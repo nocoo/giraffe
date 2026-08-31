@@ -90,7 +90,7 @@ Giraffe 是个人 GitHub 监控控制台。仓库 code name 为 `giraffe`。本�
 Cloudflare Access          生产：giraffe.hexly.ai
   │  通过后带 JWT
   ▼
-Giraffe Worker
+Worker `giraffe`
   ├── 非 /api/*  → ASSETS（Vite SPA）
   └── /api/*     → Hono
         ├── Access JWT 中间件（生产必验；本机跳过）
@@ -99,8 +99,7 @@ Giraffe Worker
         └── Snapshot 读写（D1）
               │
               ▼
-         Cloudflare D1
-         giraffe-db / giraffe-db-test
+         D1 `giraffe-db`（生产）/ `giraffe-db-test`（E2E）
 ```
 
 本机：
@@ -121,6 +120,57 @@ Caddyfile 尚未登记 giraffe，实现脚手架时再改 `/opt/homebrew/etc/Cad
 | 生产 | 443 | `giraffe.hexly.ai` |
 
 Worker 不另占 `dev+30000`。dove 同款：`wrangler.toml` 的 `[dev] port = 7045` 就是 Caddy 上游。
+
+### 5.1 Cloudflare 资源命名
+
+产品 slug 即仓库名 `giraffe`。命名对齐账号里**现行多数实例**（`dove`/`dove-db`、`lyre`/`lyre-db`、`pew`/`pew-db`/`pew-db-test`、`xray`/`xray-db`），以及隔离规范：测试资源统一 `-test` 后缀，D1 额外带 `-db`。
+
+| 资源 | 生产 | 测试（L2/L3） | wrangler |
+|------|------|---------------|----------|
+| Worker 脚本 | `giraffe` | `giraffe-test` | `name = "giraffe"`；`[env.test] name = "giraffe-test"` |
+| 自定义域 | `giraffe.hexly.ai` | 不部署 test Worker | `[[routes]] custom_domain = true` |
+| D1 | `giraffe-db` | `giraffe-db-test` | `database_name`；binding 固定 `DB` |
+| Worker secret | `TOKEN_ENCRYPTION_KEY` | 同名，只存在 test 环境本地 `.dev.vars` | `wrangler secret put` |
+
+本机开发连**生产** D1 `giraffe-db`（家族惯例：dev 可看真数据）。E2E 必须 `--env test`，只绑 `giraffe-db-test`。
+
+对标与刻意不抄：
+
+- **抄**：dove / lyre / xray 的「单 Worker + `{name}.hexly.ai`」；pew / xray 的 `[env.test] name = "{name}-test"`。
+- **不抄**：`bogo`、`steed`、`gecko`（D1 没有 `-db`）；`gecko-test`（测试库没有 `-db`）；`lizhengme-db` / `tongjinet-db`（产品改名遗留）；`noheir.worker.hexly.ai` / `pew.worker.hexly.ai`（那是 API sidecar，giraffe 是 SPA+API 一体，走 apex `giraffe.hexly.ai`）。
+- 禁止 `-staging`、`-dev`、`-e2e` 变体。
+
+`wrangler.toml` 目标形态（ID 在创建资源后填入，不预造）：
+
+```toml
+name = "giraffe"
+main = "src/server/index.ts"
+
+[dev]
+port = 7045
+
+[[routes]]
+pattern = "giraffe.hexly.ai"
+custom_domain = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "giraffe-db"
+database_id = "<prod>"
+
+[env.test]
+name = "giraffe-test"
+
+[env.test.vars]
+RESOURCE_ENV = "test"
+
+[[env.test.d1_databases]]
+binding = "DB"
+database_name = "giraffe-db-test"
+database_id = "<test>"
+```
+
+账号里目前没有 `giraffe` / `giraffe-db` / `giraffe-db-test`，脚手架阶段用 `wrangler d1 create` 新建，不复用其它库。
 
 ---
 
@@ -213,7 +263,7 @@ Worker 不另占 `dev+30000`。dove 同款：`wrangler.toml` 的 `[dev] port = 7
 
 读取路径：API 默认返回快照；`?fresh=1` 时打 GitHub、覆写快照再返回。首版不做 Cron 预热。
 
-隔离：生产 `giraffe-db`，测试 `giraffe-db-test`。E2E 禁止打生产 D1。测试库含 `_test_marker`。详见 6DQ D1。
+隔离见 [5.1](#51-cloudflare-资源命名)：生产 `giraffe-db`，E2E 只碰 `giraffe-db-test`。测试库含 `_test_marker`。详见 6DQ D1。
 
 文件约定：
 
@@ -336,7 +386,7 @@ giraffe/
 | 维 | 要求 | 时机 |
 |----|------|------|
 | L1 | Vitest；ViewModel / 纯函数 / token-crypto / snapshot 合并逻辑；覆盖率 ≥ 90%；薄壳 `routes/*.tsx` 豁免 | pre-commit，<30s |
-| L2 | 真 HTTP 打 `wrangler dev --local`；覆盖上表全部 `/api` 方法组合；绑定 `giraffe-db-test` | pre-push，<3min |
+| L2 | 真 HTTP 打 `wrangler dev --local --env test`（脚本名 `giraffe-test`）；覆盖上表全部 `/api` 方法组合；绑定 `giraffe-db-test` | pre-push，<3min |
 | L3 | Playwright：Access 短路下的设置 PAT → 仓库列表 → 单仓钻取 | CI / 按需 |
 | G1 | `tsc --noEmit` + `biome check --error-on-warnings`，0 error 0 warning | pre-commit |
 | G2 | `gitleaks` + `osv-scanner --lockfile=bun.lock` | pre-push |

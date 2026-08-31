@@ -16,7 +16,7 @@ Direction document: [docs/01-architecture.md](docs/01-architecture.md). Numbered
 | UI | Tailwind CSS v4 + shadcn/ui (Basalt Gen 2) |
 | Charts | Recharts |
 | Validation | Zod v4 |
-| Database | Cloudflare D1 (`giraffe-db` / `giraffe-db-test`) |
+| Database | Cloudflare D1 `giraffe-db` / `giraffe-db-test` (binding `DB`) |
 | GitHub auth | Encrypted PAT in D1 (multi-account). No Device Flow, no `gh` CLI |
 | App gate | Cloudflare Access in production; local `*.dev.hexly.ai` bypasses Access |
 | Lint | Biome (`biome check --error-on-warnings`). No ESLint |
@@ -55,6 +55,19 @@ MVVM: viewmodels have no View/DOM imports. Route files stay thin.
 | L3 BDD | 27045 | localhost |
 
 Caddy site is not registered yet. Do not reuse 7044 (fundly). Do not put GitHub tokens in client bundles or logs.
+
+## Cloudflare Resource Names
+
+Align with live account convention (`dove`/`dove-db`, `lyre`/`lyre-db`, `pew`/`pew-db`/`pew-db-test`). Product slug is `giraffe`. Do not copy legacy names (`bogo`, `steed`, `gecko`, `gecko-test`, `lizhengme-db`, `tongjinet-db`) or sidecar hosts (`*.worker.hexly.ai`).
+
+| Resource | Prod | Test |
+|---|---|---|
+| Worker script | `giraffe` | `giraffe-test` (`[env.test] name`) |
+| Custom domain | `giraffe.hexly.ai` | not deployed |
+| D1 | `giraffe-db` | `giraffe-db-test` |
+| D1 binding | `DB` | `DB` |
+
+Dev may bind prod D1. L2/L3 must run `--env test` and never touch `giraffe-db`. No `-staging` / `-dev` / `-e2e` suffixes.
 
 ## Quality System (6DQ)
 
