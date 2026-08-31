@@ -52,12 +52,21 @@ Strict TDD. Red test first, then the smallest implementation, then refactor. Tes
 
 Server (`src/server`) and Client (`src/client`) stay isolated. Each layer must be runnable and verifiable on its own:
 
-- Phase 1 — Server only. Mirror the reference project's token mode and API resources. Done when L1 + L2 are green for the full API surface. No client feature code.
-- Phase 2 — Client on the frozen API. Starts only after phase 1 is done. L3 comes in this phase.
+Numbered docs before code, in this order:
 
-Do not invent Server or Client internals in this file. Those belong in later numbered docs (02 Server, 03 Client). Do not start a phase before its numbered doc exists and has been reviewed.
+| # | Doc | Gate |
+|---|---|---|
+| 02 | Quality | tests, coverage, when each layer runs. Required before any feature code |
+| 03 | Data schema | GitHub API + reference-project shapes, D1 tables. Required before persistence |
+| 04 | Server design | every endpoint, behavior, response contract, atomic commit steps. Phase 1 |
+| 05 | Client design | Vite page structure and presentation, atomic commit steps. Phase 2 |
 
-Each phase is split into steps; each step is split into atomic commits.
+- Phase 1 — Server only, after 02–04. Done when 04's APIs have L1 + L2 green. No client feature code.
+- Phase 2 — Client, after phase 1 and 05. L3 belongs here.
+
+Do not invent quality rules, schemas, endpoints, or pages in this file. Do not start a layer before its numbered doc exists and has been reviewed.
+
+Each phase is split into steps in 04/05; each step is split into atomic commits.
 
 ## Local Domain and Ports
 
