@@ -48,7 +48,7 @@ MVVM: viewmodels have no View/DOM imports. Route files stay thin.
 
 ## Development Method
 
-Strict TDD. Red test first, then the smallest implementation, then refactor. Tests are the only proof of correctness — not clicking the UI or reading logs. Red and green are separate commits.
+Strict TDD. Write the failing test in the working tree, then the smallest implementation, then refactor. Only green commits land — pre-commit runs L1 with coverage, so red commits are impossible and must not be forced with `--no-verify`. Tests are the only proof of correctness.
 
 Server (`src/server`) and Client (`src/client`) stay isolated. Each layer must be runnable and verifiable on its own:
 
@@ -135,7 +135,7 @@ Install packages with a temporary registry (`BUN_CONFIG_REGISTRY=…`). Never se
 
 Atomic Conventional Commits. Imperative, lowercase, ≤50 characters. Types: `fix` `feat` `docs` `test` `refactor` `chore`. Stage specific files only — never `git add -A` or `git add .`. Do not push unless asked.
 
-One logical change per commit. Green commits must typecheck and the new tests must pass. A TDD red commit may fail tests; the next green commit must make them pass.
+One logical change per commit. Every commit must pass pre-commit (G1 + L1 coverage). Do not commit failing tests.
 
 Code changes that alter behavior or structure must update the matching numbered doc in the same effort (separate commit if it is a separate logical change).
 
