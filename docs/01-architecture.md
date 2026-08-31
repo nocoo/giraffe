@@ -97,7 +97,7 @@ Worker `giraffe`
         └── Snapshot 读写（D1）
               │
               ▼
-         D1 `giraffe-db`（生产）/ `giraffe-db-test`（E2E）
+         D1 `giraffe-db`（仅生产远程库）
 ```
 
 本机：
@@ -121,18 +121,18 @@ Caddyfile 尚未登记 giraffe，脚手架时再加。端口：
 
 ### 5.1 Cloudflare 资源命名
 
-产品 slug 为 `giraffe`。测试资源用 `-test` 后缀，D1 名称带 `-db`。禁止 `-staging`、`-dev`、`-e2e`。
+线上只部署一套资源。L2 / L3 不占用 Cloudflare 上的第二套 Worker 或 D1，全部走本机 `wrangler dev --local --persist-to`（Miniflare SQLite）。同一套本地 Worker 同时承接 API E2E 与浏览器 E2E。
 
-| 资源 | 生产 | 测试（L2/L3） | wrangler |
-|------|------|---------------|----------|
-| Worker 脚本 | `giraffe` | `giraffe-test` | `name = "giraffe"`；`[env.test] name = "giraffe-test"` |
-| 自定义域 | `giraffe.hexly.ai` | 不部署 test Worker | `[[routes]] custom_domain = true` |
-| D1 | `giraffe-db` | `giraffe-db-test` | `database_name`；binding 固定 `DB` |
-| Worker secret | `TOKEN_ENCRYPTION_KEY` | 同名，只存在 test 环境本地 `.dev.vars` | `wrangler secret put` |
+| 资源 | 生产（远程） | L2 / L3（本机） |
+|------|--------------|-----------------|
+| Worker 脚本 | `giraffe` | 不部署。`wrangler dev --local` 起临时进程 |
+| 自定义域 | `giraffe.hexly.ai` | 无。runner 打 `127.0.0.1` |
+| D1 | `giraffe-db`（binding `DB`） | 不创建远程测试库。L2 用 `.wrangler/e2e/`，L3 用 `.wrangler/e2e-pw/` |
+| Secret | `TOKEN_ENCRYPTION_KEY` | runner 用 `--var` / `.dev.vars` 注入，不写进远程 |
 
-本机开发连生产 D1 `giraffe-db`。E2E 必须 `--env test`，只绑 `giraffe-db-test`。
+本机 `bun dev` 可绑远程 `giraffe-db`。E2E 必须 `--local`，每次先清空 persist 目录，再 apply schema，并写入 `_test_marker`。marker 不对则 runner 拒绝继续。不需要 CF 凭证，也不部署 `--env test`。
 
-`wrangler.toml` 目标形态（ID 在创建资源后填入）：
+`wrangler.toml` 目标形态（ID 在创建生产库后填入）。没有 `[env.test]`，没有第二套 D1：
 
 ```toml
 name = "giraffe"
@@ -149,20 +149,9 @@ custom_domain = true
 binding = "DB"
 database_name = "giraffe-db"
 database_id = "<prod>"
-
-[env.test]
-name = "giraffe-test"
-
-[env.test.vars]
-RESOURCE_ENV = "test"
-
-[[env.test.d1_databases]]
-binding = "DB"
-database_name = "giraffe-db-test"
-database_id = "<test>"
 ```
 
-账号里目前没有 `giraffe` / `giraffe-db` / `giraffe-db-test`，脚手架阶段用 `wrangler d1 create` 新建，不复用其它库。
+账号里目前没有 `giraffe` / `giraffe-db`，脚手架阶段 `wrangler d1 create giraffe-db` 只建生产库。
 
 ---
 
@@ -255,7 +244,7 @@ database_id = "<test>"
 
 读取路径：API 默认返回快照；`?fresh=1` 时打 GitHub、覆写快照再返回。首版不做 Cron 预热。
 
-隔离见 [5.1](#51-cloudflare-资源命名)：生产 `giraffe-db`，E2E 只碰 `giraffe-db-test`。测试库含 `_test_marker`。详见 6DQ D1。
+隔离见 [5.1](#51-cloudflare-资源命名)：生产只用远程 `giraffe-db`。E2E 打本机 persist 目录里的 SQLite，库内含 `_test_marker`。详见 6DQ D1。
 
 文件约定：
 
@@ -378,13 +367,13 @@ giraffe/
 | 维 | 要求 | 时机 |
 |----|------|------|
 | L1 | Vitest；ViewModel / 纯函数 / token-crypto / snapshot 合并逻辑；覆盖率 ≥ 90%；薄壳 `routes/*.tsx` 豁免 | pre-commit，<30s |
-| L2 | 真 HTTP 打 `wrangler dev --local --env test`（脚本名 `giraffe-test`）；覆盖上表全部 `/api` 方法组合；绑定 `giraffe-db-test` | pre-push，<3min |
-| L3 | Playwright：Access 短路下的设置 PAT → 仓库列表 → 单仓钻取 | CI / 按需 |
+| L2 | 真 HTTP。`scripts/run-e2e.ts` 清空 `.wrangler/e2e/`，拉起 `wrangler dev --local --persist-to=.wrangler/e2e --port 17045`，覆盖全部 `/api` 方法组合 | pre-push，<3min |
+| L3 | Playwright 打同一套本地 Worker（`--persist-to=.wrangler/e2e-pw --port 27045`）：设置 PAT → 仓库列表 → 单仓钻取 | CI / 按需 |
 | G1 | `tsc --noEmit` + `biome check --error-on-warnings`，0 error 0 warning | pre-commit |
 | G2 | `gitleaks` + `osv-scanner --lockfile=bun.lock` | pre-push |
-| D1 | `giraffe-db` vs `giraffe-db-test`；构建期校验 binding 名含 `-test`；运行时拒绝非 test 资源跑 E2E；`_test_marker` | L2/L3 强制 |
+| D1 | 无远程测试库。隔离靠 `--local --persist-to` 目录 + `_test_marker`；runner 不见 marker 则退出 | L2/L3 强制 |
 
-无状态或未建库的脚手架阶段，D1 维度标 N/A 直到第一次接入 D1。一旦有 D1，测试不得打生产库。
+脚手架尚未接入 D1 时，D1 维度标 N/A。一旦有生产 `giraffe-db`，E2E 仍不得连远程。
 
 ---
 

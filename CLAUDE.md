@@ -16,7 +16,7 @@ Direction document: [docs/01-architecture.md](docs/01-architecture.md). Numbered
 | UI | Tailwind CSS v4 + shadcn/ui (Basalt Gen 2) |
 | Charts | Recharts |
 | Validation | Zod v4 |
-| Database | Cloudflare D1 `giraffe-db` / `giraffe-db-test` (binding `DB`) |
+| Database | Cloudflare D1 `giraffe-db` (binding `DB`). E2E uses local Miniflare SQLite |
 | GitHub auth | Encrypted PAT in D1 (multi-account). No Device Flow, no `gh` CLI |
 | App gate | Cloudflare Access in production; local `*.dev.hexly.ai` bypasses Access |
 | Lint | Biome (`biome check --error-on-warnings`). No ESLint |
@@ -58,14 +58,16 @@ Caddy site is not registered yet. Do not put GitHub tokens in client bundles or 
 
 ## Cloudflare Resource Names
 
-| Resource | Prod | Test |
-|---|---|---|
-| Worker script | `giraffe` | `giraffe-test` (`[env.test] name`) |
-| Custom domain | `giraffe.hexly.ai` | not deployed |
-| D1 | `giraffe-db` | `giraffe-db-test` |
-| D1 binding | `DB` | `DB` |
+Online: one Worker `giraffe`, one D1 `giraffe-db` (binding `DB`), custom domain `giraffe.hexly.ai`. No remote test Worker, no remote test D1, no `[env.test]`.
 
-Dev may bind prod D1. L2/L3 must run `--env test` and never touch `giraffe-db`. No `-staging` / `-dev` / `-e2e` suffixes.
+L2 and L3 share the same local wrangler process model:
+
+| Layer | Command | Persist dir | Port |
+|---|---|---|---|
+| L2 API E2E | `wrangler dev --local --persist-to=.wrangler/e2e` | `.wrangler/e2e/` | 17045 |
+| L3 Playwright | `wrangler dev --local --persist-to=.wrangler/e2e-pw` | `.wrangler/e2e-pw/` | 27045 |
+
+Runner wipes the persist dir, applies schema, writes `_test_marker`, then hits real HTTP. Missing or wrong marker → abort. No Cloudflare credentials. Dev `bun dev` may bind remote `giraffe-db`; E2E must not.
 
 ## Quality System (6DQ)
 
@@ -76,7 +78,7 @@ Dev may bind prod D1. L2/L3 must run `--env test` and never touch `giraffe-db`. 
 | L3 System/E2E | Playwright | CI / on-demand | PAT settings → repo list → repo detail |
 | G1 Static | `tsc --noEmit` + Biome | pre-commit | 0 error, 0 warning |
 | G2 Security | osv-scanner + gitleaks | pre-push | 0 vulns, 0 leaked secrets |
-| D1 Isolation | `giraffe-db-test` | L2/L3 | `-test` suffix, runtime marker, never prod D1 |
+| D1 Isolation | `wrangler dev --local --persist-to` | L2/L3 | local SQLite + `_test_marker`; never remote D1 |
 
 ### Hooks
 
@@ -86,7 +88,7 @@ Dev may bind prod D1. L2/L3 must run `--env test` and never touch `giraffe-db`. 
 | pre-push | <3min | L2 ‖ G2 |
 | on-demand | — | L3 |
 
-Until D1 exists, D1 isolation is N/A. After the first D1 binding, E2E must not touch `giraffe-db`.
+Until D1 exists, D1 isolation is N/A. After `giraffe-db` exists, E2E still stays on `--local --persist-to`.
 
 ## Commands (once scaffolded)
 
