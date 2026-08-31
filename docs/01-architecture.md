@@ -142,6 +142,8 @@ E2E 必须 `--local --persist-to`，每次先清空 persist 目录，再 apply s
 name = "giraffe"
 main = "src/server/index.ts"
 compatibility_date = "2026-04-01"
+workers_dev = false
+preview_urls = false
 
 [dev]
 port = 7045
@@ -163,7 +165,7 @@ database_id = "<prod>"
 # 禁止 remote = true。本机 wrangler dev 默认本地 D1。
 ```
 
-`wrangler deploy` 前必须先 `vite build`，否则 `[assets]` 目录不存在。账号里目前没有 `giraffe` / `giraffe-db`，脚手架阶段 `wrangler d1 create giraffe-db` 只建生产库。
+阶段 1 的 `dev:server` 在启动前若 `dist/client` 不存在，写入占位 `index.html`（空壳即可），这样 wrangler 不因缺 assets 目录而拒绝启动。`wrangler deploy` 前必须 `vite build` 换成真实产物。账号里目前没有 `giraffe` / `giraffe-db`，脚手架阶段 `wrangler d1 create giraffe-db` 只建生产库。
 
 ---
 
@@ -177,8 +179,9 @@ database_id = "<prod>"
 - Worker secrets / vars：`CF_ACCESS_TEAM_DOMAIN`（如 `https://<team>.cloudflareaccess.com`）、`CF_ACCESS_AUD`（Access 应用 audience）。缺任一则生产请求失败关闭，不得放行。
 - 中间件读取 `Cf-Access-Jwt-Assertion`，用该 team 的 JWKS 验签，并校验 `iss`、`aud`、`exp`。只验签名不够。失败 401。
 - 从 JWT 取 email / name，仅用于顶栏展示，不作为 GitHub 身份。
-- Access 短路只允许 `ENVIRONMENT === "development"`（由 wrangler `[vars]` / `--var` 注入）。缺省或未知值失败关闭。禁止用 `Host`、`X-Forwarded-*` 或域名后缀判断。
-- 自定义域未挂好 Access 应用与策略前，禁止 `wrangler deploy` 把 `giraffe.hexly.ai` 对外。部署检查清单写入 04。
+- Access 短路只允许 `ENVIRONMENT === "development"`。该值**禁止**写入会随 `wrangler deploy` 上去的 `[vars]`。只允许 gitignore 的 `.dev.vars`，或本地脚本 `--var ENVIRONMENT:development`。缺省、未知、或生产部署中出现 `development` 一律失败关闭。禁止用 `Host`、`X-Forwarded-*` 或域名后缀判断。
+- `wrangler.toml` 设 `workers_dev = false`，关闭 `*.workers.dev` 与 preview URL。只通过 Access 保护的 `giraffe.hexly.ai` 对外。
+- 自定义域未挂好 Access 应用与策略前，禁止 `wrangler deploy` 把该域对外。部署检查清单写入 04。
 - 所有会改状态的 `/api`（POST / DELETE，含无 body 的 activate / read-all）必须校验 `Origin` 与允许列表一致，否则 403。防止 Access 会话被跨站触发。
 - 应用内无 `/login`、无 OAuth、无 session cookie。
 

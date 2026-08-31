@@ -18,7 +18,7 @@ Direction document: [docs/01-architecture.md](docs/01-architecture.md). Numbered
 | Validation | Zod v4 |
 | Database | Cloudflare D1 `giraffe-db` (binding `DB`). E2E uses local Miniflare SQLite |
 | GitHub auth | Encrypted PAT in D1 (multi-account). No Device Flow, no `gh` CLI |
-| App gate | Cloudflare Access JWT (`iss` + `aud` + JWKS). Bypass only if `ENVIRONMENT=development`. Fail closed |
+| App gate | Cloudflare Access JWT (`iss` + `aud` + JWKS). Bypass only via `.dev.vars` / `--var ENVIRONMENT=development`, never deployable `[vars]`. `workers_dev = false` |
 | Lint | Biome (`biome check --error-on-warnings`). No ESLint |
 | Tests | Vitest (L1) + real-HTTP E2E (L2) + Playwright (L3) |
 | Deploy | `wrangler deploy` (assets + worker) |
@@ -117,7 +117,7 @@ Until D1 exists, D1 isolation is N/A. After `giraffe-db` exists, E2E still stays
 ## Commands (once scaffolded)
 
 ```bash
-bun run dev:server      # wrangler dev --local --port 7045 (API only, phase 1)
+bun run dev:server      # mkdir placeholder assets if needed; wrangler dev --local --port 7045 --var ENVIRONMENT:development
 bun run dev:client      # vite on its port; talks to mock or to dev:server via /api
 bun dev                 # phase 2: wrangler serves API + built/dev assets on 7045
 bun run build           # vite build → dist/client
