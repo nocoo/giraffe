@@ -10,7 +10,7 @@ Giraffe 是个人 GitHub 监控控制台。仓库 code name 为 `giraffe`。本�
 
 ## 1. 产品定义
 
-面向单人使用的 GitHub 监控台。用 PAT 在 Worker 侧拉取 GitHub 数据，落 D1 快照后给控制台展示。明文 PAT 不得持久化在浏览器、打进前端包、写入日志，也不得出现在任何 API 响应里。D1 只存 AES-GCM 信封。设置页提交后立即清空输入框；明文只存在于提交前的输入框和该次 HTTPS 请求体。
+面向单人使用的 GitHub 监控台。用 PAT 在 Worker 侧拉取 GitHub 数据，落 D1 快照后给控制台展示。明文 PAT 允许短暂出现在：设置页输入框（提交后立即清空）、该次 HTTPS 请求体、Worker 内存解密结果、出站 `Authorization: Bearer`。禁止：浏览器持久化、前端包、日志、trace、API 响应、D1 明文列。D1 只存 AES-GCM 信封。
 
 参考实现：`/Users/nocoo/workspace/references/gh-dashboard`（产品名 Gitdeck）。本项目只借鉴其 **token 鉴权形态** 和 **HTTP API 资源划分**，界面按 Basalt Gen 2 完整重做。
 
@@ -67,8 +67,8 @@ Giraffe 是个人 GitHub 监控控制台。仓库 code name 为 `giraffe`。本�
 | API | Hono | Worker 内 `/api/*` |
 | 校验 | Zod v4 | 请求体与 PAT 录入 |
 | 数据 | Cloudflare D1 | `accounts` + 通用 `snapshots` |
-| 密钥 | Worker secrets | `TOKEN_ENCRYPTION_KEY`；PAT 不以明文落库 |
-| 门禁 | Cloudflare Access JWT | 生产校验 `Cf-Access-Jwt-Assertion`；本机开发域名不走 Access |
+| 密钥 | Worker secrets | `TOKEN_ENCRYPTION_KEY_V<n>` + `TOKEN_ENCRYPTION_KEY_CURRENT`；明文 PAT 不落库 |
+| 门禁 | Cloudflare Access JWT | 生产校验 `iss`/`aud`/JWKS；本机仅 `--var ENVIRONMENT:development` 或 `.dev.vars` |
 | 部署 | `wrangler deploy` | `[assets]` + `run_worker_first = ["/api/*"]`，`not_found_handling = "single-page-application"` |
 | Lint | Biome 2.x | `biome check --error-on-warnings` |
 | L1 | Vitest 4 | 覆盖率 ≥ 90%（UI 薄壳豁免） |
@@ -277,7 +277,7 @@ database_id = "<prod>"
 
 ### `snapshot_days`
 
-日报差量用。主键 `(account_id, day)`，`day` 为该快照 `fetched_at` 的 UTC `YYYY-MM-DD`，按真实采集日写入，不得改写成「昨天」或「今天」。`payload` 存该日 star/fork/issue 计数。计算差量只允许对比**严格更早**的一天。若没有更早的 `snapshot_days` 行，`/api/digest` 返回 `baseline_missing`，不把同一天或把过期快照当成一日基线。保留最近 30 天，更早的删除。
+日报差量用。主键 `(account_id, day)`，`day` 为该快照 `fetched_at` 的 UTC `YYYY-MM-DD`，按真实采集日写入，不得改写成「昨天」或「今天」。`payload` 存该日 star/fork/issue 计数。计算差量只允许对比 **UTC 日历上紧邻的前一天**。没有 `day = today-1` 的行时返回 `baseline_missing`（或显式标出间隔天数，首版选择前者），不得把五天前的变化当成「今日差量」。保留最近 30 天，更早的删除。
 
 读取路径：
 
@@ -300,7 +300,7 @@ database_id = "<prod>"
 
 ## 8. API
 
-前缀 `/api`。JSON。生产与本地均由同一 Hono 应用提供。GitHub token 不出 Worker。
+前缀 `/api`。JSON。生产与本地均由同一 Hono 应用提供。GitHub token 不得出现在响应、日志或前端；Worker 内存与出站 Authorization 头除外。
 
 | 方法 | 路径 | 行为 |
 |------|------|------|
@@ -410,8 +410,8 @@ giraffe/
 | 维 | 要求 | 时机 |
 |----|------|------|
 | L1 | `bun run test:coverage`（不是 `bun run test`）；覆盖率 ≥ 90%；薄壳 `routes/*.tsx` 豁免 | pre-commit，<30s |
-| L2 | 真 HTTP。`scripts/run-e2e.ts` 清空 `.wrangler/e2e/`，拉起 `wrangler dev --local --persist-to=.wrangler/e2e --port 17045`，覆盖全部 `/api` 方法组合。GitHub 出站必须是 stub | pre-push，<3min |
-| L3 | Playwright 打另一本地进程（`--local --persist-to=.wrangler/e2e-pw --port 27045`）：设置 PAT → 仓库列表 → 单仓钻取。同样禁止 GitHub 出站 | CI / 按需 |
+| L2 | 真 HTTP。runner 自己注入 `ENVIRONMENT:development`、`TOKEN_ENCRYPTION_KEY_CURRENT:1`、`TOKEN_ENCRYPTION_KEY_V1:<fixture>`，不依赖 gitignore 的 `.dev.vars`。命令：`wrangler dev --local --persist-to=.wrangler/e2e --port 17045 --var …`。GitHub 出站必须是 stub | pre-push，<3min |
+| L3 | 另一进程，同样由 runner 注入上述 `--var`，`--persist-to=.wrangler/e2e-pw --port 27045`。同样禁止 GitHub 出站 | CI / 按需 |
 | G1 | `tsc --noEmit` + `biome check --error-on-warnings`，0 error 0 warning | pre-commit |
 | G2 | `gitleaks` + `osv-scanner --lockfile=bun.lock` | pre-push |
 | D1 | 无远程测试库。隔离靠 `--local --persist-to` 目录 + `_test_marker`；runner 不见 marker 则退出 | L2/L3 强制 |

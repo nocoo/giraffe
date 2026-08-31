@@ -1,6 +1,6 @@
 # Giraffe
 
-Personal GitHub monitoring console. Code name `giraffe`. A Cloudflare Worker proxies GitHub with user-pasted classic PATs and serves a Vite SPA. Plaintext PAT is never persisted, bundled, logged, or returned. D1 stores only the AES-GCM envelope. The settings input is cleared after submit; plaintext exists in the DOM only until then, and in that one HTTPS request body.
+Personal GitHub monitoring console. Code name `giraffe`. A Cloudflare Worker proxies GitHub with user-pasted classic PATs and serves a Vite SPA. Plaintext PAT may exist only in the settings input (cleared after submit), that request body, Worker memory after decrypt, and the outbound GitHub `Authorization` header. It must never be persisted, bundled, logged, traced, or returned. D1 stores only the AES-GCM envelope.
 
 Direction document: [docs/01-architecture.md](docs/01-architecture.md). Numbered docs are Chinese; this file is the Agent handbook.
 
@@ -18,7 +18,7 @@ Direction document: [docs/01-architecture.md](docs/01-architecture.md). Numbered
 | Validation | Zod v4 |
 | Database | Cloudflare D1 `giraffe-db` (binding `DB`). E2E uses local Miniflare SQLite |
 | GitHub auth | Encrypted PAT in D1 (multi-account). No Device Flow, no `gh` CLI |
-| App gate | Cloudflare Access JWT (`iss` + `aud` + JWKS). Bypass only via `.dev.vars` / `--var ENVIRONMENT=development`, never deployable `[vars]`. `workers_dev = false` |
+| App gate | Cloudflare Access JWT (`iss` + `aud` + JWKS). Bypass only via `.dev.vars` / `--var ENVIRONMENT:development`, never deployable `[vars]`. `workers_dev = false` |
 | Lint | Biome (`biome check --error-on-warnings`). No ESLint |
 | Tests | Vitest (L1) + real-HTTP E2E (L2) + Playwright (L3) |
 | Deploy | `wrangler deploy` (assets + worker) |
@@ -88,10 +88,10 @@ L2 and L3 use the same Worker code and launch model, as **separate processes**:
 
 | Layer | Command | Persist dir | Port |
 |---|---|---|---|
-| L2 API E2E | `wrangler dev --local --persist-to=.wrangler/e2e --port 17045` | `.wrangler/e2e/` | 17045 |
-| L3 Playwright | `wrangler dev --local --persist-to=.wrangler/e2e-pw --port 27045` | `.wrangler/e2e-pw/` | 27045 |
+| L2 API E2E | `wrangler dev --local --persist-to=.wrangler/e2e --port 17045` plus `--var` below | `.wrangler/e2e/` | 17045 |
+| L3 Playwright | same, `--persist-to=.wrangler/e2e-pw --port 27045` | `.wrangler/e2e-pw/` | 27045 |
 
-Runner wipes the persist dir, applies schema, writes `_test_marker`, then hits real HTTP. Missing or wrong marker → abort. GitHub egress is stubbed; no real PAT, no Cloudflare credentials. Default `bun dev` uses local D1, never remote `giraffe-db`.
+The runner, not `.dev.vars`, injects `--var ENVIRONMENT:development --var TOKEN_ENCRYPTION_KEY_CURRENT:1 --var TOKEN_ENCRYPTION_KEY_V1:<32-byte-fixture>`. Wrangler `--var` syntax is `KEY:VALUE`. Then wipe persist, apply schema, write `_test_marker`, hit real HTTP. Missing marker → abort. GitHub egress is stubbed. Default `bun dev` uses local D1.
 
 ## Quality System (6DQ)
 
@@ -125,8 +125,8 @@ bun run typecheck       # tsc --noEmit
 bun run lint            # biome check --error-on-warnings
 bun run test            # L1 without coverage gate (watch/debug)
 bun run test:coverage   # L1 + ≥90% coverage; this is the pre-commit command
-bun run test:e2e:api    # L2: wrangler --local --persist-to=.wrangler/e2e --port 17045
-bun run test:e2e:bdd    # L3: wrangler --local --persist-to=.wrangler/e2e-pw --port 27045
+bun run test:e2e:api    # L2 runner injects --var fixtures; port 17045
+bun run test:e2e:bdd    # L3 runner injects --var fixtures; port 27045
 ```
 
 Phase 2 Client tests use a mock `/api` (MSW or static fixtures). They must not boot wrangler. Server tests must not import `src/client`. Phase 1 has no Client tests.
