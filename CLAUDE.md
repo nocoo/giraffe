@@ -18,7 +18,7 @@ Direction document: [docs/01-architecture.md](docs/01-architecture.md). Numbered
 | Validation | Zod v4 |
 | Database | Cloudflare D1 `giraffe-db` (binding `DB`). E2E uses local Miniflare SQLite |
 | GitHub auth | Encrypted PAT in D1 (multi-account). No Device Flow, no `gh` CLI |
-| App gate | Cloudflare Access in production; local `*.dev.hexly.ai` bypasses Access |
+| App gate | Cloudflare Access JWT (`iss` + `aud` + JWKS). Bypass only if `ENVIRONMENT=development`. Fail closed |
 | Lint | Biome (`biome check --error-on-warnings`). No ESLint |
 | Tests | Vitest (L1) + real-HTTP E2E (L2) + Playwright (L3) |
 | Deploy | `wrangler deploy` (assets + worker) |

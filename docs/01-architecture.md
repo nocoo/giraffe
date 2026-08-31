@@ -172,9 +172,12 @@ database_id = "<prod>"
 ### 6.1 Cloudflare Access（谁能打开控制台）
 
 - 生产自定义域挂 Access 应用。策略在 Cloudflare Dashboard，不进仓库。
-- Worker 中间件读取 `Cf-Access-Jwt-Assertion`，用 Access 团队 JWKS 验签。失败 401。
+- Worker secrets / vars：`CF_ACCESS_TEAM_DOMAIN`（如 `https://<team>.cloudflareaccess.com`）、`CF_ACCESS_AUD`（Access 应用 audience）。缺任一则生产请求失败关闭，不得放行。
+- 中间件读取 `Cf-Access-Jwt-Assertion`，用该 team 的 JWKS 验签，并校验 `iss`、`aud`、`exp`。只验签名不够。失败 401。
 - 从 JWT 取 email / name，仅用于顶栏展示，不作为 GitHub 身份。
-- `giraffe.dev.hexly.ai` 与 `wrangler dev` **不** 套 Access。本地中间件短路，避免假 JWT。
+- Access 短路只允许 `ENVIRONMENT === "development"`（由 wrangler `[vars]` / `--var` 注入）。缺省或未知值失败关闭。禁止用 `Host`、`X-Forwarded-*` 或域名后缀判断。
+- 自定义域未挂好 Access 应用与策略前，禁止 `wrangler deploy` 把 `giraffe.hexly.ai` 对外。部署检查清单写入 04。
+- 所有会改状态的 `/api`（POST / DELETE，含无 body 的 activate / read-all）必须校验 `Origin` 与允许列表一致，否则 403。防止 Access 会话被跨站触发。
 - 应用内无 `/login`、无 OAuth、无 session cookie。
 
 文件约定：
