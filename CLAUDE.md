@@ -91,7 +91,7 @@ L2 and L3 use the same Worker code and launch model, as **separate processes**:
 | L2 API E2E | `wrangler dev --local --persist-to=.wrangler/e2e --port 17045` plus `--var` below | `.wrangler/e2e/` | 17045 |
 | L3 Playwright | same, `--persist-to=.wrangler/e2e-pw --port 27045` | `.wrangler/e2e-pw/` | 27045 |
 
-The runner, not `.dev.vars`, injects `--var ENVIRONMENT:development --var TOKEN_ENCRYPTION_KEY_CURRENT:1 --var TOKEN_ENCRYPTION_KEY_V1:<32-byte-fixture>`. Wrangler `--var` syntax is `KEY:VALUE`. Then wipe persist, apply schema, write `_test_marker`, hit real HTTP. Missing marker → abort. GitHub egress is stubbed. Default `bun dev` uses local D1.
+The runner, not `.dev.vars`, injects `--var ENVIRONMENT:development --var TOKEN_ENCRYPTION_KEY_CURRENT:1 --var TOKEN_ENCRYPTION_KEY_V1:<32-byte-fixture>`. Wrangler `--var` syntax is `KEY:VALUE`. L2 also writes a placeholder `dist/client/index.html` if missing. L3 runs `vite build` first. Then wipe persist, apply schema, write `_test_marker`, hit real HTTP. Missing marker → abort. GitHub egress is stubbed. Default `bun dev` uses local D1.
 
 ## Quality System (6DQ)
 

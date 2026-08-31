@@ -31,7 +31,7 @@ Giraffe 是个人 GitHub 监控控制台。仓库 code name 为 `giraffe`。本�
 | 分层 | MVVM。ViewModel 不感知 View |
 | GitHub 鉴权 | 设置页粘贴 PAT；服务端加密写入 D1；可多账号 |
 | 控制台门禁 | Cloudflare Access 挡在 Worker 前面。应用内无登录页、无 Google OAuth |
-| 数据 | D1 快照（默认读库，`fresh=1` 回源 GitHub） |
+| 数据 | D1 快照。GET 只读；回源用 `POST /api/refresh` |
 | 提供商 | 只做 GitHub |
 | 质量 | 严格 TDD + 6DQ。正确性只由测试证明 |
 | 分层隔离 | Server API 与 Client UI 可独立测试、运行、验证 |
@@ -165,7 +165,7 @@ database_id = "<prod>"
 # 禁止 remote = true。本机 wrangler dev 默认本地 D1。
 ```
 
-阶段 1 的 `dev:server` 在启动前若 `dist/client` 不存在，写入占位 `index.html`（空壳即可），这样 wrangler 不因缺 assets 目录而拒绝启动。`wrangler deploy` 前必须 `vite build` 换成真实产物。账号里目前没有 `giraffe` / `giraffe-db`，脚手架阶段 `wrangler d1 create giraffe-db` 只建生产库。
+`dev:server` 与 L2 runner 在启动 wrangler 前，若 `dist/client` 不存在则写入占位 `index.html`，避免 wrangler 因缺 assets 拒绝启动。L3 runner 必须先 `vite build` 再起 wrangler（阶段 2 才有真实页面）。`wrangler deploy` 前必须 `vite build`。账号里目前没有 `giraffe` / `giraffe-db`，脚手架阶段 `wrangler d1 create giraffe-db` 只建生产库。
 
 ---
 
@@ -182,7 +182,7 @@ database_id = "<prod>"
 - Access 短路只允许 `ENVIRONMENT === "development"`。该值**禁止**写入会随 `wrangler deploy` 上去的 `[vars]`。只允许 gitignore 的 `.dev.vars`，或本地脚本 `--var ENVIRONMENT:development`。缺省、未知、或生产部署中出现 `development` 一律失败关闭。禁止用 `Host`、`X-Forwarded-*` 或域名后缀判断。
 - `wrangler.toml` 设 `workers_dev = false`，关闭 `*.workers.dev` 与 preview URL。只通过 Access 保护的 `giraffe.hexly.ai` 对外。
 - 自定义域未挂好 Access 应用与策略前，禁止 `wrangler deploy` 把该域对外。部署检查清单写入 04。
-- 所有会改状态的 `/api`（POST / DELETE，含无 body 的 activate / read-all）必须校验 `Origin` 与允许列表一致，否则 403。防止 Access 会话被跨站触发。
+- 所有会改状态的 `/api`（POST / DELETE，含无 body 的 activate / read-all / refresh）必须校验 `Origin` 与允许列表一致，否则 403。GET 不得回源 GitHub、不得写 D1。
 - 应用内无 `/login`、无 OAuth、无 session cookie。
 
 文件约定：
@@ -281,10 +281,9 @@ database_id = "<prod>"
 
 读取路径：
 
-- 有快照且无 `fresh=1`：直接返回，并带 `fetched_at`
-- 无快照（新账号或从未拉过）：服务端同步回源一次，再返回；不得对空库 200 + 空列表装成「没有仓库」
-- `fresh=1`：回源 GitHub，覆写当前快照（及必要的 `snapshot_days`）再返回
-- 首版不做 Cron。Client 在进入页面时带 `fresh=1` 的策略由 05 定；Server 必须能在无 Client 的情况下仅靠上述规则自洽
+- GET：只读快照，带 `fetched_at`。无快照返回 409 `snapshot_missing`，不回源、不写库
+- `POST /api/refresh`：Origin 校验后回源 GitHub，覆写当前快照及必要的 `snapshot_days`，再返回新快照
+- 首版不做 Cron。何时 POST refresh 由 04/05 定；Server 不得在 GET 里偷刷新
 
 隔离见 [5.1](#51-cloudflare-资源命名)：生产只用远程 `giraffe-db`。E2E 打本机 persist 目录里的 SQLite，库内含 `_test_marker`。详见 6DQ D1。细节表结构以 03 为准。
 
@@ -310,10 +309,11 @@ database_id = "<prod>"
 | POST | `/api/accounts` | classic PAT：`GET /user` + 必填 scope；AES-GCM 信封入库 |
 | POST | `/api/accounts/:id/activate` | 切换当前账号 |
 | DELETE | `/api/accounts/:id` | 删除账号与其快照 |
-| GET | `/api/repos` | 快照；`fresh=1` 刷新 |
-| GET | `/api/issues` | 同上 |
-| GET | `/api/prs` | 同上 |
-| GET | `/api/insights` | 同上 |
+| POST | `/api/refresh` | Origin 校验；回源并覆写快照。body 指定 kind 或全部 |
+| GET | `/api/repos` | 只读快照；无快照 409 |
+| GET | `/api/issues` | 只读快照；无快照 409 |
+| GET | `/api/prs` | 只读快照；无快照 409 |
+| GET | `/api/insights` | 只读快照；无快照 409 |
 | GET | `/api/alerts` | Dependabot + code scanning |
 | GET | `/api/notifications` | inbox |
 | POST | `/api/notifications/read` | 标记已读（透传 GitHub，并更新快照） |
@@ -410,8 +410,8 @@ giraffe/
 | 维 | 要求 | 时机 |
 |----|------|------|
 | L1 | `bun run test:coverage`（不是 `bun run test`）；覆盖率 ≥ 90%；薄壳 `routes/*.tsx` 豁免 | pre-commit，<30s |
-| L2 | 真 HTTP。runner 自己注入 `ENVIRONMENT:development`、`TOKEN_ENCRYPTION_KEY_CURRENT:1`、`TOKEN_ENCRYPTION_KEY_V1:<fixture>`，不依赖 gitignore 的 `.dev.vars`。命令：`wrangler dev --local --persist-to=.wrangler/e2e --port 17045 --var …`。GitHub 出站必须是 stub | pre-push，<3min |
-| L3 | 另一进程，同样由 runner 注入上述 `--var`，`--persist-to=.wrangler/e2e-pw --port 27045`。同样禁止 GitHub 出站 | CI / 按需 |
+| L2 | 真 HTTP。runner 写入 assets 占位、注入 `--var` fixture，再 `wrangler dev --local --persist-to=.wrangler/e2e --port 17045`。GitHub 出站必须是 stub | pre-push，<3min |
+| L3 | runner 先 `vite build`，再注入 `--var`，`--persist-to=.wrangler/e2e-pw --port 27045`。禁止 GitHub 出站 | CI / 按需 |
 | G1 | `tsc --noEmit` + `biome check --error-on-warnings`，0 error 0 warning | pre-commit |
 | G2 | `gitleaks` + `osv-scanner --lockfile=bun.lock` | pre-push |
 | D1 | 无远程测试库。隔离靠 `--local --persist-to` 目录 + `_test_marker`；runner 不见 marker 则退出 | L2/L3 强制 |
