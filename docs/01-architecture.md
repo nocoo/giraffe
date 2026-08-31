@@ -224,7 +224,7 @@ database_id = "<prod>"
 
 ## 7. 数据：D1 快照
 
-不把 GitHub 资源拆成宽表。当前视图按账号 + 种类存 JSON；日报差量另表按天保留。单行 `payload` 不得超过 D1 2 MB 上限：超限按页切成 `kind` + `#` + `page`（如 `repos#2`），API 组装后返回。切分算法细节由 03 定。
+不把 GitHub 资源拆成宽表。当前视图按账号 + 种类存 JSON；日报差量另表按天保留。D1 整行上限约 2,000,000 字节。`payload` 最大 **1,500,000 字节**，给其它列留余量。超限按页切成 `kind` + `#` + `page`（如 `repos#2`），API 组装后返回。切分算法细节由 03 定。
 
 ### `accounts`
 
@@ -276,7 +276,7 @@ database_id = "<prod>"
 
 ### `snapshot_days`
 
-日报差量用。主键 `(account_id, day)`，`day` 为 UTC `YYYY-MM-DD`。`payload` 存当天 star/fork/issue 计数。刷新 `digest` 前若当天尚无行，先把当前 `repos` 快照的计数写入昨天或今天的基线，再算差。保留最近 30 天，更早的删除。没有基线时 `/api/digest` 返回 `baseline_missing`，不编造差量。
+日报差量用。主键 `(account_id, day)`，`day` 为该快照 `fetched_at` 的 UTC `YYYY-MM-DD`，按真实采集日写入，不得改写成「昨天」或「今天」。`payload` 存该日 star/fork/issue 计数。计算差量只允许对比**严格更早**的一天。若没有更早的 `snapshot_days` 行，`/api/digest` 返回 `baseline_missing`，不把同一天或把过期快照当成一日基线。保留最近 30 天，更早的删除。
 
 读取路径：
 
@@ -286,8 +286,6 @@ database_id = "<prod>"
 - 首版不做 Cron。Client 在进入页面时带 `fresh=1` 的策略由 05 定；Server 必须能在无 Client 的情况下仅靠上述规则自洽
 
 隔离见 [5.1](#51-cloudflare-资源命名)：生产只用远程 `giraffe-db`。E2E 打本机 persist 目录里的 SQLite，库内含 `_test_marker`。详见 6DQ D1。细节表结构以 03 为准。
-
-隔离见 [5.1](#51-cloudflare-资源命名)：生产只用远程 `giraffe-db`。E2E 打本机 persist 目录里的 SQLite，库内含 `_test_marker`。详见 6DQ D1。
 
 文件约定：
 
