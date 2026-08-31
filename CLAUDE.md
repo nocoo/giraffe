@@ -82,14 +82,14 @@ Caddy site is not registered yet. Do not persist, bundle, log, or echo GitHub to
 
 Online: one Worker `giraffe`, one D1 `giraffe-db` (binding `DB`), custom domain `giraffe.hexly.ai`. No remote test Worker, no remote test D1, no `[env.test]`.
 
-L2 and L3 share the same local wrangler process model:
+L2 and L3 use the same Worker code and launch model, as **separate processes**:
 
 | Layer | Command | Persist dir | Port |
 |---|---|---|---|
-| L2 API E2E | `wrangler dev --local --persist-to=.wrangler/e2e` | `.wrangler/e2e/` | 17045 |
-| L3 Playwright | `wrangler dev --local --persist-to=.wrangler/e2e-pw` | `.wrangler/e2e-pw/` | 27045 |
+| L2 API E2E | `wrangler dev --local --persist-to=.wrangler/e2e --port 17045` | `.wrangler/e2e/` | 17045 |
+| L3 Playwright | `wrangler dev --local --persist-to=.wrangler/e2e-pw --port 27045` | `.wrangler/e2e-pw/` | 27045 |
 
-Runner wipes the persist dir, applies schema, writes `_test_marker`, then hits real HTTP. Missing or wrong marker → abort. No Cloudflare credentials. Dev `bun dev` may bind remote `giraffe-db`; E2E must not.
+Runner wipes the persist dir, applies schema, writes `_test_marker`, then hits real HTTP. Missing or wrong marker → abort. GitHub egress is stubbed; no real PAT, no Cloudflare credentials. Default `bun dev` uses local D1, never remote `giraffe-db`.
 
 ## Quality System (6DQ)
 

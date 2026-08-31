@@ -123,7 +123,7 @@ Caddyfile 尚未登记 giraffe，脚手架时再加。端口：
 
 ### 5.1 Cloudflare 资源命名
 
-线上只部署一套资源。L2 / L3 不占用 Cloudflare 上的第二套 Worker 或 D1，全部走本机 `wrangler dev --local --persist-to`（Miniflare SQLite）。同一套本地 Worker 同时承接 API E2E 与浏览器 E2E。
+线上只部署一套资源。L2 / L3 不占用 Cloudflare 上的第二套 Worker 或 D1，全部走本机 `wrangler dev --local --persist-to`（Miniflare SQLite）。L2 与 L3 用同一套 Worker 代码与启动方式，但是**两个进程**：不同 `--port`、不同 persist 目录。
 
 | 资源 | 生产（远程） | L2 / L3（本机） |
 |------|--------------|-----------------|
@@ -132,7 +132,9 @@ Caddyfile 尚未登记 giraffe，脚手架时再加。端口：
 | D1 | `giraffe-db`（binding `DB`） | 不创建远程测试库。L2 用 `.wrangler/e2e/`，L3 用 `.wrangler/e2e-pw/` |
 | Secret | `TOKEN_ENCRYPTION_KEY` | runner 用 `--var` / `.dev.vars` 注入，不写进远程 |
 
-本机 `bun dev` 可绑远程 `giraffe-db`。E2E 必须 `--local`，每次先清空 persist 目录，再 apply schema，并写入 `_test_marker`。marker 不对则 runner 拒绝继续。不需要 CF 凭证，也不部署 `--env test`。
+本机 `bun dev` / `wrangler dev` **默认本地 D1**（不要 `remote = true`）。调试生产数据必须显式、一次性的命令，不得写进默认脚本。
+
+E2E 必须 `--local --persist-to`，每次先清空 persist 目录，再 apply schema，并写入 `_test_marker`。marker 不对则 runner 拒绝继续。L2 / L3 **禁止访问 api.github.com**：GitHub Client 注入确定性 stub（fixture PAT 与固定 JSON）。无 CF 凭证、无真实 PAT、不部署 `--env test`。
 
 `wrangler.toml` 目标形态（ID 在创建生产库后填入）。没有 `[env.test]`，没有第二套 D1：
 
@@ -394,8 +396,8 @@ giraffe/
 | 维 | 要求 | 时机 |
 |----|------|------|
 | L1 | Vitest；ViewModel / 纯函数 / token-crypto / snapshot 合并逻辑；覆盖率 ≥ 90%；薄壳 `routes/*.tsx` 豁免 | pre-commit，<30s |
-| L2 | 真 HTTP。`scripts/run-e2e.ts` 清空 `.wrangler/e2e/`，拉起 `wrangler dev --local --persist-to=.wrangler/e2e --port 17045`，覆盖全部 `/api` 方法组合 | pre-push，<3min |
-| L3 | Playwright 打同一套本地 Worker（`--persist-to=.wrangler/e2e-pw --port 27045`）：设置 PAT → 仓库列表 → 单仓钻取 | CI / 按需 |
+| L2 | 真 HTTP。`scripts/run-e2e.ts` 清空 `.wrangler/e2e/`，拉起 `wrangler dev --local --persist-to=.wrangler/e2e --port 17045`，覆盖全部 `/api` 方法组合。GitHub 出站必须是 stub | pre-push，<3min |
+| L3 | Playwright 打另一本地进程（`--local --persist-to=.wrangler/e2e-pw --port 27045`）：设置 PAT → 仓库列表 → 单仓钻取。同样禁止 GitHub 出站 | CI / 按需 |
 | G1 | `tsc --noEmit` + `biome check --error-on-warnings`，0 error 0 warning | pre-commit |
 | G2 | `gitleaks` + `osv-scanner --lockfile=bun.lock` | pre-push |
 | D1 | 无远程测试库。隔离靠 `--local --persist-to` 目录 + `_test_marker`；runner 不见 marker 则退出 | L2/L3 强制 |
