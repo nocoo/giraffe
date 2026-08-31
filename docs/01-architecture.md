@@ -10,7 +10,7 @@ Giraffe 是个人 GitHub 监控控制台。仓库 code name 为 `giraffe`。本�
 
 ## 1. 产品定义
 
-面向单人使用的 GitHub 监控台。用 PAT 在 Worker 侧拉取 GitHub 数据，落 D1 快照后给控制台展示。浏览器永不持有 GitHub token。
+面向单人使用的 GitHub 监控台。用 PAT 在 Worker 侧拉取 GitHub 数据，落 D1 快照后给控制台展示。PAT 不得持久化在浏览器、打进前端包、写入日志，也不得出现在任何 API 响应里。设置页提交时明文只在该次 HTTPS 请求体内短暂存在。
 
 参考实现：`/Users/nocoo/workspace/references/gh-dashboard`（产品名 Gitdeck）。本项目只借鉴其 **token 鉴权形态** 和 **HTTP API 资源划分**，界面按 Basalt Gen 2 完整重做。
 
@@ -176,13 +176,25 @@ database_id = "<prod>"
 
 ### 6.2 GitHub PAT（Worker 怎么读 GitHub）
 
-只接受用户粘贴的 PAT。不做 Device Flow，不从 `gh` CLI 读 token。
+只接受用户粘贴的 **classic PAT**。不做 Device Flow，不从 `gh` CLI 读 token，首版不支持 fine-grained PAT。
 
-- 设置页提交 PAT。请求体只走 HTTPS 到 Worker，响应永不回传完整 token。
-- Worker 用 `TOKEN_ENCRYPTION_KEY`（AES-GCM）加密后写入 D1 `accounts`。
-- 列表接口只返回 `login`、`avatar_url`、`token_last4`、`scopes`、是否当前账号。
-- 可多账号；`is_active` 标记当前用于拉取的账号。
-- 调用 GitHub 时在 Worker 内解密，`Authorization: Bearer …`。日志与错误信息必须经过 sanitize。
+必填 scope：`repo`、`read:org`、`read:user`、`notifications`。Traffic / security alerts 额外需要对应权限；录入时读取 `X-OAuth-Scopes`，写入 `accounts.scopes` 与 `accounts.capabilities` JSON。缺能力的端点返回结构化错误（例如 `capability_missing`），不得装成空列表。
+
+`POST /api/accounts` 校验：
+
+1. `GET https://api.github.com/user` 必须成功
+2. 响应头 `X-OAuth-Scopes` 必须覆盖必填 scope，否则 400
+3. 通过后再加密入库
+
+加密约定（AES-256-GCM）：
+
+- `TOKEN_ENCRYPTION_KEY`：32 字节密钥，hex 或 base64，Worker secret
+- 每次加密使用 **12 字节随机 IV**，不得复用
+- D1 `token_ciphertext` 存 JSON 信封：`{"v":1,"iv":"<b64>","ct":"<b64>","tag":"<b64>"}`
+- `accounts.key_version` 整数，默认 1，轮换密钥时用
+- 列表接口只返回 `login`、`avatar_url`、`token_last4`、`scopes`、`capabilities`、是否当前账号
+- 可多账号；`is_active` 标记当前用于拉取的账号
+- 调用 GitHub 时在 Worker 内解密。日志、错误体、trace 必须 sanitize，禁止出现 token 或信封明文
 
 文件约定：
 
@@ -205,9 +217,11 @@ database_id = "<prod>"
 | `id` | TEXT PK | nanoid |
 | `login` | TEXT | GitHub login |
 | `avatar_url` | TEXT | |
-| `token_ciphertext` | TEXT | AES-GCM 密文 |
+| `token_ciphertext` | TEXT | AES-GCM 信封 JSON（含 iv / ct / tag / v） |
 | `token_last4` | TEXT | 展示用 |
-| `scopes` | TEXT | 逗号分隔或 JSON |
+| `key_version` | INTEGER | 加密密钥版本，默认 1 |
+| `scopes` | TEXT | GitHub `X-OAuth-Scopes` 原文 |
+| `capabilities` | TEXT | JSON，如 `{"notifications":true,"traffic":false}` |
 | `is_active` | INTEGER | 0/1 |
 | `created_at` | TEXT | UTC ISO-8601，以 `Z` 结尾 |
 | `updated_at` | TEXT | 同上 |
@@ -266,7 +280,7 @@ database_id = "<prod>"
 | GET | `/api/live` | 版本、环境，无鉴权数据 |
 | GET | `/api/me` | Access 身份（email/name）；本地返回 stub |
 | GET | `/api/accounts` | 账号列表（无 token） |
-| POST | `/api/accounts` | 校验 PAT（`GET /user`），加密入库 |
+| POST | `/api/accounts` | classic PAT：`GET /user` + 必填 scope；AES-GCM 信封入库 |
 | POST | `/api/accounts/:id/activate` | 切换当前账号 |
 | DELETE | `/api/accounts/:id` | 删除账号与其快照 |
 | GET | `/api/repos` | 快照；`fresh=1` 刷新 |

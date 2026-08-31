@@ -1,6 +1,6 @@
 # Giraffe
 
-Personal GitHub monitoring console. Code name `giraffe`. The browser never holds a GitHub token; a Cloudflare Worker proxies GitHub with user-pasted PATs and serves a Vite SPA.
+Personal GitHub monitoring console. Code name `giraffe`. A Cloudflare Worker proxies GitHub with user-pasted classic PATs and serves a Vite SPA. The PAT must never be persisted, bundled, logged, or returned by any API. It exists in the browser only in the settings submit request body.
 
 Direction document: [docs/01-architecture.md](docs/01-architecture.md). Numbered docs are Chinese; this file is the Agent handbook.
 
@@ -76,7 +76,7 @@ Each phase is split into steps in 04/05; each step is split into atomic commits.
 | L2 API E2E | 17045 | localhost, runner-owned |
 | L3 BDD | 27045 | localhost |
 
-Caddy site is not registered yet. Do not put GitHub tokens in client bundles or logs.
+Caddy site is not registered yet. Do not persist, bundle, log, or echo GitHub tokens.
 
 ## Cloudflare Resource Names
 
