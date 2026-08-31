@@ -77,7 +77,7 @@ Giraffe 是个人 GitHub 监控控制台。仓库 code name 为 `giraffe`。本�
 | G2 | osv-scanner + gitleaks | pre-push |
 | Hooks | Husky 9 | pre-commit = L1 + G1；pre-push = L2 ‖ G2 |
 
-开发用 `wrangler dev` 同时提供 API 与静态资源。构建用 `vite build`。不使用 `@cloudflare/vite-plugin`。
+阶段 1 用 `bun run dev:server`（仅 Worker，本地 D1）。阶段 2 起 Client 用 `bun run dev:client`（Vite，打 mock 或本机 `/api`）。生产形态是 `vite build` + `wrangler deploy`（assets + Worker）。不使用 `@cloudflare/vite-plugin`。
 
 ---
 
@@ -407,7 +407,7 @@ giraffe/
 
 | 维 | 要求 | 时机 |
 |----|------|------|
-| L1 | Vitest；ViewModel / 纯函数 / token-crypto / snapshot 合并逻辑；覆盖率 ≥ 90%；薄壳 `routes/*.tsx` 豁免 | pre-commit，<30s |
+| L1 | `bun run test:coverage`（不是 `bun run test`）；覆盖率 ≥ 90%；薄壳 `routes/*.tsx` 豁免 | pre-commit，<30s |
 | L2 | 真 HTTP。`scripts/run-e2e.ts` 清空 `.wrangler/e2e/`，拉起 `wrangler dev --local --persist-to=.wrangler/e2e --port 17045`，覆盖全部 `/api` 方法组合。GitHub 出站必须是 stub | pre-push，<3min |
 | L3 | Playwright 打另一本地进程（`--local --persist-to=.wrangler/e2e-pw --port 27045`）：设置 PAT → 仓库列表 → 单仓钻取。同样禁止 GitHub 出站 | CI / 按需 |
 | G1 | `tsc --noEmit` + `biome check --error-on-warnings`，0 error 0 warning | pre-commit |
@@ -447,8 +447,9 @@ Client 只通过 HTTP 契约消费 Server。Server 测试不得 import Client。
 |------|------|------------|
 | 02 | 质量保证 | 写测试与功能代码 |
 | 03 | 数据 Schema | 建表、抓取、落库 |
-| 04 | Server 设计 | 实现 Worker / API（阶段 1） |
-| 05 | Client 设计 | 实现 Vite 界面（阶段 2） |
+| 04 | Server 设计 | 阶段 1：实现 Worker / API |
+| — | 阶段 1 完成 | L1 + L2 绿 |
+| 05 | Client 设计 | 阶段 2：实现 Vite 界面 |
 
 阶段 1 完成标准：04 列出的全部接口有测试，L1 + L2 绿，无 Client 功能代码。阶段 2 完成标准：05 列出的页面有测试，L1 绿，核心路径 L3 绿。未完成阶段 1，不得开始阶段 2（工具链脚手架除外）。
 
@@ -478,6 +479,6 @@ Client 只通过 HTTP 契约消费 Server。Server 测试不得 import Client。
 | 02 | 质量保证 | 测试分层、覆盖率、何时跑哪一层；TDD 与门控细则。功能代码之前完成 |
 | 03 | 数据 Schema | 对照 GitHub API 返回与参考项目，定义抓取/维护/展示用的库表与 JSON 形状。建表之前完成 |
 | 04 | Server 设计 | 全部接口、每接口职责、返回约定、拆到原子化提交的步骤。阶段 1 开工前完成 |
-| 05 | Client 设计 | Vite 页面结构与展示形式、拆到原子化提交的步骤。阶段 2 开工前完成 |
+| 05 | Client 设计 | Vite 页面结构与展示形式、拆到原子化提交的步骤。阶段 1 完成且本文 review 后，阶段 2 开工前完成 |
 
 对应文档未写成并 review 前，不开始该层功能代码。当前 Agent 入口是根目录 `CLAUDE.md`。

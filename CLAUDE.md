@@ -52,16 +52,18 @@ Strict TDD. Write the failing test in the working tree, then the smallest implem
 
 Server (`src/server`) and Client (`src/client`) stay isolated. Each layer must be runnable and verifiable on its own:
 
-Numbered docs before code, in this order:
+Numbered docs before the layer they govern. Sequence:
+
+`02` → `03` → `04` → **phase 1 Server** → `05` → **phase 2 Client**
 
 | # | Doc | Gate |
 |---|---|---|
 | 02 | Quality | tests, coverage, when each layer runs. Required before any feature code |
 | 03 | Data schema | GitHub API + reference-project shapes, D1 tables. Required before persistence |
 | 04 | Server design | every endpoint, behavior, response contract, atomic commit steps. Phase 1 |
-| 05 | Client design | Vite page structure and presentation, atomic commit steps. Phase 2 |
+| 05 | Client design | Vite page structure and presentation, atomic commit steps. After phase 1, before Client code |
 
-- Phase 1 — Server only, after 02–04. Done when 04's APIs have L1 + L2 green. No client feature code.
+- Phase 1 — Server only, after 02–04. Done when 04's APIs have L1 + L2 green. No client feature code. 05 is not required yet.
 - Phase 2 — Client, after phase 1 and 05. L3 belongs here.
 
 Do not invent quality rules, schemas, endpoints, or pages in this file. Do not start a layer before its numbered doc exists and has been reviewed.
@@ -106,7 +108,7 @@ Runner wipes the persist dir, applies schema, writes `_test_marker`, then hits r
 
 | Hook | Budget | Runs |
 |---|---|---|
-| pre-commit | <30s | G1 → L1 |
+| pre-commit | <30s | G1 → L1 (`bun run test:coverage`, not `bun run test`) |
 | pre-push | <3min | L2 ‖ G2 |
 | on-demand | — | L3 |
 
@@ -115,15 +117,19 @@ Until D1 exists, D1 isolation is N/A. After `giraffe-db` exists, E2E still stays
 ## Commands (once scaffolded)
 
 ```bash
-bun dev                 # wrangler dev on 7045
+bun run dev:server      # wrangler dev --local --port 7045 (API only, phase 1)
+bun run dev:client      # vite on its port; talks to mock or to dev:server via /api
+bun dev                 # phase 2: wrangler serves API + built/dev assets on 7045
 bun run build           # vite build → dist/client
 bun run typecheck       # tsc --noEmit
 bun run lint            # biome check --error-on-warnings
-bun run test            # L1
-bun run test:coverage   # L1 + coverage gate
-bun run test:e2e:api    # L2 on 17045
-bun run test:e2e:bdd    # L3 on 27045
+bun run test            # L1 without coverage gate (watch/debug)
+bun run test:coverage   # L1 + ≥90% coverage; this is the pre-commit command
+bun run test:e2e:api    # L2: wrangler --local --persist-to=.wrangler/e2e --port 17045
+bun run test:e2e:bdd    # L3: wrangler --local --persist-to=.wrangler/e2e-pw --port 27045
 ```
+
+Phase 1 Client tests use a mock `/api` (MSW or static fixtures). They must not boot wrangler. Server tests must not import `src/client`.
 
 Install packages with a temporary registry (`BUN_CONFIG_REGISTRY=…`). Never set a global Bun registry. If `bun.lock` only changed registry URLs, restore it before commit.
 
