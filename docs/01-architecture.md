@@ -10,7 +10,7 @@ Giraffe 是个人 GitHub 监控控制台。仓库 code name 为 `giraffe`。本�
 
 ## 1. 产品定义
 
-面向单人使用的 GitHub 监控台。用 PAT 在 Worker 侧拉取 GitHub 数据，落 D1 快照后给控制台展示。PAT 不得持久化在浏览器、打进前端包、写入日志，也不得出现在任何 API 响应里。设置页提交时明文只在该次 HTTPS 请求体内短暂存在。
+面向单人使用的 GitHub 监控台。用 PAT 在 Worker 侧拉取 GitHub 数据，落 D1 快照后给控制台展示。明文 PAT 不得持久化在浏览器、打进前端包、写入日志，也不得出现在任何 API 响应里。D1 只存 AES-GCM 信封。设置页提交后立即清空输入框；明文只存在于提交前的输入框和该次 HTTPS 请求体。
 
 参考实现：`/Users/nocoo/workspace/references/gh-dashboard`（产品名 Gitdeck）。本项目只借鉴其 **token 鉴权形态** 和 **HTTP API 资源划分**，界面按 Basalt Gen 2 完整重做。
 
@@ -130,7 +130,7 @@ Caddyfile 尚未登记 giraffe，脚手架时再加。端口：
 | Worker 脚本 | `giraffe` | 不部署。`wrangler dev --local` 起临时进程 |
 | 自定义域 | `giraffe.hexly.ai` | 无。runner 打 `127.0.0.1` |
 | D1 | `giraffe-db`（binding `DB`） | 不创建远程测试库。L2 用 `.wrangler/e2e/`，L3 用 `.wrangler/e2e-pw/` |
-| Secret | `TOKEN_ENCRYPTION_KEY` | runner 用 `--var` / `.dev.vars` 注入，不写进远程 |
+| Secret | `TOKEN_ENCRYPTION_KEY_V<n>` + `TOKEN_ENCRYPTION_KEY_CURRENT` | 本地 `.dev.vars` / `--var`，禁止把 `ENVIRONMENT=development` 写进可部署 `[vars]` |
 
 本机 `bun dev` / `wrangler dev` **默认本地 D1**（不要 `remote = true`）。调试生产数据必须显式、一次性的命令，不得写进默认脚本。
 
@@ -194,7 +194,7 @@ database_id = "<prod>"
 
 只接受用户粘贴的 **classic PAT**。不做 Device Flow，不从 `gh` CLI 读 token，首版不支持 fine-grained PAT。
 
-必填 scope：`repo`、`read:org`、`read:user`、`notifications`。Traffic / security alerts 额外需要对应权限；录入时读取 `X-OAuth-Scopes`，写入 `accounts.scopes` 与 `accounts.capabilities` JSON。缺能力的端点返回结构化错误（例如 `capability_missing`），不得装成空列表。
+必填 scope：`repo`、`read:org`、`read:user`、`notifications`。录入时读取 `X-OAuth-Scopes`，写入 `accounts.scopes`。`accounts.capabilities` 只表示 **token 级** scope 是否出现（例如有没有 `notifications`），不能表示某个仓库的 Traffic / security 权限——那些还依赖仓库角色与 SSO。跨仓列表缺 token 级 scope 时返回 `capability_missing`；单仓 Traffic / security 在 GitHub 返回 403/404 时按仓库返回 `forbidden`，不得把账号级 boolean 当成仓库真相。
 
 `POST /api/accounts` 校验：
 
@@ -204,10 +204,11 @@ database_id = "<prod>"
 
 加密约定（AES-256-GCM）：
 
-- `TOKEN_ENCRYPTION_KEY`：32 字节密钥，hex 或 base64，Worker secret
+- 密钥环：Worker secret `TOKEN_ENCRYPTION_KEY_V<n>`（32 字节，hex 或 base64）。当前写入版本由 `TOKEN_ENCRYPTION_KEY_CURRENT`（整数）指定
+- 解密用行上的 `key_version` 选对应 secret；加密新值用 current
 - 每次加密使用 **12 字节随机 IV**，不得复用
 - D1 `token_ciphertext` 存 JSON 信封：`{"v":1,"iv":"<b64>","ct":"<b64>","tag":"<b64>"}`
-- `accounts.key_version` 整数，默认 1，轮换密钥时用
+- 轮换：先写入新 secret，把 `TOKEN_ENCRYPTION_KEY_CURRENT` 调到 n+1，再把全部 `accounts` 解密后用新密钥重加密并更新 `key_version`。旧 secret 必须等所有行迁移完才能删
 - 列表接口只返回 `login`、`avatar_url`、`token_last4`、`scopes`、`capabilities`、是否当前账号
 - 可多账号；`is_active` 标记当前用于拉取的账号
 - 调用 GitHub 时在 Worker 内解密。日志、错误体、trace 必须 sanitize，禁止出现 token 或信封明文
@@ -237,7 +238,7 @@ database_id = "<prod>"
 | `token_last4` | TEXT | 展示用 |
 | `key_version` | INTEGER | 加密密钥版本，默认 1 |
 | `scopes` | TEXT | GitHub `X-OAuth-Scopes` 原文 |
-| `capabilities` | TEXT | JSON，如 `{"notifications":true,"traffic":false}` |
+| `capabilities` | TEXT | token 级 scope 标记，不是仓库权限 |
 | `is_active` | INTEGER | 0/1 |
 | `created_at` | TEXT | UTC ISO-8601，以 `Z` 结尾 |
 | `updated_at` | TEXT | 同上 |

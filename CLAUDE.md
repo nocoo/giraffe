@@ -1,6 +1,6 @@
 # Giraffe
 
-Personal GitHub monitoring console. Code name `giraffe`. A Cloudflare Worker proxies GitHub with user-pasted classic PATs and serves a Vite SPA. The PAT must never be persisted, bundled, logged, or returned by any API. It exists in the browser only in the settings submit request body.
+Personal GitHub monitoring console. Code name `giraffe`. A Cloudflare Worker proxies GitHub with user-pasted classic PATs and serves a Vite SPA. Plaintext PAT is never persisted, bundled, logged, or returned. D1 stores only the AES-GCM envelope. The settings input is cleared after submit; plaintext exists in the DOM only until then, and in that one HTTPS request body.
 
 Direction document: [docs/01-architecture.md](docs/01-architecture.md). Numbered docs are Chinese; this file is the Agent handbook.
 
@@ -129,7 +129,7 @@ bun run test:e2e:api    # L2: wrangler --local --persist-to=.wrangler/e2e --port
 bun run test:e2e:bdd    # L3: wrangler --local --persist-to=.wrangler/e2e-pw --port 27045
 ```
 
-Phase 1 Client tests use a mock `/api` (MSW or static fixtures). They must not boot wrangler. Server tests must not import `src/client`.
+Phase 2 Client tests use a mock `/api` (MSW or static fixtures). They must not boot wrangler. Server tests must not import `src/client`. Phase 1 has no Client tests.
 
 Install packages with a temporary registry (`BUN_CONFIG_REGISTRY=…`). Never set a global Bun registry. If `bun.lock` only changed registry URLs, restore it before commit.
 
