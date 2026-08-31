@@ -93,6 +93,8 @@ L2 and L3 use the same Worker code and launch model, as **separate processes**:
 
 The runner, not `.dev.vars`, injects `--var ENVIRONMENT:development --var TOKEN_ENCRYPTION_KEY_CURRENT:1 --var TOKEN_ENCRYPTION_KEY_V1:<32-byte-fixture>`. Wrangler `--var` syntax is `KEY:VALUE`. L2 also writes a placeholder `dist/client/index.html` if missing. L3 runs `vite build` first. Then wipe persist, apply schema, write `_test_marker`, hit real HTTP. Missing marker → abort. GitHub egress is stubbed. Default `bun dev` uses local D1.
 
+Quality authority: [docs/02-quality.md](docs/02-quality.md). Summary below.
+
 ## Quality System (6DQ)
 
 | Layer | Tool | Trigger | Bar |
