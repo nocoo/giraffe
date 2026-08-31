@@ -31,7 +31,7 @@ Giraffe 是个人 GitHub 监控控制台。仓库 code name 为 `giraffe`。本�
 | 分层 | MVVM。ViewModel 不感知 View |
 | GitHub 鉴权 | 设置页粘贴 PAT；服务端加密写入 D1；可多账号 |
 | 控制台门禁 | Cloudflare Access 挡在 Worker 前面。应用内无登录页、无 Google OAuth |
-| 数据 | D1 快照（接近 Gitdeck 磁盘缓存，不是每次都直打 GitHub） |
+| 数据 | D1 快照（默认读库，`fresh=1` 回源 GitHub） |
 | 提供商 | 只做 GitHub |
 | 质量 | 6DQ（L1/L2/L3 + G1/G2 + D1） |
 | Git | Conventional Commits，原子化提交，不主动 push |
@@ -53,17 +53,15 @@ Giraffe 是个人 GitHub 监控控制台。仓库 code name 为 `giraffe`。本�
 
 ## 4. 技术选型
 
-对标家族项目 **dove**（Vite SPA + Hono + 单 Worker 部署），UI 对标 **basalt** Gen 2。
-
 | 层 | 选型 | 说明 |
 |----|------|------|
 | 语言 | TypeScript 7.0.x | `tsc --noEmit`，`strict` + `noUncheckedIndexedAccess` + `exactOptionalPropertyTypes` |
 | 包管理 / 脚本 | Bun | `package.json` 为版本唯一来源 |
 | 前端构建 | Vite 8 + `@vitejs/plugin-react` | 产物 `dist/client/` |
 | UI | React 19 + React Router | SPA |
-| 样式 | Tailwind CSS v4 + shadcn/ui | Basalt token（`palette.ts`、`--chart-*`） |
+| 样式 | Tailwind CSS v4 + shadcn/ui | Basalt Gen 2（`palette.ts`、`--chart-*`） |
 | 图表 | Recharts | Insights / Traffic |
-| Toast / 命令面板 | sonner + cmdk | 家族指纹 |
+| Toast / 命令面板 | sonner + cmdk | |
 | API | Hono | Worker 内 `/api/*` |
 | 校验 | Zod v4 | 请求体与 PAT 录入 |
 | 数据 | Cloudflare D1 | `accounts` + 通用 `snapshots` |
@@ -77,7 +75,7 @@ Giraffe 是个人 GitHub 监控控制台。仓库 code name 为 `giraffe`。本�
 | G2 | osv-scanner + gitleaks | pre-push |
 | Hooks | Husky 9 | pre-commit = L1 + G1；pre-push = L2 ‖ G2 |
 
-不采用 `@cloudflare/vite-plugin`。家族内 dove 已验证：`vite build` 出静态资源，`wrangler dev` 同时拉 API 与 assets。本地 HMR 若不够用，再单开文档评估，不在首版切换工具链。
+开发用 `wrangler dev` 同时提供 API 与静态资源。构建用 `vite build`。不使用 `@cloudflare/vite-plugin`。
 
 ---
 
@@ -110,7 +108,7 @@ https://giraffe.dev.hexly.ai
   → wrangler dev :7045
 ```
 
-Caddyfile 尚未登记 giraffe，实现脚手架时再改 `/opt/homebrew/etc/Caddyfile`。端口按家族规则分配（首次 commit 2026-09-01，Caddy 当前末号 7044 Fundly）：
+Caddyfile 尚未登记 giraffe，脚手架时再加。端口：
 
 | 用途 | 端口 | 域名 |
 |------|------|------|
@@ -119,11 +117,11 @@ Caddyfile 尚未登记 giraffe，实现脚手架时再改 `/opt/homebrew/etc/Cad
 | L3 BDD | 27045 | 无 Caddy |
 | 生产 | 443 | `giraffe.hexly.ai` |
 
-Worker 不另占 `dev+30000`。dove 同款：`wrangler.toml` 的 `[dev] port = 7045` 就是 Caddy 上游。
+`wrangler.toml` `[dev] port = 7045`，Caddy 反代到该端口。
 
 ### 5.1 Cloudflare 资源命名
 
-产品 slug 即仓库名 `giraffe`。命名对齐账号里**现行多数实例**（`dove`/`dove-db`、`lyre`/`lyre-db`、`pew`/`pew-db`/`pew-db-test`、`xray`/`xray-db`），以及隔离规范：测试资源统一 `-test` 后缀，D1 额外带 `-db`。
+产品 slug 为 `giraffe`。测试资源用 `-test` 后缀，D1 名称带 `-db`。禁止 `-staging`、`-dev`、`-e2e`。
 
 | 资源 | 生产 | 测试（L2/L3） | wrangler |
 |------|------|---------------|----------|
@@ -132,15 +130,9 @@ Worker 不另占 `dev+30000`。dove 同款：`wrangler.toml` 的 `[dev] port = 7
 | D1 | `giraffe-db` | `giraffe-db-test` | `database_name`；binding 固定 `DB` |
 | Worker secret | `TOKEN_ENCRYPTION_KEY` | 同名，只存在 test 环境本地 `.dev.vars` | `wrangler secret put` |
 
-本机开发连**生产** D1 `giraffe-db`（家族惯例：dev 可看真数据）。E2E 必须 `--env test`，只绑 `giraffe-db-test`。
+本机开发连生产 D1 `giraffe-db`。E2E 必须 `--env test`，只绑 `giraffe-db-test`。
 
-对标与刻意不抄：
-
-- **抄**：dove / lyre / xray 的「单 Worker + `{name}.hexly.ai`」；pew / xray 的 `[env.test] name = "{name}-test"`。
-- **不抄**：`bogo`、`steed`、`gecko`（D1 没有 `-db`）；`gecko-test`（测试库没有 `-db`）；`lizhengme-db` / `tongjinet-db`（产品改名遗留）；`noheir.worker.hexly.ai` / `pew.worker.hexly.ai`（那是 API sidecar，giraffe 是 SPA+API 一体，走 apex `giraffe.hexly.ai`）。
-- 禁止 `-staging`、`-dev`、`-e2e` 变体。
-
-`wrangler.toml` 目标形态（ID 在创建资源后填入，不预造）：
+`wrangler.toml` 目标形态（ID 在创建资源后填入）：
 
 ```toml
 name = "giraffe"
@@ -193,7 +185,7 @@ database_id = "<test>"
 
 ### 6.2 GitHub PAT（Worker 怎么读 GitHub）
 
-对齐 Gitdeck 的 **token 形态**，不对齐 device / gh-cli。
+只接受用户粘贴的 PAT。不做 Device Flow，不从 `gh` CLI 读 token。
 
 - 设置页提交 PAT。请求体只走 HTTPS 到 Worker，响应永不回传完整 token。
 - Worker 用 `TOKEN_ENCRYPTION_KEY`（AES-GCM）加密后写入 D1 `accounts`。
@@ -213,7 +205,7 @@ database_id = "<test>"
 
 ## 7. 数据：D1 快照
 
-不把 GitHub 资源拆成宽表。快照接近 Gitdeck 的磁盘缓存：按账号 + 种类存 JSON。
+不把 GitHub 资源拆成宽表。按账号 + 种类存 JSON 快照。
 
 ### `accounts`
 
@@ -274,38 +266,38 @@ database_id = "<test>"
 
 ---
 
-## 8. API（参考 Gitdeck，不抄实现）
+## 8. API
 
 前缀 `/api`。JSON。生产与本地均由同一 Hono 应用提供。GitHub token 不出 Worker。
 
-| 方法 | 路径 | 来源 | 行为 |
-|------|------|------|------|
-| GET | `/api/live` | 家族惯例 | 版本、环境，无鉴权数据 |
-| GET | `/api/me` | 新增 | Access 身份（email/name）；本地返回 stub |
-| GET | `/api/accounts` | Gitdeck | 账号列表（无 token） |
-| POST | `/api/accounts` | Gitdeck `add-token` | 校验 PAT（`GET /user`），加密入库 |
-| POST | `/api/accounts/:id/activate` | Gitdeck | 切换当前账号 |
-| DELETE | `/api/accounts/:id` | Gitdeck | 删除账号与其快照 |
-| GET | `/api/repos` | Gitdeck | 快照；`fresh=1` 刷新 |
-| GET | `/api/issues` | Gitdeck | 同上 |
-| GET | `/api/prs` | Gitdeck | 同上 |
-| GET | `/api/insights` | Gitdeck `repo-insights` | 同上 |
-| GET | `/api/alerts` | Gitdeck 安全数据 | 独立告警视图 |
-| GET | `/api/notifications` | Gitdeck | inbox |
-| POST | `/api/notifications/read` | Gitdeck | 标记已读（透传 GitHub，并更新快照） |
-| POST | `/api/notifications/read-all` | Gitdeck | 全部已读 |
-| GET | `/api/digest` | Gitdeck `daily-digests` | 统计摘要，无 LLM |
-| GET | `/api/repos/:owner/:name` | Gitdeck `repo-details` | 单仓概览 |
-| GET | `/api/repos/:owner/:name/actions` | 单仓 Actions | |
-| GET | `/api/repos/:owner/:name/traffic` | 单仓 Traffic | |
-| GET | `/api/repos/:owner/:name/security` | 单仓安全 | |
-| GET | `/api/repos/:owner/:name/issues` | 单仓 issues | |
-| GET | `/api/repos/:owner/:name/prs` | 单仓 PRs | |
-| GET | `/api/repos/:owner/:name/releases` | releases | |
-| GET | `/api/repos/:owner/:name/languages` | languages | |
-| GET | `/api/repos/:owner/:name/contributors` | contributors | |
+| 方法 | 路径 | 行为 |
+|------|------|------|
+| GET | `/api/live` | 版本、环境，无鉴权数据 |
+| GET | `/api/me` | Access 身份（email/name）；本地返回 stub |
+| GET | `/api/accounts` | 账号列表（无 token） |
+| POST | `/api/accounts` | 校验 PAT（`GET /user`），加密入库 |
+| POST | `/api/accounts/:id/activate` | 切换当前账号 |
+| DELETE | `/api/accounts/:id` | 删除账号与其快照 |
+| GET | `/api/repos` | 快照；`fresh=1` 刷新 |
+| GET | `/api/issues` | 同上 |
+| GET | `/api/prs` | 同上 |
+| GET | `/api/insights` | 同上 |
+| GET | `/api/alerts` | Dependabot + code scanning |
+| GET | `/api/notifications` | inbox |
+| POST | `/api/notifications/read` | 标记已读（透传 GitHub，并更新快照） |
+| POST | `/api/notifications/read-all` | 全部已读 |
+| GET | `/api/digest` | 统计摘要，无 LLM |
+| GET | `/api/repos/:owner/:name` | 单仓概览 |
+| GET | `/api/repos/:owner/:name/actions` | 单仓 Actions |
+| GET | `/api/repos/:owner/:name/traffic` | 单仓 Traffic |
+| GET | `/api/repos/:owner/:name/security` | 单仓安全 |
+| GET | `/api/repos/:owner/:name/issues` | 单仓 issues |
+| GET | `/api/repos/:owner/:name/prs` | 单仓 PRs |
+| GET | `/api/repos/:owner/:name/releases` | releases |
+| GET | `/api/repos/:owner/:name/languages` | languages |
+| GET | `/api/repos/:owner/:name/contributors` | contributors |
 
-不做：`/api/auth/*`（device flow）、`/api/projects*`、`/api/mentions/*`、`/api/stargazers`、GitLab OAuth。
+不做 Device Flow、Projects 看板、Mentions、stargazers、GitLab。
 
 错误码：未过 Access → 401；无可用 PAT → 409（或 412，实现时定一种，全局一致）；GitHub 4xx/5xx 映射为结构化 JSON，不把 GitHub 原文 token 相关头回传。
 

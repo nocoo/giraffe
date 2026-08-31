@@ -54,11 +54,9 @@ MVVM: viewmodels have no View/DOM imports. Route files stay thin.
 | L2 API E2E | 17045 | localhost, runner-owned |
 | L3 BDD | 27045 | localhost |
 
-Caddy site is not registered yet. Do not reuse 7044 (fundly). Do not put GitHub tokens in client bundles or logs.
+Caddy site is not registered yet. Do not put GitHub tokens in client bundles or logs.
 
 ## Cloudflare Resource Names
-
-Align with live account convention (`dove`/`dove-db`, `lyre`/`lyre-db`, `pew`/`pew-db`/`pew-db-test`). Product slug is `giraffe`. Do not copy legacy names (`bogo`, `steed`, `gecko`, `gecko-test`, `lizhengme-db`, `tongjinet-db`) or sidecar hosts (`*.worker.hexly.ai`).
 
 | Resource | Prod | Test |
 |---|---|---|
