@@ -221,7 +221,7 @@ database_id = "<prod>"
 
 ## 7. 数据：D1 快照
 
-不把 GitHub 资源拆成宽表。按账号 + 种类存 JSON 快照。
+不把 GitHub 资源拆成宽表。当前视图按账号 + 种类存 JSON；日报差量另表按天保留。单行 `payload` 不得超过 D1 2 MB 上限：超限按页切成 `kind` + `#` + `page`（如 `repos#2`），API 组装后返回。切分算法细节由 03 定。
 
 ### `accounts`
 
@@ -260,7 +260,7 @@ database_id = "<prod>"
 | `insights` | 聚合健康/告警/机会 |
 | `alerts` | Dependabot + code scanning |
 | `notifications` | inbox |
-| `digest` | 当日统计摘要（无 LLM） |
+| `digest` | 最近一次摘要的**当前**副本。差量历史不放这里 |
 | `repo:{owner}/{name}:details` | 单仓概览 |
 | `repo:{owner}/{name}:actions` | workflow runs |
 | `repo:{owner}/{name}:traffic` | views/clones |
@@ -271,7 +271,18 @@ database_id = "<prod>"
 | `repo:{owner}/{name}:languages` | 语言占比 |
 | `repo:{owner}/{name}:contributors` | contributors |
 
-读取路径：API 默认返回快照；`?fresh=1` 时打 GitHub、覆写快照再返回。首版不做 Cron 预热。
+### `snapshot_days`
+
+日报差量用。主键 `(account_id, day)`，`day` 为 UTC `YYYY-MM-DD`。`payload` 存当天 star/fork/issue 计数。刷新 `digest` 前若当天尚无行，先把当前 `repos` 快照的计数写入昨天或今天的基线，再算差。保留最近 30 天，更早的删除。没有基线时 `/api/digest` 返回 `baseline_missing`，不编造差量。
+
+读取路径：
+
+- 有快照且无 `fresh=1`：直接返回，并带 `fetched_at`
+- 无快照（新账号或从未拉过）：服务端同步回源一次，再返回；不得对空库 200 + 空列表装成「没有仓库」
+- `fresh=1`：回源 GitHub，覆写当前快照（及必要的 `snapshot_days`）再返回
+- 首版不做 Cron。Client 在进入页面时带 `fresh=1` 的策略由 05 定；Server 必须能在无 Client 的情况下仅靠上述规则自洽
+
+隔离见 [5.1](#51-cloudflare-资源命名)：生产只用远程 `giraffe-db`。E2E 打本机 persist 目录里的 SQLite，库内含 `_test_marker`。详见 6DQ D1。细节表结构以 03 为准。
 
 隔离见 [5.1](#51-cloudflare-资源命名)：生产只用远程 `giraffe-db`。E2E 打本机 persist 目录里的 SQLite，库内含 `_test_marker`。详见 6DQ D1。
 
@@ -280,6 +291,7 @@ database_id = "<prod>"
 - `src/server/lib/db/d1.ts`
 - `src/server/lib/db/accounts.ts`
 - `src/server/lib/db/snapshots.ts`
+- `src/server/lib/db/snapshot-days.ts`
 - `src/server/lib/db/schema.sql`（或后续 Drizzle；首版原生 SQL，不提前上 ORM）
 
 ---
