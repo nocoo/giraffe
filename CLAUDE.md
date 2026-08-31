@@ -46,6 +46,19 @@ vite.config.ts
 
 MVVM: viewmodels have no View/DOM imports. Route files stay thin.
 
+## Development Method
+
+Strict TDD. Red test first, then the smallest implementation, then refactor. Tests are the only proof of correctness — not clicking the UI or reading logs. Red and green are separate commits.
+
+Server (`src/server`) and Client (`src/client`) stay isolated. Each layer must be runnable and verifiable on its own:
+
+- Phase 1 — Server only. Mirror the reference project's token mode and API resources. Done when L1 + L2 are green for the full API surface. No client feature code.
+- Phase 2 — Client on the frozen API. Starts only after phase 1 is done. L3 comes in this phase.
+
+Do not invent Server or Client internals in this file. Those belong in later numbered docs (02 Server, 03 Client). Do not start a phase before its numbered doc exists and has been reviewed.
+
+Each phase is split into steps; each step is split into atomic commits.
+
 ## Local Domain and Ports
 
 | Purpose | Port | Host |
@@ -75,7 +88,7 @@ Runner wipes the persist dir, applies schema, writes `_test_marker`, then hits r
 |---|---|---|---|
 | L1 Unit | vitest | pre-commit | coverage ≥ 90% (thin UI shells exempt) |
 | L2 Integration/API | `scripts/run-e2e.ts` | pre-push | real HTTP, 100% `/api` method combos, isolated D1 |
-| L3 System/E2E | Playwright | CI / on-demand | PAT settings → repo list → repo detail |
+| L3 System/E2E | Playwright | CI / on-demand, **phase 2** | PAT settings → repo list → repo detail |
 | G1 Static | `tsc --noEmit` + Biome | pre-commit | 0 error, 0 warning |
 | G2 Security | osv-scanner + gitleaks | pre-push | 0 vulns, 0 leaked secrets |
 | D1 Isolation | `wrangler dev --local --persist-to` | L2/L3 | local SQLite + `_test_marker`; never remote D1 |
@@ -113,7 +126,7 @@ Install packages with a temporary registry (`BUN_CONFIG_REGISTRY=…`). Never se
 
 Atomic Conventional Commits. Imperative, lowercase, ≤50 characters. Types: `fix` `feat` `docs` `test` `refactor` `chore`. Stage specific files only — never `git add -A` or `git add .`. Do not push unless asked.
 
-One logical change per commit. After each commit the tree must typecheck and the relevant tests must pass.
+One logical change per commit. Green commits must typecheck and the new tests must pass. A TDD red commit may fail tests; the next green commit must make them pass.
 
 Code changes that alter behavior or structure must update the matching numbered doc in the same effort (separate commit if it is a separate logical change).
 

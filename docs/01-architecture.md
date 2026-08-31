@@ -33,7 +33,9 @@ Giraffe 是个人 GitHub 监控控制台。仓库 code name 为 `giraffe`。本�
 | 控制台门禁 | Cloudflare Access 挡在 Worker 前面。应用内无登录页、无 Google OAuth |
 | 数据 | D1 快照（默认读库，`fresh=1` 回源 GitHub） |
 | 提供商 | 只做 GitHub |
-| 质量 | 6DQ（L1/L2/L3 + G1/G2 + D1） |
+| 质量 | 严格 TDD + 6DQ。正确性只由测试证明 |
+| 分层隔离 | Server API 与 Client UI 可独立测试、运行、验证 |
+| 实现阶段 | 第一阶段完整实现 Server；完成后再做 Client |
 | Git | Conventional Commits，原子化提交，不主动 push |
 
 ---
@@ -375,9 +377,43 @@ giraffe/
 
 脚手架尚未接入 D1 时，D1 维度标 N/A。一旦有生产 `giraffe-db`，E2E 仍不得连远程。
 
+第一阶段只要求 L1（Server 单测）+ L2（真 HTTP）。L3 在 Client 落地后才启用。
+
 ---
 
-## 12. 原子化提交
+## 12. 开发方式
+
+### TDD
+
+严格测试驱动。先写会失败的测试，再写最小实现让它通过，再按需重构。正确性只由测试证明，不靠手动点页面、看日志或「跑起来看看」。
+
+红与绿分开提交。没有对应测试的行为变更不算完成。
+
+### API 与界面隔离
+
+`src/server` 与 `src/client` 互不耦合实现细节。
+
+| 层 | 独立能力 | 证明手段 |
+|----|----------|----------|
+| Server | 单独 `wrangler dev`、单独 L1 / L2 | 单测 + 真 HTTP 打 `/api/*` |
+| Client | 单独 Vite、单独 ViewModel / 组件测试 | 单测；不依赖点开整站来证明逻辑 |
+
+Client 只通过 HTTP 契约消费 Server。Server 测试不得 import Client。Client 单测不得启动 Worker，除非那是明确的 L3。
+
+### 两阶段执行
+
+先写编号文档，再写代码。Server / Client 的模块划分、路由与数据契约在后续编号文档里定，本文不展开。
+
+| 阶段 | 做什么 | 完成标准 |
+|------|--------|----------|
+| 1 Server | 对照参考项目的 token 形态与 API 资源，完整实现 Worker 侧逻辑 | 该阶段文档列出的全部 API 有测试；L1 + L2 绿；无 Client 功能代码 |
+| 2 Client | 在已稳定的 API 上做界面 | 该阶段文档列出的页面有测试；L1 绿；核心路径 L3 绿 |
+
+每个阶段内部再拆步骤。未完成阶段 1，不得开始阶段 2 的功能实现（工具链脚手架除外）。
+
+---
+
+## 13. 原子化提交
 
 全程坚持，不攒大批量 diff。
 
@@ -386,36 +422,17 @@ giraffe/
 - 一次 commit 只含一个逻辑变更
 - 只 `git add` 具体文件，不用 `git add -A` / `git add .`
 - 不主动 push
-- 每个 commit 后代码可 typecheck / 可测（脚手架早期至少可 `tsc` + `biome`）
+- 每个 commit 后相关测试必须能跑；TDD 的红提交允许测试失败，绿提交必须通过
 
-实现阶段建议的提交切片（可按实际增删，不可把整仓一次提交）：
-
-1. `chore: scaffold bun vite worker toolchain`
-2. `chore: add biome husky and 6dq hooks`
-3. `feat: add hono worker and spa shell`
-4. `feat: validate cloudflare access jwt`
-5. `feat: add d1 accounts and snapshot tables`
-6. `feat: store encrypted github pats`
-7. `feat: proxy github repos issues and prs`
-8. `feat: add insights alerts and inbox`
-9. `feat: add daily digest snapshot`
-10. `feat: add repository detail views`
-11. `test: cover api routes over isolated d1`
-12. `chore: add giraffe.dev.hexly.ai caddy site`
-
-文档变更同样原子化：本文与 `CLAUDE.md` 分两次提交。
+阶段内：先拆步骤（写入该阶段的编号文档），再在步骤里按红 → 绿 → 重构做原子提交。禁止把一整阶段打成一次 commit。
 
 ---
 
-## 13. 后续编号文档（尚未写）
-
-实现前不必一次写完，缺哪块补哪号。
+## 14. 后续编号文档（尚未写）
 
 | 预留 | 内容 |
 |------|------|
-| 02 | 本地运行与 Caddy / Access 开发短路 |
-| 03 | 6DQ 细则与覆盖率门控 |
-| 04 | D1 schema 与快照刷新语义 |
-| 05 | GitHub API 映射与限流 |
+| 02 | 阶段 1：Server 设计（模块、契约、步骤、测试清单） |
+| 03 | 阶段 2：Client 设计（页面、ViewModel、步骤、测试清单） |
 
-根目录 `README.md` 在脚手架落地时再写，并链回本文。当前 Agent 入口是根目录 `CLAUDE.md`。
+02 / 03 未写成并 review 前，不开始对应阶段的功能代码。当前 Agent 入口是根目录 `CLAUDE.md`。
