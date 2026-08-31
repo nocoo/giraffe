@@ -139,9 +139,16 @@ Caddyfile 尚未登记 giraffe，脚手架时再加。端口：
 ```toml
 name = "giraffe"
 main = "src/server/index.ts"
+compatibility_date = "2026-04-01"
 
 [dev]
 port = 7045
+
+[assets]
+directory = "./dist/client"
+binding = "ASSETS"
+run_worker_first = ["/api/*"]
+not_found_handling = "single-page-application"
 
 [[routes]]
 pattern = "giraffe.hexly.ai"
@@ -151,9 +158,10 @@ custom_domain = true
 binding = "DB"
 database_name = "giraffe-db"
 database_id = "<prod>"
+# 禁止 remote = true。本机 wrangler dev 默认本地 D1。
 ```
 
-账号里目前没有 `giraffe` / `giraffe-db`，脚手架阶段 `wrangler d1 create giraffe-db` 只建生产库。
+`wrangler deploy` 前必须先 `vite build`，否则 `[assets]` 目录不存在。账号里目前没有 `giraffe` / `giraffe-db`，脚手架阶段 `wrangler d1 create giraffe-db` 只建生产库。
 
 ---
 
