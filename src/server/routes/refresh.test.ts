@@ -233,6 +233,20 @@ describe("refresh route", () => {
 			(
 				await createApp().request(
 					"http://localhost/api/refresh",
+					{ method: "POST", headers, body: JSON.stringify({ kinds: ["digest"] }) },
+					e,
+				)
+			).status,
+		).toBe(200);
+		await createApp().request(
+			"http://localhost/api/refresh",
+			{ method: "POST", headers, body: JSON.stringify({ kinds: ["repos"] }) },
+			e,
+		);
+		expect(
+			(
+				await createApp().request(
+					"http://localhost/api/refresh",
 					{ method: "POST", headers, body: JSON.stringify({ kinds: ["issues", "prs", "alerts"] }) },
 					e,
 				)
@@ -451,5 +465,25 @@ describe("refresh route", () => {
 				)
 			).status,
 		).toBe(200);
+		const trunc = env();
+		const truncId = await createAccount(trunc);
+		const truncDb = createDb(trunc.DB);
+		await truncDb.batch(
+			replaceSnapshotStmts(
+				truncDb,
+				truncId,
+				"repos",
+				{ truncated: true, repos: [{ name_with_owner: "o/n" }] },
+				fetchedAt,
+			),
+		);
+		stubGithub();
+		const issues = await createApp().request(
+			"http://localhost/api/refresh",
+			{ method: "POST", headers, body: JSON.stringify({ kinds: ["issues"] }) },
+			trunc,
+		);
+		expect(issues.status).toBe(200);
+		expect(((await issues.json()) as { truncated: boolean }).truncated).toBe(true);
 	});
 });

@@ -90,6 +90,37 @@ describe("createGithubClient", () => {
 		const data = await client.githubGraphql("t", "query { ok }", {});
 		expect(data.ok).toBe(true);
 		expect(() => createGithubClient(env({ ENVIRONMENT: "development" }))).toThrow(ApiError);
+		const net = createGithubClient(
+			env({ ENVIRONMENT: "development", GITHUB_API_BASE: "http://127.0.0.1:17046" }),
+			async () => {
+				throw new Error("offline");
+			},
+		);
+		await expect(net.githubFetch("http://127.0.0.1:17046/x")).rejects.toMatchObject({
+			code: "github_error",
+		});
+		const prefixed = createGithubClient(
+			env({ ENVIRONMENT: "development", GITHUB_API_BASE: "http://127.0.0.1:17046/github" }),
+			async (input) => {
+				expect(String(input)).toBe("http://127.0.0.1:17046/github/user");
+				return new Response("{}", { status: 200 });
+			},
+		);
+		await prefixed.githubApi("t", "/user");
+		const badJson = createGithubClient(
+			env({ ENVIRONMENT: "development", GITHUB_API_BASE: "http://127.0.0.1:17046" }),
+			async () => new Response("not-json", { status: 200 }),
+		);
+		await expect(badJson.githubApi("t", "/user")).rejects.toMatchObject({ code: "github_error" });
+		const cap = createGithubClient(
+			env({ ENVIRONMENT: "development", GITHUB_API_BASE: "http://127.0.0.1:17046" }),
+			async () => {
+				throw new TruncatedError();
+			},
+		);
+		await expect(cap.githubFetch("http://127.0.0.1:17046/x")).rejects.toBeInstanceOf(
+			TruncatedError,
+		);
 	});
 
 	it("maps remaining github error statuses and graphql failures", async () => {

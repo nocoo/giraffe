@@ -192,12 +192,20 @@ export async function postRefresh(
 		if (stop) {
 			break;
 		}
-		const payload =
+		let payload =
 			kind === "repos"
 				? await collectRepos(gh, token)
 				: await collectKind(gh, token, kind, needsRepoNames(kind) ? await repoNames() : []);
+		if (needsRepoNames(kind)) {
+			const reposPayload = await loaded("repos");
+			if (reposPayload?.truncated === true) {
+				payload = { ...payload, truncated: true };
+			}
+		}
+		payload = { ...payload, fetched_at: fetchedAt };
 		const clamped = clampToBudget(payload, MAX_STAGED_BYTES - used);
-		written[kind] = { ...clamped.payload, fetched_at: fetchedAt };
+		const preview = splitPages(kind, clamped.payload);
+		written[kind] = { ...clamped.payload, truncated: preview.truncated };
 		used += clamped.bytes;
 		if (clamped.capped) {
 			stop = true;
@@ -224,7 +232,12 @@ export async function postRefresh(
 			written.insights = { ...insights, truncated: preview.truncated };
 		}
 	}
-	const digestOk = sourceOk(reposSrc);
+	const today = utcDay(fetchedAt);
+	const wroteRepos = Boolean(written.repos && written.repos.truncated !== true);
+	const todayDay = wroteRepos
+		? dayFrom(written.repos as Collected)
+		: await readDay(db, accountId, today);
+	const digestOk = sourceOk(reposSrc) && todayDay !== null;
 	if (explicitDigest && !digestOk) {
 		throw new ApiError(409, "snapshot_missing", "derived sources missing");
 	}

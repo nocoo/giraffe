@@ -20,6 +20,7 @@ function client(opts: {
 }): GithubClient {
 	return {
 		count: 0,
+		graphqlErrors: [],
 		githubFetch: async () => new Response("{}"),
 		githubApi: async (_token, path) => {
 			if (!opts.api) {
@@ -482,6 +483,55 @@ describe("collectKind", () => {
 		await expect(collectKind(hard, "tok", "repo:o/n:actions", [])).rejects.toMatchObject({
 			code: "github_unauthorized",
 		});
+		const gqlErr = client({
+			graphql: async () => ({
+				search: { issueCount: 0, nodes: [], pageInfo: { hasNextPage: false } },
+			}),
+		});
+		gqlErr.graphqlErrors = [{ type: "NOT_FOUND" }];
+		gqlErr.githubGraphql = async () => {
+			gqlErr.graphqlErrors = [{ type: "NOT_FOUND" }];
+			return { search: { issueCount: 0, nodes: [], pageInfo: { hasNextPage: false } } };
+		};
+		await expect(collectKind(gqlErr, "tok", "repo:o/n:issues", [])).rejects.toMatchObject({
+			code: "not_found",
+		});
+		gqlErr.githubGraphql = async () => {
+			gqlErr.graphqlErrors = [{ type: "FORBIDDEN" }];
+			return { search: { issueCount: 0, nodes: [], pageInfo: { hasNextPage: false } } };
+		};
+		await expect(collectKind(gqlErr, "tok", "repo:o/n:prs", [])).rejects.toMatchObject({
+			code: "github_forbidden",
+		});
+		const labeled = client({
+			graphql: () => ({
+				search: {
+					issueCount: 1,
+					pageInfo: { hasNextPage: false },
+					nodes: [
+						{
+							__typename: "Issue",
+							number: 1,
+							labels: { pageInfo: { hasNextPage: true }, nodes: [] },
+							repository: { nameWithOwner: "o/n" },
+						},
+					],
+				},
+			}),
+		});
+		expect((await collectKind(labeled, "tok", "issues", ["o/n"])).truncated).toBe(true);
+		const softGql = client({});
+		softGql.githubGraphql = async () => {
+			softGql.graphqlErrors = [{ type: "FORBIDDEN" }];
+			return {
+				search: {
+					issueCount: 0,
+					pageInfo: { hasNextPage: false },
+					nodes: [1, { __typename: "Issue", number: 1, repository: { nameWithOwner: "o/n" } }],
+				},
+			};
+		};
+		expect((await collectKind(softGql, "tok", "issues", ["o/n"])).truncated).toBe(true);
 	});
 
 	it("pages security alerts and ignores scanning soft errors", async () => {

@@ -59,7 +59,7 @@ class Stmt {
 		}
 		if (sql.startsWith("UPDATE accounts SET avatar_url")) {
 			for (const row of this.mem.accounts) {
-				if (row.login === v[7]) {
+				if (row.login === v[8]) {
 					row.avatar_url = v[0];
 					row.token_ciphertext = v[1];
 					row.token_last4 = v[2];
@@ -67,6 +67,7 @@ class Stmt {
 					row.scopes = v[4];
 					row.capabilities = v[5];
 					row.updated_at = v[6];
+					row.last_used_at = v[7];
 				}
 			}
 			return [];

@@ -26,8 +26,11 @@ function daysSince(fetchedAt: string, pushedAt: string | null): number {
 		return 9999;
 	}
 	const ms = Date.parse(fetchedAt) - Date.parse(pushedAt);
-	if (!Number.isFinite(ms) || ms < 0) {
+	if (!Number.isFinite(ms)) {
 		return 9999;
+	}
+	if (ms < 0) {
+		return 0;
 	}
 	return Math.floor(ms / 86_400_000);
 }

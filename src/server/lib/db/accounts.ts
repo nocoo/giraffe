@@ -62,7 +62,7 @@ export function insertAccountStmt(db: Db, row: AccountRow): D1PreparedStatement 
 export function upsertAccountStmt(db: Db, row: AccountRow): D1PreparedStatement {
 	return db
 		.prepare(
-			`UPDATE accounts SET avatar_url=?, token_ciphertext=?, token_last4=?, key_version=?, scopes=?, capabilities=?, updated_at=? WHERE login=?`,
+			`UPDATE accounts SET avatar_url=?, token_ciphertext=?, token_last4=?, key_version=?, scopes=?, capabilities=?, updated_at=?, last_used_at=? WHERE login=?`,
 		)
 		.bind(
 			row.avatar_url,
@@ -72,6 +72,7 @@ export function upsertAccountStmt(db: Db, row: AccountRow): D1PreparedStatement 
 			row.scopes,
 			row.capabilities,
 			row.updated_at,
+			row.last_used_at,
 			row.login,
 		);
 }

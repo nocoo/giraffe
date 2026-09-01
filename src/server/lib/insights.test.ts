@@ -22,6 +22,15 @@ describe("buildInsights", () => {
 		expect(result.insights[2]?.opportunities).toContain("stale_push");
 	});
 
+	it("treats invalid pushed_at as ancient", () => {
+		const result = buildInsights(
+			[{ name_with_owner: "a/x", open_issue_count: 0, pushed_at: "not-a-date" }],
+			[],
+			fetched,
+		);
+		expect(result.insights[0]?.days_since_push).toBe(9999);
+	});
+
 	it("treats missing pushed_at as ancient", () => {
 		const result = buildInsights(
 			[{ name_with_owner: "a/x", open_issue_count: 0, pushed_at: null }],
@@ -40,12 +49,13 @@ describe("buildInsights", () => {
 		expect(result.insights[0]?.health).toBe("risky");
 	});
 
-	it("treats future pushed_at as ancient", () => {
+	it("treats future pushed_at as zero days", () => {
 		const result = buildInsights(
 			[{ name_with_owner: "a/x", open_issue_count: 0, pushed_at: "2099-01-01T00:00:00.000Z" }],
 			[],
 			"2026-09-01T00:00:00.000Z",
 		);
-		expect(result.insights[0]?.days_since_push).toBe(9999);
+		expect(result.insights[0]?.days_since_push).toBe(0);
+		expect(result.insights[0]?.health).toBe("strong");
 	});
 });

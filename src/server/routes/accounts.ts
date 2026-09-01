@@ -49,8 +49,12 @@ export async function getAccounts(
 export async function postAccount(
 	c: Context<{ Bindings: Env; Variables: AppVars }>,
 ): Promise<Response> {
-	const body = (await readJson(c.req.raw, 4096)) as { token?: string };
-	const token = body.token ?? "";
+	const raw = await readJson(c.req.raw, 4096);
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+		throw new ApiError(400, "validation_failed", "invalid body");
+	}
+	const body = raw as { token?: string };
+	const token = typeof body.token === "string" ? body.token : "";
 	assertClassicPat(token);
 	const db = c.get("db");
 	const gh = createGithubClient(c.env);
@@ -78,6 +82,7 @@ export async function postAccount(
 			scopes: parsed.scopes,
 			capabilities: JSON.stringify(parsed.capabilities),
 			updated_at: now,
+			last_used_at: now,
 		};
 		await db.batch([upsertAccountStmt(db, row)]);
 		return jsonOk(publicAccount(row), 201);
@@ -97,8 +102,15 @@ export async function postAccount(
 		updated_at: now,
 		last_used_at: now,
 	};
-	await db.batch([insertAccountStmt(db, row)]);
-	return jsonOk(publicAccount(row), 201);
+	try {
+		await db.batch([insertAccountStmt(db, row)]);
+		return jsonOk(publicAccount(row), 201);
+	} catch {
+		const countAgain = await countAccounts(db);
+		const retry = { ...row, is_active: countAgain === 0 ? 1 : 0 };
+		await db.batch([insertAccountStmt(db, retry)]);
+		return jsonOk(publicAccount(retry), 201);
+	}
 }
 
 export async function activateAccount(

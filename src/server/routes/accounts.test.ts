@@ -176,6 +176,15 @@ describe("accounts routes", () => {
 		expect(
 			(
 				await createApp().request(
+					"http://localhost/api/accounts",
+					{ method: "POST", headers, body: "null" },
+					e,
+				)
+			).status,
+		).toBe(400);
+		expect(
+			(
+				await createApp().request(
 					"http://localhost/api/accounts/missing",
 					{ method: "DELETE", headers: { origin: "https://giraffe.dev.hexly.ai" } },
 					e,
@@ -243,6 +252,62 @@ describe("accounts routes", () => {
 		);
 		expect(third.status).toBe(201);
 		expect(((await third.json()) as { is_active: boolean }).is_active).toBe(false);
+	});
+
+	it("retries an insert conflict and then fails", async () => {
+		vi.stubGlobal("fetch", async () => {
+			return new Response(JSON.stringify({ login: "octocat", avatar_url: "" }), {
+				headers: { "X-OAuth-Scopes": "repo, read:org, read:user, notifications" },
+			});
+		});
+		const raw = openSqliteD1(true);
+		let blows = 1;
+		const e = {
+			...env(),
+			DB: {
+				prepare: (sql: string) => raw.prepare(sql),
+				batch: async (statements: D1PreparedStatement[]) => {
+					if (blows > 0) {
+						blows -= 1;
+						throw new Error("conflict");
+					}
+					return raw.batch(statements);
+				},
+			} as unknown as D1Database,
+		};
+		const headers = { origin: "https://giraffe.dev.hexly.ai", "content-type": "application/json" };
+		expect(
+			(
+				await createApp().request(
+					"http://localhost/api/accounts",
+					{ method: "POST", headers, body: JSON.stringify({ token: PAT }) },
+					e,
+				)
+			).status,
+		).toBe(201);
+		blows = 2;
+		const e2 = {
+			...env(),
+			DB: {
+				prepare: (sql: string) => raw.prepare(sql),
+				batch: async () => {
+					throw new Error("conflict");
+				},
+			} as unknown as D1Database,
+		};
+		expect(
+			(
+				await createApp().request(
+					"http://localhost/api/accounts",
+					{
+						method: "POST",
+						headers,
+						body: JSON.stringify({ token: PAT }),
+					},
+					e2,
+				)
+			).status,
+		).toBe(500);
 	});
 
 	it("rejects a missing encryption key", async () => {

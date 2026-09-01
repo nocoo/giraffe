@@ -92,11 +92,30 @@ describe("api method matrix", () => {
 				expect((await api(path)).status).not.toBe(401);
 			}
 			for (const [method, path, init] of WRITES) {
+				const extra = (init.headers as Record<string, string> | undefined) ?? {};
 				expect(
 					(
 						await fetch(`${base}${path}`, {
 							method,
-							headers: { origin, ...(init.headers as Record<string, string> | undefined) },
+							headers: { origin, ...extra },
+							body: init.body,
+						})
+					).status,
+				).toBe(401);
+				expect(
+					(
+						await fetch(`${base}${path}`, {
+							method,
+							headers: { origin, "Cf-Access-Jwt-Assertion": jwtBadSig, ...extra },
+							body: init.body,
+						})
+					).status,
+				).toBe(401);
+				expect(
+					(
+						await fetch(`${base}${path}`, {
+							method,
+							headers: { origin, "Cf-Access-Jwt-Assertion": jwtBadAud, ...extra },
 							body: init.body,
 						})
 					).status,
@@ -105,7 +124,7 @@ describe("api method matrix", () => {
 					(
 						await api(path, {
 							method,
-							headers: { origin, ...(init.headers as HeadersInit) },
+							headers: { origin, ...extra },
 							body: init.body,
 						})
 					).status,
@@ -133,6 +152,26 @@ describe("api method matrix", () => {
 				})
 			).status,
 		).toBe(403);
+		for (const [method, path, init] of WRITES) {
+			expect(
+				(
+					await api(path, {
+						method,
+						headers: { ...(init.headers as HeadersInit) },
+						body: init.body,
+					})
+				).status,
+			).toBe(403);
+			expect(
+				(
+					await api(path, {
+						method,
+						headers: { origin: "https://evil.example", ...(init.headers as HeadersInit) },
+						body: init.body,
+					})
+				).status,
+			).toBe(403);
+		}
 		const created = await api("/api/accounts", {
 			method: "POST",
 			headers: { origin, "content-type": "application/json" },

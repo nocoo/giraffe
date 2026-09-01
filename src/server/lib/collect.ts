@@ -21,10 +21,10 @@ export type Collected = { truncated: boolean } & Record<string, unknown>;
 export const MAX_STAGED_BYTES = 16 * 1024 * 1024;
 
 const REPOS_QUERY =
-	"query($after:String){ viewer { repositories(first:100, after:$after, affiliations:[OWNER, COLLABORATOR, ORGANIZATION_MEMBER]) { pageInfo { hasNextPage endCursor } nodes { nameWithOwner name owner { login } description stargazerCount forkCount pushedAt isPrivate isArchived isFork url primaryLanguage { name } issues(states:OPEN) { totalCount } } } } }";
+	"query($after:String){ viewer { repositories(first:100, after:$after, affiliations:[OWNER, COLLABORATOR, ORGANIZATION_MEMBER]) { pageInfo { hasNextPage endCursor } nodes { nameWithOwner name owner { login } description stargazerCount forkCount pushedAt isPrivate isArchived isFork visibility url primaryLanguage { name } issues(states:OPEN) { totalCount } } } } }";
 
 const ISSUE_SEARCH =
-	"query($q:String!,$after:String){ search(query:$q, type:ISSUE, first:100, after:$after){ issueCount pageInfo{ hasNextPage endCursor } nodes{ __typename ... on Issue { number title url createdAt updatedAt author{ login } labels(first:10){ nodes{ name color } } comments{ totalCount } repository{ nameWithOwner } } } } }";
+	"query($q:String!,$after:String){ search(query:$q, type:ISSUE, first:100, after:$after){ issueCount pageInfo{ hasNextPage endCursor } nodes{ __typename ... on Issue { number title url createdAt updatedAt author{ login } labels(first:100){ pageInfo{ hasNextPage } nodes{ name color } } comments{ totalCount } repository{ nameWithOwner } } } } }";
 
 const PR_SEARCH =
 	"query($q:String!,$after:String){ search(query:$q, type:ISSUE, first:100, after:$after){ issueCount pageInfo{ hasNextPage endCursor } nodes{ __typename ... on PullRequest { number title url createdAt updatedAt author{ login } isDraft reviewDecision additions deletions baseRefName headRefName repository{ nameWithOwner } } } } }";
@@ -57,7 +57,7 @@ export function clampToBudget(
 	}
 	const key = arrayKey(payload);
 	if (!key || !Array.isArray(payload[key])) {
-		const next = { ...payload, truncated: true };
+		const next = { truncated: true } as Collected;
 		return { payload: next, bytes: utf8Bytes(JSON.stringify(next)), capped: true };
 	}
 	const items = [...(payload[key] as unknown[])];
@@ -104,6 +104,7 @@ async function searchList(
 	token: string,
 	repos: string[],
 	isPr: boolean,
+	strict = false,
 ): Promise<Collected> {
 	const names = [...repos].sort();
 	const items: unknown[] = [];
@@ -132,7 +133,27 @@ async function searchList(
 				items.push(...nodes);
 				groupCount += nodes.length;
 				const count = search.issueCount ?? 0;
-				if (count > 1000) {
+				if (count >= 1000) {
+					truncated = true;
+				}
+				if (gh.graphqlErrors.length > 0) {
+					if (strict) {
+						if (gh.graphqlErrors.some((err) => err.type === "NOT_FOUND")) {
+							throw new ApiError(404, "not_found", "github not found");
+						}
+						throw new ApiError(403, "github_forbidden", "github forbidden");
+					}
+					truncated = true;
+				}
+				if (
+					nodes.some((node) => {
+						if (!node || typeof node !== "object") {
+							return false;
+						}
+						const labels = (node as { labels?: { pageInfo?: { hasNextPage?: boolean } } }).labels;
+						return labels?.pageInfo?.hasNextPage === true;
+					})
+				) {
 					truncated = true;
 				}
 				if (search.pageInfo?.hasNextPage && search.pageInfo.endCursor) {
@@ -149,6 +170,9 @@ async function searchList(
 					break;
 				}
 				if (skipSoft(err)) {
+					if (strict) {
+						throw err;
+					}
 					truncated = true;
 					break;
 				}
@@ -275,16 +299,18 @@ async function collectAlerts(
 	}
 	for (const full of names.slice(0, 10)) {
 		const { owner, name } = ownerName(full);
+		let path: string | null =
+			`/repos/${owner}/${name}/code-scanning/alerts?state=open&per_page=100`;
 		try {
-			const res = await gh.githubApi(
-				token,
-				`/repos/${owner}/${name}/code-scanning/alerts?state=open`,
-			);
-			const body = (await res.json()) as unknown;
-			const mapped = mapCodeScanningAlerts(full, Array.isArray(body) ? body : []);
-			scanning += mapped.length;
-			items.push(...mapped);
-			ok += 1;
+			while (path) {
+				const res = await gh.githubApi(token, path);
+				const body = (await res.json()) as unknown;
+				const mapped = mapCodeScanningAlerts(full, Array.isArray(body) ? body : []);
+				scanning += mapped.length;
+				items.push(...mapped);
+				ok += 1;
+				path = nextPath(res);
+			}
 		} catch (err) {
 			if (skipSoft(err)) {
 				truncated = true;
@@ -376,35 +402,50 @@ async function collectRepoKind(gh: GithubClient, token: string, kind: string): P
 			let truncated = false;
 			let unavailable = false;
 			for (;;) {
-				const data = await gh.githubGraphql(token, ALERTS_QUERY, { o: owner, n: name, after });
-				const repo = data.repository as {
-					vulnerabilityAlerts?: {
-						pageInfo?: { hasNextPage?: boolean; endCursor?: string | null };
-						nodes?: unknown[];
-					};
-				} | null;
-				if (!repo) {
-					unavailable = true;
+				try {
+					const data = await gh.githubGraphql(token, ALERTS_QUERY, { o: owner, n: name, after });
+					const repo = data.repository as {
+						vulnerabilityAlerts?: {
+							pageInfo?: { hasNextPage?: boolean; endCursor?: string | null };
+							nodes?: unknown[];
+						};
+					} | null;
+					if (!repo) {
+						unavailable = true;
+						break;
+					}
+					count += repo.vulnerabilityAlerts?.nodes?.length ?? 0;
+					if (
+						repo.vulnerabilityAlerts?.pageInfo?.hasNextPage &&
+						repo.vulnerabilityAlerts.pageInfo.endCursor
+					) {
+						after = repo.vulnerabilityAlerts.pageInfo.endCursor;
+						continue;
+					}
 					break;
+				} catch (err) {
+					if (err instanceof TruncatedError) {
+						truncated = true;
+						break;
+					}
+					throw err;
 				}
-				count += repo.vulnerabilityAlerts?.nodes?.length ?? 0;
-				if (
-					repo.vulnerabilityAlerts?.pageInfo?.hasNextPage &&
-					repo.vulnerabilityAlerts.pageInfo.endCursor
-				) {
-					after = repo.vulnerabilityAlerts.pageInfo.endCursor;
-					continue;
-				}
-				break;
 			}
 			let scanning = 0;
 			try {
-				const res = await gh.githubApi(token, `${base}/code-scanning/alerts?state=open`);
-				const body = (await res.json()) as unknown;
-				scanning = Array.isArray(body) ? body.length : 0;
+				let path: string | null = `${base}/code-scanning/alerts?state=open&per_page=100`;
+				while (path) {
+					const res = await gh.githubApi(token, path);
+					const body = (await res.json()) as unknown;
+					scanning += Array.isArray(body) ? body.length : 0;
+					path = nextPath(res);
+				}
 			} catch (err) {
 				if (skipSoft(err)) {
 					truncated = true;
+					if (count === 0) {
+						unavailable = true;
+					}
 				} else if (err instanceof TruncatedError) {
 					truncated = true;
 				} else {
@@ -421,17 +462,14 @@ async function collectRepoKind(gh: GithubClient, token: string, kind: string): P
 			if (skipSoft(err)) {
 				return { truncated: false, unavailable: true, dependabot_open: 0, code_scanning_open: 0 };
 			}
-			if (err instanceof TruncatedError) {
-				return { truncated: true, unavailable: true, dependabot_open: 0, code_scanning_open: 0 };
-			}
 			throw err;
 		}
 	}
 	if (suffix === "issues") {
-		return searchList(gh, token, [full], false);
+		return searchList(gh, token, [full], false, true);
 	}
 	if (suffix === "prs") {
-		return searchList(gh, token, [full], true);
+		return searchList(gh, token, [full], true, true);
 	}
 	if (suffix === "releases") {
 		return collectRestList(gh, token, `${base}/releases?per_page=100`, (rows, truncated) => ({

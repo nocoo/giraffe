@@ -1,8 +1,12 @@
 import { ApiError } from "./errors";
 
 export async function readJson(request: Request, maxBytes: number): Promise<unknown> {
-	const type = request.headers.get("content-type") ?? "";
-	if (!type.toLowerCase().startsWith("application/json")) {
+	const rawType = request.headers.get("content-type") ?? "";
+	const [type, ...params] = rawType.split(";").map((part) => part.trim().toLowerCase());
+	if (type !== "application/json") {
+		throw new ApiError(400, "validation_failed", "json required");
+	}
+	if (params.some((part) => part.startsWith("charset=") && part !== "charset=utf-8")) {
 		throw new ApiError(400, "validation_failed", "json required");
 	}
 	const reader = request.body?.getReader();

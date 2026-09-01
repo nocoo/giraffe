@@ -35,30 +35,8 @@ async function verifyJwt(
 	if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) {
 		throw new ApiError(401, "access_unauthorized", "bad token");
 	}
-	const header = JSON.parse(new TextDecoder().decode(b64urlToBytes(parts[0]))) as {
-		alg?: string;
-		kid?: string;
-	};
-	if (header.alg !== "RS256") {
-		throw new ApiError(401, "access_unauthorized", "bad alg");
-	}
-	const jwk = jwks.keys.find((key) => key.kid === header.kid) ?? jwks.keys[0];
-	if (!jwk) {
-		throw new ApiError(401, "access_unauthorized", "no jwk");
-	}
-	const key = await crypto.subtle.importKey(
-		"jwk",
-		jwk,
-		{ name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-		false,
-		["verify"],
-	);
-	const data = new TextEncoder().encode(`${parts[0]}.${parts[1]}`);
-	const ok = await crypto.subtle.verify("RSASSA-PKCS1-v1_5", key, b64urlToBytes(parts[2]), data);
-	if (!ok) {
-		throw new ApiError(401, "access_unauthorized", "bad signature");
-	}
-	const payload = JSON.parse(new TextDecoder().decode(b64urlToBytes(parts[1]))) as {
+	let header: { alg?: string; kid?: string };
+	let payload: {
 		iss?: string;
 		aud?: string | string[];
 		exp?: number;
@@ -66,6 +44,40 @@ async function verifyJwt(
 		email?: string;
 		name?: string;
 	};
+	try {
+		header = JSON.parse(new TextDecoder().decode(b64urlToBytes(parts[0]))) as typeof header;
+		payload = JSON.parse(new TextDecoder().decode(b64urlToBytes(parts[1]))) as typeof payload;
+	} catch {
+		throw new ApiError(401, "access_unauthorized", "bad token");
+	}
+	if (header.alg !== "RS256") {
+		throw new ApiError(401, "access_unauthorized", "bad alg");
+	}
+	const jwk = header.kid ? jwks.keys.find((key) => key.kid === header.kid) : jwks.keys[0];
+	if (!jwk) {
+		throw new ApiError(401, "access_unauthorized", "no jwk");
+	}
+	let ok = false;
+	try {
+		const key = await crypto.subtle.importKey(
+			"jwk",
+			jwk,
+			{ name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+			false,
+			["verify"],
+		);
+		ok = await crypto.subtle.verify(
+			"RSASSA-PKCS1-v1_5",
+			key,
+			b64urlToBytes(parts[2]),
+			dataBytes(parts),
+		);
+	} catch {
+		throw new ApiError(401, "access_unauthorized", "bad token");
+	}
+	if (!ok) {
+		throw new ApiError(401, "access_unauthorized", "bad signature");
+	}
 	if (payload.iss !== iss) {
 		throw new ApiError(401, "access_unauthorized", "bad iss");
 	}
@@ -74,7 +86,7 @@ async function verifyJwt(
 		throw new ApiError(401, "access_unauthorized", "bad aud");
 	}
 	const now = Math.floor(Date.now() / 1000);
-	if (typeof payload.exp === "number" && payload.exp < now) {
+	if (typeof payload.exp !== "number" || payload.exp <= now) {
 		throw new ApiError(401, "access_unauthorized", "expired");
 	}
 	if (typeof payload.nbf === "number" && payload.nbf > now) {
@@ -85,6 +97,10 @@ async function verifyJwt(
 	} catch {
 		throw new ApiError(401, "access_unauthorized", "missing email");
 	}
+}
+
+function dataBytes(parts: string[]): Uint8Array {
+	return new TextEncoder().encode(`${parts[0]}.${parts[1]}`);
 }
 
 type FetchImpl = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;

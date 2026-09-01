@@ -19,6 +19,8 @@ describe("createDb", () => {
 		expect(
 			await other.prepare("SELECT * FROM accounts WHERE id = ?").bind("missing").first("id"),
 		).toBeNull();
-		await expect(other.prepare("NOPE").first()).rejects.toThrow(/unsupported sql/);
+		await expect(other.prepare("NOPE").first()).rejects.toMatchObject({ code: "db_error" });
+		await expect(other.prepare("NOPE").all()).rejects.toMatchObject({ code: "db_error" });
+		await expect(other.prepare("NOPE").run()).rejects.toMatchObject({ code: "db_error" });
 	});
 });

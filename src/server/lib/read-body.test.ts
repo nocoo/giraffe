@@ -30,5 +30,15 @@ describe("readJson", () => {
 			body: "{",
 		});
 		await expect(readJson(bad, 100)).rejects.toBeInstanceOf(ApiError);
+		await expect(
+			readJson(
+				new Request("http://x", {
+					method: "POST",
+					headers: { "content-type": "application/json; charset=iso-8859-1" },
+					body: "{}",
+				}),
+				100,
+			),
+		).rejects.toBeInstanceOf(ApiError);
 	});
 });

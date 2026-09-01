@@ -96,20 +96,18 @@ describe("access", () => {
 			aud: "giraffe-e2e",
 			email: "a@b.c",
 		});
-		expect(
-			(
-				await resolveIdentity(
-					new Request("http://x/api/me", { headers: { "Cf-Access-Jwt-Assertion": noExp } }),
-					env({
-						ENVIRONMENT: "test",
-						CF_ACCESS_TEAM_DOMAIN: "http://127.0.0.1:17047",
-						CF_ACCESS_AUD: "giraffe-e2e",
-						ACCESS_JWKS_URL: "http://127.0.0.1:17047/cdn-cgi/access/certs",
-					}),
-					fetchImpl,
-				)
-			).email,
-		).toBe("a@b.c");
+		await expect(
+			resolveIdentity(
+				new Request("http://x/api/me", { headers: { "Cf-Access-Jwt-Assertion": noExp } }),
+				env({
+					ENVIRONMENT: "test",
+					CF_ACCESS_TEAM_DOMAIN: "http://127.0.0.1:17047",
+					CF_ACCESS_AUD: "giraffe-e2e",
+					ACCESS_JWKS_URL: "http://127.0.0.1:17047/cdn-cgi/access/certs",
+				}),
+				fetchImpl,
+			),
+		).rejects.toMatchObject({ code: "access_unauthorized" });
 		const arrayAud = await signJwt(pair.privateKey, {
 			iss: "http://127.0.0.1:17047",
 			aud: ["giraffe-e2e"],
@@ -233,6 +231,25 @@ describe("access", () => {
 				fetchImpl,
 			),
 		).rejects.toMatchObject({ code: "access_unauthorized" });
+		const noKid = await signJwt(
+			pair.privateKey,
+			{
+				iss: "http://127.0.0.1:17047",
+				aud: "giraffe-e2e",
+				exp: now + 60,
+				email: "a@b.c",
+			},
+			"",
+		);
+		expect(
+			(
+				await resolveIdentity(
+					new Request("http://x/api/me", { headers: { "Cf-Access-Jwt-Assertion": noKid } }),
+					testEnv,
+					fetchImpl,
+				)
+			).email,
+		).toBe("a@b.c");
 		const badIss = await signJwt(pair.privateKey, {
 			iss: "https://evil.example",
 			aud: "giraffe-e2e",
@@ -244,6 +261,34 @@ describe("access", () => {
 				new Request("http://x/api/me", { headers: { "Cf-Access-Jwt-Assertion": badIss } }),
 				testEnv,
 				fetchImpl,
+			),
+		).rejects.toMatchObject({ code: "access_unauthorized" });
+		const badAud = await signJwt(pair.privateKey, {
+			iss: "http://127.0.0.1:17047",
+			aud: "nope",
+			exp: now + 60,
+			email: "a@b.c",
+		});
+		await expect(
+			resolveIdentity(
+				new Request("http://x/api/me", { headers: { "Cf-Access-Jwt-Assertion": badAud } }),
+				testEnv,
+				fetchImpl,
+			),
+		).rejects.toMatchObject({ code: "access_unauthorized" });
+		const hsOk = `${b64url(new TextEncoder().encode(JSON.stringify({ alg: "HS256", kid: "k1" })))}.${b64url(new TextEncoder().encode(JSON.stringify({ iss: "http://127.0.0.1:17047", aud: "giraffe-e2e", exp: now + 60, email: "a@b.c" })))}.aa`;
+		await expect(
+			resolveIdentity(
+				new Request("http://x/api/me", { headers: { "Cf-Access-Jwt-Assertion": hsOk } }),
+				testEnv,
+				fetchImpl,
+			),
+		).rejects.toMatchObject({ code: "access_unauthorized" });
+		await expect(
+			resolveIdentity(
+				new Request("http://x/api/me", { headers: { "Cf-Access-Jwt-Assertion": token } }),
+				testEnv,
+				async () => Response.json({ keys: [{ kty: "oct", kid: "k1", alg: "HS256" }] }),
 			),
 		).rejects.toMatchObject({ code: "access_unauthorized" });
 	});

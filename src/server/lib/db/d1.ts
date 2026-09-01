@@ -8,6 +8,14 @@ export type Db = {
 	batch: D1Database["batch"];
 };
 
+async function d1Try<T>(fn: () => Promise<T>): Promise<T> {
+	try {
+		return await fn();
+	} catch {
+		throw new ApiError(500, "db_error", "d1 error");
+	}
+}
+
 export function createDb(raw: D1Database): Db {
 	let statements = 0;
 	let inBatch = false;
@@ -26,19 +34,21 @@ export function createDb(raw: D1Database): Db {
 			bind: (...values: unknown[]) => wrap(stmt.bind(...values)),
 			first: async <T = Record<string, unknown>>(col?: string) => {
 				bump();
-				const row = await stmt.first<Record<string, unknown>>();
-				if (col === undefined) {
-					return row as T | null;
-				}
-				return (row ? row[col] : null) as T | null;
+				return d1Try(async () => {
+					const row = await stmt.first<Record<string, unknown>>();
+					if (col === undefined) {
+						return row as T | null;
+					}
+					return (row ? row[col] : null) as T | null;
+				});
 			},
 			all: async <T = Record<string, unknown>>() => {
 				bump();
-				return stmt.all<T>();
+				return d1Try(() => stmt.all<T>());
 			},
 			run: async () => {
 				bump();
-				return stmt.run();
+				return d1Try(() => stmt.run());
 			},
 		} as D1PreparedStatement;
 		originals.set(wrapped, stmt);
@@ -55,7 +65,9 @@ export function createDb(raw: D1Database): Db {
 			bump(statementsToRun.length);
 			inBatch = true;
 			try {
-				return await raw.batch(statementsToRun.map((stmt) => originals.get(stmt) ?? stmt));
+				return await d1Try(() =>
+					raw.batch(statementsToRun.map((stmt) => originals.get(stmt) ?? stmt)),
+				);
 			} finally {
 				inBatch = false;
 			}

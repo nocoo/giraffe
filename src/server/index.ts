@@ -19,7 +19,7 @@ function allow(
 	path: string,
 	methods: string[],
 ): void {
-	const blocked = ["GET", "POST", "PUT", "PATCH", "DELETE"].filter(
+	const blocked = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"].filter(
 		(method) => !methods.includes(method),
 	);
 	app.on(blocked, path, () => notAllowed());

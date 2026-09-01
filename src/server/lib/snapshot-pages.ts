@@ -47,8 +47,9 @@ export function splitPages(
 	}
 	const key = arrayKey(payload);
 	if (!key || !Array.isArray(payload[key])) {
+		const compact = { fetched_at: payload.fetched_at ?? "", truncated: true };
 		return {
-			pages: [{ kind: logical, payload: JSON.stringify({ ...payload, truncated: true }) }],
+			pages: [{ kind: logical, payload: JSON.stringify(compact) }],
 			truncated: true,
 		};
 	}

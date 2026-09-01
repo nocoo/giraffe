@@ -49,7 +49,8 @@ export function mapRepos(nodes: Array<Record<string, unknown>>): unknown[] {
 			open_issue_count: Number(n.openIssueCount ?? issues?.totalCount ?? 0),
 			primary_language: language?.name ?? null,
 			pushed_at: n.pushedAt ?? null,
-			visibility: n.isPrivate ? "PRIVATE" : "PUBLIC",
+			visibility:
+				typeof n.visibility === "string" ? n.visibility : n.isPrivate ? "PRIVATE" : "PUBLIC",
 			is_private: Boolean(n.isPrivate),
 			is_archived: Boolean(n.isArchived),
 			is_fork: Boolean(n.isFork),
