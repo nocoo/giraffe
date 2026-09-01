@@ -126,7 +126,7 @@ G1 禁止把 `ENVIRONMENT=development` / `test`、`GITHUB_API_BASE`、`ACCESS_JW
 | 401 | `github_unauthorized` | 出站 GitHub 401（坏 PAT） |
 | 403 | `origin_forbidden` | POST/DELETE 缺 Origin，或 Origin 不在白名单 |
 | 403 | `github_forbidden` | 出站 GitHub 403，且不是 traffic/security/alerts 写入 `forbidden`/`unavailable` 的情况 |
-| 404 | `not_found` | 未知 `/api`、未知 `accounts/:id`、单仓 details GitHub 404、notifications thread GitHub 404 |
+| 404 | `not_found` | 未知 `/api`、未知 `accounts/:id`、任一单仓 kind 的 GitHub 404、notifications thread GitHub 404 |
 | 405 | `method_not_allowed` | 已注册路径上的未列出方法 |
 | 409 | `account_missing` | 需要 active 账号但没有 |
 | 409 | `snapshot_missing` | 该逻辑 kind 无快照 |
@@ -197,11 +197,11 @@ Body 上限：accounts 4 KiB，其它 64 KiB。用 `request.body` 流式读，�
   - `Accept: application/vnd.github+json`
   - `X-GitHub-Api-Version: 2022-11-28`
   - `User-Agent: giraffe/<APP_VERSION>`
-- `githubGraphql(token, query, variables)`：`POST {base}/graphql`，`Accept: application/json`，走 `githubFetch`。HTTP 200 且 `errors` 含 `RATE_LIMITED` → 503 `github_rate_limited`。`errors` **全部**为路径级 `FORBIDDEN` / `NOT_FOUND` → 丢掉对应节点，不当硬失败。其它 `errors` → 502 `github_error`。`data` 为 JSON 对象才解析。
+- `githubGraphql(token, query, variables)`：`POST {base}/graphql`，`Accept: application/json`，走 `githubFetch`。HTTP 200 且 `errors` 含 `RATE_LIMITED` → 503 `github_rate_limited`。`errors` **全部**为路径级 `FORBIDDEN` / `NOT_FOUND` → 丢掉对应节点，不当硬失败，**且该 kind `truncated: true`**。其它 `errors` → 502 `github_error`。`data` 为 JSON 对象才解析。REST 单仓 403/404 跳过时同样 `truncated: true`。
 - GraphQL 分页：`first: 100`，直到 `hasNextPage` 为假或本请求 GitHub 次数用尽。REST 列表：`per_page=100`，同样直到没有下一页或次数用尽。用尽时当前 kind `truncated: true`。
 - 空成功体：HTTP **205**（以及 204）视为成功，不按 JSON 解析。notifications 的 PATCH/PUT 走这条。其它 2xx 若声明 JSON 却非 JSON → 502 `github_error`。
 
-状态映射：GitHub 401 → 401 `github_unauthorized`。429 → 503。HTTP 403 且 `X-RateLimit-Remaining` 为 `0`，或 body 表明 rate limit → 503 `github_rate_limited`。5xx / 422 / 应 JSON 却非 JSON → 502 `github_error`。单仓 traffic/security/alerts 的 403/404：写入 03 的 `forbidden` / `unavailable`，不把整次 refresh 打成 403。其它 403 → 403 `github_forbidden`。单仓 details GitHub 404 与 `PATCH /notifications/threads/{id}` 的 404 → 404 `not_found`（thread 404 不写快照）。列表类单项 404 跳过该项。
+状态映射：GitHub 401 → 401 `github_unauthorized`。429 → 503。HTTP 403 且 `X-RateLimit-Remaining` 为 `0`，或 body 表明 rate limit → 503 `github_rate_limited`。5xx / 422 / 应 JSON 却非 JSON → 502 `github_error`。单仓 traffic/security/alerts 的 403/404：写入 03 的 `forbidden` / `unavailable`，不把整次 refresh 打成 403。其它 403 → 403 `github_forbidden`。单仓 **任意** kind（details/actions/traffic/security/issues/prs/releases/languages/contributors）GitHub 404，以及 `PATCH /notifications/threads/{id}` 的 404 → 404 `not_found`（不写该 kind / 不写快照）。跨仓列表里单项 404 跳过该项。
 
 L1：注入 fake fetch；setup 默认 fetch throw（`network denied in L1`）。
 
@@ -229,11 +229,13 @@ L1：注入 fake fetch；setup 默认 fetch throw（`network denied in L1`）。
 
 `schema.sql` **不含** `_test_marker`。L2/L3 runner 在执行 schema 之后另跑 03 的 marker SQL。生产禁止建 `_test_marker`。
 
-访问层只用绑定参数，不用字符串拼 SQL。读快照：按逻辑 kind 取 `kind` 与全部 `kind#n`，交给 `snapshot-pages` 组装。
+访问层只用绑定参数，不用字符串拼 SQL。读/删逻辑 kind 的物理页：`SELECT kind FROM snapshots WHERE account_id=?`，在 JS 里筛 `kind === logical || /^${escapeRegExp(logical)}#\\d+$/.test(kind)`，再按精确 `kind` 绑定读写。禁止 `LIKE` / `GLOB`（`_` 可出现在仓库名里，且 D1 对 LIKE 有长度限制）。
 
 写快照：同一 `DB.batch` 里删除该逻辑 kind 的全部物理行并插入新页。激活：同一 batch 里 `UPDATE … is_active=0` 再 `UPDATE … is_active=1 WHERE id=?`。插入首个账号：`INSERT` 时直接 `is_active=1`，不要先插 0 再改。batch 失败整段回滚，禁止留下半页快照或两个 `is_active=1`。`accounts_one_active` 冲突 → 再读再写一次，仍失败则 500 `db_error`。不得手写双活。
 
-`last_used_at`：只在**已经落库的账号**上、且该次 HTTP 处理**整段成功**之后更新一次（`POST /api/accounts` 在 scope 通过并 batch 写入之后；refresh 在最终那一次 batch 成功之后；notifications 在 GitHub 2xx 且快照 batch 成功之后）。`GET /user` 成功但缺 scope 的失败路径**不**写 `last_used_at`。中途 GitHub 失败则本请求不写库、不改 `last_used_at`。
+`last_used_at`：只在**已经落库的账号**上、且该次 HTTP 处理**整段成功**时，与其它 D1 写**同一** `DB.batch` 更新（accounts 写入、refresh 最终 batch、notifications 快照 batch）。禁止先提交业务 batch 再单独 UPDATE 时间戳。`GET /user` 成功但缺 scope **不**写。中途 GitHub 失败则本请求不写库。
+
+`createDb(env)` 每请求一次，放入 Hono context，所有 store 复用同一句柄。禁止在 store 内再 `createDb`（否则计数器归零）。
 
 `GET /api/live` 用 **D1 binding** 读 `_test_marker`：有 `value=test` 则 `d1_marker: "test"`，否则 `null`。不得用 wrangler CLI 查同一 SQLite 充当 live 实现。
 
@@ -258,7 +260,7 @@ Body（Zod）：`kinds` 可选。
 或 `{}`。
 
 - 缺 `kinds` 或 `"all"`：刷新全部跨仓 GitHub kind：`repos`、`issues`、`prs`、`alerts`、`notifications`。
-- 数组：只对列出的 GitHub kind 出站。顺序：**先按数组出现序去重**，再串行。重复 kind → 400 `validation_failed`。`issues` / `prs` / `alerts` 需要已有 `repos` 快照，或本次数组**同时含** `repos` 并**先在内存收集** repos（仍不写库直到最终 batch）。否则 409 `snapshot_missing`，**不得**偷偷持久化 repos。
+- 数组：只对列出的 GitHub kind 出站，按数组顺序串行。重复 kind → 400 `validation_failed`（不去重）。`issues` / `prs` / `alerts` 需要已有 `repos` 快照，或本次数组**同时含** `repos` 并**先在内存收集** repos（仍不写库直到最终 batch）。否则 409 `snapshot_missing`，**不得**偷偷持久化 repos。
 - `all` 的串行顺序固定：`repos` → `issues` → `prs` → `alerts` → `notifications`。同一时刻只收集一个 kind。
 - `insights` / `digest` 出现在数组里：不打 GitHub。最终 batch 里：仅当写入或已有的源 kind 均 `truncated === false` 才重算并写派生。源不足：跳过；仅当 kinds **显式**要求该派生且源不足时才 409 `snapshot_missing`。
 - `kinds: []`、未知字符串、非法 `repo:` 形状 → 400 `validation_failed`。
@@ -297,18 +299,18 @@ GitHub 调用（均经请求内 client，计入 40 次上限）。跨仓 `repos`
 
 响应：
 
-- 单个 GitHub kind：200，body 与对应 GET 成功体相同（含该 kind 的 `truncated`）。
+- 单个 kind（含单独刷新 `insights` / `digest`）：200，body 与对应 GET 成功体相同（含该 kind 的 `truncated`）。
 - `"all"` 或多个 kind：
 
 ```json
 {
   "fetched_at": "<iso>",
-  "kinds": ["repos", "issues", "insights"],
-  "truncated_kind": "issues"
+  "kinds": ["repos", "issues", "alerts", "insights"],
+  "truncated_kinds": ["issues", "alerts"]
 }
 ```
 
-`kinds` 为本轮实际写入的逻辑 kind（**含**本次写入的 insights/digest）。`truncated_kind` 为被截断的那一个 GitHub kind，没有则为 `null`。未开始的 kind 不出现。不内嵌 payload。
+`kinds` 为本轮实际写入的逻辑 kind（**含**本次写入的 insights/digest）。`truncated_kinds` 为本轮 `truncated: true` 的 GitHub kind 数组，可多个；没有则为 `[]`。未开始的 kind 不出现。不内嵌 payload。
 
 ---
 
@@ -450,7 +452,7 @@ L1 必测（注入 DB / fake fetch，无网络、无 wrangler）：
 | `insights` | health 三档与 opportunities |
 | `errors` / 路由 | 信封；body 超限 400；未知 `/api` 404；已知路径错误方法 405；`onError` → 500 `internal_error` |
 | `createDb` | 第 81 条 statement 不 execute |
-| refresh 收集 | 硬失败零写入；search total/1000 → truncated；40 次后只截断当前 kind；多 kind 响应的 `kinds`/`truncated_kind` |
+| refresh 收集 | 硬失败零写入；search total/1000 → truncated；多 kind 同时 truncated；路径级 FORBIDDEN → truncated 且跳过派生；单独 insights/digest 响应体 |
 | 路由纯逻辑 | 无快照 409；`scopes_missing`；`capability_missing` |
 
 L2 真 HTTP，隔离与套件 A/B 以 02 为准。第一个 `/api` 处理函数落地的**同一批变更**必须实现 `scripts/run-e2e.ts`（不再 N/A）。本文第 11 节每一个方法+路径都必须进入套件 A 与套件 B。
@@ -523,7 +525,7 @@ L2 fixture 仓用 `octocat/hello-world`。
 
 - 新 `/api` 路径或把 409 改成 412
 - GET 回源或写 D1
-- 只凭 `ENVIRONMENT=development` 短路 Access（必须同时未设置 team/aud）
+- 只凭 `ENVIRONMENT=development` 短路 Access（必须同时已设 `GITHUB_API_BASE` 且未设 team/aud）
 - 每仓 REST 扇出 issues/prs（必须用 GraphQL 聚合）
 - `github-client.ts` / `access.ts` 以外的 `fetch`
 - Client 或 L3 代码

@@ -131,7 +131,7 @@ ACCESS_JWKS_URL=http://127.0.0.1:17047/cdn-cgi/access/certs
 8. 停 wrangler，再进入下一套件
 9. finally 杀全部进程
 
-GitHub 出站的**唯一**入口是 `githubFetch(env, url)`。比较用 `new URL(url).origin === new URL(base).origin`，不是 hostname 对 origin。
+GitHub 出站的**唯一**入口是请求内 `createGithubClient(env)` 返回的 `githubFetch(url)`（签名细节见 04）。比较用 `new URL(url).origin === new URL(base).origin`，不是 hostname 对 origin。禁止模块级 fetch 计数器。
 
 - `ENVIRONMENT` 为 `development` 或 `test`：必须用 `GITHUB_API_BASE`；origin 不匹配则 **throw 且不调用 fetch**
 - 生产：忽略 `GITHUB_API_BASE`，origin 只能是 `https://api.github.com`

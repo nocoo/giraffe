@@ -454,8 +454,8 @@ CREATE TABLE snapshot_days (
 
 1. 用当前 active account 的 PAT 拉 GitHub（经 `githubFetch`）。
 2. 写成对应 snapshots 行（含分页）。
-3. 若刷新了 `repos`，按 `fetched_at` 的 UTC 日 upsert `snapshot_days`。
-4. 重算 `insights` 与 `digest` 当前副本。
+3. 若刷新了 `repos` **且** 该快照 `truncated === false`，按 `fetched_at` 的 UTC 日 upsert `snapshot_days`。`truncated: true` 的 repos **不**写 `snapshot_days`。
+4. 重算 `insights` 与 `digest` 当前副本；任一源 `truncated: true` 则跳过该派生（见 04）。
 5. 删掉 30 天前的 `snapshot_days`。
 
 `DELETE /api/accounts/:id`：依赖 CASCADE 删掉该账号全部 snapshots 与 snapshot_days。
