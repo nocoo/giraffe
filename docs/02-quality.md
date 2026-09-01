@@ -122,7 +122,7 @@ ACCESS_JWKS_URL=http://127.0.0.1:17047/cdn-cgi/access/certs
 每个套件：
 
 1. 临时目录 + 占位 `dist/client/index.html`
-2. 清空该套件 persist（可共用 `.wrangler/e2e/`，两次启动之间仍要 migrate+marker）
+2. 清空该套件 persist（可共用 `.wrangler/e2e/`，两次启动之间仍要执行 schema + marker）
 3. **先**用仓库根绝对路径执行 schema：`wrangler d1 execute giraffe-db --local --persist-to=<绝对路径> --file=<schema.sql 绝对路径>`（若 03 改为 migrations，则换成 `migrations apply` + 同一绝对 persist）。写入 `_test_marker`
 4. 启动 GitHub stub `:17046`、Access JWKS stub `:17047`
 5. 启动 wrangler：`--local --persist-to=<绝对路径> --port 17045 --env-file=<该套件文件>`
@@ -184,7 +184,7 @@ L3 **只跑套件 A**（`ENVIRONMENT=development` Access 短路）。不做套�
 
 1. 先 `vite build`，把真实 `dist/client` 放进临时目录（不要占位壳）
 2. persist：`.wrangler/e2e-pw/`
-3. 端口 27045；同样先 migrate 再启动
+3. 端口 27045；同样先执行 schema + marker 再启动
 4. 与 L2 相同方式初始化 D1（schema.sql 或 03 指定的 migrations），再轮询 `GET /api/live` 且 `d1_marker=test`
 5. finally 清理
 
@@ -219,7 +219,7 @@ L3 **只跑套件 A**（`ENVIRONMENT=development` Access 短路）。不做套�
 | D1 | 远程 `giraffe-db` | 无 | persist 目录 SQLite；经 Worker binding 读到 `d1_marker=test` |
 | GitHub | `https://api.github.com` | 无 | 仅 `GITHUB_API_BASE` stub；未配置则失败关闭 |
 | Access | 真 JWT + 真 JWKS | 单测夹具 | 套件 A 可 development 短路；套件 B 真 HTTP + stub JWKS |
-| 配置 | 生产 secrets | 无 | runner 临时目录 `.dev.vars`，不用仓库根 `.dev.vars` |
+| 配置 | 生产 secrets | 无 | runner `--env-file`，不用任何 `.dev.vars` |
 | PAT | 用户 classic PAT | 假数据 | fixture |
 
 `wrangler.toml` 禁止 `remote = true`。默认 `bun run dev:server` 也是本地 D1。
