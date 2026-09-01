@@ -281,6 +281,9 @@ describe("api method matrix", () => {
 			login?: string;
 			token_last4?: string;
 			is_active?: boolean;
+			capabilities?: Record<string, boolean>;
+			avatar_url?: string;
+			scopes?: string;
 		};
 		expect(account).toMatchObject({
 			id: expect.any(String),
@@ -290,7 +293,12 @@ describe("api method matrix", () => {
 			scopes: expect.any(String),
 			is_active: true,
 		});
-		expect(account).toHaveProperty("capabilities");
+		expect(account.capabilities).toEqual({
+			repo: true,
+			"read:org": true,
+			"read:user": true,
+			notifications: true,
+		});
 		noSecrets(account);
 		if (suite === "A") {
 			for (const path of GETS.filter((p) => p !== "/api/me" && p !== "/api/accounts")) {
@@ -325,7 +333,12 @@ describe("api method matrix", () => {
 			scopes: expect.any(String),
 			is_active: true,
 		});
-		expect(listedBody.accounts[0]).toHaveProperty("capabilities");
+		expect(listedBody.accounts[0]?.capabilities).toEqual({
+			repo: true,
+			"read:org": true,
+			"read:user": true,
+			notifications: true,
+		});
 		noSecrets(listedBody);
 		const logPath = process.env.GIRAFFE_WRANGLER_LOG;
 		const badPat = await api("/api/accounts", {
@@ -336,6 +349,7 @@ describe("api method matrix", () => {
 		expect(badPat.status).toBe(400);
 		const badPatJson = await badPat.json();
 		expect(badPatJson).toMatchObject({ error: { code: "validation_failed" } });
+		expect(JSON.stringify(badPatJson)).not.toContain("nope");
 		noSecrets(badPatJson);
 		const unauthGithub = await api("/api/accounts", {
 			method: "POST",
@@ -360,6 +374,7 @@ describe("api method matrix", () => {
 			expect(log).not.toContain(PAT);
 			expect(log).not.toContain(PAT_401);
 			expect(log).not.toContain(PAT_SCOPE);
+			expect(log).not.toContain("nope");
 		}
 
 		const refreshed = await api("/api/refresh", {
@@ -426,18 +441,37 @@ describe("api method matrix", () => {
 		noSecrets(detailsBody);
 		const issuesBody = (await (await api("/api/issues")).json()) as Record<string, unknown>;
 		snapshotMeta(issuesBody);
-		expect(Array.isArray(issuesBody.issues)).toBe(true);
+		expect((issuesBody.issues as unknown[])[0]).toMatchObject({
+			name_with_owner: "octocat/hello-world",
+			number: 1,
+			title: "bug",
+			url: "https://github.com/octocat/hello-world/issues/1",
+			author_login: "octocat",
+		});
 		const prsBody = (await (await api("/api/prs")).json()) as Record<string, unknown>;
 		snapshotMeta(prsBody);
-		expect(Array.isArray(prsBody.pull_requests)).toBe(true);
+		expect((prsBody.pull_requests as unknown[])[0]).toMatchObject({
+			name_with_owner: "octocat/hello-world",
+			number: 2,
+			title: "pr",
+			additions: 1,
+			deletions: 1,
+			base_ref: "main",
+			head_ref: "feat",
+		});
 		const alertsBody = (await (await api("/api/alerts")).json()) as Record<string, unknown>;
 		snapshotMeta(alertsBody);
 		expect(alertsBody).toMatchObject({
-			unavailable: expect.any(Boolean),
-			dependabot_open: expect.any(Number),
-			code_scanning_open: expect.any(Number),
+			unavailable: false,
+			dependabot_open: 1,
+			code_scanning_open: 0,
 		});
-		expect(Array.isArray(alertsBody.items)).toBe(true);
+		expect((alertsBody.items as unknown[])[0]).toMatchObject({
+			name_with_owner: "octocat/hello-world",
+			source: "dependabot",
+			severity: "low",
+			summary: "demo",
+		});
 		const insightsBody = (await (await api("/api/insights")).json()) as Record<string, unknown>;
 		snapshotMeta(insightsBody);
 		expect(Array.isArray(insightsBody.insights)).toBe(true);
@@ -475,28 +509,46 @@ describe("api method matrix", () => {
 			await api("/api/repos/octocat/hello-world/actions")
 		).json()) as Record<string, unknown>;
 		snapshotMeta(actionsBody);
-		expect(Array.isArray(actionsBody.runs)).toBe(true);
+		expect((actionsBody.runs as unknown[])[0]).toMatchObject({
+			id: 1,
+			name: "ci",
+			status: "completed",
+			conclusion: "success",
+		});
 		const releasesBody = (await (
 			await api("/api/repos/octocat/hello-world/releases")
 		).json()) as Record<string, unknown>;
 		snapshotMeta(releasesBody);
-		expect(Array.isArray(releasesBody.releases)).toBe(true);
+		expect((releasesBody.releases as unknown[])[0]).toMatchObject({
+			id: 1,
+			tag_name: "v1.0.0",
+			name: "one",
+		});
 		const contributorsBody = (await (
 			await api("/api/repos/octocat/hello-world/contributors")
 		).json()) as Record<string, unknown>;
 		snapshotMeta(contributorsBody);
-		expect(Array.isArray(contributorsBody.contributors)).toBe(true);
+		expect((contributorsBody.contributors as unknown[])[0]).toMatchObject({
+			login: "octocat",
+			contributions: 1,
+		});
 		const repoIssues = (await (
 			await api("/api/repos/octocat/hello-world/issues")
 		).json()) as Record<string, unknown>;
 		snapshotMeta(repoIssues);
-		expect(Array.isArray(repoIssues.issues)).toBe(true);
+		expect((repoIssues.issues as unknown[])[0]).toMatchObject({
+			number: 1,
+			title: "bug",
+		});
 		const repoPrs = (await (await api("/api/repos/octocat/hello-world/prs")).json()) as Record<
 			string,
 			unknown
 		>;
 		snapshotMeta(repoPrs);
-		expect(Array.isArray(repoPrs.pull_requests)).toBe(true);
+		expect((repoPrs.pull_requests as unknown[])[0]).toMatchObject({
+			number: 2,
+			title: "pr",
+		});
 		const oneKind = await api("/api/refresh", {
 			method: "POST",
 			headers: { origin, "content-type": "application/json" },

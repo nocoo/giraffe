@@ -327,13 +327,75 @@ const github = await listen(17046, (req, res) => {
 				return;
 			}
 			if (query.includes("search")) {
+				if (query.includes("PullRequest")) {
+					sendJson(res, 200, {
+						data: {
+							search: {
+								issueCount: 1,
+								pageInfo: { hasNextPage: false },
+								nodes: [
+									{
+										__typename: "PullRequest",
+										number: 2,
+										title: "pr",
+										url: "https://github.com/octocat/hello-world/pull/2",
+										createdAt: "2026-08-01T00:00:00.000Z",
+										updatedAt: "2026-08-02T00:00:00.000Z",
+										author: { login: "octocat" },
+										isDraft: false,
+										reviewDecision: "APPROVED",
+										additions: 1,
+										deletions: 1,
+										baseRefName: "main",
+										headRefName: "feat",
+										repository: { nameWithOwner: "octocat/hello-world" },
+									},
+								],
+							},
+						},
+					});
+					return;
+				}
 				sendJson(res, 200, {
-					data: { search: { issueCount: 0, nodes: [], pageInfo: { hasNextPage: false } } },
+					data: {
+						search: {
+							issueCount: 1,
+							pageInfo: { hasNextPage: false },
+							nodes: [
+								{
+									__typename: "Issue",
+									number: 1,
+									title: "bug",
+									url: "https://github.com/octocat/hello-world/issues/1",
+									createdAt: "2026-08-01T00:00:00.000Z",
+									updatedAt: "2026-08-02T00:00:00.000Z",
+									author: { login: "octocat" },
+									labels: { nodes: [{ name: "bug", color: "ededed" }] },
+									comments: { totalCount: 0 },
+									repository: { nameWithOwner: "octocat/hello-world" },
+								},
+							],
+						},
+					},
 				});
 				return;
 			}
 			sendJson(res, 200, {
-				data: { repository: { vulnerabilityAlerts: { nodes: [] } } },
+				data: {
+					repository: {
+						vulnerabilityAlerts: {
+							nodes: [
+								{
+									securityAdvisory: {
+										summary: "demo",
+										permalink: "https://github.com/advisories/GHSA-demo",
+									},
+									securityVulnerability: { severity: "LOW" },
+								},
+							],
+						},
+					},
+				},
 			});
 			return;
 		}
@@ -368,16 +430,51 @@ const github = await listen(17046, (req, res) => {
 			]);
 			return;
 		}
-		if (
-			url.pathname.includes("/code-scanning/alerts") ||
-			url.pathname.endsWith("/releases") ||
-			url.pathname.endsWith("/contributors")
-		) {
+		if (url.pathname.includes("/code-scanning/alerts")) {
 			sendJson(res, 200, []);
 			return;
 		}
+		if (url.pathname.endsWith("/releases")) {
+			sendJson(res, 200, [
+				{
+					id: 1,
+					tag_name: "v1.0.0",
+					name: "one",
+					html_url: "https://github.com/octocat/hello-world/releases/tag/v1.0.0",
+					draft: false,
+					prerelease: false,
+					published_at: "2026-08-01T00:00:00.000Z",
+				},
+			]);
+			return;
+		}
+		if (url.pathname.endsWith("/contributors")) {
+			sendJson(res, 200, [
+				{
+					login: "octocat",
+					avatar_url: "https://github.com/octocat.png",
+					html_url: "https://github.com/octocat",
+					contributions: 1,
+				},
+			]);
+			return;
+		}
 		if (url.pathname.includes("/actions/runs")) {
-			sendJson(res, 200, { workflow_runs: [] });
+			sendJson(res, 200, {
+				workflow_runs: [
+					{
+						id: 1,
+						name: "ci",
+						html_url: "https://github.com/octocat/hello-world/actions/runs/1",
+						status: "completed",
+						conclusion: "success",
+						event: "push",
+						head_branch: "main",
+						created_at: "2026-08-01T00:00:00.000Z",
+						updated_at: "2026-08-01T00:00:00.000Z",
+					},
+				],
+			});
 			return;
 		}
 		if (url.pathname.includes("/traffic/")) {
