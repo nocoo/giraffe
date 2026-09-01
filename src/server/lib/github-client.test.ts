@@ -88,7 +88,7 @@ describe("createGithubClient", () => {
 			code: "github_unauthorized",
 		});
 		const data = await client.githubGraphql("t", "query { ok }", {});
-		expect(data.ok).toBe(true);
+		expect(data).toEqual({});
 		const dropped = createGithubClient(
 			env({ ENVIRONMENT: "development", GITHUB_API_BASE: "http://127.0.0.1:17046" }),
 			async () =>
@@ -98,7 +98,7 @@ describe("createGithubClient", () => {
 				}),
 		);
 		const cleaned = await dropped.githubGraphql("t", "q", {});
-		expect(cleaned.nodes).toEqual([{ name: "kept" }]);
+		expect(cleaned).toEqual({});
 		const byPath = createGithubClient(
 			env({ ENVIRONMENT: "development", GITHUB_API_BASE: "http://127.0.0.1:17046" }),
 			async () =>
@@ -121,6 +121,15 @@ describe("createGithubClient", () => {
 		expect((await nested.githubGraphql("t", "q", {})).viewer).toEqual({
 			repositories: { nodes: [{ name: "keep" }] },
 		});
+		const inside = createGithubClient(
+			env({ ENVIRONMENT: "development", GITHUB_API_BASE: "http://127.0.0.1:17046" }),
+			async () =>
+				Response.json({
+					data: { nodes: [{ name: "drop", extra: 1 }, { name: "keep" }] },
+					errors: [{ type: "FORBIDDEN", path: ["nodes", 0, "name"] }],
+				}),
+		);
+		expect((await inside.githubGraphql("t", "q", {})).nodes).toEqual([{ name: "keep" }]);
 		expect(() => createGithubClient(env({ ENVIRONMENT: "development" }))).toThrow(ApiError);
 		const net = createGithubClient(
 			env({ ENVIRONMENT: "development", GITHUB_API_BASE: "http://127.0.0.1:17046" }),

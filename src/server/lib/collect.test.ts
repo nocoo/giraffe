@@ -337,6 +337,19 @@ describe("collectKind", () => {
 		);
 		expect(empty.unavailable).toBe(true);
 		expect(empty.truncated).toBe(true);
+		const denied = client({
+			api: async () => {
+				throw new ApiError(403, "github_forbidden", "no");
+			},
+		});
+		denied.githubGraphql = async () => {
+			denied.graphqlErrors = [{ type: "FORBIDDEN" }];
+			return { repository: { vulnerabilityAlerts: { nodes: [] } } };
+		};
+		const deniedOut = await collectKind(denied, "tok", "alerts", ["o/n"]);
+		expect(deniedOut.unavailable).toBe(true);
+		expect(deniedOut.truncated).toBe(true);
+		expect(deniedOut.items).toEqual([]);
 		const many = Array.from({ length: 11 }, (_, i) => `o/r${i}`);
 		const truncated = await collectKind(
 			client({

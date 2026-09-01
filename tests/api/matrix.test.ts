@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { request as httpRequest } from "node:http";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -68,6 +69,21 @@ function accessHeaders(extra: HeadersInit = {}, token = jwt): HeadersInit {
 async function api(path: string, init: RequestInit = {}, token = jwt): Promise<Response> {
 	const headers = new Headers(accessHeaders(init.headers, token));
 	return fetch(`${base}${path}`, { ...init, headers });
+}
+
+function rawMethod(method: string, path: string): Promise<number> {
+	const url = new URL(`${base}${path}`);
+	return new Promise((resolve, reject) => {
+		const req = httpRequest(
+			{ hostname: url.hostname, port: url.port, path: url.pathname, method },
+			(res) => {
+				res.resume();
+				resolve(res.statusCode ?? 0);
+			},
+		);
+		req.on("error", reject);
+		req.end();
+	});
 }
 
 async function githubCount(): Promise<number> {
@@ -163,6 +179,13 @@ describe("api method matrix", () => {
 			}
 		}
 
+		expect((await api("/api")).status).toBe(404);
+		if (suite === "B") {
+			expect((await fetch(`${base}/api`)).status).toBe(401);
+		}
+		if (suite === "A") {
+			expect(await rawMethod("TRACE", "/api/me")).toBe(405);
+		}
 		expect((await api("/api/me")).status).toBe(200);
 		expect((await api("/api/accounts")).status).toBe(200);
 		if (suite === "A") {
@@ -222,6 +245,12 @@ describe("api method matrix", () => {
 		expect(envelope).not.toContain(PAT);
 		expect(envelope).toContain('"iv"');
 		expect(envelope).toContain('"ct"');
+		expect(envelope).toContain('"tag"');
+		const parsedEnvelope = JSON.parse(envelope) as { iv?: string; ct?: string; tag?: string };
+		expect(parsedEnvelope.iv).toEqual(expect.any(String));
+		expect(parsedEnvelope.ct).toEqual(expect.any(String));
+		expect(parsedEnvelope.tag).toEqual(expect.any(String));
+		expect(JSON.stringify(await (await api("/api/live")).json())).not.toContain(PAT);
 		const listed = await api("/api/accounts");
 		expect(JSON.stringify(await listed.json())).not.toContain(PAT);
 		const logPath = process.env.GIRAFFE_WRANGLER_LOG;
@@ -294,6 +323,7 @@ describe("api method matrix", () => {
 		expect(reposBody.repos[0]).toMatchObject({
 			name_with_owner: "octocat/hello-world",
 			owner_login: "octocat",
+			url: "https://github.com/octocat/hello-world",
 		});
 		const detailsBody = (await (await api("/api/repos/octocat/hello-world")).json()) as {
 			default_branch?: string;
@@ -339,9 +369,14 @@ describe("api method matrix", () => {
 			notifications: Array<{ id?: string; unread?: boolean }>;
 		};
 		expect(notifBody.notifications[0]).toMatchObject({ id: "123", unread: false });
+		expect(notifBody.notifications[1]).toMatchObject({ id: "456", unread: true });
 		expect(
 			(await api("/api/notifications/read-all", { method: "POST", headers: { origin } })).status,
 		).toBe(200);
+		const afterAll = (await (await api("/api/notifications")).json()) as {
+			notifications: Array<{ id?: string; unread?: boolean }>;
+		};
+		expect(afterAll.notifications.every((row) => row.unread === false)).toBe(true);
 		const created2 = await api("/api/accounts", {
 			method: "POST",
 			headers: { origin, "content-type": "application/json" },

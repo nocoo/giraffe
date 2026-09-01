@@ -147,7 +147,7 @@ port = 17045
 [assets]
 directory = ${JSON.stringify(join(tmp, "dist/client"))}
 binding = "ASSETS"
-run_worker_first = ["/api/*"]
+run_worker_first = ["/api", "/api/*"]
 not_found_handling = "single-page-application"
 [[d1_databases]]
 binding = "DB"
@@ -300,6 +300,7 @@ const github = await listen(17046, (req, res) => {
 										forkCount: 0,
 										pushedAt: "2026-08-01T00:00:00.000Z",
 										issues: { totalCount: 0 },
+										url: "https://github.com/octocat/hello-world",
 									},
 								],
 								pageInfo: { hasNextPage: false },
@@ -338,6 +339,14 @@ const github = await listen(17046, (req, res) => {
 					reason: "mention",
 					updated_at: "2026-09-01T00:00:00.000Z",
 					subject: { title: "hello", url: "https://github.com" },
+					repository: { full_name: "octocat/hello-world" },
+				},
+				{
+					id: "456",
+					unread: true,
+					reason: "mention",
+					updated_at: "2026-09-01T00:00:00.000Z",
+					subject: { title: "world", url: "https://github.com" },
 					repository: { full_name: "octocat/hello-world" },
 				},
 			]);

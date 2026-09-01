@@ -3,7 +3,7 @@ import { type Env, envMode } from "../env";
 import { ApiError } from "./errors";
 
 const GITHUB_ORIGIN = "https://api.github.com";
-const MAX_FETCHES = 40;
+export const MAX_FETCHES = 40;
 
 export class TruncatedError extends Error {
 	constructor() {
@@ -102,15 +102,27 @@ function setNullAtPath(value: unknown, path: unknown[]): unknown {
 	return value;
 }
 
+function dropPath(value: unknown, path: unknown[]): unknown {
+	let end = path.length;
+	for (let i = 0; i < path.length; i += 1) {
+		if (typeof path[i] === "number") {
+			end = i + 1;
+		}
+	}
+	return setNullAtPath(value, path.slice(0, end));
+}
+
 function applyGraphqlErrors(
 	data: Record<string, unknown>,
 	errors: Array<{ type?: string; path?: unknown[] }>,
 ): Record<string, unknown> {
 	let next: unknown = data;
 	for (const error of errors) {
-		if ((error.type === "FORBIDDEN" || error.type === "NOT_FOUND") && Array.isArray(error.path)) {
-			next = setNullAtPath(next, error.path);
+		if (!Array.isArray(error.path) || error.path.length === 0) {
+			next = {};
+			continue;
 		}
+		next = dropPath(next, error.path);
 	}
 	return dropNullNodes(next) as Record<string, unknown>;
 }

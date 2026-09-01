@@ -7,7 +7,6 @@ import {
 	clampToBudget,
 	collectKind,
 	collectRepos,
-	emptyCollected,
 	MAX_STAGED_BYTES,
 } from "../lib/collect";
 import { getActiveAccount, touchLastUsedStmt } from "../lib/db/accounts";
@@ -15,7 +14,7 @@ import { pruneDaysStmt, readDay, upsertDayStmt } from "../lib/db/snapshot-days";
 import { readSnapshot, replaceSnapshotStmts } from "../lib/db/snapshots";
 import { buildDigest, type DayPayload, utcDay, yesterday } from "../lib/digest";
 import { ApiError, jsonOk } from "../lib/errors";
-import { createGithubClient, TruncatedError } from "../lib/github-client";
+import { createGithubClient, MAX_FETCHES } from "../lib/github-client";
 import type { Capabilities } from "../lib/github-map";
 import { buildInsights, type InsightAlert, type RepoRow } from "../lib/insights";
 import { readJson } from "../lib/read-body";
@@ -193,20 +192,10 @@ export async function postRefresh(
 		if (stop) {
 			break;
 		}
-		let payload: Collected;
-		try {
-			payload =
-				kind === "repos"
-					? await collectRepos(gh, token)
-					: await collectKind(gh, token, kind, needsRepoNames(kind) ? await repoNames() : []);
-		} catch (err) {
-			if (err instanceof TruncatedError) {
-				written[kind] = emptyCollected(kind, fetchedAt);
-				stop = true;
-				continue;
-			}
-			throw err;
-		}
+		let payload: Collected =
+			kind === "repos"
+				? await collectRepos(gh, token)
+				: await collectKind(gh, token, kind, needsRepoNames(kind) ? await repoNames() : []);
 		if (needsRepoNames(kind)) {
 			const reposPayload = await loaded("repos");
 			if (reposPayload?.truncated === true) {
@@ -222,7 +211,7 @@ export async function postRefresh(
 		const preview = splitPages(kind, clamped.payload);
 		written[kind] = { ...assemblePages(kind, preview.pages), truncated: preview.truncated };
 		used += clamped.bytes;
-		if (clamped.capped) {
+		if (clamped.capped || gh.count >= MAX_FETCHES) {
 			stop = true;
 		}
 	}

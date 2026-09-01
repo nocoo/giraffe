@@ -55,6 +55,18 @@ describe("worker fetch", () => {
 		expect(
 			(await createApp().request("http://localhost/api/nope", { method: "HEAD" }, e)).status,
 		).toBe(404);
+		const boom = env();
+		boom.DB = {
+			prepare: () => {
+				throw new TypeError("db down");
+			},
+			batch: async () => [],
+		} as unknown as D1Database;
+		const crashed = await createApp().request("http://localhost/api/accounts", {}, boom);
+		expect(crashed.status).toBe(500);
+		expect(await crashed.json()).toEqual({
+			error: { code: "internal_error", message: "db down" },
+		});
 		const prod = { ...e, ENVIRONMENT: "production" as const };
 		const unauth = await createApp().request("http://localhost/api/me", {}, prod);
 		expect(unauth.status).toBe(401);

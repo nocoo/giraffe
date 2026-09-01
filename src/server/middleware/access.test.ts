@@ -148,6 +148,22 @@ describe("access", () => {
 				fetchImpl,
 			),
 		).rejects.toBeInstanceOf(ApiError);
+		let prodJwks = "";
+		await expect(
+			resolveIdentity(
+				new Request("http://x/api/me", { headers: { "Cf-Access-Jwt-Assertion": token } }),
+				env({
+					ENVIRONMENT: "production",
+					ACCESS_JWKS_URL: "http://127.0.0.1:17047/cdn-cgi/access/certs",
+				}),
+				async (input) => {
+					prodJwks = String(input);
+					return fetchImpl();
+				},
+			),
+		).rejects.toMatchObject({ code: "access_unauthorized" });
+		expect(prodJwks).toBe(`${ACCESS_TEAM_DOMAIN.replace(/\/$/, "")}/cdn-cgi/access/certs`);
+		expect(prodJwks).not.toContain("17047");
 		const bypassed = await resolveIdentity(
 			new Request("http://x/api/me"),
 			env({ ENVIRONMENT: "development", GITHUB_API_BASE: "http://127.0.0.1:1" }),

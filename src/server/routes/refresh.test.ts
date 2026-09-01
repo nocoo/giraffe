@@ -563,8 +563,7 @@ describe("refresh route", () => {
 			{},
 			e,
 		);
-		expect(details.status).toBe(200);
-		expect(await details.json()).toMatchObject({ truncated: true, default_branch: "", url: "" });
+		expect(details.status).toBe(409);
 		const huge = env();
 		const hugeId = await createAccount(huge);
 		const hugeDb = createDb(huge.DB);
@@ -754,5 +753,38 @@ describe("refresh route", () => {
 		expect(failed.status).toBe(403);
 		expect((await createApp().request("http://localhost/api/issues", {}, e)).status).toBe(409);
 		expect((await createApp().request("http://localhost/api/repos", {}, e)).status).toBe(200);
+	});
+
+	it("does not write later kinds after the fetch cap", async () => {
+		const e = env();
+		await createAccount(e);
+		let pages = 0;
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+			const url = String(input);
+			if (!url.endsWith("/graphql")) {
+				throw new Error(`unexpected ${url}`);
+			}
+			pages += 1;
+			return Response.json({
+				data: {
+					viewer: {
+						repositories: {
+							nodes: [{ nameWithOwner: "o/n", issues: { totalCount: 0 } }],
+							pageInfo: { hasNextPage: true, endCursor: `c${pages}` },
+						},
+					},
+				},
+			});
+		});
+		const res = await createApp().request(
+			"http://localhost/api/refresh",
+			{ method: "POST", headers, body: JSON.stringify({}) },
+			e,
+		);
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { kinds: string[] };
+		expect(body.kinds).toEqual(["repos"]);
+		expect(pages).toBe(40);
+		expect((await createApp().request("http://localhost/api/issues", {}, e)).status).toBe(409);
 	});
 });

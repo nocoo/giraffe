@@ -8,5 +8,8 @@ describe("sanitize", () => {
 		expect(sanitize("github_pat_11AAAA")).toBe("[redacted]");
 		expect(sanitize("Authorization Bearer abc.def")).toBe("Authorization Bearer [redacted]");
 		expect(sanitize('{"v":1,"iv":"aa","ct":"bb","tag":"cc"}')).toBe("[redacted]");
+		expect(sanitize('{"ct":"c","iv":"i","tag":"t"}')).toBe("[redacted]");
+		expect(sanitize("{not json}")).toBe("{not json}");
+		expect(sanitize('{"iv":"x"}')).toBe('{"iv":"x"}');
 	});
 });

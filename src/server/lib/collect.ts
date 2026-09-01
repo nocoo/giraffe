@@ -290,10 +290,11 @@ async function collectAlerts(
 					truncated = true;
 					break;
 				}
-				got = true;
 				if (gh.graphqlErrors.length > 0) {
 					truncated = true;
+					break;
 				}
+				got = true;
 				const nodes = repo.vulnerabilityAlerts?.nodes ?? [];
 				dependabot += nodes.length;
 				items.push(...mapDependabotAlerts(full, nodes));
