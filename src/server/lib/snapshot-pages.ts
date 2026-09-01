@@ -47,7 +47,13 @@ export function splitPages(
 	}
 	const key = arrayKey(payload);
 	if (!key || !Array.isArray(payload[key])) {
-		const compact = { fetched_at: payload.fetched_at ?? "", truncated: true };
+		const compact: Record<string, unknown> = {
+			fetched_at: payload.fetched_at ?? "",
+			truncated: true,
+		};
+		if (logical.endsWith(":languages")) {
+			compact.languages = {};
+		}
 		return {
 			pages: [{ kind: logical, payload: JSON.stringify(compact) }],
 			truncated: true,

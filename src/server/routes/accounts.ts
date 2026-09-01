@@ -106,10 +106,23 @@ export async function postAccount(
 		await db.batch([insertAccountStmt(db, row)]);
 		return jsonOk(publicAccount(row), 201);
 	} catch {
-		const countAgain = await countAccounts(db);
-		const retry = { ...row, is_active: countAgain === 0 ? 1 : 0 };
-		await db.batch([insertAccountStmt(db, retry)]);
-		return jsonOk(publicAccount(retry), 201);
+		const raced = await getAccountByLogin(db, user.login);
+		if (!raced) {
+			throw new ApiError(500, "db_error", "account conflict");
+		}
+		const updated = {
+			...raced,
+			avatar_url: user.avatar_url,
+			token_ciphertext: envelope,
+			token_last4: tokenLast4(token),
+			key_version: version,
+			scopes: parsed.scopes,
+			capabilities: JSON.stringify(parsed.capabilities),
+			updated_at: now,
+			last_used_at: now,
+		};
+		await db.batch([upsertAccountStmt(db, updated)]);
+		return jsonOk(publicAccount(updated), 201);
 	}
 }
 

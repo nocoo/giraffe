@@ -52,6 +52,13 @@ describe("snapshot-pages", () => {
 			blob: "z".repeat(1_600_000),
 		});
 		expect(truncated).toBe(true);
+		const langs = splitPages("repo:o/n:languages", {
+			fetched_at: "t",
+			truncated: false,
+			languages: { TypeScript: "z".repeat(1_600_000) },
+		});
+		expect(langs.truncated).toBe(true);
+		expect(JSON.parse(langs.pages[0]?.payload ?? "{}")).toMatchObject({ languages: {} });
 		const empty = splitPages("repos", {
 			fetched_at: "t",
 			truncated: false,

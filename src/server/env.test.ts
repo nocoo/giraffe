@@ -35,5 +35,8 @@ describe("encryptionKey", () => {
 		expect(Number.isNaN(currentKeyVersion(env({ TOKEN_ENCRYPTION_KEY_CURRENT: "1oops" })))).toBe(
 			true,
 		);
+		expect(
+			Number.isNaN(currentKeyVersion(env({ TOKEN_ENCRYPTION_KEY_CURRENT: "9007199254740993" }))),
+		).toBe(true);
 	});
 });

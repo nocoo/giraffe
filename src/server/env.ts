@@ -42,8 +42,12 @@ export function encryptionKey(env: Env, version: number): string | undefined {
 }
 
 export function currentKeyVersion(env: Env): number {
-	if (!/^[1-9]\d*$/.test(env.TOKEN_ENCRYPTION_KEY_CURRENT)) {
+	if (!/^[1-9]\d{0,14}$/.test(env.TOKEN_ENCRYPTION_KEY_CURRENT)) {
 		return Number.NaN;
 	}
-	return Number(env.TOKEN_ENCRYPTION_KEY_CURRENT);
+	const parsed = Number(env.TOKEN_ENCRYPTION_KEY_CURRENT);
+	if (!Number.isSafeInteger(parsed)) {
+		return Number.NaN;
+	}
+	return parsed;
 }

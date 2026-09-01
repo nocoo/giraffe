@@ -18,7 +18,7 @@ import { createGithubClient } from "../lib/github-client";
 import type { Capabilities } from "../lib/github-map";
 import { buildInsights, type InsightAlert, type RepoRow } from "../lib/insights";
 import { readJson } from "../lib/read-body";
-import { splitPages } from "../lib/snapshot-pages";
+import { assemblePages, splitPages } from "../lib/snapshot-pages";
 import { decryptToken, parseKeyBytes } from "../lib/token-crypto";
 
 const bodySchema = z.object({
@@ -205,7 +205,7 @@ export async function postRefresh(
 		payload = { ...payload, fetched_at: fetchedAt };
 		const clamped = clampToBudget(payload, MAX_STAGED_BYTES - used);
 		const preview = splitPages(kind, clamped.payload);
-		written[kind] = { ...clamped.payload, truncated: preview.truncated };
+		written[kind] = { ...assemblePages(kind, preview.pages), truncated: preview.truncated };
 		used += clamped.bytes;
 		if (clamped.capped) {
 			stop = true;

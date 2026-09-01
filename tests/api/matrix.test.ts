@@ -214,7 +214,7 @@ describe("api method matrix", () => {
 			body: JSON.stringify({}),
 		});
 		expect(refreshed.status).toBe(200);
-		await api("/api/refresh", {
+		const repoRefresh = await api("/api/refresh", {
 			method: "POST",
 			headers: { origin, "content-type": "application/json" },
 			body: JSON.stringify({
@@ -231,6 +231,7 @@ describe("api method matrix", () => {
 				],
 			}),
 		});
+		expect(repoRefresh.status).toBe(200);
 		const before = await githubCount();
 		for (const path of GETS.filter((p) => p !== "/api/me" && p !== "/api/accounts")) {
 			const res = await api(path);

@@ -170,6 +170,22 @@ describe("notification write-through", () => {
 		const { createDb } = await import("../lib/db/d1");
 		const { replaceSnapshotStmts } = await import("../lib/db/snapshots");
 		const db = createDb(e.DB);
+		await db.batch(replaceSnapshotStmts(db, id, "notifications", { truncated: false }, "t"));
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+			if (String(input).endsWith("/notifications") && init?.method === "PUT") {
+				return new Response(null, { status: 202 });
+			}
+			throw new Error("unexpected");
+		});
+		expect(
+			(
+				await createApp().request(
+					"http://localhost/api/notifications/read-all",
+					{ method: "POST", headers: { origin: "https://giraffe.dev.hexly.ai" } },
+					e,
+				)
+			).status,
+		).toBe(200);
 		await db.batch(
 			replaceSnapshotStmts(
 				db,

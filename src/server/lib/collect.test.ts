@@ -111,6 +111,18 @@ describe("collectRepos", () => {
 		expect(out.truncated).toBe(false);
 		expect((out.repos as unknown[]).length).toBe(2);
 		expect(page).toBe(2);
+		const soft = client({
+			graphql: () => ({
+				viewer: { repositories: { nodes: [{ nameWithOwner: "o/a" }], pageInfo: {} } },
+			}),
+		});
+		soft.githubGraphql = async () => {
+			soft.graphqlErrors = [{ type: "FORBIDDEN" }];
+			return {
+				viewer: { repositories: { nodes: [{ nameWithOwner: "o/a" }], pageInfo: {} } },
+			};
+		};
+		expect((await collectRepos(soft, "tok")).truncated).toBe(true);
 	});
 
 	it("marks truncated when the fetch cap hits", async () => {

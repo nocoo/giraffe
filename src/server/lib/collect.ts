@@ -58,7 +58,11 @@ export function clampToBudget(
 	const key = arrayKey(payload);
 	if (!key || !Array.isArray(payload[key])) {
 		const next = { truncated: true } as Collected;
-		return { payload: next, bytes: utf8Bytes(JSON.stringify(next)), capped: true };
+		const bytes = utf8Bytes(JSON.stringify(next));
+		if (bytes > limit) {
+			return { payload: next, bytes: 0, capped: true };
+		}
+		return { payload: next, bytes, capped: true };
 	}
 	const items = [...(payload[key] as unknown[])];
 	while (items.length > 0) {
@@ -201,6 +205,9 @@ export async function collectRepos(gh: GithubClient, token: string): Promise<Col
 				| undefined;
 			const conn = viewer?.repositories;
 			nodes.push(...(conn?.nodes ?? []));
+			if (gh.graphqlErrors.length > 0) {
+				truncated = true;
+			}
 			if (conn?.pageInfo?.hasNextPage && conn.pageInfo.endCursor) {
 				after = conn.pageInfo.endCursor;
 				continue;
@@ -270,6 +277,9 @@ async function collectAlerts(
 					break;
 				}
 				got = true;
+				if (gh.graphqlErrors.length > 0) {
+					truncated = true;
+				}
 				const nodes = repo.vulnerabilityAlerts?.nodes ?? [];
 				dependabot += nodes.length;
 				items.push(...mapDependabotAlerts(full, nodes));
@@ -299,18 +309,16 @@ async function collectAlerts(
 	}
 	for (const full of names.slice(0, 10)) {
 		const { owner, name } = ownerName(full);
-		let path: string | null =
-			`/repos/${owner}/${name}/code-scanning/alerts?state=open&per_page=100`;
 		try {
-			while (path) {
-				const res = await gh.githubApi(token, path);
-				const body = (await res.json()) as unknown;
-				const mapped = mapCodeScanningAlerts(full, Array.isArray(body) ? body : []);
-				scanning += mapped.length;
-				items.push(...mapped);
-				ok += 1;
-				path = nextPath(res);
-			}
+			const res = await gh.githubApi(
+				token,
+				`/repos/${owner}/${name}/code-scanning/alerts?state=open&per_page=100`,
+			);
+			const body = (await res.json()) as unknown;
+			const mapped = mapCodeScanningAlerts(full, Array.isArray(body) ? body : []);
+			scanning += mapped.length;
+			items.push(...mapped);
+			ok += 1;
 		} catch (err) {
 			if (skipSoft(err)) {
 				truncated = true;
@@ -414,6 +422,9 @@ async function collectRepoKind(gh: GithubClient, token: string, kind: string): P
 						unavailable = true;
 						break;
 					}
+					if (gh.graphqlErrors.length > 0) {
+						truncated = true;
+					}
 					count += repo.vulnerabilityAlerts?.nodes?.length ?? 0;
 					if (
 						repo.vulnerabilityAlerts?.pageInfo?.hasNextPage &&
@@ -433,19 +444,16 @@ async function collectRepoKind(gh: GithubClient, token: string, kind: string): P
 			}
 			let scanning = 0;
 			try {
-				let path: string | null = `${base}/code-scanning/alerts?state=open&per_page=100`;
-				while (path) {
-					const res = await gh.githubApi(token, path);
-					const body = (await res.json()) as unknown;
-					scanning += Array.isArray(body) ? body.length : 0;
-					path = nextPath(res);
-				}
+				const res = await gh.githubApi(
+					token,
+					`${base}/code-scanning/alerts?state=open&per_page=100`,
+				);
+				const body = (await res.json()) as unknown;
+				scanning += Array.isArray(body) ? body.length : 0;
 			} catch (err) {
 				if (skipSoft(err)) {
 					truncated = true;
-					if (count === 0) {
-						unavailable = true;
-					}
+					unavailable = true;
 				} else if (err instanceof TruncatedError) {
 					truncated = true;
 				} else {

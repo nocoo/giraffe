@@ -185,6 +185,15 @@ describe("accounts routes", () => {
 		expect(
 			(
 				await createApp().request(
+					"http://localhost/api/accounts",
+					{ method: "POST", headers, body: JSON.stringify({ token: 1 }) },
+					e,
+				)
+			).status,
+		).toBe(400);
+		expect(
+			(
+				await createApp().request(
 					"http://localhost/api/accounts/missing",
 					{ method: "DELETE", headers: { origin: "https://giraffe.dev.hexly.ai" } },
 					e,
@@ -267,11 +276,12 @@ describe("accounts routes", () => {
 			DB: {
 				prepare: (sql: string) => raw.prepare(sql),
 				batch: async (statements: D1PreparedStatement[]) => {
+					const out = await raw.batch(statements);
 					if (blows > 0) {
 						blows -= 1;
 						throw new Error("conflict");
 					}
-					return raw.batch(statements);
+					return out;
 				},
 			} as unknown as D1Database,
 		};
@@ -285,11 +295,11 @@ describe("accounts routes", () => {
 				)
 			).status,
 		).toBe(201);
-		blows = 2;
+		const empty = openSqliteD1(true);
 		const e2 = {
 			...env(),
 			DB: {
-				prepare: (sql: string) => raw.prepare(sql),
+				prepare: (sql: string) => empty.prepare(sql),
 				batch: async () => {
 					throw new Error("conflict");
 				},

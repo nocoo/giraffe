@@ -92,7 +92,7 @@ function stubGithub(extra?: (url: string) => Response | undefined): void {
 		if (url.includes("/contributors")) {
 			return Response.json([]);
 		}
-		if (url.endsWith("/repos/octocat/hello-world")) {
+		if (url.includes("/repos/")) {
 			return Response.json({ default_branch: "main", html_url: "u" });
 		}
 		throw new Error(`unexpected ${url}`);
@@ -127,6 +127,21 @@ describe("refresh route", () => {
 			e,
 		);
 		expect(all.status).toBe(200);
+		expect(
+			(
+				await createApp().request(
+					"http://localhost/api/refresh",
+					{
+						method: "POST",
+						headers,
+						body: JSON.stringify({
+							kinds: Array.from({ length: 16 }, (_, i) => `repo:octocat/r${i}:details`),
+						}),
+					},
+					e,
+				)
+			).status,
+		).toBe(200);
 		const body = (await all.json()) as { kinds: string[] };
 		expect(body.kinds).toContain("repos");
 		const single = await createApp().request(
@@ -473,7 +488,7 @@ describe("refresh route", () => {
 				truncDb,
 				truncId,
 				"repos",
-				{ truncated: true, repos: [{ name_with_owner: "o/n" }] },
+				{ truncated: true, repos: [{ name_with_owner: "o/n" }, {}] },
 				fetchedAt,
 			),
 		);
