@@ -250,7 +250,7 @@ L1：注入 fake fetch；setup 默认 fetch throw（`network denied in L1`）。
 
 `["repos","insights"]`：insights 走左列，digest 走右列。禁止把「数组里出现 insights」同时又当隐式。
 
-默认 `all` 每 kind 2 页时整请求 statement < 80。L1 还要覆盖：显式 digest 超大 → 200+truncated；隐式超大 → 不写派生；16 MiB 时当前 payload ≤16 MiB、当前 kind truncated、后续 kind 零 fetch **且不写**。
+默认 `all` 每 kind 2 页时整请求 statement < 80。L1 还要覆盖：显式 insights 与显式 digest 超大 → 200+truncated；`["repos","insights"]` 的 `truncated_kinds` 可含 `insights`；隐式超大 → 不写派生；16 MiB 时 **累计** GitHub staged ≤16 MiB、当前 kind truncated、后续 kind 零 fetch **且不写**。
 
 写快照：同一 `DB.batch` 里删除该逻辑 kind 的全部物理行并插入新页。激活：同一 batch 里 `UPDATE … is_active=0` 再 `UPDATE … is_active=1 WHERE id=?`。插入首个账号：`INSERT` 时直接 `is_active=1`，不要先插 0 再改。batch 失败整段回滚，禁止留下半页快照或两个 `is_active=1`。`accounts_one_active` 冲突 → 再读再写一次，仍失败则 500 `db_error`。不得手写双活。
 
@@ -332,7 +332,7 @@ GitHub 调用（均经请求内 client，计入 40 次上限）。跨仓 `repos`
 }
 ```
 
-`kinds` 为本轮实际写入的逻辑 kind（**含**本次写入的 insights/digest）。`truncated_kinds` 为本轮 `truncated: true` 的 GitHub kind 数组，可多个；没有则为 `[]`。未开始的 kind 不出现。不内嵌 payload。
+`kinds` 为本轮实际写入的逻辑 kind（**含**本次写入的 insights/digest）。`truncated_kinds` 为本轮写入且 `truncated: true` 的 kind，**含**显式截断的 insights/digest。没有则为 `[]`。未开始或不写的 kind 不出现。不内嵌 payload。
 
 ---
 
@@ -474,7 +474,7 @@ L1 必测（注入 DB / fake fetch，无网络、无 wrangler）：
 | `insights` | health 三档与 opportunities |
 | `errors` / 路由 | 信封；body 超限 400；未知 `/api` 404；已知路径错误方法 405；`onError` → 500 `internal_error` |
 | `createDb` | 第 81 条不 execute；两 store 同一句柄；`last_used_at` 与业务语句同一 batch；默认 `all` 最终 batch 语句数 < 80 |
-| refresh 收集 | 硬失败零写入；第 3 页丢弃不写 `kind#3`；kinds 17 项 → 400；16 项整请求 statement < 80；16 MiB：当前 ≤16 MiB + truncated + 后续零 fetch 且不写；显式 digest 超大 200+truncated；隐式超大跳过派生 |
+| refresh 收集 | 硬失败零写入；第 3 页丢弃不写 `kind#3`；kinds 17 项 → 400；16 项整请求 statement < 80；16 MiB **累计** staged；显式 insights 与 digest 超大；混合数组 truncated_kinds；隐式超大跳过 |
 | 路由纯逻辑 | 无快照 409；`scopes_missing`；`capability_missing` |
 
 L2 真 HTTP，隔离与套件 A/B 以 02 为准。第一个 `/api` 处理函数落地的**同一批变更**必须实现 `scripts/run-e2e.ts`（不再 N/A）。本文第 11 节每一个方法+路径都必须进入套件 A 与套件 B。
