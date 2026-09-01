@@ -26,7 +26,7 @@
 | 无快照 | HTTP **409**，`code: "snapshot_missing"`。GET 不回源、不写库 |
 | 刷新时机 | 无 Cron。GET 不得刷新。只接受 `POST /api/refresh`。何时调用由 05，Server 不调度 |
 | GitHub 出站 | 同一允许 origin 上的 REST 与 `POST /graphql`。除 Access JWKS 外唯一 `fetch` 是 `githubFetch` |
-| 出站上限 | 单次请求 `githubFetch` ≤ **40**。Cloudflare 把 GitHub、JWKS、**D1 statement**（含 `DB.batch` 内每一条）算进同一配额。生产必须 Workers **付费档**（1000 subrequest）。禁止按免费档 50 设计。`createDb(env)` 对本请求 statement 计数，**第 81 条在 execute 前 throw** → 500 `db_error`，不发送该 batch。L1 覆盖第 81 条 |
+| 出站上限 | 单次请求 `githubFetch` ≤ **40**。D1 每请求自限 **80** statement（平台 D1 上限 1000）。Worker 用付费档。禁止按免费档 50 设计。`createDb(env)` 第 81 条在 execute 前 throw → 500 `db_error`。L1 覆盖第 81 条 |
 | 账号主键 | `login` 唯一。再次粘贴同一 login 则 **upsert**（保留 `id`，重加密 token） |
 | 删除当前账号 | 不自动激活其它账号；之后快照类接口 409 `account_missing` |
 | 查询参数 | 首版 GET 无 filter/sort。筛选在 Client |
@@ -197,7 +197,7 @@ Body 上限：accounts 4 KiB，其它 64 KiB。用 `request.body` 流式读，�
   - `Accept: application/vnd.github+json`
   - `X-GitHub-Api-Version: 2022-11-28`
   - `User-Agent: giraffe/<APP_VERSION>`
-- `githubGraphql(token, query, variables)`：`POST {base}/graphql`，`Accept: application/json`，走 `githubFetch`。HTTP 200 且 `errors` 含 `RATE_LIMITED` → 503 `github_rate_limited`。跨仓列表：路径级 `FORBIDDEN` / `NOT_FOUND` 丢掉对应节点，kind `truncated: true`，不当 HTTP 404。单仓查询：根上 `repository` 为 null 或该仓 `NOT_FOUND` / `FORBIDDEN` → 走下面「单仓 GitHub 404/403」同一张表（details → HTTP 404；traffic → forbidden 快照；security → unavailable 快照；其它 kind → HTTP 404）。不把单仓 `FORBIDDEN` 打成 502。其它 `errors` → 502 `github_error`。`data` 为 JSON 对象才解析。
+- `githubGraphql(token, query, variables)`：`POST {base}/graphql`，`Accept: application/json`，走 `githubFetch`。HTTP 200 且 `errors` 含 `RATE_LIMITED` → 503 `github_rate_limited`。跨仓列表：路径级 `FORBIDDEN` / `NOT_FOUND` 丢掉对应节点，kind `truncated: true`，不当 HTTP 404。单仓：`repository` 为 null 或 `NOT_FOUND` → 与 REST 404 同一张表。单仓 `FORBIDDEN` 或 REST 403 → 与 REST 403 同一张表（traffic forbidden 快照；security unavailable 快照；**其它 kind HTTP 403 `github_forbidden`**，不是 404）。不把单仓 `FORBIDDEN` 打成 502。其它 `errors` → 502 `github_error`。`data` 为 JSON 对象才解析。
 - GraphQL 分页：`first: 100`，直到 `hasNextPage` 为假或本请求 GitHub 次数用尽。REST 列表：`per_page=100`，同样直到没有下一页或次数用尽。用尽时当前 kind `truncated: true`。
 - 空成功体：HTTP **205**（以及 204）视为成功，不按 JSON 解析。notifications 的 PATCH/PUT 走这条。其它 2xx 若声明 JSON 却非 JSON → 502 `github_error`。
 
@@ -206,7 +206,7 @@ Body 上限：accounts 4 KiB，其它 64 KiB。用 `request.body` 流式读，�
 - `details`：404 → HTTP 404 `not_found`，不写快照。GraphQL 该仓为 null 同此。
 - `traffic`：403/404 → 写入 `forbidden: true` 的快照（HTTP 200），不是 HTTP 404。
 - `security`：403/404 → 写入 `unavailable: true` 的快照（HTTP 200）。
-- 其它单仓 kind：GitHub 404 → HTTP 404 `not_found`。
+- 其它单仓 kind：GitHub 404 / `NOT_FOUND` → HTTP 404 `not_found`。GitHub 403 / `FORBIDDEN` → HTTP 403 `github_forbidden`（L1 覆盖非 security kind）。
 - `PATCH /notifications/threads/{id}` 404 → HTTP 404 `not_found`，不写快照。
 - 跨仓列表单项 404 或路径级 GraphQL `NOT_FOUND`：跳过该项，kind `truncated: true`，不把整请求打成 HTTP 404。
 
@@ -236,7 +236,7 @@ L1：注入 fake fetch；setup 默认 fetch throw（`network denied in L1`）。
 
 `schema.sql` **不含** `_test_marker`。L2/L3 runner 在执行 schema 之后另跑 03 的 marker SQL。生产禁止建 `_test_marker`。
 
-访问层只用绑定参数，不用字符串拼 SQL。物理页最多 **16**（`kind`、`kind#2` … `kind#16`）。替换每个逻辑 kind 恰好 **两条** statement：一条 `DELETE … kind IN (16 个精确值)`，一条多行 `INSERT … VALUES (row1), (row2), …`（最多 16 行，禁止每页一条 INSERT）。读：**一条** `SELECT … WHERE account_id=? AND kind IN (该逻辑 kind 的 16 个精确物理名)`，禁止只按 `account_id` 全表拉取。内存按连续页组装，缺页即停。禁止 `LIKE` / `GLOB`。默认 `all` 即使每 kind 16 页，最终 batch 也必须 < 80（L1 用 16 页 fixture 数语句）。
+访问层只用绑定参数，不用字符串拼 SQL。物理页最多 **2**（`kind`、`kind#2`）。替换每个逻辑 kind 恰好 **两条** statement：一条 `DELETE … kind IN (logical, logical#2)`，一条多行 `INSERT … VALUES`（最多 2 行）。读：**一条** `SELECT … WHERE account_id=? AND kind IN (logical, logical#2)`。本请求 staged payload UTF-8 合计不得超过 **16 MiB**，超出则当前 kind `truncated: true` 并停止后续 GitHub 收集。禁止 `LIKE` / `GLOB`。默认 `all` 每 kind 2 页时最终 batch < 80（L1 数语句）。L2 套件 A 对 `all` 满页 fixture 不得出现 Worker 1102 / memory exceeded。
 
 写快照：同一 `DB.batch` 里删除该逻辑 kind 的全部物理行并插入新页。激活：同一 batch 里 `UPDATE … is_active=0` 再 `UPDATE … is_active=1 WHERE id=?`。插入首个账号：`INSERT` 时直接 `is_active=1`，不要先插 0 再改。batch 失败整段回滚，禁止留下半页快照或两个 `is_active=1`。`accounts_one_active` 冲突 → 再读再写一次，仍失败则 500 `db_error`。不得手写双活。
 
@@ -460,7 +460,7 @@ L1 必测（注入 DB / fake fetch，无网络、无 wrangler）：
 | `insights` | health 三档与 opportunities |
 | `errors` / 路由 | 信封；body 超限 400；未知 `/api` 404；已知路径错误方法 405；`onError` → 500 `internal_error` |
 | `createDb` | 第 81 条不 execute；两 store 同一句柄；`last_used_at` 与业务语句同一 batch；默认 `all` 最终 batch 语句数 < 80 |
-| refresh 收集 | 硬失败零写入；search total/1000 → truncated；多 kind 同时 truncated；路径级 FORBIDDEN → truncated 且跳过派生；单仓 security FORBIDDEN → unavailable 快照；`all` 每 kind 16 页时 batch < 80；单独 insights/digest 响应体 |
+| refresh 收集 | 硬失败零写入；search total/1000 → truncated；多 kind 同时 truncated；单仓非 security FORBIDDEN → 403；security FORBIDDEN → unavailable；staged 超 16 MiB → truncated；`all` 2 页 batch < 80 |
 | 路由纯逻辑 | 无快照 409；`scopes_missing`；`capability_missing` |
 
 L2 真 HTTP，隔离与套件 A/B 以 02 为准。第一个 `/api` 处理函数落地的**同一批变更**必须实现 `scripts/run-e2e.ts`（不再 N/A）。本文第 11 节每一个方法+路径都必须进入套件 A 与套件 B。
@@ -485,7 +485,7 @@ L2 fixture 仓用 `octocat/hello-world`。
 自定义域对外之前必须全部满足。未完成禁止 `wrangler deploy` 绑定 `giraffe.hexly.ai`：
 
 1. Cloudflare Access 应用与策略已挂在 `giraffe.hexly.ai`。
-2. 该 Worker 在付费档（subrequest 1000）。免费档不得绑定自定义域。
+2. 该 Worker 在付费档。免费档不得绑定自定义域。
 3. `wrangler.toml`：`workers_dev = false`，`preview_urls = false`，无 `[env.test]`，无 `remote = true`，无 development/test `[vars]`。
 4. 生产 D1 `giraffe-db` 已创建，`database_id` 已填真实 UUID；已对**远程**库执行 `schema.sql`（不是 persist 目录）。
 5. Secrets：`TOKEN_ENCRYPTION_KEY_V1`、`TOKEN_ENCRYPTION_KEY_CURRENT`、`CF_ACCESS_TEAM_DOMAIN`、`CF_ACCESS_AUD`。
