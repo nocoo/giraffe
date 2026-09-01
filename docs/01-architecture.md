@@ -179,7 +179,7 @@ database_id = "<prod>"
 - Worker secrets / vars：`CF_ACCESS_TEAM_DOMAIN`（如 `https://<team>.cloudflareaccess.com`）、`CF_ACCESS_AUD`（Access 应用 audience）。缺任一则生产请求失败关闭，不得放行。
 - 中间件读取 `Cf-Access-Jwt-Assertion`，用该 team 的 JWKS 验签，并校验 `iss`、`aud`、`exp`。只验签名不够。失败 401。
 - 从 JWT 取 email / name，仅用于顶栏展示，不作为 GitHub 身份。
-- Access 短路只允许 `ENVIRONMENT === "development"`。该值**禁止**写入会随 `wrangler deploy` 上去的 `[vars]`。本机 `dev:server` 只用 `.dev.vars`。L2/L3 只用 runner `--env-file`。缺省、未知、或生产部署中出现 `development` 一律失败关闭。禁止用 `Host`、`X-Forwarded-*` 或域名后缀判断。
+- Access 短路当且仅当：`ENVIRONMENT === "development"`，且已设 `GITHUB_API_BASE`，且 `CF_ACCESS_TEAM_DOMAIN` 与 `CF_ACCESS_AUD` 都未设。该值**禁止**写入会随 `wrangler deploy` 上去的 `[vars]`。本机 `dev:server` 只用 `.dev.vars`。L2/L3 只用 runner `--env-file`。缺省、未知、或生产部署中出现 `development` 但没有 `GITHUB_API_BASE` → **不得短路**，按生产验 JWT。禁止用 `Host`、`X-Forwarded-*` 或域名后缀判断。细则见 [04](04-server.md)。
 - `wrangler.toml` 设 `workers_dev = false`，关闭 `*.workers.dev` 与 preview URL。只通过 Access 保护的 `giraffe.hexly.ai` 对外。
 - 自定义域未挂好 Access 应用与策略前，禁止 `wrangler deploy` 把该域对外。部署检查清单见 [04 §13](04-server.md)。
 - 所有会改状态的 `/api`（POST / DELETE，含无 body 的 activate / read-all / refresh）必须校验 `Origin` 与允许列表一致，否则 403。GET 不得回源 GitHub、不得写 D1。
@@ -242,7 +242,7 @@ database_id = "<prod>"
 | `is_active` | INTEGER | 0/1 |
 | `created_at` | TEXT | UTC ISO-8601，以 `Z` 结尾 |
 | `updated_at` | TEXT | 同上 |
-| `last_used_at` | TEXT | 上次成功打 GitHub |
+| `last_used_at` | TEXT | 上次整段成功的出站 GitHub 操作，见 [04](04-server.md) |
 
 ### `snapshots`
 
