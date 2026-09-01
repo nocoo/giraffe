@@ -52,7 +52,7 @@ Hook：
 | pre-push | L2 ‖ G2 | `bun run test:e2e:api` 与 `bun run gate:security` 并行 |
 | CI | 阶段 1：G1+L1+L2+G2；阶段 2：再加 L3 | 与本地同一命令 |
 
-`gate:test-skip` 必须扫描 `src/` 与 `tests/`，命中任一则失败：`describe.only`、`describe.skip`、`it.only`、`it.skip`、`test.only`、`test.skip`、`test.todo`、`test.fails`、`it.fails`、`xtest`、`xdescribe`。Biome 开启 `noSkippedTests` / `noFocusedTests`（或等价规则）且 `--error-on-warnings`；脚本是双保险。
+`gate:test-skip` 必须扫描 `src/` 与 `tests/`，命中任一则失败，包括链式写法：`.only`、`.skip`、`.todo`、`.fails`、`.runIf`、`.skipIf`、`xtest`、`xdescribe`、`it.todo`、`test.concurrent.todo`。Biome 开启 `noSkippedTests` / `noFocusedTests`（或等价规则）且 `--error-on-warnings`；脚本是双保险。
 
 ---
 
@@ -109,7 +109,7 @@ CF_ACCESS_AUD=giraffe-e2e
 ACCESS_JWKS_URL=http://127.0.0.1:17047/cdn-cgi/access/certs
 ```
 
-`ENVIRONMENT` 在功能套件与 Access 套件中的值见 5.3。`--var` 语法若使用必须是 `KEY:VALUE`。
+`ENVIRONMENT`：套件 A 为 `development`，套件 B 为 `test`，生产为空或 `production`。`--var` 若用必须是 `KEY:VALUE`。
 
 ### 5.2 生命周期
 
@@ -121,7 +121,7 @@ ACCESS_JWKS_URL=http://127.0.0.1:17047/cdn-cgi/access/certs
 
 1. 临时目录 + 占位 `dist/client/index.html`
 2. 清空该套件 persist（可共用 `.wrangler/e2e/`，两次启动之间仍要 migrate+marker）
-3. **先** `wrangler d1 migrations apply giraffe-db --local --persist-to=<绝对路径>`，写入 `_test_marker`。schema 来源与 03 一致，路径相对仓库根，不依赖临时 cwd 下的 `./migrations`
+3. **先**用仓库根绝对路径执行 schema：`wrangler d1 execute giraffe-db --local --persist-to=<绝对路径> --file=<schema.sql 绝对路径>`（若 03 改为 migrations，则换成 `migrations apply` + 同一绝对 persist）。写入 `_test_marker`
 4. 启动 GitHub stub `:17046`、Access JWKS stub `:17047`
 5. 启动 wrangler：`--local --persist-to=<绝对路径> --port 17045 --env-file=<该套件文件>`
 6. 轮询 `GET /api/live`，60s 超时。响应必须带 `d1_marker=test`（Worker **经 D1 binding** 读 `_test_marker`）。对不上则失败——禁止 runner 用 CLI 再查同一 SQLite 充当验证
@@ -129,7 +129,13 @@ ACCESS_JWKS_URL=http://127.0.0.1:17047/cdn-cgi/access/certs
 8. 停 wrangler，再进入下一套件
 9. finally 杀全部进程
 
-`github-client` 只通过 `GITHUB_API_BASE`（未设时才是生产默认常量）发请求。L1 断言：已设 `GITHUB_API_BASE` 时，目标 origin 不是 `api.github.com` 否则 throw。G1 可扫除默认常量外的 `api.github.com` 字面量。L2 stub 记录所有进入 17046 的请求；Worker 若直连 `api.github.com`，该请求不会出现在 stub 上，同时 client 应已 throw——套件 A 结束时 stub 计数 >0（refresh 成功路径）且进程内不得出现对 `api.github.com` 的成功响应。
+GitHub 出站的**唯一**入口是 `githubFetch(env, url)`（或同等单函数）。该函数：
+
+- `GITHUB_API_BASE` 已设：hostname 必须等于 stub origin，否则 throw，不调用真正的 fetch
+- 未设：只允许 `api.github.com`
+- L2 必须设置 `GITHUB_API_BASE`，否则 runner 失败关闭
+
+G1 禁止在 `github-client` 之外出现 `fetch(` 指向 GitHub。L1 覆盖「错 host 即 throw」。这是进程内强制边界，不依赖 stub 去观察直连流量。
 
 端口占用则失败并打印占用方，禁止改打 7045。
 
@@ -146,18 +152,19 @@ ACCESS_JWKS_URL=http://127.0.0.1:17047/cdn-cgi/access/certs
 | 种类 | 要求 |
 |------|------|
 | 成功路径 | 写类（POST/DELETE）带**允许的 Origin**；状态码与 body 符合契约；必须能在后续 GET 观察到状态变化。GET **不带 Origin** 也必须 200/409（按是否有快照），证明只读不依赖 Origin |
-| 契约失败 | GET 无快照 → 409。POST **与 DELETE**：缺 Origin → 403；Origin 不在允许列表 → 403。403 **不能**当作该路径唯一用例 |
+| 契约失败 | **快照类 GET**（repos/issues/prs/insights/alerts/notifications/digest 及单仓 GET）无快照 → 409。`GET /api/live`、`GET /api/me`、`GET /api/accounts` 不在此列。POST **与 DELETE**：缺 Origin → 403；Origin 不在允许列表 → 403。403 **不能**当作该路径唯一用例 |
 | 只读 | GET 期间 GitHub stub 请求数为 0，且相关 D1 行（快照 payload / `fetched_at` / accounts）字节级不变 |
 
-PAT `POST /api/accounts` 成功路径额外断言：
+PAT `POST /api/accounts` 成功**与失败**路径（400 缺 scope、GitHub stub 401、非法 token）均断言：
 
 - HTTP 响应、错误体、wrangler stdout/stderr 均不含 fixture PAT 明文
-- 经 Worker 可读的账号详情/live 诊断不得含明文
-- 用 **同一 persist + Worker binding** 读出的 `token_ciphertext` 是信封 JSON（含 `iv`/`ct`/`tag`），且明文 PAT 不是其中子串
+- 经 Worker 可读的账号详情 / live 不得含明文
+- 成功路径：在 `GET /api/live` 已证明 `d1_marker=test` 之后，用同一绝对 persist 做 `wrangler d1 execute --local --persist-to=<绝对路径>` 读 `token_ciphertext`（不新增 dump API）。值必须是信封 JSON（`iv`/`ct`/`tag`），明文 PAT 不是子串
 
-**套件 B — 生产 Access（真 HTTP）**
+**套件 B — Access 中间件（真 HTTP）**
 
-- **不**设 `ENVIRONMENT=development`
+- `ENVIRONMENT=test`：必须验 JWT；JWKS 只允许 `ACCESS_JWKS_URL`
+- 生产（`ENVIRONMENT` 空或 `production`）**必须忽略** `ACCESS_JWKS_URL`，只信 `CF_ACCESS_TEAM_DOMAIN` 的 JWKS。L1 覆盖「生产模式下 fixture JWKS 被忽略」
 - 用 stub JWKS 签发 fixture JWT
 - 除明确公开的 `GET /api/live` 外，**每一个**受保护的方法+路径：无 JWT / 坏签名 / 错 `aud` → 401。只测 `/api/me` 不够
 - 至少一条合法 fixture JWT → 2xx（可用 `/api/me`）
@@ -171,7 +178,7 @@ PAT `POST /api/accounts` 成功路径额外断言：
 
 阶段 2 才有。Playwright，Chromium。
 
-Runner 与 L2 相同的隔离目录、`--env-file`、GitHub stub、Access 策略（功能套件可 development 短路）。差异：
+L3 **只跑套件 A**（`ENVIRONMENT=development` Access 短路）。不做套件 B，浏览器不注入 CF Access JWT。隔离目录、`--env-file`、GitHub `githubFetch` 边界与 L2 套件 A 相同。差异：
 
 1. 先 `vite build`，把真实 `dist/client` 放进临时目录（不要占位壳）
 2. persist：`.wrangler/e2e-pw/`

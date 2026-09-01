@@ -84,14 +84,7 @@ Caddy site is not registered yet. Do not persist, bundle, log, or echo GitHub to
 
 Online: one Worker `giraffe`, one D1 `giraffe-db` (binding `DB`), custom domain `giraffe.hexly.ai`. No remote test Worker, no remote test D1, no `[env.test]`.
 
-L2 and L3 use the same Worker code and launch model, as **separate processes**:
-
-| Layer | Command | Persist dir | Port |
-|---|---|---|---|
-| L2 API E2E | `wrangler dev --local --persist-to=.wrangler/e2e --port 17045` plus `--var` below | `.wrangler/e2e/` | 17045 |
-| L3 Playwright | same, `--persist-to=.wrangler/e2e-pw --port 27045` | `.wrangler/e2e-pw/` | 27045 |
-
-L2/L3 runner details are in [docs/02-quality.md](docs/02-quality.md): isolated temp dir and `--env-file` (never the repo-root `.dev.vars`), absolute `--persist-to`, GitHub stub via `GITHUB_API_BASE`, two Wrangler launches for Access vs feature suites. `GET /api/live` must report `d1_marker=test` from the Worker D1 binding.
+L2/L3: see [docs/02-quality.md](docs/02-quality.md). Ports 17045 / 27045. Absolute persist `.wrangler/e2e/` and `.wrangler/e2e-pw/`. Isolated `--env-file`, never repo-root `.dev.vars`. L2 launches Wrangler twice (suite A development bypass, suite B `ENVIRONMENT=test` + stub JWKS). L3 is suite A only.
 
 Quality authority: [docs/02-quality.md](docs/02-quality.md). Summary below.
 
@@ -127,8 +120,8 @@ bun run typecheck       # tsc --noEmit
 bun run lint            # biome check --error-on-warnings
 bun run test            # L1 without coverage gate (watch/debug)
 bun run test:coverage   # L1 + ≥90% coverage; this is the pre-commit command
-bun run test:e2e:api    # L2 runner injects --var fixtures; port 17045
-bun run test:e2e:bdd    # L3 runner injects --var fixtures; port 27045
+bun run test:e2e:api    # L2: 02 runner, ports 17045/17046/17047
+bun run test:e2e:bdd    # L3: 02 runner, port 27045, suite A only
 ```
 
 Phase 2 Client tests use a mock `/api` (MSW or static fixtures). They must not boot wrangler. Server tests must not import `src/client`. Phase 1 has no Client tests.
