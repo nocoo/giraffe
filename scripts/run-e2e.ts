@@ -10,6 +10,7 @@ const persist = join(root, ".wrangler/e2e");
 const schema = join(root, "src/server/lib/db/schema.sql");
 const wranglerBin = join(root, "node_modules/.bin/wrangler");
 const ZERO_KEY = "0".repeat(64);
+const tokens = { jwt: "", jwtBadAud: "", jwtBadSig: "" };
 
 if (!(await hasApiRoutes())) {
 	console.log("L2 N/A: no /api routes yet");
@@ -157,6 +158,9 @@ database_id = "00000000-0000-4000-8000-000000000001"
 			{
 				GIRAFFE_SUITE: name,
 				GIRAFFE_E2E: "http://127.0.0.1:17045",
+				GIRAFFE_JWT: tokens.jwt,
+				GIRAFFE_JWT_BAD_AUD: tokens.jwtBadAud,
+				GIRAFFE_JWT_BAD_SIG: tokens.jwtBadSig,
 			},
 		);
 	} finally {
@@ -168,14 +172,208 @@ database_id = "00000000-0000-4000-8000-000000000001"
 	}
 }
 
-const github = await listen(17046, (_req, res) => {
-	res.statusCode = 404;
-	res.end("{}");
+function readBody(req: IncomingMessage): Promise<string> {
+	return new Promise((resolve) => {
+		const chunks: Buffer[] = [];
+		req.on("data", (chunk) => {
+			chunks.push(chunk as Buffer);
+		});
+		req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+	});
+}
+
+function sendJson(
+	res: ServerResponse,
+	status: number,
+	body: unknown,
+	headers: Record<string, string> = {},
+): void {
+	res.statusCode = status;
+	res.setHeader("content-type", "application/json");
+	for (const [key, value] of Object.entries(headers)) {
+		res.setHeader(key, value);
+	}
+	res.end(JSON.stringify(body));
+}
+
+let githubHits = 0;
+const github = await listen(17046, (req, res) => {
+	const url = new URL(req.url ?? "/", "http://127.0.0.1:17046");
+	if (url.pathname === "/_count") {
+		res.end(String(githubHits));
+		return;
+	}
+	if (url.pathname === "/_reset") {
+		githubHits = 0;
+		res.end("0");
+		return;
+	}
+	githubHits += 1;
+	void (async () => {
+		const auth = req.headers.authorization ?? "";
+		if (url.pathname === "/user") {
+			if (auth.includes("B".repeat(8))) {
+				sendJson(res, 401, {});
+				return;
+			}
+			const scopes = auth.includes("C".repeat(8))
+				? "repo"
+				: "repo, read:org, read:user, notifications";
+			sendJson(res, 200, { login: "octocat", avatar_url: "" }, { "X-OAuth-Scopes": scopes });
+			return;
+		}
+		if (url.pathname === "/graphql") {
+			const raw = await readBody(req);
+			const query = String((JSON.parse(raw || "{}") as { query?: string }).query ?? "");
+			if (query.includes("viewer")) {
+				sendJson(res, 200, {
+					data: {
+						viewer: {
+							repositories: {
+								nodes: [
+									{
+										nameWithOwner: "octocat/hello-world",
+										name: "hello-world",
+										owner: { login: "octocat" },
+										stargazerCount: 1,
+										forkCount: 0,
+										pushedAt: "2026-08-01T00:00:00.000Z",
+										issues: { totalCount: 0 },
+									},
+								],
+								pageInfo: { hasNextPage: false },
+							},
+						},
+					},
+				});
+				return;
+			}
+			if (query.includes("search")) {
+				sendJson(res, 200, {
+					data: { search: { issueCount: 0, nodes: [], pageInfo: { hasNextPage: false } } },
+				});
+				return;
+			}
+			sendJson(res, 200, {
+				data: { repository: { vulnerabilityAlerts: { nodes: [] } } },
+			});
+			return;
+		}
+		if (req.method === "PATCH" && url.pathname.startsWith("/notifications/threads/")) {
+			res.statusCode = 205;
+			res.end();
+			return;
+		}
+		if (req.method === "PUT" && url.pathname === "/notifications") {
+			res.statusCode = 205;
+			res.end();
+			return;
+		}
+		if (url.pathname === "/notifications") {
+			sendJson(res, 200, [
+				{
+					id: "123",
+					unread: true,
+					reason: "mention",
+					updated_at: "2026-09-01T00:00:00.000Z",
+					subject: { title: "hello", url: "https://github.com" },
+					repository: { full_name: "octocat/hello-world" },
+				},
+			]);
+			return;
+		}
+		if (
+			url.pathname.includes("/code-scanning/alerts") ||
+			url.pathname.endsWith("/releases") ||
+			url.pathname.endsWith("/contributors")
+		) {
+			sendJson(res, 200, []);
+			return;
+		}
+		if (url.pathname.includes("/actions/runs")) {
+			sendJson(res, 200, { workflow_runs: [] });
+			return;
+		}
+		if (url.pathname.includes("/traffic/")) {
+			sendJson(res, 200, { count: 0, uniques: 0, views: [], clones: [] });
+			return;
+		}
+		if (url.pathname.endsWith("/languages")) {
+			sendJson(res, 200, { TypeScript: 1 });
+			return;
+		}
+		if (url.pathname === "/repos/octocat/hello-world") {
+			sendJson(res, 200, {
+				default_branch: "main",
+				html_url: "https://github.com/octocat/hello-world",
+			});
+			return;
+		}
+		sendJson(res, 404, {});
+	})().catch(() => {
+		res.statusCode = 500;
+		res.end("{}");
+	});
 });
+
+function b64url(bytes: Uint8Array): string {
+	let s = "";
+	for (const b of bytes) {
+		s += String.fromCharCode(b);
+	}
+	return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+const pair = (await crypto.subtle.generateKey(
+	{
+		name: "RSASSA-PKCS1-v1_5",
+		modulusLength: 2048,
+		publicExponent: new Uint8Array([1, 0, 1]),
+		hash: "SHA-256",
+	},
+	true,
+	["sign", "verify"],
+)) as CryptoKeyPair;
+const jwk = (await crypto.subtle.exportKey("jwk", pair.publicKey)) as Record<string, unknown> & {
+	kid?: string;
+};
+jwk.kid = "e2e";
+jwk.alg = "RS256";
+jwk.use = "sig";
+
+async function signJwt(payload: Record<string, unknown>): Promise<string> {
+	const header = b64url(new TextEncoder().encode(JSON.stringify({ alg: "RS256", kid: "e2e" })));
+	const body = b64url(new TextEncoder().encode(JSON.stringify(payload)));
+	const sig = new Uint8Array(
+		await crypto.subtle.sign(
+			"RSASSA-PKCS1-v1_5",
+			pair.privateKey,
+			new TextEncoder().encode(`${header}.${body}`),
+		),
+	);
+	return `${header}.${body}.${b64url(sig)}`;
+}
+
+const now = Math.floor(Date.now() / 1000);
+tokens.jwt = await signJwt({
+	iss: "http://127.0.0.1:17047",
+	aud: "giraffe-e2e",
+	exp: now + 3600,
+	email: "e2e@local",
+	name: "e2e",
+});
+tokens.jwtBadAud = await signJwt({
+	iss: "http://127.0.0.1:17047",
+	aud: "wrong",
+	exp: now + 3600,
+	email: "e2e@local",
+});
+tokens.jwtBadSig = `${tokens.jwt.slice(0, Math.max(0, tokens.jwt.length - 4))}aaaa`;
+
 const jwks = await listen(17047, (req, res) => {
 	if (req.url?.includes("/cdn-cgi/access/certs")) {
 		res.setHeader("content-type", "application/json");
-		res.end(JSON.stringify({ keys: [] }));
+		res.end(JSON.stringify({ keys: [jwk] }));
 		return;
 	}
 	res.statusCode = 404;
