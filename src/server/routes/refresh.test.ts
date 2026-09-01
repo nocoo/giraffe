@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "../env";
 import { createApp } from "../index";
+import { MAX_STAGED_BYTES } from "../lib/collect";
 import { insertAccountStmt } from "../lib/db/accounts";
 import { createDb } from "../lib/db/d1";
 import { upsertDayStmt } from "../lib/db/snapshot-days";
@@ -313,6 +314,76 @@ describe("refresh route", () => {
 		).toBe(401);
 		expect((await createApp().request("http://localhost/api/repos", {}, later)).status).toBe(409);
 		expect((await createApp().request("http://localhost/api/issues", {}, later)).status).toBe(409);
+	});
+
+	it("does not fetch later kinds when staged bytes equal the budget", async () => {
+		const e = env();
+		await createAccount(e);
+		const fetchedAt = "2026-09-01T00:00:00.000Z";
+		const repo = (description: string) => ({
+			truncated: false,
+			fetched_at: fetchedAt,
+			repos: [
+				{
+					name_with_owner: "o/n",
+					name: "n",
+					owner_login: "o",
+					description,
+					stargazer_count: 0,
+					fork_count: 0,
+					open_issue_count: 0,
+					primary_language: null,
+					pushed_at: null,
+					visibility: "PUBLIC",
+					is_private: false,
+					is_archived: false,
+					is_fork: false,
+				},
+			],
+		});
+		const encoded = (description: string) =>
+			new TextEncoder().encode(JSON.stringify(repo(description))).length;
+		const descLen = MAX_STAGED_BYTES - encoded("");
+		expect(encoded("x".repeat(descLen))).toBe(MAX_STAGED_BYTES);
+		let notifications = 0;
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+			const url = String(input);
+			if (url.endsWith("/graphql")) {
+				return Response.json({
+					data: {
+						viewer: {
+							repositories: {
+								nodes: [
+									{
+										nameWithOwner: "o/n",
+										name: "n",
+										owner: { login: "o" },
+										description: "x".repeat(descLen),
+									},
+								],
+								pageInfo: { hasNextPage: false },
+							},
+						},
+					},
+				});
+			}
+			if (url.includes("/notifications")) {
+				notifications += 1;
+				return Response.json([]);
+			}
+			throw new Error(`unexpected ${url}`);
+		});
+		const res = await createApp().request(
+			"http://localhost/api/refresh",
+			{
+				method: "POST",
+				headers,
+				body: JSON.stringify({ kinds: ["repos", "notifications"] }),
+			},
+			e,
+		);
+		expect(res.status).toBe(200);
+		expect(notifications).toBe(0);
 	});
 
 	it("rejects missing capabilities and encryption", async () => {
