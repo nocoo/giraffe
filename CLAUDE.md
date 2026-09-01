@@ -22,7 +22,7 @@ This file is the **contract**. Hooks, CI, and config are **enforcement**. If the
 
 - Plaintext GitHub PAT may exist only in the settings input (cleared after submit), that request body, Worker memory after decrypt, and the outbound `Authorization` header. Never persist, bundle, log, trace, or return it. D1 stores only the AES-GCM envelope.
 - `workers_dev = false`. App gate is Cloudflare Access JWT (`iss` + `aud` + JWKS). No in-app login.
-- Phase 1 is Server only (`src/server`). No client feature code until [docs/05](docs/05) exists. Server tests must not import `src/client`. L3 is N/A until phase 2.
+- Phase 1 is Server only (`src/server`). No client feature code until docs/05 exists. Server tests must not import `src/client`. L3 is N/A until phase 2. Phase 2 MVVM: viewmodels have no View/DOM imports.
 - E2E is `--local --persist-to` only. Never remote `giraffe-db`. L2 persist `.wrangler/e2e/` :17045; L3 `.wrangler/e2e-pw/` :27045.
 - Strict TDD: failing tests stay in the working tree; only green L1 commits. `--no-verify` forbidden.
 - Caddy for `giraffe.dev.hexly.ai` is **not** registered yet.
@@ -46,8 +46,6 @@ tests/api/    L2
 docs/         01–04 (05 unwritten)
 ```
 
-MVVM applies in phase 2: viewmodels have no View/DOM imports; routes stay thin.
-
 ## Commands
 
 ```bash
@@ -59,8 +57,6 @@ bun run test:coverage
 bun run test:e2e:api
 bun run gate:security
 ```
-
-There is no `dev:client`, `build`, or `wrangler deploy` script yet.
 
 ## Verification
 
@@ -74,13 +70,13 @@ Today: pre-commit typecheck/lint/`gate:test-skip`/`gate:wrangler-vars`/`gate:git
 |---|---|---|---|
 | Logic | L1 vitest ≥95% all four | enforced | pre-commit `test:coverage`; `vitest.config.ts` |
 | API L2 | real HTTP, isolated D1 | enforced | pre-push `test:e2e:api` (`scripts/run-e2e.ts`) |
-| UI L3 | Playwright | N/A | phase 2; `test:e2e:bdd` exists but is not a gate |
+| UI L3 | Playwright | N/A | — |
 | Types / lint | tsc + Biome 0 warning + skip/vars/fetch gates | enforced | pre-commit |
 | G2 secrets | gitleaks | enforced | pre-push `gate:security` (stdin ranges) |
 | G2 deps | osv-scanner `bun.lock` | enforced | pre-push `gate:security` |
-| Bundler | Vite → `dist/client` | planned | no `build` script; wrangler `[assets]` already points there |
+| Bundler | Vite → `dist/client` | planned | — |
 | Docs | numbered doc if behavior changes | manual | human review |
-| Release | `wrangler deploy` | planned | no CD |
+| Release | `wrangler deploy` | planned | — |
 
 | Hook | Org bar | Status | Evidence |
 |---|---|---|---|
@@ -96,8 +92,6 @@ Today: pre-commit typecheck/lint/`gate:test-skip`/`gate:wrangler-vars`/`gate:git
 | Dev | 7045 (planned `https://giraffe.dev.hexly.ai`) | `.dev.vars`; Caddy not registered |
 | L2 | 17045 | `--local --persist-to .wrangler/e2e/` |
 | L3 | 27045 | `--local --persist-to .wrangler/e2e-pw/` (phase 2) |
-
-E2E never hits `api.github.com` or remote D1.
 
 ## Operations / Release
 
