@@ -1,5 +1,5 @@
-import { execFileSync, spawn } from "node:child_process";
-import { createWriteStream } from "node:fs";
+import { type ChildProcess, execFileSync, spawn } from "node:child_process";
+import { closeSync, fsyncSync, openSync, writeSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { dirname, join } from "node:path";
@@ -172,6 +172,10 @@ async function suite(name: "A" | "B"): Promise<void> {
 	await assertPortFree(17045);
 	const logPath = join(tmp, `wrangler-${name}.log`);
 	await writeFile(logPath, "");
+	const logFd = openSync(logPath, "a");
+	const writeLog = (chunk: Buffer) => {
+		writeSync(logFd, Uint8Array.from(chunk));
+	};
 	const wrangler = spawn(
 		wranglerBin,
 		[
@@ -185,13 +189,12 @@ async function suite(name: "A" | "B"): Promise<void> {
 		],
 		{ cwd: root, stdio: ["ignore", "pipe", "pipe"] },
 	);
-	const logStream = createWriteStream(logPath, { flags: "a" });
 	wrangler.stdout?.on("data", (chunk) => {
-		logStream.write(chunk);
+		writeLog(chunk as Buffer);
 		process.stdout.write(chunk);
 	});
 	wrangler.stderr?.on("data", (chunk) => {
-		logStream.write(chunk);
+		writeLog(chunk as Buffer);
 		process.stderr.write(chunk);
 	});
 	try {
@@ -211,12 +214,28 @@ async function suite(name: "A" | "B"): Promise<void> {
 			},
 		);
 	} finally {
-		wrangler.kill("SIGTERM");
-		await Bun.sleep(300);
-		if (wrangler.exitCode === null) {
-			wrangler.kill("SIGKILL");
-		}
-		logStream.end();
+		await stopWrangler(wrangler);
+		fsyncSync(logFd);
+		closeSync(logFd);
+	}
+}
+
+async function stopWrangler(wrangler: ChildProcess): Promise<void> {
+	if (wrangler.exitCode !== null) {
+		return;
+	}
+	wrangler.kill("SIGTERM");
+	await Promise.race([
+		new Promise<void>((resolve) => {
+			wrangler.once("exit", () => resolve());
+		}),
+		Bun.sleep(1_000),
+	]);
+	if (wrangler.exitCode === null) {
+		wrangler.kill("SIGKILL");
+		await new Promise<void>((resolve) => {
+			wrangler.once("exit", () => resolve());
+		});
 	}
 }
 
@@ -448,11 +467,22 @@ const jwks = await listen(17047, (req, res) => {
 	res.end();
 });
 
+async function shutdown(): Promise<void> {
+	await github.close();
+	await jwks.close();
+}
+
+process.once("SIGINT", () => {
+	void shutdown().finally(() => process.exit(1));
+});
+process.once("SIGTERM", () => {
+	void shutdown().finally(() => process.exit(1));
+});
+
 try {
 	await mkdir(join(root, ".wrangler/e2e-run"), { recursive: true });
 	await suite("A");
 	await suite("B");
 } finally {
-	await github.close();
-	await jwks.close();
+	await shutdown();
 }

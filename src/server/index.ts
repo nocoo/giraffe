@@ -19,19 +19,12 @@ function allow(
 	path: string,
 	methods: string[],
 ): void {
-	const blocked = [
-		"GET",
-		"POST",
-		"PUT",
-		"PATCH",
-		"DELETE",
-		"HEAD",
-		"OPTIONS",
-		"TRACE",
-		"CONNECT",
-		"PROPFIND",
-	].filter((method) => !methods.includes(method));
-	app.on(blocked, path, () => notAllowed());
+	app.all(path, async (c, next) => {
+		if (!methods.includes(c.req.raw.method)) {
+			return notAllowed();
+		}
+		await next();
+	});
 }
 
 function onGet(
@@ -39,12 +32,7 @@ function onGet(
 	path: string,
 	handler: (c: Context<{ Bindings: Env; Variables: AppVars }>) => Response | Promise<Response>,
 ): void {
-	app.on("GET", path, (c) => {
-		if (c.req.raw.method === "HEAD") {
-			return notAllowed();
-		}
-		return handler(c);
-	});
+	app.on("GET", path, handler);
 }
 
 function repoGet(

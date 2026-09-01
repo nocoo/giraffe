@@ -285,13 +285,13 @@ export async function collectKind(
 		return searchList(gh, token, repoNames, true, false, budget);
 	}
 	if (kind === "alerts") {
-		return collectAlerts(gh, token, repoNames);
+		return collectAlerts(gh, token, repoNames, budget);
 	}
 	if (kind === "notifications") {
 		return collectNotifications(gh, token, budget);
 	}
 	if (kind.startsWith("repo:")) {
-		return collectRepoKind(gh, token, kind);
+		return collectRepoKind(gh, token, kind, budget);
 	}
 	throw new ApiError(400, "validation_failed", "unknown kind");
 }
@@ -300,6 +300,7 @@ async function collectAlerts(
 	gh: GithubClient,
 	token: string,
 	repoNames: string[],
+	budget = MAX_STAGED_BYTES,
 ): Promise<Collected> {
 	const names = [...repoNames].sort();
 	const items: unknown[] = [];
@@ -307,7 +308,11 @@ async function collectAlerts(
 	let ok = 0;
 	let dependabot = 0;
 	let scanning = 0;
+	let stop = false;
 	for (const full of names) {
+		if (stop) {
+			break;
+		}
 		const { owner, name } = ownerName(full);
 		let after: string | null = null;
 		let got = false;
@@ -333,6 +338,22 @@ async function collectAlerts(
 				dependabot += nodes.length;
 				items.push(...mapDependabotAlerts(full, nodes));
 				if (
+					exceedsBudget(
+						{
+							truncated: true,
+							unavailable: false,
+							items,
+							dependabot_open: dependabot,
+							code_scanning_open: scanning,
+						},
+						budget,
+					)
+				) {
+					truncated = true;
+					stop = true;
+					break;
+				}
+				if (
 					repo.vulnerabilityAlerts?.pageInfo?.hasNextPage &&
 					repo.vulnerabilityAlerts.pageInfo.endCursor
 				) {
@@ -353,6 +374,9 @@ async function collectAlerts(
 		}
 	}
 	for (const full of names.slice(0, 10)) {
+		if (stop) {
+			break;
+		}
 		const { owner, name } = ownerName(full);
 		try {
 			const res = await gh.githubApi(
@@ -464,7 +488,12 @@ export function emptyCollected(kind: string, fetchedAt: string): Collected {
 	return base;
 }
 
-async function collectRepoKind(gh: GithubClient, token: string, kind: string): Promise<Collected> {
+async function collectRepoKind(
+	gh: GithubClient,
+	token: string,
+	kind: string,
+	budget = MAX_STAGED_BYTES,
+): Promise<Collected> {
 	const match = /^repo:([^/]+\/[^:]+):(.+)$/.exec(kind);
 	if (!match?.[1] || !match[2]) {
 		throw new ApiError(400, "validation_failed", "invalid repo kind");
@@ -479,10 +508,16 @@ async function collectRepoKind(gh: GithubClient, token: string, kind: string): P
 		return { truncated: false, ...mapRepoDetails(body) };
 	}
 	if (suffix === "actions") {
-		return collectRestList(gh, token, `${base}/actions/runs?per_page=100`, (rows, truncated) => ({
-			truncated,
-			runs: mapActionRuns({ workflow_runs: rows }),
-		}));
+		return collectRestList(
+			gh,
+			token,
+			`${base}/actions/runs?per_page=100`,
+			(rows, truncated) => ({
+				truncated,
+				runs: mapActionRuns({ workflow_runs: rows }),
+			}),
+			budget,
+		);
 	}
 	if (suffix === "traffic") {
 		try {
@@ -572,16 +607,22 @@ async function collectRepoKind(gh: GithubClient, token: string, kind: string): P
 		};
 	}
 	if (suffix === "issues") {
-		return searchList(gh, token, [full], false, true);
+		return searchList(gh, token, [full], false, true, budget);
 	}
 	if (suffix === "prs") {
-		return searchList(gh, token, [full], true, true);
+		return searchList(gh, token, [full], true, true, budget);
 	}
 	if (suffix === "releases") {
-		return collectRestList(gh, token, `${base}/releases?per_page=100`, (rows, truncated) => ({
-			truncated,
-			releases: mapReleases(rows),
-		}));
+		return collectRestList(
+			gh,
+			token,
+			`${base}/releases?per_page=100`,
+			(rows, truncated) => ({
+				truncated,
+				releases: mapReleases(rows),
+			}),
+			budget,
+		);
 	}
 	if (suffix === "languages") {
 		const res = await gh.githubApi(token, `${base}/languages`);
@@ -589,10 +630,16 @@ async function collectRepoKind(gh: GithubClient, token: string, kind: string): P
 		return { truncated: false, languages };
 	}
 	if (suffix === "contributors") {
-		return collectRestList(gh, token, `${base}/contributors?per_page=100`, (rows, truncated) => ({
-			truncated,
-			contributors: mapContributors(rows),
-		}));
+		return collectRestList(
+			gh,
+			token,
+			`${base}/contributors?per_page=100`,
+			(rows, truncated) => ({
+				truncated,
+				contributors: mapContributors(rows),
+			}),
+			budget,
+		);
 	}
 	throw new ApiError(400, "validation_failed", "unknown repo kind");
 }
@@ -602,6 +649,7 @@ async function collectRestList(
 	token: string,
 	start: string,
 	finish: (rows: unknown[], truncated: boolean) => Collected,
+	budget = MAX_STAGED_BYTES,
 ): Promise<Collected> {
 	const rows: unknown[] = [];
 	let path: string | null = start;
@@ -620,6 +668,10 @@ async function collectRestList(
 				rows.push(...body);
 			}
 			path = nextPath(res);
+			if (exceedsBudget(finish(rows, true), budget)) {
+				truncated = true;
+				break;
+			}
 		} catch (err) {
 			if (err instanceof TruncatedError) {
 				truncated = true;

@@ -117,6 +117,24 @@ function d1Rows(sql: string): Array<Record<string, unknown>> {
 	return parsed[0]?.results ?? [];
 }
 
+function noSecrets(value: unknown): void {
+	const text = JSON.stringify(value);
+	expect(text).not.toContain(PAT);
+	expect(text).not.toContain(PAT_401);
+	expect(text).not.toContain(PAT_SCOPE);
+	expect(text).not.toContain(PAT_2);
+	expect(text).not.toContain("token_ciphertext");
+	expect(text).not.toContain('"iv"');
+	expect(text).not.toContain('"ct"');
+	expect(text).not.toContain('"tag"');
+}
+
+function snapshotMeta(body: Record<string, unknown>): void {
+	expect(typeof body.fetched_at).toBe("string");
+	expect((body.fetched_at as string).length).toBeGreaterThan(10);
+	expect(typeof body.truncated).toBe("boolean");
+}
+
 describe("api method matrix", () => {
 	it("covers suite A/B contracts for every listed path", async () => {
 		if (suite === "B") {
@@ -185,12 +203,22 @@ describe("api method matrix", () => {
 		}
 		if (suite === "A") {
 			expect(await rawMethod("TRACE", "/api/me")).toBe(405);
+			expect(await rawMethod("MKCOL", "/api/me")).toBe(405);
+			expect(await rawMethod("PROPFIND", "/api/accounts")).toBe(405);
 		}
-		expect((await api("/api/me")).status).toBe(200);
+		const me = await api("/api/me");
+		expect(me.status).toBe(200);
+		const meBody = (await me.json()) as { email?: string; name?: string };
+		expect(meBody.email).toEqual(expect.any(String));
+		noSecrets(meBody);
 		expect((await api("/api/accounts")).status).toBe(200);
 		if (suite === "A") {
 			for (const path of GETS.filter((p) => p !== "/api/me" && p !== "/api/accounts")) {
-				expect((await api(path)).status).toBe(409);
+				const missing = await api(path);
+				expect(missing.status).toBe(409);
+				expect(await missing.json()).toMatchObject({
+					error: { code: "account_missing" },
+				});
 			}
 		}
 		expect(
@@ -237,11 +265,15 @@ describe("api method matrix", () => {
 			body: JSON.stringify({ token: PAT }),
 		});
 		expect(created.status).toBe(201);
-		const account = (await created.json()) as { id: string; token_last4?: string };
-		expect(JSON.stringify(account)).not.toContain(PAT);
-		expect(JSON.stringify(account)).not.toContain("token_ciphertext");
-		expect(JSON.stringify(account)).not.toContain('"iv"');
-		expect(JSON.stringify(account)).not.toContain('"ct"');
+		const account = (await created.json()) as {
+			id: string;
+			login?: string;
+			token_last4?: string;
+			is_active?: boolean;
+		};
+		expect(account.login).toBe("octocat");
+		expect(account.is_active).toBe(true);
+		noSecrets(account);
 		const envelopes = d1Rows("SELECT token_ciphertext FROM accounts");
 		expect(envelopes.length).toBeGreaterThan(0);
 		const envelope = String(envelopes[0]?.token_ciphertext ?? "");
@@ -253,9 +285,17 @@ describe("api method matrix", () => {
 		expect(parsedEnvelope.iv).toEqual(expect.any(String));
 		expect(parsedEnvelope.ct).toEqual(expect.any(String));
 		expect(parsedEnvelope.tag).toEqual(expect.any(String));
-		expect(JSON.stringify(await (await api("/api/live")).json())).not.toContain(PAT);
+		const liveBody = await (await api("/api/live")).json();
+		noSecrets(liveBody);
 		const listed = await api("/api/accounts");
-		expect(JSON.stringify(await listed.json())).not.toContain(PAT);
+		expect(listed.status).toBe(200);
+		const listedBody = (await listed.json()) as { accounts: Array<Record<string, unknown>> };
+		expect(listedBody.accounts[0]).toMatchObject({
+			id: account.id,
+			login: "octocat",
+			is_active: true,
+		});
+		noSecrets(listedBody);
 		const logPath = process.env.GIRAFFE_WRANGLER_LOG;
 		expect(
 			(
@@ -272,16 +312,18 @@ describe("api method matrix", () => {
 			body: JSON.stringify({ token: PAT_401 }),
 		});
 		expect(unauthGithub.status).toBe(401);
-		const unauthBody = JSON.stringify(await unauthGithub.json());
-		expect(unauthBody).not.toContain(PAT_401);
-		expect(unauthBody).not.toContain(PAT);
+		const unauthJson = await unauthGithub.json();
+		expect(unauthJson).toMatchObject({ error: { code: "github_unauthorized" } });
+		noSecrets(unauthJson);
 		const scopeRes = await api("/api/accounts", {
 			method: "POST",
 			headers: { origin, "content-type": "application/json" },
 			body: JSON.stringify({ token: PAT_SCOPE }),
 		});
 		expect(scopeRes.status).toBe(400);
-		expect(JSON.stringify(await scopeRes.json())).not.toContain(PAT_SCOPE);
+		const scopeJson = await scopeRes.json();
+		expect(scopeJson).toMatchObject({ error: { code: "scopes_missing" } });
+		noSecrets(scopeJson);
 		if (logPath) {
 			const log = readFileSync(logPath, "utf8");
 			expect(log).not.toContain(PAT);
@@ -295,6 +337,15 @@ describe("api method matrix", () => {
 			body: JSON.stringify({}),
 		});
 		expect(refreshed.status).toBe(200);
+		const refreshBody = (await refreshed.json()) as {
+			fetched_at?: string;
+			kinds?: string[];
+			truncated_kinds?: string[];
+		};
+		expect(refreshBody.fetched_at).toEqual(expect.any(String));
+		expect(refreshBody.kinds).toEqual(expect.arrayContaining(["repos", "issues", "prs", "alerts"]));
+		expect(Array.isArray(refreshBody.truncated_kinds)).toBe(true);
+		noSecrets(refreshBody);
 		const repoRefresh = await api("/api/refresh", {
 			method: "POST",
 			headers: { origin, "content-type": "application/json" },
@@ -313,28 +364,93 @@ describe("api method matrix", () => {
 			}),
 		});
 		expect(repoRefresh.status).toBe(200);
+		const repoRefreshBody = (await repoRefresh.json()) as { kinds?: string[] };
+		expect(repoRefreshBody.kinds?.length).toBeGreaterThan(0);
+		noSecrets(repoRefreshBody);
 		const reposGet = await api("/api/repos");
 		expect(reposGet.status).toBe(200);
-		const reposBody = (await reposGet.json()) as {
-			repos: Array<{ name_with_owner?: string; owner_login?: string }>;
-			truncated: boolean;
-			fetched_at?: string;
+		const reposBody = (await reposGet.json()) as Record<string, unknown> & {
+			repos: Array<Record<string, unknown>>;
 		};
-		expect(Array.isArray(reposBody.repos)).toBe(true);
+		snapshotMeta(reposBody);
 		expect(reposBody.truncated).toBe(false);
-		expect(reposBody.fetched_at).toEqual(expect.any(String));
 		expect(reposBody.repos[0]).toMatchObject({
 			name_with_owner: "octocat/hello-world",
+			name: "hello-world",
 			owner_login: "octocat",
+			stargazer_count: 1,
+			fork_count: 0,
 			url: "https://github.com/octocat/hello-world",
 		});
-		const detailsBody = (await (await api("/api/repos/octocat/hello-world")).json()) as {
-			default_branch?: string;
-			url?: string;
-		};
+		noSecrets(reposBody);
+		const detailsBody = (await (await api("/api/repos/octocat/hello-world")).json()) as Record<
+			string,
+			unknown
+		>;
+		snapshotMeta(detailsBody);
 		expect(detailsBody).toMatchObject({
 			default_branch: "main",
 			url: "https://github.com/octocat/hello-world",
+		});
+		noSecrets(detailsBody);
+		const issuesBody = (await (await api("/api/issues")).json()) as Record<string, unknown>;
+		snapshotMeta(issuesBody);
+		expect(Array.isArray(issuesBody.issues)).toBe(true);
+		const prsBody = (await (await api("/api/prs")).json()) as Record<string, unknown>;
+		snapshotMeta(prsBody);
+		expect(Array.isArray(prsBody.pull_requests)).toBe(true);
+		const alertsBody = (await (await api("/api/alerts")).json()) as Record<string, unknown>;
+		snapshotMeta(alertsBody);
+		expect(alertsBody).toMatchObject({
+			unavailable: expect.any(Boolean),
+			dependabot_open: expect.any(Number),
+			code_scanning_open: expect.any(Number),
+		});
+		expect(Array.isArray(alertsBody.items)).toBe(true);
+		const insightsBody = (await (await api("/api/insights")).json()) as Record<string, unknown>;
+		snapshotMeta(insightsBody);
+		expect(Array.isArray(insightsBody.insights)).toBe(true);
+		const digestBody = (await (await api("/api/digest")).json()) as Record<string, unknown>;
+		snapshotMeta(digestBody);
+		expect(digestBody).toMatchObject({
+			day: expect.any(String),
+			baseline_missing: expect.any(Boolean),
+		});
+		expect(Array.isArray(digestBody.repos)).toBe(true);
+		const trafficBody = (await (
+			await api("/api/repos/octocat/hello-world/traffic")
+		).json()) as Record<string, unknown>;
+		snapshotMeta(trafficBody);
+		expect(trafficBody).toMatchObject({
+			forbidden: false,
+			views: { count: expect.any(Number), uniques: expect.any(Number) },
+			clones: { count: expect.any(Number), uniques: expect.any(Number) },
+		});
+		const securityBody = (await (
+			await api("/api/repos/octocat/hello-world/security")
+		).json()) as Record<string, unknown>;
+		snapshotMeta(securityBody);
+		expect(securityBody).toMatchObject({
+			unavailable: expect.any(Boolean),
+			dependabot_open: expect.any(Number),
+			code_scanning_open: expect.any(Number),
+		});
+		const languagesBody = (await (
+			await api("/api/repos/octocat/hello-world/languages")
+		).json()) as Record<string, unknown>;
+		snapshotMeta(languagesBody);
+		expect(languagesBody.languages).toMatchObject({ TypeScript: 1 });
+		const notifSnap = (await (await api("/api/notifications")).json()) as Record<
+			string,
+			unknown
+		> & {
+			notifications: Array<Record<string, unknown>>;
+		};
+		snapshotMeta(notifSnap);
+		expect(notifSnap.notifications[0]).toMatchObject({
+			id: "123",
+			unread: true,
+			name_with_owner: "octocat/hello-world",
 		});
 		const snapRows = d1Rows("SELECT kind, fetched_at FROM snapshots ORDER BY kind");
 		expect(snapRows.length).toBeGreaterThan(0);
@@ -350,36 +466,44 @@ describe("api method matrix", () => {
 		for (const path of GETS.filter((p) => p !== "/api/me" && p !== "/api/accounts")) {
 			const res = await api(path);
 			expect(res.status).toBe(200);
-			expect(JSON.stringify(await res.json())).not.toContain(PAT);
+			const body = await res.json();
+			noSecrets(body);
+			snapshotMeta(body as Record<string, unknown>);
 		}
 		expect(await githubCount()).toBe(before);
 		expect(d1Rows("SELECT kind, payload, fetched_at FROM snapshots ORDER BY kind")).toEqual(
 			beforeRows,
 		);
 		expect(d1Rows("SELECT login, last_used_at, is_active FROM accounts")).toEqual(beforeAccounts);
-		expect(
-			(
-				await api("/api/notifications/read", {
-					method: "POST",
-					headers: { origin, "content-type": "application/json" },
-					body: JSON.stringify({ id: "123" }),
-				})
-			).status,
-		).toBe(200);
+		const readRes = await api("/api/notifications/read", {
+			method: "POST",
+			headers: { origin, "content-type": "application/json" },
+			body: JSON.stringify({ id: "123" }),
+		});
+		expect(readRes.status).toBe(200);
+		const readBody = await readRes.json();
+		noSecrets(readBody);
 		const afterRead = await api("/api/notifications");
 		expect(afterRead.status).toBe(200);
 		const notifBody = (await afterRead.json()) as {
 			notifications: Array<{ id?: string; unread?: boolean }>;
 		};
+		expect(notifBody).toEqual(readBody);
 		expect(notifBody.notifications[0]).toMatchObject({ id: "123", unread: false });
 		expect(notifBody.notifications[1]).toMatchObject({ id: "456", unread: true });
+		const readAllRes = await api("/api/notifications/read-all", {
+			method: "POST",
+			headers: { origin },
+		});
+		expect(readAllRes.status).toBe(200);
+		const readAllBody = await readAllRes.json();
+		const afterAll = await (await api("/api/notifications")).json();
+		expect(afterAll).toEqual(readAllBody);
 		expect(
-			(await api("/api/notifications/read-all", { method: "POST", headers: { origin } })).status,
-		).toBe(200);
-		const afterAll = (await (await api("/api/notifications")).json()) as {
-			notifications: Array<{ id?: string; unread?: boolean }>;
-		};
-		expect(afterAll.notifications.every((row) => row.unread === false)).toBe(true);
+			(afterAll as { notifications: Array<{ unread?: boolean }> }).notifications.every(
+				(row) => row.unread === false,
+			),
+		).toBe(true);
 		const created2 = await api("/api/accounts", {
 			method: "POST",
 			headers: { origin, "content-type": "application/json" },
@@ -389,10 +513,12 @@ describe("api method matrix", () => {
 		const account2 = (await created2.json()) as { id: string; login?: string; is_active?: boolean };
 		expect(account2.login).toBe("hubot");
 		expect(account2.is_active).toBe(false);
-		expect(
-			(await api(`/api/accounts/${account2.id}/activate`, { method: "POST", headers: { origin } }))
-				.status,
-		).toBe(200);
+		const activated = await api(`/api/accounts/${account2.id}/activate`, {
+			method: "POST",
+			headers: { origin },
+		});
+		expect(activated.status).toBe(200);
+		expect(await activated.json()).toMatchObject({ id: account2.id, is_active: true });
 		expect((await api("/api/repos")).status).toBe(409);
 		expect(
 			(await api(`/api/accounts/${account.id}/activate`, { method: "POST", headers: { origin } }))

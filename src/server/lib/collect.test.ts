@@ -169,6 +169,32 @@ describe("collectRepos", () => {
 		const out = await collectRepos(gh, "tok");
 		expect(out.truncated).toBe(true);
 		expect(out.repos).toEqual([]);
+		const note = client({
+			api: () =>
+				Response.json([
+					{
+						id: "1",
+						unread: true,
+						reason: "mention",
+						updated_at: "t",
+						subject: { title: "hello", url: "u" },
+						repository: { full_name: "o/n" },
+					},
+				]),
+		});
+		expect((await collectKind(note, "tok", "notifications", [], 40)).truncated).toBe(true);
+		const actions = client({
+			api: () =>
+				Response.json({
+					workflow_runs: Array.from({ length: 20 }, (_, i) => ({
+						id: i,
+						name: "n".repeat(80),
+						html_url: "u",
+						status: "completed",
+					})),
+				}),
+		});
+		expect((await collectKind(actions, "tok", "repo:o/n:actions", [], 80)).truncated).toBe(true);
 		let pages = 0;
 		const bulky = client({
 			graphql: () => {
@@ -517,6 +543,16 @@ describe("collectKind", () => {
 			graphql: () => ({ repository: { vulnerabilityAlerts: { nodes: [] } } }),
 		});
 		expect((await collectKind(nextScan, "tok", "alerts", ["o/n"])).truncated).toBe(true);
+		const nextSec = client({
+			graphql: () => ({ repository: { vulnerabilityAlerts: { nodes: [] } } }),
+			api: () =>
+				new Response("[]", {
+					headers: {
+						link: '<https://api.github.com/repos/o/n/code-scanning/alerts?page=2>; rel="next"',
+					},
+				}),
+		});
+		expect((await collectKind(nextSec, "tok", "repo:o/n:security", [])).truncated).toBe(true);
 		const forbiddenSec = client({
 			graphql: async () => {
 				forbiddenSec.graphqlErrors = [{ type: "FORBIDDEN" }];
