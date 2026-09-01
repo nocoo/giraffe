@@ -57,6 +57,7 @@ src/server/
   lib/token-crypto.ts
   lib/github-client.ts             # githubFetch + githubApi
   lib/github-map.ts                # REST → 03 形状
+  lib/access-config.ts             # 生产 team/AUD
   lib/access-identity.ts
   lib/snapshot-pages.ts            # 1.5MB 切分 / 组装
   lib/insights.ts
@@ -98,9 +99,9 @@ G1 禁止把 `ENVIRONMENT=development` / `test`、`GITHUB_API_BASE`、`ACCESS_JW
 
 | | development（有 `GITHUB_API_BASE`，无 team/aud） | test | production |
 |--|--------------------------------------------------|------|------------|
-| Access | 短路，不验 JWT | 必验。必须同时有 `CF_ACCESS_TEAM_DOMAIN`、`CF_ACCESS_AUD`、`ACCESS_JWKS_URL`。JWKS 只信 `ACCESS_JWKS_URL`。`iss` 必须精确等于 `CF_ACCESS_TEAM_DOMAIN`（无尾斜杠）。`alg` 仅 `RS256`。校验 `iss`/`aud`/`exp`，有 `nbf` 则验 | 必验；忽略 `ACCESS_JWKS_URL`，JWKS 只信 `CF_ACCESS_TEAM_DOMAIN`。同样 RS256 + `iss`/`aud`/`exp`，有 `nbf` 则验 |
+| Access | 短路，不验 JWT | 必验。必须同时有 `CF_ACCESS_TEAM_DOMAIN`、`CF_ACCESS_AUD`、`ACCESS_JWKS_URL`。JWKS 只信 `ACCESS_JWKS_URL`。`iss` 必须精确等于 `CF_ACCESS_TEAM_DOMAIN`（无尾斜杠）。`alg` 仅 `RS256`。校验 `iss`/`aud`/`exp`，有 `nbf` 则验 | 必验；忽略 `ACCESS_JWKS_URL`。`iss`/`aud` 默认 `src/server/lib/access-config.ts`（`https://nocoo.cloudflareaccess.com` / 本仓库 AUD）。env 非空则覆盖。同样 RS256 + `iss`/`aud`/`exp`，有 `nbf` 则验 |
 | GitHub origin | 必须 `GITHUB_API_BASE`；不匹配则 throw 且不 fetch | 同左 | 忽略 `GITHUB_API_BASE`，只许 `https://api.github.com` |
-| 缺 Access 配置 | 允许短路 | 受保护路由 500 `access_misconfigured` | 受保护路由 500 `access_misconfigured` |
+| 缺 Access 配置 | 允许短路 | 受保护路由 500 `access_misconfigured` | 用 `access-config.ts` 常量，不 500 |
 
 `githubFetch` 的 origin 比较：`new URL(url).origin === new URL(base).origin`，禁止 hostname 对 origin。`POST /graphql` 的 url 必须是 `{base}/graphql`。
 
@@ -502,7 +503,7 @@ L2 fixture 仓用 `octocat/hello-world`。
 2. 该 Worker 在付费档。免费档不得绑定自定义域。
 3. `wrangler.toml`：`workers_dev = false`，`preview_urls = false`，无 `[env.test]`，无 `remote = true`，无 development/test `[vars]`。
 4. 生产 D1 `giraffe-db` 已创建，`database_id` 已填真实 UUID；已对**远程**库执行 `schema.sql`（不是 persist 目录）。
-5. Secrets：`TOKEN_ENCRYPTION_KEY_V1`、`TOKEN_ENCRYPTION_KEY_CURRENT`、`CF_ACCESS_TEAM_DOMAIN`、`CF_ACCESS_AUD`。
+5. Secrets：`TOKEN_ENCRYPTION_KEY_V1`、`TOKEN_ENCRYPTION_KEY_CURRENT`。Access team/AUD 在 `src/server/lib/access-config.ts`，**不要**写入 `wrangler.toml` `[vars]`（否则本机与 L2 套件 A 无法短路）。
 6. 先 `vite build`（阶段 1 可用占位 `dist/client`），再 `wrangler deploy`。
 7. 部署后 `GET https://giraffe.hexly.ai/api/live` 不得在无 Access 的匿名请求中返回业务数据（live 本身公开，只含 version/environment/`d1_marker`）。`GET /api/me` 无 JWT 必须 401。
 

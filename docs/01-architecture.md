@@ -176,7 +176,7 @@ database_id = "<prod>"
 ### 6.1 Cloudflare Access（谁能打开控制台）
 
 - 生产自定义域挂 Access 应用。策略在 Cloudflare Dashboard，不进仓库。
-- Worker secrets / vars：`CF_ACCESS_TEAM_DOMAIN`（如 `https://<team>.cloudflareaccess.com`）、`CF_ACCESS_AUD`（Access 应用 audience）。缺任一则生产请求失败关闭，不得放行。
+- 生产 Access `iss`/`aud` 写在 `src/server/lib/access-config.ts`（team `nocoo`）。不要放进 `wrangler.toml` `[vars]`。L2 套件 B 才用 env 覆盖。
 - 中间件读取 `Cf-Access-Jwt-Assertion`，用该 team 的 JWKS 验签，并校验 `iss`、`aud`、`exp`。只验签名不够。失败 401。
 - 从 JWT 取 email / name，仅用于顶栏展示，不作为 GitHub 身份。
 - Access 短路当且仅当：`ENVIRONMENT === "development"`，且已设 `GITHUB_API_BASE`，且 `CF_ACCESS_TEAM_DOMAIN` 与 `CF_ACCESS_AUD` 都未设。该值**禁止**写入会随 `wrangler deploy` 上去的 `[vars]`。本机 `dev:server` 只用 `.dev.vars`。L2/L3 只用 runner `--env-file`。缺省、未知、或生产部署中出现 `development` 但没有 `GITHUB_API_BASE` → **不得短路**，按生产验 JWT。禁止用 `Host`、`X-Forwarded-*` 或域名后缀判断。细则见 [04](04-server.md)。
