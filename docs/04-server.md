@@ -25,11 +25,13 @@
 | 无可用 PAT | HTTP **409**，`code: "account_missing"`。不用 412 |
 | 无快照 | HTTP **409**，`code: "snapshot_missing"`。GET 不回源、不写库 |
 | 刷新时机 | 无 Cron。GET 不得刷新。只接受 `POST /api/refresh`。何时调用由 05，Server 不调度 |
-| GitHub 出站 | 只走 REST。`githubFetch` 是除 Access JWKS 外唯一 `fetch` |
+| GitHub 出站 | 同一允许 origin 上的 REST 与 `POST /graphql`。除 Access JWKS 外唯一 `fetch` 是 `githubFetch` |
+| 出站上限 | 单次请求 `githubFetch` ≤ **40**。达到后停止后续 GitHub 调用，已写入的快照 `truncated: true`。40+1（JWKS）低于 Workers 免费档 50 subrequest，不要求付费计划 |
 | 账号主键 | `login` 唯一。再次粘贴同一 login 则 **upsert**（保留 `id`，重加密 token） |
 | 删除当前账号 | 不自动激活其它账号；之后快照类接口 409 `account_missing` |
 | 查询参数 | 首版 GET 无 filter/sort。筛选在 Client |
 | 快照响应 | GET 成功体 = 03 对应逻辑 kind 的 JSON。分页在服务端拼好，不暴露 `kind#n` |
+| 多语句 D1 | 快照替换、激活、插入并激活必须 `DB.batch`。禁止跨 await 的非 batch 多写 |
 
 ---
 
@@ -75,21 +77,9 @@ tests/api/                         # L2 真 HTTP。由 scripts/run-e2e.ts 跑
 
 ## 4. Env
 
-```ts
-interface Env {
-  DB: D1Database;
-  ASSETS: Fetcher;
-  ENVIRONMENT?: string;
-  TOKEN_ENCRYPTION_KEY_CURRENT: string;
-  TOKEN_ENCRYPTION_KEY_V1?: string;
-  CF_ACCESS_TEAM_DOMAIN?: string;
-  CF_ACCESS_AUD?: string;
-  GITHUB_API_BASE?: string;
-  ACCESS_JWKS_URL?: string;
-}
-```
+Wrangler 生成的绑定类型是 `Env` 的底。`env.ts` 只补充文档化的 secrets / vars，**不要**给整个 `Env` 加宽 index signature。
 
-动态读取 `TOKEN_ENCRYPTION_KEY_V${n}`，不把 V2+ 写死在类型里。缺当前版本密钥 → 500 `encryption_misconfigured`。
+`TOKEN_ENCRYPTION_KEY_V<n>` 用辅助函数读取：参数 `n` 为整数，拼出 `TOKEN_ENCRYPTION_KEY_V${n}`，**仅当**该字符串匹配 `/^TOKEN_ENCRYPTION_KEY_V\d+$/` 才去 `env` 上取值。缺当前版本密钥 → 500 `encryption_misconfigured`。
 
 `ENVIRONMENT` 归一：
 
@@ -100,17 +90,19 @@ interface Env {
 | 空、`production` | production |
 | 其它 | 当 production（Access **不**短路） |
 
-G1 禁止把 `ENVIRONMENT=development` / `test`、`GITHUB_API_BASE`、`ACCESS_JWKS_URL` 写入 `wrangler.toml`。
+G1 禁止把 `ENVIRONMENT=development` / `test`、`GITHUB_API_BASE`、`ACCESS_JWKS_URL` 写入 `wrangler.toml`。Dashboard / secrets 仍可能误配，因此短路条件不得只看 `ENVIRONMENT`。
+
+**Access 短路**当且仅当：模式为 development **且** `CF_ACCESS_TEAM_DOMAIN` 与 `CF_ACCESS_AUD` 都未设置。若模式为 development 但二者任一已设置（生产误把 `ENVIRONMENT=development` 配进 Worker）→ **不得短路**，按 production 验 JWT；缺 JWKS 配置则受保护路由 500 `access_misconfigured`。`GET /api/live` 仍公开。
 
 模式行为：
 
-| | development | test | production |
-|--|-------------|------|------------|
-| Access | 短路，不验 JWT | 必验；JWKS 只信 `ACCESS_JWKS_URL` | 必验；忽略 `ACCESS_JWKS_URL`，JWKS 只信 `CF_ACCESS_TEAM_DOMAIN` |
+| | development（且无 team/aud） | test | production |
+|--|------------------------------|------|------------|
+| Access | 短路，不验 JWT | 必验。必须同时有 `CF_ACCESS_TEAM_DOMAIN`、`CF_ACCESS_AUD`、`ACCESS_JWKS_URL`。JWKS 只信 `ACCESS_JWKS_URL`。`iss` 必须精确等于 `CF_ACCESS_TEAM_DOMAIN`（无尾斜杠）。`alg` 仅 `RS256`。校验 `iss`/`aud`/`exp`，有 `nbf` 则验 | 必验；忽略 `ACCESS_JWKS_URL`，JWKS 只信 `CF_ACCESS_TEAM_DOMAIN`。同样 RS256 + `iss`/`aud`/`exp` |
 | GitHub origin | 必须 `GITHUB_API_BASE`；不匹配则 throw 且不 fetch | 同左 | 忽略 `GITHUB_API_BASE`，只许 `https://api.github.com` |
-| 缺 Access 配置 | 短路，不需要 team/aud | 缺 `ACCESS_JWKS_URL` 或 aud → 失败关闭 | 缺 `CF_ACCESS_TEAM_DOMAIN` 或 `CF_ACCESS_AUD` → 失败关闭 |
+| 缺 Access 配置 | 允许短路 | 受保护路由 500 `access_misconfigured` | 受保护路由 500 `access_misconfigured` |
 
-`githubFetch` 的 origin 比较：`new URL(url).origin === new URL(base).origin`，禁止 hostname 对 origin。
+`githubFetch` 的 origin 比较：`new URL(url).origin === new URL(base).origin`，禁止 hostname 对 origin。`POST /graphql` 的 url 必须是 `{base}/graphql`。
 
 ---
 
@@ -133,25 +125,30 @@ G1 禁止把 `ENVIRONMENT=development` / `test`、`GITHUB_API_BASE`、`ACCESS_JW
 | 401 | `access_unauthorized` | Access JWT 缺/坏/过期/错 aud/错 iss |
 | 401 | `github_unauthorized` | 出站 GitHub 401（坏 PAT） |
 | 403 | `origin_forbidden` | POST/DELETE 缺 Origin，或 Origin 不在白名单 |
+| 403 | `github_forbidden` | 出站 GitHub 403，且不是 traffic/security/alerts 写入 `forbidden`/`unavailable` 的情况 |
 | 404 | `not_found` | 未知 `/api`、未知 `accounts/:id`、单仓 GitHub 404 |
 | 405 | `method_not_allowed` | 已注册路径上的未列出方法 |
 | 409 | `account_missing` | 需要 active 账号但没有 |
 | 409 | `snapshot_missing` | 该逻辑 kind 无快照 |
 | 409 | `capability_missing` | 刷新某 kind 时 token 级 scope 不足 |
 | 500 | `encryption_misconfigured` | 密钥环缺当前版本 |
-| 502 | `github_error` | GitHub 5xx，或 origin 已通过后的网络失败 |
+| 500 | `access_misconfigured` | 必验 JWT 但 team/aud/JWKS 缺 |
+| 500 | `db_error` | D1 抛错 |
+| 500 | `internal_error` | 未归类异常；`message` 经 sanitize，不得含栈里的密钥 |
+| 502 | `github_error` | GitHub 5xx、422、body 非 JSON、origin 已通过后的网络失败 |
+| 503 | `github_rate_limited` | GitHub 429。不转发 `Retry-After` 以外的 GitHub 头；不把 token 写入 message |
 
-成功 JSON 不得出现 `error` 字段。成功不得把 token、信封、`token_ciphertext` 放入 body。
+成功 JSON 不得出现 `error` 字段。成功不得把 token、信封、`token_ciphertext` 放入 body。Hono `onError` 把未列出的异常变成 500 `internal_error`；禁止未捕获导致非 JSON 响应。
 
 ### 5.2 Access
 
 文件：`src/server/middleware/access.ts`、`src/server/lib/access-identity.ts`。
 
 - 公开：**仅** `GET /api/live`。其它 `/api/*` 都要过中间件。
-- 读 `Cf-Access-Jwt-Assertion`。验签 + `iss` + `aud` + `exp`。只验签不够。
-- development 短路：不读 JWT，身份固定 `{ "email": "dev@local", "name": "dev" }`。
+- 读 `Cf-Access-Jwt-Assertion`。验签 + `iss` + `aud` + `exp`。只验签不够。`alg` 仅 RS256。
+- 短路条件见第 4 节（development **且**未设置 team/aud）。短路时不读 JWT，身份固定 `{ "email": "dev@local", "name": "dev" }`。
 - 禁止用 `Host`、`X-Forwarded-*`、域名后缀决定是否短路。
-- JWKS `fetch` 只允许写在 `access.ts`（G1 白名单）。
+- JWKS `fetch` 只允许写在 `access.ts`（G1 白名单）。该 `fetch` 不计入 GitHub 的 40 次上限。
 
 ### 5.3 Origin（CSRF）
 
@@ -182,7 +179,9 @@ G1 禁止把 `ENVIRONMENT=development` / `test`、`GITHUB_API_BASE`、`ACCESS_JW
 
 ### 5.5 请求体
 
-有 JSON 的 POST：`Content-Type` 必须是 `application/json`（可带 `charset=utf-8`），否则 400 `validation_failed`。无 body 的 POST（activate、read-all）不要求 Content-Type。Body 上限：accounts 4 KiB，其它 64 KiB，超过 400。
+有 JSON 的 POST：`Content-Type` 必须是 `application/json`（可带 `charset=utf-8`），否则 400 `validation_failed`。无 body 的 POST（activate、read-all）不要求 Content-Type。
+
+Body 上限：accounts 4 KiB，其它 64 KiB。**先** `arrayBuffer()`，用 `byteLength` 判断，超限 400，再 `TextDecoder` + `JSON.parse`。禁止先 `request.json()` 再量大小。
 
 ---
 
@@ -190,16 +189,17 @@ G1 禁止把 `ENVIRONMENT=development` / `test`、`GITHUB_API_BASE`、`ACCESS_JW
 
 `src/server/lib/github-client.ts`：
 
-- `githubFetch(env, url, init)`：按第 4 节核对 origin，通过才 `fetch`。这是 github-client 里唯一的 `fetch` 调用点。
+- `githubFetch(env, url, init)`：按第 4 节核对 origin，通过才 `fetch`。这是 github-client 里唯一的 `fetch` 调用点。每次成功进入 `fetch` 前把本请求计数 +1，**第 41 次起不再调用 fetch**，抛内部截断（调用方标 `truncated: true`）。
 - `githubApi(env, token, path, init)`：拼 `base + path`（path 以 `/` 开头），加头后走 `githubFetch`：
   - `Authorization: Bearer <token>`
   - `Accept: application/vnd.github+json`
   - `X-GitHub-Api-Version: 2022-11-28`
   - `User-Agent: giraffe/<APP_VERSION>`
-- 列表分页：`per_page=100`，最多 **10** 页。还有下一页则调用方把快照 `truncated: true`。
-- 单仓扇出（issues / prs / alerts）：最多前 **100** 个 `name_with_owner`，超出则 `truncated: true`。
+- `githubGraphql(env, token, query, variables)`：`POST {base}/graphql`，同一套头（`Accept: application/json`），走 `githubFetch`。响应 `errors` 非空 → 502 `github_error`。
+- GraphQL 分页：每种查询最多 **2** 页（`first: 100`）。REST 列表：`per_page=100`，最多 **2** 页。超出 → `truncated: true`。
+- 任意成功的 `githubApi` / `githubGraphql` 之后更新该账号 `last_used_at`（与 refresh 结束时的更新合并成一次 batch 即可）。
 
-GitHub 401 → 抛出后映射 401 `github_unauthorized`。GitHub 5xx → 502 `github_error`。刷新 traffic/security 时单仓 403/404：写入 03 的 `forbidden` / `unavailable`，**不**把整次 refresh 打成 403。
+状态映射：GitHub 401 → 401 `github_unauthorized`。429 → 503 `github_rate_limited`。5xx / 422 / 非 JSON → 502 `github_error`。单仓 traffic/security/alerts 的 403/404：写入 03 的 `forbidden` / `unavailable`，不把整次 refresh 打成 403。其它 403 → 403 `github_forbidden`。单仓 details 404 → 404 `not_found`。
 
 L1：注入 fake fetch；setup 默认 fetch throw（`network denied in L1`）。
 
@@ -212,6 +212,7 @@ L1：注入 fake fetch；setup 默认 fetch throw（`network denied in L1`）。
 - 只接受 classic PAT：`^ghp_[A-Za-z0-9]{36}$`。`github_pat_` 或其它 → 400 `validation_failed`。
 - `TOKEN_ENCRYPTION_KEY_CURRENT` 为十进制整数（如 `"1"`）。密钥字节：32 字节，secret 为 64 hex 或 32 字节标准 base64。
 - IV：每次加密 12 字节 `crypto.getRandomValues`，禁止复用。
+- Web Crypto `AES-GCM` 的 encrypt 结果是 **密文 ‖ 16 字节 tag**。拆信封：`tag` = 末 16 字节，`ct` = 其余部分。二者与 `iv` 均用标准 base64（非 URL）。解密时先 `ct ‖ tag` 再 `decrypt`。`ct` **不含** tag。
 - 信封：`{"v":1,"iv":"<b64>","ct":"<b64>","tag":"<b64>"}`，写入 `token_ciphertext`。
 - 解密用行上 `key_version` 选 `TOKEN_ENCRYPTION_KEY_V<n>`。
 - `token_last4`：PAT 最后 4 个字符。
@@ -226,7 +227,11 @@ L1：注入 fake fetch；setup 默认 fetch throw（`network denied in L1`）。
 
 `schema.sql` **不含** `_test_marker`。L2/L3 runner 在执行 schema 之后另跑 03 的 marker SQL。生产禁止建 `_test_marker`。
 
-访问层只用绑定参数，不用字符串拼 SQL。读快照：按逻辑 kind 取 `kind` 与全部 `kind#n`，交给 `snapshot-pages` 组装。写：先删该逻辑 kind 全部物理行再插入。切分规则见 03 §3。
+访问层只用绑定参数，不用字符串拼 SQL。读快照：按逻辑 kind 取 `kind` 与全部 `kind#n`，交给 `snapshot-pages` 组装。
+
+写快照：同一 `DB.batch` 里删除该逻辑 kind 的全部物理行并插入新页。激活：同一 batch 里 `UPDATE … is_active=0` 再 `UPDATE … is_active=1 WHERE id=?`。插入首个账号：`INSERT` 时直接 `is_active=1`，不要先插 0 再改。batch 失败整段回滚，禁止留下半页快照或两个 `is_active=1`。`accounts_one_active` 冲突 → 再读再写一次，仍失败则 500 `db_error`。不得手写双活。
+
+`last_used_at`：任意成功 GitHub 调用（`POST /api/accounts` 的 `/user`、refresh、notifications 已读）后更新，可与相邻写合并进同一 batch。
 
 `GET /api/live` 用 **D1 binding** 读 `_test_marker`：有 `value=test` 则 `d1_marker: "test"`，否则 `null`。不得用 wrangler CLI 查同一 SQLite 充当 live 实现。
 
@@ -250,47 +255,47 @@ Body（Zod）：`kinds` 可选。
 
 或 `{}`。
 
-- 缺 `kinds` 或 `"all"`：刷新全部跨仓 GitHub kind：`repos`、`issues`、`prs`、`alerts`、`notifications`，然后重算 `insights` 与 `digest`。
-- 数组：只刷新列出的逻辑 kind。`insights` / `digest` 不打 GitHub，只从已有（含本次刚写的）`repos`/`issues`/`alerts`/`snapshot_days` 重算；源快照缺失 → 409 `snapshot_missing`。
+- 缺 `kinds` 或 `"all"`：刷新全部跨仓 GitHub kind：`repos`、`issues`、`prs`、`alerts`、`notifications`。
+- 数组：只对列出的 GitHub kind 出站。`issues` / `prs` / `alerts` 需要已有 `repos` 快照（或本次数组**同时**含 `repos` 并先写它）。否则 409 `snapshot_missing`，**不得**为了扇出偷偷拉 `repos`。
+- `insights` / `digest` 出现在数组里：不打 GitHub。每次 **成功的** refresh（无论 kinds）结束时都按 03 §5 重算并写 `insights` 与 `digest`：源不足则跳过该派生写入；仅当 kinds **显式**要求该派生且源不足时才 409 `snapshot_missing`。
 - `kinds: []`、未知字符串、非法 `repo:` 形状 → 400 `validation_failed`。
 - 单仓 kind：`repo:{owner}/{name}:details` 等，与 03 逻辑 kind 一致。`owner`/`name` 各匹配 `^[A-Za-z0-9_.-]+$`，且不是 `.` / `..`。
 
 Token 级 scope：刷新 `notifications` 需要 `capabilities.notifications === true`，否则 409 `capability_missing`（不写库）。其它跨仓 kind 需要 `capabilities.repo === true`。
 
-GitHub REST（均经 `githubApi`）：
+GitHub 调用（均经 `githubFetch`，计入 40 次上限）。跨仓 `repos` / `issues` / `prs` 用 GraphQL，以便一次拿到 03 所需字段（含 PR 的 `additions`、`deletions`、`reviewDecision`）：
 
 | 逻辑 kind | 方法 |
 |-----------|------|
-| `repos` | `GET /user/repos?per_page=100&affiliation=owner,collaborator,organization_member&page=` |
-| `issues` | 对至多 100 仓 `GET /repos/{o}/{n}/issues?state=open&per_page=100`（过滤 `pull_request` 字段，只要 issue） |
-| `prs` | 对至多 100 仓 `GET /repos/{o}/{n}/pulls?state=open&per_page=100` |
-| `alerts` | 每仓 `GET /repos/{o}/{n}/dependabot/alerts?state=open` 与 `GET /repos/{o}/{n}/code-scanning/alerts?state=open`。全仓均 403/404 → `unavailable: true` |
-| `notifications` | `GET /notifications?per_page=100`（默认未读） |
-| `repo:…:details` | `GET /repos/{o}/{n}` |
-| `repo:…:actions` | `GET /repos/{o}/{n}/actions/runs?per_page=100` |
-| `repo:…:traffic` | `GET /repos/{o}/{n}/traffic/views` 与 `/traffic/clones` |
-| `repo:…:security` | 该仓 dependabot + code scanning 计数 |
-| `repo:…:issues` / `:prs` | 与跨仓同一 REST，仅该仓 |
-| `repo:…:releases` | `GET /repos/{o}/{n}/releases?per_page=100` |
-| `repo:…:languages` | `GET /repos/{o}/{n}/languages` |
-| `repo:…:contributors` | `GET /repos/{o}/{n}/contributors?per_page=100` |
+| `repos` | GraphQL `viewer.repositories`（`first: 100`，最多 2 页） |
+| `issues` | GraphQL：对已有 repos 的 `name_with_owner` 做 `search(type: ISSUE, query: "is:issue is:open repo:o/n …")`，query 里最多 20 个 `repo:`，必要时拆成第 2 次。不要每仓 REST 扇出 |
+| `prs` | GraphQL `search(type: ISSUE, query: "is:pr is:open repo:…")`，节点上取 `additions`、`deletions`、`reviewDecision`。规则同 issues |
+| `alerts` | GraphQL `vulnerabilityAlerts`（Dependabot）最多 2 页；code scanning 用 REST，**最多 10 仓**（取 repos 列表前 10）。其余仓不拉。全失败 → `unavailable: true` |
+| `notifications` | REST `GET /notifications?per_page=100`，最多 2 页 |
+| `repo:…:details` | REST `GET /repos/{o}/{n}` |
+| `repo:…:actions` | REST `GET /repos/{o}/{n}/actions/runs?per_page=100`，最多 2 页 |
+| `repo:…:traffic` | REST views + clones（2 次） |
+| `repo:…:security` | 该仓 vulnerabilityAlerts GraphQL 1 次 + code scanning REST 1 次 |
+| `repo:…:issues` / `:prs` | GraphQL 限定单个 `repo:o/n`，PR 仍取 additions/deletions/reviewDecision |
+| `repo:…:releases` | REST releases，最多 2 页 |
+| `repo:…:languages` | REST languages |
+| `repo:…:contributors` | REST contributors，最多 2 页 |
 
 映射在 `github-map.ts`，字段名对齐 03（snake_case）。
 
-副作用（成功后，同一请求内）：
+副作用（成功出站之后，**同一** `DB.batch` 能合并的合并）：
 
-1. 写对应 snapshots（含分页）。
-2. 若写了 `repos`：按 `fetched_at` 的 UTC 日 upsert `snapshot_days`（stars/forks/open_issues/repos 合计），删除早于 30 天的行。
-3. 若本次使得 `repos`+`issues`+`alerts` 都存在：重算并写 `insights`。
-4. 若写了 `repos`：重算并写 `digest` 当前副本（无昨天 → `baseline_missing: true`，delta 全 `null`）。
-5. 更新 `accounts.last_used_at`。
+1. 写对应 snapshots（删除+插入同一 batch）。
+2. 若写了 `repos`：按 `fetched_at` 的 UTC 日 upsert `snapshot_days`（合计 + `by_repo`），删除早于 30 天的行。
+3. 重算 `insights`（需 repos+issues+alerts 均已存在）与 `digest`（需 repos + 当天 snapshot_days）。digest 每仓 delta 来自今天与昨天 `by_repo` 按 `name_with_owner` 对齐。
+4. 更新 `accounts.last_used_at`。
 
 响应：
 
 - 单个 kind：200，body 与对应 GET 成功体相同。
 - `"all"` 或多个 kind：200 `{ "fetched_at": "<iso>", "kinds": ["repos", "..."] }`，不内嵌 payload。
 
-顺序：串行调用 GitHub，避免无界并发。
+GitHub 调用串行。`githubFetch` 满 40 次则停止后续出站，已完成的 kind 照常写入并 `truncated: true`；未开始的 kind 本轮不写。
 
 ---
 
@@ -308,7 +313,7 @@ GitHub REST（均经 `githubApi`）：
 
 `opportunities` 封闭枚举，可多选：`stale_push`、`many_issues`、`open_alerts`。`alerts` 数组复制该仓 alerts `items`。
 
-digest 只对比 `day` 与 UTC 日历昨天。无昨天行：`baseline_missing: true`，三个 delta 与每仓 delta 均为 `null`，禁止填 `0`。
+digest 只对比 `day` 与 UTC 日历昨天的 `snapshot_days`（含 `by_repo`）。无昨天行：`baseline_missing: true`，账号级与每仓 delta 均为 `null`，禁止填 `0`。昨天没有的仓：该仓 delta 为 `null`。
 
 ---
 
@@ -404,7 +409,7 @@ Origin 必过。未知 id → 404。删除行，CASCADE 快照。204 无 body。
 
 ### `POST /api/notifications/read`
 
-Body：`{ "id": "<github thread id>" }`。Origin 必过。无账号 → 409。`POST /notifications/threads/{id}` 到 GitHub，再把当前 notifications 快照里该 id 的 `unread` 置 `false`（无快照则 409 `snapshot_missing`，仍可向 GitHub 标记？**否**：无快照 409，不打 GitHub）。200，body 同 GET notifications。
+Body：`{ "id": "<github thread id>" }`。Origin 必过。无账号 → 409。无 notifications 快照 → 409 `snapshot_missing`，**不**打 GitHub。有快照则 `PATCH /notifications/threads/{id}`（GitHub 标记已读），再把快照里该 id 的 `unread` 置 `false`。200，body 同 GET notifications。
 
 ### `POST /api/notifications/read-all`
 
@@ -422,10 +427,10 @@ L1 必测（注入 DB / fake fetch，无网络、无 wrangler）：
 
 | 模块 | 例子 |
 |------|------|
-| `token-crypto` | 往返解密；IV 不重复；错 key_version |
+| `token-crypto` | 往返解密；IV 不重复；错 key_version；ct 不含 tag |
 | `sanitize` | PAT / Bearer 被剥掉 |
-| `githubFetch` | 生产忽略 `GITHUB_API_BASE`；development origin 不匹配不调用 fetch |
-| `access` | 缺 iss/aud/过期 → 401；production 忽略 fixture JWKS |
+| `githubFetch` | 生产忽略 `GITHUB_API_BASE`；development origin 不匹配不调用 fetch；第 41 次不 fetch |
+| `access` | 缺 iss/aud/过期 → 401；production 忽略 fixture JWKS；development+team 不短路 |
 | `origin` | 缺头 / 错 Origin → 403；GET 不查 Origin |
 | `snapshot-pages` | 切分与组装；单元素过大 `truncated` |
 | `digest` | 邻日差量；无昨天 → `baseline_missing` 且 delta `null` |
@@ -469,21 +474,29 @@ L2 fixture 仓用 `octocat/hello-world`。
 | # | 提交 | 内容 | 证明 |
 |---|------|------|------|
 | 1 | `feat: add server env and error helpers` | `env.ts` `errors.ts` `sanitize.ts` | L1 |
-| 2 | `feat: add token envelope crypto` | `token-crypto.ts` | L1 往返与 IV |
-| 3 | `feat: add githubFetch origin gate` | `github-client.ts` | L1 不匹配不 fetch；生产忽略 base |
+| 2 | `feat: add token envelope crypto` | `token-crypto.ts` | L1 往返、IV、ct/tag 拆分 |
+| 3 | `feat: add githubFetch origin gate` | `github-client.ts` | L1：不匹配不 fetch；生产忽略 base；第 41 次不 fetch |
 | 4 | `feat: add snapshot paging helpers` | `snapshot-pages.ts` | L1 |
-| 5 | `feat: add insights and digest math` | `insights.ts` `digest.ts` | L1 |
-| 6 | `feat: add d1 schema and stores` | `schema.sql` 与 `lib/db/*` | L1 用 fake D1 |
-| 7 | `feat: add access and origin middleware` | `middleware/*` `access-identity.ts` | L1 |
-| 8 | `feat: add live api and l2 runner` | Hono 挂载、`routes/live.ts`、替换占位 fetch、**实现** `scripts/run-e2e.ts` + `tests/api/live.test.ts` | L1 + L2 A/B（仅 live） |
+| 5 | `feat: add insights and digest math` | `insights.ts` `digest.ts`（含 `by_repo`） | L1 |
+| 6 | `feat: add d1 schema and stores` | `schema.sql` 与 `lib/db/*`（含 batch 与 `accounts_one_active`） | L1 用 fake D1 |
+| 7 | `feat: add access and origin middleware` | `middleware/*` `access-identity.ts` | L1：development+team 不短路；test 验 iss |
+| 8 | `feat: add live api and l2 runner` | Hono、`routes/live.ts`、替换占位 fetch、**实现** `run-e2e.ts` + `tests/api/live.test.ts` | L1 + L2 A/B（仅 live） |
 | 9 | `feat: add me endpoint` | `routes/me.ts` | L1 + L2 A/B |
-| 10 | `feat: add accounts crud api` | `routes/accounts.ts` 加解密入库 | L1 + L2（含 PAT 非泄漏与信封） |
-| 11 | `feat: add refresh for list snapshots` | `refresh.ts` `github-map.ts` 跨仓 kind | L1 + L2：refresh 后 GET 能读到 |
-| 12 | `feat: add snapshot get routes` | `routes/snapshots.ts` | L1 + L2 409/200/只读 |
-| 13 | `feat: add notification write-through` | `routes/notifications.ts` | L1 + L2；无快照不打 GitHub |
-| 14 | `feat: add single-repo snapshot api` | `routes/repos.ts` + refresh 单仓 kind | L1 + L2 |
+| 10 | `feat: add accounts crud api` | `routes/accounts.ts` | L1 + L2（PAT 非泄漏与信封） |
+| 11 | `feat: add snapshot get routes` | `routes/snapshots.ts` 全部跨仓 GET | L1 + L2：无快照 409，不打 GitHub |
+| 12 | `feat: add refresh for repos` | `refresh.ts` + repos GraphQL 映射 | L2：refresh 响应体为 03 JSON；随后 GET `/api/repos` 200 |
+| 13 | `feat: add refresh for issues and prs` | issues/prs GraphQL | L2 GET 200 |
+| 14 | `feat: add refresh for alerts` | alerts 收集 | L2 GET 200 |
+| 15 | `feat: add digest and insights refresh` | 派生写入 | L2 GET digest/insights |
+| 16 | `feat: add notifications snapshot api` | notifications GET + refresh | L2 |
+| 17 | `feat: add notification write-through` | PATCH 已读与 read-all | L2；无快照不打 GitHub |
+| 18 | `feat: add single-repo details api` | details GET + refresh | L2 |
+| 19 | `feat: add single-repo traffic security` | traffic + security | L2 |
+| 20 | `feat: add single-repo actions releases` | actions + releases | L2 |
+| 21 | `feat: add single-repo issues and prs` | 单仓 issues/prs | L2 |
+| 22 | `feat: add languages and contributors` | languages + contributors | L2 |
 
-步骤 8 起 L2 为硬门。步骤 8 不得只交 live 而不交 runner。步骤 10 未绿之前不要做 refresh（没有 PAT）。
+步骤 8 起 L2 为硬门。步骤 8 不得只交 live 而不交 runner。步骤 10 未绿之前不要做 refresh。步骤 11 先于 refresh，使 409 路径可测；步骤 12 起才出站。每步只引入表格「内容」列的那些路径。
 
 阶段 1 完成线见 02 §10：上表全部接口 L1 + L2 A/B 绿，覆盖率四项 ≥ 95%，无 Client 功能代码。
 
@@ -493,6 +506,8 @@ L2 fixture 仓用 `octocat/hello-world`。
 
 - 新 `/api` 路径或把 409 改成 412
 - GET 回源或写 D1
+- 只凭 `ENVIRONMENT=development` 短路 Access（必须同时未设置 team/aud）
+- 每仓 REST 扇出 issues/prs（必须用 GraphQL 聚合）
 - `github-client.ts` / `access.ts` 以外的 `fetch`
 - Client 或 L3 代码
 - 把 fixture PAT 写进仓库非测试路径；L2 fixture 必须是明显假值
