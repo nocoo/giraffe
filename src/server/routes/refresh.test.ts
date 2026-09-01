@@ -533,18 +533,26 @@ describe("refresh route", () => {
 	it("treats fetch cap as truncation and keeps batches small", async () => {
 		const e = env();
 		let lastBatch = 0;
-		const prepared: string[] = [];
+		const sqlOf = new WeakMap<object, string>();
 		const raw = e.DB;
 		e.DB = {
 			prepare: (sql: string) => {
-				prepared.push(sql);
-				return raw.prepare(sql);
+				const stmt = raw.prepare(sql);
+				const originalBind = stmt.bind.bind(stmt);
+				stmt.bind = (...values: unknown[]) => {
+					const bound = originalBind(...values);
+					sqlOf.set(bound as object, sql);
+					return bound;
+				};
+				sqlOf.set(stmt as object, sql);
+				return stmt;
 			},
 			batch: async (statements: D1PreparedStatement[]) => {
 				lastBatch = statements.length;
 				if (statements.length > 2) {
-					expect(prepared.some((sql) => sql.includes("snapshots"))).toBe(true);
-					expect(prepared.some((sql) => sql.includes("last_used_at"))).toBe(true);
+					const sqls = statements.map((statement) => sqlOf.get(statement as object) ?? "");
+					expect(sqls.some((sql) => sql.includes("snapshots"))).toBe(true);
+					expect(sqls.some((sql) => sql.includes("last_used_at"))).toBe(true);
 				}
 				return raw.batch(statements);
 			},
