@@ -1,7 +1,8 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-const ROUTE = /["'`]\/api(?:\/|\b)|basePath\(\s*["']\/api["']|route\(\s*["']\/api["']/;
+export const API_ROUTE_PATTERN =
+	/["'`]\/api(?:\/|\b)|basePath\(\s*["']\/api["']|route\(\s*["']\/api["']/;
 
 async function collect(dir: string, acc: string[]): Promise<void> {
 	const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
@@ -23,7 +24,7 @@ export async function hasApiRoutes(): Promise<boolean> {
 	await collect("src/server", files);
 	for (const file of files) {
 		const text = await readFile(file, "utf8");
-		if (ROUTE.test(text)) {
+		if (API_ROUTE_PATTERN.test(text)) {
 			return true;
 		}
 	}

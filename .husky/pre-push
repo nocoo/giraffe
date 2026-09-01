@@ -1,3 +1,16 @@
+ZERO=0000000000000000000000000000000000000000
+RANGES=""
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+	[ -z "$local_sha" ] && continue
+	[ "$local_sha" = "$ZERO" ] && continue
+	if [ -z "$remote_sha" ] || [ "$remote_sha" = "$ZERO" ]; then
+		RANGES="$RANGES $local_sha"
+	else
+		RANGES="$RANGES $remote_sha..$local_sha"
+	fi
+done
+export GITLEAKS_LOG_OPTS="${RANGES:-origin/main..HEAD}"
+
 bun run test:e2e:api &
 PID_L2=$!
 bun run gate:security &
@@ -6,3 +19,4 @@ FAIL=0
 wait $PID_L2 || FAIL=1
 wait $PID_G2 || FAIL=1
 exit $FAIL
+

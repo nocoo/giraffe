@@ -23,13 +23,15 @@ async function runCommand(cmd: string[], label: string): Promise<boolean> {
 const arg = process.argv[2];
 const tasks: Array<() => Promise<boolean>> = [];
 if (arg !== "--deps") {
-	const range = `${process.env.GITLEAKS_LOG_OPTS ?? "origin/main..HEAD"}`;
-	tasks.push(() =>
-		runCommand(
-			["gitleaks", "detect", "--no-banner", "--redact", `--log-opts=${range}`],
-			"gitleaks",
-		),
-	);
+	const ranges = (process.env.GITLEAKS_LOG_OPTS ?? "origin/main..HEAD").trim().split(/\s+/);
+	for (const range of ranges) {
+		tasks.push(() =>
+			runCommand(
+				["gitleaks", "detect", "--no-banner", "--redact", `--log-opts=${range}`],
+				`gitleaks ${range}`,
+			),
+		);
+	}
 }
 if (arg !== "--secrets") {
 	tasks.push(() => runCommand(["osv-scanner", "--lockfile=bun.lock"], "osv-scanner"));

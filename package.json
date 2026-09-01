@@ -5,7 +5,7 @@
 	"type": "module",
 	"scripts": {
 		"dev:server": "bun run scripts/dev-server.ts",
-		"typecheck": "tsc --noEmit",
+		"typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.scripts.json",
 		"lint": "biome check --error-on-warnings .",
 		"lint:fix": "biome check --write .",
 		"test": "vitest run",

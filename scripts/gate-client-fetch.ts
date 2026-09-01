@@ -1,6 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { parseSync } from "oxc-parser";
+import { collectFetchAliases, isFetchCall, walk } from "./fetch-ast";
 
 const ALLOW = "src/client/lib/api.ts";
 
@@ -13,33 +14,10 @@ async function collect(dir: string, acc: string[]): Promise<void> {
 			continue;
 		}
 		const name = String(entry.name);
-		if (
-			(name.endsWith(".ts") || name.endsWith(".tsx")) &&
-			!name.endsWith(".test.ts") &&
-			!name.endsWith(".test.tsx")
-		) {
+		if ((name.endsWith(".ts") || name.endsWith(".tsx")) && !name.includes(".test.")) {
 			acc.push(full);
 		}
 	}
-}
-
-function isFetchCall(node: Record<string, unknown>): boolean {
-	if (node.type !== "CallExpression") {
-		return false;
-	}
-	const callee = node.callee as Record<string, unknown> | undefined;
-	if (!callee) {
-		return false;
-	}
-	if (callee.type === "Identifier" && callee.name === "fetch") {
-		return true;
-	}
-	if (callee.type === "MemberExpression") {
-		const obj = callee.object as Record<string, unknown> | undefined;
-		const prop = callee.property as Record<string, unknown> | undefined;
-		return prop?.name === "fetch" && (obj?.name === "self" || obj?.name === "globalThis");
-	}
-	return false;
 }
 
 function urlIsApi(node: Record<string, unknown>): boolean {
@@ -59,23 +37,6 @@ function urlIsApi(node: Record<string, unknown>): boolean {
 	return false;
 }
 
-function walk(node: unknown, visit: (n: Record<string, unknown>) => void): void {
-	if (!node || typeof node !== "object") {
-		return;
-	}
-	const rec = node as Record<string, unknown>;
-	visit(rec);
-	for (const value of Object.values(rec)) {
-		if (Array.isArray(value)) {
-			for (const item of value) {
-				walk(item, visit);
-			}
-		} else {
-			walk(value, visit);
-		}
-	}
-}
-
 const files: string[] = [];
 await collect("src/client", files);
 
@@ -84,8 +45,9 @@ for (const file of files) {
 	const rel = relative(".", file).replaceAll("\\", "/");
 	const text = await readFile(file, "utf8");
 	const parsed = parseSync(file, text);
+	const aliases = collectFetchAliases(parsed.program);
 	walk(parsed.program, (node) => {
-		if (!isFetchCall(node)) {
+		if (!isFetchCall(node, aliases)) {
 			return;
 		}
 		if (rel !== ALLOW) {
