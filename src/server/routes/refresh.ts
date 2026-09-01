@@ -229,7 +229,10 @@ export async function postRefresh(
 		);
 		const preview = splitPages("insights", insights);
 		if (!preview.truncated || explicitInsights) {
-			written.insights = { ...insights, truncated: preview.truncated };
+			written.insights = {
+				...assemblePages("insights", preview.pages),
+				truncated: preview.truncated,
+			};
 		}
 	}
 	const today = utcDay(fetchedAt);
@@ -250,7 +253,10 @@ export async function postRefresh(
 		);
 		const preview = splitPages("digest", digest as unknown as Record<string, unknown>);
 		if (!preview.truncated || explicitDigest) {
-			written.digest = { ...digest, truncated: preview.truncated };
+			written.digest = {
+				...assemblePages("digest", preview.pages),
+				truncated: preview.truncated,
+			};
 		}
 	}
 

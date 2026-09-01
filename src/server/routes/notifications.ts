@@ -7,6 +7,7 @@ import { readSnapshot, replaceSnapshotStmts } from "../lib/db/snapshots";
 import { ApiError, jsonOk } from "../lib/errors";
 import { createGithubClient } from "../lib/github-client";
 import { readJson } from "../lib/read-body";
+import { assemblePages, splitPages } from "../lib/snapshot-pages";
 import { decryptToken, parseKeyBytes } from "../lib/token-crypto";
 
 const readSchema = z.object({
@@ -49,12 +50,17 @@ async function persist(
 	const db = c.get("db");
 	const fetchedAt = new Date().toISOString();
 	const next = { ...snap, fetched_at: fetchedAt };
+	const preview = splitPages("notifications", next);
+	const assembled = {
+		...assemblePages("notifications", preview.pages),
+		truncated: preview.truncated,
+	};
 	const stmts = [
-		...replaceSnapshotStmts(db, accountId, "notifications", next, fetchedAt),
+		...replaceSnapshotStmts(db, accountId, "notifications", assembled, fetchedAt),
 		touchLastUsedStmt(db, accountId, fetchedAt),
 	];
 	await db.batch(stmts);
-	return jsonOk(next);
+	return jsonOk(assembled);
 }
 
 export async function postRead(

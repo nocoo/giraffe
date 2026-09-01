@@ -89,7 +89,7 @@ async function verifyJwt(
 	if (typeof payload.exp !== "number" || payload.exp <= now) {
 		throw new ApiError(401, "access_unauthorized", "expired");
 	}
-	if (typeof payload.nbf === "number" && payload.nbf > now) {
+	if (payload.nbf !== undefined && (typeof payload.nbf !== "number" || payload.nbf > now)) {
 		throw new ApiError(401, "access_unauthorized", "not yet valid");
 	}
 	try {
