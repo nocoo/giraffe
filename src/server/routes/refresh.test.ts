@@ -384,6 +384,12 @@ describe("refresh route", () => {
 		);
 		expect(res.status).toBe(200);
 		expect(notifications).toBe(0);
+		const body = (await res.json()) as { kinds: string[] };
+		expect(body.kinds).toEqual(["repos"]);
+		expect((await createApp().request("http://localhost/api/repos", {}, e)).status).toBe(200);
+		const later = await createApp().request("http://localhost/api/notifications", {}, e);
+		expect(later.status).toBe(409);
+		expect(await later.json()).toMatchObject({ error: { code: "snapshot_missing" } });
 	});
 
 	it("rejects missing capabilities and encryption", async () => {
