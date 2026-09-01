@@ -1,3 +1,7 @@
+import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const base = process.env.GIRAFFE_E2E ?? "http://127.0.0.1:17045";
@@ -68,6 +72,32 @@ async function api(path: string, init: RequestInit = {}, token = jwt): Promise<R
 async function githubCount(): Promise<number> {
 	const res = await fetch("http://127.0.0.1:17046/_count");
 	return Number(await res.text());
+}
+
+function d1Rows(sql: string): Array<Record<string, unknown>> {
+	const persist = process.env.GIRAFFE_PERSIST;
+	const config = process.env.GIRAFFE_CONFIG;
+	if (!persist || !config) {
+		return [];
+	}
+	const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
+	const raw = execFileSync(
+		join(root, "node_modules/.bin/wrangler"),
+		[
+			"d1",
+			"execute",
+			"giraffe-db",
+			"--local",
+			`--persist-to=${persist}`,
+			`--config=${config}`,
+			"--json",
+			"--command",
+			sql,
+		],
+		{ encoding: "utf8", cwd: root },
+	);
+	const parsed = JSON.parse(raw) as Array<{ results?: Array<Record<string, unknown>> }>;
+	return parsed[0]?.results ?? [];
 }
 
 describe("api method matrix", () => {
@@ -180,6 +210,19 @@ describe("api method matrix", () => {
 		expect(created.status).toBe(201);
 		const account = (await created.json()) as { id: string; token_last4?: string };
 		expect(JSON.stringify(account)).not.toContain(PAT);
+		const envelopes = d1Rows("SELECT token_ciphertext FROM accounts");
+		expect(envelopes.length).toBeGreaterThan(0);
+		const envelope = String(envelopes[0]?.token_ciphertext ?? "");
+		expect(envelope).not.toContain(PAT);
+		expect(envelope).toContain('"iv"');
+		expect(envelope).toContain('"ct"');
+		const listed = await api("/api/accounts");
+		expect(JSON.stringify(await listed.json())).not.toContain(PAT);
+		const logPath = process.env.GIRAFFE_WRANGLER_LOG;
+		if (logPath) {
+			const log = readFileSync(logPath, "utf8");
+			expect(log).not.toContain(PAT);
+		}
 		expect(
 			(
 				await api("/api/accounts", {
@@ -232,12 +275,20 @@ describe("api method matrix", () => {
 			}),
 		});
 		expect(repoRefresh.status).toBe(200);
+		const reposGet = await api("/api/repos");
+		expect(reposGet.status).toBe(200);
+		const reposBody = (await reposGet.json()) as { repos: unknown[]; truncated: boolean };
+		expect(Array.isArray(reposBody.repos)).toBe(true);
+		expect(reposBody.truncated).toBe(false);
+		const beforeRows = d1Rows("SELECT kind, payload FROM snapshots ORDER BY kind");
 		const before = await githubCount();
 		for (const path of GETS.filter((p) => p !== "/api/me" && p !== "/api/accounts")) {
 			const res = await api(path);
-			expect([200, 409]).toContain(res.status);
+			expect(res.status).toBe(200);
+			expect(JSON.stringify(await res.json())).not.toContain(PAT);
 		}
 		expect(await githubCount()).toBe(before);
+		expect(d1Rows("SELECT kind, payload FROM snapshots ORDER BY kind")).toEqual(beforeRows);
 		expect(
 			(
 				await api("/api/notifications/read", {

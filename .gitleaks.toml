@@ -1,0 +1,5 @@
+title = "giraffe"
+
+[[allowlists]]
+description = "Cloudflare Access audience hash is not a secret"
+paths = ['''src/server/lib/access-config\.ts''']

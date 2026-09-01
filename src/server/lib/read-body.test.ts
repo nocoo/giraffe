@@ -34,6 +34,16 @@ describe("readJson", () => {
 			readJson(
 				new Request("http://x", {
 					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: new Uint8Array([0xff, 0xfe, 0x22, 0x61, 0x22]),
+				}),
+				100,
+			),
+		).rejects.toBeInstanceOf(ApiError);
+		await expect(
+			readJson(
+				new Request("http://x", {
+					method: "POST",
 					headers: { "content-type": "application/json; charset=iso-8859-1" },
 					body: "{}",
 				}),

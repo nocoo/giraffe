@@ -46,6 +46,12 @@ describe("worker fetch", () => {
 		expect(
 			(await createApp().request("http://localhost/api/refresh", { method: "GET" }, e)).status,
 		).toBe(405);
+		expect(
+			(await createApp().request("http://localhost/api/live", { method: "HEAD" }, e)).status,
+		).toBe(405);
+		expect(
+			(await createApp().request("http://localhost/api/me", { method: "HEAD" }, e)).status,
+		).toBe(405);
 		const prod = { ...e, ENVIRONMENT: "production" as const };
 		const unauth = await createApp().request("http://localhost/api/me", {}, prod);
 		expect(unauth.status).toBe(401);

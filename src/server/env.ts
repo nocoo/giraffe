@@ -6,9 +6,12 @@ export type AppVars = {
 	identity: Identity;
 };
 
-export interface Env {
+interface CloudflareBindings {
 	DB: D1Database;
 	ASSETS: Fetcher;
+}
+
+export interface Env extends CloudflareBindings {
 	ENVIRONMENT?: string;
 	TOKEN_ENCRYPTION_KEY_CURRENT: string;
 	CF_ACCESS_TEAM_DOMAIN?: string;

@@ -57,24 +57,42 @@ export function clampToBudget(
 	}
 	const key = arrayKey(payload);
 	if (!key || !Array.isArray(payload[key])) {
-		const next = { truncated: true } as Collected;
+		const next = {
+			fetched_at: payload.fetched_at ?? "",
+			truncated: true,
+		} as Collected;
 		const bytes = utf8Bytes(JSON.stringify(next));
 		if (bytes > limit) {
 			return { payload: next, bytes: 0, capped: true };
 		}
 		return { payload: next, bytes, capped: true };
 	}
-	const items = [...(payload[key] as unknown[])];
-	while (items.length > 0) {
-		const next = { ...payload, [key]: items, truncated: true };
+	const items = payload[key] as unknown[];
+	let lo = 0;
+	let hi = items.length;
+	let best: Collected | undefined;
+	let bestBytes = 0;
+	while (lo <= hi) {
+		const mid = (lo + hi) >> 1;
+		const next = { ...payload, [key]: items.slice(0, mid), truncated: true };
 		const bytes = utf8Bytes(JSON.stringify(next));
 		if (bytes <= limit) {
-			return { payload: next, bytes, capped: true };
+			best = next;
+			bestBytes = bytes;
+			lo = mid + 1;
+		} else {
+			hi = mid - 1;
 		}
-		items.pop();
+	}
+	if (best) {
+		return { payload: best, bytes: bestBytes, capped: true };
 	}
 	const empty = { ...payload, [key]: [], truncated: true };
-	return { payload: empty, bytes: utf8Bytes(JSON.stringify(empty)), capped: true };
+	const emptyBytes = utf8Bytes(JSON.stringify(empty));
+	if (emptyBytes > limit) {
+		return { payload: empty, bytes: 0, capped: true };
+	}
+	return { payload: empty, bytes: emptyBytes, capped: true };
 }
 
 export function ownerName(nameWithOwner: string): { owner: string; name: string } {
@@ -204,7 +222,10 @@ export async function collectRepos(gh: GithubClient, token: string): Promise<Col
 				  }
 				| undefined;
 			const conn = viewer?.repositories;
-			nodes.push(...(conn?.nodes ?? []));
+			const page = (conn?.nodes ?? []).filter((node): node is Record<string, unknown> =>
+				Boolean(node && typeof node === "object"),
+			);
+			nodes.push(...page);
 			if (gh.graphqlErrors.length > 0) {
 				truncated = true;
 			}
@@ -319,6 +340,9 @@ async function collectAlerts(
 			scanning += mapped.length;
 			items.push(...mapped);
 			ok += 1;
+			if (nextPath(res)) {
+				truncated = true;
+			}
 		} catch (err) {
 			if (skipSoft(err)) {
 				truncated = true;
@@ -424,6 +448,7 @@ async function collectRepoKind(gh: GithubClient, token: string, kind: string): P
 					}
 					if (gh.graphqlErrors.length > 0) {
 						truncated = true;
+						unavailable = true;
 					}
 					count += repo.vulnerabilityAlerts?.nodes?.length ?? 0;
 					if (
@@ -450,6 +475,9 @@ async function collectRepoKind(gh: GithubClient, token: string, kind: string): P
 				);
 				const body = (await res.json()) as unknown;
 				scanning += Array.isArray(body) ? body.length : 0;
+				if (nextPath(res)) {
+					truncated = true;
+				}
 			} catch (err) {
 				if (skipSoft(err)) {
 					truncated = true;

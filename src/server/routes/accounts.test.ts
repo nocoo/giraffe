@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "../env";
 import { createApp } from "../index";
+import { insertAccountStmt } from "../lib/db/accounts";
+import { createDb } from "../lib/db/d1";
 import { openSqliteD1 } from "../lib/db/sqlite-d1";
 
 const PAT = `ghp_${"A".repeat(36)}`;
@@ -318,6 +320,65 @@ describe("accounts routes", () => {
 				)
 			).status,
 		).toBe(500);
+	});
+
+	it("retries a different-login active-account race as inactive", async () => {
+		vi.stubGlobal("fetch", async () => {
+			return new Response(JSON.stringify({ login: "octocat", avatar_url: "" }), {
+				headers: { "X-OAuth-Scopes": "repo, read:org, read:user, notifications" },
+			});
+		});
+		const raw = openSqliteD1(true);
+		const seed = createDb(raw);
+		await seed.batch([
+			insertAccountStmt(seed, {
+				id: "hub1",
+				login: "hub",
+				avatar_url: "",
+				token_ciphertext: "{}",
+				token_last4: "hub1",
+				key_version: 1,
+				scopes: "repo",
+				capabilities: "{}",
+				is_active: 1,
+				created_at: "t",
+				updated_at: "t",
+				last_used_at: null,
+			}),
+		]);
+		let counts = 0;
+		const e = {
+			...env(),
+			DB: {
+				prepare(sql: string) {
+					const stmt = raw.prepare(sql);
+					if (sql.replace(/\s+/g, " ").startsWith("SELECT COUNT(*)")) {
+						return {
+							bind: () => this,
+							first: async () => {
+								counts += 1;
+								return { n: counts === 1 ? 0 : 1 };
+							},
+							all: async () => stmt.all(),
+							run: async () => stmt.run(),
+						};
+					}
+					return stmt;
+				},
+				batch: (statements: D1PreparedStatement[]) => raw.batch(statements),
+			} as unknown as D1Database,
+		};
+		const created = await createApp().request(
+			"http://localhost/api/accounts",
+			{
+				method: "POST",
+				headers: { origin: "https://giraffe.dev.hexly.ai", "content-type": "application/json" },
+				body: JSON.stringify({ token: PAT }),
+			},
+			e,
+		);
+		expect(created.status).toBe(201);
+		expect(((await created.json()) as { is_active: boolean }).is_active).toBe(false);
 	});
 
 	it("rejects a missing encryption key", async () => {

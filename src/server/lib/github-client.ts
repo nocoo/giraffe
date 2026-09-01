@@ -62,6 +62,20 @@ function mapStatus(res: Response, body: string): never {
 	throw new ApiError(502, "github_error", "github error");
 }
 
+function dropNullNodes(value: unknown): unknown {
+	if (Array.isArray(value)) {
+		return value.filter((item) => item !== null).map(dropNullNodes);
+	}
+	if (value && typeof value === "object") {
+		const out: Record<string, unknown> = {};
+		for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+			out[key] = dropNullNodes(nested);
+		}
+		return out;
+	}
+	return value;
+}
+
 async function readJsonBody(res: Response): Promise<string> {
 	const text = await res.text();
 	try {
@@ -148,7 +162,11 @@ export function createGithubClient(env: Env, fetchImpl: FetchImpl = fetch): Gith
 			if (payload.data === null || typeof payload.data !== "object") {
 				throw new ApiError(502, "github_error", "github error");
 			}
-			return payload.data as Record<string, unknown>;
+			const data = payload.data as Record<string, unknown>;
+			if (errors.length > 0) {
+				return dropNullNodes(data) as Record<string, unknown>;
+			}
+			return data;
 		},
 	};
 	return client;

@@ -89,6 +89,16 @@ describe("createGithubClient", () => {
 		});
 		const data = await client.githubGraphql("t", "query { ok }", {});
 		expect(data.ok).toBe(true);
+		const dropped = createGithubClient(
+			env({ ENVIRONMENT: "development", GITHUB_API_BASE: "http://127.0.0.1:17046" }),
+			async () =>
+				Response.json({
+					data: { nodes: [null, { name: "kept" }] },
+					errors: [{ type: "FORBIDDEN" }],
+				}),
+		);
+		const cleaned = await dropped.githubGraphql("t", "q", {});
+		expect(cleaned.nodes).toEqual([{ name: "kept" }]);
 		expect(() => createGithubClient(env({ ENVIRONMENT: "development" }))).toThrow(ApiError);
 		const net = createGithubClient(
 			env({ ENVIRONMENT: "development", GITHUB_API_BASE: "http://127.0.0.1:17046" }),

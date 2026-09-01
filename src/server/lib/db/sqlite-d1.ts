@@ -54,6 +54,12 @@ class Stmt {
 				updated_at: v[10],
 				last_used_at: v[11],
 			};
+			if (this.mem.accounts.some((existing) => existing.login === row.login)) {
+				throw new Error("unique login");
+			}
+			if (row.is_active === 1 && this.mem.accounts.some((existing) => existing.is_active === 1)) {
+				throw new Error("accounts_one_active");
+			}
 			this.mem.accounts.push(row);
 			return [];
 		}

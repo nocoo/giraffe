@@ -501,4 +501,145 @@ describe("refresh route", () => {
 		expect(issues.status).toBe(200);
 		expect(((await issues.json()) as { truncated: boolean }).truncated).toBe(true);
 	});
+
+	it("treats fetch cap as truncation and keeps batches small", async () => {
+		const e = env();
+		let lastBatch = 0;
+		const raw = e.DB;
+		e.DB = {
+			prepare: (sql: string) => raw.prepare(sql),
+			batch: async (statements: D1PreparedStatement[]) => {
+				lastBatch = statements.length;
+				return raw.batch(statements);
+			},
+		} as D1Database;
+		await createAccount(e);
+		stubGithub();
+		const all = await createApp().request(
+			"http://localhost/api/refresh",
+			{ method: "POST", headers, body: JSON.stringify({}) },
+			e,
+		);
+		expect(all.status).toBe(200);
+		expect(lastBatch).toBeLessThan(80);
+		let n = 0;
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+			const url = String(input);
+			if (url.endsWith("/user")) {
+				return new Response(JSON.stringify({ login: "octocat", avatar_url: "" }), {
+					headers: { "X-OAuth-Scopes": "repo, read:org, read:user, notifications" },
+				});
+			}
+			n += 1;
+			if (url.includes("/notifications")) {
+				return new Response("[]", {
+					headers: { link: '<http://127.0.0.1:17046/notifications?page=2>; rel="next"' },
+				});
+			}
+			if (url.includes("/repos/")) {
+				return Response.json({ default_branch: "main", html_url: "u" });
+			}
+			throw new Error(`unexpected ${url}`);
+		});
+		const capped = await createApp().request(
+			"http://localhost/api/refresh",
+			{
+				method: "POST",
+				headers,
+				body: JSON.stringify({
+					kinds: ["notifications", "repo:octocat/hello-world:details"],
+				}),
+			},
+			e,
+		);
+		expect(capped.status).toBe(200);
+		expect(n).toBeGreaterThan(30);
+		const huge = env();
+		const hugeId = await createAccount(huge);
+		const hugeDb = createDb(huge.DB);
+		const repos = Array.from({ length: 40 }, (_, i) => ({
+			name_with_owner: `org/r${i}`,
+			open_issue_count: 0,
+			pushed_at: "2026-08-01T00:00:00.000Z",
+			stargazer_count: 0,
+			fork_count: 0,
+		}));
+		const items = repos.flatMap((repo) =>
+			Array.from({ length: 80 }, () => ({
+				name_with_owner: repo.name_with_owner,
+				source: "dependabot",
+				severity: "low",
+				summary: "s".repeat(2_000),
+				url: "https://example.com/a",
+			})),
+		);
+		const fetchedAt = "2026-09-01T00:00:00.000Z";
+		await hugeDb.batch(
+			replaceSnapshotStmts(hugeDb, hugeId, "repos", { truncated: false, repos }, fetchedAt),
+		);
+		await hugeDb.batch(
+			replaceSnapshotStmts(hugeDb, hugeId, "issues", { truncated: false, issues: [] }, fetchedAt),
+		);
+		await hugeDb
+			.prepare("INSERT INTO snapshots (account_id, kind, payload, fetched_at) VALUES (?, ?, ?, ?)")
+			.bind(
+				hugeId,
+				"alerts",
+				JSON.stringify({
+					truncated: false,
+					items,
+					unavailable: false,
+					dependabot_open: items.length,
+					code_scanning_open: 0,
+				}),
+				fetchedAt,
+			)
+			.run();
+		stubGithub();
+		const explicit = await createApp().request(
+			"http://localhost/api/refresh",
+			{ method: "POST", headers, body: JSON.stringify({ kinds: ["insights"] }) },
+			huge,
+		);
+		expect(explicit.status).toBe(200);
+		const explicitBody = (await explicit.json()) as { truncated: boolean };
+		expect(explicitBody.truncated).toBe(true);
+		const got = await createApp().request("http://localhost/api/insights", {}, huge);
+		expect(await got.json()).toEqual(explicitBody);
+		const skip = env();
+		const skipId = await createAccount(skip);
+		const skipDb = createDb(skip.DB);
+		await skipDb.batch(
+			replaceSnapshotStmts(skipDb, skipId, "repos", { truncated: false, repos }, fetchedAt),
+		);
+		await skipDb.batch(
+			replaceSnapshotStmts(skipDb, skipId, "issues", { truncated: false, issues: [] }, fetchedAt),
+		);
+		await skipDb
+			.prepare("INSERT INTO snapshots (account_id, kind, payload, fetched_at) VALUES (?, ?, ?, ?)")
+			.bind(
+				skipId,
+				"alerts",
+				JSON.stringify({
+					truncated: false,
+					items,
+					unavailable: false,
+					dependabot_open: items.length,
+					code_scanning_open: 0,
+				}),
+				fetchedAt,
+			)
+			.run();
+		stubGithub();
+		expect(
+			(
+				await createApp().request(
+					"http://localhost/api/refresh",
+					{ method: "POST", headers, body: JSON.stringify({ kinds: ["notifications"] }) },
+					skip,
+				)
+			).status,
+		).toBe(200);
+		expect((await createApp().request("http://localhost/api/insights", {}, skip)).status).toBe(409);
+	});
 });

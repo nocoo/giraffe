@@ -36,7 +36,9 @@ export async function readJson(request: Request, maxBytes: number): Promise<unkn
 		offset += chunk.byteLength;
 	}
 	try {
-		return JSON.parse(new TextDecoder().decode(bytes)) as unknown;
+		return JSON.parse(
+			new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes),
+		) as unknown;
 	} catch {
 		throw new ApiError(400, "validation_failed", "invalid json");
 	}

@@ -74,10 +74,13 @@ describe("collect helpers", () => {
 		const capped = clampToBudget({ truncated: false, items: ["aaaa", "bbbb", "cccc"] }, 40);
 		expect(capped.payload.truncated).toBe(true);
 		expect(capped.capped).toBe(true);
-		const noArray = clampToBudget({ truncated: false, languages: { ts: 1 } }, 1);
+		const noArray = clampToBudget({ truncated: false, fetched_at: "t", languages: { ts: 1 } }, 1);
 		expect(noArray.payload.truncated).toBe(true);
+		expect(noArray.payload.fetched_at).toBe("t");
+		expect(noArray.bytes).toBe(0);
 		const empty = clampToBudget({ truncated: false, items: ["zzzzzzzz"] }, 0);
 		expect(empty.payload.items).toEqual([]);
+		expect(empty.bytes).toBe(0);
 	});
 });
 
@@ -111,6 +114,17 @@ describe("collectRepos", () => {
 		expect(out.truncated).toBe(false);
 		expect((out.repos as unknown[]).length).toBe(2);
 		expect(page).toBe(2);
+		const withNull = client({
+			graphql: () => ({
+				viewer: {
+					repositories: {
+						nodes: [null as unknown as Record<string, unknown>, { nameWithOwner: "o/c" }],
+						pageInfo: { hasNextPage: false },
+					},
+				},
+			}),
+		});
+		expect(((await collectRepos(withNull, "tok")).repos as unknown[]).length).toBe(1);
 		const soft = client({
 			graphql: () => ({
 				viewer: { repositories: { nodes: [{ nameWithOwner: "o/a" }], pageInfo: {} } },
@@ -430,6 +444,26 @@ describe("collectKind", () => {
 		).toBe(0);
 		expect((await collectKind(gh, "tok", "repo:o/n:traffic", [])).forbidden).toBe(false);
 		expect((await collectKind(gh, "tok", "repo:o/n:security", [])).unavailable).toBe(false);
+		const nextScan = client({
+			api: () =>
+				new Response("[]", {
+					headers: {
+						link: '<https://api.github.com/repos/o/n/code-scanning/alerts?page=2>; rel="next"',
+					},
+				}),
+			graphql: () => ({ repository: { vulnerabilityAlerts: { nodes: [] } } }),
+		});
+		expect((await collectKind(nextScan, "tok", "alerts", ["o/n"])).truncated).toBe(true);
+		const forbiddenSec = client({
+			graphql: async () => {
+				forbiddenSec.graphqlErrors = [{ type: "FORBIDDEN" }];
+				return { repository: { vulnerabilityAlerts: { nodes: [{ id: "1" }] } } };
+			},
+			api: () => Response.json([]),
+		});
+		expect((await collectKind(forbiddenSec, "tok", "repo:o/n:security", [])).unavailable).toBe(
+			true,
+		);
 		expect((await collectKind(gh, "tok", "repo:o/n:issues", [])).issues).toEqual([]);
 		expect((await collectKind(gh, "tok", "repo:o/n:prs", [])).pull_requests).toEqual([]);
 		expect(

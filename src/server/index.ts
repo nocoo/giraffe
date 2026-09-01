@@ -36,67 +36,73 @@ function repoGet(
 export function createApp(): Hono<{ Bindings: Env; Variables: AppVars }> {
 	const app = new Hono<{ Bindings: Env; Variables: AppVars }>();
 	app.onError((err) => toErrorResponse(err));
+	app.use(async (c, next) => {
+		if (c.req.path.startsWith("/api") && c.req.method === "HEAD") {
+			return notAllowed();
+		}
+		await next();
+	});
 	app.notFound((c) => {
 		if (c.req.path.startsWith("/api")) {
 			return jsonError(404, "not_found", "not found");
 		}
 		return c.env.ASSETS.fetch(c.req.raw);
 	});
-	app.get("/api/live", async (c) => liveResponse(c.env, createDb(c.env.DB)));
 	allow(app, "/api/live", ["GET"]);
+	app.get("/api/live", async (c) => liveResponse(c.env, createDb(c.env.DB)));
 	app.use("/api/*", async (c, next) => {
 		c.set("db", createDb(c.env.DB));
 		c.set("identity", await resolveIdentity(c.req.raw, c.env));
 		assertOrigin(c.req.raw, envMode(c.env.ENVIRONMENT));
 		await next();
 	});
-	app.get("/api/me", (c) => c.json(c.get("identity")));
 	allow(app, "/api/me", ["GET"]);
+	app.get("/api/me", (c) => c.json(c.get("identity")));
+	allow(app, "/api/accounts", ["GET", "POST"]);
 	app.get("/api/accounts", (c) => getAccounts(c));
 	app.post("/api/accounts", (c) => postAccount(c));
-	allow(app, "/api/accounts", ["GET", "POST"]);
-	app.post("/api/accounts/:id/activate", (c) => activateAccount(c));
 	allow(app, "/api/accounts/:id/activate", ["POST"]);
-	app.delete("/api/accounts/:id", (c) => removeAccount(c));
+	app.post("/api/accounts/:id/activate", (c) => activateAccount(c));
 	allow(app, "/api/accounts/:id", ["DELETE"]);
-	app.post("/api/refresh", (c) => postRefresh(c));
+	app.delete("/api/accounts/:id", (c) => removeAccount(c));
 	allow(app, "/api/refresh", ["POST"]);
-	app.get("/api/repos", (c) => snapshotGet(c, "repos"));
+	app.post("/api/refresh", (c) => postRefresh(c));
 	allow(app, "/api/repos", ["GET"]);
-	app.get("/api/issues", (c) => snapshotGet(c, "issues"));
+	app.get("/api/repos", (c) => snapshotGet(c, "repos"));
 	allow(app, "/api/issues", ["GET"]);
-	app.get("/api/prs", (c) => snapshotGet(c, "prs"));
+	app.get("/api/issues", (c) => snapshotGet(c, "issues"));
 	allow(app, "/api/prs", ["GET"]);
-	app.get("/api/insights", (c) => snapshotGet(c, "insights"));
+	app.get("/api/prs", (c) => snapshotGet(c, "prs"));
 	allow(app, "/api/insights", ["GET"]);
-	app.get("/api/alerts", (c) => snapshotGet(c, "alerts"));
+	app.get("/api/insights", (c) => snapshotGet(c, "insights"));
 	allow(app, "/api/alerts", ["GET"]);
-	app.get("/api/notifications", (c) => snapshotGet(c, "notifications"));
+	app.get("/api/alerts", (c) => snapshotGet(c, "alerts"));
 	allow(app, "/api/notifications", ["GET"]);
-	app.get("/api/digest", (c) => snapshotGet(c, "digest"));
+	app.get("/api/notifications", (c) => snapshotGet(c, "notifications"));
 	allow(app, "/api/digest", ["GET"]);
-	app.get("/api/repos/:owner/:name", (c) => repoGet(c, "details"));
+	app.get("/api/digest", (c) => snapshotGet(c, "digest"));
 	allow(app, "/api/repos/:owner/:name", ["GET"]);
-	app.get("/api/repos/:owner/:name/actions", (c) => repoGet(c, "actions"));
+	app.get("/api/repos/:owner/:name", (c) => repoGet(c, "details"));
 	allow(app, "/api/repos/:owner/:name/actions", ["GET"]);
-	app.get("/api/repos/:owner/:name/traffic", (c) => repoGet(c, "traffic"));
+	app.get("/api/repos/:owner/:name/actions", (c) => repoGet(c, "actions"));
 	allow(app, "/api/repos/:owner/:name/traffic", ["GET"]);
-	app.get("/api/repos/:owner/:name/security", (c) => repoGet(c, "security"));
+	app.get("/api/repos/:owner/:name/traffic", (c) => repoGet(c, "traffic"));
 	allow(app, "/api/repos/:owner/:name/security", ["GET"]);
-	app.get("/api/repos/:owner/:name/issues", (c) => repoGet(c, "issues"));
+	app.get("/api/repos/:owner/:name/security", (c) => repoGet(c, "security"));
 	allow(app, "/api/repos/:owner/:name/issues", ["GET"]);
-	app.get("/api/repos/:owner/:name/prs", (c) => repoGet(c, "prs"));
+	app.get("/api/repos/:owner/:name/issues", (c) => repoGet(c, "issues"));
 	allow(app, "/api/repos/:owner/:name/prs", ["GET"]);
-	app.get("/api/repos/:owner/:name/releases", (c) => repoGet(c, "releases"));
+	app.get("/api/repos/:owner/:name/prs", (c) => repoGet(c, "prs"));
 	allow(app, "/api/repos/:owner/:name/releases", ["GET"]);
-	app.get("/api/repos/:owner/:name/languages", (c) => repoGet(c, "languages"));
+	app.get("/api/repos/:owner/:name/releases", (c) => repoGet(c, "releases"));
 	allow(app, "/api/repos/:owner/:name/languages", ["GET"]);
-	app.get("/api/repos/:owner/:name/contributors", (c) => repoGet(c, "contributors"));
+	app.get("/api/repos/:owner/:name/languages", (c) => repoGet(c, "languages"));
 	allow(app, "/api/repos/:owner/:name/contributors", ["GET"]);
-	app.post("/api/notifications/read", (c) => postRead(c));
+	app.get("/api/repos/:owner/:name/contributors", (c) => repoGet(c, "contributors"));
 	allow(app, "/api/notifications/read", ["POST"]);
-	app.post("/api/notifications/read-all", (c) => postReadAll(c));
+	app.post("/api/notifications/read", (c) => postRead(c));
 	allow(app, "/api/notifications/read-all", ["POST"]);
+	app.post("/api/notifications/read-all", (c) => postReadAll(c));
 	return app;
 }
 

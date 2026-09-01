@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createWriteStream } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { dirname, join } from "node:path";
@@ -33,6 +34,19 @@ function listen(
 			});
 		});
 	});
+}
+
+async function assertPortFree(port: number): Promise<void> {
+	try {
+		const res = await fetch(`http://127.0.0.1:${port}/api/live`);
+		if (res.ok) {
+			throw new Error(`port ${port} already in use`);
+		}
+	} catch (err) {
+		if (err instanceof Error && err.message.includes("already in use")) {
+			throw err;
+		}
+	}
 }
 
 async function waitLive(timeoutMs: number): Promise<void> {
@@ -137,6 +151,9 @@ database_id = "00000000-0000-4000-8000-000000000001"
 	}
 	await writeFile(envFile, `${lines.join("\n")}\n`);
 	await applySchema();
+	await assertPortFree(17045);
+	const logPath = join(tmp, `wrangler-${name}.log`);
+	await writeFile(logPath, "");
 	const wrangler = spawn(
 		wranglerBin,
 		[
@@ -148,8 +165,17 @@ database_id = "00000000-0000-4000-8000-000000000001"
 			`--config=${join(tmp, "wrangler.toml")}`,
 			`--env-file=${envFile}`,
 		],
-		{ cwd: root, stdio: "inherit" },
+		{ cwd: root, stdio: ["ignore", "pipe", "pipe"] },
 	);
+	const logStream = createWriteStream(logPath, { flags: "a" });
+	wrangler.stdout?.on("data", (chunk) => {
+		logStream.write(chunk);
+		process.stdout.write(chunk);
+	});
+	wrangler.stderr?.on("data", (chunk) => {
+		logStream.write(chunk);
+		process.stderr.write(chunk);
+	});
 	try {
 		await waitLive(60_000);
 		await run(
@@ -161,6 +187,9 @@ database_id = "00000000-0000-4000-8000-000000000001"
 				GIRAFFE_JWT: tokens.jwt,
 				GIRAFFE_JWT_BAD_AUD: tokens.jwtBadAud,
 				GIRAFFE_JWT_BAD_SIG: tokens.jwtBadSig,
+				GIRAFFE_WRANGLER_LOG: logPath,
+				GIRAFFE_PERSIST: persist,
+				GIRAFFE_CONFIG: join(tmp, "wrangler.toml"),
 			},
 		);
 	} finally {
@@ -169,6 +198,7 @@ database_id = "00000000-0000-4000-8000-000000000001"
 		if (wrangler.exitCode === null) {
 			wrangler.kill("SIGKILL");
 		}
+		logStream.end();
 	}
 }
 
