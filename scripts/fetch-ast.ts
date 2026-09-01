@@ -133,6 +133,17 @@ export function collectFetchAliases(root: unknown): Set<string> {
 	return aliases;
 }
 
+function isCallApply(node: Record<string, unknown> | undefined, aliases: Set<string>): boolean {
+	if (node?.type !== "MemberExpression") {
+		return false;
+	}
+	const method = propertyName(rec(node.property));
+	if (method !== "call" && method !== "apply") {
+		return false;
+	}
+	return exprIsFetchLike(rec(node.object), aliases);
+}
+
 export function isFetchCall(node: Record<string, unknown>, aliases: Set<string>): boolean {
 	if (node.type !== "CallExpression") {
 		return false;
@@ -141,7 +152,7 @@ export function isFetchCall(node: Record<string, unknown>, aliases: Set<string>)
 	if (!callee) {
 		return false;
 	}
-	if (exprIsFetchLike(callee, aliases)) {
+	if (exprIsFetchLike(callee, aliases) || isCallApply(callee, aliases)) {
 		return true;
 	}
 	const name = identName(callee);

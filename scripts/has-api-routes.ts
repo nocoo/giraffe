@@ -1,7 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { parseSync } from "oxc-parser";
-import { sourceHasApiRoutes } from "./api-route-ast";
+import { exportedApiBindings, importSpecs, isApiPath, sourceHasApiRoutes } from "./api-route-ast";
 
 async function collect(dir: string, acc: string[]): Promise<void> {
 	const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
@@ -18,6 +18,14 @@ async function collect(dir: string, acc: string[]): Promise<void> {
 	}
 }
 
+function resolveImport(fromFile: string, spec: string): string {
+	const base = resolve(dirname(fromFile), spec);
+	if (base.endsWith(".ts")) {
+		return base;
+	}
+	return `${base}.ts`;
+}
+
 export async function hasApiRoutes(): Promise<boolean> {
 	const routed: string[] = [];
 	await collect("src/server/routes", routed);
@@ -26,9 +34,24 @@ export async function hasApiRoutes(): Promise<boolean> {
 	}
 	const files: string[] = [];
 	await collect("src/server", files);
+	const programs = new Map<string, unknown>();
+	const exports = new Map<string, Map<string, string>>();
 	for (const file of files) {
 		const text = await readFile(file, "utf8");
-		if (sourceHasApiRoutes(parseSync(file, text).program)) {
+		const program = parseSync(file, text).program;
+		programs.set(resolve(file), program);
+		exports.set(resolve(file), exportedApiBindings(program));
+	}
+	for (const [file, program] of programs) {
+		const extra = new Set<string>();
+		for (const spec of importSpecs(program)) {
+			const target = resolveImport(file, spec.from);
+			const exported = exports.get(target)?.get(spec.imported);
+			if (exported && isApiPath(exported)) {
+				extra.add(spec.local);
+			}
+		}
+		if (sourceHasApiRoutes(program, extra)) {
 			return true;
 		}
 	}

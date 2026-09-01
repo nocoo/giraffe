@@ -31,6 +31,11 @@ describe("collectFetchAliases", () => {
 		expect(hasFetch("const request = fetch.bind(globalThis); request('/x')")).toBe(true);
 	});
 
+	it("detects fetch.call and fetch.apply", () => {
+		expect(hasFetch('fetch.call(globalThis, "/x")')).toBe(true);
+		expect(hasFetch('fetch.apply(globalThis, ["/x"])')).toBe(true);
+	});
+
 	it("does not flag unrelated calls", () => {
 		expect(hasFetch("const request = other; request('/x')")).toBe(false);
 	});
