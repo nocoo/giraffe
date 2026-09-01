@@ -1,145 +1,116 @@
 # Giraffe
 
-Personal GitHub monitoring console. Code name `giraffe`. A Cloudflare Worker proxies GitHub with user-pasted classic PATs and serves a Vite SPA. Plaintext PAT may exist only in the settings input (cleared after submit), that request body, Worker memory after decrypt, and the outbound GitHub `Authorization` header. It must never be persisted, bundled, logged, traced, or returned. D1 stores only the AES-GCM envelope.
+Personal GitHub monitoring console. Cloudflare Worker (Hono `/api/*`) + planned Vite SPA. Code name `giraffe`.
+Profile: ts-worker-web
+Direction: [docs/01-architecture.md](docs/01-architecture.md). Quality: [docs/02-quality.md](docs/02-quality.md). Frameworks must not rewrite this file.
 
-Direction document: [docs/01-architecture.md](docs/01-architecture.md). Numbered docs are Chinese; this file is the Agent handbook.
+## Sources of Truth
 
-## Tech Stack
+This file is the **contract**. Hooks, CI, and config are **enforcement**. If they disagree, raise enforcement; never lower this file.
+
+| Fact | Where |
+|---|---|
+| Agent handbook | this file |
+| Human docs | `docs/01`–`04` (`05` Client not written). No README.md |
+| Version | `package.json` `"version"` via `src/lib/version.ts` (`APP_VERSION`) |
+| Enforcement | `.husky/*`, `vitest.config.ts`, `scripts/gate-*.ts` |
+| Machine rules | global `AGENTS.md`, `rules/git-commit.md` |
+| Accidents | [Retrospective.md](Retrospective.md) |
+| Env files | `.dev.vars` gitignored. E2E uses runner `--env-file` only. Never deployable `[vars]` |
+
+## Project Invariants
+
+- Plaintext GitHub PAT may exist only in the settings input (cleared after submit), that request body, Worker memory after decrypt, and the outbound `Authorization` header. Never persist, bundle, log, trace, or return it. D1 stores only the AES-GCM envelope.
+- `workers_dev = false`. App gate is Cloudflare Access JWT (`iss` + `aud` + JWKS). No in-app login.
+- Phase 1 is Server only (`src/server`). No client feature code until [docs/05](docs/05) exists. Server tests must not import `src/client`. L3 is N/A until phase 2.
+- E2E is `--local --persist-to` only. Never remote `giraffe-db`. L2 persist `.wrangler/e2e/` :17045; L3 `.wrangler/e2e-pw/` :27045.
+- Strict TDD: failing tests stay in the working tree; only green L1 commits. `--no-verify` forbidden.
+- Caddy for `giraffe.dev.hexly.ai` is **not** registered yet.
+
+## Stack / Layout
 
 | Component | Choice |
 |---|---|
-| Language | TypeScript 7 (`strict`, `exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`) |
+| Language | TypeScript 7 strict (`exactOptionalPropertyTypes`) |
 | Package manager | Bun |
-| Runtime | Cloudflare Workers |
-| API | Hono under `/api/*` |
-| Frontend | React 19 SPA (Vite 8 + React Router) |
-| UI | Tailwind CSS v4 + shadcn/ui (Basalt Gen 2) |
-| Charts | Recharts |
-| Validation | Zod v4 |
-| Database | Cloudflare D1 `giraffe-db` (binding `DB`). E2E uses local Miniflare SQLite |
-| GitHub auth | Encrypted PAT in D1 (multi-account). No Device Flow, no `gh` CLI |
-| App gate | Cloudflare Access JWT (`iss` + `aud` + JWKS). Local dev: `.dev.vars`. E2E: runner `--env-file` only. Never deployable `[vars]`. `workers_dev = false` |
-| Lint | Biome (`biome check --error-on-warnings`). No ESLint |
-| Tests | Vitest (L1) + real-HTTP E2E (L2) + Playwright (L3) |
-| Deploy | `wrangler deploy` (assets + worker) |
-
-## Product Scope (v1)
-
-In: repo list, cross-repo issues/PRs, insights, security alerts, notifications, statistical daily digest, per-repo overview/security/actions/PRs/issues/releases/traffic/languages/contributors, settings for PATs.
-
-Out: GitLab/Forgejo, OAuth Device Flow, OpenAI digest, Kanban, mentions, dependents, in-app login page.
-
-Reference API (token mode + resource shapes only): `/Users/nocoo/workspace/references/gh-dashboard`. UI is a full redesign.
-
-## Target Layout
+| Runtime | Cloudflare Workers (Hono) |
+| Lint | Biome `--error-on-warnings` (`noSkippedTests` / `noFocusedTests`) |
+| Tests | Vitest L1 95% all four; L2 `scripts/run-e2e.ts`; L3 Playwright (phase 2) |
+| Data | D1 `giraffe-db` (binding `DB`; wrangler id is still a placeholder) |
 
 ```
-src/
-  server/          # Hono app, GitHub client, D1, Access middleware
-  client/          # Vite SPA, Basalt Gen 2 shell, viewmodels, routes
-  lib/             # shared pure functions
-scripts/           # L2 runner, G2 gates
-docs/              # numbered Chinese docs
-wrangler.toml
-vite.config.ts
+src/server/   Hono, D1, Access, GitHub
+src/lib/      shared
+scripts/      L2 runner + gates
+tests/api/    L2
+docs/         01–04 (05 unwritten)
 ```
 
-MVVM: viewmodels have no View/DOM imports. Route files stay thin.
+MVVM applies in phase 2: viewmodels have no View/DOM imports; routes stay thin.
 
-## Development Method
-
-Strict TDD. Write the failing test in the working tree, then the smallest implementation, then refactor. Only green commits land — pre-commit runs L1 with coverage, so red commits are impossible and must not be forced with `--no-verify`. Tests are the only proof of correctness.
-
-Server (`src/server`) and Client (`src/client`) stay isolated. Each layer must be runnable and verifiable on its own:
-
-Numbered docs before the layer they govern. Sequence:
-
-`02` → `03` → `04` → **phase 1 Server** → `05` → **phase 2 Client**
-
-| # | Doc | Gate |
-|---|---|---|
-| 02 | Quality | tests, coverage, when each layer runs. Required before any feature code |
-| 03 | Data schema | [docs/03-schema.md](docs/03-schema.md). Required before persistence |
-| 04 | Server design | [docs/04-server.md](docs/04-server.md). Phase 1 |
-| 05 | Client design | Vite page structure and presentation, atomic commit steps. After phase 1, before Client code |
-
-- Phase 1 — Server only, after 02–04. Done when 04's APIs have L1 + L2 green. No client feature code. 05 is not required yet.
-- Phase 2 — Client, after phase 1 and 05. L3 belongs here.
-
-Do not invent quality rules, schemas, endpoints, or pages in this file. Do not start a layer before its numbered doc exists and has been reviewed.
-
-Each phase is split into steps in 04/05; each step is split into atomic commits.
-
-## Local Domain and Ports
-
-| Purpose | Port | Host |
-|---|---|---|
-| Dev (`wrangler dev`) | 7045 | `https://giraffe.dev.hexly.ai` |
-| L2 API E2E | 17045 | localhost, runner-owned |
-| L3 BDD | 27045 | localhost |
-
-Caddy site is not registered yet. Do not persist, bundle, log, or echo GitHub tokens.
-
-## Cloudflare Resource Names
-
-Online: one Worker `giraffe`, one D1 `giraffe-db` (binding `DB`), custom domain `giraffe.hexly.ai`. No remote test Worker, no remote test D1, no `[env.test]`.
-
-L2/L3: see [docs/02-quality.md](docs/02-quality.md). Ports 17045 / 27045. Absolute persist `.wrangler/e2e/` and `.wrangler/e2e-pw/`. Isolated `--env-file`, never repo-root `.dev.vars`. L2 launches Wrangler twice (suite A development bypass, suite B `ENVIRONMENT=test` + stub JWKS). L3 is suite A only.
-
-Quality authority: [docs/02-quality.md](docs/02-quality.md). Summary below.
-
-## Quality System (6DQ)
-
-| Layer | Tool | Trigger | Bar |
-|---|---|---|---|
-| L1 Unit | vitest | pre-commit | coverage ≥ 95% (thin UI shells exempt) |
-| L2 Integration/API | `scripts/run-e2e.ts` | pre-push | real HTTP, 100% `/api` method combos, isolated D1 |
-| L3 System/E2E | Playwright | CI / on-demand, **phase 2** | PAT settings → repo list → repo detail |
-| G1 Static | `tsc` + Biome + skip/wrangler/github-fetch/client-fetch gates | pre-commit | 0 error, 0 warning |
-| G2 Security | osv-scanner + gitleaks | pre-push | 0 vulns, 0 leaked secrets |
-| D1 Isolation | `wrangler dev --local --persist-to` | L2/L3 | local SQLite + `_test_marker`; never remote D1 |
-
-### Hooks
-
-| Hook | Budget | Runs |
-|---|---|---|
-| pre-commit | <30s | G1（含 `gate:github-fetch` + `gate:client-fetch`）→ L1 (`test:coverage`) |
-| pre-push | <3min | L2 ‖ G2 |
-| on-demand | — | L3 |
-
-Until D1 exists, D1 isolation is N/A. After `giraffe-db` exists, E2E still stays on `--local --persist-to`.
-
-## Commands (once scaffolded)
+## Commands
 
 ```bash
-bun run dev:server      # placeholder assets; wrangler dev --local --port 7045; ENVIRONMENT from .dev.vars
-bun run dev:client      # vite on its port; talks to mock or to dev:server via /api
-bun dev                 # phase 2: wrangler serves API + built/dev assets on 7045
-bun run build           # vite build → dist/client
-bun run typecheck       # tsc --noEmit
-bun run lint            # biome check --error-on-warnings
-bun run test            # L1 without coverage gate (watch/debug)
-bun run test:coverage   # L1 + ≥95% coverage; this is the pre-commit command
-bun run test:e2e:api    # L2: 02 runner, ports 17045/17046/17047
-bun run test:e2e:bdd    # L3: 02 runner, port 27045, suite A only
+bun run dev:server
+bun run typecheck
+bun run lint
+bun run test
+bun run test:coverage
+bun run test:e2e:api
+bun run gate:security
 ```
 
-Phase 2 Client tests use a mock `/api` (MSW or static fixtures). They must not boot wrangler. Server tests must not import `src/client`. Phase 1 has no Client tests.
+There is no `dev:client`, `build`, or `wrangler deploy` script yet.
 
-Install packages with a temporary registry (`BUN_CONFIG_REGISTRY=…`). Never set a global Bun registry. If `bun.lock` only changed registry URLs, restore it before commit.
+## Verification
 
-## Versioning
+Status: `enforced` | `planned` | `manual` | `N/A`. `enforced` Evidence = hook/CI/config/script.
 
-`package.json` `"version"` is the only source of truth (`1.2.3`). Display as `v1.2.3`. No hardcoded version strings.
+Org gaps: index-snapshot pre-commit; GitHub CI. pre-push **does** parse stdin refs for gitleaks (`GITLEAKS_LOG_OPTS`).
 
-## Git
+Today: pre-commit typecheck/lint/`gate:test-skip`/`gate:wrangler-vars`/`gate:github-fetch`/`gate:client-fetch`/`test:coverage` on the working tree. pre-push L2 ‖ G2. No `.github/workflows`.
 
-Atomic Conventional Commits. Imperative, lowercase, ≤50 characters. Types: `fix` `feat` `docs` `test` `refactor` `chore`. Stage specific files only — never `git add -A` or `git add .`. Do not push unless asked.
+| Change | Proof | Status | Evidence |
+|---|---|---|---|
+| Logic | L1 vitest ≥95% all four | enforced | pre-commit `test:coverage`; `vitest.config.ts` |
+| API L2 | real HTTP, isolated D1 | enforced | pre-push `test:e2e:api` (`scripts/run-e2e.ts`) |
+| UI L3 | Playwright | N/A | phase 2; `test:e2e:bdd` exists but is not a gate |
+| Types / lint | tsc + Biome 0 warning + skip/vars/fetch gates | enforced | pre-commit |
+| G2 secrets | gitleaks | enforced | pre-push `gate:security` (stdin ranges) |
+| G2 deps | osv-scanner `bun.lock` | enforced | pre-push `gate:security` |
+| Bundler | Vite → `dist/client` | planned | no `build` script; wrangler `[assets]` already points there |
+| Docs | numbered doc if behavior changes | manual | human review |
+| Release | `wrangler deploy` | planned | no CD |
 
-One logical change per commit. Every commit must pass pre-commit (G1 + L1 coverage). Do not commit failing tests.
+| Hook | Org bar | Status | Evidence |
+|---|---|---|---|
+| pre-commit | index snapshot | planned | — |
+| pre-push | stdin ref range | enforced | `.husky/pre-push` reads stdin SHAs |
 
-Code changes that alter behavior or structure must update the matching numbered doc in the same effort (separate commit if it is a separate logical change).
+`--no-verify` forbidden on commits and branch pushes. Tag-only may skip.
+
+## Resources / Isolation
+
+| Purpose | Port / resource | Isolation |
+|---|---|---|
+| Dev | 7045 (planned `https://giraffe.dev.hexly.ai`) | `.dev.vars`; Caddy not registered |
+| L2 | 17045 | `--local --persist-to .wrangler/e2e/` |
+| L3 | 27045 | `--local --persist-to .wrangler/e2e-pw/` (phase 2) |
+
+E2E never hits `api.github.com` or remote D1.
+
+## Operations / Release
+
+- No CD. Who: operator with Cloudflare account. Do not `wrangler deploy` until D1 id is real and Access is configured.
+- Live-check: not wired. Runbook: [docs/04-server.md](docs/04-server.md).
 
 ## Retrospective
 
-(empty)
+| Kind | Where |
+|---|---|
+| Accident narrative | [Retrospective.md](Retrospective.md) |
+| Recurring project rule | one line here (cap ~10) |
+| Checkable rule | hook or test |
+
+- PAT plaintext never in D1, logs, traces, or responses.
+- Phase 1: no `src/client` feature code.
