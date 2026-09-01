@@ -1,7 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-const ROUTE = /["'`]\/api\//;
+const ROUTE = /["'`]\/api(?:\/|\b)|basePath\(\s*["']\/api["']|route\(\s*["']\/api["']/;
 
 async function collect(dir: string, acc: string[]): Promise<void> {
 	const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);

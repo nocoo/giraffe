@@ -1,17 +1,17 @@
 import { readFile } from "node:fs/promises";
 
-const FORBIDDEN = [
-	"GITHUB_API_BASE",
-	"ACCESS_JWKS_URL",
-	"ENVIRONMENT=development",
-	"ENVIRONMENT=test",
+const text = await readFile("wrangler.toml", "utf8");
+const checks: Array<[RegExp, string]> = [
+	[/\bGITHUB_API_BASE\b/, "GITHUB_API_BASE"],
+	[/\bACCESS_JWKS_URL\b/, "ACCESS_JWKS_URL"],
+	[/\bENVIRONMENT\s*=\s*["']development["']/, 'ENVIRONMENT = "development"'],
+	[/\bENVIRONMENT\s*=\s*["']test["']/, 'ENVIRONMENT = "test"'],
 ];
 
-const text = await readFile("wrangler.toml", "utf8");
 let failed = false;
-for (const token of FORBIDDEN) {
-	if (text.includes(token)) {
-		console.error(`wrangler.toml must not contain ${token}`);
+for (const [pattern, label] of checks) {
+	if (pattern.test(text)) {
+		console.error(`wrangler.toml must not contain ${label}`);
 		failed = true;
 	}
 }

@@ -37,7 +37,31 @@ function walk(node: unknown, visit: (n: Record<string, unknown>) => void): void 
 	}
 }
 
-function fetchKind(node: Record<string, unknown>): string | undefined {
+function collectFetchAliases(root: unknown): Set<string> {
+	const aliases = new Set(["fetch"]);
+	walk(root, (node) => {
+		if (node.type === "VariableDeclarator") {
+			const id = node.id as Record<string, unknown> | undefined;
+			const init = node.init as Record<string, unknown> | undefined;
+			if (id?.type === "Identifier" && init?.type === "Identifier" && init.name === "fetch") {
+				aliases.add(String(id.name));
+			}
+			if (id?.type === "ObjectPattern" && Array.isArray(id.properties)) {
+				for (const prop of id.properties) {
+					const p = prop as Record<string, unknown>;
+					const key = p.key as Record<string, unknown> | undefined;
+					const value = p.value as Record<string, unknown> | undefined;
+					if (key?.name === "fetch" && value?.type === "Identifier") {
+						aliases.add(String(value.name));
+					}
+				}
+			}
+		}
+	});
+	return aliases;
+}
+
+function fetchKind(node: Record<string, unknown>, aliases: Set<string>): string | undefined {
 	if (node.type !== "CallExpression") {
 		return undefined;
 	}
@@ -45,8 +69,8 @@ function fetchKind(node: Record<string, unknown>): string | undefined {
 	if (!callee) {
 		return undefined;
 	}
-	if (callee.type === "Identifier" && callee.name === "fetch") {
-		return "fetch";
+	if (callee.type === "Identifier" && typeof callee.name === "string" && aliases.has(callee.name)) {
+		return callee.name;
 	}
 	if (callee.type === "MemberExpression") {
 		const obj = callee.object as Record<string, unknown> | undefined;
@@ -71,8 +95,9 @@ for (const file of files) {
 	}
 	const text = await readFile(file, "utf8");
 	const parsed = parseSync(file, text);
+	const aliases = collectFetchAliases(parsed.program);
 	walk(parsed.program, (node) => {
-		const kind = fetchKind(node);
+		const kind = fetchKind(node, aliases);
 		if (kind) {
 			console.error(`${rel}: forbidden ${kind}`);
 			failed = true;
