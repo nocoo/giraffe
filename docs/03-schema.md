@@ -127,9 +127,9 @@ CREATE TABLE snapshot_days (
 |------|-----------|
 | 整包 ≤ 1,500,000 字节 | `repos` |
 | 需第 2 页 | `repos#2` |
-| 第 n 页 | `repos#n`（n≥2） |
+| 第 n 页 | `repos#n`（2≤n≤16） |
 
-第 1 页 kind **不加** `#1`。读取时：取 `kind` 与所有 `kind#n`，按 n 排序拼接数组字段。写入时先删该逻辑 kind 的全部物理行再插入。
+第 1 页 kind **不加** `#1`。最多 16 页。第 17 页起的数据丢弃并 `truncated: true`。读取时：一条 SELECT 取 `kind`…`kind#16`，按 n 连续拼接，缺页即停。写入时一条 `DELETE … kind IN (16 个精确值)` 再插入。禁止 `LIKE`。
 
 切分页：在数组根字段上切（`repos` / `issues` / `pull_requests` 等），单元素超过 1,500,000 则拒绝该元素并记 `truncated: true`。
 
@@ -452,7 +452,7 @@ CREATE TABLE snapshot_days (
 
 `POST /api/refresh`：
 
-1. 用当前 active account 的 PAT 拉 GitHub（经 `githubFetch`）。
+1. 对请求里的 **GitHub kind** 用当前 active account 的 PAT 出站（经 `githubFetch`）。仅 `insights` / `digest` 的刷新不打 GitHub。
 2. 写成对应 snapshots 行（含分页）。
 3. 若刷新了 `repos` **且** 该快照 `truncated === false`，按 `fetched_at` 的 UTC 日 upsert `snapshot_days`。`truncated: true` 的 repos **不** upsert。
 4. 重算 `insights` 与 `digest` 当前副本；任一源 `truncated: true` 则跳过该派生（见 04）。

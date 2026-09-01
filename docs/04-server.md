@@ -197,7 +197,7 @@ Body 上限：accounts 4 KiB，其它 64 KiB。用 `request.body` 流式读，�
   - `Accept: application/vnd.github+json`
   - `X-GitHub-Api-Version: 2022-11-28`
   - `User-Agent: giraffe/<APP_VERSION>`
-- `githubGraphql(token, query, variables)`：`POST {base}/graphql`，`Accept: application/json`，走 `githubFetch`。HTTP 200 且 `errors` 含 `RATE_LIMITED` → 503 `github_rate_limited`。`errors` **全部**为路径级 `FORBIDDEN` / `NOT_FOUND` → 丢掉对应节点，不当硬失败，**且该 kind `truncated: true`**。其它 `errors` → 502 `github_error`。`data` 为 JSON 对象才解析。REST 单仓 403/404 跳过时同样 `truncated: true`。
+- `githubGraphql(token, query, variables)`：`POST {base}/graphql`，`Accept: application/json`，走 `githubFetch`。HTTP 200 且 `errors` 含 `RATE_LIMITED` → 503 `github_rate_limited`。跨仓列表：路径级 `FORBIDDEN` / `NOT_FOUND` 丢掉对应节点，kind `truncated: true`，不当 HTTP 404。单仓查询：根上 `repository` 为 null 或该仓 `NOT_FOUND` → 走第 6 节单仓 404/forbidden/unavailable，不走「跳过并 truncated」。其它 `errors` → 502 `github_error`。`data` 为 JSON 对象才解析。
 - GraphQL 分页：`first: 100`，直到 `hasNextPage` 为假或本请求 GitHub 次数用尽。REST 列表：`per_page=100`，同样直到没有下一页或次数用尽。用尽时当前 kind `truncated: true`。
 - 空成功体：HTTP **205**（以及 204）视为成功，不按 JSON 解析。notifications 的 PATCH/PUT 走这条。其它 2xx 若声明 JSON 却非 JSON → 502 `github_error`。
 
@@ -236,7 +236,7 @@ L1：注入 fake fetch；setup 默认 fetch throw（`network denied in L1`）。
 
 `schema.sql` **不含** `_test_marker`。L2/L3 runner 在执行 schema 之后另跑 03 的 marker SQL。生产禁止建 `_test_marker`。
 
-访问层只用绑定参数，不用字符串拼 SQL。物理页最多 **16**（`kind`、`kind#2` … `kind#16`）。替换时 **不先 SELECT**：同一 batch 对这 16 个精确 kind 各发一条 `DELETE … WHERE account_id=? AND kind=?`，再 INSERT 新页。读组装：从逻辑 kind 起依次取 `#2`… 直到缺页即停，忽略更高页残留。禁止 `LIKE` / `GLOB`。页名用 `logical + '#' + n` 字符串比较，不要写未插值的正则字面量。
+访问层只用绑定参数，不用字符串拼 SQL。物理页最多 **16**（`kind`、`kind#2` … `kind#16`）。替换每个逻辑 kind 用 **一条** `DELETE FROM snapshots WHERE account_id=? AND kind IN (logical, logical#2, …, logical#16)`，再 INSERT 新页。读：**一条** `SELECT … WHERE account_id=?`（可加 `kind IN (…16 个精确值)`），在内存按连续页组装，缺页即停。禁止每页一条 DELETE/SELECT，禁止 `LIKE` / `GLOB`。默认 `all` 的最终 batch 必须 < 80 statements（L1 用假 DB 数语句）。
 
 写快照：同一 `DB.batch` 里删除该逻辑 kind 的全部物理行并插入新页。激活：同一 batch 里 `UPDATE … is_active=0` 再 `UPDATE … is_active=1 WHERE id=?`。插入首个账号：`INSERT` 时直接 `is_active=1`，不要先插 0 再改。batch 失败整段回滚，禁止留下半页快照或两个 `is_active=1`。`accounts_one_active` 冲突 → 再读再写一次，仍失败则 500 `db_error`。不得手写双活。
 
@@ -459,7 +459,7 @@ L1 必测（注入 DB / fake fetch，无网络、无 wrangler）：
 | `digest` | 邻日差量；无昨天 → `baseline_missing` 且 delta `null` |
 | `insights` | health 三档与 opportunities |
 | `errors` / 路由 | 信封；body 超限 400；未知 `/api` 404；已知路径错误方法 405；`onError` → 500 `internal_error` |
-| `createDb` | 第 81 条 statement 不 execute；两 store 必须拿到同一句柄；`last_used_at` 与业务语句在同一 batch 数组 |
+| `createDb` | 第 81 条不 execute；两 store 同一句柄；`last_used_at` 与业务语句同一 batch；默认 `all` 最终 batch 语句数 < 80 |
 | refresh 收集 | 硬失败零写入；search total/1000 → truncated；多 kind 同时 truncated；路径级 FORBIDDEN → truncated 且跳过派生；单独 insights/digest 响应体 |
 | 路由纯逻辑 | 无快照 409；`scopes_missing`；`capability_missing` |
 
