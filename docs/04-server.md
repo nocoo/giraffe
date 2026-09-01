@@ -236,7 +236,11 @@ L1：注入 fake fetch；setup 默认 fetch throw（`network denied in L1`）。
 
 `schema.sql` **不含** `_test_marker`。L2/L3 runner 在执行 schema 之后另跑 03 的 marker SQL。生产禁止建 `_test_marker`。
 
-访问层只用绑定参数，不用字符串拼 SQL。物理页最多 **2**（`kind`、`kind#2`）。替换每个逻辑 kind 恰好 **两条** statement：一条 `DELETE … kind IN (logical, logical#2)`，一条多行 `INSERT … VALUES`（最多 2 行）。读：**一条** `SELECT … WHERE account_id=? AND kind IN (logical, logical#2)`。本请求 **GitHub 源 kind** staged payload UTF-8 合计不得超过 **16 MiB**（不含 snapshot_days / insights / digest）。超出则当前 kind `truncated: true` 并停止后续 GitHub 收集。派生仍按第 9 节规则尝试写入，单行超 1.5MB 则跳过该派生、不列入 `truncated_kinds`。禁止 `LIKE` / `GLOB`。默认 `all` 每 kind 2 页时最终 batch < 80（L1 数语句，并覆盖 16 个单仓 kind 的边界）。L1 断言第 3 页被丢弃且不写 `kind#3`。不把本机 wrangler 未 1102 当成生产 128MB 的证明。
+访问层只用绑定参数，不用字符串拼 SQL。物理页最多 **2**（`kind`、`kind#2`）。替换每个逻辑 kind 恰好 **两条** statement：一条 `DELETE … kind IN (logical, logical#2)`，一条多行 `INSERT … VALUES`（最多 2 行）。读：**一条** `SELECT … WHERE account_id=? AND kind IN (logical, logical#2)`。本请求 **GitHub 源 kind** staged payload UTF-8 合计不得超过 **16 MiB**（不含 snapshot_days / insights / digest）。超出则当前 kind 截到上限内、`truncated: true`，已 staged 字节保持 ≤16 MiB，**不再** fetch 或写入后续 GitHub kind。禁止 `LIKE` / `GLOB`。
+
+`createDb` 的 80 上限是**整次请求**（含读账号、读旧快照、读 snapshot_days、最终 batch），不是只数最后一次 batch。L1 用同一计数器覆盖。
+
+派生：隐式重算（`all` / 多 kind 结束时）若 2 页仍放不下则**跳过**该派生、不进 `truncated_kinds`。显式 `kinds: ["insights"]` 或 `["digest"]`：按 2 页切分写入，仍超则写入能放下的并 `truncated: true`（无源仍 409）。默认 `all` 每 kind 2 页时整请求 statement < 80。L1 断言第 3 页被丢弃且不写 `kind#3`，以及 16 MiB 截断后后续 kind 零 fetch。
 
 写快照：同一 `DB.batch` 里删除该逻辑 kind 的全部物理行并插入新页。激活：同一 batch 里 `UPDATE … is_active=0` 再 `UPDATE … is_active=1 WHERE id=?`。插入首个账号：`INSERT` 时直接 `is_active=1`，不要先插 0 再改。batch 失败整段回滚，禁止留下半页快照或两个 `is_active=1`。`accounts_one_active` 冲突 → 再读再写一次，仍失败则 500 `db_error`。不得手写双活。
 
@@ -460,7 +464,7 @@ L1 必测（注入 DB / fake fetch，无网络、无 wrangler）：
 | `insights` | health 三档与 opportunities |
 | `errors` / 路由 | 信封；body 超限 400；未知 `/api` 404；已知路径错误方法 405；`onError` → 500 `internal_error` |
 | `createDb` | 第 81 条不 execute；两 store 同一句柄；`last_used_at` 与业务语句同一 batch；默认 `all` 最终 batch 语句数 < 80 |
-| refresh 收集 | 硬失败零写入；第 3 页丢弃不写 `kind#3`；kinds 17 项 → 400；16 项 batch < 80；单仓非 security FORBIDDEN → 403；staged 16 MiB 不含派生 |
+| refresh 收集 | 硬失败零写入；第 3 页丢弃不写 `kind#3`；kinds 17 项 → 400；16 项**整请求** statement < 80；16 MiB 截断后后续 kind 零 fetch；显式 insights 超大仍 200+truncated |
 | 路由纯逻辑 | 无快照 409；`scopes_missing`；`capability_missing` |
 
 L2 真 HTTP，隔离与套件 A/B 以 02 为准。第一个 `/api` 处理函数落地的**同一批变更**必须实现 `scripts/run-e2e.ts`（不再 N/A）。本文第 11 节每一个方法+路径都必须进入套件 A 与套件 B。
