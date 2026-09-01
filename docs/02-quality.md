@@ -97,19 +97,25 @@ Runner 必须：
 3. **只**用 runner 写的 `--env-file` 注入 fixture。L2/L3 **不写、不读** `.dev.vars`。本机 `dev:server` 才用 `.dev.vars`。仓库根 `.dev.vars` 不得传给 E2E wrangler。
 4. Wrangler `--config` 指向拷贝的 toml，`--persist-to` 为绝对路径。
 
-Fixture 至少：
+共用 fixture：
 
 ```
-ENVIRONMENT=
 TOKEN_ENCRYPTION_KEY_CURRENT=1
 TOKEN_ENCRYPTION_KEY_V1=<32 字节全 0 的 hex>
 GITHUB_API_BASE=http://127.0.0.1:17046
+```
+
+套件 A（`ENVIRONMENT=development`）**不得**设置 `CF_ACCESS_TEAM_DOMAIN`、`CF_ACCESS_AUD`、`ACCESS_JWKS_URL`，否则 04 的 Access 短路不成立，业务请求会 401。
+
+套件 B（`ENVIRONMENT=test`）必须额外：
+
+```
 CF_ACCESS_TEAM_DOMAIN=http://127.0.0.1:17047
 CF_ACCESS_AUD=giraffe-e2e
 ACCESS_JWKS_URL=http://127.0.0.1:17047/cdn-cgi/access/certs
 ```
 
-`ENVIRONMENT`：套件 A 为 `development`，套件 B 为 `test`，生产为空或 `production`。
+生产为空或 `production`。
 
 生产（空/`production`）**忽略** `GITHUB_API_BASE` 与 `ACCESS_JWKS_URL`。G1 检查 `wrangler.toml` 不得出现这两项，也不得出现 `ENVIRONMENT=development` 或 `ENVIRONMENT=test`。L1 覆盖：生产模式下即使注入这两项也不改 JWKS、不改 GitHub origin。
 
