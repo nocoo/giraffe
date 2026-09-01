@@ -52,7 +52,7 @@ Hook：
 | pre-push | L2 ‖ G2 | `bun run test:e2e:api` 与 `bun run gate:security` 并行 |
 | CI | 阶段 1：G1+L1+L2+G2；阶段 2：再加 L3 | 与本地同一命令 |
 
-`gate:test-skip` 必须扫描 `src/` 与 `tests/`，命中任一则失败：`describe.only`、`describe.skip`、`it.only`、`it.skip`、`test.only`、`test.skip`、`test.todo`、`xtest`、`xdescribe`。Biome 开启 `noSkippedTests` / `noFocusedTests`（或等价规则）且 `--error-on-warnings`；脚本是双保险。
+`gate:test-skip` 必须扫描 `src/` 与 `tests/`，命中任一则失败：`describe.only`、`describe.skip`、`it.only`、`it.skip`、`test.only`、`test.skip`、`test.todo`、`test.fails`、`it.fails`、`xtest`、`xdescribe`。Biome 开启 `noSkippedTests` / `noFocusedTests`（或等价规则）且 `--error-on-warnings`；脚本是双保险。
 
 ---
 
@@ -60,7 +60,7 @@ Hook：
 
 工具：Vitest 4。覆盖率：**statements、branches、functions、lines 每一项都 ≥ 90%**。任一项低于 90% 即失败。
 
-`vitest` coverage 必须 `all: true`，`include: ["src/**/*.{ts,tsx}"]`。未 import 的生产文件也计入分母。`exclude` 只允许 `src/client/routes/*.tsx`。`src/server/routes/` 不豁免。
+`vitest` coverage 用 `include: ["src/**/*.{ts,tsx}"]` 把未 import 的生产文件算进分母（Vitest 4 没有 `coverage.all`）。`exclude` 必须包含测试自身：`**/*.test.ts`、`**/*.test.tsx`、`**/__tests__/**`，以及薄壳 `src/client/routes/*.tsx`。不得把测试文件算进分子。`src/server/routes/` 不豁免。
 
 ### 必测
 
@@ -92,9 +92,10 @@ L1 禁止：网络、真实 D1、真实 GitHub、启动 wrangler。
 
 Runner 必须：
 
-1. 建临时目录（例如 `.wrangler/e2e-run/`），把 `wrangler.toml` 拷进去，`src/` 与 `dist/client` 用该目录能解析到的路径（拷贝或 symlink）。
-2. **只在该临时目录**写 `.dev.vars` / `--env-file`，内容仅限 fixture。仓库根若存在 `.dev.vars`，runner **不得**把它传给 wrangler。
-3. `--env-file` 指向 runner 自己写的文件。Wrangler 的 cwd 是该临时目录。
+1. 建临时目录（例如 `.wrangler/e2e-run/`），把 `wrangler.toml` 拷进去；`src/` 与 schema 文件（`src/server/lib/db/schema.sql` 或 `migrations/`，以 03 为准）必须能从该目录解析。
+2. persist 使用**仓库根绝对路径** `.wrangler/e2e/`（L3 为 `.wrangler/e2e-pw/`），不要写成相对临时 cwd 的嵌套路径。
+3. **只在该临时目录**写 `--env-file`（以及如需的 `.dev.vars`），内容仅限 fixture。仓库根 `.dev.vars` 不得传给 wrangler。
+4. Wrangler `--config` 指向拷贝的 toml，`--persist-to` 为绝对路径。
 
 Fixture 至少：
 
@@ -114,16 +115,21 @@ ACCESS_JWKS_URL=http://127.0.0.1:17047/cdn-cgi/access/certs
 
 `try/finally`：任何失败、超时、信号都要杀掉 wrangler 与 stub，释放 17045/17046/17047。
 
-顺序：
+套件 A 与套件 B 的 Worker 环境不同，必须 **起停两次** wrangler，各用一份 env-file。不能在同一进程里改 `ENVIRONMENT`。
+
+每个套件：
 
 1. 临时目录 + 占位 `dist/client/index.html`
-2. 清空 persist：`.wrangler/e2e/`
-3. **先** `wrangler d1 migrations apply giraffe-db --local --persist-to=.wrangler/e2e`（相对临时 cwd），写入 `_test_marker`
+2. 清空该套件 persist（可共用 `.wrangler/e2e/`，两次启动之间仍要 migrate+marker）
+3. **先** `wrangler d1 migrations apply giraffe-db --local --persist-to=<绝对路径>`，写入 `_test_marker`。schema 来源与 03 一致，路径相对仓库根，不依赖临时 cwd 下的 `./migrations`
 4. 启动 GitHub stub `:17046`、Access JWKS stub `:17047`
-5. 启动 wrangler：`--local --persist-to=.wrangler/e2e --port 17045`，cwd=临时目录
-6. 轮询 `GET /api/live`，60s 超时。响应必须带 `d1_marker=test`（Worker **经 D1 binding** 读 `_test_marker`）。对不上则失败——禁止 runner 自己再用 CLI 查同一文件充当验证
-7. 跑 API 测试
-8. finally 杀进程
+5. 启动 wrangler：`--local --persist-to=<绝对路径> --port 17045 --env-file=<该套件文件>`
+6. 轮询 `GET /api/live`，60s 超时。响应必须带 `d1_marker=test`（Worker **经 D1 binding** 读 `_test_marker`）。对不上则失败——禁止 runner 用 CLI 再查同一 SQLite 充当验证
+7. 跑该套件测试
+8. 停 wrangler，再进入下一套件
+9. finally 杀全部进程
+
+`github-client` 只通过 `GITHUB_API_BASE`（未设时才是生产默认常量）发请求。L1 断言：已设 `GITHUB_API_BASE` 时，目标 origin 不是 `api.github.com` 否则 throw。G1 可扫除默认常量外的 `api.github.com` 字面量。L2 stub 记录所有进入 17046 的请求；Worker 若直连 `api.github.com`，该请求不会出现在 stub 上，同时 client 应已 throw——套件 A 结束时 stub 计数 >0（refresh 成功路径）且进程内不得出现对 `api.github.com` 的成功响应。
 
 端口占用则失败并打印占用方，禁止改打 7045。
 
@@ -139,9 +145,9 @@ ACCESS_JWKS_URL=http://127.0.0.1:17047/cdn-cgi/access/certs
 
 | 种类 | 要求 |
 |------|------|
-| 成功路径 | 允许的 Origin；状态码与 body 符合契约；写类接口必须能在后续 GET 观察到状态变化 |
-| 契约失败 | GET 无快照 → 409；POST 缺 Origin → 403。403 **不能**当作该路径唯一用例 |
-| 只读 | GET 之后 stub 无 GitHub 写操作、快照 `fetched_at` 不变 |
+| 成功路径 | 写类（POST/DELETE）带**允许的 Origin**；状态码与 body 符合契约；必须能在后续 GET 观察到状态变化。GET **不带 Origin** 也必须 200/409（按是否有快照），证明只读不依赖 Origin |
+| 契约失败 | GET 无快照 → 409。POST **与 DELETE**：缺 Origin → 403；Origin 不在允许列表 → 403。403 **不能**当作该路径唯一用例 |
+| 只读 | GET 期间 GitHub stub 请求数为 0，且相关 D1 行（快照 payload / `fetched_at` / accounts）字节级不变 |
 
 PAT `POST /api/accounts` 成功路径额外断言：
 
@@ -153,8 +159,9 @@ PAT `POST /api/accounts` 成功路径额外断言：
 
 - **不**设 `ENVIRONMENT=development`
 - 用 stub JWKS 签发 fixture JWT
-- `GET /api/me`（或任意受保护 JSON 端点）：无 JWT / 坏签名 / 错 `aud` → 401；合法 fixture JWT → 2xx
-- 此套件覆盖「中间件是否挂上」，不替代套件 A 的业务断言
+- 除明确公开的 `GET /api/live` 外，**每一个**受保护的方法+路径：无 JWT / 坏签名 / 错 `aud` → 401。只测 `/api/me` 不够
+- 至少一条合法 fixture JWT → 2xx（可用 `/api/me`）
+- 此套件覆盖「中间件是否挂上每一条受保护路由」，不替代套件 A 的业务断言
 
 两套都要跑。缺套件 B 不算 L2 绿。
 
@@ -217,7 +224,7 @@ Runner 与 L2 相同的隔离目录、`--env-file`、GitHub stub、Access 策略
 - 把 `ENVIRONMENT=development` 写进可部署 `[vars]`
 - 在仓库根带着开发者 `.dev.vars` 启动 L2/L3 wrangler
 - `--var KEY=VALUE`（必须 `KEY:VALUE`）
-- 覆盖率门控用 `bun run test`；`coverage.all` 不为 true
+- 覆盖率门控用 `bun run test`；漏配 `include` 导致未引用文件不进分母
 - 提交红测试、`--no-verify`
 - Server 测试引用 Client，或 Client 单测启 Worker
 - 阶段 1 写 L3 或 Client 测试冒充完成
@@ -230,7 +237,7 @@ Runner 与 L2 相同的隔离目录、`--env-file`、GitHub stub、Access 策略
 **阶段 1 可宣告完成**，当且仅当：
 
 - 04 列出的全部接口有 L1（该测的逻辑）和 L2 套件 A+B
-- `test:coverage` 四项均 ≥ 90%，且 `all: true` 含全部 `src/`（薄壳除外）
+- `test:coverage` 四项均 ≥ 90%，`include` 含全部生产 `src/`（测试文件与薄壳除外）
 - pre-commit / pre-push 命令在干净树上可复现绿
 - 无 Client 功能代码
 

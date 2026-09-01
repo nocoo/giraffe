@@ -91,7 +91,7 @@ L2 and L3 use the same Worker code and launch model, as **separate processes**:
 | L2 API E2E | `wrangler dev --local --persist-to=.wrangler/e2e --port 17045` plus `--var` below | `.wrangler/e2e/` | 17045 |
 | L3 Playwright | same, `--persist-to=.wrangler/e2e-pw --port 27045` | `.wrangler/e2e-pw/` | 27045 |
 
-The runner, not `.dev.vars`, injects `--var ENVIRONMENT:development --var TOKEN_ENCRYPTION_KEY_CURRENT:1 --var TOKEN_ENCRYPTION_KEY_V1:<32-byte-fixture>`. Wrangler `--var` syntax is `KEY:VALUE`. L2 also writes a placeholder `dist/client/index.html` if missing. L3 runs `vite build` first. Then wipe persist, apply schema, write `_test_marker`, hit real HTTP. Missing marker → abort. GitHub egress is stubbed. Default `bun dev` uses local D1.
+L2/L3 runner details are in [docs/02-quality.md](docs/02-quality.md): isolated temp dir and `--env-file` (never the repo-root `.dev.vars`), absolute `--persist-to`, GitHub stub via `GITHUB_API_BASE`, two Wrangler launches for Access vs feature suites. `GET /api/live` must report `d1_marker=test` from the Worker D1 binding.
 
 Quality authority: [docs/02-quality.md](docs/02-quality.md). Summary below.
 
@@ -102,7 +102,7 @@ Quality authority: [docs/02-quality.md](docs/02-quality.md). Summary below.
 | L1 Unit | vitest | pre-commit | coverage ≥ 90% (thin UI shells exempt) |
 | L2 Integration/API | `scripts/run-e2e.ts` | pre-push | real HTTP, 100% `/api` method combos, isolated D1 |
 | L3 System/E2E | Playwright | CI / on-demand, **phase 2** | PAT settings → repo list → repo detail |
-| G1 Static | `tsc --noEmit` + Biome | pre-commit | 0 error, 0 warning |
+| G1 Static | `tsc --noEmit` + Biome + `gate:test-skip` | pre-commit | 0 error, 0 warning |
 | G2 Security | osv-scanner + gitleaks | pre-push | 0 vulns, 0 leaked secrets |
 | D1 Isolation | `wrangler dev --local --persist-to` | L2/L3 | local SQLite + `_test_marker`; never remote D1 |
 
@@ -110,7 +110,7 @@ Quality authority: [docs/02-quality.md](docs/02-quality.md). Summary below.
 
 | Hook | Budget | Runs |
 |---|---|---|
-| pre-commit | <30s | G1 → L1 (`bun run test:coverage`, not `bun run test`) |
+| pre-commit | <30s | G1 (`typecheck` + `lint` + `gate:test-skip`) → L1 (`bun run test:coverage`) |
 | pre-push | <3min | L2 ‖ G2 |
 | on-demand | — | L3 |
 

@@ -410,9 +410,9 @@ giraffe/
 | 维 | 要求 | 时机 |
 |----|------|------|
 | L1 | `bun run test:coverage`（不是 `bun run test`）；覆盖率 ≥ 90%；薄壳 `routes/*.tsx` 豁免 | pre-commit，<30s |
-| L2 | 真 HTTP。runner 写入 assets 占位、注入 `--var` fixture，再 `wrangler dev --local --persist-to=.wrangler/e2e --port 17045`。GitHub 出站必须是 stub | pre-push，<3min |
-| L3 | runner 先 `vite build`，再注入 `--var`，`--persist-to=.wrangler/e2e-pw --port 27045`。禁止 GitHub 出站 | CI / 按需 |
-| G1 | `tsc --noEmit` + `biome check --error-on-warnings`，0 error 0 warning | pre-commit |
+| L2 | 真 HTTP。细则以 [02](02-quality.md) 为准：临时目录 `--env-file`、绝对 persist、套件 A/B 两次启动、GitHub 仅 `GITHUB_API_BASE` | pre-push，<3min |
+| L3 | 先 `vite build`，其余隔离同 02。阶段 2 | CI / 按需 |
+| G1 | `tsc --noEmit` + `biome check --error-on-warnings` + `gate:test-skip` | pre-commit |
 | G2 | `gitleaks` + `osv-scanner --lockfile=bun.lock` | pre-push |
 | D1 | 无远程测试库。隔离靠 `--local --persist-to` 目录 + `_test_marker`；runner 不见 marker 则退出 | L2/L3 强制 |
 
