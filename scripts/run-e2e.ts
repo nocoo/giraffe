@@ -89,6 +89,18 @@ async function waitLive(timeoutMs: number): Promise<void> {
 	throw new Error("live poll timeout");
 }
 
+const children: ChildProcess[] = [];
+
+function track(child: ChildProcess): void {
+	children.push(child);
+	child.on("exit", () => {
+		const index = children.indexOf(child);
+		if (index >= 0) {
+			children.splice(index, 1);
+		}
+	});
+}
+
 function run(cmd: string, args: string[], extra: Record<string, string> = {}): Promise<void> {
 	return new Promise((resolve, reject) => {
 		const child = spawn(cmd, args, {
@@ -96,6 +108,7 @@ function run(cmd: string, args: string[], extra: Record<string, string> = {}): P
 			env: { ...process.env, ...extra },
 			stdio: "inherit",
 		});
+		track(child);
 		child.on("exit", (code) => {
 			if (code === 0) {
 				resolve();
@@ -189,6 +202,7 @@ async function suite(name: "A" | "B"): Promise<void> {
 		],
 		{ cwd: root, stdio: ["ignore", "pipe", "pipe"] },
 	);
+	track(wrangler);
 	wrangler.stdout?.on("data", (chunk) => {
 		writeLog(chunk as Buffer);
 		process.stdout.write(chunk);
@@ -565,6 +579,17 @@ const jwks = await listen(17047, (req, res) => {
 });
 
 async function shutdown(): Promise<void> {
+	for (const child of [...children]) {
+		if (child.exitCode === null) {
+			child.kill("SIGTERM");
+		}
+	}
+	await Bun.sleep(300);
+	for (const child of [...children]) {
+		if (child.exitCode === null) {
+			child.kill("SIGKILL");
+		}
+	}
 	await github.close();
 	await jwks.close();
 }

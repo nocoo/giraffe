@@ -533,11 +533,19 @@ describe("refresh route", () => {
 	it("treats fetch cap as truncation and keeps batches small", async () => {
 		const e = env();
 		let lastBatch = 0;
+		const prepared: string[] = [];
 		const raw = e.DB;
 		e.DB = {
-			prepare: (sql: string) => raw.prepare(sql),
+			prepare: (sql: string) => {
+				prepared.push(sql);
+				return raw.prepare(sql);
+			},
 			batch: async (statements: D1PreparedStatement[]) => {
 				lastBatch = statements.length;
+				if (statements.length > 2) {
+					expect(prepared.some((sql) => sql.includes("snapshots"))).toBe(true);
+					expect(prepared.some((sql) => sql.includes("last_used_at"))).toBe(true);
+				}
 				return raw.batch(statements);
 			},
 		} as D1Database;

@@ -218,7 +218,7 @@ export async function postRefresh(
 		const preview = splitPages(kind, clamped.payload);
 		written[kind] = { ...assemblePages(kind, preview.pages), truncated: preview.truncated };
 		used += clamped.bytes;
-		if (clamped.capped || gh.count >= MAX_FETCHES) {
+		if (clamped.capped || gh.count >= MAX_FETCHES || used >= MAX_STAGED_BYTES) {
 			stop = true;
 		}
 	}
