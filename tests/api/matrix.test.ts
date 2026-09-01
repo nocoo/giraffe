@@ -234,15 +234,13 @@ describe("api method matrix", () => {
 				});
 			}
 		}
-		expect(
-			(
-				await api("/api/accounts", {
-					method: "POST",
-					headers: { "content-type": "application/json" },
-					body: JSON.stringify({ token: PAT }),
-				})
-			).status,
-		).toBe(403);
+		const noOrigin = await api("/api/accounts", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ token: PAT }),
+		});
+		expect(noOrigin.status).toBe(403);
+		expect(await noOrigin.json()).toMatchObject({ error: { code: "origin_forbidden" } });
 		expect(
 			(
 				await api("/api/accounts", {
@@ -294,6 +292,15 @@ describe("api method matrix", () => {
 		});
 		expect(account).toHaveProperty("capabilities");
 		noSecrets(account);
+		if (suite === "A") {
+			for (const path of GETS.filter((p) => p !== "/api/me" && p !== "/api/accounts")) {
+				const missingSnap = await api(path);
+				expect(missingSnap.status).toBe(409);
+				expect(await missingSnap.json()).toMatchObject({
+					error: { code: "snapshot_missing" },
+				});
+			}
+		}
 		const envelopes = d1Rows("SELECT token_ciphertext FROM accounts");
 		expect(envelopes.length).toBeGreaterThan(0);
 		const envelope = String(envelopes[0]?.token_ciphertext ?? "");
@@ -313,19 +320,23 @@ describe("api method matrix", () => {
 		expect(listedBody.accounts[0]).toMatchObject({
 			id: account.id,
 			login: "octocat",
+			avatar_url: expect.any(String),
+			token_last4: expect.any(String),
+			scopes: expect.any(String),
 			is_active: true,
 		});
+		expect(listedBody.accounts[0]).toHaveProperty("capabilities");
 		noSecrets(listedBody);
 		const logPath = process.env.GIRAFFE_WRANGLER_LOG;
-		expect(
-			(
-				await api("/api/accounts", {
-					method: "POST",
-					headers: { origin, "content-type": "application/json" },
-					body: JSON.stringify({ token: "nope" }),
-				})
-			).status,
-		).toBe(400);
+		const badPat = await api("/api/accounts", {
+			method: "POST",
+			headers: { origin, "content-type": "application/json" },
+			body: JSON.stringify({ token: "nope" }),
+		});
+		expect(badPat.status).toBe(400);
+		const badPatJson = await badPat.json();
+		expect(badPatJson).toMatchObject({ error: { code: "validation_failed" } });
+		noSecrets(badPatJson);
 		const unauthGithub = await api("/api/accounts", {
 			method: "POST",
 			headers: { origin, "content-type": "application/json" },

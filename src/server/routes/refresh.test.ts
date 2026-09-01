@@ -289,6 +289,30 @@ describe("refresh route", () => {
 			).status,
 		).toBe(401);
 		expect((await createApp().request("http://localhost/api/repos", {}, e)).status).toBe(409);
+		const later = env();
+		await createAccount(later);
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+			const url = String(input);
+			if (url.endsWith("/graphql")) {
+				const body = JSON.parse(String(init?.body ?? "{}")) as { query?: string };
+				if ((body.query ?? "").includes("viewer")) {
+					return Response.json(graphqlData(body.query ?? ""));
+				}
+				return new Response("no", { status: 401 });
+			}
+			throw new Error(`unexpected ${url}`);
+		});
+		expect(
+			(
+				await createApp().request(
+					"http://localhost/api/refresh",
+					{ method: "POST", headers, body: JSON.stringify({ kinds: ["repos", "issues"] }) },
+					later,
+				)
+			).status,
+		).toBe(401);
+		expect((await createApp().request("http://localhost/api/repos", {}, later)).status).toBe(409);
+		expect((await createApp().request("http://localhost/api/issues", {}, later)).status).toBe(409);
 	});
 
 	it("rejects missing capabilities and encryption", async () => {

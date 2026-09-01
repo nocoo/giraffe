@@ -59,6 +59,17 @@ describe("snapshot-pages", () => {
 		});
 		expect(langs.truncated).toBe(true);
 		expect(JSON.parse(langs.pages[0]?.payload ?? "{}")).toMatchObject({ languages: {} });
+		const details = splitPages("repo:o/n:details", {
+			fetched_at: "t",
+			truncated: false,
+			blob: "z".repeat(1_600_000),
+			default_branch: "main",
+		});
+		expect(JSON.parse(details.pages[0]?.payload ?? "{}")).toMatchObject({
+			truncated: true,
+			default_branch: "",
+			url: "",
+		});
 		const empty = splitPages("repos", {
 			fetched_at: "t",
 			truncated: false,

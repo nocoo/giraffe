@@ -1,3 +1,5 @@
+import { emptyCollected } from "./collect";
+
 const MAX = 1_500_000;
 
 export type SnapshotPage = { kind: string; payload: string };
@@ -47,13 +49,7 @@ export function splitPages(
 	}
 	const key = arrayKey(payload);
 	if (!key || !Array.isArray(payload[key])) {
-		const compact: Record<string, unknown> = {
-			fetched_at: payload.fetched_at ?? "",
-			truncated: true,
-		};
-		if (logical.endsWith(":languages")) {
-			compact.languages = {};
-		}
+		const compact = emptyCollected(logical, String(payload.fetched_at ?? ""));
 		return {
 			pages: [{ kind: logical, payload: JSON.stringify(compact) }],
 			truncated: true,

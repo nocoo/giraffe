@@ -184,6 +184,7 @@ describe("createGithubClient", () => {
 			new Response("no", { status: 404 }),
 			new Response("no", { status: 422 }),
 			new Response("no", { status: 500 }),
+			new Response("{}", { status: 202 }),
 			new Response("not-json", { status: 200 }),
 			Response.json({ errors: [{ type: "RATE_LIMITED" }] }),
 			Response.json({ data: { ok: true }, errors: [{ type: "OTHER" }] }),
@@ -206,6 +207,9 @@ describe("createGithubClient", () => {
 		});
 		await expect(client.githubApi("t", "/c")).rejects.toMatchObject({ code: "not_found" });
 		await expect(client.githubApi("t", "/d")).rejects.toMatchObject({ code: "github_error" });
+		await expect(client.githubGraphql("t", "q", {})).rejects.toMatchObject({
+			code: "github_error",
+		});
 		await expect(client.githubGraphql("t", "q", {})).rejects.toMatchObject({
 			code: "github_error",
 		});
