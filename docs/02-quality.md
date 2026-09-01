@@ -137,7 +137,7 @@ GitHub 出站的**唯一**入口是 `githubFetch(env, url)`。比较用 `new URL
 - 生产：忽略 `GITHUB_API_BASE`，origin 只能是 `https://api.github.com`
 - L2 runner 未设 `GITHUB_API_BASE` 则失败关闭
 
-G1：除 `github-client` 外禁止 `fetch(`。L1 的 github-client 测试必须 `vi.stubGlobal("fetch")`（或注入 fake fetch），禁止真实网络；覆盖 origin 不匹配 throw。这是强制边界。
+G1 `gate:github-fetch` 用 AST（不是纯字符串）禁止白名单外的 `fetch` / `self.fetch` / `globalThis.fetch` 以及 `const { fetch }` 解构。白名单：`github-client.ts`、`access.ts`。不靠 stub 去数 `api.github.com` 命中。L1 github-client 测试注入 fake fetch，覆盖 origin 不匹配 throw。
 
 端口占用则失败并打印占用方，禁止改打 7045。
 
@@ -146,8 +146,7 @@ G1：除 `github-client` 外禁止 `fetch(`。L1 的 github-client 测试必须 
 **套件 A — 功能（可短路 Access）**
 
 - 注入 `ENVIRONMENT=development`（仅该套件 `--env-file`，不是 wrangler.toml `[vars]`，不是 `.dev.vars`）
-- GitHub 只允许 `GITHUB_API_BASE`。Worker 禁止在 `GITHUB_API_BASE` 之外发请求。Stub 记请求；套件结束时 `api.github.com` 命中必须为 0
-- `GITHUB_API_BASE` 未注入则 Worker 与 runner 都失败关闭，不得默默打 GitHub
+- GitHub 只允许 `GITHUB_API_BASE`。未注入则 runner 与 `githubFetch` 都失败关闭。出站保证靠 `githubFetch` + G1 AST 门，不靠 stub 观察直连
 
 每个 04（或 01 §8）**方法+路径**至少：
 
@@ -254,6 +253,7 @@ L3 **只跑套件 A**（`ENVIRONMENT=development` Access 短路）。不做套�
 
 **阶段 2 可宣告完成**，当且仅当：
 
+- 阶段 1 的 L1/L2/G1/G2 仍绿
 - 05 列出的页面有 L1 ViewModel/组件测试
 - 第 6 节最低 L3 路径绿
 - 覆盖率仍四项 ≥ 90%
