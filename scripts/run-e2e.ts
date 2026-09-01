@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -36,17 +36,38 @@ function listen(
 	});
 }
 
-async function assertPortFree(port: number): Promise<void> {
+function occupyingPid(port: number): string {
 	try {
-		const res = await fetch(`http://127.0.0.1:${port}/api/live`);
-		if (res.ok) {
-			throw new Error(`port ${port} already in use`);
-		}
-	} catch (err) {
-		if (err instanceof Error && err.message.includes("already in use")) {
-			throw err;
-		}
+		return execFileSync("lsof", ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-t"], {
+			encoding: "utf8",
+		})
+			.trim()
+			.split("\n")
+			.filter(Boolean)
+			.join(",");
+	} catch {
+		return "unknown";
 	}
+}
+
+async function assertPortFree(port: number): Promise<void> {
+	await new Promise<void>((resolve, reject) => {
+		const server = createServer();
+		server.once("error", (err) => {
+			const code =
+				err && typeof err === "object" && "code" in err
+					? String((err as { code: unknown }).code)
+					: "";
+			if (code === "EADDRINUSE") {
+				reject(new Error(`port ${port} already in use (pid ${occupyingPid(port)})`));
+				return;
+			}
+			reject(err);
+		});
+		server.listen(port, "127.0.0.1", () => {
+			server.close(() => resolve());
+		});
+	});
 }
 
 async function waitLive(timeoutMs: number): Promise<void> {
@@ -227,6 +248,7 @@ function sendJson(
 }
 
 let githubHits = 0;
+await assertPortFree(17046);
 const github = await listen(17046, (req, res) => {
 	const url = new URL(req.url ?? "/", "http://127.0.0.1:17046");
 	if (url.pathname === "/_count") {
@@ -244,6 +266,15 @@ const github = await listen(17046, (req, res) => {
 		if (url.pathname === "/user") {
 			if (auth.includes("B".repeat(8))) {
 				sendJson(res, 401, {});
+				return;
+			}
+			if (auth.includes("D".repeat(8))) {
+				sendJson(
+					res,
+					200,
+					{ login: "hubot", avatar_url: "" },
+					{ "X-OAuth-Scopes": "repo, read:org, read:user, notifications" },
+				);
 				return;
 			}
 			const scopes = auth.includes("C".repeat(8))
@@ -400,6 +431,7 @@ tokens.jwtBadAud = await signJwt({
 });
 tokens.jwtBadSig = `${tokens.jwt.slice(0, Math.max(0, tokens.jwt.length - 4))}aaaa`;
 
+await assertPortFree(17047);
 const jwks = await listen(17047, (req, res) => {
 	if (req.url?.includes("/cdn-cgi/access/certs")) {
 		res.setHeader("content-type", "application/json");

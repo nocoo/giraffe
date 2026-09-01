@@ -52,9 +52,18 @@ describe("worker fetch", () => {
 		expect(
 			(await createApp().request("http://localhost/api/me", { method: "HEAD" }, e)).status,
 		).toBe(405);
+		expect(
+			(await createApp().request("http://localhost/api/nope", { method: "HEAD" }, e)).status,
+		).toBe(404);
 		const prod = { ...e, ENVIRONMENT: "production" as const };
 		const unauth = await createApp().request("http://localhost/api/me", {}, prod);
 		expect(unauth.status).toBe(401);
+		expect(
+			(await createApp().request("http://localhost/api/me", { method: "HEAD" }, prod)).status,
+		).toBe(401);
+		expect(
+			(await createApp().request("http://localhost/api/repos", { method: "HEAD" }, prod)).status,
+		).toBe(401);
 		const root = await createApp().request("http://localhost/", {}, e);
 		expect(await root.text()).toBe("asset");
 	});

@@ -5,7 +5,7 @@
 	"type": "module",
 	"scripts": {
 		"dev:server": "bun run scripts/dev-server.ts",
-		"typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.scripts.json",
+		"typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.scripts.json && wrangler types --check --include-runtime=false --env-interface=CloudflareBindings",
 		"lint": "biome check --error-on-warnings .",
 		"lint:fix": "biome check --write .",
 		"test": "vitest run",

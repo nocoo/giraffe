@@ -13,6 +13,7 @@ const jwtBadSig = process.env.GIRAFFE_JWT_BAD_SIG ?? "";
 const PAT = `ghp_${"A".repeat(36)}`;
 const PAT_401 = `ghp_${"B".repeat(36)}`;
 const PAT_SCOPE = `ghp_${"C".repeat(36)}`;
+const PAT_2 = `ghp_${"D".repeat(36)}`;
 
 const GETS = [
 	"/api/me",
@@ -164,6 +165,11 @@ describe("api method matrix", () => {
 
 		expect((await api("/api/me")).status).toBe(200);
 		expect((await api("/api/accounts")).status).toBe(200);
+		if (suite === "A") {
+			for (const path of GETS.filter((p) => p !== "/api/me" && p !== "/api/accounts")) {
+				expect((await api(path)).status).toBe(409);
+			}
+		}
 		expect(
 			(
 				await api("/api/accounts", {
@@ -219,10 +225,6 @@ describe("api method matrix", () => {
 		const listed = await api("/api/accounts");
 		expect(JSON.stringify(await listed.json())).not.toContain(PAT);
 		const logPath = process.env.GIRAFFE_WRANGLER_LOG;
-		if (logPath) {
-			const log = readFileSync(logPath, "utf8");
-			expect(log).not.toContain(PAT);
-		}
 		expect(
 			(
 				await api("/api/accounts", {
@@ -232,24 +234,28 @@ describe("api method matrix", () => {
 				})
 			).status,
 		).toBe(400);
-		expect(
-			(
-				await api("/api/accounts", {
-					method: "POST",
-					headers: { origin, "content-type": "application/json" },
-					body: JSON.stringify({ token: PAT_401 }),
-				})
-			).status,
-		).toBe(401);
-		expect(
-			(
-				await api("/api/accounts", {
-					method: "POST",
-					headers: { origin, "content-type": "application/json" },
-					body: JSON.stringify({ token: PAT_SCOPE }),
-				})
-			).status,
-		).toBe(400);
+		const unauthGithub = await api("/api/accounts", {
+			method: "POST",
+			headers: { origin, "content-type": "application/json" },
+			body: JSON.stringify({ token: PAT_401 }),
+		});
+		expect(unauthGithub.status).toBe(401);
+		const unauthBody = JSON.stringify(await unauthGithub.json());
+		expect(unauthBody).not.toContain(PAT_401);
+		expect(unauthBody).not.toContain(PAT);
+		const scopeRes = await api("/api/accounts", {
+			method: "POST",
+			headers: { origin, "content-type": "application/json" },
+			body: JSON.stringify({ token: PAT_SCOPE }),
+		});
+		expect(scopeRes.status).toBe(400);
+		expect(JSON.stringify(await scopeRes.json())).not.toContain(PAT_SCOPE);
+		if (logPath) {
+			const log = readFileSync(logPath, "utf8");
+			expect(log).not.toContain(PAT);
+			expect(log).not.toContain(PAT_401);
+			expect(log).not.toContain(PAT_SCOPE);
+		}
 
 		const refreshed = await api("/api/refresh", {
 			method: "POST",
@@ -277,10 +283,36 @@ describe("api method matrix", () => {
 		expect(repoRefresh.status).toBe(200);
 		const reposGet = await api("/api/repos");
 		expect(reposGet.status).toBe(200);
-		const reposBody = (await reposGet.json()) as { repos: unknown[]; truncated: boolean };
+		const reposBody = (await reposGet.json()) as {
+			repos: Array<{ name_with_owner?: string; owner_login?: string }>;
+			truncated: boolean;
+			fetched_at?: string;
+		};
 		expect(Array.isArray(reposBody.repos)).toBe(true);
 		expect(reposBody.truncated).toBe(false);
-		const beforeRows = d1Rows("SELECT kind, payload FROM snapshots ORDER BY kind");
+		expect(reposBody.fetched_at).toEqual(expect.any(String));
+		expect(reposBody.repos[0]).toMatchObject({
+			name_with_owner: "octocat/hello-world",
+			owner_login: "octocat",
+		});
+		const detailsBody = (await (await api("/api/repos/octocat/hello-world")).json()) as {
+			default_branch?: string;
+			url?: string;
+		};
+		expect(detailsBody).toMatchObject({
+			default_branch: "main",
+			url: "https://github.com/octocat/hello-world",
+		});
+		const snapRows = d1Rows("SELECT kind, fetched_at FROM snapshots ORDER BY kind");
+		expect(snapRows.length).toBeGreaterThan(0);
+		for (const row of snapRows) {
+			expect(String(row.fetched_at).length).toBeGreaterThan(10);
+		}
+		const accountRows = d1Rows("SELECT login, last_used_at, is_active FROM accounts");
+		expect(accountRows[0]).toMatchObject({ login: "octocat", is_active: 1 });
+		expect(String(accountRows[0]?.last_used_at ?? "").length).toBeGreaterThan(10);
+		const beforeRows = d1Rows("SELECT kind, payload, fetched_at FROM snapshots ORDER BY kind");
+		const beforeAccounts = d1Rows("SELECT login, last_used_at, is_active FROM accounts");
 		const before = await githubCount();
 		for (const path of GETS.filter((p) => p !== "/api/me" && p !== "/api/accounts")) {
 			const res = await api(path);
@@ -288,7 +320,10 @@ describe("api method matrix", () => {
 			expect(JSON.stringify(await res.json())).not.toContain(PAT);
 		}
 		expect(await githubCount()).toBe(before);
-		expect(d1Rows("SELECT kind, payload FROM snapshots ORDER BY kind")).toEqual(beforeRows);
+		expect(d1Rows("SELECT kind, payload, fetched_at FROM snapshots ORDER BY kind")).toEqual(
+			beforeRows,
+		);
+		expect(d1Rows("SELECT login, last_used_at, is_active FROM accounts")).toEqual(beforeAccounts);
 		expect(
 			(
 				await api("/api/notifications/read", {
@@ -298,15 +333,39 @@ describe("api method matrix", () => {
 				})
 			).status,
 		).toBe(200);
+		const afterRead = await api("/api/notifications");
+		expect(afterRead.status).toBe(200);
+		const notifBody = (await afterRead.json()) as {
+			notifications: Array<{ id?: string; unread?: boolean }>;
+		};
+		expect(notifBody.notifications[0]).toMatchObject({ id: "123", unread: false });
 		expect(
 			(await api("/api/notifications/read-all", { method: "POST", headers: { origin } })).status,
 		).toBe(200);
+		const created2 = await api("/api/accounts", {
+			method: "POST",
+			headers: { origin, "content-type": "application/json" },
+			body: JSON.stringify({ token: PAT_2 }),
+		});
+		expect(created2.status).toBe(201);
+		const account2 = (await created2.json()) as { id: string; login?: string; is_active?: boolean };
+		expect(account2.login).toBe("hubot");
+		expect(account2.is_active).toBe(false);
+		expect(
+			(await api(`/api/accounts/${account2.id}/activate`, { method: "POST", headers: { origin } }))
+				.status,
+		).toBe(200);
+		expect((await api("/api/repos")).status).toBe(409);
 		expect(
 			(await api(`/api/accounts/${account.id}/activate`, { method: "POST", headers: { origin } }))
 				.status,
 		).toBe(200);
+		expect((await api("/api/repos")).status).toBe(200);
 		expect(
 			(await api(`/api/accounts/${account.id}`, { method: "DELETE", headers: { origin } })).status,
 		).toBe(204);
+		expect((await api("/api/repos")).status).toBe(409);
+		expect(d1Rows(`SELECT * FROM snapshots WHERE account_id = '${account.id}'`)).toEqual([]);
+		expect(d1Rows(`SELECT * FROM snapshot_days WHERE account_id = '${account.id}'`)).toEqual([]);
 	});
 });

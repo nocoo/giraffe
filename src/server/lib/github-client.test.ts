@@ -99,6 +99,28 @@ describe("createGithubClient", () => {
 		);
 		const cleaned = await dropped.githubGraphql("t", "q", {});
 		expect(cleaned.nodes).toEqual([{ name: "kept" }]);
+		const byPath = createGithubClient(
+			env({ ENVIRONMENT: "development", GITHUB_API_BASE: "http://127.0.0.1:17046" }),
+			async () =>
+				Response.json({
+					data: { nodes: [{ name: "a" }, { name: "drop-me" }] },
+					errors: [{ type: "FORBIDDEN", path: ["nodes", 1] }],
+				}),
+		);
+		expect((await byPath.githubGraphql("t", "q", {})).nodes).toEqual([{ name: "a" }]);
+		const nested = createGithubClient(
+			env({ ENVIRONMENT: "development", GITHUB_API_BASE: "http://127.0.0.1:17046" }),
+			async () =>
+				Response.json({
+					data: {
+						viewer: { repositories: { nodes: [{ name: "drop" }, { name: "keep" }] } },
+					},
+					errors: [{ type: "NOT_FOUND", path: ["viewer", "repositories", "nodes", 0] }],
+				}),
+		);
+		expect((await nested.githubGraphql("t", "q", {})).viewer).toEqual({
+			repositories: { nodes: [{ name: "keep" }] },
+		});
 		expect(() => createGithubClient(env({ ENVIRONMENT: "development" }))).toThrow(ApiError);
 		const net = createGithubClient(
 			env({ ENVIRONMENT: "development", GITHUB_API_BASE: "http://127.0.0.1:17046" }),

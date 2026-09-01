@@ -7,6 +7,7 @@ import {
 	clampToBudget,
 	collectKind,
 	collectRepos,
+	emptyCollected,
 	MAX_STAGED_BYTES,
 } from "../lib/collect";
 import { getActiveAccount, touchLastUsedStmt } from "../lib/db/accounts";
@@ -200,7 +201,7 @@ export async function postRefresh(
 					: await collectKind(gh, token, kind, needsRepoNames(kind) ? await repoNames() : []);
 		} catch (err) {
 			if (err instanceof TruncatedError) {
-				written[kind] = { truncated: true, fetched_at: fetchedAt };
+				written[kind] = emptyCollected(kind, fetchedAt);
 				stop = true;
 				continue;
 			}
@@ -283,7 +284,7 @@ export async function postRefresh(
 	if (written.repos && written.repos.truncated !== true) {
 		stmts.push(upsertDayStmt(db, accountId, utcDay(fetchedAt), dayFrom(written.repos)));
 	}
-	const cutoff = new Date(Date.parse(fetchedAt) - 30 * 86_400_000).toISOString().slice(0, 10);
+	const cutoff = new Date(Date.parse(fetchedAt) - 29 * 86_400_000).toISOString().slice(0, 10);
 	stmts.push(pruneDaysStmt(db, accountId, cutoff));
 	if (gh.count > 0) {
 		stmts.push(touchLastUsedStmt(db, accountId, fetchedAt));

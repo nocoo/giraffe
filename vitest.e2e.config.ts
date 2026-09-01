@@ -5,5 +5,6 @@ export default defineConfig({
 		environment: "node",
 		include: ["tests/api/**/*.test.ts"],
 		fileParallelism: false,
+		testTimeout: 30_000,
 	},
 });

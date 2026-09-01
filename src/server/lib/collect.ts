@@ -191,13 +191,6 @@ async function searchList(
 					truncated = true;
 					break;
 				}
-				if (skipSoft(err)) {
-					if (strict) {
-						throw err;
-					}
-					truncated = true;
-					break;
-				}
 				throw err;
 			}
 		}
@@ -385,6 +378,53 @@ async function collectNotifications(gh: GithubClient, token: string): Promise<Co
 		}
 	}
 	return { truncated, notifications: mapNotifications(items) };
+}
+
+export function emptyCollected(kind: string, fetchedAt: string): Collected {
+	const base = { fetched_at: fetchedAt, truncated: true };
+	if (kind === "repos") {
+		return { ...base, repos: [] };
+	}
+	if (kind === "issues") {
+		return { ...base, issues: [] };
+	}
+	if (kind === "prs") {
+		return { ...base, pull_requests: [] };
+	}
+	if (kind === "alerts") {
+		return { ...base, unavailable: true, items: [], dependabot_open: 0, code_scanning_open: 0 };
+	}
+	if (kind === "notifications") {
+		return { ...base, notifications: [] };
+	}
+	if (kind.endsWith(":details")) {
+		return { ...base, ...mapRepoDetails({}) };
+	}
+	if (kind.endsWith(":actions")) {
+		return { ...base, runs: [] };
+	}
+	if (kind.endsWith(":traffic")) {
+		return { ...base, forbidden: false, views: emptyTraffic(), clones: emptyTraffic() };
+	}
+	if (kind.endsWith(":security")) {
+		return { ...base, unavailable: true, dependabot_open: 0, code_scanning_open: 0 };
+	}
+	if (kind.endsWith(":issues")) {
+		return { ...base, issues: [] };
+	}
+	if (kind.endsWith(":prs")) {
+		return { ...base, pull_requests: [] };
+	}
+	if (kind.endsWith(":releases")) {
+		return { ...base, releases: [] };
+	}
+	if (kind.endsWith(":languages")) {
+		return { ...base, languages: {} };
+	}
+	if (kind.endsWith(":contributors")) {
+		return { ...base, contributors: [] };
+	}
+	return base;
 }
 
 async function collectRepoKind(gh: GithubClient, token: string, kind: string): Promise<Collected> {

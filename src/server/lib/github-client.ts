@@ -76,6 +76,45 @@ function dropNullNodes(value: unknown): unknown {
 	return value;
 }
 
+function setNullAtPath(value: unknown, path: unknown[]): unknown {
+	if (path.length === 0 || value === null || typeof value !== "object") {
+		return null;
+	}
+	const [head, ...rest] = path;
+	if (typeof head === "number" && Array.isArray(value)) {
+		const copy = [...value];
+		if (rest.length === 0) {
+			copy[head] = null;
+			return copy;
+		}
+		copy[head] = setNullAtPath(copy[head], rest);
+		return copy;
+	}
+	if (typeof head === "string" && !Array.isArray(value)) {
+		const record = { ...(value as Record<string, unknown>) };
+		if (rest.length === 0) {
+			record[head] = null;
+			return record;
+		}
+		record[head] = setNullAtPath(record[head], rest);
+		return record;
+	}
+	return value;
+}
+
+function applyGraphqlErrors(
+	data: Record<string, unknown>,
+	errors: Array<{ type?: string; path?: unknown[] }>,
+): Record<string, unknown> {
+	let next: unknown = data;
+	for (const error of errors) {
+		if ((error.type === "FORBIDDEN" || error.type === "NOT_FOUND") && Array.isArray(error.path)) {
+			next = setNullAtPath(next, error.path);
+		}
+	}
+	return dropNullNodes(next) as Record<string, unknown>;
+}
+
 async function readJsonBody(res: Response): Promise<string> {
 	const text = await res.text();
 	try {
@@ -142,7 +181,10 @@ export function createGithubClient(env: Env, fetchImpl: FetchImpl = fetch): Gith
 				const body = await res.text();
 				mapStatus(res, body);
 			}
-			let payload: { data?: unknown; errors?: Array<{ type?: string; message?: string }> };
+			let payload: {
+				data?: unknown;
+				errors?: Array<{ type?: string; message?: string; path?: unknown[] }>;
+			};
 			try {
 				payload = (await res.json()) as typeof payload;
 			} catch {
@@ -164,7 +206,7 @@ export function createGithubClient(env: Env, fetchImpl: FetchImpl = fetch): Gith
 			}
 			const data = payload.data as Record<string, unknown>;
 			if (errors.length > 0) {
-				return dropNullNodes(data) as Record<string, unknown>;
+				return applyGraphqlErrors(data, errors);
 			}
 			return data;
 		},

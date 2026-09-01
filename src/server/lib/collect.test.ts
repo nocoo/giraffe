@@ -3,6 +3,7 @@ import {
 	clampToBudget,
 	collectKind,
 	collectRepos,
+	emptyCollected,
 	MAX_STAGED_BYTES,
 	nextPath,
 	ownerName,
@@ -81,6 +82,26 @@ describe("collect helpers", () => {
 		const empty = clampToBudget({ truncated: false, items: ["zzzzzzzz"] }, 0);
 		expect(empty.payload.items).toEqual([]);
 		expect(empty.bytes).toBe(0);
+		expect(emptyCollected("repo:o/n:details", "t")).toMatchObject({
+			truncated: true,
+			fetched_at: "t",
+			default_branch: "",
+			url: "",
+		});
+		expect(emptyCollected("repos", "t").repos).toEqual([]);
+		expect(emptyCollected("issues", "t").issues).toEqual([]);
+		expect(emptyCollected("prs", "t").pull_requests).toEqual([]);
+		expect(emptyCollected("alerts", "t")).toMatchObject({ unavailable: true, items: [] });
+		expect(emptyCollected("notifications", "t").notifications).toEqual([]);
+		expect(emptyCollected("repo:o/n:actions", "t").runs).toEqual([]);
+		expect(emptyCollected("repo:o/n:traffic", "t")).toMatchObject({ forbidden: false });
+		expect(emptyCollected("repo:o/n:security", "t")).toMatchObject({ unavailable: true });
+		expect(emptyCollected("repo:o/n:issues", "t").issues).toEqual([]);
+		expect(emptyCollected("repo:o/n:prs", "t").pull_requests).toEqual([]);
+		expect(emptyCollected("repo:o/n:releases", "t").releases).toEqual([]);
+		expect(emptyCollected("repo:o/n:languages", "t").languages).toEqual({});
+		expect(emptyCollected("repo:o/n:contributors", "t").contributors).toEqual([]);
+		expect(emptyCollected("other", "t")).toEqual({ fetched_at: "t", truncated: true });
 	});
 });
 
@@ -250,7 +271,17 @@ describe("collectKind", () => {
 				throw new ApiError(403, "github_forbidden", "no");
 			},
 		});
-		expect((await collectKind(forbidden, "tok", "issues", ["o/n"])).truncated).toBe(true);
+		await expect(collectKind(forbidden, "tok", "issues", ["o/n"])).rejects.toMatchObject({
+			code: "github_forbidden",
+		});
+		const http404 = client({
+			graphql: async () => {
+				throw new ApiError(404, "not_found", "no");
+			},
+		});
+		await expect(collectKind(http404, "tok", "prs", ["o/n"])).rejects.toMatchObject({
+			code: "not_found",
+		});
 		const hard = client({
 			graphql: async () => {
 				throw new ApiError(401, "github_unauthorized", "no");

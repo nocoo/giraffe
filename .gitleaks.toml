@@ -1,5 +1,5 @@
 title = "giraffe"
 
 [[allowlists]]
-description = "Cloudflare Access audience hash is not a secret"
-paths = ['''src/server/lib/access-config\.ts''']
+description = "pinned Cloudflare Access audience hash"
+regexes = ['''708cd6083298fe4ff68440b542fb1d440f5c5fcd399b17f6f44a21cb4d4cf2c6''']

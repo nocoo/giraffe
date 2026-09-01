@@ -3,6 +3,7 @@ import type { Env } from "../env";
 import { createApp } from "../index";
 import { insertAccountStmt } from "../lib/db/accounts";
 import { createDb } from "../lib/db/d1";
+import { upsertDayStmt } from "../lib/db/snapshot-days";
 import { replaceSnapshotStmts } from "../lib/db/snapshots";
 import { openSqliteD1 } from "../lib/db/sqlite-d1";
 import { encryptToken, parseKeyBytes } from "../lib/token-crypto";
@@ -448,6 +449,9 @@ describe("refresh route", () => {
 		);
 		expect(capped.status).toBe(200);
 		expect(notifications).toBe(0);
+		expect((await createApp().request("http://localhost/api/notifications", {}, e)).status).toBe(
+			409,
+		);
 		const odd = env();
 		const oddId = await createAccount(odd);
 		const oddDb = createDb(odd.DB);
@@ -554,6 +558,13 @@ describe("refresh route", () => {
 		);
 		expect(capped.status).toBe(200);
 		expect(n).toBeGreaterThan(30);
+		const details = await createApp().request(
+			"http://localhost/api/repos/octocat/hello-world",
+			{},
+			e,
+		);
+		expect(details.status).toBe(200);
+		expect(await details.json()).toMatchObject({ truncated: true, default_branch: "", url: "" });
 		const huge = env();
 		const hugeId = await createAccount(huge);
 		const hugeDb = createDb(huge.DB);
@@ -641,5 +652,107 @@ describe("refresh route", () => {
 			).status,
 		).toBe(200);
 		expect((await createApp().request("http://localhost/api/insights", {}, skip)).status).toBe(409);
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+			const url = String(input);
+			if (url.endsWith("/graphql")) {
+				const body = JSON.parse(String(init?.body ?? "{}")) as { query?: string };
+				if ((body.query ?? "").includes("viewer")) {
+					return Response.json({
+						data: {
+							viewer: {
+								repositories: {
+									nodes: Array.from({ length: 40 }, (_, i) => ({
+										nameWithOwner: `org/r${i}`,
+										name: `r${i}`,
+										owner: { login: "org" },
+										pushedAt: "2026-08-01T00:00:00.000Z",
+										issues: { totalCount: 0 },
+									})),
+									pageInfo: { hasNextPage: false },
+								},
+							},
+						},
+					});
+				}
+				return Response.json(graphqlData(body.query ?? ""));
+			}
+			throw new Error(`unexpected ${url}`);
+		});
+		const mixed = await createApp().request(
+			"http://localhost/api/refresh",
+			{ method: "POST", headers, body: JSON.stringify({ kinds: ["repos", "insights"] }) },
+			huge,
+		);
+		expect(mixed.status).toBe(200);
+		const mixedBody = (await mixed.json()) as { truncated_kinds: string[] };
+		expect(mixedBody.truncated_kinds).toContain("insights");
+		const digestEnv = env();
+		const digestId = await createAccount(digestEnv);
+		const digestDb = createDb(digestEnv.DB);
+		const fatRepos = Array.from({ length: 80 }, (_, i) => ({
+			name_with_owner: `org/${"r".repeat(80_000)}${i}`,
+			stargazer_count: 0,
+			fork_count: 0,
+			open_issue_count: 0,
+		}));
+		await digestDb
+			.prepare("INSERT INTO snapshots (account_id, kind, payload, fetched_at) VALUES (?, ?, ?, ?)")
+			.bind(digestId, "repos", JSON.stringify({ truncated: false, repos: fatRepos }), fetchedAt)
+			.run();
+		await digestDb.batch([
+			upsertDayStmt(digestDb, digestId, new Date().toISOString().slice(0, 10), {
+				stars: 0,
+				forks: 0,
+				open_issues: 0,
+				repos: fatRepos.length,
+				by_repo: [],
+			}),
+		]);
+		stubGithub();
+		const digestRes = await createApp().request(
+			"http://localhost/api/refresh",
+			{ method: "POST", headers, body: JSON.stringify({ kinds: ["digest"] }) },
+			digestEnv,
+		);
+		expect(digestRes.status).toBe(200);
+		const digestBody = (await digestRes.json()) as { truncated: boolean };
+		expect(digestBody.truncated).toBe(true);
+		expect(
+			await (await createApp().request("http://localhost/api/digest", {}, digestEnv)).json(),
+		).toEqual(digestBody);
+	});
+
+	it("aborts cross-repo search http errors without writing", async () => {
+		const e = env();
+		await createAccount(e);
+		stubGithub();
+		expect(
+			(
+				await createApp().request(
+					"http://localhost/api/refresh",
+					{ method: "POST", headers, body: JSON.stringify({ kinds: ["repos"] }) },
+					e,
+				)
+			).status,
+		).toBe(200);
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+			const url = String(input);
+			if (url.endsWith("/graphql")) {
+				const body = JSON.parse(String(init?.body ?? "{}")) as { query?: string };
+				if ((body.query ?? "").includes("search")) {
+					return new Response("no", { status: 403 });
+				}
+				return Response.json(graphqlData(body.query ?? ""));
+			}
+			throw new Error(`unexpected ${url}`);
+		});
+		const failed = await createApp().request(
+			"http://localhost/api/refresh",
+			{ method: "POST", headers, body: JSON.stringify({ kinds: ["issues"] }) },
+			e,
+		);
+		expect(failed.status).toBe(403);
+		expect((await createApp().request("http://localhost/api/issues", {}, e)).status).toBe(409);
+		expect((await createApp().request("http://localhost/api/repos", {}, e)).status).toBe(200);
 	});
 });
