@@ -1,3 +1,11 @@
+import type { Identity } from "./lib/access-identity";
+import type { Db } from "./lib/db/d1";
+
+export type AppVars = {
+	db: Db;
+	identity: Identity;
+};
+
 export interface Env {
 	DB: D1Database;
 	ASSETS: Fetcher;

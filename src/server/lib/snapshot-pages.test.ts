@@ -23,6 +23,17 @@ describe("snapshot-pages", () => {
 		expect(Array.isArray(assembled.repos)).toBe(true);
 	});
 
+	it("moves leftover items onto the second page", () => {
+		const item = { blob: "x".repeat(900_000) };
+		const { pages, truncated } = splitPages("repos", {
+			fetched_at: "t",
+			truncated: false,
+			repos: [item, item, item],
+		});
+		expect(pages.length).toBe(2);
+		expect(truncated).toBe(true);
+	});
+
 	it("drops a single oversized element", () => {
 		const huge = { blob: "y".repeat(1_600_000) };
 		const { truncated, pages } = splitPages("repos", {
@@ -48,5 +59,11 @@ describe("snapshot-pages", () => {
 		});
 		expect(empty.truncated).toBe(true);
 		expect(assemblePages("repos", [])).toEqual({ fetched_at: "", truncated: false });
+		expect(
+			assemblePages("repos", [
+				{ kind: "repos", payload: JSON.stringify({ repos: [1] }) },
+				{ kind: "repos#2", payload: JSON.stringify({ repos: "nope" }) },
+			]),
+		).toEqual({ repos: [1] });
 	});
 });

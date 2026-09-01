@@ -61,15 +61,15 @@ export function splitPages(
 			truncated = true;
 			continue;
 		}
-		const slot = pageItems[page] ?? [];
+		const slot = pageItems[page] as unknown[];
 		if (fitsPage(payload, key, slot, item, true)) {
 			slot.push(item);
 			continue;
 		}
 		if (page === 0) {
 			page = 1;
-			const second = pageItems[1];
-			if (second && fitsPage(payload, key, second, item, true)) {
+			const second = pageItems[1] as unknown[];
+			if (fitsPage(payload, key, second, item, true)) {
 				second.push(item);
 				continue;
 			}
@@ -111,7 +111,7 @@ export function assemblePages(logical: string, rows: SnapshotPage[]): Record<str
 		return head;
 	}
 	const tail = JSON.parse(second.payload) as Record<string, unknown>;
-	const a = Array.isArray(head[key]) ? (head[key] as unknown[]) : [];
+	const a = head[key] as unknown[];
 	const b = Array.isArray(tail[key]) ? (tail[key] as unknown[]) : [];
 	return { ...head, [key]: [...a, ...b] };
 }

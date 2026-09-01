@@ -91,6 +91,25 @@ describe("access", () => {
 			fetchImpl,
 		);
 		expect(id).toEqual({ email: "a@b.c", name: "Ada" });
+		const noExp = await signJwt(pair.privateKey, {
+			iss: "http://127.0.0.1:17047",
+			aud: "giraffe-e2e",
+			email: "a@b.c",
+		});
+		expect(
+			(
+				await resolveIdentity(
+					new Request("http://x/api/me", { headers: { "Cf-Access-Jwt-Assertion": noExp } }),
+					env({
+						ENVIRONMENT: "test",
+						CF_ACCESS_TEAM_DOMAIN: "http://127.0.0.1:17047",
+						CF_ACCESS_AUD: "giraffe-e2e",
+						ACCESS_JWKS_URL: "http://127.0.0.1:17047/cdn-cgi/access/certs",
+					}),
+					fetchImpl,
+				)
+			).email,
+		).toBe("a@b.c");
 		const arrayAud = await signJwt(pair.privateKey, {
 			iss: "http://127.0.0.1:17047",
 			aud: ["giraffe-e2e"],

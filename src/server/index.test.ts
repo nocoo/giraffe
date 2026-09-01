@@ -34,6 +34,18 @@ describe("worker fetch", () => {
 		expect(missing.status).toBe(404);
 		const method = await createApp().request("http://localhost/api/live", { method: "POST" }, e);
 		expect(method.status).toBe(405);
+		expect(
+			(
+				await createApp().request(
+					"http://localhost/api/me",
+					{ method: "POST", headers: { origin: "https://giraffe.dev.hexly.ai" } },
+					e,
+				)
+			).status,
+		).toBe(405);
+		expect(
+			(await createApp().request("http://localhost/api/refresh", { method: "GET" }, e)).status,
+		).toBe(405);
 		const prod = { ...e, ENVIRONMENT: "production" as const };
 		const unauth = await createApp().request("http://localhost/api/me", {}, prod);
 		expect(unauth.status).toBe(401);

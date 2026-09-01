@@ -20,8 +20,9 @@ export function createDb(raw: D1Database): Db {
 		}
 		statements += n;
 	}
+	const originals = new WeakMap<object, D1PreparedStatement>();
 	const wrap = (stmt: D1PreparedStatement): D1PreparedStatement => {
-		return {
+		const wrapped = {
 			bind: (...values: unknown[]) => wrap(stmt.bind(...values)),
 			first: async <T = Record<string, unknown>>(col?: string) => {
 				bump();
@@ -40,6 +41,8 @@ export function createDb(raw: D1Database): Db {
 				return stmt.run();
 			},
 		} as D1PreparedStatement;
+		originals.set(wrapped, stmt);
+		return wrapped;
 	};
 	return {
 		get statements() {
@@ -52,7 +55,7 @@ export function createDb(raw: D1Database): Db {
 			bump(statementsToRun.length);
 			inBatch = true;
 			try {
-				return await raw.batch(statementsToRun);
+				return await raw.batch(statementsToRun.map((stmt) => originals.get(stmt) ?? stmt));
 			} finally {
 				inBatch = false;
 			}
