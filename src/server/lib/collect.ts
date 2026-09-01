@@ -136,8 +136,12 @@ async function searchList(
 	const names = [...repos].sort();
 	const items: unknown[] = [];
 	let truncated = false;
+	let stop = false;
 	const query = isPr ? PR_SEARCH : ISSUE_SEARCH;
 	for (let i = 0; i < names.length; i += 20) {
+		if (stop) {
+			break;
+		}
 		const group = names.slice(i, i + 20);
 		const q = `${isPr ? "is:pr" : "is:issue"} is:open ${group.map((n) => `repo:${n}`).join(" ")}`;
 		let after: string | null = null;
@@ -153,7 +157,14 @@ async function searchList(
 					  }
 					| undefined;
 				if (!search) {
+					if (strict) {
+						if (gh.graphqlErrors.some((err) => err.type === "NOT_FOUND")) {
+							throw new ApiError(404, "not_found", "github not found");
+						}
+						throw new ApiError(403, "github_forbidden", "github forbidden");
+					}
 					truncated = true;
+					stop = true;
 					break;
 				}
 				const nodes = search.nodes ?? [];
@@ -164,6 +175,7 @@ async function searchList(
 					: ({ truncated: true, issues: items } as Collected);
 				if (exceedsBudget(staged, budget)) {
 					truncated = true;
+					stop = true;
 					break;
 				}
 				const count = search.issueCount ?? 0;
@@ -201,6 +213,7 @@ async function searchList(
 			} catch (err) {
 				if (err instanceof TruncatedError) {
 					truncated = true;
+					stop = true;
 					break;
 				}
 				throw err;
@@ -329,10 +342,6 @@ async function collectAlerts(
 				break;
 			} catch (err) {
 				if (err instanceof TruncatedError) {
-					truncated = true;
-					break;
-				}
-				if (skipSoft(err)) {
 					truncated = true;
 					break;
 				}

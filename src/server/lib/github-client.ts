@@ -171,7 +171,11 @@ export function createGithubClient(env: Env, fetchImpl: FetchImpl = fetch): Gith
 			if (res.status === 204 || res.status === 205) {
 				return res;
 			}
-			if (res.status === 202 && path === "/notifications") {
+			if (
+				res.status === 202 &&
+				(init?.method ?? "GET").toUpperCase() === "PUT" &&
+				path === "/notifications"
+			) {
 				return res;
 			}
 			if (!res.ok) {

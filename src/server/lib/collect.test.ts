@@ -389,7 +389,9 @@ describe("collectKind", () => {
 				throw new TruncatedError();
 			},
 		});
-		expect((await collectKind(soft, "tok", "alerts", ["o/n"])).truncated).toBe(true);
+		await expect(collectKind(soft, "tok", "alerts", ["o/n"])).rejects.toMatchObject({
+			code: "not_found",
+		});
 		const capGql = client({
 			graphql: async () => {
 				throw new TruncatedError();
@@ -619,6 +621,43 @@ describe("collectKind", () => {
 		await expect(collectKind(gqlErr, "tok", "repo:o/n:prs", [])).rejects.toMatchObject({
 			code: "github_forbidden",
 		});
+		const pathless = client({});
+		pathless.githubGraphql = async () => {
+			pathless.graphqlErrors = [{ type: "FORBIDDEN" }];
+			return {};
+		};
+		await expect(collectKind(pathless, "tok", "repo:o/n:issues", [])).rejects.toMatchObject({
+			code: "github_forbidden",
+		});
+		pathless.githubGraphql = async () => {
+			pathless.graphqlErrors = [{ type: "NOT_FOUND" }];
+			return {};
+		};
+		await expect(collectKind(pathless, "tok", "repo:o/n:prs", [])).rejects.toMatchObject({
+			code: "not_found",
+		});
+		let groups = 0;
+		const bulkySearch = client({
+			graphql: () => {
+				groups += 1;
+				return {
+					search: {
+						issueCount: 1,
+						pageInfo: { hasNextPage: false },
+						nodes: [{ ...issueNode, title: "x".repeat(400) }],
+					},
+				};
+			},
+		});
+		const bulkyOut = await collectKind(
+			bulkySearch,
+			"tok",
+			"issues",
+			Array.from({ length: 21 }, (_, i) => `o/r${i}`),
+			120,
+		);
+		expect(bulkyOut.truncated).toBe(true);
+		expect(groups).toBe(1);
 		const labeled = client({
 			graphql: () => ({
 				search: {
