@@ -36,6 +36,23 @@ export function collectFetchAliases(root: unknown): Set<string> {
 	while (changed) {
 		changed = false;
 		walk(root, (node) => {
+			if (node.type === "AssignmentExpression") {
+				const left = node.left as Record<string, unknown> | undefined;
+				const right = node.right as Record<string, unknown> | undefined;
+				if (left?.type === "Identifier" && right) {
+					const name = String(left.name);
+					if (
+						isFetchExpr(right) ||
+						(right.type === "Identifier" && aliases.has(String(right.name)))
+					) {
+						if (!aliases.has(name)) {
+							aliases.add(name);
+							changed = true;
+						}
+					}
+				}
+				return;
+			}
 			if (node.type !== "VariableDeclarator") {
 				return;
 			}

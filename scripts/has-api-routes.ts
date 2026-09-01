@@ -20,6 +20,11 @@ async function collect(dir: string, acc: string[]): Promise<void> {
 }
 
 export async function hasApiRoutes(): Promise<boolean> {
+	const routed: string[] = [];
+	await collect("src/server/routes", routed);
+	if (routed.length > 0) {
+		return true;
+	}
 	const files: string[] = [];
 	await collect("src/server", files);
 	for (const file of files) {
