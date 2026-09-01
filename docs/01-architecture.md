@@ -68,7 +68,7 @@ Giraffe 是个人 GitHub 监控控制台。仓库 code name 为 `giraffe`。本�
 | 校验 | Zod v4 | 请求体与 PAT 录入 |
 | 数据 | Cloudflare D1 | `accounts` + 通用 `snapshots` |
 | 密钥 | Worker secrets | `TOKEN_ENCRYPTION_KEY_V<n>` + `TOKEN_ENCRYPTION_KEY_CURRENT`；明文 PAT 不落库 |
-| 门禁 | Cloudflare Access JWT | 生产校验 `iss`/`aud`/JWKS；本机仅 `--var ENVIRONMENT:development` 或 `.dev.vars` |
+| 门禁 | Cloudflare Access JWT | 生产校验 `iss`/`aud`/JWKS；本机 `dev:server` 用 `.dev.vars`；E2E 用 runner `--env-file` |
 | 部署 | `wrangler deploy` | `[assets]` + `run_worker_first = ["/api/*"]`，`not_found_handling = "single-page-application"` |
 | Lint | Biome 2.x | `biome check --error-on-warnings` |
 | L1 | Vitest 4 | 覆盖率 ≥ 90%（UI 薄壳豁免） |

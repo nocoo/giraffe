@@ -94,7 +94,7 @@ Runner 必须：
 
 1. 建临时目录（例如 `.wrangler/e2e-run/`），把 `wrangler.toml` 拷进去；`src/` 与 schema 文件（`src/server/lib/db/schema.sql` 或 `migrations/`，以 03 为准）必须能从该目录解析。
 2. persist 使用**仓库根绝对路径** `.wrangler/e2e/`（L3 为 `.wrangler/e2e-pw/`），不要写成相对临时 cwd 的嵌套路径。
-3. **只在该临时目录**写 `--env-file`（以及如需的 `.dev.vars`），内容仅限 fixture。仓库根 `.dev.vars` 不得传给 wrangler。
+3. **只**用 runner 写的 `--env-file` 注入 fixture。L2/L3 **不写、不读** `.dev.vars`。本机 `dev:server` 才用 `.dev.vars`。仓库根 `.dev.vars` 不得传给 E2E wrangler。
 4. Wrangler `--config` 指向拷贝的 toml，`--persist-to` 为绝对路径。
 
 Fixture 至少：
@@ -109,7 +109,9 @@ CF_ACCESS_AUD=giraffe-e2e
 ACCESS_JWKS_URL=http://127.0.0.1:17047/cdn-cgi/access/certs
 ```
 
-`ENVIRONMENT`：套件 A 为 `development`，套件 B 为 `test`，生产为空或 `production`。`--var` 若用必须是 `KEY:VALUE`。
+`ENVIRONMENT`：套件 A 为 `development`，套件 B 为 `test`，生产为空或 `production`。
+
+生产（空/`production`）**忽略** `GITHUB_API_BASE` 与 `ACCESS_JWKS_URL`。G1 检查 `wrangler.toml` 不得出现这两项，也不得出现 `ENVIRONMENT=development` 或 `ENVIRONMENT=test`。L1 覆盖：生产模式下即使注入这两项也不改 JWKS、不改 GitHub origin。
 
 ### 5.2 生命周期
 
@@ -129,13 +131,13 @@ ACCESS_JWKS_URL=http://127.0.0.1:17047/cdn-cgi/access/certs
 8. 停 wrangler，再进入下一套件
 9. finally 杀全部进程
 
-GitHub 出站的**唯一**入口是 `githubFetch(env, url)`（或同等单函数）。该函数：
+GitHub 出站的**唯一**入口是 `githubFetch(env, url)`。比较用 `new URL(url).origin === new URL(base).origin`，不是 hostname 对 origin。
 
-- `GITHUB_API_BASE` 已设：hostname 必须等于 stub origin，否则 throw，不调用真正的 fetch
-- 未设：只允许 `api.github.com`
-- L2 必须设置 `GITHUB_API_BASE`，否则 runner 失败关闭
+- `ENVIRONMENT` 为 `development` 或 `test`：必须用 `GITHUB_API_BASE`；origin 不匹配则 **throw 且不调用 fetch**
+- 生产：忽略 `GITHUB_API_BASE`，origin 只能是 `https://api.github.com`
+- L2 runner 未设 `GITHUB_API_BASE` 则失败关闭
 
-G1 禁止在 `github-client` 之外出现 `fetch(` 指向 GitHub。L1 覆盖「错 host 即 throw」。这是进程内强制边界，不依赖 stub 去观察直连流量。
+G1：除 `github-client` 外禁止 `fetch(`。L1 的 github-client 测试必须 `vi.stubGlobal("fetch")`（或注入 fake fetch），禁止真实网络；覆盖 origin 不匹配 throw。这是强制边界。
 
 端口占用则失败并打印占用方，禁止改打 7045。
 
@@ -143,7 +145,7 @@ G1 禁止在 `github-client` 之外出现 `fetch(` 指向 GitHub。L1 覆盖「�
 
 **套件 A — 功能（可短路 Access）**
 
-- 注入 `ENVIRONMENT=development`（仅临时 `.dev.vars`，不是 wrangler.toml `[vars]`）
+- 注入 `ENVIRONMENT=development`（仅该套件 `--env-file`，不是 wrangler.toml `[vars]`，不是 `.dev.vars`）
 - GitHub 只允许 `GITHUB_API_BASE`。Worker 禁止在 `GITHUB_API_BASE` 之外发请求。Stub 记请求；套件结束时 `api.github.com` 命中必须为 0
 - `GITHUB_API_BASE` 未注入则 Worker 与 runner 都失败关闭，不得默默打 GitHub
 
@@ -167,7 +169,7 @@ PAT `POST /api/accounts` 成功**与失败**路径（400 缺 scope、GitHub stub
 - 生产（`ENVIRONMENT` 空或 `production`）**必须忽略** `ACCESS_JWKS_URL`，只信 `CF_ACCESS_TEAM_DOMAIN` 的 JWKS。L1 覆盖「生产模式下 fixture JWKS 被忽略」
 - 用 stub JWKS 签发 fixture JWT
 - 除明确公开的 `GET /api/live` 外，**每一个**受保护的方法+路径：无 JWT / 坏签名 / 错 `aud` → 401。只测 `/api/me` 不够
-- 至少一条合法 fixture JWT → 2xx（可用 `/api/me`）
+- **每一个**受保护方法+路径：合法 fixture JWT 不得 401（允许 200/409/其它业务码）。只给 `/api/me` 发合法 JWT 不够
 - 此套件覆盖「中间件是否挂上每一条受保护路由」，不替代套件 A 的业务断言
 
 两套都要跑。缺套件 B 不算 L2 绿。
@@ -183,7 +185,7 @@ L3 **只跑套件 A**（`ENVIRONMENT=development` Access 短路）。不做套�
 1. 先 `vite build`，把真实 `dist/client` 放进临时目录（不要占位壳）
 2. persist：`.wrangler/e2e-pw/`
 3. 端口 27045；同样先 migrate 再启动
-4. 同样轮询 `GET /api/live` 且 `d1_marker=test`
+4. 与 L2 相同方式初始化 D1（schema.sql 或 03 指定的 migrations），再轮询 `GET /api/live` 且 `d1_marker=test`
 5. finally 清理
 
 最低路径（05 可加，不可减）：

@@ -18,7 +18,7 @@ Direction document: [docs/01-architecture.md](docs/01-architecture.md). Numbered
 | Validation | Zod v4 |
 | Database | Cloudflare D1 `giraffe-db` (binding `DB`). E2E uses local Miniflare SQLite |
 | GitHub auth | Encrypted PAT in D1 (multi-account). No Device Flow, no `gh` CLI |
-| App gate | Cloudflare Access JWT (`iss` + `aud` + JWKS). Bypass only via `.dev.vars` / `--var ENVIRONMENT:development`, never deployable `[vars]`. `workers_dev = false` |
+| App gate | Cloudflare Access JWT (`iss` + `aud` + JWKS). Local dev: `.dev.vars`. E2E: runner `--env-file` only. Never deployable `[vars]`. `workers_dev = false` |
 | Lint | Biome (`biome check --error-on-warnings`). No ESLint |
 | Tests | Vitest (L1) + real-HTTP E2E (L2) + Playwright (L3) |
 | Deploy | `wrangler deploy` (assets + worker) |
