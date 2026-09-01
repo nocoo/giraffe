@@ -6,6 +6,6 @@
 |---|------|
 | 01 | [架构、技术选型与功能](01-architecture.md) |
 | 02 | [质量保证](02-quality.md) |
-| 03 | 数据 Schema（未写） |
+| 03 | [数据 Schema](03-schema.md) |
 | 04 | Server 设计（未写） |
 | 05 | Client 设计（未写） |

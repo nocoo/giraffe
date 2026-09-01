@@ -59,7 +59,7 @@ Numbered docs before the layer they govern. Sequence:
 | # | Doc | Gate |
 |---|---|---|
 | 02 | Quality | tests, coverage, when each layer runs. Required before any feature code |
-| 03 | Data schema | GitHub API + reference-project shapes, D1 tables. Required before persistence |
+| 03 | Data schema | [docs/03-schema.md](docs/03-schema.md). Required before persistence |
 | 04 | Server design | every endpoint, behavior, response contract, atomic commit steps. Phase 1 |
 | 05 | Client design | Vite page structure and presentation, atomic commit steps. After phase 1, before Client code |
 
