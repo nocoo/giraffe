@@ -131,7 +131,7 @@ CREATE TABLE snapshot_days (
 
 第 1 页 kind **不加** `#1`。读取时：取 `kind` 与所有 `kind#n`，按 n 排序拼接数组字段。写入时先删该逻辑 kind 的全部物理行再插入。
 
-切分页：在数组根字段上切（`repos` / `issues` / `pullRequests` 等），单元素超过 1,500,000 则拒绝该元素并记 `truncated: true`。
+切分页：在数组根字段上切（`repos` / `issues` / `pull_requests` 等），单元素超过 1,500,000 则拒绝该元素并记 `truncated: true`。
 
 ---
 
@@ -330,6 +330,7 @@ CREATE TABLE snapshot_days (
 ```json
 {
   "fetched_at": "...",
+  "truncated": false,
   "description": null,
   "homepage": null,
   "default_branch": "main",
@@ -374,6 +375,7 @@ CREATE TABLE snapshot_days (
 ```json
 {
   "fetched_at": "...",
+  "truncated": false,
   "forbidden": false,
   "views": { "count": 0, "uniques": 0, "points": [] },
   "clones": { "count": 0, "uniques": 0, "points": [] }
@@ -387,6 +389,7 @@ CREATE TABLE snapshot_days (
 ```json
 {
   "fetched_at": "...",
+  "truncated": false,
   "unavailable": false,
   "dependabot_open": 0,
   "code_scanning_open": 0
@@ -424,6 +427,7 @@ CREATE TABLE snapshot_days (
 ```json
 {
   "fetched_at": "...",
+  "truncated": false,
   "languages": { "TypeScript": 1000 }
 }
 ```
