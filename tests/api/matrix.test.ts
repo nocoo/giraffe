@@ -441,19 +441,29 @@ describe("api method matrix", () => {
 		noSecrets(detailsBody);
 		const issuesBody = (await (await api("/api/issues")).json()) as Record<string, unknown>;
 		snapshotMeta(issuesBody);
-		expect((issuesBody.issues as unknown[])[0]).toMatchObject({
+		expect((issuesBody.issues as unknown[])[0]).toEqual({
 			name_with_owner: "octocat/hello-world",
 			number: 1,
 			title: "bug",
 			url: "https://github.com/octocat/hello-world/issues/1",
+			created_at: "2026-08-01T00:00:00.000Z",
+			updated_at: "2026-08-02T00:00:00.000Z",
 			author_login: "octocat",
+			labels: [{ name: "bug", color: "ededed" }],
+			comments_count: 0,
 		});
 		const prsBody = (await (await api("/api/prs")).json()) as Record<string, unknown>;
 		snapshotMeta(prsBody);
-		expect((prsBody.pull_requests as unknown[])[0]).toMatchObject({
+		expect((prsBody.pull_requests as unknown[])[0]).toEqual({
 			name_with_owner: "octocat/hello-world",
 			number: 2,
 			title: "pr",
+			url: "https://github.com/octocat/hello-world/pull/2",
+			created_at: "2026-08-01T00:00:00.000Z",
+			updated_at: "2026-08-02T00:00:00.000Z",
+			author_login: "octocat",
+			is_draft: false,
+			review_decision: "APPROVED",
 			additions: 1,
 			deletions: 1,
 			base_ref: "main",
@@ -466,11 +476,12 @@ describe("api method matrix", () => {
 			dependabot_open: 1,
 			code_scanning_open: 0,
 		});
-		expect((alertsBody.items as unknown[])[0]).toMatchObject({
+		expect((alertsBody.items as unknown[])[0]).toEqual({
 			name_with_owner: "octocat/hello-world",
 			source: "dependabot",
 			severity: "low",
 			summary: "demo",
+			url: "https://github.com/advisories/GHSA-demo",
 		});
 		const insightsBody = (await (await api("/api/insights")).json()) as Record<string, unknown>;
 		snapshotMeta(insightsBody);
@@ -509,45 +520,74 @@ describe("api method matrix", () => {
 			await api("/api/repos/octocat/hello-world/actions")
 		).json()) as Record<string, unknown>;
 		snapshotMeta(actionsBody);
-		expect((actionsBody.runs as unknown[])[0]).toMatchObject({
+		expect((actionsBody.runs as unknown[])[0]).toEqual({
 			id: 1,
 			name: "ci",
+			html_url: "https://github.com/octocat/hello-world/actions/runs/1",
 			status: "completed",
 			conclusion: "success",
+			event: "push",
+			head_branch: "main",
+			created_at: "2026-08-01T00:00:00.000Z",
+			updated_at: "2026-08-01T00:00:00.000Z",
 		});
 		const releasesBody = (await (
 			await api("/api/repos/octocat/hello-world/releases")
 		).json()) as Record<string, unknown>;
 		snapshotMeta(releasesBody);
-		expect((releasesBody.releases as unknown[])[0]).toMatchObject({
+		expect((releasesBody.releases as unknown[])[0]).toEqual({
 			id: 1,
 			tag_name: "v1.0.0",
 			name: "one",
+			html_url: "https://github.com/octocat/hello-world/releases/tag/v1.0.0",
+			draft: false,
+			prerelease: false,
+			published_at: "2026-08-01T00:00:00.000Z",
 		});
 		const contributorsBody = (await (
 			await api("/api/repos/octocat/hello-world/contributors")
 		).json()) as Record<string, unknown>;
 		snapshotMeta(contributorsBody);
-		expect((contributorsBody.contributors as unknown[])[0]).toMatchObject({
+		expect((contributorsBody.contributors as unknown[])[0]).toEqual({
 			login: "octocat",
+			avatar_url: "https://github.com/octocat.png",
+			html_url: "https://github.com/octocat",
 			contributions: 1,
 		});
 		const repoIssues = (await (
 			await api("/api/repos/octocat/hello-world/issues")
 		).json()) as Record<string, unknown>;
 		snapshotMeta(repoIssues);
-		expect((repoIssues.issues as unknown[])[0]).toMatchObject({
+		expect((repoIssues.issues as unknown[])[0]).toEqual({
+			name_with_owner: "octocat/hello-world",
 			number: 1,
 			title: "bug",
+			url: "https://github.com/octocat/hello-world/issues/1",
+			created_at: "2026-08-01T00:00:00.000Z",
+			updated_at: "2026-08-02T00:00:00.000Z",
+			author_login: "octocat",
+			labels: [{ name: "bug", color: "ededed" }],
+			comments_count: 0,
 		});
 		const repoPrs = (await (await api("/api/repos/octocat/hello-world/prs")).json()) as Record<
 			string,
 			unknown
 		>;
 		snapshotMeta(repoPrs);
-		expect((repoPrs.pull_requests as unknown[])[0]).toMatchObject({
+		expect((repoPrs.pull_requests as unknown[])[0]).toEqual({
+			name_with_owner: "octocat/hello-world",
 			number: 2,
 			title: "pr",
+			url: "https://github.com/octocat/hello-world/pull/2",
+			created_at: "2026-08-01T00:00:00.000Z",
+			updated_at: "2026-08-02T00:00:00.000Z",
+			author_login: "octocat",
+			is_draft: false,
+			review_decision: "APPROVED",
+			additions: 1,
+			deletions: 1,
+			base_ref: "main",
+			head_ref: "feat",
 		});
 		const oneKind = await api("/api/refresh", {
 			method: "POST",

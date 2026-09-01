@@ -366,6 +366,7 @@ async function collectAlerts(
 			} catch (err) {
 				if (err instanceof TruncatedError) {
 					truncated = true;
+					stop = true;
 					break;
 				}
 				throw err;

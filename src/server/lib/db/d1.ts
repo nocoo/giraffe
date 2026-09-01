@@ -31,7 +31,13 @@ export function createDb(raw: D1Database): Db {
 	const originals = new WeakMap<object, D1PreparedStatement>();
 	const wrap = (stmt: D1PreparedStatement): D1PreparedStatement => {
 		const wrapped = {
-			bind: (...values: unknown[]) => wrap(stmt.bind(...values)),
+			bind: (...values: unknown[]) => {
+				try {
+					return wrap(stmt.bind(...values));
+				} catch {
+					throw new ApiError(500, "db_error", "d1 error");
+				}
+			},
 			first: async <T = Record<string, unknown>>(col?: string) => {
 				bump();
 				return d1Try(async () => {

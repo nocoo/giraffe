@@ -6,9 +6,11 @@ import { resolveIdentity } from "./middleware/access";
 import { assertOrigin } from "./middleware/origin";
 import { activateAccount, getAccounts, postAccount, removeAccount } from "./routes/accounts";
 import { liveResponse } from "./routes/live";
+import { getMe } from "./routes/me";
 import { postRead, postReadAll } from "./routes/notifications";
 import { postRefresh } from "./routes/refresh";
-import { repoParts, snapshotGet } from "./routes/snapshots";
+import { repoGet } from "./routes/repos";
+import { snapshotGet } from "./routes/snapshots";
 
 function notAllowed(): Response {
 	return jsonError(405, "method_not_allowed", "method not allowed");
@@ -35,14 +37,6 @@ function onGet(
 	app.on("GET", path, handler);
 }
 
-function repoGet(
-	c: Context<{ Bindings: Env; Variables: AppVars }>,
-	suffix: string,
-): Promise<Response> {
-	const { owner, name } = repoParts(String(c.req.param("owner")), String(c.req.param("name")));
-	return snapshotGet(c, `repo:${owner}/${name}:${suffix}`);
-}
-
 export function createApp(): Hono<{ Bindings: Env; Variables: AppVars }> {
 	const app = new Hono<{ Bindings: Env; Variables: AppVars }>();
 	app.onError((err) => toErrorResponse(err));
@@ -64,7 +58,7 @@ export function createApp(): Hono<{ Bindings: Env; Variables: AppVars }> {
 	allow(app, "/api/live", ["GET"]);
 	onGet(app, "/api/live", (c) => liveResponse(c.env, c.get("db")));
 	allow(app, "/api/me", ["GET"]);
-	onGet(app, "/api/me", (c) => c.json(c.get("identity")));
+	onGet(app, "/api/me", (c) => getMe(c));
 	allow(app, "/api/accounts", ["GET", "POST"]);
 	onGet(app, "/api/accounts", (c) => getAccounts(c));
 	app.post("/api/accounts", (c) => postAccount(c));

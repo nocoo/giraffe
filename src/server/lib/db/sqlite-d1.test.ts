@@ -12,12 +12,28 @@ describe("openSqliteD1", () => {
 		expect(await db.dump()).toBe("");
 		expect((await db.exec("SELECT 1")).count).toBe(0);
 		const rolling = openSqliteD1();
-		const ok = rolling.prepare("SELECT 1 AS n");
+		await rolling
+			.prepare(
+				"INSERT INTO accounts (id, login, avatar_url, token_ciphertext, token_last4, key_version, scopes, capabilities, is_active, created_at, updated_at, last_used_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			)
+			.bind("1", "octo", "", "{}", "AAAA", 1, "", "{}", 1, "t", "t", null)
+			.run();
+		expect(
+			(await rolling.prepare("SELECT COUNT(*) AS n FROM accounts").first<{ n: number }>())?.n,
+		).toBe(1);
+		const insert = rolling
+			.prepare(
+				"INSERT INTO accounts (id, login, avatar_url, token_ciphertext, token_last4, key_version, scopes, capabilities, is_active, created_at, updated_at, last_used_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			)
+			.bind("2", "hub", "", "{}", "BBBB", 1, "", "{}", 0, "t", "t", null);
 		const boom = {
 			run: async () => {
 				throw new Error("fail");
 			},
 		} as unknown as D1PreparedStatement;
-		await expect(rolling.batch([ok, boom])).rejects.toThrow("fail");
+		await expect(rolling.batch([insert, boom])).rejects.toThrow("fail");
+		expect(
+			(await rolling.prepare("SELECT COUNT(*) AS n FROM accounts").first<{ n: number }>())?.n,
+		).toBe(1);
 	});
 });
