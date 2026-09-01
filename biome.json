@@ -1,0 +1,51 @@
+{
+	"$schema": "https://biomejs.dev/schemas/2.5.10/schema.json",
+	"assist": { "actions": { "source": { "organizeImports": "on" } } },
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"preset": "recommended",
+			"correctness": {
+				"noUnusedImports": "error",
+				"noUnusedVariables": "error",
+				"noNodejsModules": "off",
+				"useImportExtensions": "off",
+				"noUndeclaredDependencies": "off",
+				"noUndeclaredVariables": "off"
+			},
+			"suspicious": {
+				"noExplicitAny": "error",
+				"noSkippedTests": "error",
+				"noFocusedTests": "error",
+				"noConsole": "off"
+			},
+			"style": {
+				"noNonNullAssertion": "error",
+				"useConst": "error"
+			}
+		}
+	},
+	"formatter": {
+		"enabled": true,
+		"indentStyle": "tab",
+		"indentWidth": 2,
+		"lineWidth": 100
+	},
+	"javascript": {
+		"formatter": {
+			"quoteStyle": "double",
+			"semicolons": "always"
+		}
+	},
+	"files": {
+		"includes": [
+			"**",
+			"!**/node_modules",
+			"!**/dist",
+			"!**/coverage",
+			"!**/.wrangler",
+			"!**/bun.lock",
+			"!**/*.d.ts"
+		]
+	}
+}

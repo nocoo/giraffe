@@ -1,0 +1,7 @@
+bun run typecheck
+bun run lint
+bun run gate:test-skip
+bun run gate:wrangler-vars
+bun run gate:github-fetch
+bun run gate:client-fetch
+bun run test:coverage

@@ -1,0 +1,33 @@
+{
+	"name": "giraffe",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev:server": "bun run scripts/dev-server.ts",
+		"typecheck": "tsc --noEmit",
+		"lint": "biome check --error-on-warnings .",
+		"lint:fix": "biome check --write .",
+		"test": "vitest run",
+		"test:coverage": "vitest run --coverage",
+		"test:e2e:api": "bun run scripts/run-e2e.ts",
+		"test:e2e:bdd": "bun run scripts/run-e2e-bdd.ts",
+		"gate:test-skip": "bun run scripts/gate-test-skip.ts",
+		"gate:wrangler-vars": "bun run scripts/gate-wrangler-vars.ts",
+		"gate:github-fetch": "bun run scripts/gate-github-fetch.ts",
+		"gate:client-fetch": "bun run scripts/gate-client-fetch.ts",
+		"gate:security": "bun run scripts/gate-security.ts",
+		"prepare": "husky"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.5.10",
+		"@cloudflare/workers-types": "5.20260814.1",
+		"@types/bun": "^1.4.0",
+		"@vitest/coverage-v8": "4.1.11",
+		"husky": "9.1.7",
+		"oxc-parser": "^0.147.0",
+		"typescript": "7.0.2",
+		"vitest": "4.1.11",
+		"wrangler": "4.123.0"
+	}
+}
