@@ -71,6 +71,12 @@ describe("createGithubClient", () => {
 				if (path.endsWith("/empty")) {
 					return new Response(null, { status: 205 });
 				}
+				if (path.endsWith("/notifications")) {
+					return new Response(null, { status: 202 });
+				}
+				if (path.endsWith("/accepted")) {
+					return new Response("{}", { status: 202 });
+				}
 				if (path.endsWith("/unauth")) {
 					return new Response("no", { status: 401 });
 				}
@@ -84,6 +90,10 @@ describe("createGithubClient", () => {
 			},
 		);
 		expect((await client.githubApi("t", "/empty")).status).toBe(205);
+		expect((await client.githubApi("t", "/notifications", { method: "PUT" })).status).toBe(202);
+		await expect(client.githubApi("t", "/accepted")).rejects.toMatchObject({
+			code: "github_error",
+		});
 		await expect(client.githubApi("t", "/unauth")).rejects.toMatchObject({
 			code: "github_unauthorized",
 		});

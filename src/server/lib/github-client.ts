@@ -178,6 +178,9 @@ export function createGithubClient(env: Env, fetchImpl: FetchImpl = fetch): Gith
 			) {
 				return res;
 			}
+			if (res.status === 202) {
+				throw new ApiError(502, "github_error", "github error");
+			}
 			if (!res.ok) {
 				const body = await res.text();
 				mapStatus(res, body);

@@ -11,5 +11,13 @@ describe("openSqliteD1", () => {
 		expect(row?.value).toBe("test");
 		expect(await db.dump()).toBe("");
 		expect((await db.exec("SELECT 1")).count).toBe(0);
+		const rolling = openSqliteD1();
+		const ok = rolling.prepare("SELECT 1 AS n");
+		const boom = {
+			run: async () => {
+				throw new Error("fail");
+			},
+		} as unknown as D1PreparedStatement;
+		await expect(rolling.batch([ok, boom])).rejects.toThrow("fail");
 	});
 });

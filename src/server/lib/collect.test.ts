@@ -78,6 +78,12 @@ describe("collect helpers", () => {
 		const noArray = clampToBudget({ truncated: false, fetched_at: "t", languages: { ts: 1 } }, 1);
 		expect(noArray.payload.truncated).toBe(true);
 		expect(noArray.payload.fetched_at).toBe("t");
+		const details = clampToBudget(
+			{ truncated: false, fetched_at: "t", default_branch: "main", url: "u" },
+			1,
+			"repo:o/n:details",
+		);
+		expect(details.payload).toMatchObject({ truncated: true, default_branch: "", url: "" });
 		expect(noArray.bytes).toBe(0);
 		const empty = clampToBudget({ truncated: false, items: ["zzzzzzzz"] }, 0);
 		expect(empty.payload.items).toEqual([]);
@@ -195,6 +201,45 @@ describe("collectRepos", () => {
 				}),
 		});
 		expect((await collectKind(actions, "tok", "repo:o/n:actions", [], 80)).truncated).toBe(true);
+		const traffic = client({
+			api: () =>
+				Response.json({
+					count: 1,
+					uniques: 1,
+					views: Array.from({ length: 40 }, () => ({
+						timestamp: "t",
+						count: 1,
+						uniques: 1,
+					})),
+					clones: [],
+				}),
+		});
+		const trafficOut = await collectKind(traffic, "tok", "repo:o/n:traffic", [], 80);
+		expect(trafficOut.truncated).toBe(true);
+		const fatSec = client({
+			graphql: () => ({
+				repository: {
+					vulnerabilityAlerts: {
+						nodes: Array.from({ length: 20 }, () => ({
+							id: "1",
+							securityAdvisory: { summary: "s".repeat(400), permalink: "u" },
+							securityVulnerability: { severity: "HIGH" },
+						})),
+					},
+				},
+			}),
+			api: async () => {
+				throw new Error("scan skipped");
+			},
+		});
+		expect((await collectKind(fatSec, "tok", "repo:o/n:security", [], 20)).truncated).toBe(true);
+		const skipScan = client({
+			graphql: () => ({ repository: { vulnerabilityAlerts: { nodes: [] } } }),
+			api: async () => {
+				throw new Error("scan skipped");
+			},
+		});
+		expect((await collectKind(skipScan, "tok", "alerts", ["o/n"], 10)).truncated).toBe(true);
 		let pages = 0;
 		const bulky = client({
 			graphql: () => {

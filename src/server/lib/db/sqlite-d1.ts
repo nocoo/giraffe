@@ -168,11 +168,25 @@ export function openSqliteD1(marker = false): D1Database {
 	return {
 		prepare: (sql: string) => new Stmt(mem, sql) as unknown as D1PreparedStatement,
 		batch: async (statements: D1PreparedStatement[]) => {
-			const out: D1Result[] = [];
-			for (const statement of statements) {
-				out.push(await statement.run());
+			const snap = {
+				accounts: mem.accounts.map((row) => ({ ...row })),
+				snapshots: mem.snapshots.map((row) => ({ ...row })),
+				days: mem.days.map((row) => ({ ...row })),
+				marker: mem.marker.map((row) => ({ ...row })),
+			};
+			try {
+				const out: D1Result[] = [];
+				for (const statement of statements) {
+					out.push(await statement.run());
+				}
+				return out;
+			} catch (err) {
+				mem.accounts = snap.accounts;
+				mem.snapshots = snap.snapshots;
+				mem.days = snap.days;
+				mem.marker = snap.marker;
+				throw err;
 			}
-			return out;
 		},
 		dump: async () => "",
 		exec: async () => ({ count: 0, duration: 0 }),

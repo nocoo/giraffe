@@ -74,7 +74,7 @@ describe("worker fetch", () => {
 		const crashed = await createApp().request("http://localhost/api/accounts", {}, boom);
 		expect(crashed.status).toBe(500);
 		expect(await crashed.json()).toEqual({
-			error: { code: "internal_error", message: "db down" },
+			error: { code: "db_error", message: "d1 error" },
 		});
 		const prod = { ...e, ENVIRONMENT: "production" as const };
 		const unauth = await createApp().request("http://localhost/api/me", {}, prod);

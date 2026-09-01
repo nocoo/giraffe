@@ -48,6 +48,7 @@ function arrayKey(payload: Record<string, unknown>): string | undefined {
 export function clampToBudget(
 	payload: Collected,
 	budget: number,
+	kind = "",
 ): { payload: Collected; bytes: number; capped: boolean } {
 	const limit = Math.max(0, budget);
 	const encoded = JSON.stringify(payload);
@@ -57,10 +58,11 @@ export function clampToBudget(
 	}
 	const key = arrayKey(payload);
 	if (!key || !Array.isArray(payload[key])) {
-		const next = {
-			fetched_at: payload.fetched_at ?? "",
-			truncated: true,
-		} as Collected;
+		const next = (
+			kind
+				? emptyCollected(kind, String(payload.fetched_at ?? ""))
+				: { fetched_at: payload.fetched_at ?? "", truncated: true }
+		) as Collected;
 		const bytes = utf8Bytes(JSON.stringify(next));
 		if (bytes > limit) {
 			return { payload: next, bytes: 0, capped: true };
@@ -377,6 +379,21 @@ async function collectAlerts(
 		if (stop) {
 			break;
 		}
+		if (
+			exceedsBudget(
+				{
+					truncated: true,
+					unavailable: ok === 0,
+					items,
+					dependabot_open: dependabot,
+					code_scanning_open: scanning,
+				},
+				budget,
+			)
+		) {
+			truncated = true;
+			break;
+		}
 		const { owner, name } = ownerName(full);
 		try {
 			const res = await gh.githubApi(
@@ -522,11 +539,21 @@ async function collectRepoKind(
 	if (suffix === "traffic") {
 		try {
 			const views = await gh.githubApi(token, `${base}/traffic/views`);
+			const viewsBody = mapTraffic(await views.json(), "views");
+			const afterViews = {
+				truncated: true,
+				forbidden: false,
+				views: viewsBody,
+				clones: emptyTraffic(),
+			};
+			if (exceedsBudget(afterViews, budget)) {
+				return afterViews;
+			}
 			const clones = await gh.githubApi(token, `${base}/traffic/clones`);
 			return {
 				truncated: false,
 				forbidden: false,
-				views: mapTraffic(await views.json(), "views"),
+				views: viewsBody,
 				clones: mapTraffic(await clones.json(), "clones"),
 			};
 		} catch (err) {
@@ -581,6 +608,24 @@ async function collectRepoKind(
 			} else {
 				throw err;
 			}
+		}
+		if (
+			exceedsBudget(
+				{
+					truncated: true,
+					unavailable,
+					dependabot_open: count,
+					code_scanning_open: scanning,
+				},
+				budget,
+			)
+		) {
+			return {
+				truncated: true,
+				unavailable,
+				dependabot_open: count,
+				code_scanning_open: scanning,
+			};
 		}
 		try {
 			const res = await gh.githubApi(token, `${base}/code-scanning/alerts?state=open&per_page=100`);

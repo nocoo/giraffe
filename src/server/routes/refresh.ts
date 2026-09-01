@@ -210,7 +210,7 @@ export async function postRefresh(
 			}
 		}
 		payload = { ...payload, fetched_at: fetchedAt };
-		const clamped = clampToBudget(payload, MAX_STAGED_BYTES - used);
+		const clamped = clampToBudget(payload, MAX_STAGED_BYTES - used, kind);
 		if (clamped.capped && clamped.bytes === 0) {
 			stop = true;
 			break;

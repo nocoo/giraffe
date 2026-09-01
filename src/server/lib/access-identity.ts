@@ -3,9 +3,10 @@ export type Identity = {
 	name: string;
 };
 
-export function identityFromClaims(email: string | undefined, name: string | undefined): Identity {
-	if (!email) {
+export function identityFromClaims(email: unknown, name: unknown): Identity {
+	if (typeof email !== "string" || email.length === 0) {
 		throw new Error("missing email");
 	}
-	return { email, name: name && name.length > 0 ? name : email };
+	const resolvedName = typeof name === "string" && name.length > 0 ? name : email;
+	return { email, name: resolvedName };
 }

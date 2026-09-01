@@ -59,7 +59,11 @@ export function createDb(raw: D1Database): Db {
 			return statements;
 		},
 		prepare(query) {
-			return wrap(raw.prepare(query));
+			try {
+				return wrap(raw.prepare(query));
+			} catch {
+				throw new ApiError(500, "db_error", "d1 error");
+			}
 		},
 		async batch(statementsToRun) {
 			bump(statementsToRun.length);

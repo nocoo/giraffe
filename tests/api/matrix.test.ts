@@ -68,7 +68,20 @@ function accessHeaders(extra: HeadersInit = {}, token = jwt): HeadersInit {
 
 async function api(path: string, init: RequestInit = {}, token = jwt): Promise<Response> {
 	const headers = new Headers(accessHeaders(init.headers, token));
-	return fetch(`${base}${path}`, { ...init, headers });
+	let last: unknown;
+	for (let attempt = 0; attempt < 3; attempt += 1) {
+		try {
+			return await fetch(`${base}${path}`, { ...init, headers });
+		} catch (err) {
+			last = err;
+			const msg = String(err);
+			if (!msg.includes("ECONNRESET") && !msg.includes("fetch failed")) {
+				throw err;
+			}
+			await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+		}
+	}
+	throw last;
 }
 
 function rawMethod(method: string, path: string): Promise<number> {
@@ -271,8 +284,15 @@ describe("api method matrix", () => {
 			token_last4?: string;
 			is_active?: boolean;
 		};
-		expect(account.login).toBe("octocat");
-		expect(account.is_active).toBe(true);
+		expect(account).toMatchObject({
+			id: expect.any(String),
+			login: "octocat",
+			avatar_url: expect.any(String),
+			token_last4: expect.any(String),
+			scopes: expect.any(String),
+			is_active: true,
+		});
+		expect(account).toHaveProperty("capabilities");
 		noSecrets(account);
 		const envelopes = d1Rows("SELECT token_ciphertext FROM accounts");
 		expect(envelopes.length).toBeGreaterThan(0);
@@ -440,6 +460,39 @@ describe("api method matrix", () => {
 		).json()) as Record<string, unknown>;
 		snapshotMeta(languagesBody);
 		expect(languagesBody.languages).toMatchObject({ TypeScript: 1 });
+		const actionsBody = (await (
+			await api("/api/repos/octocat/hello-world/actions")
+		).json()) as Record<string, unknown>;
+		snapshotMeta(actionsBody);
+		expect(Array.isArray(actionsBody.runs)).toBe(true);
+		const releasesBody = (await (
+			await api("/api/repos/octocat/hello-world/releases")
+		).json()) as Record<string, unknown>;
+		snapshotMeta(releasesBody);
+		expect(Array.isArray(releasesBody.releases)).toBe(true);
+		const contributorsBody = (await (
+			await api("/api/repos/octocat/hello-world/contributors")
+		).json()) as Record<string, unknown>;
+		snapshotMeta(contributorsBody);
+		expect(Array.isArray(contributorsBody.contributors)).toBe(true);
+		const repoIssues = (await (
+			await api("/api/repos/octocat/hello-world/issues")
+		).json()) as Record<string, unknown>;
+		snapshotMeta(repoIssues);
+		expect(Array.isArray(repoIssues.issues)).toBe(true);
+		const repoPrs = (await (await api("/api/repos/octocat/hello-world/prs")).json()) as Record<
+			string,
+			unknown
+		>;
+		snapshotMeta(repoPrs);
+		expect(Array.isArray(repoPrs.pull_requests)).toBe(true);
+		const oneKind = await api("/api/refresh", {
+			method: "POST",
+			headers: { origin, "content-type": "application/json" },
+			body: JSON.stringify({ kinds: ["alerts"] }),
+		});
+		expect(oneKind.status).toBe(200);
+		expect(await oneKind.json()).toEqual(await (await api("/api/alerts")).json());
 		const notifSnap = (await (await api("/api/notifications")).json()) as Record<
 			string,
 			unknown
