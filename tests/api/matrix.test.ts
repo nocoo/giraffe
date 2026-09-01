@@ -239,6 +239,9 @@ describe("api method matrix", () => {
 		expect(created.status).toBe(201);
 		const account = (await created.json()) as { id: string; token_last4?: string };
 		expect(JSON.stringify(account)).not.toContain(PAT);
+		expect(JSON.stringify(account)).not.toContain("token_ciphertext");
+		expect(JSON.stringify(account)).not.toContain('"iv"');
+		expect(JSON.stringify(account)).not.toContain('"ct"');
 		const envelopes = d1Rows("SELECT token_ciphertext FROM accounts");
 		expect(envelopes.length).toBeGreaterThan(0);
 		const envelope = String(envelopes[0]?.token_ciphertext ?? "");

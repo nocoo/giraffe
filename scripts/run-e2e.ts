@@ -1,6 +1,6 @@
 import { execFileSync, spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -106,7 +106,7 @@ function run(cmd: string, args: string[], extra: Record<string, string> = {}): P
 	});
 }
 
-async function applySchema(): Promise<void> {
+async function applySchema(config: string): Promise<void> {
 	await rm(persist, { recursive: true, force: true });
 	await mkdir(persist, { recursive: true });
 	await run(wranglerBin, [
@@ -115,6 +115,7 @@ async function applySchema(): Promise<void> {
 		"giraffe-db",
 		"--local",
 		`--persist-to=${persist}`,
+		`--config=${config}`,
 		`--file=${schema}`,
 	]);
 	const marker = join(root, ".wrangler/e2e-run/marker.sql");
@@ -128,6 +129,7 @@ async function applySchema(): Promise<void> {
 		"giraffe-db",
 		"--local",
 		`--persist-to=${persist}`,
+		`--config=${config}`,
 		`--file=${marker}`,
 	]);
 }
@@ -135,25 +137,20 @@ async function applySchema(): Promise<void> {
 async function suite(name: "A" | "B"): Promise<void> {
 	const tmp = join(root, ".wrangler/e2e-run");
 	await mkdir(join(tmp, "dist/client"), { recursive: true });
+	const configPath = join(tmp, "wrangler.toml");
+	const rootToml = await readFile(join(root, "wrangler.toml"), "utf8");
 	await writeFile(
-		join(tmp, "wrangler.toml"),
-		`name = "giraffe"
-main = ${JSON.stringify(join(root, "src/server/index.ts"))}
-compatibility_date = "2026-04-01"
-workers_dev = false
-preview_urls = false
-[dev]
-port = 17045
-[assets]
-directory = ${JSON.stringify(join(tmp, "dist/client"))}
-binding = "ASSETS"
-run_worker_first = ["/api", "/api/*"]
-not_found_handling = "single-page-application"
-[[d1_databases]]
-binding = "DB"
-database_name = "giraffe-db"
-database_id = "00000000-0000-4000-8000-000000000001"
-`,
+		configPath,
+		rootToml
+			.replaceAll("port = 7045", "port = 17045")
+			.replaceAll(
+				'directory = "./dist/client"',
+				`directory = ${JSON.stringify(join(tmp, "dist/client"))}`,
+			)
+			.replaceAll(
+				'main = "src/server/index.ts"',
+				`main = ${JSON.stringify(join(root, "src/server/index.ts"))}`,
+			),
 	);
 	await writeFile(join(tmp, "dist/client/index.html"), "<!doctype html><title>giraffe</title>\n");
 	const envFile = join(tmp, `.env.${name}`);
@@ -171,7 +168,7 @@ database_id = "00000000-0000-4000-8000-000000000001"
 		lines.push("ACCESS_JWKS_URL=http://127.0.0.1:17047/cdn-cgi/access/certs");
 	}
 	await writeFile(envFile, `${lines.join("\n")}\n`);
-	await applySchema();
+	await applySchema(configPath);
 	await assertPortFree(17045);
 	const logPath = join(tmp, `wrangler-${name}.log`);
 	await writeFile(logPath, "");

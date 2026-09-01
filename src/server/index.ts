@@ -29,6 +29,7 @@ function allow(
 		"OPTIONS",
 		"TRACE",
 		"CONNECT",
+		"PROPFIND",
 	].filter((method) => !methods.includes(method));
 	app.on(blocked, path, () => notAllowed());
 }
@@ -63,14 +64,17 @@ export function createApp(): Hono<{ Bindings: Env; Variables: AppVars }> {
 		}
 		return c.env.ASSETS.fetch(c.req.raw);
 	});
-	allow(app, "/api/live", ["GET"]);
-	onGet(app, "/api/live", async (c) => liveResponse(c.env, createDb(c.env.DB)));
 	app.use("/api/*", async (c, next) => {
 		c.set("db", createDb(c.env.DB));
-		c.set("identity", await resolveIdentity(c.req.raw, c.env));
-		assertOrigin(c.req.raw, envMode(c.env.ENVIRONMENT));
+		const liveGet = c.req.path === "/api/live" && c.req.raw.method === "GET";
+		if (!liveGet) {
+			c.set("identity", await resolveIdentity(c.req.raw, c.env));
+			assertOrigin(c.req.raw, envMode(c.env.ENVIRONMENT));
+		}
 		await next();
 	});
+	allow(app, "/api/live", ["GET"]);
+	onGet(app, "/api/live", (c) => liveResponse(c.env, c.get("db")));
 	allow(app, "/api/me", ["GET"]);
 	onGet(app, "/api/me", (c) => c.json(c.get("identity")));
 	allow(app, "/api/accounts", ["GET", "POST"]);

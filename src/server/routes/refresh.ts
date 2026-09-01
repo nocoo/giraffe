@@ -192,10 +192,17 @@ export async function postRefresh(
 		if (stop) {
 			break;
 		}
+		const remaining = MAX_STAGED_BYTES - used;
 		let payload: Collected =
 			kind === "repos"
-				? await collectRepos(gh, token)
-				: await collectKind(gh, token, kind, needsRepoNames(kind) ? await repoNames() : []);
+				? await collectRepos(gh, token, remaining)
+				: await collectKind(
+						gh,
+						token,
+						kind,
+						needsRepoNames(kind) ? await repoNames() : [],
+						remaining,
+					);
 		if (needsRepoNames(kind)) {
 			const reposPayload = await loaded("repos");
 			if (reposPayload?.truncated === true) {

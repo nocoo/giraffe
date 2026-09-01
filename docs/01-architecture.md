@@ -69,7 +69,7 @@ Giraffe 是个人 GitHub 监控控制台。仓库 code name 为 `giraffe`。本�
 | 数据 | Cloudflare D1 | `accounts` + 通用 `snapshots` |
 | 密钥 | Worker secrets | `TOKEN_ENCRYPTION_KEY_V<n>` + `TOKEN_ENCRYPTION_KEY_CURRENT`；明文 PAT 不落库 |
 | 门禁 | Cloudflare Access JWT | 生产校验 `iss`/`aud`/JWKS；本机 `dev:server` 用 `.dev.vars`；E2E 用 runner `--env-file` |
-| 部署 | `wrangler deploy` | `[assets]` + `run_worker_first = ["/api/*"]`，`not_found_handling = "single-page-application"` |
+| 部署 | `wrangler deploy` | `[assets]` + `run_worker_first = ["/api", "/api/*"]`，`not_found_handling = "single-page-application"` |
 | Lint | Biome 2.x | `biome check --error-on-warnings` |
 | L1 | Vitest 4 | 覆盖率 ≥ 95%（UI 薄壳豁免） |
 | L2 | `scripts/run-e2e.ts` | 真 HTTP，打隔离 D1 |
@@ -151,7 +151,7 @@ port = 7045
 [assets]
 directory = "./dist/client"
 binding = "ASSETS"
-run_worker_first = ["/api/*"]
+run_worker_first = ["/api", "/api/*"]
 not_found_handling = "single-page-application"
 
 [[routes]]

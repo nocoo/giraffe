@@ -169,6 +169,23 @@ describe("collectRepos", () => {
 		const out = await collectRepos(gh, "tok");
 		expect(out.truncated).toBe(true);
 		expect(out.repos).toEqual([]);
+		let pages = 0;
+		const bulky = client({
+			graphql: () => {
+				pages += 1;
+				return {
+					viewer: {
+						repositories: {
+							nodes: [{ nameWithOwner: "o/a", description: "x".repeat(200) }],
+							pageInfo: { hasNextPage: true, endCursor: "c" },
+						},
+					},
+				};
+			},
+		});
+		const capped = await collectRepos(bulky, "tok", 80);
+		expect(capped.truncated).toBe(true);
+		expect(pages).toBe(1);
 	});
 
 	it("rethrows hard graphql failures", async () => {
@@ -507,6 +524,15 @@ describe("collectKind", () => {
 		});
 		expect((await collectKind(forbiddenSec, "tok", "repo:o/n:security", [])).unavailable).toBe(
 			true,
+		);
+		const gqlDenied = client({
+			graphql: async () => {
+				throw new ApiError(403, "github_forbidden", "no");
+			},
+			api: () => Response.json([{ html_url: "https://example.com/a" }]),
+		});
+		expect((await collectKind(gqlDenied, "tok", "repo:o/n:security", [])).code_scanning_open).toBe(
+			1,
 		);
 		expect((await collectKind(gh, "tok", "repo:o/n:issues", [])).issues).toEqual([]);
 		expect((await collectKind(gh, "tok", "repo:o/n:prs", [])).pull_requests).toEqual([]);

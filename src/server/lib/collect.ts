@@ -121,12 +121,17 @@ function skipSoft(err: unknown): boolean {
 	return err instanceof ApiError && (err.code === "github_forbidden" || err.code === "not_found");
 }
 
+function exceedsBudget(payload: Collected, budget: number): boolean {
+	return utf8Bytes(JSON.stringify(payload)) > budget;
+}
+
 async function searchList(
 	gh: GithubClient,
 	token: string,
 	repos: string[],
 	isPr: boolean,
 	strict = false,
+	budget = MAX_STAGED_BYTES,
 ): Promise<Collected> {
 	const names = [...repos].sort();
 	const items: unknown[] = [];
@@ -154,6 +159,13 @@ async function searchList(
 				const nodes = search.nodes ?? [];
 				items.push(...nodes);
 				groupCount += nodes.length;
+				const staged = isPr
+					? ({ truncated: true, pull_requests: items } as Collected)
+					: ({ truncated: true, issues: items } as Collected);
+				if (exceedsBudget(staged, budget)) {
+					truncated = true;
+					break;
+				}
 				const count = search.issueCount ?? 0;
 				if (count >= 1000) {
 					truncated = true;
@@ -199,7 +211,11 @@ async function searchList(
 	return isPr ? { truncated, pull_requests: mapped } : { truncated, issues: mapped };
 }
 
-export async function collectRepos(gh: GithubClient, token: string): Promise<Collected> {
+export async function collectRepos(
+	gh: GithubClient,
+	token: string,
+	budget = MAX_STAGED_BYTES,
+): Promise<Collected> {
 	const nodes: Array<Record<string, unknown>> = [];
 	let after: string | null = null;
 	let truncated = false;
@@ -222,6 +238,10 @@ export async function collectRepos(gh: GithubClient, token: string): Promise<Col
 			if (gh.graphqlErrors.length > 0) {
 				truncated = true;
 			}
+			if (exceedsBudget({ truncated: true, repos: mapRepos(nodes) }, budget)) {
+				truncated = true;
+				break;
+			}
 			if (conn?.pageInfo?.hasNextPage && conn.pageInfo.endCursor) {
 				after = conn.pageInfo.endCursor;
 				continue;
@@ -243,18 +263,19 @@ export async function collectKind(
 	token: string,
 	kind: string,
 	repoNames: string[],
+	budget = MAX_STAGED_BYTES,
 ): Promise<Collected> {
 	if (kind === "issues") {
-		return searchList(gh, token, repoNames, false);
+		return searchList(gh, token, repoNames, false, false, budget);
 	}
 	if (kind === "prs") {
-		return searchList(gh, token, repoNames, true);
+		return searchList(gh, token, repoNames, true, false, budget);
 	}
 	if (kind === "alerts") {
 		return collectAlerts(gh, token, repoNames);
 	}
 	if (kind === "notifications") {
-		return collectNotifications(gh, token);
+		return collectNotifications(gh, token, budget);
 	}
 	if (kind.startsWith("repo:")) {
 		return collectRepoKind(gh, token, kind);
@@ -358,7 +379,11 @@ async function collectAlerts(
 	};
 }
 
-async function collectNotifications(gh: GithubClient, token: string): Promise<Collected> {
+async function collectNotifications(
+	gh: GithubClient,
+	token: string,
+	budget = MAX_STAGED_BYTES,
+): Promise<Collected> {
 	const items: unknown[] = [];
 	let path: string | null = "/notifications?per_page=100";
 	let truncated = false;
@@ -368,7 +393,9 @@ async function collectNotifications(gh: GithubClient, token: string): Promise<Co
 			const body = (await res.json()) as unknown;
 			items.push(...(Array.isArray(body) ? body : []));
 			path = nextPath(res);
-			if (path) {
+			if (exceedsBudget({ truncated: true, notifications: items }, budget)) {
+				truncated = true;
+				break;
 			}
 		} catch (err) {
 			if (err instanceof TruncatedError) {
@@ -469,78 +496,71 @@ async function collectRepoKind(gh: GithubClient, token: string, kind: string): P
 		}
 	}
 	if (suffix === "security") {
+		let after: string | null = null;
+		let count = 0;
+		let truncated = false;
+		let unavailable = false;
+		let scanning = 0;
 		try {
-			let after: string | null = null;
-			let count = 0;
-			let truncated = false;
-			let unavailable = false;
 			for (;;) {
-				try {
-					const data = await gh.githubGraphql(token, ALERTS_QUERY, { o: owner, n: name, after });
-					const repo = data.repository as {
-						vulnerabilityAlerts?: {
-							pageInfo?: { hasNextPage?: boolean; endCursor?: string | null };
-							nodes?: unknown[];
-						};
-					} | null;
-					if (!repo) {
-						unavailable = true;
-						break;
-					}
-					if (gh.graphqlErrors.length > 0) {
-						truncated = true;
-						unavailable = true;
-					}
-					count += repo.vulnerabilityAlerts?.nodes?.length ?? 0;
-					if (
-						repo.vulnerabilityAlerts?.pageInfo?.hasNextPage &&
-						repo.vulnerabilityAlerts.pageInfo.endCursor
-					) {
-						after = repo.vulnerabilityAlerts.pageInfo.endCursor;
-						continue;
-					}
+				const data = await gh.githubGraphql(token, ALERTS_QUERY, { o: owner, n: name, after });
+				const repo = data.repository as {
+					vulnerabilityAlerts?: {
+						pageInfo?: { hasNextPage?: boolean; endCursor?: string | null };
+						nodes?: unknown[];
+					};
+				} | null;
+				if (!repo) {
+					unavailable = true;
 					break;
-				} catch (err) {
-					if (err instanceof TruncatedError) {
-						truncated = true;
-						break;
-					}
-					throw err;
 				}
-			}
-			let scanning = 0;
-			try {
-				const res = await gh.githubApi(
-					token,
-					`${base}/code-scanning/alerts?state=open&per_page=100`,
-				);
-				const body = (await res.json()) as unknown;
-				scanning += Array.isArray(body) ? body.length : 0;
-				if (nextPath(res)) {
-					truncated = true;
-				}
-			} catch (err) {
-				if (skipSoft(err)) {
+				if (gh.graphqlErrors.length > 0) {
 					truncated = true;
 					unavailable = true;
-				} else if (err instanceof TruncatedError) {
-					truncated = true;
-				} else {
-					throw err;
 				}
+				count += repo.vulnerabilityAlerts?.nodes?.length ?? 0;
+				if (
+					repo.vulnerabilityAlerts?.pageInfo?.hasNextPage &&
+					repo.vulnerabilityAlerts.pageInfo.endCursor
+				) {
+					after = repo.vulnerabilityAlerts.pageInfo.endCursor;
+					continue;
+				}
+				break;
 			}
-			return {
-				truncated,
-				unavailable,
-				dependabot_open: count,
-				code_scanning_open: scanning,
-			};
+		} catch (err) {
+			if (err instanceof TruncatedError) {
+				truncated = true;
+			} else if (skipSoft(err)) {
+				truncated = true;
+				unavailable = true;
+			} else {
+				throw err;
+			}
+		}
+		try {
+			const res = await gh.githubApi(token, `${base}/code-scanning/alerts?state=open&per_page=100`);
+			const body = (await res.json()) as unknown;
+			scanning += Array.isArray(body) ? body.length : 0;
+			if (nextPath(res)) {
+				truncated = true;
+			}
 		} catch (err) {
 			if (skipSoft(err)) {
-				return { truncated: false, unavailable: true, dependabot_open: 0, code_scanning_open: 0 };
+				truncated = true;
+				unavailable = true;
+			} else if (err instanceof TruncatedError) {
+				truncated = true;
+			} else {
+				throw err;
 			}
-			throw err;
 		}
+		return {
+			truncated,
+			unavailable,
+			dependabot_open: count,
+			code_scanning_open: scanning,
+		};
 	}
 	if (suffix === "issues") {
 		return searchList(gh, token, [full], false, true);

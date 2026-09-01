@@ -33,7 +33,16 @@ describe("worker fetch", () => {
 		const missing = await createApp().request("http://localhost/api/nope", {}, e);
 		expect(missing.status).toBe(404);
 		const method = await createApp().request("http://localhost/api/live", { method: "POST" }, e);
-		expect(method.status).toBe(405);
+		expect(method.status).toBe(403);
+		expect(
+			(
+				await createApp().request(
+					"http://localhost/api/live",
+					{ method: "POST", headers: { origin: "https://giraffe.dev.hexly.ai" } },
+					e,
+				)
+			).status,
+		).toBe(405);
 		expect(
 			(
 				await createApp().request(
@@ -75,6 +84,12 @@ describe("worker fetch", () => {
 		).toBe(401);
 		expect(
 			(await createApp().request("http://localhost/api/repos", { method: "HEAD" }, prod)).status,
+		).toBe(401);
+		expect(
+			(await createApp().request("http://localhost/api/live", { method: "POST" }, prod)).status,
+		).toBe(401);
+		expect(
+			(await createApp().request("http://localhost/api/live", { method: "HEAD" }, prod)).status,
 		).toBe(401);
 		const root = await createApp().request("http://localhost/", {}, e);
 		expect(await root.text()).toBe("asset");

@@ -168,7 +168,10 @@ export function createGithubClient(env: Env, fetchImpl: FetchImpl = fetch): Gith
 			headers.set("X-GitHub-Api-Version", "2022-11-28");
 			headers.set("User-Agent", `giraffe/${APP_VERSION}`);
 			const res = await client.githubFetch(`${base}${path}`, { ...init, headers });
-			if (res.status === 204 || res.status === 205 || res.status === 202) {
+			if (res.status === 204 || res.status === 205) {
+				return res;
+			}
+			if (res.status === 202 && path === "/notifications") {
 				return res;
 			}
 			if (!res.ok) {
