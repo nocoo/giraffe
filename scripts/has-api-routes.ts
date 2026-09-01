@@ -1,8 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-
-export const API_ROUTE_PATTERN =
-	/["'`]\/api(?:\/|\b)|basePath\(\s*["']\/api["']|route\(\s*["']\/api["']/;
+import { parseSync } from "oxc-parser";
+import { sourceHasApiRoutes } from "./api-route-ast";
 
 async function collect(dir: string, acc: string[]): Promise<void> {
 	const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
@@ -29,7 +28,7 @@ export async function hasApiRoutes(): Promise<boolean> {
 	await collect("src/server", files);
 	for (const file of files) {
 		const text = await readFile(file, "utf8");
-		if (API_ROUTE_PATTERN.test(text)) {
+		if (sourceHasApiRoutes(parseSync(file, text).program)) {
 			return true;
 		}
 	}
