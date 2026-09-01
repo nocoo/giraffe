@@ -114,7 +114,7 @@ export function importSpecs(
 			return;
 		}
 		const from = evalConstString(rec(node.source));
-		if (!from?.startsWith(".")) {
+		if (!from?.startsWith(".") && !from?.startsWith("@/")) {
 			return;
 		}
 		const specifiers = node.specifiers as unknown[] | undefined;

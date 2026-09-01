@@ -18,24 +18,26 @@ async function collect(dir: string, acc: string[]): Promise<void> {
 	}
 }
 
-function resolveImport(fromFile: string, spec: string): string {
-	const base = resolve(dirname(fromFile), spec);
+export function resolveImport(fromFile: string, spec: string, root = "."): string {
+	const base = spec.startsWith("@/")
+		? resolve(root, "src", spec.slice(2))
+		: resolve(dirname(fromFile), spec);
 	if (base.endsWith(".ts")) {
 		return base;
 	}
 	return `${base}.ts`;
 }
 
-export async function hasApiRoutes(): Promise<boolean> {
+export async function hasApiRoutes(root = "."): Promise<boolean> {
 	const routed: string[] = [];
-	await collect("src/server/routes", routed);
+	await collect(join(root, "src/server/routes"), routed);
 	if (routed.length > 0) {
 		return true;
 	}
 	const files: string[] = [];
-	await collect("src/server", files);
+	await collect(join(root, "src/server"), files);
 	const exportFiles: string[] = [...files];
-	await collect("src/lib", exportFiles);
+	await collect(join(root, "src/lib"), exportFiles);
 	const programs = new Map<string, unknown>();
 	const exports = new Map<string, Map<string, string>>();
 	for (const file of exportFiles) {
@@ -52,7 +54,7 @@ export async function hasApiRoutes(): Promise<boolean> {
 		}
 		const extra = new Set<string>();
 		for (const spec of importSpecs(program)) {
-			const target = resolveImport(abs, spec.from);
+			const target = resolveImport(abs, spec.from, root);
 			const exported = exports.get(target)?.get(spec.imported);
 			if (exported && isApiPath(exported)) {
 				extra.add(spec.local);
