@@ -4,7 +4,7 @@ Giraffe 是个人 GitHub 监控控制台。仓库 code name 为 `giraffe`。本�
 
 > 返回 [文档目录](README.md)
 
-本文不评估工作量。阶段 1 Server 已落地（`src/server`）。Client 与 [05](05) 未写；实现时按本文结构创建，不另开兼容层。
+本文不评估工作量。阶段 1 Server 已落地（`src/server`）。Client 与 docs/05 未写；实现时按本文结构创建，不另开兼容层。
 
 ---
 
