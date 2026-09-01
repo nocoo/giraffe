@@ -71,7 +71,7 @@ Giraffe 是个人 GitHub 监控控制台。仓库 code name 为 `giraffe`。本�
 | 门禁 | Cloudflare Access JWT | 生产校验 `iss`/`aud`/JWKS；本机 `dev:server` 用 `.dev.vars`；E2E 用 runner `--env-file` |
 | 部署 | `wrangler deploy` | `[assets]` + `run_worker_first = ["/api/*"]`，`not_found_handling = "single-page-application"` |
 | Lint | Biome 2.x | `biome check --error-on-warnings` |
-| L1 | Vitest 4 | 覆盖率 ≥ 90%（UI 薄壳豁免） |
+| L1 | Vitest 4 | 覆盖率 ≥ 95%（UI 薄壳豁免） |
 | L2 | `scripts/run-e2e.ts` | 真 HTTP，打隔离 D1 |
 | L3 | Playwright | 按需 / CI |
 | G2 | osv-scanner + gitleaks | pre-push |
@@ -409,7 +409,7 @@ giraffe/
 
 | 维 | 要求 | 时机 |
 |----|------|------|
-| L1 | `bun run test:coverage`（不是 `bun run test`）；覆盖率 ≥ 90%；薄壳 `routes/*.tsx` 豁免 | pre-commit，<30s |
+| L1 | `bun run test:coverage`（不是 `bun run test`）；覆盖率 ≥ 95%；薄壳 `routes/*.tsx` 豁免 | pre-commit，<30s |
 | L2 | 真 HTTP。细则以 [02](02-quality.md) 为准：临时目录 `--env-file`、绝对 persist、套件 A/B 两次启动、GitHub 仅 `GITHUB_API_BASE` | pre-push，<3min |
 | L3 | 先 `vite build`，其余隔离同 02。阶段 2 | CI / 按需 |
 | G1 | `tsc` + `biome` + `gate:test-skip` + `gate:wrangler-vars` + `gate:github-fetch` + `gate:client-fetch` | pre-commit |

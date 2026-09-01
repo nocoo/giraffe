@@ -58,7 +58,7 @@ Hook：
 
 ## 4. L1 单元
 
-工具：Vitest 4。覆盖率：**statements、branches、functions、lines 每一项都 ≥ 90%**。任一项低于 90% 即失败。
+工具：Vitest 4。覆盖率：**statements、branches、functions、lines 每一项都 ≥ 95%**。任一项低于 95% 即失败。
 
 `vitest` coverage 用 `include: ["src/**/*.{ts,tsx}"]` 把未 import 的生产文件算进分母（Vitest 4 没有 `coverage.all`）。`exclude` 必须包含测试自身：`**/*.test.ts`、`**/*.test.tsx`、`**/__tests__/**`，以及薄壳 `src/client/routes/*.tsx`。不得把测试文件算进分子。`src/server/routes/` 不豁免。
 
@@ -250,7 +250,7 @@ L3 **只跑套件 A**（`ENVIRONMENT=development` Access 短路）。不做套�
 **阶段 1 可宣告完成**，当且仅当：
 
 - 04 列出的全部接口有 L1（该测的逻辑）和 L2 套件 A+B
-- `test:coverage` 四项均 ≥ 90%，`include` 含全部生产 `src/`（测试文件与薄壳除外）
+- `test:coverage` 四项均 ≥ 95%，`include` 含全部生产 `src/`（测试文件与薄壳除外）
 - pre-commit / pre-push 命令在干净树上可复现绿
 - 无 Client 功能代码
 
@@ -259,4 +259,4 @@ L3 **只跑套件 A**（`ENVIRONMENT=development` Access 短路）。不做套�
 - 阶段 1 的 L1/L2/G1/G2 仍绿
 - 05 列出的页面有 L1 ViewModel/组件测试
 - 第 6 节最低 L3 路径绿
-- 覆盖率仍四项 ≥ 90%
+- 覆盖率仍四项 ≥ 95%

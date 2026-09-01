@@ -92,7 +92,7 @@ Quality authority: [docs/02-quality.md](docs/02-quality.md). Summary below.
 
 | Layer | Tool | Trigger | Bar |
 |---|---|---|---|
-| L1 Unit | vitest | pre-commit | coverage ≥ 90% (thin UI shells exempt) |
+| L1 Unit | vitest | pre-commit | coverage ≥ 95% (thin UI shells exempt) |
 | L2 Integration/API | `scripts/run-e2e.ts` | pre-push | real HTTP, 100% `/api` method combos, isolated D1 |
 | L3 System/E2E | Playwright | CI / on-demand, **phase 2** | PAT settings → repo list → repo detail |
 | G1 Static | `tsc` + Biome + skip/wrangler/github-fetch/client-fetch gates | pre-commit | 0 error, 0 warning |
@@ -119,7 +119,7 @@ bun run build           # vite build → dist/client
 bun run typecheck       # tsc --noEmit
 bun run lint            # biome check --error-on-warnings
 bun run test            # L1 without coverage gate (watch/debug)
-bun run test:coverage   # L1 + ≥90% coverage; this is the pre-commit command
+bun run test:coverage   # L1 + ≥95% coverage; this is the pre-commit command
 bun run test:e2e:api    # L2: 02 runner, ports 17045/17046/17047
 bun run test:e2e:bdd    # L3: 02 runner, port 27045, suite A only
 ```
