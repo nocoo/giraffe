@@ -137,7 +137,7 @@ GitHub 出站的**唯一**入口是 `githubFetch(env, url)`。比较用 `new URL
 - 生产：忽略 `GITHUB_API_BASE`，origin 只能是 `https://api.github.com`
 - L2 runner 未设 `GITHUB_API_BASE` 则失败关闭
 
-G1 `gate:github-fetch` 用 AST（不是纯字符串）禁止白名单外的 `fetch` / `self.fetch` / `globalThis.fetch` 以及 `const { fetch }` 解构。白名单：`github-client.ts`、`access.ts`。不靠 stub 去数 `api.github.com` 命中。L1 github-client 测试注入 fake fetch，覆盖 origin 不匹配 throw。
+G1 `gate:github-fetch` 只扫 `src/server/**`。用 AST（不是纯字符串）禁止白名单外的 `fetch` / `self.fetch` / `globalThis.fetch` 以及 `const { fetch }` 解构。白名单：`github-client.ts`、`access.ts`。`src/client/**` 不在此门（Client 必须用 `fetch` 打 `/api`）。不靠 stub 去数 `api.github.com` 命中。L1 github-client 测试注入 fake fetch，覆盖 origin 不匹配 throw。
 
 端口占用则失败并打印占用方，禁止改打 7045。
 
@@ -203,7 +203,7 @@ L3 **只跑套件 A**（`ENVIRONMENT=development` Access 短路）。不做套�
 - `biome check --error-on-warnings .`：0 error、0 warning
 - `bun run gate:test-skip`（见第 3 节）
 - `bun run gate:wrangler-vars`：`wrangler.toml` 不得含 `GITHUB_API_BASE`、`ACCESS_JWKS_URL`、`ENVIRONMENT=development`、`ENVIRONMENT=test`
-- `bun run gate:github-fetch`：除白名单模块外禁止出现全局 `fetch(` / `globalThis.fetch`。白名单仅 `src/server/lib/github-client.ts` 与 `src/server/middleware/access.ts`（JWKS）
+- `bun run gate:github-fetch`：只扫 `src/server/**`。AST 禁止白名单外的 `fetch` / `self.fetch` / `globalThis.fetch` / `const { fetch }`。白名单：`github-client.ts`、`access.ts`。Client 不在此门
 
 **G2**
 
