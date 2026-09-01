@@ -95,7 +95,7 @@ Quality authority: [docs/02-quality.md](docs/02-quality.md). Summary below.
 | L1 Unit | vitest | pre-commit | coverage ≥ 90% (thin UI shells exempt) |
 | L2 Integration/API | `scripts/run-e2e.ts` | pre-push | real HTTP, 100% `/api` method combos, isolated D1 |
 | L3 System/E2E | Playwright | CI / on-demand, **phase 2** | PAT settings → repo list → repo detail |
-| G1 Static | `tsc` + Biome + `gate:test-skip` + `gate:wrangler-vars` + `gate:github-fetch` | pre-commit | 0 error, 0 warning |
+| G1 Static | `tsc` + Biome + skip/wrangler/github-fetch/client-fetch gates | pre-commit | 0 error, 0 warning |
 | G2 Security | osv-scanner + gitleaks | pre-push | 0 vulns, 0 leaked secrets |
 | D1 Isolation | `wrangler dev --local --persist-to` | L2/L3 | local SQLite + `_test_marker`; never remote D1 |
 
@@ -103,7 +103,7 @@ Quality authority: [docs/02-quality.md](docs/02-quality.md). Summary below.
 
 | Hook | Budget | Runs |
 |---|---|---|
-| pre-commit | <30s | G1 (`typecheck` + `lint` + `gate:test-skip` + `gate:wrangler-vars` + `gate:github-fetch`) → L1 (`test:coverage`) |
+| pre-commit | <30s | G1（含 `gate:github-fetch` + `gate:client-fetch`）→ L1 (`test:coverage`) |
 | pre-push | <3min | L2 ‖ G2 |
 | on-demand | — | L3 |
 

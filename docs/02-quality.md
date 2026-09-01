@@ -25,7 +25,7 @@
 | L1 | `bun run test:coverage` | pre-commit | <30s | Server 单测 | Server + Client 单测 |
 | L2 | `bun run test:e2e:api` | **pre-push**（不进 pre-commit） | <3min | 全部 `/api` 真 HTTP | 同左（随 04 增补） |
 | L3 | `bun run test:e2e:bdd` | CI / 按需 | — | **N/A** | 核心界面路径 |
-| G1 | `typecheck` + `lint` + `gate:test-skip` + `gate:wrangler-vars` + `gate:github-fetch` | pre-commit | 含在 30s 内 | 要 | 要 |
+| G1 | `typecheck` + `lint` + skip/wrangler/github-fetch/client-fetch gates | pre-commit | 含在 30s 内 | 要 | 要 |
 | G2 | `bun run gate:security` | pre-push | 与 L2 并行，合计 <3min | 要（有 lockfile 后） | 要 |
 | 隔离 | 见第 8 节 | L2/L3 | — | L2 | L2 + L3 |
 
@@ -48,7 +48,7 @@ Hook：
 
 | Hook | 顺序 | 命令 |
 |------|------|------|
-| pre-commit | G1 → L1 | `bun run typecheck && bun run lint && bun run gate:test-skip && bun run gate:wrangler-vars && bun run gate:github-fetch && bun run test:coverage` |
+| pre-commit | G1 → L1 | `bun run typecheck && bun run lint && bun run gate:test-skip && bun run gate:wrangler-vars && bun run gate:github-fetch && bun run gate:client-fetch && bun run test:coverage` |
 | pre-push | L2 ‖ G2 | `bun run test:e2e:api` 与 `bun run gate:security` 并行 |
 | CI | 阶段 1：G1+L1+L2+G2；阶段 2：再加 L3 | 与本地同一命令 |
 
@@ -137,7 +137,9 @@ GitHub 出站的**唯一**入口是 `githubFetch(env, url)`。比较用 `new URL
 - 生产：忽略 `GITHUB_API_BASE`，origin 只能是 `https://api.github.com`
 - L2 runner 未设 `GITHUB_API_BASE` 则失败关闭
 
-G1 `gate:github-fetch` 只扫 `src/server/**`。用 AST（不是纯字符串）禁止白名单外的 `fetch` / `self.fetch` / `globalThis.fetch` 以及 `const { fetch }` 解构。白名单：`github-client.ts`、`access.ts`。`src/client/**` 不在此门（Client 必须用 `fetch` 打 `/api`）。不靠 stub 去数 `api.github.com` 命中。L1 github-client 测试注入 fake fetch，覆盖 origin 不匹配 throw。
+G1 `gate:github-fetch` 扫 `src/server/**` 与 `src/lib/**`。AST 禁止白名单外的 `fetch` / `self.fetch` / `globalThis.fetch` / `const { fetch }`。白名单：`github-client.ts`、`access.ts`。`src/lib` 不得 fetch。
+
+G1 `gate:client-fetch` 扫 `src/client/**`：只允许 `src/client/lib/api.ts` 调用 fetch，且 URL 必须是同源相对路径 `/api/...`。禁止 Client 打 `api.github.com` 或其它绝对 URL。
 
 端口占用则失败并打印占用方，禁止改打 7045。
 
@@ -203,7 +205,8 @@ L3 **只跑套件 A**（`ENVIRONMENT=development` Access 短路）。不做套�
 - `biome check --error-on-warnings .`：0 error、0 warning
 - `bun run gate:test-skip`（见第 3 节）
 - `bun run gate:wrangler-vars`：`wrangler.toml` 不得含 `GITHUB_API_BASE`、`ACCESS_JWKS_URL`、`ENVIRONMENT=development`、`ENVIRONMENT=test`
-- `bun run gate:github-fetch`：只扫 `src/server/**`。AST 禁止白名单外的 `fetch` / `self.fetch` / `globalThis.fetch` / `const { fetch }`。白名单：`github-client.ts`、`access.ts`。Client 不在此门
+- `bun run gate:github-fetch`：扫 `src/server/**` 与 `src/lib/**`。AST 禁止白名单外的 fetch 别名。白名单：`github-client.ts`、`access.ts`
+- `bun run gate:client-fetch`：Client 只允许 `src/client/lib/api.ts` 以相对路径 `/api/` 调用 fetch
 
 **G2**
 
