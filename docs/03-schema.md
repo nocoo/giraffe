@@ -129,7 +129,7 @@ CREATE TABLE snapshot_days (
 | 需第 2 页 | `repos#2` |
 | 第 n 页 | `repos#n`（2≤n≤16） |
 
-第 1 页 kind **不加** `#1`。最多 16 页。第 17 页起的数据丢弃并 `truncated: true`。读取时：一条 SELECT 取 `kind`…`kind#16`，按 n 连续拼接，缺页即停。写入时一条 `DELETE … kind IN (16 个精确值)` 再插入。禁止 `LIKE`。
+第 1 页 kind **不加** `#1`。最多 16 页。第 17 页起的数据丢弃并 `truncated: true`。读取时：一条 SELECT 取 `kind`…`kind#16`，按 n 连续拼接，缺页即停。写入时一条 `DELETE … kind IN (16 个精确值)` 加一条多行 `INSERT … VALUES`。禁止 `LIKE`，禁止每页一条 INSERT。
 
 切分页：在数组根字段上切（`repos` / `issues` / `pull_requests` 等），单元素超过 1,500,000 则拒绝该元素并记 `truncated: true`。
 

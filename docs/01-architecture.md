@@ -194,7 +194,7 @@ database_id = "<prod>"
 
 只接受用户粘贴的 **classic PAT**。不做 Device Flow，不从 `gh` CLI 读 token，首版不支持 fine-grained PAT。
 
-必填 scope：`repo`、`read:org`、`read:user`、`notifications`。录入时读取 `X-OAuth-Scopes`，写入 `accounts.scopes`。`accounts.capabilities` 只表示 **token 级** scope 是否出现（例如有没有 `notifications`），不能表示某个仓库的 Traffic / security 权限——那些还依赖仓库角色与 SSO。跨仓列表缺 token 级 scope 时返回 `capability_missing`；单仓 Traffic / security 在 GitHub 返回 403/404 时按仓库返回 `forbidden`，不得把账号级 boolean 当成仓库真相。
+必填 scope：`repo`、`read:org`、`read:user`、`notifications`。录入时读取 `X-OAuth-Scopes`，写入 `accounts.scopes`。`accounts.capabilities` 只表示 **token 级** scope 是否出现（例如有没有 `notifications`），不能表示某个仓库的 Traffic / security 权限——那些还依赖仓库角色与 SSO。跨仓列表缺 token 级 scope 时返回 `capability_missing`；单仓 Traffic 在 GitHub 403/404 时快照 `forbidden: true`；单仓 security 403/404 时快照 `unavailable: true`。不得把账号级 boolean 当成仓库真相。细则见 [04](04-server.md)。
 
 `POST /api/accounts` 校验：
 
