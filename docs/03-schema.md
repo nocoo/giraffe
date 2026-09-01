@@ -16,7 +16,7 @@ GitHub 字段名跟 REST/GraphQL 对齐（`login`、`nameWithOwner`、`stargazer
 - ID：`accounts.id` 用 nanoid（21）。
 - JSON 列存 TEXT。读写用 `JSON.parse` / `JSON.stringify`。
 - 单行总大小必须 < 2,000,000 字节。`payload` 最大 **1,500,000** UTF-8 字节。
-- 超限：同一逻辑 kind 拆成 `kind`、`kind#2`、`kind#3`… 每页仍 ≤ 1,500,000。API 组装后对客户端只暴露逻辑 kind。
+- 超限：同一逻辑 kind 拆成 `kind` 与 `kind#2`。每页 ≤ 1,500,000。再多丢弃并 `truncated: true`。API 组装后对客户端只暴露逻辑 kind。
 - FK：`snapshots.account_id`、`snapshot_days.account_id` → `accounts.id`，`ON DELETE CASCADE`。
 - 生产库名 `giraffe-db`。测试只用 wrangler `--local --persist-to`，不建远程测试库。
 

@@ -120,7 +120,7 @@ G1 禁止把 `ENVIRONMENT=development` / `test`、`GITHUB_API_BASE`、`ACCESS_JW
 
 | HTTP | code | 何时 |
 |------|------|------|
-| 400 | `validation_failed` | Zod 失败、非法 token 形态、未知 kind、`kinds: []`、重复 kind、缺必填 JSON |
+| 400 | `validation_failed` | Zod 失败、非法 token 形态、未知 kind、`kinds: []`、重复 kind、超过 16 项、缺必填 JSON |
 | 400 | `scopes_missing` | `POST /api/accounts` 的 `X-OAuth-Scopes` 未覆盖必填 |
 | 401 | `access_unauthorized` | Access JWT 缺/坏/过期/错 aud/错 iss |
 | 401 | `github_unauthorized` | 出站 GitHub 401（坏 PAT） |
@@ -236,7 +236,7 @@ L1：注入 fake fetch；setup 默认 fetch throw（`network denied in L1`）。
 
 `schema.sql` **不含** `_test_marker`。L2/L3 runner 在执行 schema 之后另跑 03 的 marker SQL。生产禁止建 `_test_marker`。
 
-访问层只用绑定参数，不用字符串拼 SQL。物理页最多 **2**（`kind`、`kind#2`）。替换每个逻辑 kind 恰好 **两条** statement：一条 `DELETE … kind IN (logical, logical#2)`，一条多行 `INSERT … VALUES`（最多 2 行）。读：**一条** `SELECT … WHERE account_id=? AND kind IN (logical, logical#2)`。本请求 staged payload UTF-8 合计不得超过 **16 MiB**，超出则当前 kind `truncated: true` 并停止后续 GitHub 收集。禁止 `LIKE` / `GLOB`。默认 `all` 每 kind 2 页时最终 batch < 80（L1 数语句）。L2 套件 A 对 `all` 满页 fixture 不得出现 Worker 1102 / memory exceeded。
+访问层只用绑定参数，不用字符串拼 SQL。物理页最多 **2**（`kind`、`kind#2`）。替换每个逻辑 kind 恰好 **两条** statement：一条 `DELETE … kind IN (logical, logical#2)`，一条多行 `INSERT … VALUES`（最多 2 行）。读：**一条** `SELECT … WHERE account_id=? AND kind IN (logical, logical#2)`。本请求 **GitHub 源 kind** staged payload UTF-8 合计不得超过 **16 MiB**（不含 snapshot_days / insights / digest）。超出则当前 kind `truncated: true` 并停止后续 GitHub 收集。派生仍按第 9 节规则尝试写入，单行超 1.5MB 则跳过该派生、不列入 `truncated_kinds`。禁止 `LIKE` / `GLOB`。默认 `all` 每 kind 2 页时最终 batch < 80（L1 数语句，并覆盖 16 个单仓 kind 的边界）。L1 断言第 3 页被丢弃且不写 `kind#3`。不把本机 wrangler 未 1102 当成生产 128MB 的证明。
 
 写快照：同一 `DB.batch` 里删除该逻辑 kind 的全部物理行并插入新页。激活：同一 batch 里 `UPDATE … is_active=0` 再 `UPDATE … is_active=1 WHERE id=?`。插入首个账号：`INSERT` 时直接 `is_active=1`，不要先插 0 再改。batch 失败整段回滚，禁止留下半页快照或两个 `is_active=1`。`accounts_one_active` 冲突 → 再读再写一次，仍失败则 500 `db_error`。不得手写双活。
 
@@ -267,7 +267,7 @@ Body（Zod）：`kinds` 可选。
 或 `{}`。
 
 - 缺 `kinds` 或 `"all"`：刷新全部跨仓 GitHub kind：`repos`、`issues`、`prs`、`alerts`、`notifications`。
-- 数组：只对列出的 GitHub kind 出站。重复 kind → 400 `validation_failed`（不去重）。若数组同时含 `repos` 与依赖它的 kind，**无论数组顺序**都先在内存收集 `repos`，再按数组去掉 `repos` 后的顺序收集其余。`issues` / `prs` / `alerts` 需要已有或本轮内存中的 `repos`。否则 409 `snapshot_missing`，**不得**偷偷持久化 repos。
+- 数组：只对列出的 GitHub kind 出站。最多 **16** 项（`all` 计 5）。超过或重复 → 400 `validation_failed`。若数组同时含 `repos` 与依赖它的 kind，**无论数组顺序**都先在内存收集 `repos`，再按数组去掉 `repos` 后的顺序收集其余。`issues` / `prs` / `alerts` 需要已有或本轮内存中的 `repos`。否则 409 `snapshot_missing`，**不得**偷偷持久化 repos。
 - `all` 的串行顺序固定：`repos` → `issues` → `prs` → `alerts` → `notifications`。同一时刻只收集一个 kind。
 - `insights` / `digest` 出现在数组里：不打 GitHub。最终 batch 里：仅当写入或已有的源 kind 均 `truncated === false` 才重算并写派生。源不足：跳过；仅当 kinds **显式**要求该派生且源不足时才 409 `snapshot_missing`。
 - `kinds: []`、未知字符串、非法 `repo:` 形状 → 400 `validation_failed`。
@@ -460,7 +460,7 @@ L1 必测（注入 DB / fake fetch，无网络、无 wrangler）：
 | `insights` | health 三档与 opportunities |
 | `errors` / 路由 | 信封；body 超限 400；未知 `/api` 404；已知路径错误方法 405；`onError` → 500 `internal_error` |
 | `createDb` | 第 81 条不 execute；两 store 同一句柄；`last_used_at` 与业务语句同一 batch；默认 `all` 最终 batch 语句数 < 80 |
-| refresh 收集 | 硬失败零写入；search total/1000 → truncated；多 kind 同时 truncated；单仓非 security FORBIDDEN → 403；security FORBIDDEN → unavailable；staged 超 16 MiB → truncated；`all` 2 页 batch < 80 |
+| refresh 收集 | 硬失败零写入；第 3 页丢弃不写 `kind#3`；kinds 17 项 → 400；16 项 batch < 80；单仓非 security FORBIDDEN → 403；staged 16 MiB 不含派生 |
 | 路由纯逻辑 | 无快照 409；`scopes_missing`；`capability_missing` |
 
 L2 真 HTTP，隔离与套件 A/B 以 02 为准。第一个 `/api` 处理函数落地的**同一批变更**必须实现 `scripts/run-e2e.ts`（不再 N/A）。本文第 11 节每一个方法+路径都必须进入套件 A 与套件 B。
