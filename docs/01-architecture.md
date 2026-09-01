@@ -181,7 +181,7 @@ database_id = "<prod>"
 - 从 JWT 取 email / name，仅用于顶栏展示，不作为 GitHub 身份。
 - Access 短路只允许 `ENVIRONMENT === "development"`。该值**禁止**写入会随 `wrangler deploy` 上去的 `[vars]`。本机 `dev:server` 只用 `.dev.vars`。L2/L3 只用 runner `--env-file`。缺省、未知、或生产部署中出现 `development` 一律失败关闭。禁止用 `Host`、`X-Forwarded-*` 或域名后缀判断。
 - `wrangler.toml` 设 `workers_dev = false`，关闭 `*.workers.dev` 与 preview URL。只通过 Access 保护的 `giraffe.hexly.ai` 对外。
-- 自定义域未挂好 Access 应用与策略前，禁止 `wrangler deploy` 把该域对外。部署检查清单写入 04。
+- 自定义域未挂好 Access 应用与策略前，禁止 `wrangler deploy` 把该域对外。部署检查清单见 [04 §13](04-server.md)。
 - 所有会改状态的 `/api`（POST / DELETE，含无 body 的 activate / read-all / refresh）必须校验 `Origin` 与允许列表一致，否则 403。GET 不得回源 GitHub、不得写 D1。
 - 应用内无 `/login`、无 OAuth、无 session cookie。
 
@@ -283,7 +283,7 @@ database_id = "<prod>"
 
 - GET：只读快照，带 `fetched_at`。无快照返回 409 `snapshot_missing`，不回源、不写库
 - `POST /api/refresh`：Origin 校验后回源 GitHub，覆写当前快照及必要的 `snapshot_days`，再返回新快照
-- 首版不做 Cron。何时 POST refresh 由 04/05 定；Server 不得在 GET 里偷刷新
+- 首版不做 Cron。只接受 `POST /api/refresh`（见 [04](04-server.md)）；Server 不得在 GET 里偷刷新。何时由 Client 调用由 05 定
 
 隔离见 [5.1](#51-cloudflare-资源命名)：生产只用远程 `giraffe-db`。E2E 打本机 persist 目录里的 SQLite，库内含 `_test_marker`。详见 6DQ D1。细节表结构以 03 为准。
 
@@ -331,7 +331,7 @@ database_id = "<prod>"
 
 不做 Device Flow、Projects 看板、Mentions、stargazers、GitLab。
 
-错误码：未过 Access → 401；无可用 PAT → 409（或 412，实现时定一种，全局一致）；GitHub 4xx/5xx 映射为结构化 JSON，不把 GitHub 原文 token 相关头回传。
+错误码：未过 Access → 401；无可用 PAT → 409 `account_missing`。完整信封与映射见 [04](04-server.md)。GitHub 4xx/5xx 映射为结构化 JSON，不把 GitHub 原文 token 相关头回传。
 
 ---
 
@@ -383,7 +383,6 @@ giraffe/
         github-client.ts
         token-crypto.ts
         sanitize.ts
-        version.ts
       __tests__/
     client/
       main.tsx
@@ -480,7 +479,7 @@ Client 只通过 HTTP 契约消费 Server。Server 测试不得 import Client。
 |---|------|----------|
 | 02 | [质量保证](02-quality.md) | 已写。测试分层、覆盖率、何时跑哪一层 |
 | 03 | [数据 Schema](03-schema.md) | 已写。库表与 JSON 形状 |
-| 04 | Server 设计（未写） | 全部接口、每接口职责、返回约定、拆到原子化提交的步骤。阶段 1 开工前完成 |
+| 04 | [Server 设计](04-server.md) | 已写。全部接口、每接口职责、返回约定、原子化提交步骤 |
 | 05 | Client 设计（未写） | Vite 页面结构与展示形式、拆到原子化提交的步骤。阶段 1 完成且本文 review 后，阶段 2 开工前完成 |
 
 对应文档未写成并 review 前，不开始该层功能代码。当前 Agent 入口是根目录 `CLAUDE.md`。

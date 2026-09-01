@@ -4,7 +4,7 @@
 
 > 返回 [文档目录](README.md)
 
-本文不评估工作量。接口清单以 04 为准；04 未写成前，阶段 1 的 API 面以 [01 §8](01-architecture.md) 为暂定清单。
+本文不评估工作量。接口清单以 [04](04-server.md) 为准。
 
 ---
 
@@ -150,7 +150,7 @@ G1 `gate:client-fetch` 扫 `src/client/**`：只允许 `src/client/lib/api.ts` �
 - 注入 `ENVIRONMENT=development`（仅该套件 `--env-file`，不是 wrangler.toml `[vars]`，不是 `.dev.vars`）
 - GitHub 只允许 `GITHUB_API_BASE`。未注入则 runner 与 `githubFetch` 都失败关闭。出站保证靠 `githubFetch` + G1 AST 门，不靠 stub 观察直连
 
-每个 04（或 01 §8）**方法+路径**至少：
+每个 [04](04-server.md) **方法+路径**至少：
 
 | 种类 | 要求 |
 |------|------|

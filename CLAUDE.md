@@ -60,7 +60,7 @@ Numbered docs before the layer they govern. Sequence:
 |---|---|---|
 | 02 | Quality | tests, coverage, when each layer runs. Required before any feature code |
 | 03 | Data schema | [docs/03-schema.md](docs/03-schema.md). Required before persistence |
-| 04 | Server design | every endpoint, behavior, response contract, atomic commit steps. Phase 1 |
+| 04 | Server design | [docs/04-server.md](docs/04-server.md). Phase 1 |
 | 05 | Client design | Vite page structure and presentation, atomic commit steps. After phase 1, before Client code |
 
 - Phase 1 — Server only, after 02–04. Done when 04's APIs have L1 + L2 green. No client feature code. 05 is not required yet.
