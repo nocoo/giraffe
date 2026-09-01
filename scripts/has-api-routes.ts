@@ -34,18 +34,25 @@ export async function hasApiRoutes(): Promise<boolean> {
 	}
 	const files: string[] = [];
 	await collect("src/server", files);
+	const exportFiles: string[] = [...files];
+	await collect("src/lib", exportFiles);
 	const programs = new Map<string, unknown>();
 	const exports = new Map<string, Map<string, string>>();
-	for (const file of files) {
+	for (const file of exportFiles) {
 		const text = await readFile(file, "utf8");
 		const program = parseSync(file, text).program;
 		programs.set(resolve(file), program);
 		exports.set(resolve(file), exportedApiBindings(program));
 	}
-	for (const [file, program] of programs) {
+	for (const file of files) {
+		const abs = resolve(file);
+		const program = programs.get(abs);
+		if (!program) {
+			continue;
+		}
 		const extra = new Set<string>();
 		for (const spec of importSpecs(program)) {
-			const target = resolveImport(file, spec.from);
+			const target = resolveImport(abs, spec.from);
 			const exported = exports.get(target)?.get(spec.imported);
 			if (exported && isApiPath(exported)) {
 				extra.add(spec.local);
