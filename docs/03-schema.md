@@ -56,6 +56,7 @@ CREATE TABLE accounts (
   last_used_at TEXT
 );
 CREATE UNIQUE INDEX accounts_login ON accounts (login);
+CREATE UNIQUE INDEX accounts_one_active ON accounts (is_active) WHERE is_active = 1;
 ```
 
 `token_ciphertext` 信封：
@@ -102,11 +103,19 @@ CREATE TABLE snapshot_days (
   "stars": 0,
   "forks": 0,
   "open_issues": 0,
-  "repos": 0
+  "repos": 0,
+  "by_repo": [
+    {
+      "name_with_owner": "owner/name",
+      "stars": 0,
+      "forks": 0,
+      "open_issues": 0
+    }
+  ]
 }
 ```
 
-数字来自当日 `repos` 快照合计：`stargazerCount`、`forkCount`、`openIssueCount`、仓库数。刷新时按**当天**写入或覆盖该日行，不改写成昨天。差量只对比 `day = today-1`。没有昨天的行则业务层 `baseline_missing`。保留 30 天，删除更早行。
+合计数字来自当日 `repos` 快照：`stargazer_count`、`fork_count`、`open_issue_count`、仓库数。`by_repo` 与当日 `repos` 数组一一对应，供 digest 的每仓 delta。刷新时按**当天**写入或覆盖该日行，不改写成昨天。差量只对比 `day = today-1`（合计与 `by_repo` 均按 `name_with_owner` 对齐；昨天没有的仓 delta 为 `null`）。没有昨天的行则业务层 `baseline_missing`。保留 30 天，删除更早行。
 
 ---
 
@@ -456,4 +465,8 @@ CREATE TABLE snapshot_days (
 3. `snapshot_days`
 4. 本地测试再执行 `_test_marker`
 
-L2/L3 runner 用绝对路径 `wrangler d1 execute giraffe-db --local --persist-to=<abs> --file=src/server/lib/db/schema.sql`。
+L2/L3 runner 用**绝对路径**：
+
+`wrangler d1 execute giraffe-db --local --persist-to=<persist 绝对路径> --file=<schema.sql 绝对路径>`
+
+`schema.sql` 位于仓库内 `src/server/lib/db/schema.sql`，`--file` 必须是该文件的绝对路径，不得写成相对路径。
