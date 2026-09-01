@@ -25,7 +25,7 @@
 | L1 | `bun run test:coverage` | pre-commit | <30s | Server 单测 | Server + Client 单测 |
 | L2 | `bun run test:e2e:api` | **pre-push**（不进 pre-commit） | <3min | 全部 `/api` 真 HTTP | 同左（随 04 增补） |
 | L3 | `bun run test:e2e:bdd` | CI / 按需 | — | **N/A** | 核心界面路径 |
-| G1 | `typecheck` + `lint` + `gate:test-skip` | pre-commit | 含在 30s 内 | 要 | 要 |
+| G1 | `typecheck` + `lint` + `gate:test-skip` + `gate:wrangler-vars` + `gate:github-fetch` | pre-commit | 含在 30s 内 | 要 | 要 |
 | G2 | `bun run gate:security` | pre-push | 与 L2 并行，合计 <3min | 要（有 lockfile 后） | 要 |
 | 隔离 | 见第 8 节 | L2/L3 | — | L2 | L2 + L3 |
 
@@ -204,7 +204,7 @@ L3 **只跑套件 A**（`ENVIRONMENT=development` Access 短路）。不做套�
 - `biome check --error-on-warnings .`：0 error、0 warning
 - `bun run gate:test-skip`（见第 3 节）
 - `bun run gate:wrangler-vars`：`wrangler.toml` 不得含 `GITHUB_API_BASE`、`ACCESS_JWKS_URL`、`ENVIRONMENT=development`、`ENVIRONMENT=test`
-- `bun run gate:github-fetch`：除 `github-client` 外不得 `fetch(` 指向 GitHub
+- `bun run gate:github-fetch`：除白名单模块外禁止出现全局 `fetch(` / `globalThis.fetch`。白名单仅 `src/server/lib/github-client.ts` 与 `src/server/middleware/access.ts`（JWKS）
 
 **G2**
 
