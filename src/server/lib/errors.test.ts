@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ApiError, errorResponse, jsonError, jsonOk } from "./errors";
+import { ApiError, errorResponse, jsonError, jsonOk, toErrorResponse } from "./errors";
 
 describe("errors", () => {
 	it("returns the envelope and sanitizes PAT in messages", async () => {
@@ -18,5 +18,8 @@ describe("errors", () => {
 		expect(created.status).toBe(201);
 		expect(await created.json()).toEqual({ ok: true });
 		expect((await jsonOk({ a: 1 })).status).toBe(200);
+		expect(toErrorResponse(err).status).toBe(400);
+		expect(toErrorResponse(new Error("boom")).status).toBe(500);
+		expect(toErrorResponse("x").status).toBe(500);
 	});
 });

@@ -28,3 +28,10 @@ export function jsonOk(body: unknown, status = 200): Response {
 export function errorResponse(err: ApiError): Response {
 	return jsonError(err.status, err.code, err.message);
 }
+
+export function toErrorResponse(err: unknown): Response {
+	if (err instanceof ApiError) {
+		return errorResponse(err);
+	}
+	return jsonError(500, "internal_error", err instanceof Error ? err.message : "error");
+}

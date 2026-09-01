@@ -29,5 +29,9 @@
 		"typescript": "7.0.2",
 		"vitest": "4.1.11",
 		"wrangler": "4.123.0"
+	},
+	"dependencies": {
+		"hono": "^4.13.4",
+		"zod": "^4.5.0-canary.20260825T041357"
 	}
 }
