@@ -48,7 +48,7 @@ Hook：
 
 | Hook | 顺序 | 命令 |
 |------|------|------|
-| pre-commit | G1 → L1 | `bun run typecheck && bun run lint && bun run gate:test-skip && bun run test:coverage` |
+| pre-commit | G1 → L1 | `bun run typecheck && bun run lint && bun run gate:test-skip && bun run gate:wrangler-vars && bun run gate:github-fetch && bun run test:coverage` |
 | pre-push | L2 ‖ G2 | `bun run test:e2e:api` 与 `bun run gate:security` 并行 |
 | CI | 阶段 1：G1+L1+L2+G2；阶段 2：再加 L3 | 与本地同一命令 |
 
@@ -78,7 +78,7 @@ Hook：
 - Client：`src/client/**/*.test.ts`（阶段 2）
 - 共享：`src/lib/**/*.test.ts`
 
-L1 禁止：网络、真实 D1、真实 GitHub、启动 wrangler。
+L1 禁止：网络、真实 D1、真实 GitHub、启动 wrangler。`vitest` setup 默认把 `fetch` stub 成 throw（`network denied in L1`）。github-client 测试可注入 fake fetch，不得走真实网络。
 
 ---
 
@@ -203,6 +203,8 @@ L3 **只跑套件 A**（`ENVIRONMENT=development` Access 短路）。不做套�
 - `tsc --noEmit`，`strict` + `noUncheckedIndexedAccess` + `exactOptionalPropertyTypes`
 - `biome check --error-on-warnings .`：0 error、0 warning
 - `bun run gate:test-skip`（见第 3 节）
+- `bun run gate:wrangler-vars`：`wrangler.toml` 不得含 `GITHUB_API_BASE`、`ACCESS_JWKS_URL`、`ENVIRONMENT=development`、`ENVIRONMENT=test`
+- `bun run gate:github-fetch`：除 `github-client` 外不得 `fetch(` 指向 GitHub
 
 **G2**
 

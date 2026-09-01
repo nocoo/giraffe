@@ -103,7 +103,7 @@ Quality authority: [docs/02-quality.md](docs/02-quality.md). Summary below.
 
 | Hook | Budget | Runs |
 |---|---|---|
-| pre-commit | <30s | G1 (`typecheck` + `lint` + `gate:test-skip`) → L1 (`bun run test:coverage`) |
+| pre-commit | <30s | G1 (`typecheck` + `lint` + `gate:test-skip` + `gate:wrangler-vars` + `gate:github-fetch`) → L1 (`test:coverage`) |
 | pre-push | <3min | L2 ‖ G2 |
 | on-demand | — | L3 |
 
@@ -112,7 +112,7 @@ Until D1 exists, D1 isolation is N/A. After `giraffe-db` exists, E2E still stays
 ## Commands (once scaffolded)
 
 ```bash
-bun run dev:server      # mkdir placeholder assets if needed; wrangler dev --local --port 7045 --var ENVIRONMENT:development
+bun run dev:server      # placeholder assets; wrangler dev --local --port 7045; ENVIRONMENT from .dev.vars
 bun run dev:client      # vite on its port; talks to mock or to dev:server via /api
 bun dev                 # phase 2: wrangler serves API + built/dev assets on 7045
 bun run build           # vite build → dist/client

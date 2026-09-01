@@ -130,11 +130,11 @@ Caddyfile 尚未登记 giraffe，脚手架时再加。端口：
 | Worker 脚本 | `giraffe` | 不部署。`wrangler dev --local` 起临时进程 |
 | 自定义域 | `giraffe.hexly.ai` | 无。runner 打 `127.0.0.1` |
 | D1 | `giraffe-db`（binding `DB`） | 不创建远程测试库。L2 用 `.wrangler/e2e/`，L3 用 `.wrangler/e2e-pw/` |
-| Secret | `TOKEN_ENCRYPTION_KEY_V<n>` + `TOKEN_ENCRYPTION_KEY_CURRENT` | 本地 `.dev.vars` / `--var`，禁止把 `ENVIRONMENT=development` 写进可部署 `[vars]` |
+| Secret | `TOKEN_ENCRYPTION_KEY_V<n>` + `TOKEN_ENCRYPTION_KEY_CURRENT` | 本机开发：`.dev.vars`。L2/L3：runner `--env-file`。禁止写进可部署 `[vars]` |
 
 本机 `bun dev` / `wrangler dev` **默认本地 D1**（不要 `remote = true`）。调试生产数据必须显式、一次性的命令，不得写进默认脚本。
 
-E2E 必须 `--local --persist-to`，每次先清空 persist 目录，再 apply schema，并写入 `_test_marker`。marker 不对则 runner 拒绝继续。L2 / L3 **禁止访问 api.github.com**：GitHub Client 注入确定性 stub（fixture PAT 与固定 JSON）。无 CF 凭证、无真实 PAT、不部署 `--env test`。
+E2E 细则见 [02](02-quality.md)。无 CF 凭证、无真实 PAT。
 
 `wrangler.toml` 目标形态（ID 在创建生产库后填入）。没有 `[env.test]`，没有第二套 D1：
 
@@ -179,7 +179,7 @@ database_id = "<prod>"
 - Worker secrets / vars：`CF_ACCESS_TEAM_DOMAIN`（如 `https://<team>.cloudflareaccess.com`）、`CF_ACCESS_AUD`（Access 应用 audience）。缺任一则生产请求失败关闭，不得放行。
 - 中间件读取 `Cf-Access-Jwt-Assertion`，用该 team 的 JWKS 验签，并校验 `iss`、`aud`、`exp`。只验签名不够。失败 401。
 - 从 JWT 取 email / name，仅用于顶栏展示，不作为 GitHub 身份。
-- Access 短路只允许 `ENVIRONMENT === "development"`。该值**禁止**写入会随 `wrangler deploy` 上去的 `[vars]`。只允许 gitignore 的 `.dev.vars`，或本地脚本 `--var ENVIRONMENT:development`。缺省、未知、或生产部署中出现 `development` 一律失败关闭。禁止用 `Host`、`X-Forwarded-*` 或域名后缀判断。
+- Access 短路只允许 `ENVIRONMENT === "development"`。该值**禁止**写入会随 `wrangler deploy` 上去的 `[vars]`。本机 `dev:server` 只用 `.dev.vars`。L2/L3 只用 runner `--env-file`。缺省、未知、或生产部署中出现 `development` 一律失败关闭。禁止用 `Host`、`X-Forwarded-*` 或域名后缀判断。
 - `wrangler.toml` 设 `workers_dev = false`，关闭 `*.workers.dev` 与 preview URL。只通过 Access 保护的 `giraffe.hexly.ai` 对外。
 - 自定义域未挂好 Access 应用与策略前，禁止 `wrangler deploy` 把该域对外。部署检查清单写入 04。
 - 所有会改状态的 `/api`（POST / DELETE，含无 body 的 activate / read-all / refresh）必须校验 `Origin` 与允许列表一致，否则 403。GET 不得回源 GitHub、不得写 D1。
@@ -412,7 +412,7 @@ giraffe/
 | L1 | `bun run test:coverage`（不是 `bun run test`）；覆盖率 ≥ 90%；薄壳 `routes/*.tsx` 豁免 | pre-commit，<30s |
 | L2 | 真 HTTP。细则以 [02](02-quality.md) 为准：临时目录 `--env-file`、绝对 persist、套件 A/B 两次启动、GitHub 仅 `GITHUB_API_BASE` | pre-push，<3min |
 | L3 | 先 `vite build`，其余隔离同 02。阶段 2 | CI / 按需 |
-| G1 | `tsc --noEmit` + `biome check --error-on-warnings` + `gate:test-skip` | pre-commit |
+| G1 | `tsc` + `biome` + `gate:test-skip` + `gate:wrangler-vars` + `gate:github-fetch` | pre-commit |
 | G2 | `gitleaks` + `osv-scanner --lockfile=bun.lock` | pre-push |
 | D1 | 无远程测试库。隔离靠 `--local --persist-to` 目录 + `_test_marker`；runner 不见 marker 则退出 | L2/L3 强制 |
 
