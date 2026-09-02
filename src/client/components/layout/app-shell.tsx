@@ -16,9 +16,11 @@ import {
 	SidebarProvider,
 	SidebarUser,
 	ThemeToggle,
+	toast,
 } from "@nocoo/basalt";
 import { AppMain, AppSkipLink, AppShell as Shell } from "@nocoo/basalt/components/app-shell";
 import { Breadcrumbs } from "@nocoo/basalt/components/breadcrumbs";
+import { Empty } from "@nocoo/basalt/components/empty";
 import { useSidebar } from "@nocoo/basalt/components/sidebar";
 import {
 	Activity,
@@ -34,6 +36,7 @@ import {
 import { type ReactNode, useEffect, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router";
 import { APP_VERSION } from "../../../lib/version";
+import { reportError, subscribeErrorUi } from "../../lib/error-ui";
 import { breadcrumbsFor, NAV_ITEMS, paletteItems } from "../../lib/navigation";
 import { displayName, loadMe, type MeIdentity } from "../../viewmodels/me";
 import { cachedRepoRows } from "../../viewmodels/repos";
@@ -144,12 +147,30 @@ function Palette() {
 
 export function AppShell() {
 	const location = useLocation();
+	const navigate = useNavigate();
 	const crumbs = breadcrumbsFor(location.pathname);
 	const [me, setMe] = useState<MeIdentity | null>(null);
+	const [accessDenied, setAccessDenied] = useState(false);
+	const [accountMissing, setAccountMissing] = useState(false);
+	useEffect(() => {
+		return subscribeErrorUi((ui) => {
+			if (ui.kind === "access") {
+				setAccessDenied(true);
+			}
+			if (ui.kind === "account_missing") {
+				setAccountMissing(true);
+			}
+		});
+	}, []);
 	useEffect(() => {
 		void loadMe()
 			.then(setMe)
-			.catch(() => undefined);
+			.catch((err: unknown) => {
+				const ui = reportError(err);
+				if (ui.kind === "toast") {
+					toast(ui.message);
+				}
+			});
 	}, []);
 	return (
 		<SidebarProvider defaultWidth={260} peek>
@@ -179,7 +200,21 @@ export function AppShell() {
 						<Breadcrumbs items={crumbs.map((item) => ({ href: item.href, label: item.label }))} />
 					</header>
 					<ContentIsland>
-						<Outlet />
+						{accessDenied ? (
+							<Empty title="未通过 Access" description="此应用需要 Cloudflare Access 身份。" />
+						) : (
+							<>
+								{accountMissing ? (
+									<div className="mb-4 flex items-center justify-between rounded-md border border-basalt-border px-3 py-2 text-sm">
+										<span>没有活跃账号</span>
+										<Button type="button" variant="secondary" onClick={() => navigate("/settings")}>
+											去设置
+										</Button>
+									</div>
+								) : null}
+								<Outlet />
+							</>
+						)}
 					</ContentIsland>
 				</AppMain>
 			</Shell>

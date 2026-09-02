@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { errorUi } from "./error-ui";
+import { catchLoad, errorUi, reportError, subscribeErrorUi } from "./error-ui";
 import { ApiError } from "./errors";
 
 describe("errorUi", () => {
@@ -33,5 +33,30 @@ describe("errorUi", () => {
 			kind: "toast",
 			message: "boom",
 		});
+		expect(errorUi(new ApiError(404, "not_found", "gone"))).toEqual({
+			kind: "empty",
+			title: "未找到",
+		});
+	});
+
+	it("notifies subscribers and maps load failures", () => {
+		const seen: string[] = [];
+		const stop = subscribeErrorUi((ui) => {
+			seen.push(ui.kind);
+		});
+		expect(reportError(new ApiError(401, "access_unauthorized", "no")).kind).toBe("access");
+		expect(seen).toEqual(["access"]);
+		stop();
+		expect(catchLoad(new ApiError(409, "snapshot_missing", "n"), () => undefined)).toEqual({
+			missing: true,
+		});
+		expect(catchLoad(new ApiError(409, "account_missing", "n"), () => undefined)).toEqual({
+			missing: true,
+		});
+		const toasts: string[] = [];
+		expect(
+			catchLoad(new ApiError(502, "github_error", "x"), (message) => toasts.push(message)),
+		).toBe(undefined);
+		expect(toasts).toEqual(["GitHub 请求失败"]);
 	});
 });

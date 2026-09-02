@@ -1,4 +1,4 @@
-import { Badge, Button, StatStrip, Toolbar } from "@nocoo/basalt";
+import { Badge, Button, StatStrip, Toolbar, toast } from "@nocoo/basalt";
 import { Empty } from "@nocoo/basalt/components/empty";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
 import {
@@ -10,6 +10,7 @@ import {
 	TableRow,
 } from "@nocoo/basalt/components/table";
 import { useEffect, useState } from "react";
+import { catchLoad } from "../lib/error-ui";
 import {
 	type AlertsSnapshot,
 	alertsUnavailable,
@@ -21,8 +22,22 @@ import { requestRefresh } from "../viewmodels/refresh";
 export function AlertsPage() {
 	const [snap, setSnap] = useState<AlertsSnapshot | { missing: true } | null>(null);
 
+	function onLoadError(err: unknown): void {
+		const missing = catchLoad(err, toast);
+		if (missing) {
+			setSnap(missing);
+		}
+	}
+
 	useEffect(() => {
-		void loadAlerts().then(setSnap);
+		void loadAlerts()
+			.then(setSnap)
+			.catch((err: unknown) => {
+				const missing = catchLoad(err, toast);
+				if (missing) {
+					setSnap(missing);
+				}
+			});
 	}, []);
 
 	if (snap && "missing" in snap) {
@@ -33,7 +48,9 @@ export function AlertsPage() {
 				<Button
 					type="button"
 					onClick={() => {
-						void requestRefresh(["alerts"]).then(() => loadAlerts().then(setSnap));
+						void requestRefresh(["alerts"])
+							.then(() => loadAlerts().then(setSnap))
+							.catch(onLoadError);
 					}}
 				>
 					刷新
@@ -70,7 +87,9 @@ export function AlertsPage() {
 					type="button"
 					variant="secondary"
 					onClick={() => {
-						void requestRefresh(["alerts"]).then(() => loadAlerts().then(setSnap));
+						void requestRefresh(["alerts"])
+							.then(() => loadAlerts().then(setSnap))
+							.catch(onLoadError);
 					}}
 				>
 					刷新

@@ -1,4 +1,4 @@
-import { Button, ConfirmDialog, Field } from "@nocoo/basalt";
+import { Button, ConfirmDialog, Field, toast } from "@nocoo/basalt";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
 import { SensitiveInput } from "@nocoo/basalt/components/sensitive-input";
 import {
@@ -10,6 +10,7 @@ import {
 	TableRow,
 } from "@nocoo/basalt/components/table";
 import { type FormEvent, useEffect, useState } from "react";
+import { catchLoad, reportError } from "../lib/error-ui";
 import {
 	accountFieldError,
 	activateAccount,
@@ -29,6 +30,10 @@ export function SettingsPage() {
 	const [error, setError] = useState<string | null>(null);
 	const [pendingId, setPendingId] = useState<string | null>(null);
 
+	function onLoadError(err: unknown): void {
+		catchLoad(err, toast);
+	}
+
 	function reload() {
 		return Promise.all([loadMe(), loadAccounts()]).then(([identity, rows]) => {
 			setMe(identity);
@@ -37,10 +42,14 @@ export function SettingsPage() {
 	}
 
 	useEffect(() => {
-		void Promise.all([loadMe(), loadAccounts()]).then(([identity, rows]) => {
-			setMe(identity);
-			setAccounts(rows);
-		});
+		void Promise.all([loadMe(), loadAccounts()])
+			.then(([identity, rows]) => {
+				setMe(identity);
+				setAccounts(rows);
+			})
+			.catch((err: unknown) => {
+				catchLoad(err, toast);
+			});
 	}, []);
 
 	async function onSubmit(event: FormEvent) {
@@ -52,6 +61,7 @@ export function SettingsPage() {
 			await createAccount(value);
 			await reload();
 		} catch (err) {
+			reportError(err);
 			setError(accountFieldError(err) ?? "添加失败");
 		}
 	}
@@ -90,7 +100,9 @@ export function SettingsPage() {
 						variant="secondary"
 						disabled={refreshInFlight()}
 						onClick={() => {
-							void requestRefresh("all").then(() => reload());
+							void requestRefresh("all")
+								.then(() => reload())
+								.catch(onLoadError);
 						}}
 					>
 						刷新全部
@@ -120,7 +132,9 @@ export function SettingsPage() {
 									variant="secondary"
 									disabled={row.is_active}
 									onClick={() => {
-										void activateAccount(row.id).then(() => reload());
+										void activateAccount(row.id)
+											.then(() => reload())
+											.catch(onLoadError);
 									}}
 								>
 									激活
@@ -149,10 +163,12 @@ export function SettingsPage() {
 					if (!pendingId) {
 						return;
 					}
-					return deleteAccount(pendingId).then(() => {
-						setPendingId(null);
-						return reload();
-					});
+					return deleteAccount(pendingId)
+						.then(() => {
+							setPendingId(null);
+							return reload();
+						})
+						.catch(onLoadError);
 				}}
 			/>
 		</div>

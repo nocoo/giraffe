@@ -10,6 +10,7 @@ import {
 	TabsList,
 	TabsTrigger,
 	Toolbar,
+	toast,
 } from "@nocoo/basalt";
 import { AreaChart } from "@nocoo/basalt/charts/area";
 import { DonutChart } from "@nocoo/basalt/charts/donut";
@@ -25,6 +26,7 @@ import {
 } from "@nocoo/basalt/components/table";
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router";
+import { catchLoad } from "../lib/error-ui";
 import type { IssuesSnapshot } from "../viewmodels/issues";
 import type { PullsSnapshot } from "../viewmodels/pulls";
 import { requestRefresh } from "../viewmodels/refresh";
@@ -46,7 +48,7 @@ import {
 	trafficPoints,
 } from "../viewmodels/repo-detail";
 
-async function fetchTab<T extends object>(
+async function fetchTab<T extends { account_id: string }>(
 	owner: string,
 	name: string,
 	tab: RepoTab,
@@ -90,52 +92,123 @@ export function RepoDetailPage() {
 	);
 	const refreshed = useRef(new Set<string>());
 
+	function onLoadError(err: unknown): void {
+		const missing = catchLoad(err, toast);
+		if (missing) {
+			setSnap(missing);
+		}
+	}
+
 	useEffect(() => {
+		let cancelled = false;
+		setSnap(null);
+		setSecurity(null);
+		setTraffic(null);
+		setActions(null);
+		setReleases(null);
+		setIssues(null);
+		setPulls(null);
+		setLanguages(null);
+		setContributors(null);
 		if (!valid) {
 			setSnap({ invalid: true });
 			return;
 		}
-		void loadRepoTab<RepoDetails>(owner, name, "details").then(async (next) => {
-			if ("missing" in next && !refreshed.current.has(`${owner}/${name}:details`)) {
-				refreshed.current.add(`${owner}/${name}:details`);
-				await requestRefresh(repoKind(owner, name, "details"));
-				setSnap(await loadRepoTab<RepoDetails>(owner, name, "details"));
-				return;
-			}
-			setSnap(next);
-		});
+		void loadRepoTab<RepoDetails>(owner, name, "details")
+			.then(async (next) => {
+				if (cancelled) {
+					return;
+				}
+				if ("missing" in next && !refreshed.current.has(`${owner}/${name}:details`)) {
+					refreshed.current.add(`${owner}/${name}:details`);
+					await requestRefresh(repoKind(owner, name, "details"));
+					if (cancelled) {
+						return;
+					}
+					setSnap(await loadRepoTab<RepoDetails>(owner, name, "details"));
+					return;
+				}
+				setSnap(next);
+			})
+			.catch((err: unknown) => {
+				if (cancelled) {
+					return;
+				}
+				const missing = catchLoad(err, toast);
+				if (missing) {
+					setSnap(missing);
+				}
+			});
+		return () => {
+			cancelled = true;
+		};
 	}, [owner, name, valid]);
 
 	useEffect(() => {
 		if (!valid) {
 			return;
 		}
+		let cancelled = false;
+		function apply<T>(
+			setter: (value: T | { missing: true }) => void,
+			value: T | { missing: true },
+		) {
+			if (!cancelled) {
+				setter(value);
+			}
+		}
+		function onTabError(err: unknown): void {
+			if (cancelled) {
+				return;
+			}
+			const missing = catchLoad(err, toast);
+			if (missing) {
+				setSnap(missing);
+			}
+		}
 		if (tab === "security") {
-			void fetchTab<RepoSecurity>(owner, name, "security", refreshed.current).then(setSecurity);
+			void fetchTab<RepoSecurity>(owner, name, "security", refreshed.current)
+				.then((value) => apply(setSecurity, value))
+				.catch(onTabError);
 		}
 		if (tab === "traffic") {
-			void fetchTab<RepoTraffic>(owner, name, "traffic", refreshed.current).then(setTraffic);
+			void fetchTab<RepoTraffic>(owner, name, "traffic", refreshed.current)
+				.then((value) => apply(setTraffic, value))
+				.catch(onTabError);
 		}
 		if (tab === "actions") {
-			void fetchTab<RepoActions>(owner, name, "actions", refreshed.current).then(setActions);
+			void fetchTab<RepoActions>(owner, name, "actions", refreshed.current)
+				.then((value) => apply(setActions, value))
+				.catch(onTabError);
 		}
 		if (tab === "releases") {
-			void fetchTab<RepoReleases>(owner, name, "releases", refreshed.current).then(setReleases);
+			void fetchTab<RepoReleases>(owner, name, "releases", refreshed.current)
+				.then((value) => apply(setReleases, value))
+				.catch(onTabError);
 		}
 		if (tab === "issues") {
-			void fetchTab<IssuesSnapshot>(owner, name, "issues", refreshed.current).then(setIssues);
+			void fetchTab<IssuesSnapshot>(owner, name, "issues", refreshed.current)
+				.then((value) => apply(setIssues, value))
+				.catch(onTabError);
 		}
 		if (tab === "prs") {
-			void fetchTab<PullsSnapshot>(owner, name, "prs", refreshed.current).then(setPulls);
+			void fetchTab<PullsSnapshot>(owner, name, "prs", refreshed.current)
+				.then((value) => apply(setPulls, value))
+				.catch(onTabError);
 		}
 		if (tab === "languages") {
-			void fetchTab<RepoLanguages>(owner, name, "languages", refreshed.current).then(setLanguages);
+			void fetchTab<RepoLanguages>(owner, name, "languages", refreshed.current)
+				.then((value) => apply(setLanguages, value))
+				.catch(onTabError);
 		}
 		if (tab === "contributors") {
-			void fetchTab<RepoContributors>(owner, name, "contributors", refreshed.current).then(
-				setContributors,
-			);
+			void fetchTab<RepoContributors>(owner, name, "contributors", refreshed.current)
+				.then((value) => apply(setContributors, value))
+				.catch(onTabError);
 		}
+		return () => {
+			cancelled = true;
+		};
 	}, [owner, name, valid, tab]);
 
 	if (!valid || (snap && "invalid" in snap)) {
@@ -155,9 +228,9 @@ export function RepoDetailPage() {
 				<Button
 					type="button"
 					onClick={() => {
-						void requestRefresh(repoKind(owner, name, "details")).then(() =>
-							loadRepoTab<RepoDetails>(owner, name, "details").then(setSnap),
-						);
+						void requestRefresh(repoKind(owner, name, "details"))
+							.then(() => loadRepoTab<RepoDetails>(owner, name, "details").then(setSnap))
+							.catch(onLoadError);
 					}}
 				>
 					刷新
@@ -183,52 +256,54 @@ export function RepoDetailPage() {
 					type="button"
 					variant="secondary"
 					onClick={() => {
-						void requestRefresh(repoKind(owner, name, tab)).then(() => {
-							if (tab === "details") {
-								return loadRepoTab<RepoDetails>(owner, name, "details").then(setSnap);
-							}
-							if (tab === "security") {
-								return fetchTab<RepoSecurity>(owner, name, "security", refreshed.current).then(
-									setSecurity,
+						void requestRefresh(repoKind(owner, name, tab))
+							.then(() => {
+								if (tab === "details") {
+									return loadRepoTab<RepoDetails>(owner, name, "details").then(setSnap);
+								}
+								if (tab === "security") {
+									return fetchTab<RepoSecurity>(owner, name, "security", refreshed.current).then(
+										setSecurity,
+									);
+								}
+								if (tab === "actions") {
+									return fetchTab<RepoActions>(owner, name, "actions", refreshed.current).then(
+										setActions,
+									);
+								}
+								if (tab === "releases") {
+									return fetchTab<RepoReleases>(owner, name, "releases", refreshed.current).then(
+										setReleases,
+									);
+								}
+								if (tab === "issues") {
+									return fetchTab<IssuesSnapshot>(owner, name, "issues", refreshed.current).then(
+										setIssues,
+									);
+								}
+								if (tab === "prs") {
+									return fetchTab<PullsSnapshot>(owner, name, "prs", refreshed.current).then(
+										setPulls,
+									);
+								}
+								if (tab === "languages") {
+									return fetchTab<RepoLanguages>(owner, name, "languages", refreshed.current).then(
+										setLanguages,
+									);
+								}
+								if (tab === "contributors") {
+									return fetchTab<RepoContributors>(
+										owner,
+										name,
+										"contributors",
+										refreshed.current,
+									).then(setContributors);
+								}
+								return fetchTab<RepoTraffic>(owner, name, "traffic", refreshed.current).then(
+									setTraffic,
 								);
-							}
-							if (tab === "actions") {
-								return fetchTab<RepoActions>(owner, name, "actions", refreshed.current).then(
-									setActions,
-								);
-							}
-							if (tab === "releases") {
-								return fetchTab<RepoReleases>(owner, name, "releases", refreshed.current).then(
-									setReleases,
-								);
-							}
-							if (tab === "issues") {
-								return fetchTab<IssuesSnapshot>(owner, name, "issues", refreshed.current).then(
-									setIssues,
-								);
-							}
-							if (tab === "prs") {
-								return fetchTab<PullsSnapshot>(owner, name, "prs", refreshed.current).then(
-									setPulls,
-								);
-							}
-							if (tab === "languages") {
-								return fetchTab<RepoLanguages>(owner, name, "languages", refreshed.current).then(
-									setLanguages,
-								);
-							}
-							if (tab === "contributors") {
-								return fetchTab<RepoContributors>(
-									owner,
-									name,
-									"contributors",
-									refreshed.current,
-								).then(setContributors);
-							}
-							return fetchTab<RepoTraffic>(owner, name, "traffic", refreshed.current).then(
-								setTraffic,
-							);
-						});
+							})
+							.catch(onLoadError);
 					}}
 				>
 					刷新

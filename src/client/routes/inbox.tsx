@@ -10,23 +10,29 @@ import {
 	TableRow,
 } from "@nocoo/basalt/components/table";
 import { useEffect, useState } from "react";
-import { ApiError } from "../lib/errors";
+import { catchLoad } from "../lib/error-ui";
 import { loadInbox, markRead, markReadAll, type NotificationsSnapshot } from "../viewmodels/inbox";
 import { requestRefresh } from "../viewmodels/refresh";
-
-function onWriteError(err: unknown): void {
-	if (err instanceof ApiError && err.code === "account_conflict") {
-		toast("账号已切换");
-		return;
-	}
-	toast("操作失败");
-}
 
 export function InboxPage() {
 	const [snap, setSnap] = useState<NotificationsSnapshot | { missing: true } | null>(null);
 
+	function onLoadError(err: unknown): void {
+		const missing = catchLoad(err, toast);
+		if (missing) {
+			setSnap(missing);
+		}
+	}
+
 	useEffect(() => {
-		void loadInbox().then(setSnap);
+		void loadInbox()
+			.then(setSnap)
+			.catch((err: unknown) => {
+				const missing = catchLoad(err, toast);
+				if (missing) {
+					setSnap(missing);
+				}
+			});
 	}, []);
 
 	if (snap && "missing" in snap) {
@@ -37,7 +43,9 @@ export function InboxPage() {
 				<Button
 					type="button"
 					onClick={() => {
-						void requestRefresh(["notifications"]).then(() => loadInbox().then(setSnap));
+						void requestRefresh(["notifications"])
+							.then(() => loadInbox().then(setSnap))
+							.catch(onLoadError);
 					}}
 				>
 					刷新
@@ -57,7 +65,9 @@ export function InboxPage() {
 					type="button"
 					variant="secondary"
 					onClick={() => {
-						void requestRefresh(["notifications"]).then(() => loadInbox().then(setSnap));
+						void requestRefresh(["notifications"])
+							.then(() => loadInbox().then(setSnap))
+							.catch(onLoadError);
 					}}
 				>
 					刷新
@@ -65,7 +75,7 @@ export function InboxPage() {
 				<Button
 					type="button"
 					onClick={() => {
-						void markReadAll().then(setSnap).catch(onWriteError);
+						void markReadAll().then(setSnap).catch(onLoadError);
 					}}
 				>
 					全部已读
@@ -103,7 +113,7 @@ export function InboxPage() {
 										variant="secondary"
 										disabled={!row.unread}
 										onClick={() => {
-											void markRead(row.id).then(setSnap).catch(onWriteError);
+											void markRead(row.id).then(setSnap).catch(onLoadError);
 										}}
 									>
 										已读

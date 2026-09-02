@@ -31,6 +31,9 @@ export function errorUi(err: unknown): ErrorUi {
 	if (err.code === "snapshot_missing") {
 		return { kind: "empty", title: "没有快照" };
 	}
+	if (err.code === "not_found") {
+		return { kind: "empty", title: "未找到" };
+	}
 	if (err.code === "scopes_missing" || err.code === "validation_failed") {
 		return { kind: "field", message: err.message };
 	}
@@ -39,4 +42,35 @@ export function errorUi(err: unknown): ErrorUi {
 		return { kind: "toast", message: toast };
 	}
 	return { kind: "toast", message: err.message };
+}
+
+const listeners = new Set<(ui: ErrorUi) => void>();
+
+export function subscribeErrorUi(listener: (ui: ErrorUi) => void): () => void {
+	listeners.add(listener);
+	return () => {
+		listeners.delete(listener);
+	};
+}
+
+export function reportError(err: unknown): ErrorUi {
+	const ui = errorUi(err);
+	for (const listener of listeners) {
+		listener(ui);
+	}
+	return ui;
+}
+
+export function catchLoad(
+	err: unknown,
+	notify: (message: string) => void,
+): { missing: true } | undefined {
+	const ui = reportError(err);
+	if (ui.kind === "toast") {
+		notify(ui.message);
+	}
+	if (ui.kind === "empty" || ui.kind === "account_missing") {
+		return { missing: true };
+	}
+	return undefined;
 }

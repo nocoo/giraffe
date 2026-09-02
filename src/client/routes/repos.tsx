@@ -1,4 +1,4 @@
-import { Badge, Button, Input, LayerCard, SegmentControl } from "@nocoo/basalt";
+import { Badge, Button, Input, LayerCard, SegmentControl, toast } from "@nocoo/basalt";
 import { Empty } from "@nocoo/basalt/components/empty";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
 import {
@@ -11,6 +11,7 @@ import {
 } from "@nocoo/basalt/components/table";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
+import { catchLoad } from "../lib/error-ui";
 import { requestRefresh } from "../viewmodels/refresh";
 import {
 	alertsIncomplete,
@@ -31,6 +32,14 @@ export function ReposPage() {
 	const [snap, setSnap] = useState<ReposSnapshot | { missing: true } | null>(null);
 	const [insights, setInsights] = useState<InsightsSnapshot | null>(null);
 
+	function onLoadError(err: unknown): void {
+		const missing = catchLoad(err, toast);
+		if (missing) {
+			setSnap(missing);
+			setInsights(null);
+		}
+	}
+
 	async function reload() {
 		const next = await loadRepos();
 		setSnap(next);
@@ -42,14 +51,22 @@ export function ReposPage() {
 	}
 
 	useEffect(() => {
-		void loadRepos().then(async (next) => {
-			setSnap(next);
-			if (!("missing" in next)) {
-				setInsights(await loadInsightsOptional());
-			} else {
-				setInsights(null);
-			}
-		});
+		void loadRepos()
+			.then(async (next) => {
+				setSnap(next);
+				if (!("missing" in next)) {
+					setInsights(await loadInsightsOptional());
+				} else {
+					setInsights(null);
+				}
+			})
+			.catch((err: unknown) => {
+				const missing = catchLoad(err, toast);
+				if (missing) {
+					setSnap(missing);
+					setInsights(null);
+				}
+			});
 	}, []);
 
 	const rows = useMemo(() => {
@@ -69,7 +86,9 @@ export function ReposPage() {
 				<Button
 					type="button"
 					onClick={() => {
-						void requestRefresh(["repos"]).then(() => reload());
+						void requestRefresh(["repos"])
+							.then(() => reload())
+							.catch(onLoadError);
 					}}
 				>
 					刷新

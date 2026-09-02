@@ -1,4 +1,4 @@
-import { Badge, Button, StatStrip, Toolbar } from "@nocoo/basalt";
+import { Badge, Button, StatStrip, Toolbar, toast } from "@nocoo/basalt";
 import { ClipboardText } from "@nocoo/basalt/components/clipboard-text";
 import { Empty } from "@nocoo/basalt/components/empty";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
@@ -11,6 +11,7 @@ import {
 	TableRow,
 } from "@nocoo/basalt/components/table";
 import { useEffect, useMemo, useState } from "react";
+import { catchLoad } from "../lib/error-ui";
 import { formatDelta } from "../lib/format";
 import { type DigestSnapshot, digestMarkdown, loadDigest } from "../viewmodels/digest";
 import { requestRefresh } from "../viewmodels/refresh";
@@ -18,8 +19,22 @@ import { requestRefresh } from "../viewmodels/refresh";
 export function DigestPage() {
 	const [snap, setSnap] = useState<DigestSnapshot | { missing: true } | null>(null);
 
+	function onLoadError(err: unknown): void {
+		const missing = catchLoad(err, toast);
+		if (missing) {
+			setSnap(missing);
+		}
+	}
+
 	useEffect(() => {
-		void loadDigest().then(setSnap);
+		void loadDigest()
+			.then(setSnap)
+			.catch((err: unknown) => {
+				const missing = catchLoad(err, toast);
+				if (missing) {
+					setSnap(missing);
+				}
+			});
 	}, []);
 
 	const markdown = useMemo(() => {
@@ -37,7 +52,9 @@ export function DigestPage() {
 				<Button
 					type="button"
 					onClick={() => {
-						void requestRefresh(["repos"]).then(() => loadDigest().then(setSnap));
+						void requestRefresh(["repos"])
+							.then(() => loadDigest().then(setSnap))
+							.catch(onLoadError);
 					}}
 				>
 					刷新
@@ -67,7 +84,9 @@ export function DigestPage() {
 					type="button"
 					variant="secondary"
 					onClick={() => {
-						void requestRefresh(["repos"]).then(() => loadDigest().then(setSnap));
+						void requestRefresh(["repos"])
+							.then(() => loadDigest().then(setSnap))
+							.catch(onLoadError);
 					}}
 				>
 					刷新

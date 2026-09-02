@@ -1,4 +1,4 @@
-import { Badge, Button, Input, Toolbar } from "@nocoo/basalt";
+import { Badge, Button, Input, Toolbar, toast } from "@nocoo/basalt";
 import { Empty } from "@nocoo/basalt/components/empty";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
 import {
@@ -10,6 +10,7 @@ import {
 	TableRow,
 } from "@nocoo/basalt/components/table";
 import { useEffect, useMemo, useState } from "react";
+import { catchLoad } from "../lib/error-ui";
 import { filterPulls, loadPulls, type PullsSnapshot } from "../viewmodels/pulls";
 import { requestRefresh } from "../viewmodels/refresh";
 
@@ -17,8 +18,22 @@ export function PullsPage() {
 	const [query, setQuery] = useState("");
 	const [snap, setSnap] = useState<PullsSnapshot | { missing: true } | null>(null);
 
+	function onLoadError(err: unknown): void {
+		const missing = catchLoad(err, toast);
+		if (missing) {
+			setSnap(missing);
+		}
+	}
+
 	useEffect(() => {
-		void loadPulls().then(setSnap);
+		void loadPulls()
+			.then(setSnap)
+			.catch((err: unknown) => {
+				const missing = catchLoad(err, toast);
+				if (missing) {
+					setSnap(missing);
+				}
+			});
 	}, []);
 
 	const rows = useMemo(() => {
@@ -36,7 +51,9 @@ export function PullsPage() {
 				<Button
 					type="button"
 					onClick={() => {
-						void requestRefresh(["prs"]).then(() => loadPulls().then(setSnap));
+						void requestRefresh(["prs"])
+							.then(() => loadPulls().then(setSnap))
+							.catch(onLoadError);
 					}}
 				>
 					刷新
@@ -60,7 +77,9 @@ export function PullsPage() {
 					type="button"
 					variant="secondary"
 					onClick={() => {
-						void requestRefresh(["prs"]).then(() => loadPulls().then(setSnap));
+						void requestRefresh(["prs"])
+							.then(() => loadPulls().then(setSnap))
+							.catch(onLoadError);
 					}}
 				>
 					刷新

@@ -1,4 +1,4 @@
-import { Badge, Button, Input, Toolbar } from "@nocoo/basalt";
+import { Badge, Button, Input, Toolbar, toast } from "@nocoo/basalt";
 import { Empty } from "@nocoo/basalt/components/empty";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
 import {
@@ -10,6 +10,7 @@ import {
 	TableRow,
 } from "@nocoo/basalt/components/table";
 import { useEffect, useMemo, useState } from "react";
+import { catchLoad } from "../lib/error-ui";
 import { filterIssues, type IssuesSnapshot, loadIssues } from "../viewmodels/issues";
 import { requestRefresh } from "../viewmodels/refresh";
 
@@ -17,8 +18,22 @@ export function IssuesPage() {
 	const [query, setQuery] = useState("");
 	const [snap, setSnap] = useState<IssuesSnapshot | { missing: true } | null>(null);
 
+	function onLoadError(err: unknown): void {
+		const missing = catchLoad(err, toast);
+		if (missing) {
+			setSnap(missing);
+		}
+	}
+
 	useEffect(() => {
-		void loadIssues().then(setSnap);
+		void loadIssues()
+			.then(setSnap)
+			.catch((err: unknown) => {
+				const missing = catchLoad(err, toast);
+				if (missing) {
+					setSnap(missing);
+				}
+			});
 	}, []);
 
 	const rows = useMemo(() => {
@@ -36,7 +51,9 @@ export function IssuesPage() {
 				<Button
 					type="button"
 					onClick={() => {
-						void requestRefresh(["issues"]).then(() => loadIssues().then(setSnap));
+						void requestRefresh(["issues"])
+							.then(() => loadIssues().then(setSnap))
+							.catch(onLoadError);
 					}}
 				>
 					刷新
@@ -60,7 +77,9 @@ export function IssuesPage() {
 					type="button"
 					variant="secondary"
 					onClick={() => {
-						void requestRefresh(["issues"]).then(() => loadIssues().then(setSnap));
+						void requestRefresh(["issues"])
+							.then(() => loadIssues().then(setSnap))
+							.catch(onLoadError);
 					}}
 				>
 					刷新

@@ -1,4 +1,4 @@
-import { Badge, Button, SegmentControl, Toolbar } from "@nocoo/basalt";
+import { Badge, Button, SegmentControl, Toolbar, toast } from "@nocoo/basalt";
 import { Empty } from "@nocoo/basalt/components/empty";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
 import {
@@ -10,6 +10,7 @@ import {
 	TableRow,
 } from "@nocoo/basalt/components/table";
 import { useEffect, useMemo, useState } from "react";
+import { catchLoad } from "../lib/error-ui";
 import {
 	alertsIncomplete,
 	filterInsights,
@@ -23,8 +24,22 @@ export function InsightsPage() {
 	const [health, setHealth] = useState<Health | "all">("all");
 	const [snap, setSnap] = useState<InsightsSnapshot | { missing: true } | null>(null);
 
+	function onLoadError(err: unknown): void {
+		const missing = catchLoad(err, toast);
+		if (missing) {
+			setSnap(missing);
+		}
+	}
+
 	useEffect(() => {
-		void loadInsights().then(setSnap);
+		void loadInsights()
+			.then(setSnap)
+			.catch((err: unknown) => {
+				const missing = catchLoad(err, toast);
+				if (missing) {
+					setSnap(missing);
+				}
+			});
 	}, []);
 
 	const rows = useMemo(() => {
@@ -43,9 +58,9 @@ export function InsightsPage() {
 				<Button
 					type="button"
 					onClick={() => {
-						void requestRefresh(["repos", "issues", "alerts"]).then(() =>
-							loadInsights().then(setSnap),
-						);
+						void requestRefresh(["repos", "issues", "alerts"])
+							.then(() => loadInsights().then(setSnap))
+							.catch(onLoadError);
 					}}
 				>
 					刷新
@@ -75,9 +90,9 @@ export function InsightsPage() {
 					type="button"
 					variant="secondary"
 					onClick={() => {
-						void requestRefresh(["repos", "issues", "alerts"]).then(() =>
-							loadInsights().then(setSnap),
-						);
+						void requestRefresh(["repos", "issues", "alerts"])
+							.then(() => loadInsights().then(setSnap))
+							.catch(onLoadError);
 					}}
 				>
 					刷新
