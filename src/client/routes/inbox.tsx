@@ -120,19 +120,17 @@ export function InboxPage() {
 											未读
 										</Badge>
 									) : (
-										<span className="text-basalt-muted-foreground">已读</span>
+										<span className="text-muted-foreground">已读</span>
 									)}
 								</TableCell>
-								<TableCell className="text-basalt-muted-foreground">
-									{row.name_with_owner}
-								</TableCell>
+								<TableCell className="text-muted-foreground">{row.name_with_owner}</TableCell>
 								<TableCell>
 									<Link href={row.url} target="_blank" rel="noreferrer">
 										{row.title}
 									</Link>
 								</TableCell>
 								<TableCell>{row.reason}</TableCell>
-								<TableCell className="text-basalt-muted-foreground">
+								<TableCell className="text-muted-foreground">
 									{formatDate(row.updated_at)}
 								</TableCell>
 								<TableCell>

@@ -102,7 +102,7 @@ export function SettingsPage() {
 					/>
 				}
 			/>
-			<LayerCard>
+			<LayerCard className="rounded-card bg-secondary">
 				<LayerCard.Header>
 					<p className="font-medium">Access 身份</p>
 				</LayerCard.Header>
@@ -114,15 +114,15 @@ export function SettingsPage() {
 							</Avatar>
 							<div className="min-w-0">
 								<p className="truncate font-medium">{displayName(me)}</p>
-								<p className="truncate text-sm text-basalt-muted-foreground">{me.email}</p>
+								<p className="truncate text-sm text-muted-foreground">{me.email}</p>
 							</div>
 						</div>
 					) : (
-						<p className="text-sm text-basalt-muted-foreground">加载身份…</p>
+						<p className="text-sm text-muted-foreground">加载身份…</p>
 					)}
 				</LayerCard.Body>
 			</LayerCard>
-			<LayerCard>
+			<LayerCard className="rounded-card bg-secondary">
 				<LayerCard.Header>
 					<p className="font-medium">GitHub 账号</p>
 				</LayerCard.Header>
@@ -177,7 +177,7 @@ export function SettingsPage() {
 								</div>
 							</TableCell>
 							<TableCell className="font-mono text-sm">{row.token_last4}</TableCell>
-							<TableCell className="text-sm text-basalt-muted-foreground">{row.scopes}</TableCell>
+							<TableCell className="text-sm text-muted-foreground">{row.scopes}</TableCell>
 							<TableCell>
 								{row.is_active ? (
 									<Badge variant="success">当前</Badge>
