@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { applyRead, applyReadAll, loadInbox, markRead, markReadAll } from "./inbox";
 import { setActiveAccountId } from "./session";

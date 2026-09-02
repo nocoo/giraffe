@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { filterPulls, loadPulls, type PullRow } from "./pulls";
 import { setActiveAccountId } from "./session";

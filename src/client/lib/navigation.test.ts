@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
 import { breadcrumbsFor, NAV_ITEMS, paletteItems } from "./navigation";
 import { APP_PATHS } from "./routes";
