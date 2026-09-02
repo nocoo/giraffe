@@ -11,12 +11,35 @@ export const NAV_ITEMS: readonly NavItem[] = [
 	{ href: "/settings", label: "设置", icon: "Settings" },
 ];
 
-export type PaletteItem = { href: string; label: string };
+export type NavGroup = { label: string; items: readonly NavItem[] };
+
+export const NAV_GROUPS: readonly NavGroup[] = [
+	{ label: "浏览", items: NAV_ITEMS.slice(0, 4) },
+	{ label: "工作", items: NAV_ITEMS.slice(4, 7) },
+	{ label: "系统", items: NAV_ITEMS.slice(7) },
+];
+
+export const PAGE_DESCRIPTIONS: Record<string, string> = {
+	"/": "当前账号下的仓库快照",
+	"/issues": "跨仓打开的 Issue",
+	"/pulls": "跨仓打开的 Pull Request",
+	"/insights": "按健康度分组的仓库信号",
+	"/alerts": "Dependabot 与 code scanning",
+	"/inbox": "GitHub 通知收件箱",
+	"/digest": "相对昨天基线的仓库变化",
+	"/settings": "Access 身份与 GitHub 账号",
+};
+
+export type PaletteItem = { href: string; label: string; icon: string };
 
 export function paletteItems(
 	repos: { name_with_owner: string; owner_login: string; name: string }[] | null,
 ): PaletteItem[] {
-	const items: PaletteItem[] = NAV_ITEMS.map((item) => ({ href: item.href, label: item.label }));
+	const items: PaletteItem[] = NAV_ITEMS.map((item) => ({
+		href: item.href,
+		label: item.label,
+		icon: item.icon,
+	}));
 	if (!repos) {
 		return items;
 	}
@@ -25,6 +48,7 @@ export function paletteItems(
 		...repos.map((row) => ({
 			href: `/repos/${row.owner_login}/${row.name}`,
 			label: row.name_with_owner,
+			icon: "Box",
 		})),
 	];
 }
@@ -45,4 +69,17 @@ export function breadcrumbsFor(pathname: string): { href: string; label: string 
 		return [{ href: item.href, label: item.label }];
 	}
 	return [{ href: pathname, label: "未找到" }];
+}
+
+export function headerTitle(pathname: string): string {
+	const crumbs = breadcrumbsFor(pathname);
+	let label = "未找到";
+	for (const crumb of crumbs) {
+		label = crumb.label;
+	}
+	return label;
+}
+
+export function headerCrumbs(pathname: string): { href: string; label: string }[] {
+	return breadcrumbsFor(pathname).slice(0, -1);
 }
