@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { BrowserRouter, Link, Route, Routes } from "react-router";
 import { AppShell } from "./components/layout/app-shell";
 import { AlertsPage } from "./routes/alerts";
+import { InboxPage } from "./routes/inbox";
 import { InsightsPage } from "./routes/insights";
 import { IssuesPage } from "./routes/issues";
 import { PullsPage } from "./routes/pulls";
@@ -41,6 +42,7 @@ export function App() {
 							<Route path="/pulls" element={<PullsPage />} />
 							<Route path="/insights" element={<InsightsPage />} />
 							<Route path="/alerts" element={<AlertsPage />} />
+							<Route path="/inbox" element={<InboxPage />} />
 							<Route path="/settings" element={<SettingsPage />} />
 						</Route>
 					</Routes>

@@ -1,0 +1,119 @@
+import { Badge, Button, Toolbar, toast } from "@nocoo/basalt";
+import { Empty } from "@nocoo/basalt/components/empty";
+import { PageHeader } from "@nocoo/basalt/components/page-header";
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+} from "@nocoo/basalt/components/table";
+import { useEffect, useState } from "react";
+import { ApiError } from "../lib/errors";
+import { loadInbox, markRead, markReadAll, type NotificationsSnapshot } from "../viewmodels/inbox";
+import { requestRefresh } from "../viewmodels/refresh";
+
+function onWriteError(err: unknown): void {
+	if (err instanceof ApiError && err.code === "account_conflict") {
+		toast("账号已切换");
+		return;
+	}
+	toast("操作失败");
+}
+
+export function InboxPage() {
+	const [snap, setSnap] = useState<NotificationsSnapshot | { missing: true } | null>(null);
+
+	useEffect(() => {
+		void loadInbox().then(setSnap);
+	}, []);
+
+	if (snap && "missing" in snap) {
+		return (
+			<div className="flex flex-col gap-4">
+				<PageHeader title="通知" />
+				<Empty title="没有快照" description="先添加 PAT 或刷新。" />
+				<Button
+					type="button"
+					onClick={() => {
+						void requestRefresh(["notifications"]).then(() => loadInbox().then(setSnap));
+					}}
+				>
+					刷新
+				</Button>
+			</div>
+		);
+	}
+
+	const rows = snap?.notifications ?? [];
+
+	return (
+		<div className="flex flex-col gap-4">
+			<PageHeader title="通知" />
+			{snap?.truncated ? <Badge>已截断</Badge> : null}
+			<Toolbar aria-label="通知工具条">
+				<Button
+					type="button"
+					variant="secondary"
+					onClick={() => {
+						void requestRefresh(["notifications"]).then(() => loadInbox().then(setSnap));
+					}}
+				>
+					刷新
+				</Button>
+				<Button
+					type="button"
+					onClick={() => {
+						void markReadAll().then(setSnap).catch(onWriteError);
+					}}
+				>
+					全部已读
+				</Button>
+			</Toolbar>
+			{rows.length === 0 ? (
+				<Empty title="没有通知" />
+			) : (
+				<Table data-testid="inbox-list">
+					<TableHeader>
+						<TableRow>
+							<TableHead>未读</TableHead>
+							<TableHead>仓</TableHead>
+							<TableHead>title</TableHead>
+							<TableHead>reason</TableHead>
+							<TableHead>时间</TableHead>
+							<TableHead />
+						</TableRow>
+					</TableHeader>
+					<TableBody>
+						{rows.map((row) => (
+							<TableRow key={row.id}>
+								<TableCell>{row.unread ? "是" : "否"}</TableCell>
+								<TableCell>{row.name_with_owner}</TableCell>
+								<TableCell>
+									<a href={row.url} target="_blank" rel="noreferrer">
+										{row.title}
+									</a>
+								</TableCell>
+								<TableCell>{row.reason}</TableCell>
+								<TableCell>{row.updated_at}</TableCell>
+								<TableCell>
+									<Button
+										type="button"
+										variant="secondary"
+										disabled={!row.unread}
+										onClick={() => {
+											void markRead(row.id).then(setSnap).catch(onWriteError);
+										}}
+									>
+										已读
+									</Button>
+								</TableCell>
+							</TableRow>
+						))}
+					</TableBody>
+				</Table>
+			)}
+		</div>
+	);
+}
