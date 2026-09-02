@@ -1,4 +1,4 @@
-import { LinkProvider, ThemeProvider, Toaster } from "@nocoo/basalt";
+import { LinkProvider, ThemeProvider, Toaster, TooltipProvider } from "@nocoo/basalt";
 import type { ReactNode } from "react";
 import { BrowserRouter, Link, Route, Routes } from "react-router";
 import { AppShell } from "./components/layout/app-shell";
@@ -57,17 +57,19 @@ export function App() {
 	return (
 		<ThemeProvider>
 			<LinkProvider render={RouterLink}>
-				<BrowserRouter>
-					<Toaster />
-					<Routes>
-						<Route element={<AppShell />}>
-							{APP_PATHS.map((path) => (
-								<Route key={path} path={path} element={PAGES[path]} />
-							))}
-							<Route path="*" element={<NotFoundPage />} />
-						</Route>
-					</Routes>
-				</BrowserRouter>
+				<TooltipProvider>
+					<BrowserRouter>
+						<Toaster />
+						<Routes>
+							<Route element={<AppShell />}>
+								{APP_PATHS.map((path) => (
+									<Route key={path} path={path} element={PAGES[path]} />
+								))}
+								<Route path="*" element={<NotFoundPage />} />
+							</Route>
+						</Routes>
+					</BrowserRouter>
+				</TooltipProvider>
 			</LinkProvider>
 		</ThemeProvider>
 	);
