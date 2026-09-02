@@ -302,7 +302,7 @@ GitHub 调用（均经请求内 client，计入 40 次上限）。跨仓 `repos`
 | `repos` | GraphQL `viewer.repositories(first: 100, affiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER])`。跟 REST `affiliation=owner,collaborator,organization_member` 同一集合。有下一页继续，直到没有或次数用尽 |
 | `issues` | 把当前 repos 快照（或本轮内存中的 repos）的 `name_with_owner` 按 **字典序** 每 20 个一组。每组 GraphQL `search(type: ISSUE, query: "is:issue is:open repo:o/n …")`，跟 `pageInfo` 直到该组 `hasNextPage` 为假。若 `issueCount`（或等价 total）> 已收集条数，或还有未查询的仓，或次数用尽 → 该 kind `truncated: true`。GitHub search 最多约 1000 条，达到也必须 `truncated: true`。禁止每仓 REST |
 | `prs` | 同 issues，query 为 `is:pr is:open repo:…`，节点取 `additions`、`deletions`、`reviewDecision`。同样用 total 与 1000 上限判断 truncated |
-| `alerts` | Dependabot：按字典序 **每仓一次** GraphQL `repository(owner, name) { vulnerabilityAlerts(first: 20, after) }`，该仓跟 cursor 直到 `hasNextPage` 为假或次数用尽。某仓未跟完 → alerts `truncated: true`。code scanning：字典序 **前 10** 仓各一次 REST；仓数 > 10 → `truncated: true`。单仓 REST 403/404 或 GraphQL 路径级 FORBIDDEN 跳过该仓。零仓成功 → `unavailable: true`，`truncated` 仍按上规则 |
+| `alerts` | Dependabot：按字典序 **每仓一次** GraphQL `repository(owner, name) { vulnerabilityAlerts(first: 20, after) }`，该仓跟 cursor 直到 `hasNextPage` 为假或次数用尽。某仓未跟完 → alerts `truncated: true`。code scanning：字典序 **前 10** 仓各一次 REST；仓数 > 10 → `truncated: true`。单仓 REST 403/404 或 GraphQL 路径级 FORBIDDEN 跳过该仓，且 **必须** `truncated: true`（持久化不完整，供后续 insights `alerts_incomplete`）。零仓成功 → `unavailable: true`，`truncated` 仍按上规则 |
 | `notifications` | REST `GET /notifications?per_page=100`，直到没有下一页或次数用尽 |
 | `repo:…:details` | REST `GET /repos/{o}/{n}` |
 | `repo:…:actions` | REST `GET /repos/{o}/{n}/actions/runs?per_page=100` |

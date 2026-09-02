@@ -250,7 +250,7 @@ Server 不调度。Client 只经 `viewmodels/refresh.ts` 调 `POST /api/refresh`
 - `POST /api/accounts` 201：用响应体 `id` **先**写入 `activeAccountId`（若 `is_active`），再入队 refresh。禁止还没 stamp 就刷 repos。
 - 快照缓存按该 id 隔离；id 变化则清空缓存。
 - 入队时盖上当时的 `activeAccountId`。`POST /api/refresh` 仍不带账号 id（04）。
-- **发出前**、**应用 payload 前**、**补读 GET 前**：stamp 必须等于此刻 `activeAccountId`，否则丢弃（含 A 在途切到 B：A 的 body 不得写入 B 缓存，也不得用 B 的身份去补读）。
+- **发出前**、**应用 payload 前**、**补读 GET 前**：stamp 必须等于此刻 `activeAccountId`，否则丢弃（含 A 在途切到 B：A 的 body 不得写入 B 缓存，也不得用 B 的身份去补读）。快照 GET / 单 kind refresh 的 body 含 `account_id`（03）：若 ≠ stamp，丢弃并再 `ensureSession()`。这关掉 ensureSession 与随后 GET 之间的 TOCTOU。
 - **等价**（同一 stamp + 规范化相同 kinds）合并为同一 in-flight Promise。
 - **不等价**且 stamp 仍是当前账号：FIFO 排队。
 - activate / 删除当前账号成功后：更新 `activeAccountId`、清空旧 stamp 队列、按 §7 为新账号入队 `["repos"]`（删除导致无 active 则不入队）。
@@ -415,7 +415,7 @@ export function breadcrumbsFor(pathname: string): { href: string; label: string 
 | `routes.ts` | 01 §9 九条路径全部在表中；与 NAV_ITEMS href 一致 |
 | 命令面板数据 | 静态 NAV_ITEMS；有 repos 缓存时含仓库项 |
 | health 展示 | `alerts_incomplete` →「告警不完整」 |
-| `session.ts` | 无 stamp 时 GET accounts；201 先 stamp；in-flight 切换丢弃 |
+| `session.ts` | 每次 ensureSession 都 GET accounts；201 先 stamp；in-flight 切换丢弃；body.account_id 不匹配则丢弃 |
 
 Client 单测：文件顶 `// @vitest-environment happy-dom` 或 vitest 对 `src/client/**` 设 environment。不得 `import` `src/server`。
 

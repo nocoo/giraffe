@@ -141,12 +141,13 @@ CREATE TABLE snapshot_days (
 
 ```json
 {
+  "account_id": "<accounts.id>",
   "fetched_at": "2026-09-01T00:00:00.000Z",
   "truncated": false
 }
 ```
 
-另加 kind 自己的数据字段。字段用 snake_case 存库；与 GitHub 原名字冲突时在映射层处理。
+`account_id` 为写入该快照的账号。Client 用来丢弃跨 Tab 切换后的错账本响应。另加 kind 自己的数据字段。字段用 snake_case 存库；与 GitHub 原名字冲突时在映射层处理。
 
 ### `repos`
 
@@ -251,7 +252,7 @@ CREATE TABLE snapshot_days (
 }
 ```
 
-`health`：`strong` | `watch` | `risky`。`alerts_incomplete: true` 当派生时 alerts 快照缺失、`unavailable: true`、`truncated: true`，或收集时有仓因 403/404/FORBIDDEN 被跳过。UI 必须展示「告警不完整」，不得把 `strong` 当成已扫完全部安全告警。
+`health`：`strong` | `watch` | `risky`。`alerts_incomplete: true` 当派生时 alerts 快照缺失、`unavailable: true` 或 `truncated: true`（04：仓 403/404/FORBIDDEN 跳过也把 alerts 标 truncated，故能持久化）。UI 必须展示「告警不完整」，不得把 `strong` 当成已扫完全部安全告警。
 
 ### `alerts`
 
