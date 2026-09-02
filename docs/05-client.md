@@ -12,7 +12,7 @@ Codex Sign Off 本文之前，禁止第 12 节步骤 1 及之后（含 Vite 脚�
 
 ## 1. 范围
 
-做：`src/client` Vite + React 19 SPA；只打同源 `/api/*`；用 `@nocoo/basalt@2.0.0-rc.1` 控件拼界面；L1 ViewModel 测试 + 02 §6 三条 L3；产物进 `dist/client`，由已落地 Worker `[assets]` 托管。
+做：`src/client` Vite + React 19 SPA；只打同源 `/api/*`；用 `@nocoo/basalt@2.0.0` 控件拼界面；L1 ViewModel 测试 + 02 §6 三条 L3；产物进 `dist/client`，由已落地 Worker `[assets]` 托管。
 
 不做：平行控件库、本地 vendoring Basalt 源码、shadcn 再拷一份、Next.js、`@cloudflare/vite-plugin`、独立 Vite 开发服务器打 Worker API、GitLab、Device Flow、fine-grained PAT、LLM digest、Kanban、Mentions、Dependents、顶层 CI Health、应用内登录 / OAuth / session cookie。
 
@@ -24,7 +24,7 @@ Codex Sign Off 本文之前，禁止第 12 节步骤 1 及之后（含 Vite 脚�
 
 | 主题 | 决定 |
 |------|------|
-| 包 | `@nocoo/basalt@2.0.0-rc.1`。从 npm 安装（临时允许的 registry）。禁止把 `../basalt` 源码拷进本仓，禁止 `file:` 依赖，禁止把镜像 URL 写进 `bun.lock` |
+| 包 | `@nocoo/basalt@2.0.0`。从 npm 安装（临时允许的 registry）。禁止把 `../basalt` 源码拷进本仓，禁止 `file:` 依赖，禁止把镜像 URL 写进 `bun.lock` |
 | 控件 | 只用该包已发布的控件。根 barrel 没有的走 granular：`@nocoo/basalt/components/*`、`@nocoo/basalt/charts/*`。缺的用 HTML + 已有 Basalt 叶子，不自研第二套 widget |
 | 布局语言 | 参考 `/Users/nocoo/workspace/work/whiteboard/intentional-kusto-queries` 的 **壳**，不是拷它的组件。侧栏展开 260px / 收起 68px，`transition-all duration-300 ease-in-out`，sticky flex 子项（不是 `fixed` + spacer）。主区 **ContentIsland** 浮岛。跳过链接。顶栏高 14（`h-14`）面包屑。中文 UI |
 | 壳实现 | giraffe 的 `src/client/components/layout/*` **只组合** Basalt：`AppShell` / `AppMain` / `AppSkipLink`（`@nocoo/basalt/components/app-shell`，不在根 barrel）、`Sidebar*` + `ContentIsland`（根 barrel）、`ThemeProvider` / `ThemeToggle` / `LinkProvider`。禁止再写一套 `sidebar-context`。`AppMain` 必须传 `tabIndex={-1}`，否则 skip link 无法聚焦 |
@@ -99,7 +99,7 @@ tests/e2e/                         # L3；由 scripts/run-e2e-bdd.ts 跑
 | 构建 | Vite 8 + `@vitejs/plugin-react` + `@tailwindcss/vite`。无独立 `dev:client` |
 | UI | React 19 + React Router |
 | 样式 | Tailwind CSS v4 + `@nocoo/basalt/styles/tailwind` |
-| 控件 | `@nocoo/basalt@2.0.0-rc.1` |
+| 控件 | `@nocoo/basalt@2.0.0` |
 | 图标 | `lucide-react`（Basalt peer） |
 | 图表 | Basalt charts + peer `recharts@^3`（Traffic、Languages） |
 | Toast | Basalt `toast` / `Toaster`（根 barrel；底层 sonner） |
