@@ -1,4 +1,4 @@
-import { Badge, SegmentControl, Toolbar, toast } from "@nocoo/basalt";
+import { Badge, Link, SegmentControl, toast } from "@nocoo/basalt";
 import { Empty } from "@nocoo/basalt/components/empty";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
 import {
@@ -9,9 +9,12 @@ import {
 	TableHeader,
 	TableRow,
 } from "@nocoo/basalt/components/table";
+import { Activity } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad, missingTitle } from "../lib/error-ui";
+import { formatHealth, healthBadgeVariant } from "../lib/format";
+import { PAGE_DESCRIPTIONS } from "../lib/navigation";
 import {
 	alertsIncomplete,
 	filterInsights,
@@ -53,9 +56,9 @@ export function InsightsPage() {
 
 	if (snap && "missing" in snap) {
 		return (
-			<div className="flex flex-col gap-4">
-				<PageHeader title="Insights" />
-				<Empty title={missingTitle(snap)} description="先添加 PAT 或刷新。" />
+			<div className="flex flex-col gap-6">
+				<PageHeader title="Insights" description={PAGE_DESCRIPTIONS["/insights"]} />
+				<Empty icon={<Activity />} title={missingTitle(snap)} description="先添加 PAT 或刷新。" />
 				<RefreshButton
 					variant="default"
 					run={() =>
@@ -67,21 +70,36 @@ export function InsightsPage() {
 		);
 	}
 
+	if (!snap) {
+		return (
+			<div className="flex flex-col gap-6">
+				<PageHeader title="Insights" description={PAGE_DESCRIPTIONS["/insights"]} />
+			</div>
+		);
+	}
+
 	return (
-		<div className="flex flex-col gap-4">
-			<PageHeader title="Insights" />
-			{snap?.truncated ? <Badge>已截断</Badge> : null}
-			{incomplete ? <Badge>告警不完整</Badge> : null}
-			<Toolbar aria-label="Insights 工具条">
+		<div className="flex flex-col gap-6">
+			<PageHeader
+				title="Insights"
+				description={PAGE_DESCRIPTIONS["/insights"]}
+				actions={
+					<>
+						{snap.truncated ? <Badge variant="warning">已截断</Badge> : null}
+						{incomplete ? <Badge variant="warning">告警不完整</Badge> : null}
+					</>
+				}
+			/>
+			<div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
 				<SegmentControl
 					legend="健康"
 					value={health}
 					onValueChange={(value) => setHealth(value as Health | "all")}
 					options={[
 						{ value: "all", label: "全部" },
-						{ value: "strong", label: "strong" },
-						{ value: "watch", label: "watch" },
-						{ value: "risky", label: "risky" },
+						{ value: "strong", label: "健康" },
+						{ value: "watch", label: "观察" },
+						{ value: "risky", label: "风险" },
 					]}
 				/>
 				<RefreshButton
@@ -90,50 +108,56 @@ export function InsightsPage() {
 					}
 					onError={onLoadError}
 				/>
-			</Toolbar>
+			</div>
 			{rows.length === 0 ? (
-				<Empty title="没有 Insights" />
+				<Empty icon={<Activity />} title="没有 Insights" />
 			) : (
 				<Table data-testid="insight-list">
 					<TableHeader>
 						<TableRow>
-							<TableHead>仓</TableHead>
-							<TableHead>health</TableHead>
-							<TableHead>issues</TableHead>
-							<TableHead>距上次 push</TableHead>
-							<TableHead>opportunities</TableHead>
-							<TableHead>alerts</TableHead>
+							<TableHead>仓库</TableHead>
+							<TableHead>健康</TableHead>
+							<TableHead>Issues</TableHead>
+							<TableHead>距上次推送</TableHead>
+							<TableHead>机会</TableHead>
+							<TableHead>告警</TableHead>
 						</TableRow>
 					</TableHeader>
 					<TableBody>
 						{rows.map((row) => (
 							<TableRow key={row.name_with_owner}>
-								<TableCell>{row.name_with_owner}</TableCell>
 								<TableCell>
-									<Badge>{row.health}</Badge>
+									<Link href={`/repos/${row.name_with_owner}`}>{row.name_with_owner}</Link>
 								</TableCell>
-								<TableCell>{row.open_issue_count}</TableCell>
-								<TableCell>{row.days_since_push}</TableCell>
+								<TableCell>
+									<Badge variant={healthBadgeVariant(row.health)}>{formatHealth(row.health)}</Badge>
+								</TableCell>
+								<TableCell className="tabular-nums">{row.open_issue_count}</TableCell>
+								<TableCell className="tabular-nums">{row.days_since_push} 天</TableCell>
 								<TableCell>
 									{row.opportunities.length === 0 ? (
 										"—"
 									) : (
-										<ul>
+										<div className="flex flex-wrap gap-1">
 											{row.opportunities.map((item) => (
-												<li key={item}>{item}</li>
+												<Badge key={item} variant="secondary">
+													{item}
+												</Badge>
 											))}
-										</ul>
+										</div>
 									)}
 								</TableCell>
 								<TableCell>
 									{row.alerts.length === 0 ? (
 										"—"
 									) : (
-										<ul>
+										<div className="flex flex-col gap-1">
 											{row.alerts.map((alert) => (
-												<li key={alert.url}>{alert.summary}</li>
+												<Link key={alert.url} href={alert.url} target="_blank" rel="noreferrer">
+													{alert.summary}
+												</Link>
 											))}
-										</ul>
+										</div>
 									)}
 								</TableCell>
 							</TableRow>

@@ -3,12 +3,13 @@ import {
 	AvatarFallback,
 	AvatarImage,
 	Badge,
+	LayerCard,
+	Link,
 	StatStrip,
 	Tabs,
 	TabsContent,
 	TabsList,
 	TabsTrigger,
-	Toolbar,
 	toast,
 } from "@nocoo/basalt";
 import { AreaChart } from "@nocoo/basalt/charts/area";
@@ -23,10 +24,12 @@ import {
 	TableHeader,
 	TableRow,
 } from "@nocoo/basalt/components/table";
+import { Box, GitPullRequest } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router";
 import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad, missingTitle } from "../lib/error-ui";
+import { formatCount, formatDate, formatReview } from "../lib/format";
 import type { IssuesSnapshot } from "../viewmodels/issues";
 import type { PullsSnapshot } from "../viewmodels/pulls";
 import { requestRefresh } from "../viewmodels/refresh";
@@ -215,18 +218,18 @@ export function RepoDetailPage() {
 
 	if (!valid || (snap && "invalid" in snap)) {
 		return (
-			<div className="flex flex-col gap-4">
+			<div className="flex flex-col gap-6">
 				<PageHeader title="仓库" />
-				<Empty title="无效仓库" />
+				<Empty icon={<Box />} title="无效仓库" description="owner 或 name 不符合 GitHub 规则。" />
 			</div>
 		);
 	}
 
 	if (snap && "missing" in snap) {
 		return (
-			<div className="flex flex-col gap-4">
+			<div className="flex flex-col gap-6">
 				<PageHeader title={`${owner}/${name}`} />
-				<Empty title={missingTitle(snap)} description="先添加 PAT 或刷新。" />
+				<Empty icon={<Box />} title={missingTitle(snap)} description="先添加 PAT 或刷新。" />
 				<RefreshButton
 					variant="default"
 					run={() => {
@@ -258,115 +261,131 @@ export function RepoDetailPage() {
 
 	if (!snap) {
 		return (
-			<div className="flex flex-col gap-4">
+			<div className="flex flex-col gap-6">
 				<PageHeader title={`${owner}/${name}`} />
 			</div>
 		);
 	}
 
+	const truncated =
+		tab === "details"
+			? snap.truncated
+			: tab === "security"
+				? security && !("missing" in security) && security.truncated
+				: tab === "traffic"
+					? traffic && !("missing" in traffic) && traffic.truncated
+					: tab === "actions"
+						? actions && !("missing" in actions) && actions.truncated
+						: tab === "releases"
+							? releases && !("missing" in releases) && releases.truncated
+							: tab === "issues"
+								? issues && !("missing" in issues) && issues.truncated
+								: tab === "prs"
+									? pulls && !("missing" in pulls) && pulls.truncated
+									: tab === "languages"
+										? languages && !("missing" in languages) && languages.truncated
+										: contributors && !("missing" in contributors) && contributors.truncated;
+
 	return (
-		<div className="flex flex-col gap-4" data-testid="repo-detail">
-			<PageHeader title={`${owner}/${name}`} description={snap.description ?? name} />
-			{(
-				tab === "details"
-					? snap.truncated
-					: tab === "security"
-						? security && !("missing" in security) && security.truncated
-						: tab === "traffic"
-							? traffic && !("missing" in traffic) && traffic.truncated
-							: tab === "actions"
-								? actions && !("missing" in actions) && actions.truncated
-								: tab === "releases"
-									? releases && !("missing" in releases) && releases.truncated
-									: tab === "issues"
-										? issues && !("missing" in issues) && issues.truncated
-										: tab === "prs"
-											? pulls && !("missing" in pulls) && pulls.truncated
-											: tab === "languages"
-												? languages && !("missing" in languages) && languages.truncated
-												: contributors && !("missing" in contributors) && contributors.truncated
-			) ? (
-				<Badge>已截断</Badge>
-			) : null}
-			<Toolbar aria-label="仓库详情工具条">
-				<RefreshButton
-					run={() => {
-						const mine = gen.current;
-						function applyIfCurrent<T>(setter: (value: T) => void): (value: T) => void {
-							return (value) => {
-								if (mine === gen.current) {
-									setter(value);
+		<div className="flex flex-col gap-6" data-testid="repo-detail">
+			<PageHeader
+				title={`${owner}/${name}`}
+				description={snap.description ?? name}
+				actions={
+					<>
+						{truncated ? <Badge variant="warning">已截断</Badge> : null}
+						<RefreshButton
+							run={() => {
+								const mine = gen.current;
+								function applyIfCurrent<T>(setter: (value: T) => void): (value: T) => void {
+									return (value) => {
+										if (mine === gen.current) {
+											setter(value);
+										}
+									};
 								}
-							};
-						}
-						return requestRefresh(repoKind(owner, name, tab))
-							.then(async () => {
-								if (mine !== gen.current) {
-									return false;
-								}
-								if (tab === "details") {
-									return loadRepoTab<RepoDetails>(owner, name, "details").then(
-										applyIfCurrent(setSnap),
-									);
-								}
-								if (tab === "security") {
-									return fetchTab<RepoSecurity>(owner, name, "security", refreshed.current).then(
-										applyIfCurrent(setSecurity),
-									);
-								}
-								if (tab === "actions") {
-									return fetchTab<RepoActions>(owner, name, "actions", refreshed.current).then(
-										applyIfCurrent(setActions),
-									);
-								}
-								if (tab === "releases") {
-									return fetchTab<RepoReleases>(owner, name, "releases", refreshed.current).then(
-										applyIfCurrent(setReleases),
-									);
-								}
-								if (tab === "issues") {
-									return fetchTab<IssuesSnapshot>(owner, name, "issues", refreshed.current).then(
-										applyIfCurrent(setIssues),
-									);
-								}
-								if (tab === "prs") {
-									return fetchTab<PullsSnapshot>(owner, name, "prs", refreshed.current).then(
-										applyIfCurrent(setPulls),
-									);
-								}
-								if (tab === "languages") {
-									return fetchTab<RepoLanguages>(owner, name, "languages", refreshed.current).then(
-										applyIfCurrent(setLanguages),
-									);
-								}
-								if (tab === "contributors") {
-									return fetchTab<RepoContributors>(
-										owner,
-										name,
-										"contributors",
-										refreshed.current,
-									).then(applyIfCurrent(setContributors));
-								}
-								return fetchTab<RepoTraffic>(owner, name, "traffic", refreshed.current).then(
-									applyIfCurrent(setTraffic),
-								);
-							})
-							.then((result) => {
-								if (mine !== gen.current) {
-									return false;
-								}
-								return result;
-							})
-							.catch((err: unknown) => {
-								if (mine !== gen.current) {
-									return false;
-								}
-								throw err;
-							});
-					}}
-					onError={onLoadError}
-				/>
-			</Toolbar>
+								return requestRefresh(repoKind(owner, name, tab))
+									.then(async () => {
+										if (mine !== gen.current) {
+											return false;
+										}
+										if (tab === "details") {
+											return loadRepoTab<RepoDetails>(owner, name, "details").then(
+												applyIfCurrent(setSnap),
+											);
+										}
+										if (tab === "security") {
+											return fetchTab<RepoSecurity>(
+												owner,
+												name,
+												"security",
+												refreshed.current,
+											).then(applyIfCurrent(setSecurity));
+										}
+										if (tab === "actions") {
+											return fetchTab<RepoActions>(owner, name, "actions", refreshed.current).then(
+												applyIfCurrent(setActions),
+											);
+										}
+										if (tab === "releases") {
+											return fetchTab<RepoReleases>(
+												owner,
+												name,
+												"releases",
+												refreshed.current,
+											).then(applyIfCurrent(setReleases));
+										}
+										if (tab === "issues") {
+											return fetchTab<IssuesSnapshot>(
+												owner,
+												name,
+												"issues",
+												refreshed.current,
+											).then(applyIfCurrent(setIssues));
+										}
+										if (tab === "prs") {
+											return fetchTab<PullsSnapshot>(owner, name, "prs", refreshed.current).then(
+												applyIfCurrent(setPulls),
+											);
+										}
+										if (tab === "languages") {
+											return fetchTab<RepoLanguages>(
+												owner,
+												name,
+												"languages",
+												refreshed.current,
+											).then(applyIfCurrent(setLanguages));
+										}
+										if (tab === "contributors") {
+											return fetchTab<RepoContributors>(
+												owner,
+												name,
+												"contributors",
+												refreshed.current,
+											).then(applyIfCurrent(setContributors));
+										}
+										return fetchTab<RepoTraffic>(owner, name, "traffic", refreshed.current).then(
+											applyIfCurrent(setTraffic),
+										);
+									})
+									.then((result) => {
+										if (mine !== gen.current) {
+											return false;
+										}
+										return result;
+									})
+									.catch((err: unknown) => {
+										if (mine !== gen.current) {
+											return false;
+										}
+										throw err;
+									});
+							}}
+							onError={onLoadError}
+						/>
+					</>
+				}
+			/>
 			<Tabs value={tab} onValueChange={(value) => setTab(value as RepoTab)}>
 				<TabsList>
 					<TabsTrigger value="details">概览</TabsTrigger>
@@ -384,18 +403,28 @@ export function RepoDetailPage() {
 						<div className="flex flex-col gap-4">
 							<StatStrip
 								items={[
-									{ label: "★", value: snap.stargazer_count },
-									{ label: "fork", value: snap.fork_count },
-									{ label: "issues", value: snap.open_issue_count },
+									{ label: "Stars", value: formatCount(snap.stargazer_count) },
+									{ label: "Forks", value: formatCount(snap.fork_count) },
+									{ label: "Issues", value: formatCount(snap.open_issue_count) },
 								]}
 							/>
-							<p>默认分支 {snap.default_branch}</p>
-							<p>license {snap.license ?? "—"}</p>
-							<p>
-								<a href={snap.url} target="_blank" rel="noreferrer">
-									GitHub
-								</a>
-							</p>
+							<LayerCard>
+								<LayerCard.Body className="flex flex-col gap-2 text-sm">
+									<p>
+										<span className="text-basalt-muted-foreground">默认分支</span>{" "}
+										{snap.default_branch}
+									</p>
+									<p>
+										<span className="text-basalt-muted-foreground">许可证</span>{" "}
+										{snap.license ?? "—"}
+									</p>
+									<p>
+										<Link href={snap.url} target="_blank" rel="noreferrer">
+											在 GitHub 打开
+										</Link>
+									</p>
+								</LayerCard.Body>
+							</LayerCard>
 						</div>
 					) : null}
 				</TabsContent>
@@ -408,24 +437,34 @@ export function RepoDetailPage() {
 						<Table>
 							<TableHeader>
 								<TableRow>
-									<TableHead>name</TableHead>
-									<TableHead>status</TableHead>
-									<TableHead>conclusion</TableHead>
-									<TableHead>event</TableHead>
-									<TableHead>branch</TableHead>
+									<TableHead>名称</TableHead>
+									<TableHead>状态</TableHead>
+									<TableHead>结论</TableHead>
+									<TableHead>事件</TableHead>
+									<TableHead>分支</TableHead>
 								</TableRow>
 							</TableHeader>
 							<TableBody>
 								{actions.runs.map((run) => (
 									<TableRow key={run.id}>
 										<TableCell>
-											<a href={run.html_url} target="_blank" rel="noreferrer">
+											<Link href={run.html_url} target="_blank" rel="noreferrer">
 												{run.name}
-											</a>
+											</Link>
 										</TableCell>
 										<TableCell>{run.status}</TableCell>
 										<TableCell>
-											<Badge>{run.conclusion ?? "—"}</Badge>
+											<Badge
+												variant={
+													run.conclusion === "success"
+														? "success"
+														: run.conclusion === "failure"
+															? "error"
+															: "secondary"
+												}
+											>
+												{run.conclusion ?? "—"}
+											</Badge>
 										</TableCell>
 										<TableCell>{run.event}</TableCell>
 										<TableCell>{run.head_branch ?? "—"}</TableCell>
@@ -444,21 +483,25 @@ export function RepoDetailPage() {
 						<Table>
 							<TableHeader>
 								<TableRow>
-									<TableHead>tag</TableHead>
+									<TableHead>标签</TableHead>
 									<TableHead>时间</TableHead>
-									<TableHead>prerelease</TableHead>
+									<TableHead>预发布</TableHead>
 								</TableRow>
 							</TableHeader>
 							<TableBody>
 								{releases.releases.map((row) => (
 									<TableRow key={row.id}>
 										<TableCell>
-											<a href={row.html_url} target="_blank" rel="noreferrer">
+											<Link href={row.html_url} target="_blank" rel="noreferrer">
 												{row.tag_name}
-											</a>
+											</Link>
 										</TableCell>
-										<TableCell>{row.published_at ?? "—"}</TableCell>
-										<TableCell>{row.prerelease ? "是" : "否"}</TableCell>
+										<TableCell className="text-basalt-muted-foreground">
+											{formatDate(row.published_at)}
+										</TableCell>
+										<TableCell>
+											{row.prerelease ? <Badge variant="secondary">预发布</Badge> : "—"}
+										</TableCell>
 									</TableRow>
 								))}
 							</TableBody>
@@ -491,20 +534,22 @@ export function RepoDetailPage() {
 									<TableHead>编号</TableHead>
 									<TableHead>标题</TableHead>
 									<TableHead>作者</TableHead>
-									<TableHead>更新时间</TableHead>
+									<TableHead>更新</TableHead>
 								</TableRow>
 							</TableHeader>
 							<TableBody>
 								{issues.issues.map((row) => (
 									<TableRow key={`${row.name_with_owner}#${row.number}`}>
-										<TableCell>{row.number}</TableCell>
+										<TableCell className="tabular-nums">#{row.number}</TableCell>
 										<TableCell>
-											<a href={row.url} target="_blank" rel="noreferrer">
+											<Link href={row.url} target="_blank" rel="noreferrer">
 												{row.title}
-											</a>
+											</Link>
 										</TableCell>
 										<TableCell>{row.author_login ?? "—"}</TableCell>
-										<TableCell>{row.updated_at}</TableCell>
+										<TableCell className="text-basalt-muted-foreground">
+											{formatDate(row.updated_at)}
+										</TableCell>
 									</TableRow>
 								))}
 							</TableBody>
@@ -513,9 +558,9 @@ export function RepoDetailPage() {
 				</TabsContent>
 				<TabsContent value="prs">
 					{pulls && "missing" in pulls ? (
-						<Empty title="没有快照" />
+						<Empty icon={<GitPullRequest />} title="没有快照" />
 					) : pulls && pulls.pull_requests.length === 0 ? (
-						<Empty title="没有 Pull Request" />
+						<Empty icon={<GitPullRequest />} title="没有 Pull Request" />
 					) : pulls ? (
 						<Table>
 							<TableHeader>
@@ -523,28 +568,34 @@ export function RepoDetailPage() {
 									<TableHead>编号</TableHead>
 									<TableHead>标题</TableHead>
 									<TableHead>作者</TableHead>
-									<TableHead>draft</TableHead>
-									<TableHead>review</TableHead>
-									<TableHead>+add/−del</TableHead>
-									<TableHead>更新时间</TableHead>
+									<TableHead>草稿</TableHead>
+									<TableHead>审查</TableHead>
+									<TableHead>+/−</TableHead>
+									<TableHead>更新</TableHead>
 								</TableRow>
 							</TableHeader>
 							<TableBody>
 								{pulls.pull_requests.map((row) => (
 									<TableRow key={`${row.name_with_owner}#${row.number}`}>
-										<TableCell>{row.number}</TableCell>
+										<TableCell className="tabular-nums">#{row.number}</TableCell>
 										<TableCell>
-											<a href={row.url} target="_blank" rel="noreferrer">
+											<Link href={row.url} target="_blank" rel="noreferrer">
 												{row.title}
-											</a>
+											</Link>
 										</TableCell>
 										<TableCell>{row.author_login ?? "—"}</TableCell>
-										<TableCell>{row.is_draft ? "是" : "否"}</TableCell>
-										<TableCell>{row.review_decision ?? "—"}</TableCell>
 										<TableCell>
-											+{row.additions}/−{row.deletions}
+											{row.is_draft ? <Badge variant="secondary">草稿</Badge> : "—"}
 										</TableCell>
-										<TableCell>{row.updated_at}</TableCell>
+										<TableCell>{formatReview(row.review_decision)}</TableCell>
+										<TableCell className="tabular-nums">
+											<span className="text-basalt-info">+{row.additions}</span>
+											<span className="text-basalt-muted-foreground">/</span>
+											<span className="text-basalt-danger">−{row.deletions}</span>
+										</TableCell>
+										<TableCell className="text-basalt-muted-foreground">
+											{formatDate(row.updated_at)}
+										</TableCell>
 									</TableRow>
 								))}
 							</TableBody>
@@ -560,8 +611,8 @@ export function RepoDetailPage() {
 						<div className="flex flex-col gap-4">
 							<StatStrip
 								items={[
-									{ label: "views", value: traffic.views.count },
-									{ label: "clones", value: traffic.clones.count },
+									{ label: "浏览", value: formatCount(traffic.views.count) },
+									{ label: "克隆", value: formatCount(traffic.clones.count) },
 								]}
 							/>
 							<AreaChart data={trafficPoints(traffic.views.points)} ariaLabel="views" />
@@ -590,10 +641,12 @@ export function RepoDetailPage() {
 										<AvatarImage src={row.avatar_url} alt={row.login} />
 										<AvatarFallback>{row.login.slice(0, 2)}</AvatarFallback>
 									</Avatar>
-									<a href={row.html_url} target="_blank" rel="noreferrer">
+									<Link href={row.html_url} target="_blank" rel="noreferrer">
 										{row.login}
-									</a>
-									<span>{row.contributions}</span>
+									</Link>
+									<span className="ml-auto tabular-nums text-sm text-basalt-muted-foreground">
+										{formatCount(row.contributions)}
+									</span>
 								</li>
 							))}
 						</ul>

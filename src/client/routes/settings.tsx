@@ -2,12 +2,13 @@ import {
 	Avatar,
 	AvatarFallback,
 	AvatarImage,
+	Badge,
 	Button,
 	ConfirmDialog,
 	Field,
+	LayerCard,
 	toast,
 } from "@nocoo/basalt";
-import { Loader } from "@nocoo/basalt/components/loader";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
 import { SensitiveInput } from "@nocoo/basalt/components/sensitive-input";
 import {
@@ -18,8 +19,11 @@ import {
 	TableHeader,
 	TableRow,
 } from "@nocoo/basalt/components/table";
-import { type FormEvent, useEffect, useState, useSyncExternalStore } from "react";
+import { type FormEvent, useEffect, useState } from "react";
+import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad, reportError, reportOk } from "../lib/error-ui";
+import { initials } from "../lib/format";
+import { PAGE_DESCRIPTIONS } from "../lib/navigation";
 import {
 	accountFieldError,
 	activateAccount,
@@ -30,7 +34,7 @@ import {
 	type PublicAccount,
 } from "../viewmodels/accounts";
 import { displayName, loadMe, type MeIdentity } from "../viewmodels/me";
-import { refreshInFlight, requestRefresh, subscribeRefresh } from "../viewmodels/refresh";
+import { requestRefresh } from "../viewmodels/refresh";
 
 export function SettingsPage() {
 	const [token, setToken] = useState("");
@@ -38,7 +42,6 @@ export function SettingsPage() {
 	const [me, setMe] = useState<MeIdentity | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [pendingId, setPendingId] = useState<string | null>(null);
-	const busy = useSyncExternalStore(subscribeRefresh, refreshInFlight, refreshInFlight);
 
 	function onLoadError(err: unknown): void {
 		catchLoad(err, toast);
@@ -87,56 +90,77 @@ export function SettingsPage() {
 		<div className="flex flex-col gap-6">
 			<PageHeader
 				title="设置"
-				description={me ? `Access：${displayName(me)}（${me.email}）` : "加载身份…"}
-			/>
-			<form className="flex max-w-xl flex-col gap-3" onSubmit={(event) => void onSubmit(event)}>
-				<Field
-					label="GitHub classic PAT"
-					htmlFor="pat"
-					hint="需要 repo、read:org、read:user、notifications"
-					{...(error ? { error } : {})}
-				>
-					<SensitiveInput
-						id="pat"
-						name="token"
-						autoComplete="off"
-						revealLabel="显示令牌"
-						hideLabel="隐藏令牌"
-						value={token}
-						onChange={(event) => setToken(event.target.value)}
-						data-testid="pat-input"
-						passwordManagerIgnore
+				description={PAGE_DESCRIPTIONS["/settings"]}
+				actions={
+					<RefreshButton
+						run={() =>
+							requestRefresh("all").then(() => {
+								return reload();
+							})
+						}
+						onError={onLoadError}
 					/>
-				</Field>
-				<div className="flex gap-2">
-					<Button type="submit" data-testid="pat-submit">
-						添加账号
-					</Button>
-					<Button
-						type="button"
-						variant="secondary"
-						disabled={busy}
-						onClick={() => {
-							void requestRefresh("all")
-								.then(() => {
-									toast("已刷新");
-									return reload();
-								})
-								.catch(onLoadError);
-						}}
-					>
-						{busy ? <Loader size={14} /> : null}
-						刷新全部
-					</Button>
-				</div>
-			</form>
+				}
+			/>
+			<LayerCard>
+				<LayerCard.Header>
+					<p className="font-medium">Access 身份</p>
+				</LayerCard.Header>
+				<LayerCard.Body>
+					{me ? (
+						<div className="flex items-center gap-3">
+							<Avatar className="h-10 w-10">
+								<AvatarFallback>{initials(displayName(me))}</AvatarFallback>
+							</Avatar>
+							<div className="min-w-0">
+								<p className="truncate font-medium">{displayName(me)}</p>
+								<p className="truncate text-sm text-basalt-muted-foreground">{me.email}</p>
+							</div>
+						</div>
+					) : (
+						<p className="text-sm text-basalt-muted-foreground">加载身份…</p>
+					)}
+				</LayerCard.Body>
+			</LayerCard>
+			<LayerCard>
+				<LayerCard.Header>
+					<p className="font-medium">GitHub 账号</p>
+				</LayerCard.Header>
+				<LayerCard.Body>
+					<form className="flex max-w-xl flex-col gap-3" onSubmit={(event) => void onSubmit(event)}>
+						<Field
+							label="GitHub classic PAT"
+							htmlFor="pat"
+							hint="需要 repo、read:org、read:user、notifications"
+							{...(error ? { error } : {})}
+						>
+							<SensitiveInput
+								id="pat"
+								name="token"
+								autoComplete="off"
+								revealLabel="显示令牌"
+								hideLabel="隐藏令牌"
+								value={token}
+								onChange={(event) => setToken(event.target.value)}
+								data-testid="pat-input"
+								passwordManagerIgnore
+							/>
+						</Field>
+						<div>
+							<Button type="submit" data-testid="pat-submit">
+								添加账号
+							</Button>
+						</div>
+					</form>
+				</LayerCard.Body>
+			</LayerCard>
 			<Table>
 				<TableHeader>
 					<TableRow>
 						<TableHead>账号</TableHead>
 						<TableHead>末四位</TableHead>
 						<TableHead>scopes</TableHead>
-						<TableHead>当前</TableHead>
+						<TableHead>状态</TableHead>
 						<TableHead>操作</TableHead>
 					</TableRow>
 				</TableHeader>
@@ -152,28 +176,36 @@ export function SettingsPage() {
 									{row.login}
 								</div>
 							</TableCell>
-							<TableCell>{row.token_last4}</TableCell>
-							<TableCell>{row.scopes}</TableCell>
-							<TableCell>{row.is_active ? "是" : "否"}</TableCell>
-							<TableCell className="flex gap-2">
-								<Button
-									type="button"
-									variant="secondary"
-									disabled={row.is_active}
-									onClick={() => {
-										void activateAccount(row.id)
-											.then(() => {
-												toast("已激活");
-												return reload();
-											})
-											.catch(onLoadError);
-									}}
-								>
-									激活
-								</Button>
-								<Button type="button" variant="destructive" onClick={() => setPendingId(row.id)}>
-									删除
-								</Button>
+							<TableCell className="font-mono text-sm">{row.token_last4}</TableCell>
+							<TableCell className="text-sm text-basalt-muted-foreground">{row.scopes}</TableCell>
+							<TableCell>
+								{row.is_active ? (
+									<Badge variant="success">当前</Badge>
+								) : (
+									<Badge variant="outline">待命</Badge>
+								)}
+							</TableCell>
+							<TableCell>
+								<div className="flex gap-2">
+									<Button
+										type="button"
+										variant="secondary"
+										disabled={row.is_active}
+										onClick={() => {
+											void activateAccount(row.id)
+												.then(() => {
+													toast("已激活");
+													return reload();
+												})
+												.catch(onLoadError);
+										}}
+									>
+										激活
+									</Button>
+									<Button type="button" variant="destructive" onClick={() => setPendingId(row.id)}>
+										删除
+									</Button>
+								</div>
 							</TableCell>
 						</TableRow>
 					))}

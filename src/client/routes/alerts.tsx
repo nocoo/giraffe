@@ -1,4 +1,4 @@
-import { Badge, StatStrip, Toolbar, toast } from "@nocoo/basalt";
+import { Badge, Link, StatStrip, toast } from "@nocoo/basalt";
 import { Empty } from "@nocoo/basalt/components/empty";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
 import {
@@ -9,9 +9,12 @@ import {
 	TableHeader,
 	TableRow,
 } from "@nocoo/basalt/components/table";
+import { ShieldAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad, missingTitle } from "../lib/error-ui";
+import { severityBadgeVariant } from "../lib/format";
+import { PAGE_DESCRIPTIONS } from "../lib/navigation";
 import {
 	type AlertsSnapshot,
 	alertsUnavailable,
@@ -43,9 +46,13 @@ export function AlertsPage() {
 
 	if (snap && "missing" in snap) {
 		return (
-			<div className="flex flex-col gap-4">
-				<PageHeader title="安全告警" />
-				<Empty title={missingTitle(snap)} description="先添加 PAT 或刷新。" />
+			<div className="flex flex-col gap-6">
+				<PageHeader title="安全告警" description={PAGE_DESCRIPTIONS["/alerts"]} />
+				<Empty
+					icon={<ShieldAlert />}
+					title={missingTitle(snap)}
+					description="先添加 PAT 或刷新。"
+				/>
 				<RefreshButton
 					variant="default"
 					run={() => requestRefresh(["alerts"]).then(() => loadAlerts().then(setSnap))}
@@ -57,57 +64,70 @@ export function AlertsPage() {
 
 	if (snap && alertsUnavailable(snap)) {
 		return (
-			<div className="flex flex-col gap-4">
-				<PageHeader title="安全告警" />
-				<Empty title="无权限" />
+			<div className="flex flex-col gap-6">
+				<PageHeader title="安全告警" description={PAGE_DESCRIPTIONS["/alerts"]} />
+				<Empty icon={<ShieldAlert />} title="无权限" description="当前 PAT 看不到安全告警。" />
 			</div>
 		);
 	}
 
-	const items = snap ? visibleAlerts(snap) : [];
+	if (!snap) {
+		return (
+			<div className="flex flex-col gap-6">
+				<PageHeader title="安全告警" description={PAGE_DESCRIPTIONS["/alerts"]} />
+			</div>
+		);
+	}
+
+	const items = visibleAlerts(snap);
 
 	return (
-		<div className="flex flex-col gap-4">
-			<PageHeader title="安全告警" />
-			{snap?.truncated ? <Badge>已截断</Badge> : null}
-			{snap ? (
-				<StatStrip
-					items={[
-						{ label: "Dependabot", value: snap.dependabot_open },
-						{ label: "code scanning", value: snap.code_scanning_open },
-					]}
-				/>
-			) : null}
-			<Toolbar aria-label="安全告警工具条">
-				<RefreshButton
-					run={() => requestRefresh(["alerts"]).then(() => loadAlerts().then(setSnap))}
-					onError={onLoadError}
-				/>
-			</Toolbar>
+		<div className="flex flex-col gap-6">
+			<PageHeader
+				title="安全告警"
+				description={PAGE_DESCRIPTIONS["/alerts"]}
+				actions={
+					<>
+						{snap.truncated ? <Badge variant="warning">已截断</Badge> : null}
+						<RefreshButton
+							run={() => requestRefresh(["alerts"]).then(() => loadAlerts().then(setSnap))}
+							onError={onLoadError}
+						/>
+					</>
+				}
+			/>
+			<StatStrip
+				items={[
+					{ label: "Dependabot 打开", value: snap.dependabot_open },
+					{ label: "Code scanning 打开", value: snap.code_scanning_open },
+				]}
+			/>
 			{items.length === 0 ? (
-				<Empty title="没有告警" />
+				<Empty icon={<ShieldAlert />} title="没有告警" />
 			) : (
 				<Table data-testid="alert-list">
 					<TableHeader>
 						<TableRow>
-							<TableHead>仓</TableHead>
-							<TableHead>source</TableHead>
-							<TableHead>severity</TableHead>
-							<TableHead>summary</TableHead>
+							<TableHead>仓库</TableHead>
+							<TableHead>来源</TableHead>
+							<TableHead>级别</TableHead>
+							<TableHead>摘要</TableHead>
 						</TableRow>
 					</TableHeader>
 					<TableBody>
 						{items.map((row) => (
 							<TableRow key={`${row.name_with_owner}:${row.url}`}>
-								<TableCell>{row.name_with_owner}</TableCell>
+								<TableCell className="text-basalt-muted-foreground">
+									{row.name_with_owner}
+								</TableCell>
 								<TableCell>{row.source}</TableCell>
 								<TableCell>
-									<Badge>{row.severity}</Badge>
+									<Badge variant={severityBadgeVariant(row.severity)}>{row.severity}</Badge>
 								</TableCell>
 								<TableCell>
-									<a href={row.url} target="_blank" rel="noreferrer">
+									<Link href={row.url} target="_blank" rel="noreferrer">
 										{row.summary}
-									</a>
+									</Link>
 								</TableCell>
 							</TableRow>
 						))}

@@ -18,11 +18,19 @@ function RouterLink({
 	href,
 	className,
 	children,
+	...props
 }: {
 	href: string;
 	className?: string;
 	children?: ReactNode;
-}) {
+} & Record<string, unknown>) {
+	if (href.startsWith("https://") || href.startsWith("http://")) {
+		return (
+			<a href={href} className={className} {...props}>
+				{children}
+			</a>
+		);
+	}
 	if (className === undefined) {
 		return <Link to={href}>{children}</Link>;
 	}
