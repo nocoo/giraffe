@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  quality:
+    uses: nocoo/base-ci/.github/workflows/bun-quality.yml@1e1000a018d75c7e73024448c669c215b90410e1
+    with:
+      bun-version: "1.4.0"
+      ignore-scripts: false
+      pre-command: "bun run gate:test-skip && bun run gate:wrangler-vars && bun run gate:github-fetch && bun run gate:client-fetch"
+      test-command: "bun run test:coverage"
+      lint-command: "bun run lint"
+      typecheck-command: "bun run typecheck"
+      enable-l2: "true"
+      l2-command: "bun run test:e2e:api"
+      enable-l3: "true"
+      l3-command: "./node_modules/.bin/playwright install --with-deps chromium && bun run test:e2e:bdd"
+      l3-browser: "chromium"
+    secrets: inherit

@@ -3,3 +3,7 @@ title = "giraffe"
 [[allowlists]]
 description = "pinned Cloudflare Access audience hash"
 regexes = ['''708cd6083298fe4ff68440b542fb1d440f5c5fcd399b17f6f44a21cb4d4cf2c6''']
+
+[[allowlists]]
+description = "L2/L3 fixture PAT files"
+paths = ['''(^|/)tests/api/''', '''(^|/)tests/e2e/''']
