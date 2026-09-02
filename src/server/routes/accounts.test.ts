@@ -213,7 +213,7 @@ describe("accounts routes", () => {
 					{
 						method: "POST",
 						headers,
-						body: JSON.stringify({ account_id: "gone", kinds: ["insights"] }),
+						body: JSON.stringify({ account_id: "gone_account_id_00000", kinds: ["insights"] }),
 					},
 					e,
 				)

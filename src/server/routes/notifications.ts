@@ -6,16 +6,17 @@ import { getActiveAccount, touchLastUsedStmt } from "../lib/db/accounts";
 import { readSnapshot, replaceSnapshotStmts } from "../lib/db/snapshots";
 import { ApiError, jsonOk } from "../lib/errors";
 import { createGithubClient } from "../lib/github-client";
+import { ACCOUNT_ID_RE } from "../lib/id";
 import { readJson } from "../lib/read-body";
 import { assemblePages, splitPages } from "../lib/snapshot-pages";
 import { decryptToken, parseKeyBytes } from "../lib/token-crypto";
 
 const readSchema = z.object({
 	id: z.string().regex(/^[0-9]{1,20}$/),
-	account_id: z.string().min(1),
+	account_id: z.string().regex(ACCOUNT_ID_RE),
 });
 const readAllSchema = z.object({
-	account_id: z.string().min(1),
+	account_id: z.string().regex(ACCOUNT_ID_RE),
 });
 
 function asList(snap: Record<string, unknown>): Array<Record<string, unknown>> {
@@ -28,12 +29,13 @@ function asList(snap: Record<string, unknown>): Array<Record<string, unknown>> {
 	);
 }
 
-async function loadAccount(c: Context<{ Bindings: Env; Variables: AppVars }>) {
+async function loadAccount(c: Context<{ Bindings: Env; Variables: AppVars }>, accountId: string) {
 	const db = c.get("db");
 	const account = await getActiveAccount(db);
 	if (!account) {
 		throw new ApiError(409, "account_missing", "no active account");
 	}
+	assertAccount(accountId, account.id);
 	const snap = await readSnapshot(db, account.id, "notifications");
 	if (!snap) {
 		throw new ApiError(409, "snapshot_missing", "no snapshot");
@@ -80,8 +82,7 @@ export async function postRead(
 	if (!parsed.success) {
 		throw new ApiError(400, "validation_failed", "invalid id");
 	}
-	const { db, account, snap, token } = await loadAccount(c);
-	assertAccount(parsed.data.account_id, account.id);
+	const { db, account, snap, token } = await loadAccount(c, parsed.data.account_id);
 	void db;
 	const gh = createGithubClient(c.env);
 	await gh.githubApi(token, `/notifications/threads/${parsed.data.id}`, { method: "PATCH" });
@@ -98,8 +99,7 @@ export async function postReadAll(
 	if (!parsed.success) {
 		throw new ApiError(400, "validation_failed", "invalid body");
 	}
-	const { account, snap, token } = await loadAccount(c);
-	assertAccount(parsed.data.account_id, account.id);
+	const { account, snap, token } = await loadAccount(c, parsed.data.account_id);
 	const gh = createGithubClient(c.env);
 	await gh.githubApi(token, "/notifications", { method: "PUT" });
 	const notifications = asList(snap).map((row) => ({ ...row, unread: false }));

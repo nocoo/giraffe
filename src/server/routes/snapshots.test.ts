@@ -50,7 +50,11 @@ describe("snapshot routes", () => {
 			(
 				await createApp().request(
 					"http://localhost/api/notifications/read",
-					{ method: "POST", headers, body: JSON.stringify({ id: "1", account_id: "x" }) },
+					{
+						method: "POST",
+						headers,
+						body: JSON.stringify({ id: "1", account_id: "other_account_id_0000" }),
+					},
 					e,
 				)
 			).status,
@@ -84,7 +88,11 @@ describe("snapshot routes", () => {
 			(
 				await createApp().request(
 					"http://localhost/api/refresh",
-					{ method: "POST", headers, body: JSON.stringify({ account_id: "x", kinds: ["digest"] }) },
+					{
+						method: "POST",
+						headers,
+						body: JSON.stringify({ account_id: "other_account_id_0000", kinds: ["digest"] }),
+					},
 					e,
 				)
 			).status,

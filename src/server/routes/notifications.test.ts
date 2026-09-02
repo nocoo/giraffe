@@ -152,6 +152,20 @@ describe("notification write-through", () => {
 					{
 						method: "POST",
 						headers,
+						body: JSON.stringify({ account_id: "x" }),
+					},
+					e,
+				)
+			).status,
+		).toBe(400);
+		expect(hits).toBe(0);
+		expect(
+			(
+				await createApp().request(
+					"http://localhost/api/notifications/read-all",
+					{
+						method: "POST",
+						headers,
 						body: JSON.stringify({ account_id: accountId }),
 					},
 					e,

@@ -16,13 +16,14 @@ import { buildDigest, type DayPayload, utcDay, yesterday } from "../lib/digest";
 import { ApiError, jsonOk } from "../lib/errors";
 import { createGithubClient, MAX_FETCHES } from "../lib/github-client";
 import type { Capabilities } from "../lib/github-map";
+import { ACCOUNT_ID_RE } from "../lib/id";
 import { buildInsights, type InsightAlert, type RepoRow } from "../lib/insights";
 import { readJson } from "../lib/read-body";
 import { assemblePages, splitPages } from "../lib/snapshot-pages";
 import { decryptToken, parseKeyBytes } from "../lib/token-crypto";
 
 const bodySchema = z.object({
-	account_id: z.string().min(1),
+	account_id: z.string().regex(ACCOUNT_ID_RE),
 	kinds: z.union([z.literal("all"), z.array(z.string())]).optional(),
 });
 

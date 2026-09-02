@@ -418,7 +418,7 @@ describe("refresh route", () => {
 		const envelope = await encryptToken(PAT, parseKeyBytes(KEY));
 		await db.batch([
 			insertAccountStmt(db, {
-				id: "acc_missing_caps",
+				id: "acc_missing_caps00000",
 				login: "octocat",
 				avatar_url: "",
 				token_ciphertext: envelope,
@@ -445,7 +445,7 @@ describe("refresh route", () => {
 					{
 						method: "POST",
 						headers,
-						body: JSON.stringify({ account_id: "acc_missing_caps", kinds: ["repos"] }),
+						body: JSON.stringify({ account_id: "acc_missing_caps00000", kinds: ["repos"] }),
 					},
 					e,
 				)
@@ -458,7 +458,7 @@ describe("refresh route", () => {
 					{
 						method: "POST",
 						headers,
-						body: JSON.stringify({ account_id: "acc_missing_caps", kinds: ["notifications"] }),
+						body: JSON.stringify({ account_id: "acc_missing_caps00000", kinds: ["notifications"] }),
 					},
 					e,
 				)
@@ -468,7 +468,7 @@ describe("refresh route", () => {
 		const db2 = createDb(broken.DB);
 		await db2.batch([
 			insertAccountStmt(db2, {
-				id: "acc_bad_json",
+				id: "acc_bad_json000000000",
 				login: "octocat",
 				avatar_url: "",
 				token_ciphertext: envelope,
@@ -489,7 +489,7 @@ describe("refresh route", () => {
 					{
 						method: "POST",
 						headers,
-						body: JSON.stringify({ account_id: "acc_bad_json", kinds: ["repos"] }),
+						body: JSON.stringify({ account_id: "acc_bad_json000000000", kinds: ["repos"] }),
 					},
 					broken,
 				)
@@ -510,7 +510,7 @@ describe("refresh route", () => {
 			{
 				method: "POST",
 				headers,
-				body: JSON.stringify({ account_id: "acc_missing_caps", kinds: ["repos"] }),
+				body: JSON.stringify({ account_id: "acc_missing_caps00000", kinds: ["repos"] }),
 			},
 			{ ...e, TOKEN_ENCRYPTION_KEY_V1: undefined } as Env,
 		);
@@ -994,7 +994,20 @@ describe("refresh route", () => {
 					{
 						method: "POST",
 						headers,
-						body: JSON.stringify({ account_id: "other", kinds: ["repos"] }),
+						body: JSON.stringify({ account_id: "x", kinds: ["repos"] }),
+					},
+					e,
+				)
+			).status,
+		).toBe(400);
+		expect(
+			(
+				await createApp().request(
+					"http://localhost/api/refresh",
+					{
+						method: "POST",
+						headers,
+						body: JSON.stringify({ account_id: "other_account_id_0000", kinds: ["repos"] }),
 					},
 					e,
 				)
