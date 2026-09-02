@@ -1,6 +1,4 @@
-import { apiGet } from "../lib/api";
-import { ApiError } from "../lib/errors";
-import { ensureSession } from "./session";
+import { loadKind } from "./snapshot";
 
 export type Health = "strong" | "watch" | "risky";
 
@@ -49,13 +47,5 @@ export function alertsIncomplete(snap: InsightsSnapshot | null): boolean {
 }
 
 export async function loadInsights(): Promise<InsightsSnapshot | { missing: true }> {
-	await ensureSession();
-	try {
-		return await apiGet<InsightsSnapshot>("insights");
-	} catch (err) {
-		if (err instanceof ApiError && err.code === "snapshot_missing") {
-			return { missing: true };
-		}
-		throw err;
-	}
+	return loadKind<InsightsSnapshot>("insights");
 }

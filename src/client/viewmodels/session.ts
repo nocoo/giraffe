@@ -9,6 +9,7 @@ export type AccountRow = {
 
 let activeId: string | null = null;
 let cacheGen = 0;
+let sessionTick: Promise<string> | null = null;
 
 export function getActiveAccountId(): string | null {
 	return activeId;
@@ -26,12 +27,22 @@ export function cacheGeneration(): number {
 }
 
 export async function ensureSession(): Promise<string> {
-	const body = await apiGet<{ accounts: AccountRow[] }>("accounts");
-	const active = body.accounts.find((row) => row.is_active);
-	if (!active) {
-		setActiveAccountId(null);
-		throw new ApiError(409, "account_missing", "no active account");
+	if (sessionTick) {
+		return sessionTick;
 	}
-	setActiveAccountId(active.id);
-	return active.id;
+	sessionTick = (async () => {
+		const body = await apiGet<{ accounts: AccountRow[] }>("accounts");
+		const active = body.accounts.find((row) => row.is_active);
+		if (!active) {
+			setActiveAccountId(null);
+			throw new ApiError(409, "account_missing", "no active account");
+		}
+		setActiveAccountId(active.id);
+		return active.id;
+	})();
+	try {
+		return await sessionTick;
+	} finally {
+		sessionTick = null;
+	}
 }

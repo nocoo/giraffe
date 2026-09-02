@@ -1,6 +1,4 @@
-import { apiGet } from "../lib/api";
-import { ApiError } from "../lib/errors";
-import { ensureSession } from "./session";
+import { loadKind } from "./snapshot";
 
 export type AlertItem = {
 	name_with_owner: string;
@@ -32,13 +30,5 @@ export function visibleAlerts(snap: AlertsSnapshot): AlertItem[] {
 }
 
 export async function loadAlerts(): Promise<AlertsSnapshot | { missing: true }> {
-	await ensureSession();
-	try {
-		return await apiGet<AlertsSnapshot>("alerts");
-	} catch (err) {
-		if (err instanceof ApiError && err.code === "snapshot_missing") {
-			return { missing: true };
-		}
-		throw err;
-	}
+	return loadKind<AlertsSnapshot>("alerts");
 }

@@ -107,17 +107,43 @@ describe("repos viewmodel", () => {
 		});
 		expect(await loadRepos()).toEqual({ missing: true });
 		expect(cachedRepoRows()).toEqual([]);
+		setActiveAccountId("acc1");
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+			const url = String(input);
+			if (url === "/api/accounts") {
+				return Response.json({ accounts: [{ id: "acc1", login: "o", is_active: true }] });
+			}
+			if (url === "/api/repos") {
+				return Response.json({
+					account_id: "acc1",
+					fetched_at: "t",
+					truncated: false,
+					repos: sample,
+				});
+			}
+			throw new Error(url);
+		});
+		await loadRepos();
+		setActiveAccountId("acc2");
+		expect(cachedRepoRows()).toEqual([]);
 	});
 
 	it("loads optional insights or null when missing", async () => {
 		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
-			if (String(input) === "/api/insights") {
+			const url = String(input);
+			if (url === "/api/accounts") {
+				return Response.json({ accounts: [{ id: "acc1", login: "o", is_active: true }] });
+			}
+			if (url === "/api/insights") {
 				return Response.json({ alerts_incomplete: false, insights: [] });
 			}
-			throw new Error(String(input));
+			throw new Error(url);
 		});
 		expect((await loadInsightsOptional())?.insights).toEqual([]);
-		vi.stubGlobal("fetch", async () => {
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+			if (String(input) === "/api/accounts") {
+				return Response.json({ accounts: [{ id: "acc1", login: "o", is_active: true }] });
+			}
 			return new Response(JSON.stringify({ error: { code: "snapshot_missing", message: "n" } }), {
 				status: 409,
 				headers: { "content-type": "application/json" },
@@ -137,7 +163,10 @@ describe("repos viewmodel", () => {
 			});
 		});
 		await expect(loadRepos()).rejects.toMatchObject({ code: "github_error" });
-		vi.stubGlobal("fetch", async () => {
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+			if (String(input) === "/api/accounts") {
+				return Response.json({ accounts: [{ id: "acc1", login: "o", is_active: true }] });
+			}
 			return new Response(JSON.stringify({ error: { code: "github_error", message: "x" } }), {
 				status: 502,
 				headers: { "content-type": "application/json" },

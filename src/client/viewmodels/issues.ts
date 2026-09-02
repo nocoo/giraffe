@@ -1,6 +1,4 @@
-import { apiGet } from "../lib/api";
-import { ApiError } from "../lib/errors";
-import { ensureSession } from "./session";
+import { loadKind } from "./snapshot";
 
 export type IssueRow = {
 	name_with_owner: string;
@@ -33,13 +31,5 @@ export function filterIssues(issues: IssueRow[], query: string): IssueRow[] {
 }
 
 export async function loadIssues(): Promise<IssuesSnapshot | { missing: true }> {
-	await ensureSession();
-	try {
-		return await apiGet<IssuesSnapshot>("issues");
-	} catch (err) {
-		if (err instanceof ApiError && err.code === "snapshot_missing") {
-			return { missing: true };
-		}
-		throw err;
-	}
+	return loadKind<IssuesSnapshot>("issues");
 }

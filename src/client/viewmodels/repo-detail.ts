@@ -1,6 +1,4 @@
-import { apiGet } from "../lib/api";
-import { ApiError } from "../lib/errors";
-import { ensureSession } from "./session";
+import { loadKind } from "./snapshot";
 
 export const REPO_TABS = [
 	"details",
@@ -148,7 +146,7 @@ export function repoResource(owner: string, name: string, tab: RepoTab): string 
 	return `repos/${owner}/${name}/${tab}`;
 }
 
-export async function loadRepoTab<T>(
+export async function loadRepoTab<T extends { account_id?: string }>(
 	owner: string,
 	name: string,
 	tab: RepoTab,
@@ -156,13 +154,5 @@ export async function loadRepoTab<T>(
 	if (!isValidRepoPart(owner) || !isValidRepoPart(name)) {
 		return { invalid: true };
 	}
-	await ensureSession();
-	try {
-		return await apiGet<T>(repoResource(owner, name, tab));
-	} catch (err) {
-		if (err instanceof ApiError && err.code === "snapshot_missing") {
-			return { missing: true };
-		}
-		throw err;
-	}
+	return loadKind<T>(repoResource(owner, name, tab));
 }

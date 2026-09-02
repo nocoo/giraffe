@@ -1,6 +1,5 @@
-import { apiGet } from "../lib/api";
-import { ApiError } from "../lib/errors";
-import { ensureSession } from "./session";
+import { getActiveAccountId } from "./session";
+import { loadKind } from "./snapshot";
 
 export type RepoRow = {
 	name_with_owner: string;
@@ -32,6 +31,7 @@ export type InsightRow = {
 };
 
 export type InsightsSnapshot = {
+	account_id?: string;
 	alerts_incomplete?: boolean;
 	insights: InsightRow[];
 };
@@ -86,31 +86,26 @@ export function alertsIncomplete(insights: InsightsSnapshot | null): boolean {
 let remembered: ReposSnapshot | null = null;
 
 export function cachedRepoRows(): RepoRow[] {
+	if (remembered && remembered.account_id !== getActiveAccountId()) {
+		return [];
+	}
 	return remembered?.repos ?? [];
 }
 
 export async function loadRepos(): Promise<ReposSnapshot | { missing: true }> {
-	await ensureSession();
-	try {
-		const snap = await apiGet<ReposSnapshot>("repos");
-		remembered = snap;
-		return snap;
-	} catch (err) {
-		if (err instanceof ApiError && err.code === "snapshot_missing") {
-			remembered = null;
-			return { missing: true };
-		}
-		throw err;
+	const next = await loadKind<ReposSnapshot>("repos");
+	if ("missing" in next) {
+		remembered = null;
+		return next;
 	}
+	remembered = next;
+	return next;
 }
 
 export async function loadInsightsOptional(): Promise<InsightsSnapshot | null> {
-	try {
-		return await apiGet<InsightsSnapshot>("insights");
-	} catch (err) {
-		if (err instanceof ApiError && err.code === "snapshot_missing") {
-			return null;
-		}
-		throw err;
+	const next = await loadKind<InsightsSnapshot>("insights");
+	if ("missing" in next) {
+		return null;
 	}
+	return next;
 }

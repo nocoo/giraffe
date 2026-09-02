@@ -2,6 +2,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { clearRefreshQueue, refreshInFlight, requestRefresh } from "./refresh";
 import { setActiveAccountId } from "./session";
 
+function accountsFor(id: string): Response {
+	return Response.json({ accounts: [{ id, login: "o", is_active: true }] });
+}
+
 describe("refresh coordinator", () => {
 	afterEach(() => {
 		clearRefreshQueue();
@@ -11,8 +15,14 @@ describe("refresh coordinator", () => {
 		});
 	});
 
-	it("returns null without a session stamp", async () => {
-		expect(await requestRefresh(["repos"])).toBeNull();
+	it("throws account_missing without an active account", async () => {
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+			if (String(input) === "/api/accounts") {
+				return Response.json({ accounts: [] });
+			}
+			throw new Error(String(input));
+		});
+		await expect(requestRefresh(["repos"])).rejects.toMatchObject({ code: "account_missing" });
 		expect(refreshInFlight()).toBe(false);
 	});
 
@@ -21,6 +31,9 @@ describe("refresh coordinator", () => {
 		let posts = 0;
 		vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
 			const url = String(input);
+			if (url === "/api/accounts") {
+				return accountsFor("acc1");
+			}
 			if (url === "/api/refresh") {
 				posts += 1;
 				expect(String(init?.body)).toContain("acc1");
@@ -41,6 +54,9 @@ describe("refresh coordinator", () => {
 		setActiveAccountId("acc1");
 		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
 			const url = String(input);
+			if (url === "/api/accounts") {
+				return accountsFor(url.includes("never") ? "x" : "acc1");
+			}
 			if (url === "/api/refresh") {
 				setActiveAccountId("acc2");
 				return Response.json({ account_id: "acc1", kinds: ["repos"] });
@@ -58,15 +74,20 @@ describe("refresh coordinator", () => {
 		setActiveAccountId("acc1");
 		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
 			const url = String(input);
+			if (url === "/api/accounts") {
+				return accountsFor("acc1");
+			}
 			if (url === "/api/refresh") {
 				return Response.json({ account_id: "other", kinds: ["repos"] });
 			}
 			throw new Error(url);
 		});
-		const body = await requestRefresh(["repos"]);
-		expect(body?.account_id).toBe("other");
+		expect(await requestRefresh(["repos"])).toBeNull();
 		setActiveAccountId("acc1");
-		vi.stubGlobal("fetch", async () => {
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+			if (String(input) === "/api/accounts") {
+				return accountsFor("acc1");
+			}
 			throw new Error("boom");
 		});
 		await expect(requestRefresh(["alerts"])).rejects.toThrow("boom");
@@ -77,6 +98,9 @@ describe("refresh coordinator", () => {
 		setActiveAccountId("acc1");
 		vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
 			const url = String(input);
+			if (url === "/api/accounts") {
+				return accountsFor("acc1");
+			}
 			if (url === "/api/refresh") {
 				expect(JSON.parse(String(init?.body)).kinds).toEqual(["repo:octocat/hello-world:details"]);
 				return Response.json({
@@ -96,6 +120,9 @@ describe("refresh coordinator", () => {
 		expect(body?.description).toBe("A demo repo");
 		vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
 			const url = String(input);
+			if (url === "/api/accounts") {
+				return accountsFor("acc1");
+			}
 			if (url === "/api/refresh") {
 				expect(JSON.parse(String(init?.body)).kinds).toBe("all");
 				return Response.json({ account_id: "acc1", kinds: ["repos"] });
@@ -114,12 +141,58 @@ describe("refresh coordinator", () => {
 		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
 			const url = String(input);
 			urls.push(url);
+			if (url === "/api/accounts") {
+				return accountsFor("acc1");
+			}
 			if (url === "/api/refresh") {
 				return Response.json({ account_id: "acc1", kinds: ["repos", "insights", "digest"] });
 			}
 			throw new Error(url);
 		});
 		await requestRefresh();
-		expect(urls).toEqual(["/api/refresh"]);
+		expect(urls).toEqual(["/api/accounts", "/api/refresh"]);
+	});
+
+	it("treats a missing kinds field as all when none were requested", async () => {
+		setActiveAccountId("acc1");
+		const urls: string[] = [];
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+			const url = String(input);
+			urls.push(url);
+			if (url === "/api/accounts") {
+				return accountsFor("acc1");
+			}
+			if (url === "/api/refresh") {
+				return Response.json({ account_id: "acc1" });
+			}
+			if (url === "/api/insights" || url === "/api/digest") {
+				return Response.json({ account_id: "acc1" });
+			}
+			throw new Error(url);
+		});
+		await requestRefresh();
+		expect(urls).toContain("/api/insights");
+		expect(urls).toContain("/api/digest");
+	});
+
+	it("does not follow up digest unless repos were written", async () => {
+		setActiveAccountId("acc1");
+		const urls: string[] = [];
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+			const url = String(input);
+			urls.push(url);
+			if (url === "/api/accounts") {
+				return accountsFor("acc1");
+			}
+			if (url === "/api/refresh") {
+				return Response.json({ account_id: "acc1", kinds: ["alerts"] });
+			}
+			if (url === "/api/insights") {
+				return Response.json({ account_id: "acc1" });
+			}
+			throw new Error(url);
+		});
+		await requestRefresh(["alerts"]);
+		expect(urls).toEqual(["/api/accounts", "/api/refresh", "/api/insights"]);
 	});
 });

@@ -1,7 +1,5 @@
-import { apiGet } from "../lib/api";
-import { ApiError } from "../lib/errors";
 import { formatDelta } from "../lib/format";
-import { ensureSession } from "./session";
+import { loadKind } from "./snapshot";
 
 export type DigestRepo = {
 	name_with_owner: string;
@@ -42,13 +40,5 @@ export function digestMarkdown(snap: DigestSnapshot): string {
 }
 
 export async function loadDigest(): Promise<DigestSnapshot | { missing: true }> {
-	await ensureSession();
-	try {
-		return await apiGet<DigestSnapshot>("digest");
-	} catch (err) {
-		if (err instanceof ApiError && err.code === "snapshot_missing") {
-			return { missing: true };
-		}
-		throw err;
-	}
+	return loadKind<DigestSnapshot>("digest");
 }

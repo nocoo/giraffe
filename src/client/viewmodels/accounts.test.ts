@@ -48,6 +48,9 @@ describe("accounts viewmodel", () => {
 		vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
 			const url = String(input);
 			urls.push(`${init?.method ?? "GET"} ${url}`);
+			if (url === "/api/accounts" && (init?.method ?? "GET") === "GET") {
+				return Response.json({ accounts: [{ id: "acc1", login: "octocat", is_active: true }] });
+			}
 			if (url === "/api/accounts" && init?.method === "POST") {
 				expect(String(init.body)).toContain(PAT);
 				return Response.json(
@@ -80,6 +83,29 @@ describe("accounts viewmodel", () => {
 		expect(created.id).toBe("acc1");
 		expect(getActiveAccountId()).toBe("acc1");
 		expect(urls.some((row) => row.startsWith("POST /api/refresh"))).toBe(true);
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+			const url = String(input);
+			if (url === "/api/accounts" && init?.method === "POST") {
+				return Response.json(
+					{
+						id: "acc3",
+						login: "hubot",
+						avatar_url: "",
+						token_last4: "CCCC",
+						scopes: "repo",
+						capabilities: { repo: true },
+						is_active: true,
+					},
+					{ status: 201 },
+				);
+			}
+			if (url === "/api/accounts") {
+				return Response.json({ accounts: [{ id: "acc3", login: "hubot", is_active: true }] });
+			}
+			throw new Error("refresh boom");
+		});
+		const still = await createAccount(PAT);
+		expect(still.id).toBe("acc3");
 	});
 
 	it("does not refresh after creating a non-active account", async () => {
@@ -116,7 +142,7 @@ describe("accounts viewmodel", () => {
 				return Response.json({
 					accounts: [
 						{
-							id: "acc1",
+							id: "acc2",
 							login: "octocat",
 							avatar_url: "",
 							token_last4: "AAAA",
@@ -149,6 +175,7 @@ describe("accounts viewmodel", () => {
 		await activateAccount("acc2");
 		expect(getActiveAccountId()).toBe("acc2");
 		await deleteAccount("acc2");
+		expect(getActiveAccountId()).toBeNull();
 		expect(urls).toContain("POST /api/accounts/acc2/activate");
 		expect(urls).toContain("DELETE /api/accounts/acc2");
 	});

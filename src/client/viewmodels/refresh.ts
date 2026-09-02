@@ -1,5 +1,5 @@
 import { apiGet, apiPost } from "../lib/api";
-import { getActiveAccountId } from "./session";
+import { ensureSession, getActiveAccountId } from "./session";
 
 export type RefreshBody = {
 	account_id?: string;
@@ -26,22 +26,44 @@ export function clearRefreshQueue(): void {
 	tail = Promise.resolve();
 }
 
-function keyOf(stamp: string, kinds: string | string[] | undefined): string {
-	return `${stamp}:${JSON.stringify(kinds ?? null)}`;
+function normalizeKinds(kinds: string | string[] | undefined): string | string[] | undefined {
+	if (kinds === undefined || kinds === "all") {
+		return kinds;
+	}
+	if (typeof kinds === "string") {
+		return [kinds];
+	}
+	return [...kinds].sort();
 }
 
-async function followUp(stamp: string, result: RefreshBody): Promise<void> {
+function keyOf(stamp: string, kinds: string | string[] | undefined): string {
+	return `${stamp}:${JSON.stringify(normalizeKinds(kinds) ?? null)}`;
+}
+
+function writtenKinds(result: RefreshBody, requested: string | string[] | undefined): string[] {
+	if (result.kinds) {
+		return result.kinds;
+	}
+	const normalized = normalizeKinds(requested);
+	if (Array.isArray(normalized)) {
+		return normalized;
+	}
+	return ["repos", "issues", "prs", "alerts", "notifications"];
+}
+
+async function followUp(
+	stamp: string,
+	result: RefreshBody,
+	requested: string | string[] | undefined,
+): Promise<void> {
 	if (getActiveAccountId() !== stamp) {
 		return;
 	}
-	if (result.account_id !== undefined && result.account_id !== stamp) {
-		return;
-	}
-	const written = result.kinds;
-	if (!written?.includes("insights")) {
+	const written = writtenKinds(result, requested);
+	if (!written.includes("insights")) {
 		await apiGet("insights").catch(() => undefined);
 	}
-	if (!written?.includes("digest")) {
+	if (!written.includes("digest") && written.includes("repos")) {
 		await apiGet("digest").catch(() => undefined);
 	}
 }
@@ -54,22 +76,24 @@ async function execute(
 		return null;
 	}
 	const body: { account_id: string; kinds?: string | string[] } = { account_id: stamp };
-	if (kinds !== undefined) {
-		body.kinds = kinds === "all" || Array.isArray(kinds) ? kinds : [kinds];
+	const normalized = normalizeKinds(kinds);
+	if (normalized !== undefined) {
+		body.kinds = normalized;
 	}
 	const result = await apiPost<RefreshBody>("refresh", body);
-	await followUp(stamp, result);
+	if (result.account_id !== undefined && result.account_id !== stamp) {
+		await ensureSession();
+		return null;
+	}
+	await followUp(stamp, result, kinds);
 	if (getActiveAccountId() !== stamp) {
 		return null;
 	}
 	return result;
 }
 
-export function requestRefresh(kinds?: string | string[]): Promise<RefreshBody | null> {
-	const stamp = getActiveAccountId();
-	if (!stamp) {
-		return Promise.resolve(null);
-	}
+export async function requestRefresh(kinds?: string | string[]): Promise<RefreshBody | null> {
+	const stamp = await ensureSession();
 	const key = keyOf(stamp, kinds);
 	if (pending?.key === key) {
 		return pending.promise;

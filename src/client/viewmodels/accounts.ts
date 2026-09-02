@@ -1,7 +1,7 @@
 import { apiDelete, apiGet, apiPost } from "../lib/api";
 import { ApiError } from "../lib/errors";
-import { requestRefresh } from "./refresh";
-import { setActiveAccountId } from "./session";
+import { clearRefreshQueue, requestRefresh } from "./refresh";
+import { getActiveAccountId, setActiveAccountId } from "./session";
 
 export type PublicAccount = {
 	id: string;
@@ -44,17 +44,26 @@ export async function createAccount(token: string): Promise<PublicAccount> {
 	const account = await apiPost<PublicAccount>("accounts", { token });
 	if (shouldRefreshOnCreate(account)) {
 		setActiveAccountId(account.id);
-		await requestRefresh(["repos"]);
+		try {
+			await requestRefresh(["repos"]);
+		} catch {
+			// account row exists even if the first repos refresh fails
+		}
 	}
 	return account;
 }
 
 export async function activateAccount(id: string): Promise<void> {
 	await apiPost(`accounts/${id}/activate`);
+	clearRefreshQueue();
 	setActiveAccountId(id);
 	await requestRefresh(["repos"]);
 }
 
 export async function deleteAccount(id: string): Promise<void> {
 	await apiDelete(`accounts/${id}`);
+	if (getActiveAccountId() === id) {
+		clearRefreshQueue();
+		setActiveAccountId(null);
+	}
 }

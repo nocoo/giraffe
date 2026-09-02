@@ -1,6 +1,4 @@
-import { apiGet } from "../lib/api";
-import { ApiError } from "../lib/errors";
-import { ensureSession } from "./session";
+import { loadKind } from "./snapshot";
 
 export type PullRow = {
 	name_with_owner: string;
@@ -37,13 +35,5 @@ export function filterPulls(rows: PullRow[], query: string): PullRow[] {
 }
 
 export async function loadPulls(): Promise<PullsSnapshot | { missing: true }> {
-	await ensureSession();
-	try {
-		return await apiGet<PullsSnapshot>("prs");
-	} catch (err) {
-		if (err instanceof ApiError && err.code === "snapshot_missing") {
-			return { missing: true };
-		}
-		throw err;
-	}
+	return loadKind<PullsSnapshot>("prs");
 }

@@ -1,6 +1,7 @@
-import { apiGet, apiPost } from "../lib/api";
+import { apiPost } from "../lib/api";
 import { ApiError } from "../lib/errors";
 import { ensureSession } from "./session";
+import { loadKind } from "./snapshot";
 
 export type NotificationRow = {
 	id: string;
@@ -36,15 +37,7 @@ export function applyReadAll(snap: NotificationsSnapshot): NotificationsSnapshot
 }
 
 export async function loadInbox(): Promise<NotificationsSnapshot | { missing: true }> {
-	await ensureSession();
-	try {
-		return await apiGet<NotificationsSnapshot>("notifications");
-	} catch (err) {
-		if (err instanceof ApiError && err.code === "snapshot_missing") {
-			return { missing: true };
-		}
-		throw err;
-	}
+	return loadKind<NotificationsSnapshot>("notifications");
 }
 
 export async function markRead(id: string): Promise<NotificationsSnapshot> {
