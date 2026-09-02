@@ -32,6 +32,7 @@ const snap = {
 
 describe("inbox viewmodel", () => {
 	afterEach(() => {
+		clearSnapshots();
 		setActiveAccountId(null);
 		vi.stubGlobal("fetch", () => {
 			throw new Error("network denied in L1");
@@ -94,6 +95,37 @@ describe("inbox viewmodel", () => {
 		expect(all.notifications.every((row) => !row.unread)).toBe(true);
 		expect(posts[1]).toContain('"account_id":"acc1"');
 		expect(posts).toHaveLength(2);
+	});
+
+	it("caches markRead so a remount loadInbox keeps unread false", async () => {
+		let notificationGets = 0;
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+			const url = String(input);
+			if (url === "/api/accounts") {
+				return Response.json({ accounts: [{ id: "acc1", login: "o", is_active: true }] });
+			}
+			if (url === "/api/notifications") {
+				notificationGets += 1;
+				return Response.json(snap);
+			}
+			if (url === "/api/notifications/read") {
+				return Response.json(applyRead(snap, "1"));
+			}
+			throw new Error(url);
+		});
+		const first = await loadInbox();
+		expect("missing" in first).toBe(false);
+		if (!("missing" in first)) {
+			expect(first.notifications[0]?.unread).toBe(true);
+		}
+		const written = await markRead("1", "acc1");
+		expect(written.notifications[0]?.unread).toBe(false);
+		const remount = await loadInbox();
+		expect("missing" in remount).toBe(false);
+		if (!("missing" in remount)) {
+			expect(remount.notifications[0]?.unread).toBe(false);
+		}
+		expect(notificationGets).toBe(1);
 	});
 
 	it("uses the snapshot account_id rather than the live session", async () => {
