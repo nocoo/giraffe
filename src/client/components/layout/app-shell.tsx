@@ -1,8 +1,9 @@
-import { Button, ContentIsland, Sheet, SheetContent, SheetTitle, ThemeToggle } from "@nocoo/basalt";
+import { Button, ContentIsland, Sheet, SheetContent, SheetTitle } from "@nocoo/basalt";
 import { AppHeader } from "@nocoo/basalt/components/app-header";
 import { AppMain, AppSkipLink, AppShell as Shell } from "@nocoo/basalt/components/app-shell";
 import { Banner } from "@nocoo/basalt/components/banner";
 import { Empty } from "@nocoo/basalt/components/empty";
+import { ThemeToggle } from "@nocoo/basalt/components/theme-toggle";
 import { useTheme } from "@nocoo/basalt/providers/theme";
 import { Menu, ShieldAlert } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -63,7 +64,10 @@ export function AppShell() {
 				<AppSidebar collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
 			) : (
 				<Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-					<SheetContent side="left" className="w-[260px] max-w-[260px] border-0 bg-background p-0">
+					<SheetContent
+						side="left"
+						className="w-[260px] max-w-[260px] border-0 bg-basalt-background p-0"
+					>
 						<SheetTitle className="sr-only">打开导航</SheetTitle>
 						<AppSidebar collapsed={false} onToggle={() => setMobileOpen(false)} />
 					</SheetContent>
@@ -74,7 +78,6 @@ export function AppShell() {
 					leading={
 						isMobile ? (
 							<Button
-								type="button"
 								variant="ghost"
 								size="icon"
 								className="h-8 w-8"
@@ -85,7 +88,7 @@ export function AppShell() {
 							</Button>
 						) : null
 					}
-					{...(crumbs.length > 0 ? { breadcrumbs: crumbs } : {})}
+					breadcrumbs={crumbs}
 					title={title}
 					actions={<ThemeToggle aria-label={`切换主题（当前 ${theme}）`} />}
 				/>

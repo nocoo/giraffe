@@ -10,11 +10,11 @@ import {
 	CommandPalette,
 	Sidebar,
 	SidebarFooter,
-	SidebarGroup,
 	SidebarHeader,
 	SidebarIconItem,
 	SidebarItem,
 	SidebarNav,
+	SidebarPartition,
 	SidebarSearch,
 	SidebarUser,
 	Tooltip,
@@ -163,14 +163,13 @@ export function AppSidebar({ collapsed, onToggle }: { collapsed: boolean; onTogg
 	);
 
 	return (
-		<Sidebar collapsed={collapsed}>
+		<Sidebar collapsed={collapsed} {...(collapsed ? { className: "overflow-x-hidden" } : {})}>
 			{collapsed ? (
 				<div className="flex h-screen w-[68px] flex-col items-center">
 					<SidebarHeader className="justify-center px-0">
 						<Binoculars className="h-5 w-5 text-basalt-primary" strokeWidth={1.5} />
 					</SidebarHeader>
 					<Button
-						type="button"
 						variant="ghost"
 						size="icon"
 						onClick={onToggle}
@@ -213,18 +212,19 @@ export function AppSidebar({ collapsed, onToggle }: { collapsed: boolean; onTogg
 				<div className="flex h-screen w-[260px] flex-col">
 					<SidebarHeader>
 						<div className="flex w-full items-center justify-between px-3">
-							<div className="flex items-center gap-3">
-								<Binoculars className="h-5 w-5 text-basalt-primary" strokeWidth={1.5} />
-								<span className="text-lg font-semibold text-foreground md:text-xl">Giraffe</span>
-								<span className="rounded-md bg-secondary px-1.5 py-0.5 text-[10px] leading-none font-medium text-muted-foreground">
+							<div className="flex min-w-0 items-center gap-3">
+								<Binoculars className="h-5 w-5 shrink-0 text-basalt-primary" strokeWidth={1.5} />
+								<span className="truncate text-lg font-semibold text-basalt-foreground md:text-xl">
+									Giraffe
+								</span>
+								<span className="shrink-0 rounded-md bg-basalt-secondary px-1.5 py-0.5 text-[10px] leading-none font-medium text-basalt-muted-foreground">
 									v{APP_VERSION}
 								</span>
 							</div>
 							<Button
-								type="button"
 								variant="ghost"
 								size="icon"
-								className="h-7 w-7"
+								className="h-7 w-7 shrink-0"
 								onClick={onToggle}
 								aria-label="折叠侧栏"
 							>
@@ -237,11 +237,14 @@ export function AppSidebar({ collapsed, onToggle }: { collapsed: boolean; onTogg
 					</div>
 					<SidebarNav className="pt-1">
 						{NAV_GROUPS.map((group) => (
-							<SidebarGroup key={group.label} label={group.label} defaultOpen>
-								{group.items.map((item) => (
-									<NavItemButton key={item.href} item={item} currentPath={pathname} />
-								))}
-							</SidebarGroup>
+							<div key={group.label}>
+								<SidebarPartition>{group.label}</SidebarPartition>
+								<div className="flex flex-col gap-0.5 px-3">
+									{group.items.map((item) => (
+										<NavItemButton key={item.href} item={item} currentPath={pathname} />
+									))}
+								</div>
+							</div>
 						))}
 					</SidebarNav>
 					<SidebarFooter>
@@ -266,7 +269,7 @@ export function AppSidebar({ collapsed, onToggle }: { collapsed: boolean; onTogg
 									onSelect={() => handleSelect(item.href)}
 									className="cursor-pointer gap-3"
 								>
-									<NavIcon name={item.icon} className="h-4 w-4 text-muted-foreground" />
+									<NavIcon name={item.icon} className="h-4 w-4 text-basalt-muted-foreground" />
 									<span>{item.label}</span>
 								</CommandItem>
 							))}
@@ -281,7 +284,7 @@ export function AppSidebar({ collapsed, onToggle }: { collapsed: boolean; onTogg
 									onSelect={() => handleSelect(item.href)}
 									className="cursor-pointer gap-3"
 								>
-									<NavIcon name={item.icon} className="h-4 w-4 text-muted-foreground" />
+									<NavIcon name={item.icon} className="h-4 w-4 text-basalt-muted-foreground" />
 									<span>{item.label}</span>
 								</CommandItem>
 							))}

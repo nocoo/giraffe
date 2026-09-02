@@ -294,15 +294,22 @@
 
 @layer base {
 	* {
-		@apply border-border;
+		@apply border-basalt-border;
 	}
 	html,
 	body,
 	#root {
 		height: 100%;
 	}
+	html,
+	.light {
+		color-scheme: light;
+	}
+	html.dark {
+		color-scheme: dark;
+	}
 	body {
-		@apply bg-background text-foreground antialiased;
+		@apply bg-basalt-background text-basalt-foreground antialiased;
 		font-family: var(--basalt-font-sans);
 	}
 }

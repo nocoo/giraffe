@@ -81,5 +81,9 @@ export function headerTitle(pathname: string): string {
 }
 
 export function headerCrumbs(pathname: string): { href: string; label: string }[] {
-	return breadcrumbsFor(pathname).slice(0, -1);
+	const crumbs = breadcrumbsFor(pathname);
+	if (crumbs.length > 1) {
+		return crumbs.slice(0, -1);
+	}
+	return [{ href: "/", label: "Giraffe" }];
 }

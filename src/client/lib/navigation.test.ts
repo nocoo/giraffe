@@ -45,7 +45,8 @@ describe("navigation", () => {
 		expect(breadcrumbsFor("/settings")).toEqual([{ href: "/settings", label: "设置" }]);
 		expect(breadcrumbsFor("/nope")).toEqual([{ href: "/nope", label: "未找到" }]);
 		expect(headerTitle("/")).toBe("仓库");
-		expect(headerCrumbs("/")).toEqual([]);
+		expect(headerCrumbs("/")).toEqual([{ href: "/", label: "Giraffe" }]);
+		expect(headerCrumbs("/settings")).toEqual([{ href: "/", label: "Giraffe" }]);
 		expect(headerTitle("/repos/o/n")).toBe("o/n");
 		expect(headerCrumbs("/repos/o/n")).toEqual([{ href: "/", label: "仓库" }]);
 		expect(paletteItems(null).map((item) => item.href)).toEqual(NAV_ITEMS.map((item) => item.href));
