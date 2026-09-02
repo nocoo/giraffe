@@ -13,7 +13,11 @@ binding = "ASSETS"
 run_worker_first = ["/api", "/api/*"]
 not_found_handling = "single-page-application"
 
+[[routes]]
+pattern = "giraffe.hexly.ai"
+custom_domain = true
+
 [[d1_databases]]
 binding = "DB"
 database_name = "giraffe-db"
-database_id = "00000000-0000-4000-8000-000000000001"
+database_id = "02138e3b-9b18-48b3-95b3-fa8bccd8faa8"
