@@ -1,5 +1,15 @@
-import { Badge, Button, Input, LayerCard, SegmentControl, toast } from "@nocoo/basalt";
+import {
+	Badge,
+	Button,
+	Input,
+	LayerCard,
+	Link,
+	SegmentControl,
+	Toolbar,
+	toast,
+} from "@nocoo/basalt";
 import { Empty } from "@nocoo/basalt/components/empty";
+import { Loader } from "@nocoo/basalt/components/loader";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
 import {
 	Table,
@@ -9,10 +19,9 @@ import {
 	TableHeader,
 	TableRow,
 } from "@nocoo/basalt/components/table";
-import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { catchLoad } from "../lib/error-ui";
-import { requestRefresh } from "../viewmodels/refresh";
+import { refreshInFlight, requestRefresh, subscribeRefresh } from "../viewmodels/refresh";
 import {
 	alertsIncomplete,
 	healthMap,
@@ -31,6 +40,7 @@ export function ReposPage() {
 	const [view, setView] = useState<ViewMode>("list");
 	const [snap, setSnap] = useState<ReposSnapshot | { missing: true } | null>(null);
 	const [insights, setInsights] = useState<InsightsSnapshot | null>(null);
+	const busy = useSyncExternalStore(subscribeRefresh, refreshInFlight, refreshInFlight);
 
 	function onLoadError(err: unknown): void {
 		const missing = catchLoad(err, toast);
@@ -85,12 +95,17 @@ export function ReposPage() {
 				<Empty title="没有快照" description="先添加 PAT 或刷新。" />
 				<Button
 					type="button"
+					disabled={busy}
 					onClick={() => {
 						void requestRefresh(["repos"])
-							.then(() => reload())
+							.then(() => {
+								toast("已刷新");
+								return reload();
+							})
 							.catch(onLoadError);
 					}}
 				>
+					{busy ? <Loader size={14} /> : null}
 					刷新
 				</Button>
 			</div>
@@ -102,7 +117,7 @@ export function ReposPage() {
 			<PageHeader title="仓库" />
 			{snap?.truncated ? <Badge>已截断</Badge> : null}
 			{incomplete ? <Badge>告警不完整</Badge> : null}
-			<div className="flex flex-wrap items-center gap-3">
+			<Toolbar aria-label="仓库工具条">
 				<Input
 					value={query}
 					onChange={(event) => setQuery(event.target.value)}
@@ -128,13 +143,29 @@ export function ReposPage() {
 						{ value: "grid", label: "网格" },
 					]}
 				/>
-			</div>
+				<Button
+					type="button"
+					variant="secondary"
+					disabled={busy}
+					onClick={() => {
+						void requestRefresh(["repos"])
+							.then(() => {
+								toast("已刷新");
+								return reload();
+							})
+							.catch(onLoadError);
+					}}
+				>
+					{busy ? <Loader size={14} /> : null}
+					刷新
+				</Button>
+			</Toolbar>
 			{rows.length === 0 ? (
 				<Empty title="没有仓库" />
 			) : view === "grid" ? (
 				<div className="grid gap-3 md:grid-cols-2" data-testid="repo-list">
 					{rows.map((row) => (
-						<Link key={row.name_with_owner} to={`/repos/${row.owner_login}/${row.name}`}>
+						<Link key={row.name_with_owner} href={`/repos/${row.owner_login}/${row.name}`}>
 							<LayerCard>
 								<p className="font-medium">{row.name_with_owner}</p>
 								<p className="text-sm text-basalt-muted-foreground">{row.description ?? "—"}</p>
@@ -147,22 +178,22 @@ export function ReposPage() {
 					<TableHeader>
 						<TableRow>
 							<TableHead>
-								<button type="button" onClick={() => setSort("name")}>
+								<Button type="button" variant="ghost" onClick={() => setSort("name")}>
 									仓库
-								</button>
+								</Button>
 							</TableHead>
 							<TableHead>语言</TableHead>
 							<TableHead>
-								<button type="button" onClick={() => setSort("stars")}>
+								<Button type="button" variant="ghost" onClick={() => setSort("stars")}>
 									★
-								</button>
+								</Button>
 							</TableHead>
 							<TableHead>fork</TableHead>
 							<TableHead>issues</TableHead>
 							<TableHead>
-								<button type="button" onClick={() => setSort("pushed")}>
+								<Button type="button" variant="ghost" onClick={() => setSort("pushed")}>
 									最近 push
-								</button>
+								</Button>
 							</TableHead>
 							<TableHead>可见性</TableHead>
 							{health.size > 0 ? <TableHead>健康</TableHead> : null}
@@ -172,7 +203,7 @@ export function ReposPage() {
 						{rows.map((row) => (
 							<TableRow key={row.name_with_owner}>
 								<TableCell>
-									<Link to={`/repos/${row.owner_login}/${row.name}`}>{row.name_with_owner}</Link>
+									<Link href={`/repos/${row.owner_login}/${row.name}`}>{row.name_with_owner}</Link>
 								</TableCell>
 								<TableCell>{row.primary_language ?? "—"}</TableCell>
 								<TableCell>{row.stargazer_count}</TableCell>
@@ -181,7 +212,13 @@ export function ReposPage() {
 								<TableCell>{row.pushed_at ?? "—"}</TableCell>
 								<TableCell>{row.visibility}</TableCell>
 								{health.size > 0 ? (
-									<TableCell>{health.get(row.name_with_owner) ?? "—"}</TableCell>
+									<TableCell>
+										{health.get(row.name_with_owner) ? (
+											<Badge>{health.get(row.name_with_owner)}</Badge>
+										) : (
+											"—"
+										)}
+									</TableCell>
 								) : null}
 							</TableRow>
 						))}

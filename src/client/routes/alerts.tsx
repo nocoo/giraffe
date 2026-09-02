@@ -1,4 +1,4 @@
-import { Badge, Button, StatStrip, Toolbar, toast } from "@nocoo/basalt";
+import { Badge, StatStrip, Toolbar, toast } from "@nocoo/basalt";
 import { Empty } from "@nocoo/basalt/components/empty";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
 import {
@@ -10,6 +10,7 @@ import {
 	TableRow,
 } from "@nocoo/basalt/components/table";
 import { useEffect, useState } from "react";
+import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad } from "../lib/error-ui";
 import {
 	type AlertsSnapshot,
@@ -45,16 +46,11 @@ export function AlertsPage() {
 			<div className="flex flex-col gap-4">
 				<PageHeader title="安全告警" />
 				<Empty title="没有快照" description="先添加 PAT 或刷新。" />
-				<Button
-					type="button"
-					onClick={() => {
-						void requestRefresh(["alerts"])
-							.then(() => loadAlerts().then(setSnap))
-							.catch(onLoadError);
-					}}
-				>
-					刷新
-				</Button>
+				<RefreshButton
+					variant="default"
+					run={() => requestRefresh(["alerts"]).then(() => loadAlerts().then(setSnap))}
+					onError={onLoadError}
+				/>
 			</div>
 		);
 	}
@@ -83,17 +79,10 @@ export function AlertsPage() {
 				/>
 			) : null}
 			<Toolbar aria-label="安全告警工具条">
-				<Button
-					type="button"
-					variant="secondary"
-					onClick={() => {
-						void requestRefresh(["alerts"])
-							.then(() => loadAlerts().then(setSnap))
-							.catch(onLoadError);
-					}}
-				>
-					刷新
-				</Button>
+				<RefreshButton
+					run={() => requestRefresh(["alerts"]).then(() => loadAlerts().then(setSnap))}
+					onError={onLoadError}
+				/>
 			</Toolbar>
 			{items.length === 0 ? (
 				<Empty title="没有告警" />
@@ -112,7 +101,9 @@ export function AlertsPage() {
 							<TableRow key={`${row.name_with_owner}:${row.url}`}>
 								<TableCell>{row.name_with_owner}</TableCell>
 								<TableCell>{row.source}</TableCell>
-								<TableCell>{row.severity}</TableCell>
+								<TableCell>
+									<Badge>{row.severity}</Badge>
+								</TableCell>
 								<TableCell>
 									<a href={row.url} target="_blank" rel="noreferrer">
 										{row.summary}

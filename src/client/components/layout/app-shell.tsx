@@ -60,15 +60,16 @@ function navActive(pathname: string, href: string): boolean {
 }
 
 function SideNav() {
-	const { collapsed } = useSidebar();
+	const { collapsed, peeking } = useSidebar();
 	const location = useLocation();
 	const navigate = useNavigate();
+	const iconsOnly = collapsed && !peeking;
 	return (
 		<SidebarNav>
 			{NAV_ITEMS.map((item) => {
 				const active = navActive(location.pathname, item.href);
 				const icon = ICONS[item.icon];
-				if (collapsed) {
+				if (iconsOnly) {
 					return (
 						<SidebarIconItem
 							key={item.href}
@@ -152,6 +153,7 @@ export function AppShell() {
 	const [me, setMe] = useState<MeIdentity | null>(null);
 	const [accessDenied, setAccessDenied] = useState(false);
 	const [accountMissing, setAccountMissing] = useState(false);
+	const [mobile, setMobile] = useState(false);
 	useEffect(() => {
 		return subscribeErrorUi((ui) => {
 			if (ui.kind === "access") {
@@ -161,6 +163,13 @@ export function AppShell() {
 				setAccountMissing(true);
 			}
 		});
+	}, []);
+	useEffect(() => {
+		const mq = window.matchMedia("(max-width: 767px)");
+		const apply = () => setMobile(mq.matches);
+		apply();
+		mq.addEventListener("change", apply);
+		return () => mq.removeEventListener("change", apply);
 	}, []);
 	useEffect(() => {
 		void loadMe()
@@ -173,11 +182,12 @@ export function AppShell() {
 			});
 	}, []);
 	return (
-		<SidebarProvider defaultWidth={260} peek>
+		<SidebarProvider defaultWidth={260} peek={!mobile} overlay={mobile} defaultCollapsed={mobile}>
 			<AppSkipLink>跳到主内容</AppSkipLink>
 			<Shell>
 				<Sidebar>
 					<SidebarHeader>
+						<Box className="h-4 w-4" aria-hidden strokeWidth={1.5} />
 						<span className="truncate text-sm font-semibold">Giraffe</span>
 						<span className="rounded-md bg-basalt-secondary px-1.5 py-0.5 font-mono text-[10px]">
 							v{APP_VERSION}

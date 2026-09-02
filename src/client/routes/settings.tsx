@@ -1,4 +1,13 @@
-import { Button, ConfirmDialog, Field, toast } from "@nocoo/basalt";
+import {
+	Avatar,
+	AvatarFallback,
+	AvatarImage,
+	Button,
+	ConfirmDialog,
+	Field,
+	toast,
+} from "@nocoo/basalt";
+import { Loader } from "@nocoo/basalt/components/loader";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
 import { SensitiveInput } from "@nocoo/basalt/components/sensitive-input";
 import {
@@ -9,7 +18,7 @@ import {
 	TableHeader,
 	TableRow,
 } from "@nocoo/basalt/components/table";
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useState, useSyncExternalStore } from "react";
 import { catchLoad, reportError } from "../lib/error-ui";
 import {
 	accountFieldError,
@@ -21,7 +30,7 @@ import {
 	type PublicAccount,
 } from "../viewmodels/accounts";
 import { displayName, loadMe, type MeIdentity } from "../viewmodels/me";
-import { refreshInFlight, requestRefresh } from "../viewmodels/refresh";
+import { refreshInFlight, requestRefresh, subscribeRefresh } from "../viewmodels/refresh";
 
 export function SettingsPage() {
 	const [token, setToken] = useState("");
@@ -29,6 +38,7 @@ export function SettingsPage() {
 	const [me, setMe] = useState<MeIdentity | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [pendingId, setPendingId] = useState<string | null>(null);
+	const busy = useSyncExternalStore(subscribeRefresh, refreshInFlight, refreshInFlight);
 
 	function onLoadError(err: unknown): void {
 		catchLoad(err, toast);
@@ -60,6 +70,7 @@ export function SettingsPage() {
 		try {
 			await createAccount(value);
 			await reload();
+			toast("已添加账号");
 		} catch (err) {
 			reportError(err);
 			setError(accountFieldError(err) ?? "添加失败");
@@ -98,13 +109,17 @@ export function SettingsPage() {
 					<Button
 						type="button"
 						variant="secondary"
-						disabled={refreshInFlight()}
+						disabled={busy}
 						onClick={() => {
 							void requestRefresh("all")
-								.then(() => reload())
+								.then(() => {
+									toast("已刷新");
+									return reload();
+								})
 								.catch(onLoadError);
 						}}
 					>
+						{busy ? <Loader size={14} /> : null}
 						刷新全部
 					</Button>
 				</div>
@@ -122,7 +137,15 @@ export function SettingsPage() {
 				<TableBody>
 					{accounts.map((row) => (
 						<TableRow key={row.id}>
-							<TableCell>{row.login}</TableCell>
+							<TableCell>
+								<div className="flex items-center gap-2">
+									<Avatar>
+										<AvatarImage src={row.avatar_url} alt={row.login} />
+										<AvatarFallback>{row.login.slice(0, 2)}</AvatarFallback>
+									</Avatar>
+									{row.login}
+								</div>
+							</TableCell>
 							<TableCell>{row.token_last4}</TableCell>
 							<TableCell>{row.scopes}</TableCell>
 							<TableCell>{row.is_active ? "是" : "否"}</TableCell>
@@ -133,7 +156,10 @@ export function SettingsPage() {
 									disabled={row.is_active}
 									onClick={() => {
 										void activateAccount(row.id)
-											.then(() => reload())
+											.then(() => {
+												toast("已激活");
+												return reload();
+											})
 											.catch(onLoadError);
 									}}
 								>
@@ -165,6 +191,7 @@ export function SettingsPage() {
 					}
 					return deleteAccount(pendingId)
 						.then(() => {
+							toast("已删除");
 							setPendingId(null);
 							return reload();
 						})

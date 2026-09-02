@@ -10,6 +10,7 @@ import {
 	TableRow,
 } from "@nocoo/basalt/components/table";
 import { useEffect, useState } from "react";
+import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad } from "../lib/error-ui";
 import { loadInbox, markRead, markReadAll, type NotificationsSnapshot } from "../viewmodels/inbox";
 import { requestRefresh } from "../viewmodels/refresh";
@@ -40,16 +41,11 @@ export function InboxPage() {
 			<div className="flex flex-col gap-4">
 				<PageHeader title="通知" />
 				<Empty title="没有快照" description="先添加 PAT 或刷新。" />
-				<Button
-					type="button"
-					onClick={() => {
-						void requestRefresh(["notifications"])
-							.then(() => loadInbox().then(setSnap))
-							.catch(onLoadError);
-					}}
-				>
-					刷新
-				</Button>
+				<RefreshButton
+					variant="default"
+					run={() => requestRefresh(["notifications"]).then(() => loadInbox().then(setSnap))}
+					onError={onLoadError}
+				/>
 			</div>
 		);
 	}
@@ -61,21 +57,19 @@ export function InboxPage() {
 			<PageHeader title="通知" />
 			{snap?.truncated ? <Badge>已截断</Badge> : null}
 			<Toolbar aria-label="通知工具条">
+				<RefreshButton
+					run={() => requestRefresh(["notifications"]).then(() => loadInbox().then(setSnap))}
+					onError={onLoadError}
+				/>
 				<Button
 					type="button"
-					variant="secondary"
 					onClick={() => {
-						void requestRefresh(["notifications"])
-							.then(() => loadInbox().then(setSnap))
+						void markReadAll()
+							.then((next) => {
+								toast("已全部已读");
+								setSnap(next);
+							})
 							.catch(onLoadError);
-					}}
-				>
-					刷新
-				</Button>
-				<Button
-					type="button"
-					onClick={() => {
-						void markReadAll().then(setSnap).catch(onLoadError);
 					}}
 				>
 					全部已读
@@ -113,7 +107,12 @@ export function InboxPage() {
 										variant="secondary"
 										disabled={!row.unread}
 										onClick={() => {
-											void markRead(row.id).then(setSnap).catch(onLoadError);
+											void markRead(row.id)
+												.then((next) => {
+													toast("已读");
+													setSnap(next);
+												})
+												.catch(onLoadError);
 										}}
 									>
 										已读

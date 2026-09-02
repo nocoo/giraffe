@@ -1,4 +1,4 @@
-import { Badge, Button, StatStrip, Toolbar, toast } from "@nocoo/basalt";
+import { Badge, StatStrip, Toolbar, toast } from "@nocoo/basalt";
 import { ClipboardText } from "@nocoo/basalt/components/clipboard-text";
 import { Empty } from "@nocoo/basalt/components/empty";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
@@ -11,6 +11,7 @@ import {
 	TableRow,
 } from "@nocoo/basalt/components/table";
 import { useEffect, useMemo, useState } from "react";
+import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad } from "../lib/error-ui";
 import { formatDelta } from "../lib/format";
 import { type DigestSnapshot, digestMarkdown, loadDigest } from "../viewmodels/digest";
@@ -49,16 +50,11 @@ export function DigestPage() {
 			<div className="flex flex-col gap-4">
 				<PageHeader title="日报" />
 				<Empty title="没有快照" description="先添加 PAT 或刷新。" />
-				<Button
-					type="button"
-					onClick={() => {
-						void requestRefresh(["repos"])
-							.then(() => loadDigest().then(setSnap))
-							.catch(onLoadError);
-					}}
-				>
-					刷新
-				</Button>
+				<RefreshButton
+					variant="default"
+					run={() => requestRefresh(["repos"]).then(() => loadDigest().then(setSnap))}
+					onError={onLoadError}
+				/>
 			</div>
 		);
 	}
@@ -80,17 +76,10 @@ export function DigestPage() {
 				/>
 			) : null}
 			<Toolbar aria-label="日报工具条">
-				<Button
-					type="button"
-					variant="secondary"
-					onClick={() => {
-						void requestRefresh(["repos"])
-							.then(() => loadDigest().then(setSnap))
-							.catch(onLoadError);
-					}}
-				>
-					刷新
-				</Button>
+				<RefreshButton
+					run={() => requestRefresh(["repos"]).then(() => loadDigest().then(setSnap))}
+					onError={onLoadError}
+				/>
 			</Toolbar>
 			{snap && snap.repos.length > 0 ? (
 				<Table data-testid="digest-list">

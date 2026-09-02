@@ -3,7 +3,6 @@ import {
 	AvatarFallback,
 	AvatarImage,
 	Badge,
-	Button,
 	StatStrip,
 	Tabs,
 	TabsContent,
@@ -26,6 +25,7 @@ import {
 } from "@nocoo/basalt/components/table";
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router";
+import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad } from "../lib/error-ui";
 import type { IssuesSnapshot } from "../viewmodels/issues";
 import type { PullsSnapshot } from "../viewmodels/pulls";
@@ -225,16 +225,15 @@ export function RepoDetailPage() {
 			<div className="flex flex-col gap-4">
 				<PageHeader title={`${owner}/${name}`} />
 				<Empty title="没有快照" description="先添加 PAT 或刷新。" />
-				<Button
-					type="button"
-					onClick={() => {
-						void requestRefresh(repoKind(owner, name, "details"))
-							.then(() => loadRepoTab<RepoDetails>(owner, name, "details").then(setSnap))
-							.catch(onLoadError);
-					}}
-				>
-					刷新
-				</Button>
+				<RefreshButton
+					variant="default"
+					run={() =>
+						requestRefresh(repoKind(owner, name, "details")).then(() =>
+							loadRepoTab<RepoDetails>(owner, name, "details").then(setSnap),
+						)
+					}
+					onError={onLoadError}
+				/>
 			</div>
 		);
 	}
@@ -250,64 +249,79 @@ export function RepoDetailPage() {
 	return (
 		<div className="flex flex-col gap-4" data-testid="repo-detail">
 			<PageHeader title={`${owner}/${name}`} description={snap.description ?? name} />
-			{snap?.truncated ? <Badge>已截断</Badge> : null}
+			{(
+				tab === "details"
+					? snap.truncated
+					: tab === "security"
+						? security && !("missing" in security) && security.truncated
+						: tab === "traffic"
+							? traffic && !("missing" in traffic) && traffic.truncated
+							: tab === "actions"
+								? actions && !("missing" in actions) && actions.truncated
+								: tab === "releases"
+									? releases && !("missing" in releases) && releases.truncated
+									: tab === "issues"
+										? issues && !("missing" in issues) && issues.truncated
+										: tab === "prs"
+											? pulls && !("missing" in pulls) && pulls.truncated
+											: tab === "languages"
+												? languages && !("missing" in languages) && languages.truncated
+												: contributors && !("missing" in contributors) && contributors.truncated
+			) ? (
+				<Badge>已截断</Badge>
+			) : null}
 			<Toolbar aria-label="仓库详情工具条">
-				<Button
-					type="button"
-					variant="secondary"
-					onClick={() => {
-						void requestRefresh(repoKind(owner, name, tab))
-							.then(() => {
-								if (tab === "details") {
-									return loadRepoTab<RepoDetails>(owner, name, "details").then(setSnap);
-								}
-								if (tab === "security") {
-									return fetchTab<RepoSecurity>(owner, name, "security", refreshed.current).then(
-										setSecurity,
-									);
-								}
-								if (tab === "actions") {
-									return fetchTab<RepoActions>(owner, name, "actions", refreshed.current).then(
-										setActions,
-									);
-								}
-								if (tab === "releases") {
-									return fetchTab<RepoReleases>(owner, name, "releases", refreshed.current).then(
-										setReleases,
-									);
-								}
-								if (tab === "issues") {
-									return fetchTab<IssuesSnapshot>(owner, name, "issues", refreshed.current).then(
-										setIssues,
-									);
-								}
-								if (tab === "prs") {
-									return fetchTab<PullsSnapshot>(owner, name, "prs", refreshed.current).then(
-										setPulls,
-									);
-								}
-								if (tab === "languages") {
-									return fetchTab<RepoLanguages>(owner, name, "languages", refreshed.current).then(
-										setLanguages,
-									);
-								}
-								if (tab === "contributors") {
-									return fetchTab<RepoContributors>(
-										owner,
-										name,
-										"contributors",
-										refreshed.current,
-									).then(setContributors);
-								}
-								return fetchTab<RepoTraffic>(owner, name, "traffic", refreshed.current).then(
-									setTraffic,
+				<RefreshButton
+					run={() =>
+						requestRefresh(repoKind(owner, name, tab)).then(() => {
+							if (tab === "details") {
+								return loadRepoTab<RepoDetails>(owner, name, "details").then(setSnap);
+							}
+							if (tab === "security") {
+								return fetchTab<RepoSecurity>(owner, name, "security", refreshed.current).then(
+									setSecurity,
 								);
-							})
-							.catch(onLoadError);
-					}}
-				>
-					刷新
-				</Button>
+							}
+							if (tab === "actions") {
+								return fetchTab<RepoActions>(owner, name, "actions", refreshed.current).then(
+									setActions,
+								);
+							}
+							if (tab === "releases") {
+								return fetchTab<RepoReleases>(owner, name, "releases", refreshed.current).then(
+									setReleases,
+								);
+							}
+							if (tab === "issues") {
+								return fetchTab<IssuesSnapshot>(owner, name, "issues", refreshed.current).then(
+									setIssues,
+								);
+							}
+							if (tab === "prs") {
+								return fetchTab<PullsSnapshot>(owner, name, "prs", refreshed.current).then(
+									setPulls,
+								);
+							}
+							if (tab === "languages") {
+								return fetchTab<RepoLanguages>(owner, name, "languages", refreshed.current).then(
+									setLanguages,
+								);
+							}
+							if (tab === "contributors") {
+								return fetchTab<RepoContributors>(
+									owner,
+									name,
+									"contributors",
+									refreshed.current,
+								).then(setContributors);
+							}
+							return fetchTab<RepoTraffic>(owner, name, "traffic", refreshed.current).then(
+								setTraffic,
+							);
+						})
+					}
+					onError={onLoadError}
+				/>
 			</Toolbar>
 			<Tabs value={tab} onValueChange={(value) => setTab(value as RepoTab)}>
 				<TabsList>

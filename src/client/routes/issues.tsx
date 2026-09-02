@@ -1,5 +1,6 @@
 import { Badge, Button, Input, Toolbar, toast } from "@nocoo/basalt";
 import { Empty } from "@nocoo/basalt/components/empty";
+import { Loader } from "@nocoo/basalt/components/loader";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
 import {
 	Table,
@@ -9,14 +10,15 @@ import {
 	TableHeader,
 	TableRow,
 } from "@nocoo/basalt/components/table";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { catchLoad } from "../lib/error-ui";
 import { filterIssues, type IssuesSnapshot, loadIssues } from "../viewmodels/issues";
-import { requestRefresh } from "../viewmodels/refresh";
+import { refreshInFlight, requestRefresh, subscribeRefresh } from "../viewmodels/refresh";
 
 export function IssuesPage() {
 	const [query, setQuery] = useState("");
 	const [snap, setSnap] = useState<IssuesSnapshot | { missing: true } | null>(null);
+	const busy = useSyncExternalStore(subscribeRefresh, refreshInFlight, refreshInFlight);
 
 	function onLoadError(err: unknown): void {
 		const missing = catchLoad(err, toast);
@@ -50,12 +52,17 @@ export function IssuesPage() {
 				<Empty title="没有快照" description="先添加 PAT 或刷新。" />
 				<Button
 					type="button"
+					disabled={busy}
 					onClick={() => {
 						void requestRefresh(["issues"])
-							.then(() => loadIssues().then(setSnap))
+							.then(() => {
+								toast("已刷新");
+								return loadIssues().then(setSnap);
+							})
 							.catch(onLoadError);
 					}}
 				>
+					{busy ? <Loader size={14} /> : null}
 					刷新
 				</Button>
 			</div>
@@ -76,12 +83,17 @@ export function IssuesPage() {
 				<Button
 					type="button"
 					variant="secondary"
+					disabled={busy}
 					onClick={() => {
 						void requestRefresh(["issues"])
-							.then(() => loadIssues().then(setSnap))
+							.then(() => {
+								toast("已刷新");
+								return loadIssues().then(setSnap);
+							})
 							.catch(onLoadError);
 					}}
 				>
+					{busy ? <Loader size={14} /> : null}
 					刷新
 				</Button>
 			</Toolbar>

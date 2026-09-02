@@ -1,4 +1,4 @@
-import { Badge, Button, SegmentControl, Toolbar, toast } from "@nocoo/basalt";
+import { Badge, SegmentControl, Toolbar, toast } from "@nocoo/basalt";
 import { Empty } from "@nocoo/basalt/components/empty";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
 import {
@@ -10,6 +10,7 @@ import {
 	TableRow,
 } from "@nocoo/basalt/components/table";
 import { useEffect, useMemo, useState } from "react";
+import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad } from "../lib/error-ui";
 import {
 	alertsIncomplete,
@@ -55,16 +56,13 @@ export function InsightsPage() {
 			<div className="flex flex-col gap-4">
 				<PageHeader title="Insights" />
 				<Empty title="没有快照" description="先添加 PAT 或刷新。" />
-				<Button
-					type="button"
-					onClick={() => {
-						void requestRefresh(["repos", "issues", "alerts"])
-							.then(() => loadInsights().then(setSnap))
-							.catch(onLoadError);
-					}}
-				>
-					刷新
-				</Button>
+				<RefreshButton
+					variant="default"
+					run={() =>
+						requestRefresh(["repos", "issues", "alerts"]).then(() => loadInsights().then(setSnap))
+					}
+					onError={onLoadError}
+				/>
 			</div>
 		);
 	}
@@ -86,17 +84,12 @@ export function InsightsPage() {
 						{ value: "risky", label: "risky" },
 					]}
 				/>
-				<Button
-					type="button"
-					variant="secondary"
-					onClick={() => {
-						void requestRefresh(["repos", "issues", "alerts"])
-							.then(() => loadInsights().then(setSnap))
-							.catch(onLoadError);
-					}}
-				>
-					刷新
-				</Button>
+				<RefreshButton
+					run={() =>
+						requestRefresh(["repos", "issues", "alerts"]).then(() => loadInsights().then(setSnap))
+					}
+					onError={onLoadError}
+				/>
 			</Toolbar>
 			{rows.length === 0 ? (
 				<Empty title="没有 Insights" />
@@ -116,14 +109,32 @@ export function InsightsPage() {
 						{rows.map((row) => (
 							<TableRow key={row.name_with_owner}>
 								<TableCell>{row.name_with_owner}</TableCell>
-								<TableCell>{row.health}</TableCell>
+								<TableCell>
+									<Badge>{row.health}</Badge>
+								</TableCell>
 								<TableCell>{row.open_issue_count}</TableCell>
 								<TableCell>{row.days_since_push}</TableCell>
-								<TableCell>{row.opportunities.join(", ") || "—"}</TableCell>
 								<TableCell>
-									{row.alerts.length === 0
-										? "—"
-										: row.alerts.map((alert) => alert.summary).join(", ")}
+									{row.opportunities.length === 0 ? (
+										"—"
+									) : (
+										<ul>
+											{row.opportunities.map((item) => (
+												<li key={item}>{item}</li>
+											))}
+										</ul>
+									)}
+								</TableCell>
+								<TableCell>
+									{row.alerts.length === 0 ? (
+										"—"
+									) : (
+										<ul>
+											{row.alerts.map((alert) => (
+												<li key={alert.url}>{alert.summary}</li>
+											))}
+										</ul>
+									)}
 								</TableCell>
 							</TableRow>
 						))}
