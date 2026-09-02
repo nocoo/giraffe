@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { BrowserRouter, Link, Route, Routes } from "react-router";
 import { AppShell } from "./components/layout/app-shell";
 import { IssuesPage } from "./routes/issues";
+import { PullsPage } from "./routes/pulls";
 import { ReposPage } from "./routes/repos";
 import { SettingsPage } from "./routes/settings";
 
@@ -35,6 +36,7 @@ export function App() {
 						<Route element={<AppShell />}>
 							<Route path="/" element={<ReposPage />} />
 							<Route path="/issues" element={<IssuesPage />} />
+							<Route path="/pulls" element={<PullsPage />} />
 							<Route path="/settings" element={<SettingsPage />} />
 						</Route>
 					</Routes>
