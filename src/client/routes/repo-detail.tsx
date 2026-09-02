@@ -165,9 +165,17 @@ export function RepoDetailPage() {
 		);
 	}
 
+	if (!snap) {
+		return (
+			<div className="flex flex-col gap-4">
+				<PageHeader title={`${owner}/${name}`} />
+			</div>
+		);
+	}
+
 	return (
 		<div className="flex flex-col gap-4" data-testid="repo-detail">
-			<PageHeader title={`${owner}/${name}`} description={snap?.description ?? name} />
+			<PageHeader title={`${owner}/${name}`} description={snap.description ?? name} />
 			{snap?.truncated ? <Badge>已截断</Badge> : null}
 			<Toolbar aria-label="仓库详情工具条">
 				<Button

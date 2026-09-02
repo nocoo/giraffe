@@ -49,6 +49,8 @@
 			"!**/dist",
 			"!**/coverage",
 			"!**/.wrangler",
+			"!**/test-results",
+			"!**/playwright-report",
 			"!**/bun.lock",
 			"!**/*.d.ts",
 			"!src/client/index.css"

@@ -17,6 +17,7 @@
       "devDependencies": {
         "@biomejs/biome": "2.5.10",
         "@cloudflare/workers-types": "5.20260814.1",
+        "@playwright/test": "^1.62.1",
         "@tailwindcss/vite": "^4.3.3",
         "@types/bun": "^1.4.0",
         "@types/react": "^19.2.18",
@@ -247,6 +248,8 @@
     "@oxc-parser/binding-win32-x64-msvc": ["@oxc-parser/binding-win32-x64-msvc@0.147.0", "", { "os": "win32", "cpu": "x64" }, "sha1-mC1LO9xBdkiOhVGeJVHECyosY7M="],
 
     "@oxc-project/types": ["@oxc-project/types@0.147.0", "", {}, "sha1-US5DGWBT20qZko41sodUmjImJos="],
+
+    "@playwright/test": ["@playwright/test@1.62.1", "", { "dependencies": { "playwright": "1.62.1" }, "bin": { "playwright": "cli.js" } }, "sha1-aOGq9uSA4ZI5Nt7mxm+uGSHTplo="],
 
     "@poppinss/colors": ["@poppinss/colors@4.1.6", "", { "dependencies": { "kleur": "^4.1.5" } }, "sha1-v4VG4wz8Xujf5omIzljrCtnXwhs="],
 
@@ -674,6 +677,10 @@
 
     "picomatch": ["picomatch@4.0.7", "", {}, "sha1-YxM2ADTMs2s9xh7L3/eBIfkP4h8="],
 
+    "playwright": ["playwright@1.62.1", "", { "dependencies": { "playwright-core": "1.62.1" }, "optionalDependencies": { "fsevents": "2.3.2" }, "bin": { "playwright": "cli.js" } }, "sha1-hEe2dV6K7IWjy3IHyCPj7S/GZwA="],
+
+    "playwright-core": ["playwright-core@1.62.1", "", { "bin": { "playwright-core": "cli.js" } }, "sha1-Eg9noZGBv9GDxg+pA8DZkzC1Z4U="],
+
     "postcss": ["postcss@8.5.26", "", { "dependencies": { "nanoid": "^3.3.17", "picocolors": "^1.1.1", "source-map-js": "^1.2.1" } }, "sha1-bnUTV4DH4Q3zQzvyJmxVLTXIxiA="],
 
     "react": ["react@19.2.8", "", {}, "sha1-qAZj27WNacb+P9KR08syTop9/y0="],
@@ -789,6 +796,8 @@
     "@tailwindcss/oxide-wasm32-wasi/@tybys/wasm-util": ["@tybys/wasm-util@0.10.3", "", { "dependencies": { "tslib": "^2.4.0" }, "bundled": true }, "sha1-AVy6np3UfOFNA9KoxdVHv7FpZl0="],
 
     "@tailwindcss/oxide-wasm32-wasi/tslib": ["tslib@2.8.1", "", { "bundled": true }, "sha1-YS7+TtI11Wfoq6Xypfq3AoCt6D8="],
+
+    "playwright/fsevents": ["fsevents@2.3.2", "", { "os": "darwin" }, "sha1-ilJveLj99GI7cJ4Ll1xSwkwC/Ro="],
 
     "rolldown/@oxc-project/types": ["@oxc-project/types@0.146.0", "", {}, "sha1-1Xolkau/H25QmBsH7iSrJpUw2Ho="],
 
