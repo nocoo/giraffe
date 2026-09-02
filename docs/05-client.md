@@ -34,12 +34,12 @@ Codex Sign Off 本文之前，禁止第 12 节步骤 1 及之后（含 Vite 脚�
 | 刷新 | GET 不刷新（04）。只由 Client 调 `POST /api/refresh`。时机见第 7 节。进行中互斥见 `viewmodels/refresh.ts` 模块单例 |
 | PAT | 只出现在设置页输入（提交后清空）、该次请求体。禁止 `localStorage` / `sessionStorage` / 前端包 / 日志 |
 | 筛选 | 04 GET 无 filter/sort。搜索、排序、网格/列表切换全在 Client ViewModel。列表用 Basalt `Table`（`@nocoo/basalt/components/table`），**不用** `DataTable`（其内部自带不可关闭的列头排序，会与 VM 双真相） |
-| Origin | 生产页源 `https://giraffe.hexly.ai`，与 04 白名单一致。本机唯一写 API 拓扑：`vite build` + `bun run dev:server`，页源 `https://giraffe.dev.hexly.ai` 或 wrangler 的请求 `url.origin`。L3 Playwright `baseURL` 为 `http://127.0.0.1:27045`。**04 必须补一条**：Access 短路条件成立时（与 `access.ts` 同一套 `ENVIRONMENT=development` 且已设 `GITHUB_API_BASE` 且未设 team/aud），允许 `Origin === new URL(request.url).origin`，或 `https://giraffe.dev.hexly.ai`。生产与 `test` 模式不变。禁止把 loopback 写进生产白名单。该补丁是步骤 1，否则 L3 设置页 POST 必 403 |
+| Origin | 以 04 §5.3 与 02 §6 为准：生产/test 不含 loopback；development Access 短路允许同源 `url.origin`（L3 `:27045`）。步骤 1 实现 `origin.ts`，L1+L2 绿 |
 | 构建 | Vite 8 + `@vitejs/plugin-react` + `@tailwindcss/vite`。仓库根 `index.html`（Vite 入口，`src/client/main.tsx`）。`outDir = dist/client`。Tailwind CSS v4，按 Basalt README：`@source` + `@import "@nocoo/basalt/styles/tailwind"` + `@import "tailwindcss"`。不使用 `@cloudflare/vite-plugin` |
 | 开发拓扑 | **不**把 Vite `:5173` 当可写 API 的应用。无 proxy、无 mock。`package.json` 不提供 `dev:client`。日常：`bun run build` 然后 `bun run dev:server` |
 | TS | TypeScript 7 `strict` + `exactOptionalPropertyTypes`。Worker 与 Client 分 tsconfig：Client 加 `DOM`；Worker 继续 Workers types。`tsc --noEmit` 两个都跑 |
 | 版本 | `APP_VERSION` 仍来自 `src/lib/version.ts` ← `package.json`。侧栏展示 `v{version}` |
-| L3 时机 | 02：CI / 按需。pre-push 仍是 L2 ‖ G2。步骤 14 实现 runner 与三条路径，不改 husky pre-push |
+| L3 时机 | 02：CI / 按需。pre-push 仍是 L2 ‖ G2。步骤 20 实现 runner 与三条路径，不改 husky pre-push |
 
 ---
 
@@ -188,7 +188,7 @@ Basalt `ContentIsland` 已是 `rounded-[16px] bg-basalt-card … ring-1 ring-bas
 每个 `src/client/viewmodels/*.ts`：
 
 - 导出纯函数：把 03 JSON + UI 状态（query、sort、view）变成渲染用的 plain object。
-- 可导出 `useXViewModel()`：只依赖 `react`（`useState` / `useCallback` / `useMemo`）、`../lib/api.ts`、`./refresh.ts`。
+- 可导出 `useXViewModel()`：只依赖 `react`（`useState` / `useCallback` / `useMemo` / `useEffect` / `useRef`）、`../lib/api.ts`、`./refresh.ts`。初次 GET、取消、账号变化后的重载都在这个 hook 的 `useEffect` 里，不进 route、不进 layout。
 - **禁止** import：`react-dom`、`@nocoo/basalt`、`*.tsx`、`document` / `window`（clipboard 纯函数只返回字符串，真正写剪贴板在 route 里用 Basalt `ClipboardText`）。
 - L1 测纯函数与 `refresh.ts` 锁；hook 用 mock 掉的 `api.ts`。不启 Worker。
 
@@ -221,12 +221,13 @@ async function send(resource: string, init?: RequestInit): Promise<Response> {
 | `github_unauthorized` 401 | toast「GitHub 认证失败」，设置页可再贴 PAT |
 | `github_forbidden` 403 | toast |
 | `origin_forbidden` 403 | toast；检查页源 |
-| `not_found` 404 | 岛内「未找到」；单仓非法/GitHub 404 同此 |
+| `not_found` 404 | 岛内「未找到」（GitHub 无此仓等）。Client 侧非法 `owner`/`name` 不发请求，展示校验文案，不是 404 |
+| `validation_failed` 400 | 设置页或其它字段错；服务端非法 owner 也是这个 code |
 | `method_not_allowed` 405 | toast（不应被 UI 走到） |
 | `account_missing` 409 | 横幅 + 链到 `/settings` |
 | `snapshot_missing` 409 | 该页 `Empty` +「刷新」按钮（§7 对应 kind） |
 | `capability_missing` 409 | toast，缺 notifications scope |
-| `validation_failed` / `scopes_missing` 400 | 设置页字段错 |
+| `scopes_missing` 400 | 设置页字段错 |
 | `github_rate_limited` 503 | toast |
 | `github_error` 502 | toast |
 | `encryption_misconfigured` / `access_misconfigured` / `db_error` / `internal_error` 500 | toast `message` |
@@ -234,13 +235,21 @@ async function send(resource: string, init?: RequestInit): Promise<Response> {
 
 成功写操作：toast 短中文（「已添加账号」「已刷新」）。
 
-截断成功（HTTP 200 且 `truncated` 或 `truncated_kinds.length > 0`）**不是**错误：Badge「已截断」+ 按 `kinds` 再 GET 已写入的 kind。
+截断成功（HTTP 200 且 `truncated` 或 `truncated_kinds.length > 0`）**不是**错误：Badge「已截断」。再读规则见 §7。
 
 ---
 
 ## 7. 刷新时机
 
-Server 不调度。Client 只经 `viewmodels/refresh.ts` 调 `POST /api/refresh`。该模块持有**进程内单例锁**：已有 in-flight 则后来者等待同一 Promise 或直接 no-op（L1 必须覆盖互斥、账号切换时丢弃过期结果、路由卸载不清空锁——锁在模块而非 hook）。禁止各页 hook 各自 `useState(refreshing)` 当全局真相。
+Server 不调度。Client 只经 `viewmodels/refresh.ts` 调 `POST /api/refresh`。该模块持有**进程内单例**：
+
+- 锁在模块而非 hook。路由卸载不清空锁。
+- **等价**请求（同一 `accountId` + 规范化后相同 `kinds`）合并为同一个 in-flight Promise。
+- **不等价**请求（不同账号或不同 kinds）FIFO 排队：等当前结束再发，不得 no-op 吞掉。
+- 发出时记下 `accountId`。返回后若当前 active 已变，丢弃结果且**再跑**队列里为新账号排队的请求（不能只丢弃而不补跑）。
+- L1 覆盖：互斥、合并等价、排队不等价、账号切换丢弃并补跑。
+
+禁止各页 hook 各自 `useState(refreshing)` 当全局真相。页面只读 `refresh.ts` 的 `inFlight` 标记。
 
 | 触发 | `kinds` | 随后 |
 |------|---------|------|
@@ -253,11 +262,24 @@ Server 不调度。Client 只经 `viewmodels/refresh.ts` 调 `POST /api/refresh`
 | 轮询 / focus / interval | **不做** | |
 | 设置页「刷新全部」按钮 | `"all"`（展开为 5 个 GitHub kind，insights/digest 隐式） | 200 后按返回 `kinds` GET |
 
-**禁止**在 Insights/Digest 工具条里**显式**请求 `insights` / `digest`。04：源不足或源 `truncated: true` 时，显式派生 → 409 且本请求不落库；隐式则跳过派生、GitHub kind 仍写入。仓库数 > 10 时 alerts 必 `truncated: true`，显式 insights 会让整次 refresh 409。隐式则可留下 repos/issues/alerts，insights 保持旧快照或继续 `snapshot_missing`。
+**禁止**在 Insights/Digest 工具条里**显式**请求 `insights` / `digest`。04：insights 源不足只看 repos/issues 缺失或 truncated；alerts 截断仍写入 insights。digest 仍要未截断 repos。显式派生遇源不足 → 409 且本请求不落库，所以 UI 只用隐式。
 
 HTTP **硬失败**（4xx/5xx，含 409 显式派生）→ 04 零写入；Client 不得把内存里的部分收集当成功。
 
-HTTP **200** 即使 `truncated_kinds` 非空、即使 `kinds` 少于请求列表：这是成功截断/次数用尽。Client：toast 可选「部分刷新」；对返回的 `kinds` 再 GET；未出现的 kind 保持刷新前快照；`truncated` Badge。不得把 200 当成失败。
+HTTP **200** 体有两种（04）：
+
+1. **单 kind**（请求数组恰好一项 GitHub 或派生名）：body = 该 kind 的 GET 快照，无 `kinds` 字段。
+2. **`"all"` 或多 kind**：`{ fetched_at, kinds, truncated_kinds }`。
+
+`refresh.ts` 归一：
+
+- 单 kind：该 kind 已写入；用 body 更新缓存，不必再 GET 同一 kind。
+- 多 kind / all：对 `kinds` 里每一项再 GET。
+- 隐式派生：若本轮写入含 `repos`（单 kind 的 repos，或 `kinds` 含 `repos`），再 `GET /api/digest`（409 则保持旧 digest 或 Empty）。若本轮写入含 `repos` 与 `issues`（alerts 可 truncated），再 `GET /api/insights`（409 仅当 04 仍源不足）。
+- Digest 页请求 `["repos"]`：按单 kind 更新 repos 缓存，再 GET digest。
+- Insights 页请求 `["repos","issues","alerts"]`：按多 kind GET 这三个，再 GET insights。04：alerts truncated **不**阻止写入 insights。
+
+`truncated` / `truncated_kinds`：Badge「已截断」，仍是成功。未出现的 kind 保持刷新前快照。不得把 200 当成失败。
 
 单次 `githubFetch` ≤ 40（04）。锁保证不同时两个 refresh。进行中按钮 disabled + `Loader`。
 
@@ -299,7 +321,7 @@ HTTP **200** 即使 `truncated_kinds` 非空、即使 `kinds` 少于请求列表
 
 ### 8.3 `/insights`
 
-按 `health`：`strong` / `watch` / `risky` 分三组或 Segment 过滤。`opportunities`、`alerts` 数组展示为列表。数字与 03 一致，Client 不算 health。GET 409 时 Empty，刷新走 §7 隐式派生（可能仍 409，不循环）。
+按 `health`：`strong` / `watch` / `risky` 分三组或 Segment 过滤。`opportunities`、`alerts` 数组展示为列表。数字与 03 一致，Client 不算 health。GET 409 时 Empty，刷新走 §7 隐式派生。alerts 截断不再阻止 insights 写入（04 §8）。仍 409 仅当 repos 或 issues 不足；不循环自动刷。
 
 ### 8.4 `/alerts`
 
@@ -373,16 +395,18 @@ export function breadcrumbsFor(pathname: string): { href: string; label: string 
 | 模块 | 例子 |
 |------|------|
 | `api.ts` | 注入 fetch：模板 URL 以 `/api/` 开头、信封抛 `ApiError`、204、成功无 error 字段 |
-| `refresh.ts` | 互斥：第二个调用不并发；硬失败不更新快照缓存；200+truncated_kinds 视为成功并列出需 GET 的 kind；显式 insights 不得由本模块默认发出 |
-| `accounts` | 提交后 token 状态为空串；列表不含 ciphertext；`is_active === false` 不触发 refresh |
+| `refresh.ts` | 合并等价；排队不等价；账号切换丢弃并补跑；单 kind 200 用 payload；多 kind 再 GET；`["repos"]` 之后 GET digest；硬失败不更新缓存；默认 kinds 不含显式 insights/digest |
+| `accounts` | 提交后 token 空串；列表不含 ciphertext；`is_active === false` 不 refresh；activate / delete 归约 |
+| `me` | 短路身份字段映射 |
 | `repos` | 搜索/排序/列表|网格；truncated 标记 |
 | `issues` / `pulls` | 过滤 |
 | `insights` | 按 health 分组 |
 | `alerts` | unavailable |
-| `inbox` | 已读后 unread false（对返回体归约，不打网） |
+| `inbox` | 已读与 **read-all** 后 unread false（对返回体归约） |
 | `digest` | `baseline_missing` → markdown 不含假 0 |
-| `repo-detail` | 非法 owner；forbidden traffic；languages 排序 |
+| `repo-detail` | 非法 owner 不请求；九个 tab 各绑定正确 GET path；forbidden traffic；unavailable security；languages 排序 |
 | `navigation.ts` | breadcrumbsFor `/`、`/repos/o/n`、未知路径 |
+| 命令面板数据 | 静态 NAV_ITEMS；有 repos 缓存时含仓库项 |
 
 Client 单测：文件顶 `// @vitest-environment happy-dom` 或 vitest 对 `src/client/**` 设 environment。不得 `import` `src/server`。
 
@@ -402,17 +426,14 @@ L3 依赖步骤 1 的 Origin 补丁。未补丁前不算 L3 绿。L3 **不是** 
 
 ---
 
-## 11. 04 补丁（步骤 1）
+## 11. 04 / 02 补丁（步骤 1）
 
-在 `docs/04-server.md` §5 Origin 与 `src/server/middleware/origin.ts`：
+编号文档已与本文对齐的部分（Origin 表、insights 源不足、L1 豁免、L3 Origin）在 Sign Off 前写入 01/02/04。步骤 1 只补实现：
 
-- 生产：仅 `https://giraffe.hexly.ai`
-- `test`：仅 `https://giraffe.dev.hexly.ai`（L2 套件 B 继续手设该头）
-- development **且** Access 短路条件成立（复用 `access.ts` 的判定，禁止另写一套）：允许 `Origin` 等于 `new URL(request.url).origin`，或 `https://giraffe.dev.hexly.ai`
+1. `origin.ts`：development Access 短路时允许同源 Origin。L1：短路同源 通过；生产拒绝 `http://127.0.0.1:27045`。L2 A/B 仍绿。
+2. insights 派生：alerts 截断/缺失不是源不足（04 §8 已写）。改 `collect`/`refresh` 实现并补 L1。
 
-禁止：生产放行 loopback；用 `Host` / `X-Forwarded-*` 判断。L1 覆盖短路同源允许、生产拒绝 `http://127.0.0.1:27045`。L2 套件 A/B 仍绿。
-
-此补丁不是新 API。提交信息 `fix: allow same-origin posts in dev`。
+提交可拆成两次（Origin 一次、insights 一次），都在步骤 5 之前。信息：`fix: allow same-origin posts in dev`、`fix: derive insights when alerts truncated`。
 
 ---
 
@@ -424,28 +445,30 @@ L3 依赖步骤 1 的 Origin 补丁。未补丁前不算 L3 绿。L3 **不是** 
 
 | # | 提交 | 内容 | 证明 |
 |---|------|------|------|
-| 0 | `docs: add client design document` | 本文 + docs 索引 | Codex Sign Off |
-| 1 | `fix: allow same-origin posts in dev` | 04 + `origin.ts` | L1；L2 套件 A/B 仍绿 |
-| 2 | `feat: scaffold vite client toolchain` | 根 `index.html`、Vite、`@tailwindcss/vite`、React 插件、Basalt 依赖、`tsconfig.client.json`、coverage exclude 同步 §10.1、空 `main.tsx`/`app.tsx`/layout 壳、无业务页 | `bun run build`；G1 client-fetch 仍绿 |
-| 3 | `feat: add same-origin api client` | `api.ts` + errors；`` fetch(`/api/${resource}`) `` | L1 注入 fetch；`gate:client-fetch` 绿 |
-| 4 | `feat: add app shell layout` | layout 组合 Basalt；`navigation.ts`；Router 空岛；`LinkProvider` adapter；`AppMain tabIndex={-1}` | L1 `navigation.ts` |
-| 5 | `feat: add settings accounts page` | settings + accounts VM；PAT 清空；仅 active 账号刷 repos | L1 |
-| 6 | `feat: add repos list page` | `/` + refresh 单例 | L1 筛选排序 + refresh 互斥 |
-| 7 | `feat: add issues page` | `/issues` | L1 |
-| 8 | `feat: add pulls page` | `/pulls` | L1 |
-| 9 | `feat: add insights page` | 隐式派生刷新 | L1 |
-| 10 | `feat: add alerts page` | | L1 |
-| 11 | `feat: add inbox write-through page` | GET + 已读 | L1 归约 |
-| 12 | `feat: add digest page` | markdown 纯函数 | L1 baseline_missing |
-| 13 | `feat: add repo details tab` | 概览 GET | L1 非法 owner |
-| 14 | `feat: add repo security and traffic` | | L1 unavailable/forbidden |
-| 15 | `feat: add repo actions and releases` | | L1 |
-| 16 | `feat: add repo issues and pulls` | | L1 |
-| 17 | `feat: add repo languages and contributors` | Donut + 列表 | L1 |
-| 18 | `feat: add command palette` | ⌘K 静态项 | L1 |
-| 19 | `test: add l3 three-path suite` | Playwright + `run-e2e-bdd.ts` | `bun run test:e2e:bdd` 三条；不改 pre-push |
+| 0 | `docs: add client design document` | 本文 + 01/02/04 对齐 | Codex Sign Off |
+| 1a | `fix: allow same-origin posts in dev` | `origin.ts` | L1；L2 A/B 绿 |
+| 1b | `fix: derive insights when alerts truncated` | refresh/collect 派生 | L1 |
+| 2 | `feat: scaffold vite client toolchain` | 根 `index.html`、Vite、`@tailwindcss/vite`、React 插件、Basalt 依赖、`tsconfig.client.json`、coverage exclude 同步 02、空 `main.tsx`/`app.tsx`/layout 壳、无业务页 | `bun run build`；G1 client-fetch 绿 |
+| 3 | `feat: add same-origin api client` | `api.ts` + errors；`` fetch(`/api/${resource}`) `` | L1 注入 fetch；gate 绿 |
+| 4 | `feat: add refresh coordinator` | `viewmodels/refresh.ts` 单例、排队、归一 04 两种 200 | L1 互斥/排队/单 kind vs 多 kind |
+| 5 | `feat: add app shell layout` | layout 组合 Basalt；`navigation.ts`；`me.ts`；Router 空岛；`LinkProvider`；`AppMain tabIndex={-1}` | L1 navigation + me |
+| 6 | `feat: add settings accounts page` | settings + accounts VM；PAT 清空；仅 active/activate 经 refresh.ts 刷 repos | L1 activate/delete |
+| 7 | `feat: add repos list page` | `/` | L1 筛选排序 |
+| 8 | `feat: add issues page` | `/issues` | L1 |
+| 9 | `feat: add pulls page` | `/pulls` | L1 |
+| 10 | `feat: add insights page` | 隐式 insights GET | L1 health 分组 |
+| 11 | `feat: add alerts page` | `/alerts` 含 unavailable | L1 |
+| 12 | `feat: add inbox write-through page` | GET + 已读 + **read-all** | L1 归约 |
+| 13 | `feat: add digest page` | markdown 纯函数；刷 repos 后再 GET digest | L1 baseline_missing |
+| 14 | `feat: add repo details tab` | 概览 GET | L1 非法 owner |
+| 15 | `feat: add repo security and traffic` | security + traffic 空态 | L1 unavailable/forbidden |
+| 16 | `feat: add repo actions and releases` | actions + releases 表 | L1 |
+| 17 | `feat: add repo issues and pulls` | 单仓 issues/prs | L1 |
+| 18 | `feat: add repo languages and contributors` | Donut + 列表 | L1 |
+| 19 | `feat: add command palette` | ⌘K 静态项 **与** 内存仓库项 | L1 |
+| 20 | `test: add l3 three-path suite` | Playwright + `run-e2e-bdd.ts` | `bun run test:e2e:bdd` 三条；不改 pre-push |
 
-步骤 2 不得出现业务 route 的数据逻辑。步骤 5 未绿之前不要做仓库页。步骤 19 未绿不得宣称阶段 2 完成。
+步骤 2 不得出现业务 route 的数据逻辑。步骤 6 未绿之前不要做仓库页。步骤 4 的 refresh.ts 必须先于设置页。步骤 20 未绿不得宣称阶段 2 完成。
 
 阶段 2 完成线见 02 §10：本文页面有 L1，三条 L3 绿，覆盖率四项 ≥ 95%，阶段 1 的 L2/G1/G2 仍绿，无平行控件库。
 

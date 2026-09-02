@@ -60,7 +60,7 @@ Hook：
 
 工具：Vitest 4。覆盖率：**statements、branches、functions、lines 每一项都 ≥ 95%**。任一项低于 95% 即失败。
 
-`vitest` coverage 用 `include: ["src/**/*.{ts,tsx}"]` 把未 import 的生产文件算进分母（Vitest 4 没有 `coverage.all`）。`exclude` 必须包含测试自身：`**/*.test.ts`、`**/*.test.tsx`、`**/__tests__/**`，以及薄壳 `src/client/routes/*.tsx`。不得把测试文件算进分子。`src/server/routes/` 不豁免。
+`vitest` coverage 用 `include: ["src/**/*.{ts,tsx}"]` 把未 import 的生产文件算进分母（Vitest 4 没有 `coverage.all`）。`exclude` 必须包含测试自身：`**/*.test.ts`、`**/*.test.tsx`、`**/__tests__/**`，以及薄壳 `src/client/routes/*.tsx`、`src/client/components/layout/**/*.tsx`、`src/client/main.tsx`、`src/client/app.tsx`。不得把测试文件算进分子。`src/server/routes/` 不豁免。ViewModel 与 `src/client/lib/**` 不豁免。
 
 ### 必测
 
@@ -187,7 +187,7 @@ PAT `POST /api/accounts` 成功**与失败**路径（400 缺 scope、GitHub stub
 
 阶段 2 才有。Playwright，Chromium。
 
-L3 **只跑套件 A**（`ENVIRONMENT=development` Access 短路）。不做套件 B，浏览器不注入 CF Access JWT。隔离目录、`--env-file`、GitHub `githubFetch` 边界与 L2 套件 A 相同。差异：
+L3 **只跑套件 A**（`ENVIRONMENT=development` Access 短路）。不做套件 B，浏览器不注入 CF Access JWT。隔离目录、`--env-file`、GitHub `githubFetch` 边界与 L2 套件 A 相同。L2 写请求仍手设 Origin `https://giraffe.dev.hexly.ai`。L3 Playwright 的页源是 `http://127.0.0.1:27045`，浏览器会带该 Origin；04 在 Access 短路条件下允许 `Origin === request URL origin`。这不是把 loopback 写入生产白名单。差异：
 
 1. 先 `vite build`，把真实 `dist/client` 放进临时目录（不要占位壳）
 2. persist：`.wrangler/e2e-pw/`

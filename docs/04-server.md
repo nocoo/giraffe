@@ -161,11 +161,12 @@ G1 禁止把 `ENVIRONMENT=development` / `test`、`GITHUB_API_BASE`、`ACCESS_JW
 
 | 模式 | 允许的 Origin |
 |------|----------------|
-| production | `https://giraffe.hexly.ai` |
-| development | `https://giraffe.dev.hexly.ai` |
-| test | `https://giraffe.dev.hexly.ai` |
+| production | 仅 `https://giraffe.hexly.ai` |
+| development 且 Access 短路成立 | `https://giraffe.dev.hexly.ai`，**或** `Origin === new URL(request.url).origin`（同源 POST，含 L3 `http://127.0.0.1:27045`） |
+| development 但未短路 | 同 production（不得因 loopback 放行） |
+| test | 仅 `https://giraffe.dev.hexly.ai` |
 
-白名单 **不含** `http://127.0.0.1:*`。L2/L3 请求头带上表 Origin，即使打的是 loopback。缺头或其它值 → 403 `origin_forbidden`。403 不得当作该路径唯一 L2 用例。
+生产与 test 白名单 **不含** `http://127.0.0.1:*`。L2 写请求仍手设 `https://giraffe.dev.hexly.ai`，即使打的是 loopback。L3 浏览器不能改 Origin，依赖 development 短路下的同源规则。缺头或其它值 → 403 `origin_forbidden`。403 不得当作该路径唯一 L2 用例。短路判定必须复用 `access.ts`，禁止另写一套，禁止用 `Host` / `X-Forwarded-*`。
 
 ### 5.4 Sanitize
 
@@ -248,6 +249,8 @@ L1：注入 fake fetch；setup 默认 fetch throw（`network denied in L1`）。
 | 源不足 | 409 `snapshot_missing` | 跳过 |
 | ≤2 页 | 写入 | 写入 |
 | 2 页仍超 | 写入能放下的，`truncated: true`，HTTP 200 | **跳过**，不进 `truncated_kinds` |
+
+insights 的「源不足」**只**看 `repos` 与 `issues`：缺行或该源 `truncated: true`。`alerts` 缺行、`unavailable: true` 或 `truncated: true` **不是** insights 源不足：仍写入 insights，`alerts` 字段用已有（可空）数据。否则仓库数 > 10 时 alerts 必截断，insights 永远无法生成。digest 的源不足仍是：无未截断 `repos`，或没有当天 `snapshot_days`。
 
 `["repos","insights"]`：insights 走左列，digest 走右列。禁止把「数组里出现 insights」同时又当隐式。
 
@@ -555,6 +558,6 @@ L2 fixture 仓用 `octocat/hello-world`。
 - 把 fixture PAT 写进仓库非测试路径；L2 fixture 必须是明显假值
 - 生产 schema 含 `_test_marker`
 - 用 `Host` 做 Access 短路
-- Origin 白名单放行 loopback
+- 生产或 test 白名单放行 loopback（development 短路下的同源 POST 除外，见 §5.3）
 - 响应或日志出现 PAT / 信封
 - 未实现 L2 runner 就合并第一个 `/api` 处理函数

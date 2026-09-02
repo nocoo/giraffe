@@ -400,7 +400,7 @@ giraffe/
 
 | 维 | 要求 | 时机 |
 |----|------|------|
-| L1 | `bun run test:coverage`（不是 `bun run test`）；覆盖率 ≥ 95%；薄壳 `routes/*.tsx` 豁免 | pre-commit，<30s |
+| L1 | `bun run test:coverage`（不是 `bun run test`）；覆盖率 ≥ 95%；薄壳豁免见 [02](02-quality.md)（`routes/*.tsx`、Client layout / `main.tsx` / `app.tsx`） | pre-commit，<30s |
 | L2 | 真 HTTP。细则以 [02](02-quality.md) 为准：临时目录 `--env-file`、绝对 persist、套件 A/B 两次启动、GitHub 仅 `GITHUB_API_BASE` | pre-push，<3min |
 | L3 | 先 `vite build`，其余隔离同 02。阶段 2 | CI / 按需 |
 | G1 | `tsc` + `biome` + `gate:test-skip` + `gate:wrangler-vars` + `gate:github-fetch` + `gate:client-fetch` | pre-commit |
