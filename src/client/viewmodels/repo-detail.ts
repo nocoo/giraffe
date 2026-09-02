@@ -40,6 +40,42 @@ export type RepoTraffic = {
 	clones: { count: number; uniques: number; points: TrafficPoint[] };
 };
 
+export type ActionRun = {
+	id: number;
+	name: string;
+	html_url: string;
+	status: string;
+	conclusion: string | null;
+	event: string;
+	head_branch: string | null;
+	created_at: string;
+	updated_at: string;
+};
+
+export type RepoActions = {
+	account_id: string;
+	fetched_at: string;
+	truncated: boolean;
+	runs: ActionRun[];
+};
+
+export type RepoRelease = {
+	id: number;
+	tag_name: string;
+	name: string | null;
+	html_url: string;
+	draft: boolean;
+	prerelease: boolean;
+	published_at: string | null;
+};
+
+export type RepoReleases = {
+	account_id: string;
+	fetched_at: string;
+	truncated: boolean;
+	releases: RepoRelease[];
+};
+
 export type RepoDetails = {
 	account_id: string;
 	fetched_at: string;

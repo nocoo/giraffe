@@ -11,13 +11,23 @@ import {
 import { AreaChart } from "@nocoo/basalt/charts/area";
 import { Empty } from "@nocoo/basalt/components/empty";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+} from "@nocoo/basalt/components/table";
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router";
 import { requestRefresh } from "../viewmodels/refresh";
 import {
 	isValidRepoPart,
 	loadRepoTab,
+	type RepoActions,
 	type RepoDetails,
+	type RepoReleases,
 	type RepoSecurity,
 	type RepoTab,
 	type RepoTraffic,
@@ -26,6 +36,28 @@ import {
 	trafficForbidden,
 	trafficPoints,
 } from "../viewmodels/repo-detail";
+
+async function fetchTab<T extends object>(
+	owner: string,
+	name: string,
+	tab: RepoTab,
+	auto: Set<string>,
+): Promise<T | { missing: true }> {
+	const first = await loadRepoTab<T>(owner, name, tab);
+	if ("invalid" in first) {
+		return { missing: true };
+	}
+	if ("missing" in first && !auto.has(tab)) {
+		auto.add(tab);
+		await requestRefresh(repoKind(owner, name, tab));
+		const again = await loadRepoTab<T>(owner, name, tab);
+		if ("invalid" in again || "missing" in again) {
+			return { missing: true };
+		}
+		return again;
+	}
+	return first;
+}
 
 export function RepoDetailPage() {
 	const params = useParams();
@@ -38,6 +70,8 @@ export function RepoDetailPage() {
 	);
 	const [security, setSecurity] = useState<RepoSecurity | { missing: true } | null>(null);
 	const [traffic, setTraffic] = useState<RepoTraffic | { missing: true } | null>(null);
+	const [actions, setActions] = useState<RepoActions | { missing: true } | null>(null);
+	const [releases, setReleases] = useState<RepoReleases | { missing: true } | null>(null);
 	const refreshed = useRef(new Set<string>());
 
 	useEffect(() => {
@@ -61,34 +95,16 @@ export function RepoDetailPage() {
 			return;
 		}
 		if (tab === "security") {
-			void loadRepoTab<RepoSecurity>(owner, name, "security").then(async (next) => {
-				if ("invalid" in next) {
-					return;
-				}
-				if ("missing" in next && !refreshed.current.has("security")) {
-					refreshed.current.add("security");
-					await requestRefresh(repoKind(owner, name, "security"));
-					const again = await loadRepoTab<RepoSecurity>(owner, name, "security");
-					setSecurity("invalid" in again ? { missing: true } : again);
-					return;
-				}
-				setSecurity("invalid" in next ? { missing: true } : next);
-			});
+			void fetchTab<RepoSecurity>(owner, name, "security", refreshed.current).then(setSecurity);
 		}
 		if (tab === "traffic") {
-			void loadRepoTab<RepoTraffic>(owner, name, "traffic").then(async (next) => {
-				if ("invalid" in next) {
-					return;
-				}
-				if ("missing" in next && !refreshed.current.has("traffic")) {
-					refreshed.current.add("traffic");
-					await requestRefresh(repoKind(owner, name, "traffic"));
-					const again = await loadRepoTab<RepoTraffic>(owner, name, "traffic");
-					setTraffic("invalid" in again ? { missing: true } : again);
-					return;
-				}
-				setTraffic("invalid" in next ? { missing: true } : next);
-			});
+			void fetchTab<RepoTraffic>(owner, name, "traffic", refreshed.current).then(setTraffic);
+		}
+		if (tab === "actions") {
+			void fetchTab<RepoActions>(owner, name, "actions", refreshed.current).then(setActions);
+		}
+		if (tab === "releases") {
+			void fetchTab<RepoReleases>(owner, name, "releases", refreshed.current).then(setReleases);
 		}
 	}, [owner, name, valid, tab]);
 
@@ -134,13 +150,23 @@ export function RepoDetailPage() {
 								return loadRepoTab<RepoDetails>(owner, name, "details").then(setSnap);
 							}
 							if (tab === "security") {
-								return loadRepoTab<RepoSecurity>(owner, name, "security").then((next) => {
-									setSecurity("invalid" in next ? { missing: true } : next);
-								});
+								return fetchTab<RepoSecurity>(owner, name, "security", refreshed.current).then(
+									setSecurity,
+								);
 							}
-							return loadRepoTab<RepoTraffic>(owner, name, "traffic").then((next) => {
-								setTraffic("invalid" in next ? { missing: true } : next);
-							});
+							if (tab === "actions") {
+								return fetchTab<RepoActions>(owner, name, "actions", refreshed.current).then(
+									setActions,
+								);
+							}
+							if (tab === "releases") {
+								return fetchTab<RepoReleases>(owner, name, "releases", refreshed.current).then(
+									setReleases,
+								);
+							}
+							return fetchTab<RepoTraffic>(owner, name, "traffic", refreshed.current).then(
+								setTraffic,
+							);
 						});
 					}}
 				>
@@ -151,6 +177,8 @@ export function RepoDetailPage() {
 				<TabsList>
 					<TabsTrigger value="details">概览</TabsTrigger>
 					<TabsTrigger value="security">Security</TabsTrigger>
+					<TabsTrigger value="actions">Actions</TabsTrigger>
+					<TabsTrigger value="releases">Releases</TabsTrigger>
 					<TabsTrigger value="traffic">Traffic</TabsTrigger>
 				</TabsList>
 				<TabsContent value="details">
@@ -171,6 +199,72 @@ export function RepoDetailPage() {
 								</a>
 							</p>
 						</div>
+					) : null}
+				</TabsContent>
+				<TabsContent value="actions">
+					{actions && "missing" in actions ? (
+						<Empty title="没有快照" />
+					) : actions && actions.runs.length === 0 ? (
+						<Empty title="没有 workflow runs" />
+					) : actions ? (
+						<Table>
+							<TableHeader>
+								<TableRow>
+									<TableHead>name</TableHead>
+									<TableHead>status</TableHead>
+									<TableHead>conclusion</TableHead>
+									<TableHead>event</TableHead>
+									<TableHead>branch</TableHead>
+								</TableRow>
+							</TableHeader>
+							<TableBody>
+								{actions.runs.map((run) => (
+									<TableRow key={run.id}>
+										<TableCell>
+											<a href={run.html_url} target="_blank" rel="noreferrer">
+												{run.name}
+											</a>
+										</TableCell>
+										<TableCell>{run.status}</TableCell>
+										<TableCell>
+											<Badge>{run.conclusion ?? "—"}</Badge>
+										</TableCell>
+										<TableCell>{run.event}</TableCell>
+										<TableCell>{run.head_branch ?? "—"}</TableCell>
+									</TableRow>
+								))}
+							</TableBody>
+						</Table>
+					) : null}
+				</TabsContent>
+				<TabsContent value="releases">
+					{releases && "missing" in releases ? (
+						<Empty title="没有快照" />
+					) : releases && releases.releases.length === 0 ? (
+						<Empty title="没有 Release" />
+					) : releases ? (
+						<Table>
+							<TableHeader>
+								<TableRow>
+									<TableHead>tag</TableHead>
+									<TableHead>时间</TableHead>
+									<TableHead>prerelease</TableHead>
+								</TableRow>
+							</TableHeader>
+							<TableBody>
+								{releases.releases.map((row) => (
+									<TableRow key={row.id}>
+										<TableCell>
+											<a href={row.html_url} target="_blank" rel="noreferrer">
+												{row.tag_name}
+											</a>
+										</TableCell>
+										<TableCell>{row.published_at ?? "—"}</TableCell>
+										<TableCell>{row.prerelease ? "是" : "否"}</TableCell>
+									</TableRow>
+								))}
+							</TableBody>
+						</Table>
 					) : null}
 				</TabsContent>
 				<TabsContent value="security">
