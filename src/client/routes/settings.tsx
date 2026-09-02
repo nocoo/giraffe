@@ -20,6 +20,7 @@ import {
 	type PublicAccount,
 } from "../viewmodels/accounts";
 import { displayName, loadMe, type MeIdentity } from "../viewmodels/me";
+import { refreshInFlight, requestRefresh } from "../viewmodels/refresh";
 
 export function SettingsPage() {
 	const [token, setToken] = useState("");
@@ -80,9 +81,21 @@ export function SettingsPage() {
 						passwordManagerIgnore
 					/>
 				</Field>
-				<Button type="submit" data-testid="pat-submit">
-					添加账号
-				</Button>
+				<div className="flex gap-2">
+					<Button type="submit" data-testid="pat-submit">
+						添加账号
+					</Button>
+					<Button
+						type="button"
+						variant="secondary"
+						disabled={refreshInFlight()}
+						onClick={() => {
+							void requestRefresh("all").then(() => reload());
+						}}
+					>
+						刷新全部
+					</Button>
+				</div>
 			</form>
 			<Table>
 				<TableHeader>

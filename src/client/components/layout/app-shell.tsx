@@ -1,4 +1,5 @@
 import {
+	Button,
 	CommandEmpty,
 	CommandGroup,
 	CommandInput,
@@ -26,6 +27,7 @@ import {
 	GitPullRequest,
 	Inbox,
 	Newspaper,
+	PanelLeft,
 	Settings,
 	ShieldAlert,
 } from "lucide-react";
@@ -33,6 +35,7 @@ import { type ReactNode, useEffect, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router";
 import { APP_VERSION } from "../../../lib/version";
 import { breadcrumbsFor, NAV_ITEMS, paletteItems } from "../../lib/navigation";
+import { displayName, loadMe, type MeIdentity } from "../../viewmodels/me";
 import { cachedRepoRows } from "../../viewmodels/repos";
 
 const ICONS: Record<string, ReactNode> = {
@@ -85,6 +88,20 @@ function SideNav() {
 	);
 }
 
+function CollapseButton() {
+	const { collapsed, setCollapsed } = useSidebar();
+	return (
+		<Button
+			type="button"
+			variant="ghost"
+			aria-label={collapsed ? "展开侧栏" : "折叠侧栏"}
+			onClick={() => setCollapsed(!collapsed)}
+		>
+			<PanelLeft className="h-4 w-4" strokeWidth={1.5} />
+		</Button>
+	);
+}
+
 function Palette() {
 	const navigate = useNavigate();
 	const [open, setOpen] = useState(false);
@@ -128,8 +145,14 @@ function Palette() {
 export function AppShell() {
 	const location = useLocation();
 	const crumbs = breadcrumbsFor(location.pathname);
+	const [me, setMe] = useState<MeIdentity | null>(null);
+	useEffect(() => {
+		void loadMe()
+			.then(setMe)
+			.catch(() => undefined);
+	}, []);
 	return (
-		<SidebarProvider defaultWidth={260}>
+		<SidebarProvider defaultWidth={260} peek>
 			<AppSkipLink>跳到主内容</AppSkipLink>
 			<Shell>
 				<Sidebar>
@@ -138,19 +161,21 @@ export function AppShell() {
 						<span className="rounded-md bg-basalt-secondary px-1.5 py-0.5 font-mono text-[10px]">
 							v{APP_VERSION}
 						</span>
+						<CollapseButton />
 					</SidebarHeader>
 					<SideNav />
 					<SidebarFooter>
 						<SidebarUser
-							name="Giraffe"
-							email={`v${APP_VERSION}`}
+							name={me ? displayName(me) : "Giraffe"}
+							email={me?.email ?? `v${APP_VERSION}`}
 							action={<ThemeToggle aria-label="切换主题" />}
 						/>
 					</SidebarFooter>
 				</Sidebar>
 				<AppMain tabIndex={-1}>
 					<Palette />
-					<header className="flex h-14 shrink-0 items-center px-4 md:px-6">
+					<header className="flex h-14 shrink-0 items-center gap-2 px-4 md:px-6">
+						<CollapseButton />
 						<Breadcrumbs items={crumbs.map((item) => ({ href: item.href, label: item.label }))} />
 					</header>
 					<ContentIsland>

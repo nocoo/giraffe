@@ -20,6 +20,6 @@ jobs:
       enable-l2: "true"
       l2-command: "bun run test:e2e:api"
       enable-l3: "true"
-      l3-command: "./node_modules/.bin/playwright install --with-deps chromium && bun run test:e2e:bdd"
+      l3-command: "bun run test:e2e:bdd"
       l3-browser: "chromium"
     secrets: inherit

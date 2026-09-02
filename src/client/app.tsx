@@ -2,6 +2,7 @@ import { LinkProvider, ThemeProvider, Toaster } from "@nocoo/basalt";
 import type { ReactNode } from "react";
 import { BrowserRouter, Link, Route, Routes } from "react-router";
 import { AppShell } from "./components/layout/app-shell";
+import { APP_PATHS } from "./lib/routes";
 import { AlertsPage } from "./routes/alerts";
 import { DigestPage } from "./routes/digest";
 import { InboxPage } from "./routes/inbox";
@@ -32,6 +33,18 @@ function RouterLink({
 	);
 }
 
+const PAGES: Record<(typeof APP_PATHS)[number], ReactNode> = {
+	"/": <ReposPage />,
+	"/issues": <IssuesPage />,
+	"/pulls": <PullsPage />,
+	"/insights": <InsightsPage />,
+	"/alerts": <AlertsPage />,
+	"/inbox": <InboxPage />,
+	"/digest": <DigestPage />,
+	"/repos/:owner/:name": <RepoDetailPage />,
+	"/settings": <SettingsPage />,
+};
+
 export function App() {
 	return (
 		<ThemeProvider>
@@ -40,15 +53,9 @@ export function App() {
 					<Toaster />
 					<Routes>
 						<Route element={<AppShell />}>
-							<Route path="/" element={<ReposPage />} />
-							<Route path="/issues" element={<IssuesPage />} />
-							<Route path="/pulls" element={<PullsPage />} />
-							<Route path="/insights" element={<InsightsPage />} />
-							<Route path="/alerts" element={<AlertsPage />} />
-							<Route path="/inbox" element={<InboxPage />} />
-							<Route path="/digest" element={<DigestPage />} />
-							<Route path="/repos/:owner/:name" element={<RepoDetailPage />} />
-							<Route path="/settings" element={<SettingsPage />} />
+							{APP_PATHS.map((path) => (
+								<Route key={path} path={path} element={PAGES[path]} />
+							))}
 							<Route path="*" element={<NotFoundPage />} />
 						</Route>
 					</Routes>

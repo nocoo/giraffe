@@ -56,8 +56,9 @@ async function fetchTab<T extends object>(
 	if ("invalid" in first) {
 		return { missing: true };
 	}
-	if ("missing" in first && !auto.has(tab)) {
-		auto.add(tab);
+	const key = `${owner}/${name}:${tab}`;
+	if ("missing" in first && !auto.has(key)) {
+		auto.add(key);
 		await requestRefresh(repoKind(owner, name, tab));
 		const again = await loadRepoTab<T>(owner, name, tab);
 		if ("invalid" in again || "missing" in again) {
@@ -95,8 +96,8 @@ export function RepoDetailPage() {
 			return;
 		}
 		void loadRepoTab<RepoDetails>(owner, name, "details").then(async (next) => {
-			if ("missing" in next && !refreshed.current.has("details")) {
-				refreshed.current.add("details");
+			if ("missing" in next && !refreshed.current.has(`${owner}/${name}:details`)) {
+				refreshed.current.add(`${owner}/${name}:details`);
 				await requestRefresh(repoKind(owner, name, "details"));
 				setSnap(await loadRepoTab<RepoDetails>(owner, name, "details"));
 				return;
