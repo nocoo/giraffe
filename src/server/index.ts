@@ -2,7 +2,7 @@ import { type Context, Hono } from "hono";
 import { type AppVars, type Env, envMode } from "./env";
 import { createDb } from "./lib/db/d1";
 import { jsonError, toErrorResponse } from "./lib/errors";
-import { resolveIdentity } from "./middleware/access";
+import { accessBypass, resolveIdentity } from "./middleware/access";
 import { assertOrigin } from "./middleware/origin";
 import { activateAccount, getAccounts, postAccount, removeAccount } from "./routes/accounts";
 import { liveResponse } from "./routes/live";
@@ -51,7 +51,7 @@ export function createApp(): Hono<{ Bindings: Env; Variables: AppVars }> {
 		const liveGet = c.req.path === "/api/live" && c.req.raw.method === "GET";
 		if (!liveGet) {
 			c.set("identity", await resolveIdentity(c.req.raw, c.env));
-			assertOrigin(c.req.raw, envMode(c.env.ENVIRONMENT));
+			assertOrigin(c.req.raw, envMode(c.env.ENVIRONMENT), accessBypass(c.env));
 		}
 		await next();
 	});

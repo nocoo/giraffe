@@ -29,4 +29,36 @@ describe("origin", () => {
 		assertOrigin(new Request("http://x/api/repos", { method: "HEAD" }), "production");
 		assertOrigin(new Request("http://x/api/repos", { method: "OPTIONS" }), "development");
 	});
+
+	it("allows same-origin posts when access bypass is on and rejects them in production", () => {
+		const same = "http://127.0.0.1:27045";
+		assertOrigin(
+			new Request(`${same}/api/refresh`, {
+				method: "POST",
+				headers: { Origin: same },
+			}),
+			"development",
+			true,
+		);
+		expect(() =>
+			assertOrigin(
+				new Request(`${same}/api/refresh`, {
+					method: "POST",
+					headers: { Origin: same },
+				}),
+				"development",
+				false,
+			),
+		).toThrow(ApiError);
+		expect(() =>
+			assertOrigin(
+				new Request(`${same}/api/refresh`, {
+					method: "POST",
+					headers: { Origin: same },
+				}),
+				"production",
+				true,
+			),
+		).toThrow(ApiError);
+	});
 });

@@ -8,7 +8,7 @@ export function allowedOrigin(mode: EnvMode): string {
 	return "https://giraffe.dev.hexly.ai";
 }
 
-export function assertOrigin(request: Request, mode: EnvMode): void {
+export function assertOrigin(request: Request, mode: EnvMode, bypass = false): void {
 	if (request.method === "GET" || request.method === "HEAD") {
 		return;
 	}
@@ -16,9 +16,16 @@ export function assertOrigin(request: Request, mode: EnvMode): void {
 		return;
 	}
 	const origin = request.headers.get("Origin");
-	if (!origin || origin !== allowedOrigin(mode)) {
+	if (!origin) {
 		throw new ApiError(403, "origin_forbidden", "origin not allowed");
 	}
+	if (origin === allowedOrigin(mode)) {
+		return;
+	}
+	if (bypass && mode === "development" && origin === new URL(request.url).origin) {
+		return;
+	}
+	throw new ApiError(403, "origin_forbidden", "origin not allowed");
 }
 
 export function originFromEnv(environment: string | undefined): string {
