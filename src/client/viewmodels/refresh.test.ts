@@ -73,6 +73,41 @@ describe("refresh coordinator", () => {
 		expect(refreshInFlight()).toBe(false);
 	});
 
+	it("wraps a single repo kind string as an array", async () => {
+		setActiveAccountId("acc1");
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+			const url = String(input);
+			if (url === "/api/refresh") {
+				expect(JSON.parse(String(init?.body)).kinds).toEqual(["repo:octocat/hello-world:details"]);
+				return Response.json({
+					account_id: "acc1",
+					description: "A demo repo",
+				});
+			}
+			if (url === "/api/insights" || url === "/api/digest") {
+				return new Response(JSON.stringify({ error: { code: "snapshot_missing", message: "n" } }), {
+					status: 409,
+					headers: { "content-type": "application/json" },
+				});
+			}
+			throw new Error(url);
+		});
+		const body = await requestRefresh("repo:octocat/hello-world:details");
+		expect(body?.description).toBe("A demo repo");
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+			const url = String(input);
+			if (url === "/api/refresh") {
+				expect(JSON.parse(String(init?.body)).kinds).toBe("all");
+				return Response.json({ account_id: "acc1", kinds: ["repos"] });
+			}
+			if (url === "/api/insights" || url === "/api/digest") {
+				return Response.json({ account_id: "acc1" });
+			}
+			throw new Error(url);
+		});
+		expect((await requestRefresh("all"))?.kinds).toEqual(["repos"]);
+	});
+
 	it("does not refetch insights when kinds already include them", async () => {
 		setActiveAccountId("acc1");
 		const urls: string[] = [];

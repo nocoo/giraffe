@@ -55,7 +55,7 @@ async function execute(
 	}
 	const body: { account_id: string; kinds?: string | string[] } = { account_id: stamp };
 	if (kinds !== undefined) {
-		body.kinds = kinds;
+		body.kinds = kinds === "all" || Array.isArray(kinds) ? kinds : [kinds];
 	}
 	const result = await apiPost<RefreshBody>("refresh", body);
 	await followUp(stamp, result);
