@@ -2,6 +2,7 @@ import { LinkProvider, ThemeProvider, Toaster } from "@nocoo/basalt";
 import type { ReactNode } from "react";
 import { BrowserRouter, Link, Route, Routes } from "react-router";
 import { AppShell } from "./components/layout/app-shell";
+import { AlertsPage } from "./routes/alerts";
 import { InsightsPage } from "./routes/insights";
 import { IssuesPage } from "./routes/issues";
 import { PullsPage } from "./routes/pulls";
@@ -39,6 +40,7 @@ export function App() {
 							<Route path="/issues" element={<IssuesPage />} />
 							<Route path="/pulls" element={<PullsPage />} />
 							<Route path="/insights" element={<InsightsPage />} />
+							<Route path="/alerts" element={<AlertsPage />} />
 							<Route path="/settings" element={<SettingsPage />} />
 						</Route>
 					</Routes>
