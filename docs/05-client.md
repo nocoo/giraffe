@@ -227,7 +227,7 @@ async function send(resource: string, init?: RequestInit): Promise<Response> {
 | `validation_failed` 400 | 设置页或其它字段错；服务端非法 owner 也是这个 code |
 | `method_not_allowed` 405 | toast（不应被 UI 走到） |
 | `account_missing` 409 | 横幅 + 链到 `/settings` |
-| `account_conflict` 409 | `ensureSession()` 后重试或提示账号已切换；不得把该次写当成功 |
+| `account_conflict` 409 | toast「账号已切换」+ `ensureSession()`；**不**自动重放该写 |
 | `snapshot_missing` 409 | 该页 `Empty` +「刷新」按钮（§7 对应 kind） |
 | `capability_missing` 409 | toast，缺 notifications scope |
 | `scopes_missing` 400 | 设置页字段错 |
@@ -249,9 +249,9 @@ Server 不调度。Client 只经 `viewmodels/refresh.ts` 调 `POST /api/refresh`
 - 锁在模块而非 hook。路由卸载不清空锁。
 - Client 持有 `activeAccountId`。`ensureSession()`（`viewmodels/session.ts`）在任何快照 GET/refresh **之前每次**调用：`GET /api/accounts`，取 `is_active` 行的 `id`（没有则 `account_missing`）。同一事件循环内可复用这次结果（禁止跨请求长缓存）。若返回的 id 与本地不同：更新 stamp、清空该旧 id 缓存。这样另一 Tab activate 后本 Tab 下一次读不会把新账号数据写入旧缓存。
 - `POST /api/accounts` 201：用响应体 `id` **先**写入 `activeAccountId`（若 `is_active`），再入队 refresh。禁止还没 stamp 就刷 repos。
-- `POST /api/refresh`、`/api/notifications/read`、`read-all` 的 JSON **必带** `account_id`（当前 stamp）。04：与 active 不符 → 409 `account_conflict`，Client 则 `ensureSession()` 并不把该次当成功。这把 ensureSession 与 POST 之间的跨 Tab 窗口变成服务器拒绝，而不是写到错账号。
+- `POST /api/refresh`、`/api/notifications/read`、`read-all` 的 JSON **必带** `account_id`（当前 stamp）。缺字段 → 400。与 active 不符 → 409 `account_conflict`：只 `ensureSession()` + toast，**不得**自动重放该写操作（避免把原账号的已读施加到新账号）。
 - 快照缓存按该 id 隔离；id 变化则清空缓存。
-- 入队时盖上当时的 `activeAccountId`。`POST /api/refresh` 仍不带账号 id（04）。
+- 入队时盖上当时的 `activeAccountId`，发出的 body 带同一 id。
 - **发出前**、**应用 payload 前**、**补读 GET 前**：stamp 必须等于此刻 `activeAccountId`，否则丢弃（含 A 在途切到 B：A 的 body 不得写入 B 缓存，也不得用 B 的身份去补读）。快照 GET / 单 kind refresh 的 body 含 `account_id`（03）：若 ≠ stamp，丢弃并再 `ensureSession()`。这关掉 ensureSession 与随后 GET 之间的 TOCTOU。
 - **等价**（同一 stamp + 规范化相同 kinds）合并为同一 in-flight Promise。
 - **不等价**且 stamp 仍是当前账号：FIFO 排队。
@@ -337,7 +337,7 @@ HTTP **200** 体有两种（04）：
 
 ### 8.5 `/inbox`
 
-表：未读、仓、title、reason、时间。行内「已读」→ `POST /api/notifications/read` `{ id }`（id 为数字字符串）。工具条「全部已读」→ `POST /api/notifications/read-all`。无快照 409 不打 GitHub（04）。成功后 body 即新 notifications 快照，ViewModel 替换。
+表：未读、仓、title、reason、时间。行内「已读」→ `POST /api/notifications/read` `{ id, account_id }`（id 为数字字符串）。工具条「全部已读」→ `POST /api/notifications/read-all` `{ account_id }`。无快照 409 不打 GitHub（04）。成功后 body 即新 notifications 快照，ViewModel 替换。
 
 ### 8.6 `/digest`
 
@@ -402,7 +402,7 @@ export function breadcrumbsFor(pathname: string): { href: string; label: string 
 
 | 模块 | 例子 |
 |------|------|
-| `api.ts` | 注入 fetch：模板 URL 以 `/api/` 开头、信封抛 `ApiError`、204、成功无 error 字段 |
+| `api.ts` | 注入 fetch：模板 URL 以 `/api/` 开头、信封抛 `ApiError`、204、成功无 error 字段；refresh/read/read-all 的 body 含 `account_id` |
 | `refresh.ts` | 合并等价；排队不等价；账号切换丢弃并补跑；单 kind 200 用 payload；多 kind 再 GET；`["repos"]` 之后 GET digest；硬失败不更新缓存；默认 kinds 不含显式 insights/digest |
 | `accounts` | 提交后 token 空串；列表不含 ciphertext；`is_active === false` 不 refresh；activate / delete 归约 |
 | `me` | 短路身份字段映射 |
