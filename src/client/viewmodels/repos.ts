@@ -83,12 +83,21 @@ export function alertsIncomplete(insights: InsightsSnapshot | null): boolean {
 	return insights?.alerts_incomplete === true;
 }
 
+let remembered: ReposSnapshot | null = null;
+
+export function cachedRepoRows(): RepoRow[] {
+	return remembered?.repos ?? [];
+}
+
 export async function loadRepos(): Promise<ReposSnapshot | { missing: true }> {
 	await ensureSession();
 	try {
-		return await apiGet<ReposSnapshot>("repos");
+		const snap = await apiGet<ReposSnapshot>("repos");
+		remembered = snap;
+		return snap;
 	} catch (err) {
 		if (err instanceof ApiError && err.code === "snapshot_missing") {
+			remembered = null;
 			return { missing: true };
 		}
 		throw err;

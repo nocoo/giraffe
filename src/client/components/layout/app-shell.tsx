@@ -1,4 +1,10 @@
 import {
+	CommandEmpty,
+	CommandGroup,
+	CommandInput,
+	CommandItem,
+	CommandList,
+	CommandPalette,
 	ContentIsland,
 	Sidebar,
 	SidebarFooter,
@@ -23,10 +29,11 @@ import {
 	Settings,
 	ShieldAlert,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router";
 import { APP_VERSION } from "../../../lib/version";
-import { breadcrumbsFor, NAV_ITEMS } from "../../lib/navigation";
+import { breadcrumbsFor, NAV_ITEMS, paletteItems } from "../../lib/navigation";
+import { cachedRepoRows } from "../../viewmodels/repos";
 
 const ICONS: Record<string, ReactNode> = {
 	Box: <Box className="h-4 w-4" strokeWidth={1.5} />,
@@ -78,6 +85,46 @@ function SideNav() {
 	);
 }
 
+function Palette() {
+	const navigate = useNavigate();
+	const [open, setOpen] = useState(false);
+	const items = paletteItems(cachedRepoRows());
+
+	useEffect(() => {
+		function onKey(event: KeyboardEvent) {
+			if ((event.metaKey || event.ctrlKey) && event.key === "k") {
+				event.preventDefault();
+				setOpen(true);
+			}
+		}
+		window.addEventListener("keydown", onKey);
+		return () => window.removeEventListener("keydown", onKey);
+	}, []);
+
+	return (
+		<CommandPalette open={open} onOpenChange={setOpen}>
+			<CommandInput placeholder="搜索页面或仓库" />
+			<CommandList>
+				<CommandEmpty>没有匹配项</CommandEmpty>
+				<CommandGroup heading="导航">
+					{items.map((item) => (
+						<CommandItem
+							key={item.href}
+							value={`${item.label} ${item.href}`}
+							onSelect={() => {
+								setOpen(false);
+								navigate(item.href);
+							}}
+						>
+							{item.label}
+						</CommandItem>
+					))}
+				</CommandGroup>
+			</CommandList>
+		</CommandPalette>
+	);
+}
+
 export function AppShell() {
 	const location = useLocation();
 	const crumbs = breadcrumbsFor(location.pathname);
@@ -102,6 +149,7 @@ export function AppShell() {
 					</SidebarFooter>
 				</Sidebar>
 				<AppMain tabIndex={-1}>
+					<Palette />
 					<header className="flex h-14 shrink-0 items-center px-4 md:px-6">
 						<Breadcrumbs items={crumbs.map((item) => ({ href: item.href, label: item.label }))} />
 					</header>

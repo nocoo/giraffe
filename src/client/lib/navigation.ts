@@ -11,6 +11,24 @@ export const NAV_ITEMS: readonly NavItem[] = [
 	{ href: "/settings", label: "设置", icon: "Settings" },
 ];
 
+export type PaletteItem = { href: string; label: string };
+
+export function paletteItems(
+	repos: { name_with_owner: string; owner_login: string; name: string }[] | null,
+): PaletteItem[] {
+	const items: PaletteItem[] = NAV_ITEMS.map((item) => ({ href: item.href, label: item.label }));
+	if (!repos) {
+		return items;
+	}
+	return [
+		...items,
+		...repos.map((row) => ({
+			href: `/repos/${row.owner_login}/${row.name}`,
+			label: row.name_with_owner,
+		})),
+	];
+}
+
 export function breadcrumbsFor(pathname: string): { href: string; label: string }[] {
 	if (pathname === "/") {
 		return [{ href: "/", label: "仓库" }];

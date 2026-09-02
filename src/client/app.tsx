@@ -7,6 +7,7 @@ import { DigestPage } from "./routes/digest";
 import { InboxPage } from "./routes/inbox";
 import { InsightsPage } from "./routes/insights";
 import { IssuesPage } from "./routes/issues";
+import { NotFoundPage } from "./routes/not-found";
 import { PullsPage } from "./routes/pulls";
 import { RepoDetailPage } from "./routes/repo-detail";
 import { ReposPage } from "./routes/repos";
@@ -48,6 +49,7 @@ export function App() {
 							<Route path="/digest" element={<DigestPage />} />
 							<Route path="/repos/:owner/:name" element={<RepoDetailPage />} />
 							<Route path="/settings" element={<SettingsPage />} />
+							<Route path="*" element={<NotFoundPage />} />
 						</Route>
 					</Routes>
 				</BrowserRouter>

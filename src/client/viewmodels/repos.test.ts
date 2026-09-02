@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	alertsIncomplete,
+	cachedRepoRows,
 	filterRepos,
 	healthMap,
 	loadInsightsOptional,
@@ -93,6 +94,7 @@ describe("repos viewmodel", () => {
 		expect("missing" in snap).toBe(false);
 		if (!("missing" in snap)) {
 			expect(snap.repos).toHaveLength(2);
+			expect(cachedRepoRows()).toHaveLength(2);
 		}
 		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
 			if (String(input) === "/api/accounts") {
@@ -104,6 +106,7 @@ describe("repos viewmodel", () => {
 			});
 		});
 		expect(await loadRepos()).toEqual({ missing: true });
+		expect(cachedRepoRows()).toEqual([]);
 	});
 
 	it("loads optional insights or null when missing", async () => {
