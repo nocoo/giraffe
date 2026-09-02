@@ -250,7 +250,7 @@ L1：注入 fake fetch；setup 默认 fetch throw（`network denied in L1`）。
 | ≤2 页 | 写入 | 写入 |
 | 2 页仍超 | 写入能放下的，`truncated: true`，HTTP 200 | **跳过**，不进 `truncated_kinds` |
 
-insights 的「源不足」**只**看 `repos` 与 `issues`：缺行或该源 `truncated: true`。`alerts` 缺行、`unavailable: true` 或 `truncated: true` **不是** insights 源不足：仍写入 insights，`alerts` 字段用已有（可空）数据。否则仓库数 > 10 时 alerts 必截断，insights 永远无法生成。digest 的源不足仍是：无未截断 `repos`，或没有当天 `snapshot_days`。
+insights 的「源不足」**只**看 `repos` 与 `issues`：缺行或该源 `truncated: true`。`alerts` 缺行、`unavailable: true` 或 `truncated: true` **不是** insights 源不足：仍写入 insights，`alerts` 字段用已有（可空）数据，顶层 `alerts_incomplete: true`（见 03）。否则仓库数 > 10 时 alerts 必截断，insights 永远无法生成。digest 的源不足仍是：无未截断 `repos`，或没有当天 `snapshot_days`。alerts 完整时 `alerts_incomplete: false`。
 
 `["repos","insights"]`：insights 走左列，digest 走右列。禁止把「数组里出现 insights」同时又当隐式。
 
