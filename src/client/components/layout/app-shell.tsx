@@ -273,50 +273,31 @@ function Palette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: b
 	);
 }
 
-function SearchTrigger() {
+function SearchTrigger({ onSearch }: { onSearch: () => void }) {
 	const { collapsed, peeking } = useSidebar();
 	const compact = collapsed && !peeking;
-	const [open, setOpen] = useState(false);
-
-	useEffect(() => {
-		function onKey(event: KeyboardEvent) {
-			if ((event.metaKey || event.ctrlKey) && event.key === "k") {
-				event.preventDefault();
-				setOpen((current) => !current);
-			}
-		}
-		window.addEventListener("keydown", onKey);
-		return () => window.removeEventListener("keydown", onKey);
-	}, []);
-
 	if (compact) {
 		return (
-			<>
-				<Tooltip delayDuration={0}>
-					<TooltipTrigger asChild>
-						<SidebarIconItem className="mb-2" aria-label="搜索 (⌘K)" onClick={() => setOpen(true)}>
-							<Search className="h-4 w-4" strokeWidth={1.5} />
-						</SidebarIconItem>
-					</TooltipTrigger>
-					<TooltipContent side="right" sideOffset={8}>
-						搜索 (⌘K)
-					</TooltipContent>
-				</Tooltip>
-				<Palette open={open} onOpenChange={setOpen} />
-			</>
+			<Tooltip delayDuration={0}>
+				<TooltipTrigger asChild>
+					<SidebarIconItem className="mb-2" aria-label="搜索 (⌘K)" onClick={onSearch}>
+						<Search className="h-4 w-4" strokeWidth={1.5} />
+					</SidebarIconItem>
+				</TooltipTrigger>
+				<TooltipContent side="right" sideOffset={8}>
+					搜索 (⌘K)
+				</TooltipContent>
+			</Tooltip>
 		);
 	}
 	return (
-		<>
-			<div className="px-3 pb-1">
-				<SidebarSearch onClick={() => setOpen(true)}>搜索</SidebarSearch>
-			</div>
-			<Palette open={open} onOpenChange={setOpen} />
-		</>
+		<div className="px-3 pb-1">
+			<SidebarSearch onClick={onSearch}>搜索</SidebarSearch>
+		</div>
 	);
 }
 
-function Rail() {
+function Rail({ onSearch }: { onSearch: () => void }) {
 	const { collapsed, peeking } = useSidebar();
 	const compact = collapsed && !peeking;
 	const [me, setMe] = useState<MeIdentity | null>(null);
@@ -336,14 +317,14 @@ function Rail() {
 				<div className="flex h-screen w-[68px] flex-col items-center">
 					<HeaderBrand />
 					<CollapseButton />
-					<SearchTrigger />
+					<SearchTrigger onSearch={onSearch} />
 					<SideNav />
 					<FooterUser me={me} />
 				</div>
 			) : (
 				<div className="flex h-screen flex-col">
 					<HeaderBrand />
-					<SearchTrigger />
+					<SearchTrigger onSearch={onSearch} />
 					<SideNav />
 					<FooterUser me={me} />
 				</div>
@@ -360,6 +341,17 @@ export function AppShell() {
 	const title = headerTitle(location.pathname);
 	const [accessDenied, setAccessDenied] = useState(false);
 	const [accountMissing, setAccountMissing] = useState(false);
+	const [searchOpen, setSearchOpen] = useState(false);
+	useEffect(() => {
+		function onKey(event: KeyboardEvent) {
+			if ((event.metaKey || event.ctrlKey) && event.key === "k") {
+				event.preventDefault();
+				setSearchOpen((current) => !current);
+			}
+		}
+		window.addEventListener("keydown", onKey);
+		return () => window.removeEventListener("keydown", onKey);
+	}, []);
 	useEffect(() => {
 		return subscribeErrorUi((ui) => {
 			if (ui.kind === "access") {
@@ -391,7 +383,8 @@ export function AppShell() {
 		>
 			<Shell>
 				<AppSkipLink>跳到主内容</AppSkipLink>
-				<Rail />
+				<Rail onSearch={() => setSearchOpen(true)} />
+				<Palette open={searchOpen} onOpenChange={setSearchOpen} />
 				<AppMain tabIndex={-1}>
 					<AppHeader
 						leading={
