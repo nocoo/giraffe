@@ -11,7 +11,7 @@ This file is the **contract**. Hooks, CI, and config are **enforcement**. If the
 | Fact | Where |
 |---|---|
 | Agent handbook | this file |
-| Human docs | `docs/01`–`04` (`05` Client not written). No README.md |
+| Human docs | `docs/01`–`05`. No README.md |
 | Version | `package.json` `"version"` via `src/lib/version.ts` (`APP_VERSION`) |
 | Enforcement | `.husky/*`, `vitest.config.ts`, `scripts/gate-*.ts` |
 | Machine rules | global `AGENTS.md`, `rules/git-commit.md` |
@@ -22,7 +22,7 @@ This file is the **contract**. Hooks, CI, and config are **enforcement**. If the
 
 - Plaintext GitHub PAT may exist only in the settings input (cleared after submit), that request body, Worker memory after decrypt, and the outbound `Authorization` header. Never persist, bundle, log, trace, or return it. D1 stores only the AES-GCM envelope.
 - `workers_dev = false`. App gate is Cloudflare Access JWT (`iss` + `aud` + JWKS). No in-app login.
-- Phase 1 is Server only (`src/server`). No client feature code until docs/05 exists. Server tests must not import `src/client`. L3 is N/A until phase 2. Phase 2 MVVM: viewmodels have no View/DOM imports.
+- Phase 1 is Server only (`src/server`). Client feature code follows [docs/05](docs/05-client.md) after that doc is signed off. Server tests must not import `src/client`. L3 is N/A until phase 2. Phase 2 MVVM: viewmodels have no View/DOM imports.
 - E2E is `--local --persist-to` only. Never remote `giraffe-db`. L2 persist `.wrangler/e2e/` :17045; L3 `.wrangler/e2e-pw/` :27045.
 - Strict TDD: failing tests stay in the working tree; only green L1 commits. `--no-verify` forbidden.
 - Caddy for `giraffe.dev.hexly.ai` is **not** registered yet.
@@ -43,7 +43,7 @@ src/server/   Hono, D1, Access, GitHub
 src/lib/      shared
 scripts/      L2 runner + gates
 tests/api/    L2
-docs/         01–04 (05 unwritten)
+docs/         01–05
 ```
 
 ## Commands

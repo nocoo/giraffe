@@ -4,7 +4,7 @@ Giraffe 是个人 GitHub 监控控制台。仓库 code name 为 `giraffe`。本�
 
 > 返回 [文档目录](README.md)
 
-本文不评估工作量。阶段 1 Server 已落地（`src/server`）。Client 与 docs/05 未写；实现时按本文结构创建，不另开兼容层。
+本文不评估工作量。阶段 1 Server 已落地（`src/server`）。Client 设计见 [05](05-client.md)；实现时按 05，不另开兼容层。
 
 ---
 
@@ -353,14 +353,7 @@ Basalt Gen 2。侧栏展开 260px / 收起 68px。主区浮岛。中文 UI。
 
 单仓不做 Mentions、Dependents。不做顶层 Kanban、顶层 CI Health（CI 放在单仓 Actions）。
 
-文件约定：
-
-- `src/client/components/layout/app-shell.tsx`
-- `src/client/components/layout/sidebar.tsx`
-- `src/client/components/layout/sidebar-context.ts`
-- `src/client/lib/navigation.ts` — 导航数据与渲染分离
-- `src/client/viewmodels/*.ts`
-- `src/client/routes/*.tsx` — 薄壳页面
+文件约定以 [05](05-client.md) 为准。壳组合 `@nocoo/basalt` 的 `AppShell` / `Sidebar` / `ContentIsland`，不自写第二套 sidebar-context，不建 `components/ui/`。
 
 ---
 
@@ -388,8 +381,7 @@ giraffe/
       main.tsx
       routes/
       viewmodels/
-      components/layout/
-      components/ui/
+      components/layout/            # 组合 Basalt 壳，见 05
       lib/api.ts
     lib/                        # 前后端可共享的纯函数
   scripts/
@@ -480,6 +472,6 @@ Client 只通过 HTTP 契约消费 Server。Server 测试不得 import Client。
 | 02 | [质量保证](02-quality.md) | 已写。测试分层、覆盖率、何时跑哪一层 |
 | 03 | [数据 Schema](03-schema.md) | 已写。库表与 JSON 形状 |
 | 04 | [Server 设计](04-server.md) | 已写。全部接口、每接口职责、返回约定、原子化提交步骤 |
-| 05 | Client 设计（未写） | Vite 页面结构与展示形式、拆到原子化提交的步骤。阶段 1 完成且本文 review 后，阶段 2 开工前完成 |
+| 05 | [Client 设计](05-client.md) | 已写。Vite 页面、Basalt 2.0.0-rc 控件、MVVM、原子化提交步骤 |
 
 对应文档未写成并 review 前，不开始该层功能代码。当前 Agent 入口是根目录 `CLAUDE.md`。
