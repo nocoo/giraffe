@@ -93,7 +93,9 @@ Wrangler 生成的绑定类型是 `Env` 的底。`env.ts` 只补充文档化的 
 
 G1 禁止把 `ENVIRONMENT=development` / `test`、`GITHUB_API_BASE`、`ACCESS_JWKS_URL` 写入 `wrangler.toml`。Dashboard / secrets 仍可能误配，因此短路条件不得只看 `ENVIRONMENT`。
 
-**Access 短路**当且仅当：模式为 development **且** 已设 `GITHUB_API_BASE` **且** `CF_ACCESS_TEAM_DOMAIN` 与 `CF_ACCESS_AUD` 都未设置。缺 `GITHUB_API_BASE` 的 development（生产误配）→ **不得短路**，按 production 验 JWT；缺 JWKS 配置则受保护路由 500 `access_misconfigured`。`GET /api/live` 仍公开。
+本机 `wrangler dev --local` 只读 gitignored 的 `.dev.vars`（模板 `dev.vars.example`）。必须含 `ENVIRONMENT=development`、`GITHUB_API_BASE`（本机打真 GitHub 时用 `https://api.github.com`）、`TOKEN_ENCRYPTION_KEY_CURRENT` 与 `TOKEN_ENCRYPTION_KEY_V1`，且不得设 `CF_ACCESS_TEAM_DOMAIN` / `CF_ACCESS_AUD`。缺任一项则 Access 不短路，页面会显示「未通过 Access」。`--local` 使用本机 D1，不是线上 `giraffe-db`。L2/L3 仍只用 runner `--env-file`（套件 A 同样短路；套件 B 验 JWT），不依赖本机 `.dev.vars`。
+
+**Access 短路**当且仅当：模式为 development **且** 已设 `GITHUB_API_BASE` **且** `CF_ACCESS_TEAM_DOMAIN` 与 `CF_ACCESS_AUD` 都未设置。缺 `GITHUB_API_BASE` 的 development（生产误配）→ **不得短路**，按 production 验 JWT；缺 JWKS 配置则受保护路由 500 `access_misconfigured`。`GET /api/live` 仍公开。禁止用 `Host`、`X-Forwarded-*`、域名后缀决定是否短路。
 
 模式行为：
 
