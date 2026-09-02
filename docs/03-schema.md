@@ -251,7 +251,7 @@ CREATE TABLE snapshot_days (
 }
 ```
 
-`health`：`strong` | `watch` | `risky`。`alerts_incomplete: true` 当派生时 alerts 快照缺失、`unavailable: true` 或 `truncated: true`。UI 必须展示「告警不完整」，不得把 `strong` 当成已扫完全部安全告警。
+`health`：`strong` | `watch` | `risky`。`alerts_incomplete: true` 当派生时 alerts 快照缺失、`unavailable: true`、`truncated: true`，或收集时有仓因 403/404/FORBIDDEN 被跳过。UI 必须展示「告警不完整」，不得把 `strong` 当成已扫完全部安全告警。
 
 ### `alerts`
 

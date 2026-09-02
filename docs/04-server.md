@@ -250,7 +250,7 @@ L1：注入 fake fetch；setup 默认 fetch throw（`network denied in L1`）。
 | ≤2 页 | 写入 | 写入 |
 | 2 页仍超 | 写入能放下的，`truncated: true`，HTTP 200 | **跳过**，不进 `truncated_kinds` |
 
-insights 的「源不足」**只**看 `repos` 与 `issues`：缺行或该源 `truncated: true`。`alerts` 缺行、`unavailable: true` 或 `truncated: true` **不是** insights 源不足：仍写入 insights，`alerts` 字段用已有（可空）数据，顶层 `alerts_incomplete: true`（见 03）。否则仓库数 > 10 时 alerts 必截断，insights 永远无法生成。digest 的源不足仍是：无未截断 `repos`，或没有当天 `snapshot_days`。alerts 完整时 `alerts_incomplete: false`。
+insights 的「源不足」**只**看 `repos` 与 `issues`：缺行或该源 `truncated: true`。`alerts` 缺行、`unavailable: true`、`truncated: true`、或收集时**任一仓**因 403/404/FORBIDDEN 被跳过，都**不是** insights 源不足：仍写入 insights，顶层 `alerts_incomplete: true`（见 03）。仅当 alerts 快照存在且 `unavailable === false` 且 `truncated === false` 且没有仓被跳过时 `alerts_incomplete: false`。digest 的源不足仍是：无未截断 `repos`，或没有当天 `snapshot_days`。
 
 `["repos","insights"]`：insights 走左列，digest 走右列。禁止把「数组里出现 insights」同时又当隐式。
 
@@ -475,7 +475,7 @@ L1 必测（注入 DB / fake fetch，无网络、无 wrangler）：
 | `origin` | 缺头 / 错 Origin → 403；GET 不查 Origin |
 | `snapshot-pages` | 切分与组装；单元素过大 `truncated` |
 | `digest` | 邻日差量；无昨天 → `baseline_missing` 且 delta `null` |
-| `insights` | health 三档与 opportunities |
+| `insights` | health 三档与 opportunities；`alerts_incomplete` true（缺/unavailable/truncated/仓跳过）与 false |
 | `errors` / 路由 | 信封；body 超限 400；未知 `/api` 404；已知路径错误方法 405；`onError` → 500 `internal_error` |
 | `createDb` | 第 81 条不 execute；两 store 同一句柄；`last_used_at` 与业务语句同一 batch；默认 `all` 最终 batch 语句数 < 80 |
 | refresh 收集 | 硬失败零写入；第 3 页丢弃不写 `kind#3`；kinds 17 项 → 400；16 项整请求 statement < 80；16 MiB **累计** staged；显式 insights 与 digest 超大；混合数组 truncated_kinds；隐式超大跳过 |

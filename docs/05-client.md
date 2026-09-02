@@ -190,7 +190,7 @@ Basalt `ContentIsland` 已是 `rounded-[16px] bg-basalt-card … ring-1 ring-bas
 每个 `src/client/viewmodels/*.ts`：
 
 - 导出纯函数：把 03 JSON + UI 状态（query、sort、view）变成渲染用的 plain object。
-- 可导出 `useXViewModel()`：只依赖 `react`（`useState` / `useCallback` / `useMemo` / `useEffect` / `useRef`）、`../lib/api.ts`、`./refresh.ts`。初次 GET、取消、账号变化后的重载都在这个 hook 的 `useEffect` 里，不进 route、不进 layout。
+- 可导出 `useXViewModel()`：只依赖 `react`（`useState` / `useCallback` / `useMemo` / `useEffect` / `useRef`）、`../lib/api.ts`、`./refresh.ts`、`./session.ts`。初次 GET 必须先 `ensureSession()`。取消、账号变化后的重载都在这个 hook 的 `useEffect` 里，不进 route、不进 layout。
 - **禁止** import：`react-dom`、`@nocoo/basalt`、`*.tsx`、`document` / `window`（clipboard 纯函数只返回字符串，真正写剪贴板在 route 里用 Basalt `ClipboardText`）。
 - L1 测纯函数与 `refresh.ts` 锁；hook 用 mock 掉的 `api.ts`。不启 Worker。
 
@@ -246,7 +246,7 @@ async function send(resource: string, init?: RequestInit): Promise<Response> {
 Server 不调度。Client 只经 `viewmodels/refresh.ts` 调 `POST /api/refresh`。该模块持有**进程内单例**：
 
 - 锁在模块而非 hook。路由卸载不清空锁。
-- Client 持有 `activeAccountId`。`ensureSession()`（`viewmodels/session.ts`）在任何快照 GET/refresh 之前调用：若尚未有 id 则 `GET /api/accounts`，取 `is_active` 行的 `id`（没有则 `account_missing`）。
+- Client 持有 `activeAccountId`。`ensureSession()`（`viewmodels/session.ts`）在任何快照 GET/refresh **之前每次**调用：`GET /api/accounts`，取 `is_active` 行的 `id`（没有则 `account_missing`）。同一事件循环内可复用这次结果（禁止跨请求长缓存）。若返回的 id 与本地不同：更新 stamp、清空该旧 id 缓存。这样另一 Tab activate 后本 Tab 下一次读不会把新账号数据写入旧缓存。
 - `POST /api/accounts` 201：用响应体 `id` **先**写入 `activeAccountId`（若 `is_active`），再入队 refresh。禁止还没 stamp 就刷 repos。
 - 快照缓存按该 id 隔离；id 变化则清空缓存。
 - 入队时盖上当时的 `activeAccountId`。`POST /api/refresh` 仍不带账号 id（04）。
