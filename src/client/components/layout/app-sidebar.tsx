@@ -41,7 +41,7 @@ import { useLocation, useNavigate } from "react-router";
 import { APP_VERSION } from "../../../lib/version";
 import { reportError } from "../../lib/error-ui";
 import { initials } from "../../lib/format";
-import { NAV_GROUPS, NAV_ITEMS, type NavItem, paletteItems } from "../../lib/navigation";
+import { NAV_GROUPS, NAV_ITEMS, paletteItems } from "../../lib/navigation";
 import { displayName, loadMe, type MeIdentity } from "../../viewmodels/me";
 import { cachedRepoRows } from "../../viewmodels/repos";
 
@@ -72,36 +72,6 @@ function commandSearchMatches(value: string, query: string) {
 	const tokens = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
 	const normalizedValue = value.toLocaleLowerCase();
 	return tokens.every((token) => normalizedValue.includes(token));
-}
-
-function NavItemButton({ item, currentPath }: { item: NavItem; currentPath: string }) {
-	const navigate = useNavigate();
-	return (
-		<SidebarItem active={navActive(currentPath, item.href)} onClick={() => navigate(item.href)}>
-			<NavIcon name={item.icon} />
-			<span className="flex-1 truncate text-left">{item.label}</span>
-		</SidebarItem>
-	);
-}
-
-function CollapsedNavItem({ item, currentPath }: { item: NavItem; currentPath: string }) {
-	const navigate = useNavigate();
-	return (
-		<Tooltip delayDuration={0}>
-			<TooltipTrigger asChild>
-				<SidebarIconItem
-					active={navActive(currentPath, item.href)}
-					aria-label={item.label}
-					onClick={() => navigate(item.href)}
-				>
-					<NavIcon name={item.icon} className="h-4 w-4" />
-				</SidebarIconItem>
-			</TooltipTrigger>
-			<TooltipContent side="right" sideOffset={8}>
-				{item.label}
-			</TooltipContent>
-		</Tooltip>
-	);
 }
 
 export function AppSidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
@@ -163,29 +133,29 @@ export function AppSidebar({ collapsed, onToggle }: { collapsed: boolean; onTogg
 	);
 
 	return (
-		<Sidebar collapsed={collapsed} {...(collapsed ? { className: "overflow-x-hidden" } : {})}>
+		<Sidebar collapsed={collapsed}>
 			{collapsed ? (
-				<div className="flex h-screen w-[68px] flex-col items-center">
+				<>
 					<SidebarHeader className="justify-center px-0">
 						<Binoculars className="h-5 w-5 text-basalt-primary" strokeWidth={1.5} />
 					</SidebarHeader>
 					<Button
 						variant="ghost"
 						size="icon"
+						className="mb-1 self-center"
 						onClick={onToggle}
 						aria-label="展开侧栏"
-						className="mb-1"
 					>
 						<PanelLeft aria-hidden="true" />
 					</Button>
 					<Tooltip delayDuration={0}>
 						<TooltipTrigger asChild>
 							<SidebarIconItem
-								className="mb-2"
+								className="mb-2 self-center"
 								onClick={() => setSearchOpen(true)}
 								aria-label="搜索 (⌘K)"
 							>
-								<Search aria-hidden="true" className="h-4 w-4" strokeWidth={1.5} />
+								<Search className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
 							</SidebarIconItem>
 						</TooltipTrigger>
 						<TooltipContent side="right" sideOffset={8}>
@@ -194,24 +164,38 @@ export function AppSidebar({ collapsed, onToggle }: { collapsed: boolean; onTogg
 					</Tooltip>
 					<SidebarNav className="w-full items-center gap-1 pt-1">
 						{NAV_ITEMS.map((item) => (
-							<CollapsedNavItem key={item.href} item={item} currentPath={pathname} />
+							<Tooltip key={item.href} delayDuration={0}>
+								<TooltipTrigger asChild>
+									<SidebarIconItem
+										active={navActive(pathname, item.href)}
+										aria-label={item.label}
+										className="self-center"
+										onClick={() => navigate(item.href)}
+									>
+										<NavIcon name={item.icon} className="h-4 w-4" />
+									</SidebarIconItem>
+								</TooltipTrigger>
+								<TooltipContent side="right" sideOffset={8}>
+									{item.label}
+								</TooltipContent>
+							</Tooltip>
 						))}
 					</SidebarNav>
 					<SidebarFooter className="flex w-full justify-center px-0">
 						<Tooltip delayDuration={0}>
 							<TooltipTrigger asChild>
-								<span className="inline-flex cursor-pointer">{avatar}</span>
+								<span className="inline-flex">{avatar}</span>
 							</TooltipTrigger>
 							<TooltipContent side="right" sideOffset={8}>
 								{name}
 							</TooltipContent>
 						</Tooltip>
 					</SidebarFooter>
-				</div>
+				</>
 			) : (
-				<div className="flex h-screen w-[260px] flex-col">
+				<>
 					<SidebarHeader>
-						<div className="flex w-full items-center justify-between px-3">
+						<div className="flex w-full items-center justify-between">
 							<div className="flex min-w-0 items-center gap-3">
 								<Binoculars className="h-5 w-5 shrink-0 text-basalt-primary" strokeWidth={1.5} />
 								<span className="truncate text-lg font-semibold text-basalt-foreground md:text-xl">
@@ -241,7 +225,14 @@ export function AppSidebar({ collapsed, onToggle }: { collapsed: boolean; onTogg
 								<SidebarPartition>{group.label}</SidebarPartition>
 								<div className="flex flex-col gap-0.5 px-3">
 									{group.items.map((item) => (
-										<NavItemButton key={item.href} item={item} currentPath={pathname} />
+										<SidebarItem
+											key={item.href}
+											active={navActive(pathname, item.href)}
+											onClick={() => navigate(item.href)}
+										>
+											<NavIcon name={item.icon} />
+											<span className="flex-1 truncate text-left">{item.label}</span>
+										</SidebarItem>
 									))}
 								</div>
 							</div>
@@ -250,7 +241,7 @@ export function AppSidebar({ collapsed, onToggle }: { collapsed: boolean; onTogg
 					<SidebarFooter>
 						<SidebarUser name={name} email={email} avatar={avatar} />
 					</SidebarFooter>
-				</div>
+				</>
 			)}
 			<CommandPalette open={searchOpen} onOpenChange={handleSearchOpenChange} shouldFilter={false}>
 				<CommandInput

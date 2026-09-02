@@ -47,11 +47,7 @@ export function AppShell() {
 	}, [location.pathname]);
 
 	useEffect(() => {
-		if (mobileOpen) {
-			document.body.style.overflow = "hidden";
-		} else {
-			document.body.style.overflow = "";
-		}
+		document.body.style.overflow = mobileOpen ? "hidden" : "";
 		return () => {
 			document.body.style.overflow = "";
 		};
@@ -61,7 +57,7 @@ export function AppShell() {
 		<Shell>
 			<AppSkipLink>跳到主内容</AppSkipLink>
 			{!isMobile ? (
-				<AppSidebar collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
+				<AppSidebar collapsed={collapsed} onToggle={() => setCollapsed((value) => !value)} />
 			) : (
 				<Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
 					<SheetContent

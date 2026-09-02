@@ -24,7 +24,7 @@ function RouterLink({
 	className?: string;
 	children?: ReactNode;
 } & Record<string, unknown>) {
-	if (href.startsWith("https://") || href.startsWith("http://")) {
+	if (/^(https?:|mailto:|tel:)/.test(href)) {
 		return (
 			<a href={href} className={className} {...props}>
 				{children}
