@@ -20,7 +20,10 @@ export function RefreshButton({
 			disabled={busy}
 			onClick={() => {
 				void run()
-					.then(() => {
+					.then((result) => {
+						if (result === false) {
+							return;
+						}
 						toast("已刷新");
 					})
 					.catch(onError);

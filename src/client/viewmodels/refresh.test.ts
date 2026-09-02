@@ -354,6 +354,31 @@ describe("refresh coordinator", () => {
 		await expect(requestRefresh(["issues"])).rejects.toMatchObject({ code: "github_error" });
 	});
 
+	it("clears in-flight state when session loading fails", async () => {
+		setActiveAccountId("acc1");
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+			if (String(input) === "/api/accounts") {
+				throw new Error("session boom");
+			}
+			throw new Error(String(input));
+		});
+		await expect(requestRefresh(["repos"])).rejects.toThrow("session boom");
+		expect(refreshInFlight()).toBe(false);
+	});
+
+	it("drops a started refresh when ensureSession switches accounts", async () => {
+		setActiveAccountId("acc1");
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+			const url = String(input);
+			if (url === "/api/accounts") {
+				return accountsFor("acc2");
+			}
+			throw new Error(url);
+		});
+		expect(await requestRefresh(["repos"])).toBeNull();
+		expect(refreshInFlight()).toBe(false);
+	});
+
 	it("stops applying written kinds after a stamp change", async () => {
 		setActiveAccountId("acc1");
 		let current = "acc1";

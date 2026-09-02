@@ -48,7 +48,7 @@ export function SettingsPage() {
 		return Promise.all([loadMe(), loadAccounts()]).then(([identity, rows]) => {
 			setMe(identity);
 			setAccounts(rows);
-			if (rows.length > 0) {
+			if (rows.some((row) => row.is_active)) {
 				reportOk();
 			}
 		});

@@ -229,12 +229,28 @@ export function RepoDetailPage() {
 				<Empty title={missingTitle(snap)} description="先添加 PAT 或刷新。" />
 				<RefreshButton
 					variant="default"
-					run={() =>
-						requestRefresh(repoKind(owner, name, "details")).then(() =>
-							loadRepoTab<RepoDetails>(owner, name, "details").then(setSnap),
-						)
-					}
-					onError={onLoadError}
+					run={() => {
+						const mine = gen.current;
+						return requestRefresh(repoKind(owner, name, "details"))
+							.then(async () => {
+								if (mine !== gen.current) {
+									return false;
+								}
+								const next = await loadRepoTab<RepoDetails>(owner, name, "details");
+								if (mine !== gen.current) {
+									return false;
+								}
+								setSnap(next);
+								return undefined;
+							})
+							.catch((err: unknown) => {
+								if (mine !== gen.current) {
+									return false;
+								}
+								onLoadError(err);
+								return false;
+							});
+					}}
 				/>
 			</div>
 		);
@@ -283,57 +299,64 @@ export function RepoDetailPage() {
 								}
 							};
 						}
-						return requestRefresh(repoKind(owner, name, tab)).then(() => {
-							if (mine !== gen.current) {
-								return;
-							}
-							if (tab === "details") {
-								return loadRepoTab<RepoDetails>(owner, name, "details").then(
-									applyIfCurrent(setSnap),
+						return requestRefresh(repoKind(owner, name, tab))
+							.then(async () => {
+								if (mine !== gen.current) {
+									return false;
+								}
+								if (tab === "details") {
+									return loadRepoTab<RepoDetails>(owner, name, "details").then(
+										applyIfCurrent(setSnap),
+									);
+								}
+								if (tab === "security") {
+									return fetchTab<RepoSecurity>(owner, name, "security", refreshed.current).then(
+										applyIfCurrent(setSecurity),
+									);
+								}
+								if (tab === "actions") {
+									return fetchTab<RepoActions>(owner, name, "actions", refreshed.current).then(
+										applyIfCurrent(setActions),
+									);
+								}
+								if (tab === "releases") {
+									return fetchTab<RepoReleases>(owner, name, "releases", refreshed.current).then(
+										applyIfCurrent(setReleases),
+									);
+								}
+								if (tab === "issues") {
+									return fetchTab<IssuesSnapshot>(owner, name, "issues", refreshed.current).then(
+										applyIfCurrent(setIssues),
+									);
+								}
+								if (tab === "prs") {
+									return fetchTab<PullsSnapshot>(owner, name, "prs", refreshed.current).then(
+										applyIfCurrent(setPulls),
+									);
+								}
+								if (tab === "languages") {
+									return fetchTab<RepoLanguages>(owner, name, "languages", refreshed.current).then(
+										applyIfCurrent(setLanguages),
+									);
+								}
+								if (tab === "contributors") {
+									return fetchTab<RepoContributors>(
+										owner,
+										name,
+										"contributors",
+										refreshed.current,
+									).then(applyIfCurrent(setContributors));
+								}
+								return fetchTab<RepoTraffic>(owner, name, "traffic", refreshed.current).then(
+									applyIfCurrent(setTraffic),
 								);
-							}
-							if (tab === "security") {
-								return fetchTab<RepoSecurity>(owner, name, "security", refreshed.current).then(
-									applyIfCurrent(setSecurity),
-								);
-							}
-							if (tab === "actions") {
-								return fetchTab<RepoActions>(owner, name, "actions", refreshed.current).then(
-									applyIfCurrent(setActions),
-								);
-							}
-							if (tab === "releases") {
-								return fetchTab<RepoReleases>(owner, name, "releases", refreshed.current).then(
-									applyIfCurrent(setReleases),
-								);
-							}
-							if (tab === "issues") {
-								return fetchTab<IssuesSnapshot>(owner, name, "issues", refreshed.current).then(
-									applyIfCurrent(setIssues),
-								);
-							}
-							if (tab === "prs") {
-								return fetchTab<PullsSnapshot>(owner, name, "prs", refreshed.current).then(
-									applyIfCurrent(setPulls),
-								);
-							}
-							if (tab === "languages") {
-								return fetchTab<RepoLanguages>(owner, name, "languages", refreshed.current).then(
-									applyIfCurrent(setLanguages),
-								);
-							}
-							if (tab === "contributors") {
-								return fetchTab<RepoContributors>(
-									owner,
-									name,
-									"contributors",
-									refreshed.current,
-								).then(applyIfCurrent(setContributors));
-							}
-							return fetchTab<RepoTraffic>(owner, name, "traffic", refreshed.current).then(
-								applyIfCurrent(setTraffic),
-							);
-						});
+							})
+							.catch((err: unknown) => {
+								if (mine !== gen.current) {
+									return false;
+								}
+								throw err;
+							});
 					}}
 					onError={onLoadError}
 				/>

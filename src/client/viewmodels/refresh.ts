@@ -12,11 +12,12 @@ export type RefreshBody = {
 } & Record<string, unknown>;
 
 const jobs = new Map<string, Promise<RefreshBody | null>>();
+const starting = new Map<string, Promise<RefreshBody | null>>();
 let tail: Promise<void> = Promise.resolve();
 const listeners = new Set<() => void>();
 
 export function refreshInFlight(): boolean {
-	return jobs.size > 0;
+	return jobs.size > 0 || starting.size > 0;
 }
 
 export function subscribeRefresh(listener: () => void): () => void {
@@ -34,6 +35,7 @@ function notifyRefresh(): void {
 
 export function clearRefreshQueue(): void {
 	jobs.clear();
+	starting.clear();
 	notifyRefresh();
 }
 
@@ -89,9 +91,6 @@ async function followUp(
 	result: RefreshBody,
 	requested: string | string[] | undefined,
 ): Promise<void> {
-	if (getActiveAccountId() !== stamp) {
-		return;
-	}
 	const current = await ensureSession();
 	if (current !== stamp) {
 		return;
@@ -161,36 +160,55 @@ async function execute(
 
 export function requestRefresh(kinds?: string | string[]): Promise<RefreshBody | null> {
 	const known = getActiveAccountId();
+	const preKey = `${known ?? ""}:${JSON.stringify(normalizeKinds(kinds) ?? null)}`;
 	if (known) {
 		const existing = jobs.get(keyOf(known, kinds));
 		if (existing) {
 			return existing;
 		}
 	}
-	const started: Promise<RefreshBody | null> = ensureSession().then((stamp) => {
-		const key = keyOf(stamp, kinds);
-		const existing = jobs.get(key);
-		if (existing && existing !== started) {
-			return existing;
-		}
-		const job = tail.then(() => execute(stamp, kinds));
-		jobs.set(key, job);
-		notifyRefresh();
-		tail = job.then(
-			() => {
-				jobs.delete(key);
-				notifyRefresh();
-			},
-			() => {
-				jobs.delete(key);
-				notifyRefresh();
-			},
-		);
-		return job;
-	});
-	if (known) {
-		jobs.set(keyOf(known, kinds), started);
-		notifyRefresh();
+	const pendingStart = starting.get(preKey);
+	if (pendingStart) {
+		return pendingStart;
 	}
+	const started: Promise<RefreshBody | null> = ensureSession().then(
+		(stamp) => {
+			starting.delete(preKey);
+			if (known !== null && stamp !== known) {
+				notifyRefresh();
+				return null;
+			}
+			const key = keyOf(stamp, kinds);
+			const existing = jobs.get(key);
+			if (existing) {
+				return existing;
+			}
+			const job = tail.then(() => execute(stamp, kinds));
+			jobs.set(key, job);
+			notifyRefresh();
+			tail = job.then(
+				() => {
+					if (jobs.get(key) === job) {
+						jobs.delete(key);
+						notifyRefresh();
+					}
+				},
+				() => {
+					if (jobs.get(key) === job) {
+						jobs.delete(key);
+						notifyRefresh();
+					}
+				},
+			);
+			return job;
+		},
+		(err: unknown) => {
+			starting.delete(preKey);
+			notifyRefresh();
+			throw err;
+		},
+	);
+	starting.set(preKey, started);
+	notifyRefresh();
 	return started;
 }
