@@ -24,6 +24,7 @@ import { Empty } from "@nocoo/basalt/components/empty";
 import { useSidebar } from "@nocoo/basalt/components/sidebar";
 import {
 	Activity,
+	Binoculars,
 	Box,
 	CircleDot,
 	GitPullRequest,
@@ -92,6 +93,46 @@ function SideNav() {
 	);
 }
 
+function HeaderBrand() {
+	const { collapsed, peeking } = useSidebar();
+	const compact = collapsed && !peeking;
+	return (
+		<SidebarHeader>
+			<Binoculars className="h-4 w-4" aria-hidden strokeWidth={1.5} />
+			{compact ? null : (
+				<>
+					<span className="truncate text-sm font-semibold">Giraffe</span>
+					<span className="rounded-md bg-basalt-secondary px-1.5 py-0.5 font-mono text-[10px]">
+						v{APP_VERSION}
+					</span>
+				</>
+			)}
+			<CollapseButton />
+		</SidebarHeader>
+	);
+}
+
+function FooterUser({ me }: { me: MeIdentity | null }) {
+	const { collapsed, peeking } = useSidebar();
+	const compact = collapsed && !peeking;
+	if (compact) {
+		return (
+			<SidebarFooter>
+				<ThemeToggle aria-label="切换主题" />
+			</SidebarFooter>
+		);
+	}
+	return (
+		<SidebarFooter>
+			<SidebarUser
+				name={me ? displayName(me) : "Giraffe"}
+				email={me?.email ?? `v${APP_VERSION}`}
+				action={<ThemeToggle aria-label="切换主题" />}
+			/>
+		</SidebarFooter>
+	);
+}
+
 function CollapseButton() {
 	const { collapsed, setCollapsed } = useSidebar();
 	return (
@@ -153,7 +194,9 @@ export function AppShell() {
 	const [me, setMe] = useState<MeIdentity | null>(null);
 	const [accessDenied, setAccessDenied] = useState(false);
 	const [accountMissing, setAccountMissing] = useState(false);
-	const [mobile, setMobile] = useState(false);
+	const [mobile, setMobile] = useState(
+		() => typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches,
+	);
 	useEffect(() => {
 		return subscribeErrorUi((ui) => {
 			if (ui.kind === "access") {
@@ -161,6 +204,10 @@ export function AppShell() {
 			}
 			if (ui.kind === "account_missing") {
 				setAccountMissing(true);
+			}
+			if (ui.kind === "ok") {
+				setAccessDenied(false);
+				setAccountMissing(false);
 			}
 		});
 	}, []);
@@ -186,22 +233,9 @@ export function AppShell() {
 			<AppSkipLink>跳到主内容</AppSkipLink>
 			<Shell>
 				<Sidebar>
-					<SidebarHeader>
-						<Box className="h-4 w-4" aria-hidden strokeWidth={1.5} />
-						<span className="truncate text-sm font-semibold">Giraffe</span>
-						<span className="rounded-md bg-basalt-secondary px-1.5 py-0.5 font-mono text-[10px]">
-							v{APP_VERSION}
-						</span>
-						<CollapseButton />
-					</SidebarHeader>
+					<HeaderBrand />
 					<SideNav />
-					<SidebarFooter>
-						<SidebarUser
-							name={me ? displayName(me) : "Giraffe"}
-							email={me?.email ?? `v${APP_VERSION}`}
-							action={<ThemeToggle aria-label="切换主题" />}
-						/>
-					</SidebarFooter>
+					<FooterUser me={me} />
 				</Sidebar>
 				<AppMain tabIndex={-1}>
 					<Palette />

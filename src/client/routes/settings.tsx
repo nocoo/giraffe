@@ -19,7 +19,7 @@ import {
 	TableRow,
 } from "@nocoo/basalt/components/table";
 import { type FormEvent, useEffect, useState, useSyncExternalStore } from "react";
-import { catchLoad, reportError } from "../lib/error-ui";
+import { catchLoad, reportError, reportOk } from "../lib/error-ui";
 import {
 	accountFieldError,
 	activateAccount,
@@ -48,6 +48,9 @@ export function SettingsPage() {
 		return Promise.all([loadMe(), loadAccounts()]).then(([identity, rows]) => {
 			setMe(identity);
 			setAccounts(rows);
+			if (rows.length > 0) {
+				reportOk();
+			}
 		});
 	}
 
@@ -56,6 +59,9 @@ export function SettingsPage() {
 			.then(([identity, rows]) => {
 				setMe(identity);
 				setAccounts(rows);
+				if (rows.length > 0) {
+					reportOk();
+				}
 			})
 			.catch((err: unknown) => {
 				catchLoad(err, toast);

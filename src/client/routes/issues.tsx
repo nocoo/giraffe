@@ -11,7 +11,7 @@ import {
 	TableRow,
 } from "@nocoo/basalt/components/table";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { catchLoad } from "../lib/error-ui";
+import { catchLoad, missingTitle } from "../lib/error-ui";
 import { filterIssues, type IssuesSnapshot, loadIssues } from "../viewmodels/issues";
 import { refreshInFlight, requestRefresh, subscribeRefresh } from "../viewmodels/refresh";
 
@@ -49,7 +49,7 @@ export function IssuesPage() {
 		return (
 			<div className="flex flex-col gap-4">
 				<PageHeader title="Issues" />
-				<Empty title="没有快照" description="先添加 PAT 或刷新。" />
+				<Empty title={missingTitle(snap)} description="先添加 PAT 或刷新。" />
 				<Button
 					type="button"
 					disabled={busy}

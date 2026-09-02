@@ -11,7 +11,7 @@ import {
 } from "@nocoo/basalt/components/table";
 import { useEffect, useState } from "react";
 import { RefreshButton } from "../components/layout/refresh-button";
-import { catchLoad } from "../lib/error-ui";
+import { catchLoad, missingTitle } from "../lib/error-ui";
 import { loadInbox, markRead, markReadAll, type NotificationsSnapshot } from "../viewmodels/inbox";
 import { requestRefresh } from "../viewmodels/refresh";
 
@@ -40,7 +40,7 @@ export function InboxPage() {
 		return (
 			<div className="flex flex-col gap-4">
 				<PageHeader title="通知" />
-				<Empty title="没有快照" description="先添加 PAT 或刷新。" />
+				<Empty title={missingTitle(snap)} description="先添加 PAT 或刷新。" />
 				<RefreshButton
 					variant="default"
 					run={() => requestRefresh(["notifications"]).then(() => loadInbox().then(setSnap))}
@@ -50,7 +50,15 @@ export function InboxPage() {
 		);
 	}
 
-	const rows = snap?.notifications ?? [];
+	if (!snap) {
+		return (
+			<div className="flex flex-col gap-4">
+				<PageHeader title="通知" />
+			</div>
+		);
+	}
+
+	const rows = snap.notifications;
 
 	return (
 		<div className="flex flex-col gap-4">
@@ -64,7 +72,7 @@ export function InboxPage() {
 				<Button
 					type="button"
 					onClick={() => {
-						void markReadAll()
+						void markReadAll(snap.account_id)
 							.then((next) => {
 								toast("已全部已读");
 								setSnap(next);
@@ -107,7 +115,7 @@ export function InboxPage() {
 										variant="secondary"
 										disabled={!row.unread}
 										onClick={() => {
-											void markRead(row.id)
+											void markRead(row.id, snap.account_id)
 												.then((next) => {
 													toast("已读");
 													setSnap(next);

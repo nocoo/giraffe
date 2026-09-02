@@ -5,7 +5,8 @@ export type ErrorUi =
 	| { kind: "account_missing" }
 	| { kind: "empty"; title: string }
 	| { kind: "field"; message: string }
-	| { kind: "toast"; message: string };
+	| { kind: "toast"; message: string }
+	| { kind: "ok" };
 
 const TOAST: Record<string, string> = {
 	github_unauthorized: "GitHub 认证失败",
@@ -61,16 +62,29 @@ export function reportError(err: unknown): ErrorUi {
 	return ui;
 }
 
+export function reportOk(): void {
+	for (const listener of listeners) {
+		listener({ kind: "ok" });
+	}
+}
+
+export function missingTitle(snap: { missing: true; title?: unknown }): string {
+	return typeof snap.title === "string" ? snap.title : "没有快照";
+}
+
 export function catchLoad(
 	err: unknown,
 	notify: (message: string) => void,
-): { missing: true } | undefined {
+): { missing: true; title: string } | undefined {
 	const ui = reportError(err);
 	if (ui.kind === "toast") {
 		notify(ui.message);
 	}
-	if (ui.kind === "empty" || ui.kind === "account_missing") {
-		return { missing: true };
+	if (ui.kind === "empty") {
+		return { missing: true, title: ui.title };
+	}
+	if (ui.kind === "account_missing") {
+		return { missing: true, title: "没有快照" };
 	}
 	return undefined;
 }

@@ -12,7 +12,7 @@ import {
 } from "@nocoo/basalt/components/table";
 import { useEffect, useMemo, useState } from "react";
 import { RefreshButton } from "../components/layout/refresh-button";
-import { catchLoad } from "../lib/error-ui";
+import { catchLoad, missingTitle } from "../lib/error-ui";
 import { formatDelta } from "../lib/format";
 import { type DigestSnapshot, digestMarkdown, loadDigest } from "../viewmodels/digest";
 import { requestRefresh } from "../viewmodels/refresh";
@@ -49,7 +49,7 @@ export function DigestPage() {
 		return (
 			<div className="flex flex-col gap-4">
 				<PageHeader title="日报" />
-				<Empty title="没有快照" description="先添加 PAT 或刷新。" />
+				<Empty title={missingTitle(snap)} description="先添加 PAT 或刷新。" />
 				<RefreshButton
 					variant="default"
 					run={() => requestRefresh(["repos"]).then(() => loadDigest().then(setSnap))}

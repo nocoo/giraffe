@@ -26,7 +26,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router";
 import { RefreshButton } from "../components/layout/refresh-button";
-import { catchLoad } from "../lib/error-ui";
+import { catchLoad, missingTitle } from "../lib/error-ui";
 import type { IssuesSnapshot } from "../viewmodels/issues";
 import type { PullsSnapshot } from "../viewmodels/pulls";
 import { requestRefresh } from "../viewmodels/refresh";
@@ -91,6 +91,7 @@ export function RepoDetailPage() {
 		null,
 	);
 	const refreshed = useRef(new Set<string>());
+	const gen = useRef(0);
 
 	function onLoadError(err: unknown): void {
 		const missing = catchLoad(err, toast);
@@ -101,6 +102,7 @@ export function RepoDetailPage() {
 
 	useEffect(() => {
 		let cancelled = false;
+		gen.current += 1;
 		setSnap(null);
 		setSecurity(null);
 		setTraffic(null);
@@ -224,7 +226,7 @@ export function RepoDetailPage() {
 		return (
 			<div className="flex flex-col gap-4">
 				<PageHeader title={`${owner}/${name}`} />
-				<Empty title="没有快照" description="先添加 PAT 或刷新。" />
+				<Empty title={missingTitle(snap)} description="先添加 PAT 或刷新。" />
 				<RefreshButton
 					variant="default"
 					run={() =>
@@ -272,39 +274,52 @@ export function RepoDetailPage() {
 			) : null}
 			<Toolbar aria-label="仓库详情工具条">
 				<RefreshButton
-					run={() =>
-						requestRefresh(repoKind(owner, name, tab)).then(() => {
+					run={() => {
+						const mine = gen.current;
+						function applyIfCurrent<T>(setter: (value: T) => void): (value: T) => void {
+							return (value) => {
+								if (mine === gen.current) {
+									setter(value);
+								}
+							};
+						}
+						return requestRefresh(repoKind(owner, name, tab)).then(() => {
+							if (mine !== gen.current) {
+								return;
+							}
 							if (tab === "details") {
-								return loadRepoTab<RepoDetails>(owner, name, "details").then(setSnap);
+								return loadRepoTab<RepoDetails>(owner, name, "details").then(
+									applyIfCurrent(setSnap),
+								);
 							}
 							if (tab === "security") {
 								return fetchTab<RepoSecurity>(owner, name, "security", refreshed.current).then(
-									setSecurity,
+									applyIfCurrent(setSecurity),
 								);
 							}
 							if (tab === "actions") {
 								return fetchTab<RepoActions>(owner, name, "actions", refreshed.current).then(
-									setActions,
+									applyIfCurrent(setActions),
 								);
 							}
 							if (tab === "releases") {
 								return fetchTab<RepoReleases>(owner, name, "releases", refreshed.current).then(
-									setReleases,
+									applyIfCurrent(setReleases),
 								);
 							}
 							if (tab === "issues") {
 								return fetchTab<IssuesSnapshot>(owner, name, "issues", refreshed.current).then(
-									setIssues,
+									applyIfCurrent(setIssues),
 								);
 							}
 							if (tab === "prs") {
 								return fetchTab<PullsSnapshot>(owner, name, "prs", refreshed.current).then(
-									setPulls,
+									applyIfCurrent(setPulls),
 								);
 							}
 							if (tab === "languages") {
 								return fetchTab<RepoLanguages>(owner, name, "languages", refreshed.current).then(
-									setLanguages,
+									applyIfCurrent(setLanguages),
 								);
 							}
 							if (tab === "contributors") {
@@ -313,13 +328,13 @@ export function RepoDetailPage() {
 									name,
 									"contributors",
 									refreshed.current,
-								).then(setContributors);
+								).then(applyIfCurrent(setContributors));
 							}
 							return fetchTab<RepoTraffic>(owner, name, "traffic", refreshed.current).then(
-								setTraffic,
+								applyIfCurrent(setTraffic),
 							);
-						})
-					}
+						});
+					}}
 					onError={onLoadError}
 				/>
 			</Toolbar>
