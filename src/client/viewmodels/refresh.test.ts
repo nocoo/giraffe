@@ -48,6 +48,10 @@ describe("refresh coordinator", () => {
 			throw new Error(url);
 		});
 		expect(await requestRefresh(["repos"])).toBeNull();
+		setActiveAccountId("acc1");
+		const queued = requestRefresh(["alerts"]);
+		setActiveAccountId("acc2");
+		expect(await queued).toBeNull();
 	});
 
 	it("skips follow-up when payload account_id mismatches and on error", async () => {

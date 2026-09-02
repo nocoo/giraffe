@@ -1,5 +1,41 @@
+import { LinkProvider, ThemeProvider, Toaster } from "@nocoo/basalt";
+import type { ReactNode } from "react";
+import { BrowserRouter, Link, Route, Routes } from "react-router";
 import { AppShell } from "./components/layout/app-shell";
+import { SettingsPage } from "./routes/settings";
+
+function RouterLink({
+	href,
+	className,
+	children,
+}: {
+	href: string;
+	className?: string;
+	children?: ReactNode;
+}) {
+	if (className === undefined) {
+		return <Link to={href}>{children}</Link>;
+	}
+	return (
+		<Link to={href} className={className}>
+			{children}
+		</Link>
+	);
+}
 
 export function App() {
-	return <AppShell />;
+	return (
+		<ThemeProvider>
+			<LinkProvider render={RouterLink}>
+				<BrowserRouter>
+					<Toaster />
+					<Routes>
+						<Route element={<AppShell />}>
+							<Route path="/settings" element={<SettingsPage />} />
+						</Route>
+					</Routes>
+				</BrowserRouter>
+			</LinkProvider>
+		</ThemeProvider>
+	);
 }
