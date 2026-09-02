@@ -1,4 +1,7 @@
 import {
+	Avatar,
+	AvatarFallback,
+	AvatarImage,
 	Badge,
 	Button,
 	StatStrip,
@@ -9,6 +12,7 @@ import {
 	Toolbar,
 } from "@nocoo/basalt";
 import { AreaChart } from "@nocoo/basalt/charts/area";
+import { DonutChart } from "@nocoo/basalt/charts/donut";
 import { Empty } from "@nocoo/basalt/components/empty";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
 import {
@@ -28,13 +32,16 @@ import {
 	isValidRepoPart,
 	loadRepoTab,
 	type RepoActions,
+	type RepoContributors,
 	type RepoDetails,
+	type RepoLanguages,
 	type RepoReleases,
 	type RepoSecurity,
 	type RepoTab,
 	type RepoTraffic,
 	repoKind,
 	securityUnavailable,
+	sortedLanguages,
 	trafficForbidden,
 	trafficPoints,
 } from "../viewmodels/repo-detail";
@@ -76,6 +83,10 @@ export function RepoDetailPage() {
 	const [releases, setReleases] = useState<RepoReleases | { missing: true } | null>(null);
 	const [issues, setIssues] = useState<IssuesSnapshot | { missing: true } | null>(null);
 	const [pulls, setPulls] = useState<PullsSnapshot | { missing: true } | null>(null);
+	const [languages, setLanguages] = useState<RepoLanguages | { missing: true } | null>(null);
+	const [contributors, setContributors] = useState<RepoContributors | { missing: true } | null>(
+		null,
+	);
 	const refreshed = useRef(new Set<string>());
 
 	useEffect(() => {
@@ -115,6 +126,14 @@ export function RepoDetailPage() {
 		}
 		if (tab === "prs") {
 			void fetchTab<PullsSnapshot>(owner, name, "prs", refreshed.current).then(setPulls);
+		}
+		if (tab === "languages") {
+			void fetchTab<RepoLanguages>(owner, name, "languages", refreshed.current).then(setLanguages);
+		}
+		if (tab === "contributors") {
+			void fetchTab<RepoContributors>(owner, name, "contributors", refreshed.current).then(
+				setContributors,
+			);
 		}
 	}, [owner, name, valid, tab]);
 
@@ -184,6 +203,19 @@ export function RepoDetailPage() {
 									setPulls,
 								);
 							}
+							if (tab === "languages") {
+								return fetchTab<RepoLanguages>(owner, name, "languages", refreshed.current).then(
+									setLanguages,
+								);
+							}
+							if (tab === "contributors") {
+								return fetchTab<RepoContributors>(
+									owner,
+									name,
+									"contributors",
+									refreshed.current,
+								).then(setContributors);
+							}
 							return fetchTab<RepoTraffic>(owner, name, "traffic", refreshed.current).then(
 								setTraffic,
 							);
@@ -202,6 +234,8 @@ export function RepoDetailPage() {
 					<TabsTrigger value="issues">Issues</TabsTrigger>
 					<TabsTrigger value="releases">Releases</TabsTrigger>
 					<TabsTrigger value="traffic">Traffic</TabsTrigger>
+					<TabsTrigger value="languages">Languages</TabsTrigger>
+					<TabsTrigger value="contributors">Contributors</TabsTrigger>
 				</TabsList>
 				<TabsContent value="details">
 					{snap ? (
@@ -390,6 +424,37 @@ export function RepoDetailPage() {
 							/>
 							<AreaChart data={trafficPoints(traffic.views.points)} ariaLabel="views" />
 						</div>
+					) : null}
+				</TabsContent>
+				<TabsContent value="languages">
+					{languages && "missing" in languages ? (
+						<Empty title="没有快照" />
+					) : languages && Object.keys(languages.languages).length === 0 ? (
+						<Empty title="没有语言数据" />
+					) : languages ? (
+						<DonutChart data={sortedLanguages(languages.languages)} ariaLabel="languages" />
+					) : null}
+				</TabsContent>
+				<TabsContent value="contributors">
+					{contributors && "missing" in contributors ? (
+						<Empty title="没有快照" />
+					) : contributors && contributors.contributors.length === 0 ? (
+						<Empty title="没有贡献者" />
+					) : contributors ? (
+						<ul className="flex flex-col gap-3">
+							{contributors.contributors.map((row) => (
+								<li key={row.login} className="flex items-center gap-3">
+									<Avatar>
+										<AvatarImage src={row.avatar_url} alt={row.login} />
+										<AvatarFallback>{row.login.slice(0, 2)}</AvatarFallback>
+									</Avatar>
+									<a href={row.html_url} target="_blank" rel="noreferrer">
+										{row.login}
+									</a>
+									<span>{row.contributions}</span>
+								</li>
+							))}
+						</ul>
 					) : null}
 				</TabsContent>
 			</Tabs>

@@ -6,6 +6,7 @@ import {
 	repoKind,
 	repoResource,
 	securityUnavailable,
+	sortedLanguages,
 	trafficForbidden,
 	trafficPoints,
 } from "./repo-detail";
@@ -101,6 +102,12 @@ describe("repo-detail viewmodel", () => {
 			}),
 		).toBe(false);
 		expect(trafficPoints([{ timestamp: "t", count: 4, uniques: 2 }])).toEqual([{ x: "t", y: 4 }]);
+		expect(sortedLanguages({})).toEqual([]);
+		expect(sortedLanguages({ TypeScript: 100, CSS: 100, Go: 50 })).toEqual([
+			{ name: "CSS", value: 100 },
+			{ name: "TypeScript", value: 100 },
+			{ name: "Go", value: 50 },
+		]);
 	});
 
 	it("maps snapshot_missing and rethrows other errors", async () => {

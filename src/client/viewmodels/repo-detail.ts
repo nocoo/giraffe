@@ -112,6 +112,35 @@ export function trafficPoints(points: TrafficPoint[]): { x: string; y: number }[
 	return points.map((point) => ({ x: point.timestamp, y: point.count }));
 }
 
+export type RepoLanguages = {
+	account_id: string;
+	fetched_at: string;
+	truncated: boolean;
+	languages: Record<string, number>;
+};
+
+export function sortedLanguages(
+	languages: Record<string, number>,
+): { name: string; value: number }[] {
+	return Object.entries(languages)
+		.map(([name, value]) => ({ name, value }))
+		.sort((a, b) => b.value - a.value || a.name.localeCompare(b.name));
+}
+
+export type RepoContributor = {
+	login: string;
+	avatar_url: string;
+	html_url: string;
+	contributions: number;
+};
+
+export type RepoContributors = {
+	account_id: string;
+	fetched_at: string;
+	truncated: boolean;
+	contributors: RepoContributor[];
+};
+
 export function repoResource(owner: string, name: string, tab: RepoTab): string {
 	if (tab === "details") {
 		return `repos/${owner}/${name}`;
