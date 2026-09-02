@@ -22,7 +22,7 @@ This file is the **contract**. Hooks, CI, and config are **enforcement**. If the
 
 - Plaintext GitHub PAT may exist only in the settings input (cleared after submit), that request body, Worker memory after decrypt, and the outbound `Authorization` header. Never persist, bundle, log, trace, or return it. D1 stores only the AES-GCM envelope.
 - `workers_dev = false`. App gate is Cloudflare Access JWT (`iss` + `aud` + JWKS). No in-app login.
-- Phase 1 is Server only (`src/server`). Client feature code follows [docs/05](docs/05-client.md) after that doc is signed off. Server tests must not import `src/client`. L3 is N/A until phase 2. Phase 2 MVVM: viewmodels have no View/DOM imports.
+- Client follows [docs/05](docs/05-client.md). Server tests must not import `src/client`. Phase 2 MVVM: viewmodels have no View/DOM imports.
 - E2E is `--local --persist-to` only. Never remote `giraffe-db`. L2 persist `.wrangler/e2e/` :17045; L3 `.wrangler/e2e-pw/` :27045.
 - Strict TDD: failing tests stay in the working tree; only green L1 commits. `--no-verify` forbidden.
 - Caddy for `giraffe.dev.hexly.ai` is **not** registered yet.
@@ -35,8 +35,8 @@ This file is the **contract**. Hooks, CI, and config are **enforcement**. If the
 | Package manager | Bun |
 | Runtime | Cloudflare Workers (Hono) |
 | Lint | Biome `--error-on-warnings` (`noSkippedTests` / `noFocusedTests`) |
-| Tests | Vitest L1 95% all four; L2 `scripts/run-e2e.ts`; L3 Playwright (phase 2) |
-| Data | D1 `giraffe-db` (binding `DB`; wrangler id is still a placeholder) |
+| Tests | Vitest L1 95% all four; L2 `scripts/run-e2e.ts`; L3 Playwright |
+| Data | D1 `giraffe-db` (binding `DB`) |
 
 ```
 src/server/   Hono, D1, Access, GitHub
@@ -62,21 +62,21 @@ bun run gate:security
 
 Status: `enforced` | `planned` | `manual` | `N/A`. `enforced` Evidence = hook/CI/config/script.
 
-Org gaps: index-snapshot pre-commit; GitHub CI. pre-push **does** parse stdin refs for gitleaks (`GITLEAKS_LOG_OPTS`).
+Org gaps: index-snapshot pre-commit. pre-push **does** parse stdin refs for gitleaks (`GITLEAKS_LOG_OPTS`).
 
-Today: pre-commit typecheck/lint/`gate:test-skip`/`gate:wrangler-vars`/`gate:github-fetch`/`gate:client-fetch`/`test:coverage` on the working tree. pre-push L2 ‖ G2. No `.github/workflows`.
+Today: pre-commit typecheck/lint/`gate:test-skip`/`gate:wrangler-vars`/`gate:github-fetch`/`gate:client-fetch`/`test:coverage` on the working tree. pre-push L2 ‖ G2. GitHub Actions CI runs G1+L1+L2+G2+L3. CD is `wrangler deploy` after `vite build`.
 
 | Change | Proof | Status | Evidence |
 |---|---|---|---|
 | Logic | L1 vitest ≥95% all four | enforced | pre-commit `test:coverage`; `vitest.config.ts` |
 | API L2 | real HTTP, isolated D1 | enforced | pre-push `test:e2e:api` (`scripts/run-e2e.ts`) |
-| UI L3 | Playwright | N/A | — |
+| UI L3 | Playwright | enforced | CI `test:e2e:bdd` (not pre-push) |
 | Types / lint | tsc + Biome 0 warning + skip/vars/fetch gates | enforced | pre-commit |
 | G2 secrets | gitleaks | enforced | pre-push `gate:security` (stdin ranges) |
 | G2 deps | osv-scanner `bun.lock` | enforced | pre-push `gate:security` |
-| Bundler | Vite → `dist/client` | planned | — |
+| Bundler | Vite → `dist/client` | enforced | CD `bun run build` before `wrangler deploy` |
 | Docs | numbered doc if behavior changes | manual | human review |
-| Release | `wrangler deploy` | planned | — |
+| Release | `wrangler deploy` | enforced | `.github/workflows/release.yml` |
 
 | Hook | Org bar | Status | Evidence |
 |---|---|---|---|
@@ -91,12 +91,12 @@ Today: pre-commit typecheck/lint/`gate:test-skip`/`gate:wrangler-vars`/`gate:git
 |---|---|---|
 | Dev | 7045 (planned `https://giraffe.dev.hexly.ai`) | `.dev.vars`; Caddy not registered |
 | L2 | 17045 | `--local --persist-to .wrangler/e2e/` |
-| L3 | 27045 | `--local --persist-to .wrangler/e2e-pw/` (phase 2) |
+| L3 | 27045 | `--local --persist-to .wrangler/e2e-pw/` |
 
 ## Operations / Release
 
-- No CD. Who: operator with Cloudflare account. Do not `wrangler deploy` until D1 id is real and Access is configured.
-- Live-check: not wired. Runbook: [docs/04-server.md](docs/04-server.md).
+- CD: `.github/workflows/release.yml` (`vite build` then `wrangler deploy`). Secrets stay in Cloudflare / GitHub, never `[vars]`.
+- Live-check: `GET https://giraffe.hexly.ai/api/live`. Runbook: [docs/04-server.md](docs/04-server.md).
 
 ## Retrospective
 
