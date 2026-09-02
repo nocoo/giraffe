@@ -5,7 +5,8 @@
 	"type": "module",
 	"scripts": {
 		"dev:server": "bun run scripts/dev-server.ts",
-		"typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.scripts.json && wrangler types --check --include-runtime=false --env-interface=CloudflareBindings",
+		"typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.client.json && tsc --noEmit -p tsconfig.scripts.json && wrangler types --check --include-runtime=false --env-interface=CloudflareBindings",
+		"build": "vite build",
 		"lint": "biome check --error-on-warnings .",
 		"lint:fix": "biome check --write .",
 		"test": "vitest run",
@@ -22,16 +23,27 @@
 	"devDependencies": {
 		"@biomejs/biome": "2.5.10",
 		"@cloudflare/workers-types": "5.20260814.1",
+		"@tailwindcss/vite": "^4.3.3",
 		"@types/bun": "^1.4.0",
+		"@types/react": "^19.2.18",
+		"@types/react-dom": "^19.2.5",
+		"@vitejs/plugin-react": "^6.1.0",
 		"@vitest/coverage-v8": "4.1.11",
 		"husky": "9.1.7",
 		"oxc-parser": "^0.147.0",
+		"tailwindcss": "^4.3.3",
 		"typescript": "7.0.2",
+		"vite": "^8.2.2",
 		"vitest": "4.1.11",
 		"wrangler": "4.123.0"
 	},
 	"dependencies": {
+		"@nocoo/basalt": "./vendor/nocoo-basalt-2.0.0-rc.1.tgz",
 		"hono": "^4.13.4",
+		"lucide-react": "^1.34.0",
+		"react": "^19.2.8",
+		"react-dom": "^19.2.8",
+		"react-router": "^8.3.0",
 		"zod": "^4.5.0-canary.20260825T041357"
 	}
 }
