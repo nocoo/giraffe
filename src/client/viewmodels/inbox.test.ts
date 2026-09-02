@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { applyRead, applyReadAll, loadInbox, markRead, markReadAll } from "./inbox";
 import { setActiveAccountId } from "./session";
+import { clearSnapshots } from "./snapshot";
 
 const snap = {
 	account_id: "acc1",
@@ -54,6 +55,7 @@ describe("inbox viewmodel", () => {
 		});
 		const loaded = await loadInbox();
 		expect("missing" in loaded).toBe(false);
+		clearSnapshots();
 		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
 			if (String(input) === "/api/accounts") {
 				return Response.json({ accounts: [{ id: "acc1", login: "o", is_active: true }] });

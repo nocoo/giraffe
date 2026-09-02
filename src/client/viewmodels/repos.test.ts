@@ -11,6 +11,7 @@ import {
 	visibleRepos,
 } from "./repos";
 import { setActiveAccountId } from "./session";
+import { clearSnapshots } from "./snapshot";
 
 const sample: RepoRow[] = [
 	{
@@ -65,11 +66,14 @@ describe("repos viewmodel", () => {
 			"hello-world",
 		]);
 		const health = healthMap({
+			account_id: "acc1",
 			alerts_incomplete: true,
 			insights: [{ name_with_owner: "octocat/alpha", health: "strong" }],
 		});
 		expect(health.get("octocat/alpha")).toBe("strong");
-		expect(alertsIncomplete({ alerts_incomplete: true, insights: [] })).toBe(true);
+		expect(alertsIncomplete({ account_id: "acc1", alerts_incomplete: true, insights: [] })).toBe(
+			true,
+		);
 		expect(alertsIncomplete(null)).toBe(false);
 		expect(healthMap(null).size).toBe(0);
 	});
@@ -96,6 +100,7 @@ describe("repos viewmodel", () => {
 			expect(snap.repos).toHaveLength(2);
 			expect(cachedRepoRows()).toHaveLength(2);
 		}
+		clearSnapshots();
 		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
 			if (String(input) === "/api/accounts") {
 				return Response.json({ accounts: [{ id: "acc1", login: "o", is_active: true }] });
@@ -135,11 +140,12 @@ describe("repos viewmodel", () => {
 				return Response.json({ accounts: [{ id: "acc1", login: "o", is_active: true }] });
 			}
 			if (url === "/api/insights") {
-				return Response.json({ alerts_incomplete: false, insights: [] });
+				return Response.json({ account_id: "acc1", alerts_incomplete: false, insights: [] });
 			}
 			throw new Error(url);
 		});
 		expect((await loadInsightsOptional())?.insights).toEqual([]);
+		clearSnapshots();
 		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
 			if (String(input) === "/api/accounts") {
 				return Response.json({ accounts: [{ id: "acc1", login: "o", is_active: true }] });

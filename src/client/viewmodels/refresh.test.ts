@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { clearRefreshQueue, refreshInFlight, requestRefresh } from "./refresh";
+import { clearRefreshQueue, refreshInFlight, requestRefresh, resourceOfKind } from "./refresh";
 import { setActiveAccountId } from "./session";
+import { clearSnapshots, loadKind } from "./snapshot";
 
 function accountsFor(id: string): Response {
 	return Response.json({ accounts: [{ id, login: "o", is_active: true }] });
@@ -9,6 +10,7 @@ function accountsFor(id: string): Response {
 describe("refresh coordinator", () => {
 	afterEach(() => {
 		clearRefreshQueue();
+		clearSnapshots();
 		setActiveAccountId(null);
 		vi.stubGlobal("fetch", () => {
 			throw new Error("network denied in L1");
@@ -39,7 +41,7 @@ describe("refresh coordinator", () => {
 				expect(String(init?.body)).toContain("acc1");
 				return Response.json({ account_id: "acc1", kinds: ["repos"] });
 			}
-			if (url === "/api/insights" || url === "/api/digest") {
+			if (url === "/api/insights" || url === "/api/digest" || url === "/api/repos") {
 				return Response.json({ account_id: "acc1", truncated: false });
 			}
 			throw new Error(url);
@@ -127,7 +129,7 @@ describe("refresh coordinator", () => {
 				expect(JSON.parse(String(init?.body)).kinds).toBe("all");
 				return Response.json({ account_id: "acc1", kinds: ["repos"] });
 			}
-			if (url === "/api/insights" || url === "/api/digest") {
+			if (url === "/api/insights" || url === "/api/digest" || url === "/api/repos") {
 				return Response.json({ account_id: "acc1" });
 			}
 			throw new Error(url);
@@ -147,10 +149,14 @@ describe("refresh coordinator", () => {
 			if (url === "/api/refresh") {
 				return Response.json({ account_id: "acc1", kinds: ["repos", "insights", "digest"] });
 			}
+			if (url === "/api/repos" || url === "/api/insights" || url === "/api/digest") {
+				return Response.json({ account_id: "acc1" });
+			}
 			throw new Error(url);
 		});
 		await requestRefresh();
-		expect(urls).toEqual(["/api/accounts", "/api/refresh"]);
+		expect(urls.filter((url) => url === "/api/insights")).toHaveLength(1);
+		expect(urls.filter((url) => url === "/api/digest")).toHaveLength(1);
 	});
 
 	it("treats a missing kinds field as all when none were requested", async () => {
@@ -165,12 +171,25 @@ describe("refresh coordinator", () => {
 			if (url === "/api/refresh") {
 				return Response.json({ account_id: "acc1" });
 			}
-			if (url === "/api/insights" || url === "/api/digest") {
+			if (
+				url === "/api/insights" ||
+				url === "/api/digest" ||
+				url === "/api/repos" ||
+				url === "/api/issues" ||
+				url === "/api/prs" ||
+				url === "/api/alerts" ||
+				url === "/api/notifications"
+			) {
 				return Response.json({ account_id: "acc1" });
 			}
 			throw new Error(url);
 		});
 		await requestRefresh();
+		expect(urls).toContain("/api/repos");
+		expect(urls).toContain("/api/issues");
+		expect(urls).toContain("/api/prs");
+		expect(urls).toContain("/api/alerts");
+		expect(urls).toContain("/api/notifications");
 		expect(urls).toContain("/api/insights");
 		expect(urls).toContain("/api/digest");
 	});
@@ -187,12 +206,150 @@ describe("refresh coordinator", () => {
 			if (url === "/api/refresh") {
 				return Response.json({ account_id: "acc1", kinds: ["alerts"] });
 			}
-			if (url === "/api/insights") {
+			if (url === "/api/insights" || url === "/api/alerts") {
 				return Response.json({ account_id: "acc1" });
 			}
 			throw new Error(url);
 		});
 		await requestRefresh(["alerts"]);
-		expect(urls).toEqual(["/api/accounts", "/api/refresh", "/api/insights"]);
+		expect(urls).toContain("/api/alerts");
+		expect(urls).toContain("/api/insights");
+		expect(urls).not.toContain("/api/digest");
+	});
+
+	it("resyncs session on account_conflict and does not replay", async () => {
+		setActiveAccountId("acc1");
+		const urls: string[] = [];
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+			const url = String(input);
+			urls.push(url);
+			if (url === "/api/accounts") {
+				return accountsFor("acc1");
+			}
+			if (url === "/api/refresh") {
+				return new Response(
+					JSON.stringify({ error: { code: "account_conflict", message: "switched" } }),
+					{ status: 409, headers: { "content-type": "application/json" } },
+				);
+			}
+			throw new Error(url);
+		});
+		await expect(requestRefresh(["repos"])).rejects.toMatchObject({ code: "account_conflict" });
+		expect(urls.filter((url) => url === "/api/accounts")).toHaveLength(2);
+		expect(urls.filter((url) => url === "/api/refresh")).toHaveLength(1);
+	});
+
+	it("drops a refresh payload that omits account_id", async () => {
+		setActiveAccountId("acc1");
+		const urls: string[] = [];
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+			const url = String(input);
+			urls.push(url);
+			if (url === "/api/accounts") {
+				return accountsFor("acc1");
+			}
+			if (url === "/api/refresh") {
+				return Response.json({ kinds: ["repos"] });
+			}
+			throw new Error(url);
+		});
+		expect(await requestRefresh(["repos"])).toBeNull();
+		expect(urls).toEqual(["/api/accounts", "/api/refresh", "/api/accounts"]);
+	});
+
+	it("caches a single-kind payload so the next load skips GET", async () => {
+		setActiveAccountId("acc1");
+		let issueGets = 0;
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+			const url = String(input);
+			if (url === "/api/accounts") {
+				return accountsFor("acc1");
+			}
+			if (url === "/api/refresh") {
+				return Response.json({
+					account_id: "acc1",
+					fetched_at: "t",
+					truncated: false,
+					issues: [],
+				});
+			}
+			if (url === "/api/insights") {
+				return Response.json({ account_id: "acc1", insights: [] });
+			}
+			if (url === "/api/issues") {
+				issueGets += 1;
+				throw new Error("should use cache");
+			}
+			throw new Error(url);
+		});
+		await requestRefresh(["issues"]);
+		expect(await loadKind("issues")).toMatchObject({ account_id: "acc1", issues: [] });
+		expect(issueGets).toBe(0);
+	});
+
+	it("refetches each written kind after a multi-kind refresh", async () => {
+		setActiveAccountId("acc1");
+		const urls: string[] = [];
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+			const url = String(input);
+			urls.push(url);
+			if (url === "/api/accounts") {
+				return accountsFor("acc1");
+			}
+			if (url === "/api/refresh") {
+				return Response.json({ account_id: "acc1", kinds: ["repos", "alerts"] });
+			}
+			if (
+				url === "/api/repos" ||
+				url === "/api/alerts" ||
+				url === "/api/insights" ||
+				url === "/api/digest"
+			) {
+				return Response.json({ account_id: "acc1" });
+			}
+			throw new Error(url);
+		});
+		await requestRefresh(["repos", "alerts"]);
+		expect(urls.filter((url) => url !== "/api/accounts")).toEqual([
+			"/api/refresh",
+			"/api/repos",
+			"/api/alerts",
+			"/api/insights",
+			"/api/digest",
+		]);
+	});
+
+	it("propagates non-missing follow-up errors", async () => {
+		setActiveAccountId("acc1");
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+			const url = String(input);
+			if (url === "/api/accounts") {
+				return accountsFor("acc1");
+			}
+			if (url === "/api/refresh") {
+				return Response.json({
+					account_id: "acc1",
+					fetched_at: "t",
+					truncated: false,
+					issues: [],
+				});
+			}
+			if (url === "/api/insights") {
+				return new Response(JSON.stringify({ error: { code: "github_error", message: "boom" } }), {
+					status: 502,
+					headers: { "content-type": "application/json" },
+				});
+			}
+			throw new Error(url);
+		});
+		await expect(requestRefresh(["issues"])).rejects.toMatchObject({ code: "github_error" });
+	});
+
+	it("maps repo kinds onto snapshot resources", () => {
+		expect(resourceOfKind("issues")).toBe("issues");
+		expect(resourceOfKind("repo:octocat/hello-world:details")).toBe("repos/octocat/hello-world");
+		expect(resourceOfKind("repo:octocat/hello-world:security")).toBe(
+			"repos/octocat/hello-world/security",
+		);
 	});
 });

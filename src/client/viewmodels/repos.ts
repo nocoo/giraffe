@@ -31,7 +31,7 @@ export type InsightRow = {
 };
 
 export type InsightsSnapshot = {
-	account_id?: string;
+	account_id: string;
 	alerts_incomplete?: boolean;
 	insights: InsightRow[];
 };

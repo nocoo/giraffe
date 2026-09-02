@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { formatDelta } from "../lib/format";
 import { digestMarkdown, loadDigest } from "./digest";
 import { setActiveAccountId } from "./session";
+import { clearSnapshots } from "./snapshot";
 
 const withBaseline = {
 	account_id: "acc1",
@@ -74,6 +75,7 @@ describe("digest viewmodel", () => {
 		});
 		const snap = await loadDigest();
 		expect("missing" in snap).toBe(false);
+		clearSnapshots();
 		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
 			if (String(input) === "/api/accounts") {
 				return Response.json({ accounts: [{ id: "acc1", login: "o", is_active: true }] });

@@ -146,7 +146,7 @@ export function repoResource(owner: string, name: string, tab: RepoTab): string 
 	return `repos/${owner}/${name}/${tab}`;
 }
 
-export async function loadRepoTab<T extends { account_id?: string }>(
+export async function loadRepoTab<T extends { account_id: string }>(
 	owner: string,
 	name: string,
 	tab: RepoTab,

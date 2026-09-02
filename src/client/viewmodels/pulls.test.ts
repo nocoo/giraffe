@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { filterPulls, loadPulls, type PullRow } from "./pulls";
 import { setActiveAccountId } from "./session";
+import { clearSnapshots } from "./snapshot";
 
 const sample: PullRow[] = [
 	{
@@ -70,6 +71,7 @@ describe("pulls viewmodel", () => {
 		if (!("missing" in snap)) {
 			expect(snap.pull_requests).toHaveLength(2);
 		}
+		clearSnapshots();
 		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
 			if (String(input) === "/api/accounts") {
 				return Response.json({ accounts: [{ id: "acc1", login: "o", is_active: true }] });

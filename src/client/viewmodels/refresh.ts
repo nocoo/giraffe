@@ -1,5 +1,7 @@
-import { apiGet, apiPost } from "../lib/api";
+import { apiPost } from "../lib/api";
+import { ApiError } from "../lib/errors";
 import { ensureSession, getActiveAccountId } from "./session";
+import { fetchKind, putSnapshot } from "./snapshot";
 
 export type RefreshBody = {
 	account_id?: string;
@@ -16,14 +18,43 @@ type Pending = {
 
 let pending: Pending | null = null;
 let tail: Promise<void> = Promise.resolve();
+const listeners = new Set<() => void>();
 
 export function refreshInFlight(): boolean {
 	return pending !== null;
 }
 
+export function subscribeRefresh(listener: () => void): () => void {
+	listeners.add(listener);
+	return () => {
+		listeners.delete(listener);
+	};
+}
+
+function notifyRefresh(): void {
+	for (const listener of listeners) {
+		listener();
+	}
+}
+
 export function clearRefreshQueue(): void {
 	pending = null;
 	tail = Promise.resolve();
+	notifyRefresh();
+}
+
+export function resourceOfKind(kind: string): string {
+	if (!kind.startsWith("repo:")) {
+		return kind;
+	}
+	const rest = kind.slice("repo:".length);
+	const idx = rest.lastIndexOf(":");
+	const repo = rest.slice(0, idx);
+	const tab = rest.slice(idx + 1);
+	if (tab === "details") {
+		return `repos/${repo}`;
+	}
+	return `repos/${repo}/${tab}`;
 }
 
 function normalizeKinds(kinds: string | string[] | undefined): string | string[] | undefined {
@@ -51,6 +82,14 @@ function writtenKinds(result: RefreshBody, requested: string | string[] | undefi
 	return ["repos", "issues", "prs", "alerts", "notifications"];
 }
 
+function isSingleKind(result: RefreshBody, requested: string | string[] | undefined): boolean {
+	if (result.kinds) {
+		return false;
+	}
+	const normalized = normalizeKinds(requested);
+	return Array.isArray(normalized) && normalized.length === 1;
+}
+
 async function followUp(
 	stamp: string,
 	result: RefreshBody,
@@ -59,13 +98,38 @@ async function followUp(
 	if (getActiveAccountId() !== stamp) {
 		return;
 	}
+	await ensureSession();
+	if (getActiveAccountId() !== stamp) {
+		return;
+	}
 	const written = writtenKinds(result, requested);
 	if (!written.includes("insights")) {
-		await apiGet("insights").catch(() => undefined);
+		await fetchKind("insights");
 	}
 	if (!written.includes("digest") && written.includes("repos")) {
-		await apiGet("digest").catch(() => undefined);
+		await fetchKind("digest");
 	}
+}
+
+async function applyResult(
+	stamp: string,
+	result: RefreshBody,
+	requested: string | string[] | undefined,
+): Promise<void> {
+	if (isSingleKind(result, requested)) {
+		const kind = writtenKinds(result, requested)[0];
+		if (kind) {
+			putSnapshot(resourceOfKind(kind), result as { account_id: string });
+		}
+	} else {
+		for (const kind of writtenKinds(result, requested)) {
+			if (getActiveAccountId() !== stamp) {
+				return;
+			}
+			await fetchKind(resourceOfKind(kind));
+		}
+	}
+	await followUp(stamp, result, requested);
 }
 
 async function execute(
@@ -80,12 +144,20 @@ async function execute(
 	if (normalized !== undefined) {
 		body.kinds = normalized;
 	}
-	const result = await apiPost<RefreshBody>("refresh", body);
-	if (result.account_id !== undefined && result.account_id !== stamp) {
+	let result: RefreshBody;
+	try {
+		result = await apiPost<RefreshBody>("refresh", body);
+	} catch (err) {
+		if (err instanceof ApiError && err.code === "account_conflict") {
+			await ensureSession();
+		}
+		throw err;
+	}
+	if (result.account_id !== stamp) {
 		await ensureSession();
 		return null;
 	}
-	await followUp(stamp, result, kinds);
+	await applyResult(stamp, result, kinds);
 	if (getActiveAccountId() !== stamp) {
 		return null;
 	}
@@ -100,15 +172,18 @@ export async function requestRefresh(kinds?: string | string[]): Promise<Refresh
 	}
 	const job = tail.then(() => execute(stamp, kinds));
 	pending = { key, promise: job };
+	notifyRefresh();
 	tail = job.then(
 		() => {
 			if (pending?.key === key) {
 				pending = null;
+				notifyRefresh();
 			}
 		},
 		() => {
 			if (pending?.key === key) {
 				pending = null;
+				notifyRefresh();
 			}
 		},
 	);

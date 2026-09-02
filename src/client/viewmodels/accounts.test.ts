@@ -71,7 +71,7 @@ describe("accounts viewmodel", () => {
 				expect(String(init?.body)).toContain("repos");
 				return Response.json({ account_id: "acc1", kinds: ["repos"] });
 			}
-			if (url === "/api/insights" || url === "/api/digest") {
+			if (url === "/api/insights" || url === "/api/digest" || url === "/api/repos") {
 				return new Response(JSON.stringify({ error: { code: "snapshot_missing", message: "n" } }), {
 					status: 409,
 					headers: { "content-type": "application/json" },
@@ -159,7 +159,7 @@ describe("accounts viewmodel", () => {
 			if (url === "/api/refresh") {
 				return Response.json({ account_id: "acc2", kinds: ["repos"] });
 			}
-			if (url === "/api/insights" || url === "/api/digest") {
+			if (url === "/api/insights" || url === "/api/digest" || url === "/api/repos") {
 				return new Response(JSON.stringify({ error: { code: "snapshot_missing", message: "n" } }), {
 					status: 409,
 					headers: { "content-type": "application/json" },
