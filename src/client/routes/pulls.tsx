@@ -112,7 +112,9 @@ export function PullsPage() {
 					<TableBody>
 						{rows.map((row) => (
 							<TableRow key={`${row.name_with_owner}#${row.number}`}>
-								<TableCell className="text-muted-foreground">{row.name_with_owner}</TableCell>
+								<TableCell className="text-basalt-muted-foreground">
+									{row.name_with_owner}
+								</TableCell>
 								<TableCell className="tabular-nums">#{row.number}</TableCell>
 								<TableCell>
 									<Link href={row.url} target="_blank" rel="noreferrer">
@@ -125,11 +127,11 @@ export function PullsPage() {
 								</TableCell>
 								<TableCell>{formatReview(row.review_decision)}</TableCell>
 								<TableCell className="tabular-nums">
-									<span className="text-success">+{row.additions}</span>
-									<span className="text-muted-foreground">/</span>
-									<span className="text-destructive">−{row.deletions}</span>
+									<span className="text-basalt-info">+{row.additions}</span>
+									<span className="text-basalt-muted-foreground">/</span>
+									<span className="text-basalt-danger">−{row.deletions}</span>
 								</TableCell>
-								<TableCell className="text-muted-foreground">
+								<TableCell className="text-basalt-muted-foreground">
 									{formatDate(row.updated_at)}
 								</TableCell>
 							</TableRow>

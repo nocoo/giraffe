@@ -117,7 +117,9 @@ export function AlertsPage() {
 					<TableBody>
 						{items.map((row) => (
 							<TableRow key={`${row.name_with_owner}:${row.url}`}>
-								<TableCell className="text-muted-foreground">{row.name_with_owner}</TableCell>
+								<TableCell className="text-basalt-muted-foreground">
+									{row.name_with_owner}
+								</TableCell>
 								<TableCell>{row.source}</TableCell>
 								<TableCell>
 									<Badge variant={severityBadgeVariant(row.severity)}>{row.severity}</Badge>

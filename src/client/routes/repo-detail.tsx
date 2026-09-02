@@ -411,10 +411,12 @@ export function RepoDetailPage() {
 							<LayerCard>
 								<LayerCard.Body className="flex flex-col gap-2 text-sm">
 									<p>
-										<span className="text-muted-foreground">默认分支</span> {snap.default_branch}
+										<span className="text-basalt-muted-foreground">默认分支</span>{" "}
+										{snap.default_branch}
 									</p>
 									<p>
-										<span className="text-muted-foreground">许可证</span> {snap.license ?? "—"}
+										<span className="text-basalt-muted-foreground">许可证</span>{" "}
+										{snap.license ?? "—"}
 									</p>
 									<p>
 										<Link href={snap.url} target="_blank" rel="noreferrer">
@@ -494,7 +496,7 @@ export function RepoDetailPage() {
 												{row.tag_name}
 											</Link>
 										</TableCell>
-										<TableCell className="text-muted-foreground">
+										<TableCell className="text-basalt-muted-foreground">
 											{formatDate(row.published_at)}
 										</TableCell>
 										<TableCell>
@@ -545,7 +547,7 @@ export function RepoDetailPage() {
 											</Link>
 										</TableCell>
 										<TableCell>{row.author_login ?? "—"}</TableCell>
-										<TableCell className="text-muted-foreground">
+										<TableCell className="text-basalt-muted-foreground">
 											{formatDate(row.updated_at)}
 										</TableCell>
 									</TableRow>
@@ -587,11 +589,11 @@ export function RepoDetailPage() {
 										</TableCell>
 										<TableCell>{formatReview(row.review_decision)}</TableCell>
 										<TableCell className="tabular-nums">
-											<span className="text-success">+{row.additions}</span>
-											<span className="text-muted-foreground">/</span>
-											<span className="text-destructive">−{row.deletions}</span>
+											<span className="text-basalt-info">+{row.additions}</span>
+											<span className="text-basalt-muted-foreground">/</span>
+											<span className="text-basalt-danger">−{row.deletions}</span>
 										</TableCell>
-										<TableCell className="text-muted-foreground">
+										<TableCell className="text-basalt-muted-foreground">
 											{formatDate(row.updated_at)}
 										</TableCell>
 									</TableRow>
@@ -642,7 +644,7 @@ export function RepoDetailPage() {
 									<Link href={row.html_url} target="_blank" rel="noreferrer">
 										{row.login}
 									</Link>
-									<span className="ml-auto tabular-nums text-sm text-muted-foreground">
+									<span className="ml-auto tabular-nums text-sm text-basalt-muted-foreground">
 										{formatCount(row.contributions)}
 									</span>
 								</li>

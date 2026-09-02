@@ -105,7 +105,9 @@ export function IssuesPage() {
 					<TableBody>
 						{rows.map((row) => (
 							<TableRow key={`${row.name_with_owner}#${row.number}`}>
-								<TableCell className="text-muted-foreground">{row.name_with_owner}</TableCell>
+								<TableCell className="text-basalt-muted-foreground">
+									{row.name_with_owner}
+								</TableCell>
 								<TableCell className="tabular-nums">#{row.number}</TableCell>
 								<TableCell>
 									<Link href={row.url} target="_blank" rel="noreferrer">
@@ -113,7 +115,7 @@ export function IssuesPage() {
 									</Link>
 								</TableCell>
 								<TableCell>{row.author_login ?? "—"}</TableCell>
-								<TableCell className="text-muted-foreground">
+								<TableCell className="text-basalt-muted-foreground">
 									{formatDate(row.updated_at)}
 								</TableCell>
 							</TableRow>

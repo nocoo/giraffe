@@ -165,9 +165,9 @@ export function ReposPage() {
 							<Link
 								key={row.name_with_owner}
 								href={`/repos/${row.owner_login}/${row.name}`}
-								className="text-foreground no-underline hover:no-underline"
+								className="text-basalt-foreground no-underline hover:no-underline"
 							>
-								<LayerCard className="h-full rounded-card bg-secondary transition-colors hover:bg-accent/30">
+								<LayerCard className="h-full transition-colors hover:bg-basalt-accent/30">
 									<LayerCard.Header>
 										<p className="truncate font-medium">{row.name_with_owner}</p>
 										{status ? (
@@ -175,10 +175,10 @@ export function ReposPage() {
 										) : null}
 									</LayerCard.Header>
 									<LayerCard.Body>
-										<p className="line-clamp-2 text-sm text-muted-foreground">
+										<p className="line-clamp-2 text-sm text-basalt-muted-foreground">
 											{row.description ?? "没有描述"}
 										</p>
-										<p className="mt-3 text-xs text-muted-foreground">
+										<p className="mt-3 text-xs text-basalt-muted-foreground">
 											{row.primary_language ?? "—"} · ★ {formatCount(row.stargazer_count)} ·{" "}
 											{formatVisibility(row.visibility)}
 										</p>
@@ -224,7 +224,7 @@ export function ReposPage() {
 											{row.name_with_owner}
 										</Link>
 									</TableCell>
-									<TableCell className="text-muted-foreground">
+									<TableCell className="text-basalt-muted-foreground">
 										{row.primary_language ?? "—"}
 									</TableCell>
 									<TableCell className="tabular-nums">{formatCount(row.stargazer_count)}</TableCell>
@@ -232,7 +232,7 @@ export function ReposPage() {
 									<TableCell className="tabular-nums">
 										{formatCount(row.open_issue_count)}
 									</TableCell>
-									<TableCell className="text-muted-foreground">
+									<TableCell className="text-basalt-muted-foreground">
 										{formatDate(row.pushed_at)}
 									</TableCell>
 									<TableCell>{formatVisibility(row.visibility)}</TableCell>
