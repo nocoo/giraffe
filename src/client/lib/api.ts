@@ -1,4 +1,4 @@
-import { ApiError } from "./errors";
+import { ApiError, asErrorCode } from "./errors";
 
 async function send(resource: string, init?: RequestInit): Promise<Response> {
 	return fetch(`/api/${resource}`, { credentials: "same-origin", ...init });
@@ -16,7 +16,7 @@ async function parse<T>(res: Response): Promise<T> {
 				: undefined;
 		throw new ApiError(
 			res.status,
-			typeof err?.code === "string" ? err.code : "internal_error",
+			asErrorCode(typeof err?.code === "string" ? err.code : "internal_error"),
 			typeof err?.message === "string" ? err.message : "request failed",
 		);
 	}

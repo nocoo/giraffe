@@ -74,10 +74,17 @@ describe("api client", () => {
 				expect(init?.body).toBeUndefined();
 				return new Response(null, { status: 204 });
 			}
+			if (url === "/api/d") {
+				return new Response(JSON.stringify({ error: { code: "nope", message: "x" } }), {
+					status: 500,
+					headers: { "content-type": "application/json" },
+				});
+			}
 			throw new Error(url);
 		});
 		await expect(apiGet("a")).rejects.toMatchObject({ code: "internal_error", status: 500 });
 		await expect(apiGet("b")).rejects.toMatchObject({ code: "internal_error", status: 502 });
 		await expect(apiPost("c")).resolves.toBeUndefined();
+		await expect(apiGet("d")).rejects.toMatchObject({ code: "internal_error", status: 500 });
 	});
 });
