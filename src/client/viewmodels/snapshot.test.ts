@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { setActiveAccountId } from "./session";
-import { clearSnapshots, loadKind } from "./snapshot";
+import { clearSnapshots, fetchKindAs, loadKind } from "./snapshot";
 
 describe("snapshot loader", () => {
 	afterEach(() => {
@@ -85,5 +85,10 @@ describe("snapshot loader", () => {
 		expect(await loadKind("issues")).toMatchObject({ account_id: "acc1" });
 		expect(await loadKind("issues")).toMatchObject({ account_id: "acc1" });
 		expect(issuesGets).toBe(1);
+	});
+
+	it("skips fetchKindAs when the local stamp is stale", async () => {
+		setActiveAccountId("acc2");
+		expect(await fetchKindAs("issues", "acc1")).toEqual({ missing: true });
 	});
 });

@@ -33,10 +33,13 @@ export function peekSnapshot<T extends { account_id: string }>(
 	return hit.body as T;
 }
 
-export async function fetchKind<T extends { account_id: string }>(
+export async function fetchKindAs<T extends { account_id: string }>(
 	resource: string,
+	stamp: string,
 ): Promise<T | { missing: true }> {
-	const stamp = await ensureSession();
+	if (getActiveAccountId() !== stamp) {
+		return { missing: true };
+	}
 	try {
 		const body = await apiGet<T>(resource);
 		if (getActiveAccountId() !== stamp) {
@@ -54,6 +57,13 @@ export async function fetchKind<T extends { account_id: string }>(
 		}
 		throw err;
 	}
+}
+
+export async function fetchKind<T extends { account_id: string }>(
+	resource: string,
+): Promise<T | { missing: true }> {
+	const stamp = await ensureSession();
+	return fetchKindAs<T>(resource, stamp);
 }
 
 export async function loadKind<T extends { account_id: string }>(

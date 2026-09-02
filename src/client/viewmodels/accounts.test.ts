@@ -179,4 +179,22 @@ describe("accounts viewmodel", () => {
 		expect(urls).toContain("POST /api/accounts/acc2/activate");
 		expect(urls).toContain("DELETE /api/accounts/acc2");
 	});
+
+	it("keeps activation when the follow-up refresh fails", async () => {
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+			const url = String(input);
+			if (url === "/api/accounts/acc2/activate") {
+				return Response.json({ id: "acc2", is_active: true });
+			}
+			if (url === "/api/accounts") {
+				return Response.json({ accounts: [{ id: "acc2", login: "octocat", is_active: true }] });
+			}
+			if (url === "/api/refresh") {
+				throw new Error("refresh boom");
+			}
+			throw new Error(`${init?.method} ${url}`);
+		});
+		await activateAccount("acc2");
+		expect(getActiveAccountId()).toBe("acc2");
+	});
 });

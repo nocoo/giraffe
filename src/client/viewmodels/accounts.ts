@@ -57,7 +57,11 @@ export async function activateAccount(id: string): Promise<void> {
 	await apiPost(`accounts/${id}/activate`);
 	clearRefreshQueue();
 	setActiveAccountId(id);
-	await requestRefresh(["repos"]);
+	try {
+		await requestRefresh(["repos"]);
+	} catch {
+		// account is already active even if the first repos refresh fails
+	}
 }
 
 export async function deleteAccount(id: string): Promise<void> {

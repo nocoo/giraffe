@@ -40,8 +40,7 @@ export async function loadInbox(): Promise<NotificationsSnapshot | { missing: tr
 	return loadKind<NotificationsSnapshot>("notifications");
 }
 
-export async function markRead(id: string): Promise<NotificationsSnapshot> {
-	const account_id = await ensureSession();
+export async function markRead(id: string, account_id: string): Promise<NotificationsSnapshot> {
 	try {
 		return await apiPost<NotificationsSnapshot>("notifications/read", { id, account_id });
 	} catch (err) {
@@ -52,8 +51,7 @@ export async function markRead(id: string): Promise<NotificationsSnapshot> {
 	}
 }
 
-export async function markReadAll(): Promise<NotificationsSnapshot> {
-	const account_id = await ensureSession();
+export async function markReadAll(account_id: string): Promise<NotificationsSnapshot> {
 	try {
 		return await apiPost<NotificationsSnapshot>("notifications/read-all", { account_id });
 	} catch (err) {

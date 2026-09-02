@@ -85,14 +85,26 @@ describe("inbox viewmodel", () => {
 			}
 			throw new Error(url);
 		});
-		const one = await markRead("1");
+		const one = await markRead("1", "acc1");
 		expect(one.notifications[0]?.unread).toBe(false);
 		expect(posts[0]).toContain('"account_id":"acc1"');
 		expect(posts[0]).toContain('"id":"1"');
-		const all = await markReadAll();
+		const all = await markReadAll("acc1");
 		expect(all.notifications.every((row) => !row.unread)).toBe(true);
 		expect(posts[1]).toContain('"account_id":"acc1"');
 		expect(posts).toHaveLength(2);
+	});
+
+	it("uses the snapshot account_id rather than the live session", async () => {
+		setActiveAccountId("acc2");
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+			if (String(input) === "/api/notifications/read") {
+				expect(String(init?.body)).toContain('"account_id":"acc1"');
+				return Response.json(applyRead(snap, "1"));
+			}
+			throw new Error(String(input));
+		});
+		await markRead("1", "acc1");
 	});
 
 	it("does not replay on account_conflict", async () => {
@@ -111,8 +123,8 @@ describe("inbox viewmodel", () => {
 			}
 			throw new Error(url);
 		});
-		await expect(markRead("1")).rejects.toMatchObject({ code: "account_conflict" });
-		await expect(markReadAll()).rejects.toMatchObject({ code: "account_conflict" });
+		await expect(markRead("1", "acc1")).rejects.toMatchObject({ code: "account_conflict" });
+		await expect(markReadAll("acc1")).rejects.toMatchObject({ code: "account_conflict" });
 		expect(posts).toBe(2);
 	});
 

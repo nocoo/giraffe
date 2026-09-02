@@ -52,7 +52,10 @@ describe("refresh coordinator", () => {
 			}
 			throw new Error(url);
 		});
-		const [a, b] = await Promise.all([requestRefresh(["repos"]), requestRefresh(["repos"])]);
+		const first = requestRefresh(["repos"]);
+		const second = requestRefresh(["repos"]);
+		expect(first).toBe(second);
+		const [a, b] = await Promise.all([first, second]);
 		expect(posts).toBe(1);
 		expect(a?.kinds).toEqual(["repos"]);
 		expect(b?.kinds).toEqual(["repos"]);
@@ -349,6 +352,30 @@ describe("refresh coordinator", () => {
 			throw new Error(url);
 		});
 		await expect(requestRefresh(["issues"])).rejects.toMatchObject({ code: "github_error" });
+	});
+
+	it("stops applying written kinds after a stamp change", async () => {
+		setActiveAccountId("acc1");
+		let current = "acc1";
+		const urls: string[] = [];
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+			const url = String(input);
+			urls.push(url);
+			if (url === "/api/accounts") {
+				return accountsFor(current);
+			}
+			if (url === "/api/refresh") {
+				return Response.json({ account_id: "acc1", kinds: ["repos", "alerts"] });
+			}
+			if (url === "/api/repos") {
+				current = "acc2";
+				setActiveAccountId("acc2");
+				return Response.json({ account_id: "acc1" });
+			}
+			throw new Error(url);
+		});
+		await requestRefresh(["repos", "alerts"]);
+		expect(urls).not.toContain("/api/alerts");
 	});
 
 	it("maps repo kinds onto snapshot resources", () => {

@@ -1,7 +1,7 @@
 import { apiPost } from "../lib/api";
 import { ApiError } from "../lib/errors";
 import { ensureSession, getActiveAccountId } from "./session";
-import { fetchKind, putSnapshot } from "./snapshot";
+import { fetchKindAs, putSnapshot } from "./snapshot";
 
 export type RefreshBody = {
 	account_id?: string;
@@ -34,7 +34,6 @@ function notifyRefresh(): void {
 
 export function clearRefreshQueue(): void {
 	jobs.clear();
-	tail = Promise.resolve();
 	notifyRefresh();
 }
 
@@ -93,16 +92,16 @@ async function followUp(
 	if (getActiveAccountId() !== stamp) {
 		return;
 	}
-	await ensureSession();
-	if (getActiveAccountId() !== stamp) {
+	const current = await ensureSession();
+	if (current !== stamp) {
 		return;
 	}
 	const written = writtenKinds(result, requested);
 	if (!written.includes("insights")) {
-		await fetchKind("insights");
+		await fetchKindAs("insights", stamp);
 	}
 	if (!written.includes("digest") && written.includes("repos")) {
-		await fetchKind("digest");
+		await fetchKindAs("digest", stamp);
 	}
 }
 
@@ -118,10 +117,11 @@ async function applyResult(
 		}
 	} else {
 		for (const kind of writtenKinds(result, requested)) {
-			if (getActiveAccountId() !== stamp) {
+			const current = await ensureSession();
+			if (current !== stamp) {
 				return;
 			}
-			await fetchKind(resourceOfKind(kind));
+			await fetchKindAs(resourceOfKind(kind), stamp);
 		}
 	}
 	await followUp(stamp, result, requested);
@@ -148,7 +148,7 @@ async function execute(
 		}
 		throw err;
 	}
-	if (result.account_id !== stamp) {
+	if (result.account_id !== stamp || getActiveAccountId() !== stamp) {
 		await ensureSession();
 		return null;
 	}
@@ -159,25 +159,38 @@ async function execute(
 	return result;
 }
 
-export async function requestRefresh(kinds?: string | string[]): Promise<RefreshBody | null> {
-	const stamp = await ensureSession();
-	const key = keyOf(stamp, kinds);
-	const existing = jobs.get(key);
-	if (existing) {
-		return existing;
+export function requestRefresh(kinds?: string | string[]): Promise<RefreshBody | null> {
+	const known = getActiveAccountId();
+	if (known) {
+		const existing = jobs.get(keyOf(known, kinds));
+		if (existing) {
+			return existing;
+		}
 	}
-	const job = tail.then(() => execute(stamp, kinds));
-	jobs.set(key, job);
-	notifyRefresh();
-	tail = job.then(
-		() => {
-			jobs.delete(key);
-			notifyRefresh();
-		},
-		() => {
-			jobs.delete(key);
-			notifyRefresh();
-		},
-	);
-	return job;
+	const started: Promise<RefreshBody | null> = ensureSession().then((stamp) => {
+		const key = keyOf(stamp, kinds);
+		const existing = jobs.get(key);
+		if (existing && existing !== started) {
+			return existing;
+		}
+		const job = tail.then(() => execute(stamp, kinds));
+		jobs.set(key, job);
+		notifyRefresh();
+		tail = job.then(
+			() => {
+				jobs.delete(key);
+				notifyRefresh();
+			},
+			() => {
+				jobs.delete(key);
+				notifyRefresh();
+			},
+		);
+		return job;
+	});
+	if (known) {
+		jobs.set(keyOf(known, kinds), started);
+		notifyRefresh();
+	}
+	return started;
 }
