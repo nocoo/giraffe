@@ -8,6 +8,7 @@ import { InboxPage } from "./routes/inbox";
 import { InsightsPage } from "./routes/insights";
 import { IssuesPage } from "./routes/issues";
 import { PullsPage } from "./routes/pulls";
+import { RepoDetailPage } from "./routes/repo-detail";
 import { ReposPage } from "./routes/repos";
 import { SettingsPage } from "./routes/settings";
 
@@ -45,6 +46,7 @@ export function App() {
 							<Route path="/alerts" element={<AlertsPage />} />
 							<Route path="/inbox" element={<InboxPage />} />
 							<Route path="/digest" element={<DigestPage />} />
+							<Route path="/repos/:owner/:name" element={<RepoDetailPage />} />
 							<Route path="/settings" element={<SettingsPage />} />
 						</Route>
 					</Routes>
