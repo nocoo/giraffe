@@ -904,4 +904,54 @@ describe("refresh route", () => {
 		expect(pages).toBe(40);
 		expect((await createApp().request("http://localhost/api/issues", {}, e)).status).toBe(409);
 	});
+
+	it("derives insights when alerts are truncated", async () => {
+		const e = env();
+		const id = await createAccount(e);
+		const db = createDb(e.DB);
+		const fetched = "2026-09-01T00:00:00.000Z";
+		await db.batch([
+			...replaceSnapshotStmts(
+				db,
+				id,
+				"repos",
+				{
+					fetched_at: fetched,
+					truncated: false,
+					repos: [
+						{
+							name_with_owner: "octocat/hello-world",
+							open_issue_count: 0,
+							pushed_at: fetched,
+						},
+					],
+				},
+				fetched,
+			),
+			...replaceSnapshotStmts(
+				db,
+				id,
+				"issues",
+				{ fetched_at: fetched, truncated: false, issues: [] },
+				fetched,
+			),
+			...replaceSnapshotStmts(
+				db,
+				id,
+				"alerts",
+				{ fetched_at: fetched, truncated: true, unavailable: false, items: [] },
+				fetched,
+			),
+		]);
+		stubGithub();
+		const res = await createApp().request(
+			"http://localhost/api/refresh",
+			{ method: "POST", headers, body: JSON.stringify({ kinds: ["insights"] }) },
+			e,
+		);
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { alerts_incomplete?: boolean; insights?: unknown[] };
+		expect(body.alerts_incomplete).toBe(true);
+		expect(Array.isArray(body.insights)).toBe(true);
+	});
 });

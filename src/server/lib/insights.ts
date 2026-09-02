@@ -39,7 +39,8 @@ export function buildInsights(
 	repos: RepoRow[],
 	alerts: InsightAlert[],
 	fetchedAt: string,
-): { fetched_at: string; truncated: boolean; insights: Insight[] } {
+	alertsIncomplete = false,
+): { fetched_at: string; truncated: boolean; alerts_incomplete: boolean; insights: Insight[] } {
 	const byRepo = new Map<string, InsightAlert[]>();
 	for (const alert of alerts) {
 		const list = byRepo.get(alert.name_with_owner) ?? [];
@@ -75,5 +76,5 @@ export function buildInsights(
 			opportunities,
 		};
 	});
-	return { fetched_at: fetchedAt, truncated: false, insights };
+	return { fetched_at: fetchedAt, truncated: false, alerts_incomplete: alertsIncomplete, insights };
 }

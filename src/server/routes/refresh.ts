@@ -228,15 +228,18 @@ export async function postRefresh(
 	const reposSrc = await loaded("repos");
 	const issuesSrc = await loaded("issues");
 	const alertsSrc = await loaded("alerts");
-	const insightsOk = sourceOk(reposSrc) && sourceOk(issuesSrc) && sourceOk(alertsSrc);
+	const insightsOk = sourceOk(reposSrc) && sourceOk(issuesSrc);
 	if (explicitInsights && !insightsOk) {
 		throw new ApiError(409, "snapshot_missing", "derived sources missing");
 	}
-	if (insightsOk && reposSrc && alertsSrc) {
+	if (insightsOk && reposSrc) {
+		const alertsIncomplete =
+			alertsSrc === null || alertsSrc.unavailable === true || alertsSrc.truncated === true;
 		const insights = buildInsights(
 			asRepos(reposSrc),
-			Array.isArray(alertsSrc.items) ? (alertsSrc.items as InsightAlert[]) : [],
+			Array.isArray(alertsSrc?.items) ? (alertsSrc.items as InsightAlert[]) : [],
 			fetchedAt,
+			alertsIncomplete,
 		);
 		const preview = splitPages("insights", insights);
 		if (!preview.truncated || explicitInsights) {

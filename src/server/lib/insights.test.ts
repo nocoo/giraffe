@@ -20,6 +20,18 @@ describe("buildInsights", () => {
 		expect(result.insights[1]?.opportunities).toContain("open_alerts");
 		expect(result.insights[2]?.health).toBe("risky");
 		expect(result.insights[2]?.opportunities).toContain("stale_push");
+		expect(result.alerts_incomplete).toBe(false);
+	});
+
+	it("marks alerts_incomplete when asked", () => {
+		const result = buildInsights(
+			[{ name_with_owner: "a/s", open_issue_count: 0, pushed_at: "2026-08-20T00:00:00.000Z" }],
+			[],
+			fetched,
+			true,
+		);
+		expect(result.alerts_incomplete).toBe(true);
+		expect(result.insights[0]?.health).toBe("strong");
 	});
 
 	it("treats invalid pushed_at as ancient", () => {
