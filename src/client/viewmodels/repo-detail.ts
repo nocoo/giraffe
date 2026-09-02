@@ -16,6 +16,30 @@ export const REPO_TABS = [
 
 export type RepoTab = (typeof REPO_TABS)[number];
 
+export type RepoSecurity = {
+	account_id: string;
+	fetched_at: string;
+	truncated: boolean;
+	unavailable: boolean;
+	dependabot_open: number;
+	code_scanning_open: number;
+};
+
+export type TrafficPoint = {
+	timestamp: string;
+	count: number;
+	uniques: number;
+};
+
+export type RepoTraffic = {
+	account_id: string;
+	fetched_at: string;
+	truncated: boolean;
+	forbidden: boolean;
+	views: { count: number; uniques: number; points: TrafficPoint[] };
+	clones: { count: number; uniques: number; points: TrafficPoint[] };
+};
+
 export type RepoDetails = {
 	account_id: string;
 	fetched_at: string;
@@ -38,6 +62,18 @@ export function isValidRepoPart(value: string): boolean {
 
 export function repoKind(owner: string, name: string, tab: RepoTab): string {
 	return `repo:${owner}/${name}:${tab}`;
+}
+
+export function securityUnavailable(snap: RepoSecurity): boolean {
+	return snap.unavailable === true;
+}
+
+export function trafficForbidden(snap: RepoTraffic): boolean {
+	return snap.forbidden === true;
+}
+
+export function trafficPoints(points: TrafficPoint[]): { x: string; y: number }[] {
+	return points.map((point) => ({ x: point.timestamp, y: point.count }));
 }
 
 export function repoResource(owner: string, name: string, tab: RepoTab): string {

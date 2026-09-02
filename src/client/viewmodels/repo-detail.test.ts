@@ -1,5 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { isValidRepoPart, loadRepoTab, REPO_TABS, repoKind, repoResource } from "./repo-detail";
+import {
+	isValidRepoPart,
+	loadRepoTab,
+	REPO_TABS,
+	repoKind,
+	repoResource,
+	securityUnavailable,
+	trafficForbidden,
+	trafficPoints,
+} from "./repo-detail";
 import { setActiveAccountId } from "./session";
 
 describe("repo-detail viewmodel", () => {
@@ -51,6 +60,47 @@ describe("repo-detail viewmodel", () => {
 		]);
 		expect(repoResource("o", "n", "details")).toBe("repos/o/n");
 		expect(repoKind("o", "n", "security")).toBe("repo:o/n:security");
+		expect(
+			securityUnavailable({
+				account_id: "a",
+				fetched_at: "t",
+				truncated: false,
+				unavailable: true,
+				dependabot_open: 0,
+				code_scanning_open: 0,
+			}),
+		).toBe(true);
+		expect(
+			securityUnavailable({
+				account_id: "a",
+				fetched_at: "t",
+				truncated: false,
+				unavailable: false,
+				dependabot_open: 1,
+				code_scanning_open: 0,
+			}),
+		).toBe(false);
+		expect(
+			trafficForbidden({
+				account_id: "a",
+				fetched_at: "t",
+				truncated: false,
+				forbidden: true,
+				views: { count: 0, uniques: 0, points: [] },
+				clones: { count: 0, uniques: 0, points: [] },
+			}),
+		).toBe(true);
+		expect(
+			trafficForbidden({
+				account_id: "a",
+				fetched_at: "t",
+				truncated: false,
+				forbidden: false,
+				views: { count: 1, uniques: 1, points: [{ timestamp: "t", count: 4, uniques: 2 }] },
+				clones: { count: 0, uniques: 0, points: [] },
+			}),
+		).toBe(false);
+		expect(trafficPoints([{ timestamp: "t", count: 4, uniques: 2 }])).toEqual([{ x: "t", y: 4 }]);
 	});
 
 	it("maps snapshot_missing and rethrows other errors", async () => {
