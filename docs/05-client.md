@@ -402,7 +402,7 @@ export function breadcrumbsFor(pathname: string): { href: string; label: string 
 
 | 模块 | 例子 |
 |------|------|
-| `api.ts` | 注入 fetch：模板 URL 以 `/api/` 开头、信封抛 `ApiError`、204、成功无 error 字段；refresh/read/read-all 的 body 含 `account_id` |
+| `api.ts` | 注入 fetch：模板 URL 以 `/api/` 开头、信封抛 `ApiError`、204、成功无 error 字段；refresh/read/read-all 的 body 含 `account_id`；`account_conflict` 不自动重放 |
 | `refresh.ts` | 合并等价；排队不等价；账号切换丢弃并补跑；单 kind 200 用 payload；多 kind 再 GET；`["repos"]` 之后 GET digest；硬失败不更新缓存；默认 kinds 不含显式 insights/digest |
 | `accounts` | 提交后 token 空串；列表不含 ciphertext；`is_active === false` 不 refresh；activate / delete 归约 |
 | `me` | 短路身份字段映射 |
@@ -443,7 +443,7 @@ L3 依赖步骤 1 的 Origin 补丁。未补丁前不算 L3 绿。L3 **不是** 
 
 1. `origin.ts`：development Access 短路时允许同源 Origin。L1：短路同源 通过；生产拒绝 `http://127.0.0.1:27045`。L2 A/B 仍绿。
 2. insights 派生：alerts 截断/缺失不是源不足；写入 `alerts_incomplete`（03）。仓 403 跳过 → alerts `truncated: true`。改 `collect`/`refresh`/`insights` 并补 L1。
-3. 快照外层 `account_id`；refresh/notifications 写请求可选 `account_id` → 错则 409 `account_conflict`。
+3. 快照外层 `account_id`；refresh/read/read-all **必填** `account_id`：缺 → 400，错 → 409 且零 GitHub、零 D1。
 
 提交拆开，都在 Client 脚手架之前。信息：`fix: allow same-origin posts in dev`、`fix: derive insights when alerts truncated`、`fix: return snapshot account_id`。
 
@@ -460,7 +460,7 @@ L3 依赖步骤 1 的 Origin 补丁。未补丁前不算 L3 绿。L3 **不是** 
 | 0 | `docs: add client design document` | 本文 + 01/02/04 对齐 | Codex Sign Off |
 | 1a | `fix: allow same-origin posts in dev` | `origin.ts` | L1；L2 A/B 绿 |
 | 1b | `fix: derive insights when alerts truncated` | refresh/collect 派生 + `alerts_incomplete` + 仓跳过 truncated | L1 |
-| 1c | `fix: return snapshot account_id` | GET/单 kind 体含 `account_id`；写请求错 id → 409 | L1+L2 |
+| 1c | `fix: return snapshot account_id` | GET/单 kind 体含 `account_id`；写请求缺 id → 400、错 id → 409 且零 GitHub 零 D1 | L1+L2 |
 | 2 | `feat: scaffold vite client toolchain` | 根 `index.html`、Vite、`@tailwindcss/vite`、React 插件、Basalt 依赖、`tsconfig.client.json`、coverage exclude 同步 02、空 `main.tsx`/`app.tsx`/layout 壳、无业务页 | `bun run build`；G1 client-fetch 绿 |
 | 3 | `feat: add same-origin api client` | `api.ts` + errors；`` fetch(`/api/${resource}`) `` | L1 注入 fetch；gate 绿 |
 | 4 | `feat: add refresh coordinator` | `session.ts` + `refresh.ts` 单例、stamp、排队、归一 04 两种 200 | L1 互斥/排队/201 stamp/切换丢弃 |

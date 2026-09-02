@@ -182,7 +182,7 @@ G1 禁止把 `ENVIRONMENT=development` / `test`、`GITHUB_API_BASE`、`ACCESS_JW
 
 ### 5.5 请求体
 
-有 JSON 的 POST：`Content-Type` 必须是 `application/json`（可带 `charset=utf-8`），否则 400 `validation_failed`。无 body 的 POST（activate、read-all）不要求 Content-Type。
+有 JSON 的 POST：`Content-Type` 必须是 `application/json`（可带 `charset=utf-8`），否则 400 `validation_failed`。无 body 的 POST **仅** `activate` 不要求 Content-Type。`refresh`、`notifications/read`、`read-all` 都有 JSON（至少 `account_id`）。
 
 Body 上限：accounts 4 KiB，其它 64 KiB。用 `request.body` 流式读，累计超过上限立即 cancel 并 400。禁止 `arrayBuffer()` / `request.json()` 在限长之前把整包读进内存。
 
@@ -274,16 +274,16 @@ insights 的「源不足」**只**看 `repos` 与 `issues`：缺行或该源 `tr
 Body（Zod）：`kinds` 可选。`account_id` **必填**（nanoid 21）。缺或非法 → 400 `validation_failed`。≠ 当前 active → 409 `account_conflict`，不写库、不出站。
 
 ```json
-{ "kinds": "all" }
+{ "account_id": "<accounts.id>", "kinds": "all" }
 ```
 
 或
 
 ```json
-{ "kinds": ["repos", "issues"] }
+{ "account_id": "<accounts.id>", "kinds": ["repos", "issues"] }
 ```
 
-或 `{}`。
+或 `{ "account_id": "<accounts.id>" }`（kinds 缺省 = all）。无 `account_id` 不是合法体。
 
 - 缺 `kinds` 或 `"all"`：刷新全部跨仓 GitHub kind：`repos`、`issues`、`prs`、`alerts`、`notifications`。
 - 数组：只对列出的 GitHub kind 出站。最多 **16** 项（`all` 计 5）。超过或重复 → 400 `validation_failed`。若数组同时含 `repos` 与依赖它的 kind，**无论数组顺序**都先在内存收集 `repos`，再按数组去掉 `repos` 后的顺序收集其余。`issues` / `prs` / `alerts` 需要已有或本轮内存中的 `repos`。否则 409 `snapshot_missing`，**不得**偷偷持久化 repos。
@@ -477,7 +477,7 @@ L1 必测（注入 DB / fake fetch，无网络、无 wrangler）：
 | `snapshot-pages` | 切分与组装；单元素过大 `truncated` |
 | `digest` | 邻日差量；无昨天 → `baseline_missing` 且 delta `null` |
 | `insights` | health 三档与 opportunities；`alerts_incomplete` true（缺/unavailable/truncated/仓跳过）与 false |
-| `errors` / 路由 | 信封；body 超限 400；未知 `/api` 404；已知路径错误方法 405；`onError` → 500 `internal_error`；快照 GET 与单 kind refresh 成功体含正确 `account_id`；refresh/read/read-all 缺 `account_id` → 400；错 id → 409 `account_conflict` |
+| `errors` / 路由 | 信封；body 超限 400；未知 `/api` 404；已知路径错误方法 405；`onError` → 500 `internal_error`；快照 GET 与单 kind refresh 成功体含正确 `account_id`；refresh/read/read-all 缺 `account_id` → 400；错 id → 409 `account_conflict` 且 stub 计数 0、D1 字节不变 |
 | `createDb` | 第 81 条不 execute；两 store 同一句柄；`last_used_at` 与业务语句同一 batch；默认 `all` 最终 batch 语句数 < 80 |
 | refresh 收集 | 硬失败零写入；第 3 页丢弃不写 `kind#3`；kinds 17 项 → 400；16 项整请求 statement < 80；16 MiB **累计** staged；显式 insights 与 digest 超大；混合数组 truncated_kinds；隐式超大跳过 |
 | 路由纯逻辑 | 无快照 409；`scopes_missing`；`capability_missing` |
