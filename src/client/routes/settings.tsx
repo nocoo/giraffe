@@ -59,7 +59,7 @@ export function SettingsPage() {
 			.then(([identity, rows]) => {
 				setMe(identity);
 				setAccounts(rows);
-				if (rows.length > 0) {
+				if (rows.some((row) => row.is_active)) {
 					reportOk();
 				}
 			})

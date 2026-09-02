@@ -31,7 +31,14 @@ export async function ensureSession(): Promise<string> {
 		return sessionTick;
 	}
 	sessionTick = (async () => {
+		const gen = cacheGen;
 		const body = await apiGet<{ accounts: AccountRow[] }>("accounts");
+		if (cacheGen !== gen) {
+			if (activeId) {
+				return activeId;
+			}
+			throw new ApiError(409, "account_missing", "no active account");
+		}
 		const active = body.accounts.find((row) => row.is_active);
 		if (!active) {
 			setActiveAccountId(null);

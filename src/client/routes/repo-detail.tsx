@@ -351,6 +351,12 @@ export function RepoDetailPage() {
 									applyIfCurrent(setTraffic),
 								);
 							})
+							.then((result) => {
+								if (mine !== gen.current) {
+									return false;
+								}
+								return result;
+							})
 							.catch((err: unknown) => {
 								if (mine !== gen.current) {
 									return false;

@@ -184,17 +184,17 @@ export function requestRefresh(kinds?: string | string[]): Promise<RefreshBody |
 				return existing;
 			}
 			const job = tail.then(() => execute(stamp, kinds));
-			jobs.set(key, job);
+			jobs.set(key, started);
 			notifyRefresh();
 			tail = job.then(
 				() => {
-					if (jobs.get(key) === job) {
+					if (jobs.get(key) === started) {
 						jobs.delete(key);
 						notifyRefresh();
 					}
 				},
 				() => {
-					if (jobs.get(key) === job) {
+					if (jobs.get(key) === started) {
 						jobs.delete(key);
 						notifyRefresh();
 					}
