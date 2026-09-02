@@ -53,6 +53,7 @@ src/client/
   app.tsx                          # 路由表
   components/layout/app-shell.tsx  # 组合 Basalt 壳；含侧栏、岛、顶栏
   lib/navigation.ts                # 导航数据，与渲染分离
+  lib/routes.ts                    # 全部 SPA 路径表；app.tsx 只消费它
   lib/api.ts                       # 唯一 fetch；每个调用站点都是 /api/ 模板字面量
   lib/errors.ts                    # 04 信封 → 类型
   lib/format.ts                    # 日期、delta 纯函数
@@ -244,10 +245,13 @@ async function send(resource: string, init?: RequestInit): Promise<Response> {
 Server 不调度。Client 只经 `viewmodels/refresh.ts` 调 `POST /api/refresh`。该模块持有**进程内单例**：
 
 - 锁在模块而非 hook。路由卸载不清空锁。
-- **等价**请求（同一 `accountId` + 规范化后相同 `kinds`）合并为同一个 in-flight Promise。
-- **不等价**请求（不同账号或不同 kinds）FIFO 排队：等当前结束再发，不得 no-op 吞掉。
-- 发出时记下 `accountId`。返回后若当前 active 已变，丢弃结果且**再跑**队列里为新账号排队的请求（不能只丢弃而不补跑）。
-- L1 覆盖：互斥、合并等价、排队不等价、账号切换丢弃并补跑。
+- Client 持有 `activeAccountId`（来自最近一次 `GET /api/accounts` 的 `is_active` 行）。快照缓存按该 id 隔离；id 变化则清空缓存。
+- 入队时盖上当时的 `activeAccountId`。`POST /api/refresh` 仍不带账号 id（04），只刷新服务端当前账号。
+- **发出前**：若条目 stamp ≠ 此刻 `activeAccountId`，丢弃该条目（旧账号的请求不得打出，否则会打在新账号上）。
+- **等价**（同一 stamp + 规范化相同 kinds）合并为同一 in-flight Promise。
+- **不等价**且 stamp 仍是当前账号：FIFO 排队。
+- activate / 删除当前账号成功后：更新 `activeAccountId`、清空旧 stamp 队列、按 §7 为新账号入队 `["repos"]`（删除导致无 active 则不入队）。
+- L1 覆盖：合并等价、排队不等价、stamp 过期丢弃、activate 清空并补跑。
 
 禁止各页 hook 各自 `useState(refreshing)` 当全局真相。页面只读 `refresh.ts` 的 `inFlight` 标记。
 
@@ -275,9 +279,8 @@ HTTP **200** 体有两种（04）：
 
 - 单 kind：该 kind 已写入；用 body 更新缓存，不必再 GET 同一 kind。
 - 多 kind / all：对 `kinds` 里每一项再 GET。
-- 隐式派生：若本轮写入含 `repos`（单 kind 的 repos，或 `kinds` 含 `repos`），再 `GET /api/digest`（409 则保持旧 digest 或 Empty）。若本轮写入含 `repos` 与 `issues`（alerts 可 truncated），再 `GET /api/insights`（409 仅当 04 仍源不足）。
-- Digest 页请求 `["repos"]`：按单 kind 更新 repos 缓存，再 GET digest。
-- Insights 页请求 `["repos","issues","alerts"]`：按多 kind GET 这三个，再 GET insights。04：alerts truncated **不**阻止写入 insights。
+- 隐式派生补读：**仅当**该派生名没有出现在本轮已写入集合里。已写入集合 = 单 kind 的那一项，或多 kind 的 `kinds`。任意成功 refresh 之后：若 `insights` 未在集合中则 `GET /api/insights`（409 保留旧值或 Empty）；若 `digest` 未在集合中且本轮写入含 `repos` 则 `GET /api/digest`（409 同上）。单独刷 `alerts` 也会补 GET insights，避免仓库页 health 过期。
+- Digest 页请求 `["repos"]`：按单 kind 更新 repos，再因 digest 不在集合中而 GET digest。
 
 `truncated` / `truncated_kinds`：Badge「已截断」，仍是成功。未出现的 kind 保持刷新前快照。不得把 200 当成失败。
 
@@ -307,7 +310,7 @@ HTTP **200** 体有两种（04）：
 
 `PageHeader` 标题「仓库」。`Toolbar`：搜索（name/description）、`SegmentControl` 列表 | 网格、排序（star / push 时间 / name）。排序状态在 VM，点表头调用 VM，不靠 Table 内置排序。
 
-列表：`Table` 列 = 仓库、语言、★、fork、open issues、最近 push、可见性、health（若 insights 已在内存则显示，没有则不加列，不为此自动刷 insights）。
+列表：`Table` 列 = 仓库、语言、★、fork、open issues、最近 push、可见性、health（若 insights 已在内存则显示，没有则不加列，不为此自动刷 insights）。若 alerts 快照 `truncated` / `unavailable` 或 alerts `snapshot_missing`，health 旁 Badge「告警不完整」，不得把 `strong` 理解成已扫完全部安全告警。
 
 网格：`LayerCard` 卡，点整卡进 `/repos/:owner/:name`。
 
@@ -321,7 +324,7 @@ HTTP **200** 体有两种（04）：
 
 ### 8.3 `/insights`
 
-按 `health`：`strong` / `watch` / `risky` 分三组或 Segment 过滤。`opportunities`、`alerts` 数组展示为列表。数字与 03 一致，Client 不算 health。GET 409 时 Empty，刷新走 §7 隐式派生。alerts 截断不再阻止 insights 写入（04 §8）。仍 409 仅当 repos 或 issues 不足；不循环自动刷。
+按 `health`：`strong` / `watch` / `risky` 分三组或 Segment 过滤。`opportunities`、`alerts` 数组展示为列表。数字与 03 一致，Client 不算 health。alerts 不完整时页头 Badge「告警不完整」。GET 409 时 Empty，刷新走 §7。仍 409 仅当 repos 或 issues 不足；不循环自动刷。
 
 ### 8.4 `/alerts`
 
@@ -406,7 +409,9 @@ export function breadcrumbsFor(pathname: string): { href: string; label: string 
 | `digest` | `baseline_missing` → markdown 不含假 0 |
 | `repo-detail` | 非法 owner 不请求；九个 tab 各绑定正确 GET path；forbidden traffic；unavailable security；languages 排序 |
 | `navigation.ts` | breadcrumbsFor `/`、`/repos/o/n`、未知路径 |
+| `routes.ts` | 01 §9 九条路径全部在表中；与 NAV_ITEMS href 一致 |
 | 命令面板数据 | 静态 NAV_ITEMS；有 repos 缓存时含仓库项 |
+| health 展示 | alerts 不完整 →「告警不完整」；完整才只显示 strong/watch/risky |
 
 Client 单测：文件顶 `// @vitest-environment happy-dom` 或 vitest 对 `src/client/**` 设 environment。不得 `import` `src/server`。
 
@@ -451,7 +456,7 @@ L3 依赖步骤 1 的 Origin 补丁。未补丁前不算 L3 绿。L3 **不是** 
 | 2 | `feat: scaffold vite client toolchain` | 根 `index.html`、Vite、`@tailwindcss/vite`、React 插件、Basalt 依赖、`tsconfig.client.json`、coverage exclude 同步 02、空 `main.tsx`/`app.tsx`/layout 壳、无业务页 | `bun run build`；G1 client-fetch 绿 |
 | 3 | `feat: add same-origin api client` | `api.ts` + errors；`` fetch(`/api/${resource}`) `` | L1 注入 fetch；gate 绿 |
 | 4 | `feat: add refresh coordinator` | `viewmodels/refresh.ts` 单例、排队、归一 04 两种 200 | L1 互斥/排队/单 kind vs 多 kind |
-| 5 | `feat: add app shell layout` | layout 组合 Basalt；`navigation.ts`；`me.ts`；Router 空岛；`LinkProvider`；`AppMain tabIndex={-1}` | L1 navigation + me |
+| 5 | `feat: add app shell layout` | layout 组合 Basalt；`navigation.ts`；`routes.ts`；`me.ts`；Router 空岛；`LinkProvider`；`AppMain tabIndex={-1}` | L1 navigation + routes 九路径 + me |
 | 6 | `feat: add settings accounts page` | settings + accounts VM；PAT 清空；仅 active/activate 经 refresh.ts 刷 repos | L1 activate/delete |
 | 7 | `feat: add repos list page` | `/` | L1 筛选排序 |
 | 8 | `feat: add issues page` | `/issues` | L1 |

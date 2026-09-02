@@ -61,9 +61,9 @@ Giraffe 是个人 GitHub 监控控制台。仓库 code name 为 `giraffe`。本�
 | 包管理 / 脚本 | Bun | `package.json` 为版本唯一来源 |
 | 前端构建 | Vite 8 + `@vitejs/plugin-react` | 产物 `dist/client/` |
 | UI | React 19 + React Router | SPA |
-| 样式 | Tailwind CSS v4 + shadcn/ui | Basalt Gen 2（`palette.ts`、`--chart-*`） |
-| 图表 | Recharts | Insights / Traffic |
-| Toast / 命令面板 | sonner + cmdk | |
+| 样式 | Tailwind CSS v4 + `@nocoo/basalt@2.0.0-rc.1` | 控件来自包；细则见 [05](05-client.md) |
+| 图表 | Basalt charts（peer `recharts@^3`） | Insights / Traffic / Languages |
+| Toast / 命令面板 | Basalt `Toaster` / `CommandPalette` | |
 | API | Hono | Worker 内 `/api/*` |
 | 校验 | Zod v4 | 请求体与 PAT 录入 |
 | 数据 | Cloudflare D1 | `accounts` + 通用 `snapshots` |
@@ -77,7 +77,7 @@ Giraffe 是个人 GitHub 监控控制台。仓库 code name 为 `giraffe`。本�
 | G2 | osv-scanner + gitleaks | pre-push |
 | Hooks | Husky 9 | pre-commit = L1 + G1；pre-push = L2 ‖ G2 |
 
-阶段 1 用 `bun run dev:server`（仅 Worker，本地 D1）。阶段 2 起 Client 用 `bun run dev:client`（Vite，打 mock 或本机 `/api`）。生产形态是 `vite build` + `wrangler deploy`（assets + Worker）。不使用 `@cloudflare/vite-plugin`。
+阶段 1 用 `bun run dev:server`（仅 Worker，本地 D1）。阶段 2 日常：`vite build` 后 `bun run dev:server` 托管 `dist/client`。不提供可写 API 的独立 Vite 开发服务器。生产形态是 `vite build` + `wrangler deploy`（assets + Worker）。不使用 `@cloudflare/vite-plugin`。细则见 [05](05-client.md)。
 
 ---
 

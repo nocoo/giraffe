@@ -287,7 +287,7 @@ Body（Zod）：`kinds` 可选。
 - 缺 `kinds` 或 `"all"`：刷新全部跨仓 GitHub kind：`repos`、`issues`、`prs`、`alerts`、`notifications`。
 - 数组：只对列出的 GitHub kind 出站。最多 **16** 项（`all` 计 5）。超过或重复 → 400 `validation_failed`。若数组同时含 `repos` 与依赖它的 kind，**无论数组顺序**都先在内存收集 `repos`，再按数组去掉 `repos` 后的顺序收集其余。`issues` / `prs` / `alerts` 需要已有或本轮内存中的 `repos`。否则 409 `snapshot_missing`，**不得**偷偷持久化 repos。
 - `all` 的串行顺序固定：`repos` → `issues` → `prs` → `alerts` → `notifications`。同一时刻只收集一个 kind。
-- `insights` / `digest` 出现在数组里：不打 GitHub。派生写入一律按第 8 节表格（源不存在或源 `truncated: true` 视为源不足）。
+- `insights` / `digest` 出现在数组里：不打 GitHub。派生写入一律按第 8 节表格。insights 源不足**只**看 repos/issues（缺或 truncated）；alerts 缺/unavailable/truncated 仍写入。digest 源不足：无未截断 repos 或无当天 snapshot_days。
 - `kinds: []`、未知字符串、非法 `repo:` 形状 → 400 `validation_failed`。
 - 单仓 kind：`repo:{owner}/{name}:details` 等，与 03 逻辑 kind 一致。`owner`/`name` 各匹配 `^[A-Za-z0-9_.-]+$`，且不是 `.` / `..`。
 
@@ -320,7 +320,7 @@ GitHub 调用（均经请求内 client，计入 40 次上限）。跨仓 `repos`
 1. 写入本轮**实际完成**的 snapshots（每个逻辑 kind：删旧页+插新页）。
 2. 仅当本轮写入的 `repos` 为 `truncated: false` 时 upsert 当天 `snapshot_days`。repos truncated 则 **不** upsert。
 3. **每次**成功 refresh 的同一 batch 都 `DELETE` 30 天前的 `snapshot_days`（即使本轮没 upsert）。
-4. 派生写入按第 8 节表格。insights 源为 repos+issues+alerts；digest 源为未截断 repos + 当天 snapshot_days。
+4. 派生写入按第 8 节表格。insights 必源为未截断 repos + 未截断 issues；alerts 可选。digest 源为未截断 repos + 当天 snapshot_days。
 5. 本请求 `githubFetch` 计数 > 0 时才更新 `accounts.last_used_at`（与上述语句同一 batch）。只重算 insights/digest、一次 GitHub 都没打，则不改 `last_used_at`。
 
 响应：
