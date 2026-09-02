@@ -11,17 +11,12 @@ export type RefreshBody = {
 	truncated_kinds?: string[];
 } & Record<string, unknown>;
 
-type Pending = {
-	key: string;
-	promise: Promise<RefreshBody | null>;
-};
-
-let pending: Pending | null = null;
+const jobs = new Map<string, Promise<RefreshBody | null>>();
 let tail: Promise<void> = Promise.resolve();
 const listeners = new Set<() => void>();
 
 export function refreshInFlight(): boolean {
-	return pending !== null;
+	return jobs.size > 0;
 }
 
 export function subscribeRefresh(listener: () => void): () => void {
@@ -38,7 +33,7 @@ function notifyRefresh(): void {
 }
 
 export function clearRefreshQueue(): void {
-	pending = null;
+	jobs.clear();
 	tail = Promise.resolve();
 	notifyRefresh();
 }
@@ -167,24 +162,21 @@ async function execute(
 export async function requestRefresh(kinds?: string | string[]): Promise<RefreshBody | null> {
 	const stamp = await ensureSession();
 	const key = keyOf(stamp, kinds);
-	if (pending?.key === key) {
-		return pending.promise;
+	const existing = jobs.get(key);
+	if (existing) {
+		return existing;
 	}
 	const job = tail.then(() => execute(stamp, kinds));
-	pending = { key, promise: job };
+	jobs.set(key, job);
 	notifyRefresh();
 	tail = job.then(
 		() => {
-			if (pending?.key === key) {
-				pending = null;
-				notifyRefresh();
-			}
+			jobs.delete(key);
+			notifyRefresh();
 		},
 		() => {
-			if (pending?.key === key) {
-				pending = null;
-				notifyRefresh();
-			}
+			jobs.delete(key);
+			notifyRefresh();
 		},
 	);
 	return job;

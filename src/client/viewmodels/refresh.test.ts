@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { clearRefreshQueue, refreshInFlight, requestRefresh, resourceOfKind } from "./refresh";
+import {
+	clearRefreshQueue,
+	refreshInFlight,
+	requestRefresh,
+	resourceOfKind,
+	subscribeRefresh,
+} from "./refresh";
 import { setActiveAccountId } from "./session";
 import { clearSnapshots, loadKind } from "./snapshot";
 
@@ -351,5 +357,72 @@ describe("refresh coordinator", () => {
 		expect(resourceOfKind("repo:octocat/hello-world:security")).toBe(
 			"repos/octocat/hello-world/security",
 		);
+	});
+
+	it("merges an equivalent job even when another kind is queued", async () => {
+		setActiveAccountId("acc1");
+		let release!: () => void;
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		let posts = 0;
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+			const url = String(input);
+			if (url === "/api/accounts") {
+				return accountsFor("acc1");
+			}
+			if (url === "/api/refresh") {
+				posts += 1;
+				const kinds = JSON.parse(String(init?.body)).kinds as string[];
+				if (kinds[0] === "repos") {
+					await gate;
+				}
+				return Response.json({
+					account_id: "acc1",
+					fetched_at: "t",
+					truncated: false,
+				});
+			}
+			if (url === "/api/insights" || url === "/api/digest") {
+				return Response.json({ account_id: "acc1" });
+			}
+			throw new Error(url);
+		});
+		const first = requestRefresh(["repos"]);
+		const other = requestRefresh(["alerts"]);
+		const again = requestRefresh(["repos"]);
+		release();
+		await Promise.all([first, other, again]);
+		expect(posts).toBe(2);
+	});
+
+	it("notifies subscribers when the queue starts and drains", async () => {
+		setActiveAccountId("acc1");
+		const ticks: boolean[] = [];
+		const stop = subscribeRefresh(() => {
+			ticks.push(refreshInFlight());
+		});
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+			const url = String(input);
+			if (url === "/api/accounts") {
+				return accountsFor("acc1");
+			}
+			if (url === "/api/refresh") {
+				return Response.json({
+					account_id: "acc1",
+					fetched_at: "t",
+					truncated: false,
+					issues: [],
+				});
+			}
+			if (url === "/api/insights") {
+				return Response.json({ account_id: "acc1" });
+			}
+			throw new Error(url);
+		});
+		await requestRefresh(["issues"]);
+		stop();
+		expect(ticks[0]).toBe(true);
+		expect(ticks.at(-1)).toBe(false);
 	});
 });
