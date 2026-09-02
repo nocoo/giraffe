@@ -45,12 +45,12 @@ describe("snapshot routes", () => {
 					e,
 				)
 			).status,
-		).toBe(409);
+		).toBe(400);
 		expect(
 			(
 				await createApp().request(
 					"http://localhost/api/notifications/read",
-					{ method: "POST", headers, body: JSON.stringify({ id: "1" }) },
+					{ method: "POST", headers, body: JSON.stringify({ id: "1", account_id: "x" }) },
 					e,
 				)
 			).status,
@@ -62,7 +62,10 @@ describe("snapshot routes", () => {
 					{
 						method: "POST",
 						headers,
-						body: JSON.stringify({ kinds: Array.from({ length: 17 }, (_, i) => `k${i}`) }),
+						body: JSON.stringify({
+							account_id: "x",
+							kinds: Array.from({ length: 17 }, (_, i) => `k${i}`),
+						}),
 					},
 					e,
 				)
@@ -72,7 +75,7 @@ describe("snapshot routes", () => {
 			(
 				await createApp().request(
 					"http://localhost/api/refresh",
-					{ method: "POST", headers, body: JSON.stringify({ kinds: 1 }) },
+					{ method: "POST", headers, body: JSON.stringify({ account_id: "x", kinds: 1 }) },
 					e,
 				)
 			).status,
@@ -81,7 +84,7 @@ describe("snapshot routes", () => {
 			(
 				await createApp().request(
 					"http://localhost/api/refresh",
-					{ method: "POST", headers, body: JSON.stringify({ kinds: ["digest"] }) },
+					{ method: "POST", headers, body: JSON.stringify({ account_id: "x", kinds: ["digest"] }) },
 					e,
 				)
 			).status,

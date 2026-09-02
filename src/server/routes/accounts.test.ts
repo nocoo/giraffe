@@ -98,7 +98,7 @@ describe("accounts routes", () => {
 			{
 				method: "POST",
 				headers,
-				body: JSON.stringify({ kinds: ["repos"] }),
+				body: JSON.stringify({ account_id: body.id, kinds: ["repos"] }),
 			},
 			e,
 		);
@@ -109,7 +109,11 @@ describe("accounts routes", () => {
 			(
 				await createApp().request(
 					"http://localhost/api/refresh",
-					{ method: "POST", headers, body: JSON.stringify({ kinds: ["repos", "repos"] }) },
+					{
+						method: "POST",
+						headers,
+						body: JSON.stringify({ account_id: body.id, kinds: ["repos", "repos"] }),
+					},
 					e,
 				)
 			).status,
@@ -118,7 +122,7 @@ describe("accounts routes", () => {
 			(
 				await createApp().request(
 					"http://localhost/api/refresh",
-					{ method: "POST", headers, body: JSON.stringify({}) },
+					{ method: "POST", headers, body: JSON.stringify({ account_id: body.id }) },
 					e,
 				)
 			).status,
@@ -161,7 +165,7 @@ describe("accounts routes", () => {
 			(
 				await createApp().request(
 					"http://localhost/api/refresh",
-					{ method: "POST", headers, body: JSON.stringify({ kinds: [] }) },
+					{ method: "POST", headers, body: JSON.stringify({ account_id: body.id, kinds: [] }) },
 					e,
 				)
 			).status,
@@ -206,7 +210,11 @@ describe("accounts routes", () => {
 			(
 				await createApp().request(
 					"http://localhost/api/refresh",
-					{ method: "POST", headers, body: JSON.stringify({ kinds: ["insights"] }) },
+					{
+						method: "POST",
+						headers,
+						body: JSON.stringify({ account_id: "gone", kinds: ["insights"] }),
+					},
 					e,
 				)
 			).status,

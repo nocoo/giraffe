@@ -48,14 +48,27 @@ const WRITES: Array<[string, string, RequestInit]> = [
 	[
 		"POST",
 		"/api/refresh",
-		{ headers: { "content-type": "application/json" }, body: JSON.stringify({ kinds: ["repos"] }) },
+		{
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ account_id: "x", kinds: ["repos"] }),
+		},
 	],
 	[
 		"POST",
 		"/api/notifications/read",
-		{ headers: { "content-type": "application/json" }, body: JSON.stringify({ id: "123" }) },
+		{
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ id: "123", account_id: "x" }),
+		},
 	],
-	["POST", "/api/notifications/read-all", {}],
+	[
+		"POST",
+		"/api/notifications/read-all",
+		{
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ account_id: "x" }),
+		},
+	],
 ];
 
 function accessHeaders(extra: HeadersInit = {}, token = jwt): HeadersInit {
@@ -146,6 +159,8 @@ function snapshotMeta(body: Record<string, unknown>): void {
 	expect(typeof body.fetched_at).toBe("string");
 	expect((body.fetched_at as string).length).toBeGreaterThan(10);
 	expect(typeof body.truncated).toBe("boolean");
+	expect(typeof body.account_id).toBe("string");
+	expect((body.account_id as string).length).toBeGreaterThan(0);
 }
 
 describe("api method matrix", () => {
@@ -380,7 +395,7 @@ describe("api method matrix", () => {
 		const refreshed = await api("/api/refresh", {
 			method: "POST",
 			headers: { origin, "content-type": "application/json" },
-			body: JSON.stringify({}),
+			body: JSON.stringify({ account_id: account.id }),
 		});
 		expect(refreshed.status).toBe(200);
 		const refreshBody = (await refreshed.json()) as {
@@ -396,6 +411,7 @@ describe("api method matrix", () => {
 			method: "POST",
 			headers: { origin, "content-type": "application/json" },
 			body: JSON.stringify({
+				account_id: account.id,
 				kinds: [
 					"repo:octocat/hello-world:details",
 					"repo:octocat/hello-world:actions",
@@ -592,7 +608,7 @@ describe("api method matrix", () => {
 		const oneKind = await api("/api/refresh", {
 			method: "POST",
 			headers: { origin, "content-type": "application/json" },
-			body: JSON.stringify({ kinds: ["alerts"] }),
+			body: JSON.stringify({ account_id: account.id, kinds: ["alerts"] }),
 		});
 		expect(oneKind.status).toBe(200);
 		expect(await oneKind.json()).toEqual(await (await api("/api/alerts")).json());
@@ -634,7 +650,7 @@ describe("api method matrix", () => {
 		const readRes = await api("/api/notifications/read", {
 			method: "POST",
 			headers: { origin, "content-type": "application/json" },
-			body: JSON.stringify({ id: "123" }),
+			body: JSON.stringify({ id: "123", account_id: account.id }),
 		});
 		expect(readRes.status).toBe(200);
 		const readBody = await readRes.json();
@@ -649,7 +665,8 @@ describe("api method matrix", () => {
 		expect(notifBody.notifications[1]).toMatchObject({ id: "456", unread: true });
 		const readAllRes = await api("/api/notifications/read-all", {
 			method: "POST",
-			headers: { origin },
+			headers: { origin, "content-type": "application/json" },
+			body: JSON.stringify({ account_id: account.id }),
 		});
 		expect(readAllRes.status).toBe(200);
 		const readAllBody = await readAllRes.json();

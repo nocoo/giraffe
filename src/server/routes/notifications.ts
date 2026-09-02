@@ -12,6 +12,10 @@ import { decryptToken, parseKeyBytes } from "../lib/token-crypto";
 
 const readSchema = z.object({
 	id: z.string().regex(/^[0-9]{1,20}$/),
+	account_id: z.string().min(1),
+});
+const readAllSchema = z.object({
+	account_id: z.string().min(1),
 });
 
 function asList(snap: Record<string, unknown>): Array<Record<string, unknown>> {
@@ -42,6 +46,12 @@ async function loadAccount(c: Context<{ Bindings: Env; Variables: AppVars }>) {
 	return { db, account, snap, token };
 }
 
+function assertAccount(accountId: string, activeId: string): void {
+	if (accountId !== activeId) {
+		throw new ApiError(409, "account_conflict", "account changed");
+	}
+}
+
 async function persist(
 	c: Context<{ Bindings: Env; Variables: AppVars }>,
 	accountId: string,
@@ -60,7 +70,7 @@ async function persist(
 		touchLastUsedStmt(db, accountId, fetchedAt),
 	];
 	await db.batch(stmts);
-	return jsonOk(assembled);
+	return jsonOk({ ...assembled, account_id: accountId });
 }
 
 export async function postRead(
@@ -71,6 +81,7 @@ export async function postRead(
 		throw new ApiError(400, "validation_failed", "invalid id");
 	}
 	const { db, account, snap, token } = await loadAccount(c);
+	assertAccount(parsed.data.account_id, account.id);
 	void db;
 	const gh = createGithubClient(c.env);
 	await gh.githubApi(token, `/notifications/threads/${parsed.data.id}`, { method: "PATCH" });
@@ -83,7 +94,12 @@ export async function postRead(
 export async function postReadAll(
 	c: Context<{ Bindings: Env; Variables: AppVars }>,
 ): Promise<Response> {
+	const parsed = readAllSchema.safeParse(await readJson(c.req.raw, 65_536));
+	if (!parsed.success) {
+		throw new ApiError(400, "validation_failed", "invalid body");
+	}
 	const { account, snap, token } = await loadAccount(c);
+	assertAccount(parsed.data.account_id, account.id);
 	const gh = createGithubClient(c.env);
 	await gh.githubApi(token, "/notifications", { method: "PUT" });
 	const notifications = asList(snap).map((row) => ({ ...row, unread: false }));

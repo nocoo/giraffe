@@ -121,11 +121,11 @@ describe("refresh route", () => {
 
 	it("refreshes all kinds and single repo kinds", async () => {
 		const e = env();
-		await createAccount(e);
+		const id = await createAccount(e);
 		stubGithub();
 		const all = await createApp().request(
 			"http://localhost/api/refresh",
-			{ method: "POST", headers, body: JSON.stringify({}) },
+			{ method: "POST", headers, body: JSON.stringify({ account_id: id }) },
 			e,
 		);
 		expect(all.status).toBe(200);
@@ -137,6 +137,7 @@ describe("refresh route", () => {
 						method: "POST",
 						headers,
 						body: JSON.stringify({
+							account_id: id,
 							kinds: Array.from({ length: 16 }, (_, i) => `repo:octocat/r${i}:details`),
 						}),
 					},
@@ -148,7 +149,7 @@ describe("refresh route", () => {
 		expect(body.kinds).toContain("repos");
 		const single = await createApp().request(
 			"http://localhost/api/refresh",
-			{ method: "POST", headers, body: JSON.stringify({ kinds: ["repos"] }) },
+			{ method: "POST", headers, body: JSON.stringify({ account_id: id, kinds: ["repos"] }) },
 			e,
 		);
 		expect(single.status).toBe(200);
@@ -158,7 +159,7 @@ describe("refresh route", () => {
 			{
 				method: "POST",
 				headers,
-				body: JSON.stringify({ kinds: ["repo:octocat/hello-world:details"] }),
+				body: JSON.stringify({ account_id: id, kinds: ["repo:octocat/hello-world:details"] }),
 			},
 			e,
 		);
@@ -183,7 +184,10 @@ describe("refresh route", () => {
 						{
 							method: "POST",
 							headers,
-							body: JSON.stringify({ kinds: [`repo:octocat/hello-world:${suffix}`] }),
+							body: JSON.stringify({
+								account_id: id,
+								kinds: [`repo:octocat/hello-world:${suffix}`],
+							}),
 						},
 						e,
 					)
@@ -194,13 +198,13 @@ describe("refresh route", () => {
 
 	it("validates kinds and requires sources", async () => {
 		const e = env();
-		await createAccount(e);
+		const id = await createAccount(e);
 		stubGithub();
 		expect(
 			(
 				await createApp().request(
 					"http://localhost/api/refresh",
-					{ method: "POST", headers, body: JSON.stringify({ kinds: ["nope"] }) },
+					{ method: "POST", headers, body: JSON.stringify({ account_id: id, kinds: ["nope"] }) },
 					e,
 				)
 			).status,
@@ -209,7 +213,11 @@ describe("refresh route", () => {
 			(
 				await createApp().request(
 					"http://localhost/api/refresh",
-					{ method: "POST", headers, body: JSON.stringify({ kinds: ["repo:./n:details"] }) },
+					{
+						method: "POST",
+						headers,
+						body: JSON.stringify({ account_id: id, kinds: ["repo:./n:details"] }),
+					},
 					e,
 				)
 			).status,
@@ -218,7 +226,7 @@ describe("refresh route", () => {
 			(
 				await createApp().request(
 					"http://localhost/api/refresh",
-					{ method: "POST", headers, body: JSON.stringify({ kinds: ["issues"] }) },
+					{ method: "POST", headers, body: JSON.stringify({ account_id: id, kinds: ["issues"] }) },
 					e,
 				)
 			).status,
@@ -227,7 +235,11 @@ describe("refresh route", () => {
 			(
 				await createApp().request(
 					"http://localhost/api/refresh",
-					{ method: "POST", headers, body: JSON.stringify({ kinds: ["insights"] }) },
+					{
+						method: "POST",
+						headers,
+						body: JSON.stringify({ account_id: id, kinds: ["insights"] }),
+					},
 					e,
 				)
 			).status,
@@ -236,35 +248,39 @@ describe("refresh route", () => {
 			(
 				await createApp().request(
 					"http://localhost/api/refresh",
-					{ method: "POST", headers, body: JSON.stringify({ kinds: ["digest"] }) },
+					{ method: "POST", headers, body: JSON.stringify({ account_id: id, kinds: ["digest"] }) },
 					e,
 				)
 			).status,
 		).toBe(409);
 		await createApp().request(
 			"http://localhost/api/refresh",
-			{ method: "POST", headers, body: JSON.stringify({ kinds: ["repos"] }) },
+			{ method: "POST", headers, body: JSON.stringify({ account_id: id, kinds: ["repos"] }) },
 			e,
 		);
 		expect(
 			(
 				await createApp().request(
 					"http://localhost/api/refresh",
-					{ method: "POST", headers, body: JSON.stringify({ kinds: ["digest"] }) },
+					{ method: "POST", headers, body: JSON.stringify({ account_id: id, kinds: ["digest"] }) },
 					e,
 				)
 			).status,
 		).toBe(200);
 		await createApp().request(
 			"http://localhost/api/refresh",
-			{ method: "POST", headers, body: JSON.stringify({ kinds: ["repos"] }) },
+			{ method: "POST", headers, body: JSON.stringify({ account_id: id, kinds: ["repos"] }) },
 			e,
 		);
 		expect(
 			(
 				await createApp().request(
 					"http://localhost/api/refresh",
-					{ method: "POST", headers, body: JSON.stringify({ kinds: ["issues", "prs", "alerts"] }) },
+					{
+						method: "POST",
+						headers,
+						body: JSON.stringify({ account_id: id, kinds: ["issues", "prs", "alerts"] }),
+					},
 					e,
 				)
 			).status,
@@ -273,7 +289,7 @@ describe("refresh route", () => {
 
 	it("does not persist on github hard failure", async () => {
 		const e = env();
-		await createAccount(e);
+		const id = await createAccount(e);
 		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
 			if (String(input).endsWith("/graphql")) {
 				return new Response("no", { status: 401 });
@@ -284,14 +300,14 @@ describe("refresh route", () => {
 			(
 				await createApp().request(
 					"http://localhost/api/refresh",
-					{ method: "POST", headers, body: JSON.stringify({ kinds: ["repos"] }) },
+					{ method: "POST", headers, body: JSON.stringify({ account_id: id, kinds: ["repos"] }) },
 					e,
 				)
 			).status,
 		).toBe(401);
 		expect((await createApp().request("http://localhost/api/repos", {}, e)).status).toBe(409);
 		const later = env();
-		await createAccount(later);
+		const laterId = await createAccount(later);
 		vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
 			const url = String(input);
 			if (url.endsWith("/graphql")) {
@@ -307,7 +323,11 @@ describe("refresh route", () => {
 			(
 				await createApp().request(
 					"http://localhost/api/refresh",
-					{ method: "POST", headers, body: JSON.stringify({ kinds: ["repos", "issues"] }) },
+					{
+						method: "POST",
+						headers,
+						body: JSON.stringify({ account_id: laterId, kinds: ["repos", "issues"] }),
+					},
 					later,
 				)
 			).status,
@@ -318,7 +338,7 @@ describe("refresh route", () => {
 
 	it("does not fetch later kinds when staged bytes equal the budget", async () => {
 		const e = env();
-		await createAccount(e);
+		const id = await createAccount(e);
 		const fetchedAt = "2026-09-01T00:00:00.000Z";
 		const repo = (description: string) => ({
 			truncated: false,
@@ -378,7 +398,7 @@ describe("refresh route", () => {
 			{
 				method: "POST",
 				headers,
-				body: JSON.stringify({ kinds: ["repos", "notifications"] }),
+				body: JSON.stringify({ account_id: id, kinds: ["repos", "notifications"] }),
 			},
 			e,
 		);
@@ -422,7 +442,11 @@ describe("refresh route", () => {
 			(
 				await createApp().request(
 					"http://localhost/api/refresh",
-					{ method: "POST", headers, body: JSON.stringify({ kinds: ["repos"] }) },
+					{
+						method: "POST",
+						headers,
+						body: JSON.stringify({ account_id: "acc_missing_caps", kinds: ["repos"] }),
+					},
 					e,
 				)
 			).status,
@@ -431,7 +455,11 @@ describe("refresh route", () => {
 			(
 				await createApp().request(
 					"http://localhost/api/refresh",
-					{ method: "POST", headers, body: JSON.stringify({ kinds: ["notifications"] }) },
+					{
+						method: "POST",
+						headers,
+						body: JSON.stringify({ account_id: "acc_missing_caps", kinds: ["notifications"] }),
+					},
 					e,
 				)
 			).status,
@@ -458,7 +486,11 @@ describe("refresh route", () => {
 			(
 				await createApp().request(
 					"http://localhost/api/refresh",
-					{ method: "POST", headers, body: JSON.stringify({ kinds: ["repos"] }) },
+					{
+						method: "POST",
+						headers,
+						body: JSON.stringify({ account_id: "acc_bad_json", kinds: ["repos"] }),
+					},
 					broken,
 				)
 			).status,
@@ -475,7 +507,11 @@ describe("refresh route", () => {
 		);
 		const missingKey = await createApp().request(
 			"http://localhost/api/refresh",
-			{ method: "POST", headers, body: JSON.stringify({ kinds: ["repos"] }) },
+			{
+				method: "POST",
+				headers,
+				body: JSON.stringify({ account_id: "acc_missing_caps", kinds: ["repos"] }),
+			},
 			{ ...e, TOKEN_ENCRYPTION_KEY_V1: undefined } as Env,
 		);
 		expect(missingKey.status).toBe(500);
@@ -509,7 +545,11 @@ describe("refresh route", () => {
 			(
 				await createApp().request(
 					"http://localhost/api/refresh",
-					{ method: "POST", headers, body: JSON.stringify({ kinds: ["repos", "insights"] }) },
+					{
+						method: "POST",
+						headers,
+						body: JSON.stringify({ account_id: id, kinds: ["repos", "insights"] }),
+					},
 					e,
 				)
 			).status,
@@ -545,7 +585,11 @@ describe("refresh route", () => {
 		});
 		const capped = await createApp().request(
 			"http://localhost/api/refresh",
-			{ method: "POST", headers, body: JSON.stringify({ kinds: ["repos", "notifications"] }) },
+			{
+				method: "POST",
+				headers,
+				body: JSON.stringify({ account_id: id, kinds: ["repos", "notifications"] }),
+			},
 			e,
 		);
 		expect(capped.status).toBe(200);
@@ -580,7 +624,11 @@ describe("refresh route", () => {
 			(
 				await createApp().request(
 					"http://localhost/api/refresh",
-					{ method: "POST", headers, body: JSON.stringify({ kinds: ["insights"] }) },
+					{
+						method: "POST",
+						headers,
+						body: JSON.stringify({ account_id: oddId, kinds: ["insights"] }),
+					},
 					odd,
 				)
 			).status,
@@ -600,7 +648,7 @@ describe("refresh route", () => {
 		stubGithub();
 		const issues = await createApp().request(
 			"http://localhost/api/refresh",
-			{ method: "POST", headers, body: JSON.stringify({ kinds: ["issues"] }) },
+			{ method: "POST", headers, body: JSON.stringify({ account_id: truncId, kinds: ["issues"] }) },
 			trunc,
 		);
 		expect(issues.status).toBe(200);
@@ -634,11 +682,11 @@ describe("refresh route", () => {
 				return raw.batch(statements);
 			},
 		} as D1Database;
-		await createAccount(e);
+		const id = await createAccount(e);
 		stubGithub();
 		const all = await createApp().request(
 			"http://localhost/api/refresh",
-			{ method: "POST", headers, body: JSON.stringify({}) },
+			{ method: "POST", headers, body: JSON.stringify({ account_id: id }) },
 			e,
 		);
 		expect(all.status).toBe(200);
@@ -668,6 +716,7 @@ describe("refresh route", () => {
 				method: "POST",
 				headers,
 				body: JSON.stringify({
+					account_id: id,
 					kinds: ["notifications", "repo:octocat/hello-world:details"],
 				}),
 			},
@@ -725,7 +774,11 @@ describe("refresh route", () => {
 		stubGithub();
 		const explicit = await createApp().request(
 			"http://localhost/api/refresh",
-			{ method: "POST", headers, body: JSON.stringify({ kinds: ["insights"] }) },
+			{
+				method: "POST",
+				headers,
+				body: JSON.stringify({ account_id: hugeId, kinds: ["insights"] }),
+			},
 			huge,
 		);
 		expect(explicit.status).toBe(200);
@@ -762,7 +815,11 @@ describe("refresh route", () => {
 			(
 				await createApp().request(
 					"http://localhost/api/refresh",
-					{ method: "POST", headers, body: JSON.stringify({ kinds: ["notifications"] }) },
+					{
+						method: "POST",
+						headers,
+						body: JSON.stringify({ account_id: skipId, kinds: ["notifications"] }),
+					},
 					skip,
 				)
 			).status,
@@ -796,7 +853,11 @@ describe("refresh route", () => {
 		});
 		const mixed = await createApp().request(
 			"http://localhost/api/refresh",
-			{ method: "POST", headers, body: JSON.stringify({ kinds: ["repos", "insights"] }) },
+			{
+				method: "POST",
+				headers,
+				body: JSON.stringify({ account_id: hugeId, kinds: ["repos", "insights"] }),
+			},
 			huge,
 		);
 		expect(mixed.status).toBe(200);
@@ -827,7 +888,11 @@ describe("refresh route", () => {
 		stubGithub();
 		const digestRes = await createApp().request(
 			"http://localhost/api/refresh",
-			{ method: "POST", headers, body: JSON.stringify({ kinds: ["digest"] }) },
+			{
+				method: "POST",
+				headers,
+				body: JSON.stringify({ account_id: digestId, kinds: ["digest"] }),
+			},
 			digestEnv,
 		);
 		expect(digestRes.status).toBe(200);
@@ -840,13 +905,13 @@ describe("refresh route", () => {
 
 	it("aborts cross-repo search http errors without writing", async () => {
 		const e = env();
-		await createAccount(e);
+		const id = await createAccount(e);
 		stubGithub();
 		expect(
 			(
 				await createApp().request(
 					"http://localhost/api/refresh",
-					{ method: "POST", headers, body: JSON.stringify({ kinds: ["repos"] }) },
+					{ method: "POST", headers, body: JSON.stringify({ account_id: id, kinds: ["repos"] }) },
 					e,
 				)
 			).status,
@@ -864,7 +929,7 @@ describe("refresh route", () => {
 		});
 		const failed = await createApp().request(
 			"http://localhost/api/refresh",
-			{ method: "POST", headers, body: JSON.stringify({ kinds: ["issues"] }) },
+			{ method: "POST", headers, body: JSON.stringify({ account_id: id, kinds: ["issues"] }) },
 			e,
 		);
 		expect(failed.status).toBe(403);
@@ -874,7 +939,7 @@ describe("refresh route", () => {
 
 	it("does not write later kinds after the fetch cap", async () => {
 		const e = env();
-		await createAccount(e);
+		const id = await createAccount(e);
 		let pages = 0;
 		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
 			const url = String(input);
@@ -895,7 +960,7 @@ describe("refresh route", () => {
 		});
 		const res = await createApp().request(
 			"http://localhost/api/refresh",
-			{ method: "POST", headers, body: JSON.stringify({}) },
+			{ method: "POST", headers, body: JSON.stringify({ account_id: id }) },
 			e,
 		);
 		expect(res.status).toBe(200);
@@ -903,6 +968,48 @@ describe("refresh route", () => {
 		expect(body.kinds).toEqual(["repos"]);
 		expect(pages).toBe(40);
 		expect((await createApp().request("http://localhost/api/issues", {}, e)).status).toBe(409);
+	});
+
+	it("rejects missing or conflicting account_id without github", async () => {
+		const e = env();
+		const id = await createAccount(e);
+		let hits = 0;
+		vi.stubGlobal("fetch", async () => {
+			hits += 1;
+			throw new Error("github");
+		});
+		expect(
+			(
+				await createApp().request(
+					"http://localhost/api/refresh",
+					{ method: "POST", headers, body: JSON.stringify({ kinds: ["repos"] }) },
+					e,
+				)
+			).status,
+		).toBe(400);
+		expect(
+			(
+				await createApp().request(
+					"http://localhost/api/refresh",
+					{
+						method: "POST",
+						headers,
+						body: JSON.stringify({ account_id: "other", kinds: ["repos"] }),
+					},
+					e,
+				)
+			).status,
+		).toBe(409);
+		expect(hits).toBe(0);
+		stubGithub();
+		const ok = await createApp().request(
+			"http://localhost/api/refresh",
+			{ method: "POST", headers, body: JSON.stringify({ account_id: id, kinds: ["repos"] }) },
+			e,
+		);
+		expect(ok.status).toBe(200);
+		const repos = await createApp().request("http://localhost/api/repos", {}, e);
+		expect(((await repos.json()) as { account_id: string }).account_id).toBe(id);
 	});
 
 	it("derives insights when alerts are truncated", async () => {
@@ -946,7 +1053,7 @@ describe("refresh route", () => {
 		stubGithub();
 		const res = await createApp().request(
 			"http://localhost/api/refresh",
-			{ method: "POST", headers, body: JSON.stringify({ kinds: ["insights"] }) },
+			{ method: "POST", headers, body: JSON.stringify({ account_id: id, kinds: ["insights"] }) },
 			e,
 		);
 		expect(res.status).toBe(200);

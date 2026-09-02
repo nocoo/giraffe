@@ -16,7 +16,7 @@ export async function snapshotGet(
 	if (!snap) {
 		throw new ApiError(409, "snapshot_missing", `no snapshot for ${logical}`);
 	}
-	return jsonOk(snap);
+	return jsonOk({ ...snap, account_id: account.id });
 }
 
 export function repoParts(owner: string, name: string): { owner: string; name: string } {

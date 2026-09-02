@@ -56,27 +56,29 @@ describe("notification write-through", () => {
 			}
 			throw new Error(`unexpected ${url}`);
 		});
-		expect(
-			(
-				await createApp().request(
-					"http://localhost/api/accounts",
-					{ method: "POST", headers, body: JSON.stringify({ token: PAT }) },
-					e,
-				)
-			).status,
-		).toBe(201);
+		const created = await createApp().request(
+			"http://localhost/api/accounts",
+			{ method: "POST", headers, body: JSON.stringify({ token: PAT }) },
+			e,
+		);
+		expect(created.status).toBe(201);
+		const accountId = ((await created.json()) as { id: string }).id;
 		expect(
 			(
 				await createApp().request(
 					"http://localhost/api/refresh",
-					{ method: "POST", headers, body: JSON.stringify({ kinds: ["notifications"] }) },
+					{
+						method: "POST",
+						headers,
+						body: JSON.stringify({ account_id: accountId, kinds: ["notifications"] }),
+					},
 					e,
 				)
 			).status,
 		).toBe(200);
 		const read = await createApp().request(
 			"http://localhost/api/notifications/read",
-			{ method: "POST", headers, body: JSON.stringify({ id: "123" }) },
+			{ method: "POST", headers, body: JSON.stringify({ id: "123", account_id: accountId }) },
 			e,
 		);
 		expect(read.status).toBe(200);
@@ -84,7 +86,11 @@ describe("notification write-through", () => {
 		expect(after.notifications.find((n) => n.id === "123")?.unread).toBe(false);
 		const all = await createApp().request(
 			"http://localhost/api/notifications/read-all",
-			{ method: "POST", headers: { origin: "https://giraffe.dev.hexly.ai" } },
+			{
+				method: "POST",
+				headers,
+				body: JSON.stringify({ account_id: accountId }),
+			},
 			e,
 		);
 		expect(all.status).toBe(200);
@@ -97,7 +103,7 @@ describe("notification write-through", () => {
 			(
 				await createApp().request(
 					"http://localhost/api/notifications/read",
-					{ method: "POST", headers, body: JSON.stringify({ id: "abc" }) },
+					{ method: "POST", headers, body: JSON.stringify({ id: "abc", account_id: accountId }) },
 					e,
 				)
 			).status,
@@ -112,7 +118,7 @@ describe("notification write-through", () => {
 			(
 				await createApp().request(
 					"http://localhost/api/notifications/read",
-					{ method: "POST", headers, body: JSON.stringify({ id: "123" }) },
+					{ method: "POST", headers, body: JSON.stringify({ id: "123", account_id: accountId }) },
 					e,
 				)
 			).status,
@@ -132,17 +138,22 @@ describe("notification write-through", () => {
 			}
 			throw new Error(`unexpected ${url}`);
 		});
-		await createApp().request(
+		const created = await createApp().request(
 			"http://localhost/api/accounts",
 			{ method: "POST", headers, body: JSON.stringify({ token: PAT }) },
 			e,
 		);
+		const accountId = ((await created.json()) as { id: string }).id;
 		hits = 0;
 		expect(
 			(
 				await createApp().request(
 					"http://localhost/api/notifications/read-all",
-					{ method: "POST", headers: { origin: "https://giraffe.dev.hexly.ai" } },
+					{
+						method: "POST",
+						headers,
+						body: JSON.stringify({ account_id: accountId }),
+					},
 					e,
 				)
 			).status,
@@ -181,7 +192,7 @@ describe("notification write-through", () => {
 			(
 				await createApp().request(
 					"http://localhost/api/notifications/read-all",
-					{ method: "POST", headers: { origin: "https://giraffe.dev.hexly.ai" } },
+					{ method: "POST", headers, body: JSON.stringify({ account_id: id }) },
 					e,
 				)
 			).status,
@@ -205,7 +216,7 @@ describe("notification write-through", () => {
 			(
 				await createApp().request(
 					"http://localhost/api/notifications/read-all",
-					{ method: "POST", headers: { origin: "https://giraffe.dev.hexly.ai" } },
+					{ method: "POST", headers, body: JSON.stringify({ account_id: id }) },
 					e,
 				)
 			).status,
@@ -214,7 +225,7 @@ describe("notification write-through", () => {
 			(
 				await createApp().request(
 					"http://localhost/api/notifications/read-all",
-					{ method: "POST", headers: { origin: "https://giraffe.dev.hexly.ai" } },
+					{ method: "POST", headers, body: JSON.stringify({ account_id: id }) },
 					{ ...e, TOKEN_ENCRYPTION_KEY_V1: undefined } as Env,
 				)
 			).status,

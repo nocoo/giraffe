@@ -22,6 +22,7 @@ import { assemblePages, splitPages } from "../lib/snapshot-pages";
 import { decryptToken, parseKeyBytes } from "../lib/token-crypto";
 
 const bodySchema = z.object({
+	account_id: z.string().min(1),
 	kinds: z.union([z.literal("all"), z.array(z.string())]).optional(),
 });
 
@@ -151,6 +152,9 @@ export async function postRefresh(
 	const account = await getActiveAccount(db);
 	if (!account) {
 		throw new ApiError(409, "account_missing", "no active account");
+	}
+	if (parsed.data.account_id !== account.id) {
+		throw new ApiError(409, "account_conflict", "account changed");
 	}
 	const secret = encryptionKey(c.env, account.key_version);
 	if (!secret) {
@@ -290,9 +294,10 @@ export async function postRefresh(
 	}
 	await db.batch(stmts);
 	if (requested.length === 1) {
-		return jsonOk(written[requested[0] as string]);
+		return jsonOk({ ...written[requested[0] as string], account_id: accountId });
 	}
 	return jsonOk({
+		account_id: accountId,
 		fetched_at: fetchedAt,
 		kinds: Object.keys(written),
 		truncated_kinds: Object.keys(written).filter((kind) => written[kind]?.truncated === true),
