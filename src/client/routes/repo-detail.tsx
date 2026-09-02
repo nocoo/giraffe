@@ -21,6 +21,8 @@ import {
 } from "@nocoo/basalt/components/table";
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router";
+import type { IssuesSnapshot } from "../viewmodels/issues";
+import type { PullsSnapshot } from "../viewmodels/pulls";
 import { requestRefresh } from "../viewmodels/refresh";
 import {
 	isValidRepoPart,
@@ -72,6 +74,8 @@ export function RepoDetailPage() {
 	const [traffic, setTraffic] = useState<RepoTraffic | { missing: true } | null>(null);
 	const [actions, setActions] = useState<RepoActions | { missing: true } | null>(null);
 	const [releases, setReleases] = useState<RepoReleases | { missing: true } | null>(null);
+	const [issues, setIssues] = useState<IssuesSnapshot | { missing: true } | null>(null);
+	const [pulls, setPulls] = useState<PullsSnapshot | { missing: true } | null>(null);
 	const refreshed = useRef(new Set<string>());
 
 	useEffect(() => {
@@ -105,6 +109,12 @@ export function RepoDetailPage() {
 		}
 		if (tab === "releases") {
 			void fetchTab<RepoReleases>(owner, name, "releases", refreshed.current).then(setReleases);
+		}
+		if (tab === "issues") {
+			void fetchTab<IssuesSnapshot>(owner, name, "issues", refreshed.current).then(setIssues);
+		}
+		if (tab === "prs") {
+			void fetchTab<PullsSnapshot>(owner, name, "prs", refreshed.current).then(setPulls);
 		}
 	}, [owner, name, valid, tab]);
 
@@ -164,6 +174,16 @@ export function RepoDetailPage() {
 									setReleases,
 								);
 							}
+							if (tab === "issues") {
+								return fetchTab<IssuesSnapshot>(owner, name, "issues", refreshed.current).then(
+									setIssues,
+								);
+							}
+							if (tab === "prs") {
+								return fetchTab<PullsSnapshot>(owner, name, "prs", refreshed.current).then(
+									setPulls,
+								);
+							}
 							return fetchTab<RepoTraffic>(owner, name, "traffic", refreshed.current).then(
 								setTraffic,
 							);
@@ -178,6 +198,8 @@ export function RepoDetailPage() {
 					<TabsTrigger value="details">概览</TabsTrigger>
 					<TabsTrigger value="security">Security</TabsTrigger>
 					<TabsTrigger value="actions">Actions</TabsTrigger>
+					<TabsTrigger value="prs">PRs</TabsTrigger>
+					<TabsTrigger value="issues">Issues</TabsTrigger>
 					<TabsTrigger value="releases">Releases</TabsTrigger>
 					<TabsTrigger value="traffic">Traffic</TabsTrigger>
 				</TabsList>
@@ -279,6 +301,78 @@ export function RepoDetailPage() {
 								{ label: "code scanning", value: security.code_scanning_open },
 							]}
 						/>
+					) : null}
+				</TabsContent>
+				<TabsContent value="issues">
+					{issues && "missing" in issues ? (
+						<Empty title="没有快照" />
+					) : issues && issues.issues.length === 0 ? (
+						<Empty title="没有 Issue" />
+					) : issues ? (
+						<Table>
+							<TableHeader>
+								<TableRow>
+									<TableHead>编号</TableHead>
+									<TableHead>标题</TableHead>
+									<TableHead>作者</TableHead>
+									<TableHead>更新时间</TableHead>
+								</TableRow>
+							</TableHeader>
+							<TableBody>
+								{issues.issues.map((row) => (
+									<TableRow key={`${row.name_with_owner}#${row.number}`}>
+										<TableCell>{row.number}</TableCell>
+										<TableCell>
+											<a href={row.url} target="_blank" rel="noreferrer">
+												{row.title}
+											</a>
+										</TableCell>
+										<TableCell>{row.author_login ?? "—"}</TableCell>
+										<TableCell>{row.updated_at}</TableCell>
+									</TableRow>
+								))}
+							</TableBody>
+						</Table>
+					) : null}
+				</TabsContent>
+				<TabsContent value="prs">
+					{pulls && "missing" in pulls ? (
+						<Empty title="没有快照" />
+					) : pulls && pulls.pull_requests.length === 0 ? (
+						<Empty title="没有 Pull Request" />
+					) : pulls ? (
+						<Table>
+							<TableHeader>
+								<TableRow>
+									<TableHead>编号</TableHead>
+									<TableHead>标题</TableHead>
+									<TableHead>作者</TableHead>
+									<TableHead>draft</TableHead>
+									<TableHead>review</TableHead>
+									<TableHead>+add/−del</TableHead>
+									<TableHead>更新时间</TableHead>
+								</TableRow>
+							</TableHeader>
+							<TableBody>
+								{pulls.pull_requests.map((row) => (
+									<TableRow key={`${row.name_with_owner}#${row.number}`}>
+										<TableCell>{row.number}</TableCell>
+										<TableCell>
+											<a href={row.url} target="_blank" rel="noreferrer">
+												{row.title}
+											</a>
+										</TableCell>
+										<TableCell>{row.author_login ?? "—"}</TableCell>
+										<TableCell>{row.is_draft ? "是" : "否"}</TableCell>
+										<TableCell>{row.review_decision ?? "—"}</TableCell>
+										<TableCell>
+											+{row.additions}/−{row.deletions}
+										</TableCell>
+										<TableCell>{row.updated_at}</TableCell>
+									</TableRow>
+								))}
+							</TableBody>
+						</Table>
 					) : null}
 				</TabsContent>
 				<TabsContent value="traffic">
