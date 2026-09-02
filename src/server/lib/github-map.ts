@@ -10,7 +10,7 @@ const REQUIRED = ["repo", "read:org", "read:user", "notifications"] as const;
 export function parseScopes(header: string | null): {
 	scopes: string;
 	capabilities: Capabilities;
-	missing: boolean;
+	missing: string[];
 } {
 	const scopes = header ?? "";
 	const parts = scopes
@@ -24,7 +24,15 @@ export function parseScopes(header: string | null): {
 		"read:user": set.has("read:user"),
 		notifications: set.has("notifications"),
 	};
-	return { scopes, capabilities, missing: REQUIRED.some((s) => !set.has(s)) };
+	return {
+		scopes,
+		capabilities,
+		missing: REQUIRED.filter((scope) => !set.has(scope)),
+	};
+}
+
+export function scopesMissingMessage(missing: readonly string[]): string {
+	return `缺少权限：${missing.join("、")}`;
 }
 
 export function mapUser(body: { login?: string; avatar_url?: string }): {

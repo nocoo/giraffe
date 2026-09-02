@@ -233,15 +233,18 @@ describe("accounts routes", () => {
 		});
 		const e = env();
 		const headers = { origin: "https://giraffe.dev.hexly.ai", "content-type": "application/json" };
-		expect(
-			(
-				await createApp().request(
-					"http://localhost/api/accounts",
-					{ method: "POST", headers, body: JSON.stringify({ token: PAT }) },
-					e,
-				)
-			).status,
-		).toBe(400);
+		const missing = await createApp().request(
+			"http://localhost/api/accounts",
+			{ method: "POST", headers, body: JSON.stringify({ token: PAT }) },
+			e,
+		);
+		expect(missing.status).toBe(400);
+		expect(await missing.json()).toMatchObject({
+			error: {
+				code: "scopes_missing",
+				message: "缺少权限：read:org、read:user、notifications",
+			},
+		});
 		vi.stubGlobal("fetch", async () => {
 			return new Response(JSON.stringify({ login: "octocat", avatar_url: "x" }), {
 				headers: { "X-OAuth-Scopes": "repo, read:org, read:user, notifications" },

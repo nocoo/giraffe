@@ -39,9 +39,9 @@ describe("accounts viewmodel", () => {
 		};
 		expect(accountsArePublic([publicRow])).toBe(true);
 		expect(accountsArePublic([{ ...publicRow, token: PAT } as PublicAccount])).toBe(false);
-		expect(accountFieldError(new ApiError(400, "scopes_missing", "required scopes missing"))).toBe(
-			"required scopes missing",
-		);
+		expect(
+			accountFieldError(new ApiError(400, "scopes_missing", "缺少权限：read:org、notifications")),
+		).toBe("缺少权限：read:org、notifications");
 		expect(accountFieldError(new Error("x"))).toBeNull();
 		expect(accountFieldError(new ApiError(400, "validation_failed", "bad"))).toBe("bad");
 

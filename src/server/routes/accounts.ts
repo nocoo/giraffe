@@ -14,7 +14,7 @@ import {
 } from "../lib/db/accounts";
 import { ApiError, jsonOk } from "../lib/errors";
 import { createGithubClient } from "../lib/github-client";
-import { mapUser, parseScopes } from "../lib/github-map";
+import { mapUser, parseScopes, scopesMissingMessage } from "../lib/github-map";
 import { createId } from "../lib/id";
 import { readJson } from "../lib/read-body";
 import { assertClassicPat, encryptToken, parseKeyBytes, tokenLast4 } from "../lib/token-crypto";
@@ -61,8 +61,8 @@ export async function postAccount(
 	const res = await gh.githubApi(token, "/user");
 	const user = mapUser((await res.json()) as { login?: string; avatar_url?: string });
 	const parsed = parseScopes(res.headers.get("X-OAuth-Scopes"));
-	if (parsed.missing) {
-		throw new ApiError(400, "scopes_missing", "required scopes missing");
+	if (parsed.missing.length > 0) {
+		throw new ApiError(400, "scopes_missing", scopesMissingMessage(parsed.missing));
 	}
 	const version = currentKeyVersion(c.env);
 	const secret = encryptionKey(c.env, version);

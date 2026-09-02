@@ -13,12 +13,16 @@ import {
 	mapTraffic,
 	mapUser,
 	parseScopes,
+	scopesMissingMessage,
 } from "./github-map";
 
 describe("github-map", () => {
 	it("detects missing required scopes", () => {
-		expect(parseScopes("repo, read:org").missing).toBe(true);
-		expect(parseScopes("repo, read:org, read:user, notifications").missing).toBe(false);
+		expect(parseScopes("repo, read:org").missing).toEqual(["read:user", "notifications"]);
+		expect(parseScopes("repo, read:org, read:user, notifications").missing).toEqual([]);
+		expect(scopesMissingMessage(["read:user", "notifications"])).toBe(
+			"缺少权限：read:user、notifications",
+		);
 		expect(mapUser({ login: "octocat" }).avatar_url).toBe("");
 		expect(
 			mapRepos([{ nameWithOwner: "o/n", stargazerCount: 1, owner: { login: "o" }, name: "n" }])[0],
