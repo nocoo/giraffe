@@ -227,6 +227,7 @@ async function send(resource: string, init?: RequestInit): Promise<Response> {
 | `validation_failed` 400 | 设置页或其它字段错；服务端非法 owner 也是这个 code |
 | `method_not_allowed` 405 | toast（不应被 UI 走到） |
 | `account_missing` 409 | 横幅 + 链到 `/settings` |
+| `account_conflict` 409 | `ensureSession()` 后重试或提示账号已切换；不得把该次写当成功 |
 | `snapshot_missing` 409 | 该页 `Empty` +「刷新」按钮（§7 对应 kind） |
 | `capability_missing` 409 | toast，缺 notifications scope |
 | `scopes_missing` 400 | 设置页字段错 |
@@ -248,6 +249,7 @@ Server 不调度。Client 只经 `viewmodels/refresh.ts` 调 `POST /api/refresh`
 - 锁在模块而非 hook。路由卸载不清空锁。
 - Client 持有 `activeAccountId`。`ensureSession()`（`viewmodels/session.ts`）在任何快照 GET/refresh **之前每次**调用：`GET /api/accounts`，取 `is_active` 行的 `id`（没有则 `account_missing`）。同一事件循环内可复用这次结果（禁止跨请求长缓存）。若返回的 id 与本地不同：更新 stamp、清空该旧 id 缓存。这样另一 Tab activate 后本 Tab 下一次读不会把新账号数据写入旧缓存。
 - `POST /api/accounts` 201：用响应体 `id` **先**写入 `activeAccountId`（若 `is_active`），再入队 refresh。禁止还没 stamp 就刷 repos。
+- `POST /api/refresh`、`/api/notifications/read`、`read-all` 的 JSON **必带** `account_id`（当前 stamp）。04：与 active 不符 → 409 `account_conflict`，Client 则 `ensureSession()` 并不把该次当成功。这把 ensureSession 与 POST 之间的跨 Tab 窗口变成服务器拒绝，而不是写到错账号。
 - 快照缓存按该 id 隔离；id 变化则清空缓存。
 - 入队时盖上当时的 `activeAccountId`。`POST /api/refresh` 仍不带账号 id（04）。
 - **发出前**、**应用 payload 前**、**补读 GET 前**：stamp 必须等于此刻 `activeAccountId`，否则丢弃（含 A 在途切到 B：A 的 body 不得写入 B 缓存，也不得用 B 的身份去补读）。快照 GET / 单 kind refresh 的 body 含 `account_id`（03）：若 ≠ stamp，丢弃并再 `ensureSession()`。这关掉 ensureSession 与随后 GET 之间的 TOCTOU。
@@ -440,9 +442,10 @@ L3 依赖步骤 1 的 Origin 补丁。未补丁前不算 L3 绿。L3 **不是** 
 编号文档已与本文对齐的部分（Origin 表、insights 源不足、L1 豁免、L3 Origin）在 Sign Off 前写入 01/02/04。步骤 1 只补实现：
 
 1. `origin.ts`：development Access 短路时允许同源 Origin。L1：短路同源 通过；生产拒绝 `http://127.0.0.1:27045`。L2 A/B 仍绿。
-2. insights 派生：alerts 截断/缺失不是源不足；写入 `alerts_incomplete`（03）。改 `collect`/`refresh`/`insights` 并补 L1。
+2. insights 派生：alerts 截断/缺失不是源不足；写入 `alerts_incomplete`（03）。仓 403 跳过 → alerts `truncated: true`。改 `collect`/`refresh`/`insights` 并补 L1。
+3. 快照外层 `account_id`；refresh/notifications 写请求可选 `account_id` → 错则 409 `account_conflict`。
 
-提交可拆成两次（Origin 一次、insights 一次），都在步骤 5 之前。信息：`fix: allow same-origin posts in dev`、`fix: derive insights when alerts truncated`。
+提交拆开，都在 Client 脚手架之前。信息：`fix: allow same-origin posts in dev`、`fix: derive insights when alerts truncated`、`fix: return snapshot account_id`。
 
 ---
 
@@ -456,7 +459,8 @@ L3 依赖步骤 1 的 Origin 补丁。未补丁前不算 L3 绿。L3 **不是** 
 |---|------|------|------|
 | 0 | `docs: add client design document` | 本文 + 01/02/04 对齐 | Codex Sign Off |
 | 1a | `fix: allow same-origin posts in dev` | `origin.ts` | L1；L2 A/B 绿 |
-| 1b | `fix: derive insights when alerts truncated` | refresh/collect 派生 | L1 |
+| 1b | `fix: derive insights when alerts truncated` | refresh/collect 派生 + `alerts_incomplete` + 仓跳过 truncated | L1 |
+| 1c | `fix: return snapshot account_id` | GET/单 kind 体含 `account_id`；写请求错 id → 409 | L1+L2 |
 | 2 | `feat: scaffold vite client toolchain` | 根 `index.html`、Vite、`@tailwindcss/vite`、React 插件、Basalt 依赖、`tsconfig.client.json`、coverage exclude 同步 02、空 `main.tsx`/`app.tsx`/layout 壳、无业务页 | `bun run build`；G1 client-fetch 绿 |
 | 3 | `feat: add same-origin api client` | `api.ts` + errors；`` fetch(`/api/${resource}`) `` | L1 注入 fetch；gate 绿 |
 | 4 | `feat: add refresh coordinator` | `session.ts` + `refresh.ts` 单例、stamp、排队、归一 04 两种 200 | L1 互斥/排队/201 stamp/切换丢弃 |

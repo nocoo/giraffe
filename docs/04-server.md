@@ -132,6 +132,7 @@ G1 禁止把 `ENVIRONMENT=development` / `test`、`GITHUB_API_BASE`、`ACCESS_JW
 | 409 | `account_missing` | 需要 active 账号但没有 |
 | 409 | `snapshot_missing` | 该逻辑 kind 无快照 |
 | 409 | `capability_missing` | 刷新某 kind 时 token 级 scope 不足 |
+| 409 | `account_conflict` | 写请求 JSON 带了 `account_id` 且不等于当前 active |
 | 500 | `encryption_misconfigured` | 密钥环缺当前版本 |
 | 500 | `access_misconfigured` | 必验 JWT 但 team/aud/JWKS 缺 |
 | 500 | `db_error` | D1 抛错 |
@@ -270,7 +271,7 @@ insights 的「源不足」**只**看 `repos` 与 `issues`：缺行或该源 `tr
 
 `POST /api/refresh`。需要 active 账号。Origin 必过。
 
-Body（Zod）：`kinds` 可选。
+Body（Zod）：`kinds` 可选。`account_id` 可选；Client 必填。若出现且 ≠ 当前 active → 409 `account_conflict`，不写库、不出站。
 
 ```json
 { "kinds": "all" }
@@ -450,11 +451,11 @@ Origin 必过。未知 id → 404。删除行，CASCADE 快照。204 无 body。
 
 ### `POST /api/notifications/read`
 
-Body：`{ "id": "<thread id>" }`。`id` 必须匹配 `^[0-9]{1,20}$`，否则 400 `validation_failed`。Origin 必过。无账号 → 409。无 notifications 快照 → 409 `snapshot_missing`，**不**打 GitHub。有快照则 `PATCH /notifications/threads/{id}`（GitHub 已读，成功为 205 空体），再把快照里该 id 的 `unread` 置 `false`。200，body 同 GET notifications。
+Body：`{ "id": "<thread id>", "account_id": "<optional>" }`。`id` 必须匹配 `^[0-9]{1,20}$`，否则 400 `validation_failed`。`account_id` 若出现且 ≠ active → 409 `account_conflict`，不打 GitHub。Origin 必过。无账号 → 409。无 notifications 快照 → 409 `snapshot_missing`，**不**打 GitHub。有快照则 `PATCH /notifications/threads/{id}`（GitHub 已读，成功为 205 空体），再把快照里该 id 的 `unread` 置 `false`。200，body 同 GET notifications。
 
 ### `POST /api/notifications/read-all`
 
-无 body。Origin 必过。`PUT /notifications`（GitHub mark all read）。成功 HTTP **205 或 202**（空体或可忽略 body）。无快照 409，不打 GitHub。成功后快照内全部 `unread: false`。200，body 同 GET。
+Body 可空或 `{ "account_id": "<optional>" }`。`account_id` 若出现且 ≠ active → 409 `account_conflict`，不打 GitHub。Origin 必过。`PUT /notifications`（GitHub mark all read）。成功 HTTP **205 或 202**（空体或可忽略 body）。无快照 409，不打 GitHub。成功后快照内全部 `unread: false`。200，body 同 GET。
 
 ### 未列出的 `/api`
 
@@ -476,7 +477,7 @@ L1 必测（注入 DB / fake fetch，无网络、无 wrangler）：
 | `snapshot-pages` | 切分与组装；单元素过大 `truncated` |
 | `digest` | 邻日差量；无昨天 → `baseline_missing` 且 delta `null` |
 | `insights` | health 三档与 opportunities；`alerts_incomplete` true（缺/unavailable/truncated/仓跳过）与 false |
-| `errors` / 路由 | 信封；body 超限 400；未知 `/api` 404；已知路径错误方法 405；`onError` → 500 `internal_error` |
+| `errors` / 路由 | 信封；body 超限 400；未知 `/api` 404；已知路径错误方法 405；`onError` → 500 `internal_error`；快照 GET 与单 kind refresh 成功体含正确 `account_id`；带错 `account_id` 的 refresh/read → 409 `account_conflict` |
 | `createDb` | 第 81 条不 execute；两 store 同一句柄；`last_used_at` 与业务语句同一 batch；默认 `all` 最终 batch 语句数 < 80 |
 | refresh 收集 | 硬失败零写入；第 3 页丢弃不写 `kind#3`；kinds 17 项 → 400；16 项整请求 statement < 80；16 MiB **累计** staged；显式 insights 与 digest 超大；混合数组 truncated_kinds；隐式超大跳过 |
 | 路由纯逻辑 | 无快照 409；`scopes_missing`；`capability_missing` |
