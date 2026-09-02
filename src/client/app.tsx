@@ -2,6 +2,7 @@ import { LinkProvider, ThemeProvider, Toaster } from "@nocoo/basalt";
 import type { ReactNode } from "react";
 import { BrowserRouter, Link, Route, Routes } from "react-router";
 import { AppShell } from "./components/layout/app-shell";
+import { ReposPage } from "./routes/repos";
 import { SettingsPage } from "./routes/settings";
 
 function RouterLink({
@@ -31,6 +32,7 @@ export function App() {
 					<Toaster />
 					<Routes>
 						<Route element={<AppShell />}>
+							<Route path="/" element={<ReposPage />} />
 							<Route path="/settings" element={<SettingsPage />} />
 						</Route>
 					</Routes>
