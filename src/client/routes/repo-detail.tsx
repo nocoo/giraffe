@@ -26,6 +26,7 @@ import {
 import { Box, GitPullRequest } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router";
+import { PageSkeleton } from "../components/layout/page-skeleton";
 import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad, missingTitle } from "../lib/error-ui";
 import { formatCount, formatDate, formatReview } from "../lib/format";
@@ -104,7 +105,9 @@ export function RepoDetailPage() {
 	const gen = useRef(0);
 
 	function onLoadError(err: unknown): void {
-		const missing = catchLoad(err, toast);
+		const missing = catchLoad(err, (message) => {
+			toast.error(message);
+		});
 		if (missing) {
 			setSnap(missing);
 		}
@@ -146,7 +149,9 @@ export function RepoDetailPage() {
 				if (cancelled) {
 					return;
 				}
-				const missing = catchLoad(err, toast);
+				const missing = catchLoad(err, (message) => {
+					toast.error(message);
+				});
 				if (missing) {
 					setSnap(missing);
 				}
@@ -173,7 +178,9 @@ export function RepoDetailPage() {
 			if (cancelled) {
 				return;
 			}
-			const missing = catchLoad(err, toast);
+			const missing = catchLoad(err, (message) => {
+				toast.error(message);
+			});
 			if (missing) {
 				setSnap(missing);
 			}
@@ -284,9 +291,7 @@ export function RepoDetailPage() {
 		return (
 			<div className="flex flex-col gap-6">
 				<PageHeader title={`${owner}/${name}`} />
-				<TabWell>
-					<LayerCard.Loading label="加载仓库" />
-				</TabWell>
+				<PageSkeleton label="加载仓库" />
 			</div>
 		);
 	}

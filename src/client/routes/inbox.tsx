@@ -11,6 +11,7 @@ import {
 } from "@nocoo/basalt/components/table";
 import { Inbox } from "lucide-react";
 import { useEffect, useState } from "react";
+import { PageSkeleton } from "../components/layout/page-skeleton";
 import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad, missingTitle } from "../lib/error-ui";
 import { formatDate } from "../lib/format";
@@ -22,7 +23,9 @@ export function InboxPage() {
 	const [snap, setSnap] = useState<NotificationsSnapshot | { missing: true } | null>(null);
 
 	function onLoadError(err: unknown): void {
-		const missing = catchLoad(err, toast);
+		const missing = catchLoad(err, (message) => {
+			toast.error(message);
+		});
 		if (missing) {
 			setSnap(missing);
 		}
@@ -32,7 +35,9 @@ export function InboxPage() {
 		void loadInbox()
 			.then(setSnap)
 			.catch((err: unknown) => {
-				const missing = catchLoad(err, toast);
+				const missing = catchLoad(err, (message) => {
+					toast.error(message);
+				});
 				if (missing) {
 					setSnap(missing);
 				}
@@ -65,11 +70,7 @@ export function InboxPage() {
 		return (
 			<div className="flex flex-col gap-6">
 				<PageHeader title="通知" description={PAGE_DESCRIPTIONS["/inbox"]} />
-				<LayerCard>
-					<LayerCard.Primary>
-						<LayerCard.Loading label="加载通知" />
-					</LayerCard.Primary>
-				</LayerCard>
+				<PageSkeleton label="加载通知" />
 			</div>
 		);
 	}
@@ -103,7 +104,7 @@ export function InboxPage() {
 							onClick={() => {
 								void markReadAll(snap.account_id)
 									.then((next) => {
-										toast("已全部已读");
+										toast.success("已全部已读");
 										setSnap(next);
 									})
 									.catch(onLoadError);
@@ -160,7 +161,7 @@ export function InboxPage() {
 												onClick={() => {
 													void markRead(row.id, snap.account_id)
 														.then((next) => {
-															toast("已读");
+															toast.success("已读");
 															setSnap(next);
 														})
 														.catch(onLoadError);

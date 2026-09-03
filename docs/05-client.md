@@ -190,8 +190,8 @@ Basalt `ContentIsland` 已是 L1 岛。不要再包一层自定义 card 当岛�
 | 复制 digest | `ClipboardText` | `@nocoo/basalt/components/clipboard-text` |
 | Traffic | `AreaChart` 或 `LineChart` | `@nocoo/basalt/charts/area` / `line` |
 | Languages | `DonutChart` | `@nocoo/basalt/charts/donut` |
-| 加载 | `Loader` | `@nocoo/basalt/components/loader` |
-| 骨架 | `SkeletonLine` | `@nocoo/basalt/components/skeleton-line` |
+| 加载 | `Button loading` | `@nocoo/basalt` |
+| 骨架 | `SkeletonLine` 经 `PageSkeleton` | `@nocoo/basalt/components/skeleton-line` |
 
 禁止：再引入 shadcn、再包一层 `src/client/components/ui/button.tsx`、用 kusto 的 `cn.ts` / `sidebar-context.tsx`、用 Basalt `DataTable`。
 
@@ -252,7 +252,7 @@ async function send(resource: string, init?: RequestInit): Promise<Response> {
 | `encryption_misconfigured` / `access_misconfigured` / `db_error` / `internal_error` 500 | toast `message` |
 | 其它 | toast `message`（已 sanitize）；未知 code 当 `internal_error` |
 
-成功写操作：toast 短中文（「已添加账号」「已刷新」）。
+成功写操作：`toast.success` 短中文（「已添加账号」「已刷新」）。失败：`toast.error`（`catchLoad` 注入）。刷新钮用 Basalt `Button loading`，不用手写 Loader。
 
 截断成功（HTTP 200 且 `truncated` 或 `truncated_kinds.length > 0`）**不是**错误：Badge「已截断」。再读规则见 §7。
 

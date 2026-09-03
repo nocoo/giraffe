@@ -104,7 +104,7 @@ export function AppSidebar({ collapsed, onToggle }: { collapsed: boolean; onTogg
 			.catch((err: unknown) => {
 				const ui = reportError(err);
 				if (ui.kind === "toast") {
-					toast(ui.message);
+					toast.error(ui.message);
 				}
 			});
 	}, []);

@@ -1,5 +1,4 @@
 import { Button, toast } from "@nocoo/basalt";
-import { Loader } from "@nocoo/basalt/components/loader";
 import { useSyncExternalStore } from "react";
 import { refreshInFlight, subscribeRefresh } from "../../viewmodels/refresh";
 
@@ -17,19 +16,18 @@ export function RefreshButton({
 		<Button
 			type="button"
 			{...(variant === "default" ? {} : { variant })}
-			disabled={busy}
+			loading={busy}
 			onClick={() => {
 				void run()
 					.then((result) => {
 						if (result === false) {
 							return;
 						}
-						toast("已刷新");
+						toast.success("已刷新");
 					})
 					.catch(onError);
 			}}
 		>
-			{busy ? <Loader size={14} /> : null}
 			刷新
 		</Button>
 	);

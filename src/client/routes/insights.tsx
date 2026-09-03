@@ -11,6 +11,7 @@ import {
 } from "@nocoo/basalt/components/table";
 import { Activity } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { PageSkeleton } from "../components/layout/page-skeleton";
 import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad, missingTitle } from "../lib/error-ui";
 import { formatHealth, healthBadgeVariant } from "../lib/format";
@@ -29,7 +30,9 @@ export function InsightsPage() {
 	const [snap, setSnap] = useState<InsightsSnapshot | { missing: true } | null>(null);
 
 	function onLoadError(err: unknown): void {
-		const missing = catchLoad(err, toast);
+		const missing = catchLoad(err, (message) => {
+			toast.error(message);
+		});
 		if (missing) {
 			setSnap(missing);
 		}
@@ -39,7 +42,9 @@ export function InsightsPage() {
 		void loadInsights()
 			.then(setSnap)
 			.catch((err: unknown) => {
-				const missing = catchLoad(err, toast);
+				const missing = catchLoad(err, (message) => {
+					toast.error(message);
+				});
 				if (missing) {
 					setSnap(missing);
 				}
@@ -84,11 +89,7 @@ export function InsightsPage() {
 		return (
 			<div className="flex flex-col gap-6">
 				<PageHeader title="Insights" description={PAGE_DESCRIPTIONS["/insights"]} />
-				<LayerCard>
-					<LayerCard.Primary>
-						<LayerCard.Loading label="加载 Insights" />
-					</LayerCard.Primary>
-				</LayerCard>
+				<PageSkeleton label="加载 Insights" />
 			</div>
 		);
 	}

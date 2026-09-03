@@ -11,6 +11,7 @@ import {
 } from "@nocoo/basalt/components/table";
 import { Box } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { PageSkeleton } from "../components/layout/page-skeleton";
 import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad, missingTitle } from "../lib/error-ui";
 import {
@@ -42,7 +43,9 @@ export function ReposPage() {
 	const [insights, setInsights] = useState<InsightsSnapshot | null>(null);
 
 	function onLoadError(err: unknown): void {
-		const missing = catchLoad(err, toast);
+		const missing = catchLoad(err, (message) => {
+			toast.error(message);
+		});
 		if (missing) {
 			setSnap(missing);
 			setInsights(null);
@@ -70,7 +73,9 @@ export function ReposPage() {
 				}
 			})
 			.catch((err: unknown) => {
-				const missing = catchLoad(err, toast);
+				const missing = catchLoad(err, (message) => {
+					toast.error(message);
+				});
 				if (missing) {
 					setSnap(missing);
 					setInsights(null);
@@ -121,11 +126,7 @@ export function ReposPage() {
 		return (
 			<div className="flex flex-col gap-6">
 				<PageHeader title="仓库" description={PAGE_DESCRIPTIONS["/"]} />
-				<LayerCard>
-					<LayerCard.Primary>
-						<LayerCard.Loading label="加载仓库" />
-					</LayerCard.Primary>
-				</LayerCard>
+				<PageSkeleton label="加载仓库" />
 			</div>
 		);
 	}

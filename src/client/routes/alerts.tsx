@@ -11,6 +11,7 @@ import {
 } from "@nocoo/basalt/components/table";
 import { ShieldAlert } from "lucide-react";
 import { useEffect, useState } from "react";
+import { PageSkeleton } from "../components/layout/page-skeleton";
 import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad, missingTitle } from "../lib/error-ui";
 import { severityBadgeVariant } from "../lib/format";
@@ -27,7 +28,9 @@ export function AlertsPage() {
 	const [snap, setSnap] = useState<AlertsSnapshot | { missing: true } | null>(null);
 
 	function onLoadError(err: unknown): void {
-		const missing = catchLoad(err, toast);
+		const missing = catchLoad(err, (message) => {
+			toast.error(message);
+		});
 		if (missing) {
 			setSnap(missing);
 		}
@@ -37,7 +40,9 @@ export function AlertsPage() {
 		void loadAlerts()
 			.then(setSnap)
 			.catch((err: unknown) => {
-				const missing = catchLoad(err, toast);
+				const missing = catchLoad(err, (message) => {
+					toast.error(message);
+				});
 				if (missing) {
 					setSnap(missing);
 				}
@@ -87,11 +92,7 @@ export function AlertsPage() {
 		return (
 			<div className="flex flex-col gap-6">
 				<PageHeader title="安全告警" description={PAGE_DESCRIPTIONS["/alerts"]} />
-				<LayerCard>
-					<LayerCard.Primary>
-						<LayerCard.Loading label="加载告警" />
-					</LayerCard.Primary>
-				</LayerCard>
+				<PageSkeleton label="加载告警" />
 			</div>
 		);
 	}

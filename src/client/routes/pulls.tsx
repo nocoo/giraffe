@@ -11,6 +11,7 @@ import {
 } from "@nocoo/basalt/components/table";
 import { GitPullRequest } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { PageSkeleton } from "../components/layout/page-skeleton";
 import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad, missingTitle } from "../lib/error-ui";
 import { formatDate, formatReview } from "../lib/format";
@@ -23,7 +24,9 @@ export function PullsPage() {
 	const [snap, setSnap] = useState<PullsSnapshot | { missing: true } | null>(null);
 
 	function onLoadError(err: unknown): void {
-		const missing = catchLoad(err, toast);
+		const missing = catchLoad(err, (message) => {
+			toast.error(message);
+		});
 		if (missing) {
 			setSnap(missing);
 		}
@@ -33,7 +36,9 @@ export function PullsPage() {
 		void loadPulls()
 			.then(setSnap)
 			.catch((err: unknown) => {
-				const missing = catchLoad(err, toast);
+				const missing = catchLoad(err, (message) => {
+					toast.error(message);
+				});
 				if (missing) {
 					setSnap(missing);
 				}
@@ -73,11 +78,7 @@ export function PullsPage() {
 		return (
 			<div className="flex flex-col gap-6">
 				<PageHeader title="Pull Requests" description={PAGE_DESCRIPTIONS["/pulls"]} />
-				<LayerCard>
-					<LayerCard.Primary>
-						<LayerCard.Loading label="加载 Pull Requests" />
-					</LayerCard.Primary>
-				</LayerCard>
+				<PageSkeleton label="加载 Pull Requests" />
 			</div>
 		);
 	}

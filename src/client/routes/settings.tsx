@@ -48,10 +48,13 @@ export function SettingsPage() {
 	const [error, setError] = useState<string | null>(null);
 	const [phase, setPhase] = useState<AccountAddPhase>("idle");
 	const [pendingId, setPendingId] = useState<string | null>(null);
+	const [actingId, setActingId] = useState<string | null>(null);
 	const busy = accountAddBusy(phase);
 
 	function onLoadError(err: unknown): void {
-		catchLoad(err, toast);
+		catchLoad(err, (message) => {
+			toast.error(message);
+		});
 	}
 
 	function reload() {
@@ -74,7 +77,9 @@ export function SettingsPage() {
 				}
 			})
 			.catch((err: unknown) => {
-				catchLoad(err, toast);
+				catchLoad(err, (message) => {
+					toast.error(message);
+				});
 			});
 	}, []);
 
@@ -92,7 +97,7 @@ export function SettingsPage() {
 				setPhase(next);
 			});
 			await reload();
-			toast("已添加账号");
+			toast.success("已添加账号");
 		} catch (err) {
 			reportError(err);
 			setError(accountFieldError(err) ?? "添加失败");
@@ -221,14 +226,19 @@ export function SettingsPage() {
 												<Button
 													type="button"
 													variant="secondary"
-													disabled={row.is_active}
+													disabled={row.is_active || actingId === row.id}
+													loading={actingId === row.id}
 													onClick={() => {
+														setActingId(row.id);
 														void activateAccount(row.id)
 															.then(() => {
-																toast("已激活");
+																toast.success("已激活");
 																return reload();
 															})
-															.catch(onLoadError);
+															.catch(onLoadError)
+															.finally(() => {
+																setActingId(null);
+															});
 													}}
 												>
 													激活
@@ -267,7 +277,7 @@ export function SettingsPage() {
 					}
 					return deleteAccount(pendingId)
 						.then(() => {
-							toast("已删除");
+							toast.success("已删除");
 							setPendingId(null);
 							return reload();
 						})
