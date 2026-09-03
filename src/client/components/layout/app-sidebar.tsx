@@ -25,7 +25,6 @@ import {
 } from "@nocoo/basalt";
 import {
 	Activity,
-	Binoculars,
 	Box,
 	CircleDot,
 	GitPullRequest,
@@ -45,6 +44,7 @@ import { initials } from "../../lib/format";
 import { NAV_GROUPS, NAV_ITEMS, paletteItems } from "../../lib/navigation";
 import { displayName, loadMe, type MeIdentity } from "../../viewmodels/me";
 import { cachedRepoRows } from "../../viewmodels/repos";
+import { BrandMark } from "./mark";
 
 const ICONS: Record<string, LucideIcon> = {
 	Box,
@@ -139,7 +139,7 @@ export function AppSidebar({ collapsed, onToggle }: { collapsed: boolean; onTogg
 			{collapsed ? (
 				<>
 					<SidebarHeader className="justify-center px-0">
-						<Binoculars className="h-5 w-5 text-basalt-primary" strokeWidth={1.5} />
+						<BrandMark alt="Giraffe" />
 					</SidebarHeader>
 					<Button
 						variant="ghost"
@@ -199,7 +199,7 @@ export function AppSidebar({ collapsed, onToggle }: { collapsed: boolean; onTogg
 					<SidebarHeader>
 						<div className="flex w-full items-center justify-between">
 							<div className="flex min-w-0 items-center gap-3">
-								<Binoculars className="h-5 w-5 shrink-0 text-basalt-primary" strokeWidth={1.5} />
+								<BrandMark />
 								<span className="truncate text-lg font-semibold text-basalt-foreground md:text-xl">
 									Giraffe
 								</span>

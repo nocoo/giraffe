@@ -47,6 +47,10 @@ Codex Sign Off 本文之前，禁止第 12 节步骤 1 及之后（含 Vite 脚�
 
 ```
 index.html                         # Vite 入口，根目录
+logo.png                           # 品牌源图
+public/logo-24.png                 # 侧栏
+public/logo-32.png                 # favicon
+public/apple-touch-icon.png        # Apple touch icon
 src/client/
   main.tsx                         # createRoot；ThemeProvider + LinkProvider + Router + Toaster
   index.css                        # Basalt Tailwind 入口
@@ -199,7 +203,7 @@ Basalt `ContentIsland` 已是 L1 岛。不要再包一层自定义 card 当岛�
 
 禁止：再引入 shadcn、再包一层 `src/client/components/ui/button.tsx`、用 kusto 的 `cn.ts` / `sidebar-context.tsx`、用 Basalt `DataTable`。
 
-品牌标记：不要用 `BasaltMark`。用 `lucide-react` 的 `Binoculars`，或 `src/client/components/layout/mark.tsx` 一个小 SVG。仅此一个非 Basalt 图形。
+品牌标记：不要用 `BasaltMark`。侧栏用 `src/client/components/layout/mark.tsx` 读 `/logo-24.png`（源文件根目录 `logo.png`，派生 `public/logo-24.png`）。Favicon 用 `/logo-32.png`。仅此一个非 Basalt 图形。
 
 ---
 
