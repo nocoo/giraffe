@@ -1,7 +1,7 @@
 import { apiPost } from "../lib/api";
 import { ApiError } from "../lib/errors";
 import { ensureSession, getActiveAccountId } from "./session";
-import { fetchKindAs, putSnapshot } from "./snapshot";
+import { fetchKindAs, peekSnapshot, putSnapshot } from "./snapshot";
 
 export type RefreshBody = {
 	account_id?: string;
@@ -96,7 +96,12 @@ async function followUp(
 		return;
 	}
 	const written = writtenKinds(result, requested);
-	if (!written.includes("insights")) {
+	if (
+		!written.includes("insights") &&
+		(written.includes("issues") ||
+			written.includes("alerts") ||
+			peekSnapshot("issues", stamp) !== undefined)
+	) {
 		await fetchKindAs("insights", stamp);
 	}
 	if (!written.includes("digest") && written.includes("repos")) {

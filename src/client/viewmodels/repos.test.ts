@@ -5,6 +5,7 @@ import {
 	cachedRepoRows,
 	filterRepos,
 	healthMap,
+	type InsightsSnapshot,
 	loadInsightsOptional,
 	loadRepos,
 	type RepoRow,
@@ -12,7 +13,7 @@ import {
 	visibleRepos,
 } from "./repos";
 import { setActiveAccountId } from "./session";
-import { clearSnapshots } from "./snapshot";
+import { clearSnapshots, putSnapshot } from "./snapshot";
 
 const sample: RepoRow[] = [
 	{
@@ -135,27 +136,21 @@ describe("repos viewmodel", () => {
 	});
 
 	it("loads optional insights or null when missing", async () => {
-		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
-			const url = String(input);
-			if (url === "/api/accounts") {
-				return Response.json({ accounts: [{ id: "acc1", login: "o", is_active: true }] });
-			}
-			if (url === "/api/insights") {
-				return Response.json({ account_id: "acc1", alerts_incomplete: false, insights: [] });
-			}
-			throw new Error(url);
-		});
-		expect((await loadInsightsOptional())?.insights).toEqual([]);
-		clearSnapshots();
+		setActiveAccountId("acc1");
 		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
 			if (String(input) === "/api/accounts") {
 				return Response.json({ accounts: [{ id: "acc1", login: "o", is_active: true }] });
 			}
-			return new Response(JSON.stringify({ error: { code: "snapshot_missing", message: "n" } }), {
-				status: 409,
-				headers: { "content-type": "application/json" },
-			});
+			throw new Error(String(input));
 		});
+		const cached: InsightsSnapshot = {
+			account_id: "acc1",
+			alerts_incomplete: false,
+			insights: [],
+		};
+		putSnapshot("insights", cached);
+		expect((await loadInsightsOptional())?.insights).toEqual([]);
+		clearSnapshots();
 		expect(await loadInsightsOptional()).toBeNull();
 	});
 
@@ -170,15 +165,5 @@ describe("repos viewmodel", () => {
 			});
 		});
 		await expect(loadRepos()).rejects.toMatchObject({ code: "github_error" });
-		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
-			if (String(input) === "/api/accounts") {
-				return Response.json({ accounts: [{ id: "acc1", login: "o", is_active: true }] });
-			}
-			return new Response(JSON.stringify({ error: { code: "github_error", message: "x" } }), {
-				status: 502,
-				headers: { "content-type": "application/json" },
-			});
-		});
-		await expect(loadInsightsOptional()).rejects.toMatchObject({ code: "github_error" });
 	});
 });

@@ -227,6 +227,59 @@ describe("refresh coordinator", () => {
 		expect(urls).not.toContain("/api/digest");
 	});
 
+	it("does not GET insights after repos-only when issues are absent", async () => {
+		setActiveAccountId("acc1");
+		const urls: string[] = [];
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+			const url = String(input);
+			urls.push(url);
+			if (url === "/api/accounts") {
+				return accountsFor("acc1");
+			}
+			if (url === "/api/refresh") {
+				return Response.json({
+					account_id: "acc1",
+					fetched_at: "t",
+					truncated: false,
+					repos: [],
+				});
+			}
+			if (url === "/api/digest") {
+				return Response.json({ account_id: "acc1" });
+			}
+			throw new Error(url);
+		});
+		await requestRefresh(["repos"]);
+		expect(urls).toContain("/api/digest");
+		expect(urls).not.toContain("/api/insights");
+	});
+
+	it("GETs insights after issues even when they were not written", async () => {
+		setActiveAccountId("acc1");
+		const urls: string[] = [];
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+			const url = String(input);
+			urls.push(url);
+			if (url === "/api/accounts") {
+				return accountsFor("acc1");
+			}
+			if (url === "/api/refresh") {
+				return Response.json({
+					account_id: "acc1",
+					fetched_at: "t",
+					truncated: false,
+					issues: [],
+				});
+			}
+			if (url === "/api/insights") {
+				return Response.json({ account_id: "acc1", insights: [] });
+			}
+			throw new Error(url);
+		});
+		await requestRefresh(["issues"]);
+		expect(urls).toContain("/api/insights");
+	});
+
 	it("resyncs session on account_conflict and does not replay", async () => {
 		setActiveAccountId("acc1");
 		const urls: string[] = [];

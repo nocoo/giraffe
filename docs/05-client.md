@@ -284,7 +284,7 @@ HTTP **200** 体有两种（04）：
 
 - 单 kind：该 kind 已写入；用 body 更新缓存，不必再 GET 同一 kind。
 - 多 kind / all：对 `kinds` 里每一项再 GET。
-- 隐式派生补读：**仅当**该派生名没有出现在本轮已写入集合里。已写入集合 = 单 kind 的那一项，或多 kind 的 `kinds`。任意成功 refresh 之后：若 `insights` 未在集合中则 `GET /api/insights`（409 保留旧值或 Empty）；若 `digest` 未在集合中且本轮写入含 `repos` 则 `GET /api/digest`（409 同上）。单独刷 `alerts` 也会补 GET insights，避免仓库页 health 过期。
+- 隐式派生补读：**仅当**该派生名没有出现在本轮已写入集合里。已写入集合 = 单 kind 的那一项，或多 kind 的 `kinds`。`insights`：仅当本轮写入含 `issues` 或 `alerts`，或内存已有 issues 快照时才 `GET /api/insights`（04 隐式派生需要 repos+issues；源不足时不 GET，避免必 409）。`digest`：未在集合中且本轮写入含 `repos` 则 `GET /api/digest`（409 保留旧值或 Empty）。单独刷 `alerts` 仍补 GET insights，避免仓库页 health 过期。
 - Digest 页请求 `["repos"]`：按单 kind 更新 repos，再因 digest 不在集合中而 GET digest。
 
 `truncated` / `truncated_kinds`：Badge「已截断」，仍是成功。未出现的 kind 保持刷新前快照。不得把 200 当成失败。
@@ -315,7 +315,7 @@ HTTP **200** 体有两种（04）：
 
 `PageHeader` 标题「仓库」。`Toolbar`：搜索（name/description）、`SegmentControl` 列表 | 网格、排序（star / push 时间 / name）。排序状态在 VM，点表头调用 VM，不靠 Table 内置排序。
 
-列表：`Table` 列 = 仓库、语言、★、fork、open issues、最近 push、可见性、health（若 insights 已在内存则显示，没有则不加列，不为此自动刷 insights）。`insights.alerts_incomplete === true` 时 health 旁 Badge「告警不完整」，不得把 `strong` 理解成已扫完全部安全告警。不另 GET alerts 来推断该标记。
+列表：`Table` 列 = 仓库、语言、★、fork、open issues、最近 push、可见性、health（若 insights 已在内存则显示，没有则不加列；只读内存，不 GET、不为此自动刷 insights）。`insights.alerts_incomplete === true` 时 health 旁 Badge「告警不完整」，不得把 `strong` 理解成已扫完全部安全告警。不另 GET alerts 来推断该标记。
 
 网格：`LayerCard` 卡，点整卡进 `/repos/:owner/:name`。
 

@@ -1,5 +1,5 @@
-import { getActiveAccountId } from "./session";
-import { loadKind } from "./snapshot";
+import { ensureSession, getActiveAccountId } from "./session";
+import { loadKind, peekSnapshot } from "./snapshot";
 
 export type RepoRow = {
 	name_with_owner: string;
@@ -103,9 +103,6 @@ export async function loadRepos(): Promise<ReposSnapshot | { missing: true }> {
 }
 
 export async function loadInsightsOptional(): Promise<InsightsSnapshot | null> {
-	const next = await loadKind<InsightsSnapshot>("insights");
-	if ("missing" in next) {
-		return null;
-	}
-	return next;
+	const stamp = await ensureSession();
+	return peekSnapshot<InsightsSnapshot>("insights", stamp) ?? null;
 }
