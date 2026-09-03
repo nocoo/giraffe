@@ -304,7 +304,7 @@ database_id = "<prod>"
 | 方法 | 路径 | 行为 |
 |------|------|------|
 | GET | `/api/live` | 版本、环境，无鉴权数据 |
-| GET | `/api/me` | Access 身份（email/name）；本地返回 stub |
+| GET | `/api/me` | Access 身份（email/name/avatar）；avatar 来自 lizheng.blog 作者档案；本地 stub 可无头像 |
 | GET | `/api/accounts` | 账号列表（无 token） |
 | POST | `/api/accounts` | classic PAT：`GET /user` + 必填 scope；AES-GCM 信封入库 |
 | POST | `/api/accounts/:id/activate` | 切换当前账号 |

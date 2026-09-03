@@ -1,6 +1,7 @@
 import {
 	Avatar,
 	AvatarFallback,
+	AvatarImage,
 	Button,
 	CommandEmpty,
 	CommandGroup,
@@ -128,6 +129,7 @@ export function AppSidebar({ collapsed, onToggle }: { collapsed: boolean; onTogg
 	const email = me?.email ?? `v${APP_VERSION}`;
 	const avatar = (
 		<Avatar className="h-9 w-9 shrink-0">
+			{me?.avatar ? <AvatarImage src={me.avatar} alt={name} /> : null}
 			<AvatarFallback className="text-xs">{initials(name)}</AvatarFallback>
 		</Avatar>
 	);

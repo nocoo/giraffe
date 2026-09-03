@@ -25,7 +25,7 @@
 | 无可用 PAT | HTTP **409**，`code: "account_missing"`。不用 412 |
 | 无快照 | HTTP **409**，`code: "snapshot_missing"`。GET 不回源、不写库 |
 | 刷新时机 | 无 Cron。GET 不得刷新。只接受 `POST /api/refresh`。何时调用由 05，Server 不调度 |
-| GitHub 出站 | 同一允许 origin 上的 REST 与 `POST /graphql`。除 Access JWKS 外唯一 `fetch` 是 `githubFetch` |
+| GitHub 出站 | 同一允许 origin 上的 REST 与 `POST /graphql`。除 Access JWKS 与 `GET https://lizheng.blog/api/authors/profile?hash=`（仅 SHA-256，禁止带 email）外，唯一 `fetch` 是 `githubFetch` |
 | 出站上限 | 单次请求 `githubFetch` ≤ **40**。D1 每请求自限 **80** statement（平台 D1 上限 1000）。Worker 用付费档。禁止按免费档 50 设计。`createDb(env)` 第 81 条在 execute 前 throw → 500 `db_error`。L1 覆盖第 81 条 |
 | 账号主键 | `login` 唯一。再次粘贴同一 login 则 **upsert**（保留 `id`，重加密 token） |
 | 删除当前账号 | 不自动激活其它账号；之后快照类接口 409 `account_missing` |
@@ -383,10 +383,10 @@ digest 只对比 `day` 与 UTC 日历昨天的 `snapshot_days`（含 `by_repo`�
 ### `GET /api/me`
 
 ```json
-{ "email": "a@b.c", "name": "n" }
+{ "email": "a@b.c", "name": "n", "avatar": "https://…" }
 ```
 
-`email` 取 JWT `email`；缺省或空 → 401 `access_unauthorized`。`name`：JWT `name` 为非空字符串则用之，否则用 `email`。development stub：`dev@local` / `dev`。不返回 GitHub login。无 GitHub 账号也 200。
+`email` 取 JWT `email`；缺省或空 → 401 `access_unauthorized`。`name`：lizheng.blog 作者档案非空 `name` 优先，否则 JWT `name`，再否则 `email`。`avatar`：档案非空字符串，否则 `null`。档案用 `SHA-256(trim+lower(email))` 查 `GET https://lizheng.blog/api/authors/profile?hash=`，超时 2.5s，失败当 miss。**禁止**把 email 放进该 URL 或请求体。development stub 仍 `dev@local` / `dev`，档案 miss 则 `avatar: null`。不返回 GitHub login。无 GitHub 账号也 200。
 
 ### `GET /api/accounts`
 

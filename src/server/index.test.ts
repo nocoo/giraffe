@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "./env";
 import worker, { createApp } from "./index";
 import { openSqliteD1 } from "./lib/db/sqlite-d1";
@@ -16,7 +16,15 @@ function env(): Env {
 }
 
 describe("worker fetch", () => {
+	afterEach(() => {
+		vi.unstubAllGlobals();
+	});
+
 	it("serves live json and assets for non-api", async () => {
+		vi.stubGlobal(
+			"fetch",
+			async () => new Response(JSON.stringify({ name: null, avatar: null }), { status: 200 }),
+		);
 		const e = env();
 		const live = await worker.fetch(
 			new Request("http://localhost/api/live"),
@@ -29,7 +37,7 @@ describe("worker fetch", () => {
 		expect(await asset.text()).toBe("asset");
 		const me = await createApp().request("http://localhost/api/me", {}, e);
 		expect(me.status).toBe(200);
-		expect(await me.json()).toEqual({ email: "dev@local", name: "dev" });
+		expect(await me.json()).toEqual({ email: "dev@local", name: "dev", avatar: null });
 		const missing = await createApp().request("http://localhost/api/nope", {}, e);
 		expect(missing.status).toBe(404);
 		const method = await createApp().request("http://localhost/api/live", { method: "POST" }, e);

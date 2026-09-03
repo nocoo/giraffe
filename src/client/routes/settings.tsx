@@ -128,6 +128,7 @@ export function SettingsPage() {
 					{me ? (
 						<div className="flex items-center gap-3">
 							<Avatar className="h-10 w-10">
+								{me.avatar ? <AvatarImage src={me.avatar} alt={displayName(me)} /> : null}
 								<AvatarFallback>{initials(displayName(me))}</AvatarFallback>
 							</Avatar>
 							<div className="min-w-0">

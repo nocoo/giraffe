@@ -132,7 +132,7 @@ AppShell (flex h-screen)
     Sidebar（收起 w-[68px]，展开 width=260）
       SidebarHeader：标记 + 「Giraffe」+ 版本 pill + 折叠钮
       SidebarNav：第 8 节条目
-      SidebarFooter：SidebarUser = GET /api/me 的 name/email；ThemeToggle
+      SidebarFooter：SidebarUser = GET /api/me 的 name/email/`avatar`（lizheng.blog）；ThemeToggle
     AppMain tabIndex={-1}
       header.h-14：移动端打开钮 + 面包屑
       ContentIsland：页面
@@ -380,7 +380,7 @@ HTTP **200** 体有两种（04）：
 
 ### 8.8 `/settings`
 
-`PageHeader`「设置」。`GET /api/me` 展示 Access 身份（非 GitHub）。
+`PageToolbar`「设置」。`GET /api/me` 展示 Access 身份与 lizheng.blog 头像（非 GitHub）。
 
 账号表：login、avatar、`token_last4`、scopes、是否当前。无 token 列。
 

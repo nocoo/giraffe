@@ -3,7 +3,11 @@ import { join, relative } from "node:path";
 import { parseSync } from "oxc-parser";
 import { collectFetchAliases, isFetchCall, walk } from "./fetch-ast";
 
-const ALLOW = new Set(["src/server/lib/github-client.ts", "src/server/middleware/access.ts"]);
+const ALLOW = new Set([
+	"src/server/lib/github-client.ts",
+	"src/server/middleware/access.ts",
+	"src/server/lib/author-profile.ts",
+]);
 const ROOTS = ["src/server", "src/lib"];
 
 async function collect(dir: string, acc: string[]): Promise<void> {
