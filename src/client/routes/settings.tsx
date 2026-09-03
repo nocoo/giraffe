@@ -25,8 +25,13 @@ import { catchLoad, reportError, reportOk } from "../lib/error-ui";
 import { initials } from "../lib/format";
 import { PAGE_DESCRIPTIONS } from "../lib/navigation";
 import {
+	type AccountAddPhase,
+	accountAddBusy,
+	accountAddHint,
+	accountAddLabel,
 	accountFieldError,
 	activateAccount,
+	canSubmitAccount,
 	createAccount,
 	deleteAccount,
 	emptyToken,
@@ -41,7 +46,9 @@ export function SettingsPage() {
 	const [accounts, setAccounts] = useState<PublicAccount[]>([]);
 	const [me, setMe] = useState<MeIdentity | null>(null);
 	const [error, setError] = useState<string | null>(null);
+	const [phase, setPhase] = useState<AccountAddPhase>("idle");
 	const [pendingId, setPendingId] = useState<string | null>(null);
+	const busy = accountAddBusy(phase);
 
 	function onLoadError(err: unknown): void {
 		catchLoad(err, toast);
@@ -73,16 +80,24 @@ export function SettingsPage() {
 
 	async function onSubmit(event: FormEvent) {
 		event.preventDefault();
+		if (!canSubmitAccount(token, phase)) {
+			return;
+		}
 		const value = token;
 		setToken(emptyToken());
 		setError(null);
+		setPhase("saving");
 		try {
-			await createAccount(value);
+			await createAccount(value, (next) => {
+				setPhase(next);
+			});
 			await reload();
 			toast("已添加账号");
 		} catch (err) {
 			reportError(err);
 			setError(accountFieldError(err) ?? "添加失败");
+		} finally {
+			setPhase("idle");
 		}
 	}
 
@@ -127,11 +142,15 @@ export function SettingsPage() {
 					<p className="font-medium">GitHub 账号</p>
 				</LayerCard.Header>
 				<LayerCard.Body>
-					<form className="flex max-w-xl flex-col gap-3" onSubmit={(event) => void onSubmit(event)}>
+					<form
+						className="flex max-w-xl flex-col gap-3"
+						aria-busy={busy}
+						onSubmit={(event) => void onSubmit(event)}
+					>
 						<Field
 							label="GitHub classic PAT"
 							htmlFor="pat"
-							hint="需要 repo、read:org、read:user、notifications"
+							hint={accountAddHint(phase) ?? "需要 repo、read:org、read:user、notifications"}
 							{...(error ? { error } : {})}
 						>
 							<SensitiveInput
@@ -141,14 +160,20 @@ export function SettingsPage() {
 								revealLabel="显示令牌"
 								hideLabel="隐藏令牌"
 								value={token}
+								disabled={busy}
 								onChange={(event) => setToken(event.target.value)}
 								data-testid="pat-input"
 								passwordManagerIgnore
 							/>
 						</Field>
 						<div>
-							<Button type="submit" data-testid="pat-submit">
-								添加账号
+							<Button
+								type="submit"
+								data-testid="pat-submit"
+								loading={busy}
+								disabled={!canSubmitAccount(token, phase)}
+							>
+								{accountAddLabel(phase)}
 							</Button>
 						</div>
 					</form>

@@ -2,9 +2,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../lib/errors";
 import {
+	accountAddBusy,
+	accountAddHint,
+	accountAddLabel,
 	accountFieldError,
 	accountsArePublic,
 	activateAccount,
+	canSubmitAccount,
 	createAccount,
 	deleteAccount,
 	emptyToken,
@@ -22,6 +26,21 @@ describe("accounts viewmodel", () => {
 		vi.stubGlobal("fetch", () => {
 			throw new Error("network denied in L1");
 		});
+	});
+
+	it("locks submit while adding and names the wait", () => {
+		expect(accountAddBusy("idle")).toBe(false);
+		expect(accountAddBusy("saving")).toBe(true);
+		expect(accountAddBusy("syncing")).toBe(true);
+		expect(canSubmitAccount(PAT, "idle")).toBe(true);
+		expect(canSubmitAccount("", "idle")).toBe(false);
+		expect(canSubmitAccount(PAT, "saving")).toBe(false);
+		expect(accountAddLabel("idle")).toBe("添加账号");
+		expect(accountAddLabel("saving")).toBe("正在添加…");
+		expect(accountAddLabel("syncing")).toBe("正在同步…");
+		expect(accountAddHint("idle")).toBeNull();
+		expect(accountAddHint("saving")).toBe("正在校验令牌并保存账号");
+		expect(accountAddHint("syncing")).toBe("账号已保存，正在同步仓库");
 	});
 
 	it("clears the token and refreshes only the active account", async () => {
@@ -86,9 +105,13 @@ describe("accounts viewmodel", () => {
 			}
 			throw new Error(url);
 		});
-		const created = await createAccount(PAT);
+		const phases: string[] = [];
+		const created = await createAccount(PAT, (phase) => {
+			phases.push(phase);
+		});
 		expect(created.id).toBe("acc1");
 		expect(getActiveAccountId()).toBe("acc1");
+		expect(phases).toEqual(["saving", "syncing"]);
 		expect(urls.some((row) => row.startsWith("POST /api/refresh"))).toBe(true);
 		vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
 			const url = String(input);
@@ -135,8 +158,12 @@ describe("accounts viewmodel", () => {
 			}
 			throw new Error(String(input));
 		});
-		await createAccount(PAT);
+		const phases: string[] = [];
+		await createAccount(PAT, (phase) => {
+			phases.push(phase);
+		});
 		expect(urls).toEqual(["/api/accounts"]);
+		expect(phases).toEqual(["saving"]);
 		expect(getActiveAccountId()).toBeNull();
 	});
 

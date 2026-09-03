@@ -13,12 +13,42 @@ export type PublicAccount = {
 	is_active: boolean;
 };
 
+export type AccountAddPhase = "idle" | "saving" | "syncing";
+
 export function emptyToken(): string {
 	return "";
 }
 
 export function shouldRefreshOnCreate(account: Pick<PublicAccount, "is_active">): boolean {
 	return account.is_active;
+}
+
+export function accountAddBusy(phase: AccountAddPhase): boolean {
+	return phase !== "idle";
+}
+
+export function canSubmitAccount(token: string, phase: AccountAddPhase): boolean {
+	return token.length > 0 && !accountAddBusy(phase);
+}
+
+export function accountAddLabel(phase: AccountAddPhase): string {
+	if (phase === "saving") {
+		return "正在添加…";
+	}
+	if (phase === "syncing") {
+		return "正在同步…";
+	}
+	return "添加账号";
+}
+
+export function accountAddHint(phase: AccountAddPhase): string | null {
+	if (phase === "saving") {
+		return "正在校验令牌并保存账号";
+	}
+	if (phase === "syncing") {
+		return "账号已保存，正在同步仓库";
+	}
+	return null;
 }
 
 export function accountFieldError(err: unknown): string | null {
@@ -49,10 +79,15 @@ export async function loadAccounts(): Promise<PublicAccount[]> {
 	return body.accounts;
 }
 
-export async function createAccount(token: string): Promise<PublicAccount> {
+export async function createAccount(
+	token: string,
+	onPhase?: (phase: AccountAddPhase) => void,
+): Promise<PublicAccount> {
+	onPhase?.("saving");
 	const account = await apiPost<PublicAccount>("accounts", { token });
 	if (shouldRefreshOnCreate(account)) {
 		setActiveAccountId(account.id);
+		onPhase?.("syncing");
 		try {
 			await requestRefresh(["repos"]);
 		} catch {

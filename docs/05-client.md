@@ -368,7 +368,7 @@ HTTP **200** 体有两种（04）：
 
 账号表：login、avatar、`token_last4`、scopes、是否当前。无 token 列。
 
-添加：`SensitiveInput`（`revealLabel`/`hideLabel` 中文），提交 `POST /api/accounts` `{ token }`。**无论成功失败都清空输入**。成功 201 且 `is_active === true` 才按 §7 刷 `repos`。第二账号默认非 active，只出现在表里，需用户 activate。
+添加：`SensitiveInput`（`revealLabel`/`hideLabel` 中文），提交 `POST /api/accounts` `{ token }`。**无论成功失败都清空输入**。提交中 `Button loading`、输入禁用，防重复提交；文案「正在添加…」（校验并保存）→ 若该账号 `is_active` 再「正在同步…」（§7 刷 `repos`）。成功 201 且 `is_active === true` 才刷 `repos`。第二账号默认非 active，只出现在表里，需用户 activate。
 
 `POST /api/accounts/:id/activate` 切换当前，成功后刷 `repos`。`DELETE` 经 `ConfirmDialog`。删除当前账号后快照页将 409 `account_missing`。
 
