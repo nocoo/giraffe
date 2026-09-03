@@ -158,10 +158,10 @@ Basalt `ContentIsland` 已是 L1 岛。不要再包一层自定义 card 当岛�
 
 - 非结构砖（网格仓卡、KPI）：岛上裸 `LayerCard padding="md"`，不要 Header/Body。
 - 表单 / 身份：`Secondary` 标题 + `Body`（控件留在 L2）。
-- 列表 / 表：`Header` 放搜索与刷新，`Primary className="p-0"` 放 `Table`。空态用 `LayerCard.Empty`，仍在 `Primary` 里。
+- 列表 / 表：岛内第一行是标题+副标题 | 筛选与刷新（`PageToolbar`，左 `Text` 标题/副标题，右 Input / SegmentControl / 刷新）。表只进 `LayerCard.Primary className="p-0"`。不要用 Basalt `PageHeader` 亮卡，不要把筛选放进 `LayerCard.Header`。
+- 空态用 `LayerCard.Empty`，仍在 `Primary` 里。
 - `Table`、列表、图表 **不得** 直接做 `ContentIsland` 的子节点。
 - `StatStrip` 自己已是 muted 砖，不要再套一层 `LayerCard`。
-- `PageHeader` 不是表面。
 
 ### 5.3 控件映射（强制）
 
@@ -169,7 +169,7 @@ Basalt `ContentIsland` 已是 L1 岛。不要再包一层自定义 card 当岛�
 |------|------|------|
 | 壳 | `AppShell` `AppMain` `AppSkipLink` | `@nocoo/basalt/components/app-shell` |
 | 侧栏 / 岛 | `Sidebar*` `ContentIsland` `SidebarProvider` | `@nocoo/basalt` |
-| 顶栏标题 | `PageHeader` | `@nocoo/basalt/components/page-header` |
+| 岛内页头 | `Text` 经 `PageToolbar` | `@nocoo/basalt` |
 | 面包屑 | `Breadcrumbs`（若 PageHeader 不够） | `@nocoo/basalt/components/breadcrumbs` |
 | 按钮 / 输入 / 字段 | `Button` `Input` `Field` `Label` | `@nocoo/basalt` |
 | PAT | `SensitiveInput` | `@nocoo/basalt/components/sensitive-input` |
@@ -329,7 +329,7 @@ HTTP **200** 体有两种（04）：
 
 ### 8.1 `/` 仓库
 
-`PageHeader` 标题「仓库」。`Toolbar`：搜索（name/description）、`SegmentControl` 列表 | 网格、排序（star / push 时间 / name）。排序状态在 VM，点表头调用 VM，不靠 Table 内置排序。
+`PageToolbar` 左「仓库」+ 副标题，右搜索、`SegmentControl` 列表|网格、排序、刷新。排序状态在 VM，点表头调用 VM，不靠 Table 内置排序。
 
 列表：`Table` 列 = 仓库、语言、★、fork、open issues、最近 push、可见性、health（若 insights 已在内存则显示，没有则不加列；只读内存，不 GET、不为此自动刷 insights）。`insights.alerts_incomplete === true` 时 health 旁 Badge「告警不完整」，不得把 `strong` 理解成已扫完全部安全告警。不另 GET alerts 来推断该标记。
 

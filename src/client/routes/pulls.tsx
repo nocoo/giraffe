@@ -1,6 +1,5 @@
 import { Badge, Input, Link, toast } from "@nocoo/basalt";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
-import { PageHeader } from "@nocoo/basalt/components/page-header";
 import {
 	Table,
 	TableBody,
@@ -12,6 +11,7 @@ import {
 import { GitPullRequest } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { PageSkeleton } from "../components/layout/page-skeleton";
+import { PageToolbar } from "../components/layout/page-toolbar";
 import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad, missingTitle } from "../lib/error-ui";
 import { formatDate, formatReview } from "../lib/format";
@@ -54,19 +54,24 @@ export function PullsPage() {
 
 	if (snap && "missing" in snap) {
 		return (
-			<div className="flex flex-col gap-6">
-				<PageHeader title="Pull Requests" description={PAGE_DESCRIPTIONS["/pulls"]} />
-				<LayerCard>
-					<LayerCard.Primary className="flex flex-col gap-4">
-						<LayerCard.Empty
-							icon={<GitPullRequest />}
-							title={missingTitle(snap)}
-							description="先添加 PAT 或刷新。"
-						/>
+			<div className="flex flex-col gap-4">
+				<PageToolbar
+					title="Pull Requests"
+					description={PAGE_DESCRIPTIONS["/pulls"]}
+					actions={
 						<RefreshButton
 							variant="default"
 							run={() => requestRefresh(["prs"]).then(() => loadPulls().then(setSnap))}
 							onError={onLoadError}
+						/>
+					}
+				/>
+				<LayerCard>
+					<LayerCard.Primary>
+						<LayerCard.Empty
+							icon={<GitPullRequest />}
+							title={missingTitle(snap)}
+							description="先添加 PAT 或刷新。"
 						/>
 					</LayerCard.Primary>
 				</LayerCard>
@@ -76,36 +81,36 @@ export function PullsPage() {
 
 	if (!snap) {
 		return (
-			<div className="flex flex-col gap-6">
-				<PageHeader title="Pull Requests" description={PAGE_DESCRIPTIONS["/pulls"]} />
+			<div className="flex flex-col gap-4">
+				<PageToolbar title="Pull Requests" description={PAGE_DESCRIPTIONS["/pulls"]} />
 				<PageSkeleton label="加载 Pull Requests" />
 			</div>
 		);
 	}
 
 	return (
-		<div className="flex flex-col gap-6">
-			<PageHeader
+		<div className="flex flex-col gap-4">
+			<PageToolbar
 				title="Pull Requests"
 				description={PAGE_DESCRIPTIONS["/pulls"]}
-				actions={snap.truncated ? <Badge variant="warning">已截断</Badge> : null}
-			/>
-			<LayerCard>
-				<LayerCard.Header>
-					<div className="flex w-full flex-col gap-3 md:flex-row md:items-center md:justify-between">
+				actions={
+					<>
+						{snap.truncated ? <Badge variant="warning">已截断</Badge> : null}
 						<Input
 							value={query}
 							onChange={(event) => setQuery(event.target.value)}
 							placeholder="搜索仓库或标题"
 							aria-label="搜索 Pull Requests"
-							className="md:max-w-sm"
+							className="w-full md:w-56"
 						/>
 						<RefreshButton
 							run={() => requestRefresh(["prs"]).then(() => loadPulls().then(setSnap))}
 							onError={onLoadError}
 						/>
-					</div>
-				</LayerCard.Header>
+					</>
+				}
+			/>
+			<LayerCard>
 				<LayerCard.Primary className={rows.length === 0 ? undefined : "p-0"}>
 					{rows.length === 0 ? (
 						<LayerCard.Empty icon={<GitPullRequest />} title="没有 Pull Request" />

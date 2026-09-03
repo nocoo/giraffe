@@ -9,7 +9,6 @@ import {
 	toast,
 } from "@nocoo/basalt";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
-import { PageHeader } from "@nocoo/basalt/components/page-header";
 import { SensitiveInput } from "@nocoo/basalt/components/sensitive-input";
 import {
 	Table,
@@ -20,6 +19,7 @@ import {
 	TableRow,
 } from "@nocoo/basalt/components/table";
 import { type FormEvent, useEffect, useState } from "react";
+import { PageToolbar } from "../components/layout/page-toolbar";
 import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad, reportError, reportOk } from "../lib/error-ui";
 import { initials } from "../lib/format";
@@ -107,8 +107,8 @@ export function SettingsPage() {
 	}
 
 	return (
-		<div className="flex flex-col gap-6">
-			<PageHeader
+		<div className="flex flex-col gap-4">
+			<PageToolbar
 				title="设置"
 				description={PAGE_DESCRIPTIONS["/settings"]}
 				actions={

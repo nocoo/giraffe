@@ -1,6 +1,5 @@
 import { Badge, Link, SegmentControl, toast } from "@nocoo/basalt";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
-import { PageHeader } from "@nocoo/basalt/components/page-header";
 import {
 	Table,
 	TableBody,
@@ -12,6 +11,7 @@ import {
 import { Activity } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { PageSkeleton } from "../components/layout/page-skeleton";
+import { PageToolbar } from "../components/layout/page-toolbar";
 import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad, missingTitle } from "../lib/error-ui";
 import { formatHealth, healthBadgeVariant } from "../lib/format";
@@ -61,15 +61,11 @@ export function InsightsPage() {
 
 	if (snap && "missing" in snap) {
 		return (
-			<div className="flex flex-col gap-6">
-				<PageHeader title="Insights" description={PAGE_DESCRIPTIONS["/insights"]} />
-				<LayerCard>
-					<LayerCard.Primary className="flex flex-col gap-4">
-						<LayerCard.Empty
-							icon={<Activity />}
-							title={missingTitle(snap)}
-							description="先添加 PAT 或刷新。"
-						/>
+			<div className="flex flex-col gap-4">
+				<PageToolbar
+					title="Insights"
+					description={PAGE_DESCRIPTIONS["/insights"]}
+					actions={
 						<RefreshButton
 							variant="default"
 							run={() =>
@@ -79,6 +75,15 @@ export function InsightsPage() {
 							}
 							onError={onLoadError}
 						/>
+					}
+				/>
+				<LayerCard>
+					<LayerCard.Primary>
+						<LayerCard.Empty
+							icon={<Activity />}
+							title={missingTitle(snap)}
+							description="先添加 PAT 或刷新。"
+						/>
 					</LayerCard.Primary>
 				</LayerCard>
 			</div>
@@ -87,28 +92,22 @@ export function InsightsPage() {
 
 	if (!snap) {
 		return (
-			<div className="flex flex-col gap-6">
-				<PageHeader title="Insights" description={PAGE_DESCRIPTIONS["/insights"]} />
+			<div className="flex flex-col gap-4">
+				<PageToolbar title="Insights" description={PAGE_DESCRIPTIONS["/insights"]} />
 				<PageSkeleton label="加载 Insights" />
 			</div>
 		);
 	}
 
 	return (
-		<div className="flex flex-col gap-6">
-			<PageHeader
+		<div className="flex flex-col gap-4">
+			<PageToolbar
 				title="Insights"
 				description={PAGE_DESCRIPTIONS["/insights"]}
 				actions={
 					<>
 						{snap.truncated ? <Badge variant="warning">已截断</Badge> : null}
 						{incomplete ? <Badge variant="warning">告警不完整</Badge> : null}
-					</>
-				}
-			/>
-			<LayerCard>
-				<LayerCard.Header>
-					<div className="flex w-full flex-col gap-3 md:flex-row md:items-center md:justify-between">
 						<SegmentControl
 							legend="健康"
 							value={health}
@@ -128,8 +127,10 @@ export function InsightsPage() {
 							}
 							onError={onLoadError}
 						/>
-					</div>
-				</LayerCard.Header>
+					</>
+				}
+			/>
+			<LayerCard>
 				<LayerCard.Primary className={rows.length === 0 ? undefined : "p-0"}>
 					{rows.length === 0 ? (
 						<LayerCard.Empty icon={<Activity />} title="没有 Insights" />

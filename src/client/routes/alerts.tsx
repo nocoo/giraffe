@@ -1,6 +1,5 @@
 import { Badge, Link, StatStrip, toast } from "@nocoo/basalt";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
-import { PageHeader } from "@nocoo/basalt/components/page-header";
 import {
 	Table,
 	TableBody,
@@ -12,6 +11,7 @@ import {
 import { ShieldAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { PageSkeleton } from "../components/layout/page-skeleton";
+import { PageToolbar } from "../components/layout/page-toolbar";
 import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad, missingTitle } from "../lib/error-ui";
 import { severityBadgeVariant } from "../lib/format";
@@ -51,19 +51,24 @@ export function AlertsPage() {
 
 	if (snap && "missing" in snap) {
 		return (
-			<div className="flex flex-col gap-6">
-				<PageHeader title="安全告警" description={PAGE_DESCRIPTIONS["/alerts"]} />
-				<LayerCard>
-					<LayerCard.Primary className="flex flex-col gap-4">
-						<LayerCard.Empty
-							icon={<ShieldAlert />}
-							title={missingTitle(snap)}
-							description="先添加 PAT 或刷新。"
-						/>
+			<div className="flex flex-col gap-4">
+				<PageToolbar
+					title="安全告警"
+					description={PAGE_DESCRIPTIONS["/alerts"]}
+					actions={
 						<RefreshButton
 							variant="default"
 							run={() => requestRefresh(["alerts"]).then(() => loadAlerts().then(setSnap))}
 							onError={onLoadError}
+						/>
+					}
+				/>
+				<LayerCard>
+					<LayerCard.Primary>
+						<LayerCard.Empty
+							icon={<ShieldAlert />}
+							title={missingTitle(snap)}
+							description="先添加 PAT 或刷新。"
 						/>
 					</LayerCard.Primary>
 				</LayerCard>
@@ -73,8 +78,8 @@ export function AlertsPage() {
 
 	if (snap && alertsUnavailable(snap)) {
 		return (
-			<div className="flex flex-col gap-6">
-				<PageHeader title="安全告警" description={PAGE_DESCRIPTIONS["/alerts"]} />
+			<div className="flex flex-col gap-4">
+				<PageToolbar title="安全告警" description={PAGE_DESCRIPTIONS["/alerts"]} />
 				<LayerCard>
 					<LayerCard.Primary>
 						<LayerCard.Empty
@@ -90,8 +95,8 @@ export function AlertsPage() {
 
 	if (!snap) {
 		return (
-			<div className="flex flex-col gap-6">
-				<PageHeader title="安全告警" description={PAGE_DESCRIPTIONS["/alerts"]} />
+			<div className="flex flex-col gap-4">
+				<PageToolbar title="安全告警" description={PAGE_DESCRIPTIONS["/alerts"]} />
 				<PageSkeleton label="加载告警" />
 			</div>
 		);
@@ -100,8 +105,8 @@ export function AlertsPage() {
 	const items = visibleAlerts(snap);
 
 	return (
-		<div className="flex flex-col gap-6">
-			<PageHeader
+		<div className="flex flex-col gap-4">
+			<PageToolbar
 				title="安全告警"
 				description={PAGE_DESCRIPTIONS["/alerts"]}
 				actions={

@@ -1,6 +1,5 @@
 import { Badge, Input, Link, toast } from "@nocoo/basalt";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
-import { PageHeader } from "@nocoo/basalt/components/page-header";
 import {
 	Table,
 	TableBody,
@@ -12,6 +11,7 @@ import {
 import { CircleDot } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { PageSkeleton } from "../components/layout/page-skeleton";
+import { PageToolbar } from "../components/layout/page-toolbar";
 import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad, missingTitle } from "../lib/error-ui";
 import { formatDate } from "../lib/format";
@@ -52,21 +52,45 @@ export function IssuesPage() {
 		return filterIssues(snap.issues, query);
 	}, [snap, query]);
 
+	const filters = (
+		<>
+			{snap && !("missing" in snap) && snap.truncated ? (
+				<Badge variant="warning">已截断</Badge>
+			) : null}
+			<Input
+				value={query}
+				onChange={(event) => setQuery(event.target.value)}
+				placeholder="搜索仓库或标题"
+				aria-label="搜索 Issues"
+				className="w-full md:w-56"
+			/>
+			<RefreshButton
+				run={() => requestRefresh(["issues"]).then(() => loadIssues().then(setSnap))}
+				onError={onLoadError}
+			/>
+		</>
+	);
+
 	if (snap && "missing" in snap) {
 		return (
-			<div className="flex flex-col gap-6">
-				<PageHeader title="Issues" description={PAGE_DESCRIPTIONS["/issues"]} />
-				<LayerCard>
-					<LayerCard.Primary className="flex flex-col gap-4">
-						<LayerCard.Empty
-							icon={<CircleDot />}
-							title={missingTitle(snap)}
-							description="先添加 PAT 或刷新。"
-						/>
+			<div className="flex flex-col gap-4">
+				<PageToolbar
+					title="Issues"
+					description={PAGE_DESCRIPTIONS["/issues"]}
+					actions={
 						<RefreshButton
 							variant="default"
 							run={() => requestRefresh(["issues"]).then(() => loadIssues().then(setSnap))}
 							onError={onLoadError}
+						/>
+					}
+				/>
+				<LayerCard>
+					<LayerCard.Primary>
+						<LayerCard.Empty
+							icon={<CircleDot />}
+							title={missingTitle(snap)}
+							description="先添加 PAT 或刷新。"
 						/>
 					</LayerCard.Primary>
 				</LayerCard>
@@ -76,36 +100,17 @@ export function IssuesPage() {
 
 	if (!snap) {
 		return (
-			<div className="flex flex-col gap-6">
-				<PageHeader title="Issues" description={PAGE_DESCRIPTIONS["/issues"]} />
+			<div className="flex flex-col gap-4">
+				<PageToolbar title="Issues" description={PAGE_DESCRIPTIONS["/issues"]} />
 				<PageSkeleton label="加载 Issues" />
 			</div>
 		);
 	}
 
 	return (
-		<div className="flex flex-col gap-6">
-			<PageHeader
-				title="Issues"
-				description={PAGE_DESCRIPTIONS["/issues"]}
-				actions={snap.truncated ? <Badge variant="warning">已截断</Badge> : null}
-			/>
+		<div className="flex flex-col gap-4">
+			<PageToolbar title="Issues" description={PAGE_DESCRIPTIONS["/issues"]} actions={filters} />
 			<LayerCard>
-				<LayerCard.Header>
-					<div className="flex w-full flex-col gap-3 md:flex-row md:items-center md:justify-between">
-						<Input
-							value={query}
-							onChange={(event) => setQuery(event.target.value)}
-							placeholder="搜索仓库或标题"
-							aria-label="搜索 Issues"
-							className="md:max-w-sm"
-						/>
-						<RefreshButton
-							run={() => requestRefresh(["issues"]).then(() => loadIssues().then(setSnap))}
-							onError={onLoadError}
-						/>
-					</div>
-				</LayerCard.Header>
 				<LayerCard.Primary className={rows.length === 0 ? undefined : "p-0"}>
 					{rows.length === 0 ? (
 						<LayerCard.Empty icon={<CircleDot />} title="没有 Issue" />

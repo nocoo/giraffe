@@ -14,7 +14,6 @@ import {
 import { AreaChart } from "@nocoo/basalt/charts/area";
 import { DonutChart } from "@nocoo/basalt/charts/donut";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
-import { PageHeader } from "@nocoo/basalt/components/page-header";
 import {
 	Table,
 	TableBody,
@@ -27,6 +26,7 @@ import { Box, GitPullRequest } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router";
 import { PageSkeleton } from "../components/layout/page-skeleton";
+import { PageToolbar } from "../components/layout/page-toolbar";
 import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad, missingTitle } from "../lib/error-ui";
 import { formatCount, formatDate, formatReview } from "../lib/format";
@@ -232,8 +232,8 @@ export function RepoDetailPage() {
 
 	if (!valid || (snap && "invalid" in snap)) {
 		return (
-			<div className="flex flex-col gap-6">
-				<PageHeader title="仓库" />
+			<div className="flex flex-col gap-4">
+				<PageToolbar title="仓库" />
 				<TabWell>
 					<LayerCard.Empty
 						icon={<Box />}
@@ -247,8 +247,8 @@ export function RepoDetailPage() {
 
 	if (snap && "missing" in snap) {
 		return (
-			<div className="flex flex-col gap-6">
-				<PageHeader title={`${owner}/${name}`} />
+			<div className="flex flex-col gap-4">
+				<PageToolbar title={`${owner}/${name}`} />
 				<TabWell>
 					<LayerCard.Empty
 						icon={<Box />}
@@ -289,8 +289,8 @@ export function RepoDetailPage() {
 
 	if (!snap) {
 		return (
-			<div className="flex flex-col gap-6">
-				<PageHeader title={`${owner}/${name}`} />
+			<div className="flex flex-col gap-4">
+				<PageToolbar title={`${owner}/${name}`} />
 				<PageSkeleton label="加载仓库" />
 			</div>
 		);
@@ -316,8 +316,8 @@ export function RepoDetailPage() {
 										: contributors && !("missing" in contributors) && contributors.truncated;
 
 	return (
-		<div className="flex flex-col gap-6" data-testid="repo-detail">
-			<PageHeader
+		<div className="flex flex-col gap-4" data-testid="repo-detail">
+			<PageToolbar
 				title={`${owner}/${name}`}
 				description={snap.description ?? name}
 				actions={

@@ -1,6 +1,5 @@
 import { Badge, Button, Link, toast } from "@nocoo/basalt";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
-import { PageHeader } from "@nocoo/basalt/components/page-header";
 import {
 	Table,
 	TableBody,
@@ -12,6 +11,7 @@ import {
 import { Inbox } from "lucide-react";
 import { useEffect, useState } from "react";
 import { PageSkeleton } from "../components/layout/page-skeleton";
+import { PageToolbar } from "../components/layout/page-toolbar";
 import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad, missingTitle } from "../lib/error-ui";
 import { formatDate } from "../lib/format";
@@ -46,19 +46,24 @@ export function InboxPage() {
 
 	if (snap && "missing" in snap) {
 		return (
-			<div className="flex flex-col gap-6">
-				<PageHeader title="通知" description={PAGE_DESCRIPTIONS["/inbox"]} />
-				<LayerCard>
-					<LayerCard.Primary className="flex flex-col gap-4">
-						<LayerCard.Empty
-							icon={<Inbox />}
-							title={missingTitle(snap)}
-							description="先添加 PAT 或刷新。"
-						/>
+			<div className="flex flex-col gap-4">
+				<PageToolbar
+					title="通知"
+					description={PAGE_DESCRIPTIONS["/inbox"]}
+					actions={
 						<RefreshButton
 							variant="default"
 							run={() => requestRefresh(["notifications"]).then(() => loadInbox().then(setSnap))}
 							onError={onLoadError}
+						/>
+					}
+				/>
+				<LayerCard>
+					<LayerCard.Primary>
+						<LayerCard.Empty
+							icon={<Inbox />}
+							title={missingTitle(snap)}
+							description="先添加 PAT 或刷新。"
 						/>
 					</LayerCard.Primary>
 				</LayerCard>
@@ -68,8 +73,8 @@ export function InboxPage() {
 
 	if (!snap) {
 		return (
-			<div className="flex flex-col gap-6">
-				<PageHeader title="通知" description={PAGE_DESCRIPTIONS["/inbox"]} />
+			<div className="flex flex-col gap-4">
+				<PageToolbar title="通知" description={PAGE_DESCRIPTIONS["/inbox"]} />
 				<PageSkeleton label="加载通知" />
 			</div>
 		);
@@ -79,20 +84,14 @@ export function InboxPage() {
 	const unread = rows.filter((row) => row.unread).length;
 
 	return (
-		<div className="flex flex-col gap-6">
-			<PageHeader
+		<div className="flex flex-col gap-4">
+			<PageToolbar
 				title="通知"
 				description={PAGE_DESCRIPTIONS["/inbox"]}
 				actions={
 					<>
 						{snap.truncated ? <Badge variant="warning">已截断</Badge> : null}
 						{unread > 0 ? <Badge variant="info">{unread} 未读</Badge> : null}
-					</>
-				}
-			/>
-			<LayerCard>
-				<LayerCard.Header>
-					<div className="flex w-full flex-wrap items-center gap-2">
 						<RefreshButton
 							run={() => requestRefresh(["notifications"]).then(() => loadInbox().then(setSnap))}
 							onError={onLoadError}
@@ -112,8 +111,10 @@ export function InboxPage() {
 						>
 							全部已读
 						</Button>
-					</div>
-				</LayerCard.Header>
+					</>
+				}
+			/>
+			<LayerCard>
 				<LayerCard.Primary className={rows.length === 0 ? undefined : "p-0"}>
 					{rows.length === 0 ? (
 						<LayerCard.Empty icon={<Inbox />} title="没有通知" />

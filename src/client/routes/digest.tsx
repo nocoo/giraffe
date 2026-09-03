@@ -1,7 +1,6 @@
 import { Badge, Link, StatStrip, toast } from "@nocoo/basalt";
 import { ClipboardText } from "@nocoo/basalt/components/clipboard-text";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
-import { PageHeader } from "@nocoo/basalt/components/page-header";
 import {
 	Table,
 	TableBody,
@@ -13,6 +12,7 @@ import {
 import { Newspaper } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { PageSkeleton } from "../components/layout/page-skeleton";
+import { PageToolbar } from "../components/layout/page-toolbar";
 import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad, missingTitle } from "../lib/error-ui";
 import { formatDelta } from "../lib/format";
@@ -54,19 +54,24 @@ export function DigestPage() {
 
 	if (snap && "missing" in snap) {
 		return (
-			<div className="flex flex-col gap-6">
-				<PageHeader title="日报" description={PAGE_DESCRIPTIONS["/digest"]} />
-				<LayerCard>
-					<LayerCard.Primary className="flex flex-col gap-4">
-						<LayerCard.Empty
-							icon={<Newspaper />}
-							title={missingTitle(snap)}
-							description="先添加 PAT 或刷新。"
-						/>
+			<div className="flex flex-col gap-4">
+				<PageToolbar
+					title="日报"
+					description={PAGE_DESCRIPTIONS["/digest"]}
+					actions={
 						<RefreshButton
 							variant="default"
 							run={() => requestRefresh(["repos"]).then(() => loadDigest().then(setSnap))}
 							onError={onLoadError}
+						/>
+					}
+				/>
+				<LayerCard>
+					<LayerCard.Primary>
+						<LayerCard.Empty
+							icon={<Newspaper />}
+							title={missingTitle(snap)}
+							description="先添加 PAT 或刷新。"
 						/>
 					</LayerCard.Primary>
 				</LayerCard>
@@ -76,8 +81,8 @@ export function DigestPage() {
 
 	if (!snap) {
 		return (
-			<div className="flex flex-col gap-6">
-				<PageHeader title="日报" description={PAGE_DESCRIPTIONS["/digest"]} />
+			<div className="flex flex-col gap-4">
+				<PageToolbar title="日报" description={PAGE_DESCRIPTIONS["/digest"]} />
 				<PageSkeleton label="加载日报" />
 			</div>
 		);
@@ -86,8 +91,8 @@ export function DigestPage() {
 	const missing = snap.baseline_missing === true;
 
 	return (
-		<div className="flex flex-col gap-6">
-			<PageHeader
+		<div className="flex flex-col gap-4">
+			<PageToolbar
 				title="日报"
 				description={PAGE_DESCRIPTIONS["/digest"]}
 				actions={

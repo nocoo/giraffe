@@ -1,6 +1,5 @@
 import { Badge, Button, Input, Link, SegmentControl, toast } from "@nocoo/basalt";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
-import { PageHeader } from "@nocoo/basalt/components/page-header";
 import {
 	Table,
 	TableBody,
@@ -12,6 +11,7 @@ import {
 import { Box } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { PageSkeleton } from "../components/layout/page-skeleton";
+import { PageToolbar } from "../components/layout/page-toolbar";
 import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad, missingTitle } from "../lib/error-ui";
 import {
@@ -100,21 +100,62 @@ export function ReposPage() {
 		</>
 	);
 
+	const filters = (
+		<>
+			{actions}
+			<Input
+				value={query}
+				onChange={(event) => setQuery(event.target.value)}
+				placeholder="搜索仓库"
+				aria-label="搜索仓库"
+				className="w-full md:w-56"
+			/>
+			<SegmentControl
+				legend="排序"
+				value={sort}
+				onValueChange={(value) => setSort(value as SortKey)}
+				options={[
+					{ value: "stars", label: "Star" },
+					{ value: "pushed", label: "最近推送" },
+					{ value: "name", label: "名称" },
+				]}
+			/>
+			<SegmentControl
+				legend="视图"
+				value={view}
+				onValueChange={(value) => setView(value as ViewMode)}
+				options={[
+					{ value: "list", label: "列表" },
+					{ value: "grid", label: "网格" },
+				]}
+			/>
+			<RefreshButton
+				run={() => requestRefresh(["repos"]).then(() => reload())}
+				onError={onLoadError}
+			/>
+		</>
+	);
+
 	if (snap && "missing" in snap) {
 		return (
-			<div className="flex flex-col gap-6">
-				<PageHeader title="仓库" description={PAGE_DESCRIPTIONS["/"]} />
-				<LayerCard>
-					<LayerCard.Primary className="flex flex-col gap-4">
-						<LayerCard.Empty
-							icon={<Box />}
-							title={missingTitle(snap)}
-							description="先添加 PAT 或刷新。"
-						/>
+			<div className="flex flex-col gap-4">
+				<PageToolbar
+					title="仓库"
+					description={PAGE_DESCRIPTIONS["/"]}
+					actions={
 						<RefreshButton
 							variant="default"
 							run={() => requestRefresh(["repos"]).then(() => reload())}
 							onError={onLoadError}
+						/>
+					}
+				/>
+				<LayerCard>
+					<LayerCard.Primary>
+						<LayerCard.Empty
+							icon={<Box />}
+							title={missingTitle(snap)}
+							description="先添加 PAT 或刷新。"
 						/>
 					</LayerCard.Primary>
 				</LayerCard>
@@ -124,97 +165,53 @@ export function ReposPage() {
 
 	if (!snap) {
 		return (
-			<div className="flex flex-col gap-6">
-				<PageHeader title="仓库" description={PAGE_DESCRIPTIONS["/"]} />
+			<div className="flex flex-col gap-4">
+				<PageToolbar title="仓库" description={PAGE_DESCRIPTIONS["/"]} />
 				<PageSkeleton label="加载仓库" />
 			</div>
 		);
 	}
 
-	const toolbar = (
-		<div className="flex w-full flex-col gap-3 md:flex-row md:items-center md:justify-between">
-			<Input
-				value={query}
-				onChange={(event) => setQuery(event.target.value)}
-				placeholder="搜索仓库"
-				aria-label="搜索仓库"
-				className="md:max-w-sm"
-			/>
-			<div className="flex flex-wrap items-center gap-2">
-				<SegmentControl
-					legend="排序"
-					value={sort}
-					onValueChange={(value) => setSort(value as SortKey)}
-					options={[
-						{ value: "stars", label: "Star" },
-						{ value: "pushed", label: "最近推送" },
-						{ value: "name", label: "名称" },
-					]}
-				/>
-				<SegmentControl
-					legend="视图"
-					value={view}
-					onValueChange={(value) => setView(value as ViewMode)}
-					options={[
-						{ value: "list", label: "列表" },
-						{ value: "grid", label: "网格" },
-					]}
-				/>
-				<RefreshButton
-					run={() => requestRefresh(["repos"]).then(() => reload())}
-					onError={onLoadError}
-				/>
-			</div>
-		</div>
-	);
-
 	return (
-		<div className="flex flex-col gap-6">
-			<PageHeader title="仓库" description={PAGE_DESCRIPTIONS["/"]} actions={actions} />
+		<div className="flex flex-col gap-4">
+			<PageToolbar title="仓库" description={PAGE_DESCRIPTIONS["/"]} actions={filters} />
 			{rows.length === 0 ? (
 				<LayerCard>
-					<LayerCard.Header>{toolbar}</LayerCard.Header>
 					<LayerCard.Primary>
 						<LayerCard.Empty icon={<Box />} title="没有仓库" />
 					</LayerCard.Primary>
 				</LayerCard>
 			) : view === "grid" ? (
-				<div className="flex flex-col gap-4">
-					<LayerCard>
-						<LayerCard.Secondary className="w-full">{toolbar}</LayerCard.Secondary>
-					</LayerCard>
-					<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" data-testid="repo-list">
-						{rows.map((row) => {
-							const status = health.get(row.name_with_owner);
-							return (
-								<Link
-									key={row.name_with_owner}
-									href={`/repos/${row.owner_login}/${row.name}`}
-									className="text-basalt-foreground no-underline hover:no-underline"
-								>
-									<LayerCard padding="md" className="h-full">
-										<div className="flex items-start justify-between gap-2">
-											<p className="truncate font-medium">{row.name_with_owner}</p>
-											{status ? (
-												<Badge variant={healthBadgeVariant(status)}>{formatHealth(status)}</Badge>
-											) : null}
-										</div>
-										<p className="mt-2 line-clamp-2 text-sm text-basalt-muted-foreground">
-											{row.description ?? "没有描述"}
-										</p>
-										<p className="mt-3 text-xs text-basalt-muted-foreground">
-											{row.primary_language ?? "—"} · ★ {formatCount(row.stargazer_count)} ·{" "}
-											{formatVisibility(row.visibility)}
-										</p>
-									</LayerCard>
-								</Link>
-							);
-						})}
-					</div>
+				<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" data-testid="repo-list">
+					{rows.map((row) => {
+						const status = health.get(row.name_with_owner);
+						return (
+							<Link
+								key={row.name_with_owner}
+								href={`/repos/${row.owner_login}/${row.name}`}
+								className="text-basalt-foreground no-underline hover:no-underline"
+							>
+								<LayerCard padding="md" className="h-full">
+									<div className="flex items-start justify-between gap-2">
+										<p className="truncate font-medium">{row.name_with_owner}</p>
+										{status ? (
+											<Badge variant={healthBadgeVariant(status)}>{formatHealth(status)}</Badge>
+										) : null}
+									</div>
+									<p className="mt-2 line-clamp-2 text-sm text-basalt-muted-foreground">
+										{row.description ?? "没有描述"}
+									</p>
+									<p className="mt-3 text-xs text-basalt-muted-foreground">
+										{row.primary_language ?? "—"} · ★ {formatCount(row.stargazer_count)} ·{" "}
+										{formatVisibility(row.visibility)}
+									</p>
+								</LayerCard>
+							</Link>
+						);
+					})}
 				</div>
 			) : (
 				<LayerCard>
-					<LayerCard.Header>{toolbar}</LayerCard.Header>
 					<LayerCard.Primary className="p-0">
 						<Table data-testid="repo-list">
 							<TableHeader>
