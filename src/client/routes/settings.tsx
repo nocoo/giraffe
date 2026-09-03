@@ -125,6 +125,7 @@ export function SettingsPage() {
 			/>
 			<SectionRule title="身份">
 				<LayerCard>
+					<LayerCard.Header>Access</LayerCard.Header>
 					<LayerCard.Body>
 						{me ? (
 							<div className="flex items-center gap-3">
@@ -145,6 +146,7 @@ export function SettingsPage() {
 			</SectionRule>
 			<SectionRule title="GitHub 账号">
 				<LayerCard>
+					<LayerCard.Header>添加 PAT</LayerCard.Header>
 					<LayerCard.Body>
 						<form
 							className="flex max-w-xl flex-col gap-3"
