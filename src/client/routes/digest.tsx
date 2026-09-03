@@ -1,6 +1,6 @@
 import { Badge, Link, StatStrip, toast } from "@nocoo/basalt";
 import { ClipboardText } from "@nocoo/basalt/components/clipboard-text";
-import { Empty } from "@nocoo/basalt/components/empty";
+import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
 import {
 	Table,
@@ -51,12 +51,20 @@ export function DigestPage() {
 		return (
 			<div className="flex flex-col gap-6">
 				<PageHeader title="日报" description={PAGE_DESCRIPTIONS["/digest"]} />
-				<Empty icon={<Newspaper />} title={missingTitle(snap)} description="先添加 PAT 或刷新。" />
-				<RefreshButton
-					variant="default"
-					run={() => requestRefresh(["repos"]).then(() => loadDigest().then(setSnap))}
-					onError={onLoadError}
-				/>
+				<LayerCard>
+					<LayerCard.Primary className="flex flex-col gap-4">
+						<LayerCard.Empty
+							icon={<Newspaper />}
+							title={missingTitle(snap)}
+							description="先添加 PAT 或刷新。"
+						/>
+						<RefreshButton
+							variant="default"
+							run={() => requestRefresh(["repos"]).then(() => loadDigest().then(setSnap))}
+							onError={onLoadError}
+						/>
+					</LayerCard.Primary>
+				</LayerCard>
 			</div>
 		);
 	}
@@ -65,6 +73,11 @@ export function DigestPage() {
 		return (
 			<div className="flex flex-col gap-6">
 				<PageHeader title="日报" description={PAGE_DESCRIPTIONS["/digest"]} />
+				<LayerCard>
+					<LayerCard.Primary>
+						<LayerCard.Loading label="加载日报" />
+					</LayerCard.Primary>
+				</LayerCard>
 			</div>
 		);
 	}
@@ -95,38 +108,53 @@ export function DigestPage() {
 				]}
 			/>
 			{snap.repos.length > 0 ? (
-				<Table data-testid="digest-list">
-					<TableHeader>
-						<TableRow>
-							<TableHead>仓库</TableHead>
-							<TableHead>Stars</TableHead>
-							<TableHead>Forks</TableHead>
-							<TableHead>Issues</TableHead>
-						</TableRow>
-					</TableHeader>
-					<TableBody>
-						{snap.repos.map((row) => (
-							<TableRow key={row.name_with_owner}>
-								<TableCell>
-									<Link href={`/repos/${row.name_with_owner}`}>{row.name_with_owner}</Link>
-								</TableCell>
-								<TableCell className="tabular-nums">
-									{formatDelta(row.stars_delta, missing)}
-								</TableCell>
-								<TableCell className="tabular-nums">
-									{formatDelta(row.forks_delta, missing)}
-								</TableCell>
-								<TableCell className="tabular-nums">
-									{formatDelta(row.open_issues_delta, missing)}
-								</TableCell>
-							</TableRow>
-						))}
-					</TableBody>
-				</Table>
+				<LayerCard>
+					<LayerCard.Primary className="p-0">
+						<Table data-testid="digest-list">
+							<TableHeader>
+								<TableRow>
+									<TableHead>仓库</TableHead>
+									<TableHead>Stars</TableHead>
+									<TableHead>Forks</TableHead>
+									<TableHead>Issues</TableHead>
+								</TableRow>
+							</TableHeader>
+							<TableBody>
+								{snap.repos.map((row) => (
+									<TableRow key={row.name_with_owner}>
+										<TableCell>
+											<Link href={`/repos/${row.name_with_owner}`}>{row.name_with_owner}</Link>
+										</TableCell>
+										<TableCell className="tabular-nums">
+											{formatDelta(row.stars_delta, missing)}
+										</TableCell>
+										<TableCell className="tabular-nums">
+											{formatDelta(row.forks_delta, missing)}
+										</TableCell>
+										<TableCell className="tabular-nums">
+											{formatDelta(row.open_issues_delta, missing)}
+										</TableCell>
+									</TableRow>
+								))}
+							</TableBody>
+						</Table>
+					</LayerCard.Primary>
+				</LayerCard>
 			) : (
-				<Empty icon={<Newspaper />} title="没有日报" />
+				<LayerCard>
+					<LayerCard.Primary>
+						<LayerCard.Empty icon={<Newspaper />} title="没有日报" />
+					</LayerCard.Primary>
+				</LayerCard>
 			)}
-			{markdown ? <ClipboardText text={markdown} copyText="复制 Markdown" /> : null}
+			{markdown ? (
+				<LayerCard>
+					<LayerCard.Secondary>Markdown</LayerCard.Secondary>
+					<LayerCard.Body>
+						<ClipboardText text={markdown} copyText="复制 Markdown" />
+					</LayerCard.Body>
+				</LayerCard>
+			) : null}
 		</div>
 	);
 }

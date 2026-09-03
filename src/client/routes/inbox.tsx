@@ -1,5 +1,5 @@
 import { Badge, Button, Link, toast } from "@nocoo/basalt";
-import { Empty } from "@nocoo/basalt/components/empty";
+import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
 import {
 	Table,
@@ -43,12 +43,20 @@ export function InboxPage() {
 		return (
 			<div className="flex flex-col gap-6">
 				<PageHeader title="通知" description={PAGE_DESCRIPTIONS["/inbox"]} />
-				<Empty icon={<Inbox />} title={missingTitle(snap)} description="先添加 PAT 或刷新。" />
-				<RefreshButton
-					variant="default"
-					run={() => requestRefresh(["notifications"]).then(() => loadInbox().then(setSnap))}
-					onError={onLoadError}
-				/>
+				<LayerCard>
+					<LayerCard.Primary className="flex flex-col gap-4">
+						<LayerCard.Empty
+							icon={<Inbox />}
+							title={missingTitle(snap)}
+							description="先添加 PAT 或刷新。"
+						/>
+						<RefreshButton
+							variant="default"
+							run={() => requestRefresh(["notifications"]).then(() => loadInbox().then(setSnap))}
+							onError={onLoadError}
+						/>
+					</LayerCard.Primary>
+				</LayerCard>
 			</div>
 		);
 	}
@@ -57,6 +65,11 @@ export function InboxPage() {
 		return (
 			<div className="flex flex-col gap-6">
 				<PageHeader title="通知" description={PAGE_DESCRIPTIONS["/inbox"]} />
+				<LayerCard>
+					<LayerCard.Primary>
+						<LayerCard.Loading label="加载通知" />
+					</LayerCard.Primary>
+				</LayerCard>
 			</div>
 		);
 	}
@@ -76,87 +89,93 @@ export function InboxPage() {
 					</>
 				}
 			/>
-			<div className="flex flex-wrap items-center gap-2">
-				<RefreshButton
-					run={() => requestRefresh(["notifications"]).then(() => loadInbox().then(setSnap))}
-					onError={onLoadError}
-				/>
-				<Button
-					type="button"
-					variant="secondary"
-					disabled={unread === 0}
-					onClick={() => {
-						void markReadAll(snap.account_id)
-							.then((next) => {
-								toast("已全部已读");
-								setSnap(next);
-							})
-							.catch(onLoadError);
-					}}
-				>
-					全部已读
-				</Button>
-			</div>
-			{rows.length === 0 ? (
-				<Empty icon={<Inbox />} title="没有通知" />
-			) : (
-				<Table data-testid="inbox-list">
-					<TableHeader>
-						<TableRow>
-							<TableHead>状态</TableHead>
-							<TableHead>仓库</TableHead>
-							<TableHead>标题</TableHead>
-							<TableHead>原因</TableHead>
-							<TableHead>时间</TableHead>
-							<TableHead />
-						</TableRow>
-					</TableHeader>
-					<TableBody>
-						{rows.map((row) => (
-							<TableRow key={row.id}>
-								<TableCell>
-									{row.unread ? (
-										<Badge variant="info" dot>
-											未读
-										</Badge>
-									) : (
-										<span className="text-basalt-muted-foreground">已读</span>
-									)}
-								</TableCell>
-								<TableCell className="text-basalt-muted-foreground">
-									{row.name_with_owner}
-								</TableCell>
-								<TableCell>
-									<Link href={row.url} target="_blank" rel="noreferrer">
-										{row.title}
-									</Link>
-								</TableCell>
-								<TableCell>{row.reason}</TableCell>
-								<TableCell className="text-basalt-muted-foreground">
-									{formatDate(row.updated_at)}
-								</TableCell>
-								<TableCell>
-									<Button
-										type="button"
-										variant="secondary"
-										disabled={!row.unread}
-										onClick={() => {
-											void markRead(row.id, snap.account_id)
-												.then((next) => {
-													toast("已读");
-													setSnap(next);
-												})
-												.catch(onLoadError);
-										}}
-									>
-										已读
-									</Button>
-								</TableCell>
-							</TableRow>
-						))}
-					</TableBody>
-				</Table>
-			)}
+			<LayerCard>
+				<LayerCard.Header>
+					<div className="flex w-full flex-wrap items-center gap-2">
+						<RefreshButton
+							run={() => requestRefresh(["notifications"]).then(() => loadInbox().then(setSnap))}
+							onError={onLoadError}
+						/>
+						<Button
+							type="button"
+							variant="secondary"
+							disabled={unread === 0}
+							onClick={() => {
+								void markReadAll(snap.account_id)
+									.then((next) => {
+										toast("已全部已读");
+										setSnap(next);
+									})
+									.catch(onLoadError);
+							}}
+						>
+							全部已读
+						</Button>
+					</div>
+				</LayerCard.Header>
+				<LayerCard.Primary className={rows.length === 0 ? undefined : "p-0"}>
+					{rows.length === 0 ? (
+						<LayerCard.Empty icon={<Inbox />} title="没有通知" />
+					) : (
+						<Table data-testid="inbox-list">
+							<TableHeader>
+								<TableRow>
+									<TableHead>状态</TableHead>
+									<TableHead>仓库</TableHead>
+									<TableHead>标题</TableHead>
+									<TableHead>原因</TableHead>
+									<TableHead>时间</TableHead>
+									<TableHead />
+								</TableRow>
+							</TableHeader>
+							<TableBody>
+								{rows.map((row) => (
+									<TableRow key={row.id}>
+										<TableCell>
+											{row.unread ? (
+												<Badge variant="info" dot>
+													未读
+												</Badge>
+											) : (
+												<span className="text-basalt-muted-foreground">已读</span>
+											)}
+										</TableCell>
+										<TableCell className="text-basalt-muted-foreground">
+											{row.name_with_owner}
+										</TableCell>
+										<TableCell>
+											<Link href={row.url} target="_blank" rel="noreferrer">
+												{row.title}
+											</Link>
+										</TableCell>
+										<TableCell>{row.reason}</TableCell>
+										<TableCell className="text-basalt-muted-foreground">
+											{formatDate(row.updated_at)}
+										</TableCell>
+										<TableCell>
+											<Button
+												type="button"
+												variant="secondary"
+												disabled={!row.unread}
+												onClick={() => {
+													void markRead(row.id, snap.account_id)
+														.then((next) => {
+															toast("已读");
+															setSnap(next);
+														})
+														.catch(onLoadError);
+												}}
+											>
+												已读
+											</Button>
+										</TableCell>
+									</TableRow>
+								))}
+							</TableBody>
+						</Table>
+					)}
+				</LayerCard.Primary>
+			</LayerCard>
 		</div>
 	);
 }

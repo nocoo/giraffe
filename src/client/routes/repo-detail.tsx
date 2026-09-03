@@ -3,7 +3,6 @@ import {
 	AvatarFallback,
 	AvatarImage,
 	Badge,
-	LayerCard,
 	Link,
 	StatStrip,
 	Tabs,
@@ -14,7 +13,7 @@ import {
 } from "@nocoo/basalt";
 import { AreaChart } from "@nocoo/basalt/charts/area";
 import { DonutChart } from "@nocoo/basalt/charts/donut";
-import { Empty } from "@nocoo/basalt/components/empty";
+import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
 import {
 	Table,
@@ -25,7 +24,7 @@ import {
 	TableRow,
 } from "@nocoo/basalt/components/table";
 import { Box, GitPullRequest } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router";
 import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad, missingTitle } from "../lib/error-ui";
@@ -72,6 +71,14 @@ async function fetchTab<T extends { account_id: string }>(
 		return again;
 	}
 	return first;
+}
+
+function TabWell({ children, flush = false }: { children: ReactNode; flush?: boolean }) {
+	return (
+		<LayerCard>
+			<LayerCard.Primary className={flush ? "p-0" : undefined}>{children}</LayerCard.Primary>
+		</LayerCard>
+	);
 }
 
 export function RepoDetailPage() {
@@ -220,7 +227,13 @@ export function RepoDetailPage() {
 		return (
 			<div className="flex flex-col gap-6">
 				<PageHeader title="仓库" />
-				<Empty icon={<Box />} title="无效仓库" description="owner 或 name 不符合 GitHub 规则。" />
+				<TabWell>
+					<LayerCard.Empty
+						icon={<Box />}
+						title="无效仓库"
+						description="owner 或 name 不符合 GitHub 规则。"
+					/>
+				</TabWell>
 			</div>
 		);
 	}
@@ -229,32 +242,40 @@ export function RepoDetailPage() {
 		return (
 			<div className="flex flex-col gap-6">
 				<PageHeader title={`${owner}/${name}`} />
-				<Empty icon={<Box />} title={missingTitle(snap)} description="先添加 PAT 或刷新。" />
-				<RefreshButton
-					variant="default"
-					run={() => {
-						const mine = gen.current;
-						return requestRefresh(repoKind(owner, name, "details"))
-							.then(async () => {
-								if (mine !== gen.current) {
-									return false;
-								}
-								const next = await loadRepoTab<RepoDetails>(owner, name, "details");
-								if (mine !== gen.current) {
-									return false;
-								}
-								setSnap(next);
-								return undefined;
-							})
-							.catch((err: unknown) => {
-								if (mine !== gen.current) {
-									return false;
-								}
-								onLoadError(err);
-								return false;
-							});
-					}}
-				/>
+				<TabWell>
+					<LayerCard.Empty
+						icon={<Box />}
+						title={missingTitle(snap)}
+						description="先添加 PAT 或刷新。"
+					/>
+					<div className="pt-2">
+						<RefreshButton
+							variant="default"
+							run={() => {
+								const mine = gen.current;
+								return requestRefresh(repoKind(owner, name, "details"))
+									.then(async () => {
+										if (mine !== gen.current) {
+											return false;
+										}
+										const next = await loadRepoTab<RepoDetails>(owner, name, "details");
+										if (mine !== gen.current) {
+											return false;
+										}
+										setSnap(next);
+										return undefined;
+									})
+									.catch((err: unknown) => {
+										if (mine !== gen.current) {
+											return false;
+										}
+										onLoadError(err);
+										return false;
+									});
+							}}
+						/>
+					</div>
+				</TabWell>
 			</div>
 		);
 	}
@@ -263,6 +284,9 @@ export function RepoDetailPage() {
 		return (
 			<div className="flex flex-col gap-6">
 				<PageHeader title={`${owner}/${name}`} />
+				<TabWell>
+					<LayerCard.Loading label="加载仓库" />
+				</TabWell>
 			</div>
 		);
 	}
@@ -409,6 +433,7 @@ export function RepoDetailPage() {
 								]}
 							/>
 							<LayerCard>
+								<LayerCard.Secondary>概览</LayerCard.Secondary>
 								<LayerCard.Body className="flex flex-col gap-2 text-sm">
 									<p>
 										<span className="text-basalt-muted-foreground">默认分支</span>{" "}
@@ -430,89 +455,105 @@ export function RepoDetailPage() {
 				</TabsContent>
 				<TabsContent value="actions">
 					{actions && "missing" in actions ? (
-						<Empty title="没有快照" />
+						<TabWell>
+							<LayerCard.Empty title="没有快照" />
+						</TabWell>
 					) : actions && actions.runs.length === 0 ? (
-						<Empty title="没有 workflow runs" />
+						<TabWell>
+							<LayerCard.Empty title="没有 workflow runs" />
+						</TabWell>
 					) : actions ? (
-						<Table>
-							<TableHeader>
-								<TableRow>
-									<TableHead>名称</TableHead>
-									<TableHead>状态</TableHead>
-									<TableHead>结论</TableHead>
-									<TableHead>事件</TableHead>
-									<TableHead>分支</TableHead>
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{actions.runs.map((run) => (
-									<TableRow key={run.id}>
-										<TableCell>
-											<Link href={run.html_url} target="_blank" rel="noreferrer">
-												{run.name}
-											</Link>
-										</TableCell>
-										<TableCell>{run.status}</TableCell>
-										<TableCell>
-											<Badge
-												variant={
-													run.conclusion === "success"
-														? "success"
-														: run.conclusion === "failure"
-															? "error"
-															: "secondary"
-												}
-											>
-												{run.conclusion ?? "—"}
-											</Badge>
-										</TableCell>
-										<TableCell>{run.event}</TableCell>
-										<TableCell>{run.head_branch ?? "—"}</TableCell>
+						<TabWell flush>
+							<Table>
+								<TableHeader>
+									<TableRow>
+										<TableHead>名称</TableHead>
+										<TableHead>状态</TableHead>
+										<TableHead>结论</TableHead>
+										<TableHead>事件</TableHead>
+										<TableHead>分支</TableHead>
 									</TableRow>
-								))}
-							</TableBody>
-						</Table>
+								</TableHeader>
+								<TableBody>
+									{actions.runs.map((run) => (
+										<TableRow key={run.id}>
+											<TableCell>
+												<Link href={run.html_url} target="_blank" rel="noreferrer">
+													{run.name}
+												</Link>
+											</TableCell>
+											<TableCell>{run.status}</TableCell>
+											<TableCell>
+												<Badge
+													variant={
+														run.conclusion === "success"
+															? "success"
+															: run.conclusion === "failure"
+																? "error"
+																: "secondary"
+													}
+												>
+													{run.conclusion ?? "—"}
+												</Badge>
+											</TableCell>
+											<TableCell>{run.event}</TableCell>
+											<TableCell>{run.head_branch ?? "—"}</TableCell>
+										</TableRow>
+									))}
+								</TableBody>
+							</Table>
+						</TabWell>
 					) : null}
 				</TabsContent>
 				<TabsContent value="releases">
 					{releases && "missing" in releases ? (
-						<Empty title="没有快照" />
+						<TabWell>
+							<LayerCard.Empty title="没有快照" />
+						</TabWell>
 					) : releases && releases.releases.length === 0 ? (
-						<Empty title="没有 Release" />
+						<TabWell>
+							<LayerCard.Empty title="没有 Release" />
+						</TabWell>
 					) : releases ? (
-						<Table>
-							<TableHeader>
-								<TableRow>
-									<TableHead>标签</TableHead>
-									<TableHead>时间</TableHead>
-									<TableHead>预发布</TableHead>
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{releases.releases.map((row) => (
-									<TableRow key={row.id}>
-										<TableCell>
-											<Link href={row.html_url} target="_blank" rel="noreferrer">
-												{row.tag_name}
-											</Link>
-										</TableCell>
-										<TableCell className="text-basalt-muted-foreground">
-											{formatDate(row.published_at)}
-										</TableCell>
-										<TableCell>
-											{row.prerelease ? <Badge variant="secondary">预发布</Badge> : "—"}
-										</TableCell>
+						<TabWell flush>
+							<Table>
+								<TableHeader>
+									<TableRow>
+										<TableHead>标签</TableHead>
+										<TableHead>时间</TableHead>
+										<TableHead>预发布</TableHead>
 									</TableRow>
-								))}
-							</TableBody>
-						</Table>
+								</TableHeader>
+								<TableBody>
+									{releases.releases.map((row) => (
+										<TableRow key={row.id}>
+											<TableCell>
+												<Link href={row.html_url} target="_blank" rel="noreferrer">
+													{row.tag_name}
+												</Link>
+											</TableCell>
+											<TableCell className="text-basalt-muted-foreground">
+												{formatDate(row.published_at)}
+											</TableCell>
+											<TableCell>
+												{row.prerelease ? <Badge variant="secondary">预发布</Badge> : "—"}
+											</TableCell>
+										</TableRow>
+									))}
+								</TableBody>
+							</Table>
+						</TabWell>
 					) : null}
 				</TabsContent>
 				<TabsContent value="security">
 					{security && "missing" in security ? (
-						<Empty title="没有快照" />
+						<TabWell>
+							<LayerCard.Empty title="没有快照" />
+						</TabWell>
 					) : security && securityUnavailable(security) ? (
-						<Empty title="无权限" />
+						<TabWell>
+							<LayerCard.Empty title="无权限" />
+						</TabWell>
 					) : security ? (
 						<StatStrip
 							items={[
@@ -524,89 +565,105 @@ export function RepoDetailPage() {
 				</TabsContent>
 				<TabsContent value="issues">
 					{issues && "missing" in issues ? (
-						<Empty title="没有快照" />
+						<TabWell>
+							<LayerCard.Empty title="没有快照" />
+						</TabWell>
 					) : issues && issues.issues.length === 0 ? (
-						<Empty title="没有 Issue" />
+						<TabWell>
+							<LayerCard.Empty title="没有 Issue" />
+						</TabWell>
 					) : issues ? (
-						<Table>
-							<TableHeader>
-								<TableRow>
-									<TableHead>编号</TableHead>
-									<TableHead>标题</TableHead>
-									<TableHead>作者</TableHead>
-									<TableHead>更新</TableHead>
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{issues.issues.map((row) => (
-									<TableRow key={`${row.name_with_owner}#${row.number}`}>
-										<TableCell className="tabular-nums">#{row.number}</TableCell>
-										<TableCell>
-											<Link href={row.url} target="_blank" rel="noreferrer">
-												{row.title}
-											</Link>
-										</TableCell>
-										<TableCell>{row.author_login ?? "—"}</TableCell>
-										<TableCell className="text-basalt-muted-foreground">
-											{formatDate(row.updated_at)}
-										</TableCell>
+						<TabWell flush>
+							<Table>
+								<TableHeader>
+									<TableRow>
+										<TableHead>编号</TableHead>
+										<TableHead>标题</TableHead>
+										<TableHead>作者</TableHead>
+										<TableHead>更新</TableHead>
 									</TableRow>
-								))}
-							</TableBody>
-						</Table>
+								</TableHeader>
+								<TableBody>
+									{issues.issues.map((row) => (
+										<TableRow key={`${row.name_with_owner}#${row.number}`}>
+											<TableCell className="tabular-nums">#{row.number}</TableCell>
+											<TableCell>
+												<Link href={row.url} target="_blank" rel="noreferrer">
+													{row.title}
+												</Link>
+											</TableCell>
+											<TableCell>{row.author_login ?? "—"}</TableCell>
+											<TableCell className="text-basalt-muted-foreground">
+												{formatDate(row.updated_at)}
+											</TableCell>
+										</TableRow>
+									))}
+								</TableBody>
+							</Table>
+						</TabWell>
 					) : null}
 				</TabsContent>
 				<TabsContent value="prs">
 					{pulls && "missing" in pulls ? (
-						<Empty icon={<GitPullRequest />} title="没有快照" />
+						<TabWell>
+							<LayerCard.Empty icon={<GitPullRequest />} title="没有快照" />
+						</TabWell>
 					) : pulls && pulls.pull_requests.length === 0 ? (
-						<Empty icon={<GitPullRequest />} title="没有 Pull Request" />
+						<TabWell>
+							<LayerCard.Empty icon={<GitPullRequest />} title="没有 Pull Request" />
+						</TabWell>
 					) : pulls ? (
-						<Table>
-							<TableHeader>
-								<TableRow>
-									<TableHead>编号</TableHead>
-									<TableHead>标题</TableHead>
-									<TableHead>作者</TableHead>
-									<TableHead>草稿</TableHead>
-									<TableHead>审查</TableHead>
-									<TableHead>+/−</TableHead>
-									<TableHead>更新</TableHead>
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{pulls.pull_requests.map((row) => (
-									<TableRow key={`${row.name_with_owner}#${row.number}`}>
-										<TableCell className="tabular-nums">#{row.number}</TableCell>
-										<TableCell>
-											<Link href={row.url} target="_blank" rel="noreferrer">
-												{row.title}
-											</Link>
-										</TableCell>
-										<TableCell>{row.author_login ?? "—"}</TableCell>
-										<TableCell>
-											{row.is_draft ? <Badge variant="secondary">草稿</Badge> : "—"}
-										</TableCell>
-										<TableCell>{formatReview(row.review_decision)}</TableCell>
-										<TableCell className="tabular-nums">
-											<span className="text-basalt-info">+{row.additions}</span>
-											<span className="text-basalt-muted-foreground">/</span>
-											<span className="text-basalt-danger">−{row.deletions}</span>
-										</TableCell>
-										<TableCell className="text-basalt-muted-foreground">
-											{formatDate(row.updated_at)}
-										</TableCell>
+						<TabWell flush>
+							<Table>
+								<TableHeader>
+									<TableRow>
+										<TableHead>编号</TableHead>
+										<TableHead>标题</TableHead>
+										<TableHead>作者</TableHead>
+										<TableHead>草稿</TableHead>
+										<TableHead>审查</TableHead>
+										<TableHead>+/−</TableHead>
+										<TableHead>更新</TableHead>
 									</TableRow>
-								))}
-							</TableBody>
-						</Table>
+								</TableHeader>
+								<TableBody>
+									{pulls.pull_requests.map((row) => (
+										<TableRow key={`${row.name_with_owner}#${row.number}`}>
+											<TableCell className="tabular-nums">#{row.number}</TableCell>
+											<TableCell>
+												<Link href={row.url} target="_blank" rel="noreferrer">
+													{row.title}
+												</Link>
+											</TableCell>
+											<TableCell>{row.author_login ?? "—"}</TableCell>
+											<TableCell>
+												{row.is_draft ? <Badge variant="secondary">草稿</Badge> : "—"}
+											</TableCell>
+											<TableCell>{formatReview(row.review_decision)}</TableCell>
+											<TableCell className="tabular-nums">
+												<span className="text-basalt-info">+{row.additions}</span>
+												<span className="text-basalt-muted-foreground">/</span>
+												<span className="text-basalt-danger">−{row.deletions}</span>
+											</TableCell>
+											<TableCell className="text-basalt-muted-foreground">
+												{formatDate(row.updated_at)}
+											</TableCell>
+										</TableRow>
+									))}
+								</TableBody>
+							</Table>
+						</TabWell>
 					) : null}
 				</TabsContent>
 				<TabsContent value="traffic">
 					{traffic && "missing" in traffic ? (
-						<Empty title="没有快照" />
+						<TabWell>
+							<LayerCard.Empty title="没有快照" />
+						</TabWell>
 					) : traffic && trafficForbidden(traffic) ? (
-						<Empty title="无 Traffic 权限" />
+						<TabWell>
+							<LayerCard.Empty title="无 Traffic 权限" />
+						</TabWell>
 					) : traffic ? (
 						<div className="flex flex-col gap-4">
 							<StatStrip
@@ -615,41 +672,55 @@ export function RepoDetailPage() {
 									{ label: "克隆", value: formatCount(traffic.clones.count) },
 								]}
 							/>
-							<AreaChart data={trafficPoints(traffic.views.points)} ariaLabel="views" />
+							<TabWell>
+								<AreaChart data={trafficPoints(traffic.views.points)} ariaLabel="views" />
+							</TabWell>
 						</div>
 					) : null}
 				</TabsContent>
 				<TabsContent value="languages">
 					{languages && "missing" in languages ? (
-						<Empty title="没有快照" />
+						<TabWell>
+							<LayerCard.Empty title="没有快照" />
+						</TabWell>
 					) : languages && Object.keys(languages.languages).length === 0 ? (
-						<Empty title="没有语言数据" />
+						<TabWell>
+							<LayerCard.Empty title="没有语言数据" />
+						</TabWell>
 					) : languages ? (
-						<DonutChart data={sortedLanguages(languages.languages)} ariaLabel="languages" />
+						<TabWell>
+							<DonutChart data={sortedLanguages(languages.languages)} ariaLabel="languages" />
+						</TabWell>
 					) : null}
 				</TabsContent>
 				<TabsContent value="contributors">
 					{contributors && "missing" in contributors ? (
-						<Empty title="没有快照" />
+						<TabWell>
+							<LayerCard.Empty title="没有快照" />
+						</TabWell>
 					) : contributors && contributors.contributors.length === 0 ? (
-						<Empty title="没有贡献者" />
+						<TabWell>
+							<LayerCard.Empty title="没有贡献者" />
+						</TabWell>
 					) : contributors ? (
-						<ul className="flex flex-col gap-3">
-							{contributors.contributors.map((row) => (
-								<li key={row.login} className="flex items-center gap-3">
-									<Avatar>
-										<AvatarImage src={row.avatar_url} alt={row.login} />
-										<AvatarFallback>{row.login.slice(0, 2)}</AvatarFallback>
-									</Avatar>
-									<Link href={row.html_url} target="_blank" rel="noreferrer">
-										{row.login}
-									</Link>
-									<span className="ml-auto tabular-nums text-sm text-basalt-muted-foreground">
-										{formatCount(row.contributions)}
-									</span>
-								</li>
-							))}
-						</ul>
+						<TabWell>
+							<ul className="flex flex-col gap-3">
+								{contributors.contributors.map((row) => (
+									<li key={row.login} className="flex items-center gap-3">
+										<Avatar>
+											<AvatarImage src={row.avatar_url} alt={row.login} />
+											<AvatarFallback>{row.login.slice(0, 2)}</AvatarFallback>
+										</Avatar>
+										<Link href={row.html_url} target="_blank" rel="noreferrer">
+											{row.login}
+										</Link>
+										<span className="ml-auto tabular-nums text-sm text-basalt-muted-foreground">
+											{formatCount(row.contributions)}
+										</span>
+									</li>
+								))}
+							</ul>
+						</TabWell>
 					) : null}
 				</TabsContent>
 			</Tabs>

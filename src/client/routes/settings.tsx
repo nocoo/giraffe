@@ -6,9 +6,9 @@ import {
 	Button,
 	ConfirmDialog,
 	Field,
-	LayerCard,
 	toast,
 } from "@nocoo/basalt";
+import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
 import { SensitiveInput } from "@nocoo/basalt/components/sensitive-input";
 import {
@@ -118,9 +118,7 @@ export function SettingsPage() {
 				}
 			/>
 			<LayerCard>
-				<LayerCard.Header>
-					<p className="font-medium">Access 身份</p>
-				</LayerCard.Header>
+				<LayerCard.Secondary>Access 身份</LayerCard.Secondary>
 				<LayerCard.Body>
 					{me ? (
 						<div className="flex items-center gap-3">
@@ -138,9 +136,7 @@ export function SettingsPage() {
 				</LayerCard.Body>
 			</LayerCard>
 			<LayerCard>
-				<LayerCard.Header>
-					<p className="font-medium">GitHub 账号</p>
-				</LayerCard.Header>
+				<LayerCard.Secondary>GitHub 账号</LayerCard.Secondary>
 				<LayerCard.Body>
 					<form
 						className="flex max-w-xl flex-col gap-3"
@@ -179,63 +175,80 @@ export function SettingsPage() {
 					</form>
 				</LayerCard.Body>
 			</LayerCard>
-			<Table>
-				<TableHeader>
-					<TableRow>
-						<TableHead>账号</TableHead>
-						<TableHead>末四位</TableHead>
-						<TableHead>scopes</TableHead>
-						<TableHead>状态</TableHead>
-						<TableHead>操作</TableHead>
-					</TableRow>
-				</TableHeader>
-				<TableBody>
-					{accounts.map((row) => (
-						<TableRow key={row.id}>
-							<TableCell>
-								<div className="flex items-center gap-2">
-									<Avatar>
-										<AvatarImage src={row.avatar_url} alt={row.login} />
-										<AvatarFallback>{row.login.slice(0, 2)}</AvatarFallback>
-									</Avatar>
-									{row.login}
-								</div>
-							</TableCell>
-							<TableCell className="font-mono text-sm">{row.token_last4}</TableCell>
-							<TableCell className="text-sm text-basalt-muted-foreground">{row.scopes}</TableCell>
-							<TableCell>
-								{row.is_active ? (
-									<Badge variant="success">当前</Badge>
-								) : (
-									<Badge variant="outline">待命</Badge>
-								)}
-							</TableCell>
-							<TableCell>
-								<div className="flex gap-2">
-									<Button
-										type="button"
-										variant="secondary"
-										disabled={row.is_active}
-										onClick={() => {
-											void activateAccount(row.id)
-												.then(() => {
-													toast("已激活");
-													return reload();
-												})
-												.catch(onLoadError);
-										}}
-									>
-										激活
-									</Button>
-									<Button type="button" variant="destructive" onClick={() => setPendingId(row.id)}>
-										删除
-									</Button>
-								</div>
-							</TableCell>
-						</TableRow>
-					))}
-				</TableBody>
-			</Table>
+			<LayerCard>
+				<LayerCard.Header>
+					<p className="font-medium text-basalt-foreground">账号</p>
+				</LayerCard.Header>
+				<LayerCard.Primary className="p-0">
+					{accounts.length === 0 ? (
+						<LayerCard.Empty title="还没有 GitHub 账号" description="在上方粘贴 classic PAT。" />
+					) : (
+						<Table>
+							<TableHeader>
+								<TableRow>
+									<TableHead>账号</TableHead>
+									<TableHead>末四位</TableHead>
+									<TableHead>scopes</TableHead>
+									<TableHead>状态</TableHead>
+									<TableHead>操作</TableHead>
+								</TableRow>
+							</TableHeader>
+							<TableBody>
+								{accounts.map((row) => (
+									<TableRow key={row.id}>
+										<TableCell>
+											<div className="flex items-center gap-2">
+												<Avatar>
+													<AvatarImage src={row.avatar_url} alt={row.login} />
+													<AvatarFallback>{row.login.slice(0, 2)}</AvatarFallback>
+												</Avatar>
+												{row.login}
+											</div>
+										</TableCell>
+										<TableCell className="font-mono text-sm">{row.token_last4}</TableCell>
+										<TableCell className="text-sm text-basalt-muted-foreground">
+											{row.scopes}
+										</TableCell>
+										<TableCell>
+											{row.is_active ? (
+												<Badge variant="success">当前</Badge>
+											) : (
+												<Badge variant="outline">待命</Badge>
+											)}
+										</TableCell>
+										<TableCell>
+											<div className="flex gap-2">
+												<Button
+													type="button"
+													variant="secondary"
+													disabled={row.is_active}
+													onClick={() => {
+														void activateAccount(row.id)
+															.then(() => {
+																toast("已激活");
+																return reload();
+															})
+															.catch(onLoadError);
+													}}
+												>
+													激活
+												</Button>
+												<Button
+													type="button"
+													variant="destructive"
+													onClick={() => setPendingId(row.id)}
+												>
+													删除
+												</Button>
+											</div>
+										</TableCell>
+									</TableRow>
+								))}
+							</TableBody>
+						</Table>
+					)}
+				</LayerCard.Primary>
+			</LayerCard>
 			<ConfirmDialog
 				open={pendingId !== null}
 				onOpenChange={(open) => {

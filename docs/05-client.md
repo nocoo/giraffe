@@ -24,7 +24,7 @@ Codex Sign Off 本文之前，禁止第 12 节步骤 1 及之后（含 Vite 脚�
 
 | 主题 | 决定 |
 |------|------|
-| 包 | `@nocoo/basalt@2.0.0`。从 npm 安装（临时允许的 registry）。禁止把 `../basalt` 源码拷进本仓，禁止 `file:` 依赖，禁止把镜像 URL 写进 `bun.lock` |
+| 包 | `@nocoo/basalt@2.0.0`。从 npm 安装（临时允许的 registry）。禁止把 `../basalt` 源码拷进本仓，禁止 `file:` 依赖，禁止把镜像 URL 写进 `bun.lock`。岛内表面嵌套见 §5.2（2.0.0 用 `Primary` 当 Well） |
 | 控件 | 只用该包已发布的控件。根 barrel 没有的走 granular：`@nocoo/basalt/components/*`、`@nocoo/basalt/charts/*`。缺的用 HTML + 已有 Basalt 叶子，不自研第二套 widget |
 | 布局语言 | 参考 `/Users/nocoo/workspace/work/whiteboard/intentional-kusto-queries` 的 **壳**，不是拷它的组件。侧栏展开 260px / 收起 68px，`transition-all duration-300 ease-in-out`，sticky flex 子项（不是 `fixed` + spacer）。主区 **ContentIsland** 浮岛。跳过链接。顶栏高 14（`h-14`）面包屑。中文 UI |
 | 壳实现 | giraffe 的 `src/client/components/layout/*` **只组合** Basalt：`AppShell` / `AppMain` / `AppSkipLink`（`@nocoo/basalt/components/app-shell`，不在根 barrel）、`Sidebar*` + `ContentIsland`（根 barrel）、`ThemeProvider` / `ThemeToggle` / `LinkProvider`。禁止再写一套 `sidebar-context`。`AppMain` 必须传 `tabIndex={-1}`，否则 skip link 无法聚焦 |
@@ -143,9 +143,25 @@ Toaster
 
 折叠态只显示图标（`SidebarIconItem`）。展开显示中文标签。
 
-### 5.2 浮岛
+### 5.2 浮岛与四层亮度
 
-Basalt `ContentIsland` 已是 `rounded-[16px] bg-basalt-card … ring-1 ring-basalt-border/40 md:rounded-basalt-island`。不要再包一层自定义 card 当岛。岛内用 `PageHeader`（granular）、`LayerCard`、`StatStrip`、`Toolbar`、`Table`。
+Basalt `ContentIsland` 已是 L1 岛。不要再包一层自定义 card 当岛。页面在岛内按 [INTEGRATION §14](https://github.com/nocoo/basalt/blob/main/INTEGRATION.md) 嵌套。`@nocoo/basalt@2.0.0` 尚无 `LayerCard.Well` 与 descendant `data-basalt-surface`：用 **Primary = Well（L3）**，**Secondary 或 Primary 子节点**把外壳切成 structured muted（L2）。禁止手写 `bg-card` / `bg-muted` 井。
+
+| 层 | 何处 | 2.0.0 油漆 |
+|---|---|---|
+| L0 | `AppShell` | `bg-basalt-background` |
+| L1 | `ContentIsland` | 岛（card） |
+| L2 | 带 `Primary` 或 `Secondary` 的 `LayerCard` | `bg-basalt-muted` |
+| L3 | `LayerCard.Primary` | `bg-basalt-bright` |
+
+配方（对齐 Basalt `/layout`）：
+
+- 非结构砖（网格仓卡、KPI）：岛上裸 `LayerCard padding="md"`，不要 Header/Body。
+- 表单 / 身份：`Secondary` 标题 + `Body`（控件留在 L2）。
+- 列表 / 表：`Header` 放搜索与刷新，`Primary className="p-0"` 放 `Table`。空态用 `LayerCard.Empty`，仍在 `Primary` 里。
+- `Table`、列表、图表 **不得** 直接做 `ContentIsland` 的子节点。
+- `StatStrip` 自己已是 muted 砖，不要再套一层 `LayerCard`。
+- `PageHeader` 不是表面。
 
 ### 5.3 控件映射（强制）
 
@@ -160,7 +176,7 @@ Basalt `ContentIsland` 已是 `rounded-[16px] bg-basalt-card … ring-1 ring-bas
 | 列表 | `Table` `TableHeader` `TableBody` `TableRow` `TableCell` | `@nocoo/basalt/components/table` |
 | 空态 | `Empty` | `@nocoo/basalt/components/empty` |
 | 统计 | `StatStrip` | `@nocoo/basalt` |
-| 卡片 | `LayerCard` | `@nocoo/basalt` |
+| 卡片 | `LayerCard` | `@nocoo/basalt/components/layer-card` |
 | 分段（列表/网格、筛选） | `SegmentControl` | `@nocoo/basalt` |
 | 页级 tab（单仓） | `Tabs*` | `@nocoo/basalt` |
 | 工具条 | `Toolbar` | `@nocoo/basalt` |

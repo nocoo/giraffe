@@ -1,5 +1,5 @@
 import { Badge, Input, Link, toast } from "@nocoo/basalt";
-import { Empty } from "@nocoo/basalt/components/empty";
+import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
 import {
 	Table,
@@ -51,12 +51,20 @@ export function IssuesPage() {
 		return (
 			<div className="flex flex-col gap-6">
 				<PageHeader title="Issues" description={PAGE_DESCRIPTIONS["/issues"]} />
-				<Empty icon={<CircleDot />} title={missingTitle(snap)} description="先添加 PAT 或刷新。" />
-				<RefreshButton
-					variant="default"
-					run={() => requestRefresh(["issues"]).then(() => loadIssues().then(setSnap))}
-					onError={onLoadError}
-				/>
+				<LayerCard>
+					<LayerCard.Primary className="flex flex-col gap-4">
+						<LayerCard.Empty
+							icon={<CircleDot />}
+							title={missingTitle(snap)}
+							description="先添加 PAT 或刷新。"
+						/>
+						<RefreshButton
+							variant="default"
+							run={() => requestRefresh(["issues"]).then(() => loadIssues().then(setSnap))}
+							onError={onLoadError}
+						/>
+					</LayerCard.Primary>
+				</LayerCard>
 			</div>
 		);
 	}
@@ -65,6 +73,11 @@ export function IssuesPage() {
 		return (
 			<div className="flex flex-col gap-6">
 				<PageHeader title="Issues" description={PAGE_DESCRIPTIONS["/issues"]} />
+				<LayerCard>
+					<LayerCard.Primary>
+						<LayerCard.Loading label="加载 Issues" />
+					</LayerCard.Primary>
+				</LayerCard>
 			</div>
 		);
 	}
@@ -76,53 +89,59 @@ export function IssuesPage() {
 				description={PAGE_DESCRIPTIONS["/issues"]}
 				actions={snap.truncated ? <Badge variant="warning">已截断</Badge> : null}
 			/>
-			<div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-				<Input
-					value={query}
-					onChange={(event) => setQuery(event.target.value)}
-					placeholder="搜索仓库或标题"
-					aria-label="搜索 Issues"
-					className="md:max-w-sm"
-				/>
-				<RefreshButton
-					run={() => requestRefresh(["issues"]).then(() => loadIssues().then(setSnap))}
-					onError={onLoadError}
-				/>
-			</div>
-			{rows.length === 0 ? (
-				<Empty icon={<CircleDot />} title="没有 Issue" />
-			) : (
-				<Table data-testid="issue-list">
-					<TableHeader>
-						<TableRow>
-							<TableHead>仓库</TableHead>
-							<TableHead>编号</TableHead>
-							<TableHead>标题</TableHead>
-							<TableHead>作者</TableHead>
-							<TableHead>更新</TableHead>
-						</TableRow>
-					</TableHeader>
-					<TableBody>
-						{rows.map((row) => (
-							<TableRow key={`${row.name_with_owner}#${row.number}`}>
-								<TableCell className="text-basalt-muted-foreground">
-									{row.name_with_owner}
-								</TableCell>
-								<TableCell className="tabular-nums">#{row.number}</TableCell>
-								<TableCell>
-									<Link href={row.url} target="_blank" rel="noreferrer">
-										{row.title}
-									</Link>
-								</TableCell>
-								<TableCell>{row.author_login ?? "—"}</TableCell>
-								<TableCell className="text-basalt-muted-foreground">
-									{formatDate(row.updated_at)}
-								</TableCell>
-							</TableRow>
-						))}
-					</TableBody>
-				</Table>
-			)}
+			<LayerCard>
+				<LayerCard.Header>
+					<div className="flex w-full flex-col gap-3 md:flex-row md:items-center md:justify-between">
+						<Input
+							value={query}
+							onChange={(event) => setQuery(event.target.value)}
+							placeholder="搜索仓库或标题"
+							aria-label="搜索 Issues"
+							className="md:max-w-sm"
+						/>
+						<RefreshButton
+							run={() => requestRefresh(["issues"]).then(() => loadIssues().then(setSnap))}
+							onError={onLoadError}
+						/>
+					</div>
+				</LayerCard.Header>
+				<LayerCard.Primary className={rows.length === 0 ? undefined : "p-0"}>
+					{rows.length === 0 ? (
+						<LayerCard.Empty icon={<CircleDot />} title="没有 Issue" />
+					) : (
+						<Table data-testid="issue-list">
+							<TableHeader>
+								<TableRow>
+									<TableHead>仓库</TableHead>
+									<TableHead>编号</TableHead>
+									<TableHead>标题</TableHead>
+									<TableHead>作者</TableHead>
+									<TableHead>更新</TableHead>
+								</TableRow>
+							</TableHeader>
+							<TableBody>
+								{rows.map((row) => (
+									<TableRow key={`${row.name_with_owner}#${row.number}`}>
+										<TableCell className="text-basalt-muted-foreground">
+											{row.name_with_owner}
+										</TableCell>
+										<TableCell className="tabular-nums">#{row.number}</TableCell>
+										<TableCell>
+											<Link href={row.url} target="_blank" rel="noreferrer">
+												{row.title}
+											</Link>
+										</TableCell>
+										<TableCell>{row.author_login ?? "—"}</TableCell>
+										<TableCell className="text-basalt-muted-foreground">
+											{formatDate(row.updated_at)}
+										</TableCell>
+									</TableRow>
+								))}
+							</TableBody>
+						</Table>
+					)}
+				</LayerCard.Primary>
+			</LayerCard>
 		</div>
 	);
 }
