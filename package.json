@@ -41,7 +41,7 @@
 		"wrangler": "4.123.0"
 	},
 	"dependencies": {
-		"@nocoo/basalt": "2.0.0",
+		"@nocoo/basalt": "2.0.2",
 		"hono": "^4.13.4",
 		"lucide-react": "^1.34.0",
 		"react": "^19.2.8",
