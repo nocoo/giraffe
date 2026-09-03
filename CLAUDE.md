@@ -49,6 +49,7 @@ docs/         01–05
 ## Commands
 
 ```bash
+bun run dev
 bun run dev:server
 bun run typecheck
 bun run lint

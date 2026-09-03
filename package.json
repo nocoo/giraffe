@@ -4,6 +4,7 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
+		"dev": "bun run scripts/dev.ts",
 		"dev:server": "bun run scripts/dev-server.ts",
 		"typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.client.json && tsc --noEmit -p tsconfig.scripts.json && bun run scripts/check-wrangler-types.ts",
 		"build": "vite build",

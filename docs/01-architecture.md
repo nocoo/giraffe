@@ -77,7 +77,7 @@ Giraffe 是个人 GitHub 监控控制台。仓库 code name 为 `giraffe`。本�
 | G2 | osv-scanner + gitleaks | pre-push |
 | Hooks | Husky 9 | pre-commit = L1 + G1；pre-push = L2 ‖ G2 |
 
-阶段 1 用 `bun run dev:server`（仅 Worker，本地 D1）。阶段 2 日常：`vite build` 后 `bun run dev:server` 托管 `dist/client`。不提供可写 API 的独立 Vite 开发服务器。生产形态是 `vite build` + `wrangler deploy`（assets + Worker）。不使用 `@cloudflare/vite-plugin`。细则见 [05](05-client.md)。
+阶段 1 用 `bun run dev:server`（仅 Worker，本地 D1）。阶段 2 日常：`bun run dev`（Vite `:7045` HMR，Caddy `giraffe.dev.hexly.ai`；`/api` 反代到 wrangler `:7046`）。`dev:server` 仍是 wrangler 托管 `dist/client`（无 HMR）。生产形态是 `vite build` + `wrangler deploy`（assets + Worker）。不使用 `@cloudflare/vite-plugin`。细则见 [05](05-client.md)。
 
 ---
 
@@ -107,14 +107,16 @@ Worker `giraffe`
 ```
 https://giraffe.dev.hexly.ai
   → Caddy（mkcert）
-  → wrangler dev :7045
+  → Vite :7045（HMR）
+       /api → wrangler :7046
 ```
 
 Caddyfile 尚未登记 giraffe，脚手架时再加。端口：
 
 | 用途 | 端口 | 域名 |
 |------|------|------|
-| 主开发（wrangler） | 7045 | `giraffe.dev.hexly.ai` |
+| 主开发（Vite HMR） | 7045 | `giraffe.dev.hexly.ai` |
+| 主开发（wrangler API） | 7046 | 仅 Vite `/api` 反代 |
 | L2 API E2E | 17045 | 无 Caddy，runner 直连 |
 | L3 BDD | 27045 | 无 Caddy |
 | 生产 | 443 | `giraffe.hexly.ai` |
