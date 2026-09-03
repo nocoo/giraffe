@@ -2,7 +2,6 @@ import { Button, ContentIsland, Sheet, SheetContent, SheetTitle } from "@nocoo/b
 import { AppHeader } from "@nocoo/basalt/components/app-header";
 import { AppMain, AppSkipLink, AppShell as Shell } from "@nocoo/basalt/components/app-shell";
 import { Banner } from "@nocoo/basalt/components/banner";
-import { Empty } from "@nocoo/basalt/components/empty";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
 import { ThemeToggle } from "@nocoo/basalt/components/theme-toggle";
@@ -115,7 +114,7 @@ export function AppShell() {
 								/>
 								<LayerCard>
 									<LayerCard.Well>
-										<Empty
+										<LayerCard.Empty
 											icon={<ShieldAlert />}
 											title="未通过 Access"
 											description="此应用需要 Cloudflare Access 身份。"
