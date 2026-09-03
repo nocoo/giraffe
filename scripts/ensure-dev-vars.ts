@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const FALLBACK = [
@@ -13,6 +13,13 @@ const FALLBACK = [
 export function ensureDevVars(root: string): void {
 	const dest = join(root, ".dev.vars");
 	if (existsSync(dest)) {
+		return;
+	}
+	const leftover = readdirSync(root).find(
+		(name) => name.startsWith(".dev.vars.__") && name !== ".dev.vars",
+	);
+	if (leftover) {
+		renameSync(join(root, leftover), dest);
 		return;
 	}
 	const example = join(root, "dev.vars.example");

@@ -13,10 +13,10 @@ import {
 } from "@nocoo/basalt/components/table";
 import { Newspaper } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { PageSkeleton } from "../components/layout/page-skeleton";
+import { TableSkeleton } from "../components/layout/page-skeleton";
 import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad, missingTitle } from "../lib/error-ui";
-import { formatDelta } from "../lib/format";
+import { formatDelta, NUM_CELL, NUM_HEAD } from "../lib/format";
 import { PAGE_DESCRIPTIONS } from "../lib/navigation";
 import { type DigestSnapshot, digestMarkdown, loadDigest } from "../viewmodels/digest";
 import { requestRefresh } from "../viewmodels/refresh";
@@ -84,7 +84,7 @@ export function DigestPage() {
 		return (
 			<div className="space-y-8">
 				<PageHeader title="日报" description={PAGE_DESCRIPTIONS["/digest"]} />
-				<PageSkeleton label="加载日报" />
+				<TableSkeleton label="加载日报" columns={4} />
 			</div>
 		);
 	}
@@ -122,9 +122,9 @@ export function DigestPage() {
 								<TableHeader>
 									<TableRow>
 										<TableHead>仓库</TableHead>
-										<TableHead>Stars</TableHead>
-										<TableHead>Forks</TableHead>
-										<TableHead>Issues</TableHead>
+										<TableHead className={NUM_HEAD}>Stars</TableHead>
+										<TableHead className={NUM_HEAD}>Forks</TableHead>
+										<TableHead className={NUM_HEAD}>Issues</TableHead>
 									</TableRow>
 								</TableHeader>
 								<TableBody>
@@ -133,13 +133,13 @@ export function DigestPage() {
 											<TableCell>
 												<Link href={`/repos/${row.name_with_owner}`}>{row.name_with_owner}</Link>
 											</TableCell>
-											<TableCell className="tabular-nums">
+											<TableCell className={NUM_CELL}>
 												{formatDelta(row.stars_delta, missing)}
 											</TableCell>
-											<TableCell className="tabular-nums">
+											<TableCell className={NUM_CELL}>
 												{formatDelta(row.forks_delta, missing)}
 											</TableCell>
-											<TableCell className="tabular-nums">
+											<TableCell className={NUM_CELL}>
 												{formatDelta(row.open_issues_delta, missing)}
 											</TableCell>
 										</TableRow>

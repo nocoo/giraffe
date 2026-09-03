@@ -11,10 +11,10 @@ import {
 } from "@nocoo/basalt/components/table";
 import { Inbox } from "lucide-react";
 import { useEffect, useState } from "react";
-import { PageSkeleton } from "../components/layout/page-skeleton";
+import { TableSkeleton } from "../components/layout/page-skeleton";
 import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad, missingTitle } from "../lib/error-ui";
-import { formatDate } from "../lib/format";
+import { DATE_CELL, formatDate, NUM_HEAD } from "../lib/format";
 import { PAGE_DESCRIPTIONS } from "../lib/navigation";
 import { loadInbox, markRead, markReadAll, type NotificationsSnapshot } from "../viewmodels/inbox";
 import { requestRefresh } from "../viewmodels/refresh";
@@ -75,7 +75,7 @@ export function InboxPage() {
 		return (
 			<div className="space-y-8">
 				<PageHeader title="通知" description={PAGE_DESCRIPTIONS["/inbox"]} />
-				<PageSkeleton label="加载通知" />
+				<TableSkeleton label="加载通知" columns={6} />
 			</div>
 		);
 	}
@@ -126,7 +126,7 @@ export function InboxPage() {
 									<TableHead>仓库</TableHead>
 									<TableHead>标题</TableHead>
 									<TableHead>原因</TableHead>
-									<TableHead>时间</TableHead>
+									<TableHead className={NUM_HEAD}>时间</TableHead>
 									<TableHead />
 								</TableRow>
 							</TableHeader>
@@ -150,10 +150,10 @@ export function InboxPage() {
 												{row.title}
 											</Link>
 										</TableCell>
-										<TableCell>{row.reason}</TableCell>
-										<TableCell className="text-basalt-muted-foreground">
-											{formatDate(row.updated_at)}
+										<TableCell>
+											<Badge variant="outline">{row.reason}</Badge>
 										</TableCell>
+										<TableCell className={DATE_CELL}>{formatDate(row.updated_at)}</TableCell>
 										<TableCell>
 											<Button
 												type="button"

@@ -13,6 +13,7 @@ import {
 } from "@nocoo/basalt";
 import { AreaChart } from "@nocoo/basalt/charts/area";
 import { DonutChart } from "@nocoo/basalt/charts/donut";
+import { DescriptionList } from "@nocoo/basalt/components/description-list";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
 import {
@@ -26,10 +27,20 @@ import {
 import { Box, GitPullRequest } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router";
-import { PageSkeleton } from "../components/layout/page-skeleton";
+import { DetailSkeleton, TableSkeleton } from "../components/layout/page-skeleton";
 import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad, missingTitle } from "../lib/error-ui";
-import { formatCount, formatDate, formatReview } from "../lib/format";
+import {
+	DATE_CELL,
+	formatConclusion,
+	formatCount,
+	formatDate,
+	formatReview,
+	formatRunStatus,
+	NUM_CELL,
+	NUM_HEAD,
+	reviewBadgeVariant,
+} from "../lib/format";
 import type { IssuesSnapshot } from "../viewmodels/issues";
 import type { PullsSnapshot } from "../viewmodels/pulls";
 import { requestRefresh } from "../viewmodels/refresh";
@@ -136,11 +147,21 @@ export function RepoDetailPage() {
 				}
 				if ("missing" in next && !refreshed.current.has(`${owner}/${name}:details`)) {
 					refreshed.current.add(`${owner}/${name}:details`);
-					await requestRefresh(repoKind(owner, name, "details"));
-					if (cancelled) {
-						return;
+					try {
+						await requestRefresh(repoKind(owner, name, "details"));
+						if (cancelled) {
+							return;
+						}
+						setSnap(await loadRepoTab<RepoDetails>(owner, name, "details"));
+					} catch (err: unknown) {
+						if (cancelled) {
+							return;
+						}
+						const failed = catchLoad(err, (message) => {
+							toast.error(message);
+						});
+						setSnap(failed ?? next);
 					}
-					setSnap(await loadRepoTab<RepoDetails>(owner, name, "details"));
 					return;
 				}
 				setSnap(next);
@@ -291,7 +312,7 @@ export function RepoDetailPage() {
 		return (
 			<div className="space-y-8">
 				<PageHeader title={`${owner}/${name}`} />
-				<PageSkeleton label="加载仓库" />
+				<DetailSkeleton label="加载仓库" />
 			</div>
 		);
 	}
@@ -439,20 +460,28 @@ export function RepoDetailPage() {
 							/>
 							<LayerCard>
 								<LayerCard.Header>概览</LayerCard.Header>
-								<LayerCard.Body className="flex flex-col gap-2 text-sm">
-									<p>
-										<span className="text-basalt-muted-foreground">默认分支</span>{" "}
-										{snap.default_branch}
-									</p>
-									<p>
-										<span className="text-basalt-muted-foreground">许可证</span>{" "}
-										{snap.license ?? "—"}
-									</p>
-									<p>
-										<Link href={snap.url} target="_blank" rel="noreferrer">
-											在 GitHub 打开
-										</Link>
-									</p>
+								<LayerCard.Body>
+									<DescriptionList columns={2}>
+										<DescriptionList.Item term="默认分支">
+											{snap.default_branch}
+										</DescriptionList.Item>
+										<DescriptionList.Item term="许可证">{snap.license ?? "—"}</DescriptionList.Item>
+										<DescriptionList.Item term="最近推送">
+											<span className="tabular-nums">{formatDate(snap.pushed_at)}</span>
+										</DescriptionList.Item>
+										<DescriptionList.Item term="归档">
+											{snap.is_archived ? (
+												<Badge variant="secondary">已归档</Badge>
+											) : (
+												<Badge variant="outline">活跃</Badge>
+											)}
+										</DescriptionList.Item>
+										<DescriptionList.Item term="GitHub">
+											<Link href={snap.url} target="_blank" rel="noreferrer">
+												打开仓库
+											</Link>
+										</DescriptionList.Item>
+									</DescriptionList>
 								</LayerCard.Body>
 							</LayerCard>
 						</div>
@@ -477,6 +506,7 @@ export function RepoDetailPage() {
 										<TableHead>结论</TableHead>
 										<TableHead>事件</TableHead>
 										<TableHead>分支</TableHead>
+										<TableHead className={NUM_HEAD}>更新</TableHead>
 									</TableRow>
 								</TableHeader>
 								<TableBody>
@@ -487,7 +517,9 @@ export function RepoDetailPage() {
 													{run.name}
 												</Link>
 											</TableCell>
-											<TableCell>{run.status}</TableCell>
+											<TableCell>
+												<Badge variant="outline">{formatRunStatus(run.status)}</Badge>
+											</TableCell>
 											<TableCell>
 												<Badge
 													variant={
@@ -498,17 +530,22 @@ export function RepoDetailPage() {
 																: "secondary"
 													}
 												>
-													{run.conclusion ?? "—"}
+													{formatConclusion(run.conclusion)}
 												</Badge>
 											</TableCell>
-											<TableCell>{run.event}</TableCell>
+											<TableCell>
+												<Badge variant="outline">{run.event}</Badge>
+											</TableCell>
 											<TableCell>{run.head_branch ?? "—"}</TableCell>
+											<TableCell className={DATE_CELL}>{formatDate(run.updated_at)}</TableCell>
 										</TableRow>
 									))}
 								</TableBody>
 							</Table>
 						</TabWell>
-					) : null}
+					) : (
+						<TableSkeleton label="加载 Actions" columns={6} rows={6} />
+					)}
 				</TabsContent>
 				<TabsContent value="releases">
 					{releases && "missing" in releases ? (
@@ -525,7 +562,7 @@ export function RepoDetailPage() {
 								<TableHeader>
 									<TableRow>
 										<TableHead>标签</TableHead>
-										<TableHead>时间</TableHead>
+										<TableHead className={NUM_HEAD}>时间</TableHead>
 										<TableHead>预发布</TableHead>
 									</TableRow>
 								</TableHeader>
@@ -537,9 +574,7 @@ export function RepoDetailPage() {
 													{row.tag_name}
 												</Link>
 											</TableCell>
-											<TableCell className="text-basalt-muted-foreground">
-												{formatDate(row.published_at)}
-											</TableCell>
+											<TableCell className={DATE_CELL}>{formatDate(row.published_at)}</TableCell>
 											<TableCell>
 												{row.prerelease ? <Badge variant="secondary">预发布</Badge> : "—"}
 											</TableCell>
@@ -548,7 +583,9 @@ export function RepoDetailPage() {
 								</TableBody>
 							</Table>
 						</TabWell>
-					) : null}
+					) : (
+						<TableSkeleton label="加载 Release" columns={3} rows={6} />
+					)}
 				</TabsContent>
 				<TabsContent value="security">
 					{security && "missing" in security ? (
@@ -562,8 +599,8 @@ export function RepoDetailPage() {
 					) : security ? (
 						<StatStrip
 							items={[
-								{ label: "Dependabot", value: security.dependabot_open },
-								{ label: "code scanning", value: security.code_scanning_open },
+								{ label: "Dependabot", value: formatCount(security.dependabot_open) },
+								{ label: "code scanning", value: formatCount(security.code_scanning_open) },
 							]}
 						/>
 					) : null}
@@ -582,31 +619,31 @@ export function RepoDetailPage() {
 							<Table>
 								<TableHeader>
 									<TableRow>
-										<TableHead>编号</TableHead>
+										<TableHead className={NUM_HEAD}>编号</TableHead>
 										<TableHead>标题</TableHead>
 										<TableHead>作者</TableHead>
-										<TableHead>更新</TableHead>
+										<TableHead className={NUM_HEAD}>更新</TableHead>
 									</TableRow>
 								</TableHeader>
 								<TableBody>
 									{issues.issues.map((row) => (
 										<TableRow key={`${row.name_with_owner}#${row.number}`}>
-											<TableCell className="tabular-nums">#{row.number}</TableCell>
+											<TableCell className={NUM_CELL}>#{row.number}</TableCell>
 											<TableCell>
 												<Link href={row.url} target="_blank" rel="noreferrer">
 													{row.title}
 												</Link>
 											</TableCell>
 											<TableCell>{row.author_login ?? "—"}</TableCell>
-											<TableCell className="text-basalt-muted-foreground">
-												{formatDate(row.updated_at)}
-											</TableCell>
+											<TableCell className={DATE_CELL}>{formatDate(row.updated_at)}</TableCell>
 										</TableRow>
 									))}
 								</TableBody>
 							</Table>
 						</TabWell>
-					) : null}
+					) : (
+						<TableSkeleton label="加载 Issues" columns={4} rows={6} />
+					)}
 				</TabsContent>
 				<TabsContent value="prs">
 					{pulls && "missing" in pulls ? (
@@ -622,19 +659,19 @@ export function RepoDetailPage() {
 							<Table>
 								<TableHeader>
 									<TableRow>
-										<TableHead>编号</TableHead>
+										<TableHead className={NUM_HEAD}>编号</TableHead>
 										<TableHead>标题</TableHead>
 										<TableHead>作者</TableHead>
 										<TableHead>草稿</TableHead>
 										<TableHead>审查</TableHead>
-										<TableHead>+/−</TableHead>
-										<TableHead>更新</TableHead>
+										<TableHead className={NUM_HEAD}>+/−</TableHead>
+										<TableHead className={NUM_HEAD}>更新</TableHead>
 									</TableRow>
 								</TableHeader>
 								<TableBody>
 									{pulls.pull_requests.map((row) => (
 										<TableRow key={`${row.name_with_owner}#${row.number}`}>
-											<TableCell className="tabular-nums">#{row.number}</TableCell>
+											<TableCell className={NUM_CELL}>#{row.number}</TableCell>
 											<TableCell>
 												<Link href={row.url} target="_blank" rel="noreferrer">
 													{row.title}
@@ -644,21 +681,29 @@ export function RepoDetailPage() {
 											<TableCell>
 												{row.is_draft ? <Badge variant="secondary">草稿</Badge> : "—"}
 											</TableCell>
-											<TableCell>{formatReview(row.review_decision)}</TableCell>
-											<TableCell className="tabular-nums">
-												<span className="text-basalt-info">+{row.additions}</span>
+											<TableCell>
+												{row.review_decision ? (
+													<Badge variant={reviewBadgeVariant(row.review_decision)}>
+														{formatReview(row.review_decision)}
+													</Badge>
+												) : (
+													"—"
+												)}
+											</TableCell>
+											<TableCell className={NUM_CELL}>
+												<span className="text-basalt-info">+{formatCount(row.additions)}</span>
 												<span className="text-basalt-muted-foreground">/</span>
-												<span className="text-basalt-danger">−{row.deletions}</span>
+												<span className="text-basalt-danger">−{formatCount(row.deletions)}</span>
 											</TableCell>
-											<TableCell className="text-basalt-muted-foreground">
-												{formatDate(row.updated_at)}
-											</TableCell>
+											<TableCell className={DATE_CELL}>{formatDate(row.updated_at)}</TableCell>
 										</TableRow>
 									))}
 								</TableBody>
 							</Table>
 						</TabWell>
-					) : null}
+					) : (
+						<TableSkeleton label="加载 Pull Requests" columns={7} rows={6} />
+					)}
 				</TabsContent>
 				<TabsContent value="traffic">
 					{traffic && "missing" in traffic ? (
@@ -681,7 +726,9 @@ export function RepoDetailPage() {
 								<AreaChart data={trafficPoints(traffic.views.points)} ariaLabel="views" />
 							</TabWell>
 						</div>
-					) : null}
+					) : (
+						<DetailSkeleton label="加载 Traffic" />
+					)}
 				</TabsContent>
 				<TabsContent value="languages">
 					{languages && "missing" in languages ? (
@@ -696,7 +743,9 @@ export function RepoDetailPage() {
 						<TabWell>
 							<DonutChart data={sortedLanguages(languages.languages)} ariaLabel="languages" />
 						</TabWell>
-					) : null}
+					) : (
+						<TableSkeleton label="加载语言" columns={2} rows={5} />
+					)}
 				</TabsContent>
 				<TabsContent value="contributors">
 					{contributors && "missing" in contributors ? (
@@ -719,14 +768,16 @@ export function RepoDetailPage() {
 										<Link href={row.html_url} target="_blank" rel="noreferrer">
 											{row.login}
 										</Link>
-										<span className="ml-auto tabular-nums text-sm text-basalt-muted-foreground">
-											{formatCount(row.contributions)}
+										<span className="ml-auto text-sm text-basalt-muted-foreground tabular-nums">
+											{formatCount(row.contributions)} 次
 										</span>
 									</li>
 								))}
 							</ul>
 						</TabWell>
-					) : null}
+					) : (
+						<TableSkeleton label="加载贡献者" columns={2} rows={6} />
+					)}
 				</TabsContent>
 			</Tabs>
 		</div>

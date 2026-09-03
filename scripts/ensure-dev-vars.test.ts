@@ -36,6 +36,16 @@ describe("ensureDevVars", () => {
 		});
 	});
 
+	it("restores a leftover typecheck file before generating", async () => {
+		await withDir(async (root) => {
+			await writeFile(join(root, ".dev.vars.__typecheck"), "ENVIRONMENT=development\nKEPT=1\n");
+			ensureDevVars(root);
+			expect(await readFile(join(root, ".dev.vars"), "utf8")).toBe(
+				"ENVIRONMENT=development\nKEPT=1\n",
+			);
+		});
+	});
+
 	it("does not overwrite an existing file", async () => {
 		await withDir(async (root) => {
 			await writeFile(join(root, ".dev.vars"), "ENVIRONMENT=development\n");

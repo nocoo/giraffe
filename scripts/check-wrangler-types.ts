@@ -3,10 +3,11 @@ import { join } from "node:path";
 
 const root = join(import.meta.dir, "..");
 const devVars = join(root, ".dev.vars");
-const hidden = join(root, ".dev.vars.__typecheck");
+const hidden = join(root, `.dev.vars.__hide_${process.pid}`);
 if (existsSync(devVars)) {
 	renameSync(devVars, hidden);
 }
+let code = 1;
 try {
 	const proc = Bun.spawnSync(
 		[
@@ -18,9 +19,10 @@ try {
 		],
 		{ cwd: root, stdout: "inherit", stderr: "inherit" },
 	);
-	process.exit(proc.exitCode ?? 1);
+	code = proc.exitCode ?? 1;
 } finally {
 	if (existsSync(hidden)) {
 		renameSync(hidden, devVars);
 	}
 }
+process.exit(code);

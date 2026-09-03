@@ -11,16 +11,20 @@ import {
 } from "@nocoo/basalt/components/table";
 import { Box } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { PageSkeleton } from "../components/layout/page-skeleton";
+import { LanguageLabel } from "../components/layout/labels";
+import { TableSkeleton } from "../components/layout/page-skeleton";
 import { RefreshButton } from "../components/layout/refresh-button";
 import { INLINE_SEGMENT } from "../components/layout/segment";
 import { catchLoad, missingTitle } from "../lib/error-ui";
 import {
+	DATE_CELL,
 	formatCount,
 	formatDate,
 	formatHealth,
 	formatVisibility,
 	healthBadgeVariant,
+	NUM_CELL,
+	NUM_HEAD,
 } from "../lib/format";
 import { PAGE_DESCRIPTIONS } from "../lib/navigation";
 import { requestRefresh } from "../viewmodels/refresh";
@@ -165,7 +169,7 @@ export function ReposPage() {
 		return (
 			<div className="space-y-8">
 				<PageHeader title="仓库" description={PAGE_DESCRIPTIONS["/"]} />
-				<PageSkeleton label="加载仓库" />
+				<TableSkeleton label="加载仓库" columns={8} />
 			</div>
 		);
 	}
@@ -212,10 +216,13 @@ export function ReposPage() {
 									<p className="mt-2 line-clamp-2 text-sm text-basalt-muted-foreground">
 										{row.description ?? "没有描述"}
 									</p>
-									<p className="mt-3 text-xs text-basalt-muted-foreground">
-										{row.primary_language ?? "—"} · ★ {formatCount(row.stargazer_count)} ·{" "}
-										{formatVisibility(row.visibility)}
-									</p>
+									<div className="mt-3 flex items-center gap-2 text-xs text-basalt-muted-foreground">
+										<LanguageLabel name={row.primary_language} />
+										<span>·</span>
+										<span className="tabular-nums">★ {formatCount(row.stargazer_count)}</span>
+										<span>·</span>
+										<Badge variant="outline">{formatVisibility(row.visibility)}</Badge>
+									</div>
 								</LayerCard>
 							</Link>
 						);
@@ -233,14 +240,14 @@ export function ReposPage() {
 										</Button>
 									</TableHead>
 									<TableHead>语言</TableHead>
-									<TableHead>
+									<TableHead className={NUM_HEAD}>
 										<Button type="button" variant="ghost" onClick={() => setSort("stars")}>
 											★
 										</Button>
 									</TableHead>
-									<TableHead>Fork</TableHead>
-									<TableHead>Issues</TableHead>
-									<TableHead>
+									<TableHead className={NUM_HEAD}>Fork</TableHead>
+									<TableHead className={NUM_HEAD}>Issues</TableHead>
+									<TableHead className={NUM_HEAD}>
 										<Button type="button" variant="ghost" onClick={() => setSort("pushed")}>
 											最近推送
 										</Button>
@@ -259,20 +266,18 @@ export function ReposPage() {
 													{row.name_with_owner}
 												</Link>
 											</TableCell>
-											<TableCell className="text-basalt-muted-foreground">
-												{row.primary_language ?? "—"}
+											<TableCell>
+												<LanguageLabel name={row.primary_language} />
 											</TableCell>
-											<TableCell className="tabular-nums">
-												{formatCount(row.stargazer_count)}
-											</TableCell>
-											<TableCell className="tabular-nums">{formatCount(row.fork_count)}</TableCell>
-											<TableCell className="tabular-nums">
+											<TableCell className={NUM_CELL}>{formatCount(row.stargazer_count)}</TableCell>
+											<TableCell className={NUM_CELL}>{formatCount(row.fork_count)}</TableCell>
+											<TableCell className={NUM_CELL}>
 												{formatCount(row.open_issue_count)}
 											</TableCell>
-											<TableCell className="text-basalt-muted-foreground">
-												{formatDate(row.pushed_at)}
+											<TableCell className={DATE_CELL}>{formatDate(row.pushed_at)}</TableCell>
+											<TableCell>
+												<Badge variant="outline">{formatVisibility(row.visibility)}</Badge>
 											</TableCell>
-											<TableCell>{formatVisibility(row.visibility)}</TableCell>
 											{health.size > 0 ? (
 												<TableCell>
 													{status ? (

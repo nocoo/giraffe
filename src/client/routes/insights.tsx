@@ -11,11 +11,18 @@ import {
 } from "@nocoo/basalt/components/table";
 import { Activity } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { PageSkeleton } from "../components/layout/page-skeleton";
+import { TableSkeleton } from "../components/layout/page-skeleton";
 import { RefreshButton } from "../components/layout/refresh-button";
 import { INLINE_SEGMENT } from "../components/layout/segment";
 import { catchLoad, missingTitle } from "../lib/error-ui";
-import { formatHealth, healthBadgeVariant } from "../lib/format";
+import {
+	formatCount,
+	formatDays,
+	formatHealth,
+	healthBadgeVariant,
+	NUM_CELL,
+	NUM_HEAD,
+} from "../lib/format";
 import { PAGE_DESCRIPTIONS } from "../lib/navigation";
 import {
 	alertsIncomplete,
@@ -95,7 +102,7 @@ export function InsightsPage() {
 		return (
 			<div className="space-y-8">
 				<PageHeader title="Insights" description={PAGE_DESCRIPTIONS["/insights"]} />
-				<PageSkeleton label="加载 Insights" />
+				<TableSkeleton label="加载 Insights" columns={6} />
 			</div>
 		);
 	}
@@ -142,8 +149,8 @@ export function InsightsPage() {
 								<TableRow>
 									<TableHead>仓库</TableHead>
 									<TableHead>健康</TableHead>
-									<TableHead>Issues</TableHead>
-									<TableHead>距上次推送</TableHead>
+									<TableHead className={NUM_HEAD}>Issues</TableHead>
+									<TableHead className={NUM_HEAD}>距上次推送</TableHead>
 									<TableHead>机会</TableHead>
 									<TableHead>告警</TableHead>
 								</TableRow>
@@ -159,8 +166,8 @@ export function InsightsPage() {
 												{formatHealth(row.health)}
 											</Badge>
 										</TableCell>
-										<TableCell className="tabular-nums">{row.open_issue_count}</TableCell>
-										<TableCell className="tabular-nums">{row.days_since_push} 天</TableCell>
+										<TableCell className={NUM_CELL}>{formatCount(row.open_issue_count)}</TableCell>
+										<TableCell className={NUM_CELL}>{formatDays(row.days_since_push)}</TableCell>
 										<TableCell>
 											{row.opportunities.length === 0 ? (
 												"—"

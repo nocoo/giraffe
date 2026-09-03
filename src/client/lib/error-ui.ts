@@ -18,7 +18,7 @@ const TOAST: Record<string, string> = {
 	github_rate_limited: "GitHub 限流",
 	github_error: "GitHub 请求失败",
 	db_error: "数据库错误",
-	encryption_misconfigured: "加密未配置",
+	encryption_misconfigured: "无法解密令牌，请在设置里重新添加 PAT",
 };
 
 export function errorUi(err: unknown): ErrorUi {

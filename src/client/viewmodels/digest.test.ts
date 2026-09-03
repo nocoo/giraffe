@@ -50,7 +50,7 @@ describe("digest viewmodel", () => {
 
 	it("renders markdown without fake zeros when baseline is missing", () => {
 		expect(formatDelta(null, false)).toBe("—");
-		expect(formatDelta(2, false)).toBe("2");
+		expect(formatDelta(2, false)).toBe("+2");
 		expect(formatDelta(0, true)).toBe("—");
 		const md = digestMarkdown(missingBaseline);
 		expect(md).toContain("没有昨天的基线");
@@ -58,8 +58,8 @@ describe("digest viewmodel", () => {
 		expect(md).not.toContain("| 0 |");
 		expect(md).not.toContain("合计 stars 0");
 		const present = digestMarkdown(withBaseline);
-		expect(present).toContain("| octocat/hello-world | 3 | 0 | -1 |");
-		expect(present).toContain("合计 stars 3 / forks 0 / issues -1");
+		expect(present).toContain("| octocat/hello-world | +3 | 0 | −1 |");
+		expect(present).toContain("合计 stars +3 / forks 0 / issues −1");
 		expect(present).not.toContain("没有昨天的基线");
 	});
 

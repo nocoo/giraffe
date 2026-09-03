@@ -39,7 +39,7 @@ describe("errorUi", () => {
 		});
 		expect(errorUi(new ApiError(500, "encryption_misconfigured", "missing"))).toEqual({
 			kind: "toast",
-			message: "加密未配置",
+			message: "无法解密令牌，请在设置里重新添加 PAT",
 		});
 		expect(errorUi(new ApiError(409, "account_conflict", "c"))).toEqual({
 			kind: "toast",

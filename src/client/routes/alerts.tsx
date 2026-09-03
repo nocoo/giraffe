@@ -11,10 +11,10 @@ import {
 } from "@nocoo/basalt/components/table";
 import { ShieldAlert } from "lucide-react";
 import { useEffect, useState } from "react";
-import { PageSkeleton } from "../components/layout/page-skeleton";
+import { TableSkeleton } from "../components/layout/page-skeleton";
 import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad, missingTitle } from "../lib/error-ui";
-import { severityBadgeVariant } from "../lib/format";
+import { formatCount, severityBadgeVariant } from "../lib/format";
 import { PAGE_DESCRIPTIONS } from "../lib/navigation";
 import {
 	type AlertsSnapshot,
@@ -97,7 +97,7 @@ export function AlertsPage() {
 		return (
 			<div className="space-y-8">
 				<PageHeader title="安全告警" description={PAGE_DESCRIPTIONS["/alerts"]} />
-				<PageSkeleton label="加载告警" />
+				<TableSkeleton label="加载告警" columns={4} />
 			</div>
 		);
 	}
@@ -121,8 +121,8 @@ export function AlertsPage() {
 			/>
 			<StatStrip
 				items={[
-					{ label: "Dependabot 打开", value: snap.dependabot_open },
-					{ label: "Code scanning 打开", value: snap.code_scanning_open },
+					{ label: "Dependabot 打开", value: formatCount(snap.dependabot_open) },
+					{ label: "Code scanning 打开", value: formatCount(snap.code_scanning_open) },
 				]}
 			/>
 			{items.length === 0 ? (
@@ -149,7 +149,9 @@ export function AlertsPage() {
 										<TableCell className="text-basalt-muted-foreground">
 											{row.name_with_owner}
 										</TableCell>
-										<TableCell>{row.source}</TableCell>
+										<TableCell>
+											<Badge variant="outline">{row.source}</Badge>
+										</TableCell>
 										<TableCell>
 											<Badge variant={severityBadgeVariant(row.severity)}>{row.severity}</Badge>
 										</TableCell>

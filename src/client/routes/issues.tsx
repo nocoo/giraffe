@@ -11,10 +11,10 @@ import {
 } from "@nocoo/basalt/components/table";
 import { CircleDot } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { PageSkeleton } from "../components/layout/page-skeleton";
+import { TableSkeleton } from "../components/layout/page-skeleton";
 import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad, missingTitle } from "../lib/error-ui";
-import { formatDate } from "../lib/format";
+import { DATE_CELL, formatDate, NUM_CELL, NUM_HEAD } from "../lib/format";
 import { PAGE_DESCRIPTIONS } from "../lib/navigation";
 import { filterIssues, type IssuesSnapshot, loadIssues } from "../viewmodels/issues";
 import { requestRefresh } from "../viewmodels/refresh";
@@ -102,7 +102,7 @@ export function IssuesPage() {
 		return (
 			<div className="space-y-8">
 				<PageHeader title="Issues" description={PAGE_DESCRIPTIONS["/issues"]} />
-				<PageSkeleton label="加载 Issues" />
+				<TableSkeleton label="加载 Issues" columns={5} />
 			</div>
 		);
 	}
@@ -119,10 +119,10 @@ export function IssuesPage() {
 							<TableHeader>
 								<TableRow>
 									<TableHead>仓库</TableHead>
-									<TableHead>编号</TableHead>
+									<TableHead className={NUM_HEAD}>编号</TableHead>
 									<TableHead>标题</TableHead>
 									<TableHead>作者</TableHead>
-									<TableHead>更新</TableHead>
+									<TableHead className={NUM_HEAD}>更新</TableHead>
 								</TableRow>
 							</TableHeader>
 							<TableBody>
@@ -131,16 +131,14 @@ export function IssuesPage() {
 										<TableCell className="text-basalt-muted-foreground">
 											{row.name_with_owner}
 										</TableCell>
-										<TableCell className="tabular-nums">#{row.number}</TableCell>
+										<TableCell className={NUM_CELL}>#{row.number}</TableCell>
 										<TableCell>
 											<Link href={row.url} target="_blank" rel="noreferrer">
 												{row.title}
 											</Link>
 										</TableCell>
 										<TableCell>{row.author_login ?? "—"}</TableCell>
-										<TableCell className="text-basalt-muted-foreground">
-											{formatDate(row.updated_at)}
-										</TableCell>
+										<TableCell className={DATE_CELL}>{formatDate(row.updated_at)}</TableCell>
 									</TableRow>
 								))}
 							</TableBody>
