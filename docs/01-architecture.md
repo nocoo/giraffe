@@ -165,7 +165,7 @@ database_id = "<prod>"
 # 禁止 remote = true。本机 wrangler dev 默认本地 D1。
 ```
 
-`dev:server` 与 L2 runner 在启动 wrangler 前，若 `dist/client` 不存在则写入占位 `index.html`，避免 wrangler 因缺 assets 拒绝启动。L3 runner 必须先 `vite build` 再起 wrangler（阶段 2 才有真实页面）。`wrangler deploy` 前必须 `vite build`。账号里目前没有 `giraffe` / `giraffe-db`，脚手架阶段 `wrangler d1 create giraffe-db` 只建生产库。
+`dev:server` 与 L2 runner 在启动 wrangler 前，若 `dist/client` 不存在则写入占位 `index.html`，避免 wrangler 因缺 assets 拒绝启动。`dev:server` 若本地 D1 无 `accounts` 表，则对默认 persist 执行 `schema.sql`。L3 runner 必须先 `vite build` 再起 wrangler（阶段 2 才有真实页面）。`wrangler deploy` 前必须 `vite build`。账号里目前没有 `giraffe` / `giraffe-db`，脚手架阶段 `wrangler d1 create giraffe-db` 只建生产库。
 
 ---
 
