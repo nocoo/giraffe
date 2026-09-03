@@ -33,6 +33,14 @@ describe("errorUi", () => {
 			kind: "toast",
 			message: "GitHub 认证失败",
 		});
+		expect(errorUi(new ApiError(500, "db_error", "d1 error"))).toEqual({
+			kind: "toast",
+			message: "数据库错误",
+		});
+		expect(errorUi(new ApiError(500, "encryption_misconfigured", "missing"))).toEqual({
+			kind: "toast",
+			message: "加密未配置",
+		});
 		expect(errorUi(new ApiError(409, "account_conflict", "c"))).toEqual({
 			kind: "toast",
 			message: "账号已切换",

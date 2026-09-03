@@ -22,11 +22,20 @@ export function shouldRefreshOnCreate(account: Pick<PublicAccount, "is_active">)
 }
 
 export function accountFieldError(err: unknown): string | null {
-	if (
-		err instanceof ApiError &&
-		(err.code === "scopes_missing" || err.code === "validation_failed")
-	) {
+	if (!(err instanceof ApiError)) {
+		return null;
+	}
+	if (err.code === "scopes_missing" || err.code === "validation_failed") {
 		return err.message;
+	}
+	if (err.code === "github_unauthorized") {
+		return "令牌无效";
+	}
+	if (err.code === "db_error") {
+		return "保存失败";
+	}
+	if (err.code === "encryption_misconfigured") {
+		return "加密未配置";
 	}
 	return null;
 }

@@ -44,6 +44,12 @@ describe("accounts viewmodel", () => {
 		).toBe("缺少权限：read:org、notifications");
 		expect(accountFieldError(new Error("x"))).toBeNull();
 		expect(accountFieldError(new ApiError(400, "validation_failed", "bad"))).toBe("bad");
+		expect(accountFieldError(new ApiError(401, "github_unauthorized", "no"))).toBe("令牌无效");
+		expect(accountFieldError(new ApiError(500, "db_error", "d1 error"))).toBe("保存失败");
+		expect(accountFieldError(new ApiError(500, "encryption_misconfigured", "missing"))).toBe(
+			"加密未配置",
+		);
+		expect(accountFieldError(new ApiError(500, "internal_error", "boom"))).toBeNull();
 
 		const urls: string[] = [];
 		vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {

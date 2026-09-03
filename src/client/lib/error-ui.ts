@@ -17,6 +17,8 @@ const TOAST: Record<string, string> = {
 	capability_missing: "缺少 notifications 权限",
 	github_rate_limited: "GitHub 限流",
 	github_error: "GitHub 请求失败",
+	db_error: "数据库错误",
+	encryption_misconfigured: "加密未配置",
 };
 
 export function errorUi(err: unknown): ErrorUi {
