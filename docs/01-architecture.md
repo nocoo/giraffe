@@ -27,7 +27,7 @@ Giraffe 是个人 GitHub 监控控制台。仓库 code name 为 `giraffe`。本�
 | 运行时 | 单个 Cloudflare Worker：Hono 处理 `/api/*`，`[assets]` 托管 Vite 产物 |
 | 包管理 | Bun。安装走临时 registry，不把镜像 URL 写进 `bun.lock` |
 | Lint / 格式化 | Biome。无 ESLint |
-| 设计系统 | Basalt Gen 2（`app-shell` + `sidebar` + `sidebar-context`） |
+| 设计系统 | Basalt Gen 2（`app-shell` + `sidebar`；不要 `sidebar-context`） |
 | 分层 | MVVM。ViewModel 不感知 View |
 | GitHub 鉴权 | 设置页粘贴 PAT；服务端加密写入 D1；可多账号 |
 | 控制台门禁 | Cloudflare Access 挡在 Worker 前面。应用内无登录页、无 Google OAuth |
