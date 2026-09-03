@@ -1,5 +1,6 @@
 import { Badge, Link, SegmentControl, toast } from "@nocoo/basalt";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
+import { PageHeader } from "@nocoo/basalt/components/page-header";
 import {
 	Table,
 	TableBody,
@@ -11,8 +12,8 @@ import {
 import { Activity } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { PageSkeleton } from "../components/layout/page-skeleton";
-import { INLINE_SEGMENT, PageToolbar } from "../components/layout/page-toolbar";
 import { RefreshButton } from "../components/layout/refresh-button";
+import { INLINE_SEGMENT } from "../components/layout/segment";
 import { catchLoad, missingTitle } from "../lib/error-ui";
 import { formatHealth, healthBadgeVariant } from "../lib/format";
 import { PAGE_DESCRIPTIONS } from "../lib/navigation";
@@ -61,8 +62,8 @@ export function InsightsPage() {
 
 	if (snap && "missing" in snap) {
 		return (
-			<div className="flex flex-col gap-4">
-				<PageToolbar
+			<div className="space-y-8">
+				<PageHeader
 					title="Insights"
 					description={PAGE_DESCRIPTIONS["/insights"]}
 					actions={
@@ -78,13 +79,13 @@ export function InsightsPage() {
 					}
 				/>
 				<LayerCard>
-					<LayerCard.Primary>
+					<LayerCard.Well>
 						<LayerCard.Empty
 							icon={<Activity />}
 							title={missingTitle(snap)}
 							description="先添加 PAT 或刷新。"
 						/>
-					</LayerCard.Primary>
+					</LayerCard.Well>
 				</LayerCard>
 			</div>
 		);
@@ -92,16 +93,16 @@ export function InsightsPage() {
 
 	if (!snap) {
 		return (
-			<div className="flex flex-col gap-4">
-				<PageToolbar title="Insights" description={PAGE_DESCRIPTIONS["/insights"]} />
+			<div className="space-y-8">
+				<PageHeader title="Insights" description={PAGE_DESCRIPTIONS["/insights"]} />
 				<PageSkeleton label="加载 Insights" />
 			</div>
 		);
 	}
 
 	return (
-		<div className="flex flex-col gap-4">
-			<PageToolbar
+		<div className="space-y-8">
+			<PageHeader
 				title="Insights"
 				description={PAGE_DESCRIPTIONS["/insights"]}
 				actions={
@@ -132,7 +133,7 @@ export function InsightsPage() {
 				}
 			/>
 			<LayerCard>
-				<LayerCard.Primary className={rows.length === 0 ? undefined : "p-0"}>
+				<LayerCard.Well {...(rows.length === 0 ? {} : { className: "p-0" })}>
 					{rows.length === 0 ? (
 						<LayerCard.Empty icon={<Activity />} title="没有 Insights" />
 					) : (
@@ -191,7 +192,7 @@ export function InsightsPage() {
 							</TableBody>
 						</Table>
 					)}
-				</LayerCard.Primary>
+				</LayerCard.Well>
 			</LayerCard>
 		</div>
 	);

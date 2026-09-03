@@ -9,6 +9,8 @@ import {
 	toast,
 } from "@nocoo/basalt";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
+import { PageHeader } from "@nocoo/basalt/components/page-header";
+import { SectionRule } from "@nocoo/basalt/components/section-rule";
 import { SensitiveInput } from "@nocoo/basalt/components/sensitive-input";
 import {
 	Table,
@@ -19,7 +21,6 @@ import {
 	TableRow,
 } from "@nocoo/basalt/components/table";
 import { type FormEvent, useEffect, useState } from "react";
-import { PageToolbar } from "../components/layout/page-toolbar";
 import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad, reportError, reportOk } from "../lib/error-ui";
 import { initials } from "../lib/format";
@@ -107,8 +108,8 @@ export function SettingsPage() {
 	}
 
 	return (
-		<div className="flex flex-col gap-4">
-			<PageToolbar
+		<div className="space-y-8">
+			<PageHeader
 				title="设置"
 				description={PAGE_DESCRIPTIONS["/settings"]}
 				actions={
@@ -122,144 +123,143 @@ export function SettingsPage() {
 					/>
 				}
 			/>
-			<LayerCard>
-				<LayerCard.Secondary>Access 身份</LayerCard.Secondary>
-				<LayerCard.Body>
-					{me ? (
-						<div className="flex items-center gap-3">
-							<Avatar className="h-10 w-10">
-								{me.avatar ? <AvatarImage src={me.avatar} alt={displayName(me)} /> : null}
-								<AvatarFallback>{initials(displayName(me))}</AvatarFallback>
-							</Avatar>
-							<div className="min-w-0">
-								<p className="truncate font-medium">{displayName(me)}</p>
-								<p className="truncate text-sm text-basalt-muted-foreground">{me.email}</p>
+			<SectionRule title="身份">
+				<LayerCard>
+					<LayerCard.Body>
+						{me ? (
+							<div className="flex items-center gap-3">
+								<Avatar className="h-10 w-10">
+									{me.avatar ? <AvatarImage src={me.avatar} alt={displayName(me)} /> : null}
+									<AvatarFallback>{initials(displayName(me))}</AvatarFallback>
+								</Avatar>
+								<div className="min-w-0">
+									<p className="truncate font-medium">{displayName(me)}</p>
+									<p className="truncate text-sm text-basalt-muted-foreground">{me.email}</p>
+								</div>
 							</div>
-						</div>
-					) : (
-						<p className="text-sm text-basalt-muted-foreground">加载身份…</p>
-					)}
-				</LayerCard.Body>
-			</LayerCard>
-			<LayerCard>
-				<LayerCard.Secondary>GitHub 账号</LayerCard.Secondary>
-				<LayerCard.Body>
-					<form
-						className="flex max-w-xl flex-col gap-3"
-						aria-busy={busy}
-						onSubmit={(event) => void onSubmit(event)}
-					>
-						<Field
-							label="GitHub classic PAT"
-							htmlFor="pat"
-							hint={accountAddHint(phase) ?? "需要 repo、read:org、read:user、notifications"}
-							{...(error ? { error } : {})}
+						) : (
+							<p className="text-sm text-basalt-muted-foreground">加载身份…</p>
+						)}
+					</LayerCard.Body>
+				</LayerCard>
+			</SectionRule>
+			<SectionRule title="GitHub 账号">
+				<LayerCard>
+					<LayerCard.Body>
+						<form
+							className="flex max-w-xl flex-col gap-3"
+							aria-busy={busy}
+							onSubmit={(event) => void onSubmit(event)}
 						>
-							<SensitiveInput
-								id="pat"
-								name="token"
-								autoComplete="off"
-								revealLabel="显示令牌"
-								hideLabel="隐藏令牌"
-								value={token}
-								disabled={busy}
-								onChange={(event) => setToken(event.target.value)}
-								data-testid="pat-input"
-								passwordManagerIgnore
-							/>
-						</Field>
-						<div>
-							<Button
-								type="submit"
-								data-testid="pat-submit"
-								loading={busy}
-								disabled={!canSubmitAccount(token, phase)}
+							<Field
+								label="GitHub classic PAT"
+								htmlFor="pat"
+								hint={accountAddHint(phase) ?? "需要 repo、read:org、read:user、notifications"}
+								{...(error ? { error } : {})}
 							>
-								{accountAddLabel(phase)}
-							</Button>
-						</div>
-					</form>
-				</LayerCard.Body>
-			</LayerCard>
-			<LayerCard>
-				<LayerCard.Header>
-					<p className="font-medium text-basalt-foreground">账号</p>
-				</LayerCard.Header>
-				<LayerCard.Primary className="p-0">
-					{accounts.length === 0 ? (
-						<LayerCard.Empty title="还没有 GitHub 账号" description="在上方粘贴 classic PAT。" />
-					) : (
-						<Table>
-							<TableHeader>
-								<TableRow>
-									<TableHead>账号</TableHead>
-									<TableHead>末四位</TableHead>
-									<TableHead>scopes</TableHead>
-									<TableHead>状态</TableHead>
-									<TableHead>操作</TableHead>
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{accounts.map((row) => (
-									<TableRow key={row.id}>
-										<TableCell>
-											<div className="flex items-center gap-2">
-												<Avatar>
-													<AvatarImage src={row.avatar_url} alt={row.login} />
-													<AvatarFallback>{row.login.slice(0, 2)}</AvatarFallback>
-												</Avatar>
-												{row.login}
-											</div>
-										</TableCell>
-										<TableCell className="font-mono text-sm">{row.token_last4}</TableCell>
-										<TableCell className="text-sm text-basalt-muted-foreground">
-											{row.scopes}
-										</TableCell>
-										<TableCell>
-											{row.is_active ? (
-												<Badge variant="success">当前</Badge>
-											) : (
-												<Badge variant="outline">待命</Badge>
-											)}
-										</TableCell>
-										<TableCell>
-											<div className="flex gap-2">
-												<Button
-													type="button"
-													variant="secondary"
-													disabled={row.is_active || actingId === row.id}
-													loading={actingId === row.id}
-													onClick={() => {
-														setActingId(row.id);
-														void activateAccount(row.id)
-															.then(() => {
-																toast.success("已激活");
-																return reload();
-															})
-															.catch(onLoadError)
-															.finally(() => {
-																setActingId(null);
-															});
-													}}
-												>
-													激活
-												</Button>
-												<Button
-													type="button"
-													variant="destructive"
-													onClick={() => setPendingId(row.id)}
-												>
-													删除
-												</Button>
-											</div>
-										</TableCell>
+								<SensitiveInput
+									id="pat"
+									name="token"
+									autoComplete="off"
+									revealLabel="显示令牌"
+									hideLabel="隐藏令牌"
+									value={token}
+									disabled={busy}
+									onChange={(event) => setToken(event.target.value)}
+									data-testid="pat-input"
+									passwordManagerIgnore
+								/>
+							</Field>
+							<div>
+								<Button
+									type="submit"
+									data-testid="pat-submit"
+									loading={busy}
+									disabled={!canSubmitAccount(token, phase)}
+								>
+									{accountAddLabel(phase)}
+								</Button>
+							</div>
+						</form>
+					</LayerCard.Body>
+				</LayerCard>
+				<LayerCard>
+					<LayerCard.Well className="p-0">
+						{accounts.length === 0 ? (
+							<LayerCard.Empty title="还没有 GitHub 账号" description="在上方粘贴 classic PAT。" />
+						) : (
+							<Table>
+								<TableHeader>
+									<TableRow>
+										<TableHead>账号</TableHead>
+										<TableHead>末四位</TableHead>
+										<TableHead>scopes</TableHead>
+										<TableHead>状态</TableHead>
+										<TableHead>操作</TableHead>
 									</TableRow>
-								))}
-							</TableBody>
-						</Table>
-					)}
-				</LayerCard.Primary>
-			</LayerCard>
+								</TableHeader>
+								<TableBody>
+									{accounts.map((row) => (
+										<TableRow key={row.id}>
+											<TableCell>
+												<div className="flex items-center gap-2">
+													<Avatar>
+														<AvatarImage src={row.avatar_url} alt={row.login} />
+														<AvatarFallback>{row.login.slice(0, 2)}</AvatarFallback>
+													</Avatar>
+													{row.login}
+												</div>
+											</TableCell>
+											<TableCell className="font-mono text-sm">{row.token_last4}</TableCell>
+											<TableCell className="text-sm text-basalt-muted-foreground">
+												{row.scopes}
+											</TableCell>
+											<TableCell>
+												{row.is_active ? (
+													<Badge variant="success">当前</Badge>
+												) : (
+													<Badge variant="outline">待命</Badge>
+												)}
+											</TableCell>
+											<TableCell>
+												<div className="flex gap-2">
+													<Button
+														type="button"
+														variant="secondary"
+														disabled={row.is_active || actingId === row.id}
+														loading={actingId === row.id}
+														onClick={() => {
+															setActingId(row.id);
+															void activateAccount(row.id)
+																.then(() => {
+																	toast.success("已激活");
+																	return reload();
+																})
+																.catch(onLoadError)
+																.finally(() => {
+																	setActingId(null);
+																});
+														}}
+													>
+														激活
+													</Button>
+													<Button
+														type="button"
+														variant="destructive"
+														onClick={() => setPendingId(row.id)}
+													>
+														删除
+													</Button>
+												</div>
+											</TableCell>
+										</TableRow>
+									))}
+								</TableBody>
+							</Table>
+						)}
+					</LayerCard.Well>
+				</LayerCard>
+			</SectionRule>
 			<ConfirmDialog
 				open={pendingId !== null}
 				onOpenChange={(open) => {

@@ -1,5 +1,6 @@
 import { Badge, Input, Link, toast } from "@nocoo/basalt";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
+import { PageHeader } from "@nocoo/basalt/components/page-header";
 import {
 	Table,
 	TableBody,
@@ -11,7 +12,6 @@ import {
 import { CircleDot } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { PageSkeleton } from "../components/layout/page-skeleton";
-import { PageToolbar } from "../components/layout/page-toolbar";
 import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad, missingTitle } from "../lib/error-ui";
 import { formatDate } from "../lib/format";
@@ -73,8 +73,8 @@ export function IssuesPage() {
 
 	if (snap && "missing" in snap) {
 		return (
-			<div className="flex flex-col gap-4">
-				<PageToolbar
+			<div className="space-y-8">
+				<PageHeader
 					title="Issues"
 					description={PAGE_DESCRIPTIONS["/issues"]}
 					actions={
@@ -86,13 +86,13 @@ export function IssuesPage() {
 					}
 				/>
 				<LayerCard>
-					<LayerCard.Primary>
+					<LayerCard.Well>
 						<LayerCard.Empty
 							icon={<CircleDot />}
 							title={missingTitle(snap)}
 							description="先添加 PAT 或刷新。"
 						/>
-					</LayerCard.Primary>
+					</LayerCard.Well>
 				</LayerCard>
 			</div>
 		);
@@ -100,18 +100,18 @@ export function IssuesPage() {
 
 	if (!snap) {
 		return (
-			<div className="flex flex-col gap-4">
-				<PageToolbar title="Issues" description={PAGE_DESCRIPTIONS["/issues"]} />
+			<div className="space-y-8">
+				<PageHeader title="Issues" description={PAGE_DESCRIPTIONS["/issues"]} />
 				<PageSkeleton label="加载 Issues" />
 			</div>
 		);
 	}
 
 	return (
-		<div className="flex flex-col gap-4">
-			<PageToolbar title="Issues" description={PAGE_DESCRIPTIONS["/issues"]} actions={filters} />
+		<div className="space-y-8">
+			<PageHeader title="Issues" description={PAGE_DESCRIPTIONS["/issues"]} actions={filters} />
 			<LayerCard>
-				<LayerCard.Primary className={rows.length === 0 ? undefined : "p-0"}>
+				<LayerCard.Well {...(rows.length === 0 ? {} : { className: "p-0" })}>
 					{rows.length === 0 ? (
 						<LayerCard.Empty icon={<CircleDot />} title="没有 Issue" />
 					) : (
@@ -146,7 +146,7 @@ export function IssuesPage() {
 							</TableBody>
 						</Table>
 					)}
-				</LayerCard.Primary>
+				</LayerCard.Well>
 			</LayerCard>
 		</div>
 	);

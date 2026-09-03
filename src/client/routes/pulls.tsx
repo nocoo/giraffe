@@ -1,5 +1,6 @@
 import { Badge, Input, Link, toast } from "@nocoo/basalt";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
+import { PageHeader } from "@nocoo/basalt/components/page-header";
 import {
 	Table,
 	TableBody,
@@ -11,7 +12,6 @@ import {
 import { GitPullRequest } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { PageSkeleton } from "../components/layout/page-skeleton";
-import { PageToolbar } from "../components/layout/page-toolbar";
 import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad, missingTitle } from "../lib/error-ui";
 import { formatDate, formatReview } from "../lib/format";
@@ -54,8 +54,8 @@ export function PullsPage() {
 
 	if (snap && "missing" in snap) {
 		return (
-			<div className="flex flex-col gap-4">
-				<PageToolbar
+			<div className="space-y-8">
+				<PageHeader
 					title="Pull Requests"
 					description={PAGE_DESCRIPTIONS["/pulls"]}
 					actions={
@@ -67,13 +67,13 @@ export function PullsPage() {
 					}
 				/>
 				<LayerCard>
-					<LayerCard.Primary>
+					<LayerCard.Well>
 						<LayerCard.Empty
 							icon={<GitPullRequest />}
 							title={missingTitle(snap)}
 							description="先添加 PAT 或刷新。"
 						/>
-					</LayerCard.Primary>
+					</LayerCard.Well>
 				</LayerCard>
 			</div>
 		);
@@ -81,16 +81,16 @@ export function PullsPage() {
 
 	if (!snap) {
 		return (
-			<div className="flex flex-col gap-4">
-				<PageToolbar title="Pull Requests" description={PAGE_DESCRIPTIONS["/pulls"]} />
+			<div className="space-y-8">
+				<PageHeader title="Pull Requests" description={PAGE_DESCRIPTIONS["/pulls"]} />
 				<PageSkeleton label="加载 Pull Requests" />
 			</div>
 		);
 	}
 
 	return (
-		<div className="flex flex-col gap-4">
-			<PageToolbar
+		<div className="space-y-8">
+			<PageHeader
 				title="Pull Requests"
 				description={PAGE_DESCRIPTIONS["/pulls"]}
 				actions={
@@ -111,7 +111,7 @@ export function PullsPage() {
 				}
 			/>
 			<LayerCard>
-				<LayerCard.Primary className={rows.length === 0 ? undefined : "p-0"}>
+				<LayerCard.Well {...(rows.length === 0 ? {} : { className: "p-0" })}>
 					{rows.length === 0 ? (
 						<LayerCard.Empty icon={<GitPullRequest />} title="没有 Pull Request" />
 					) : (
@@ -158,7 +158,7 @@ export function PullsPage() {
 							</TableBody>
 						</Table>
 					)}
-				</LayerCard.Primary>
+				</LayerCard.Well>
 			</LayerCard>
 		</div>
 	);

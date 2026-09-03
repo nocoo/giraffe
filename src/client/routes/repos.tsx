@@ -1,5 +1,6 @@
 import { Badge, Button, Input, Link, SegmentControl, toast } from "@nocoo/basalt";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
+import { PageHeader } from "@nocoo/basalt/components/page-header";
 import {
 	Table,
 	TableBody,
@@ -11,8 +12,8 @@ import {
 import { Box } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { PageSkeleton } from "../components/layout/page-skeleton";
-import { INLINE_SEGMENT, PageToolbar } from "../components/layout/page-toolbar";
 import { RefreshButton } from "../components/layout/refresh-button";
+import { INLINE_SEGMENT } from "../components/layout/segment";
 import { catchLoad, missingTitle } from "../lib/error-ui";
 import {
 	formatCount,
@@ -102,7 +103,6 @@ export function ReposPage() {
 
 	const filters = (
 		<>
-			{actions}
 			<Input
 				value={query}
 				onChange={(event) => setQuery(event.target.value)}
@@ -131,17 +131,13 @@ export function ReposPage() {
 					{ value: "grid", label: "网格" },
 				]}
 			/>
-			<RefreshButton
-				run={() => requestRefresh(["repos"]).then(() => reload())}
-				onError={onLoadError}
-			/>
 		</>
 	);
 
 	if (snap && "missing" in snap) {
 		return (
-			<div className="flex flex-col gap-4">
-				<PageToolbar
+			<div className="space-y-8">
+				<PageHeader
 					title="仓库"
 					description={PAGE_DESCRIPTIONS["/"]}
 					actions={
@@ -153,13 +149,13 @@ export function ReposPage() {
 					}
 				/>
 				<LayerCard>
-					<LayerCard.Primary>
+					<LayerCard.Well>
 						<LayerCard.Empty
 							icon={<Box />}
 							title={missingTitle(snap)}
 							description="先添加 PAT 或刷新。"
 						/>
-					</LayerCard.Primary>
+					</LayerCard.Well>
 				</LayerCard>
 			</div>
 		);
@@ -167,21 +163,34 @@ export function ReposPage() {
 
 	if (!snap) {
 		return (
-			<div className="flex flex-col gap-4">
-				<PageToolbar title="仓库" description={PAGE_DESCRIPTIONS["/"]} />
+			<div className="space-y-8">
+				<PageHeader title="仓库" description={PAGE_DESCRIPTIONS["/"]} />
 				<PageSkeleton label="加载仓库" />
 			</div>
 		);
 	}
 
 	return (
-		<div className="flex flex-col gap-4">
-			<PageToolbar title="仓库" description={PAGE_DESCRIPTIONS["/"]} actions={filters} />
+		<div className="space-y-8">
+			<PageHeader
+				title="仓库"
+				description={PAGE_DESCRIPTIONS["/"]}
+				actions={
+					<>
+						{actions}
+						<RefreshButton
+							run={() => requestRefresh(["repos"]).then(() => reload())}
+							onError={onLoadError}
+						/>
+					</>
+				}
+				filters={filters}
+			/>
 			{rows.length === 0 ? (
 				<LayerCard>
-					<LayerCard.Primary>
+					<LayerCard.Well>
 						<LayerCard.Empty icon={<Box />} title="没有仓库" />
-					</LayerCard.Primary>
+					</LayerCard.Well>
 				</LayerCard>
 			) : view === "grid" ? (
 				<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" data-testid="repo-list">
@@ -214,7 +223,7 @@ export function ReposPage() {
 				</div>
 			) : (
 				<LayerCard>
-					<LayerCard.Primary className="p-0">
+					<LayerCard.Well className="p-0">
 						<Table data-testid="repo-list">
 							<TableHeader>
 								<TableRow>
@@ -280,7 +289,7 @@ export function ReposPage() {
 								})}
 							</TableBody>
 						</Table>
-					</LayerCard.Primary>
+					</LayerCard.Well>
 				</LayerCard>
 			)}
 		</div>

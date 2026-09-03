@@ -1,5 +1,6 @@
 import { Badge, Button, Link, toast } from "@nocoo/basalt";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
+import { PageHeader } from "@nocoo/basalt/components/page-header";
 import {
 	Table,
 	TableBody,
@@ -11,7 +12,6 @@ import {
 import { Inbox } from "lucide-react";
 import { useEffect, useState } from "react";
 import { PageSkeleton } from "../components/layout/page-skeleton";
-import { PageToolbar } from "../components/layout/page-toolbar";
 import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad, missingTitle } from "../lib/error-ui";
 import { formatDate } from "../lib/format";
@@ -46,8 +46,8 @@ export function InboxPage() {
 
 	if (snap && "missing" in snap) {
 		return (
-			<div className="flex flex-col gap-4">
-				<PageToolbar
+			<div className="space-y-8">
+				<PageHeader
 					title="通知"
 					description={PAGE_DESCRIPTIONS["/inbox"]}
 					actions={
@@ -59,13 +59,13 @@ export function InboxPage() {
 					}
 				/>
 				<LayerCard>
-					<LayerCard.Primary>
+					<LayerCard.Well>
 						<LayerCard.Empty
 							icon={<Inbox />}
 							title={missingTitle(snap)}
 							description="先添加 PAT 或刷新。"
 						/>
-					</LayerCard.Primary>
+					</LayerCard.Well>
 				</LayerCard>
 			</div>
 		);
@@ -73,8 +73,8 @@ export function InboxPage() {
 
 	if (!snap) {
 		return (
-			<div className="flex flex-col gap-4">
-				<PageToolbar title="通知" description={PAGE_DESCRIPTIONS["/inbox"]} />
+			<div className="space-y-8">
+				<PageHeader title="通知" description={PAGE_DESCRIPTIONS["/inbox"]} />
 				<PageSkeleton label="加载通知" />
 			</div>
 		);
@@ -84,8 +84,8 @@ export function InboxPage() {
 	const unread = rows.filter((row) => row.unread).length;
 
 	return (
-		<div className="flex flex-col gap-4">
-			<PageToolbar
+		<div className="space-y-8">
+			<PageHeader
 				title="通知"
 				description={PAGE_DESCRIPTIONS["/inbox"]}
 				actions={
@@ -115,7 +115,7 @@ export function InboxPage() {
 				}
 			/>
 			<LayerCard>
-				<LayerCard.Primary className={rows.length === 0 ? undefined : "p-0"}>
+				<LayerCard.Well {...(rows.length === 0 ? {} : { className: "p-0" })}>
 					{rows.length === 0 ? (
 						<LayerCard.Empty icon={<Inbox />} title="没有通知" />
 					) : (
@@ -176,7 +176,7 @@ export function InboxPage() {
 							</TableBody>
 						</Table>
 					)}
-				</LayerCard.Primary>
+				</LayerCard.Well>
 			</LayerCard>
 		</div>
 	);

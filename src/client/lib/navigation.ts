@@ -19,7 +19,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
 	{ label: "系统", items: NAV_ITEMS.slice(7) },
 ];
 
-export const PAGE_DESCRIPTIONS: Record<string, string> = {
+export const PAGE_DESCRIPTIONS = {
 	"/": "当前账号下的仓库快照",
 	"/issues": "跨仓打开的 Issue",
 	"/pulls": "跨仓打开的 Pull Request",
@@ -28,7 +28,7 @@ export const PAGE_DESCRIPTIONS: Record<string, string> = {
 	"/inbox": "GitHub 通知收件箱",
 	"/digest": "相对昨天基线的仓库变化",
 	"/settings": "Access 身份与 GitHub 账号",
-};
+} as const;
 
 export type PaletteItem = { href: string; label: string; icon: string };
 
