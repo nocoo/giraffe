@@ -61,7 +61,7 @@ Giraffe 是个人 GitHub 监控控制台。仓库 code name 为 `giraffe`。本�
 | 包管理 / 脚本 | Bun | `package.json` 为版本唯一来源 |
 | 前端构建 | Vite 8 + `@vitejs/plugin-react` | 产物 `dist/client/` |
 | UI | React 19 + React Router | SPA |
-| 样式 | Tailwind CSS v4 + `@nocoo/basalt@2.0.0` | 控件来自包；细则见 [05](05-client.md) |
+| 样式 | Tailwind CSS v4 + `@nocoo/basalt@2.0.2` | 控件来自包；细则见 [05](05-client.md) |
 | 图表 | Basalt charts（peer `recharts@^3`） | Insights / Traffic / Languages |
 | Toast / 命令面板 | Basalt `Toaster` / `CommandPalette` | |
 | API | Hono | Worker 内 `/api/*` |
@@ -474,6 +474,6 @@ Client 只通过 HTTP 契约消费 Server。Server 测试不得 import Client。
 | 02 | [质量保证](02-quality.md) | 已写。测试分层、覆盖率、何时跑哪一层 |
 | 03 | [数据 Schema](03-schema.md) | 已写。库表与 JSON 形状 |
 | 04 | [Server 设计](04-server.md) | 已写。全部接口、每接口职责、返回约定、原子化提交步骤 |
-| 05 | [Client 设计](05-client.md) | 已写。Vite 页面、Basalt 2.0.0 控件、MVVM、原子化提交步骤 |
+| 05 | [Client 设计](05-client.md) | 已写。Vite 页面、Basalt 2.0.2 控件、MVVM、原子化提交步骤 |
 
 对应文档未写成并 review 前，不开始该层功能代码。当前 Agent 入口是根目录 `CLAUDE.md`。

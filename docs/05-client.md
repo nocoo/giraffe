@@ -12,7 +12,7 @@ Codex Sign Off 本文之前，禁止第 12 节步骤 1 及之后（含 Vite 脚�
 
 ## 1. 范围
 
-做：`src/client` Vite + React 19 SPA；只打同源 `/api/*`；用 `@nocoo/basalt@2.0.0` 控件拼界面；L1 ViewModel 测试 + 02 §6 三条 L3；产物进 `dist/client`，由已落地 Worker `[assets]` 托管。
+做：`src/client` Vite + React 19 SPA；只打同源 `/api/*`；用 `@nocoo/basalt@2.0.2` 控件拼界面；L1 ViewModel 测试 + 02 §6 三条 L3；产物进 `dist/client`，由已落地 Worker `[assets]` 托管。
 
 不做：平行控件库、本地 vendoring Basalt 源码、shadcn 再拷一份、Next.js、`@cloudflare/vite-plugin`、独立 Vite 开发服务器打 Worker API、GitLab、Device Flow、fine-grained PAT、LLM digest、Kanban、Mentions、Dependents、顶层 CI Health、应用内登录 / OAuth / session cookie。
 
@@ -24,10 +24,10 @@ Codex Sign Off 本文之前，禁止第 12 节步骤 1 及之后（含 Vite 脚�
 
 | 主题 | 决定 |
 |------|------|
-| 包 | `@nocoo/basalt@2.0.0`。从 npm 安装（临时允许的 registry）。禁止把 `../basalt` 源码拷进本仓，禁止 `file:` 依赖，禁止把镜像 URL 写进 `bun.lock`。岛内表面嵌套见 §5.2（2.0.0 用 `Primary` 当 Well） |
+| 包 | `@nocoo/basalt@2.0.2`。从 npm 安装（临时允许的 registry）。禁止把 `../basalt` 源码拷进本仓，禁止 `file:` 依赖，禁止把镜像 URL 写进 `bun.lock`。岛内表面嵌套见 §5.2 |
 | 控件 | 只用该包已发布的控件。根 barrel 没有的走 granular：`@nocoo/basalt/components/*`、`@nocoo/basalt/charts/*`。缺的用 HTML + 已有 Basalt 叶子，不自研第二套 widget |
 | 布局语言 | 参考 `/Users/nocoo/workspace/work/whiteboard/intentional-kusto-queries` 的 **壳**，不是拷它的组件。侧栏展开 260px / 收起 68px，`transition-all duration-300 ease-in-out`，sticky flex 子项（不是 `fixed` + spacer）。主区 **ContentIsland** 浮岛。跳过链接。顶栏高 14（`h-14`）面包屑。中文 UI |
-| 壳实现 | giraffe 的 `src/client/components/layout/*` **只组合** Basalt：`AppShell` / `AppMain` / `AppSkipLink`（`@nocoo/basalt/components/app-shell`，不在根 barrel）、`Sidebar*` + `ContentIsland`（根 barrel）、`ThemeProvider` / `ThemeToggle` / `LinkProvider`。禁止再写一套 `sidebar-context`。`AppMain` 必须传 `tabIndex={-1}`，否则 skip link 无法聚焦 |
+| 壳实现 | giraffe 的 `src/client/components/layout/*` **只组合** Basalt：`AppShell` / `AppMain` / `AppSkipLink`、`AppHeader`、`PageHeader`、`SectionRule`（均不在根 barrel）、`Sidebar*` + `ContentIsland`（根 barrel）、`ThemeProvider` / `ThemeToggle` / `LinkProvider`。禁止 `SidebarProvider`、禁止再写一套 `sidebar-context`。`AppMain` 必须传 `tabIndex={-1}`，否则 skip link 无法聚焦 |
 | 路由 | React Router SPA。路径与 01 §9 一致，见第 8 节。无 `/login` |
 | 分层 | MVVM。ViewModel 无 View/DOM/`@nocoo/basalt`/`react-dom` import。L1 覆盖率豁免：`src/client/routes/*.tsx` 与 `src/client/components/layout/**/*.tsx`（薄壳组合）。`main.tsx` / `app.tsx` 同样豁免（只挂 provider 与路由表） |
 | 出站 | 唯一 `fetch` 在 `src/client/lib/api.ts`。G1 `gate:client-fetch` 只接受**字面量**或以 `/api/` 开头的**模板字面量**。因此必须写成 `` fetch(`/api/${resource}`) `` 或 `` fetch(`/api/accounts/${id}/activate`) ``，禁止 `fetch(path)` 变量 |
@@ -99,7 +99,7 @@ tests/e2e/                         # L3；由 scripts/run-e2e-bdd.ts 跑
 | 构建 | Vite 8 + `@vitejs/plugin-react` + `@tailwindcss/vite`。`bun run dev` 开 HMR |
 | UI | React 19 + React Router |
 | 样式 | Tailwind CSS v4 + `@nocoo/basalt/styles/tailwind` |
-| 控件 | `@nocoo/basalt@2.0.0` |
+| 控件 | `@nocoo/basalt@2.0.2` |
 | 图标 | `lucide-react`（Basalt peer） |
 | 图表 | Basalt charts + peer `recharts@^3`（Traffic、Languages） |
 | Toast | Basalt `toast` / `Toaster`（根 barrel；底层 sonner） |
@@ -129,38 +129,40 @@ peers：`react` / `react-dom` ^19、`lucide-react`、`recharts` ^3。不用 `Dat
 ```
 [Skip link → #main-content]
 AppShell (flex h-screen)
-  SidebarProvider defaultWidth=260
-    Sidebar（收起 w-[68px]，展开 width=260）
-      SidebarHeader：标记 + 「Giraffe」+ 版本 pill + 折叠钮
-      SidebarNav：第 8 节条目
-      SidebarFooter：SidebarUser = GET /api/me 的 name/email/`avatar`（lizheng.blog）；ThemeToggle
-    AppMain tabIndex={-1}
-      header.h-14：移动端打开钮 + 面包屑；右侧 GitHub 外链 + ThemeToggle
-      ContentIsland：页面
+  Sidebar collapsed 状态（展开 260 / 收起 68；不要 SidebarProvider）
+    SidebarHeader：标记 + 「Giraffe」+ 版本 pill + 折叠钮
+    SidebarNav：第 8 节条目
+    SidebarFooter：SidebarUser = GET /api/me 的 name/email/`avatar`（lizheng.blog）
+  AppMain tabIndex={-1}
+    AppHeader h-14：移动端打开钮 + 祖先面包屑 + 当前页名；右侧 GitHub 外链 + ThemeToggle
+    island wrap px-2 pb-2 md:px-3 md:pb-3
+      ContentIsland：PageHeader 然后卡片
 Toaster
 ```
 
-移动端：`SidebarProvider overlay` 或 Basalt `Sheet` 打开同一套 `SidebarNav`。不要自写 overlay 动画。
+移动端：省略 in-flow 侧栏，同一套 `Sidebar` 放进左侧 `Sheet`（始终 `collapsed={false}`）。不要自写 overlay 动画。普通壳不要 `SidebarProvider`（那是 peek / overlay / resize 用的）。
 
 折叠态只显示图标（`SidebarIconItem`）。展开显示中文标签。
 
 ### 5.2 浮岛与四层亮度
 
-Basalt `ContentIsland` 已是 L1 岛。不要再包一层自定义 card 当岛。页面在岛内按 [INTEGRATION §14](https://github.com/nocoo/basalt/blob/main/INTEGRATION.md) 嵌套。`@nocoo/basalt@2.0.0` 尚无 `LayerCard.Well` 与 descendant `data-basalt-surface`：用 **Primary = Well（L3）**，**Secondary 或 Primary 子节点**把外壳切成 structured muted（L2）。禁止手写 `bg-card` / `bg-muted` 井。
+Basalt `ContentIsland` 已是 L1 岛。不要再包一层自定义 card 当岛。页面在岛内按 [INTEGRATION §13–15](https://github.com/nocoo/basalt/blob/main/INTEGRATION.md) 嵌套。`AppHeader.title` 是顶栏当前页（`text-sm`）；`PageHeader.title` 是岛内内容标题（`text-2xl`）。二者可以同词，角色不同。禁止自写第二套页头。`AppHeader` 已有面包屑时，`PageHeader` 不要再传 `breadcrumbs`。禁止手写 `bg-card` / `bg-muted` 井。
 
-| 层 | 何处 | 2.0.0 油漆 |
+| 层 | 何处 | 油漆 |
 |---|---|---|
 | L0 | `AppShell` | `bg-basalt-background` |
-| L1 | `ContentIsland` | 岛（card） |
-| L2 | 带 `Primary` 或 `Secondary` 的 `LayerCard` | `bg-basalt-muted` |
-| L3 | `LayerCard.Primary` | `bg-basalt-bright` |
+| L1 | `ContentIsland` | `--basalt-card` |
+| L2 | 岛上第一张 `LayerCard` | `--basalt-secondary` |
+| L3 | `LayerCard.Well`（`Primary` 是别名） | `--basalt-bright` |
 
-配方（对齐 Basalt `/layout`）：
+配方：
 
+- 每页先 `PageHeader`（flush，不包卡）。短筛选放 `actions`（刷新/创建最后）；两个及以上筛选放 `filters`。
+- 分区用 `SectionRule`。卡片标题留在 `LayerCard.Header`。
 - 非结构砖（网格仓卡、KPI）：岛上裸 `LayerCard padding="md"`，不要 Header/Body。
-- 表单 / 身份：`Secondary` 标题 + `Body`（控件留在 L2）。
-- 列表 / 表：岛内第一行单行高：左标题与副标题（`items-center`，不换行叠），右筛选与刷新。`SegmentControl` 在工具条里 `legend` 只给读屏（`sr-only`），禁止 legend 压在分段上面破坏行高。表只进 `LayerCard.Primary className="p-0"`。不要用 Basalt `PageHeader` 亮卡，不要把筛选放进 `LayerCard.Header`。
-- 空态用 `LayerCard.Empty`，仍在 `Primary` 里。
+- 表单 / 身份：`Header` + `Body`（控件留在 L2）。`Secondary` 是 `Header` 别名。
+- 列表 / 表：表只进 `LayerCard.Well className="p-0"`。`SegmentControl` 的 `legend` 只给读屏（`sr-only`）。
+- 空态用 `LayerCard.Empty`，仍在 `Well` 里。
 - `Table`、列表、图表 **不得** 直接做 `ContentIsland` 的子节点。
 - `StatStrip` 自己已是 muted 砖，不要再套一层 `LayerCard`。
 
@@ -169,9 +171,10 @@ Basalt `ContentIsland` 已是 L1 岛。不要再包一层自定义 card 当岛�
 | 用途 | 控件 | 导入 |
 |------|------|------|
 | 壳 | `AppShell` `AppMain` `AppSkipLink` | `@nocoo/basalt/components/app-shell` |
-| 侧栏 / 岛 | `Sidebar*` `ContentIsland` `SidebarProvider` | `@nocoo/basalt` |
-| 岛内页头 | `Text` 经 `PageToolbar` | `@nocoo/basalt` |
-| 面包屑 | `Breadcrumbs`（若 PageHeader 不够） | `@nocoo/basalt/components/breadcrumbs` |
+| 侧栏 / 岛 | `Sidebar*` `ContentIsland` | `@nocoo/basalt` |
+| 顶栏 | `AppHeader` | `@nocoo/basalt/components/app-header` |
+| 岛内页头 | `PageHeader` | `@nocoo/basalt/components/page-header` |
+| 分区 | `SectionRule` | `@nocoo/basalt/components/section-rule` |
 | 按钮 / 输入 / 字段 | `Button` `Input` `Field` `Label` | `@nocoo/basalt` |
 | PAT | `SensitiveInput` | `@nocoo/basalt/components/sensitive-input` |
 | 列表 | `Table` `TableHeader` `TableBody` `TableRow` `TableCell` | `@nocoo/basalt/components/table` |
@@ -330,7 +333,7 @@ HTTP **200** 体有两种（04）：
 
 ### 8.1 `/` 仓库
 
-`PageToolbar` 左「仓库」+ 副标题，右搜索、`SegmentControl` 列表|网格、排序、刷新。排序状态在 VM，点表头调用 VM，不靠 Table 内置排序。
+`PageHeader` 标题「仓库」+ 副标题。`actions`：截断/不完整 Badge 与刷新。`filters`：搜索、`SegmentControl` 排序与列表|网格。排序状态在 VM，点表头调用 VM，不靠 Table 内置排序。
 
 列表：`Table` 列 = 仓库、语言、★、fork、open issues、最近 push、可见性、health（若 insights 已在内存则显示，没有则不加列；只读内存，不 GET、不为此自动刷 insights）。`insights.alerts_incomplete === true` 时 health 旁 Badge「告警不完整」，不得把 `strong` 理解成已扫完全部安全告警。不另 GET alerts 来推断该标记。
 
@@ -381,7 +384,7 @@ HTTP **200** 体有两种（04）：
 
 ### 8.8 `/settings`
 
-`PageToolbar`「设置」。`GET /api/me` 展示 Access 身份与 lizheng.blog 头像（非 GitHub）。
+`PageHeader`「设置」。`SectionRule` 分「身份」与「GitHub 账号」。`GET /api/me` 展示 Access 身份与 lizheng.blog 头像（非 GitHub）。
 
 账号表：login、avatar、`token_last4`、scopes、是否当前。无 token 列。
 
