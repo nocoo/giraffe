@@ -11,6 +11,7 @@ import { Outlet, useLocation, useNavigate } from "react-router";
 import { subscribeErrorUi } from "../../lib/error-ui";
 import { headerCrumbs, headerTitle } from "../../lib/navigation";
 import { AppSidebar } from "./app-sidebar";
+import { GithubIcon } from "./github-icon";
 import { useIsMobile } from "./use-mobile";
 
 export function AppShell() {
@@ -86,7 +87,21 @@ export function AppShell() {
 					}
 					breadcrumbs={crumbs}
 					title={title}
-					actions={<ThemeToggle aria-label={`切换主题（当前 ${theme}）`} />}
+					actions={
+						<>
+							<Button variant="ghost" size="icon" className="h-8 w-8" asChild>
+								<a
+									href="https://github.com/nocoo/giraffe"
+									target="_blank"
+									rel="noopener noreferrer"
+									aria-label="GitHub"
+								>
+									<GithubIcon className="h-[18px] w-[18px]" strokeWidth={1.5} />
+								</a>
+							</Button>
+							<ThemeToggle aria-label={`切换主题（当前 ${theme}）`} />
+						</>
+					}
 				/>
 				<div className="flex min-h-0 flex-1 flex-col px-2 pb-2 md:px-3 md:pb-3">
 					<ContentIsland>

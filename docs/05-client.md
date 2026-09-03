@@ -135,7 +135,7 @@ AppShell (flex h-screen)
       SidebarNav：第 8 节条目
       SidebarFooter：SidebarUser = GET /api/me 的 name/email/`avatar`（lizheng.blog）；ThemeToggle
     AppMain tabIndex={-1}
-      header.h-14：移动端打开钮 + 面包屑
+      header.h-14：移动端打开钮 + 面包屑；右侧 GitHub 外链 + ThemeToggle
       ContentIsland：页面
 Toaster
 ```
