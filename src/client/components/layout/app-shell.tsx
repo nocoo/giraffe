@@ -3,6 +3,8 @@ import { AppHeader } from "@nocoo/basalt/components/app-header";
 import { AppMain, AppSkipLink, AppShell as Shell } from "@nocoo/basalt/components/app-shell";
 import { Banner } from "@nocoo/basalt/components/banner";
 import { Empty } from "@nocoo/basalt/components/empty";
+import { LayerCard } from "@nocoo/basalt/components/layer-card";
+import { PageHeader } from "@nocoo/basalt/components/page-header";
 import { ThemeToggle } from "@nocoo/basalt/components/theme-toggle";
 import { useTheme } from "@nocoo/basalt/providers/theme";
 import { Menu, ShieldAlert } from "lucide-react";
@@ -106,11 +108,21 @@ export function AppShell() {
 				<div className="flex min-h-0 flex-1 flex-col px-2 pb-2 md:px-3 md:pb-3">
 					<ContentIsland>
 						{accessDenied ? (
-							<Empty
-								icon={<ShieldAlert />}
-								title="未通过 Access"
-								description="此应用需要 Cloudflare Access 身份。"
-							/>
+							<div className="space-y-8">
+								<PageHeader
+									title="未通过 Access"
+									description="此应用需要 Cloudflare Access 身份。"
+								/>
+								<LayerCard>
+									<LayerCard.Well>
+										<Empty
+											icon={<ShieldAlert />}
+											title="未通过 Access"
+											description="此应用需要 Cloudflare Access 身份。"
+										/>
+									</LayerCard.Well>
+								</LayerCard>
+							</div>
 						) : (
 							<>
 								{accountMissing ? (
