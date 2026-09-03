@@ -158,7 +158,7 @@ Basalt `ContentIsland` 已是 L1 岛。不要再包一层自定义 card 当岛�
 
 - 非结构砖（网格仓卡、KPI）：岛上裸 `LayerCard padding="md"`，不要 Header/Body。
 - 表单 / 身份：`Secondary` 标题 + `Body`（控件留在 L2）。
-- 列表 / 表：岛内第一行是标题+副标题 | 筛选与刷新（`PageToolbar`，左 `Text` 标题/副标题，右 Input / SegmentControl / 刷新）。表只进 `LayerCard.Primary className="p-0"`。不要用 Basalt `PageHeader` 亮卡，不要把筛选放进 `LayerCard.Header`。
+- 列表 / 表：岛内第一行单行高：左标题与副标题（`items-center`，不换行叠），右筛选与刷新。`SegmentControl` 在工具条里 `legend` 只给读屏（`sr-only`），禁止 legend 压在分段上面破坏行高。表只进 `LayerCard.Primary className="p-0"`。不要用 Basalt `PageHeader` 亮卡，不要把筛选放进 `LayerCard.Header`。
 - 空态用 `LayerCard.Empty`，仍在 `Primary` 里。
 - `Table`、列表、图表 **不得** 直接做 `ContentIsland` 的子节点。
 - `StatStrip` 自己已是 muted 砖，不要再套一层 `LayerCard`。

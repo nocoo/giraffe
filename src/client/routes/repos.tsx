@@ -11,7 +11,7 @@ import {
 import { Box } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { PageSkeleton } from "../components/layout/page-skeleton";
-import { PageToolbar } from "../components/layout/page-toolbar";
+import { INLINE_SEGMENT, PageToolbar } from "../components/layout/page-toolbar";
 import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad, missingTitle } from "../lib/error-ui";
 import {
@@ -108,10 +108,11 @@ export function ReposPage() {
 				onChange={(event) => setQuery(event.target.value)}
 				placeholder="搜索仓库"
 				aria-label="搜索仓库"
-				className="w-full md:w-56"
+				className="w-56 shrink-0"
 			/>
 			<SegmentControl
 				legend="排序"
+				className={INLINE_SEGMENT}
 				value={sort}
 				onValueChange={(value) => setSort(value as SortKey)}
 				options={[
@@ -122,6 +123,7 @@ export function ReposPage() {
 			/>
 			<SegmentControl
 				legend="视图"
+				className={INLINE_SEGMENT}
 				value={view}
 				onValueChange={(value) => setView(value as ViewMode)}
 				options={[

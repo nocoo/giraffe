@@ -62,7 +62,7 @@ export function IssuesPage() {
 				onChange={(event) => setQuery(event.target.value)}
 				placeholder="搜索仓库或标题"
 				aria-label="搜索 Issues"
-				className="w-full md:w-56"
+				className="w-56 shrink-0"
 			/>
 			<RefreshButton
 				run={() => requestRefresh(["issues"]).then(() => loadIssues().then(setSnap))}

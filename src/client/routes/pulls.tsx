@@ -101,7 +101,7 @@ export function PullsPage() {
 							onChange={(event) => setQuery(event.target.value)}
 							placeholder="搜索仓库或标题"
 							aria-label="搜索 Pull Requests"
-							className="w-full md:w-56"
+							className="w-56 shrink-0"
 						/>
 						<RefreshButton
 							run={() => requestRefresh(["prs"]).then(() => loadPulls().then(setSnap))}

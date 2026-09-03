@@ -11,7 +11,7 @@ import {
 import { Activity } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { PageSkeleton } from "../components/layout/page-skeleton";
-import { PageToolbar } from "../components/layout/page-toolbar";
+import { INLINE_SEGMENT, PageToolbar } from "../components/layout/page-toolbar";
 import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad, missingTitle } from "../lib/error-ui";
 import { formatHealth, healthBadgeVariant } from "../lib/format";
@@ -110,6 +110,7 @@ export function InsightsPage() {
 						{incomplete ? <Badge variant="warning">告警不完整</Badge> : null}
 						<SegmentControl
 							legend="健康"
+							className={INLINE_SEGMENT}
 							value={health}
 							onValueChange={(value) => setHealth(value as Health | "all")}
 							options={[
