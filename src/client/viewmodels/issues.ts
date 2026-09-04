@@ -47,6 +47,14 @@ export function visibleIssues(issues: IssueRow[], query: string, key: IssueSort)
 	return sortIssues(filterIssues(issues, query), key);
 }
 
+export function issueMetrics(issues: IssueRow[]): { count: number; repos: number } {
+	const repos = new Set<string>();
+	for (const row of issues) {
+		repos.add(row.name_with_owner);
+	}
+	return { count: issues.length, repos: repos.size };
+}
+
 export async function loadIssues(): Promise<IssuesSnapshot | { missing: true }> {
 	return loadKind<IssuesSnapshot>("issues");
 }

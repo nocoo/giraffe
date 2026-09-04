@@ -15,6 +15,7 @@ import { DonutChart } from "@nocoo/basalt/charts/donut";
 import { DescriptionList } from "@nocoo/basalt/components/description-list";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
+import { SectionRule } from "@nocoo/basalt/components/section-rule";
 import {
 	Table,
 	TableBody,
@@ -27,15 +28,21 @@ import {
 	Box,
 	Bug,
 	CircleDot,
+	Code2,
 	Download,
 	Eye,
+	FolderDown,
 	GitFork,
 	GitPullRequest,
+	Play,
 	ShieldAlert,
 	Star,
+	Tag,
+	Users,
 } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router";
+import { ChartBrick, ChartEmpty, ChartRow } from "../components/layout/chart-brick";
 import { Kpi, KpiRow } from "../components/layout/kpi";
 import {
 	ChartSkeleton,
@@ -472,9 +479,8 @@ export function RepoDetailPage() {
 								<Kpi icon={GitFork} label="Forks" value={formatCount(snap.fork_count)} />
 								<Kpi icon={CircleDot} label="Issues" value={formatCount(snap.open_issue_count)} />
 							</KpiRow>
-							<LayerCard>
-								<LayerCard.Header>概览</LayerCard.Header>
-								<LayerCard.Body>
+							<SectionRule title="概览">
+								<LayerCard padding="md">
 									<DescriptionList columns={2}>
 										<DescriptionList.Item term="默认分支">
 											{snap.default_branch}
@@ -496,19 +502,19 @@ export function RepoDetailPage() {
 											</Link>
 										</DescriptionList.Item>
 									</DescriptionList>
-								</LayerCard.Body>
-							</LayerCard>
+								</LayerCard>
+							</SectionRule>
 						</div>
 					) : null}
 				</TabsContent>
 				<TabsContent value="actions">
 					{actions && "missing" in actions ? (
 						<TabWell>
-							<LayerCard.Empty title="没有快照" />
+							<LayerCard.Empty icon={<Play />} title="没有快照" />
 						</TabWell>
 					) : actions && actions.runs.length === 0 ? (
 						<TabWell>
-							<LayerCard.Empty title="没有 workflow runs" />
+							<LayerCard.Empty icon={<Play />} title="没有 workflow runs" />
 						</TabWell>
 					) : actions ? (
 						<TabWell flush>
@@ -564,11 +570,11 @@ export function RepoDetailPage() {
 				<TabsContent value="releases">
 					{releases && "missing" in releases ? (
 						<TabWell>
-							<LayerCard.Empty title="没有快照" />
+							<LayerCard.Empty icon={<Tag />} title="没有快照" />
 						</TabWell>
 					) : releases && releases.releases.length === 0 ? (
 						<TabWell>
-							<LayerCard.Empty title="没有 Release" />
+							<LayerCard.Empty icon={<Tag />} title="没有 Release" />
 						</TabWell>
 					) : releases ? (
 						<TabWell flush>
@@ -604,11 +610,11 @@ export function RepoDetailPage() {
 				<TabsContent value="security">
 					{security && "missing" in security ? (
 						<TabWell>
-							<LayerCard.Empty title="没有快照" />
+							<LayerCard.Empty icon={<ShieldAlert />} title="没有快照" />
 						</TabWell>
 					) : security && securityUnavailable(security) ? (
 						<TabWell>
-							<LayerCard.Empty title="无权限" />
+							<LayerCard.Empty icon={<ShieldAlert />} title="无权限" />
 						</TabWell>
 					) : security ? (
 						<KpiRow>
@@ -624,11 +630,11 @@ export function RepoDetailPage() {
 				<TabsContent value="issues">
 					{issues && "missing" in issues ? (
 						<TabWell>
-							<LayerCard.Empty title="没有快照" />
+							<LayerCard.Empty icon={<CircleDot />} title="没有快照" />
 						</TabWell>
 					) : issues && issues.issues.length === 0 ? (
 						<TabWell>
-							<LayerCard.Empty title="没有 Issue" />
+							<LayerCard.Empty icon={<CircleDot />} title="没有 Issue" />
 						</TabWell>
 					) : issues ? (
 						<TabWell flush>
@@ -750,21 +756,48 @@ export function RepoDetailPage() {
 				<TabsContent value="traffic">
 					{traffic && "missing" in traffic ? (
 						<TabWell>
-							<LayerCard.Empty title="没有快照" />
+							<LayerCard.Empty icon={<Eye />} title="没有快照" />
 						</TabWell>
 					) : traffic && trafficForbidden(traffic) ? (
 						<TabWell>
-							<LayerCard.Empty title="无 Traffic 权限" />
+							<LayerCard.Empty icon={<Eye />} title="无 Traffic 权限" />
 						</TabWell>
 					) : traffic ? (
 						<div className="flex flex-col gap-4">
 							<KpiRow>
 								<Kpi icon={Eye} label="浏览" value={formatCount(traffic.views.count)} />
+								<Kpi icon={Users} label="独立访客" value={formatCount(traffic.views.uniques)} />
 								<Kpi icon={Download} label="克隆" value={formatCount(traffic.clones.count)} />
+								<Kpi
+									icon={FolderDown}
+									label="独立克隆"
+									value={formatCount(traffic.clones.uniques)}
+								/>
 							</KpiRow>
-							<TabWell>
-								<AreaChart data={trafficPoints(traffic.views.points)} ariaLabel="views" />
-							</TabWell>
+							<ChartRow>
+								<ChartBrick title="浏览">
+									{traffic.views.points.length > 0 ? (
+										<AreaChart
+											data={trafficPoints(traffic.views.points)}
+											ariaLabel="views"
+											className="h-full w-full"
+										/>
+									) : (
+										<ChartEmpty label="没有浏览数据" />
+									)}
+								</ChartBrick>
+								<ChartBrick title="克隆">
+									{traffic.clones.points.length > 0 ? (
+										<AreaChart
+											data={trafficPoints(traffic.clones.points)}
+											ariaLabel="clones"
+											className="h-full w-full"
+										/>
+									) : (
+										<ChartEmpty label="没有克隆数据" />
+									)}
+								</ChartBrick>
+							</ChartRow>
 						</div>
 					) : (
 						<DetailSkeleton label="加载 Traffic" />
@@ -773,16 +806,22 @@ export function RepoDetailPage() {
 				<TabsContent value="languages">
 					{languages && "missing" in languages ? (
 						<TabWell>
-							<LayerCard.Empty title="没有快照" />
+							<LayerCard.Empty icon={<Code2 />} title="没有快照" />
 						</TabWell>
 					) : languages && Object.keys(languages.languages).length === 0 ? (
 						<TabWell>
-							<LayerCard.Empty title="没有语言数据" />
+							<LayerCard.Empty icon={<Code2 />} title="没有语言数据" />
 						</TabWell>
 					) : languages ? (
-						<TabWell>
-							<DonutChart data={sortedLanguages(languages.languages)} ariaLabel="languages" />
-						</TabWell>
+						<ChartBrick title="语言">
+							<DonutChart
+								data={sortedLanguages(languages.languages)}
+								ariaLabel="languages"
+								className="h-full w-full"
+								showLegend
+								valueFormatter={formatCount}
+							/>
+						</ChartBrick>
 					) : (
 						<ChartSkeleton label="加载语言" />
 					)}
@@ -790,11 +829,11 @@ export function RepoDetailPage() {
 				<TabsContent value="contributors">
 					{contributors && "missing" in contributors ? (
 						<TabWell>
-							<LayerCard.Empty title="没有快照" />
+							<LayerCard.Empty icon={<Users />} title="没有快照" />
 						</TabWell>
 					) : contributors && contributors.contributors.length === 0 ? (
 						<TabWell>
-							<LayerCard.Empty title="没有贡献者" />
+							<LayerCard.Empty icon={<Users />} title="没有贡献者" />
 						</TabWell>
 					) : contributors ? (
 						<TabWell>

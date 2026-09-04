@@ -340,9 +340,11 @@ HTTP **200** 体有两种（04）：
 
 `PageHeader` 标题「仓库」+ 副标题。`actions`：截断/不完整 Badge 与刷新。`filters`：搜索、`SegmentControl` 排序与列表|网格。排序状态在 VM，点表头调用 VM，不靠 Table 内置排序。
 
+KPI（裸 `LayerCard padding="md"`，主题色 icon）：仓库数 / Stars / Forks / Issues，由 `repoMetrics` 从快照合计。其下 `SectionRule`「仓库」。
+
 列表：`Table` 列 = 仓库、语言、★、fork、open issues、最近 push、可见性、health（若 insights 已在内存则显示，没有则不加列；只读内存，不 GET、不为此自动刷 insights）。`insights.alerts_incomplete === true` 时 health 旁 Badge「告警不完整」，不得把 `strong` 理解成已扫完全部安全告警。不另 GET alerts 来推断该标记。
 
-网格：`LayerCard` 卡，点整卡进 `/repos/:owner/:name`。
+网格：`LayerCard padding="md"` 卡（主题色 Star icon），点整卡进 `/repos/:owner/:name`。
 
 字段用 03 `repos[]`。`truncated: true` 时 PageHeader 下 `Badge`「已截断」。
 
@@ -351,6 +353,8 @@ HTTP **200** 体有两种（04）：
 ### 8.2 `/issues` `/pulls`
 
 跨仓表。列：仓、编号、标题（外链 `url`，`target=_blank`）、作者、更新时间；PR 另加 draft、review、+add/−del。Client 侧按仓 / 标题过滤。不改 GET query。
+
+Issues KPI：打开 Issues / 涉及仓库（`issueMetrics`）。PRs KPI：草稿 / 待审查 / 需修改 / 已批准（`pullMetrics`，草稿优先）。表在 `SectionRule` 内。
 
 ### 8.3 `/insights`
 
@@ -378,13 +382,13 @@ KPI：stars / forks / open issues 的 delta。`baseline_missing` → 文案「�
 
 | Tab | GET | 要点 |
 |-----|-----|------|
-| 概览 | `.../:owner/:name` | 描述、★、fork、issues、默认分支、license、外链 GitHub |
-| Security | `/security` | `unavailable` 空态；否则 open 计数 |
-| Actions | `/actions` | runs 表，conclusion Badge |
+| 概览 | `.../:owner/:name` | Stars/Forks/Issues KPI；`SectionRule` 概览 + `DescriptionList`（无 `LayerCard.Header`） |
+| Security | `/security` | `unavailable` 空态（ShieldAlert）；否则 Dependabot / Code scanning KPI |
+| Actions | `/actions` | runs 表，conclusion Badge；空态 Play icon |
 | PRs / Issues | `/prs` `/issues` | 同跨仓列，无仓列 |
 | Releases | `/releases` | tag、时间、prerelease |
-| Traffic | `/traffic` | `forbidden` → Empty「无 Traffic 权限」；否则 views/clones KPI + 面积图 |
-| Languages | `/languages` | Donut，字节数 |
+| Traffic | `/traffic` | `forbidden` → Empty「无 Traffic 权限」；否则浏览/独立访客/克隆/独立克隆 KPI + 两张图卡（一卡一图） |
+| Languages | `/languages` | 图卡 Donut，字节数 |
 | Contributors | `/contributors` | Avatar + login + contributions |
 
 侧栏「仓库」在钻取时保持祖先高亮。

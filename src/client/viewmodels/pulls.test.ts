@@ -1,6 +1,13 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { filterPulls, loadPulls, type PullRow, sortPulls, visiblePulls } from "./pulls";
+import {
+	filterPulls,
+	loadPulls,
+	type PullRow,
+	pullMetrics,
+	sortPulls,
+	visiblePulls,
+} from "./pulls";
 import { setActiveAccountId } from "./session";
 import { clearSnapshots } from "./snapshot";
 
@@ -52,6 +59,36 @@ describe("pulls viewmodel", () => {
 		expect(sortPulls(sample, "updated").map((row) => row.number)).toEqual([9, 2]);
 		expect(sortPulls(sample, "repo").map((row) => row.number)).toEqual([9, 2]);
 		expect(visiblePulls(sample, "login", "updated").map((row) => row.number)).toEqual([2]);
+		expect(pullMetrics([])).toEqual({
+			draft: 0,
+			reviewRequired: 0,
+			changesRequested: 0,
+			approved: 0,
+		});
+		expect(pullMetrics(sample)).toEqual({
+			draft: 1,
+			reviewRequired: 0,
+			changesRequested: 0,
+			approved: 1,
+		});
+		const approved = sample.find((row) => row.number === 2);
+		expect(approved).toBeDefined();
+		if (!approved) {
+			return;
+		}
+		expect(
+			pullMetrics([
+				...sample,
+				{ ...approved, number: 3, is_draft: false, review_decision: "REVIEW_REQUIRED" },
+				{ ...approved, number: 4, is_draft: false, review_decision: "CHANGES_REQUESTED" },
+				{ ...approved, number: 5, is_draft: false, review_decision: null },
+			]),
+		).toEqual({
+			draft: 1,
+			reviewRequired: 1,
+			changesRequested: 1,
+			approved: 1,
+		});
 	});
 
 	it("loads prs after session and maps snapshot_missing", async () => {

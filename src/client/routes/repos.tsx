@@ -1,6 +1,7 @@
 import { Badge, Input, Link, SegmentControl, toast } from "@nocoo/basalt";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
+import { SectionRule } from "@nocoo/basalt/components/section-rule";
 import {
 	Table,
 	TableBody,
@@ -9,8 +10,9 @@ import {
 	TableHeader,
 	TableRow,
 } from "@nocoo/basalt/components/table";
-import { Box } from "lucide-react";
+import { Box, CircleDot, GitFork, Star } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { Kpi, KpiRow } from "../components/layout/kpi";
 import { LanguageLabel } from "../components/layout/labels";
 import { TableSkeleton } from "../components/layout/page-skeleton";
 import { RefreshButton } from "../components/layout/refresh-button";
@@ -42,6 +44,7 @@ import {
 	loadInsightsOptional,
 	loadRepos,
 	type ReposSnapshot,
+	repoMetrics,
 	type SortKey,
 	type ViewMode,
 	visibleRepos,
@@ -182,6 +185,8 @@ export function ReposPage() {
 		);
 	}
 
+	const metrics = repoMetrics(snap.repos);
+
 	return (
 		<div className="space-y-8">
 			<PageHeader
@@ -198,144 +203,157 @@ export function ReposPage() {
 				}
 				filters={filters}
 			/>
-			{rows.length === 0 ? (
-				<LayerCard>
-					<LayerCard.Well>
-						<LayerCard.Empty icon={<Box />} title="没有仓库" />
-					</LayerCard.Well>
-				</LayerCard>
-			) : view === "grid" ? (
-				<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" data-testid="repo-list">
-					{rows.map((row) => {
-						const status = health.get(row.name_with_owner);
-						return (
-							<Link
-								key={row.name_with_owner}
-								href={`/repos/${row.owner_login}/${row.name}`}
-								className="text-basalt-foreground no-underline hover:no-underline"
-							>
-								<LayerCard padding="md" className="h-full">
-									<div className="flex items-start justify-between gap-2">
-										<p className="truncate font-medium">{row.name_with_owner}</p>
-										{status ? (
-											<Badge variant={healthBadgeVariant(status)}>{formatHealth(status)}</Badge>
-										) : null}
-									</div>
-									<p className="mt-2 line-clamp-2 text-sm text-basalt-muted-foreground">
-										{row.description ?? "没有描述"}
-									</p>
-									<div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-basalt-muted-foreground">
-										<LanguageLabel name={row.primary_language} />
-										<span>·</span>
-										<span className="tabular-nums">★ {formatCount(row.stargazer_count)}</span>
-										<Badge variant={visibilityBadgeVariant(row.visibility)}>
-											{formatVisibility(row.visibility)}
-										</Badge>
-										{row.is_archived ? <Badge variant="orange">归档</Badge> : null}
-										{row.is_fork ? <Badge variant="teal">Fork</Badge> : null}
-									</div>
-								</LayerCard>
-							</Link>
-						);
-					})}
-				</div>
-			) : (
-				<LayerCard>
-					<LayerCard.Well className="p-0">
-						<Table data-testid="repo-list">
-							<TableHeader>
-								<TableRow>
-									<TableHead>
-										<SortButton
-											label="仓库"
-											active={sort === "name"}
-											onClick={() => setSort("name")}
-										/>
-									</TableHead>
-									<TableHead>标记</TableHead>
-									<TableHead>语言</TableHead>
-									<TableHead className={NUM_HEAD}>
-										<SortButton
-											label="★"
-											active={sort === "stars"}
-											onClick={() => setSort("stars")}
-										/>
-									</TableHead>
-									<TableHead className={NUM_HEAD}>Fork</TableHead>
-									<TableHead className={NUM_HEAD}>Issues</TableHead>
-									<TableHead>活跃</TableHead>
-									<TableHead className={NUM_HEAD}>
-										<SortButton
-											label="最近推送"
-											active={sort === "pushed"}
-											onClick={() => setSort("pushed")}
-										/>
-									</TableHead>
-									{health.size > 0 ? <TableHead>健康</TableHead> : null}
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{rows.map((row) => {
-									const status = health.get(row.name_with_owner);
-									const days = daysBetween(snap.fetched_at, row.pushed_at);
-									return (
-										<TableRow key={row.name_with_owner}>
-											<TableCell>
-												<Link href={`/repos/${row.owner_login}/${row.name}`}>
-													{row.name_with_owner}
-												</Link>
-											</TableCell>
-											<TableCell>
-												<div className="flex flex-wrap gap-1">
-													<Badge variant={visibilityBadgeVariant(row.visibility)}>
-														{formatVisibility(row.visibility)}
-													</Badge>
-													{row.is_archived ? <Badge variant="orange">归档</Badge> : null}
-													{row.is_fork ? <Badge variant="teal">Fork</Badge> : null}
-												</div>
-											</TableCell>
-											<TableCell>
-												<LanguageLabel name={row.primary_language} />
-											</TableCell>
-											<TableCell className={NUM_CELL}>{formatCount(row.stargazer_count)}</TableCell>
-											<TableCell className={NUM_CELL}>{formatCount(row.fork_count)}</TableCell>
-											<TableCell>
-												<div className="flex items-center justify-end gap-2">
-													<Meter
-														filled={meterFilled(row.open_issue_count, peakIssues)}
-														tone="bg-basalt-primary"
-														label={`${row.name_with_owner} issues`}
-													/>
-													<span className={NUM_CELL}>{formatCount(row.open_issue_count)}</span>
-												</div>
-											</TableCell>
-											<TableCell>
-												<Meter
-													filled={freshnessFilled(days)}
-													tone={freshnessTone(days)}
-													label={`${row.name_with_owner} activity`}
-												/>
-											</TableCell>
-											<TableCell className={DATE_CELL}>{formatDate(row.pushed_at)}</TableCell>
-											{health.size > 0 ? (
-												<TableCell>
-													{status ? (
-														<Badge variant={healthBadgeVariant(status)}>
-															{formatHealth(status)}
-														</Badge>
-													) : (
-														"—"
-													)}
-												</TableCell>
+			<KpiRow>
+				<Kpi icon={Box} label="仓库" value={formatCount(metrics.count)} />
+				<Kpi icon={Star} label="Stars" value={formatCount(metrics.stars)} />
+				<Kpi icon={GitFork} label="Forks" value={formatCount(metrics.forks)} />
+				<Kpi icon={CircleDot} label="Issues" value={formatCount(metrics.issues)} />
+			</KpiRow>
+			<SectionRule title="仓库">
+				{rows.length === 0 ? (
+					<LayerCard>
+						<LayerCard.Well>
+							<LayerCard.Empty icon={<Box />} title="没有仓库" />
+						</LayerCard.Well>
+					</LayerCard>
+				) : view === "grid" ? (
+					<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" data-testid="repo-list">
+						{rows.map((row) => {
+							const status = health.get(row.name_with_owner);
+							return (
+								<Link
+									key={row.name_with_owner}
+									href={`/repos/${row.owner_login}/${row.name}`}
+									className="text-basalt-foreground no-underline hover:no-underline"
+								>
+									<LayerCard padding="md" className="h-full">
+										<div className="flex items-start justify-between gap-2">
+											<p className="truncate font-medium">{row.name_with_owner}</p>
+											{status ? (
+												<Badge variant={healthBadgeVariant(status)}>{formatHealth(status)}</Badge>
 											) : null}
-										</TableRow>
-									);
-								})}
-							</TableBody>
-						</Table>
-					</LayerCard.Well>
-				</LayerCard>
-			)}
+										</div>
+										<p className="mt-2 line-clamp-2 text-sm text-basalt-muted-foreground">
+											{row.description ?? "没有描述"}
+										</p>
+										<div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-basalt-muted-foreground">
+											<LanguageLabel name={row.primary_language} />
+											<span>·</span>
+											<span className="inline-flex items-center gap-1 tabular-nums">
+												<Star className="size-3 text-basalt-primary" strokeWidth={1.5} />
+												{formatCount(row.stargazer_count)}
+											</span>
+											<Badge variant={visibilityBadgeVariant(row.visibility)}>
+												{formatVisibility(row.visibility)}
+											</Badge>
+											{row.is_archived ? <Badge variant="orange">归档</Badge> : null}
+											{row.is_fork ? <Badge variant="teal">Fork</Badge> : null}
+										</div>
+									</LayerCard>
+								</Link>
+							);
+						})}
+					</div>
+				) : (
+					<LayerCard>
+						<LayerCard.Well className="p-0">
+							<Table data-testid="repo-list">
+								<TableHeader>
+									<TableRow>
+										<TableHead>
+											<SortButton
+												label="仓库"
+												active={sort === "name"}
+												onClick={() => setSort("name")}
+											/>
+										</TableHead>
+										<TableHead>标记</TableHead>
+										<TableHead>语言</TableHead>
+										<TableHead className={NUM_HEAD}>
+											<SortButton
+												label="★"
+												active={sort === "stars"}
+												onClick={() => setSort("stars")}
+											/>
+										</TableHead>
+										<TableHead className={NUM_HEAD}>Fork</TableHead>
+										<TableHead className={NUM_HEAD}>Issues</TableHead>
+										<TableHead>活跃</TableHead>
+										<TableHead className={NUM_HEAD}>
+											<SortButton
+												label="最近推送"
+												active={sort === "pushed"}
+												onClick={() => setSort("pushed")}
+											/>
+										</TableHead>
+										{health.size > 0 ? <TableHead>健康</TableHead> : null}
+									</TableRow>
+								</TableHeader>
+								<TableBody>
+									{rows.map((row) => {
+										const status = health.get(row.name_with_owner);
+										const days = daysBetween(snap.fetched_at, row.pushed_at);
+										return (
+											<TableRow key={row.name_with_owner}>
+												<TableCell>
+													<Link href={`/repos/${row.owner_login}/${row.name}`}>
+														{row.name_with_owner}
+													</Link>
+												</TableCell>
+												<TableCell>
+													<div className="flex flex-wrap gap-1">
+														<Badge variant={visibilityBadgeVariant(row.visibility)}>
+															{formatVisibility(row.visibility)}
+														</Badge>
+														{row.is_archived ? <Badge variant="orange">归档</Badge> : null}
+														{row.is_fork ? <Badge variant="teal">Fork</Badge> : null}
+													</div>
+												</TableCell>
+												<TableCell>
+													<LanguageLabel name={row.primary_language} />
+												</TableCell>
+												<TableCell className={NUM_CELL}>
+													{formatCount(row.stargazer_count)}
+												</TableCell>
+												<TableCell className={NUM_CELL}>{formatCount(row.fork_count)}</TableCell>
+												<TableCell>
+													<div className="flex items-center justify-end gap-2">
+														<Meter
+															filled={meterFilled(row.open_issue_count, peakIssues)}
+															tone="bg-basalt-primary"
+															label={`${row.name_with_owner} issues`}
+														/>
+														<span className={NUM_CELL}>{formatCount(row.open_issue_count)}</span>
+													</div>
+												</TableCell>
+												<TableCell>
+													<Meter
+														filled={freshnessFilled(days)}
+														tone={freshnessTone(days)}
+														label={`${row.name_with_owner} activity`}
+													/>
+												</TableCell>
+												<TableCell className={DATE_CELL}>{formatDate(row.pushed_at)}</TableCell>
+												{health.size > 0 ? (
+													<TableCell>
+														{status ? (
+															<Badge variant={healthBadgeVariant(status)}>
+																{formatHealth(status)}
+															</Badge>
+														) : (
+															"—"
+														)}
+													</TableCell>
+												) : null}
+											</TableRow>
+										);
+									})}
+								</TableBody>
+							</Table>
+						</LayerCard.Well>
+					</LayerCard>
+				)}
+			</SectionRule>
 		</div>
 	);
 }

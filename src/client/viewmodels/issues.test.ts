@@ -1,6 +1,13 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { filterIssues, type IssueRow, loadIssues, sortIssues, visibleIssues } from "./issues";
+import {
+	filterIssues,
+	type IssueRow,
+	issueMetrics,
+	loadIssues,
+	sortIssues,
+	visibleIssues,
+} from "./issues";
 import { setActiveAccountId } from "./session";
 import { clearSnapshots } from "./snapshot";
 
@@ -44,6 +51,9 @@ describe("issues viewmodel", () => {
 		expect(sortIssues(sample, "updated").map((row) => row.number)).toEqual([4, 1]);
 		expect(sortIssues(sample, "repo").map((row) => row.number)).toEqual([4, 1]);
 		expect(visibleIssues(sample, "hello", "updated").map((row) => row.number)).toEqual([1]);
+		expect(issueMetrics([])).toEqual({ count: 0, repos: 0 });
+		expect(issueMetrics(sample)).toEqual({ count: 2, repos: 2 });
+		expect(issueMetrics(filterIssues(sample, "hello"))).toEqual({ count: 1, repos: 1 });
 	});
 
 	it("loads issues after session and maps snapshot_missing", async () => {

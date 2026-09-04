@@ -63,17 +63,13 @@ export function DetailSkeleton({ label }: { label: string }) {
 					</LayerCard>
 				))}
 			</div>
-			<LayerCard>
-				<LayerCard.Header>
-					<SkeletonLine height={10} minWidth={22} maxWidth={36} />
-				</LayerCard.Header>
-				<LayerCard.Body className="space-y-3">
+			<LayerCard padding="md">
+				<div className="space-y-3">
 					<SkeletonLine minWidth={44} maxWidth={68} />
 					<SkeletonLine minWidth={36} maxWidth={58} />
 					<SkeletonBlock className="h-8 w-28" delayMs={140} />
-				</LayerCard.Body>
+				</div>
 			</LayerCard>
-			<SkeletonBlock className="h-48 w-full rounded-lg" delayMs={180} />
 		</div>
 	);
 }
@@ -119,12 +115,11 @@ export function InsightsSkeleton({ label }: { label: string }) {
 
 export function ChartSkeleton({ label }: { label: string }) {
 	return (
-		<LayerCard>
-			<LayerCard.Well>
-				<div role="status" aria-label={label}>
-					<SkeletonBlock className="h-52 w-full rounded-lg" />
-				</div>
-			</LayerCard.Well>
+		<LayerCard padding="md">
+			<div role="status" aria-label={label}>
+				<SkeletonLine height={10} minWidth={22} maxWidth={36} />
+				<SkeletonBlock className="mt-3 h-52 w-full rounded-lg" />
+			</div>
 		</LayerCard>
 	);
 }

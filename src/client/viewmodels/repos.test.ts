@@ -9,6 +9,7 @@ import {
 	loadInsightsOptional,
 	loadRepos,
 	type RepoRow,
+	repoMetrics,
 	sortRepos,
 	visibleRepos,
 } from "./repos";
@@ -78,6 +79,8 @@ describe("repos viewmodel", () => {
 		);
 		expect(alertsIncomplete(null)).toBe(false);
 		expect(healthMap(null).size).toBe(0);
+		expect(repoMetrics([])).toEqual({ count: 0, stars: 0, forks: 0, issues: 0 });
+		expect(repoMetrics(sample)).toEqual({ count: 2, stars: 12, forks: 1, issues: 1 });
 	});
 
 	it("loads repos after session and maps snapshot_missing", async () => {

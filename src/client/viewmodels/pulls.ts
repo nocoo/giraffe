@@ -51,6 +51,30 @@ export function visiblePulls(rows: PullRow[], query: string, key: PullSort): Pul
 	return sortPulls(filterPulls(rows, query), key);
 }
 
+export function pullMetrics(rows: PullRow[]): {
+	draft: number;
+	reviewRequired: number;
+	changesRequested: number;
+	approved: number;
+} {
+	let draft = 0;
+	let reviewRequired = 0;
+	let changesRequested = 0;
+	let approved = 0;
+	for (const row of rows) {
+		if (row.is_draft) {
+			draft += 1;
+		} else if (row.review_decision === "APPROVED") {
+			approved += 1;
+		} else if (row.review_decision === "CHANGES_REQUESTED") {
+			changesRequested += 1;
+		} else if (row.review_decision === "REVIEW_REQUIRED") {
+			reviewRequired += 1;
+		}
+	}
+	return { draft, reviewRequired, changesRequested, approved };
+}
+
 export async function loadPulls(): Promise<PullsSnapshot | { missing: true }> {
 	return loadKind<PullsSnapshot>("prs");
 }

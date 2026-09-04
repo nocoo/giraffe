@@ -68,6 +68,23 @@ export function visibleRepos(repos: RepoRow[], query: string, key: SortKey): Rep
 	return sortRepos(filterRepos(repos, query), key);
 }
 
+export function repoMetrics(repos: RepoRow[]): {
+	count: number;
+	stars: number;
+	forks: number;
+	issues: number;
+} {
+	let stars = 0;
+	let forks = 0;
+	let issues = 0;
+	for (const row of repos) {
+		stars += row.stargazer_count;
+		forks += row.fork_count;
+		issues += row.open_issue_count;
+	}
+	return { count: repos.length, stars, forks, issues };
+}
+
 export function healthMap(insights: InsightsSnapshot | null): Map<string, InsightRow["health"]> {
 	const map = new Map<string, InsightRow["health"]>();
 	if (!insights) {
