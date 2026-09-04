@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.3.0
+
+### Added
+- Insights board with sectioned KPIs and one chart per card
+- Themed KPI cards and icons on repos, issues, PRs, alerts, inbox, digest, and repo detail
+- Table chips, meters, and sortable headers
+- Logo mark and leaf-green primary theme
+- PageHeader well and SectionRule layout on catalog pages
+
+### Changed
+- Upgrade `@nocoo/basalt` to 2.0.2
+- Drop the duplicate repo table from Insights
+
+### Fixed
+- Align page-header control heights
+- Remove table-like header dividers from KPI and chart cards
+- White-on-fill contrast for themed buttons
+- Access empty states and settings card headers
+- Skeleton blocks for non-text placeholders
+
 ## v0.2.0
 
 ### Added
