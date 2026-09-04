@@ -199,7 +199,7 @@ Basalt `ContentIsland` 已是 L1 岛。不要再包一层自定义 card 当岛�
 | Traffic | `AreaChart` 或 `LineChart` | `@nocoo/basalt/charts/area` / `line` |
 | Languages | `DonutChart` | `@nocoo/basalt/charts/donut` |
 | 加载 | `Button loading` | `@nocoo/basalt` |
-| 骨架 | `SkeletonLine` 经 `PageSkeleton` | `@nocoo/basalt/components/skeleton-line` |
+| 骨架 | 文字用 `SkeletonLine`；行/卡/图/头像用圆角 `SkeletonBlock`（同 Basalt shimmer） | `@nocoo/basalt/components/skeleton-line` + `layout/page-skeleton` |
 
 禁止：再引入 shadcn、再包一层 `src/client/components/ui/button.tsx`、用 kusto 的 `cn.ts` / `sidebar-context.tsx`、用 Basalt `DataTable`。
 

@@ -27,7 +27,12 @@ import {
 import { Box, GitPullRequest } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router";
-import { DetailSkeleton, TableSkeleton } from "../components/layout/page-skeleton";
+import {
+	ChartSkeleton,
+	DetailSkeleton,
+	PeopleSkeleton,
+	TableSkeleton,
+} from "../components/layout/page-skeleton";
 import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad, missingTitle } from "../lib/error-ui";
 import {
@@ -744,7 +749,7 @@ export function RepoDetailPage() {
 							<DonutChart data={sortedLanguages(languages.languages)} ariaLabel="languages" />
 						</TabWell>
 					) : (
-						<TableSkeleton label="加载语言" columns={2} rows={5} />
+						<ChartSkeleton label="加载语言" />
 					)}
 				</TabsContent>
 				<TabsContent value="contributors">
@@ -776,7 +781,7 @@ export function RepoDetailPage() {
 							</ul>
 						</TabWell>
 					) : (
-						<TableSkeleton label="加载贡献者" columns={2} rows={6} />
+						<PeopleSkeleton label="加载贡献者" />
 					)}
 				</TabsContent>
 			</Tabs>
