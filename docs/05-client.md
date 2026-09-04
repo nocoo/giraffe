@@ -168,7 +168,7 @@ Basalt `ContentIsland` 已是 L1 岛。不要再包一层自定义 card 当岛�
 - 列表 / 表：表只进 `LayerCard.Well className="p-0"`。`SegmentControl` 的 `legend` 只给读屏（`sr-only`）。
 - 空态用 `LayerCard.Empty`，仍在 `Well` 里。
 - `Table`、列表、图表 **不得** 直接做 `ContentIsland` 的子节点。
-- `StatStrip` 自己已是 muted 砖，不要再套一层 `LayerCard`。
+- KPI 用裸 `LayerCard padding="md"`（`layout/kpi`），不用灰 `StatStrip`。
 
 ### 5.3 控件映射（强制）
 
@@ -183,7 +183,7 @@ Basalt `ContentIsland` 已是 L1 岛。不要再包一层自定义 card 当岛�
 | PAT | `SensitiveInput` | `@nocoo/basalt/components/sensitive-input` |
 | 列表 | `Table` `TableHeader` `TableBody` `TableRow` `TableCell` | `@nocoo/basalt/components/table`。表头可点排序；行内用 `SlotBarChart` meter、彩色 Badge、GitHub label 色片。不用 `DataTable` |
 | 空态 | `Empty` | `@nocoo/basalt/components/empty` |
-| 统计 | `StatStrip` | `@nocoo/basalt` |
+| 统计 | 岛上裸 `LayerCard padding="md"` KPI（主题色 icon） | `layout/kpi`。不用灰 `StatStrip` |
 | 卡片 | `LayerCard` | `@nocoo/basalt/components/layer-card` |
 | 分段（列表/网格、筛选） | `SegmentControl` | `@nocoo/basalt` |
 | 页级 tab（单仓） | `Tabs*` | `@nocoo/basalt` |
@@ -360,15 +360,15 @@ HTTP **200** 体有两种（04）：
 
 ### 8.4 `/alerts`
 
-`unavailable: true` → Empty「无权限」。否则 `StatStrip`（Dependabot / code scanning open）+ 表（仓、source、severity、summary 外链）。
+`unavailable: true` → Empty「无权限」。否则 KPI（Dependabot / code scanning）+ `SectionRule` 告警表（仓、source、severity、summary 外链）。
 
 ### 8.5 `/inbox`
 
-表：未读、仓、title、reason、时间。行内「已读」→ `POST /api/notifications/read` `{ id, account_id }`（id 为数字字符串）。工具条「全部已读」→ `POST /api/notifications/read-all` `{ account_id }`。无快照 409 不打 GitHub（04）。成功后 body 即新 notifications 快照，ViewModel 替换。
+KPI（未读 / 全部）+ `SectionRule` 通知表：未读、仓、title、reason、时间。行内「已读」→ `POST /api/notifications/read` `{ id, account_id }`（id 为数字字符串）。工具条「全部已读」→ `POST /api/notifications/read-all` `{ account_id }`。无快照 409 不打 GitHub（04）。成功后 body 即新 notifications 快照，ViewModel 替换。
 
 ### 8.6 `/digest`
 
-`StatStrip`：stars / forks / open issues 的 delta。`baseline_missing` → 文案「没有昨天的基线」，delta 显示「—」不得显示 0。`ClipboardText` 复制 Markdown。Markdown 由 `viewmodels/digest.ts` 纯函数生成（仓表 + 合计），**无** LLM。GET 409 时 Empty；刷新只刷 `repos`。
+KPI：stars / forks / open issues 的 delta。`baseline_missing` → 文案「没有昨天的基线」，delta 显示「—」不得显示 0。`ClipboardText` 复制 Markdown。Markdown 由 `viewmodels/digest.ts` 纯函数生成（仓表 + 合计），**无** LLM。GET 409 时 Empty；刷新只刷 `repos`。
 
 ### 8.7 `/repos/:owner/:name`
 
@@ -383,7 +383,7 @@ HTTP **200** 体有两种（04）：
 | Actions | `/actions` | runs 表，conclusion Badge |
 | PRs / Issues | `/prs` `/issues` | 同跨仓列，无仓列 |
 | Releases | `/releases` | tag、时间、prerelease |
-| Traffic | `/traffic` | `forbidden` → Empty「无 Traffic 权限」；否则 views/clones `StatStrip` + 面积图 |
+| Traffic | `/traffic` | `forbidden` → Empty「无 Traffic 权限」；否则 views/clones KPI + 面积图 |
 | Languages | `/languages` | Donut，字节数 |
 | Contributors | `/contributors` | Avatar + login + contributions |
 

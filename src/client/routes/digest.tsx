@@ -1,4 +1,4 @@
-import { Badge, Link, StatStrip, toast } from "@nocoo/basalt";
+import { Badge, Link, toast } from "@nocoo/basalt";
 import { ClipboardText } from "@nocoo/basalt/components/clipboard-text";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
@@ -11,8 +11,9 @@ import {
 	TableHeader,
 	TableRow,
 } from "@nocoo/basalt/components/table";
-import { Newspaper } from "lucide-react";
+import { CircleDot, GitFork, Newspaper, Star } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { Kpi, KpiRow } from "../components/layout/kpi";
 import { TableSkeleton } from "../components/layout/page-skeleton";
 import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad, missingTitle } from "../lib/error-ui";
@@ -106,13 +107,15 @@ export function DigestPage() {
 					</>
 				}
 			/>
-			<StatStrip
-				items={[
-					{ label: "Stars 变化", value: formatDelta(snap.stars_delta, missing) },
-					{ label: "Forks 变化", value: formatDelta(snap.forks_delta, missing) },
-					{ label: "打开 Issues 变化", value: formatDelta(snap.open_issues_delta, missing) },
-				]}
-			/>
+			<KpiRow>
+				<Kpi icon={Star} label="Stars 变化" value={formatDelta(snap.stars_delta, missing)} />
+				<Kpi icon={GitFork} label="Forks 变化" value={formatDelta(snap.forks_delta, missing)} />
+				<Kpi
+					icon={CircleDot}
+					label="Issues 变化"
+					value={formatDelta(snap.open_issues_delta, missing)}
+				/>
+			</KpiRow>
 			<SectionRule title="仓库">
 				{snap.repos.length > 0 ? (
 					<LayerCard>

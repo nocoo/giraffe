@@ -1,6 +1,7 @@
 import { Badge, Button, Link, toast } from "@nocoo/basalt";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
+import { SectionRule } from "@nocoo/basalt/components/section-rule";
 import {
 	Table,
 	TableBody,
@@ -9,12 +10,13 @@ import {
 	TableHeader,
 	TableRow,
 } from "@nocoo/basalt/components/table";
-import { Inbox } from "lucide-react";
+import { Inbox, Mail, MailOpen } from "lucide-react";
 import { useEffect, useState } from "react";
+import { Kpi, KpiRow } from "../components/layout/kpi";
 import { TableSkeleton } from "../components/layout/page-skeleton";
 import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad, missingTitle } from "../lib/error-ui";
-import { DATE_CELL, formatDate, NUM_HEAD, reasonBadgeVariant } from "../lib/format";
+import { DATE_CELL, formatCount, formatDate, NUM_HEAD, reasonBadgeVariant } from "../lib/format";
 import { PAGE_DESCRIPTIONS } from "../lib/navigation";
 import { loadInbox, markRead, markReadAll, type NotificationsSnapshot } from "../viewmodels/inbox";
 import { requestRefresh } from "../viewmodels/refresh";
@@ -113,70 +115,76 @@ export function InboxPage() {
 					</>
 				}
 			/>
-			<LayerCard>
-				<LayerCard.Well {...(rows.length === 0 ? {} : { className: "p-0" })}>
-					{rows.length === 0 ? (
-						<LayerCard.Empty icon={<Inbox />} title="没有通知" />
-					) : (
-						<Table data-testid="inbox-list">
-							<TableHeader>
-								<TableRow>
-									<TableHead>状态</TableHead>
-									<TableHead>仓库</TableHead>
-									<TableHead>标题</TableHead>
-									<TableHead>原因</TableHead>
-									<TableHead className={NUM_HEAD}>时间</TableHead>
-									<TableHead />
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{rows.map((row) => (
-									<TableRow key={row.id} {...(row.unread ? { variant: "selected" } : {})}>
-										<TableCell>
-											{row.unread ? (
-												<Badge variant="blue" dot>
-													未读
-												</Badge>
-											) : (
-												<span className="text-basalt-muted-foreground">已读</span>
-											)}
-										</TableCell>
-										<TableCell className="text-basalt-muted-foreground">
-											{row.name_with_owner}
-										</TableCell>
-										<TableCell>
-											<Link href={row.url} target="_blank" rel="noreferrer">
-												{row.title}
-											</Link>
-										</TableCell>
-										<TableCell>
-											<Badge variant={reasonBadgeVariant(row.reason)}>{row.reason}</Badge>
-										</TableCell>
-										<TableCell className={DATE_CELL}>{formatDate(row.updated_at)}</TableCell>
-										<TableCell>
-											<Button
-												type="button"
-												variant="secondary"
-												disabled={!row.unread}
-												onClick={() => {
-													void markRead(row.id, snap.account_id)
-														.then((next) => {
-															toast.success("已读");
-															setSnap(next);
-														})
-														.catch(onLoadError);
-												}}
-											>
-												已读
-											</Button>
-										</TableCell>
+			<KpiRow>
+				<Kpi icon={Mail} label="未读" value={formatCount(unread)} />
+				<Kpi icon={MailOpen} label="全部" value={formatCount(rows.length)} />
+			</KpiRow>
+			<SectionRule title="通知">
+				<LayerCard>
+					<LayerCard.Well {...(rows.length === 0 ? {} : { className: "p-0" })}>
+						{rows.length === 0 ? (
+							<LayerCard.Empty icon={<Inbox />} title="没有通知" />
+						) : (
+							<Table data-testid="inbox-list">
+								<TableHeader>
+									<TableRow>
+										<TableHead>状态</TableHead>
+										<TableHead>仓库</TableHead>
+										<TableHead>标题</TableHead>
+										<TableHead>原因</TableHead>
+										<TableHead className={NUM_HEAD}>时间</TableHead>
+										<TableHead />
 									</TableRow>
-								))}
-							</TableBody>
-						</Table>
-					)}
-				</LayerCard.Well>
-			</LayerCard>
+								</TableHeader>
+								<TableBody>
+									{rows.map((row) => (
+										<TableRow key={row.id} {...(row.unread ? { variant: "selected" } : {})}>
+											<TableCell>
+												{row.unread ? (
+													<Badge variant="blue" dot>
+														未读
+													</Badge>
+												) : (
+													<span className="text-basalt-muted-foreground">已读</span>
+												)}
+											</TableCell>
+											<TableCell className="text-basalt-muted-foreground">
+												{row.name_with_owner}
+											</TableCell>
+											<TableCell>
+												<Link href={row.url} target="_blank" rel="noreferrer">
+													{row.title}
+												</Link>
+											</TableCell>
+											<TableCell>
+												<Badge variant={reasonBadgeVariant(row.reason)}>{row.reason}</Badge>
+											</TableCell>
+											<TableCell className={DATE_CELL}>{formatDate(row.updated_at)}</TableCell>
+											<TableCell>
+												<Button
+													type="button"
+													variant="secondary"
+													disabled={!row.unread}
+													onClick={() => {
+														void markRead(row.id, snap.account_id)
+															.then((next) => {
+																toast.success("已读");
+																setSnap(next);
+															})
+															.catch(onLoadError);
+													}}
+												>
+													已读
+												</Button>
+											</TableCell>
+										</TableRow>
+									))}
+								</TableBody>
+							</Table>
+						)}
+					</LayerCard.Well>
+				</LayerCard>
+			</SectionRule>
 		</div>
 	);
 }

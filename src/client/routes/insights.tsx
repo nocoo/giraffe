@@ -14,10 +14,10 @@ import {
 	Eye,
 	GitPullRequest,
 	HeartPulse,
-	type LucideIcon,
 	ShieldAlert,
 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { Kpi, KpiRow } from "../components/layout/kpi";
 import { InsightsSkeleton } from "../components/layout/page-skeleton";
 import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad, missingTitle } from "../lib/error-ui";
@@ -57,20 +57,6 @@ const PR_STATUS_SERIES = [
 	{ key: "未标记", color: chart.cadet },
 ];
 
-function Kpi({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
-	return (
-		<LayerCard padding="md">
-			<div className="flex items-start justify-between gap-3">
-				<div className="min-w-0">
-					<p className="text-xs text-basalt-muted-foreground">{label}</p>
-					<p className="mt-1 tabular-nums text-xl font-medium tracking-tight">{value}</p>
-				</div>
-				<Icon className="size-4 shrink-0 text-basalt-primary" strokeWidth={1.5} />
-			</div>
-		</LayerCard>
-	);
-}
-
 function ChartBrick({ title, children }: { title: string; children: ReactNode }) {
 	return (
 		<LayerCard padding="md">
@@ -88,10 +74,6 @@ function ChartEmpty({ label }: { label: string }) {
 			</p>
 		</div>
 	);
-}
-
-function KpiRow({ children }: { children: ReactNode }) {
-	return <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{children}</div>;
 }
 
 function ChartRow({ children }: { children: ReactNode }) {

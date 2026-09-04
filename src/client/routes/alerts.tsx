@@ -1,6 +1,7 @@
-import { Badge, Link, StatStrip, toast } from "@nocoo/basalt";
+import { Badge, Link, toast } from "@nocoo/basalt";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
+import { SectionRule } from "@nocoo/basalt/components/section-rule";
 import {
 	Table,
 	TableBody,
@@ -9,8 +10,9 @@ import {
 	TableHeader,
 	TableRow,
 } from "@nocoo/basalt/components/table";
-import { ShieldAlert } from "lucide-react";
+import { Bug, ShieldAlert } from "lucide-react";
 import { useEffect, useState } from "react";
+import { Kpi, KpiRow } from "../components/layout/kpi";
 import { TableSkeleton } from "../components/layout/page-skeleton";
 import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad, missingTitle } from "../lib/error-ui";
@@ -118,54 +120,58 @@ export function AlertsPage() {
 					</>
 				}
 			/>
-			<StatStrip
-				items={[
-					{ label: "Dependabot 打开", value: formatCount(snap.dependabot_open) },
-					{ label: "Code scanning 打开", value: formatCount(snap.code_scanning_open) },
-				]}
-			/>
-			{items.length === 0 ? (
-				<LayerCard>
-					<LayerCard.Well>
-						<LayerCard.Empty icon={<ShieldAlert />} title="没有告警" />
-					</LayerCard.Well>
-				</LayerCard>
-			) : (
-				<LayerCard>
-					<LayerCard.Well className="p-0">
-						<Table data-testid="alert-list">
-							<TableHeader>
-								<TableRow>
-									<TableHead>仓库</TableHead>
-									<TableHead>来源</TableHead>
-									<TableHead>级别</TableHead>
-									<TableHead>摘要</TableHead>
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{items.map((row) => (
-									<TableRow key={`${row.name_with_owner}:${row.url}`}>
-										<TableCell className="text-basalt-muted-foreground">
-											{row.name_with_owner}
-										</TableCell>
-										<TableCell>
-											<Badge variant={sourceBadgeVariant(row.source)}>{row.source}</Badge>
-										</TableCell>
-										<TableCell>
-											<Badge variant={severityBadgeVariant(row.severity)}>{row.severity}</Badge>
-										</TableCell>
-										<TableCell>
-											<Link href={row.url} target="_blank" rel="noreferrer">
-												{row.summary}
-											</Link>
-										</TableCell>
+			<KpiRow>
+				<Kpi icon={Bug} label="Dependabot" value={formatCount(snap.dependabot_open)} />
+				<Kpi
+					icon={ShieldAlert}
+					label="Code scanning"
+					value={formatCount(snap.code_scanning_open)}
+				/>
+			</KpiRow>
+			<SectionRule title="告警">
+				{items.length === 0 ? (
+					<LayerCard>
+						<LayerCard.Well>
+							<LayerCard.Empty icon={<ShieldAlert />} title="没有告警" />
+						</LayerCard.Well>
+					</LayerCard>
+				) : (
+					<LayerCard>
+						<LayerCard.Well className="p-0">
+							<Table data-testid="alert-list">
+								<TableHeader>
+									<TableRow>
+										<TableHead>仓库</TableHead>
+										<TableHead>来源</TableHead>
+										<TableHead>级别</TableHead>
+										<TableHead>摘要</TableHead>
 									</TableRow>
-								))}
-							</TableBody>
-						</Table>
-					</LayerCard.Well>
-				</LayerCard>
-			)}
+								</TableHeader>
+								<TableBody>
+									{items.map((row) => (
+										<TableRow key={`${row.name_with_owner}:${row.url}`}>
+											<TableCell className="text-basalt-muted-foreground">
+												{row.name_with_owner}
+											</TableCell>
+											<TableCell>
+												<Badge variant={sourceBadgeVariant(row.source)}>{row.source}</Badge>
+											</TableCell>
+											<TableCell>
+												<Badge variant={severityBadgeVariant(row.severity)}>{row.severity}</Badge>
+											</TableCell>
+											<TableCell>
+												<Link href={row.url} target="_blank" rel="noreferrer">
+													{row.summary}
+												</Link>
+											</TableCell>
+										</TableRow>
+									))}
+								</TableBody>
+							</Table>
+						</LayerCard.Well>
+					</LayerCard>
+				)}
+			</SectionRule>
 		</div>
 	);
 }

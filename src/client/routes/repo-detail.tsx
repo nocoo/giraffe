@@ -4,7 +4,6 @@ import {
 	AvatarImage,
 	Badge,
 	Link,
-	StatStrip,
 	Tabs,
 	TabsContent,
 	TabsList,
@@ -24,9 +23,20 @@ import {
 	TableHeader,
 	TableRow,
 } from "@nocoo/basalt/components/table";
-import { Box, GitPullRequest } from "lucide-react";
+import {
+	Box,
+	Bug,
+	CircleDot,
+	Download,
+	Eye,
+	GitFork,
+	GitPullRequest,
+	ShieldAlert,
+	Star,
+} from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router";
+import { Kpi, KpiRow } from "../components/layout/kpi";
 import {
 	ChartSkeleton,
 	DetailSkeleton,
@@ -457,13 +467,11 @@ export function RepoDetailPage() {
 				<TabsContent value="details">
 					{snap ? (
 						<div className="flex flex-col gap-4">
-							<StatStrip
-								items={[
-									{ label: "Stars", value: formatCount(snap.stargazer_count) },
-									{ label: "Forks", value: formatCount(snap.fork_count) },
-									{ label: "Issues", value: formatCount(snap.open_issue_count) },
-								]}
-							/>
+							<KpiRow>
+								<Kpi icon={Star} label="Stars" value={formatCount(snap.stargazer_count)} />
+								<Kpi icon={GitFork} label="Forks" value={formatCount(snap.fork_count)} />
+								<Kpi icon={CircleDot} label="Issues" value={formatCount(snap.open_issue_count)} />
+							</KpiRow>
 							<LayerCard>
 								<LayerCard.Header>概览</LayerCard.Header>
 								<LayerCard.Body>
@@ -603,12 +611,14 @@ export function RepoDetailPage() {
 							<LayerCard.Empty title="无权限" />
 						</TabWell>
 					) : security ? (
-						<StatStrip
-							items={[
-								{ label: "Dependabot", value: formatCount(security.dependabot_open) },
-								{ label: "code scanning", value: formatCount(security.code_scanning_open) },
-							]}
-						/>
+						<KpiRow>
+							<Kpi icon={Bug} label="Dependabot" value={formatCount(security.dependabot_open)} />
+							<Kpi
+								icon={ShieldAlert}
+								label="Code scanning"
+								value={formatCount(security.code_scanning_open)}
+							/>
+						</KpiRow>
 					) : null}
 				</TabsContent>
 				<TabsContent value="issues">
@@ -748,12 +758,10 @@ export function RepoDetailPage() {
 						</TabWell>
 					) : traffic ? (
 						<div className="flex flex-col gap-4">
-							<StatStrip
-								items={[
-									{ label: "浏览", value: formatCount(traffic.views.count) },
-									{ label: "克隆", value: formatCount(traffic.clones.count) },
-								]}
-							/>
+							<KpiRow>
+								<Kpi icon={Eye} label="浏览" value={formatCount(traffic.views.count)} />
+								<Kpi icon={Download} label="克隆" value={formatCount(traffic.clones.count)} />
+							</KpiRow>
 							<TabWell>
 								<AreaChart data={trafficPoints(traffic.views.points)} ariaLabel="views" />
 							</TabWell>
