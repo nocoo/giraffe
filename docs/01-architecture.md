@@ -343,10 +343,10 @@ Basalt Gen 2。侧栏展开 260px / 收起 68px。主区浮岛。中文 UI。
 
 | 路由 | 侧栏 | 首版内容 |
 |------|------|----------|
+| `/insights` | Insights | 跨仓 Issue / PR 分布与状态；健康 / 观察 / 风险；需关注的 issue/安全/久未 push |
 | `/` | 仓库 | 列表/网格：描述、语言、star、fork、open issues、最近 push、健康标记；筛选与排序 |
 | `/issues` | Issues | 跨仓列表 + 筛选 |
 | `/pulls` | Pull Requests | 跨仓列表 + 筛选 |
-| `/insights` | Insights | 需关注的 issue/安全/久未 push；Strong / Watch / Risky |
 | `/alerts` | 安全告警 | Dependabot + code scanning |
 | `/inbox` | 通知 | GitHub notifications |
 | `/digest` | 日报 | 当日 star/fork/issue 变动；可复制 Markdown；**无** LLM 叙事 |

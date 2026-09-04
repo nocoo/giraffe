@@ -78,6 +78,35 @@ export function DetailSkeleton({ label }: { label: string }) {
 	);
 }
 
+export function InsightsSkeleton({ label }: { label: string }) {
+	return (
+		<div className="space-y-8" role="status" aria-label={label}>
+			{["sk-work", "sk-review", "sk-health"].map((id, index) => (
+				<LayerCard key={id}>
+					<LayerCard.Header>
+						<SkeletonLine height={10} minWidth={22} maxWidth={36} />
+					</LayerCard.Header>
+					<LayerCard.Body className="space-y-4">
+						<div className="grid grid-cols-4 gap-3">
+							{["a", "b", "c", "d"].map((slot, slotIndex) => (
+								<div key={`${id}-${slot}`}>
+									<SkeletonLine height={8} minWidth={16} maxWidth={28} />
+									<SkeletonBlock className="mt-2 h-6 w-12" delayMs={index * 80 + slotIndex * 30} />
+								</div>
+							))}
+						</div>
+						<div className="grid gap-4 md:grid-cols-2">
+							<SkeletonBlock className="h-56 w-full rounded-lg" delayMs={index * 80 + 120} />
+							<SkeletonBlock className="h-56 w-full rounded-lg" delayMs={index * 80 + 160} />
+						</div>
+					</LayerCard.Body>
+				</LayerCard>
+			))}
+			<TableSkeleton label="加载 Insights 列表" columns={6} />
+		</div>
+	);
+}
+
 export function ChartSkeleton({ label }: { label: string }) {
 	return (
 		<LayerCard>

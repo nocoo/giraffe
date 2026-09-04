@@ -198,6 +198,7 @@ Basalt `ContentIsland` 已是 L1 岛。不要再包一层自定义 card 当岛�
 | 复制 digest | `ClipboardText` | `@nocoo/basalt/components/clipboard-text` |
 | Traffic | `AreaChart` 或 `LineChart` | `@nocoo/basalt/charts/area` / `line` |
 | Languages | `DonutChart` | `@nocoo/basalt/charts/donut` |
+| Insights | `StackedBarChart` `DonutChart` `LineChart` `BarChart` | `@nocoo/basalt/charts/stacked-bar` / `donut` / `line` / `bar` |
 | 加载 | `Button loading` | `@nocoo/basalt` |
 | 骨架 | 文字用 `SkeletonLine`；行/卡/图/头像用圆角 `SkeletonBlock`（同 Basalt shimmer） | `@nocoo/basalt/components/skeleton-line` + `layout/page-skeleton` |
 
@@ -288,7 +289,7 @@ Server 不调度。Client 只经 `viewmodels/refresh.ts` 调 `POST /api/refresh`
 |------|---------|------|
 | 设置页 **成功** `POST /api/accounts` 且响应 `is_active === true` | `["repos"]` | 输入已空；再 `GET /api/repos`。`is_active === false`（第二账号）**不** refresh |
 | 设置页 **成功** activate | `["repos"]` | 切到新账号后再 GET |
-| 跨仓页工具条「刷新」 | 该页 GitHub kind：repos / issues / prs / alerts / notifications。**Insights 页** `["repos","issues","alerts"]`（insights **隐式**派生）。**Digest 页** `["repos"]`（digest **隐式**） | 200 后按 `kinds` 再 GET；见下「派生」 |
+| 跨仓页工具条「刷新」 | 该页 GitHub kind：repos / issues / prs / alerts / notifications。**Insights 页** `["repos","issues","prs","alerts"]`（insights **隐式**派生）。**Digest 页** `["repos"]`（digest **隐式**） | 200 后按 `kinds` 再 GET；见下「派生」 |
 | 单仓页工具条「刷新」 | 当前 tab 的 `repo:{owner}/{name}:…` | 同上 |
 | 进入单仓且该 tab 409 | 自动一次该 kind。同一 tab 同一 session 不连打 | |
 | 路由切换到跨仓页且 409 | **不**自动刷新。Empty + 按钮 | |
@@ -323,10 +324,10 @@ HTTP **200** 体有两种（04）：
 
 | 路由 | 侧栏 | 图标（lucide） | 读 | 刷新 kind |
 |------|------|----------------|----|-----------|
+| `/insights` | Insights | `Activity` | `GET /api/insights`，并读已有 `issues` / `prs` 快照 | `["repos","issues","prs","alerts"]` 隐式 insights |
 | `/` | 仓库 | `Box` | `GET /api/repos` | `repos` |
 | `/issues` | Issues | `CircleDot` | `GET /api/issues` | `issues` |
 | `/pulls` | Pull Requests | `GitPullRequest` | `GET /api/prs` | `prs` |
-| `/insights` | Insights | `Activity` | `GET /api/insights` | `["repos","issues","alerts"]` 隐式 insights |
 | `/alerts` | 安全告警 | `ShieldAlert` | `GET /api/alerts` | `alerts` |
 | `/inbox` | 通知 | `Inbox` | `GET /api/notifications` | `notifications` |
 | `/digest` | 日报 | `Newspaper` | `GET /api/digest` | `["repos"]` 隐式 digest |
@@ -353,7 +354,15 @@ HTTP **200** 体有两种（04）：
 
 ### 8.3 `/insights`
 
-按 `health`：`strong` / `watch` / `risky` 分三组或 Segment 过滤。`opportunities`、`alerts` 数组展示为列表。数字与 03 一致，Client 不算 health。`alerts_incomplete` 时页头 Badge「告警不完整」。GET 409 时 Empty，刷新走 §7。仍 409 仅当 repos 或 issues 不足；不循环自动刷。
+浏览组第一项。页头下三张叠维卡片，表在下。
+
+1. 跨仓工作量：StatStrip（打开 Issue / PR、有 Issue 的仓、有 PR 的仓）+ 仓内 Issue/PR `StackedBarChart` + 覆盖 `DonutChart`（仅 Issue / 仅 PR / 两者 / 暂无）。
+2. 审查与节奏：StatStrip（草稿 / 待审 / 需改 / 已批）+ PR 状态 `DonutChart` + 近 8 周新建 Issue/PR `LineChart`。
+3. 健康与活跃：StatStrip（健康 / 观察 / 风险 / 90 天未推）+ 健康 `DonutChart` + 距上次推送分桶 `BarChart`。
+
+图表由 ViewModel 从 insights + issues + prs 快照聚合。issues 快照缺失时 Issue 计数回退 `open_issue_count`；prs 缺失时 PR 为 0。空 issues 快照不当回退。Client 仍不算 health。
+
+表按 `health`：`strong` / `watch` / `risky` Segment 过滤。`opportunities`、`alerts` 数组展示为列表。数字与 03 一致。`alerts_incomplete` 时页头 Badge「告警不完整」。GET 409 时 Empty，刷新走 §7。仍 409 仅当 repos 或 issues 不足；不循环自动刷。
 
 ### 8.4 `/alerts`
 

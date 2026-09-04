@@ -1,10 +1,10 @@
 export type NavItem = { href: string; label: string; icon: string };
 
 export const NAV_ITEMS: readonly NavItem[] = [
+	{ href: "/insights", label: "Insights", icon: "Activity" },
 	{ href: "/", label: "仓库", icon: "Box" },
 	{ href: "/issues", label: "Issues", icon: "CircleDot" },
 	{ href: "/pulls", label: "Pull Requests", icon: "GitPullRequest" },
-	{ href: "/insights", label: "Insights", icon: "Activity" },
 	{ href: "/alerts", label: "安全告警", icon: "ShieldAlert" },
 	{ href: "/inbox", label: "通知", icon: "Inbox" },
 	{ href: "/digest", label: "日报", icon: "Newspaper" },
@@ -23,7 +23,7 @@ export const PAGE_DESCRIPTIONS = {
 	"/": "当前账号下的仓库快照",
 	"/issues": "跨仓打开的 Issue",
 	"/pulls": "跨仓打开的 Pull Request",
-	"/insights": "按健康度分组的仓库信号",
+	"/insights": "跨仓 Issue / PR 分布与仓库健康",
 	"/alerts": "Dependabot 与 code scanning",
 	"/inbox": "GitHub 通知收件箱",
 	"/digest": "相对昨天基线的仓库变化",
