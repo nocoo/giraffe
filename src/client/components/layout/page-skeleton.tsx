@@ -80,33 +80,39 @@ export function DetailSkeleton({ label }: { label: string }) {
 
 export function InsightsSkeleton({ label }: { label: string }) {
 	return (
-		<div className="space-y-6" role="status" aria-label={label}>
-			<div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
-				{["m0", "m1", "m2", "m3", "m4", "m5", "m6", "m7"].map((id, index) => (
-					<LayerCard key={id} padding="md">
-						<div className="flex items-center gap-3">
-							<SkeletonBlock className="size-9 rounded-md" delayMs={index * 40} />
-							<div>
+		<div className="space-y-8" role="status" aria-label={label}>
+			{["sk-work", "sk-review", "sk-health"].map((section, sectionIndex) => (
+				<div key={section} className="space-y-3">
+					<SkeletonLine height={8} minWidth={18} maxWidth={28} />
+					<div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+						{["a", "b", "c", "d"].map((slot, slotIndex) => (
+							<LayerCard key={`${section}-${slot}`} padding="md">
 								<SkeletonLine height={8} minWidth={16} maxWidth={28} />
-								<SkeletonBlock className="mt-2 h-6 w-12" delayMs={index * 40 + 20} />
-							</div>
-						</div>
-					</LayerCard>
-				))}
-			</div>
-			<div className="grid gap-4 lg:grid-cols-3">
-				{["c0", "c1", "c2"].map((id, index) => (
-					<LayerCard key={id}>
-						<LayerCard.Header>
+								<SkeletonBlock
+									className="mt-2 h-7 w-16"
+									delayMs={sectionIndex * 80 + slotIndex * 30}
+								/>
+							</LayerCard>
+						))}
+					</div>
+					<div className="grid gap-3 lg:grid-cols-2">
+						<LayerCard padding="md">
 							<SkeletonLine height={10} minWidth={22} maxWidth={36} />
-						</LayerCard.Header>
-						<LayerCard.Body className="flex flex-col gap-4">
-							<SkeletonBlock className="h-44 w-full rounded-lg" delayMs={index * 80 + 80} />
-							<SkeletonBlock className="h-36 w-full rounded-lg" delayMs={index * 80 + 120} />
-						</LayerCard.Body>
-					</LayerCard>
-				))}
-			</div>
+							<SkeletonBlock
+								className="mt-3 h-52 w-full rounded-lg"
+								delayMs={sectionIndex * 80 + 120}
+							/>
+						</LayerCard>
+						<LayerCard padding="md">
+							<SkeletonLine height={10} minWidth={22} maxWidth={36} />
+							<SkeletonBlock
+								className="mt-3 h-52 w-full rounded-lg"
+								delayMs={sectionIndex * 80 + 160}
+							/>
+						</LayerCard>
+					</div>
+				</div>
+			))}
 		</div>
 	);
 }

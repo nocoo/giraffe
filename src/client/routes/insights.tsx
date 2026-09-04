@@ -6,6 +6,7 @@ import { chart } from "@nocoo/basalt/charts/palette";
 import { StackedBarChart } from "@nocoo/basalt/charts/stacked-bar";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
+import { SectionRule } from "@nocoo/basalt/components/section-rule";
 import {
 	Activity,
 	CircleDot,
@@ -56,63 +57,45 @@ const PR_STATUS_SERIES = [
 	{ key: "未标记", color: chart.cadet },
 ];
 
-function MetricCard({
-	icon: Icon,
-	label,
-	value,
-}: {
-	icon: LucideIcon;
-	label: string;
-	value: string;
-}) {
+function Kpi({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
 	return (
 		<LayerCard padding="md">
-			<div className="flex items-center gap-3">
-				<span className="flex size-9 shrink-0 items-center justify-center rounded-basalt-md text-basalt-primary">
-					<Icon className="size-4" strokeWidth={1.75} />
-				</span>
+			<div className="flex items-start justify-between gap-3">
 				<div className="min-w-0">
-					<p className="truncate text-xs text-basalt-muted-foreground">{label}</p>
-					<p className="tabular-nums text-lg font-medium">{value}</p>
+					<p className="text-xs text-basalt-muted-foreground">{label}</p>
+					<p className="mt-1 tabular-nums text-xl font-medium tracking-tight">{value}</p>
 				</div>
+				<Icon className="size-4 shrink-0 text-basalt-primary" strokeWidth={1.5} />
 			</div>
 		</LayerCard>
 	);
 }
 
-function ChartCard({
-	icon: Icon,
-	title,
-	plot,
-	ring,
-}: {
-	icon: LucideIcon;
-	title: string;
-	plot: ReactNode;
-	ring: ReactNode;
-}) {
+function ChartBrick({ title, children }: { title: string; children: ReactNode }) {
 	return (
-		<LayerCard>
-			<LayerCard.Header>
-				<span className="inline-flex items-center gap-2">
-					<Icon className="size-4 text-basalt-primary" strokeWidth={1.75} />
-					{title}
-				</span>
-			</LayerCard.Header>
-			<LayerCard.Body className="flex flex-col gap-4">
-				<div className="h-44 min-w-0">{plot}</div>
-				<div className="flex h-36 min-w-0 items-center justify-center">{ring}</div>
-			</LayerCard.Body>
+		<LayerCard padding="md">
+			<p className="mb-3 text-sm font-medium">{title}</p>
+			<div className="h-52 min-w-0">{children}</div>
 		</LayerCard>
 	);
 }
 
 function ChartEmpty({ label }: { label: string }) {
 	return (
-		<p className="text-sm text-basalt-muted-foreground" role="status">
-			{label}
-		</p>
+		<div className="flex h-full items-center justify-center">
+			<p className="text-sm text-basalt-muted-foreground" role="status">
+				{label}
+			</p>
+		</div>
 	);
+}
+
+function KpiRow({ children }: { children: ReactNode }) {
+	return <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{children}</div>;
+}
+
+function ChartRow({ children }: { children: ReactNode }) {
+	return <div className="grid gap-3 lg:grid-cols-2">{children}</div>;
 }
 
 export function InsightsPage() {
@@ -155,7 +138,7 @@ export function InsightsPage() {
 
 	if (board && "missing" in board) {
 		return (
-			<div className="space-y-6">
+			<div className="space-y-8">
 				<PageHeader
 					title="Insights"
 					description={PAGE_DESCRIPTIONS["/insights"]}
@@ -185,7 +168,7 @@ export function InsightsPage() {
 
 	if (!board || !charts) {
 		return (
-			<div className="space-y-6">
+			<div className="space-y-8">
 				<PageHeader title="Insights" description={PAGE_DESCRIPTIONS["/insights"]} />
 				<InsightsSkeleton label="加载 Insights" />
 			</div>
@@ -193,7 +176,7 @@ export function InsightsPage() {
 	}
 
 	return (
-		<div className="space-y-6">
+		<div className="space-y-8">
 			<PageHeader
 				title="Insights"
 				description={PAGE_DESCRIPTIONS["/insights"]}
@@ -212,120 +195,133 @@ export function InsightsPage() {
 					</>
 				}
 			/>
-			<div
-				className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8"
-				data-testid="insight-metrics"
-			>
-				<MetricCard icon={CircleDot} label="Issues" value={formatCount(charts.issueCount)} />
-				<MetricCard icon={GitPullRequest} label="PRs" value={formatCount(charts.prCount)} />
-				<MetricCard
-					icon={Activity}
-					label="Issue 仓"
-					value={formatCount(charts.reposWithIssues + charts.reposWithBoth)}
-				/>
-				<MetricCard
-					icon={GitPullRequest}
-					label="PR 仓"
-					value={formatCount(charts.reposWithPrs + charts.reposWithBoth)}
-				/>
-				<MetricCard icon={HeartPulse} label="健康" value={formatCount(charts.strongCount)} />
-				<MetricCard icon={Eye} label="观察" value={formatCount(charts.watchCount)} />
-				<MetricCard icon={ShieldAlert} label="风险" value={formatCount(charts.riskyCount)} />
-				<MetricCard icon={Clock} label="久未推送" value={formatCount(charts.staleCount)} />
-			</div>
-			<div className="grid gap-4 lg:grid-cols-3">
-				<ChartCard
-					icon={CircleDot}
-					title="跨仓工作量"
-					plot={
-						charts.workloadByRepo.length > 0 ? (
-							<StackedBarChart
-								data={charts.workloadByRepo}
+			<SectionRule title="工作量">
+				<div className="space-y-3" data-testid="insight-metrics">
+					<KpiRow>
+						<Kpi icon={CircleDot} label="打开 Issues" value={formatCount(charts.issueCount)} />
+						<Kpi icon={GitPullRequest} label="打开 PRs" value={formatCount(charts.prCount)} />
+						<Kpi
+							icon={Activity}
+							label="有 Issue 的仓"
+							value={formatCount(charts.reposWithIssues + charts.reposWithBoth)}
+						/>
+						<Kpi
+							icon={GitPullRequest}
+							label="有 PR 的仓"
+							value={formatCount(charts.reposWithPrs + charts.reposWithBoth)}
+						/>
+					</KpiRow>
+					<ChartRow>
+						<ChartBrick title="仓内 Issue / PR">
+							{charts.workloadByRepo.length > 0 ? (
+								<StackedBarChart
+									data={charts.workloadByRepo}
+									series={ISSUE_PR_SERIES}
+									ariaLabel="issues and pull requests by repository"
+									className="h-full w-full"
+									showAxes
+									showLegend
+									valueFormatter={formatCount}
+								/>
+							) : (
+								<ChartEmpty label="没有打开的 Issue 或 Pull Request" />
+							)}
+						</ChartBrick>
+						<ChartBrick title="仓库覆盖">
+							{charts.coverage.length > 0 ? (
+								<DonutChart
+									data={charts.coverage}
+									series={COVERAGE_SERIES}
+									ariaLabel="repositories with issues or pull requests"
+									className="h-full w-full"
+									showLegend
+									valueFormatter={formatCount}
+								/>
+							) : (
+								<ChartEmpty label="没有仓库覆盖数据" />
+							)}
+						</ChartBrick>
+					</ChartRow>
+				</div>
+			</SectionRule>
+			<SectionRule title="审查与节奏">
+				<div className="space-y-3">
+					<KpiRow>
+						<Kpi icon={GitPullRequest} label="草稿" value={formatCount(charts.draftCount)} />
+						<Kpi icon={Eye} label="待审查" value={formatCount(charts.reviewRequiredCount)} />
+						<Kpi
+							icon={ShieldAlert}
+							label="需修改"
+							value={formatCount(charts.changesRequestedCount)}
+						/>
+						<Kpi icon={HeartPulse} label="已批准" value={formatCount(charts.approvedCount)} />
+					</KpiRow>
+					<ChartRow>
+						<ChartBrick title="近 8 周新建">
+							<LineChart
+								data={charts.activity}
 								series={ISSUE_PR_SERIES}
-								ariaLabel="issues and pull requests by repository"
+								ariaLabel="issues and pull requests opened by week"
 								className="h-full w-full"
 								showAxes
 								showLegend
 								valueFormatter={formatCount}
 							/>
-						) : (
-							<ChartEmpty label="没有打开的 Issue 或 Pull Request" />
-						)
-					}
-					ring={
-						charts.coverage.length > 0 ? (
-							<DonutChart
-								data={charts.coverage}
-								series={COVERAGE_SERIES}
-								ariaLabel="repositories with issues or pull requests"
+						</ChartBrick>
+						<ChartBrick title="PR 状态">
+							{charts.prStatus.length > 0 ? (
+								<DonutChart
+									data={charts.prStatus}
+									series={PR_STATUS_SERIES}
+									ariaLabel="pull request review status"
+									className="h-full w-full"
+									showLegend
+									valueFormatter={formatCount}
+								/>
+							) : (
+								<ChartEmpty label="没有打开的 Pull Request" />
+							)}
+						</ChartBrick>
+					</ChartRow>
+				</div>
+			</SectionRule>
+			<SectionRule title="健康与活跃">
+				<div className="space-y-3">
+					<KpiRow>
+						<Kpi icon={HeartPulse} label="健康" value={formatCount(charts.strongCount)} />
+						<Kpi icon={Eye} label="观察" value={formatCount(charts.watchCount)} />
+						<Kpi icon={ShieldAlert} label="风险" value={formatCount(charts.riskyCount)} />
+						<Kpi icon={Clock} label="久未推送" value={formatCount(charts.staleCount)} />
+					</KpiRow>
+					<ChartRow>
+						<ChartBrick title="距上次推送">
+							<BarChart
+								data={charts.freshness}
+								series={[{ key: "y", label: "仓库数", color: chart.teal }]}
+								ariaLabel="days since last push"
 								className="h-full w-full"
+								showAxes
 								showLegend
 								valueFormatter={formatCount}
 							/>
-						) : (
-							<ChartEmpty label="没有仓库覆盖数据" />
-						)
-					}
-				/>
-				<ChartCard
-					icon={GitPullRequest}
-					title="审查与节奏"
-					plot={
-						<LineChart
-							data={charts.activity}
-							series={ISSUE_PR_SERIES}
-							ariaLabel="issues and pull requests opened by week"
-							className="h-full w-full"
-							showAxes
-							showLegend
-							valueFormatter={formatCount}
-						/>
-					}
-					ring={
-						charts.prStatus.length > 0 ? (
-							<DonutChart
-								data={charts.prStatus}
-								series={PR_STATUS_SERIES}
-								ariaLabel="pull request review status"
-								className="h-full w-full"
-								showLegend
-								valueFormatter={formatCount}
-							/>
-						) : (
-							<ChartEmpty label="没有打开的 Pull Request" />
-						)
-					}
-				/>
-				<ChartCard
-					icon={HeartPulse}
-					title="健康与活跃"
-					plot={
-						<BarChart
-							data={charts.freshness}
-							series={[{ key: "y", label: "仓库数", color: chart.teal }]}
-							ariaLabel="days since last push"
-							className="h-full w-full"
-							showAxes
-							showLegend
-							valueFormatter={formatCount}
-						/>
-					}
-					ring={
-						charts.health.length > 0 ? (
-							<DonutChart
-								data={charts.health}
-								series={HEALTH_SERIES}
-								ariaLabel="repository health"
-								className="h-full w-full"
-								showLegend
-								valueFormatter={formatCount}
-							/>
-						) : (
-							<ChartEmpty label="没有健康数据" />
-						)
-					}
-				/>
-			</div>
+						</ChartBrick>
+						<ChartBrick title="健康分布">
+							{charts.health.length > 0 ? (
+								<DonutChart
+									data={charts.health}
+									series={HEALTH_SERIES}
+									ariaLabel="repository health"
+									className="h-full w-full"
+									showLegend
+									valueFormatter={formatCount}
+								/>
+							) : (
+								<ChartEmpty label="没有健康数据" />
+							)}
+						</ChartBrick>
+					</ChartRow>
+				</div>
+			</SectionRule>
 		</div>
 	);
 }
