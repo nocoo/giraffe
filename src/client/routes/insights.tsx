@@ -1,4 +1,4 @@
-import { Badge, Link, SegmentControl, StatStrip, toast } from "@nocoo/basalt";
+import { Badge, toast } from "@nocoo/basalt";
 import { BarChart } from "@nocoo/basalt/charts/bar";
 import { DonutChart } from "@nocoo/basalt/charts/donut";
 import { LineChart } from "@nocoo/basalt/charts/line";
@@ -7,44 +7,26 @@ import { StackedBarChart } from "@nocoo/basalt/charts/stacked-bar";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
 import {
-	Table,
-	TableBody,
-	TableCell,
-	TableHead,
-	TableHeader,
-	TableRow,
-} from "@nocoo/basalt/components/table";
-import { Activity } from "lucide-react";
+	Activity,
+	CircleDot,
+	Clock,
+	Eye,
+	GitPullRequest,
+	HeartPulse,
+	type LucideIcon,
+	ShieldAlert,
+} from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { InsightsSkeleton } from "../components/layout/page-skeleton";
 import { RefreshButton } from "../components/layout/refresh-button";
-import { INLINE_SEGMENT } from "../components/layout/segment";
-import { Meter, SortButton } from "../components/layout/table-chrome";
 import { catchLoad, missingTitle } from "../lib/error-ui";
-import {
-	formatCount,
-	formatDays,
-	formatHealth,
-	freshnessFilled,
-	freshnessTone,
-	healthBadgeVariant,
-	maxCount,
-	meterFilled,
-	NUM_CELL,
-	NUM_HEAD,
-	opportunityBadgeVariant,
-	opportunityLabel,
-} from "../lib/format";
+import { formatCount } from "../lib/format";
 import { PAGE_DESCRIPTIONS } from "../lib/navigation";
 import {
 	alertsIncomplete,
 	buildInsightsCharts,
-	filterInsights,
-	type Health,
-	type InsightSort,
 	type InsightsBoard,
 	loadInsightsBoard,
-	sortInsights,
 } from "../viewmodels/insights";
 import { requestRefresh } from "../viewmodels/refresh";
 
@@ -74,23 +56,37 @@ const PR_STATUS_SERIES = [
 	{ key: "未标记", color: chart.cadet },
 ];
 
-function ChartCard({
+function Metric({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
+	return (
+		<div className="flex min-w-0 items-center gap-3">
+			<span className="flex size-9 shrink-0 items-center justify-center rounded-basalt-md bg-basalt-primary/10 text-basalt-primary">
+				<Icon className="size-4" strokeWidth={1.75} />
+			</span>
+			<div className="min-w-0">
+				<p className="truncate text-xs text-basalt-muted-foreground">{label}</p>
+				<p className="tabular-nums text-lg font-medium">{value}</p>
+			</div>
+		</div>
+	);
+}
+
+function ChartPanel({
+	icon: Icon,
 	title,
-	stats,
 	children,
 }: {
+	icon: LucideIcon;
 	title: string;
-	stats: { label: string; value: string }[];
 	children: ReactNode;
 }) {
 	return (
-		<LayerCard>
-			<LayerCard.Header>{title}</LayerCard.Header>
-			<LayerCard.Body className="space-y-4">
-				<StatStrip items={stats} />
-				<div className="grid items-center gap-6 md:grid-cols-2">{children}</div>
-			</LayerCard.Body>
-		</LayerCard>
+		<section className="min-w-0 space-y-3 bg-basalt-bright">
+			<h2 className="flex items-center gap-2 text-sm font-medium">
+				<Icon className="size-4 text-basalt-primary" strokeWidth={1.75} />
+				{title}
+			</h2>
+			{children}
+		</section>
 	);
 }
 
@@ -103,8 +99,6 @@ function ChartEmpty({ label }: { label: string }) {
 }
 
 export function InsightsPage() {
-	const [health, setHealth] = useState<Health | "all">("all");
-	const [sort, setSort] = useState<InsightSort>("issues");
 	const [board, setBoard] = useState<InsightsBoard | { missing: true } | null>(null);
 
 	function onLoadError(err: unknown): void {
@@ -129,12 +123,6 @@ export function InsightsPage() {
 			});
 	}, []);
 
-	const rows = useMemo(() => {
-		if (!board || "missing" in board) {
-			return [];
-		}
-		return sortInsights(filterInsights(board.insights.insights, health), sort);
-	}, [board, health, sort]);
 	const charts = useMemo(() => {
 		if (!board || "missing" in board) {
 			return null;
@@ -147,11 +135,10 @@ export function InsightsPage() {
 		);
 	}, [board]);
 	const incomplete = board && !("missing" in board) ? alertsIncomplete(board.insights) : false;
-	const peakIssues = maxCount(rows.map((row) => row.open_issue_count));
 
 	if (board && "missing" in board) {
 		return (
-			<div className="space-y-8">
+			<div className="space-y-6">
 				<PageHeader
 					title="Insights"
 					description={PAGE_DESCRIPTIONS["/insights"]}
@@ -181,7 +168,7 @@ export function InsightsPage() {
 
 	if (!board || !charts) {
 		return (
-			<div className="space-y-8">
+			<div className="space-y-6">
 				<PageHeader title="Insights" description={PAGE_DESCRIPTIONS["/insights"]} />
 				<InsightsSkeleton label="加载 Insights" />
 			</div>
@@ -189,7 +176,7 @@ export function InsightsPage() {
 	}
 
 	return (
-		<div className="space-y-8">
+		<div className="space-y-6">
 			<PageHeader
 				title="Insights"
 				description={PAGE_DESCRIPTIONS["/insights"]}
@@ -197,18 +184,6 @@ export function InsightsPage() {
 					<>
 						{board.insights.truncated ? <Badge variant="warning">已截断</Badge> : null}
 						{incomplete ? <Badge variant="warning">告警不完整</Badge> : null}
-						<SegmentControl
-							legend="健康"
-							className={INLINE_SEGMENT}
-							value={health}
-							onValueChange={(value) => setHealth(value as Health | "all")}
-							options={[
-								{ value: "all", label: "全部" },
-								{ value: "strong", label: "健康" },
-								{ value: "watch", label: "观察" },
-								{ value: "risky", label: "风险" },
-							]}
-						/>
 						<RefreshButton
 							run={() =>
 								requestRefresh(["repos", "issues", "prs", "alerts"]).then(() =>
@@ -220,204 +195,102 @@ export function InsightsPage() {
 					</>
 				}
 			/>
-			<ChartCard
-				title="跨仓工作量"
-				stats={[
-					{ label: "打开 Issues", value: formatCount(charts.issueCount) },
-					{ label: "打开 PRs", value: formatCount(charts.prCount) },
-					{
-						label: "有 Issue 的仓",
-						value: formatCount(charts.reposWithIssues + charts.reposWithBoth),
-					},
-					{ label: "有 PR 的仓", value: formatCount(charts.reposWithPrs + charts.reposWithBoth) },
-				]}
+			<div
+				className="flex flex-wrap items-center gap-x-8 gap-y-4 bg-basalt-bright py-1"
+				data-testid="insight-metrics"
 			>
-				{charts.workloadByRepo.length > 0 ? (
-					<StackedBarChart
-						data={charts.workloadByRepo}
+				<Metric icon={CircleDot} label="打开 Issues" value={formatCount(charts.issueCount)} />
+				<Metric icon={GitPullRequest} label="打开 PRs" value={formatCount(charts.prCount)} />
+				<Metric
+					icon={Activity}
+					label="有 Issue 的仓"
+					value={formatCount(charts.reposWithIssues + charts.reposWithBoth)}
+				/>
+				<Metric
+					icon={GitPullRequest}
+					label="有 PR 的仓"
+					value={formatCount(charts.reposWithPrs + charts.reposWithBoth)}
+				/>
+				<Metric icon={HeartPulse} label="健康" value={formatCount(charts.strongCount)} />
+				<Metric icon={Eye} label="观察" value={formatCount(charts.watchCount)} />
+				<Metric icon={ShieldAlert} label="风险" value={formatCount(charts.riskyCount)} />
+				<Metric icon={Clock} label="90 天未推送" value={formatCount(charts.staleCount)} />
+			</div>
+			<div className="grid gap-8 bg-basalt-bright lg:grid-cols-3">
+				<ChartPanel icon={CircleDot} title="跨仓工作量">
+					{charts.workloadByRepo.length > 0 ? (
+						<StackedBarChart
+							data={charts.workloadByRepo}
+							series={ISSUE_PR_SERIES}
+							ariaLabel="issues and pull requests by repository"
+							className="h-40 w-full"
+							showAxes
+							showLegend
+							valueFormatter={formatCount}
+						/>
+					) : (
+						<ChartEmpty label="没有打开的 Issue 或 Pull Request" />
+					)}
+					{charts.coverage.length > 0 ? (
+						<DonutChart
+							data={charts.coverage}
+							series={COVERAGE_SERIES}
+							ariaLabel="repositories with issues or pull requests"
+							className="h-36 w-full"
+							showLegend
+							valueFormatter={formatCount}
+						/>
+					) : (
+						<ChartEmpty label="没有仓库覆盖数据" />
+					)}
+				</ChartPanel>
+				<ChartPanel icon={GitPullRequest} title="审查与节奏">
+					{charts.prStatus.length > 0 ? (
+						<DonutChart
+							data={charts.prStatus}
+							series={PR_STATUS_SERIES}
+							ariaLabel="pull request review status"
+							className="h-36 w-full"
+							showLegend
+							valueFormatter={formatCount}
+						/>
+					) : (
+						<ChartEmpty label="没有打开的 Pull Request" />
+					)}
+					<LineChart
+						data={charts.activity}
 						series={ISSUE_PR_SERIES}
-						ariaLabel="issues and pull requests by repository"
-						className="h-56 w-full"
+						ariaLabel="issues and pull requests opened by week"
+						className="h-40 w-full"
 						showAxes
 						showLegend
 						valueFormatter={formatCount}
 					/>
-				) : (
-					<ChartEmpty label="没有打开的 Issue 或 Pull Request" />
-				)}
-				{charts.coverage.length > 0 ? (
-					<DonutChart
-						data={charts.coverage}
-						series={COVERAGE_SERIES}
-						ariaLabel="repositories with issues or pull requests"
-						className="h-56 w-full"
-						showLegend
-						valueFormatter={formatCount}
-					/>
-				) : (
-					<ChartEmpty label="没有仓库覆盖数据" />
-				)}
-			</ChartCard>
-			<ChartCard
-				title="审查与节奏"
-				stats={[
-					{ label: "草稿", value: formatCount(charts.draftCount) },
-					{ label: "待审查", value: formatCount(charts.reviewRequiredCount) },
-					{ label: "需修改", value: formatCount(charts.changesRequestedCount) },
-					{ label: "已批准", value: formatCount(charts.approvedCount) },
-				]}
-			>
-				{charts.prStatus.length > 0 ? (
-					<DonutChart
-						data={charts.prStatus}
-						series={PR_STATUS_SERIES}
-						ariaLabel="pull request review status"
-						className="h-56 w-full"
-						showLegend
-						valueFormatter={formatCount}
-					/>
-				) : (
-					<ChartEmpty label="没有打开的 Pull Request" />
-				)}
-				<LineChart
-					data={charts.activity}
-					series={ISSUE_PR_SERIES}
-					ariaLabel="issues and pull requests opened by week"
-					className="h-56 w-full"
-					showAxes
-					showLegend
-					valueFormatter={formatCount}
-				/>
-			</ChartCard>
-			<ChartCard
-				title="健康与活跃"
-				stats={[
-					{ label: "健康", value: formatCount(charts.strongCount) },
-					{ label: "观察", value: formatCount(charts.watchCount) },
-					{ label: "风险", value: formatCount(charts.riskyCount) },
-					{ label: "90 天未推送", value: formatCount(charts.staleCount) },
-				]}
-			>
-				{charts.health.length > 0 ? (
-					<DonutChart
-						data={charts.health}
-						series={HEALTH_SERIES}
-						ariaLabel="repository health"
-						className="h-56 w-full"
-						showLegend
-						valueFormatter={formatCount}
-					/>
-				) : (
-					<ChartEmpty label="没有健康数据" />
-				)}
-				<BarChart
-					data={charts.freshness}
-					series={[{ key: "y", label: "仓库数", color: chart.teal }]}
-					ariaLabel="days since last push"
-					className="h-56 w-full"
-					showAxes
-					showLegend
-					valueFormatter={formatCount}
-				/>
-			</ChartCard>
-			<LayerCard>
-				<LayerCard.Well {...(rows.length === 0 ? {} : { className: "p-0" })}>
-					{rows.length === 0 ? (
-						<LayerCard.Empty icon={<Activity />} title="没有 Insights" />
+				</ChartPanel>
+				<ChartPanel icon={HeartPulse} title="健康与活跃">
+					{charts.health.length > 0 ? (
+						<DonutChart
+							data={charts.health}
+							series={HEALTH_SERIES}
+							ariaLabel="repository health"
+							className="h-36 w-full"
+							showLegend
+							valueFormatter={formatCount}
+						/>
 					) : (
-						<Table data-testid="insight-list">
-							<TableHeader>
-								<TableRow>
-									<TableHead>
-										<SortButton
-											label="仓库"
-											active={sort === "name"}
-											onClick={() => setSort("name")}
-										/>
-									</TableHead>
-									<TableHead>健康</TableHead>
-									<TableHead className={NUM_HEAD}>
-										<SortButton
-											label="Issues"
-											active={sort === "issues"}
-											onClick={() => setSort("issues")}
-										/>
-									</TableHead>
-									<TableHead>活跃</TableHead>
-									<TableHead className={NUM_HEAD}>
-										<SortButton
-											label="距上次推送"
-											active={sort === "days"}
-											onClick={() => setSort("days")}
-										/>
-									</TableHead>
-									<TableHead>机会</TableHead>
-									<TableHead>告警</TableHead>
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{rows.map((row) => (
-									<TableRow key={row.name_with_owner}>
-										<TableCell>
-											<Link href={`/repos/${row.name_with_owner}`}>{row.name_with_owner}</Link>
-										</TableCell>
-										<TableCell>
-											<Badge variant={healthBadgeVariant(row.health)}>
-												{formatHealth(row.health)}
-											</Badge>
-										</TableCell>
-										<TableCell>
-											<div className="flex items-center justify-end gap-2">
-												<Meter
-													filled={meterFilled(row.open_issue_count, peakIssues)}
-													tone="bg-basalt-primary"
-													label={`${row.name_with_owner} issues`}
-												/>
-												<span className={NUM_CELL}>{formatCount(row.open_issue_count)}</span>
-											</div>
-										</TableCell>
-										<TableCell>
-											<Meter
-												filled={freshnessFilled(row.days_since_push)}
-												tone={freshnessTone(row.days_since_push)}
-												label={`${row.name_with_owner} activity`}
-											/>
-										</TableCell>
-										<TableCell className={NUM_CELL}>{formatDays(row.days_since_push)}</TableCell>
-										<TableCell>
-											{row.opportunities.length === 0 ? (
-												"—"
-											) : (
-												<div className="flex flex-wrap gap-1">
-													{row.opportunities.map((item) => (
-														<Badge key={item} variant={opportunityBadgeVariant(item)}>
-															{opportunityLabel(item)}
-														</Badge>
-													))}
-												</div>
-											)}
-										</TableCell>
-										<TableCell>
-											{row.alerts.length === 0 ? (
-												"—"
-											) : (
-												<div className="flex flex-col gap-1">
-													<Badge variant="red">{formatCount(row.alerts.length)}</Badge>
-													{row.alerts.map((alert) => (
-														<Link key={alert.url} href={alert.url} target="_blank" rel="noreferrer">
-															{alert.summary}
-														</Link>
-													))}
-												</div>
-											)}
-										</TableCell>
-									</TableRow>
-								))}
-							</TableBody>
-						</Table>
+						<ChartEmpty label="没有健康数据" />
 					)}
-				</LayerCard.Well>
-			</LayerCard>
+					<BarChart
+						data={charts.freshness}
+						series={[{ key: "y", label: "仓库数", color: chart.teal }]}
+						ariaLabel="days since last push"
+						className="h-40 w-full"
+						showAxes
+						showLegend
+						valueFormatter={formatCount}
+					/>
+				</ChartPanel>
+			</div>
 		</div>
 	);
 }

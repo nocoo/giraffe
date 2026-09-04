@@ -80,29 +80,27 @@ export function DetailSkeleton({ label }: { label: string }) {
 
 export function InsightsSkeleton({ label }: { label: string }) {
 	return (
-		<div className="space-y-8" role="status" aria-label={label}>
-			{["sk-work", "sk-review", "sk-health"].map((id, index) => (
-				<LayerCard key={id}>
-					<LayerCard.Header>
+		<div className="space-y-6 bg-basalt-bright" role="status" aria-label={label}>
+			<div className="flex flex-wrap items-center gap-x-8 gap-y-4 py-1">
+				{["m0", "m1", "m2", "m3", "m4", "m5", "m6", "m7"].map((id, index) => (
+					<div key={id} className="flex items-center gap-3">
+						<SkeletonBlock className="size-9 rounded-md" delayMs={index * 40} />
+						<div>
+							<SkeletonLine height={8} minWidth={16} maxWidth={28} />
+							<SkeletonBlock className="mt-2 h-6 w-12" delayMs={index * 40 + 20} />
+						</div>
+					</div>
+				))}
+			</div>
+			<div className="grid gap-8 lg:grid-cols-3">
+				{["c0", "c1", "c2"].map((id, index) => (
+					<div key={id} className="space-y-3">
 						<SkeletonLine height={10} minWidth={22} maxWidth={36} />
-					</LayerCard.Header>
-					<LayerCard.Body className="space-y-4">
-						<div className="grid grid-cols-4 gap-3">
-							{["a", "b", "c", "d"].map((slot, slotIndex) => (
-								<div key={`${id}-${slot}`}>
-									<SkeletonLine height={8} minWidth={16} maxWidth={28} />
-									<SkeletonBlock className="mt-2 h-6 w-12" delayMs={index * 80 + slotIndex * 30} />
-								</div>
-							))}
-						</div>
-						<div className="grid gap-4 md:grid-cols-2">
-							<SkeletonBlock className="h-56 w-full rounded-lg" delayMs={index * 80 + 120} />
-							<SkeletonBlock className="h-56 w-full rounded-lg" delayMs={index * 80 + 160} />
-						</div>
-					</LayerCard.Body>
-				</LayerCard>
-			))}
-			<TableSkeleton label="加载 Insights 列表" columns={6} />
+						<SkeletonBlock className="h-40 w-full rounded-lg" delayMs={index * 80 + 80} />
+						<SkeletonBlock className="h-36 w-full rounded-lg" delayMs={index * 80 + 120} />
+					</div>
+				))}
+			</div>
 		</div>
 	);
 }

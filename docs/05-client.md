@@ -354,15 +354,9 @@ HTTP **200** 体有两种（04）：
 
 ### 8.3 `/insights`
 
-浏览组第一项。页头下三张叠维卡片，表在下。
+浏览组第一项。不重复仓库全表。白底一行 KPI（主题色 icon + 数字），下接三列图：工作量堆叠柱 / 覆盖环、PR 状态环 / 近 8 周折线、健康环 / 推送分桶柱。无灰 StatStrip、无仓列表。
 
-1. 跨仓工作量：StatStrip（打开 Issue / PR、有 Issue 的仓、有 PR 的仓）+ 仓内 Issue/PR `StackedBarChart` + 覆盖 `DonutChart`（仅 Issue / 仅 PR / 两者 / 暂无）。
-2. 审查与节奏：StatStrip（草稿 / 待审 / 需改 / 已批）+ PR 状态 `DonutChart` + 近 8 周新建 Issue/PR `LineChart`。
-3. 健康与活跃：StatStrip（健康 / 观察 / 风险 / 90 天未推）+ 健康 `DonutChart` + 距上次推送分桶 `BarChart`。
-
-图表由 ViewModel 从 insights + issues + prs 快照聚合。issues 快照缺失时 Issue 计数回退 `open_issue_count`；prs 缺失时 PR 为 0。空 issues 快照不当回退。Client 仍不算 health。
-
-表按 `health`：`strong` / `watch` / `risky` Segment 过滤。`opportunities`、`alerts` 数组展示为列表。数字与 03 一致。`alerts_incomplete` 时页头 Badge「告警不完整」。GET 409 时 Empty，刷新走 §7。仍 409 仅当 repos 或 issues 不足；不循环自动刷。
+图表由 ViewModel 从 insights + issues + prs 快照聚合。issues 快照缺失时 Issue 计数回退 `open_issue_count`；prs 缺失时 PR 为 0。空 issues 快照不当回退。Client 仍不算 health。`alerts_incomplete` 时页头 Badge「告警不完整」。GET 409 时 Empty，刷新走 §7。仍 409 仅当 repos 或 issues 不足；不循环自动刷。
 
 ### 8.4 `/alerts`
 
