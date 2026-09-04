@@ -8,10 +8,10 @@
 [data-mode="light"],
 .dark,
 [data-mode="dark"] {
-	--basalt-primary: 217 91% 48%;
+	--basalt-primary: 87 53% 33%;
 	--basalt-primary-foreground: 0 0% 100%;
-	--basalt-ring: 217 91% 48%;
-	--basalt-chart-1: 217 91% 48%;
+	--basalt-ring: 87 53% 33%;
+	--basalt-chart-1: 87 53% 33%;
 	--basalt-heatmap-green-3: 142 64% 30%;
 }
 

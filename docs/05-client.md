@@ -192,7 +192,7 @@ Basalt `ContentIsland` 已是 L1 岛。不要再包一层自定义 card 当岛�
 | 头像 | `Avatar*` | `@nocoo/basalt` |
 | 确认删除账号 | `ConfirmDialog` / `useConfirm` | `@nocoo/basalt` |
 | Toast | `toast` `Toaster` | `@nocoo/basalt` |
-| 主题 | `ThemeProvider` `ThemeToggle` | `@nocoo/basalt`。实心底（primary / success）叠白字。Basalt 默认 primary 60% 对白只有 3.6:1，giraffe 在 `index.css` 把 `--basalt-primary` 压到 48%、`--basalt-heatmap-green-3` 压到 30%，白字 ≥ AA |
+| 主题 | `ThemeProvider` `ThemeToggle` | `@nocoo/basalt`。实心底叠白字。primary 取 logo 叶子 `#5a8228` → `--basalt-primary: 87 53% 33%`（白字 4.5:1）；`--basalt-heatmap-green-3` 30% 给 success |
 | Router 链接 | `Link` + `LinkProvider` | `@nocoo/basalt` |
 | ⌘K | `CommandPalette*` | `@nocoo/basalt` |
 | 复制 digest | `ClipboardText` | `@nocoo/basalt/components/clipboard-text` |
