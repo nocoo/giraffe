@@ -14,7 +14,7 @@ import { useEffect, useState } from "react";
 import { TableSkeleton } from "../components/layout/page-skeleton";
 import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad, missingTitle } from "../lib/error-ui";
-import { DATE_CELL, formatDate, NUM_HEAD } from "../lib/format";
+import { DATE_CELL, formatDate, NUM_HEAD, reasonBadgeVariant } from "../lib/format";
 import { PAGE_DESCRIPTIONS } from "../lib/navigation";
 import { loadInbox, markRead, markReadAll, type NotificationsSnapshot } from "../viewmodels/inbox";
 import { requestRefresh } from "../viewmodels/refresh";
@@ -130,10 +130,10 @@ export function InboxPage() {
 							</TableHeader>
 							<TableBody>
 								{rows.map((row) => (
-									<TableRow key={row.id}>
+									<TableRow key={row.id} {...(row.unread ? { variant: "selected" } : {})}>
 										<TableCell>
 											{row.unread ? (
-												<Badge variant="info" dot>
+												<Badge variant="blue" dot>
 													未读
 												</Badge>
 											) : (
@@ -149,7 +149,7 @@ export function InboxPage() {
 											</Link>
 										</TableCell>
 										<TableCell>
-											<Badge variant="outline">{row.reason}</Badge>
+											<Badge variant={reasonBadgeVariant(row.reason)}>{row.reason}</Badge>
 										</TableCell>
 										<TableCell className={DATE_CELL}>{formatDate(row.updated_at)}</TableCell>
 										<TableCell>

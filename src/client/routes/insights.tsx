@@ -19,14 +19,21 @@ import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { InsightsSkeleton } from "../components/layout/page-skeleton";
 import { RefreshButton } from "../components/layout/refresh-button";
 import { INLINE_SEGMENT } from "../components/layout/segment";
+import { Meter, SortButton } from "../components/layout/table-chrome";
 import { catchLoad, missingTitle } from "../lib/error-ui";
 import {
 	formatCount,
 	formatDays,
 	formatHealth,
+	freshnessFilled,
+	freshnessTone,
 	healthBadgeVariant,
+	maxCount,
+	meterFilled,
 	NUM_CELL,
 	NUM_HEAD,
+	opportunityBadgeVariant,
+	opportunityLabel,
 } from "../lib/format";
 import { PAGE_DESCRIPTIONS } from "../lib/navigation";
 import {
@@ -34,8 +41,10 @@ import {
 	buildInsightsCharts,
 	filterInsights,
 	type Health,
+	type InsightSort,
 	type InsightsBoard,
 	loadInsightsBoard,
+	sortInsights,
 } from "../viewmodels/insights";
 import { requestRefresh } from "../viewmodels/refresh";
 
@@ -95,6 +104,7 @@ function ChartEmpty({ label }: { label: string }) {
 
 export function InsightsPage() {
 	const [health, setHealth] = useState<Health | "all">("all");
+	const [sort, setSort] = useState<InsightSort>("issues");
 	const [board, setBoard] = useState<InsightsBoard | { missing: true } | null>(null);
 
 	function onLoadError(err: unknown): void {
@@ -123,8 +133,8 @@ export function InsightsPage() {
 		if (!board || "missing" in board) {
 			return [];
 		}
-		return filterInsights(board.insights.insights, health);
-	}, [board, health]);
+		return sortInsights(filterInsights(board.insights.insights, health), sort);
+	}, [board, health, sort]);
 	const charts = useMemo(() => {
 		if (!board || "missing" in board) {
 			return null;
@@ -137,6 +147,7 @@ export function InsightsPage() {
 		);
 	}, [board]);
 	const incomplete = board && !("missing" in board) ? alertsIncomplete(board.insights) : false;
+	const peakIssues = maxCount(rows.map((row) => row.open_issue_count));
 
 	if (board && "missing" in board) {
 		return (
@@ -317,10 +328,29 @@ export function InsightsPage() {
 						<Table data-testid="insight-list">
 							<TableHeader>
 								<TableRow>
-									<TableHead>仓库</TableHead>
+									<TableHead>
+										<SortButton
+											label="仓库"
+											active={sort === "name"}
+											onClick={() => setSort("name")}
+										/>
+									</TableHead>
 									<TableHead>健康</TableHead>
-									<TableHead className={NUM_HEAD}>Issues</TableHead>
-									<TableHead className={NUM_HEAD}>距上次推送</TableHead>
+									<TableHead className={NUM_HEAD}>
+										<SortButton
+											label="Issues"
+											active={sort === "issues"}
+											onClick={() => setSort("issues")}
+										/>
+									</TableHead>
+									<TableHead>活跃</TableHead>
+									<TableHead className={NUM_HEAD}>
+										<SortButton
+											label="距上次推送"
+											active={sort === "days"}
+											onClick={() => setSort("days")}
+										/>
+									</TableHead>
 									<TableHead>机会</TableHead>
 									<TableHead>告警</TableHead>
 								</TableRow>
@@ -336,7 +366,23 @@ export function InsightsPage() {
 												{formatHealth(row.health)}
 											</Badge>
 										</TableCell>
-										<TableCell className={NUM_CELL}>{formatCount(row.open_issue_count)}</TableCell>
+										<TableCell>
+											<div className="flex items-center justify-end gap-2">
+												<Meter
+													filled={meterFilled(row.open_issue_count, peakIssues)}
+													tone="bg-basalt-primary"
+													label={`${row.name_with_owner} issues`}
+												/>
+												<span className={NUM_CELL}>{formatCount(row.open_issue_count)}</span>
+											</div>
+										</TableCell>
+										<TableCell>
+											<Meter
+												filled={freshnessFilled(row.days_since_push)}
+												tone={freshnessTone(row.days_since_push)}
+												label={`${row.name_with_owner} activity`}
+											/>
+										</TableCell>
 										<TableCell className={NUM_CELL}>{formatDays(row.days_since_push)}</TableCell>
 										<TableCell>
 											{row.opportunities.length === 0 ? (
@@ -344,8 +390,8 @@ export function InsightsPage() {
 											) : (
 												<div className="flex flex-wrap gap-1">
 													{row.opportunities.map((item) => (
-														<Badge key={item} variant="secondary">
-															{item}
+														<Badge key={item} variant={opportunityBadgeVariant(item)}>
+															{opportunityLabel(item)}
 														</Badge>
 													))}
 												</div>
@@ -356,6 +402,7 @@ export function InsightsPage() {
 												"—"
 											) : (
 												<div className="flex flex-col gap-1">
+													<Badge variant="red">{formatCount(row.alerts.length)}</Badge>
 													{row.alerts.map((alert) => (
 														<Link key={alert.url} href={alert.url} target="_blank" rel="noreferrer">
 															{alert.summary}

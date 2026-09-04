@@ -30,6 +30,23 @@ export function filterIssues(issues: IssueRow[], query: string): IssueRow[] {
 	});
 }
 
+export type IssueSort = "updated" | "repo";
+
+export function sortIssues(issues: IssueRow[], key: IssueSort): IssueRow[] {
+	const copy = [...issues];
+	copy.sort((a, b) => {
+		if (key === "repo") {
+			return a.name_with_owner.localeCompare(b.name_with_owner) || a.number - b.number;
+		}
+		return b.updated_at.localeCompare(a.updated_at);
+	});
+	return copy;
+}
+
+export function visibleIssues(issues: IssueRow[], query: string, key: IssueSort): IssueRow[] {
+	return sortIssues(filterIssues(issues, query), key);
+}
+
 export async function loadIssues(): Promise<IssuesSnapshot | { missing: true }> {
 	return loadKind<IssuesSnapshot>("issues");
 }

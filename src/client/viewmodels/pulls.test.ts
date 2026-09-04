@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { filterPulls, loadPulls, type PullRow } from "./pulls";
+import { filterPulls, loadPulls, type PullRow, sortPulls, visiblePulls } from "./pulls";
 import { setActiveAccountId } from "./session";
 import { clearSnapshots } from "./snapshot";
 
@@ -49,6 +49,9 @@ describe("pulls viewmodel", () => {
 		expect(filterPulls(sample, "hello").map((row) => row.number)).toEqual([2]);
 		expect(filterPulls(sample, "docs").map((row) => row.number)).toEqual([9]);
 		expect(filterPulls(sample, "").map((row) => row.number)).toEqual([2, 9]);
+		expect(sortPulls(sample, "updated").map((row) => row.number)).toEqual([9, 2]);
+		expect(sortPulls(sample, "repo").map((row) => row.number)).toEqual([9, 2]);
+		expect(visiblePulls(sample, "login", "updated").map((row) => row.number)).toEqual([2]);
 	});
 
 	it("loads prs after session and maps snapshot_missing", async () => {

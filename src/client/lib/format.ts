@@ -97,38 +97,37 @@ export function formatHealth(health: "strong" | "watch" | "risky"): string {
 
 export function healthBadgeVariant(
 	health: "strong" | "watch" | "risky",
-): "success" | "warning" | "error" {
+): "success" | "orange" | "red" {
 	if (health === "strong") {
 		return "success";
 	}
 	if (health === "watch") {
-		return "warning";
+		return "orange";
 	}
-	return "error";
+	return "red";
 }
 
 export function formatVisibility(value: string): string {
-	if (value === "private") {
+	const key = value.toLowerCase();
+	if (key === "private") {
 		return "私有";
 	}
-	if (value === "public") {
+	if (key === "public") {
 		return "公开";
 	}
 	return value;
 }
 
-export function severityBadgeVariant(
-	severity: string,
-): "error" | "warning" | "secondary" | "outline" {
+export function severityBadgeVariant(severity: string): "red" | "orange" | "teal" | "outline" {
 	const key = severity.toLowerCase();
 	if (key === "critical" || key === "high") {
-		return "error";
+		return "red";
 	}
 	if (key === "medium" || key === "moderate") {
-		return "warning";
+		return "orange";
 	}
 	if (key === "low") {
-		return "secondary";
+		return "teal";
 	}
 	return "outline";
 }
@@ -151,17 +150,188 @@ export function formatReview(decision: string | null): string {
 
 export function reviewBadgeVariant(
 	decision: string | null,
-): "success" | "warning" | "secondary" | "outline" {
+): "success" | "red" | "orange" | "outline" {
 	if (decision === "APPROVED") {
 		return "success";
 	}
 	if (decision === "CHANGES_REQUESTED") {
-		return "warning";
+		return "red";
 	}
 	if (decision === "REVIEW_REQUIRED") {
-		return "secondary";
+		return "orange";
 	}
 	return "outline";
+}
+
+export function visibilityBadgeVariant(value: string): "blue" | "purple" | "outline" {
+	const key = value.toLowerCase();
+	if (key === "public") {
+		return "blue";
+	}
+	if (key === "private") {
+		return "purple";
+	}
+	return "outline";
+}
+
+export function opportunityLabel(value: string): string {
+	if (value === "stale_push") {
+		return "久未推送";
+	}
+	if (value === "many_issues") {
+		return "大量 Issue";
+	}
+	if (value === "open_alerts") {
+		return "有告警";
+	}
+	return value;
+}
+
+export function opportunityBadgeVariant(value: string): "orange" | "red" | "purple" | "secondary" {
+	if (value === "stale_push") {
+		return "orange";
+	}
+	if (value === "many_issues") {
+		return "red";
+	}
+	if (value === "open_alerts") {
+		return "purple";
+	}
+	return "secondary";
+}
+
+export function reasonBadgeVariant(
+	reason: string,
+): "blue" | "purple" | "teal" | "orange" | "red" | "outline" {
+	if (reason === "assign" || reason === "review_requested") {
+		return "blue";
+	}
+	if (reason === "mention" || reason === "team_mention") {
+		return "purple";
+	}
+	if (reason === "comment" || reason === "ci_activity") {
+		return "teal";
+	}
+	if (reason === "author" || reason === "state_change") {
+		return "orange";
+	}
+	if (reason === "security_alert") {
+		return "red";
+	}
+	return "outline";
+}
+
+export function sourceBadgeVariant(source: string): "teal" | "blue" | "purple" | "outline" {
+	const key = source.toLowerCase();
+	if (key.includes("dependabot")) {
+		return "teal";
+	}
+	if (key.includes("code")) {
+		return "blue";
+	}
+	if (key.includes("secret")) {
+		return "purple";
+	}
+	return "outline";
+}
+
+export function takeChips<T>(items: T[], limit = 2): { shown: T[]; extra: number } {
+	if (items.length <= limit) {
+		return { shown: items, extra: 0 };
+	}
+	return { shown: items.slice(0, limit), extra: items.length - limit };
+}
+
+export function fillTextColor(color: string): "#ffffff" | "#111111" {
+	const hex = color.startsWith("#") ? color.slice(1) : color;
+	if (!/^[0-9a-fA-F]{6}$/.test(hex)) {
+		return "#ffffff";
+	}
+	const r = Number.parseInt(hex.slice(0, 2), 16) / 255;
+	const g = Number.parseInt(hex.slice(2, 4), 16) / 255;
+	const b = Number.parseInt(hex.slice(4, 6), 16) / 255;
+	const lin = (channel: number) =>
+		channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+	const luminance = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+	const white = 1.05 / (luminance + 0.05);
+	const black = (luminance + 0.05) / 0.05;
+	return white >= black ? "#ffffff" : "#111111";
+}
+
+export function labelFill(color: string): string {
+	return color.startsWith("#") ? color : `#${color}`;
+}
+
+export function daysBetween(fetchedAt: string, earlier: string | null): number {
+	if (!earlier) {
+		return 9999;
+	}
+	const ms = Date.parse(fetchedAt) - Date.parse(earlier);
+	if (!Number.isFinite(ms)) {
+		return 9999;
+	}
+	if (ms < 0) {
+		return 0;
+	}
+	return Math.floor(ms / 86_400_000);
+}
+
+export function meterFilled(value: number, max: number, total = 8): number {
+	if (value <= 0 || max <= 0) {
+		return 0;
+	}
+	return Math.max(1, Math.round((value / max) * total));
+}
+
+export function freshnessFilled(days: number): number {
+	if (days <= 7) {
+		return 8;
+	}
+	if (days <= 30) {
+		return 5;
+	}
+	if (days <= 90) {
+		return 3;
+	}
+	return 1;
+}
+
+export function freshnessTone(days: number): string {
+	if (days <= 7) {
+		return "bg-basalt-heatmap-green-3";
+	}
+	if (days <= 30) {
+		return "bg-basalt-chart-7";
+	}
+	if (days <= 90) {
+		return "bg-basalt-chart-8";
+	}
+	return "bg-basalt-chart-10";
+}
+
+export function maxCount(values: number[]): number {
+	let max = 0;
+	for (const value of values) {
+		if (value > max) {
+			max = value;
+		}
+	}
+	return max;
+}
+
+export function churnFilled(
+	additions: number,
+	deletions: number,
+): {
+	adds: number;
+	dels: number;
+} {
+	const total = additions + deletions;
+	if (total <= 0) {
+		return { adds: 0, dels: 0 };
+	}
+	const adds = Math.round((additions / total) * 8);
+	return { adds, dels: 8 - adds };
 }
 
 export function formatRunStatus(status: string): string {

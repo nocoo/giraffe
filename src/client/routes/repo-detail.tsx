@@ -34,8 +34,10 @@ import {
 	TableSkeleton,
 } from "../components/layout/page-skeleton";
 import { RefreshButton } from "../components/layout/refresh-button";
+import { ChurnMeter, LabelChips, PersonCell } from "../components/layout/table-chrome";
 import { catchLoad, missingTitle } from "../lib/error-ui";
 import {
+	churnFilled,
 	DATE_CELL,
 	formatConclusion,
 	formatCount,
@@ -625,7 +627,9 @@ export function RepoDetailPage() {
 									<TableRow>
 										<TableHead className={NUM_HEAD}>编号</TableHead>
 										<TableHead>标题</TableHead>
+										<TableHead>标签</TableHead>
 										<TableHead>作者</TableHead>
+										<TableHead className={NUM_HEAD}>评论</TableHead>
 										<TableHead className={NUM_HEAD}>更新</TableHead>
 									</TableRow>
 								</TableHeader>
@@ -638,7 +642,13 @@ export function RepoDetailPage() {
 													{row.title}
 												</Link>
 											</TableCell>
-											<TableCell>{row.author_login ?? "—"}</TableCell>
+											<TableCell>
+												<LabelChips labels={row.labels} />
+											</TableCell>
+											<TableCell>
+												<PersonCell login={row.author_login} />
+											</TableCell>
+											<TableCell className={NUM_CELL}>{formatCount(row.comments_count)}</TableCell>
 											<TableCell className={DATE_CELL}>{formatDate(row.updated_at)}</TableCell>
 										</TableRow>
 									))}
@@ -666,42 +676,60 @@ export function RepoDetailPage() {
 										<TableHead className={NUM_HEAD}>编号</TableHead>
 										<TableHead>标题</TableHead>
 										<TableHead>作者</TableHead>
-										<TableHead>草稿</TableHead>
-										<TableHead>审查</TableHead>
-										<TableHead className={NUM_HEAD}>+/−</TableHead>
+										<TableHead>状态</TableHead>
+										<TableHead className={NUM_HEAD}>变更</TableHead>
 										<TableHead className={NUM_HEAD}>更新</TableHead>
 									</TableRow>
 								</TableHeader>
 								<TableBody>
-									{pulls.pull_requests.map((row) => (
-										<TableRow key={`${row.name_with_owner}#${row.number}`}>
-											<TableCell className={NUM_CELL}>#{row.number}</TableCell>
-											<TableCell>
-												<Link href={row.url} target="_blank" rel="noreferrer">
-													{row.title}
-												</Link>
-											</TableCell>
-											<TableCell>{row.author_login ?? "—"}</TableCell>
-											<TableCell>
-												{row.is_draft ? <Badge variant="secondary">草稿</Badge> : "—"}
-											</TableCell>
-											<TableCell>
-												{row.review_decision ? (
-													<Badge variant={reviewBadgeVariant(row.review_decision)}>
-														{formatReview(row.review_decision)}
-													</Badge>
-												) : (
-													"—"
-												)}
-											</TableCell>
-											<TableCell className={NUM_CELL}>
-												<span className="text-basalt-info">+{formatCount(row.additions)}</span>
-												<span className="text-basalt-muted-foreground">/</span>
-												<span className="text-basalt-danger">−{formatCount(row.deletions)}</span>
-											</TableCell>
-											<TableCell className={DATE_CELL}>{formatDate(row.updated_at)}</TableCell>
-										</TableRow>
-									))}
+									{pulls.pull_requests.map((row) => {
+										const churn = churnFilled(row.additions, row.deletions);
+										return (
+											<TableRow key={`${row.name_with_owner}#${row.number}`}>
+												<TableCell className={NUM_CELL}>#{row.number}</TableCell>
+												<TableCell>
+													<Link href={row.url} target="_blank" rel="noreferrer">
+														{row.title}
+													</Link>
+												</TableCell>
+												<TableCell>
+													<PersonCell login={row.author_login} />
+												</TableCell>
+												<TableCell>
+													<div className="flex flex-wrap gap-1">
+														{row.is_draft ? <Badge variant="purple">草稿</Badge> : null}
+														{row.review_decision ? (
+															<Badge variant={reviewBadgeVariant(row.review_decision)}>
+																{formatReview(row.review_decision)}
+															</Badge>
+														) : null}
+														{!row.is_draft && !row.review_decision ? (
+															<span className="text-basalt-muted-foreground">—</span>
+														) : null}
+													</div>
+												</TableCell>
+												<TableCell>
+													<div className="flex items-center justify-end gap-2">
+														<ChurnMeter
+															adds={churn.adds}
+															dels={churn.dels}
+															label={`#${row.number} diff`}
+														/>
+														<span className={NUM_CELL}>
+															<span className="text-basalt-info">
+																+{formatCount(row.additions)}
+															</span>
+															<span className="text-basalt-muted-foreground">/</span>
+															<span className="text-basalt-danger">
+																−{formatCount(row.deletions)}
+															</span>
+														</span>
+													</div>
+												</TableCell>
+												<TableCell className={DATE_CELL}>{formatDate(row.updated_at)}</TableCell>
+											</TableRow>
+										);
+									})}
 								</TableBody>
 							</Table>
 						</TabWell>

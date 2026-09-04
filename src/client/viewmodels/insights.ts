@@ -350,6 +350,22 @@ export function filterInsights(rows: InsightRow[], health: Health | "all"): Insi
 	return rows.filter((row) => row.health === health);
 }
 
+export type InsightSort = "issues" | "days" | "name";
+
+export function sortInsights(rows: InsightRow[], key: InsightSort): InsightRow[] {
+	const copy = [...rows];
+	copy.sort((a, b) => {
+		if (key === "issues") {
+			return b.open_issue_count - a.open_issue_count;
+		}
+		if (key === "days") {
+			return b.days_since_push - a.days_since_push;
+		}
+		return a.name_with_owner.localeCompare(b.name_with_owner);
+	});
+	return copy;
+}
+
 export function alertsIncomplete(snap: InsightsSnapshot | null): boolean {
 	return snap?.alerts_incomplete === true;
 }

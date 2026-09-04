@@ -181,7 +181,7 @@ Basalt `ContentIsland` 已是 L1 岛。不要再包一层自定义 card 当岛�
 | 分区 | `SectionRule` | `@nocoo/basalt/components/section-rule` |
 | 按钮 / 输入 / 字段 | `Button` `Input` `Field` `Label` | `@nocoo/basalt`。页级主操作（刷新、提交、激活、全部已读）用默认变体 `bg-basalt-primary`；危险操作用 `destructive`；壳层 / 表头排序用 `ghost`；行内次要用 `secondary` |
 | PAT | `SensitiveInput` | `@nocoo/basalt/components/sensitive-input` |
-| 列表 | `Table` `TableHeader` `TableBody` `TableRow` `TableCell` | `@nocoo/basalt/components/table` |
+| 列表 | `Table` `TableHeader` `TableBody` `TableRow` `TableCell` | `@nocoo/basalt/components/table`。表头可点排序；行内用 `SlotBarChart` meter、彩色 Badge、GitHub label 色片。不用 `DataTable` |
 | 空态 | `Empty` | `@nocoo/basalt/components/empty` |
 | 统计 | `StatStrip` | `@nocoo/basalt` |
 | 卡片 | `LayerCard` | `@nocoo/basalt/components/layer-card` |

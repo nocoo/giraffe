@@ -8,6 +8,7 @@ import {
 	type InsightRow,
 	loadInsights,
 	loadInsightsBoard,
+	sortInsights,
 } from "./insights";
 import type { IssueRow } from "./issues";
 import type { PullRow } from "./pulls";
@@ -64,6 +65,13 @@ describe("insights viewmodel", () => {
 		expect(groups.risky).toHaveLength(1);
 		expect(filterInsights(sample, "all")).toHaveLength(3);
 		expect(filterInsights(sample, "risky")[0]?.name_with_owner).toBe("octocat/gamma");
+		expect(sortInsights(sample, "issues").map((row) => row.name_with_owner)).toEqual([
+			"octocat/beta",
+			"octocat/gamma",
+			"octocat/alpha",
+		]);
+		expect(sortInsights(sample, "days")[0]?.name_with_owner).toBe("octocat/gamma");
+		expect(sortInsights(sample, "name")[0]?.name_with_owner).toBe("octocat/alpha");
 		expect(
 			alertsIncomplete({
 				account_id: "a",

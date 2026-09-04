@@ -13,14 +13,21 @@ import { CircleDot } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { TableSkeleton } from "../components/layout/page-skeleton";
 import { RefreshButton } from "../components/layout/refresh-button";
+import { LabelChips, PersonCell, SortButton } from "../components/layout/table-chrome";
 import { catchLoad, missingTitle } from "../lib/error-ui";
-import { DATE_CELL, formatDate, NUM_CELL, NUM_HEAD } from "../lib/format";
+import { DATE_CELL, formatCount, formatDate, NUM_CELL, NUM_HEAD } from "../lib/format";
 import { PAGE_DESCRIPTIONS } from "../lib/navigation";
-import { filterIssues, type IssuesSnapshot, loadIssues } from "../viewmodels/issues";
+import {
+	type IssueSort,
+	type IssuesSnapshot,
+	loadIssues,
+	visibleIssues,
+} from "../viewmodels/issues";
 import { requestRefresh } from "../viewmodels/refresh";
 
 export function IssuesPage() {
 	const [query, setQuery] = useState("");
+	const [sort, setSort] = useState<IssueSort>("updated");
 	const [snap, setSnap] = useState<IssuesSnapshot | { missing: true } | null>(null);
 
 	function onLoadError(err: unknown): void {
@@ -49,8 +56,8 @@ export function IssuesPage() {
 		if (!snap || "missing" in snap) {
 			return [];
 		}
-		return filterIssues(snap.issues, query);
-	}, [snap, query]);
+		return visibleIssues(snap.issues, query, sort);
+	}, [snap, query, sort]);
 
 	const filters = (
 		<>
@@ -117,11 +124,25 @@ export function IssuesPage() {
 						<Table data-testid="issue-list">
 							<TableHeader>
 								<TableRow>
-									<TableHead>仓库</TableHead>
+									<TableHead>
+										<SortButton
+											label="仓库"
+											active={sort === "repo"}
+											onClick={() => setSort("repo")}
+										/>
+									</TableHead>
 									<TableHead className={NUM_HEAD}>编号</TableHead>
 									<TableHead>标题</TableHead>
+									<TableHead>标签</TableHead>
 									<TableHead>作者</TableHead>
-									<TableHead className={NUM_HEAD}>更新</TableHead>
+									<TableHead className={NUM_HEAD}>评论</TableHead>
+									<TableHead className={NUM_HEAD}>
+										<SortButton
+											label="更新"
+											active={sort === "updated"}
+											onClick={() => setSort("updated")}
+										/>
+									</TableHead>
 								</TableRow>
 							</TableHeader>
 							<TableBody>
@@ -136,7 +157,13 @@ export function IssuesPage() {
 												{row.title}
 											</Link>
 										</TableCell>
-										<TableCell>{row.author_login ?? "—"}</TableCell>
+										<TableCell>
+											<LabelChips labels={row.labels} />
+										</TableCell>
+										<TableCell>
+											<PersonCell login={row.author_login} />
+										</TableCell>
+										<TableCell className={NUM_CELL}>{formatCount(row.comments_count)}</TableCell>
 										<TableCell className={DATE_CELL}>{formatDate(row.updated_at)}</TableCell>
 									</TableRow>
 								))}

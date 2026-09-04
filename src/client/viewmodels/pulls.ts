@@ -34,6 +34,23 @@ export function filterPulls(rows: PullRow[], query: string): PullRow[] {
 	});
 }
 
+export type PullSort = "updated" | "repo";
+
+export function sortPulls(rows: PullRow[], key: PullSort): PullRow[] {
+	const copy = [...rows];
+	copy.sort((a, b) => {
+		if (key === "repo") {
+			return a.name_with_owner.localeCompare(b.name_with_owner) || a.number - b.number;
+		}
+		return b.updated_at.localeCompare(a.updated_at);
+	});
+	return copy;
+}
+
+export function visiblePulls(rows: PullRow[], query: string, key: PullSort): PullRow[] {
+	return sortPulls(filterPulls(rows, query), key);
+}
+
 export async function loadPulls(): Promise<PullsSnapshot | { missing: true }> {
 	return loadKind<PullsSnapshot>("prs");
 }

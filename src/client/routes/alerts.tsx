@@ -14,7 +14,7 @@ import { useEffect, useState } from "react";
 import { TableSkeleton } from "../components/layout/page-skeleton";
 import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad, missingTitle } from "../lib/error-ui";
-import { formatCount, severityBadgeVariant } from "../lib/format";
+import { formatCount, severityBadgeVariant, sourceBadgeVariant } from "../lib/format";
 import { PAGE_DESCRIPTIONS } from "../lib/navigation";
 import {
 	type AlertsSnapshot,
@@ -149,7 +149,7 @@ export function AlertsPage() {
 											{row.name_with_owner}
 										</TableCell>
 										<TableCell>
-											<Badge variant="outline">{row.source}</Badge>
+											<Badge variant={sourceBadgeVariant(row.source)}>{row.source}</Badge>
 										</TableCell>
 										<TableCell>
 											<Badge variant={severityBadgeVariant(row.severity)}>{row.severity}</Badge>

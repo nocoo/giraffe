@@ -1,4 +1,4 @@
-import { Badge, Button, Input, Link, SegmentControl, toast } from "@nocoo/basalt";
+import { Badge, Input, Link, SegmentControl, toast } from "@nocoo/basalt";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
 import {
@@ -15,16 +15,23 @@ import { LanguageLabel } from "../components/layout/labels";
 import { TableSkeleton } from "../components/layout/page-skeleton";
 import { RefreshButton } from "../components/layout/refresh-button";
 import { INLINE_SEGMENT } from "../components/layout/segment";
+import { Meter, SortButton } from "../components/layout/table-chrome";
 import { catchLoad, missingTitle } from "../lib/error-ui";
 import {
 	DATE_CELL,
+	daysBetween,
 	formatCount,
 	formatDate,
 	formatHealth,
 	formatVisibility,
+	freshnessFilled,
+	freshnessTone,
 	healthBadgeVariant,
+	maxCount,
+	meterFilled,
 	NUM_CELL,
 	NUM_HEAD,
+	visibilityBadgeVariant,
 } from "../lib/format";
 import { PAGE_DESCRIPTIONS } from "../lib/navigation";
 import { requestRefresh } from "../viewmodels/refresh";
@@ -96,6 +103,7 @@ export function ReposPage() {
 	}, [snap, query, sort]);
 	const health = healthMap(insights);
 	const incomplete = alertsIncomplete(insights);
+	const peakIssues = maxCount(rows.map((row) => row.open_issue_count));
 	const actions = (
 		<>
 			{snap && !("missing" in snap) && snap.truncated ? (
@@ -215,12 +223,15 @@ export function ReposPage() {
 									<p className="mt-2 line-clamp-2 text-sm text-basalt-muted-foreground">
 										{row.description ?? "没有描述"}
 									</p>
-									<div className="mt-3 flex items-center gap-2 text-xs text-basalt-muted-foreground">
+									<div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-basalt-muted-foreground">
 										<LanguageLabel name={row.primary_language} />
 										<span>·</span>
 										<span className="tabular-nums">★ {formatCount(row.stargazer_count)}</span>
-										<span>·</span>
-										<Badge variant="outline">{formatVisibility(row.visibility)}</Badge>
+										<Badge variant={visibilityBadgeVariant(row.visibility)}>
+											{formatVisibility(row.visibility)}
+										</Badge>
+										{row.is_archived ? <Badge variant="orange">归档</Badge> : null}
+										{row.is_fork ? <Badge variant="teal">Fork</Badge> : null}
 									</div>
 								</LayerCard>
 							</Link>
@@ -234,30 +245,38 @@ export function ReposPage() {
 							<TableHeader>
 								<TableRow>
 									<TableHead>
-										<Button type="button" variant="ghost" onClick={() => setSort("name")}>
-											仓库
-										</Button>
+										<SortButton
+											label="仓库"
+											active={sort === "name"}
+											onClick={() => setSort("name")}
+										/>
 									</TableHead>
+									<TableHead>标记</TableHead>
 									<TableHead>语言</TableHead>
 									<TableHead className={NUM_HEAD}>
-										<Button type="button" variant="ghost" onClick={() => setSort("stars")}>
-											★
-										</Button>
+										<SortButton
+											label="★"
+											active={sort === "stars"}
+											onClick={() => setSort("stars")}
+										/>
 									</TableHead>
 									<TableHead className={NUM_HEAD}>Fork</TableHead>
 									<TableHead className={NUM_HEAD}>Issues</TableHead>
+									<TableHead>活跃</TableHead>
 									<TableHead className={NUM_HEAD}>
-										<Button type="button" variant="ghost" onClick={() => setSort("pushed")}>
-											最近推送
-										</Button>
+										<SortButton
+											label="最近推送"
+											active={sort === "pushed"}
+											onClick={() => setSort("pushed")}
+										/>
 									</TableHead>
-									<TableHead>可见性</TableHead>
 									{health.size > 0 ? <TableHead>健康</TableHead> : null}
 								</TableRow>
 							</TableHeader>
 							<TableBody>
 								{rows.map((row) => {
 									const status = health.get(row.name_with_owner);
+									const days = daysBetween(snap.fetched_at, row.pushed_at);
 									return (
 										<TableRow key={row.name_with_owner}>
 											<TableCell>
@@ -266,17 +285,37 @@ export function ReposPage() {
 												</Link>
 											</TableCell>
 											<TableCell>
+												<div className="flex flex-wrap gap-1">
+													<Badge variant={visibilityBadgeVariant(row.visibility)}>
+														{formatVisibility(row.visibility)}
+													</Badge>
+													{row.is_archived ? <Badge variant="orange">归档</Badge> : null}
+													{row.is_fork ? <Badge variant="teal">Fork</Badge> : null}
+												</div>
+											</TableCell>
+											<TableCell>
 												<LanguageLabel name={row.primary_language} />
 											</TableCell>
 											<TableCell className={NUM_CELL}>{formatCount(row.stargazer_count)}</TableCell>
 											<TableCell className={NUM_CELL}>{formatCount(row.fork_count)}</TableCell>
-											<TableCell className={NUM_CELL}>
-												{formatCount(row.open_issue_count)}
+											<TableCell>
+												<div className="flex items-center justify-end gap-2">
+													<Meter
+														filled={meterFilled(row.open_issue_count, peakIssues)}
+														tone="bg-basalt-primary"
+														label={`${row.name_with_owner} issues`}
+													/>
+													<span className={NUM_CELL}>{formatCount(row.open_issue_count)}</span>
+												</div>
+											</TableCell>
+											<TableCell>
+												<Meter
+													filled={freshnessFilled(days)}
+													tone={freshnessTone(days)}
+													label={`${row.name_with_owner} activity`}
+												/>
 											</TableCell>
 											<TableCell className={DATE_CELL}>{formatDate(row.pushed_at)}</TableCell>
-											<TableCell>
-												<Badge variant="outline">{formatVisibility(row.visibility)}</Badge>
-											</TableCell>
 											{health.size > 0 ? (
 												<TableCell>
 													{status ? (

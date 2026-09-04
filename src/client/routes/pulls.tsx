@@ -13,8 +13,10 @@ import { GitPullRequest } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { TableSkeleton } from "../components/layout/page-skeleton";
 import { RefreshButton } from "../components/layout/refresh-button";
+import { ChurnMeter, PersonCell, SortButton } from "../components/layout/table-chrome";
 import { catchLoad, missingTitle } from "../lib/error-ui";
 import {
+	churnFilled,
 	DATE_CELL,
 	formatCount,
 	formatDate,
@@ -24,11 +26,12 @@ import {
 	reviewBadgeVariant,
 } from "../lib/format";
 import { PAGE_DESCRIPTIONS } from "../lib/navigation";
-import { filterPulls, loadPulls, type PullsSnapshot } from "../viewmodels/pulls";
+import { loadPulls, type PullSort, type PullsSnapshot, visiblePulls } from "../viewmodels/pulls";
 import { requestRefresh } from "../viewmodels/refresh";
 
 export function PullsPage() {
 	const [query, setQuery] = useState("");
+	const [sort, setSort] = useState<PullSort>("updated");
 	const [snap, setSnap] = useState<PullsSnapshot | { missing: true } | null>(null);
 
 	function onLoadError(err: unknown): void {
@@ -57,8 +60,8 @@ export function PullsPage() {
 		if (!snap || "missing" in snap) {
 			return [];
 		}
-		return filterPulls(snap.pull_requests, query);
-	}, [snap, query]);
+		return visiblePulls(snap.pull_requests, query, sort);
+	}, [snap, query, sort]);
 
 	if (snap && "missing" in snap) {
 		return (
@@ -125,49 +128,77 @@ export function PullsPage() {
 						<Table data-testid="pr-list">
 							<TableHeader>
 								<TableRow>
-									<TableHead>仓库</TableHead>
+									<TableHead>
+										<SortButton
+											label="仓库"
+											active={sort === "repo"}
+											onClick={() => setSort("repo")}
+										/>
+									</TableHead>
 									<TableHead className={NUM_HEAD}>编号</TableHead>
 									<TableHead>标题</TableHead>
 									<TableHead>作者</TableHead>
-									<TableHead>草稿</TableHead>
-									<TableHead>审查</TableHead>
-									<TableHead className={NUM_HEAD}>+/−</TableHead>
-									<TableHead className={NUM_HEAD}>更新</TableHead>
+									<TableHead>状态</TableHead>
+									<TableHead className={NUM_HEAD}>变更</TableHead>
+									<TableHead className={NUM_HEAD}>
+										<SortButton
+											label="更新"
+											active={sort === "updated"}
+											onClick={() => setSort("updated")}
+										/>
+									</TableHead>
 								</TableRow>
 							</TableHeader>
 							<TableBody>
-								{rows.map((row) => (
-									<TableRow key={`${row.name_with_owner}#${row.number}`}>
-										<TableCell className="text-basalt-muted-foreground">
-											{row.name_with_owner}
-										</TableCell>
-										<TableCell className={NUM_CELL}>#{row.number}</TableCell>
-										<TableCell>
-											<Link href={row.url} target="_blank" rel="noreferrer">
-												{row.title}
-											</Link>
-										</TableCell>
-										<TableCell>{row.author_login ?? "—"}</TableCell>
-										<TableCell>
-											{row.is_draft ? <Badge variant="secondary">草稿</Badge> : "—"}
-										</TableCell>
-										<TableCell>
-											{row.review_decision ? (
-												<Badge variant={reviewBadgeVariant(row.review_decision)}>
-													{formatReview(row.review_decision)}
-												</Badge>
-											) : (
-												"—"
-											)}
-										</TableCell>
-										<TableCell className={NUM_CELL}>
-											<span className="text-basalt-info">+{formatCount(row.additions)}</span>
-											<span className="text-basalt-muted-foreground">/</span>
-											<span className="text-basalt-danger">−{formatCount(row.deletions)}</span>
-										</TableCell>
-										<TableCell className={DATE_CELL}>{formatDate(row.updated_at)}</TableCell>
-									</TableRow>
-								))}
+								{rows.map((row) => {
+									const churn = churnFilled(row.additions, row.deletions);
+									return (
+										<TableRow key={`${row.name_with_owner}#${row.number}`}>
+											<TableCell className="text-basalt-muted-foreground">
+												{row.name_with_owner}
+											</TableCell>
+											<TableCell className={NUM_CELL}>#{row.number}</TableCell>
+											<TableCell>
+												<Link href={row.url} target="_blank" rel="noreferrer">
+													{row.title}
+												</Link>
+											</TableCell>
+											<TableCell>
+												<PersonCell login={row.author_login} />
+											</TableCell>
+											<TableCell>
+												<div className="flex flex-wrap gap-1">
+													{row.is_draft ? <Badge variant="purple">草稿</Badge> : null}
+													{row.review_decision ? (
+														<Badge variant={reviewBadgeVariant(row.review_decision)}>
+															{formatReview(row.review_decision)}
+														</Badge>
+													) : null}
+													{!row.is_draft && !row.review_decision ? (
+														<span className="text-basalt-muted-foreground">—</span>
+													) : null}
+												</div>
+											</TableCell>
+											<TableCell>
+												<div className="flex items-center justify-end gap-2">
+													<ChurnMeter
+														adds={churn.adds}
+														dels={churn.dels}
+														label={`${row.name_with_owner}#${row.number} diff`}
+													/>
+													<span className={NUM_CELL}>
+														<span className="text-basalt-info">+{formatCount(row.additions)}</span>
+														<span className="text-basalt-muted-foreground">/</span>
+														<span className="text-basalt-danger">
+															−{formatCount(row.deletions)}
+														</span>
+													</span>
+												</div>
+											</TableCell>
+											<TableCell className={DATE_CELL}>{formatDate(row.updated_at)}</TableCell>
+										</TableRow>
+									);
+								})}
 							</TableBody>
 						</Table>
 					)}
