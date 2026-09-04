@@ -161,7 +161,7 @@ Basalt `ContentIsland` 已是 L1 岛。不要再包一层自定义 card 当岛�
 
 配方：
 
-- 每页先 `PageHeader`（flush，不包卡）。短筛选放 `actions`（刷新/创建最后）；两个及以上筛选放 `filters`。
+- 每页先 `PageHeader`（flush，不包卡）。短筛选放 `actions`（刷新/创建最后）；两个及以上筛选放 `filters`。页头右侧按钮与搜索用 `size="sm"`（`h-8`），与标题行、`SegmentControl` 同高。
 - 分区用 `SectionRule`。卡片标题留在 `LayerCard.Header`。
 - 非结构砖（网格仓卡、KPI）：岛上裸 `LayerCard padding="md"`，不要 Header/Body。
 - 表单 / 身份：`Header` + `Body`（控件留在 L2）。`Secondary` 是 `Header` 别名。

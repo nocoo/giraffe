@@ -60,22 +60,14 @@ export function IssuesPage() {
 	}, [snap, query, sort]);
 
 	const filters = (
-		<>
-			{snap && !("missing" in snap) && snap.truncated ? (
-				<Badge variant="warning">已截断</Badge>
-			) : null}
-			<Input
-				value={query}
-				onChange={(event) => setQuery(event.target.value)}
-				placeholder="搜索仓库或标题"
-				aria-label="搜索 Issues"
-				className="w-56 shrink-0"
-			/>
-			<RefreshButton
-				run={() => requestRefresh(["issues"]).then(() => loadIssues().then(setSnap))}
-				onError={onLoadError}
-			/>
-		</>
+		<Input
+			value={query}
+			onChange={(event) => setQuery(event.target.value)}
+			placeholder="搜索仓库或标题"
+			aria-label="搜索 Issues"
+			size="sm"
+			className="w-56 shrink-0"
+		/>
 	);
 
 	if (snap && "missing" in snap) {
@@ -115,7 +107,20 @@ export function IssuesPage() {
 
 	return (
 		<div className="space-y-8">
-			<PageHeader title="Issues" description={PAGE_DESCRIPTIONS["/issues"]} actions={filters} />
+			<PageHeader
+				title="Issues"
+				description={PAGE_DESCRIPTIONS["/issues"]}
+				actions={
+					<>
+						{snap.truncated ? <Badge variant="warning">已截断</Badge> : null}
+						<RefreshButton
+							run={() => requestRefresh(["issues"]).then(() => loadIssues().then(setSnap))}
+							onError={onLoadError}
+						/>
+					</>
+				}
+				filters={filters}
+			/>
 			<LayerCard>
 				<LayerCard.Well {...(rows.length === 0 ? {} : { className: "p-0" })}>
 					{rows.length === 0 ? (

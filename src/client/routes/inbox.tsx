@@ -97,6 +97,7 @@ export function InboxPage() {
 						/>
 						<Button
 							type="button"
+							size="sm"
 							disabled={unread === 0}
 							onClick={() => {
 								void markReadAll(snap.account_id)

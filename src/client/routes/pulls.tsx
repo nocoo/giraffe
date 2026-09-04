@@ -106,18 +106,21 @@ export function PullsPage() {
 				actions={
 					<>
 						{snap.truncated ? <Badge variant="warning">已截断</Badge> : null}
-						<Input
-							value={query}
-							onChange={(event) => setQuery(event.target.value)}
-							placeholder="搜索仓库或标题"
-							aria-label="搜索 Pull Requests"
-							className="w-56 shrink-0"
-						/>
 						<RefreshButton
 							run={() => requestRefresh(["prs"]).then(() => loadPulls().then(setSnap))}
 							onError={onLoadError}
 						/>
 					</>
+				}
+				filters={
+					<Input
+						value={query}
+						onChange={(event) => setQuery(event.target.value)}
+						placeholder="搜索仓库或标题"
+						aria-label="搜索 Pull Requests"
+						size="sm"
+						className="w-56 shrink-0"
+					/>
 				}
 			/>
 			<LayerCard>

@@ -13,6 +13,7 @@ export function RefreshButton({
 	return (
 		<Button
 			type="button"
+			size="sm"
 			loading={busy}
 			onClick={() => {
 				void run()

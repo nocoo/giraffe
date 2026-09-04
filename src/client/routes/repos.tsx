@@ -120,6 +120,7 @@ export function ReposPage() {
 				onChange={(event) => setQuery(event.target.value)}
 				placeholder="搜索仓库"
 				aria-label="搜索仓库"
+				size="sm"
 				className="w-56 shrink-0"
 			/>
 			<SegmentControl
