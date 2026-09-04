@@ -3,6 +3,18 @@
 @import "@nocoo/basalt/styles/tailwind";
 @import "tailwindcss";
 
+:root,
+.light,
+[data-mode="light"],
+.dark,
+[data-mode="dark"] {
+	--basalt-primary: 217 91% 48%;
+	--basalt-primary-foreground: 0 0% 100%;
+	--basalt-ring: 217 91% 48%;
+	--basalt-chart-1: 217 91% 48%;
+	--basalt-heatmap-green-3: 142 64% 30%;
+}
+
 @layer base {
 	html,
 	body,
