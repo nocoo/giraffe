@@ -56,37 +56,54 @@ const PR_STATUS_SERIES = [
 	{ key: "未标记", color: chart.cadet },
 ];
 
-function Metric({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
+function MetricCard({
+	icon: Icon,
+	label,
+	value,
+}: {
+	icon: LucideIcon;
+	label: string;
+	value: string;
+}) {
 	return (
-		<div className="flex min-w-0 items-center gap-3">
-			<span className="flex size-9 shrink-0 items-center justify-center rounded-basalt-md bg-basalt-primary/10 text-basalt-primary">
-				<Icon className="size-4" strokeWidth={1.75} />
-			</span>
-			<div className="min-w-0">
-				<p className="truncate text-xs text-basalt-muted-foreground">{label}</p>
-				<p className="tabular-nums text-lg font-medium">{value}</p>
+		<LayerCard padding="md">
+			<div className="flex items-center gap-3">
+				<span className="flex size-9 shrink-0 items-center justify-center rounded-basalt-md text-basalt-primary">
+					<Icon className="size-4" strokeWidth={1.75} />
+				</span>
+				<div className="min-w-0">
+					<p className="truncate text-xs text-basalt-muted-foreground">{label}</p>
+					<p className="tabular-nums text-lg font-medium">{value}</p>
+				</div>
 			</div>
-		</div>
+		</LayerCard>
 	);
 }
 
-function ChartPanel({
+function ChartCard({
 	icon: Icon,
 	title,
-	children,
+	plot,
+	ring,
 }: {
 	icon: LucideIcon;
 	title: string;
-	children: ReactNode;
+	plot: ReactNode;
+	ring: ReactNode;
 }) {
 	return (
-		<section className="min-w-0 space-y-3 bg-basalt-bright">
-			<h2 className="flex items-center gap-2 text-sm font-medium">
-				<Icon className="size-4 text-basalt-primary" strokeWidth={1.75} />
-				{title}
-			</h2>
-			{children}
-		</section>
+		<LayerCard>
+			<LayerCard.Header>
+				<span className="inline-flex items-center gap-2">
+					<Icon className="size-4 text-basalt-primary" strokeWidth={1.75} />
+					{title}
+				</span>
+			</LayerCard.Header>
+			<LayerCard.Body className="flex flex-col gap-4">
+				<div className="h-44 min-w-0">{plot}</div>
+				<div className="flex h-36 min-w-0 items-center justify-center">{ring}</div>
+			</LayerCard.Body>
+		</LayerCard>
 	);
 }
 
@@ -196,100 +213,118 @@ export function InsightsPage() {
 				}
 			/>
 			<div
-				className="flex flex-wrap items-center gap-x-8 gap-y-4 bg-basalt-bright py-1"
+				className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8"
 				data-testid="insight-metrics"
 			>
-				<Metric icon={CircleDot} label="打开 Issues" value={formatCount(charts.issueCount)} />
-				<Metric icon={GitPullRequest} label="打开 PRs" value={formatCount(charts.prCount)} />
-				<Metric
+				<MetricCard icon={CircleDot} label="Issues" value={formatCount(charts.issueCount)} />
+				<MetricCard icon={GitPullRequest} label="PRs" value={formatCount(charts.prCount)} />
+				<MetricCard
 					icon={Activity}
-					label="有 Issue 的仓"
+					label="Issue 仓"
 					value={formatCount(charts.reposWithIssues + charts.reposWithBoth)}
 				/>
-				<Metric
+				<MetricCard
 					icon={GitPullRequest}
-					label="有 PR 的仓"
+					label="PR 仓"
 					value={formatCount(charts.reposWithPrs + charts.reposWithBoth)}
 				/>
-				<Metric icon={HeartPulse} label="健康" value={formatCount(charts.strongCount)} />
-				<Metric icon={Eye} label="观察" value={formatCount(charts.watchCount)} />
-				<Metric icon={ShieldAlert} label="风险" value={formatCount(charts.riskyCount)} />
-				<Metric icon={Clock} label="90 天未推送" value={formatCount(charts.staleCount)} />
+				<MetricCard icon={HeartPulse} label="健康" value={formatCount(charts.strongCount)} />
+				<MetricCard icon={Eye} label="观察" value={formatCount(charts.watchCount)} />
+				<MetricCard icon={ShieldAlert} label="风险" value={formatCount(charts.riskyCount)} />
+				<MetricCard icon={Clock} label="久未推送" value={formatCount(charts.staleCount)} />
 			</div>
-			<div className="grid gap-8 bg-basalt-bright lg:grid-cols-3">
-				<ChartPanel icon={CircleDot} title="跨仓工作量">
-					{charts.workloadByRepo.length > 0 ? (
-						<StackedBarChart
-							data={charts.workloadByRepo}
+			<div className="grid gap-4 lg:grid-cols-3">
+				<ChartCard
+					icon={CircleDot}
+					title="跨仓工作量"
+					plot={
+						charts.workloadByRepo.length > 0 ? (
+							<StackedBarChart
+								data={charts.workloadByRepo}
+								series={ISSUE_PR_SERIES}
+								ariaLabel="issues and pull requests by repository"
+								className="h-full w-full"
+								showAxes
+								showLegend
+								valueFormatter={formatCount}
+							/>
+						) : (
+							<ChartEmpty label="没有打开的 Issue 或 Pull Request" />
+						)
+					}
+					ring={
+						charts.coverage.length > 0 ? (
+							<DonutChart
+								data={charts.coverage}
+								series={COVERAGE_SERIES}
+								ariaLabel="repositories with issues or pull requests"
+								className="h-full w-full"
+								showLegend
+								valueFormatter={formatCount}
+							/>
+						) : (
+							<ChartEmpty label="没有仓库覆盖数据" />
+						)
+					}
+				/>
+				<ChartCard
+					icon={GitPullRequest}
+					title="审查与节奏"
+					plot={
+						<LineChart
+							data={charts.activity}
 							series={ISSUE_PR_SERIES}
-							ariaLabel="issues and pull requests by repository"
-							className="h-40 w-full"
+							ariaLabel="issues and pull requests opened by week"
+							className="h-full w-full"
 							showAxes
 							showLegend
 							valueFormatter={formatCount}
 						/>
-					) : (
-						<ChartEmpty label="没有打开的 Issue 或 Pull Request" />
-					)}
-					{charts.coverage.length > 0 ? (
-						<DonutChart
-							data={charts.coverage}
-							series={COVERAGE_SERIES}
-							ariaLabel="repositories with issues or pull requests"
-							className="h-36 w-full"
+					}
+					ring={
+						charts.prStatus.length > 0 ? (
+							<DonutChart
+								data={charts.prStatus}
+								series={PR_STATUS_SERIES}
+								ariaLabel="pull request review status"
+								className="h-full w-full"
+								showLegend
+								valueFormatter={formatCount}
+							/>
+						) : (
+							<ChartEmpty label="没有打开的 Pull Request" />
+						)
+					}
+				/>
+				<ChartCard
+					icon={HeartPulse}
+					title="健康与活跃"
+					plot={
+						<BarChart
+							data={charts.freshness}
+							series={[{ key: "y", label: "仓库数", color: chart.teal }]}
+							ariaLabel="days since last push"
+							className="h-full w-full"
+							showAxes
 							showLegend
 							valueFormatter={formatCount}
 						/>
-					) : (
-						<ChartEmpty label="没有仓库覆盖数据" />
-					)}
-				</ChartPanel>
-				<ChartPanel icon={GitPullRequest} title="审查与节奏">
-					{charts.prStatus.length > 0 ? (
-						<DonutChart
-							data={charts.prStatus}
-							series={PR_STATUS_SERIES}
-							ariaLabel="pull request review status"
-							className="h-36 w-full"
-							showLegend
-							valueFormatter={formatCount}
-						/>
-					) : (
-						<ChartEmpty label="没有打开的 Pull Request" />
-					)}
-					<LineChart
-						data={charts.activity}
-						series={ISSUE_PR_SERIES}
-						ariaLabel="issues and pull requests opened by week"
-						className="h-40 w-full"
-						showAxes
-						showLegend
-						valueFormatter={formatCount}
-					/>
-				</ChartPanel>
-				<ChartPanel icon={HeartPulse} title="健康与活跃">
-					{charts.health.length > 0 ? (
-						<DonutChart
-							data={charts.health}
-							series={HEALTH_SERIES}
-							ariaLabel="repository health"
-							className="h-36 w-full"
-							showLegend
-							valueFormatter={formatCount}
-						/>
-					) : (
-						<ChartEmpty label="没有健康数据" />
-					)}
-					<BarChart
-						data={charts.freshness}
-						series={[{ key: "y", label: "仓库数", color: chart.teal }]}
-						ariaLabel="days since last push"
-						className="h-40 w-full"
-						showAxes
-						showLegend
-						valueFormatter={formatCount}
-					/>
-				</ChartPanel>
+					}
+					ring={
+						charts.health.length > 0 ? (
+							<DonutChart
+								data={charts.health}
+								series={HEALTH_SERIES}
+								ariaLabel="repository health"
+								className="h-full w-full"
+								showLegend
+								valueFormatter={formatCount}
+							/>
+						) : (
+							<ChartEmpty label="没有健康数据" />
+						)
+					}
+				/>
 			</div>
 		</div>
 	);
