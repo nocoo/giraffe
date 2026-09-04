@@ -179,7 +179,7 @@ Basalt `ContentIsland` 已是 L1 岛。不要再包一层自定义 card 当岛�
 | 顶栏 | `AppHeader` | `@nocoo/basalt/components/app-header` |
 | 岛内页头 | `PageHeader` | `@nocoo/basalt/components/page-header` |
 | 分区 | `SectionRule` | `@nocoo/basalt/components/section-rule` |
-| 按钮 / 输入 / 字段 | `Button` `Input` `Field` `Label` | `@nocoo/basalt` |
+| 按钮 / 输入 / 字段 | `Button` `Input` `Field` `Label` | `@nocoo/basalt`。页级主操作（刷新、提交、激活、全部已读）用默认变体 `bg-basalt-primary`；危险操作用 `destructive`；壳层 / 表头排序用 `ghost`；行内次要用 `secondary` |
 | PAT | `SensitiveInput` | `@nocoo/basalt/components/sensitive-input` |
 | 列表 | `Table` `TableHeader` `TableBody` `TableRow` `TableCell` | `@nocoo/basalt/components/table` |
 | 空态 | `Empty` | `@nocoo/basalt/components/empty` |

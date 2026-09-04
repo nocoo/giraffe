@@ -61,7 +61,6 @@ export function DigestPage() {
 					description={PAGE_DESCRIPTIONS["/digest"]}
 					actions={
 						<RefreshButton
-							variant="default"
 							run={() => requestRefresh(["repos"]).then(() => loadDigest().then(setSnap))}
 							onError={onLoadError}
 						/>

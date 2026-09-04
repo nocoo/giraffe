@@ -5,17 +5,14 @@ import { refreshInFlight, subscribeRefresh } from "../../viewmodels/refresh";
 export function RefreshButton({
 	run,
 	onError,
-	variant = "secondary",
 }: {
 	run: () => Promise<unknown>;
 	onError?: (err: unknown) => void;
-	variant?: "secondary" | "default";
 }) {
 	const busy = useSyncExternalStore(subscribeRefresh, refreshInFlight, refreshInFlight);
 	return (
 		<Button
 			type="button"
-			{...(variant === "default" ? {} : { variant })}
 			loading={busy}
 			onClick={() => {
 				void run()

@@ -146,7 +146,6 @@ export function InsightsPage() {
 					description={PAGE_DESCRIPTIONS["/insights"]}
 					actions={
 						<RefreshButton
-							variant="default"
 							run={() =>
 								requestRefresh(["repos", "issues", "prs", "alerts"]).then(() =>
 									loadInsightsBoard().then(setBoard),

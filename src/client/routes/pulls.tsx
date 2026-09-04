@@ -68,7 +68,6 @@ export function PullsPage() {
 					description={PAGE_DESCRIPTIONS["/pulls"]}
 					actions={
 						<RefreshButton
-							variant="default"
 							run={() => requestRefresh(["prs"]).then(() => loadPulls().then(setSnap))}
 							onError={onLoadError}
 						/>

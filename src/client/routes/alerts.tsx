@@ -57,7 +57,6 @@ export function AlertsPage() {
 					description={PAGE_DESCRIPTIONS["/alerts"]}
 					actions={
 						<RefreshButton
-							variant="default"
 							run={() => requestRefresh(["alerts"]).then(() => loadAlerts().then(setSnap))}
 							onError={onLoadError}
 						/>

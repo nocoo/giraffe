@@ -146,7 +146,6 @@ export function ReposPage() {
 					description={PAGE_DESCRIPTIONS["/"]}
 					actions={
 						<RefreshButton
-							variant="default"
 							run={() => requestRefresh(["repos"]).then(() => reload())}
 							onError={onLoadError}
 						/>

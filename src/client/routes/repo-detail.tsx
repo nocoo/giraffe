@@ -283,7 +283,6 @@ export function RepoDetailPage() {
 					/>
 					<div className="pt-2">
 						<RefreshButton
-							variant="default"
 							run={() => {
 								const mine = gen.current;
 								return requestRefresh(repoKind(owner, name, "details"))

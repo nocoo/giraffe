@@ -227,7 +227,6 @@ export function SettingsPage() {
 												<div className="flex gap-2">
 													<Button
 														type="button"
-														variant="secondary"
 														disabled={row.is_active || actingId === row.id}
 														loading={actingId === row.id}
 														onClick={() => {

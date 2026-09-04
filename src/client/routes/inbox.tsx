@@ -52,7 +52,6 @@ export function InboxPage() {
 					description={PAGE_DESCRIPTIONS["/inbox"]}
 					actions={
 						<RefreshButton
-							variant="default"
 							run={() => requestRefresh(["notifications"]).then(() => loadInbox().then(setSnap))}
 							onError={onLoadError}
 						/>
@@ -98,7 +97,6 @@ export function InboxPage() {
 						/>
 						<Button
 							type="button"
-							variant="secondary"
 							disabled={unread === 0}
 							onClick={() => {
 								void markReadAll(snap.account_id)

@@ -79,7 +79,6 @@ export function IssuesPage() {
 					description={PAGE_DESCRIPTIONS["/issues"]}
 					actions={
 						<RefreshButton
-							variant="default"
 							run={() => requestRefresh(["issues"]).then(() => loadIssues().then(setSnap))}
 							onError={onLoadError}
 						/>
