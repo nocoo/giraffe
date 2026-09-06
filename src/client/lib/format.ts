@@ -32,10 +32,6 @@ export function formatCount(value: number): string {
 	return new Intl.NumberFormat("zh-CN").format(value);
 }
 
-export function formatDays(value: number): string {
-	return `${formatCount(value)} 天`;
-}
-
 const LANGUAGE_COLORS: Record<string, string> = {
 	TypeScript: "#3178c6",
 	JavaScript: "#f1e05a",
@@ -172,32 +168,6 @@ export function visibilityBadgeVariant(value: string): "blue" | "purple" | "outl
 		return "purple";
 	}
 	return "outline";
-}
-
-export function opportunityLabel(value: string): string {
-	if (value === "stale_push") {
-		return "久未推送";
-	}
-	if (value === "many_issues") {
-		return "大量 Issue";
-	}
-	if (value === "open_alerts") {
-		return "有告警";
-	}
-	return value;
-}
-
-export function opportunityBadgeVariant(value: string): "orange" | "red" | "purple" | "secondary" {
-	if (value === "stale_push") {
-		return "orange";
-	}
-	if (value === "many_issues") {
-		return "red";
-	}
-	if (value === "open_alerts") {
-		return "purple";
-	}
-	return "secondary";
 }
 
 export function reasonBadgeVariant(

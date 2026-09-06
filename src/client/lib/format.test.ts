@@ -7,7 +7,6 @@ import {
 	formatConclusion,
 	formatCount,
 	formatDate,
-	formatDays,
 	formatDelta,
 	formatHealth,
 	formatReview,
@@ -21,8 +20,6 @@ import {
 	languageColor,
 	maxCount,
 	meterFilled,
-	opportunityBadgeVariant,
-	opportunityLabel,
 	reasonBadgeVariant,
 	reviewBadgeVariant,
 	severityBadgeVariant,
@@ -43,7 +40,6 @@ describe("format", () => {
 		expect(formatDate("not-a-date")).toBe("—");
 		expect(formatDate("2024-03-15T12:00:00.000Z")).toMatch(/^2024-03-15 \d{2}:\d{2}$/);
 		expect(formatCount(1200)).toBe("1,200");
-		expect(formatDays(3)).toBe("3 天");
 		expect(languageColor("TypeScript")).toBe("#3178c6");
 		expect(languageColor("UnknownLang")).toMatch(/^hsl\(\d+ 42% 48%\)$/);
 		expect(initials("")).toBe("?");
@@ -88,14 +84,6 @@ describe("format", () => {
 		expect(visibilityBadgeVariant("public")).toBe("blue");
 		expect(visibilityBadgeVariant("PRIVATE")).toBe("purple");
 		expect(visibilityBadgeVariant("internal")).toBe("outline");
-		expect(opportunityLabel("stale_push")).toBe("久未推送");
-		expect(opportunityLabel("many_issues")).toBe("大量 Issue");
-		expect(opportunityLabel("open_alerts")).toBe("有告警");
-		expect(opportunityLabel("other")).toBe("other");
-		expect(opportunityBadgeVariant("stale_push")).toBe("orange");
-		expect(opportunityBadgeVariant("many_issues")).toBe("red");
-		expect(opportunityBadgeVariant("open_alerts")).toBe("purple");
-		expect(opportunityBadgeVariant("x")).toBe("secondary");
 		expect(reasonBadgeVariant("mention")).toBe("purple");
 		expect(reasonBadgeVariant("assign")).toBe("blue");
 		expect(reasonBadgeVariant("comment")).toBe("teal");
