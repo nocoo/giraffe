@@ -1,4 +1,4 @@
-<p align="center"><img src="logo.png" width="128" height="128"/></p>
+<p align="center"><img src="assets/brand/icon-rounded.png" alt="Giraffe" width="128" height="128"/></p>
 
 <h1 align="center">Giraffe</h1>
 
@@ -46,7 +46,7 @@ bun run test:coverage
 bun run test:e2e:api
 ```
 
-源 logo 是根目录 `logo.png`。派生图标：
+根目录 `logo.png` 为透明原图；README 和 Apple touch 使用独立的背景版本。使用规范见 [品牌资源](assets/brand/README.md)。派生图标：
 
 ```bash
 ./scripts/resize-logos.sh

@@ -1,0 +1,46 @@
+{
+	"study": "giraffe/2026-09-07-01",
+	"finishing": "02",
+	"model": "gpt-image-2",
+	"method": "generated-redesign",
+	"generationCalls": 1,
+	"nativeDimensions": [2048, 2048],
+	"generation": {
+		"path": "raw/generated.png",
+		"sha256": "55739caf938b94207c5c96f556004413cec9373db619deb31aab784b602be603"
+	},
+	"sourceRevisionBefore": "e0bb57ab7b7e498db9bd470d673ba52bb76be6f0",
+	"previous": {
+		"original": "/logos/originals/giraffe.png",
+		"sourceUrl": "https://github.com/nocoo/giraffe/blob/13083cd48ff37f4d47f1b5848d980eaa72fba80f/logo.png",
+		"sha256": "169ba1ff6951014dd9fdedb750bc4d65d7099c250eb1f941570bfb3c509db0fe",
+		"width": 1408,
+		"height": 1408
+	},
+	"masters": {
+		"logo.png": {
+			"sha256": "68144efac72c45b858868fe82c6321a3f23b7428581daec62372259c72d20339",
+			"width": 2048,
+			"height": 2048
+		},
+		"assets/brand/icon.png": {
+			"sha256": "a0a891160f779acc998e77af4d92bd2517494de36e252f80a0ca0261fb704686",
+			"width": 2048,
+			"height": 2048
+		},
+		"assets/brand/icon-rounded.png": {
+			"sha256": "9231462e42a52e4f59f1da7c9a6dc96178e782d5ab54bf5e1232c9e03da766a9",
+			"width": 2048,
+			"height": 2048
+		}
+	},
+	"protectedFeatureClearancePx": 164.64,
+	"intentionalEdges": ["bottom"],
+	"acceptance": {
+		"decisionSource": "owner-delegated batch acceptance",
+		"ownerReviewedExactBytes": false,
+		"scope": "Surety, Owl, Ellie, Giraffe, and Steed redesign batch"
+	},
+	"review": "https://hexly.ai/logos/giraffe",
+	"archive": "https://github.com/nocoo/hexly.ai/tree/main/artwork/logo-family/giraffe/2026-09-07-01"
+}
