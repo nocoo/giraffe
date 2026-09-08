@@ -1,7 +1,8 @@
-import { Avatar, AvatarFallback, Badge, Button } from "@nocoo/basalt";
+import { Avatar, AvatarFallback, Button } from "@nocoo/basalt";
 import { SlotBarChart } from "@nocoo/basalt/charts/slot-bar";
 import { ChevronDown } from "lucide-react";
 import { fillTextColor, initials, labelFill, takeChips } from "../../lib/format";
+import { CandyBadge } from "./candy-badge";
 
 export function SortButton({
 	label,
@@ -55,7 +56,7 @@ export function LabelChips({ labels }: { labels: { name: string; color: string }
 					</span>
 				);
 			})}
-			{extra > 0 ? <Badge variant="secondary">+{extra}</Badge> : null}
+			{extra > 0 ? <CandyBadge tone="gray">+{extra}</CandyBadge> : null}
 		</span>
 	);
 }

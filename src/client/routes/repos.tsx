@@ -1,4 +1,4 @@
-import { Badge, Input, Link, SegmentControl, toast } from "@nocoo/basalt";
+import { Input, Link, SegmentControl, toast } from "@nocoo/basalt";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
@@ -12,6 +12,7 @@ import {
 } from "@nocoo/basalt/components/table";
 import { Box, CircleDot, GitFork, Star } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { CandyBadge } from "../components/layout/candy-badge";
 import { Kpi, KpiRow } from "../components/layout/kpi";
 import { LanguageLabel } from "../components/layout/labels";
 import { TableSkeleton } from "../components/layout/page-skeleton";
@@ -110,9 +111,9 @@ export function ReposPage() {
 	const actions = (
 		<>
 			{snap && !("missing" in snap) && snap.truncated ? (
-				<Badge variant="warning">已截断</Badge>
+				<CandyBadge tone="amber">已截断</CandyBadge>
 			) : null}
-			{incomplete ? <Badge variant="warning">告警不完整</Badge> : null}
+			{incomplete ? <CandyBadge tone="orange">告警不完整</CandyBadge> : null}
 		</>
 	);
 
@@ -230,7 +231,9 @@ export function ReposPage() {
 										<div className="flex items-start justify-between gap-2">
 											<p className="truncate font-medium">{row.name_with_owner}</p>
 											{status ? (
-												<Badge variant={healthBadgeVariant(status)}>{formatHealth(status)}</Badge>
+												<CandyBadge tone={healthBadgeVariant(status)}>
+													{formatHealth(status)}
+												</CandyBadge>
 											) : null}
 										</div>
 										<p className="mt-2 line-clamp-2 text-sm text-basalt-muted-foreground">
@@ -243,11 +246,11 @@ export function ReposPage() {
 												<Star className="size-3 text-basalt-primary" strokeWidth={1.5} />
 												{formatCount(row.stargazer_count)}
 											</span>
-											<Badge variant={visibilityBadgeVariant(row.visibility)}>
+											<CandyBadge tone={visibilityBadgeVariant(row.visibility)}>
 												{formatVisibility(row.visibility)}
-											</Badge>
-											{row.is_archived ? <Badge variant="orange">归档</Badge> : null}
-											{row.is_fork ? <Badge variant="teal">Fork</Badge> : null}
+											</CandyBadge>
+											{row.is_archived ? <CandyBadge tone="orange">归档</CandyBadge> : null}
+											{row.is_fork ? <CandyBadge tone="teal">Fork</CandyBadge> : null}
 										</div>
 									</LayerCard>
 								</Link>
@@ -302,11 +305,11 @@ export function ReposPage() {
 												</TableCell>
 												<TableCell>
 													<div className="flex flex-wrap gap-1">
-														<Badge variant={visibilityBadgeVariant(row.visibility)}>
+														<CandyBadge tone={visibilityBadgeVariant(row.visibility)}>
 															{formatVisibility(row.visibility)}
-														</Badge>
-														{row.is_archived ? <Badge variant="orange">归档</Badge> : null}
-														{row.is_fork ? <Badge variant="teal">Fork</Badge> : null}
+														</CandyBadge>
+														{row.is_archived ? <CandyBadge tone="orange">归档</CandyBadge> : null}
+														{row.is_fork ? <CandyBadge tone="teal">Fork</CandyBadge> : null}
 													</div>
 												</TableCell>
 												<TableCell>
@@ -337,9 +340,9 @@ export function ReposPage() {
 												{health.size > 0 ? (
 													<TableCell>
 														{status ? (
-															<Badge variant={healthBadgeVariant(status)}>
+															<CandyBadge tone={healthBadgeVariant(status)}>
 																{formatHealth(status)}
-															</Badge>
+															</CandyBadge>
 														) : (
 															"—"
 														)}

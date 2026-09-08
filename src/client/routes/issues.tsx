@@ -1,4 +1,4 @@
-import { Badge, Input, Link, toast } from "@nocoo/basalt";
+import { Input, Link, toast } from "@nocoo/basalt";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
@@ -12,6 +12,7 @@ import {
 } from "@nocoo/basalt/components/table";
 import { Box, CircleDot } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { CandyBadge } from "../components/layout/candy-badge";
 import { Kpi, KpiRow } from "../components/layout/kpi";
 import { TableSkeleton } from "../components/layout/page-skeleton";
 import { RefreshButton } from "../components/layout/refresh-button";
@@ -117,7 +118,7 @@ export function IssuesPage() {
 				description={PAGE_DESCRIPTIONS["/issues"]}
 				actions={
 					<>
-						{snap.truncated ? <Badge variant="warning">已截断</Badge> : null}
+						{snap.truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
 						<RefreshButton
 							run={() => requestRefresh(["issues"]).then(() => loadIssues().then(setSnap))}
 							onError={onLoadError}

@@ -1,4 +1,4 @@
-import { Badge, toast } from "@nocoo/basalt";
+import { toast } from "@nocoo/basalt";
 import { BarChart } from "@nocoo/basalt/charts/bar";
 import { DonutChart } from "@nocoo/basalt/charts/donut";
 import { LineChart } from "@nocoo/basalt/charts/line";
@@ -17,6 +17,7 @@ import {
 	ShieldAlert,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { CandyBadge } from "../components/layout/candy-badge";
 import { ChartBrick, ChartEmpty, ChartRow } from "../components/layout/chart-brick";
 import { Kpi, KpiRow } from "../components/layout/kpi";
 import { InsightsSkeleton } from "../components/layout/page-skeleton";
@@ -142,8 +143,8 @@ export function InsightsPage() {
 				description={PAGE_DESCRIPTIONS["/insights"]}
 				actions={
 					<>
-						{board.insights.truncated ? <Badge variant="warning">已截断</Badge> : null}
-						{incomplete ? <Badge variant="warning">告警不完整</Badge> : null}
+						{board.insights.truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
+						{incomplete ? <CandyBadge tone="orange">告警不完整</CandyBadge> : null}
 						<RefreshButton
 							run={() =>
 								requestRefresh(["repos", "issues", "prs", "alerts"]).then(() =>

@@ -1,4 +1,4 @@
-import { Badge, Button, Link, toast } from "@nocoo/basalt";
+import { Button, Link, toast } from "@nocoo/basalt";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
@@ -12,6 +12,7 @@ import {
 } from "@nocoo/basalt/components/table";
 import { Inbox, Mail, MailOpen } from "lucide-react";
 import { useEffect, useState } from "react";
+import { CandyBadge } from "../components/layout/candy-badge";
 import { Kpi, KpiRow } from "../components/layout/kpi";
 import { TableSkeleton } from "../components/layout/page-skeleton";
 import { RefreshButton } from "../components/layout/refresh-button";
@@ -91,8 +92,8 @@ export function InboxPage() {
 				description={PAGE_DESCRIPTIONS["/inbox"]}
 				actions={
 					<>
-						{snap.truncated ? <Badge variant="warning">已截断</Badge> : null}
-						{unread > 0 ? <Badge variant="info">{unread} 未读</Badge> : null}
+						{snap.truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
+						{unread > 0 ? <CandyBadge tone="sky">{unread} 未读</CandyBadge> : null}
 						<RefreshButton
 							run={() => requestRefresh(["notifications"]).then(() => loadInbox().then(setSnap))}
 							onError={onLoadError}
@@ -141,9 +142,9 @@ export function InboxPage() {
 										<TableRow key={row.id} {...(row.unread ? { variant: "selected" } : {})}>
 											<TableCell>
 												{row.unread ? (
-													<Badge variant="blue" dot>
+													<CandyBadge tone="sky" dot>
 														未读
-													</Badge>
+													</CandyBadge>
 												) : (
 													<span className="text-basalt-muted-foreground">已读</span>
 												)}
@@ -157,7 +158,7 @@ export function InboxPage() {
 												</Link>
 											</TableCell>
 											<TableCell>
-												<Badge variant={reasonBadgeVariant(row.reason)}>{row.reason}</Badge>
+												<CandyBadge tone={reasonBadgeVariant(row.reason)}>{row.reason}</CandyBadge>
 											</TableCell>
 											<TableCell className={DATE_CELL}>{formatDate(row.updated_at)}</TableCell>
 											<TableCell>

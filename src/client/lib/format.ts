@@ -2,6 +2,37 @@ export const NUM_HEAD = "text-right";
 export const NUM_CELL = "text-right tabular-nums";
 export const DATE_CELL = "text-right tabular-nums whitespace-nowrap text-basalt-muted-foreground";
 
+export type CandyTone =
+	| "green"
+	| "amber"
+	| "orange"
+	| "red"
+	| "rose"
+	| "teal"
+	| "sky"
+	| "blue"
+	| "purple"
+	| "indigo"
+	| "gray";
+
+const CANDY_CLASS: Record<CandyTone, string> = {
+	green: "border-transparent bg-[hsl(var(--basalt-accent-4))] text-[hsl(0_0%_10%)]",
+	amber: "border-transparent bg-[hsl(var(--basalt-accent-6))] text-[hsl(0_0%_10%)]",
+	orange: "border-transparent bg-[hsl(var(--basalt-accent-7))] text-[hsl(0_0%_10%)]",
+	red: "border-transparent bg-[hsl(var(--basalt-accent-8))] text-[hsl(0_0%_10%)]",
+	rose: "border-transparent bg-[hsl(var(--basalt-accent-9))] text-[hsl(0_0%_10%)]",
+	teal: "border-transparent bg-[hsl(var(--basalt-accent-3))] text-[hsl(0_0%_10%)]",
+	sky: "border-transparent bg-[hsl(var(--basalt-accent-2))] text-[hsl(0_0%_10%)]",
+	blue: "border-transparent bg-[hsl(var(--basalt-accent-1))] text-[hsl(0_0%_10%)]",
+	purple: "border-transparent bg-[hsl(var(--basalt-accent-10))] text-[hsl(0_0%_10%)]",
+	indigo: "border-transparent bg-[hsl(var(--basalt-accent-11))] text-[hsl(0_0%_10%)]",
+	gray: "border-transparent bg-[hsl(var(--basalt-accent-12))] text-[hsl(0_0%_10%)]",
+};
+
+export function candyClass(tone: CandyTone): string {
+	return CANDY_CLASS[tone];
+}
+
 export function formatDelta(value: number | null, baselineMissing: boolean): string {
 	if (baselineMissing || value === null) {
 		return "—";
@@ -95,14 +126,12 @@ export function formatHealth(health: "strong" | "watch" | "risky"): string {
 	return "风险";
 }
 
-export function healthBadgeVariant(
-	health: "strong" | "watch" | "risky",
-): "success" | "orange" | "red" {
+export function healthBadgeVariant(health: "strong" | "watch" | "risky"): CandyTone {
 	if (health === "strong") {
-		return "success";
+		return "green";
 	}
 	if (health === "watch") {
-		return "orange";
+		return "amber";
 	}
 	return "red";
 }
@@ -118,7 +147,7 @@ export function formatVisibility(value: string): string {
 	return value;
 }
 
-export function severityBadgeVariant(severity: string): "red" | "orange" | "teal" | "outline" {
+export function severityBadgeVariant(severity: string): CandyTone {
 	const key = severity.toLowerCase();
 	if (key === "critical" || key === "high") {
 		return "red";
@@ -129,7 +158,7 @@ export function severityBadgeVariant(severity: string): "red" | "orange" | "teal
 	if (key === "low") {
 		return "teal";
 	}
-	return "outline";
+	return "gray";
 }
 
 export function formatReview(decision: string | null): string {
@@ -148,22 +177,20 @@ export function formatReview(decision: string | null): string {
 	return decision;
 }
 
-export function reviewBadgeVariant(
-	decision: string | null,
-): "success" | "red" | "orange" | "outline" {
+export function reviewBadgeVariant(decision: string | null): CandyTone {
 	if (decision === "APPROVED") {
-		return "success";
+		return "green";
 	}
 	if (decision === "CHANGES_REQUESTED") {
-		return "red";
+		return "rose";
 	}
 	if (decision === "REVIEW_REQUIRED") {
-		return "orange";
+		return "amber";
 	}
-	return "outline";
+	return "gray";
 }
 
-export function visibilityBadgeVariant(value: string): "blue" | "purple" | "outline" {
+export function visibilityBadgeVariant(value: string): CandyTone {
 	const key = value.toLowerCase();
 	if (key === "public") {
 		return "blue";
@@ -171,7 +198,7 @@ export function visibilityBadgeVariant(value: string): "blue" | "purple" | "outl
 	if (key === "private") {
 		return "purple";
 	}
-	return "outline";
+	return "gray";
 }
 
 export function opportunityLabel(value: string): string {
@@ -187,24 +214,22 @@ export function opportunityLabel(value: string): string {
 	return value;
 }
 
-export function opportunityBadgeVariant(value: string): "orange" | "red" | "purple" | "secondary" {
+export function opportunityBadgeVariant(value: string): CandyTone {
 	if (value === "stale_push") {
-		return "orange";
+		return "amber";
 	}
 	if (value === "many_issues") {
 		return "red";
 	}
 	if (value === "open_alerts") {
-		return "purple";
+		return "orange";
 	}
-	return "secondary";
+	return "gray";
 }
 
-export function reasonBadgeVariant(
-	reason: string,
-): "blue" | "purple" | "teal" | "orange" | "red" | "outline" {
+export function reasonBadgeVariant(reason: string): CandyTone {
 	if (reason === "assign" || reason === "review_requested") {
-		return "blue";
+		return "sky";
 	}
 	if (reason === "mention" || reason === "team_mention") {
 		return "purple";
@@ -213,15 +238,15 @@ export function reasonBadgeVariant(
 		return "teal";
 	}
 	if (reason === "author" || reason === "state_change") {
-		return "orange";
+		return "amber";
 	}
 	if (reason === "security_alert") {
 		return "red";
 	}
-	return "outline";
+	return "gray";
 }
 
-export function sourceBadgeVariant(source: string): "teal" | "blue" | "purple" | "outline" {
+export function sourceBadgeVariant(source: string): CandyTone {
 	const key = source.toLowerCase();
 	if (key.includes("dependabot")) {
 		return "teal";
@@ -232,7 +257,17 @@ export function sourceBadgeVariant(source: string): "teal" | "blue" | "purple" |
 	if (key.includes("secret")) {
 		return "purple";
 	}
-	return "outline";
+	return "gray";
+}
+
+export function conclusionBadgeVariant(conclusion: string | null): CandyTone {
+	if (conclusion === "success") {
+		return "green";
+	}
+	if (conclusion === "failure") {
+		return "red";
+	}
+	return "gray";
 }
 
 export function takeChips<T>(items: T[], limit = 2): { shown: T[]; extra: number } {

@@ -1,4 +1,4 @@
-import { Badge, Link, toast } from "@nocoo/basalt";
+import { Link, toast } from "@nocoo/basalt";
 import { ClipboardText } from "@nocoo/basalt/components/clipboard-text";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
@@ -13,6 +13,7 @@ import {
 } from "@nocoo/basalt/components/table";
 import { CircleDot, GitFork, Newspaper, Star } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { CandyBadge } from "../components/layout/candy-badge";
 import { Kpi, KpiRow } from "../components/layout/kpi";
 import { TableSkeleton } from "../components/layout/page-skeleton";
 import { RefreshButton } from "../components/layout/refresh-button";
@@ -98,8 +99,8 @@ export function DigestPage() {
 				description={PAGE_DESCRIPTIONS["/digest"]}
 				actions={
 					<>
-						{snap.truncated ? <Badge variant="warning">已截断</Badge> : null}
-						{missing ? <Badge variant="secondary">没有昨天的基线</Badge> : null}
+						{snap.truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
+						{missing ? <CandyBadge tone="gray">没有昨天的基线</CandyBadge> : null}
 						<RefreshButton
 							run={() => requestRefresh(["repos"]).then(() => loadDigest().then(setSnap))}
 							onError={onLoadError}

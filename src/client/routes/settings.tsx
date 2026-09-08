@@ -2,7 +2,6 @@ import {
 	Avatar,
 	AvatarFallback,
 	AvatarImage,
-	Badge,
 	Button,
 	ConfirmDialog,
 	Field,
@@ -21,6 +20,7 @@ import {
 	TableRow,
 } from "@nocoo/basalt/components/table";
 import { type FormEvent, useEffect, useState } from "react";
+import { CandyBadge } from "../components/layout/candy-badge";
 import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad, reportError, reportOk } from "../lib/error-ui";
 import { initials } from "../lib/format";
@@ -218,9 +218,9 @@ export function SettingsPage() {
 											</TableCell>
 											<TableCell>
 												{row.is_active ? (
-													<Badge variant="success">当前</Badge>
+													<CandyBadge tone="green">当前</CandyBadge>
 												) : (
-													<Badge variant="outline">待命</Badge>
+													<CandyBadge tone="gray">待命</CandyBadge>
 												)}
 											</TableCell>
 											<TableCell>

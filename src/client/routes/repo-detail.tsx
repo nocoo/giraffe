@@ -2,7 +2,6 @@ import {
 	Avatar,
 	AvatarFallback,
 	AvatarImage,
-	Badge,
 	Link,
 	Tabs,
 	TabsContent,
@@ -42,6 +41,7 @@ import {
 } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router";
+import { CandyBadge } from "../components/layout/candy-badge";
 import { ChartBrick, ChartEmpty, ChartRow } from "../components/layout/chart-brick";
 import { Kpi, KpiRow } from "../components/layout/kpi";
 import {
@@ -55,6 +55,7 @@ import { ChurnMeter, LabelChips, PersonCell } from "../components/layout/table-c
 import { catchLoad, missingTitle } from "../lib/error-ui";
 import {
 	churnFilled,
+	conclusionBadgeVariant,
 	DATE_CELL,
 	formatConclusion,
 	formatCount,
@@ -366,7 +367,7 @@ export function RepoDetailPage() {
 				description={snap.description ?? name}
 				actions={
 					<>
-						{truncated ? <Badge variant="warning">已截断</Badge> : null}
+						{truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
 						<RefreshButton
 							run={() => {
 								const mine = gen.current;
@@ -491,9 +492,9 @@ export function RepoDetailPage() {
 										</DescriptionList.Item>
 										<DescriptionList.Item term="归档">
 											{snap.is_archived ? (
-												<Badge variant="secondary">已归档</Badge>
+												<CandyBadge tone="orange">已归档</CandyBadge>
 											) : (
-												<Badge variant="outline">活跃</Badge>
+												<CandyBadge tone="green">活跃</CandyBadge>
 											)}
 										</DescriptionList.Item>
 										<DescriptionList.Item term="GitHub">
@@ -538,23 +539,15 @@ export function RepoDetailPage() {
 												</Link>
 											</TableCell>
 											<TableCell>
-												<Badge variant="outline">{formatRunStatus(run.status)}</Badge>
+												<CandyBadge tone="gray">{formatRunStatus(run.status)}</CandyBadge>
 											</TableCell>
 											<TableCell>
-												<Badge
-													variant={
-														run.conclusion === "success"
-															? "success"
-															: run.conclusion === "failure"
-																? "error"
-																: "secondary"
-													}
-												>
+												<CandyBadge tone={conclusionBadgeVariant(run.conclusion)}>
 													{formatConclusion(run.conclusion)}
-												</Badge>
+												</CandyBadge>
 											</TableCell>
 											<TableCell>
-												<Badge variant="outline">{run.event}</Badge>
+												<CandyBadge tone="indigo">{run.event}</CandyBadge>
 											</TableCell>
 											<TableCell>{run.head_branch ?? "—"}</TableCell>
 											<TableCell className={DATE_CELL}>{formatDate(run.updated_at)}</TableCell>
@@ -596,7 +589,7 @@ export function RepoDetailPage() {
 											</TableCell>
 											<TableCell className={DATE_CELL}>{formatDate(row.published_at)}</TableCell>
 											<TableCell>
-												{row.prerelease ? <Badge variant="secondary">预发布</Badge> : "—"}
+												{row.prerelease ? <CandyBadge tone="amber">预发布</CandyBadge> : "—"}
 											</TableCell>
 										</TableRow>
 									))}
@@ -713,11 +706,11 @@ export function RepoDetailPage() {
 												</TableCell>
 												<TableCell>
 													<div className="flex flex-wrap gap-1">
-														{row.is_draft ? <Badge variant="purple">草稿</Badge> : null}
+														{row.is_draft ? <CandyBadge tone="purple">草稿</CandyBadge> : null}
 														{row.review_decision ? (
-															<Badge variant={reviewBadgeVariant(row.review_decision)}>
+															<CandyBadge tone={reviewBadgeVariant(row.review_decision)}>
 																{formatReview(row.review_decision)}
-															</Badge>
+															</CandyBadge>
 														) : null}
 														{!row.is_draft && !row.review_decision ? (
 															<span className="text-basalt-muted-foreground">—</span>

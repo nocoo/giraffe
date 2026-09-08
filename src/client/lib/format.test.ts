@@ -1,7 +1,9 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
 import {
+	candyClass,
 	churnFilled,
+	conclusionBadgeVariant,
 	daysBetween,
 	fillTextColor,
 	formatConclusion,
@@ -53,8 +55,8 @@ describe("format", () => {
 		expect(formatHealth("strong")).toBe("健康");
 		expect(formatHealth("watch")).toBe("观察");
 		expect(formatHealth("risky")).toBe("风险");
-		expect(healthBadgeVariant("strong")).toBe("success");
-		expect(healthBadgeVariant("watch")).toBe("orange");
+		expect(healthBadgeVariant("strong")).toBe("green");
+		expect(healthBadgeVariant("watch")).toBe("amber");
 		expect(healthBadgeVariant("risky")).toBe("red");
 		expect(formatVisibility("private")).toBe("私有");
 		expect(formatVisibility("public")).toBe("公开");
@@ -64,15 +66,15 @@ describe("format", () => {
 		expect(severityBadgeVariant("HIGH")).toBe("red");
 		expect(severityBadgeVariant("medium")).toBe("orange");
 		expect(severityBadgeVariant("low")).toBe("teal");
-		expect(severityBadgeVariant("unknown")).toBe("outline");
+		expect(severityBadgeVariant("unknown")).toBe("gray");
 		expect(formatReview(null)).toBe("—");
 		expect(formatReview("APPROVED")).toBe("已批准");
 		expect(formatReview("CHANGES_REQUESTED")).toBe("需修改");
 		expect(formatReview("REVIEW_REQUIRED")).toBe("待审查");
 		expect(formatReview("OTHER")).toBe("OTHER");
-		expect(reviewBadgeVariant("APPROVED")).toBe("success");
-		expect(reviewBadgeVariant("CHANGES_REQUESTED")).toBe("red");
-		expect(reviewBadgeVariant(null)).toBe("outline");
+		expect(reviewBadgeVariant("APPROVED")).toBe("green");
+		expect(reviewBadgeVariant("CHANGES_REQUESTED")).toBe("rose");
+		expect(reviewBadgeVariant(null)).toBe("gray");
 		expect(formatRunStatus("completed")).toBe("完成");
 		expect(formatRunStatus("in_progress")).toBe("进行中");
 		expect(formatRunStatus("queued")).toBe("排队");
@@ -83,29 +85,33 @@ describe("format", () => {
 		expect(formatConclusion("skipped")).toBe("跳过");
 		expect(formatConclusion("timed_out")).toBe("timed_out");
 		expect(formatConclusion(null)).toBe("—");
-		expect(reviewBadgeVariant("REVIEW_REQUIRED")).toBe("orange");
-		expect(reviewBadgeVariant("OTHER")).toBe("outline");
+		expect(conclusionBadgeVariant("success")).toBe("green");
+		expect(conclusionBadgeVariant("failure")).toBe("red");
+		expect(conclusionBadgeVariant(null)).toBe("gray");
+		expect(candyClass("green")).toContain("--basalt-accent-4");
+		expect(reviewBadgeVariant("REVIEW_REQUIRED")).toBe("amber");
+		expect(reviewBadgeVariant("OTHER")).toBe("gray");
 		expect(visibilityBadgeVariant("public")).toBe("blue");
 		expect(visibilityBadgeVariant("PRIVATE")).toBe("purple");
-		expect(visibilityBadgeVariant("internal")).toBe("outline");
+		expect(visibilityBadgeVariant("internal")).toBe("gray");
 		expect(opportunityLabel("stale_push")).toBe("久未推送");
 		expect(opportunityLabel("many_issues")).toBe("大量 Issue");
 		expect(opportunityLabel("open_alerts")).toBe("有告警");
 		expect(opportunityLabel("other")).toBe("other");
-		expect(opportunityBadgeVariant("stale_push")).toBe("orange");
+		expect(opportunityBadgeVariant("stale_push")).toBe("amber");
 		expect(opportunityBadgeVariant("many_issues")).toBe("red");
-		expect(opportunityBadgeVariant("open_alerts")).toBe("purple");
-		expect(opportunityBadgeVariant("x")).toBe("secondary");
+		expect(opportunityBadgeVariant("open_alerts")).toBe("orange");
+		expect(opportunityBadgeVariant("x")).toBe("gray");
 		expect(reasonBadgeVariant("mention")).toBe("purple");
-		expect(reasonBadgeVariant("assign")).toBe("blue");
+		expect(reasonBadgeVariant("assign")).toBe("sky");
 		expect(reasonBadgeVariant("comment")).toBe("teal");
-		expect(reasonBadgeVariant("author")).toBe("orange");
+		expect(reasonBadgeVariant("author")).toBe("amber");
 		expect(reasonBadgeVariant("security_alert")).toBe("red");
-		expect(reasonBadgeVariant("subscribed")).toBe("outline");
+		expect(reasonBadgeVariant("subscribed")).toBe("gray");
 		expect(sourceBadgeVariant("dependabot")).toBe("teal");
 		expect(sourceBadgeVariant("code_scanning")).toBe("blue");
 		expect(sourceBadgeVariant("secret_scanning")).toBe("purple");
-		expect(sourceBadgeVariant("other")).toBe("outline");
+		expect(sourceBadgeVariant("other")).toBe("gray");
 		expect(takeChips(["a", "b"], 2)).toEqual({ shown: ["a", "b"], extra: 0 });
 		expect(takeChips(["a", "b", "c"], 2)).toEqual({ shown: ["a", "b"], extra: 1 });
 		expect(fillTextColor("1d4ed8")).toBe("#ffffff");
