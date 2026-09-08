@@ -200,7 +200,7 @@ Basalt `ContentIsland` 已是 L1 岛。不要再包一层自定义 card 当岛�
 | Languages | `DonutChart` | `@nocoo/basalt/charts/donut` |
 | Insights | `StackedBarChart` `DonutChart` `LineChart` `BarChart` | `@nocoo/basalt/charts/stacked-bar` / `donut` / `line` / `bar` |
 | 加载 | `Button loading` | `@nocoo/basalt` |
-| 骨架 | 文字用 `SkeletonLine`；行/卡/图/头像用圆角 `SkeletonBlock`（同 Basalt shimmer） | `@nocoo/basalt/components/skeleton-line` + `layout/page-skeleton` |
+| 骨架 | 只用 Basalt `SkeletonLine` 铺在 L2 `LayerCard` 上，不进 Well、不自绘深色块。200ms 内加载完成则不展示 | `@nocoo/basalt/components/skeleton-line` + `layout/page-skeleton` |
 
 禁止：再引入 shadcn、再包一层 `src/client/components/ui/button.tsx`、用 kusto 的 `cn.ts` / `sidebar-context.tsx`、用 Basalt `DataTable`。
 

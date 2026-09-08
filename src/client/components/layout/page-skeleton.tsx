@@ -1,30 +1,24 @@
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { SkeletonLine } from "@nocoo/basalt/components/skeleton-line";
+import { type ReactNode, useEffect, useState } from "react";
 
-function Shimmer({ delayMs = 0 }: { delayMs?: number }) {
-	return (
-		<span
-			className="pointer-events-none absolute inset-0 animate-basalt-shimmer bg-gradient-to-r from-transparent via-black/10 to-transparent motion-reduce:animate-none"
-			style={delayMs > 0 ? { animationDelay: `${delayMs}ms` } : undefined}
-		/>
-	);
+const CHART_BARS = [32, 48, 40, 67, 55, 84, 69, 78] as const;
+
+function useDeferredReveal(delayMs = 200): boolean {
+	const [show, setShow] = useState(false);
+	useEffect(() => {
+		const id = window.setTimeout(() => setShow(true), delayMs);
+		return () => window.clearTimeout(id);
+	}, [delayMs]);
+	return show;
 }
 
-export function SkeletonBlock({
-	className = "",
-	delayMs = 0,
-}: {
-	className?: string;
-	delayMs?: number;
-}) {
-	return (
-		<div
-			className={`relative overflow-hidden rounded-md bg-basalt-muted ${className}`}
-			aria-hidden="true"
-		>
-			<Shimmer delayMs={delayMs} />
-		</div>
-	);
+function Deferred({ children }: { children: ReactNode }) {
+	const show = useDeferredReveal();
+	if (!show) {
+		return null;
+	}
+	return children;
 }
 
 export function TableSkeleton({
@@ -36,108 +30,142 @@ export function TableSkeleton({
 	rows?: number;
 }) {
 	return (
-		<LayerCard>
-			<LayerCard.Well className="p-0">
-				<div role="status" aria-label={label} className="flex flex-col gap-2 p-3">
+		<Deferred>
+			<LayerCard>
+				<div role="status" aria-label={label} className="flex flex-col gap-3 p-4">
 					{Array.from({ length: rows }, (_, index) => (
-						<SkeletonBlock
+						<SkeletonLine
 							key={`row-${index.toString()}`}
-							className="h-10 w-full"
-							delayMs={index * 45}
+							minWidth={52 + (index % 4) * 8}
+							maxWidth={88 + (index % 3) * 4}
+							height={12}
 						/>
 					))}
 				</div>
-			</LayerCard.Well>
-		</LayerCard>
+			</LayerCard>
+		</Deferred>
 	);
 }
 
 export function DetailSkeleton({ label }: { label: string }) {
 	return (
-		<div className="flex flex-col gap-4" role="status" aria-label={label}>
-			<div className="grid grid-cols-3 gap-3">
-				{["sk-a", "sk-b", "sk-c"].map((id, index) => (
-					<LayerCard key={id} padding="md">
-						<SkeletonLine height={8} minWidth={24} maxWidth={40} />
-						<SkeletonBlock className="mt-3 h-7 w-16" delayMs={index * 70} />
-					</LayerCard>
-				))}
-			</div>
-			<LayerCard padding="md">
-				<div className="space-y-3">
+		<Deferred>
+			<div className="flex flex-col gap-4" role="status" aria-label={label}>
+				<div className="grid grid-cols-3 gap-3">
+					{["sk-a", "sk-b", "sk-c"].map((id) => (
+						<LayerCard key={id} className="space-y-3" padding="md">
+							<SkeletonLine height={8} minWidth={24} maxWidth={40} />
+							<SkeletonLine height={22} minWidth={36} maxWidth={52} />
+						</LayerCard>
+					))}
+				</div>
+				<LayerCard className="space-y-3" padding="md">
 					<SkeletonLine minWidth={44} maxWidth={68} />
 					<SkeletonLine minWidth={36} maxWidth={58} />
-					<SkeletonBlock className="h-8 w-28" delayMs={140} />
-				</div>
-			</LayerCard>
-		</div>
+					<SkeletonLine minWidth={28} maxWidth={40} height={12} />
+				</LayerCard>
+			</div>
+		</Deferred>
 	);
 }
 
 export function InsightsSkeleton({ label }: { label: string }) {
 	return (
-		<div className="space-y-8" role="status" aria-label={label}>
-			{["sk-work", "sk-review", "sk-health"].map((section, sectionIndex) => (
-				<div key={section} className="space-y-3">
-					<SkeletonLine height={8} minWidth={18} maxWidth={28} />
-					<div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-						{["a", "b", "c", "d"].map((slot, slotIndex) => (
-							<LayerCard key={`${section}-${slot}`} padding="md">
-								<SkeletonLine height={8} minWidth={16} maxWidth={28} />
-								<SkeletonBlock
-									className="mt-2 h-7 w-16"
-									delayMs={sectionIndex * 80 + slotIndex * 30}
-								/>
+		<Deferred>
+			<div className="space-y-8" role="status" aria-label={label}>
+				{["sk-work", "sk-review", "sk-health"].map((section) => (
+					<div key={section} className="space-y-3">
+						<SkeletonLine height={8} minWidth={18} maxWidth={28} />
+						<div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+							{["a", "b", "c", "d"].map((slot) => (
+								<LayerCard key={`${section}-${slot}`} className="space-y-3" padding="md">
+									<SkeletonLine height={8} minWidth={16} maxWidth={28} />
+									<SkeletonLine height={22} minWidth={28} maxWidth={44} />
+								</LayerCard>
+							))}
+						</div>
+						<div className="grid gap-3 lg:grid-cols-2">
+							<LayerCard className="space-y-3" padding="md">
+								<SkeletonLine height={10} minWidth={22} maxWidth={36} />
+								<div className="flex h-40 items-end gap-2">
+									{CHART_BARS.map((height) => (
+										<SkeletonLine
+											key={`${section}-${height.toString()}`}
+											minWidth={100}
+											maxWidth={100}
+											height={height}
+											className="flex-1"
+										/>
+									))}
+								</div>
 							</LayerCard>
-						))}
+							<LayerCard className="space-y-3" padding="md">
+								<SkeletonLine height={10} minWidth={22} maxWidth={36} />
+								<div className="flex h-40 items-end gap-2">
+									{CHART_BARS.map((height) => (
+										<SkeletonLine
+											key={`${section}-b-${height.toString()}`}
+											minWidth={100}
+											maxWidth={100}
+											height={height}
+											className="flex-1"
+										/>
+									))}
+								</div>
+							</LayerCard>
+						</div>
 					</div>
-					<div className="grid gap-3 lg:grid-cols-2">
-						<LayerCard padding="md">
-							<SkeletonLine height={10} minWidth={22} maxWidth={36} />
-							<SkeletonBlock
-								className="mt-3 h-52 w-full rounded-lg"
-								delayMs={sectionIndex * 80 + 120}
-							/>
-						</LayerCard>
-						<LayerCard padding="md">
-							<SkeletonLine height={10} minWidth={22} maxWidth={36} />
-							<SkeletonBlock
-								className="mt-3 h-52 w-full rounded-lg"
-								delayMs={sectionIndex * 80 + 160}
-							/>
-						</LayerCard>
-					</div>
-				</div>
-			))}
-		</div>
+				))}
+			</div>
+		</Deferred>
 	);
 }
 
 export function ChartSkeleton({ label }: { label: string }) {
 	return (
-		<LayerCard padding="md">
-			<div role="status" aria-label={label}>
-				<SkeletonLine height={10} minWidth={22} maxWidth={36} />
-				<SkeletonBlock className="mt-3 h-52 w-full rounded-lg" />
-			</div>
-		</LayerCard>
+		<Deferred>
+			<LayerCard padding="md">
+				<div role="status" aria-label={label} className="space-y-3">
+					<SkeletonLine height={10} minWidth={22} maxWidth={36} />
+					<div className="flex h-40 items-end gap-2">
+						{CHART_BARS.map((height) => (
+							<SkeletonLine
+								key={height}
+								minWidth={100}
+								maxWidth={100}
+								height={height}
+								className="flex-1"
+							/>
+						))}
+					</div>
+				</div>
+			</LayerCard>
+		</Deferred>
 	);
 }
 
 export function PeopleSkeleton({ label, rows = 6 }: { label: string; rows?: number }) {
 	return (
-		<LayerCard>
-			<LayerCard.Well>
-				<div role="status" aria-label={label} className="flex flex-col gap-3">
+		<Deferred>
+			<LayerCard padding="md">
+				<div role="status" aria-label={label} className="flex flex-col gap-4">
 					{Array.from({ length: rows }, (_, index) => (
 						<div key={`person-${index.toString()}`} className="flex items-center gap-3">
-							<SkeletonBlock className="size-9 shrink-0 rounded-full" delayMs={index * 45} />
-							<SkeletonLine minWidth={28} maxWidth={48} />
-							<SkeletonBlock className="ml-auto h-4 w-10" delayMs={index * 45 + 20} />
+							<SkeletonLine
+								minWidth={100}
+								maxWidth={100}
+								height={36}
+								className="rounded-full"
+								style={{ width: 36, flexShrink: 0 }}
+							/>
+							<div className="min-w-0 flex-1">
+								<SkeletonLine minWidth={28} maxWidth={48} />
+							</div>
+							<SkeletonLine minWidth={12} maxWidth={18} height={10} />
 						</div>
 					))}
 				</div>
-			</LayerCard.Well>
-		</LayerCard>
+			</LayerCard>
+		</Deferred>
 	);
 }
