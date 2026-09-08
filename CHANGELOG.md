@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.3.1
+
+### Added
+- AccentProvider brand green from the logo leaf
+- Refined giraffe identity mark
+
+### Changed
+- Upgrade `@nocoo/basalt` to 2.1.0
+- Pin client chrome to Basalt 2.1.0
+- Move the daily wrangler sidecar to 37045 so 7046 stays the lizheng preview
+
+### Fixed
+- Keep the sidebar mark still while collapsing
+- Use the five-color chart cycle for unlabeled and changes-requested series
+- Restore success-badge contrast on the 30% green token
+- Record giraffe 7045 / 37045 ports
+
 ## v0.3.0
 
 ### Added
