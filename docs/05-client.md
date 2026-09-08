@@ -192,7 +192,7 @@ Basalt `ContentIsland` 已是 L1 岛。不要再包一层自定义 card 当岛�
 | 头像 | `Avatar*` | `@nocoo/basalt` |
 | 确认删除账号 | `ConfirmDialog` / `useConfirm` | `@nocoo/basalt` |
 | Toast | `toast` `Toaster` | `@nocoo/basalt` |
-| 主题 | `ThemeProvider` `ThemeToggle` `AccentProvider` | `ThemeProvider` 根 barrel；`AccentProvider` 走 `@nocoo/basalt/providers/accent`。`persist={false}`，`defaultAccent="primary"`，`paletteOverrides.primary` 取 logo 叶子 `#5a8228` → `87 53% 33%`（语义 primary 由包推导对比度）。禁止再写 `--basalt-primary` / `--basalt-chart-1`。图表固定五色循环，与 accent 无关。`--basalt-heatmap-green-3` 30% 仍给 success meter |
+| 主题 | `ThemeProvider` `ThemeToggle` `AccentProvider` | `ThemeProvider` 根 barrel；`AccentProvider` 走 `@nocoo/basalt/providers/accent`。`persist={false}`，`defaultAccent="primary"`，`paletteOverrides.primary` 取 logo 叶子 `#5a8228` → `87 53% 33%`（语义 primary 由包推导对比度）。禁止再写 `--basalt-primary` / `--basalt-chart-1`。图表固定五色循环，与 accent 无关。`--basalt-heatmap-green-3` 30% 仍给 success meter；同时设 `--basalt-badge-green-foreground: 0 0% 100%`，否则 2.1 深色字叠 30% 绿不足 4.5:1 |
 | Router 链接 | `Link` + `LinkProvider` | `@nocoo/basalt` |
 | ⌘K | `CommandPalette*` | `@nocoo/basalt` |
 | 复制 digest | `ClipboardText` | `@nocoo/basalt/components/clipboard-text` |

@@ -9,6 +9,7 @@
 .dark,
 [data-mode="dark"] {
 	--basalt-heatmap-green-3: 142 64% 30%;
+	--basalt-badge-green-foreground: 0 0% 100%;
 }
 
 @layer base {
