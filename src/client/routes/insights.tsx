@@ -53,7 +53,7 @@ const HEALTH_SERIES = [
 const PR_STATUS_SERIES = [
 	{ key: "草稿", color: chart.gray },
 	{ key: "待审查", color: chart.amber },
-	{ key: "需修改", color: chart.orange },
+	{ key: "需修改", color: chart.rose },
 	{ key: "已批准", color: chart.green },
 	{ key: "未标记", color: chart.primary },
 ];
