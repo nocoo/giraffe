@@ -10,7 +10,7 @@ const viteBin = join(root, "node_modules/.bin/vite");
 ensureDevVars(root);
 ensureLocalSchema();
 
-const wrangler = Bun.spawn([wranglerBin, "dev", "--local", "--port", "7046"], {
+const wrangler = Bun.spawn([wranglerBin, "dev", "--local", "--port", "37045"], {
 	cwd: root,
 	stdin: "inherit",
 	stdout: "inherit",
