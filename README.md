@@ -7,7 +7,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/TypeScript-7-blue" alt="TypeScript" />
   <img src="https://img.shields.io/badge/Cloudflare_Workers-Hono-orange" alt="Cloudflare Workers" />
-  <img src="https://img.shields.io/badge/UI-Basalt_2.0.3-black" alt="Basalt" />
+  <img src="https://img.shields.io/badge/UI-Basalt_2.1.0-black" alt="Basalt" />
 </p>
 
 ---

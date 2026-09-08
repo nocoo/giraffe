@@ -12,7 +12,7 @@ Codex Sign Off 本文之前，禁止第 12 节步骤 1 及之后（含 Vite 脚�
 
 ## 1. 范围
 
-做：`src/client` Vite + React 19 SPA；只打同源 `/api/*`；用 `@nocoo/basalt@2.0.3` 控件拼界面；L1 ViewModel 测试 + 02 §6 三条 L3；产物进 `dist/client`，由已落地 Worker `[assets]` 托管。
+做：`src/client` Vite + React 19 SPA；只打同源 `/api/*`；用 `@nocoo/basalt@2.1.0` 控件拼界面；L1 ViewModel 测试 + 02 §6 三条 L3；产物进 `dist/client`，由已落地 Worker `[assets]` 托管。
 
 不做：平行控件库、本地 vendoring Basalt 源码、shadcn 再拷一份、Next.js、`@cloudflare/vite-plugin`、独立 Vite 开发服务器打 Worker API、GitLab、Device Flow、fine-grained PAT、LLM digest、Kanban、Mentions、Dependents、顶层 CI Health、应用内登录 / OAuth / session cookie。
 
@@ -24,10 +24,10 @@ Codex Sign Off 本文之前，禁止第 12 节步骤 1 及之后（含 Vite 脚�
 
 | 主题 | 决定 |
 |------|------|
-| 包 | `@nocoo/basalt@2.0.3`。从 npm 安装（临时允许的 registry）。禁止把 `../basalt` 源码拷进本仓，禁止 `file:` 依赖，禁止把镜像 URL 写进 `bun.lock`。岛内表面嵌套见 §5.2 |
+| 包 | `@nocoo/basalt@2.1.0`。从 npm 安装（临时允许的 registry）。禁止把 `../basalt` 源码拷进本仓，禁止 `file:` 依赖，禁止把镜像 URL 写进 `bun.lock`。岛内表面嵌套见 §5.2 |
 | 控件 | 只用该包已发布的控件。根 barrel 没有的走 granular：`@nocoo/basalt/components/*`、`@nocoo/basalt/charts/*`。缺的用 HTML + 已有 Basalt 叶子，不自研第二套 widget |
 | 布局语言 | 参考 `/Users/nocoo/workspace/work/whiteboard/intentional-kusto-queries` 的 **壳**，不是拷它的组件。侧栏展开 260px / 收起 68px，`transition-all duration-300 ease-in-out`，sticky flex 子项（不是 `fixed` + spacer）。主区 **ContentIsland** 浮岛。跳过链接。顶栏高 14（`h-14`）面包屑。中文 UI |
-| 壳实现 | giraffe 的 `src/client/components/layout/*` **只组合** Basalt：`AppShell` / `AppMain` / `AppSkipLink`、`AppHeader`、`PageHeader`、`SectionRule`（均不在根 barrel）、`Sidebar*` + `ContentIsland`（根 barrel）、`ThemeProvider` / `ThemeToggle` / `LinkProvider`。禁止 `SidebarProvider`、禁止再写一套 `sidebar-context`。`AppMain` 必须传 `tabIndex={-1}`，否则 skip link 无法聚焦 |
+| 壳实现 | giraffe 的 `src/client/components/layout/*` **只组合** Basalt：`AppShell` / `AppMain` / `AppSkipLink`、`AppHeader`、`PageHeader`、`SectionRule`（均不在根 barrel）、`Sidebar*` + `ContentIsland`（根 barrel）、`ThemeProvider` / `ThemeToggle` / `LinkProvider`。`AccentProvider` 挂在 `app.tsx`（granular `@nocoo/basalt/providers/accent`）。禁止 `SidebarProvider`、禁止再写一套 `sidebar-context`。`AppMain` 必须传 `tabIndex={-1}`，否则 skip link 无法聚焦 |
 | 路由 | React Router SPA。路径与 01 §9 一致，见第 8 节。无 `/login` |
 | 分层 | MVVM。ViewModel 无 View/DOM/`@nocoo/basalt`/`react-dom` import。L1 覆盖率豁免：`src/client/routes/*.tsx` 与 `src/client/components/layout/**/*.tsx`（薄壳组合）。`main.tsx` / `app.tsx` 同样豁免（只挂 provider 与路由表） |
 | 出站 | 唯一 `fetch` 在 `src/client/lib/api.ts`。G1 `gate:client-fetch` 只接受**字面量**或以 `/api/` 开头的**模板字面量**。因此必须写成 `` fetch(`/api/${resource}`) `` 或 `` fetch(`/api/accounts/${id}/activate`) ``，禁止 `fetch(path)` 变量 |
@@ -52,7 +52,7 @@ public/logo-24.png                 # 侧栏
 public/logo-32.png                 # favicon
 public/apple-touch-icon.png        # Apple touch icon
 src/client/
-  main.tsx                         # createRoot；ThemeProvider + LinkProvider + Router + Toaster
+  main.tsx                         # createRoot；主题预水合；ThemeProvider + AccentProvider + LinkProvider + Router + Toaster
   index.css                        # Basalt Tailwind 入口
   app.tsx                          # 路由表
   components/layout/app-shell.tsx  # 组合 Basalt 壳；含侧栏、岛、顶栏
@@ -103,7 +103,7 @@ tests/e2e/                         # L3；由 scripts/run-e2e-bdd.ts 跑
 | 构建 | Vite 8 + `@vitejs/plugin-react` + `@tailwindcss/vite`。`bun run dev` 开 HMR |
 | UI | React 19 + React Router |
 | 样式 | Tailwind CSS v4 + `@nocoo/basalt/styles/tailwind` |
-| 控件 | `@nocoo/basalt@2.0.3` |
+| 控件 | `@nocoo/basalt@2.1.0` |
 | 图标 | `lucide-react`（Basalt peer） |
 | 图表 | Basalt charts + peer `recharts@^3`（Traffic、Languages） |
 | Toast | Basalt `toast` / `Toaster`（根 barrel；底层 sonner） |
@@ -192,7 +192,7 @@ Basalt `ContentIsland` 已是 L1 岛。不要再包一层自定义 card 当岛�
 | 头像 | `Avatar*` | `@nocoo/basalt` |
 | 确认删除账号 | `ConfirmDialog` / `useConfirm` | `@nocoo/basalt` |
 | Toast | `toast` `Toaster` | `@nocoo/basalt` |
-| 主题 | `ThemeProvider` `ThemeToggle` | `@nocoo/basalt`。实心底叠白字。primary 取 logo 叶子 `#5a8228` → `--basalt-primary: 87 53% 33%`（白字 4.5:1）；`--basalt-heatmap-green-3` 30% 给 success |
+| 主题 | `ThemeProvider` `ThemeToggle` `AccentProvider` | `ThemeProvider` 根 barrel；`AccentProvider` 走 `@nocoo/basalt/providers/accent`。`persist={false}`，`defaultAccent="primary"`，`paletteOverrides.primary` 取 logo 叶子 `#5a8228` → `87 53% 33%`（语义 primary 由包推导对比度）。禁止再写 `--basalt-primary` / `--basalt-chart-1`。图表固定五色循环，与 accent 无关。`--basalt-heatmap-green-3` 30% 仍给 success meter |
 | Router 链接 | `Link` + `LinkProvider` | `@nocoo/basalt` |
 | ⌘K | `CommandPalette*` | `@nocoo/basalt` |
 | 复制 digest | `ClipboardText` | `@nocoo/basalt/components/clipboard-text` |
