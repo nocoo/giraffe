@@ -7,7 +7,7 @@ An ochre giraffe pauses with one multicolored acacia sprig in its mouth. Both os
 | Surface | Asset | Treatment |
 | --- | --- | --- |
 | README header / large gallery | `assets/brand/icon-rounded.png` | Selected rounded presentation, shown at 128 px in README |
-| Sidebar in both states | `public/logo-24.png` via `src/client/components/layout/mark.tsx` | Transparent foreground rendered at 20 px, with no crop. |
+| Sidebar in both states | `public/logo-24.png` via `src/client/components/layout/mark.tsx` | Transparent foreground rendered at 24 px, with no crop. |
 | Browser | `public/logo-32.png` | Transparent 32 px PNG, declared in `index.html`. |
 | Apple touch | `public/apple-touch-icon.png` | Opaque 180 px square presentation; platform masking is independent of browser favicon behavior. |
 
