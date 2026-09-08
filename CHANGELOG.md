@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.4.0
+
+### Added
+- Candy-tone badges on catalog pages, using Basalt accent fills and white text
+- Basalt Green locked as the default primary accent
+
+### Changed
+- Align the sidebar mark with family chrome at 24px
+
+### Fixed
+- Lighten loading skeletons to `SkeletonLine` on L2 cards
+- Skip skeletons when a page finishes loading within 200ms
+
 ## v0.3.1
 
 ### Added
