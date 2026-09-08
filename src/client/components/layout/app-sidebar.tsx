@@ -136,11 +136,36 @@ export function AppSidebar({ collapsed, onToggle }: { collapsed: boolean; onTogg
 
 	return (
 		<Sidebar collapsed={collapsed}>
+			<SidebarHeader>
+				<div className="flex w-full items-center justify-between">
+					<div className="flex min-w-0 items-center gap-3">
+						<BrandMark alt={collapsed ? "Giraffe" : ""} />
+						{collapsed ? null : (
+							<>
+								<span className="truncate text-lg font-semibold text-basalt-foreground md:text-xl">
+									Giraffe
+								</span>
+								<span className="shrink-0 rounded-md bg-basalt-secondary px-1.5 py-0.5 text-[10px] leading-none font-medium text-basalt-muted-foreground">
+									v{APP_VERSION}
+								</span>
+							</>
+						)}
+					</div>
+					{collapsed ? null : (
+						<Button
+							variant="ghost"
+							size="icon"
+							className="h-7 w-7 shrink-0"
+							onClick={onToggle}
+							aria-label="折叠侧栏"
+						>
+							<PanelLeft aria-hidden="true" />
+						</Button>
+					)}
+				</div>
+			</SidebarHeader>
 			{collapsed ? (
 				<>
-					<SidebarHeader className="justify-center px-0">
-						<BrandMark alt="Giraffe" />
-					</SidebarHeader>
 					<Button
 						variant="ghost"
 						size="icon"
@@ -196,28 +221,6 @@ export function AppSidebar({ collapsed, onToggle }: { collapsed: boolean; onTogg
 				</>
 			) : (
 				<>
-					<SidebarHeader>
-						<div className="flex w-full items-center justify-between">
-							<div className="flex min-w-0 items-center gap-3">
-								<BrandMark />
-								<span className="truncate text-lg font-semibold text-basalt-foreground md:text-xl">
-									Giraffe
-								</span>
-								<span className="shrink-0 rounded-md bg-basalt-secondary px-1.5 py-0.5 text-[10px] leading-none font-medium text-basalt-muted-foreground">
-									v{APP_VERSION}
-								</span>
-							</div>
-							<Button
-								variant="ghost"
-								size="icon"
-								className="h-7 w-7 shrink-0"
-								onClick={onToggle}
-								aria-label="折叠侧栏"
-							>
-								<PanelLeft aria-hidden="true" />
-							</Button>
-						</div>
-					</SidebarHeader>
 					<div className="px-3 pb-1">
 						<SidebarSearch onClick={() => setSearchOpen(true)}>搜索</SidebarSearch>
 					</div>
