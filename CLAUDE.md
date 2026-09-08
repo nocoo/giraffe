@@ -25,7 +25,7 @@ This file is the **contract**. Hooks, CI, and config are **enforcement**. If the
 - Client follows [docs/05](docs/05-client.md). Server tests must not import `src/client`. Phase 2 MVVM: viewmodels have no View/DOM imports.
 - E2E is `--local --persist-to` only. Never remote `giraffe-db`. L2 persist `.wrangler/e2e/` :17045; L3 `.wrangler/e2e-pw/` :27045.
 - Strict TDD: failing tests stay in the working tree; only green L1 commits. `--no-verify` forbidden.
-- Caddy for `giraffe.dev.hexly.ai` is **not** registered yet.
+- Caddy `giraffe.dev.hexly.ai` → Vite `:7045`. Daily wrangler sidecar is `:37045` (not `:7046`).
 
 ## Stack / Layout
 
@@ -90,7 +90,7 @@ Today: pre-commit typecheck/lint/`gate:test-skip`/`gate:wrangler-vars`/`gate:git
 
 | Purpose | Port / resource | Isolation |
 |---|---|---|
-| Dev | 7045 (planned `https://giraffe.dev.hexly.ai`) | `.dev.vars`; Caddy not registered |
+| Dev | 7045 Vite + 37045 wrangler | `https://giraffe.dev.hexly.ai`; `.dev.vars` |
 | L2 | 17045 | `--local --persist-to .wrangler/e2e/` |
 | L3 | 27045 | `--local --persist-to .wrangler/e2e-pw/` |
 

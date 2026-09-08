@@ -36,7 +36,7 @@ Codex Sign Off 本文之前，禁止第 12 节步骤 1 及之后（含 Vite 脚�
 | 筛选 | 04 GET 无 filter/sort。搜索、排序、网格/列表切换全在 Client ViewModel。列表用 Basalt `Table`（`@nocoo/basalt/components/table`），**不用** `DataTable`（其内部自带不可关闭的列头排序，会与 VM 双真相） |
 | Origin | 以 04 §5.3 与 02 §6 为准：生产/test 不含 loopback；development Access 短路允许同源 `url.origin`（L3 `:27045`）。步骤 1 实现 `origin.ts`，L1+L2 绿 |
 | 构建 | Vite 8 + `@vitejs/plugin-react` + `@tailwindcss/vite`。仓库根 `index.html`（Vite 入口，`src/client/main.tsx`）。`outDir = dist/client`。Tailwind CSS v4，按 Basalt README：`@source` + `@import "@nocoo/basalt/styles/tailwind"` + `@import "tailwindcss"`。不使用 `@cloudflare/vite-plugin` |
-| 开发拓扑 | 日常 `bun run dev`：Vite `:7045`（Caddy 域名、HMR），`/api` proxy 到 wrangler `:7046`。不把 Vite 当无 Worker 的可写 API，无 mock。L2/L3 仍 `vite build` + wrangler 托管 `dist/client` |
+| 开发拓扑 | 日常 `bun run dev`：Vite `:7045`（Caddy 域名、HMR），`/api` proxy 到 wrangler sidecar `:37045`。不把 Vite 当无 Worker 的可写 API，无 mock。L2/L3 仍 `vite build` + wrangler 托管 `dist/client` |
 | TS | TypeScript 7 `strict` + `exactOptionalPropertyTypes`。Worker 与 Client 分 tsconfig：Client 加 `DOM`；Worker 继续 Workers types。`tsc --noEmit` 两个都跑 |
 | 版本 | `APP_VERSION` 仍来自 `src/lib/version.ts` ← `package.json`。侧栏展示 `v{version}` |
 | L3 时机 | 02：CI / 按需。pre-push 仍是 L2 ‖ G2。步骤 20 实现 runner 与三条路径，不改 husky pre-push |
@@ -114,7 +114,7 @@ peers：`react` / `react-dom` ^19、`lucide-react`、`recharts` ^3。不用 `Dat
 
 `package.json` 脚本：
 
-- `dev` — Vite `:7045` HMR + wrangler `:7046`（`/api` proxy）
+- `dev` — Vite `:7045` HMR + wrangler `:37045`（`/api` proxy）
 - `build` — `vite build` → `dist/client`
 - `test:e2e:bdd` — `scripts/run-e2e-bdd.ts`（有 `src/client` 后不再 phase-1 早退；失败即非 0。pre-push **不**跑它）
 

@@ -38,7 +38,7 @@ Giraffe 用 GitHub classic PAT 在 Cloudflare Worker 侧拉取数据，加密后
 ## 开发
 
 ```bash
-bun run dev          # Vite :7045 + wrangler :7046
+bun run dev          # Vite :7045 + wrangler :37045
 bun run typecheck
 bun run lint
 bun run test
