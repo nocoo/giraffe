@@ -1,4 +1,5 @@
 import { LinkProvider, ThemeProvider, Toaster, TooltipProvider } from "@nocoo/basalt";
+import { AccentProvider } from "@nocoo/basalt/providers/accent";
 import type { ReactNode } from "react";
 import { BrowserRouter, Link, Route, Routes } from "react-router";
 import { AppShell } from "./components/layout/app-shell";
@@ -13,6 +14,10 @@ import { PullsPage } from "./routes/pulls";
 import { RepoDetailPage } from "./routes/repo-detail";
 import { ReposPage } from "./routes/repos";
 import { SettingsPage } from "./routes/settings";
+
+const GIRAFFE_PALETTE = {
+	primary: { light: "87 53% 33%", dark: "87 53% 33%" },
+} as const;
 
 function RouterLink({
 	href,
@@ -56,21 +61,23 @@ const PAGES: Record<(typeof APP_PATHS)[number], ReactNode> = {
 export function App() {
 	return (
 		<ThemeProvider>
-			<LinkProvider render={RouterLink}>
-				<TooltipProvider>
-					<BrowserRouter>
-						<Toaster />
-						<Routes>
-							<Route element={<AppShell />}>
-								{APP_PATHS.map((path) => (
-									<Route key={path} path={path} element={PAGES[path]} />
-								))}
-								<Route path="*" element={<NotFoundPage />} />
-							</Route>
-						</Routes>
-					</BrowserRouter>
-				</TooltipProvider>
-			</LinkProvider>
+			<AccentProvider defaultAccent="primary" persist={false} paletteOverrides={GIRAFFE_PALETTE}>
+				<LinkProvider render={RouterLink}>
+					<TooltipProvider>
+						<BrowserRouter>
+							<Toaster />
+							<Routes>
+								<Route element={<AppShell />}>
+									{APP_PATHS.map((path) => (
+										<Route key={path} path={path} element={PAGES[path]} />
+									))}
+									<Route path="*" element={<NotFoundPage />} />
+								</Route>
+							</Routes>
+						</BrowserRouter>
+					</TooltipProvider>
+				</LinkProvider>
+			</AccentProvider>
 		</ThemeProvider>
 	);
 }
