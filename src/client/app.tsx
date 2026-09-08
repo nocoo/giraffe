@@ -15,8 +15,8 @@ import { RepoDetailPage } from "./routes/repo-detail";
 import { ReposPage } from "./routes/repos";
 import { SettingsPage } from "./routes/settings";
 
-const GIRAFFE_PALETTE = {
-	primary: { light: "87 53% 33%", dark: "87 53% 33%" },
+const GIRAFFE_ACCENT = {
+	primary: { light: "113 58% 62%", dark: "113 58% 70%" },
 } as const;
 
 function RouterLink({
@@ -61,7 +61,7 @@ const PAGES: Record<(typeof APP_PATHS)[number], ReactNode> = {
 export function App() {
 	return (
 		<ThemeProvider>
-			<AccentProvider defaultAccent="primary" persist={false} paletteOverrides={GIRAFFE_PALETTE}>
+			<AccentProvider defaultAccent="primary" persist={false} paletteOverrides={GIRAFFE_ACCENT}>
 				<LinkProvider render={RouterLink}>
 					<TooltipProvider>
 						<BrowserRouter>
