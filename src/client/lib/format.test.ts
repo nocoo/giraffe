@@ -89,6 +89,7 @@ describe("format", () => {
 		expect(conclusionBadgeVariant("failure")).toBe("red");
 		expect(conclusionBadgeVariant(null)).toBe("gray");
 		expect(candyClass("green")).toContain("--basalt-accent-4");
+		expect(candyClass("green")).toContain("text-white");
 		expect(reviewBadgeVariant("REVIEW_REQUIRED")).toBe("amber");
 		expect(reviewBadgeVariant("OTHER")).toBe("gray");
 		expect(visibilityBadgeVariant("public")).toBe("blue");

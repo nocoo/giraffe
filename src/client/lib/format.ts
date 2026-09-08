@@ -16,17 +16,17 @@ export type CandyTone =
 	| "gray";
 
 const CANDY_CLASS: Record<CandyTone, string> = {
-	green: "border-transparent bg-[hsl(var(--basalt-accent-4))] text-[hsl(0_0%_10%)]",
-	amber: "border-transparent bg-[hsl(var(--basalt-accent-6))] text-[hsl(0_0%_10%)]",
-	orange: "border-transparent bg-[hsl(var(--basalt-accent-7))] text-[hsl(0_0%_10%)]",
-	red: "border-transparent bg-[hsl(var(--basalt-accent-8))] text-[hsl(0_0%_10%)]",
-	rose: "border-transparent bg-[hsl(var(--basalt-accent-9))] text-[hsl(0_0%_10%)]",
-	teal: "border-transparent bg-[hsl(var(--basalt-accent-3))] text-[hsl(0_0%_10%)]",
-	sky: "border-transparent bg-[hsl(var(--basalt-accent-2))] text-[hsl(0_0%_10%)]",
-	blue: "border-transparent bg-[hsl(var(--basalt-accent-1))] text-[hsl(0_0%_10%)]",
-	purple: "border-transparent bg-[hsl(var(--basalt-accent-10))] text-[hsl(0_0%_10%)]",
-	indigo: "border-transparent bg-[hsl(var(--basalt-accent-11))] text-[hsl(0_0%_10%)]",
-	gray: "border-transparent bg-[hsl(var(--basalt-accent-12))] text-[hsl(0_0%_10%)]",
+	green: "border-transparent bg-[hsl(var(--basalt-accent-4))] text-white",
+	amber: "border-transparent bg-[hsl(var(--basalt-accent-6))] text-white",
+	orange: "border-transparent bg-[hsl(var(--basalt-accent-7))] text-white",
+	red: "border-transparent bg-[hsl(var(--basalt-accent-8))] text-white",
+	rose: "border-transparent bg-[hsl(var(--basalt-accent-9))] text-white",
+	teal: "border-transparent bg-[hsl(var(--basalt-accent-3))] text-white",
+	sky: "border-transparent bg-[hsl(var(--basalt-accent-2))] text-white",
+	blue: "border-transparent bg-[hsl(var(--basalt-accent-1))] text-white",
+	purple: "border-transparent bg-[hsl(var(--basalt-accent-10))] text-white",
+	indigo: "border-transparent bg-[hsl(var(--basalt-accent-11))] text-white",
+	gray: "border-transparent bg-[hsl(var(--basalt-accent-12))] text-white",
 };
 
 export function candyClass(tone: CandyTone): string {

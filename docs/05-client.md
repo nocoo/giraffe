@@ -188,7 +188,7 @@ Basalt `ContentIsland` 已是 L1 岛。不要再包一层自定义 card 当岛�
 | 分段（列表/网格、筛选） | `SegmentControl` | `@nocoo/basalt` |
 | 页级 tab（单仓） | `Tabs*` | `@nocoo/basalt` |
 | 工具条 | `Toolbar` | `@nocoo/basalt` |
-| 徽章（health / severity） | `CandyBadge`（Basalt `Badge` + 糖果 `accent-1…12`） | `layout/candy-badge`。不用 `success`/`warning`/`info` tint |
+| 徽章（health / severity） | `CandyBadge`（Basalt `Badge` + 糖果 `accent-1…12`） | `layout/candy-badge`。白字。不用 `success`/`warning`/`info` tint |
 | 头像 | `Avatar*` | `@nocoo/basalt` |
 | 确认删除账号 | `ConfirmDialog` / `useConfirm` | `@nocoo/basalt` |
 | Toast | `toast` `Toaster` | `@nocoo/basalt` |
