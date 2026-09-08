@@ -55,7 +55,7 @@ const PR_STATUS_SERIES = [
 	{ key: "待审查", color: chart.amber },
 	{ key: "需修改", color: chart.orange },
 	{ key: "已批准", color: chart.green },
-	{ key: "未标记", color: chart.cadet },
+	{ key: "未标记", color: chart.primary },
 ];
 
 export function InsightsPage() {
