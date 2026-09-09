@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Upgrade `@nocoo/basalt` to 2.1.2
 - Standardize bilingual project README
 
+### Fixed
+- Patch `hono` 4.13.7 and override `sharp` 0.35.4 so osv-scanner passes
+
 ## v0.4.0
 
 ### Added
