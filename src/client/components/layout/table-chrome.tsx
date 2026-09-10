@@ -1,6 +1,6 @@
-import { Avatar, AvatarFallback, Button } from "@nocoo/basalt";
+import { Avatar, AvatarFallback, Badge, Button } from "@nocoo/basalt";
 import { SlotBarChart } from "@nocoo/basalt/charts/slot-bar";
-import { ChevronDown } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import { fillTextColor, initials, labelFill, takeChips } from "../../lib/format";
 import { CandyBadge } from "./candy-badge";
 
@@ -8,16 +8,27 @@ export function SortButton({
 	label,
 	active,
 	onClick,
+	direction = "desc",
 }: {
 	label: string;
 	active: boolean;
 	onClick: () => void;
+	direction?: "asc" | "desc";
 }) {
+	const Icon = active ? (direction === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
 	return (
-		<Button type="button" variant="ghost" size="sm" onClick={onClick}>
+		<Button
+			type="button"
+			variant="ghost"
+			size="sm"
+			className="-mx-2 h-7 gap-1.5 px-2"
+			aria-pressed={active}
+			onClick={onClick}
+		>
 			{label}
-			<ChevronDown
+			<Icon
 				className={`size-3.5 ${active ? "text-basalt-foreground" : "text-basalt-muted-foreground/40"}`}
+				aria-hidden="true"
 			/>
 		</Button>
 	);
@@ -28,7 +39,7 @@ export function PersonCell({ login }: { login: string | null }) {
 		return <span className="text-basalt-muted-foreground">—</span>;
 	}
 	return (
-		<span className="inline-flex items-center gap-2">
+		<span className="inline-flex max-w-40 items-center gap-2" title={login}>
 			<Avatar className="size-6">
 				<AvatarFallback className="text-[10px]">{initials(login)}</AvatarFallback>
 			</Avatar>
@@ -47,16 +58,22 @@ export function LabelChips({ labels }: { labels: { name: string; color: string }
 			{shown.map((label) => {
 				const fill = labelFill(label.color);
 				return (
-					<span
+					<Badge
+						variant={null}
 						key={label.name}
-						className="inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium"
+						className="max-w-44 truncate border-transparent px-2 py-0.5 text-[11px]"
+						title={label.name}
 						style={{ backgroundColor: fill, color: fillTextColor(label.color) }}
 					>
 						{label.name}
-					</span>
+					</Badge>
 				);
 			})}
-			{extra > 0 ? <CandyBadge tone="gray">+{extra}</CandyBadge> : null}
+			{extra > 0 ? (
+				<CandyBadge tone="gray" title={labels.map((label) => label.name).join("、")}>
+					+{extra}
+				</CandyBadge>
+			) : null}
 		</span>
 	);
 }

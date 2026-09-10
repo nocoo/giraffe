@@ -10,7 +10,7 @@ export function CandyBadge({
 	return (
 		<Badge
 			variant={null}
-			className={className === undefined ? candyClass(tone) : `${candyClass(tone)} ${className}`}
+			className={`${candyClass(tone)} shrink-0 whitespace-nowrap ${className ?? ""}`}
 			{...props}
 		/>
 	);

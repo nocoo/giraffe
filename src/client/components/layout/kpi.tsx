@@ -12,18 +12,26 @@ export function Kpi({
 	value: string;
 }) {
 	return (
-		<LayerCard padding="md">
+		<LayerCard padding="md" className="min-w-0">
 			<div className="flex items-start justify-between gap-3">
 				<div className="min-w-0">
 					<p className="text-xs text-basalt-muted-foreground">{label}</p>
-					<p className="mt-1 tabular-nums text-xl font-medium tracking-tight">{value}</p>
+					<p className="mt-2 text-2xl font-semibold tabular-nums tracking-tight">{value}</p>
 				</div>
-				<Icon className="size-4 shrink-0 text-basalt-primary" strokeWidth={1.5} />
+				<Icon
+					className="mt-0.5 size-4 shrink-0 text-basalt-primary"
+					strokeWidth={1.5}
+					aria-hidden="true"
+				/>
 			</div>
 		</LayerCard>
 	);
 }
 
 export function KpiRow({ children }: { children: ReactNode }) {
-	return <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{children}</div>;
+	return (
+		<div className="grid grid-cols-2 gap-3 max-sm:[&>:last-child:nth-child(odd)]:col-span-2 sm:auto-cols-fr sm:grid-flow-col sm:grid-cols-none">
+			{children}
+		</div>
+	);
 }

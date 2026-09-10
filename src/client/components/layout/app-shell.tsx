@@ -73,12 +73,13 @@ export function AppShell() {
 			)}
 			<AppMain tabIndex={-1}>
 				<AppHeader
+					className="[&_nav]:shrink-0 [&_nav]:whitespace-nowrap"
 					leading={
 						isMobile ? (
 							<Button
 								variant="ghost"
 								size="icon"
-								className="h-8 w-8"
+								className="h-8 w-8 shrink-0"
 								onClick={() => setMobileOpen(true)}
 								aria-label="打开导航"
 							>

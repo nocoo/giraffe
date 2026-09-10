@@ -1,4 +1,5 @@
 import { Button, toast } from "@nocoo/basalt";
+import { RefreshCw } from "lucide-react";
 import { useSyncExternalStore } from "react";
 import { refreshInFlight, subscribeRefresh } from "../../viewmodels/refresh";
 
@@ -14,6 +15,7 @@ export function RefreshButton({
 		<Button
 			type="button"
 			size="sm"
+			icon={<RefreshCw className="size-3.5" aria-hidden="true" />}
 			loading={busy}
 			onClick={() => {
 				void run()

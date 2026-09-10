@@ -1,4 +1,4 @@
-import { toast } from "@nocoo/basalt";
+import { Button, Link, toast } from "@nocoo/basalt";
 import { BarChart } from "@nocoo/basalt/charts/bar";
 import { DonutChart } from "@nocoo/basalt/charts/donut";
 import { LineChart } from "@nocoo/basalt/charts/line";
@@ -19,6 +19,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ChartBrick, ChartEmpty, ChartRow } from "../components/layout/chart-brick";
+import { SnapshotDescription } from "../components/layout/collection-chrome";
 import { Kpi, KpiRow } from "../components/layout/kpi";
 import { InsightsSkeleton } from "../components/layout/page-skeleton";
 import { RefreshButton } from "../components/layout/refresh-button";
@@ -119,7 +120,12 @@ export function InsightsPage() {
 						<LayerCard.Empty
 							icon={<Activity />}
 							title={missingTitle(board)}
-							description="先添加 PAT 或刷新。"
+							description="点击刷新获取数据，或前往设置检查 GitHub 账号连接。"
+							action={
+								<Button variant="secondary" size="sm" asChild>
+									<Link href="/settings">查看账号设置</Link>
+								</Button>
+							}
 						/>
 					</LayerCard.Well>
 				</LayerCard>
@@ -140,7 +146,12 @@ export function InsightsPage() {
 		<div className="space-y-8">
 			<PageHeader
 				title="Insights"
-				description={PAGE_DESCRIPTIONS["/insights"]}
+				description={
+					<SnapshotDescription
+						description={PAGE_DESCRIPTIONS["/insights"]}
+						fetchedAt={board.insights.fetched_at}
+					/>
+				}
 				actions={
 					<>
 						{board.insights.truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
@@ -173,13 +184,16 @@ export function InsightsPage() {
 						/>
 					</KpiRow>
 					<ChartRow>
-						<ChartBrick title="仓内 Issue / PR">
+						<ChartBrick
+							title="仓内 Issue / PR"
+							description="按当前打开的 Issue 与 Pull Request 数量比较"
+						>
 							{charts.workloadByRepo.length > 0 ? (
 								<StackedBarChart
 									data={charts.workloadByRepo}
 									series={ISSUE_PR_SERIES}
 									ariaLabel="issues and pull requests by repository"
-									className="h-full w-full"
+									className="h-56 w-full"
 									showAxes
 									showLegend
 									valueFormatter={formatCount}
@@ -188,13 +202,13 @@ export function InsightsPage() {
 								<ChartEmpty label="没有打开的 Issue 或 Pull Request" />
 							)}
 						</ChartBrick>
-						<ChartBrick title="仓库覆盖">
+						<ChartBrick title="仓库覆盖" description="哪些仓库有待处理的 Issue 或 Pull Request">
 							{charts.coverage.length > 0 ? (
 								<DonutChart
 									data={charts.coverage}
 									series={COVERAGE_SERIES}
 									ariaLabel="repositories with issues or pull requests"
-									className="h-full w-full"
+									className="h-56 w-full"
 									showLegend
 									valueFormatter={formatCount}
 								/>
@@ -218,24 +232,30 @@ export function InsightsPage() {
 						<Kpi icon={HeartPulse} label="已批准" value={formatCount(charts.approvedCount)} />
 					</KpiRow>
 					<ChartRow>
-						<ChartBrick title="近 8 周新建">
+						<ChartBrick
+							title="近 8 周新建"
+							description="当前打开的 Issue 与 Pull Request 的创建时间"
+						>
 							<LineChart
 								data={charts.activity}
 								series={ISSUE_PR_SERIES}
 								ariaLabel="issues and pull requests opened by week"
-								className="h-full w-full"
+								className="h-56 w-full"
 								showAxes
 								showLegend
 								valueFormatter={formatCount}
 							/>
 						</ChartBrick>
-						<ChartBrick title="PR 状态">
+						<ChartBrick title="PR 状态" description="草稿、待审查、需修改、已批准与未标记">
 							{charts.prStatus.length > 0 ? (
 								<DonutChart
 									data={charts.prStatus}
 									series={PR_STATUS_SERIES}
 									ariaLabel="pull request review status"
-									className="h-full w-full"
+									summary={charts.prStatus
+										.map((item) => `${item.name} ${formatCount(item.value)} 个`)
+										.join("，")}
+									className="h-56 w-full"
 									showLegend
 									valueFormatter={formatCount}
 								/>
@@ -255,24 +275,27 @@ export function InsightsPage() {
 						<Kpi icon={Clock} label="久未推送" value={formatCount(charts.staleCount)} />
 					</KpiRow>
 					<ChartRow>
-						<ChartBrick title="距上次推送">
+						<ChartBrick title="距上次推送" description="以数据更新时间为基准，单位为天">
 							<BarChart
 								data={charts.freshness}
 								series={[{ key: "y", label: "仓库数", color: chart.teal }]}
 								ariaLabel="days since last push"
-								className="h-full w-full"
+								className="h-56 w-full"
 								showAxes
 								showLegend
 								valueFormatter={formatCount}
 							/>
 						</ChartBrick>
-						<ChartBrick title="健康分布">
+						<ChartBrick title="健康分布" description="当前可见仓库的健康状态">
 							{charts.health.length > 0 ? (
 								<DonutChart
 									data={charts.health}
 									series={HEALTH_SERIES}
 									ariaLabel="repository health"
-									className="h-full w-full"
+									summary={charts.health
+										.map((item) => `${item.name} ${formatCount(item.value)} 个`)
+										.join("，")}
+									className="h-56 w-full"
 									showLegend
 									valueFormatter={formatCount}
 								/>

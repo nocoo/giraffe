@@ -2,6 +2,7 @@ import {
 	Avatar,
 	AvatarFallback,
 	AvatarImage,
+	Button,
 	Link,
 	Tabs,
 	TabsContent,
@@ -11,9 +12,11 @@ import {
 } from "@nocoo/basalt";
 import { AreaChart } from "@nocoo/basalt/charts/area";
 import { DonutChart } from "@nocoo/basalt/charts/donut";
+import { Code } from "@nocoo/basalt/components/code";
 import { DescriptionList } from "@nocoo/basalt/components/description-list";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
+import { ScrollArea } from "@nocoo/basalt/components/scroll-area";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
 import {
 	Table,
@@ -29,6 +32,7 @@ import {
 	CircleDot,
 	Code2,
 	Download,
+	ExternalLink,
 	Eye,
 	FolderDown,
 	GitFork,
@@ -43,6 +47,7 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ChartBrick, ChartEmpty, ChartRow } from "../components/layout/chart-brick";
+import { SnapshotDescription, TableScroll } from "../components/layout/collection-chrome";
 import { Kpi, KpiRow } from "../components/layout/kpi";
 import {
 	ChartSkeleton,
@@ -113,7 +118,9 @@ async function fetchTab<T extends { account_id: string }>(
 function TabWell({ children, flush = false }: { children: ReactNode; flush?: boolean }) {
 	return (
 		<LayerCard>
-			<LayerCard.Well {...(flush ? { className: "p-0" } : {})}>{children}</LayerCard.Well>
+			<LayerCard.Well {...(flush ? { className: "p-0" } : {})}>
+				{flush ? <TableScroll label="仓库数据">{children}</TableScroll> : children}
+			</LayerCard.Well>
 		</LayerCard>
 	);
 }
@@ -229,7 +236,21 @@ export function RepoDetailPage() {
 			});
 			if (missing) {
 				setSnap(missing);
+				return;
 			}
+			// A failed initial fetch must leave the loading state so the user can retry.
+			const setCurrent = {
+				details: setSnap,
+				security: setSecurity,
+				traffic: setTraffic,
+				actions: setActions,
+				releases: setReleases,
+				issues: setIssues,
+				prs: setPulls,
+				languages: setLanguages,
+				contributors: setContributors,
+			}[tab];
+			setCurrent({ missing: true });
 		}
 		if (tab === "security") {
 			void fetchTab<RepoSecurity>(owner, name, "security", refreshed.current)
@@ -294,7 +315,14 @@ export function RepoDetailPage() {
 	if (snap && "missing" in snap) {
 		return (
 			<div className="space-y-8">
-				<PageHeader title={`${owner}/${name}`} />
+				<PageHeader
+					title={
+						<span className="[overflow-wrap:anywhere]">
+							{owner}/<wbr />
+							{name}
+						</span>
+					}
+				/>
 				<TabWell>
 					<LayerCard.Empty
 						icon={<Box />}
@@ -335,39 +363,68 @@ export function RepoDetailPage() {
 	if (!snap) {
 		return (
 			<div className="space-y-8">
-				<PageHeader title={`${owner}/${name}`} />
+				<PageHeader
+					title={
+						<span className="[overflow-wrap:anywhere]">
+							{owner}/<wbr />
+							{name}
+						</span>
+					}
+				/>
 				<DetailSkeleton label="加载仓库" />
 			</div>
 		);
 	}
 
-	const truncated =
+	const activeSnapshot =
 		tab === "details"
-			? snap.truncated
+			? snap
 			: tab === "security"
-				? security && !("missing" in security) && security.truncated
+				? security
 				: tab === "traffic"
-					? traffic && !("missing" in traffic) && traffic.truncated
+					? traffic
 					: tab === "actions"
-						? actions && !("missing" in actions) && actions.truncated
+						? actions
 						: tab === "releases"
-							? releases && !("missing" in releases) && releases.truncated
+							? releases
 							: tab === "issues"
-								? issues && !("missing" in issues) && issues.truncated
+								? issues
 								: tab === "prs"
-									? pulls && !("missing" in pulls) && pulls.truncated
+									? pulls
 									: tab === "languages"
-										? languages && !("missing" in languages) && languages.truncated
-										: contributors && !("missing" in contributors) && contributors.truncated;
+										? languages
+										: contributors;
+	const current = activeSnapshot && !("missing" in activeSnapshot) ? activeSnapshot : null;
+	const truncated = current?.truncated;
 
 	return (
 		<div className="space-y-8" data-testid="repo-detail">
 			<PageHeader
-				title={`${owner}/${name}`}
-				description={snap.description ?? name}
+				title={
+					<span className="[overflow-wrap:anywhere]">
+						{owner}/<wbr />
+						{name}
+					</span>
+				}
+				description={
+					current ? (
+						<SnapshotDescription
+							description={snap.description ?? "仓库概览、开发动态与协作数据"}
+							fetchedAt={current.fetched_at}
+						/>
+					) : (
+						(snap.description ?? name)
+					)
+				}
 				actions={
 					<>
 						{truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
+						<Button variant="secondary" size="sm" asChild>
+							<a href={snap.url} target="_blank" rel="noreferrer">
+								<ExternalLink className="size-3.5" aria-hidden="true" />
+								GitHub
+							</a>
+						</Button>
 						<RefreshButton
 							run={() => {
 								const mine = gen.current;
@@ -460,18 +517,47 @@ export function RepoDetailPage() {
 					</>
 				}
 			/>
-			<Tabs value={tab} onValueChange={(value) => setTab(value as RepoTab)}>
-				<TabsList>
-					<TabsTrigger value="details">概览</TabsTrigger>
-					<TabsTrigger value="security">Security</TabsTrigger>
-					<TabsTrigger value="actions">Actions</TabsTrigger>
-					<TabsTrigger value="prs">PRs</TabsTrigger>
-					<TabsTrigger value="issues">Issues</TabsTrigger>
-					<TabsTrigger value="releases">Releases</TabsTrigger>
-					<TabsTrigger value="traffic">Traffic</TabsTrigger>
-					<TabsTrigger value="languages">Languages</TabsTrigger>
-					<TabsTrigger value="contributors">Contributors</TabsTrigger>
-				</TabsList>
+			<Tabs value={tab} onValueChange={(value) => setTab(value as RepoTab)} className="min-w-0">
+				<ScrollArea orientation="horizontal" aria-label="仓库标签页" className="mb-6">
+					<TabsList className="w-max min-w-full flex-nowrap" aria-label="仓库详情">
+						<TabsTrigger value="details" className="gap-1.5 whitespace-nowrap">
+							<Box className="size-3.5" aria-hidden="true" />
+							概览
+						</TabsTrigger>
+						<TabsTrigger value="security" className="gap-1.5 whitespace-nowrap">
+							<ShieldAlert className="size-3.5" aria-hidden="true" />
+							安全
+						</TabsTrigger>
+						<TabsTrigger value="actions" className="gap-1.5 whitespace-nowrap">
+							<Play className="size-3.5" aria-hidden="true" />
+							Actions
+						</TabsTrigger>
+						<TabsTrigger value="prs" className="gap-1.5 whitespace-nowrap">
+							<GitPullRequest className="size-3.5" aria-hidden="true" />
+							PRs
+						</TabsTrigger>
+						<TabsTrigger value="issues" className="gap-1.5 whitespace-nowrap">
+							<CircleDot className="size-3.5" aria-hidden="true" />
+							Issues
+						</TabsTrigger>
+						<TabsTrigger value="releases" className="gap-1.5 whitespace-nowrap">
+							<Tag className="size-3.5" aria-hidden="true" />
+							发布
+						</TabsTrigger>
+						<TabsTrigger value="traffic" className="gap-1.5 whitespace-nowrap">
+							<Eye className="size-3.5" aria-hidden="true" />
+							流量
+						</TabsTrigger>
+						<TabsTrigger value="languages" className="gap-1.5 whitespace-nowrap">
+							<Code2 className="size-3.5" aria-hidden="true" />
+							语言
+						</TabsTrigger>
+						<TabsTrigger value="contributors" className="gap-1.5 whitespace-nowrap">
+							<Users className="size-3.5" aria-hidden="true" />
+							贡献者
+						</TabsTrigger>
+					</TabsList>
+				</ScrollArea>
 				<TabsContent value="details">
 					{snap ? (
 						<div className="flex flex-col gap-4">
@@ -484,7 +570,7 @@ export function RepoDetailPage() {
 								<LayerCard padding="md">
 									<DescriptionList columns={2}>
 										<DescriptionList.Item term="默认分支">
-											{snap.default_branch}
+											<Code>{snap.default_branch}</Code>
 										</DescriptionList.Item>
 										<DescriptionList.Item term="许可证">{snap.license ?? "—"}</DescriptionList.Item>
 										<DescriptionList.Item term="最近推送">
@@ -511,15 +597,23 @@ export function RepoDetailPage() {
 				<TabsContent value="actions">
 					{actions && "missing" in actions ? (
 						<TabWell>
-							<LayerCard.Empty icon={<Play />} title="没有快照" />
+							<LayerCard.Empty
+								icon={<Play />}
+								title="没有快照"
+								description="点击上方刷新，重新获取这个仓库的数据。"
+							/>
 						</TabWell>
 					) : actions && actions.runs.length === 0 ? (
 						<TabWell>
-							<LayerCard.Empty icon={<Play />} title="没有 workflow runs" />
+							<LayerCard.Empty
+								icon={<Play />}
+								title="还没有工作流记录"
+								description="GitHub Actions 的运行状态与结果会显示在这里。"
+							/>
 						</TabWell>
 					) : actions ? (
 						<TabWell flush>
-							<Table>
+							<Table className="min-w-[680px] [&_th]:whitespace-nowrap">
 								<TableHeader>
 									<TableRow>
 										<TableHead>名称</TableHead>
@@ -549,7 +643,9 @@ export function RepoDetailPage() {
 											<TableCell>
 												<CandyBadge tone="indigo">{run.event}</CandyBadge>
 											</TableCell>
-											<TableCell>{run.head_branch ?? "—"}</TableCell>
+											<TableCell>
+												<Code>{run.head_branch ?? "—"}</Code>
+											</TableCell>
 											<TableCell className={DATE_CELL}>{formatDate(run.updated_at)}</TableCell>
 										</TableRow>
 									))}
@@ -563,15 +659,23 @@ export function RepoDetailPage() {
 				<TabsContent value="releases">
 					{releases && "missing" in releases ? (
 						<TabWell>
-							<LayerCard.Empty icon={<Tag />} title="没有快照" />
+							<LayerCard.Empty
+								icon={<Tag />}
+								title="没有快照"
+								description="点击上方刷新，重新获取这个仓库的数据。"
+							/>
 						</TabWell>
 					) : releases && releases.releases.length === 0 ? (
 						<TabWell>
-							<LayerCard.Empty icon={<Tag />} title="没有 Release" />
+							<LayerCard.Empty
+								icon={<Tag />}
+								title="还没有发布版本"
+								description="仓库发布版本后，这里会显示标签与发布时间。"
+							/>
 						</TabWell>
 					) : releases ? (
 						<TabWell flush>
-							<Table>
+							<Table className="min-w-[680px] [&_th]:whitespace-nowrap">
 								<TableHeader>
 									<TableRow>
 										<TableHead>标签</TableHead>
@@ -603,11 +707,19 @@ export function RepoDetailPage() {
 				<TabsContent value="security">
 					{security && "missing" in security ? (
 						<TabWell>
-							<LayerCard.Empty icon={<ShieldAlert />} title="没有快照" />
+							<LayerCard.Empty
+								icon={<ShieldAlert />}
+								title="没有快照"
+								description="点击上方刷新，重新获取这个仓库的数据。"
+							/>
 						</TabWell>
 					) : security && securityUnavailable(security) ? (
 						<TabWell>
-							<LayerCard.Empty icon={<ShieldAlert />} title="无权限" />
+							<LayerCard.Empty
+								icon={<ShieldAlert />}
+								title="无法查看安全数据"
+								description="请在设置中检查当前账号的仓库访问权限。"
+							/>
 						</TabWell>
 					) : security ? (
 						<KpiRow>
@@ -623,7 +735,11 @@ export function RepoDetailPage() {
 				<TabsContent value="issues">
 					{issues && "missing" in issues ? (
 						<TabWell>
-							<LayerCard.Empty icon={<CircleDot />} title="没有快照" />
+							<LayerCard.Empty
+								icon={<CircleDot />}
+								title="没有快照"
+								description="点击上方刷新，重新获取这个仓库的数据。"
+							/>
 						</TabWell>
 					) : issues && issues.issues.length === 0 ? (
 						<TabWell>
@@ -631,10 +747,9 @@ export function RepoDetailPage() {
 						</TabWell>
 					) : issues ? (
 						<TabWell flush>
-							<Table>
+							<Table className="min-w-[680px] [&_th]:whitespace-nowrap">
 								<TableHeader>
 									<TableRow>
-										<TableHead className={NUM_HEAD}>编号</TableHead>
 										<TableHead>标题</TableHead>
 										<TableHead>标签</TableHead>
 										<TableHead>作者</TableHead>
@@ -645,11 +760,18 @@ export function RepoDetailPage() {
 								<TableBody>
 									{issues.issues.map((row) => (
 										<TableRow key={`${row.name_with_owner}#${row.number}`}>
-											<TableCell className={NUM_CELL}>#{row.number}</TableCell>
 											<TableCell>
-												<Link href={row.url} target="_blank" rel="noreferrer">
+												<Link
+													href={row.url}
+													target="_blank"
+													rel="noreferrer"
+													className="font-medium text-basalt-foreground [overflow-wrap:anywhere] hover:text-basalt-primary"
+												>
 													{row.title}
 												</Link>
+												<p className="mt-1 text-xs tabular-nums text-basalt-muted-foreground">
+													#{row.number}
+												</p>
 											</TableCell>
 											<TableCell>
 												<LabelChips labels={row.labels} />
@@ -671,7 +793,11 @@ export function RepoDetailPage() {
 				<TabsContent value="prs">
 					{pulls && "missing" in pulls ? (
 						<TabWell>
-							<LayerCard.Empty icon={<GitPullRequest />} title="没有快照" />
+							<LayerCard.Empty
+								icon={<GitPullRequest />}
+								title="没有快照"
+								description="点击上方刷新，重新获取这个仓库的数据。"
+							/>
 						</TabWell>
 					) : pulls && pulls.pull_requests.length === 0 ? (
 						<TabWell>
@@ -679,10 +805,9 @@ export function RepoDetailPage() {
 						</TabWell>
 					) : pulls ? (
 						<TabWell flush>
-							<Table>
+							<Table className="min-w-[680px] [&_th]:whitespace-nowrap">
 								<TableHeader>
 									<TableRow>
-										<TableHead className={NUM_HEAD}>编号</TableHead>
 										<TableHead>标题</TableHead>
 										<TableHead>作者</TableHead>
 										<TableHead>状态</TableHead>
@@ -695,11 +820,18 @@ export function RepoDetailPage() {
 										const churn = churnFilled(row.additions, row.deletions);
 										return (
 											<TableRow key={`${row.name_with_owner}#${row.number}`}>
-												<TableCell className={NUM_CELL}>#{row.number}</TableCell>
 												<TableCell>
-													<Link href={row.url} target="_blank" rel="noreferrer">
+													<Link
+														href={row.url}
+														target="_blank"
+														rel="noreferrer"
+														className="font-medium text-basalt-foreground [overflow-wrap:anywhere] hover:text-basalt-primary"
+													>
 														{row.title}
 													</Link>
+													<p className="mt-1 text-xs tabular-nums text-basalt-muted-foreground">
+														#{row.number}
+													</p>
 												</TableCell>
 												<TableCell>
 													<PersonCell login={row.author_login} />
@@ -749,11 +881,19 @@ export function RepoDetailPage() {
 				<TabsContent value="traffic">
 					{traffic && "missing" in traffic ? (
 						<TabWell>
-							<LayerCard.Empty icon={<Eye />} title="没有快照" />
+							<LayerCard.Empty
+								icon={<Eye />}
+								title="没有快照"
+								description="点击上方刷新，重新获取这个仓库的数据。"
+							/>
 						</TabWell>
 					) : traffic && trafficForbidden(traffic) ? (
 						<TabWell>
-							<LayerCard.Empty icon={<Eye />} title="无 Traffic 权限" />
+							<LayerCard.Empty
+								icon={<Eye />}
+								title="无法查看流量"
+								description="流量数据需要当前账号拥有此仓库的推送权限。"
+							/>
 						</TabWell>
 					) : traffic ? (
 						<div className="flex flex-col gap-4">
@@ -768,23 +908,31 @@ export function RepoDetailPage() {
 								/>
 							</KpiRow>
 							<ChartRow>
-								<ChartBrick title="浏览">
+								<ChartBrick title="浏览趋势" description="最近 14 天的仓库页面访问">
 									{traffic.views.points.length > 0 ? (
 										<AreaChart
 											data={trafficPoints(traffic.views.points)}
 											ariaLabel="views"
-											className="h-full w-full"
+											showAxes
+											valueFormatter={formatCount}
+											xValueFormatter={(value) => String(value).slice(5, 10)}
+											summary={`${traffic.views.count} 次浏览，${traffic.views.uniques} 位独立访客`}
+											className="h-56 w-full"
 										/>
 									) : (
 										<ChartEmpty label="没有浏览数据" />
 									)}
 								</ChartBrick>
-								<ChartBrick title="克隆">
+								<ChartBrick title="克隆趋势" description="最近 14 天的仓库克隆次数">
 									{traffic.clones.points.length > 0 ? (
 										<AreaChart
 											data={trafficPoints(traffic.clones.points)}
 											ariaLabel="clones"
-											className="h-full w-full"
+											showAxes
+											valueFormatter={formatCount}
+											xValueFormatter={(value) => String(value).slice(5, 10)}
+											summary={`${traffic.clones.count} 次克隆，${traffic.clones.uniques} 位独立克隆用户`}
+											className="h-56 w-full"
 										/>
 									) : (
 										<ChartEmpty label="没有克隆数据" />
@@ -799,18 +947,26 @@ export function RepoDetailPage() {
 				<TabsContent value="languages">
 					{languages && "missing" in languages ? (
 						<TabWell>
-							<LayerCard.Empty icon={<Code2 />} title="没有快照" />
+							<LayerCard.Empty
+								icon={<Code2 />}
+								title="没有快照"
+								description="点击上方刷新，重新获取这个仓库的数据。"
+							/>
 						</TabWell>
 					) : languages && Object.keys(languages.languages).length === 0 ? (
 						<TabWell>
-							<LayerCard.Empty icon={<Code2 />} title="没有语言数据" />
+							<LayerCard.Empty
+								icon={<Code2 />}
+								title="还没有语言统计"
+								description="仓库中有可统计的代码后，刷新即可查看语言分布。"
+							/>
 						</TabWell>
 					) : languages ? (
-						<ChartBrick title="语言">
+						<ChartBrick title="语言分布" description="按仓库代码字节数统计">
 							<DonutChart
 								data={sortedLanguages(languages.languages)}
 								ariaLabel="languages"
-								className="h-full w-full"
+								className="h-56 w-full"
 								showLegend
 								valueFormatter={formatCount}
 							/>
@@ -822,30 +978,55 @@ export function RepoDetailPage() {
 				<TabsContent value="contributors">
 					{contributors && "missing" in contributors ? (
 						<TabWell>
-							<LayerCard.Empty icon={<Users />} title="没有快照" />
+							<LayerCard.Empty
+								icon={<Users />}
+								title="没有快照"
+								description="点击上方刷新，重新获取这个仓库的数据。"
+							/>
 						</TabWell>
 					) : contributors && contributors.contributors.length === 0 ? (
 						<TabWell>
-							<LayerCard.Empty icon={<Users />} title="没有贡献者" />
+							<LayerCard.Empty
+								icon={<Users />}
+								title="还没有贡献记录"
+								description="有提交记录的贡献者会显示在这里。"
+							/>
 						</TabWell>
 					) : contributors ? (
-						<TabWell>
-							<ul className="flex flex-col gap-3">
-								{contributors.contributors.map((row) => (
-									<li key={row.login} className="flex items-center gap-3">
-										<Avatar>
-											<AvatarImage src={row.avatar_url} alt={row.login} />
-											<AvatarFallback>{row.login.slice(0, 2)}</AvatarFallback>
-										</Avatar>
-										<Link href={row.html_url} target="_blank" rel="noreferrer">
-											{row.login}
-										</Link>
-										<span className="ml-auto text-sm text-basalt-muted-foreground tabular-nums">
-											{formatCount(row.contributions)} 次
-										</span>
-									</li>
-								))}
-							</ul>
+						<TabWell flush>
+							<Table className="min-w-[280px]" aria-label="贡献者">
+								<TableHeader>
+									<TableRow>
+										<TableHead>贡献者</TableHead>
+										<TableHead className={NUM_HEAD}>提交次数</TableHead>
+									</TableRow>
+								</TableHeader>
+								<TableBody>
+									{contributors.contributors.map((row) => (
+										<TableRow key={row.login}>
+											<TableCell>
+												<div className="flex min-w-0 items-center gap-3">
+													<Avatar className="size-8 shrink-0">
+														{row.avatar_url ? (
+															<AvatarImage src={row.avatar_url} alt={row.login} />
+														) : null}
+														<AvatarFallback>{row.login.slice(0, 2)}</AvatarFallback>
+													</Avatar>
+													<Link
+														href={row.html_url}
+														target="_blank"
+														rel="noreferrer"
+														className="font-medium text-basalt-foreground [overflow-wrap:anywhere] hover:text-basalt-primary"
+													>
+														{row.login}
+													</Link>
+												</div>
+											</TableCell>
+											<TableCell className={NUM_CELL}>{formatCount(row.contributions)}</TableCell>
+										</TableRow>
+									))}
+								</TableBody>
+							</Table>
 						</TabWell>
 					) : (
 						<PeopleSkeleton label="加载贡献者" />

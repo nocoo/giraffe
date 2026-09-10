@@ -180,8 +180,10 @@ Basalt `ContentIsland` 已是 L1 岛。不要再包一层自定义 card 当岛�
 | 岛内页头 | `PageHeader` | `@nocoo/basalt/components/page-header` |
 | 分区 | `SectionRule` | `@nocoo/basalt/components/section-rule` |
 | 按钮 / 输入 / 字段 | `Button` `Input` `Field` `Label` | `@nocoo/basalt`。页级主操作（刷新、提交、激活、全部已读）用默认变体 `bg-basalt-primary`；危险操作用 `destructive`；壳层 / 表头排序用 `ghost`；行内次要用 `secondary` |
+| 搜索 / 筛选 | `InputGroup` / `FilterBar` | granular `components/input-group` / `components/filter-bar`。搜索图标、清空按钮和输入框由共享控件组合；清空后焦点回到输入框 |
 | PAT | `SensitiveInput` | `@nocoo/basalt/components/sensitive-input` |
 | 列表 | `Table` `TableHeader` `TableBody` `TableRow` `TableCell` | `@nocoo/basalt/components/table`。表头可点排序；行内用 `SlotBarChart` meter、彩色 Badge、GitHub label 色片。不用 `DataTable` |
+| 横向内容 | `ScrollArea` | `@nocoo/basalt/components/scroll-area`，`orientation="horizontal"`。宽表放在 Well 内滚动；单仓标签也使用共享滚动区，均有中文可访问名称 |
 | 空态 | `Empty` | `@nocoo/basalt/components/empty` |
 | 统计 | 岛上裸 `LayerCard padding="md"` KPI（主题色 icon） | `layout/kpi`。不用灰 `StatStrip` |
 | 卡片 | `LayerCard` | `@nocoo/basalt/components/layer-card` |
@@ -195,7 +197,7 @@ Basalt `ContentIsland` 已是 L1 岛。不要再包一层自定义 card 当岛�
 | 主题 | `ThemeProvider` `ThemeToggle` `AccentProvider` | `ThemeProvider` 根 barrel；`AccentProvider` 走 `@nocoo/basalt/providers/accent`。`persist={false}`，`defaultAccent="primary"`，`paletteOverrides.primary` 用 Basalt Green 糖果色（`113 58% 62%` / `113 58% 70%`）作草绿主色。禁止再写 `--basalt-*` token。图表固定五色循环，与 accent 无关 |
 | Router 链接 | `Link` + `LinkProvider` | `@nocoo/basalt` |
 | ⌘K | `CommandPalette*` | `@nocoo/basalt` |
-| 复制 digest | `ClipboardText` | `@nocoo/basalt/components/clipboard-text` |
+| 日报预览 / 复制 | `CodeBlock` / `ClipboardText` | granular `components/code` / `components/clipboard-text`。`text` 是可见标签，`copyText` 必须传完整 Markdown 内容 |
 | Traffic | `AreaChart` 或 `LineChart` | `@nocoo/basalt/charts/area` / `line` |
 | Languages | `DonutChart` | `@nocoo/basalt/charts/donut` |
 | Insights | `StackedBarChart` `DonutChart` `LineChart` `BarChart` | `@nocoo/basalt/charts/stacked-bar` / `donut` / `line` / `bar` |
@@ -205,6 +207,19 @@ Basalt `ContentIsland` 已是 L1 岛。不要再包一层自定义 card 当岛�
 禁止：再引入 shadcn、再包一层 `src/client/components/ui/button.tsx`、用 kusto 的 `cn.ts` / `sidebar-context.tsx`、用 Basalt `DataTable`。
 
 品牌标记：不要用 `BasaltMark`。侧栏用 `src/client/components/layout/mark.tsx` 读 `/logo-24.png`（源文件根目录 `logo.png`，派生 `public/logo-24.png`）。Favicon 用 `/logo-32.png`。仅此一个非 Basalt 图形。
+
+### 5.4 页面细节
+
+- `PageHeader` 的说明下展示数据更新时间，取当前页面（单仓为当前标签）的 `fetched_at`。不把加载中的其他标签时间当成本标签时间。
+- 窄屏顶栏保留导航按钮与祖先面包屑的宽度，面包屑不换行；长的当前页标题沿用 `AppHeader` 的截断行为。
+- 统计卡按实际数量均分桌面行，窄屏排两列；奇数张时最后一张占满行。表格标题与描述分主次；Issue / PR 的编号、仓库放在标题下，仓库名可跳到单仓页。
+- 搜索与排序放在 `FilterBar`；列表 / 网格切换放在仓库分区。分区显示结果数，搜索无结果与真正无数据使用不同空态，前者有「清除搜索」操作。
+- `Table` 保持必要列宽，通过共享 `ScrollArea` 查看完整数据，禁止由卡片裁掉右侧列。数字右对齐且等宽，状态徽章不拆行。
+- 图表卡使用 `LayerCard.Header` / `Body`，标题下说明指标范围或单位。绘图区通过公开 `className` 设置明确高度，卡片随摘要内容增高，避免百分比高度导致图形消失。PR 状态图保留五种颜色与文字摘要。
+- 设置页的 PAT 表单、Access 身份并列展示，窄屏上下排列；已连接账号独立成区。账号删除确认带账号名。
+- 通知标记已读时显示 `Button loading`，同一页面的已读操作暂时禁用，成功后应用服务端返回的状态。
+- 日报提供完整 Markdown 预览与复制；没有昨天基线时用 `Banner` 说明等待条件，变化值仍为「—」。
+- `layout/collection-chrome` 只组合 Basalt 输入和滚动控件，并展示计数与更新时间；`table-chrome` 只组合表格叶子；`kpi` / `chart-brick` 只组合卡片。它们不维护第二套控件样式、API 或筛选逻辑。
 
 ---
 
@@ -338,66 +353,68 @@ HTTP **200** 体有两种（04）：
 
 ### 8.1 `/` 仓库
 
-`PageHeader` 标题「仓库」+ 副标题。`actions`：截断/不完整 Badge 与刷新。`filters`：搜索、`SegmentControl` 排序与列表|网格。排序状态在 VM，点表头调用 VM，不靠 Table 内置排序。
+`PageHeader` 标题「仓库」+ 副标题和更新时间。`actions`：截断/不完整 Badge 与刷新。`filters`：`FilterBar` 内的搜索与 `SegmentControl` 排序。列表 / 网格切换和结果数放在仓库 `SectionRule.actions`。排序通过 VM 完成，不靠 Table 内置排序。
 
 KPI（裸 `LayerCard padding="md"`，主题色 icon）：仓库数 / Stars / Forks / Issues，由 `repoMetrics` 从快照合计。其下 `SectionRule`「仓库」。
 
-列表：`Table` 列 = 仓库、语言、★、fork、open issues、最近 push、可见性、health（若 insights 已在内存则显示，没有则不加列；只读内存，不 GET、不为此自动刷 insights）。`insights.alerts_incomplete === true` 时 health 旁 Badge「告警不完整」，不得把 `strong` 理解成已扫完全部安全告警。不另 GET alerts 来推断该标记。
+列表：`Table` 列 = 仓库、语言、Stars、Fork、Issues、最近推送、health。首列包含描述、可见性、归档和 Fork 标记；推送时间下显示活跃 meter。health 若 insights 已在内存则显示，没有则不加列；只读内存，不 GET、不为此自动刷 insights。`insights.alerts_incomplete === true` 时页头 Badge「告警不完整」，不得把 `strong` 理解成已扫完全部安全告警。不另 GET alerts 来推断该标记。
 
-网格：`LayerCard padding="md"` 卡（主题色 Star icon），点整卡进 `/repos/:owner/:name`。
+网格：`LayerCard padding="md"` 卡，标题与 health 同行，描述最多两行，底部显示语言、Stars、可见性与推送时间。点整卡进 `/repos/:owner/:name`。
 
 字段用 03 `repos[]`。`truncated: true` 时 PageHeader 下 `Badge`「已截断」。
 
-空数组且有快照：`Empty`「没有仓库」，不是 409。
+空数组且有快照：`Empty`「还没有仓库」，不是 409。搜索无结果时显示「没有匹配结果」与清除搜索操作。
 
 ### 8.2 `/issues` `/pulls`
 
-跨仓表。列：仓、编号、标题（外链 `url`，`target=_blank`）、作者、更新时间；PR 另加 draft、review、+add/−del。Client 侧按仓 / 标题过滤。不改 GET query。
+跨仓表。首列是标题（外链 `url`，`target=_blank`），下方显示编号与可进入单仓页的仓库链接；其余列是作者、更新时间，Issues 另有标签和评论数，PR 另有 draft、review、+add/−del。`FilterBar` 提供搜索和最近更新 / 按仓库排序。Client 侧按仓 / 标题过滤，不改 GET query。
 
 Issues KPI：打开 Issues / 涉及仓库（`issueMetrics`）。PRs KPI：草稿 / 待审查 / 需修改 / 已批准（`pullMetrics`，草稿优先）。表在 `SectionRule` 内。
 
 ### 8.3 `/insights`
 
-浏览组第一项。不重复仓库全表。用 `SectionRule` 分「工作量 / 审查与节奏 / 健康与活跃」。每区：最多四张 KPI（裸 `LayerCard padding="md"`，主题色 icon，无 Header）+ 两张图卡（一卡一图，无 Header 横线）。不用 `StatStrip`、不用 `LayerCard.Header`。
+浏览组第一项。不重复仓库全表。用 `SectionRule` 分「工作量 / 审查与节奏 / 健康与活跃」。每区：最多四张 KPI（裸 `LayerCard padding="md"`，主题色 icon，无 Header）+ 两张图卡（一卡一图，使用 `LayerCard.Header` 放标题与指标说明，`Body` 放图表）。不用 `StatStrip`。
 
 图表由 ViewModel 从 insights + issues + prs 快照聚合。issues 快照缺失时 Issue 计数回退 `open_issue_count`；prs 缺失时 PR 为 0。空 issues 快照不当回退。Client 仍不算 health。`alerts_incomplete` 时页头 Badge「告警不完整」。GET 409 时 Empty，刷新走 §7。仍 409 仅当 repos 或 issues 不足；不循环自动刷。
 
 ### 8.4 `/alerts`
 
-`unavailable: true` → Empty「无权限」。否则 KPI（Dependabot / code scanning）+ `SectionRule` 告警表（仓、source、severity、summary 外链）。
+`unavailable: true` → Empty「无权限」，附检查账号权限的设置链接。否则 KPI（Dependabot / code scanning）+ `SectionRule` 告警表（首列摘要外链与仓库链接，其余列 source、severity）。
 
 ### 8.5 `/inbox`
 
-KPI（未读 / 全部）+ `SectionRule` 通知表：未读、仓、title、reason、时间。行内「已读」→ `POST /api/notifications/read` `{ id, account_id }`（id 为数字字符串）。工具条「全部已读」→ `POST /api/notifications/read-all` `{ account_id }`。无快照 409 不打 GitHub（04）。成功后 body 即新 notifications 快照，ViewModel 替换。
+KPI（未读 / 全部）+ `SectionRule` 通知表：状态、标题与仓库链接、原因、时间、操作。未读行的「标为已读」→ `POST /api/notifications/read` `{ id, account_id }`（id 为数字字符串）。页头「全部已读」→ `POST /api/notifications/read-all` `{ account_id }`。请求中显示加载状态并禁用其他已读操作。无快照 409 不打 GitHub（04）。成功后 body 即新 notifications 快照，ViewModel 替换。
 
 ### 8.6 `/digest`
 
-KPI：stars / forks / open issues 的 delta。`baseline_missing` → 文案「没有昨天的基线」，delta 显示「—」不得显示 0。`ClipboardText` 复制 Markdown。Markdown 由 `viewmodels/digest.ts` 纯函数生成（仓表 + 合计），**无** LLM。GET 409 时 Empty；刷新只刷 `repos`。
+页头显示日报日期与数据更新时间。KPI：stars / forks / open issues 的 delta。`baseline_missing` → `Banner` 说明尚无昨天的基线，delta 显示「—」不得显示 0。`CodeBlock` 预览 Markdown，`ClipboardText` 复制完整内容。Markdown 由 `viewmodels/digest.ts` 纯函数生成（仓表 + 合计），**无** LLM。GET 409 时 Empty；刷新只刷 `repos`。
 
 ### 8.7 `/repos/:owner/:name`
 
 `owner`/`name` 校验同 04（`^[A-Za-z0-9_.-]+$`，不是 `.`/`..`），非法 → 岛内校验错误，不请求。
 
-`Tabs`：概览、Security、Actions、PRs、Issues、Releases、Traffic、Languages、Contributors。默认概览。
+`Tabs`：概览、安全、Actions、PRs、Issues、发布、流量、语言、贡献者。默认概览。使用共享 `ScrollArea` 保持窄屏标签可达；页头更新时间取当前标签快照，缺数据时不显示其他标签的时间。
+
+标签首次加载或自动补刷失败时结束骨架状态，展示错误提示与可通过页头刷新重试的空态。
 
 | Tab | GET | 要点 |
 |-----|-----|------|
 | 概览 | `.../:owner/:name` | Stars/Forks/Issues KPI；`SectionRule` 概览 + `DescriptionList`（无 `LayerCard.Header`） |
-| Security | `/security` | `unavailable` 空态（ShieldAlert）；否则 Dependabot / Code scanning KPI |
+| 安全 | `/security` | `unavailable` 空态（ShieldAlert），说明账号权限；否则 Dependabot / Code scanning KPI |
 | Actions | `/actions` | runs 表，conclusion Badge；空态 Play icon |
 | PRs / Issues | `/prs` `/issues` | 同跨仓列，无仓列 |
-| Releases | `/releases` | tag、时间、prerelease |
-| Traffic | `/traffic` | `forbidden` → Empty「无 Traffic 权限」；否则浏览/独立访客/克隆/独立克隆 KPI + 两张图卡（一卡一图） |
-| Languages | `/languages` | 图卡 Donut，字节数 |
-| Contributors | `/contributors` | Avatar + login + contributions |
+| 发布 | `/releases` | tag、时间、prerelease |
+| 流量 | `/traffic` | `forbidden` → Empty「无法查看流量」，说明需要推送权限；否则浏览/独立访客/克隆/独立克隆 KPI + 两张图卡（日期轴、数值轴、统计摘要） |
+| 语言 | `/languages` | 图卡 Donut，字节数 |
+| 贡献者 | `/contributors` | `Table` 内的 Avatar + login + 提交次数 |
 
 侧栏「仓库」在钻取时保持祖先高亮。
 
 ### 8.8 `/settings`
 
-`PageHeader`「设置」。`SectionRule` 分「身份」与「GitHub 账号」。`GET /api/me` 展示 Access 身份与 lizheng.blog 头像（非 GitHub）。
+`PageHeader`「设置」。`SectionRule` 分「账号连接」与「已连接的账号」。连接区并列 PAT 表单与访问身份，窄屏上下排列。`GET /api/me` 展示 Access 身份与 lizheng.blog 头像（非 GitHub）。
 
-账号表：login、avatar、`token_last4`、scopes、是否当前。无 token 列。
+账号表：login、avatar、令牌末四位（`•••• token_last4`）、权限范围、是否当前、操作。不显示完整 token。删除确认说明具体账号名及影响范围。
 
 添加：`SensitiveInput`（`revealLabel`/`hideLabel` 中文），提交 `POST /api/accounts` `{ token }`。**无论成功失败都清空输入**。提交中 `Button loading`、输入禁用，防重复提交；文案「正在添加…」（校验并保存）→ 若该账号 `is_active` 再「正在同步…」（§7 刷 `repos`）。成功 201 且 `is_active === true` 才刷 `repos`。第二账号默认非 active，只出现在表里，需用户 activate。
 
@@ -463,6 +480,8 @@ Client 单测：文件顶 `// @vitest-environment happy-dom` 或 vitest 对 `src
 3. 点进该仓详情，概览可见描述或名称。
 
 Runner：`scripts/run-e2e-bdd.ts`。先 `vite build`，persist `.wrangler/e2e-pw/`，端口 27045，schema + `_test_marker`，`GET /api/live` 且 `d1_marker=test`，GitHub stub 不得占用 17045。套件 **只 A**。Playwright Chromium。`baseURL = http://127.0.0.1:27045`。
+
+`tests/e2e/ui.spec.ts` 在同一真实构建上拦截同源 API 为固定展示数据，补充验证搜索恢复、网格导航、完整日报复制、缺基线数据、通知操作进度、空态与权限提示、表格键盘横向滚动、单仓全部标签的数据与更新时间、浅色 / 深色 / 移动端全部页面及失败 PAT 清空。图表必须实际绘制且具有可用尺寸，PR 状态必须有五种不同的实际填充色。`ui-fixtures.ts` 只属于测试，不进入客户端。原有不拦截 API 的 PAT → 仓库列表 → 单仓路径仍必须通过。
 
 L3 依赖步骤 1 的 Origin 补丁。未补丁前不算 L3 绿。L3 **不是** pre-push 门。
 
