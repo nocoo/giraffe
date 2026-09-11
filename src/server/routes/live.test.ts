@@ -15,11 +15,13 @@ describe("liveResponse", () => {
 		} satisfies Env;
 		const res = await liveResponse(env, createDb(env.DB));
 		expect(await res.json()).toEqual({
+			status: "ok",
 			name: "giraffe",
 			version: APP_VERSION,
 			environment: "development",
 			d1_marker: "test",
 		});
+		expect(res.headers.get("cache-control")).toBe("no-store");
 		const empty = await liveResponse(env, createDb(openSqliteD1(false)));
 		expect(((await empty.json()) as { d1_marker: string | null }).d1_marker).toBeNull();
 		const throwing = {

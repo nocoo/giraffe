@@ -16,10 +16,15 @@ export async function liveResponse(env: Env, db: Db): Promise<Response> {
 	} catch {
 		marker = null;
 	}
-	return jsonOk({
-		name: "giraffe",
-		version: APP_VERSION,
-		environment: envMode(env.ENVIRONMENT),
-		d1_marker: marker,
-	});
+	return jsonOk(
+		{
+			status: "ok",
+			name: "giraffe",
+			version: APP_VERSION,
+			environment: envMode(env.ENVIRONMENT),
+			d1_marker: marker,
+		},
+		200,
+		{ "cache-control": "no-store" },
+	);
 }

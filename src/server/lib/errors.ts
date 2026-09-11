@@ -18,10 +18,13 @@ export function jsonError(status: number, code: string, message: string): Respon
 	});
 }
 
-export function jsonOk(body: unknown, status = 200): Response {
+export function jsonOk(body: unknown, status = 200, headers?: Record<string, string>): Response {
 	return new Response(JSON.stringify(body), {
 		status,
-		headers: { "content-type": "application/json; charset=utf-8" },
+		headers: {
+			"content-type": "application/json; charset=utf-8",
+			...headers,
+		},
 	});
 }
 
