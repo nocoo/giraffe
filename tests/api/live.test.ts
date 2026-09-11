@@ -9,5 +9,7 @@ describe("GET /api/live", () => {
 		const body = (await res.json()) as { name: string; d1_marker: string };
 		expect(body.name).toBe("giraffe");
 		expect(body.d1_marker).toBe("test");
+		expect(body).toMatchObject({ status: "ok", database: { connected: true } });
+		expect(res.headers.get("cache-control")).toBe("no-store");
 	});
 });

@@ -265,7 +265,7 @@ insights 的「源不足」**只**看 `repos` 与 `issues`：缺行或该源 `tr
 
 `createDb(env)` 每请求一次，放入 Hono context，所有 store 复用同一句柄。禁止在 store 内再 `createDb`（否则计数器归零）。
 
-`GET /api/live` 用 **D1 binding** 读 `_test_marker`：有 `value=test` 则 `d1_marker: "test"`，否则 `null`。不得用 wrangler CLI 查同一 SQLite 充当 live 实现。
+`GET /api/live` 先用 **D1 binding** 执行只读 `SELECT 1` 检查数据库，再读可选的 `_test_marker`：有 `value=test` 则 `d1_marker: "test"`，否则 `null`。标记表缺失不代表数据库不可用；核心查询失败返回 503。不得用 wrangler CLI 查同一 SQLite 充当 live 实现。
 
 ---
 
@@ -367,18 +367,20 @@ digest 只对比 `day` 与 UTC 日历昨天的 `snapshot_days`（含 `by_repo`�
 
 ### `GET /api/live`
 
-公开。不读 PAT。不写库。
+公开。不读 PAT。不写库。所有响应含 `Cache-Control: no-store`。
 
 ```json
 {
+  "status": "ok",
   "name": "giraffe",
   "version": "0.0.0",
   "environment": "development",
-  "d1_marker": "test"
+  "d1_marker": "test",
+  "database": { "connected": true }
 }
 ```
 
-`version` = `APP_VERSION`（`package.json`）。`environment` 为归一后的模式。`d1_marker` 为 `"test"` 或 `null`。无 D1 表时 `null`，不得 500。
+`version` = `APP_VERSION`（`package.json`）。`environment` 为归一后的模式。`d1_marker` 为 `"test"` 或 `null`；缺少标记表时为 `null`，仍可返回 200。核心 D1 探测失败或结果无效时返回 HTTP 503、`status: "error"`、`database.connected: false`，保留版本信息，不返回数据库错误详情。
 
 ### `GET /api/me`
 
@@ -511,7 +513,7 @@ L2 fixture 仓用 `octocat/hello-world`。
 4. 生产 D1 `giraffe-db` 已创建，`database_id` 已填真实 UUID；已对**远程**库执行 `schema.sql`（不是 persist 目录）。
 5. Secrets：`TOKEN_ENCRYPTION_KEY_V1`、`TOKEN_ENCRYPTION_KEY_CURRENT`。Access team/AUD 在 `src/server/lib/access-config.ts`，**不要**写入 `wrangler.toml` `[vars]`（否则本机与 L2 套件 A 无法短路）。
 6. 先 `vite build`（阶段 1 可用占位 `dist/client`），再 `wrangler deploy`。
-7. 部署后 `GET https://giraffe.hexly.ai/api/live` 不得在无 Access 的匿名请求中返回业务数据（live 本身公开，只含 version/environment/`d1_marker`）。`GET /api/me` 无 JWT 必须 401。
+7. 部署后 `GET https://giraffe.hexly.ai/api/live` 不得在无 Access 的匿名请求中返回业务数据（live 本身公开，只含 status/name/version/environment/`d1_marker` 与数据库连通状态）。`GET /api/me` 无 JWT 必须 401。
 
 ---
 

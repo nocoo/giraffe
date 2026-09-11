@@ -98,6 +98,7 @@ Today: pre-commit typecheck/lint/`gate:test-skip`/`gate:wrangler-vars`/`gate:git
 
 - CD: `.github/workflows/release.yml` (`vite build` then `wrangler deploy`). Secrets stay in Cloudflare / GitHub, never `[vars]`.
 - Live-check: `GET https://giraffe.hexly.ai/api/live`. Runbook: [docs/04-server.md](docs/04-server.md).
+- Public live checks use the D1 binding to execute `SELECT 1`; database failure returns uncached HTTP 503 with `status: "error"`. The optional `_test_marker` table is test-isolation metadata, not the production readiness probe. Keep the top-level version current and never return private database diagnostics.
 
 ## Retrospective
 

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Add `status: "ok"` and `Cache-Control: no-store` to `GET /api/live` health endpoint
+- Probe the D1 binding and return HTTP 503 on database failure; keep the optional test marker separate from readiness
 
 ## v0.4.1
 

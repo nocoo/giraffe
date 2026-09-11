@@ -6,7 +6,7 @@ import { openSqliteD1 } from "../lib/db/sqlite-d1";
 import { liveResponse } from "./live";
 
 describe("liveResponse", () => {
-	it("reads the d1 marker and stays null without the table", async () => {
+	it("checks D1 while keeping the test marker optional", async () => {
 		const env = {
 			DB: openSqliteD1(true),
 			ASSETS: { fetch: () => Promise.reject(new Error("no")) } as unknown as Fetcher,
@@ -20,18 +20,66 @@ describe("liveResponse", () => {
 			version: APP_VERSION,
 			environment: "development",
 			d1_marker: "test",
+			database: { connected: true },
 		});
 		expect(res.headers.get("cache-control")).toBe("no-store");
 		const empty = await liveResponse(env, createDb(openSqliteD1(false)));
-		expect(((await empty.json()) as { d1_marker: string | null }).d1_marker).toBeNull();
+		expect(empty.status).toBe(200);
+		expect(await empty.json()).toMatchObject({
+			status: "ok",
+			database: { connected: true },
+			d1_marker: null,
+		});
+		const missingMarkerDb = createDb(openSqliteD1(false));
+		const prepare = missingMarkerDb.prepare;
+		missingMarkerDb.prepare = (sql) => {
+			if (sql.includes("_test_marker")) throw new Error("no such table: _test_marker");
+			return prepare(sql);
+		};
+		const missingMarker = await liveResponse(env, missingMarkerDb);
+		expect(missingMarker.status).toBe(200);
+		expect(await missingMarker.json()).toMatchObject({
+			status: "ok",
+			database: { connected: true },
+			d1_marker: null,
+		});
 		const throwing = {
 			statements: 0,
 			prepare: () => {
-				throw new Error("no d1");
+				throw new Error("private D1 diagnostic");
 			},
 			batch: async () => [],
 		};
 		const failed = await liveResponse(env, throwing as unknown as ReturnType<typeof createDb>);
-		expect(((await failed.json()) as { d1_marker: string | null }).d1_marker).toBeNull();
+		expect(failed.status).toBe(503);
+		expect(failed.headers.get("cache-control")).toBe("no-store");
+		expect(await failed.json()).toEqual({
+			status: "error",
+			name: "giraffe",
+			version: APP_VERSION,
+			environment: "development",
+			database: { connected: false },
+			d1_marker: null,
+		});
+	});
+
+	it.each([null, { n: 0 }])("rejects an invalid D1 probe result: %s", async (row) => {
+		const env = {
+			DB: openSqliteD1(false),
+			ASSETS: { fetch: () => Promise.reject(new Error("no")) } as unknown as Fetcher,
+			TOKEN_ENCRYPTION_KEY_CURRENT: "1",
+			ENVIRONMENT: "development",
+		} satisfies Env;
+		const db = {
+			statements: 0,
+			prepare: () => ({ first: async () => row }),
+			batch: async () => [],
+		};
+		const response = await liveResponse(env, db as unknown as ReturnType<typeof createDb>);
+		expect(response.status).toBe(503);
+		expect(await response.json()).toMatchObject({
+			status: "error",
+			database: { connected: false },
+		});
 	});
 });
