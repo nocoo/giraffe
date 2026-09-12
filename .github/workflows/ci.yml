@@ -9,17 +9,18 @@ on:
 
 jobs:
   quality:
-    uses: nocoo/base-ci/.github/workflows/bun-quality.yml@1e1000a018d75c7e73024448c669c215b90410e1
+    uses: nocoo/base-ci/.github/workflows/quality.yml@3d2e9e55fdd60aa756df454ded53ef6d06d6653f
     with:
-      bun-version: "1.4.0"
-      ignore-scripts: false
-      pre-command: "bun run gate:test-skip && bun run gate:wrangler-vars && bun run gate:github-fetch && bun run gate:client-fetch"
+      runtime-version: "1.4.0"
+      install-policy: "project"
+      coverage-path: "coverage"
+      prepare-command: "bun run gate:test-skip && bun run gate:wrangler-vars && bun run gate:github-fetch && bun run gate:client-fetch"
       test-command: "bun run test:coverage"
       lint-command: "bun run lint"
       typecheck-command: "bun run typecheck"
-      enable-l2: "true"
+      l2: true
       l2-command: "bun run test:e2e:api"
-      enable-l3: "true"
+      l3: true
       l3-command: "bun run test:e2e:bdd"
       l3-browser: "chromium"
     secrets: inherit
