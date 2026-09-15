@@ -408,3 +408,26 @@ it("refuses to resume a resource saved under another survey", async () => {
 		),
 	).rejects.toMatchObject({ code: "snapshot_missing" });
 });
+
+it("labels access lost between split CI windows as an incomplete subset", async () => {
+	const state = ready("actions");
+	const store = memoryStore();
+	let calls = 0;
+	const gh = github(() => {
+		calls++;
+		if (calls === 1) return Response.json({ total_count: 1001, workflow_runs: [] });
+		if (calls === 2)
+			return Response.json({
+				total_count: 1,
+				workflow_runs: [{ ...rawEvent(), conclusion: "success" }],
+			});
+		return Response.json({ message: "Forbidden" }, { status: 403 });
+	});
+	await invoke(state, gh, store);
+	await invoke(state, gh, store);
+	await invoke(state, gh, store);
+	expect(state.repos[0]?.coverage.actions).toMatchObject({ status: "limited", observed: 1 });
+	expect(state.repos[0]?.coverage.actions.reason).toContain("incomplete observed subset");
+	expect(state.repos[0]?.metrics.ciSuccess).toBe(1);
+	expect(store.data.get(streamKey("nocoo/app", "actions"))?.ranges).toEqual([]);
+});

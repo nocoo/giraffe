@@ -8,6 +8,7 @@ import {
 	factoryError,
 	formatFactoryCount,
 	formatHours,
+	formatObservedCount,
 	formatRate,
 	formatUtc,
 	loadFactory,
@@ -98,6 +99,8 @@ describe("factory account-bound data operations", () => {
 	});
 	it("formats zero, unavailable, durations and UTC consistently", () => {
 		expect(formatFactoryCount(15000)).toBe("15,000");
+		expect(formatObservedCount(5000, false)).toBe("≥ 5,000");
+		expect(formatObservedCount(0, true)).toBe("0");
 		expect(formatHours(null)).toBe("—");
 		expect(formatHours(1.25)).toBe("1.3 h");
 		expect(formatHours(48)).toBe("2.0 d");

@@ -15,3 +15,5 @@
 - [软件工厂：采集与指标口径](06-software-factory.md)
 
 - [nocoo 软件工厂真实调查](07-factory-investigation.md)
+
+- [软件工厂独立审查与验证](08-factory-review.md)

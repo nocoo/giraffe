@@ -94,7 +94,7 @@ export function FactoryHeatmap({
 						className={`factory-day factory-heat-${d.count === 0 ? 0 : Math.min(4, Math.ceil((d.count / max) * 4))} ${selected === d.date ? "factory-day-selected" : ""}`}
 						aria-pressed={selected === d.date}
 						title={`${d.date} UTC · ${n(d.count)}`}
-						aria-label={`${d.date} UTC：${n(d.count)}，点击查看当日记录`}
+						aria-label={`${d.date} UTC：${n(d.count)}，点击查看当日统计`}
 					/>
 				))}
 			</div>

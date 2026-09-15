@@ -28,6 +28,7 @@ import {
 	factoryRepoPage,
 	filterFactoryRepos,
 	formatHours,
+	formatObservedCount,
 	formatRate,
 	formatUtc,
 	hasFactoryMeasurement,
@@ -361,7 +362,14 @@ export function FactoryPage() {
 							<div className="factory-metric-strip">
 								<Metric
 									label="窗口提交"
-									value={board.observed.commits ? n(board.aggregate.commits) : "—"}
+									value={
+										board.observed.commits
+											? formatObservedCount(
+													board.aggregate.commits,
+													board.streamComplete.commits === scope.length,
+												)
+											: "—"
+									}
 									note={`${n(board.totals.allCommits)} 默认分支历史总量`}
 								>
 									<FactorySpark
@@ -380,7 +388,14 @@ export function FactoryPage() {
 								</Metric>
 								<Metric
 									label="窗口合并 PR"
-									value={board.observed.prs ? n(board.aggregate.prMerged) : "—"}
+									value={
+										board.observed.prs
+											? formatObservedCount(
+													board.aggregate.prMerged,
+													board.streamComplete.prs === scope.length,
+												)
+											: "—"
+									}
 									note={`P50 ${formatHours(board.aggregate.cycleP50)} · P90 ${formatHours(board.aggregate.cycleP90)}`}
 								>
 									<FactorySpark
@@ -403,7 +418,14 @@ export function FactoryPage() {
 								</Metric>
 								<Metric
 									label="窗口发布"
-									value={board.observed.releases ? n(board.aggregate.releases) : "—"}
+									value={
+										board.observed.releases
+											? formatObservedCount(
+													board.aggregate.releases,
+													board.streamComplete.releases === scope.length,
+												)
+											: "—"
+									}
 									note={`${board.totals.repos} 仓库 · ${board.totals.private} 私有`}
 								>
 									<span className="text-xs text-basalt-muted-foreground">
@@ -701,7 +723,12 @@ export function FactoryPage() {
 															type="button"
 															onClick={() => drill(r.name, "commits")}
 														>
-															{!hasFactoryMeasurement(r, "commits") ? "—" : n(r.metrics.commits)}
+															{!hasFactoryMeasurement(r, "commits")
+																? "—"
+																: formatObservedCount(
+																		r.metrics.commits,
+																		r.coverage.commits.status === "complete",
+																	)}
 														</button>
 													</TableCell>
 													<TableCell className="text-right">

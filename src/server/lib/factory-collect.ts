@@ -304,9 +304,12 @@ async function collectStream(
 			error instanceof ApiError &&
 			(error.code === "github_forbidden" || error.code === "not_found")
 		) {
-			data.coverage.status = "unavailable";
-			data.coverage.reason = "GitHub denied access or resource not available (403/404)";
+			data.coverage.status = data.items.length ? "limited" : "unavailable";
+			data.coverage.reason = data.items.length
+				? "GitHub access lost during pagination (403/404); incomplete observed subset only"
+				: "GitHub denied access or resource not available (403/404)";
 			data.next = null;
+			data.ranges = [];
 		} else throw error;
 	}
 	data.coverage.observed = data.items.length;

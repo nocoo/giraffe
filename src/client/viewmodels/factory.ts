@@ -369,3 +369,7 @@ export function hasFactoryMeasurement(repo: FactoryRepo, stream: FactoryStreamNa
 	const coverage = repo.coverage[stream];
 	return coverage.status === "complete" || (coverage.status === "limited" && coverage.observed > 0);
 }
+
+export function formatObservedCount(value: number, complete: boolean): string {
+	return `${complete ? "" : "≥ "}${formatFactoryCount(value)}`;
+}
