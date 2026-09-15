@@ -21,7 +21,7 @@ try {
 	const owner = (await new Response(login.stdout).text()).trim();
 	if ((await login.exited) || !/^[A-Za-z0-9-]+$/.test(owner))
 		throw new Error("gh GitHub account unavailable");
-	state = newFactory("local_audit_account_01", owner, new Date().toISOString());
+	state = newFactory("local_audit_account_1", owner, new Date().toISOString());
 }
 const save = async () => writeFile(snapshotPath, JSON.stringify(state), { mode: 0o600 });
 const store = {

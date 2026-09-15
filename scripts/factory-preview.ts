@@ -1,4 +1,4 @@
-/** Replay an actual audit through the real local Worker + D1, isolated from daily development. */
+/** Replay a real audit using built assets + local Worker/D1, isolated from daily development. */
 
 import { Database } from "bun:sqlite";
 import { randomBytes } from "node:crypto";
@@ -13,7 +13,7 @@ const dir = resolve(".factory-cache/preview");
 const persist = resolve(".wrangler/factory-preview");
 await mkdir(dir, { recursive: true, mode: 0o700 });
 const key = Buffer.from(randomBytes(32)).toString("hex");
-const id = "local_audit_account_01";
+const id = "local_audit_account_1";
 
 const schema = await readFile("src/server/lib/db/schema.sql", "utf8");
 const initSql = schema
@@ -74,7 +74,7 @@ for await (const file of new Bun.Glob("**/*.sqlite").scan({ cwd: persist, absolu
 	}
 	db.exec("PRAGMA foreign_keys=ON");
 	db.transaction(() => {
-		db.query("DELETE FROM accounts WHERE id = ?").run(id);
+		db.query("DELETE FROM accounts WHERE id IN (?, ?)").run(id, "local_audit_account_01");
 		db.query(
 			"INSERT INTO accounts (id,login,token_ciphertext,token_last4,key_version,capabilities,is_active,created_at,updated_at) VALUES (?,?,?,'demo',1,'{}',1,?,?)",
 		).run(id, snapshot.owner, envelope, snapshot.fetched_at, snapshot.fetched_at);
@@ -88,6 +88,8 @@ for await (const file of new Bun.Glob("**/*.sqlite").scan({ cwd: persist, absolu
 	break;
 }
 if (!imported) throw new Error("Isolated local D1 file not found");
+const build = Bun.spawn(["bun", "run", "build"], { stdout: "inherit", stderr: "inherit" });
+if (await build.exited) throw new Error("Preview build failed");
 const worker = Bun.spawn(
 	[
 		"bunx",
@@ -99,23 +101,18 @@ const worker = Bun.spawn(
 		"--env-file",
 		`${dir}/preview.vars`,
 		"--port",
-		"37045",
+		"7045",
 	],
 	{ stdout: "inherit", stderr: "inherit" },
 );
-const vite = Bun.spawn(["bunx", "vite", "--port", "7045", "--strictPort"], {
-	stdout: "inherit",
-	stderr: "inherit",
-});
 const stop = () => {
 	worker.kill();
-	vite.kill();
 };
 process.on("SIGINT", stop);
 process.on("SIGTERM", stop);
 console.log(
 	"Real audit preview: http://localhost:7045/factory (or https://giraffe.dev.hexly.ai/factory). Isolated local D1; no GitHub credentials.",
 );
-const code = await Promise.race([worker.exited, vite.exited]);
+const code = await worker.exited;
 stop();
 process.exitCode = code;

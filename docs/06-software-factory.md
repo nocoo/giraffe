@@ -39,7 +39,7 @@ bun run factory:preview .factory-cache/my-survey
 
 `factory:audit` 由本机已认证的 `gh` CLI 发出请求，不读取/输出明文 GitHub 凭证。原始响应按请求摘要缓存，紧凑明细按资源保存；目录已被 Git/Biome 忽略。CLI 的 requests 表示经过采集器的逻辑请求数，缓存命中不产生新的 GitHub 调用。不要把含私有仓库信息的调查目录作为公共 fixture。
 
-`factory:preview` 先让 Wrangler 初始化 `.wrangler/factory-preview`，再在 Worker 停止时用参数化 SQLite 导入真实调查，启动 Vite `7045` 与 Worker `37045`。它不使用日常开发或远程 D1；预览账号仅持有加密的非凭证占位文本。仅预览读操作可用，要采集新数据请在正常应用设置中连接真实账号。先停止占用这两个端口的开发进程。固定入口为 `http://localhost:7045/factory`，已有 Caddy 时也可用 `https://giraffe.dev.hexly.ai/factory`。
+`factory:preview` 先让 Wrangler 初始化 `.wrangler/factory-preview`，再在 Worker 停止时用参数化 SQLite 导入真实调查，构建前端并由单个本地 Worker `7045` 托管产物。它不使用日常开发或远程 D1；预览账号仅持有加密的非凭证占位文本。仅预览读操作可用，要采集新数据请在正常应用设置中连接真实账号。先停止占用 `7045` 的开发进程。固定入口为 `http://localhost:7045/factory`，已有 Caddy 时也可用 `https://giraffe.dev.hexly.ai/factory`。
 
 每份资源带 runId，GET/续传验证其与调查一致；跨调查混读会要求重读快照。重启调查的第一页失败时保留上一份快照。无效 package.json 作为该仓依赖证据不可用处理，其他资源仍继续采集。清单漂移等无法续传的错误可点击「重新调查」。
 
