@@ -153,7 +153,11 @@ export function createGithubClient(env: Env, fetchImpl: FetchImpl = fetch): Gith
 			}
 			client.count += 1;
 			try {
-				return await fetchImpl(url, init);
+				return await fetchImpl(url, {
+					...init,
+					redirect: "error",
+					signal: init?.signal ?? AbortSignal.timeout(15_000),
+				});
 			} catch (err) {
 				if (err instanceof ApiError || err instanceof TruncatedError) {
 					throw err;

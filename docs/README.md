@@ -11,3 +11,5 @@
 | 03 | [数据 Schema](03-schema.md) |
 | 04 | [Server 设计](04-server.md) |
 | 05 | [Client 设计](05-client.md) |
+
+- [软件工厂：采集与指标口径](06-software-factory.md)

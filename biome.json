@@ -49,6 +49,7 @@
 			"!**/dist",
 			"!**/coverage",
 			"!**/.wrangler",
+			"!**/.factory-cache",
 			"!**/test-results",
 			"!**/playwright-report",
 			"!**/bun.lock",
