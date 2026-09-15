@@ -27,6 +27,7 @@ import {
 	Activity,
 	Box,
 	CircleDot,
+	Factory,
 	GitPullRequest,
 	Inbox,
 	type LucideIcon,
@@ -47,6 +48,7 @@ import { cachedRepoRows } from "../../viewmodels/repos";
 import { BrandMark } from "./mark";
 
 const ICONS: Record<string, LucideIcon> = {
+	Factory,
 	Box,
 	CircleDot,
 	GitPullRequest,

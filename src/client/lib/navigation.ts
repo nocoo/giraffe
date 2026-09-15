@@ -1,6 +1,7 @@
 export type NavItem = { href: string; label: string; icon: string };
 
 export const NAV_ITEMS: readonly NavItem[] = [
+	{ href: "/factory", label: "软件工厂", icon: "Factory" },
 	{ href: "/insights", label: "Insights", icon: "Activity" },
 	{ href: "/", label: "仓库", icon: "Box" },
 	{ href: "/issues", label: "Issues", icon: "CircleDot" },
@@ -14,13 +15,14 @@ export const NAV_ITEMS: readonly NavItem[] = [
 export type NavGroup = { label: string; items: readonly NavItem[] };
 
 export const NAV_GROUPS: readonly NavGroup[] = [
-	{ label: "浏览", items: NAV_ITEMS.slice(0, 4) },
-	{ label: "工作", items: NAV_ITEMS.slice(4, 7) },
-	{ label: "系统", items: NAV_ITEMS.slice(7) },
+	{ label: "浏览", items: NAV_ITEMS.slice(0, 5) },
+	{ label: "工作", items: NAV_ITEMS.slice(5, 8) },
+	{ label: "系统", items: NAV_ITEMS.slice(8) },
 ];
 
 export const PAGE_DESCRIPTIONS = {
 	"/": "当前账号下的仓库快照",
+	"/factory": "可追溯的软件工厂流量与交付",
 	"/issues": "跨仓打开的 Issue",
 	"/pulls": "跨仓打开的 Pull Request",
 	"/insights": "跨仓 Issue / PR 分布与仓库健康",

@@ -1,19 +1,31 @@
 import { LinkProvider, ThemeProvider, Toaster, TooltipProvider } from "@nocoo/basalt";
 import { AccentProvider } from "@nocoo/basalt/providers/accent";
-import type { ReactNode } from "react";
+import { lazy, type ReactNode, Suspense } from "react";
 import { BrowserRouter, Link, Route, Routes } from "react-router";
 import { AppShell } from "./components/layout/app-shell";
 import { APP_PATHS } from "./lib/routes";
-import { AlertsPage } from "./routes/alerts";
-import { DigestPage } from "./routes/digest";
-import { InboxPage } from "./routes/inbox";
-import { InsightsPage } from "./routes/insights";
-import { IssuesPage } from "./routes/issues";
-import { NotFoundPage } from "./routes/not-found";
-import { PullsPage } from "./routes/pulls";
-import { RepoDetailPage } from "./routes/repo-detail";
-import { ReposPage } from "./routes/repos";
-import { SettingsPage } from "./routes/settings";
+
+const AlertsPage = lazy(() => import("./routes/alerts").then((m) => ({ default: m.AlertsPage })));
+const DigestPage = lazy(() => import("./routes/digest").then((m) => ({ default: m.DigestPage })));
+const FactoryPage = lazy(() =>
+	import("./routes/factory").then((m) => ({ default: m.FactoryPage })),
+);
+const InboxPage = lazy(() => import("./routes/inbox").then((m) => ({ default: m.InboxPage })));
+const InsightsPage = lazy(() =>
+	import("./routes/insights").then((m) => ({ default: m.InsightsPage })),
+);
+const IssuesPage = lazy(() => import("./routes/issues").then((m) => ({ default: m.IssuesPage })));
+const NotFoundPage = lazy(() =>
+	import("./routes/not-found").then((m) => ({ default: m.NotFoundPage })),
+);
+const PullsPage = lazy(() => import("./routes/pulls").then((m) => ({ default: m.PullsPage })));
+const RepoDetailPage = lazy(() =>
+	import("./routes/repo-detail").then((m) => ({ default: m.RepoDetailPage })),
+);
+const ReposPage = lazy(() => import("./routes/repos").then((m) => ({ default: m.ReposPage })));
+const SettingsPage = lazy(() =>
+	import("./routes/settings").then((m) => ({ default: m.SettingsPage })),
+);
 
 const GIRAFFE_ACCENT = {
 	primary: { light: "113 58% 62%", dark: "113 58% 70%" },
@@ -48,6 +60,7 @@ function RouterLink({
 
 const PAGES: Record<(typeof APP_PATHS)[number], ReactNode> = {
 	"/": <ReposPage />,
+	"/factory": <FactoryPage />,
 	"/issues": <IssuesPage />,
 	"/pulls": <PullsPage />,
 	"/insights": <InsightsPage />,
@@ -69,9 +82,30 @@ export function App() {
 							<Routes>
 								<Route element={<AppShell />}>
 									{APP_PATHS.map((path) => (
-										<Route key={path} path={path} element={PAGES[path]} />
+										<Route
+											key={path}
+											path={path}
+											element={
+												<Suspense
+													fallback={
+														<p role="status" className="p-4 text-sm text-basalt-muted-foreground">
+															正在加载页面…
+														</p>
+													}
+												>
+													{PAGES[path]}
+												</Suspense>
+											}
+										/>
 									))}
-									<Route path="*" element={<NotFoundPage />} />
+									<Route
+										path="*"
+										element={
+											<Suspense fallback={null}>
+												<NotFoundPage />
+											</Suspense>
+										}
+									/>
 								</Route>
 							</Routes>
 						</BrowserRouter>

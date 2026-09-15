@@ -143,3 +143,28 @@ export function aggregateFactory(repos: FactoryRepo[]) {
 		cycleP90: percentile(metrics.cycleHours, 0.9),
 	};
 }
+
+/** Detail predicates run before pagination, so current WIP is not hidden on a later page. */
+export function filterFactoryEvents(
+	items: FactoryEvent[],
+	state: string,
+	day: string,
+): FactoryEvent[] {
+	const at = (e: FactoryEvent) =>
+		state === "merged" ? e.mergedAt : state === "closed" ? e.closedAt : e.at;
+	return items
+		.filter((e) => {
+			const time = at(e);
+			return (
+				(!state || e.state === state || e.conclusion === state) &&
+				(!day ||
+					(time !== null &&
+						Number.isFinite(Date.parse(time)) &&
+						new Date(time).toISOString().slice(0, 10) === day))
+			);
+		})
+		.sort(
+			(a, b) =>
+				(Date.parse(at(b) ?? "") || 0) - (Date.parse(at(a) ?? "") || 0) || a.id.localeCompare(b.id),
+		);
+}

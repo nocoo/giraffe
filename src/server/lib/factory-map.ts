@@ -129,6 +129,8 @@ export function mapDependencies(data: GithubObject, repo: FactoryRepo): FactoryE
 	const text = object(data.package).text;
 	if (typeof text === "string") {
 		const pkg = object(JSON.parse(text));
+		if (typeof pkg.name === "string")
+			add(pkg.name, typeof pkg.version === "string" ? pkg.version : "", "package.json#name");
 		for (const key of [
 			"dependencies",
 			"devDependencies",

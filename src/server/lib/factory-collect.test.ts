@@ -256,12 +256,13 @@ describe("factory incremental collection", () => {
 		expect(state.status).toBe("complete");
 		await invoke(state);
 		expect(state.status).toBe("complete");
-		await expect(
-			invoke(
-				ready("dependencies"),
-				github(() => Response.json({ data: { repository: { package: { text: "bad-json" } } } })),
-			),
-		).rejects.toMatchObject({ code: "github_error" });
+		const malformed = ready("dependencies");
+		await invoke(
+			malformed,
+			github(() => Response.json({ data: { repository: { package: { text: "bad-json" } } } })),
+		);
+		expect(malformed.repos[0]?.coverage.dependencies.status).toBe("unavailable");
+		expect(malformed.cursor.repo).toBe(1);
 		const denied = ready("dependencies");
 		await invoke(
 			denied,
@@ -320,4 +321,90 @@ it("refuses partial GraphQL inventory and repeated cursors", async () => {
 			),
 		),
 	).rejects.toMatchObject({ code: "github_error" });
+});
+
+it("accepts GitHub numeric repository links without changing repository or sampling filters", () => {
+	const next = factoryNext(
+		'<https://api.github.com/repositories/1316914553/commits?page=2>; rel="next"',
+		"/repos/nocoo/app/commits?sha=abc&per_page=100&page=1",
+	);
+	expect(next).toBe("/repos/nocoo/app/commits?sha=abc&per_page=100&page=2");
+	expect(() =>
+		factoryNext(
+			'<https://api.github.com/repositories/123/issues?page=2>; rel="next"',
+			"/repos/nocoo/app/commits?page=1",
+		),
+	).toThrow();
+	expect(() =>
+		factoryNext(
+			'<https://api.github.com/repos/nocoo/app/commits?page=3>; rel="next"',
+			"/repos/nocoo/app/commits?page=1",
+		),
+	).toThrow();
+});
+
+it("prioritizes recently updated work when an oversized resource must be capped", async () => {
+	const state = ready("prs");
+	const gh = github((url) => {
+		expect(url).toContain("sort=updated&direction=desc");
+		return Response.json([rawEvent()]);
+	});
+	await invoke(state, gh);
+	expect(state.repos[0]?.coverage.prs.status).toBe("complete");
+});
+it("covers the entire subsecond CI window without gaps and excludes the exact end", async () => {
+	const state = ready("actions");
+	state.window = { since: "2026-09-01T00:00:00.000Z", until: "2026-09-01T00:00:02.500Z" };
+	const parts = splitActionWindow(state.window);
+	expect(parts?.[0].until).toBe(parts?.[1].since);
+	await invoke(
+		state,
+		github((url) => {
+			expect(new URL(url).searchParams.get("created")).toBe(
+				`${state.window.since}..${state.window.until}`,
+			);
+			return Response.json({
+				total_count: 2,
+				workflow_runs: [
+					{ ...rawEvent(), created_at: "2026-09-01T00:00:02.250Z", conclusion: "success" },
+					{ ...rawEvent(2), created_at: state.window.until, conclusion: "failure" },
+				],
+			});
+		}),
+	);
+	expect(state.repos[0]?.metrics.ciSuccess).toBe(1);
+	expect(state.repos[0]?.metrics.ciFailure).toBe(0);
+	expect(state.repos[0]?.coverage.actions.observed).toBe(1);
+});
+it("does not request manifests for an empty repository", async () => {
+	const state = ready("dependencies");
+	if (state.repos[0]) state.repos[0].head = null;
+	const gh = github(() => {
+		throw new Error("unexpected request");
+	});
+	await invoke(state, gh);
+	expect(gh.count).toBe(0);
+	expect(state.repos[0]?.coverage.dependencies.status).toBe("complete");
+});
+
+it("refuses to resume a resource saved under another survey", async () => {
+	const state = ready();
+	const repo = state.repos[0];
+	if (!repo) throw new Error("fixture");
+	repo.coverage.commits.status = "partial";
+	const store = memoryStore();
+	await store.write(streamKey(repo.name, "commits"), {
+		runId: "old",
+		items: [],
+		next: null,
+		ranges: [],
+		coverage: repo.coverage.commits,
+	});
+	await expect(
+		invoke(
+			state,
+			github(() => Response.json([])),
+			store,
+		),
+	).rejects.toMatchObject({ code: "snapshot_missing" });
 });

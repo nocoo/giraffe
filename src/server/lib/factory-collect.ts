@@ -1,4 +1,10 @@
-import { factoryWindow, mergeMetrics, summarizeEvents, uniqueEvents } from "../../lib/factory";
+import {
+	factoryWindow,
+	inWindow,
+	mergeMetrics,
+	summarizeEvents,
+	uniqueEvents,
+} from "../../lib/factory";
 import {
 	FACTORY_STREAMS,
 	type FactoryRepo,
@@ -60,11 +66,11 @@ function source(repo: FactoryRepo, stream: FactoryStreamName, window: FactoryWin
 		case "commits":
 			return `${base}/commits?sha=${repo.head}&since=${window.since}&until=${window.until}&per_page=100&page=1`;
 		case "issues":
-			return `${base}/issues?state=all&sort=created&direction=asc&per_page=100&page=1`;
+			return `${base}/issues?state=all&sort=updated&direction=desc&per_page=100&page=1`;
 		case "prs":
-			return `${base}/pulls?state=all&sort=created&direction=asc&per_page=100&page=1`;
+			return `${base}/pulls?state=all&sort=updated&direction=desc&per_page=100&page=1`;
 		case "actions":
-			return `${base}/actions/runs?created=${window.since}..${new Date(Date.parse(window.until) - 1000).toISOString()}&per_page=100&page=1`;
+			return `${base}/actions/runs?created=${window.since}..${window.until}&per_page=100&page=1`;
 		case "releases":
 			return `${base}/releases?per_page=100&page=1`;
 		case "alerts":
@@ -79,13 +85,21 @@ export function factoryNext(link: string | null, current: string): string | null
 	if (!next) return null;
 	const url = new URL(next);
 	const before = new URL(current, "https://api.github.com");
+	const suffix = before.pathname.replace(/^\/repos\/[^/]+\/[^/]+/, "");
+	const canonical = /^\/repositories\/\d+(\/.*)$/.exec(url.pathname)?.[1];
+	const page = Number(url.searchParams.get("page"));
+	const currentPage = Number(before.searchParams.get("page") ?? "1");
 	if (
 		url.origin !== "https://api.github.com" ||
-		url.pathname !== before.pathname ||
-		url.href === before.href
+		(url.pathname !== before.pathname && canonical !== suffix) ||
+		!Number.isInteger(page) ||
+		page !== currentPage + 1
 	)
 		throw new ApiError(502, "github_error", "invalid pagination");
-	return `${url.pathname}${url.search}`;
+	// GitHub emits /repositories/:numericId links. Keep the requested named repository and
+	// original filters; consume only the sequential page number, never a new target or scope.
+	before.searchParams.set("page", String(page));
+	return `${before.pathname}${before.search}`;
 }
 function rateFromData(s: FactorySnapshot, data: Record<string, unknown>) {
 	const rate = object(data.rateLimit);
@@ -164,11 +178,11 @@ function advanceCursor(s: FactorySnapshot) {
 export function splitActionWindow(window: FactoryWindow): [FactoryWindow, FactoryWindow] | null {
 	const start = Date.parse(window.since);
 	const end = Date.parse(window.until);
-	const mid = Math.floor((start + end) / 2000) * 1000;
+	const mid = Math.floor((start + end) / 2);
 	if (end - start <= 1000) return null;
 	return [
 		{ since: window.since, until: new Date(mid).toISOString() },
-		{ since: new Date(mid + 1000).toISOString(), until: window.until },
+		{ since: new Date(mid).toISOString(), until: window.until },
 	];
 }
 async function collectStream(
@@ -187,7 +201,10 @@ async function collectStream(
 	const key = streamKey(repo.name, stream);
 	const first = source(repo, stream, s.window);
 	const saved = repo.coverage[stream].status === "pending" ? null : await store.read(key);
+	if (saved && saved.runId !== s.runId)
+		throw new ApiError(409, "snapshot_missing", "resource belongs to another survey");
 	const data: FactoryStreamData = saved ?? {
+		runId: s.runId,
 		items: [],
 		next: first,
 		ranges: [],
@@ -196,7 +213,9 @@ async function collectStream(
 	data.coverage.status = "partial";
 	data.coverage.fetchedAt = now;
 	try {
-		if (stream === "dependencies") {
+		if (stream === "dependencies" && !repo.head) {
+			data.next = null;
+		} else if (stream === "dependencies") {
 			const [owner, name] = repo.name.split("/");
 			const variables: Record<string, unknown> = { owner, name };
 			for (const [alias, path] of [
@@ -214,7 +233,9 @@ async function collectStream(
 			try {
 				data.items = mapDependencies(object(result.repository), repo);
 			} catch {
-				throw new ApiError(502, "github_error", "invalid manifest");
+				data.coverage.status = "unavailable";
+				data.coverage.reason =
+					"Root package.json is not valid JSON; dependency evidence unavailable";
 			}
 			data.next = null;
 		} else if (stream === "commits" && !repo.head) {
@@ -250,7 +271,12 @@ async function collectStream(
 			} else {
 				const list = stream === "actions" ? object(payload).workflow_runs : payload;
 				if (!Array.isArray(list)) throw new ApiError(502, "github_error", "invalid resource list");
-				data.items = uniqueEvents([...data.items, ...mapFactoryEvents(stream, rows(list))]);
+				data.items = uniqueEvents([
+					...data.items,
+					...mapFactoryEvents(stream, rows(list)).filter(
+						(e) => (stream !== "commits" && stream !== "actions") || inWindow(e.at, s.window),
+					),
+				]);
 				data.next = factoryNext(response.headers.get("link"), path);
 			}
 		}
@@ -272,7 +298,7 @@ async function collectStream(
 			data.next = null;
 			data.ranges = [];
 		}
-		if (!data.next && data.coverage.status !== "limited") data.coverage.status = "complete";
+		if (!data.next && data.coverage.status === "partial") data.coverage.status = "complete";
 	} catch (error) {
 		if (
 			error instanceof ApiError &&

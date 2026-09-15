@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NOW, rawRepo, ready } from "../../../tests/fixtures/factory";
+import { NOW, rawEvent, rawRepo, ready } from "../../../tests/fixtures/factory";
 import { sqliteFixture } from "../../../tests/fixtures/sqlite";
 import type { FactorySnapshot } from "../../lib/factory-types";
 import type { Env } from "../env";
@@ -7,6 +7,7 @@ import { createApp } from "../index";
 import { insertAccountStmt } from "../lib/db/accounts";
 import { createDb } from "../lib/db/d1";
 import { readSnapshot, replaceSnapshotStmts } from "../lib/db/snapshots";
+import { mapFactoryEvents } from "../lib/factory-map";
 import { encryptToken, parseKeyBytes } from "../lib/token-crypto";
 
 const KEY = "0".repeat(64);
@@ -141,5 +142,72 @@ describe("factory API", () => {
 			.run();
 		vi.stubGlobal("fetch", async () => Response.json({ message: "rate limit" }, { status: 429 }));
 		expect((await s.call("/api/factory/refresh", { account_id: ID })).status).toBe(503);
+	});
+});
+
+it("filters full resource WIP and UTC days before pagination, rejecting malformed filters", async () => {
+	const s = await setup();
+	const state = ready("prs");
+	const repo = state.repos[0];
+	if (!repo) throw new Error("fixture");
+	repo.coverage.prs.status = "complete";
+	const items = mapFactoryEvents(
+		"prs",
+		Array.from({ length: 201 }, (_, i) => ({
+			...rawEvent(i),
+			state: i === 200 ? "open" : "closed",
+		})),
+	);
+	await s.db.batch([
+		...replaceSnapshotStmts(s.db, ID, "factory", { ...state }, NOW),
+		...replaceSnapshotStmts(s.db, ID, "factory:nocoo/app:prs", { items, runId: state.runId }, NOW),
+	]);
+	const response = await s.call("/api/factory/repos/nocoo/app/prs?state=open&day=2026-09-01");
+	expect(response.status).toBe(200);
+	expect(await response.json()).toMatchObject({
+		total: 1,
+		items: [{ state: "open", id: "N_200" }],
+	});
+	for (const suffix of [
+		"?day=bad",
+		"?day=2026-02-31",
+		"?day=2026-99-99",
+		"?state=bad%20filter",
+		"?page=1.5",
+		"?page=51",
+	])
+		expect((await s.call(`/api/factory/repos/nocoo/app/prs${suffix}`)).status).toBe(400);
+});
+
+it("never serves detail from another survey generation", async () => {
+	const s = await setup();
+	const state = ready("commits");
+	if (state.repos[0]) state.repos[0].coverage.commits.status = "complete";
+	await s.db.batch([
+		...replaceSnapshotStmts(s.db, ID, "factory", { ...state }, NOW),
+		...replaceSnapshotStmts(
+			s.db,
+			ID,
+			"factory:nocoo/app:commits",
+			{ items: [], runId: "other" },
+			NOW,
+		),
+	]);
+	expect((await s.call("/api/factory/repos/nocoo/app/commits")).status).toBe(409);
+});
+
+it("retains the last survey if the first page of a restart fails authentication", async () => {
+	const s = await setup();
+	const old = ready();
+	old.status = "complete";
+	await s.db.batch(replaceSnapshotStmts(s.db, ID, "factory", { ...old }, NOW));
+	vi.stubGlobal("fetch", async () => Response.json({ message: "Unauthorized" }, { status: 401 }));
+	expect((await s.call("/api/factory/refresh", { account_id: ID, restart: true })).status).toBe(
+		401,
+	);
+	expect(await readSnapshot(s.db, ID, "factory")).toMatchObject({
+		runId: old.runId,
+		status: "complete",
+		repos: [{ name: "nocoo/app" }],
 	});
 });

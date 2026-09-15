@@ -1,5 +1,6 @@
 import type { Context } from "hono";
 import { z } from "zod";
+import { filterFactoryEvents } from "../../lib/factory";
 import {
 	FACTORY_STREAMS,
 	type FactorySnapshot,
@@ -56,7 +57,19 @@ export async function getFactoryStream(c: Ctx): Promise<Response> {
 					account.id,
 					streamKey(repo.name, stream),
 				)) as FactoryStreamData | null);
-	const items = resource?.items ?? [];
+	if (resource && resource.runId !== snap.runId)
+		throw new ApiError(409, "snapshot_missing", "survey changed; reload snapshot");
+	const filter = c.req.query("state") ?? "";
+	const day = c.req.query("day") ?? "";
+	if (
+		(filter && !/^[a-z_]{1,30}$/.test(filter)) ||
+		(day &&
+			(!/^\d{4}-\d{2}-\d{2}$/.test(day) ||
+				!Number.isFinite(Date.parse(day)) ||
+				new Date(day).toISOString().slice(0, 10) !== day))
+	)
+		throw new ApiError(400, "validation_failed", "invalid detail filter");
+	const items = filterFactoryEvents(resource?.items ?? [], filter, day);
 	return jsonOk(
 		{
 			account_id: account.id,
@@ -119,11 +132,14 @@ export async function postFactoryRefresh(c: Ctx): Promise<Response> {
 			try {
 				await stepFactory(state, gh, token, store, new Date().toISOString());
 			} catch (error) {
+				const requests = state.requests;
 				Object.assign(state, checkpoint);
+				state.requests = requests;
 				failure = error;
 				break;
 			}
 		}
+		if (failure && old && state.revision === 0) throw failure;
 		const serialized = { ...state };
 		if (splitPages("factory", serialized).truncated)
 			throw new ApiError(

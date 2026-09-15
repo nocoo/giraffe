@@ -13,6 +13,7 @@ import { APP_PATHS } from "./routes";
 describe("navigation", () => {
 	it("covers 01 section 9 paths and breadcrumbs", () => {
 		expect(NAV_ITEMS.map((item) => item.href)).toEqual([
+			"/factory",
 			"/insights",
 			"/",
 			"/issues",
@@ -28,6 +29,7 @@ describe("navigation", () => {
 		);
 		expect([...APP_PATHS]).toEqual([
 			"/",
+			"/factory",
 			"/issues",
 			"/pulls",
 			"/insights",
@@ -50,7 +52,7 @@ describe("navigation", () => {
 		expect(headerTitle("/repos/o/n")).toBe("o/n");
 		expect(headerCrumbs("/repos/o/n")).toEqual([{ href: "/", label: "仓库" }]);
 		expect(paletteItems(null).map((item) => item.href)).toEqual(NAV_ITEMS.map((item) => item.href));
-		expect(paletteItems(null)[0]?.icon).toBe("Activity");
+		expect(paletteItems(null)[0]?.icon).toBe("Factory");
 		expect(
 			paletteItems([
 				{ name_with_owner: "octocat/hello-world", owner_login: "octocat", name: "hello-world" },

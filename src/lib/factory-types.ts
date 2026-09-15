@@ -85,6 +85,7 @@ export type FactoryRepo = {
 	dependencies: { name: string; version: string; path: string; url: string }[];
 };
 export type FactoryStreamData = {
+	runId: string;
 	items: FactoryEvent[];
 	next: string | null;
 	ranges: FactoryWindow[];
