@@ -6,6 +6,7 @@ import { openSqliteD1 } from "../lib/db/sqlite-d1";
 
 function env(): Env {
 	return {
+		FACTORY_QUEUE: {} as Queue,
 		DB: openSqliteD1(true),
 		ASSETS: {
 			fetch: async () => new Response("asset"),

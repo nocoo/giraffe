@@ -2,10 +2,12 @@ import { type Context, Hono } from "hono";
 import { type AppVars, type Env, envMode } from "./env";
 import { createDb } from "./lib/db/d1";
 import { jsonError, toErrorResponse } from "./lib/errors";
+import { consumeFactory, continueFactory } from "./lib/factory-dispatch";
 import { accessBypass, resolveIdentity } from "./middleware/access";
 import { assertOrigin } from "./middleware/origin";
 import { activateAccount, getAccounts, postAccount, removeAccount } from "./routes/accounts";
-import { getFactory, getFactoryStream, postFactoryRefresh } from "./routes/factory";
+import { getFactory, getFactoryStream } from "./routes/factory";
+import { getFactoryRuns, postFactoryControl, postFactoryRun } from "./routes/factory-runs";
 import { liveResponse } from "./routes/live";
 import { getMe } from "./routes/me";
 import { postRead, postReadAll } from "./routes/notifications";
@@ -72,7 +74,12 @@ export function createApp(): Hono<{ Bindings: Env; Variables: AppVars }> {
 	allow(app, "/api/factory", ["GET"]);
 	onGet(app, "/api/factory", getFactory);
 	allow(app, "/api/factory/refresh", ["POST"]);
-	app.post("/api/factory/refresh", postFactoryRefresh);
+	app.post("/api/factory/refresh", postFactoryRun);
+	allow(app, "/api/factory/runs", ["GET", "POST"]);
+	onGet(app, "/api/factory/runs", getFactoryRuns);
+	app.post("/api/factory/runs", postFactoryRun);
+	allow(app, "/api/factory/runs/:id/control", ["POST"]);
+	app.post("/api/factory/runs/:id/control", postFactoryControl);
 	allow(app, "/api/factory/repos/:owner/:name/:stream", ["GET"]);
 	onGet(app, "/api/factory/repos/:owner/:name/:stream", getFactoryStream);
 	allow(app, "/api/repos", ["GET"]);
@@ -117,6 +124,10 @@ export function createApp(): Hono<{ Bindings: Env; Variables: AppVars }> {
 const app = createApp();
 
 export default {
+	queue: consumeFactory,
+	scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext) {
+		ctx.waitUntil(continueFactory(env));
+	},
 	fetch(request: Request, env: Env, ctx: ExecutionContext): Response | Promise<Response> {
 		const path = new URL(request.url).pathname;
 		if (path === "/api" || path.startsWith("/api/")) {

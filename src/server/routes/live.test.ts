@@ -8,6 +8,7 @@ import { liveResponse } from "./live";
 describe("liveResponse", () => {
 	it("checks D1 while keeping the test marker optional", async () => {
 		const env = {
+			FACTORY_QUEUE: {} as Queue,
 			DB: openSqliteD1(true),
 			ASSETS: { fetch: () => Promise.reject(new Error("no")) } as unknown as Fetcher,
 			TOKEN_ENCRYPTION_KEY_CURRENT: "1",
@@ -65,6 +66,7 @@ describe("liveResponse", () => {
 
 	it.each([null, { n: 0 }])("rejects an invalid D1 probe result: %s", async (row) => {
 		const env = {
+			FACTORY_QUEUE: {} as Queue,
 			DB: openSqliteD1(false),
 			ASSETS: { fetch: () => Promise.reject(new Error("no")) } as unknown as Fetcher,
 			TOKEN_ENCRYPTION_KEY_CURRENT: "1",

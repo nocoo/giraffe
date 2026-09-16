@@ -4,6 +4,7 @@ import { currentKeyVersion, encryptionKey, envMode } from "./env";
 
 function env(partial: Partial<Env> & { TOKEN_ENCRYPTION_KEY_V1?: string }): Env {
 	return {
+		FACTORY_QUEUE: {} as Queue,
 		DB: {} as D1Database,
 		ASSETS: { fetch: () => Promise.reject(new Error("no assets")) } as unknown as Fetcher,
 		TOKEN_ENCRYPTION_KEY_CURRENT: "1",

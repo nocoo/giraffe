@@ -130,9 +130,9 @@ export async function claimRun(db: Db, id: string, now: string): Promise<RunLeas
 	const until = new Date(Date.parse(now) + RUN_LEASE_MS).toISOString();
 	const row = await db
 		.prepare(
-			"UPDATE factory_runs SET lease_token=?,lease_until=? WHERE id=? AND status='running' AND next_at<=? AND (lease_until IS NULL OR lease_until<=?) RETURNING payload,version",
+			"UPDATE factory_runs SET lease_token=?,lease_until=?,updated_at=?,payload=json_set(payload,'$.updatedAt',?,'$.version',version+1,'$.steps[' || json_extract(payload,'$.cursor') || '].status','running','$.steps[' || json_extract(payload,'$.cursor') || '].startedAt',COALESCE(json_extract(payload,'$.steps[' || json_extract(payload,'$.cursor') || '].startedAt'),?)),version=version+1 WHERE id=? AND status='running' AND next_at<=? AND (lease_until IS NULL OR lease_until<=?) RETURNING payload,version",
 		)
-		.bind(token, until, id, now, now)
+		.bind(token, until, now, now, now, id, now, now)
 		.first<RunRow>();
 	return row
 		? { run: JSON.parse(row.payload) as FactoryRun, token, version: row.version, leaseUntil: until }

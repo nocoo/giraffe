@@ -39,6 +39,7 @@ export type FactoryRun = {
 	requestKey: string;
 	mode: "catalog" | "refresh";
 	repos: string[];
+	repoIds: Record<string, string>;
 	window: FactoryWindow;
 	steps: FactoryRunStep[];
 	cursor: number;
@@ -166,6 +167,7 @@ export function makeRun(
 		requestKey,
 		mode,
 		repos: repos.map((r) => r.name),
+		repoIds: Object.fromEntries(repos.map((r) => [r.name, r.id])),
 		window: factoryWindow(now),
 		steps,
 		cursor: 0,

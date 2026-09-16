@@ -5,6 +5,7 @@ import { createGithubClient, TruncatedError } from "./github-client";
 
 function env(partial: Partial<Env>): Env {
 	return {
+		FACTORY_QUEUE: {} as Queue,
 		DB: {} as D1Database,
 		ASSETS: { fetch: () => Promise.reject(new Error("no assets")) } as unknown as Fetcher,
 		TOKEN_ENCRYPTION_KEY_CURRENT: "1",
@@ -244,4 +245,25 @@ it("uses Workers-supported manual redirects and rejects redirects without forwar
 	});
 	expect(calls).toBe(1);
 	expect(seen).toBe("manual");
+});
+
+it("persists rate-limit reset and Retry-After dates while handling malformed headers safely", async () => {
+	for (const headers of [
+		{ "retry-after": "Wed, 01 Jan 2099 00:00:00 GMT", "x-ratelimit-reset": "0" },
+		{ "retry-after": "invalid", "x-ratelimit-reset": "invalid" },
+		{ "retry-after": "", "x-ratelimit-reset": "4070908800" },
+	]) {
+		const client = createGithubClient(env({ ENVIRONMENT: "production" }), async () =>
+			Response.json({ message: "limited" }, { status: 429, headers }),
+		);
+		try {
+			await client.githubApi("fake", "/user");
+			throw new Error("expected rate limit");
+		} catch (error) {
+			expect(error).toMatchObject({ code: "github_rate_limited" });
+			expect(Date.parse((error as { retryAt: string }).retryAt)).toBeGreaterThan(
+				Date.now() + 59000,
+			);
+		}
+	}
 });

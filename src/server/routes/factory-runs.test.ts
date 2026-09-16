@@ -1,0 +1,169 @@
+import { afterEach, expect, it, vi } from "vitest";
+import { factoryFixture } from "../../../tests/fixtures/factory-snapshot";
+import { sqliteFixture } from "../../../tests/fixtures/sqlite";
+import type { FactoryRunResponse } from "../../lib/factory-run";
+import type { Env } from "../env";
+import { createApp } from "../index";
+import { createDb } from "../lib/db/d1";
+import { replaceSnapshotStmts } from "../lib/db/snapshots";
+
+const snapshot = factoryFixture();
+const id = snapshot.account_id;
+const headers = { origin: "https://giraffe.dev.hexly.ai", "content-type": "application/json" };
+async function setup(withAccount = true, withSnapshot = true) {
+	const send = vi.fn().mockResolvedValue(undefined);
+	const env = {
+		DB: sqliteFixture(),
+		FACTORY_QUEUE: { send },
+		ENVIRONMENT: "development",
+		GITHUB_API_BASE: "http://fixture",
+	} as unknown as Env;
+	const db = createDb(env.DB);
+	if (withAccount)
+		await db
+			.prepare(
+				"INSERT INTO accounts(id,login,token_ciphertext,token_last4,is_active,created_at,updated_at) VALUES(?,?,?, ?,1,?,?)",
+			)
+			.bind(id, "nocoo", "encrypted", "fake", snapshot.fetched_at, snapshot.fetched_at)
+			.run();
+	if (withAccount && withSnapshot)
+		await db.batch(replaceSnapshotStmts(db, id, "factory", { ...snapshot }, snapshot.fetched_at));
+	const app = createApp();
+	return {
+		env,
+		db,
+		send,
+		call: (path = "/api/factory/runs", body?: unknown, h = headers) =>
+			app.request(
+				`http://localhost${path}`,
+				{
+					method: body === undefined ? "GET" : "POST",
+					headers: h,
+					...(body === undefined ? {} : { body: JSON.stringify(body) }),
+				},
+				env,
+			),
+	};
+}
+const plan = () => ({
+	account_id: id,
+	requestKey: crypto.randomUUID(),
+	mode: "refresh",
+	scope: "selected",
+	repos: ["nocoo/app"],
+});
+afterEach(() => vi.unstubAllGlobals());
+it("restores server state after reload, preserves the old overview and freezes the submitted plan", async () => {
+	const s = await setup();
+	const original = (await s.call("/api/factory")).clone();
+	const input = plan();
+	const created = await s.call("/api/factory/runs", input);
+	expect(created.status).toBe(202);
+	const createdBody = (await created.json()) as { id: string };
+	expect((await s.call("/api/factory/runs", input)).status).toBe(202);
+	expect((await s.call("/api/factory/runs", plan())).status).toBe(409);
+	const state = (await (await s.call()).json()) as FactoryRunResponse;
+	expect(state.current).toMatchObject({
+		id: createdBody.id,
+		repos: ["nocoo/app"],
+		progress: { total: 11, completed: 0 },
+	});
+	expect(state.current).not.toHaveProperty("checkpoint");
+	expect(await (await s.call("/api/factory")).json()).toEqual(await original.json());
+	expect(
+		(
+			await s.call(`/api/factory/runs/${createdBody.id}/control`, {
+				account_id: id,
+				action: "pause",
+			})
+		).status,
+	).toBe(200);
+	expect(((await (await s.call()).json()) as FactoryRunResponse).current?.status).toBe("paused");
+	expect(
+		(
+			await s.call(`/api/factory/runs/${createdBody.id}/control`, {
+				account_id: id,
+				action: "resume",
+			})
+		).status,
+	).toBe(200);
+	expect(
+		(
+			await s.call(`/api/factory/runs/${createdBody.id}/control`, {
+				account_id: id,
+				action: "cancel",
+			})
+		).status,
+	).toBe(200);
+	const ended = (await (await s.call()).json()) as FactoryRunResponse;
+	expect(ended.current).toBeNull();
+	expect(ended.history[0]?.status).toBe("cancelled");
+	expect(ended.nextAllowedAt).not.toBeNull();
+	expect((await s.call("/api/factory/runs", plan())).status).toBe(409);
+});
+it("persists work even if dispatch fails and protects controls with active-account/Origin validation", async () => {
+	const s = await setup();
+	s.send.mockRejectedValue(new Error("queue offline"));
+	expect((await s.call("/api/factory/runs", plan())).status).toBe(202);
+	const state = (await (await s.call()).json()) as FactoryRunResponse;
+	const runId = state.current?.id;
+	const control = `/api/factory/runs/${runId}/control`;
+	expect((await s.call(control, { account_id: id, action: "resume" })).status).toBe(200);
+	expect((await s.call(control, {})).status).toBe(400);
+	expect((await s.call(control, { account_id: "b".repeat(21), action: "pause" })).status).toBe(409);
+	expect(
+		(await s.call("/api/factory/runs/unknown/control", { account_id: id, action: "pause" })).status,
+	).toBe(404);
+	expect(
+		(
+			await s.call("/api/factory/runs", plan(), {
+				"content-type": "application/json",
+			} as typeof headers)
+		).status,
+	).toBe(403);
+	expect(
+		(
+			await s.call(
+				control,
+				{ account_id: id, action: "pause" },
+				{ ...headers, origin: "https://evil.example" },
+			)
+		).status,
+	).toBe(403);
+});
+it("rejects empty, duplicate, foreign, cooling and incomplete all scopes; discovery remains explicit", async () => {
+	const none = await setup(false);
+	expect((await none.call()).status).toBe(409);
+	const s = await setup();
+	expect((await s.call("/api/factory/runs", {})).status).toBe(400);
+	expect(
+		(await s.call("/api/factory/runs", { ...plan(), account_id: "b".repeat(21) })).status,
+	).toBe(409);
+	for (const repos of [[], ["evil/repo"], ["nocoo/app", "nocoo/app"]])
+		expect((await s.call("/api/factory/runs", { ...plan(), repos })).status).toBe(400);
+	const noCatalog = await setup(true, false);
+	expect((await noCatalog.call("/api/factory/runs", plan())).status).toBe(409);
+	const noState = (await (await noCatalog.call()).json()) as FactoryRunResponse;
+	expect(noState.catalog).toEqual([]);
+	expect(noState.catalogComplete).toBe(false);
+	const incomplete = { ...snapshot, inventory: { ...snapshot.inventory, complete: false } };
+	await s.db.batch(replaceSnapshotStmts(s.db, id, "factory", incomplete, snapshot.fetched_at));
+	expect((await s.call("/api/factory/runs", { ...plan(), scope: "all" })).status).toBe(409);
+	await s.db
+		.prepare("INSERT INTO factory_repo_state(account_id,repo,payload) VALUES(?,?,?)")
+		.bind(
+			id,
+			"nocoo/app",
+			JSON.stringify({
+				repo: "nocoo/app",
+				status: "success",
+				refreshedAt: snapshot.fetched_at,
+				nextAllowedAt: "2999-01-01T00:00:00.000Z",
+			}),
+		)
+		.run();
+	expect((await s.call("/api/factory/runs", plan())).status).toBe(409);
+	expect((await noCatalog.call("/api/factory/runs", { ...plan(), mode: "catalog" })).status).toBe(
+		202,
+	);
+});

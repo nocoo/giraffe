@@ -59,6 +59,12 @@ export type FactoryMetrics = FactoryDay & {
 	authors: Record<string, number>;
 };
 export type FactoryRepo = {
+	observation?: {
+		version: string;
+		window: FactoryWindow;
+		refreshedAt: string;
+		source: "run" | "legacy";
+	};
 	id: string;
 	name: string;
 	url: string;
@@ -92,6 +98,7 @@ export type FactoryStreamData = {
 	coverage: FactoryCoverage;
 };
 export type FactorySnapshot = {
+	publication?: { mixed: boolean; runId: string; publishedAt: string };
 	schema: 1;
 	account_id: string;
 	owner: string;

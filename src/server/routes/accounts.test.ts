@@ -9,6 +9,7 @@ const PAT = `ghp_${"A".repeat(36)}`;
 
 function env(): Env {
 	return {
+		FACTORY_QUEUE: {} as Queue,
 		DB: openSqliteD1(true),
 		ASSETS: { fetch: async () => new Response("x") } as unknown as Fetcher,
 		TOKEN_ENCRYPTION_KEY_CURRENT: "1",
@@ -286,6 +287,7 @@ describe("accounts routes", () => {
 		let blows = 1;
 		const e = {
 			...env(),
+			FACTORY_QUEUE: {} as Queue,
 			DB: {
 				prepare: (sql: string) => raw.prepare(sql),
 				batch: async (statements: D1PreparedStatement[]) => {
@@ -311,6 +313,7 @@ describe("accounts routes", () => {
 		const empty = openSqliteD1(true);
 		const e2 = {
 			...env(),
+			FACTORY_QUEUE: {} as Queue,
 			DB: {
 				prepare: (sql: string) => empty.prepare(sql),
 				batch: async () => {
@@ -360,6 +363,7 @@ describe("accounts routes", () => {
 		let counts = 0;
 		const e = {
 			...env(),
+			FACTORY_QUEUE: {} as Queue,
 			DB: {
 				prepare(sql: string) {
 					const stmt = raw.prepare(sql);

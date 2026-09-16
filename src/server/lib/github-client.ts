@@ -51,7 +51,24 @@ function mapStatus(res: Response, body: string): never {
 		throw new ApiError(401, "github_unauthorized", "github unauthorized");
 	}
 	if (isRateLimited(res, body)) {
-		throw new ApiError(503, "github_rate_limited", "github rate limited");
+		const retry = res.headers.get("retry-after");
+		const reset = Number(res.headers.get("x-ratelimit-reset")) * 1000;
+		const delay = retry
+			? /^\d+$/.test(retry)
+				? Date.now() + Number(retry) * 1000
+				: Date.parse(retry)
+			: 0;
+		const until = Math.max(
+			Date.now() + 60_000,
+			Number.isFinite(reset) ? reset : 0,
+			Number.isFinite(delay) ? delay : 0,
+		);
+		throw new ApiError(
+			503,
+			"github_rate_limited",
+			"github rate limited",
+			new Date(until).toISOString(),
+		);
 	}
 	if (res.status === 403) {
 		throw new ApiError(403, "github_forbidden", "github forbidden");

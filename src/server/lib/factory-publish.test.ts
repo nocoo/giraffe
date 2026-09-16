@@ -1,0 +1,135 @@
+import { expect, it } from "vitest";
+import { factoryFixture } from "../../../tests/fixtures/factory-snapshot";
+import { sqliteFixture } from "../../../tests/fixtures/sqlite";
+import { makeRun } from "../../lib/factory-run";
+import { FACTORY_STREAMS } from "../../lib/factory-types";
+import { createDb } from "./db/d1";
+import {
+	claimRun,
+	controlRun,
+	publishedFactory,
+	repoStates,
+	saveRun,
+	startRun,
+} from "./db/factory-runs";
+import { replaceSnapshotStmts } from "./db/snapshots";
+import {
+	boundedJson,
+	currentRepo,
+	publicationWrites,
+	repositoryWrites,
+	restoreLegacyRepo,
+	snapshotWrites,
+} from "./factory-publish";
+
+const snap = factoryFixture();
+const now = snap.fetched_at;
+async function setup() {
+	const raw = sqliteFixture();
+	const db = createDb(raw);
+	await db
+		.prepare(
+			"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+		)
+		.bind(snap.account_id, "nocoo", "encrypted", "fake", now, now)
+		.run();
+	const run = makeRun("r1", snap.account_id, "nocoo", "key", "catalog", [], now);
+	await startRun(db, run);
+	const lease = await claimRun(db, "r1", now);
+	if (!lease) throw new Error("fixture");
+	const repo = structuredClone(snap.repos[0]);
+	if (!repo) throw new Error("fixture");
+	return { raw, db, lease, repo };
+}
+it("preserves stronger last-known-good coverage and failed-repository metadata in one atomic commit", async () => {
+	const { raw, db, lease, repo } = await setup();
+	for (const key of FACTORY_STREAMS) repo.coverage[key].status = "complete";
+	repo.observation = { version: "r1", refreshedAt: now, window: snap.window, source: "run" };
+	await db.batch(await repositoryWrites(db, lease, now, repo, repo.name, null));
+	expect((await repoStates(db, snap.account_id))[0]).toMatchObject({
+		status: "success",
+		version: "r1",
+		coverage: 7,
+	});
+	const incomplete = structuredClone(repo);
+	incomplete.coverage.prs.status = "unavailable";
+	incomplete.metrics.prMerged = 999;
+	await db.batch(await repositoryWrites(db, lease, now, incomplete, repo.name, null));
+	expect((await currentRepo(db, snap.account_id, repo.name))?.metrics.prMerged).toBe(0);
+	expect((await repoStates(db, snap.account_id))[0]).toMatchObject({
+		status: "partial",
+		error: "coverage_regression_retained",
+		refreshedAt: now,
+	});
+	await db.batch(await repositoryWrites(db, lease, now, null, repo.name, "github_error"));
+	expect((await repoStates(db, snap.account_id))[0]).toMatchObject({
+		status: "failed",
+		version: "r1",
+		coverage: 7,
+	});
+	expect(await restoreLegacyRepo(db, lease, now, repo)).toEqual([]);
+	const writes = await repositoryWrites(db, lease, now, repo, repo.name, null);
+	await controlRun(createDb(raw), snap.account_id, "r1", "pause", now);
+	expect(await saveRun(createDb(raw), lease, writes, now)).toBe(false);
+	expect((await repoStates(createDb(raw), snap.account_id))[0]?.status).toBe("failed");
+});
+it("fails closed at storage limits and for missing publication input", async () => {
+	const { db, lease } = await setup();
+	expect(() => boundedJson("x".repeat(1_800_001))).toThrow("capacity");
+	expect(() =>
+		snapshotWrites(db, lease, now, "factory:v:large", { ...snap, owner: "x".repeat(3_100_000) }),
+	).toThrow("capacity");
+	await expect(publicationWrites(db, lease, now)).rejects.toMatchObject({
+		code: "snapshot_missing",
+	});
+});
+it("does not overwrite a published global version when updating only the catalog", async () => {
+	const { db, lease, repo } = await setup();
+	await db.batch(replaceSnapshotStmts(db, snap.account_id, "factory:v:existing", { ...snap }, now));
+	await db
+		.prepare("UPDATE factory_state SET published_id=? WHERE account_id=?")
+		.bind("existing", snap.account_id)
+		.run();
+	lease.run.checkpoint = { ...snap, repos: [repo] };
+	await db.batch(await publicationWrites(db, lease, now));
+	expect((await publishedFactory(db, snap.account_id))?.runId).toBe(snap.runId);
+});
+it("recovers only matching legacy resource versions and does not invent missing data", async () => {
+	const { db, lease, repo } = await setup();
+	expect(await restoreLegacyRepo(db, lease, now, repo)).toEqual([]);
+	await db.batch([
+		...replaceSnapshotStmts(
+			db,
+			snap.account_id,
+			"factory:nocoo/app:commits",
+			{ runId: now, items: [], coverage: { ...repo.coverage.commits, status: "partial" } },
+			now,
+		),
+		...replaceSnapshotStmts(
+			db,
+			snap.account_id,
+			"factory:nocoo/app:issues",
+			{ runId: "another", items: [], coverage: repo.coverage.issues },
+			now,
+		),
+		...replaceSnapshotStmts(
+			db,
+			snap.account_id,
+			"factory:nocoo/app:dependencies",
+			{
+				runId: now,
+				items: [{ id: "one", title: "package", url: "https://github.com/nocoo/app", at: now }],
+				coverage: { ...repo.coverage.dependencies, status: "complete" },
+			},
+			now,
+		),
+	]);
+	await db.batch(await restoreLegacyRepo(db, lease, now, repo));
+	const current = await currentRepo(db, snap.account_id, repo.name);
+	expect(current?.coverage.commits.status).toBe("partial");
+	expect(current?.coverage.issues.status).toBe("pending");
+	expect(current?.dependencies).toEqual([
+		{ name: "package", version: "", path: "", url: "https://github.com/nocoo/app" },
+	]);
+	expect(current?.observation?.refreshedAt).toBe(now);
+});
