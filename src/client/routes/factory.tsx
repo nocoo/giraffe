@@ -8,7 +8,7 @@ import {
 	TableHeader,
 	TableRow,
 } from "@nocoo/basalt/components/table";
-import { ArrowLeft, ArrowUpRight, GitBranch, Pause, Play, RefreshCw } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, GitBranch } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import {
@@ -18,7 +18,6 @@ import {
 } from "../../lib/factory-types";
 import { reportError } from "../lib/error-ui";
 import {
-	advanceFactory,
 	dependencyEdges,
 	type FactoryDetail,
 	factoryBoard,
@@ -50,13 +49,13 @@ import {
 	FactoryThroughput,
 	FactoryTreemap,
 } from "./factory-charts";
+import { FactoryRuns } from "./factory-runs";
 
 export function FactoryPage() {
 	const [snapshot, setSnapshot] = useState<FactorySnapshot | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState("");
-	const [busy, setBusy] = useState(false);
-	const stop = useRef(false);
+
 	const mounted = useRef(true);
 	const [params, setParams] = useSearchParams();
 	const [detail, setDetail] = useState<FactoryDetail | null>(null);
@@ -115,7 +114,6 @@ export function FactoryPage() {
 			});
 		return () => {
 			mounted.current = false;
-			stop.current = true;
 		};
 	}, []);
 	useEffect(() => {
@@ -142,38 +140,10 @@ export function FactoryPage() {
 			cancelled = true;
 		};
 	}, [selected, stream, page, snapshot, detailState, detailDay]);
-	async function collect(restart = false) {
-		if (busy) return;
-		stop.current = false;
-		setBusy(true);
-		setError("");
-		try {
-			let first = true;
-			while (!stop.current) {
-				const result = await advanceFactory(first && restart);
-				first = false;
-				if (!mounted.current) break;
-				if (!result) {
-					setSnapshot(null);
-					break;
-				}
-				setSnapshot(result);
-				if (result.status === "complete") break;
-			}
-		} catch (err) {
-			if (mounted.current) {
-				fail(err);
-				try {
-					const current = await reloadFactory();
-					if (!("missing" in current)) setSnapshot(current);
-				} catch {
-					/* keep the last successful snapshot */
-				}
-			}
-		} finally {
-			if (mounted.current) setBusy(false);
-		}
-	}
+	const readPublished = useCallback(async () => {
+		const result = await reloadFactory();
+		if (!("missing" in result)) setSnapshot(result);
+	}, []);
 	const groups = useMemo(() => factoryGroups(snapshot?.repos ?? []), [snapshot]);
 	const scope = useMemo(
 		() => filterFactoryRepos(snapshot?.repos ?? [], { language, topic, query, repo: selected }),
@@ -187,45 +157,9 @@ export function FactoryPage() {
 	const repo = scope[0];
 	const ranking = factoryRepoPage(board?.ranking ?? [], repoPage);
 	const actions = (
-		<div className="flex flex-wrap gap-2">
-			{busy ? (
-				<Button
-					size="sm"
-					variant="secondary"
-					onClick={() => {
-						stop.current = true;
-					}}
-				>
-					<Pause className="size-3.5" />
-					本批完成后暂停
-				</Button>
-			) : (
-				<Button size="sm" onClick={() => void collect(snapshot?.status === "complete")}>
-					<RefreshCw className="size-3.5" />
-					{snapshot?.status === "collecting" ? "继续采集" : snapshot ? "更新调查" : "开始调查"}
-				</Button>
-			)}
-			{snapshot?.status === "collecting" && !busy ? (
-				<Button size="sm" variant="ghost" onClick={() => void collect(true)}>
-					重新调查
-				</Button>
-			) : null}
-			<Button
-				size="sm"
-				variant="ghost"
-				disabled={busy}
-				onClick={() => {
-					setError("");
-					setLoading(true);
-					void reloadFactory()
-						.then((r) => setSnapshot("missing" in r ? null : r))
-						.catch(fail)
-						.finally(() => setLoading(false));
-				}}
-			>
-				读取快照
-			</Button>
-		</div>
+		<Button size="sm" variant="ghost" onClick={() => void readPublished().catch(fail)}>
+			读取已发布快照
+		</Button>
 	);
 	return (
 		<div className="factory space-y-4">
@@ -237,6 +171,11 @@ export function FactoryPage() {
 						: "GitHub 的仓库、工作流与交付节奏"
 				}
 				actions={actions}
+			/>
+			<FactoryRuns
+				snapshot={snapshot}
+				onPublished={readPublished}
+				filter={{ language, topic, query, repo: selected }}
 			/>
 			{error ? (
 				<div role="alert" className="factory-notice factory-warning">
@@ -257,25 +196,23 @@ export function FactoryPage() {
 						首次调查完整分页读取归属仓库，再分批采集 90 天窗口的提交、历史 Issue /
 						PR、Actions、Release 与依赖证据。进度可暂停和续传。
 					</p>
-					<Button onClick={() => void collect()} disabled={busy}>
-						<Play className="size-4" />
-						开始调查
-					</Button>
+					<p className="pb-4 text-sm">请在上方刷新控制台发现仓库，然后选择刷新范围。</p>
 				</FactoryPanel>
 			) : null}
 			{snapshot && board ? (
 				<>
 					<div className="factory-provenance">
-						<span className={`factory-status-dot ${busy ? "factory-status-busy" : ""}`} />
+						<span className="factory-status-dot" />
 						<strong>
-							{busy
-								? "采集中"
+							{snapshot.publication?.mixed
+								? "混合版本 · 保留历史成功数据"
 								: snapshot.status === "complete"
 									? "已保存的 GitHub 观察"
-									: "调查未完成"}
+									: "旧调查未完成 · 可恢复已有资源"}
 						</strong>
 						<span>
-							{snapshot.window.since.slice(0, 10)} → {snapshot.window.until.slice(0, 10)} · 90 天 /
+							{snapshot.window.since.slice(0, 10)} → {snapshot.window.until.slice(0, 10)} ·{" "}
+							{snapshot.publication?.mixed ? "仓库分别采样 /" : "90 天 /"}
 							UTC / 末日未满
 						</span>
 						<span className="ml-auto">更新 {formatUtc(snapshot.fetched_at)}</span>

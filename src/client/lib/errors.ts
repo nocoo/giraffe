@@ -1,5 +1,8 @@
 export const ERROR_CODES = [
 	"validation_failed",
+	"refresh_cooldown",
+	"catalog_incomplete",
+	"factory_capacity",
 	"scopes_missing",
 	"access_unauthorized",
 	"github_unauthorized",

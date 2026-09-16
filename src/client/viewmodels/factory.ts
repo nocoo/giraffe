@@ -7,10 +7,10 @@ import {
 	type FactorySnapshot,
 	type FactoryStreamName,
 } from "../../lib/factory-types";
-import { apiGet, apiPost } from "../lib/api";
+import { apiGet } from "../lib/api";
 import { ApiError } from "../lib/errors";
 import { ensureSession, getActiveAccountId } from "./session";
-import { fetchKind, loadKind, putSnapshot } from "./snapshot";
+import { fetchKind, loadKind } from "./snapshot";
 
 export type FactoryFilter = { language: string; topic: string; query: string; repo: string };
 export const STREAM_LABELS: Record<FactoryStreamName, string> = {
@@ -41,23 +41,6 @@ export type FactoryDetail = {
 };
 export const loadFactory = () => loadKind<FactorySnapshot>("factory");
 export const reloadFactory = () => fetchKind<FactorySnapshot>("factory");
-let flight: Promise<FactorySnapshot | null> | null = null;
-export function advanceFactory(restart = false): Promise<FactorySnapshot | null> {
-	if (flight) return flight;
-	flight = (async () => {
-		const stamp = await ensureSession();
-		const result = await apiPost<FactorySnapshot>("factory/refresh", {
-			account_id: stamp,
-			restart,
-		});
-		if (getActiveAccountId() !== stamp || result.account_id !== stamp) return null;
-		putSnapshot("factory", result);
-		return result;
-	})().finally(() => {
-		flight = null;
-	});
-	return flight;
-}
 export async function loadFactoryDetail(
 	repo: string,
 	stream: FactoryStreamName,
@@ -74,6 +57,8 @@ export async function loadFactoryDetail(
 }
 export function factoryError(error: unknown): string {
 	if (error instanceof ApiError) {
+		if (error.code === "refresh_cooldown") return "所选范围仍在冷却，请查看下次允许刷新时间。";
+		if (error.code === "catalog_incomplete") return "仓库清单尚未完成，请先发现仓库。";
 		if (error.code === "github_rate_limited")
 			return "GitHub 限流：已保存成功页。等待配额恢复后继续采集。";
 		if (error.code === "account_conflict")
@@ -182,7 +167,10 @@ export function factoryBoard(snapshot: FactorySnapshot, repos: FactoryRepo[]) {
 		trend: {
 			recent,
 			previous,
-			change: completeCommits && previous > 0 ? (recent - previous) / previous : null,
+			change:
+				!snapshot.publication?.mixed && completeCommits && previous > 0
+					? (recent - previous) / previous
+					: null,
 		},
 		ranking: [...repos].sort(
 			(a, b) => b.metrics.commits - a.metrics.commits || a.name.localeCompare(b.name),

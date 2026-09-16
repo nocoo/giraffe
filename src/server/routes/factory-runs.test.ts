@@ -167,3 +167,35 @@ it("rejects empty, duplicate, foreign, cooling and incomplete all scopes; discov
 		202,
 	);
 });
+
+it("applies explicit priority order to complete filtered scopes", async () => {
+	const s = await setup();
+	const first = snapshot.repos[0];
+	if (!first) throw new Error("fixture");
+	const repo2 = { ...first, id: "two", name: "nocoo/two" };
+	await s.db.batch(
+		replaceSnapshotStmts(
+			s.db,
+			id,
+			"factory",
+			{ ...snapshot, repos: [first, repo2] },
+			snapshot.fetched_at,
+		),
+	);
+	expect(
+		(
+			await s.call("/api/factory/runs", {
+				...plan(),
+				scope: "filter",
+				language: "TypeScript",
+				topic: "cli",
+				query: "Example",
+				repos: ["nocoo/two", "nocoo/app"],
+			})
+		).status,
+	).toBe(202);
+	expect(((await (await s.call()).json()) as FactoryRunResponse).current?.repos).toEqual([
+		"nocoo/two",
+		"nocoo/app",
+	]);
+});

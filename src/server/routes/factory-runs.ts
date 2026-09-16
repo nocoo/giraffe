@@ -102,6 +102,10 @@ export async function postFactoryRun(c: Ctx): Promise<Response> {
 	} catch {
 		throw new ApiError(400, "validation_failed", "invalid repository selection");
 	}
+	if (data.scope !== "selected" && data.repos?.length) {
+		const order = new Map(data.repos.map((name, i) => [name, i]));
+		repos.sort((a, b) => (order.get(a.name) ?? 1000) - (order.get(b.name) ?? 1000));
+	}
 	if (data.mode === "refresh" && (!repos.length || repos.length > 500))
 		throw new ApiError(400, "validation_failed", "select 1 to 500 repositories");
 	if (

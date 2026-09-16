@@ -4,7 +4,6 @@ import { factoryFixture } from "../../../tests/fixtures/factory-snapshot";
 import { apiGet, apiPost } from "../lib/api";
 import { ApiError } from "../lib/errors";
 import {
-	advanceFactory,
 	factoryError,
 	formatFactoryCount,
 	formatHours,
@@ -36,33 +35,11 @@ afterEach(() => {
 	clearSnapshots();
 });
 describe("factory account-bound data operations", () => {
-	it("loads cached snapshots, explicitly reloads, and coalesces refresh requests", async () => {
+	it("loads cached snapshots and explicitly reloads without triggering a refresh", async () => {
 		expect(await loadFactory()).toEqual(snap);
 		expect(await loadFactory()).toEqual(snap);
 		expect(await reloadFactory()).toEqual(snap);
-		const a = advanceFactory();
-		const b = advanceFactory();
-		expect(a).toBe(b);
-		expect(await a).toEqual(snap);
-		expect(apiPost).toHaveBeenCalledTimes(1);
-		expect(apiPost).toHaveBeenCalledWith("factory/refresh", {
-			account_id: snap.account_id,
-			restart: false,
-		});
-		await advanceFactory(true);
-		expect(apiPost).toHaveBeenLastCalledWith("factory/refresh", {
-			account_id: snap.account_id,
-			restart: true,
-		});
-	});
-	it("rejects mismatched and stale accounts in refresh responses", async () => {
-		vi.mocked(apiPost).mockResolvedValueOnce({ ...snap, account_id: "b".repeat(21) });
-		expect(await advanceFactory()).toBeNull();
-		vi.mocked(apiPost).mockImplementationOnce(async () => {
-			setActiveAccountId("b".repeat(21));
-			return snap;
-		});
-		expect(await advanceFactory()).toBeNull();
+		expect(apiPost).not.toHaveBeenCalled();
 	});
 	it("loads filtered detail and ignores a late response after switching accounts", async () => {
 		await loadFactoryDetail("nocoo/app", "prs");
@@ -83,19 +60,18 @@ describe("factory account-bound data operations", () => {
 		});
 		expect(await loadFactoryDetail("nocoo/app", "prs")).toBeNull();
 	});
-	it("releases a failed refresh for retry and explains recovery without revealing raw GitHub errors", async () => {
-		vi.mocked(apiPost).mockRejectedValueOnce(new ApiError(503, "github_rate_limited", "limited"));
-		await expect(advanceFactory()).rejects.toMatchObject({ code: "github_rate_limited" });
-		expect(await advanceFactory()).toEqual(snap);
+	it("explains recoverable errors without exposing upstream messages", () => {
 		for (const code of [
 			"github_rate_limited",
 			"account_conflict",
 			"account_missing",
 			"github_unauthorized",
 			"internal_error",
+			"refresh_cooldown",
+			"catalog_incomplete",
 		] as const)
-			expect(factoryError(new ApiError(503, code, "secret diagnostic"))).not.toContain("secret");
-		expect(factoryError(new Error("secret diagnostic"))).not.toContain("secret");
+			expect(factoryError(new ApiError(503, code, "secret"))).not.toContain("secret");
+		expect(factoryError(new Error("secret"))).not.toContain("secret");
 	});
 	it("formats zero, unavailable, durations and UTC consistently", () => {
 		expect(formatFactoryCount(15000)).toBe("15,000");
