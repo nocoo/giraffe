@@ -200,3 +200,9 @@ it("ignores an error arriving after the view has unmounted", async () => {
 	await pending;
 	expect(onError).not.toHaveBeenCalled();
 });
+
+it("requests a specific run history without performing a mutation", async () => {
+	expect(await loadFactoryRuns("run-1")).toEqual(state);
+	expect(apiGet).toHaveBeenCalledWith("factory/runs?history=run-1");
+	expect(apiPost).not.toHaveBeenCalled();
+});

@@ -122,3 +122,34 @@ it("keeps publications, catalog and history readable without GitHub and scopes a
 		"cancelled",
 	);
 });
+
+it("allows only one concurrent start across independent request wrappers", async () => {
+	const { raw, run } = await setup();
+	const results = await Promise.allSettled([
+		startRun(createDb(raw), run),
+		startRun(createDb(raw), { ...run, id: "competing", requestKey: "different" }),
+	]);
+	expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+	expect(results.filter((r) => r.status === "rejected")).toHaveLength(1);
+});
+it("rolls staging and progress back together when a later statement fails, then recovers the expired lease", async () => {
+	const { db, raw, run } = await setup();
+	await startRun(db, run);
+	const lease = await claimRun(db, run.id, now);
+	if (!lease) throw new Error("fixture");
+	const { fenced } = await import("./factory-runs");
+	const stage = fenced(
+		db,
+		lease,
+		now,
+		"INSERT INTO factory_resources(run_id,repo,stream,payload) SELECT 'r1','nocoo/app','commits','{}' WHERE $guard",
+	);
+	const failure = db.prepare(
+		"INSERT INTO factory_repo_state(account_id,repo,payload) VALUES(NULL,'repo','{}')",
+	);
+	await expect(saveRun(db, lease, [stage, failure], now)).rejects.toMatchObject({
+		code: "db_error",
+	});
+	expect((await db.prepare("SELECT * FROM factory_resources").all()).results).toEqual([]);
+	expect(await claimRun(createDb(raw), run.id, "2026-09-15T22:02:00.000Z")).not.toBeNull();
+});

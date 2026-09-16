@@ -7,7 +7,13 @@ import {
 	type FactoryStreamData,
 } from "../../lib/factory-types";
 import type { Db } from "./db/d1";
-import { factoryHead, fenced, publishedFactory, type RunLease } from "./db/factory-runs";
+import {
+	catalogFactory,
+	factoryHead,
+	fenced,
+	publishedFactory,
+	type RunLease,
+} from "./db/factory-runs";
 import { readSnapshot } from "./db/snapshots";
 import { ApiError } from "./errors";
 import { streamKey } from "./factory-collect";
@@ -85,6 +91,7 @@ export async function repositoryWrites(
 	const accepted = error || regression ? null : repo;
 	const steps = lease.run.steps.filter((s) => s.repo === name);
 	const state: RepoRefreshState = {
+		observation: accepted?.observation ?? old?.observation,
 		repo: name,
 		version: accepted?.observation?.version ?? old?.version ?? null,
 		refreshedAt: accepted?.observation?.refreshedAt ?? old?.refreshedAt ?? null,
@@ -170,6 +177,8 @@ export async function restoreLegacyRepo(
 				.sort()
 				.at(-1) ?? first.runId,
 		source: "legacy",
+		repo: repo.name,
+		metadataAt: lease.run.startedAt,
 	};
 	return repositoryWrites(db, lease, now, repo, repo.name, null, true);
 }
@@ -200,7 +209,7 @@ export async function publicationWrites(
 		throw new ApiError(409, "snapshot_missing", "no catalog or committed factory data");
 	const result = await db
 		.prepare(
-			"SELECT v.payload FROM factory_repo_versions v JOIN factory_repo_state s ON s.account_id=v.account_id AND s.repo=v.repo AND s.version=v.version WHERE v.account_id=? ORDER BY v.repo",
+			"SELECT v.payload FROM factory_repo_versions v JOIN factory_repo_state s ON s.account_id=v.account_id AND s.repo=v.repo AND s.version=v.version WHERE v.account_id=? ORDER BY v.refreshed_at,v.repo",
 		)
 		.bind(run.account_id)
 		.all<{ payload: string }>();
@@ -214,9 +223,31 @@ export async function publicationWrites(
 				source: "legacy",
 			};
 	}
-	const map = new Map(snapshot.repos.map((r) => [r.name, r]));
-	for (const repo of committed) map.set(repo.name, repo);
-	snapshot.repos = [...map.values()];
+	const map = new Map(snapshot.repos.map((r) => [r.id, r]));
+	for (const repo of committed) map.set(repo.id, repo);
+	const catalog =
+		run.mode === "catalog" ? run.checkpoint : await catalogFactory(db, run.account_id);
+	if (catalog?.inventory.complete) {
+		snapshot.inventory = catalog.inventory;
+		snapshot.repos = catalog.repos.map((meta) => {
+			const observed = map.get(meta.id);
+			if (!observed) return meta;
+			if (observed.observation?.version === run.id) return observed;
+			return {
+				...observed,
+				name: meta.name,
+				url: meta.url,
+				...(observed.observation
+					? {
+							observation: {
+								...observed.observation,
+								repo: observed.observation.repo ?? observed.name,
+							},
+						}
+					: {}),
+			};
+		});
+	} else snapshot.repos = [...map.values()];
 	snapshot.runId = run.id;
 	snapshot.status = "complete";
 	snapshot.fetched_at = now;

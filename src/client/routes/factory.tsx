@@ -217,6 +217,18 @@ export function FactoryPage() {
 						</span>
 						<span className="ml-auto">更新 {formatUtc(snapshot.fetched_at)}</span>
 					</div>
+					{selected && repo?.observation ? (
+						<div className="factory-run-meta">
+							<span>
+								事件窗口 {formatUtc(repo.observation.window.since)} →{" "}
+								{formatUtc(repo.observation.window.until)}
+							</span>
+							<span>
+								仓库快照 {formatUtc(repo.observation.refreshedAt)} ·{" "}
+								{repo.observation.source === "legacy" ? "旧资源恢复" : "GitHub 采集"}
+							</span>
+						</div>
+					) : null}
 					<div className="factory-toolbar">
 						<label>
 							语言群{" "}

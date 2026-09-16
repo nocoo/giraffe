@@ -43,15 +43,25 @@ async function account(c: Ctx) {
 export async function getFactoryRuns(c: Ctx): Promise<Response> {
 	const row = await account(c);
 	const db = c.get("db");
-	const runs = await listRuns(db, row.id);
+	const detail = c.req.query("history") ?? "";
+	if (detail.length > 80) throw new ApiError(400, "validation_failed", "invalid history ID");
+	const runs = await listRuns(db, row.id, detail);
 	const head = await factoryHead(db, row.id);
 	const catalog = await catalogFactory(db, row.id);
 	const states = await repoStates(db, row.id);
 	const now = new Date().toISOString();
-	const views = runs.map(({ run, leaseUntil }) => {
+	const views = runs.map(({ run, leaseUntil, counts }) => {
 		const { checkpoint, ...view } = run;
 		void checkpoint;
-		return { ...view, progress: runProgress(run, now), leaseUntil };
+		return {
+			...view,
+			progress: {
+				...runProgress(run, now),
+				...counts,
+				completed: counts.success + counts.failed + counts.skipped,
+			},
+			leaseUntil,
+		};
 	});
 	const response: FactoryRunResponse = {
 		account_id: row.id,
@@ -75,6 +85,12 @@ export async function postFactoryRun(c: Ctx): Promise<Response> {
 	if (data.account_id !== row.id) throw new ApiError(409, "account_conflict", "account changed");
 	const db = c.get("db");
 	const now = new Date().toISOString();
+	const prior = await db
+		.prepare("SELECT id,status FROM factory_runs WHERE account_id=? AND request_key=?")
+		.bind(row.id, data.requestKey)
+		.first<{ id: string; status: string }>();
+	if (prior)
+		return jsonOk({ account_id: row.id, id: prior.id, status: prior.status }, 202, PRIVATE);
 	const catalog = await catalogFactory(db, row.id);
 	const states = await repoStates(db, row.id);
 	if (

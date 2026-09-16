@@ -32,14 +32,25 @@ export async function getRun(db: Db, account: string, id: string) {
 		.first<RunRow>();
 	return row ? parse(row) : null;
 }
-export async function listRuns(db: Db, account: string) {
+export async function listRuns(db: Db, account: string, detail = "") {
 	const rows = await db
-		.prepare(
-			"SELECT payload,lease_until FROM factory_runs WHERE account_id=? ORDER BY CASE WHEN status IN ('running','paused') THEN 0 ELSE 1 END,created_at DESC LIMIT 21",
-		)
-		.bind(account)
-		.all<RunRow>();
-	return rows.results.map(parse);
+		.prepare(`SELECT
+ CASE WHEN status IN ('running','paused') OR id=COALESCE(NULLIF(?,''),(SELECT id FROM factory_runs WHERE account_id=? ORDER BY created_at DESC LIMIT 1)) THEN json_remove(payload,'$.checkpoint') ELSE json_remove(payload,'$.checkpoint','$.steps') END AS payload,
+ lease_until,json_array_length(payload,'$.steps') AS total,
+ (SELECT COUNT(*) FROM json_each(payload,'$.steps') WHERE json_extract(value,'$.status')='success') AS success,
+ (SELECT COUNT(*) FROM json_each(payload,'$.steps') WHERE json_extract(value,'$.status')='failed') AS failed,
+ (SELECT COUNT(*) FROM json_each(payload,'$.steps') WHERE json_extract(value,'$.status')='skipped') AS skipped
+ FROM factory_runs WHERE account_id=? ORDER BY CASE WHEN status IN ('running','paused') THEN 0 ELSE 1 END,created_at DESC LIMIT 21`)
+		.bind(detail, account, account)
+		.all<RunRow & { total: number; success: number; failed: number; skipped: number }>();
+	return rows.results.map((row) => {
+		const entry = parse(row);
+		entry.run.steps ??= [];
+		return {
+			...entry,
+			counts: { total: row.total, success: row.success, failed: row.failed, skipped: row.skipped },
+		};
+	});
 }
 export const factoryHead = (db: Db, account: string) =>
 	db
@@ -185,6 +196,8 @@ export async function controlRun(
 	if (!["running", "paused"].includes(run.status)) return run;
 	run.status = action === "pause" ? "paused" : action === "resume" ? "running" : "cancelled";
 	run.updatedAt = now;
+	if (action === "pause")
+		for (const step of run.steps) if (step.status === "running") step.status = "pending";
 	if (action === "cancel") {
 		run.finishedAt = now;
 		for (const step of run.steps)

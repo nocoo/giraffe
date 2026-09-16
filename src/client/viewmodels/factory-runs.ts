@@ -42,9 +42,11 @@ export const STEP_STATUS: Record<StepStatus, string> = {
 };
 export const secondsUntil = (at: string | null, now: number) =>
 	at ? Math.max(0, Math.ceil((Date.parse(at) - now) / 1000)) : 0;
-export async function loadFactoryRuns(): Promise<FactoryRunResponse | null> {
+export async function loadFactoryRuns(history = ""): Promise<FactoryRunResponse | null> {
 	const account = await ensureSession();
-	const response = await apiGet<FactoryRunResponse>("factory/runs");
+	const response = await apiGet<FactoryRunResponse>(
+		history ? `factory/runs?history=${encodeURIComponent(history)}` : "factory/runs",
+	);
 	return getActiveAccountId() === account && response.account_id === account ? response : null;
 }
 export async function startFactoryRun(

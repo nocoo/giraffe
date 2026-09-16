@@ -41,20 +41,21 @@ export async function getFactoryStream(c: Ctx): Promise<Response> {
 	if (!repo || !snap) throw new ApiError(404, "not_found", "repository outside factory inventory");
 	let resource: FactoryStreamData | null = null;
 	const version = repo.observation?.version ?? snap.runId;
+	const sourceRepo = repo.observation?.repo ?? repo.name;
 	if (repo.observation?.source === "run") {
 		const row = await c
 			.get("db")
 			.prepare(
 				"SELECT payload FROM factory_resources WHERE run_id=? AND repo=? AND stream=? AND EXISTS(SELECT 1 FROM factory_runs WHERE id=? AND account_id=?)",
 			)
-			.bind(version, repo.name, stream, version, account.id)
+			.bind(version, sourceRepo, stream, version, account.id)
 			.first<{ payload: string }>();
 		resource = row ? (JSON.parse(row.payload) as FactoryStreamData) : null;
 	} else if (repo.coverage[stream].status !== "pending")
 		resource = (await readSnapshot(
 			c.get("db"),
 			account.id,
-			streamKey(repo.name, stream),
+			streamKey(sourceRepo, stream),
 		)) as FactoryStreamData | null;
 	if (resource && resource.runId !== version)
 		throw new ApiError(409, "snapshot_missing", "resource version unavailable");

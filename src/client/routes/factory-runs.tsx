@@ -38,6 +38,7 @@ export function FactoryRuns({
 	const [selected, setSelected] = useState<string[]>([]);
 	const [priority, setPriority] = useState<Record<string, number>>({});
 	const [historyId, setHistoryId] = useState("");
+	const historyRef = useRef("");
 	const [now, setNow] = useState(Date.now());
 	const offset = useRef(0);
 	const publication = useRef<string | null | undefined>(undefined);
@@ -47,11 +48,12 @@ export function FactoryRuns({
 	const intent = useRef<{ signature: string; key: string } | null>(null);
 	useEffect(() => {
 		poll.current = createRunPolling({
-			load: loadFactoryRuns,
+			load: () => loadFactoryRuns(historyRef.current),
 			hidden: () => document.hidden,
 			onError: (err) => setError(factoryError(err)),
 			onData: (state) => {
 				setData(state);
+
 				offset.current = Date.parse(state.serverNow) - Date.now();
 				setNow(Date.now() + offset.current);
 				setError("");
@@ -106,6 +108,7 @@ export function FactoryRuns({
 			await startFactoryRun(input, intent.current.key);
 			intent.current = null;
 			setHistoryId("");
+			historyRef.current = "";
 			await poll.current?.refresh();
 		} catch (err) {
 			setError(factoryError(err));
@@ -269,7 +272,11 @@ export function FactoryRuns({
 					<select
 						aria-label="运行记录"
 						value={historyId}
-						onChange={(e) => setHistoryId(e.target.value)}
+						onChange={(e) => {
+							historyRef.current = e.target.value;
+							setHistoryId(e.target.value);
+							void poll.current?.refresh();
+						}}
 					>
 						<option value="">{current ? "当前 run" : "最近一次 run"}</option>
 						{data?.history.map((r) => (
@@ -315,9 +322,11 @@ export function FactoryRuns({
 						<span>心跳 {formatUtc(viewed.updatedAt)}</span>
 						<span>
 							估计剩余{" "}
-							{viewed.progress.etaSeconds === null
-								? "未知"
-								: `约 ${duration(viewed.progress.etaSeconds)}（按已完成步骤耗时估算）`}
+							{viewed.finishedAt
+								? "已结束"
+								: viewed.progress.etaSeconds === null
+									? "未知"
+									: `约 ${duration(viewed.progress.etaSeconds)}（按已完成步骤耗时估算）`}
 						</span>
 					</div>
 					{viewed.status === "running" && secondsUntil(viewed.nextAttemptAt, now) > 0 ? (
@@ -358,11 +367,19 @@ export function FactoryRuns({
 										{duration(Math.ceil(row.durationMs / 1000))}
 									</span>
 									<span>
-										快照 {formatUtc(row.state?.refreshedAt ?? null)} · 覆盖{" "}
+										最近成功 {formatUtc(row.state?.refreshedAt ?? null)} · 覆盖{" "}
 										{row.state?.coverage ?? "—"}/7
 									</span>
 								</summary>
 								<div className="factory-run-meta">
+									<span>
+										当前成功快照窗口{" "}
+										{row.state?.observation
+											? `${row.state.observation.window.since} → ${row.state.observation.window.until}`
+											: "未知"}{" "}
+										· {row.state?.observation?.source === "legacy" ? "旧资源恢复" : "GitHub 采集"}
+									</span>
+									<span>元数据观测 {formatUtc(row.state?.observation?.metadataAt ?? null)}</span>
 									<span>下次可刷新 {formatUtc(row.state?.nextAllowedAt ?? null)}</span>
 									<span>
 										重试{" "}

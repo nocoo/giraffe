@@ -342,3 +342,29 @@ it("records unavailable coverage, metadata limits, catalog failure and malformed
 		}
 	}
 });
+
+it("rechecks repository cooldown at execution after a competing run commits during planning", async () => {
+	const env = await setup();
+	await executeRunPage(env, "r1", () => now);
+	await createDb(env.DB)
+		.prepare("INSERT INTO factory_repo_state(account_id,repo,payload) VALUES(?,?,?)")
+		.bind(
+			snap.account_id,
+			"nocoo/app",
+			JSON.stringify({ repo: "nocoo/app", nextAllowedAt: "2999-01-01T00:00:00.000Z" }),
+		)
+		.run();
+	const calls = vi.mocked(fetch).mock.calls.length;
+	await executeRunPage(env, "r1", () => now);
+	expect(fetch).toHaveBeenCalledTimes(calls);
+	const run = (await getRun(createDb(env.DB), snap.account_id, "r1"))?.run;
+	expect(run?.steps.filter((s) => s.status === "skipped")).toHaveLength(9);
+});
+
+it("uses server time for persisted heartbeat when no clock is injected", async () => {
+	const env = await setup();
+	const before = Date.now();
+	await executeRunPage(env, "r1");
+	const run = (await getRun(createDb(env.DB), snap.account_id, "r1"))?.run;
+	expect(Date.parse(run?.updatedAt ?? "")).toBeGreaterThanOrEqual(before);
+});

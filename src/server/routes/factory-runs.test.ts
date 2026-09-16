@@ -199,3 +199,40 @@ it("applies explicit priority order to complete filtered scopes", async () => {
 		"nocoo/app",
 	]);
 });
+
+it("returns the same completed run for a retried request even when repository cooldown changed", async () => {
+	const s = await setup();
+	const input = plan();
+	const first = (await (await s.call("/api/factory/runs", input)).json()) as { id: string };
+	await s.call(`/api/factory/runs/${first.id}/control`, { account_id: id, action: "cancel" });
+	await s.db
+		.prepare("INSERT INTO factory_repo_state(account_id,repo,payload) VALUES(?,?,?)")
+		.bind(
+			id,
+			"nocoo/app",
+			JSON.stringify({
+				repo: "nocoo/app",
+				status: "success",
+				refreshedAt: snapshot.fetched_at,
+				nextAllowedAt: "2999-01-01T00:00:00.000Z",
+			}),
+		)
+		.run();
+	const retry = await s.call("/api/factory/runs", input);
+	expect(retry.status).toBe(202);
+	expect(await retry.json()).toMatchObject({ id: first.id, status: "cancelled" });
+});
+
+it("returns compact history with accurate totals and expands only the requested account-bound run", async () => {
+	const s = await setup();
+	const first = (await (await s.call("/api/factory/runs", plan())).json()) as { id: string };
+	await s.call(`/api/factory/runs/${first.id}/control`, { account_id: id, action: "cancel" });
+	const compact = (await (await s.call()).json()) as FactoryRunResponse;
+	expect(compact.history[0]?.steps).toHaveLength(11);
+	expect(compact.history[0]?.progress).toMatchObject({ total: 11, completed: 11, skipped: 11 });
+	const detail = (await (
+		await s.call(`/api/factory/runs?history=${first.id}`)
+	).json()) as FactoryRunResponse;
+	expect(detail.history[0]?.steps).toHaveLength(11);
+	expect((await s.call(`/api/factory/runs?history=${"x".repeat(81)}`)).status).toBe(400);
+});

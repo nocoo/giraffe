@@ -51,6 +51,14 @@ export async function executeRunPage(
 	const gh = createGithubClient(env);
 	let writes: D1PreparedStatement[] = [];
 	try {
+		if (step.kind === "metadata") {
+			const state = await db
+				.prepare("SELECT payload FROM factory_repo_state WHERE account_id=? AND repo=?")
+				.bind(run.account_id, step.repo)
+				.first<{ payload: string }>();
+			if (state && (JSON.parse(state.payload) as { nextAllowedAt: string }).nextAllowedAt > clock())
+				throw new ApiError(409, "repository_cooldown", "repository cooldown");
+		}
 		let token = "";
 		if (!["restore", "commit", "publish"].includes(step.kind)) {
 			const account = await getAccount(db, run.account_id);
@@ -101,6 +109,9 @@ export async function executeRunPage(
 				window: run.window,
 				refreshedAt: clock(),
 				source: "run",
+				metadataAt:
+					run.steps.find((s) => s.kind === "metadata" && s.repo === repo.name)?.finishedAt ??
+					run.startedAt,
 			};
 			writes = await repositoryWrites(db, lease, clock(), repo, repo.name, null);
 			finish(step, "success", clock());
@@ -169,7 +180,18 @@ export async function executeRunPage(
 		writes = [];
 		const code = error instanceof ApiError ? error.code : "internal_error";
 		step.error = code;
-		if (code === "github_unauthorized" || code === "encryption_key_missing") {
+		if (code === "repository_cooldown") {
+			for (const later of run.steps)
+				if (
+					later.repo === step.repo &&
+					(later.status === "pending" || later.status === "running")
+				) {
+					finish(later, "skipped", clock());
+					later.error = code;
+					later.attempts = 0;
+				}
+			run.nextAttemptAt = clock();
+		} else if (code === "github_unauthorized" || code === "encryption_key_missing") {
 			run.status = "paused";
 			step.status = "pending";
 		} else if (code === "github_rate_limited") {

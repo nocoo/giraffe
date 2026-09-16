@@ -60,6 +60,8 @@ export type FactoryMetrics = FactoryDay & {
 };
 export type FactoryRepo = {
 	observation?: {
+		metadataAt?: string;
+		repo?: string;
 		version: string;
 		window: FactoryWindow;
 		refreshedAt: string;

@@ -54,6 +54,7 @@ export type FactoryRun = {
 	restoreCursor: number;
 };
 export type RepoRefreshState = {
+	observation?: FactoryRepo["observation"];
 	repo: string;
 	refreshedAt: string | null;
 	status: "success" | "failed" | "partial";

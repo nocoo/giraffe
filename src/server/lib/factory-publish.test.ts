@@ -133,3 +133,57 @@ it("recovers only matching legacy resource versions and does not invent missing 
 	]);
 	expect(current?.observation?.refreshedAt).toBe(now);
 });
+
+it("deduplicates renamed repositories by stable GitHub identity at publication", async () => {
+	const { db, lease, repo } = await setup();
+	await db.batch(replaceSnapshotStmts(db, snap.account_id, "factory", { ...snap }, now));
+	lease.run.mode = "refresh";
+	repo.name = "nocoo/renamed";
+	repo.observation = { version: "r1", refreshedAt: now, window: snap.window, source: "run" };
+	await db.batch(await repositoryWrites(db, lease, now, repo, repo.name, null));
+	await db.batch(await publicationWrites(db, lease, now));
+	const published = await publishedFactory(db, snap.account_id);
+	expect(published?.repos).toHaveLength(1);
+	expect(published?.repos[0]?.name).toBe("nocoo/renamed");
+});
+
+it("uses the complete catalog for membership while preserving renamed repositories and unknown new data", async () => {
+	const { db, lease, repo } = await setup();
+	lease.run.mode = "refresh";
+	await db.batch(
+		replaceSnapshotStmts(
+			db,
+			snap.account_id,
+			"factory",
+			{ ...snap, repos: [repo, { ...repo, id: "retired", name: "nocoo/retired" }] },
+			now,
+		),
+	);
+	await db.batch(
+		replaceSnapshotStmts(
+			db,
+			snap.account_id,
+			"factory:catalog:new",
+			{
+				...snap,
+				repos: [
+					{ ...repo, name: "nocoo/renamed" },
+					{ ...repo, id: "new", name: "nocoo/new" },
+				],
+			},
+			now,
+		),
+	);
+	await db
+		.prepare("UPDATE factory_state SET catalog_id=? WHERE account_id=?")
+		.bind("new", snap.account_id)
+		.run();
+	await db.batch(await publicationWrites(db, lease, now));
+	const published = await publishedFactory(db, snap.account_id);
+	expect(published?.repos.map((r) => r.name)).toEqual(["nocoo/renamed", "nocoo/new"]);
+	expect(published?.repos[0]?.observation?.repo).toBe("nocoo/app");
+	expect(published?.repos[1]?.coverage.commits.status).toBe("pending");
+	expect(
+		await (await import("./db/snapshots")).readSnapshot(db, snap.account_id, "factory"),
+	).toMatchObject({ repos: [{ name: "nocoo/app" }, { name: "nocoo/retired" }] });
+});
