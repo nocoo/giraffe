@@ -25,6 +25,7 @@ import {
 	factoryError,
 	factoryGroups,
 	factoryParams,
+	factoryRepoCount,
 	factoryRepoPage,
 	filterFactoryRepos,
 	formatHours,
@@ -723,12 +724,7 @@ export function FactoryPage() {
 															type="button"
 															onClick={() => drill(r.name, "commits")}
 														>
-															{!hasFactoryMeasurement(r, "commits")
-																? "—"
-																: formatObservedCount(
-																		r.metrics.commits,
-																		r.coverage.commits.status === "complete",
-																	)}
+															{factoryRepoCount(r, "commits")}
 														</button>
 													</TableCell>
 													<TableCell className="text-right">
@@ -754,7 +750,7 @@ export function FactoryPage() {
 															className="factory-number"
 															onClick={() => drill(r.name, "prs")}
 														>
-															{r.coverage.prs.status === "complete" ? n(r.metrics.prMerged) : "—"}
+															{factoryRepoCount(r, "prs")}
 														</button>
 													</TableCell>
 													<TableCell className="text-right">
@@ -774,7 +770,7 @@ export function FactoryPage() {
 															className="factory-number"
 															onClick={() => drill(r.name, "releases")}
 														>
-															{r.coverage.releases.status === "complete" ? r.metrics.releases : "—"}
+															{factoryRepoCount(r, "releases")}
 														</button>
 													</TableCell>
 													<TableCell>

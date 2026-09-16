@@ -7,6 +7,7 @@ import {
 	factoryBoard,
 	factoryGroups,
 	factoryParams,
+	factoryRepoCount,
 	factoryRepoPage,
 	filterFactoryRepos,
 	hasFactoryMeasurement,
@@ -297,4 +298,24 @@ it("does not divide by zero for a returned language with zero bytes", () => {
 	const s = ready();
 	if (s.repos[0]) s.repos[0].languages = [{ name: "Unknown", bytes: 0 }];
 	expect(factoryBoard(s, s.repos).languages[0]?.share).toBe(0);
+});
+
+it("renders lower bounds consistently for truncated commit, merged PR and release table cells", () => {
+	const repo = ready().repos[0];
+	if (!repo) throw new Error("fixture");
+	Object.assign(repo.metrics, { commits: 12, prMerged: 3, releases: 2 });
+	for (const [stream, count] of [
+		["commits", 12],
+		["prs", 3],
+		["releases", 2],
+	] as const) {
+		expect(factoryRepoCount(repo, stream)).toBe("—");
+		repo.coverage[stream].status = "limited";
+		repo.coverage[stream].observed = 2;
+		expect(factoryRepoCount(repo, stream)).toBe(`≥ ${count}`);
+		repo.coverage[stream].status = "complete";
+		expect(factoryRepoCount(repo, stream)).toBe(String(count));
+	}
+	repo.metrics.prMerged = 0;
+	expect(factoryRepoCount(repo, "prs")).toBe("0");
 });

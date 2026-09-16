@@ -373,3 +373,13 @@ export function hasFactoryMeasurement(repo: FactoryRepo, stream: FactoryStreamNa
 export function formatObservedCount(value: number, complete: boolean): string {
 	return `${complete ? "" : "≥ "}${formatFactoryCount(value)}`;
 }
+
+export function factoryRepoCount(
+	repo: FactoryRepo,
+	stream: "commits" | "prs" | "releases",
+): string {
+	const fields = { commits: "commits", prs: "prMerged", releases: "releases" } as const;
+	return hasFactoryMeasurement(repo, stream)
+		? formatObservedCount(repo.metrics[fields[stream]], repo.coverage[stream].status === "complete")
+		: "—";
+}
