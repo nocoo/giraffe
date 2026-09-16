@@ -98,3 +98,5 @@
  .factory-run-controls>label { max-width:100%; }
  .factory-run-stages li { flex-basis:100px; }
 }
+.factory-day-unknown { background:repeating-linear-gradient(135deg,transparent,transparent 3px,var(--color-basalt-border) 3px,var(--color-basalt-border) 4px); }
+.factory-calendar { overflow-x:auto; }

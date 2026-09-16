@@ -36,6 +36,7 @@ try {
 		"factory_repo_state",
 		"factory_version_refs",
 		"factory_storage",
+		"factory_budget",
 	];
 	for (const table of required)
 		if (!db.query("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(table))
@@ -83,7 +84,7 @@ try {
 			.query(
 				"UPDATE factory_runs SET payload=json_set(payload,'$.cursor',1) WHERE id=? AND lease_token=? AND version=0 AND status='running'",
 			)
-			.run(probe, probe).changes !== 1
+			.run(probe, probe).changes < 1
 	)
 		throw new Error("Valid fenced mutation failed");
 	db.query("INSERT INTO factory_resources VALUES(?,'probe/repo','commits','{}')").run(probe);

@@ -207,3 +207,70 @@ it("aggregates only current repository pointers even when a newer historical ver
 	await db.batch(await publicationWrites(db, lease, now));
 	expect((await publishedFactory(db, snap.account_id))?.repos[0]?.metrics.commits).toBe(0);
 });
+
+it("preserves useful limited evidence when a subsequent result loses access or contains a smaller subset", async () => {
+	const { db, lease, repo } = await setup();
+	repo.coverage.commits = { ...repo.coverage.commits, status: "limited", observed: 100 };
+	repo.metrics.commits = 100;
+	repo.observation = { source: "run", version: "r1", refreshedAt: now, window: snap.window };
+	await db.batch(await repositoryWrites(db, lease, now, repo, repo.name, null));
+	for (const [status, observed] of [
+		["unavailable", 0],
+		["limited", 50],
+	] as const) {
+		const next = structuredClone(repo);
+		next.coverage.commits.status = status;
+		next.coverage.commits.observed = observed;
+		next.metrics.commits = observed;
+		await db.batch(await repositoryWrites(db, lease, now, next, repo.name, null));
+		expect((await currentRepo(db, snap.account_id, repo.name))?.metrics.commits).toBe(100);
+	}
+});
+it("retains contribution provenance across catalog-only and failed refresh publications", async () => {
+	const { db, lease } = await setup();
+	const calendar = { total: 2, restricted: 0, days: [], fetchedAt: now };
+	const observation = { version: "original", window: snap.window, fetchedAt: now };
+	await db.batch(
+		replaceSnapshotStmts(
+			db,
+			snap.account_id,
+			"factory",
+			{
+				...snap,
+				contribution: calendar,
+				contributionStatus: "complete",
+				contributionObservation: observation,
+			},
+			now,
+		),
+	);
+	lease.run.checkpoint = structuredClone(snap);
+	await db.batch(await publicationWrites(db, lease, now));
+	expect((await publishedFactory(db, snap.account_id))?.contributionObservation).toEqual(
+		observation,
+	);
+});
+
+it("removes an obsolete second physical page when rewriting a publication with a smaller payload", async () => {
+	const { db, lease, repo } = await setup();
+	const kind = "factory:v:repair";
+	const big = { ...repo, description: "x".repeat(850000) };
+	await db.batch(
+		snapshotWrites(db, lease, now, kind, {
+			...snap,
+			repos: [big, { ...big, id: "second", name: "nocoo/second" }],
+		}),
+	);
+	const { readSnapshot } = await import("./db/snapshots");
+	expect((await readSnapshot(db, snap.account_id, kind))?.repos).toHaveLength(2);
+	await db.batch(snapshotWrites(db, lease, now, kind, { ...snap, repos: [repo] }));
+	expect((await readSnapshot(db, snap.account_id, kind))?.repos).toHaveLength(1);
+	expect(
+		(
+			await db
+				.prepare("SELECT kind FROM snapshots WHERE account_id=? AND kind=?")
+				.bind(snap.account_id, `${kind}#2`)
+				.all()
+		).results,
+	).toEqual([]);
+});

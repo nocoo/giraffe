@@ -68,7 +68,7 @@ export function FactoryHeatmap({
 	selected,
 	onSelect,
 }: {
-	days: { date: string; count: number }[];
+	days: { date: string; count: number; known?: boolean }[];
 	selected: string;
 	onSelect: (date: string) => void;
 }) {
@@ -91,10 +91,10 @@ export function FactoryHeatmap({
 							gridColumn: Math.floor((i + offset) / 7) + 1,
 							gridRow: ((i + offset) % 7) + 1,
 						}}
-						className={`factory-day factory-heat-${d.count === 0 ? 0 : Math.min(4, Math.ceil((d.count / max) * 4))} ${selected === d.date ? "factory-day-selected" : ""}`}
+						className={`factory-day ${d.known === false && d.count === 0 ? "factory-day-unknown" : ""} factory-heat-${d.count === 0 ? 0 : Math.min(4, Math.ceil((d.count / max) * 4))} ${selected === d.date ? "factory-day-selected" : ""}`}
 						aria-pressed={selected === d.date}
-						title={`${d.date} UTC · ${n(d.count)}`}
-						aria-label={`${d.date} UTC：${n(d.count)}，点击查看当日统计`}
+						title={`${d.date} UTC · ${d.known === false ? (d.count ? `≥ ${n(d.count)}` : "未完整观测") : n(d.count)}`}
+						aria-label={`${d.date} UTC：${d.known === false ? (d.count ? `≥ ${n(d.count)}` : "未完整观测") : n(d.count)}，点击查看当日统计`}
 					/>
 				))}
 			</div>
@@ -160,7 +160,12 @@ export function FactoryThroughput({ days }: { days: Board["days"] }) {
 		>
 			<ResponsiveContainer width="100%" height="100%">
 				<AreaChart
-					data={days}
+					data={days.map((d) => ({
+						...d,
+						prMerged: d.complete.prs || d.prMerged ? d.prMerged : null,
+						prClosed: d.complete.prs || d.prClosed ? d.prClosed : null,
+						releases: d.complete.releases || d.releases ? d.releases : null,
+					}))}
 					accessibilityLayer
 					margin={{ top: 4, right: 4, left: -22, bottom: 0 }}
 				>
@@ -182,7 +187,7 @@ export function FactoryThroughput({ days }: { days: Board["days"] }) {
 						}}
 					/>
 					<Area
-						name="合并 PR"
+						name="合并 PR（观测）"
 						dataKey="prMerged"
 						stackId="throughput"
 						stroke={GREEN}
@@ -191,7 +196,7 @@ export function FactoryThroughput({ days }: { days: Board["days"] }) {
 						isAnimationActive={false}
 					/>
 					<Area
-						name="关闭未合并 PR"
+						name="关闭未合并 PR（观测）"
 						dataKey="prClosed"
 						stackId="throughput"
 						stroke={AMBER}
@@ -200,7 +205,7 @@ export function FactoryThroughput({ days }: { days: Board["days"] }) {
 						isAnimationActive={false}
 					/>
 					<Area
-						name="Release"
+						name="Release（观测）"
 						dataKey="releases"
 						stackId="throughput"
 						stroke={BLUE}

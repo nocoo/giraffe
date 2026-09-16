@@ -54,6 +54,9 @@ export function FactoryRuns({
 			onError: (err) => setError(factoryError(err)),
 			onData: (state) => {
 				setData(state);
+				setSelected((old) =>
+					old.filter((name) => state.catalog.some((repo) => repo.name === name)),
+				);
 
 				offset.current = Date.parse(state.serverNow) - Date.now();
 				setNow(Date.now() + offset.current);
@@ -112,7 +115,7 @@ export function FactoryRuns({
 			const input = {
 				mode,
 				scope,
-				...(scope === "selected" ? { repos: names } : { order: names }),
+				...(scope === "selected" ? { repos: names, order: names } : { order: names }),
 				...(scope === "filter"
 					? {
 							language: filter.language,
@@ -185,17 +188,25 @@ export function FactoryRuns({
 					更新凭据后续跑；已保存进度保留。
 				</p>
 			) : null}
+			{current?.status === "paused" && current.progress.current?.error === "factory_capacity" ? (
+				<p role="alert" className="factory-notice factory-warning">
+					工厂数据达到容量边界，采集已暂停。旧数据和进度保留；可等待历史清理后续跑，或取消并缩小范围。
+				</p>
+			) : null}
 			<div className="factory-run-meta">
 				{data?.storage ? (
 					<span>
-						资源用量 {(data.storage.resourceBytes / 1e6).toFixed(1)} /{" "}
-						{data.storage.limitBytes / 1e6} MB · 保留最近 20 次运行及所有当前快照引用
+						工厂数据 {((data.storage.totalBytes ?? data.storage.resourceBytes) / 1e6).toFixed(1)} /{" "}
+						{data.storage.limitBytes / 1e6} MB（含历史，预留 2 MB 控制空间）· 保留最近 20
+						次运行及所有当前快照引用
 					</span>
 				) : null}
 			</div>
 			{current ? (
 				<div className="factory-run-controls">
-					<strong>{RUN_LABELS[current.status]}</strong>
+					<strong>
+						{current.mode === "catalog" ? "发现/恢复" : "刷新"} · {RUN_LABELS[current.status]}
+					</strong>
 					<code title={current.id}>{current.id.slice(0, 8)}</code>
 					<Button
 						size="sm"
@@ -321,7 +332,7 @@ export function FactoryRuns({
 						{data?.history.map((r) => (
 							<option key={r.id} value={r.id}>
 								{r.startedAt.slice(0, 19).replace("T", " ")} UTC · {RUN_LABELS[r.status]} ·{" "}
-								{r.repos.length} 仓库
+								{r.mode === "catalog" ? "发现/恢复" : `${r.repos.length} 仓库`}
 							</option>
 						))}
 					</select>
@@ -341,7 +352,7 @@ export function FactoryRuns({
 							{viewed.progress.skipped}
 						</span>
 						<span>
-							{RUN_LABELS[viewed.status]} · {viewed.requests} 次 GitHub 请求
+							{RUN_LABELS[viewed.status]} · 已记账 {viewed.requests} 次 GitHub 请求
 						</span>
 					</div>
 					<progress
@@ -421,10 +432,8 @@ export function FactoryRuns({
 									<span>元数据观测 {formatUtc(row.state?.observation?.metadataAt ?? null)}</span>
 									<span>下次可刷新 {formatUtc(row.state?.nextAllowedAt ?? null)}</span>
 									<span>
-										重试{" "}
-										{row.state?.retries ??
-											row.steps.reduce((n, s) => n + Math.max(0, s.attempts - 1), 0)}{" "}
-										· {row.state?.error ?? "—"}
+										重试 {row.steps.reduce((n, s) => n + Math.max(0, s.attempts - 1), 0)} ·{" "}
+										{row.state?.error ?? "—"}
 									</span>
 								</div>
 								<ol className="factory-run-stages">

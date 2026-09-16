@@ -431,3 +431,16 @@ it("labels access lost between split CI windows as an incomplete subset", async 
 	expect(state.repos[0]?.metrics.ciSuccess).toBe(1);
 	expect(store.data.get(streamKey("nocoo/app", "actions"))?.ranges).toEqual([]);
 });
+
+it("marks oversized manifest responses unavailable before decoding their contents", async () => {
+	const state = ready("dependencies");
+	await invoke(
+		state,
+		github(() => new Response("{}", { headers: { "content-length": "90000000" } })),
+	);
+	expect(state.repos[0]?.coverage.dependencies).toMatchObject({
+		status: "unavailable",
+		observed: 0,
+	});
+	expect(state.repos[0]?.coverage.dependencies.reason).toContain("memory budget");
+});

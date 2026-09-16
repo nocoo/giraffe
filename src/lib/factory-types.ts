@@ -101,6 +101,7 @@ export type FactoryStreamData = {
 	coverage: FactoryCoverage;
 };
 export type FactorySnapshot = {
+	contributionObservation?: { version: string; window: FactoryWindow; fetchedAt: string };
 	publication?: { mixed: boolean; runId: string; publishedAt: string };
 	schema: 1;
 	account_id: string;

@@ -153,3 +153,55 @@ it("rolls staging and progress back together when a later statement fails, then 
 	expect((await db.prepare("SELECT * FROM factory_resources").all()).results).toEqual([]);
 	expect(await claimRun(createDb(raw), run.id, "2026-09-15T22:02:00.000Z")).not.toBeNull();
 });
+
+it("serializes competing controls instead of overwriting a newer run version", async () => {
+	const { db, raw, run } = await setup();
+	await startRun(db, run);
+	const controls = await Promise.allSettled([
+		controlRun(createDb(raw), snap.account_id, "r1", "pause", now),
+		controlRun(createDb(raw), snap.account_id, "r1", "cancel", now),
+	]);
+	expect(controls.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+	expect(controls.find((r) => r.status === "rejected")).toMatchObject({
+		reason: { code: "account_conflict" },
+	});
+});
+
+it("rolls every staged write back if the lease expires between preparing writes and committing the batch", async () => {
+	const { db, run } = await setup();
+	await startRun(db, run);
+	const lease = await claimRun(db, run.id, now);
+	if (!lease) throw new Error("fixture");
+	const { fenced } = await import("./factory-runs");
+	const stage = fenced(
+		db,
+		lease,
+		now,
+		"INSERT INTO factory_resources(run_id,repo,stream,payload) SELECT 'r1','nocoo/app','commits','{}' WHERE $guard",
+	);
+	expect(await saveRun(db, lease, [stage], "2026-09-15T22:02:00.000Z")).toBe(false);
+	expect((await db.prepare("SELECT * FROM factory_resources").all()).results).toEqual([]);
+});
+
+it("uses the latest prepared fence timestamp even if the caller clock moves backwards", async () => {
+	const { db, run } = await setup();
+	await startRun(db, run);
+	const lease = await claimRun(db, run.id, now);
+	if (!lease) throw new Error("fixture");
+	const { fenced } = await import("./factory-runs");
+	const future = "2026-09-15T22:02:00.000Z";
+	const late = fenced(
+		db,
+		lease,
+		future,
+		"INSERT INTO factory_resources SELECT 'r1','nocoo/app','commits','{}' WHERE $guard",
+	);
+	const earlier = fenced(
+		db,
+		lease,
+		now,
+		"INSERT INTO factory_resources SELECT 'r1','nocoo/app','issues','{}' WHERE $guard",
+	);
+	expect(await saveRun(db, lease, [late, earlier], now)).toBe(false);
+	expect((await db.prepare("SELECT * FROM factory_resources").all()).results).toEqual([]);
+});

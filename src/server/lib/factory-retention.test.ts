@@ -7,10 +7,11 @@ import { claimRun, startRun } from "./db/factory-runs";
 import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
 import { publicationWrites, repositoryWrites } from "./factory-publish";
 import {
-	checkResourceCapacity,
+	checkFactoryCapacity,
 	FACTORY_STORAGE_LIMIT,
 	factoryStorage,
 	pruneFactory,
+	resourceDelta,
 } from "./factory-retention";
 
 const snap = factoryFixture();
@@ -126,20 +127,24 @@ it("accounts for resource replacements and enforces capacity before destructive 
 	const { db } = await setup();
 	expect(await factoryStorage(db, account)).toEqual({
 		resourceBytes: 0,
+		totalBytes: 0,
 		limitBytes: FACTORY_STORAGE_LIMIT,
 	});
 	const run = makeRun("r", account, "nocoo", "k", "catalog", [], snap.fetched_at);
 	await startRun(db, run);
-	await checkResourceCapacity(db, account, "r", "repo", "commits", "{}");
+	await checkFactoryCapacity(db, account, await resourceDelta(db, "r", "repo", "commits", "{}"));
 	await db
 		.prepare("INSERT INTO factory_resources VALUES(?,?,?,?)")
 		.bind("r", "repo", "commits", "{}")
 		.run();
 	await db.prepare("UPDATE factory_resources SET payload=?").bind('{"x":1}').run();
 	expect((await factoryStorage(db, account)).resourceBytes).toBe(7);
-	await db.prepare("UPDATE factory_storage SET bytes=?").bind(FACTORY_STORAGE_LIMIT).run();
-	await checkResourceCapacity(db, account, "r", "repo", "commits", "{}");
+	await db
+		.prepare("UPDATE factory_budget SET bytes=?")
+		.bind(FACTORY_STORAGE_LIMIT - 2_000_000)
+		.run();
+	await checkFactoryCapacity(db, account, await resourceDelta(db, "r", "repo", "commits", "{}"));
 	await expect(
-		checkResourceCapacity(db, account, "r", "another", "commits", "{}"),
+		checkFactoryCapacity(db, account, await resourceDelta(db, "r", "another", "commits", "{}")),
 	).rejects.toMatchObject({ code: "factory_capacity" });
 });

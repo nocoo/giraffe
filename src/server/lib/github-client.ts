@@ -144,8 +144,38 @@ function applyGraphqlErrors(
 	return dropNullNodes(next) as Record<string, unknown>;
 }
 
-async function readJsonBody(res: Response): Promise<string> {
-	const text = await res.text();
+const DEFAULT_RESPONSE_BYTES = 20_000_000;
+async function readBoundedBody(res: Response, maxBytes: number): Promise<string> {
+	const reader = res.body?.getReader();
+	if (!reader) return "";
+	const large = () =>
+		new ApiError(502, "github_response_too_large", `GitHub response exceeds ${maxBytes / 1e6} MB`);
+	if (Number(res.headers.get("content-length")) > maxBytes) {
+		await reader.cancel();
+		throw large();
+	}
+	const chunks: Uint8Array[] = [];
+	let size = 0;
+	for (;;) {
+		const { done, value } = await reader.read();
+		if (done) break;
+		size += value.byteLength;
+		if (size > maxBytes) {
+			await reader.cancel();
+			throw large();
+		}
+		chunks.push(value);
+	}
+	const bytes = new Uint8Array(size);
+	let offset = 0;
+	for (const chunk of chunks) {
+		bytes.set(chunk, offset);
+		offset += chunk.byteLength;
+	}
+	return new TextDecoder().decode(bytes);
+}
+async function readJsonBody(res: Response, maxBytes: number): Promise<string> {
+	const text = await readBoundedBody(res, maxBytes);
 	try {
 		JSON.parse(text);
 	} catch {
@@ -156,7 +186,11 @@ async function readJsonBody(res: Response): Promise<string> {
 
 type FetchImpl = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
-export function createGithubClient(env: Env, fetchImpl: FetchImpl = fetch): GithubClient {
+export function createGithubClient(
+	env: Env,
+	fetchImpl: FetchImpl = fetch,
+	maxResponseBytes = DEFAULT_RESPONSE_BYTES,
+): GithubClient {
 	const base = allowedBase(env);
 	const client: GithubClient = {
 		count: 0,
@@ -207,10 +241,10 @@ export function createGithubClient(env: Env, fetchImpl: FetchImpl = fetch): Gith
 				throw new ApiError(502, "github_error", "github error");
 			}
 			if (!res.ok) {
-				const body = await res.text();
+				const body = await readBoundedBody(res, maxResponseBytes);
 				mapStatus(res, body);
 			}
-			const text = await readJsonBody(res);
+			const text = await readJsonBody(res, maxResponseBytes);
 			return new Response(text, { status: res.status, headers: res.headers });
 		},
 		async githubGraphql(token, query, variables) {
@@ -228,7 +262,7 @@ export function createGithubClient(env: Env, fetchImpl: FetchImpl = fetch): Gith
 				throw new ApiError(502, "github_error", "github error");
 			}
 			if (!res.ok) {
-				const body = await res.text();
+				const body = await readBoundedBody(res, maxResponseBytes);
 				mapStatus(res, body);
 			}
 			let payload: {
@@ -236,8 +270,9 @@ export function createGithubClient(env: Env, fetchImpl: FetchImpl = fetch): Gith
 				errors?: Array<{ type?: string; message?: string; path?: unknown[] }>;
 			};
 			try {
-				payload = (await res.json()) as typeof payload;
-			} catch {
+				payload = JSON.parse(await readJsonBody(res, maxResponseBytes)) as typeof payload;
+			} catch (error) {
+				if (error instanceof ApiError) throw error;
 				throw new ApiError(502, "github_error", "github error");
 			}
 			const errors = payload.errors ?? [];

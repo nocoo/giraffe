@@ -88,12 +88,35 @@ export function factoryGroups(repos: FactoryRepo[]) {
 }
 export function factoryBoard(snapshot: FactorySnapshot, repos: FactoryRepo[]) {
 	const aggregate = aggregateFactory(repos);
-	const start = Date.parse(snapshot.window.since);
-	const end = Date.parse(snapshot.window.until);
+	const windows = repos.length
+		? repos.map((r) => r.observation?.window ?? snapshot.window)
+		: [snapshot.window];
+	const end = Math.max(...windows.map((w) => Date.parse(w.until)));
+	const earliest = Math.min(...windows.map((w) => Date.parse(w.since)));
+	const start = Math.max(
+		earliest,
+		Date.parse(new Date(end).toISOString().slice(0, 10)) - 365 * 86400_000,
+	);
+	const mixedWindows = windows.some(
+		(w) => w.since !== windows[0]?.since || w.until !== windows[0]?.until,
+	);
 	const days = [];
-	for (let date = start; date < end; date += 86400000) {
+	for (let date = start; date < end; date += 86400_000) {
 		const day = new Date(date).toISOString().slice(0, 10);
-		days.push({ date: day, ...(aggregate.days[day] ?? emptyDay()) });
+		const complete = Object.fromEntries(
+			FACTORY_STREAMS.map((stream) => [
+				stream,
+				repos.every((r) => {
+					const window = r.observation?.window ?? snapshot.window;
+					return (
+						r.coverage[stream].status === "complete" &&
+						date >= Date.parse(window.since) &&
+						date < Date.parse(window.until)
+					);
+				}),
+			]),
+		) as Record<FactoryStreamName, boolean>;
+		days.push({ date: day, ...(aggregate.days[day] ?? emptyDay()), complete });
 	}
 	const coverage = {
 		complete: 0,
@@ -142,6 +165,8 @@ export function factoryBoard(snapshot: FactorySnapshot, repos: FactoryRepo[]) {
 	) as Record<FactoryStreamName, boolean>;
 
 	return {
+		mixedWindows,
+		displayWindow: { since: new Date(start).toISOString(), until: new Date(end).toISOString() },
 		aggregate,
 		streamComplete: Object.fromEntries(
 			FACTORY_STREAMS.map((k) => [

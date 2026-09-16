@@ -17,7 +17,7 @@ import {
 import { readSnapshot } from "./db/snapshots";
 import { ApiError } from "./errors";
 import { streamKey } from "./factory-collect";
-import { splitPages } from "./snapshot-pages";
+import { physicalKinds, splitPages } from "./snapshot-pages";
 
 export function boundedJson(value: unknown): string {
 	const text = JSON.stringify(value);
@@ -43,15 +43,27 @@ export function snapshotWrites(
 			"factory_capacity",
 			"publication capacity reached; previous data retained",
 		);
-	return pages.map((p) =>
+	lease.extraBytes =
+		(lease.extraBytes ?? 0) +
+		pages.reduce((n, p) => n + new TextEncoder().encode(p.payload).length, 0);
+	return [
 		fenced(
 			db,
 			lease,
 			now,
-			"INSERT INTO snapshots(account_id,kind,payload,fetched_at) SELECT ?,?,?,? WHERE $guard ON CONFLICT(account_id,kind) DO UPDATE SET payload=excluded.payload,fetched_at=excluded.fetched_at",
-			[lease.run.account_id, p.kind, p.payload, now],
+			"DELETE FROM snapshots WHERE account_id=? AND kind IN (?,?) AND $guard",
+			[lease.run.account_id, ...physicalKinds(kind)],
 		),
-	);
+		...pages.map((p) =>
+			fenced(
+				db,
+				lease,
+				now,
+				"INSERT INTO snapshots(account_id,kind,payload,fetched_at) SELECT ?,?,?,? WHERE $guard ON CONFLICT(account_id,kind) DO UPDATE SET payload=excluded.payload,fetched_at=excluded.fetched_at",
+				[lease.run.account_id, p.kind, p.payload, now],
+			),
+		),
+	];
 }
 export async function currentRepo(
 	db: Db,
@@ -86,7 +98,13 @@ export async function repositoryWrites(
 		repo &&
 		previous &&
 		FACTORY_STREAMS.some(
-			(s) => previous.coverage[s].status === "complete" && repo.coverage[s].status !== "complete",
+			(s) =>
+				(previous.coverage[s].status === "complete" && repo.coverage[s].status !== "complete") ||
+				(previous.coverage[s].status === "limited" &&
+					previous.coverage[s].observed > 0 &&
+					repo.coverage[s].status !== "complete" &&
+					(repo.coverage[s].status !== "limited" ||
+						repo.coverage[s].observed < previous.coverage[s].observed)),
 		);
 	const accepted = error || regression ? null : repo;
 	const steps = lease.run.steps.filter((s) => s.repo === name);
@@ -111,6 +129,11 @@ export async function repositoryWrites(
 			? FACTORY_STREAMS.filter((s) => accepted.coverage[s].status === "complete").length
 			: (old?.coverage ?? 0),
 	};
+	lease.extraBytes =
+		(lease.extraBytes ?? 0) +
+		(accepted ? new TextEncoder().encode(boundedJson(accepted)).length : 0) +
+		new TextEncoder().encode(JSON.stringify(state)).length -
+		(oldState ? new TextEncoder().encode(oldState.payload).length : 0);
 	const writes: D1PreparedStatement[] = [];
 	if (accepted)
 		writes.push(
@@ -254,12 +277,33 @@ export async function publicationWrites(
 	snapshot.startedAt = run.startedAt;
 	snapshot.window = run.window;
 	snapshot.requests = run.requests;
-	if (run.checkpoint?.contribution) {
-		snapshot.contribution = run.checkpoint.contribution;
-		snapshot.contributionStatus = run.checkpoint.contributionStatus;
-	}
+	const fresh =
+		run.mode === "refresh" && run.checkpoint?.contributionStatus === "complete"
+			? run.checkpoint.contribution
+			: null;
+	snapshot.contribution = fresh ?? base?.contribution ?? null;
+	snapshot.contributionStatus =
+		run.mode === "catalog"
+			? (base?.contributionStatus ?? "unavailable")
+			: fresh
+				? "complete"
+				: "unavailable";
+	if (fresh)
+		snapshot.contributionObservation = {
+			version: run.id,
+			window: run.window,
+			fetchedAt: fresh.fetchedAt,
+		};
+	else if (base?.contribution)
+		snapshot.contributionObservation = base.contributionObservation ?? {
+			version: base.runId,
+			window: base.window,
+			fetchedAt: base.contribution.fetchedAt,
+		};
 	snapshot.publication = {
-		mixed: snapshot.repos.some((r) => r.observation?.version !== run.id),
+		mixed:
+			snapshot.repos.some((r) => r.observation?.version !== run.id) ||
+			Boolean(snapshot.contribution && snapshot.contributionObservation?.version !== run.id),
 		runId: run.id,
 		publishedAt: now,
 	};
@@ -274,6 +318,13 @@ export async function publicationWrites(
 				]
 			: [],
 	);
+	lease.extraBytes =
+		(lease.extraBytes ?? 0) +
+		refs.reduce(
+			(sum, ref) =>
+				sum + new TextEncoder().encode(run.id + ref.repo + ref.version + ref.source).length,
+			0,
+		);
 	writes.push(
 		fenced(
 			db,

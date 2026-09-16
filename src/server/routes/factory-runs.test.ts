@@ -247,6 +247,11 @@ it("rejects ambiguous scope/order and refuses new resource work beyond its accou
 	expect(
 		(await s.call("/api/factory/runs", { ...plan(), order: ["nocoo/app", "nocoo/app"] })).status,
 	).toBe(400);
-	await s.db.prepare("INSERT INTO factory_storage VALUES(?,?)").bind(id, 256_000_000).run();
+	await s.db
+		.prepare(
+			"INSERT INTO factory_budget VALUES(?,?) ON CONFLICT(account_id) DO UPDATE SET bytes=excluded.bytes",
+		)
+		.bind(id, 256_000_000)
+		.run();
 	expect((await s.call("/api/factory/runs", plan())).status).toBe(422);
 });

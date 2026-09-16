@@ -267,3 +267,47 @@ it("persists rate-limit reset and Retry-After dates while handling malformed hea
 		}
 	}
 });
+
+it("bounds decoded REST and GraphQL response bodies before parsing large manifests", async () => {
+	for (const graphql of [false, true]) {
+		const client = createGithubClient(
+			env({ ENVIRONMENT: "production" }),
+			async () => new Response("x".repeat(4_000_001)),
+			4_000_000,
+		);
+		await expect(
+			graphql ? client.githubGraphql("fake", "query", {}) : client.githubApi("fake", "/user"),
+		).rejects.toMatchObject({ code: "github_response_too_large" });
+	}
+	const hinted = createGithubClient(
+		env({ ENVIRONMENT: "production" }),
+		async () => new Response("{}", { headers: { "content-length": "9000000" } }),
+		4_000_000,
+	);
+	await expect(hinted.githubApi("fake", "/user")).rejects.toMatchObject({
+		code: "github_response_too_large",
+	});
+});
+
+it("handles missing or interrupted response bodies without exposing upstream content", async () => {
+	const empty = createGithubClient(
+		env({ ENVIRONMENT: "production" }),
+		async () => new Response(null),
+	);
+	await expect(empty.githubApi("fake", "/user")).rejects.toMatchObject({ code: "github_error" });
+	const broken = createGithubClient(
+		env({ ENVIRONMENT: "production" }),
+		async () =>
+			new Response(
+				new ReadableStream({
+					start(controller) {
+						controller.error(new Error("upstream transport failure"));
+					},
+				}),
+			),
+	);
+	await expect(broken.githubGraphql("fake", "query", {})).rejects.toMatchObject({
+		code: "github_error",
+		message: "github error",
+	});
+});

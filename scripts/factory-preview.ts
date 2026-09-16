@@ -17,8 +17,8 @@ const id = "local_audit_account_1";
 
 const schema = await readFile("src/server/lib/db/schema.sql", "utf8");
 const initSql = schema
-	.replaceAll("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ")
-	.replaceAll("CREATE UNIQUE INDEX ", "CREATE UNIQUE INDEX IF NOT EXISTS ");
+	.replace(/CREATE TABLE (?!IF NOT EXISTS )/g, "CREATE TABLE IF NOT EXISTS ")
+	.replace(/CREATE (UNIQUE )?INDEX (?!IF NOT EXISTS )/g, "CREATE $1INDEX IF NOT EXISTS ");
 const envelope = await encryptToken("offline-preview-no-github-credential", parseKeyBytes(key));
 snapshot.account_id = id;
 const payloads = [{ kind: "factory", payload: JSON.stringify(snapshot) }];

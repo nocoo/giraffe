@@ -331,7 +331,13 @@ it("records unavailable coverage, metadata limits, catalog failure and malformed
 		} else {
 			const run = await drive(env);
 			expect(run?.status).toBe(
-				mode === "inventory" ? "failed" : mode === "contributions" ? "completed" : "partial",
+				mode === "inventory"
+					? "failed"
+					: mode === "capacity"
+						? "paused"
+						: mode === "contributions"
+							? "completed"
+							: "partial",
 			);
 			if (mode === "coverage")
 				expect(run?.steps.find((s) => s.kind === "alerts")?.error).toBe("coverage_unavailable");
@@ -418,4 +424,69 @@ it("aborts before GitHub when a control invalidates the lease between claim and 
 	};
 	expect(await executeRunPage(env, "r1", () => now)).toBeNull();
 	expect(fetch).not.toHaveBeenCalled();
+});
+
+it("retains an older contribution calendar with explicit provenance when the new collection is unavailable", async () => {
+	const env = await setup();
+	const old = {
+		...snap,
+		contributionStatus: "complete" as const,
+		contribution: {
+			total: 4,
+			restricted: 1,
+			days: [{ date: "2026-09-01", count: 4 }],
+			fetchedAt: now,
+		},
+	};
+	const db = createDb(env.DB);
+	await db.batch(replaceSnapshotStmts(db, snap.account_id, "factory", old, now));
+	await drive(env);
+	const published = await publishedFactory(createDb(env.DB), snap.account_id);
+	expect(published?.contribution).toEqual(old.contribution);
+	expect(published?.contributionStatus).toBe("unavailable");
+	expect(published?.contributionObservation).toMatchObject({
+		version: snap.runId,
+		window: snap.window,
+	});
+	expect(published?.publication?.mixed).toBe(true);
+});
+it("keeps interrupted repository cooldown while allowing the same frozen run to resume", async () => {
+	const env = await setup();
+	const { controlRun, repoStates } = await import("./db/factory-runs");
+	await executeRunPage(env, "r1", () => now);
+	await executeRunPage(env, "r1", () => now);
+	await controlRun(createDb(env.DB), snap.account_id, "r1", "pause", now);
+	expect((await repoStates(createDb(env.DB), snap.account_id))[0]).toMatchObject({
+		attemptRunId: "r1",
+		attemptStatus: "pause",
+		nextAllowedAt: "2026-09-15T22:15:00.000Z",
+	});
+	await controlRun(createDb(env.DB), snap.account_id, "r1", "resume", now);
+	expect((await drive(env))?.status).toBe("partial");
+});
+it("pauses at total factory capacity without replacing the published snapshot", async () => {
+	const env = await setup();
+	await createDb(env.DB).prepare("UPDATE factory_budget SET bytes=?").bind(255_000_000).run();
+	await executeRunPage(env, "r1", () => now);
+	const run = (await getRun(createDb(env.DB), snap.account_id, "r1"))?.run;
+	expect(run?.status).toBe("paused");
+	expect(run?.steps[0]).toMatchObject({ error: "factory_capacity", pages: 0, finishedAt: null });
+	expect((await publishedFactory(createDb(env.DB), snap.account_id))?.runId).toBe(snap.runId);
+});
+
+it("does not shorten an existing repository cooldown on repeated pause/cancel controls", async () => {
+	const env = await setup();
+	const { controlRun, repoStates } = await import("./db/factory-runs");
+	await executeRunPage(env, "r1", () => now);
+	await executeRunPage(env, "r1", () => now);
+	await controlRun(createDb(env.DB), snap.account_id, "r1", "pause", now);
+	await createDb(env.DB)
+		.prepare(
+			"UPDATE factory_repo_state SET payload=json_set(payload,'$.nextAllowedAt','2999-01-01T00:00:00.000Z')",
+		)
+		.run();
+	await controlRun(createDb(env.DB), snap.account_id, "r1", "cancel", now);
+	expect((await repoStates(createDb(env.DB), snap.account_id))[0]?.nextAllowedAt).toBe(
+		"2999-01-01T00:00:00.000Z",
+	);
 });

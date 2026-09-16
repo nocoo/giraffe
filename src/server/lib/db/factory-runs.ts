@@ -1,5 +1,6 @@
 import {
 	type FactoryRun,
+	REPO_COOLDOWN_MS,
 	type RepoRefreshState,
 	RUN_COOLDOWN_MS,
 	RUN_LEASE_MS,
@@ -15,7 +16,15 @@ type RunRow = {
 	lease_until: string | null;
 	version: number;
 };
-export type RunLease = { run: FactoryRun; token: string; version: number; leaseUntil: string };
+export type RunLease = {
+	run: FactoryRun;
+	token: string;
+	version: number;
+	leaseUntil: string;
+	extraBytes?: number;
+	storedBytes?: number;
+	fenceAt?: string;
+};
 export type FactoryHead = {
 	published_id: string | null;
 	catalog_id: string | null;
@@ -154,7 +163,14 @@ export async function claimRun(db: Db, id: string, now: string): Promise<RunLeas
 		.bind(token, until, now, now, id, now, now)
 		.first<RunRow>();
 	return row
-		? { run: JSON.parse(row.payload) as FactoryRun, token, version: row.version, leaseUntil: until }
+		? {
+				run: JSON.parse(row.payload) as FactoryRun,
+				token,
+				version: row.version,
+				leaseUntil: until,
+				extraBytes: 0,
+				storedBytes: new TextEncoder().encode(row.payload).length,
+			}
 		: null;
 }
 export function fenced(
@@ -164,6 +180,7 @@ export function fenced(
 	sql: string,
 	values: unknown[] = [],
 ): D1PreparedStatement {
+	lease.fenceAt = lease.fenceAt && lease.fenceAt > now ? lease.fenceAt : now;
 	const guard =
 		"EXISTS(SELECT 1 FROM factory_runs WHERE id=? AND lease_token=? AND version=? AND lease_until>? AND status='running')";
 	return db
@@ -179,17 +196,34 @@ export async function saveRun(
 	const run = lease.run;
 	run.updatedAt = now;
 	run.version = lease.version + 1;
-	const result = await db.batch([
-		...writes,
-		fenced(
-			db,
-			lease,
-			now,
-			"UPDATE factory_runs SET payload=?,status=?,version=version+1,updated_at=?,next_at=?,lease_token=NULL,lease_until=NULL WHERE id=? AND $guard",
-			[JSON.stringify(run), run.status, now, run.nextAttemptAt, run.id],
-		),
-	]);
-	return Boolean(result.at(-1)?.meta.changes);
+	const expiresAfter = lease.fenceAt && lease.fenceAt > now ? lease.fenceAt : now;
+	const validSql =
+		"SELECT 1 FROM factory_runs WHERE id=? AND lease_token=? AND version=? AND lease_until>? AND status='running'";
+	const args = [run.id, lease.token, lease.version, expiresAfter];
+	try {
+		const result = await db.batch([
+			// A failed final CAS must not leave earlier writes committed. Abort the transaction first.
+			db.prepare(`SELECT CASE WHEN EXISTS(${validSql}) THEN 1 ELSE json('{') END`).bind(...args),
+			...writes,
+			fenced(
+				db,
+				lease,
+				now,
+				"UPDATE factory_runs SET payload=?,status=?,version=version+1,updated_at=?,next_at=?,lease_token=NULL,lease_until=NULL WHERE id=? AND $guard",
+				[JSON.stringify(run), run.status, now, run.nextAttemptAt, run.id],
+			),
+		]);
+		return Boolean(result.at(-1)?.meta.changes);
+	} catch (error) {
+		if (
+			!(await db
+				.prepare(validSql)
+				.bind(...args)
+				.first())
+		)
+			return false;
+		throw error;
+	}
 }
 export async function controlRun(
 	db: Db,
@@ -215,8 +249,45 @@ export async function controlRun(
 				step.error = "cancelled";
 			}
 	}
+	const writes: D1PreparedStatement[] = [];
+	const current = run.steps[run.cursor];
+	if (
+		action !== "resume" &&
+		current?.repo &&
+		run.steps.some((s) => s.repo === current.repo && s.startedAt)
+	) {
+		const prior = await db
+			.prepare("SELECT version,payload FROM factory_repo_state WHERE account_id=? AND repo=?")
+			.bind(account, current.repo)
+			.first<{ version: string | null; payload: string }>();
+		const state: RepoRefreshState = prior
+			? (JSON.parse(prior.payload) as RepoRefreshState)
+			: { repo: current.repo, status: "partial", refreshedAt: null, nextAllowedAt: now };
+		state.nextAllowedAt =
+			[state.nextAllowedAt, new Date(Date.parse(now) + REPO_COOLDOWN_MS).toISOString()]
+				.sort()
+				.at(-1) ?? now;
+		state.attemptRunId = id;
+		state.attemptStatus = action;
+		state.attemptedAt = now;
+		writes.push(
+			db
+				.prepare(
+					"INSERT INTO factory_repo_state(account_id,repo,version,payload) SELECT ?,?,?,? WHERE EXISTS(SELECT 1 FROM factory_runs WHERE account_id=? AND id=? AND version=? AND status IN ('running','paused')) ON CONFLICT(account_id,repo) DO UPDATE SET payload=excluded.payload",
+				)
+				.bind(
+					account,
+					current.repo,
+					prior?.version ?? null,
+					JSON.stringify(state),
+					account,
+					id,
+					run.version,
+				),
+		);
+	}
 	// Resume must preserve rate-limit/backoff deadlines.
-	const result = await db
+	const update = db
 		.prepare(
 			"UPDATE factory_runs SET status=?,payload=?,version=version+1,lease_token=NULL,lease_until=NULL,updated_at=? WHERE account_id=? AND id=? AND version=? AND status IN ('running','paused')",
 		)
@@ -227,9 +298,11 @@ export async function controlRun(
 			account,
 			id,
 			run.version,
-		)
-		.run();
-	if (!result.meta.changes) throw new ApiError(409, "account_conflict", "run changed; reload");
+		);
+	const results = await db.batch([...writes, update]);
+	const result = results.at(-1);
+
+	if (!result?.meta.changes) throw new ApiError(409, "account_conflict", "run changed; reload");
 	return { ...run, version: run.version + 1 };
 }
 export async function dueRuns(db: Db, now: string) {

@@ -18,7 +18,7 @@ import {
 	restoreLegacyRepo,
 } from "./factory-publish";
 import { FACTORY_REPO_QUERY } from "./factory-queries";
-import { checkResourceCapacity } from "./factory-retention";
+import { checkFactoryCapacity, resourceDelta } from "./factory-retention";
 import { createGithubClient } from "./github-client";
 import { decryptToken, parseKeyBytes } from "./token-crypto";
 
@@ -46,6 +46,7 @@ export async function executeRunPage(
 		return null;
 	}
 	const started = clock();
+	const savedPages = step.pages;
 	step.startedAt ??= started;
 	step.attempts = step.error ? step.attempts + 1 : Math.max(1, step.attempts);
 	step.status = "running";
@@ -59,7 +60,7 @@ export async function executeRunPage(
 	).run();
 	if (!began.meta.changes) return null;
 	const before = structuredClone(run.checkpoint);
-	const gh = createGithubClient(env);
+	const gh = createGithubClient(env, undefined, 4_000_000);
 	let writes: D1PreparedStatement[] = [];
 	try {
 		if (step.kind === "metadata") {
@@ -67,7 +68,14 @@ export async function executeRunPage(
 				.prepare("SELECT payload FROM factory_repo_state WHERE account_id=? AND repo=?")
 				.bind(run.account_id, step.repo)
 				.first<{ payload: string }>();
-			if (state && (JSON.parse(state.payload) as { nextAllowedAt: string }).nextAllowedAt > clock())
+			const previousAttempt = state
+				? (JSON.parse(state.payload) as { nextAllowedAt: string; attemptRunId?: string })
+				: null;
+			if (
+				previousAttempt &&
+				previousAttempt.nextAllowedAt > clock() &&
+				previousAttempt.attemptRunId !== run.id
+			)
 				throw new ApiError(409, "repository_cooldown", "repository cooldown");
 		}
 		let token = "";
@@ -93,7 +101,7 @@ export async function executeRunPage(
 			run.checkpoint.runId = run.id;
 			run.checkpoint.inventory.complete = true;
 			run.checkpoint.repos = [{ ...mapFactoryRepo(repo), metadataAt: clock() }];
-			run.checkpoint.contributionStatus = "complete";
+			run.checkpoint.contributionStatus = previous?.contributionStatus ?? "unavailable";
 			run.checkpoint.contribution = previous?.contribution ?? null;
 			const rate = object(data.rateLimit);
 			if (typeof rate.remaining === "number")
@@ -157,14 +165,9 @@ export async function executeRunPage(
 					return row ? (JSON.parse(row.payload) as FactoryStreamData) : null;
 				},
 				write: async (_key: string, data: FactoryStreamData) => {
-					await checkResourceCapacity(
-						db,
-						run.account_id,
-						run.id,
-						String(step.repo),
-						String(stream),
-						boundedJson(data),
-					);
+					lease.extraBytes =
+						(lease.extraBytes ?? 0) +
+						(await resourceDelta(db, run.id, String(step.repo), String(stream), boundedJson(data)));
 					writes.push(
 						fenced(
 							db,
@@ -193,11 +196,20 @@ export async function executeRunPage(
 		}
 		step.pages += gh.count;
 		step.retryFailures = 0;
-		boundedJson(run);
+		await checkFactoryCapacity(
+			db,
+			run.account_id,
+			(lease.extraBytes ?? 0) +
+				new TextEncoder().encode(boundedJson(run)).length -
+				(lease.storedBytes ?? 0),
+		);
 		run.nextAttemptAt = clock();
 	} catch (error) {
 		run.checkpoint = before;
+		step.pages = savedPages;
+		step.finishedAt = null;
 		writes = [];
+		lease.extraBytes = 0;
 		const code = error instanceof ApiError ? error.code : "internal_error";
 		step.error = code;
 		if (
@@ -206,6 +218,7 @@ export async function executeRunPage(
 				"github_unauthorized",
 				"encryption_key_missing",
 				"github_rate_limited",
+				"factory_capacity",
 			].includes(code)
 		)
 			step.retryFailures = (step.retryFailures ?? 0) + 1;
@@ -220,7 +233,11 @@ export async function executeRunPage(
 					later.attempts = 0;
 				}
 			run.nextAttemptAt = clock();
-		} else if (code === "github_unauthorized" || code === "encryption_key_missing") {
+		} else if (
+			code === "github_unauthorized" ||
+			code === "encryption_key_missing" ||
+			code === "factory_capacity"
+		) {
 			run.status = "paused";
 			step.status = "pending";
 		} else if (code === "github_rate_limited") {
@@ -235,7 +252,8 @@ export async function executeRunPage(
 		} else if (
 			(step.retryFailures ?? 0) <= RUN_MAX_RETRIES &&
 			code !== "factory_capacity" &&
-			code !== "repository_unavailable"
+			code !== "repository_unavailable" &&
+			code !== "github_response_too_large"
 		) {
 			step.status = "pending";
 			run.nextAttemptAt = new Date(

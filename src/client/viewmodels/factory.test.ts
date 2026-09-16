@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
 import { factoryFixture as ready } from "../../../tests/fixtures/factory-snapshot";
+import { FACTORY_STREAMS } from "../../lib/factory-types";
 import {
 	dependencyEdges,
 	eventPage,
@@ -318,4 +319,37 @@ it("renders lower bounds consistently for truncated commit, merged PR and releas
 	}
 	repo.metrics.prMerged = 0;
 	expect(factoryRepoCount(repo, "prs")).toBe("0");
+});
+
+it("builds mixed-window calendars from observed windows, with unknown dates rather than fabricated zeros", () => {
+	const snap = ready();
+	const first = snap.repos[0];
+	if (!first) throw new Error("fixture");
+	for (const stream of FACTORY_STREAMS) first.coverage[stream].status = "complete";
+	first.observation = {
+		source: "run",
+		version: "old",
+		refreshedAt: "2026-08-01T00:00:00Z",
+		window: { since: "2026-07-01T00:00:00Z", until: "2026-08-01T00:00:00Z" },
+	};
+	const second = {
+		...structuredClone(first),
+		id: "two",
+		name: "nocoo/two",
+		observation: {
+			...first.observation,
+			version: "new",
+			window: { since: "2026-08-01T00:00:00Z", until: "2026-09-01T00:00:00Z" },
+		},
+	};
+	const board = factoryBoard(snap, [first, second]);
+	expect(board.mixedWindows).toBe(true);
+	expect(board.days[0]?.date).toBe("2026-07-01");
+	expect(board.days[0]?.complete.commits).toBe(false);
+	expect(board.days.at(-1)?.complete.commits).toBe(false);
+	const single = factoryBoard(snap, [first]);
+	expect(single.days[0]?.complete.commits).toBe(true);
+	expect(single.displayWindow.until).toBe("2026-08-01T00:00:00.000Z");
+	first.observation.window = { since: "2000-01-01T00:00:00Z", until: "2000-02-01T00:00:00Z" };
+	expect(factoryBoard(snap, [first, second]).days.length).toBeLessThanOrEqual(366);
 });

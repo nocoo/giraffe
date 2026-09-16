@@ -56,6 +56,8 @@ export type FactoryRun = {
 	restoreCursor: number;
 };
 export type RepoRefreshState = {
+	attemptRunId?: string;
+	attemptStatus?: string;
 	observation?: FactoryRepo["observation"];
 	repo: string;
 	refreshedAt: string | null;
@@ -73,7 +75,7 @@ export type FactoryRunView = Omit<FactoryRun, "checkpoint"> & {
 	leaseUntil: string | null;
 };
 export type FactoryRunResponse = {
-	storage?: { resourceBytes: number; limitBytes: number };
+	storage?: { resourceBytes: number; totalBytes?: number; limitBytes: number };
 	account_id: string;
 	serverNow: string;
 	nextAllowedAt: string | null;

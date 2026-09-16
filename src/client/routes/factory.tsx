@@ -314,7 +314,7 @@ export function FactoryPage() {
 						<>
 							<div className="factory-metric-strip">
 								<Metric
-									label="窗口提交"
+									label={board.mixedWindows ? "各仓观测提交" : "窗口提交"}
 									value={
 										board.observed.commits
 											? formatObservedCount(
@@ -331,7 +331,7 @@ export function FactoryPage() {
 									/>
 								</Metric>
 								<Metric
-									label="在制工作 · 清单时点"
+									label="在制工作 · 各仓观测时点"
 									value={`${n(board.totals.openIssues)} / ${n(board.totals.openPrs)}`}
 									note="Open issue / Open PR"
 								>
@@ -340,7 +340,7 @@ export function FactoryPage() {
 									</span>
 								</Metric>
 								<Metric
-									label="窗口合并 PR"
+									label={board.mixedWindows ? "各仓观测合并 PR" : "窗口合并 PR"}
 									value={
 										board.observed.prs
 											? formatObservedCount(
@@ -420,12 +420,31 @@ export function FactoryPage() {
 										</div>
 										<span className="text-xs text-basalt-muted-foreground">
 											{calendar === "commits"
-												? `${board.trend.recent} / ${board.trend.previous} · 近/前 7 个完整日`
+												? board.mixedWindows
+													? "混合窗口 · 各日覆盖见账本"
+													: `${board.trend.recent} / ${board.trend.previous} · 近/前 7 个完整日`
 												: snapshot.contribution
 													? `${n(snapshot.contribution.total)} 贡献 · ${n(snapshot.contribution.restricted)} 受限贡献`
 													: `${snapshot.contributionStatus === "pending" ? "未采集" : "不可用"}`}
 										</span>
 									</div>
+									{calendar === "contributions" && snapshot.contributionObservation ? (
+										<p className="mb-2 text-xs text-basalt-muted-foreground">
+											来源 {formatUtc(snapshot.contributionObservation.fetchedAt)} ·{" "}
+											{snapshot.contributionObservation.window.since.slice(0, 10)} →{" "}
+											{snapshot.contributionObservation.window.until.slice(0, 10)}
+											{snapshot.contributionStatus !== "complete"
+												? " · 本次不可用，保留旧日历"
+												: ""}
+										</p>
+									) : null}
+									{calendar === "commits" && board.mixedWindows ? (
+										<p className="mb-2 text-xs text-basalt-muted-foreground">
+											展示各仓库窗口并集（最多一年）；缺少覆盖的零显示为未知，正值为观测下界。
+											{board.displayWindow.since.slice(0, 10)} →{" "}
+											{board.displayWindow.until.slice(0, 10)}
+										</p>
+									) : null}
 									{(
 										calendar === "commits"
 											? board.observed.commits
@@ -434,7 +453,11 @@ export function FactoryPage() {
 										<FactoryHeatmap
 											days={
 												calendar === "commits"
-													? board.days.map((d) => ({ date: d.date, count: d.commits }))
+													? board.days.map((d) => ({
+															date: d.date,
+															count: d.commits,
+															known: d.complete.commits,
+														}))
 													: (snapshot.contribution?.days ?? [])
 											}
 											selected={day}
@@ -462,7 +485,10 @@ export function FactoryPage() {
 										</p>
 									) : null}
 								</FactoryPanel>
-								<FactoryPanel title="交付吞吐" hint="每日合并 PR + 未合并关闭 + Release">
+								<FactoryPanel
+									title="交付吞吐"
+									hint="每日合并 PR + 未合并关闭 + Release；混合/缺失覆盖为观测下界，未观测零留空"
+								>
 									{board.observed.prs || board.observed.releases ? (
 										<FactoryThroughput days={board.days} />
 									) : (
@@ -632,7 +658,7 @@ export function FactoryPage() {
 										<TableHeader>
 											<TableRow>
 												<TableHead>仓库 / 语言</TableHead>
-												<TableHead>90 天节奏</TableHead>
+												<TableHead>观测窗口节奏</TableHead>
 												<TableHead className="text-right">提交</TableHead>
 												<TableHead className="text-right">Open I / PR</TableHead>
 												<TableHead className="text-right">合并 PR</TableHead>
@@ -675,9 +701,14 @@ export function FactoryPage() {
 														<span className="text-basalt-primary">
 															{hasFactoryMeasurement(r, "commits") ? (
 																<FactorySpark
-																	values={board.days.map(
-																		(d) => r.metrics.days[d.date]?.commits ?? 0,
-																	)}
+																	values={board.days
+																		.filter(
+																			(d) =>
+																				!r.observation ||
+																				(d.date >= r.observation.window.since.slice(0, 10) &&
+																					d.date <= r.observation.window.until.slice(0, 10)),
+																		)
+																		.map((d) => r.metrics.days[d.date]?.commits ?? 0)}
 																	label={`${r.name} 每日提交`}
 																/>
 															) : (
@@ -979,7 +1010,25 @@ export function FactoryPage() {
 														<td
 															key={`${d.date}-${["commit", "issue", "close", "pr", "merge", "reject", "ci", "fail", "release"][i]}`}
 														>
-															{n(value)}
+															{d.complete[
+																(
+																	[
+																		"commits",
+																		"issues",
+																		"issues",
+																		"prs",
+																		"prs",
+																		"prs",
+																		"actions",
+																		"actions",
+																		"releases",
+																	] as const
+																)[i] ?? "commits"
+															]
+																? n(value)
+																: value
+																	? `≥ ${n(value)}`
+																	: "—"}
 														</td>
 													))}
 												</tr>
