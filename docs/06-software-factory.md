@@ -15,13 +15,15 @@
 
 ## API、成本与存储
 
-`GET /api/factory` 只读当前账号快照。`POST /api/factory/refresh` 接收 `{account_id, restart?: boolean}`，每次最多推进 6 页；默认续传当前调查，`restart:true` 开启新的冻结窗口。客户端可连续推进，也可暂停，离开页面停止发起后续请求。已完成资源保存在 D1，续传不重复抓取。不是后台定时采集，也不是跨调查 ETag 缓存。
+持久刷新设计、迁移与回滚见 [09 — 持久化工厂刷新](09-factory-runs.md)。
 
-`GET /api/factory/repos/:owner/:name/:stream?page=1` 只读明细，每页 100，最多 50 页。stream = commits/issues/prs/actions/releases/alerts/dependencies。返回 account_id、runId、coverage、total、items。只允许当前清单内仓库；新调查尚未采集的资源不会返回上次调查的旧数据。
+`GET /api/factory` 只读已发布的当前账号全局快照。`GET /api/factory/runs` 只读当前 run、最近 20 个历史 run、仓库状态和清单。`POST /api/factory/runs`（`/api/factory/refresh` 为同一契约别名）接收 `{account_id, requestKey: UUID, mode: "catalog" | "refresh", scope, repos?, language?, topic?, query?}`，202 返回持久 run ID。`requestKey` 每次明确新建操作生成，网络重试复用；重复键返回原 run，不能当作新的刷新。`scope` 支持 all/selected/filter/stale/failed，repos 顺序作为显式优先级。旧 `{restart:true}` 请求拒绝，不能隐式触发全仓刷新。
 
-数据保存在现有 snapshots：`factory`（元数据和每仓聚合）、`factory:{owner}/{repo}:{stream}`（紧凑明细），无需迁移。单资源最多 5,000 项、1.2 MB，达到容量时标记 limited 并展示观察子集，完成覆盖率不包含它。大快照按既有两页策略切分，若仍会丢失数据则拒绝覆盖旧快照。排除仓库的旧资源不可通过工厂 API 读取，删除账号按外键清理。
+`POST /api/factory/runs/:id/control` 接收 `{account_id, action: "pause" | "resume" | "cancel"}`。状态从 D1 恢复；队列每次处理一页，cron 每分钟恢复到期任务。冷却由服务端执行，暂停不绕过限流等待。GET 永不调 GitHub、不写库；所有 mutation 仍经过 Access JWT 与 Origin 验证。
 
-`factory:lock` 用 D1 条件 upsert/RETURNING 实现跨 isolate 租约；5 分钟过期。每个出站请求最长 15 秒，禁止跟随重定向，分页只接受 GitHub 同资源 URL。每批资源和游标原子写入，失败保留已成功页，释放租约后可重试。当前 API rate remaining/reset 被记录，低于 50 保留额度时暂停；429/secondary rate limit 不自动循环重试。PAT 仅在 Worker 内解密。工厂 GET/POST 返回 `Cache-Control: private, no-store`。
+`GET /api/factory/repos/:owner/:name/:stream?page=1` 按当前全局快照指向的仓库版本读取明细，每页 100、最多 50 页。新 run 的 staging 不可见。失败保留旧成功仓库版本，覆盖回退时保留更完整的旧版本。全局发布版本明确 mixed 状态，每仓库附原始采样窗口与 refreshedAt。
+
+单资源仍最多 5,000 项 / 1.2 MB；每个 run/control 记录上限 1.8 MB、单次选择上限 500 仓库，超过边界明确报错并保留旧数据。全局快照按两页拆分，拒绝有损发布。新表与版本键均为增量存储，不覆盖 legacy `factory` / `factory:{repo}:{stream}`，使旧数据恢复与回滚可核验。错误只存安全代码，不保存上游原始报错或令牌。
 
 每条来源记录 status、pages、observed、fetchedAt、source、reason；complete 表示当前端点范围分页完成，不等同于整个软件工厂的业务事实完整。未完成/限流/权限不足与观测到的零分开。UI 不计算无依据的综合健康分数。
 
@@ -41,10 +43,10 @@ bun run factory:preview .factory-cache/my-survey
 
 `factory:preview` 先让 Wrangler 初始化 `.wrangler/factory-preview`，再在 Worker 停止时用参数化 SQLite 导入真实调查，构建前端并由单个本地 Worker `7045` 托管产物。它不使用日常开发或远程 D1；预览账号仅持有加密的非凭证占位文本。仅预览读操作可用，要采集新数据请在正常应用设置中连接真实账号。先停止占用 `7045` 的开发进程。固定入口为 `http://localhost:7045/factory`，已有 Caddy 时也可用 `https://giraffe.dev.hexly.ai/factory`。
 
-每份资源带 runId，GET/续传验证其与调查一致；跨调查混读会要求重读快照。重启调查的第一页失败时保留上一份快照。无效 package.json 作为该仓依赖证据不可用处理，其他资源仍继续采集。清单漂移等无法续传的错误可点击「重新调查」。
+每份资源带 runId，仓库 observation 指向对应版本。无效 package.json 标为依赖证据不可用；其他资源继续执行。清单漂移等不能续传的错误保留原有数据，可取消后重新发现清单。
 
 图表不把尚未采集的提交画成零；CI 指标旁展示完成覆盖仓数。仓库覆盖短码 C/I/PR/CI/R/A/D 唯一对应各资源。包名同时属于多个仓库时，引用边不强行指向任何一个。页面模块按路由懒加载，重型图表共享独立 chunk。
 
-已知性能边界：单次明细仍会在 Worker 内解析最多 1.2 MB / 5,000 条，再筛选分页；这是有界读取，未实现按日期索引的明细表。前端聚合使用 memo，仓库表仅渲染 25 行；采集期间每批完成后更新一次。未来规模超出这一级时可以改为按日物理分片，当前不会隐藏容量截断。
+已知性能边界：单次明细仍会在 Worker 内解析最多 1.2 MB / 5,000 条，再筛选分页；这是有界读取，未实现按日期索引的明细表。前端聚合使用 memo，仓库表仅渲染 25 行；采集期间保留已发布总览，后台发布新版本后更新一次。未来规模超出这一级时可以改为按日物理分片，当前不会隐藏容量截断。
 
 若分页中途失去权限而已取得部分记录，资源标为 limited（不完整子集），清空待取范围并明确原因；完全未取得记录时才是 unavailable。提交/合并/发布计数在覆盖不完整时用 `≥` 标出已观测下界；完整的零仍显示 0，没有可用观测显示 `—`。CI 比率只代表观测样本，不把不完整比率误标为下界。

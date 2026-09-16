@@ -37,9 +37,15 @@ const GETS = [
 	"/api/repos/octocat/hello-world/contributors",
 ];
 
-const FACTORY_GETS = ["/api/factory", "/api/factory/repos/octocat/hello-world/commits"];
+const FACTORY_GETS = [
+	"/api/factory/runs",
+	"/api/factory",
+	"/api/factory/repos/octocat/hello-world/commits",
+];
 
 const WRITES: Array<[string, string, RequestInit]> = [
+	["POST", "/api/factory/runs", {}],
+	["POST", "/api/factory/runs/x/control", {}],
 	[
 		"POST",
 		"/api/factory/refresh",
@@ -689,6 +695,105 @@ describe("api method matrix", () => {
 				(row) => row.unread === false,
 			),
 		).toBe(true);
+
+		const postFactory = (path: string, body: unknown) =>
+			api(path, {
+				method: "POST",
+				headers: { origin, "content-type": "application/json" },
+				body: JSON.stringify(body),
+			});
+		const createPlan = {
+			account_id: account.id,
+			requestKey: crypto.randomUUID(),
+			mode: "catalog",
+			scope: "selected",
+		};
+		const createdRun = await postFactory("/api/factory/runs", createPlan);
+		expect(createdRun.status).toBe(202);
+		const task = (await createdRun.json()) as { id: string };
+		expect((await postFactory("/api/factory/runs", createPlan)).status).toBe(202);
+		expect(
+			(
+				await postFactory(`/api/factory/runs/${task.id}/control`, {
+					account_id: account.id,
+					action: "pause",
+				})
+			).status,
+		).toBe(200);
+		const paused = (await (await api("/api/factory/runs")).json()) as {
+			current: { status: string };
+		};
+		expect(paused.current.status).toBe("paused");
+		noSecrets(paused);
+		expect(
+			(
+				await postFactory(`/api/factory/runs/${task.id}/control`, {
+					account_id: account.id,
+					action: "resume",
+				})
+			).status,
+		).toBe(200);
+		await expect
+			.poll(
+				async () => {
+					const r = (await (await api("/api/factory/runs")).json()) as {
+						current: unknown;
+						history: { status: string }[];
+					};
+					return r.current ? "running" : r.history[0]?.status;
+				},
+				{ timeout: 25000, interval: 250 },
+			)
+			.toBe("completed");
+		const factoryBefore = (await (await api("/api/factory")).json()) as { repos: unknown[] };
+		expect(factoryBefore.repos).toHaveLength(1);
+		expect(
+			(
+				await postFactory("/api/factory/refresh", {
+					account_id: account.id,
+					requestKey: crypto.randomUUID(),
+					mode: "refresh",
+					scope: "selected",
+					repos: ["octocat/hello-world"],
+				})
+			).status,
+		).toBe(409);
+		// Move only isolated fixture deadlines into the past to exercise a second run without a real minute wait.
+		d1Rows(
+			"UPDATE factory_state SET next_at='2000-01-01T00:00:00.000Z'; UPDATE factory_runs SET created_at='2000-01-01T00:00:00.000Z'",
+		);
+		const refreshRun = await postFactory("/api/factory/refresh", {
+			account_id: account.id,
+			requestKey: crypto.randomUUID(),
+			mode: "refresh",
+			scope: "selected",
+			repos: ["octocat/hello-world"],
+		});
+		expect(refreshRun.status).toBe(202);
+		expect(await (await api("/api/factory")).json()).toEqual(factoryBefore);
+		await expect
+			.poll(
+				async () => {
+					const r = (await (await api("/api/factory/runs")).json()) as {
+						current: unknown;
+						history: { status: string }[];
+					};
+					return (
+						!r.current && r.history.some((h) => h.status === "completed" || h.status === "partial")
+					);
+				},
+				{ timeout: 25000, interval: 250 },
+			)
+			.toBe(true);
+		expect((await api("/api/factory/repos/octocat/hello-world/commits")).status).toBe(200);
+		const requestsBefore = await githubCount();
+		const rowsBefore = d1Rows("SELECT kind,payload FROM snapshots WHERE kind LIKE 'factory%'");
+		await api("/api/factory/runs");
+		await api("/api/factory");
+		expect(await githubCount()).toBe(requestsBefore);
+		expect(d1Rows("SELECT kind,payload FROM snapshots WHERE kind LIKE 'factory%'")).toEqual(
+			rowsBefore,
+		);
 		const created2 = await api("/api/accounts", {
 			method: "POST",
 			headers: { origin, "content-type": "application/json" },

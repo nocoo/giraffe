@@ -7,6 +7,7 @@ test("settings PAT, repo list, and repo detail", async ({ page }) => {
 	await page.getByTestId("pat-input").fill(PAT);
 	await page.getByTestId("pat-submit").click();
 	await expect(page.getByTestId("pat-input")).toHaveValue("");
+	await expect(page.locator("form[aria-busy]")).toHaveAttribute("aria-busy", "false");
 	await expect(page.locator("body")).not.toContainText(PAT);
 	expect(await page.content()).not.toContain(PAT);
 	await expect(page.getByText("octocat")).toBeVisible();

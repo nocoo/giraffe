@@ -4,6 +4,7 @@ import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { factoryGraphqlStub } from "./factory-stub";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const persist = join(root, ".wrangler/e2e-pw");
@@ -207,6 +208,12 @@ const github = await listen(githubPort, (req, res) => {
 		if (url.pathname === "/graphql") {
 			const raw = await readBody(req);
 			const query = String((JSON.parse(raw || "{}") as { query?: string }).query ?? "");
+			const factoryResponse = factoryGraphqlStub(query);
+			if (factoryResponse) {
+				await Bun.sleep(300);
+				sendJson(res, 200, factoryResponse);
+				return;
+			}
 			if (query.includes("viewer")) {
 				sendJson(res, 200, {
 					data: {
@@ -241,6 +248,15 @@ const github = await listen(githubPort, (req, res) => {
 				default_branch: "main",
 				html_url: "https://github.com/octocat/hello-world",
 			});
+			return;
+		}
+		if (url.pathname.startsWith("/repos/octocat/hello-world/")) {
+			await Bun.sleep(200);
+			sendJson(
+				res,
+				200,
+				url.pathname.endsWith("actions/runs") ? { total_count: 0, workflow_runs: [] } : [],
+			);
 			return;
 		}
 		sendJson(res, 404, {});

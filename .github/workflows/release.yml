@@ -39,6 +39,8 @@ jobs:
       install-policy: "project"
       build-command: "bun run build"
       wrangler-version: "4.123.0"
+      d1-migrations: true
+      d1-databases: "giraffe-db"
       environment: production
       concurrency-group: deploy-worker-production
       timeout-minutes: 15

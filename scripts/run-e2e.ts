@@ -4,6 +4,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { factoryGraphqlStub } from "./factory-stub";
 import { hasApiRoutes } from "./has-api-routes";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -316,6 +317,12 @@ const github = await listen(17046, (req, res) => {
 		if (url.pathname === "/graphql") {
 			const raw = await readBody(req);
 			const query = String((JSON.parse(raw || "{}") as { query?: string }).query ?? "");
+			const factoryResponse = factoryGraphqlStub(query);
+			if (factoryResponse) {
+				await Bun.sleep(300);
+				sendJson(res, 200, factoryResponse);
+				return;
+			}
 			if (query.includes("viewer")) {
 				sendJson(res, 200, {
 					data: {

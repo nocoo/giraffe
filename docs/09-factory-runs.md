@@ -27,10 +27,18 @@
 
 ## 迁移与回滚
 
-部署前：导出 D1；记录旧表逐行摘要；在本地 SQLite 备份副本上应用迁移两次，核验所有旧行完全一致。通过本地并发/崩溃测试后才启用 release workflow 的 D1 migrations。部署后再查旧行摘要、表结构、run/publication 一致性。回滚 Worker 到前版本无需逆向删表；停止队列/cron 后旧程序仍可读原 legacy snapshots。新表与版本保留供修复，禁止为回滚清空数据。
+部署前：导出 D1；记录旧表逐行摘要；运行 `bun scripts/verify-factory-migration.ts <local-export.sql>` 在本地 SQLite 备份副本上应用迁移两次，核验所有旧行完全一致。通过本地并发/崩溃测试后才启用 release workflow 的 D1 migrations。部署后再查旧行摘要、表结构、run/publication 一致性。回滚 Worker 到前版本无需逆向删表；停止队列/cron 后旧程序仍可读原 legacy snapshots。新表与版本保留供修复，禁止为回滚清空数据。
 
 ## UI 与验证
 
 进度线程包括固定分母、成功/失败/跳过、阶段、队列、重试、真实页数、开始/更新时间、估算剩余（采样不足显示未知）、冷却、历史 run。范围选择支持明确优先级以及当前筛选结果；提交后不可更改本次顺序。只读轮询一次完成后再安排下一次，页面隐藏降低频率，错误退避；重载从服务端恢复。
 
 测试覆盖计划、范围/顺序冻结、冷却、并发启动、租约接管、陈旧提交拒绝、重复页、失败保留、暂停/取消、限流、重载读取、原子仓库/全局发布、迁移重复执行/旧行不变、API 鉴权/Origin 和 UI。生产 smoke 仅选一个仓库，先重载观察未完成状态，再验证完成后旧数据仍在；不触发全仓刷新。
+
+## 实现边界与审查处理
+
+资源继续使用既有有界 JSON collector：每流 5,000 项 / 1.2 MB，事件 ID 去重和 next/ranges 与 run checkpoint 在同一 fenced batch 保存。因此不依赖 JSON 之外的无界事件列表；重复页不改变已提交进度。完整 run payload 在每次保存前检查 1.8 MB 上限，最多 500 仓库。超过规模时失败保留旧版本，而不悄悄截断计划。
+
+publication 实体复用 snapshots 分页容器：`factory:v:<run-id>` 是不可变全局组合，repo.observation 明确引用资源版本；`factory:catalog:<run-id>` 是清单实体。factory_state 的两个指针与对应实体在同一 fenced batch 提交。这里不再重复建另一套 JSON 分页表。schema 的字符串指针由事务和一致性测试保护。
+
+Grok、Pi 的第一轮架构审查均指出体积、fencing、publication 映射、catalog 完整性与混合窗口语义需要落成代码。这些边界已有实现和测试。公开进度排除内部 checkpoint；历史只返回最近 20 次。引用中的历史版本保留，避免恢复或回滚时删除唯一事件副本。未来需要基于引用关系清理长期版本；当前不自动删除 legacy 数据。
