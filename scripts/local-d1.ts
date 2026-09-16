@@ -13,7 +13,7 @@ function d1(args: string[]): string {
 	});
 }
 
-export function ensureLocalSchema(): void {
+function ensureBaseSchema(): void {
 	const stdout = d1([
 		"--command",
 		"SELECT name FROM sqlite_master WHERE type='table' AND name='accounts'",
@@ -29,4 +29,9 @@ export function ensureLocalSchema(): void {
 	if (!rows.some((row) => row.name === "accounts")) {
 		d1([`--file=${schema}`]);
 	}
+}
+
+export function ensureLocalSchema(): void {
+	ensureBaseSchema();
+	d1([`--file=${join(root, "migrations/0001_factory_runs.sql")}`]);
 }
