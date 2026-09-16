@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.6.0 — 2026-09-16
+
+### Added
+- Persistent factory runs with frozen repository order, scope, window and logical step totals; durable progress and history survive browser reloads and Worker restarts
+- Cloudflare Queue page execution with D1 fenced leases, retry/backoff, rate-limit deadlines, cron recovery, pause/resume/cancel and server-enforced account/repository cooldowns
+- Reference-aware bounded retention and a 256 MB factory-data budget preserve current/mixed snapshot detail while limiting storage growth
+- Dense refresh console with repository priorities, selected/filtered/stale/failed scopes, queue timelines, real request counts, coverage, timestamps and bounded polling
+- Additive, repeatable D1 migration and a local production-export verification command; legacy resource recovery retains original event windows and timestamps
+
+### Fixed
+- Keep last-known-good snapshots visible throughout refresh; atomically commit repository versions and publish consistent global versions at run completion
+- Preserve stronger prior coverage on partial failures; prevent stale workers, overlapping starts and retry requests from erasing data or bypassing cooldowns
+- Keep renamed repositories distinct by stable GitHub identity, record mixed-version provenance and avoid reading large historical checkpoints during polling
+
+### Operations
+- Provision `giraffe-factory` Queue before deployment; Release applies `0001_factory_runs.sql`, `0002_factory_retention.sql`, and `0003_factory_budget.sql` before deploying the Worker
+- Existing legacy factory rows remain untouched, enabling data recovery and Worker rollback without destructive down migrations
+- `/api/factory/refresh` now accepts the explicit run-plan contract; legacy implicit restart requests are rejected
+
 ## v0.5.0 — 2026-09-16
 
 ### Added
