@@ -227,3 +227,21 @@ describe("createGithubClient", () => {
 		});
 	});
 });
+
+it("uses Workers-supported manual redirects and rejects redirects without forwarding credentials", async () => {
+	let calls = 0;
+	let seen: RequestInit["redirect"];
+	const client = createGithubClient(env({ ENVIRONMENT: "production" }), async (_url, init) => {
+		calls++;
+		seen = init?.redirect;
+		return new Response(null, {
+			status: 302,
+			headers: { Location: "https://elsewhere.example/collect" },
+		});
+	});
+	await expect(client.githubApi("test-token", "/user")).rejects.toMatchObject({
+		code: "github_error",
+	});
+	expect(calls).toBe(1);
+	expect(seen).toBe("manual");
+});

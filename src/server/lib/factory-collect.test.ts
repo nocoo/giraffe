@@ -229,7 +229,7 @@ describe("factory incremental collection", () => {
 		])
 			expect(() => factoryNext(`<${url}>; rel="next"`, "/repos/a/b/issues")).toThrow();
 		const client = github((_url, init) => {
-			expect(init?.redirect).toBe("error");
+			expect(init?.redirect).toBe("manual");
 			expect(init?.signal).toBeDefined();
 			return Response.json([]);
 		});

@@ -37,7 +37,14 @@ const GETS = [
 	"/api/repos/octocat/hello-world/contributors",
 ];
 
+const FACTORY_GETS = ["/api/factory", "/api/factory/repos/octocat/hello-world/commits"];
+
 const WRITES: Array<[string, string, RequestInit]> = [
+	[
+		"POST",
+		"/api/factory/refresh",
+		{ headers: { "content-type": "application/json" }, body: JSON.stringify({ account_id: "x" }) },
+	],
 	[
 		"POST",
 		"/api/accounts",
@@ -166,7 +173,7 @@ function snapshotMeta(body: Record<string, unknown>): void {
 describe("api method matrix", () => {
 	it("covers suite A/B contracts for every listed path", async () => {
 		if (suite === "B") {
-			for (const path of GETS) {
+			for (const path of [...GETS, ...FACTORY_GETS]) {
 				expect((await fetch(`${base}${path}`)).status).toBe(401);
 				expect(
 					(
@@ -247,6 +254,11 @@ describe("api method matrix", () => {
 				expect(await missing.json()).toMatchObject({
 					error: { code: "account_missing" },
 				});
+			}
+		}
+		if (suite === "A") {
+			for (const path of FACTORY_GETS) {
+				expect((await api(path)).status).toBe(409);
 			}
 		}
 		const noOrigin = await api("/api/accounts", {

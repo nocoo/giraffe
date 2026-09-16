@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Use pinned shared quality and Worker deployment workflows with proven-source SHA verification
 
 ### Fixed
+- Use Workers-supported manual redirects and explicitly reject 3xx responses before credentials can be forwarded
 - Preserve GitHub pagination filters when Link headers use numeric repository URLs; split large Actions queries without time gaps
 - Keep unavailable, incomplete, observed-zero, and truncated lower-bound measurements distinct; filter PR/Issue detail by the selected lifecycle date
 - Prevent concurrent refreshes and mixed survey generations; preserve the previous snapshot when the first restarted request fails

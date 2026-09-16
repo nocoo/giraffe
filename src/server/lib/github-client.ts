@@ -153,11 +153,15 @@ export function createGithubClient(env: Env, fetchImpl: FetchImpl = fetch): Gith
 			}
 			client.count += 1;
 			try {
-				return await fetchImpl(url, {
+				const response = await fetchImpl(url, {
 					...init,
-					redirect: "error",
+					redirect: "manual",
 					signal: init?.signal ?? AbortSignal.timeout(15_000),
 				});
+				if (response.status >= 300 && response.status < 400) {
+					throw new ApiError(502, "github_error", "github redirects are not allowed");
+				}
+				return response;
 			} catch (err) {
 				if (err instanceof ApiError || err instanceof TruncatedError) {
 					throw err;
