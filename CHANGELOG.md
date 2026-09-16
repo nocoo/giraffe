@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.5.0 — 2026-09-16
+
+### Added
+- Software factory dashboard at `/factory`: overview, language/topic groups, repository drilldowns, and paginated commit, Issue, PR, Actions, Release, and dependency evidence
+- Contribution/commit calendars, proportional repository treemap, throughput areas, WIP scatter, sparklines, observed dependency links, and accessible daily ledgers
+- Resumable GitHub collection with complete owned-repository pagination, frozen 90-day windows and default-branch heads, explicit exclusions, source timestamps, and per-resource coverage
+- Local `factory:audit` and isolated Worker/D1 `factory:preview` commands; survey methodology, real investigation results, and independent review records
+
+### Changed
+- Lazy-load page modules and share chart chunks to reduce the initial JavaScript bundle
+- Use pinned shared quality and Worker deployment workflows with proven-source SHA verification
+
+### Fixed
+- Preserve GitHub pagination filters when Link headers use numeric repository URLs; split large Actions queries without time gaps
+- Keep unavailable, incomplete, observed-zero, and truncated lower-bound measurements distinct; filter PR/Issue detail by the selected lifecycle date
+- Prevent concurrent refreshes and mixed survey generations; preserve the previous snapshot when the first restarted request fails
+- Isolate malformed dependency manifests and partial permission loss; avoid ambiguous package-name dependency edges
+- Serve audit previews from built Worker assets with valid local account IDs
+
+### Data scope
+- No database migration is required; factory data uses the existing snapshots table and is collected on demand
+- Dependency evidence covers root manifests and named workflow entrypoints; unavailable security data remains unknown
+- Resource limits are explicit (5,000 records / 1.2 MB), and the current UTC day is incomplete
+
 ## v0.4.2
 
 ### Fixed
