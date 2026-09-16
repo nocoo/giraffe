@@ -59,6 +59,7 @@ export type FactoryMetrics = FactoryDay & {
 	authors: Record<string, number>;
 };
 export type FactoryRepo = {
+	metadataAt?: string;
 	observation?: {
 		metadataAt?: string;
 		repo?: string;

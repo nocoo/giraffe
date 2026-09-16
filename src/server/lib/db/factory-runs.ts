@@ -88,7 +88,7 @@ export async function startRun(db: Db, run: FactoryRun): Promise<FactoryRun> {
 		.bind(run.account_id, run.requestKey)
 		.first<{ payload: string }>();
 	if (old) return JSON.parse(old.payload) as FactoryRun;
-	const inserted = await db
+	const insert = db
 		.prepare(`INSERT OR IGNORE INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at)
  SELECT ?,?,?,'running',?,?,?,? WHERE NOT EXISTS(SELECT 1 FROM factory_runs WHERE account_id=? AND status IN ('running','paused'))
  AND NOT EXISTS(SELECT 1 FROM factory_runs WHERE account_id=? AND created_at>?)
@@ -109,9 +109,24 @@ export async function startRun(db: Db, run: FactoryRun): Promise<FactoryRun> {
 			run.startedAt,
 			run.account_id,
 			run.startedAt,
-		)
-		.run();
-	if (!inserted.meta.changes) {
+		);
+	const results = await db.batch([
+		insert,
+		db
+			.prepare(
+				"INSERT INTO factory_state(account_id,next_at) SELECT ?,? WHERE EXISTS(SELECT 1 FROM factory_runs WHERE id=? AND account_id=? AND request_key=?) ON CONFLICT(account_id) DO UPDATE SET next_at=MAX(next_at,excluded.next_at)",
+			)
+			.bind(
+				run.account_id,
+				new Date(Date.parse(run.startedAt) + RUN_COOLDOWN_MS).toISOString(),
+				run.id,
+				run.account_id,
+				run.requestKey,
+			),
+	]);
+	const inserted = results[0];
+
+	if (!inserted?.meta.changes) {
 		const duplicate = await db
 			.prepare("SELECT payload FROM factory_runs WHERE account_id=? AND request_key=?")
 			.bind(run.account_id, run.requestKey)
@@ -127,13 +142,6 @@ export async function startRun(db: Db, run: FactoryRun): Promise<FactoryRun> {
 			active ? "a run already exists" : "refresh cooldown; read nextAllowedAt",
 		);
 	}
-	// Account cooldown is also derived from created_at on subsequent starts; persist a UI hint.
-	await db
-		.prepare(
-			"INSERT INTO factory_state(account_id,next_at) VALUES(?,?) ON CONFLICT(account_id) DO UPDATE SET next_at=MAX(next_at,excluded.next_at)",
-		)
-		.bind(run.account_id, new Date(Date.parse(run.startedAt) + RUN_COOLDOWN_MS).toISOString())
-		.run();
 	return run;
 }
 export async function claimRun(db: Db, id: string, now: string): Promise<RunLease | null> {
@@ -141,9 +149,9 @@ export async function claimRun(db: Db, id: string, now: string): Promise<RunLeas
 	const until = new Date(Date.parse(now) + RUN_LEASE_MS).toISOString();
 	const row = await db
 		.prepare(
-			"UPDATE factory_runs SET lease_token=?,lease_until=?,updated_at=?,payload=json_set(payload,'$.updatedAt',?,'$.version',version+1,'$.steps[' || json_extract(payload,'$.cursor') || '].status','running','$.steps[' || json_extract(payload,'$.cursor') || '].startedAt',COALESCE(json_extract(payload,'$.steps[' || json_extract(payload,'$.cursor') || '].startedAt'),?)),version=version+1 WHERE id=? AND status='running' AND next_at<=? AND (lease_until IS NULL OR lease_until<=?) RETURNING payload,version",
+			"UPDATE factory_runs SET lease_token=?,lease_until=?,updated_at=?,payload=json_set(payload,'$.updatedAt',?,'$.version',version+1),version=version+1 WHERE id=? AND status='running' AND next_at<=? AND (lease_until IS NULL OR lease_until<=?) RETURNING payload,version",
 		)
-		.bind(token, until, now, now, now, id, now, now)
+		.bind(token, until, now, now, id, now, now)
 		.first<RunRow>();
 	return row
 		? { run: JSON.parse(row.payload) as FactoryRun, token, version: row.version, leaseUntil: until }

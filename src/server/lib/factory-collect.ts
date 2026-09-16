@@ -110,7 +110,7 @@ function rateFromData(s: FactorySnapshot, data: Record<string, unknown>) {
 			resource: "graphql",
 		};
 }
-async function inventory(s: FactorySnapshot, gh: GithubClient, token: string) {
+async function inventory(s: FactorySnapshot, gh: GithubClient, token: string, now: string) {
 	const data = await gh.githubGraphql(token, FACTORY_INVENTORY_QUERY, { after: s.inventory.after });
 	rateFromData(s, data);
 	const viewer = object(data.viewer);
@@ -128,7 +128,8 @@ async function inventory(s: FactorySnapshot, gh: GithubClient, token: string) {
 		if (reason) {
 			if (!s.inventory.excluded.some((e) => e.name === name))
 				s.inventory.excluded.push({ name, reason });
-		} else if (!s.repos.some((repo) => repo.id === r.id)) s.repos.push(mapFactoryRepo(r));
+		} else if (!s.repos.some((repo) => repo.id === r.id))
+			s.repos.push({ ...mapFactoryRepo(r), metadataAt: now });
 	}
 	s.inventory.total = Number(conn.totalCount);
 	s.inventory.scanned = s.repos.length + s.inventory.excluded.length;
@@ -344,7 +345,7 @@ export async function stepFactory(
 		throw new ApiError(503, "github_rate_limited", "GitHub reserve reached");
 	const before = gh.count;
 	try {
-		if (!s.inventory.complete) await inventory(s, gh, token);
+		if (!s.inventory.complete) await inventory(s, gh, token, now);
 		else if (s.contributionStatus === "pending") await contributions(s, gh, token, now);
 		else await collectStream(s, gh, token, store, now);
 		s.fetched_at = now;

@@ -57,6 +57,8 @@ export async function getFactoryStream(c: Ctx): Promise<Response> {
 			account.id,
 			streamKey(sourceRepo, stream),
 		)) as FactoryStreamData | null;
+	if (!resource && repo.coverage[stream].status !== "pending")
+		throw new ApiError(409, "snapshot_missing", "referenced resource unavailable");
 	if (resource && resource.runId !== version)
 		throw new ApiError(409, "snapshot_missing", "resource version unavailable");
 	const filter = c.req.query("state") ?? "";

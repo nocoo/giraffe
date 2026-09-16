@@ -20,6 +20,7 @@ import {
 import { ApiError, jsonOk } from "../lib/errors";
 import { enqueueRun } from "../lib/factory-dispatch";
 import { boundedJson } from "../lib/factory-publish";
+import { factoryStorage } from "../lib/factory-retention";
 import { ACCOUNT_ID_RE } from "../lib/id";
 import { readJson } from "../lib/read-body";
 
@@ -31,6 +32,8 @@ const input = z.object({
 	mode: z.enum(["catalog", "refresh"]),
 	scope: z.enum(["all", "selected", "filter", "stale", "failed"]).default("selected"),
 	repos: z.array(z.string().max(200)).max(500).optional(),
+	order: z.array(z.string().max(200)).max(500).optional(),
+	repo: z.string().max(200).optional(),
 	language: z.string().max(100).optional(),
 	topic: z.string().max(100).optional(),
 	query: z.string().max(100).optional(),
@@ -64,6 +67,7 @@ export async function getFactoryRuns(c: Ctx): Promise<Response> {
 		};
 	});
 	const response: FactoryRunResponse = {
+		storage: await factoryStorage(db, row.id),
 		account_id: row.id,
 		serverNow: now,
 		nextAllowedAt: head?.next_at ?? null,
@@ -91,6 +95,9 @@ export async function postFactoryRun(c: Ctx): Promise<Response> {
 		.first<{ id: string; status: string }>();
 	if (prior)
 		return jsonOk({ account_id: row.id, id: prior.id, status: prior.status }, 202, PRIVATE);
+	const storage = await factoryStorage(db, row.id);
+	if (data.mode === "refresh" && storage.resourceBytes >= storage.limitBytes)
+		throw new ApiError(422, "factory_capacity", "factory resource quota reached");
 	const catalog = await catalogFactory(db, row.id);
 	const states = await repoStates(db, row.id);
 	if (
@@ -112,14 +119,27 @@ export async function postFactoryRun(c: Ctx): Promise<Response> {
 							language: data.language ?? "",
 							topic: data.topic ?? "",
 							query: data.query ?? "",
+							repo: data.repo ?? "",
 						},
 						now,
 					);
 	} catch {
 		throw new ApiError(400, "validation_failed", "invalid repository selection");
 	}
-	if (data.scope !== "selected" && data.repos?.length) {
-		const order = new Map(data.repos.map((name, i) => [name, i]));
+	if (data.mode === "refresh" && data.scope !== "selected" && data.repos !== undefined)
+		throw new ApiError(
+			400,
+			"validation_failed",
+			"repos is membership only; use order for priorities",
+		);
+	if (
+		data.order &&
+		(new Set(data.order).size !== data.order.length ||
+			data.order.some((name) => !catalog?.repos.some((r) => r.name === name)))
+	)
+		throw new ApiError(400, "validation_failed", "invalid priority order");
+	if (data.scope !== "selected" && data.order?.length) {
+		const order = new Map(data.order.map((name, i) => [name, i]));
 		repos.sort((a, b) => (order.get(a.name) ?? 1000) - (order.get(b.name) ?? 1000));
 	}
 	if (data.mode === "refresh" && (!repos.length || repos.length > 500))
@@ -139,6 +159,15 @@ export async function postFactoryRun(c: Ctx): Promise<Response> {
 		now,
 		states,
 	);
+	plan.selection = {
+		scope: data.scope,
+		...(data.repos ? { repos: data.repos } : {}),
+		...(data.order ? { order: data.order } : {}),
+		...(data.language ? { language: data.language } : {}),
+		...(data.topic ? { topic: data.topic } : {}),
+		...(data.query ? { query: data.query } : {}),
+		...(data.repo ? { repo: data.repo } : {}),
+	};
 	boundedJson(plan);
 	const run = await startRun(db, plan);
 	// A queue outage cannot erase a committed run: the scheduled D1 scan retries dispatch.

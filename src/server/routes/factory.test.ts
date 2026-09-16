@@ -131,3 +131,13 @@ it("keeps factory GET read-only and validates repository/stream/page boundaries"
 	expect((await s.call("/api/factory/repos/nocoo/app/prs?page=0")).status).toBe(400);
 	expect((await s.call("/api/factory/repos/nocoo/app/prs")).status).toBe(200);
 });
+
+it("does not invent an empty result when a published resource reference is missing", async () => {
+	const s = await setup();
+	const state = ready();
+	const repo = state.repos[0];
+	if (!repo) throw new Error("fixture");
+	repo.coverage.commits.status = "complete";
+	await s.db.batch(replaceSnapshotStmts(s.db, ID, "factory", { ...state }, NOW));
+	expect((await s.call("/api/factory/repos/nocoo/app/commits")).status).toBe(409);
+});

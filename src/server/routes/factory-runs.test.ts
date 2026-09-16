@@ -187,10 +187,11 @@ it("applies explicit priority order to complete filtered scopes", async () => {
 			await s.call("/api/factory/runs", {
 				...plan(),
 				scope: "filter",
+				repos: undefined,
 				language: "TypeScript",
 				topic: "cli",
 				query: "Example",
-				repos: ["nocoo/two", "nocoo/app"],
+				order: ["nocoo/two", "nocoo/app"],
 			})
 		).status,
 	).toBe(202);
@@ -235,4 +236,17 @@ it("returns compact history with accurate totals and expands only the requested 
 	).json()) as FactoryRunResponse;
 	expect(detail.history[0]?.steps).toHaveLength(11);
 	expect((await s.call(`/api/factory/runs?history=${"x".repeat(81)}`)).status).toBe(400);
+});
+
+it("rejects ambiguous scope/order and refuses new resource work beyond its account budget", async () => {
+	const s = await setup();
+	expect((await s.call("/api/factory/runs", { ...plan(), scope: "all" })).status).toBe(400);
+	expect((await s.call("/api/factory/runs", { ...plan(), order: ["unknown/repo"] })).status).toBe(
+		400,
+	);
+	expect(
+		(await s.call("/api/factory/runs", { ...plan(), order: ["nocoo/app", "nocoo/app"] })).status,
+	).toBe(400);
+	await s.db.prepare("INSERT INTO factory_storage VALUES(?,?)").bind(id, 256_000_000).run();
+	expect((await s.call("/api/factory/runs", plan())).status).toBe(422);
 });

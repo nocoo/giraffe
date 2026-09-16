@@ -17,13 +17,13 @@
 
 持久刷新设计、迁移与回滚见 [09 — 持久化工厂刷新](09-factory-runs.md)。
 
-`GET /api/factory` 只读已发布的当前账号全局快照。`GET /api/factory/runs` 只读当前 run、最近 20 个历史 run、仓库状态和清单。`POST /api/factory/runs`（`/api/factory/refresh` 为同一契约别名）接收 `{account_id, requestKey: UUID, mode: "catalog" | "refresh", scope, repos?, language?, topic?, query?}`，202 返回持久 run ID。`requestKey` 每次明确新建操作生成，网络重试复用；重复键返回原 run，不能当作新的刷新。`scope` 支持 all/selected/filter/stale/failed，repos 顺序作为显式优先级。旧 `{restart:true}` 请求拒绝，不能隐式触发全仓刷新。
+`GET /api/factory` 只读已发布的当前账号全局快照。`GET /api/factory/runs` 只读当前 run、最近 20 个历史 run、仓库状态和清单。`POST /api/factory/runs`（`/api/factory/refresh` 为同一契约别名）接收 `{account_id, requestKey: UUID, mode: "catalog" | "refresh", scope, repos?, order?, language?, topic?, query?, repo?}`，202 返回持久 run ID。`requestKey` 每次明确新建操作生成，网络重试复用；重复键返回原 run，不能当作新的刷新。`scope` 支持 all/selected/filter/stale/failed，selected 使用 repos 指定成员和顺序；其他范围由服务端解析成员，order 单独指定优先级。旧 `{restart:true}` 请求拒绝，不能隐式触发全仓刷新。
 
 `POST /api/factory/runs/:id/control` 接收 `{account_id, action: "pause" | "resume" | "cancel"}`。状态从 D1 恢复；队列每次处理一页，cron 每分钟恢复到期任务。冷却由服务端执行，暂停不绕过限流等待。GET 永不调 GitHub、不写库；所有 mutation 仍经过 Access JWT 与 Origin 验证。
 
 `GET /api/factory/repos/:owner/:name/:stream?page=1` 按当前全局快照指向的仓库版本读取明细，每页 100、最多 50 页。新 run 的 staging 不可见。失败保留旧成功仓库版本，覆盖回退时保留更完整的旧版本。全局发布版本明确 mixed 状态，每仓库附原始采样窗口与 refreshedAt。
 
-单资源仍最多 5,000 项 / 1.2 MB；每个 run/control 记录上限 1.8 MB、单次选择上限 500 仓库，超过边界明确报错并保留旧数据。全局快照按两页拆分，拒绝有损发布。新表与版本键均为增量存储，不覆盖 legacy `factory` / `factory:{repo}:{stream}`，使旧数据恢复与回滚可核验。错误只存安全代码，不保存上游原始报错或令牌。
+每账号资源预算 256 MB，界面显示 D1 实测用量；保留根保护的历史按 09 的有界维护规则清理。单资源仍最多 5,000 项 / 1.2 MB；每个 run/control 记录上限 1.8 MB、单次选择上限 500 仓库，超过边界明确报错并保留旧数据。全局快照按两页拆分，拒绝有损发布。新表与版本键均为增量存储，不覆盖 legacy `factory` / `factory:{repo}:{stream}`，使旧数据恢复与回滚可核验。错误只存安全代码，不保存上游原始报错或令牌。
 
 每条来源记录 status、pages、observed、fetchedAt、source、reason；complete 表示当前端点范围分页完成，不等同于整个软件工厂的业务事实完整。未完成/限流/权限不足与观测到的零分开。UI 不计算无依据的综合健康分数。
 

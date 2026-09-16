@@ -18,6 +18,7 @@ import {
 	restoreLegacyRepo,
 } from "./factory-publish";
 import { FACTORY_REPO_QUERY } from "./factory-queries";
+import { checkResourceCapacity } from "./factory-retention";
 import { createGithubClient } from "./github-client";
 import { decryptToken, parseKeyBytes } from "./token-crypto";
 
@@ -37,7 +38,9 @@ export async function executeRunPage(
 		run.cursor++;
 	const step = run.steps[run.cursor];
 	if (!step) {
-		run.status = "failed";
+		run.status = run.steps.some((s) => s.status === "failed" || s.status === "skipped")
+			? "partial"
+			: "completed";
 		run.finishedAt = clock();
 		await saveRun(db, lease, [], clock());
 		return null;
@@ -47,6 +50,14 @@ export async function executeRunPage(
 	step.attempts = step.error ? step.attempts + 1 : Math.max(1, step.attempts);
 	step.status = "running";
 	step.error = null;
+	const began = await fenced(
+		db,
+		lease,
+		clock(),
+		"UPDATE factory_runs SET payload=? WHERE id=? AND $guard",
+		[JSON.stringify(run), run.id],
+	).run();
+	if (!began.meta.changes) return null;
 	const before = structuredClone(run.checkpoint);
 	const gh = createGithubClient(env);
 	let writes: D1PreparedStatement[] = [];
@@ -81,7 +92,7 @@ export async function executeRunPage(
 			run.checkpoint = newFactory(run.account_id, run.owner, run.startedAt);
 			run.checkpoint.runId = run.id;
 			run.checkpoint.inventory.complete = true;
-			run.checkpoint.repos = [mapFactoryRepo(repo)];
+			run.checkpoint.repos = [{ ...mapFactoryRepo(repo), metadataAt: clock() }];
 			run.checkpoint.contributionStatus = "complete";
 			run.checkpoint.contribution = previous?.contribution ?? null;
 			const rate = object(data.rateLimit);
@@ -146,6 +157,14 @@ export async function executeRunPage(
 					return row ? (JSON.parse(row.payload) as FactoryStreamData) : null;
 				},
 				write: async (_key: string, data: FactoryStreamData) => {
+					await checkResourceCapacity(
+						db,
+						run.account_id,
+						run.id,
+						String(step.repo),
+						String(stream),
+						boundedJson(data),
+					);
 					writes.push(
 						fenced(
 							db,
@@ -173,6 +192,7 @@ export async function executeRunPage(
 			}
 		}
 		step.pages += gh.count;
+		step.retryFailures = 0;
 		boundedJson(run);
 		run.nextAttemptAt = clock();
 	} catch (error) {
@@ -180,6 +200,15 @@ export async function executeRunPage(
 		writes = [];
 		const code = error instanceof ApiError ? error.code : "internal_error";
 		step.error = code;
+		if (
+			![
+				"repository_cooldown",
+				"github_unauthorized",
+				"encryption_key_missing",
+				"github_rate_limited",
+			].includes(code)
+		)
+			step.retryFailures = (step.retryFailures ?? 0) + 1;
 		if (code === "repository_cooldown") {
 			for (const later of run.steps)
 				if (
@@ -204,13 +233,13 @@ export async function executeRunPage(
 				),
 			).toISOString();
 		} else if (
-			step.attempts <= RUN_MAX_RETRIES &&
+			(step.retryFailures ?? 0) <= RUN_MAX_RETRIES &&
 			code !== "factory_capacity" &&
 			code !== "repository_unavailable"
 		) {
 			step.status = "pending";
 			run.nextAttemptAt = new Date(
-				Date.parse(clock()) + retryDelay(step.attempts) * 1000,
+				Date.parse(clock()) + retryDelay(step.retryFailures ?? 1) * 1000,
 			).toISOString();
 		} else {
 			finish(step, "failed", clock());

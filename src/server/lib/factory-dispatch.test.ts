@@ -4,6 +4,7 @@ import { dueRuns } from "./db/factory-runs";
 import { consumeFactory, continueFactory, enqueueRun } from "./factory-dispatch";
 import { executeRunPage } from "./factory-execute";
 
+vi.mock("./factory-retention", () => ({ pruneFactory: vi.fn() }));
 vi.mock("./factory-execute", () => ({ executeRunPage: vi.fn() }));
 vi.mock("./db/factory-runs", () => ({ dueRuns: vi.fn() }));
 afterEach(() => vi.clearAllMocks());

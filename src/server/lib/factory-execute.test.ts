@@ -161,10 +161,10 @@ it("discovers inventory and restores legacy resource evidence with original wind
 		),
 	);
 	for (let i = 0; i < 7; i++) await stepFactory(state, gh, "fake", store, now);
-	for (const [kind, data] of store.data)
-		await createDb(env.DB).batch(
-			replaceSnapshotStmts(createDb(env.DB), snap.account_id, kind, { ...data }, now),
-		);
+	for (const [kind, data] of store.data) {
+		const db = createDb(env.DB);
+		await db.batch(replaceSnapshotStmts(db, snap.account_id, kind, { ...data }, now));
+	}
 	vi.stubGlobal("fetch", async () =>
 		Response.json({
 			data: {
@@ -367,4 +367,55 @@ it("uses server time for persisted heartbeat when no clock is injected", async (
 	await executeRunPage(env, "r1");
 	const run = (await getRun(createDb(env.DB), snap.account_id, "r1"))?.run;
 	expect(Date.parse(run?.updatedAt ?? "")).toBeGreaterThanOrEqual(before);
+});
+
+it("never revives completed steps on claim and finalizes exhausted persisted plans", async () => {
+	for (const exhausted of [false, true]) {
+		const env = await setup();
+		const found = await getRun(createDb(env.DB), snap.account_id, "r1");
+		if (!found) throw new Error("fixture");
+		for (const step of found.run.steps)
+			if (exhausted || step.kind === "contributions") step.status = "success";
+		await createDb(env.DB)
+			.prepare("UPDATE factory_runs SET payload=? WHERE id=?")
+			.bind(JSON.stringify(found.run), "r1")
+			.run();
+		await executeRunPage(env, "r1", () => now);
+		const saved = (await getRun(createDb(env.DB), snap.account_id, "r1"))?.run;
+		expect(saved?.steps[0]?.status).toBe("success");
+		expect(saved?.status).toBe(exhausted ? "completed" : "running");
+	}
+});
+it("does not spend network retry budget while waiting for valid credentials", async () => {
+	const env = await setup();
+	const { controlRun } = await import("./db/factory-runs");
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async () => Response.json({ message: "unauthorized" }, { status: 401 })),
+	);
+	for (let i = 0; i < 4; i++) {
+		await executeRunPage(env, "r1", () => now);
+		await controlRun(createDb(env.DB), snap.account_id, "r1", "resume", now);
+	}
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async () => Response.json({}, { status: 500 })),
+	);
+	await executeRunPage(env, "r1", () => now);
+	const run = (await getRun(createDb(env.DB), snap.account_id, "r1"))?.run;
+	expect(run?.status).toBe("running");
+	expect(run?.steps[0]).toMatchObject({ retryFailures: 1, attempts: 5, status: "pending" });
+});
+it("aborts before GitHub when a control invalidates the lease between claim and step start", async () => {
+	const env = await setup();
+	const prepare = env.DB.prepare.bind(env.DB);
+	env.DB.prepare = (sql: string) => {
+		if (sql.startsWith("UPDATE factory_runs SET payload=? WHERE id=?"))
+			void prepare(
+				"UPDATE factory_runs SET status='paused',lease_token=NULL,payload=json_set(payload,'$.status','paused') WHERE id='r1'",
+			).run();
+		return prepare(sql);
+	};
+	expect(await executeRunPage(env, "r1", () => now)).toBeNull();
+	expect(fetch).not.toHaveBeenCalled();
 });

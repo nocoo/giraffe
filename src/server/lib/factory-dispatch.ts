@@ -2,6 +2,7 @@ import type { Env } from "../env";
 import { createDb } from "./db/d1";
 import { dueRuns } from "./db/factory-runs";
 import { executeRunPage } from "./factory-execute";
+import { pruneFactory } from "./factory-retention";
 
 export async function enqueueRun(
 	env: Env,
@@ -36,4 +37,5 @@ export async function consumeFactory(batch: MessageBatch<unknown>, env: Env): Pr
 export async function continueFactory(env: Env): Promise<void> {
 	const ids = await dueRuns(createDb(env.DB), new Date().toISOString());
 	for (const id of ids) await enqueueRun(env, id);
+	await pruneFactory(createDb(env.DB), new Date().toISOString());
 }

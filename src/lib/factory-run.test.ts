@@ -111,3 +111,9 @@ it("handles empty scopes, real duration estimates and stale observations", () =>
 	expect(runProgress(run, now)).toMatchObject({ etaSeconds: null, current: null });
 	expect(retryDelay(0)).toBe(30);
 });
+
+it("resolves an explicit repository predicate as part of a server-side filter", () => {
+	expect(
+		selectRunRepos(repos, [], { scope: "filter", repo: "nocoo/two" }, now).map((r) => r.name),
+	).toEqual(["nocoo/two"]);
+});

@@ -57,6 +57,8 @@ export async function loadFactoryDetail(
 }
 export function factoryError(error: unknown): string {
 	if (error instanceof ApiError) {
+		if (error.code === "factory_capacity")
+			return "已达到存储或计划容量边界。旧快照保留；请缩小范围并查看资源用量。";
 		if (error.code === "refresh_cooldown") return "所选范围仍在冷却，请查看下次允许刷新时间。";
 		if (error.code === "catalog_incomplete") return "仓库清单尚未完成，请先发现仓库。";
 		if (error.code === "github_rate_limited")

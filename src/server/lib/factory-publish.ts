@@ -178,7 +178,7 @@ export async function restoreLegacyRepo(
 				.at(-1) ?? first.runId,
 		source: "legacy",
 		repo: repo.name,
-		metadataAt: lease.run.startedAt,
+		metadataAt: repo.metadataAt ?? lease.run.startedAt,
 	};
 	return repositoryWrites(db, lease, now, repo, repo.name, null, true);
 }
@@ -263,6 +263,26 @@ export async function publicationWrites(
 		runId: run.id,
 		publishedAt: now,
 	};
+	const refs = snapshot.repos.flatMap((repo) =>
+		repo.observation
+			? [
+					{
+						repo: repo.observation.repo ?? repo.name,
+						version: repo.observation.version,
+						source: repo.observation.source,
+					},
+				]
+			: [],
+	);
+	writes.push(
+		fenced(
+			db,
+			lease,
+			now,
+			"INSERT INTO factory_version_refs(account_id,publication_id,repo,version,source) SELECT ?,?,json_extract(value,'$.repo'),json_extract(value,'$.version'),json_extract(value,'$.source') FROM json_each(?) WHERE $guard ON CONFLICT(account_id,publication_id,repo) DO NOTHING",
+			[run.account_id, run.id, JSON.stringify(refs)],
+		),
+	);
 	writes.push(...snapshotWrites(db, lease, now, `factory:v:${run.id}`, snapshot));
 	writes.push(
 		fenced(

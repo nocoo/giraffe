@@ -69,6 +69,7 @@ describe("factory account-bound data operations", () => {
 			"internal_error",
 			"refresh_cooldown",
 			"catalog_incomplete",
+			"factory_capacity",
 		] as const)
 			expect(factoryError(new ApiError(503, code, "secret"))).not.toContain("secret");
 		expect(factoryError(new Error("secret"))).not.toContain("secret");

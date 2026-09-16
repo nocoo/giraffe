@@ -34,4 +34,5 @@ function ensureBaseSchema(): void {
 export function ensureLocalSchema(): void {
 	ensureBaseSchema();
 	d1([`--file=${join(root, "migrations/0001_factory_runs.sql")}`]);
+	d1([`--file=${join(root, "migrations/0002_factory_retention.sql")}`]);
 }

@@ -28,7 +28,7 @@ export function FactoryRuns({
 	filter,
 }: {
 	snapshot: FactorySnapshot | null;
-	onPublished: () => Promise<void>;
+	onPublished: (account?: string) => Promise<void>;
 	filter: { language: string; topic: string; query: string; repo: string };
 }) {
 	const [data, setData] = useState<FactoryRunResponse | null>(null);
@@ -42,6 +42,7 @@ export function FactoryRuns({
 	const [now, setNow] = useState(Date.now());
 	const offset = useRef(0);
 	const publication = useRef<string | null | undefined>(undefined);
+	const accountRef = useRef<string | null>(null);
 	const poll = useRef<ReturnType<typeof createRunPolling> | null>(null);
 	const onPublishedRef = useRef(onPublished);
 	onPublishedRef.current = onPublished;
@@ -57,8 +58,19 @@ export function FactoryRuns({
 				offset.current = Date.parse(state.serverNow) - Date.now();
 				setNow(Date.now() + offset.current);
 				setError("");
-				if (state.publication && publication.current !== state.publication)
-					void onPublishedRef.current().catch((err) => setError(factoryError(err)));
+				if (
+					accountRef.current !== state.account_id ||
+					(state.publication && publication.current !== state.publication)
+				)
+					void onPublishedRef.current(state.account_id).catch((err) => setError(factoryError(err)));
+				if (accountRef.current !== state.account_id) {
+					setSelected([]);
+					setPriority({});
+					setHistoryId("");
+					historyRef.current = "";
+					intent.current = null;
+				}
+				accountRef.current = state.account_id;
 				publication.current = state.publication;
 			},
 		});
@@ -99,8 +111,16 @@ export function FactoryRuns({
 			].sort((a, b) => (priority[a] ?? 100) - (priority[b] ?? 100));
 			const input = {
 				mode,
-				scope: scope === "filter" ? ("selected" as const) : scope,
-				repos: names,
+				scope,
+				...(scope === "selected" ? { repos: names } : { order: names }),
+				...(scope === "filter"
+					? {
+							language: filter.language,
+							topic: filter.topic,
+							query: filter.query,
+							repo: filter.repo,
+						}
+					: {}),
 			};
 			const signature = JSON.stringify(input);
 			if (intent.current?.signature !== signature)
@@ -156,6 +176,23 @@ export function FactoryRuns({
 					清单 {catalog.length} 仓库 · {data?.catalogComplete ? "完整" : "尚未发现完整清单"}
 				</span>
 			</div>
+			{current?.status === "paused" &&
+			["github_unauthorized", "encryption_key_missing"].includes(
+				current.progress.current?.error ?? "",
+			) ? (
+				<p role="alert" className="factory-notice factory-warning">
+					凭据或加密配置不可用。请在 <a href="/settings">账号设置</a>{" "}
+					更新凭据后续跑；已保存进度保留。
+				</p>
+			) : null}
+			<div className="factory-run-meta">
+				{data?.storage ? (
+					<span>
+						资源用量 {(data.storage.resourceBytes / 1e6).toFixed(1)} /{" "}
+						{data.storage.limitBytes / 1e6} MB · 保留最近 20 次运行及所有当前快照引用
+					</span>
+				) : null}
+			</div>
 			{current ? (
 				<div className="factory-run-controls">
 					<strong>{RUN_LABELS[current.status]}</strong>
@@ -185,15 +222,17 @@ export function FactoryRuns({
 								onChange={(e) => setScope(e.target.value as RunSelection["scope"])}
 							>
 								<option value="selected">手动选择</option>
-								<option value="filter">当前筛选 / 仓库群（{options.length}）</option>
+								<option value="filter" disabled={!data?.catalogComplete}>
+									当前筛选 / 仓库群（{options.length}）
+								</option>
 								<option value="all" disabled={!data?.catalogComplete}>
 									全部仓库（{catalog.length}）
 								</option>
 								<option value="stale" disabled={!data?.catalogComplete}>
-									过期 / 覆盖不足（24h）
+									全清单：过期 / 覆盖不足（24h）
 								</option>
 								<option value="failed" disabled={!data?.catalogComplete}>
-									仅上次失败
+									全清单：仅上次失败
 								</option>
 							</select>
 						</label>

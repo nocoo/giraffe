@@ -26,6 +26,7 @@ export type FactoryRunStep = {
 	repo: string | null;
 	status: StepStatus;
 	attempts: number;
+	retryFailures?: number;
 	startedAt: string | null;
 	finishedAt: string | null;
 	durationMs: number;
@@ -37,6 +38,7 @@ export type FactoryRun = {
 	account_id: string;
 	owner: string;
 	requestKey: string;
+	selection?: RunSelection;
 	mode: "catalog" | "refresh";
 	repos: string[];
 	repoIds: Record<string, string>;
@@ -71,6 +73,7 @@ export type FactoryRunView = Omit<FactoryRun, "checkpoint"> & {
 	leaseUntil: string | null;
 };
 export type FactoryRunResponse = {
+	storage?: { resourceBytes: number; limitBytes: number };
 	account_id: string;
 	serverNow: string;
 	nextAllowedAt: string | null;
@@ -85,6 +88,8 @@ export type FactoryRunResponse = {
 export type RunSelection = {
 	scope: "all" | "selected" | "filter" | "stale" | "failed";
 	repos?: string[];
+	order?: string[];
+	repo?: string;
 	language?: string;
 	topic?: string;
 	query?: string;
@@ -116,7 +121,8 @@ export function selectRunRepos(
 		if (input.scope === "failed") return state?.status === "failed";
 		return (
 			input.scope !== "filter" ||
-			((!input.language || repo.language === input.language) &&
+			((!input.repo || repo.name === input.repo) &&
+				(!input.language || repo.language === input.language) &&
 				(!input.topic || repo.topics.includes(input.topic)) &&
 				(!query || `${repo.name} ${repo.description ?? ""}`.toLowerCase().includes(query)))
 		);

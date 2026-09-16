@@ -140,7 +140,8 @@ export function FactoryPage() {
 			cancelled = true;
 		};
 	}, [selected, stream, page, snapshot, detailState, detailDay]);
-	const readPublished = useCallback(async () => {
+	const readPublished = useCallback(async (account?: string) => {
+		if (account) setSnapshot((old) => (old?.account_id === account ? old : null));
 		const result = await reloadFactory();
 		if (!("missing" in result)) setSnapshot(result);
 	}, []);
@@ -211,8 +212,10 @@ export function FactoryPage() {
 									: "旧调查未完成 · 可恢复已有资源"}
 						</strong>
 						<span>
-							{snapshot.window.since.slice(0, 10)} → {snapshot.window.until.slice(0, 10)} ·{" "}
-							{snapshot.publication?.mixed ? "仓库分别采样 /" : "90 天 /"}
+							{snapshot.publication?.mixed
+								? "混合窗口（各仓库独立采样）"
+								: `${snapshot.window.since.slice(0, 10)} → ${snapshot.window.until.slice(0, 10)}`}{" "}
+							· {snapshot.publication?.mixed ? "仓库分别采样 /" : "90 天 /"}
 							UTC / 末日未满
 						</span>
 						<span className="ml-auto">更新 {formatUtc(snapshot.fetched_at)}</span>
@@ -651,6 +654,21 @@ export function FactoryPage() {
 														</button>
 														<div className="text-[10px] text-basalt-muted-foreground">
 															{r.language} {r.private ? "· private" : ""}
+															<div>
+																元数据{" "}
+																{formatUtc(r.metadataAt ?? r.observation?.metadataAt ?? null)}
+															</div>
+															<div>
+																{r.observation
+																	? `${r.observation.source === "legacy" ? "旧资源恢复" : "事件快照"} ${formatUtc(r.observation.refreshedAt)}`
+																	: "事件未采集"}
+															</div>
+															{r.observation ? (
+																<div>
+																	窗口 {r.observation.window.since.slice(0, 10)} →{" "}
+																	{r.observation.window.until.slice(0, 10)}
+																</div>
+															) : null}
 														</div>
 													</TableCell>
 													<TableCell>
@@ -1000,7 +1018,7 @@ export function FactoryPage() {
 							{snapshot.rate
 								? `${snapshot.rate.resource} ${snapshot.rate.remaining}，重置 ${formatUtc(snapshot.rate.resetAt)}`
 								: "此导入快照未记录最近额度"}
-							。每批至多 6 页，资源至多 5,000 条或 1.2
+							。每条队列消息至多 1 页 / 一个逻辑动作，资源至多 5,000 条或 1.2
 							MB；截断数据只表示观察子集。已完成资源在续传时复用；更新调查重新取样。
 						</p>
 						<p>

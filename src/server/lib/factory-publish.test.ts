@@ -70,7 +70,7 @@ it("preserves stronger last-known-good coverage and failed-repository metadata i
 	expect(await restoreLegacyRepo(db, lease, now, repo)).toEqual([]);
 	const writes = await repositoryWrites(db, lease, now, repo, repo.name, null);
 	await controlRun(createDb(raw), snap.account_id, "r1", "pause", now);
-	expect(await saveRun(createDb(raw), lease, writes, now)).toBe(false);
+	expect(await saveRun(db, lease, writes, now)).toBe(false);
 	expect((await repoStates(createDb(raw), snap.account_id))[0]?.status).toBe("failed");
 });
 it("fails closed at storage limits and for missing publication input", async () => {
@@ -186,4 +186,24 @@ it("uses the complete catalog for membership while preserving renamed repositori
 	expect(
 		await (await import("./db/snapshots")).readSnapshot(db, snap.account_id, "factory"),
 	).toMatchObject({ repos: [{ name: "nocoo/app" }, { name: "nocoo/retired" }] });
+});
+
+it("aggregates only current repository pointers even when a newer historical version exists", async () => {
+	const { db, lease, repo } = await setup();
+	lease.run.mode = "refresh";
+	repo.observation = { source: "run", version: "r1", refreshedAt: now, window: snap.window };
+	await db.batch(replaceSnapshotStmts(db, snap.account_id, "factory", { ...snap }, now));
+	await db.batch(await repositoryWrites(db, lease, now, repo, repo.name, null));
+	await db
+		.prepare("INSERT INTO factory_repo_versions VALUES(?,?,?,?,?)")
+		.bind(
+			snap.account_id,
+			repo.name,
+			"unpublished",
+			JSON.stringify({ ...repo, metrics: { ...repo.metrics, commits: 9999 } }),
+			"2999-01-01",
+		)
+		.run();
+	await db.batch(await publicationWrites(db, lease, now));
+	expect((await publishedFactory(db, snap.account_id))?.repos[0]?.metrics.commits).toBe(0);
 });
