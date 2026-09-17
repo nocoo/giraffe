@@ -1,5 +1,3 @@
-import { HeaderTooltip, HexlyLink } from "./header-links";
-import { ThemeToggle } from "./theme-toggle";
 import { Button, ContentIsland, Sheet, SheetContent, SheetTitle } from "@nocoo/basalt";
 import { AppHeader } from "@nocoo/basalt/components/app-header";
 import { AppMain, AppSkipLink, AppShell as Shell } from "@nocoo/basalt/components/app-shell";
@@ -14,6 +12,8 @@ import { subscribeErrorUi } from "../../lib/error-ui";
 import { headerCrumbs, headerTitle } from "../../lib/navigation";
 import { AppSidebar } from "./app-sidebar";
 import { GithubIcon } from "./github-icon";
+import { HeaderTooltip, HexlyLink } from "./header-links";
+import { ThemeToggle } from "./theme-toggle";
 import { useIsMobile } from "./use-mobile";
 
 export function AppShell() {
