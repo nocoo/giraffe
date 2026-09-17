@@ -1,10 +1,11 @@
+import { HeaderTooltip, HexlyLink } from "./header-links";
+import { ThemeToggle } from "./theme-toggle";
 import { Button, ContentIsland, Sheet, SheetContent, SheetTitle } from "@nocoo/basalt";
 import { AppHeader } from "@nocoo/basalt/components/app-header";
 import { AppMain, AppSkipLink, AppShell as Shell } from "@nocoo/basalt/components/app-shell";
 import { Banner } from "@nocoo/basalt/components/banner";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
-import { ThemeToggle } from "@nocoo/basalt/components/theme-toggle";
 import { useTheme } from "@nocoo/basalt/providers/theme";
 import { Menu, ShieldAlert } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -76,31 +77,36 @@ export function AppShell() {
 					className="[&_nav]:shrink-0 [&_nav]:whitespace-nowrap"
 					leading={
 						isMobile ? (
-							<Button
-								variant="ghost"
-								size="icon"
-								className="h-8 w-8 shrink-0"
-								onClick={() => setMobileOpen(true)}
-								aria-label="打开导航"
-							>
-								<Menu aria-hidden="true" />
-							</Button>
+							<HeaderTooltip label="打开导航">
+								<Button
+									variant="ghost"
+									size="icon"
+									className="h-8 w-8 shrink-0"
+									onClick={() => setMobileOpen(true)}
+									aria-label="打开导航"
+								>
+									<Menu aria-hidden="true" />
+								</Button>
+							</HeaderTooltip>
 						) : null
 					}
 					breadcrumbs={crumbs}
 					title={title}
 					actions={
 						<>
-							<Button variant="ghost" size="icon" className="h-8 w-8" asChild>
-								<a
-									href="https://github.com/nocoo/giraffe"
-									target="_blank"
-									rel="noopener noreferrer"
-									aria-label="GitHub"
-								>
-									<GithubIcon className="h-[18px] w-[18px]" strokeWidth={1.5} />
-								</a>
-							</Button>
+							<HeaderTooltip label="GitHub repository">
+								<Button variant="ghost" size="icon" className="h-8 w-8" asChild>
+									<a
+										href="https://github.com/nocoo/giraffe"
+										target="_blank"
+										rel="noopener noreferrer"
+										aria-label="GitHub"
+									>
+										<GithubIcon className="h-[18px] w-[18px]" strokeWidth={1.5} />
+									</a>
+								</Button>
+							</HeaderTooltip>
+							<HexlyLink />
 							<ThemeToggle aria-label={`切换主题（当前 ${theme}）`} />
 						</>
 					}
