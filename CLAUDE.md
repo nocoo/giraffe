@@ -1,112 +1,100 @@
 # Giraffe
 
-Personal GitHub monitoring console. Cloudflare Worker (Hono `/api/*`) + planned Vite SPA. Code name `giraffe`.
-Profile: ts-worker-web
-Direction: [docs/01-architecture.md](docs/01-architecture.md). Quality: [docs/02-quality.md](docs/02-quality.md). Frameworks must not rewrite this file.
+Personal GitHub console with account snapshots, inboxes, repository detail and resumable software-factory runs.
+Profile: ts-worker-web.
+Direction: [architecture](docs/01-architecture.md), [quality](docs/02-quality.md) and [factory runs](docs/09-factory-runs.md). Frameworks must not rewrite this file.
 
 ## Sources of Truth
 
-This file is the **contract**. Hooks, CI, and config are **enforcement**. If they disagree, raise enforcement; never lower this file.
+This file is the contract; hooks, CI and configuration enforce it. Raise weaker enforcement instead of lowering this contract.
 
 | Fact | Where |
 |---|---|
-| Agent handbook | this file |
-| Human docs | `docs/01`–`05`. No README.md |
-| Version | `package.json` `"version"` via `src/lib/version.ts` (`APP_VERSION`) |
-| Enforcement | `.husky/*`, `vitest.config.ts`, `scripts/gate-*.ts` |
-| Machine rules | global `AGENTS.md`, `rules/git-commit.md` |
-| Accidents | [Retrospective.md](Retrospective.md) |
-| Env files | `.dev.vars` gitignored. E2E uses runner `--env-file` only. Never deployable `[vars]` |
+| Human docs | [README.md](README.md), [docs index](docs/README.md) |
+| Version | `package.json`, read through `src/lib/version.ts` as `APP_VERSION` |
+| Enforcement | `.husky/`, CI/release workflows, Vitest/Playwright configs and `scripts/gate-*.ts` |
+| Local secrets | Ignored `.dev.vars`, initialized from `dev.vars.example`; test runners generate their own env files |
+| Machine rules / accidents | Global `AGENTS.md` and `rules/`; [Retrospective.md](Retrospective.md) |
 
 ## Project Invariants
 
-- Plaintext GitHub PAT may exist only in the settings input (cleared after submit), that request body, Worker memory after decrypt, and the outbound `Authorization` header. Never persist, bundle, log, trace, or return it. D1 stores only the AES-GCM envelope.
-- `workers_dev = false`. App gate is Cloudflare Access JWT (`iss` + `aud` + JWKS). No in-app login.
-- Client follows [docs/05](docs/05-client.md). Server tests must not import `src/client`. Phase 2 MVVM: viewmodels have no View/DOM imports.
-- E2E is `--local --persist-to` only. Never remote `giraffe-db`. L2 persist `.wrangler/e2e/` :17045; L3 `.wrangler/e2e-pw/` :27045.
-- Strict TDD: failing tests stay in the working tree; only green L1 commits. `--no-verify` forbidden.
-- Caddy `giraffe.dev.hexly.ai` → Vite `:7045`. Daily wrangler sidecar is `:37045` (not `:7046`).
+- Plaintext classic GitHub PAT exists only in the settings input until submission, that request body, decrypted Worker memory and outbound Authorization. Never persist, bundle, log, trace or return it. D1 stores AES-GCM envelopes; error records store safe codes, not raw upstream failures.
+- `workers_dev = false`; Cloudflare Access validates JWT issuer/audience/JWKS. There is no in-app login. Authorized users of one deployment share its accounts/snapshots; do not claim per-user tenancy.
+- Browser calls go through `src/client/lib/api.ts` using relative `/api/` URLs; GitHub calls use `createGithubClient(env)`. Production ignores fixture GitHub/JWKS overrides. GET snapshots are read-only and must not silently fetch upstream or write data.
+- Server tests must not import the client. Viewmodels stay free of View/DOM imports and views/routes stay thin. The React/Basalt client now exists; historical phase-1 exclusions are no longer the current project scope.
+- Automated tests use local Wrangler/SQLite and GitHub/JWKS stubs, never real PATs, daily `.dev.vars` or `api.github.com`. Never use remote D1 or deploy remote `-test` resources.
+- Preserve leased/fenced factory writes, bounded retention and immutable per-repository/global publication. Failed or limited collection retains prior good data and its original window; missing coverage is not a successful zero. Preserve old rows through additive migrations and rollback. Details: [factory contract](docs/06-software-factory.md), [run/storage rules](docs/09-factory-runs.md).
+- Keep strict TDD: failing tests remain in the working tree; commits pass current L1/G1. Never skip hooks to publish a failing change.
 
 ## Stack / Layout
 
 | Component | Choice |
 |---|---|
-| Language | TypeScript 7 strict (`exactOptionalPropertyTypes`) |
-| Package manager | Bun |
-| Runtime | Cloudflare Workers (Hono) |
-| Lint | Biome `--error-on-warnings` (`noSkippedTests` / `noFocusedTests`) |
-| Tests | Vitest L1 95% all four; L2 `scripts/run-e2e.ts`; L3 Playwright |
-| Data | D1 `giraffe-db` (binding `DB`) |
-
-```
-src/server/   Hono, D1, Access, GitHub
-src/lib/      shared
-scripts/      L2 runner + gates
-tests/api/    L2
-docs/         01–05
-```
+| Runtime / install | TypeScript 7 strict, Bun 1.4, Node ≥22.12; Hono Cloudflare Worker |
+| UI / data | Vite React/Basalt SPA, D1 `giraffe-db` through `DB` |
+| Static / tests | Biome and AST boundary gates, Vitest/V8, real HTTP and Playwright Chromium |
+| `src/server/`, `src/lib/` | API, Access, encrypted accounts, GitHub collection, storage and shared types |
+| `src/client/`, `tests/{api,e2e}/` | Routes/viewmodels and API/browser journeys |
+| `scripts/`, `migrations/`, `docs/` | Runners, schema evolution and numbered design/runbooks |
 
 ## Commands
 
+Run from the root. API/browser runners generate fake keys and test configuration without `.dev.vars`. Install Chromium for browser checks; Gitleaks and OSV Scanner are required by push gates.
+
 ```bash
-bun run dev
-bun run dev:server
+bun install --frozen-lockfile
 bun run typecheck
 bun run lint
-bun run test
+bun run build
+bun run gate:test-skip
+bun run gate:wrangler-vars
+bun run gate:github-fetch
+bun run gate:client-fetch
 bun run test:coverage
 bun run test:e2e:api
+bun run test:e2e:bdd
 bun run gate:security
 ```
 
+For daily development, prepare `.dev.vars` from the example without overwriting an existing file. Replace the public `TOKEN_ENCRYPTION_KEY_V1` example before storing any real PAT and keep `TOKEN_ENCRYPTION_KEY_CURRENT=1`; `bun run dev` starts local Vite/Worker, while `bun run dev:server` starts the API lane. Development GitHub traffic still reaches the real service.
+
 ## Verification
 
-Status: `enforced` | `planned` | `manual` | `N/A`. `enforced` Evidence = hook/CI/config/script.
+6DQ = L1/L2/L3 + G1/G2 + D1. Status: `enforced`, `planned`, `manual`, `N/A`.
 
-Org gaps: index-snapshot pre-commit. pre-push **does** parse stdin refs for gitleaks (`GITLEAKS_LOG_OPTS`).
-
-Today: pre-commit typecheck/lint/`gate:test-skip`/`gate:wrangler-vars`/`gate:github-fetch`/`gate:client-fetch`/`test:coverage` on the working tree. pre-push L2 ‖ G2. GitHub Actions CI runs G1+L1+L2+G2+L3. CD is `wrangler deploy` after `vite build`.
-
-| Change | Proof | Status | Evidence |
+| Dimension | Required proof | Status | Current enforcement / gap |
 |---|---|---|---|
-| Logic | L1 vitest ≥95% all four | enforced | pre-commit `test:coverage`; `vitest.config.ts` |
-| API L2 | real HTTP, isolated D1 | enforced | pre-push `test:e2e:api` (`scripts/run-e2e.ts`) |
-| UI L3 | Playwright | enforced | CI `test:e2e:bdd` (not pre-push) |
-| Types / lint | tsc + Biome 0 warning + skip/vars/fetch gates | enforced | pre-commit |
-| G2 secrets | gitleaks | enforced | pre-push `gate:security` (stdin ranges) |
-| G2 deps | osv-scanner `bun.lock` | enforced | pre-push `gate:security` |
-| Bundler | Vite → `dist/client` | enforced | CD `bun run build` before `wrangler deploy` |
-| Docs | numbered doc if behavior changes | manual | human review |
-| Release | `wrangler deploy` | enforced | `.github/workflows/release.yml` |
+| L1 logic | Statements, branches, functions and lines each ≥95%; no skipped/focused tests | enforced | Commit/CI coverage includes server/shared/client logic; skip gate and Biome reject disabled/focused tests, and L1 setup rejects real network |
+| L2 API | Real local HTTP over 100% of endpoint/method combinations, success/failure and auth | planned | Push/CI run functional suite A and JWT suite B; full endpoint/method assertion inventory must track the evolving factory API |
+| L3 UI | Critical account/catalogue/repository/factory journeys in Chromium | enforced | CI runs the built SPA through `scripts/run-e2e-bdd.ts` and GitHub stub |
+| G1 static | Strict types and check-only lint, zero errors/warnings | enforced | Commit/CI check three TS configs, generated Wrangler types and skip/vars/fetch boundaries |
+| G2 security | Dependency and secret scans; missing tool fails | enforced | Pre-push passes stdin commit ranges, including new refs, to Gitleaks and scans `bun.lock` with OSV; CI shared scanners |
+| D1 isolation | Fresh local state per run, guards and marker before fixtures/reset/cleanup | planned | Both runners are local with `_test_marker env=test` and stub ports, but reuse fixed directories and delete them before proving marker/ownership |
+| Build | Actual Vite assets in `dist/client` | enforced | L3 runner and CD build; typecheck alone does not build |
+| Docs / migration | API/schema/source-window and rollback proof | manual | Server, client and factory runbooks; local migration verifier on a backup copy |
 
-| Hook | Org bar | Status | Evidence |
-|---|---|---|---|
-| pre-commit | index snapshot | planned | — |
-| pre-push | stdin ref range | enforced | `.husky/pre-push` reads stdin SHAs |
+| Hook | Current behavior | Required follow-up |
+|---|---|---|
+| pre-commit | Working-tree typecheck, full lint, four structural gates and coverage | G1+L1 on index snapshot, <30s |
+| pre-push | Local L2 and G2 in parallel; Gitleaks consumes stdin ranges | Test the same pushed commit snapshots as well, <3min |
 
-`--no-verify` forbidden on commits and branch pushes. Tag-only may skip.
+Install restores Husky. Hooks are check-only; never use `--no-verify` on commits or branch pushes. CI/CD pins shared workflows at `ad43150de3a2be2fa464b5cd2f921dc4fa9f8f0f`.
 
 ## Resources / Isolation
 
-| Purpose | Port / resource | Isolation |
+| Lane | Ports / directory | Boundary |
 |---|---|---|
-| Dev | 7045 Vite + 37045 wrangler | `https://giraffe.dev.hexly.ai`; `.dev.vars` |
-| L2 | 17045 | `--local --persist-to .wrangler/e2e/` |
-| L3 | 27045 | `--local --persist-to .wrangler/e2e-pw/` |
+| Daily dev | Vite 7045, Worker 37045; `.wrangler/state` | Caddy `giraffe.dev.hexly.ai`; local D1, real GitHub unless configured otherwise |
+| L2 | Worker 17045, GitHub stub 17046, JWKS stub 17047; `.wrangler/e2e` | Functional and signed-JWT suites start separate Workers; runner env files only |
+| L3 | Worker 27045, GitHub stub 27046; `.wrangler/e2e-pw` | Real built SPA with development-auth fixtures |
+
+Keep these ports free; a conflict fails instead of falling back to development. Required runners allocate per-run local persistence, reject remote bindings/credential fallback, prove test context and verify `_test_marker(key,value)` with `env=test` before reset/cleanup. Existing fixed directory names are implementation gaps, not the desired contract.
 
 ## Operations / Release
 
-- CD: `.github/workflows/release.yml` (`vite build` then `wrangler deploy`). Secrets stay in Cloudflare / GitHub, never `[vars]`.
-- Live-check: `GET https://giraffe.hexly.ai/api/live`. Runbook: [docs/04-server.md](docs/04-server.md).
-- Public live checks use the D1 binding to execute `SELECT 1`; database failure returns uncached HTTP 503 with `status: "error"`. The optional `_test_marker` table is test-isolation metadata, not the production readiness probe. Keep the top-level version current and never return private database diagnostics.
+Authorized publication uses `.github/workflows/release.yml`: trusted successful main CI or an explicitly requested version tag/manual dispatch, shared migration/build/deploy workflow and production secrets. Do not deploy concurrently from a laptop. Apply additive migrations before code needing the new schema; validate factory migrations against a local backup copy as documented.
+Verify `GET https://giraffe.hexly.ai/api/live`: current top-level version and a real D1 `SELECT 1`; database failure returns uncached 503 with `status: "error"`. `_test_marker` is test metadata, not the production health probe, and private diagnostics never enter the response. Runbook: [server](docs/04-server.md).
 
 ## Retrospective
 
-| Kind | Where |
-|---|---|
-| Accident narrative | [Retrospective.md](Retrospective.md) |
-| Recurring project rule | one line here (cap ~10) |
-| Checkable rule | hook or test |
-
-- PAT plaintext never in D1, logs, traces, or responses.
-- Phase 1: no `src/client` feature code.
+Narratives remain in [Retrospective.md](Retrospective.md); keep only recurring rules here, cross-project lessons in global rules/nmem and deterministic requirements in hooks/tests.
