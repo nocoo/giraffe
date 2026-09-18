@@ -112,6 +112,21 @@ describe("collect helpers", () => {
 });
 
 describe("collectRepos", () => {
+	it("does not treat missing repository or security connections as successful empty data", async () => {
+		for (const result of [{}, { viewer: {} }, { viewer: { repositories: {} } }]) {
+			expect(await collectRepos(client({ graphql: () => result }), "tok")).toMatchObject({
+				truncated: true,
+			});
+		}
+		for (const repository of [{}, { vulnerabilityAlerts: {} }]) {
+			const gh = client({ graphql: () => ({ repository }) });
+			expect(await collectKind(gh, "tok", "alerts", ["o/n"])).toMatchObject({ truncated: true });
+			expect(await collectKind(gh, "tok", "repo:o/n:security", [])).toMatchObject({
+				unavailable: true,
+			});
+		}
+	});
+
 	it("pages viewer repositories and maps nodes", async () => {
 		let page = 0;
 		const gh = client({

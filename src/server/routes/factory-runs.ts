@@ -21,6 +21,7 @@ import { ApiError, jsonOk } from "../lib/errors";
 import { enqueueRun } from "../lib/factory-dispatch";
 import { boundedJson } from "../lib/factory-publish";
 import { checkFactoryCapacity, factoryStorage } from "../lib/factory-retention";
+import { siteCatalog } from "../lib/factory-site";
 import { ACCOUNT_ID_RE } from "../lib/id";
 import { readJson } from "../lib/read-body";
 
@@ -51,6 +52,7 @@ export async function getFactoryRuns(c: Ctx): Promise<Response> {
 	const runs = await listRuns(db, row.id, detail);
 	const head = await factoryHead(db, row.id);
 	const catalog = await catalogFactory(db, row.id);
+	const siteRepos = await siteCatalog(db, row.id);
 	const states = await repoStates(db, row.id);
 	const now = new Date().toISOString();
 	const views = runs.map(({ run, leaseUntil, counts }) => {
@@ -76,7 +78,7 @@ export async function getFactoryRuns(c: Ctx): Promise<Response> {
 		repositories: states,
 		catalog: catalog?.repos ?? [],
 		catalogUpdatedAt: catalog?.fetched_at ?? null,
-		catalogComplete: catalog?.inventory.complete ?? false,
+		catalogComplete: Boolean(catalog?.inventory.complete && siteRepos !== null),
 		publication: head?.published_id ?? null,
 	};
 	return jsonOk(response, 200, PRIVATE);
@@ -99,10 +101,11 @@ export async function postFactoryRun(c: Ctx): Promise<Response> {
 	if (data.mode === "refresh" && storage.totalBytes >= storage.limitBytes - 2_000_000)
 		throw new ApiError(422, "factory_capacity", "factory resource quota reached");
 	const catalog = await catalogFactory(db, row.id);
+	const siteRepos = data.mode === "refresh" ? await siteCatalog(db, row.id) : [];
 	const states = await repoStates(db, row.id);
 	if (
 		data.mode === "refresh" &&
-		(!catalog || (data.scope !== "selected" && !catalog.inventory.complete))
+		(!catalog || siteRepos === null || (data.scope !== "selected" && !catalog.inventory.complete))
 	)
 		throw new ApiError(409, "catalog_incomplete", "discover complete catalog first");
 	let repos: NonNullable<Awaited<ReturnType<typeof catalogFactory>>>["repos"];
@@ -142,10 +145,16 @@ export async function postFactoryRun(c: Ctx): Promise<Response> {
 		const order = new Map(data.order.map((name, i) => [name, i]));
 		repos.sort((a, b) => (order.get(a.name) ?? 1000) - (order.get(b.name) ?? 1000));
 	}
-	if (data.mode === "refresh" && (!repos.length || repos.length > 500))
+	if (
+		data.mode === "refresh" &&
+		((data.scope !== "all" && !repos.length) ||
+			repos.length > 500 ||
+			(siteRepos?.length ?? 0) > 500)
+	)
 		throw new ApiError(400, "validation_failed", "select 1 to 500 repositories");
 	if (
 		data.mode === "refresh" &&
+		data.scope !== "all" &&
 		repos.every((r) => states.some((s) => s.repo === r.name && s.nextAllowedAt > now))
 	)
 		throw new ApiError(409, "refresh_cooldown", "all selected repositories are cooling down");
@@ -158,6 +167,7 @@ export async function postFactoryRun(c: Ctx): Promise<Response> {
 		repos,
 		now,
 		states,
+		siteRepos ?? [],
 	);
 	plan.selection = {
 		scope: data.scope,

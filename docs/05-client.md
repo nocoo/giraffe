@@ -1,6 +1,6 @@
 # 05 — Client 设计
 
-阶段 2 的 Vite SPA 契约。页面、MVVM、控件复用、刷新时机、L1/L3 与原子提交步骤以本文为准。01 第 9 节只是信息架构摘要。HTTP 以 [04](04-server.md) 为准，JSON 以 [03](03-schema.md) 为准，测试分层以 [02](02-quality.md) 为准。
+Vite SPA 契约。页面、MVVM、控件复用、刷新时机与 L1/L3 以本文为准；§11–12 保留阶段 2 的历史实施记录。当前全站刷新以 §7 和 [09](09-factory-runs.md) 为准。01 第 9 节只是信息架构摘要。HTTP 以 [04](04-server.md) 为准，JSON 以 [03](03-schema.md) 为准，测试分层以 [02](02-quality.md) 为准。
 
 > 返回 [文档目录](README.md)
 
@@ -12,7 +12,7 @@ Codex Sign Off 本文之前，禁止第 12 节步骤 1 及之后（含 Vite 脚�
 
 ## 1. 范围
 
-做：`src/client` Vite + React 19 SPA；只打同源 `/api/*`；用 `@nocoo/basalt@2.1.0` 控件拼界面；L1 ViewModel 测试 + 02 §6 三条 L3；产物进 `dist/client`，由已落地 Worker `[assets]` 托管。
+做：`src/client` Vite + React 19 SPA；只打同源 `/api/*`；用 `@nocoo/basalt@2.1.8` 控件拼界面；L1 ViewModel 测试 + 02 §6 三条 L3；产物进 `dist/client`，由已落地 Worker `[assets]` 托管。
 
 不做：平行控件库、本地 vendoring Basalt 源码、shadcn 再拷一份、Next.js、`@cloudflare/vite-plugin`、独立 Vite 开发服务器打 Worker API、GitLab、Device Flow、fine-grained PAT、LLM digest、Kanban、Mentions、Dependents、顶层 CI Health、应用内登录 / OAuth / session cookie。
 
@@ -24,14 +24,14 @@ Codex Sign Off 本文之前，禁止第 12 节步骤 1 及之后（含 Vite 脚�
 
 | 主题 | 决定 |
 |------|------|
-| 包 | `@nocoo/basalt@2.1.0`。从 npm 安装（临时允许的 registry）。禁止把 `../basalt` 源码拷进本仓，禁止 `file:` 依赖，禁止把镜像 URL 写进 `bun.lock`。岛内表面嵌套见 §5.2 |
+| 包 | `@nocoo/basalt@2.1.8`。从 npm 安装（临时允许的 registry）。禁止把 `../basalt` 源码拷进本仓，禁止 `file:` 依赖，禁止把镜像 URL 写进 `bun.lock`。岛内表面嵌套见 §5.2 |
 | 控件 | 只用该包已发布的控件。根 barrel 没有的走 granular：`@nocoo/basalt/components/*`、`@nocoo/basalt/charts/*`。缺的用 HTML + 已有 Basalt 叶子，不自研第二套 widget |
 | 布局语言 | 参考 `/Users/nocoo/workspace/work/whiteboard/intentional-kusto-queries` 的 **壳**，不是拷它的组件。侧栏展开 260px / 收起 68px，`transition-all duration-300 ease-in-out`，sticky flex 子项（不是 `fixed` + spacer）。主区 **ContentIsland** 浮岛。跳过链接。顶栏高 14（`h-14`）面包屑。中文 UI |
 | 壳实现 | giraffe 的 `src/client/components/layout/*` **只组合** Basalt：`AppShell` / `AppMain` / `AppSkipLink`、`AppHeader`、`PageHeader`、`SectionRule`（均不在根 barrel）、`Sidebar*` + `ContentIsland`（根 barrel）、`ThemeProvider` / `ThemeToggle` / `LinkProvider`。`AccentProvider` 挂在 `app.tsx`（granular `@nocoo/basalt/providers/accent`）。禁止 `SidebarProvider`、禁止再写一套 `sidebar-context`。`AppMain` 必须传 `tabIndex={-1}`，否则 skip link 无法聚焦 |
 | 路由 | React Router SPA。路径与 01 §9 一致，见第 8 节。无 `/login` |
 | 分层 | MVVM。ViewModel 无 View/DOM/`@nocoo/basalt`/`react-dom` import。L1 覆盖率豁免：`src/client/routes/*.tsx` 与 `src/client/components/layout/**/*.tsx`（薄壳组合）。`main.tsx` / `app.tsx` 同样豁免（只挂 provider 与路由表） |
 | 出站 | 唯一 `fetch` 在 `src/client/lib/api.ts`。G1 `gate:client-fetch` 只接受**字面量**或以 `/api/` 开头的**模板字面量**。因此必须写成 `` fetch(`/api/${resource}`) `` 或 `` fetch(`/api/accounts/${id}/activate`) ``，禁止 `fetch(path)` 变量 |
-| 刷新 | GET 不刷新（04）。只由 Client 调 `POST /api/refresh`。时机见第 7 节。进行中互斥见 `viewmodels/refresh.ts` 模块单例 |
+| 刷新 | GET 只读。唯一入口是软件工厂的持久刷新控制台；其他页面无独立刷新及缺快照自动采集。见 §7 / 09 |
 | PAT | 只出现在设置页输入（提交后清空）、该次请求体。禁止 `localStorage` / `sessionStorage` / 前端包 / 日志 |
 | 筛选 | 04 GET 无 filter/sort。搜索、排序、网格/列表切换全在 Client ViewModel。列表用 Basalt `Table`（`@nocoo/basalt/components/table`），**不用** `DataTable`（其内部自带不可关闭的列头排序，会与 VM 双真相） |
 | Origin | 以 04 §5.3 与 02 §6 为准：生产/test 不含 loopback；development Access 短路允许同源 `url.origin`（L3 `:27045`）。步骤 1 实现 `origin.ts`，L1+L2 绿 |
@@ -73,7 +73,8 @@ src/client/
     repo-detail.ts
     me.ts
     session.ts                     # activeAccountId + ensureSession
-    refresh.ts                     # 模块单例互斥锁 + POST /api/refresh
+    factory-runs.ts                 # 持久 run 的启动、控制、只读轮询
+    snapshot.ts                     # 带账号校验的只读 GET，无长期快照缓存
   routes/
     repos.tsx
     issues.tsx
@@ -103,9 +104,9 @@ tests/e2e/                         # L3；由 scripts/run-e2e-bdd.ts 跑
 | 构建 | Vite 8 + `@vitejs/plugin-react` + `@tailwindcss/vite`。`bun run dev` 开 HMR |
 | UI | React 19 + React Router |
 | 样式 | Tailwind CSS v4 + `@nocoo/basalt/styles/tailwind` |
-| 控件 | `@nocoo/basalt@2.1.0` |
+| 控件 | `@nocoo/basalt@2.1.8` |
 | 图标 | `lucide-react`（Basalt peer） |
-| 图表 | Basalt charts + peer `recharts@^3`（Traffic、Languages） |
+| 图表 | Basalt charts + peer `recharts@^3`（软件工厂、Insights、Traffic、Languages） |
 | Toast | Basalt `toast` / `Toaster`（根 barrel；底层 sonner） |
 | 命令面板 | Basalt `CommandPalette`（⌘K 跳路由） |
 | 测试 | Vitest L1（`src/client/**` 用 happy-dom）；Playwright L3 Chromium |
@@ -163,12 +164,12 @@ Basalt `ContentIsland` 已是 L1 岛。不要再包一层自定义 card 当岛�
 
 - 每页先 `PageHeader`（flush，不包卡）。短筛选放 `actions`（刷新/创建最后）；两个及以上筛选放 `filters`。页头右侧按钮与搜索用 `size="sm"`（`h-8`），与标题行、`SegmentControl` 同高。
 - 分区用 `SectionRule`。卡片标题留在 `LayerCard.Header`。
-- 非结构砖（网格仓卡、KPI）：岛上裸 `LayerCard padding="md"`，不要 Header/Body。
+- 网格仓卡：岛上裸 `LayerCard padding="md"`，不要 Header/Body。
 - 表单 / 身份：`Header` + `Body`（控件留在 L2）。`Secondary` 是 `Header` 别名。
-- 列表 / 表：表只进 `LayerCard.Well className="p-0"`。`SegmentControl` 的 `legend` 只给读屏（`sr-only`）。
+- 列表 / 表：表放进无二次内边距的 `LayerCard.Well` 或 `Body`（`className="p-0"`）。`SegmentControl` 的 `legend` 只给读屏（`sr-only`）。
 - 空态用 `LayerCard.Empty`，仍在 `Well` 里。
 - `Table`、列表、图表 **不得** 直接做 `ContentIsland` 的子节点。
-- KPI 用裸 `LayerCard padding="md"`（`layout/kpi`），不用灰 `StatStrip`。
+- KPI 由 `layout/kpi` 统一组合 Basalt `StatCard`，不再手写指标卡。`StatStrip` 只用于已有卡片内部的并列阶段计数，不替代页级 KPI。
 
 ### 5.3 控件映射（强制）
 
@@ -182,25 +183,26 @@ Basalt `ContentIsland` 已是 L1 岛。不要再包一层自定义 card 当岛�
 | 按钮 / 输入 / 字段 | `Button` `Input` `Field` `Label` | `@nocoo/basalt`。页级主操作（刷新、提交、激活、全部已读）用默认变体 `bg-basalt-primary`；危险操作用 `destructive`；壳层 / 表头排序用 `ghost`；行内次要用 `secondary` |
 | 搜索 / 筛选 | `InputGroup` / `FilterBar` | granular `components/input-group` / `components/filter-bar`。搜索图标、清空按钮和输入框由共享控件组合；清空后焦点回到输入框 |
 | PAT | `SensitiveInput` | `@nocoo/basalt/components/sensitive-input` |
-| 列表 | `Table` `TableHeader` `TableBody` `TableRow` `TableCell` | `@nocoo/basalt/components/table`。表头可点排序；行内用 `SlotBarChart` meter、彩色 Badge、GitHub label 色片。不用 `DataTable` |
+| 列表 | `Table` `TableHeader` `TableBody` `TableRow` `TableCell` | `@nocoo/basalt/components/table`。表头可点排序；行内用 `SlotBarChart` meter、绿色/中性徽章，标签保留文字、不套用上游杂色。不用 `DataTable` |
 | 横向内容 | `ScrollArea` | `@nocoo/basalt/components/scroll-area`，`orientation="horizontal"`。宽表放在 Well 内滚动；单仓标签也使用共享滚动区，均有中文可访问名称 |
 | 空态 | `Empty` | `@nocoo/basalt/components/empty` |
-| 统计 | 岛上裸 `LayerCard padding="md"` KPI（主题色 icon） | `layout/kpi`。不用灰 `StatStrip` |
+| 统计 | `StatCard` KPI（主题色 icon）；卡片内阶段计数用 `StatStrip` | `layout/kpi` → `@nocoo/basalt/charts/stat-card`；`@nocoo/basalt/components/stat-strip` |
 | 卡片 | `LayerCard` | `@nocoo/basalt/components/layer-card` |
 | 分段（列表/网格、筛选） | `SegmentControl` | `@nocoo/basalt` |
 | 页级 tab（单仓） | `Tabs*` | `@nocoo/basalt` |
 | 工具条 | `Toolbar` | `@nocoo/basalt` |
-| 徽章（health / severity） | `CandyBadge`（Basalt `Badge` + 糖果 `accent-1…12`） | `layout/candy-badge`。白字。不用 `success`/`warning`/`info` tint |
+| 徽章（health / severity） | `CandyBadge`（Basalt `Badge` 的站点配色组合） | `layout/candy-badge`。常规状态用绿色/中性灰浅底，警告和错误保留 Basalt 语义色，正文使用对应的对比色，不使用模板糖果色 |
 | 头像 | `Avatar*` | `@nocoo/basalt` |
 | 确认删除账号 | `ConfirmDialog` / `useConfirm` | `@nocoo/basalt` |
 | Toast | `toast` `Toaster` | `@nocoo/basalt` |
-| 主题 | `ThemeProvider` `ThemeToggle` `AccentProvider` | `ThemeProvider` 根 barrel；`AccentProvider` 走 `@nocoo/basalt/providers/accent`。`persist={false}`，`defaultAccent="primary"`，`paletteOverrides.primary` 用 Basalt Green 糖果色（`113 58% 62%` / `113 58% 70%`）作草绿主色。禁止再写 `--basalt-*` token。图表固定五色循环，与 accent 无关 |
+| 主题 | `ThemeProvider` `ThemeToggle` `AccentProvider` | `ThemeProvider` 根 barrel；`AccentProvider` 走 `@nocoo/basalt/providers/accent`。`persist={false}`，`defaultAccent="primary"`，`paletteOverrides.primary` 为草绿主色（`113 58% 62%` / `113 58% 70%`）。禁止重写 `--basalt-*`；图表通过 `lib/chart-theme` 和显式 `series.color` 使用主题色衍生的五个绿色层次，不依赖包默认五彩色板 |
 | Router 链接 | `Link` + `LinkProvider` | `@nocoo/basalt` |
 | ⌘K | `CommandPalette*` | `@nocoo/basalt` |
 | 日报预览 / 复制 | `CodeBlock` / `ClipboardText` | granular `components/code` / `components/clipboard-text`。`text` 是可见标签，`copyText` 必须传完整 Markdown 内容 |
 | Traffic | `AreaChart` 或 `LineChart` | `@nocoo/basalt/charts/area` / `line` |
-| Languages | `DonutChart` | `@nocoo/basalt/charts/donut` |
-| Insights | `StackedBarChart` `DonutChart` `LineChart` `BarChart` | `@nocoo/basalt/charts/stacked-bar` / `donut` / `line` / `bar` |
+| Languages | `layout/donut-chart` | Recharts `Pie` + Basalt `ChartShell` / `ChartLegend` / tooltip；圆环按可用绘图区缩放，避免包默认 48px 半径造成留白 |
+| Insights | `StackedBarChart` `LineChart` `BarChart` + 共享环形图组合 | `@nocoo/basalt/charts/stacked-bar` / `line` / `bar`；`layout/donut-chart` |
+| 软件工厂 | `Sparkline`、堆叠 `AreaChart`；散点图和树图组合 `ChartFrame` + Recharts | 沿用 Basalt `config`、`tooltip`，显式使用站点绿色图表配色；日历选择和缺失态见 [06](06-software-factory.md) |
 | 加载 | `Button loading` | `@nocoo/basalt` |
 | 骨架 | 只用 Basalt `SkeletonLine` 铺在 L2 `LayerCard` 上，不进 Well、不自绘深色块。200ms 内加载完成则不展示 | `@nocoo/basalt/components/skeleton-line` + `layout/page-skeleton` |
 
@@ -215,11 +217,23 @@ Basalt `ContentIsland` 已是 L1 岛。不要再包一层自定义 card 当岛�
 - 统计卡按实际数量均分桌面行，窄屏排两列；奇数张时最后一张占满行。表格标题与描述分主次；Issue / PR 的编号、仓库放在标题下，仓库名可跳到单仓页。
 - 搜索与排序放在 `FilterBar`；列表 / 网格切换放在仓库分区。分区显示结果数，搜索无结果与真正无数据使用不同空态，前者有「清除搜索」操作。
 - `Table` 保持必要列宽，通过共享 `ScrollArea` 查看完整数据，禁止由卡片裁掉右侧列。数字右对齐且等宽，状态徽章不拆行。
-- 图表卡使用 `LayerCard.Header` / `Body`，标题下说明指标范围或单位。绘图区通过公开 `className` 设置明确高度，卡片随摘要内容增高，避免百分比高度导致图形消失。PR 状态图保留五种颜色与文字摘要。
+- 图表卡使用 `LayerCard.Header` / `Body`，指标口径收进标题旁的问号。绘图区通过公开 `className` 设置基础高度；同排图卡与文字卡等高拉伸，卡片 Body 填满剩余高度，不在较短卡片下方留空。PR 状态图保留五种可区分的绿色层次、图例和读屏摘要。
 - 设置页的 PAT 表单、Access 身份并列展示，窄屏上下排列；已连接账号独立成区。账号删除确认带账号名。
 - 通知标记已读时显示 `Button loading`，同一页面的已读操作暂时禁用，成功后应用服务端返回的状态。
 - 日报提供完整 Markdown 预览与复制；没有昨天基线时用 `Banner` 说明等待条件，变化值仍为「—」。
 - `layout/collection-chrome` 只组合 Basalt 输入和滚动控件，并展示计数与更新时间；`table-chrome` 只组合表格叶子；`kpi` / `chart-brick` 只组合卡片。它们不维护第二套控件样式、API 或筛选逻辑。
+
+### 5.5 字号与可视化规范
+
+卡片标题统一为 Basalt `Text variant="heading"`（16px），正文 14px，说明与辅助文字 13px，KPI 数值 28px，坐标轴最小 12px。`index.css` 的 `--text-xs` 统一辅助字号，不逐卡硬编码 9–11px；页标题和大对话框标题保留各自层级。
+
+优先使用 Basalt 已发布图表。没有等价封装的 Recharts 图必须放进 Basalt `ChartFrame` / `ChartShell`，使用共享坐标轴、网格与 tooltip 配置，不另写布局算法。站点 `chartColor` 从 primary 与中性表面混合出五级绿色，在浅色/深色中都跟随主题；健康风险图、失败与删除变更仍保留有实际意义的警示色。保留可访问摘要、键盘下钻或表格替代；未知值保持为空，不补成已观测的零。筛选组合使用带标签的 Basalt Select，选择和输入使用 Checkbox/Input。
+
+表格单元格桌面为上下 12px / 左右 16px，≤480px 为 10px / 12px。选中行使用 `TableRow variant="selected"` 的 `aria-selected` 与浅绿色底色，行标题与单元格一同高亮。图表鼠标点击不显示浏览器默认蓝框，规则覆盖坐标标签、图例及 Recharts 内层 SVG；键盘 `:focus-visible` 保留 2px 内描绿色轮廓。日历选中/焦点轮廓同样向内，边缘单元格不越界裁切。
+
+`layout/help-tooltip` 只组合 Basalt Button / Tooltip 与问号图标，支持悬停、键盘聚焦、触屏点击、Escape 和外部点击关闭。长指标定义与重复说明放入提示；异常、数据缺失和可执行操作保留在卡片或健康 banner 中，不藏进 hover。图表已有图例/指标时，冗余摘要保留为读屏文字。
+
+软件工厂仓库行不展开多个来源时间戳。末列「数据时间」按钮打开 Basalt Dialog，展示仓库信息/活动数据的准确时间、原统计范围及旧版来源。绝对时间按设备时区格式化到秒，明确时区；距今时长按 `Date.now()` 每秒重算，跨天不丢秒，缺失不补当前时间。计时只随打开的弹窗挂载，关闭后停止，不让表格或图表跟着每秒重绘。日历仍按 UTC 日期汇总。
 
 ---
 
@@ -230,9 +244,9 @@ Basalt `ContentIsland` 已是 L1 岛。不要再包一层自定义 card 当岛�
 每个 `src/client/viewmodels/*.ts`：
 
 - 导出纯函数：把 03 JSON + UI 状态（query、sort、view）变成渲染用的 plain object。
-- 可导出 `useXViewModel()`：只依赖 `react`（`useState` / `useCallback` / `useMemo` / `useEffect` / `useRef`）、`../lib/api.ts`、`./refresh.ts`、`./session.ts`。初次 GET 必须先 `ensureSession()`。取消、账号变化后的重载都在这个 hook 的 `useEffect` 里，不进 route、不进 layout。
+- 可导出 `useXViewModel()`：只依赖 `react`（`useState` / `useCallback` / `useMemo` / `useEffect` / `useRef`）、`../lib/api.ts` 与其他 ViewModel。初次 GET 必须先 `ensureSession()`，响应再校验账号。路由/layout 不直接请求 API。
 - **禁止** import：`react-dom`、`@nocoo/basalt`、`*.tsx`、`document` / `window`（clipboard 纯函数只返回字符串，真正写剪贴板在 route 里用 Basalt `ClipboardText`）。
-- L1 测纯函数与 `refresh.ts` 锁；hook 用 mock 掉的 `api.ts`。不启 Worker。
+- L1 测纯函数、账号隔离与工厂轮询/操作；hook 用 mock 掉的 `api.ts`。不启 Worker。
 
 ### 6.2 `api.ts`
 
@@ -268,7 +282,7 @@ async function send(resource: string, init?: RequestInit): Promise<Response> {
 | `method_not_allowed` 405 | toast（不应被 UI 走到） |
 | `account_missing` 409 | 横幅 + 链到 `/settings` |
 | `account_conflict` 409 | toast「账号已切换」+ `ensureSession()`；**不**自动重放该写 |
-| `snapshot_missing` 409 | 该页 `Empty` +「刷新」按钮（§7 对应 kind） |
+| `snapshot_missing` 409 | 共享空态「等待统一刷新」+ 前往工厂控制台，不执行采集 |
 | `capability_missing` 409 | toast，缺 notifications scope |
 | `scopes_missing` 400 | 设置页字段错 |
 | `github_rate_limited` 503 | toast |
@@ -276,60 +290,26 @@ async function send(resource: string, init?: RequestInit): Promise<Response> {
 | `encryption_misconfigured` / `access_misconfigured` / `db_error` / `internal_error` 500 | toast `message` |
 | 其它 | toast `message`（已 sanitize）；未知 code 当 `internal_error` |
 
-成功写操作：`toast.success` 短中文（「已添加账号」「已刷新」）。失败：`toast.error`（`catchLoad` 注入）。刷新钮用 Basalt `Button loading`，不用手写 Loader。
+成功写操作：`toast.success` 短中文（「已添加账号」等）。失败：`toast.error`（`catchLoad` 注入）。采集任务的结果统一在工厂控制台显示，不在普通页面另设刷新钮。
 
-截断成功（HTTP 200 且 `truncated` 或 `truncated_kinds.length > 0`）**不是**错误：Badge「已截断」。再读规则见 §7。
+读取旧快照的 `truncated: true` 仍显示「已截断」。新工厂刷新若来源截断则保留旧值并报告未完成，不用不完整结果覆盖已有页面快照。
 
 ---
 
-## 7. 刷新时机
+## 7. 全站统一刷新
 
-Server 不调度。Client 只经 `viewmodels/refresh.ts` 调 `POST /api/refresh`。该模块持有**进程内单例**：
+软件工厂是唯一的前端采集入口。`viewmodels/factory-runs.ts` 提交持久 run 与暂停/继续/取消动作，服务端队列执行，D1 保存进度；详细契约见 [09](09-factory-runs.md)。旧 `POST /api/refresh` 仅保留 API 兼容，前端已删除 `refresh.ts` 协调器与独立 RefreshButton。
 
-- 锁在模块而非 hook。路由卸载不清空锁。
-- Client 持有 `activeAccountId`。`ensureSession()`（`viewmodels/session.ts`）在任何快照 GET/refresh **之前每次**调用：`GET /api/accounts`，取 `is_active` 行的 `id`（没有则 `account_missing`）。同一事件循环内可复用这次结果（禁止跨请求长缓存）。若返回的 id 与本地不同：更新 stamp、清空该旧 id 缓存。这样另一 Tab activate 后本 Tab 下一次读不会把新账号数据写入旧缓存。
-- `POST /api/accounts` 201：用响应体 `id` **先**写入 `activeAccountId`（若 `is_active`），再入队 refresh。禁止还没 stamp 就刷 repos。
-- `POST /api/refresh`、`/api/notifications/read`、`read-all` 的 JSON **必带** `account_id`（当前 stamp）。缺字段 → 400。与 active 不符 → 409 `account_conflict`：只 `ensureSession()` + toast，**不得**自动重放该写操作（避免把原账号的已读施加到新账号）。
-- 快照缓存按该 id 隔离；id 变化则清空缓存。
-- 入队时盖上当时的 `activeAccountId`，发出的 body 带同一 id。
-- **发出前**、**应用 payload 前**、**补读 GET 前**：stamp 必须等于此刻 `activeAccountId`，否则丢弃（含 A 在途切到 B：A 的 body 不得写入 B 缓存，也不得用 B 的身份去补读）。快照 GET / 单 kind refresh 的 body 含 `account_id`（03）：若 ≠ stamp，丢弃并再 `ensureSession()`。这关掉 ensureSession 与随后 GET 之间的 TOCTOU。
-- **等价**（同一 stamp + 规范化相同 kinds）合并为同一 in-flight Promise。
-- **不等价**且 stamp 仍是当前账号：FIFO 排队。
-- activate / 删除当前账号成功后：更新 `activeAccountId`、清空旧 stamp 队列、按 §7 为新账号入队 `["repos"]`（删除导致无 active 则不入队）。
-- L1 覆盖：201 先 stamp 再 refresh；合并等价；排队不等价；发出后切换则丢弃 payload 且不补读；activate 清空并补跑。
+- 默认全站刷新：仓库列表、Issues、PRs、安全告警、通知、Insights、日报及完整可访问仓库清单的九类详情都会更新。工厂中的范围选择只影响统计仓库。
+- 首次使用或旧数据升级时先「同步仓库列表」，再「开始刷新」。清单不完整时禁止在界面启动刷新，不能把未扫描的数据当空数组。
+- 各页面仅 GET；缺少快照统一使用 `SnapshotPending` 导航至 `/factory?refresh=1`，到达后打开同一个控制台。缺账号则前往设置，不混同于缺数据。
+- 添加、激活、删除账号只更新账号状态与本地 stamp，不自动采集。通知标记已读仍是独立的业务写操作，不属于刷新。
+- 每次快照读取前 `ensureSession()` 获取当前账号；同一轮并发可复用 in-flight 查询，但不跨请求长期缓存。读取前后及应用响应时都核对 `account_id`，不匹配即丢弃。
+- 路由重新挂载时重新 GET 保存的快照，避免后台刷新完成后一直显示旧的内存数据。仓库命令面板缓存仍按账号隔离，不用于代替页面读取。
+- 工厂创建/控制、通知 read/read-all 的 body 必带当前 `account_id`。`account_conflict` 只恢复会话并提示，不自动重放任何写操作。
+- 工厂只读轮询一次结束后才安排下一次；关闭对话框继续显示页面进度，离开页面不停止服务端任务。其他页面不轮询 GitHub、不在 focus 或缺数据时自动发起刷新。
 
-禁止各页 hook 各自 `useState(refreshing)` 当全局真相。页面只读 `refresh.ts` 的 `inFlight` 标记。
-
-| 触发 | `kinds` | 随后 |
-|------|---------|------|
-| 设置页 **成功** `POST /api/accounts` 且响应 `is_active === true` | `["repos"]` | 输入已空；再 `GET /api/repos`。`is_active === false`（第二账号）**不** refresh |
-| 设置页 **成功** activate | `["repos"]` | 切到新账号后再 GET |
-| 跨仓页工具条「刷新」 | 该页 GitHub kind：repos / issues / prs / alerts / notifications。**Insights 页** `["repos","issues","prs","alerts"]`（insights **隐式**派生）。**Digest 页** `["repos"]`（digest **隐式**） | 200 后按 `kinds` 再 GET；见下「派生」 |
-| 单仓页工具条「刷新」 | 当前 tab 的 `repo:{owner}/{name}:…` | 同上 |
-| 进入单仓且该 tab 409 | 自动一次该 kind。同一 tab 同一 session 不连打 | |
-| 路由切换到跨仓页且 409 | **不**自动刷新。Empty + 按钮 | |
-| 轮询 / focus / interval | **不做** | |
-| 设置页「刷新全部」按钮 | `"all"`（展开为 5 个 GitHub kind，insights/digest 隐式） | 200 后按返回 `kinds` GET |
-
-**禁止**在 Insights/Digest 工具条里**显式**请求 `insights` / `digest`。04：insights 源不足只看 repos/issues 缺失或 truncated；alerts 截断仍写入 insights。digest 仍要未截断 repos。显式派生遇源不足 → 409 且本请求不落库，所以 UI 只用隐式。
-
-HTTP **硬失败**（4xx/5xx，含 409 显式派生）→ 04 零写入；Client 不得把内存里的部分收集当成功。
-
-HTTP **200** 体有两种（04）：
-
-1. **单 kind**（请求数组恰好一项 GitHub 或派生名）：body = 该 kind 的 GET 快照，无 `kinds` 字段。
-2. **`"all"` 或多 kind**：`{ fetched_at, kinds, truncated_kinds }`。
-
-`refresh.ts` 归一：
-
-- 单 kind：该 kind 已写入；用 body 更新缓存，不必再 GET 同一 kind。
-- 多 kind / all：对 `kinds` 里每一项再 GET。
-- 隐式派生补读：**仅当**该派生名没有出现在本轮已写入集合里。已写入集合 = 单 kind 的那一项，或多 kind 的 `kinds`。`insights`：仅当本轮写入含 `issues` 或 `alerts`，或内存已有 issues 快照时才 `GET /api/insights`（04 隐式派生需要 repos+issues；源不足时不 GET，避免必 409）。`digest`：未在集合中且本轮写入含 `repos` 则 `GET /api/digest`（409 保留旧值或 Empty）。单独刷 `alerts` 仍补 GET insights，避免仓库页 health 过期。
-- Digest 页请求 `["repos"]`：按单 kind 更新 repos，再因 digest 不在集合中而 GET digest。
-
-`truncated` / `truncated_kinds`：Badge「已截断」，仍是成功。未出现的 kind 保持刷新前快照。不得把 200 当成失败。
-
-单次 `githubFetch` ≤ 40（04）。锁保证不同时两个 refresh。进行中按钮 disabled + `Loader`。
+失败、权限不足、截断在控制台按数据源说明影响和处理方式。每类页面成功后独立替换；失败保留上次保存内容及时间，没有旧数据则继续等待统一刷新。不得用伪造的零值清掉数据。工厂统计的不可变版本、限流等待、冷却和租约防陈旧写入规则见 09。
 
 ---
 
@@ -337,27 +317,28 @@ HTTP **200** 体有两种（04）：
 
 中文。侧栏顺序固定。
 
-| 路由 | 侧栏 | 图标（lucide） | 读 | 刷新 kind |
-|------|------|----------------|----|-----------|
-| `/insights` | Insights | `Activity` | `GET /api/insights`，并读已有 `issues` / `prs` 快照 | `["repos","issues","prs","alerts"]` 隐式 insights |
-| `/` | 仓库 | `Box` | `GET /api/repos` | `repos` |
-| `/issues` | Issues | `CircleDot` | `GET /api/issues` | `issues` |
-| `/pulls` | Pull Requests | `GitPullRequest` | `GET /api/prs` | `prs` |
-| `/alerts` | 安全告警 | `ShieldAlert` | `GET /api/alerts` | `alerts` |
-| `/inbox` | 通知 | `Inbox` | `GET /api/notifications` | `notifications` |
-| `/digest` | 日报 | `Newspaper` | `GET /api/digest` | `["repos"]` 隐式 digest |
-| `/repos/:owner/:name` | （钻取，侧栏「仓库」高亮） | — | 按 tab GET 单仓 | 该 tab kind |
-| `/settings` | 设置 | `Settings` | `GET /api/accounts`、`GET /api/me` | 见 §7 |
+| 路由 | 侧栏 | 图标（lucide） | 读 |
+|------|------|----------------|----|
+| `/factory` | 软件工厂 | `Factory` | `GET /api/factory`、`GET /api/factory/runs`；唯一刷新入口 |
+| `/insights` | Insights | `Activity` | `GET /api/insights`，并读已有 `issues` / `prs` 快照 |
+| `/` | 仓库 | `Box` | `GET /api/repos` |
+| `/issues` | Issues | `CircleDot` | `GET /api/issues` |
+| `/pulls` | Pull Requests | `GitPullRequest` | `GET /api/prs` |
+| `/alerts` | 安全告警 | `ShieldAlert` | `GET /api/alerts` |
+| `/inbox` | 通知 | `Inbox` | `GET /api/notifications` |
+| `/digest` | 日报 | `Newspaper` | `GET /api/digest` |
+| `/repos/:owner/:name` | （钻取，侧栏「仓库」高亮） | — | 按 tab GET 单仓 |
+| `/settings` | 设置 | `Settings` | `GET /api/accounts`、`GET /api/me` |
 
 未知路径：岛内 404 文案，不调用 API。
 
 ### 8.1 `/` 仓库
 
-`PageHeader` 标题「仓库」+ 副标题和更新时间。`actions`：截断/不完整 Badge 与刷新。`filters`：`FilterBar` 内的搜索与 `SegmentControl` 排序。列表 / 网格切换和结果数放在仓库 `SectionRule.actions`。排序通过 VM 完成，不靠 Table 内置排序。
+`PageHeader` 标题「仓库」+ 副标题和更新时间。`actions` 仅展示截断/不完整 Badge。`filters`：`FilterBar` 内的搜索与 `SegmentControl` 排序。列表 / 网格切换和结果数放在仓库 `SectionRule.actions`。排序通过 VM 完成，不靠 Table 内置排序。
 
-KPI（裸 `LayerCard padding="md"`，主题色 icon）：仓库数 / Stars / Forks / Issues，由 `repoMetrics` 从快照合计。其下 `SectionRule`「仓库」。
+KPI（共享 `StatCard`，主题色 icon）：仓库数 / Stars / Forks / Issues，由 `repoMetrics` 从快照合计。其下 `SectionRule`「仓库」。
 
-列表：`Table` 列 = 仓库、语言、Stars、Fork、Issues、最近推送、health。首列包含描述、可见性、归档和 Fork 标记；推送时间下显示活跃 meter。health 若 insights 已在内存则显示，没有则不加列；只读内存，不 GET、不为此自动刷 insights。`insights.alerts_incomplete === true` 时页头 Badge「告警不完整」，不得把 `strong` 理解成已扫完全部安全告警。不另 GET alerts 来推断该标记。
+列表：`Table` 列 = 仓库、语言、Stars、Fork、Issues、最近推送、health。首列包含描述、可见性、归档和 Fork 标记；推送时间下显示活跃 meter。health 通过只读 GET 获取已有 insights，没有则不加列；不为此触发采集。`insights.alerts_incomplete === true` 时页头 Badge「告警不完整」，不得把 `strong` 理解成已扫完全部安全告警。不另 GET alerts 来推断该标记。
 
 网格：`LayerCard padding="md"` 卡，标题与 health 同行，描述最多两行，底部显示语言、Stars、可见性与推送时间。点整卡进 `/repos/:owner/:name`。
 
@@ -373,7 +354,7 @@ Issues KPI：打开 Issues / 涉及仓库（`issueMetrics`）。PRs KPI：草稿
 
 ### 8.3 `/insights`
 
-浏览组第一项。不重复仓库全表。用 `SectionRule` 分「工作量 / 审查与节奏 / 健康与活跃」。每区：最多四张 KPI（裸 `LayerCard padding="md"`，主题色 icon，无 Header）+ 两张图卡（一卡一图，使用 `LayerCard.Header` 放标题与指标说明，`Body` 放图表）。不用 `StatStrip`。
+浏览组第一项。不重复仓库全表。用 `SectionRule` 分「工作量 / 审查与节奏 / 健康与活跃」。每区：最多四张 KPI（共享 `StatCard`，主题色 icon）+ 两张图卡（一卡一图，使用 `LayerCard.Header` 放标题与指标说明，`Body` 放图表）。
 
 图表由 ViewModel 从 insights + issues + prs 快照聚合。issues 快照缺失时 Issue 计数回退 `open_issue_count`；prs 缺失时 PR 为 0。空 issues 快照不当回退。Client 仍不算 health。`alerts_incomplete` 时页头 Badge「告警不完整」。GET 409 时 Empty，刷新走 §7。仍 409 仅当 repos 或 issues 不足；不循环自动刷。
 
@@ -387,7 +368,7 @@ KPI（未读 / 全部）+ `SectionRule` 通知表：状态、标题与仓库链�
 
 ### 8.6 `/digest`
 
-页头显示日报日期与数据更新时间。KPI：stars / forks / open issues 的 delta。`baseline_missing` → `Banner` 说明尚无昨天的基线，delta 显示「—」不得显示 0。`CodeBlock` 预览 Markdown，`ClipboardText` 复制完整内容。Markdown 由 `viewmodels/digest.ts` 纯函数生成（仓表 + 合计），**无** LLM。GET 409 时 Empty；刷新只刷 `repos`。
+页头显示日报日期与数据更新时间。KPI：stars / forks / open issues 的 delta。`baseline_missing` → `Banner` 说明尚无昨天的基线，delta 显示「—」不得显示 0。`CodeBlock` 预览 Markdown，`ClipboardText` 复制完整内容。Markdown 由 `viewmodels/digest.ts` 纯函数生成（仓表 + 合计），**无** LLM。GET 409 时统一引导到工厂；日报由工厂刷新仓库数据时派生。
 
 ### 8.7 `/repos/:owner/:name`
 
@@ -395,7 +376,7 @@ KPI（未读 / 全部）+ `SectionRule` 通知表：状态、标题与仓库链�
 
 `Tabs`：概览、安全、Actions、PRs、Issues、发布、流量、语言、贡献者。默认概览。使用共享 `ScrollArea` 保持窄屏标签可达；页头更新时间取当前标签快照，缺数据时不显示其他标签的时间。
 
-标签首次加载或自动补刷失败时结束骨架状态，展示错误提示与可通过页头刷新重试的空态。
+标签只读保存的快照，首次加载失败后结束骨架状态。缺数据时展示统一工厂入口，不自动补刷；重新进入页面会重新读取最新保存内容。
 
 | Tab | GET | 要点 |
 |-----|-----|------|
@@ -416,9 +397,9 @@ KPI（未读 / 全部）+ `SectionRule` 通知表：状态、标题与仓库链�
 
 账号表：login、avatar、令牌末四位（`•••• token_last4`）、权限范围、是否当前、操作。不显示完整 token。删除确认说明具体账号名及影响范围。
 
-添加：`SensitiveInput`（`revealLabel`/`hideLabel` 中文），提交 `POST /api/accounts` `{ token }`。**无论成功失败都清空输入**。提交中 `Button loading`、输入禁用，防重复提交；文案「正在添加…」（校验并保存）→ 若该账号 `is_active` 再「正在同步…」（§7 刷 `repos`）。成功 201 且 `is_active === true` 才刷 `repos`。第二账号默认非 active，只出现在表里，需用户 activate。
+添加：`SensitiveInput`（`revealLabel`/`hideLabel` 中文），提交 `POST /api/accounts` `{ token }`。**无论成功失败都清空输入**。提交中 `Button loading`、输入禁用，防重复提交；文案「正在添加…」（校验并保存），成功后提示前往工厂统一刷新，不自动采集。第二账号默认非 active，只出现在表里，需用户 activate。
 
-`POST /api/accounts/:id/activate` 切换当前，成功后刷 `repos`。`DELETE` 经 `ConfirmDialog`。删除当前账号后快照页将 409 `account_missing`。
+`POST /api/accounts/:id/activate` 切换当前，成功后页面读取该账号已有数据，不自动采集。`DELETE` 经 `ConfirmDialog`。删除当前账号后快照页将 409 `account_missing`。
 
 classic PAT 形态提示；缺 scope 的 `scopes_missing` 展示在字段下。
 
@@ -451,8 +432,8 @@ export function breadcrumbsFor(pathname: string): { href: string; label: string 
 | 模块 | 例子 |
 |------|------|
 | `api.ts` | 注入 fetch：模板 URL 以 `/api/` 开头、信封抛 `ApiError`、204、成功无 error 字段；refresh/read/read-all 的 body 含 `account_id`；`account_conflict` 不自动重放 |
-| `refresh.ts` | 合并等价；排队不等价；账号切换丢弃并补跑；单 kind 200 用 payload；多 kind 再 GET；`["repos"]` 之后 GET digest；硬失败不更新缓存；默认 kinds 不含显式 insights/digest |
-| `accounts` | 提交后 token 空串；列表不含 ciphertext；`is_active === false` 不 refresh；activate / delete 归约 |
+| `factory-runs.ts` / `snapshot.ts` | 持久任务启动/控制与轮询；账号切换丢弃在途数据；页面重新加载读取最新保存快照；缺数据不采集 |
+| `accounts` | 提交后 token 空串；列表不含 ciphertext；添加/切换账号不自动 refresh；activate / delete 归约 |
 | `me` | 短路身份字段映射 |
 | `repos` | 搜索/排序/列表|网格；truncated 标记 |
 | `issues` / `pulls` | 过滤 |
@@ -476,12 +457,14 @@ Client 单测：文件顶 `// @vitest-environment happy-dom` 或 vitest 对 `src
 02 §6 最低三条，本文不可减：
 
 1. 打开 `/settings`，在 PAT 框填 L2 同款 fixture PAT，提交。输入框为空。响应不得在 DOM 留下 PAT。
-2. 随后 `/` 仓库列表 **有至少一行**（首个账号 201 + `is_active` → 刷 `repos`；GitHub stub 与 L2 套件 A 相同，`octocat/hello-world`）。
+2. 在工厂同步清单并全站刷新，随后 `/` 仓库列表 **有至少一行**（GitHub stub 仓库为 `octocat/hello-world`）；创建账号本身不触发采集。
 3. 点进该仓详情，概览可见描述或名称。
 
 Runner：`scripts/run-e2e-bdd.ts`。先 `vite build`，persist `.wrangler/e2e-pw/`，端口 27045，schema + `_test_marker`，`GET /api/live` 且 `d1_marker=test`，GitHub stub 不得占用 17045。套件 **只 A**。Playwright Chromium。`baseURL = http://127.0.0.1:27045`。
 
 `tests/e2e/ui.spec.ts` 在同一真实构建上拦截同源 API 为固定展示数据，补充验证搜索恢复、网格导航、完整日报复制、缺基线数据、通知操作进度、空态与权限提示、表格键盘横向滚动、单仓全部标签的数据与更新时间、浅色 / 深色 / 移动端全部页面及失败 PAT 清空。图表必须实际绘制且具有可用尺寸，PR 状态必须有五种不同的实际填充色。`ui-fixtures.ts` 只属于测试，不进入客户端。原有不拦截 API 的 PAT → 仓库列表 → 单仓路径仍必须通过。
+
+`tests/e2e/basalt.spec.ts` 验证跨页字号、浅深主题绿色实际绘制、键盘下钻/焦点、问号的悬停/键盘/触屏操作、卡片底部留白、圆环占用比例、表格边距与选中语义，以及移动端深色控件布局和数据时间弹窗。时间格式的跨分、跨小时、跨天和未来时钟边界由 `lib/format.test.ts` 覆盖。
 
 L3 依赖步骤 1 的 Origin 补丁。未补丁前不算 L3 绿。L3 **不是** pre-push 门。
 
@@ -543,7 +526,7 @@ L3 依赖步骤 1 的 Origin 补丁。未补丁前不算 L3 绿。L3 **不是** 
 - 绝对 URL、`api.github.com`、把 PAT 写入 storage
 - import `src/server` 进 Client；Server 测试 import Client
 - 复制 Basalt 或 kusto 源码当本仓控件；使用 `DataTable`
-- GET 触发 refresh（必须用户动作或 §7 写明的 201-active / activate / 单仓 409）
+- GET、添加/切换账号或缺快照触发自动采集；软件工厂以外提供独立刷新操作
 - 显式 refresh `insights` / `digest`（工具条与 bootstrap）
 - 应用内 `/login`
 - Vite `:5173` 打 Worker 写接口

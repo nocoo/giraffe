@@ -14,7 +14,6 @@ import {
 	emptyToken,
 	loadAccounts,
 	type PublicAccount,
-	shouldRefreshOnCreate,
 } from "./accounts";
 import { getActiveAccountId, setActiveAccountId } from "./session";
 
@@ -31,22 +30,17 @@ describe("accounts viewmodel", () => {
 	it("locks submit while adding and names the wait", () => {
 		expect(accountAddBusy("idle")).toBe(false);
 		expect(accountAddBusy("saving")).toBe(true);
-		expect(accountAddBusy("syncing")).toBe(true);
 		expect(canSubmitAccount(PAT, "idle")).toBe(true);
 		expect(canSubmitAccount("", "idle")).toBe(false);
 		expect(canSubmitAccount(PAT, "saving")).toBe(false);
 		expect(accountAddLabel("idle")).toBe("添加账号");
 		expect(accountAddLabel("saving")).toBe("正在添加…");
-		expect(accountAddLabel("syncing")).toBe("正在同步…");
 		expect(accountAddHint("idle")).toBeNull();
 		expect(accountAddHint("saving")).toBe("正在校验令牌并保存账号");
-		expect(accountAddHint("syncing")).toBe("账号已保存，正在同步仓库");
 	});
 
-	it("clears the token and refreshes only the active account", async () => {
+	it("clears the token without starting collection outside the factory", async () => {
 		expect(emptyToken()).toBe("");
-		expect(shouldRefreshOnCreate({ is_active: true })).toBe(true);
-		expect(shouldRefreshOnCreate({ is_active: false })).toBe(false);
 		const publicRow = {
 			id: "a",
 			login: "octocat",
@@ -111,8 +105,8 @@ describe("accounts viewmodel", () => {
 		});
 		expect(created.id).toBe("acc1");
 		expect(getActiveAccountId()).toBe("acc1");
-		expect(phases).toEqual(["saving", "syncing"]);
-		expect(urls.some((row) => row.startsWith("POST /api/refresh"))).toBe(true);
+		expect(phases).toEqual(["saving"]);
+		expect(urls.some((row) => row.startsWith("POST /api/refresh"))).toBe(false);
 		vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
 			const url = String(input);
 			if (url === "/api/accounts" && init?.method === "POST") {
@@ -212,6 +206,7 @@ describe("accounts viewmodel", () => {
 		expect(getActiveAccountId()).toBeNull();
 		expect(urls).toContain("POST /api/accounts/acc2/activate");
 		expect(urls).toContain("DELETE /api/accounts/acc2");
+		expect(urls).not.toContain("POST /api/refresh");
 	});
 
 	it("keeps activation when the follow-up refresh fails", async () => {

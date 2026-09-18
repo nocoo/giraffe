@@ -19,7 +19,9 @@ import {
 } from "./factory-publish";
 import { FACTORY_REPO_QUERY } from "./factory-queries";
 import { checkFactoryCapacity, resourceDelta } from "./factory-retention";
+import { collectSitePage } from "./factory-site";
 import { createGithubClient } from "./github-client";
+import { assertRefreshCapabilities } from "./refresh";
 import { decryptToken, parseKeyBytes } from "./token-crypto";
 
 export async function executeRunPage(
@@ -47,6 +49,7 @@ export async function executeRunPage(
 	}
 	const started = clock();
 	const savedPages = step.pages;
+	const savedSnapshotCursor = step.snapshotCursor;
 	step.startedAt ??= started;
 	step.attempts = step.error ? step.attempts + 1 : Math.max(1, step.attempts);
 	step.status = "running";
@@ -82,11 +85,17 @@ export async function executeRunPage(
 		if (!["restore", "commit", "publish"].includes(step.kind)) {
 			const account = await getAccount(db, run.account_id);
 			if (!account) throw new ApiError(409, "account_missing", "account missing");
+			if (step.kind === "snapshot")
+				assertRefreshCapabilities(account.capabilities, [step.resource ?? ""]);
 			const key = encryptionKey(env, account.key_version);
 			if (!key) throw new ApiError(500, "encryption_key_missing", "encryption key missing");
 			token = await decryptToken(account.token_ciphertext, parseKeyBytes(key));
 		}
-		if (step.kind === "metadata") {
+		if (step.kind === "snapshot") {
+			const result = await collectSitePage(db, lease, step, gh, token, clock());
+			writes = result.writes;
+			if (result.done) finish(step, "success", clock());
+		} else if (step.kind === "metadata") {
 			const [owner, name] = String(step.repo).split("/");
 			const data = await gh.githubGraphql(token, FACTORY_REPO_QUERY, { owner, name });
 			const repo = object(data.repository);
@@ -207,6 +216,8 @@ export async function executeRunPage(
 	} catch (error) {
 		run.checkpoint = before;
 		step.pages = savedPages;
+		if (savedSnapshotCursor === undefined) delete step.snapshotCursor;
+		else step.snapshotCursor = savedSnapshotCursor;
 		step.finishedAt = null;
 		writes = [];
 		lease.extraBytes = 0;
@@ -226,6 +237,7 @@ export async function executeRunPage(
 			for (const later of run.steps)
 				if (
 					later.repo === step.repo &&
+					later.kind !== "snapshot" &&
 					(later.status === "pending" || later.status === "running")
 				) {
 					finish(later, "skipped", clock());
@@ -253,6 +265,14 @@ export async function executeRunPage(
 			(step.retryFailures ?? 0) <= RUN_MAX_RETRIES &&
 			code !== "factory_capacity" &&
 			code !== "repository_unavailable" &&
+			![
+				"snapshot_incomplete",
+				"snapshot_unavailable",
+				"catalog_changed",
+				"capability_missing",
+				"github_forbidden",
+				"not_found",
+			].includes(code) &&
 			code !== "github_response_too_large"
 		) {
 			step.status = "pending";
@@ -261,9 +281,12 @@ export async function executeRunPage(
 			).toISOString();
 		} else {
 			finish(step, "failed", clock());
-			if (step.repo) {
+			if (step.kind === "snapshot") {
+				// A page failure must not invalidate factory metrics or other page sources.
+				run.nextAttemptAt = clock();
+			} else if (step.repo) {
 				for (const later of run.steps)
-					if (later.repo === step.repo && later.status === "pending") {
+					if (later.repo === step.repo && later.kind !== "snapshot" && later.status === "pending") {
 						finish(later, "skipped", clock());
 						later.error = "repository_failed";
 					}

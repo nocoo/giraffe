@@ -171,7 +171,7 @@ test("repository grid retains the search and links to the selected repository", 
 	await expect(page.getByRole("tabpanel").getByText("MIT", { exact: true })).toBeVisible();
 });
 
-test("missing snapshots provide a working route to account settings", async ({ page }) => {
+test("missing snapshots lead to the unified factory console", async ({ page }) => {
 	await page.route("**/api/**", (route) => {
 		const path = new URL(route.request().url()).pathname;
 		if (path === "/api/me" || path === "/api/accounts") {
@@ -184,10 +184,11 @@ test("missing snapshots provide a working route to account settings", async ({ p
 	});
 	for (const path of ["/", "/issues", "/pulls", "/alerts", "/inbox", "/digest", "/insights"]) {
 		await page.goto(path);
-		await expect(page.getByText("没有快照", { exact: true })).toBeVisible();
-		await page.getByRole("link", { name: "查看账号设置", exact: true }).click();
-		await expect(page).toHaveURL(/\/settings$/);
-		await expect(page.getByTestId("pat-input")).toBeVisible();
+		await expect(page.getByText("等待统一刷新", { exact: true })).toBeVisible();
+		await expect(page.getByRole("button", { name: /刷新/ })).toHaveCount(0);
+		await page.getByRole("link", { name: "前往刷新控制台", exact: true }).click();
+		await expect(page).toHaveURL(/\/factory\?refresh=1$/);
+		await expect(page.getByRole("dialog", { name: "刷新控制台", exact: true })).toBeVisible();
 	}
 });
 
@@ -242,9 +243,14 @@ test("digest without a baseline preserves unknown changes in the table and clipb
 	expect(copied).not.toContain("+12");
 });
 
-test("repository tabs stop loading after refresh failure and can retry without stale timestamps", async ({
+test("missing repository tabs remain read-only and show fresh data after a factory visit", async ({
 	page,
 }) => {
+	const writes: string[] = [];
+	page.on("request", (request) => {
+		if (new URL(request.url()).pathname.startsWith("/api/") && request.method() !== "GET")
+			writes.push(request.url());
+	});
 	const previous = "2026-09-07T08:30:00.000Z";
 	await page.route("**/api/repos/octocat/hello-world/security", (route) =>
 		route.fulfill({
@@ -266,26 +272,25 @@ test("repository tabs stop loading after refresh failure and can retry without s
 	await page.getByRole("tab", { name: "安全", exact: true }).click();
 	await expect(updated).toHaveAttribute("datetime", previous);
 	await page.getByRole("tab", { name: "语言", exact: true }).click();
-	await expect(page.getByRole("tabpanel").getByText("没有快照", { exact: true })).toBeVisible();
+	await expect(page.getByRole("tabpanel").getByText("等待统一刷新", { exact: true })).toBeVisible();
 	await expect(updated).toHaveCount(0);
 	await expect(page.getByRole("tabpanel").getByRole("status")).toHaveCount(0);
+	await page.getByRole("link", { name: "前往刷新控制台", exact: true }).click();
+	await expect(page.getByRole("dialog", { name: "刷新控制台", exact: true })).toBeVisible();
 	await page.unroute("**/api/repos/octocat/hello-world/languages");
-	await page.route("**/api/refresh", (route) => {
-		expect(route.request().postDataJSON()).toEqual({
-			account_id: "ui-account",
-			kinds: ["repo:octocat/hello-world:languages"],
-		});
-		return route.fulfill({ json: createUiFixtures()["/api/repos/octocat/hello-world/languages"] });
-	});
-	await page.getByRole("button", { name: "刷新", exact: true }).click();
+	await page.goBack();
+	await page.getByRole("tab", { name: "语言", exact: true }).click();
 	await expectChart(page, "languages");
 	await expect(updated).toHaveAttribute("datetime", "2026-09-08T08:30:00.000Z");
 	await page.getByRole("tab", { name: "概览", exact: true }).click();
 	await expect(updated).toHaveAttribute("datetime", "2026-09-08T08:30:00.000Z");
+	expect(writes).toEqual([]);
 });
 
 for (const mode of ["light", "dark", "mobile"] as const) {
-	test(`${mode}: all pages render long content without clipped page actions`, async ({ page }) => {
+	test(`${mode}: pages fit long content without overflow or separate refresh buttons`, async ({
+		page,
+	}) => {
 		const width = mode === "mobile" ? 390 : 1440;
 		await page.setViewportSize({ width, height: mode === "mobile" ? 844 : 1000 });
 		await page.emulateMedia({ colorScheme: mode === "light" ? "light" : "dark" });
@@ -306,8 +311,7 @@ for (const mode of ["light", "dark", "mobile"] as const) {
 			expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
 				width,
 			);
-			const action = page.getByRole("button", { name: "刷新", exact: true });
-			await expect(action).toBeInViewport();
+			await expect(page.getByRole("button", { name: /刷新/ })).toHaveCount(0);
 			if (process.env.UI_SCREENSHOTS) {
 				await page.screenshot({
 					path: `${process.env.UI_SCREENSHOTS}/${mode}-${ready}.png`,

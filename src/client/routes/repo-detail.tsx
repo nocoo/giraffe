@@ -11,7 +11,6 @@ import {
 	toast,
 } from "@nocoo/basalt";
 import { AreaChart } from "@nocoo/basalt/charts/area";
-import { DonutChart } from "@nocoo/basalt/charts/donut";
 import { Code } from "@nocoo/basalt/components/code";
 import { DescriptionList } from "@nocoo/basalt/components/description-list";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
@@ -43,11 +42,12 @@ import {
 	Tag,
 	Users,
 } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { useParams } from "react-router";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ChartBrick, ChartEmpty, ChartRow } from "../components/layout/chart-brick";
 import { SnapshotDescription, TableScroll } from "../components/layout/collection-chrome";
+import { DonutChart } from "../components/layout/donut-chart";
 import { Kpi, KpiRow } from "../components/layout/kpi";
 import {
 	ChartSkeleton,
@@ -55,9 +55,10 @@ import {
 	PeopleSkeleton,
 	TableSkeleton,
 } from "../components/layout/page-skeleton";
-import { RefreshButton } from "../components/layout/refresh-button";
+import { SnapshotPending } from "../components/layout/snapshot-pending";
 import { ChurnMeter, LabelChips, PersonCell } from "../components/layout/table-chrome";
-import { catchLoad, missingTitle } from "../lib/error-ui";
+import { chartColor } from "../lib/chart-theme";
+import { catchLoad } from "../lib/error-ui";
 import {
 	churnFilled,
 	conclusionBadgeVariant,
@@ -73,7 +74,6 @@ import {
 } from "../lib/format";
 import type { IssuesSnapshot } from "../viewmodels/issues";
 import type { PullsSnapshot } from "../viewmodels/pulls";
-import { requestRefresh } from "../viewmodels/refresh";
 import {
 	isValidRepoPart,
 	loadRepoTab,
@@ -85,7 +85,6 @@ import {
 	type RepoSecurity,
 	type RepoTab,
 	type RepoTraffic,
-	repoKind,
 	securityUnavailable,
 	sortedLanguages,
 	trafficForbidden,
@@ -96,21 +95,10 @@ async function fetchTab<T extends { account_id: string }>(
 	owner: string,
 	name: string,
 	tab: RepoTab,
-	auto: Set<string>,
 ): Promise<T | { missing: true }> {
 	const first = await loadRepoTab<T>(owner, name, tab);
 	if ("invalid" in first) {
 		return { missing: true };
-	}
-	const key = `${owner}/${name}:${tab}`;
-	if ("missing" in first && !auto.has(key)) {
-		auto.add(key);
-		await requestRefresh(repoKind(owner, name, tab));
-		const again = await loadRepoTab<T>(owner, name, tab);
-		if ("invalid" in again || "missing" in again) {
-			return { missing: true };
-		}
-		return again;
 	}
 	return first;
 }
@@ -144,21 +132,9 @@ export function RepoDetailPage() {
 	const [contributors, setContributors] = useState<RepoContributors | { missing: true } | null>(
 		null,
 	);
-	const refreshed = useRef(new Set<string>());
-	const gen = useRef(0);
-
-	function onLoadError(err: unknown): void {
-		const missing = catchLoad(err, (message) => {
-			toast.error(message);
-		});
-		if (missing) {
-			setSnap(missing);
-		}
-	}
 
 	useEffect(() => {
 		let cancelled = false;
-		gen.current += 1;
 		setSnap(null);
 		setSecurity(null);
 		setTraffic(null);
@@ -173,27 +149,8 @@ export function RepoDetailPage() {
 			return;
 		}
 		void loadRepoTab<RepoDetails>(owner, name, "details")
-			.then(async (next) => {
+			.then((next) => {
 				if (cancelled) {
-					return;
-				}
-				if ("missing" in next && !refreshed.current.has(`${owner}/${name}:details`)) {
-					refreshed.current.add(`${owner}/${name}:details`);
-					try {
-						await requestRefresh(repoKind(owner, name, "details"));
-						if (cancelled) {
-							return;
-						}
-						setSnap(await loadRepoTab<RepoDetails>(owner, name, "details"));
-					} catch (err: unknown) {
-						if (cancelled) {
-							return;
-						}
-						const failed = catchLoad(err, (message) => {
-							toast.error(message);
-						});
-						setSnap(failed ?? next);
-					}
 					return;
 				}
 				setSnap(next);
@@ -253,42 +210,42 @@ export function RepoDetailPage() {
 			setCurrent({ missing: true });
 		}
 		if (tab === "security") {
-			void fetchTab<RepoSecurity>(owner, name, "security", refreshed.current)
+			void fetchTab<RepoSecurity>(owner, name, "security")
 				.then((value) => apply(setSecurity, value))
 				.catch(onTabError);
 		}
 		if (tab === "traffic") {
-			void fetchTab<RepoTraffic>(owner, name, "traffic", refreshed.current)
+			void fetchTab<RepoTraffic>(owner, name, "traffic")
 				.then((value) => apply(setTraffic, value))
 				.catch(onTabError);
 		}
 		if (tab === "actions") {
-			void fetchTab<RepoActions>(owner, name, "actions", refreshed.current)
+			void fetchTab<RepoActions>(owner, name, "actions")
 				.then((value) => apply(setActions, value))
 				.catch(onTabError);
 		}
 		if (tab === "releases") {
-			void fetchTab<RepoReleases>(owner, name, "releases", refreshed.current)
+			void fetchTab<RepoReleases>(owner, name, "releases")
 				.then((value) => apply(setReleases, value))
 				.catch(onTabError);
 		}
 		if (tab === "issues") {
-			void fetchTab<IssuesSnapshot>(owner, name, "issues", refreshed.current)
+			void fetchTab<IssuesSnapshot>(owner, name, "issues")
 				.then((value) => apply(setIssues, value))
 				.catch(onTabError);
 		}
 		if (tab === "prs") {
-			void fetchTab<PullsSnapshot>(owner, name, "prs", refreshed.current)
+			void fetchTab<PullsSnapshot>(owner, name, "prs")
 				.then((value) => apply(setPulls, value))
 				.catch(onTabError);
 		}
 		if (tab === "languages") {
-			void fetchTab<RepoLanguages>(owner, name, "languages", refreshed.current)
+			void fetchTab<RepoLanguages>(owner, name, "languages")
 				.then((value) => apply(setLanguages, value))
 				.catch(onTabError);
 		}
 		if (tab === "contributors") {
-			void fetchTab<RepoContributors>(owner, name, "contributors", refreshed.current)
+			void fetchTab<RepoContributors>(owner, name, "contributors")
 				.then((value) => apply(setContributors, value))
 				.catch(onTabError);
 		}
@@ -324,37 +281,7 @@ export function RepoDetailPage() {
 					}
 				/>
 				<TabWell>
-					<LayerCard.Empty
-						icon={<Box />}
-						title={missingTitle(snap)}
-						description="先添加 PAT 或刷新。"
-					/>
-					<div className="pt-2">
-						<RefreshButton
-							run={() => {
-								const mine = gen.current;
-								return requestRefresh(repoKind(owner, name, "details"))
-									.then(async () => {
-										if (mine !== gen.current) {
-											return false;
-										}
-										const next = await loadRepoTab<RepoDetails>(owner, name, "details");
-										if (mine !== gen.current) {
-											return false;
-										}
-										setSnap(next);
-										return undefined;
-									})
-									.catch((err: unknown) => {
-										if (mine !== gen.current) {
-											return false;
-										}
-										onLoadError(err);
-										return false;
-									});
-							}}
-						/>
-					</div>
+					<SnapshotPending state={snap} />
 				</TabWell>
 			</div>
 		);
@@ -425,95 +352,6 @@ export function RepoDetailPage() {
 								GitHub
 							</a>
 						</Button>
-						<RefreshButton
-							run={() => {
-								const mine = gen.current;
-								function applyIfCurrent<T>(setter: (value: T) => void): (value: T) => void {
-									return (value) => {
-										if (mine === gen.current) {
-											setter(value);
-										}
-									};
-								}
-								return requestRefresh(repoKind(owner, name, tab))
-									.then(async () => {
-										if (mine !== gen.current) {
-											return false;
-										}
-										if (tab === "details") {
-											return loadRepoTab<RepoDetails>(owner, name, "details").then(
-												applyIfCurrent(setSnap),
-											);
-										}
-										if (tab === "security") {
-											return fetchTab<RepoSecurity>(
-												owner,
-												name,
-												"security",
-												refreshed.current,
-											).then(applyIfCurrent(setSecurity));
-										}
-										if (tab === "actions") {
-											return fetchTab<RepoActions>(owner, name, "actions", refreshed.current).then(
-												applyIfCurrent(setActions),
-											);
-										}
-										if (tab === "releases") {
-											return fetchTab<RepoReleases>(
-												owner,
-												name,
-												"releases",
-												refreshed.current,
-											).then(applyIfCurrent(setReleases));
-										}
-										if (tab === "issues") {
-											return fetchTab<IssuesSnapshot>(
-												owner,
-												name,
-												"issues",
-												refreshed.current,
-											).then(applyIfCurrent(setIssues));
-										}
-										if (tab === "prs") {
-											return fetchTab<PullsSnapshot>(owner, name, "prs", refreshed.current).then(
-												applyIfCurrent(setPulls),
-											);
-										}
-										if (tab === "languages") {
-											return fetchTab<RepoLanguages>(
-												owner,
-												name,
-												"languages",
-												refreshed.current,
-											).then(applyIfCurrent(setLanguages));
-										}
-										if (tab === "contributors") {
-											return fetchTab<RepoContributors>(
-												owner,
-												name,
-												"contributors",
-												refreshed.current,
-											).then(applyIfCurrent(setContributors));
-										}
-										return fetchTab<RepoTraffic>(owner, name, "traffic", refreshed.current).then(
-											applyIfCurrent(setTraffic),
-										);
-									})
-									.then((result) => {
-										if (mine !== gen.current) {
-											return false;
-										}
-										return result;
-									})
-									.catch((err: unknown) => {
-										if (mine !== gen.current) {
-											return false;
-										}
-										throw err;
-									});
-							}}
-							onError={onLoadError}
-						/>
 					</>
 				}
 			/>
@@ -597,11 +435,7 @@ export function RepoDetailPage() {
 				<TabsContent value="actions">
 					{actions && "missing" in actions ? (
 						<TabWell>
-							<LayerCard.Empty
-								icon={<Play />}
-								title="没有快照"
-								description="点击上方刷新，重新获取这个仓库的数据。"
-							/>
+							<SnapshotPending />
 						</TabWell>
 					) : actions && actions.runs.length === 0 ? (
 						<TabWell>
@@ -659,11 +493,7 @@ export function RepoDetailPage() {
 				<TabsContent value="releases">
 					{releases && "missing" in releases ? (
 						<TabWell>
-							<LayerCard.Empty
-								icon={<Tag />}
-								title="没有快照"
-								description="点击上方刷新，重新获取这个仓库的数据。"
-							/>
+							<SnapshotPending />
 						</TabWell>
 					) : releases && releases.releases.length === 0 ? (
 						<TabWell>
@@ -707,11 +537,7 @@ export function RepoDetailPage() {
 				<TabsContent value="security">
 					{security && "missing" in security ? (
 						<TabWell>
-							<LayerCard.Empty
-								icon={<ShieldAlert />}
-								title="没有快照"
-								description="点击上方刷新，重新获取这个仓库的数据。"
-							/>
+							<SnapshotPending />
 						</TabWell>
 					) : security && securityUnavailable(security) ? (
 						<TabWell>
@@ -735,11 +561,7 @@ export function RepoDetailPage() {
 				<TabsContent value="issues">
 					{issues && "missing" in issues ? (
 						<TabWell>
-							<LayerCard.Empty
-								icon={<CircleDot />}
-								title="没有快照"
-								description="点击上方刷新，重新获取这个仓库的数据。"
-							/>
+							<SnapshotPending />
 						</TabWell>
 					) : issues && issues.issues.length === 0 ? (
 						<TabWell>
@@ -793,11 +615,7 @@ export function RepoDetailPage() {
 				<TabsContent value="prs">
 					{pulls && "missing" in pulls ? (
 						<TabWell>
-							<LayerCard.Empty
-								icon={<GitPullRequest />}
-								title="没有快照"
-								description="点击上方刷新，重新获取这个仓库的数据。"
-							/>
+							<SnapshotPending />
 						</TabWell>
 					) : pulls && pulls.pull_requests.length === 0 ? (
 						<TabWell>
@@ -857,7 +675,7 @@ export function RepoDetailPage() {
 															label={`#${row.number} diff`}
 														/>
 														<span className={NUM_CELL}>
-															<span className="text-basalt-info">
+															<span className="text-basalt-primary">
 																+{formatCount(row.additions)}
 															</span>
 															<span className="text-basalt-muted-foreground">/</span>
@@ -881,11 +699,7 @@ export function RepoDetailPage() {
 				<TabsContent value="traffic">
 					{traffic && "missing" in traffic ? (
 						<TabWell>
-							<LayerCard.Empty
-								icon={<Eye />}
-								title="没有快照"
-								description="点击上方刷新，重新获取这个仓库的数据。"
-							/>
+							<SnapshotPending />
 						</TabWell>
 					) : traffic && trafficForbidden(traffic) ? (
 						<TabWell>
@@ -912,11 +726,16 @@ export function RepoDetailPage() {
 									{traffic.views.points.length > 0 ? (
 										<AreaChart
 											data={trafficPoints(traffic.views.points)}
+											series={[{ key: "y", label: "浏览", color: chartColor(0) }]}
 											ariaLabel="views"
 											showAxes
 											valueFormatter={formatCount}
 											xValueFormatter={(value) => String(value).slice(5, 10)}
-											summary={`${traffic.views.count} 次浏览，${traffic.views.uniques} 位独立访客`}
+											summary={
+												<span className="sr-only">
+													{traffic.views.count} 次浏览，{traffic.views.uniques} 位独立访客
+												</span>
+											}
 											className="h-56 w-full"
 										/>
 									) : (
@@ -927,11 +746,16 @@ export function RepoDetailPage() {
 									{traffic.clones.points.length > 0 ? (
 										<AreaChart
 											data={trafficPoints(traffic.clones.points)}
+											series={[{ key: "y", label: "克隆", color: chartColor(0) }]}
 											ariaLabel="clones"
 											showAxes
 											valueFormatter={formatCount}
 											xValueFormatter={(value) => String(value).slice(5, 10)}
-											summary={`${traffic.clones.count} 次克隆，${traffic.clones.uniques} 位独立克隆用户`}
+											summary={
+												<span className="sr-only">
+													{traffic.clones.count} 次克隆，{traffic.clones.uniques} 位独立克隆用户
+												</span>
+											}
 											className="h-56 w-full"
 										/>
 									) : (
@@ -947,11 +771,7 @@ export function RepoDetailPage() {
 				<TabsContent value="languages">
 					{languages && "missing" in languages ? (
 						<TabWell>
-							<LayerCard.Empty
-								icon={<Code2 />}
-								title="没有快照"
-								description="点击上方刷新，重新获取这个仓库的数据。"
-							/>
+							<SnapshotPending />
 						</TabWell>
 					) : languages && Object.keys(languages.languages).length === 0 ? (
 						<TabWell>
@@ -978,11 +798,7 @@ export function RepoDetailPage() {
 				<TabsContent value="contributors">
 					{contributors && "missing" in contributors ? (
 						<TabWell>
-							<LayerCard.Empty
-								icon={<Users />}
-								title="没有快照"
-								description="点击上方刷新，重新获取这个仓库的数据。"
-							/>
+							<SnapshotPending />
 						</TabWell>
 					) : contributors && contributors.contributors.length === 0 ? (
 						<TabWell>

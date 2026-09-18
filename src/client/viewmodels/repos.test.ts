@@ -5,7 +5,6 @@ import {
 	cachedRepoRows,
 	filterRepos,
 	healthMap,
-	type InsightsSnapshot,
 	loadInsightsOptional,
 	loadRepos,
 	type RepoRow,
@@ -14,7 +13,6 @@ import {
 	visibleRepos,
 } from "./repos";
 import { setActiveAccountId } from "./session";
-import { clearSnapshots, putSnapshot } from "./snapshot";
 
 const sample: RepoRow[] = [
 	{
@@ -105,7 +103,6 @@ describe("repos viewmodel", () => {
 			expect(snap.repos).toHaveLength(2);
 			expect(cachedRepoRows()).toHaveLength(2);
 		}
-		clearSnapshots();
 		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
 			if (String(input) === "/api/accounts") {
 				return Response.json({ accounts: [{ id: "acc1", login: "o", is_active: true }] });
@@ -140,20 +137,22 @@ describe("repos viewmodel", () => {
 
 	it("loads optional insights or null when missing", async () => {
 		setActiveAccountId("acc1");
+		let missing = false;
 		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
 			if (String(input) === "/api/accounts") {
 				return Response.json({ accounts: [{ id: "acc1", login: "o", is_active: true }] });
 			}
+			if (String(input) === "/api/insights")
+				return missing
+					? Response.json(
+							{ error: { code: "snapshot_missing", message: "missing" } },
+							{ status: 409 },
+						)
+					: Response.json({ account_id: "acc1", insights: [] });
 			throw new Error(String(input));
 		});
-		const cached: InsightsSnapshot = {
-			account_id: "acc1",
-			alerts_incomplete: false,
-			insights: [],
-		};
-		putSnapshot("insights", cached);
 		expect((await loadInsightsOptional())?.insights).toEqual([]);
-		clearSnapshots();
+		missing = true;
 		expect(await loadInsightsOptional()).toBeNull();
 	});
 

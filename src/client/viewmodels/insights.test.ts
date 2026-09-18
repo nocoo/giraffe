@@ -13,7 +13,6 @@ import {
 import type { IssueRow } from "./issues";
 import type { PullRow } from "./pulls";
 import { setActiveAccountId } from "./session";
-import { clearSnapshots } from "./snapshot";
 
 const sample: InsightRow[] = [
 	{
@@ -116,7 +115,6 @@ describe("insights viewmodel", () => {
 			expect(alertsIncomplete(snap)).toBe(true);
 			expect(snap.insights).toHaveLength(3);
 		}
-		clearSnapshots();
 		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
 			if (String(input) === "/api/accounts") {
 				return Response.json({ accounts: [{ id: "acc1", login: "o", is_active: true }] });
@@ -394,7 +392,6 @@ describe("insights viewmodel", () => {
 			expect(board.issues).toEqual([]);
 			expect(board.pulls).toBeNull();
 		}
-		clearSnapshots();
 		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
 			if (String(input) === "/api/accounts") {
 				return Response.json({ accounts: [{ id: "acc1", login: "o", is_active: true }] });

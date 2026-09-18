@@ -20,8 +20,8 @@ import {
 } from "../components/layout/collection-chrome";
 import { Kpi, KpiRow } from "../components/layout/kpi";
 import { TableSkeleton } from "../components/layout/page-skeleton";
-import { RefreshButton } from "../components/layout/refresh-button";
-import { catchLoad, missingTitle } from "../lib/error-ui";
+import { SnapshotPending } from "../components/layout/snapshot-pending";
+import { catchLoad } from "../lib/error-ui";
 import { formatCount, severityBadgeVariant, sourceBadgeVariant } from "../lib/format";
 import { PAGE_DESCRIPTIONS } from "../lib/navigation";
 import {
@@ -30,19 +30,9 @@ import {
 	loadAlerts,
 	visibleAlerts,
 } from "../viewmodels/alerts";
-import { requestRefresh } from "../viewmodels/refresh";
 
 export function AlertsPage() {
 	const [snap, setSnap] = useState<AlertsSnapshot | { missing: true } | null>(null);
-
-	function onLoadError(err: unknown): void {
-		const missing = catchLoad(err, (message) => {
-			toast.error(message);
-		});
-		if (missing) {
-			setSnap(missing);
-		}
-	}
 
 	useEffect(() => {
 		void loadAlerts()
@@ -60,28 +50,10 @@ export function AlertsPage() {
 	if (snap && "missing" in snap) {
 		return (
 			<div className="space-y-8">
-				<PageHeader
-					title="安全告警"
-					description={PAGE_DESCRIPTIONS["/alerts"]}
-					actions={
-						<RefreshButton
-							run={() => requestRefresh(["alerts"]).then(() => loadAlerts().then(setSnap))}
-							onError={onLoadError}
-						/>
-					}
-				/>
+				<PageHeader title="安全告警" description={PAGE_DESCRIPTIONS["/alerts"]} />
 				<LayerCard>
 					<LayerCard.Well>
-						<LayerCard.Empty
-							icon={<ShieldAlert />}
-							title={missingTitle(snap)}
-							description="点击刷新获取数据，或前往设置检查 GitHub 账号连接。"
-							action={
-								<Button variant="secondary" size="sm" asChild>
-									<Link href="/settings">查看账号设置</Link>
-								</Button>
-							}
-						/>
+						<SnapshotPending state={snap} />
 					</LayerCard.Well>
 				</LayerCard>
 			</div>
@@ -131,15 +103,7 @@ export function AlertsPage() {
 						fetchedAt={snap.fetched_at}
 					/>
 				}
-				actions={
-					<>
-						{snap.truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
-						<RefreshButton
-							run={() => requestRefresh(["alerts"]).then(() => loadAlerts().then(setSnap))}
-							onError={onLoadError}
-						/>
-					</>
-				}
+				actions={snap.truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
 			/>
 			<KpiRow>
 				<Kpi icon={Bug} label="Dependabot" value={formatCount(snap.dependabot_open)} />

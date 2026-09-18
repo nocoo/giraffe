@@ -15,18 +15,20 @@ export type CandyTone =
 	| "indigo"
 	| "gray";
 
+const BRAND_BADGE = "border-transparent bg-basalt-primary/10 text-basalt-primary";
+const NEUTRAL_BADGE = "border-transparent bg-basalt-muted text-basalt-muted-foreground";
 const CANDY_CLASS: Record<CandyTone, string> = {
-	green: "border-transparent bg-[hsl(var(--basalt-accent-4))] text-white",
-	amber: "border-transparent bg-[hsl(var(--basalt-accent-6))] text-white",
-	orange: "border-transparent bg-[hsl(var(--basalt-accent-7))] text-white",
-	red: "border-transparent bg-[hsl(var(--basalt-accent-8))] text-white",
-	rose: "border-transparent bg-[hsl(var(--basalt-accent-9))] text-white",
-	teal: "border-transparent bg-[hsl(var(--basalt-accent-3))] text-white",
-	sky: "border-transparent bg-[hsl(var(--basalt-accent-2))] text-white",
-	blue: "border-transparent bg-[hsl(var(--basalt-accent-1))] text-white",
-	purple: "border-transparent bg-[hsl(var(--basalt-accent-10))] text-white",
-	indigo: "border-transparent bg-[hsl(var(--basalt-accent-11))] text-white",
-	gray: "border-transparent bg-[hsl(var(--basalt-accent-12))] text-white",
+	green: BRAND_BADGE,
+	amber: "border-transparent bg-basalt-warning-tint text-basalt-warning",
+	orange: "border-transparent bg-basalt-warning-tint text-basalt-warning",
+	red: "border-transparent bg-basalt-danger-tint text-basalt-destructive",
+	rose: "border-transparent bg-basalt-danger-tint text-basalt-destructive",
+	teal: BRAND_BADGE,
+	sky: BRAND_BADGE,
+	blue: BRAND_BADGE,
+	purple: NEUTRAL_BADGE,
+	indigo: NEUTRAL_BADGE,
+	gray: NEUTRAL_BADGE,
 };
 
 export function candyClass(tone: CandyTone): string {
@@ -59,49 +61,38 @@ export function formatDate(value: string | null | undefined): string {
 	return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())} ${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
 }
 
+export function formatPreciseDate(value: string | null | undefined, timeZone?: string): string {
+	const timestamp = value ? Date.parse(value) : Number.NaN;
+	if (!Number.isFinite(timestamp)) return "时间未知";
+	return new Intl.DateTimeFormat("zh-CN", {
+		dateStyle: "medium",
+		timeStyle: "medium",
+		hourCycle: "h23",
+		...(timeZone ? { timeZone } : {}),
+	}).format(timestamp);
+}
+
+export function formatTimeAgo(value: string | null | undefined, now: number): string {
+	const elapsed = now - (value ? Date.parse(value) : Number.NaN);
+	if (!Number.isFinite(elapsed)) return "时间未知";
+	const seconds = Math.floor(Math.abs(elapsed) / 1000);
+	const duration = [
+		seconds >= 86400 ? `${Math.floor(seconds / 86400)} 天` : "",
+		seconds >= 3600 ? `${Math.floor(seconds / 3600) % 24} 小时` : "",
+		seconds >= 60 ? `${Math.floor(seconds / 60) % 60} 分` : "",
+		`${seconds % 60} 秒`,
+	]
+		.filter(Boolean)
+		.join(" ");
+	return `${duration}${elapsed < 0 ? "后（晚于本机时间）" : "前"}`;
+}
+
 export function formatCount(value: number): string {
 	return new Intl.NumberFormat("zh-CN").format(value);
 }
 
 export function formatDays(value: number): string {
 	return `${formatCount(value)} 天`;
-}
-
-const LANGUAGE_COLORS: Record<string, string> = {
-	TypeScript: "#3178c6",
-	JavaScript: "#f1e05a",
-	Python: "#3572a5",
-	Go: "#00add8",
-	Rust: "#dea584",
-	Java: "#b07219",
-	Ruby: "#701516",
-	PHP: "#4f5d95",
-	Swift: "#f05138",
-	Kotlin: "#a97bff",
-	HTML: "#e34c26",
-	CSS: "#563d7c",
-	SCSS: "#c6538c",
-	Vue: "#41b883",
-	Shell: "#89e051",
-	C: "#555555",
-	"C++": "#f34b7d",
-	"C#": "#178600",
-	Dockerfile: "#384d54",
-	JSON: "#292929",
-	Markdown: "#083fa1",
-	YAML: "#cb171e",
-};
-
-export function languageColor(name: string): string {
-	const known = LANGUAGE_COLORS[name];
-	if (known) {
-		return known;
-	}
-	let hash = 0;
-	for (let i = 0; i < name.length; i += 1) {
-		hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
-	}
-	return `hsl(${hash % 360} 42% 48%)`;
 }
 
 export function initials(name: string): string {
@@ -277,26 +268,6 @@ export function takeChips<T>(items: T[], limit = 2): { shown: T[]; extra: number
 	return { shown: items.slice(0, limit), extra: items.length - limit };
 }
 
-export function fillTextColor(color: string): "#ffffff" | "#111111" {
-	const hex = color.startsWith("#") ? color.slice(1) : color;
-	if (!/^[0-9a-fA-F]{6}$/.test(hex)) {
-		return "#ffffff";
-	}
-	const r = Number.parseInt(hex.slice(0, 2), 16) / 255;
-	const g = Number.parseInt(hex.slice(2, 4), 16) / 255;
-	const b = Number.parseInt(hex.slice(4, 6), 16) / 255;
-	const lin = (channel: number) =>
-		channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
-	const luminance = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
-	const white = 1.05 / (luminance + 0.05);
-	const black = (luminance + 0.05) / 0.05;
-	return white >= black ? "#ffffff" : "#111111";
-}
-
-export function labelFill(color: string): string {
-	return color.startsWith("#") ? color : `#${color}`;
-}
-
 export function daysBetween(fetchedAt: string, earlier: string | null): number {
 	if (!earlier) {
 		return 9999;
@@ -333,15 +304,15 @@ export function freshnessFilled(days: number): number {
 
 export function freshnessTone(days: number): string {
 	if (days <= 7) {
-		return "bg-basalt-heatmap-green-3";
+		return "bg-basalt-primary";
 	}
 	if (days <= 30) {
-		return "bg-basalt-chart-7";
+		return "bg-basalt-primary/75";
 	}
 	if (days <= 90) {
-		return "bg-basalt-chart-8";
+		return "bg-basalt-primary/50";
 	}
-	return "bg-basalt-chart-10";
+	return "bg-basalt-primary/25";
 }
 
 export function maxCount(values: number[]): number {

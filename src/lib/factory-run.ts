@@ -6,6 +6,7 @@ import {
 	type FactoryStreamName,
 	type FactoryWindow,
 } from "./factory-types";
+import { REPO_SNAPSHOT_TABS, SITE_SNAPSHOT_KINDS } from "./snapshot-kinds";
 
 export const RUN_COOLDOWN_MS = 60_000;
 export const REPO_COOLDOWN_MS = 15 * 60_000;
@@ -20,9 +21,12 @@ export type StepKind =
 	| "metadata"
 	| FactoryStreamName
 	| "commit"
+	| "snapshot"
 	| "publish";
 export type FactoryRunStep = {
 	kind: StepKind;
+	resource?: string;
+	snapshotCursor?: number;
 	repo: string | null;
 	status: StepStatus;
 	attempts: number;
@@ -41,6 +45,7 @@ export type FactoryRun = {
 	selection?: RunSelection;
 	mode: "catalog" | "refresh";
 	repos: string[];
+	siteRepos?: string[];
 	repoIds: Record<string, string>;
 	window: FactoryWindow;
 	steps: FactoryRunStep[];
@@ -139,6 +144,7 @@ export function makeRun(
 	repos: FactoryRepo[],
 	now: string,
 	states: Pick<RepoRefreshState, "repo" | "refreshedAt" | "status" | "nextAllowedAt">[] = [],
+	siteRepos: string[] = repos.map((repo) => repo.name),
 ): FactoryRun {
 	const step = (kind: StepKind, repo: string | null = null): FactoryRunStep => ({
 		kind,
@@ -151,9 +157,13 @@ export function makeRun(
 		pages: 0,
 		error: null,
 	});
+	const snapshot = (resource: string, repo: string | null = null): FactoryRunStep => ({
+		...step("snapshot", repo),
+		resource,
+	});
 	const steps =
 		mode === "catalog"
-			? [step("inventory"), step("restore"), step("publish")]
+			? [step("inventory"), snapshot("repos"), step("restore"), step("publish")]
 			: [
 					step("contributions"),
 					...repos.flatMap((r) => [
@@ -161,10 +171,19 @@ export function makeRun(
 						...FACTORY_STREAMS.map((s) => step(s, r.name)),
 						step("commit", r.name),
 					]),
+					snapshot("repos"),
+					...siteRepos.flatMap((repo) =>
+						REPO_SNAPSHOT_TABS.map((tab) => snapshot(`repo:${repo}:${tab}`, repo)),
+					),
+					...SITE_SNAPSHOT_KINDS.filter((kind) => kind !== "repos").map((kind) => snapshot(kind)),
 					step("publish"),
 				];
 	for (const s of steps)
-		if (s.repo && states.some((r) => r.repo === s.repo && r.nextAllowedAt > now)) {
+		if (
+			s.kind !== "snapshot" &&
+			s.repo &&
+			states.some((r) => r.repo === s.repo && r.nextAllowedAt > now)
+		) {
 			s.status = "skipped";
 			s.error = "repository_cooldown";
 			s.finishedAt = now;
@@ -176,6 +195,7 @@ export function makeRun(
 		requestKey,
 		mode,
 		repos: repos.map((r) => r.name),
+		siteRepos: [...siteRepos],
 		repoIds: Object.fromEntries(repos.map((r) => [r.name, r.id])),
 		window: factoryWindow(now),
 		steps,

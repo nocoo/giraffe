@@ -2,7 +2,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { applyRead, applyReadAll, loadInbox, markRead, markReadAll } from "./inbox";
 import { setActiveAccountId } from "./session";
-import { clearSnapshots } from "./snapshot";
 
 const snap = {
 	account_id: "acc1",
@@ -32,7 +31,6 @@ const snap = {
 
 describe("inbox viewmodel", () => {
 	afterEach(() => {
-		clearSnapshots();
 		setActiveAccountId(null);
 		vi.stubGlobal("fetch", () => {
 			throw new Error("network denied in L1");
@@ -57,7 +55,6 @@ describe("inbox viewmodel", () => {
 		});
 		const loaded = await loadInbox();
 		expect("missing" in loaded).toBe(false);
-		clearSnapshots();
 		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
 			if (String(input) === "/api/accounts") {
 				return Response.json({ accounts: [{ id: "acc1", login: "o", is_active: true }] });
@@ -97,8 +94,9 @@ describe("inbox viewmodel", () => {
 		expect(posts).toHaveLength(2);
 	});
 
-	it("caches markRead so a remount loadInbox keeps unread false", async () => {
+	it("reads persisted notification state again on remount", async () => {
 		let notificationGets = 0;
+		let stored = snap;
 		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
 			const url = String(input);
 			if (url === "/api/accounts") {
@@ -106,10 +104,11 @@ describe("inbox viewmodel", () => {
 			}
 			if (url === "/api/notifications") {
 				notificationGets += 1;
-				return Response.json(snap);
+				return Response.json(stored);
 			}
 			if (url === "/api/notifications/read") {
-				return Response.json(applyRead(snap, "1"));
+				stored = applyRead(stored, "1");
+				return Response.json(stored);
 			}
 			throw new Error(url);
 		});
@@ -125,7 +124,7 @@ describe("inbox viewmodel", () => {
 		if (!("missing" in remount)) {
 			expect(remount.notifications[0]?.unread).toBe(false);
 		}
-		expect(notificationGets).toBe(1);
+		expect(notificationGets).toBe(2);
 	});
 
 	it("uses the snapshot account_id rather than the live session", async () => {

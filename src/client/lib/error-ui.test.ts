@@ -19,7 +19,7 @@ describe("errorUi", () => {
 		});
 		expect(errorUi(new ApiError(409, "snapshot_missing", "no"))).toEqual({
 			kind: "empty",
-			title: "没有快照",
+			title: "等待统一刷新",
 		});
 		expect(errorUi(new ApiError(400, "scopes_missing", "need repo"))).toEqual({
 			kind: "field",
@@ -54,7 +54,7 @@ describe("errorUi", () => {
 			title: "未找到",
 		});
 		expect(missingTitle({ missing: true, title: "未找到" })).toBe("未找到");
-		expect(missingTitle({ missing: true })).toBe("没有快照");
+		expect(missingTitle({ missing: true })).toBe("等待统一刷新");
 	});
 
 	it("notifies subscribers and maps load failures", () => {
@@ -67,7 +67,7 @@ describe("errorUi", () => {
 		stop();
 		expect(catchLoad(new ApiError(409, "snapshot_missing", "n"), () => undefined)).toEqual({
 			missing: true,
-			title: "没有快照",
+			title: "等待统一刷新",
 		});
 		expect(catchLoad(new ApiError(404, "not_found", "gone"), () => undefined)).toEqual({
 			missing: true,
@@ -75,7 +75,7 @@ describe("errorUi", () => {
 		});
 		expect(catchLoad(new ApiError(409, "account_missing", "n"), () => undefined)).toEqual({
 			missing: true,
-			title: "没有快照",
+			title: "请先连接 GitHub 账号",
 		});
 		const toasts: string[] = [];
 		expect(

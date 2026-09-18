@@ -1,4 +1,4 @@
-import { Button, Link, toast } from "@nocoo/basalt";
+import { Link, toast } from "@nocoo/basalt";
 import { Banner } from "@nocoo/basalt/components/banner";
 import { ClipboardText } from "@nocoo/basalt/components/clipboard-text";
 import { CodeBlock } from "@nocoo/basalt/components/code";
@@ -23,24 +23,14 @@ import {
 } from "../components/layout/collection-chrome";
 import { Kpi, KpiRow } from "../components/layout/kpi";
 import { TableSkeleton } from "../components/layout/page-skeleton";
-import { RefreshButton } from "../components/layout/refresh-button";
-import { catchLoad, missingTitle } from "../lib/error-ui";
+import { SnapshotPending } from "../components/layout/snapshot-pending";
+import { catchLoad } from "../lib/error-ui";
 import { formatDelta, NUM_CELL, NUM_HEAD } from "../lib/format";
 import { PAGE_DESCRIPTIONS } from "../lib/navigation";
 import { type DigestSnapshot, digestMarkdown, loadDigest } from "../viewmodels/digest";
-import { requestRefresh } from "../viewmodels/refresh";
 
 export function DigestPage() {
 	const [snap, setSnap] = useState<DigestSnapshot | { missing: true } | null>(null);
-
-	function onLoadError(err: unknown): void {
-		const missing = catchLoad(err, (message) => {
-			toast.error(message);
-		});
-		if (missing) {
-			setSnap(missing);
-		}
-	}
 
 	useEffect(() => {
 		void loadDigest()
@@ -65,28 +55,10 @@ export function DigestPage() {
 	if (snap && "missing" in snap) {
 		return (
 			<div className="space-y-8">
-				<PageHeader
-					title="日报"
-					description={PAGE_DESCRIPTIONS["/digest"]}
-					actions={
-						<RefreshButton
-							run={() => requestRefresh(["repos"]).then(() => loadDigest().then(setSnap))}
-							onError={onLoadError}
-						/>
-					}
-				/>
+				<PageHeader title="日报" description={PAGE_DESCRIPTIONS["/digest"]} />
 				<LayerCard>
 					<LayerCard.Well>
-						<LayerCard.Empty
-							icon={<Newspaper />}
-							title={missingTitle(snap)}
-							description="点击刷新获取数据，或前往设置检查 GitHub 账号连接。"
-							action={
-								<Button variant="secondary" size="sm" asChild>
-									<Link href="/settings">查看账号设置</Link>
-								</Button>
-							}
-						/>
+						<SnapshotPending state={snap} />
 					</LayerCard.Well>
 				</LayerCard>
 			</div>
@@ -114,15 +86,7 @@ export function DigestPage() {
 						fetchedAt={snap.fetched_at}
 					/>
 				}
-				actions={
-					<>
-						{snap.truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
-						<RefreshButton
-							run={() => requestRefresh(["repos"]).then(() => loadDigest().then(setSnap))}
-							onError={onLoadError}
-						/>
-					</>
-				}
+				actions={snap.truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
 			/>
 			{missing ? (
 				<Banner
@@ -200,7 +164,7 @@ export function DigestPage() {
 					<LayerCard>
 						<LayerCard.Body>
 							<CodeBlock
-								className="max-h-80 whitespace-pre-wrap break-words text-xs leading-6"
+								className="max-h-80 whitespace-pre-wrap break-words text-sm leading-6"
 								aria-label="日报 Markdown"
 							>
 								{markdown}

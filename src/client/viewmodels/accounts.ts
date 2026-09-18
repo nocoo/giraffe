@@ -1,6 +1,5 @@
 import { apiDelete, apiGet, apiPost } from "../lib/api";
 import { ApiError } from "../lib/errors";
-import { clearRefreshQueue, requestRefresh } from "./refresh";
 import { getActiveAccountId, setActiveAccountId } from "./session";
 
 export type PublicAccount = {
@@ -13,14 +12,10 @@ export type PublicAccount = {
 	is_active: boolean;
 };
 
-export type AccountAddPhase = "idle" | "saving" | "syncing";
+export type AccountAddPhase = "idle" | "saving";
 
 export function emptyToken(): string {
 	return "";
-}
-
-export function shouldRefreshOnCreate(account: Pick<PublicAccount, "is_active">): boolean {
-	return account.is_active;
 }
 
 export function accountAddBusy(phase: AccountAddPhase): boolean {
@@ -35,18 +30,12 @@ export function accountAddLabel(phase: AccountAddPhase): string {
 	if (phase === "saving") {
 		return "正在添加…";
 	}
-	if (phase === "syncing") {
-		return "正在同步…";
-	}
 	return "添加账号";
 }
 
 export function accountAddHint(phase: AccountAddPhase): string | null {
 	if (phase === "saving") {
 		return "正在校验令牌并保存账号";
-	}
-	if (phase === "syncing") {
-		return "账号已保存，正在同步仓库";
 	}
 	return null;
 }
@@ -85,33 +74,20 @@ export async function createAccount(
 ): Promise<PublicAccount> {
 	onPhase?.("saving");
 	const account = await apiPost<PublicAccount>("accounts", { token });
-	if (shouldRefreshOnCreate(account)) {
+	if (account.is_active) {
 		setActiveAccountId(account.id);
-		onPhase?.("syncing");
-		try {
-			await requestRefresh(["repos"]);
-		} catch {
-			// account row exists even if the first repos refresh fails
-		}
 	}
 	return account;
 }
 
 export async function activateAccount(id: string): Promise<void> {
 	await apiPost(`accounts/${id}/activate`);
-	clearRefreshQueue();
 	setActiveAccountId(id);
-	try {
-		await requestRefresh(["repos"]);
-	} catch {
-		// account is already active even if the first repos refresh fails
-	}
 }
 
 export async function deleteAccount(id: string): Promise<void> {
 	await apiDelete(`accounts/${id}`);
 	if (getActiveAccountId() === id) {
-		clearRefreshQueue();
 		setActiveAccountId(null);
 	}
 }

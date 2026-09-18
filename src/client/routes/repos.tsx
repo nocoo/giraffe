@@ -23,10 +23,10 @@ import {
 import { Kpi, KpiRow } from "../components/layout/kpi";
 import { LanguageLabel } from "../components/layout/labels";
 import { TableSkeleton } from "../components/layout/page-skeleton";
-import { RefreshButton } from "../components/layout/refresh-button";
 import { INLINE_SEGMENT } from "../components/layout/segment";
+import { SnapshotPending } from "../components/layout/snapshot-pending";
 import { Meter, SortButton } from "../components/layout/table-chrome";
-import { catchLoad, missingTitle } from "../lib/error-ui";
+import { catchLoad } from "../lib/error-ui";
 import {
 	DATE_CELL,
 	daysBetween,
@@ -44,7 +44,6 @@ import {
 	visibilityBadgeVariant,
 } from "../lib/format";
 import { PAGE_DESCRIPTIONS } from "../lib/navigation";
-import { requestRefresh } from "../viewmodels/refresh";
 import {
 	alertsIncomplete,
 	healthMap,
@@ -64,26 +63,6 @@ export function ReposPage() {
 	const [view, setView] = useState<ViewMode>("list");
 	const [snap, setSnap] = useState<ReposSnapshot | { missing: true } | null>(null);
 	const [insights, setInsights] = useState<InsightsSnapshot | null>(null);
-
-	function onLoadError(err: unknown): void {
-		const missing = catchLoad(err, (message) => {
-			toast.error(message);
-		});
-		if (missing) {
-			setSnap(missing);
-			setInsights(null);
-		}
-	}
-
-	async function reload() {
-		const next = await loadRepos();
-		setSnap(next);
-		if (!("missing" in next)) {
-			setInsights(await loadInsightsOptional());
-		} else {
-			setInsights(null);
-		}
-	}
 
 	useEffect(() => {
 		void loadRepos()
@@ -149,28 +128,10 @@ export function ReposPage() {
 	if (snap && "missing" in snap) {
 		return (
 			<div className="space-y-8">
-				<PageHeader
-					title="仓库"
-					description={PAGE_DESCRIPTIONS["/"]}
-					actions={
-						<RefreshButton
-							run={() => requestRefresh(["repos"]).then(() => reload())}
-							onError={onLoadError}
-						/>
-					}
-				/>
+				<PageHeader title="仓库" description={PAGE_DESCRIPTIONS["/"]} />
 				<LayerCard>
 					<LayerCard.Well>
-						<LayerCard.Empty
-							icon={<Box />}
-							title={missingTitle(snap)}
-							description="点击刷新获取数据，或前往设置检查 GitHub 账号连接。"
-							action={
-								<Button variant="secondary" size="sm" asChild>
-									<Link href="/settings">查看账号设置</Link>
-								</Button>
-							}
-						/>
+						<SnapshotPending state={snap} />
 					</LayerCard.Well>
 				</LayerCard>
 			</div>
@@ -195,15 +156,7 @@ export function ReposPage() {
 				description={
 					<SnapshotDescription description={PAGE_DESCRIPTIONS["/"]} fetchedAt={snap.fetched_at} />
 				}
-				actions={
-					<>
-						{actions}
-						<RefreshButton
-							run={() => requestRefresh(["repos"]).then(() => reload())}
-							onError={onLoadError}
-						/>
-					</>
-				}
+				actions={actions}
 				filters={filters}
 			/>
 			<KpiRow>
@@ -239,7 +192,7 @@ export function ReposPage() {
 								description={
 									query.trim()
 										? "试试其他关键词，或清除搜索查看全部内容。"
-										: "当前快照中没有相关内容，刷新可获取最新数据。"
+										: "最近一次统一更新中没有相关内容。"
 								}
 								action={
 									query.trim() ? (
@@ -266,7 +219,10 @@ export function ReposPage() {
 										className="flex h-full min-w-0 flex-col transition-shadow hover:ring-1 hover:ring-basalt-border"
 									>
 										<div className="flex items-start justify-between gap-2">
-											<p className="min-w-0 truncate font-medium" title={row.name_with_owner}>
+											<p
+												className="min-w-0 truncate text-base font-semibold"
+												title={row.name_with_owner}
+											>
 												{row.name_with_owner}
 											</p>
 											{status ? (

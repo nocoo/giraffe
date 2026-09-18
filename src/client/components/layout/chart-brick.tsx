@@ -1,5 +1,7 @@
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
+import { Text } from "@nocoo/basalt/components/text";
 import type { ReactNode } from "react";
+import { HelpTooltip } from "./help-tooltip";
 
 export function ChartBrick({
 	title,
@@ -13,14 +15,14 @@ export function ChartBrick({
 	return (
 		<LayerCard className="min-w-0">
 			<LayerCard.Header>
-				<div className="space-y-1">
-					<h3 className="text-sm font-medium text-basalt-foreground">{title}</h3>
-					{description ? <p className="text-xs">{description}</p> : null}
+				<div className="flex items-center gap-2">
+					<Text as="h3" variant="heading">
+						{title}
+					</Text>
+					{description ? <HelpTooltip label={`${title}说明`}>{description}</HelpTooltip> : null}
 				</div>
 			</LayerCard.Header>
-			<LayerCard.Body>
-				<div className="min-h-56 min-w-0">{children}</div>
-			</LayerCard.Body>
+			<LayerCard.Body className="flex flex-1 flex-col">{children}</LayerCard.Body>
 		</LayerCard>
 	);
 }

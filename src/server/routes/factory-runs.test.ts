@@ -26,8 +26,18 @@ async function setup(withAccount = true, withSnapshot = true) {
 			)
 			.bind(id, "nocoo", "encrypted", "fake", snapshot.fetched_at, snapshot.fetched_at)
 			.run();
-	if (withAccount && withSnapshot)
+	if (withAccount && withSnapshot) {
 		await db.batch(replaceSnapshotStmts(db, id, "factory", { ...snapshot }, snapshot.fetched_at));
+		await db.batch(
+			replaceSnapshotStmts(
+				db,
+				id,
+				"repos",
+				{ repos: snapshot.repos.map((r) => ({ name_with_owner: r.name })), truncated: false },
+				snapshot.fetched_at,
+			),
+		);
+	}
 	const app = createApp();
 	return {
 		env,
@@ -66,7 +76,7 @@ it("restores server state after reload, preserves the old overview and freezes t
 	expect(state.current).toMatchObject({
 		id: createdBody.id,
 		repos: ["nocoo/app"],
-		progress: { total: 11, completed: 0 },
+		progress: { total: 25, completed: 0 },
 	});
 	expect(state.current).not.toHaveProperty("checkpoint");
 	expect(await (await s.call("/api/factory")).json()).toEqual(await original.json());
@@ -229,13 +239,61 @@ it("returns compact history with accurate totals and expands only the requested 
 	const first = (await (await s.call("/api/factory/runs", plan())).json()) as { id: string };
 	await s.call(`/api/factory/runs/${first.id}/control`, { account_id: id, action: "cancel" });
 	const compact = (await (await s.call()).json()) as FactoryRunResponse;
-	expect(compact.history[0]?.steps).toHaveLength(11);
-	expect(compact.history[0]?.progress).toMatchObject({ total: 11, completed: 11, skipped: 11 });
+	expect(compact.history[0]?.steps).toHaveLength(25);
+	expect(compact.history[0]?.progress).toMatchObject({ total: 25, completed: 25, skipped: 25 });
 	const detail = (await (
 		await s.call(`/api/factory/runs?history=${first.id}`)
 	).json()) as FactoryRunResponse;
-	expect(detail.history[0]?.steps).toHaveLength(11);
+	expect(detail.history[0]?.steps).toHaveLength(25);
 	expect((await s.call(`/api/factory/runs?history=${"x".repeat(81)}`)).status).toBe(400);
+});
+
+it("freezes all accessible detail pages, including repositories excluded from factory metrics", async () => {
+	const s = await setup();
+	await s.db.batch(
+		replaceSnapshotStmts(
+			s.db,
+			id,
+			"repos",
+			{
+				repos: [{ name_with_owner: "nocoo/app" }, { name_with_owner: "org/archived-fork" }],
+				truncated: false,
+			},
+			snapshot.fetched_at,
+		),
+	);
+	expect(
+		(await s.call("/api/factory/runs", { ...plan(), scope: "all", repos: undefined })).status,
+	).toBe(202);
+	const state = (await (await s.call()).json()) as FactoryRunResponse;
+	expect(state.current?.repos).toEqual(["nocoo/app"]);
+	expect(state.current?.siteRepos).toEqual(["nocoo/app", "org/archived-fork"]);
+	expect(state.current?.steps).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({ resource: "repo:org/archived-fork:details" }),
+		]),
+	);
+});
+
+it("requires a complete site catalog before a full refresh, including on an existing installation", async () => {
+	for (const missing of [true, false]) {
+		const s = await setup();
+		if (missing) await s.db.prepare("DELETE FROM snapshots WHERE kind='repos'").run();
+		else
+			await s.db.batch(
+				replaceSnapshotStmts(
+					s.db,
+					id,
+					"repos",
+					{ repos: [], truncated: true },
+					snapshot.fetched_at,
+				),
+			);
+		expect(((await (await s.call()).json()) as FactoryRunResponse).catalogComplete).toBe(false);
+		const res = await s.call("/api/factory/runs", { ...plan(), scope: "all", repos: undefined });
+		expect(res.status).toBe(409);
+		expect(await res.json()).toMatchObject({ error: { code: "catalog_incomplete" } });
+	}
 });
 
 it("rejects ambiguous scope/order and refuses new resource work beyond its account budget", async () => {

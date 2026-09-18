@@ -22,10 +22,10 @@ import {
 } from "../components/layout/collection-chrome";
 import { Kpi, KpiRow } from "../components/layout/kpi";
 import { TableSkeleton } from "../components/layout/page-skeleton";
-import { RefreshButton } from "../components/layout/refresh-button";
 import { INLINE_SEGMENT } from "../components/layout/segment";
+import { SnapshotPending } from "../components/layout/snapshot-pending";
 import { ChurnMeter, PersonCell, SortButton } from "../components/layout/table-chrome";
-import { catchLoad, missingTitle } from "../lib/error-ui";
+import { catchLoad } from "../lib/error-ui";
 import {
 	churnFilled,
 	DATE_CELL,
@@ -44,21 +44,11 @@ import {
 	pullMetrics,
 	visiblePulls,
 } from "../viewmodels/pulls";
-import { requestRefresh } from "../viewmodels/refresh";
 
 export function PullsPage() {
 	const [query, setQuery] = useState("");
 	const [sort, setSort] = useState<PullSort>("updated");
 	const [snap, setSnap] = useState<PullsSnapshot | { missing: true } | null>(null);
-
-	function onLoadError(err: unknown): void {
-		const missing = catchLoad(err, (message) => {
-			toast.error(message);
-		});
-		if (missing) {
-			setSnap(missing);
-		}
-	}
 
 	useEffect(() => {
 		void loadPulls()
@@ -83,28 +73,10 @@ export function PullsPage() {
 	if (snap && "missing" in snap) {
 		return (
 			<div className="space-y-8">
-				<PageHeader
-					title="Pull Requests"
-					description={PAGE_DESCRIPTIONS["/pulls"]}
-					actions={
-						<RefreshButton
-							run={() => requestRefresh(["prs"]).then(() => loadPulls().then(setSnap))}
-							onError={onLoadError}
-						/>
-					}
-				/>
+				<PageHeader title="Pull Requests" description={PAGE_DESCRIPTIONS["/pulls"]} />
 				<LayerCard>
 					<LayerCard.Well>
-						<LayerCard.Empty
-							icon={<GitPullRequest />}
-							title={missingTitle(snap)}
-							description="点击刷新获取数据，或前往设置检查 GitHub 账号连接。"
-							action={
-								<Button variant="secondary" size="sm" asChild>
-									<Link href="/settings">查看账号设置</Link>
-								</Button>
-							}
-						/>
+						<SnapshotPending state={snap} />
 					</LayerCard.Well>
 				</LayerCard>
 			</div>
@@ -132,15 +104,7 @@ export function PullsPage() {
 						fetchedAt={snap.fetched_at}
 					/>
 				}
-				actions={
-					<>
-						{snap.truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
-						<RefreshButton
-							run={() => requestRefresh(["prs"]).then(() => loadPulls().then(setSnap))}
-							onError={onLoadError}
-						/>
-					</>
-				}
+				actions={snap.truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
 				filters={
 					<FilterBar label="Pull Requests 筛选" className="w-full">
 						<SearchField
@@ -181,7 +145,7 @@ export function PullsPage() {
 								description={
 									query.trim()
 										? "试试其他关键词，或清除搜索查看全部内容。"
-										: "当前快照中没有相关内容，刷新可获取最新数据。"
+										: "最近一次统一更新中没有相关内容。"
 								}
 								action={
 									query.trim() ? (
@@ -265,7 +229,7 @@ export function PullsPage() {
 																label={`${row.name_with_owner}#${row.number} diff`}
 															/>
 															<span className={NUM_CELL}>
-																<span className="text-basalt-info">
+																<span className="text-basalt-primary">
 																	+{formatCount(row.additions)}
 																</span>
 																<span className="text-basalt-muted-foreground">/</span>

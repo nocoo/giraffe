@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.7.0 — 2026-09-18
+
+### Added
+- Unified software-factory refresh updates site-wide lists, Insights, Digest and repository details through durable, resumable steps, including repositories outside the factory metric scope
+- Large refresh dialog with phase and repository progress, actionable failure explanations, history and a compact page-level health/progress banner
+- Repository timestamp dialogs with readable local/UTC times, observation windows and elapsed time updated every second
+
+### Changed
+- Other pages read saved snapshots without independent refresh buttons or automatic collection; missing data links to the factory refresh console
+- Standardize Basalt/Recharts visualizations, green chart colors, typography, table spacing, compact help tooltips and equal-height cards
+- Upgrade Basalt to 2.1.8 and Vitest/coverage to 5.0.1; add the Hexly project shortcut and accessible header tooltips
+
+### Fixed
+- Let long signal lists expand and fill their cards; remove blue chart-click outlines while retaining green keyboard focus and inset calendar selection outlines
+- Preserve prior good page data on failed collection, resume aggregate chunks without duplicate records and keep cancelled/cooling repository progress accurate
+- Treat missing GitHub repository or security-alert responses as unavailable data, not successful empty results
+
+### Operations
+- No new D1 migration or Cloudflare binding is required; existing account storage limits now also include ordinary snapshots and Digest baselines
+- After upgrading, synchronize the repository list in the refresh console before starting the first full-site refresh; repository selection only limits factory metrics
+- The legacy `POST /api/refresh` endpoint remains compatible, but the client no longer calls it
+
 ## v0.6.0 — 2026-09-16
 
 ### Added

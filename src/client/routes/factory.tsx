@@ -1,5 +1,5 @@
-import { Button, Input } from "@nocoo/basalt";
-import { PageHeader } from "@nocoo/basalt/components/page-header";
+import { Button, Input, SegmentControl } from "@nocoo/basalt";
+import { StatStrip } from "@nocoo/basalt/components/stat-strip";
 import {
 	Table,
 	TableBody,
@@ -16,6 +16,8 @@ import {
 	type FactorySnapshot,
 	type FactoryStreamName,
 } from "../../lib/factory-types";
+import { Kpi, KpiRow } from "../components/layout/kpi";
+import { SelectField } from "../components/layout/select-field";
 import { reportError } from "../lib/error-ui";
 import {
 	dependencyEdges,
@@ -49,6 +51,7 @@ import {
 	FactoryThroughput,
 	FactoryTreemap,
 } from "./factory-charts";
+import { FactoryRepoTimes } from "./factory-repo-times";
 import { FactoryRuns } from "./factory-runs";
 
 export function FactoryPage() {
@@ -91,10 +94,6 @@ export function FactoryPage() {
 			next.delete("page");
 			return next;
 		});
-	};
-	const fail = (err: unknown) => {
-		reportError(err);
-		setError(factoryError(err));
 	};
 	useEffect(() => {
 		mounted.current = true;
@@ -143,7 +142,11 @@ export function FactoryPage() {
 	const readPublished = useCallback(async (account?: string) => {
 		if (account) setSnapshot((old) => (old?.account_id === account ? old : null));
 		const result = await reloadFactory();
-		if (!("missing" in result)) setSnapshot(result);
+		if (mounted.current) {
+			setSnapshot("missing" in result ? null : result);
+			setError("");
+			setLoading(false);
+		}
 	}, []);
 	const groups = useMemo(() => factoryGroups(snapshot?.repos ?? []), [snapshot]);
 	const scope = useMemo(
@@ -157,32 +160,15 @@ export function FactoryPage() {
 	);
 	const repo = scope[0];
 	const ranking = factoryRepoPage(board?.ranking ?? [], repoPage);
-	const actions = (
-		<Button size="sm" variant="ghost" onClick={() => void readPublished().catch(fail)}>
-			读取已发布快照
-		</Button>
-	);
 	return (
 		<div className="factory space-y-4">
-			<PageHeader
-				title="软件工厂"
-				description={
-					snapshot
-						? `${snapshot.owner} / GitHub · 从生产节奏到每一条工作记录`
-						: "GitHub 的仓库、工作流与交付节奏"
-				}
-				actions={actions}
-			/>
 			<FactoryRuns
 				snapshot={snapshot}
 				onPublished={readPublished}
 				filter={{ language, topic, query, repo: selected }}
+				snapshotError={error}
+				loading={loading}
 			/>
-			{error ? (
-				<div role="alert" className="factory-notice factory-warning">
-					{error} <Link to="/settings">账号设置 ↗</Link>
-				</div>
-			) : null}
 			{loading && !snapshot ? (
 				<div role="status" className="factory-loading">
 					正在读取工厂快照…
@@ -194,74 +180,39 @@ export function FactoryPage() {
 			{!loading && !snapshot ? (
 				<FactoryPanel title="建立你的软件工厂视图" hint="使用当前 GitHub 账号">
 					<p className="py-8 text-sm text-basalt-muted-foreground">
-						首次调查完整分页读取归属仓库，再分批采集 90 天窗口的提交、历史 Issue /
-						PR、Actions、Release 与依赖证据。进度可暂停和续传。
+						同步仓库列表，再选择需要更新的仓库，即可查看提交、工作记录与交付趋势。
+						刷新可以暂停，离开页面后也会继续。
 					</p>
-					<p className="pb-4 text-sm">请在上方刷新控制台发现仓库，然后选择刷新范围。</p>
+					<p className="pb-4 text-sm">点击右上角「刷新控制台」开始。</p>
 				</FactoryPanel>
 			) : null}
 			{snapshot && board ? (
 				<>
-					<div className="factory-provenance">
-						<span className="factory-status-dot" />
-						<strong>
-							{snapshot.publication?.mixed
-								? "混合版本 · 保留历史成功数据"
-								: snapshot.status === "complete"
-									? "已保存的 GitHub 观察"
-									: "旧调查未完成 · 可恢复已有资源"}
-						</strong>
-						<span>
-							{snapshot.publication?.mixed
-								? "混合窗口（各仓库独立采样）"
-								: `${snapshot.window.since.slice(0, 10)} → ${snapshot.window.until.slice(0, 10)}`}{" "}
-							· {snapshot.publication?.mixed ? "仓库分别采样 /" : "90 天 /"}
-							UTC / 末日未满
-						</span>
-						<span className="ml-auto">更新 {formatUtc(snapshot.fetched_at)}</span>
-					</div>
-					{selected && repo?.observation ? (
-						<div className="factory-run-meta">
-							<span>
-								事件窗口 {formatUtc(repo.observation.window.since)} →{" "}
-								{formatUtc(repo.observation.window.until)}
-							</span>
-							<span>
-								仓库快照 {formatUtc(repo.observation.refreshedAt)} ·{" "}
-								{repo.observation.source === "legacy" ? "旧资源恢复" : "GitHub 采集"}
-							</span>
-						</div>
-					) : null}
 					<div className="factory-toolbar">
-						<label>
-							语言群{" "}
-							<select
-								value={language}
-								onChange={(e) => {
-									update("language", e.target.value);
-								}}
-							>
-								<option value="">全部语言</option>
-								{groups.languages.map((g) => (
-									<option key={g}>{g}</option>
-								))}
-							</select>
-						</label>
-						<label>
-							领域标签{" "}
-							<select value={topic} onChange={(e) => update("topic", e.target.value)}>
-								<option value="">全部 topics</option>
-								{groups.topics.map((g) => (
-									<option key={g}>{g}</option>
-								))}
-							</select>
-						</label>
+						<SelectField
+							label="语言群"
+							value={language}
+							onValueChange={(value) => update("language", value)}
+							options={[
+								{ value: "", label: "全部语言" },
+								...groups.languages.map((value) => ({ value, label: value })),
+							]}
+						/>
+						<SelectField
+							label="领域标签"
+							value={topic}
+							onValueChange={(value) => update("topic", value)}
+							options={[
+								{ value: "", label: "全部 topics" },
+								...groups.topics.map((value) => ({ value, label: value })),
+							]}
+						/>
 						<Input
 							aria-label="搜索工厂仓库"
 							placeholder="搜索仓库或描述…"
 							value={query}
 							onChange={(e) => update("q", e.target.value)}
-							className="h-8 max-w-64 text-xs"
+							className="max-w-64"
 						/>
 						<span className="ml-auto text-xs text-basalt-muted-foreground">
 							清单 {snapshot.inventory.scanned}/{snapshot.inventory.total} · 纳入{" "}
@@ -282,38 +233,24 @@ export function FactoryPage() {
 							</Link>
 						</div>
 					) : null}
-					{board.coverage.complete < board.coverage.total ? (
-						<div className="factory-notice">
-							<strong>
-								数据覆盖 {board.coverage.complete}/{board.coverage.total}
-							</strong>
-							<span>
-								{" "}
-								个仓库资源完整 · {board.coverage.unavailable} 不可用 · {board.coverage.limited}{" "}
-								截断。图表仅累计已结束资源的观测值，未覆盖部分不是零。
-							</span>
-							{snapshot.status === "collecting" ? (
-								<span>
-									{" "}
-									当前：{snapshot.repos[snapshot.cursor.repo]?.name ?? "仓库清单"} /{" "}
-									{STREAM_LABELS[FACTORY_STREAMS[snapshot.cursor.stream] ?? "commits"]}
-								</span>
-							) : null}
-						</div>
-					) : null}
 					{!scope.length ? (
 						<div role="status" className="py-12 text-center text-sm">
 							{snapshot.inventory.complete
 								? "没有符合当前筛选的仓库。"
 								: "仓库清单仍在分页采集中。"}{" "}
-							<button className="factory-link" type="button" onClick={() => setParams({})}>
+							<Button
+								variant="ghost"
+								className="factory-link"
+								type="button"
+								onClick={() => setParams({})}
+							>
 								重置筛选
-							</button>
+							</Button>
 						</div>
 					) : (
 						<>
-							<div className="factory-metric-strip">
-								<Metric
+							<KpiRow>
+								<Kpi
 									label={board.mixedWindows ? "各仓观测提交" : "窗口提交"}
 									value={
 										board.observed.commits
@@ -323,23 +260,25 @@ export function FactoryPage() {
 												)
 											: "—"
 									}
-									note={`${n(board.totals.allCommits)} 默认分支历史总量`}
+									subtitle={`${n(board.totals.allCommits)} 默认分支历史总量`}
 								>
 									<FactorySpark
-										values={board.days.map((d) => d.commits)}
+										values={board.days.map((d) =>
+											d.complete.commits || d.commits ? d.commits : null,
+										)}
 										label="窗口内每日默认分支提交"
 									/>
-								</Metric>
-								<Metric
+								</Kpi>
+								<Kpi
 									label="在制工作 · 各仓观测时点"
 									value={`${n(board.totals.openIssues)} / ${n(board.totals.openPrs)}`}
-									note="Open issue / Open PR"
+									subtitle="Open issue / Open PR"
 								>
 									<span className="text-xs text-basalt-muted-foreground">
 										{n(board.aggregate.agedIssues + board.aggregate.agedPrs)} 个长龄信号
 									</span>
-								</Metric>
-								<Metric
+								</Kpi>
+								<Kpi
 									label={board.mixedWindows ? "各仓观测合并 PR" : "窗口合并 PR"}
 									value={
 										board.observed.prs
@@ -349,17 +288,19 @@ export function FactoryPage() {
 												)
 											: "—"
 									}
-									note={`P50 ${formatHours(board.aggregate.cycleP50)} · P90 ${formatHours(board.aggregate.cycleP90)}`}
+									subtitle={`P50 ${formatHours(board.aggregate.cycleP50)} · P90 ${formatHours(board.aggregate.cycleP90)}`}
 								>
 									<FactorySpark
-										values={board.days.map((d) => d.prMerged)}
+										values={board.days.map((d) =>
+											d.complete.prs || d.prMerged ? d.prMerged : null,
+										)}
 										label="窗口内每日合并 PR"
 									/>
-								</Metric>
-								<Metric
+								</Kpi>
+								<Kpi
 									label="CI 观测成功率"
 									value={board.observed.actions ? formatRate(board.aggregate.ciRate) : "—"}
-									note={
+									subtitle={
 										board.observed.actions
 											? `${n(board.aggregate.ciSuccess)} 成功 / ${n(board.aggregate.ciFailure)} 失败 · 完整 ${board.streamComplete.actions}/${scope.length} 仓`
 											: `尚未采集 · 完整 ${board.streamComplete.actions}/${scope.length} 仓`
@@ -368,8 +309,8 @@ export function FactoryPage() {
 									<span className="text-xs text-basalt-muted-foreground">
 										{n(board.aggregate.ciOther)} 其他 · {board.aggregate.ciPending} 进行中
 									</span>
-								</Metric>
-								<Metric
+								</Kpi>
+								<Kpi
 									label="窗口发布"
 									value={
 										board.observed.releases
@@ -379,45 +320,35 @@ export function FactoryPage() {
 												)
 											: "—"
 									}
-									note={`${board.totals.repos} 仓库 · ${board.totals.private} 私有`}
+									subtitle={`${board.totals.repos} 仓库 · ${board.totals.private} 私有`}
 								>
 									<span className="text-xs text-basalt-muted-foreground">
 										{(board.totals.sizeKiB / 1048576).toFixed(2)} GiB Git 存储
 									</span>
-								</Metric>
-							</div>
-							<div className="grid gap-3 xl:grid-cols-[1.15fr_1fr]">
+								</Kpi>
+							</KpiRow>
+							<div className="factory-chart-grid grid gap-3 xl:grid-cols-[1.15fr_1fr]">
 								<FactoryPanel
 									title={calendar === "commits" ? "提交日历" : "账号贡献日历"}
 									hint={
 										calendar === "commits"
-											? "当前筛选 · committer date"
-											: "整个账号 · 包括外部/排除仓库，不随筛选变化"
+											? "按提交时间（UTC）统计当前筛选的仓库。各仓库更新时间不同时，显示它们的日期并集，最多一年；斜纹表示未完整获取，不是零提交。"
+											: `整个账号的贡献，包括外部和已排除仓库，不随筛选变化。${snapshot.contributionObservation ? `数据更新于 ${formatUtc(snapshot.contributionObservation.fetchedAt)}，范围 ${snapshot.contributionObservation.window.since.slice(0, 10)} 至 ${snapshot.contributionObservation.window.until.slice(0, 10)}。` : ""}`
 									}
 								>
 									<div className="mb-3 flex items-center justify-between gap-2">
-										<div className="factory-switch">
-											<button
-												type="button"
-												aria-pressed={calendar === "commits"}
-												onClick={() => {
-													setCalendar("commits");
-													setDay("");
-												}}
-											>
-												仓库提交
-											</button>
-											<button
-												type="button"
-												aria-pressed={calendar === "contributions"}
-												onClick={() => {
-													setCalendar("contributions");
-													setDay("");
-												}}
-											>
-												账号贡献
-											</button>
-										</div>
+										<SegmentControl
+											legend="日历来源"
+											value={calendar}
+											options={[
+												{ value: "commits", label: "仓库提交" },
+												{ value: "contributions", label: "账号贡献" },
+											]}
+											onValueChange={(value) => {
+												setCalendar(value as typeof calendar);
+												setDay("");
+											}}
+										/>
 										<span className="text-xs text-basalt-muted-foreground">
 											{calendar === "commits"
 												? board.mixedWindows
@@ -428,21 +359,11 @@ export function FactoryPage() {
 													: `${snapshot.contributionStatus === "pending" ? "未采集" : "不可用"}`}
 										</span>
 									</div>
-									{calendar === "contributions" && snapshot.contributionObservation ? (
+									{calendar === "contributions" &&
+									snapshot.contributionObservation &&
+									snapshot.contributionStatus !== "complete" ? (
 										<p className="mb-2 text-xs text-basalt-muted-foreground">
-											来源 {formatUtc(snapshot.contributionObservation.fetchedAt)} ·{" "}
-											{snapshot.contributionObservation.window.since.slice(0, 10)} →{" "}
-											{snapshot.contributionObservation.window.until.slice(0, 10)}
-											{snapshot.contributionStatus !== "complete"
-												? " · 本次不可用，保留旧日历"
-												: ""}
-										</p>
-									) : null}
-									{calendar === "commits" && board.mixedWindows ? (
-										<p className="mb-2 text-xs text-basalt-muted-foreground">
-											展示各仓库窗口并集（最多一年）；缺少覆盖的零显示为未知，正值为观测下界。
-											{board.displayWindow.since.slice(0, 10)} →{" "}
-											{board.displayWindow.until.slice(0, 10)}
+											本次未能更新，显示上次获取的日历。
 										</p>
 									) : null}
 									{(
@@ -487,25 +408,22 @@ export function FactoryPage() {
 								</FactoryPanel>
 								<FactoryPanel
 									title="交付吞吐"
-									hint="每日合并 PR + 未合并关闭 + Release；混合/缺失覆盖为观测下界，未观测零留空"
+									hint="统计每天合并的 PR、未合并就关闭的 PR 和发布版本。未完整获取的日期只显示已知数量，没有数据时留空。事件类别相加，不代表唯一工作项。"
 								>
 									{board.observed.prs || board.observed.releases ? (
 										<FactoryThroughput days={board.days} />
 									) : (
 										<p className="factory-chart-empty">交付资源尚未采集。</p>
 									)}
-									<div className="factory-chart-key">
-										<span>● 合并 PR</span>
-										<span>● 未合并关闭</span>
-										<span>● Release</span>
-										<span className="ml-auto">事件类别相加，不代表唯一工作项</span>
-									</div>
 								</FactoryPanel>
 							</div>
-							<div className="grid gap-3 xl:grid-cols-3">
-								<FactoryPanel title="仓库规模地图" hint="面积 = Linguist 语言字节 · 点击下钻">
+							<div className="factory-chart-grid grid gap-3 xl:grid-cols-3">
+								<FactoryPanel
+									title="仓库规模地图"
+									hint="面积按 GitHub 统计的语言字节数分配，不是代码行数。点击色块查看仓库；零字节仓库仍在下方表格中。"
+								>
 									<FactoryTreemap repos={scope} onSelect={(name) => drill(name, "commits")} />
-									<div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-basalt-muted-foreground">
+									<div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-basalt-muted-foreground">
 										{board.languages.slice(0, 6).map((l) => (
 											<span key={l.name} title={`${n(l.bytes)} bytes`}>
 												{l.name} <strong>{formatRate(l.share)}</strong>
@@ -524,18 +442,24 @@ export function FactoryPage() {
 											仓库。比例以返回的语言字节之和计算。
 										</p>
 									</details>
-									<p className="mt-2 text-[11px] text-basalt-muted-foreground">
+									<p className="mt-2 text-xs text-basalt-muted-foreground">
 										{(board.totals.languageBytes / 1e6).toFixed(2)} MB 语言字节 · Git 磁盘{" "}
 										{n(board.totals.sizeKiB)} KiB
 									</p>
 								</FactoryPanel>
-								<FactoryPanel title="流量 × 在制品" hint="仅已观测提交 · 键盘请用仓库表">
+								<FactoryPanel
+									title="提交与待办"
+									hint="每个气泡是一座仓库，大小代表语言字节数。只展示已获取提交数据的仓库；点击气泡或使用下方仓库表查看详情。"
+								>
 									<FactoryScatter repos={scope} onSelect={drill} />
-									<p className="text-center text-[11px] text-basalt-muted-foreground">
-										横轴：窗口提交　纵轴：Open issue + PR（清单时点）
+									<p className="text-center text-xs text-basalt-muted-foreground">
+										横轴：提交 · 纵轴：待处理 Issue / PR
 									</p>
 								</FactoryPanel>
-								<FactoryPanel title="工作流量账" hint="独立队列 · 不推断 Issue 与 PR 关联">
+								<FactoryPanel
+									title="工作流量账"
+									hint="分别统计 Issue 与 PR 的创建、待处理和完成数量，不推断两者的关联。「期间」指当前统计窗口，Issue 按最后关闭时间计数。各阶段不一定是同一批工作项。"
+								>
 									<div className="factory-flow">
 										<FlowRow
 											label="Issues"
@@ -544,7 +468,7 @@ export function FactoryPage() {
 												board.totals.openIssues,
 												board.observed.issues ? board.aggregate.issueClosed : null,
 											]}
-											labels={["窗口创建", "当前开放", "窗口最后关闭"]}
+											labels={["期间创建", "当前开放", "期间关闭"]}
 										/>
 										<FlowRow
 											label="Pull requests"
@@ -553,12 +477,11 @@ export function FactoryPage() {
 												board.totals.openPrs,
 												board.observed.prs ? board.aggregate.prMerged : null,
 											]}
-											labels={["窗口创建", "当前开放", "窗口合并"]}
+											labels={["期间创建", "当前开放", "期间合并"]}
 										/>
 									</div>
-									<p className="mt-3 text-[11px] text-basalt-muted-foreground">
-										PR 另有 {n(board.aggregate.prClosed)}{" "}
-										个窗口内未合并关闭。创建队列与合并队列可能跨越窗口，箭头仅表达阶段。
+									<p className="mt-3 text-xs text-basalt-muted-foreground">
+										另有 {n(board.aggregate.prClosed)} 个 PR 未合并关闭
 									</p>
 									<div className="mt-3 border-t border-basalt-border pt-3 text-xs">
 										历史已关闭 Issue <strong>{n(board.totals.closedIssues)}</strong> · 历史已合并 PR{" "}
@@ -567,11 +490,15 @@ export function FactoryPage() {
 								</FactoryPanel>
 							</div>
 							<div className="grid gap-3 xl:grid-cols-[1.3fr_1fr]">
-								<FactoryPanel title="需要检查的信号" hint="规则提示 · 不等于已证实阻塞">
+								<FactoryPanel
+									title="需要检查的信号"
+									hint="PR 超过 7 天、Issue 超过 14 天仍未关闭，或 CI 至少运行 10 次且失败率不低于 20% 时提醒检查。这些信号不代表已经确认有问题。"
+								>
 									<div className="factory-signal-list">
 										{board.anomalies.length ? (
 											board.anomalies.map((a) => (
-												<button
+												<Button
+													variant="ghost"
 													type="button"
 													key={`${a.repo}:${a.stream}`}
 													onClick={() => drill(a.repo, a.stream)}
@@ -579,7 +506,7 @@ export function FactoryPage() {
 													<span>{a.repo.split("/")[1]}</span>
 													<span>{a.label}</span>
 													<ArrowUpRight className="size-3.5" />
-												</button>
+												</Button>
 											))
 										) : (
 											<p className="py-3 text-xs text-basalt-muted-foreground">
@@ -587,9 +514,9 @@ export function FactoryPage() {
 											</p>
 										)}
 									</div>
-									<p className="mt-3 text-[11px] text-basalt-muted-foreground">
-										PR ≥7 天；Issue ≥14 天；CI 判定 ≥10 次且失败率 ≥20%。依赖告警完整覆盖{" "}
-										{board.securityKnown}/{scope.length} 仓库；未覆盖的安全状态未知。
+									<p className="mt-3 text-xs text-basalt-muted-foreground">
+										安全告警已读取 {board.securityKnown}/{scope.length} 仓库
+										{board.securityKnown < scope.length ? " · 其余安全状态未知" : ""}
 									</p>
 								</FactoryPanel>
 								<FactoryPanel title="依赖与维护" hint="固定 SHA 的直接引用证据">
@@ -607,15 +534,23 @@ export function FactoryPage() {
 									<div className="factory-network mt-3">
 										{visibleEdges.slice(0, 8).map((e) => (
 											<div key={`${e.source}:${e.target}`}>
-												<button type="button" onClick={() => drill(e.source, "dependencies")}>
+												<Button
+													variant="ghost"
+													type="button"
+													onClick={() => drill(e.source, "dependencies")}
+												>
 													{e.source.split("/")[1]}
-												</button>
+												</Button>
 												<span className="factory-network-line" aria-hidden="true">
 													→
 												</span>
-												<button type="button" onClick={() => drill(e.target, "dependencies")}>
+												<Button
+													variant="ghost"
+													type="button"
+													onClick={() => drill(e.target, "dependencies")}
+												>
 													{e.target.split("/")[1]}
-												</button>
+												</Button>
 												<a
 													href={safeGithubUrl(e.url)}
 													target="_blank"
@@ -652,6 +587,7 @@ export function FactoryPage() {
 							<FactoryPanel
 								title={selected ? "仓库生产线" : "仓库生产线 · 按窗口提交量排序"}
 								hint="每行是一条生产线，点击仓库或指标下钻"
+								flush
 							>
 								<div className="factory-table-scroll">
 									<Table>
@@ -665,36 +601,23 @@ export function FactoryPage() {
 												<TableHead className="text-right">CI 成功 / 判定</TableHead>
 												<TableHead className="text-right">发布</TableHead>
 												<TableHead>资源覆盖</TableHead>
+												<TableHead className="text-right">时间</TableHead>
 											</TableRow>
 										</TableHeader>
 										<TableBody>
 											{ranking.rows.map((r) => (
 												<TableRow key={r.id}>
 													<TableCell>
-														<button
+														<Button
+															variant="ghost"
 															className="factory-repo-link"
 															type="button"
 															onClick={() => drill(r.name)}
 														>
 															{r.name.split("/")[1]}
-														</button>
-														<div className="text-[10px] text-basalt-muted-foreground">
+														</Button>
+														<div className="text-xs text-basalt-muted-foreground">
 															{r.language} {r.private ? "· private" : ""}
-															<div>
-																元数据{" "}
-																{formatUtc(r.metadataAt ?? r.observation?.metadataAt ?? null)}
-															</div>
-															<div>
-																{r.observation
-																	? `${r.observation.source === "legacy" ? "旧资源恢复" : "事件快照"} ${formatUtc(r.observation.refreshedAt)}`
-																	: "事件未采集"}
-															</div>
-															{r.observation ? (
-																<div>
-																	窗口 {r.observation.window.since.slice(0, 10)} →{" "}
-																	{r.observation.window.until.slice(0, 10)}
-																</div>
-															) : null}
 														</div>
 													</TableCell>
 													<TableCell>
@@ -708,7 +631,12 @@ export function FactoryPage() {
 																				(d.date >= r.observation.window.since.slice(0, 10) &&
 																					d.date <= r.observation.window.until.slice(0, 10)),
 																		)
-																		.map((d) => r.metrics.days[d.date]?.commits ?? 0)}
+																		.map((d) => {
+																			const count = r.metrics.days[d.date]?.commits ?? 0;
+																			return r.coverage.commits.status === "complete" || count
+																				? count
+																				: null;
+																		})}
 																	label={`${r.name} 每日提交`}
 																/>
 															) : (
@@ -717,42 +645,47 @@ export function FactoryPage() {
 														</span>
 													</TableCell>
 													<TableCell className="text-right">
-														<button
+														<Button
+															variant="ghost"
 															className="factory-number"
 															type="button"
 															onClick={() => drill(r.name, "commits")}
 														>
 															{factoryRepoCount(r, "commits")}
-														</button>
+														</Button>
 													</TableCell>
 													<TableCell className="text-right">
-														<button
+														<Button
+															variant="ghost"
 															type="button"
 															className="factory-number"
 															onClick={() => drill(r.name, "issues")}
 														>
 															{r.openIssues}
-														</button>{" "}
+														</Button>{" "}
 														/{" "}
-														<button
+														<Button
+															variant="ghost"
 															type="button"
 															className="factory-number"
 															onClick={() => drill(r.name, "prs")}
 														>
 															{r.openPrs}
-														</button>
+														</Button>
 													</TableCell>
 													<TableCell className="text-right">
-														<button
+														<Button
+															variant="ghost"
 															type="button"
 															className="factory-number"
 															onClick={() => drill(r.name, "prs")}
 														>
 															{factoryRepoCount(r, "prs")}
-														</button>
+														</Button>
 													</TableCell>
 													<TableCell className="text-right">
-														<button
+														<Button
+															variant="ghost"
 															type="button"
 															className="factory-number"
 															onClick={() => drill(r.name, "actions")}
@@ -760,21 +693,23 @@ export function FactoryPage() {
 															{r.coverage.actions.status === "complete"
 																? `${r.metrics.ciSuccess} / ${r.metrics.ciSuccess + r.metrics.ciFailure}`
 																: "—"}
-														</button>
+														</Button>
 													</TableCell>
 													<TableCell className="text-right">
-														<button
+														<Button
+															variant="ghost"
 															type="button"
 															className="factory-number"
 															onClick={() => drill(r.name, "releases")}
 														>
 															{factoryRepoCount(r, "releases")}
-														</button>
+														</Button>
 													</TableCell>
 													<TableCell>
 														<div className="factory-coverage-dots">
 															{FACTORY_STREAMS.map((k) => (
-																<button
+																<Button
+																	variant="ghost"
 																	type="button"
 																	key={k}
 																	onClick={() => drill(r.name, k)}
@@ -783,9 +718,12 @@ export function FactoryPage() {
 																	aria-label={`${r.name} ${STREAM_LABELS[k]}：${STATUS_LABELS[r.coverage[k].status]}`}
 																>
 																	{STREAM_CODES[k]}
-																</button>
+																</Button>
 															))}
 														</div>
+													</TableCell>
+													<TableCell className="text-right">
+														<FactoryRepoTimes repo={r} />
 													</TableCell>
 												</TableRow>
 											))}
@@ -793,7 +731,7 @@ export function FactoryPage() {
 									</Table>
 								</div>
 								{ranking.pages > 1 ? (
-									<div className="mt-3 flex items-center justify-end gap-2 text-xs">
+									<div className="flex items-center justify-end gap-2 px-4 py-3 text-xs">
 										<span>
 											仓库第 {ranking.current}/{ranking.pages} 页 · 每页 25 行
 										</span>
@@ -818,45 +756,42 @@ export function FactoryPage() {
 							</FactoryPanel>
 							{selected ? (
 								<FactoryPanel title={`${selected} · 工作记录`} hint="分页明细 · 每页 100 条">
-									<fieldset className="factory-tabs">
-										<legend className="sr-only">选择记录类型</legend>
-										{FACTORY_STREAMS.map((k) => (
-											<button
-												type="button"
-												key={k}
-												aria-pressed={stream === k}
-												onClick={() => {
-													update("stream", k);
-												}}
-											>
-												{STREAM_LABELS[k]}
-											</button>
-										))}
-									</fieldset>
+									<SegmentControl
+										legend="选择记录类型"
+										value={stream}
+										onValueChange={(value) => update("stream", value)}
+										options={FACTORY_STREAMS.map((value) => ({
+											value,
+											label: STREAM_LABELS[value],
+										}))}
+									/>
 									<div className="factory-toolbar mt-3">
-										<label>
-											状态{" "}
-											<select value={detailState} onChange={(e) => update("state", e.target.value)}>
-												<option value="">全部状态</option>
-												<option value="open">Open</option>
-												<option value="merged">Merged</option>
-												<option value="closed">Closed</option>
-												<option value="success">CI success</option>
-												<option value="failure">CI failure</option>
-												<option value="cancelled">Cancelled</option>
-											</select>
-										</label>
-										<label>
+										<SelectField
+											label="状态"
+											value={detailState}
+											onValueChange={(value) => update("state", value)}
+											options={[
+												{ value: "", label: "全部状态" },
+												{ value: "open", label: "Open" },
+												{ value: "merged", label: "Merged" },
+												{ value: "closed", label: "Closed" },
+												{ value: "success", label: "CI success" },
+												{ value: "failure", label: "CI failure" },
+												{ value: "cancelled", label: "Cancelled" },
+											]}
+										/>
+										<label htmlFor="factory-detail-day">
 											{detailState === "merged"
 												? "合并 UTC 日期"
 												: detailState === "closed"
 													? "关闭 UTC 日期"
 													: "记录 UTC 日期"}{" "}
-											<input
+											<Input
+												id="factory-detail-day"
 												type="date"
 												value={detailDay}
 												onChange={(e) => update("day", e.target.value)}
-												className="rounded border border-basalt-border bg-basalt-background p-1"
+												className="w-auto"
 											/>
 										</label>
 									</div>
@@ -880,7 +815,7 @@ export function FactoryPage() {
 											{detail.coverage.reason ? (
 												<p className="factory-notice">{detail.coverage.reason}</p>
 											) : null}
-											<p className="my-2 break-all text-[10px] text-basalt-muted-foreground">
+											<p className="my-2 break-all text-xs text-basalt-muted-foreground">
 												来源 {detail.coverage.source} · {detail.coverage.pages} API 页
 											</p>
 											{detail.items.length ? (
@@ -908,7 +843,7 @@ export function FactoryPage() {
 																			{e.title || e.id}
 																			<ArrowUpRight className="size-3 shrink-0" />
 																		</a>
-																		<div className="max-w-96 truncate text-[10px] text-basalt-muted-foreground">
+																		<div className="max-w-96 truncate text-xs text-basalt-muted-foreground">
 																			{e.path ?? e.id}
 																			{e.version ? ` · ${e.version}` : ""}
 																		</div>
@@ -969,10 +904,10 @@ export function FactoryPage() {
 							>
 								<summary>每日账本 · 可访问的图表数据与趋势核对</summary>
 								<div className="factory-table-scroll">
-									<table>
+									<Table>
 										<caption className="sr-only">当前筛选内各日事件数，UTC</caption>
-										<thead>
-											<tr>
+										<TableHeader>
+											<TableRow>
 												{[
 													"UTC 日期",
 													"提交",
@@ -985,17 +920,18 @@ export function FactoryPage() {
 													"CI 失败",
 													"Release",
 												].map((h) => (
-													<th key={h}>{h}</th>
+													<TableHead key={h}>{h}</TableHead>
 												))}
-											</tr>
-										</thead>
-										<tbody>
+											</TableRow>
+										</TableHeader>
+										<TableBody>
 											{board.days.map((d) => (
-												<tr
+												<TableRow
 													key={d.date}
+													variant={day === d.date ? "selected" : "default"}
 													className={day === d.date ? "factory-ledger-selected" : ""}
 												>
-													<th scope="row">{d.date}</th>
+													<TableHead scope="row">{d.date}</TableHead>
 													{[
 														d.commits,
 														d.issueOpened,
@@ -1007,7 +943,7 @@ export function FactoryPage() {
 														d.ciFailure,
 														d.releases,
 													].map((value, i) => (
-														<td
+														<TableCell
 															key={`${d.date}-${["commit", "issue", "close", "pr", "merge", "reject", "ci", "fail", "release"][i]}`}
 														>
 															{d.complete[
@@ -1029,18 +965,33 @@ export function FactoryPage() {
 																: value
 																	? `≥ ${n(value)}`
 																	: "—"}
-														</td>
+														</TableCell>
 													))}
-												</tr>
+												</TableRow>
 											))}
-										</tbody>
-									</table>
+										</TableBody>
+									</Table>
 								</div>
 							</details>
 						</>
 					)}
 					<details className="factory-methods">
 						<summary>来源、口径与不确定性</summary>
+						<p>
+							页面数据更新于 {formatUtc(snapshot.fetched_at)}。
+							{snapshot.publication?.mixed
+								? "各仓库使用各自最近可用的数据，更新时间与统计范围可能不同。"
+								: `统计范围：${formatUtc(snapshot.window.since)} → ${formatUtc(snapshot.window.until)}。`}
+							所有时间为 UTC，最后一天尚未结束。
+						</p>
+						{selected && repo?.observation ? (
+							<p>
+								{selected}：数据更新于 {formatUtc(repo.observation.refreshedAt)}，统计范围{" "}
+								{formatUtc(repo.observation.window.since)} →{" "}
+								{formatUtc(repo.observation.window.until)}。
+								{repo.observation.source === "legacy" ? "从历史记录恢复。" : "从 GitHub 获取。"}
+							</p>
+						) : null}
 						<p>
 							调查启动 {formatUtc(snapshot.window.until)}；仓库清单取样后逐资源分页，GitHub
 							不提供跨端点原子快照。状态可能在采集过程中变化。清单覆盖仅限当前令牌可见仓库，包括私有仓库；无权读取的资源显示未知。
@@ -1091,26 +1042,6 @@ export function FactoryPage() {
 		</div>
 	);
 }
-function Metric({
-	label,
-	value,
-	note,
-	children,
-}: {
-	label: string;
-	value: string;
-	note: string;
-	children: React.ReactNode;
-}) {
-	return (
-		<div className="factory-metric">
-			<span>{label}</span>
-			<strong>{value}</strong>
-			<small>{note}</small>
-			<div className="mt-2 text-basalt-primary">{children}</div>
-		</div>
-	);
-}
 function FlowRow({
 	label,
 	values,
@@ -1123,14 +1054,13 @@ function FlowRow({
 	return (
 		<div>
 			<h3>{label}</h3>
-			<div className="factory-flow-stages">
-				{values.map((value, i) => (
-					<div key={labels[i]}>
-						<small>{labels[i]}</small>
-						<strong>{value === null ? "—" : n(value)}</strong>
-					</div>
-				))}
-			</div>
+			<StatStrip
+				className="grid-cols-3 md:grid-cols-3 [&>div]:p-3"
+				items={values.map((value, index) => ({
+					label: labels[index],
+					value: value === null ? "—" : n(value),
+				}))}
+			/>
 		</div>
 	);
 }

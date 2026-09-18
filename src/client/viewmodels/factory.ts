@@ -58,17 +58,18 @@ export async function loadFactoryDetail(
 export function factoryError(error: unknown): string {
 	if (error instanceof ApiError) {
 		if (error.code === "factory_capacity")
-			return "已达到存储或计划容量边界。旧快照保留；请缩小范围并查看资源用量。";
-		if (error.code === "refresh_cooldown") return "所选范围仍在冷却，请查看下次允许刷新时间。";
-		if (error.code === "catalog_incomplete") return "仓库清单尚未完成，请先发现仓库。";
+			return "存储空间或仓库数量达到上限。已有数据保留；请缩小刷新范围，并查看存储用量。";
+		if (error.code === "refresh_cooldown") return "刚刚发起过刷新，请等倒计时结束后再试。";
+		if (error.code === "catalog_incomplete")
+			return "仓库列表还没读完整，请先点击「同步仓库列表」。";
 		if (error.code === "github_rate_limited")
-			return "GitHub 限流：已保存成功页。等待配额恢复后继续采集。";
+			return "GitHub 暂时限制了请求频率，已获取的数据已保存，等待请求额度恢复后继续。";
 		if (error.code === "account_conflict")
-			return "账号已切换或另一采集正在运行，请重新加载后继续。";
+			return "账号已切换，或已有刷新正在进行。请更新状态后继续。";
 		if (error.code === "account_missing") return "请先在设置中连接 GitHub 账号。";
 		if (error.code === "github_unauthorized") return "GitHub 令牌失效，请在设置中更新。";
 	}
-	return "加载失败。已有快照和采集进度已保留，可以重试。";
+	return "暂时无法完成操作。已有数据和刷新进度保留，请稍后重试。";
 }
 export function filterFactoryRepos(repos: FactoryRepo[], f: FactoryFilter): FactoryRepo[] {
 	const q = f.query.trim().toLowerCase();
@@ -232,50 +233,6 @@ export function factoryBoard(snapshot: FactorySnapshot, repos: FactoryRepo[]) {
 			return signals;
 		}),
 	};
-}
-export type TreeTile = {
-	name: string;
-	value: number;
-	x: number;
-	y: number;
-	width: number;
-	height: number;
-};
-/** Binary partition keeps exact proportional areas; zeros remain in the repository table. */
-export function treemapTiles(
-	input: { name: string; value: number }[],
-	width = 100,
-	height = 100,
-): TreeTile[] {
-	const sorted = input
-		.filter((d) => Number.isFinite(d.value) && d.value > 0)
-		.sort((a, b) => b.value - a.value);
-	function layout(items: typeof input, x: number, y: number, w: number, h: number): TreeTile[] {
-		if (!items.length) return [];
-		if (items.length === 1) {
-			const item = items[0];
-			return item ? [{ ...item, x, y, width: w, height: h }] : [];
-		}
-		const total = items.reduce((n, d) => n + d.value, 0);
-		let sum = 0;
-		let cut = 1;
-		for (let i = 0; i < items.length - 1; i++) {
-			sum += items[i]?.value ?? 0;
-			cut = i + 1;
-			if (sum >= total / 2) break;
-		}
-		const ratio = sum / total;
-		return w >= h
-			? [
-					...layout(items.slice(0, cut), x, y, w * ratio, h),
-					...layout(items.slice(cut), x + w * ratio, y, w * (1 - ratio), h),
-				]
-			: [
-					...layout(items.slice(0, cut), x, y, w, h * ratio),
-					...layout(items.slice(cut), x, y + h * ratio, w, h * (1 - ratio)),
-				];
-	}
-	return layout(sorted, 0, 0, width, height);
 }
 export function dependencyEdges(repos: FactoryRepo[]) {
 	const names = new Set(repos.map((r) => r.name));

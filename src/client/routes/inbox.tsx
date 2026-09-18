@@ -20,12 +20,11 @@ import {
 } from "../components/layout/collection-chrome";
 import { Kpi, KpiRow } from "../components/layout/kpi";
 import { TableSkeleton } from "../components/layout/page-skeleton";
-import { RefreshButton } from "../components/layout/refresh-button";
-import { catchLoad, missingTitle } from "../lib/error-ui";
+import { SnapshotPending } from "../components/layout/snapshot-pending";
+import { catchLoad } from "../lib/error-ui";
 import { DATE_CELL, formatCount, formatDate, NUM_HEAD, reasonBadgeVariant } from "../lib/format";
 import { PAGE_DESCRIPTIONS } from "../lib/navigation";
 import { loadInbox, markRead, markReadAll, type NotificationsSnapshot } from "../viewmodels/inbox";
-import { requestRefresh } from "../viewmodels/refresh";
 
 export function InboxPage() {
 	const [snap, setSnap] = useState<NotificationsSnapshot | { missing: true } | null>(null);
@@ -56,28 +55,10 @@ export function InboxPage() {
 	if (snap && "missing" in snap) {
 		return (
 			<div className="space-y-8">
-				<PageHeader
-					title="通知"
-					description={PAGE_DESCRIPTIONS["/inbox"]}
-					actions={
-						<RefreshButton
-							run={() => requestRefresh(["notifications"]).then(() => loadInbox().then(setSnap))}
-							onError={onLoadError}
-						/>
-					}
-				/>
+				<PageHeader title="通知" description={PAGE_DESCRIPTIONS["/inbox"]} />
 				<LayerCard>
 					<LayerCard.Well>
-						<LayerCard.Empty
-							icon={<Inbox />}
-							title={missingTitle(snap)}
-							description="点击刷新获取数据，或前往设置检查 GitHub 账号连接。"
-							action={
-								<Button variant="secondary" size="sm" asChild>
-									<Link href="/settings">查看账号设置</Link>
-								</Button>
-							}
-						/>
+						<SnapshotPending state={snap} />
 					</LayerCard.Well>
 				</LayerCard>
 			</div>
@@ -109,10 +90,6 @@ export function InboxPage() {
 				actions={
 					<>
 						{snap.truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
-						<RefreshButton
-							run={() => requestRefresh(["notifications"]).then(() => loadInbox().then(setSnap))}
-							onError={onLoadError}
-						/>
 						<Button
 							type="button"
 							size="sm"

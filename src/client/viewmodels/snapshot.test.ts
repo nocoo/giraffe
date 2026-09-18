@@ -1,11 +1,10 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { setActiveAccountId } from "./session";
-import { clearSnapshots, fetchKindAs, loadKind } from "./snapshot";
+import { fetchKindAs, loadKind } from "./snapshot";
 
 describe("snapshot loader", () => {
 	afterEach(() => {
-		clearSnapshots();
 		setActiveAccountId(null);
 		vi.stubGlobal("fetch", () => {
 			throw new Error("network denied in L1");
@@ -65,7 +64,7 @@ describe("snapshot loader", () => {
 		expect(await loadKind("issues")).toEqual({ missing: true });
 	});
 
-	it("returns a cached snapshot without a second GET", async () => {
+	it("reads the latest stored snapshot on navigation after a background factory refresh", async () => {
 		let issuesGets = 0;
 		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
 			const url = String(input);
@@ -76,16 +75,16 @@ describe("snapshot loader", () => {
 				issuesGets += 1;
 				return Response.json({
 					account_id: "acc1",
-					fetched_at: "t",
+					fetched_at: `t${issuesGets}`,
 					truncated: false,
 					issues: [],
 				});
 			}
 			throw new Error(url);
 		});
-		expect(await loadKind("issues")).toMatchObject({ account_id: "acc1" });
-		expect(await loadKind("issues")).toMatchObject({ account_id: "acc1" });
-		expect(issuesGets).toBe(1);
+		expect(await loadKind("issues")).toMatchObject({ account_id: "acc1", fetched_at: "t1" });
+		expect(await loadKind("issues")).toMatchObject({ account_id: "acc1", fetched_at: "t2" });
+		expect(issuesGets).toBe(2);
 	});
 
 	it("skips fetchKindAs when the local stamp is stale", async () => {

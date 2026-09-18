@@ -22,10 +22,10 @@ import {
 } from "../components/layout/collection-chrome";
 import { Kpi, KpiRow } from "../components/layout/kpi";
 import { TableSkeleton } from "../components/layout/page-skeleton";
-import { RefreshButton } from "../components/layout/refresh-button";
 import { INLINE_SEGMENT } from "../components/layout/segment";
+import { SnapshotPending } from "../components/layout/snapshot-pending";
 import { LabelChips, PersonCell, SortButton } from "../components/layout/table-chrome";
-import { catchLoad, missingTitle } from "../lib/error-ui";
+import { catchLoad } from "../lib/error-ui";
 import { DATE_CELL, formatCount, formatDate, NUM_CELL, NUM_HEAD } from "../lib/format";
 import { PAGE_DESCRIPTIONS } from "../lib/navigation";
 import {
@@ -35,21 +35,11 @@ import {
 	loadIssues,
 	visibleIssues,
 } from "../viewmodels/issues";
-import { requestRefresh } from "../viewmodels/refresh";
 
 export function IssuesPage() {
 	const [query, setQuery] = useState("");
 	const [sort, setSort] = useState<IssueSort>("updated");
 	const [snap, setSnap] = useState<IssuesSnapshot | { missing: true } | null>(null);
-
-	function onLoadError(err: unknown): void {
-		const missing = catchLoad(err, (message) => {
-			toast.error(message);
-		});
-		if (missing) {
-			setSnap(missing);
-		}
-	}
 
 	useEffect(() => {
 		void loadIssues()
@@ -95,28 +85,10 @@ export function IssuesPage() {
 	if (snap && "missing" in snap) {
 		return (
 			<div className="space-y-8">
-				<PageHeader
-					title="Issues"
-					description={PAGE_DESCRIPTIONS["/issues"]}
-					actions={
-						<RefreshButton
-							run={() => requestRefresh(["issues"]).then(() => loadIssues().then(setSnap))}
-							onError={onLoadError}
-						/>
-					}
-				/>
+				<PageHeader title="Issues" description={PAGE_DESCRIPTIONS["/issues"]} />
 				<LayerCard>
 					<LayerCard.Well>
-						<LayerCard.Empty
-							icon={<CircleDot />}
-							title={missingTitle(snap)}
-							description="点击刷新获取数据，或前往设置检查 GitHub 账号连接。"
-							action={
-								<Button variant="secondary" size="sm" asChild>
-									<Link href="/settings">查看账号设置</Link>
-								</Button>
-							}
-						/>
+						<SnapshotPending state={snap} />
 					</LayerCard.Well>
 				</LayerCard>
 			</div>
@@ -144,15 +116,7 @@ export function IssuesPage() {
 						fetchedAt={snap.fetched_at}
 					/>
 				}
-				actions={
-					<>
-						{snap.truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
-						<RefreshButton
-							run={() => requestRefresh(["issues"]).then(() => loadIssues().then(setSnap))}
-							onError={onLoadError}
-						/>
-					</>
-				}
+				actions={snap.truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
 				filters={filters}
 			/>
 			<KpiRow>
@@ -172,7 +136,7 @@ export function IssuesPage() {
 								description={
 									query.trim()
 										? "试试其他关键词，或清除搜索查看全部内容。"
-										: "当前快照中没有相关内容，刷新可获取最新数据。"
+										: "最近一次统一更新中没有相关内容。"
 								}
 								action={
 									query.trim() ? (

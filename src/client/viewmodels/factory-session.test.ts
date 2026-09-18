@@ -15,12 +15,10 @@ import {
 	reloadFactory,
 } from "./factory";
 import { setActiveAccountId } from "./session";
-import { clearSnapshots } from "./snapshot";
 
 vi.mock("../lib/api", () => ({ apiGet: vi.fn(), apiPost: vi.fn() }));
 const snap = factoryFixture();
 beforeEach(() => {
-	clearSnapshots();
 	setActiveAccountId(snap.account_id);
 	vi.mocked(apiGet).mockImplementation(async (resource) =>
 		resource === "accounts"
@@ -32,7 +30,6 @@ beforeEach(() => {
 afterEach(() => {
 	vi.clearAllMocks();
 	setActiveAccountId(null);
-	clearSnapshots();
 });
 describe("factory account-bound data operations", () => {
 	it("loads cached snapshots and explicitly reloads without triggering a refresh", async () => {

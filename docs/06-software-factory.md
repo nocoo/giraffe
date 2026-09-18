@@ -1,6 +1,6 @@
 # 06 — 软件工厂
 
-本次演进扩展 01/03/04/05 的初版范围：新增工厂采集与视图，沿用 Worker、D1、Access、加密 PAT、React MVVM 和 Basalt。旧仓库与待办页面仍可用。
+本次演进扩展 01/03/04/05 的初版范围：新增工厂采集与视图，沿用 Worker、D1、Access、加密 PAT、React MVVM 和 Basalt。软件工厂负责全站刷新，仓库、待办、通知、日报、Insights 及单仓页面只读保存的数据，不另设刷新按钮或缺数据自动采集。
 
 ## 采集契约
 
@@ -17,19 +17,27 @@
 
 持久刷新设计、迁移与回滚见 [09 — 持久化工厂刷新](09-factory-runs.md)。
 
+工厂统计仍遵循上面的本人非归档/非 fork 范围；全站页面使用单独的完整可访问仓库清单，包括协作、组织、归档与 fork。先同步仓库列表，再发起全站刷新；界面中的仓库选择只限制统计范围，不会遗漏其他仓库详情。页面缺数据时统一导航到控制台，失败保留已有数据与原时间。
+
 `GET /api/factory` 只读已发布的当前账号全局快照。`GET /api/factory/runs` 只读当前 run、最近 20 个历史 run、仓库状态和清单。`POST /api/factory/runs`（`/api/factory/refresh` 为同一契约别名）接收 `{account_id, requestKey: UUID, mode: "catalog" | "refresh", scope, repos?, order?, language?, topic?, query?, repo?}`，202 返回持久 run ID。`requestKey` 每次明确新建操作生成，网络重试复用；重复键返回原 run，不能当作新的刷新。`scope` 支持 all/selected/filter/stale/failed，selected 使用 repos 指定成员和顺序；其他范围由服务端解析成员，order 单独指定优先级。旧 `{restart:true}` 请求拒绝，不能隐式触发全仓刷新。
 
 `POST /api/factory/runs/:id/control` 接收 `{account_id, action: "pause" | "resume" | "cancel"}`。状态从 D1 恢复；队列每次处理一页，cron 每分钟恢复到期任务。冷却由服务端执行，暂停不绕过限流等待。GET 永不调 GitHub、不写库；所有 mutation 仍经过 Access JWT 与 Origin 验证。
 
 `GET /api/factory/repos/:owner/:name/:stream?page=1` 按当前全局快照指向的仓库版本读取明细，每页 100、最多 50 页。新 run 的 staging 不可见。失败保留旧成功仓库版本，覆盖回退时保留更完整的旧版本。全局发布版本明确 mixed 状态，每仓库附原始采样窗口与 refreshedAt。
 
-每账号工厂逻辑数据预算 256 MB（预留 2 MB 控制空间），界面显示触发器计量的用量；保留根保护的历史按 09 的有界维护规则清理。单资源仍最多 5,000 项 / 1.2 MB；每个 run/control 记录上限 1.8 MB、单次选择上限 500 仓库，超过边界明确报错并保留旧数据。全局快照按两页拆分，拒绝有损发布。新表与版本键均为增量存储，不覆盖 legacy `factory` / `factory:{repo}:{stream}`，使旧数据恢复与回滚可核验。错误只存安全代码，不保存上游原始报错或令牌。
+每账号逻辑数据预算 256 MB（预留 2 MB 控制空间），包含工厂数据、普通页面快照及日报基线；保留根保护的历史按 09 的有界维护规则清理。工厂单资源仍最多 5,000 项 / 1.2 MB；全站列表分批聚合上限 1.5 MB；每个 run/control 记录上限 1.8 MB、统计与页面清单各最多 500 仓库，超过边界明确报错并保留旧数据。全局快照按两页拆分，拒绝有损发布。新表与版本键均为增量存储，不覆盖 legacy `factory` / `factory:{repo}:{stream}`，使旧数据恢复与回滚可核验。错误只存安全代码，不保存上游原始报错或令牌。
 
 每条来源记录 status、pages、observed、fetchedAt、source、reason；complete 表示当前端点范围分页完成，不等同于整个软件工厂的业务事实完整。未完成/限流/权限不足与观测到的零分开。UI 不计算无依据的综合健康分数。
 
 ## 使用与本地复核
 
 导航「软件工厂」进入 `/factory`。语言群按 GitHub primaryLanguage 互斥分组；topic 允许重叠。仓库搜索、领域筛选、仓库/记录类型/状态/日期/页码保存在 URL。图表点击可下钻，仓库表每页 25 行，明细先按状态或 UTC 日期过滤再每页 100 行；merged 按 mergedAt、closed 按 closedAt，其余按记录时间。提供完整每日账本、语言字节表和来源文件链接作为图形替代；键盘可聚焦图表按钮与表格链接。缺失、限流、权限不足、采集中、无匹配结果分别呈现。
+
+界面沿用 [05 §5.5](05-client.md#55-字号与可视化规范) 的 16/14/13px 卡片字号和共享 StatCard。趋势线与吞吐图使用 Basalt Sparkline/AreaChart；规模树图和散点图使用 Recharts + Basalt ChartFrame、坐标轴与 tooltip，显式采用站点绿色层次，不使用模板多彩色板，不自写树图布局算法。Basalt HeatmapCalendar 尚无日期选择和缺失态 API，因此日历保留业务布局，组合 Basalt Button/Tooltip 和公开绿色 heatmap 色板，保留每日账本下钻与未知状态。所有筛选、复选与输入使用 Basalt 控件。
+
+卡片说明统一收进标题旁的问号，保留短轴标签、实际数量和数据不完整提醒。同排所有卡片等高，文字卡（包括「需要检查的信号」）随相邻高卡拉伸，日历与绘图区自适应填满空间。仓库表不叠加 Body 与单元格的双重内边距；每日账本选中行为浅绿色并提供 `aria-selected`。图表标签和嵌套 SVG 的指针点击都不出现蓝框，键盘保留绿色焦点；日历首尾单元格的选中与焦点轮廓向内绘制，避免被边缘裁掉。
+
+仓库表末列只显示「数据时间」按钮，来源详情收进 Basalt Dialog。弹窗区分「仓库信息更新」「活动数据更新」，展示本地时区的完整时间、每秒重算的距今时长、原统计范围和旧版来源；缺失时间明确说明，不伪造刚刚采集。统计范围保留原始边界，日历的 UTC 分组语义不变。
 
 额外只读调查工具沿用同一采集器与聚合代码：
 

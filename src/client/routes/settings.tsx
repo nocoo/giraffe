@@ -6,6 +6,7 @@ import {
 	ConfirmDialog,
 	Field,
 	Link,
+	Text,
 	toast,
 } from "@nocoo/basalt";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
@@ -24,7 +25,6 @@ import { ExternalLink, KeyRound, ShieldCheck, Trash2 } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ResultCount, TableScroll } from "../components/layout/collection-chrome";
-import { RefreshButton } from "../components/layout/refresh-button";
 import { catchLoad, reportError, reportOk } from "../lib/error-ui";
 import { initials } from "../lib/format";
 import { PAGE_DESCRIPTIONS } from "../lib/navigation";
@@ -43,7 +43,6 @@ import {
 	type PublicAccount,
 } from "../viewmodels/accounts";
 import { displayName, loadMe, type MeIdentity } from "../viewmodels/me";
-import { requestRefresh } from "../viewmodels/refresh";
 
 export function SettingsPage() {
 	const [token, setToken] = useState("");
@@ -112,28 +111,15 @@ export function SettingsPage() {
 
 	return (
 		<div className="space-y-8">
-			<PageHeader
-				title="设置"
-				description={PAGE_DESCRIPTIONS["/settings"]}
-				actions={
-					<RefreshButton
-						run={() =>
-							requestRefresh("all").then(() => {
-								return reload();
-							})
-						}
-						onError={onLoadError}
-					/>
-				}
-			/>
+			<PageHeader title="设置" description={PAGE_DESCRIPTIONS["/settings"]} />
 			<SectionRule title="账号连接">
 				<div className="grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
 					<LayerCard>
 						<LayerCard.Header>
-							<div className="flex items-center gap-2 text-sm font-medium text-basalt-foreground">
+							<Text as="h2" variant="heading" className="flex items-center gap-2">
 								<KeyRound className="size-4 text-basalt-primary" aria-hidden="true" />
 								连接 GitHub
-							</div>
+							</Text>
 							<Link
 								href="https://github.com/settings/tokens/new"
 								target="_blank"
@@ -181,17 +167,17 @@ export function SettingsPage() {
 									</Button>
 								</div>
 								<p className="text-xs leading-5 text-basalt-muted-foreground">
-									首个账号添加成功后会自动同步仓库。
+									添加账号后，请前往软件工厂统一刷新数据。
 								</p>
 							</form>
 						</LayerCard.Body>
 					</LayerCard>
 					<LayerCard>
 						<LayerCard.Header>
-							<div className="flex items-center gap-2 text-sm font-medium text-basalt-foreground">
+							<Text as="h2" variant="heading" className="flex items-center gap-2">
 								<ShieldCheck className="size-4 text-basalt-primary" aria-hidden="true" />
 								访问身份
-							</div>
+							</Text>
 						</LayerCard.Header>
 						<LayerCard.Body className="space-y-5">
 							{me ? (
@@ -210,7 +196,7 @@ export function SettingsPage() {
 									加载身份…
 								</p>
 							)}
-							<div className="space-y-2 text-xs leading-6 text-basalt-muted-foreground">
+							<div className="space-y-2 text-sm leading-6 text-basalt-muted-foreground">
 								<p>访问身份由 Cloudflare Access 验证。</p>
 								<p>每次使用一个活跃的 GitHub 账号。切换账号后，页面会显示该账号的数据。</p>
 							</div>

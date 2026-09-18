@@ -1,7 +1,7 @@
 import { apiPost } from "../lib/api";
 import { ApiError } from "../lib/errors";
 import { ensureSession } from "./session";
-import { loadKind, putSnapshot } from "./snapshot";
+import { loadKind } from "./snapshot";
 
 export type NotificationRow = {
 	id: string;
@@ -43,7 +43,6 @@ export async function loadInbox(): Promise<NotificationsSnapshot | { missing: tr
 export async function markRead(id: string, account_id: string): Promise<NotificationsSnapshot> {
 	try {
 		const body = await apiPost<NotificationsSnapshot>("notifications/read", { id, account_id });
-		putSnapshot("notifications", body);
 		return body;
 	} catch (err) {
 		if (err instanceof ApiError && err.code === "account_conflict") {
@@ -56,7 +55,6 @@ export async function markRead(id: string, account_id: string): Promise<Notifica
 export async function markReadAll(account_id: string): Promise<NotificationsSnapshot> {
 	try {
 		const body = await apiPost<NotificationsSnapshot>("notifications/read-all", { account_id });
-		putSnapshot("notifications", body);
 		return body;
 	} catch (err) {
 		if (err instanceof ApiError && err.code === "account_conflict") {

@@ -1,7 +1,7 @@
-import { Avatar, AvatarFallback, Badge, Button } from "@nocoo/basalt";
+import { Avatar, AvatarFallback, Button } from "@nocoo/basalt";
 import { SlotBarChart } from "@nocoo/basalt/charts/slot-bar";
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
-import { fillTextColor, initials, labelFill, takeChips } from "../../lib/format";
+import { initials, takeChips } from "../../lib/format";
 import { CandyBadge } from "./candy-badge";
 
 export function SortButton({
@@ -41,7 +41,7 @@ export function PersonCell({ login }: { login: string | null }) {
 	return (
 		<span className="inline-flex max-w-40 items-center gap-2" title={login}>
 			<Avatar className="size-6">
-				<AvatarFallback className="text-[10px]">{initials(login)}</AvatarFallback>
+				<AvatarFallback className="text-xs">{initials(login)}</AvatarFallback>
 			</Avatar>
 			<span className="truncate">{login}</span>
 		</span>
@@ -55,20 +55,16 @@ export function LabelChips({ labels }: { labels: { name: string; color: string }
 	const { shown, extra } = takeChips(labels, 2);
 	return (
 		<span className="inline-flex flex-wrap items-center gap-1">
-			{shown.map((label) => {
-				const fill = labelFill(label.color);
-				return (
-					<Badge
-						variant={null}
-						key={label.name}
-						className="max-w-44 truncate border-transparent px-2 py-0.5 text-[11px]"
-						title={label.name}
-						style={{ backgroundColor: fill, color: fillTextColor(label.color) }}
-					>
-						{label.name}
-					</Badge>
-				);
-			})}
+			{shown.map((label) => (
+				<CandyBadge
+					tone="gray"
+					key={label.name}
+					className="max-w-44 truncate border-transparent px-2 py-0.5 text-xs"
+					title={label.name}
+				>
+					{label.name}
+				</CandyBadge>
+			))}
 			{extra > 0 ? (
 				<CandyBadge tone="gray" title={labels.map((label) => label.name).join("、")}>
 					+{extra}
@@ -93,8 +89,8 @@ export function ChurnMeter({ adds, dels, label }: { adds: number; dels: number; 
 		return <span className="text-basalt-muted-foreground">—</span>;
 	}
 	const items = [
-		...Array.from({ length: adds }, () => ({ color: "bg-basalt-heatmap-green-3", height: 1 })),
-		...Array.from({ length: dels }, () => ({ color: "bg-basalt-chart-10", height: 1 })),
+		...Array.from({ length: adds }, () => ({ color: "bg-basalt-primary", height: 1 })),
+		...Array.from({ length: dels }, () => ({ color: "bg-basalt-destructive/70", height: 1 })),
 	];
 	return (
 		<SlotBarChart items={items} ariaLabel={label} heightClass="h-5" className="w-16 shrink-0" />

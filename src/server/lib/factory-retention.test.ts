@@ -148,3 +148,19 @@ it("accounts for resource replacements and enforces capacity before destructive 
 		checkFactoryCapacity(db, account, await resourceDelta(db, "r", "another", "commits", "{}")),
 	).rejects.toMatchObject({ code: "factory_capacity" });
 });
+
+it("includes all page snapshots and daily baselines in the same account storage budget", async () => {
+	const { db } = await setup();
+	await db.batch(
+		replaceSnapshotStmts(db, account, "issues", { issues: [], truncated: false }, snap.fetched_at),
+	);
+	await db
+		.prepare("INSERT INTO snapshot_days(account_id,day,payload) VALUES(?,?,?)")
+		.bind(account, "2026-09-15", "{}")
+		.run();
+	const stored = await db
+		.prepare("SELECT SUM(length(CAST(payload AS BLOB))) AS bytes FROM snapshots WHERE account_id=?")
+		.bind(account)
+		.first<{ bytes: number }>();
+	expect((await factoryStorage(db, account)).totalBytes).toBe((stored?.bytes ?? 0) + 2);
+});

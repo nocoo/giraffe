@@ -14,7 +14,6 @@ import {
 	hasFactoryMeasurement,
 	STREAM_CODES,
 	safeGithubUrl,
-	treemapTiles,
 } from "./factory";
 
 describe("software factory view model", () => {
@@ -39,21 +38,6 @@ describe("software factory view model", () => {
 		expect(
 			filterFactoryRepos(s.repos, { language: "", topic: "macos", query: "", repo: "nocoo/app" }),
 		).toHaveLength(0);
-	});
-	it("lays out true proportional positive treemap areas and preserves zero-size repositories in the table", () => {
-		const tiles = treemapTiles(
-			[
-				{ name: "a", value: 3 },
-				{ name: "b", value: 1 },
-				{ name: "empty", value: 0 },
-			],
-			100,
-			100,
-		);
-		expect(tiles).toHaveLength(2);
-		expect((tiles[0]?.width ?? 0) * (tiles[0]?.height ?? 0)).toBeCloseTo(7500);
-		expect((tiles[1]?.width ?? 0) * (tiles[1]?.height ?? 0)).toBeCloseTo(2500);
-		expect(treemapTiles([], 100, 100)).toEqual([]);
 	});
 	it("reports coverage and raw sample sizes, never treating unknown security as healthy", () => {
 		const s = ready();
@@ -183,18 +167,6 @@ describe("factory sampling signals", () => {
 		expect(
 			filterFactoryRepos(s.repos, { language: "", topic: "", query: "", repo: r.name }),
 		).toHaveLength(1);
-		const tiles = treemapTiles(
-			[
-				{ name: "one", value: 1 },
-				{ name: "two", value: 1 },
-				{ name: "three", value: 1 },
-				{ name: "bad", value: NaN },
-			],
-			20,
-			100,
-		);
-		expect(tiles).toHaveLength(3);
-		expect(tiles.reduce((a, t) => a + t.width * t.height, 0)).toBeCloseTo(2000);
 		expect(safeGithubUrl("not a URL")).toBe("https://github.com");
 		expect(safeGithubUrl("https://user@github.com/nocoo/app")).toBe("https://github.com");
 	});

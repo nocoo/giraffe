@@ -18,15 +18,15 @@ describe("frozen refresh plans", () => {
 		const run = makeRun("run", snapshot.account_id, "nocoo", "request", "refresh", selection, now);
 		selection.reverse();
 		expect(run.repos).toEqual(["nocoo/two", "nocoo/app"]);
-		expect(run.steps).toHaveLength(20);
+		expect(run.steps).toHaveLength(43);
 		expect(run.steps[1]).toMatchObject({ kind: "metadata", repo: "nocoo/two" });
 		run.requests = 900;
-		expect(runProgress(run, now)).toMatchObject({ total: 20, completed: 0, etaSeconds: null });
+		expect(runProgress(run, now)).toMatchObject({ total: 43, completed: 0, etaSeconds: null });
 		Object.assign(run.steps[0] ?? {}, { status: "success", durationMs: 1000 });
 		Object.assign(run.steps[1] ?? {}, { status: "failed" });
 		Object.assign(run.steps[2] ?? {}, { status: "skipped" });
 		expect(runProgress(run, now)).toMatchObject({
-			total: 20,
+			total: 43,
 			completed: 3,
 			success: 1,
 			failed: 1,
@@ -74,6 +74,7 @@ describe("frozen refresh plans", () => {
 		expect(runProgress(r, now).skipped).toBe(9);
 		expect(makeRun("r", "a", "nocoo", "k", "catalog", [], now).steps.map((s) => s.kind)).toEqual([
 			"inventory",
+			"snapshot",
 			"restore",
 			"publish",
 		]);
@@ -105,9 +106,9 @@ it("handles empty scopes, real duration estimates and stale observations", () =>
 	).toHaveLength(2);
 	const run = makeRun("a", "a", "a", "a", "catalog", [], now);
 	Object.assign(run.steps[0] ?? {}, { status: "success", durationMs: 1000 });
-	expect(runProgress(run, now).etaSeconds).toBe(2);
+	expect(runProgress(run, now).etaSeconds).toBe(3);
 	run.status = "paused";
-	run.cursor = 3;
+	run.cursor = 4;
 	expect(runProgress(run, now)).toMatchObject({ etaSeconds: null, current: null });
 	expect(retryDelay(0)).toBe(30);
 });
@@ -116,4 +117,30 @@ it("resolves an explicit repository predicate as part of a server-side filter", 
 	expect(
 		selectRunRepos(repos, [], { scope: "filter", repo: "nocoo/two" }, now).map((r) => r.name),
 	).toEqual(["nocoo/two"]);
+});
+
+it("includes every site page and freezes detail targets outside the factory metrics catalog", () => {
+	const names = ["nocoo/app", "team/archived-fork"];
+	const run = makeRun("run", "a", "nocoo", "key", "refresh", [firstRepo], now, [], names);
+	names.reverse();
+	expect(run.siteRepos).toEqual(["nocoo/app", "team/archived-fork"]);
+	expect(run.repos).toEqual(["nocoo/app"]);
+	const resources = run.steps.filter((s) => s.kind === "snapshot").map((s) => s.resource);
+	expect(resources).toEqual(
+		expect.arrayContaining(["repos", "issues", "prs", "alerts", "notifications"]),
+	);
+	for (const repo of names) {
+		for (const tab of [
+			"details",
+			"actions",
+			"traffic",
+			"security",
+			"issues",
+			"prs",
+			"releases",
+			"languages",
+			"contributors",
+		])
+			expect(resources).toContain(`repo:${repo}:${tab}`);
+	}
 });

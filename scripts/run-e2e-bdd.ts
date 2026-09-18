@@ -239,7 +239,17 @@ const github = await listen(githubPort, (req, res) => {
 				});
 				return;
 			}
+			if (query.includes("search(")) {
+				sendJson(res, 200, {
+					data: { search: { issueCount: 0, nodes: [], pageInfo: { hasNextPage: false } } },
+				});
+				return;
+			}
 			sendJson(res, 200, { data: { repository: { vulnerabilityAlerts: { nodes: [] } } } });
+			return;
+		}
+		if (url.pathname === "/notifications") {
+			sendJson(res, 200, []);
 			return;
 		}
 		if (url.pathname === "/repos/octocat/hello-world") {
@@ -252,6 +262,14 @@ const github = await listen(githubPort, (req, res) => {
 		}
 		if (url.pathname.startsWith("/repos/octocat/hello-world/")) {
 			await Bun.sleep(200);
+			if (url.pathname.includes("/traffic/")) {
+				sendJson(res, 200, { count: 0, uniques: 0, views: [], clones: [] });
+				return;
+			}
+			if (url.pathname.endsWith("/languages")) {
+				sendJson(res, 200, { TypeScript: 100 });
+				return;
+			}
 			sendJson(
 				res,
 				200,

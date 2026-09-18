@@ -1,37 +1,6 @@
 import { apiGet } from "../lib/api";
 import { ApiError } from "../lib/errors";
-import { cacheGeneration, ensureSession, getActiveAccountId } from "./session";
-
-type Entry = {
-	gen: number;
-	account_id: string;
-	body: { account_id: string };
-};
-
-const snapshots = new Map<string, Entry>();
-
-export function clearSnapshots(): void {
-	snapshots.clear();
-}
-
-export function putSnapshot(resource: string, body: { account_id: string }): void {
-	snapshots.set(resource, {
-		gen: cacheGeneration(),
-		account_id: body.account_id,
-		body,
-	});
-}
-
-export function peekSnapshot<T extends { account_id: string }>(
-	resource: string,
-	accountId: string,
-): T | undefined {
-	const hit = snapshots.get(resource);
-	if (!hit || hit.gen !== cacheGeneration() || hit.account_id !== accountId) {
-		return undefined;
-	}
-	return hit.body as T;
-}
+import { ensureSession, getActiveAccountId } from "./session";
 
 export async function fetchKindAs<T extends { account_id: string }>(
 	resource: string,
@@ -49,7 +18,6 @@ export async function fetchKindAs<T extends { account_id: string }>(
 			await ensureSession();
 			return { missing: true };
 		}
-		putSnapshot(resource, body);
 		return body;
 	} catch (err) {
 		if (err instanceof ApiError && err.code === "snapshot_missing") {
@@ -69,10 +37,7 @@ export async function fetchKind<T extends { account_id: string }>(
 export async function loadKind<T extends { account_id: string }>(
 	resource: string,
 ): Promise<T | { missing: true }> {
-	const stamp = await ensureSession();
-	const cached = peekSnapshot<T>(resource, stamp);
-	if (cached) {
-		return cached;
-	}
+	// The durable factory job can finish while this page is unmounted.
+	// Navigation reads the latest saved data; GET never starts collection.
 	return fetchKind<T>(resource);
 }

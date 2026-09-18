@@ -6,7 +6,7 @@ import { makeRun } from "../../lib/factory-run";
 import type { Env } from "../env";
 import { createDb } from "./db/d1";
 import { getRun, publishedFactory, startRun } from "./db/factory-runs";
-import { replaceSnapshotStmts } from "./db/snapshots";
+import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
 import { executeRunPage } from "./factory-execute";
 import { encryptToken, parseKeyBytes } from "./token-crypto";
 
@@ -34,6 +34,10 @@ async function setup(mode: "refresh" | "catalog" = "refresh") {
 			now,
 		)
 		.run();
+	await db
+		.prepare("UPDATE accounts SET capabilities=? WHERE id=?")
+		.bind(JSON.stringify({ repo: true, notifications: true }), snap.account_id)
+		.run();
 	await db.batch(replaceSnapshotStmts(db, snap.account_id, "factory", { ...snap }, now));
 	const run = makeRun(
 		"r1",
@@ -52,6 +56,22 @@ beforeEach(() =>
 		"fetch",
 		vi.fn(async (url: string, init: RequestInit) => {
 			const q = String(init?.body);
+			if (q.includes("affiliations:[OWNER, COLLABORATOR"))
+				return Response.json({
+					data: {
+						viewer: { repositories: { nodes: [rawRepo], pageInfo: { hasNextPage: false } } },
+					},
+				});
+			if (q.includes("search(query"))
+				return Response.json({
+					data: { search: { issueCount: 0, nodes: [], pageInfo: { hasNextPage: false } } },
+				});
+			if (q.includes("vulnerabilityAlerts"))
+				return Response.json({
+					data: {
+						repository: { vulnerabilityAlerts: { nodes: [], pageInfo: { hasNextPage: false } } },
+					},
+				});
 			if (q.includes("contributionsCollection")) return Response.json({ data: { user: null } });
 			if (q.includes("nameWithOwner")) return Response.json({ data: { repository: rawRepo } });
 			if (q.includes("object(expression")) return Response.json({ data: { repository: {} } });
@@ -66,7 +86,7 @@ it("publishes only a complete committed repository set and survives every-page r
 	const env = await setup();
 	await executeRunPage(env, "r1", () => now);
 	expect((await publishedFactory(createDb(env.DB), snap.account_id))?.runId).toBe(snap.runId);
-	for (let i = 0; i < 20; i++) await executeRunPage(env, "r1", () => now);
+	await drive(env);
 	expect((await getRun(createDb(env.DB), snap.account_id, "r1"))?.run.status).toBe("partial"); // contribution unavailable
 	const published = await publishedFactory(createDb(env.DB), snap.account_id);
 	expect(published?.runId).toBe("r1");
@@ -489,4 +509,174 @@ it("does not shorten an existing repository cooldown on repeated pause/cancel co
 	expect((await repoStates(createDb(env.DB), snap.account_id))[0]?.nextAllowedAt).toBe(
 		"2999-01-01T00:00:00.000Z",
 	);
+});
+
+it("refreshes all site pages through the durable run, including derived insights and digest", async () => {
+	const env = await setup();
+	const run = await drive(env);
+	expect(run?.steps.filter((s) => s.kind === "snapshot").every((s) => s.status === "success")).toBe(
+		true,
+	);
+	for (const kind of [
+		"repos",
+		"issues",
+		"prs",
+		"alerts",
+		"notifications",
+		"insights",
+		"digest",
+		"repo:nocoo/app:details",
+		"repo:nocoo/app:traffic",
+		"repo:nocoo/app:security",
+		"repo:nocoo/app:actions",
+		"repo:nocoo/app:issues",
+		"repo:nocoo/app:prs",
+		"repo:nocoo/app:releases",
+		"repo:nocoo/app:languages",
+		"repo:nocoo/app:contributors",
+	]) {
+		expect(await readSnapshot(createDb(env.DB), snap.account_id, kind), kind).toMatchObject({
+			fetched_at: now,
+			truncated: false,
+		});
+	}
+});
+
+it("retains prior page data on forbidden or limited collection and keeps other pages independent", async () => {
+	const base = vi.mocked(fetch).getMockImplementation();
+	if (!base) throw new Error("fixture");
+	for (const limited of [false, true]) {
+		const env = await setup();
+		const db = createDb(env.DB);
+		const old = {
+			fetched_at: "2025-01-01T00:00:00.000Z",
+			truncated: false,
+			forbidden: false,
+			views: { count: 9 },
+		};
+		await db.batch(
+			replaceSnapshotStmts(db, snap.account_id, "repo:nocoo/app:traffic", old, old.fetched_at),
+		);
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (url: string, init: RequestInit) => {
+				if (url.includes("/traffic/"))
+					return limited
+						? Response.json({
+								count: 1,
+								uniques: 1,
+								views: [{ timestamp: "x".repeat(1_800_000), count: 1, uniques: 1 }],
+							})
+						: Response.json({ message: "private permission detail" }, { status: 403 });
+				return base(url, init);
+			}),
+		);
+		const run = await drive(env);
+		expect(run?.steps.find((s) => s.resource === "repo:nocoo/app:traffic")?.status).toBe("failed");
+		expect(await readSnapshot(createDb(env.DB), snap.account_id, "repo:nocoo/app:traffic")).toEqual(
+			old,
+		);
+		expect(run?.steps.find((s) => s.resource === "repo:nocoo/app:contributors")?.status).toBe(
+			"success",
+		);
+		expect(run?.steps.find((s) => s.kind === "commit")?.status).toBe("success");
+		expect(JSON.stringify(run)).not.toContain("private permission detail");
+	}
+});
+
+it("fences ordinary snapshot writes when a page finishes after cancellation", async () => {
+	const env = await setup();
+	const db = createDb(env.DB);
+	const found = await getRun(db, snap.account_id, "r1");
+	if (!found) throw new Error("fixture");
+	found.run.cursor = found.run.steps.findIndex((s) => s.resource === "notifications");
+	await db
+		.prepare("UPDATE factory_runs SET payload=? WHERE id='r1'")
+		.bind(JSON.stringify(found.run))
+		.run();
+	let release: (r: Response) => void = () => {};
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(
+			() =>
+				new Promise<Response>((resolve) => {
+					release = resolve;
+				}),
+		),
+	);
+	const running = executeRunPage(env, "r1", () => now);
+	await vi.waitFor(() => expect(fetch).toHaveBeenCalled());
+	const { controlRun } = await import("./db/factory-runs");
+	await controlRun(createDb(env.DB), snap.account_id, "r1", "cancel", now);
+	release(Response.json([]));
+	expect(await running).toBeNull();
+	expect(await readSnapshot(createDb(env.DB), snap.account_id, "notifications")).toBeNull();
+});
+
+it("resumes a failed site-list chunk without advancing its cursor or duplicating earlier records", async () => {
+	const env = await setup();
+	const db = createDb(env.DB);
+	const found = await getRun(db, snap.account_id, "r1");
+	if (!found) throw new Error("fixture");
+	found.run.siteRepos = Array.from({ length: 11 }, (_, index) => `org/repo${index}`);
+	found.run.cursor = found.run.steps.findIndex((step) => step.resource === "issues");
+	await db
+		.prepare("UPDATE factory_runs SET payload=? WHERE id='r1'")
+		.bind(JSON.stringify(found.run))
+		.run();
+	const previous = {
+		truncated: false,
+		fetched_at: "2025-01-01",
+		issues: [{ title: "last good result" }],
+	};
+	await db.batch(
+		replaceSnapshotStmts(db, snap.account_id, "issues", previous, previous.fetched_at),
+	);
+	let calls = 0;
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async (_url, init) => {
+			calls++;
+			if (calls === 2) return Response.json({}, { status: 502 });
+			const query = String(JSON.parse(String(init?.body)).variables.q);
+			const names = query
+				.split(" ")
+				.filter((part) => part.startsWith("repo:"))
+				.map((part) => part.slice(5));
+			return Response.json({
+				data: {
+					search: {
+						issueCount: names.length,
+						pageInfo: { hasNextPage: false },
+						nodes: names.map((name) => ({
+							__typename: "Issue",
+							number: 1,
+							title: name,
+							repository: { nameWithOwner: name },
+						})),
+					},
+				},
+			});
+		}),
+	);
+	await executeRunPage(env, "r1", () => now);
+	expect(await readSnapshot(createDb(env.DB), snap.account_id, "issues")).toEqual(previous);
+	await executeRunPage(env, "r1", () => now);
+	const failed = (await getRun(createDb(env.DB), snap.account_id, "r1"))?.run;
+	if (!failed) throw new Error("fixture");
+	expect(failed.steps[failed.cursor]).toMatchObject({
+		snapshotCursor: 10,
+		status: "pending",
+		error: "github_error",
+	});
+	expect(await readSnapshot(createDb(env.DB), snap.account_id, "issues")).toEqual(previous);
+	await executeRunPage(env, "r1", () => failed.nextAttemptAt);
+	const saved = await readSnapshot(createDb(env.DB), snap.account_id, "issues");
+	if (!saved) throw new Error("fixture");
+	expect(saved.issues).toHaveLength(11);
+	expect(
+		new Set((saved.issues as { name_with_owner: string }[]).map((issue) => issue.name_with_owner))
+			.size,
+	).toBe(11);
+	expect(calls).toBe(3);
 });

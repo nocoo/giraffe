@@ -32,7 +32,7 @@ export function errorUi(err: unknown): ErrorUi {
 		return { kind: "account_missing" };
 	}
 	if (err.code === "snapshot_missing") {
-		return { kind: "empty", title: "没有快照" };
+		return { kind: "empty", title: "等待统一刷新" };
 	}
 	if (err.code === "not_found") {
 		return { kind: "empty", title: "未找到" };
@@ -71,7 +71,7 @@ export function reportOk(): void {
 }
 
 export function missingTitle(snap: { missing: true; title?: unknown }): string {
-	return typeof snap.title === "string" ? snap.title : "没有快照";
+	return typeof snap.title === "string" ? snap.title : "等待统一刷新";
 }
 
 export function catchLoad(
@@ -86,7 +86,7 @@ export function catchLoad(
 		return { missing: true, title: ui.title };
 	}
 	if (ui.kind === "account_missing") {
-		return { missing: true, title: "没有快照" };
+		return { missing: true, title: "请先连接 GitHub 账号" };
 	}
 	return undefined;
 }

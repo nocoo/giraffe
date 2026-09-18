@@ -246,7 +246,11 @@ export async function collectRepos(
 				  }
 				| undefined;
 			const conn = viewer?.repositories;
-			const page = (conn?.nodes ?? []).filter((node): node is Record<string, unknown> =>
+			if (!Array.isArray(conn?.nodes)) {
+				truncated = true;
+				break;
+			}
+			const page = conn.nodes.filter((node): node is Record<string, unknown> =>
 				Boolean(node && typeof node === "object"),
 			);
 			nodes.push(...page);
@@ -327,7 +331,7 @@ async function collectAlerts(
 						nodes?: unknown[];
 					};
 				} | null;
-				if (!repo) {
+				if (!Array.isArray(repo?.vulnerabilityAlerts?.nodes)) {
 					truncated = true;
 					break;
 				}
@@ -582,7 +586,7 @@ async function collectRepoKind(
 						nodes?: unknown[];
 					};
 				} | null;
-				if (!repo) {
+				if (!Array.isArray(repo?.vulnerabilityAlerts?.nodes)) {
 					unavailable = true;
 					break;
 				}

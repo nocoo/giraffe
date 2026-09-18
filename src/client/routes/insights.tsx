@@ -1,8 +1,6 @@
-import { Button, Link, toast } from "@nocoo/basalt";
+import { toast } from "@nocoo/basalt";
 import { BarChart } from "@nocoo/basalt/charts/bar";
-import { DonutChart } from "@nocoo/basalt/charts/donut";
 import { LineChart } from "@nocoo/basalt/charts/line";
-import { chart } from "@nocoo/basalt/charts/palette";
 import { StackedBarChart } from "@nocoo/basalt/charts/stacked-bar";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
@@ -20,10 +18,12 @@ import { useEffect, useMemo, useState } from "react";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ChartBrick, ChartEmpty, ChartRow } from "../components/layout/chart-brick";
 import { SnapshotDescription } from "../components/layout/collection-chrome";
+import { DonutChart } from "../components/layout/donut-chart";
 import { Kpi, KpiRow } from "../components/layout/kpi";
 import { InsightsSkeleton } from "../components/layout/page-skeleton";
-import { RefreshButton } from "../components/layout/refresh-button";
-import { catchLoad, missingTitle } from "../lib/error-ui";
+import { SnapshotPending } from "../components/layout/snapshot-pending";
+import { chartColor } from "../lib/chart-theme";
+import { catchLoad } from "../lib/error-ui";
 import { formatCount } from "../lib/format";
 import { PAGE_DESCRIPTIONS } from "../lib/navigation";
 import {
@@ -32,45 +32,35 @@ import {
 	type InsightsBoard,
 	loadInsightsBoard,
 } from "../viewmodels/insights";
-import { requestRefresh } from "../viewmodels/refresh";
 
 const ISSUE_PR_SERIES = [
-	{ key: "y" as const, label: "Issues", color: chart.sky },
-	{ key: "y2" as const, label: "Pull Requests", color: chart.amber },
+	{ key: "y" as const, label: "Issues", color: chartColor(0) },
+	{ key: "y2" as const, label: "Pull Requests", color: chartColor(1) },
 ];
 
 const COVERAGE_SERIES = [
-	{ key: "仅 Issue", color: chart.sky },
-	{ key: "仅 PR", color: chart.amber },
-	{ key: "两者都有", color: chart.teal },
-	{ key: "暂无", color: chart.gray },
+	{ key: "仅 Issue", color: chartColor(0) },
+	{ key: "仅 PR", color: chartColor(1) },
+	{ key: "两者都有", color: chartColor(2) },
+	{ key: "暂无", color: chartColor(3) },
 ];
 
 const HEALTH_SERIES = [
-	{ key: "健康", color: chart.green },
-	{ key: "观察", color: chart.amber },
-	{ key: "风险", color: chart.red },
+	{ key: "健康", color: chartColor(0) },
+	{ key: "观察", color: "hsl(var(--basalt-warning))" },
+	{ key: "风险", color: "hsl(var(--basalt-destructive))" },
 ];
 
 const PR_STATUS_SERIES = [
-	{ key: "草稿", color: chart.gray },
-	{ key: "待审查", color: chart.amber },
-	{ key: "需修改", color: chart.rose },
-	{ key: "已批准", color: chart.green },
-	{ key: "未标记", color: chart.primary },
+	{ key: "草稿", color: chartColor(3) },
+	{ key: "待审查", color: chartColor(1) },
+	{ key: "需修改", color: chartColor(2) },
+	{ key: "已批准", color: chartColor(0) },
+	{ key: "未标记", color: chartColor(4) },
 ];
 
 export function InsightsPage() {
 	const [board, setBoard] = useState<InsightsBoard | { missing: true } | null>(null);
-
-	function onLoadError(err: unknown): void {
-		const missing = catchLoad(err, (message) => {
-			toast.error(message);
-		});
-		if (missing) {
-			setBoard(missing);
-		}
-	}
 
 	useEffect(() => {
 		void loadInsightsBoard()
@@ -101,32 +91,10 @@ export function InsightsPage() {
 	if (board && "missing" in board) {
 		return (
 			<div className="space-y-8">
-				<PageHeader
-					title="Insights"
-					description={PAGE_DESCRIPTIONS["/insights"]}
-					actions={
-						<RefreshButton
-							run={() =>
-								requestRefresh(["repos", "issues", "prs", "alerts"]).then(() =>
-									loadInsightsBoard().then(setBoard),
-								)
-							}
-							onError={onLoadError}
-						/>
-					}
-				/>
+				<PageHeader title="Insights" description={PAGE_DESCRIPTIONS["/insights"]} />
 				<LayerCard>
 					<LayerCard.Well>
-						<LayerCard.Empty
-							icon={<Activity />}
-							title={missingTitle(board)}
-							description="点击刷新获取数据，或前往设置检查 GitHub 账号连接。"
-							action={
-								<Button variant="secondary" size="sm" asChild>
-									<Link href="/settings">查看账号设置</Link>
-								</Button>
-							}
-						/>
+						<SnapshotPending state={board} />
 					</LayerCard.Well>
 				</LayerCard>
 			</div>
@@ -156,14 +124,6 @@ export function InsightsPage() {
 					<>
 						{board.insights.truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
 						{incomplete ? <CandyBadge tone="orange">告警不完整</CandyBadge> : null}
-						<RefreshButton
-							run={() =>
-								requestRefresh(["repos", "issues", "prs", "alerts"]).then(() =>
-									loadInsightsBoard().then(setBoard),
-								)
-							}
-							onError={onLoadError}
-						/>
 					</>
 				}
 			/>
@@ -252,9 +212,13 @@ export function InsightsPage() {
 									data={charts.prStatus}
 									series={PR_STATUS_SERIES}
 									ariaLabel="pull request review status"
-									summary={charts.prStatus
-										.map((item) => `${item.name} ${formatCount(item.value)} 个`)
-										.join("，")}
+									summary={
+										<span className="sr-only">
+											{charts.prStatus
+												.map((item) => `${item.name} ${formatCount(item.value)} 个`)
+												.join("，")}
+										</span>
+									}
 									className="h-56 w-full"
 									showLegend
 									valueFormatter={formatCount}
@@ -278,7 +242,7 @@ export function InsightsPage() {
 						<ChartBrick title="距上次推送" description="以数据更新时间为基准，单位为天">
 							<BarChart
 								data={charts.freshness}
-								series={[{ key: "y", label: "仓库数", color: chart.teal }]}
+								series={[{ key: "y", label: "仓库数", color: chartColor(0) }]}
 								ariaLabel="days since last push"
 								className="h-56 w-full"
 								showAxes
@@ -292,9 +256,13 @@ export function InsightsPage() {
 									data={charts.health}
 									series={HEALTH_SERIES}
 									ariaLabel="repository health"
-									summary={charts.health
-										.map((item) => `${item.name} ${formatCount(item.value)} 个`)
-										.join("，")}
+									summary={
+										<span className="sr-only">
+											{charts.health
+												.map((item) => `${item.name} ${formatCount(item.value)} 个`)
+												.join("，")}
+										</span>
+									}
 									className="h-56 w-full"
 									showLegend
 									valueFormatter={formatCount}

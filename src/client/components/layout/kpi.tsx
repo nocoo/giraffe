@@ -1,36 +1,37 @@
-import { LayerCard } from "@nocoo/basalt/components/layer-card";
+import { StatCard } from "@nocoo/basalt/charts/stat-card";
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
 export function Kpi({
-	icon: Icon,
+	icon,
 	label,
 	value,
+	subtitle,
+	children,
 }: {
-	icon: LucideIcon;
+	icon?: LucideIcon;
 	label: string;
 	value: string;
+	subtitle?: string;
+	children?: ReactNode;
 }) {
 	return (
-		<LayerCard padding="md" className="min-w-0">
-			<div className="flex items-start justify-between gap-3">
-				<div className="min-w-0">
-					<p className="text-xs text-basalt-muted-foreground">{label}</p>
-					<p className="mt-2 text-2xl font-semibold tabular-nums tracking-tight">{value}</p>
-				</div>
-				<Icon
-					className="mt-0.5 size-4 shrink-0 text-basalt-primary"
-					strokeWidth={1.5}
-					aria-hidden="true"
-				/>
-			</div>
-		</LayerCard>
+		<StatCard
+			className="giraffe-stat-card min-w-0"
+			title={label}
+			value={value}
+			{...(subtitle ? { subtitle } : {})}
+			{...(icon ? { icon } : {})}
+			iconColor="text-basalt-primary"
+		>
+			{children}
+		</StatCard>
 	);
 }
 
 export function KpiRow({ children }: { children: ReactNode }) {
 	return (
-		<div className="grid grid-cols-2 gap-3 max-sm:[&>:last-child:nth-child(odd)]:col-span-2 sm:auto-cols-fr sm:grid-flow-col sm:grid-cols-none">
+		<div className="grid grid-cols-2 gap-4 max-lg:[&>:last-child:nth-child(odd)]:col-span-2 lg:auto-cols-fr lg:grid-flow-col lg:grid-cols-none">
 			{children}
 		</div>
 	);

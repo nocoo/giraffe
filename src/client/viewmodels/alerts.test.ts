@@ -2,7 +2,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { alertsUnavailable, loadAlerts, visibleAlerts } from "./alerts";
 import { setActiveAccountId } from "./session";
-import { clearSnapshots } from "./snapshot";
 
 describe("alerts viewmodel", () => {
 	afterEach(() => {
@@ -58,7 +57,6 @@ describe("alerts viewmodel", () => {
 		});
 		const snap = await loadAlerts();
 		expect("missing" in snap).toBe(false);
-		clearSnapshots();
 		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
 			if (String(input) === "/api/accounts") {
 				return Response.json({ accounts: [{ id: "acc1", login: "o", is_active: true }] });

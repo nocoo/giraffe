@@ -5,22 +5,21 @@ import {
 	churnFilled,
 	conclusionBadgeVariant,
 	daysBetween,
-	fillTextColor,
 	formatConclusion,
 	formatCount,
 	formatDate,
 	formatDays,
 	formatDelta,
 	formatHealth,
+	formatPreciseDate,
 	formatReview,
 	formatRunStatus,
+	formatTimeAgo,
 	formatVisibility,
 	freshnessFilled,
 	freshnessTone,
 	healthBadgeVariant,
 	initials,
-	labelFill,
-	languageColor,
 	maxCount,
 	meterFilled,
 	opportunityBadgeVariant,
@@ -34,6 +33,36 @@ import {
 } from "./format";
 
 describe("format", () => {
+	it("formats local timestamps and second-accurate elapsed time without losing days", () => {
+		const at = "2026-09-17T22:55:37.000Z";
+		const base = Date.parse(at);
+		expect(formatPreciseDate(at, "Asia/Shanghai")).toBe("2026年9月18日 06:55:37");
+		expect(formatPreciseDate(at, "UTC")).toBe("2026年9月17日 22:55:37");
+		expect(formatPreciseDate(at)).toMatch(/2026年9月\d+日 \d{2}:55:37/);
+		for (const value of [null, undefined, "", "not-a-date"]) {
+			expect(formatPreciseDate(value)).toBe("时间未知");
+			expect(formatTimeAgo(value, base)).toBe("时间未知");
+		}
+		expect(formatTimeAgo(at, Number.NaN)).toBe("时间未知");
+		expect(
+			[0, 999, 1000, 59000, 60000, 3599000, 3600000, 86399000, 86400000, 90061000].map((ms) =>
+				formatTimeAgo(at, base + ms),
+			),
+		).toEqual([
+			"0 秒前",
+			"0 秒前",
+			"1 秒前",
+			"59 秒前",
+			"1 分 0 秒前",
+			"59 分 59 秒前",
+			"1 小时 0 分 0 秒前",
+			"23 小时 59 分 59 秒前",
+			"1 天 0 小时 0 分 0 秒前",
+			"1 天 1 小时 1 分 1 秒前",
+		]);
+		expect(formatTimeAgo(at, base - 5000)).toBe("5 秒后（晚于本机时间）");
+	});
+
 	it("formats deltas, dates, counts, and labels", () => {
 		expect(formatDelta(null, false)).toBe("—");
 		expect(formatDelta(2, false)).toBe("+2");
@@ -46,8 +75,6 @@ describe("format", () => {
 		expect(formatDate("2024-03-15T12:00:00.000Z")).toMatch(/^2024-03-15 \d{2}:\d{2}$/);
 		expect(formatCount(1200)).toBe("1,200");
 		expect(formatDays(3)).toBe("3 天");
-		expect(languageColor("TypeScript")).toBe("#3178c6");
-		expect(languageColor("UnknownLang")).toMatch(/^hsl\(\d+ 42% 48%\)$/);
 		expect(initials("")).toBe("?");
 		expect(initials("  ")).toBe("?");
 		expect(initials("dev")).toBe("DE");
@@ -88,8 +115,11 @@ describe("format", () => {
 		expect(conclusionBadgeVariant("success")).toBe("green");
 		expect(conclusionBadgeVariant("failure")).toBe("red");
 		expect(conclusionBadgeVariant(null)).toBe("gray");
-		expect(candyClass("green")).toContain("--basalt-accent-4");
-		expect(candyClass("green")).toContain("text-white");
+		expect(candyClass("green")).toContain("text-basalt-primary");
+		expect(candyClass("blue")).toBe(candyClass("green"));
+		expect(candyClass("purple")).toBe(candyClass("gray"));
+		expect(candyClass("amber")).toContain("text-basalt-warning");
+		expect(candyClass("red")).toContain("text-basalt-destructive");
 		expect(reviewBadgeVariant("REVIEW_REQUIRED")).toBe("amber");
 		expect(reviewBadgeVariant("OTHER")).toBe("gray");
 		expect(visibilityBadgeVariant("public")).toBe("blue");
@@ -115,11 +145,6 @@ describe("format", () => {
 		expect(sourceBadgeVariant("other")).toBe("gray");
 		expect(takeChips(["a", "b"], 2)).toEqual({ shown: ["a", "b"], extra: 0 });
 		expect(takeChips(["a", "b", "c"], 2)).toEqual({ shown: ["a", "b"], extra: 1 });
-		expect(fillTextColor("1d4ed8")).toBe("#ffffff");
-		expect(fillTextColor("#f1e05a")).toBe("#111111");
-		expect(fillTextColor("nope")).toBe("#ffffff");
-		expect(labelFill("d73a4a")).toBe("#d73a4a");
-		expect(labelFill("#abc")).toBe("#abc");
 		expect(daysBetween("2026-09-10T00:00:00.000Z", "2026-09-01T00:00:00.000Z")).toBe(9);
 		expect(daysBetween("2026-09-01T00:00:00.000Z", "2026-09-10T00:00:00.000Z")).toBe(0);
 		expect(daysBetween("t", null)).toBe(9999);
@@ -132,10 +157,10 @@ describe("format", () => {
 		expect(freshnessFilled(20)).toBe(5);
 		expect(freshnessFilled(40)).toBe(3);
 		expect(freshnessFilled(100)).toBe(1);
-		expect(freshnessTone(3)).toBe("bg-basalt-heatmap-green-3");
-		expect(freshnessTone(20)).toBe("bg-basalt-chart-7");
-		expect(freshnessTone(40)).toBe("bg-basalt-chart-8");
-		expect(freshnessTone(100)).toBe("bg-basalt-chart-10");
+		expect(freshnessTone(3)).toBe("bg-basalt-primary");
+		expect(freshnessTone(20)).toBe("bg-basalt-primary/75");
+		expect(freshnessTone(40)).toBe("bg-basalt-primary/50");
+		expect(freshnessTone(100)).toBe("bg-basalt-primary/25");
 		expect(maxCount([1, 8, 3])).toBe(8);
 		expect(maxCount([])).toBe(0);
 		expect(churnFilled(0, 0)).toEqual({ adds: 0, dels: 0 });

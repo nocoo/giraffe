@@ -1,8 +1,10 @@
 import { expect, test } from "@playwright/test";
+import type { FactoryRunResponse } from "../../src/lib/factory-run";
 
 const PAT = `ghp_${"A".repeat(36)}`;
 
-test("settings PAT, repo list, and repo detail", async ({ page }) => {
+test("settings PAT, unified refresh, repo list, and repo detail", async ({ page }) => {
+	test.setTimeout(180000);
 	await page.goto("/settings");
 	await page.getByTestId("pat-input").fill(PAT);
 	await page.getByTestId("pat-submit").click();
@@ -11,6 +13,45 @@ test("settings PAT, repo list, and repo detail", async ({ page }) => {
 	await expect(page.locator("body")).not.toContainText(PAT);
 	expect(await page.content()).not.toContain(PAT);
 	await expect(page.getByText("octocat")).toBeVisible();
+	// This journey also runs on its own, without the factory smoke's saved data.
+	if (!(await page.request.get("/api/repos/octocat/hello-world")).ok()) {
+		await page.goto("/factory?refresh=1");
+		const state = (await (
+			await page.request.get("/api/factory/runs")
+		).json()) as FactoryRunResponse;
+		if (!state.catalogComplete) {
+			const sync = page.getByRole("button", { name: "同步仓库列表", exact: true });
+			await expect(sync).toBeEnabled({ timeout: 70000 });
+			await sync.click();
+			await expect
+				.poll(
+					async () => {
+						const next = (await (
+							await page.request.get("/api/factory/runs")
+						).json()) as FactoryRunResponse;
+						return !next.current && next.catalogComplete;
+					},
+					{ timeout: 25000 },
+				)
+				.toBe(true);
+		}
+		await page.getByRole("button", { name: "更新状态", exact: true }).click();
+		await page.getByRole("tab", { name: "发起刷新", exact: true }).click();
+		const start = page.getByRole("button", { name: "开始刷新（1）", exact: true });
+		await expect(start).toBeEnabled({ timeout: 70000 });
+		await start.click();
+		await expect
+			.poll(
+				async () => {
+					const next = (await (
+						await page.request.get("/api/factory/runs")
+					).json()) as FactoryRunResponse;
+					return !next.current && next.history[0]?.mode === "refresh" && next.history[0]?.status;
+				},
+				{ timeout: 45000 },
+			)
+			.toBe("completed");
+	}
 
 	await page.goto("/");
 	const list = page.getByTestId("repo-list");
