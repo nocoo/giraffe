@@ -363,7 +363,7 @@ Basalt Gen 2。侧栏展开 260px / 收起 68px。主区浮岛。中文 UI。
 
 ```
 giraffe/
-  CLAUDE.md
+  AGENTS.md
   docs/
     README.md
     01-architecture.md          # 本文
@@ -476,4 +476,4 @@ Client 只通过 HTTP 契约消费 Server。Server 测试不得 import Client。
 | 04 | [Server 设计](04-server.md) | 已写。全部接口、每接口职责、返回约定、原子化提交步骤 |
 | 05 | [Client 设计](05-client.md) | 已写。Vite 页面、Basalt 2.1.0 控件、MVVM、原子化提交步骤 |
 
-对应文档未写成并 review 前，不开始该层功能代码。当前 Agent 入口是根目录 `CLAUDE.md`。
+对应文档未写成并 review 前，不开始该层功能代码。当前 Agent 入口是根目录 `AGENTS.md`。

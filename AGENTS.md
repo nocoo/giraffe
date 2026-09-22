@@ -4,19 +4,13 @@ Personal GitHub console with account snapshots, inboxes, repository detail and r
 Profile: ts-worker-web.
 Direction: [architecture](docs/01-architecture.md), [quality](docs/02-quality.md) and [factory runs](docs/09-factory-runs.md). Frameworks must not rewrite this file.
 
-## Sources of Truth
+## Scope and instruction sources
 
-This file is the contract; hooks, CI and configuration enforce it. Raise weaker enforcement instead of lowering this contract.
+- This file is the only project handbook; nested files do not compete with it. Do not create a `CLAUDE.md` alias or copy.
+- This file is the contract; hooks, CI and configuration enforce it. Raise weaker enforcement instead of lowering this contract.
+- Human docs: [README.md](README.md) and the [docs index](docs/README.md). Version: `package.json`, read through `src/lib/version.ts` as `APP_VERSION`. Enforcement: `.husky/`, CI/release workflows, Vitest/Playwright configs and `scripts/gate-*.ts`. Local secrets: ignored `.dev.vars` initialized from `dev.vars.example`; test runners generate their own env files. Machine rules/accidents: global `AGENTS.md` and `rules/`; [Retrospective.md](Retrospective.md).
 
-| Fact | Where |
-|---|---|
-| Human docs | [README.md](README.md), [docs index](docs/README.md) |
-| Version | `package.json`, read through `src/lib/version.ts` as `APP_VERSION` |
-| Enforcement | `.husky/`, CI/release workflows, Vitest/Playwright configs and `scripts/gate-*.ts` |
-| Local secrets | Ignored `.dev.vars`, initialized from `dev.vars.example`; test runners generate their own env files |
-| Machine rules / accidents | Global `AGENTS.md` and `rules/`; [Retrospective.md](Retrospective.md) |
-
-## Project Invariants
+## Project invariants
 
 - Plaintext classic GitHub PAT exists only in the settings input until submission, that request body, decrypted Worker memory and outbound Authorization. Never persist, bundle, log, trace or return it. D1 stores AES-GCM envelopes; error records store safe codes, not raw upstream failures.
 - `workers_dev = false`; Cloudflare Access validates JWT issuer/audience/JWKS. There is no in-app login. Authorized users of one deployment share its accounts/snapshots; do not claim per-user tenancy.
@@ -24,20 +18,11 @@ This file is the contract; hooks, CI and configuration enforce it. Raise weaker 
 - Server tests must not import the client. Viewmodels stay free of View/DOM imports and views/routes stay thin. The React/Basalt client now exists; historical phase-1 exclusions are no longer the current project scope.
 - Automated tests use local Wrangler/SQLite and GitHub/JWKS stubs, never real PATs, daily `.dev.vars` or `api.github.com`. Never use remote D1 or deploy remote `-test` resources.
 - Preserve leased/fenced factory writes, bounded retention and immutable per-repository/global publication. Failed or limited collection retains prior good data and its original window; missing coverage is not a successful zero. Preserve old rows through additive migrations and rollback. Details: [factory contract](docs/06-software-factory.md), [run/storage rules](docs/09-factory-runs.md).
-- Keep strict TDD: failing tests remain in the working tree; commits pass current L1/G1. Never skip hooks to publish a failing change.
+- Keep strict TDD: failing tests remain in the working tree; commits pass current L1. Never skip hooks to publish a failing change.
 
-## Stack / Layout
+## Setup and commands
 
-| Component | Choice |
-|---|---|
-| Runtime / install | TypeScript 7 strict, Bun 1.4, Node ≥22.12; Hono Cloudflare Worker |
-| UI / data | Vite React/Basalt SPA, D1 `giraffe-db` through `DB` |
-| Static / tests | Biome and AST boundary gates, Vitest/V8, real HTTP and Playwright Chromium |
-| `src/server/`, `src/lib/` | API, Access, encrypted accounts, GitHub collection, storage and shared types |
-| `src/client/`, `tests/{api,e2e}/` | Routes/viewmodels and API/browser journeys |
-| `scripts/`, `migrations/`, `docs/` | Runners, schema evolution and numbered design/runbooks |
-
-## Commands
+TypeScript 7 strict, Bun 1.4, Node ≥22.12; Hono Cloudflare Worker. Vite React/Basalt SPA; D1 `giraffe-db` through `DB`. Biome and AST boundary gates; Vitest/V8, real HTTP and Playwright Chromium. `src/server/` and `src/lib/` hold API, Access, encrypted accounts, GitHub collection, storage and shared types; `src/client/` and `tests/{api,e2e}/` hold routes/viewmodels and API/browser journeys; `scripts/`, `migrations/`, `docs/` hold runners, schema evolution and numbered design/runbooks.
 
 Run from the root. API/browser runners generate fake keys and test configuration without `.dev.vars`. Install Chromium for browser checks; Gitleaks and OSV Scanner are required by push gates.
 
@@ -58,16 +43,15 @@ bun run gate:security
 
 For daily development, prepare `.dev.vars` from the example without overwriting an existing file. Replace the public `TOKEN_ENCRYPTION_KEY_V1` example before storing any real PAT and keep `TOKEN_ENCRYPTION_KEY_CURRENT=1`; `bun run dev` starts local Vite/Worker, while `bun run dev:server` starts the API lane. Development GitHub traffic still reaches the real service.
 
-## Verification
+## Testing and quality contract
 
-6DQ = L1/L2/L3 + G1/G2 + D1. Status: `enforced`, `planned`, `manual`, `N/A`.
+6DQ keeps its name with unified L1, L2/L3, G2 and D1; the owner merged former G1 into L1 on 2026-09-21. Statuses: `enforced`, `planned`, `manual`, `N/A`.
 
 | Dimension | Required proof | Status | Current enforcement / gap |
 |---|---|---|---|
-| L1 logic | Statements, branches, functions and lines each ≥95%; no skipped/focused tests | enforced | Commit/CI coverage includes server/shared/client logic; skip gate and Biome reject disabled/focused tests, and L1 setup rejects real network |
+| L1 pre-commit quality | Statements, branches, functions and lines each ≥95%; no skipped/focused tests; strict types and check-only lint, zero errors/warnings | planned | Commit/CI coverage includes server/shared/client logic with enforced subchecks: the skip gate and Biome reject disabled/focused tests, L1 setup rejects real network, and commit/CI check three TS configs, generated Wrangler types and skip/vars/fetch boundaries. Gates run on the working tree; index-snapshot, <30s and rejection evidence are missing |
 | L2 API | Real local HTTP over 100% of endpoint/method combinations, success/failure and auth | planned | Push/CI run functional suite A and JWT suite B; full endpoint/method assertion inventory must track the evolving factory API |
 | L3 UI | Critical account/catalogue/repository/factory journeys in Chromium | enforced | CI runs the built SPA through `scripts/run-e2e-bdd.ts` and GitHub stub |
-| G1 static | Strict types and check-only lint, zero errors/warnings | enforced | Commit/CI check three TS configs, generated Wrangler types and skip/vars/fetch boundaries |
 | G2 security | Dependency and secret scans; missing tool fails | enforced | Pre-push passes stdin commit ranges, including new refs, to Gitleaks and scans `bun.lock` with OSV; CI shared scanners |
 | D1 isolation | Fresh local state per run, guards and marker before fixtures/reset/cleanup | planned | Both runners are local with `_test_marker env=test` and stub ports, but reuse fixed directories and delete them before proving marker/ownership |
 | Build | Actual Vite assets in `dist/client` | enforced | L3 runner and CD build; typecheck alone does not build |
@@ -75,12 +59,12 @@ For daily development, prepare `.dev.vars` from the example without overwriting 
 
 | Hook | Current behavior | Required follow-up |
 |---|---|---|
-| pre-commit | Working-tree typecheck, full lint, four structural gates and coverage | G1+L1 on index snapshot, <30s |
+| pre-commit | Working-tree typecheck, full lint, four structural gates and coverage | Unified L1 on an index snapshot, <30s |
 | pre-push | Local L2 and G2 in parallel; Gitleaks consumes stdin ranges | Test the same pushed commit snapshots as well, <3min |
 
 Install restores Husky. Hooks are check-only; never use `--no-verify` on commits or branch pushes. CI/CD pins shared workflows at `ad43150de3a2be2fa464b5cd2f921dc4fa9f8f0f`.
 
-## Resources / Isolation
+## Resources and isolation
 
 | Lane | Ports / directory | Boundary |
 |---|---|---|
@@ -90,7 +74,7 @@ Install restores Husky. Hooks are check-only; never use `--no-verify` on commits
 
 Keep these ports free; a conflict fails instead of falling back to development. Required runners allocate per-run local persistence, reject remote bindings/credential fallback, prove test context and verify `_test_marker(key,value)` with `env=test` before reset/cleanup. Existing fixed directory names are implementation gaps, not the desired contract.
 
-## Operations / Release
+## Operations / release
 
 Authorized publication uses `.github/workflows/release.yml`: trusted successful main CI or an explicitly requested version tag/manual dispatch, shared migration/build/deploy workflow and production secrets. Do not deploy concurrently from a laptop. Apply additive migrations before code needing the new schema; validate factory migrations against a local backup copy as documented.
 Verify `GET https://giraffe.hexly.ai/api/live`: current top-level version and a real D1 `SELECT 1`; database failure returns uncached 503 with `status: "error"`. `_test_marker` is test metadata, not the production health probe, and private diagnostics never enter the response. Runbook: [server](docs/04-server.md).
