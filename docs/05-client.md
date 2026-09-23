@@ -193,7 +193,7 @@ Basalt `ContentIsland` 已是 L1 岛。不要再包一层自定义 card 当岛�
 | 分段（列表/网格、筛选） | `SegmentControl` | `@nocoo/basalt` |
 | 页级 tab（单仓） | `Tabs*` | `@nocoo/basalt` |
 | 工具条 | `Toolbar` | `@nocoo/basalt` |
-| 徽章（health / severity） | `CandyBadge` (Basalt `Badge` composition) | Uses the twelve Basalt candy accent tokens with dark labels in both themes. Arbitrary GitHub labels use tinted category fills with semantic foreground text. |
+| 徽章（health / severity） | `CandyBadge` (Basalt `Badge` composition) | Colored candy badges use white labels in both themes. Neutral gray badges retain dark labels; arbitrary GitHub labels use tinted category fills with semantic foreground text. White labels on bright candy fills are an owner-selected visual preference, not a 4.5:1 contrast guarantee. |
 | 头像 | `Avatar*` | `@nocoo/basalt` |
 | 确认删除账号 | `ConfirmDialog` / `useConfirm` | `@nocoo/basalt` |
 | Toast | `toast` `Toaster` | `@nocoo/basalt` |

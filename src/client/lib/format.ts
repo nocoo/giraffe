@@ -30,7 +30,9 @@ const CANDY_CLASS: Record<CandyTone, string> = {
 };
 
 export function candyClass(tone: CandyTone): string {
-	return `border-transparent text-basalt-foreground dark:text-basalt-background ${CANDY_CLASS[tone]}`;
+	const foreground =
+		tone === "gray" ? "text-basalt-foreground dark:text-basalt-background" : "text-white";
+	return `border-transparent ${foreground} ${CANDY_CLASS[tone]}`;
 }
 
 export function formatDelta(value: number | null, baselineMissing: boolean): string {
