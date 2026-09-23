@@ -12,17 +12,24 @@ import {
 	TableHeader,
 	TableRow,
 } from "@nocoo/basalt/components/table";
-import { Box, CircleDot, Clock3, GitFork, Star } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Box, Clock3, Star } from "lucide-react";
+import { type CSSProperties, useEffect, useMemo, useState } from "react";
 import { participates } from "../../lib/repo-statistics";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ResultCount, SearchField, TableScroll } from "../components/layout/collection-chrome";
-import { Kpi, KpiRow } from "../components/layout/kpi";
 import { LanguageLabel } from "../components/layout/labels";
+import {
+	ActiveFilters,
+	AgeStrip,
+	Breakdown,
+	OverviewCard,
+} from "../components/layout/overview-cards";
 import { TableSkeleton } from "../components/layout/page-skeleton";
+import { ShareBar } from "../components/layout/rank-bars";
 import { INLINE_SEGMENT } from "../components/layout/segment";
 import { SnapshotPending } from "../components/layout/snapshot-pending";
 import { Meter, SortButton } from "../components/layout/table-chrome";
+import { categoryColor } from "../lib/chart-theme";
 import { catchLoad, reportError } from "../lib/error-ui";
 import {
 	DATE_CELL,
@@ -41,6 +48,8 @@ import {
 	visibilityBadgeVariant,
 } from "../lib/format";
 import { PAGE_DESCRIPTIONS } from "../lib/navigation";
+import { REPO_STATUS, reposBoard } from "../viewmodels/boards";
+import { AGE_BUCKETS, shortRepo } from "../viewmodels/overview";
 import {
 	alertsIncomplete,
 	healthMap,
@@ -56,6 +65,14 @@ import {
 	visibleRepos,
 } from "../viewmodels/repos";
 
+const NO_FILTERS = { language: "", status: "", age: "" };
+const STATUS_COLORS = [
+	"var(--color-basalt-primary)",
+	"color-mix(in srgb,var(--color-basalt-primary) 35%,var(--color-basalt-border))",
+	"var(--color-basalt-muted-foreground)",
+	"var(--color-basalt-warning)",
+];
+
 export function ReposPage() {
 	const [query, setQuery] = useState("");
 	const [sort, setSort] = useState<SortKey>("stars");
@@ -63,6 +80,9 @@ export function ReposPage() {
 	const [snap, setSnap] = useState<ReposSnapshot | { missing: true } | null>(null);
 	const [insights, setInsights] = useState<InsightsSnapshot | null>(null);
 	const [saving, setSaving] = useState<string | null>(null);
+	const [picked, setPicked] = useState(NO_FILTERS);
+	const pick = (key: keyof typeof NO_FILTERS) => (value: string) =>
+		setPicked((old) => ({ ...old, [key]: value }));
 	async function toggleStatistics(repo: RepoRow, enabled: boolean) {
 		if (!snap || "missing" in snap || saving) return;
 		const account = snap.account_id;
@@ -119,12 +139,14 @@ export function ReposPage() {
 			});
 	}, []);
 
-	const rows = useMemo(() => {
-		if (!snap || "missing" in snap) {
-			return [];
-		}
-		return visibleRepos(snap.repos, query, sort);
-	}, [snap, query, sort]);
+	const board = useMemo(
+		() => (snap && !("missing" in snap) ? reposBoard(snap.repos, snap.fetched_at, picked) : null),
+		[snap, picked],
+	);
+	const rows = useMemo(
+		() => (board ? visibleRepos(board.rows, query, sort) : []),
+		[board, query, sort],
+	);
 	const health = healthMap(insights);
 	const incomplete = alertsIncomplete(insights);
 	const peakIssues = maxCount(rows.map((row) => row.open_issue_count));
@@ -188,21 +210,101 @@ export function ReposPage() {
 	}
 
 	const metrics = repoMetrics(snap.repos);
+	if (!board) return null;
 
 	return (
-		<div className="space-y-8">
+		<div className="giraffe-page-motion space-y-6">
 			<PageHeader
 				title="仓库"
 				description={PAGE_DESCRIPTIONS["/"]}
 				actions={actions}
 				filters={filters}
 			/>
-			<KpiRow>
-				<Kpi icon={Box} label="参与统计的仓库" value={formatCount(metrics.count)} />
-				<Kpi icon={Star} label="Stars" value={formatCount(metrics.stars)} />
-				<Kpi icon={GitFork} label="Forks" value={formatCount(metrics.forks)} />
-				<Kpi icon={CircleDot} label="Issues" value={formatCount(metrics.issues)} />
-			</KpiRow>
+			<div className="giraffe-stat-inline" data-testid="repo-summary">
+				<span>
+					<strong>{formatCount(snap.repos.length)}</strong>个仓库 · 其中{" "}
+					<strong>{formatCount(metrics.count)}</strong>个参与统计
+				</span>
+				<span>
+					<strong>{formatCount(board.privateCount)}</strong>个私有
+				</span>
+				<span>
+					参与统计的 Stars <strong>{formatCount(metrics.stars)}</strong>· Forks{" "}
+					<strong>{formatCount(metrics.forks)}</strong>· Open Issues{" "}
+					<strong>{formatCount(metrics.issues)}</strong>
+				</span>
+			</div>
+			<div className="giraffe-overview" style={{ "--cols": 4 } as CSSProperties}>
+				<OverviewCard
+					title="仓库构成"
+					hint="按参与统计、已排除、Fork 与已归档分组，点击下方状态筛选。"
+				>
+					<ShareBar
+						label="仓库构成"
+						legend={false}
+						parts={board.status.map((st, i) => ({
+							key: st.key,
+							label: st.label,
+							value: st.value,
+							color: STATUS_COLORS[i] ?? "var(--color-basalt-border)",
+						}))}
+					/>
+					<div className="mt-4">
+						<Breakdown
+							rows={board.status.map((st, i) => ({
+								name: st.key,
+								value: st.value,
+								share: st.value / Math.max(1, board.rows.length),
+								color: STATUS_COLORS[i] ?? "var(--color-basalt-border)",
+							}))}
+							max={Math.max(1, ...board.status.map((st) => st.value))}
+							label="仓库按状态"
+							active={picked.status}
+							onSelect={pick("status")}
+							format={(k) => REPO_STATUS.find((st) => st.key === k)?.label ?? k}
+						/>
+					</div>
+				</OverviewCard>
+				<OverviewCard title="最近推送" hint="距最近一次推送的天数，点击筛选。越靠右越久未动。">
+					<AgeStrip
+						age={board.freshness}
+						active={picked.age}
+						onSelect={pick("age")}
+						label="仓库最近推送分布"
+					/>
+				</OverviewCard>
+				<OverviewCard
+					title="主语言"
+					hint="按 GitHub 主语言统计仓库数，颜色与全站语言色一致。点击筛选。"
+				>
+					<Breakdown
+						rows={board.languages.rows.map((r) => ({ ...r, color: categoryColor(r.name) }))}
+						max={board.languages.max}
+						label="仓库按主语言"
+						active={picked.language}
+						onSelect={pick("language")}
+					/>
+				</OverviewCard>
+				<OverviewCard title="Stars 最多" hint="当前筛选下 Stars 最多的仓库。">
+					<Breakdown
+						rows={board.stars.rows}
+						max={board.stars.max}
+						label="Stars 最多的仓库"
+						active=""
+						format={shortRepo}
+						color="var(--color-basalt-warning)"
+					/>
+				</OverviewCard>
+			</div>
+			<ActiveFilters
+				filters={picked}
+				labels={{ status: "状态", age: "最近推送", language: "语言" }}
+				format={{
+					status: (k) => REPO_STATUS.find((st) => st.key === k)?.label ?? k,
+					age: (k) => AGE_BUCKETS.find((b) => b.key === k)?.label ?? k,
+				}}
+				onClear={(key) => setPicked((old) => (key ? { ...old, [key]: "" } : NO_FILTERS))}
+			/>
 			<SectionRule
 				title="仓库"
 				actions={

@@ -42,8 +42,9 @@ import {
 	Tag,
 	Users,
 } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router";
+import type { FactoryRepo, FactorySnapshot } from "../../lib/factory-types";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ChartBrick, ChartEmpty, ChartRow } from "../components/layout/chart-brick";
 import { SnapshotDescription, TableScroll } from "../components/layout/collection-chrome";
@@ -72,6 +73,8 @@ import {
 	NUM_HEAD,
 	reviewBadgeVariant,
 } from "../lib/format";
+import { repoActivityBoard, repoFactorySeries } from "../viewmodels/boards";
+import { loadFactory } from "../viewmodels/factory";
 import type { IssuesSnapshot } from "../viewmodels/issues";
 import type { PullsSnapshot } from "../viewmodels/pulls";
 import {
@@ -90,6 +93,7 @@ import {
 	trafficForbidden,
 	trafficPoints,
 } from "../viewmodels/repo-detail";
+import { ReleaseTimeline, RepoActivityChart, RunOutcomeChart } from "./repo-charts";
 
 async function fetchTab<T extends { account_id: string }>(
 	owner: string,
@@ -132,9 +136,24 @@ export function RepoDetailPage() {
 	const [contributors, setContributors] = useState<RepoContributors | { missing: true } | null>(
 		null,
 	);
+	const [factory, setFactory] = useState<{ snap: FactorySnapshot; repo: FactoryRepo } | null>(null);
+	const loaded = useRef({ actions: false, releases: false });
 
 	useEffect(() => {
 		let cancelled = false;
+		setFactory(null);
+		loaded.current = { actions: false, releases: false };
+		if (valid)
+			// The overview borrows the factory's 90-day per-repo metrics; it is optional context.
+			void loadFactory()
+				.then((f) => {
+					const repo =
+						"missing" in f
+							? undefined
+							: f.repos.find((r) => r.name.toLowerCase() === `${owner}/${name}`.toLowerCase());
+					if (!cancelled && repo && !("missing" in f)) setFactory({ snap: f, repo });
+				})
+				.catch(() => undefined);
 		setSnap(null);
 		setSecurity(null);
 		setTraffic(null);
@@ -219,12 +238,14 @@ export function RepoDetailPage() {
 				.then((value) => apply(setTraffic, value))
 				.catch(onTabError);
 		}
-		if (tab === "actions") {
+		if (tab === "actions" || (tab === "details" && !loaded.current.actions)) {
+			loaded.current.actions = true;
 			void fetchTab<RepoActions>(owner, name, "actions")
 				.then((value) => apply(setActions, value))
 				.catch(onTabError);
 		}
-		if (tab === "releases") {
+		if (tab === "releases" || (tab === "details" && !loaded.current.releases)) {
+			loaded.current.releases = true;
 			void fetchTab<RepoReleases>(owner, name, "releases")
 				.then((value) => apply(setReleases, value))
 				.catch(onTabError);
@@ -322,6 +343,28 @@ export function RepoDetailPage() {
 										? languages
 										: contributors;
 	const current = activeSnapshot && !("missing" in activeSnapshot) ? activeSnapshot : null;
+	const activity =
+		(actions && !("missing" in actions)) || (releases && !("missing" in releases))
+			? repoActivityBoard(
+					{
+						runs: actions && !("missing" in actions) ? actions.runs : [],
+						releases: releases && !("missing" in releases) ? releases.releases : [],
+					},
+					snap.fetched_at,
+				)
+			: null;
+	const days = factory
+		? repoFactorySeries(factory.repo, factory.repo.observation?.window ?? factory.snap.window)
+		: [];
+	const flow30 = days.slice(-30).reduce(
+		(n, d) => ({
+			commits: n.commits + d.commits,
+			merged: n.merged + d.prMerged,
+			opened: n.opened + d.issueOpened,
+			closed: n.closed + d.issueClosed,
+		}),
+		{ commits: 0, merged: 0, opened: 0, closed: 0 },
+	);
 	const truncated = current?.truncated;
 
 	return (
@@ -402,8 +445,63 @@ export function RepoDetailPage() {
 							<KpiRow>
 								<Kpi icon={Star} label="Stars" value={formatCount(snap.stargazer_count)} />
 								<Kpi icon={GitFork} label="Forks" value={formatCount(snap.fork_count)} />
-								<Kpi icon={CircleDot} label="Issues" value={formatCount(snap.open_issue_count)} />
+								<Kpi
+									icon={CircleDot}
+									label="Open Issues"
+									value={formatCount(snap.open_issue_count)}
+									{...(factory
+										? { subtitle: `30 天 新开 ${flow30.opened} · 关闭 ${flow30.closed}` }
+										: {})}
+								/>
+								<Kpi
+									icon={Play}
+									label="CI 成功率"
+									value={activity?.ci.rate == null ? "—" : `${Math.round(activity.ci.rate * 100)}%`}
+									subtitle={
+										activity
+											? `最近 ${activity.ci.success + activity.ci.failure} 次判定 · 中位 ${activity.ci.medianMinutes === null ? "—" : `${activity.ci.medianMinutes.toFixed(1)} 分钟`}`
+											: "读取中"
+									}
+								/>
+								<Kpi
+									icon={Tag}
+									label="版本"
+									value={formatCount(activity?.releases.published ?? 0)}
+									subtitle={
+										activity?.releases.cadenceDays == null
+											? "发布间隔 —"
+											: `发布间隔中位 ${activity.releases.cadenceDays} 天`
+									}
+								/>
 							</KpiRow>
+							{days.length ? (
+								<ChartBrick
+									title="90 天活动"
+									description="来自软件工厂的该仓库数据：每日默认分支提交与合并 PR（左轴），截至当日 7 天 CI 成功率（右轴）。"
+								>
+									<p className="giraffe-stat-inline mb-2">
+										<span>
+											30 天提交 <strong>{formatCount(flow30.commits)}</strong>
+										</span>
+										<span>
+											合并 PR <strong>{formatCount(flow30.merged)}</strong>
+										</span>
+										<span>
+											Issue 新开 / 关闭 <strong>{formatCount(flow30.opened)}</strong>/
+											<strong>{formatCount(flow30.closed)}</strong>
+										</span>
+									</p>
+									<RepoActivityChart days={days} />
+								</ChartBrick>
+							) : null}
+							{activity?.releases.timeline.length ? (
+								<ChartBrick
+									title="版本节奏"
+									description="已发布版本按时间排列，空心点为预发布；点的疏密即发布节奏。"
+								>
+									{activity ? <ReleaseTimeline releases={activity.releases} /> : null}
+								</ChartBrick>
+							) : null}
 							<SectionRule title="概览">
 								<LayerCard padding="md">
 									<DescriptionList columns={2}>
@@ -446,46 +544,81 @@ export function RepoDetailPage() {
 							/>
 						</TabWell>
 					) : actions ? (
-						<TabWell flush>
-							<Table className="min-w-[680px] [&_th]:whitespace-nowrap">
-								<TableHeader>
-									<TableRow>
-										<TableHead>名称</TableHead>
-										<TableHead>状态</TableHead>
-										<TableHead>结论</TableHead>
-										<TableHead>事件</TableHead>
-										<TableHead>分支</TableHead>
-										<TableHead className={NUM_HEAD}>更新</TableHead>
-									</TableRow>
-								</TableHeader>
-								<TableBody>
-									{actions.runs.map((run) => (
-										<TableRow key={run.id}>
-											<TableCell>
-												<Link href={run.html_url} target="_blank" rel="noreferrer">
-													{run.name}
-												</Link>
-											</TableCell>
-											<TableCell>
-												<CandyBadge tone="gray">{formatRunStatus(run.status)}</CandyBadge>
-											</TableCell>
-											<TableCell>
-												<CandyBadge tone={conclusionBadgeVariant(run.conclusion)}>
-													{formatConclusion(run.conclusion)}
-												</CandyBadge>
-											</TableCell>
-											<TableCell>
-												<CandyBadge tone="indigo">{run.event}</CandyBadge>
-											</TableCell>
-											<TableCell>
-												<Code>{run.head_branch ?? "—"}</Code>
-											</TableCell>
-											<TableCell className={DATE_CELL}>{formatDate(run.updated_at)}</TableCell>
+						<div className="flex flex-col gap-4">
+							{activity ? (
+								<ChartBrick
+									title="工作流结果"
+									description="最近 100 次运行按日期与结果堆叠。成功率只计成功与失败，取消与跳过单列。"
+								>
+									<p className="giraffe-stat-inline mb-2">
+										<span>
+											成功 <strong>{formatCount(activity.ci.success)}</strong>
+										</span>
+										<span>
+											失败 <strong>{formatCount(activity.ci.failure)}</strong>
+										</span>
+										<span>
+											取消 / 跳过 <strong>{formatCount(activity.ci.other)}</strong>
+										</span>
+										<span>
+											成功率{" "}
+											<strong>
+												{activity.ci.rate === null ? "—" : `${Math.round(activity.ci.rate * 100)}%`}
+											</strong>
+										</span>
+										<span>
+											耗时中位{" "}
+											<strong>
+												{activity.ci.medianMinutes === null
+													? "—"
+													: `${activity.ci.medianMinutes.toFixed(1)} 分钟`}
+											</strong>
+										</span>
+									</p>
+									<RunOutcomeChart ci={activity.ci} />
+								</ChartBrick>
+							) : null}
+							<TabWell flush>
+								<Table className="min-w-[680px] [&_th]:whitespace-nowrap">
+									<TableHeader>
+										<TableRow>
+											<TableHead>名称</TableHead>
+											<TableHead>状态</TableHead>
+											<TableHead>结论</TableHead>
+											<TableHead>事件</TableHead>
+											<TableHead>分支</TableHead>
+											<TableHead className={NUM_HEAD}>更新</TableHead>
 										</TableRow>
-									))}
-								</TableBody>
-							</Table>
-						</TabWell>
+									</TableHeader>
+									<TableBody>
+										{actions.runs.map((run) => (
+											<TableRow key={run.id}>
+												<TableCell>
+													<Link href={run.html_url} target="_blank" rel="noreferrer">
+														{run.name}
+													</Link>
+												</TableCell>
+												<TableCell>
+													<CandyBadge tone="gray">{formatRunStatus(run.status)}</CandyBadge>
+												</TableCell>
+												<TableCell>
+													<CandyBadge tone={conclusionBadgeVariant(run.conclusion)}>
+														{formatConclusion(run.conclusion)}
+													</CandyBadge>
+												</TableCell>
+												<TableCell>
+													<CandyBadge tone="indigo">{run.event}</CandyBadge>
+												</TableCell>
+												<TableCell>
+													<Code>{run.head_branch ?? "—"}</Code>
+												</TableCell>
+												<TableCell className={DATE_CELL}>{formatDate(run.updated_at)}</TableCell>
+											</TableRow>
+										))}
+									</TableBody>
+								</Table>
+							</TabWell>
+						</div>
 					) : (
 						<TableSkeleton label="加载 Actions" columns={6} rows={6} />
 					)}
@@ -504,32 +637,61 @@ export function RepoDetailPage() {
 							/>
 						</TabWell>
 					) : releases ? (
-						<TabWell flush>
-							<Table className="min-w-[680px] [&_th]:whitespace-nowrap">
-								<TableHeader>
-									<TableRow>
-										<TableHead>标签</TableHead>
-										<TableHead className={NUM_HEAD}>时间</TableHead>
-										<TableHead>预发布</TableHead>
-									</TableRow>
-								</TableHeader>
-								<TableBody>
-									{releases.releases.map((row) => (
-										<TableRow key={row.id}>
-											<TableCell>
-												<Link href={row.html_url} target="_blank" rel="noreferrer">
-													{row.tag_name}
-												</Link>
-											</TableCell>
-											<TableCell className={DATE_CELL}>{formatDate(row.published_at)}</TableCell>
-											<TableCell>
-												{row.prerelease ? <CandyBadge tone="amber">预发布</CandyBadge> : "—"}
-											</TableCell>
+						<div className="flex flex-col gap-4">
+							{activity?.releases.timeline.length ? (
+								<ChartBrick
+									title="版本节奏"
+									description="已发布版本按时间排列，空心点为预发布；点的疏密即发布节奏。"
+								>
+									<p className="giraffe-stat-inline mb-1">
+										<span>
+											已发布 <strong>{formatCount(activity.releases.published)}</strong>
+										</span>
+										<span>
+											预发布 <strong>{formatCount(activity.releases.prerelease)}</strong>
+										</span>
+										<span>
+											草稿 <strong>{formatCount(activity.releases.draft)}</strong>
+										</span>
+										<span>
+											间隔中位{" "}
+											<strong>
+												{activity.releases.cadenceDays === null
+													? "—"
+													: `${activity.releases.cadenceDays} 天`}
+											</strong>
+										</span>
+									</p>
+									{activity ? <ReleaseTimeline releases={activity.releases} /> : null}
+								</ChartBrick>
+							) : null}
+							<TabWell flush>
+								<Table className="min-w-[680px] [&_th]:whitespace-nowrap">
+									<TableHeader>
+										<TableRow>
+											<TableHead>标签</TableHead>
+											<TableHead className={NUM_HEAD}>时间</TableHead>
+											<TableHead>预发布</TableHead>
 										</TableRow>
-									))}
-								</TableBody>
-							</Table>
-						</TabWell>
+									</TableHeader>
+									<TableBody>
+										{releases.releases.map((row) => (
+											<TableRow key={row.id}>
+												<TableCell>
+													<Link href={row.html_url} target="_blank" rel="noreferrer">
+														{row.tag_name}
+													</Link>
+												</TableCell>
+												<TableCell className={DATE_CELL}>{formatDate(row.published_at)}</TableCell>
+												<TableCell>
+													{row.prerelease ? <CandyBadge tone="amber">预发布</CandyBadge> : "—"}
+												</TableCell>
+											</TableRow>
+										))}
+									</TableBody>
+								</Table>
+							</TabWell>
+						</div>
 					) : (
 						<TableSkeleton label="加载 Release" columns={3} rows={6} />
 					)}

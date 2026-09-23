@@ -11,7 +11,7 @@ import {
 	TableHeader,
 	TableRow,
 } from "@nocoo/basalt/components/table";
-import { Box, CircleDot } from "lucide-react";
+import { CircleDot } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { CandyBadge } from "../components/layout/candy-badge";
 import {
@@ -20,25 +20,40 @@ import {
 	SnapshotDescription,
 	TableScroll,
 } from "../components/layout/collection-chrome";
-import { Kpi, KpiRow } from "../components/layout/kpi";
+import {
+	ActiveFilters,
+	AgeStrip,
+	Breakdown,
+	CountBars,
+	OverviewCard,
+} from "../components/layout/overview-cards";
 import { TableSkeleton } from "../components/layout/page-skeleton";
 import { INLINE_SEGMENT } from "../components/layout/segment";
 import { SnapshotPending } from "../components/layout/snapshot-pending";
 import { LabelChips, PersonCell, SortButton } from "../components/layout/table-chrome";
+import { FLOW_COLORS } from "../lib/chart-theme";
 import { catchLoad } from "../lib/error-ui";
 import { DATE_CELL, formatCount, formatDate, NUM_CELL, NUM_HEAD } from "../lib/format";
 import { PAGE_DESCRIPTIONS } from "../lib/navigation";
+import { type WorkFilters, workBoard } from "../viewmodels/boards";
 import {
 	type IssueSort,
 	type IssuesSnapshot,
-	issueMetrics,
 	loadIssues,
 	visibleIssues,
 } from "../viewmodels/issues";
+import { AGE_BUCKETS, shortRepo } from "../viewmodels/overview";
+
+const NO_FILTERS: WorkFilters = { repo: "", label: "", author: "", age: "" };
+const FILTER_LABELS = { repo: "仓库", label: "标签", author: "作者", age: "年龄" };
+const AGE_LABEL = (key: string) => AGE_BUCKETS.find((b) => b.key === key)?.label ?? key;
 
 export function IssuesPage() {
 	const [query, setQuery] = useState("");
 	const [sort, setSort] = useState<IssueSort>("updated");
+	const [picked, setPicked] = useState<WorkFilters>(NO_FILTERS);
+	const pick = (key: keyof WorkFilters) => (value: string) =>
+		setPicked((old) => ({ ...old, [key]: value }));
 	const [snap, setSnap] = useState<IssuesSnapshot | { missing: true } | null>(null);
 
 	useEffect(() => {
@@ -54,12 +69,14 @@ export function IssuesPage() {
 			});
 	}, []);
 
-	const rows = useMemo(() => {
-		if (!snap || "missing" in snap) {
-			return [];
-		}
-		return visibleIssues(snap.issues, query, sort);
-	}, [snap, query, sort]);
+	const board = useMemo(
+		() => (snap && !("missing" in snap) ? workBoard(snap.issues, snap.fetched_at, picked) : null),
+		[snap, picked],
+	);
+	const rows = useMemo(
+		() => (board ? visibleIssues(board.rows, query, sort) : []),
+		[board, query, sort],
+	);
 
 	const filters = (
 		<FilterBar label="Issues 筛选" className="w-full">
@@ -104,10 +121,9 @@ export function IssuesPage() {
 		);
 	}
 
-	const metrics = issueMetrics(snap.issues);
-
+	if (!board) return null;
 	return (
-		<div className="space-y-8">
+		<div className="giraffe-page-motion space-y-6">
 			<PageHeader
 				title="Issues"
 				description={
@@ -119,10 +135,80 @@ export function IssuesPage() {
 				actions={snap.truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
 				filters={filters}
 			/>
-			<KpiRow>
-				<Kpi icon={CircleDot} label="打开 Issues" value={formatCount(metrics.count)} />
-				<Kpi icon={Box} label="涉及仓库" value={formatCount(metrics.repos)} />
-			</KpiRow>
+			<div className="giraffe-stat-inline" data-testid="issue-summary">
+				<span>
+					<strong>{formatCount(board.rows.length)}</strong>
+					{board.rows.length === board.total
+						? "个 open Issue"
+						: `/ ${formatCount(board.total)} 个 open Issue`}
+				</span>
+				<span>
+					<strong>{formatCount(board.repoCount)}</strong>
+					个仓库
+				</span>
+				<span>
+					年龄中位数 <strong>{board.medianAge === null ? "—" : `${board.medianAge} 天`}</strong>
+				</span>
+				<span>
+					<strong>{formatCount(board.stale)}</strong>个超过 30 天
+				</span>
+				<span>
+					<strong>{formatCount(board.discussed)}</strong>个有评论
+				</span>
+			</div>
+			<div className="giraffe-overview">
+				<OverviewCard
+					title="积压年龄"
+					hint="按创建时间分组，点击任一列筛选下方列表。越靠右越久未关闭。"
+				>
+					<AgeStrip
+						age={board.age}
+						active={picked.age}
+						onSelect={pick("age")}
+						label="Issue 年龄分布"
+					/>
+				</OverviewCard>
+				<OverviewCard
+					title="按仓库"
+					hint="当前筛选下 open Issue 最多的仓库，其余合并为「其他」。点击筛选。"
+				>
+					<Breakdown
+						rows={board.repos.rows}
+						max={board.repos.max}
+						label="Issue 按仓库"
+						active={picked.repo}
+						onSelect={pick("repo")}
+						format={shortRepo}
+					/>
+				</OverviewCard>
+				<OverviewCard
+					title="新增节奏与标签"
+					hint="柱为近 12 周每周新建、目前仍 open 的 Issue；下方为标签分布，点击筛选。"
+				>
+					<CountBars
+						data={board.weekly}
+						series={[{ key: "y", label: "新建且仍 open", color: "var(--color-basalt-primary)" }]}
+						label="近 12 周新建 Issue"
+						className="h-28 w-full"
+					/>
+					<div className="mt-3">
+						<Breakdown
+							rows={board.labels.rows}
+							max={board.labels.max}
+							label="Issue 按标签"
+							active={picked.label}
+							onSelect={pick("label")}
+							color={FLOW_COLORS.opened}
+						/>
+					</div>
+				</OverviewCard>
+			</div>
+			<ActiveFilters
+				filters={picked}
+				labels={FILTER_LABELS}
+				format={{ age: AGE_LABEL, repo: shortRepo }}
+				onClear={(key) => setPicked((old) => (key ? { ...old, [key]: "" } : NO_FILTERS))}
+			/>
 			<SectionRule
 				title="Issues"
 				actions={<ResultCount count={rows.length} total={snap.issues.length} />}

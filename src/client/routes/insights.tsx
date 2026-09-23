@@ -1,25 +1,14 @@
-import { toast } from "@nocoo/basalt";
+import { Link, toast } from "@nocoo/basalt";
 import { BarChart } from "@nocoo/basalt/charts/bar";
-import { LineChart } from "@nocoo/basalt/charts/line";
 import { StackedBarChart } from "@nocoo/basalt/charts/stacked-bar";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
-import {
-	Activity,
-	CircleDot,
-	Clock,
-	Eye,
-	GitPullRequest,
-	HeartPulse,
-	ShieldAlert,
-} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ChartBrick, ChartEmpty, ChartRow } from "../components/layout/chart-brick";
 import { SnapshotDescription } from "../components/layout/collection-chrome";
 import { DonutChart } from "../components/layout/donut-chart";
-import { Kpi, KpiRow } from "../components/layout/kpi";
 import { InsightsSkeleton } from "../components/layout/page-skeleton";
 import { SnapshotPending } from "../components/layout/snapshot-pending";
 import { chartColor } from "../lib/chart-theme";
@@ -29,6 +18,7 @@ import { PAGE_DESCRIPTIONS } from "../lib/navigation";
 import {
 	alertsIncomplete,
 	buildInsightsCharts,
+	healthTiles,
 	type InsightsBoard,
 	loadInsightsBoard,
 } from "../viewmodels/insights";
@@ -87,6 +77,11 @@ export function InsightsPage() {
 		);
 	}, [board]);
 	const incomplete = board && !("missing" in board) ? alertsIncomplete(board.insights) : false;
+	const rest = charts?.workloadByRepo.find((p) => p.x === "其他");
+	const tiles = useMemo(
+		() => (board && !("missing" in board) ? healthTiles(board.insights.insights) : []),
+		[board],
+	);
 
 	if (board && "missing" in board) {
 		return (
@@ -111,7 +106,7 @@ export function InsightsPage() {
 	}
 
 	return (
-		<div className="space-y-8">
+		<div className="giraffe-page-motion space-y-8">
 			<PageHeader
 				title="Insights"
 				description={
@@ -129,35 +124,42 @@ export function InsightsPage() {
 			/>
 			<SectionRule title="工作量">
 				<div className="space-y-3" data-testid="insight-metrics">
-					<KpiRow>
-						<Kpi icon={CircleDot} label="打开 Issues" value={formatCount(charts.issueCount)} />
-						<Kpi icon={GitPullRequest} label="打开 PRs" value={formatCount(charts.prCount)} />
-						<Kpi
-							icon={Activity}
-							label="有 Issue 的仓"
-							value={formatCount(charts.reposWithIssues + charts.reposWithBoth)}
-						/>
-						<Kpi
-							icon={GitPullRequest}
-							label="有 PR 的仓"
-							value={formatCount(charts.reposWithPrs + charts.reposWithBoth)}
-						/>
-					</KpiRow>
+					<p className="giraffe-stat-inline">
+						<span>
+							<strong>{formatCount(charts.issueCount)}</strong>个 open Issue ·{" "}
+							<strong>{formatCount(charts.reposWithIssues + charts.reposWithBoth)}</strong>个仓库
+						</span>
+						<span>
+							<strong>{formatCount(charts.prCount)}</strong>个 open PR ·{" "}
+							<strong>{formatCount(charts.reposWithPrs + charts.reposWithBoth)}</strong>个仓库
+						</span>
+						<span>
+							<strong>{formatCount(charts.reposQuiet)}</strong>个仓库无待办
+						</span>
+					</p>
 					<ChartRow>
 						<ChartBrick
 							title="仓内 Issue / PR"
-							description="按当前打开的 Issue 与 Pull Request 数量比较"
+							description="当前 open Issue 与 PR 最多的 8 个仓库；其余仓库合计见下方说明。"
 						>
 							{charts.workloadByRepo.length > 0 ? (
-								<StackedBarChart
-									data={charts.workloadByRepo}
-									series={ISSUE_PR_SERIES}
-									ariaLabel="issues and pull requests by repository"
-									className="h-56 w-full"
-									showAxes
-									showLegend
-									valueFormatter={formatCount}
-								/>
+								<>
+									<StackedBarChart
+										data={charts.workloadByRepo.filter((p) => p.x !== "其他")}
+										series={ISSUE_PR_SERIES}
+										ariaLabel="issues and pull requests by repository"
+										className="h-56 w-full"
+										showAxes
+										showLegend
+										valueFormatter={formatCount}
+									/>
+									{rest ? (
+										<p className="mt-2 text-xs text-basalt-muted-foreground">
+											其余仓库合计 {formatCount((rest.y ?? 0) + (rest.y2 ?? 0))} 项（Issue{" "}
+											{formatCount(rest.y ?? 0)} · PR {formatCount(rest.y2 ?? 0)}）
+										</p>
+									) : null}
+								</>
 							) : (
 								<ChartEmpty label="没有打开的 Issue 或 Pull Request" />
 							)}
@@ -181,22 +183,26 @@ export function InsightsPage() {
 			</SectionRule>
 			<SectionRule title="审查与节奏">
 				<div className="space-y-3">
-					<KpiRow>
-						<Kpi icon={GitPullRequest} label="草稿" value={formatCount(charts.draftCount)} />
-						<Kpi icon={Eye} label="待审查" value={formatCount(charts.reviewRequiredCount)} />
-						<Kpi
-							icon={ShieldAlert}
-							label="需修改"
-							value={formatCount(charts.changesRequestedCount)}
-						/>
-						<Kpi icon={HeartPulse} label="已批准" value={formatCount(charts.approvedCount)} />
-					</KpiRow>
+					<p className="giraffe-stat-inline">
+						<span>
+							草稿 <strong>{formatCount(charts.draftCount)}</strong>
+						</span>
+						<span>
+							待审查 <strong>{formatCount(charts.reviewRequiredCount)}</strong>
+						</span>
+						<span>
+							需修改 <strong>{formatCount(charts.changesRequestedCount)}</strong>
+						</span>
+						<span>
+							已批准 <strong>{formatCount(charts.approvedCount)}</strong>
+						</span>
+					</p>
 					<ChartRow>
 						<ChartBrick
 							title="近 8 周新建"
 							description="当前打开的 Issue 与 Pull Request 的创建时间"
 						>
-							<LineChart
+							<BarChart
 								data={charts.activity}
 								series={ISSUE_PR_SERIES}
 								ariaLabel="issues and pull requests opened by week"
@@ -232,12 +238,26 @@ export function InsightsPage() {
 			</SectionRule>
 			<SectionRule title="健康与活跃">
 				<div className="space-y-3">
-					<KpiRow>
-						<Kpi icon={HeartPulse} label="健康" value={formatCount(charts.strongCount)} />
-						<Kpi icon={Eye} label="观察" value={formatCount(charts.watchCount)} />
-						<Kpi icon={ShieldAlert} label="风险" value={formatCount(charts.riskyCount)} />
-						<Kpi icon={Clock} label="久未推送" value={formatCount(charts.staleCount)} />
-					</KpiRow>
+					<p className="giraffe-stat-inline">
+						<span>
+							健康 <strong>{formatCount(charts.strongCount)}</strong>
+						</span>
+						<span>
+							观察 <strong>{formatCount(charts.watchCount)}</strong>
+						</span>
+						<span>
+							风险 <strong>{formatCount(charts.riskyCount)}</strong>
+						</span>
+						<span>
+							90 天以上未推送 <strong>{formatCount(charts.staleCount)}</strong>
+						</span>
+					</p>
+					<ChartBrick
+						title="仓库健康地图"
+						description="每个方块是一个参与统计的仓库，风险在前。颜色表示健康状态，方块内是距最近推送天数；悬停查看触发的规则，点击打开仓库。"
+					>
+						<HealthMap tiles={tiles} />
+					</ChartBrick>
 					<ChartRow>
 						<ChartBrick title="距上次推送" description="以数据更新时间为基准，单位为天">
 							<BarChart
@@ -275,5 +295,34 @@ export function InsightsPage() {
 				</div>
 			</SectionRule>
 		</div>
+	);
+}
+
+const HEALTH_LABEL = { strong: "健康", watch: "观察", risky: "风险" } as const;
+function HealthMap({ tiles }: { tiles: ReturnType<typeof healthTiles> }) {
+	if (!tiles.length) return <ChartEmpty label="没有健康数据" />;
+	return (
+		<ul className="giraffe-health-map" aria-label="仓库健康地图">
+			{tiles.map((t, i) => {
+				const detail = `${HEALTH_LABEL[t.health]}，${t.days} 天前推送${t.reasons.length ? `，${t.reasons.join("，")}` : ""}`;
+				return (
+					<li
+						key={t.name}
+						data-health={t.health}
+						title={`${t.name} · ${detail}`}
+						style={{ animationDelay: `${Math.min(i, 40) * 12}ms` }}
+					>
+						<Link className="giraffe-health-tile" href={`/repos/${t.name}`}>
+							<span>{t.short}</span>
+							<small>
+								{t.days === 0 ? "今天" : `${t.days} 天`}
+								{t.reasons.length ? ` · ${t.reasons[0]}` : ""}
+							</small>
+							<span className="sr-only">{detail}</span>
+						</Link>
+					</li>
+				);
+			})}
+		</ul>
 	);
 }

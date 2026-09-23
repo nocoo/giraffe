@@ -11,7 +11,7 @@ import {
 	TableRow,
 } from "@nocoo/basalt/components/table";
 import { Bug, ShieldAlert } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CandyBadge } from "../components/layout/candy-badge";
 import {
 	ResultCount,
@@ -19,7 +19,9 @@ import {
 	TableScroll,
 } from "../components/layout/collection-chrome";
 import { Kpi, KpiRow } from "../components/layout/kpi";
+import { ActiveFilters, Breakdown, OverviewCard } from "../components/layout/overview-cards";
 import { TableSkeleton } from "../components/layout/page-skeleton";
+import { ShareBar } from "../components/layout/rank-bars";
 import { SnapshotPending } from "../components/layout/snapshot-pending";
 import { catchLoad } from "../lib/error-ui";
 import { formatCount, severityBadgeVariant, sourceBadgeVariant } from "../lib/format";
@@ -30,9 +32,34 @@ import {
 	loadAlerts,
 	visibleAlerts,
 } from "../viewmodels/alerts";
+import { alertsBoard, SEVERITIES } from "../viewmodels/boards";
+import { shortRepo } from "../viewmodels/overview";
+
+const NO_FILTERS = { severity: "", repo: "", source: "" };
+const SEVERITY_LABELS: Record<string, string> = {
+	critical: "严重",
+	high: "高",
+	medium: "中",
+	low: "低",
+	other: "其他",
+};
+const SEVERITY_COLORS: Record<string, string> = {
+	critical: "var(--color-basalt-destructive)",
+	high: "color-mix(in srgb,var(--color-basalt-destructive) 55%,var(--color-basalt-warning))",
+	medium: "var(--color-basalt-warning)",
+	low: "color-mix(in srgb,var(--color-basalt-warning) 40%,var(--color-basalt-border))",
+	other: "var(--color-basalt-muted-foreground)",
+};
 
 export function AlertsPage() {
 	const [snap, setSnap] = useState<AlertsSnapshot | { missing: true } | null>(null);
+	const [picked, setPicked] = useState(NO_FILTERS);
+	const pick = (key: keyof typeof NO_FILTERS) => (value: string) =>
+		setPicked((old) => ({ ...old, [key]: value }));
+	const board = useMemo(
+		() => (snap && !("missing" in snap) ? alertsBoard(visibleAlerts(snap), picked) : null),
+		[snap, picked],
+	);
 
 	useEffect(() => {
 		void loadAlerts()
@@ -91,10 +118,12 @@ export function AlertsPage() {
 		);
 	}
 
-	const items = visibleAlerts(snap);
+	if (!board) return null;
+	const items = board.rows;
+	const all = visibleAlerts(snap);
 
 	return (
-		<div className="space-y-8">
+		<div className="giraffe-page-motion space-y-6">
 			<PageHeader
 				title="安全告警"
 				description={
@@ -113,14 +142,90 @@ export function AlertsPage() {
 					value={formatCount(snap.code_scanning_open)}
 				/>
 			</KpiRow>
-			<SectionRule title="待处理告警" actions={<ResultCount count={items.length} />}>
+			{snap.truncated ? (
+				<p className="giraffe-coverage-note" role="note">
+					覆盖不完整：Dependabot 逐仓读取，Code scanning 只检查按名称排序的前 10
+					个仓库，其余仓库的安全状态未知。显示为 0 不代表所有仓库都没有告警。
+				</p>
+			) : null}
+			{all.length ? (
+				<>
+					<div className="giraffe-overview">
+						<OverviewCard title="严重程度" hint="按 GitHub 给出的级别分组，点击筛选下方列表。">
+							<ShareBar
+								label="告警严重程度"
+								legend={false}
+								parts={board.severity.map((sv) => ({
+									key: sv.key,
+									label: SEVERITY_LABELS[sv.key] ?? sv.key,
+									value: sv.value,
+									color: SEVERITY_COLORS[sv.key] ?? "var(--color-basalt-border)",
+								}))}
+							/>
+							<div className="mt-4">
+								<Breakdown
+									rows={SEVERITIES.map((k) => ({
+										name: k,
+										value: board.severity.find((sv) => sv.key === k)?.value ?? 0,
+										color: SEVERITY_COLORS[k] ?? "var(--color-basalt-border)",
+									}))}
+									max={Math.max(1, ...board.severity.map((sv) => sv.value))}
+									label="告警按严重程度"
+									active={picked.severity}
+									onSelect={pick("severity")}
+									format={(k) => SEVERITY_LABELS[k] ?? k}
+								/>
+							</div>
+						</OverviewCard>
+						<OverviewCard title="按仓库" hint="告警最多的仓库，点击筛选。">
+							<Breakdown
+								rows={board.repos.rows}
+								max={board.repos.max}
+								label="告警按仓库"
+								active={picked.repo}
+								onSelect={pick("repo")}
+								format={shortRepo}
+								color="var(--color-basalt-destructive)"
+							/>
+						</OverviewCard>
+						<OverviewCard
+							title="按来源"
+							hint="Dependabot 依赖漏洞与 Code scanning 代码扫描，点击筛选。"
+						>
+							<Breakdown
+								rows={board.sources.rows}
+								max={board.sources.max}
+								label="告警按来源"
+								active={picked.source}
+								onSelect={pick("source")}
+							/>
+						</OverviewCard>
+					</div>
+					<ActiveFilters
+						filters={picked}
+						labels={{ severity: "级别", repo: "仓库", source: "来源" }}
+						format={{ severity: (k) => SEVERITY_LABELS[k] ?? k, repo: shortRepo }}
+						onClear={(key) => setPicked((old) => (key ? { ...old, [key]: "" } : NO_FILTERS))}
+					/>
+				</>
+			) : null}
+			<SectionRule
+				title="待处理告警"
+				actions={<ResultCount count={items.length} total={all.length} />}
+			>
 				{items.length === 0 ? (
 					<LayerCard>
 						<LayerCard.Well>
 							<LayerCard.Empty
 								icon={<ShieldAlert />}
-								title="当前没有安全告警"
-								description="可见仓库的当前快照中没有待处理告警。"
+								title={all.length ? "没有符合筛选的告警" : "已检查的仓库没有安全告警"}
+								description={
+									all.length
+										? "清除筛选查看全部告警。"
+										: snap.truncated
+											? "仅代表已读取到的仓库；未覆盖仓库的状态未知。"
+											: "可见仓库的当前快照中没有待处理告警。"
+								}
 							/>
 						</LayerCard.Well>
 					</LayerCard>
