@@ -6,6 +6,7 @@ import {
 	type FactoryRepo,
 	type FactorySnapshot,
 	type FactoryStreamName,
+	type FactoryWindow,
 } from "../../lib/factory-types";
 import { apiGet } from "../lib/api";
 import { ApiError } from "../lib/errors";
@@ -133,17 +134,7 @@ export function factoryBoard(snapshot: FactorySnapshot, repos: FactoryRepo[]) {
 			if (status === "limited") coverage.limited++;
 		}
 	const midnight = Date.parse(new Date(end).toISOString().slice(0, 10));
-	const recent = days
-		.filter((d) => Date.parse(d.date) >= midnight - 7 * 86400000 && Date.parse(d.date) < midnight)
-		.reduce((n, d) => n + d.commits, 0);
-	const previous = days
-		.filter(
-			(d) =>
-				Date.parse(d.date) >= midnight - 14 * 86400000 &&
-				Date.parse(d.date) < midnight - 7 * 86400000,
-		)
-		.reduce((n, d) => n + d.commits, 0);
-	const completeCommits = repos.every((r) => r.coverage.commits.status === "complete");
+	const pulse = portfolioPulse(repos, snapshot.window, midnight, days);
 	const languageBytes = new Map<string, number>();
 	for (const r of repos)
 		for (const l of r.languages)
@@ -192,14 +183,7 @@ export function factoryBoard(snapshot: FactorySnapshot, repos: FactoryRepo[]) {
 			closedPrs: repos.reduce((n, r) => n + r.closedPrs, 0),
 			mergedPrs: repos.reduce((n, r) => n + r.mergedPrs, 0),
 		},
-		trend: {
-			recent,
-			previous,
-			change:
-				!snapshot.publication?.mixed && completeCommits && previous > 0
-					? (recent - previous) / previous
-					: null,
-		},
+		pulse,
 		ranking: [...repos].sort(
 			(a, b) => b.metrics.commits - a.metrics.commits || a.name.localeCompare(b.name),
 		),
@@ -233,6 +217,84 @@ export function factoryBoard(snapshot: FactorySnapshot, repos: FactoryRepo[]) {
 			return signals;
 		}),
 	};
+}
+const DAY_MS = 86_400_000;
+function portfolioPulse(
+	repos: FactoryRepo[],
+	fallback: FactoryWindow,
+	midnight: number,
+	days: {
+		date: string;
+		commits: number;
+		prMerged: number;
+		releases: number;
+	}[],
+) {
+	const since = midnight - 7 * DAY_MS;
+	const previousSince = midnight - 14 * DAY_MS;
+	const iso = (t: number) => new Date(t).toISOString().slice(0, 10);
+	const inRange = (date: string, from: number, to: number) => {
+		const t = Date.parse(date);
+		return t >= from && t < to;
+	};
+	const recentDays = days.filter((d) => inRange(d.date, since, midnight));
+	const previousDays = days.filter((d) => inRange(d.date, previousSince, since));
+	const lastCommit = new Map<string, string>();
+	const rows = repos.map((r) => {
+		let recent = 0;
+		let previous = 0;
+		for (const [date, value] of Object.entries(r.metrics.days)) {
+			if (inRange(date, since, midnight)) recent += value.commits;
+			else if (inRange(date, previousSince, since)) previous += value.commits;
+			if (value.commits && date > (lastCommit.get(r.name) ?? "")) lastCommit.set(r.name, date);
+		}
+		return { name: r.name, language: r.language, recent, previous };
+	});
+	const measured = rows.filter((_, i) => {
+		const repo = repos[i];
+		return repo !== undefined && hasFactoryMeasurement(repo, "commits");
+	});
+	const active = { week: 0, month: 0, dormant: 0, unknown: rows.length - measured.length };
+	for (const row of measured) {
+		const last = Date.parse(lastCommit.get(row.name) ?? "");
+		if (last >= since) active.week++;
+		else if (last >= midnight - 30 * DAY_MS) active.month++;
+		else active.dormant++;
+	}
+	return {
+		range: { since: iso(since), until: iso(midnight - DAY_MS) },
+		commits: {
+			recent: recentDays.reduce((n, d) => n + d.commits, 0),
+			previous: previousDays.reduce((n, d) => n + d.commits, 0),
+			// Whole days only: a window ending mid-day leaves that day's commits partial.
+			complete:
+				repos.length > 0 &&
+				repos.every(
+					(r) =>
+						r.coverage.commits.status === "complete" &&
+						Date.parse((r.observation?.window ?? fallback).since) <= previousSince &&
+						Date.parse((r.observation?.window ?? fallback).until) >= midnight,
+				),
+		},
+		prMerged: recentDays.reduce((n, d) => n + d.prMerged, 0),
+		releases: recentDays.reduce((n, d) => n + d.releases, 0),
+		active,
+		movers: measured
+			.filter((r) => r.recent > 0)
+			.sort((a, b) => b.recent - a.recent || a.name.localeCompare(b.name))
+			.slice(0, 6),
+		cooling: measured
+			.filter((r) => r.recent === 0 && r.previous > 0)
+			.sort((a, b) => b.previous - a.previous || a.name.localeCompare(b.name))
+			.slice(0, 6),
+		lastCommit,
+	};
+}
+export function activityAge(date: string | undefined, until: string): string {
+	if (!date) return "窗口内无提交";
+	const midnight = Date.parse(until.slice(0, 10));
+	const age = Math.round((midnight - Date.parse(date)) / DAY_MS);
+	return age <= 0 ? "今天" : age === 1 ? "昨天" : `${age} 天前`;
 }
 export function dependencyEdges(repos: FactoryRepo[]) {
 	const names = new Set(repos.map((r) => r.name));

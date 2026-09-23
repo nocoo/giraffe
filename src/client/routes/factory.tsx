@@ -9,7 +9,7 @@ import {
 	TableRow,
 } from "@nocoo/basalt/components/table";
 import { ArrowLeft, ArrowUpRight, GitBranch } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import {
 	FACTORY_STREAMS,
@@ -21,6 +21,7 @@ import { LanguageLabel } from "../components/layout/labels";
 import { SelectField } from "../components/layout/select-field";
 import { reportError } from "../lib/error-ui";
 import {
+	activityAge,
 	dependencyEdges,
 	type FactoryDetail,
 	factoryBoard,
@@ -52,6 +53,7 @@ import {
 	FactoryThroughput,
 	FactoryTreemap,
 } from "./factory-charts";
+import { FactoryPulse, FactorySkeleton, PulseDelta } from "./factory-pulse";
 import { FactoryRepoTimes } from "./factory-repo-times";
 import { FactoryRuns } from "./factory-runs";
 
@@ -150,11 +152,20 @@ export function FactoryPage() {
 		}
 	}, []);
 	const groups = useMemo(() => factoryGroups(snapshot?.repos ?? []), [snapshot]);
+	// Typing stays responsive; the board and charts follow at lower priority.
+	const deferredQuery = useDeferredValue(query);
 	const scope = useMemo(
-		() => filterFactoryRepos(snapshot?.repos ?? [], { language, topic, query, repo: selected }),
-		[snapshot, language, topic, query, selected],
+		() =>
+			filterFactoryRepos(snapshot?.repos ?? [], {
+				language,
+				topic,
+				query: deferredQuery,
+				repo: selected,
+			}),
+		[snapshot, language, topic, deferredQuery, selected],
 	);
 	const board = useMemo(() => (snapshot ? factoryBoard(snapshot, scope) : null), [snapshot, scope]);
+	const stale = deferredQuery !== query;
 	const edges = useMemo(() => dependencyEdges(snapshot?.repos ?? []), [snapshot]);
 	const visibleEdges = edges.filter(
 		(e) => !selected || e.source === selected || e.target === selected,
@@ -170,14 +181,7 @@ export function FactoryPage() {
 				snapshotError={error}
 				loading={loading}
 			/>
-			{loading && !snapshot ? (
-				<div role="status" className="factory-loading">
-					正在读取工厂快照…
-					<div />
-					<div />
-					<div />
-				</div>
-			) : null}
+			{loading && !snapshot ? <FactorySkeleton /> : null}
 			{!loading && !snapshot ? (
 				<FactoryPanel title="建立你的软件工厂视图" hint="使用当前 GitHub 账号">
 					<p className="py-8 text-sm text-basalt-muted-foreground">
@@ -188,7 +192,7 @@ export function FactoryPage() {
 				</FactoryPanel>
 			) : null}
 			{snapshot && board ? (
-				<>
+				<div className="factory-board" data-stale={stale || undefined}>
 					<div className="factory-toolbar">
 						<SelectField
 							label="语言群"
@@ -263,6 +267,12 @@ export function FactoryPage() {
 									}
 									subtitle={`${n(board.totals.allCommits)} 默认分支历史总量`}
 								>
+									{board.pulse.commits.complete ? (
+										<PulseDelta
+											recent={board.pulse.commits.recent}
+											previous={board.pulse.commits.previous}
+										/>
+									) : null}
 									<FactorySpark
 										values={board.days.map((d) =>
 											d.complete.commits || d.commits ? d.commits : null,
@@ -328,6 +338,13 @@ export function FactoryPage() {
 									</span>
 								</Kpi>
 							</KpiRow>
+							{selected ? null : (
+								<FactoryPulse
+									pulse={board.pulse}
+									repos={scope.length}
+									onSelect={(name) => drill(name, "commits")}
+								/>
+							)}
 							<div className="factory-chart-grid grid gap-3 xl:grid-cols-[1.15fr_1fr]">
 								<FactoryPanel
 									title={calendar === "commits" ? "提交日历" : "账号贡献日历"}
@@ -354,7 +371,7 @@ export function FactoryPage() {
 											{calendar === "commits"
 												? board.mixedWindows
 													? "混合窗口 · 各日覆盖见账本"
-													: `${board.trend.recent} / ${board.trend.previous} · 近/前 7 个完整日`
+													: `${n(board.pulse.commits.recent)} / ${n(board.pulse.commits.previous)} · 近/前 7 个完整日`
 												: snapshot.contribution
 													? `${n(snapshot.contribution.total)} 贡献 · ${n(snapshot.contribution.restricted)} 受限贡献`
 													: `${snapshot.contributionStatus === "pending" ? "未采集" : "不可用"}`}
@@ -617,8 +634,18 @@ export function FactoryPage() {
 														>
 															{r.name.split("/")[1]}
 														</Button>
-														<div className="text-xs text-basalt-muted-foreground">
-															<LanguageLabel name={r.language} /> {r.private ? "· private" : ""}
+														<div className="flex flex-wrap items-center gap-x-1.5 text-xs text-basalt-muted-foreground">
+															<LanguageLabel name={r.language} />
+															{r.private ? <span>· private</span> : null}
+															{hasFactoryMeasurement(r, "commits") ? (
+																<span>
+																	· 最后提交{" "}
+																	{activityAge(
+																		board.pulse.lastCommit.get(r.name),
+																		(r.observation?.window ?? snapshot.window).until,
+																	)}
+																</span>
+															) : null}
 														</div>
 													</TableCell>
 													<TableCell>
@@ -1038,7 +1065,7 @@ export function FactoryPage() {
 							</div>
 						</details>
 					</details>
-				</>
+				</div>
 			) : null}
 		</div>
 	);

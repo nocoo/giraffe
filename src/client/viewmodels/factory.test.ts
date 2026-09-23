@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { factoryFixture as ready } from "../../../tests/fixtures/factory-snapshot";
 import { FACTORY_STREAMS } from "../../lib/factory-types";
 import {
+	activityAge,
 	dependencyEdges,
 	eventPage,
 	factoryBoard,
@@ -136,7 +137,7 @@ describe("factory sampling signals", () => {
 			},
 		};
 		const b = factoryBoard(s, s.repos);
-		expect(b.trend).toEqual({ recent: 10, previous: 5, change: 1 });
+		expect(b.pulse.commits).toEqual({ recent: 10, previous: 5, complete: true });
 		expect(b.anomalies).toHaveLength(4);
 		expect(b.securityKnown).toBe(1);
 		const second = {
@@ -324,4 +325,80 @@ it("builds mixed-window calendars from observed windows, with unknown dates rath
 	expect(single.displayWindow.until).toBe("2026-08-01T00:00:00.000Z");
 	first.observation.window = { since: "2000-01-01T00:00:00Z", until: "2000-02-01T00:00:00Z" };
 	expect(factoryBoard(snap, [first, second]).days.length).toBeLessThanOrEqual(366);
+});
+
+function day(commits: number, extra: Partial<Record<"prMerged" | "releases", number>> = {}) {
+	return {
+		commits,
+		issueOpened: 0,
+		issueClosed: 0,
+		prOpened: 0,
+		prMerged: extra.prMerged ?? 0,
+		prClosed: 0,
+		ciSuccess: 0,
+		ciFailure: 0,
+		releases: extra.releases ?? 0,
+	};
+}
+
+it("summarizes the last seven complete UTC days as a portfolio pulse without inventing unknown activity", () => {
+	const s = ready();
+	const base = s.repos[0];
+	if (!base) throw new Error("fixture");
+	for (const stream of FACTORY_STREAMS) base.coverage[stream].status = "complete";
+	const hot = {
+		...structuredClone(base),
+		id: "hot",
+		name: "nocoo/hot",
+	};
+	hot.metrics.days = {
+		"2026-09-14": day(8, { prMerged: 2, releases: 1 }),
+		"2026-09-08": day(3),
+		"2026-09-15": day(50),
+	};
+	const cooling = {
+		...structuredClone(base),
+		id: "cool",
+		name: "nocoo/cool",
+	};
+	cooling.metrics.days = { "2026-09-05": day(6), "2026-08-01": day(9) };
+	const idle = { ...structuredClone(base), id: "idle", name: "nocoo/idle" };
+	idle.metrics.days = { "2026-07-01": day(2) };
+	const unknown = { ...structuredClone(base), id: "unknown", name: "nocoo/unknown" };
+	unknown.coverage.commits.status = "pending";
+	unknown.metrics.days = { "2026-09-14": day(4) };
+	s.repos = [hot, cooling, idle, unknown];
+	const pulse = factoryBoard(s, s.repos).pulse;
+	expect(pulse.range).toEqual({ since: "2026-09-08", until: "2026-09-14" });
+	expect(pulse.commits).toEqual({ recent: 15, previous: 6, complete: false });
+	expect(pulse.prMerged).toBe(2);
+	expect(pulse.releases).toBe(1);
+	expect(pulse.active).toEqual({ week: 1, month: 1, dormant: 1, unknown: 1 });
+	expect(pulse.movers.map((m) => [m.name, m.recent, m.previous])).toEqual([["nocoo/hot", 11, 0]]);
+	expect(pulse.cooling.map((m) => m.name)).toEqual(["nocoo/cool"]);
+	expect(pulse.lastCommit.get("nocoo/hot")).toBe("2026-09-15");
+	expect(pulse.lastCommit.get("nocoo/idle")).toBe("2026-07-01");
+	const complete = factoryBoard(s, [hot, cooling, idle]).pulse;
+	expect(complete.commits.complete).toBe(true);
+	cooling.observation = {
+		source: "run",
+		version: "v",
+		refreshedAt: "2026-09-14T22:00:00Z",
+		window: { since: "2026-06-17T00:00:00Z", until: "2026-09-14T22:00:00Z" },
+	};
+	expect(factoryBoard(s, [hot, cooling, idle]).pulse.commits.complete).toBe(false);
+	cooling.observation.window.until = "2026-09-15T00:00:00Z";
+	expect(factoryBoard(s, [hot, cooling, idle]).pulse.commits.complete).toBe(true);
+	cooling.observation.window.since = "2026-09-02T00:00:00Z";
+	expect(factoryBoard(s, [hot, cooling, idle]).pulse.commits.complete).toBe(false);
+	delete cooling.observation;
+	expect(complete.active).toEqual({ week: 1, month: 1, dormant: 1, unknown: 0 });
+	expect(factoryBoard(s, []).pulse).toMatchObject({ movers: [], commits: { complete: false } });
+});
+
+it("reads relative activity age from the snapshot clock, not the viewer clock", () => {
+	expect(activityAge("2026-09-15", "2026-09-15T22:00:00Z")).toBe("今天");
+	expect(activityAge("2026-09-14", "2026-09-15T22:00:00Z")).toBe("昨天");
+	expect(activityAge("2026-09-01", "2026-09-15T22:00:00Z")).toBe("14 天前");
+	expect(activityAge(undefined, "2026-09-15T22:00:00Z")).toBe("窗口内无提交");
 });
