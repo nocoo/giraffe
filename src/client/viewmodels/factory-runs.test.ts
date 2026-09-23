@@ -9,6 +9,8 @@ import {
 	factoryDataHealth,
 	formatRunDuration,
 	loadFactoryRuns,
+	publicationKey,
+	publishedReadNeeded,
 	runIssues,
 	runRepositoryRows,
 	runStages,
@@ -456,4 +458,22 @@ it("formats waits without rounding an hour into sixty extra minutes", () => {
 		"1 小时 0 分钟",
 		"1 小时 1 分钟",
 	]);
+});
+
+it("reads the published snapshot only when the shown one is not the current publication", () => {
+	const shown = factoryFixture();
+	shown.publication = { mixed: false, runId: "pub-1", publishedAt: shown.fetched_at };
+	const same = { account_id: shown.account_id, publication: "pub-1" };
+	expect(publishedReadNeeded(undefined, same, shown)).toBe(false);
+	expect(publishedReadNeeded(undefined, { ...same, publication: "pub-2" }, shown)).toBe(true);
+	expect(publishedReadNeeded(undefined, { ...same, account_id: "other" }, shown)).toBe(true);
+	expect(publishedReadNeeded(undefined, { ...same, publication: null }, shown)).toBe(false);
+	expect(publishedReadNeeded(undefined, same, null)).toBe(true);
+	expect(
+		publishedReadNeeded(
+			publicationKey({ ...same, publication: "pub-2" }),
+			{ ...same, publication: "pub-2" },
+			shown,
+		),
+	).toBe(false);
 });

@@ -35,6 +35,8 @@ import {
 	factoryDataHealth,
 	formatRunDuration,
 	loadFactoryRuns,
+	publicationKey,
+	publishedReadNeeded,
 	RUN_LABELS,
 	secondsUntil,
 	startFactoryRun,
@@ -71,7 +73,9 @@ export function FactoryRuns({
 	const historyRef = useRef("");
 	const [now, setNow] = useState(Date.now());
 	const offset = useRef(0);
-	const publication = useRef<string | null | undefined>(undefined);
+	const seenPublication = useRef<string | undefined>(undefined);
+	const shownRef = useRef({ snapshot, loading });
+	shownRef.current = { snapshot, loading };
 	const accountRef = useRef<string | null>(null);
 	const poll = useRef<ReturnType<typeof createRunPolling> | null>(null);
 	const onPublishedRef = useRef(onPublished);
@@ -90,13 +94,15 @@ export function FactoryRuns({
 				offset.current = Date.parse(state.serverNow) - Date.now();
 				setNow(Date.now() + offset.current);
 				setPollError("");
-				if (
-					accountRef.current !== state.account_id ||
-					(state.publication && publication.current !== state.publication)
-				)
-					void onPublishedRef
-						.current(state.account_id)
-						.catch((err) => setPollError(factoryError(err)));
+				// The page's own initial read is still in flight; compare on the next poll instead.
+				const shown = shownRef.current;
+				if (!shown.loading || shown.snapshot) {
+					if (publishedReadNeeded(seenPublication.current, state, shown.snapshot))
+						void onPublishedRef
+							.current(state.account_id)
+							.catch((err) => setPollError(factoryError(err)));
+					seenPublication.current = publicationKey(state);
+				}
 				if (accountRef.current !== state.account_id) {
 					setSelected([]);
 					setPriority({});
@@ -108,7 +114,6 @@ export function FactoryRuns({
 					setError("");
 				}
 				accountRef.current = state.account_id;
-				publication.current = state.publication;
 			},
 		});
 		const tick = setInterval(() => setNow(Date.now() + offset.current), 1000);

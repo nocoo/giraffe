@@ -449,3 +449,17 @@ function repositoryLabel(steps: FactoryRunStep[], status: StepStatus, runStatus:
 	if (runStatus === "paused" && steps.some((s) => s.startedAt && !s.finishedAt)) return "已暂停";
 	return status === "success" ? "刷新完成" : STEP_STATUS[status];
 }
+export const publicationKey = (state: { account_id: string; publication: string | null }) =>
+	`${state.account_id}:${state.publication ?? ""}`;
+/** Skips re-reading the large published snapshot when the page already shows that publication. */
+export function publishedReadNeeded(
+	seen: string | undefined,
+	state: { account_id: string; publication: string | null },
+	shown: FactorySnapshot | null,
+): boolean {
+	if (seen === publicationKey(state)) return false;
+	return !(
+		shown?.account_id === state.account_id &&
+		(state.publication === null || shown.publication?.runId === state.publication)
+	);
+}
