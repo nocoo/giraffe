@@ -2,6 +2,7 @@ import { aggregateFactory, emptyDay } from "../../lib/factory";
 import {
 	FACTORY_STREAMS,
 	type FactoryCoverage,
+	type FactoryDay,
 	type FactoryEvent,
 	type FactoryRepo,
 	type FactorySnapshot,
@@ -102,7 +103,7 @@ export function factoryBoard(snapshot: FactorySnapshot, repos: FactoryRepo[]) {
 	const mixedWindows = windows.some(
 		(w) => w.since !== windows[0]?.since || w.until !== windows[0]?.until,
 	);
-	const days = [];
+	const days: BoardDay[] = [];
 	for (let date = start; date < end; date += 86400_000) {
 		const day = new Date(date).toISOString().slice(0, 10);
 		const complete = Object.fromEntries(
@@ -134,7 +135,29 @@ export function factoryBoard(snapshot: FactorySnapshot, repos: FactoryRepo[]) {
 			if (status === "limited") coverage.limited++;
 		}
 	const midnight = Date.parse(new Date(end).toISOString().slice(0, 10));
-	const pulse = portfolioPulse(repos, snapshot.window, midnight, days);
+	const windowOf = (r: FactoryRepo) => r.observation?.window ?? snapshot.window;
+	// Periods end at the last UTC day every repository observed in full, so comparisons never mix a partial day.
+	const periodEnd = repos.length
+		? Math.min(...repos.map((r) => Date.parse(windowOf(r).until.slice(0, 10))))
+		: midnight;
+	const repoActivity = repos.map((r) => activityOf(r, periodEnd));
+	const series = addStock(days, repos);
+	const stockOn = (date: string, key: "openIssues" | "openPrs") =>
+		series.find((d) => d.date === date)?.[key] ?? null;
+	const periods = PERIODS.map((length) => {
+		const summary = periodSummary(repos, windowOf, periodEnd, length);
+		const before = isoDay(Date.parse(summary.since) - DAY_MS);
+		return {
+			...summary,
+			stock: {
+				openIssues: {
+					from: stockOn(before, "openIssues"),
+					to: stockOn(summary.until, "openIssues"),
+				},
+				openPrs: { from: stockOn(before, "openPrs"), to: stockOn(summary.until, "openPrs") },
+			},
+		};
+	});
 	const languageBytes = new Map<string, number>();
 	for (const r of repos)
 		for (const l of r.languages)
@@ -168,7 +191,7 @@ export function factoryBoard(snapshot: FactorySnapshot, repos: FactoryRepo[]) {
 		) as Record<FactoryStreamName, number>,
 		languages,
 		observed,
-		days,
+		days: series,
 		coverage,
 		securityKnown: repos.filter((r) => r.coverage.alerts.status === "complete").length,
 		totals: {
@@ -183,7 +206,9 @@ export function factoryBoard(snapshot: FactorySnapshot, repos: FactoryRepo[]) {
 			closedPrs: repos.reduce((n, r) => n + r.closedPrs, 0),
 			mergedPrs: repos.reduce((n, r) => n + r.mergedPrs, 0),
 		},
-		pulse,
+		periods,
+		repoActivity,
+		activity: activityBuckets(repoActivity, periodEnd),
 		ranking: [...repos].sort(
 			(a, b) => b.metrics.commits - a.metrics.commits || a.name.localeCompare(b.name),
 		),
@@ -219,76 +244,265 @@ export function factoryBoard(snapshot: FactorySnapshot, repos: FactoryRepo[]) {
 	};
 }
 const DAY_MS = 86_400_000;
-function portfolioPulse(
-	repos: FactoryRepo[],
-	fallback: FactoryWindow,
-	midnight: number,
-	days: {
-		date: string;
-		commits: number;
-		prMerged: number;
-		releases: number;
-	}[],
-) {
-	const since = midnight - 7 * DAY_MS;
-	const previousSince = midnight - 14 * DAY_MS;
-	const iso = (t: number) => new Date(t).toISOString().slice(0, 10);
-	const inRange = (date: string, from: number, to: number) => {
+export const PERIODS = [1, 7, 30] as const;
+export type Period = (typeof PERIODS)[number];
+type Flow = {
+	commits: number;
+	prOpened: number;
+	prMerged: number;
+	prClosed: number;
+	issueOpened: number;
+	issueClosed: number;
+	releases: number;
+	ciSuccess: number;
+	ciFailure: number;
+};
+const FLOW_KEYS = [
+	"commits",
+	"prOpened",
+	"prMerged",
+	"prClosed",
+	"issueOpened",
+	"issueClosed",
+	"releases",
+	"ciSuccess",
+	"ciFailure",
+] as const satisfies readonly (keyof Flow)[];
+const PERIOD_STREAMS = ["commits", "issues", "prs", "actions", "releases"] as const;
+const emptyFlow = (): Flow => Object.fromEntries(FLOW_KEYS.map((k) => [k, 0])) as Flow;
+const isoDay = (t: number) => new Date(t).toISOString().slice(0, 10);
+
+function sumFlow(days: Record<string, Flow>, from: number, to: number): Flow {
+	const flow = emptyFlow();
+	for (const [date, value] of Object.entries(days)) {
 		const t = Date.parse(date);
-		return t >= from && t < to;
-	};
-	const recentDays = days.filter((d) => inRange(d.date, since, midnight));
-	const previousDays = days.filter((d) => inRange(d.date, previousSince, since));
-	const lastCommit = new Map<string, string>();
-	const rows = repos.map((r) => {
-		let recent = 0;
-		let previous = 0;
-		for (const [date, value] of Object.entries(r.metrics.days)) {
-			if (inRange(date, since, midnight)) recent += value.commits;
-			else if (inRange(date, previousSince, since)) previous += value.commits;
-			if (value.commits && date > (lastCommit.get(r.name) ?? "")) lastCommit.set(r.name, date);
-		}
-		return { name: r.name, language: r.language, recent, previous };
-	});
-	const measured = rows.filter((_, i) => {
-		const repo = repos[i];
-		return repo !== undefined && hasFactoryMeasurement(repo, "commits");
-	});
-	const active = { week: 0, month: 0, dormant: 0, unknown: rows.length - measured.length };
-	for (const row of measured) {
-		const last = Date.parse(lastCommit.get(row.name) ?? "");
-		if (last >= since) active.week++;
-		else if (last >= midnight - 30 * DAY_MS) active.month++;
-		else active.dormant++;
+		if (t < from || t >= to) continue;
+		for (const k of FLOW_KEYS) flow[k] += value[k];
 	}
-	return {
-		range: { since: iso(since), until: iso(midnight - DAY_MS) },
-		commits: {
-			recent: recentDays.reduce((n, d) => n + d.commits, 0),
-			previous: previousDays.reduce((n, d) => n + d.commits, 0),
-			// Whole days only: a window ending mid-day leaves that day's commits partial.
-			complete:
-				repos.length > 0 &&
-				repos.every(
-					(r) =>
-						r.coverage.commits.status === "complete" &&
-						Date.parse((r.observation?.window ?? fallback).since) <= previousSince &&
-						Date.parse((r.observation?.window ?? fallback).until) >= midnight,
-				),
-		},
-		prMerged: recentDays.reduce((n, d) => n + d.prMerged, 0),
-		releases: recentDays.reduce((n, d) => n + d.releases, 0),
-		active,
-		movers: measured
-			.filter((r) => r.recent > 0)
-			.sort((a, b) => b.recent - a.recent || a.name.localeCompare(b.name))
-			.slice(0, 6),
-		cooling: measured
-			.filter((r) => r.recent === 0 && r.previous > 0)
-			.sort((a, b) => b.previous - a.previous || a.name.localeCompare(b.name))
-			.slice(0, 6),
-		lastCommit,
+	return flow;
+}
+
+function activityOf(r: FactoryRepo, midnight: number) {
+	let last: string | undefined;
+	for (const [date, value] of Object.entries(r.metrics.days))
+		if (value.commits && date < isoDay(midnight + DAY_MS) && date > (last ?? "")) last = date;
+	const known = {
+		commits: hasFactoryMeasurement(r, "commits"),
+		issues: r.coverage.issues.status === "complete",
+		prs: r.coverage.prs.status === "complete",
 	};
+	return {
+		name: r.name,
+		language: r.language,
+		private: r.private,
+		last,
+		periods: Object.fromEntries(
+			PERIODS.map((n) => [n, sumFlow(r.metrics.days, midnight - n * DAY_MS, midnight)]),
+		) as Record<Period, Flow>,
+		previous7: sumFlow(r.metrics.days, midnight - 14 * DAY_MS, midnight - 7 * DAY_MS).commits,
+		openIssues: r.openIssues,
+		openPrs: r.openPrs,
+		agedIssues: known.issues ? r.metrics.agedIssues : null,
+		agedPrs: known.prs ? r.metrics.agedPrs : null,
+		known,
+	};
+}
+export type RepoActivity = ReturnType<typeof activityOf>;
+
+function periodSummary(
+	repos: FactoryRepo[],
+	windowOf: (r: FactoryRepo) => FactoryWindow,
+	midnight: number,
+	length: Period,
+) {
+	const since = midnight - length * DAY_MS;
+	const previousSince = since - length * DAY_MS;
+	const covered = (from: number) =>
+		Object.fromEntries(
+			PERIOD_STREAMS.map((stream) => [
+				stream,
+				repos.length > 0 &&
+					repos.every(
+						(r) =>
+							r.coverage[stream].status === "complete" &&
+							Date.parse(windowOf(r).since) <= from &&
+							Date.parse(windowOf(r).until) >= midnight,
+					),
+			]),
+		) as Record<(typeof PERIOD_STREAMS)[number], boolean>;
+	const total = (from: number, to: number) => {
+		const flow = emptyFlow();
+		let active = 0;
+		for (const r of repos) {
+			const part = sumFlow(r.metrics.days, from, to);
+			for (const k of FLOW_KEYS) flow[k] += part[k];
+			if (part.commits) active++;
+		}
+		return { ...flow, active };
+	};
+	return {
+		days: length,
+		since: isoDay(since),
+		until: isoDay(midnight - DAY_MS),
+		current: total(since, midnight),
+		previous: total(previousSince, since),
+		complete: covered(since),
+		previousComplete: covered(previousSince),
+	};
+}
+export type PeriodSummary = ReturnType<typeof periodSummary> & {
+	stock: Record<"openIssues" | "openPrs", { from: number | null; to: number | null }>;
+};
+
+function activityBuckets(activity: RepoActivity[], midnight: number) {
+	const buckets = { week: 0, month: 0, dormant: 0, unknown: 0 };
+	for (const r of activity) {
+		if (!r.known.commits) buckets.unknown++;
+		else if (Date.parse(r.last ?? "") >= midnight - 7 * DAY_MS) buckets.week++;
+		else if (Date.parse(r.last ?? "") >= midnight - 30 * DAY_MS) buckets.month++;
+		else buckets.dormant++;
+	}
+	return buckets;
+}
+
+type BoardDay = FactoryDay & { date: string; complete: Record<FactoryStreamName, boolean> };
+/**
+ * Open backlog is only observed today. Walking backwards (open(d-1) = open(d) - opened(d) + closed(d))
+ * is exact only when every repository's event list is complete; a negative result proves missing
+ * events, so that day and every earlier day are withheld.
+ */
+function walkBack(days: BoardDay[], now: number | null, net: (d: BoardDay) => number) {
+	const out: (number | null)[] = new Array(days.length).fill(null);
+	let open = now;
+	for (let i = days.length - 1; i >= 0 && open !== null && open >= 0; i--) {
+		out[i] = open;
+		open -= net(days[i] as BoardDay);
+	}
+	return out;
+}
+
+function addStock(days: BoardDay[], repos: FactoryRepo[]) {
+	const exact = (stream: "issues" | "prs") =>
+		repos.length > 0 && repos.every((r) => r.coverage[stream].status === "complete");
+	const sum = (key: "openIssues" | "openPrs") => repos.reduce((n, r) => n + r[key], 0);
+	const openIssues = walkBack(
+		days,
+		exact("issues") ? sum("openIssues") : null,
+		(d) => d.issueOpened - d.issueClosed,
+	);
+	const openPrs = walkBack(
+		days,
+		exact("prs") ? sum("openPrs") : null,
+		(d) => d.prOpened - d.prMerged - d.prClosed,
+	);
+	const commitKnown = repos.length > 0 && repos.every((r) => hasFactoryMeasurement(r, "commits"));
+	const ciKnown = repos.length > 0 && repos.every((r) => r.coverage.actions.status === "complete");
+	const index = new Map(days.map((d, i) => [d.date, i]));
+	const commitDays = repos.map((r) =>
+		Object.entries(r.metrics.days)
+			.filter(([, v]) => v.commits > 0)
+			.map(([date]) => index.get(date))
+			.filter((i): i is number => i !== undefined)
+			.sort((a, b) => a - b),
+	);
+	let success = 0;
+	let failure = 0;
+	return days.map((d, i) => {
+		success += d.ciSuccess - (days[i - 7]?.ciSuccess ?? 0);
+		failure += d.ciFailure - (days[i - 7]?.ciFailure ?? 0);
+		const rolling = i >= 6;
+		return {
+			...d,
+			openIssues: openIssues[i] ?? null,
+			openPrs: openPrs[i] ?? null,
+			ciRate7: ciKnown && rolling && success + failure ? success / (success + failure) : null,
+			activeRepos7:
+				commitKnown && rolling
+					? commitDays.filter((list) => list.some((k) => k <= i && k > i - 7)).length
+					: null,
+		};
+	});
+}
+
+export function backlogRows(activity: RepoActivity[]) {
+	const rows = activity
+		.map((r) => ({
+			name: r.name,
+			language: r.language,
+			openIssues: r.openIssues,
+			openPrs: r.openPrs,
+			agedIssues: r.agedIssues,
+			agedPrs: r.agedPrs,
+			total: r.openIssues + r.openPrs,
+			done30: r.periods[30].issueClosed + r.periods[30].prMerged,
+		}))
+		.filter((r) => r.total > 0)
+		.sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+	return {
+		rows,
+		openIssues: rows.reduce((n, r) => n + r.openIssues, 0),
+		openPrs: rows.reduce((n, r) => n + r.openPrs, 0),
+		aged: rows.reduce((n, r) => n + (r.agedIssues ?? 0) + (r.agedPrs ?? 0), 0),
+		clear: activity.length - rows.length,
+		max: Math.max(1, ...rows.map((r) => r.total)),
+	};
+}
+
+function median(values: number[]): number {
+	if (!values.length) return 0;
+	const sorted = [...values].sort((a, b) => a - b);
+	const mid = Math.floor(sorted.length / 2);
+	const upper = sorted[mid] as number;
+	return sorted.length % 2 ? upper : ((sorted[mid - 1] as number) + upper) / 2;
+}
+/** Low activity with above-median backlog marks where work is accumulating. */
+export function activityQuadrant(activity: RepoActivity[]) {
+	const points = activity
+		.filter((r) => r.known.commits)
+		.map((r) => ({
+			name: r.name,
+			language: r.language,
+			commits: r.periods[30].commits,
+			backlog: r.openIssues + r.openPrs,
+			last: r.last,
+		}));
+	const medianCommits = median(points.map((p) => p.commits));
+	const medianBacklog = median(points.map((p) => p.backlog));
+	return {
+		points,
+		medianCommits,
+		medianBacklog,
+		stalled: points
+			.filter((p) => p.commits < medianCommits && p.backlog > medianBacklog)
+			.sort((a, b) => b.backlog - a.backlog),
+	};
+}
+
+export function periodChange(
+	current: number | null,
+	previous: number | null,
+	kind: "count" | "rate" | "delta" = "count",
+): { label: string; direction: "up" | "down" | "flat" } {
+	if (current === null || previous === null) return { label: "—", direction: "flat" };
+	// Net flows can cross zero, where a percentage is meaningless.
+	if (kind === "delta") {
+		const d = current - previous;
+		return d
+			? { label: `${d > 0 ? "+" : ""}${formatFactoryCount(d)}`, direction: d > 0 ? "up" : "down" }
+			: { label: "持平", direction: "flat" };
+	}
+	if (kind === "rate") {
+		const pp = (current - previous) * 100;
+		return {
+			label: `${pp >= 0 ? "+" : ""}${pp.toFixed(1)}pp`,
+			direction: pp > 0 ? "up" : pp < 0 ? "down" : "flat",
+		};
+	}
+	if (!previous)
+		return current ? { label: "新增", direction: "up" } : { label: "—", direction: "flat" };
+	if (current === previous) return { label: "持平", direction: "flat" };
+	const change = Math.round(((current - previous) / previous) * 100);
+	return { label: `${change > 0 ? "+" : ""}${change}%`, direction: change > 0 ? "up" : "down" };
 }
 export function activityAge(date: string | undefined, until: string): string {
 	if (!date) return "窗口内无提交";

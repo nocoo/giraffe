@@ -1,38 +1,17 @@
 import { Tooltip as BasaltTooltip, Button, TooltipContent, TooltipTrigger } from "@nocoo/basalt";
-import { AreaChart } from "@nocoo/basalt/charts/area";
-import {
-	ANIMATION_PROPS,
-	cartesianAxisProps,
-	chartTooltipProps,
-	GRID_PROPS,
-} from "@nocoo/basalt/charts/config";
+import { ANIMATION_PROPS, chartTooltipProps } from "@nocoo/basalt/charts/config";
 import { ChartFrame } from "@nocoo/basalt/charts/frame";
 import { heatmapColorScales } from "@nocoo/basalt/charts/heatmap-calendar";
 import { Sparkline } from "@nocoo/basalt/charts/sparkline";
-import { ChartTooltipContent } from "@nocoo/basalt/charts/tooltip";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { Text } from "@nocoo/basalt/components/text";
 import type { ReactNode } from "react";
-import {
-	CartesianGrid,
-	Scatter,
-	ScatterChart,
-	Tooltip,
-	Treemap,
-	XAxis,
-	YAxis,
-	ZAxis,
-} from "recharts";
+import { Tooltip, Treemap } from "recharts";
 import type { FactoryRepo } from "../../lib/factory-types";
 import { HelpTooltip } from "../components/layout/help-tooltip";
 import { categoryColor, chartColor } from "../lib/chart-theme";
-import {
-	type factoryBoard,
-	hasFactoryMeasurement,
-	formatFactoryCount as n,
-} from "../viewmodels/factory";
+import { formatFactoryCount as n } from "../viewmodels/factory";
 
-type Board = ReturnType<typeof factoryBoard>;
 export function FactoryPanel({
 	title,
 	hint,
@@ -210,103 +189,6 @@ export function FactoryTreemap({
 			>
 				<Tooltip {...chartTooltipProps({ formatter: (value) => `${n(value)} bytes` })} />
 			</Treemap>
-		</ChartFrame>
-	);
-}
-export function FactoryThroughput({ days }: { days: Board["days"] }) {
-	return (
-		<AreaChart
-			ariaLabel="交付吞吐"
-			className="factory-plot w-full"
-			showAxes
-			showLegend
-			stacked
-			xValueFormatter={(value) => String(value).slice(5)}
-			valueFormatter={n}
-			data={days.map((day) => ({
-				x: day.date,
-				prMerged: day.complete.prs || day.prMerged ? day.prMerged : null,
-				prClosed: day.complete.prs || day.prClosed ? day.prClosed : null,
-				releases: day.complete.releases || day.releases ? day.releases : null,
-			}))}
-			series={[
-				{ key: "prMerged", label: "合并 PR", color: chartColor(0) },
-				{ key: "prClosed", label: "未合并关闭", color: chartColor(1) },
-				{ key: "releases", label: "Release", color: chartColor(2) },
-			]}
-			summary={<span className="sr-only">每日已观测事件；未知值留空，完整数字见每日账本。</span>}
-		/>
-	);
-}
-export function FactoryScatter({
-	repos,
-	onSelect,
-}: {
-	repos: FactoryRepo[];
-	onSelect: (repo: string) => void;
-}) {
-	const data = repos
-		.filter((r) => hasFactoryMeasurement(r, "commits"))
-		.map((r) => ({
-			name: r.name,
-			commits: r.metrics.commits,
-			wip: r.openIssues + r.openPrs,
-			size: r.languageBytes,
-		}));
-	if (!data.length)
-		return <p className="factory-chart-empty">当前范围还没有可用的提交观测，未画成零。</p>;
-	return (
-		<ChartFrame
-			size="factory-plot w-full"
-			ariaLabel="仓库提交与开放工作"
-			summary={
-				<span className="sr-only">
-					横轴为窗口提交，纵轴为开放 Issue 和 PR。气泡大小参考语言字节；也可在下方仓库表选择仓库。
-				</span>
-			}
-		>
-			<ScatterChart margin={{ top: 20, right: 20, left: -18, bottom: 8 }}>
-				<CartesianGrid {...GRID_PROPS} />
-				<XAxis
-					type="number"
-					dataKey="commits"
-					name="窗口提交"
-					{...cartesianAxisProps()}
-					allowDecimals={false}
-				/>
-				<YAxis
-					type="number"
-					dataKey="wip"
-					name="开放 Issue + PR"
-					allowDecimals={false}
-					{...cartesianAxisProps()}
-				/>
-				<ZAxis type="number" dataKey="size" range={[32, 700]} name="语言 bytes" />
-				<Tooltip
-					{...chartTooltipProps()}
-					content={({ active, payload }) => (
-						<ChartTooltipContent
-							active={active}
-							payload={payload.map((item) => ({
-								name: String(item.name ?? ""),
-								value: typeof item.value === "number" ? item.value : String(item.value ?? "—"),
-								color: item.color ?? chartColor(0),
-							}))}
-							label={String(payload[0]?.payload?.name ?? "")}
-						/>
-					)}
-				/>
-				<Scatter
-					name="仓库"
-					data={data}
-					fill={chartColor(0)}
-					{...ANIMATION_PROPS}
-					onClick={(point) => {
-						const name = (point.payload as { name?: unknown } | undefined)?.name;
-						if (typeof name === "string") onSelect(name);
-					}}
-				/>
-			</ScatterChart>
 		</ChartFrame>
 	);
 }

@@ -1,4 +1,5 @@
 import { Button, Input, SegmentControl } from "@nocoo/basalt";
+import { SectionRule } from "@nocoo/basalt/components/section-rule";
 import { StatStrip } from "@nocoo/basalt/components/stat-strip";
 import {
 	Table,
@@ -9,7 +10,15 @@ import {
 	TableRow,
 } from "@nocoo/basalt/components/table";
 import { ArrowLeft, ArrowUpRight, GitBranch } from "lucide-react";
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import {
+	type CSSProperties,
+	useCallback,
+	useDeferredValue,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { Link, useSearchParams } from "react-router";
 import {
 	FACTORY_STREAMS,
@@ -19,6 +28,7 @@ import {
 import { Kpi, KpiRow } from "../components/layout/kpi";
 import { LanguageLabel } from "../components/layout/labels";
 import { SelectField } from "../components/layout/select-field";
+import { FLOW_COLORS } from "../lib/chart-theme";
 import { reportError } from "../lib/error-ui";
 import {
 	activityAge,
@@ -45,17 +55,24 @@ import {
 	STREAM_LABELS,
 	safeGithubUrl,
 } from "../viewmodels/factory";
-import {
-	FactoryHeatmap,
-	FactoryPanel,
-	FactoryScatter,
-	FactorySpark,
-	FactoryThroughput,
-	FactoryTreemap,
-} from "./factory-charts";
-import { FactoryPulse, FactorySkeleton, PulseDelta } from "./factory-pulse";
+import { FactoryHeatmap, FactoryPanel, FactorySpark, FactoryTreemap } from "./factory-charts";
 import { FactoryRepoTimes } from "./factory-repo-times";
 import { FactoryRuns } from "./factory-runs";
+import { ActivityBar, FactorySkeleton } from "./factory-skeleton";
+import {
+	ActivityQuadrant,
+	BacklogPanel,
+	CommitBreadthChart,
+	DeliveryChart,
+	FlowStockChart,
+	PeriodStrip,
+	RepoPeriodMatrix,
+} from "./factory-story";
+
+const FLOW_STYLE = {
+	"--factory-issue": FLOW_COLORS.opened,
+	"--factory-pr": FLOW_COLORS.release,
+} as CSSProperties;
 
 export function FactoryPage() {
 	const [snapshot, setSnapshot] = useState<FactorySnapshot | null>(null);
@@ -81,6 +98,7 @@ export function FactoryPage() {
 		? (streamRaw as FactoryStreamName)
 		: "prs";
 	const page = Math.max(1, Math.min(50, Number(params.get("page")) || 1));
+	const period = ([1, 7, 30] as const).find((p) => String(p) === params.get("period")) ?? 7;
 	const update = useCallback(
 		(key: string, value: string) => {
 			setParams((old) => factoryParams(old, key, value));
@@ -173,7 +191,7 @@ export function FactoryPage() {
 	const repo = scope[0];
 	const ranking = factoryRepoPage(board?.ranking ?? [], repoPage);
 	return (
-		<div className="factory space-y-4">
+		<div className="factory space-y-4" style={FLOW_STYLE}>
 			<FactoryRuns
 				snapshot={snapshot}
 				onPublished={readPublished}
@@ -254,354 +272,406 @@ export function FactoryPage() {
 						</div>
 					) : (
 						<>
-							<KpiRow>
-								<Kpi
-									label={board.mixedWindows ? "各仓观测提交" : "窗口提交"}
-									value={
-										board.observed.commits
-											? formatObservedCount(
-													board.aggregate.commits,
-													board.streamComplete.commits === scope.length,
-												)
-											: "—"
-									}
-									subtitle={`${n(board.totals.allCommits)} 默认分支历史总量`}
-								>
-									{board.pulse.commits.complete ? (
-										<PulseDelta
-											recent={board.pulse.commits.recent}
-											previous={board.pulse.commits.previous}
-										/>
-									) : null}
-									<FactorySpark
-										values={board.days.map((d) =>
-											d.complete.commits || d.commits ? d.commits : null,
-										)}
-										label="窗口内每日默认分支提交"
-									/>
-								</Kpi>
-								<Kpi
-									label="在制工作 · 各仓观测时点"
-									value={`${n(board.totals.openIssues)} / ${n(board.totals.openPrs)}`}
-									subtitle="Open issue / Open PR"
-								>
-									<span className="text-xs text-basalt-muted-foreground">
-										{n(board.aggregate.agedIssues + board.aggregate.agedPrs)} 个长龄信号
-									</span>
-								</Kpi>
-								<Kpi
-									label={board.mixedWindows ? "各仓观测合并 PR" : "窗口合并 PR"}
-									value={
-										board.observed.prs
-											? formatObservedCount(
-													board.aggregate.prMerged,
-													board.streamComplete.prs === scope.length,
-												)
-											: "—"
-									}
-									subtitle={`P50 ${formatHours(board.aggregate.cycleP50)} · P90 ${formatHours(board.aggregate.cycleP90)}`}
-								>
-									<FactorySpark
-										values={board.days.map((d) =>
-											d.complete.prs || d.prMerged ? d.prMerged : null,
-										)}
-										label="窗口内每日合并 PR"
-									/>
-								</Kpi>
-								<Kpi
-									label="CI 观测成功率"
-									value={board.observed.actions ? formatRate(board.aggregate.ciRate) : "—"}
-									subtitle={
-										board.observed.actions
-											? `${n(board.aggregate.ciSuccess)} 成功 / ${n(board.aggregate.ciFailure)} 失败 · 完整 ${board.streamComplete.actions}/${scope.length} 仓`
-											: `尚未采集 · 完整 ${board.streamComplete.actions}/${scope.length} 仓`
-									}
-								>
-									<span className="text-xs text-basalt-muted-foreground">
-										{n(board.aggregate.ciOther)} 其他 · {board.aggregate.ciPending} 进行中
-									</span>
-								</Kpi>
-								<Kpi
-									label="窗口发布"
-									value={
-										board.observed.releases
-											? formatObservedCount(
-													board.aggregate.releases,
-													board.streamComplete.releases === scope.length,
-												)
-											: "—"
-									}
-									subtitle={`${board.totals.repos} 仓库 · ${board.totals.private} 私有`}
-								>
-									<span className="text-xs text-basalt-muted-foreground">
-										{(board.totals.sizeKiB / 1048576).toFixed(2)} GiB Git 存储
-									</span>
-								</Kpi>
-							</KpiRow>
-							{selected ? null : (
-								<FactoryPulse
-									pulse={board.pulse}
-									repos={scope.length}
-									onSelect={(name) => drill(name, "commits")}
+							<PeriodStrip
+								periods={board.periods}
+								period={period}
+								onPeriod={(value) => update("period", value === 7 ? "" : String(value))}
+								totals={board.totals}
+								activeRepos={board.activity.week}
+							/>
+							<section className="factory-section" aria-labelledby="factory-change-title">
+								<SectionRule
+									id="factory-change-title"
+									title="变化 · 最近 90 天"
+									hint="左轴是每日流量（柱），右轴是结果（折线）。Open 存量由当前数量按每日新开与完成倒推；事件不完整时不画折线。"
 								/>
-							)}
-							<div className="factory-chart-grid grid gap-3 xl:grid-cols-[1.15fr_1fr]">
-								<FactoryPanel
-									title={calendar === "commits" ? "提交日历" : "账号贡献日历"}
-									hint={
-										calendar === "commits"
-											? "按提交时间（UTC）统计当前筛选的仓库。各仓库更新时间不同时，显示它们的日期并集，最多一年；斜纹表示未完整获取，不是零提交。"
-											: "账号贡献无法按仓库排除，已停止展示。请使用参与统计仓库的提交日历。"
-									}
-								>
-									<div className="mb-3 flex items-center justify-between gap-2">
-										<SegmentControl
-											legend="日历来源"
-											value={calendar}
-											options={[
-												{ value: "commits", label: "仓库提交" },
-												{ value: "contributions", label: "账号贡献", disabled: true },
-											]}
-											onValueChange={(value) => {
-												setCalendar(value as typeof calendar);
-												setDay("");
-											}}
-										/>
-										<span className="text-xs text-basalt-muted-foreground">
-											{calendar === "commits"
-												? board.mixedWindows
-													? "混合窗口 · 各日覆盖见账本"
-													: `${n(board.pulse.commits.recent)} / ${n(board.pulse.commits.previous)} · 近/前 7 个完整日`
-												: snapshot.contribution
-													? `${n(snapshot.contribution.total)} 贡献 · ${n(snapshot.contribution.restricted)} 受限贡献`
-													: `${snapshot.contributionStatus === "pending" ? "未采集" : "不可用"}`}
-										</span>
-									</div>
-									{calendar === "contributions" &&
-									snapshot.contributionObservation &&
-									snapshot.contributionStatus !== "complete" ? (
-										<p className="mb-2 text-xs text-basalt-muted-foreground">
-											本次未能更新，显示上次获取的日历。
-										</p>
-									) : null}
-									{(
-										calendar === "commits"
-											? board.observed.commits
-											: snapshot.contribution !== null
-									) ? (
-										<FactoryHeatmap
-											days={
-												calendar === "commits"
-													? board.days.map((d) => ({
-															date: d.date,
-															count: d.commits,
-															known: d.complete.commits,
-														}))
-													: (snapshot.contribution?.days ?? [])
-											}
-											selected={day}
-											onSelect={setDay}
-										/>
-									) : (
-										<p className="factory-chart-empty">当前范围的日历数据尚不可用。</p>
-									)}
-									{day ? (
-										<p className="mt-3 text-xs" role="status">
-											{day} UTC ·{" "}
-											{calendar === "commits"
-												? `${board.days.find((d) => d.date === day)?.commits ?? 0} 提交；已高亮每日账本；明细日期筛选独立。`
-												: `${snapshot.contribution?.days.find((d) => d.date === day)?.count ?? 0} 账号贡献。`}
-											<a
-												className="factory-link ml-2"
-												href={
-													calendar === "commits"
-														? "#factory-ledger"
-														: `https://github.com/${snapshot.owner}?tab=overview&from=${day}&to=${day}`
-												}
-											>
-												查看来源 ↗
-											</a>
-										</p>
-									) : null}
-								</FactoryPanel>
-								<FactoryPanel
-									title="交付吞吐"
-									hint="统计每天合并的 PR、未合并就关闭的 PR 和发布版本。未完整获取的日期只显示已知数量，没有数据时留空。事件类别相加，不代表唯一工作项。"
-								>
-									{board.observed.prs || board.observed.releases ? (
-										<FactoryThroughput days={board.days} />
-									) : (
-										<p className="factory-chart-empty">交付资源尚未采集。</p>
-									)}
-								</FactoryPanel>
-							</div>
-							<div className="factory-chart-grid grid gap-3 xl:grid-cols-3">
-								<FactoryPanel
-									title="仓库规模地图"
-									hint="面积按 GitHub 统计的语言字节数分配，不是代码行数。点击色块查看仓库；零字节仓库仍在下方表格中。"
-								>
-									<FactoryTreemap repos={scope} onSelect={(name) => drill(name, "commits")} />
-									<div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-basalt-muted-foreground">
-										{board.languages.slice(0, 6).map((l) => (
-											<span key={l.name} title={`${n(l.bytes)} bytes`}>
-												<LanguageLabel name={l.name} /> <strong>{formatRate(l.share)}</strong>
-											</span>
-										))}
-									</div>
-									<details className="factory-methods mt-2">
-										<summary>全部语言字节</summary>
-										{board.languages.map((l) => (
-											<p key={l.name}>
-												<LanguageLabel name={l.name} /> · {n(l.bytes)} bytes · {formatRate(l.share)}
-											</p>
-										))}
-										<p>
-											语言列表覆盖 {scope.filter((r) => r.languagesComplete).length}/{scope.length}{" "}
-											仓库。比例以返回的语言字节之和计算。
-										</p>
-									</details>
-									<p className="mt-2 text-xs text-basalt-muted-foreground">
-										{(board.totals.languageBytes / 1e6).toFixed(2)} MB 语言字节 · Git 磁盘{" "}
-										{n(board.totals.sizeKiB)} KiB
-									</p>
-								</FactoryPanel>
-								<FactoryPanel
-									title="提交与待办"
-									hint="每个气泡是一座仓库，大小代表语言字节数。只展示已获取提交数据的仓库；点击气泡或使用下方仓库表查看详情。"
-								>
-									<FactoryScatter repos={scope} onSelect={drill} />
-									<p className="text-center text-xs text-basalt-muted-foreground">
-										横轴：提交 · 纵轴：待处理 Issue / PR
-									</p>
-								</FactoryPanel>
-								<FactoryPanel
-									title="工作流量账"
-									hint="分别统计 Issue 与 PR 的创建、待处理和完成数量，不推断两者的关联。「期间」指当前统计窗口，Issue 按最后关闭时间计数。各阶段不一定是同一批工作项。"
-								>
-									<div className="factory-flow">
-										<FlowRow
-											label="Issues"
-											values={[
-												board.observed.issues ? board.aggregate.issueOpened : null,
-												board.totals.openIssues,
-												board.observed.issues ? board.aggregate.issueClosed : null,
-											]}
-											labels={["期间创建", "当前开放", "期间关闭"]}
-										/>
-										<FlowRow
-											label="Pull requests"
-											values={[
-												board.observed.prs ? board.aggregate.prOpened : null,
-												board.totals.openPrs,
-												board.observed.prs ? board.aggregate.prMerged : null,
-											]}
-											labels={["期间创建", "当前开放", "期间合并"]}
-										/>
-									</div>
-									<p className="mt-3 text-xs text-basalt-muted-foreground">
-										另有 {n(board.aggregate.prClosed)} 个 PR 未合并关闭
-									</p>
-									<div className="mt-3 border-t border-basalt-border pt-3 text-xs">
-										历史已关闭 Issue <strong>{n(board.totals.closedIssues)}</strong> · 历史已合并 PR{" "}
-										<strong>{n(board.totals.mergedPrs)}</strong>
-									</div>
-								</FactoryPanel>
-							</div>
-							<div className="grid gap-3 xl:grid-cols-[1.3fr_1fr]">
-								<FactoryPanel
-									title="需要检查的信号"
-									hint="PR 超过 7 天、Issue 超过 14 天仍未关闭，或 CI 至少运行 10 次且失败率不低于 20% 时提醒检查。这些信号不代表已经确认有问题。"
-								>
-									<div className="factory-signal-list">
-										{board.anomalies.length ? (
-											board.anomalies.map((a) => (
-												<Button
-													variant="ghost"
-													type="button"
-													key={`${a.repo}:${a.stream}`}
-													onClick={() => drill(a.repo, a.stream)}
-												>
-													<span>{a.repo.split("/")[1]}</span>
-													<span>{a.label}</span>
-													<ArrowUpRight className="size-3.5" />
-												</Button>
-											))
+								<div className="factory-chart-grid grid gap-3 xl:grid-cols-2">
+									<FactoryPanel
+										title="提交产出与覆盖面"
+										hint="柱：每日默认分支提交（左轴）。线：截至当日 7 天内有提交的仓库数（右轴），看产出是集中在少数仓库还是全面推进。"
+									>
+										{board.observed.commits ? (
+											<CommitBreadthChart days={board.days} />
 										) : (
-											<p className="py-3 text-xs text-basalt-muted-foreground">
-												已观察资源未触发长龄/CI 失败率规则。
-											</p>
+											<p className="factory-chart-empty">提交尚未采集。</p>
 										)}
-									</div>
-									<p className="mt-3 text-xs text-basalt-muted-foreground">
-										安全告警已读取 {board.securityKnown}/{scope.length} 仓库
-										{board.securityKnown < scope.length ? " · 其余安全状态未知" : ""}
-									</p>
+									</FactoryPanel>
+									<FactoryPanel
+										title="交付吞吐"
+										hint="柱：每天合并的 PR 与发布的 Release（左轴）。线：截至当日 7 天 CI 成功率（右轴）。未完整获取的日期只显示已知数量，没有数据时留空。事件类别相加，不代表唯一工作项。"
+									>
+										{board.observed.prs || board.observed.releases ? (
+											<DeliveryChart days={board.days} />
+										) : (
+											<p className="factory-chart-empty">交付资源尚未采集。</p>
+										)}
+									</FactoryPanel>
+								</div>
+								<div className="factory-chart-grid grid gap-3 xl:grid-cols-2">
+									<FactoryPanel
+										title="PR 流量与存量"
+										hint="向上柱为每日新开 PR，向下为合并与未合并关闭（左轴）；阶梯线为日终 open PR 数（右轴）。"
+									>
+										{board.observed.prs ? (
+											<FlowStockChart days={board.days} kind="prs" />
+										) : (
+											<p className="factory-chart-empty">PR 尚未采集。</p>
+										)}
+									</FactoryPanel>
+									<FactoryPanel
+										title="Issue 流量与存量"
+										hint="向上柱为每日新开 Issue，向下为关闭（左轴）；阶梯线为日终 open Issue 数（右轴）。线上升说明积压在增加。"
+									>
+										{board.observed.issues ? (
+											<FlowStockChart days={board.days} kind="issues" />
+										) : (
+											<p className="factory-chart-empty">Issue 尚未采集。</p>
+										)}
+									</FactoryPanel>
+								</div>
+								<FactoryPanel
+									title="仓库变化矩阵"
+									hint={`每行一个仓库。提交列为最近 1、7、30 个完整 UTC 日，颜色深浅按列内最大值；周环比对比前 7 天。PR 与 Issue 列使用上方选中的 ${period} 天区间，积压为当前 open 数。`}
+									flush
+								>
+									<RepoPeriodMatrix
+										activity={board.repoActivity}
+										period={period}
+										until={(name) =>
+											(scope.find((r) => r.name === name)?.observation?.window ?? snapshot.window)
+												.until
+										}
+										onSelect={(name) => drill(name, "commits")}
+									/>
 								</FactoryPanel>
-								<FactoryPanel title="依赖与维护" hint="固定 SHA 的直接引用证据">
-									<div className="flex flex-wrap gap-4 text-xs">
-										<span>
-											机器人开放 PR <strong>{board.aggregate.botOpen}</strong>
-										</span>
-										<span>
-											窗口机器人合并 <strong>{board.aggregate.botMerged}</strong>
-										</span>
-										<span>
-											观测引用边 <strong>{visibleEdges.length}</strong>
-										</span>
-									</div>
-									<div className="factory-network mt-3">
-										{visibleEdges.slice(0, 8).map((e) => (
-											<div key={`${e.source}:${e.target}`}>
-												<Button
-													variant="ghost"
-													type="button"
-													onClick={() => drill(e.source, "dependencies")}
-												>
-													{e.source.split("/")[1]}
-												</Button>
-												<span className="factory-network-line" aria-hidden="true">
-													→
-												</span>
-												<Button
-													variant="ghost"
-													type="button"
-													onClick={() => drill(e.target, "dependencies")}
-												>
-													{e.target.split("/")[1]}
-												</Button>
-												<a
-													href={safeGithubUrl(e.url)}
-													target="_blank"
-													rel="noreferrer"
-													title="打开引用文件"
-												>
-													{e.references} 引用 ↗
-												</a>
-											</div>
-										))}
-										{!visibleEdges.length ? (
-											<p className="py-3 text-xs text-basalt-muted-foreground">
-												当前没有可解析为纳入仓库的直接引用。
+							</section>
+							<section className="factory-section" aria-labelledby="factory-stock-title">
+								<SectionRule
+									id="factory-stock-title"
+									title="存量 · 我名下全部仓库"
+									hint="当前时点的积累：规模、历史总量与未完成的工作。"
+								/>
+								<KpiRow>
+									<Kpi
+										label="仓库"
+										value={n(board.totals.repos)}
+										subtitle={`${board.totals.private} 私有 · ${(board.totals.sizeKiB / 1048576).toFixed(2)} GiB Git 存储`}
+									>
+										<ActivityBar activity={board.activity} />
+									</Kpi>
+									<Kpi
+										label="Open Issue / PR"
+										value={`${n(board.totals.openIssues)} / ${n(board.totals.openPrs)}`}
+										subtitle={`${n(board.aggregate.agedIssues + board.aggregate.agedPrs)} 个长龄 · Issue ≥14 天、PR ≥7 天`}
+									>
+										<FactorySpark
+											values={board.days.map((d) => d.openIssues)}
+											label="窗口内每日 open Issue"
+										/>
+									</Kpi>
+									<Kpi
+										label="历史提交"
+										value={n(board.totals.allCommits)}
+										subtitle={`窗口内 ${
+											board.observed.commits
+												? formatObservedCount(
+														board.aggregate.commits,
+														board.streamComplete.commits === scope.length,
+													)
+												: "—"
+										} · 默认分支`}
+									>
+										<FactorySpark
+											values={board.days.map((d) =>
+												d.complete.commits || d.commits ? d.commits : null,
+											)}
+											label="窗口内每日默认分支提交"
+										/>
+									</Kpi>
+									<Kpi
+										label="已合并 PR · 历史"
+										value={n(board.totals.mergedPrs)}
+										subtitle={`窗口内 ${
+											board.observed.prs
+												? formatObservedCount(
+														board.aggregate.prMerged,
+														board.streamComplete.prs === scope.length,
+													)
+												: "—"
+										} · P50 ${formatHours(board.aggregate.cycleP50)} · P90 ${formatHours(board.aggregate.cycleP90)}`}
+									>
+										<FactorySpark
+											values={board.days.map((d) =>
+												d.complete.prs || d.prMerged ? d.prMerged : null,
+											)}
+											label="窗口内每日合并 PR"
+										/>
+									</Kpi>
+									<Kpi
+										label="CI 观测成功率"
+										value={board.observed.actions ? formatRate(board.aggregate.ciRate) : "—"}
+										subtitle={
+											board.observed.actions
+												? `${n(board.aggregate.ciSuccess)} 成功 / ${n(board.aggregate.ciFailure)} 失败 · 窗口发布 ${n(board.aggregate.releases)}`
+												: `尚未采集 · 完整 ${board.streamComplete.actions}/${scope.length} 仓`
+										}
+									>
+										<FactorySpark
+											values={board.days.map((d) => d.ciRate7)}
+											label="窗口内 CI 7 日成功率"
+										/>
+									</Kpi>
+								</KpiRow>
+								<div className="factory-chart-grid grid gap-3 xl:grid-cols-[1.15fr_1fr]">
+									<FactoryPanel
+										title={calendar === "commits" ? "提交日历" : "账号贡献日历"}
+										hint={
+											calendar === "commits"
+												? "按提交时间（UTC）统计当前筛选的仓库。各仓库更新时间不同时，显示它们的日期并集，最多一年；斜纹表示未完整获取，不是零提交。"
+												: "账号贡献无法按仓库排除，已停止展示。请使用参与统计仓库的提交日历。"
+										}
+									>
+										<div className="mb-3 flex items-center justify-between gap-2">
+											<SegmentControl
+												legend="日历来源"
+												value={calendar}
+												options={[
+													{ value: "commits", label: "仓库提交" },
+													{ value: "contributions", label: "账号贡献", disabled: true },
+												]}
+												onValueChange={(value) => {
+													setCalendar(value as typeof calendar);
+													setDay("");
+												}}
+											/>
+											<span className="text-xs text-basalt-muted-foreground">
+												{calendar === "commits"
+													? board.mixedWindows
+														? "混合窗口 · 各日覆盖见账本"
+														: `${n(board.periods[1]?.current.commits ?? 0)} / ${n(board.periods[1]?.previous.commits ?? 0)} · 近/前 7 个完整日`
+													: snapshot.contribution
+														? `${n(snapshot.contribution.total)} 贡献 · ${n(snapshot.contribution.restricted)} 受限贡献`
+														: `${snapshot.contributionStatus === "pending" ? "未采集" : "不可用"}`}
+											</span>
+										</div>
+										{calendar === "contributions" &&
+										snapshot.contributionObservation &&
+										snapshot.contributionStatus !== "complete" ? (
+											<p className="mb-2 text-xs text-basalt-muted-foreground">
+												本次未能更新，显示上次获取的日历。
 											</p>
 										) : null}
-									</div>
-									<details className="factory-methods mt-2">
-										<summary>全部引用与范围</summary>
-										<p>
-											仅根 package.json 声明与 ci.yml / release.yml 中的 literal
-											uses；不含传递依赖、monorepo 子包或动态引用。全局引用图不随语言/topic
-											筛选缩减。
-										</p>
-										{visibleEdges.map((e) => (
-											<p key={`${e.source}:${e.target}`}>
-												<a href={safeGithubUrl(e.url)} target="_blank" rel="noreferrer">
-													{e.source} → {e.target} · {e.references} 引用 ↗
+										{(
+											calendar === "commits"
+												? board.observed.commits
+												: snapshot.contribution !== null
+										) ? (
+											<FactoryHeatmap
+												days={
+													calendar === "commits"
+														? board.days.map((d) => ({
+																date: d.date,
+																count: d.commits,
+																known: d.complete.commits,
+															}))
+														: (snapshot.contribution?.days ?? [])
+												}
+												selected={day}
+												onSelect={setDay}
+											/>
+										) : (
+											<p className="factory-chart-empty">当前范围的日历数据尚不可用。</p>
+										)}
+										{day ? (
+											<p className="mt-3 text-xs" role="status">
+												{day} UTC ·{" "}
+												{calendar === "commits"
+													? `${board.days.find((d) => d.date === day)?.commits ?? 0} 提交；已高亮每日账本；明细日期筛选独立。`
+													: `${snapshot.contribution?.days.find((d) => d.date === day)?.count ?? 0} 账号贡献。`}
+												<a
+													className="factory-link ml-2"
+													href={
+														calendar === "commits"
+															? "#factory-ledger"
+															: `https://github.com/${snapshot.owner}?tab=overview&from=${day}&to=${day}`
+													}
+												>
+													查看来源 ↗
 												</a>
 											</p>
-										))}
-									</details>
-								</FactoryPanel>
-							</div>
+										) : null}
+									</FactoryPanel>
+									<BacklogPanel activity={board.repoActivity} onSelect={drill} />
+								</div>
+								<div className="factory-chart-grid grid gap-3 xl:grid-cols-3">
+									<FactoryPanel
+										title="仓库规模地图"
+										hint="面积按 GitHub 统计的语言字节数分配，不是代码行数。点击色块查看仓库；零字节仓库仍在下方表格中。"
+									>
+										<FactoryTreemap repos={scope} onSelect={(name) => drill(name, "commits")} />
+										<div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-basalt-muted-foreground">
+											{board.languages.slice(0, 6).map((l) => (
+												<span key={l.name} title={`${n(l.bytes)} bytes`}>
+													<LanguageLabel name={l.name} /> <strong>{formatRate(l.share)}</strong>
+												</span>
+											))}
+										</div>
+										<details className="factory-methods mt-2">
+											<summary>全部语言字节</summary>
+											{board.languages.map((l) => (
+												<p key={l.name}>
+													<LanguageLabel name={l.name} /> · {n(l.bytes)} bytes ·{" "}
+													{formatRate(l.share)}
+												</p>
+											))}
+											<p>
+												语言列表覆盖 {scope.filter((r) => r.languagesComplete).length}/
+												{scope.length} 仓库。比例以返回的语言字节之和计算。
+											</p>
+										</details>
+										<p className="mt-2 text-xs text-basalt-muted-foreground">
+											{(board.totals.languageBytes / 1e6).toFixed(2)} MB 语言字节 · Git 磁盘{" "}
+											{n(board.totals.sizeKiB)} KiB
+										</p>
+									</FactoryPanel>
+									<FactoryPanel
+										title="提交与待办"
+										hint="每个点是一座仓库：横轴为最近 30 天提交（对数刻度），纵轴为当前 open Issue 与 PR，颜色为主语言。虚线为中位数；左上阴影区积压高于中位数、推进低于中位数，最值得检查。"
+									>
+										<ActivityQuadrant
+											activity={board.repoActivity}
+											onSelect={(name) => drill(name, "issues")}
+										/>
+									</FactoryPanel>
+									<FactoryPanel
+										title="工作流量账"
+										hint="分别统计 Issue 与 PR 的创建、待处理和完成数量，不推断两者的关联。「期间」指当前统计窗口，Issue 按最后关闭时间计数。各阶段不一定是同一批工作项。"
+									>
+										<div className="factory-flow">
+											<FlowRow
+												label="Issues"
+												values={[
+													board.observed.issues ? board.aggregate.issueOpened : null,
+													board.totals.openIssues,
+													board.observed.issues ? board.aggregate.issueClosed : null,
+												]}
+												labels={["期间创建", "当前开放", "期间关闭"]}
+											/>
+											<FlowRow
+												label="Pull requests"
+												values={[
+													board.observed.prs ? board.aggregate.prOpened : null,
+													board.totals.openPrs,
+													board.observed.prs ? board.aggregate.prMerged : null,
+												]}
+												labels={["期间创建", "当前开放", "期间合并"]}
+											/>
+										</div>
+										<p className="mt-3 text-xs text-basalt-muted-foreground">
+											另有 {n(board.aggregate.prClosed)} 个 PR 未合并关闭
+										</p>
+										<div className="mt-3 border-t border-basalt-border pt-3 text-xs">
+											历史已关闭 Issue <strong>{n(board.totals.closedIssues)}</strong> · 历史已合并
+											PR <strong>{n(board.totals.mergedPrs)}</strong>
+										</div>
+									</FactoryPanel>
+								</div>
+								<div className="grid gap-3 xl:grid-cols-[1.3fr_1fr]">
+									<FactoryPanel
+										title="需要检查的信号"
+										hint="PR 超过 7 天、Issue 超过 14 天仍未关闭，或 CI 至少运行 10 次且失败率不低于 20% 时提醒检查。这些信号不代表已经确认有问题。"
+									>
+										<div className="factory-signal-list">
+											{board.anomalies.length ? (
+												board.anomalies.map((a) => (
+													<Button
+														variant="ghost"
+														type="button"
+														key={`${a.repo}:${a.stream}`}
+														onClick={() => drill(a.repo, a.stream)}
+													>
+														<span>{a.repo.split("/")[1]}</span>
+														<span>{a.label}</span>
+														<ArrowUpRight className="size-3.5" />
+													</Button>
+												))
+											) : (
+												<p className="py-3 text-xs text-basalt-muted-foreground">
+													已观察资源未触发长龄/CI 失败率规则。
+												</p>
+											)}
+										</div>
+										<p className="mt-3 text-xs text-basalt-muted-foreground">
+											安全告警已读取 {board.securityKnown}/{scope.length} 仓库
+											{board.securityKnown < scope.length ? " · 其余安全状态未知" : ""}
+										</p>
+									</FactoryPanel>
+									<FactoryPanel title="依赖与维护" hint="固定 SHA 的直接引用证据">
+										<div className="flex flex-wrap gap-4 text-xs">
+											<span>
+												机器人开放 PR <strong>{board.aggregate.botOpen}</strong>
+											</span>
+											<span>
+												窗口机器人合并 <strong>{board.aggregate.botMerged}</strong>
+											</span>
+											<span>
+												观测引用边 <strong>{visibleEdges.length}</strong>
+											</span>
+										</div>
+										<div className="factory-network mt-3">
+											{visibleEdges.slice(0, 8).map((e) => (
+												<div key={`${e.source}:${e.target}`}>
+													<Button
+														variant="ghost"
+														type="button"
+														onClick={() => drill(e.source, "dependencies")}
+													>
+														{e.source.split("/")[1]}
+													</Button>
+													<span className="factory-network-line" aria-hidden="true">
+														→
+													</span>
+													<Button
+														variant="ghost"
+														type="button"
+														onClick={() => drill(e.target, "dependencies")}
+													>
+														{e.target.split("/")[1]}
+													</Button>
+													<a
+														href={safeGithubUrl(e.url)}
+														target="_blank"
+														rel="noreferrer"
+														title="打开引用文件"
+													>
+														{e.references} 引用 ↗
+													</a>
+												</div>
+											))}
+											{!visibleEdges.length ? (
+												<p className="py-3 text-xs text-basalt-muted-foreground">
+													当前没有可解析为纳入仓库的直接引用。
+												</p>
+											) : null}
+										</div>
+										<details className="factory-methods mt-2">
+											<summary>全部引用与范围</summary>
+											<p>
+												仅根 package.json 声明与 ci.yml / release.yml 中的 literal
+												uses；不含传递依赖、monorepo 子包或动态引用。全局引用图不随语言/topic
+												筛选缩减。
+											</p>
+											{visibleEdges.map((e) => (
+												<p key={`${e.source}:${e.target}`}>
+													<a href={safeGithubUrl(e.url)} target="_blank" rel="noreferrer">
+														{e.source} → {e.target} · {e.references} 引用 ↗
+													</a>
+												</p>
+											))}
+										</details>
+									</FactoryPanel>
+								</div>
+							</section>
 							<FactoryPanel
 								title={selected ? "仓库生产线" : "仓库生产线 · 按窗口提交量排序"}
 								hint="每行是一条生产线，点击仓库或指标下钻"
@@ -641,7 +711,7 @@ export function FactoryPage() {
 																<span>
 																	· 最后提交{" "}
 																	{activityAge(
-																		board.pulse.lastCommit.get(r.name),
+																		board.repoActivity.find((a) => a.name === r.name)?.last,
 																		(r.observation?.window ?? snapshot.window).until,
 																	)}
 																</span>

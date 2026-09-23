@@ -149,7 +149,7 @@ test("factory opens a large accessible console while keeping one compact health 
 		"value",
 		"61",
 	);
-	expect((await page.locator(".giraffe-stat-card").first().boundingBox())?.y).toBeLessThan(450);
+	expect((await page.locator(".factory-period").boundingBox())?.y).toBeLessThan(450);
 	expect((await trigger.boundingBox())?.x).toBeGreaterThan(900);
 	await page.screenshot({
 		path: ".factory-cache/refresh-console/list-desktop.png",
@@ -301,7 +301,7 @@ test("closing the console keeps polling and pause, resume and cancel preserve pu
 	).toBeVisible();
 	expect(controls).toEqual(["pause", "resume", "cancel"]);
 	await page.getByRole("button", { name: "关闭刷新控制台" }).click();
-	await expect(page.locator(".giraffe-stat-card").first()).toBeVisible();
+	await expect(page.locator(".factory-period")).toBeVisible();
 	await expect(page.getByText("2 个仓库有数据未获取", { exact: true })).toBeVisible();
 });
 

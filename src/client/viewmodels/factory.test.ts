@@ -4,6 +4,8 @@ import { factoryFixture as ready } from "../../../tests/fixtures/factory-snapsho
 import { FACTORY_STREAMS } from "../../lib/factory-types";
 import {
 	activityAge,
+	activityQuadrant,
+	backlogRows,
 	dependencyEdges,
 	eventPage,
 	factoryBoard,
@@ -13,6 +15,7 @@ import {
 	factoryRepoPage,
 	filterFactoryRepos,
 	hasFactoryMeasurement,
+	periodChange,
 	STREAM_CODES,
 	safeGithubUrl,
 } from "./factory";
@@ -137,7 +140,13 @@ describe("factory sampling signals", () => {
 			},
 		};
 		const b = factoryBoard(s, s.repos);
-		expect(b.pulse.commits).toEqual({ recent: 10, previous: 5, complete: true });
+		expect(b.periods[1]).toMatchObject({
+			days: 7,
+			current: { commits: 10 },
+			previous: { commits: 5 },
+			complete: { commits: true },
+			previousComplete: { commits: true },
+		});
 		expect(b.anomalies).toHaveLength(4);
 		expect(b.securityKnown).toBe(1);
 		const second = {
@@ -341,64 +350,208 @@ function day(commits: number, extra: Partial<Record<"prMerged" | "releases", num
 	};
 }
 
-it("summarizes the last seven complete UTC days as a portfolio pulse without inventing unknown activity", () => {
-	const s = ready();
-	const base = s.repos[0];
-	if (!base) throw new Error("fixture");
-	for (const stream of FACTORY_STREAMS) base.coverage[stream].status = "complete";
-	const hot = {
-		...structuredClone(base),
-		id: "hot",
-		name: "nocoo/hot",
-	};
-	hot.metrics.days = {
-		"2026-09-14": day(8, { prMerged: 2, releases: 1 }),
-		"2026-09-08": day(3),
-		"2026-09-15": day(50),
-	};
-	const cooling = {
-		...structuredClone(base),
-		id: "cool",
-		name: "nocoo/cool",
-	};
-	cooling.metrics.days = { "2026-09-05": day(6), "2026-08-01": day(9) };
-	const idle = { ...structuredClone(base), id: "idle", name: "nocoo/idle" };
-	idle.metrics.days = { "2026-07-01": day(2) };
-	const unknown = { ...structuredClone(base), id: "unknown", name: "nocoo/unknown" };
-	unknown.coverage.commits.status = "pending";
-	unknown.metrics.days = { "2026-09-14": day(4) };
-	s.repos = [hot, cooling, idle, unknown];
-	const pulse = factoryBoard(s, s.repos).pulse;
-	expect(pulse.range).toEqual({ since: "2026-09-08", until: "2026-09-14" });
-	expect(pulse.commits).toEqual({ recent: 15, previous: 6, complete: false });
-	expect(pulse.prMerged).toBe(2);
-	expect(pulse.releases).toBe(1);
-	expect(pulse.active).toEqual({ week: 1, month: 1, dormant: 1, unknown: 1 });
-	expect(pulse.movers.map((m) => [m.name, m.recent, m.previous])).toEqual([["nocoo/hot", 11, 0]]);
-	expect(pulse.cooling.map((m) => m.name)).toEqual(["nocoo/cool"]);
-	expect(pulse.lastCommit.get("nocoo/hot")).toBe("2026-09-15");
-	expect(pulse.lastCommit.get("nocoo/idle")).toBe("2026-07-01");
-	const complete = factoryBoard(s, [hot, cooling, idle]).pulse;
-	expect(complete.commits.complete).toBe(true);
-	cooling.observation = {
-		source: "run",
-		version: "v",
-		refreshedAt: "2026-09-14T22:00:00Z",
-		window: { since: "2026-06-17T00:00:00Z", until: "2026-09-14T22:00:00Z" },
-	};
-	expect(factoryBoard(s, [hot, cooling, idle]).pulse.commits.complete).toBe(false);
-	cooling.observation.window.until = "2026-09-15T00:00:00Z";
-	expect(factoryBoard(s, [hot, cooling, idle]).pulse.commits.complete).toBe(true);
-	cooling.observation.window.since = "2026-09-02T00:00:00Z";
-	expect(factoryBoard(s, [hot, cooling, idle]).pulse.commits.complete).toBe(false);
-	delete cooling.observation;
-	expect(complete.active).toEqual({ week: 1, month: 1, dormant: 1, unknown: 0 });
-	expect(factoryBoard(s, []).pulse).toMatchObject({ movers: [], commits: { complete: false } });
-});
-
 it("reads relative activity age from the snapshot clock, not the viewer clock", () => {
 	expect(activityAge("2026-09-15", "2026-09-15T22:00:00Z")).toBe("今天");
 	expect(activityAge("2026-09-14", "2026-09-15T22:00:00Z")).toBe("昨天");
 	expect(activityAge("2026-09-01", "2026-09-15T22:00:00Z")).toBe("14 天前");
 	expect(activityAge(undefined, "2026-09-15T22:00:00Z")).toBe("窗口内无提交");
+});
+
+function withDays(name: string, days: Record<string, ReturnType<typeof day>>) {
+	const repo = structuredClone(ready().repos[0]);
+	if (!repo) throw new Error("fixture");
+	for (const stream of FACTORY_STREAMS) repo.coverage[stream].status = "complete";
+	repo.id = name;
+	repo.name = `nocoo/${name}`;
+	repo.metrics.days = days;
+	return repo;
+}
+
+it("compares 1, 7 and 30 complete UTC days with the preceding equal period", () => {
+	const s = ready();
+	const hot = withDays("hot", {
+		"2026-09-14": { ...day(4, { prMerged: 1, releases: 1 }), issueOpened: 3, issueClosed: 1 },
+		"2026-09-13": day(2),
+		"2026-09-05": day(5),
+		"2026-08-20": day(7),
+		"2026-08-01": day(9),
+		"2026-09-15": day(99),
+	});
+	hot.metrics.days["2026-09-12"] = { ...day(0), ciSuccess: 3, ciFailure: 1 };
+	const quiet = withDays("quiet", { "2026-09-13": day(1) });
+	s.repos = [hot, quiet];
+	const [d1, d7, d30] = factoryBoard(s, s.repos).periods;
+	expect(d1).toMatchObject({
+		days: 1,
+		since: "2026-09-14",
+		until: "2026-09-14",
+		current: { commits: 4, prMerged: 1, releases: 1, issueOpened: 3, issueClosed: 1, active: 1 },
+		previous: { commits: 3, active: 2 },
+	});
+	expect(d7?.current).toMatchObject({ commits: 7, ciSuccess: 3, ciFailure: 1, active: 2 });
+	expect(d7?.previous).toMatchObject({ commits: 5, active: 1 });
+	expect(d30?.current.commits).toBe(19);
+	expect(d30?.previous.commits).toBe(9);
+	expect(d30?.complete.commits).toBe(true);
+	quiet.coverage.issues.status = "limited";
+	quiet.observation = {
+		source: "run",
+		version: "v",
+		refreshedAt: "2026-09-15T00:00:00Z",
+		window: { since: "2026-08-20T00:00:00Z", until: "2026-09-15T22:00:00Z" },
+	};
+	const behind = structuredClone(quiet);
+	behind.id = "behind";
+	behind.name = "nocoo/behind";
+	behind.observation = {
+		source: "run",
+		version: "v",
+		refreshedAt: "2026-09-14T23:00:00Z",
+		window: { since: "2026-06-16T00:00:00Z", until: "2026-09-14T23:00:00Z" },
+	};
+	const shifted = factoryBoard(s, [hot, behind]);
+	expect(shifted.periods[0]).toMatchObject({
+		since: "2026-09-13",
+		until: "2026-09-13",
+		complete: { commits: true },
+	});
+	expect(shifted.repoActivity[0]?.periods[1].commits).toBe(2);
+	const partial = factoryBoard(s, s.repos).periods;
+	expect(partial[0]?.complete).toMatchObject({ commits: true, issues: false });
+	expect(partial[2]?.complete.commits).toBe(false);
+	expect(partial[1]?.previousComplete.commits).toBe(true);
+	expect(factoryBoard(s, []).periods[0]?.complete.commits).toBe(false);
+});
+
+it("summarizes each repository per period with stock, aged work and last commit", () => {
+	const s = ready();
+	const repo = withDays("app", {
+		"2026-09-14": { ...day(2, { prMerged: 1 }), issueOpened: 1, issueClosed: 2 },
+		"2026-09-02": day(6),
+		"2026-07-01": day(1),
+	});
+	Object.assign(repo, { openIssues: 5, openPrs: 2 });
+	Object.assign(repo.metrics, { agedIssues: 3, agedPrs: 1 });
+	const blind = withDays("blind", {});
+	blind.coverage.commits.status = "pending";
+	blind.coverage.issues.status = "partial";
+	s.repos = [repo, blind];
+	const [app, other] = factoryBoard(s, s.repos).repoActivity;
+	expect(app).toMatchObject({
+		name: "nocoo/app",
+		last: "2026-09-14",
+		previous7: 6,
+		openIssues: 5,
+		openPrs: 2,
+		agedIssues: 3,
+		agedPrs: 1,
+		known: { commits: true, issues: true, prs: true },
+	});
+	expect(app?.periods[1]).toMatchObject({
+		commits: 2,
+		prMerged: 1,
+		issueOpened: 1,
+		issueClosed: 2,
+	});
+	expect(app?.periods[7].commits).toBe(2);
+	expect(app?.periods[30].commits).toBe(8);
+	expect(other).toMatchObject({ agedIssues: null, known: { commits: false, issues: false } });
+	expect(other?.last).toBeUndefined();
+	expect(factoryBoard(s, s.repos).activity).toEqual({ week: 1, month: 0, dormant: 0, unknown: 1 });
+});
+
+it("reconstructs open backlog backwards from the current count and rolls 7-day breadth and CI rate", () => {
+	const s = ready();
+	const a = withDays("a", {
+		"2026-09-15": { ...day(1), issueOpened: 2, issueClosed: 0, prOpened: 1 },
+		"2026-09-14": { ...day(1), issueOpened: 0, issueClosed: 3, ciSuccess: 3, ciFailure: 1 },
+		"2026-09-10": { ...day(2), ciSuccess: 1 },
+	});
+	Object.assign(a, { openIssues: 4, openPrs: 1 });
+	const b = withDays("b", { "2026-09-13": day(1), "2026-09-01": day(1) });
+	Object.assign(b, { openIssues: 0, openPrs: 0 });
+	s.repos = [a, b];
+	const days = factoryBoard(s, s.repos).days;
+	const at = (date: string) => days.find((d) => d.date === date);
+	expect(at("2026-09-15")).toMatchObject({ openIssues: 4, openPrs: 1, activeRepos7: 2 });
+	expect(at("2026-09-14")).toMatchObject({ openIssues: 2, openPrs: 0, ciRate7: 0.8 });
+	expect(at("2026-09-13")?.openIssues).toBe(5);
+	expect(at("2026-09-08")?.activeRepos7).toBe(0);
+	expect(at("2026-09-07")?.activeRepos7).toBe(1);
+	expect(at("2026-09-08")?.ciRate7).toBeNull();
+	expect(days[0]?.activeRepos7).toBeNull();
+	const d1 = factoryBoard(s, s.repos).periods[0];
+	expect(d1?.stock).toEqual({ openIssues: { from: 5, to: 2 }, openPrs: { from: 0, to: 0 } });
+	a.openIssues = 0;
+	expect(factoryBoard(s, s.repos).days.find((d) => d.date === "2026-09-13")?.openIssues).toBeNull();
+	expect(factoryBoard(s, s.repos).periods[0]?.stock.openIssues).toEqual({ from: null, to: null });
+	a.coverage.issues.status = "limited";
+	b.coverage.actions.status = "pending";
+	const blind = factoryBoard(s, s.repos).days;
+	expect(blind.every((d) => d.openIssues === null && d.ciRate7 === null)).toBe(true);
+	expect(blind.at(-1)?.openPrs).toBe(1);
+});
+
+it("ranks accumulated work with aged share and recent throughput", () => {
+	const s = ready();
+	const heavy = withDays("heavy", { "2026-09-01": { ...day(0), issueClosed: 4, prMerged: 2 } });
+	Object.assign(heavy, { openIssues: 6, openPrs: 1 });
+	Object.assign(heavy.metrics, { agedIssues: 2, agedPrs: 1 });
+	const light = withDays("light", {});
+	Object.assign(light, { openIssues: 1, openPrs: 0 });
+	light.coverage.issues.status = "limited";
+	const clear = withDays("clear", {});
+	Object.assign(clear, { openIssues: 0, openPrs: 0 });
+	s.repos = [light, clear, heavy];
+	const backlog = backlogRows(factoryBoard(s, s.repos).repoActivity);
+	expect(backlog.rows.map((r) => [r.name, r.total, r.done30])).toEqual([
+		["nocoo/heavy", 7, 6],
+		["nocoo/light", 1, 0],
+	]);
+	expect(backlog.rows[1]?.agedIssues).toBeNull();
+	expect(backlog).toMatchObject({ openIssues: 7, openPrs: 1, aged: 3, clear: 1, max: 7 });
+	expect(backlogRows([]).max).toBe(1);
+	const tie = withDays("aa", {});
+	Object.assign(tie, { openIssues: 7, openPrs: 0 });
+	s.repos = [heavy, tie];
+	expect(backlogRows(factoryBoard(s, s.repos).repoActivity).rows.map((r) => r.name)).toEqual([
+		"nocoo/aa",
+		"nocoo/heavy",
+	]);
+});
+
+it("splits repositories into activity and backlog quadrants around medians", () => {
+	const s = ready();
+	const repos = [3, 0, 10, 40].map((commits, i) => {
+		const r = withDays(`r${i}`, commits ? { "2026-09-01": day(commits) } : {});
+		r.openIssues = [5, 2, 0, 1][i] ?? 0;
+		r.openPrs = 0;
+		return r;
+	});
+	const blind = withDays("blind", {});
+	blind.coverage.commits.status = "pending";
+	s.repos = [...repos, blind];
+	const q = activityQuadrant(factoryBoard(s, s.repos).repoActivity);
+	expect(q.points.map((p) => p.name)).toEqual(["nocoo/r0", "nocoo/r1", "nocoo/r2", "nocoo/r3"]);
+	expect(q.medianCommits).toBe(6.5);
+	expect(q.medianBacklog).toBe(1.5);
+	expect(q.stalled.map((p) => p.name)).toEqual(["nocoo/r0", "nocoo/r1"]);
+	expect(activityQuadrant([])).toMatchObject({ points: [], medianCommits: 0, medianBacklog: 0 });
+	s.repos = repos.slice(0, 3);
+	expect(activityQuadrant(factoryBoard(s, s.repos).repoActivity).medianCommits).toBe(3);
+});
+
+it("describes change against the previous period without inventing a baseline", () => {
+	expect(periodChange(12, 10)).toEqual({ label: "+20%", direction: "up" });
+	expect(periodChange(5, 10)).toEqual({ label: "-50%", direction: "down" });
+	expect(periodChange(10, 10)).toEqual({ label: "持平", direction: "flat" });
+	expect(periodChange(3, 0)).toEqual({ label: "新增", direction: "up" });
+	expect(periodChange(0, 0)).toEqual({ label: "—", direction: "flat" });
+	expect(periodChange(0.9, 0.85, "rate")).toEqual({ label: "+5.0pp", direction: "up" });
+	expect(periodChange(null, 0.85, "rate")).toEqual({ label: "—", direction: "flat" });
+	expect(periodChange(0.8, 0.9, "rate")).toEqual({ label: "-10.0pp", direction: "down" });
+	expect(periodChange(0.9, 0.9, "rate")).toEqual({ label: "+0.0pp", direction: "flat" });
+	expect(periodChange(37, -12, "delta")).toEqual({ label: "+49", direction: "up" });
+	expect(periodChange(-5, 3, "delta")).toEqual({ label: "-8", direction: "down" });
+	expect(periodChange(2, 2, "delta")).toEqual({ label: "持平", direction: "flat" });
 });

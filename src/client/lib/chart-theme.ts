@@ -69,3 +69,14 @@ export function categoryColor(name: string): string {
 	for (const char of key) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
 	return chartColor(hash);
 }
+
+/** Validated in both themes (lightness, CVD and contrast) for the factory's composed charts. */
+export const FLOW_COLORS = {
+	commits: "#3b82f6",
+	merged: "#0d9488",
+	opened: "#d97706",
+	closed: "#0d9488",
+	release: "#8b5cf6",
+	stock: "#d97706",
+	rate: "#8b5cf6",
+} as const;

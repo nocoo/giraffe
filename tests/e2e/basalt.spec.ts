@@ -127,7 +127,7 @@ test("multicolor chart series stay distinct in both themes across factory, insig
 	for (const mode of ["light", "dark"] as const) {
 		await page.emulateMedia({ colorScheme: mode });
 		for (const [path, label, marks, property] of [
-			["/factory", "交付吞吐", ".recharts-area-curve", "stroke"],
+			["/factory", "交付吞吐", ".recharts-bar-rectangle path", "fill"],
 			["/factory", "仓库规模地图", ".recharts-treemap-depth-1 rect", "fill"],
 			["/factory", "仓库提交与开放工作", ".recharts-scatter-symbol path", "fill"],
 			[
@@ -167,7 +167,7 @@ test("multicolor chart series stay distinct in both themes across factory, insig
 								([red = 0, green = 0, blue = 0, alpha = 0]) =>
 									alpha > 0 && Math.max(red, green, blue) - Math.min(red, green, blue) > 20,
 							) &&
-							(label !== "交付吞吐" || new Set(channels.map(String)).size === 3)
+							(label !== "交付吞吐" || new Set(channels.map(String)).size === 2)
 						);
 					},
 					{ message: `${mode}: ${label} uses distinct palette colors` },
