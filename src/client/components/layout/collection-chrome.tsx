@@ -1,8 +1,8 @@
 import { InputGroup } from "@nocoo/basalt/components/input-group";
 import { ScrollArea } from "@nocoo/basalt/components/scroll-area";
 import { Clock3, Search, X } from "lucide-react";
-import { type ReactNode, useRef } from "react";
-import { formatCount, formatDate } from "../../lib/format";
+import { type ReactNode, useEffect, useRef, useState } from "react";
+import { formatCount, formatDate, formatTimeAgo } from "../../lib/format";
 
 // Product compositions: Basalt owns input behavior, focus styling and scrolling.
 export function SearchField({
@@ -71,14 +71,33 @@ export function SnapshotDescription({
 	return (
 		<>
 			<span className="[overflow-wrap:anywhere]">{description}</span>
-			<span className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
-				<Clock3 className="size-3.5 shrink-0" aria-hidden="true" />
-				数据更新于{" "}
-				<time dateTime={fetchedAt} className="tabular-nums">
-					{formatDate(fetchedAt)}
-				</time>
+			<span className="mt-2 block">
+				<SnapshotTime fetchedAt={fetchedAt} />
 			</span>
 		</>
+	);
+}
+
+export function SnapshotTime({
+	fetchedAt,
+	label = "上次刷新",
+}: {
+	fetchedAt: string;
+	label?: string;
+}) {
+	const [, refreshTime] = useState(0);
+	useEffect(() => {
+		const timer = setInterval(() => refreshTime((tick) => tick + 1), 60_000);
+		return () => clearInterval(timer);
+	}, []);
+	return (
+		<span className="inline-flex flex-wrap items-center gap-1.5 text-xs text-basalt-muted-foreground">
+			<Clock3 className="size-3.5 shrink-0" aria-hidden="true" />
+			{label}
+			<time dateTime={fetchedAt} className="tabular-nums">
+				{formatDate(fetchedAt)}（{formatTimeAgo(fetchedAt, Date.now(), true)}）
+			</time>
+		</span>
 	);
 }
 

@@ -263,12 +263,20 @@ it("separates a finished refresh from missing data and groups the same problem a
 	expect(problems[0]?.action).toContain("security_events");
 	expect(problems[0]?.impact).toContain("漏洞");
 	expect(factoryDataHealth(snapshot)).toMatchObject({
-		tone: "warning",
-		title: "2 个仓库有数据未获取",
+		tone: "info",
+		title: "工厂数据可用",
 	});
-	expect(factoryDataHealth(snapshot).detail).toContain("安全告警（2）");
+	expect(factoryDataHealth(snapshot).detail).toContain("可选安全告警未获取（2 个仓库）");
+	expect(factoryDataHealth(snapshot).detail).toContain("安全状态未知");
 	snapshot.publication = { mixed: true, runId: "partial", publishedAt: snapshot.fetched_at };
 	expect(factoryDataHealth(snapshot).detail).toContain("更新时间不同");
+	repo.coverage.commits.status = "unavailable";
+	expect(factoryDataHealth(snapshot)).toMatchObject({
+		tone: "warning",
+		title: "1 个仓库有数据未获取",
+	});
+	expect(factoryDataHealth(snapshot).detail).toContain("代码提交（1）");
+	expect(factoryDataHealth(snapshot).detail).not.toContain("安全告警");
 });
 
 it("explains recovery without treating rate limits, skipped steps or a paused run as lost data", () => {
@@ -301,7 +309,7 @@ it("reports missing inventory, healthy data and mixed update times in one health
 	snapshot.inventory.complete = false;
 	expect(
 		factoryDataHealth({ ...snapshot, inventory: { ...snapshot.inventory, complete: true } }).detail,
-	).toContain("等 7 类数据");
+	).toContain("等 6 类数据");
 	expect(factoryDataHealth(snapshot).title).toBe("仓库列表尚未获取完整");
 	snapshot.inventory.complete = true;
 	snapshot.status = "complete";

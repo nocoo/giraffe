@@ -278,14 +278,17 @@ export function factoryDataHealth(snapshot: FactorySnapshot | null) {
 			title: "仓库列表尚未获取完整",
 			detail: "当前统计只包含已找到的仓库，可在刷新控制台继续同步。",
 		};
+	const required = FACTORY_STREAMS.filter((kind) => kind !== "alerts");
 	const incomplete = snapshot.repos.filter((repo) =>
-		FACTORY_STREAMS.some((kind) => repo.coverage[kind].status !== "complete"),
+		required.some((kind) => repo.coverage[kind].status !== "complete"),
 	);
 	if (incomplete.length) {
-		const missing = FACTORY_STREAMS.map((kind) => ({
-			kind,
-			count: incomplete.filter((r) => r.coverage[kind].status !== "complete").length,
-		})).filter((item) => item.count);
+		const missing = required
+			.map((kind) => ({
+				kind,
+				count: incomplete.filter((r) => r.coverage[kind].status !== "complete").length,
+			}))
+			.filter((item) => item.count);
 		return {
 			tone: "warning",
 			title: `${incomplete.length} 个仓库有数据未获取`,
@@ -294,7 +297,7 @@ export function factoryDataHealth(snapshot: FactorySnapshot | null) {
 				.map((item) => `${STEP_LABELS[item.kind]}（${item.count}）`)
 				.join(
 					"、",
-				)}${missing.length > 3 ? ` 等 ${missing.length} 类数据` : ""}。缺失不代表零，已有数据仍可查看。${snapshot.publication?.mixed ? "各仓库的更新时间不同。" : ""}`,
+				)}${missing.length > 3 ? ` 等 ${missing.length} 类数据` : ""}；缺失不代表零。${snapshot.publication?.mixed ? "各仓库更新时间不同。" : ""}`,
 		};
 	}
 	if (!snapshot.contributionExcluded && snapshot.contributionStatus !== "complete")
@@ -302,6 +305,13 @@ export function factoryDataHealth(snapshot: FactorySnapshot | null) {
 			tone: "warning",
 			title: "账号贡献日历尚未更新",
 			detail: "仓库数据可用；账号贡献日历可能显示旧数据，或暂时为空。",
+		};
+	const optional = snapshot.repos.filter((repo) => repo.coverage.alerts.status !== "complete");
+	if (optional.length)
+		return {
+			tone: "info",
+			title: "工厂数据可用",
+			detail: `可选安全告警未获取（${optional.length} 个仓库），安全状态未知。${snapshot.publication?.mixed ? "各仓库更新时间不同。" : ""}`,
 		};
 	if (snapshot.publication?.mixed)
 		return {

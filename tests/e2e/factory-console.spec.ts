@@ -137,18 +137,25 @@ test("factory opens a large accessible console while keeping one compact health 
 	page,
 }) => {
 	const fixture = consoleFixture();
+	const now = new Date(Date.parse(fixture.snapshot.fetched_at) + 3 * 86400000 + 7200000);
+	await page.clock.setFixedTime(now);
+	fixture.state.serverNow = now.toISOString();
+	for (const run of fixture.state.history) run.finishedAt = now.toISOString();
 	await mockConsole(page, fixture);
 	await page.setViewportSize({ width: 1440, height: 1000 });
 	await page.emulateMedia({ reducedMotion: "reduce" });
 	await page.goto("/factory");
 	const trigger = page.getByRole("button", { name: "刷新控制台", exact: true });
 	await expect(page.getByRole("dialog")).toHaveCount(0);
-	await expect(page.locator(".factory-health-banner")).toHaveCount(1);
-	await expect(page.getByText("2 个仓库有数据未获取", { exact: true })).toBeVisible();
-	await expect(page.getByRole("progressbar", { name: "列表页刷新进度" })).toHaveAttribute(
-		"value",
-		"61",
-	);
+	const banner = page.getByRole("region", { name: "数据健康与刷新进度" });
+	await expect(banner).toHaveAttribute("data-tone", "info");
+	await expect(banner).toContainText("可选安全告警未获取（2 个仓库）");
+	await expect(banner).toContainText("安全状态未知");
+	await expect(banner).toContainText("快照更新");
+	await expect(banner.locator("time")).toHaveAttribute("datetime", fixture.snapshot.fetched_at);
+	await expect(banner.locator("time")).toContainText("3 天前");
+	await expect(page.getByRole("progressbar", { name: "列表页刷新进度" })).toHaveCount(0);
+	expect((await banner.boundingBox())?.height).toBeLessThanOrEqual(56);
 	expect((await page.locator(".factory-period").boundingBox())?.y).toBeLessThan(450);
 	expect((await trigger.boundingBox())?.x).toBeGreaterThan(900);
 	await page.screenshot({
@@ -203,10 +210,7 @@ test("factory opens a large accessible console while keeping one compact health 
 	await page.keyboard.press("Escape");
 	await expect(dialog).toHaveCount(0);
 	await expect(trigger).toBeFocused();
-	await expect(page.getByRole("progressbar", { name: "列表页刷新进度" })).toHaveAttribute(
-		"value",
-		"61",
-	);
+	await expect(page.getByRole("progressbar", { name: "列表页刷新进度" })).toHaveCount(0);
 	await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
 	await trigger.click();
 	await page.screenshot({
@@ -302,10 +306,11 @@ test("closing the console keeps polling and pause, resume and cancel preserve pu
 	expect(controls).toEqual(["pause", "resume", "cancel"]);
 	await page.getByRole("button", { name: "关闭刷新控制台" }).click();
 	await expect(page.locator(".factory-period")).toBeVisible();
-	await expect(page.getByText("2 个仓库有数据未获取", { exact: true })).toBeVisible();
+	await expect(page.getByText("工厂数据可用", { exact: true })).toBeVisible();
+	await expect(page.getByRole("progressbar", { name: "列表页刷新进度" })).toHaveCount(0);
 });
 
-test("history does not replace the page progress and a failed start remains explained after polling", async ({
+test("history stays in the console and a failed start remains explained after polling", async ({
 	page,
 }) => {
 	const fixture = consoleFixture();
@@ -316,11 +321,8 @@ test("history does not replace the page progress and a failed start remains expl
 	await page.getByRole("option", { name: /已完成 · 同步列表/ }).click();
 	await expect(page.getByRole("progressbar", { name: "本次刷新进度" })).toHaveAttribute("max", "4");
 	await page.getByRole("button", { name: "关闭刷新控制台" }).click();
-	await expect(page.getByRole("progressbar", { name: "列表页刷新进度" })).toHaveAttribute(
-		"max",
-		"61",
-	);
-	await page.getByRole("button", { name: "查看进度", exact: true }).click();
+	await expect(page.getByRole("progressbar", { name: "列表页刷新进度" })).toHaveCount(0);
+	await page.getByRole("button", { name: "查看详情", exact: true }).click();
 	await page.getByRole("button", { name: "选择这 2 个仓库重试", exact: true }).click();
 	await expect(page.getByRole("tab", { name: "发起刷新" })).toHaveAttribute(
 		"aria-selected",

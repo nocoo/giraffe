@@ -1,4 +1,5 @@
 import { Button, Checkbox, Input, Tabs, TabsContent, TabsList, TabsTrigger } from "@nocoo/basalt";
+import { Banner } from "@nocoo/basalt/components/banner";
 import {
 	Dialog,
 	DialogClose,
@@ -26,7 +27,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { type FactoryRunResponse, type RunSelection, selectRunRepos } from "../../lib/factory-run";
 import type { FactorySnapshot } from "../../lib/factory-types";
-import { SearchField } from "../components/layout/collection-chrome";
+import { SearchField, SnapshotTime } from "../components/layout/collection-chrome";
 import { SelectField } from "../components/layout/select-field";
 import { factoryError, filterFactoryRepos, formatUtc } from "../viewmodels/factory";
 import {
@@ -246,28 +247,43 @@ export function FactoryRuns({
 				data-tone={bannerError ? "warning" : health.tone}
 				aria-label="数据健康与刷新进度"
 			>
-				<div className="factory-health-message">
-					{loading && !snapshot && !bannerError ? (
-						<LoaderCircle className="animate-spin" aria-hidden="true" />
-					) : (
-						<HealthIcon aria-hidden="true" />
-					)}
-					<div className="min-w-0 flex-1">
-						<strong>
-							{bannerError
-								? "暂时无法读取最新状态"
-								: loading && !snapshot
-									? "正在读取工厂数据…"
-									: health.title}
-						</strong>
-						<p>{bannerError || health.detail}</p>
-					</div>
-					<Button size="sm" variant="ghost" onClick={openLatest}>
-						查看详情
-						<ArrowRight className="size-3.5" aria-hidden="true" />
-					</Button>
-				</div>
-				{latest ? (
+				<Banner
+					size="sm"
+					variant={bannerError || health.tone === "warning" ? "alert" : "secondary"}
+					className="factory-health-message"
+					icon={
+						loading && !snapshot && !bannerError ? (
+							<LoaderCircle className="animate-spin" aria-hidden="true" />
+						) : (
+							<HealthIcon aria-hidden="true" />
+						)
+					}
+					description={
+						<div className="factory-health-summary">
+							<strong>
+								{bannerError
+									? "暂时无法读取最新状态"
+									: loading && !snapshot
+										? "正在读取工厂数据…"
+										: health.title}
+							</strong>
+							<span>{bannerError || health.detail}</span>
+							{snapshot ? (
+								<SnapshotTime
+									fetchedAt={snapshot.fetched_at}
+									label={snapshot.publication?.mixed ? "快照更新" : "上次刷新"}
+								/>
+							) : null}
+						</div>
+					}
+					action={
+						<Banner.Action variant="ghost" onClick={openLatest}>
+							查看详情
+							<ArrowRight className="size-3.5" aria-hidden="true" />
+						</Banner.Action>
+					}
+				/>
+				{current ? (
 					<div className="factory-banner-progress">
 						<div className="factory-banner-run-label" role="status">
 							{current?.status === "running" ? (
@@ -278,15 +294,15 @@ export function FactoryRuns({
 								<Clock3 aria-hidden="true" />
 							)}
 							<span>
-								{RUN_LABELS[latest.status]}
+								{RUN_LABELS[current.status]}
 								{current?.progress.current
 									? ` · ${current.progress.current.repo ?? "账号"} / ${stepLabel(current.progress.current)}`
 									: ""}
 							</span>
 						</div>
-						<FactoryProgressBar run={latest} label="列表页刷新进度" />
+						<FactoryProgressBar run={current} label="列表页刷新进度" />
 						<span className="factory-banner-count">
-							{latest.progress.completed} / {latest.progress.total} 步
+							{current.progress.completed} / {current.progress.total} 步
 						</span>
 						<Button variant="ghost" size="sm" onClick={openLatest}>
 							查看进度

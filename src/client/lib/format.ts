@@ -72,10 +72,15 @@ export function formatPreciseDate(value: string | null | undefined, timeZone?: s
 	}).format(timestamp);
 }
 
-export function formatTimeAgo(value: string | null | undefined, now: number): string {
+export function formatTimeAgo(
+	value: string | null | undefined,
+	now: number,
+	compact = false,
+): string {
 	const elapsed = now - (value ? Date.parse(value) : Number.NaN);
 	if (!Number.isFinite(elapsed)) return "时间未知";
 	const seconds = Math.floor(Math.abs(elapsed) / 1000);
+	if (compact && elapsed >= 0 && seconds < 60) return "刚刚";
 	const duration = [
 		seconds >= 86400 ? `${Math.floor(seconds / 86400)} 天` : "",
 		seconds >= 3600 ? `${Math.floor(seconds / 3600) % 24} 小时` : "",
@@ -83,6 +88,7 @@ export function formatTimeAgo(value: string | null | undefined, now: number): st
 		`${seconds % 60} 秒`,
 	]
 		.filter(Boolean)
+		.slice(0, compact ? 1 : undefined)
 		.join(" ");
 	return `${duration}${elapsed < 0 ? "后（晚于本机时间）" : "前"}`;
 }

@@ -235,6 +235,8 @@ Basalt `ContentIsland` 已是 L1 岛。不要再包一层自定义 card 当岛�
 
 `layout/help-tooltip` 只组合 Basalt Button / Tooltip 与问号图标，支持悬停、键盘聚焦、触屏点击、Escape 和外部点击关闭。长指标定义与重复说明放入提示；异常、数据缺失和可执行操作保留在卡片或健康 banner 中，不藏进 hover。图表已有图例/指标时，冗余摘要保留为读屏文字。
 
+Snapshot headers show the saved data timestamp and compact elapsed age, updated locally each minute without fetching data. The factory health strip uses a compact Basalt Banner and wraps on narrow screens; only an active run adds a progress row. Its timestamp comes from the displayed snapshot, never a failed attempt or history record. Mixed publications label it as the snapshot update and retain the notice that repository times differ. Missing optional security coverage is a neutral tip, including on repositories and insights; it remains unknown rather than zero, and detailed collection diagnostics remain available in the refresh console. Required data failures still receive warning feedback. New collection runs remain manual; polling reads saved state and the scheduled Worker resumes existing runs.
+
 软件工厂仓库行不展开多个来源时间戳。末列「数据时间」按钮打开 Basalt Dialog，展示仓库信息/活动数据的准确时间、原统计范围及旧版来源。绝对时间按设备时区格式化到秒，明确时区；距今时长按 `Date.now()` 每秒重算，跨天不丢秒，缺失不补当前时间。计时只随打开的弹窗挂载，关闭后停止，不让表格或图表跟着每秒重绘。日历仍按 UTC 日期汇总。
 
 ---

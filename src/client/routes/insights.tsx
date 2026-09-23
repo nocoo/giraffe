@@ -118,7 +118,11 @@ export function InsightsPage() {
 				actions={
 					<>
 						{board.insights.truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
-						{incomplete ? <CandyBadge tone="orange">告警不完整</CandyBadge> : null}
+						{incomplete ? (
+							<span role="note" className="text-xs text-basalt-muted-foreground">
+								可选安全告警未完整获取
+							</span>
+						) : null}
 					</>
 				}
 			/>

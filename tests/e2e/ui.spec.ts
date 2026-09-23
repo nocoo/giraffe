@@ -24,6 +24,21 @@ test.beforeEach(async ({ page }) => {
 	await mockSnapshots(page);
 });
 
+test("repository header shows the saved snapshot age and optional security coverage as a note", async ({
+	page,
+}) => {
+	const snapshot = createUiFixtures()["/api/repos"];
+	await page.route("**/api/insights", (route) =>
+		route.fulfill({ json: { ...createUiFixtures()["/api/insights"], alerts_incomplete: true } }),
+	);
+	await page.clock.setFixedTime(new Date(Date.parse(snapshot.fetched_at) + 5 * 86400000));
+	await page.goto("/");
+	const updated = page.locator("time").filter({ hasText: "5 天前" });
+	await expect(updated).toHaveAttribute("datetime", snapshot.fetched_at);
+	await expect(page.getByRole("note")).toContainText("可选安全告警未完整获取");
+	await expect(page.getByText("告警不完整", { exact: true })).toHaveCount(0);
+});
+
 async function expectChart(page: Page, label: string) {
 	const plot = page
 		.getByRole("group", { name: label, exact: true })

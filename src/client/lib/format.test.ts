@@ -63,6 +63,17 @@ describe("format", () => {
 		expect(formatTimeAgo(at, base - 5000)).toBe("5 秒后（晚于本机时间）");
 	});
 
+	it("keeps snapshot ages compact while preserving unknown and future timestamps", () => {
+		const at = "2026-09-17T22:55:37.000Z";
+		const base = Date.parse(at);
+		expect(formatTimeAgo(at, base + 90061000, true)).toBe("1 天前");
+		expect(formatTimeAgo(at, base + 3661000, true)).toBe("1 小时前");
+		expect(formatTimeAgo(at, base + 61000, true)).toBe("1 分前");
+		expect(formatTimeAgo(at, base + 5000, true)).toBe("刚刚");
+		expect(formatTimeAgo(at, base - 5000, true)).toBe("5 秒后（晚于本机时间）");
+		expect(formatTimeAgo(null, base, true)).toBe("时间未知");
+	});
+
 	it("formats deltas, dates, counts, and labels", () => {
 		expect(formatDelta(null, false)).toBe("—");
 		expect(formatDelta(2, false)).toBe("+2");

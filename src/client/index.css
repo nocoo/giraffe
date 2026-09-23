@@ -203,14 +203,10 @@
 
 /* Refresh progress stays on the page; all operations and diagnostics live in the dialog. */
 .factory { --factory-success:var(--color-basalt-chart-5);--factory-warning:var(--color-giraffe-yellow);--factory-info:var(--color-basalt-chart-1);--factory-skipped:var(--color-basalt-muted-foreground); }
-.factory-health-banner { border:1px solid var(--color-basalt-border);border-radius:10px;overflow:hidden; }
-.factory-health-banner[data-tone=warning] { border-color:color-mix(in srgb,var(--factory-warning) 35%,var(--color-basalt-border));background:color-mix(in srgb,var(--factory-warning) 5%,transparent); }
-.factory-health-message { display:flex;align-items:center;gap:12px;padding:13px 16px; }
-.factory-health-message>svg { width:19px;height:19px;flex-shrink:0;color:var(--color-basalt-info); }
-.factory-health-banner[data-tone=warning] .factory-health-message>svg { color:var(--color-basalt-warning); }
-.factory-health-banner[data-tone=success] .factory-health-message>svg { color:var(--color-basalt-primary); }
-.factory-health-message strong { font-size:var(--text-sm);font-weight:600; }
-.factory-health-message p { margin-top:3px;font-size:var(--text-xs);line-height:1.6;color:var(--color-basalt-muted-foreground); }
+.factory-health-banner { border-radius:var(--radius-basalt-md);overflow:hidden; }
+.factory-health-message { align-items:center;border-radius:0; }
+.factory-health-summary { display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;font-size:var(--text-xs);line-height:1.6; }
+.factory-health-summary strong { font-weight:600;color:var(--color-basalt-foreground); }
 .factory-banner-progress { display:grid;grid-template-columns:minmax(0,1fr) minmax(80px,200px) auto auto;align-items:center;gap:14px;border-top:1px solid var(--color-basalt-border);padding:10px 16px;font-size:var(--text-xs); }
 .factory-banner-run-label { display:flex;align-items:center;gap:7px;min-width:0; }
 .factory-banner-run-label>span { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
@@ -365,9 +361,7 @@ details[open]>summary>.factory-disclosure { transform:rotate(90deg); }
  .factory-run-issues .factory-issue-actions { justify-content:flex-start; }
 }
 @media(max-width:700px) {
- .factory-health-message { gap:9px;padding:12px;align-items:flex-start; }
- .factory-health-message>svg { margin-top:2px; }
- .factory-health-message>button { padding-inline:6px; }
+ .factory-health-message { gap:8px;align-items:flex-start; }
  .factory-banner-progress { grid-template-columns:minmax(60px,1fr) auto auto;gap:9px;padding:10px 12px; }
  .factory-banner-run-label { grid-column:1/-1; }
  .factory-console { width:calc(100vw - 16px);max-width:calc(100vw - 16px);height:calc(100dvh - 16px);max-height:calc(100dvh - 16px); }

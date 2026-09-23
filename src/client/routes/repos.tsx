@@ -12,11 +12,16 @@ import {
 	TableHeader,
 	TableRow,
 } from "@nocoo/basalt/components/table";
-import { Box, Clock3, Star } from "lucide-react";
+import { Box, Star } from "lucide-react";
 import { type CSSProperties, useEffect, useMemo, useState } from "react";
 import { participates } from "../../lib/repo-statistics";
 import { CandyBadge } from "../components/layout/candy-badge";
-import { ResultCount, SearchField, TableScroll } from "../components/layout/collection-chrome";
+import {
+	ResultCount,
+	SearchField,
+	SnapshotTime,
+	TableScroll,
+} from "../components/layout/collection-chrome";
 import { LanguageLabel } from "../components/layout/labels";
 import {
 	ActiveFilters,
@@ -152,16 +157,15 @@ export function ReposPage() {
 	const peakIssues = maxCount(rows.map((row) => row.open_issue_count));
 	const actions = (
 		<>
-			{snap && !("missing" in snap) ? (
-				<span className="flex items-center gap-1.5 whitespace-nowrap text-xs text-basalt-muted-foreground">
-					<Clock3 className="size-3.5" aria-hidden="true" />
-					数据更新于 <time dateTime={snap.fetched_at}>{formatDate(snap.fetched_at)}</time>
-				</span>
-			) : null}
+			{snap && !("missing" in snap) ? <SnapshotTime fetchedAt={snap.fetched_at} /> : null}
 			{snap && !("missing" in snap) && snap.truncated ? (
 				<CandyBadge tone="amber">已截断</CandyBadge>
 			) : null}
-			{incomplete ? <CandyBadge tone="orange">告警不完整</CandyBadge> : null}
+			{incomplete ? (
+				<span role="note" className="text-xs text-basalt-muted-foreground">
+					可选安全告警未完整获取
+				</span>
+			) : null}
 		</>
 	);
 

@@ -18,10 +18,7 @@ test("factory run survives reload, refreshes the whole site and preserves the la
 	await expect(page.getByRole("progressbar", { name: "本次刷新进度" })).toHaveAttribute("max", "4");
 	await page.reload();
 	await expect(page.getByRole("dialog")).toHaveCount(0);
-	await expect(page.getByRole("progressbar", { name: "列表页刷新进度" })).toHaveAttribute(
-		"max",
-		"4",
-	);
+	await expect(page.getByRole("region", { name: "数据健康与刷新进度" })).toBeVisible();
 	await expect
 		.poll(
 			async () => {
