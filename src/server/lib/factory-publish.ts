@@ -6,6 +6,7 @@ import {
 	type FactorySnapshot,
 	type FactoryStreamData,
 } from "../../lib/factory-types";
+import { aiConfigured } from "./ai-assessment";
 import type { Db } from "./db/d1";
 import {
 	catalogFactory,
@@ -154,6 +155,16 @@ export async function repositoryWrites(
 			[lease.run.account_id, name, state.version, boundedJson(state)],
 		),
 	);
+	if (accepted && !legacy && (await aiConfigured(db)))
+		writes.push(
+			fenced(
+				db,
+				lease,
+				now,
+				"INSERT INTO ai_reviews(account_id,repo,job_id,source_version,source_at,stage,next_at) SELECT ?,?,?,?,?, 'judgment',? WHERE $guard ON CONFLICT(account_id,repo) DO UPDATE SET job_id=excluded.job_id,source_version=excluded.source_version,source_at=excluded.source_at,stage='judgment',input=NULL,judgment=NULL,error=NULL,attempts=0,next_at=excluded.next_at,lease_token=NULL,lease_until=NULL WHERE ai_reviews.source_version<>excluded.source_version",
+				[lease.run.account_id, name, crypto.randomUUID(), state.version, state.refreshedAt, now],
+			),
+		);
 	return writes;
 }
 /** Recover only already-stored evidence, preserving its original run window/time. No GitHub calls. */

@@ -38,6 +38,7 @@ import {
 	GitPullRequest,
 	Play,
 	ShieldAlert,
+	Sparkles,
 	Star,
 	Tag,
 	Users,
@@ -93,7 +94,10 @@ import {
 	trafficForbidden,
 	trafficPoints,
 } from "../viewmodels/repo-detail";
+import { RepoAssessmentPanel } from "./repo-assessment";
 import { ReleaseTimeline, RepoActivityChart, RunOutcomeChart } from "./repo-charts";
+
+type DetailTab = RepoTab | "assessment";
 
 async function fetchTab<T extends { account_id: string }>(
 	owner: string,
@@ -122,7 +126,7 @@ export function RepoDetailPage() {
 	const owner = params.owner ?? "";
 	const name = params.name ?? "";
 	const valid = isValidRepoPart(owner) && isValidRepoPart(name);
-	const [tab, setTab] = useState<RepoTab>("details");
+	const [tab, setTab] = useState<DetailTab>("details");
 	const [snap, setSnap] = useState<RepoDetails | { missing: true } | { invalid: true } | null>(
 		null,
 	);
@@ -191,9 +195,10 @@ export function RepoDetailPage() {
 	}, [owner, name, valid]);
 
 	useEffect(() => {
-		if (!valid) {
+		if (!valid || tab === "assessment") {
 			return;
 		}
+		const snapshotTab = tab;
 		let cancelled = false;
 		function apply<T>(
 			setter: (value: T | { missing: true }) => void,
@@ -225,7 +230,7 @@ export function RepoDetailPage() {
 				prs: setPulls,
 				languages: setLanguages,
 				contributors: setContributors,
-			}[tab];
+			}[snapshotTab];
 			setCurrent({ missing: true });
 		}
 		if (tab === "security") {
@@ -325,23 +330,25 @@ export function RepoDetailPage() {
 	}
 
 	const activeSnapshot =
-		tab === "details"
-			? snap
-			: tab === "security"
-				? security
-				: tab === "traffic"
-					? traffic
-					: tab === "actions"
-						? actions
-						: tab === "releases"
-							? releases
-							: tab === "issues"
-								? issues
-								: tab === "prs"
-									? pulls
-									: tab === "languages"
-										? languages
-										: contributors;
+		tab === "assessment"
+			? null
+			: tab === "details"
+				? snap
+				: tab === "security"
+					? security
+					: tab === "traffic"
+						? traffic
+						: tab === "actions"
+							? actions
+							: tab === "releases"
+								? releases
+								: tab === "issues"
+									? issues
+									: tab === "prs"
+										? pulls
+										: tab === "languages"
+											? languages
+											: contributors;
 	const current = activeSnapshot && !("missing" in activeSnapshot) ? activeSnapshot : null;
 	const activity =
 		(actions && !("missing" in actions)) || (releases && !("missing" in releases))
@@ -398,12 +405,16 @@ export function RepoDetailPage() {
 					</>
 				}
 			/>
-			<Tabs value={tab} onValueChange={(value) => setTab(value as RepoTab)} className="min-w-0">
+			<Tabs value={tab} onValueChange={(value) => setTab(value as DetailTab)} className="min-w-0">
 				<ScrollArea orientation="horizontal" aria-label="仓库标签页" className="mb-6">
 					<TabsList className="w-max min-w-full flex-nowrap" aria-label="仓库详情">
 						<TabsTrigger value="details" className="gap-1.5 whitespace-nowrap">
 							<Box className="size-3.5" aria-hidden="true" />
 							概览
+						</TabsTrigger>
+						<TabsTrigger value="assessment" className="gap-1.5 whitespace-nowrap">
+							<Sparkles className="size-3.5" aria-hidden="true" />
+							AI 评估
 						</TabsTrigger>
 						<TabsTrigger value="security" className="gap-1.5 whitespace-nowrap">
 							<ShieldAlert className="size-3.5" aria-hidden="true" />
@@ -439,6 +450,11 @@ export function RepoDetailPage() {
 						</TabsTrigger>
 					</TabsList>
 				</ScrollArea>
+				<TabsContent value="assessment">
+					{tab === "assessment" ? (
+						<RepoAssessmentPanel key={`${owner}/${name}`} owner={owner} name={name} />
+					) : null}
+				</TabsContent>
 				<TabsContent value="details">
 					{snap ? (
 						<div className="flex flex-col gap-4">

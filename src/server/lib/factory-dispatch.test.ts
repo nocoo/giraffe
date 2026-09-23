@@ -1,9 +1,14 @@
 import { afterEach, expect, it, vi } from "vitest";
 import type { Env } from "../env";
+import { dueAssessments, executeAssessment } from "./ai-assessment";
 import { dueRuns } from "./db/factory-runs";
 import { consumeFactory, continueFactory, enqueueRun } from "./factory-dispatch";
 import { executeRunPage } from "./factory-execute";
 
+vi.mock("./ai-assessment", () => ({
+	dueAssessments: vi.fn().mockResolvedValue([]),
+	executeAssessment: vi.fn(),
+}));
 vi.mock("./factory-retention", () => ({ pruneFactory: vi.fn() }));
 vi.mock("./factory-execute", () => ({ executeRunPage: vi.fn() }));
 vi.mock("./db/factory-runs", () => ({ dueRuns: vi.fn() }));
@@ -31,4 +36,27 @@ it("acknowledges duplicates, retries failures and schedules durable continuation
 	vi.mocked(dueRuns).mockResolvedValue(["orphan"]);
 	await continueFactory(env);
 	expect(send).toHaveBeenLastCalledWith({ id: "orphan" }, { delaySeconds: 0 });
+});
+
+it("dispatches assessment outbox jobs and resumes each separate stage", async () => {
+	const send = vi.fn();
+	const env = { FACTORY_QUEUE: { send } } as unknown as Env;
+	const ack = vi.fn(),
+		retry = vi.fn();
+	vi.mocked(executeAssessment).mockResolvedValue(new Date(Date.now() + 60_000).toISOString());
+	await consumeFactory(
+		{
+			messages: [
+				{ body: { reviewId: "ai_job" }, ack, retry },
+				{ body: {}, ack, retry },
+			],
+		} as unknown as MessageBatch<unknown>,
+		env,
+	);
+	expect(send).toHaveBeenCalledWith({ reviewId: "ai_job" }, { delaySeconds: 60 });
+	expect(ack).toHaveBeenCalledTimes(2);
+	vi.mocked(dueRuns).mockResolvedValue([]);
+	vi.mocked(dueAssessments).mockResolvedValue(["orphan_ai"]);
+	await continueFactory(env);
+	expect(send).toHaveBeenLastCalledWith({ reviewId: "orphan_ai" });
 });

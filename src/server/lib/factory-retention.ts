@@ -15,8 +15,9 @@ export async function factoryStorage(db: Db, account: string) {
 		.prepare(`SELECT COALESCE(SUM(bytes),0) AS bytes FROM (
 		SELECT length(CAST(payload AS BLOB)) AS bytes FROM snapshots WHERE account_id=? AND kind NOT LIKE 'factory%'
 		UNION ALL SELECT length(CAST(payload AS BLOB)) FROM snapshot_days WHERE account_id=?
+		UNION ALL SELECT length(CAST(COALESCE(input,'')||COALESCE(judgment,'')||COALESCE(report,'') AS BLOB)) FROM ai_reviews WHERE account_id=?
 	)`)
-		.bind(account, account)
+		.bind(account, account, account)
 		.first<{ bytes: number }>();
 	return {
 		resourceBytes: row?.bytes ?? 0,

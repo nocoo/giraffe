@@ -17,3 +17,5 @@
 - [nocoo 软件工厂真实调查](07-factory-investigation.md)
 
 - [软件工厂独立审查与验证](08-factory-review.md)
+
+- [Repository AI assessments](10-ai-assessments.md)

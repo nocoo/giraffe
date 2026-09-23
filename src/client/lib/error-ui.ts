@@ -9,6 +9,7 @@ export type ErrorUi =
 	| { kind: "ok" };
 
 const TOAST: Record<string, string> = {
+	ai_connection_failed: "AI 连接测试失败，请检查地址、模型和 API key",
 	github_unauthorized: "GitHub 认证失败",
 	github_forbidden: "没有 GitHub 权限",
 	origin_forbidden: "来源不被允许",

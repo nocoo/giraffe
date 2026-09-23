@@ -86,6 +86,7 @@ export function mapFactoryEvents(stream: FactoryStreamName, data: GithubObject[]
 				author: str(object(r.user ?? r.author ?? r.actor).login) || "unlinked",
 				state: str(r.state ?? r.status),
 			};
+			if (stream === "prs" || stream === "issues") event.body = str(r.body).slice(0, 1200);
 			if (stream === "commits") {
 				event.id = str(r.sha);
 				event.at = str(object(commit.committer).date);
@@ -105,6 +106,8 @@ export function mapFactoryEvents(stream: FactoryStreamName, data: GithubObject[]
 			}
 			if (stream === "alerts") {
 				event.id = String(r.number);
+				event.severity = nullable(object(r.security_advisory).severity);
+				event.body = str(object(r.security_advisory).summary).slice(0, 1200);
 				event.title = `${str(object(object(r.dependency).package).name)} · ${str(object(r.security_advisory).severity)}`;
 			}
 			return event;

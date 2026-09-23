@@ -373,7 +373,7 @@ test("the redesigned settings form clears a rejected PAT", async ({ page }) => {
 	await page.getByTestId("pat-input").fill(token);
 	await page.getByTestId("pat-submit").click();
 	await expect(page.getByTestId("pat-input")).toHaveValue("");
-	await expect(page.getByRole("alert")).toHaveText("令牌无效");
+	await expect(page.locator("#pat-error")).toHaveText("令牌无效");
 	await expect(page.getByTestId("pat-input")).toHaveAttribute("aria-invalid", "true");
 	await expect(page.getByTestId("pat-submit")).toBeDisabled();
 	expect(await page.content()).not.toContain(token);

@@ -23,6 +23,7 @@ import {
 } from "@nocoo/basalt/components/table";
 import { ExternalLink, KeyRound, ShieldCheck, Trash2 } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
+import { AiSettings } from "../components/ai-settings";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ResultCount, TableScroll } from "../components/layout/collection-chrome";
 import { catchLoad, reportError, reportOk } from "../lib/error-ui";
@@ -290,6 +291,7 @@ export function SettingsPage() {
 					</LayerCard.Well>
 				</LayerCard>
 			</SectionRule>
+			<AiSettings />
 			<ConfirmDialog
 				open={pendingId !== null}
 				onOpenChange={(open) => {

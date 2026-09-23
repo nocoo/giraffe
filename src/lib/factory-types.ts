@@ -20,6 +20,8 @@ export type FactoryCoverage = {
 	observed: number;
 };
 export type FactoryEvent = {
+	body?: string;
+	severity?: string | null;
 	id: string;
 	title: string;
 	url: string;

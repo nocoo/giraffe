@@ -5,6 +5,7 @@ import {
 	type FactoryStreamName,
 } from "../../lib/factory-types";
 import { type Env, encryptionKey } from "../env";
+import { dispatchAssessment } from "./ai-assessment";
 import { getAccount } from "./db/accounts";
 import { createDb } from "./db/d1";
 import { claimRun, fenced, saveRun } from "./db/factory-runs";
@@ -315,6 +316,8 @@ export async function executeRunPage(
 	)
 		run.cursor++;
 	const saved = await saveRun(db, lease, writes, clock());
+	if (saved && step.kind === "commit" && step.repo)
+		await dispatchAssessment(env, run.account_id, step.repo, run.id);
 	return saved && run.status === "running" ? run.nextAttemptAt : null;
 }
 function finish(step: FactoryRunStep, status: "success" | "failed" | "skipped", now: string) {

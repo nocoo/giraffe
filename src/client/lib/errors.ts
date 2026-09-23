@@ -1,4 +1,5 @@
 export const ERROR_CODES = [
+	"ai_connection_failed",
 	"validation_failed",
 	"refresh_cooldown",
 	"catalog_incomplete",

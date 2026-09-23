@@ -10,7 +10,10 @@ test("factory run survives reload, refreshes the whole site and preserves the la
 	await page.getByTestId("pat-input").fill(`ghp_${"A".repeat(36)}`);
 	await page.getByTestId("pat-submit").click();
 	await expect(page.getByTestId("pat-input")).toHaveValue("");
-	await expect(page.locator("form[aria-busy]")).toHaveAttribute("aria-busy", "false");
+	await expect(page.locator("form").filter({ has: page.getByTestId("pat-input") })).toHaveAttribute(
+		"aria-busy",
+		"false",
+	);
 	await page.goto("/factory");
 	await page.getByRole("button", { name: "刷新控制台", exact: true }).click();
 	await expect(page.getByRole("button", { name: "同步仓库列表" })).toBeEnabled();

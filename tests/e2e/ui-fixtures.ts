@@ -1,3 +1,4 @@
+import { defaultAiSettings } from "../../src/lib/ai-settings";
 import { ciReport } from "../../src/lib/ci-health";
 
 const fetchedAt = "2026-09-08T08:30:00.000Z";
@@ -77,6 +78,7 @@ export function createUiFixtures() {
 	);
 	const repoPath = "/api/repos/octocat/hello-world";
 	return {
+		"/api/ai/settings": { settings: [defaultAiSettings("summary"), defaultAiSettings("judgment")] },
 		"/api/me": { name: "演示账号", email: "demo@example.test", avatar: null },
 		"/api/accounts": {
 			accounts: [

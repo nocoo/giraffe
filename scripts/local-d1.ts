@@ -37,4 +37,6 @@ export function ensureLocalSchema(): void {
 	d1([`--file=${join(root, "migrations/0002_factory_retention.sql")}`]);
 	d1([`--file=${join(root, "migrations/0003_factory_budget.sql")}`]);
 	d1([`--file=${join(root, "migrations/0004_repo_statistics.sql")}`]);
+	d1([`--file=${join(root, "migrations/0005_ai_settings.sql")}`]);
+	d1([`--file=${join(root, "migrations/0006_ai_reviews.sql")}`]);
 }

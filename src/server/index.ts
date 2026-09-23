@@ -6,6 +6,12 @@ import { consumeFactory, continueFactory } from "./lib/factory-dispatch";
 import { accessBypass, resolveIdentity } from "./middleware/access";
 import { assertOrigin } from "./middleware/origin";
 import { activateAccount, getAccounts, postAccount, removeAccount } from "./routes/accounts";
+import {
+	deleteAiSettings,
+	getAiSettings,
+	postAiSettings,
+	testAiSettings,
+} from "./routes/ai-settings";
 import { getCi } from "./routes/ci";
 import { getFactory, getFactoryStream } from "./routes/factory";
 import { getFactoryRuns, postFactoryControl, postFactoryRun } from "./routes/factory-runs";
@@ -13,6 +19,7 @@ import { liveResponse } from "./routes/live";
 import { getMe } from "./routes/me";
 import { postRead, postReadAll } from "./routes/notifications";
 import { postRefresh } from "./routes/refresh";
+import { getRepoAssessment } from "./routes/repo-assessment";
 import { repoGet, setRepoStatistics } from "./routes/repos";
 import { snapshotGet } from "./routes/snapshots";
 
@@ -70,6 +77,15 @@ export function createApp(): Hono<{ Bindings: Env; Variables: AppVars }> {
 	app.post("/api/accounts/:id/activate", (c) => activateAccount(c));
 	allow(app, "/api/accounts/:id", ["DELETE"]);
 	app.delete("/api/accounts/:id", (c) => removeAccount(c));
+	allow(app, "/api/ai/settings", ["GET"]);
+	onGet(app, "/api/ai/settings", getAiSettings);
+	allow(app, "/api/ai/settings/:kind", ["POST", "DELETE"]);
+	app.delete("/api/ai/settings/:kind", deleteAiSettings);
+	app.post("/api/ai/settings/:kind", postAiSettings);
+	allow(app, "/api/ai/settings/:kind/test", ["POST"]);
+	app.post("/api/ai/settings/:kind/test", testAiSettings);
+	allow(app, "/api/repos/:owner/:name/assessment", ["GET"]);
+	onGet(app, "/api/repos/:owner/:name/assessment", getRepoAssessment);
 	allow(app, "/api/refresh", ["POST"]);
 	app.post("/api/refresh", (c) => postRefresh(c));
 	allow(app, "/api/factory", ["GET"]);
