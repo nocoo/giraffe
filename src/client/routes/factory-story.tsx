@@ -348,8 +348,7 @@ export function FlowStockChart({ days, kind }: { days: Day[]; kind: "prs" | "iss
 		const opened = known(d, prs ? "prOpened" : "issueOpened", kind);
 		const closed = prs ? known(d, "prMerged", "prs") : known(d, "issueClosed", "issues");
 		return {
-			date: d.date,
-			day: d,
+			...d,
 			opened,
 			closed: closed === null ? null : -closed,
 			rejected: prs ? (known(d, "prClosed", "prs") === null ? null : -d.prClosed) : null,

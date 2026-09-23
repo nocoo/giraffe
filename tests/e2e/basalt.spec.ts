@@ -394,6 +394,40 @@ test("calendar edge cells keep selection and keyboard focus inside the grid", as
 	}
 });
 
+for (const [chart, values] of [
+	["PR 流量与存量", ["新开9", "合并6", "未合并关闭 ↓3", "日终 open3"]],
+	["Issue 流量与存量", ["新开6", "关闭3", "日终 open2"]],
+	["提交产出与覆盖面", ["提交≥ 36", "7 日活跃仓库3"]],
+	["交付吞吐", ["合并 PR6", "Release3", "CI 7 日成功率85.7%"]],
+] as const) {
+	test(`${chart} tooltip displays daily values and leaves the page usable`, async ({ page }) => {
+		const errors: string[] = [];
+		page.on("pageerror", (error) => errors.push(error.message));
+		await page.setViewportSize({ width: 1440, height: 1000 });
+		await page.goto("/factory");
+		const plot = page.getByRole("group", { name: chart, exact: true });
+		const bar = plot
+			.locator(".recharts-bar")
+			.first()
+			.locator(".recharts-bar-rectangle path")
+			.filter({ visible: true })
+			.first();
+		await bar.scrollIntoViewIfNeeded();
+		const bounds = await bar.boundingBox();
+		if (!bounds) throw new Error("Daily chart bar missing");
+		await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+		const tip = plot.locator(".factory-chart-tip");
+		await expect(tip).toBeVisible();
+		await expect(tip.locator("strong")).toHaveText("2026-09-10 UTC");
+		await expect(tip.getByTestId("chart-tooltip-row")).toHaveText([...values]);
+		await page.mouse.move(0, 0);
+		await expect(tip).not.toBeVisible();
+		await page.getByRole("button", { name: /2026-09-10 UTC.*点击查看当日统计/ }).click();
+		await expect(page.locator(".factory-ledger-selected")).toContainText("2026-09-10");
+		expect(errors).toEqual([]);
+	});
+}
+
 test("factory visualizations use Basalt chart frames and preserve keyboard drilldowns", async ({
 	page,
 }) => {
