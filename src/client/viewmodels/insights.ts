@@ -389,3 +389,33 @@ export async function loadInsightsBoard(): Promise<InsightsBoard | { missing: tr
 		pulls: "missing" in pullsSnap ? null : pullsSnap.pull_requests,
 	};
 }
+
+const HEALTH_RANK: Record<Health, number> = { risky: 0, watch: 1, strong: 2 };
+/** Every repository as one tile, riskiest first, with the rules that put it there. */
+export function healthTiles(rows: InsightRow[]) {
+	return rows
+		.map((row) => {
+			const reasons: string[] = [];
+			if (row.days_since_push >= 30) reasons.push(`${row.days_since_push} 天未推送`);
+			if (row.alerts.length) {
+				const high = row.alerts.some((a) => a.severity === "high" || a.severity === "critical");
+				reasons.push(`${row.alerts.length} 个告警${high ? "（含高危）" : ""}`);
+			}
+			if (row.open_issue_count >= 20) reasons.push(`${row.open_issue_count} 个 open Issue`);
+			return {
+				name: row.name_with_owner,
+				short: row.name_with_owner.slice(row.name_with_owner.lastIndexOf("/") + 1),
+				health: row.health,
+				days: row.days_since_push,
+				issues: row.open_issue_count,
+				reasons,
+			};
+		})
+		.sort(
+			(a, b) =>
+				HEALTH_RANK[a.health] - HEALTH_RANK[b.health] ||
+				b.days - a.days ||
+				b.issues - a.issues ||
+				a.name.localeCompare(b.name),
+		);
+}

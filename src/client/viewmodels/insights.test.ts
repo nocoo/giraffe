@@ -5,6 +5,7 @@ import {
 	buildInsightsCharts,
 	filterInsights,
 	groupInsights,
+	healthTiles,
 	type InsightRow,
 	loadInsights,
 	loadInsightsBoard,
@@ -415,5 +416,56 @@ describe("insights viewmodel", () => {
 			});
 		});
 		await expect(loadInsights()).rejects.toMatchObject({ code: "github_error" });
+	});
+});
+
+describe("health tiles", () => {
+	it("orders every repository by risk and explains which rule it hit", () => {
+		const row = (
+			name: string,
+			health: "strong" | "watch" | "risky",
+			days: number,
+			issues = 0,
+			alerts = 0,
+		) => ({
+			name_with_owner: name,
+			open_issue_count: issues,
+			days_since_push: days,
+			health,
+			alerts: Array.from({ length: alerts }, () => ({
+				name_with_owner: name,
+				source: "dependabot",
+				severity: name.startsWith("a/low") ? "low" : "high",
+				summary: "",
+				url: "",
+			})),
+			opportunities: [],
+		});
+		const tiles = healthTiles([
+			row("a/ok", "strong", 1),
+			row("a/old", "risky", 120),
+			row("a/busy", "watch", 3, 25),
+			row("a/vuln", "risky", 2, 0, 2),
+			row("a/quiet", "watch", 40),
+			row("a/low", "watch", 3, 0, 1),
+			row("a/low2", "watch", 3, 0, 1),
+			row("a/busier", "watch", 3, 30),
+		]);
+		expect(tiles.map((t) => t.name)).toEqual([
+			"a/old",
+			"a/vuln",
+			"a/quiet",
+			"a/busier",
+			"a/busy",
+			"a/low",
+			"a/low2",
+			"a/ok",
+		]);
+		expect(tiles[5]?.reasons).toEqual(["1 个告警"]);
+		expect(tiles[0]?.reasons).toEqual(["120 天未推送"]);
+		expect(tiles[1]?.reasons).toEqual(["2 个告警（含高危）"]);
+		expect(tiles[2]?.reasons).toEqual(["40 天未推送"]);
+		expect(tiles[4]?.reasons).toEqual(["25 个 open Issue"]);
+		expect(tiles[7]).toMatchObject({ short: "ok", reasons: [] });
 	});
 });
