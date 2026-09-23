@@ -15,24 +15,22 @@ export type CandyTone =
 	| "indigo"
 	| "gray";
 
-const BRAND_BADGE = "border-transparent bg-basalt-primary/10 text-basalt-primary";
-const NEUTRAL_BADGE = "border-transparent bg-basalt-muted text-basalt-muted-foreground";
 const CANDY_CLASS: Record<CandyTone, string> = {
-	green: BRAND_BADGE,
-	amber: "border-transparent bg-basalt-warning-tint text-basalt-warning",
-	orange: "border-transparent bg-orange-500/15 text-orange-700 dark:text-orange-300",
-	red: "border-transparent bg-basalt-danger-tint text-basalt-destructive",
-	rose: "border-transparent bg-rose-500/15 text-rose-700 dark:text-rose-300",
-	teal: "border-transparent bg-teal-500/15 text-teal-700 dark:text-teal-300",
-	sky: "border-transparent bg-sky-500/15 text-sky-700 dark:text-sky-300",
-	blue: "border-transparent bg-blue-500/15 text-blue-700 dark:text-blue-300",
-	purple: "border-transparent bg-purple-500/15 text-purple-700 dark:text-purple-300",
-	indigo: "border-transparent bg-indigo-500/15 text-indigo-700 dark:text-indigo-300",
-	gray: NEUTRAL_BADGE,
+	green: "bg-[hsl(var(--basalt-accent-4))]",
+	amber: "bg-[hsl(var(--basalt-accent-6))]",
+	orange: "bg-[hsl(var(--basalt-accent-7))]",
+	red: "bg-[hsl(var(--basalt-accent-8))]",
+	rose: "bg-[hsl(var(--basalt-accent-9))]",
+	teal: "bg-[hsl(var(--basalt-accent-3))]",
+	sky: "bg-[hsl(var(--basalt-accent-2))]",
+	blue: "bg-[hsl(var(--basalt-accent-1))]",
+	purple: "bg-[hsl(var(--basalt-accent-10))]",
+	indigo: "bg-[hsl(var(--basalt-accent-11))]",
+	gray: "bg-[hsl(var(--basalt-accent-12))]",
 };
 
 export function candyClass(tone: CandyTone): string {
-	return CANDY_CLASS[tone];
+	return `border-transparent text-basalt-foreground dark:text-basalt-background ${CANDY_CLASS[tone]}`;
 }
 
 export function formatDelta(value: number | null, baselineMissing: boolean): string {
@@ -304,15 +302,15 @@ export function freshnessFilled(days: number): number {
 
 export function freshnessTone(days: number): string {
 	if (days <= 7) {
-		return "bg-basalt-primary";
+		return "bg-basalt-chart-5";
 	}
 	if (days <= 30) {
-		return "bg-basalt-primary/75";
+		return "bg-basalt-chart-5/75";
 	}
 	if (days <= 90) {
-		return "bg-basalt-primary/50";
+		return "bg-basalt-chart-5/50";
 	}
-	return "bg-basalt-primary/25";
+	return "bg-basalt-chart-5/25";
 }
 
 export function maxCount(values: number[]): number {

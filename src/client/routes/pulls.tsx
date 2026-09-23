@@ -60,10 +60,10 @@ type PullFilters = WorkFilters & { review: string };
 const NO_FILTERS: PullFilters = { repo: "", label: "", author: "", age: "", review: "" };
 const FILTER_LABELS = { repo: "仓库", author: "作者", age: "年龄", review: "审查" };
 const REVIEW_COLORS = {
-	draft: "var(--color-basalt-muted-foreground)",
-	required: chartColor(1),
-	changes: "var(--color-basalt-warning)",
-	approved: "var(--color-basalt-primary)",
+	draft: chartColor(0),
+	required: chartColor(3),
+	changes: chartColor(1),
+	approved: "var(--color-basalt-chart-5)",
 	none: "var(--color-basalt-border)",
 };
 
@@ -275,7 +275,7 @@ export function PullsPage() {
 										key: b.key,
 										label: PR_SIZES[i]?.label ?? b.key,
 										value: b.value,
-										color: `color-mix(in srgb,var(--color-basalt-primary) ${100 - i * 22}%,var(--color-basalt-border))`,
+										color: `color-mix(in srgb,var(--color-basalt-chart-5) ${100 - i * 22}%,var(--color-basalt-border))`,
 									}))}
 								/>
 							</div>

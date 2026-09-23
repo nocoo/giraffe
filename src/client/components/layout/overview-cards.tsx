@@ -18,13 +18,12 @@ import type { AGE_BUCKETS } from "../../viewmodels/overview";
 import { ChartBrick } from "./chart-brick";
 import { RankBars, type RankRow } from "./rank-bars";
 
-/** Recency ramp: newest in the brand hue, oldest fading toward neutral. */
 export const AGE_COLORS: Record<(typeof AGE_BUCKETS)[number]["key"], string> = {
-	d1: "var(--color-basalt-primary)",
-	d7: "color-mix(in srgb,var(--color-basalt-primary) 75%,var(--color-basalt-border))",
-	d30: "color-mix(in srgb,var(--color-basalt-primary) 50%,var(--color-basalt-border))",
-	d90: "color-mix(in srgb,var(--color-basalt-warning) 60%,var(--color-basalt-border))",
-	old: "var(--color-basalt-warning)",
+	d1: "var(--color-basalt-chart-5)",
+	d7: "color-mix(in srgb,var(--color-basalt-chart-5) 75%,var(--color-basalt-border))",
+	d30: "color-mix(in srgb,var(--color-basalt-chart-5) 50%,var(--color-basalt-border))",
+	d90: "color-mix(in srgb,var(--color-basalt-chart-7) 60%,var(--color-basalt-border))",
+	old: "var(--color-basalt-chart-7)",
 };
 
 export function OverviewCard({

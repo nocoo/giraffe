@@ -62,8 +62,8 @@ export function LabelChips({ labels }: { labels: { name: string; color: string }
 					className="max-w-44 truncate border-transparent px-2 py-0.5 text-xs"
 					title={label.name}
 					style={{
-						color: categoryColor(label.name),
-						backgroundColor: `color-mix(in srgb, ${categoryColor(label.name)} 14%, transparent)`,
+						color: "var(--color-basalt-foreground)",
+						backgroundColor: `color-mix(in srgb, ${categoryColor(label.name)} 24%, var(--color-basalt-secondary))`,
 					}}
 				>
 					{label.name}
@@ -93,8 +93,8 @@ export function ChurnMeter({ adds, dels, label }: { adds: number; dels: number; 
 		return <span className="text-basalt-muted-foreground">—</span>;
 	}
 	const items = [
-		...Array.from({ length: adds }, () => ({ color: "bg-basalt-primary", height: 1 })),
-		...Array.from({ length: dels }, () => ({ color: "bg-basalt-destructive/70", height: 1 })),
+		...Array.from({ length: adds }, () => ({ color: "bg-basalt-chart-5", height: 1 })),
+		...Array.from({ length: dels }, () => ({ color: "bg-basalt-chart-11", height: 1 })),
 	];
 	return (
 		<SlotBarChart items={items} ariaLabel={label} heightClass="h-5" className="w-16 shrink-0" />

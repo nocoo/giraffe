@@ -44,10 +44,10 @@ const SEVERITY_LABELS: Record<string, string> = {
 	other: "其他",
 };
 const SEVERITY_COLORS: Record<string, string> = {
-	critical: "var(--color-basalt-destructive)",
-	high: "color-mix(in srgb,var(--color-basalt-destructive) 55%,var(--color-basalt-warning))",
-	medium: "var(--color-basalt-warning)",
-	low: "color-mix(in srgb,var(--color-basalt-warning) 40%,var(--color-basalt-border))",
+	critical: "hsl(var(--basalt-accent-8))",
+	high: "color-mix(in srgb,hsl(var(--basalt-accent-8)) 55%,var(--color-basalt-chart-7))",
+	medium: "var(--color-basalt-chart-7)",
+	low: "color-mix(in srgb,var(--color-basalt-chart-7) 40%,var(--color-basalt-border))",
 	other: "var(--color-basalt-muted-foreground)",
 };
 
@@ -185,7 +185,7 @@ export function AlertsPage() {
 								active={picked.repo}
 								onSelect={pick("repo")}
 								format={shortRepo}
-								color="var(--color-basalt-destructive)"
+								color="hsl(var(--basalt-accent-8))"
 							/>
 						</OverviewCard>
 						<OverviewCard

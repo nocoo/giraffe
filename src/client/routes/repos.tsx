@@ -67,10 +67,10 @@ import {
 
 const NO_FILTERS = { language: "", status: "", age: "" };
 const STATUS_COLORS = [
-	"var(--color-basalt-primary)",
-	"color-mix(in srgb,var(--color-basalt-primary) 35%,var(--color-basalt-border))",
+	"var(--color-basalt-chart-5)",
+	"color-mix(in srgb,var(--color-basalt-chart-5) 35%,var(--color-basalt-border))",
 	"var(--color-basalt-muted-foreground)",
-	"var(--color-basalt-warning)",
+	"var(--color-basalt-chart-7)",
 ];
 
 export function ReposPage() {
@@ -292,7 +292,7 @@ export function ReposPage() {
 						label="Stars 最多的仓库"
 						active=""
 						format={shortRepo}
-						color="var(--color-basalt-warning)"
+						color="var(--color-basalt-chart-7)"
 					/>
 				</OverviewCard>
 			</div>
@@ -488,7 +488,7 @@ export function ReposPage() {
 														<div className="flex items-center justify-end gap-2">
 															<Meter
 																filled={meterFilled(row.open_issue_count, peakIssues)}
-																tone="bg-basalt-primary"
+																tone="bg-basalt-chart-1"
 																label={`${row.name_with_owner} issues`}
 															/>
 															<span className={NUM_CELL}>{formatCount(row.open_issue_count)}</span>

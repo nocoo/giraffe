@@ -116,8 +116,8 @@ export function RepoActivityChart({ days }: { days: Day[] }) {
 }
 
 const OUTCOME = [
-	{ key: "success", label: "成功", color: "var(--color-basalt-primary)" },
-	{ key: "failure", label: "失败", color: "var(--color-basalt-destructive)" },
+	{ key: "success", label: "成功", color: "var(--color-basalt-chart-5)" },
+	{ key: "failure", label: "失败", color: "hsl(var(--basalt-accent-8))" },
 	{ key: "other", label: "取消 / 跳过", color: "var(--color-basalt-muted-foreground)" },
 	{ key: "pending", label: "进行中", color: FLOW_COLORS.opened },
 ];

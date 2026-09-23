@@ -28,10 +28,6 @@ const SettingsPage = lazy(() =>
 	import("./routes/settings").then((m) => ({ default: m.SettingsPage })),
 );
 
-const GIRAFFE_ACCENT = {
-	primary: { light: "113 58% 62%", dark: "113 58% 70%" },
-} as const;
-
 function RouterLink({
 	href,
 	className,
@@ -76,7 +72,7 @@ const PAGES: Record<(typeof APP_PATHS)[number], ReactNode> = {
 export function App() {
 	return (
 		<ThemeProvider>
-			<AccentProvider defaultAccent="primary" persist={false} paletteOverrides={GIRAFFE_ACCENT}>
+			<AccentProvider defaultAccent="green" persist={false}>
 				<LinkProvider render={RouterLink}>
 					<TooltipProvider>
 						<BrowserRouter>

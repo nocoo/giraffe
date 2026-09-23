@@ -140,7 +140,7 @@ test("multicolor chart series stay distinct in both themes across factory, insig
 		] as const) {
 			await page.goto(path);
 			await expect(page.locator("html")).toHaveAttribute("data-mode", mode);
-			await expect(page.locator("html")).toHaveAttribute("data-accent", "primary");
+			await expect(page.locator("html")).toHaveAttribute("data-accent", "green");
 			if (label === "languages") await page.getByRole("tab", { name: "语言", exact: true }).click();
 			const colors = page.getByRole("group", { name: label, exact: true }).locator(marks);
 			await expect(colors.first()).toBeVisible();

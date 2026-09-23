@@ -33,7 +33,7 @@
 
 导航「软件工厂」进入 `/factory`。语言群按 GitHub primaryLanguage 互斥分组；topic 允许重叠。仓库搜索、领域筛选、仓库/记录类型/状态/日期/页码保存在 URL。图表点击可下钻，仓库表每页 25 行，明细先按状态或 UTC 日期过滤再每页 100 行；merged 按 mergedAt、closed 按 closedAt，其余按记录时间。提供完整每日账本、语言字节表和来源文件链接作为图形替代；键盘可聚焦图表按钮与表格链接。缺失、限流、权限不足、采集中、无匹配结果分别呈现。
 
-界面沿用 [05 §5.5](05-client.md#55-字号与可视化规范) 的 16/14/13px 卡片字号和共享 StatCard。趋势线与吞吐图使用 Basalt Sparkline/AreaChart；规模树图和散点图使用 Recharts + Basalt ChartFrame、坐标轴与 tooltip，显式采用站点绿色层次，不使用模板多彩色板，不自写树图布局算法。Basalt HeatmapCalendar 尚无日期选择和缺失态 API，因此日历保留业务布局，组合 Basalt Button/Tooltip 和公开绿色 heatmap 色板，保留每日账本下钻与未知状态。所有筛选、复选与输入使用 Basalt 控件。
+The interface follows the 16/14/13px card typography and shared StatCard in [05 §5.5](05-client.md#55-字号与可视化规范). Trend and throughput charts use Basalt Sparkline/AreaChart; treemaps and scatter plots combine Recharts with Basalt frames, axes and tooltips. All marks use the shared Basalt candy palette; axis labels retain semantic text colors. The calendar keeps its application-owned date selection and unknown states, using Basalt Button/Tooltip and a surface-relative candy-green intensity ramp shared with the repository matrix. Filters, checkboxes and inputs use Basalt controls.
 
 卡片说明统一收进标题旁的问号，保留短轴标签、实际数量和数据不完整提醒。同排所有卡片等高，文字卡（包括「需要检查的信号」）随相邻高卡拉伸，日历与绘图区自适应填满空间。仓库表不叠加 Body 与单元格的双重内边距；每日账本选中行为浅绿色并提供 `aria-selected`。图表标签和嵌套 SVG 的指针点击都不出现蓝框，键盘保留绿色焦点；日历首尾单元格的选中与焦点轮廓向内绘制，避免被边缘裁掉。
 

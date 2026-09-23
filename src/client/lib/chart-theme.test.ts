@@ -1,9 +1,10 @@
+import { CHART_COLORS } from "@nocoo/basalt/charts/palette";
 import { expect, it } from "vitest";
 import { categoryColor, chartColor } from "./chart-theme";
 
-it("uses a multicolor palette with stable named categories and safe fallback", () => {
+it("uses the Basalt candy cycle with stable named categories and safe fallback", () => {
 	const colors = Array.from({ length: 10 }, (_, index) => chartColor(index));
-	expect(new Set(colors).size).toBe(10);
+	expect(colors).toEqual([...CHART_COLORS, ...CHART_COLORS]);
 	expect(chartColor(10)).toBe(colors[0]);
 	expect(chartColor(-1)).toBe(colors[0]);
 	expect(chartColor(Number.NaN)).toBe(colors[0]);

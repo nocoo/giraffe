@@ -193,11 +193,11 @@ Basalt `ContentIsland` 已是 L1 岛。不要再包一层自定义 card 当岛�
 | 分段（列表/网格、筛选） | `SegmentControl` | `@nocoo/basalt` |
 | 页级 tab（单仓） | `Tabs*` | `@nocoo/basalt` |
 | 工具条 | `Toolbar` | `@nocoo/basalt` |
-| 徽章（health / severity） | `CandyBadge`（Basalt `Badge` 的站点配色组合） | `layout/candy-badge`。常规状态用绿色/中性灰浅底，警告和错误保留 Basalt 语义色，正文使用对应的对比色，不使用模板糖果色 |
+| 徽章（health / severity） | `CandyBadge` (Basalt `Badge` composition) | Uses the twelve Basalt candy accent tokens with dark labels in both themes. Arbitrary GitHub labels use tinted category fills with semantic foreground text. |
 | 头像 | `Avatar*` | `@nocoo/basalt` |
 | 确认删除账号 | `ConfirmDialog` / `useConfirm` | `@nocoo/basalt` |
 | Toast | `toast` `Toaster` | `@nocoo/basalt` |
-| 主题 | `ThemeProvider` `ThemeToggle` `AccentProvider` | `ThemeProvider` 根 barrel；`AccentProvider` 走 `@nocoo/basalt/providers/accent`。`persist={false}`，`defaultAccent="primary"`，`paletteOverrides.primary` 为草绿主色（`113 58% 62%` / `113 58% 70%`）。禁止重写 `--basalt-*`；图表通过 `lib/chart-theme` 和显式 `series.color` 使用主题色衍生的五个绿色层次，不依赖包默认五彩色板 |
+| 主题 | `ThemeProvider` `ThemeToggle` `AccentProvider` | `ThemeProvider` from the root barrel; `AccentProvider` from `@nocoo/basalt/providers/accent`, with `persist={false}` and `defaultAccent="green"`. Do not override `--basalt-*`. Charts use the package Blue/Pink/Green/Yellow/Gray cycle via `lib/chart-theme`, independently of the control accent. Semantic primary text, actions and focus retain Basalt contrast handling. |
 | Router 链接 | `Link` + `LinkProvider` | `@nocoo/basalt` |
 | ⌘K | `CommandPalette*` | `@nocoo/basalt` |
 | 日报预览 / 复制 | `CodeBlock` / `ClipboardText` | granular `components/code` / `components/clipboard-text`。`text` 是可见标签，`copyText` 必须传完整 Markdown 内容 |

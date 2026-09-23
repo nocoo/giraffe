@@ -187,7 +187,7 @@ export function IssuesPage() {
 				>
 					<CountBars
 						data={board.weekly}
-						series={[{ key: "y", label: "新建且仍 open", color: "var(--color-basalt-primary)" }]}
+						series={[{ key: "y", label: "新建且仍 open", color: "var(--color-basalt-chart-5)" }]}
 						label="近 12 周新建 Issue"
 						className="h-28 w-full"
 					/>

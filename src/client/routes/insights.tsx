@@ -36,16 +36,16 @@ const COVERAGE_SERIES = [
 ];
 
 const HEALTH_SERIES = [
-	{ key: "健康", color: chartColor(0) },
-	{ key: "观察", color: "hsl(var(--basalt-warning))" },
-	{ key: "风险", color: "hsl(var(--basalt-destructive))" },
+	{ key: "健康", color: chartColor(2) },
+	{ key: "观察", color: "var(--color-basalt-chart-7)" },
+	{ key: "风险", color: "hsl(var(--basalt-accent-8))" },
 ];
 
 const PR_STATUS_SERIES = [
-	{ key: "草稿", color: chartColor(3) },
-	{ key: "待审查", color: chartColor(1) },
-	{ key: "需修改", color: chartColor(2) },
-	{ key: "已批准", color: chartColor(0) },
+	{ key: "草稿", color: chartColor(0) },
+	{ key: "待审查", color: chartColor(3) },
+	{ key: "需修改", color: chartColor(1) },
+	{ key: "已批准", color: chartColor(2) },
 	{ key: "未标记", color: chartColor(4) },
 ];
 

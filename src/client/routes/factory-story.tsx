@@ -235,12 +235,16 @@ function known(d: Day, key: keyof Day, stream: keyof Day["complete"]): number | 
 	return d.complete[stream] || value ? value : null;
 }
 
-const axisLabel = (value: string, side: "left" | "right", color: string) => ({
+const axisLabel = (value: string, side: "left" | "right") => ({
 	value,
 	angle: -90,
 	position: side === "left" ? ("left" as const) : ("right" as const),
 	offset: -2,
-	style: { fill: color, fontSize: 12, textAnchor: "middle" as const },
+	style: {
+		fill: "var(--color-basalt-muted-foreground)",
+		fontSize: 12,
+		textAnchor: "middle" as const,
+	},
 });
 
 /** Output (bars, left axis) against how widely the work was spread (line, right axis). */
@@ -279,7 +283,7 @@ export function CommitBreadthChart({ days }: { days: Day[] }) {
 					{...cartesianAxisProps()}
 					allowDecimals={false}
 					width={44}
-					label={axisLabel("提交", "left", FLOW_COLORS.commits)}
+					label={axisLabel("提交", "left")}
 				/>
 				<YAxis
 					yAxisId="breadth"
@@ -287,7 +291,7 @@ export function CommitBreadthChart({ days }: { days: Day[] }) {
 					{...cartesianAxisProps()}
 					allowDecimals={false}
 					width={36}
-					label={axisLabel("活跃仓库", "right", FLOW_COLORS.release)}
+					label={axisLabel("活跃仓库", "right")}
 				/>
 				<Tooltip
 					{...chartTooltipProps({ cursor: "bar" })}
@@ -397,7 +401,7 @@ export function FlowStockChart({ days, kind }: { days: Day[]; kind: "prs" | "iss
 					allowDecimals={false}
 					width={44}
 					tickFormatter={(v: number) => n(Math.abs(v))}
-					label={axisLabel("每日流量", "left", "var(--color-basalt-muted-foreground)")}
+					label={axisLabel("每日流量", "left")}
 				/>
 				<YAxis
 					yAxisId="stock"
@@ -405,7 +409,7 @@ export function FlowStockChart({ days, kind }: { days: Day[]; kind: "prs" | "iss
 					{...cartesianAxisProps(!hasStock)}
 					allowDecimals={false}
 					width={36}
-					label={axisLabel(hasStock ? "Open" : "", "right", "var(--color-basalt-foreground)")}
+					label={axisLabel(hasStock ? "Open" : "", "right")}
 				/>
 				<ReferenceLine yAxisId="flow" y={0} stroke="var(--color-basalt-border)" />
 				<Tooltip
@@ -525,7 +529,7 @@ export function DeliveryChart({ days }: { days: Day[] }) {
 					{...cartesianAxisProps()}
 					allowDecimals={false}
 					width={44}
-					label={axisLabel("交付数", "left", FLOW_COLORS.merged)}
+					label={axisLabel("交付数", "left")}
 				/>
 				<YAxis
 					yAxisId="rate"
@@ -534,7 +538,7 @@ export function DeliveryChart({ days }: { days: Day[] }) {
 					domain={[0, 1]}
 					width={40}
 					tickFormatter={(v: number) => `${Math.round(v * 100)}%`}
-					label={axisLabel("CI 成功率", "right", FLOW_COLORS.release)}
+					label={axisLabel("CI 成功率", "right")}
 				/>
 				<Tooltip
 					{...chartTooltipProps({ cursor: "bar" })}
@@ -826,7 +830,7 @@ export function ActivityQuadrant({
 						x2={q.medianCommits + 1}
 						y1={q.medianBacklog}
 						y2={yMax}
-						fill="var(--color-basalt-warning)"
+						fill="var(--color-basalt-chart-7)"
 						fillOpacity={0.07}
 						ifOverflow="extendDomain"
 					/>
@@ -854,7 +858,7 @@ export function ActivityQuadrant({
 						allowDecimals={false}
 						width={32}
 						{...cartesianAxisProps()}
-						label={axisLabel("积压 ↑", "left", "var(--color-basalt-muted-foreground)")}
+						label={axisLabel("积压 ↑", "left")}
 						tickFormatter={(v: number) => (Number.isInteger(v) && v >= 0 ? n(v) : "")}
 						allowDataOverflow
 					/>

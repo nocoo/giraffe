@@ -1,7 +1,6 @@
 import { Tooltip as BasaltTooltip, Button, TooltipContent, TooltipTrigger } from "@nocoo/basalt";
 import { ANIMATION_PROPS, chartTooltipProps } from "@nocoo/basalt/charts/config";
 import { ChartFrame } from "@nocoo/basalt/charts/frame";
-import { heatmapColorScales } from "@nocoo/basalt/charts/heatmap-calendar";
 import { Sparkline } from "@nocoo/basalt/charts/sparkline";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { Text } from "@nocoo/basalt/components/text";
@@ -116,10 +115,7 @@ export function FactoryHeatmap({
 									style={{
 										gridColumn: Math.floor((i + offset) / 7) + 1,
 										gridRow: ((i + offset) % 7) + 1,
-										backgroundColor:
-											heatmapColorScales.green[
-												d.count === 0 ? 0 : Math.min(4, Math.ceil((d.count / max) * 4))
-											],
+										backgroundColor: `var(--giraffe-heat-${d.count === 0 ? 0 : Math.min(4, Math.ceil((d.count / max) * 4))})`,
 									}}
 									className={`factory-day h-auto min-w-0 p-0 ${d.known === false && d.count === 0 ? "factory-day-unknown" : ""} ${selected === d.date ? "factory-day-selected" : ""}`}
 									aria-pressed={selected === d.date}
@@ -135,8 +131,12 @@ export function FactoryHeatmap({
 				<span>{days[0]?.date} · 周一至周日，自上而下</span>
 				<span>
 					少{" "}
-					{heatmapColorScales.green.slice(1).map((color) => (
-						<span key={color} className="factory-legend" style={{ backgroundColor: color }} />
+					{[1, 2, 3, 4].map((level) => (
+						<span
+							key={level}
+							className="factory-legend"
+							style={{ backgroundColor: `var(--giraffe-heat-${level})` }}
+						/>
 					))}{" "}
 					多
 				</span>

@@ -19,7 +19,7 @@ export function RankBars({
 	label,
 	active = "",
 	onSelect,
-	color = "var(--color-basalt-primary)",
+	color = "var(--color-basalt-chart-5)",
 }: {
 	rows: RankRow[];
 	max: number;
