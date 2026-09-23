@@ -29,7 +29,7 @@ function AiSettingsCard({ settings }: { settings: PublicAiSettings }) {
 	const [error, setError] = useState<string | null>(null);
 	const [status, setStatus] = useState<string | null>(null);
 	const summary = settings.kind === "summary";
-	const title = summary ? "通用 AI · 仓库报告" : "GEV · 判断与归类";
+	const title = summary ? "通用 AI · 仓库报告" : "JEV · 判断与归类";
 	const busy = phase !== "idle";
 	const canSubmit = canSubmitAiSettings(draft, saved, busy);
 	const retainedKey = saved.hasApiKey && sameAiDestination(draft, saved);
@@ -107,7 +107,7 @@ function AiSettingsCard({ settings }: { settings: PublicAiSettings }) {
 				>
 					<p className="text-sm leading-6 text-basalt-muted-foreground">
 						{summary
-							? "综合提交、PR、Issue、交付节奏与 GEV 判断，生成结构化仓库报告。"
+							? "综合提交、PR、Issue、交付节奏与 JEV 判断，生成结构化仓库报告。"
 							: "通过 TypeSafe 模型判断安全事项的紧急程度、识别需要人工技术判断的 PR。"}
 					</p>
 					<fieldset disabled={busy} className="min-w-0 space-y-4">
@@ -248,7 +248,7 @@ export function AiSettings() {
 				两项配置保存后，下次仓库刷新会将统计、事项标题与正文节选发送到对应 AI 服务进行评估。
 			</p>
 			{settings ? (
-				<div className="grid items-start gap-4 xl:grid-cols-2">
+				<div className="grid gap-4 xl:grid-cols-2">
 					{settings.map((item) => (
 						<AiSettingsCard key={item.kind} settings={item} />
 					))}

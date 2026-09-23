@@ -196,7 +196,7 @@ describe("AI settings cards", () => {
 		expect(container.textContent).toContain("AI 配置加载失败。");
 		vi.mocked(loadAiSettings).mockResolvedValue([defaultAiSettings("judgment")]);
 		await click("button");
-		expect(container.textContent).toContain("GEV · 判断与归类");
+		expect(container.textContent).toContain("JEV · 判断与归类");
 	});
 
 	it("can disable a provider and keeps the stored key if removal fails", async () => {
