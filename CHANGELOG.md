@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.9.0 — 2026-09-24
+
+### Added
+- `GET /api/ci` classifies saved CI runs into workflow and lane streams, folds numbered and Dependabot jobs, and judges each stream broken (consecutive or chronic failures), flaky, healthy or idle, with release cadence per repository
+- CI and releases page: summarizes stream verdicts, lists broken workflows first with recent run strips, splits recovered failures into recurring and one-off, charts 30 days of outcomes and ranks releases by pipeline state and staleness
+
+### Changed
+- Sidebar navigation is grouped by purpose (overview, repository health, to-do, system) with the flat item list derived from the groups so order has one definition
+
+### Fixed
+- Run strips read oldest to newest with the newest cell enlarged and outlined, an old/latest axis on cards and per-cell timestamps; factory sparklines label their start and end dates
+
 ## v0.8.0 — 2026-09-23
 
 ### Added
