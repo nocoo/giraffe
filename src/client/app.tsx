@@ -28,6 +28,10 @@ const SettingsPage = lazy(() =>
 	import("./routes/settings").then((m) => ({ default: m.SettingsPage })),
 );
 
+const CANDY_PALETTE = {
+	amber: { light: "43 92% 48%", dark: "43 92% 60%" },
+};
+
 function RouterLink({
 	href,
 	className,
@@ -72,7 +76,7 @@ const PAGES: Record<(typeof APP_PATHS)[number], ReactNode> = {
 export function App() {
 	return (
 		<ThemeProvider>
-			<AccentProvider defaultAccent="green" persist={false}>
+			<AccentProvider defaultAccent="green" persist={false} paletteOverrides={CANDY_PALETTE}>
 				<LinkProvider render={RouterLink}>
 					<TooltipProvider>
 						<BrowserRouter>

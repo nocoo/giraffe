@@ -37,7 +37,7 @@ const COVERAGE_SERIES = [
 
 const HEALTH_SERIES = [
 	{ key: "健康", color: chartColor(2) },
-	{ key: "观察", color: "var(--color-basalt-chart-7)" },
+	{ key: "观察", color: "var(--color-giraffe-yellow)" },
 	{ key: "风险", color: "hsl(var(--basalt-accent-8))" },
 ];
 

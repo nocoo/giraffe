@@ -70,7 +70,7 @@ const STATUS_COLORS = [
 	"var(--color-basalt-chart-5)",
 	"color-mix(in srgb,var(--color-basalt-chart-5) 35%,var(--color-basalt-border))",
 	"var(--color-basalt-muted-foreground)",
-	"var(--color-basalt-chart-7)",
+	"var(--color-giraffe-yellow)",
 ];
 
 export function ReposPage() {
@@ -292,7 +292,7 @@ export function ReposPage() {
 						label="Stars 最多的仓库"
 						active=""
 						format={shortRepo}
-						color="var(--color-basalt-chart-7)"
+						color="var(--color-giraffe-yellow)"
 					/>
 				</OverviewCard>
 			</div>

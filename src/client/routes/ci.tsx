@@ -42,7 +42,7 @@ import { daysAgo, shortRepo } from "../viewmodels/overview";
 
 const VERDICT = {
 	broken: { label: "连续失败", tone: "red", color: "hsl(var(--basalt-accent-8))" },
-	flaky: { label: "偶发失败", tone: "amber", color: "var(--color-basalt-chart-7)" },
+	flaky: { label: "偶发失败", tone: "amber", color: "var(--color-giraffe-yellow)" },
 	healthy: { label: "稳定", tone: "green", color: "var(--color-basalt-chart-5)" },
 	idle: { label: "无近期运行", tone: "gray", color: "var(--color-basalt-border)" },
 	none: { label: "无工作流", tone: "gray", color: "var(--color-basalt-border)" },
@@ -51,7 +51,7 @@ const OUTCOME_COLOR = {
 	success: "var(--color-basalt-chart-5)",
 	failure: "hsl(var(--basalt-accent-8))",
 	other: "var(--color-basalt-muted-foreground)",
-	pending: "var(--color-basalt-chart-7)",
+	pending: "var(--color-giraffe-yellow)",
 };
 
 export function CiPage() {

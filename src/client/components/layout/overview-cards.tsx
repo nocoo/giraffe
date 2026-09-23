@@ -22,8 +22,8 @@ export const AGE_COLORS: Record<(typeof AGE_BUCKETS)[number]["key"], string> = {
 	d1: "var(--color-basalt-chart-5)",
 	d7: "color-mix(in srgb,var(--color-basalt-chart-5) 75%,var(--color-basalt-border))",
 	d30: "color-mix(in srgb,var(--color-basalt-chart-5) 50%,var(--color-basalt-border))",
-	d90: "color-mix(in srgb,var(--color-basalt-chart-7) 60%,var(--color-basalt-border))",
-	old: "var(--color-basalt-chart-7)",
+	d90: "color-mix(in srgb,var(--color-giraffe-yellow) 60%,var(--color-basalt-border))",
+	old: "var(--color-giraffe-yellow)",
 };
 
 export function OverviewCard({

@@ -1,15 +1,20 @@
 import { getChartColor } from "@nocoo/basalt/charts/config";
 import { chart } from "@nocoo/basalt/charts/palette";
 
-export { getChartColor as chartColor } from "@nocoo/basalt/charts/config";
+const YELLOW = "var(--color-giraffe-yellow)";
+
+export function chartColor(index: number): string {
+	const color = getChartColor(index);
+	return color === chart.amber ? YELLOW : color;
+}
 
 const CATEGORIES: Record<string, string> = {
 	typescript: chart.primary,
-	javascript: chart.amber,
-	python: chart.amber,
+	javascript: YELLOW,
+	python: YELLOW,
 	go: chart.green,
 	rust: chart.rose,
-	swift: chart.amber,
+	swift: YELLOW,
 	kotlin: chart.rose,
 	java: chart.rose,
 	ruby: chart.rose,
@@ -18,7 +23,7 @@ const CATEGORIES: Record<string, string> = {
 	"c++": chart.rose,
 	c: chart.gray,
 	shell: chart.green,
-	html: chart.amber,
+	html: YELLOW,
 	css: chart.rose,
 	vue: chart.green,
 	dart: chart.green,
@@ -33,15 +38,15 @@ export function categoryColor(name: string): string {
 	if (fixed) return fixed;
 	let hash = 0;
 	for (const char of key) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
-	return getChartColor(hash);
+	return chartColor(hash);
 }
 
 export const FLOW_COLORS = {
 	commits: chart.primary,
 	merged: chart.green,
-	opened: chart.amber,
+	opened: YELLOW,
 	closed: chart.green,
 	release: chart.rose,
-	stock: chart.amber,
+	stock: YELLOW,
 	rate: chart.rose,
 } as const;

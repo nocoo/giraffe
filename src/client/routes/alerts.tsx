@@ -45,9 +45,9 @@ const SEVERITY_LABELS: Record<string, string> = {
 };
 const SEVERITY_COLORS: Record<string, string> = {
 	critical: "hsl(var(--basalt-accent-8))",
-	high: "color-mix(in srgb,hsl(var(--basalt-accent-8)) 55%,var(--color-basalt-chart-7))",
-	medium: "var(--color-basalt-chart-7)",
-	low: "color-mix(in srgb,var(--color-basalt-chart-7) 40%,var(--color-basalt-border))",
+	high: "color-mix(in srgb,hsl(var(--basalt-accent-8)) 55%,var(--color-giraffe-yellow))",
+	medium: "var(--color-giraffe-yellow)",
+	low: "color-mix(in srgb,var(--color-giraffe-yellow) 40%,var(--color-basalt-border))",
 	other: "var(--color-basalt-muted-foreground)",
 };
 

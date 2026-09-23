@@ -830,7 +830,7 @@ export function ActivityQuadrant({
 						x2={q.medianCommits + 1}
 						y1={q.medianBacklog}
 						y2={yMax}
-						fill="var(--color-basalt-chart-7)"
+						fill="var(--color-giraffe-yellow)"
 						fillOpacity={0.07}
 						ifOverflow="extendDomain"
 					/>

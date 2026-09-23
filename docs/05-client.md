@@ -197,7 +197,7 @@ Basalt `ContentIsland` 已是 L1 岛。不要再包一层自定义 card 当岛�
 | 头像 | `Avatar*` | `@nocoo/basalt` |
 | 确认删除账号 | `ConfirmDialog` / `useConfirm` | `@nocoo/basalt` |
 | Toast | `toast` `Toaster` | `@nocoo/basalt` |
-| 主题 | `ThemeProvider` `ThemeToggle` `AccentProvider` | `ThemeProvider` from the root barrel; `AccentProvider` from `@nocoo/basalt/providers/accent`, with `persist={false}` and `defaultAccent="green"`. Do not override `--basalt-*`. Charts use the package Blue/Pink/Green/Yellow/Gray cycle via `lib/chart-theme`, independently of the control accent. Semantic primary text, actions and focus retain Basalt contrast handling. |
+| 主题 | `ThemeProvider` `ThemeToggle` `AccentProvider` | `ThemeProvider` from the root barrel; `AccentProvider` from `@nocoo/basalt/providers/accent`, with `persist={false}` and `defaultAccent="green"`. Do not override `--basalt-*`. Charts use the package Blue/Pink/Green/Yellow/Gray cycle via `lib/chart-theme`, independently of the control accent. The amber swatch uses `paletteOverrides` (`43 92% 48%` light / `43 92% 60%` dark); yellow chart marks share it through `--color-giraffe-yellow`. Other palette colors stay unchanged. Semantic primary text, actions and focus retain Basalt contrast handling. |
 | Router 链接 | `Link` + `LinkProvider` | `@nocoo/basalt` |
 | ⌘K | `CommandPalette*` | `@nocoo/basalt` |
 | 日报预览 / 复制 | `CodeBlock` / `ClipboardText` | granular `components/code` / `components/clipboard-text`。`text` 是可见标签，`copyText` 必须传完整 Markdown 内容 |
