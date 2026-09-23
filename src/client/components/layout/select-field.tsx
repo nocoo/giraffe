@@ -30,7 +30,7 @@ export function SelectField({
 				<SelectTrigger id={id} aria-label={label}>
 					<SelectValue />
 				</SelectTrigger>
-				<SelectContent>
+				<SelectContent className="w-max min-w-[var(--radix-select-trigger-width)]">
 					{options.map((option) => (
 						<SelectItem
 							key={option.value}

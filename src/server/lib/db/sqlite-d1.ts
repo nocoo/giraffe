@@ -5,6 +5,7 @@ class Memory {
 	snapshots: Row[] = [];
 	days: Row[] = [];
 	marker: Row[] = [];
+	statistics: Row[] = [];
 }
 
 class Stmt {
@@ -21,6 +22,16 @@ class Stmt {
 	private exec(): Row[] {
 		const sql = this.sql.replace(/\s+/g, " ").trim();
 		const v = this.values;
+		if (sql.startsWith("SELECT repo,enabled FROM repo_statistics"))
+			return this.mem.statistics.filter((r) => r.account_id === v[0]);
+		if (sql.startsWith("INSERT INTO repo_statistics")) {
+			this.mem.statistics = this.mem.statistics.filter(
+				(r) =>
+					!(r.account_id === v[0] && String(r.repo).toLowerCase() === String(v[1]).toLowerCase()),
+			);
+			this.mem.statistics.push({ account_id: v[0], repo: v[1], enabled: v[2] });
+			return [];
+		}
 		if (sql === "SELECT 1 AS n") {
 			return [{ n: 1 }];
 		}
@@ -102,6 +113,7 @@ class Stmt {
 			return [];
 		}
 		if (sql.startsWith("DELETE FROM accounts")) {
+			this.mem.statistics = this.mem.statistics.filter((r) => r.account_id !== v[0]);
 			this.mem.accounts = this.mem.accounts.filter((row) => row.id !== v[0]);
 			this.mem.snapshots = this.mem.snapshots.filter((row) => row.account_id !== v[0]);
 			this.mem.days = this.mem.days.filter((row) => row.account_id !== v[0]);

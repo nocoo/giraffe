@@ -1,7 +1,11 @@
+import { participates } from "../../lib/repo-statistics";
+import { apiPost } from "../lib/api";
+import { ApiError } from "../lib/errors";
 import { getActiveAccountId } from "./session";
 import { loadKind } from "./snapshot";
 
 export type RepoRow = {
+	statistics_enabled?: boolean;
 	name_with_owner: string;
 	name: string;
 	owner_login: string;
@@ -77,12 +81,13 @@ export function repoMetrics(repos: RepoRow[]): {
 	let stars = 0;
 	let forks = 0;
 	let issues = 0;
-	for (const row of repos) {
+	const selected = repos.filter(participates);
+	for (const row of selected) {
 		stars += row.stargazer_count;
 		forks += row.fork_count;
 		issues += row.open_issue_count;
 	}
-	return { count: repos.length, stars, forks, issues };
+	return { count: selected.length, stars, forks, issues };
 }
 
 export function healthMap(insights: InsightsSnapshot | null): Map<string, InsightRow["health"]> {
@@ -101,6 +106,28 @@ export function alertsIncomplete(insights: InsightsSnapshot | null): boolean {
 }
 
 let remembered: ReposSnapshot | null = null;
+
+export async function saveRepoStatistics(
+	account: string,
+	repo: RepoRow,
+	enabled: boolean,
+): Promise<void> {
+	if (getActiveAccountId() !== account)
+		throw new ApiError(409, "account_conflict", "account changed");
+	const result = await apiPost<{ account_id: string }>(
+		`repos/${encodeURIComponent(repo.owner_login)}/${encodeURIComponent(repo.name)}/statistics`,
+		{ account_id: account, enabled },
+	);
+	if (result.account_id !== account || getActiveAccountId() !== account)
+		throw new ApiError(409, "account_conflict", "account changed");
+	if (remembered?.account_id === account)
+		remembered = {
+			...remembered,
+			repos: remembered.repos.map((r) =>
+				r.name_with_owner === repo.name_with_owner ? { ...r, statistics_enabled: enabled } : r,
+			),
+		};
+}
 
 export function cachedRepoRows(): RepoRow[] {
 	if (remembered && remembered.account_id !== getActiveAccountId()) {

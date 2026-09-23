@@ -17,6 +17,7 @@ import {
 	type FactoryStreamName,
 } from "../../lib/factory-types";
 import { Kpi, KpiRow } from "../components/layout/kpi";
+import { LanguageLabel } from "../components/layout/labels";
 import { SelectField } from "../components/layout/select-field";
 import { reportError } from "../lib/error-ui";
 import {
@@ -333,7 +334,7 @@ export function FactoryPage() {
 									hint={
 										calendar === "commits"
 											? "按提交时间（UTC）统计当前筛选的仓库。各仓库更新时间不同时，显示它们的日期并集，最多一年；斜纹表示未完整获取，不是零提交。"
-											: `整个账号的贡献，包括外部和已排除仓库，不随筛选变化。${snapshot.contributionObservation ? `数据更新于 ${formatUtc(snapshot.contributionObservation.fetchedAt)}，范围 ${snapshot.contributionObservation.window.since.slice(0, 10)} 至 ${snapshot.contributionObservation.window.until.slice(0, 10)}。` : ""}`
+											: "账号贡献无法按仓库排除，已停止展示。请使用参与统计仓库的提交日历。"
 									}
 								>
 									<div className="mb-3 flex items-center justify-between gap-2">
@@ -342,7 +343,7 @@ export function FactoryPage() {
 											value={calendar}
 											options={[
 												{ value: "commits", label: "仓库提交" },
-												{ value: "contributions", label: "账号贡献" },
+												{ value: "contributions", label: "账号贡献", disabled: true },
 											]}
 											onValueChange={(value) => {
 												setCalendar(value as typeof calendar);
@@ -426,7 +427,7 @@ export function FactoryPage() {
 									<div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-basalt-muted-foreground">
 										{board.languages.slice(0, 6).map((l) => (
 											<span key={l.name} title={`${n(l.bytes)} bytes`}>
-												{l.name} <strong>{formatRate(l.share)}</strong>
+												<LanguageLabel name={l.name} /> <strong>{formatRate(l.share)}</strong>
 											</span>
 										))}
 									</div>
@@ -434,7 +435,7 @@ export function FactoryPage() {
 										<summary>全部语言字节</summary>
 										{board.languages.map((l) => (
 											<p key={l.name}>
-												{l.name} · {n(l.bytes)} bytes · {formatRate(l.share)}
+												<LanguageLabel name={l.name} /> · {n(l.bytes)} bytes · {formatRate(l.share)}
 											</p>
 										))}
 										<p>
@@ -617,7 +618,7 @@ export function FactoryPage() {
 															{r.name.split("/")[1]}
 														</Button>
 														<div className="text-xs text-basalt-muted-foreground">
-															{r.language} {r.private ? "· private" : ""}
+															<LanguageLabel name={r.language} /> {r.private ? "· private" : ""}
 														</div>
 													</TableCell>
 													<TableCell>

@@ -22,6 +22,7 @@ import { checkFactoryCapacity, resourceDelta } from "./factory-retention";
 import { collectSitePage } from "./factory-site";
 import { createGithubClient } from "./github-client";
 import { assertRefreshCapabilities } from "./refresh";
+import { repoPolicy } from "./repo-statistics";
 import { decryptToken, parseKeyBytes } from "./token-crypto";
 
 export async function executeRunPage(
@@ -101,7 +102,11 @@ export async function executeRunPage(
 			const repo = object(data.repository);
 			if (
 				gh.graphqlErrors.length ||
-				exclusion(repo, run.owner) ||
+				exclusion(repo, run.owner, true) ||
+				!(await repoPolicy(db, run.account_id)).enabled(String(step.repo), {
+					is_fork: repo.isFork === true,
+					is_archived: repo.isArchived === true,
+				}) ||
 				repo.id !== run.repoIds[String(step.repo)]
 			)
 				throw new ApiError(403, "repository_unavailable", "repository identity/access changed");
@@ -188,7 +193,7 @@ export async function executeRunPage(
 					);
 				},
 			};
-			await stepFactory(checkpoint, gh, token, store, clock());
+			await stepFactory(checkpoint, gh, token, store, clock(), true);
 			if (step.kind === "inventory") {
 				if (checkpoint.repos.length > 500)
 					throw new ApiError(422, "factory_capacity", "catalog exceeds 500 repositories");

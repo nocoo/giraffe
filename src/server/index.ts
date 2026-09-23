@@ -12,7 +12,7 @@ import { liveResponse } from "./routes/live";
 import { getMe } from "./routes/me";
 import { postRead, postReadAll } from "./routes/notifications";
 import { postRefresh } from "./routes/refresh";
-import { repoGet } from "./routes/repos";
+import { repoGet, setRepoStatistics } from "./routes/repos";
 import { snapshotGet } from "./routes/snapshots";
 
 function notAllowed(): Response {
@@ -83,6 +83,8 @@ export function createApp(): Hono<{ Bindings: Env; Variables: AppVars }> {
 	allow(app, "/api/factory/repos/:owner/:name/:stream", ["GET"]);
 	onGet(app, "/api/factory/repos/:owner/:name/:stream", getFactoryStream);
 	allow(app, "/api/repos", ["GET"]);
+	allow(app, "/api/repos/:owner/:name/statistics", ["POST"]);
+	app.post("/api/repos/:owner/:name/statistics", setRepoStatistics);
 	onGet(app, "/api/repos", (c) => snapshotGet(c, "repos"));
 	allow(app, "/api/issues", ["GET"]);
 	onGet(app, "/api/issues", (c) => snapshotGet(c, "issues"));

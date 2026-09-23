@@ -120,7 +120,7 @@ test("Basalt card typography is consistent across factory, insights and reposito
 	).toBe(true);
 });
 
-test("green chart series stay distinct in both themes across factory, insights and repo detail", async ({
+test("multicolor chart series stay distinct in both themes across factory, insights and repo detail", async ({
 	page,
 }) => {
 	await page.setViewportSize({ width: 1440, height: 1000 });
@@ -165,12 +165,12 @@ test("green chart series stay distinct in both themes across factory, insights a
 							channels.length > 0 &&
 							channels.every(
 								([red = 0, green = 0, blue = 0, alpha = 0]) =>
-									alpha > 0 && green > red && green > blue,
+									alpha > 0 && Math.max(red, green, blue) - Math.min(red, green, blue) > 20,
 							) &&
 							(label !== "交付吞吐" || new Set(channels.map(String)).size === 3)
 						);
 					},
-					{ message: `${mode}: ${label} uses distinct green paint` },
+					{ message: `${mode}: ${label} uses distinct palette colors` },
 				)
 				.toBe(true);
 			if (label === "仓库提交与开放工作") {

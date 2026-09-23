@@ -9,6 +9,7 @@ import {
 	loadRepos,
 	type RepoRow,
 	repoMetrics,
+	saveRepoStatistics,
 	sortRepos,
 	visibleRepos,
 } from "./repos";
@@ -50,6 +51,69 @@ const sample: RepoRow[] = [
 ];
 
 describe("repos viewmodel", () => {
+	it("excludes default forks/archives from KPIs and respects explicit overrides", () => {
+		const first = sample[0];
+		if (!first) throw new Error("fixture");
+		expect(
+			repoMetrics([
+				{ ...first, is_fork: true },
+				{ ...first, is_archived: true },
+				{ ...first, statistics_enabled: false },
+			]),
+		).toEqual({ count: 0, stars: 0, forks: 0, issues: 0 });
+		expect(repoMetrics([{ ...first, is_fork: true, statistics_enabled: true }])).toEqual({
+			count: 1,
+			stars: 2,
+			forks: 0,
+			issues: 1,
+		});
+	});
+	it("saves settings, updates cached rows and rejects account changes or failed writes", async () => {
+		const first = sample[0];
+		if (!first) throw new Error("fixture");
+		setActiveAccountId("acc1");
+		let responseAccount = "acc1";
+		let switchAccount = false;
+		let fail = false;
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+			if (String(input) === "/api/accounts")
+				return Response.json({ accounts: [{ id: "acc1", login: "o", is_active: true }] });
+			if (String(input) === "/api/repos")
+				return Response.json({
+					account_id: "acc1",
+					fetched_at: "t",
+					truncated: false,
+					repos: sample,
+				});
+			expect(init?.method).toBe("POST");
+			if (fail)
+				return Response.json({ error: { code: "db_error", message: "failed" } }, { status: 500 });
+			if (switchAccount) setActiveAccountId("acc2");
+			return Response.json({ account_id: responseAccount });
+		});
+		await loadRepos();
+		await saveRepoStatistics("acc1", first, false);
+		expect(cachedRepoRows()[0]?.statistics_enabled).toBe(false);
+		expect(cachedRepoRows()[1]?.statistics_enabled).toBeUndefined();
+		fail = true;
+		await expect(saveRepoStatistics("acc1", first, true)).rejects.toMatchObject({
+			code: "db_error",
+		});
+		expect(cachedRepoRows()[0]?.statistics_enabled).toBe(false);
+		fail = false;
+		responseAccount = "other";
+		await expect(saveRepoStatistics("acc1", first, true)).rejects.toMatchObject({
+			code: "account_conflict",
+		});
+		responseAccount = "acc1";
+		switchAccount = true;
+		await expect(saveRepoStatistics("acc1", first, true)).rejects.toMatchObject({
+			code: "account_conflict",
+		});
+		await expect(saveRepoStatistics("acc1", first, true)).rejects.toMatchObject({
+			code: "account_conflict",
+		});
+	});
 	afterEach(() => {
 		setActiveAccountId(null);
 		vi.stubGlobal("fetch", () => {

@@ -7,6 +7,7 @@ import { createGithubClient } from "../lib/github-client";
 import { ACCOUNT_ID_RE } from "../lib/id";
 import { readJson } from "../lib/read-body";
 import { assertRefreshCapabilities, expandKinds, prepareRefresh } from "../lib/refresh";
+import { statisticsSnapshot } from "../lib/repo-statistics";
 import { decryptToken, parseKeyBytes } from "../lib/token-crypto";
 
 const bodySchema = z.object({
@@ -41,7 +42,15 @@ export async function postRefresh(
 	);
 	await db.batch(stmts);
 	if (requested.length === 1)
-		return jsonOk({ ...written[requested[0] as string], account_id: account.id });
+		return jsonOk({
+			...(await statisticsSnapshot(
+				db,
+				account.id,
+				requested[0] as string,
+				written[requested[0] as string] ?? {},
+			)),
+			account_id: account.id,
+		});
 	return jsonOk({
 		account_id: account.id,
 		fetched_at: fetchedAt,

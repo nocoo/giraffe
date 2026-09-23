@@ -4,9 +4,9 @@
 
 ## 采集契约
 
-- 归属范围：GitHub GraphQL `viewer.repositories(affiliations:[OWNER], ownerAffiliations:[OWNER])`，按名称排序，每页 10 个，遍历 `pageInfo`。按 node ID 去重。排除 archived，再排除 fork，再排除已知 effective mirror `nocoo/rsshub`；三类互斥。扫描数与 `totalCount` 不符时报错，不宣称清单完整。只能证明当前令牌的可见范围，不能证明没有不可见的私有仓库。
+- 归属范围：GitHub GraphQL `viewer.repositories(affiliations:[OWNER], ownerAffiliations:[OWNER])`，按名称排序，每页 10 个，遍历 `pageInfo`。按 node ID 去重，清单保留 archived/fork 元数据，默认不参与统计，仓库页可以手动开启。工厂原有本人归属边界及 effective mirror `nocoo/rsshub` 排除规则继续生效。扫描数与 `totalCount` 不符时报错，不宣称清单完整。只能证明当前令牌的可见范围，不能证明没有不可见的私有仓库。
 - 仓库规模：`diskUsage` 为 GitHub 仓库磁盘 KiB，不是代码行数；语言为 Linguist 字节数，不含被 Linguist 排除的生成文件等。每仓前 100 种语言，超出则标记语言覆盖不完整。主题前 20 个仅作可重叠筛选标签，不能相加当互斥领域。
-- 采样窗口：从采集启动时 UTC 当日零点往前 89 日至启动时刻，左闭右开。包含当前不完整日。提交按 committer timestamp，固定清单时的默认分支 SHA，包含所有作者及 merge commit；不是所有分支提交，不是 nocoo 个人贡献。跨仓同 SHA 按 repo+SHA 计数；账号贡献热力单独来自 `contributionsCollection`，可能包括排除仓库、外部仓库与受限贡献，不与仓库提交相加。
+- 采样窗口：从采集启动时 UTC 当日零点往前 89 日至启动时刻，左闭右开。包含当前不完整日。提交按 committer timestamp，固定清单时的默认分支 SHA，包含所有作者及 merge commit；不是所有分支提交，不是 nocoo 个人贡献。跨仓同 SHA 按 repo+SHA 计数。历史账号贡献来自 `contributionsCollection`，可能包含排除仓库、外部仓库与受限贡献；原始记录保留，当前统计响应不返回该汇总。
 - Issue/PR：从各仓资源端点按 updated 降序完整分页，容量截断时优先保留最近更新记录；不按 created_at 提前停止，避免遗漏旧创建、窗口内合并的工作。Issue 显式排除 REST 返回的 `pull_request`。生命周期按 `created_at`、最后 `closed_at`、`merged_at`；不重建 reopen 的多次历史转换。清单的 open/closed 计数是清单取样时状态，明细是分页观察时状态；GitHub 不提供跨 API 原子快照，持续变化的状态可能略有差异。
 - PR 吞吐：窗口内 merged；closed 指未合并关闭。耗时是窗口内合并队列的 created→merged 小时，P50/P90 用 nearest rank，明确样本数。没有样本为 null。WIP 长龄信号：open PR ≥7 天、open issue ≥14 天；这是需检查的规则，不证明实际被阻塞。
 - CI：按窗口内 `created_at` 的 workflow run ID 去重，使用 API 返回的最新 attempt。成功率 = success / (success + failure + timed_out + action_required + startup_failure)。cancelled/skipped/neutral/stale 等单列，pending 单列。不是 job 成功率，不重建所有重试，不包含被删除/过期保留策略清理的 runs。超过 1,000 条的查询自动二分时间范围（边界重叠、按 run ID 去重，无时间缝隙），最终按左闭右开窗口过滤；无法细分时明确 limited。
@@ -17,7 +17,7 @@
 
 持久刷新设计、迁移与回滚见 [09 — 持久化工厂刷新](09-factory-runs.md)。
 
-工厂统计仍遵循上面的本人非归档/非 fork 范围；全站页面使用单独的完整可访问仓库清单，包括协作、组织、归档与 fork。先同步仓库列表，再发起全站刷新；界面中的仓库选择只限制统计范围，不会遗漏其他仓库详情。页面缺数据时统一导航到控制台，失败保留已有数据与原时间。
+仓库页的“参与统计”开关统一约束工厂列表、图表、汇总、引用图及刷新计划。设置在响应读取时应用，不修改不可变发布版本；重新开启会恢复已有观测。旧清单未保存的 Fork/归档仓库，需要同步仓库列表后再采集，缺失观测不算作零。GitHub 全账号贡献日历无法按仓库排除，因此不展示该汇总，保留参与统计仓库的提交日历。全站原始快照与单仓详情继续保留，方便管理和重新纳入。页面缺数据时统一导航到控制台，失败保留已有数据与原时间。
 
 `GET /api/factory` 只读已发布的当前账号全局快照。`GET /api/factory/runs` 只读当前 run、最近 20 个历史 run、仓库状态和清单。`POST /api/factory/runs`（`/api/factory/refresh` 为同一契约别名）接收 `{account_id, requestKey: UUID, mode: "catalog" | "refresh", scope, repos?, order?, language?, topic?, query?, repo?}`，202 返回持久 run ID。`requestKey` 每次明确新建操作生成，网络重试复用；重复键返回原 run，不能当作新的刷新。`scope` 支持 all/selected/filter/stale/failed，selected 使用 repos 指定成员和顺序；其他范围由服务端解析成员，order 单独指定优先级。旧 `{restart:true}` 请求拒绝，不能隐式触发全仓刷新。
 

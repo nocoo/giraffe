@@ -20,14 +20,14 @@ const NEUTRAL_BADGE = "border-transparent bg-basalt-muted text-basalt-muted-fore
 const CANDY_CLASS: Record<CandyTone, string> = {
 	green: BRAND_BADGE,
 	amber: "border-transparent bg-basalt-warning-tint text-basalt-warning",
-	orange: "border-transparent bg-basalt-warning-tint text-basalt-warning",
+	orange: "border-transparent bg-orange-500/15 text-orange-700 dark:text-orange-300",
 	red: "border-transparent bg-basalt-danger-tint text-basalt-destructive",
-	rose: "border-transparent bg-basalt-danger-tint text-basalt-destructive",
-	teal: BRAND_BADGE,
-	sky: BRAND_BADGE,
-	blue: BRAND_BADGE,
-	purple: NEUTRAL_BADGE,
-	indigo: NEUTRAL_BADGE,
+	rose: "border-transparent bg-rose-500/15 text-rose-700 dark:text-rose-300",
+	teal: "border-transparent bg-teal-500/15 text-teal-700 dark:text-teal-300",
+	sky: "border-transparent bg-sky-500/15 text-sky-700 dark:text-sky-300",
+	blue: "border-transparent bg-blue-500/15 text-blue-700 dark:text-blue-300",
+	purple: "border-transparent bg-purple-500/15 text-purple-700 dark:text-purple-300",
+	indigo: "border-transparent bg-indigo-500/15 text-indigo-700 dark:text-indigo-300",
 	gray: NEUTRAL_BADGE,
 };
 

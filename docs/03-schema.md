@@ -24,6 +24,12 @@ GitHub 字段名跟 REST/GraphQL 对齐（`login`、`nameWithOwner`、`stargazer
 
 ## 2. 表
 
+### `repo_statistics`
+
+仓库参与统计的手动覆盖值，主键 `(account_id, repo)`，仓库名不区分大小写，`enabled` 为 0/1。无覆盖值时，Fork 或已归档仓库默认不参与，其余默认参与。设置独立于 GitHub 快照保存，重新同步不会重置；删除账号时级联删除。增量迁移为 `migrations/0004_repo_statistics.sql`，可重复执行；回滚代码时保留该表即可，无需删除原始快照或设置。
+
+`POST /api/repos/:owner/:name/statistics` 接收 `{account_id, enabled: boolean}`，验证活动账号与仓库存在。读取时统一过滤工厂、Issues、PR、Insights、告警、通知和日报，仓库管理页始终返回完整清单及有效 `statistics_enabled`。日报使用当前设置过滤两天的原始仓库基线再求差。
+
 ### `_test_marker`
 
 仅 L2/L3 本地库。生产 **不得** 有此表。

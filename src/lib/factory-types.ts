@@ -59,6 +59,8 @@ export type FactoryMetrics = FactoryDay & {
 	authors: Record<string, number>;
 };
 export type FactoryRepo = {
+	is_fork?: boolean;
+	is_archived?: boolean;
 	metadataAt?: string;
 	observation?: {
 		metadataAt?: string;
@@ -101,6 +103,7 @@ export type FactoryStreamData = {
 	coverage: FactoryCoverage;
 };
 export type FactorySnapshot = {
+	contributionExcluded?: boolean;
 	contributionObservation?: { version: string; window: FactoryWindow; fetchedAt: string };
 	publication?: { mixed: boolean; runId: string; publishedAt: string };
 	schema: 1;

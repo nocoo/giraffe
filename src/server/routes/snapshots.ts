@@ -3,6 +3,7 @@ import type { AppVars, Env } from "../env";
 import { getActiveAccount } from "../lib/db/accounts";
 import { readSnapshot } from "../lib/db/snapshots";
 import { ApiError, jsonOk } from "../lib/errors";
+import { statisticsSnapshot } from "../lib/repo-statistics";
 
 export async function snapshotGet(
 	c: Context<{ Bindings: Env; Variables: AppVars }>,
@@ -16,7 +17,14 @@ export async function snapshotGet(
 	if (!snap) {
 		throw new ApiError(409, "snapshot_missing", `no snapshot for ${logical}`);
 	}
-	return jsonOk({ ...snap, account_id: account.id });
+	return jsonOk(
+		{
+			...(await statisticsSnapshot(c.get("db"), account.id, logical, snap)),
+			account_id: account.id,
+		},
+		200,
+		{ "cache-control": "private, no-store" },
+	);
 }
 
 export function repoParts(owner: string, name: string): { owner: string; name: string } {

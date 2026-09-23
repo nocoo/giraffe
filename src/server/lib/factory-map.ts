@@ -23,10 +23,10 @@ function nullable(value: unknown): string | null {
 export function coverage(source = ""): FactoryCoverage {
 	return { status: "pending", pages: 0, fetchedAt: null, source, reason: null, observed: 0 };
 }
-export function exclusion(r: GithubObject, owner: string): string | null {
+export function exclusion(r: GithubObject, owner: string, includeDisabled = false): string | null {
 	if (str(object(r.owner).login).toLowerCase() !== owner.toLowerCase()) return "not-owner";
-	if (r.isArchived === true) return "archived";
-	if (r.isFork === true) return "fork";
+	if (!includeDisabled && r.isArchived === true) return "archived";
+	if (!includeDisabled && r.isFork === true) return "fork";
 	if (str(r.nameWithOwner).toLowerCase() === "nocoo/rsshub") return "effective-mirror";
 	return null;
 }
@@ -36,6 +36,8 @@ export function mapFactoryRepo(r: GithubObject): FactoryRepo {
 	const lang = object(r.languages);
 	const count = (key: string) => Number(object(r[key]).totalCount ?? 0);
 	return {
+		is_fork: r.isFork === true,
+		is_archived: r.isArchived === true,
 		id: str(r.id),
 		name: str(r.nameWithOwner),
 		url: str(r.url),

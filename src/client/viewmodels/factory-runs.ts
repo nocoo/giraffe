@@ -297,7 +297,7 @@ export function factoryDataHealth(snapshot: FactorySnapshot | null) {
 				)}${missing.length > 3 ? ` 等 ${missing.length} 类数据` : ""}。缺失不代表零，已有数据仍可查看。${snapshot.publication?.mixed ? "各仓库的更新时间不同。" : ""}`,
 		};
 	}
-	if (snapshot.contributionStatus !== "complete")
+	if (!snapshot.contributionExcluded && snapshot.contributionStatus !== "complete")
 		return {
 			tone: "warning",
 			title: "账号贡献日历尚未更新",

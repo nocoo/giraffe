@@ -30,6 +30,13 @@ CREATE TABLE snapshot_days (
   PRIMARY KEY (account_id, day)
 );
 
+CREATE TABLE IF NOT EXISTS repo_statistics (
+ account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+ repo TEXT NOT NULL COLLATE NOCASE,
+ enabled INTEGER NOT NULL CHECK(enabled IN (0,1)),
+ PRIMARY KEY(account_id,repo)
+);
+
 -- Additive and repeatable. Legacy snapshots/accounts are never modified.
 CREATE TABLE IF NOT EXISTS factory_runs (
  id TEXT PRIMARY KEY,

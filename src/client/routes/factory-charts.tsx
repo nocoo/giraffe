@@ -25,7 +25,7 @@ import {
 } from "recharts";
 import type { FactoryRepo } from "../../lib/factory-types";
 import { HelpTooltip } from "../components/layout/help-tooltip";
-import { chartColor } from "../lib/chart-theme";
+import { categoryColor, chartColor } from "../lib/chart-theme";
 import {
 	type factoryBoard,
 	hasFactoryMeasurement,
@@ -188,7 +188,7 @@ export function FactoryTreemap({
 								width={tile.width}
 								height={tile.height}
 								rx={4}
-								fill={chartColor(tile.index)}
+								fill={categoryColor(repos.find((r) => r.name === tile.name)?.language ?? "")}
 							/>
 							<foreignObject x={tile.x} y={tile.y} width={tile.width} height={tile.height}>
 								<Button

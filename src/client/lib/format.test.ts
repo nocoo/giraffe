@@ -116,8 +116,8 @@ describe("format", () => {
 		expect(conclusionBadgeVariant("failure")).toBe("red");
 		expect(conclusionBadgeVariant(null)).toBe("gray");
 		expect(candyClass("green")).toContain("text-basalt-primary");
-		expect(candyClass("blue")).toBe(candyClass("green"));
-		expect(candyClass("purple")).toBe(candyClass("gray"));
+		expect(candyClass("blue")).not.toBe(candyClass("green"));
+		expect(candyClass("purple")).not.toBe(candyClass("gray"));
 		expect(candyClass("amber")).toContain("text-basalt-warning");
 		expect(candyClass("red")).toContain("text-basalt-destructive");
 		expect(reviewBadgeVariant("REVIEW_REQUIRED")).toBe("amber");

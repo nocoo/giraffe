@@ -24,6 +24,7 @@ import { checkFactoryCapacity, factoryStorage } from "../lib/factory-retention";
 import { siteCatalog } from "../lib/factory-site";
 import { ACCOUNT_ID_RE } from "../lib/id";
 import { readJson } from "../lib/read-body";
+import { repoPolicy, statisticsFactory } from "../lib/repo-statistics";
 
 type Ctx = Context<{ Bindings: Env; Variables: AppVars }>;
 const PRIVATE = { "cache-control": "private, no-store" };
@@ -51,7 +52,9 @@ export async function getFactoryRuns(c: Ctx): Promise<Response> {
 	if (detail.length > 80) throw new ApiError(400, "validation_failed", "invalid history ID");
 	const runs = await listRuns(db, row.id, detail);
 	const head = await factoryHead(db, row.id);
-	const catalog = await catalogFactory(db, row.id);
+	const rawCatalog = await catalogFactory(db, row.id);
+	const policy = await repoPolicy(db, row.id);
+	const catalog = rawCatalog ? statisticsFactory(rawCatalog, policy) : null;
 	const siteRepos = await siteCatalog(db, row.id);
 	const states = await repoStates(db, row.id);
 	const now = new Date().toISOString();
@@ -100,7 +103,9 @@ export async function postFactoryRun(c: Ctx): Promise<Response> {
 	const storage = await factoryStorage(db, row.id);
 	if (data.mode === "refresh" && storage.totalBytes >= storage.limitBytes - 2_000_000)
 		throw new ApiError(422, "factory_capacity", "factory resource quota reached");
-	const catalog = await catalogFactory(db, row.id);
+	const rawCatalog = await catalogFactory(db, row.id);
+	const policy = await repoPolicy(db, row.id);
+	const catalog = rawCatalog ? statisticsFactory(rawCatalog, policy) : null;
 	const siteRepos = data.mode === "refresh" ? await siteCatalog(db, row.id) : [];
 	const states = await repoStates(db, row.id);
 	if (

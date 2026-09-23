@@ -15,6 +15,7 @@ import { ApiError } from "./errors";
 import { type GithubClient, MAX_FETCHES } from "./github-client";
 import type { Capabilities } from "./github-map";
 import { buildInsights, type InsightAlert, type RepoRow } from "./insights";
+import { repoPolicy } from "./repo-statistics";
 import { assemblePages, physicalKinds, splitPages } from "./snapshot-pages";
 
 const ALL = SITE_SNAPSHOT_KINDS;
@@ -200,6 +201,7 @@ export async function prepareRefresh(
 	const reposSrc = await loaded("repos");
 	const issuesSrc = await loaded("issues");
 	const alertsSrc = await loaded("alerts");
+	const policy = await repoPolicy(db, accountId, reposSrc);
 	const insightsOk = sourceOk(reposSrc) && sourceOk(issuesSrc);
 	if (explicitInsights && !insightsOk) {
 		throw new ApiError(409, "snapshot_missing", "derived sources missing");
@@ -208,7 +210,7 @@ export async function prepareRefresh(
 		const alertsIncomplete =
 			alertsSrc === null || alertsSrc.unavailable === true || alertsSrc.truncated === true;
 		const insights = buildInsights(
-			asRepos(reposSrc),
+			asRepos(reposSrc).filter((r) => policy.enabled(r.name_with_owner)),
 			Array.isArray(alertsSrc?.items) ? (alertsSrc.items as InsightAlert[]) : [],
 			fetchedAt,
 			alertsIncomplete,
@@ -231,10 +233,24 @@ export async function prepareRefresh(
 		throw new ApiError(409, "snapshot_missing", "derived sources missing");
 	}
 	if (digestOk && reposSrc) {
-		const day = dayFrom(reposSrc);
+		const day = dayFrom({
+			...reposSrc,
+			repos: policy.repos.filter((r) => policy.enabled(r.name_with_owner)),
+		});
+		const previous = await readDay(db, accountId, yesterday(utcDay(fetchedAt)));
+		const selectedPrevious = previous?.by_repo.filter((r) => policy.enabled(r.name_with_owner));
 		const digest = buildDigest(
 			day,
-			await readDay(db, accountId, yesterday(utcDay(fetchedAt))),
+			previous && selectedPrevious
+				? {
+						...previous,
+						by_repo: selectedPrevious,
+						repos: selectedPrevious.length,
+						stars: selectedPrevious.reduce((n, r) => n + r.stars, 0),
+						forks: selectedPrevious.reduce((n, r) => n + r.forks, 0),
+						open_issues: selectedPrevious.reduce((n, r) => n + r.open_issues, 0),
+					}
+				: null,
 			fetchedAt,
 		);
 		const preview = splitPages("digest", digest as unknown as Record<string, unknown>);

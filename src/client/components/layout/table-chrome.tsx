@@ -61,6 +61,10 @@ export function LabelChips({ labels }: { labels: { name: string; color: string }
 					key={label.name}
 					className="max-w-44 truncate border-transparent px-2 py-0.5 text-xs"
 					title={label.name}
+					style={{
+						color: categoryColor(label.name),
+						backgroundColor: `color-mix(in srgb, ${categoryColor(label.name)} 14%, transparent)`,
+					}}
 				>
 					{label.name}
 				</CandyBadge>
@@ -96,3 +100,5 @@ export function ChurnMeter({ adds, dels, label }: { adds: number; dels: number; 
 		<SlotBarChart items={items} ariaLabel={label} heightClass="h-5" className="w-16 shrink-0" />
 	);
 }
+
+import { categoryColor } from "../../lib/chart-theme";

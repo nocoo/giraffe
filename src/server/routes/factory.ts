@@ -11,6 +11,7 @@ import { publishedFactory } from "../lib/db/factory-runs";
 import { readSnapshot } from "../lib/db/snapshots";
 import { ApiError, jsonOk } from "../lib/errors";
 import { streamKey } from "../lib/factory-collect";
+import { repoPolicy, statisticsFactory } from "../lib/repo-statistics";
 import { repoParts } from "./snapshots";
 
 type Ctx = Context<{ Bindings: Env; Variables: AppVars }>;
@@ -25,7 +26,14 @@ export async function getFactory(c: Ctx): Promise<Response> {
 	const account = await active(c);
 	const snap = await publishedFactory(c.get("db"), account.id);
 	if (!snap) throw new ApiError(409, "snapshot_missing", "no factory snapshot");
-	return jsonOk({ ...snap, account_id: account.id }, 200, PRIVATE);
+	return jsonOk(
+		{
+			...statisticsFactory(snap, await repoPolicy(c.get("db"), account.id)),
+			account_id: account.id,
+		},
+		200,
+		PRIVATE,
+	);
 }
 export async function getFactoryStream(c: Ctx): Promise<Response> {
 	const account = await active(c);
@@ -38,6 +46,8 @@ export async function getFactoryStream(c: Ctx): Promise<Response> {
 		throw new ApiError(400, "validation_failed", "invalid page");
 	const snap = await publishedFactory(c.get("db"), account.id);
 	const repo = snap?.repos.find((r) => r.name === `${owner}/${name}`);
+	if (repo && !(await repoPolicy(c.get("db"), account.id)).enabled(repo.name, repo))
+		throw new ApiError(404, "not_found", "repository excluded from statistics");
 	if (!repo || !snap) throw new ApiError(404, "not_found", "repository outside factory inventory");
 	let resource: FactoryStreamData | null = null;
 	const version = repo.observation?.version ?? snap.runId;

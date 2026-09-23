@@ -57,7 +57,7 @@ import {
 } from "../components/layout/page-skeleton";
 import { SnapshotPending } from "../components/layout/snapshot-pending";
 import { ChurnMeter, LabelChips, PersonCell } from "../components/layout/table-chrome";
-import { chartColor } from "../lib/chart-theme";
+import { categoryColor, chartColor } from "../lib/chart-theme";
 import { catchLoad } from "../lib/error-ui";
 import {
 	churnFilled,
@@ -785,6 +785,10 @@ export function RepoDetailPage() {
 						<ChartBrick title="语言分布" description="按仓库代码字节数统计">
 							<DonutChart
 								data={sortedLanguages(languages.languages)}
+								series={Object.keys(languages.languages).map((name) => ({
+									key: name,
+									color: categoryColor(name),
+								}))}
 								ariaLabel="languages"
 								className="h-56 w-full"
 								showLegend

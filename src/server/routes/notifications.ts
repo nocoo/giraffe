@@ -8,6 +8,7 @@ import { ApiError, jsonOk } from "../lib/errors";
 import { createGithubClient } from "../lib/github-client";
 import { ACCOUNT_ID_RE } from "../lib/id";
 import { readJson } from "../lib/read-body";
+import { statisticsSnapshot } from "../lib/repo-statistics";
 import { assemblePages, splitPages } from "../lib/snapshot-pages";
 import { decryptToken, parseKeyBytes } from "../lib/token-crypto";
 
@@ -72,7 +73,10 @@ async function persist(
 		touchLastUsedStmt(db, accountId, fetchedAt),
 	];
 	await db.batch(stmts);
-	return jsonOk({ ...assembled, account_id: accountId });
+	return jsonOk({
+		...(await statisticsSnapshot(db, accountId, "notifications", assembled)),
+		account_id: accountId,
+	});
 }
 
 export async function postRead(
