@@ -138,6 +138,7 @@ export function FactoryRunDetails({
 	const active = run.status === "running" || run.status === "paused";
 	const current = active ? run.progress.current : null;
 	const globalSteps = run.steps.filter((step) => !step.repo);
+	const full = run.steps.some((step) => step.resource === "repos");
 	return (
 		<div className="factory-run-details">
 			<section className="factory-run-overview" aria-label="本次刷新进度">
@@ -146,7 +147,7 @@ export function FactoryRunDetails({
 						<p className="factory-eyebrow">
 							{run.mode === "catalog"
 								? "同步仓库列表"
-								: `全站刷新 · ${run.repos.length} 个统计仓库`}
+								: `${full ? "全站刷新" : "仓库刷新"} · ${run.repos.length} 个统计仓库`}
 						</p>
 						<h3>{RUN_LABELS[run.status]}</h3>
 					</div>
@@ -416,7 +417,9 @@ export function FactoryRunDetails({
 				<p>
 					运行编号 <code>{run.id}</code> · 已发送 {run.requests} 次 GitHub 请求。
 				</p>
-				<p>刷新会更新全站数据；仓库选择仅影响工厂统计。同步仓库列表共 4 步。所有时间为 UTC。</p>
+				<p>
+					仓库刷新仅更新对应统计和详情；全站刷新包含全站列表。同步仓库列表共 4 步。所有时间为 UTC。
+				</p>
 			</details>
 		</div>
 	);

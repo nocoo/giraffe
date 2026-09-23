@@ -106,7 +106,8 @@ export async function postFactoryRun(c: Ctx): Promise<Response> {
 	const rawCatalog = await catalogFactory(db, row.id);
 	const policy = await repoPolicy(db, row.id);
 	const catalog = rawCatalog ? statisticsFactory(rawCatalog, policy) : null;
-	const siteRepos = data.mode === "refresh" ? await siteCatalog(db, row.id) : [];
+	const siteRepos =
+		data.mode === "refresh" && data.scope === "all" ? await siteCatalog(db, row.id) : [];
 	const states = await repoStates(db, row.id);
 	if (
 		data.mode === "refresh" &&
@@ -163,6 +164,15 @@ export async function postFactoryRun(c: Ctx): Promise<Response> {
 		repos.every((r) => states.some((s) => s.repo === r.name && s.nextAllowedAt > now))
 	)
 		throw new ApiError(409, "refresh_cooldown", "all selected repositories are cooling down");
+	const selection = {
+		scope: data.scope,
+		...(data.repos ? { repos: data.repos } : {}),
+		order: repos.map((repo) => repo.name),
+		...(data.language ? { language: data.language } : {}),
+		...(data.topic ? { topic: data.topic } : {}),
+		...(data.query ? { query: data.query } : {}),
+		...(data.repo ? { repo: data.repo } : {}),
+	};
 	const plan = makeRun(
 		crypto.randomUUID(),
 		row.id,
@@ -173,16 +183,8 @@ export async function postFactoryRun(c: Ctx): Promise<Response> {
 		now,
 		states,
 		siteRepos ?? [],
+		selection,
 	);
-	plan.selection = {
-		scope: data.scope,
-		...(data.repos ? { repos: data.repos } : {}),
-		order: plan.repos,
-		...(data.language ? { language: data.language } : {}),
-		...(data.topic ? { topic: data.topic } : {}),
-		...(data.query ? { query: data.query } : {}),
-		...(data.repo ? { repo: data.repo } : {}),
-	};
 	await checkFactoryCapacity(db, row.id, new TextEncoder().encode(boundedJson(plan)).length);
 	const run = await startRun(db, plan);
 	// A queue outage cannot erase a committed run: the scheduled D1 scan retries dispatch.

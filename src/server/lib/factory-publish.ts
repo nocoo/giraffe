@@ -293,12 +293,11 @@ export async function publicationWrites(
 			? run.checkpoint.contribution
 			: null;
 	snapshot.contribution = fresh ?? base?.contribution ?? null;
-	snapshot.contributionStatus =
-		run.mode === "catalog"
-			? (base?.contributionStatus ?? "unavailable")
-			: fresh
-				? "complete"
-				: "unavailable";
+	snapshot.contributionStatus = !run.steps.some((step) => step.kind === "contributions")
+		? (base?.contributionStatus ?? "unavailable")
+		: fresh
+			? "complete"
+			: "unavailable";
 	if (fresh)
 		snapshot.contributionObservation = {
 			version: run.id,

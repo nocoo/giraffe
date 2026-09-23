@@ -304,7 +304,7 @@ async function send(resource: string, init?: RequestInit): Promise<Response> {
 
 软件工厂是唯一的前端采集入口。`viewmodels/factory-runs.ts` 提交持久 run 与暂停/继续/取消动作，服务端队列执行，D1 保存进度；详细契约见 [09](09-factory-runs.md)。旧 `POST /api/refresh` 仅保留 API 兼容，前端已删除 `refresh.ts` 协调器与独立 RefreshButton。
 
-- 默认全站刷新：仓库列表、Issues、PRs、安全告警、通知、Insights、日报及完整可访问仓库清单的九类详情都会更新。工厂中的范围选择只影响统计仓库。
+- Full refresh updates the site catalog, Issues, PRs, security alerts, notifications, Insights, digest and all accessible repository detail tabs. Selected, filtered, stale and failed scopes update only the resolved repositories: nine statistics steps and nine detail tabs each, plus publication. One selected repository is 19 steps; unrelated site snapshots retain their original contents and timestamps. The console labels this phase as repository pages and omits the account-contribution phase. Known manual selections remain available when the full site catalog is incomplete.
 - 首次使用或旧数据升级时先「同步仓库列表」，再「开始刷新」。清单不完整时禁止在界面启动刷新，不能把未扫描的数据当空数组。
 - 各页面仅 GET；缺少快照统一使用 `SnapshotPending` 导航至 `/factory?refresh=1`，到达后打开同一个控制台。缺账号则前往设置，不混同于缺数据。
 - 添加、激活、删除账号只更新账号状态与本地 stamp，不自动采集。通知标记已读仍是独立的业务写操作，不属于刷新。

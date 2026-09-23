@@ -144,3 +144,20 @@ it("includes every site page and freezes detail targets outside the factory metr
 			expect(resources).toContain(`repo:${repo}:${tab}`);
 	}
 });
+
+it.each(["selected", "filter", "stale", "failed"] as const)(
+	"bounds %s refresh work to the resolved repositories regardless of site size",
+	(scope) => {
+		const names = ["nocoo/app", ...Array.from({ length: 160 }, (_, i) => `org/repo${i}`)];
+		const run = makeRun("run", "a", "nocoo", "key", "refresh", [firstRepo], now, [], names, {
+			scope,
+		});
+		expect(run.siteRepos).toEqual(["nocoo/app"]);
+		expect(run.steps).toHaveLength(19);
+		expect(run.steps.filter((step) => step.kind === "snapshot")).toHaveLength(9);
+		expect(run.steps.filter((step) => step.repo === null).map((step) => step.kind)).toEqual([
+			"publish",
+		]);
+		expect(run.steps.every((step) => step.repo === null || step.repo === "nocoo/app")).toBe(true);
+	},
+);

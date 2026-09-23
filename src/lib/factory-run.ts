@@ -145,7 +145,10 @@ export function makeRun(
 	now: string,
 	states: Pick<RepoRefreshState, "repo" | "refreshedAt" | "status" | "nextAllowedAt">[] = [],
 	siteRepos: string[] = repos.map((repo) => repo.name),
+	selection: RunSelection = { scope: "all" },
 ): FactoryRun {
+	const full = selection.scope === "all";
+	const pageRepos = full ? siteRepos : repos.map((repo) => repo.name);
 	const step = (kind: StepKind, repo: string | null = null): FactoryRunStep => ({
 		kind,
 		repo,
@@ -165,17 +168,19 @@ export function makeRun(
 		mode === "catalog"
 			? [step("inventory"), snapshot("repos"), step("restore"), step("publish")]
 			: [
-					step("contributions"),
+					...(full ? [step("contributions")] : []),
 					...repos.flatMap((r) => [
 						step("metadata", r.name),
 						...FACTORY_STREAMS.map((s) => step(s, r.name)),
 						step("commit", r.name),
 					]),
-					snapshot("repos"),
-					...siteRepos.flatMap((repo) =>
+					...(full ? [snapshot("repos")] : []),
+					...pageRepos.flatMap((repo) =>
 						REPO_SNAPSHOT_TABS.map((tab) => snapshot(`repo:${repo}:${tab}`, repo)),
 					),
-					...SITE_SNAPSHOT_KINDS.filter((kind) => kind !== "repos").map((kind) => snapshot(kind)),
+					...(full
+						? SITE_SNAPSHOT_KINDS.filter((kind) => kind !== "repos").map((kind) => snapshot(kind))
+						: []),
 					step("publish"),
 				];
 	for (const s of steps)
@@ -194,8 +199,9 @@ export function makeRun(
 		owner,
 		requestKey,
 		mode,
+		selection: structuredClone(selection),
 		repos: repos.map((r) => r.name),
-		siteRepos: [...siteRepos],
+		siteRepos: [...pageRepos],
 		repoIds: Object.fromEntries(repos.map((r) => [r.name, r.id])),
 		window: factoryWindow(now),
 		steps,

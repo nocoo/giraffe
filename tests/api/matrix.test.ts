@@ -771,6 +771,7 @@ describe("api method matrix", () => {
 			repos: ["octocat/hello-world"],
 		});
 		expect(refreshRun.status).toBe(202);
+		expect(await refreshRun.json()).toMatchObject({ totalSteps: 19 });
 		expect(await (await api("/api/factory")).json()).toEqual(factoryBefore);
 		await expect
 			.poll(

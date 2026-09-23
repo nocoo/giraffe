@@ -8,9 +8,9 @@
 
 ## 计划与执行
 
-- D1 是任务真相源。软件工厂是全站唯一采集入口；其他页面只读已保存数据。启动事务冻结工厂统计仓库 `repos`、全站页面仓库 `siteRepos`、顺序、窗口与步骤。页面清单包括令牌可访问的本人、协作及组织仓库，不沿用工厂统计对 fork、归档、镜像的排除规则。
-- 数据刷新总步骤 = 贡献日历 + N 个统计仓库各 9 步（metadata + 7 streams + commit）+ 仓库列表 + M 个页面仓库各 9 类详情 + Issues/PRs/安全告警/通知 + 发布，即 `9N + 9M + 7`。分页次数单列 pages/requests，不改变分母；冷却只跳过统计的 9 步，不跳过页面更新。
-- catalog run 为 inventory、全站仓库列表、restore、publish 共 4 步。首次使用或升级后先同步清单，再全站刷新。全站页面清单必须完整；非 selected 的统计范围还要求完整工厂清单。刷新中发现冻结清单外的新仓库会报告 `catalog_changed`，保留原清单并提示重新同步，不静默遗漏新详情。
+- D1 is the source of truth. The software factory remains the only collection entry point. Each run freezes its statistics repositories (`repos`), detail targets (`siteRepos`), order, window and steps. Only `scope=all` uses the complete accessible site catalog, including repositories excluded from factory statistics. Selected, filtered, stale and failed scopes use their resolved statistics repositories for both statistics and detail pages.
+- A full refresh has `9N + 9M + 7` logical steps: contributions, nine statistics steps per statistics repository, the site catalog, nine detail tabs per accessible repository, four account-wide lists, and publication. A scoped refresh has `18N + 1` steps: statistics, detail tabs and publication only. One selected repository therefore has 19 steps, including exactly nine detail pages, independent of site size. Pagination is counted separately and never expands the logical denominator. Cooldowns skip statistics steps while retaining planned detail work.
+- Catalog runs retain four steps: inventory, site catalog, restore and publication. Full refresh requires complete statistics and site catalogs; non-selected scoped runs require a complete statistics catalog. A selected known repository does not require a complete site catalog. Full refresh still reports `catalog_changed` when discovery finds repositories outside its frozen site targets; synchronize the catalog explicitly before including them.
 - 每个队列消息执行一页/一个有界动作并提交，再安排下一条。全站 Issues/PRs/告警每次最多处理 10 个仓库，中间结果与 cursor 一起保存在既有 staging，全部完成后才替换列表。cron 每分钟扫描到期任务，修复 enqueue 与数据库之间不可原子的问题。队列消息只有 run ID，没有令牌或事件。
 - 90 秒租约；提交事务中的每一条写入都受 run ID、lease token、版本、未过期租约和 running 状态保护。最后 CAS 更新 checkpoint 并释放租约。控制操作使旧租约失效；已在途的 GitHub 请求可能结束，但不能再写。
 - 每页心跳与 checkpoint 同时落库。崩溃最多重取未提交页；去重以事件 ID，统计只在流结束时计算。队列重复投递不会重复发布。
@@ -35,13 +35,13 @@
 
 页面右上角「刷新控制台」打开大对话框，使用 Basalt Dialog 的焦点约束、Esc 关闭与焦点恢复。主页面只保留一条数据健康与刷新进度提示，随后进入筛选和提交指标；关闭对话框不会停止只读轮询或服务端任务。主页面始终展示当前任务或最近一次任务，切换历史记录不会替换主页面的进度。
 
-对话框分为「刷新进度」和「发起刷新」。进度条分别展示已完成、未完成与跳过，处理到 100% 不表示数据全部获取成功。刷新展示贡献日历、工厂统计、全站页面、发布四个阶段；逐仓库展开可查看统计及页面步骤，不参与统计的仓库只显示页面步骤。清单同步仍按发现、恢复、发布三个视觉阶段展示（共 4 步）。相同问题按步骤与诊断代码合并，说明可能原因、数据影响和处理方式；原始代码、数据时间、页数与存储等诊断信息按需展开。权限问题不假定具体原因已证实；截断不承诺重复刷新能补齐，限流说明自动继续，暂停和失败说明已保存数据的保留行为。
+The console has progress and start tabs. Progress separates success, failure and skipped work; 100% processed does not imply complete data. Full refresh shows contributions, statistics, site pages and publication. Scoped refresh shows statistics, repository pages and publication, with empty stages omitted. Repository rows expose their own statistics and detail steps; repositories outside factory statistics have detail steps only. Catalog discovery retains three visual phases and four logical steps. Problems are grouped by step and diagnostic code, with their possible causes, data impact and recovery actions. Raw codes, timestamps, page counts and storage diagnostics remain collapsed. Permission causes are not assumed; truncated sources do not promise recovery on retry, rate limits explain automatic continuation, and pause/failure states explain retention of saved data.
 
-默认全站刷新，选择、筛选、失败重试与优先级只影响工厂统计，任何刷新都更新完整页面清单。手动选择可搜索完整统计清单，「当前页面筛选」单独使用页面条件；启动后不可更改本次顺序。缺快照页面只提供 `/factory?refresh=1` 导航，不发起采集。页面重新挂载时读取最新保存的数据，不长期复用内存快照。只读轮询一次完成后再安排下一次，页面隐藏降低频率，错误退避；重载从服务端恢复。操作错误与轮询错误分开保存，成功读取状态不会清除启动失败的说明。
+The default scope is full-site refresh. Selection, filtering, stale-data refresh and failed-repository retry restrict both statistics and detail work to the resolved repositories. They do not fetch contributions, the site catalog, account-wide Issues/PRs/alerts, notifications, Insights or digest; those snapshots keep their prior contents and timestamps. Factory publication merges the accepted repository versions with existing observations and retains contribution provenance. AI assessments still follow accepted repository updates when configured. Manual selection searches the statistics catalog; page filters apply only to the explicit filter scope. Priority changes order, not membership. Frozen active and historical plans are never rewritten; cancel an old broad plan and start a new scoped run to use this behavior. Missing snapshots still link to `/factory?refresh=1`; other pages remain read-only. Polls remain serial, slow down while hidden, back off on errors, and keep operation errors separate from polling errors.
 
 范围和历史记录选择使用带标签的 Basalt Select，仓库勾选与优先级使用 Basalt Checkbox/Input；标题、正文、辅助文字遵循全站 16/14/13px 层级。移动端对话框内部滚动，保持关闭和返回操作可达。
 
-测试覆盖计划、完整页面清单与分批聚合、范围/顺序冻结、冷却、并发启动、租约接管、陈旧提交拒绝、重复页、失败保留、暂停/取消、限流、重载读取、原子仓库/全局发布、迁移重复执行/旧行不变、API 鉴权/Origin 和 UI。自动验收仅使用本地 GitHub stub；选择单仓也会更新全站页面，因此不能再把 selected 当作生产的低流量 smoke。
+Tests cover scoped plans against a 161-repository site catalog, all four scoped selectors, unchanged full-site coverage, upstream request isolation, preservation of unrelated snapshots and timestamps, contribution provenance, publication, cooldowns, retries, leases and controls. Browser coverage verifies that one selected repository shows 19 total steps, nine detail pages and only one repository row. Automated checks use local GitHub fixtures only.
 
 ## 实现边界与审查处理
 

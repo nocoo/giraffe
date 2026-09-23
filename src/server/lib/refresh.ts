@@ -196,69 +196,71 @@ export async function prepareRefresh(
 		}
 	}
 
-	const explicitInsights = requested.includes("insights");
-	const explicitDigest = requested.includes("digest");
-	const reposSrc = await loaded("repos");
-	const issuesSrc = await loaded("issues");
-	const alertsSrc = await loaded("alerts");
-	const policy = await repoPolicy(db, accountId, reposSrc);
-	const insightsOk = sourceOk(reposSrc) && sourceOk(issuesSrc);
-	if (explicitInsights && !insightsOk) {
-		throw new ApiError(409, "snapshot_missing", "derived sources missing");
-	}
-	if (insightsOk && reposSrc) {
-		const alertsIncomplete =
-			alertsSrc === null || alertsSrc.unavailable === true || alertsSrc.truncated === true;
-		const insights = buildInsights(
-			asRepos(reposSrc).filter((r) => policy.enabled(r.name_with_owner)),
-			Array.isArray(alertsSrc?.items) ? (alertsSrc.items as InsightAlert[]) : [],
-			fetchedAt,
-			alertsIncomplete,
-		);
-		const preview = splitPages("insights", insights);
-		if (!preview.truncated || explicitInsights) {
-			written.insights = {
-				...assemblePages("insights", preview.pages),
-				truncated: preview.truncated,
-			};
+	if (requested.some((kind) => CROSS.has(kind) || DERIVED.has(kind))) {
+		const explicitInsights = requested.includes("insights");
+		const explicitDigest = requested.includes("digest");
+		const reposSrc = await loaded("repos");
+		const issuesSrc = await loaded("issues");
+		const alertsSrc = await loaded("alerts");
+		const policy = await repoPolicy(db, accountId, reposSrc);
+		const insightsOk = sourceOk(reposSrc) && sourceOk(issuesSrc);
+		if (explicitInsights && !insightsOk) {
+			throw new ApiError(409, "snapshot_missing", "derived sources missing");
 		}
-	}
-	const today = utcDay(fetchedAt);
-	const wroteRepos = Boolean(written.repos && written.repos.truncated !== true);
-	const todayDay = wroteRepos
-		? dayFrom(written.repos as Collected)
-		: await readDay(db, accountId, today);
-	const digestOk = sourceOk(reposSrc) && todayDay !== null;
-	if (explicitDigest && !digestOk) {
-		throw new ApiError(409, "snapshot_missing", "derived sources missing");
-	}
-	if (digestOk && reposSrc) {
-		const day = dayFrom({
-			...reposSrc,
-			repos: policy.repos.filter((r) => policy.enabled(r.name_with_owner)),
-		});
-		const previous = await readDay(db, accountId, yesterday(utcDay(fetchedAt)));
-		const selectedPrevious = previous?.by_repo.filter((r) => policy.enabled(r.name_with_owner));
-		const digest = buildDigest(
-			day,
-			previous && selectedPrevious
-				? {
-						...previous,
-						by_repo: selectedPrevious,
-						repos: selectedPrevious.length,
-						stars: selectedPrevious.reduce((n, r) => n + r.stars, 0),
-						forks: selectedPrevious.reduce((n, r) => n + r.forks, 0),
-						open_issues: selectedPrevious.reduce((n, r) => n + r.open_issues, 0),
-					}
-				: null,
-			fetchedAt,
-		);
-		const preview = splitPages("digest", digest as unknown as Record<string, unknown>);
-		if (!preview.truncated || explicitDigest) {
-			written.digest = {
-				...assemblePages("digest", preview.pages),
-				truncated: preview.truncated,
-			};
+		if (insightsOk && reposSrc) {
+			const alertsIncomplete =
+				alertsSrc === null || alertsSrc.unavailable === true || alertsSrc.truncated === true;
+			const insights = buildInsights(
+				asRepos(reposSrc).filter((r) => policy.enabled(r.name_with_owner)),
+				Array.isArray(alertsSrc?.items) ? (alertsSrc.items as InsightAlert[]) : [],
+				fetchedAt,
+				alertsIncomplete,
+			);
+			const preview = splitPages("insights", insights);
+			if (!preview.truncated || explicitInsights) {
+				written.insights = {
+					...assemblePages("insights", preview.pages),
+					truncated: preview.truncated,
+				};
+			}
+		}
+		const today = utcDay(fetchedAt);
+		const wroteRepos = Boolean(written.repos && written.repos.truncated !== true);
+		const todayDay = wroteRepos
+			? dayFrom(written.repos as Collected)
+			: await readDay(db, accountId, today);
+		const digestOk = sourceOk(reposSrc) && todayDay !== null;
+		if (explicitDigest && !digestOk) {
+			throw new ApiError(409, "snapshot_missing", "derived sources missing");
+		}
+		if (digestOk && reposSrc) {
+			const day = dayFrom({
+				...reposSrc,
+				repos: policy.repos.filter((r) => policy.enabled(r.name_with_owner)),
+			});
+			const previous = await readDay(db, accountId, yesterday(utcDay(fetchedAt)));
+			const selectedPrevious = previous?.by_repo.filter((r) => policy.enabled(r.name_with_owner));
+			const digest = buildDigest(
+				day,
+				previous && selectedPrevious
+					? {
+							...previous,
+							by_repo: selectedPrevious,
+							repos: selectedPrevious.length,
+							stars: selectedPrevious.reduce((n, r) => n + r.stars, 0),
+							forks: selectedPrevious.reduce((n, r) => n + r.forks, 0),
+							open_issues: selectedPrevious.reduce((n, r) => n + r.open_issues, 0),
+						}
+					: null,
+				fetchedAt,
+			);
+			const preview = splitPages("digest", digest as unknown as Record<string, unknown>);
+			if (!preview.truncated || explicitDigest) {
+				written.digest = {
+					...assemblePages("digest", preview.pages),
+					truncated: preview.truncated,
+				};
+			}
 		}
 	}
 

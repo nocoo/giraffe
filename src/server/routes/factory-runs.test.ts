@@ -76,7 +76,7 @@ it("restores server state after reload, preserves the old overview and freezes t
 	expect(state.current).toMatchObject({
 		id: createdBody.id,
 		repos: ["nocoo/app"],
-		progress: { total: 25, completed: 0 },
+		progress: { total: 19, completed: 0 },
 	});
 	expect(state.current).not.toHaveProperty("checkpoint");
 	expect(await (await s.call("/api/factory")).json()).toEqual(await original.json());
@@ -239,12 +239,12 @@ it("returns compact history with accurate totals and expands only the requested 
 	const first = (await (await s.call("/api/factory/runs", plan())).json()) as { id: string };
 	await s.call(`/api/factory/runs/${first.id}/control`, { account_id: id, action: "cancel" });
 	const compact = (await (await s.call()).json()) as FactoryRunResponse;
-	expect(compact.history[0]?.steps).toHaveLength(25);
-	expect(compact.history[0]?.progress).toMatchObject({ total: 25, completed: 25, skipped: 25 });
+	expect(compact.history[0]?.steps).toHaveLength(19);
+	expect(compact.history[0]?.progress).toMatchObject({ total: 19, completed: 19, skipped: 19 });
 	const detail = (await (
 		await s.call(`/api/factory/runs?history=${first.id}`)
 	).json()) as FactoryRunResponse;
-	expect(detail.history[0]?.steps).toHaveLength(25);
+	expect(detail.history[0]?.steps).toHaveLength(19);
 	expect((await s.call(`/api/factory/runs?history=${"x".repeat(81)}`)).status).toBe(400);
 });
 
@@ -294,6 +294,59 @@ it("requires a complete site catalog before a full refresh, including on an exis
 		expect(res.status).toBe(409);
 		expect(await res.json()).toMatchObject({ error: { code: "catalog_incomplete" } });
 	}
+});
+
+it.each(["selected", "filter", "stale", "failed"] as const)(
+	"limits %s API plans to resolved repositories in a large site catalog",
+	async (scope) => {
+		const s = await setup();
+		await s.db.batch(
+			replaceSnapshotStmts(
+				s.db,
+				id,
+				"repos",
+				{
+					repos: ["nocoo/app", ...Array.from({ length: 160 }, (_, i) => `org/repo${i}`)].map(
+						(name_with_owner) => ({ name_with_owner }),
+					),
+					truncated: false,
+				},
+				snapshot.fetched_at,
+			),
+		);
+		await s.db
+			.prepare("INSERT INTO factory_repo_state(account_id,repo,payload) VALUES(?,?,?)")
+			.bind(
+				id,
+				"nocoo/app",
+				JSON.stringify({
+					repo: "nocoo/app",
+					status: "failed",
+					refreshedAt: null,
+					nextAllowedAt: snapshot.fetched_at,
+				}),
+			)
+			.run();
+		const response = await s.call("/api/factory/runs", {
+			...plan(),
+			scope,
+			repos: scope === "selected" ? ["nocoo/app"] : undefined,
+		});
+		expect(response.status).toBe(202);
+		expect(await response.json()).toMatchObject({ totalSteps: 19 });
+		const state = (await (await s.call()).json()) as FactoryRunResponse;
+		expect(state.current?.siteRepos).toEqual(["nocoo/app"]);
+		expect(state.current?.steps.filter((step) => step.kind === "snapshot")).toHaveLength(9);
+		expect(
+			state.current?.steps.every((step) => step.repo === "nocoo/app" || step.kind === "publish"),
+		).toBe(true);
+	},
+);
+
+it("allows a known selected repository without rescanning an incomplete site catalog", async () => {
+	const s = await setup();
+	await s.db.prepare("DELETE FROM snapshots WHERE kind='repos'").run();
+	expect((await s.call("/api/factory/runs", plan())).status).toBe(202);
 });
 
 it("rejects ambiguous scope/order and refuses new resource work beyond its account budget", async () => {

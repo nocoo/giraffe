@@ -2,17 +2,21 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { rawRepo } from "../../../tests/fixtures/factory";
 import { factoryFixture } from "../../../tests/fixtures/factory-snapshot";
 import { sqliteFixture } from "../../../tests/fixtures/sqlite";
-import { makeRun } from "../../lib/factory-run";
+import { makeRun, type RunSelection } from "../../lib/factory-run";
 import type { Env } from "../env";
 import { createDb } from "./db/d1";
 import { getRun, publishedFactory, startRun } from "./db/factory-runs";
+import { readDay, upsertDayStmt } from "./db/snapshot-days";
 import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
 import { executeRunPage } from "./factory-execute";
 import { encryptToken, parseKeyBytes } from "./token-crypto";
 
 const snap = factoryFixture();
 const now = snap.fetched_at;
-async function setup(mode: "refresh" | "catalog" = "refresh") {
+async function setup(
+	mode: "refresh" | "catalog" = "refresh",
+	selection: RunSelection = { scope: "all" },
+) {
 	const env = {
 		FACTORY_QUEUE: {} as Queue,
 		DB: sqliteFixture(),
@@ -47,6 +51,9 @@ async function setup(mode: "refresh" | "catalog" = "refresh") {
 		mode,
 		mode === "catalog" ? [] : snap.repos,
 		now,
+		[],
+		snap.repos.map((repo) => repo.name),
+		selection,
 	);
 	await startRun(db, run);
 	return env;
@@ -94,6 +101,91 @@ it("publishes only a complete committed repository set and survives every-page r
 	const count = vi.mocked(fetch).mock.calls.length;
 	await executeRunPage(env, "r1", () => now);
 	expect(fetch).toHaveBeenCalledTimes(count);
+});
+
+it("refreshes one repository without scanning or rewriting unrelated site data", async () => {
+	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] });
+	const db = createDb(env.DB);
+	const other = structuredClone(snap.repos[0]);
+	if (!other) throw new Error("fixture repository missing");
+	other.id = "other";
+	other.name = "org/other";
+	other.observation = {
+		version: "old",
+		refreshedAt: now,
+		window: snap.window,
+		source: "run",
+		repo: other.name,
+	};
+	const calendar = { total: 2, restricted: 0, days: [], fetchedAt: now };
+	const observation = { version: "old", window: snap.window, fetchedAt: now };
+	await db.batch(
+		replaceSnapshotStmts(
+			db,
+			snap.account_id,
+			"factory",
+			{
+				...snap,
+				repos: [...snap.repos, other],
+				contribution: calendar,
+				contributionStatus: "complete",
+				contributionObservation: observation,
+			},
+			now,
+		),
+	);
+	const preserved: Record<string, Record<string, unknown>> = {
+		repos: {
+			repos: [{ name_with_owner: "nocoo/app" }, { name_with_owner: "org/other" }],
+			truncated: false,
+		},
+		issues: { issues: [{ repo: "org/other", number: 1 }], truncated: false },
+		prs: { pull_requests: [{ repo: "org/other", number: 2 }], truncated: false },
+		alerts: { items: [], truncated: false },
+		notifications: { notifications: [], truncated: false },
+		insights: { marker: "original insights" },
+		digest: { marker: "original digest" },
+		"repo:org/other:details": { description: "Retain other repository" },
+	};
+	for (const [kind, payload] of Object.entries(preserved))
+		await db.batch(
+			replaceSnapshotStmts(db, snap.account_id, kind, { ...payload, fetched_at: now }, now),
+		);
+	const originals = new Map(
+		await Promise.all(
+			Object.keys(preserved).map(
+				async (kind) => [kind, await readSnapshot(db, snap.account_id, kind)] as const,
+			),
+		),
+	);
+	const daily = { stars: 3, forks: 1, open_issues: 2, repos: 2, by_repo: [] };
+	await db.batch([upsertDayStmt(db, snap.account_id, now.slice(0, 10), daily)]);
+	const later = new Date(Date.parse(now) + 30_000).toISOString();
+	const run = await drive(env, later);
+	expect(run?.steps).toHaveLength(19);
+	expect(run?.status).toBe("completed");
+	for (const [kind, payload] of originals)
+		expect(await readSnapshot(db, snap.account_id, kind)).toEqual(payload);
+	expect(await readDay(db, snap.account_id, now.slice(0, 10))).toEqual(daily);
+	for (const [url, init] of vi.mocked(fetch).mock.calls) {
+		const body = String(init?.body ?? "");
+		expect(String(url)).not.toContain("/notifications");
+		expect(body).not.toMatch(/contributionsCollection|affiliations:|org\/other/);
+		if (body.includes("search(query"))
+			expect(JSON.parse(body).variables.q.match(/repo:\S+/g)).toEqual(["repo:nocoo/app"]);
+	}
+	const published = await publishedFactory(db, snap.account_id);
+	expect(published?.repos.find((repo) => repo.name === "org/other")).toEqual(other);
+	expect(published?.repos.find((repo) => repo.name === "nocoo/app")?.observation?.version).toBe(
+		"r1",
+	);
+	expect(published?.contribution).toEqual(calendar);
+	expect(published?.contributionObservation).toEqual(observation);
+	expect(published?.contributionStatus).toBe("complete");
+	expect(published?.publication?.mixed).toBe(true);
+	expect(await readSnapshot(db, snap.account_id, "repo:nocoo/app:details")).toMatchObject({
+		fetched_at: later,
+	});
 });
 
 async function drive(env: Env, start = now) {

@@ -321,7 +321,7 @@ export function FactoryRuns({
 						</span>
 						<div>
 							<DialogTitle className="text-xl">刷新控制台</DialogTitle>
-							<DialogDescription>统一更新全站数据。关闭窗口后，刷新仍会继续。</DialogDescription>
+							<DialogDescription>按所选范围更新数据。关闭窗口后，刷新仍会继续。</DialogDescription>
 						</div>
 					</div>
 					<DialogClose asChild>
@@ -443,7 +443,11 @@ export function FactoryRuns({
 							<div className="factory-section-heading">
 								<div>
 									<h3>选择要更新的仓库</h3>
-									<p>全站列表、通知、日报和所有仓库详情都会更新；下方范围用于工厂统计。</p>
+									<p>
+										{scope === "all"
+											? "更新账号贡献、全站列表、通知、日报和所有仓库详情。"
+											: "仅更新所选仓库的统计、详情及已配置的 AI 评估；全站列表保留上次数据。"}
+									</p>
 								</div>
 							</div>
 							{current ? (
@@ -642,7 +646,8 @@ export function FactoryRuns({
 										size="sm"
 										disabled={
 											busy ||
-											!data?.catalogComplete ||
+											!data ||
+											(scope !== "selected" && !data.catalogComplete) ||
 											!!current ||
 											cooldown > 0 ||
 											(scope !== "all" && !planned.length)

@@ -345,3 +345,47 @@ test("history stays in the console and a failed start remains explained after po
 	await page.getByRole("button", { name: "重试读取", exact: true }).click();
 	await expect(page.getByRole("alert")).toContainText("倒计时");
 });
+
+test("selecting one repository limits the console to its nine detail pages", async ({ page }) => {
+	const fixture = consoleFixture();
+	fixture.state.current = null;
+	fixture.state.history = [];
+	fixture.state.catalogComplete = false;
+	await mockConsole(page, fixture);
+	await page.route("**/api/factory/runs", async (route) => {
+		if (route.request().method() !== "POST") return route.fallback();
+		const input = route.request().postDataJSON();
+		expect(input).toMatchObject({ scope: "selected", repos: ["nocoo/app"] });
+		const run = makeRun(
+			"single-repo",
+			fixture.snapshot.account_id,
+			"nocoo",
+			"single",
+			"refresh",
+			fixture.snapshot.repos.filter((repo) => repo.name === "nocoo/app"),
+			fixture.snapshot.fetched_at,
+			[],
+			fixture.snapshot.repos.map((repo) => repo.name),
+			input,
+		);
+		fixture.state.current = { ...run, leaseUntil: null, progress: runProgress(run, run.startedAt) };
+		return route.fulfill({ status: 202, json: { id: run.id, totalSteps: run.steps.length } });
+	});
+	await page.goto("/factory?refresh=1");
+	const dialog = page.getByRole("dialog", { name: "刷新控制台" });
+	await dialog.getByRole("combobox", { name: "刷新范围", exact: true }).click();
+	await page.getByRole("option", { name: "手动选择仓库", exact: true }).click();
+	await dialog.getByRole("checkbox", { name: "nocoo/app", exact: true }).check();
+	await expect(dialog.getByText(/仅更新所选仓库/)).toBeVisible();
+	await dialog.getByRole("button", { name: "开始刷新（1）", exact: true }).click();
+	await expect(dialog.getByRole("progressbar", { name: "本次刷新进度" })).toHaveAttribute(
+		"max",
+		"19",
+	);
+	const stages = dialog.locator(".factory-run-phases>li");
+	await expect(stages).toHaveCount(3);
+	await expect(stages.filter({ hasText: "仓库页面" })).toContainText("0 / 9");
+	await expect(dialog.getByText("全站页面", { exact: true })).toHaveCount(0);
+	await expect(dialog.locator(".factory-run-row")).toHaveCount(1);
+	await expect(dialog.locator(".factory-run-row")).toContainText("nocoo/app");
+});

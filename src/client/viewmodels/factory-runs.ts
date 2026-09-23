@@ -253,16 +253,21 @@ export function runStages(run: FactoryRunView) {
 						title: "工厂统计",
 						steps: run.steps.filter((s) => s.repo !== null && s.kind !== "snapshot"),
 					},
-					{ title: "全站页面", steps: run.steps.filter((s) => s.kind === "snapshot") },
+					{
+						title: run.steps.some((s) => s.resource === "repos") ? "全站页面" : "仓库页面",
+						steps: run.steps.filter((s) => s.kind === "snapshot"),
+					},
 					{ title: "更新页面", steps: run.steps.filter((s) => s.kind === "publish") },
 				];
-	return stages.map((stage) => ({
-		...stage,
-		total: stage.steps.length,
-		completed: stage.steps.filter((s) => ["success", "failed", "skipped"].includes(s.status))
-			.length,
-		failed: stage.steps.filter((s) => s.status === "failed").length,
-	}));
+	return stages
+		.filter((stage) => stage.steps.length > 0)
+		.map((stage) => ({
+			...stage,
+			total: stage.steps.length,
+			completed: stage.steps.filter((s) => ["success", "failed", "skipped"].includes(s.status))
+				.length,
+			failed: stage.steps.filter((s) => s.status === "failed").length,
+		}));
 }
 
 export function factoryDataHealth(snapshot: FactorySnapshot | null) {

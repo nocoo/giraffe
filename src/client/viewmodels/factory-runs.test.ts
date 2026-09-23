@@ -23,6 +23,28 @@ import { setActiveAccountId } from "./session";
 vi.mock("../lib/api", () => ({ apiGet: vi.fn(), apiPost: vi.fn() }));
 const snap = factoryFixture();
 const run = makeRun("r", snap.account_id, "nocoo", "key", "refresh", snap.repos, snap.fetched_at);
+
+it("shows only repository statistics, details and publication for a scoped run", () => {
+	const scoped = makeRun(
+		"scoped",
+		snap.account_id,
+		"nocoo",
+		"key",
+		"refresh",
+		snap.repos,
+		snap.fetched_at,
+		[],
+		["nocoo/app", "org/other"],
+		{ scope: "selected" },
+	);
+	const view = { ...scoped, leaseUntil: null, progress: runProgress(scoped, snap.fetched_at) };
+	expect(runStages(view).map((stage) => [stage.title, stage.total])).toEqual([
+		["工厂统计", 9],
+		["仓库页面", 9],
+		["更新页面", 1],
+	]);
+	expect(runRepositoryRows(view, []).map((row) => row.repo)).toEqual(["nocoo/app"]);
+});
 const state: FactoryRunResponse = {
 	account_id: snap.account_id,
 	serverNow: snap.fetched_at,
