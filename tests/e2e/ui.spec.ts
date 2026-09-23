@@ -303,6 +303,7 @@ for (const mode of ["light", "dark", "mobile"] as const) {
 			["/alerts", "alert-list"],
 			["/inbox", "inbox-list"],
 			["/digest", "digest-list"],
+			["/ci", "ci-list"],
 			["/settings", "pat-input"],
 			["/repos/octocat/hello-world", "repo-detail"],
 		] as const) {
@@ -366,4 +367,28 @@ test("the redesigned settings form clears a rejected PAT", async ({ page }) => {
 			JSON.stringify([Object.entries(localStorage), Object.entries(sessionStorage)]),
 		),
 	).not.toContain(token);
+});
+
+test("CI page separates consecutive failures from recurring ones and filters the stream list", async ({
+	page,
+}) => {
+	await page.goto("/ci");
+	const summary = page.getByTestId("ci-summary");
+	await expect(summary.getByText("需要处理", { exact: true })).toBeVisible();
+	const act = page.locator(".giraffe-ci-card");
+	await expect(act).toHaveCount(1);
+	await expect(act).toContainText("hello-world");
+	await expect(act).toContainText("连续 2 次");
+	await expect(page.getByText("反复失败 · 1", { exact: true })).toBeVisible();
+	await expect(page.getByText("1 个仓库未采集", { exact: true })).toBeVisible();
+	const list = page.getByTestId("ci-list");
+	await expect(list.getByRole("row")).toHaveCount(5);
+	await page.getByRole("radio", { name: "连续失败", exact: true }).click();
+	await expect(list.getByRole("row")).toHaveCount(2);
+	await page.getByRole("radio", { name: "全部", exact: true }).click();
+	await page.getByLabel("搜索工作流", { exact: true }).fill("field");
+	await expect(list.getByRole("row")).toHaveCount(2);
+	const releases = page.getByTestId("release-list");
+	await expect(releases.getByRole("row").nth(1)).toContainText("v2.1.0");
+	await expect(releases.getByRole("row").nth(1)).toContainText("连续失败");
 });

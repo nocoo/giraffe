@@ -36,6 +36,7 @@ import {
 	Search,
 	Settings,
 	ShieldAlert,
+	Workflow,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
@@ -57,6 +58,7 @@ const ICONS: Record<string, LucideIcon> = {
 	Inbox,
 	Newspaper,
 	Settings,
+	Workflow,
 };
 
 function NavIcon({ name, className }: { name: string; className?: string }) {

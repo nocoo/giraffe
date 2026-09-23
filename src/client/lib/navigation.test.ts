@@ -18,6 +18,7 @@ describe("navigation", () => {
 			"/",
 			"/issues",
 			"/pulls",
+			"/ci",
 			"/alerts",
 			"/inbox",
 			"/digest",
@@ -33,6 +34,7 @@ describe("navigation", () => {
 			"/issues",
 			"/pulls",
 			"/insights",
+			"/ci",
 			"/alerts",
 			"/inbox",
 			"/digest",
@@ -45,6 +47,7 @@ describe("navigation", () => {
 			{ href: "/repos/o/n", label: "o/n" },
 		]);
 		expect(breadcrumbsFor("/settings")).toEqual([{ href: "/settings", label: "设置" }]);
+		expect(breadcrumbsFor("/ci")).toEqual([{ href: "/ci", label: "CI 与发布" }]);
 		expect(breadcrumbsFor("/nope")).toEqual([{ href: "/nope", label: "未找到" }]);
 		expect(headerTitle("/")).toBe("仓库");
 		expect(headerCrumbs("/")).toEqual([{ href: "/", label: "Giraffe" }]);

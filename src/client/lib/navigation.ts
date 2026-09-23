@@ -6,6 +6,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
 	{ href: "/", label: "仓库", icon: "Box" },
 	{ href: "/issues", label: "Issues", icon: "CircleDot" },
 	{ href: "/pulls", label: "Pull Requests", icon: "GitPullRequest" },
+	{ href: "/ci", label: "CI 与发布", icon: "Workflow" },
 	{ href: "/alerts", label: "安全告警", icon: "ShieldAlert" },
 	{ href: "/inbox", label: "通知", icon: "Inbox" },
 	{ href: "/digest", label: "日报", icon: "Newspaper" },
@@ -16,8 +17,8 @@ export type NavGroup = { label: string; items: readonly NavItem[] };
 
 export const NAV_GROUPS: readonly NavGroup[] = [
 	{ label: "浏览", items: NAV_ITEMS.slice(0, 5) },
-	{ label: "工作", items: NAV_ITEMS.slice(5, 8) },
-	{ label: "系统", items: NAV_ITEMS.slice(8) },
+	{ label: "工作", items: NAV_ITEMS.slice(5, 9) },
+	{ label: "系统", items: NAV_ITEMS.slice(9) },
 ];
 
 export const PAGE_DESCRIPTIONS = {
@@ -26,6 +27,7 @@ export const PAGE_DESCRIPTIONS = {
 	"/issues": "跨仓打开的 Issue",
 	"/pulls": "跨仓打开的 Pull Request",
 	"/insights": "跨仓 Issue / PR 分布与仓库健康",
+	"/ci": "各仓库 CI 与发布状态，区分连续失败与偶发失败",
 	"/alerts": "Dependabot 与 code scanning",
 	"/inbox": "GitHub 通知收件箱",
 	"/digest": "相对昨天基线的仓库变化",

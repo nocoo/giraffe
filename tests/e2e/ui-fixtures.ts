@@ -1,3 +1,5 @@
+import { ciReport } from "../../src/lib/ci-health";
+
 const fetchedAt = "2026-09-08T08:30:00.000Z";
 const envelope = { account_id: "ui-account", fetched_at: fetchedAt, truncated: false };
 
@@ -236,5 +238,70 @@ export function createUiFixtures() {
 				},
 			],
 		},
+		"/api/ci": ciFixture(),
+	};
+}
+
+function ciFixture() {
+	const now = fetchedAt;
+	const at = (hoursAgo: number) => new Date(Date.parse(now) - hoursAgo * 3_600_000).toISOString();
+	let id = 0;
+	const run = (name: string, conclusion: string, hoursAgo: number, head_branch = "main") => ({
+		id: ++id,
+		name,
+		html_url: `https://github.com/octocat/hello-world/actions/runs/${id}`,
+		status: "completed",
+		conclusion,
+		event: "push",
+		head_branch,
+		created_at: at(hoursAgo),
+		updated_at: at(hoursAgo),
+	});
+	const report = ciReport(
+		[
+			{
+				repo: "octocat/hello-world",
+				fetched_at: now,
+				truncated: false,
+				runs: [
+					run("Release", "failure", 1),
+					run("Release", "failure", 20),
+					run("Release", "success", 50),
+					run("CI", "success", 2),
+				],
+				releases: [
+					{
+						id: 1,
+						tag_name: "v2.1.0",
+						name: null,
+						html_url: "",
+						draft: false,
+						prerelease: false,
+						published_at: at(30),
+					},
+				],
+			},
+			{
+				repo: "octocat/basalt",
+				fetched_at: now,
+				truncated: false,
+				runs: ["success", "failure", "success", "failure", "success"].map((c, i) =>
+					run("CI", c, i * 10 + 1),
+				),
+			},
+			{
+				repo: "octocat/field-notes",
+				fetched_at: now,
+				truncated: false,
+				runs: [run("CI", "success", 3), run("CI", "success", 30)],
+			},
+		],
+		now,
+	);
+	return {
+		...report,
+		...envelope,
+		now,
+		unsaved: ["octocat/a-repository-with-a-very-long-name-for-layout-verification"],
 	};
 }

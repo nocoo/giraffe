@@ -4,6 +4,7 @@ export const APP_PATHS = [
 	"/issues",
 	"/pulls",
 	"/insights",
+	"/ci",
 	"/alerts",
 	"/inbox",
 	"/digest",

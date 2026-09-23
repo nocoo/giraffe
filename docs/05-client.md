@@ -326,6 +326,7 @@ async function send(resource: string, init?: RequestInit): Promise<Response> {
 | `/` | 仓库 | `Box` | `GET /api/repos` |
 | `/issues` | Issues | `CircleDot` | `GET /api/issues` |
 | `/pulls` | Pull Requests | `GitPullRequest` | `GET /api/prs` |
+| `/ci` | CI 与发布 | `Workflow` | `GET /api/ci` |
 | `/alerts` | 安全告警 | `ShieldAlert` | `GET /api/alerts` |
 | `/inbox` | 通知 | `Inbox` | `GET /api/notifications` |
 | `/digest` | 日报 | `Newspaper` | `GET /api/digest` |
@@ -359,6 +360,10 @@ Issues KPI：打开 Issues / 涉及仓库（`issueMetrics`）。PRs KPI：草稿
 浏览组第一项。不重复仓库全表。用 `SectionRule` 分「工作量 / 审查与节奏 / 健康与活跃」。每区：最多四张 KPI（共享 `StatCard`，主题色 icon）+ 两张图卡（一卡一图，使用 `LayerCard.Header` 放标题与指标说明，`Body` 放图表）。
 
 图表由 ViewModel 从 insights + issues + prs 快照聚合。issues 快照缺失时 Issue 计数回退 `open_issue_count`；prs 缺失时 PR 为 0。空 issues 快照不当回退。Client 仍不算 health。`alerts_incomplete` 时页头 Badge「告警不完整」。GET 409 时 Empty，刷新走 §7。仍 409 仅当 repos 或 issues 不足；不循环自动刷。
+
+### 8.3a `/ci`
+
+工作组第一项。页头说明判定口径与数据更新时间；截断与未采集仓库以 Badge 标出。汇总条按连续失败 / 偶发失败 / 稳定 / 无近期运行分段，四个计数各带规则说明。「需要处理」逐张卡片列出 `broken` 流：最近 10 次运行方块、失败始于或成功率、最后成功，以及 GitHub Actions 过滤链接。「继续观察」分反复失败与偶发一次两组，旁边为近 30 天每日运行结果堆叠柱。「全部工作流」表可按判定与文本筛选；「发布」表按发布流水线状态与距今时间排序，超过 3 个典型间隔（或无间隔时 90 天）标「久未发布」。只读 GET，缺数据时统一引导到工厂刷新。
 
 ### 8.4 `/alerts`
 
