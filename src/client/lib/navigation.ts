@@ -1,25 +1,37 @@
 export type NavItem = { href: string; label: string; icon: string };
 
-export const NAV_ITEMS: readonly NavItem[] = [
-	{ href: "/factory", label: "软件工厂", icon: "Factory" },
-	{ href: "/insights", label: "Insights", icon: "Activity" },
-	{ href: "/", label: "仓库", icon: "Box" },
-	{ href: "/issues", label: "Issues", icon: "CircleDot" },
-	{ href: "/pulls", label: "Pull Requests", icon: "GitPullRequest" },
-	{ href: "/ci", label: "CI 与发布", icon: "Workflow" },
-	{ href: "/alerts", label: "安全告警", icon: "ShieldAlert" },
-	{ href: "/inbox", label: "通知", icon: "Inbox" },
-	{ href: "/digest", label: "日报", icon: "Newspaper" },
-	{ href: "/settings", label: "设置", icon: "Settings" },
-];
-
 export type NavGroup = { label: string; items: readonly NavItem[] };
 
+/** Grouped by purpose: account-wide overviews, per-repository health, then work to act on. */
 export const NAV_GROUPS: readonly NavGroup[] = [
-	{ label: "浏览", items: NAV_ITEMS.slice(0, 5) },
-	{ label: "工作", items: NAV_ITEMS.slice(5, 9) },
-	{ label: "系统", items: NAV_ITEMS.slice(9) },
+	{
+		label: "总览",
+		items: [
+			{ href: "/factory", label: "软件工厂", icon: "Factory" },
+			{ href: "/digest", label: "日报", icon: "Newspaper" },
+			{ href: "/insights", label: "Insights", icon: "Activity" },
+		],
+	},
+	{
+		label: "仓库健康",
+		items: [
+			{ href: "/", label: "仓库", icon: "Box" },
+			{ href: "/ci", label: "CI 与发布", icon: "Workflow" },
+			{ href: "/alerts", label: "安全告警", icon: "ShieldAlert" },
+		],
+	},
+	{
+		label: "待办",
+		items: [
+			{ href: "/issues", label: "Issues", icon: "CircleDot" },
+			{ href: "/pulls", label: "Pull Requests", icon: "GitPullRequest" },
+			{ href: "/inbox", label: "通知", icon: "Inbox" },
+		],
+	},
+	{ label: "系统", items: [{ href: "/settings", label: "设置", icon: "Settings" }] },
 ];
+
+export const NAV_ITEMS: readonly NavItem[] = NAV_GROUPS.flatMap((group) => group.items);
 
 export const PAGE_DESCRIPTIONS = {
 	"/": "当前账号下的仓库快照",

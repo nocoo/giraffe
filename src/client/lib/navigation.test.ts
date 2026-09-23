@@ -12,21 +12,14 @@ import { APP_PATHS } from "./routes";
 
 describe("navigation", () => {
 	it("covers 01 section 9 paths and breadcrumbs", () => {
-		expect(NAV_ITEMS.map((item) => item.href)).toEqual([
-			"/factory",
-			"/insights",
-			"/",
-			"/issues",
-			"/pulls",
-			"/ci",
-			"/alerts",
-			"/inbox",
-			"/digest",
-			"/settings",
+		expect(NAV_GROUPS.map((group) => [group.label, group.items.map((item) => item.href)])).toEqual([
+			["总览", ["/factory", "/digest", "/insights"]],
+			["仓库健康", ["/", "/ci", "/alerts"]],
+			["待办", ["/issues", "/pulls", "/inbox"]],
+			["系统", ["/settings"]],
 		]);
-		expect(NAV_GROUPS.map((group) => group.label)).toEqual(["浏览", "工作", "系统"]);
-		expect(NAV_GROUPS.flatMap((group) => group.items.map((item) => item.href))).toEqual(
-			NAV_ITEMS.map((item) => item.href),
+		expect(NAV_ITEMS.map((item) => item.href)).toEqual(
+			NAV_GROUPS.flatMap((group) => group.items.map((item) => item.href)),
 		);
 		expect([...APP_PATHS]).toEqual([
 			"/",
