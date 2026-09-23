@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.8.0 — 2026-09-23
+
+### Added
+- Per-repository "participates in statistics" toggle: forks and archived repositories default off, manual overrides persist in the new `repo_statistics` table and apply at read time to factory, insights, digest and all cross-repository lists
+- Repos page lists the toggle as its first column with independent visibility/archive columns and a header-side data-updated stamp; the management list keeps disabled repositories available for re-enabling
+- Weekly pulse and motion sections on the factory dashboard
+- List-page aggregation view models for boards, insights and overview, shared by new overview cards, rank bars and repository charts across inbox, issues, pulls, alerts, digest, insights, repos and repository detail pages
+
+### Changed
+- Restructure the factory dashboard around change and stock with dedicated story and skeleton layouts
+- Unify language and category chart colors through a stable multi-color palette in `chart-theme`, keeping known-language mappings consistent across sorting and filtering
+
+### Fixed
+- Skip the duplicate factory snapshot read when loading the factory console
+
+### Operations
+- Release applies the additive, repeatable `migrations/0004_repo_statistics.sql` before deploying the Worker; rolling back code keeps the table without touching snapshots or saved settings
+
 ## v0.7.0 — 2026-09-18
 
 ### Added
