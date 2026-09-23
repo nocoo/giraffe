@@ -35,6 +35,7 @@ const GETS = [
 	"/api/repos/octocat/hello-world/releases",
 	"/api/repos/octocat/hello-world/languages",
 	"/api/repos/octocat/hello-world/contributors",
+	"/api/ci",
 ];
 
 const FACTORY_GETS = [

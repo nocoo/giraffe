@@ -6,6 +6,7 @@ import { consumeFactory, continueFactory } from "./lib/factory-dispatch";
 import { accessBypass, resolveIdentity } from "./middleware/access";
 import { assertOrigin } from "./middleware/origin";
 import { activateAccount, getAccounts, postAccount, removeAccount } from "./routes/accounts";
+import { getCi } from "./routes/ci";
 import { getFactory, getFactoryStream } from "./routes/factory";
 import { getFactoryRuns, postFactoryControl, postFactoryRun } from "./routes/factory-runs";
 import { liveResponse } from "./routes/live";
@@ -82,6 +83,8 @@ export function createApp(): Hono<{ Bindings: Env; Variables: AppVars }> {
 	app.post("/api/factory/runs/:id/control", postFactoryControl);
 	allow(app, "/api/factory/repos/:owner/:name/:stream", ["GET"]);
 	onGet(app, "/api/factory/repos/:owner/:name/:stream", getFactoryStream);
+	allow(app, "/api/ci", ["GET"]);
+	onGet(app, "/api/ci", getCi);
 	allow(app, "/api/repos", ["GET"]);
 	allow(app, "/api/repos/:owner/:name/statistics", ["POST"]);
 	app.post("/api/repos/:owner/:name/statistics", setRepoStatistics);

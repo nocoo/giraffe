@@ -453,6 +453,21 @@ Origin 必过。未知 id → 404。删除行，CASCADE 快照。204 无 body。
 
 `:owner` `:name` 校验失败 → 400 `validation_failed`（不当成 409）。
 
+### `GET /api/ci`
+
+只读派生视图，不回源 GitHub、不写 D1。无账号 409 `account_missing`；无 `repos` 快照 409 `snapshot_missing`。一条语句读取当前账号全部 `repo:*:actions`、`:releases`、`:details` 快照（含 `#2` 分页），只纳入参与统计的仓库；参与统计但没有 Actions 快照的仓库列在 `unsaved`，不算作健康。
+
+判定在 `src/lib/ci-health.ts`，基准时间取最新 Actions 快照的 `fetched_at`，不取请求时刻。一条「流」= 工作流 × 线路：默认分支与版本标签（`v1.2`）为一条线，功能分支单独成线，仅在 7 天内活跃且未通过时列出；逐次编号的运行名（`Deploy CI 352…`）合并，Dependabot 更新任务（`event=dynamic` 或 `… - Update #n`）归入 `bot`，不影响仓库结论。每条流取 30 天内最近 10 次成功/失败判定（`failure`、`timed_out`、`action_required`、`startup_failure` 为失败，取消与跳过不计）：
+
+| 判定 | 规则 |
+|------|------|
+| `broken` | 最新起连续 ≥2 次失败（`brokenBy: "streak"`），或 ≥4 次判定中失败过半（`"chronic"`） |
+| `flaky` | 有失败但不满足上条；失败 >1 次标 `recurring` |
+| `healthy` | 最近判定全部成功 |
+| `idle` | 30 天内无判定 |
+
+仓库结论取默认分支线最差项；发布工作流（名称含 release/publish/deploy/cd）状态并入 `release.pipeline`，另给最新版本、距今天数、间隔中位与 30 天发布数。200，`cache-control: private, no-store`，body 为 `CiReportResponse`（`streams`、`repos`、`daily`、`totals`、`unsaved`、`now`、`fetched_at`、`truncated`、`account_id`）。
+
 ### `POST /api/notifications/read`
 
 Body：`{ "id": "<thread id>", "account_id": "<accounts.id>" }`。`id` 必须匹配 `^[0-9]{1,20}$`，`account_id` 必填。缺/非法 → 400 `validation_failed`。≠ active → 409 `account_conflict`，不打 GitHub。Origin 必过。无账号 → 409。无 notifications 快照 → 409 `snapshot_missing`，**不**打 GitHub。有快照则 `PATCH /notifications/threads/{id}`（GitHub 已读，成功为 205 空体），再把快照里该 id 的 `unread` 置 `false`。200，body 同 GET notifications。
