@@ -367,6 +367,7 @@ export function FactoryPage() {
 										<FactorySpark
 											values={board.days.map((d) => d.openIssues)}
 											label="窗口内每日 open Issue"
+											range={{ from: board.days[0]?.date ?? "", to: board.days.at(-1)?.date ?? "" }}
 										/>
 									</Kpi>
 									<Kpi
@@ -386,6 +387,7 @@ export function FactoryPage() {
 												d.complete.commits || d.commits ? d.commits : null,
 											)}
 											label="窗口内每日默认分支提交"
+											range={{ from: board.days[0]?.date ?? "", to: board.days.at(-1)?.date ?? "" }}
 										/>
 									</Kpi>
 									<Kpi
@@ -405,6 +407,7 @@ export function FactoryPage() {
 												d.complete.prs || d.prMerged ? d.prMerged : null,
 											)}
 											label="窗口内每日合并 PR"
+											range={{ from: board.days[0]?.date ?? "", to: board.days.at(-1)?.date ?? "" }}
 										/>
 									</Kpi>
 									<Kpi
@@ -419,6 +422,7 @@ export function FactoryPage() {
 										<FactorySpark
 											values={board.days.map((d) => d.ciRate7)}
 											label="窗口内 CI 7 日成功率"
+											range={{ from: board.days[0]?.date ?? "", to: board.days.at(-1)?.date ?? "" }}
 										/>
 									</Kpi>
 								</KpiRow>
@@ -682,7 +686,10 @@ export function FactoryPage() {
 										<TableHeader>
 											<TableRow>
 												<TableHead>仓库 / 语言</TableHead>
-												<TableHead>观测窗口节奏</TableHead>
+												<TableHead>
+													观测窗口节奏 · {board.days[0]?.date.slice(5) ?? ""} →{" "}
+													{board.days.at(-1)?.date.slice(5) ?? ""}
+												</TableHead>
 												<TableHead className="text-right">提交</TableHead>
 												<TableHead className="text-right">Open I / PR</TableHead>
 												<TableHead className="text-right">合并 PR</TableHead>

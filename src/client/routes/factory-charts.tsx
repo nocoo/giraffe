@@ -41,7 +41,16 @@ export function FactoryPanel({
 		</LayerCard>
 	);
 }
-export function FactorySpark({ values, label }: { values: (number | null)[]; label: string }) {
+/** A day series left to right; `range` labels both ends so the newest side is explicit. */
+export function FactorySpark({
+	values,
+	label,
+	range,
+}: {
+	values: (number | null)[];
+	label: string;
+	range?: { from: string; to: string };
+}) {
 	const observed = values.filter((value) => value !== null);
 	if (!observed.length)
 		return (
@@ -49,7 +58,7 @@ export function FactorySpark({ values, label }: { values: (number | null)[]; lab
 				尚无完整观测
 			</Text>
 		);
-	return (
+	const spark = (
 		<Sparkline
 			data={values.map((value, index) => ({ x: index, value }))}
 			series={[{ key: "value", label, color: chartColor(0) }]}
@@ -62,6 +71,16 @@ export function FactorySpark({ values, label }: { values: (number | null)[]; lab
 				</span>
 			}
 		/>
+	);
+	if (!range) return spark;
+	return (
+		<span className="giraffe-spark">
+			{spark}
+			<span className="giraffe-spark-range" aria-hidden="true">
+				<span>{range.from.slice(5, 10)}</span>
+				<span>{range.to.slice(5, 10)}</span>
+			</span>
+		</span>
 	);
 }
 export function FactoryHeatmap({

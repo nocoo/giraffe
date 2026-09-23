@@ -29,7 +29,15 @@ import { SnapshotPending } from "../components/layout/snapshot-pending";
 import { catchLoad } from "../lib/error-ui";
 import { DATE_CELL, formatCount, formatDate, NUM_CELL, NUM_HEAD } from "../lib/format";
 import { PAGE_DESCRIPTIONS } from "../lib/navigation";
-import { type CiStream, ciBuckets, ciFilterStreams, loadCi, releaseRows } from "../viewmodels/ci";
+import {
+	type CiStream,
+	ciBuckets,
+	ciFilterStreams,
+	loadCi,
+	releaseRows,
+	runSummary,
+	runTimeline,
+} from "../viewmodels/ci";
 import { daysAgo, shortRepo } from "../viewmodels/overview";
 
 const VERDICT = {
@@ -208,7 +216,7 @@ export function CiPage() {
 
 			<SectionRule
 				title="全部工作流"
-				hint="每行一条工作流线。方块为最近 10 次运行，左侧最新。"
+				hint="每行一条工作流线。方块为最近 10 次运行，从左到右由旧到新，最右侧加框的一格是最新一次。"
 				actions={
 					<FilterBar label="工作流筛选">
 						<SearchField
@@ -241,7 +249,7 @@ export function CiPage() {
 									<TableRow>
 										<TableHead>仓库 / 工作流</TableHead>
 										<TableHead>判定</TableHead>
-										<TableHead>最近 10 次</TableHead>
+										<TableHead>最近 10 次 · 旧 → 新</TableHead>
 										<TableHead className={NUM_HEAD}>成功率</TableHead>
 										<TableHead className={NUM_HEAD}>最后成功</TableHead>
 										<TableHead className={NUM_HEAD}>最后运行</TableHead>
@@ -386,20 +394,26 @@ function Tile({
 	);
 }
 
-function RunStrip({ s }: { s: CiStream }) {
+function RunStrip({ s, axis = false }: { s: CiStream; axis?: boolean }) {
+	const cells = runTimeline(s.recent);
 	return (
-		<span
-			className="giraffe-run-strip"
-			role="img"
-			aria-label={`最近 ${s.recent.length} 次：${s.recent.map((r) => ({ success: "成功", failure: "失败", other: "取消", pending: "进行中" })[r.outcome]).join("、")}`}
-		>
-			{s.recent.map((r) => (
-				<i
-					key={r.id}
-					style={{ background: OUTCOME_COLOR[r.outcome] }}
-					title={`${r.at.slice(0, 16).replace("T", " ")} UTC`}
-				/>
-			))}
+		<span className="giraffe-run-strip" data-axis={axis || undefined}>
+			<span className="giraffe-run-cells" role="img" aria-label={runSummary(cells)}>
+				{cells.map((c) => (
+					<i
+						key={c.id}
+						data-latest={c.latest || undefined}
+						style={{ background: OUTCOME_COLOR[c.outcome] }}
+						title={c.label}
+					/>
+				))}
+			</span>
+			{axis && cells.length ? (
+				<span className="giraffe-run-axis" aria-hidden="true">
+					<span>旧</span>
+					<span>最新</span>
+				</span>
+			) : null}
 		</span>
 	);
 }
@@ -421,7 +435,7 @@ function StreamCard({ s, now }: { s: CiStream; now: string }) {
 						{s.brokenBy === "streak" ? `连续 ${s.streak} 次` : `${s.failures}/${s.decided} 失败`}
 					</CandyBadge>
 				</div>
-				<RunStrip s={s} />
+				<RunStrip s={s} axis />
 				<p className="giraffe-stat-inline">
 					{s.brokenBy === "streak" ? (
 						<span>
@@ -462,7 +476,10 @@ function WatchList({
 }) {
 	return (
 		<div className="giraffe-watch" data-muted={muted || undefined}>
-			<h3>{title}</h3>
+			<h3>
+				{title}
+				<span className="giraffe-watch-order">方块 旧 → 新</span>
+			</h3>
 			{items.length ? (
 				<ul>
 					{items.slice(0, 12).map((s) => (

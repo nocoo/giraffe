@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CiReportResponse } from "../../lib/ci-health";
-import { ciBuckets, ciFilterStreams, loadCi, releaseRows } from "./ci";
+import { ciBuckets, ciFilterStreams, loadCi, releaseRows, runSummary, runTimeline } from "./ci";
 import { setActiveAccountId } from "./session";
 
 const stream = (repo: string, verdict: string, over: Record<string, unknown> = {}) =>
@@ -120,5 +120,27 @@ describe("ci viewmodel", () => {
 			),
 		);
 		expect(await loadCi()).toEqual(body);
+	});
+});
+
+describe("run timeline", () => {
+	it("orders recent runs oldest to newest and flags only the newest", () => {
+		const recent = [
+			{ outcome: "failure" as const, at: "2026-09-18T10:00:00Z", id: 3 },
+			{ outcome: "success" as const, at: "2026-09-17T10:00:00Z", id: 2 },
+			{ outcome: "other" as const, at: "2026-09-16T10:00:00Z", id: 1 },
+		];
+		const cells = runTimeline(recent);
+		expect(cells.map((c) => [c.id, c.latest])).toEqual([
+			[1, false],
+			[2, false],
+			[3, true],
+		]);
+		expect(cells[2]?.label).toBe("2026-09-18 10:00 UTC · 失败 · 最新");
+		expect(cells[0]?.label).toBe("2026-09-16 10:00 UTC · 取消 / 跳过");
+		expect(recent[0]?.id).toBe(3);
+		expect(runTimeline([])).toEqual([]);
+		expect(runSummary(cells)).toBe("从旧到新：取消 / 跳过、成功、失败（最新）");
+		expect(runSummary([])).toBe("没有运行记录");
 	});
 });

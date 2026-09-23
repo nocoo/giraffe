@@ -56,3 +56,25 @@ export function releaseRows(repos: CiRepo[]) {
 				})),
 		);
 }
+
+const OUTCOME_LABEL = {
+	success: "成功",
+	failure: "失败",
+	other: "取消 / 跳过",
+	pending: "进行中",
+} as const;
+/** Runs arrive newest first; timelines read left to right, so the newest ends on the right. */
+export function runTimeline(recent: CiStream["recent"]) {
+	return [...recent].reverse().map((r, i, all) => {
+		const latest = i === all.length - 1;
+		return {
+			...r,
+			latest,
+			label: `${r.at.slice(0, 16).replace("T", " ")} UTC · ${OUTCOME_LABEL[r.outcome]}${latest ? " · 最新" : ""}`,
+		};
+	});
+}
+export function runSummary(cells: ReturnType<typeof runTimeline>): string {
+	if (!cells.length) return "没有运行记录";
+	return `从旧到新：${cells.map((c) => `${OUTCOME_LABEL[c.outcome]}${c.latest ? "（最新）" : ""}`).join("、")}`;
+}

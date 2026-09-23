@@ -379,7 +379,11 @@ test("CI page separates consecutive failures from recurring ones and filters the
 	await expect(act).toHaveCount(1);
 	await expect(act).toContainText("hello-world");
 	await expect(act).toContainText("连续 2 次");
-	await expect(page.getByText("反复失败 · 1", { exact: true })).toBeVisible();
+	await expect(page.getByRole("heading", { name: /^反复失败 · 1/ })).toBeVisible();
+	const strip = act.locator(".giraffe-run-cells i");
+	await expect(strip).toHaveCount(3);
+	await expect(strip.last()).toHaveAttribute("data-latest", "true");
+	await expect(strip.last()).toHaveAttribute("title", /失败 · 最新$/);
 	await expect(page.getByText("1 个仓库未采集", { exact: true })).toBeVisible();
 	const list = page.getByTestId("ci-list");
 	await expect(list.getByRole("row")).toHaveCount(5);
