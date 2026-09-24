@@ -1,5 +1,9 @@
 # Retrospective
 
+## 2026-09-24 — Repository tabs collapsed their loading layout
+
+On the first visit to a repository tab, the page header replaced its two-line snapshot description with plain text until the selected snapshot arrived. That removed 30 pixels above the tab bar and restored them after loading. Cached tabs kept their timestamp and therefore appeared stable. Skeletons also returned `null` for their first 200 milliseconds, briefly reducing the active panel to zero height. Keep the header description and timestamp geometry mounted, hiding unavailable timestamps from both sight and assistive technology, and defer only skeleton visibility. Delayed-response browser regressions cover the first frame, skeleton reveal, a different tab-specific timestamp, and cached switching at desktop and mobile widths. Layout checks must include pending states, not only settled screenshots.
+
 ## 2026-09-24 — Jev input budgets differ from report input budgets
 
 The first Jev stage reused the full repository report input. Pew produced an 84,852-byte state and a 105,135-byte request; the service immediately returned HTTP 400 with `max_tokens_exceeded`. The assessment executor then erased the safe model failure category as `ai_error` and retried identical requests three times. A compact, byte-bounded projection now retains daily cadence, stable evidence IDs and explicit omissions/excerpts while the report stage keeps its original input. A read-only replay of the same saved source returned 17 valid judgments in about 1.4 seconds. Synthetic connection probes and tiny fixtures cannot establish that realistic repository payloads fit the model context. Add multilingual size-bound regressions and preserve specific safe diagnostics; deterministic request failures must not enter the transient retry loop.

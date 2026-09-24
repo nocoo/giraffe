@@ -64,14 +64,19 @@ export function ResultCount({ count, total = count }: { count: number; total?: n
 export function SnapshotDescription({
 	description,
 	fetchedAt,
+	hideTimestamp = false,
 }: {
 	description: string;
 	fetchedAt: string;
+	hideTimestamp?: boolean;
 }) {
 	return (
 		<>
 			<span className="[overflow-wrap:anywhere]">{description}</span>
-			<span className="mt-2 block">
+			<span
+				className={`mt-2 block${hideTimestamp ? " invisible" : ""}`}
+				aria-hidden={hideTimestamp}
+			>
 				<SnapshotTime fetchedAt={fetchedAt} />
 			</span>
 		</>

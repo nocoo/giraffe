@@ -15,10 +15,7 @@ function useDeferredReveal(delayMs = 200): boolean {
 
 function Deferred({ children }: { children: ReactNode }) {
 	const show = useDeferredReveal();
-	if (!show) {
-		return null;
-	}
-	return children;
+	return <div className={show ? undefined : "invisible"}>{children}</div>;
 }
 
 export function TableSkeleton({

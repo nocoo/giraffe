@@ -384,14 +384,11 @@ export function RepoDetailPage() {
 					</span>
 				}
 				description={
-					current ? (
-						<SnapshotDescription
-							description={snap.description ?? "仓库概览、开发动态与协作数据"}
-							fetchedAt={current.fetched_at}
-						/>
-					) : (
-						(snap.description ?? name)
-					)
+					<SnapshotDescription
+						description={snap.description ?? "仓库概览、开发动态与协作数据"}
+						fetchedAt={current?.fetched_at ?? snap.fetched_at}
+						hideTimestamp={!current}
+					/>
 				}
 				actions={
 					<>

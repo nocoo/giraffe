@@ -39,6 +39,67 @@ test("repository header shows the saved snapshot age and optional security cover
 	await expect(page.getByText("告警不完整", { exact: true })).toHaveCount(0);
 });
 
+for (const width of [1440, 390]) {
+	test(`repository tabs keep their position during first loading at ${width}px`, async ({
+		page,
+	}) => {
+		await page.setViewportSize({ width, height: 900 });
+		const fixtures = createUiFixtures();
+		const updated = "2026-09-10T12:00:00.000Z";
+		let finish = () => {};
+		const pending = new Promise<void>((resolve) => {
+			finish = resolve;
+		});
+		await page.route("**/api/repos/octocat/hello-world/issues", async (route) => {
+			await pending;
+			await route.fulfill({
+				json: { ...fixtures["/api/repos/octocat/hello-world/issues"], fetched_at: updated },
+			});
+		});
+		await page.goto("/repos/octocat/hello-world");
+		const repo = page.getByTestId("repo-detail");
+		const header = repo.locator(":scope > header");
+		const tabs = page.getByRole("tablist", { name: "仓库详情" });
+		await expect(header.locator("time")).toBeVisible();
+		const initialTop = await tabs.evaluate((el) => el.getBoundingClientRect().top);
+		const initialHeight = await header.evaluate((el) => el.getBoundingClientRect().height);
+		const expectPosition = async () => {
+			expect(await tabs.evaluate((el) => el.getBoundingClientRect().top)).toBe(initialTop);
+			expect(await header.evaluate((el) => el.getBoundingClientRect().height)).toBe(initialHeight);
+		};
+		await page.clock.install();
+		await page.clock.pauseAt(new Date(Date.now() + 100));
+		try {
+			await page.getByRole("tab", { name: "Issues", exact: true }).dispatchEvent("mousedown", {
+				button: 0,
+			});
+			const panel = page.getByRole("tabpanel", { name: "Issues", exact: true });
+			await expect(panel).toBeAttached();
+			expect
+				.soft(await panel.evaluate((el) => el.getBoundingClientRect().height))
+				.toBeGreaterThan(0);
+			await expectPosition();
+			await expect(header.locator("time")).toBeHidden();
+			const loadingHeight = await panel.evaluate((el) => el.getBoundingClientRect().height);
+			await page.clock.runFor(250);
+			await expect(page.getByRole("status", { name: "加载 Issues" })).toBeVisible();
+			expect(await panel.evaluate((el) => el.getBoundingClientRect().height)).toBe(loadingHeight);
+			await expectPosition();
+			finish();
+			await expect(panel.getByRole("table")).toBeVisible();
+			await expect(header.locator("time")).toHaveAttribute("datetime", updated);
+			await expectPosition();
+			await page.clock.resume();
+			await page.getByRole("tab", { name: "概览", exact: true }).click();
+			await page.getByRole("tab", { name: "Issues", exact: true }).click();
+			await expect(panel.getByRole("table")).toBeVisible();
+			await expectPosition();
+		} finally {
+			finish();
+		}
+	});
+}
+
 async function expectChart(page: Page, label: string) {
 	const plot = page
 		.getByRole("group", { name: label, exact: true })
