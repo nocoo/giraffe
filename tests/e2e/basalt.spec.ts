@@ -478,7 +478,7 @@ test("factory Basalt controls and larger text fit mobile and dark mode", async (
 	await page.getByRole("combobox", { name: "语言群", exact: true }).click();
 	await page.getByRole("option", { name: "Swift", exact: true }).click();
 	await expect(page.locator(".factory-repo-link")).toHaveCount(1);
-	await expect(page.locator(".factory-repo-link")).toHaveText("tools");
+	await expect(page.locator(".factory-repo-link")).toHaveText("nocoo/tools");
 	await expect(page.locator(".factory select")).toHaveCount(0);
 	const scatter = page.getByRole("group", { name: "仓库提交与开放工作", exact: true });
 	await expect(scatter.locator("svg.recharts-surface")).toBeVisible();

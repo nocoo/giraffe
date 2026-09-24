@@ -68,3 +68,8 @@ TypeScript type. The client now handles non-success redirects explicitly, and
 real local HTTP tests exercise the full Worker lookup against a loopback stub.
 For future outbound integrations, verify one real local Worker request early;
 typechecking and mocked fetch results do not establish runtime compatibility.
+
+The full browser suite also retained an assertion for the short repository name
+`tools`, while the integrated table intentionally displays `nocoo/tools`. Update
+existing identity assertions alongside the new scenarios, retaining the owner
+where the same repository name could belong to different accounts.
