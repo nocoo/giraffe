@@ -296,7 +296,6 @@ for (const width of [390, 1440]) {
 				["/pulls", "pr-list"],
 				["/alerts", "alert-list"],
 				["/inbox", "inbox-list"],
-				["/digest", "digest-list"],
 				["/ci", "ci-list"],
 			] as const) {
 				await page.goto(path);

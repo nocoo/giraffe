@@ -52,11 +52,6 @@ it("handles first-day baselines and incomplete source metadata without invented 
 			"2026-09-18",
 		),
 	);
-	expect(await statisticsSnapshot(db, "a", "digest", { fetched_at: "2026-09-18" })).toMatchObject({
-		baseline_missing: true,
-		stars_delta: null,
-		repos: [{ name_with_owner: "o/r" }],
-	});
 	expect(await statisticsSnapshot(db, "a", "insights", { fetched_at: "2026-09-18" })).toMatchObject(
 		{ alerts_incomplete: true, insights: [{ name_with_owner: "o/r", open_issue_count: 0 }] },
 	);

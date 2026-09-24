@@ -35,17 +35,6 @@ export function candyClass(tone: CandyTone): string {
 	return `border-transparent ${foreground} ${CANDY_CLASS[tone]}`;
 }
 
-export function formatDelta(value: number | null, baselineMissing: boolean): string {
-	if (baselineMissing || value === null) {
-		return "—";
-	}
-	if (value === 0) {
-		return "0";
-	}
-	const abs = formatCount(Math.abs(value));
-	return value > 0 ? `+${abs}` : `−${abs}`;
-}
-
 function pad2(value: number): string {
 	return String(value).padStart(2, "0");
 }

@@ -134,20 +134,6 @@ export function createUiFixtures() {
 				name_with_owner: issue.name_with_owner,
 			})),
 		},
-		"/api/digest": {
-			...envelope,
-			day: "2026-09-08",
-			baseline_missing: false,
-			stars_delta: 12,
-			forks_delta: 4,
-			open_issues_delta: -2,
-			repos: repos.map((repo, index) => ({
-				name_with_owner: repo.name_with_owner,
-				stars_delta: 3,
-				forks_delta: 1,
-				open_issues_delta: index < 2 ? -1 : 0,
-			})),
-		},
 		[repoPath]: {
 			...envelope,
 			description: repos[0]?.description,

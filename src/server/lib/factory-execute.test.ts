@@ -6,7 +6,6 @@ import { makeRun, type RunSelection } from "../../lib/factory-run";
 import type { Env } from "../env";
 import { createDb } from "./db/d1";
 import { controlRun, getRun, publishedFactory, startRun } from "./db/factory-runs";
-import { readDay, upsertDayStmt } from "./db/snapshot-days";
 import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
 import { executeRunPage } from "./factory-execute";
 import { encryptToken, parseKeyBytes } from "./token-crypto";
@@ -146,7 +145,6 @@ it("refreshes one repository without scanning or rewriting unrelated site data",
 		alerts: { items: [], truncated: false },
 		notifications: { notifications: [], truncated: false },
 		insights: { marker: "original insights" },
-		digest: { marker: "original digest" },
 		"repo:org/other:details": { description: "Retain other repository" },
 	};
 	for (const [kind, payload] of Object.entries(preserved))
@@ -160,8 +158,6 @@ it("refreshes one repository without scanning or rewriting unrelated site data",
 			),
 		),
 	);
-	const daily = { stars: 3, forks: 1, open_issues: 2, repos: 2, by_repo: [] };
-	await db.batch([upsertDayStmt(db, snap.account_id, now.slice(0, 10), daily)]);
 	const later = new Date(Date.parse(now) + 30_000).toISOString();
 	const run = await drive(env, later);
 	expect(run?.steps).toHaveLength(20);
@@ -175,7 +171,6 @@ it("refreshes one repository without scanning or rewriting unrelated site data",
 	expect(run?.steps.find((step) => step.kind === "assessment")?.error).toBe("ai_not_configured");
 	for (const [kind, payload] of originals)
 		expect(await readSnapshot(db, snap.account_id, kind)).toEqual(payload);
-	expect(await readDay(db, snap.account_id, now.slice(0, 10))).toEqual(daily);
 	for (const [url, init] of vi.mocked(fetch).mock.calls) {
 		const body = String(init?.body ?? "");
 		expect(String(url)).not.toContain("/notifications");
@@ -732,7 +727,7 @@ it("does not shorten an existing repository cooldown on repeated pause/cancel co
 	);
 });
 
-it("refreshes all site pages through the durable run, including derived insights and digest", async () => {
+it("refreshes all site pages through the durable run, including derived insights", async () => {
 	const env = await setup();
 	const run = await drive(env);
 	expect(run?.steps.filter((s) => s.kind === "snapshot").every((s) => s.status === "success")).toBe(
@@ -745,7 +740,6 @@ it("refreshes all site pages through the durable run, including derived insights
 		"alerts",
 		"notifications",
 		"insights",
-		"digest",
 		"repo:nocoo/app:details",
 		"repo:nocoo/app:traffic",
 		"repo:nocoo/app:security",

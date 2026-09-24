@@ -94,7 +94,6 @@ test("factory run survives reload, refreshes the whole site and preserves the la
 	for (const path of [
 		...SITE_SNAPSHOT_KINDS.map((kind) => `/api/${kind}`),
 		"/api/insights",
-		"/api/digest",
 		...REPO_SNAPSHOT_TABS.map(
 			(tab) => `/api/repos/octocat/hello-world${tab === "details" ? "" : `/${tab}`}`,
 		),

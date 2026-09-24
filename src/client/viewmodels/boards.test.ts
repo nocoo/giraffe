@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
 	alertsBoard,
-	digestBoard,
 	inboxBoard,
 	mergedHistory,
 	primaryOwner,
@@ -196,7 +195,7 @@ describe("single repository factory series", () => {
 	});
 });
 
-describe("inbox, alerts and digest boards", () => {
+describe("inbox and alerts boards", () => {
 	it("groups notifications by reason, repository and day, separating own from external repositories", () => {
 		const n = (repo: string, reason: string, at: string, unread = true) => ({
 			id: `${repo}${at}${reason}`,
@@ -270,28 +269,6 @@ describe("inbox, alerts and digest boards", () => {
 		expect(
 			alertsBoard([a("x/a", "high")], { severity: "low", repo: "", source: "" }).rows,
 		).toHaveLength(0);
-	});
-
-	it("sorts digest changes into movers and sums positive and negative issue movement", () => {
-		const board = digestBoard(
-			[
-				{ name_with_owner: "a/1", stars_delta: 2, forks_delta: 0, open_issues_delta: 5 },
-				{ name_with_owner: "a/2", stars_delta: 0, forks_delta: 1, open_issues_delta: -3 },
-				{ name_with_owner: "a/3", stars_delta: 0, forks_delta: 0, open_issues_delta: 0 },
-				{ name_with_owner: "a/4", stars_delta: null, forks_delta: null, open_issues_delta: null },
-				{ name_with_owner: "a/0", stars_delta: 0, forks_delta: 0, open_issues_delta: 5 },
-			],
-			false,
-		);
-		expect(board.changed.map((r) => r.name_with_owner)).toEqual(["a/1", "a/0", "a/2"]);
-		expect(board.unchanged).toBe(2);
-		expect(board.issues).toEqual({ up: 10, down: -3, max: 5 });
-		expect(board.bars.map((b) => [b.name, b.issues])).toEqual([
-			["0", 5],
-			["1", 5],
-			["2", -3],
-		]);
-		expect(digestBoard([], true)).toMatchObject({ changed: [], unchanged: 0, issues: { max: 1 } });
 	});
 });
 

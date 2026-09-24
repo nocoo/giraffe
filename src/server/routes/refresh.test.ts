@@ -4,7 +4,6 @@ import { createApp } from "../index";
 import { MAX_STAGED_BYTES } from "../lib/collect";
 import { insertAccountStmt } from "../lib/db/accounts";
 import { createDb } from "../lib/db/d1";
-import { upsertDayStmt } from "../lib/db/snapshot-days";
 import { replaceSnapshotStmts } from "../lib/db/snapshots";
 import { openSqliteD1 } from "../lib/db/sqlite-d1";
 import { encryptToken, parseKeyBytes } from "../lib/token-crypto";
@@ -253,21 +252,7 @@ describe("refresh route", () => {
 					e,
 				)
 			).status,
-		).toBe(409);
-		await createApp().request(
-			"http://localhost/api/refresh",
-			{ method: "POST", headers, body: JSON.stringify({ account_id: id, kinds: ["repos"] }) },
-			e,
-		);
-		expect(
-			(
-				await createApp().request(
-					"http://localhost/api/refresh",
-					{ method: "POST", headers, body: JSON.stringify({ account_id: id, kinds: ["digest"] }) },
-					e,
-				)
-			).status,
-		).toBe(200);
+		).toBe(400);
 		await createApp().request(
 			"http://localhost/api/refresh",
 			{ method: "POST", headers, body: JSON.stringify({ account_id: id, kinds: ["repos"] }) },
@@ -864,44 +849,6 @@ describe("refresh route", () => {
 		expect(mixed.status).toBe(200);
 		const mixedBody = (await mixed.json()) as { truncated_kinds: string[] };
 		expect(mixedBody.truncated_kinds).toContain("insights");
-		const digestEnv = env();
-		const digestId = await createAccount(digestEnv);
-		const digestDb = createDb(digestEnv.DB);
-		const fatRepos = Array.from({ length: 80 }, (_, i) => ({
-			name_with_owner: `org/${"r".repeat(80_000)}${i}`,
-			stargazer_count: 0,
-			fork_count: 0,
-			open_issue_count: 0,
-		}));
-		await digestDb
-			.prepare("INSERT INTO snapshots (account_id, kind, payload, fetched_at) VALUES (?, ?, ?, ?)")
-			.bind(digestId, "repos", JSON.stringify({ truncated: false, repos: fatRepos }), fetchedAt)
-			.run();
-		await digestDb.batch([
-			upsertDayStmt(digestDb, digestId, new Date().toISOString().slice(0, 10), {
-				stars: 0,
-				forks: 0,
-				open_issues: 0,
-				repos: fatRepos.length,
-				by_repo: [],
-			}),
-		]);
-		stubGithub();
-		const digestRes = await createApp().request(
-			"http://localhost/api/refresh",
-			{
-				method: "POST",
-				headers,
-				body: JSON.stringify({ account_id: digestId, kinds: ["digest"] }),
-			},
-			digestEnv,
-		);
-		expect(digestRes.status).toBe(200);
-		const digestBody = (await digestRes.json()) as { truncated: boolean };
-		expect(digestBody.truncated).toBe(true);
-		expect(
-			await (await createApp().request("http://localhost/api/digest", {}, digestEnv)).json(),
-		).toEqual(digestBody);
 	});
 
 	it("aborts cross-repo search http errors without writing", async () => {

@@ -4,7 +4,6 @@ import { sqliteFixture } from "../../../tests/fixtures/sqlite";
 import type { Env } from "../env";
 import { createApp } from "../index";
 import { createDb } from "../lib/db/d1";
-import { upsertDayStmt } from "../lib/db/snapshot-days";
 import { replaceSnapshotStmts } from "../lib/db/snapshots";
 
 const id = "account_statistics_01";
@@ -72,19 +71,6 @@ async function setup() {
 			code_scanning_open: 0,
 		});
 	}
-	await save("digest", { day: "2026-09-18" });
-	await upsertDayStmt(createDb(raw), id, "2026-09-17", {
-		stars: 199,
-		forks: 21,
-		open_issues: 18,
-		repos: 3,
-		by_repo: repos.map((r) => ({
-			name_with_owner: r.name_with_owner,
-			stars: r.stargazer_count - 1,
-			forks: r.fork_count,
-			open_issues: r.open_issue_count,
-		})),
-	}).run();
 	const factory = factoryFixture();
 	factory.account_id = id;
 	const first = factory.repos[0];
@@ -120,7 +106,7 @@ async function setup() {
 }
 
 describe("global repository statistics selection", () => {
-	it("defaults forks/archives off across lists, counters, factory and same-scope daily deltas", async () => {
+	it("defaults forks/archives off across lists, counters, factory and insights", async () => {
 		const { get } = await setup();
 		expect(
 			(await get("repos")).repos.map((r: { statistics_enabled: boolean }) => r.statistics_enabled),
@@ -134,11 +120,6 @@ describe("global repository statistics selection", () => {
 		] as const)
 			expect((await get(path))[key]).toHaveLength(1);
 		expect((await get("alerts")).dependabot_open).toBe(1);
-		expect(await get("digest")).toMatchObject({
-			stars_delta: 1,
-			forks_delta: 0,
-			open_issues_delta: 0,
-		});
 		expect((await get("factory")).repos.map((r: { name: string }) => r.name)).toEqual([
 			"nocoo/app",
 		]);
@@ -154,7 +135,6 @@ describe("global repository statistics selection", () => {
 		expect(
 			(await request("repos/nocoo/app/statistics", { account_id: id, enabled: false })).status,
 		).toBe(200);
-		expect((await get("digest")).stars_delta).toBe(1);
 		const current = await get("repos");
 		await save("repos", {
 			repos: current.repos.map((r: Record<string, unknown>) => ({

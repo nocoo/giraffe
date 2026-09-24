@@ -7,7 +7,6 @@ import { APP_PATHS } from "./lib/routes";
 
 const AlertsPage = lazy(() => import("./routes/alerts").then((m) => ({ default: m.AlertsPage })));
 const CiPage = lazy(() => import("./routes/ci").then((m) => ({ default: m.CiPage })));
-const DigestPage = lazy(() => import("./routes/digest").then((m) => ({ default: m.DigestPage })));
 const FactoryPage = lazy(() =>
 	import("./routes/factory").then((m) => ({ default: m.FactoryPage })),
 );
@@ -68,7 +67,6 @@ const PAGES: Record<(typeof APP_PATHS)[number], ReactNode> = {
 	"/ci": <CiPage />,
 	"/alerts": <AlertsPage />,
 	"/inbox": <InboxPage />,
-	"/digest": <DigestPage />,
 	"/repos/:owner/:name": <RepoDetailPage />,
 	"/settings": <SettingsPage />,
 };

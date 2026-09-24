@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { insertAccountStmt } from "./accounts";
 import { createDb } from "./d1";
-import { pruneDaysStmt, readDay, upsertDayStmt } from "./snapshot-days";
+import { pruneDaysStmt } from "./snapshot-days";
 import { readSnapshot, replaceSnapshotStmts } from "./snapshots";
 import { openSqliteD1 } from "./sqlite-d1";
 
@@ -36,17 +36,6 @@ describe("snapshots store", () => {
 		const snap = await readSnapshot(db, "1", "repos");
 		expect(snap?.repos).toEqual([{ n: 1 }]);
 		expect(await readSnapshot(db, "1", "issues")).toBeNull();
-		await db.batch([
-			upsertDayStmt(db, "1", "2026-09-01", {
-				stars: 1,
-				forks: 0,
-				open_issues: 0,
-				repos: 1,
-				by_repo: [{ name_with_owner: "o/n", stars: 1, forks: 0, open_issues: 0 }],
-			}),
-			pruneDaysStmt(db, "1", "2026-08-01"),
-		]);
-		expect((await readDay(db, "1", "2026-09-01"))?.stars).toBe(1);
-		expect(await readDay(db, "1", "2026-08-01")).toBeNull();
+		await db.batch([pruneDaysStmt(db, "1", "2026-08-01")]);
 	});
 });

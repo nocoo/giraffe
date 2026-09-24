@@ -71,7 +71,6 @@ src/client/
     insights.ts
     alerts.ts
     inbox.ts
-    digest.ts
     repo-detail.ts
     me.ts
     session.ts                     # activeAccountId + ensureSession
@@ -84,7 +83,6 @@ src/client/
     insights.tsx
     alerts.tsx
     inbox.tsx
-    digest.tsx
     repo-detail.tsx
     settings.tsx
 vite.config.ts                     # react + tailwind 插件；outDir dist/client
@@ -200,7 +198,6 @@ Basalt `ContentIsland` 已是 L1 岛。不要再包一层自定义 card 当岛�
 | 主题 | `ThemeProvider` `ThemeToggle` `AccentProvider` | `ThemeProvider` from the root barrel; `AccentProvider` from `@nocoo/basalt/providers/accent`, with `persist={false}` and `defaultAccent="green"`. Do not override `--basalt-*`. Charts use the package Blue/Pink/Green/Yellow/Gray cycle via `lib/chart-theme`, independently of the control accent. The amber swatch uses `paletteOverrides` (`43 92% 48%` light / `43 92% 60%` dark); yellow chart marks share it through `--color-giraffe-yellow`. Other palette colors stay unchanged. Semantic primary text, actions and focus retain Basalt contrast handling. |
 | Router 链接 | `Link` + `LinkProvider` | `@nocoo/basalt` |
 | ⌘K | `CommandPalette*` | `@nocoo/basalt` |
-| 日报预览 / 复制 | `CodeBlock` / `ClipboardText` | granular `components/code` / `components/clipboard-text`。`text` 是可见标签，`copyText` 必须传完整 Markdown 内容 |
 | Traffic | `AreaChart` 或 `LineChart` | `@nocoo/basalt/charts/area` / `line` |
 | Languages | `layout/donut-chart` | Recharts `Pie` + Basalt `ChartShell` / `ChartLegend` / tooltip；圆环按可用绘图区缩放，避免包默认 48px 半径造成留白 |
 | Insights | `StackedBarChart` `LineChart` `BarChart` + 共享环形图组合 | `@nocoo/basalt/charts/stacked-bar` / `line` / `bar`；`layout/donut-chart` |
@@ -222,7 +219,6 @@ Basalt `ContentIsland` 已是 L1 岛。不要再包一层自定义 card 当岛�
 - 图表卡使用 `LayerCard.Header` / `Body`，指标口径收进标题旁的问号。绘图区通过公开 `className` 设置基础高度；同排图卡与文字卡等高拉伸，卡片 Body 填满剩余高度，不在较短卡片下方留空。PR 状态图保留五种可区分的绿色层次、图例和读屏摘要。
 - 设置页的 PAT 表单、Access 身份并列展示，窄屏上下排列；已连接账号独立成区。账号删除确认带账号名。
 - 通知标记已读时显示 `Button loading`，同一页面的已读操作暂时禁用，成功后应用服务端返回的状态。
-- 日报提供完整 Markdown 预览与复制；没有昨天基线时用 `Banner` 说明等待条件，变化值仍为「—」。
 - `layout/collection-chrome` 只组合 Basalt 输入和滚动控件，并展示计数与更新时间；`table-chrome` 只组合表格叶子；`kpi` / `chart-brick` 只组合卡片。它们不维护第二套控件样式、API 或筛选逻辑。
 
 ### 5.5 字号与可视化规范
@@ -323,7 +319,7 @@ to another repository never changes the application's identity.
 
 软件工厂是唯一的前端采集入口。`viewmodels/factory-runs.ts` 提交持久 run 与暂停/继续/取消动作，服务端队列执行，D1 保存进度；详细契约见 [09](09-factory-runs.md)。旧 `POST /api/refresh` 仅保留 API 兼容，前端已删除 `refresh.ts` 协调器与独立 RefreshButton。
 
-- Full refresh updates the site catalog, Issues, PRs, security alerts, notifications, Insights, digest and all accessible repository detail tabs. Selected, filtered, stale and failed scopes update only the resolved repositories: nine statistics steps, nine detail tabs and one AI analysis checkpoint each, plus publication. One selected repository is 20 steps; unrelated site snapshots retain their original contents and timestamps. The console labels this phase as repository pages and omits the account-contribution phase. Known manual selections remain available when the full site catalog is incomplete. The AI phase follows the existing background job through Jev judgment and report generation. Unconfigured AI is shown as skipped without a warning; failed analysis does not label collected repository data as lost.
+- Full refresh updates the site catalog, Issues, PRs, security alerts, notifications, Insights and all accessible repository detail tabs. Selected, filtered, stale and failed scopes update only the resolved repositories: nine statistics steps, nine detail tabs and one AI analysis checkpoint each, plus publication. One selected repository is 20 steps; unrelated site snapshots retain their original contents and timestamps. The console labels this phase as repository pages and omits the account-contribution phase. Known manual selections remain available when the full site catalog is incomplete. The AI phase follows the existing background job through Jev judgment and report generation. Unconfigured AI is shown as skipped without a warning; failed analysis does not label collected repository data as lost.
 - 首次使用或旧数据升级时先「同步仓库列表」，再「开始刷新」。清单不完整时禁止在界面启动刷新，不能把未扫描的数据当空数组。
 - 各页面仅 GET；缺少快照统一使用 `SnapshotPending` 导航至 `/factory?refresh=1`，到达后打开同一个控制台。缺账号则前往设置，不混同于缺数据。
 - 添加、激活、删除账号只更新账号状态与本地 stamp，不自动采集。通知标记已读仍是独立的业务写操作，不属于刷新。
@@ -338,7 +334,7 @@ to another repository never changes the application's identity.
 
 ## 8. 页面
 
-中文。侧栏按用途分四组，顺序固定：总览（软件工厂、日报、Insights）、仓库健康（仓库、CI 与发布、安全告警）、待办（Issues、Pull Requests、通知）、系统（设置）。分组与顺序只在 `src/client/lib/navigation.ts` 的 `NAV_GROUPS` 定义，命令面板沿用同一顺序。
+中文。侧栏按用途分四组，顺序固定：总览（软件工厂、Insights）、仓库健康（仓库、CI 与发布、安全告警）、待办（Issues、Pull Requests、通知）、系统（设置）。分组与顺序只在 `src/client/lib/navigation.ts` 的 `NAV_GROUPS` 定义，命令面板沿用同一顺序。
 
 | 路由 | 侧栏 | 图标（lucide） | 读 |
 |------|------|----------------|----|
@@ -350,7 +346,6 @@ to another repository never changes the application's identity.
 | `/ci` | CI 与发布 | `Workflow` | `GET /api/ci` |
 | `/alerts` | 安全告警 | `ShieldAlert` | `GET /api/alerts` |
 | `/inbox` | 通知 | `Inbox` | `GET /api/notifications` |
-| `/digest` | 日报 | `Newspaper` | `GET /api/digest` |
 | `/repos/:owner/:name` | （钻取，侧栏「仓库」高亮） | — | 按 tab GET 单仓 |
 | `/settings` | 设置 | `Settings` | `GET /api/accounts`、`GET /api/me` |
 
@@ -394,11 +389,7 @@ Issues KPI：打开 Issues / 涉及仓库（`issueMetrics`）。PRs KPI：草稿
 
 KPI（未读 / 全部）+ `SectionRule` 通知表：状态、标题与仓库链接、原因、时间、操作。未读行的「标为已读」→ `POST /api/notifications/read` `{ id, account_id }`（id 为数字字符串）。页头「全部已读」→ `POST /api/notifications/read-all` `{ account_id }`。请求中显示加载状态并禁用其他已读操作。无快照 409 不打 GitHub（04）。成功后 body 即新 notifications 快照，ViewModel 替换。
 
-### 8.6 `/digest`
-
-页头显示日报日期与数据更新时间。KPI：stars / forks / open issues 的 delta。`baseline_missing` → `Banner` 说明尚无昨天的基线，delta 显示「—」不得显示 0。`CodeBlock` 预览 Markdown，`ClipboardText` 复制完整内容。Markdown 由 `viewmodels/digest.ts` 纯函数生成（仓表 + 合计），**无** LLM。GET 409 时统一引导到工厂；日报由工厂刷新仓库数据时派生。
-
-### 8.7 `/repos/:owner/:name`
+### 8.6 `/repos/:owner/:name`
 
 `owner`/`name` 校验同 04（`^[A-Za-z0-9_.-]+$`，不是 `.`/`..`），非法 → 岛内校验错误，不请求。
 
@@ -419,7 +410,7 @@ KPI（未读 / 全部）+ `SectionRule` 通知表：状态、标题与仓库链�
 
 侧栏「仓库」在钻取时保持祖先高亮。
 
-### 8.8 `/settings`
+### 8.7 `/settings`
 
 `PageHeader`「设置」。`SectionRule` 分「账号连接」与「已连接的账号」。连接区并列 PAT 表单与访问身份，窄屏上下排列。`GET /api/me` 展示 Access 身份与 lizheng.blog 头像（非 GitHub）。
 
@@ -468,7 +459,6 @@ export function breadcrumbsFor(pathname: string): { href: string; label: string 
 | `insights` | 按 health 分组 |
 | `alerts` | unavailable |
 | `inbox` | 已读与 **read-all** 后 unread false（对返回体归约） |
-| `digest` | `baseline_missing` → markdown 不含假 0 |
 | `repo-detail` | 非法 owner 不请求；九个 tab 各绑定正确 GET path；forbidden traffic；unavailable security；languages 排序 |
 | `navigation.ts` | breadcrumbsFor `/`、`/repos/o/n`、未知路径 |
 | `routes.ts` | 01 §9 九条路径全部在表中；与 NAV_ITEMS href 一致 |
@@ -490,7 +480,7 @@ Client 单测：文件顶 `// @vitest-environment happy-dom` 或 vitest 对 `src
 
 Runner：`scripts/run-e2e-bdd.ts`。先 `vite build`，persist `.wrangler/e2e-pw/`，端口 27045，schema + `_test_marker`，`GET /api/live` 且 `d1_marker=test`，GitHub stub 不得占用 17045。套件 **只 A**。Playwright Chromium。`baseURL = http://127.0.0.1:27045`。
 
-`tests/e2e/ui.spec.ts` 在同一真实构建上拦截同源 API 为固定展示数据，补充验证搜索恢复、网格导航、完整日报复制、缺基线数据、通知操作进度、空态与权限提示、表格键盘横向滚动、单仓全部标签的数据与更新时间、浅色 / 深色 / 移动端全部页面及失败 PAT 清空。图表必须实际绘制且具有可用尺寸，PR 状态必须有五种不同的实际填充色。`ui-fixtures.ts` 只属于测试，不进入客户端。原有不拦截 API 的 PAT → 仓库列表 → 单仓路径仍必须通过。
+`tests/e2e/ui.spec.ts` 在同一真实构建上拦截同源 API 为固定展示数据，补充验证搜索恢复、网格导航、通知操作进度、空态与权限提示、表格键盘横向滚动、单仓全部标签的数据与更新时间、浅色 / 深色 / 移动端全部页面及失败 PAT 清空。图表必须实际绘制且具有可用尺寸，PR 状态必须有五种不同的实际填充色。`ui-fixtures.ts` 只属于测试，不进入客户端。原有不拦截 API 的 PAT → 仓库列表 → 单仓路径仍必须通过。
 
 `tests/e2e/basalt.spec.ts` 验证跨页字号、浅深主题绿色实际绘制、键盘下钻/焦点、问号的悬停/键盘/触屏操作、卡片底部留白、圆环占用比例、表格边距与选中语义，以及移动端深色控件布局和数据时间弹窗。时间格式的跨分、跨小时、跨天和未来时钟边界由 `lib/format.test.ts` 覆盖。
 
@@ -555,7 +545,7 @@ L3 依赖步骤 1 的 Origin 补丁。未补丁前不算 L3 绿。L3 **不是** 
 - import `src/server` 进 Client；Server 测试 import Client
 - 复制 Basalt 或 kusto 源码当本仓控件；使用 `DataTable`
 - GET、添加/切换账号或缺快照触发自动采集；软件工厂以外提供独立刷新操作
-- 显式 refresh `insights` / `digest`（工具条与 bootstrap）
+- 显式 refresh `insights`（工具条与 bootstrap）
 - 应用内 `/login`
 - Vite `:5173` 打 Worker 写接口
 - 用 `Host` 做 Origin；生产放行 loopback

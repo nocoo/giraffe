@@ -28,7 +28,7 @@ GitHub 字段名跟 REST/GraphQL 对齐（`login`、`nameWithOwner`、`stargazer
 
 仓库参与统计的手动覆盖值，主键 `(account_id, repo)`，仓库名不区分大小写，`enabled` 为 0/1。无覆盖值时，Fork 或已归档仓库默认不参与，其余默认参与。设置独立于 GitHub 快照保存，重新同步不会重置；删除账号时级联删除。增量迁移为 `migrations/0004_repo_statistics.sql`，可重复执行；回滚代码时保留该表即可，无需删除原始快照或设置。
 
-`POST /api/repos/:owner/:name/statistics` 接收 `{account_id, enabled: boolean}`，验证活动账号与仓库存在。读取时统一过滤工厂、Issues、PR、Insights、告警、通知和日报，仓库管理页始终返回完整清单及有效 `statistics_enabled`。日报使用当前设置过滤两天的原始仓库基线再求差。
+`POST /api/repos/:owner/:name/statistics` 接收 `{account_id, enabled: boolean}`，验证活动账号与仓库存在。读取时统一过滤工厂、Issues、PR、Insights、告警和通知，仓库管理页始终返回完整清单及有效 `statistics_enabled`。
 
 ### `_test_marker`
 
@@ -102,26 +102,7 @@ CREATE TABLE snapshot_days (
 );
 ```
 
-`day` 为 `fetched_at` 的 UTC `YYYY-MM-DD`。`payload`：
-
-```json
-{
-  "stars": 0,
-  "forks": 0,
-  "open_issues": 0,
-  "repos": 0,
-  "by_repo": [
-    {
-      "name_with_owner": "owner/name",
-      "stars": 0,
-      "forks": 0,
-      "open_issues": 0
-    }
-  ]
-}
-```
-
-合计数字来自当日 `repos` 快照：`stargazer_count`、`fork_count`、`open_issue_count`、仓库数。`by_repo` 与当日 `repos` 数组一一对应，供 digest 的每仓 delta。刷新时按**当天**写入或覆盖该日行，不改写成昨天。差量只对比 `day = today-1`（合计与 `by_repo` 均按 `name_with_owner` 对齐；昨天没有的仓 delta 为 `null`）。没有昨天的行则业务层 `baseline_missing`。保留 30 天，删除更早行。
+已停用的历史日报基线表。应用不再写入或读取，只在每次刷新时删除 30 天前的行，使旧数据自然过期；表本身按增量迁移原则保留，账号删除时级联删除。
 
 ---
 
@@ -305,154 +286,6 @@ CREATE TABLE snapshot_days (
 }
 ```
 
-### `digest`
-
-当前副本。差量来自 `snapshot_days` 的 today 与 today-1。
-
-```json
-{
-  "fetched_at": "...",
-  "truncated": false,
-  "day": "2026-09-01",
-  "baseline_missing": false,
-  "stars_delta": 0,
-  "forks_delta": 0,
-  "open_issues_delta": 0,
-  "repos": [
-    {
-      "name_with_owner": "owner/name",
-      "stars_delta": 0,
-      "forks_delta": 0,
-      "open_issues_delta": 0
-    }
-  ]
-}
-```
-
-`baseline_missing: true` 时 delta 全为 `null`，不得填 0 装成没变化。
-
-### 单仓 `repo:{owner}/{name}:details`
-
-来源：`GET /repos/{owner}/{name}`。
-
-```json
-{
-  "fetched_at": "...",
-  "truncated": false,
-  "description": null,
-  "homepage": null,
-  "default_branch": "main",
-  "license": null,
-  "is_archived": false,
-  "open_issue_count": 0,
-  "stargazer_count": 0,
-  "fork_count": 0,
-  "pushed_at": "",
-  "url": ""
-}
-```
-
-### `repo:{owner}/{name}:actions`
-
-来源：`GET /repos/{owner}/{name}/actions/runs`。
-
-```json
-{
-  "fetched_at": "...",
-  "truncated": false,
-  "runs": [
-    {
-      "id": 1,
-      "name": "",
-      "html_url": "",
-      "status": "",
-      "conclusion": null,
-      "event": "",
-      "head_branch": null,
-      "created_at": "",
-      "updated_at": ""
-    }
-  ]
-}
-```
-
-### `repo:{owner}/{name}:traffic`
-
-来源：views/clones REST。403 时 `forbidden: true`，计数为空。
-
-```json
-{
-  "fetched_at": "...",
-  "truncated": false,
-  "forbidden": false,
-  "views": { "count": 0, "uniques": 0, "points": [] },
-  "clones": { "count": 0, "uniques": 0, "points": [] }
-}
-```
-
-`points[]`：`{ "timestamp": "", "count": 0, "uniques": 0 }`。
-
-### `repo:{owner}/{name}:security`
-
-```json
-{
-  "fetched_at": "...",
-  "truncated": false,
-  "unavailable": false,
-  "dependabot_open": 0,
-  "code_scanning_open": 0
-}
-```
-
-### `repo:{owner}/{name}:issues` / `:prs`
-
-形状分别与跨仓 `issues` / `prs` 相同，但只含该仓，且可省略 `name_with_owner`（仍建议带上）。
-
-### `repo:{owner}/{name}:releases`
-
-```json
-{
-  "fetched_at": "...",
-  "truncated": false,
-  "releases": [
-    {
-      "id": 1,
-      "tag_name": "",
-      "name": null,
-      "html_url": "",
-      "draft": false,
-      "prerelease": false,
-      "published_at": null
-    }
-  ]
-}
-```
-
-### `repo:{owner}/{name}:languages`
-
-来源：`GET /repos/{owner}/{name}/languages`。
-
-```json
-{
-  "fetched_at": "...",
-  "truncated": false,
-  "languages": { "TypeScript": 1000 }
-}
-```
-
-值为字节数。
-
-### `repo:{owner}/{name}:contributors`
-
-```json
-{
-  "fetched_at": "...",
-  "truncated": false,
-  "contributors": [
-    { "login": "", "avatar_url": "", "html_url": "", "contributions": 0 }
-  ]
-}
-```
 
 ---
 
@@ -460,11 +293,10 @@ CREATE TABLE snapshot_days (
 
 `POST /api/refresh`：
 
-1. 对请求里的 **GitHub kind** 用当前 active account 的 PAT 出站（经 `githubFetch`）。仅 `insights` / `digest` 的刷新不打 GitHub。
+1. 对请求里的 **GitHub kind** 用当前 active account 的 PAT 出站（经 `githubFetch`）。仅 `insights` 的刷新不打 GitHub。
 2. 写成对应 snapshots 行（含分页）。
-3. 若刷新了 `repos` **且** 该快照 `truncated === false`，按 `fetched_at` 的 UTC 日 upsert `snapshot_days`。`truncated: true` 的 repos **不** upsert。
-4. 重算 `insights` 与 `digest`。显式请求且源不足/truncated → 409。显式且 2 页仍超 → 截断写入。隐式且源不足或 2 页仍超 → 跳过。完整规则见 04。
-5. **每次**成功 refresh 都删掉 30 天前的 `snapshot_days`（与是否 upsert 无关）。
+3. 重算 `insights`。显式请求且源不足/truncated → 409。显式且 2 页仍超 → 截断写入。隐式且源不足或 2 页仍超 → 跳过。完整规则见 04。
+4. **每次**成功 refresh 都删掉 30 天前的遗留 `snapshot_days`。
 
 `DELETE /api/accounts/:id`：依赖 CASCADE 删掉该账号全部 snapshots 与 snapshot_days。
 

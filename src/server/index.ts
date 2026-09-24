@@ -118,8 +118,6 @@ export function createApp(): Hono<{ Bindings: Env; Variables: AppVars }> {
 	onGet(app, "/api/alerts", (c) => snapshotGet(c, "alerts"));
 	allow(app, "/api/notifications", ["GET"]);
 	onGet(app, "/api/notifications", (c) => snapshotGet(c, "notifications"));
-	allow(app, "/api/digest", ["GET"]);
-	onGet(app, "/api/digest", (c) => snapshotGet(c, "digest"));
 	allow(app, "/api/repos/:owner/:name", ["GET"]);
 	onGet(app, "/api/repos/:owner/:name", (c) => repoGet(c, "details"));
 	allow(app, "/api/repos/:owner/:name/actions", ["GET"]);

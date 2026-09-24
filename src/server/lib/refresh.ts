@@ -8,9 +8,8 @@ import {
 } from "./collect";
 import { touchLastUsedStmt } from "./db/accounts";
 import type { Db } from "./db/d1";
-import { pruneDaysStmt, readDay, upsertDayStmt } from "./db/snapshot-days";
+import { pruneDaysStmt } from "./db/snapshot-days";
 import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
-import { buildDigest, type DayPayload, utcDay, yesterday } from "./digest";
 import { ApiError } from "./errors";
 import { type GithubClient, MAX_FETCHES } from "./github-client";
 import type { Capabilities } from "./github-map";
@@ -19,7 +18,7 @@ import { repoPolicy } from "./repo-statistics";
 import { assemblePages, physicalKinds, splitPages } from "./snapshot-pages";
 
 const ALL = SITE_SNAPSHOT_KINDS;
-const DERIVED = new Set(["insights", "digest"]);
+const DERIVED = new Set(["insights"]);
 const CROSS = new Set<string>(ALL);
 const SUFFIX = new Set<string>(REPO_SNAPSHOT_TABS);
 
@@ -105,24 +104,6 @@ function asRepos(payload: Collected): RepoRow[] {
 	});
 }
 
-function dayFrom(payload: Collected): DayPayload {
-	const repos = Array.isArray(payload.repos)
-		? (payload.repos as Array<Record<string, unknown>>)
-		: [];
-	return {
-		stars: repos.reduce((n, r) => n + Number(r.stargazer_count ?? 0), 0),
-		forks: repos.reduce((n, r) => n + Number(r.fork_count ?? 0), 0),
-		open_issues: repos.reduce((n, r) => n + Number(r.open_issue_count ?? 0), 0),
-		repos: repos.length,
-		by_repo: repos.map((r) => ({
-			name_with_owner: String(r.name_with_owner ?? ""),
-			stars: Number(r.stargazer_count ?? 0),
-			forks: Number(r.fork_count ?? 0),
-			open_issues: Number(r.open_issue_count ?? 0),
-		})),
-	};
-}
-
 function sourceOk(payload: Collected | null): boolean {
 	return payload !== null && payload.truncated !== true;
 }
@@ -198,7 +179,6 @@ export async function prepareRefresh(
 
 	if (requested.some((kind) => CROSS.has(kind) || DERIVED.has(kind))) {
 		const explicitInsights = requested.includes("insights");
-		const explicitDigest = requested.includes("digest");
 		const reposSrc = await loaded("repos");
 		const issuesSrc = await loaded("issues");
 		const alertsSrc = await loaded("alerts");
@@ -220,44 +200,6 @@ export async function prepareRefresh(
 			if (!preview.truncated || explicitInsights) {
 				written.insights = {
 					...assemblePages("insights", preview.pages),
-					truncated: preview.truncated,
-				};
-			}
-		}
-		const today = utcDay(fetchedAt);
-		const wroteRepos = Boolean(written.repos && written.repos.truncated !== true);
-		const todayDay = wroteRepos
-			? dayFrom(written.repos as Collected)
-			: await readDay(db, accountId, today);
-		const digestOk = sourceOk(reposSrc) && todayDay !== null;
-		if (explicitDigest && !digestOk) {
-			throw new ApiError(409, "snapshot_missing", "derived sources missing");
-		}
-		if (digestOk && reposSrc) {
-			const day = dayFrom({
-				...reposSrc,
-				repos: policy.repos.filter((r) => policy.enabled(r.name_with_owner)),
-			});
-			const previous = await readDay(db, accountId, yesterday(utcDay(fetchedAt)));
-			const selectedPrevious = previous?.by_repo.filter((r) => policy.enabled(r.name_with_owner));
-			const digest = buildDigest(
-				day,
-				previous && selectedPrevious
-					? {
-							...previous,
-							by_repo: selectedPrevious,
-							repos: selectedPrevious.length,
-							stars: selectedPrevious.reduce((n, r) => n + r.stars, 0),
-							forks: selectedPrevious.reduce((n, r) => n + r.forks, 0),
-							open_issues: selectedPrevious.reduce((n, r) => n + r.open_issues, 0),
-						}
-					: null,
-				fetchedAt,
-			);
-			const preview = splitPages("digest", digest as unknown as Record<string, unknown>);
-			if (!preview.truncated || explicitDigest) {
-				written.digest = {
-					...assemblePages("digest", preview.pages),
 					truncated: preview.truncated,
 				};
 			}
@@ -284,14 +226,6 @@ export async function prepareRefresh(
 			.bind(accountId, ...kinds)
 			.first<{ bytes: number }>();
 		bytes -= old?.bytes ?? 0;
-	}
-	if (written.repos && written.repos.truncated !== true) {
-		const day = dayFrom(written.repos);
-		const oldDay = measureBytes ? await readDay(db, accountId, utcDay(fetchedAt)) : null;
-		bytes +=
-			new TextEncoder().encode(JSON.stringify(day)).length -
-			(oldDay ? new TextEncoder().encode(JSON.stringify(oldDay)).length : 0);
-		stmts.push(upsertDayStmt(db, accountId, utcDay(fetchedAt), day));
 	}
 	const cutoff = new Date(Date.parse(fetchedAt) - 29 * 86_400_000).toISOString().slice(0, 10);
 	stmts.push(pruneDaysStmt(db, accountId, cutoff));

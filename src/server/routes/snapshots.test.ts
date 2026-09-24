@@ -25,7 +25,6 @@ describe("snapshot routes", () => {
 			"/api/insights",
 			"/api/alerts",
 			"/api/notifications",
-			"/api/digest",
 			"/api/repos/o/n/actions",
 			"/api/repos/o/n/traffic",
 			"/api/repos/o/n/security",
@@ -92,7 +91,7 @@ describe("snapshot routes", () => {
 					{
 						method: "POST",
 						headers,
-						body: JSON.stringify({ account_id: "other_account_id_0000", kinds: ["digest"] }),
+						body: JSON.stringify({ account_id: "other_account_id_0000", kinds: ["insights"] }),
 					},
 					e,
 				)

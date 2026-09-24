@@ -451,7 +451,6 @@ details[open]>summary>.factory-disclosure { transform:rotate(90deg); }
 @keyframes giraffe-rise { from { transform:scaleY(0); } }
 @media(prefers-reduced-motion:reduce) { .giraffe-age * { animation:none!important; } }
 fieldset.giraffe-age,fieldset.giraffe-active-filters { border:0;margin:0;padding:0;min-width:0; }
-.giraffe-digest-plot { height:calc(var(--digest-rows,4) * 22px + 36px);min-height:8rem; }
 .giraffe-coverage-note { padding:10px 14px;border-radius:8px;background:var(--color-basalt-warning-tint);font-size:var(--text-sm);line-height:1.6;color:var(--color-basalt-foreground); }
 .giraffe-health-map { display:grid;grid-template-columns:repeat(auto-fill,minmax(7.5rem,1fr));gap:4px; }
 .giraffe-health-map li { list-style:none;animation:var(--animate-basalt-tab-in) both; }

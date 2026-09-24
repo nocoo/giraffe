@@ -136,17 +136,6 @@ for (const [path, label, list] of [
 	});
 }
 
-test("digest copies the report content, including totals", async ({ page, context }) => {
-	await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-	await page.goto("/digest");
-	await expect(page.getByTestId("digest-list")).toBeVisible();
-	await page.getByRole("button", { name: "Copy", exact: true }).click();
-	const copied = await page.evaluate(() => navigator.clipboard.readText());
-	expect(copied).toContain("# 2026-09-08");
-	expect(copied).toContain("octocat/hello-world");
-	expect(copied).toContain("合计 stars +12 / forks +4 / issues −2");
-});
-
 test("marking a notification shows progress and applies the returned unread state", async ({
 	page,
 }) => {
@@ -258,7 +247,7 @@ test("missing snapshots lead to the unified factory console", async ({ page }) =
 			json: { error: { code: "snapshot_missing", message: "No fixture snapshot" } },
 		});
 	});
-	for (const path of ["/", "/issues", "/pulls", "/alerts", "/inbox", "/digest", "/insights"]) {
+	for (const path of ["/", "/issues", "/pulls", "/alerts", "/inbox", "/insights"]) {
 		await page.goto(path);
 		await expect(page.getByText("等待统一刷新", { exact: true })).toBeVisible();
 		await expect(page.getByRole("button", { name: /刷新/ })).toHaveCount(0);
@@ -297,26 +286,6 @@ test("unavailable security and traffic show permission guidance without zero-val
 	await page.getByRole("tab", { name: "流量", exact: true }).click();
 	await expect(page.getByText("无法查看流量", { exact: true })).toBeVisible();
 	await expect(page.getByRole("group", { name: "views", exact: true })).toHaveCount(0);
-});
-
-test("digest without a baseline preserves unknown changes in the table and clipboard", async ({
-	page,
-	context,
-}) => {
-	await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-	await page.route("**/api/digest", (route) =>
-		route.fulfill({ json: { ...createUiFixtures()["/api/digest"], baseline_missing: true } }),
-	);
-	await page.goto("/digest");
-	await expect(page.getByText("等待第一份对比数据", { exact: true })).toBeVisible();
-	await expect(
-		page.getByTestId("digest-list").getByRole("row").nth(1).getByRole("cell"),
-	).toHaveText(["octocat/hello-world", "—", "—", "—"]);
-	await page.getByRole("button", { name: "Copy", exact: true }).click();
-	const copied = await page.evaluate(() => navigator.clipboard.readText());
-	expect(copied).toContain("没有昨天的基线");
-	expect(copied).toContain("合计 stars — / forks — / issues —");
-	expect(copied).not.toContain("+12");
 });
 
 test("missing repository tabs remain read-only and show fresh data after a factory visit", async ({
@@ -380,7 +349,6 @@ for (const mode of ["light", "dark", "mobile"] as const) {
 			["/pulls", "pr-list"],
 			["/alerts", "alert-list"],
 			["/inbox", "inbox-list"],
-			["/digest", "digest-list"],
 			["/ci", "ci-list"],
 			["/settings", "pat-input"],
 			["/repos/octocat/hello-world", "repo-detail"],

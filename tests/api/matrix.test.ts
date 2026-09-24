@@ -25,7 +25,6 @@ const GETS = [
 	"/api/insights",
 	"/api/alerts",
 	"/api/notifications",
-	"/api/digest",
 	"/api/repos/octocat/hello-world",
 	"/api/repos/octocat/hello-world/actions",
 	"/api/repos/octocat/hello-world/traffic",
@@ -521,13 +520,6 @@ describe("api method matrix", () => {
 		const insightsBody = (await (await api("/api/insights")).json()) as Record<string, unknown>;
 		snapshotMeta(insightsBody);
 		expect(Array.isArray(insightsBody.insights)).toBe(true);
-		const digestBody = (await (await api("/api/digest")).json()) as Record<string, unknown>;
-		snapshotMeta(digestBody);
-		expect(digestBody).toMatchObject({
-			day: expect.any(String),
-			baseline_missing: expect.any(Boolean),
-		});
-		expect(Array.isArray(digestBody.repos)).toBe(true);
 		const trafficBody = (await (
 			await api("/api/repos/octocat/hello-world/traffic")
 		).json()) as Record<string, unknown>;
@@ -822,6 +814,5 @@ describe("api method matrix", () => {
 		).toBe(204);
 		expect((await api("/api/repos")).status).toBe(409);
 		expect(d1Rows(`SELECT * FROM snapshots WHERE account_id = '${account.id}'`)).toEqual([]);
-		expect(d1Rows(`SELECT * FROM snapshot_days WHERE account_id = '${account.id}'`)).toEqual([]);
 	});
 });

@@ -583,7 +583,6 @@ test("other pages are read-only and missing data leads to the unified factory co
 		["/pulls", "pr-list"],
 		["/alerts", "alert-list"],
 		["/inbox", "inbox-list"],
-		["/digest", "digest-list"],
 		["/insights", "insight-metrics"],
 		["/settings", "pat-input"],
 		["/repos/octocat/hello-world", "repo-detail"],

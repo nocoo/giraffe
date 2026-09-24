@@ -9,7 +9,6 @@ import {
 	formatCount,
 	formatDate,
 	formatDays,
-	formatDelta,
 	formatHealth,
 	formatPreciseDate,
 	formatReview,
@@ -74,12 +73,7 @@ describe("format", () => {
 		expect(formatTimeAgo(null, base, true)).toBe("时间未知");
 	});
 
-	it("formats deltas, dates, counts, and labels", () => {
-		expect(formatDelta(null, false)).toBe("—");
-		expect(formatDelta(2, false)).toBe("+2");
-		expect(formatDelta(-1200, false)).toBe("−1,200");
-		expect(formatDelta(0, false)).toBe("0");
-		expect(formatDelta(0, true)).toBe("—");
+	it("formats dates, counts, and labels", () => {
 		expect(formatDate(null)).toBe("—");
 		expect(formatDate(undefined)).toBe("—");
 		expect(formatDate("not-a-date")).toBe("—");

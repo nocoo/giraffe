@@ -141,14 +141,6 @@ class Stmt {
 			}
 			return [];
 		}
-		if (sql.startsWith("SELECT payload FROM snapshot_days")) {
-			return this.mem.days.filter((row) => row.account_id === v[0] && row.day === v[1]);
-		}
-		if (sql.startsWith("INSERT INTO snapshot_days")) {
-			this.mem.days = this.mem.days.filter((row) => !(row.account_id === v[0] && row.day === v[1]));
-			this.mem.days.push({ account_id: v[0], day: v[1], payload: v[2] });
-			return [];
-		}
 		if (sql.startsWith("DELETE FROM snapshot_days")) {
 			this.mem.days = this.mem.days.filter(
 				(row) => !(row.account_id === v[0] && String(row.day) < String(v[1])),

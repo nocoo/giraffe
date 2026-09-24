@@ -1,7 +1,6 @@
 import type { FactoryDay } from "../../lib/factory-types";
 import { participates } from "../../lib/repo-statistics";
 import type { AlertItem } from "./alerts";
-import type { DigestRepo } from "./digest";
 import type { NotificationRow } from "./inbox";
 import type { IssueRow } from "./issues";
 import {
@@ -12,7 +11,6 @@ import {
 	dailySeries,
 	daysAgo,
 	matchesFilters,
-	shortRepo,
 	weeklySeries,
 } from "./overview";
 import type { PullRow } from "./pulls";
@@ -223,39 +221,6 @@ export function alertsBoard(
 		})),
 		repos: countBy(rows, (r) => r.name_with_owner, 8),
 		sources: countBy(rows, (r) => r.source),
-	};
-}
-
-/** Day-over-day movers; unchanged and unknown rows collapse into a count instead of a long zero table. */
-export function digestBoard(repos: DigestRepo[], baselineMissing: boolean) {
-	const moved = (r: DigestRepo) => Boolean(r.stars_delta || r.forks_delta || r.open_issues_delta);
-	// Stars are rarer than issue churn, so a star change ranks as ten issues.
-	const weight = (r: DigestRepo) =>
-		Math.abs(Number(r.open_issues_delta)) + Math.abs(Number(r.stars_delta)) * 10;
-	const changed = baselineMissing
-		? []
-		: repos
-				.filter(moved)
-				.sort(
-					(a, b) => weight(b) - weight(a) || a.name_with_owner.localeCompare(b.name_with_owner),
-				);
-	const deltas = changed.map((r) => Number(r.open_issues_delta));
-	return {
-		changed,
-		unchanged: repos.length - changed.length,
-		issues: {
-			up: deltas.filter((d) => d > 0).reduce((n, d) => n + d, 0),
-			down: deltas.filter((d) => d < 0).reduce((n, d) => n + d, 0),
-			max: Math.max(1, ...deltas.map(Math.abs)),
-		},
-		bars: changed
-			.filter((r) => r.open_issues_delta)
-			.map((r) => ({
-				name: shortRepo(r.name_with_owner),
-				repo: r.name_with_owner,
-				issues: Number(r.open_issues_delta),
-			}))
-			.sort((a, b) => b.issues - a.issues || a.name.localeCompare(b.name)),
 	};
 }
 

@@ -8,7 +8,6 @@ export const NAV_GROUPS: readonly NavGroup[] = [
 		label: "总览",
 		items: [
 			{ href: "/factory", label: "软件工厂", icon: "Factory" },
-			{ href: "/digest", label: "日报", icon: "Newspaper" },
 			{ href: "/insights", label: "Insights", icon: "Activity" },
 		],
 	},
@@ -42,7 +41,6 @@ export const PAGE_DESCRIPTIONS = {
 	"/ci": "各仓库 CI 与发布状态，区分连续失败与偶发失败",
 	"/alerts": "Dependabot 与 code scanning",
 	"/inbox": "GitHub 通知收件箱",
-	"/digest": "相对昨天基线的仓库变化",
 	"/settings": "Access 身份与 GitHub 账号",
 } as const;
 

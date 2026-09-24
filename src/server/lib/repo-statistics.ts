@@ -1,9 +1,7 @@
 import type { FactorySnapshot } from "../../lib/factory-types";
 import { participates, type RepoStatistics } from "../../lib/repo-statistics";
 import type { Db } from "./db/d1";
-import { readDay } from "./db/snapshot-days";
 import { readSnapshot } from "./db/snapshots";
-import { buildDigest, type DayPayload, type DayRepo, utcDay, yesterday } from "./digest";
 import { buildInsights, type InsightAlert } from "./insights";
 import { assemblePages, splitPages } from "./snapshot-pages";
 
@@ -36,16 +34,6 @@ export async function repoPolicy(db: Db, account: string, source?: Record<string
 	};
 }
 type Policy = Awaited<ReturnType<typeof repoPolicy>>;
-
-function dayPayload(repos: DayRepo[]): DayPayload {
-	return {
-		by_repo: repos,
-		repos: repos.length,
-		stars: repos.reduce((n, r) => n + r.stars, 0),
-		forks: repos.reduce((n, r) => n + r.forks, 0),
-		open_issues: repos.reduce((n, r) => n + r.open_issues, 0),
-	};
-}
 
 /** Project immutable/raw snapshots at read time so settings apply immediately, even to old data. */
 export async function statisticsSnapshot(
@@ -80,30 +68,6 @@ export async function statisticsSnapshot(
 				!alerts || alerts.truncated === true || alerts.unavailable === true,
 			),
 			truncated: snap.truncated,
-		};
-		const preview = splitPages(kind, derived);
-		return { ...assemblePages(kind, preview.pages), truncated: preview.truncated };
-	}
-	if (kind === "digest") {
-		const fetchedAt = String(snap.fetched_at);
-		const current = await readDay(db, account, utcDay(fetchedAt));
-		const previous = await readDay(db, account, yesterday(utcDay(fetchedAt)));
-		const selected = (rows: DayRepo[]) => rows.filter((r) => policy.enabled(r.name_with_owner));
-		const today =
-			current?.by_repo ??
-			policy.repos.map((r) => ({
-				name_with_owner: r.name_with_owner,
-				stars: Number(r.stargazer_count ?? 0),
-				forks: Number(r.fork_count ?? 0),
-				open_issues: Number(r.open_issue_count ?? 0),
-			}));
-		const derived = {
-			...buildDigest(
-				dayPayload(selected(today)),
-				previous ? dayPayload(selected(previous.by_repo)) : null,
-				fetchedAt,
-			),
-			truncated: snap.truncated === true,
 		};
 		const preview = splitPages(kind, derived);
 		return { ...assemblePages(kind, preview.pages), truncated: preview.truncated };

@@ -61,7 +61,6 @@ src/server/
   lib/access-identity.ts
   lib/snapshot-pages.ts            # 1.5MB 切分 / 组装
   lib/insights.ts
-  lib/digest.ts
   lib/db/schema.sql                # 仅 accounts / snapshots / snapshot_days
   lib/db/d1.ts
   lib/db/accounts.ts
@@ -241,11 +240,11 @@ L1：注入 fake fetch；setup 默认 fetch throw（`network denied in L1`）。
 
 `schema.sql` **不含** `_test_marker`。L2/L3 runner 在执行 schema 之后另跑 03 的 marker SQL。生产禁止建 `_test_marker`。
 
-访问层只用绑定参数，不用字符串拼 SQL。物理页最多 **2**（`kind`、`kind#2`）。替换每个逻辑 kind 恰好 **两条** statement：一条 `DELETE … kind IN (logical, logical#2)`，一条多行 `INSERT … VALUES`（最多 2 行）。读：**一条** `SELECT … WHERE account_id=? AND kind IN (logical, logical#2)`。本请求 **GitHub 源 kind** staged payload UTF-8 合计不得超过 **16 MiB**（不含 snapshot_days / insights / digest）。超出则当前 kind 截到上限内、`truncated: true`，已 staged 字节保持 ≤16 MiB，**不再** fetch 或写入后续 GitHub kind。禁止 `LIKE` / `GLOB`。
+访问层只用绑定参数，不用字符串拼 SQL。物理页最多 **2**（`kind`、`kind#2`）。替换每个逻辑 kind 恰好 **两条** statement：一条 `DELETE … kind IN (logical, logical#2)`，一条多行 `INSERT … VALUES`（最多 2 行）。读：**一条** `SELECT … WHERE account_id=? AND kind IN (logical, logical#2)`。本请求 **GitHub 源 kind** staged payload UTF-8 合计不得超过 **16 MiB**（不含 insights）。超出则当前 kind 截到上限内、`truncated: true`，已 staged 字节保持 ≤16 MiB，**不再** fetch 或写入后续 GitHub kind。禁止 `LIKE` / `GLOB`。
 
-`createDb` 的 80 上限是**整次请求**（含读账号、读旧快照、读 snapshot_days、最终 batch），不是只数最后一次 batch。L1 用同一计数器覆盖。
+`createDb` 的 80 上限是**整次请求**（含读账号、读旧快照、最终 batch），不是只数最后一次 batch。L1 用同一计数器覆盖。
 
-`all` 只展开成 5 个 GitHub kind，**不含** insights/digest。每个成功 refresh 结束时仍尝试派生，规则：
+`all` 只展开成 5 个 GitHub kind，**不含** insights。每个成功 refresh 结束时仍尝试派生，规则：
 
 | | 请求数组里**有**该派生名 | 没有（含 `all`、`["repos"]`） |
 |--|--------------------------|------------------------------|
@@ -253,11 +252,11 @@ L1：注入 fake fetch；setup 默认 fetch throw（`network denied in L1`）。
 | ≤2 页 | 写入 | 写入 |
 | 2 页仍超 | 写入能放下的，`truncated: true`，HTTP 200 | **跳过**，不进 `truncated_kinds` |
 
-insights 的「源不足」**只**看 `repos` 与 `issues`：缺行或该源 `truncated: true`。`alerts` 缺行、`unavailable: true`、`truncated: true`、或收集时**任一仓**因 403/404/FORBIDDEN 被跳过，都**不是** insights 源不足：仍写入 insights，顶层 `alerts_incomplete: true`（见 03）。仅当 alerts 快照存在且 `unavailable === false` 且 `truncated === false` 且没有仓被跳过时 `alerts_incomplete: false`。digest 的源不足仍是：无未截断 `repos`，或没有当天 `snapshot_days`。
+insights 的「源不足」**只**看 `repos` 与 `issues`：缺行或该源 `truncated: true`。`alerts` 缺行、`unavailable: true`、`truncated: true`、或收集时**任一仓**因 403/404/FORBIDDEN 被跳过，都**不是** insights 源不足：仍写入 insights，顶层 `alerts_incomplete: true`（见 03）。仅当 alerts 快照存在且 `unavailable === false` 且 `truncated === false` 且没有仓被跳过时 `alerts_incomplete: false`。
 
-`["repos","insights"]`：insights 走左列，digest 走右列。禁止把「数组里出现 insights」同时又当隐式。
+`["repos","insights"]`：insights 走左列。禁止把「数组里出现 insights」同时又当隐式。
 
-默认 `all` 每 kind 2 页时整请求 statement < 80。L1 还要覆盖：显式 insights 与显式 digest 超大 → 200+truncated；`["repos","insights"]` 的 `truncated_kinds` 可含 `insights`；隐式超大 → 不写派生；16 MiB 时 **累计** GitHub staged ≤16 MiB、当前 kind truncated、后续 kind 零 fetch **且不写**。
+默认 `all` 每 kind 2 页时整请求 statement < 80。L1 还要覆盖：显式 insights 超大 → 200+truncated；`["repos","insights"]` 的 `truncated_kinds` 可含 `insights`；隐式超大 → 不写派生；16 MiB 时 **累计** GitHub staged ≤16 MiB、当前 kind truncated、后续 kind 零 fetch **且不写**。
 
 写快照：同一 `DB.batch` 里删除该逻辑 kind 的全部物理行并插入新页。激活：同一 batch 里 `UPDATE … is_active=0` 再 `UPDATE … is_active=1 WHERE id=?`。插入首个账号：`INSERT` 时直接 `is_active=1`，不要先插 0 再改。batch 失败整段回滚，禁止留下半页快照或两个 `is_active=1`。`accounts_one_active` 冲突 → 再读再写一次，仍失败则 500 `db_error`。不得手写双活。
 
@@ -290,7 +289,7 @@ Body（Zod）：`kinds` 可选。`account_id` **必填**（nanoid 21）。缺或
 - 缺 `kinds` 或 `"all"`：刷新全部跨仓 GitHub kind：`repos`、`issues`、`prs`、`alerts`、`notifications`。
 - 数组：只对列出的 GitHub kind 出站。最多 **16** 项（`all` 计 5）。超过或重复 → 400 `validation_failed`。若数组同时含 `repos` 与依赖它的 kind，**无论数组顺序**都先在内存收集 `repos`，再按数组去掉 `repos` 后的顺序收集其余。`issues` / `prs` / `alerts` 需要已有或本轮内存中的 `repos`。否则 409 `snapshot_missing`，**不得**偷偷持久化 repos。
 - `all` 的串行顺序固定：`repos` → `issues` → `prs` → `alerts` → `notifications`。同一时刻只收集一个 kind。
-- `insights` / `digest` 出现在数组里：不打 GitHub。派生写入一律按第 8 节表格。insights 源不足**只**看 repos/issues（缺或 truncated）；alerts 缺/unavailable/truncated 仍写入。digest 源不足：无未截断 repos 或无当天 snapshot_days。
+- `insights` 出现在数组里：不打 GitHub。派生写入一律按第 8 节表格。insights 源不足**只**看 repos/issues（缺或 truncated）；alerts 缺/unavailable/truncated 仍写入。
 - `kinds: []`、未知字符串、非法 `repo:` 形状 → 400 `validation_failed`。
 - 单仓 kind：`repo:{owner}/{name}:details` 等，与 03 逻辑 kind 一致。`owner`/`name` 各匹配 `^[A-Za-z0-9_.-]+$`，且不是 `.` / `..`。
 
@@ -321,14 +320,13 @@ GitHub 调用（均经请求内 client，计入 40 次上限）。跨仓 `repos`
 全部目标 kind 收集完（或次数用尽）后 **一次** `DB.batch`：
 
 1. 写入本轮**实际完成**的 snapshots（每个逻辑 kind：删旧页+插新页）。
-2. 仅当本轮写入的 `repos` 为 `truncated: false` 时 upsert 当天 `snapshot_days`。repos truncated 则 **不** upsert。
-3. **每次**成功 refresh 的同一 batch 都 `DELETE` 30 天前的 `snapshot_days`（即使本轮没 upsert）。
-4. 派生写入按第 8 节表格。insights 必源为未截断 repos + 未截断 issues；alerts 可选。digest 源为未截断 repos + 当天 snapshot_days。
-5. 本请求 `githubFetch` 计数 > 0 时才更新 `accounts.last_used_at`（与上述语句同一 batch）。只重算 insights/digest、一次 GitHub 都没打，则不改 `last_used_at`。
+2. 同一 batch `DELETE` 30 天前的遗留 `snapshot_days`（该表不再写入）。
+3. 派生写入按第 8 节表格。insights 必源为未截断 repos + 未截断 issues；alerts 可选。
+4. 本请求 `githubFetch` 计数 > 0 时才更新 `accounts.last_used_at`（与上述语句同一 batch）。只重算 insights、一次 GitHub 都没打，则不改 `last_used_at`。
 
 响应：
 
-- 单个 kind（含单独刷新 `insights` / `digest`）：200，body 与对应 GET 成功体相同（含该 kind 的 `truncated`）。
+- 单个 kind（含单独刷新 `insights`）：200，body 与对应 GET 成功体相同（含该 kind 的 `truncated`）。
 - `"all"` 或多个 kind：
 
 ```json
@@ -339,11 +337,11 @@ GitHub 调用（均经请求内 client，计入 40 次上限）。跨仓 `repos`
 }
 ```
 
-`kinds` 为本轮实际写入的逻辑 kind（**含**本次写入的 insights/digest）。`truncated_kinds` 为本轮写入且 `truncated: true` 的 kind，**含**显式截断的 insights/digest。没有则为 `[]`。未开始或不写的 kind 不出现。不内嵌 payload。
+`kinds` 为本轮实际写入的逻辑 kind（**含**本次写入的 insights）。`truncated_kinds` 为本轮写入且 `truncated: true` 的 kind，**含**显式截断的 insights。没有则为 `[]`。未开始或不写的 kind 不出现。不内嵌 payload。
 
 ---
 
-## 10. Insights 与 digest
+## 10. Insights
 
 纯函数，L1 必测。`fetched_at` 用本次计算时刻的 UTC ISO。
 
@@ -356,8 +354,6 @@ GitHub 调用（均经请求内 client，计入 40 次上限）。跨仓 `repos`
 | 其它 | `strong` |
 
 `opportunities` 封闭枚举，可多选：`stale_push`、`many_issues`、`open_alerts`。`alerts` 数组复制该仓 alerts `items`。
-
-digest 只对比 `day` 与 UTC 日历昨天的 `snapshot_days`（含 `by_repo`）。无昨天行：`baseline_missing: true`，账号级与每仓 delta 均为 `null`，禁止填 `0`。昨天没有的仓：该仓 delta 为 `null`。
 
 ---
 
@@ -459,7 +455,6 @@ Origin 必过。未知 id → 404。删除行，CASCADE 快照。204 无 body。
 | GET | `/api/insights` | `insights` |
 | GET | `/api/alerts` | `alerts` |
 | GET | `/api/notifications` | `notifications` |
-| GET | `/api/digest` | `digest` |
 | GET | `/api/repos/:owner/:name` | `repo:{owner}/{name}:details` |
 | GET | `/api/repos/:owner/:name/actions` | `:actions` |
 | GET | `/api/repos/:owner/:name/traffic` | `:traffic` |
@@ -513,11 +508,10 @@ L1 必测（注入 DB / fake fetch，无网络、无 wrangler）：
 | `access` | 缺 iss/aud/过期 → 401；production 忽略 fixture JWKS；development+team 不短路；有 nbf 则验 |
 | `origin` | 缺头 / 错 Origin → 403；GET 不查 Origin |
 | `snapshot-pages` | 切分与组装；单元素过大 `truncated` |
-| `digest` | 邻日差量；无昨天 → `baseline_missing` 且 delta `null` |
 | `insights` | health 三档与 opportunities；`alerts_incomplete` true（缺/unavailable/truncated/仓跳过）与 false |
 | `errors` / 路由 | 信封；body 超限 400；未知 `/api` 404；已知路径错误方法 405；`onError` → 500 `internal_error`；快照 GET 与单 kind refresh 成功体含正确 `account_id`；refresh/read/read-all 缺 `account_id` → 400；错 id → 409 `account_conflict` 且 stub 计数 0、D1 字节不变 |
 | `createDb` | 第 81 条不 execute；两 store 同一句柄；`last_used_at` 与业务语句同一 batch；默认 `all` 最终 batch 语句数 < 80 |
-| refresh 收集 | 硬失败零写入；第 3 页丢弃不写 `kind#3`；kinds 17 项 → 400；16 项整请求 statement < 80；16 MiB **累计** staged；显式 insights 与 digest 超大；混合数组 truncated_kinds；隐式超大跳过 |
+| refresh 收集 | 硬失败零写入；第 3 页丢弃不写 `kind#3`；kinds 17 项 → 400；16 项整请求 statement < 80；16 MiB **累计** staged；显式 insights 超大；混合数组 truncated_kinds；隐式超大跳过 |
 | 路由纯逻辑 | 无快照 409；`scopes_missing`；`capability_missing` |
 
 L2 真 HTTP，隔离与套件 A/B 以 02 为准。第一个 `/api` 处理函数落地的**同一批变更**必须实现 `scripts/run-e2e.ts`（不再 N/A）。本文第 11 节每一个方法+路径都必须进入套件 A 与套件 B。

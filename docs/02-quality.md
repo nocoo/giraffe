@@ -68,7 +68,7 @@ Hook：
 
 | 对象 | 阶段 | 例子 |
 |------|------|------|
-| 纯函数 | 1 | token 信封加解密、sanitize、digest 邻日差量、快照分页切分 |
+| 纯函数 | 1 | token 信封加解密、sanitize、快照分页切分 |
 | Server 路由处理的纯逻辑 | 1 | 缺 scope → `capability_missing`；无快照 GET → 409 |
 | Access JWT 校验 | 1 | 缺 `iss`/`aud`/过期 → 401；非测试 JWKS 不得接受自签 token |
 | Client ViewModel | 2 | 不碰 DOM |
@@ -163,7 +163,7 @@ G1 `gate:client-fetch` 扫 `src/client/**`：只允许 `src/client/lib/api.ts` �
 | 种类 | 要求 |
 |------|------|
 | 成功路径 | 写类（POST/DELETE）带**允许的 Origin**；状态码与 body 符合契约；必须能在后续 GET 观察到状态变化。GET **不带 Origin** 也必须 200/409（按是否有快照），证明只读不依赖 Origin |
-| 契约失败 | **快照类 GET**（repos/issues/prs/insights/alerts/notifications/digest 及单仓 GET）无快照 → 409。`GET /api/live`、`GET /api/me`、`GET /api/accounts` 不在此列。POST **与 DELETE**：缺 Origin → 403；Origin 不在允许列表 → 403。403 **不能**当作该路径唯一用例 |
+| 契约失败 | **快照类 GET**（repos/issues/prs/insights/alerts/notifications 及单仓 GET）无快照 → 409。`GET /api/live`、`GET /api/me`、`GET /api/accounts` 不在此列。POST **与 DELETE**：缺 Origin → 403；Origin 不在允许列表 → 403。403 **不能**当作该路径唯一用例 |
 | 只读 | GET 期间 GitHub stub 请求数为 0，且相关 D1 行（快照 payload / `fetched_at` / accounts）字节级不变 |
 
 PAT `POST /api/accounts` 成功**与失败**路径（400 缺 scope、GitHub stub 401、非法 token）均断言：

@@ -227,7 +227,7 @@ database_id = "<prod>"
 
 ## 7. 数据：D1 快照
 
-不把 GitHub 资源拆成宽表。当前视图按账号 + 种类存 JSON；日报差量另表按天保留。D1 整行上限约 2,000,000 字节。`payload` 最大 **1,500,000 字节**，给其它列留余量。超限按页切成 `kind` + `#` + `page`（如 `repos#2`），API 组装后返回。切分算法细节由 03 定。
+不把 GitHub 资源拆成宽表。当前视图按账号 + 种类存 JSON。D1 整行上限约 2,000,000 字节。`payload` 最大 **1,500,000 字节**，给其它列留余量。超限按页切成 `kind` + `#` + `page`（如 `repos#2`），API 组装后返回。切分算法细节由 03 定。
 
 ### `accounts`
 
@@ -266,7 +266,6 @@ database_id = "<prod>"
 | `insights` | 聚合健康/告警/机会 |
 | `alerts` | Dependabot + code scanning |
 | `notifications` | inbox |
-| `digest` | 最近一次摘要的**当前**副本。差量历史不放这里 |
 | `repo:{owner}/{name}:details` | 单仓概览 |
 | `repo:{owner}/{name}:actions` | workflow runs |
 | `repo:{owner}/{name}:traffic` | views/clones |
@@ -279,12 +278,12 @@ database_id = "<prod>"
 
 ### `snapshot_days`
 
-日报差量用。主键 `(account_id, day)`，`day` 为该快照 `fetched_at` 的 UTC `YYYY-MM-DD`，按真实采集日写入，不得改写成「昨天」或「今天」。`payload` 存该日 star/fork/issue 计数。计算差量只允许对比 **UTC 日历上紧邻的前一天**。没有 `day = today-1` 的行时返回 `baseline_missing`（或显式标出间隔天数，首版选择前者），不得把五天前的变化当成「今日差量」。保留最近 30 天，更早的删除。
+已停用的历史日报基线表。应用不再写入或读取，只在每次刷新时删除 30 天前的行，使旧数据自然过期；表本身按增量迁移原则保留，账号删除时级联删除。
 
 读取路径：
 
 - GET：只读快照，带 `fetched_at`。无快照返回 409 `snapshot_missing`，不回源、不写库
-- `POST /api/refresh`：Origin 校验后回源 GitHub，覆写当前快照及必要的 `snapshot_days`，再返回新快照
+- `POST /api/refresh`：Origin 校验后回源 GitHub，覆写当前快照，再返回新快照
 - 首版不做 Cron。只接受 `POST /api/refresh`（见 [04](04-server.md)）；Server 不得在 GET 里偷刷新。何时由 Client 调用由 05 定
 
 隔离见 [5.1](#51-cloudflare-资源命名)：生产只用远程 `giraffe-db`。E2E 打本机 persist 目录里的 SQLite，库内含 `_test_marker`。详见 6DQ D1。细节表结构以 03 为准。
@@ -320,7 +319,6 @@ database_id = "<prod>"
 | GET | `/api/notifications` | inbox |
 | POST | `/api/notifications/read` | 标记已读（透传 GitHub，并更新快照） |
 | POST | `/api/notifications/read-all` | 全部已读 |
-| GET | `/api/digest` | 统计摘要，无 LLM |
 | GET | `/api/repos/:owner/:name` | 单仓概览 |
 | GET | `/api/repos/:owner/:name/actions` | 单仓 Actions |
 | GET | `/api/repos/:owner/:name/traffic` | 单仓 Traffic |
@@ -349,7 +347,6 @@ Basalt Gen 2。侧栏展开 260px / 收起 68px。主区浮岛。中文 UI。
 | `/pulls` | Pull Requests | 跨仓列表 + 筛选 |
 | `/alerts` | 安全告警 | Dependabot + code scanning |
 | `/inbox` | 通知 | GitHub notifications |
-| `/digest` | 日报 | 当日 star/fork/issue 变动；可复制 Markdown；**无** LLM 叙事 |
 | `/repos/:owner/:name` | （钻取） | 概览、Security、Actions、PRs、Issues、Releases、Traffic、Languages、Contributors |
 | `/settings` | 设置 | PAT 增删、切换当前账号 |
 

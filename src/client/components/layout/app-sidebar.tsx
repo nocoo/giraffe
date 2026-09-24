@@ -31,7 +31,6 @@ import {
 	GitPullRequest,
 	Inbox,
 	type LucideIcon,
-	Newspaper,
 	PanelLeft,
 	Search,
 	Settings,
@@ -58,7 +57,6 @@ const ICONS: Record<string, LucideIcon> = {
 	Activity,
 	ShieldAlert,
 	Inbox,
-	Newspaper,
 	Settings,
 	Workflow,
 };
