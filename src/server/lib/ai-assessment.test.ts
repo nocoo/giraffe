@@ -185,8 +185,8 @@ it("captures bounded source evidence, prioritizes open work and declares omitted
 		body: "x".repeat(1400),
 		url: "https://github.com/nocoo/app/issues/1",
 		state: i === 29 ? "open" : "closed",
-		at: String(i),
-		createdAt: at,
+		at: "2026-09-15T21:00:00.000Z",
+		createdAt: "2026-09-15T21:00:00.000Z",
 		closedAt: null,
 		mergedAt: null,
 		author: "external",
@@ -202,8 +202,84 @@ it("captures bounded source evidence, prioritizes open work and declares omitted
 	expect(input?.events.issues).toHaveLength(24);
 	expect(input?.events.issues[0]?.id).toBe("issues:29");
 	expect(input?.events.issues[0]?.body).toHaveLength(1200);
+	expect(input?.events.issues[0]?.excerpted).toBe(true);
 	expect(input?.omitted.issues).toBe(6);
+	expect(input?.focus.recent.activity.issueOpened).toBe(30);
 	expect(input?.coverage.alerts.status).toBe("unavailable");
+});
+it("focuses on two immutable weeks while retaining older unresolved issues and separate cadence periods", async () => {
+	const { raw, env, ids } = await setup();
+	const event = (
+		id: string,
+		createdAt: string,
+		state = "closed",
+		closedAt: string | null = null,
+	) => ({
+		id,
+		title: id,
+		url: "",
+		at: createdAt,
+		createdAt,
+		state,
+		closedAt,
+		mergedAt: null,
+		author: "owner",
+	});
+	const issues = [
+		event("old-security", "2026-07-01T00:00:00.000Z", "open"),
+		event("recent", "2026-09-10T00:00:00.000Z", "open"),
+		event("recent-resolution", "2026-07-01T00:00:00.000Z", "closed", "2026-09-14T00:00:00.000Z"),
+		event("historic", "2026-07-01T00:00:00.000Z", "closed", "2026-07-02T00:00:00.000Z"),
+	];
+	const commits = [
+		event("before", "2026-08-15T00:00:00.000Z"),
+		event("previous", "2026-08-25T00:00:00.000Z"),
+		event("boundary", "2026-09-01T22:00:00.000Z"),
+		event("recent", "2026-09-14T00:00:00.000Z"),
+		event("future", "2026-09-16T00:00:00.000Z"),
+	];
+	for (const [stream, items] of [
+		["issues", issues],
+		["commits", commits],
+	] as const)
+		await raw
+			.prepare("UPDATE factory_resources SET payload=? WHERE stream=?")
+			.bind(JSON.stringify({ runId: "review_run", items }), stream)
+			.run();
+	await executeAssessment(env, (await ids())[0] as string, () => at);
+	const source = vi.mocked(judgeRepository).mock.calls[0]?.[1];
+	expect(source?.window).toEqual(snap.window);
+	expect(source?.focus.recent).toMatchObject({
+		window: { since: "2026-09-01T22:00:00.000Z", until: at },
+		activity: { commits: 2, issueOpened: 1, issueClosed: 1 },
+	});
+	expect(source?.focus.previous).toMatchObject({
+		window: { since: "2026-08-18T22:00:00.000Z", until: "2026-09-01T22:00:00.000Z" },
+		activity: { commits: 1 },
+	});
+	expect(source?.events.issues.map((item) => item.id)).toEqual([
+		"issues:recent",
+		"issues:old-security",
+		"issues:recent-resolution",
+	]);
+	expect(source?.events.commits.map((item) => item.id)).toEqual([
+		"commits:recent",
+		"commits:boundary",
+	]);
+	expect(source?.excluded.issues).toBe(1);
+	expect(source?.omitted.issues).toBe(0);
+});
+it("does not invent earlier activity when the immutable source covers fewer than fourteen days", async () => {
+	const { raw, env, ids, repo } = await setup();
+	const since = "2026-09-14T00:00:00.000Z";
+	if (!repo.observation) throw new Error("Missing fixture observation");
+	repo.observation.window.since = since;
+	await raw.prepare("UPDATE factory_repo_versions SET payload=?").bind(JSON.stringify(repo)).run();
+	await executeAssessment(env, (await ids())[0] as string, () => at);
+	const source = vi.mocked(judgeRepository).mock.calls[0]?.[1];
+	expect(source?.focus.recent.window).toEqual({ since, until: at });
+	expect(source?.focus.previous.window).toEqual({ since, until: since });
+	expect(source?.focus.previous.activity.commits).toBe(0);
 });
 it("fails safely for missing credentials, sources and capacity without retrying provider calls", async () => {
 	for (const scenario of ["config", "source", "observation", "capacity", "budget"]) {

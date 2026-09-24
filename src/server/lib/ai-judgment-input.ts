@@ -21,7 +21,7 @@ function evidence(item: ReviewEvidence) {
 		...fields,
 		title: title.slice(0, 160),
 		...(body ? { body: body.slice(0, 400) } : {}),
-		excerpted: title.length > 160 || (body?.length ?? 0) > 400,
+		excerpted: item.excerpted === true || title.length > 160 || (body?.length ?? 0) > 400,
 	};
 }
 
@@ -39,6 +39,7 @@ export function judgmentInput(input: ReviewInput) {
 		version: input.version,
 		window: input.window,
 		sampledAt: input.sampledAt,
+		focus: input.focus,
 		metrics: {
 			...Object.fromEntries(
 				Object.entries(input.metrics).filter(([, value]) => typeof value === "number"),
@@ -56,6 +57,7 @@ export function judgmentInput(input: ReviewInput) {
 			FACTORY_STREAMS.map((stream) => [stream, input.events[stream].map(evidence)]),
 		) as Record<FactoryStreamName, ReturnType<typeof evidence>[]>,
 		omitted: { ...input.omitted },
+		excluded: input.excluded,
 	};
 	// A UTF-8 byte budget leaves room below Jev's 32k state-plus-question token limit.
 	while (bytes(state) > STATE_BYTES) {

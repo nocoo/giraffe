@@ -1,13 +1,15 @@
 import { z } from "zod";
 import type {
 	FactoryCoverage,
+	FactoryDay,
 	FactoryEvent,
 	FactoryMetrics,
 	FactoryStreamName,
 	FactoryWindow,
 } from "./factory-types";
 
-export type ReviewEvidence = FactoryEvent & { body?: string; severity?: string | null };
+export type ReviewEvidence = FactoryEvent & { excerpted?: boolean };
+type ReviewPeriod = { window: FactoryWindow; activity: FactoryDay };
 
 export type ReviewInput = {
 	repository: {
@@ -24,9 +26,11 @@ export type ReviewInput = {
 	window: FactoryWindow;
 	sampledAt: string;
 	metrics: FactoryMetrics;
+	focus: { recent: ReviewPeriod; previous: ReviewPeriod };
 	coverage: Record<FactoryStreamName, FactoryCoverage>;
 	events: Record<FactoryStreamName, ReviewEvidence[]>;
 	omitted: Record<FactoryStreamName, number>;
+	excluded: Record<FactoryStreamName, number>;
 };
 
 export type JudgmentPriority = "urgent" | "review" | "routine" | "unknown";
@@ -39,7 +43,10 @@ export type Judgment = {
 	probabilities: Record<JudgmentPriority, number>;
 	uncertain: boolean;
 };
-export type JudgmentResult = { templateVersion: 1; model: string; judgments: Judgment[] };
+export type JudgmentResult = { model: string; judgments: Judgment[] } & (
+	| { templateVersion: 1 }
+	| { templateVersion: 2; focusWindow: FactoryWindow }
+);
 
 const text = z.string().trim().min(1).max(4000);
 const evidenceIds = z.array(z.string().min(1).max(256)).max(40);

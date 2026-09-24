@@ -2,7 +2,7 @@ import { APITimeoutError, APIError as TypeSafeApiError } from "@typesafe-ai/sdk"
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { JudgmentResult, RepositoryReport, ReviewInput } from "../../lib/ai-review";
 import type { AiRuntimeConfig } from "../../lib/ai-settings";
-import { emptyMetrics } from "../../lib/factory";
+import { emptyDay, emptyMetrics } from "../../lib/factory";
 import { FACTORY_STREAMS, type FactoryStreamName } from "../../lib/factory-types";
 import { judgeRepository, summarizeRepository, testAiConnection } from "./ai-models";
 
@@ -59,6 +59,16 @@ function input(): ReviewInput {
 		window: { since: "2026-06-26T00:00:00Z", until: "2026-09-24T00:00:00Z" },
 		sampledAt: "2026-09-24T00:00:00Z",
 		metrics: emptyMetrics(),
+		focus: {
+			recent: {
+				window: { since: "2026-09-10T00:00:00Z", until: "2026-09-24T00:00:00Z" },
+				activity: emptyDay(),
+			},
+			previous: {
+				window: { since: "2026-08-27T00:00:00Z", until: "2026-09-10T00:00:00Z" },
+				activity: emptyDay(),
+			},
+		},
 		coverage: streamRecord(() => ({
 			status: "complete" as const,
 			pages: 1,
@@ -81,6 +91,7 @@ function input(): ReviewInput {
 			},
 		]),
 		omitted: streamRecord(() => 0),
+		excluded: streamRecord(() => 0),
 	};
 }
 
@@ -161,6 +172,25 @@ describe("AI connection tests", () => {
 });
 
 describe("Jev repository judgments", () => {
+	it("judges security from active Issues with bot evidence as a supplement in the recent focus window", async () => {
+		const source = input();
+		source.coverage.alerts.status = "unavailable";
+		source.events.alerts = [];
+		const result = await judgeRepository(config, source);
+		expect(result).toMatchObject({ templateVersion: 2, focusWindow: source.focus.recent.window });
+		expect(result.judgments.find((item) => item.id === "security_urgency")).toMatchObject({
+			evidenceIds: ["issues:1"],
+			uncertain: true,
+		});
+		expect(mocks.systemOne.mock.calls[0]?.[0].state.focus).toEqual(source.focus);
+		const questions = JSON.stringify(mocks.systemOne.mock.calls[0]?.[0].questions);
+		expect(questions).toContain("Active Issues are the primary security evidence");
+		expect(questions).toContain("last 14 days");
+		expect(questions).toContain("Older unresolved");
+		source.coverage.issues.status = "unavailable";
+		source.coverage.alerts.status = "complete";
+		expect((await judgeRepository(config, source)).judgments[0]?.uncertain).toBe(true);
+	});
 	it("fails before contacting the provider when metadata alone exceeds the budget", async () => {
 		const source = input();
 		source.repository.name = "x".repeat(24_000);
@@ -215,6 +245,22 @@ describe("Jev repository judgments", () => {
 		const result = await judgeRepository(config, source);
 		expect(result.judgments.find((item) => item.id === "external_pr_review")?.uncertain).toBe(true);
 	});
+	it("does not treat an upstream excerpt as complete evidence even when its text is short", async () => {
+		const source = input();
+		const item = source.events.issues[0];
+		if (!item) throw new Error("Missing fixture evidence");
+		item.excerpted = true;
+		expect((await judgeRepository(config, source)).judgments[0]?.uncertain).toBe(true);
+		const safe = {
+			...report(),
+			security: { ...report().security, status: "healthy" },
+			limitations: ["Issue evidence was excerpted"],
+		};
+		mocks.generateText.mockResolvedValue({ text: JSON.stringify(safe) });
+		await expect(summarizeRepository(config, source, judgments)).rejects.toMatchObject({
+			code: "ai_invalid_report",
+		});
+	});
 	it.each([
 		[400, { detail: { error_type: "max_tokens_exceeded" } }, "ai_input_too_large"],
 		[400, { detail: "secret" }, "ai_request_rejected"],
@@ -240,7 +286,7 @@ describe("Jev repository judgments", () => {
 			}));
 		}
 		const result = await judgeRepository({ ...config, kind: "judgment" }, source);
-		expect(result.templateVersion).toBe(1);
+		expect(result.templateVersion).toBe(2);
 		expect(result.judgments).toHaveLength(24);
 		expect(result.judgments.every((item) => !item.uncertain)).toBe(true);
 		expect(mocks.systemOne).toHaveBeenCalledTimes(1);
@@ -302,12 +348,82 @@ describe("Jev repository judgments", () => {
 });
 
 describe("structured repository summary", () => {
+	it("requires active Issue coverage even when the security bot reports no findings", async () => {
+		const source = input();
+		source.coverage.issues.status = "unavailable";
+		source.events.issues = [];
+		source.events.alerts = [];
+		const safe = { status: "healthy", summary: "No bot alerts", evidenceIds: [] };
+		const result = {
+			...report(),
+			security: safe,
+			issues: { ...safe, status: "unknown" },
+			actions: [],
+			limitations: ["Issues unavailable"],
+		};
+		mocks.generateText.mockResolvedValue({ text: JSON.stringify(result) });
+		await expect(summarizeRepository(config, source, judgments)).rejects.toMatchObject({
+			code: "ai_invalid_report",
+		});
+	});
+	it("accepts Issue-led security findings when optional bot coverage is unavailable", async () => {
+		const source = input();
+		source.coverage.alerts.status = "unavailable";
+		source.events.alerts = [];
+		const result = {
+			...report(),
+			overall: "urgent",
+			security: {
+				status: "urgent",
+				summary: "An active Issue reports exposed credentials; verify impact immediately.",
+				evidenceIds: ["issues:1"],
+			},
+			actions: [
+				{
+					priority: "now",
+					title: "Investigate exposed credentials",
+					reason: "Unresolved incident report",
+					evidenceIds: ["issues:1"],
+				},
+			],
+			limitations: ["Optional security bot is unavailable; exploitability is not verified."],
+		};
+		mocks.generateText.mockResolvedValue({ text: JSON.stringify(result) });
+		await expect(summarizeRepository(config, source, judgments)).resolves.toMatchObject({
+			security: { status: "urgent" },
+		});
+	});
+	it("rejects security findings that cite only unrelated delivery evidence", async () => {
+		mocks.generateText.mockResolvedValue({
+			text: JSON.stringify({
+				...report(),
+				security: { ...report().security, status: "urgent", evidenceIds: ["commits:1"] },
+			}),
+		});
+		await expect(summarizeRepository(config, input(), judgments)).rejects.toMatchObject({
+			code: "ai_invalid_report",
+		});
+	});
+	it("rejects an overall all-clear that contradicts a detected security risk", async () => {
+		mocks.generateText.mockResolvedValue({
+			text: JSON.stringify({
+				...report(),
+				overall: "healthy",
+				security: { ...report().security, status: "urgent" },
+			}),
+		});
+		await expect(summarizeRepository(config, input(), judgments)).rejects.toMatchObject({
+			code: "ai_invalid_report",
+		});
+	});
 	it("uses next-ai and a strict JSON schema with evidence and sampling boundaries", async () => {
 		await expect(summarizeRepository(config, input(), judgments)).resolves.toEqual(report());
 		const request = mocks.generateText.mock.calls[0]?.[0];
 		expect(request.system).toContain("JSON Schema");
 		expect(request.system).toContain("untrusted");
 		expect(request.system).toContain("ASCII");
+		expect(request.system).toContain("Active Issues are the primary source of security risks");
+		expect(request.system).toContain("last 14 days");
 		expect(request.prompt).toContain('"version":"run-1"');
 		expect(request.prompt).toContain('"judgments"');
 		expect(request.maxRetries).toBe(0);
@@ -382,6 +498,10 @@ describe("structured repository summary", () => {
 			...report(),
 			overall: "healthy",
 			security: { ...report().security, status: "healthy" },
+			pullRequests: { ...report().pullRequests, status: "healthy" },
+			issues: { ...report().issues, status: "healthy" },
+			delivery: { ...report().delivery, status: "healthy" },
+			actions: [],
 		};
 		mocks.generateText.mockResolvedValue({ text: JSON.stringify(healthy) });
 		await expect(summarizeRepository(config, input(), judgments)).resolves.toMatchObject({

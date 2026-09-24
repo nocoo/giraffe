@@ -1,5 +1,9 @@
 # Retrospective
 
+## 2026-09-24 — Security assessments overlooked active Issues
+
+The security judgment and report completeness check used only the optional alert stream. A complete, empty bot feed could therefore support a healthy security section even when Issue coverage was unavailable. The regression reproduced that unsupported all-clear. Security assessment now treats active Issues as its primary evidence and bot findings as a supplement; missing alerts cannot erase a reported Issue risk. The input also separates the latest fourteen days and the preceding comparison period from long-term totals, retains older unresolved work and distinguishes outside-scope exclusions from missing sampled evidence. Test the evidence required for each conclusion, including unavailable primary sources and positive findings when supplemental sources are absent.
+
 ## 2026-09-24 — Repository tabs collapsed their loading layout
 
 On the first visit to a repository tab, the page header replaced its two-line snapshot description with plain text until the selected snapshot arrived. That removed 30 pixels above the tab bar and restored them after loading. Cached tabs kept their timestamp and therefore appeared stable. Skeletons also returned `null` for their first 200 milliseconds, briefly reducing the active panel to zero height. Keep the header description and timestamp geometry mounted, hiding unavailable timestamps from both sight and assistive technology, and defer only skeleton visibility. Delayed-response browser regressions cover the first frame, skeleton reveal, a different tab-specific timestamp, and cached switching at desktop and mobile widths. Layout checks must include pending states, not only settled screenshots. The full browser suite caught an older assertion requiring timestamp DOM removal; that check now verifies visual and accessibility absence, followed by visibility when fresh data arrives.
