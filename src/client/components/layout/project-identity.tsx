@@ -1,6 +1,6 @@
 import { Link } from "@nocoo/basalt";
 import { Archive, BookOpen, Box, ExternalLink, Globe } from "lucide-react";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import type { ProjectIdentity } from "../../../lib/project-identity";
 import { CandyBadge } from "./candy-badge";
 import { useProjectIdentity } from "./use-project-identity";
@@ -114,47 +114,37 @@ export function ProjectLink({
 export function ProjectLinks({
 	project,
 	github,
+	compact = false,
 }: {
 	project: ProjectIdentity | null;
 	github?: string;
+	/** Table rows: icon-only links; archival state already has its own column. */
+	compact?: boolean;
 }) {
 	const destination = project?.github ?? github;
+	const links = [
+		destination ? { href: destination, label: "GitHub", icon: ExternalLink } : null,
+		project?.website ? { href: project.website, label: "访问站点", icon: Globe } : null,
+		project ? { href: project.url, label: "项目说明", icon: BookOpen } : null,
+	].filter((l) => l !== null);
 	return (
-		<span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs font-medium">
-			{destination ? (
+		<span
+			className={`inline-flex items-center text-xs font-medium ${compact ? "shrink-0 gap-1" : "flex-wrap gap-x-3 gap-y-1.5"}`}
+		>
+			{links.map(({ href, label, icon: Icon }) => (
 				<Link
-					href={destination}
+					key={label}
+					href={href}
 					target="_blank"
 					rel="noreferrer"
-					className="inline-flex items-center gap-1"
+					className={compact ? "giraffe-icon-link" : "inline-flex items-center gap-1"}
+					{...(compact ? { "aria-label": label, title: label } : {})}
 				>
-					<ExternalLink aria-hidden="true" className="size-3.5" strokeWidth={1.5} />
-					GitHub
+					<Icon aria-hidden="true" className="size-3.5" strokeWidth={1.5} />
+					{compact ? null : label}
 				</Link>
-			) : null}
-			{project?.website ? (
-				<Link
-					href={project.website}
-					target="_blank"
-					rel="noreferrer"
-					className="inline-flex items-center gap-1"
-				>
-					<Globe aria-hidden="true" className="size-3.5" strokeWidth={1.5} />
-					访问站点
-				</Link>
-			) : null}
-			{project ? (
-				<Link
-					href={project.url}
-					target="_blank"
-					rel="noreferrer"
-					className="inline-flex items-center gap-1"
-				>
-					<BookOpen aria-hidden="true" className="size-3.5" strokeWidth={1.5} />
-					项目说明
-				</Link>
-			) : null}
-			{project?.archived ? (
+			))}
+			{project?.archived && !compact ? (
 				<CandyBadge tone="gray" icon={Archive}>
 					项目已归档
 				</CandyBadge>
@@ -167,34 +157,68 @@ export function ProjectSummary({
 	repo,
 	description,
 	card = false,
+	badges,
 }: {
 	repo: string;
 	description: string | null;
 	card?: boolean;
+	/** Row state shown beside the name in table rows. */
+	badges?: ReactNode;
 }) {
 	const project = useProjectIdentity(repo);
 	const summary = project?.description || description;
-	return (
-		<div className="min-w-0 flex-1" data-project={repo}>
-			<Link
-				href={`/repos/${repo}`}
-				className={`font-semibold text-basalt-foreground hover:text-basalt-primary ${card ? "text-base" : "text-sm"}`}
-			>
-				<ProjectName repo={repo} project={project} showTitle size={card ? 48 : 32} />
-			</Link>
-			{summary ? (
-				<p
-					className={`mt-2 text-basalt-muted-foreground ${card ? "line-clamp-2 min-h-10 text-sm leading-5" : "line-clamp-1 text-xs"}`}
-					title={summary}
+	if (card)
+		return (
+			<div className="min-w-0 flex-1" data-project={repo}>
+				<Link
+					href={`/repos/${repo}`}
+					className="text-base font-semibold text-basalt-foreground hover:text-basalt-primary"
 				>
-					{summary}
-				</p>
-			) : null}
-			{project ? (
-				<div className="mt-2 flex flex-wrap items-center gap-2">
-					<ProjectLinks project={project} />
+					<ProjectName repo={repo} project={project} showTitle size={48} />
+				</Link>
+				{summary ? (
+					<p
+						className="mt-2 line-clamp-2 min-h-10 text-sm leading-5 text-basalt-muted-foreground"
+						title={summary}
+					>
+						{summary}
+					</p>
+				) : null}
+				{project ? (
+					<div className="mt-2 flex flex-wrap items-center gap-2">
+						<ProjectLinks project={project} />
+					</div>
+				) : null}
+			</div>
+		);
+	// Table rows: identity and state on line one; description and links on line two.
+	return (
+		<div className="giraffe-project-row" data-project={repo}>
+			<ProjectMark project={project} size={32} />
+			<div className="min-w-0">
+				<div className="giraffe-project-row-line">
+					<Link
+						href={`/repos/${repo}`}
+						className="min-w-0 truncate text-sm font-semibold text-basalt-foreground hover:text-basalt-primary"
+						title={project ? `${project.title} · ${project.description}` : repo}
+					>
+						{project ? project.title : repo}
+						{project ? (
+							<span className="ml-2 text-xs font-normal text-basalt-muted-foreground">{repo}</span>
+						) : null}
+					</Link>
+					{badges}
 				</div>
-			) : null}
+				<div className="giraffe-project-row-line text-xs leading-5">
+					<p
+						className="min-w-0 flex-1 truncate text-basalt-muted-foreground"
+						title={summary ?? undefined}
+					>
+						{summary}
+					</p>
+					{project ? <ProjectLinks project={project} compact /> : null}
+				</div>
+			</div>
 		</div>
 	);
 }

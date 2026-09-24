@@ -246,10 +246,10 @@ export function CiPage() {
 				<LayerCard>
 					<LayerCard.Well className="p-0">
 						<TableScroll label="工作流列表">
-							<Table className="min-w-[860px] [&_th]:whitespace-nowrap" data-testid="ci-list">
+							<Table className="giraffe-data-table min-w-[860px]" data-testid="ci-list">
 								<TableHeader>
 									<TableRow>
-										<TableHead>仓库 / 工作流</TableHead>
+										<TableHead data-grow>仓库 / 工作流</TableHead>
 										<TableHead>判定</TableHead>
 										<TableHead>最近 10 次 · 旧 → 新</TableHead>
 										<TableHead className={NUM_HEAD}>成功率</TableHead>
@@ -304,10 +304,10 @@ export function CiPage() {
 				<LayerCard>
 					<LayerCard.Well className="p-0">
 						<TableScroll label="发布列表">
-							<Table className="min-w-[720px] [&_th]:whitespace-nowrap" data-testid="release-list">
+							<Table className="giraffe-data-table min-w-[720px]" data-testid="release-list">
 								<TableHeader>
 									<TableRow>
-										<TableHead>仓库</TableHead>
+										<TableHead data-grow>仓库</TableHead>
 										<TableHead>最新版本</TableHead>
 										<TableHead>发布流水线</TableHead>
 										<TableHead className={NUM_HEAD}>距今</TableHead>

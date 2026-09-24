@@ -216,10 +216,10 @@ export function SettingsPage() {
 							<LayerCard.Empty title="还没有 GitHub 账号" description="在上方粘贴 classic PAT。" />
 						) : (
 							<TableScroll label="GitHub 账号列表">
-								<Table className="min-w-[680px] [&_th]:whitespace-nowrap">
+								<Table className="giraffe-data-table min-w-[680px]">
 									<TableHeader>
 										<TableRow>
-											<TableHead>账号</TableHead>
+											<TableHead data-grow>账号</TableHead>
 											<TableHead>令牌</TableHead>
 											<TableHead>权限范围</TableHead>
 											<TableHead>状态</TableHead>

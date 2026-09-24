@@ -405,11 +405,11 @@ export function ReposPage() {
 					<LayerCard>
 						<LayerCard.Well className="p-0">
 							<TableScroll label="仓库列表">
-								<Table className="min-w-[880px] [&_th]:whitespace-nowrap" data-testid="repo-list">
+								<Table className="giraffe-data-table min-w-[900px]" data-testid="repo-list">
 									<TableHeader>
 										<TableRow>
 											<TableHead>参与统计</TableHead>
-											<TableHead>
+											<TableHead data-grow>
 												<SortButton
 													label="仓库"
 													active={sort === "name"}
@@ -419,8 +419,7 @@ export function ReposPage() {
 											</TableHead>
 
 											<TableHead>语言</TableHead>
-											<TableHead>可见性</TableHead>
-											<TableHead>归档</TableHead>
+											<TableHead>状态</TableHead>
 											<TableHead className={NUM_HEAD}>
 												<SortButton
 													label="Stars"
@@ -448,29 +447,27 @@ export function ReposPage() {
 											return (
 												<TableRow key={row.name_with_owner}>
 													<TableCell>{statisticsSwitch(row)}</TableCell>
-													<TableCell className="min-w-64 max-w-sm">
+													<TableCell className="w-full min-w-72 max-w-0">
 														<ProjectSummary
 															repo={row.name_with_owner}
 															description={row.description}
+															badges={
+																row.is_fork ? <CandyBadge tone="teal">Fork</CandyBadge> : null
+															}
 														/>
-														<div className="mt-2 flex flex-wrap gap-1">
-															{row.is_fork ? <CandyBadge tone="teal">Fork</CandyBadge> : null}
-														</div>
 													</TableCell>
 													<TableCell>
 														<LanguageLabel name={row.primary_language} />
 													</TableCell>
 													<TableCell>
-														<CandyBadge tone={visibilityBadgeVariant(row.visibility)}>
-															{formatVisibility(row.visibility)}
-														</CandyBadge>
-													</TableCell>
-													<TableCell>
-														{row.is_archived ? (
-															<CandyBadge tone="orange">已归档</CandyBadge>
-														) : (
-															<span className="text-basalt-muted-foreground">—</span>
-														)}
+														<div className="flex items-center gap-1.5">
+															<CandyBadge tone={visibilityBadgeVariant(row.visibility)}>
+																{formatVisibility(row.visibility)}
+															</CandyBadge>
+															{row.is_archived ? (
+																<CandyBadge tone="orange">已归档</CandyBadge>
+															) : null}
+														</div>
 													</TableCell>
 													<TableCell className={NUM_CELL}>
 														{formatCount(row.stargazer_count)}
@@ -487,15 +484,18 @@ export function ReposPage() {
 														</div>
 													</TableCell>
 													<TableCell className={DATE_CELL}>
-														<time dateTime={row.pushed_at ?? undefined}>
-															{formatDate(row.pushed_at)}
-														</time>
-														<div className="mt-2 flex justify-end">
+														<div className="flex items-center justify-end gap-2">
 															<Meter
 																filled={freshnessFilled(days)}
 																tone={freshnessTone(days)}
 																label={`${row.name_with_owner} activity`}
 															/>
+															<time
+																dateTime={row.pushed_at ?? undefined}
+																title={formatDate(row.pushed_at)}
+															>
+																{formatDate(row.pushed_at).slice(0, 10)}
+															</time>
 														</div>
 													</TableCell>
 													{health.size > 0 ? (

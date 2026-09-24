@@ -60,8 +60,7 @@ test("settings PAT, unified refresh, repo list, and repo detail", async ({ page 
 	const list = page.getByTestId("repo-list");
 	await expect(list).toBeVisible();
 	await expect(list.getByText("octocat/hello-world")).toBeVisible();
-	await expect(list.getByRole("columnheader", { name: "可见性", exact: true })).toBeVisible();
-	await expect(list.getByRole("columnheader", { name: "归档", exact: true })).toBeVisible();
+	await expect(list.getByRole("columnheader", { name: "状态", exact: true })).toBeVisible();
 	const toggle = page.getByRole("switch", { name: "octocat/hello-world 参与统计", exact: true });
 	await expect(toggle).toBeChecked();
 	await toggle.click();

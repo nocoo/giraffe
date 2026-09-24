@@ -235,10 +235,10 @@ export function AlertsPage() {
 					<LayerCard>
 						<LayerCard.Well className="p-0">
 							<TableScroll label="安全告警列表">
-								<Table className="min-w-[680px] [&_th]:whitespace-nowrap" data-testid="alert-list">
+								<Table className="giraffe-data-table min-w-[680px]" data-testid="alert-list">
 									<TableHeader>
 										<TableRow>
-											<TableHead>告警 / 仓库</TableHead>
+											<TableHead data-grow>告警 / 仓库</TableHead>
 											<TableHead>来源</TableHead>
 											<TableHead>级别</TableHead>
 										</TableRow>
@@ -251,7 +251,7 @@ export function AlertsPage() {
 														href={row.url}
 														target="_blank"
 														rel="noreferrer"
-														className="font-medium text-basalt-foreground [overflow-wrap:anywhere] hover:text-basalt-primary"
+														className="font-medium text-basalt-foreground giraffe-wrap [overflow-wrap:anywhere] hover:text-basalt-primary"
 													>
 														{row.summary}
 													</Link>

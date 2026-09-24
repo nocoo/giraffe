@@ -531,3 +531,17 @@ a.giraffe-health-tile:hover { background:color-mix(in srgb,var(--tile) 36%,trans
 .giraffe-findings [data-tone=amber] { --dot:var(--color-giraffe-yellow); }
 .giraffe-findings [data-tone=blue] { --dot:hsl(var(--basalt-accent-1)); }
 .giraffe-findings [data-tone=gray] { --dot:var(--color-basalt-muted-foreground); }
+.giraffe-project-row { display:grid;grid-template-columns:32px minmax(0,1fr);gap:10px;align-items:start;min-width:0; }
+/* Dense data tables: one visual row per record, centered cells, header labels never wrap. */
+.giraffe-data-table th { white-space:nowrap; }
+.giraffe-data-table td { vertical-align:middle;padding-block:10px; }
+.giraffe-data-table tbody tr:hover td { background:color-mix(in srgb,var(--color-basalt-foreground) 3%,transparent); }
+.giraffe-data-table tbody tr+tr td { border-top:1px solid color-mix(in srgb,var(--color-basalt-border) 60%,transparent); }
+.giraffe-project-row-line { display:flex;align-items:center;gap:8px 12px;min-width:0; }
+a.giraffe-icon-link { display:inline-flex;align-items:center;justify-content:center;width:1.5rem;height:1.5rem;border-radius:6px;color:var(--color-basalt-muted-foreground); }
+a.giraffe-icon-link:hover { color:var(--color-basalt-primary);background:color-mix(in srgb,var(--color-basalt-primary) 10%,transparent); }
+/* Columns other than the primary text column shrink to their content. */
+.giraffe-data-table th:not([data-grow]) { width:1px; }
+.giraffe-data-table td:not(:has(.giraffe-wrap)) { white-space:nowrap; }
+.giraffe-data-table td:has(.giraffe-wrap) { white-space:normal; }
+.giraffe-data-table th[data-grow] { width:100%; }

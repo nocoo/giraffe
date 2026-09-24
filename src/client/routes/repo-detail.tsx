@@ -579,10 +579,10 @@ export function RepoDetailPage() {
 								</ChartBrick>
 							) : null}
 							<TabWell flush>
-								<Table className="min-w-[680px] [&_th]:whitespace-nowrap">
+								<Table className="giraffe-data-table min-w-[680px]">
 									<TableHeader>
 										<TableRow>
-											<TableHead>名称</TableHead>
+											<TableHead data-grow>名称</TableHead>
 											<TableHead>状态</TableHead>
 											<TableHead>结论</TableHead>
 											<TableHead>事件</TableHead>
@@ -666,10 +666,10 @@ export function RepoDetailPage() {
 								</ChartBrick>
 							) : null}
 							<TabWell flush>
-								<Table className="min-w-[680px] [&_th]:whitespace-nowrap">
+								<Table className="giraffe-data-table min-w-[680px]">
 									<TableHeader>
 										<TableRow>
-											<TableHead>标签</TableHead>
+											<TableHead data-grow>标签</TableHead>
 											<TableHead className={NUM_HEAD}>时间</TableHead>
 											<TableHead>预发布</TableHead>
 										</TableRow>
@@ -731,10 +731,10 @@ export function RepoDetailPage() {
 						</TabWell>
 					) : issues ? (
 						<TabWell flush>
-							<Table className="min-w-[680px] [&_th]:whitespace-nowrap">
+							<Table className="giraffe-data-table min-w-[680px]">
 								<TableHeader>
 									<TableRow>
-										<TableHead>标题</TableHead>
+										<TableHead data-grow>标题</TableHead>
 										<TableHead>标签</TableHead>
 										<TableHead>作者</TableHead>
 										<TableHead className={NUM_HEAD}>评论</TableHead>
@@ -749,7 +749,7 @@ export function RepoDetailPage() {
 													href={row.url}
 													target="_blank"
 													rel="noreferrer"
-													className="font-medium text-basalt-foreground [overflow-wrap:anywhere] hover:text-basalt-primary"
+													className="font-medium text-basalt-foreground giraffe-wrap [overflow-wrap:anywhere] hover:text-basalt-primary"
 												>
 													{row.title}
 												</Link>
@@ -785,10 +785,10 @@ export function RepoDetailPage() {
 						</TabWell>
 					) : pulls ? (
 						<TabWell flush>
-							<Table className="min-w-[680px] [&_th]:whitespace-nowrap">
+							<Table className="giraffe-data-table min-w-[680px]">
 								<TableHeader>
 									<TableRow>
-										<TableHead>标题</TableHead>
+										<TableHead data-grow>标题</TableHead>
 										<TableHead>作者</TableHead>
 										<TableHead>状态</TableHead>
 										<TableHead className={NUM_HEAD}>变更</TableHead>
@@ -805,7 +805,7 @@ export function RepoDetailPage() {
 														href={row.url}
 														target="_blank"
 														rel="noreferrer"
-														className="font-medium text-basalt-foreground [overflow-wrap:anywhere] hover:text-basalt-primary"
+														className="font-medium text-basalt-foreground giraffe-wrap [overflow-wrap:anywhere] hover:text-basalt-primary"
 													>
 														{row.title}
 													</Link>
@@ -998,7 +998,7 @@ export function RepoDetailPage() {
 														href={row.html_url}
 														target="_blank"
 														rel="noreferrer"
-														className="font-medium text-basalt-foreground [overflow-wrap:anywhere] hover:text-basalt-primary"
+														className="font-medium text-basalt-foreground giraffe-wrap [overflow-wrap:anywhere] hover:text-basalt-primary"
 													>
 														{row.login}
 													</Link>

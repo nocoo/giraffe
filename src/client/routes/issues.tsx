@@ -236,10 +236,10 @@ export function IssuesPage() {
 							/>
 						) : (
 							<TableScroll label="Issue 列表">
-								<Table className="min-w-[760px] [&_th]:whitespace-nowrap" data-testid="issue-list">
+								<Table className="giraffe-data-table min-w-[760px]" data-testid="issue-list">
 									<TableHeader>
 										<TableRow>
-											<TableHead>
+											<TableHead data-grow>
 												<SortButton
 													label="Issue / 仓库"
 													active={sort === "repo"}
@@ -267,7 +267,7 @@ export function IssuesPage() {
 														href={row.url}
 														target="_blank"
 														rel="noreferrer"
-														className="font-medium text-basalt-foreground [overflow-wrap:anywhere] hover:text-basalt-primary"
+														className="font-medium text-basalt-foreground giraffe-wrap [overflow-wrap:anywhere] hover:text-basalt-primary"
 													>
 														{row.title}
 													</Link>

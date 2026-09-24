@@ -237,15 +237,12 @@ export function InboxPage() {
 						) : (
 							<>
 								<TableScroll label="通知列表">
-									<Table
-										className="min-w-[760px] [&_th]:whitespace-nowrap"
-										data-testid="inbox-list"
-									>
+									<Table className="giraffe-data-table min-w-[760px]" data-testid="inbox-list">
 										<TableHeader>
 											<TableRow>
 												<TableHead>状态</TableHead>
 
-												<TableHead>通知 / 仓库</TableHead>
+												<TableHead data-grow>通知 / 仓库</TableHead>
 												<TableHead>原因</TableHead>
 												<TableHead className={NUM_HEAD}>时间</TableHead>
 												<TableHead className="text-right">操作</TableHead>
@@ -268,7 +265,7 @@ export function InboxPage() {
 															href={row.url}
 															target="_blank"
 															rel="noreferrer"
-															className={`${row.unread ? "font-semibold" : "font-medium"} text-basalt-foreground [overflow-wrap:anywhere] hover:text-basalt-primary`}
+															className={`${row.unread ? "font-semibold" : "font-medium"} text-basalt-foreground giraffe-wrap [overflow-wrap:anywhere] hover:text-basalt-primary`}
 														>
 															{row.title}
 														</Link>
