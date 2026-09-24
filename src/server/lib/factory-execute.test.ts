@@ -62,6 +62,8 @@ beforeEach(() =>
 	vi.stubGlobal(
 		"fetch",
 		vi.fn(async (url: string, init: RequestInit) => {
+			if (url.includes("/dependabot/alerts") && new URL(url).searchParams.has("page"))
+				return Response.json({ message: "Numeric pagination is unsupported" }, { status: 400 });
 			const q = String(init?.body);
 			if (q.includes("affiliations:[OWNER, COLLABORATOR"))
 				return Response.json({
@@ -164,6 +166,13 @@ it("refreshes one repository without scanning or rewriting unrelated site data",
 	const run = await drive(env, later);
 	expect(run?.steps).toHaveLength(20);
 	expect(run?.status).toBe("completed");
+	expect(run?.steps.find((step) => step.kind === "alerts")).toMatchObject({
+		status: "success",
+		attempts: 1,
+		pages: 1,
+	});
+	expect(run?.steps.find((step) => step.kind === "commit")?.status).toBe("success");
+	expect(run?.steps.find((step) => step.kind === "assessment")?.error).toBe("ai_not_configured");
 	for (const [kind, payload] of originals)
 		expect(await readSnapshot(db, snap.account_id, kind)).toEqual(payload);
 	expect(await readDay(db, snap.account_id, now.slice(0, 10))).toEqual(daily);

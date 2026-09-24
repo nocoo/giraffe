@@ -235,6 +235,37 @@ describe("factory incremental collection", () => {
 		});
 		await invoke(ready(), client);
 	});
+	it("resumes Dependabot cursor pages without unsupported numeric pagination", async () => {
+		const state = ready("alerts");
+		const store = memoryStore();
+		const gh = github((url) => {
+			const params = new URL(url).searchParams;
+			if (params.has("page"))
+				return Response.json({ message: "Numeric pagination is unsupported" }, { status: 400 });
+			expect(params.get("state")).toBe("open");
+			expect(params.get("per_page")).toBe("100");
+			const after = params.get("after");
+			expect([null, "cursor+2="]).toContain(after);
+			return Response.json(
+				[{ ...rawEvent(after ? 2 : 1), security_advisory: { severity: "high" } }],
+				{
+					headers: after
+						? {}
+						: {
+								link: '<https://api.github.com/repositories/123/dependabot/alerts?after=cursor%2B2%3D>; rel="next"',
+							},
+				},
+			);
+		});
+		await invoke(state, gh, store);
+		expect(state.repos[0]?.coverage.alerts.status).toBe("partial");
+		await invoke(structuredClone(state), gh, store);
+		const saved = await store.read(streamKey("nocoo/app", "alerts"));
+		expect(saved?.coverage).toMatchObject({ status: "complete", pages: 2, observed: 2 });
+		expect(saved?.items.map((item) => item.id)).toEqual(["1", "2"]);
+		expect(saved?.next).toBeNull();
+		expect(gh.count).toBe(2);
+	});
 	it("pins dependency manifests, preserves source locations, and handles absent/invalid files", async () => {
 		const state = ready("dependencies");
 		const gh = github((_url, init) => {
@@ -341,6 +372,26 @@ it("accepts GitHub numeric repository links without changing repository or sampl
 			"/repos/nocoo/app/commits?page=1",
 		),
 	).toThrow();
+});
+
+it("accepts only advancing same-resource Dependabot cursors and preserves filters", () => {
+	const current = "/repos/nocoo/app/dependabot/alerts?state=open&per_page=100&after=first";
+	expect(
+		factoryNext(
+			'<https://api.github.com/repos/nocoo/app/dependabot/alerts?state=dismissed&after=second>; rel="next"',
+			current,
+		),
+	).toBe("/repos/nocoo/app/dependabot/alerts?state=open&per_page=100&after=second");
+	for (const url of [
+		"https://evil.test/repos/nocoo/app/dependabot/alerts?after=second",
+		"https://api.github.com/repos/other/app/dependabot/alerts?after=second",
+		"https://api.github.com/repos/nocoo/app/issues?after=second",
+		"https://api.github.com/repos/nocoo/app/dependabot/alerts?page=2",
+		"https://api.github.com/repos/nocoo/app/dependabot/alerts?before=first",
+		"https://api.github.com/repos/nocoo/app/dependabot/alerts?after=",
+		"https://api.github.com/repos/nocoo/app/dependabot/alerts?after=first",
+	])
+		expect(() => factoryNext(`<${url}>; rel="next"`, current)).toThrow();
 });
 
 it("prioritizes recently updated work when an oversized resource must be capped", async () => {

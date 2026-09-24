@@ -1,5 +1,9 @@
 # Retrospective
 
+## 2026-09-24 — Dependabot alerts require cursor pagination
+
+Single-repository refresh repeatedly stopped at security alerts because the collector sent `page=1` to the Dependabot REST endpoint. GitHub rejects that parameter with HTTP 400; the generic error path then waited 30, 60 and 120 seconds before failing, skipping repository publication and AI analysis. Removing the parameter returned HTTP 200 in a read-only probe. The collector now consumes the endpoint's `after` cursor from Link headers while retaining the original repository and filters. Regression fixtures reject numeric pagination and cover checkpoint resumption, cursor validation and completion through repository saving and the AI checkpoint. Generic empty-success fixtures must not conceal endpoint-specific pagination contracts.
+
 ## 2026-09-24 — Refresh plan changes affect every progress denominator
 
 Adding the AI checkpoint changed both scoped and full refresh totals. The first targeted checks covered the new checkpoint, but the full browser suite still expected four phases, eighteen repository steps and twenty-five full-refresh steps. Update every fixed plan/count assertion across unit, HTTP and browser tests when changing the frozen plan. Keep those expectations explicit so they can catch an unintended expansion of refresh scope.

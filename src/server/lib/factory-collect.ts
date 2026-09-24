@@ -74,7 +74,7 @@ function source(repo: FactoryRepo, stream: FactoryStreamName, window: FactoryWin
 		case "releases":
 			return `${base}/releases?per_page=100&page=1`;
 		case "alerts":
-			return `${base}/dependabot/alerts?state=open&per_page=100&page=1`;
+			return `${base}/dependabot/alerts?state=open&per_page=100`;
 		case "dependencies":
 			return "https://api.github.com/graphql · pinned root manifests";
 	}
@@ -87,18 +87,25 @@ export function factoryNext(link: string | null, current: string): string | null
 	const before = new URL(current, "https://api.github.com");
 	const suffix = before.pathname.replace(/^\/repos\/[^/]+\/[^/]+/, "");
 	const canonical = /^\/repositories\/\d+(\/.*)$/.exec(url.pathname)?.[1];
-	const page = Number(url.searchParams.get("page"));
-	const currentPage = Number(before.searchParams.get("page") ?? "1");
 	if (
 		url.origin !== "https://api.github.com" ||
-		(url.pathname !== before.pathname && canonical !== suffix) ||
-		!Number.isInteger(page) ||
-		page !== currentPage + 1
+		(url.pathname !== before.pathname && canonical !== suffix)
 	)
 		throw new ApiError(502, "github_error", "invalid pagination");
 	// GitHub emits /repositories/:numericId links. Keep the requested named repository and
-	// original filters; consume only the sequential page number, never a new target or scope.
-	before.searchParams.set("page", String(page));
+	// original filters; consume only pagination, never a new target or scope.
+	if (suffix === "/dependabot/alerts") {
+		const after = url.searchParams.get("after");
+		if (!after || after === before.searchParams.get("after"))
+			throw new ApiError(502, "github_error", "invalid pagination");
+		before.searchParams.set("after", after);
+	} else {
+		const page = Number(url.searchParams.get("page"));
+		const currentPage = Number(before.searchParams.get("page") ?? "1");
+		if (!Number.isInteger(page) || page !== currentPage + 1)
+			throw new ApiError(502, "github_error", "invalid pagination");
+		before.searchParams.set("page", String(page));
+	}
 	return `${before.pathname}${before.search}`;
 }
 function rateFromData(s: FactorySnapshot, data: Record<string, unknown>) {
