@@ -153,7 +153,7 @@ async function expectMark(image: Locator, size: number) {
 	expect(bounds.image.right).toBeLessThanOrEqual((bounds.parent?.right ?? 0) + 1);
 }
 
-test.use({ deviceScaleFactor: 2 });
+test.use({ deviceScaleFactor: 2, trace: "retain-on-failure", screenshot: "only-on-failure" });
 
 test("list, grid and detail share project identity without replacing Giraffe branding or refetching", async ({
 	page,
@@ -209,7 +209,12 @@ test("project identity remains available before repository snapshots exist", asy
 	await expect(page.getByRole("heading", { name: `${hello.title} ${repository}` })).toBeVisible();
 	await expect(page.getByText(hello.description, { exact: true })).toBeVisible();
 	await expect(page.getByText("等待统一刷新", { exact: true })).toBeVisible();
-	await expectLinks(page.locator("main"), hello);
+	await expectLinks(
+		page.locator("header").filter({
+			has: page.getByRole("heading", { name: `${hello.title} ${repository}`, exact: true }),
+		}),
+		hello,
+	);
 	await expectMark(page.getByRole("heading", { level: 1 }).locator("img"), 48);
 });
 

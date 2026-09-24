@@ -73,3 +73,7 @@ The full browser suite also retained an assertion for the short repository name
 `tools`, while the integrated table intentionally displays `nocoo/tools`. Update
 existing identity assertions alongside the new scenarios, retaining the owner
 where the same repository name could belong to different accounts.
+The missing-snapshot check must scope links to the header with the exact project
+title: both the application header and the repository header contain a GitHub
+destination and a level-one heading. Retain browser traces for failed identity
+journeys so navigation failures preserve their original evidence.
