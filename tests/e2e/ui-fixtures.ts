@@ -107,6 +107,29 @@ export function createUiFixtures() {
 				opportunities: [],
 			})),
 		},
+		"/api/insights/assessments": {
+			...envelope,
+			configured: true,
+			items: [
+				{
+					repo: "octocat/basalt",
+					status: "complete",
+					current: true,
+					reportAt: fetchedAt,
+					overall: "urgent",
+					sections: {
+						security: "urgent",
+						pullRequests: "healthy",
+						issues: "attention",
+						delivery: "healthy",
+					},
+					trend: "steady",
+					actions: [{ priority: "now", title: "修复共享控件中的权限绕过" }],
+					flags: [{ id: "security_urgency", choice: "urgent", uncertain: false }],
+					error: null,
+				},
+			],
+		},
 		"/api/alerts": {
 			...envelope,
 			unavailable: false,

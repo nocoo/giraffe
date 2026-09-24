@@ -339,7 +339,7 @@ to another repository never changes the application's identity.
 | 路由 | 侧栏 | 图标（lucide） | 读 |
 |------|------|----------------|----|
 | `/factory` | 软件工厂 | `Factory` | `GET /api/factory`、`GET /api/factory/runs`；唯一刷新入口 |
-| `/insights` | Insights | `Activity` | `GET /api/insights`，并读已有 `issues` / `prs` 快照 |
+| `/insights` | Insights | `Activity` | `GET /api/insights`，并读已有 `issues` / `prs` / `ci` 与 `insights/assessments` |
 | `/` | 仓库 | `Box` | `GET /api/repos` |
 | `/issues` | Issues | `CircleDot` | `GET /api/issues` |
 | `/pulls` | Pull Requests | `GitPullRequest` | `GET /api/prs` |
@@ -373,7 +373,11 @@ Issues KPI：打开 Issues / 涉及仓库（`issueMetrics`）。PRs KPI：草稿
 
 ### 8.3 `/insights`
 
-总览组第三项。不重复仓库全表。用 `SectionRule` 分「工作量 / 审查与节奏 / 健康与活跃」。每区：最多四张 KPI（共享 `StatCard`，主题色 icon）+ 两张图卡（一卡一图，使用 `LayerCard.Header` 放标题与指标说明，`Body` 放图表）。
+总览组第二项。不重复仓库全表。首区「最值得关注的仓库」给出 Top 10 与跨仓发现，其后用 `SectionRule` 分「工作量 / 审查与节奏 / 健康与活跃」。
+
+Top 10 由 `viewmodels/focus.ts` 纯函数计算，读取已保存的 insights、issues、prs、`GET /api/ci` 与 `GET /api/insights/assessments`；CI 与 AI 缺失只缩小证据，不阻塞页面。每条加权原因都可读：AI 总评与 `now` 行动、Jev `urgent`/`review` 判断、AI 分域状态与交付放缓、默认分支持续失败或反复失败、发布流水线失败、高危告警与安全标签 Issue、外部贡献者 PR、待审查或停滞 PR、陈旧 Issue 积压、长期未推送但仍有待办。报告不再对应当前仓库版本时按 60% 计入并标「旧版」；低置信 Jev 判断降权。分数只用于排序，界面显示等级（优先处理 / 需要关注 / 持续观察）、主要方面、AI 总评、待办与推送天数，前三条原因可见，其余在提示中。跨仓发现汇总阻塞交付、高危告警、AI 优先项、依赖更新占比、新增 Issue 加速、Issue 集中度、外部 PR、长期未推送与 AI 覆盖缺口，只在证据达到阈值时出现。
+
+每区：最多四张 KPI（共享 `StatCard`，主题色 icon）+ 两张图卡（一卡一图，使用 `LayerCard.Header` 放标题与指标说明，`Body` 放图表）。
 
 图表由 ViewModel 从 insights + issues + prs 快照聚合。issues 快照缺失时 Issue 计数回退 `open_issue_count`；prs 缺失时 PR 为 0。空 issues 快照不当回退。Client 仍不算 health。`alerts_incomplete` 时页头 Badge「告警不完整」。GET 409 时 Empty，刷新走 §7。仍 409 仅当 repos 或 issues 不足；不循环自动刷。
 
@@ -456,7 +460,8 @@ export function breadcrumbsFor(pathname: string): { href: string; label: string 
 | `me` | 短路身份字段映射 |
 | `repos` | 搜索/排序/列表|网格；truncated 标记 |
 | `issues` / `pulls` | 过滤 |
-| `insights` | 按 health 分组 |
+| `insights` | 按 health 分组；健康地图单行说明 |
+| `focus` | Top 10 加权原因、旧版报告折算、可选来源缺失、跨仓发现阈值 |
 | `alerts` | unavailable |
 | `inbox` | 已读与 **read-all** 后 unread false（对返回体归约） |
 | `repo-detail` | 非法 owner 不请求；九个 tab 各绑定正确 GET path；forbidden traffic；unavailable security；languages 排序 |

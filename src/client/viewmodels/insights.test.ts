@@ -9,6 +9,7 @@ import {
 	type InsightRow,
 	loadInsights,
 	loadInsightsBoard,
+	pushAge,
 	sortInsights,
 } from "./insights";
 import type { IssueRow } from "./issues";
@@ -466,6 +467,14 @@ describe("health tiles", () => {
 		expect(tiles[1]?.reasons).toEqual(["2 个告警（含高危）"]);
 		expect(tiles[2]?.reasons).toEqual(["40 天未推送"]);
 		expect(tiles[4]?.reasons).toEqual(["25 个 open Issue"]);
-		expect(tiles[7]).toMatchObject({ short: "ok", reasons: [] });
+		expect(tiles[7]).toMatchObject({ short: "ok", reasons: [], caption: "1 天" });
+		expect(tiles.map((t) => t.caption).slice(0, 5)).toEqual([
+			"120 天",
+			"2 天 · 2 告警",
+			"40 天",
+			"3 天 · 30 Issue",
+			"3 天 · 25 Issue",
+		]);
+		expect([0, 400, 5082, 9999].map(pushAge)).toEqual(["今天", "1 年", "13 年", "无推送"]);
 	});
 });

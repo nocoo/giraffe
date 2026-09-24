@@ -18,6 +18,7 @@ import { chartColor } from "../lib/chart-theme";
 import { catchLoad } from "../lib/error-ui";
 import { formatCount } from "../lib/format";
 import { PAGE_DESCRIPTIONS } from "../lib/navigation";
+import { aiCoverage, focusFindings, focusRanking } from "../viewmodels/focus";
 import {
 	alertsIncomplete,
 	buildInsightsCharts,
@@ -25,6 +26,7 @@ import {
 	type InsightsBoard,
 	loadInsightsBoard,
 } from "../viewmodels/insights";
+import { FocusSection } from "./insights-focus";
 
 const ISSUE_PR_SERIES = [
 	{ key: "y" as const, label: "Issues", color: chartColor(0) },
@@ -85,6 +87,18 @@ export function InsightsPage() {
 		() => (board && !("missing" in board) ? healthTiles(board.insights.insights) : []),
 		[board],
 	);
+	const focus = useMemo(() => {
+		if (!board || "missing" in board) return null;
+		const src = {
+			rows: board.insights.insights,
+			issues: board.issues,
+			pulls: board.pulls,
+			ci: board.ci,
+			assessments: board.assessments,
+			fetchedAt: board.insights.fetched_at,
+		};
+		return { ranked: focusRanking(src), findings: focusFindings(src), coverage: aiCoverage(src) };
+	}, [board]);
 
 	if (board && "missing" in board) {
 		return (
@@ -99,7 +113,7 @@ export function InsightsPage() {
 		);
 	}
 
-	if (!board || !charts) {
+	if (!board || !charts || !focus) {
 		return (
 			<div className="space-y-8">
 				<PageHeader title="Insights" description={PAGE_DESCRIPTIONS["/insights"]} />
@@ -129,6 +143,7 @@ export function InsightsPage() {
 					</>
 				}
 			/>
+			<FocusSection {...focus} />
 			<SectionRule title={<IconLabel icon={Layers3}>工作量</IconLabel>}>
 				<div className="space-y-3" data-testid="insight-metrics">
 					<p className="giraffe-stat-inline">
@@ -321,10 +336,7 @@ function HealthMap({ tiles }: { tiles: ReturnType<typeof healthTiles> }) {
 					>
 						<Link className="giraffe-health-tile" href={`/repos/${t.name}`}>
 							<ProjectLabel repo={t.name} short />
-							<small>
-								{t.days === 0 ? "今天" : `${t.days} 天`}
-								{t.reasons.length ? ` · ${t.reasons[0]}` : ""}
-							</small>
+							<small>{t.caption}</small>
 							<span className="sr-only">{detail}</span>
 						</Link>
 					</li>

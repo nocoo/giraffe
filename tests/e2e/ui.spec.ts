@@ -136,6 +136,25 @@ for (const [path, label, list] of [
 	});
 }
 
+test("insights ranks repositories to watch with AI, CI and alert reasons", async ({ page }) => {
+	await page.goto("/insights");
+	const focus = page.getByRole("list", { name: "Top 10 关注仓库" });
+	await expect(focus).toBeVisible();
+	const first = focus.locator(":scope > li").first();
+	await expect(first.getByRole("link", { name: /octocat\/basalt/ })).toHaveAttribute(
+		"href",
+		"/repos/octocat/basalt",
+	);
+	await expect(first).toContainText("优先处理");
+	await expect(first).toContainText("AI 总评：优先处理");
+	await expect(first).toContainText("立即：修复共享控件中的权限绕过");
+	await expect(focus).toContainText("Release 连续 2 次失败");
+	await expect(page.getByRole("list", { name: "跨仓发现" })).toContainText(
+		"AI 将 1 个仓库评为优先处理",
+	);
+	await expect(page.getByTestId("insight-focus")).toBeVisible();
+});
+
 test("marking a notification shows progress and applies the returned unread state", async ({
 	page,
 }) => {

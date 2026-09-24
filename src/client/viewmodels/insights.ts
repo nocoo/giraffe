@@ -1,3 +1,4 @@
+import { type FocusSources, loadFocusSources } from "./focus";
 import type { IssueRow } from "./issues";
 import { loadIssues } from "./issues";
 import type { PullRow } from "./pulls";
@@ -69,6 +70,8 @@ export type InsightsBoard = {
 	insights: InsightsSnapshot;
 	issues: IssueRow[] | null;
 	pulls: PullRow[] | null;
+	ci: FocusSources["ci"];
+	assessments: FocusSources["assessments"];
 };
 
 const WORKLOAD_LIMIT = 8;
@@ -375,10 +378,11 @@ export async function loadInsights(): Promise<InsightsSnapshot | { missing: true
 }
 
 export async function loadInsightsBoard(): Promise<InsightsBoard | { missing: true }> {
-	const [insights, issuesSnap, pullsSnap] = await Promise.all([
+	const [insights, issuesSnap, pullsSnap, focus] = await Promise.all([
 		loadInsights(),
 		loadIssues(),
 		loadPulls(),
+		loadFocusSources(),
 	]);
 	if ("missing" in insights) {
 		return insights;
@@ -387,22 +391,35 @@ export async function loadInsightsBoard(): Promise<InsightsBoard | { missing: tr
 		insights,
 		issues: "missing" in issuesSnap ? null : issuesSnap.issues,
 		pulls: "missing" in pullsSnap ? null : pullsSnap.pull_requests,
+		...focus,
 	};
 }
 
 const HEALTH_RANK: Record<Health, number> = { risky: 0, watch: 1, strong: 2 };
+export function pushAge(days: number): string {
+	if (days >= 9999) return "无推送";
+	if (days >= 365) return `${Math.floor(days / 365)} 年`;
+	return days === 0 ? "今天" : `${days} 天`;
+}
 /** Every repository as one tile, riskiest first, with the rules that put it there. */
 export function healthTiles(rows: InsightRow[]) {
 	return rows
 		.map((row) => {
 			const reasons: string[] = [];
+			const extra: string[] = [];
 			if (row.days_since_push >= 30) reasons.push(`${row.days_since_push} 天未推送`);
 			if (row.alerts.length) {
 				const high = row.alerts.some((a) => a.severity === "high" || a.severity === "critical");
 				reasons.push(`${row.alerts.length} 个告警${high ? "（含高危）" : ""}`);
+				extra.push(`${row.alerts.length} 告警`);
 			}
-			if (row.open_issue_count >= 20) reasons.push(`${row.open_issue_count} 个 open Issue`);
+			if (row.open_issue_count >= 20) {
+				reasons.push(`${row.open_issue_count} 个 open Issue`);
+				extra.push(`${row.open_issue_count} Issue`);
+			}
 			return {
+				// The tile already shows push age, so the caption adds only the next rule, kept to one line.
+				caption: [pushAge(row.days_since_push), ...extra.slice(0, 1)].join(" · "),
 				name: row.name_with_owner,
 				short: row.name_with_owner.slice(row.name_with_owner.lastIndexOf("/") + 1),
 				health: row.health,

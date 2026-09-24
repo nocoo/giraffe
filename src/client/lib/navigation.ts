@@ -37,7 +37,7 @@ export const PAGE_DESCRIPTIONS = {
 	"/factory": "可追溯的软件工厂流量与交付",
 	"/issues": "跨仓打开的 Issue",
 	"/pulls": "跨仓打开的 Pull Request",
-	"/insights": "跨仓 Issue / PR 分布与仓库健康",
+	"/insights": "最值得关注的仓库、跨仓发现与健康分布",
 	"/ci": "各仓库 CI 与发布状态，区分连续失败与偶发失败",
 	"/alerts": "Dependabot 与 code scanning",
 	"/inbox": "GitHub 通知收件箱",
