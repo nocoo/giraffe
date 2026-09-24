@@ -57,3 +57,14 @@ Adding two independent AI settings forms exposed browser checks that selected ev
 ## 2026-09-24 — Progress updates entered the user-input channel
 
 During assessment verification, two informational updates were mistakenly sent through the user-input tool, producing unnecessary input boxes. The task needed no user decision. Keep progress in commentary and reserve input tools for a concrete missing answer; after a mistaken input request, acknowledge it in commentary rather than issuing another input request.
+
+## 2026-09-24 — Verify external lookups in the Worker runtime
+
+The new Hexly lookup passed mocked Node tests and a direct Bun request, but the
+same request failed immediately in the daily local Worker. Changing only
+`redirect: "error"` to `redirect: "manual"` made the real Rio request succeed.
+The local runtime did not behave like the Node fetch mock despite the accepted
+TypeScript type. The client now handles non-success redirects explicitly, and
+real local HTTP tests exercise the full Worker lookup against a loopback stub.
+For future outbound integrations, verify one real local Worker request early;
+typechecking and mocked fetch results do not establish runtime compatibility.

@@ -20,6 +20,7 @@ import type {
 	StepStatus,
 } from "../../lib/factory-run";
 import { SearchField } from "../components/layout/collection-chrome";
+import { ProjectLabel } from "../components/layout/project-identity";
 import { INLINE_SEGMENT } from "../components/layout/segment";
 import { formatUtc } from "../viewmodels/factory";
 import {
@@ -338,7 +339,9 @@ export function FactoryRunDetails({
 								<summary>
 									<ChevronRight className="factory-disclosure" aria-hidden="true" />
 									<span className="factory-queue-repo">
-										<strong>{row.repo}</strong>
+										<strong>
+											<ProjectLabel repo={row.repo} />
+										</strong>
 										<small>{row.label}</small>
 									</span>
 									<span

@@ -4,6 +4,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { hexlyProjectFixture } from "../tests/fixtures/project-identity";
 import { factoryGraphqlStub } from "./factory-stub";
 import { hasApiRoutes } from "./has-api-routes";
 
@@ -172,6 +173,7 @@ async function suite(name: "A" | "B"): Promise<void> {
 		"TOKEN_ENCRYPTION_KEY_CURRENT=1",
 		`TOKEN_ENCRYPTION_KEY_V1=${ZERO_KEY}`,
 		"GITHUB_API_BASE=http://127.0.0.1:17046",
+		"HEXLY_API_BASE=http://127.0.0.1:17046/hexly",
 	];
 	if (name === "A") {
 		lines.unshift("ENVIRONMENT=development");
@@ -282,6 +284,13 @@ let githubHits = 0;
 await assertPortFree(17046);
 const github = await listen(17046, (req, res) => {
 	const url = new URL(req.url ?? "/", "http://127.0.0.1:17046");
+	if (url.pathname.startsWith("/hexly/")) {
+		if (req.headers.authorization) return sendJson(res, 403, {});
+		if (url.pathname === "/hexly/team/app.web-kit") return sendJson(res, 200, hexlyProjectFixture);
+		if (url.pathname === "/hexly/team/unavailable")
+			return sendJson(res, 503, { message: "upstream diagnostics" });
+		return sendJson(res, 404, {});
+	}
 	if (url.pathname === "/_count") {
 		res.end(String(githubHits));
 		return;

@@ -190,6 +190,7 @@ async function stopWrangler(wrangler: ChildProcess): Promise<void> {
 await assertPortFree(githubPort);
 const github = await listen(githubPort, (req, res) => {
 	const url = new URL(req.url ?? "/", `http://127.0.0.1:${githubPort}`);
+	if (url.pathname.startsWith("/hexly/")) return sendJson(res, 404, {});
 	void (async () => {
 		const auth = req.headers.authorization ?? "";
 		if (url.pathname === "/user") {
@@ -332,6 +333,7 @@ try {
 			"TOKEN_ENCRYPTION_KEY_CURRENT=1",
 			`TOKEN_ENCRYPTION_KEY_V1=${ZERO_KEY}`,
 			`GITHUB_API_BASE=http://127.0.0.1:${githubPort}`,
+			`HEXLY_API_BASE=http://127.0.0.1:${githubPort}/hexly`,
 			"",
 		].join("\n"),
 	);

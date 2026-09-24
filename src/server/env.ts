@@ -12,6 +12,7 @@ export interface Env extends CloudflareBindings {
 	CF_ACCESS_TEAM_DOMAIN?: string;
 	CF_ACCESS_AUD?: string;
 	GITHUB_API_BASE?: string;
+	HEXLY_API_BASE?: string;
 	ACCESS_JWKS_URL?: string;
 }
 

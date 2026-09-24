@@ -12,6 +12,7 @@ import { SnapshotDescription } from "../components/layout/collection-chrome";
 import { DonutChart } from "../components/layout/donut-chart";
 import { IconLabel } from "../components/layout/icon-label";
 import { InsightsSkeleton } from "../components/layout/page-skeleton";
+import { ProjectLabel } from "../components/layout/project-identity";
 import { SnapshotPending } from "../components/layout/snapshot-pending";
 import { chartColor } from "../lib/chart-theme";
 import { catchLoad } from "../lib/error-ui";
@@ -319,7 +320,7 @@ function HealthMap({ tiles }: { tiles: ReturnType<typeof healthTiles> }) {
 						style={{ animationDelay: `${Math.min(i, 40) * 12}ms` }}
 					>
 						<Link className="giraffe-health-tile" href={`/repos/${t.name}`}>
-							<span>{t.short}</span>
+							<ProjectLabel repo={t.name} short />
 							<small>
 								{t.days === 0 ? "今天" : `${t.days} 天`}
 								{t.reasons.length ? ` · ${t.reasons[0]}` : ""}

@@ -18,6 +18,7 @@ import { getFactoryRuns, postFactoryControl, postFactoryRun } from "./routes/fac
 import { liveResponse } from "./routes/live";
 import { getMe } from "./routes/me";
 import { postRead, postReadAll } from "./routes/notifications";
+import { getProjectIdentity } from "./routes/project-identity";
 import { postRefresh } from "./routes/refresh";
 import { getRepoAssessment } from "./routes/repo-assessment";
 import { repoGet, setRepoStatistics } from "./routes/repos";
@@ -70,6 +71,8 @@ export function createApp(): Hono<{ Bindings: Env; Variables: AppVars }> {
 	onGet(app, "/api/live", (c) => liveResponse(c.env, c.get("db")));
 	allow(app, "/api/me", ["GET"]);
 	onGet(app, "/api/me", (c) => getMe(c));
+	allow(app, "/api/projects/:owner/:repo", ["GET"]);
+	onGet(app, "/api/projects/:owner/:repo", getProjectIdentity);
 	allow(app, "/api/accounts", ["GET", "POST"]);
 	onGet(app, "/api/accounts", (c) => getAccounts(c));
 	app.post("/api/accounts", (c) => postAccount(c));

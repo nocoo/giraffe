@@ -47,6 +47,8 @@ import { NAV_GROUPS, NAV_ITEMS, paletteItems } from "../../lib/navigation";
 import { displayName, loadMe, type MeIdentity } from "../../viewmodels/me";
 import { cachedRepoRows } from "../../viewmodels/repos";
 import { BrandMark } from "./mark";
+import { ProjectLabel } from "./project-identity";
+import { useProjectIdentity } from "./use-project-identity";
 
 const ICONS: Record<string, LucideIcon> = {
 	Factory,
@@ -80,6 +82,7 @@ function commandSearchMatches(value: string, query: string) {
 }
 
 export function AppSidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
+	const project = useProjectIdentity("nocoo/giraffe");
 	const { pathname } = useLocation();
 	const navigate = useNavigate();
 	const [searchOpen, setSearchOpen] = useState(false);
@@ -205,7 +208,7 @@ export function AppSidebar({ collapsed, onToggle }: { collapsed: boolean; onTogg
 							<div className="flex min-w-0 items-center gap-3 pl-3">
 								<BrandMark />
 								<span className="truncate text-lg font-semibold text-basalt-foreground md:text-xl">
-									Giraffe
+									{project?.title ?? "Giraffe"}
 								</span>
 								<span className="shrink-0 rounded-md bg-basalt-secondary px-1.5 py-0.5 font-mono text-xs leading-none font-medium text-basalt-muted-foreground">
 									v{APP_VERSION}
@@ -281,8 +284,7 @@ export function AppSidebar({ collapsed, onToggle }: { collapsed: boolean; onTogg
 									onSelect={() => handleSelect(item.href)}
 									className="cursor-pointer gap-3"
 								>
-									<NavIcon name={item.icon} className="h-4 w-4 text-basalt-muted-foreground" />
-									<span>{item.label}</span>
+									<ProjectLabel repo={item.label} />
 								</CommandItem>
 							))}
 						</CommandGroup>

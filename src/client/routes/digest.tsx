@@ -1,4 +1,4 @@
-import { Link, toast } from "@nocoo/basalt";
+import { toast } from "@nocoo/basalt";
 import {
 	ANIMATION_PROPS,
 	cartesianAxisProps,
@@ -33,6 +33,7 @@ import {
 import { IconLabel } from "../components/layout/icon-label";
 import { Kpi, KpiRow } from "../components/layout/kpi";
 import { TableSkeleton } from "../components/layout/page-skeleton";
+import { ProjectLink } from "../components/layout/project-identity";
 import { SnapshotPending } from "../components/layout/snapshot-pending";
 import { FLOW_COLORS } from "../lib/chart-theme";
 import { catchLoad } from "../lib/error-ui";
@@ -205,7 +206,7 @@ export function DigestPage() {
 										{listed.map((row) => (
 											<TableRow key={row.name_with_owner}>
 												<TableCell>
-													<Link href={`/repos/${row.name_with_owner}`}>{row.name_with_owner}</Link>
+													<ProjectLink repo={row.name_with_owner} />
 												</TableCell>
 												<TableCell className={NUM_CELL}>
 													{formatDelta(row.stars_delta, missing)}

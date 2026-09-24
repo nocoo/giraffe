@@ -2,7 +2,6 @@ import {
 	Avatar,
 	AvatarFallback,
 	AvatarImage,
-	Button,
 	Link,
 	Tabs,
 	TabsContent,
@@ -31,7 +30,6 @@ import {
 	CircleDot,
 	Code2,
 	Download,
-	ExternalLink,
 	Eye,
 	FolderDown,
 	GitFork,
@@ -57,8 +55,10 @@ import {
 	PeopleSkeleton,
 	TableSkeleton,
 } from "../components/layout/page-skeleton";
+import { ProjectLinks, ProjectName } from "../components/layout/project-identity";
 import { SnapshotPending } from "../components/layout/snapshot-pending";
 import { ChurnMeter, LabelChips, PersonCell } from "../components/layout/table-chrome";
+import { useProjectIdentity } from "../components/layout/use-project-identity";
 import { categoryColor, chartColor } from "../lib/chart-theme";
 import { catchLoad } from "../lib/error-ui";
 import {
@@ -125,6 +125,7 @@ export function RepoDetailPage() {
 	const params = useParams();
 	const owner = params.owner ?? "";
 	const name = params.name ?? "";
+	const identity = useProjectIdentity(`${owner}/${name}`);
 	const valid = isValidRepoPart(owner) && isValidRepoPart(name);
 	const [tab, setTab] = useState<DetailTab>("details");
 	const [snap, setSnap] = useState<RepoDetails | { missing: true } | { invalid: true } | null>(
@@ -299,12 +300,9 @@ export function RepoDetailPage() {
 		return (
 			<div className="space-y-8">
 				<PageHeader
-					title={
-						<span className="[overflow-wrap:anywhere]">
-							{owner}/<wbr />
-							{name}
-						</span>
-					}
+					title={<ProjectName repo={`${owner}/${name}`} project={identity} size={48} showTitle />}
+					description={identity?.description}
+					actions={identity ? <ProjectLinks project={identity} /> : undefined}
 				/>
 				<TabWell>
 					<SnapshotPending state={snap} />
@@ -317,12 +315,9 @@ export function RepoDetailPage() {
 		return (
 			<div className="space-y-8">
 				<PageHeader
-					title={
-						<span className="[overflow-wrap:anywhere]">
-							{owner}/<wbr />
-							{name}
-						</span>
-					}
+					title={<ProjectName repo={`${owner}/${name}`} project={identity} size={48} showTitle />}
+					description={identity?.description}
+					actions={identity ? <ProjectLinks project={identity} /> : undefined}
 				/>
 				<DetailSkeleton label="加载仓库" />
 			</div>
@@ -377,15 +372,12 @@ export function RepoDetailPage() {
 	return (
 		<div className="space-y-8" data-testid="repo-detail">
 			<PageHeader
-				title={
-					<span className="[overflow-wrap:anywhere]">
-						{owner}/<wbr />
-						{name}
-					</span>
-				}
+				title={<ProjectName repo={`${owner}/${name}`} project={identity} size={48} showTitle />}
 				description={
 					<SnapshotDescription
-						description={snap.description ?? "仓库概览、开发动态与协作数据"}
+						description={
+							identity?.description || snap.description || "仓库概览、开发动态与协作数据"
+						}
 						fetchedAt={current?.fetched_at ?? snap.fetched_at}
 						hideTimestamp={!current}
 					/>
@@ -393,12 +385,7 @@ export function RepoDetailPage() {
 				actions={
 					<>
 						{truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
-						<Button variant="secondary" size="sm" asChild>
-							<a href={snap.url} target="_blank" rel="noreferrer">
-								<ExternalLink className="size-3.5" aria-hidden="true" />
-								GitHub
-							</a>
-						</Button>
+						<ProjectLinks project={identity} github={snap.url} />
 					</>
 				}
 			/>

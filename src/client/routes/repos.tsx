@@ -1,4 +1,4 @@
-import { Button, Link, SegmentControl, toast } from "@nocoo/basalt";
+import { Button, SegmentControl, toast } from "@nocoo/basalt";
 import { FilterBar } from "@nocoo/basalt/components/filter-bar";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
@@ -31,6 +31,7 @@ import {
 	OverviewCard,
 } from "../components/layout/overview-cards";
 import { TableSkeleton } from "../components/layout/page-skeleton";
+import { ProjectSummary } from "../components/layout/project-identity";
 import { ShareBar } from "../components/layout/rank-bars";
 import { INLINE_SEGMENT } from "../components/layout/segment";
 import { SnapshotPending } from "../components/layout/snapshot-pending";
@@ -367,23 +368,19 @@ export function ReposPage() {
 									>
 										<div className="flex items-start justify-between gap-2">
 											{statisticsSwitch(row)}
-											<Link
-												href={`/repos/${row.owner_login}/${row.name}`}
-												className="min-w-0 truncate text-base font-semibold"
-												title={row.name_with_owner}
-											>
-												{row.name_with_owner}
-											</Link>
+											<ProjectSummary
+												repo={row.name_with_owner}
+												description={row.description}
+												card
+											/>
 											{status ? (
 												<CandyBadge tone={healthBadgeVariant(status)}>
 													{formatHealth(status)}
 												</CandyBadge>
 											) : null}
 										</div>
-										<p className="mt-2 mb-4 min-h-10 line-clamp-2 text-sm leading-5 text-basalt-muted-foreground">
-											{row.description ?? "没有描述"}
-										</p>
-										<div className="mt-auto flex flex-wrap items-center gap-2 text-xs text-basalt-muted-foreground">
+
+										<div className="mt-auto flex flex-wrap items-center gap-2 pt-4 text-xs text-basalt-muted-foreground">
 											<LanguageLabel name={row.primary_language} />
 											<span>·</span>
 											<span className="inline-flex items-center gap-1 tabular-nums">
@@ -452,20 +449,10 @@ export function ReposPage() {
 												<TableRow key={row.name_with_owner}>
 													<TableCell>{statisticsSwitch(row)}</TableCell>
 													<TableCell className="min-w-64 max-w-sm">
-														<Link
-															href={`/repos/${row.owner_login}/${row.name}`}
-															className="font-medium text-basalt-foreground [overflow-wrap:anywhere] hover:text-basalt-primary"
-														>
-															{row.name_with_owner}
-														</Link>
-														{row.description ? (
-															<p
-																className="mt-1 line-clamp-1 text-xs text-basalt-muted-foreground"
-																title={row.description}
-															>
-																{row.description}
-															</p>
-														) : null}
+														<ProjectSummary
+															repo={row.name_with_owner}
+															description={row.description}
+														/>
 														<div className="mt-2 flex flex-wrap gap-1">
 															{row.is_fork ? <CandyBadge tone="teal">Fork</CandyBadge> : null}
 														</div>

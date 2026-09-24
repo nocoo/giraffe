@@ -11,6 +11,7 @@ import {
 import { Clock3, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { FactoryRepo } from "../../lib/factory-types";
+import { ProjectLabel } from "../components/layout/project-identity";
 import { formatPreciseDate, formatTimeAgo } from "../lib/format";
 
 export function FactoryRepoTimes({ repo }: { repo: FactoryRepo }) {
@@ -37,7 +38,9 @@ export function FactoryRepoTimes({ repo }: { repo: FactoryRepo }) {
 							</Button>
 						</DialogClose>
 					</div>
-					<DialogDescription className="break-all text-sm">{repo.name}</DialogDescription>
+					<DialogDescription className="break-all text-sm">
+						<ProjectLabel repo={repo.name} />
+					</DialogDescription>
 				</DialogHeader>
 				<RepoTimeDetails repo={repo} />
 			</DialogContent>

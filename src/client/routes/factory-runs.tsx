@@ -28,6 +28,7 @@ import { useSearchParams } from "react-router";
 import { type FactoryRunResponse, type RunSelection, selectRunRepos } from "../../lib/factory-run";
 import type { FactorySnapshot } from "../../lib/factory-types";
 import { SearchField, SnapshotTime } from "../components/layout/collection-chrome";
+import { ProjectLabel } from "../components/layout/project-identity";
 import { SelectField } from "../components/layout/select-field";
 import { factoryError, filterFactoryRepos, formatUtc } from "../viewmodels/factory";
 import {
@@ -570,7 +571,9 @@ export function FactoryRuns({
 															}
 														/>
 														<span>
-															<strong>{repo.name}</strong>
+															<strong>
+																<ProjectLabel repo={repo.name} />
+															</strong>
 															<small>
 																{repo.language}
 																{state

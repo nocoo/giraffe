@@ -22,6 +22,7 @@ import { IconLabel } from "../components/layout/icon-label";
 import { Kpi, KpiRow } from "../components/layout/kpi";
 import { ActiveFilters, Breakdown, OverviewCard } from "../components/layout/overview-cards";
 import { TableSkeleton } from "../components/layout/page-skeleton";
+import { ProjectLink } from "../components/layout/project-identity";
 import { ShareBar } from "../components/layout/rank-bars";
 import { SnapshotPending } from "../components/layout/snapshot-pending";
 import { catchLoad } from "../lib/error-ui";
@@ -255,12 +256,10 @@ export function AlertsPage() {
 														{row.summary}
 													</Link>
 													<p className="mt-1 text-xs">
-														<Link
-															href={`/repos/${row.name_with_owner}`}
+														<ProjectLink
+															repo={row.name_with_owner}
 															className="text-basalt-muted-foreground"
-														>
-															{row.name_with_owner}
-														</Link>
+														/>
 													</p>
 												</TableCell>
 												<TableCell>

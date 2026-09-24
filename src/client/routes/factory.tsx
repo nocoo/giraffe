@@ -15,7 +15,6 @@ import {
 	ArrowUpRight,
 	Boxes,
 	CircleDot,
-	GitBranch,
 	GitCommitHorizontal,
 	GitMerge,
 	Workflow,
@@ -38,6 +37,7 @@ import {
 import { IconLabel } from "../components/layout/icon-label";
 import { Kpi, KpiRow } from "../components/layout/kpi";
 import { LanguageLabel } from "../components/layout/labels";
+import { ProjectLabel } from "../components/layout/project-identity";
 import { SelectField } from "../components/layout/select-field";
 import { FLOW_COLORS } from "../lib/chart-theme";
 import { reportError } from "../lib/error-ui";
@@ -259,8 +259,7 @@ export function FactoryPage() {
 								<ArrowLeft className="size-4" />
 								返回仓库群
 							</Button>
-							<GitBranch className="size-4" />
-							<strong>{selected}</strong>
+							<ProjectLabel repo={selected} className="font-semibold" />
 							{repo?.private ? <span className="factory-tag">Private</span> : null}
 							<Link className="factory-link ml-auto" to={`/repos/${selected}`}>
 								原仓库详情 <ArrowUpRight className="size-3.5" />
@@ -610,7 +609,7 @@ export function FactoryPage() {
 														key={`${a.repo}:${a.stream}`}
 														onClick={() => drill(a.repo, a.stream)}
 													>
-														<span>{a.repo.split("/")[1]}</span>
+														<ProjectLabel repo={a.repo} short />
 														<span>{a.label}</span>
 														<ArrowUpRight className="size-3.5" />
 													</Button>
@@ -646,7 +645,7 @@ export function FactoryPage() {
 														type="button"
 														onClick={() => drill(e.source, "dependencies")}
 													>
-														{e.source.split("/")[1]}
+														<ProjectLabel repo={e.source} short />
 													</Button>
 													<span className="factory-network-line" aria-hidden="true">
 														→
@@ -656,7 +655,7 @@ export function FactoryPage() {
 														type="button"
 														onClick={() => drill(e.target, "dependencies")}
 													>
-														{e.target.split("/")[1]}
+														<ProjectLabel repo={e.target} short />
 													</Button>
 													<a
 														href={safeGithubUrl(e.url)}
@@ -718,14 +717,14 @@ export function FactoryPage() {
 										<TableBody>
 											{ranking.rows.map((r) => (
 												<TableRow key={r.id}>
-													<TableCell>
+													<TableCell className="min-w-60 max-w-72">
 														<Button
 															variant="ghost"
-															className="factory-repo-link"
+															className="factory-repo-link max-w-full justify-start text-left whitespace-normal"
 															type="button"
 															onClick={() => drill(r.name)}
 														>
-															{r.name.split("/")[1]}
+															<ProjectLabel repo={r.name} />
 														</Button>
 														<div className="flex flex-wrap items-center gap-x-1.5 text-xs text-basalt-muted-foreground">
 															<LanguageLabel name={r.language} />

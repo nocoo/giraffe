@@ -15,8 +15,30 @@ import { GithubIcon } from "./github-icon";
 import { HeaderTooltip, HexlyLink } from "./header-links";
 import { ThemeToggle } from "./theme-toggle";
 import { useIsMobile } from "./use-mobile";
+import { useProjectIdentity } from "./use-project-identity";
 
 export function AppShell() {
+	const project = useProjectIdentity("nocoo/giraffe");
+	useEffect(() => {
+		if (!project) return;
+		document.title = project.title;
+		const favicon = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+		if (favicon) {
+			const image = new Image();
+			image.onload = () => {
+				favicon.href = project.favicon;
+				favicon.removeAttribute("type");
+			};
+			image.onerror = () => {
+				favicon.href = "/logo-32.png";
+			};
+			image.src = project.favicon;
+			return () => {
+				image.onload = null;
+				image.onerror = null;
+			};
+		}
+	}, [project]);
 	const [collapsed, setCollapsed] = useState(false);
 	const isMobile = useIsMobile();
 	const [mobileOpen, setMobileOpen] = useState(false);

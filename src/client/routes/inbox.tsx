@@ -27,6 +27,7 @@ import {
 	OverviewCard,
 } from "../components/layout/overview-cards";
 import { TableSkeleton } from "../components/layout/page-skeleton";
+import { ProjectLink } from "../components/layout/project-identity";
 import { INLINE_SEGMENT } from "../components/layout/segment";
 import { SnapshotPending } from "../components/layout/snapshot-pending";
 import { chartColor } from "../lib/chart-theme";
@@ -272,12 +273,10 @@ export function InboxPage() {
 															{row.title}
 														</Link>
 														<p className="mt-1 text-xs">
-															<Link
-																href={`/repos/${row.name_with_owner}`}
+															<ProjectLink
+																repo={row.name_with_owner}
 																className="text-basalt-muted-foreground"
-															>
-																{row.name_with_owner}
-															</Link>
+															/>
 														</p>
 													</TableCell>
 													<TableCell>

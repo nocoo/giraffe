@@ -7,6 +7,7 @@ const ALLOW = new Set([
 	"src/server/lib/github-client.ts",
 	"src/server/middleware/access.ts",
 	"src/server/lib/author-profile.ts",
+	"src/server/lib/project-identity.ts",
 ]);
 const ROOTS = ["src/server", "src/lib"];
 

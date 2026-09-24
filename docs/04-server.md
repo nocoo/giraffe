@@ -390,6 +390,25 @@ digest 只对比 `day` 与 UTC 日历昨天的 `snapshot_days`（含 `by_repo`�
 
 `email` 取 JWT `email`；缺省或空 → 401 `access_unauthorized`。`name`：lizheng.blog 作者档案非空 `name` 优先，否则 JWT `name`，再否则 `email`。`avatar`：档案非空字符串，否则 `null`。档案用 `SHA-256(trim+lower(email))` 查 `GET https://lizheng.blog/api/authors/profile?hash=`，超时 2.5s，失败当 miss。**禁止**把 email 放进该 URL 或请求体。development stub 仍 `dev@local` / `dev`，档案 miss 则 `avatar: null`。不返回 GitHub login。无 GitHub 账号也 200。
 
+### `GET /api/projects/:owner/:repo`
+
+An Access-protected, account-independent lookup of one public Hexly project identity.
+It calls `https://hexly.ai/api/projects/{owner}/{repo}` without credentials or query
+parameters, preserving repository dots/hyphens and validating the case-insensitive
+owner/repository pair against the response and GitHub destination. Snapshot GETs
+remain read-only and do not call this service.
+
+The response contains only title, English description, owner/repository, archive
+status, GitHub/website/Hexly URLs, small/large icons and selected navigation/favicon
+URLs. Unknown repositories return `200 null`; invalid requests return 400,
+unsupported methods 405, and network/upstream/schema failures 503 with safe codes.
+All lookup responses use `Cache-Control: no-store`. The browser owns the sole
+one-hour success cache; errors and unknown repositories are not cached as identities.
+There is no D1 storage, background polling, catalogue fetch or service-health claim.
+
+Tests use `HEXLY_API_BASE` with a loopback HTTP stub. Production ignores that
+fixture setting, and the Wrangler variable gate rejects it in deployment config.
+
 ### `GET /api/accounts`
 
 ```json

@@ -273,6 +273,25 @@ async function send(resource: string, init?: RequestInit): Promise<Response> {
 
 `src/client/lib/errors.ts` 与 server 信封对齐，**不要** import `src/server`。不要为共享而把 Worker 类型拉进 Client。
 
+### Project identity presentation
+
+`viewmodels/project-identity.ts` requests one relative `/api/projects/owner/repo`
+endpoint through `api.ts`, deduplicates pending lookups and caches successful
+projected metadata in memory for at most one hour. No browser storage or polling
+is used. An unavailable identity preserves the repository name and original
+snapshot description without a global error banner.
+
+Shared project components display unmasked, unaltered CDN images with fixed
+layout dimensions and `object-fit: contain`: 64px icons for 24–32px references,
+512px icons for 48px cards/detail headings, and suitable transparent
+`project-identity` navigation PNGs for the application mark/favicon. Missing
+navigation variants use supplied icons. Campaign artwork is never selected.
+Repository cards/details show title, English description, GitHub, optional website,
+Hexly detail links and explicit archive status. Secondary repository references
+retain owner/repository identity and their existing navigation/selection behavior.
+Only `nocoo/giraffe` supplies the application's own mark/title/favicon; navigating
+to another repository never changes the application's identity.
+
 ### 6.3 错误 → UI
 
 | code / HTTP | UI |

@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 const text = await readFile("wrangler.toml", "utf8");
 const checks: Array<[RegExp, string]> = [
 	[/\bGITHUB_API_BASE\b/, "GITHUB_API_BASE"],
+	[/\bHEXLY_API_BASE\b/, "HEXLY_API_BASE"],
 	[/\bACCESS_JWKS_URL\b/, "ACCESS_JWKS_URL"],
 	[/\bENVIRONMENT\s*=\s*["']development["']/, 'ENVIRONMENT = "development"'],
 	[/\bENVIRONMENT\s*=\s*["']test["']/, 'ENVIRONMENT = "test"'],

@@ -29,6 +29,7 @@ import {
 	OverviewCard,
 } from "../components/layout/overview-cards";
 import { TableSkeleton } from "../components/layout/page-skeleton";
+import { ProjectLink } from "../components/layout/project-identity";
 import { INLINE_SEGMENT } from "../components/layout/segment";
 import { SnapshotPending } from "../components/layout/snapshot-pending";
 import { LabelChips, PersonCell, SortButton } from "../components/layout/table-chrome";
@@ -273,12 +274,10 @@ export function IssuesPage() {
 													<div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-basalt-muted-foreground">
 														<span className="tabular-nums">#{row.number}</span>
 														<span aria-hidden="true">·</span>
-														<Link
-															href={`/repos/${row.name_with_owner}`}
+														<ProjectLink
+															repo={row.name_with_owner}
 															className="text-basalt-muted-foreground"
-														>
-															{row.name_with_owner}
-														</Link>
+														/>
 													</div>
 												</TableCell>
 												<TableCell>

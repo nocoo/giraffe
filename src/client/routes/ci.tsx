@@ -24,6 +24,7 @@ import {
 import { IconLabel } from "../components/layout/icon-label";
 import { CountBars } from "../components/layout/overview-cards";
 import { TableSkeleton } from "../components/layout/page-skeleton";
+import { ProjectLink } from "../components/layout/project-identity";
 import { ShareBar } from "../components/layout/rank-bars";
 import { INLINE_SEGMENT } from "../components/layout/segment";
 import { SnapshotPending } from "../components/layout/snapshot-pending";
@@ -39,7 +40,7 @@ import {
 	runSummary,
 	runTimeline,
 } from "../viewmodels/ci";
-import { daysAgo, shortRepo } from "../viewmodels/overview";
+import { daysAgo } from "../viewmodels/overview";
 
 const VERDICT = {
 	broken: { label: "连续失败", tone: "red", color: "hsl(var(--basalt-accent-8))" },
@@ -260,12 +261,7 @@ export function CiPage() {
 									{streams.map((s) => (
 										<TableRow key={`${s.repo}:${s.workflow}:${s.branch}`}>
 											<TableCell>
-												<Link
-													href={`/repos/${s.repo}`}
-													className="font-medium text-basalt-foreground"
-												>
-													{shortRepo(s.repo)}
-												</Link>
+												<ProjectLink repo={s.repo} className="font-medium text-basalt-foreground" />
 												<div className="text-xs text-basalt-muted-foreground">
 													{s.workflow}
 													{s.scope === "branch" ? ` · ${s.branch}` : ""}
@@ -323,12 +319,7 @@ export function CiPage() {
 									{releases.map((r) => (
 										<TableRow key={r.repo}>
 											<TableCell>
-												<Link
-													href={`/repos/${r.repo}`}
-													className="font-medium text-basalt-foreground"
-												>
-													{shortRepo(r.repo)}
-												</Link>
+												<ProjectLink repo={r.repo} className="font-medium text-basalt-foreground" />
 											</TableCell>
 											<TableCell>
 												{r.latest ?? <span className="text-basalt-muted-foreground">从未发布</span>}
@@ -425,9 +416,7 @@ function StreamCard({ s, now }: { s: CiStream; now: string }) {
 			<LayerCard padding="md" className="giraffe-ci-card">
 				<div className="flex items-start justify-between gap-3">
 					<div className="min-w-0">
-						<Link href={`/repos/${s.repo}`} className="font-semibold text-basalt-foreground">
-							{shortRepo(s.repo)}
-						</Link>
+						<ProjectLink repo={s.repo} className="font-semibold text-basalt-foreground" />
 						<p className="text-xs text-basalt-muted-foreground">
 							{s.workflow} · {s.branch}
 						</p>
@@ -485,10 +474,10 @@ function WatchList({
 				<ul>
 					{items.slice(0, 12).map((s) => (
 						<li key={`${s.repo}:${s.workflow}:${s.branch}`}>
-							<Link href={`/repos/${s.repo}`} className="giraffe-watch-name">
-								{shortRepo(s.repo)}
+							<div className="giraffe-watch-name">
+								<ProjectLink repo={s.repo} />
 								<small>{s.workflow}</small>
-							</Link>
+							</div>
 							<RunStrip s={s} />
 							<span className="giraffe-watch-meta">
 								{s.failures}/{s.decided} · {ago(s.lastRun, now)}
