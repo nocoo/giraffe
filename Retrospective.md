@@ -1,5 +1,9 @@
 # Retrospective
 
+## 2026-09-24 — Neutral badges followed the system theme
+
+The assessment's dark-theme screenshot exposed pale text on the pale gray status badge. Its Tailwind `dark:` foreground variant followed the system color scheme while Basalt's theme toggle used the application theme. The foreground now uses `basalt-dark:`, matching the provider. Browser checks measure neutral badge contrast in both application themes; a screenshot that merely fits the viewport is not proof that its labels are readable.
+
 ## 2026-09-24 — Security assessments overlooked active Issues
 
 The security judgment and report completeness check used only the optional alert stream. A complete, empty bot feed could therefore support a healthy security section even when Issue coverage was unavailable. The regression reproduced that unsupported all-clear. Security assessment now treats active Issues as its primary evidence and bot findings as a supplement; missing alerts cannot erase a reported Issue risk. The input also separates the latest fourteen days and the preceding comparison period from long-term totals, retains older unresolved work and distinguishes outside-scope exclusions from missing sampled evidence. Test the evidence required for each conclusion, including unavailable primary sources and positive findings when supplemental sources are absent.
@@ -49,3 +53,7 @@ An unanchored CSS replacement also matched the suffix of two status-specific ico
 ## 2026-09-24 — Settings forms need scoped browser assertions
 
 Adding two independent AI settings forms exposed browser checks that selected every `form[aria-busy]` or every alert on the settings page. Those checks became ambiguous even though the PAT interaction still worked. The full local browser run caught the regression before publication. Scope PAT assertions to their form/field, and include the new settings GET in shared UI fixtures so an unrelated mocked 404 cannot create an extra alert. The complete 40-test browser run then passed.
+
+## 2026-09-24 — Progress updates entered the user-input channel
+
+During assessment verification, two informational updates were mistakenly sent through the user-input tool, producing unnecessary input boxes. The task needed no user decision. Keep progress in commentary and reserve input tools for a concrete missing answer; after a mistaken input request, acknowledge it in commentary rather than issuing another input request.

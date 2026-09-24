@@ -1,7 +1,9 @@
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { Text } from "@nocoo/basalt/components/text";
+import { ChartNoAxesCombined } from "lucide-react";
 import type { ReactNode } from "react";
 import { HelpTooltip } from "./help-tooltip";
+import { IconLabel } from "./icon-label";
 
 export function ChartBrick({
 	title,
@@ -17,7 +19,7 @@ export function ChartBrick({
 			<LayerCard.Header>
 				<div className="flex items-center gap-2">
 					<Text as="h3" variant="heading">
-						{title}
+						<IconLabel icon={ChartNoAxesCombined}>{title}</IconLabel>
 					</Text>
 					{description ? <HelpTooltip label={`${title}说明`}>{description}</HelpTooltip> : null}
 				</div>

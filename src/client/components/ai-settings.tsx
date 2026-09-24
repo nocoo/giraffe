@@ -2,7 +2,16 @@ import { Button, Field, Input, Text } from "@nocoo/basalt";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
 import { SensitiveInput } from "@nocoo/basalt/components/sensitive-input";
-import { BrainCircuit, FileText } from "lucide-react";
+import {
+	BrainCircuit,
+	CircleCheck,
+	CircleDashed,
+	FileText,
+	PlugZap,
+	Save,
+	Sparkles,
+	Trash2,
+} from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import {
 	type AiSettingsDraft,
@@ -20,6 +29,7 @@ import {
 	testAiSettings,
 } from "../viewmodels/ai-settings";
 import { CandyBadge } from "./layout/candy-badge";
+import { IconLabel } from "./layout/icon-label";
 import { SelectField } from "./layout/select-field";
 
 function AiSettingsCard({ settings }: { settings: PublicAiSettings }) {
@@ -86,12 +96,19 @@ function AiSettingsCard({ settings }: { settings: PublicAiSettings }) {
 
 	return (
 		<LayerCard data-testid={`${id}-card`}>
-			<LayerCard.Header>
+			<LayerCard.Header className="items-center">
 				<Text as="h2" variant="heading" className="flex items-center gap-2">
-					<Icon className="size-4 text-basalt-primary" aria-hidden="true" />
+					<Icon
+						className="size-4 shrink-0 text-basalt-primary"
+						strokeWidth={1.5}
+						aria-hidden="true"
+					/>
 					{title}
 				</Text>
-				<CandyBadge tone={saved.hasApiKey ? "green" : "gray"}>
+				<CandyBadge
+					tone={saved.hasApiKey ? "green" : "gray"}
+					icon={saved.hasApiKey ? CircleCheck : CircleDashed}
+				>
 					{saved.hasApiKey ? "已配置" : "未配置"}
 				</CandyBadge>
 			</LayerCard.Header>
@@ -107,8 +124,8 @@ function AiSettingsCard({ settings }: { settings: PublicAiSettings }) {
 				>
 					<p className="text-sm leading-6 text-basalt-muted-foreground">
 						{summary
-							? "综合提交、PR、Issue、交付节奏与 JEV 判断，生成结构化仓库报告。"
-							: "通过 TypeSafe 模型判断安全事项的紧急程度、识别需要人工技术判断的 PR。"}
+							? "重点评估最近两周的提交、PR、Issue 与交付节奏，结合 JEV 判断生成结构化报告。"
+							: "以活跃 Issues 为主要安全线索，辅以安全告警，识别紧急事项与需要人工判断的 PR。"}
 					</p>
 					<fieldset disabled={busy} className="min-w-0 space-y-4">
 						{summary ? (
@@ -187,6 +204,7 @@ function AiSettingsCard({ settings }: { settings: PublicAiSettings }) {
 					</fieldset>
 					<div className="flex flex-wrap items-center gap-2">
 						<Button type="submit" disabled={!canSubmit} loading={phase === "saving"}>
+							<Save className="size-4" strokeWidth={1.5} aria-hidden="true" />
 							保存配置
 						</Button>
 						<Button
@@ -197,6 +215,7 @@ function AiSettingsCard({ settings }: { settings: PublicAiSettings }) {
 							loading={phase === "testing"}
 							onClick={() => void submit("testing")}
 						>
+							<PlugZap className="size-4" strokeWidth={1.5} aria-hidden="true" />
 							测试连接
 						</Button>
 						{saved.hasApiKey ? (
@@ -208,6 +227,7 @@ function AiSettingsCard({ settings }: { settings: PublicAiSettings }) {
 								data-testid={`${id}-remove`}
 								onClick={() => void remove()}
 							>
+								<Trash2 className="size-4" strokeWidth={1.5} aria-hidden="true" />
 								停用并清除 key
 							</Button>
 						) : null}
@@ -243,7 +263,7 @@ export function AiSettings() {
 		void reload();
 	}, [reload]);
 	return (
-		<SectionRule title="AI 评估">
+		<SectionRule title={<IconLabel icon={Sparkles}>AI 评估</IconLabel>}>
 			<p className="mb-4 text-sm text-basalt-muted-foreground">
 				两项配置保存后，下次仓库刷新会将统计、事项标题与正文节选发送到对应 AI 服务进行评估。
 			</p>

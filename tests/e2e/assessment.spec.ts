@@ -16,8 +16,8 @@ const fixture: RepoAssessment = {
 		model: "jev-1",
 		judgments: [
 			{
-				id: "security-urgent",
-				question: "安全告警是否需要立即处理？",
+				id: "security_urgency",
+				question: "Do open security cases require immediate mitigation?",
 				evidenceIds: ["security:100"],
 				choice: "urgent",
 				confidence: 0.87,
@@ -25,8 +25,8 @@ const fixture: RepoAssessment = {
 				uncertain: false,
 			},
 			{
-				id: "external-pr",
-				question: "外部 PR 是否需要技术判断？",
+				id: "external_pr_review",
+				question: "Do external pull requests require technical judgment?",
 				evidenceIds: ["pr:80"],
 				choice: "review",
 				confidence: 0.5,
@@ -99,6 +99,91 @@ test.beforeEach(async ({ page }) => {
 	await mockApi(page);
 });
 
+test("judgment labels align and probability bars show uncertainty without implying accuracy", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 1440, height: 1000 });
+	await page.route(`**${endpoint}`, (route) => route.fulfill({ json: fixture }));
+	const panel = await openAssessment(page);
+	const rows = panel.getByTestId("assessment-judgment-row");
+	await expect(rows).toHaveCount(2);
+	const security = rows.filter({ hasText: "安全风险" });
+	const external = rows.filter({ hasText: "外部 PR 审查" });
+	for (const row of [security, external]) {
+		const bounds = await row.getByTestId("judgment-status").boundingBox();
+		const confidence = await row.getByTestId("judgment-confidence").boundingBox();
+		expect(bounds).not.toBeNull();
+		expect(confidence).not.toBeNull();
+		expect(
+			Math.abs(
+				(bounds?.y ?? 0) +
+					(bounds?.height ?? 0) / 2 -
+					(confidence?.y ?? 0) -
+					(confidence?.height ?? 0) / 2,
+			),
+		).toBeLessThan(1);
+	}
+	const columns = await rows.evaluateAll((items) =>
+		items.map((item) => ({
+			status: item.querySelector('[data-testid="judgment-status"]')?.getBoundingClientRect().x,
+			confidence: item.querySelector('[data-testid="judgment-confidence"]')?.getBoundingClientRect()
+				.x,
+		})),
+	);
+	expect(columns[0]).toEqual(columns[1]);
+	await expect(panel.getByText(/不代表结论正确率/)).toBeVisible();
+	await expect(security.getByRole("progressbar", { name: "安全风险置信度" })).toHaveAttribute(
+		"aria-valuenow",
+		"87",
+	);
+	await expect(external.getByText("需人工复核", { exact: true })).toBeVisible();
+	await external.getByRole("button").click();
+	const probabilities = external.getByRole("figure", { name: "外部 PR 审查概率分布" });
+	await expect(probabilities).toBeVisible();
+	await expect(probabilities.getByText("50%", { exact: true })).toBeVisible();
+	const proportions = await probabilities
+		.locator("[data-probability]")
+		.evaluateAll((bars) =>
+			bars.map(
+				(bar) =>
+					(bar.getBoundingClientRect().width /
+						(bar.parentElement?.getBoundingClientRect().width ?? 1)) *
+					100,
+			),
+		);
+	for (const [index, expected] of [5, 50, 40, 5].entries()) {
+		expect(proportions[index]).toBeCloseTo(expected, 1);
+	}
+	await expect(panel.getByText(/最近 14 天/)).toHaveCount(0);
+});
+
+test("new assessments show their actual two-week focus while retained v1 reports keep their original scope", async ({
+	page,
+}) => {
+	await page.route(`**${endpoint}`, (route) =>
+		route.fulfill({
+			json: {
+				...fixture,
+				judgment: {
+					...fixture.judgment,
+					templateVersion: 2,
+					focusWindow: { since: "2026-09-10T08:30:00.000Z", until: "2026-09-24T08:30:00.000Z" },
+				},
+			},
+		}),
+	);
+	const panel = await openAssessment(page);
+	await expect(
+		panel.getByText("最近 14 天 · 2026-09-10 — 2026-09-24（UTC）", { exact: true }),
+	).toBeVisible();
+	await expect(panel.getByText(/安全风险以 Issues 为主要线索/)).toBeVisible();
+	await panel.getByRole("heading", { name: "Jev 判断", exact: true }).scrollIntoViewIfNeeded();
+	await page.screenshot({
+		path: ".factory-cache/assessment-judgment-desktop.png",
+		animations: "disabled",
+	});
+});
+
 test("assessment is lazy, structured, read-only and renders model content as safe text", async ({
 	page,
 }) => {
@@ -138,11 +223,18 @@ test("assessment is lazy, structured, read-only and renders model content as saf
 	await expect(panel.locator("ol h4")).toHaveText(["检查漏洞影响", "审查外部 PR", "整理说明文档"]);
 	await panel.getByRole("heading", { name: "仓库评估", exact: true }).scrollIntoViewIfNeeded();
 	await page.screenshot({ path: ".factory-cache/assessment-desktop.png", animations: "disabled" });
-	await expect(panel.getByText("置信度 87%", { exact: true })).toBeVisible();
+	await expect(panel.getByRole("progressbar", { name: "安全风险置信度" })).toHaveAttribute(
+		"aria-valuenow",
+		"87",
+	);
 	await expect(panel.getByText("需人工复核", { exact: true })).toBeVisible();
-	await panel.getByRole("button", { name: /安全告警是否需要立即处理/ }).click();
-	await expect(panel.getByText("87%（0.87）", { exact: true })).toBeVisible();
-	await expect(panel.getByText("2%（0.02）", { exact: true })).toBeVisible();
+	await panel.getByRole("button", { name: /安全风险/ }).click();
+	await expect(
+		panel.getByRole("figure", { name: "安全风险概率分布" }).getByText("87%", { exact: true }),
+	).toBeVisible();
+	await expect(
+		panel.getByRole("figure", { name: "安全风险概率分布" }).getByText("2%", { exact: true }),
+	).toBeVisible();
 	await panel.getByRole("button", { name: "参考记录（1）", exact: true }).last().click();
 	await expect(panel.getByText("security:100", { exact: true }).last()).toBeVisible();
 	expect(reads).toBe(1);
@@ -268,12 +360,34 @@ test("assessment text, controls and probabilities fit narrow screens in both the
 		await page.addInitScript((value) => localStorage.setItem("theme", value), theme);
 		const panel = await openAssessment(page);
 		await expect(panel.getByText("评估完成", { exact: true })).toBeVisible();
+		const neutral = panel
+			.getByRole("group", { name: "判断概况" })
+			.getByText("信息不足", { exact: true });
+		const contrast = await neutral.evaluate((element) => {
+			const luminance = (color: string) => {
+				const channels = (color.match(/[\d.]+/g) ?? []).slice(0, 3).map((channel) => {
+					const value = Number(channel) / 255;
+					return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+				});
+				return (
+					(channels[0] ?? 0) * 0.2126 + (channels[1] ?? 0) * 0.7152 + (channels[2] ?? 0) * 0.0722
+				);
+			};
+			const style = getComputedStyle(element);
+			const foreground = luminance(style.color);
+			const background = luminance(style.backgroundColor);
+			return (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05);
+		});
+		expect(contrast).toBeGreaterThanOrEqual(4.5);
 		await page.screenshot({
 			path: `.factory-cache/assessment-${theme}.png`,
 			animations: "disabled",
 		});
-		await panel.getByRole("button", { name: /外部 PR 是否需要技术判断/ }).click();
-		await expect(panel.getByText("50%（0.5）", { exact: true })).toBeVisible();
+		await panel.getByRole("button", { name: /外部 PR 审查/ }).click();
+		await expect(
+			panel.getByRole("figure", { name: "外部 PR 审查概率分布" }).getByText("50%", { exact: true }),
+		).toBeVisible();
+		await panel.getByRole("figure", { name: "外部 PR 审查概率分布" }).scrollIntoViewIfNeeded();
 		expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
 			390,
 		);

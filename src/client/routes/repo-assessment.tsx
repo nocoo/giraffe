@@ -1,19 +1,39 @@
 import { Button, Link } from "@nocoo/basalt";
-import {
-	Accordion,
-	AccordionContent,
-	AccordionItem,
-	AccordionTrigger,
-} from "@nocoo/basalt/components/accordion";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
-import { Sparkles } from "lucide-react";
+import {
+	Activity,
+	ArrowRight,
+	CircleAlert,
+	CircleCheck,
+	CircleDot,
+	CircleHelp,
+	ClipboardCheck,
+	Clock3,
+	FileCheck2,
+	FileClock,
+	GitPullRequest,
+	History,
+	Info,
+	KeyRound,
+	type LucideIcon,
+	RefreshCw,
+	ShieldAlert,
+	Sparkles,
+	UserRoundCheck,
+} from "lucide-react";
 import { useEffect, useState } from "react";
-import type { JudgmentResult } from "../../lib/ai-review";
 import type { RepoAssessment } from "../../lib/repo-assessment";
 import { CandyBadge } from "../components/layout/candy-badge";
+import { IconLabel } from "../components/layout/icon-label";
 import { DetailSkeleton } from "../components/layout/page-skeleton";
 import { reportError } from "../lib/error-ui";
-import { type CandyTone, formatDate } from "../lib/format";
+import { formatDate } from "../lib/format";
+import {
+	ACTION_PRIORITY,
+	DELIVERY_TREND,
+	REPORT_STATUS,
+	RUN_STATUS,
+} from "../viewmodels/assessment-presentation";
 import { describeRunIssue } from "../viewmodels/factory-runs";
 import {
 	assessmentPending,
@@ -21,67 +41,34 @@ import {
 	loadRepoAssessment,
 	prioritizedActions,
 } from "../viewmodels/repo-assessment";
+import { EvidenceReferences, JudgmentDetails } from "./assessment-judgments";
 
 type Report = NonNullable<RepoAssessment["report"]>;
 
-const REPORT_STATUS: Record<Report["overall"], { label: string; tone: CandyTone }> = {
-	healthy: { label: "正常", tone: "green" },
-	attention: { label: "需要关注", tone: "amber" },
-	urgent: { label: "优先处理", tone: "red" },
-	unknown: { label: "信息不足", tone: "gray" },
+const REPORT_ICONS = {
+	healthy: CircleCheck,
+	attention: UserRoundCheck,
+	urgent: ShieldAlert,
+	unknown: CircleHelp,
 };
-const JUDGMENT_STATUS = {
-	urgent: { label: "立即处理", tone: "red" },
-	review: { label: "人工判断", tone: "amber" },
-	routine: { label: "常规跟进", tone: "green" },
-	unknown: { label: "信息不足", tone: "gray" },
-} as const;
-const ACTION_PRIORITY = {
-	now: { label: "立即", tone: "red" },
-	next: { label: "接下来", tone: "amber" },
-	later: { label: "后续", tone: "blue" },
-} as const;
-const DELIVERY_TREND = {
-	accelerating: "交付加快",
-	steady: "节奏稳定",
-	slowing: "交付放缓",
-	inactive: "近期无交付",
-	unknown: "节奏待确认",
-} as const;
-const RUN_STATUS: Record<RepoAssessment["status"], string> = {
-	unconfigured: "未配置 AI",
-	missing: "尚未生成",
-	judgment: "Jev 正在判断",
-	summary: "正在生成报告",
-	complete: "评估完成",
-	failed: "本次评估失败",
+const RUN_ICONS = {
+	unconfigured: KeyRound,
+	missing: FileClock,
+	judgment: Sparkles,
+	summary: RefreshCw,
+	complete: FileCheck2,
+	failed: CircleAlert,
 };
-const percent = new Intl.NumberFormat("zh-CN", { style: "percent", maximumFractionDigits: 1 });
-
-function EvidenceReferences({ ids }: { ids: string[] }) {
-	if (ids.length === 0) return null;
-	return (
-		<Accordion type="single" collapsible>
-			<AccordionItem value="evidence" className="border-0">
-				<AccordionTrigger className="py-2 text-xs text-basalt-muted-foreground">
-					参考记录（{ids.length}）
-				</AccordionTrigger>
-				<AccordionContent className="pb-0">
-					<p className="break-all font-mono text-xs text-basalt-muted-foreground">
-						{ids.join(" · ")}
-					</p>
-				</AccordionContent>
-			</AccordionItem>
-		</Accordion>
-	);
-}
+const ACTION_ICONS = { now: ShieldAlert, next: ArrowRight, later: Clock3 };
 
 function ReportSection({
 	title,
+	icon,
 	section,
 	trend,
 }: {
 	title: string;
+	icon: LucideIcon;
 	section: Report["security"];
 	trend?: Report["delivery"]["trend"];
 }) {
@@ -89,72 +76,23 @@ function ReportSection({
 	return (
 		<LayerCard className="min-w-0">
 			<LayerCard.Header className="flex flex-wrap items-center justify-between gap-2">
-				<h3 className="font-medium">{title}</h3>
-				<CandyBadge tone={status.tone}>{status.label}</CandyBadge>
+				<h3 className="font-medium text-basalt-foreground">
+					<IconLabel icon={icon}>{title}</IconLabel>
+				</h3>
+				<CandyBadge tone={status.tone} icon={REPORT_ICONS[section.status]}>
+					{status.label}
+				</CandyBadge>
 			</LayerCard.Header>
 			<LayerCard.Body className="space-y-2">
 				{trend ? (
-					<p className="text-xs text-basalt-muted-foreground">{DELIVERY_TREND[trend]}</p>
+					<p className="text-xs text-basalt-muted-foreground">
+						<IconLabel icon={Activity}>{DELIVERY_TREND[trend]}</IconLabel>
+					</p>
 				) : null}
 				<p className="whitespace-pre-line text-sm leading-relaxed [overflow-wrap:anywhere]">
 					{section.summary}
 				</p>
 				<EvidenceReferences ids={section.evidenceIds} />
-			</LayerCard.Body>
-		</LayerCard>
-	);
-}
-
-function JudgmentDetails({ result }: { result: JudgmentResult }) {
-	return (
-		<LayerCard className="min-w-0">
-			<LayerCard.Header className="flex flex-wrap items-center justify-between gap-2">
-				<h3 className="font-medium">Jev 判断</h3>
-				<span className="text-xs text-basalt-muted-foreground">
-					{result.judgments.length} 项 · {result.model} · 模板 v{result.templateVersion}
-				</span>
-			</LayerCard.Header>
-			<LayerCard.Body>
-				<Accordion type="multiple">
-					{result.judgments.map((judgment) => {
-						const status = JUDGMENT_STATUS[judgment.choice];
-						return (
-							<AccordionItem key={judgment.id} value={judgment.id}>
-								<AccordionTrigger className="gap-3 py-3 text-sm">
-									<span className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-2">
-										<span className="min-w-0 text-left [overflow-wrap:anywhere]">
-											{judgment.question}
-										</span>
-										<span className="flex flex-wrap items-center gap-2">
-											<CandyBadge tone={status.tone}>{status.label}</CandyBadge>
-											<span className="text-xs tabular-nums text-basalt-muted-foreground">
-												置信度 {percent.format(judgment.confidence)}
-											</span>
-											{judgment.uncertain ? (
-												<span className="text-xs text-basalt-muted-foreground">需人工复核</span>
-											) : null}
-										</span>
-									</span>
-								</AccordionTrigger>
-								<AccordionContent className="space-y-2">
-									<dl className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
-										{Object.entries(judgment.probabilities).map(([choice, probability]) => (
-											<div key={choice}>
-												<dt className="text-basalt-muted-foreground">
-													{JUDGMENT_STATUS[choice as keyof typeof JUDGMENT_STATUS].label}
-												</dt>
-												<dd className="mt-1 tabular-nums">
-													{percent.format(probability)}（{probability}）
-												</dd>
-											</div>
-										))}
-									</dl>
-									<EvidenceReferences ids={judgment.evidenceIds} />
-								</AccordionContent>
-							</AccordionItem>
-						);
-					})}
-				</Accordion>
 			</LayerCard.Body>
 		</LayerCard>
 	);
@@ -206,6 +144,7 @@ export function RepoAssessmentPanel({ owner, name }: { owner: string; name: stri
 							暂时无法读取 AI 评估，请重试。
 						</p>
 						<Button variant="secondary" size="sm" onClick={() => setAttempt((value) => value + 1)}>
+							<RefreshCw className="size-4" strokeWidth={1.5} aria-hidden="true" />
 							重新读取
 						</Button>
 					</LayerCard.Body>
@@ -215,30 +154,38 @@ export function RepoAssessmentPanel({ owner, name }: { owner: string; name: stri
 			{assessment ? (
 				<LayerCard>
 					<LayerCard.Header className="flex flex-wrap items-center justify-between gap-2">
-						<h2 className="flex items-center gap-2 font-medium">
-							<Sparkles className="size-4" aria-hidden="true" />
-							仓库评估
+						<h2 className="font-medium text-basalt-foreground">
+							<IconLabel icon={Sparkles}>仓库评估</IconLabel>
 						</h2>
 						<span className="flex flex-wrap items-center gap-2">
 							{report ? (
-								<CandyBadge tone={REPORT_STATUS[report.overall].tone}>
+								<CandyBadge
+									tone={REPORT_STATUS[report.overall].tone}
+									icon={REPORT_ICONS[report.overall]}
+								>
 									{REPORT_STATUS[report.overall].label}
 								</CandyBadge>
 							) : null}
-							{stale ? <CandyBadge tone="gray">历史报告</CandyBadge> : null}
+							{stale ? (
+								<CandyBadge tone="gray" icon={History}>
+									历史报告
+								</CandyBadge>
+							) : null}
 							<span role="status" className="text-xs text-basalt-muted-foreground">
-								{RUN_STATUS[status]}
+								<IconLabel icon={RUN_ICONS[status]}>{RUN_STATUS[status]}</IconLabel>
 							</span>
 						</span>
 					</LayerCard.Header>
 					<LayerCard.Body className="space-y-3">
 						{saved?.sourceAt || saved?.reportAt ? (
 							<div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-basalt-muted-foreground">
-								<span>
+								<span className="inline-flex flex-wrap items-center gap-1.5">
+									<Clock3 className="size-4 shrink-0" strokeWidth={1.5} aria-hidden="true" />
 									最新数据{" "}
 									<time dateTime={saved.sourceAt ?? undefined}>{formatDate(saved.sourceAt)}</time>
 								</span>
-								<span>
+								<span className="inline-flex flex-wrap items-center gap-1.5">
+									<FileCheck2 className="size-4 shrink-0" strokeWidth={1.5} aria-hidden="true" />
 									报告生成{" "}
 									<time dateTime={saved.reportAt ?? undefined}>{formatDate(saved.reportAt)}</time>
 								</span>
@@ -287,36 +234,50 @@ export function RepoAssessmentPanel({ owner, name }: { owner: string; name: stri
 			{report ? (
 				<>
 					<div className="grid gap-4 md:grid-cols-2">
-						<ReportSection title="安全" section={report.security} />
-						<ReportSection title="Pull Requests" section={report.pullRequests} />
-						<ReportSection title="Issues" section={report.issues} />
+						<ReportSection title="安全" icon={ShieldAlert} section={report.security} />
+						<ReportSection
+							title="Pull Requests"
+							icon={GitPullRequest}
+							section={report.pullRequests}
+						/>
+						<ReportSection title="Issues" icon={CircleDot} section={report.issues} />
 						<ReportSection
 							title="交付节奏"
+							icon={Activity}
 							section={report.delivery}
 							trend={report.delivery.trend}
 						/>
 					</div>
 					<LayerCard>
 						<LayerCard.Header>
-							<h3 className="font-medium">建议行动</h3>
+							<h3 className="font-medium text-basalt-foreground">
+								<IconLabel icon={ClipboardCheck}>建议行动</IconLabel>
+							</h3>
 						</LayerCard.Header>
 						<LayerCard.Body>
 							{report.actions.length > 0 ? (
 								<ol className="space-y-4">
 									{prioritizedActions(report.actions).map((action, index) => (
-										<li key={`${action.priority}-${index.toString()}`} className="space-y-2">
-											<div className="flex flex-wrap items-start gap-2">
-												<CandyBadge tone={ACTION_PRIORITY[action.priority].tone}>
-													{ACTION_PRIORITY[action.priority].label}
-												</CandyBadge>
-												<h4 className="min-w-0 text-sm font-medium [overflow-wrap:anywhere]">
+										<li
+											key={`${action.priority}-${index.toString()}`}
+											className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-start gap-3"
+										>
+											<CandyBadge
+												tone={ACTION_PRIORITY[action.priority].tone}
+												icon={ACTION_ICONS[action.priority]}
+												className="justify-center"
+											>
+												{ACTION_PRIORITY[action.priority].label}
+											</CandyBadge>
+											<div className="min-w-0 space-y-1">
+												<h4 className="text-sm font-medium leading-6 [overflow-wrap:anywhere]">
 													{action.title}
 												</h4>
+												<p className="whitespace-pre-line text-sm leading-relaxed [overflow-wrap:anywhere]">
+													{action.reason}
+												</p>
+												<EvidenceReferences ids={action.evidenceIds} />
 											</div>
-											<p className="whitespace-pre-line text-sm leading-relaxed [overflow-wrap:anywhere]">
-												{action.reason}
-											</p>
-											<EvidenceReferences ids={action.evidenceIds} />
 										</li>
 									))}
 								</ol>
@@ -328,7 +289,9 @@ export function RepoAssessmentPanel({ owner, name }: { owner: string; name: stri
 					{report.limitations.length > 0 ? (
 						<LayerCard>
 							<LayerCard.Header>
-								<h3 className="font-medium">评估范围与限制</h3>
+								<h3 className="font-medium text-basalt-foreground">
+									<IconLabel icon={Info}>评估范围与限制</IconLabel>
+								</h3>
 							</LayerCard.Header>
 							<LayerCard.Body>
 								<ul className="list-disc space-y-2 pl-4 text-sm text-basalt-muted-foreground">

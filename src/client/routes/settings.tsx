@@ -21,11 +21,12 @@ import {
 	TableHeader,
 	TableRow,
 } from "@nocoo/basalt/components/table";
-import { ExternalLink, KeyRound, ShieldCheck, Trash2 } from "lucide-react";
+import { ExternalLink, KeyRound, ShieldCheck, Trash2, Users } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 import { AiSettings } from "../components/ai-settings";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ResultCount, TableScroll } from "../components/layout/collection-chrome";
+import { IconLabel } from "../components/layout/icon-label";
 import { catchLoad, reportError, reportOk } from "../lib/error-ui";
 import { initials } from "../lib/format";
 import { PAGE_DESCRIPTIONS } from "../lib/navigation";
@@ -113,7 +114,7 @@ export function SettingsPage() {
 	return (
 		<div className="space-y-8">
 			<PageHeader title="设置" description={PAGE_DESCRIPTIONS["/settings"]} />
-			<SectionRule title="账号连接">
+			<SectionRule title={<IconLabel icon={KeyRound}>账号连接</IconLabel>}>
 				<div className="grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
 					<LayerCard>
 						<LayerCard.Header>
@@ -205,7 +206,10 @@ export function SettingsPage() {
 					</LayerCard>
 				</div>
 			</SectionRule>
-			<SectionRule title="已连接的账号" actions={<ResultCount count={accounts.length} />}>
+			<SectionRule
+				title={<IconLabel icon={Users}>已连接的账号</IconLabel>}
+				actions={<ResultCount count={accounts.length} />}
+			>
 				<LayerCard>
 					<LayerCard.Well className="p-0">
 						{accounts.length === 0 ? (

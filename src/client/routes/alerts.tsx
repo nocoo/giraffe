@@ -18,6 +18,7 @@ import {
 	SnapshotDescription,
 	TableScroll,
 } from "../components/layout/collection-chrome";
+import { IconLabel } from "../components/layout/icon-label";
 import { Kpi, KpiRow } from "../components/layout/kpi";
 import { ActiveFilters, Breakdown, OverviewCard } from "../components/layout/overview-cards";
 import { TableSkeleton } from "../components/layout/page-skeleton";
@@ -210,7 +211,7 @@ export function AlertsPage() {
 				</>
 			) : null}
 			<SectionRule
-				title="待处理告警"
+				title={<IconLabel icon={ShieldAlert}>待处理告警</IconLabel>}
 				actions={<ResultCount count={items.length} total={all.length} />}
 			>
 				{items.length === 0 ? (

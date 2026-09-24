@@ -20,7 +20,7 @@ import {
 	TableHeader,
 	TableRow,
 } from "@nocoo/basalt/components/table";
-import { CircleDot, GitFork, Newspaper, Star } from "lucide-react";
+import { CircleDot, FileText, GitFork, Newspaper, Star } from "lucide-react";
 import { type CSSProperties, useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 import { CandyBadge } from "../components/layout/candy-badge";
@@ -30,6 +30,7 @@ import {
 	SnapshotDescription,
 	TableScroll,
 } from "../components/layout/collection-chrome";
+import { IconLabel } from "../components/layout/icon-label";
 import { Kpi, KpiRow } from "../components/layout/kpi";
 import { TableSkeleton } from "../components/layout/page-skeleton";
 import { SnapshotPending } from "../components/layout/snapshot-pending";
@@ -183,7 +184,7 @@ export function DigestPage() {
 				</ChartBrick>
 			) : null}
 			<SectionRule
-				title={missing ? "仓库变化" : "有变化的仓库"}
+				title={<IconLabel icon={Newspaper}>{missing ? "仓库变化" : "有变化的仓库"}</IconLabel>}
 				actions={<ResultCount count={listed.length} total={snap.repos.length} />}
 				hint={`${snap.day} · 相较前一天的数据${missing ? "" : "；无变化的仓库不列出"}`}
 			>
@@ -240,7 +241,7 @@ export function DigestPage() {
 			</SectionRule>
 			{markdown ? (
 				<SectionRule
-					title="Markdown"
+					title={<IconLabel icon={FileText}>Markdown</IconLabel>}
 					actions={<ClipboardText text="复制 Markdown" copyText={markdown} className="h-8" />}
 				>
 					<LayerCard>

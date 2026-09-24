@@ -4,10 +4,12 @@ import { ChartFrame } from "@nocoo/basalt/charts/frame";
 import { Sparkline } from "@nocoo/basalt/charts/sparkline";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { Text } from "@nocoo/basalt/components/text";
+import { ChartNoAxesCombined } from "lucide-react";
 import type { ReactNode } from "react";
 import { Tooltip, Treemap } from "recharts";
 import type { FactoryRepo } from "../../lib/factory-types";
 import { HelpTooltip } from "../components/layout/help-tooltip";
+import { IconLabel } from "../components/layout/icon-label";
 import { categoryColor, chartColor } from "../lib/chart-theme";
 import { formatFactoryCount as n } from "../viewmodels/factory";
 
@@ -29,7 +31,7 @@ export function FactoryPanel({
 			<LayerCard.Header>
 				<div className="flex items-center gap-2">
 					<Text as="h2" variant="heading">
-						{title}
+						<IconLabel icon={ChartNoAxesCombined}>{title}</IconLabel>
 					</Text>
 					<HelpTooltip label={`${title}说明`}>{hint}</HelpTooltip>
 				</div>

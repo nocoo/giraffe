@@ -19,6 +19,7 @@ import {
 	SnapshotDescription,
 	TableScroll,
 } from "../components/layout/collection-chrome";
+import { IconLabel } from "../components/layout/icon-label";
 import {
 	ActiveFilters,
 	Breakdown,
@@ -206,7 +207,7 @@ export function InboxPage() {
 				</>
 			) : null}
 			<SectionRule
-				title="收件箱"
+				title={<IconLabel icon={Inbox}>收件箱</IconLabel>}
 				actions={
 					<>
 						<ResultCount count={board.rows.length} total={snap.notifications.length} />

@@ -31,7 +31,7 @@ const CANDY_CLASS: Record<CandyTone, string> = {
 
 export function candyClass(tone: CandyTone): string {
 	const foreground =
-		tone === "gray" ? "text-basalt-foreground dark:text-basalt-background" : "text-white";
+		tone === "gray" ? "text-basalt-foreground basalt-dark:text-basalt-background" : "text-white";
 	return `border-transparent ${foreground} ${CANDY_CLASS[tone]}`;
 }
 

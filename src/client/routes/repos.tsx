@@ -22,6 +22,7 @@ import {
 	SnapshotTime,
 	TableScroll,
 } from "../components/layout/collection-chrome";
+import { IconLabel } from "../components/layout/icon-label";
 import { LanguageLabel } from "../components/layout/labels";
 import {
 	ActiveFilters,
@@ -310,7 +311,7 @@ export function ReposPage() {
 				onClear={(key) => setPicked((old) => (key ? { ...old, [key]: "" } : NO_FILTERS))}
 			/>
 			<SectionRule
-				title="仓库"
+				title={<IconLabel icon={Box}>仓库</IconLabel>}
 				actions={
 					<>
 						<ResultCount count={rows.length} total={snap.repos.length} />

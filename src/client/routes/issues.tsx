@@ -20,6 +20,7 @@ import {
 	SnapshotDescription,
 	TableScroll,
 } from "../components/layout/collection-chrome";
+import { IconLabel } from "../components/layout/icon-label";
 import {
 	ActiveFilters,
 	AgeStrip,
@@ -210,7 +211,7 @@ export function IssuesPage() {
 				onClear={(key) => setPicked((old) => (key ? { ...old, [key]: "" } : NO_FILTERS))}
 			/>
 			<SectionRule
-				title="Issues"
+				title={<IconLabel icon={CircleDot}>Issues</IconLabel>}
 				actions={<ResultCount count={rows.length} total={snap.issues.length} />}
 			>
 				<LayerCard>

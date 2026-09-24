@@ -20,6 +20,7 @@ import {
 	SnapshotDescription,
 	TableScroll,
 } from "../components/layout/collection-chrome";
+import { IconLabel } from "../components/layout/icon-label";
 import {
 	ActiveFilters,
 	AgeStrip,
@@ -313,7 +314,7 @@ export function PullsPage() {
 				</>
 			) : null}
 			<SectionRule
-				title="Pull Requests"
+				title={<IconLabel icon={GitPullRequest}>Pull Requests</IconLabel>}
 				actions={<ResultCount count={rows.length} total={snap.pull_requests.length} />}
 			>
 				<LayerCard>

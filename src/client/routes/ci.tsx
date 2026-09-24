@@ -11,7 +11,7 @@ import {
 	TableHeader,
 	TableRow,
 } from "@nocoo/basalt/components/table";
-import { ArrowUpRight, CircleAlert, Eye, ShieldCheck, Workflow } from "lucide-react";
+import { ArrowUpRight, CircleAlert, Eye, ShieldCheck, Tag, Workflow } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { CiReportResponse } from "../../lib/ci-health";
 import { CandyBadge } from "../components/layout/candy-badge";
@@ -21,6 +21,7 @@ import {
 	SnapshotDescription,
 	TableScroll,
 } from "../components/layout/collection-chrome";
+import { IconLabel } from "../components/layout/icon-label";
 import { CountBars } from "../components/layout/overview-cards";
 import { TableSkeleton } from "../components/layout/page-skeleton";
 import { ShareBar } from "../components/layout/rank-bars";
@@ -172,7 +173,7 @@ export function CiPage() {
 			</section>
 
 			<SectionRule
-				title="需要处理"
+				title={<IconLabel icon={CircleAlert}>需要处理</IconLabel>}
 				hint="两种情况：最近至少连续 2 次失败，最后一次成功后再没通过；或近 4 次以上判定中失败过半，偶尔通过也不算恢复。"
 			>
 				{buckets.act.length ? (
@@ -215,7 +216,7 @@ export function CiPage() {
 			</div>
 
 			<SectionRule
-				title="全部工作流"
+				title={<IconLabel icon={Workflow}>全部工作流</IconLabel>}
 				hint="每行一条工作流线。方块为最近 10 次运行，从左到右由旧到新，最右侧加框的一格是最新一次。"
 				actions={
 					<FilterBar label="工作流筛选">
@@ -301,7 +302,7 @@ export function CiPage() {
 			</SectionRule>
 
 			<SectionRule
-				title="发布"
+				title={<IconLabel icon={Tag}>发布</IconLabel>}
 				hint="按发布流水线状态和距最近版本的时间排序。超过 3 个典型间隔（或 90 天）未发布标记为久未发布。"
 			>
 				<LayerCard>

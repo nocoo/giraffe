@@ -46,6 +46,17 @@
 .giraffe-select-field > label { flex-shrink: 0; color: var(--color-basalt-muted-foreground); }
 .giraffe-select-field > button { min-width: 0; }
 
+.assessment-judgment-summary { display:grid;grid-template-columns:minmax(0,1fr) 7rem 9rem 7rem;align-items:center;gap:1rem;min-width:0;flex:1;text-align:left; }
+@media (max-width: 1023px) {
+	.assessment-judgment-summary { grid-template-columns:7rem minmax(5rem,9rem) minmax(0,1fr);gap:.5rem .75rem; }
+	.assessment-judgment-title { grid-column:1 / -1; }
+}
+@media (max-width: 479px) {
+	.assessment-judgment-summary { grid-template-columns:7rem minmax(0,1fr); }
+	.assessment-review-flag { grid-column:1 / -1; }
+	.assessment-review-flag:empty { display:none; }
+}
+
 /* Product-specific layouts use Basalt typography, surfaces and control tokens. */
 .factory { font-size:var(--text-sm);line-height:1.6;font-variant-numeric:tabular-nums; }
 .factory-provenance { display:flex;align-items:center;flex-wrap:wrap;gap:.5rem 1rem;font-size:var(--text-xs);color:var(--color-basalt-muted-foreground); }

@@ -4,11 +4,13 @@ import { StackedBarChart } from "@nocoo/basalt/charts/stacked-bar";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
+import { Activity, GitPullRequest, Layers3 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ChartBrick, ChartEmpty, ChartRow } from "../components/layout/chart-brick";
 import { SnapshotDescription } from "../components/layout/collection-chrome";
 import { DonutChart } from "../components/layout/donut-chart";
+import { IconLabel } from "../components/layout/icon-label";
 import { InsightsSkeleton } from "../components/layout/page-skeleton";
 import { SnapshotPending } from "../components/layout/snapshot-pending";
 import { chartColor } from "../lib/chart-theme";
@@ -126,7 +128,7 @@ export function InsightsPage() {
 					</>
 				}
 			/>
-			<SectionRule title="工作量">
+			<SectionRule title={<IconLabel icon={Layers3}>工作量</IconLabel>}>
 				<div className="space-y-3" data-testid="insight-metrics">
 					<p className="giraffe-stat-inline">
 						<span>
@@ -185,7 +187,7 @@ export function InsightsPage() {
 					</ChartRow>
 				</div>
 			</SectionRule>
-			<SectionRule title="审查与节奏">
+			<SectionRule title={<IconLabel icon={GitPullRequest}>审查与节奏</IconLabel>}>
 				<div className="space-y-3">
 					<p className="giraffe-stat-inline">
 						<span>
@@ -240,7 +242,7 @@ export function InsightsPage() {
 					</ChartRow>
 				</div>
 			</SectionRule>
-			<SectionRule title="健康与活跃">
+			<SectionRule title={<IconLabel icon={Activity}>健康与活跃</IconLabel>}>
 				<div className="space-y-3">
 					<p className="giraffe-stat-inline">
 						<span>

@@ -9,7 +9,17 @@ import {
 	TableHeader,
 	TableRow,
 } from "@nocoo/basalt/components/table";
-import { ArrowLeft, ArrowUpRight, GitBranch } from "lucide-react";
+import {
+	Activity,
+	ArrowLeft,
+	ArrowUpRight,
+	Boxes,
+	CircleDot,
+	GitBranch,
+	GitCommitHorizontal,
+	GitMerge,
+	Workflow,
+} from "lucide-react";
 import {
 	type CSSProperties,
 	useCallback,
@@ -25,6 +35,7 @@ import {
 	type FactorySnapshot,
 	type FactoryStreamName,
 } from "../../lib/factory-types";
+import { IconLabel } from "../components/layout/icon-label";
 import { Kpi, KpiRow } from "../components/layout/kpi";
 import { LanguageLabel } from "../components/layout/labels";
 import { SelectField } from "../components/layout/select-field";
@@ -282,7 +293,7 @@ export function FactoryPage() {
 							<section className="factory-section" aria-labelledby="factory-change-title">
 								<SectionRule
 									id="factory-change-title"
-									title="变化 · 最近 90 天"
+									title={<IconLabel icon={Activity}>变化 · 最近 90 天</IconLabel>}
 									hint="左轴是每日流量（柱），右轴是结果（折线）。Open 存量由当前数量按每日新开与完成倒推；事件不完整时不画折线。"
 								/>
 								<div className="factory-chart-grid grid gap-3 xl:grid-cols-2">
@@ -348,11 +359,12 @@ export function FactoryPage() {
 							<section className="factory-section" aria-labelledby="factory-stock-title">
 								<SectionRule
 									id="factory-stock-title"
-									title="存量 · 我名下全部仓库"
+									title={<IconLabel icon={Boxes}>存量 · 我名下全部仓库</IconLabel>}
 									hint="当前时点的积累：规模、历史总量与未完成的工作。"
 								/>
 								<KpiRow>
 									<Kpi
+										icon={Boxes}
 										label="仓库"
 										value={n(board.totals.repos)}
 										subtitle={`${board.totals.private} 私有 · ${(board.totals.sizeKiB / 1048576).toFixed(2)} GiB Git 存储`}
@@ -360,6 +372,7 @@ export function FactoryPage() {
 										<ActivityBar activity={board.activity} />
 									</Kpi>
 									<Kpi
+										icon={CircleDot}
 										label="Open Issue / PR"
 										value={`${n(board.totals.openIssues)} / ${n(board.totals.openPrs)}`}
 										subtitle={`${n(board.aggregate.agedIssues + board.aggregate.agedPrs)} 个长龄 · Issue ≥14 天、PR ≥7 天`}
@@ -371,6 +384,7 @@ export function FactoryPage() {
 										/>
 									</Kpi>
 									<Kpi
+										icon={GitCommitHorizontal}
 										label="历史提交"
 										value={n(board.totals.allCommits)}
 										subtitle={`窗口内 ${
@@ -391,6 +405,7 @@ export function FactoryPage() {
 										/>
 									</Kpi>
 									<Kpi
+										icon={GitMerge}
 										label="已合并 PR · 历史"
 										value={n(board.totals.mergedPrs)}
 										subtitle={`窗口内 ${
@@ -411,6 +426,7 @@ export function FactoryPage() {
 										/>
 									</Kpi>
 									<Kpi
+										icon={Workflow}
 										label="CI 观测成功率"
 										value={board.observed.actions ? formatRate(board.aggregate.ciRate) : "—"}
 										subtitle={
