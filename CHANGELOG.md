@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.10.0 — 2026-09-24
+
+### Added
+
+- Hexly single-project identities across repository cards/details, work queues, CI and factory views, with high-DPI Logos, English descriptions, project links and a one-hour success-only memory cache
+- Two-stage repository assessments: the official TypeSafe Jev SDK classifies repository evidence, then next-ai generates a validated JSON report with security, PR, Issue, delivery and action sections
+- Separate encrypted AI settings cards with connection tests, plus an AI assessment tab with confidence meters, probability distributions, evidence references and retained prior reports
+- AI analysis checkpoints in refresh progress, including judgment/report stages, retries and explicit optional skips when providers are not configured
+
+### Changed
+
+- Focus assessments on the latest fourteen days and compare the preceding period; retain older unresolved work and use active Issues as the primary security evidence, supplemented by GitHub security bot alerts
+- Unify candy colors, badge contrast, Lucide icons and assessment label alignment; compact refresh banners and show snapshot timestamps and elapsed time
+- Treat unavailable optional security data as a limitation, preserving the distinction between missing evidence and an observed zero
+
+### Fixed
+
+- Restrict selected-repository refreshes to their own statistics and detail pages instead of expanding into full-site work
+- Use Dependabot cursor pagination and bounded Jev inputs; preserve safe provider diagnostics and avoid retrying deterministic request failures
+- Reject unsupported or contradictory all-clear reports, including incomplete Issue evidence and excerpted security descriptions
+- Preserve daily chart tooltip records to prevent render crashes, stabilize first-load repository tab geometry, and remove duplicate focus indicators
+- Align AI settings cards and make neutral badge contrast follow the application theme
+
+### Operations
+
+- Release applies additive, repeatable `0005_ai_settings.sql` and `0006_ai_reviews.sql` migrations before deploying the Worker; rollback retains both tables and existing snapshots
+- Configure both AI services in Settings to enable assessments on future accepted repository refreshes; reads do not start generation or rewrite historical reports
+
 ## v0.9.0 — 2026-09-24
 
 ### Added
