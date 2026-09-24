@@ -23,6 +23,7 @@ const GETS = [
 	"/api/issues",
 	"/api/prs",
 	"/api/insights",
+	"/api/insights/assessments",
 	"/api/alerts",
 	"/api/notifications",
 	"/api/repos/octocat/hello-world",

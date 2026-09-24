@@ -38,6 +38,10 @@ The authoritative contract is `repositoryReportSchema` in `src/lib/ai-review.ts`
 
 The formatted repository detail tab renders plain text, aligned icon/status labels, confidence meters, four-choice probability distributions, actions, limitations and expandable judgments. Standard question IDs receive Chinese display titles while preserving the original question in the details. Confidence is distribution concentration rather than factual correctness; manual-review hints remain textual as well as visual. Source and report versions/timestamps come from the application, not the model. Repository content is not rendered as HTML or executed as instructions.
 
+## Cross-repository projection
+
+`GET /api/insights/assessments` reads existing `ai_reviews` rows for the active account and returns one bounded summary per participating repository: stage, whether the report still matches the published repository version, overall and per-section statuses, delivery trend, at most three `now`/`next` action titles, at most eight `urgent`/`review` Jev judgments and the safe failure code. Superseded reports stay visible but are marked stale. Malformed stored JSON becomes `null` instead of a conclusion. The endpoint makes no provider or GitHub calls and writes nothing.
+
 ## Execution and persistence
 
 `0005_ai_settings.sql` adds encrypted settings. `0006_ai_reviews.sql` adds one bounded assessment row per account/repository. Existing data remains untouched. The canonical initial schema and local migration runner include both migrations.
@@ -55,5 +59,6 @@ Endpoints require the existing Access identity and write Origin guard:
 | POST | `/api/ai/settings/:kind/test` | Test submitted draft or retained key |
 | DELETE | `/api/ai/settings/:kind` | Clear one configuration/key |
 | GET | `/api/repos/:owner/:name/assessment` | Active-account report and stage; read-only |
+| GET | `/api/insights/assessments` | Compact saved report/Jev projections for participating repositories; read-only, 409 without a repository catalog |
 
 Local preview uses `https://giraffe.dev.hexly.ai`. Automated verification uses fake credentials and mocked SDK/provider responses. Real service authentication and model quality require the owner's saved keys and are not claimed by those tests. Rollback stops assessment dispatch and restores the prior application revision; retain the additive tables for subsequent recovery.

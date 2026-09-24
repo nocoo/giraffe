@@ -20,7 +20,7 @@ import { getMe } from "./routes/me";
 import { postRead, postReadAll } from "./routes/notifications";
 import { getProjectIdentity } from "./routes/project-identity";
 import { postRefresh } from "./routes/refresh";
-import { getRepoAssessment } from "./routes/repo-assessment";
+import { getAssessmentDigests, getRepoAssessment } from "./routes/repo-assessment";
 import { repoGet, setRepoStatistics } from "./routes/repos";
 import { snapshotGet } from "./routes/snapshots";
 
@@ -114,6 +114,8 @@ export function createApp(): Hono<{ Bindings: Env; Variables: AppVars }> {
 	onGet(app, "/api/prs", (c) => snapshotGet(c, "prs"));
 	allow(app, "/api/insights", ["GET"]);
 	onGet(app, "/api/insights", (c) => snapshotGet(c, "insights"));
+	allow(app, "/api/insights/assessments", ["GET"]);
+	onGet(app, "/api/insights/assessments", getAssessmentDigests);
 	allow(app, "/api/alerts", ["GET"]);
 	onGet(app, "/api/alerts", (c) => snapshotGet(c, "alerts"));
 	allow(app, "/api/notifications", ["GET"]);
