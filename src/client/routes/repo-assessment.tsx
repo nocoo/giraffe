@@ -14,6 +14,7 @@ import { CandyBadge } from "../components/layout/candy-badge";
 import { DetailSkeleton } from "../components/layout/page-skeleton";
 import { reportError } from "../lib/error-ui";
 import { type CandyTone, formatDate } from "../lib/format";
+import { describeRunIssue } from "../viewmodels/factory-runs";
 import {
 	assessmentPending,
 	assessmentStale,
@@ -194,6 +195,7 @@ export function RepoAssessmentPanel({ owner, name }: { owner: string; name: stri
 	const report = saved?.report;
 	const stale = saved ? assessmentStale(saved) : false;
 	const status = saved?.status ?? "missing";
+	const issue = describeRunIssue(saved?.error ?? "ai_error", "assessment");
 
 	return (
 		<div className="space-y-4" data-testid="repo-assessment">
@@ -261,11 +263,12 @@ export function RepoAssessmentPanel({ owner, name }: { owner: string; name: stri
 							</p>
 						) : status === "failed" ? (
 							<p className="text-sm text-basalt-muted-foreground">
-								请
-								<Link href="/settings" className="mx-1">
-									检查 AI 设置
-								</Link>
-								，下次成功刷新数据时会再次评估。
+								{issue.reason} {issue.action}
+								{issue.settings ? (
+									<Link href="/settings" className="mx-1">
+										检查 AI 设置
+									</Link>
+								) : null}
 								{saved?.error ? (
 									<span className="ml-1">
 										诊断：<code>{saved.error}</code>

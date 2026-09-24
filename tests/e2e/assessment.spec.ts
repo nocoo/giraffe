@@ -214,7 +214,7 @@ test("a failed newer assessment preserves the last successful report with its or
 				status: "failed",
 				sourceVersion: "factory-v3",
 				sourceAt: "2026-09-25T08:30:00.000Z",
-				error: "summary_invalid",
+				error: "ai_invalid_report",
 			},
 		}),
 	);
@@ -224,10 +224,19 @@ test("a failed newer assessment preserves the last successful report with its or
 	await expect(panel.getByText("本次评估失败", { exact: true })).toBeVisible();
 	await expect(panel.getByText(fixture.report?.summary ?? "", { exact: true })).toBeVisible();
 	await expect(panel.locator("time").last()).toHaveAttribute("datetime", fixture.reportAt ?? "");
-	await expect(panel.getByRole("link", { name: "检查 AI 设置", exact: true })).toHaveAttribute(
-		"href",
-		"/settings",
+	await expect(panel.getByText(/模型返回的判断或报告未通过结构与证据校验/)).toBeVisible();
+	await expect(panel.getByRole("link", { name: "检查 AI 设置", exact: true })).toHaveCount(0);
+});
+
+test("context overflow explains the input limit without suggesting a key change", async ({
+	page,
+}) => {
+	await page.route(`**${endpoint}`, (route) =>
+		route.fulfill({ json: { ...fixture, status: "failed", error: "ai_input_too_large" } }),
 	);
+	const panel = await openAssessment(page);
+	await expect(panel.getByText(/仓库数据超出了模型的上下文限制/)).toBeVisible();
+	await expect(panel.getByRole("link", { name: "检查 AI 设置", exact: true })).toHaveCount(0);
 });
 
 test("read failures have an inline retry and never start generation", async ({ page }) => {

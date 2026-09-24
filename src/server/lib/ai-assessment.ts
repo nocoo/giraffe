@@ -2,7 +2,7 @@ import type { JudgmentResult, RepositoryReport, ReviewInput } from "../../lib/ai
 import type { RepoAssessment } from "../../lib/repo-assessment";
 import type { Env } from "../env";
 import { assessmentInput } from "./ai-assessment-input";
-import { judgeRepository, summarizeRepository } from "./ai-models";
+import { judgeRepository, MODEL_FAILURES, summarizeRepository } from "./ai-models";
 import { loadAiConfig } from "./ai-settings";
 import { createDb, type Db } from "./db/d1";
 import { ApiError } from "./errors";
@@ -131,12 +131,25 @@ export async function executeAssessment(
 	} catch (error) {
 		const code =
 			error instanceof ApiError &&
-			["ai_capacity", "ai_source_missing", "ai_not_configured", "factory_capacity"].includes(
-				error.code,
-			)
+			[
+				...Object.keys(MODEL_FAILURES),
+				"ai_capacity",
+				"ai_source_missing",
+				"ai_not_configured",
+				"factory_capacity",
+			].includes(error.code)
 				? error.code
 				: "ai_error";
-		const terminal = row.attempts >= 3 || code !== "ai_error";
+		const terminal =
+			row.attempts >= 3 ||
+			![
+				"ai_error",
+				"ai_timeout",
+				"ai_provider_failed",
+				"ai_rate_limited",
+				"ai_invalid_judgment",
+				"ai_invalid_report",
+			].includes(code);
 		const now = clock();
 		const retryAt = new Date(Date.parse(now) + row.attempts * 60_000).toISOString();
 		const saved = await db

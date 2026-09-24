@@ -118,6 +118,53 @@ export function describeRunIssue(code: string | null, kind: StepKind, resource?:
 				reason: "分析输入或报告超过容量上限。",
 				action: "请维护者检查分析内容与存储用量。",
 			};
+		case "ai_input_too_large":
+			return {
+				...base,
+				title: "AI 分析输入过大",
+				reason: "仓库数据超出了模型的上下文限制。",
+				action: "请维护者调整分析输入预算后再刷新；相同输入不会自动重试。",
+			};
+		case "ai_request_rejected":
+			return {
+				...base,
+				settings: true,
+				title: "AI 服务拒绝了请求",
+				reason: "模型服务不接受当前请求格式或模型名称。",
+				action: "检查模型名称和服务地址，连接测试通过后再刷新。",
+			};
+		case "ai_auth_failed":
+			return {
+				...base,
+				settings: true,
+				title: "AI 服务认证未通过",
+				reason: "API key 无效或没有访问模型的权限。",
+				action: "在设置中检查 API key 和权限，连接测试通过后再刷新。",
+			};
+		case "ai_rate_limited":
+			return {
+				...base,
+				title: "AI 服务暂时限流",
+				reason: "模型服务限制了请求频率。",
+				action: "运行中会延迟重试；若最终未完成，可稍后重新刷新仓库。",
+			};
+		case "ai_timeout":
+			return {
+				...base,
+				title: "AI 分析超时",
+				reason: "模型未在规定时间内返回，分析请求超时。",
+				action: "运行中会自动重试；若最终未完成，可稍后重新刷新仓库。",
+			};
+		case "ai_invalid_judgment":
+		case "ai_invalid_report":
+			return {
+				...base,
+				title: "AI 结果未通过校验",
+				reason: "模型返回的判断或报告未通过结构与证据校验。",
+				action: "运行中会自动重试；反复失败时需要检查模型输出和报告模板。",
+			};
+		case "ai_provider_failed":
+		case "ai_connection_failed":
 		case "ai_error":
 			return {
 				...base,

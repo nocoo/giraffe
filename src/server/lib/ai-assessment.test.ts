@@ -16,10 +16,15 @@ import { judgeRepository, summarizeRepository } from "./ai-models";
 import { loadAiConfig } from "./ai-settings";
 import { createDb } from "./db/d1";
 import { claimRun, startRun } from "./db/factory-runs";
+import { ApiError } from "./errors";
 import { repositoryWrites } from "./factory-publish";
 import { factoryStorage } from "./factory-retention";
 
-vi.mock("./ai-models", () => ({ judgeRepository: vi.fn(), summarizeRepository: vi.fn() }));
+vi.mock("./ai-models", async (original) => ({
+	...(await original<typeof import("./ai-models")>()),
+	judgeRepository: vi.fn(),
+	summarizeRepository: vi.fn(),
+}));
 vi.mock("./ai-settings", () => ({ loadAiConfig: vi.fn() }));
 const snap = factoryFixture();
 const at = snap.fetched_at;
@@ -119,6 +124,24 @@ it("leaves unconfigured refreshes alone and reads never contact AI", async () =>
 	expect(await ids()).toEqual([]);
 	expect((await read()).status).toBe("unconfigured");
 	expect(judgeRepository).not.toHaveBeenCalled();
+});
+it.each([
+	["ai_input_too_large", false],
+	["ai_request_rejected", false],
+	["ai_auth_failed", false],
+	["ai_timeout", true],
+	["ai_provider_failed", true],
+	["ai_rate_limited", true],
+	["ai_invalid_judgment", true],
+	["ai_invalid_report", true],
+])("preserves safe %s diagnostics and retries only recoverable errors", async (code, retry) => {
+	const { env, ids, read } = await setup();
+	const id = (await ids())[0] as string;
+	vi.mocked(judgeRepository).mockRejectedValue(new ApiError(502, code, "secret provider body"));
+	const next = await executeAssessment(env, id, () => at);
+	expect(next !== null).toBe(retry);
+	expect(await read()).toMatchObject({ error: code, status: retry ? "judgment" : "failed" });
+	expect(JSON.stringify(await read())).not.toContain("secret");
 });
 it("retains a previous valid report on safe terminal failure and fences superseded workers", async () => {
 	const { raw, env, ids, read } = await setup();

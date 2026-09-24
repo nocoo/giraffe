@@ -96,6 +96,20 @@ it("shows AI stages and keeps an unconfigured skip out of refresh warnings", () 
 	for (const code of ["ai_capacity", "ai_source_missing", "factory_capacity"])
 		expect(describeRunIssue(code, "assessment").impact).toContain("数据");
 });
+it.each([
+	["ai_input_too_large", "上下文", false],
+	["ai_request_rejected", "请求", true],
+	["ai_auth_failed", "权限", true],
+	["ai_timeout", "超时", false],
+	["ai_rate_limited", "请求频率", false],
+	["ai_invalid_judgment", "校验", false],
+	["ai_invalid_report", "校验", false],
+])("explains %s without exposing provider diagnostics", (code, reason, settings) => {
+	expect(describeRunIssue(code as string, "assessment")).toMatchObject({
+		reason: expect.stringContaining(reason as string),
+		settings,
+	});
+});
 beforeEach(() => {
 	setActiveAccountId(snap.account_id);
 	vi.mocked(apiGet).mockImplementation(async (path) =>

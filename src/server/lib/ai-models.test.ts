@@ -1,3 +1,4 @@
+import { APITimeoutError, APIError as TypeSafeApiError } from "@typesafe-ai/sdk";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { JudgmentResult, RepositoryReport, ReviewInput } from "../../lib/ai-review";
 import type { AiRuntimeConfig } from "../../lib/ai-settings";
@@ -160,6 +161,74 @@ describe("AI connection tests", () => {
 });
 
 describe("Jev repository judgments", () => {
+	it("fails before contacting the provider when metadata alone exceeds the budget", async () => {
+		const source = input();
+		source.repository.name = "x".repeat(24_000);
+		await expect(judgeRepository(config, source)).rejects.toMatchObject({
+			code: "ai_input_too_large",
+		});
+		expect(mocks.systemOne).not.toHaveBeenCalled();
+	});
+	it("keeps the SDK's own timeout distinct from provider rejection", async () => {
+		mocks.systemOne.mockRejectedValueOnce(new APITimeoutError(60_000));
+		await expect(judgeRepository(config, input())).rejects.toMatchObject({ code: "ai_timeout" });
+	});
+	it("bounds multilingual evidence without losing cadence or concealing omissions", async () => {
+		const source = input();
+		for (const stream of FACTORY_STREAMS) {
+			const first = source.events[stream][0];
+			if (!first) throw new Error("Missing fixture evidence");
+			source.events[stream] = Array.from({ length: 24 }, (_, i) => ({
+				...first,
+				id: `${stream}:${i}`,
+				body: "安全问题需要审查。".repeat(150),
+			}));
+			source.omitted[stream] = 3;
+		}
+		source.metrics.cycleHours = Array.from({ length: 5000 }, () => 12);
+		source.metrics.days = { "2026-09-23": { ...source.metrics, commits: 7 } };
+		const original = structuredClone(source);
+		const result = await judgeRepository(config, source);
+		const request = mocks.systemOne.mock.calls[0]?.[0];
+		expect(new TextEncoder().encode(JSON.stringify(request.state)).length).toBeLessThanOrEqual(
+			24_000,
+		);
+		expect(request.state.metrics).not.toHaveProperty("cycleHours");
+		expect(request.state.metrics.days.columns).toContain("commits");
+		expect(request.state.metrics.days.rows[0].slice(0, 2)).toEqual(["2026-09-23", 7]);
+		for (const stream of FACTORY_STREAMS) {
+			expect(request.state.omitted[stream]).toBe(27 - request.state.events[stream].length);
+			for (const item of request.state.events[stream]) expect(item).not.toHaveProperty("url");
+		}
+		const sentIds = Object.values(request.state.events).flatMap((items) =>
+			(items as { id: string }[]).map((item) => item.id),
+		);
+		for (const judgment of result.judgments)
+			for (const id of judgment.evidenceIds) expect(sentIds).toContain(id);
+		expect(result.judgments.every((item) => item.uncertain)).toBe(true);
+		expect(source).toEqual(original);
+	});
+	it("marks shortened excerpts uncertain even when every record was included", async () => {
+		const source = input();
+		const item = source.events.prs[0];
+		if (item) item.body = "evidence".repeat(200);
+		const result = await judgeRepository(config, source);
+		expect(result.judgments.find((item) => item.id === "external_pr_review")?.uncertain).toBe(true);
+	});
+	it.each([
+		[400, { detail: { error_type: "max_tokens_exceeded" } }, "ai_input_too_large"],
+		[400, { detail: "secret" }, "ai_request_rejected"],
+		[422, {}, "ai_request_rejected"],
+		[401, {}, "ai_auth_failed"],
+		[403, {}, "ai_auth_failed"],
+		[429, {}, "ai_rate_limited"],
+		[503, { detail: "secret" }, "ai_provider_failed"],
+	])("classifies provider failures safely (%s)", async (status, body, code) => {
+		mocks.systemOne.mockRejectedValueOnce(
+			new TypeSafeApiError(status as number, body, new Headers()),
+		);
+		await expect(judgeRepository(config, input())).rejects.toMatchObject({ code });
+	});
 	it("asks independent standardized and per-item questions in one bounded batch", async () => {
 		const source = input();
 		for (const stream of ["issues", "prs", "alerts"] as const) {
