@@ -172,7 +172,7 @@ test("factory opens a large accessible console while keeping one compact health 
 	const bounds = await dialog.boundingBox();
 	expect(bounds?.width).toBeGreaterThan(1000);
 	expect(bounds?.height).toBeGreaterThan(700);
-	await expect(dialog.locator(".factory-run-phases>li")).toHaveCount(4);
+	await expect(dialog.locator(".factory-run-phases>li")).toHaveCount(5);
 	await expect(dialog.locator(".factory-issue")).toHaveCount(1);
 	await expect(dialog.getByText("未能读取安全告警", { exact: true })).toBeVisible();
 	await expect(
@@ -202,7 +202,7 @@ test("factory opens a large accessible console while keeping one compact health 
 	});
 	const row = dialog.locator(".factory-run-row").filter({ hasText: "nocoo/app" });
 	await row.locator("summary").first().click();
-	await expect(row.locator(".factory-step-timeline>li")).toHaveCount(18);
+	await expect(row.locator(".factory-step-timeline>li")).toHaveCount(19);
 	await expect(row.getByText(/未能读取安全告警/)).toBeVisible();
 	await dialog.getByRole("button", { name: "关闭刷新控制台" }).focus();
 	await page.keyboard.press("Shift+Tab");
@@ -380,12 +380,69 @@ test("selecting one repository limits the console to its nine detail pages", asy
 	await dialog.getByRole("button", { name: "开始刷新（1）", exact: true }).click();
 	await expect(dialog.getByRole("progressbar", { name: "本次刷新进度" })).toHaveAttribute(
 		"max",
-		"19",
+		"20",
 	);
 	const stages = dialog.locator(".factory-run-phases>li");
-	await expect(stages).toHaveCount(3);
+	await expect(stages).toHaveCount(4);
 	await expect(stages.filter({ hasText: "仓库页面" })).toContainText("0 / 9");
+	await expect(stages.filter({ hasText: "AI 分析" })).toContainText("0 / 1");
 	await expect(dialog.getByText("全站页面", { exact: true })).toHaveCount(0);
 	await expect(dialog.locator(".factory-run-row")).toHaveCount(1);
 	await expect(dialog.locator(".factory-run-row")).toContainText("nocoo/app");
+});
+
+test("refresh progress waits for JEV judgment and the AI report before showing completion", async ({
+	page,
+}, testInfo) => {
+	const fixture = consoleFixture();
+	const run = makeRun(
+		"ai-progress",
+		fixture.snapshot.account_id,
+		"nocoo",
+		"ai-key",
+		"refresh",
+		fixture.snapshot.repos.slice(0, 1),
+		fixture.snapshot.fetched_at,
+		[],
+		[],
+		{ scope: "selected" },
+	);
+	const ai = run.steps.find((step) => step.kind === "assessment");
+	if (!ai) throw new Error("AI step missing");
+	for (const step of run.steps)
+		if (step.kind !== "assessment" && step.kind !== "publish") step.status = "success";
+	ai.status = "running";
+	ai.assessmentStage = "judgment";
+	ai.startedAt = run.startedAt;
+	run.cursor = run.steps.indexOf(ai);
+	run.nextAttemptAt = new Date(Date.now() + 5000).toISOString();
+	const view = { ...run, leaseUntil: null, progress: runProgress(run, run.startedAt) };
+	fixture.state.current = view;
+	await mockConsole(page, fixture);
+	await page.goto("/factory?refresh=1");
+	const dialog = page.getByRole("dialog", { name: "刷新控制台" });
+	const current = dialog.locator(".factory-current-step");
+	const progress = dialog.getByRole("progressbar", { name: "本次刷新进度" });
+	await expect(current).toContainText("正在处理：nocoo/app · AI 分析 · JEV 判断");
+	await expect(progress).toHaveAttribute("value", "18");
+	await expect(progress).toHaveAttribute("max", "20");
+	await expect(
+		dialog.locator(".factory-run-phases>li").filter({ hasText: "AI 分析" }),
+	).toContainText("0 / 1");
+	await page.screenshot({ path: testInfo.outputPath("ai-analysis-progress.png") });
+	await dialog.locator(".factory-run-row>summary").click();
+	await expect(
+		dialog.locator(".factory-step-timeline>li").filter({ hasText: "AI 分析" }),
+	).toContainText("正在分析");
+	ai.assessmentStage = "summary";
+	await expect(current).toContainText("AI 分析 · 生成报告", { timeout: 10000 });
+	await expect(progress).toHaveAttribute("value", "18");
+	for (const step of view.steps) step.status = "success";
+	view.status = "completed";
+	view.cursor = view.steps.length;
+	view.progress = runProgress(view, run.startedAt);
+	fixture.state.current = null;
+	fixture.state.history.unshift(view);
+	await expect(progress).toHaveAttribute("value", "20", { timeout: 10000 });
+	await expect(dialog.locator(".factory-run-overview h3")).toHaveText("已完成");
 });

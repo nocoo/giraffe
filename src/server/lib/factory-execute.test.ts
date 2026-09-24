@@ -5,7 +5,7 @@ import { sqliteFixture } from "../../../tests/fixtures/sqlite";
 import { makeRun, type RunSelection } from "../../lib/factory-run";
 import type { Env } from "../env";
 import { createDb } from "./db/d1";
-import { getRun, publishedFactory, startRun } from "./db/factory-runs";
+import { controlRun, getRun, publishedFactory, startRun } from "./db/factory-runs";
 import { readDay, upsertDayStmt } from "./db/snapshot-days";
 import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
 import { executeRunPage } from "./factory-execute";
@@ -162,7 +162,7 @@ it("refreshes one repository without scanning or rewriting unrelated site data",
 	await db.batch([upsertDayStmt(db, snap.account_id, now.slice(0, 10), daily)]);
 	const later = new Date(Date.parse(now) + 30_000).toISOString();
 	const run = await drive(env, later);
-	expect(run?.steps).toHaveLength(19);
+	expect(run?.steps).toHaveLength(20);
 	expect(run?.status).toBe("completed");
 	for (const [kind, payload] of originals)
 		expect(await readSnapshot(db, snap.account_id, kind)).toEqual(payload);
@@ -198,6 +198,126 @@ async function drive(env: Env, start = now) {
 	}
 	throw new Error("run did not terminate");
 }
+
+async function reachAssessment() {
+	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] });
+	const db = createDb(env.DB);
+	env.FACTORY_QUEUE = { send: vi.fn().mockResolvedValue(undefined) } as unknown as Queue;
+	for (const kind of ["summary", "judgment"])
+		await db
+			.prepare(
+				"INSERT INTO ai_settings VALUES(?, 'encrypted',1,'fake','https://ai.example','openai','apiKey',?)",
+			)
+			.bind(kind, now)
+			.run();
+	for (let i = 0; i < 50; i++) {
+		const found = await getRun(db, snap.account_id, "r1");
+		if (found?.run.steps[found.run.cursor]?.kind === "assessment") return { env, db };
+		await executeRunPage(env, "r1", () => now);
+	}
+	throw new Error("AI checkpoint missing");
+}
+
+it("waits for the version-bound AI job through judgment and summary without new upstream calls", async () => {
+	const { env, db } = await reachAssessment();
+	const calls = vi.mocked(fetch).mock.calls.length;
+	Reflect.deleteProperty(env, "TOKEN_ENCRYPTION_KEY_V1");
+	const firstPoll = await executeRunPage(env, "r1", () => now);
+	expect(firstPoll).toBe(new Date(Date.parse(now) + 5000).toISOString());
+	let run = (await getRun(db, snap.account_id, "r1"))?.run;
+	expect(run?.status).toBe("running");
+	expect(run?.steps[run.cursor]).toMatchObject({
+		kind: "assessment",
+		status: "running",
+		assessmentStage: "judgment",
+	});
+	expect((await publishedFactory(db, snap.account_id))?.runId).toBe(snap.runId);
+	await db.prepare("UPDATE ai_reviews SET stage='summary'").run();
+	const summaryAt = firstPoll as string;
+	const next = await executeRunPage(env, "r1", () => summaryAt);
+	run = (await getRun(db, snap.account_id, "r1"))?.run;
+	expect(run?.steps[run.cursor]).toMatchObject({ assessmentStage: "summary", status: "running" });
+	await db.prepare("UPDATE ai_reviews SET stage='complete',report_version=source_version").run();
+	run = await drive(env, next as string);
+	expect(run?.status).toBe("completed");
+	expect(run?.steps.find((step) => step.kind === "assessment")).toMatchObject({
+		status: "success",
+		durationMs: 10000,
+	});
+	expect((await publishedFactory(db, snap.account_id))?.runId).toBe("r1");
+	expect(fetch).toHaveBeenCalledTimes(calls);
+	expect(env.FACTORY_QUEUE.send).toHaveBeenCalledTimes(1);
+});
+
+it("respects AI retry deadlines and retains collected data when analysis fails", async () => {
+	const { env, db } = await reachAssessment();
+	const retryAt = new Date(Date.parse(now) + 60000).toISOString();
+	await db
+		.prepare("UPDATE ai_reviews SET error='ai_error',attempts=2,next_at=?,report_version='old'")
+		.bind(retryAt)
+		.run();
+	expect(await executeRunPage(env, "r1", () => now)).toBe(retryAt);
+	expect(await executeRunPage(env, "r1", () => now)).toBeNull();
+	const previous = await db.prepare("SELECT * FROM factory_repo_state").all();
+	await db.prepare("UPDATE ai_reviews SET stage='failed'").run();
+	const run = await drive(env, retryAt);
+	expect(run?.status).toBe("partial");
+	expect(run?.steps.find((step) => step.kind === "assessment")).toMatchObject({
+		status: "failed",
+		error: "ai_error",
+		attempts: 2,
+	});
+	expect(await db.prepare("SELECT * FROM factory_repo_state").all()).toEqual(previous);
+	expect((await publishedFactory(db, snap.account_id))?.repos[0]?.observation?.version).toBe("r1");
+	expect(await db.prepare("SELECT report_version FROM ai_reviews").first()).toEqual({
+		report_version: "old",
+	});
+});
+
+it("does not treat a different source version's AI report as this refresh's analysis", async () => {
+	const { env, db } = await reachAssessment();
+	await db.prepare("UPDATE ai_reviews SET source_version='other',stage='complete'").run();
+	const run = await drive(env);
+	expect(run?.steps.find((step) => step.kind === "assessment")).toMatchObject({
+		status: "skipped",
+		error: "ai_source_missing",
+	});
+	expect(run?.status).toBe("partial");
+});
+it.each(["pause", "cancel"] as const)(
+	"does not extend repository cooldown when AI progress is controlled with %s",
+	async (action) => {
+		const { env, db } = await reachAssessment();
+		await executeRunPage(env, "r1", () => now);
+		const previous = await db.prepare("SELECT * FROM factory_repo_state").all();
+		const later = new Date(Date.parse(now) + 5000).toISOString();
+		await controlRun(db, snap.account_id, "r1", action, later);
+		expect(await db.prepare("SELECT * FROM factory_repo_state").all()).toEqual(previous);
+		expect(await executeRunPage(env, "r1", () => later)).toBeNull();
+		if (action === "pause") {
+			await controlRun(db, snap.account_id, "r1", "resume", later);
+			await db.prepare("UPDATE ai_reviews SET stage='complete'").run();
+			expect((await drive(env, later))?.status).toBe("completed");
+		}
+	},
+);
+it.each([
+	["ai_not_configured", "skipped", "completed", "ai_not_configured"],
+	["factory_capacity", "failed", "partial", "ai_capacity"],
+] as const)(
+	"isolates terminal AI %s from repository publication",
+	async (error, status, outcome, code) => {
+		const { env, db } = await reachAssessment();
+		await db.prepare("UPDATE ai_reviews SET stage='failed',error=?").bind(error).run();
+		const run = await drive(env);
+		expect(run?.status).toBe(outcome);
+		expect(run?.steps.find((step) => step.kind === "assessment")).toMatchObject({
+			status,
+			error: code,
+		});
+		expect((await publishedFactory(db, snap.account_id))?.runId).toBe("r1");
+	},
+);
 it("retries a failing repository with backoff, preserves old data, and still publishes a consistent version", async () => {
 	const env = await setup();
 	vi.stubGlobal(
@@ -215,7 +335,7 @@ it("retries a failing repository with backoff, preserves old data, and still pub
 		attempts: 4,
 		error: "github_error",
 	});
-	expect(run?.steps.filter((s) => s.status === "skipped")).toHaveLength(8);
+	expect(run?.steps.filter((s) => s.status === "skipped")).toHaveLength(9);
 	expect((await publishedFactory(createDb(env.DB), snap.account_id))?.repos).toHaveLength(1);
 	const { repoStates } = await import("./db/factory-runs");
 	expect((await repoStates(createDb(env.DB), snap.account_id))[0]).toMatchObject({
@@ -476,7 +596,7 @@ it("rechecks repository cooldown at execution after a competing run commits duri
 	await executeRunPage(env, "r1", () => now);
 	expect(fetch).toHaveBeenCalledTimes(calls);
 	const run = (await getRun(createDb(env.DB), snap.account_id, "r1"))?.run;
-	expect(run?.steps.filter((s) => s.status === "skipped")).toHaveLength(9);
+	expect(run?.steps.filter((s) => s.status === "skipped")).toHaveLength(10);
 });
 
 it("uses server time for persisted heartbeat when no clock is injected", async () => {

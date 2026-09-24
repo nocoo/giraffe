@@ -1,12 +1,13 @@
-import type {
-	FactoryRunResponse,
-	FactoryRunStep,
-	FactoryRunView,
-	RepoRefreshState,
-	RunSelection,
-	RunStatus,
-	StepKind,
-	StepStatus,
+import {
+	type FactoryRunResponse,
+	type FactoryRunStep,
+	type FactoryRunView,
+	isUnconfiguredAssessment,
+	type RepoRefreshState,
+	type RunSelection,
+	type RunStatus,
+	type StepKind,
+	type StepStatus,
 } from "../../lib/factory-run";
 import { FACTORY_STREAMS, type FactorySnapshot } from "../../lib/factory-types";
 import { apiGet, apiPost } from "../lib/api";
@@ -34,6 +35,7 @@ export const STEP_LABELS: Record<StepKind, string> = {
 	dependencies: "依赖关系",
 	commit: "保存仓库数据",
 	snapshot: "页面数据",
+	assessment: "AI 分析",
 	publish: "更新工厂页面",
 };
 const PAGE_LABELS: Record<string, string> = {
@@ -50,7 +52,9 @@ const PAGE_LABELS: Record<string, string> = {
 	languages: "语言",
 	contributors: "贡献者",
 };
-export function stepLabel(step: Pick<FactoryRunStep, "kind" | "resource">) {
+export function stepLabel(step: Pick<FactoryRunStep, "kind" | "resource" | "assessmentStage">) {
+	if (step.kind === "assessment" && step.assessmentStage)
+		return `AI 分析 · ${step.assessmentStage === "judgment" ? "JEV 判断" : "生成报告"}`;
 	if (step.kind !== "snapshot") return STEP_LABELS[step.kind];
 	const resource = step.resource ?? "";
 	return `${resource.startsWith("repo:") ? "详情" : "全站"} · ${PAGE_LABELS[resource.split(":").at(-1) ?? ""] ?? "页面数据"}`;
@@ -83,6 +87,7 @@ const STEP_IMPACT: Record<StepKind, string> = {
 	dependencies: "依赖关系图可能缺少引用。",
 	commit: "这个仓库的新数据尚未保存；有历史数据时继续保留。",
 	snapshot: "对应页面保留上次保存的数据；首次采集未完成时暂不显示统计。",
+	assessment: "已刷新的仓库数据保留；AI 报告继续显示上次有效结果，没有历史报告时暂不显示。",
 	publish: "工厂总览尚未更新，继续显示上次统计；已经保存的其他页面数据不受影响。",
 };
 
@@ -91,6 +96,36 @@ export function describeRunIssue(code: string | null, kind: StepKind, resource?:
 	const label = stepLabel({ kind, ...(resource ? { resource } : {}) });
 	const security = kind === "alerts" || resource === "alerts" || resource?.endsWith(":security");
 	switch (code) {
+		case "ai_not_configured":
+			return {
+				...base,
+				settings: true,
+				title: "未配置 AI，已跳过分析",
+				reason: "两类 AI 服务需要分别配置。",
+				action: "可在设置中配置 JEV 和总结模型，再刷新仓库。",
+			};
+		case "ai_source_missing":
+			return {
+				...base,
+				title: "本次没有可分析的新数据",
+				reason: "未找到与本次刷新版本对应的 AI 任务。",
+				action: "确认仓库数据已成功更新后，再发起刷新。",
+			};
+		case "ai_capacity":
+			return {
+				...base,
+				title: "AI 分析达到容量限制",
+				reason: "分析输入或报告超过容量上限。",
+				action: "请维护者检查分析内容与存储用量。",
+			};
+		case "ai_error":
+			return {
+				...base,
+				settings: true,
+				title: "AI 分析未完成",
+				reason: "模型调用或报告校验未能完成。",
+				action: "运行中会自动重试；结束后可在设置中测试两类 AI 服务，再刷新仓库。",
+			};
 		case "catalog_changed":
 			return {
 				...base,
@@ -217,6 +252,7 @@ export function runIssues(run: FactoryRunView | null) {
 		}
 	>();
 	for (const step of run?.steps ?? []) {
+		if (isUnconfiguredAssessment(step)) continue;
 		if (step.status !== "failed" && !step.error) continue;
 		if (step.error === "repository_failed" || step.error === "run_failed") continue;
 		const kind = step.error === "repository_cooldown" ? "metadata" : step.kind;
@@ -251,12 +287,15 @@ export function runStages(run: FactoryRunView) {
 					{ title: "账号贡献", steps: run.steps.filter((s) => s.kind === "contributions") },
 					{
 						title: "工厂统计",
-						steps: run.steps.filter((s) => s.repo !== null && s.kind !== "snapshot"),
+						steps: run.steps.filter(
+							(s) => s.repo !== null && s.kind !== "snapshot" && s.kind !== "assessment",
+						),
 					},
 					{
 						title: run.steps.some((s) => s.resource === "repos") ? "全站页面" : "仓库页面",
 						steps: run.steps.filter((s) => s.kind === "snapshot"),
 					},
+					{ title: "AI 分析", steps: run.steps.filter((s) => s.kind === "assessment") },
 					{ title: "更新页面", steps: run.steps.filter((s) => s.kind === "publish") },
 				];
 	return stages
@@ -267,6 +306,7 @@ export function runStages(run: FactoryRunView) {
 			completed: stage.steps.filter((s) => ["success", "failed", "skipped"].includes(s.status))
 				.length,
 			failed: stage.steps.filter((s) => s.status === "failed").length,
+			skipped: stage.steps.filter((s) => s.status === "skipped").length,
 		}));
 }
 
@@ -423,7 +463,7 @@ export function runRepositoryRows(run: FactoryRunView | null, states: RepoRefres
 			: steps.some((s) => s.status === "failed")
 				? "failed"
 				: steps.length > 0 && completed === steps.length
-					? steps.some((s) => s.status === "skipped")
+					? steps.some((s) => s.status === "skipped" && !isUnconfiguredAssessment(s))
 						? "skipped"
 						: "success"
 					: "pending";
@@ -455,13 +495,18 @@ function repositoryLabel(steps: FactoryRunStep[], status: StepStatus, runStatus:
 		return "未执行完";
 	if (status === "failed")
 		return steps.some((step) => step.kind === "commit" && step.status === "success")
-			? "部分数据未获取"
+			? steps.filter((step) => step.status === "failed").every((step) => step.kind === "assessment")
+				? "数据已更新，AI 分析未完成"
+				: "部分数据未获取"
 			: "刷新未成功";
 	if (status === "skipped" && steps.every((s) => s.error === "repository_cooldown"))
 		return "刚刷新过，已跳过";
 	if (status === "skipped" && steps.some((s) => s.error === "repository_cooldown"))
 		return "页面已更新，统计沿用旧数据";
 	if (runStatus === "paused" && steps.some((s) => s.startedAt && !s.finishedAt)) return "已暂停";
+	if (steps.some((step) => step.kind === "assessment" && step.status === "running"))
+		return "正在分析";
+	if (status === "success" && steps.some(isUnconfiguredAssessment)) return "刷新完成（AI 未配置）";
 	return status === "success" ? "刷新完成" : STEP_STATUS[status];
 }
 export const publicationKey = (state: { account_id: string; publication: string | null }) =>

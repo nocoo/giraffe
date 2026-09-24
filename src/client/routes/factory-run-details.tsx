@@ -91,7 +91,15 @@ function StepTimeline({ steps, status }: { steps: FactoryRunStep[]; status: RunS
 						<div className="min-w-0 flex-1">
 							<div className="factory-step-title">
 								<strong>{stepLabel(step)}</strong>
-								<span>{stopped ? "未执行完" : paused ? "已暂停" : STEP_STATUS[step.status]}</span>
+								<span>
+									{stopped
+										? "未执行完"
+										: paused
+											? "已暂停"
+											: step.kind === "assessment" && step.status === "running"
+												? "正在分析"
+												: STEP_STATUS[step.status]}
+								</span>
 								{step.startedAt ? (
 									<small>
 										{step.pages > 0 ? `${step.pages} 页 · ` : ""}
@@ -134,7 +142,11 @@ export function FactoryRunDetails({
 			(!onlyProblems || problemRepos.has(row.repo)) &&
 			row.repo.toLowerCase().includes(query.toLowerCase()),
 	);
-	const waiting = run.status === "running" ? secondsUntil(run.nextAttemptAt, now) : 0;
+	const analyzing =
+		run.progress.current?.kind === "assessment" &&
+		run.progress.current.status === "running" &&
+		!run.progress.current.error;
+	const waiting = run.status === "running" && !analyzing ? secondsUntil(run.nextAttemptAt, now) : 0;
 	const active = run.status === "running" || run.status === "paused";
 	const current = active ? run.progress.current : null;
 	const globalSteps = run.steps.filter((step) => !step.repo);
@@ -201,11 +213,14 @@ export function FactoryRunDetails({
 							key={stage.title}
 							data-complete={stage.total > 0 && stage.completed === stage.total}
 							data-warning={stage.failed > 0}
+							data-skipped={stage.skipped === stage.total}
 						>
 							<span className="factory-phase-number">
 								{stage.total > 0 && stage.completed === stage.total ? (
 									stage.failed ? (
 										<AlertCircle aria-hidden="true" />
+									) : stage.skipped === stage.total ? (
+										<Minus aria-hidden="true" />
 									) : (
 										<Check aria-hidden="true" />
 									)
@@ -218,6 +233,7 @@ export function FactoryRunDetails({
 								<small>
 									{stage.completed} / {stage.total} 步
 									{stage.failed ? ` · ${stage.failed} 步未完成` : ""}
+									{stage.skipped ? ` · ${stage.skipped} 步跳过` : ""}
 								</small>
 							</div>
 						</li>

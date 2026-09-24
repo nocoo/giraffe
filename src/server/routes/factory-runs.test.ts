@@ -76,7 +76,7 @@ it("restores server state after reload, preserves the old overview and freezes t
 	expect(state.current).toMatchObject({
 		id: createdBody.id,
 		repos: ["nocoo/app"],
-		progress: { total: 19, completed: 0 },
+		progress: { total: 20, completed: 0 },
 	});
 	expect(state.current).not.toHaveProperty("checkpoint");
 	expect(await (await s.call("/api/factory")).json()).toEqual(await original.json());
@@ -239,12 +239,12 @@ it("returns compact history with accurate totals and expands only the requested 
 	const first = (await (await s.call("/api/factory/runs", plan())).json()) as { id: string };
 	await s.call(`/api/factory/runs/${first.id}/control`, { account_id: id, action: "cancel" });
 	const compact = (await (await s.call()).json()) as FactoryRunResponse;
-	expect(compact.history[0]?.steps).toHaveLength(19);
-	expect(compact.history[0]?.progress).toMatchObject({ total: 19, completed: 19, skipped: 19 });
+	expect(compact.history[0]?.steps).toHaveLength(20);
+	expect(compact.history[0]?.progress).toMatchObject({ total: 20, completed: 20, skipped: 20 });
 	const detail = (await (
 		await s.call(`/api/factory/runs?history=${first.id}`)
 	).json()) as FactoryRunResponse;
-	expect(detail.history[0]?.steps).toHaveLength(19);
+	expect(detail.history[0]?.steps).toHaveLength(20);
 	expect((await s.call(`/api/factory/runs?history=${"x".repeat(81)}`)).status).toBe(400);
 });
 
@@ -333,7 +333,7 @@ it.each(["selected", "filter", "stale", "failed"] as const)(
 			repos: scope === "selected" ? ["nocoo/app"] : undefined,
 		});
 		expect(response.status).toBe(202);
-		expect(await response.json()).toMatchObject({ totalSteps: 19 });
+		expect(await response.json()).toMatchObject({ totalSteps: 20 });
 		const state = (await (await s.call()).json()) as FactoryRunResponse;
 		expect(state.current?.siteRepos).toEqual(["nocoo/app"]);
 		expect(state.current?.steps.filter((step) => step.kind === "snapshot")).toHaveLength(9);
