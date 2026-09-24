@@ -23,7 +23,7 @@ import {
 } from "../components/layout/collection-chrome";
 import { IconLabel } from "../components/layout/icon-label";
 import { CountBars } from "../components/layout/overview-cards";
-import { TableSkeleton } from "../components/layout/page-skeleton";
+import { CiSkeleton } from "../components/layout/page-skeleton";
 import { ProjectLink } from "../components/layout/project-identity";
 import { ShareBar } from "../components/layout/rank-bars";
 import { INLINE_SEGMENT } from "../components/layout/segment";
@@ -96,7 +96,7 @@ export function CiPage() {
 		return (
 			<div className="space-y-8">
 				<PageHeader title="CI 与发布" description={PAGE_DESCRIPTIONS["/ci"]} />
-				<TableSkeleton label="加载 CI 状态" columns={6} />
+				<CiSkeleton label="加载 CI 状态" />
 			</div>
 		);
 

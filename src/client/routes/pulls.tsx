@@ -28,7 +28,7 @@ import {
 	CountBars,
 	OverviewCard,
 } from "../components/layout/overview-cards";
-import { TableSkeleton } from "../components/layout/page-skeleton";
+import { ListPageSkeleton } from "../components/layout/page-skeleton";
 import { ProjectLink } from "../components/layout/project-identity";
 import { ShareBar } from "../components/layout/rank-bars";
 import { INLINE_SEGMENT } from "../components/layout/segment";
@@ -122,7 +122,11 @@ export function PullsPage() {
 		return (
 			<div className="space-y-8">
 				<PageHeader title="Pull Requests" description={PAGE_DESCRIPTIONS["/pulls"]} />
-				<TableSkeleton label="加载 Pull Requests" columns={8} />
+				<ListPageSkeleton
+					label="加载 Pull Requests"
+					cards={["bars", "rank", "columns"]}
+					columns={5}
+				/>
 			</div>
 		);
 	}

@@ -545,3 +545,7 @@ a.giraffe-icon-link:hover { color:var(--color-basalt-primary);background:color-m
 .giraffe-data-table td:not(:has(.giraffe-wrap)) { white-space:nowrap; }
 .giraffe-data-table td:has(.giraffe-wrap) { white-space:normal; }
 .giraffe-data-table th[data-grow] { width:100%; }
+.giraffe-skeleton-row { display:flex;align-items:center;gap:24px;height:57px;padding:0 16px; }
+.giraffe-skeleton-row:first-child { height:44px; }
+.giraffe-skeleton-row>:first-child { flex:1;min-width:0; }
+.giraffe-skeleton-row+.giraffe-skeleton-row { border-top:1px solid color-mix(in srgb,var(--color-basalt-border) 60%,transparent); }

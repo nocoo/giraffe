@@ -21,7 +21,7 @@ import {
 import { IconLabel } from "../components/layout/icon-label";
 import { Kpi, KpiRow } from "../components/layout/kpi";
 import { ActiveFilters, Breakdown, OverviewCard } from "../components/layout/overview-cards";
-import { TableSkeleton } from "../components/layout/page-skeleton";
+import { ListPageSkeleton } from "../components/layout/page-skeleton";
 import { ProjectLink } from "../components/layout/project-identity";
 import { ShareBar } from "../components/layout/rank-bars";
 import { SnapshotPending } from "../components/layout/snapshot-pending";
@@ -115,7 +115,7 @@ export function AlertsPage() {
 		return (
 			<div className="space-y-8">
 				<PageHeader title="安全告警" description={PAGE_DESCRIPTIONS["/alerts"]} />
-				<TableSkeleton label="加载告警" columns={4} />
+				<ListPageSkeleton label="加载告警" cards={["rank", "rank", "rank"]} columns={3} />
 			</div>
 		);
 	}

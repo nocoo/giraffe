@@ -30,7 +30,7 @@ import {
 	Breakdown,
 	OverviewCard,
 } from "../components/layout/overview-cards";
-import { TableSkeleton } from "../components/layout/page-skeleton";
+import { ListPageSkeleton } from "../components/layout/page-skeleton";
 import { ProjectSummary } from "../components/layout/project-identity";
 import { ShareBar } from "../components/layout/rank-bars";
 import { INLINE_SEGMENT } from "../components/layout/segment";
@@ -210,7 +210,11 @@ export function ReposPage() {
 		return (
 			<div className="space-y-8">
 				<PageHeader title="仓库" description={PAGE_DESCRIPTIONS["/"]} />
-				<TableSkeleton label="加载仓库" columns={8} />
+				<ListPageSkeleton
+					label="加载仓库"
+					cards={["rank", "columns", "rank", "rank"]}
+					columns={7}
+				/>
 			</div>
 		);
 	}

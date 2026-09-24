@@ -28,7 +28,7 @@ import {
 	CountBars,
 	OverviewCard,
 } from "../components/layout/overview-cards";
-import { TableSkeleton } from "../components/layout/page-skeleton";
+import { ListPageSkeleton } from "../components/layout/page-skeleton";
 import { ProjectLink } from "../components/layout/project-identity";
 import { INLINE_SEGMENT } from "../components/layout/segment";
 import { SnapshotPending } from "../components/layout/snapshot-pending";
@@ -118,7 +118,7 @@ export function IssuesPage() {
 		return (
 			<div className="space-y-8">
 				<PageHeader title="Issues" description={PAGE_DESCRIPTIONS["/issues"]} />
-				<TableSkeleton label="加载 Issues" columns={5} />
+				<ListPageSkeleton label="加载 Issues" cards={["columns", "rank", "bars"]} columns={5} />
 			</div>
 		);
 	}

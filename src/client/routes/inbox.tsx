@@ -26,7 +26,7 @@ import {
 	CountBars,
 	OverviewCard,
 } from "../components/layout/overview-cards";
-import { TableSkeleton } from "../components/layout/page-skeleton";
+import { ListPageSkeleton } from "../components/layout/page-skeleton";
 import { ProjectLink } from "../components/layout/project-identity";
 import { INLINE_SEGMENT } from "../components/layout/segment";
 import { SnapshotPending } from "../components/layout/snapshot-pending";
@@ -97,7 +97,7 @@ export function InboxPage() {
 		return (
 			<div className="space-y-8">
 				<PageHeader title="通知" description={PAGE_DESCRIPTIONS["/inbox"]} />
-				<TableSkeleton label="加载通知" columns={6} />
+				<ListPageSkeleton label="加载通知" cards={["bars", "rank", "rank"]} columns={5} />
 			</div>
 		);
 	}

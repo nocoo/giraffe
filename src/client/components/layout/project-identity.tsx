@@ -118,7 +118,7 @@ export function ProjectLinks({
 }: {
 	project: ProjectIdentity | null;
 	github?: string;
-	/** Table rows: icon-only links; archival state already has its own column. */
+	/** Table rows: icon-only links; the row shows project archival beside the name. */
 	compact?: boolean;
 }) {
 	const destination = project?.github ?? github;
@@ -202,11 +202,16 @@ export function ProjectSummary({
 						className="min-w-0 truncate text-sm font-semibold text-basalt-foreground hover:text-basalt-primary"
 						title={project ? `${project.title} · ${project.description}` : repo}
 					>
-						{project ? project.title : repo}
+						<span>{project ? project.title : repo}</span>
 						{project ? (
 							<span className="ml-2 text-xs font-normal text-basalt-muted-foreground">{repo}</span>
 						) : null}
 					</Link>
+					{project?.archived ? (
+						<CandyBadge tone="gray" icon={Archive}>
+							项目已归档
+						</CandyBadge>
+					) : null}
 					{badges}
 				</div>
 				<div className="giraffe-project-row-line text-xs leading-5">

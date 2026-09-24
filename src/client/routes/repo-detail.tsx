@@ -53,6 +53,7 @@ import {
 	ChartSkeleton,
 	DetailSkeleton,
 	PeopleSkeleton,
+	RepoDetailSkeleton,
 	TableSkeleton,
 } from "../components/layout/page-skeleton";
 import { ProjectLinks, ProjectName } from "../components/layout/project-identity";
@@ -319,7 +320,7 @@ export function RepoDetailPage() {
 					description={identity?.description}
 					actions={identity ? <ProjectLinks project={identity} /> : undefined}
 				/>
-				<DetailSkeleton label="加载仓库" />
+				<RepoDetailSkeleton label="加载仓库" />
 			</div>
 		);
 	}

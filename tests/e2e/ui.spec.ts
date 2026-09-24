@@ -83,7 +83,11 @@ for (const width of [1440, 390]) {
 			const loadingHeight = await panel.evaluate((el) => el.getBoundingClientRect().height);
 			await page.clock.runFor(250);
 			await expect(page.getByRole("status", { name: "加载 Issues" })).toBeVisible();
-			expect(await panel.evaluate((el) => el.getBoundingClientRect().height)).toBe(loadingHeight);
+			// The tab-in transform leaves sub-pixel float noise; a real layout jump is whole pixels.
+			expect(await panel.evaluate((el) => el.getBoundingClientRect().height)).toBeCloseTo(
+				loadingHeight,
+				0,
+			);
 			await expectPosition();
 			finish();
 			await expect(panel.getByRole("table")).toBeVisible();
