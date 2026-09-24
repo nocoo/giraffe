@@ -349,7 +349,8 @@ test("missing repository tabs remain read-only and show fresh data after a facto
 	await expect(updated).toHaveAttribute("datetime", previous);
 	await page.getByRole("tab", { name: "语言", exact: true }).click();
 	await expect(page.getByRole("tabpanel").getByText("等待统一刷新", { exact: true })).toBeVisible();
-	await expect(updated).toHaveCount(0);
+	await expect(updated).toBeHidden();
+	expect(await page.getByTestId("repo-detail").ariaSnapshot()).not.toContain("上次刷新");
 	await expect(page.getByRole("tabpanel").getByRole("status")).toHaveCount(0);
 	await page.getByRole("link", { name: "前往刷新控制台", exact: true }).click();
 	await expect(page.getByRole("dialog", { name: "刷新控制台", exact: true })).toBeVisible();
@@ -358,6 +359,7 @@ test("missing repository tabs remain read-only and show fresh data after a facto
 	await page.getByRole("tab", { name: "语言", exact: true }).click();
 	await expectChart(page, "languages");
 	await expect(updated).toHaveAttribute("datetime", "2026-09-08T08:30:00.000Z");
+	await expect(updated).toBeVisible();
 	await page.getByRole("tab", { name: "概览", exact: true }).click();
 	await expect(updated).toHaveAttribute("datetime", "2026-09-08T08:30:00.000Z");
 	expect(writes).toEqual([]);
