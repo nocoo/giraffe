@@ -2,7 +2,7 @@ import type { FactoryRunStep } from "../../lib/factory-run";
 import { type Collected, collectKind } from "./collect";
 import type { Db } from "./db/d1";
 import { fenced, type RunLease } from "./db/factory-runs";
-import { readSnapshot } from "./db/snapshots";
+import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
 import { ApiError } from "./errors";
 import { boundedJson } from "./factory-publish";
 import { resourceDelta } from "./factory-retention";
@@ -27,7 +27,7 @@ function catalogNames(snapshot: Record<string, unknown> | null): string[] | null
 	return new Set(names).size === names.length ? names : null;
 }
 
-function assertComplete(payload: Collected | undefined) {
+function assertComplete(payload: Collected | null | undefined): asserts payload is Collected {
 	if (payload?.forbidden || payload?.unavailable)
 		throw new ApiError(403, "snapshot_unavailable", "page source unavailable");
 	if (!payload || payload.truncated)
@@ -65,7 +65,16 @@ export async function collectSitePage(
 			.first<{ payload: string }>();
 		const previous: Collected = old ? JSON.parse(old.payload) : { truncated: false };
 		const page = names.length
-			? await collectKind(gh, token, resource, names.slice(cursor, cursor + 10), 1_500_000)
+			? await collectKind(
+					gh,
+					token,
+					resource,
+					names.slice(cursor, cursor + 10),
+					1_500_000,
+					run.depth === "quick"
+						? ((await readSnapshot(db, run.account_id, resource)) as Collected | null)
+						: null,
+				)
 			: {
 					truncated: false,
 					unavailable: false,
@@ -110,8 +119,62 @@ export async function collectSitePage(
 		}
 		written[resource] = payload;
 	}
+	const suffix = step.repo ? resource.split(":").at(-1) : null;
+	const global =
+		suffix === "issues"
+			? "issues"
+			: suffix === "prs"
+				? "prs"
+				: suffix === "security"
+					? "alerts"
+					: suffix === "details"
+						? "repos"
+						: null;
+	const key =
+		global === "issues"
+			? "issues"
+			: global === "prs"
+				? "pull_requests"
+				: global === "alerts"
+					? "items"
+					: "repos";
+	if (
+		step.repo &&
+		global &&
+		global !== "repos" &&
+		run.steps.some((s) => s.resource === global && s.status === "success")
+	) {
+		const source = (await readSnapshot(db, run.account_id, global)) as Collected | null;
+		assertComplete(source);
+		const items = (source[key] as Record<string, unknown>[]).filter(
+			(item) => item.name_with_owner === step.repo,
+		);
+		written[resource] = {
+			truncated: false,
+			[key]: items,
+			...(global === "alerts" ? alertCounts(items) : {}),
+		};
+		step.strategy = "reused";
+	}
+	if (suffix === "security" && !written[resource])
+		written[resource] = await collectKind(gh, token, "alerts", [String(step.repo)], 1_500_000);
+	if (
+		run.depth === "quick" &&
+		["languages", "contributors"].includes(suffix ?? "") &&
+		run.steps.some((s) => s.kind === "metadata" && s.repo === step.repo && s.unchangedHead)
+	) {
+		const source = (await readSnapshot(db, run.account_id, resource)) as Collected | null;
+		if (source && !source.truncated && !source.unavailable) {
+			written[resource] = {
+				...source,
+				source_fetched_at: source.source_fetched_at ?? source.fetched_at,
+			};
+			step.strategy = "reused";
+		}
+	}
 	const prepared = await prepareRefresh(db, run.account_id, gh, token, [resource], now, written, {
 		measureBytes: true,
+		quick: run.depth === "quick",
 		deriveInsights: resource === "insights" || !run.steps.some((s) => s.resource === "insights"),
 	});
 	assertComplete(prepared.written[resource]);
@@ -126,6 +189,51 @@ export async function collectSitePage(
 		)
 			throw new ApiError(409, "catalog_changed", "sync catalog before refreshing new repositories");
 	}
+	if (step.repo && global && run.selection?.scope !== "all") {
+		const previous = (await readSnapshot(db, run.account_id, global)) as Collected | null;
+		if (previous && Array.isArray(previous[key])) {
+			const payload = prepared.written[resource] as Collected;
+			const oldItems = previous[key] as Record<string, unknown>[];
+			const fresh =
+				global === "repos"
+					? oldItems
+							.filter((item) => item.name_with_owner === step.repo)
+							.map((item) => ({
+								...item,
+								...Object.fromEntries(
+									Object.entries(payload).filter(
+										([field]) => !["fetched_at", "truncated", "account_id"].includes(field),
+									),
+								),
+							}))
+					: (payload[key] as Record<string, unknown>[]);
+			const items = [...oldItems.filter((item) => item.name_with_owner !== step.repo), ...fresh];
+			const merged = {
+				...previous,
+				[key]: items,
+				repository_fetched_at: {
+					...(previous.repository_fetched_at as Record<string, string>),
+					[step.repo]: now,
+				},
+				...(global === "alerts" ? alertCounts(items) : {}),
+			};
+			if (new TextEncoder().encode(JSON.stringify(merged)).length > 1_500_000)
+				throw new ApiError(422, "snapshot_incomplete", "global list exceeds bounded storage");
+			prepared.stmts.push(
+				...replaceSnapshotStmts(db, run.account_id, global, merged, String(previous.fetched_at)),
+			);
+			prepared.bytes +=
+				new TextEncoder().encode(JSON.stringify(merged)).length -
+				new TextEncoder().encode(JSON.stringify(previous)).length;
+		}
+	}
 	lease.extraBytes = (lease.extraBytes ?? 0) + prepared.bytes;
 	return { writes: prepared.stmts, done: true };
+}
+
+function alertCounts(items: Record<string, unknown>[]) {
+	return {
+		dependabot_open: items.filter((item) => item.source === "dependabot").length,
+		code_scanning_open: items.filter((item) => item.source === "code_scanning").length,
+	};
 }

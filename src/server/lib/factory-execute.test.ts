@@ -170,8 +170,19 @@ it("refreshes one repository without scanning or rewriting unrelated site data",
 	});
 	expect(run?.steps.find((step) => step.kind === "commit")?.status).toBe("success");
 	expect(run?.steps.find((step) => step.kind === "assessment")?.error).toBe("ai_not_configured");
-	for (const [kind, payload] of originals)
-		expect(await readSnapshot(db, snap.account_id, kind)).toEqual(payload);
+	for (const [kind, payload] of originals) {
+		const next = await readSnapshot(db, snap.account_id, kind);
+		if (["repos", "issues", "prs", "alerts"].includes(kind)) {
+			expect(next?.fetched_at).toBe(payload?.fetched_at);
+			expect(next?.repository_fetched_at).toEqual({ "nocoo/app": later });
+			if (kind === "repos")
+				expect(
+					((next?.repos ?? []) as { name_with_owner: string }[]).find(
+						(repo) => repo.name_with_owner === "org/other",
+					),
+				).toEqual({ name_with_owner: "org/other" });
+		} else expect(next).toEqual(payload);
+	}
 	for (const [url, init] of vi.mocked(fetch).mock.calls) {
 		const body = String(init?.body ?? "");
 		expect(String(url)).not.toContain("/notifications");

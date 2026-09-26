@@ -189,3 +189,85 @@ it("rejects malformed site catalogs and accepts an empty completed catalog", asy
 	);
 	expect(await siteCatalog(createDb(raw), "account")).toEqual([]);
 });
+
+it("reuses current-run global pages for repository details without another GitHub request", async () => {
+	const raw = await setup("repo:nocoo/app:issues");
+	const db = createDb(raw);
+	const lease = await claimRun(db, "site", NOW);
+	if (!lease) throw new Error("fixture");
+	const source = lease.run.steps.find((s) => s.resource === "issues");
+	if (!source) throw new Error("fixture");
+	source.status = "success";
+	await db.batch(
+		replaceSnapshotStmts(
+			db,
+			"account",
+			"issues",
+			{
+				truncated: false,
+				issues: [
+					{ name_with_owner: "nocoo/app", number: 1 },
+					{ name_with_owner: "other/app", number: 2 },
+				],
+			},
+			NOW,
+		),
+	);
+	const step = lease.run.steps[lease.run.cursor];
+	if (!step) throw new Error("fixture");
+	const result = await collectSitePage(
+		db,
+		lease,
+		step,
+		github(() => {
+			throw new Error("duplicate request");
+		}),
+		"fake",
+		NOW,
+	);
+	await saveRun(db, lease, result.writes, NOW);
+	expect((await readSnapshot(createDb(raw), "account", "repo:nocoo/app:issues"))?.issues).toEqual([
+		{ name_with_owner: "nocoo/app", number: 1 },
+	]);
+});
+it("merges selected repository updates into the global list while preserving unrelated data and its full-scan time", async () => {
+	const raw = await setup("repo:nocoo/app:issues");
+	const db = createDb(raw);
+	await db.batch(
+		replaceSnapshotStmts(
+			db,
+			"account",
+			"issues",
+			{
+				truncated: false,
+				issues: [
+					{ name_with_owner: "nocoo/app", number: 1 },
+					{ name_with_owner: "other/app", number: 2 },
+				],
+			},
+			"2026-09-01T00:00:00.000Z",
+		),
+	);
+	const lease = await claimRun(db, "site", NOW);
+	if (!lease) throw new Error("fixture");
+	lease.run.selection = { scope: "selected", repos: ["nocoo/app"] };
+	const step = lease.run.steps[lease.run.cursor];
+	if (!step) throw new Error("fixture");
+	const result = await collectSitePage(
+		db,
+		lease,
+		step,
+		github(() =>
+			Response.json({
+				data: { search: { issueCount: 0, nodes: [], pageInfo: { hasNextPage: false } } },
+			}),
+		),
+		"fake",
+		NOW,
+	);
+	await saveRun(db, lease, result.writes, NOW);
+	const saved = await readSnapshot(createDb(raw), "account", "issues");
+	expect(saved?.issues).toEqual([{ name_with_owner: "other/app", number: 2 }]);
+	expect(saved?.fetched_at).toBe("2026-09-01T00:00:00.000Z");
+	expect(saved?.repository_fetched_at).toEqual({ "nocoo/app": NOW });
+});

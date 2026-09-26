@@ -18,16 +18,45 @@ import {
 
 export type Collected = { truncated: boolean } & Record<string, unknown>;
 
+function baselineRows(
+	baseline: Collected | null | undefined,
+	key: string,
+): Record<string, unknown>[] {
+	return baseline &&
+		!baseline.truncated &&
+		!baseline.unavailable &&
+		!baseline.forbidden &&
+		Array.isArray(baseline[key])
+		? (baseline[key] as Record<string, unknown>[])
+		: [];
+}
+function itemId(item: Record<string, unknown>): string {
+	const repo = item.repository as { nameWithOwner?: string } | undefined;
+	return String(
+		item.url ||
+			item.id ||
+			item.login ||
+			`${item.name_with_owner ?? repo?.nameWithOwner ?? ""}#${item.number ?? ""}`,
+	);
+}
+function mergeItems(old: Record<string, unknown>[], fresh: unknown[]): unknown[] {
+	return [
+		...new Map(
+			[...old, ...(fresh as Record<string, unknown>[])].map((item) => [itemId(item), item]),
+		).values(),
+	];
+}
+
 export const MAX_STAGED_BYTES = 16 * 1024 * 1024;
 
 const REPOS_QUERY =
 	"query($after:String){ viewer { repositories(first:100, after:$after, affiliations:[OWNER, COLLABORATOR, ORGANIZATION_MEMBER]) { pageInfo { hasNextPage endCursor } nodes { nameWithOwner name owner { login } description stargazerCount forkCount pushedAt isPrivate isArchived isFork visibility url primaryLanguage { name } issues(states:OPEN) { totalCount } } } } }";
 
 const ISSUE_SEARCH =
-	"query($q:String!,$after:String){ search(query:$q, type:ISSUE, first:100, after:$after){ issueCount pageInfo{ hasNextPage endCursor } nodes{ __typename ... on Issue { number title url createdAt updatedAt author{ login } labels(first:100){ pageInfo{ hasNextPage } nodes{ name color } } comments{ totalCount } repository{ nameWithOwner } } } } }";
+	"query($q:String!,$after:String){ search(query:$q, type:ISSUE, first:100, after:$after){ issueCount pageInfo{ hasNextPage endCursor } nodes{ __typename ... on Issue { number title url state createdAt updatedAt author{ login } labels(first:100){ pageInfo{ hasNextPage } nodes{ name color } } comments{ totalCount } repository{ nameWithOwner } } } } }";
 
 const PR_SEARCH =
-	"query($q:String!,$after:String){ search(query:$q, type:ISSUE, first:100, after:$after){ issueCount pageInfo{ hasNextPage endCursor } nodes{ __typename ... on PullRequest { number title url createdAt updatedAt author{ login } isDraft reviewDecision additions deletions baseRefName headRefName repository{ nameWithOwner } } } } }";
+	"query($q:String!,$after:String){ search(query:$q, type:ISSUE, first:100, after:$after){ issueCount pageInfo{ hasNextPage endCursor } nodes{ __typename ... on PullRequest { number title url state createdAt updatedAt author{ login } isDraft reviewDecision additions deletions baseRefName headRefName repository{ nameWithOwner } } } } }";
 
 const ALERTS_QUERY =
 	"query($o:String!,$n:String!,$after:String){ repository(owner:$o,name:$n){ vulnerabilityAlerts(first:20, after:$after){ pageInfo{ hasNextPage endCursor } nodes{ id securityAdvisory{ summary permalink } securityVulnerability{ severity } } } } }";
@@ -134,18 +163,23 @@ async function searchList(
 	isPr: boolean,
 	strict = false,
 	budget = MAX_STAGED_BYTES,
+	baseline?: Collected | null,
 ): Promise<Collected> {
 	const names = [...repos].sort();
 	const items: unknown[] = [];
 	let truncated = false;
 	let stop = false;
 	const query = isPr ? PR_SEARCH : ISSUE_SEARCH;
+	const old = baselineRows(baseline, isPr ? "pull_requests" : "issues");
+	const retained: Record<string, unknown>[] = [];
 	for (let i = 0; i < names.length; i += 20) {
 		if (stop) {
 			break;
 		}
 		const group = names.slice(i, i + 20);
-		const q = `${isPr ? "is:pr" : "is:issue"} is:open ${group.map((n) => `repo:${n}`).join(" ")}`;
+		const previous = old.filter((item) => group.includes(String(item.name_with_owner)));
+		const ids = new Set(previous.map(itemId));
+		const q = `${isPr ? "is:pr" : "is:issue"} ${previous.length ? "sort:updated-desc" : "is:open"} ${group.map((n) => `repo:${n}`).join(" ")}`;
 		let after: string | null = null;
 		let groupCount = 0;
 		for (;;) {
@@ -170,6 +204,10 @@ async function searchList(
 					break;
 				}
 				const nodes = search.nodes ?? [];
+				const overlap = nodes.some(
+					(node) =>
+						node && typeof node === "object" && ids.has(itemId(node as Record<string, unknown>)),
+				);
 				items.push(...nodes);
 				groupCount += nodes.length;
 				const staged = isPr
@@ -181,7 +219,7 @@ async function searchList(
 					break;
 				}
 				const count = search.issueCount ?? 0;
-				if (count >= 1000) {
+				if (count >= 1000 && !overlap) {
 					truncated = true;
 				}
 				if (gh.graphqlErrors.length > 0) {
@@ -204,6 +242,10 @@ async function searchList(
 				) {
 					truncated = true;
 				}
+				if (overlap && search.pageInfo?.hasNextPage) {
+					retained.push(...previous);
+					break;
+				}
 				if (search.pageInfo?.hasNextPage && search.pageInfo.endCursor) {
 					after = search.pageInfo.endCursor;
 					continue;
@@ -222,7 +264,19 @@ async function searchList(
 			}
 		}
 	}
-	const mapped = isPr ? mapPullRequests(items) : mapIssues(items);
+	const closed = new Set(
+		items
+			.filter(
+				(item) =>
+					item &&
+					typeof item === "object" &&
+					["CLOSED", "MERGED"].includes(String((item as Record<string, unknown>).state)),
+			)
+			.map((item) => itemId(item as Record<string, unknown>)),
+	);
+	const mapped = mergeItems(retained, isPr ? mapPullRequests(items) : mapIssues(items)).filter(
+		(item) => !closed.has(itemId(item as Record<string, unknown>)),
+	);
 	return isPr ? { truncated, pull_requests: mapped } : { truncated, issues: mapped };
 }
 
@@ -283,12 +337,13 @@ export async function collectKind(
 	kind: string,
 	repoNames: string[],
 	budget = MAX_STAGED_BYTES,
+	baseline?: Collected | null,
 ): Promise<Collected> {
 	if (kind === "issues") {
-		return searchList(gh, token, repoNames, false, false, budget);
+		return searchList(gh, token, repoNames, false, false, budget, baseline);
 	}
 	if (kind === "prs") {
-		return searchList(gh, token, repoNames, true, false, budget);
+		return searchList(gh, token, repoNames, true, false, budget, baseline);
 	}
 	if (kind === "alerts") {
 		return collectAlerts(gh, token, repoNames, budget);
@@ -297,7 +352,7 @@ export async function collectKind(
 		return collectNotifications(gh, token, budget);
 	}
 	if (kind.startsWith("repo:")) {
-		return collectRepoKind(gh, token, kind, budget);
+		return collectRepoKind(gh, token, kind, budget, baseline);
 	}
 	throw new ApiError(400, "validation_failed", "unknown kind");
 }
@@ -515,6 +570,7 @@ async function collectRepoKind(
 	token: string,
 	kind: string,
 	budget = MAX_STAGED_BYTES,
+	baseline?: Collected | null,
 ): Promise<Collected> {
 	const match = /^repo:([^/]+\/[^:]+):(.+)$/.exec(kind);
 	if (!match?.[1] || !match[2]) {
@@ -539,6 +595,7 @@ async function collectRepoKind(
 				runs: mapActionRuns({ workflow_runs: rows }),
 			}),
 			budget,
+			baseline,
 		);
 	}
 	if (suffix === "traffic") {
@@ -657,10 +714,10 @@ async function collectRepoKind(
 		};
 	}
 	if (suffix === "issues") {
-		return searchList(gh, token, [full], false, true, budget);
+		return searchList(gh, token, [full], false, true, budget, baseline);
 	}
 	if (suffix === "prs") {
-		return searchList(gh, token, [full], true, true, budget);
+		return searchList(gh, token, [full], true, true, budget, baseline);
 	}
 	if (suffix === "releases") {
 		return collectRestList(
@@ -672,6 +729,7 @@ async function collectRepoKind(
 				releases: mapReleases(rows),
 			}),
 			budget,
+			baseline,
 		);
 	}
 	if (suffix === "languages") {
@@ -689,6 +747,7 @@ async function collectRepoKind(
 				contributors: mapContributors(rows),
 			}),
 			budget,
+			baseline,
 		);
 	}
 	throw new ApiError(400, "validation_failed", "unknown repo kind");
@@ -700,10 +759,15 @@ async function collectRestList(
 	start: string,
 	finish: (rows: unknown[], truncated: boolean) => Collected,
 	budget = MAX_STAGED_BYTES,
+	baseline?: Collected | null,
 ): Promise<Collected> {
 	const rows: unknown[] = [];
 	let path: string | null = start;
 	let truncated = false;
+	let overlap = false;
+	const key = arrayKey(finish([], false)) ?? "";
+	const old = baselineRows(baseline, key);
+	const ids = new Set(old.map(itemId));
 	while (path) {
 		try {
 			const res = await gh.githubApi(token, path);
@@ -718,6 +782,15 @@ async function collectRestList(
 				rows.push(...body);
 			}
 			path = nextPath(res);
+			if (
+				path &&
+				(finish(rows, false)[key] as Record<string, unknown>[]).some((item) =>
+					ids.has(itemId(item)),
+				)
+			) {
+				overlap = true;
+				path = null;
+			}
 			if (exceedsBudget(finish(rows, true), budget)) {
 				truncated = true;
 				break;
@@ -730,5 +803,6 @@ async function collectRestList(
 			throw err;
 		}
 	}
-	return finish(rows, truncated);
+	const result = finish(rows, truncated);
+	return overlap ? { ...result, [key]: mergeItems(old, result[key] as unknown[]) } : result;
 }

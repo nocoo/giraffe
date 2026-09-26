@@ -124,6 +124,12 @@ export async function executeRunPage(
 				repo.id !== run.repoIds[String(step.repo)]
 			)
 				throw new ApiError(403, "repository_unavailable", "repository identity/access changed");
+			if (run.depth === "quick") {
+				const accepted = await currentRepo(db, run.account_id, String(step.repo));
+				step.unchangedHead = Boolean(
+					accepted && accepted.id === repo.id && accepted.head === mapFactoryRepo(repo).head,
+				);
+			}
 			const previous = run.checkpoint;
 			run.checkpoint = newFactory(run.account_id, run.owner, run.startedAt);
 			run.checkpoint.runId = run.id;
@@ -275,6 +281,7 @@ export async function executeRunPage(
 			else if (stream) {
 				const coverage = checkpoint.repos[0]?.coverage[stream];
 				if (coverage && coverage.status !== "partial") {
+					if (coverage.strategy) step.strategy = coverage.strategy;
 					finish(step, coverage.status === "complete" ? "success" : "failed", clock());
 					if (coverage.status !== "complete") step.error = `coverage_${coverage.status}`;
 				}

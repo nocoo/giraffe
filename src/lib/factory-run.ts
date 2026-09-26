@@ -26,6 +26,8 @@ export type StepKind =
 	| "publish";
 export type FactoryRunStep = {
 	kind: StepKind;
+	unchangedHead?: boolean;
+	strategy?: "full" | "incremental" | "reused";
 	resource?: string;
 	snapshotCursor?: number;
 	assessmentStage?: "judgment" | "summary";
