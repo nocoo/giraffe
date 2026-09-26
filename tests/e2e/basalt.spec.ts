@@ -364,9 +364,8 @@ test("signal list expands fully and fills the space beside a taller dependency c
 	expect(await list.evaluate((element) => element.clientHeight)).toBeGreaterThan(originalHeight);
 	const bottomGap = await list.evaluate((element) => {
 		const body = element.parentElement;
-		const footer = element.nextElementSibling;
-		if (!body || !footer) throw new Error("signal card content missing");
-		return body.getBoundingClientRect().bottom - footer.getBoundingClientRect().bottom;
+		if (!body) throw new Error("signal card content missing");
+		return body.getBoundingClientRect().bottom - element.getBoundingClientRect().bottom;
 	});
 	expect(bottomGap).toBeLessThanOrEqual(20);
 	await page.setViewportSize({ width: 390, height: 844 });

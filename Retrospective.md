@@ -88,3 +88,22 @@ and verify the rendered heading in the browser; typechecking alone cannot
 prove visible content. Reordering refresh steps also exposed tests tied to
 numeric positions. Locate the intended step by kind so cooldown and retry
 checks continue to exercise the same behavior after plan changes.
+
+## 2026-09-26 — Run the complete browser suite before release
+
+The focused refresh-console and page checks passed, but release CI found two
+older browser assertions that still expected the previous UI contract: a
+26-step full refresh and a security-coverage footer below the signal list.
+The explicit Insights step makes the run 27 steps, and optional security
+diagnostics now belong only in the refresh console. Update the run assertion
+and verify successful Insights generation; measure the signal list itself
+against its card body instead of depending on an unrelated footer. Run the
+complete browser suite when shared refresh plans or page structure change,
+even when focused scenarios and unit coverage already pass.
+
+The added assertion initially confused a snapshot resource with a step kind;
+Insights is `kind: "snapshot", resource: "insights"`. Read the shared step
+type and existing server assertions before extending browser checks. A progress
+update also inferred success from later test output before the suite finished.
+Report individual success only from its result, and complete-suite success
+only after the runner exits successfully.
