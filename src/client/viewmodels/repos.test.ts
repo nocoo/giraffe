@@ -8,6 +8,7 @@ import {
 	loadRepos,
 	type RepoRow,
 	repoMetrics,
+	saveRepoStar,
 	saveRepoStatistics,
 	sortRepos,
 	visibleRepos,
@@ -110,6 +111,52 @@ describe("repos viewmodel", () => {
 			code: "account_conflict",
 		});
 		await expect(saveRepoStatistics("acc1", first, true)).rejects.toMatchObject({
+			code: "account_conflict",
+		});
+	});
+	it("saves local stars, updates cached rows and rejects account changes or failed writes", async () => {
+		const first = sample[0];
+		if (!first) throw new Error("fixture");
+		setActiveAccountId("acc1");
+		let responseAccount = "acc1";
+		let switchAccount = false;
+		let fail = false;
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+			if (String(input) === "/api/accounts")
+				return Response.json({ accounts: [{ id: "acc1", login: "o", is_active: true }] });
+			if (String(input) === "/api/repos")
+				return Response.json({
+					account_id: "acc1",
+					fetched_at: "t",
+					truncated: false,
+					repos: sample,
+				});
+			expect(init?.method).toBe("POST");
+			if (fail)
+				return Response.json({ error: { code: "db_error", message: "failed" } }, { status: 500 });
+			if (switchAccount) setActiveAccountId("acc2");
+			return Response.json({ account_id: responseAccount });
+		});
+		await loadRepos();
+		await saveRepoStar("acc1", first, false);
+		expect(cachedRepoRows()[0]?.starred).toBe(false);
+		expect(cachedRepoRows()[1]?.starred).toBeUndefined();
+		fail = true;
+		await expect(saveRepoStar("acc1", first, true)).rejects.toMatchObject({
+			code: "db_error",
+		});
+		expect(cachedRepoRows()[0]?.starred).toBe(false);
+		fail = false;
+		responseAccount = "other";
+		await expect(saveRepoStar("acc1", first, true)).rejects.toMatchObject({
+			code: "account_conflict",
+		});
+		responseAccount = "acc1";
+		switchAccount = true;
+		await expect(saveRepoStar("acc1", first, true)).rejects.toMatchObject({
+			code: "account_conflict",
+		});
+		await expect(saveRepoStar("acc1", first, true)).rejects.toMatchObject({
 			code: "account_conflict",
 		});
 	});

@@ -5,6 +5,9 @@ import { BrowserRouter, Link, Route, Routes } from "react-router";
 import { AppShell } from "./components/layout/app-shell";
 import { APP_PATHS } from "./lib/routes";
 
+const RefreshPage = lazy(() =>
+	import("./routes/factory-runs").then((m) => ({ default: m.RefreshPage })),
+);
 const AlertsPage = lazy(() => import("./routes/alerts").then((m) => ({ default: m.AlertsPage })));
 const CiPage = lazy(() => import("./routes/ci").then((m) => ({ default: m.CiPage })));
 const FactoryPage = lazy(() =>
@@ -61,6 +64,7 @@ function RouterLink({
 const PAGES: Record<(typeof APP_PATHS)[number], ReactNode> = {
 	"/": <ReposPage />,
 	"/factory": <FactoryPage />,
+	"/refresh": <RefreshPage />,
 	"/issues": <IssuesPage />,
 	"/pulls": <PullsPage />,
 	"/insights": <InsightsPage />,

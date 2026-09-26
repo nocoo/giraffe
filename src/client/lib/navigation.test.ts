@@ -16,7 +16,7 @@ describe("navigation", () => {
 			["总览", ["/factory", "/insights"]],
 			["仓库健康", ["/", "/ci", "/alerts"]],
 			["待办", ["/issues", "/pulls", "/inbox"]],
-			["系统", ["/settings"]],
+			["系统", ["/refresh", "/settings"]],
 		]);
 		expect(NAV_ITEMS.map((item) => item.href)).toEqual(
 			NAV_GROUPS.flatMap((group) => group.items.map((item) => item.href)),
@@ -24,6 +24,7 @@ describe("navigation", () => {
 		expect([...APP_PATHS]).toEqual([
 			"/",
 			"/factory",
+			"/refresh",
 			"/issues",
 			"/pulls",
 			"/insights",

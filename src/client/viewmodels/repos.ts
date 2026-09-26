@@ -6,6 +6,7 @@ import { loadKind } from "./snapshot";
 
 export type RepoRow = {
 	statistics_enabled?: boolean;
+	starred?: boolean;
 	name_with_owner: string;
 	name: string;
 	owner_login: string;
@@ -103,15 +104,20 @@ export function healthMap(insights: InsightsSnapshot | null): Map<string, Insigh
 
 let remembered: ReposSnapshot | null = null;
 
-export async function saveRepoStatistics(
+export const saveRepoStatistics = (account: string, repo: RepoRow, enabled: boolean) =>
+	saveRepoSetting(account, repo, enabled, "statistics");
+export const saveRepoStar = (account: string, repo: RepoRow, enabled: boolean) =>
+	saveRepoSetting(account, repo, enabled, "star");
+async function saveRepoSetting(
 	account: string,
 	repo: RepoRow,
 	enabled: boolean,
+	kind: "statistics" | "star",
 ): Promise<void> {
 	if (getActiveAccountId() !== account)
 		throw new ApiError(409, "account_conflict", "account changed");
 	const result = await apiPost<{ account_id: string }>(
-		`repos/${encodeURIComponent(repo.owner_login)}/${encodeURIComponent(repo.name)}/statistics`,
+		`repos/${encodeURIComponent(repo.owner_login)}/${encodeURIComponent(repo.name)}/${kind}`,
 		{ account_id: account, enabled },
 	);
 	if (result.account_id !== account || getActiveAccountId() !== account)
@@ -120,7 +126,9 @@ export async function saveRepoStatistics(
 		remembered = {
 			...remembered,
 			repos: remembered.repos.map((r) =>
-				r.name_with_owner === repo.name_with_owner ? { ...r, statistics_enabled: enabled } : r,
+				r.name_with_owner === repo.name_with_owner
+					? { ...r, [kind === "star" ? "starred" : "statistics_enabled"]: enabled }
+					: r,
 			),
 		};
 }

@@ -209,7 +209,7 @@ test("card help is compact, supports hover and keyboard, and charts keep green k
 	await expect(surface).toHaveCSS("outline-width", "2px");
 	const keyboardColor = await surface.evaluate((element) => getComputedStyle(element).outlineColor);
 	const primaryColor = await page
-		.getByRole("button", { name: "刷新控制台", exact: true })
+		.getByRole("link", { name: "去刷新", exact: true })
 		.evaluate((element) => getComputedStyle(element).backgroundColor);
 	expect(keyboardColor).toBe(primaryColor);
 	await page.getByRole("heading", { name: "交付吞吐", exact: true }).click();
@@ -501,7 +501,7 @@ test("factory Basalt controls and larger text fit mobile and dark mode", async (
 		animations: "disabled",
 	});
 	await page.getByRole("button", { name: "关闭数据时间", exact: true }).click();
-	await page.getByRole("button", { name: "刷新控制台", exact: true }).click();
+	await page.getByRole("link", { name: "去刷新", exact: true }).click();
 	await page.getByRole("tab", { name: "发起刷新", exact: true }).click();
 	await expect(page.getByRole("heading", { name: "选择要更新的仓库", exact: true })).toHaveCSS(
 		"font-size",
@@ -517,7 +517,7 @@ test("factory Basalt controls and larger text fit mobile and dark mode", async (
 	);
 	expect(
 		await page
-			.getByRole("dialog")
+			.getByRole("region", { name: "刷新管理" })
 			.evaluate((element) => element.scrollWidth <= element.clientWidth),
 	).toBe(true);
 	expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
@@ -588,7 +588,7 @@ test("other pages are read-only and missing data leads to the unified factory co
 	] as const) {
 		await page.goto(path);
 		await expect(page.getByTestId(content)).toBeVisible();
-		await expect(page.getByRole("button", { name: /刷新/ })).toHaveCount(0);
+		await expect(page.getByRole("main").getByRole("button", { name: /刷新/ })).toHaveCount(0);
 		await expect(page.getByText("首个账号添加成功后会自动同步仓库。", { exact: true })).toHaveCount(
 			0,
 		);
@@ -601,7 +601,7 @@ test("other pages are read-only and missing data leads to the unified factory co
 	);
 	await page.getByRole("tab", { name: "流量", exact: true }).click();
 	await expect(page.getByText("等待统一刷新", { exact: true })).toBeVisible();
-	await page.getByRole("link", { name: "前往刷新控制台", exact: true }).click();
-	await expect(page.getByRole("dialog", { name: "刷新控制台", exact: true })).toBeVisible();
+	await page.getByRole("link", { name: "前往刷新中心", exact: true }).click();
+	await expect(page.getByRole("region", { name: "刷新管理", exact: true })).toBeVisible();
 	expect(writes).toEqual([]);
 });

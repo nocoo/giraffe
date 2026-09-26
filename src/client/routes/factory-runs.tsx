@@ -1,13 +1,5 @@
 import { Button, Checkbox, Input, Tabs, TabsContent, TabsList, TabsTrigger } from "@nocoo/basalt";
 import { Banner } from "@nocoo/basalt/components/banner";
-import {
-	Dialog,
-	DialogClose,
-	DialogContent,
-	DialogDescription,
-	DialogTitle,
-	DialogTrigger,
-} from "@nocoo/basalt/components/dialog";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
 import {
 	AlertCircle,
@@ -21,16 +13,21 @@ import {
 	Play,
 	RefreshCw,
 	Square,
-	X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { type FactoryRunResponse, type RunSelection, selectRunRepos } from "../../lib/factory-run";
 import type { FactorySnapshot } from "../../lib/factory-types";
 import { SearchField, SnapshotTime } from "../components/layout/collection-chrome";
 import { ProjectLabel } from "../components/layout/project-identity";
 import { SelectField } from "../components/layout/select-field";
-import { factoryError, filterFactoryRepos, formatUtc } from "../viewmodels/factory";
+import {
+	factoryError,
+	filterFactoryRepos,
+	formatUtc,
+	loadFactory,
+	reloadFactory,
+} from "../viewmodels/factory";
 import {
 	controlFactoryRun,
 	createRunPolling,
@@ -45,8 +42,9 @@ import {
 	stepLabel,
 } from "../viewmodels/factory-runs";
 import { FactoryProgressBar, FactoryRunDetails } from "./factory-run-details";
+import { RefreshSchedules } from "./refresh-schedules";
 
-export function FactoryRuns({
+function FactoryRuns({
 	snapshot,
 	onPublished,
 	filter,
@@ -63,8 +61,7 @@ export function FactoryRuns({
 	const [error, setError] = useState("");
 	const [pollError, setPollError] = useState("");
 	const [busy, setBusy] = useState(false);
-	const [params, setParams] = useSearchParams();
-	const [open, setOpen] = useState(params.get("refresh") === "1");
+	const [depth, setDepth] = useState<"quick" | "deep">("quick");
 	const [tab, setTab] = useState("");
 	const [scope, setScope] = useState<RunSelection["scope"]>("all");
 	const [selected, setSelected] = useState<string[]>([]);
@@ -124,22 +121,6 @@ export function FactoryRuns({
 			clearInterval(tick);
 		};
 	}, []);
-	useEffect(() => {
-		if (params.get("refresh") === "1") setOpen(true);
-	}, [params]);
-	function changeOpen(value: boolean) {
-		setOpen(value);
-		if (value) void poll.current?.refresh();
-		else if (params.has("refresh"))
-			setParams(
-				(previous) => {
-					const next = new URLSearchParams(previous);
-					next.delete("refresh");
-					return next;
-				},
-				{ replace: true },
-			);
-	}
 	const catalog = data?.catalog ?? snapshot?.repos ?? [];
 	const options = useMemo(() => filterFactoryRepos(catalog, filter), [catalog, filter]);
 	const choices = useMemo(
@@ -179,7 +160,6 @@ export function FactoryRuns({
 		setHistoryId("");
 		historyRef.current = "";
 		setTab(latest ? "progress" : "plan");
-		setOpen(true);
 		void poll.current?.refresh();
 	}
 	async function start(mode: "catalog" | "refresh") {
@@ -192,6 +172,7 @@ export function FactoryRuns({
 				.sort((a, b) => (priority[a] ?? 100) - (priority[b] ?? 100));
 			const input = {
 				mode,
+				depth,
 				scope,
 				...(scope === "selected" ? { repos: names, order: names } : { order: names }),
 				...(scope === "filter" ? filter : {}),
@@ -226,21 +207,14 @@ export function FactoryRuns({
 		}
 	}
 	return (
-		<Dialog open={open} onOpenChange={changeOpen}>
+		<div className="factory space-y-4">
 			<PageHeader
-				title="软件工厂"
-				description={
-					snapshot
-						? `${snapshot.owner} / GitHub · 从一次提交，到每一次交付`
-						: "GitHub 的仓库、工作流与交付节奏"
-				}
+				title="刷新中心"
+				description="统一管理全站数据、自动计划和刷新记录"
 				actions={
-					<DialogTrigger asChild>
-						<Button size="sm">
-							<RefreshCw className="size-3.5" aria-hidden="true" />
-							刷新控制台
-						</Button>
-					</DialogTrigger>
+					<Button size="sm" variant="secondary" asChild>
+						<Link to="/factory">返回软件工厂</Link>
+					</Button>
 				}
 			/>
 			<section
@@ -311,31 +285,13 @@ export function FactoryRuns({
 					</div>
 				) : null}
 			</section>
-			<DialogContent
-				size="xl"
-				className="factory factory-console p-0 sm:w-[min(1180px,calc(100vw-3rem))]"
-			>
-				<header className="factory-console-header">
-					<div className="factory-console-heading">
-						<span className="factory-console-mark">
-							<RefreshCw aria-hidden="true" />
-						</span>
-						<div>
-							<DialogTitle className="text-xl">刷新控制台</DialogTitle>
-							<DialogDescription>按所选范围更新数据。关闭窗口后，刷新仍会继续。</DialogDescription>
-						</div>
-					</div>
-					<DialogClose asChild>
-						<Button size="icon" variant="ghost" aria-label="关闭刷新控制台">
-							<X className="size-4" aria-hidden="true" />
-						</Button>
-					</DialogClose>
-				</header>
+			<section className="factory-console" aria-label="刷新管理">
 				<Tabs value={activeTab} onValueChange={setTab} className="factory-console-tabs">
 					<div className="factory-console-tabbar">
-						<TabsList aria-label="刷新控制台功能">
+						<TabsList aria-label="刷新中心功能">
 							<TabsTrigger value="progress">刷新进度</TabsTrigger>
 							<TabsTrigger value="plan">发起刷新</TabsTrigger>
+							<TabsTrigger value="schedule">自动刷新</TabsTrigger>
 						</TabsList>
 						<span>{catalog.length} 个仓库</span>
 					</div>
@@ -399,7 +355,7 @@ export function FactoryRuns({
 										{ value: "", label: current ? "当前刷新" : "最近一次刷新" },
 										...(data?.history ?? []).map((run) => ({
 											value: run.id,
-											label: `${formatUtc(run.startedAt)} · ${RUN_LABELS[run.status]} · ${run.mode === "catalog" ? "同步列表" : `${run.repos.length} 个仓库`}`,
+											label: `${formatUtc(run.startedAt)} · ${RUN_LABELS[run.status]} · ${run.mode === "catalog" ? "同步列表" : `${run.depth === "quick" ? "快速" : "深度"} · ${run.trigger === "daily" ? "每日自动" : run.trigger === "weekly" ? "每周自动" : "手动"} · ${run.repos.length} 个仓库`}`,
 										})),
 									]}
 								/>
@@ -440,14 +396,33 @@ export function FactoryRuns({
 								</div>
 							)}
 						</TabsContent>
+						<TabsContent value="schedule" className="mt-0">
+							{data ? (
+								<RefreshSchedules
+									key={data.account_id}
+									account={data.account_id}
+									onHistory={(id) => {
+										historyRef.current = id;
+										setHistoryId(id);
+										setTab("progress");
+										void poll.current?.refresh();
+									}}
+								/>
+							) : null}
+						</TabsContent>
 						<TabsContent value="plan" className="factory-run-plan mt-0">
+							<p className="mb-4 text-sm text-basalt-muted-foreground">
+								{depth === "quick"
+									? "先检查第一页，遇到已保存记录后停止翻页；没有交集则继续向前。首次刷新会补齐底稿。"
+									: "完整读取历史分页，重新核对数据，适合定期校准或排查遗漏。"}
+							</p>
 							<div className="factory-section-heading">
 								<div>
 									<h3>选择要更新的仓库</h3>
 									<p>
 										{scope === "all"
 											? "统一更新仓库、Insights、Issues、PR、安全告警、通知、CI 与发布及所有仓库详情；全站列表优先更新。"
-											: "仅更新所选仓库的统计、详情及已配置的 AI 评估；全站列表保留上次数据。"}
+											: "仅更新所选仓库的统计、详情及已配置的 AI 评估，同时合并到全站列表；其他仓库保留上次数据。"}
 									</p>
 								</div>
 							</div>
@@ -458,6 +433,16 @@ export function FactoryRuns({
 								</p>
 							) : null}
 							<div className="factory-plan-scope">
+								<SelectField
+									label="刷新模式"
+									value={depth}
+									onValueChange={(value) => setDepth(value as "quick" | "deep")}
+									options={[
+										{ value: "quick", label: "快速刷新" },
+										{ value: "deep", label: "完整深度刷新" },
+									]}
+								/>
+
 								<SelectField
 									label="刷新范围"
 									value={scope}
@@ -693,18 +678,57 @@ export function FactoryRuns({
 						</details>
 					</div>
 				</Tabs>
-				<footer className="factory-console-footer">
-					<span>
-						<Info aria-hidden="true" />
-						关闭窗口不会停止刷新
-					</span>
-					<DialogClose asChild>
-						<Button size="sm" variant="secondary">
-							返回软件工厂
-						</Button>
-					</DialogClose>
-				</footer>
-			</DialogContent>
-		</Dialog>
+			</section>
+		</div>
+	);
+}
+
+export function RefreshPage() {
+	const [snapshot, setSnapshot] = useState<FactorySnapshot | null>(null);
+	const [loading, setLoading] = useState(true);
+	const [error, setError] = useState("");
+	const mounted = useRef(true);
+	const [params] = useSearchParams();
+	async function read(account?: string) {
+		if (account) setSnapshot((old) => (old?.account_id === account ? old : null));
+		const result = await reloadFactory();
+		if (mounted.current) {
+			setSnapshot("missing" in result ? null : result);
+			setLoading(false);
+			setError("");
+		}
+	}
+	useEffect(() => {
+		mounted.current = true;
+		void loadFactory()
+			.then((result) => {
+				if (mounted.current) {
+					setSnapshot("missing" in result ? null : result);
+					setLoading(false);
+				}
+			})
+			.catch((err) => {
+				if (mounted.current) {
+					setError(factoryError(err));
+					setLoading(false);
+				}
+			});
+		return () => {
+			mounted.current = false;
+		};
+	}, []);
+	return (
+		<FactoryRuns
+			snapshot={snapshot}
+			onPublished={read}
+			filter={{
+				language: params.get("language") ?? "",
+				topic: params.get("topic") ?? "",
+				query: params.get("q") ?? "",
+				repo: params.get("repo") ?? "",
+			}}
+			snapshotError={error}
+			loading={loading}
+		/>
 	);
 }

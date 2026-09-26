@@ -1,4 +1,5 @@
 import { Button, Input, SegmentControl } from "@nocoo/basalt";
+import { PageHeader } from "@nocoo/basalt/components/page-header";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
 import { StatStrip } from "@nocoo/basalt/components/stat-strip";
 import {
@@ -60,7 +61,6 @@ import {
 	loadFactory,
 	loadFactoryDetail,
 	formatFactoryCount as n,
-	reloadFactory,
 	STATUS_LABELS,
 	STREAM_CODES,
 	STREAM_LABELS,
@@ -68,7 +68,6 @@ import {
 } from "../viewmodels/factory";
 import { FactoryHeatmap, FactoryPanel, FactorySpark, FactoryTreemap } from "./factory-charts";
 import { FactoryRepoTimes } from "./factory-repo-times";
-import { FactoryRuns } from "./factory-runs";
 import { ActivityBar, FactorySkeleton } from "./factory-skeleton";
 import {
 	ActivityQuadrant,
@@ -171,15 +170,6 @@ export function FactoryPage() {
 			cancelled = true;
 		};
 	}, [selected, stream, page, snapshot, detailState, detailDay]);
-	const readPublished = useCallback(async (account?: string) => {
-		if (account) setSnapshot((old) => (old?.account_id === account ? old : null));
-		const result = await reloadFactory();
-		if (mounted.current) {
-			setSnapshot("missing" in result ? null : result);
-			setError("");
-			setLoading(false);
-		}
-	}, []);
 	const groups = useMemo(() => factoryGroups(snapshot?.repos ?? []), [snapshot]);
 	// Typing stays responsive; the board and charts follow at lower priority.
 	const deferredQuery = useDeferredValue(query);
@@ -203,13 +193,20 @@ export function FactoryPage() {
 	const ranking = factoryRepoPage(board?.ranking ?? [], repoPage);
 	return (
 		<div className="factory space-y-4" style={FLOW_STYLE}>
-			<FactoryRuns
-				snapshot={snapshot}
-				onPublished={readPublished}
-				filter={{ language, topic, query, repo: selected }}
-				snapshotError={error}
-				loading={loading}
+			<PageHeader
+				title="软件工厂"
+				description="GitHub 的仓库、工作流与交付节奏"
+				actions={
+					<Button asChild size="sm">
+						<Link to={`/refresh?${params.toString()}`}>去刷新</Link>
+					</Button>
+				}
 			/>
+			{error ? (
+				<p role="alert" className="text-sm">
+					{error}
+				</p>
+			) : null}
 			{loading && !snapshot ? <FactorySkeleton /> : null}
 			{!loading && !snapshot ? (
 				<FactoryPanel title="建立你的软件工厂视图" hint="使用当前 GitHub 账号">
@@ -217,7 +214,7 @@ export function FactoryPage() {
 						同步仓库列表，再选择需要更新的仓库，即可查看提交、工作记录与交付趋势。
 						刷新可以暂停，离开页面后也会继续。
 					</p>
-					<p className="pb-4 text-sm">点击右上角「刷新控制台」开始。</p>
+					<p className="pb-4 text-sm">点击右上角「去刷新」开始。</p>
 				</FactoryPanel>
 			) : null}
 			{snapshot && board ? (

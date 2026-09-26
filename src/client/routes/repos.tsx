@@ -66,6 +66,7 @@ import {
 	type ReposSnapshot,
 	repoMetrics,
 	type SortKey,
+	saveRepoStar,
 	saveRepoStatistics,
 	type ViewMode,
 	visibleRepos,
@@ -81,6 +82,7 @@ const STATUS_COLORS = [
 
 export function ReposPage() {
 	const [query, setQuery] = useState("");
+	const [starredOnly, setStarredOnly] = useState(false);
 	const [sort, setSort] = useState<SortKey>("stars");
 	const [view, setView] = useState<ViewMode>("list");
 	const [snap, setSnap] = useState<ReposSnapshot | { missing: true } | null>(null);
@@ -89,25 +91,29 @@ export function ReposPage() {
 	const [picked, setPicked] = useState(NO_FILTERS);
 	const pick = (key: keyof typeof NO_FILTERS) => (value: string) =>
 		setPicked((old) => ({ ...old, [key]: value }));
-	async function toggleStatistics(repo: RepoRow, enabled: boolean) {
+	async function toggleStatistics(
+		repo: RepoRow,
+		enabled: boolean,
+		kind: "star" | "statistics" = "statistics",
+	) {
 		if (!snap || "missing" in snap || saving) return;
 		const account = snap.account_id;
 		setSaving(repo.name_with_owner);
 		try {
-			await saveRepoStatistics(account, repo, enabled);
+			await (kind === "star" ? saveRepoStar : saveRepoStatistics)(account, repo, enabled);
 			setSnap((current) =>
 				current && !("missing" in current) && current.account_id === account
 					? {
 							...current,
 							repos: current.repos.map((r) =>
 								r.name_with_owner === repo.name_with_owner
-									? { ...r, statistics_enabled: enabled }
+									? { ...r, [kind === "star" ? "starred" : "statistics_enabled"]: enabled }
 									: r,
 							),
 						}
 					: current,
 			);
-			setInsights(await loadInsightsOptional());
+			if (kind === "statistics") setInsights(await loadInsightsOptional());
 		} catch (err) {
 			reportError(err);
 		} finally {
@@ -115,13 +121,26 @@ export function ReposPage() {
 		}
 	}
 	const statisticsSwitch = (repo: RepoRow) => (
-		<Switch
-			size="sm"
-			checked={participates(repo)}
-			disabled={saving !== null}
-			aria-label={`${repo.name_with_owner} 参与统计`}
-			onCheckedChange={(enabled) => void toggleStatistics(repo, enabled)}
-		/>
+		<div className="flex items-center gap-2">
+			<Button
+				size="icon"
+				variant="ghost"
+				aria-label={`星标 ${repo.name_with_owner}`}
+				aria-pressed={repo.starred === true}
+				disabled={saving !== null}
+				title="Giraffe 星标：每天自动刷新"
+				onClick={() => void toggleStatistics(repo, !repo.starred, "star")}
+			>
+				<Star className="size-4" fill={repo.starred ? "currentColor" : "none"} />
+			</Button>
+			<Switch
+				size="sm"
+				checked={participates(repo)}
+				disabled={saving !== null}
+				aria-label={`${repo.name_with_owner} 参与统计`}
+				onCheckedChange={(enabled) => void toggleStatistics(repo, enabled)}
+			/>
+		</div>
 	);
 
 	useEffect(() => {
@@ -150,8 +169,15 @@ export function ReposPage() {
 		[snap, picked],
 	);
 	const rows = useMemo(
-		() => (board ? visibleRepos(board.rows, query, sort) : []),
-		[board, query, sort],
+		() =>
+			board
+				? visibleRepos(
+						starredOnly ? board.rows.filter((row) => row.starred) : board.rows,
+						query,
+						sort,
+					)
+				: [],
+		[board, query, sort, starredOnly],
 	);
 	const health = healthMap(insights);
 	const peakIssues = maxCount(rows.map((row) => row.open_issue_count));
@@ -166,6 +192,15 @@ export function ReposPage() {
 
 	const filters = (
 		<FilterBar label="仓库 筛选" className="w-full">
+			<Button
+				size="sm"
+				variant="ghost"
+				aria-pressed={starredOnly}
+				onClick={() => setStarredOnly(!starredOnly)}
+			>
+				<Star className="size-4" />
+				仅星标
+			</Button>
 			<SearchField
 				value={query}
 				onValueChange={setQuery}
@@ -405,7 +440,7 @@ export function ReposPage() {
 								<Table className="giraffe-data-table min-w-[900px]" data-testid="repo-list">
 									<TableHeader>
 										<TableRow>
-											<TableHead>参与统计</TableHead>
+											<TableHead>星标 / 统计</TableHead>
 											<TableHead data-grow>
 												<SortButton
 													label="仓库"

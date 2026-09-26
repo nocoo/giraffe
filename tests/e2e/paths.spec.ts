@@ -12,13 +12,14 @@ test("settings PAT, unified refresh, repo list, and repo detail", async ({ page 
 	await expect(page.locator("form").filter({ has: page.getByTestId("pat-input") })).toHaveAttribute(
 		"aria-busy",
 		"false",
+		{ timeout: 15000 },
 	);
 	await expect(page.locator("body")).not.toContainText(PAT);
 	expect(await page.content()).not.toContain(PAT);
 	await expect(page.getByText("octocat")).toBeVisible();
 	// This journey also runs on its own, without the factory smoke's saved data.
 	if (!(await page.request.get("/api/repos/octocat/hello-world")).ok()) {
-		await page.goto("/factory?refresh=1");
+		await page.goto("/refresh");
 		const state = (await (
 			await page.request.get("/api/factory/runs")
 		).json()) as FactoryRunResponse;
@@ -61,6 +62,21 @@ test("settings PAT, unified refresh, repo list, and repo detail", async ({ page 
 	await expect(list).toBeVisible();
 	await expect(list.getByText("octocat/hello-world")).toBeVisible();
 	await expect(list.getByRole("columnheader", { name: "状态", exact: true })).toBeVisible();
+	const star = page.getByRole("button", { name: "星标 octocat/hello-world", exact: true });
+	await star.click();
+	await expect(star).toHaveAttribute("aria-pressed", "true");
+	await page.reload();
+	await expect(star).toHaveAttribute("aria-pressed", "true");
+	await page.goto("/refresh");
+	await page.getByRole("tab", { name: "自动刷新", exact: true }).click();
+	await expect(page.getByText(/已星标 1 个仓库/)).toBeVisible();
+	await page.getByLabel("每日快速刷新时间", { exact: true }).fill("09:15");
+	await page.getByRole("button", { name: "保存计划", exact: true }).first().click();
+	await expect(page.getByRole("status").filter({ hasText: "已保存" })).toBeVisible();
+	await page.reload();
+	await page.getByRole("tab", { name: "自动刷新", exact: true }).click();
+	await expect(page.getByLabel("每日快速刷新时间", { exact: true })).toHaveValue("09:15");
+	await page.goto("/");
 	const toggle = page.getByRole("switch", { name: "octocat/hello-world 参与统计", exact: true });
 	await expect(toggle).toBeChecked();
 	await toggle.click();

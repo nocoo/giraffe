@@ -27,7 +27,13 @@ export const NAV_GROUPS: readonly NavGroup[] = [
 			{ href: "/inbox", label: "通知", icon: "Inbox" },
 		],
 	},
-	{ label: "系统", items: [{ href: "/settings", label: "设置", icon: "Settings" }] },
+	{
+		label: "系统",
+		items: [
+			{ href: "/refresh", label: "刷新中心", icon: "RefreshCw" },
+			{ href: "/settings", label: "设置", icon: "Settings" },
+		],
+	},
 ];
 
 export const NAV_ITEMS: readonly NavItem[] = NAV_GROUPS.flatMap((group) => group.items);
@@ -35,6 +41,7 @@ export const NAV_ITEMS: readonly NavItem[] = NAV_GROUPS.flatMap((group) => group
 export const PAGE_DESCRIPTIONS = {
 	"/": "当前账号下的仓库快照",
 	"/factory": "可追溯的软件工厂流量与交付",
+	"/refresh": "手动刷新、自动计划与运行记录",
 	"/issues": "跨仓打开的 Issue",
 	"/pulls": "跨仓打开的 Pull Request",
 	"/insights": "最值得关注的仓库、跨仓发现与健康分布",

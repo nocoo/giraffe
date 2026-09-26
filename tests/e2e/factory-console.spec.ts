@@ -133,108 +133,48 @@ async function mockConsole(page: Page, fixture: ReturnType<typeof consoleFixture
 	});
 }
 
-test("factory opens a large accessible console while keeping one compact health banner on the page", async ({
+test("refresh center replaces the factory dialog and keeps optional diagnostics centralized", async ({
 	page,
 }) => {
 	const fixture = consoleFixture();
-	const now = new Date(Date.parse(fixture.snapshot.fetched_at) + 3 * 86400000 + 7200000);
-	await page.clock.setFixedTime(now);
-	fixture.state.serverNow = now.toISOString();
-	for (const run of fixture.state.history) run.finishedAt = now.toISOString();
 	await mockConsole(page, fixture);
 	await page.setViewportSize({ width: 1440, height: 1000 });
-	await page.emulateMedia({ reducedMotion: "reduce" });
 	await page.goto("/factory");
-	const trigger = page.getByRole("button", { name: "刷新控制台", exact: true });
 	await expect(page.getByRole("dialog")).toHaveCount(0);
-	const banner = page.getByRole("region", { name: "数据健康与刷新进度" });
-	await expect(banner).toHaveAttribute("data-tone", "info");
-	await expect(banner).not.toContainText("安全告警");
-	await expect(banner).not.toContainText("安全状态未知");
-	await expect(banner).toContainText("快照更新");
-	await expect(banner.locator("time")).toHaveAttribute("datetime", fixture.snapshot.fetched_at);
-	await expect(banner.locator("time")).toContainText("3 天前");
-	await expect(page.getByRole("progressbar", { name: "列表页刷新进度" })).toHaveCount(0);
-	expect((await banner.boundingBox())?.height).toBeLessThanOrEqual(56);
-	expect((await page.locator(".factory-period").boundingBox())?.y).toBeLessThan(450);
-	expect((await trigger.boundingBox())?.x).toBeGreaterThan(900);
-	await page.screenshot({
-		path: ".factory-cache/refresh-console/list-desktop.png",
-		fullPage: false,
-	});
-	await trigger.click();
-	const dialog = page.getByRole("dialog", { name: "刷新控制台" });
-	await expect(dialog).toBeVisible();
-	await expect(dialog).toHaveCSS("opacity", "1");
-	expect(await dialog.evaluate((element) => getComputedStyle(element).backgroundColor)).not.toBe(
-		"rgba(0, 0, 0, 0)",
-	);
-	const bounds = await dialog.boundingBox();
-	expect(bounds?.width).toBeGreaterThan(1000);
-	expect(bounds?.height).toBeGreaterThan(700);
-	await expect(dialog.locator(".factory-run-phases>li")).toHaveCount(6);
-	await expect(dialog.locator(".factory-issue")).toHaveCount(1);
-	await expect(dialog.getByText("未能读取安全告警", { exact: true })).toBeVisible();
+	await expect(page.getByText("未能读取安全告警", { exact: true })).toHaveCount(0);
+	await page.getByRole("link", { name: "去刷新", exact: true }).click();
+	await expect(page).toHaveURL(/\/refresh/);
+	const center = page.getByRole("region", { name: "刷新管理" });
+	await expect(center).toBeVisible();
+	await expect(center.getByText("未能读取安全告警", { exact: true })).toBeVisible();
+	await expect(center.locator(".factory-run-overview h3")).toContainText("深度刷新 · 手动");
+	const results = center.getByRole("radiogroup", { name: "筛选刷新结果", exact: true });
+	await results.getByRole("radio", { name: "需关注 2", exact: true }).click();
+	await expect(center.locator(".factory-run-row")).toHaveCount(2);
+	await results.getByRole("radio", { name: "全部 3", exact: true }).click();
+	await expect(center.locator(".factory-run-row")).toHaveCount(3);
+	await center
+		.locator(".factory-run-row")
+		.filter({ hasText: "nocoo/app" })
+		.locator("summary")
+		.first()
+		.click();
 	await expect(
-		dialog.getByText("无法判断这些仓库是否有依赖漏洞，不能当成零告警。", { exact: true }),
-	).toBeVisible();
-	await expect(
-		dialog.locator(".factory-issue-guidance").getByText(/security_events/),
-	).toBeVisible();
-	const resultFilter = dialog.getByRole("radiogroup", { name: "筛选刷新结果", exact: true });
-	await expect(resultFilter).toHaveClass(/basalt-ui/);
-	await expect(resultFilter.getByRole("radio", { name: "需关注 2", exact: true })).toHaveCSS(
-		"font-size",
-		"13px",
-	);
-	await resultFilter.getByRole("radio", { name: "需关注 2", exact: true }).click();
-	await expect(dialog.locator(".factory-run-row")).toHaveCount(2);
-	await resultFilter.getByRole("radio", { name: "全部 3", exact: true }).click();
-	await expect(dialog.locator(".factory-run-row")).toHaveCount(3);
-	const colors = await dialog
-		.locator(".factory-progress-segments>span")
-		.evaluateAll((nodes) => nodes.map((node) => getComputedStyle(node).backgroundColor));
-	expect(new Set(colors).size).toBe(3);
+		center
+			.locator(".factory-run-row")
+			.filter({ hasText: "nocoo/app" })
+			.locator(".factory-step-timeline>li"),
+	).toHaveCount(19);
 	await page.screenshot({
-		path: ".factory-cache/refresh-console/dialog-desktop.png",
-		fullPage: false,
-		animations: "disabled",
+		path: ".factory-cache/refresh-console/center-desktop.png",
+		fullPage: true,
 	});
-	const row = dialog.locator(".factory-run-row").filter({ hasText: "nocoo/app" });
-	await row.locator("summary").first().click();
-	await expect(row.locator(".factory-step-timeline>li")).toHaveCount(19);
-	await expect(row.getByText(/未能读取安全告警/)).toBeVisible();
-	await dialog.getByRole("button", { name: "关闭刷新控制台" }).focus();
-	await page.keyboard.press("Shift+Tab");
-	await expect(dialog.getByRole("button", { name: "返回软件工厂" })).toBeFocused();
-	await page.keyboard.press("Escape");
-	await expect(dialog).toHaveCount(0);
-	await expect(trigger).toBeFocused();
-	await expect(page.getByRole("progressbar", { name: "列表页刷新进度" })).toHaveCount(0);
-	await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
-	await trigger.click();
-	await page.screenshot({
-		path: ".factory-cache/refresh-console/dialog-dark.png",
-		fullPage: false,
-		animations: "disabled",
-	});
-	await page.getByRole("button", { name: "关闭刷新控制台" }).click();
 	await page.setViewportSize({ width: 390, height: 844 });
+	await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
+	expect(await page.locator("body").evaluate((e) => e.scrollWidth)).toBeLessThanOrEqual(390);
 	await page.screenshot({
-		path: ".factory-cache/refresh-console/list-mobile.png",
-		fullPage: false,
-	});
-	await trigger.click();
-	await expect(dialog).toBeVisible();
-	await expect(dialog).toHaveCSS("opacity", "1");
-	expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
-	expect(await page.locator("body").evaluate((element) => element.scrollWidth)).toBeLessThanOrEqual(
-		390,
-	);
-	await page.screenshot({
-		path: ".factory-cache/refresh-console/dialog-mobile.png",
-		fullPage: false,
-		animations: "disabled",
+		path: ".factory-cache/refresh-console/center-mobile.png",
+		fullPage: true,
 	});
 });
 
@@ -248,7 +188,7 @@ test("the console distinguishes page failures from successful factory publicatio
 	repos.status = "failed";
 	repos.error = "snapshot_incomplete";
 	await mockConsole(page, fixture);
-	await page.goto("/factory?refresh=1");
+	await page.goto("/refresh");
 	const results = page.getByLabel("本次页面更新结果", { exact: true });
 	await expect(results).toBeVisible();
 	const row = (name: string) =>
@@ -261,7 +201,7 @@ test("the console distinguishes page failures from successful factory publicatio
 	await expect(row("软件工厂")).toContainText("已更新");
 });
 
-test("closing the console keeps polling and pause, resume and cancel preserve published data", async ({
+test("leaving and returning restores progress; pause, resume and cancel preserve publication", async ({
 	page,
 }) => {
 	const fixture = consoleFixture();
@@ -306,11 +246,12 @@ test("closing the console keeps polling and pause, resume and cancel preserve pu
 		return route.fulfill({ json: { account_id: active.account_id, id: active.id } });
 	});
 	await page.goto("/factory");
-	await page.getByRole("button", { name: "刷新控制台", exact: true }).click();
-	await page.getByRole("button", { name: "关闭刷新控制台" }).click();
+	await page.getByRole("link", { name: "去刷新", exact: true }).click();
+	await page.getByRole("link", { name: "返回软件工厂", exact: true }).click();
 	for (const step of active.steps.slice(0, 4)) step.status = "success";
 	active.cursor = 4;
 	update();
+	await page.getByRole("link", { name: "去刷新", exact: true }).click();
 	await expect(page.getByRole("progressbar", { name: "列表页刷新进度" })).toHaveAttribute(
 		"value",
 		"4",
@@ -322,14 +263,14 @@ test("closing the console keeps polling and pause, resume and cancel preserve pu
 	await page.getByRole("button", { name: "继续刷新", exact: true }).click();
 	await expect(page.getByRole("button", { name: "暂停刷新", exact: true })).toBeEnabled();
 	await page.getByRole("button", { name: "结束本次刷新", exact: true }).click();
-	await expect(page.getByRole("heading", { name: "已取消", exact: true })).toBeVisible();
+	await expect(page.getByRole("heading", { name: /已取消 · 深度刷新/ })).toBeVisible();
 	await expect(
 		page.locator(".factory-run-row").first().getByText("未执行完", { exact: true }),
 	).toBeVisible();
 	expect(controls).toEqual(["pause", "resume", "cancel"]);
-	await page.getByRole("button", { name: "关闭刷新控制台" }).click();
+	await page.getByRole("link", { name: "返回软件工厂", exact: true }).click();
 	await expect(page.locator(".factory-period")).toBeVisible();
-	await expect(page.getByText("数据可用，更新时间不一致", { exact: true })).toBeVisible();
+
 	await expect(page.getByRole("progressbar", { name: "列表页刷新进度" })).toHaveCount(0);
 });
 
@@ -339,13 +280,13 @@ test("history stays in the console and a failed start remains explained after po
 	const fixture = consoleFixture();
 	await mockConsole(page, fixture);
 	await page.goto("/factory");
-	await page.getByRole("button", { name: "刷新控制台", exact: true }).click();
+	await page.getByRole("link", { name: "去刷新", exact: true }).click();
 	await page.getByRole("combobox", { name: "运行记录", exact: true }).click();
 	await page.getByRole("option", { name: /已完成 · 同步列表/ }).click();
 	await expect(page.getByRole("progressbar", { name: "本次刷新进度" })).toHaveAttribute("max", "4");
-	await page.getByRole("button", { name: "关闭刷新控制台" }).click();
+	await page.getByRole("link", { name: "返回软件工厂", exact: true }).click();
 	await expect(page.getByRole("progressbar", { name: "列表页刷新进度" })).toHaveCount(0);
-	await page.getByRole("button", { name: "查看详情", exact: true }).click();
+	await page.getByRole("link", { name: "去刷新", exact: true }).click();
 	await page.getByRole("button", { name: "选择这 2 个仓库重试", exact: true }).click();
 	await expect(page.getByRole("tab", { name: "发起刷新" })).toHaveAttribute(
 		"aria-selected",
@@ -363,6 +304,7 @@ test("history stays in the console and a failed start remains explained after po
 	expect((await request).postDataJSON()).toMatchObject({
 		repos: ["nocoo/tools", "nocoo/app"],
 		order: ["nocoo/tools", "nocoo/app"],
+		depth: "quick",
 	});
 	await expect(page.getByRole("alert")).toContainText("倒计时");
 	await page.getByRole("button", { name: "重试读取", exact: true }).click();
@@ -394,8 +336,8 @@ test("selecting one repository limits the console to its nine detail pages", asy
 		fixture.state.current = { ...run, leaseUntil: null, progress: runProgress(run, run.startedAt) };
 		return route.fulfill({ status: 202, json: { id: run.id, totalSteps: run.steps.length } });
 	});
-	await page.goto("/factory?refresh=1");
-	const dialog = page.getByRole("dialog", { name: "刷新控制台" });
+	await page.goto("/refresh");
+	const dialog = page.getByRole("region", { name: "刷新管理" });
 	await dialog.getByRole("combobox", { name: "刷新范围", exact: true }).click();
 	await page.getByRole("option", { name: "手动选择仓库", exact: true }).click();
 	await dialog.getByRole("checkbox", { name: "nocoo/app", exact: true }).check();
@@ -442,8 +384,8 @@ test("refresh progress waits for JEV judgment and the AI report before showing c
 	const view = { ...run, leaseUntil: null, progress: runProgress(run, run.startedAt) };
 	fixture.state.current = view;
 	await mockConsole(page, fixture);
-	await page.goto("/factory?refresh=1");
-	const dialog = page.getByRole("dialog", { name: "刷新控制台" });
+	await page.goto("/refresh");
+	const dialog = page.getByRole("region", { name: "刷新管理" });
 	const current = dialog.locator(".factory-current-step");
 	const progress = dialog.getByRole("progressbar", { name: "本次刷新进度" });
 	await expect(current).toContainText("正在处理：nocoo/app · AI 分析 · JEV 判断");
@@ -467,5 +409,77 @@ test("refresh progress waits for JEV judgment and the AI report before showing c
 	fixture.state.current = null;
 	fixture.state.history.unshift(view);
 	await expect(progress).toHaveAttribute("value", "20", { timeout: 10000 });
-	await expect(dialog.locator(".factory-run-overview h3")).toHaveText("已完成");
+	await expect(dialog.locator(".factory-run-overview h3")).toContainText("已完成");
+});
+
+test("refresh center configures daily and weekly jobs, keeps drafts while polling and labels depth", async ({
+	page,
+}) => {
+	const fixture = consoleFixture();
+	await mockConsole(page, fixture);
+	const settings = {
+		account_id: fixture.state.account_id,
+		starred: ["nocoo/app"],
+		schedules: [
+			{
+				kind: "daily",
+				enabled: true,
+				time: "08:00",
+				weekday: 0,
+				scope: "starred",
+				nextAt: "2026-09-28T00:00:00.000Z",
+				lastRunId: null,
+				lastError: null,
+			},
+			{
+				kind: "weekly",
+				enabled: true,
+				time: "04:00",
+				weekday: 0,
+				scope: "all",
+				nextAt: "2026-10-03T20:00:00.000Z",
+				lastRunId: null,
+				lastError: null,
+			},
+		],
+	};
+	await page.route("**/api/refresh/**", (route) => {
+		if (route.request().method() === "POST") {
+			const input = route.request().postDataJSON();
+			expect(input.account_id).toBe(fixture.state.account_id);
+			const schedule = settings.schedules.find((s) => route.request().url().endsWith(s.kind));
+			if (schedule) Object.assign(schedule, input);
+		}
+		return route.fulfill({ json: settings });
+	});
+	await page.goto("/refresh");
+	await page.getByRole("tab", { name: "自动刷新", exact: true }).click();
+	await expect(page.getByText(/已星标 1 个仓库/)).toBeVisible();
+	await page.getByLabel("每日快速刷新时间", { exact: true }).fill("09:15");
+	await page.getByRole("button", { name: "保存计划", exact: true }).first().click();
+	await expect(page.getByRole("status").filter({ hasText: "已保存" })).toBeVisible();
+	expect(settings.schedules[0]?.time).toBe("09:15");
+	await page.getByRole("switch", { name: "启用每周深度刷新", exact: true }).click();
+	await page.getByRole("button", { name: "保存计划", exact: true }).nth(1).click();
+	await expect.poll(() => settings.schedules[1]?.enabled).toBe(false);
+	await page.reload();
+	await page.getByRole("tab", { name: "自动刷新", exact: true }).click();
+	await expect(page.getByLabel("每日快速刷新时间", { exact: true })).toHaveValue("09:15");
+	await expect(
+		page.getByRole("switch", { name: "启用每周深度刷新", exact: true }),
+	).not.toBeChecked();
+	await page.setViewportSize({ width: 390, height: 844 });
+	expect(await page.locator("body").evaluate((e) => e.scrollWidth)).toBeLessThanOrEqual(390);
+	await page.screenshot({
+		path: ".factory-cache/refresh-console/schedules-mobile.png",
+		fullPage: true,
+	});
+	await page.getByRole("tab", { name: "发起刷新", exact: true }).click();
+	await page.getByRole("combobox", { name: "刷新模式", exact: true }).click();
+	await page.getByRole("option", { name: "完整深度刷新", exact: true }).click();
+	const request = page.waitForRequest(
+		(r) => r.method() === "POST" && r.url().endsWith("/api/factory/runs"),
+	);
+	await page.getByRole("button", { name: "开始刷新（3）", exact: true }).click();
+	expect((await request).postDataJSON().depth).toBe("deep");
 });

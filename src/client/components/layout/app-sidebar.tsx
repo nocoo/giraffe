@@ -32,6 +32,7 @@ import {
 	Inbox,
 	type LucideIcon,
 	PanelLeft,
+	RefreshCw,
 	Search,
 	Settings,
 	ShieldAlert,
@@ -57,6 +58,7 @@ const ICONS: Record<string, LucideIcon> = {
 	Activity,
 	ShieldAlert,
 	Inbox,
+	RefreshCw,
 	Settings,
 	Workflow,
 };

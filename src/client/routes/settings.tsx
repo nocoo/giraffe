@@ -169,7 +169,7 @@ export function SettingsPage() {
 									</Button>
 								</div>
 								<p className="text-xs leading-5 text-basalt-muted-foreground">
-									添加账号后，请前往软件工厂统一刷新数据。
+									添加账号后，请前往刷新中心统一刷新数据。
 								</p>
 							</form>
 						</LayerCard.Body>

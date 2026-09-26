@@ -94,6 +94,9 @@ function StepTimeline({ steps, status }: { steps: FactoryRunStep[]; status: RunS
 						<div className="min-w-0 flex-1">
 							<div className="factory-step-title">
 								<strong>{stepLabel(step)}</strong>
+								{step.strategy && step.strategy !== "full" ? (
+									<span>{step.strategy === "reused" ? "复用已核对数据" : "增量合并"}</span>
+								) : null}
 								<span>
 									{stopped
 										? "未执行完"
@@ -164,7 +167,20 @@ export function FactoryRunDetails({
 								? "同步仓库列表"
 								: `${full ? "全站刷新" : "仓库刷新"} · ${run.repos.length} 个统计仓库`}
 						</p>
-						<h3>{RUN_LABELS[run.status]}</h3>
+						<h3>
+							{RUN_LABELS[run.status]} ·{" "}
+							{run.mode === "catalog"
+								? "同步列表"
+								: run.depth === "quick"
+									? "快速刷新"
+									: "深度刷新"}{" "}
+							·{" "}
+							{run.trigger === "daily"
+								? "每日自动"
+								: run.trigger === "weekly"
+									? "每周自动"
+									: "手动"}
+						</h3>
 					</div>
 					<div className="factory-run-fraction">
 						<strong>

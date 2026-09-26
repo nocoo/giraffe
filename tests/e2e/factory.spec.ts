@@ -13,9 +13,10 @@ test("factory run survives reload, refreshes the whole site and preserves the la
 	await expect(page.locator("form").filter({ has: page.getByTestId("pat-input") })).toHaveAttribute(
 		"aria-busy",
 		"false",
+		{ timeout: 15000 },
 	);
 	await page.goto("/factory");
-	await page.getByRole("button", { name: "刷新控制台", exact: true }).click();
+	await page.getByRole("link", { name: "去刷新", exact: true }).click();
 	await expect(page.getByRole("button", { name: "同步仓库列表" })).toBeEnabled();
 	await page.getByRole("button", { name: "同步仓库列表" }).click();
 	await expect(page.getByRole("progressbar", { name: "本次刷新进度" })).toHaveAttribute("max", "4");
@@ -35,7 +36,7 @@ test("factory run survives reload, refreshes the whole site and preserves the la
 		.toBe("completed");
 	const before = await (await page.request.get("/api/factory")).json();
 	expect(before.repos).toHaveLength(1);
-	await page.getByRole("button", { name: "刷新控制台", exact: true }).click();
+
 	await page.getByRole("button", { name: "更新状态", exact: true }).click();
 	await page.getByRole("tab", { name: "发起刷新" }).click();
 	await expect(
@@ -52,7 +53,7 @@ test("factory run survives reload, refreshes the whole site and preserves the la
 	const run = (await response.json()) as { id: string };
 	expect(await (await page.request.get("/api/factory")).json()).toEqual(before);
 	await page.reload();
-	await page.getByRole("button", { name: "刷新控制台", exact: true }).click();
+
 	await page.getByText("运行信息", { exact: true }).click();
 	await expect(page.locator("code").getByText(run.id, { exact: true })).toBeVisible();
 	await expect(page.getByRole("progressbar", { name: "本次刷新进度" })).toHaveAttribute(

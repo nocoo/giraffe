@@ -20,8 +20,8 @@ export function SnapshotPending({
 			}
 			action={
 				<Button variant="secondary" size="sm" asChild>
-					<Link href={needsAccount ? "/settings" : "/factory?refresh=1"}>
-						{needsAccount ? "查看账号设置" : "前往刷新控制台"}
+					<Link href={needsAccount ? "/settings" : "/refresh"}>
+						{needsAccount ? "查看账号设置" : "前往刷新中心"}
 					</Link>
 				</Button>
 			}

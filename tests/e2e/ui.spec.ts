@@ -278,10 +278,10 @@ test("missing snapshots lead to the unified factory console", async ({ page }) =
 	for (const path of ["/", "/issues", "/pulls", "/inbox", "/insights"]) {
 		await page.goto(path);
 		await expect(page.getByText("等待统一刷新", { exact: true })).toBeVisible();
-		await expect(page.getByRole("button", { name: /刷新/ })).toHaveCount(0);
-		await page.getByRole("link", { name: "前往刷新控制台", exact: true }).click();
-		await expect(page).toHaveURL(/\/factory\?refresh=1$/);
-		await expect(page.getByRole("dialog", { name: "刷新控制台", exact: true })).toBeVisible();
+		await expect(page.getByRole("main").getByRole("button", { name: /刷新/ })).toHaveCount(0);
+		await page.getByRole("link", { name: "前往刷新中心", exact: true }).click();
+		await expect(page).toHaveURL(/\/refresh$/);
+		await expect(page.getByRole("region", { name: "刷新管理", exact: true })).toBeVisible();
 	}
 });
 
@@ -353,8 +353,8 @@ test("missing repository tabs remain read-only and show fresh data after a facto
 	await expect(updated).toBeHidden();
 	expect(await page.getByTestId("repo-detail").ariaSnapshot()).not.toContain("上次刷新");
 	await expect(page.getByRole("tabpanel").getByRole("status")).toHaveCount(0);
-	await page.getByRole("link", { name: "前往刷新控制台", exact: true }).click();
-	await expect(page.getByRole("dialog", { name: "刷新控制台", exact: true })).toBeVisible();
+	await page.getByRole("link", { name: "前往刷新中心", exact: true }).click();
+	await expect(page.getByRole("region", { name: "刷新管理", exact: true })).toBeVisible();
 	await page.unroute("**/api/repos/octocat/hello-world/languages");
 	await page.goBack();
 	await page.getByRole("tab", { name: "语言", exact: true }).click();
@@ -390,7 +390,7 @@ for (const mode of ["light", "dark", "mobile"] as const) {
 			expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
 				width,
 			);
-			await expect(page.getByRole("button", { name: /刷新/ })).toHaveCount(0);
+			await expect(page.getByRole("main").getByRole("button", { name: /刷新/ })).toHaveCount(0);
 			if (process.env.UI_SCREENSHOTS) {
 				await page.screenshot({
 					path: `${process.env.UI_SCREENSHOTS}/${mode}-${ready}.png`,

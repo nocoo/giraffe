@@ -373,7 +373,13 @@ export function runPageUpdates(run: FactoryRunView) {
 	const pages: Array<{ name: string; matches: (step: FactoryRunStep) => boolean }> = [
 		...["repos", "issues", "prs", "alerts", "notifications", "insights"].map((resource) => ({
 			name: resource === "repos" ? "仓库" : (PAGE_LABELS[resource] ?? resource),
-			matches: (step: FactoryRunStep) => step.resource === resource,
+			matches: (step: FactoryRunStep) =>
+				step.resource === resource ||
+				(run.selection?.scope !== "all" &&
+					step.kind === "snapshot" &&
+					!!step.repo &&
+					step.resource ===
+						`repo:${step.repo}:${resource === "repos" ? "details" : resource === "alerts" ? "security" : resource}`),
 		})),
 		{
 			name: "CI 与发布",
@@ -401,7 +407,9 @@ export function runPageUpdates(run: FactoryRunView) {
 			label: !steps.length
 				? "未纳入本次刷新"
 				: updated.length === steps.length
-					? "已更新"
+					? run.selection?.scope !== "all" && ["仓库", "Issues", "PR", "安全告警"].includes(name)
+						? "所选仓库已更新"
+						: "已更新"
 					: active && pending
 						? steps.some((step) => step.status === "running")
 							? "正在更新"
@@ -418,13 +426,13 @@ export function factoryDataHealth(snapshot: FactorySnapshot | null) {
 		return {
 			tone: "info",
 			title: "还没有工厂数据",
-			detail: "打开刷新控制台，同步仓库列表后开始第一次刷新。",
+			detail: "打开刷新中心，同步仓库列表后开始第一次刷新。",
 		};
 	if (!snapshot.inventory.complete)
 		return {
 			tone: "warning",
 			title: "仓库列表尚未获取完整",
-			detail: "当前统计只包含已找到的仓库，可在刷新控制台继续同步。",
+			detail: "当前统计只包含已找到的仓库，可在刷新中心继续同步。",
 		};
 	const required = FACTORY_STREAMS.filter((kind) => kind !== "alerts");
 	const incomplete = snapshot.repos.filter((repo) =>
@@ -476,7 +484,7 @@ export async function loadFactoryRuns(history = ""): Promise<FactoryRunResponse 
 	return getActiveAccountId() === account && response.account_id === account ? response : null;
 }
 export async function startFactoryRun(
-	input: RunSelection & { mode: "catalog" | "refresh" },
+	input: RunSelection & { mode: "catalog" | "refresh"; depth?: "quick" | "deep" },
 	requestKey: string,
 ) {
 	const account = await ensureSession();
