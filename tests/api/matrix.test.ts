@@ -39,12 +39,16 @@ const GETS = [
 ];
 
 const FACTORY_GETS = [
+	"/api/refresh/settings",
 	"/api/factory/runs",
 	"/api/factory",
 	"/api/factory/repos/octocat/hello-world/commits",
 ];
 
 const WRITES: Array<[string, string, RequestInit]> = [
+	["POST", "/api/repos/octocat/hello-world/star", {}],
+	["POST", "/api/refresh/schedules/daily", {}],
+	["POST", "/api/refresh/schedules/weekly", {}],
 	["POST", "/api/factory/runs", {}],
 	["POST", "/api/factory/runs/x/control", {}],
 	[
@@ -789,6 +793,44 @@ describe("api method matrix", () => {
 		expect(d1Rows("SELECT kind,payload FROM snapshots WHERE kind LIKE 'factory%'")).toEqual(
 			rowsBefore,
 		);
+
+		const starsBefore = await githubCount();
+		const save = (path: string, body: unknown) =>
+			api(path, {
+				method: "POST",
+				headers: { origin, "content-type": "application/json" },
+				body: JSON.stringify(body),
+			});
+		expect(
+			(await save("/api/repos/octocat/hello-world/star", { account_id: account.id, enabled: true }))
+				.status,
+		).toBe(200);
+		const refreshSettings = (await (await api("/api/refresh/settings")).json()) as {
+			starred: string[];
+			schedules: { enabled: boolean; time: string }[];
+		};
+		expect(refreshSettings.starred).toEqual(["octocat/hello-world"]);
+		expect(refreshSettings.schedules.every((s) => s.enabled)).toBe(true);
+		for (const kind of ["daily", "weekly"]) {
+			const config = {
+				account_id: account.id,
+				enabled: false,
+				time: "09:15",
+				weekday: 1,
+				scope: "starred",
+			};
+			expect((await save(`/api/refresh/schedules/${kind}`, config)).status).toBe(200);
+			expect(
+				(await save(`/api/refresh/schedules/${kind}`, { ...config, time: "25:00" })).status,
+			).toBe(400);
+			expect((await api(`/api/refresh/schedules/${kind}`)).status).toBe(405);
+		}
+		expect(
+			(await save("/api/repos/octocat/missing/star", { account_id: account.id, enabled: true }))
+				.status,
+		).toBe(404);
+		expect((await api("/api/repos/octocat/hello-world/star")).status).toBe(405);
+		expect(await githubCount()).toBe(starsBefore);
 		const created2 = await api("/api/accounts", {
 			method: "POST",
 			headers: { origin, "content-type": "application/json" },
@@ -805,6 +847,7 @@ describe("api method matrix", () => {
 		expect(activated.status).toBe(200);
 		expect(await activated.json()).toMatchObject({ id: account2.id, is_active: true });
 		expect((await api("/api/repos")).status).toBe(409);
+		expect(await (await api("/api/refresh/settings")).json()).toMatchObject({ starred: [] });
 		expect(
 			(await api(`/api/accounts/${account.id}/activate`, { method: "POST", headers: { origin } }))
 				.status,
@@ -815,5 +858,9 @@ describe("api method matrix", () => {
 		).toBe(204);
 		expect((await api("/api/repos")).status).toBe(409);
 		expect(d1Rows(`SELECT * FROM snapshots WHERE account_id = '${account.id}'`)).toEqual([]);
+		expect(d1Rows(`SELECT * FROM repo_stars WHERE account_id = '${account.id}'`)).toEqual([]);
+		expect(d1Rows(`SELECT * FROM refresh_schedules WHERE account_id = '${account.id}'`)).toEqual(
+			[],
+		);
 	});
 });

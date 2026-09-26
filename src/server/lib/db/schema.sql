@@ -231,6 +231,7 @@ CREATE TABLE IF NOT EXISTS ai_reviews (
  PRIMARY KEY(account_id,repo)
 );
 CREATE INDEX IF NOT EXISTS ai_reviews_due ON ai_reviews(stage,next_at,lease_until);
+
 CREATE TABLE IF NOT EXISTS repo_stars (
  account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
  repo TEXT NOT NULL COLLATE NOCASE,

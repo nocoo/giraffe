@@ -37,6 +37,8 @@ try {
 		"factory_version_refs",
 		"factory_storage",
 		"factory_budget",
+		"repo_stars",
+		"refresh_schedules",
 	];
 	for (const table of required)
 		if (!db.query("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(table))
