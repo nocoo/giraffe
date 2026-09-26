@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.10.2 — 2026-09-26
+
+### Changed
+
+- Prioritize global lists within full-site refresh and report update results for each page in the refresh center
+- Make Insights generation an explicit step in the same full-site refresh, after repository and Issue snapshots succeed
+- Show optional security collection diagnostics only in the refresh center; other pages display available alerts or a neutral empty state
+
+### Fixed
+
+- Retain the previous Insights snapshot when required sources fail, while allowing generation after optional security or notification failures
+
+### Operations
+
+- No new database migration or Cloudflare binding is required
+- Start a full-site refresh in the refresh center to update all page snapshots; existing runs retain their frozen plans
+
 ## v0.10.1 — 2026-09-24
 
 ### Added
