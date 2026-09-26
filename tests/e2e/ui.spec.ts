@@ -24,7 +24,7 @@ test.beforeEach(async ({ page }) => {
 	await mockSnapshots(page);
 });
 
-test("repository header shows the saved snapshot age and optional security coverage as a note", async ({
+test("repository and Insights omit optional security warnings while showing saved data", async ({
 	page,
 }) => {
 	const snapshot = createUiFixtures()["/api/repos"];
@@ -35,8 +35,11 @@ test("repository header shows the saved snapshot age and optional security cover
 	await page.goto("/");
 	const updated = page.locator("time").filter({ hasText: "5 天前" });
 	await expect(updated).toHaveAttribute("datetime", snapshot.fetched_at);
-	await expect(page.getByRole("note")).toContainText("可选安全告警未完整获取");
+	await expect(page.getByText("可选安全告警未完整获取")).toHaveCount(0);
 	await expect(page.getByText("告警不完整", { exact: true })).toHaveCount(0);
+	await page.goto("/insights");
+	await expect(page.getByTestId("insight-metrics")).toBeVisible();
+	await expect(page.getByText("可选安全告警未完整获取")).toHaveCount(0);
 });
 
 for (const width of [1440, 390]) {
@@ -270,7 +273,9 @@ test("missing snapshots lead to the unified factory console", async ({ page }) =
 			json: { error: { code: "snapshot_missing", message: "No fixture snapshot" } },
 		});
 	});
-	for (const path of ["/", "/issues", "/pulls", "/alerts", "/inbox", "/insights"]) {
+	await page.goto("/alerts");
+	await expect(page.getByText("暂无告警数据", { exact: true })).toBeVisible();
+	for (const path of ["/", "/issues", "/pulls", "/inbox", "/insights"]) {
 		await page.goto(path);
 		await expect(page.getByText("等待统一刷新", { exact: true })).toBeVisible();
 		await expect(page.getByRole("button", { name: /刷新/ })).toHaveCount(0);
@@ -280,16 +285,21 @@ test("missing snapshots lead to the unified factory console", async ({ page }) =
 	}
 });
 
-test("unavailable security and traffic show permission guidance without zero-value charts", async ({
+test("unavailable optional security is empty while traffic retains permission guidance", async ({
 	page,
 }) => {
 	const fixtures = createUiFixtures();
 	await page.route("**/api/alerts", (route) =>
-		route.fulfill({ json: { ...fixtures["/api/alerts"], unavailable: true } }),
+		route.fulfill({ json: { ...fixtures["/api/alerts"], items: [], unavailable: true } }),
 	);
 	await page.route("**/api/repos/octocat/hello-world/security", (route) =>
 		route.fulfill({
-			json: { ...fixtures["/api/repos/octocat/hello-world/security"], unavailable: true },
+			json: {
+				...fixtures["/api/repos/octocat/hello-world/security"],
+				unavailable: true,
+				dependabot_open: 0,
+				code_scanning_open: 0,
+			},
 		}),
 	);
 	await page.route("**/api/repos/octocat/hello-world/traffic", (route) =>
@@ -298,13 +308,12 @@ test("unavailable security and traffic show permission guidance without zero-val
 		}),
 	);
 	await page.goto("/alerts");
-	await expect(page.getByText("无权限", { exact: true })).toBeVisible();
+	await expect(page.getByText("暂无告警数据", { exact: true })).toBeVisible();
 	await expect(page.getByTestId("alert-list")).toHaveCount(0);
-	await page.getByRole("link", { name: "检查账号权限", exact: true }).click();
-	await expect(page.getByTestId("pat-input")).toBeVisible();
+	await expect(page.getByText("检查账号权限", { exact: true })).toHaveCount(0);
 	await page.goto("/repos/octocat/hello-world");
 	await page.getByRole("tab", { name: "安全", exact: true }).click();
-	await expect(page.getByText("无法查看安全数据", { exact: true })).toBeVisible();
+	await expect(page.getByText("暂无告警数据", { exact: true })).toBeVisible();
 	await expect(page.getByRole("tabpanel").getByText("Dependabot", { exact: true })).toHaveCount(0);
 	await page.getByRole("tab", { name: "流量", exact: true }).click();
 	await expect(page.getByText("无法查看流量", { exact: true })).toBeVisible();

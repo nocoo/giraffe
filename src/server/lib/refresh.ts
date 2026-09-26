@@ -117,7 +117,7 @@ export async function prepareRefresh(
 	requested: string[],
 	fetchedAt: string,
 	written: Record<string, Collected> = {},
-	measureBytes = false,
+	options: { measureBytes?: boolean; deriveInsights?: boolean } = {},
 ) {
 	async function loaded(kind: string): Promise<Collected | null> {
 		const current = written[kind];
@@ -177,7 +177,10 @@ export async function prepareRefresh(
 		}
 	}
 
-	if (requested.some((kind) => CROSS.has(kind) || DERIVED.has(kind))) {
+	if (
+		options.deriveInsights !== false &&
+		requested.some((kind) => CROSS.has(kind) || DERIVED.has(kind))
+	) {
 		const explicitInsights = requested.includes("insights");
 		const reposSrc = await loaded("repos");
 		const issuesSrc = await loaded("issues");
@@ -218,7 +221,7 @@ export async function prepareRefresh(
 		stmts.push(...replaceSnapshotStmts(db, accountId, kind, payload, fetchedAt));
 	}
 	const kinds = Object.keys(written).flatMap(physicalKinds);
-	if (measureBytes && kinds.length) {
+	if (options.measureBytes && kinds.length) {
 		const old = await db
 			.prepare(
 				`SELECT COALESCE(SUM(length(CAST(payload AS BLOB))),0) AS bytes FROM snapshots WHERE account_id=? AND kind IN (${kinds.map(() => "?").join(",")})`,

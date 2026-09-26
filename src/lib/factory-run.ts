@@ -170,19 +170,16 @@ export function makeRun(
 		mode === "catalog"
 			? [step("inventory"), snapshot("repos"), step("restore"), step("publish")]
 			: [
+					...(full ? [...SITE_SNAPSHOT_KINDS, "insights"].map((kind) => snapshot(kind)) : []),
 					...(full ? [step("contributions")] : []),
 					...repos.flatMap((r) => [
 						step("metadata", r.name),
 						...FACTORY_STREAMS.map((s) => step(s, r.name)),
 						step("commit", r.name),
 					]),
-					...(full ? [snapshot("repos")] : []),
 					...pageRepos.flatMap((repo) =>
 						REPO_SNAPSHOT_TABS.map((tab) => snapshot(`repo:${repo}:${tab}`, repo)),
 					),
-					...(full
-						? SITE_SNAPSHOT_KINDS.filter((kind) => kind !== "repos").map((kind) => snapshot(kind))
-						: []),
 					...repos.map((repo) => step("assessment", repo.name)),
 					step("publish"),
 				];

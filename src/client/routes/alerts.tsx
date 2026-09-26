@@ -1,4 +1,4 @@
-import { Button, Link, toast } from "@nocoo/basalt";
+import { Link, toast } from "@nocoo/basalt";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
@@ -24,16 +24,10 @@ import { ActiveFilters, Breakdown, OverviewCard } from "../components/layout/ove
 import { ListPageSkeleton } from "../components/layout/page-skeleton";
 import { ProjectLink } from "../components/layout/project-identity";
 import { ShareBar } from "../components/layout/rank-bars";
-import { SnapshotPending } from "../components/layout/snapshot-pending";
 import { catchLoad } from "../lib/error-ui";
 import { formatCount, severityBadgeVariant, sourceBadgeVariant } from "../lib/format";
 import { PAGE_DESCRIPTIONS } from "../lib/navigation";
-import {
-	type AlertsSnapshot,
-	alertsUnavailable,
-	loadAlerts,
-	visibleAlerts,
-} from "../viewmodels/alerts";
+import { type AlertsSnapshot, loadAlerts } from "../viewmodels/alerts";
 import { alertsBoard, SEVERITIES } from "../viewmodels/boards";
 import { shortRepo } from "../viewmodels/overview";
 
@@ -59,7 +53,7 @@ export function AlertsPage() {
 	const pick = (key: keyof typeof NO_FILTERS) => (value: string) =>
 		setPicked((old) => ({ ...old, [key]: value }));
 	const board = useMemo(
-		() => (snap && !("missing" in snap) ? alertsBoard(visibleAlerts(snap), picked) : null),
+		() => (snap && !("missing" in snap) ? alertsBoard(snap.items, picked) : null),
 		[snap, picked],
 	);
 
@@ -76,36 +70,12 @@ export function AlertsPage() {
 			});
 	}, []);
 
-	if (snap && "missing" in snap) {
+	if (snap && ("missing" in snap || ((snap.unavailable || snap.truncated) && !snap.items.length))) {
 		return (
 			<div className="space-y-8">
 				<PageHeader title="安全告警" description={PAGE_DESCRIPTIONS["/alerts"]} />
 				<LayerCard>
-					<LayerCard.Well>
-						<SnapshotPending state={snap} />
-					</LayerCard.Well>
-				</LayerCard>
-			</div>
-		);
-	}
-
-	if (snap && alertsUnavailable(snap)) {
-		return (
-			<div className="space-y-8">
-				<PageHeader title="安全告警" description={PAGE_DESCRIPTIONS["/alerts"]} />
-				<LayerCard>
-					<LayerCard.Well>
-						<LayerCard.Empty
-							icon={<ShieldAlert />}
-							title="无权限"
-							description="当前 PAT 看不到安全告警。"
-							action={
-								<Button variant="secondary" size="sm" asChild>
-									<Link href="/settings">检查账号权限</Link>
-								</Button>
-							}
-						/>
-					</LayerCard.Well>
+					<LayerCard.Empty icon={<ShieldAlert />} title="暂无告警数据" />
 				</LayerCard>
 			</div>
 		);
@@ -122,7 +92,7 @@ export function AlertsPage() {
 
 	if (!board) return null;
 	const items = board.rows;
-	const all = visibleAlerts(snap);
+	const all = snap.items;
 
 	return (
 		<div className="giraffe-page-motion space-y-6">
@@ -134,22 +104,27 @@ export function AlertsPage() {
 						fetchedAt={snap.fetched_at}
 					/>
 				}
-				actions={snap.truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
 			/>
 			<KpiRow>
-				<Kpi icon={Bug} label="Dependabot" value={formatCount(snap.dependabot_open)} />
+				<Kpi
+					icon={Bug}
+					label="Dependabot"
+					value={
+						(snap.unavailable || snap.truncated) && !snap.dependabot_open
+							? "—"
+							: formatCount(snap.dependabot_open)
+					}
+				/>
 				<Kpi
 					icon={ShieldAlert}
 					label="Code scanning"
-					value={formatCount(snap.code_scanning_open)}
+					value={
+						(snap.unavailable || snap.truncated) && !snap.code_scanning_open
+							? "—"
+							: formatCount(snap.code_scanning_open)
+					}
 				/>
 			</KpiRow>
-			{snap.truncated ? (
-				<p className="giraffe-coverage-note" role="note">
-					覆盖不完整：Dependabot 逐仓读取，Code scanning 只检查按名称排序的前 10
-					个仓库，其余仓库的安全状态未知。显示为 0 不代表所有仓库都没有告警。
-				</p>
-			) : null}
 			{all.length ? (
 				<>
 					<div className="giraffe-overview">
@@ -220,14 +195,8 @@ export function AlertsPage() {
 						<LayerCard.Well>
 							<LayerCard.Empty
 								icon={<ShieldAlert />}
-								title={all.length ? "没有符合筛选的告警" : "已检查的仓库没有安全告警"}
-								description={
-									all.length
-										? "清除筛选查看全部告警。"
-										: snap.truncated
-											? "仅代表已读取到的仓库；未覆盖仓库的状态未知。"
-											: "可见仓库的当前快照中没有待处理告警。"
-								}
+								title={all.length ? "没有符合筛选的告警" : "暂无告警数据"}
+								{...(all.length ? { description: "清除筛选查看全部告警。" } : {})}
 							/>
 						</LayerCard.Well>
 					</LayerCard>

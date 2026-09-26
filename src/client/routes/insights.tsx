@@ -20,7 +20,6 @@ import { formatCount } from "../lib/format";
 import { PAGE_DESCRIPTIONS } from "../lib/navigation";
 import { aiCoverage, focusFindings, focusRanking } from "../viewmodels/focus";
 import {
-	alertsIncomplete,
 	buildInsightsCharts,
 	healthTiles,
 	type InsightsBoard,
@@ -81,7 +80,6 @@ export function InsightsPage() {
 			board.insights.fetched_at,
 		);
 	}, [board]);
-	const incomplete = board && !("missing" in board) ? alertsIncomplete(board.insights) : false;
 	const rest = charts?.workloadByRepo.find((p) => p.x === "其他");
 	const tiles = useMemo(
 		() => (board && !("missing" in board) ? healthTiles(board.insights.insights) : []),
@@ -132,16 +130,7 @@ export function InsightsPage() {
 						fetchedAt={board.insights.fetched_at}
 					/>
 				}
-				actions={
-					<>
-						{board.insights.truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
-						{incomplete ? (
-							<span role="note" className="text-xs text-basalt-muted-foreground">
-								可选安全告警未完整获取
-							</span>
-						) : null}
-					</>
-				}
+				actions={board.insights.truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
 			/>
 			<FocusSection {...focus} />
 			<SectionRule title={<IconLabel icon={Layers3}>工作量</IconLabel>}>

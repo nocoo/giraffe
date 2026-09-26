@@ -66,6 +66,16 @@ describe("repo-detail viewmodel", () => {
 			securityUnavailable({
 				account_id: "a",
 				fetched_at: "t",
+				truncated: true,
+				unavailable: true,
+				dependabot_open: 2,
+				code_scanning_open: 0,
+			}),
+		).toBe(false);
+		expect(
+			securityUnavailable({
+				account_id: "a",
+				fetched_at: "t",
 				truncated: false,
 				unavailable: true,
 				dependabot_open: 0,

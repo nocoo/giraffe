@@ -4,6 +4,7 @@ import { factoryFixture } from "../../../tests/fixtures/factory-snapshot";
 import { sqliteFixture } from "../../../tests/fixtures/sqlite";
 import { makeRun, type RunSelection } from "../../lib/factory-run";
 import type { Env } from "../env";
+import { createApp } from "../index";
 import { createDb } from "./db/d1";
 import { controlRun, getRun, publishedFactory, startRun } from "./db/factory-runs";
 import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
@@ -201,6 +202,15 @@ async function drive(env: Env, start = now) {
 		await executeRunPage(env, "r1", () => at);
 	}
 	throw new Error("run did not terminate");
+}
+
+async function beforeMetadata(env: Env) {
+	for (let i = 0; i < 20; i++) {
+		const found = await getRun(createDb(env.DB), snap.account_id, "r1");
+		if (found?.run.steps[found.run.cursor]?.kind === "metadata") return;
+		await executeRunPage(env, "r1", () => now);
+	}
+	throw new Error("metadata step not reached");
 }
 
 async function reachAssessment() {
@@ -553,14 +563,16 @@ it("records unavailable coverage, metadata limits, catalog failure and malformed
 		if (mode === "checkpoint") {
 			const found = await getRun(createDb(env.DB), snap.account_id, "r1");
 			if (!found) throw new Error("fixture");
-			found.run.cursor = 9;
+			found.run.cursor = found.run.steps.findIndex((step) => step.kind === "commit");
 			await createDb(env.DB)
 				.prepare("UPDATE factory_runs SET payload=? WHERE id=?")
 				.bind(JSON.stringify(found.run), "r1")
 				.run();
 		}
 		if (mode === "rate") {
-			for (let i = 0; i < 3; i++) await executeRunPage(env, "r1", () => now);
+			await beforeMetadata(env);
+			await executeRunPage(env, "r1", () => now);
+			await executeRunPage(env, "r1", () => now);
 			expect((await getRun(createDb(env.DB), snap.account_id, "r1"))?.run.nextAttemptAt).toBe(
 				"2099-01-01T00:00:00.000Z",
 			);
@@ -587,7 +599,7 @@ it("records unavailable coverage, metadata limits, catalog failure and malformed
 
 it("rechecks repository cooldown at execution after a competing run commits during planning", async () => {
 	const env = await setup();
-	await executeRunPage(env, "r1", () => now);
+	await beforeMetadata(env);
 	await createDb(env.DB)
 		.prepare("INSERT INTO factory_repo_state(account_id,repo,payload) VALUES(?,?,?)")
 		.bind(
@@ -689,7 +701,7 @@ it("retains an older contribution calendar with explicit provenance when the new
 it("keeps interrupted repository cooldown while allowing the same frozen run to resume", async () => {
 	const env = await setup();
 	const { controlRun, repoStates } = await import("./db/factory-runs");
-	await executeRunPage(env, "r1", () => now);
+	await beforeMetadata(env);
 	await executeRunPage(env, "r1", () => now);
 	await controlRun(createDb(env.DB), snap.account_id, "r1", "pause", now);
 	expect((await repoStates(createDb(env.DB), snap.account_id))[0]).toMatchObject({
@@ -713,7 +725,7 @@ it("pauses at total factory capacity without replacing the published snapshot", 
 it("does not shorten an existing repository cooldown on repeated pause/cancel controls", async () => {
 	const env = await setup();
 	const { controlRun, repoStates } = await import("./db/factory-runs");
-	await executeRunPage(env, "r1", () => now);
+	await beforeMetadata(env);
 	await executeRunPage(env, "r1", () => now);
 	await controlRun(createDb(env.DB), snap.account_id, "r1", "pause", now);
 	await createDb(env.DB)
@@ -729,6 +741,21 @@ it("does not shorten an existing repository cooldown on repeated pause/cancel co
 
 it("refreshes all site pages through the durable run, including derived insights", async () => {
 	const env = await setup();
+	const db = createDb(env.DB);
+	await db.prepare("UPDATE accounts SET is_active=1").run();
+	await db.batch(
+		replaceSnapshotStmts(
+			db,
+			snap.account_id,
+			"repos",
+			{
+				repos: [{ name_with_owner: "nocoo/app", description: "outdated" }],
+				fetched_at: "2025-01-01",
+				truncated: false,
+			},
+			"2025-01-01",
+		),
+	);
 	const run = await drive(env);
 	expect(run?.steps.filter((s) => s.kind === "snapshot").every((s) => s.status === "success")).toBe(
 		true,
@@ -755,6 +782,122 @@ it("refreshes all site pages through the durable run, including derived insights
 			truncated: false,
 		});
 	}
+	const app = createApp();
+	const requests = vi.mocked(fetch).mock.calls.length;
+	const saved = await db.prepare("SELECT * FROM snapshots ORDER BY kind").all();
+	for (const resource of [
+		"repos",
+		"insights",
+		"issues",
+		"prs",
+		"alerts",
+		"notifications",
+		"ci",
+		"factory",
+		"repos/nocoo/app",
+		"repos/nocoo/app/actions",
+		"repos/nocoo/app/traffic",
+		"repos/nocoo/app/security",
+		"repos/nocoo/app/issues",
+		"repos/nocoo/app/prs",
+		"repos/nocoo/app/releases",
+		"repos/nocoo/app/languages",
+		"repos/nocoo/app/contributors",
+	]) {
+		const response = await app.request(`http://localhost/api/${resource}`, {}, env);
+		expect(response.status, resource).toBe(200);
+		expect(await response.json(), resource).toMatchObject({
+			account_id: snap.account_id,
+			fetched_at: now,
+		});
+	}
+	expect(fetch).toHaveBeenCalledTimes(requests);
+	expect(await db.prepare("SELECT * FROM snapshots ORDER BY kind").all()).toEqual(saved);
+});
+
+it("preserves Insights when its global sources fail and records the missing update explicitly", async () => {
+	const env = await setup();
+	const db = createDb(env.DB);
+	const old = { fetched_at: "2025-01-01", truncated: false, insights: [{ marker: "old" }] };
+	for (const [kind, payload] of Object.entries({
+		repos: { repos: [{ name_with_owner: "nocoo/app" }], truncated: false },
+		issues: { issues: [], truncated: false },
+		alerts: { items: [], truncated: false },
+		insights: old,
+	}))
+		await db.batch(replaceSnapshotStmts(db, snap.account_id, kind, payload, old.fetched_at));
+	const base = vi.mocked(fetch).getMockImplementation();
+	if (!base) throw new Error("fixture");
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async (url: string, init: RequestInit) =>
+			String(init?.body).includes("search(query")
+				? Response.json({}, { status: 403 })
+				: base(url, init),
+		),
+	);
+	const run = await drive(env);
+	expect(run?.steps.find((step) => step.resource === "insights")).toMatchObject({
+		status: "failed",
+		error: "snapshot_sources_incomplete",
+		attempts: 1,
+	});
+	expect(await readSnapshot(db, snap.account_id, "insights")).toEqual(old);
+	expect(await readSnapshot(db, snap.account_id, "repos")).toMatchObject({ fetched_at: now });
+	expect(await readSnapshot(db, snap.account_id, "notifications")).toMatchObject({
+		fetched_at: now,
+	});
+});
+
+it("updates Insights independently of notifications and clears an old incomplete-alert warning", async () => {
+	const env = await setup();
+	const db = createDb(env.DB);
+	await db.batch(
+		replaceSnapshotStmts(
+			db,
+			snap.account_id,
+			"insights",
+			{
+				fetched_at: "2025-01-01",
+				truncated: false,
+				alerts_incomplete: true,
+				insights: [],
+			},
+			"2025-01-01",
+		),
+	);
+	await db
+		.prepare("UPDATE accounts SET capabilities=?")
+		.bind(JSON.stringify({ repo: true }))
+		.run();
+	const run = await drive(env);
+	expect(run?.steps.find((step) => step.resource === "notifications")?.status).toBe("failed");
+	expect(run?.steps.find((step) => step.resource === "insights")?.status).toBe("success");
+	expect(await readSnapshot(db, snap.account_id, "insights")).toMatchObject({
+		fetched_at: now,
+		alerts_incomplete: false,
+	});
+});
+
+it("does not block Insights when optional security alerts are unavailable", async () => {
+	const env = await setup();
+	const base = vi.mocked(fetch).getMockImplementation();
+	if (!base) throw new Error("fixture");
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async (url: string, init: RequestInit) =>
+			String(init?.body).includes("vulnerabilityAlerts")
+				? Response.json({}, { status: 403 })
+				: base(url, init),
+		),
+	);
+	const run = await drive(env);
+	expect(run?.steps.find((step) => step.resource === "alerts")?.status).toBe("failed");
+	expect(run?.steps.find((step) => step.resource === "insights")?.status).toBe("success");
+	expect(await readSnapshot(createDb(env.DB), snap.account_id, "insights")).toMatchObject({
+		fetched_at: now,
+		alerts_incomplete: true,
+	});
 });
 
 it("retains prior page data on forbidden or limited collection and keeps other pages independent", async () => {

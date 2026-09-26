@@ -368,7 +368,7 @@ export function RepoDetailPage() {
 		}),
 		{ commits: 0, merged: 0, opened: 0, closed: 0 },
 	);
-	const truncated = current?.truncated;
+	const truncated = tab !== "security" && current?.truncated;
 
 	return (
 		<div className="space-y-8" data-testid="repo-detail">
@@ -698,25 +698,29 @@ export function RepoDetailPage() {
 					)}
 				</TabsContent>
 				<TabsContent value="security">
-					{security && "missing" in security ? (
+					{security && ("missing" in security || securityUnavailable(security)) ? (
 						<TabWell>
-							<SnapshotPending />
-						</TabWell>
-					) : security && securityUnavailable(security) ? (
-						<TabWell>
-							<LayerCard.Empty
-								icon={<ShieldAlert />}
-								title="无法查看安全数据"
-								description="请在设置中检查当前账号的仓库访问权限。"
-							/>
+							<LayerCard.Empty icon={<ShieldAlert />} title="暂无告警数据" />
 						</TabWell>
 					) : security ? (
 						<KpiRow>
-							<Kpi icon={Bug} label="Dependabot" value={formatCount(security.dependabot_open)} />
+							<Kpi
+								icon={Bug}
+								label="Dependabot"
+								value={
+									(security.unavailable || security.truncated) && !security.dependabot_open
+										? "—"
+										: formatCount(security.dependabot_open)
+								}
+							/>
 							<Kpi
 								icon={ShieldAlert}
 								label="Code scanning"
-								value={formatCount(security.code_scanning_open)}
+								value={
+									(security.unavailable || security.truncated) && !security.code_scanning_open
+										? "—"
+										: formatCount(security.code_scanning_open)
+								}
 							/>
 						</KpiRow>
 					) : null}

@@ -44,6 +44,7 @@ const PAGE_LABELS: Record<string, string> = {
 	prs: "Pull Requests",
 	alerts: "安全告警",
 	notifications: "通知",
+	insights: "Insights",
 	details: "仓库概览",
 	actions: "CI 运行",
 	traffic: "流量",
@@ -180,6 +181,13 @@ export function describeRunIssue(code: string | null, kind: StepKind, resource?:
 				reason: "发现了不在本次计划内的新仓库。",
 				action: "先点击「同步仓库列表」，再发起全站刷新。",
 			};
+		case "snapshot_sources_incomplete":
+			return {
+				...base,
+				title: "Insights 来源尚未更新完整",
+				reason: "本次仓库列表或 Issues 未成功更新。",
+				action: "处理对应全站页面的问题后，重新发起全站刷新。",
+			};
 		case "capability_missing":
 			return {
 				...base,
@@ -200,7 +208,7 @@ export function describeRunIssue(code: string | null, kind: StepKind, resource?:
 				...base,
 				title: `未能读取${label}`,
 				reason: security
-					? "GitHub 没有返回安全告警，可能是权限不足，或仓库未启用 Dependabot 告警。"
+					? "安全告警是可选数据。GitHub 没有返回告警，可能是权限不足，或仓库未启用 Dependabot 告警。"
 					: "没有读到可用数据，可能与访问权限、仓库设置或来源文件有关。",
 				action: security
 					? "检查仓库的 Dependabot alerts 设置，以及令牌的 repo / security_events 权限；调整后重新刷新这些仓库。"
@@ -331,6 +339,10 @@ export function runStages(run: FactoryRunView) {
 					{ title: "更新页面", steps: run.steps.filter((s) => s.kind === "publish") },
 				]
 			: [
+					{
+						title: "全站列表",
+						steps: run.steps.filter((s) => s.kind === "snapshot" && s.repo === null),
+					},
 					{ title: "账号贡献", steps: run.steps.filter((s) => s.kind === "contributions") },
 					{
 						title: "工厂统计",
@@ -339,8 +351,8 @@ export function runStages(run: FactoryRunView) {
 						),
 					},
 					{
-						title: run.steps.some((s) => s.resource === "repos") ? "全站页面" : "仓库页面",
-						steps: run.steps.filter((s) => s.kind === "snapshot"),
+						title: "仓库页面",
+						steps: run.steps.filter((s) => s.kind === "snapshot" && s.repo !== null),
 					},
 					{ title: "AI 分析", steps: run.steps.filter((s) => s.kind === "assessment") },
 					{ title: "更新页面", steps: run.steps.filter((s) => s.kind === "publish") },
@@ -355,6 +367,50 @@ export function runStages(run: FactoryRunView) {
 			failed: stage.steps.filter((s) => s.status === "failed").length,
 			skipped: stage.steps.filter((s) => s.status === "skipped").length,
 		}));
+}
+
+export function runPageUpdates(run: FactoryRunView) {
+	const pages: Array<{ name: string; matches: (step: FactoryRunStep) => boolean }> = [
+		...["repos", "issues", "prs", "alerts", "notifications", "insights"].map((resource) => ({
+			name: resource === "repos" ? "仓库" : (PAGE_LABELS[resource] ?? resource),
+			matches: (step: FactoryRunStep) => step.resource === resource,
+		})),
+		{
+			name: "CI 与发布",
+			matches: (step) =>
+				step.kind === "snapshot" && /:(details|actions|releases)$/.test(step.resource ?? ""),
+		},
+		{ name: "仓库详情", matches: (step) => step.kind === "snapshot" && step.repo !== null },
+		{ name: "软件工厂", matches: (step) => step.kind === "publish" },
+	];
+	return pages.map(({ name, matches }) => {
+		const steps = run.steps.filter(matches);
+		const updated = steps.filter((step) => step.status === "success");
+		const active = run.status === "running" || run.status === "paused";
+		const pending = steps.some((step) => step.status === "pending" || step.status === "running");
+		return {
+			name,
+			total: steps.length,
+			updated: updated.length,
+			updatedAt:
+				updated
+					.map((step) => step.finishedAt)
+					.filter((at) => at !== null)
+					.sort()
+					.at(-1) ?? null,
+			label: !steps.length
+				? "未纳入本次刷新"
+				: updated.length === steps.length
+					? "已更新"
+					: active && pending
+						? steps.some((step) => step.status === "running")
+							? "正在更新"
+							: "等待更新"
+						: updated.length
+							? `部分更新 ${updated.length}/${steps.length}`
+							: "未更新，保留原数据",
+		};
+	});
 }
 
 export function factoryDataHealth(snapshot: FactorySnapshot | null) {
@@ -398,13 +454,6 @@ export function factoryDataHealth(snapshot: FactorySnapshot | null) {
 			title: "账号贡献日历尚未更新",
 			detail: "仓库数据可用；账号贡献日历可能显示旧数据，或暂时为空。",
 		};
-	const optional = snapshot.repos.filter((repo) => repo.coverage.alerts.status !== "complete");
-	if (optional.length)
-		return {
-			tone: "info",
-			title: "工厂数据可用",
-			detail: `可选安全告警未获取（${optional.length} 个仓库），安全状态未知。${snapshot.publication?.mixed ? "各仓库更新时间不同。" : ""}`,
-		};
 	if (snapshot.publication?.mixed)
 		return {
 			tone: "info",
@@ -413,8 +462,8 @@ export function factoryDataHealth(snapshot: FactorySnapshot | null) {
 		};
 	return {
 		tone: "success",
-		title: "工厂数据完整",
-		detail: `${snapshot.repos.length} 个仓库的 7 类数据均已获取；页面展示最近保存的结果。`,
+		title: "工厂数据可用",
+		detail: `${snapshot.repos.length} 个仓库的基础统计已获取；页面展示最近保存的结果。`,
 	};
 }
 export const secondsUntil = (at: string | null, now: number) =>

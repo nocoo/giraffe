@@ -99,7 +99,11 @@ export function repoKind(owner: string, name: string, tab: RepoTab): string {
 }
 
 export function securityUnavailable(snap: RepoSecurity): boolean {
-	return snap.unavailable === true;
+	return (
+		(snap.unavailable || snap.truncated) &&
+		snap.dependabot_open === 0 &&
+		snap.code_scanning_open === 0
+	);
 }
 
 export function trafficForbidden(snap: RepoTraffic): boolean {

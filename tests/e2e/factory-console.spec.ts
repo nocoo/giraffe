@@ -149,8 +149,8 @@ test("factory opens a large accessible console while keeping one compact health 
 	await expect(page.getByRole("dialog")).toHaveCount(0);
 	const banner = page.getByRole("region", { name: "数据健康与刷新进度" });
 	await expect(banner).toHaveAttribute("data-tone", "info");
-	await expect(banner).toContainText("可选安全告警未获取（2 个仓库）");
-	await expect(banner).toContainText("安全状态未知");
+	await expect(banner).not.toContainText("安全告警");
+	await expect(banner).not.toContainText("安全状态未知");
 	await expect(banner).toContainText("快照更新");
 	await expect(banner.locator("time")).toHaveAttribute("datetime", fixture.snapshot.fetched_at);
 	await expect(banner.locator("time")).toContainText("3 天前");
@@ -172,7 +172,7 @@ test("factory opens a large accessible console while keeping one compact health 
 	const bounds = await dialog.boundingBox();
 	expect(bounds?.width).toBeGreaterThan(1000);
 	expect(bounds?.height).toBeGreaterThan(700);
-	await expect(dialog.locator(".factory-run-phases>li")).toHaveCount(5);
+	await expect(dialog.locator(".factory-run-phases>li")).toHaveCount(6);
 	await expect(dialog.locator(".factory-issue")).toHaveCount(1);
 	await expect(dialog.getByText("未能读取安全告警", { exact: true })).toBeVisible();
 	await expect(
@@ -236,6 +236,29 @@ test("factory opens a large accessible console while keeping one compact health 
 		fullPage: false,
 		animations: "disabled",
 	});
+});
+
+test("the console distinguishes page failures from successful factory publication", async ({
+	page,
+}) => {
+	const fixture = consoleFixture();
+	const run = fixture.state.history[0];
+	const repos = run?.steps.find((step) => step.resource === "repos");
+	if (!repos) throw new Error("fixture page missing");
+	repos.status = "failed";
+	repos.error = "snapshot_incomplete";
+	await mockConsole(page, fixture);
+	await page.goto("/factory?refresh=1");
+	const results = page.getByLabel("本次页面更新结果", { exact: true });
+	await expect(results).toBeVisible();
+	const row = (name: string) =>
+		results
+			.locator("dl > div")
+			.filter({ has: page.locator("dt", { hasText: new RegExp(`^${name}$`) }) });
+	await expect(row("仓库")).toContainText("未更新，保留原数据");
+	await expect(row("Insights")).toContainText("已更新");
+	await expect(row("CI 与发布")).toContainText("已更新");
+	await expect(row("软件工厂")).toContainText("已更新");
 });
 
 test("closing the console keeps polling and pause, resume and cancel preserve published data", async ({
@@ -306,7 +329,7 @@ test("closing the console keeps polling and pause, resume and cancel preserve pu
 	expect(controls).toEqual(["pause", "resume", "cancel"]);
 	await page.getByRole("button", { name: "关闭刷新控制台" }).click();
 	await expect(page.locator(".factory-period")).toBeVisible();
-	await expect(page.getByText("工厂数据可用", { exact: true })).toBeVisible();
+	await expect(page.getByText("数据可用，更新时间不一致", { exact: true })).toBeVisible();
 	await expect(page.getByRole("progressbar", { name: "列表页刷新进度" })).toHaveCount(0);
 });
 

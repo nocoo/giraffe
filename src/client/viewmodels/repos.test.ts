@@ -1,7 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-	alertsIncomplete,
 	cachedRepoRows,
 	filterRepos,
 	healthMap,
@@ -136,10 +135,6 @@ describe("repos viewmodel", () => {
 			insights: [{ name_with_owner: "octocat/alpha", health: "strong" }],
 		});
 		expect(health.get("octocat/alpha")).toBe("strong");
-		expect(alertsIncomplete({ account_id: "acc1", alerts_incomplete: true, insights: [] })).toBe(
-			true,
-		);
-		expect(alertsIncomplete(null)).toBe(false);
 		expect(healthMap(null).size).toBe(0);
 		expect(repoMetrics([])).toEqual({ count: 0, stars: 0, forks: 0, issues: 0 });
 		expect(repoMetrics(sample)).toEqual({ count: 2, stars: 12, forks: 1, issues: 1 });

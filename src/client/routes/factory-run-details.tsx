@@ -1,4 +1,5 @@
 import { Button, SegmentControl } from "@nocoo/basalt";
+import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import {
 	AlertCircle,
 	ArrowUpRight,
@@ -28,6 +29,7 @@ import {
 	formatRunDuration,
 	RUN_LABELS,
 	runIssues,
+	runPageUpdates,
 	runRepositoryRows,
 	runStages,
 	STEP_STATUS,
@@ -241,6 +243,30 @@ export function FactoryRunDetails({
 					))}
 				</ol>
 			</section>
+			<LayerCard padding="md" aria-label="本次页面更新结果">
+				<LayerCard.Header>
+					<h3 className="text-sm font-medium">本次页面更新结果</h3>
+				</LayerCard.Header>
+				<p className="mb-3 text-xs text-basalt-muted-foreground">
+					各页面读取这里保存的数据。未更新的页面保留原数据；没有历史数据时显示待刷新。
+				</p>
+				<dl className="grid gap-x-6 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
+					{runPageUpdates(run).map((page) => (
+						<div
+							key={page.name}
+							className="flex flex-wrap items-baseline justify-between gap-x-2 text-xs"
+						>
+							<dt className="font-medium">{page.name}</dt>
+							<dd
+								className="text-basalt-muted-foreground"
+								title={page.updatedAt ? `本次保存于 ${formatUtc(page.updatedAt)}` : undefined}
+							>
+								{page.label}
+							</dd>
+						</div>
+					))}
+				</dl>
+			</LayerCard>
 			{waiting > 0 ? (
 				<p className="factory-console-note" role="status">
 					<Clock3 aria-hidden="true" />

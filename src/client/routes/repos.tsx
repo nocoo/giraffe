@@ -58,7 +58,6 @@ import { PAGE_DESCRIPTIONS } from "../lib/navigation";
 import { REPO_STATUS, reposBoard } from "../viewmodels/boards";
 import { AGE_BUCKETS, shortRepo } from "../viewmodels/overview";
 import {
-	alertsIncomplete,
 	healthMap,
 	type InsightsSnapshot,
 	loadInsightsOptional,
@@ -155,18 +154,12 @@ export function ReposPage() {
 		[board, query, sort],
 	);
 	const health = healthMap(insights);
-	const incomplete = alertsIncomplete(insights);
 	const peakIssues = maxCount(rows.map((row) => row.open_issue_count));
 	const actions = (
 		<>
 			{snap && !("missing" in snap) ? <SnapshotTime fetchedAt={snap.fetched_at} /> : null}
 			{snap && !("missing" in snap) && snap.truncated ? (
 				<CandyBadge tone="amber">已截断</CandyBadge>
-			) : null}
-			{incomplete ? (
-				<span role="note" className="text-xs text-basalt-muted-foreground">
-					可选安全告警未完整获取
-				</span>
 			) : null}
 		</>
 	);

@@ -12,6 +12,7 @@ import {
 	publicationKey,
 	publishedReadNeeded,
 	runIssues,
+	runPageUpdates,
 	runRepositoryRows,
 	runStages,
 	secondsUntil,
@@ -23,6 +24,44 @@ import { setActiveAccountId } from "./session";
 vi.mock("../lib/api", () => ({ apiGet: vi.fn(), apiPost: vi.fn() }));
 const snap = factoryFixture();
 const run = makeRun("r", snap.account_id, "nocoo", "key", "refresh", snap.repos, snap.fetched_at);
+
+it("reports page updates separately from factory publication and scoped exclusions", () => {
+	const plan = structuredClone(run);
+	for (const step of plan.steps) {
+		step.status = "success";
+		step.finishedAt = snap.fetched_at;
+	}
+	const repos = plan.steps.find((step) => step.resource === "repos");
+	if (!repos) throw new Error("fixture");
+	repos.status = "failed";
+	const view = { ...plan, leaseUntil: null, progress: runProgress(plan, snap.fetched_at) };
+	expect(runPageUpdates(view).find((page) => page.name === "仓库")).toMatchObject({
+		label: "未更新，保留原数据",
+		updatedAt: null,
+	});
+	expect(runPageUpdates(view).find((page) => page.name === "软件工厂")).toMatchObject({
+		label: "已更新",
+		updatedAt: snap.fetched_at,
+	});
+	expect(runPageUpdates(view).find((page) => page.name === "CI 与发布")).toMatchObject({
+		total: 3,
+		updated: 3,
+	});
+	repos.status = "running";
+	expect(runPageUpdates(view)[0]?.label).toBe("正在更新");
+	repos.status = "pending";
+	expect(runPageUpdates(view)[0]?.label).toBe("等待更新");
+	view.status = "cancelled";
+	expect(runPageUpdates(view)[0]?.label).toBe("未更新，保留原数据");
+	const detail = view.steps.find((step) => step.resource?.endsWith(":actions"));
+	if (!detail) throw new Error("fixture");
+	detail.status = "failed";
+	expect(runPageUpdates(view).find((page) => page.name === "CI 与发布")?.label).toBe(
+		"部分更新 2/3",
+	);
+	view.steps = view.steps.filter((step) => step.repo !== null);
+	expect(runPageUpdates(view)[0]?.label).toBe("未纳入本次刷新");
+});
 
 it("shows only repository statistics, details and publication for a scoped run", () => {
 	const scoped = makeRun(
@@ -322,9 +361,10 @@ it("separates a finished refresh from missing data and groups the same problem a
 	expect(view.progress.completed).toBe(view.progress.total);
 	expect(runRepositoryRows(view, [])[0]).toMatchObject({ label: "部分数据未获取" });
 	expect(runStages(view).map((stage) => [stage.title, stage.completed, stage.total])).toEqual([
+		["全站列表", 6, 6],
 		["账号贡献", 1, 1],
 		["工厂统计", 18, 18],
-		["全站页面", 23, 23],
+		["仓库页面", 18, 18],
 		["AI 分析", 2, 2],
 		["更新页面", 1, 1],
 	]);
@@ -339,13 +379,12 @@ it("separates a finished refresh from missing data and groups the same problem a
 	expect(problems[0]?.action).toContain("security_events");
 	expect(problems[0]?.impact).toContain("漏洞");
 	expect(factoryDataHealth(snapshot)).toMatchObject({
-		tone: "info",
+		tone: "success",
 		title: "工厂数据可用",
 	});
-	expect(factoryDataHealth(snapshot).detail).toContain("可选安全告警未获取（2 个仓库）");
-	expect(factoryDataHealth(snapshot).detail).toContain("安全状态未知");
+	expect(factoryDataHealth(snapshot).detail).not.toContain("安全");
 	snapshot.publication = { mixed: true, runId: "partial", publishedAt: snapshot.fetched_at };
-	expect(factoryDataHealth(snapshot).detail).toContain("更新时间不同");
+	expect(factoryDataHealth(snapshot).title).toContain("更新时间不一致");
 	repo.coverage.commits.status = "unavailable";
 	expect(factoryDataHealth(snapshot)).toMatchObject({
 		tone: "warning",
@@ -357,8 +396,8 @@ it("separates a finished refresh from missing data and groups the same problem a
 
 it("explains recovery without treating rate limits, skipped steps or a paused run as lost data", () => {
 	const view = structuredClone(state.current);
-	const contribution = view?.steps[0];
-	const metadata = view?.steps[1];
+	const contribution = view?.steps.find((step) => step.kind === "contributions");
+	const metadata = view?.steps.find((step) => step.kind === "metadata");
 	if (!view || !contribution || !metadata) throw new Error("fixture steps missing");
 	view.status = "paused";
 	contribution.error = "github_unauthorized";

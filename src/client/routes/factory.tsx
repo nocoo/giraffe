@@ -620,10 +620,6 @@ export function FactoryPage() {
 												</p>
 											)}
 										</div>
-										<p className="mt-3 text-xs text-basalt-muted-foreground">
-											安全告警已读取 {board.securityKnown}/{scope.length} 仓库
-											{board.securityKnown < scope.length ? " · 其余安全状态未知" : ""}
-										</p>
 									</FactoryPanel>
 									<FactoryPanel title="依赖与维护" hint="固定 SHA 的直接引用证据">
 										<div className="flex flex-wrap gap-4 text-xs">
@@ -1143,8 +1139,7 @@ export function FactoryPage() {
 						</p>
 						<p>
 							topics 是 GitHub 作者设置的标签，可重叠，不能把标签分组总数相加。引用图只使用可定位的
-							manifest/工作流证据；依赖告警覆盖 {board.securityKnown}/{scope.length}
-							，未覆盖不代表无漏洞。
+							manifest/工作流证据。
 						</p>
 						<details>
 							<summary>排除清单（互斥归因）</summary>

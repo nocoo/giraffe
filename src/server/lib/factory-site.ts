@@ -46,6 +46,13 @@ export async function collectSitePage(
 	const resource = step.resource ?? "";
 	assertKind(resource);
 	const run = lease.run;
+	if (
+		resource === "insights" &&
+		["repos", "issues"].some(
+			(source) => !run.steps.some((s) => s.resource === source && s.status === "success"),
+		)
+	)
+		throw new ApiError(409, "snapshot_sources_incomplete", "Insights sources were not updated");
 	const written: Record<string, Collected> = {};
 	const writes: D1PreparedStatement[] = [];
 	if (["issues", "prs", "alerts"].includes(resource)) {
@@ -103,16 +110,10 @@ export async function collectSitePage(
 		}
 		written[resource] = payload;
 	}
-	const prepared = await prepareRefresh(
-		db,
-		run.account_id,
-		gh,
-		token,
-		[resource],
-		now,
-		written,
-		true,
-	);
+	const prepared = await prepareRefresh(db, run.account_id, gh, token, [resource], now, written, {
+		measureBytes: true,
+		deriveInsights: resource === "insights" || !run.steps.some((s) => s.resource === "insights"),
+	});
 	assertComplete(prepared.written[resource]);
 	if (resource === "repos") {
 		const names = catalogNames(prepared.written.repos ?? null);

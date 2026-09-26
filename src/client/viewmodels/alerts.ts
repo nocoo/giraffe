@@ -18,17 +18,6 @@ export type AlertsSnapshot = {
 	items: AlertItem[];
 };
 
-export function alertsUnavailable(snap: AlertsSnapshot): boolean {
-	return snap.unavailable === true;
-}
-
-export function visibleAlerts(snap: AlertsSnapshot): AlertItem[] {
-	if (alertsUnavailable(snap)) {
-		return [];
-	}
-	return snap.items;
-}
-
 export async function loadAlerts(): Promise<AlertsSnapshot | { missing: true }> {
 	return loadKind<AlertsSnapshot>("alerts");
 }

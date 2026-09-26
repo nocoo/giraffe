@@ -77,3 +77,14 @@ The missing-snapshot check must scope links to the header with the exact project
 title: both the application header and the repository header contain a GitHub
 destination and a level-one heading. Retain browser traces for failed identity
 journeys so navigation failures preserve their original evidence.
+
+## 2026-09-26 — Verify rendered component content and named refresh steps
+
+During refresh-console work, `LayerCard.Header` was initially given a `title`
+attribute instead of heading children. Its DOM props accepted the attribute,
+but it would not render a visible heading. Reading the installed component
+type exposed the mistake before commit. Use explicit children for this header
+and verify the rendered heading in the browser; typechecking alone cannot
+prove visible content. Reordering refresh steps also exposed tests tied to
+numeric positions. Locate the intended step by kind so cooldown and retry
+checks continue to exercise the same behavior after plan changes.

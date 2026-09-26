@@ -93,7 +93,10 @@ export async function executeRunPage(
 				throw new ApiError(409, "repository_cooldown", "repository cooldown");
 		}
 		let token = "";
-		if (!["restore", "commit", "assessment", "publish"].includes(step.kind)) {
+		if (
+			!["restore", "commit", "assessment", "publish"].includes(step.kind) &&
+			step.resource !== "insights"
+		) {
 			const account = await getAccount(db, run.account_id);
 			if (!account) throw new ApiError(409, "account_missing", "account missing");
 			if (step.kind === "snapshot")
@@ -319,6 +322,7 @@ export async function executeRunPage(
 			code !== "repository_unavailable" &&
 			![
 				"snapshot_incomplete",
+				"snapshot_sources_incomplete",
 				"snapshot_unavailable",
 				"catalog_changed",
 				"capability_missing",

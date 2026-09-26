@@ -101,10 +101,6 @@ export function healthMap(insights: InsightsSnapshot | null): Map<string, Insigh
 	return map;
 }
 
-export function alertsIncomplete(insights: InsightsSnapshot | null): boolean {
-	return insights?.alerts_incomplete === true;
-}
-
 let remembered: ReposSnapshot | null = null;
 
 export async function saveRepoStatistics(

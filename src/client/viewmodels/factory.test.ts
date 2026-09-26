@@ -47,7 +47,6 @@ describe("software factory view model", () => {
 		const s = ready();
 		const board = factoryBoard(s, s.repos);
 		expect(board.coverage.complete).toBe(0);
-		expect(board.securityKnown).toBe(0);
 		expect(board.aggregate.ciRate).toBeNull();
 		expect(board.days).toHaveLength(90);
 	});
@@ -148,7 +147,6 @@ describe("factory sampling signals", () => {
 			previousComplete: { commits: true },
 		});
 		expect(b.anomalies).toHaveLength(4);
-		expect(b.securityKnown).toBe(1);
 		const second = {
 			...r,
 			id: "two",

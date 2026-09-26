@@ -193,7 +193,6 @@ export function factoryBoard(snapshot: FactorySnapshot, repos: FactoryRepo[]) {
 		observed,
 		days: series,
 		coverage,
-		securityKnown: repos.filter((r) => r.coverage.alerts.status === "complete").length,
 		totals: {
 			repos: repos.length,
 			private: repos.filter((r) => r.private).length,

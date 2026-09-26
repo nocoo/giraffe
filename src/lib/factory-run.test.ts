@@ -7,6 +7,19 @@ const now = snapshot.fetched_at;
 const firstRepo = snapshot.repos[0];
 if (!firstRepo) throw new Error("fixture");
 const repos = [firstRepo, { ...firstRepo, id: "R_2", name: "nocoo/two", language: "Go" }];
+it("updates global pages and explicitly derives Insights before repository collection", () => {
+	const run = makeRun("all", "a", "nocoo", "key", "refresh", repos, now);
+	expect(run.steps.slice(0, 6).map((step) => step.resource)).toEqual([
+		"repos",
+		"issues",
+		"prs",
+		"alerts",
+		"notifications",
+		"insights",
+	]);
+	expect(run.steps[6]?.kind).toBe("contributions");
+	expect(run.steps[7]).toMatchObject({ kind: "metadata", repo: "nocoo/app" });
+});
 it("tracks one AI assessment per selected statistics repository before publication", () => {
 	const run = makeRun(
 		"ai",
@@ -37,15 +50,15 @@ describe("frozen refresh plans", () => {
 		const run = makeRun("run", snapshot.account_id, "nocoo", "request", "refresh", selection, now);
 		selection.reverse();
 		expect(run.repos).toEqual(["nocoo/two", "nocoo/app"]);
-		expect(run.steps).toHaveLength(45);
-		expect(run.steps[1]).toMatchObject({ kind: "metadata", repo: "nocoo/two" });
+		expect(run.steps).toHaveLength(46);
+		expect(run.steps.find((step) => step.kind === "metadata")).toMatchObject({ repo: "nocoo/two" });
 		run.requests = 900;
-		expect(runProgress(run, now)).toMatchObject({ total: 45, completed: 0, etaSeconds: null });
+		expect(runProgress(run, now)).toMatchObject({ total: 46, completed: 0, etaSeconds: null });
 		Object.assign(run.steps[0] ?? {}, { status: "success", durationMs: 1000 });
 		Object.assign(run.steps[1] ?? {}, { status: "failed" });
 		Object.assign(run.steps[2] ?? {}, { status: "skipped" });
 		expect(runProgress(run, now)).toMatchObject({
-			total: 45,
+			total: 46,
 			completed: 3,
 			success: 1,
 			failed: 1,
