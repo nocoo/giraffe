@@ -107,3 +107,21 @@ type and existing server assertions before extending browser checks. A progress
 update also inferred success from later test output before the suite finished.
 Report individual success only from its result, and complete-suite success
 only after the runner exits successfully.
+
+## 2026-09-27 — Incremental list identity
+
+While adding quick page merges, the initial implementation keyed mapped Issue/PR
+rows only by URL. Local fixtures without URLs exposed a real weakness: unrelated
+repositories with the same empty key collapsed into one entry. The existing
+multi-repository pagination test failed before publication. The merge now uses
+resource IDs or repository plus issue number when a URL is absent; whole-page
+closure updates and cross-repository retention have dedicated checks. Future
+incremental collectors must verify identity against both raw and mapped payloads,
+including sparse records, before reusing a generic merge operation.
+
+The final reuse review also found that comparing only consecutive statistics
+heads could reuse an older language/contributor snapshot after a failed detail
+refresh. A failing regression test reproduced it. Page reuse now requires that
+page's own recorded `source_head` to match current successful metadata; missing
+provenance forces collection. Reuse decisions must follow the artifact being
+reused, not merely the latest parent record.

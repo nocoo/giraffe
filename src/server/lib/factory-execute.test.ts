@@ -1074,4 +1074,7 @@ it("loads accepted evidence across runs and copies pinned data into the new publ
 	expect(publication?.repos[0]?.coverage.commits.strategy).toBe("reused");
 	expect(publication?.repos[0]?.coverage.dependencies.strategy).toBe("reused");
 	expect((await getRun(createDb(env.DB), snap.account_id, "r2"))?.run.depth).toBe("quick");
+	expect((await getRun(createDb(env.DB), snap.account_id, "r2"))?.run.requests).toBeLessThan(
+		(await getRun(createDb(env.DB), snap.account_id, "r1"))?.run.requests ?? 0,
+	);
 });

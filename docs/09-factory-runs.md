@@ -128,7 +128,8 @@ work), Actions, releases and contributors into the saved mapped snapshots. Every
 fetched page is processed before overlap stops pagination. Exhaustion reconciles
 removals; incomplete responses cannot replace good snapshots. Security and
 notifications reconcile their current open/unread sets. Full-site Issue/PR/security
-results feed the corresponding repository tabs without duplicate requests. An
-unchanged default-branch head permits reusing languages and contributors, keeping
-`source_fetched_at` separate from the new check time. Complete deep runs always
+results feed the corresponding repository tabs without duplicate requests. Languages and contributors carry `source_head`. Quick refresh reuses them only
+when that recorded head matches successful current metadata, keeping
+`source_fetched_at` separate from the new check time. Missing provenance forces
+a fresh request, even if the previous statistics head is unchanged. Complete deep runs always
 scan upstream history and rebuild evidence under existing bounded limits.

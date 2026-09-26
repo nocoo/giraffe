@@ -355,7 +355,7 @@ function FactoryRuns({
 										{ value: "", label: current ? "当前刷新" : "最近一次刷新" },
 										...(data?.history ?? []).map((run) => ({
 											value: run.id,
-											label: `${formatUtc(run.startedAt)} · ${RUN_LABELS[run.status]} · ${run.mode === "catalog" ? "同步列表" : `${run.depth === "quick" ? "快速" : "深度"} · ${run.trigger === "daily" ? "每日自动" : run.trigger === "weekly" ? "每周自动" : "手动"} · ${run.repos.length} 个仓库`}`,
+											label: `${formatUtc(run.startedAt)} · ${RUN_LABELS[run.status]} · ${run.mode === "catalog" ? "同步列表" : `${run.depth === "quick" ? "快速" : "深度"} · ${run.trigger === "daily" ? "每日自动" : run.trigger === "weekly" ? "每周自动" : "手动"} · ${new Set([...run.repos, ...(run.siteRepos ?? [])]).size} 个仓库`}`,
 										})),
 									]}
 								/>

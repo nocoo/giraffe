@@ -271,3 +271,36 @@ it("merges selected repository updates into the global list while preserving unr
 	expect(saved?.fetched_at).toBe("2026-09-01T00:00:00.000Z");
 	expect(saved?.repository_fetched_at).toEqual({ "nocoo/app": NOW });
 });
+
+it("reuses code-dependent page data only when its recorded head matches the current metadata", async () => {
+	for (const sourceHead of ["old", "current", undefined]) {
+		const raw = await setup("repo:nocoo/app:languages");
+		const db = createDb(raw);
+		await db.batch(
+			replaceSnapshotStmts(
+				db,
+				"account",
+				"repo:nocoo/app:languages",
+				{
+					truncated: false,
+					languages: { Old: 1 },
+					...(sourceHead ? { source_head: sourceHead } : {}),
+				},
+				"2026-09-01T00:00:00.000Z",
+			),
+		);
+		const lease = await claimRun(db, "site", NOW);
+		if (!lease) throw new Error("fixture");
+		lease.run.depth = "quick";
+		const step = lease.run.steps[lease.run.cursor];
+		if (!step) throw new Error("fixture");
+		lease.run.steps.push({ ...step, kind: "metadata", status: "success", sourceHead: "current" });
+		const gh = github(() => Response.json({ New: 2 }));
+		const result = await collectSitePage(db, lease, step, gh, "fake", NOW);
+		await saveRun(db, lease, result.writes, NOW);
+		const saved = await readSnapshot(createDb(raw), "account", "repo:nocoo/app:languages");
+		expect(saved?.languages).toEqual(sourceHead === "current" ? { Old: 1 } : { New: 2 });
+		expect(saved?.source_head).toBe("current");
+		expect(gh.count).toBe(sourceHead === "current" ? 0 : 1);
+	}
+});

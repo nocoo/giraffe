@@ -158,19 +158,33 @@ export async function collectSitePage(
 	}
 	if (suffix === "security" && !written[resource])
 		written[resource] = await collectKind(gh, token, "alerts", [String(step.repo)], 1_500_000);
-	if (
-		run.depth === "quick" &&
-		["languages", "contributors"].includes(suffix ?? "") &&
-		run.steps.some((s) => s.kind === "metadata" && s.repo === step.repo && s.unchangedHead)
-	) {
+	const metadata = run.steps.find(
+		(s) => s.kind === "metadata" && s.repo === step.repo && s.status === "success",
+	);
+	if (["languages", "contributors"].includes(suffix ?? "") && metadata?.sourceHead !== undefined) {
 		const source = (await readSnapshot(db, run.account_id, resource)) as Collected | null;
-		if (source && !source.truncated && !source.unavailable) {
+		if (
+			run.depth === "quick" &&
+			source &&
+			!source.truncated &&
+			!source.unavailable &&
+			source.source_head === metadata.sourceHead
+		) {
 			written[resource] = {
 				...source,
 				source_fetched_at: source.source_fetched_at ?? source.fetched_at,
 			};
 			step.strategy = "reused";
-		}
+		} else
+			written[resource] = await collectKind(
+				gh,
+				token,
+				resource,
+				[],
+				1_500_000,
+				run.depth === "quick" ? source : null,
+			);
+		written[resource].source_head = metadata.sourceHead;
 	}
 	const prepared = await prepareRefresh(db, run.account_id, gh, token, [resource], now, written, {
 		measureBytes: true,
