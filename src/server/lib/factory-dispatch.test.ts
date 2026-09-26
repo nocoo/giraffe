@@ -9,6 +9,7 @@ vi.mock("./ai-assessment", () => ({
 	dueAssessments: vi.fn().mockResolvedValue([]),
 	executeAssessment: vi.fn(),
 }));
+vi.mock("./refresh-schedule", () => ({ scheduleRefreshes: vi.fn() }));
 vi.mock("./factory-retention", () => ({ pruneFactory: vi.fn() }));
 vi.mock("./factory-execute", () => ({ executeRunPage: vi.fn() }));
 vi.mock("./db/factory-runs", () => ({ dueRuns: vi.fn() }));

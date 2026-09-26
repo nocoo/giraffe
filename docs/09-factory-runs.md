@@ -90,3 +90,33 @@ metrics are recalculated for the current rolling window. Resource coverage recor
 scan. Reused evidence is copied into the new immutable publication under the same
 lease fence. Quick overlap is a heuristic: older edits, deletions and force-pushes
 require periodic deep refresh. Existing storage and API limits still apply.
+
+## Stars and automatic refresh
+
+Giraffe stars belong to `(account_id, repository name)` and never modify GitHub
+stars. `POST /api/repos/:owner/:name/star` accepts `account_id` and `enabled`.
+The first star initializes daily 08:00 quick and Sunday 04:00 deep schedules;
+existing settings, including disabled schedules, are preserved. Times use the
+fixed Asia/Shanghai offset. Names are case insensitive; a renamed repository must
+be starred again after catalogue synchronization.
+
+`GET /api/refresh/settings` reads stars and schedule status without side effects.
+`POST /api/refresh/schedules/:kind` saves `account_id`, `enabled`, `time` (HH:mm),
+`weekday` (Sunday=0), and `scope` (`starred` for daily; `all` or `starred` weekly).
+Settings are per account and remain active when another account is selected.
+A starred repository excluded from statistics still receives detail snapshots.
+
+The existing minute cron checks at most ten due schedules and writes normal
+leased runs through the same planner as manual refresh. Occurrence request keys
+make restart/duplicate dispatch idempotent. The insert also verifies that the
+schedule is still enabled at its original due time. Active runs, cooldowns and
+missing catalogues defer the occurrence; safe status codes appear in settings.
+A missed occurrence runs once when service recovers, then advances to the next
+future wall-clock time. Empty starred sets record a skip and advance. Weekly deep
+wins equal-time ties; daily waits for it to finish. Queue outage recovery uses the
+existing durable outbox. Disabling a schedule stops future occurrences, not an
+already accepted run; pause/cancel controls remain available for that run.
+
+Migration `0007_refresh_schedules.sql` adds account-cascaded stars and schedules.
+Apply it before the new Worker. Rollback the Worker without dropping these tables;
+previous snapshots, immutable evidence and run rows are retained.

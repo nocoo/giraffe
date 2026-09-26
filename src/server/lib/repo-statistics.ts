@@ -3,6 +3,7 @@ import { participates, type RepoStatistics } from "../../lib/repo-statistics";
 import type { Db } from "./db/d1";
 import { readSnapshot } from "./db/snapshots";
 import { buildInsights, type InsightAlert } from "./insights";
+import { starredRepos } from "./refresh-schedule";
 import { assemblePages, splitPages } from "./snapshot-pages";
 
 type Repo = Record<string, unknown> & RepoStatistics & { name_with_owner: string };
@@ -44,14 +45,17 @@ export async function statisticsSnapshot(
 ): Promise<Record<string, unknown>> {
 	if (kind.startsWith("repo:")) return snap;
 	const policy = await repoPolicy(db, account, kind === "repos" ? snap : undefined);
-	if (kind === "repos")
+	if (kind === "repos") {
+		const stars = new Set((await starredRepos(db, account)).map((name) => name.toLowerCase()));
 		return {
 			...snap,
 			repos: policy.repos.map((r) => ({
 				...r,
 				statistics_enabled: policy.enabled(r.name_with_owner),
+				starred: stars.has(r.name_with_owner.toLowerCase()),
 			})),
 		};
+	}
 	if (kind === "insights" && policy.repos.length) {
 		const alerts = await readSnapshot(db, account, "alerts");
 		const derived = {

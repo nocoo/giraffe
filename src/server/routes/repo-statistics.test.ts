@@ -184,7 +184,7 @@ describe("global repository statistics selection", () => {
 			(await request("repos/nocoo/app/statistics", { account_id: id, enabled: false })).status,
 		).toBe(409);
 	});
-	it("blocks factory detail/selection for disabled repos, includes explicit archived overrides and isolates accounts", async () => {
+	it("keeps disabled repositories out of statistics while allowing detail refresh and isolates accounts", async () => {
 		const { request, get, raw } = await setup();
 		expect((await request("factory/repos/nocoo/fork/commits")).status).toBe(404);
 		expect((await get("factory/runs")).catalog).toHaveLength(1);
@@ -198,7 +198,7 @@ describe("global repository statistics selection", () => {
 					repos: ["nocoo/fork"],
 				})
 			).status,
-		).toBe(400);
+		).toBe(202);
 		await request("repos/nocoo/archive/statistics", { account_id: id, enabled: true });
 		expect((await get("factory")).repos).toHaveLength(2);
 		await request("repos/NOCOO/ARCHIVE/statistics", { account_id: id, enabled: false });

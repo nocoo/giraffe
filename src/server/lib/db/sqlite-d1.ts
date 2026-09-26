@@ -22,6 +22,7 @@ class Stmt {
 	private exec(): Row[] {
 		const sql = this.sql.replace(/\s+/g, " ").trim();
 		const v = this.values;
+		if (sql.startsWith("SELECT repo FROM repo_stars")) return [];
 		if (sql.startsWith("SELECT repo,enabled FROM repo_statistics"))
 			return this.mem.statistics.filter((r) => r.account_id === v[0]);
 		if (sql.startsWith("INSERT INTO repo_statistics")) {

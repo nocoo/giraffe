@@ -102,7 +102,8 @@ export async function startRun(db: Db, run: FactoryRun): Promise<FactoryRun> {
  SELECT ?,?,?,'running',?,?,?,? WHERE NOT EXISTS(SELECT 1 FROM factory_runs WHERE account_id=? AND status IN ('running','paused'))
  AND NOT EXISTS(SELECT 1 FROM factory_runs WHERE account_id=? AND created_at>?)
  AND NOT EXISTS(SELECT 1 FROM factory_state WHERE account_id=? AND next_at>?)
- AND NOT EXISTS(SELECT 1 FROM snapshots WHERE account_id=? AND kind='factory:lock' AND fetched_at>?)`)
+ AND NOT EXISTS(SELECT 1 FROM snapshots WHERE account_id=? AND kind='factory:lock' AND fetched_at>?)
+ AND (? IS NULL OR EXISTS(SELECT 1 FROM refresh_schedules WHERE account_id=? AND kind=? AND next_at=? AND enabled=1))`)
 		.bind(
 			run.id,
 			run.account_id,
@@ -118,6 +119,10 @@ export async function startRun(db: Db, run: FactoryRun): Promise<FactoryRun> {
 			run.startedAt,
 			run.account_id,
 			run.startedAt,
+			run.schedule?.kind ?? null,
+			run.account_id,
+			run.schedule?.kind ?? null,
+			run.schedule?.dueAt ?? null,
 		);
 	const results = await db.batch([
 		insert,

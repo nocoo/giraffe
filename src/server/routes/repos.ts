@@ -5,14 +5,20 @@ import { getActiveAccount } from "../lib/db/accounts";
 import { ApiError, jsonOk } from "../lib/errors";
 import { ACCOUNT_ID_RE } from "../lib/id";
 import { readJson } from "../lib/read-body";
+import { enableDefaultSchedules } from "../lib/refresh-schedule";
 import { repoPolicy } from "../lib/repo-statistics";
 import { repoParts, snapshotGet } from "./snapshots";
 
 const settingsInput = z
 	.object({ account_id: z.string().regex(ACCOUNT_ID_RE), enabled: z.boolean() })
 	.strict();
-export async function setRepoStatistics(
+export const setRepoStatistics = (c: Context<{ Bindings: Env; Variables: AppVars }>) =>
+	setRepoSetting(c, "statistics");
+export const setRepoStar = (c: Context<{ Bindings: Env; Variables: AppVars }>) =>
+	setRepoSetting(c, "star");
+async function setRepoSetting(
 	c: Context<{ Bindings: Env; Variables: AppVars }>,
+	kind: "statistics" | "star",
 ): Promise<Response> {
 	const { owner, name } = repoParts(String(c.req.param("owner")), String(c.req.param("name")));
 	const parsed = settingsInput.safeParse(await readJson(c.req.raw, 1024));
@@ -26,6 +32,26 @@ export async function setRepoStatistics(
 	const full = `${owner}/${name}`;
 	const repo = policy.repos.find((r) => r.name_with_owner.toLowerCase() === full.toLowerCase());
 	if (!repo) throw new ApiError(404, "not_found", "repository not in catalog");
+	if (kind === "star") {
+		if (parsed.data.enabled) {
+			await db
+				.prepare(
+					"INSERT INTO repo_stars(account_id,repo) VALUES(?,?) ON CONFLICT(account_id,repo) DO NOTHING",
+				)
+				.bind(account.id, repo.name_with_owner)
+				.run();
+			await enableDefaultSchedules(db, account.id, new Date().toISOString());
+		} else
+			await db
+				.prepare("DELETE FROM repo_stars WHERE account_id=? AND repo=?")
+				.bind(account.id, repo.name_with_owner)
+				.run();
+		return jsonOk({
+			account_id: account.id,
+			name_with_owner: repo.name_with_owner,
+			starred: parsed.data.enabled,
+		});
+	}
 	await db
 		.prepare(
 			"INSERT INTO repo_statistics(account_id,repo,enabled) VALUES(?,?,?) ON CONFLICT(account_id,repo) DO UPDATE SET enabled=excluded.enabled",

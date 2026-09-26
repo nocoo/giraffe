@@ -20,8 +20,9 @@ import { getMe } from "./routes/me";
 import { postRead, postReadAll } from "./routes/notifications";
 import { getProjectIdentity } from "./routes/project-identity";
 import { postRefresh } from "./routes/refresh";
+import { getRefreshSettings, postRefreshSchedule } from "./routes/refresh-settings";
 import { getAssessmentDigests, getRepoAssessment } from "./routes/repo-assessment";
-import { repoGet, setRepoStatistics } from "./routes/repos";
+import { repoGet, setRepoStar, setRepoStatistics } from "./routes/repos";
 import { snapshotGet } from "./routes/snapshots";
 
 function notAllowed(): Response {
@@ -89,6 +90,12 @@ export function createApp(): Hono<{ Bindings: Env; Variables: AppVars }> {
 	app.post("/api/ai/settings/:kind/test", testAiSettings);
 	allow(app, "/api/repos/:owner/:name/assessment", ["GET"]);
 	onGet(app, "/api/repos/:owner/:name/assessment", getRepoAssessment);
+	allow(app, "/api/refresh/settings", ["GET"]);
+	onGet(app, "/api/refresh/settings", getRefreshSettings);
+	allow(app, "/api/refresh/schedules/:kind", ["POST"]);
+	app.post("/api/refresh/schedules/:kind", postRefreshSchedule);
+	allow(app, "/api/repos/:owner/:name/star", ["POST"]);
+	app.post("/api/repos/:owner/:name/star", setRepoStar);
 	allow(app, "/api/refresh", ["POST"]);
 	app.post("/api/refresh", (c) => postRefresh(c));
 	allow(app, "/api/factory", ["GET"]);

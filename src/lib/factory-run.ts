@@ -48,6 +48,7 @@ export type FactoryRun = {
 	mode: "catalog" | "refresh";
 	depth?: "quick" | "deep";
 	trigger?: "manual" | "daily" | "weekly";
+	schedule?: { kind: "daily" | "weekly"; dueAt: string };
 	repos: string[];
 	siteRepos?: string[];
 	repoIds: Record<string, string>;
@@ -153,7 +154,14 @@ export function makeRun(
 	depth: "quick" | "deep" = "deep",
 ): FactoryRun {
 	const full = selection.scope === "all";
-	const pageRepos = full ? siteRepos : repos.map((repo) => repo.name);
+	const pageRepos = full
+		? siteRepos
+		: [
+				...new Set([
+					...repos.map((repo) => repo.name),
+					...(selection.repos ?? []).filter((name) => siteRepos.includes(name)),
+				]),
+			];
 	const step = (kind: StepKind, repo: string | null = null): FactoryRunStep => ({
 		kind,
 		repo,
