@@ -32,6 +32,7 @@ const input = z.object({
 	account_id: z.string().regex(ACCOUNT_ID_RE),
 	requestKey: z.string().uuid(),
 	mode: z.enum(["catalog", "refresh"]),
+	depth: z.enum(["quick", "deep"]).default("deep"),
 	scope: z.enum(["all", "selected", "filter", "stale", "failed"]).default("selected"),
 	repos: z.array(z.string().max(200)).max(500).optional(),
 	order: z.array(z.string().max(200)).max(500).optional(),
@@ -184,6 +185,7 @@ export async function postFactoryRun(c: Ctx): Promise<Response> {
 		states,
 		siteRepos ?? [],
 		selection,
+		data.depth,
 	);
 	await checkFactoryCapacity(db, row.id, new TextEncoder().encode(boundedJson(plan)).length);
 	const run = await startRun(db, plan);

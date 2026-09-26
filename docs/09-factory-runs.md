@@ -73,3 +73,20 @@ API 的 `repos` 只表示 selected 成员；`order` 是独立的优先级顺序�
 工厂 GitHub 响应在流式读取时限制为 4 MB，超过即停止读取，避免在大 manifest 解码后才限容；其他旧 API 保持独立的 20 MB 响应边界。
 
 保存事务入口会验证本批所有 fence 时间的最大值；若租约已失效则整批回滚，避免前面的写入通过而最后 CAS 失败。已记录 requests 包括成功记账的错误/重试调用；崩溃或取消后的未提交在途调用可能额外消耗 GitHub 配额，不能据此反推出精确计费。
+
+## Refresh depth
+
+Refresh runs freeze `depth` (`quick` or `deep`) independently of catalogue/refresh
+`mode`. Persisted runs without a depth describe the original deep collector.
+Quick statistics collection reads the accepted immutable resource version, processes
+all records on each page, and stops when a page intersects that baseline. Fresh
+records replace stored records by ID. Missing or incomplete baselines bootstrap
+through full pagination; reaching the end replaces the resource and reconciles
+removed records. Open-only security lists are fully reconciled.
+
+Pinned commits and manifests can reuse complete evidence for an unchanged head;
+metrics are recalculated for the current rolling window. Resource coverage records
+`strategy` and `sourceFetchedAt` to distinguish a new check from a complete source
+scan. Reused evidence is copied into the new immutable publication under the same
+lease fence. Quick overlap is a heuristic: older edits, deletions and force-pushes
+require periodic deep refresh. Existing storage and API limits still apply.

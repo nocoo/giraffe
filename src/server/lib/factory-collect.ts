@@ -57,6 +57,11 @@ export function streamKey(repo: string, stream: FactoryStreamName): string {
 	return `factory:${repo}:${stream}`;
 }
 export type FactoryStore = {
+	baseline?: () => Promise<{
+		data: FactoryStreamData;
+		head: string | null;
+		window: FactoryWindow;
+	} | null>;
 	read: (key: string) => Promise<FactoryStreamData | null>;
 	write: (key: string, data: FactoryStreamData) => Promise<void>;
 };
@@ -224,10 +229,32 @@ async function collectStream(
 		ranges: [],
 		coverage: coverage(first),
 	};
+	const prior = await store.baseline?.();
+	const baseline =
+		prior?.data.coverage.status === "complete" &&
+		prior.window.since <= s.window.since &&
+		prior.window.until <= s.window.until
+			? prior
+			: null;
+	const retained =
+		baseline?.data.items.filter(
+			(e) => (stream !== "commits" && stream !== "actions") || inWindow(e.at, s.window),
+		) ?? [];
+	data.coverage.strategy = "full";
 	data.coverage.status = "partial";
 	data.coverage.fetchedAt = now;
 	try {
-		if (stream === "dependencies" && !repo.head) {
+		if (
+			baseline &&
+			baseline.head === repo.head &&
+			(stream === "dependencies" || stream === "commits")
+		) {
+			data.items = retained;
+			data.next = null;
+			data.coverage.strategy = "reused";
+			data.coverage.sourceFetchedAt =
+				baseline.data.coverage.sourceFetchedAt ?? baseline.data.coverage.fetchedAt;
+		} else if (stream === "dependencies" && !repo.head) {
 			data.next = null;
 		} else if (stream === "dependencies") {
 			const [owner, name] = repo.name.split("/");
@@ -266,7 +293,7 @@ async function collectStream(
 					resource: "core",
 				};
 			const payload: unknown = await response.json();
-			if (stream === "actions" && Number(object(payload).total_count) > 1000) {
+			if (stream === "actions" && !baseline && Number(object(payload).total_count) > 1000) {
 				const range = new URL(path, "https://api.github.com").searchParams
 					.get("created")
 					?.split("..");
@@ -285,16 +312,35 @@ async function collectStream(
 			} else {
 				const list = stream === "actions" ? object(payload).workflow_runs : payload;
 				if (!Array.isArray(list)) throw new ApiError(502, "github_error", "invalid resource list");
-				data.items = uniqueEvents([
-					...data.items,
-					...mapFactoryEvents(stream, rows(list)).filter(
-						(e) => (stream !== "commits" && stream !== "actions") || inWindow(e.at, s.window),
-					),
-				]);
+				const page = mapFactoryEvents(stream, rows(list)).filter(
+					(e) => (stream !== "commits" && stream !== "actions") || inWindow(e.at, s.window),
+				);
+				data.items = uniqueEvents([...data.items, ...page]);
 				data.next = factoryNext(response.headers.get("link"), path);
+				const ids = new Set(retained.map((e) => e.id));
+				// ponytail: overlap is a quick-refresh heuristic; weekly deep refresh reconciles older edits.
+				if (stream !== "alerts" && data.next && page.some((e) => ids.has(e.id))) {
+					data.items = uniqueEvents([...retained, ...data.items]);
+					data.next = null;
+					data.ranges = [];
+					data.coverage.strategy = "incremental";
+					data.coverage.sourceFetchedAt =
+						baseline?.data.coverage.sourceFetchedAt ?? baseline?.data.coverage.fetchedAt ?? null;
+				}
 			}
 		}
-		data.coverage.pages++;
+		if (
+			stream === "actions" &&
+			baseline &&
+			data.coverage.strategy === "full" &&
+			data.items.length >= 1000 &&
+			!data.next
+		) {
+			data.coverage.status = "limited";
+			data.coverage.reason =
+				"No overlap within the GitHub Actions result cap; deep refresh required";
+		}
+		if (data.coverage.strategy !== "reused") data.coverage.pages++;
 		if (!data.next && data.ranges.length && data.coverage.status !== "limited") {
 			const range = data.ranges.shift();
 			if (range)

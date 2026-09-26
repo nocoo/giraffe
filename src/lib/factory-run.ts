@@ -46,6 +46,8 @@ export type FactoryRun = {
 	requestKey: string;
 	selection?: RunSelection;
 	mode: "catalog" | "refresh";
+	depth?: "quick" | "deep";
+	trigger?: "manual" | "daily" | "weekly";
 	repos: string[];
 	siteRepos?: string[];
 	repoIds: Record<string, string>;
@@ -148,6 +150,7 @@ export function makeRun(
 	states: Pick<RepoRefreshState, "repo" | "refreshedAt" | "status" | "nextAllowedAt">[] = [],
 	siteRepos: string[] = repos.map((repo) => repo.name),
 	selection: RunSelection = { scope: "all" },
+	depth: "quick" | "deep" = "deep",
 ): FactoryRun {
 	const full = selection.scope === "all";
 	const pageRepos = full ? siteRepos : repos.map((repo) => repo.name);
@@ -199,6 +202,8 @@ export function makeRun(
 		owner,
 		requestKey,
 		mode,
+		depth,
+		trigger: "manual",
 		selection: structuredClone(selection),
 		repos: repos.map((r) => r.name),
 		siteRepos: [...pageRepos],

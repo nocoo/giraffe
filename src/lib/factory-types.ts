@@ -12,6 +12,8 @@ export const FACTORY_STREAMS = [
 export type FactoryStreamName = (typeof FACTORY_STREAMS)[number];
 export type CoverageStatus = "pending" | "partial" | "complete" | "unavailable" | "limited";
 export type FactoryCoverage = {
+	strategy?: "full" | "incremental" | "reused";
+	sourceFetchedAt?: string | null;
 	status: CoverageStatus;
 	pages: number;
 	fetchedAt: string | null;

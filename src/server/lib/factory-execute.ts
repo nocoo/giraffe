@@ -19,6 +19,7 @@ import { newFactory, stepFactory } from "./factory-collect";
 import { exclusion, mapFactoryRepo, object } from "./factory-map";
 import {
 	boundedJson,
+	currentRepo,
 	publicationWrites,
 	repositoryWrites,
 	restoreLegacyRepo,
@@ -221,6 +222,27 @@ export async function executeRunPage(
 				checkpoint.status = "collecting";
 			}
 			const store = {
+				...(run.depth === "quick" && stream
+					? {
+							baseline: async () => {
+								const repo = await currentRepo(db, run.account_id, String(step.repo));
+								if (!repo?.observation || repo.id !== run.repoIds[String(step.repo)]) return null;
+								const row = await db
+									.prepare(
+										"SELECT payload FROM factory_resources WHERE run_id=? AND repo=? AND stream=?",
+									)
+									.bind(repo.observation.version, step.repo, stream)
+									.first<{ payload: string }>();
+								return row
+									? {
+											data: JSON.parse(row.payload) as FactoryStreamData,
+											head: repo.head,
+											window: repo.observation.window,
+										}
+									: null;
+							},
+						}
+					: {}),
 				read: async () => {
 					const row = await db
 						.prepare("SELECT payload FROM factory_resources WHERE run_id=? AND repo=? AND stream=?")

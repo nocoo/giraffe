@@ -1038,3 +1038,29 @@ it("resumes a failed site-list chunk without advancing its cursor or duplicating
 	).toBe(11);
 	expect(calls).toBe(3);
 });
+
+it("loads accepted evidence across runs and copies pinned data into the new publication", async () => {
+	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] });
+	await drive(env);
+	const later = new Date(Date.parse(now) + 3600000).toISOString();
+	const run = makeRun(
+		"r2",
+		snap.account_id,
+		"nocoo",
+		"k2",
+		"refresh",
+		snap.repos,
+		later,
+		[],
+		[],
+		{ scope: "selected" },
+		"quick",
+	);
+	await startRun(createDb(env.DB), run);
+	for (let i = 0; i < run.steps.length; i++) await executeRunPage(env, "r2", () => later);
+	const publication = await publishedFactory(createDb(env.DB), snap.account_id);
+	expect(publication?.repos[0]?.observation?.version).toBe("r2");
+	expect(publication?.repos[0]?.coverage.commits.strategy).toBe("reused");
+	expect(publication?.repos[0]?.coverage.dependencies.strategy).toBe("reused");
+	expect((await getRun(createDb(env.DB), snap.account_id, "r2"))?.run.depth).toBe("quick");
+});
