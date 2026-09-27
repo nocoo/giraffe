@@ -168,3 +168,12 @@ scrolled elements into view and missed the broken user interaction. Remove the
 obsolete inner scrolling rules and keep ContentIsland as the page scroll owner.
 Browser regressions now use real wheel input over all three tabs at desktop
 and narrow widths, reaching expanded diagnostics and returning to the top.
+
+## 2026-09-27 — Native time inputs need the active color scheme
+
+The schedule input used Basalt text and surface tokens, but its native clock
+indicator retained the browser's default light appearance on a dark surface.
+Alignment screenshots did not catch its low contrast. Set the native input's
+color scheme from the active application theme, and inspect both theme variants
+when introducing browser-rendered controls; token colors alone do not style
+their native indicators or picker surfaces.
