@@ -2,7 +2,6 @@ import type { ReviewEvidence, ReviewInput } from "../../lib/ai-review";
 import { FACTORY_STREAMS, type FactoryStreamName } from "../../lib/factory-types";
 import { ApiError } from "./errors";
 
-const STATE_BYTES = 24_000;
 const bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).length;
 const DAY_COLUMNS = [
 	"commits",
@@ -15,17 +14,17 @@ const DAY_COLUMNS = [
 	"ciFailure",
 	"releases",
 ] as const;
-function evidence(item: ReviewEvidence) {
+function evidence(item: ReviewEvidence, bodyLimit: number) {
 	const { url: _url, title, body, ...fields } = item;
 	return {
 		...fields,
 		title: title.slice(0, 160),
-		...(body ? { body: body.slice(0, 400) } : {}),
-		excerpted: item.excerpted === true || title.length > 160 || (body?.length ?? 0) > 400,
+		...(body ? { body: body.slice(0, bodyLimit) } : {}),
+		excerpted: item.excerpted === true || title.length > 160 || (body?.length ?? 0) > bodyLimit,
 	};
 }
 
-export function judgmentInput(input: ReviewInput) {
+export function judgmentInput(input: ReviewInput, budget = 24_000, bodyLimit = 400) {
 	const state = {
 		repository: {
 			name: input.repository.name,
@@ -54,13 +53,16 @@ export function judgmentInput(input: ReviewInput) {
 		},
 		coverage: input.coverage,
 		events: Object.fromEntries(
-			FACTORY_STREAMS.map((stream) => [stream, input.events[stream].map(evidence)]),
+			FACTORY_STREAMS.map((stream) => [
+				stream,
+				input.events[stream].map((item) => evidence(item, bodyLimit)),
+			]),
 		) as Record<FactoryStreamName, ReturnType<typeof evidence>[]>,
 		omitted: { ...input.omitted },
 		excluded: input.excluded,
 	};
 	// A UTF-8 byte budget leaves room below Jev's 32k state-plus-question token limit.
-	while (bytes(state) > STATE_BYTES) {
+	while (bytes(state) > budget) {
 		const stream = FACTORY_STREAMS.filter((name) => state.events[name].length).sort(
 			(a, b) => bytes(state.events[b]) - bytes(state.events[a]),
 		)[0];

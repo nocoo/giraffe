@@ -210,3 +210,9 @@ CI existed yet for that commit. It stopped before checkout, migrations or
 deployment. Inspect reusable release-source requirements, wait for successful
 CI at the intended release SHA, then push the tag. If already published, retain
 the tag and rerun its deployment only after the prerequisite CI succeeds.
+
+## 2026-09-28 — AI repair constraints and local migration replay
+
+The first historical replay still returned an unsupported all-clear after a textual repair instruction. Prompt wording alone did not reliably constrain status choices. Per-domain response schemas now exclude healthy when the sampled evidence is incomplete, while server validation remains mandatory. Both selected historical failure samples then passed through the configured gateway in 16.3 and 14.2 seconds. These samples demonstrate compatibility, not a universal model-quality guarantee.
+
+An initial ALTER-column migration failed the local startup replay test because this project initializes its latest schema and replays migrations idempotently. No production migration ran. The provider switch now uses an additive, idempotent options table; backup-copy migration replay and rollback checks preserve existing rows. Inspect both production migration tracking and local schema bootstrap before choosing DDL.

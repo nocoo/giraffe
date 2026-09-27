@@ -12,7 +12,7 @@ import {
 	executeAssessment,
 	readAssessment,
 } from "./ai-assessment";
-import { judgeRepository, summarizeRepository } from "./ai-models";
+import { AiModelFailure, judgeRepository, summarizeRepository } from "./ai-models";
 import { loadAiConfig } from "./ai-settings";
 import { createDb } from "./db/d1";
 import { claimRun, startRun } from "./db/factory-runs";
@@ -398,4 +398,43 @@ it("retries rejected optional judgment once then continues the report", async ()
 	expect((await read()).status).toBe("complete");
 	expect(judgeRepository).toHaveBeenCalledTimes(2);
 	expect((await read()).judgment).toBeNull();
+});
+
+it("keeps optional judgment diagnostics after successful report generation", async () => {
+	const { raw, env, ids, read } = await setup();
+	const id = (await ids())[0] as string;
+	vi.mocked(judgeRepository).mockRejectedValue(
+		new AiModelFailure("ai_request_rejected", { httpStatus: 422, durationMs: 10 }),
+	);
+	await executeAssessment(env, id, () => at);
+	await raw.prepare("UPDATE ai_reviews SET next_at=?").bind(at).run();
+	await executeAssessment(env, id, () => at);
+	await executeAssessment(env, id, () => at);
+	expect((await read()).status).toBe("complete");
+	const rows = await raw
+		.prepare("SELECT stage,attempt,error,diagnostic FROM ai_review_attempts ORDER BY attempt")
+		.all();
+	expect(rows.results).toEqual(
+		[1, 2].map((attempt) => ({
+			stage: "judgment",
+			attempt,
+			error: "ai_request_rejected",
+			diagnostic: JSON.stringify({ httpStatus: 422, durationMs: 10 }),
+		})),
+	);
+});
+it("does not repeat the summary retry budget at the queue layer", async () => {
+	const { raw, env, ids, read } = await setup();
+	const id = (await ids())[0] as string;
+	await executeAssessment(env, id, () => at);
+	vi.mocked(summarizeRepository).mockRejectedValue(
+		new AiModelFailure("ai_invalid_report", {
+			reason: "schema_mismatch:delivery.status:invalid_value",
+		}),
+	);
+	expect(await executeAssessment(env, id, () => at)).toBeNull();
+	expect((await read()).status).toBe("failed");
+	await raw.prepare("UPDATE ai_reviews SET next_at=?").bind(at).run();
+	expect(await executeAssessment(env, id, () => at)).toBeNull();
+	expect(summarizeRepository).toHaveBeenCalledTimes(1);
 });

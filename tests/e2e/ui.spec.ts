@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { defaultAiSettings } from "../../src/lib/ai-settings";
 import { createUiFixtures } from "./ui-fixtures";
 
 async function mockSnapshots(page: Page) {
@@ -473,4 +474,35 @@ test("CI page separates consecutive failures from recurring ones and filters the
 	const releases = page.getByTestId("release-list");
 	await expect(releases.getByRole("row").nth(1)).toContainText("v2.1.0");
 	await expect(releases.getByRole("row").nth(1)).toContainText("连续失败");
+});
+
+test("optional Jev can be disabled and restored without replacing the key on narrow screens", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	let saved = { ...defaultAiSettings("judgment"), hasApiKey: true };
+	await page.route("**/api/ai/settings", (route) =>
+		route.fulfill({ json: { settings: [defaultAiSettings("summary"), saved] } }),
+	);
+	await page.route("**/api/ai/settings/judgment", async (route) => {
+		const body = route.request().postDataJSON();
+		expect(body.apiKey).toBe("");
+		saved = { ...saved, enabled: body.enabled };
+		await route.fulfill({ json: saved });
+	});
+	await page.goto("/settings");
+	const card = page.getByTestId("ai-judgment-card");
+	const toggle = card.getByRole("switch", { name: "报告生成前使用 JEV 判断" });
+	await expect(toggle).toBeChecked();
+	await toggle.click();
+	await card.getByRole("button", { name: "保存配置", exact: true }).click();
+	await expect(card.getByText("已停用", { exact: true })).toBeVisible();
+	await page.reload();
+	await expect(toggle).not.toBeChecked();
+	await toggle.click();
+	await card.getByRole("button", { name: "保存配置", exact: true }).click();
+	await expect(card.getByText("已配置", { exact: true })).toBeVisible();
+	const bounds = await card.boundingBox();
+	expect(bounds).not.toBeNull();
+	expect((bounds?.x ?? 0) + (bounds?.width ?? 0)).toBeLessThanOrEqual(390);
 });

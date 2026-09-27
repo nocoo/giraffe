@@ -2,7 +2,7 @@ import type { JudgmentResult, RepositoryReport, ReviewInput } from "../../lib/ai
 import type { RepoAssessment } from "../../lib/repo-assessment";
 import type { Env } from "../env";
 import { assessmentInput } from "./ai-assessment-input";
-import { judgeRepository, MODEL_FAILURES, summarizeRepository } from "./ai-models";
+import { AiModelFailure, judgeRepository, MODEL_FAILURES, summarizeRepository } from "./ai-models";
 import { loadAiConfig } from "./ai-settings";
 import { createDb, type Db } from "./db/d1";
 import { ApiError } from "./errors";
@@ -97,7 +97,7 @@ export async function executeAssessment(
 	if (!row) return null;
 	let next: string | null = null;
 	try {
-		if (row.attempts > (row.stage === "judgment" ? 2 : 3))
+		if (row.attempts > (row.stage === "judgment" ? 2 : 1))
 			throw new Error("Assessment attempt limit");
 		const config = await loadAiConfig(env, row.stage === "judgment" ? "judgment" : "summary");
 		if (!config && row.stage !== "judgment")
@@ -146,6 +146,23 @@ export async function executeAssessment(
 			].includes(error.code)
 				? error.code
 				: "ai_error";
+		await db
+			.prepare(
+				"INSERT INTO ai_review_attempts(job_id,stage,attempt,source_version,error,diagnostic,recorded_at) SELECT ?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM ai_reviews WHERE job_id=? AND lease_token=? AND lease_until>?) ON CONFLICT(job_id,stage,attempt) DO UPDATE SET source_version=excluded.source_version,error=excluded.error,diagnostic=excluded.diagnostic,recorded_at=excluded.recorded_at",
+			)
+			.bind(
+				id,
+				row.stage,
+				Math.min(row.attempts, 2),
+				row.source_version,
+				code,
+				JSON.stringify(error instanceof AiModelFailure ? error.diagnostic : {}),
+				clock(),
+				id,
+				token,
+				clock(),
+			)
+			.run();
 		const optionalFailure =
 			row.stage === "judgment" && (Object.hasOwn(MODEL_FAILURES, code) || code === "ai_error");
 		if (
@@ -162,7 +179,8 @@ export async function executeAssessment(
 			return saved.meta.changes ? now : null;
 		}
 		const terminal =
-			row.attempts >= 3 ||
+			row.stage === "summary" ||
+			row.attempts >= 2 ||
 			(!optionalFailure &&
 				![
 					"ai_error",
