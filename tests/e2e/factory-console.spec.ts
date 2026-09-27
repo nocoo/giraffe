@@ -5,6 +5,7 @@ import {
 	makeRun,
 	runProgress,
 } from "../../src/lib/factory-run";
+import { defaultSchedule } from "../../src/lib/refresh-schedule";
 import { factoryFixture } from "../fixtures/factory-snapshot";
 import { createUiFixtures } from "./ui-fixtures";
 
@@ -107,6 +108,17 @@ async function mockConsole(page: Page, fixture: ReturnType<typeof consoleFixture
 	const fixtures: Record<string, unknown> = {
 		...createUiFixtures(),
 		"/api/factory": fixture.snapshot,
+		"/api/refresh/settings": {
+			account_id: fixture.state.account_id,
+			starred: [],
+			schedules: (["daily", "weekly"] as const).map((kind) => ({
+				...defaultSchedule(kind),
+				kind,
+				nextAt: null,
+				lastRunId: null,
+				lastError: null,
+			})),
+		},
 	};
 	await page.route("**/api/**", (route) => {
 		const url = new URL(route.request().url());
@@ -131,6 +143,36 @@ async function mockConsole(page: Page, fixture: ReturnType<typeof consoleFixture
 					json: { error: { code: "snapshot_missing", message: "No fixture" } },
 				});
 	});
+}
+
+for (const width of [1440, 390]) {
+	for (const tab of ["刷新进度", "发起刷新", "自动刷新"]) {
+		test(`refresh center scrolls with the wheel over ${tab} at ${width}px`, async ({ page }) => {
+			await mockConsole(page, consoleFixture());
+			await page.setViewportSize({ width, height: 640 });
+			await page.emulateMedia({ reducedMotion: "reduce" });
+			await page.goto("/refresh");
+			await page.getByRole("tab", { name: tab, exact: true }).click();
+			if (tab === "自动刷新") {
+				await expect(page.getByLabel("每周深度刷新时间", { exact: true })).toBeVisible();
+			}
+			const storage = page.getByText("数据时间与存储用量", { exact: true });
+			await expect(storage).not.toBeInViewport();
+			const body = await page.locator(".factory-console-body").boundingBox();
+			if (!body) throw new Error("refresh content missing");
+			await page.mouse.move(body.x + 8, 540);
+			await page.mouse.wheel(0, 10000);
+			await expect(storage).toBeInViewport();
+			await storage.click();
+			await page.mouse.move(body.x + 8, 540);
+			await page.mouse.wheel(0, 10000);
+			await expect(page.getByRole("button", { name: "重新读取页面数据" })).toBeInViewport();
+			await page.mouse.wheel(0, -10000);
+			await expect(
+				page.locator(".factory").getByRole("heading", { name: "刷新中心", exact: true }),
+			).toBeInViewport();
+		});
+	}
 }
 
 test("refresh center replaces the factory dialog and keeps optional diagnostics centralized", async ({

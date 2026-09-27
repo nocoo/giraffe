@@ -157,3 +157,14 @@ and a smaller save button. Centering the outer row could not align their control
 edges. Use the same inline label arrangement and Basalt control size within a
 row. Check rendered control bounds and screenshots across desktop and narrow
 viewports; a passing save interaction or overflow check does not prove alignment.
+
+## 2026-09-27 — Remove dialog scroll containment from full pages
+
+Moving refresh management from a dialog into ContentIsland retained an inner
+`overflow: auto` and `overscroll-behavior: contain`. The inner body expanded to
+its content height, leaving no scroll range, yet swallowed wheel input before
+the scrollable island could receive it. Locator screenshots had automatically
+scrolled elements into view and missed the broken user interaction. Remove the
+obsolete inner scrolling rules and keep ContentIsland as the page scroll owner.
+Browser regressions now use real wheel input over all three tabs at desktop
+and narrow widths, reaching expanded diagnostics and returning to the top.

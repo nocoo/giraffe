@@ -212,7 +212,6 @@
 }
 @media(prefers-reduced-motion:reduce) { .factory,.factory * { animation:none!important;transition:none!important; } }
 
-/* Refresh progress stays on the page; all operations and diagnostics live in the dialog. */
 .factory { --factory-success:var(--color-basalt-chart-5);--factory-warning:var(--color-giraffe-yellow);--factory-info:var(--color-basalt-chart-1);--factory-skipped:var(--color-basalt-muted-foreground); }
 .factory-health-banner { border-radius:var(--radius-basalt-md);overflow:hidden; }
 .factory-health-message { align-items:center;border-radius:0; }
@@ -234,7 +233,7 @@
 .factory-console-tabs { display:flex;flex-direction:column;flex:1;min-height:0; }
 .factory-console-tabbar { display:flex;align-items:center;justify-content:space-between;padding:0 28px;border-bottom:1px solid var(--color-basalt-border); }
 .factory-console-tabbar>span { color:var(--color-basalt-muted-foreground);font-size:var(--text-xs); }
-.factory-console-body { flex:1;min-height:0;overflow:auto;padding:22px 28px;overscroll-behavior:contain;scrollbar-width:thin; }
+.factory-console-body { padding:22px 28px; }
 .factory-console-note,.factory-console-error { display:flex;align-items:center;gap:10px;font-size:var(--text-sm);line-height:1.7;padding:12px 14px;border:1px solid var(--color-basalt-border);border-radius:8px;margin-bottom:18px; }
 .factory-console-note>svg,.factory-console-error>svg { width:17px;height:17px;flex-shrink:0;color:var(--color-basalt-info); }
 .factory-console-error { border-color:var(--factory-warning); }
