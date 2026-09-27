@@ -149,3 +149,11 @@ but D1 explicitly warns that export can temporarily block queries. Wait for
 every release trigger to settle before exporting production data, and complete
 exports before retrying deployment. Historical row hashes matched after the
 export; the failed deployment was retried without moving the published tag.
+
+## 2026-09-27 — Match label orientation and control sizes
+
+The automatic refresh form combined a stacked time label, inline select labels
+and a smaller save button. Centering the outer row could not align their control
+edges. Use the same inline label arrangement and Basalt control size within a
+row. Check rendered control bounds and screenshots across desktop and narrow
+viewports; a passing save interaction or overflow check does not prove alignment.

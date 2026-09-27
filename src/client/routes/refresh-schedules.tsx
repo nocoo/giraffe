@@ -1,4 +1,5 @@
 import { Button, Input, Switch } from "@nocoo/basalt";
+import { Label } from "@nocoo/basalt/components/label";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { useEffect, useRef, useState } from "react";
 import type { RefreshSchedule, RefreshSettings } from "../../lib/refresh-schedule";
@@ -58,17 +59,18 @@ function ScheduleEditor({
 							disabled={busy}
 							onCheckedChange={(enabled) => setConfig((old) => ({ ...old, enabled }))}
 						/>
-						<label htmlFor={`schedule-time-${schedule.kind}`} className="space-y-1 text-sm">
-							北京时间
+						<div className="giraffe-select-field">
+							<Label htmlFor={`schedule-time-${schedule.kind}`}>北京时间</Label>
 							<Input
 								id={`schedule-time-${schedule.kind}`}
 								aria-label={`${label}时间`}
+								className="w-28"
 								type="time"
 								required
 								value={config.time}
 								onChange={(event) => setConfig((old) => ({ ...old, time: event.target.value }))}
 							/>
-						</label>
+						</div>
 						{schedule.kind === "weekly" ? (
 							<>
 								<SelectField
@@ -96,7 +98,7 @@ function ScheduleEditor({
 						) : (
 							<span className="text-sm text-basalt-muted-foreground">仅 Giraffe 星标仓库</span>
 						)}
-						<Button type="submit" size="sm" disabled={busy}>
+						<Button type="submit" disabled={busy}>
 							{busy ? "保存中…" : "保存计划"}
 						</Button>
 					</div>
