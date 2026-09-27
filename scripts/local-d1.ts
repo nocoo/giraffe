@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -33,10 +34,10 @@ function ensureBaseSchema(): void {
 
 export function ensureLocalSchema(): void {
 	ensureBaseSchema();
-	d1([`--file=${join(root, "migrations/0001_factory_runs.sql")}`]);
-	d1([`--file=${join(root, "migrations/0002_factory_retention.sql")}`]);
-	d1([`--file=${join(root, "migrations/0003_factory_budget.sql")}`]);
-	d1([`--file=${join(root, "migrations/0004_repo_statistics.sql")}`]);
-	d1([`--file=${join(root, "migrations/0005_ai_settings.sql")}`]);
-	d1([`--file=${join(root, "migrations/0006_ai_reviews.sql")}`]);
+	const migrations = join(root, "migrations");
+	for (const file of readdirSync(migrations)
+		.filter((name) => name.endsWith(".sql"))
+		.sort()) {
+		d1([`--file=${join(migrations, file)}`]);
+	}
 }

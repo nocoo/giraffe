@@ -125,3 +125,16 @@ refresh. A failing regression test reproduced it. Page reuse now requires that
 page's own recorded `source_head` to match current successful metadata; missing
 provenance forces collection. Reuse decisions must follow the artifact being
 reused, not merely the latest parent record.
+
+## 2026-09-27 — Existing development databases need every migration
+
+The refresh release added migration 0007, but the development bootstrap kept a
+manual list ending at 0006. Fresh test databases used the complete schema and
+passed; an existing local database lacked both refresh tables, so settings and
+manual run creation returned database errors before collection started. The
+startup health check only proved connectivity and did not detect the missing
+tables. Development startup now reads every SQL migration in filename order,
+matching the migration verifier. A regression test reproduces an existing
+pre-schedule database, verifies refresh tables are usable after startup, and
+checks repeated startup preserves saved snapshots. Verify both fresh and
+populated database startup whenever a feature adds persisted state.
