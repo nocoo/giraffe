@@ -138,3 +138,14 @@ matching the migration verifier. A regression test reproduces an existing
 pre-schedule database, verifies refresh tables are usable after startup, and
 checks repeated startup preserves saved snapshots. Verify both fresh and
 populated database startup whenever a feature adds persisted state.
+
+## 2026-09-27 — Serialize production exports with every deployment
+
+During v0.11.0 verification, the main-triggered deployment had succeeded, but
+the tag-triggered deployment was still pending when a post-deployment D1 export
+started. Its migration query then failed with Cloudflare error 7500 while the
+export was in progress. The error alone does not prove the export caused it,
+but D1 explicitly warns that export can temporarily block queries. Wait for
+every release trigger to settle before exporting production data, and complete
+exports before retrying deployment. Historical row hashes matched after the
+export; the failed deployment was retried without moving the published tag.
