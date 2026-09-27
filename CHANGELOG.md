@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.11.0 — 2026-09-27
+
+### Added
+
+- Dedicated refresh center for manual runs, automatic schedules, progress and history, with quick/deep modes and manual/daily/weekly trigger labels
+- Giraffe-local repository stars and configurable daily quick refresh for starred repositories plus weekly deep refresh
+- Incremental pagination that starts with the first page and continues until stored records overlap, while processing state changes across each fetched page
+
+### Changed
+
+- Link the software factory refresh entry to the refresh center
+- Reuse complete evidence only when its own source head and observation window permit it, and share collected snapshots across global lists and repository pages
+- Merge successful selected-repository refreshes into existing global lists while preserving unrelated data and original full-scan timestamps
+
+### Fixed
+
+- Require each page's own source head before reusing language and contributor snapshots after a failed prior refresh
+- Apply every local database migration during development startup so existing databases can load refresh settings and create runs
+
+### Operations
+
+- Apply additive, repeatable `0007_refresh_schedules.sql` before deploying the Worker; rollback retains both new tables and existing snapshots
+- The first local star initializes daily 08:00 quick refresh for starred repositories and Sunday 04:00 deep refresh for all repositories, in Asia/Shanghai time; schedules remain configurable
+- The existing minute cron dispatches automatic refreshes; no new Cloudflare binding is required
+
 ## v0.10.2 — 2026-09-26
 
 ### Changed
