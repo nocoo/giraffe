@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.11.1 — 2026-09-27
+
+### Fixed
+
+- Restore wheel scrolling throughout the refresh center by letting the application content container own page scrolling
+- Align automatic refresh labels, time inputs, selectors and save buttons
+- Apply consistent content padding to the per-page refresh results card
+- Make native time inputs follow the selected application theme, including manual overrides of the system theme
+
+### Operations
+
+- No new database migration or Cloudflare binding is required
+
 ## v0.11.0 — 2026-09-27
 
 ### Added
