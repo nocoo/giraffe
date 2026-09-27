@@ -31,8 +31,10 @@ function bounded(value: unknown): string {
 	return text;
 }
 export async function aiConfigured(db: Db): Promise<boolean> {
-	const row = await db.prepare("SELECT COUNT(*) AS n FROM ai_settings").first<{ n: number }>();
-	return row?.n === 2;
+	const row = await db
+		.prepare("SELECT COUNT(*) AS n FROM ai_settings WHERE kind='summary'")
+		.first<{ n: number }>();
+	return row?.n === 1;
 }
 export async function readAssessment(
 	db: Db,
@@ -95,9 +97,11 @@ export async function executeAssessment(
 	if (!row) return null;
 	let next: string | null = null;
 	try {
-		if (row.attempts > 3) throw new Error("Assessment attempt limit");
+		if (row.attempts > (row.stage === "judgment" ? 2 : 3))
+			throw new Error("Assessment attempt limit");
 		const config = await loadAiConfig(env, row.stage === "judgment" ? "judgment" : "summary");
-		if (!config) throw new ApiError(409, "ai_not_configured", "AI settings missing");
+		if (!config && row.stage !== "judgment")
+			throw new ApiError(409, "ai_not_configured", "AI settings missing");
 		const input =
 			row.stage === "summary" && row.input
 				? (JSON.parse(row.input) as ReviewInput)
@@ -105,15 +109,17 @@ export async function executeAssessment(
 		const inputJson = bounded(input);
 		const result =
 			row.stage === "judgment"
-				? bounded(await judgeRepository(config, input))
+				? config
+					? bounded(await judgeRepository(config, input))
+					: null
 				: bounded(
 						await summarizeRepository(
-							config,
+							config as NonNullable<typeof config>,
 							input,
-							JSON.parse(row.judgment as string) as JudgmentResult,
+							row.judgment ? (JSON.parse(row.judgment) as JudgmentResult) : null,
 						),
 					);
-		await checkFactoryCapacity(db, row.account_id, bytes(inputJson) + bytes(result));
+		await checkFactoryCapacity(db, row.account_id, bytes(inputJson) + bytes(result ?? ""));
 		const now = clock();
 		const sql =
 			row.stage === "judgment"
@@ -140,18 +146,34 @@ export async function executeAssessment(
 			].includes(error.code)
 				? error.code
 				: "ai_error";
+		const optionalFailure =
+			row.stage === "judgment" && (Object.hasOwn(MODEL_FAILURES, code) || code === "ai_error");
+		if (
+			optionalFailure &&
+			(row.attempts >= 2 || ["ai_input_too_large", "ai_auth_failed"].includes(code))
+		) {
+			const now = clock();
+			const saved = await db
+				.prepare(
+					"UPDATE ai_reviews SET stage='summary',judgment=NULL,error=NULL,attempts=0,next_at=?,lease_token=NULL,lease_until=NULL WHERE job_id=? AND lease_token=? AND lease_until>?",
+				)
+				.bind(now, id, token, now)
+				.run();
+			return saved.meta.changes ? now : null;
+		}
 		const terminal =
 			row.attempts >= 3 ||
-			![
-				"ai_error",
-				"ai_timeout",
-				"ai_provider_failed",
-				"ai_rate_limited",
-				"ai_invalid_judgment",
-				"ai_invalid_report",
-			].includes(code);
+			(!optionalFailure &&
+				![
+					"ai_error",
+					"ai_timeout",
+					"ai_provider_failed",
+					"ai_rate_limited",
+					"ai_invalid_judgment",
+					"ai_invalid_report",
+				].includes(code));
 		const now = clock();
-		const retryAt = new Date(Date.parse(now) + row.attempts * 60_000).toISOString();
+		const retryAt = new Date(Date.parse(now) + row.attempts * 15_000).toISOString();
 		const saved = await db
 			.prepare(
 				"UPDATE ai_reviews SET stage=?,error=?,next_at=?,lease_token=NULL,lease_until=NULL WHERE job_id=? AND lease_token=? AND lease_until>?",

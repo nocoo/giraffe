@@ -12,6 +12,7 @@ import { decryptToken, encryptToken, parseKeyBytes } from "./token-crypto";
 
 type AiSettingsRow = {
 	kind: AiKind;
+	enabled: number;
 	api_key_ciphertext: string;
 	key_version: number;
 	model: string;
@@ -22,12 +23,18 @@ type AiSettingsRow = {
 };
 
 async function readSettings(db: Db, kind: AiKind): Promise<AiSettingsRow | null> {
-	return db.prepare("SELECT * FROM ai_settings WHERE kind = ?").bind(kind).first<AiSettingsRow>();
+	return db
+		.prepare(
+			"SELECT s.*,COALESCE(o.enabled,1) AS enabled FROM ai_settings s LEFT JOIN ai_provider_options o ON o.kind=s.kind WHERE s.kind = ?",
+		)
+		.bind(kind)
+		.first<AiSettingsRow>();
 }
 
 function publicSettings(row: AiSettingsRow): PublicAiSettings {
 	return {
 		kind: row.kind,
+		enabled: row.enabled === 1,
 		model: row.model,
 		baseURL: row.base_url,
 		sdkType: row.sdk_type,
@@ -45,7 +52,11 @@ function keyBytes(env: Env, version: number): Uint8Array {
 }
 
 export async function getPublicAiSettings(db: Db): Promise<PublicAiSettings[]> {
-	const rows = await db.prepare("SELECT * FROM ai_settings").all<AiSettingsRow>();
+	const rows = await db
+		.prepare(
+			"SELECT s.*,COALESCE(o.enabled,1) AS enabled FROM ai_settings s LEFT JOIN ai_provider_options o ON o.kind=s.kind",
+		)
+		.all<AiSettingsRow>();
 	return (["summary", "judgment"] as const).map((kind) => {
 		const row = rows.results.find((item) => item.kind === kind);
 		return row ? publicSettings(row) : defaultAiSettings(kind);
@@ -54,7 +65,7 @@ export async function getPublicAiSettings(db: Db): Promise<PublicAiSettings[]> {
 
 export async function loadAiConfig(env: Env, kind: AiKind): Promise<AiRuntimeConfig | null> {
 	const row = await readSettings(createDb(env.DB), kind);
-	if (!row) return null;
+	if (row?.enabled !== 1) return null;
 	const { hasApiKey: _, updatedAt: __, ...config } = publicSettings(row);
 	return {
 		...config,
@@ -101,6 +112,9 @@ export async function resolveAiDraft(
 	const stored = await readSettings(db, kind);
 	const defaults = stored ? publicSettings(stored) : defaultAiSettings(kind);
 	const body = raw as Record<string, unknown>;
+	const enabled = body.enabled === undefined ? defaults.enabled : body.enabled;
+	if (typeof enabled !== "boolean" || (kind === "summary" && !enabled))
+		invalid("Invalid provider enablement");
 	const model = body.model === undefined ? defaults.model : body.model;
 	const endpoint = body.baseURL === undefined ? defaults.baseURL : body.baseURL;
 	const sdkType = body.sdkType === undefined ? defaults.sdkType : body.sdkType;
@@ -115,6 +129,7 @@ export async function resolveAiDraft(
 		invalid("Enter a valid API key");
 	const config: Omit<AiRuntimeConfig, "apiKey"> = {
 		kind,
+		enabled,
 		model: model.trim(),
 		baseURL: baseURL(endpoint),
 		sdkType,
@@ -142,24 +157,31 @@ export async function saveAiSettings(
 	const version = currentKeyVersion(env);
 	const encrypted = await encryptToken(config.apiKey, keyBytes(env, version));
 	const updatedAt = new Date().toISOString();
-	await db
-		.prepare(`INSERT INTO ai_settings(kind, api_key_ciphertext, key_version, model, base_url, sdk_type, auth_type, updated_at)
+	await db.batch([
+		db
+			.prepare(`INSERT INTO ai_settings(kind, api_key_ciphertext, key_version, model, base_url, sdk_type, auth_type, updated_at)
 		VALUES(?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(kind) DO UPDATE SET api_key_ciphertext=excluded.api_key_ciphertext, key_version=excluded.key_version,
 		model=excluded.model, base_url=excluded.base_url, sdk_type=excluded.sdk_type, auth_type=excluded.auth_type, updated_at=excluded.updated_at`)
-		.bind(
-			config.kind,
-			encrypted,
-			version,
-			config.model,
-			config.baseURL,
-			config.sdkType,
-			config.authType,
-			updatedAt,
-		)
-		.run();
+			.bind(
+				config.kind,
+				encrypted,
+				version,
+				config.model,
+				config.baseURL,
+				config.sdkType,
+				config.authType,
+				updatedAt,
+			),
+		db
+			.prepare(
+				"INSERT INTO ai_provider_options(kind,enabled) VALUES(?,?) ON CONFLICT(kind) DO UPDATE SET enabled=excluded.enabled",
+			)
+			.bind(config.kind, Number(config.enabled)),
+	]);
 	return {
 		kind: config.kind,
+		enabled: config.enabled,
 		model: config.model,
 		baseURL: config.baseURL,
 		sdkType: config.sdkType,

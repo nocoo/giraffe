@@ -10,6 +10,7 @@ import { ApiError } from "../lib/errors";
 export function draftAiSettings(settings: PublicAiSettings): AiSettingsDraft {
 	return {
 		model: settings.model,
+		enabled: settings.enabled,
 		baseURL: settings.baseURL,
 		sdkType: settings.sdkType,
 		authType: settings.authType,

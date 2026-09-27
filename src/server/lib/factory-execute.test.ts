@@ -231,7 +231,7 @@ async function reachAssessment() {
 	for (const kind of ["summary", "judgment"])
 		await db
 			.prepare(
-				"INSERT INTO ai_settings VALUES(?, 'encrypted',1,'fake','https://ai.example','openai','apiKey',?)",
+				"INSERT INTO ai_settings(kind,api_key_ciphertext,key_version,model,base_url,sdk_type,auth_type,updated_at) VALUES(?, 'encrypted',1,'fake','https://ai.example','openai','apiKey',?)",
 			)
 			.bind(kind, now)
 			.run();

@@ -263,7 +263,7 @@ export function judgeRepository(
 function validateReport(
 	text: string,
 	input: ReviewInput,
-	judgments: JudgmentResult,
+	judgments: JudgmentResult | null,
 ): RepositoryReport | string {
 	let raw: unknown;
 	try {
@@ -314,7 +314,7 @@ function validateReport(
 	)
 		return "unsupported_all_clear";
 	if (
-		(incomplete || judgments.judgments.some((item) => item.uncertain)) &&
+		(incomplete || judgments?.judgments.some((item) => item.uncertain)) &&
 		report.limitations.length === 0
 	)
 		return "missing_limitations";
@@ -329,7 +329,7 @@ ${JSON.stringify(z.toJSONSchema(repositoryReportSchema))}`;
 export function summarizeRepository(
 	config: AiRuntimeConfig,
 	input: ReviewInput,
-	judgments: JudgmentResult,
+	judgments: JudgmentResult | null,
 ): Promise<RepositoryReport> {
 	return bounded(async (signal) => {
 		const model = summaryModel(config);

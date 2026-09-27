@@ -102,6 +102,23 @@ describe("AI settings cards", () => {
 		vi.unstubAllGlobals();
 	});
 
+	it("saves optional judgment enablement while retaining the stored key", async () => {
+		const saved = { ...defaultAiSettings("judgment"), hasApiKey: true };
+		await render([defaultAiSettings("summary"), saved]);
+		vi.mocked(saveAiSettings).mockResolvedValue({ ...saved, enabled: false });
+		await click("#ai-judgment-enabled");
+		await act(async () =>
+			node<HTMLFormElement>('[data-testid="ai-judgment-card"] form').dispatchEvent(
+				new Event("submit", { bubbles: true, cancelable: true }),
+			),
+		);
+		expect(saveAiSettings).toHaveBeenCalledWith(
+			"judgment",
+			expect.objectContaining({ enabled: false, apiKey: "" }),
+		);
+		expect(container.textContent).toContain("已停用");
+	});
+
 	it("requires a model and key, clears submitted secrets, and leaves the other card usable", async () => {
 		await render();
 		expect(

@@ -62,7 +62,7 @@ async function setup(configured = true) {
 		for (const kind of ["summary", "judgment"])
 			await raw
 				.prepare(
-					"INSERT INTO ai_settings VALUES(?, 'encrypted',1,'fake','https://ai.example','openai','apiKey',?)",
+					"INSERT INTO ai_settings(kind,api_key_ciphertext,key_version,model,base_url,sdk_type,auth_type,updated_at) VALUES(?, 'encrypted',1,'fake','https://ai.example','openai','apiKey',?)",
 				)
 				.bind(kind, at)
 				.run();
@@ -127,7 +127,7 @@ it("leaves unconfigured refreshes alone and reads never contact AI", async () =>
 });
 it.each([
 	["ai_input_too_large", false],
-	["ai_request_rejected", false],
+	["ai_request_rejected", true],
 	["ai_auth_failed", false],
 	["ai_timeout", true],
 	["ai_provider_failed", true],
@@ -139,8 +139,11 @@ it.each([
 	const id = (await ids())[0] as string;
 	vi.mocked(judgeRepository).mockRejectedValue(new ApiError(502, code, "secret provider body"));
 	const next = await executeAssessment(env, id, () => at);
-	expect(next !== null).toBe(retry);
-	expect(await read()).toMatchObject({ error: code, status: retry ? "judgment" : "failed" });
+	expect(next).not.toBeNull();
+	expect(await read()).toMatchObject({
+		error: retry ? code : null,
+		status: retry ? "judgment" : "summary",
+	});
 	expect(JSON.stringify(await read())).not.toContain("secret");
 });
 it("retains a previous valid report on safe terminal failure and fences superseded workers", async () => {
@@ -148,8 +151,8 @@ it("retains a previous valid report on safe terminal failure and fences supersed
 	const id = (await ids())[0] as string;
 	await executeAssessment(env, id, () => at);
 	await executeAssessment(env, id, () => at);
-	await raw.prepare("UPDATE ai_reviews SET job_id='new_job',stage='judgment',attempts=0").run();
-	vi.mocked(judgeRepository).mockRejectedValue(new Error("secret upstream response"));
+	await raw.prepare("UPDATE ai_reviews SET job_id='new_job',stage='summary',attempts=0").run();
+	vi.mocked(summarizeRepository).mockRejectedValue(new Error("secret upstream response"));
 	for (let i = 0; i < 3; i++) {
 		await raw.prepare("UPDATE ai_reviews SET next_at=?").bind(at).run();
 		await executeAssessment(env, "new_job", () => at);
@@ -282,9 +285,8 @@ it("does not invent earlier activity when the immutable source covers fewer than
 	expect(source?.focus.previous.activity.commits).toBe(0);
 });
 it("fails safely for missing credentials, sources and capacity without retrying provider calls", async () => {
-	for (const scenario of ["config", "source", "observation", "capacity", "budget"]) {
+	for (const scenario of ["source", "observation", "capacity", "budget"]) {
 		const { raw, env, ids, read } = await setup();
-		if (scenario === "config") vi.mocked(loadAiConfig).mockResolvedValueOnce(null);
 		if (scenario === "source") await raw.prepare("DELETE FROM factory_repo_versions").run();
 		if (scenario === "observation")
 			await raw
@@ -346,7 +348,7 @@ it("does not call providers again after repeated expired leases", async () => {
 	const { raw, env, ids, read } = await setup();
 	await raw.prepare("UPDATE ai_reviews SET attempts=3").run();
 	await executeAssessment(env, (await ids())[0] as string, () => at);
-	expect((await read()).status).toBe("failed");
+	expect((await read()).status).toBe("summary");
 	expect(judgeRepository).not.toHaveBeenCalled();
 });
 it("marks the last report stale when data refreshes with AI disabled", async () => {
@@ -365,4 +367,35 @@ it("marks the last report stale when data refreshes with AI disabled", async () 
 		reportVersion: "review_run",
 		report,
 	});
+});
+
+it("generates reports with only the summary provider configured", async () => {
+	const { raw, env, ids, publish, read } = await setup();
+	await raw.prepare("DELETE FROM ai_settings WHERE kind='judgment'").run();
+	await raw.prepare("DELETE FROM ai_reviews").run();
+	vi.mocked(loadAiConfig).mockImplementation(async (_env, kind) =>
+		kind === "judgment" ? null : { ...defaultAiSettings(kind), apiKey: "fake" },
+	);
+	await publish();
+	const id = (await ids())[0] as string;
+	expect(id).toBeTruthy();
+	await executeAssessment(env, id, () => at);
+	await executeAssessment(env, id, () => at);
+	expect((await read()).status).toBe("complete");
+	expect(judgeRepository).not.toHaveBeenCalled();
+	expect(summarizeRepository).toHaveBeenCalledWith(expect.anything(), expect.anything(), null);
+});
+it("retries rejected optional judgment once then continues the report", async () => {
+	const { raw, env, ids, read } = await setup();
+	const id = (await ids())[0] as string;
+	vi.mocked(judgeRepository).mockRejectedValue(new ApiError(502, "ai_request_rejected", "secret"));
+	await executeAssessment(env, id, () => at);
+	expect((await read()).status).toBe("judgment");
+	await raw.prepare("UPDATE ai_reviews SET next_at=?").bind(at).run();
+	await executeAssessment(env, id, () => at);
+	expect((await read()).status).toBe("summary");
+	await executeAssessment(env, id, () => at);
+	expect((await read()).status).toBe("complete");
+	expect(judgeRepository).toHaveBeenCalledTimes(2);
+	expect((await read()).judgment).toBeNull();
 });

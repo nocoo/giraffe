@@ -88,7 +88,11 @@ describe("AI settings routes", () => {
 		const stored = await raw.prepare("SELECT * FROM ai_settings WHERE kind='summary'").first();
 		expect(JSON.stringify(stored)).not.toContain(key);
 		expect(stored).toMatchObject({ key_version: 1 });
-		expect(await loadAiConfig(env, "summary")).toEqual({ ...summary, kind: "summary" });
+		expect(await loadAiConfig(env, "summary")).toEqual({
+			...summary,
+			enabled: true,
+			kind: "summary",
+		});
 		expect((await request("/judgment", { apiKey: "fake-judgment-key" })).status).toBe(200);
 		expect(await loadAiConfig(env, "judgment")).toMatchObject({
 			apiKey: "fake-judgment-key",
@@ -98,6 +102,23 @@ describe("AI settings routes", () => {
 			settings: [{ hasApiKey: true }, { hasApiKey: true }],
 		});
 		expect(testAiConnection).not.toHaveBeenCalled();
+	});
+
+	it("disables judgment without deleting credentials and re-enables it", async () => {
+		const { request, env, raw } = await setup();
+		await request("/judgment", { apiKey: key });
+		expect((await request("/judgment", { enabled: false })).status).toBe(200);
+		expect(await loadAiConfig(env, "judgment")).toBeNull();
+		expect(await (await request()).json()).toMatchObject({
+			settings: [{ kind: "summary" }, { kind: "judgment", enabled: false, hasApiKey: true }],
+		});
+		expect(
+			await raw
+				.prepare("SELECT length(api_key_ciphertext) AS n FROM ai_settings WHERE kind='judgment'")
+				.first(),
+		).toMatchObject({ n: expect.any(Number) });
+		await request("/judgment", { enabled: true });
+		expect(await loadAiConfig(env, "judgment")).not.toBeNull();
 	});
 
 	it("retains an omitted key only for the same destination, and rotates encrypted keys", async () => {
@@ -141,7 +162,7 @@ describe("AI settings routes", () => {
 		const { request, env } = await setup();
 		vi.mocked(testAiConnection).mockResolvedValue({ model: "summary-test" });
 		expect((await request("/summary/test", summary)).status).toBe(200);
-		expect(testAiConnection).toHaveBeenCalledWith({ ...summary, kind: "summary" });
+		expect(testAiConnection).toHaveBeenCalledWith({ ...summary, enabled: true, kind: "summary" });
 		expect(await loadAiConfig(env, "summary")).toBeNull();
 		await request("/summary", summary);
 		expect(await (await request("/summary/test", {})).json()).toMatchObject({ ok: true });

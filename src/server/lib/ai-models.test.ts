@@ -29,6 +29,7 @@ vi.mock("@typesafe-ai/sdk", async (original) => {
 
 const config: AiRuntimeConfig = {
 	kind: "summary",
+	enabled: true,
 	apiKey: "test-secret",
 	model: "test-model",
 	baseURL: "https://ai.example.test/v1",

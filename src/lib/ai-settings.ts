@@ -2,6 +2,7 @@ export type AiKind = "summary" | "judgment";
 
 export type AiRuntimeConfig = {
 	kind: AiKind;
+	enabled: boolean;
 	apiKey: string;
 	model: string;
 	baseURL: string;
@@ -19,6 +20,7 @@ export type AiSettingsDraft = Omit<AiRuntimeConfig, "kind">;
 export function defaultAiSettings(kind: AiKind): PublicAiSettings {
 	return {
 		kind,
+		enabled: true,
 		model: kind === "summary" ? "" : "jev-latest",
 		baseURL: kind === "summary" ? "https://api.openai.com/v1" : "https://api.typesafe.ai",
 		sdkType: "openai",

@@ -250,3 +250,8 @@ CREATE TABLE IF NOT EXISTS refresh_schedules (
  PRIMARY KEY(account_id,kind)
 );
 CREATE INDEX IF NOT EXISTS refresh_schedules_due ON refresh_schedules(enabled,next_at);
+
+CREATE TABLE IF NOT EXISTS ai_provider_options (
+ kind TEXT PRIMARY KEY REFERENCES ai_settings(kind) ON DELETE CASCADE,
+ enabled INTEGER NOT NULL CHECK(enabled IN (0,1))
+);

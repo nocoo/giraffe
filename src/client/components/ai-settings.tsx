@@ -1,4 +1,4 @@
-import { Button, Field, Input, Text } from "@nocoo/basalt";
+import { Button, Field, Input, Switch, Text } from "@nocoo/basalt";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
 import { SensitiveInput } from "@nocoo/basalt/components/sensitive-input";
@@ -109,7 +109,7 @@ function AiSettingsCard({ settings }: { settings: PublicAiSettings }) {
 					tone={saved.hasApiKey ? "green" : "gray"}
 					icon={saved.hasApiKey ? CircleCheck : CircleDashed}
 				>
-					{saved.hasApiKey ? "已配置" : "未配置"}
+					{saved.hasApiKey ? (saved.enabled ? "已配置" : "已停用") : "未配置"}
 				</CandyBadge>
 			</LayerCard.Header>
 			<LayerCard.Body>
@@ -124,10 +124,22 @@ function AiSettingsCard({ settings }: { settings: PublicAiSettings }) {
 				>
 					<p className="text-sm leading-6 text-basalt-muted-foreground">
 						{summary
-							? "重点评估最近两周的提交、PR、Issue 与交付节奏，结合 JEV 判断生成结构化报告。"
+							? "重点评估最近两周的提交、PR、Issue 与交付节奏，生成结构化报告；可选结合 JEV 判断。"
 							: "以活跃 Issues 为主要安全线索，辅以安全告警，识别紧急事项与需要人工判断的 PR。"}
 					</p>
 					<fieldset disabled={busy} className="min-w-0 space-y-4">
+						{!summary ? (
+							<div className="flex items-center justify-between gap-4">
+								<label htmlFor={`${id}-enabled`} className="text-sm">
+									报告生成前使用 JEV 判断
+								</label>
+								<Switch
+									id={`${id}-enabled`}
+									checked={draft.enabled}
+									onCheckedChange={(enabled) => change({ enabled })}
+								/>
+							</div>
+						) : null}
 						{summary ? (
 							<>
 								<div className="grid gap-4 sm:grid-cols-2">
@@ -265,7 +277,8 @@ export function AiSettings() {
 	return (
 		<SectionRule title={<IconLabel icon={Sparkles}>AI 评估</IconLabel>}>
 			<p className="mb-4 text-sm text-basalt-muted-foreground">
-				两项配置保存后，下次仓库刷新会将统计、事项标题与正文节选发送到对应 AI 服务进行评估。
+				配置仓库报告后，下次刷新会将统计、事项标题与正文节选发送到 AI 服务。JEV
+				判断可选，失败不会阻止报告生成。
 			</p>
 			{settings ? (
 				<div className="grid gap-4 xl:grid-cols-2">
