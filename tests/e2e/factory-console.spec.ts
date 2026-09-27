@@ -146,6 +146,30 @@ async function mockConsole(page: Page, fixture: ReturnType<typeof consoleFixture
 }
 
 for (const width of [1440, 390]) {
+	test(`page update results keep the card gutters at ${width}px`, async ({ page }) => {
+		await mockConsole(page, consoleFixture());
+		await page.setViewportSize({ width, height: 740 });
+		await page.goto("/refresh");
+		const card = page.getByLabel("本次页面更新结果", { exact: true });
+		await expect(card.getByRole("heading")).toBeVisible();
+		const gutters = await card.evaluate((element) => {
+			const bounds = element.getBoundingClientRect();
+			const title = element.querySelector("h3")?.getBoundingClientRect();
+			const description = element.querySelector("p")?.getBoundingClientRect();
+			const results = element.querySelector("dl")?.getBoundingClientRect();
+			if (!title || !description || !results) throw new Error("update results missing");
+			return {
+				title: title.left - bounds.left,
+				description: description.left - bounds.left,
+				left: results.left - bounds.left,
+				right: bounds.right - results.right,
+				bottom: bounds.bottom - results.bottom,
+			};
+		});
+		expect(gutters.title).toBeGreaterThan(0);
+		for (const gutter of Object.values(gutters)) expect(gutter).toBeCloseTo(gutters.title, 0);
+	});
+
 	for (const tab of ["刷新进度", "发起刷新", "自动刷新"]) {
 		test(`refresh center scrolls with the wheel over ${tab} at ${width}px`, async ({ page }) => {
 			await mockConsole(page, consoleFixture());
@@ -174,6 +198,26 @@ for (const width of [1440, 390]) {
 		});
 	}
 }
+
+test("time inputs follow the chosen application theme independently of the system", async ({
+	page,
+}) => {
+	await mockConsole(page, consoleFixture());
+	await page.emulateMedia({ colorScheme: "dark" });
+	await page.goto("/refresh");
+	await page.getByRole("tab", { name: "自动刷新", exact: true }).click();
+	const time = page.getByLabel("每日快速刷新时间", { exact: true });
+	const toggle = page.getByRole("button", { name: /切换主题/ });
+	await expect(time).toHaveCSS("color-scheme", "dark");
+	await toggle.click();
+	await expect(time).toHaveCSS("color-scheme", "light");
+	await toggle.click();
+	await expect(time).toHaveCSS("color-scheme", "dark");
+	await page.emulateMedia({ colorScheme: "light" });
+	await expect(time).toHaveCSS("color-scheme", "dark");
+	await toggle.click();
+	await expect(time).toHaveCSS("color-scheme", "light");
+});
 
 test("refresh center replaces the factory dialog and keeps optional diagnostics centralized", async ({
 	page,

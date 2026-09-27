@@ -64,7 +64,7 @@ function ScheduleEditor({
 							<Input
 								id={`schedule-time-${schedule.kind}`}
 								aria-label={`${label}时间`}
-								className="w-28 scheme-light dark:scheme-dark"
+								className="w-28 scheme-light basalt-dark:scheme-dark"
 								type="time"
 								required
 								value={config.time}

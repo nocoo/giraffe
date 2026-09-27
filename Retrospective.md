@@ -177,3 +177,26 @@ Alignment screenshots did not catch its low contrast. Set the native input's
 color scheme from the active application theme, and inspect both theme variants
 when introducing browser-rendered controls; token colors alone do not style
 their native indicators or picker surfaces.
+
+The first fix used Tailwind's `dark:` variant, which follows the operating
+system here. Basalt exposes `basalt-dark:` for the application's chosen theme.
+Testing only matching OS and application themes missed the distinction. The
+input now uses the package variant, with a browser regression covering explicit
+light/dark choices and a system theme change while dark remains selected.
+
+## 2026-09-27 — Composed cards need a body slot
+
+The refresh page-results card combined `LayerCard.Header` with a bare paragraph
+and definition list, assuming `padding="md"` would pad the root. Basalt disables
+root padding when composed slots are present, so the title was inset 16px while
+the content touched the edges. Place content in `LayerCard.Body` and remove the
+ineffective root padding prop. Browser regressions compare title, description,
+list and bottom gutters at desktop and narrow widths.
+
+A source scan of client card composition and 92 local browser states across
+all 11 routes, the not-found page, refresh tabs and repository tabs found no
+additional instances of bare card content or blocked wheel scrolling. Checks
+covered 1440px/390px widths and light/dark themes using fixture data; horizontal
+overflow and inner scroll containment were inspected alongside actual wheel
+input. Verification used installed Basalt 2.1.8. Future card changes must inspect
+rendered content bounds, not infer padding from a root prop.
