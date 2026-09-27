@@ -200,3 +200,13 @@ covered 1440px/390px widths and light/dark themes using fixture data; horizontal
 overflow and inner scroll containment were inspected alongside actual wheel
 input. Verification used installed Basalt 2.1.8. Future card changes must inspect
 rendered content bounds, not infer padding from a root prop.
+
+## 2026-09-27 — Wait for exact-commit CI before pushing release tags
+
+For v0.11.1, main was pushed through passing local gates, then the release tag
+was pushed while the matching GitHub browser job was still running. The shared
+release-source action rejected the tag deployment because no successful main
+CI existed yet for that commit. It stopped before checkout, migrations or
+deployment. Inspect reusable release-source requirements, wait for successful
+CI at the intended release SHA, then push the tag. If already published, retain
+the tag and rerun its deployment only after the prerequisite CI succeeds.
