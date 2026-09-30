@@ -18,35 +18,6 @@ import {
 
 export type Collected = { truncated: boolean } & Record<string, unknown>;
 
-function baselineRows(
-	baseline: Collected | null | undefined,
-	key: string,
-): Record<string, unknown>[] {
-	return baseline &&
-		!baseline.truncated &&
-		!baseline.unavailable &&
-		!baseline.forbidden &&
-		Array.isArray(baseline[key])
-		? (baseline[key] as Record<string, unknown>[])
-		: [];
-}
-function itemId(item: Record<string, unknown>): string {
-	const repo = item.repository as { nameWithOwner?: string } | undefined;
-	return String(
-		item.url ||
-			item.id ||
-			item.login ||
-			`${item.name_with_owner ?? repo?.nameWithOwner ?? ""}#${item.number ?? ""}`,
-	);
-}
-function mergeItems(old: Record<string, unknown>[], fresh: unknown[]): unknown[] {
-	return [
-		...new Map(
-			[...old, ...(fresh as Record<string, unknown>[])].map((item) => [itemId(item), item]),
-		).values(),
-	];
-}
-
 export const MAX_STAGED_BYTES = 16 * 1024 * 1024;
 
 const REPOS_QUERY =
@@ -163,23 +134,18 @@ async function searchList(
 	isPr: boolean,
 	strict = false,
 	budget = MAX_STAGED_BYTES,
-	baseline?: Collected | null,
 ): Promise<Collected> {
 	const names = [...repos].sort();
 	const items: unknown[] = [];
 	let truncated = false;
 	let stop = false;
 	const query = isPr ? PR_SEARCH : ISSUE_SEARCH;
-	const old = baselineRows(baseline, isPr ? "pull_requests" : "issues");
-	const retained: Record<string, unknown>[] = [];
 	for (let i = 0; i < names.length; i += 20) {
 		if (stop) {
 			break;
 		}
 		const group = names.slice(i, i + 20);
-		const previous = old.filter((item) => group.includes(String(item.name_with_owner)));
-		const ids = new Set(previous.map(itemId));
-		const q = `${isPr ? "is:pr" : "is:issue"} ${previous.length ? "sort:updated-desc" : "is:open"} ${group.map((n) => `repo:${n}`).join(" ")}`;
+		const q = `${isPr ? "is:pr" : "is:issue"} is:open ${group.map((n) => `repo:${n}`).join(" ")}`;
 		let after: string | null = null;
 		let groupCount = 0;
 		for (;;) {
@@ -192,7 +158,7 @@ async function searchList(
 							nodes?: unknown[];
 					  }
 					| undefined;
-				if (!search) {
+				if (!Array.isArray(search?.nodes)) {
 					if (strict) {
 						if (gh.graphqlErrors.some((err) => err.type === "NOT_FOUND")) {
 							throw new ApiError(404, "not_found", "github not found");
@@ -203,11 +169,7 @@ async function searchList(
 					stop = true;
 					break;
 				}
-				const nodes = search.nodes ?? [];
-				const overlap = nodes.some(
-					(node) =>
-						node && typeof node === "object" && ids.has(itemId(node as Record<string, unknown>)),
-				);
+				const nodes = search.nodes;
 				items.push(...nodes);
 				groupCount += nodes.length;
 				const staged = isPr
@@ -219,7 +181,7 @@ async function searchList(
 					break;
 				}
 				const count = search.issueCount ?? 0;
-				if (count >= 1000 && !overlap) {
+				if (count >= 1000) {
 					truncated = true;
 				}
 				if (gh.graphqlErrors.length > 0) {
@@ -242,11 +204,11 @@ async function searchList(
 				) {
 					truncated = true;
 				}
-				if (overlap && search.pageInfo?.hasNextPage) {
-					retained.push(...previous);
-					break;
-				}
-				if (search.pageInfo?.hasNextPage && search.pageInfo.endCursor) {
+				if (search.pageInfo?.hasNextPage) {
+					if (!search.pageInfo.endCursor || search.pageInfo.endCursor === after) {
+						truncated = true;
+						break;
+					}
 					after = search.pageInfo.endCursor;
 					continue;
 				}
@@ -264,19 +226,13 @@ async function searchList(
 			}
 		}
 	}
-	const closed = new Set(
-		items
-			.filter(
-				(item) =>
-					item &&
-					typeof item === "object" &&
-					["CLOSED", "MERGED"].includes(String((item as Record<string, unknown>).state)),
-			)
-			.map((item) => itemId(item as Record<string, unknown>)),
+	const open = items.filter(
+		(item) =>
+			item &&
+			typeof item === "object" &&
+			!["CLOSED", "MERGED"].includes(String((item as Record<string, unknown>).state)),
 	);
-	const mapped = mergeItems(retained, isPr ? mapPullRequests(items) : mapIssues(items)).filter(
-		(item) => !closed.has(itemId(item as Record<string, unknown>)),
-	);
+	const mapped = isPr ? mapPullRequests(open) : mapIssues(open);
 	return isPr ? { truncated, pull_requests: mapped } : { truncated, issues: mapped };
 }
 
@@ -337,13 +293,12 @@ export async function collectKind(
 	kind: string,
 	repoNames: string[],
 	budget = MAX_STAGED_BYTES,
-	baseline?: Collected | null,
 ): Promise<Collected> {
 	if (kind === "issues") {
-		return searchList(gh, token, repoNames, false, false, budget, baseline);
+		return searchList(gh, token, repoNames, false, false, budget);
 	}
 	if (kind === "prs") {
-		return searchList(gh, token, repoNames, true, false, budget, baseline);
+		return searchList(gh, token, repoNames, true, false, budget);
 	}
 	if (kind === "alerts") {
 		return collectAlerts(gh, token, repoNames, budget);
@@ -352,7 +307,7 @@ export async function collectKind(
 		return collectNotifications(gh, token, budget);
 	}
 	if (kind.startsWith("repo:")) {
-		return collectRepoKind(gh, token, kind, budget, baseline);
+		return collectRepoKind(gh, token, kind, budget);
 	}
 	throw new ApiError(400, "validation_failed", "unknown kind");
 }
@@ -570,7 +525,6 @@ async function collectRepoKind(
 	token: string,
 	kind: string,
 	budget = MAX_STAGED_BYTES,
-	baseline?: Collected | null,
 ): Promise<Collected> {
 	const match = /^repo:([^/]+\/[^:]+):(.+)$/.exec(kind);
 	if (!match?.[1] || !match[2]) {
@@ -595,7 +549,6 @@ async function collectRepoKind(
 				runs: mapActionRuns({ workflow_runs: rows }),
 			}),
 			budget,
-			baseline,
 		);
 	}
 	if (suffix === "traffic") {
@@ -714,10 +667,10 @@ async function collectRepoKind(
 		};
 	}
 	if (suffix === "issues") {
-		return searchList(gh, token, [full], false, true, budget, baseline);
+		return searchList(gh, token, [full], false, true, budget);
 	}
 	if (suffix === "prs") {
-		return searchList(gh, token, [full], true, true, budget, baseline);
+		return searchList(gh, token, [full], true, true, budget);
 	}
 	if (suffix === "releases") {
 		return collectRestList(
@@ -729,7 +682,6 @@ async function collectRepoKind(
 				releases: mapReleases(rows),
 			}),
 			budget,
-			baseline,
 		);
 	}
 	if (suffix === "languages") {
@@ -747,7 +699,6 @@ async function collectRepoKind(
 				contributors: mapContributors(rows),
 			}),
 			budget,
-			baseline,
 		);
 	}
 	throw new ApiError(400, "validation_failed", "unknown repo kind");
@@ -759,15 +710,10 @@ async function collectRestList(
 	start: string,
 	finish: (rows: unknown[], truncated: boolean) => Collected,
 	budget = MAX_STAGED_BYTES,
-	baseline?: Collected | null,
 ): Promise<Collected> {
 	const rows: unknown[] = [];
 	let path: string | null = start;
 	let truncated = false;
-	let overlap = false;
-	const key = arrayKey(finish([], false)) ?? "";
-	const old = baselineRows(baseline, key);
-	const ids = new Set(old.map(itemId));
 	while (path) {
 		try {
 			const res = await gh.githubApi(token, path);
@@ -780,17 +726,11 @@ async function collectRestList(
 				rows.push(...(body as { workflow_runs: unknown[] }).workflow_runs);
 			} else if (Array.isArray(body)) {
 				rows.push(...body);
+			} else {
+				truncated = true;
+				break;
 			}
 			path = nextPath(res);
-			if (
-				path &&
-				(finish(rows, false)[key] as Record<string, unknown>[]).some((item) =>
-					ids.has(itemId(item)),
-				)
-			) {
-				overlap = true;
-				path = null;
-			}
 			if (exceedsBudget(finish(rows, true), budget)) {
 				truncated = true;
 				break;
@@ -803,6 +743,5 @@ async function collectRestList(
 			throw err;
 		}
 	}
-	const result = finish(rows, truncated);
-	return overlap ? { ...result, [key]: mergeItems(old, result[key] as unknown[]) } : result;
+	return finish(rows, truncated);
 }

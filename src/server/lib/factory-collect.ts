@@ -229,7 +229,7 @@ async function collectStream(
 		ranges: [],
 		coverage: coverage(first),
 	};
-	const prior = await store.baseline?.();
+	const prior = stream === "commits" || stream === "dependencies" ? await store.baseline?.() : null;
 	const baseline =
 		prior?.data.coverage.status === "complete" &&
 		prior.window.since <= s.window.since &&
@@ -237,9 +237,7 @@ async function collectStream(
 			? prior
 			: null;
 	const retained =
-		baseline?.data.items.filter(
-			(e) => (stream !== "commits" && stream !== "actions") || inWindow(e.at, s.window),
-		) ?? [];
+		baseline?.data.items.filter((e) => stream !== "commits" || inWindow(e.at, s.window)) ?? [];
 	data.coverage.strategy = "full";
 	data.coverage.status = "partial";
 	data.coverage.fetchedAt = now;
@@ -293,7 +291,7 @@ async function collectStream(
 					resource: "core",
 				};
 			const payload: unknown = await response.json();
-			if (stream === "actions" && !baseline && Number(object(payload).total_count) > 1000) {
+			if (stream === "actions" && Number(object(payload).total_count) > 1000) {
 				const range = new URL(path, "https://api.github.com").searchParams
 					.get("created")
 					?.split("..");
@@ -318,8 +316,7 @@ async function collectStream(
 				data.items = uniqueEvents([...data.items, ...page]);
 				data.next = factoryNext(response.headers.get("link"), path);
 				const ids = new Set(retained.map((e) => e.id));
-				// ponytail: overlap is a quick-refresh heuristic; weekly deep refresh reconciles older edits.
-				if (stream !== "alerts" && data.next && page.some((e) => ids.has(e.id))) {
+				if (stream === "commits" && data.next && page.some((e) => ids.has(e.id))) {
 					data.items = uniqueEvents([...retained, ...data.items]);
 					data.next = null;
 					data.ranges = [];
@@ -328,17 +325,6 @@ async function collectStream(
 						baseline?.data.coverage.sourceFetchedAt ?? baseline?.data.coverage.fetchedAt ?? null;
 				}
 			}
-		}
-		if (
-			stream === "actions" &&
-			baseline &&
-			data.coverage.strategy === "full" &&
-			data.items.length >= 1000 &&
-			!data.next
-		) {
-			data.coverage.status = "limited";
-			data.coverage.reason =
-				"No overlap within the GitHub Actions result cap; deep refresh required";
 		}
 		if (data.coverage.strategy !== "reused") data.coverage.pages++;
 		if (!data.next && data.ranges.length && data.coverage.status !== "limited") {

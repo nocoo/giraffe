@@ -71,9 +71,6 @@ export async function collectSitePage(
 					resource,
 					names.slice(cursor, cursor + 10),
 					1_500_000,
-					run.depth === "quick"
-						? ((await readSnapshot(db, run.account_id, resource)) as Collected | null)
-						: null,
 				)
 			: {
 					truncated: false,
@@ -182,13 +179,11 @@ export async function collectSitePage(
 				resource,
 				[],
 				1_500_000,
-				run.depth === "quick" ? source : null,
 			);
 		written[resource].source_head = metadata.sourceHead;
 	}
 	const prepared = await prepareRefresh(db, run.account_id, gh, token, [resource], now, written, {
 		measureBytes: true,
-		quick: run.depth === "quick",
 		deriveInsights: resource === "insights" || !run.steps.some((s) => s.resource === "insights"),
 	});
 	assertComplete(prepared.written[resource]);

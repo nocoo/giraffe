@@ -117,7 +117,7 @@ export async function prepareRefresh(
 	requested: string[],
 	fetchedAt: string,
 	written: Record<string, Collected> = {},
-	options: { measureBytes?: boolean; deriveInsights?: boolean; quick?: boolean } = {},
+	options: { measureBytes?: boolean; deriveInsights?: boolean } = {},
 ) {
 	async function loaded(kind: string): Promise<Collected | null> {
 		const current = written[kind];
@@ -156,7 +156,6 @@ export async function prepareRefresh(
 						kind,
 						needsRepoNames(kind) ? await repoNames() : [],
 						remaining,
-						options.quick ? await loaded(kind) : null,
 					);
 		if (needsRepoNames(kind)) {
 			const reposPayload = await loaded("repos");
