@@ -6,6 +6,7 @@ import type {
 } from "../../lib/refresh-schedule";
 import { apiGet, apiPost } from "../lib/api";
 import { ApiError } from "../lib/errors";
+import { formatDate } from "../lib/format";
 import { getActiveAccountId } from "./session";
 export async function loadRefreshSettings(account: string): Promise<RefreshSettings | null> {
 	const result = await apiGet<RefreshSettings>("refresh/settings");
@@ -36,9 +37,9 @@ export function scheduleStatus(schedule: RefreshSchedule): string {
 			return "等待已有任务或冷却结束";
 		case "catalog_incomplete":
 			return "等待同步仓库列表";
+		case "catalog_pending":
+			return "等待仓库列表同步完成";
 	}
 	if (schedule.lastError) return "暂未启动，将自动重试";
-	return schedule.nextAt
-		? `下次：${new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(schedule.nextAt))}`
-		: "等待首次安排";
+	return schedule.nextAt ? `下次：${formatDate(schedule.nextAt)}（本地时间）` : "等待首次安排";
 }

@@ -26,7 +26,6 @@ import {
 	useDeferredValue,
 	useEffect,
 	useMemo,
-	useRef,
 	useState,
 } from "react";
 import { Link, useSearchParams } from "react-router";
@@ -35,19 +34,24 @@ import {
 	type FactorySnapshot,
 	type FactoryStreamName,
 } from "../../lib/factory-types";
+import { SnapshotDescription } from "../components/layout/collection-chrome";
 import { IconLabel } from "../components/layout/icon-label";
 import { Kpi, KpiRow } from "../components/layout/kpi";
 import { LanguageLabel } from "../components/layout/labels";
 import { ProjectLabel } from "../components/layout/project-identity";
+import { ScopeEmpty } from "../components/layout/repository-scope";
 import { SelectField } from "../components/layout/select-field";
+import { useSnapshotRead } from "../components/layout/use-snapshot-read";
 import { FLOW_COLORS } from "../lib/chart-theme";
 import { reportError } from "../lib/error-ui";
+import { formatDate, formatDayRange, formatPreciseDate } from "../lib/format";
 import {
 	activityAge,
 	dependencyEdges,
 	type FactoryDetail,
 	factoryBoard,
 	factoryError,
+	factoryFreshness,
 	factoryGroups,
 	factoryParams,
 	factoryRepoCount,
@@ -56,7 +60,6 @@ import {
 	formatHours,
 	formatObservedCount,
 	formatRate,
-	formatUtc,
 	hasFactoryMeasurement,
 	loadFactory,
 	loadFactoryDetail,
@@ -89,7 +92,6 @@ export function FactoryPage() {
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState("");
 
-	const mounted = useRef(true);
 	const [params, setParams] = useSearchParams();
 	const [detail, setDetail] = useState<FactoryDetail | null>(null);
 	const [detailLoading, setDetailLoading] = useState(false);
@@ -126,26 +128,19 @@ export function FactoryPage() {
 			return next;
 		});
 	};
-	useEffect(() => {
-		mounted.current = true;
-		void loadFactory()
-			.then((result) => {
-				if (mounted.current) {
-					setSnapshot("missing" in result ? null : result);
-					setLoading(false);
-				}
-			})
-			.catch((err) => {
-				if (mounted.current) {
-					reportError(err);
-					setError(factoryError(err));
-					setLoading(false);
-				}
-			});
-		return () => {
-			mounted.current = false;
-		};
-	}, []);
+	useSnapshotRead(
+		loadFactory,
+		(result) => {
+			setSnapshot("missing" in result ? null : result);
+			setError("");
+			setLoading(false);
+		},
+		(err) => {
+			reportError(err);
+			setError(factoryError(err));
+			setLoading(false);
+		},
+	);
 	useEffect(() => {
 		let cancelled = false;
 		setDetail(null);
@@ -184,6 +179,13 @@ export function FactoryPage() {
 		[snapshot, language, topic, deferredQuery, selected],
 	);
 	const board = useMemo(() => (snapshot ? factoryBoard(snapshot, scope) : null), [snapshot, scope]);
+	const freshness = useMemo(
+		() =>
+			selected || language || topic || deferredQuery
+				? factoryFreshness(scope)
+				: snapshot?.freshness,
+		[selected, language, topic, deferredQuery, scope, snapshot],
+	);
 	const stale = deferredQuery !== query;
 	const edges = useMemo(() => dependencyEdges(snapshot?.repos ?? []), [snapshot]);
 	const visibleEdges = edges.filter(
@@ -195,13 +197,24 @@ export function FactoryPage() {
 		<div className="factory space-y-4" style={FLOW_STYLE}>
 			<PageHeader
 				title="软件工厂"
-				description="GitHub 的仓库、工作流与交付节奏"
+				description={
+					snapshot ? (
+						<SnapshotDescription
+							description="GitHub 的仓库、工作流与交付节奏"
+							fetchedAt={snapshot.fetched_at}
+							freshness={freshness}
+						/>
+					) : (
+						"GitHub 的仓库、工作流与交付节奏"
+					)
+				}
 				actions={
 					<Button asChild size="sm">
 						<Link to={`/refresh?${params.toString()}`}>去刷新</Link>
 					</Button>
 				}
 			/>
+			{!loading ? <ScopeEmpty count={snapshot?.repos.length ?? 0} /> : null}
 			{error ? (
 				<p role="alert" className="text-sm">
 					{error}
@@ -338,7 +351,7 @@ export function FactoryPage() {
 								</div>
 								<FactoryPanel
 									title="仓库变化矩阵"
-									hint={`每行一个仓库。提交列为最近 1、7、30 个完整 UTC 日，颜色深浅按列内最大值；周环比对比前 7 天。PR 与 Issue 列使用上方选中的 ${period} 天区间，积压为当前 open 数。`}
+									hint={`每行一个仓库。提交列为最近 1、7、30 个完整统计日，颜色深浅按列内最大值；周环比对比前 7 天。PR 与 Issue 列使用上方选中的 ${period} 天区间，积压为当前 open 数。`}
 									flush
 								>
 									<RepoPeriodMatrix
@@ -443,7 +456,7 @@ export function FactoryPage() {
 										title={calendar === "commits" ? "提交日历" : "账号贡献日历"}
 										hint={
 											calendar === "commits"
-												? "按提交时间（UTC）统计当前筛选的仓库。各仓库更新时间不同时，显示它们的日期并集，最多一年；斜纹表示未完整获取，不是零提交。"
+												? "按提交时间统计当前筛选的仓库，悬停查看本地时间区间。各仓库更新时间不同时，显示它们的日期并集，最多一年；斜纹表示未完整获取，不是零提交。"
 												: "账号贡献无法按仓库排除，已停止展示。请使用参与统计仓库的提交日历。"
 										}
 									>
@@ -500,7 +513,7 @@ export function FactoryPage() {
 										)}
 										{day ? (
 											<p className="mt-3 text-xs" role="status">
-												{day} UTC ·{" "}
+												{formatDayRange(day)} ·{" "}
 												{calendar === "commits"
 													? `${board.days.find((d) => d.date === day)?.commits ?? 0} 提交；已高亮每日账本；明细日期筛选独立。`
 													: `${snapshot.contribution?.days.find((d) => d.date === day)?.count ?? 0} 账号贡献。`}
@@ -695,8 +708,8 @@ export function FactoryPage() {
 											<TableRow>
 												<TableHead>仓库 / 语言</TableHead>
 												<TableHead>
-													观测窗口节奏 · {board.days[0]?.date.slice(5) ?? ""} →{" "}
-													{board.days.at(-1)?.date.slice(5) ?? ""}
+													观测窗口节奏 · {formatDate(board.days[0]?.date).slice(5, 10)} →{" "}
+													{formatDate(board.days.at(-1)?.date).slice(5, 10)}
 												</TableHead>
 												<TableHead className="text-right">提交</TableHead>
 												<TableHead className="text-right">Open I / PR</TableHead>
@@ -893,20 +906,28 @@ export function FactoryPage() {
 												{ value: "cancelled", label: "Cancelled" },
 											]}
 										/>
-										<label htmlFor="factory-detail-day">
-											{detailState === "merged"
-												? "合并 UTC 日期"
-												: detailState === "closed"
-													? "关闭 UTC 日期"
-													: "记录 UTC 日期"}{" "}
-											<Input
-												id="factory-detail-day"
-												type="date"
-												value={detailDay}
-												onChange={(e) => update("day", e.target.value)}
-												className="w-auto"
-											/>
-										</label>
+										<SelectField
+											label={
+												detailState === "merged"
+													? "合并区间（本地）"
+													: detailState === "closed"
+														? "关闭区间（本地）"
+														: "记录区间（本地）"
+											}
+											value={detailDay}
+											onValueChange={(value) => update("day", value)}
+											options={[
+												{ value: "", label: "全部时间" },
+												...[
+													...new Set([
+														...board.days.map((d) => d.date),
+														...(detailDay ? [detailDay] : []),
+													]),
+												]
+													.sort()
+													.map((date) => ({ value: date, label: formatDayRange(date) })),
+											]}
+										/>
 									</div>
 									{detailLoading ? (
 										<p role="status" className="py-6 text-sm">
@@ -923,7 +944,7 @@ export function FactoryPage() {
 												<span>
 													{detail.total} 条观察记录 · 第 {page} 页
 												</span>
-												<span>{formatUtc(detail.coverage.fetchedAt)}</span>
+												<span>{formatPreciseDate(detail.coverage.fetchedAt)}</span>
 											</div>
 											{detail.coverage.reason ? (
 												<p className="factory-notice">{detail.coverage.reason}</p>
@@ -939,8 +960,8 @@ export function FactoryPage() {
 																<TableHead>记录</TableHead>
 																<TableHead>状态 / 结论</TableHead>
 																<TableHead>作者</TableHead>
-																<TableHead>时间 UTC</TableHead>
-																<TableHead>合并 / 关闭 UTC</TableHead>
+																<TableHead>时间（本地）</TableHead>
+																<TableHead>合并 / 关闭（本地）</TableHead>
 															</TableRow>
 														</TableHeader>
 														<TableBody>
@@ -969,11 +990,11 @@ export function FactoryPage() {
 																	</TableCell>
 																	<TableCell>{e.author || "—"}</TableCell>
 																	<TableCell className="whitespace-nowrap text-xs">
-																		{e.at ? formatUtc(e.at) : "—"}
+																		{e.at ? formatPreciseDate(e.at) : "—"}
 																	</TableCell>
 																	<TableCell className="whitespace-nowrap text-xs">
 																		{e.mergedAt || e.closedAt
-																			? formatUtc(e.mergedAt ?? e.closedAt)
+																			? formatPreciseDate(e.mergedAt ?? e.closedAt)
 																			: "—"}
 																	</TableCell>
 																</TableRow>
@@ -1018,11 +1039,11 @@ export function FactoryPage() {
 								<summary>每日账本 · 可访问的图表数据与趋势核对</summary>
 								<div className="factory-table-scroll">
 									<Table>
-										<caption className="sr-only">当前筛选内各日事件数，UTC</caption>
+										<caption className="sr-only">当前筛选内各统计区间事件数，本地时间</caption>
 										<TableHeader>
 											<TableRow>
 												{[
-													"UTC 日期",
+													"统计区间（本地时间）",
 													"提交",
 													"Issue 创建",
 													"Issue 最后关闭",
@@ -1044,7 +1065,7 @@ export function FactoryPage() {
 													variant={day === d.date ? "selected" : "default"}
 													className={day === d.date ? "factory-ledger-selected" : ""}
 												>
-													<TableHead scope="row">{d.date}</TableHead>
+													<TableHead scope="row">{formatDayRange(d.date)}</TableHead>
 													{[
 														d.commits,
 														d.issueOpened,
@@ -1091,22 +1112,24 @@ export function FactoryPage() {
 					<details className="factory-methods">
 						<summary>来源、口径与不确定性</summary>
 						<p>
-							页面数据更新于 {formatUtc(snapshot.fetched_at)}。
+							最近一次来源检查{" "}
+							{formatPreciseDate(freshness ? freshness.latestAt : snapshot.fetched_at)}。
 							{snapshot.publication?.mixed
 								? "各仓库使用各自最近可用的数据，更新时间与统计范围可能不同。"
-								: `统计范围：${formatUtc(snapshot.window.since)} → ${formatUtc(snapshot.window.until)}。`}
-							所有时间为 UTC，最后一天尚未结束。
+								: `统计范围：${formatPreciseDate(snapshot.window.since)} → ${formatPreciseDate(snapshot.window.until)}。`}
+							时间按本地时区（{Intl.DateTimeFormat().resolvedOptions().timeZone}
+							）显示；统计区间包含起点、不含终点，最后一个区间尚未结束。
 						</p>
 						{selected && repo?.observation ? (
 							<p>
-								{selected}：数据更新于 {formatUtc(repo.observation.refreshedAt)}，统计范围{" "}
-								{formatUtc(repo.observation.window.since)} →{" "}
-								{formatUtc(repo.observation.window.until)}。
+								{selected}：数据更新于 {formatPreciseDate(repo.observation.refreshedAt)}，统计范围{" "}
+								{formatPreciseDate(repo.observation.window.since)} →{" "}
+								{formatPreciseDate(repo.observation.window.until)}。
 								{repo.observation.source === "legacy" ? "从历史记录恢复。" : "从 GitHub 获取。"}
 							</p>
 						) : null}
 						<p>
-							调查启动 {formatUtc(snapshot.window.until)}；仓库清单取样后逐资源分页，GitHub
+							调查启动 {formatPreciseDate(snapshot.window.until)}；仓库清单取样后逐资源分页，GitHub
 							不提供跨端点原子快照。状态可能在采集过程中变化。清单覆盖仅限当前令牌可见仓库，包括私有仓库；无权读取的资源显示未知。
 						</p>
 						<p>
@@ -1129,7 +1152,7 @@ export function FactoryPage() {
 						<p>
 							采集累计请求 {snapshot.requests}；最近响应额度{" "}
 							{snapshot.rate
-								? `${snapshot.rate.resource} ${snapshot.rate.remaining}，重置 ${formatUtc(snapshot.rate.resetAt)}`
+								? `${snapshot.rate.resource} ${snapshot.rate.remaining}，重置 ${formatPreciseDate(snapshot.rate.resetAt)}`
 								: "此导入快照未记录最近额度"}
 							。每条队列消息至多 1 页 / 一个逻辑动作，资源至多 5,000 条或 1.2
 							MB；截断数据只表示观察子集。已完成资源在续传时复用；更新调查重新取样。

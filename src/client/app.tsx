@@ -3,7 +3,8 @@ import { AccentProvider } from "@nocoo/basalt/providers/accent";
 import { lazy, type ReactNode, Suspense } from "react";
 import { BrowserRouter, Link, Route, Routes } from "react-router";
 import { AppShell } from "./components/layout/app-shell";
-import { APP_PATHS } from "./lib/routes";
+import { BusinessOutlet } from "./components/layout/repository-scope";
+import { APP_PATHS, type AppPath } from "./lib/routes";
 
 const RefreshPage = lazy(() =>
 	import("./routes/factory-runs").then((m) => ({ default: m.RefreshPage })),
@@ -75,6 +76,28 @@ const PAGES: Record<(typeof APP_PATHS)[number], ReactNode> = {
 	"/settings": <SettingsPage />,
 };
 
+const standalone = new Set<AppPath>(["/refresh", "/repos/:owner/:name", "/settings"]);
+
+function pageRoutes(paths: readonly AppPath[]) {
+	return paths.map((path) => (
+		<Route
+			key={path}
+			path={path}
+			element={
+				<Suspense
+					fallback={
+						<p role="status" className="p-4 text-sm text-basalt-muted-foreground">
+							正在加载页面…
+						</p>
+					}
+				>
+					{PAGES[path]}
+				</Suspense>
+			}
+		/>
+	));
+}
+
 export function App() {
 	return (
 		<ThemeProvider>
@@ -85,23 +108,10 @@ export function App() {
 							<Toaster />
 							<Routes>
 								<Route element={<AppShell />}>
-									{APP_PATHS.map((path) => (
-										<Route
-											key={path}
-											path={path}
-											element={
-												<Suspense
-													fallback={
-														<p role="status" className="p-4 text-sm text-basalt-muted-foreground">
-															正在加载页面…
-														</p>
-													}
-												>
-													{PAGES[path]}
-												</Suspense>
-											}
-										/>
-									))}
+									<Route element={<BusinessOutlet />}>
+										{pageRoutes(APP_PATHS.filter((path) => !standalone.has(path)))}
+									</Route>
+									{pageRoutes(APP_PATHS.filter((path) => standalone.has(path)))}
 									<Route
 										path="*"
 										element={

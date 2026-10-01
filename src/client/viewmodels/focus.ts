@@ -4,6 +4,7 @@ import { loadCi } from "./ci";
 import type { InsightRow } from "./insights";
 import type { IssueRow } from "./issues";
 import type { PullRow } from "./pulls";
+import { getRepositoryScope, scopedResource } from "./scope";
 import { loadKind } from "./snapshot";
 
 export type FocusCategory = "security" | "delivery" | "review" | "issues" | "ai" | "activity";
@@ -398,10 +399,10 @@ async function optional<T>(load: () => Promise<T | { missing: true }>): Promise<
 }
 
 /** Optional enrichments: missing CI or AI data narrows the evidence, never blocks the page. */
-export async function loadFocusSources() {
+export async function loadFocusSources(scope = getRepositoryScope()) {
 	const [ci, assessments] = await Promise.all([
-		optional(loadCi),
-		optional(() => loadKind<AssessmentDigests>("insights/assessments")),
+		optional(() => loadCi(scope)),
+		optional(() => loadKind<AssessmentDigests>(scopedResource("insights/assessments", scope))),
 	]);
 	return { ci, assessments };
 }

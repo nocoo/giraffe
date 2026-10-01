@@ -181,7 +181,7 @@ export function RepoAssessmentPanel({ owner, name }: { owner: string; name: stri
 							<div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-basalt-muted-foreground">
 								<span className="inline-flex flex-wrap items-center gap-1.5">
 									<Clock3 className="size-4 shrink-0" strokeWidth={1.5} aria-hidden="true" />
-									最新数据{" "}
+									来源数据更新{" "}
 									<time dateTime={saved.sourceAt ?? undefined}>{formatDate(saved.sourceAt)}</time>
 								</span>
 								<span className="inline-flex flex-wrap items-center gap-1.5">

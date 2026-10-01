@@ -1,3 +1,5 @@
+import { formatDate } from "../lib/format";
+
 /** Shared aggregations for list pages: age, category ranking and time series from one snapshot. */
 const DAY_MS = 86_400_000;
 
@@ -102,7 +104,7 @@ export function weeklySeries<T>(rows: T[], at: (row: T) => string, now: string, 
 	const last = monday(end);
 	const points = Array.from({ length: weeks }, (_, i) => {
 		const t = last - (weeks - 1 - i) * 7 * DAY_MS;
-		return { t, x: new Date(t).toISOString().slice(5, 10), y: 0 };
+		return { t, x: formatDate(new Date(t).toISOString()).slice(5, 10), y: 0 };
 	});
 	for (const row of rows) {
 		const t = Date.parse(at(row));

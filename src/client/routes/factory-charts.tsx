@@ -11,6 +11,7 @@ import type { FactoryRepo } from "../../lib/factory-types";
 import { HelpTooltip } from "../components/layout/help-tooltip";
 import { IconLabel } from "../components/layout/icon-label";
 import { categoryColor, chartColor } from "../lib/chart-theme";
+import { formatDate, formatDayRange } from "../lib/format";
 import { formatFactoryCount as n } from "../viewmodels/factory";
 
 export function FactoryPanel({
@@ -78,8 +79,8 @@ export function FactorySpark({
 		<span className="giraffe-spark">
 			{spark}
 			<span className="giraffe-spark-range" aria-hidden="true">
-				<span>{range.from.slice(5, 10)}</span>
-				<span>{range.to.slice(5, 10)}</span>
+				<span>{formatDate(range.from).slice(5, 10)}</span>
+				<span>{formatDate(range.to).slice(5, 10)}</span>
 			</span>
 		</span>
 	);
@@ -94,7 +95,7 @@ export function FactoryHeatmap({
 	onSelect: (date: string) => void;
 }) {
 	const max = Math.max(1, ...days.map((d) => d.count));
-	const offset = days[0] ? (new Date(days[0].date).getUTCDay() + 6) % 7 : 0;
+	const offset = days[0] ? (new Date(days[0].date).getDay() + 6) % 7 : 0;
 	// Basalt's calendar has no date-selection or missing-data API; keep the drilldown
 	// using its buttons, tooltips and heatmap palette instead of replacing unknowns with zero.
 	return (
@@ -106,7 +107,7 @@ export function FactoryHeatmap({
 				}}
 			>
 				{days.map((d, i) => {
-					const label = `${d.date} UTC：${d.known === false ? (d.count ? `≥ ${n(d.count)}` : "未完整观测") : n(d.count)}`;
+					const label = `${formatDayRange(d.date)}：${d.known === false ? (d.count ? `≥ ${n(d.count)}` : "未完整观测") : n(d.count)}`;
 					return (
 						<BasaltTooltip key={d.date}>
 							<TooltipTrigger asChild>
@@ -130,7 +131,7 @@ export function FactoryHeatmap({
 				})}
 			</div>
 			<div className="mt-3 flex flex-wrap justify-between gap-2 text-xs text-basalt-muted-foreground">
-				<span>{days[0]?.date} · 周一至周日，自上而下</span>
+				<span>{formatDate(days[0]?.date).slice(0, 10)} · 周一至周日，自上而下</span>
 				<span>
 					少{" "}
 					{[1, 2, 3, 4].map((level) => (
@@ -142,7 +143,7 @@ export function FactoryHeatmap({
 					))}{" "}
 					多
 				</span>
-				<span>{days.at(-1)?.date}（末日未满）</span>
+				<span>{formatDate(days.at(-1)?.date).slice(0, 10)}（末日未满）</span>
 			</div>
 		</div>
 	);

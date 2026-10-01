@@ -78,7 +78,7 @@ describe("repos viewmodel", () => {
 		vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
 			if (String(input) === "/api/accounts")
 				return Response.json({ accounts: [{ id: "acc1", login: "o", is_active: true }] });
-			if (String(input) === "/api/repos")
+			if (String(input) === "/api/repos?scope=starred")
 				return Response.json({
 					account_id: "acc1",
 					fetched_at: "t",
@@ -124,7 +124,7 @@ describe("repos viewmodel", () => {
 		vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
 			if (String(input) === "/api/accounts")
 				return Response.json({ accounts: [{ id: "acc1", login: "o", is_active: true }] });
-			if (String(input) === "/api/repos")
+			if (String(input) === "/api/repos?scope=starred")
 				return Response.json({
 					account_id: "acc1",
 					fetched_at: "t",
@@ -193,7 +193,7 @@ describe("repos viewmodel", () => {
 			if (url === "/api/accounts") {
 				return Response.json({ accounts: [{ id: "acc1", login: "o", is_active: true }] });
 			}
-			if (url === "/api/repos") {
+			if (url === "/api/repos?scope=starred") {
 				return Response.json({
 					account_id: "acc1",
 					fetched_at: "2026-09-01T00:00:00.000Z",
@@ -226,7 +226,7 @@ describe("repos viewmodel", () => {
 			if (url === "/api/accounts") {
 				return Response.json({ accounts: [{ id: "acc1", login: "o", is_active: true }] });
 			}
-			if (url === "/api/repos") {
+			if (url === "/api/repos?scope=starred") {
 				return Response.json({
 					account_id: "acc1",
 					fetched_at: "t",
@@ -248,7 +248,7 @@ describe("repos viewmodel", () => {
 			if (String(input) === "/api/accounts") {
 				return Response.json({ accounts: [{ id: "acc1", login: "o", is_active: true }] });
 			}
-			if (String(input) === "/api/insights")
+			if (String(input) === "/api/insights?scope=starred")
 				return missing
 					? Response.json(
 							{ error: { code: "snapshot_missing", message: "missing" } },

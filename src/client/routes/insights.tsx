@@ -5,15 +5,17 @@ import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
 import { Activity, GitPullRequest, Layers3 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ChartBrick, ChartEmpty, ChartRow } from "../components/layout/chart-brick";
-import { SnapshotDescription } from "../components/layout/collection-chrome";
+import { SnapshotDescription, SnapshotTime } from "../components/layout/collection-chrome";
 import { DonutChart } from "../components/layout/donut-chart";
 import { IconLabel } from "../components/layout/icon-label";
 import { InsightsSkeleton } from "../components/layout/page-skeleton";
 import { ProjectLabel } from "../components/layout/project-identity";
+import { ScopeEmpty } from "../components/layout/repository-scope";
 import { SnapshotPending } from "../components/layout/snapshot-pending";
+import { useSnapshotRead } from "../components/layout/use-snapshot-read";
 import { chartColor } from "../lib/chart-theme";
 import { catchLoad } from "../lib/error-ui";
 import { formatCount } from "../lib/format";
@@ -56,18 +58,14 @@ const PR_STATUS_SERIES = [
 export function InsightsPage() {
 	const [board, setBoard] = useState<InsightsBoard | { missing: true } | null>(null);
 
-	useEffect(() => {
-		void loadInsightsBoard()
-			.then(setBoard)
-			.catch((err: unknown) => {
-				const missing = catchLoad(err, (message) => {
-					toast.error(message);
-				});
-				if (missing) {
-					setBoard(missing);
-				}
-			});
-	}, []);
+	useSnapshotRead(loadInsightsBoard, setBoard, (err) => {
+		const missing = catchLoad(err, (message) => {
+			toast.error(message);
+		});
+		if (missing) {
+			setBoard(missing);
+		}
+	});
 
 	const charts = useMemo(() => {
 		if (!board || "missing" in board) {
@@ -75,8 +73,8 @@ export function InsightsPage() {
 		}
 		return buildInsightsCharts(
 			board.insights.insights,
-			board.issues,
-			board.pulls,
+			board.issues?.issues ?? null,
+			board.pulls?.pull_requests ?? null,
 			board.insights.fetched_at,
 		);
 	}, [board]);
@@ -89,8 +87,8 @@ export function InsightsPage() {
 		if (!board || "missing" in board) return null;
 		const src = {
 			rows: board.insights.insights,
-			issues: board.issues,
-			pulls: board.pulls,
+			issues: board.issues?.issues ?? null,
+			pulls: board.pulls?.pull_requests ?? null,
 			ci: board.ci,
 			assessments: board.assessments,
 			fetchedAt: board.insights.fetched_at,
@@ -128,10 +126,34 @@ export function InsightsPage() {
 					<SnapshotDescription
 						description={PAGE_DESCRIPTIONS["/insights"]}
 						fetchedAt={board.insights.fetched_at}
+						freshness={board.insights.freshness}
 					/>
 				}
 				actions={board.insights.truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
 			/>
+			<ScopeEmpty count={board.insights.insights.length} />
+			<section className="flex flex-wrap gap-x-6 gap-y-2" aria-label="来源数据更新时间">
+				<SnapshotTime
+					label="Issues 数据更新"
+					fetchedAt={board.issues?.fetched_at}
+					freshness={board.issues?.freshness}
+				/>
+				<SnapshotTime
+					label="PR 数据更新"
+					fetchedAt={board.pulls?.fetched_at}
+					freshness={board.pulls?.freshness}
+				/>
+				<SnapshotTime
+					label="CI 数据更新"
+					fetchedAt={board.ci?.fetched_at}
+					freshness={board.ci?.freshness}
+				/>
+				<SnapshotTime
+					label="评估数据更新"
+					fetchedAt={board.assessments?.fetched_at}
+					freshness={board.assessments?.freshness}
+				/>
+			</section>
 			<FocusSection {...focus} />
 			<SectionRule title={<IconLabel icon={Layers3}>工作量</IconLabel>}>
 				<div className="space-y-3" data-testid="insight-metrics">

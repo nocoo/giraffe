@@ -13,7 +13,7 @@ import {
 	TableRow,
 } from "@nocoo/basalt/components/table";
 import { Box, Star } from "lucide-react";
-import { type CSSProperties, useEffect, useMemo, useState } from "react";
+import { type CSSProperties, useMemo, useState } from "react";
 import { participates } from "../../lib/repo-statistics";
 import { CandyBadge } from "../components/layout/candy-badge";
 import {
@@ -33,9 +33,11 @@ import {
 import { ListPageSkeleton } from "../components/layout/page-skeleton";
 import { ProjectSummary } from "../components/layout/project-identity";
 import { ShareBar } from "../components/layout/rank-bars";
+import { ScopeEmpty, useRepositoryScope } from "../components/layout/repository-scope";
 import { INLINE_SEGMENT } from "../components/layout/segment";
 import { SnapshotPending } from "../components/layout/snapshot-pending";
 import { Meter, SortButton } from "../components/layout/table-chrome";
+import { useSnapshotRead } from "../components/layout/use-snapshot-read";
 import { categoryColor } from "../lib/chart-theme";
 import { catchLoad, reportError } from "../lib/error-ui";
 import {
@@ -81,8 +83,8 @@ const STATUS_COLORS = [
 ];
 
 export function ReposPage() {
+	const scope = useRepositoryScope();
 	const [query, setQuery] = useState("");
-	const [starredOnly, setStarredOnly] = useState(false);
 	const [sort, setSort] = useState<SortKey>("stars");
 	const [view, setView] = useState<ViewMode>("list");
 	const [snap, setSnap] = useState<ReposSnapshot | { missing: true } | null>(null);
@@ -105,15 +107,24 @@ export function ReposPage() {
 				current && !("missing" in current) && current.account_id === account
 					? {
 							...current,
-							repos: current.repos.map((r) =>
-								r.name_with_owner === repo.name_with_owner
-									? { ...r, [kind === "star" ? "starred" : "statistics_enabled"]: enabled }
-									: r,
-							),
+							repos: current.repos
+								.filter(
+									(row) =>
+										!(
+											kind === "star" &&
+											!enabled &&
+											scope === "starred" &&
+											row.name_with_owner === repo.name_with_owner
+										),
+								)
+								.map((r) =>
+									r.name_with_owner === repo.name_with_owner
+										? { ...r, [kind === "star" ? "starred" : "statistics_enabled"]: enabled }
+										: r,
+								),
 						}
 					: current,
 			);
-			if (kind === "statistics") setInsights(await loadInsightsOptional());
 		} catch (err) {
 			reportError(err);
 		} finally {
@@ -143,47 +154,45 @@ export function ReposPage() {
 		</div>
 	);
 
-	useEffect(() => {
-		void loadRepos()
-			.then(async (next) => {
-				setSnap(next);
-				if (!("missing" in next)) {
-					setInsights(await loadInsightsOptional());
-				} else {
-					setInsights(null);
-				}
-			})
-			.catch((err: unknown) => {
-				const missing = catchLoad(err, (message) => {
-					toast.error(message);
-				});
-				if (missing) {
-					setSnap(missing);
-					setInsights(null);
-				}
+	useSnapshotRead(
+		async () => {
+			const [next, health] = await Promise.all([
+				loadRepos(scope),
+				loadInsightsOptional(scope).catch(() => null),
+			]);
+			return { next, health };
+		},
+		({ next, health }) => {
+			setSnap(next);
+			setInsights("missing" in next ? null : health);
+		},
+		(err) => {
+			const missing = catchLoad(err, (message) => {
+				toast.error(message);
 			});
-	}, []);
+			if (missing) {
+				setSnap(missing);
+				setInsights(null);
+			}
+		},
+		saving === null,
+	);
 
 	const board = useMemo(
 		() => (snap && !("missing" in snap) ? reposBoard(snap.repos, snap.fetched_at, picked) : null),
 		[snap, picked],
 	);
 	const rows = useMemo(
-		() =>
-			board
-				? visibleRepos(
-						starredOnly ? board.rows.filter((row) => row.starred) : board.rows,
-						query,
-						sort,
-					)
-				: [],
-		[board, query, sort, starredOnly],
+		() => (board ? visibleRepos(board.rows, query, sort) : []),
+		[board, query, sort],
 	);
 	const health = healthMap(insights);
 	const peakIssues = maxCount(rows.map((row) => row.open_issue_count));
 	const actions = (
 		<>
-			{snap && !("missing" in snap) ? <SnapshotTime fetchedAt={snap.fetched_at} /> : null}
+			{snap && !("missing" in snap) ? (
+				<SnapshotTime fetchedAt={snap.fetched_at} freshness={snap.freshness} />
+			) : null}
 			{snap && !("missing" in snap) && snap.truncated ? (
 				<CandyBadge tone="amber">已截断</CandyBadge>
 			) : null}
@@ -192,15 +201,6 @@ export function ReposPage() {
 
 	const filters = (
 		<FilterBar label="仓库 筛选" className="w-full">
-			<Button
-				size="sm"
-				variant="ghost"
-				aria-pressed={starredOnly}
-				onClick={() => setStarredOnly(!starredOnly)}
-			>
-				<Star className="size-4" />
-				仅星标
-			</Button>
 			<SearchField
 				value={query}
 				onValueChange={setQuery}
@@ -258,6 +258,7 @@ export function ReposPage() {
 				actions={actions}
 				filters={filters}
 			/>
+			<ScopeEmpty count={snap.repos.length} />
 			<div className="giraffe-stat-inline" data-testid="repo-summary">
 				<span>
 					<strong>{formatCount(snap.repos.length)}</strong>个仓库 · 其中{" "}

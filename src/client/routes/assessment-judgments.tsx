@@ -22,7 +22,7 @@ import {
 import type { Judgment, JudgmentResult } from "../../lib/ai-review";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { IconLabel } from "../components/layout/icon-label";
-import { candyClass } from "../lib/format";
+import { candyClass, formatDate } from "../lib/format";
 import {
 	JUDGMENT_STATUS,
 	judgmentDistribution,
@@ -121,8 +121,8 @@ export function JudgmentDetails({ result }: { result: JudgmentResult }) {
 				{result.templateVersion === 2 ? (
 					<div className="space-y-1 text-xs text-basalt-muted-foreground">
 						<IconLabel icon={CalendarDays}>
-							最近 14 天 · {result.focusWindow.since.slice(0, 10)} —{" "}
-							{result.focusWindow.until.slice(0, 10)}（UTC）
+							最近 14 天 · {formatDate(result.focusWindow.since)} —{" "}
+							{formatDate(result.focusWindow.until)}（本地时间）
 						</IconLabel>
 						<p>
 							兼顾更早但仍活跃的 Issues 与 PR；安全风险以 Issues 为主要线索，GitHub

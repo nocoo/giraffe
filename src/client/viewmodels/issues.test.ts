@@ -61,7 +61,7 @@ describe("issues viewmodel", () => {
 			if (url === "/api/accounts") {
 				return Response.json({ accounts: [{ id: "acc1", login: "o", is_active: true }] });
 			}
-			if (url === "/api/issues") {
+			if (url === "/api/issues?scope=starred") {
 				return Response.json({
 					account_id: "acc1",
 					fetched_at: "2026-09-01T00:00:00.000Z",

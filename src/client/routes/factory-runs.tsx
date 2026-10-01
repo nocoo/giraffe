@@ -21,10 +21,10 @@ import type { FactorySnapshot } from "../../lib/factory-types";
 import { SearchField, SnapshotTime } from "../components/layout/collection-chrome";
 import { ProjectLabel } from "../components/layout/project-identity";
 import { SelectField } from "../components/layout/select-field";
+import { formatPreciseDate } from "../lib/format";
 import {
 	factoryError,
 	filterFactoryRepos,
-	formatUtc,
 	loadFactory,
 	reloadFactory,
 } from "../viewmodels/factory";
@@ -61,7 +61,7 @@ function FactoryRuns({
 	const [error, setError] = useState("");
 	const [pollError, setPollError] = useState("");
 	const [busy, setBusy] = useState(false);
-	const [depth, setDepth] = useState<"quick" | "deep">("quick");
+	const [task, setTask] = useState<"quick" | "deep" | "catalog">("quick");
 	const [tab, setTab] = useState("");
 	const [scope, setScope] = useState<RunSelection["scope"]>("all");
 	const [selected, setSelected] = useState<string[]>([]);
@@ -162,7 +162,7 @@ function FactoryRuns({
 		setTab(latest ? "progress" : "plan");
 		void poll.current?.refresh();
 	}
-	async function start(mode: "catalog" | "refresh") {
+	async function start() {
 		if (busy || current) return;
 		setBusy(true);
 		setError("");
@@ -170,13 +170,16 @@ function FactoryRuns({
 			const names = planned
 				.map((repo) => repo.name)
 				.sort((a, b) => (priority[a] ?? 100) - (priority[b] ?? 100));
-			const input = {
-				mode,
-				depth,
-				scope,
-				...(scope === "selected" ? { repos: names, order: names } : { order: names }),
-				...(scope === "filter" ? filter : {}),
-			};
+			const input =
+				task === "catalog"
+					? { mode: "catalog" as const, depth: "quick" as const, scope: "all" as const }
+					: {
+							mode: "refresh" as const,
+							depth: task,
+							scope,
+							...(scope === "selected" ? { repos: names, order: names } : { order: names }),
+							...(scope === "filter" ? filter : {}),
+						};
 			const signature = JSON.stringify(input);
 			if (intent.current?.signature !== signature)
 				intent.current = { signature, key: crypto.randomUUID() };
@@ -355,7 +358,7 @@ function FactoryRuns({
 										{ value: "", label: current ? "当前刷新" : "最近一次刷新" },
 										...(data?.history ?? []).map((run) => ({
 											value: run.id,
-											label: `${formatUtc(run.startedAt)} · ${RUN_LABELS[run.status]} · ${run.mode === "catalog" ? "同步列表" : `${run.depth === "quick" ? "快速" : "深度"} · ${run.trigger === "daily" ? "每日自动" : run.trigger === "weekly" ? "每周自动" : "手动"} · ${new Set([...run.repos, ...(run.siteRepos ?? [])]).size} 个仓库`}`,
+											label: `${formatPreciseDate(run.startedAt)} · ${RUN_LABELS[run.status]} · ${run.mode === "catalog" ? "同步列表" : `${run.depth === "quick" ? "快速" : "深度"} · ${new Set([...run.repos, ...(run.siteRepos ?? [])]).size} 个仓库`} · ${run.trigger === "daily" ? "每日自动" : run.trigger === "weekly" ? "每周自动" : "手动"}`,
 										})),
 									]}
 								/>
@@ -412,17 +415,21 @@ function FactoryRuns({
 						</TabsContent>
 						<TabsContent value="plan" className="factory-run-plan mt-0">
 							<p className="mb-4 text-sm text-basalt-muted-foreground">
-								{depth === "quick"
-									? "先检查第一页，遇到已保存记录后停止翻页；没有交集则继续向前。首次刷新会补齐底稿。"
-									: "完整读取历史分页，重新核对数据，适合定期校准或排查遗漏。"}
+								{task === "catalog"
+									? "发现当前账号可访问的仓库并更新仓库列表；仓库详情和历史统计使用已有数据。"
+									: task === "quick"
+										? "更新当前数据；提交与代码依赖在版本未变时复用证据，Issues、PR 和可变状态完整核对。首次刷新补齐底稿。"
+										: "完整读取历史分页，重新核对数据，适合定期校准或排查遗漏。"}
 							</p>
 							<div className="factory-section-heading">
 								<div>
-									<h3>选择要更新的仓库</h3>
+									<h3>{task === "catalog" ? "同步当前账号仓库列表" : "选择要更新的仓库"}</h3>
 									<p>
-										{scope === "all"
-											? "统一更新仓库、Insights、Issues、PR、安全告警、通知、CI 与发布及所有仓库详情；全站列表优先更新。"
-											: "仅更新所选仓库的统计、详情及已配置的 AI 评估，同时合并到全站列表；其他仓库保留上次数据。"}
+										{task === "catalog"
+											? "同步列表包含 4 个步骤，可在刷新进度和历史记录中查看。"
+											: scope === "all"
+												? "统一更新仓库、Insights、Issues、PR、安全告警、通知、CI 与发布及所有仓库详情；全站列表优先更新。"
+												: "仅更新所选仓库的统计、详情及已配置的 AI 评估，同时合并到全站列表；其他仓库保留上次数据。"}
 									</p>
 								</div>
 							</div>
@@ -435,215 +442,217 @@ function FactoryRuns({
 							<div className="factory-plan-scope">
 								<SelectField
 									label="刷新模式"
-									value={depth}
-									onValueChange={(value) => setDepth(value as "quick" | "deep")}
+									value={task}
+									onValueChange={(value) => setTask(value as "quick" | "deep" | "catalog")}
 									options={[
 										{ value: "quick", label: "快速刷新" },
 										{ value: "deep", label: "完整深度刷新" },
+										{ value: "catalog", label: "同步仓库列表" },
 									]}
 								/>
 
-								<SelectField
-									label="刷新范围"
-									value={scope}
-									onValueChange={(value) => setScope(value as RunSelection["scope"])}
-									options={[
-										{ value: "selected", label: "手动选择仓库" },
-										{
-											value: "filter",
-											label: `当前页面筛选（${options.length} 个）`,
-											disabled: !data?.catalogComplete,
-										},
-										{
-											value: "all",
-											label: `全站刷新（${catalog.length} 个统计仓库）`,
-											disabled: !data?.catalogComplete,
-										},
-										{
-											value: "stale",
-											label: "数据缺失或超过 24 小时未更新",
-											disabled: !data?.catalogComplete,
-										},
-										{
-											value: "failed",
-											label: "上次刷新失败的仓库",
-											disabled: !data?.catalogComplete,
-										},
-									]}
-								/>
-								<span>
-									本次选择 <strong>{planned.length}</strong> 个仓库
-								</span>
-							</div>
-							{!data?.catalogComplete ? (
-								<p className="factory-console-note">
-									<Info aria-hidden="true" />
-									请先同步仓库列表，确认全站刷新需要覆盖的仓库。
-								</p>
-							) : null}
-							{catalog.length ? (
-								<>
-									<div className="factory-selection-toolbar">
-										<SearchField
-											label="搜索可选仓库"
-											placeholder="搜索仓库…"
-											value={selectionQuery}
-											onValueChange={setSelectionQuery}
+								{task !== "catalog" ? (
+									<>
+										<SelectField
+											label="刷新范围"
+											value={scope}
+											onValueChange={(value) => setScope(value as RunSelection["scope"])}
+											options={[
+												{ value: "selected", label: "手动选择仓库" },
+												{
+													value: "filter",
+													label: `当前页面筛选（${options.length} 个）`,
+													disabled: !data?.catalogComplete,
+												},
+												{
+													value: "all",
+													label: `全站刷新（${catalog.length} 个统计仓库）`,
+													disabled: !data?.catalogComplete,
+												},
+												{
+													value: "stale",
+													label: "数据缺失或超过 24 小时未更新",
+													disabled: !data?.catalogComplete,
+												},
+												{
+													value: "failed",
+													label: "上次刷新失败的仓库",
+													disabled: !data?.catalogComplete,
+												},
+											]}
 										/>
-										<div>
-											{scope === "selected" ? (
-												<>
-													<Button
-														size="sm"
-														variant="ghost"
-														onClick={() =>
-															setSelected((old) => [
-																...new Set([...old, ...choices.map((repo) => repo.name)]),
-															])
-														}
-													>
-														全选当前结果
-													</Button>
-													<Button
-														size="sm"
-														variant="ghost"
-														disabled={!selected.length}
-														onClick={() => setSelected([])}
-													>
-														清空选择
-													</Button>
-												</>
-											) : null}
-											<Button
-												size="sm"
-												variant="ghost"
-												aria-pressed={showPriority}
-												onClick={() => setShowPriority(!showPriority)}
-											>
-												{showPriority ? "收起优先级" : "设置优先级"}
-											</Button>
-										</div>
-									</div>
-									{scope === "filter" ? (
-										<p className="factory-selection-hint">
-											本次范围沿用主页面的语言、标签和搜索条件。
+										<span>
+											本次选择 <strong>{planned.length}</strong> 个仓库
+										</span>
+									</>
+								) : null}
+							</div>
+							{task !== "catalog" ? (
+								<>
+									{!data?.catalogComplete ? (
+										<p className="factory-console-note">
+											<Info aria-hidden="true" />
+											请先同步仓库列表，确认全站刷新需要覆盖的仓库。
 										</p>
 									) : null}
-									{showPriority ? (
-										<p className="factory-selection-hint">
-											数字越小越先刷新；相同数字按选择顺序执行。
-										</p>
-									) : null}
-									<fieldset className="factory-run-select">
-										<legend className="sr-only">选择仓库及优先级</legend>
-										{choices.map((repo) => {
-											const state = data?.repositories.find((item) => item.repo === repo.name);
-											const wait = secondsUntil(state?.nextAllowedAt ?? null, now);
-											return (
-												<div key={repo.id} className="factory-run-select-row">
-													<label htmlFor={`factory-select-${repo.id}`}>
-														<Checkbox
-															id={`factory-select-${repo.id}`}
-															aria-label={repo.name}
-															disabled={scope !== "selected"}
-															checked={planned.some((item) => item.name === repo.name)}
-															onCheckedChange={(checked) =>
-																setSelected((old) =>
-																	checked === true
-																		? [...old, repo.name]
-																		: old.filter((name) => name !== repo.name),
-																)
-															}
-														/>
-														<span>
-															<strong>
-																<ProjectLabel repo={repo.name} />
-															</strong>
-															<small>
-																{repo.language}
-																{state
-																	? ` · ${state.status === "success" ? "数据完整" : state.status === "partial" ? "部分数据未获取" : "上次未刷新成功"}`
-																	: " · 尚未刷新"}
-															</small>
-														</span>
-													</label>
-													<span className="factory-selection-time">
-														{wait
-															? `${formatRunDuration(wait)} 后可刷新`
-															: state?.refreshedAt
-																? `更新于 ${formatUtc(state.refreshedAt)}`
-																: "可开始刷新"}
-													</span>
-													{showPriority ? (
-														<label
-															className="factory-priority"
-															htmlFor={`factory-priority-${repo.id}`}
-														>
-															优先级
-															<Input
-																id={`factory-priority-${repo.id}`}
-																type="number"
-																min="1"
-																max="999"
-																aria-label={`${repo.name} 优先级`}
-																value={priority[repo.name] ?? 100}
-																onChange={(event) =>
-																	setPriority((old) => ({
-																		...old,
-																		[repo.name]: Math.max(
-																			1,
-																			Math.min(999, Number(event.target.value) || 100),
-																		),
-																	}))
+									{catalog.length ? (
+										<>
+											<div className="factory-selection-toolbar">
+												<SearchField
+													label="搜索可选仓库"
+													placeholder="搜索仓库…"
+													value={selectionQuery}
+													onValueChange={setSelectionQuery}
+												/>
+												<div>
+													{scope === "selected" ? (
+														<>
+															<Button
+																size="sm"
+																variant="ghost"
+																onClick={() =>
+																	setSelected((old) => [
+																		...new Set([...old, ...choices.map((repo) => repo.name)]),
+																	])
 																}
-															/>
-														</label>
+															>
+																全选当前结果
+															</Button>
+															<Button
+																size="sm"
+																variant="ghost"
+																disabled={!selected.length}
+																onClick={() => setSelected([])}
+															>
+																清空选择
+															</Button>
+														</>
 													) : null}
+													<Button
+														size="sm"
+														variant="ghost"
+														aria-pressed={showPriority}
+														onClick={() => setShowPriority(!showPriority)}
+													>
+														{showPriority ? "收起优先级" : "设置优先级"}
+													</Button>
 												</div>
-											);
-										})}
-										{!choices.length ? (
-											<p className="factory-console-empty">没有符合筛选条件的仓库。</p>
-										) : null}
-									</fieldset>
+											</div>
+											{scope === "filter" ? (
+												<p className="factory-selection-hint">
+													本次范围沿用主页面的语言、标签和搜索条件。
+												</p>
+											) : null}
+											{showPriority ? (
+												<p className="factory-selection-hint">
+													数字越小越先刷新；相同数字按选择顺序执行。
+												</p>
+											) : null}
+											<fieldset className="factory-run-select">
+												<legend className="sr-only">选择仓库及优先级</legend>
+												{choices.map((repo) => {
+													const state = data?.repositories.find((item) => item.repo === repo.name);
+													const wait = secondsUntil(state?.nextAllowedAt ?? null, now);
+													return (
+														<div key={repo.id} className="factory-run-select-row">
+															<label htmlFor={`factory-select-${repo.id}`}>
+																<Checkbox
+																	id={`factory-select-${repo.id}`}
+																	aria-label={repo.name}
+																	disabled={scope !== "selected"}
+																	checked={planned.some((item) => item.name === repo.name)}
+																	onCheckedChange={(checked) =>
+																		setSelected((old) =>
+																			checked === true
+																				? [...old, repo.name]
+																				: old.filter((name) => name !== repo.name),
+																		)
+																	}
+																/>
+																<span>
+																	<strong>
+																		<ProjectLabel repo={repo.name} />
+																	</strong>
+																	<small>
+																		{repo.language}
+																		{state
+																			? ` · ${state.status === "success" ? "数据完整" : state.status === "partial" ? "部分数据未获取" : "上次未刷新成功"}`
+																			: " · 尚未刷新"}
+																	</small>
+																</span>
+															</label>
+															<span className="factory-selection-time">
+																{wait
+																	? `${formatRunDuration(wait)} 后可刷新`
+																	: state?.refreshedAt
+																		? `更新于 ${formatPreciseDate(state.refreshedAt)}`
+																		: "可开始刷新"}
+															</span>
+															{showPriority ? (
+																<label
+																	className="factory-priority"
+																	htmlFor={`factory-priority-${repo.id}`}
+																>
+																	优先级
+																	<Input
+																		id={`factory-priority-${repo.id}`}
+																		type="number"
+																		min="1"
+																		max="999"
+																		aria-label={`${repo.name} 优先级`}
+																		value={priority[repo.name] ?? 100}
+																		onChange={(event) =>
+																			setPriority((old) => ({
+																				...old,
+																				[repo.name]: Math.max(
+																					1,
+																					Math.min(999, Number(event.target.value) || 100),
+																				),
+																			}))
+																		}
+																	/>
+																</label>
+															) : null}
+														</div>
+													);
+												})}
+												{!choices.length ? (
+													<p className="factory-console-empty">没有符合筛选条件的仓库。</p>
+												) : null}
+											</fieldset>
+										</>
+									) : (
+										<div className="factory-console-empty">
+											<FolderSync aria-hidden="true" />
+											<h3>先找到你的仓库</h3>
+											<p>同步列表会发现当前账号的仓库，并读取已经保存的数据。</p>
+										</div>
+									)}
 								</>
-							) : (
-								<div className="factory-console-empty">
-									<FolderSync aria-hidden="true" />
-									<h3>先找到你的仓库</h3>
-									<p>同步列表会发现当前账号的仓库，并读取已经保存的数据。</p>
-								</div>
-							)}
+							) : null}
 							<div className="factory-plan-footer">
 								<p>
 									{cooldown
 										? `还需等待 ${formatRunDuration(cooldown)}，即可发起下一次刷新。`
-										: "每个仓库刷新后需间隔 15 分钟；刚刷新过的仓库会自动跳过。"}
+										: task === "catalog"
+											? "同步仓库列表后，可选择快速或深度刷新更新仓库数据。"
+											: "每个仓库刷新后需间隔 15 分钟；刚刷新过的仓库会自动跳过。"}
 								</p>
 								<div>
-									<Button
-										size="sm"
-										variant="secondary"
-										disabled={busy || !data || !!current || cooldown > 0}
-										onClick={() => void start("catalog")}
-									>
-										<FolderSync className="size-3.5" aria-hidden="true" />
-										同步仓库列表
-									</Button>
 									<Button
 										size="sm"
 										disabled={
 											busy ||
 											!data ||
-											(scope !== "selected" && !data.catalogComplete) ||
+											(task !== "catalog" && scope !== "selected" && !data.catalogComplete) ||
 											!!current ||
 											cooldown > 0 ||
-											(scope !== "all" && !planned.length)
+											(task !== "catalog" && scope !== "all" && !planned.length)
 										}
-										onClick={() => void start("refresh")}
+										onClick={() => void start()}
 									>
 										<Play className="size-3.5" aria-hidden="true" />
-										开始刷新{planned.length ? `（${planned.length}）` : ""}
+										开始刷新{task !== "catalog" && planned.length ? `（${planned.length}）` : ""}
 									</Button>
 								</div>
 							</div>
@@ -651,14 +660,15 @@ function FactoryRuns({
 						<details className="factory-diagnostics factory-storage">
 							<summary>数据时间与存储用量</summary>
 							<p>
-								页面数据更新于 {formatUtc(snapshot?.fetched_at ?? null)}。
+								页面数据更新于 {formatPreciseDate(snapshot?.fetched_at ?? null)}。
 								{snapshot?.publication?.mixed
 									? "各仓库使用各自最近可用的数据，更新时间可能不同。"
 									: "刷新过程中，页面继续显示上次保存的数据。"}
 							</p>
 							<p>
-								仓库列表更新于 {formatUtc(data?.catalogUpdatedAt ?? null)} · {catalog.length} 个仓库
-								· {data?.catalogComplete ? "列表已完整获取" : "列表尚未完整获取"}。
+								仓库列表更新于 {formatPreciseDate(data?.catalogUpdatedAt ?? null)} ·{" "}
+								{catalog.length} 个仓库 ·{" "}
+								{data?.catalogComplete ? "列表已完整获取" : "列表尚未完整获取"}。
 							</p>
 							{data?.storage ? (
 								<p>
@@ -691,7 +701,7 @@ export function RefreshPage() {
 	const [params] = useSearchParams();
 	async function read(account?: string) {
 		if (account) setSnapshot((old) => (old?.account_id === account ? old : null));
-		const result = await reloadFactory();
+		const result = await reloadFactory("all");
 		if (mounted.current) {
 			setSnapshot("missing" in result ? null : result);
 			setLoading(false);
@@ -700,7 +710,7 @@ export function RefreshPage() {
 	}
 	useEffect(() => {
 		mounted.current = true;
-		void loadFactory()
+		void loadFactory("all")
 			.then((result) => {
 				if (mounted.current) {
 					setSnapshot("missing" in result ? null : result);

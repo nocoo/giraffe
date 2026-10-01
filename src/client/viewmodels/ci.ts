@@ -1,11 +1,14 @@
 import type { CiReportResponse } from "../../lib/ci-health";
+import { formatDate } from "../lib/format";
+import { getRepositoryScope, scopedResource } from "./scope";
 import { loadKind } from "./snapshot";
 
 export type CiStream = CiReportResponse["streams"][number];
 export type CiRepo = CiReportResponse["repos"][number];
 export type CiFilters = { verdict: string; repo: string; query: string };
 
-export const loadCi = () => loadKind<CiReportResponse>("ci");
+export const loadCi = (scope = getRepositoryScope()) =>
+	loadKind<CiReportResponse>(scopedResource("ci", scope));
 
 /** Act now: consecutive failures. Watch: failures that recovered. Bot jobs are reported apart. */
 export function ciBuckets(streams: CiStream[]) {
@@ -70,7 +73,7 @@ export function runTimeline(recent: CiStream["recent"]) {
 		return {
 			...r,
 			latest,
-			label: `${r.at.slice(0, 16).replace("T", " ")} UTC · ${OUTCOME_LABEL[r.outcome]}${latest ? " · 最新" : ""}`,
+			label: `${formatDate(r.at)} · ${OUTCOME_LABEL[r.outcome]}${latest ? " · 最新" : ""}`,
 		};
 	});
 }

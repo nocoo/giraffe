@@ -398,12 +398,12 @@ describe("focus sources", () => {
 				if (url === "/api/me") return Response.json({ email: "e" });
 				if (url === "/api/accounts")
 					return Response.json({ accounts: [{ id: "acct", login: "n", is_active: true }] });
-				if (url === "/api/ci")
+				if (url === "/api/ci?scope=starred")
 					return Response.json(
 						{ error: { code: "snapshot_missing", message: "m" } },
 						{ status: 409 },
 					);
-				if (url === "/api/insights/assessments")
+				if (url === "/api/insights/assessments?scope=starred")
 					return Response.json({ account_id: "acct", configured: true, items: [] });
 				throw new Error(url);
 			}),

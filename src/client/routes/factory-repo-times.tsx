@@ -118,7 +118,7 @@ function RepoTimeDetails({ repo }: { repo: FactoryRepo }) {
 									))}
 								</div>
 								<p className="text-xs text-basalt-muted-foreground">
-									仅统计这段时间内的活动；日历日期按 UTC 汇总。
+									仅统计这段时间内的活动；日历按固定日界汇总，悬停可查看对应的本地时间区间。
 								</p>
 							</>
 						) : (

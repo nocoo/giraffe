@@ -9,8 +9,10 @@ import {
 	type FactoryStreamName,
 	type FactoryWindow,
 } from "../../lib/factory-types";
+import { type SnapshotFreshness, snapshotFreshness } from "../../lib/snapshot-freshness";
 import { apiGet } from "../lib/api";
 import { ApiError } from "../lib/errors";
+import { getRepositoryScope, scopedResource } from "./scope";
 import { ensureSession, getActiveAccountId } from "./session";
 import { fetchKind, loadKind } from "./snapshot";
 
@@ -41,18 +43,28 @@ export type FactoryDetail = {
 	total: number;
 	items: FactoryEvent[];
 };
-export const loadFactory = () => loadKind<FactorySnapshot>("factory");
-export const reloadFactory = () => fetchKind<FactorySnapshot>("factory");
+export const loadFactory = (scope = getRepositoryScope()) =>
+	loadKind<FactorySnapshot>(scopedResource("factory", scope));
+export const reloadFactory = (scope = getRepositoryScope()) =>
+	fetchKind<FactorySnapshot>(scopedResource("factory", scope));
+
+export function factoryFreshness(repos: FactoryRepo[]): SnapshotFreshness {
+	return snapshotFreshness(repos.map((repo) => repo.observation?.refreshedAt));
+}
 export async function loadFactoryDetail(
 	repo: string,
 	stream: FactoryStreamName,
 	page = 1,
 	state = "",
 	day = "",
+	scope = getRepositoryScope(),
 ): Promise<FactoryDetail | null> {
 	const stamp = await ensureSession();
 	const result = await apiGet<FactoryDetail>(
-		`factory/repos/${repo}/${stream}?page=${page}&state=${encodeURIComponent(state)}&day=${encodeURIComponent(day)}`,
+		scopedResource(
+			`factory/repos/${repo}/${stream}?page=${page}&state=${encodeURIComponent(state)}&day=${encodeURIComponent(day)}`,
+			scope,
+		),
 	);
 	if (getActiveAccountId() !== stamp || result.account_id !== stamp) return null;
 	return result;
@@ -576,10 +588,6 @@ export function formatHours(n: number | null): string {
 export function formatRate(n: number | null): string {
 	return n === null ? "—" : `${(n * 100).toFixed(1)}%`;
 }
-export function formatUtc(at: string | null): string {
-	return at ? `${new Date(at).toISOString().replace("T", " ").slice(0, 19)} UTC` : "未采集";
-}
-
 export function factoryParams(
 	current: URLSearchParams,
 	key: string,

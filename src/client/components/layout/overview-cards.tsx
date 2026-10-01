@@ -132,6 +132,7 @@ export function CountBars({
 	series,
 	label,
 	xFormat = (v) => v,
+	tooltipFormat = xFormat,
 	className = "h-44 w-full",
 	stacked = series.length > 1,
 }: {
@@ -139,6 +140,7 @@ export function CountBars({
 	series: { key: string; label: string; color: string }[];
 	label: string;
 	xFormat?: (value: string) => string;
+	tooltipFormat?: (value: string) => string;
 	className?: string;
 	/** Stack only parts of one whole; distinct events sit side by side. */
 	stacked?: boolean;
@@ -164,7 +166,7 @@ export function CountBars({
 					content={({ active, payload, label: x }) =>
 						active && payload?.length ? (
 							<div className="factory-chart-tip">
-								<strong>{xFormat(String(x))}</strong>
+								<strong>{tooltipFormat(String(x))}</strong>
 								{series.map((s) => {
 									const hit = payload.find((p) => p.dataKey === s.key);
 									return (

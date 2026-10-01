@@ -9,7 +9,6 @@ import {
 	formatHours,
 	formatObservedCount,
 	formatRate,
-	formatUtc,
 	loadFactory,
 	loadFactoryDetail,
 	reloadFactory,
@@ -40,10 +39,12 @@ describe("factory account-bound data operations", () => {
 	});
 	it("loads filtered detail and ignores a late response after switching accounts", async () => {
 		await loadFactoryDetail("nocoo/app", "prs");
-		expect(apiGet).toHaveBeenCalledWith("factory/repos/nocoo/app/prs?page=1&state=&day=");
+		expect(apiGet).toHaveBeenCalledWith(
+			"factory/repos/nocoo/app/prs?page=1&state=&day=&scope=starred",
+		);
 		await loadFactoryDetail("nocoo/app", "commits", 2, "open", "2026-09-01");
 		expect(apiGet).toHaveBeenCalledWith(
-			"factory/repos/nocoo/app/commits?page=2&state=open&day=2026-09-01",
+			"factory/repos/nocoo/app/commits?page=2&state=open&day=2026-09-01&scope=starred",
 		);
 		vi.mocked(apiGet).mockImplementation(async (resource) => {
 			if (resource === "accounts") return { accounts: [{ id: snap.account_id, is_active: true }] };
@@ -71,7 +72,7 @@ describe("factory account-bound data operations", () => {
 			expect(factoryError(new ApiError(503, code, "secret"))).not.toContain("secret");
 		expect(factoryError(new Error("secret"))).not.toContain("secret");
 	});
-	it("formats zero, unavailable, durations and UTC consistently", () => {
+	it("formats zero, unavailable, durations consistently", () => {
 		expect(formatFactoryCount(15000)).toBe("15,000");
 		expect(formatObservedCount(5000, false)).toBe("≥ 5,000");
 		expect(formatObservedCount(0, true)).toBe("0");
@@ -80,7 +81,5 @@ describe("factory account-bound data operations", () => {
 		expect(formatHours(48)).toBe("2.0 d");
 		expect(formatRate(null)).toBe("—");
 		expect(formatRate(0)).toBe("0.0%");
-		expect(formatUtc(null)).toBe("未采集");
-		expect(formatUtc("2026-09-01T08:00:00+08:00")).toBe("2026-09-01 00:00:00 UTC");
 	});
 });

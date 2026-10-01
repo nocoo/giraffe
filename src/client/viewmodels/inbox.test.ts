@@ -48,7 +48,7 @@ describe("inbox viewmodel", () => {
 			if (url === "/api/accounts") {
 				return Response.json({ accounts: [{ id: "acc1", login: "o", is_active: true }] });
 			}
-			if (url === "/api/notifications") {
+			if (url === "/api/notifications?scope=starred") {
 				return Response.json(snap);
 			}
 			throw new Error(url);
@@ -74,11 +74,11 @@ describe("inbox viewmodel", () => {
 			if (url === "/api/accounts") {
 				return Response.json({ accounts: [{ id: "acc1", login: "o", is_active: true }] });
 			}
-			if (url === "/api/notifications/read") {
+			if (url === "/api/notifications/read?scope=starred") {
 				posts.push(String(init?.body));
 				return Response.json(applyRead(snap, "1"));
 			}
-			if (url === "/api/notifications/read-all") {
+			if (url === "/api/notifications/read-all?scope=starred") {
 				posts.push(String(init?.body));
 				return Response.json(applyReadAll(snap));
 			}
@@ -102,11 +102,11 @@ describe("inbox viewmodel", () => {
 			if (url === "/api/accounts") {
 				return Response.json({ accounts: [{ id: "acc1", login: "o", is_active: true }] });
 			}
-			if (url === "/api/notifications") {
+			if (url === "/api/notifications?scope=starred") {
 				notificationGets += 1;
 				return Response.json(stored);
 			}
-			if (url === "/api/notifications/read") {
+			if (url === "/api/notifications/read?scope=starred") {
 				stored = applyRead(stored, "1");
 				return Response.json(stored);
 			}
@@ -130,7 +130,7 @@ describe("inbox viewmodel", () => {
 	it("uses the snapshot account_id rather than the live session", async () => {
 		setActiveAccountId("acc2");
 		vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
-			if (String(input) === "/api/notifications/read") {
+			if (String(input) === "/api/notifications/read?scope=starred") {
 				expect(String(init?.body)).toContain('"account_id":"acc1"');
 				return Response.json(applyRead(snap, "1"));
 			}
@@ -146,7 +146,10 @@ describe("inbox viewmodel", () => {
 			if (url === "/api/accounts") {
 				return Response.json({ accounts: [{ id: "acc1", login: "o", is_active: true }] });
 			}
-			if (url === "/api/notifications/read" || url === "/api/notifications/read-all") {
+			if (
+				url === "/api/notifications/read?scope=starred" ||
+				url === "/api/notifications/read-all?scope=starred"
+			) {
 				posts += 1;
 				return new Response(
 					JSON.stringify({ error: { code: "account_conflict", message: "changed" } }),

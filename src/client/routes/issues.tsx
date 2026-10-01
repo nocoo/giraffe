@@ -12,7 +12,7 @@ import {
 	TableRow,
 } from "@nocoo/basalt/components/table";
 import { CircleDot } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { CandyBadge } from "../components/layout/candy-badge";
 import {
 	ResultCount,
@@ -30,9 +30,11 @@ import {
 } from "../components/layout/overview-cards";
 import { ListPageSkeleton } from "../components/layout/page-skeleton";
 import { ProjectLink } from "../components/layout/project-identity";
+import { ScopeEmpty } from "../components/layout/repository-scope";
 import { INLINE_SEGMENT } from "../components/layout/segment";
 import { SnapshotPending } from "../components/layout/snapshot-pending";
 import { LabelChips, PersonCell, SortButton } from "../components/layout/table-chrome";
+import { useSnapshotRead } from "../components/layout/use-snapshot-read";
 import { FLOW_COLORS } from "../lib/chart-theme";
 import { catchLoad } from "../lib/error-ui";
 import { DATE_CELL, formatCount, formatDate, NUM_CELL, NUM_HEAD } from "../lib/format";
@@ -58,18 +60,14 @@ export function IssuesPage() {
 		setPicked((old) => ({ ...old, [key]: value }));
 	const [snap, setSnap] = useState<IssuesSnapshot | { missing: true } | null>(null);
 
-	useEffect(() => {
-		void loadIssues()
-			.then(setSnap)
-			.catch((err: unknown) => {
-				const missing = catchLoad(err, (message) => {
-					toast.error(message);
-				});
-				if (missing) {
-					setSnap(missing);
-				}
-			});
-	}, []);
+	useSnapshotRead(loadIssues, setSnap, (err) => {
+		const missing = catchLoad(err, (message) => {
+			toast.error(message);
+		});
+		if (missing) {
+			setSnap(missing);
+		}
+	});
 
 	const board = useMemo(
 		() => (snap && !("missing" in snap) ? workBoard(snap.issues, snap.fetched_at, picked) : null),
@@ -132,11 +130,13 @@ export function IssuesPage() {
 					<SnapshotDescription
 						description={PAGE_DESCRIPTIONS["/issues"]}
 						fetchedAt={snap.fetched_at}
+						freshness={snap.freshness}
 					/>
 				}
 				actions={snap.truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
 				filters={filters}
 			/>
+			<ScopeEmpty count={snap.freshness?.total ?? snap.issues.length} />
 			<div className="giraffe-stat-inline" data-testid="issue-summary">
 				<span>
 					<strong>{formatCount(board.rows.length)}</strong>

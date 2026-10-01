@@ -12,7 +12,7 @@ import {
 } from "@nocoo/basalt/components/table";
 import { TablePager } from "@nocoo/basalt/components/table-pager";
 import { CheckCheck, Inbox, MailCheck } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { CandyBadge } from "../components/layout/candy-badge";
 import {
 	ResultCount,
@@ -28,11 +28,20 @@ import {
 } from "../components/layout/overview-cards";
 import { ListPageSkeleton } from "../components/layout/page-skeleton";
 import { ProjectLink } from "../components/layout/project-identity";
+import { ScopeEmpty, useRepositoryScope } from "../components/layout/repository-scope";
 import { INLINE_SEGMENT } from "../components/layout/segment";
 import { SnapshotPending } from "../components/layout/snapshot-pending";
+import { useSnapshotRead } from "../components/layout/use-snapshot-read";
 import { chartColor } from "../lib/chart-theme";
 import { catchLoad } from "../lib/error-ui";
-import { DATE_CELL, formatCount, formatDate, NUM_HEAD, reasonBadgeVariant } from "../lib/format";
+import {
+	DATE_CELL,
+	formatCount,
+	formatDate,
+	formatDayRange,
+	NUM_HEAD,
+	reasonBadgeVariant,
+} from "../lib/format";
 import { PAGE_DESCRIPTIONS } from "../lib/navigation";
 import { inboxBoard, primaryOwner } from "../viewmodels/boards";
 import { loadInbox, markRead, markReadAll, type NotificationsSnapshot } from "../viewmodels/inbox";
@@ -42,6 +51,7 @@ const NO_FILTERS = { reason: "", repo: "", unread: "" };
 const PAGE_SIZE = 50;
 
 export function InboxPage() {
+	const scope = useRepositoryScope();
 	const [snap, setSnap] = useState<NotificationsSnapshot | { missing: true } | null>(null);
 	const [marking, setMarking] = useState<string | null>(null);
 	const [picked, setPicked] = useState(NO_FILTERS);
@@ -67,18 +77,7 @@ export function InboxPage() {
 		}
 	}
 
-	useEffect(() => {
-		void loadInbox()
-			.then(setSnap)
-			.catch((err: unknown) => {
-				const missing = catchLoad(err, (message) => {
-					toast.error(message);
-				});
-				if (missing) {
-					setSnap(missing);
-				}
-			});
-	}, []);
+	useSnapshotRead(loadInbox, setSnap, onLoadError, marking === null);
 
 	if (snap && "missing" in snap) {
 		return (
@@ -117,6 +116,7 @@ export function InboxPage() {
 					<SnapshotDescription
 						description={PAGE_DESCRIPTIONS["/inbox"]}
 						fetchedAt={snap.fetched_at}
+						freshness={snap.freshness}
 					/>
 				}
 				actions={
@@ -130,20 +130,25 @@ export function InboxPage() {
 							disabled={unread === 0 || marking !== null}
 							onClick={() => {
 								setMarking("all");
-								void markReadAll(snap.account_id)
+								void markReadAll(snap.account_id, scope)
 									.then((next) => {
-										toast.success("已将全部通知标为已读");
+										toast.success(
+											scope === "starred"
+												? "已将当前星标范围通知标为已读"
+												: "已将此账号全部通知标为已读",
+										);
 										setSnap(next);
 									})
 									.catch(onLoadError)
 									.finally(() => setMarking(null));
 							}}
 						>
-							全部已读
+							{scope === "starred" ? "当前范围已读" : "账号全部已读"}
 						</Button>
 					</>
 				}
 			/>
+			<ScopeEmpty count={snap.freshness?.total ?? snap.notifications.length} />
 			<div className="giraffe-stat-inline">
 				<span>
 					<strong>{formatCount(unread)}</strong>未读 / {formatCount(snap.notifications.length)} 条
@@ -167,7 +172,8 @@ export function InboxPage() {
 								data={board.daily.points}
 								series={board.daily.keys.map((k) => ({ key: k, label: k, color: reasonColor(k) }))}
 								label="近 30 天通知按原因"
-								xFormat={(v) => v.slice(5)}
+								xFormat={(v) => formatDate(v).slice(5, 10)}
+								tooltipFormat={(v) => formatDayRange(v)}
 								className="h-56 w-full"
 							/>
 						</OverviewCard>
@@ -293,7 +299,7 @@ export function InboxPage() {
 																disabled={marking !== null}
 																onClick={() => {
 																	setMarking(row.id);
-																	void markRead(row.id, snap.account_id)
+																	void markRead(row.id, snap.account_id, scope)
 																		.then((next) => {
 																			toast.success("已标为已读");
 																			setSnap(next);

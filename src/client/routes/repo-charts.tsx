@@ -10,7 +10,7 @@ import { ChartLegend } from "@nocoo/basalt/charts/legend";
 import { ChartTooltipRow } from "@nocoo/basalt/charts/tooltip";
 import { Bar, CartesianGrid, ComposedChart, Line, Tooltip, XAxis, YAxis } from "recharts";
 import { FLOW_COLORS } from "../lib/chart-theme";
-import { formatCount } from "../lib/format";
+import { formatCount, formatDate, formatDayRange } from "../lib/format";
 import type { repoActivityBoard, repoFactorySeries } from "../viewmodels/boards";
 
 type Day = ReturnType<typeof repoFactorySeries>[number];
@@ -42,7 +42,7 @@ export function RepoActivityChart({ days }: { days: Day[] }) {
 				<XAxis
 					dataKey="x"
 					{...cartesianAxisProps()}
-					tickFormatter={(v) => String(v).slice(5)}
+					tickFormatter={(v) => formatDate(String(v)).slice(5, 10)}
 					minTickGap={24}
 				/>
 				<YAxis yAxisId="flow" {...cartesianAxisProps()} allowDecimals={false} width={32} />
@@ -61,7 +61,7 @@ export function RepoActivityChart({ days }: { days: Day[] }) {
 						if (!active || !d) return null;
 						return (
 							<div className="factory-chart-tip">
-								<strong>{d.x} UTC</strong>
+								<strong>{formatDayRange(d.x)}</strong>
 								<ChartTooltipRow
 									label="提交"
 									color={FLOW_COLORS.commits}
@@ -140,11 +140,14 @@ export function RunOutcomeChart({ ci }: { ci: ReturnType<typeof repoActivityBoar
 				<XAxis
 					dataKey="x"
 					{...cartesianAxisProps()}
-					tickFormatter={(v) => String(v).slice(5)}
+					tickFormatter={(v) => formatDate(String(v)).slice(5, 10)}
 					minTickGap={20}
 				/>
 				<YAxis {...cartesianAxisProps()} allowDecimals={false} width={28} />
-				<Tooltip {...chartTooltipProps({ cursor: "bar", formatter: formatCount })} />
+				<Tooltip
+					{...chartTooltipProps({ cursor: "bar", formatter: formatCount })}
+					labelFormatter={(value) => formatDayRange(String(value))}
+				/>
 				{OUTCOME.map((o, i) => (
 					<Bar
 						key={o.key}
@@ -176,7 +179,7 @@ export function ReleaseTimeline({
 		<div
 			className="giraffe-release-line"
 			role="img"
-			aria-label={`${items.length} 个版本，从 ${items[0]?.at.slice(0, 10)} 到 ${items.at(-1)?.at.slice(0, 10)}`}
+			aria-label={`${items.length} 个版本，从 ${formatDate(items[0]?.at)} 到 ${formatDate(items.at(-1)?.at)}`}
 		>
 			<span className="giraffe-release-axis" aria-hidden="true" />
 			{items.map((r, i) => (
@@ -187,10 +190,10 @@ export function ReleaseTimeline({
 					style={{
 						left: `${items.length === 1 ? 50 : ((Date.parse(r.at) - first) / span) * 100}%`,
 					}}
-					title={`${r.tag} · ${r.at.slice(0, 10)}${r.prerelease ? " · 预发布" : ""}`}
+					title={`${r.tag} · ${formatDate(r.at)}${r.prerelease ? " · 预发布" : ""}`}
 				>
 					{i === 0 || i === items.length - 1 || items.length <= 8 ? (
-						<small aria-hidden="true">{r.at.slice(5, 10)}</small>
+						<small aria-hidden="true">{formatDate(r.at).slice(5, 10)}</small>
 					) : null}
 				</span>
 			))}

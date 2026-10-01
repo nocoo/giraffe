@@ -1,6 +1,8 @@
 import { participates } from "../../lib/repo-statistics";
+import type { SnapshotFreshness } from "../../lib/snapshot-freshness";
 import { apiPost } from "../lib/api";
 import { ApiError } from "../lib/errors";
+import { getRepositoryScope, scopedResource } from "./scope";
 import { getActiveAccountId } from "./session";
 import { loadKind } from "./snapshot";
 
@@ -24,6 +26,7 @@ export type RepoRow = {
 };
 
 export type ReposSnapshot = {
+	freshness?: SnapshotFreshness;
 	account_id: string;
 	fetched_at: string;
 	truncated: boolean;
@@ -36,6 +39,8 @@ export type InsightRow = {
 };
 
 export type InsightsSnapshot = {
+	fetched_at?: string;
+	freshness?: SnapshotFreshness;
 	account_id: string;
 	alerts_incomplete?: boolean;
 	insights: InsightRow[];
@@ -140,8 +145,10 @@ export function cachedRepoRows(): RepoRow[] {
 	return remembered?.repos ?? [];
 }
 
-export async function loadRepos(): Promise<ReposSnapshot | { missing: true }> {
-	const next = await loadKind<ReposSnapshot>("repos");
+export async function loadRepos(
+	scope = getRepositoryScope(),
+): Promise<ReposSnapshot | { missing: true }> {
+	const next = await loadKind<ReposSnapshot>(scopedResource("repos", scope));
 	if ("missing" in next) {
 		remembered = null;
 		return next;
@@ -150,7 +157,9 @@ export async function loadRepos(): Promise<ReposSnapshot | { missing: true }> {
 	return next;
 }
 
-export async function loadInsightsOptional(): Promise<InsightsSnapshot | null> {
-	const snapshot = await loadKind<InsightsSnapshot>("insights");
+export async function loadInsightsOptional(
+	scope = getRepositoryScope(),
+): Promise<InsightsSnapshot | null> {
+	const snapshot = await loadKind<InsightsSnapshot>(scopedResource("insights", scope));
 	return "missing" in snapshot ? null : snapshot;
 }

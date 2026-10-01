@@ -1,3 +1,5 @@
+import type { SnapshotFreshness } from "../../lib/snapshot-freshness";
+import { getRepositoryScope, scopedResource } from "./scope";
 import { loadKind } from "./snapshot";
 
 export type AlertItem = {
@@ -9,6 +11,7 @@ export type AlertItem = {
 };
 
 export type AlertsSnapshot = {
+	freshness?: SnapshotFreshness;
 	account_id: string;
 	fetched_at: string;
 	truncated: boolean;
@@ -18,6 +21,8 @@ export type AlertsSnapshot = {
 	items: AlertItem[];
 };
 
-export async function loadAlerts(): Promise<AlertsSnapshot | { missing: true }> {
-	return loadKind<AlertsSnapshot>("alerts");
+export async function loadAlerts(
+	scope = getRepositoryScope(),
+): Promise<AlertsSnapshot | { missing: true }> {
+	return loadKind<AlertsSnapshot>(scopedResource("alerts", scope));
 }

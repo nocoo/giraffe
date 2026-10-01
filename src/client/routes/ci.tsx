@@ -12,7 +12,7 @@ import {
 	TableRow,
 } from "@nocoo/basalt/components/table";
 import { ArrowUpRight, CircleAlert, Eye, ShieldCheck, Tag, Workflow } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { CiReportResponse } from "../../lib/ci-health";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ChartBrick } from "../components/layout/chart-brick";
@@ -26,10 +26,19 @@ import { CountBars } from "../components/layout/overview-cards";
 import { CiSkeleton } from "../components/layout/page-skeleton";
 import { ProjectLink } from "../components/layout/project-identity";
 import { ShareBar } from "../components/layout/rank-bars";
+import { ScopeEmpty } from "../components/layout/repository-scope";
 import { INLINE_SEGMENT } from "../components/layout/segment";
 import { SnapshotPending } from "../components/layout/snapshot-pending";
+import { useSnapshotRead } from "../components/layout/use-snapshot-read";
 import { catchLoad } from "../lib/error-ui";
-import { DATE_CELL, formatCount, formatDate, NUM_CELL, NUM_HEAD } from "../lib/format";
+import {
+	DATE_CELL,
+	formatCount,
+	formatDate,
+	formatDayRange,
+	NUM_CELL,
+	NUM_HEAD,
+} from "../lib/format";
 import { PAGE_DESCRIPTIONS } from "../lib/navigation";
 import {
 	type CiStream,
@@ -59,14 +68,10 @@ const OUTCOME_COLOR = {
 export function CiPage() {
 	const [snap, setSnap] = useState<CiReportResponse | { missing: true } | null>(null);
 	const [filters, setFilters] = useState({ verdict: "", repo: "", query: "" });
-	useEffect(() => {
-		void loadCi()
-			.then(setSnap)
-			.catch((err: unknown) => {
-				const missing = catchLoad(err, (message) => toast.error(message));
-				if (missing) setSnap(missing);
-			});
-	}, []);
+	useSnapshotRead(loadCi, setSnap, (err) => {
+		const missing = catchLoad(err, (message) => toast.error(message));
+		if (missing) setSnap(missing);
+	});
 	const report = snap && !("missing" in snap) ? snap : null;
 	const buckets = useMemo(() => (report ? ciBuckets(report.streams) : null), [report]);
 	const streams = useMemo(
@@ -111,6 +116,7 @@ export function CiPage() {
 					<SnapshotDescription
 						description={PAGE_DESCRIPTIONS["/ci"]}
 						fetchedAt={report.fetched_at}
+						freshness={report.freshness}
 					/>
 				}
 				actions={
@@ -124,6 +130,7 @@ export function CiPage() {
 					</>
 				}
 			/>
+			<ScopeEmpty count={report.repos.length + report.unsaved.length} />
 			<section className="giraffe-ci-summary" aria-label="CI 判定汇总" data-testid="ci-summary">
 				<ShareBar
 					label="工作流判定"
@@ -210,7 +217,8 @@ export function CiPage() {
 							{ key: "other", label: "取消 / 跳过", color: OUTCOME_COLOR.other },
 						]}
 						label="近 30 天运行结果"
-						xFormat={(v) => v.slice(5)}
+						xFormat={(v) => formatDate(v).slice(5, 10)}
+						tooltipFormat={(v) => formatDayRange(v)}
 						className="h-56 w-full"
 					/>
 				</ChartBrick>

@@ -35,19 +35,29 @@ export function candyClass(tone: CandyTone): string {
 	return `border-transparent ${foreground} ${CANDY_CLASS[tone]}`;
 }
 
-function pad2(value: number): string {
-	return String(value).padStart(2, "0");
+export function formatDate(value: string | null | undefined, timeZone?: string): string {
+	const timestamp = value ? Date.parse(value) : Number.NaN;
+	if (!Number.isFinite(timestamp)) return "—";
+	const parts = Object.fromEntries(
+		new Intl.DateTimeFormat("en-GB", {
+			year: "numeric",
+			month: "2-digit",
+			day: "2-digit",
+			hour: "2-digit",
+			minute: "2-digit",
+			hourCycle: "h23",
+			...(timeZone ? { timeZone } : {}),
+		})
+			.formatToParts(timestamp)
+			.map(({ type, value }) => [type, value]),
+	);
+	return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
 }
 
-export function formatDate(value: string | null | undefined): string {
-	if (!value) {
-		return "—";
-	}
-	const date = new Date(value);
-	if (Number.isNaN(date.getTime())) {
-		return "—";
-	}
-	return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())} ${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+export function formatDayRange(day: string, lastDay = day, timeZone?: string): string {
+	const end = Date.parse(lastDay) + 86_400_000;
+	if (!Number.isFinite(Date.parse(day)) || !Number.isFinite(end)) return "—";
+	return `${formatDate(day, timeZone)} → ${formatDate(new Date(end).toISOString(), timeZone)}`;
 }
 
 export function formatPreciseDate(value: string | null | undefined, timeZone?: string): string {
@@ -84,6 +94,29 @@ export function formatTimeAgo(
 
 export function formatCount(value: number): string {
 	return new Intl.NumberFormat("zh-CN").format(value);
+}
+
+export function formatSnapshotFreshness(
+	fetchedAt: string | null | undefined,
+	freshness: SnapshotFreshness | undefined,
+	now = Date.now(),
+	timeZone?: string,
+): string {
+	if (freshness?.total === 0) return "当前范围暂无数据";
+	const latest = freshness ? freshness.latestAt : fetchedAt;
+	const oldest = freshness?.oldestAt;
+	const available = latest && Number.isFinite(Date.parse(latest));
+	const range = oldest && available && Date.parse(oldest) < Date.parse(latest);
+	const time = range
+		? `${formatDate(oldest, timeZone)} → ${formatDate(latest, timeZone)}`
+		: available
+			? `${formatDate(latest, timeZone)}（${formatTimeAgo(latest, now, true)}）`
+			: freshness
+				? "未采集"
+				: "时间未知";
+	return freshness?.missing
+		? `${time} · ${formatCount(freshness.missing)}/${formatCount(freshness.total)} 项缺少数据`
+		: time;
 }
 
 export function formatDays(value: number): string {
@@ -366,3 +399,5 @@ export function formatConclusion(conclusion: string | null): string {
 	}
 	return conclusion;
 }
+
+import type { SnapshotFreshness } from "../../lib/snapshot-freshness";

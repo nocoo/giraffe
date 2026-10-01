@@ -370,8 +370,13 @@ export function runStages(run: FactoryRunView) {
 }
 
 export function runPageUpdates(run: FactoryRunView) {
-	const pages: Array<{ name: string; matches: (step: FactoryRunStep) => boolean }> = [
+	const pages: Array<{
+		resource: string;
+		name: string;
+		matches: (step: FactoryRunStep) => boolean;
+	}> = [
 		...["repos", "issues", "prs", "alerts", "notifications", "insights"].map((resource) => ({
+			resource,
 			name: resource === "repos" ? "仓库" : (PAGE_LABELS[resource] ?? resource),
 			matches: (step: FactoryRunStep) =>
 				step.resource === resource ||
@@ -382,19 +387,25 @@ export function runPageUpdates(run: FactoryRunView) {
 						`repo:${step.repo}:${resource === "repos" ? "details" : resource === "alerts" ? "security" : resource}`),
 		})),
 		{
+			resource: "ci",
 			name: "CI 与发布",
 			matches: (step) =>
 				step.kind === "snapshot" && /:(details|actions|releases)$/.test(step.resource ?? ""),
 		},
-		{ name: "仓库详情", matches: (step) => step.kind === "snapshot" && step.repo !== null },
-		{ name: "软件工厂", matches: (step) => step.kind === "publish" },
+		{
+			resource: "repo-detail",
+			name: "仓库详情",
+			matches: (step) => step.kind === "snapshot" && step.repo !== null,
+		},
+		{ resource: "factory", name: "软件工厂", matches: (step) => step.kind === "publish" },
 	];
-	return pages.map(({ name, matches }) => {
+	return pages.map(({ resource, name, matches }) => {
 		const steps = run.steps.filter(matches);
 		const updated = steps.filter((step) => step.status === "success");
 		const active = run.status === "running" || run.status === "paused";
 		const pending = steps.some((step) => step.status === "pending" || step.status === "running");
 		return {
+			resource,
 			name,
 			total: steps.length,
 			updated: updated.length,
@@ -407,7 +418,8 @@ export function runPageUpdates(run: FactoryRunView) {
 			label: !steps.length
 				? "未纳入本次刷新"
 				: updated.length === steps.length
-					? run.selection?.scope !== "all" && ["仓库", "Issues", "PR", "安全告警"].includes(name)
+					? run.selection?.scope !== "all" &&
+						["repos", "issues", "prs", "alerts"].includes(resource)
 						? "所选仓库已更新"
 						: "已更新"
 					: active && pending

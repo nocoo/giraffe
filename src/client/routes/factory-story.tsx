@@ -28,6 +28,7 @@ import {
 } from "recharts";
 import { LanguageLabel } from "../components/layout/labels";
 import { categoryColor, FLOW_COLORS } from "../lib/chart-theme";
+import { formatDate, formatDayRange } from "../lib/format";
 import {
 	activityAge,
 	activityQuadrant,
@@ -189,8 +190,7 @@ export function PeriodStrip({
 					onValueChange={(value) => onPeriod(Number(value) as Period)}
 				/>
 				<span>
-					{p.since === p.until ? p.since : `${p.since} → ${p.until}`} UTC · 对比前 {period} 天 ·{" "}
-					{activeRepos} 仓 7 日内活跃
+					{formatDayRange(p.since, p.until)} · 对比前 {period} 天 · {activeRepos} 仓 7 日内活跃
 				</span>
 			</header>
 			<dl>
@@ -222,7 +222,7 @@ function DayTooltip({
 	if (!active || !d) return null;
 	return (
 		<div className="factory-chart-tip">
-			<strong>{d.date} UTC</strong>
+			<strong>{formatDayRange(d.date)}</strong>
 			{rows.map((r) => (
 				<ChartTooltipRow key={r.label} label={r.label} color={r.color} value={r.value(d)} />
 			))}
@@ -275,7 +275,7 @@ export function CommitBreadthChart({ days }: { days: Day[] }) {
 				<XAxis
 					dataKey="date"
 					{...cartesianAxisProps()}
-					tickFormatter={(v) => String(v).slice(5)}
+					tickFormatter={(v) => formatDate(String(v)).slice(5, 10)}
 					minTickGap={24}
 				/>
 				<YAxis
@@ -391,7 +391,7 @@ export function FlowStockChart({ days, kind }: { days: Day[]; kind: "prs" | "iss
 				<XAxis
 					dataKey="date"
 					{...cartesianAxisProps()}
-					tickFormatter={(v) => String(v).slice(5)}
+					tickFormatter={(v) => formatDate(String(v)).slice(5, 10)}
 					minTickGap={24}
 				/>
 				<YAxis
@@ -520,7 +520,7 @@ export function DeliveryChart({ days }: { days: Day[] }) {
 				<XAxis
 					dataKey="date"
 					{...cartesianAxisProps()}
-					tickFormatter={(v) => String(v).slice(5)}
+					tickFormatter={(v) => formatDate(String(v)).slice(5, 10)}
 					minTickGap={24}
 				/>
 				<YAxis
@@ -616,7 +616,7 @@ export function RepoPeriodMatrix({
 		<div className="factory-matrix-scroll">
 			<table className="factory-matrix">
 				<caption className="sr-only">
-					各仓库最近 1、7、30 个完整 UTC 日的提交、PR 与 Issue 变化，以及当前积压
+					各仓库最近 1、7、30 个完整统计日的提交、PR 与 Issue 变化，以及当前积压
 				</caption>
 				<thead>
 					<tr>

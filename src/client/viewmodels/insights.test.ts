@@ -100,7 +100,7 @@ describe("insights viewmodel", () => {
 			if (url === "/api/accounts") {
 				return Response.json({ accounts: [{ id: "acc1", login: "o", is_active: true }] });
 			}
-			if (url === "/api/insights") {
+			if (url === "/api/insights?scope=starred") {
 				return Response.json({
 					account_id: "acc1",
 					fetched_at: "2026-09-01T00:00:00.000Z",
@@ -362,7 +362,7 @@ describe("insights viewmodel", () => {
 			if (url === "/api/accounts") {
 				return Response.json({ accounts: [{ id: "acc1", login: "o", is_active: true }] });
 			}
-			if (url === "/api/insights") {
+			if (url === "/api/insights?scope=starred") {
 				return Response.json({
 					account_id: "acc1",
 					fetched_at: "2026-09-01T00:00:00.000Z",
@@ -371,7 +371,7 @@ describe("insights viewmodel", () => {
 					insights: sample,
 				});
 			}
-			if (url === "/api/issues") {
+			if (url === "/api/issues?scope=starred") {
 				return Response.json({
 					account_id: "acc1",
 					fetched_at: "t",
@@ -379,7 +379,7 @@ describe("insights viewmodel", () => {
 					issues: [],
 				});
 			}
-			if (url === "/api/prs") {
+			if (url === "/api/prs?scope=starred") {
 				return new Response(JSON.stringify({ error: { code: "snapshot_missing", message: "n" } }), {
 					status: 409,
 					headers: { "content-type": "application/json" },
@@ -391,7 +391,7 @@ describe("insights viewmodel", () => {
 		expect("missing" in board).toBe(false);
 		if (!("missing" in board)) {
 			expect(board.insights.insights).toHaveLength(3);
-			expect(board.issues).toEqual([]);
+			expect(board.issues).toMatchObject({ fetched_at: "t", issues: [] });
 			expect(board.pulls).toBeNull();
 		}
 		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {

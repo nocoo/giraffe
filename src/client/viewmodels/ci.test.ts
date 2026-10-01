@@ -1,6 +1,8 @@
 // @vitest-environment happy-dom
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CiReportResponse } from "../../lib/ci-health";
+import { formatDate } from "../lib/format";
 import { ciBuckets, ciFilterStreams, loadCi, releaseRows, runSummary, runTimeline } from "./ci";
 import { setActiveAccountId } from "./session";
 
@@ -136,8 +138,8 @@ describe("run timeline", () => {
 			[2, false],
 			[3, true],
 		]);
-		expect(cells[2]?.label).toBe("2026-09-18 10:00 UTC · 失败 · 最新");
-		expect(cells[0]?.label).toBe("2026-09-16 10:00 UTC · 取消 / 跳过");
+		expect(cells[2]?.label).toBe(`${formatDate("2026-09-18T10:00:00Z")} · 失败 · 最新`);
+		expect(cells[0]?.label).toBe(`${formatDate("2026-09-16T10:00:00Z")} · 取消 / 跳过`);
 		expect(recent[0]?.id).toBe(3);
 		expect(runTimeline([])).toEqual([]);
 		expect(runSummary(cells)).toBe("从旧到新：取消 / 跳过、成功、失败（最新）");

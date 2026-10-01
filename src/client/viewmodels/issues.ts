@@ -1,3 +1,5 @@
+import type { SnapshotFreshness } from "../../lib/snapshot-freshness";
+import { getRepositoryScope, scopedResource } from "./scope";
 import { loadKind } from "./snapshot";
 
 export type IssueRow = {
@@ -13,6 +15,7 @@ export type IssueRow = {
 };
 
 export type IssuesSnapshot = {
+	freshness?: SnapshotFreshness;
 	account_id: string;
 	fetched_at: string;
 	truncated: boolean;
@@ -55,6 +58,8 @@ export function issueMetrics(issues: IssueRow[]): { count: number; repos: number
 	return { count: issues.length, repos: repos.size };
 }
 
-export async function loadIssues(): Promise<IssuesSnapshot | { missing: true }> {
-	return loadKind<IssuesSnapshot>("issues");
+export async function loadIssues(
+	scope = getRepositoryScope(),
+): Promise<IssuesSnapshot | { missing: true }> {
+	return loadKind<IssuesSnapshot>(scopedResource("issues", scope));
 }

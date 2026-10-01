@@ -8,11 +8,13 @@ import {
 	formatConclusion,
 	formatCount,
 	formatDate,
+	formatDayRange,
 	formatDays,
 	formatHealth,
 	formatPreciseDate,
 	formatReview,
 	formatRunStatus,
+	formatSnapshotFreshness,
 	formatTimeAgo,
 	formatVisibility,
 	freshnessFilled,
@@ -32,6 +34,64 @@ import {
 } from "./format";
 
 describe("format", () => {
+	it("distinguishes mixed, missing and empty source freshness from publication time", () => {
+		const oldestAt = "2026-09-01T00:00:00Z";
+		const latestAt = "2026-09-02T00:00:00Z";
+		const now = Date.parse("2026-10-01T00:00:00Z");
+		expect(
+			formatSnapshotFreshness(
+				"2026-10-01T00:00:00Z",
+				{ oldestAt, latestAt, total: 3, missing: 1 },
+				now,
+				"UTC",
+			),
+		).toBe("2026-09-01 00:00 → 2026-09-02 00:00 · 1/3 项缺少数据");
+		expect(
+			formatSnapshotFreshness(
+				latestAt,
+				{ oldestAt: null, latestAt: null, total: 2, missing: 2 },
+				now,
+			),
+		).toBe("未采集 · 2/2 项缺少数据");
+		expect(
+			formatSnapshotFreshness(
+				latestAt,
+				{ oldestAt: null, latestAt: null, total: 0, missing: 0 },
+				now,
+			),
+		).toBe("当前范围暂无数据");
+		expect(formatSnapshotFreshness(latestAt, undefined, now, "UTC")).toBe(
+			"2026-09-02 00:00（29 天前）",
+		);
+		expect(
+			formatSnapshotFreshness(
+				null,
+				{ oldestAt: latestAt, latestAt, total: 1, missing: 0 },
+				now,
+				"UTC",
+			),
+		).toBe("2026-09-02 00:00（29 天前）");
+		expect(formatSnapshotFreshness(null, undefined, now)).toBe("时间未知");
+		expect(formatSnapshotFreshness("invalid", undefined, now)).toBe("时间未知");
+	});
+	it("localizes timestamps and aggregate boundaries across midnight and DST", () => {
+		expect(formatDate("2026-09-16T20:01:12Z", "Asia/Shanghai")).toBe("2026-09-17 04:01");
+		expect(formatDate("2026-09-28T11:31:35Z", "America/Los_Angeles")).toBe("2026-09-28 04:31");
+		expect(formatDayRange("2026-09-10", "2026-09-10", "Asia/Shanghai")).toBe(
+			"2026-09-10 08:00 → 2026-09-11 08:00",
+		);
+		expect(formatDayRange("2026-03-08", "2026-03-08", "America/New_York")).toBe(
+			"2026-03-07 19:00 → 2026-03-08 20:00",
+		);
+		expect(formatDayRange("2026-09-01", "2026-09-07", "UTC")).toBe(
+			"2026-09-01 00:00 → 2026-09-08 00:00",
+		);
+		expect(formatDayRange("invalid")).toBe("—");
+		expect(formatDayRange("2026-09-10")).toBe(
+			`${formatDate("2026-09-10")} → ${formatDate("2026-09-11")}`,
+		);
+	});
+
 	it("formats local timestamps and second-accurate elapsed time without losing days", () => {
 		const at = "2026-09-17T22:55:37.000Z";
 		const base = Date.parse(at);

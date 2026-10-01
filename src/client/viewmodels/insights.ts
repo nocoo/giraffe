@@ -1,8 +1,11 @@
-import { type FocusSources, loadFocusSources } from "./focus";
-import type { IssueRow } from "./issues";
+import type { SnapshotFreshness } from "../../lib/snapshot-freshness";
+import { formatDate } from "../lib/format";
+import { loadFocusSources } from "./focus";
+import type { IssueRow, IssuesSnapshot } from "./issues";
 import { loadIssues } from "./issues";
-import type { PullRow } from "./pulls";
+import type { PullRow, PullsSnapshot } from "./pulls";
 import { loadPulls } from "./pulls";
+import { getRepositoryScope, scopedResource } from "./scope";
 import { loadKind } from "./snapshot";
 
 export type Health = "strong" | "watch" | "risky";
@@ -25,6 +28,7 @@ export type InsightRow = {
 };
 
 export type InsightsSnapshot = {
+	freshness?: SnapshotFreshness;
 	account_id: string;
 	fetched_at: string;
 	truncated: boolean;
@@ -68,10 +72,10 @@ export type InsightsCharts = {
 
 export type InsightsBoard = {
 	insights: InsightsSnapshot;
-	issues: IssueRow[] | null;
-	pulls: PullRow[] | null;
-	ci: FocusSources["ci"];
-	assessments: FocusSources["assessments"];
+	issues: IssuesSnapshot | null;
+	pulls: PullsSnapshot | null;
+	ci: Awaited<ReturnType<typeof loadFocusSources>>["ci"];
+	assessments: Awaited<ReturnType<typeof loadFocusSources>>["assessments"];
 };
 
 const WORKLOAD_LIMIT = 8;
@@ -139,10 +143,7 @@ function mondayUtc(ts: number): number {
 }
 
 function weekLabel(ts: number): string {
-	const monday = new Date(mondayUtc(ts));
-	const month = String(monday.getUTCMonth() + 1).padStart(2, "0");
-	const day = String(monday.getUTCDate()).padStart(2, "0");
-	return `${month}-${day}`;
+	return formatDate(new Date(mondayUtc(ts)).toISOString()).slice(5, 10);
 }
 
 function activitySeries(
@@ -373,24 +374,28 @@ export function alertsIncomplete(snap: InsightsSnapshot | null): boolean {
 	return snap?.alerts_incomplete === true;
 }
 
-export async function loadInsights(): Promise<InsightsSnapshot | { missing: true }> {
-	return loadKind<InsightsSnapshot>("insights");
+export async function loadInsights(
+	scope = getRepositoryScope(),
+): Promise<InsightsSnapshot | { missing: true }> {
+	return loadKind<InsightsSnapshot>(scopedResource("insights", scope));
 }
 
-export async function loadInsightsBoard(): Promise<InsightsBoard | { missing: true }> {
+export async function loadInsightsBoard(
+	scope = getRepositoryScope(),
+): Promise<InsightsBoard | { missing: true }> {
 	const [insights, issuesSnap, pullsSnap, focus] = await Promise.all([
-		loadInsights(),
-		loadIssues(),
-		loadPulls(),
-		loadFocusSources(),
+		loadInsights(scope),
+		loadIssues(scope),
+		loadPulls(scope),
+		loadFocusSources(scope),
 	]);
 	if ("missing" in insights) {
 		return insights;
 	}
 	return {
 		insights,
-		issues: "missing" in issuesSnap ? null : issuesSnap.issues,
-		pulls: "missing" in pullsSnap ? null : pullsSnap.pull_requests,
+		issues: "missing" in issuesSnap ? null : issuesSnap,
+		pulls: "missing" in pullsSnap ? null : pullsSnap,
 		...focus,
 	};
 }

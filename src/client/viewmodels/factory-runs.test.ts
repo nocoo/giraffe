@@ -84,6 +84,15 @@ it("shows only repository statistics, details and publication for a scoped run",
 		["更新页面", 1],
 	]);
 	expect(runRepositoryRows(view, []).map((row) => row.repo)).toEqual(["nocoo/app"]);
+	for (const step of view.steps) {
+		step.status = "success";
+		step.finishedAt = snap.fetched_at;
+	}
+	expect(runPageUpdates(view).find((page) => page.resource === "prs")).toMatchObject({
+		name: "Pull Requests",
+		label: "所选仓库已更新",
+		updatedAt: snap.fetched_at,
+	});
 });
 const state: FactoryRunResponse = {
 	account_id: snap.account_id,

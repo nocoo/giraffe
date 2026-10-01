@@ -2,7 +2,8 @@ import { InputGroup } from "@nocoo/basalt/components/input-group";
 import { ScrollArea } from "@nocoo/basalt/components/scroll-area";
 import { Clock3, Search, X } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { formatCount, formatDate, formatTimeAgo } from "../../lib/format";
+import type { SnapshotFreshness } from "../../../lib/snapshot-freshness";
+import { formatCount, formatSnapshotFreshness } from "../../lib/format";
 
 // Product compositions: Basalt owns input behavior, focus styling and scrolling.
 export function SearchField({
@@ -64,10 +65,12 @@ export function ResultCount({ count, total = count }: { count: number; total?: n
 export function SnapshotDescription({
 	description,
 	fetchedAt,
+	freshness,
 	hideTimestamp = false,
 }: {
 	description: string;
-	fetchedAt: string;
+	fetchedAt: string | null | undefined;
+	freshness?: SnapshotFreshness | undefined;
 	hideTimestamp?: boolean;
 }) {
 	return (
@@ -77,7 +80,7 @@ export function SnapshotDescription({
 				className={`mt-2 block${hideTimestamp ? " invisible" : ""}`}
 				aria-hidden={hideTimestamp}
 			>
-				<SnapshotTime fetchedAt={fetchedAt} />
+				<SnapshotTime fetchedAt={fetchedAt} freshness={freshness} />
 			</span>
 		</>
 	);
@@ -85,9 +88,11 @@ export function SnapshotDescription({
 
 export function SnapshotTime({
 	fetchedAt,
-	label = "上次刷新",
+	freshness,
+	label = "数据更新",
 }: {
-	fetchedAt: string;
+	fetchedAt: string | null | undefined;
+	freshness?: SnapshotFreshness | undefined;
 	label?: string;
 }) {
 	const [, refreshTime] = useState(0);
@@ -95,13 +100,21 @@ export function SnapshotTime({
 		const timer = setInterval(() => refreshTime((tick) => tick + 1), 60_000);
 		return () => clearInterval(timer);
 	}, []);
+	const latest = freshness ? freshness.latestAt : fetchedAt;
+	const mixed =
+		freshness?.oldestAt && latest && Date.parse(freshness.oldestAt) < Date.parse(latest);
+	const text = formatSnapshotFreshness(fetchedAt, freshness);
 	return (
 		<span className="inline-flex flex-wrap items-center gap-1.5 text-xs text-basalt-muted-foreground">
 			<Clock3 className="size-3.5 shrink-0" aria-hidden="true" />
 			{label}
-			<time dateTime={fetchedAt} className="tabular-nums">
-				{formatDate(fetchedAt)}（{formatTimeAgo(fetchedAt, Date.now(), true)}）
-			</time>
+			{latest && Number.isFinite(Date.parse(latest)) && !mixed && freshness?.total !== 0 ? (
+				<time dateTime={latest} className="tabular-nums">
+					{text}
+				</time>
+			) : (
+				<span className="tabular-nums">{text}</span>
+			)}
 		</span>
 	);
 }

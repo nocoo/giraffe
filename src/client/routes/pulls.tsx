@@ -12,12 +12,14 @@ import {
 	TableRow,
 } from "@nocoo/basalt/components/table";
 import { GitPullRequest } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import type { FactorySnapshot } from "../../lib/factory-types";
 import { CandyBadge } from "../components/layout/candy-badge";
 import {
 	ResultCount,
 	SearchField,
 	SnapshotDescription,
+	SnapshotTime,
 	TableScroll,
 } from "../components/layout/collection-chrome";
 import { IconLabel } from "../components/layout/icon-label";
@@ -31,9 +33,11 @@ import {
 import { ListPageSkeleton } from "../components/layout/page-skeleton";
 import { ProjectLink } from "../components/layout/project-identity";
 import { ShareBar } from "../components/layout/rank-bars";
+import { ScopeEmpty } from "../components/layout/repository-scope";
 import { INLINE_SEGMENT } from "../components/layout/segment";
 import { SnapshotPending } from "../components/layout/snapshot-pending";
 import { ChurnMeter, PersonCell, SortButton } from "../components/layout/table-chrome";
+import { useSnapshotRead } from "../components/layout/use-snapshot-read";
 import { chartColor, FLOW_COLORS } from "../lib/chart-theme";
 import { catchLoad } from "../lib/error-ui";
 import {
@@ -41,6 +45,7 @@ import {
 	DATE_CELL,
 	formatCount,
 	formatDate,
+	formatDayRange,
 	formatReview,
 	NUM_CELL,
 	NUM_HEAD,
@@ -73,27 +78,28 @@ export function PullsPage() {
 	const [query, setQuery] = useState("");
 	const [sort, setSort] = useState<PullSort>("updated");
 	const [picked, setPicked] = useState<PullFilters>(NO_FILTERS);
-	const [history, setHistory] = useState<ReturnType<typeof mergedHistory> | null>(null);
+	const [factory, setFactory] = useState<FactorySnapshot | null>(null);
+	const history = useMemo(
+		() => (factory ? mergedHistory(factory.repos, factory.window.until, 30) : null),
+		[factory],
+	);
 	const pick = (key: keyof PullFilters) => (value: string) =>
 		setPicked((old) => ({ ...old, [key]: value }));
 	const [snap, setSnap] = useState<PullsSnapshot | { missing: true } | null>(null);
 
-	useEffect(() => {
-		// Merged throughput comes from the saved factory snapshot; it gives context when nothing is open.
-		void loadFactory()
-			.then((f) => setHistory("missing" in f ? null : mergedHistory(f.repos, f.window.until, 30)))
-			.catch(() => setHistory(null));
-		void loadPulls()
-			.then(setSnap)
-			.catch((err: unknown) => {
-				const missing = catchLoad(err, (message) => {
-					toast.error(message);
-				});
-				if (missing) {
-					setSnap(missing);
-				}
-			});
-	}, []);
+	useSnapshotRead(
+		loadFactory,
+		(snapshot) => setFactory("missing" in snapshot ? null : snapshot),
+		() => undefined,
+	);
+	useSnapshotRead(loadPulls, setSnap, (err) => {
+		const missing = catchLoad(err, (message) => {
+			toast.error(message);
+		});
+		if (missing) {
+			setSnap(missing);
+		}
+	});
 
 	const board = useMemo(
 		() =>
@@ -140,6 +146,7 @@ export function PullsPage() {
 					<SnapshotDescription
 						description={PAGE_DESCRIPTIONS["/pulls"]}
 						fetchedAt={snap.fetched_at}
+						freshness={snap.freshness}
 					/>
 				}
 				actions={snap.truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
@@ -164,6 +171,7 @@ export function PullsPage() {
 					</FilterBar>
 				}
 			/>
+			<ScopeEmpty count={snap.freshness?.total ?? snap.pull_requests.length} />
 			<div className="giraffe-stat-inline" data-testid="pr-summary">
 				<span>
 					<strong>{formatCount(board.rows.length)}</strong>个 open PR ·{" "}
@@ -187,6 +195,7 @@ export function PullsPage() {
 							title="近 30 天 PR 吞吐"
 							hint="来自软件工厂最近保存的数据：每日合并与新开的 PR。open 列表为空时，这里说明 PR 是否在持续流动。"
 						>
+							<SnapshotTime fetchedAt={factory?.fetched_at} freshness={factory?.freshness} />
 							<CountBars
 								data={history.daily}
 								series={[
@@ -194,7 +203,8 @@ export function PullsPage() {
 									{ key: "opened", label: "新开", color: FLOW_COLORS.opened },
 								]}
 								label="近 30 天每日合并与新开 PR"
-								xFormat={(v) => v.slice(5)}
+								xFormat={(v) => formatDate(v).slice(5, 10)}
+								tooltipFormat={(v) => formatDayRange(v)}
 								className="h-48 w-full"
 								stacked={false}
 							/>

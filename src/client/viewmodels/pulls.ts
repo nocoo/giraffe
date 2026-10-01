@@ -1,3 +1,5 @@
+import type { SnapshotFreshness } from "../../lib/snapshot-freshness";
+import { getRepositoryScope, scopedResource } from "./scope";
 import { loadKind } from "./snapshot";
 
 export type PullRow = {
@@ -17,6 +19,7 @@ export type PullRow = {
 };
 
 export type PullsSnapshot = {
+	freshness?: SnapshotFreshness;
 	account_id: string;
 	fetched_at: string;
 	truncated: boolean;
@@ -75,6 +78,8 @@ export function pullMetrics(rows: PullRow[]): {
 	return { draft, reviewRequired, changesRequested, approved };
 }
 
-export async function loadPulls(): Promise<PullsSnapshot | { missing: true }> {
-	return loadKind<PullsSnapshot>("prs");
+export async function loadPulls(
+	scope = getRepositoryScope(),
+): Promise<PullsSnapshot | { missing: true }> {
+	return loadKind<PullsSnapshot>(scopedResource("prs", scope));
 }

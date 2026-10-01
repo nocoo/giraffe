@@ -11,7 +11,7 @@ import {
 	TableRow,
 } from "@nocoo/basalt/components/table";
 import { Bug, ShieldAlert } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { CandyBadge } from "../components/layout/candy-badge";
 import {
 	ResultCount,
@@ -24,6 +24,8 @@ import { ActiveFilters, Breakdown, OverviewCard } from "../components/layout/ove
 import { ListPageSkeleton } from "../components/layout/page-skeleton";
 import { ProjectLink } from "../components/layout/project-identity";
 import { ShareBar } from "../components/layout/rank-bars";
+import { ScopeEmpty } from "../components/layout/repository-scope";
+import { useSnapshotRead } from "../components/layout/use-snapshot-read";
 import { catchLoad } from "../lib/error-ui";
 import { formatCount, severityBadgeVariant, sourceBadgeVariant } from "../lib/format";
 import { PAGE_DESCRIPTIONS } from "../lib/navigation";
@@ -57,23 +59,33 @@ export function AlertsPage() {
 		[snap, picked],
 	);
 
-	useEffect(() => {
-		void loadAlerts()
-			.then(setSnap)
-			.catch((err: unknown) => {
-				const missing = catchLoad(err, (message) => {
-					toast.error(message);
-				});
-				if (missing) {
-					setSnap(missing);
-				}
-			});
-	}, []);
+	useSnapshotRead(loadAlerts, setSnap, (err) => {
+		const missing = catchLoad(err, (message) => {
+			toast.error(message);
+		});
+		if (missing) {
+			setSnap(missing);
+		}
+	});
 
 	if (snap && ("missing" in snap || ((snap.unavailable || snap.truncated) && !snap.items.length))) {
 		return (
 			<div className="space-y-8">
-				<PageHeader title="安全告警" description={PAGE_DESCRIPTIONS["/alerts"]} />
+				<PageHeader
+					title="安全告警"
+					description={
+						"missing" in snap ? (
+							PAGE_DESCRIPTIONS["/alerts"]
+						) : (
+							<SnapshotDescription
+								description={PAGE_DESCRIPTIONS["/alerts"]}
+								fetchedAt={snap.fetched_at}
+								freshness={snap.freshness}
+							/>
+						)
+					}
+				/>
+				<ScopeEmpty count={0} />
 				<LayerCard>
 					<LayerCard.Empty icon={<ShieldAlert />} title="暂无告警数据" />
 				</LayerCard>
@@ -102,9 +114,11 @@ export function AlertsPage() {
 					<SnapshotDescription
 						description={PAGE_DESCRIPTIONS["/alerts"]}
 						fetchedAt={snap.fetched_at}
+						freshness={snap.freshness}
 					/>
 				}
 			/>
+			<ScopeEmpty count={snap.freshness?.total ?? snap.items.length} />
 			<KpiRow>
 				<Kpi
 					icon={Bug}

@@ -46,7 +46,11 @@ import { useParams } from "react-router";
 import type { FactoryRepo, FactorySnapshot } from "../../lib/factory-types";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ChartBrick, ChartEmpty, ChartRow } from "../components/layout/chart-brick";
-import { SnapshotDescription, TableScroll } from "../components/layout/collection-chrome";
+import {
+	SnapshotDescription,
+	SnapshotTime,
+	TableScroll,
+} from "../components/layout/collection-chrome";
 import { DonutChart } from "../components/layout/donut-chart";
 import { Kpi, KpiRow } from "../components/layout/kpi";
 import {
@@ -60,6 +64,7 @@ import { ProjectLinks, ProjectName } from "../components/layout/project-identity
 import { SnapshotPending } from "../components/layout/snapshot-pending";
 import { ChurnMeter, LabelChips, PersonCell } from "../components/layout/table-chrome";
 import { useProjectIdentity } from "../components/layout/use-project-identity";
+import { useSnapshotRead } from "../components/layout/use-snapshot-read";
 import { categoryColor, chartColor } from "../lib/chart-theme";
 import { catchLoad } from "../lib/error-ui";
 import {
@@ -76,7 +81,7 @@ import {
 	reviewBadgeVariant,
 } from "../lib/format";
 import { repoActivityBoard, repoFactorySeries } from "../viewmodels/boards";
-import { loadFactory } from "../viewmodels/factory";
+import { factoryFreshness, loadFactory } from "../viewmodels/factory";
 import type { IssuesSnapshot } from "../viewmodels/issues";
 import type { PullsSnapshot } from "../viewmodels/pulls";
 import {
@@ -144,6 +149,60 @@ export function RepoDetailPage() {
 	);
 	const [factory, setFactory] = useState<{ snap: FactorySnapshot; repo: FactoryRepo } | null>(null);
 	const loaded = useRef({ actions: false, releases: false });
+	useSnapshotRead(
+		async () => ({
+			key: `${owner}/${name}/${tab}`,
+			value:
+				tab === "assessment"
+					? null
+					: await fetchTab<
+							| RepoDetails
+							| RepoActions
+							| RepoReleases
+							| RepoSecurity
+							| RepoTraffic
+							| IssuesSnapshot
+							| PullsSnapshot
+							| RepoLanguages
+							| RepoContributors
+						>(owner, name, tab),
+		}),
+		({ key, value }) => {
+			if (key !== `${owner}/${name}/${tab}` || !value || "missing" in value) return;
+			switch (tab) {
+				case "details":
+					setSnap(value as RepoDetails);
+					break;
+				case "actions":
+					setActions(value as RepoActions);
+					break;
+				case "releases":
+					setReleases(value as RepoReleases);
+					break;
+				case "security":
+					setSecurity(value as RepoSecurity);
+					break;
+				case "traffic":
+					setTraffic(value as RepoTraffic);
+					break;
+				case "issues":
+					setIssues(value as IssuesSnapshot);
+					break;
+				case "prs":
+					setPulls(value as PullsSnapshot);
+					break;
+				case "languages":
+					setLanguages(value as RepoLanguages);
+					break;
+				case "contributors":
+					setContributors(value as RepoContributors);
+					break;
+			}
+		},
+		() => undefined,
+		valid && tab !== "assessment",
+		false,
+	);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -151,7 +210,7 @@ export function RepoDetailPage() {
 		loaded.current = { actions: false, releases: false };
 		if (valid)
 			// The overview borrows the factory's 90-day per-repo metrics; it is optional context.
-			void loadFactory()
+			void loadFactory("all")
 				.then((f) => {
 					const repo =
 						"missing" in f
@@ -379,7 +438,7 @@ export function RepoDetailPage() {
 						description={
 							identity?.description || snap.description || "仓库概览、开发动态与协作数据"
 						}
-						fetchedAt={current?.fetched_at ?? snap.fetched_at}
+						fetchedAt={current?.fetched_at}
 						hideTimestamp={!current}
 					/>
 				}
@@ -480,6 +539,10 @@ export function RepoDetailPage() {
 									title="90 天活动"
 									description="来自软件工厂的该仓库数据：每日默认分支提交与合并 PR（左轴），截至当日 7 天 CI 成功率（右轴）。"
 								>
+									<SnapshotTime
+										fetchedAt={null}
+										freshness={factoryFreshness(factory ? [factory.repo] : [])}
+									/>
 									<p className="giraffe-stat-inline mb-2">
 										<span>
 											30 天提交 <strong>{formatCount(flow30.commits)}</strong>
@@ -500,6 +563,9 @@ export function RepoDetailPage() {
 									title="版本节奏"
 									description="已发布版本按时间排列，空心点为预发布；点的疏密即发布节奏。"
 								>
+									<SnapshotTime
+										fetchedAt={releases && !("missing" in releases) ? releases.fetched_at : null}
+									/>
 									{activity ? <ReleaseTimeline releases={activity.releases} /> : null}
 								</ChartBrick>
 							) : null}
@@ -897,7 +963,7 @@ export function RepoDetailPage() {
 											ariaLabel="views"
 											showAxes
 											valueFormatter={formatCount}
-											xValueFormatter={(value) => String(value).slice(5, 10)}
+											xValueFormatter={(value) => formatDate(String(value)).slice(5, 10)}
 											summary={
 												<span className="sr-only">
 													{traffic.views.count} 次浏览，{traffic.views.uniques} 位独立访客
@@ -917,7 +983,7 @@ export function RepoDetailPage() {
 											ariaLabel="clones"
 											showAxes
 											valueFormatter={formatCount}
-											xValueFormatter={(value) => String(value).slice(5, 10)}
+											xValueFormatter={(value) => formatDate(String(value)).slice(5, 10)}
 											summary={
 												<span className="sr-only">
 													{traffic.clones.count} 次克隆，{traffic.clones.uniques} 位独立克隆用户

@@ -26,7 +26,12 @@ function ScheduleEditor({
 	const [busy, setBusy] = useState(false);
 	const [message, setMessage] = useState("");
 	const [error, setError] = useState("");
-	const label = schedule.kind === "daily" ? "每日快速刷新" : "每周深度刷新";
+	const label =
+		schedule.kind === "catalog"
+			? "每日同步仓库列表"
+			: schedule.kind === "daily"
+				? "每日快速刷新"
+				: "每周深度刷新";
 	return (
 		<LayerCard>
 			<LayerCard.Header>{label}</LayerCard.Header>
@@ -96,7 +101,9 @@ function ScheduleEditor({
 								/>
 							</>
 						) : (
-							<span className="text-sm text-basalt-muted-foreground">仅 Giraffe 星标仓库</span>
+							<span className="text-sm text-basalt-muted-foreground">
+								{schedule.kind === "catalog" ? "当前账号全部仓库" : "仅 Giraffe 星标仓库"}
+							</span>
 						)}
 						<Button type="submit" disabled={busy}>
 							{busy ? "保存中…" : "保存计划"}
@@ -161,7 +168,8 @@ export function RefreshSchedules({
 		<div className="space-y-4">
 			<p className="text-sm text-basalt-muted-foreground">
 				已星标 {data?.starred.length ?? 0}{" "}
-				个仓库。在仓库页面点亮星标后，每天自动更新；周深刷补齐历史变动。离开页面后任务仍会执行。
+				个仓库。每日快速刷新更新星标视图的统计、详情、Issues、PR、通知与
+				Insights；每周深度刷新校准历史。目录过旧时先自动同步，离开页面后任务仍会执行。
 			</p>
 			{error ? <p role="alert">{error}</p> : null}
 			{data ? (

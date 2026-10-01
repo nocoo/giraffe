@@ -23,7 +23,8 @@ import type {
 import { SearchField } from "../components/layout/collection-chrome";
 import { ProjectLabel } from "../components/layout/project-identity";
 import { INLINE_SEGMENT } from "../components/layout/segment";
-import { formatUtc } from "../viewmodels/factory";
+import { formatPreciseDate } from "../lib/format";
+
 import {
 	describeRunIssue,
 	formatRunDuration,
@@ -276,7 +277,9 @@ export function FactoryRunDetails({
 								<dt className="font-medium">{page.name}</dt>
 								<dd
 									className="text-basalt-muted-foreground"
-									title={page.updatedAt ? `本次保存于 ${formatUtc(page.updatedAt)}` : undefined}
+									title={
+										page.updatedAt ? `本次保存于 ${formatPreciseDate(page.updatedAt)}` : undefined
+									}
 								>
 									{page.label}
 								</dd>
@@ -425,23 +428,24 @@ export function FactoryRunDetails({
 										) : null}
 										{row.state ? (
 											<p>
-												工厂统计更新于 {formatUtc(row.state.refreshedAt)} ·{" "}
+												工厂统计更新于 {formatPreciseDate(row.state.refreshedAt)} ·{" "}
 												{row.state.coverage ?? "—"} / 7 类完整。这里的时间独立于所选运行记录。
 											</p>
 										) : null}
 										{row.state?.observation ? (
 											<p>
-												统计范围：{formatUtc(row.state.observation.window.since)} →{" "}
-												{formatUtc(row.state.observation.window.until)} ·{" "}
+												统计范围：{formatPreciseDate(row.state.observation.window.since)} →{" "}
+												{formatPreciseDate(row.state.observation.window.until)} ·{" "}
 												{row.state.observation.source === "legacy"
 													? "从历史记录恢复"
 													: "从 GitHub 获取"}
-												。仓库信息更新于 {formatUtc(row.state.observation.metadataAt ?? null)}。
+												。仓库信息更新于{" "}
+												{formatPreciseDate(row.state.observation.metadataAt ?? null)}。
 											</p>
 										) : null}
 										<p>
 											{row.state
-												? `工厂统计下次可刷新：${formatUtc(row.state.nextAllowedAt)} · `
+												? `工厂统计下次可刷新：${formatPreciseDate(row.state.nextAllowedAt)} · `
 												: ""}
 											本次共 {row.pages} 页，耗时{" "}
 											{formatRunDuration(Math.ceil(row.durationMs / 1000))}。
@@ -474,14 +478,15 @@ export function FactoryRunDetails({
 			<details className="factory-diagnostics">
 				<summary>运行信息</summary>
 				<p>
-					开始 {formatUtc(run.startedAt)} · 最后响应 {formatUtc(run.updatedAt)}
-					{run.finishedAt ? ` · 结束 ${formatUtc(run.finishedAt)}` : ""}
+					开始 {formatPreciseDate(run.startedAt)} · 最后响应 {formatPreciseDate(run.updatedAt)}
+					{run.finishedAt ? ` · 结束 ${formatPreciseDate(run.finishedAt)}` : ""}
 				</p>
 				<p>
 					运行编号 <code>{run.id}</code> · 已发送 {run.requests} 次 GitHub 请求。
 				</p>
 				<p>
-					仓库刷新仅更新对应统计和详情；全站刷新包含全站列表。同步仓库列表共 4 步。所有时间为 UTC。
+					仓库刷新仅更新对应统计和详情；全站刷新包含全站列表。同步仓库列表共 4 步。时间按本地时区（
+					{Intl.DateTimeFormat().resolvedOptions().timeZone}）显示。
 				</p>
 			</details>
 		</div>
