@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Remove the 256 MB account storage quota from refresh creation, execution and AI assessment; storage measurements no longer block collection
+- Preserve notification write-through results when background polling resumes after marking a thread read
 - Keep bounded reference-safe retention running even if scheduling or queue dispatch fails
 - Preserve per-record, per-resource, request and repository-count limits, lease fencing and prior-good-data protection
 

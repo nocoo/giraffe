@@ -77,7 +77,7 @@ export function InboxPage() {
 		}
 	}
 
-	useSnapshotRead(loadInbox, setSnap, onLoadError, marking === null);
+	useSnapshotRead(loadInbox, setSnap, onLoadError, marking === null, snap === null);
 
 	if (snap && "missing" in snap) {
 		return (

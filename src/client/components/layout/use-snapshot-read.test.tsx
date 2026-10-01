@@ -44,6 +44,18 @@ function Reader({
 }
 
 describe("visible snapshot revalidation", () => {
+	it("resumes the timer after a mutation without immediately replacing the write response", async () => {
+		const load = vi.fn().mockResolvedValue(1);
+		const failed = vi.fn();
+		await act(async () => root.render(<Reader load={load} failed={failed} />));
+		await act(async () =>
+			root.render(<Reader load={load} failed={failed} enabled={false} initialRead={false} />),
+		);
+		await act(async () => root.render(<Reader load={load} failed={failed} initialRead={false} />));
+		expect(load).toHaveBeenCalledTimes(1);
+		await act(async () => vi.advanceTimersByTimeAsync(60_000));
+		expect(load).toHaveBeenCalledTimes(2);
+	});
 	it("can preserve an existing initial loader without duplicate first requests", async () => {
 		const load = vi.fn().mockResolvedValue(2);
 		await act(async () => root.render(<Reader load={load} failed={vi.fn()} initialRead={false} />));

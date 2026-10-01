@@ -174,6 +174,11 @@ test("marking a notification shows progress and applies the returned unread stat
 	});
 	const initial = createUiFixtures()["/api/notifications"];
 	let requests = 0;
+	let reads = 0;
+	page.on("request", (request) => {
+		if (new URL(request.url()).pathname === "/api/notifications" && request.method() === "GET")
+			reads++;
+	});
 	await page.route(
 		(url) => url.pathname === "/api/notifications/read",
 		async (route) => {
@@ -203,6 +208,7 @@ test("marking a notification shows progress and applies the returned unread stat
 		await expect(row.getByRole("button")).toHaveCount(0);
 		await expect(page.getByRole("button", { name: "当前范围已读", exact: true })).toBeEnabled();
 		expect(requests).toBe(1);
+		expect(reads).toBe(1);
 	} finally {
 		finish();
 	}

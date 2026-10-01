@@ -253,3 +253,8 @@ major line. Verify installed versions and the advisory ranges: Undici 7.29.1 fix
 the reported vulnerabilities without a forced 8.x upgrade. After updating Wrangler,
 its own dependency pins made the Sharp and Undici overrides redundant, so they were
 removed only after confirming resolved versions and a clean security scan.
+
+A browser regression exposed that re-enabling polling after a notification mutation
+ran the initial loader again immediately. A late/stale read could replace the saved
+write response. The inbox now distinguishes first load from resumed background work;
+regressions assert that resuming arms the timer without an immediate duplicate GET.
