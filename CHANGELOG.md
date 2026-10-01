@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.12.1 — 2026-10-01
+
+### Fixed
+
+- Remove the 256 MB account storage quota from refresh creation, execution and AI assessment; storage measurements no longer block collection
+- Keep bounded reference-safe retention running even if scheduling or queue dispatch fails
+- Preserve per-record, per-resource, request and repository-count limits, lease fencing and prior-good-data protection
+
+### Changed
+
+- Remove obsolete write-delta accounting and quota-limit UI/API fields while retaining storage telemetry
+- Resolve dependency update issues #2–#21: update React and types to 19.3.0, React Router to 8.4.0, Vite to 8.3.1, Vitest/coverage to 5.0.3, Playwright to 1.63.0 and Wrangler to 4.145.0
+- Update Biome, Workers types, Bun types, the React Vite plugin, Happy DOM, Oxc, Hono and Lucide to the reported target versions
+- Remove redundant Sharp and Undici overrides; resolved Undici 7.29.1 remains fixed for the reported advisories
+- Raise the documented Node.js minimum to 22.22 for the upgraded router
+
+### Operations
+
+- No database migration, history deletion, retention-window change or new Cloudflare binding is required
+- Automatic cleanup continues to protect current references, recent publications and the latest 20 runs
+
 ## v0.12.0 — 2026-10-01
 
 ### Added
