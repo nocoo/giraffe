@@ -22,7 +22,7 @@ Direction: [architecture](docs/01-architecture.md), [quality](docs/02-quality.md
 
 ## Setup and commands
 
-TypeScript 7 strict, Bun 1.4, Node ≥22.12; Hono Cloudflare Worker. Vite React/Basalt SPA; D1 `giraffe-db` through `DB`. Biome and AST boundary gates; Vitest/V8, real HTTP and Playwright Chromium. `src/server/` and `src/lib/` hold API, Access, encrypted accounts, GitHub collection, storage and shared types; `src/client/` and `tests/{api,e2e}/` hold routes/viewmodels and API/browser journeys; `scripts/`, `migrations/`, `docs/` hold runners, schema evolution and numbered design/runbooks.
+TypeScript 7 strict, Bun 1.4, Node ≥22.22; Hono Cloudflare Worker. Vite React/Basalt SPA; D1 `giraffe-db` through `DB`. Biome and AST boundary gates; Vitest/V8, real HTTP and Playwright Chromium. `src/server/` and `src/lib/` hold API, Access, encrypted accounts, GitHub collection, storage and shared types; `src/client/` and `tests/{api,e2e}/` hold routes/viewmodels and API/browser journeys; `scripts/`, `migrations/`, `docs/` hold runners, schema evolution and numbered design/runbooks.
 
 Run from the root. API/browser runners generate fake keys and test configuration without `.dev.vars`. Install Chromium for browser checks; Gitleaks and OSV Scanner are required by push gates.
 

@@ -46,7 +46,7 @@ PAT 使用 AES-256-GCM 加密后存入 D1；数据快照以 JSON 保存，未做
 
 ## 开发
 
-本地使用 Bun 1.4 和 Node.js 22.12+。在仓库根目录安装依赖，并首次准备本地环境文件：
+本地使用 Bun 1.4 和 Node.js 22.22+。在仓库根目录安装依赖，并首次准备本地环境文件：
 
 ```bash
 bun install --frozen-lockfile
