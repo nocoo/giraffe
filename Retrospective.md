@@ -258,3 +258,8 @@ A browser regression exposed that re-enabling polling after a notification mutat
 ran the initial loader again immediately. A late/stale read could replace the saved
 write response. The inbox now distinguishes first load from resumed background work;
 regressions assert that resuming arms the timer without an immediate duplicate GET.
+
+Browser geometry assertions must sample related elements in one DOM evaluation.
+Separate bounding-box calls during tab entrance motion compared two animation frames,
+producing a false alignment failure. Measure both boxes atomically and wait for the
+existing sub-pixel tolerance, rather than increasing the tolerance or disabling motion.

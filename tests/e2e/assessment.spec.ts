@@ -111,20 +111,22 @@ test("judgment labels align and probability bars show uncertainty without implyi
 	await expect(rows).toHaveCount(2);
 	const security = rows.filter({ hasText: "安全风险" });
 	const external = rows.filter({ hasText: "外部 PR 审查" });
-	for (const row of [security, external]) {
-		const bounds = await row.getByTestId("judgment-status").boundingBox();
-		const confidence = await row.getByTestId("judgment-confidence").boundingBox();
-		expect(bounds).not.toBeNull();
-		expect(confidence).not.toBeNull();
-		expect(
-			Math.abs(
-				(bounds?.y ?? 0) +
-					(bounds?.height ?? 0) / 2 -
-					(confidence?.y ?? 0) -
-					(confidence?.height ?? 0) / 2,
-			),
-		).toBeLessThan(1);
-	}
+	for (const row of [security, external])
+		await expect
+			.poll(() =>
+				row.evaluate((element) => {
+					const status = element
+						.querySelector('[data-testid="judgment-status"]')
+						?.getBoundingClientRect();
+					const confidence = element
+						.querySelector('[data-testid="judgment-confidence"]')
+						?.getBoundingClientRect();
+					return status && confidence
+						? Math.abs(status.y + status.height / 2 - confidence.y - confidence.height / 2)
+						: Number.POSITIVE_INFINITY;
+				}),
+			)
+			.toBeLessThan(1);
 	const columns = await rows.evaluateAll((items) =>
 		items.map((item) => ({
 			status: item.querySelector('[data-testid="judgment-status"]')?.getBoundingClientRect().x,
