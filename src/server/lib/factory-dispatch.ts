@@ -53,10 +53,13 @@ export async function consumeFactory(batch: MessageBatch<unknown>, env: Env): Pr
 }
 /** D1 is the durable outbox: missing messages and expired leases are redispatched every minute. */
 export async function continueFactory(env: Env): Promise<void> {
-	await scheduleRefreshes(env.DB, new Date().toISOString());
-	const ids = await dueRuns(createDb(env.DB), new Date().toISOString());
-	for (const id of ids) await enqueueRun(env, id);
-	for (const reviewId of await dueAssessments(createDb(env.DB), new Date().toISOString()))
-		await env.FACTORY_QUEUE.send({ reviewId });
-	await pruneFactory(createDb(env.DB), new Date().toISOString());
+	try {
+		await scheduleRefreshes(env.DB, new Date().toISOString());
+		const ids = await dueRuns(createDb(env.DB), new Date().toISOString());
+		for (const id of ids) await enqueueRun(env, id);
+		for (const reviewId of await dueAssessments(createDb(env.DB), new Date().toISOString()))
+			await env.FACTORY_QUEUE.send({ reviewId });
+	} finally {
+		await pruneFactory(createDb(env.DB), new Date().toISOString());
+	}
 }

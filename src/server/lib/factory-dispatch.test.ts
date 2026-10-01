@@ -4,6 +4,7 @@ import { dueAssessments, executeAssessment } from "./ai-assessment";
 import { dueRuns } from "./db/factory-runs";
 import { consumeFactory, continueFactory, enqueueRun } from "./factory-dispatch";
 import { executeRunPage } from "./factory-execute";
+import { pruneFactory } from "./factory-retention";
 
 vi.mock("./ai-assessment", () => ({
 	dueAssessments: vi.fn().mockResolvedValue([]),
@@ -14,6 +15,14 @@ vi.mock("./factory-retention", () => ({ pruneFactory: vi.fn() }));
 vi.mock("./factory-execute", () => ({ executeRunPage: vi.fn() }));
 vi.mock("./db/factory-runs", () => ({ dueRuns: vi.fn() }));
 afterEach(() => vi.clearAllMocks());
+it("runs reference-safe cleanup even when queue dispatch fails", async () => {
+	const env = {
+		FACTORY_QUEUE: { send: vi.fn().mockRejectedValue(new Error("queue unavailable")) },
+	} as unknown as Env;
+	vi.mocked(dueRuns).mockResolvedValue(["due"]);
+	await expect(continueFactory(env)).rejects.toThrow("queue unavailable");
+	expect(pruneFactory).toHaveBeenCalledTimes(1);
+});
 it("acknowledges duplicates, retries failures and schedules durable continuation with bounded delays", async () => {
 	const send = vi.fn();
 	const env = { FACTORY_QUEUE: { send } } as unknown as Env;

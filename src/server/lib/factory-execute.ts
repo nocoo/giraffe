@@ -331,7 +331,6 @@ export async function executeRunPage(
 			).toISOString();
 		} else if (
 			(step.retryFailures ?? 0) <= RUN_MAX_RETRIES &&
-			code !== "factory_capacity" &&
 			code !== "repository_unavailable" &&
 			![
 				"snapshot_incomplete",
