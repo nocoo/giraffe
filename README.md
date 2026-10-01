@@ -31,7 +31,7 @@ PAT 使用 AES-256-GCM 加密后存入 D1；数据快照以 JSON 保存，未做
 - **单仓详情**：详情、安全、Actions、PR、Issue、Release、流量、语言和贡献者九个页签。
 - **Insights 与告警**：按当前快照展示规则分类及 GitHub 安全告警，标明截断、权限不足或数据不可用状态。
 - **通知处理**：浏览通知，标记单条或全部已读；这些操作会同步写回 GitHub。
-- **每日变化**：按 UTC 日期比较 Stars、Forks 和开放 Issue 数量，支持复制 Markdown；缺少昨天的基线时显示缺失状态。
+- **Starred / All scope**: business pages default to Giraffe-starred repositories. Daily quick refresh updates their data; weekly deep refresh calibrates history. Page times describe the selected saved sources.
 
 可见仓库与告警取决于 PAT 权限及 GitHub API 的返回结果。控制台不是持续运行的监控服务，也不执行独立的代码安全扫描。
 
@@ -39,8 +39,8 @@ PAT 使用 AES-256-GCM 加密后存入 D1；数据快照以 JSON 保存，未做
 
 1. 打开[站点](https://giraffe.hexly.ai)，通过该部署的 Cloudflare Access 访问策略。应用没有单独的注册或登录页。
 2. 在「设置」添加 GitHub **classic PAT**，需要 `repo`、`read:org`、`read:user` 和 `notifications` scope。当前不接受 fine-grained PAT。令牌输入框在提交时立即清空。
-3. 第一个账号会成为当前账号并自动同步仓库；添加后续账号后，手动切换即可同步该账号。删除当前账号后，需要重新选择其他账号。
-4. 在目标页面点击刷新以获取新数据。仓库详情中尚无快照的页签首次打开时会尝试加载；平时读取的是已有快照。
+3. The first account becomes active. Open the refresh center to discover repositories, then star the repositories you follow. Adding or switching an account does not silently collect GitHub data.
+4. Configure daily quick and weekly deep refresh in the refresh center. Business pages read saved snapshots and default to Starred; select All to include other repositories and their original source times.
 
 侧栏身份来自 Cloudflare Access。姓名与头像会通过邮箱的 SHA-256 摘要查询 `lizheng.blog` 作者档案，服务不可用时使用身份信息回退。
 

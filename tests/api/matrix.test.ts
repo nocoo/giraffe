@@ -656,7 +656,11 @@ describe("api method matrix", () => {
 			expect(res.status).toBe(200);
 			const body = await res.json();
 			noSecrets(body);
-			snapshotMeta(body as Record<string, unknown>);
+			if (path === "/api/insights/assessments" && !body.items.length) {
+				expect(body.fetched_at).toBe("");
+				expect(body.freshness.latestAt).toBeNull();
+				expect(body.account_id).toBe(account.id);
+			} else snapshotMeta(body as Record<string, unknown>);
 		}
 		expect(await githubCount()).toBe(before);
 		expect(d1Rows("SELECT kind, payload, fetched_at FROM snapshots ORDER BY kind")).toEqual(
@@ -807,10 +811,61 @@ describe("api method matrix", () => {
 		).toBe(200);
 		const refreshSettings = (await (await api("/api/refresh/settings")).json()) as {
 			starred: string[];
-			schedules: { enabled: boolean; time: string }[];
+			schedules: { kind: string; enabled: boolean; time: string }[];
 		};
 		expect(refreshSettings.starred).toEqual(["octocat/hello-world"]);
-		expect(refreshSettings.schedules.every((s) => s.enabled)).toBe(true);
+		for (const path of [
+			"repos",
+			"issues",
+			"prs",
+			"alerts",
+			"notifications",
+			"insights",
+			"ci",
+			"factory",
+			"insights/assessments",
+		]) {
+			const scoped = await api(`/api/${path}?scope=starred`);
+			expect(scoped.status, path).toBe(200);
+			const body = (await scoped.json()) as { account_id: string; freshness: { total: number } };
+			expect(body.account_id).toBe(account.id);
+			expect(body.freshness, path).toBeDefined();
+			expect((await api(`/api/${path}?scope=unknown`)).status, path).toBe(400);
+		}
+		expect(await githubCount()).toBe(starsBefore);
+		expect(
+			(
+				await save("/api/repos/octocat/hello-world/star", {
+					account_id: account.id,
+					enabled: false,
+				})
+			).status,
+		).toBe(200);
+		for (const [path, key] of [
+			["repos", "repos"],
+			["issues", "issues"],
+			["prs", "pull_requests"],
+			["insights", "insights"],
+			["ci", "repos"],
+			["factory", "repos"],
+		]) {
+			const empty = (await (await api(`/api/${path}?scope=starred`)).json()) as Record<
+				string,
+				unknown
+			>;
+			expect(empty[String(key)], path).toEqual([]);
+			expect(empty.freshness, path).toMatchObject({ total: 0, missing: 0, latestAt: null });
+		}
+		expect((await (await api("/api/repos?scope=all")).json()).repos.length).toBeGreaterThan(0);
+		expect(
+			(await save("/api/repos/octocat/hello-world/star", { account_id: account.id, enabled: true }))
+				.status,
+		).toBe(200);
+		expect(await githubCount()).toBe(starsBefore);
+		expect(
+			refreshSettings.schedules.filter((s) => s.kind !== "catalog").every((s) => s.enabled),
+		).toBe(true);
+		expect(refreshSettings.schedules.find((s) => s.kind === "catalog")?.enabled).toBe(false);
 		for (const kind of ["daily", "weekly"]) {
 			const config = {
 				account_id: account.id,

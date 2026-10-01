@@ -17,8 +17,9 @@ test("factory run survives reload, refreshes the whole site and preserves the la
 	);
 	await page.goto("/factory");
 	await page.getByRole("link", { name: "去刷新", exact: true }).click();
-	await expect(page.getByRole("button", { name: "同步仓库列表" })).toBeEnabled();
-	await page.getByRole("button", { name: "同步仓库列表" }).click();
+	await page.getByRole("combobox", { name: "刷新模式", exact: true }).click();
+	await page.getByRole("option", { name: "同步仓库列表", exact: true }).click();
+	await page.getByRole("button", { name: "开始刷新", exact: true }).click();
 	await expect(page.getByRole("progressbar", { name: "本次刷新进度" })).toHaveAttribute("max", "4");
 	await page.reload();
 	await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -39,6 +40,8 @@ test("factory run survives reload, refreshes the whole site and preserves the la
 
 	await page.getByRole("button", { name: "更新状态", exact: true }).click();
 	await page.getByRole("tab", { name: "发起刷新" }).click();
+	await page.getByRole("combobox", { name: "刷新模式", exact: true }).click();
+	await page.getByRole("option", { name: "快速刷新", exact: true }).click();
 	await expect(
 		page.getByRole("checkbox", { name: "octocat/hello-world", exact: true }),
 	).toBeChecked();

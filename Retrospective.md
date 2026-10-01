@@ -216,3 +216,25 @@ the tag and rerun its deployment only after the prerequisite CI succeeds.
 The first historical replay still returned an unsupported all-clear after a textual repair instruction. Prompt wording alone did not reliably constrain status choices. Per-domain response schemas now exclude healthy when the sampled evidence is incomplete, while server validation remains mandatory. Both selected historical failure samples then passed through the configured gateway in 16.3 and 14.2 seconds. These samples demonstrate compatibility, not a universal model-quality guarantee.
 
 An initial ALTER-column migration failed the local startup replay test because this project initializes its latest schema and replays migrations idempotently. No production migration ran. The provider switch now uses an additive, idempotent options table; backup-copy migration replay and rollback checks preserve existing rows. Inspect both production migration tracking and local schema bootstrap before choosing DDL.
+
+## 2026-10-01 — Scope and successful checks define freshness
+
+Daily starred runs successfully merged Issue/PR rows, but list headers displayed only
+the old account-wide scan time. Conversely, CI used the newest repository timestamp,
+and marking a notification read changed the entire inbox collection timestamp. None
+of these timestamps described the page's actual selected evidence. Scope must apply
+before both aggregation and freshness calculation. A successful check of an empty
+repository counts; missing data does not. Source time, task time, user edits and AI
+report generation are separate events.
+
+An ID intersection is not a safe stopping condition for mutable histories: a fixture
+with 101 previously open issues closed since the baseline retained the last issue as
+open after the first page. Use bounded full reconciliation for current mutable lists;
+reserve overlap shortcuts for evidence whose ordering and immutability justify them.
+
+The parallel tool rejected calls containing both legacy `message` and `items` keys,
+including empty values. Repeating an unchanged invalid request did not improve the
+outcome. Stop after the first deterministic schema failure, correct the shape or use
+an available runner, and keep worker file ownership explicit. The inherited Herdr
+pane identifiers were stale; do not infer the live pane from them or prompt the
+coordinator's own pane as though it were a worker communication channel.

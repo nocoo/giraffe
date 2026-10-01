@@ -2,6 +2,8 @@ import { expect, type Page, test } from "@playwright/test";
 import type { RepoAssessment } from "../../src/lib/repo-assessment";
 import { createUiFixtures } from "./ui-fixtures";
 
+test.use({ timezoneId: "Asia/Shanghai" });
+
 const endpoint = "/api/repos/octocat/hello-world/assessment";
 const fixture: RepoAssessment = {
 	account_id: "ui-account",
@@ -174,7 +176,9 @@ test("new assessments show their actual two-week focus while retained v1 reports
 	);
 	const panel = await openAssessment(page);
 	await expect(
-		panel.getByText("最近 14 天 · 2026-09-10 — 2026-09-24（UTC）", { exact: true }),
+		panel.getByText("最近 14 天 · 2026-09-10 16:30 — 2026-09-24 16:30（本地时间）", {
+			exact: true,
+		}),
 	).toBeVisible();
 	await expect(panel.getByText(/安全风险以 Issues 为主要线索/)).toBeVisible();
 	await panel.getByRole("heading", { name: "Jev 判断", exact: true }).scrollIntoViewIfNeeded();

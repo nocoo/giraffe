@@ -303,7 +303,9 @@ test("chart content fills cards, donut charts use the plot area and table gutter
 				(element.closest("[data-basalt-surface]")?.getBoundingClientRect().left ?? 0),
 		),
 	).toBeLessThanOrEqual(1);
-	await page.getByRole("button", { name: /2026-09-10 UTC.*点击查看当日统计/ }).click();
+	await page
+		.getByRole("button", { name: /2026-09-10 08:00 → 2026-09-11 08:00.*点击查看当日统计/ })
+		.click();
 	await expect(page.locator(".factory-ledger-selected")).toHaveAttribute("aria-selected", "true");
 	await page.goto("/insights");
 	const chart = page.getByRole("group", {
@@ -352,7 +354,10 @@ test("signal list expands fully and fills the space beside a taller dependency c
 		return repo;
 	});
 	snapshot.inventory.total = snapshot.inventory.scanned = snapshot.repos.length;
-	await page.route("**/api/factory", (route) => route.fulfill({ json: snapshot }));
+	await page.route(
+		(url) => url.pathname === "/api/factory",
+		(route) => route.fulfill({ json: snapshot }),
+	);
 	await page.setViewportSize({ width: 1440, height: 1000 });
 	await page.goto("/factory");
 	const list = page.locator(".factory-signal-list");
@@ -417,11 +422,13 @@ for (const [chart, values] of [
 		await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
 		const tip = plot.locator(".factory-chart-tip");
 		await expect(tip).toBeVisible();
-		await expect(tip.locator("strong")).toHaveText("2026-09-10 UTC");
+		await expect(tip.locator("strong")).toHaveText("2026-09-10 08:00 → 2026-09-11 08:00");
 		await expect(tip.getByTestId("chart-tooltip-row")).toHaveText([...values]);
 		await page.mouse.move(0, 0);
 		await expect(tip).not.toBeVisible();
-		await page.getByRole("button", { name: /2026-09-10 UTC.*点击查看当日统计/ }).click();
+		await page
+			.getByRole("button", { name: /2026-09-10 08:00 → 2026-09-11 08:00.*点击查看当日统计/ })
+			.click();
 		await expect(page.locator(".factory-ledger-selected")).toContainText("2026-09-10");
 		expect(errors).toEqual([]);
 	});
@@ -463,7 +470,9 @@ test("factory visualizations use Basalt chart frames and preserve keyboard drill
 	await page.keyboard.press("Enter");
 	await expect(page).toHaveURL(/repo=nocoo%2Fapp/);
 	await page.getByRole("button", { name: "返回仓库群", exact: true }).click();
-	const day = page.getByRole("button", { name: /2026-09-10 UTC.*点击查看当日统计/ });
+	const day = page.getByRole("button", {
+		name: /2026-09-10 08:00 → 2026-09-11 08:00.*点击查看当日统计/,
+	});
 	await day.click();
 	await expect(day).toHaveAttribute("aria-pressed", "true");
 	await expect(page.locator("#factory-ledger")).toHaveAttribute("open", "");

@@ -111,7 +111,7 @@ async function mockConsole(page: Page, fixture: ReturnType<typeof consoleFixture
 		"/api/refresh/settings": {
 			account_id: fixture.state.account_id,
 			starred: [],
-			schedules: (["daily", "weekly"] as const).map((kind) => ({
+			schedules: (["daily", "weekly", "catalog"] as const).map((kind) => ({
 				...defaultSchedule(kind),
 				kind,
 				nextAt: null,
@@ -527,6 +527,13 @@ test("refresh center configures daily and weekly jobs, keeps drafts while pollin
 				lastRunId: null,
 				lastError: null,
 			},
+			{
+				...defaultSchedule("catalog"),
+				kind: "catalog",
+				nextAt: null,
+				lastRunId: null,
+				lastError: null,
+			},
 		],
 	};
 	await page.route("**/api/refresh/**", (route) => {
@@ -548,9 +555,15 @@ test("refresh center configures daily and weekly jobs, keeps drafts while pollin
 	await page.getByRole("switch", { name: "启用每周深度刷新", exact: true }).click();
 	await page.getByRole("button", { name: "保存计划", exact: true }).nth(1).click();
 	await expect.poll(() => settings.schedules[1]?.enabled).toBe(false);
+	await page.getByRole("switch", { name: "启用每日同步仓库列表", exact: true }).click();
+	await page.getByLabel("每日同步仓库列表时间", { exact: true }).fill("06:30");
+	await page.getByRole("button", { name: "保存计划", exact: true }).nth(2).click();
+	await expect.poll(() => settings.schedules[2]?.enabled).toBe(true);
+	expect(settings.schedules[2]?.time).toBe("06:30");
 	await page.reload();
 	await page.getByRole("tab", { name: "自动刷新", exact: true }).click();
 	await expect(page.getByLabel("每日快速刷新时间", { exact: true })).toHaveValue("09:15");
+	await expect(page.getByLabel("每日同步仓库列表时间", { exact: true })).toHaveValue("06:30");
 	await expect(
 		page.getByRole("switch", { name: "启用每周深度刷新", exact: true }),
 	).not.toBeChecked();
@@ -568,4 +581,65 @@ test("refresh center configures daily and weekly jobs, keeps drafts while pollin
 	);
 	await page.getByRole("button", { name: "开始刷新（3）", exact: true }).click();
 	expect((await request).postDataJSON().depth).toBe("deep");
+});
+
+for (const [timeZone, expected] of [
+	["Asia/Shanghai", "2026年9月17日 04:01:12"],
+	["America/Los_Angeles", "2026年9月16日 13:01:12"],
+]) {
+	test(`refresh timestamps follow the browser zone ${timeZone}`, async ({ browser }) => {
+		const context = await browser.newContext({ timezoneId: timeZone });
+		try {
+			const page = await context.newPage();
+			const fixture = consoleFixture();
+			const run = fixture.state.history[0];
+			if (!run) throw new Error("fixture run missing");
+			run.startedAt = "2026-09-16T20:01:12Z";
+			await mockConsole(page, fixture);
+			await page.goto("/refresh");
+			await page.getByText("运行信息", { exact: true }).click();
+			await expect(page.getByText(`开始 ${expected}`, { exact: false })).toBeVisible();
+			await expect(
+				page.getByText(`时间按本地时区（${timeZone}）显示。`, { exact: false }),
+			).toBeVisible();
+			await expect(page.locator(".factory-console")).not.toContainText(" UTC");
+		} finally {
+			await context.close();
+		}
+	});
+}
+
+test("catalogue sync shares the refresh selector and records automatic provenance", async ({
+	page,
+}) => {
+	const fixture = consoleFixture();
+	fixture.state.catalog = [];
+	fixture.state.catalogComplete = false;
+	fixture.state.history = [];
+	await mockConsole(page, fixture);
+	let request: Record<string, unknown> | undefined;
+	await page.route("**/api/factory/runs", async (route) => {
+		if (route.request().method() !== "POST") return route.fallback();
+		request = route.request().postDataJSON();
+		return route.fulfill({ status: 202, json: { id: "catalogue-run", totalSteps: 4 } });
+	});
+	await page.goto("/refresh");
+	await page.getByRole("tab", { name: "发起刷新", exact: true }).click();
+	await page.getByRole("combobox", { name: "刷新模式", exact: true }).click();
+	await page.getByRole("option", { name: "同步仓库列表", exact: true }).click();
+	await expect(page.getByRole("combobox", { name: "刷新范围", exact: true })).toHaveCount(0);
+	await expect(page.getByRole("button", { name: "同步仓库列表", exact: true })).toHaveCount(0);
+	await page.getByRole("button", { name: "开始刷新", exact: true }).click();
+	await expect.poll(() => request?.mode).toBe("catalog");
+	expect(request).toMatchObject({ scope: "all", depth: "quick" });
+	expect(request).not.toHaveProperty("repos");
+	expect(request).not.toHaveProperty("order");
+	fixture.older.trigger = "daily";
+	fixture.state.history = [fixture.older];
+	await page.getByRole("button", { name: "更新状态", exact: true }).click();
+	await expect(
+		page.getByRole("heading", { name: "已完成 · 同步列表 · 每日自动", exact: true }),
+	).toBeVisible();
+	await page.getByRole("combobox", { name: "运行记录", exact: true }).click();
+	await expect(page.getByRole("option", { name: /同步列表 · 每日自动/ })).toBeVisible();
 });

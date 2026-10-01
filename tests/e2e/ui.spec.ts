@@ -29,8 +29,10 @@ test("repository and Insights omit optional security warnings while showing save
 	page,
 }) => {
 	const snapshot = createUiFixtures()["/api/repos"];
-	await page.route("**/api/insights", (route) =>
-		route.fulfill({ json: { ...createUiFixtures()["/api/insights"], alerts_incomplete: true } }),
+	await page.route(
+		(url) => url.pathname === "/api/insights",
+		(route) =>
+			route.fulfill({ json: { ...createUiFixtures()["/api/insights"], alerts_incomplete: true } }),
 	);
 	await page.clock.setFixedTime(new Date(Date.parse(snapshot.fetched_at) + 5 * 86400000));
 	await page.goto("/");
@@ -172,19 +174,22 @@ test("marking a notification shows progress and applies the returned unread stat
 	});
 	const initial = createUiFixtures()["/api/notifications"];
 	let requests = 0;
-	await page.route("**/api/notifications/read", async (route) => {
-		requests += 1;
-		await pending;
-		await route.fulfill({
-			json: {
-				...initial,
-				notifications: initial.notifications.map((row) => ({
-					...row,
-					unread: row.id === "1" ? false : row.unread,
-				})),
-			},
-		});
-	});
+	await page.route(
+		(url) => url.pathname === "/api/notifications/read",
+		async (route) => {
+			requests += 1;
+			await pending;
+			await route.fulfill({
+				json: {
+					...initial,
+					notifications: initial.notifications.map((row) => ({
+						...row,
+						unread: row.id === "1" ? false : row.unread,
+					})),
+				},
+			});
+		},
+	);
 	try {
 		await page.goto("/inbox");
 		const row = page.getByTestId("inbox-list").getByRole("row").filter({ hasText: "优化长标题" });
@@ -192,11 +197,11 @@ test("marking a notification shows progress and applies the returned unread stat
 		await expect(mark).toBeVisible();
 		await mark.click();
 		await expect(mark).toBeDisabled();
-		await expect(page.getByRole("button", { name: "全部已读", exact: true })).toBeDisabled();
+		await expect(page.getByRole("button", { name: "当前范围已读", exact: true })).toBeDisabled();
 		finish();
 		await expect(row).toContainText("已读");
 		await expect(row.getByRole("button")).toHaveCount(0);
-		await expect(page.getByRole("button", { name: "全部已读", exact: true })).toBeEnabled();
+		await expect(page.getByRole("button", { name: "当前范围已读", exact: true })).toBeEnabled();
 		expect(requests).toBe(1);
 	} finally {
 		finish();
@@ -290,8 +295,10 @@ test("unavailable optional security is empty while traffic retains permission gu
 	page,
 }) => {
 	const fixtures = createUiFixtures();
-	await page.route("**/api/alerts", (route) =>
-		route.fulfill({ json: { ...fixtures["/api/alerts"], items: [], unavailable: true } }),
+	await page.route(
+		(url) => url.pathname === "/api/alerts",
+		(route) =>
+			route.fulfill({ json: { ...fixtures["/api/alerts"], items: [], unavailable: true } }),
 	);
 	await page.route("**/api/repos/octocat/hello-world/security", (route) =>
 		route.fulfill({
@@ -345,7 +352,7 @@ test("missing repository tabs remain read-only and show fresh data after a facto
 		}),
 	);
 	await page.goto("/repos/octocat/hello-world");
-	const updated = page.getByTestId("repo-detail").locator("time");
+	const updated = page.getByTestId("repo-detail").locator(":scope > header time");
 	await expect(updated).toHaveAttribute("datetime", "2026-09-08T08:30:00.000Z");
 	await page.getByRole("tab", { name: "安全", exact: true }).click();
 	await expect(updated).toHaveAttribute("datetime", previous);
@@ -468,7 +475,10 @@ test("CI page separates consecutive failures from recurring ones and filters the
 	await expect(list.getByRole("row")).toHaveCount(5);
 	await page.getByRole("radio", { name: "连续失败", exact: true }).click();
 	await expect(list.getByRole("row")).toHaveCount(2);
-	await page.getByRole("radio", { name: "全部", exact: true }).click();
+	await page
+		.getByLabel("工作流筛选", { exact: true })
+		.getByRole("radio", { name: "全部", exact: true })
+		.click();
 	await page.getByLabel("搜索工作流", { exact: true }).fill("field");
 	await expect(list.getByRole("row")).toHaveCount(2);
 	const releases = page.getByTestId("release-list");

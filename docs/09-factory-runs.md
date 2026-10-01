@@ -76,20 +76,20 @@ API 的 `repos` 只表示 selected 成员；`order` 是独立的优先级顺序�
 
 ## Refresh depth
 
-Refresh runs freeze `depth` (`quick` or `deep`) independently of catalogue/refresh
-`mode`. Persisted runs without a depth describe the original deep collector.
-Quick statistics collection reads the accepted immutable resource version, processes
-all records on each page, and stops when a page intersects that baseline. Fresh
-records replace stored records by ID. Missing or incomplete baselines bootstrap
-through full pagination; reaching the end replaces the resource and reconciles
-removed records. Open-only security lists are fully reconciled.
+Daily quick refresh updates the current starred view. Weekly deep refresh calibrates
+history across its configured scope. Depth and repository membership are separate;
+both modes publish the same snapshots and preserve prior good data on failed reads.
+Quick mode reuses complete pinned commit/manifests evidence only when the verified
+head and rolling window permit it. Immutable commit history can stop at a verified
+baseline intersection. Mutable Issues, PRs, Actions, releases and contributor lists
+must not stop merely because an old ID appears: old records can change, disappear,
+or move between pages. Current open Issue/PR lists are fully reconciled within the
+existing request, pagination and storage limits. Deep mode rebuilds all bounded
+source evidence, including unchanged-head resources.
 
-Pinned commits and manifests can reuse complete evidence for an unchanged head;
-metrics are recalculated for the current rolling window. Resource coverage records
-`strategy` and `sourceFetchedAt` to distinguish a new check from a complete source
-scan. Reused evidence is copied into the new immutable publication under the same
-lease fence. Quick overlap is a heuristic: older edits, deletions and force-pushes
-require periodic deep refresh. Existing storage and API limits still apply.
+Source provenance remains distinct from the last successful check. Reused code
+evidence records its original `sourceFetchedAt`; missing/incomplete evidence causes
+normal collection. A failed or limited read never refreshes the age of retained data.
 
 ## Stars and automatic refresh
 
@@ -121,15 +121,49 @@ Migration `0007_refresh_schedules.sql` adds account-cascaded stars and schedules
 Apply it before the new Worker. Rollback the Worker without dropping these tables;
 previous snapshots, immutable evidence and run rows are retained.
 
-## Page reuse and incremental collection
+## Page scope and daily collection
 
-Quick page collection merges updated Issue/PR search results (including closed
-work), Actions, releases and contributors into the saved mapped snapshots. Every
-fetched page is processed before overlap stops pagination. Exhaustion reconciles
-removals; incomplete responses cannot replace good snapshots. Security and
-notifications reconcile their current open/unread sets. Full-site Issue/PR/security
-results feed the corresponding repository tabs without duplicate requests. Languages and contributors carry `source_head`. Quick refresh reuses them only
-when that recorded head matches successful current metadata, keeping
-`source_fetched_at` separate from the new check time. Missing provenance forces
-a fresh request, even if the previous statistics head is unchanged. Complete deep runs always
-scan upstream history and rebuild evidence under existing bounded limits.
+Cross-repository business pages default to the account's Giraffe stars and expose a
+Starred / All filter. Apply the scope before aggregating tables, totals, charts and
+rankings. Statistics participation remains an independent policy; a starred repository
+excluded from statistics still has its detail snapshots refreshed. An empty star set
+stays empty and offers the complete catalogue rather than silently switching scopes.
+Repository URLs identify a specific repository and are not hidden by this filter.
+Settings, automatic schedules and run history are account-level control surfaces.
+
+Business snapshot GETs accept `scope=starred|all`; omitted scope reads the ordinary
+saved projection. GET remains local, read-only and never starts collection. Scope
+changes cannot change the schedule or issue upstream writes. Notification bulk-read
+in starred scope affects only that scope's saved unread threads; the account-wide
+GitHub bulk endpoint is reserved for an explicitly all-scope action. Read-through
+updates preserve notification collection time.
+
+New daily starred plans include the repository list and notifications, the existing
+selected statistics/detail work, explicit selected Insights derivation and publication.
+A single repository therefore has 23 logical steps in a daily plan, versus 20 for a
+manual selected run. Missing or day-old factory catalogues are refreshed through an
+idempotent persisted preparation run before accepting the scheduled refresh. The
+original occurrence stays due while preparation is active. A terminal preparation
+failure records `catalog_incomplete` and advances to the next occurrence so one
+failed idempotency key cannot block future days; accepted plans remain frozen.
+Successful repository detail reads merge into account snapshots and record
+`repository_fetched_at`. Missing global baselines can retain scoped evidence with an
+explicit incomplete global flag; they never invent complete account coverage.
+
+Page freshness describes the selected primary data, not the latest task, unrelated
+repository, derived GET time or content edit time. Mixed source times and missing
+coverage remain visible. Issues/PRs include successfully checked zero-row repositories
+in scope freshness. CI derives its scope before totals and considers saved dependencies.
+Insights uses refreshed selected sources; optional unavailable security does not prevent
+core derivation. Assessment source time and report-generation time remain separate.
+The browser re-reads saved data while visible and on focus; background tabs pause.
+
+## Dashboard time presentation
+
+Dashboard timestamps use the browser's local timezone, including refresh history,
+CI runs, assessment windows and scheduled next-run times. Storage and API instants
+remain UTC. Preaggregated days retain their original bucket boundaries; charts,
+ledger rows and detail filters show those boundaries as local intervals, inclusive
+of the start and exclusive of the end. Local dates on axes identify the interval
+start, not a regrouping of observations. Schedule wall-clock configuration remains
+explicitly labelled Beijing time; changing the viewing timezone does not reschedule jobs.

@@ -24,7 +24,10 @@ test("settings PAT, unified refresh, repo list, and repo detail", async ({ page 
 			await page.request.get("/api/factory/runs")
 		).json()) as FactoryRunResponse;
 		if (!state.catalogComplete) {
-			const sync = page.getByRole("button", { name: "同步仓库列表", exact: true });
+			await page.getByRole("tab", { name: "发起刷新", exact: true }).click();
+			await page.getByRole("combobox", { name: "刷新模式", exact: true }).click();
+			await page.getByRole("option", { name: "同步仓库列表", exact: true }).click();
+			const sync = page.getByRole("button", { name: "开始刷新", exact: true });
 			await expect(sync).toBeEnabled({ timeout: 70000 });
 			await sync.click();
 			await expect
@@ -41,6 +44,8 @@ test("settings PAT, unified refresh, repo list, and repo detail", async ({ page 
 		}
 		await page.getByRole("button", { name: "更新状态", exact: true }).click();
 		await page.getByRole("tab", { name: "发起刷新", exact: true }).click();
+		await page.getByRole("combobox", { name: "刷新模式", exact: true }).click();
+		await page.getByRole("option", { name: "快速刷新", exact: true }).click();
 		const start = page.getByRole("button", { name: "开始刷新（1）", exact: true });
 		await expect(start).toBeEnabled({ timeout: 70000 });
 		await start.click();
@@ -58,6 +63,10 @@ test("settings PAT, unified refresh, repo list, and repo detail", async ({ page 
 	}
 
 	await page.goto("/");
+	await page
+		.getByRole("group", { name: "仓库范围" })
+		.getByRole("radio", { name: "全部", exact: true })
+		.click();
 	const list = page.getByTestId("repo-list");
 	await expect(list).toBeVisible();
 	await expect(list.getByText("octocat/hello-world")).toBeVisible();

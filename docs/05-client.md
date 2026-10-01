@@ -324,12 +324,23 @@ refresh, and shows mode plus manual/daily/weekly origin in history. Automatic
 schedules use Beijing time and are account scoped. Giraffe-local repository stars
 control the daily scope; the weekly deep scope is configurable. See [09](09-factory-runs.md).
 
+Business pages default to the starred scope and expose a Starred / All filter.
+Scope applies before metrics, charts, ranks and freshness; changing it only reads
+saved data. Explicit repository URLs and account-level settings/history remain
+outside this filter. Checked-empty repositories count toward freshness, whereas
+missing or retained old sources remain explicit. Daily scheduled selected runs
+also collect notifications and derive selected Insights after successful sources.
+Repository discovery is prepared automatically when the saved catalogue is stale.
+Notification bulk-read is limited to the selected repository scope, and never
+advances the inbox collection timestamp. See 09 for the precise daily run contract.
+
+
 - Full refresh updates the site catalog, Issues, PRs, security alerts, notifications, Insights and all accessible repository detail tabs. Selected, filtered, stale and failed scopes update only the resolved repositories: nine statistics steps, nine detail tabs and one AI analysis checkpoint each, plus publication. One selected repository is 20 steps; selected repository entries merge into existing global lists while unrelated rows and the original full-scan timestamps are preserved. The console labels this phase as repository pages and omits the account-contribution phase. Known manual selections remain available when the full site catalog is incomplete. The AI phase follows the existing background job through Jev judgment and report generation. Unconfigured AI is shown as skipped without a warning; failed analysis does not label collected repository data as lost.
 - 首次使用或旧数据升级时先「同步仓库列表」，再「开始刷新」。清单不完整时禁止在界面启动刷新，不能把未扫描的数据当空数组。
 - 各页面仅 GET；缺少快照统一使用 `SnapshotPending` 导航至 `/refresh` 刷新中心。缺账号则前往设置，不混同于缺数据。
 - 添加、激活、删除账号只更新账号状态与本地 stamp，不自动采集。通知标记已读仍是独立的业务写操作，不属于刷新。
 - 每次快照读取前 `ensureSession()` 获取当前账号；同一轮并发可复用 in-flight 查询，但不跨请求长期缓存。读取前后及应用响应时都核对 `account_id`，不匹配即丢弃。
-- 路由重新挂载时重新 GET 保存的快照，避免后台刷新完成后一直显示旧的内存数据。仓库命令面板缓存仍按账号隔离，不用于代替页面读取。
+- Pages re-read saved snapshots on navigation, scope changes, focus and visible-only polling. They never start GitHub collection from a GET. 仓库命令面板缓存仍按账号隔离，不用于代替页面读取。
 - 工厂创建/控制、通知 read/read-all 的 body 必带当前 `account_id`。`account_conflict` 只恢复会话并提示，不自动重放任何写操作。
 - 工厂只读轮询一次结束后才安排下一次；刷新中心显示页面进度，离开页面不停止服务端任务。其他页面不轮询 GitHub、不在 focus 或缺数据时自动发起刷新。
 
