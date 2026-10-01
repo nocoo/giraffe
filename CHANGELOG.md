@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.12.2 — 2026-10-01
+
+### Fixed
+
+- Place repository scope, compact search/sort controls and page actions beside business-page titles instead of above them
+- Share the subtitle line with primary-data timestamps, wrapping long ranges naturally on narrow screens
+- Keep repository scope beside the title on mobile and wrap search/sort controls only when space is limited
+- Move secondary Insights source timestamps into an accessible on-demand popover
+
+### Operations
+
+- Preserve filtering, data freshness semantics and saved snapshots; no database migration or new Cloudflare binding is required
+- Verify compact headers across all eight business pages, desktop/mobile widths, dark themes and mixed timestamp ranges
+
 ## v0.12.1 — 2026-10-01
 
 ### Fixed
