@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.12.0 — 2026-10-01
+
+### Added
+
+- Default starred-repository views with a shared Starred / All scope filter across business pages
+- Scope-aware data freshness, including checked empty repositories, mixed source times and missing coverage
+- Daily starred refresh of repository data, notifications and explicit Insights derivation, with persisted catalogue preparation
+- Optional daily catalogue schedules and clearer manual catalogue/quick/deep task selection
+
+### Fixed
+
+- Patch the transitive Undici dependency to 7.29.1 to clear the current vulnerability gate
+- Reconcile current Issue/PR and mutable history pages instead of stopping at arbitrary stored IDs
+- Preserve collection timestamps when notifications are marked read and bound bulk-read actions to their selected scope
+- Apply repository scope before CI, Insights and factory aggregation; distinguish data time from publication and report time
+- Re-read saved page data while visible without causing upstream collection
+- Use consistent local-time display for source instants and explicit intervals for daily charts
+
+### Operations
+
+- Apply additive migration 0010 before the matching Worker; existing accounts, snapshots and immutable evidence remain intact
+- Daily quick refresh remains starred; weekly deep refresh retains its configured scope for history calibration
+- Quick collection retains safe unchanged-head reuse, while mutable source reconciliation may require more GitHub requests
+
 ## v0.11.2 — 2026-09-28
 
 ### Fixed
