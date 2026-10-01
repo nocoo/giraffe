@@ -107,6 +107,7 @@ export type FactoryStreamData = {
 	coverage: FactoryCoverage;
 };
 export type FactorySnapshot = {
+	freshness?: import("./snapshot-freshness").SnapshotFreshness;
 	contributionExcluded?: boolean;
 	contributionObservation?: { version: string; window: FactoryWindow; fetchedAt: string };
 	publication?: { mixed: boolean; runId: string; publishedAt: string };

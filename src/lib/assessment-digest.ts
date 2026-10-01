@@ -22,6 +22,7 @@ export type AssessmentDigest = {
 };
 
 export type AssessmentDigests = {
+	freshness?: import("./snapshot-freshness").SnapshotFreshness;
 	account_id: string;
 	fetched_at: string;
 	truncated: boolean;

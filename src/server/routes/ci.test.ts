@@ -37,9 +37,9 @@ async function setup(withAccount = true) {
 		GITHUB_API_BASE: "http://127.0.0.1:17046",
 		ASSETS: { fetch: async () => new Response() } as unknown as Fetcher,
 	} satisfies Env;
-	const save = async (kind: string, payload: Record<string, unknown>) => {
+	const save = async (kind: string, payload: Record<string, unknown>, fetchedAt = at) => {
 		const db = createDb(raw);
-		await db.batch(replaceSnapshotStmts(db, id, kind, payload, at));
+		await db.batch(replaceSnapshotStmts(db, id, kind, payload, fetchedAt));
 	};
 	const app = createApp();
 	return {
@@ -55,6 +55,90 @@ async function setup(withAccount = true) {
 }
 
 describe("GET /api/ci", () => {
+	it("scopes all aggregates and missing dependencies before deriving the report", async () => {
+		const fixture = await setup();
+		const old = "2026-09-01T00:00:00.000Z";
+		const recent = "2026-09-19T00:00:00.000Z";
+		await fixture.save("repos", {
+			repos: [
+				"nocoo/app",
+				"nocoo/empty",
+				"nocoo/unseen",
+				"nocoo/hidden",
+				"nocoo/hidden-unsaved",
+			].map((name_with_owner) => ({ name_with_owner })),
+		});
+		for (const repo of ["NOCOO/APP", "nocoo/empty", "nocoo/unseen"])
+			await fixture.raw.prepare("INSERT INTO repo_stars VALUES(?,?)").bind(id, repo).run();
+		await fixture.save("repo:nocoo/app:actions", { runs: [run("CI", "success", at)] });
+		await fixture.save("repo:nocoo/app:details", { default_branch: "main" }, old);
+		await fixture.save("repo:nocoo/app:releases", { releases: [] }, recent);
+		await fixture.save("repo:nocoo/empty:actions", { runs: [] }, recent);
+		await fixture.save(
+			"repo:nocoo/hidden:actions",
+			{ runs: [run("CI", "failure", at), run("CI", "failure", old)] },
+			old,
+		);
+		const before = await fixture.raw.prepare("SELECT * FROM snapshots ORDER BY kind").all();
+		const response = await fixture.call("/api/ci?scope=starred");
+		expect(response.status).toBe(200);
+		const body = (await response.json()) as CiReportResponse;
+		expect(body.repos.map((repo) => repo.repo)).toEqual(["nocoo/app", "nocoo/empty"]);
+		expect(body.unsaved).toEqual(["nocoo/unseen"]);
+		expect(body.totals).toMatchObject({ repos: 2, broken: 0, healthy: 1 });
+		expect(body.daily.reduce((total, day) => total + day.failure, 0)).toBe(0);
+		expect(body).toMatchObject({
+			fetched_at: recent,
+			now: recent,
+			freshness: { oldestAt: old, latestAt: recent, total: 9, missing: 5 },
+		});
+		expect(await fixture.raw.prepare("SELECT * FROM snapshots ORDER BY kind").all()).toEqual(
+			before,
+		);
+	});
+
+	it("returns an empty successful report for no stars and rejects invalid scope", async () => {
+		const fixture = await setup();
+		expect((await fixture.call("/api/ci?scope=starred")).status).toBe(200);
+		await fixture.save("repos", { repos: [{ name_with_owner: "nocoo/app" }] });
+		await fixture.save("repo:nocoo/app:actions", { runs: [run("CI", "failure", at)] });
+		const response = await fixture.call("/api/ci?scope=starred");
+		expect(response.status).toBe(200);
+		expect(await response.json()).toMatchObject({
+			repos: [],
+			streams: [],
+			unsaved: [],
+			totals: { repos: 0 },
+			fetched_at: "",
+			freshness: { oldestAt: null, latestAt: null, total: 0, missing: 0 },
+		});
+		expect((await fixture.call("/api/ci?scope=invalid")).status).toBe(400);
+	});
+
+	it("keeps unavailable dependencies missing and uses primary saved checks rather than source event times", async () => {
+		const fixture = await setup();
+		await fixture.save("repos", {
+			repos: [{ name_with_owner: "nocoo/app" }, { name_with_owner: "nocoo/unavailable" }],
+		});
+		await fixture.save("repo:nocoo/app:actions", { runs: [] });
+		await fixture.save("repo:nocoo/app:details", { forbidden: true }, "2026-10-01T00:00:00.000Z");
+		await fixture.save(
+			"repo:nocoo/app:releases",
+			{ unavailable: true },
+			"2026-10-01T00:00:00.000Z",
+		);
+		await fixture.save(
+			"repo:nocoo/unavailable:actions",
+			{ unavailable: true },
+			"2026-10-01T00:00:00.000Z",
+		);
+		expect(await (await fixture.call()).json()).toMatchObject({
+			fetched_at: at,
+			unsaved: ["nocoo/unavailable"],
+			freshness: { oldestAt: at, latestAt: at, total: 6, missing: 5 },
+		});
+	});
+
 	it("classifies saved runs per repository without contacting GitHub or writing data", async () => {
 		const s = await setup();
 		await s.save("repos", {

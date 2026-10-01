@@ -5,13 +5,15 @@ import {
 	type FactoryStreamData,
 	type FactoryStreamName,
 } from "../../lib/factory-types";
+import { snapshotFreshness } from "../../lib/snapshot-freshness";
 import type { AppVars, Env } from "../env";
 import { getActiveAccount } from "../lib/db/accounts";
 import { publishedFactory } from "../lib/db/factory-runs";
 import { readSnapshot } from "../lib/db/snapshots";
 import { ApiError, jsonOk } from "../lib/errors";
-import { streamKey } from "../lib/factory-collect";
+import { newFactory, streamKey } from "../lib/factory-collect";
 import { repoPolicy, statisticsFactory } from "../lib/repo-statistics";
+import { snapshotScope } from "../lib/snapshot-scope";
 import { repoParts } from "./snapshots";
 
 type Ctx = Context<{ Bindings: Env; Variables: AppVars }>;
@@ -23,12 +25,29 @@ async function active(c: Ctx) {
 	return account;
 }
 export async function getFactory(c: Ctx): Promise<Response> {
+	const scope = snapshotScope(c.req.queries("scope"));
 	const account = await active(c);
-	const snap = await publishedFactory(c.get("db"), account.id);
+	const policy = await repoPolicy(c.get("db"), account.id, undefined, scope);
+	let snap = await publishedFactory(c.get("db"), account.id);
+	if (!snap && policy.empty) {
+		const empty = newFactory(account.id, account.login, "1970-01-01T00:00:00.000Z");
+		snap = {
+			...empty,
+			runId: "",
+			startedAt: "",
+			window: { since: empty.window.until, until: empty.window.until },
+			status: "complete",
+			inventory: { ...empty.inventory, complete: true },
+		};
+	}
 	if (!snap) throw new ApiError(409, "snapshot_missing", "no factory snapshot");
+	const projected = statisticsFactory(snap, policy);
+	const freshness = snapshotFreshness(projected.repos.map((repo) => repo.observation?.refreshedAt));
 	return jsonOk(
 		{
-			...statisticsFactory(snap, await repoPolicy(c.get("db"), account.id)),
+			...projected,
+			fetched_at: freshness.latestAt ?? "",
+			freshness,
 			account_id: account.id,
 		},
 		200,
@@ -36,6 +55,7 @@ export async function getFactory(c: Ctx): Promise<Response> {
 	);
 }
 export async function getFactoryStream(c: Ctx): Promise<Response> {
+	const scope = snapshotScope(c.req.queries("scope"));
 	const account = await active(c);
 	const { owner, name } = repoParts(c.req.param("owner") ?? "", c.req.param("name") ?? "");
 	const stream = c.req.param("stream") as FactoryStreamName;
@@ -45,8 +65,11 @@ export async function getFactoryStream(c: Ctx): Promise<Response> {
 	if (!Number.isInteger(page) || page < 1 || page > 50)
 		throw new ApiError(400, "validation_failed", "invalid page");
 	const snap = await publishedFactory(c.get("db"), account.id);
-	const repo = snap?.repos.find((r) => r.name === `${owner}/${name}`);
-	if (repo && !(await repoPolicy(c.get("db"), account.id)).enabled(repo.name, repo))
+	const repo = snap?.repos.find((r) => r.name.toLowerCase() === `${owner}/${name}`.toLowerCase());
+	if (
+		repo &&
+		!(await repoPolicy(c.get("db"), account.id, undefined, scope)).enabled(repo.name, repo)
+	)
 		throw new ApiError(404, "not_found", "repository excluded from statistics");
 	if (!repo || !snap) throw new ApiError(404, "not_found", "repository outside factory inventory");
 	let resource: FactoryStreamData | null = null;

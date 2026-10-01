@@ -1,3 +1,5 @@
+import type { SnapshotFreshness } from "./snapshot-freshness";
+
 /**
  * CI health classification from saved GitHub Actions runs. A stream is one workflow on one lane
  * (the default branch plus release tags, or a single feature branch).
@@ -306,6 +308,7 @@ export function ciReport(entries: CiEntry[], now: string) {
 }
 export type CiReport = ReturnType<typeof ciReport>;
 export type CiReportResponse = CiReport & {
+	freshness?: SnapshotFreshness;
 	account_id: string;
 	fetched_at: string;
 	truncated: boolean;

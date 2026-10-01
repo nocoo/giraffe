@@ -1,20 +1,24 @@
 import type { Context } from "hono";
 import { type CiEntry, type CiRelease, type CiRun, ciReport } from "../../lib/ci-health";
+import { snapshotFreshness } from "../../lib/snapshot-freshness";
 import type { AppVars, Env } from "../env";
 import { getActiveAccount } from "../lib/db/accounts";
 import { ApiError, jsonOk } from "../lib/errors";
 import { repoPolicy } from "../lib/repo-statistics";
 import { assemblePages, type SnapshotPage } from "../lib/snapshot-pages";
+import { snapshotScope } from "../lib/snapshot-scope";
 
 const KIND = /^repo:(.+):(actions|releases|details)(?:#2)?$/;
 
 /** Read-only report over saved per-repository Actions and Release snapshots. */
 export async function getCi(c: Context<{ Bindings: Env; Variables: AppVars }>): Promise<Response> {
+	const scope = snapshotScope(c.req.queries("scope"));
 	const db = c.get("db");
 	const account = await getActiveAccount(db);
 	if (!account) throw new ApiError(409, "account_missing", "no active account");
-	const policy = await repoPolicy(db, account.id);
-	if (!policy.repos.length) throw new ApiError(409, "snapshot_missing", "no repository catalog");
+	const policy = await repoPolicy(db, account.id, undefined, scope);
+	if (!policy.catalog && !policy.empty)
+		throw new ApiError(409, "snapshot_missing", "no repository catalog");
 	// One statement for every repository keeps the Worker well inside the D1 statement cap.
 	const rows = await db
 		.prepare(
@@ -33,6 +37,7 @@ export async function getCi(c: Context<{ Bindings: Env; Variables: AppVars }>): 
 	}
 	const entries: CiEntry[] = [];
 	const unsaved: string[] = [];
+	const times: (string | null)[] = [];
 	for (const repo of policy.repos) {
 		const name = repo.name_with_owner;
 		if (!policy.enabled(name)) continue;
@@ -44,15 +49,23 @@ export async function getCi(c: Context<{ Bindings: Env; Variables: AppVars }>): 
 			return found ? assemblePages(found[0], found[1]) : null;
 		};
 		const actions = read("actions");
-		if (!actions) {
+		const releases = read("releases");
+		const details = read("details");
+		const dependencies = [actions, releases, details].map((snapshot) =>
+			snapshot?.unavailable !== true &&
+			snapshot?.forbidden !== true &&
+			typeof snapshot?.fetched_at === "string"
+				? snapshot.fetched_at
+				: null,
+		);
+		times.push(...dependencies);
+		if (!actions || actions.unavailable === true || actions.forbidden === true) {
 			unsaved.push(name);
 			continue;
 		}
-		const releases = read("releases");
-		const details = read("details");
 		entries.push({
 			repo: name,
-			fetched_at: String(actions.fetched_at ?? ""),
+			fetched_at: snapshotFreshness(dependencies).latestAt ?? "",
 			truncated: actions.truncated === true,
 			runs: Array.isArray(actions.runs) ? (actions.runs as CiRun[]) : [],
 			...(typeof details?.default_branch === "string"
@@ -61,20 +74,18 @@ export async function getCi(c: Context<{ Bindings: Env; Variables: AppVars }>): 
 			releases: Array.isArray(releases?.releases) ? (releases.releases as CiRelease[]) : null,
 		});
 	}
-	// Judge against the newest saved run time, not the request clock: GET never refreshes data.
-	const fetchedAt =
-		entries
-			.map((e) => e.fetched_at)
-			.sort()
-			.at(-1) ?? "";
-	const now = fetchedAt || new Date().toISOString();
+	const freshness = snapshotFreshness(times);
+	const fetchedAt = freshness.latestAt ?? "";
+	const report = ciReport(entries, fetchedAt || "1970-01-01T00:00:00.000Z");
 	return jsonOk(
 		{
-			...ciReport(entries, now),
+			...report,
+			daily: fetchedAt ? report.daily : [],
 			account_id: account.id,
 			fetched_at: fetchedAt,
+			freshness,
 			truncated: entries.some((e) => e.truncated),
-			now,
+			now: fetchedAt,
 			unsaved,
 		},
 		200,

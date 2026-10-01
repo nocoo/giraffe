@@ -4,22 +4,38 @@ import { getActiveAccount } from "../lib/db/accounts";
 import { readSnapshot } from "../lib/db/snapshots";
 import { ApiError, jsonOk } from "../lib/errors";
 import { statisticsSnapshot } from "../lib/repo-statistics";
+import { snapshotScope, snapshotSelection } from "../lib/snapshot-scope";
 
 export async function snapshotGet(
 	c: Context<{ Bindings: Env; Variables: AppVars }>,
 	logical: string,
 ): Promise<Response> {
+	const scope = snapshotScope(c.req.queries("scope"));
 	const account = await getActiveAccount(c.get("db"));
 	if (!account) {
 		throw new ApiError(409, "account_missing", "no active account");
 	}
-	const snap = await readSnapshot(c.get("db"), account.id, logical);
+	let snap = await readSnapshot(c.get("db"), account.id, logical);
+	if (!snap && scope === "starred" && !logical.startsWith("repo:")) {
+		const selection = await snapshotSelection(c.get("db"), account.id, scope);
+		const key = (
+			{
+				repos: "repos",
+				issues: "issues",
+				prs: "pull_requests",
+				alerts: "items",
+				notifications: "notifications",
+				insights: "insights",
+			} as Record<string, string>
+		)[logical];
+		if (selection.empty && key) snap = { [key]: [], fetched_at: "", truncated: false };
+	}
 	if (!snap) {
 		throw new ApiError(409, "snapshot_missing", `no snapshot for ${logical}`);
 	}
 	return jsonOk(
 		{
-			...(await statisticsSnapshot(c.get("db"), account.id, logical, snap)),
+			...(await statisticsSnapshot(c.get("db"), account.id, logical, snap, scope)),
 			account_id: account.id,
 		},
 		200,
