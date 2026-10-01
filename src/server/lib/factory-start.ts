@@ -144,6 +144,7 @@ export async function startRefresh(
 		siteRepos ?? [],
 		selection,
 		data.depth,
+		trigger === "daily" && data.mode === "refresh",
 	);
 	await checkFactoryCapacity(db, row.id, new TextEncoder().encode(boundedJson(plan)).length);
 	plan.trigger = trigger;

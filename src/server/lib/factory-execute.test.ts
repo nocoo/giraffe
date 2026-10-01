@@ -16,6 +16,7 @@ const now = snap.fetched_at;
 async function setup(
 	mode: "refresh" | "catalog" = "refresh",
 	selection: RunSelection = { scope: "all" },
+	daily = false,
 ) {
 	const env = {
 		FACTORY_QUEUE: {} as Queue,
@@ -54,7 +55,10 @@ async function setup(
 		[],
 		snap.repos.map((repo) => repo.name),
 		selection,
+		daily ? "quick" : "deep",
+		daily,
 	);
+	if (daily) run.trigger = "daily";
 	await startRun(db, run);
 	return env;
 }
@@ -91,6 +95,44 @@ beforeEach(() =>
 	),
 );
 afterEach(() => vi.unstubAllGlobals());
+it("daily starred refresh publishes all default page sources without requiring old global lists", async () => {
+	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] }, true);
+	const run = await drive(env);
+	expect(run?.status).toBe("completed");
+	expect(run?.steps).toHaveLength(23);
+	for (const kind of ["repos", "issues", "prs", "notifications", "insights"]) {
+		const saved = await readSnapshot(createDb(env.DB), snap.account_id, kind);
+		expect(saved, kind).not.toBeNull();
+		if (["issues", "prs", "insights"].includes(kind))
+			expect(saved?.repository_fetched_at).toEqual({ "nocoo/app": now });
+	}
+	expect(run?.steps.find((step) => step.resource === "insights")?.status).toBe("success");
+	await createDb(env.DB).prepare("UPDATE accounts SET is_active=1").run();
+	await createDb(env.DB)
+		.prepare("INSERT INTO repo_stars(account_id,repo) VALUES(?,?)")
+		.bind(snap.account_id, "nocoo/app")
+		.run();
+	for (const kind of ["issues", "prs", "insights"]) {
+		const response = await createApp().request(
+			`http://localhost/api/${kind}?scope=starred`,
+			{},
+			env,
+		);
+		expect(response.status).toBe(200);
+		expect(await response.json()).toMatchObject({
+			truncated: false,
+			freshness: { missing: 0, latestAt: now },
+		});
+	}
+	expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes("/notifications"))).toBe(
+		true,
+	);
+	expect(
+		vi
+			.mocked(fetch)
+			.mock.calls.some(([, init]) => String(init?.body).includes("contributionsCollection")),
+	).toBe(false);
+});
 it("publishes only a complete committed repository set and survives every-page restarts", async () => {
 	const env = await setup();
 	await executeRunPage(env, "r1", () => now);

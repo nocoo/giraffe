@@ -7,7 +7,9 @@ import { ApiError } from "./errors";
 import { boundedJson } from "./factory-publish";
 import { resourceDelta } from "./factory-retention";
 import type { GithubClient } from "./github-client";
+import { buildInsights, type InsightAlert } from "./insights";
 import { assertKind, prepareRefresh } from "./refresh";
+import { repoPolicy } from "./repo-statistics";
 
 export async function siteCatalog(db: Db, account: string): Promise<string[] | null> {
 	return catalogNames(await readSnapshot(db, account, "repos"));
@@ -46,6 +48,76 @@ export async function collectSitePage(
 	const resource = step.resource ?? "";
 	assertKind(resource);
 	const run = lease.run;
+	const scoped = run.selection?.scope !== "all";
+	if (resource === "insights" && scoped) {
+		const names = run.siteRepos ?? run.repos;
+		if (
+			names.some((repo) =>
+				["details", "issues"].some(
+					(tab) =>
+						!run.steps.some((s) => s.resource === `repo:${repo}:${tab}` && s.status === "success"),
+				),
+			)
+		)
+			throw new ApiError(409, "snapshot_sources_incomplete", "Insights sources were not updated");
+		const policy = await repoPolicy(db, run.account_id);
+		const catalog = await siteCatalog(db, run.account_id);
+		if (!catalog || names.some((name) => !catalog.includes(name)))
+			throw new ApiError(409, "snapshot_sources_incomplete", "selected catalogue sources missing");
+		const alerts = await readSnapshot(db, run.account_id, "alerts");
+		const issues = await readSnapshot(db, run.account_id, "issues");
+		if (!Array.isArray(issues?.issues))
+			throw new ApiError(409, "snapshot_sources_incomplete", "selected Issues sources missing");
+		const counts = new Map<string, number>();
+		for (const row of issues.issues as { name_with_owner: string }[])
+			counts.set(row.name_with_owner, (counts.get(row.name_with_owner) ?? 0) + 1);
+		const previous = await readSnapshot(db, run.account_id, "insights");
+		const selected = new Set(names);
+		const fresh = buildInsights(
+			policy.repos
+				.filter(
+					(repo) => selected.has(repo.name_with_owner) && policy.enabled(repo.name_with_owner),
+				)
+				.map((repo) => ({
+					name_with_owner: repo.name_with_owner,
+					open_issue_count: counts.get(repo.name_with_owner) ?? 0,
+					pushed_at: typeof repo.pushed_at === "string" ? repo.pushed_at : null,
+				})),
+			Array.isArray(alerts?.items) ? (alerts.items as InsightAlert[]) : [],
+			now,
+			!alerts || alerts.truncated === true || alerts.unavailable === true,
+		);
+		const old = Array.isArray(previous?.insights)
+			? (previous.insights as { name_with_owner: string }[])
+			: [];
+		const payload = {
+			...fresh,
+			fetched_at: String(previous?.fetched_at ?? now),
+			insights: [...old.filter((repo) => !selected.has(repo.name_with_owner)), ...fresh.insights],
+			truncated: previous?.truncated ?? true,
+			repository_fetched_at: {
+				...(previous?.repository_fetched_at as Record<string, string>),
+				...Object.fromEntries(names.map((repo) => [repo, now])),
+			},
+		};
+		const bytes = new TextEncoder().encode(JSON.stringify(payload)).length;
+		if (bytes > 1_500_000)
+			throw new ApiError(422, "snapshot_incomplete", "Insights exceed bounded storage");
+		lease.extraBytes =
+			(lease.extraBytes ?? 0) +
+			bytes -
+			(previous ? new TextEncoder().encode(JSON.stringify(previous)).length : 0);
+		return {
+			writes: replaceSnapshotStmts(
+				db,
+				run.account_id,
+				"insights",
+				payload,
+				String(previous?.fetched_at ?? now),
+			),
+			done: true,
+		};
+	}
 	if (
 		resource === "insights" &&
 		["repos", "issues"].some(
@@ -65,13 +137,7 @@ export async function collectSitePage(
 			.first<{ payload: string }>();
 		const previous: Collected = old ? JSON.parse(old.payload) : { truncated: false };
 		const page = names.length
-			? await collectKind(
-					gh,
-					token,
-					resource,
-					names.slice(cursor, cursor + 10),
-					1_500_000,
-				)
+			? await collectKind(gh, token, resource, names.slice(cursor, cursor + 10), 1_500_000)
 			: {
 					truncated: false,
 					unavailable: false,
@@ -172,14 +238,7 @@ export async function collectSitePage(
 				source_fetched_at: source.source_fetched_at ?? source.fetched_at,
 			};
 			step.strategy = "reused";
-		} else
-			written[resource] = await collectKind(
-				gh,
-				token,
-				resource,
-				[],
-				1_500_000,
-			);
+		} else written[resource] = await collectKind(gh, token, resource, [], 1_500_000);
 		written[resource].source_head = metadata.sourceHead;
 	}
 	const prepared = await prepareRefresh(db, run.account_id, gh, token, [resource], now, written, {
@@ -194,15 +253,16 @@ export async function collectSitePage(
 			throw new ApiError(422, "factory_capacity", "site catalog exceeds 500 repositories");
 		if (
 			run.mode === "refresh" &&
+			!scoped &&
 			names.some((name) => !(run.siteRepos ?? run.repos).includes(name))
 		)
 			throw new ApiError(409, "catalog_changed", "sync catalog before refreshing new repositories");
 	}
 	if (step.repo && global && run.selection?.scope !== "all") {
 		const previous = (await readSnapshot(db, run.account_id, global)) as Collected | null;
-		if (previous && Array.isArray(previous[key])) {
+		if ((previous && Array.isArray(previous[key])) || global !== "repos") {
 			const payload = prepared.written[resource] as Collected;
-			const oldItems = previous[key] as Record<string, unknown>[];
+			const oldItems = (previous?.[key] ?? []) as Record<string, unknown>[];
 			const fresh =
 				global === "repos"
 					? oldItems
@@ -219,9 +279,11 @@ export async function collectSitePage(
 			const items = [...oldItems.filter((item) => item.name_with_owner !== step.repo), ...fresh];
 			const merged = {
 				...previous,
+				fetched_at: String(previous?.fetched_at ?? now),
+				truncated: previous?.truncated ?? true,
 				[key]: items,
 				repository_fetched_at: {
-					...(previous.repository_fetched_at as Record<string, string>),
+					...(previous?.repository_fetched_at as Record<string, string>),
 					[step.repo]: now,
 				},
 				...(global === "alerts" ? alertCounts(items) : {}),
@@ -229,11 +291,17 @@ export async function collectSitePage(
 			if (new TextEncoder().encode(JSON.stringify(merged)).length > 1_500_000)
 				throw new ApiError(422, "snapshot_incomplete", "global list exceeds bounded storage");
 			prepared.stmts.push(
-				...replaceSnapshotStmts(db, run.account_id, global, merged, String(previous.fetched_at)),
+				...replaceSnapshotStmts(
+					db,
+					run.account_id,
+					global,
+					merged,
+					String(previous?.fetched_at ?? now),
+				),
 			);
 			prepared.bytes +=
 				new TextEncoder().encode(JSON.stringify(merged)).length -
-				new TextEncoder().encode(JSON.stringify(previous)).length;
+				(previous ? new TextEncoder().encode(JSON.stringify(previous)).length : 0);
 		}
 	}
 	lease.extraBytes = (lease.extraBytes ?? 0) + prepared.bytes;

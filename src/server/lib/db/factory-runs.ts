@@ -103,7 +103,7 @@ export async function startRun(db: Db, run: FactoryRun): Promise<FactoryRun> {
  AND NOT EXISTS(SELECT 1 FROM factory_runs WHERE account_id=? AND created_at>?)
  AND NOT EXISTS(SELECT 1 FROM factory_state WHERE account_id=? AND next_at>?)
  AND NOT EXISTS(SELECT 1 FROM snapshots WHERE account_id=? AND kind='factory:lock' AND fetched_at>?)
- AND (? IS NULL OR EXISTS(SELECT 1 FROM refresh_schedules WHERE account_id=? AND kind=? AND next_at=? AND enabled=1))`)
+ AND (? IS NULL OR EXISTS(SELECT 1 FROM (SELECT * FROM refresh_schedules UNION ALL SELECT * FROM catalog_refresh_schedules) WHERE account_id=? AND kind=? AND next_at=? AND enabled=1))`)
 		.bind(
 			run.id,
 			run.account_id,

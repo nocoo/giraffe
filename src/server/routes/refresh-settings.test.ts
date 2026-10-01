@@ -49,7 +49,8 @@ it("keeps stars local and account scoped; validates schedules and exposes safe s
 	expect((await call("repos/nocoo/app/star", star)).status).toBe(200);
 	const current = (await (await call("refresh/settings")).json()) as RefreshSettings;
 	expect(current.starred).toEqual(["nocoo/app"]);
-	expect(current.schedules.every((s) => s.enabled)).toBe(true);
+	expect(current.schedules.filter((s) => s.kind !== "catalog").every((s) => s.enabled)).toBe(true);
+	expect(current.schedules.find((s) => s.kind === "catalog")?.enabled).toBe(false);
 	expect((await call("repos/nocoo/missing/star", star)).status).toBe(404);
 	expect((await call("repos/nocoo/app/star", { ...star, account_id: "b".repeat(21) })).status).toBe(
 		409,
@@ -63,6 +64,8 @@ it("keeps stars local and account scoped; validates schedules and exposes safe s
 		scope: "starred",
 	};
 	expect((await call("refresh/schedules/daily", daily)).status).toBe(200);
+	expect((await call("refresh/schedules/catalog", { ...daily, scope: "all" })).status).toBe(200);
+	expect((await call("refresh/schedules/catalog", daily)).status).toBe(400);
 	for (const patch of [{ time: "24:00" }, { weekday: 7 }, { scope: "all" }, { extra: true }])
 		expect((await call("refresh/schedules/daily", { ...daily, ...patch })).status).toBe(400);
 	expect((await call("refresh/schedules/invalid", daily)).status).toBe(400);

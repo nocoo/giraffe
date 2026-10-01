@@ -304,3 +304,174 @@ it("reuses code-dependent page data only when its recorded head matches the curr
 		expect(gh.count).toBe(sourceHead === "current" ? 0 : 1);
 	}
 });
+
+it("bootstraps partial global lists without inventing coverage for unselected repositories", async () => {
+	const raw = await setup("repo:nocoo/app:issues");
+	const db = createDb(raw);
+	const lease = await claimRun(db, "site", NOW);
+	if (!lease) throw new Error("fixture");
+	lease.run.selection = { scope: "selected", repos: ["nocoo/app"] };
+	const step = lease.run.steps[lease.run.cursor];
+	if (!step) throw new Error("fixture");
+	const result = await collectSitePage(
+		db,
+		lease,
+		step,
+		github(() =>
+			Response.json({
+				data: { search: { issueCount: 0, nodes: [], pageInfo: { hasNextPage: false } } },
+			}),
+		),
+		"fake",
+		NOW,
+	);
+	await saveRun(db, lease, result.writes, NOW);
+	expect(await readSnapshot(createDb(raw), "account", "issues")).toMatchObject({
+		issues: [],
+		truncated: true,
+		repository_fetched_at: { "nocoo/app": NOW },
+	});
+});
+
+it("derives scoped Insights only after selected sources succeed and preserves unrelated rows", async () => {
+	for (const existing of [false, true]) {
+		const raw = await setup("insights");
+		const db = createDb(raw);
+		await db.batch(replaceSnapshotStmts(db, "account", "issues", { issues: [] }, NOW));
+		await db.batch(
+			replaceSnapshotStmts(
+				db,
+				"account",
+				"repos",
+				{ repos: [{ name_with_owner: "nocoo/app", open_issue_count: 2, pushed_at: NOW }] },
+				NOW,
+			),
+		);
+		if (existing) {
+			await db.batch(
+				replaceSnapshotStmts(
+					db,
+					"account",
+					"insights",
+					{ insights: [{ name_with_owner: "other/repo" }], truncated: false },
+					"2026-09-01",
+				),
+			);
+			await db.batch(
+				replaceSnapshotStmts(db, "account", "alerts", { items: [], truncated: false }, NOW),
+			);
+		}
+		const lease = await claimRun(db, "site", NOW);
+		if (!lease) throw new Error("fixture");
+		lease.run.selection = { scope: "selected", repos: ["nocoo/app"] };
+		const step = lease.run.steps[lease.run.cursor];
+		if (!step) throw new Error("fixture");
+		const gh = github(() => {
+			throw new Error("must not fetch");
+		});
+		await expect(collectSitePage(db, lease, step, gh, "fake", NOW)).rejects.toMatchObject({
+			code: "snapshot_sources_incomplete",
+		});
+		for (const source of lease.run.steps)
+			if (["repo:nocoo/app:details", "repo:nocoo/app:issues"].includes(source.resource ?? ""))
+				source.status = "success";
+		const result = await collectSitePage(db, lease, step, gh, "fake", NOW);
+		await saveRun(db, lease, result.writes, NOW);
+		const saved = await readSnapshot(createDb(raw), "account", "insights");
+		expect(saved).toMatchObject({
+			repository_fetched_at: { "nocoo/app": NOW },
+			truncated: !existing,
+		});
+		expect(saved?.insights).toHaveLength(existing ? 2 : 1);
+		expect(
+			((saved?.insights ?? []) as { name_with_owner: string; open_issue_count: number }[]).find(
+				(row) => row.name_with_owner === "nocoo/app",
+			)?.open_issue_count,
+		).toBe(0);
+	}
+});
+
+it("rejects oversized scoped Insights without replacing its previous publication", async () => {
+	const raw = await setup("insights");
+	const db = createDb(raw);
+	await db.batch(replaceSnapshotStmts(db, "account", "issues", { issues: [] }, NOW));
+	await db.batch(
+		replaceSnapshotStmts(
+			db,
+			"account",
+			"repos",
+			{ repos: [{ name_with_owner: "nocoo/app", pushed_at: NOW }] },
+			NOW,
+		),
+	);
+	await db.batch(
+		replaceSnapshotStmts(
+			db,
+			"account",
+			"alerts",
+			{
+				items: Array.from({ length: 2 }, () => ({
+					name_with_owner: "nocoo/app",
+					source: "dependabot",
+					severity: "high",
+					summary: "x".repeat(800_000),
+				})),
+			},
+			NOW,
+		),
+	);
+	const lease = await claimRun(db, "site", NOW);
+	if (!lease) throw new Error("fixture");
+	lease.run.selection = { scope: "selected", repos: ["nocoo/app"] };
+	for (const source of lease.run.steps)
+		if (["repo:nocoo/app:details", "repo:nocoo/app:issues"].includes(source.resource ?? ""))
+			source.status = "success";
+	const step = lease.run.steps[lease.run.cursor];
+	if (!step) throw new Error("fixture");
+	await expect(
+		collectSitePage(
+			db,
+			lease,
+			step,
+			github(() => {
+				throw new Error("no network");
+			}),
+			"fake",
+			NOW,
+		),
+	).rejects.toMatchObject({ code: "snapshot_incomplete" });
+	expect(await readSnapshot(createDb(raw), "account", "insights")).toBeNull();
+});
+
+it("retains Insights when selected metadata cannot be joined to a complete saved catalogue", async () => {
+	for (const catalog of [
+		null,
+		{ repos: [], truncated: false },
+		{ repos: [{ name_with_owner: "nocoo/app" }], truncated: true },
+	]) {
+		const raw = await setup("insights");
+		const db = createDb(raw);
+		if (catalog) await db.batch(replaceSnapshotStmts(db, "account", "repos", catalog, NOW));
+		const lease = await claimRun(db, "site", NOW);
+		if (!lease) throw new Error("fixture");
+		lease.run.selection = { scope: "selected", repos: ["nocoo/app"] };
+		for (const source of lease.run.steps)
+			if (["repo:nocoo/app:details", "repo:nocoo/app:issues"].includes(source.resource ?? ""))
+				source.status = "success";
+		const step = lease.run.steps[lease.run.cursor];
+		if (!step) throw new Error("fixture");
+		await expect(
+			collectSitePage(
+				db,
+				lease,
+				step,
+				github(() => {
+					throw new Error("no network");
+				}),
+				"fake",
+				NOW,
+			),
+		).rejects.toMatchObject({ code: "snapshot_sources_incomplete" });
+		expect(await readSnapshot(createDb(raw), "account", "insights")).toBeNull();
+	}
+});

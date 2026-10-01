@@ -35,9 +35,10 @@ export async function postRefreshSchedule(c: Ctx): Promise<Response> {
 	const kind = c.req.param("kind");
 	const parsed = configInput.safeParse(await readJson(c.req.raw, 2048));
 	if (
-		(kind !== "daily" && kind !== "weekly") ||
+		(kind !== "daily" && kind !== "weekly" && kind !== "catalog") ||
 		!parsed.success ||
-		(kind === "daily" && parsed.data.scope !== "starred")
+		(kind === "daily" && parsed.data.scope !== "starred") ||
+		(kind === "catalog" && (parsed.data.scope !== "all" || parsed.data.weekday !== 0))
 	)
 		throw new ApiError(400, "validation_failed", "invalid schedule");
 	const account = await getActiveAccount(c.get("db"));

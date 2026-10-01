@@ -23,7 +23,7 @@ export function nextScheduleAt(
 	if (kind === "weekly")
 		local.setUTCDate(local.getUTCDate() + ((weekday - local.getUTCDay() + 7) % 7));
 	if (local.getTime() - 8 * 3600000 <= Date.parse(now))
-		local.setUTCDate(local.getUTCDate() + (kind === "daily" ? 1 : 7));
+		local.setUTCDate(local.getUTCDate() + (kind === "weekly" ? 7 : 1));
 	return new Date(local.getTime() - 8 * 3600000).toISOString();
 }
 type ScheduleRow = {
@@ -38,10 +38,12 @@ type ScheduleRow = {
 };
 export async function readSchedules(db: Db, account: string): Promise<RefreshSchedule[]> {
 	const rows = await db
-		.prepare("SELECT * FROM refresh_schedules WHERE account_id=?")
+		.prepare(
+			"SELECT * FROM (SELECT * FROM refresh_schedules UNION ALL SELECT * FROM catalog_refresh_schedules) WHERE account_id=?",
+		)
 		.bind(account)
 		.all<ScheduleRow>();
-	return (["daily", "weekly"] as const).map((kind) => {
+	return (["daily", "weekly", "catalog"] as const).map((kind) => {
 		const row = rows.results.find((r) => r.kind === kind);
 		return row
 			? {
@@ -66,7 +68,7 @@ export async function saveSchedule(
 ): Promise<void> {
 	await db
 		.prepare(
-			"INSERT INTO refresh_schedules(account_id,kind,enabled,time,weekday,scope,next_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(account_id,kind) DO UPDATE SET enabled=excluded.enabled,time=excluded.time,weekday=excluded.weekday,scope=excluded.scope,next_at=excluded.next_at,last_error=NULL",
+			`INSERT INTO ${kind === "catalog" ? "catalog_refresh_schedules" : "refresh_schedules"}(account_id,kind,enabled,time,weekday,scope,next_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(account_id,kind) DO UPDATE SET enabled=excluded.enabled,time=excluded.time,weekday=excluded.weekday,scope=excluded.scope,next_at=excluded.next_at,last_error=NULL`,
 		)
 		.bind(
 			account,
@@ -107,7 +109,7 @@ export async function enableDefaultSchedules(db: Db, account: string, now: strin
 export async function scheduleRefreshes(raw: D1Database, now: string): Promise<void> {
 	const due = await createDb(raw)
 		.prepare(
-			"SELECT * FROM refresh_schedules WHERE enabled=1 AND next_at<=? ORDER BY next_at,kind DESC LIMIT 10",
+			"SELECT * FROM (SELECT * FROM refresh_schedules UNION ALL SELECT * FROM catalog_refresh_schedules) WHERE enabled=1 AND next_at<=? ORDER BY next_at,kind DESC LIMIT 10",
 		)
 		.bind(now)
 		.all<ScheduleRow & { account_id: string }>();
@@ -119,18 +121,48 @@ export async function scheduleRefreshes(raw: D1Database, now: string): Promise<v
 		try {
 			const account = await getAccount(db, row.account_id);
 			if (!account) continue;
-			const catalog = await catalogFactory(db, account.id);
-			if (!catalog?.inventory.complete)
-				throw new ApiError(409, "catalog_incomplete", "catalog incomplete");
-			const policy = await repoPolicy(db, account.id);
-			const stars = new Set((await starredRepos(db, account.id)).map((name) => name.toLowerCase()));
-			const repos =
-				row.scope === "all"
-					? statisticsFactory(catalog, policy).repos.map((repo) => repo.name)
-					: policy.repos
-							.filter((repo) => stars.has(repo.name_with_owner.toLowerCase()))
-							.map((repo) => repo.name_with_owner);
-			if (!repos.length) {
+			let repos: string[] = [];
+			if (row.kind !== "catalog") {
+				const catalog = await catalogFactory(db, account.id);
+				if (
+					!catalog?.inventory.complete ||
+					Date.parse(now) - Date.parse(catalog.fetched_at) >= 86400_000
+				) {
+					const preparation = await startRefresh(
+						db,
+						account,
+						{
+							account_id: account.id,
+							requestKey: `${row.kind}:${row.next_at}:catalog`,
+							mode: "catalog",
+							depth: "quick",
+							scope: "all",
+						},
+						now,
+						row.kind,
+						{ kind: row.kind, dueAt: row.next_at },
+					);
+					advance = !["running", "paused"].includes(preparation.status);
+					throw new ApiError(
+						409,
+						preparation.status === "running" || preparation.status === "paused"
+							? "catalog_pending"
+							: "catalog_incomplete",
+						"scheduled catalogue preparation",
+					);
+				}
+				const policy = await repoPolicy(db, account.id);
+				const stars = new Set(
+					(await starredRepos(db, account.id)).map((name) => name.toLowerCase()),
+				);
+				repos =
+					row.scope === "all"
+						? statisticsFactory(catalog, policy).repos.map((repo) => repo.name)
+						: policy.repos
+								.filter((repo) => stars.has(repo.name_with_owner.toLowerCase()))
+								.map((repo) => repo.name_with_owner);
+			}
+			if (row.kind !== "catalog" && !repos.length) {
 				error = "no_starred_repositories";
 				advance = true;
 			} else {
@@ -140,13 +172,13 @@ export async function scheduleRefreshes(raw: D1Database, now: string): Promise<v
 					{
 						account_id: account.id,
 						requestKey: `${row.kind}:${row.next_at}`,
-						mode: "refresh",
-						depth: row.kind === "daily" ? "quick" : "deep",
+						mode: row.kind === "catalog" ? "catalog" : "refresh",
+						depth: row.kind === "weekly" ? "deep" : "quick",
 						scope: row.scope === "all" ? "all" : "selected",
 						...(row.scope === "starred" ? { repos } : {}),
 					},
 					now,
-					row.kind,
+					row.kind === "weekly" ? "weekly" : "daily",
 					{ kind: row.kind, dueAt: row.next_at },
 				);
 				runId = run.id;
@@ -157,7 +189,7 @@ export async function scheduleRefreshes(raw: D1Database, now: string): Promise<v
 		}
 		await db
 			.prepare(
-				"UPDATE refresh_schedules SET next_at=?,last_run_id=COALESCE(?,last_run_id),last_error=? WHERE account_id=? AND kind=? AND enabled=1 AND next_at=?",
+				`UPDATE ${row.kind === "catalog" ? "catalog_refresh_schedules" : "refresh_schedules"} SET next_at=?,last_run_id=COALESCE(?,last_run_id),last_error=? WHERE account_id=? AND kind=? AND enabled=1 AND next_at=?`,
 			)
 			.bind(
 				advance ? nextScheduleAt(row.kind, row.time, row.weekday, now) : row.next_at,

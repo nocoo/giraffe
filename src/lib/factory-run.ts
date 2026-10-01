@@ -50,7 +50,7 @@ export type FactoryRun = {
 	mode: "catalog" | "refresh";
 	depth?: "quick" | "deep";
 	trigger?: "manual" | "daily" | "weekly";
-	schedule?: { kind: "daily" | "weekly"; dueAt: string };
+	schedule?: { kind: "daily" | "weekly" | "catalog"; dueAt: string };
 	repos: string[];
 	siteRepos?: string[];
 	repoIds: Record<string, string>;
@@ -154,6 +154,7 @@ export function makeRun(
 	siteRepos: string[] = repos.map((repo) => repo.name),
 	selection: RunSelection = { scope: "all" },
 	depth: "quick" | "deep" = "deep",
+	dailyPages = false,
 ): FactoryRun {
 	const full = selection.scope === "all";
 	const pageRepos = full
@@ -183,6 +184,7 @@ export function makeRun(
 		mode === "catalog"
 			? [step("inventory"), snapshot("repos"), step("restore"), step("publish")]
 			: [
+					...(dailyPages && !full ? [snapshot("repos"), snapshot("notifications")] : []),
 					...(full ? [...SITE_SNAPSHOT_KINDS, "insights"].map((kind) => snapshot(kind)) : []),
 					...(full ? [step("contributions")] : []),
 					...repos.flatMap((r) => [
@@ -193,6 +195,7 @@ export function makeRun(
 					...pageRepos.flatMap((repo) =>
 						REPO_SNAPSHOT_TABS.map((tab) => snapshot(`repo:${repo}:${tab}`, repo)),
 					),
+					...(dailyPages && !full ? [snapshot("insights")] : []),
 					...repos.map((repo) => step("assessment", repo.name)),
 					step("publish"),
 				];
