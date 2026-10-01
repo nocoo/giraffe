@@ -15,20 +15,22 @@ export function useRepositoryScope() {
 
 export function BusinessOutlet() {
 	const scope = useRepositoryScope();
+	return <Outlet key={scope} />;
+}
+
+export function RepositoryScopeFilter() {
+	const scope = useRepositoryScope();
 	return (
-		<div className="space-y-4">
-			<SegmentControl
-				legend="仓库范围"
-				className="[&>legend]:float-left [&>legend]:mr-3 [&>legend]:pt-1.5 [&_[data-slot=segment-control-viewport]]:pb-0"
-				value={scope}
-				onValueChange={(value) => setRepositoryScope(value === "all" ? "all" : "starred")}
-				options={[
-					{ value: "starred", label: "星标" },
-					{ value: "all", label: "全部" },
-				]}
-			/>
-			<Outlet key={scope} />
-		</div>
+		<SegmentControl
+			legend="仓库范围"
+			className="shrink-0 [&>legend]:sr-only [&_[data-slot=segment-control-viewport]]:pb-0"
+			value={scope}
+			onValueChange={(value) => setRepositoryScope(value === "all" ? "all" : "starred")}
+			options={[
+				{ value: "starred", label: "星标" },
+				{ value: "all", label: "全部" },
+			]}
+		/>
 	);
 }
 

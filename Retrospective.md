@@ -263,3 +263,19 @@ Browser geometry assertions must sample related elements in one DOM evaluation.
 Separate bounding-box calls during tab entrance motion compared two animation frames,
 producing a false alignment failure. Measure both boxes atomically and wait for the
 existing sub-pixel tolerance, rather than increasing the tolerance or disabling motion.
+
+## 2026-10-01 — Compose page scope inside the header
+
+The shared scope outlet inserted a standalone filter row above every business title,
+and the snapshot description forced another row for time. This wasted vertical space
+and separated controls from their page. Compose the existing Basalt header actions
+instead, share subtitle/time space and test geometry at desktop and mobile widths.
+Keep controls grouped when responsive CSS uses display:contents, otherwise badges
+can become unintended grid rows. Long timestamps need inline wrapping, not a flex
+item that forces its entire value below the label.
+
+Basalt PopoverTitle is a styled heading, not an automatic accessible-name binding.
+Connect PopoverContent to its title explicitly and test Escape/focus behavior. Mock
+missing API resources as missing responses, not successful empty objects that can
+break unrelated identity consumers. In zsh, avoid `path` as a loop variable: it is
+tied to PATH and can hide commands for the rest of the shell invocation.

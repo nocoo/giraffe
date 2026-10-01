@@ -74,15 +74,15 @@ export function SnapshotDescription({
 	hideTimestamp?: boolean;
 }) {
 	return (
-		<>
+		<span className="inline-flex w-full flex-wrap items-center gap-x-4 gap-y-1">
 			<span className="[overflow-wrap:anywhere]">{description}</span>
 			<span
-				className={`mt-2 block${hideTimestamp ? " invisible" : ""}`}
+				className={`inline-flex min-w-0${hideTimestamp ? " invisible" : ""}`}
 				aria-hidden={hideTimestamp}
 			>
 				<SnapshotTime fetchedAt={fetchedAt} freshness={freshness} />
 			</span>
-		</>
+		</span>
 	);
 }
 
@@ -105,9 +105,11 @@ export function SnapshotTime({
 		freshness?.oldestAt && latest && Date.parse(freshness.oldestAt) < Date.parse(latest);
 	const text = formatSnapshotFreshness(fetchedAt, freshness);
 	return (
-		<span className="inline-flex flex-wrap items-center gap-1.5 text-xs text-basalt-muted-foreground">
-			<Clock3 className="size-3.5 shrink-0" aria-hidden="true" />
-			{label}
+		<span className="text-xs text-basalt-muted-foreground">
+			<span className="mr-1.5 inline-flex items-center gap-1.5 whitespace-nowrap align-middle">
+				<Clock3 className="size-3.5 shrink-0" aria-hidden="true" />
+				{label}
+			</span>
 			{latest && Number.isFinite(Date.parse(latest)) && !mixed && freshness?.total !== 0 ? (
 				<time dateTime={latest} className="tabular-nums">
 					{text}

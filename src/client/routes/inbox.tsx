@@ -1,6 +1,5 @@
 import { Button, Link, SegmentControl, toast } from "@nocoo/basalt";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
-import { PageHeader } from "@nocoo/basalt/components/page-header";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
 import {
 	Table,
@@ -13,6 +12,7 @@ import {
 import { TablePager } from "@nocoo/basalt/components/table-pager";
 import { CheckCheck, Inbox, MailCheck } from "lucide-react";
 import { useMemo, useState } from "react";
+import { BusinessPageHeader as PageHeader } from "../components/layout/business-page-header";
 import { CandyBadge } from "../components/layout/candy-badge";
 import {
 	ResultCount,

@@ -1,6 +1,6 @@
 # 05 — Client 设计
 
-仓库页将“数据更新于”放在页头右侧；列表首列为“参与统计”开关，可见性和归档状态独立成列。开关保存到服务端，作用于所有跨仓统计和软件工厂；管理清单保留禁用仓库以便重新开启。语言圆点、语言分布图、工厂规模地图统一使用 `chart-theme.ts` 的多色色板，已知语言固定映射，其他分类按规范化名称稳定映射，排序和筛选不会改变颜色。
+Business pages compose Basalt PageHeader through BusinessPageHeader: the title shares its row with the repository scope and available controls; subtitle and primary-data time share a wrapping second line. 列表首列为“参与统计”开关，可见性和归档状态独立成列。开关保存到服务端，作用于所有跨仓统计和软件工厂；管理清单保留禁用仓库以便重新开启。语言圆点、语言分布图、工厂规模地图统一使用 `chart-theme.ts` 的多色色板，已知语言固定映射，其他分类按规范化名称稳定映射，排序和筛选不会改变颜色。
 
 Vite SPA 契约。页面、MVVM、控件复用、刷新时机与 L1/L3 以本文为准；§11–12 保留阶段 2 的历史实施记录。当前全站刷新以 §7 和 [09](09-factory-runs.md) 为准。01 第 9 节只是信息架构摘要。HTTP 以 [04](04-server.md) 为准，JSON 以 [03](03-schema.md) 为准，测试分层以 [02](02-quality.md) 为准。
 
@@ -162,7 +162,7 @@ Basalt `ContentIsland` 已是 L1 岛。不要再包一层自定义 card 当岛�
 
 配方：
 
-- 每页先 `PageHeader`（flush，不包卡）。短筛选放 `actions`（刷新/创建最后）；两个及以上筛选放 `filters`。页头右侧按钮与搜索用 `size="sm"`（`h-8`），与标题行、`SegmentControl` 同高。
+- Begin with Basalt `PageHeader`, flush on the island. Business pages use `BusinessPageHeader` to compose the repository scope, compact search/sort controls and actions beside the title. At narrow widths, keep scope beside the title and wrap search/sort only when needed. Use existing small controls and design-token spacing; do not duplicate the library header.
 - 分区用 `SectionRule`。卡片标题留在 `LayerCard.Header`。
 - 网格仓卡：岛上裸 `LayerCard padding="md"`，不要 Header/Body。
 - 表单 / 身份：`Header` + `Body`（控件留在 L2）。`Secondary` 是 `Header` 别名。
@@ -211,7 +211,7 @@ Basalt `ContentIsland` 已是 L1 岛。不要再包一层自定义 card 当岛�
 
 ### 5.4 页面细节
 
-- `PageHeader` 的说明下展示数据更新时间，取当前页面（单仓为当前标签）的 `fetched_at`。不把加载中的其他标签时间当成本标签时间。
+- `SnapshotDescription` places the subtitle and primary data time on one wrapping line. Preserve the actual scoped source times, mixed ranges and missing coverage; repository pages use the active tab, never another tab as a fallback. Insights exposes secondary source times in an accessible on-demand popover rather than a permanent extra row.
 - 窄屏顶栏保留导航按钮与祖先面包屑的宽度，面包屑不换行；长的当前页标题沿用 `AppHeader` 的截断行为。
 - 统计卡按实际数量均分桌面行，窄屏排两列；奇数张时最后一张占满行。表格标题与描述分主次；Issue / PR 的编号、仓库放在标题下，仓库名可跳到单仓页。
 - 搜索与排序放在 `FilterBar`；列表 / 网格切换放在仓库分区。分区显示结果数，搜索无结果与真正无数据使用不同空态，前者有「清除搜索」操作。
@@ -370,7 +370,7 @@ advances the inbox collection timestamp. See 09 for the precise daily run contra
 
 ### 8.1 `/` 仓库
 
-`PageHeader` 标题「仓库」+ 副标题和更新时间。`actions` 仅展示截断/不完整 Badge。`filters`：`FilterBar` 内的搜索与 `SegmentControl` 排序。列表 / 网格切换和结果数放在仓库 `SectionRule.actions`。排序通过 VM 完成，不靠 Table 内置排序。
+`BusinessPageHeader` presents the repository title, subtitle and data time. Repository scope, search, sorting and status badges share the title row when space permits; search/sorting wrap below at narrower widths. 列表 / 网格切换和结果数放在仓库 `SectionRule.actions`。排序通过 VM 完成，不靠 Table 内置排序。
 
 KPI（共享 `StatCard`，主题色 icon）：仓库数 / Stars / Forks / Issues，由 `repoMetrics` 从快照合计。其下 `SectionRule`「仓库」。
 

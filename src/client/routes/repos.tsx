@@ -1,7 +1,6 @@
 import { Button, SegmentControl, toast } from "@nocoo/basalt";
 import { FilterBar } from "@nocoo/basalt/components/filter-bar";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
-import { PageHeader } from "@nocoo/basalt/components/page-header";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
 import { Switch } from "@nocoo/basalt/components/switch";
 import {
@@ -15,11 +14,12 @@ import {
 import { Box, Star } from "lucide-react";
 import { type CSSProperties, useMemo, useState } from "react";
 import { participates } from "../../lib/repo-statistics";
+import { BusinessPageHeader as PageHeader } from "../components/layout/business-page-header";
 import { CandyBadge } from "../components/layout/candy-badge";
 import {
 	ResultCount,
 	SearchField,
-	SnapshotTime,
+	SnapshotDescription,
 	TableScroll,
 } from "../components/layout/collection-chrome";
 import { IconLabel } from "../components/layout/icon-label";
@@ -188,16 +188,6 @@ export function ReposPage() {
 	);
 	const health = healthMap(insights);
 	const peakIssues = maxCount(rows.map((row) => row.open_issue_count));
-	const actions = (
-		<>
-			{snap && !("missing" in snap) ? (
-				<SnapshotTime fetchedAt={snap.fetched_at} freshness={snap.freshness} />
-			) : null}
-			{snap && !("missing" in snap) && snap.truncated ? (
-				<CandyBadge tone="amber">已截断</CandyBadge>
-			) : null}
-		</>
-	);
 
 	const filters = (
 		<FilterBar label="仓库 筛选" className="w-full">
@@ -254,8 +244,14 @@ export function ReposPage() {
 		<div className="giraffe-page-motion space-y-6">
 			<PageHeader
 				title="仓库"
-				description={PAGE_DESCRIPTIONS["/"]}
-				actions={actions}
+				description={
+					<SnapshotDescription
+						description={PAGE_DESCRIPTIONS["/"]}
+						fetchedAt={snap.fetched_at}
+						freshness={snap.freshness}
+					/>
+				}
+				actions={snap.truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
 				filters={filters}
 			/>
 			<ScopeEmpty count={snap.repos.length} />

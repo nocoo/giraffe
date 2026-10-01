@@ -1,5 +1,4 @@
 import { Button, Input, SegmentControl } from "@nocoo/basalt";
-import { PageHeader } from "@nocoo/basalt/components/page-header";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
 import { StatStrip } from "@nocoo/basalt/components/stat-strip";
 import {
@@ -34,6 +33,7 @@ import {
 	type FactorySnapshot,
 	type FactoryStreamName,
 } from "../../lib/factory-types";
+import { BusinessPageHeader as PageHeader } from "../components/layout/business-page-header";
 import { SnapshotDescription } from "../components/layout/collection-chrome";
 import { IconLabel } from "../components/layout/icon-label";
 import { Kpi, KpiRow } from "../components/layout/kpi";
