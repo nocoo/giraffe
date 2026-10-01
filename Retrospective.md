@@ -238,3 +238,18 @@ outcome. Stop after the first deterministic schema failure, correct the shape or
 an available runner, and keep worker file ownership explicit. The inherited Herdr
 pane identifiers were stale; do not infer the live pane from them or prompt the
 coordinator's own pane as though it were a worker communication channel.
+
+## 2026-10-01 — Retention and storage telemetry are not an artificial quota
+
+The 256 MB account guard could stop collection before the protected recent-20-run
+window became eligible for garbage collection. Storage measurement remains useful,
+but it must not veto normal refreshes. Removed the account guard and its redundant
+per-write byte deltas while preserving per-record/request limits, lease fences and
+reference-safe retention. Regression tests now create, execute and assess above the
+former threshold. Cleanup runs even when the preceding dispatch step fails.
+
+Dependency issue titles can contain stale baselines or recommend a different fixed
+major line. Verify installed versions and the advisory ranges: Undici 7.29.1 fixes
+the reported vulnerabilities without a forced 8.x upgrade. After updating Wrangler,
+its own dependency pins made the Sharp and Undici overrides redundant, so they were
+removed only after confirming resolved versions and a clean security scan.

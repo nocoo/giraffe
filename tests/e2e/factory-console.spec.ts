@@ -188,6 +188,8 @@ for (const width of [1440, 390]) {
 			await page.mouse.wheel(0, 10000);
 			await expect(storage).toBeInViewport();
 			await storage.click();
+			await expect(page.getByText("全站数据占用 42.0 MB。", { exact: false })).toBeAttached();
+			await expect(page.locator(".factory-console")).not.toContainText("256");
 			await page.mouse.move(body.x + 8, 540);
 			await page.mouse.wheel(0, 10000);
 			await expect(page.getByRole("button", { name: "重新读取页面数据" })).toBeInViewport();

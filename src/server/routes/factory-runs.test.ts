@@ -365,4 +365,7 @@ it("rejects ambiguous scope/order but allows work above the former account quota
 		.bind(id, 256_000_000)
 		.run();
 	expect((await s.call("/api/factory/runs", plan())).status).toBe(202);
+	const storage = ((await (await s.call()).json()) as FactoryRunResponse).storage;
+	expect(storage?.totalBytes).toBeGreaterThan(256_000_000);
+	expect(storage).not.toHaveProperty("limitBytes");
 });
