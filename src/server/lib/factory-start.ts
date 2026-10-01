@@ -5,7 +5,6 @@ import type { Db } from "./db/d1";
 import { catalogFactory, getRun, repoStates, startRun } from "./db/factory-runs";
 import { ApiError } from "./errors";
 import { boundedJson } from "./factory-publish";
-import { checkFactoryCapacity, factoryStorage } from "./factory-retention";
 import { siteCatalog } from "./factory-site";
 import { ACCOUNT_ID_RE } from "./id";
 import { repoPolicy, statisticsFactory } from "./repo-statistics";
@@ -39,9 +38,6 @@ export async function startRefresh(
 		const existing = await getRun(db, row.id, prior.id);
 		if (existing) return existing.run;
 	}
-	const storage = await factoryStorage(db, row.id);
-	if (data.mode === "refresh" && storage.totalBytes >= storage.limitBytes - 2_000_000)
-		throw new ApiError(422, "factory_capacity", "factory resource quota reached");
 	const rawCatalog = await catalogFactory(db, row.id);
 	const policy = await repoPolicy(db, row.id);
 	const catalog = rawCatalog ? statisticsFactory(rawCatalog, policy) : null;
@@ -146,7 +142,7 @@ export async function startRefresh(
 		data.depth,
 		trigger === "daily" && data.mode === "refresh",
 	);
-	await checkFactoryCapacity(db, row.id, new TextEncoder().encode(boundedJson(plan)).length);
+	boundedJson(plan);
 	plan.trigger = trigger;
 	if (schedule) plan.schedule = schedule;
 	return startRun(db, plan);

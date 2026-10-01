@@ -285,7 +285,7 @@ it("does not invent earlier activity when the immutable source covers fewer than
 	expect(source?.focus.previous.activity.commits).toBe(0);
 });
 it("fails safely for missing credentials, sources and capacity without retrying provider calls", async () => {
-	for (const scenario of ["source", "observation", "capacity", "budget"]) {
+	for (const scenario of ["source", "observation", "capacity"]) {
 		const { raw, env, ids, read } = await setup();
 		if (scenario === "source") await raw.prepare("DELETE FROM factory_repo_versions").run();
 		if (scenario === "observation")
@@ -294,10 +294,17 @@ it("fails safely for missing credentials, sources and capacity without retrying 
 				.run();
 		if (scenario === "capacity")
 			vi.mocked(judgeRepository).mockResolvedValueOnce({ ...judgment, model: "x".repeat(250001) });
-		if (scenario === "budget") await raw.prepare("UPDATE factory_budget SET bytes=256000000").run();
 		expect(await executeAssessment(env, (await ids())[0] as string, () => at)).toBeNull();
 		expect((await read()).status).toBe("failed");
 	}
+});
+it("generates assessments above the former account storage quota", async () => {
+	const { raw, env, ids, read } = await setup();
+	await raw.prepare("UPDATE factory_budget SET bytes=512000000").run();
+	const id = (await ids())[0] as string;
+	await executeAssessment(env, id, () => at);
+	await executeAssessment(env, id, () => at);
+	expect((await read()).status).toBe("complete");
 });
 it("delivers new jobs, recovers queue failures through the durable due scan, and marks no report as missing", async () => {
 	const { raw, env, ids, read, repo } = await setup();

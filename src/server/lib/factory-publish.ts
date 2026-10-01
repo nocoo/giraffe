@@ -44,9 +44,6 @@ export function snapshotWrites(
 			"factory_capacity",
 			"publication capacity reached; previous data retained",
 		);
-	lease.extraBytes =
-		(lease.extraBytes ?? 0) +
-		pages.reduce((n, p) => n + new TextEncoder().encode(p.payload).length, 0);
 	return [
 		fenced(
 			db,
@@ -130,11 +127,6 @@ export async function repositoryWrites(
 			? FACTORY_STREAMS.filter((s) => accepted.coverage[s].status === "complete").length
 			: (old?.coverage ?? 0),
 	};
-	lease.extraBytes =
-		(lease.extraBytes ?? 0) +
-		(accepted ? new TextEncoder().encode(boundedJson(accepted)).length : 0) +
-		new TextEncoder().encode(JSON.stringify(state)).length -
-		(oldState ? new TextEncoder().encode(oldState.payload).length : 0);
 	const writes: D1PreparedStatement[] = [];
 	if (accepted)
 		writes.push(
@@ -328,13 +320,6 @@ export async function publicationWrites(
 				]
 			: [],
 	);
-	lease.extraBytes =
-		(lease.extraBytes ?? 0) +
-		refs.reduce(
-			(sum, ref) =>
-				sum + new TextEncoder().encode(run.id + ref.repo + ref.version + ref.source).length,
-			0,
-		);
 	writes.push(
 		fenced(
 			db,

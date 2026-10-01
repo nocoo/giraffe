@@ -87,7 +87,7 @@ export type FactoryRunView = Omit<FactoryRun, "checkpoint"> & {
 	leaseUntil: string | null;
 };
 export type FactoryRunResponse = {
-	storage?: { resourceBytes: number; totalBytes?: number; limitBytes: number };
+	storage?: { resourceBytes: number; totalBytes: number };
 	account_id: string;
 	serverNow: string;
 	nextAllowedAt: string | null;

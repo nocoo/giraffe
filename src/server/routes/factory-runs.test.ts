@@ -349,7 +349,7 @@ it("allows a known selected repository without rescanning an incomplete site cat
 	expect((await s.call("/api/factory/runs", plan())).status).toBe(202);
 });
 
-it("rejects ambiguous scope/order and refuses new resource work beyond its account budget", async () => {
+it("rejects ambiguous scope/order but allows work above the former account quota", async () => {
 	const s = await setup();
 	expect((await s.call("/api/factory/runs", { ...plan(), scope: "all" })).status).toBe(400);
 	expect((await s.call("/api/factory/runs", { ...plan(), order: ["unknown/repo"] })).status).toBe(
@@ -364,5 +364,5 @@ it("rejects ambiguous scope/order and refuses new resource work beyond its accou
 		)
 		.bind(id, 256_000_000)
 		.run();
-	expect((await s.call("/api/factory/runs", plan())).status).toBe(422);
+	expect((await s.call("/api/factory/runs", plan())).status).toBe(202);
 });

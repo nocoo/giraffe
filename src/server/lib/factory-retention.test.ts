@@ -6,13 +6,7 @@ import { createDb } from "./db/d1";
 import { claimRun, startRun } from "./db/factory-runs";
 import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
 import { publicationWrites, repositoryWrites } from "./factory-publish";
-import {
-	checkFactoryCapacity,
-	FACTORY_STORAGE_LIMIT,
-	factoryStorage,
-	pruneFactory,
-	resourceDelta,
-} from "./factory-retention";
+import { factoryStorage, pruneFactory } from "./factory-retention";
 
 const snap = factoryFixture();
 const account = snap.account_id;
@@ -123,30 +117,23 @@ it("records publication roots atomically and protects mixed-version detail when 
 	});
 	expect(await readSnapshot(createDb(raw), account, "factory:v:root-run")).not.toBeNull();
 });
-it("accounts for resource replacements and enforces capacity before destructive writes", async () => {
+it("reports storage telemetry without imposing an account quota", async () => {
 	const { db } = await setup();
 	expect(await factoryStorage(db, account)).toEqual({
 		resourceBytes: 0,
 		totalBytes: 0,
-		limitBytes: FACTORY_STORAGE_LIMIT,
 	});
 	const run = makeRun("r", account, "nocoo", "k", "catalog", [], snap.fetched_at);
 	await startRun(db, run);
-	await checkFactoryCapacity(db, account, await resourceDelta(db, "r", "repo", "commits", "{}"));
 	await db
 		.prepare("INSERT INTO factory_resources VALUES(?,?,?,?)")
 		.bind("r", "repo", "commits", "{}")
 		.run();
 	await db.prepare("UPDATE factory_resources SET payload=?").bind('{"x":1}').run();
 	expect((await factoryStorage(db, account)).resourceBytes).toBe(7);
-	await db
-		.prepare("UPDATE factory_budget SET bytes=?")
-		.bind(FACTORY_STORAGE_LIMIT - 2_000_000)
-		.run();
-	await checkFactoryCapacity(db, account, await resourceDelta(db, "r", "repo", "commits", "{}"));
-	await expect(
-		checkFactoryCapacity(db, account, await resourceDelta(db, "r", "another", "commits", "{}")),
-	).rejects.toMatchObject({ code: "factory_capacity" });
+	await db.prepare("UPDATE factory_budget SET bytes=512000000").run();
+	expect((await factoryStorage(db, account)).totalBytes).toBe(512000000);
+	expect(await factoryStorage(db, account)).not.toHaveProperty("limitBytes");
 });
 
 it("includes all page snapshots and daily baselines in the same account storage budget", async () => {

@@ -72,7 +72,7 @@ export async function loadFactoryDetail(
 export function factoryError(error: unknown): string {
 	if (error instanceof ApiError) {
 		if (error.code === "factory_capacity")
-			return "存储空间或仓库数量达到上限。已有数据保留；请缩小刷新范围，并查看存储用量。";
+			return "单条数据或仓库数量超过安全上限。已有数据保留；请缩小刷新范围。";
 		if (error.code === "refresh_cooldown") return "刚刚发起过刷新，请等倒计时结束后再试。";
 		if (error.code === "catalog_incomplete")
 			return "仓库列表还没读完整，请先点击「同步仓库列表」。";

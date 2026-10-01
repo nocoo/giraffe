@@ -21,8 +21,6 @@ export type RunLease = {
 	token: string;
 	version: number;
 	leaseUntil: string;
-	extraBytes?: number;
-	storedBytes?: number;
 	fenceAt?: string;
 };
 export type FactoryHead = {
@@ -173,8 +171,6 @@ export async function claimRun(db: Db, id: string, now: string): Promise<RunLeas
 				token,
 				version: row.version,
 				leaseUntil: until,
-				extraBytes: 0,
-				storedBytes: new TextEncoder().encode(row.payload).length,
 			}
 		: null;
 }

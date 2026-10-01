@@ -1,6 +1,4 @@
 import type { Db } from "./db/d1";
-import { ApiError } from "./errors";
-export const FACTORY_STORAGE_LIMIT = 256_000_000;
 export async function factoryStorage(db: Db, account: string) {
 	const row = await db
 		.prepare("SELECT bytes FROM factory_storage WHERE account_id=?")
@@ -23,32 +21,7 @@ export async function factoryStorage(db: Db, account: string) {
 	return {
 		resourceBytes: row?.bytes ?? 0,
 		totalBytes: (total?.bytes ?? 0) + (pages?.bytes ?? 0),
-		limitBytes: FACTORY_STORAGE_LIMIT,
 	};
-}
-export async function checkFactoryCapacity(db: Db, account: string, delta: number) {
-	const storage = await factoryStorage(db, account);
-	if (storage.totalBytes + Math.max(0, delta) > FACTORY_STORAGE_LIMIT - 2_000_000)
-		throw new ApiError(
-			422,
-			"factory_capacity",
-			"factory data budget reached; 2 MB reserved for controls",
-		);
-}
-export async function resourceDelta(
-	db: Db,
-	run: string,
-	repo: string,
-	stream: string,
-	payload: string,
-) {
-	const old = await db
-		.prepare(
-			"SELECT length(CAST(payload AS BLOB)) AS bytes FROM factory_resources WHERE run_id=? AND repo=? AND stream=?",
-		)
-		.bind(run, repo, stream)
-		.first<{ bytes: number }>();
-	return new TextEncoder().encode(payload).length - (old?.bytes ?? 0);
 }
 /** Bounded GC. Current heads, their manifests, two latest publications and 20 recent runs are roots. */
 export async function pruneFactory(db: Db, now: string) {

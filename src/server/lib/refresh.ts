@@ -15,7 +15,7 @@ import { type GithubClient, MAX_FETCHES } from "./github-client";
 import type { Capabilities } from "./github-map";
 import { buildInsights, type InsightAlert, type RepoRow } from "./insights";
 import { repoPolicy } from "./repo-statistics";
-import { assemblePages, physicalKinds, splitPages } from "./snapshot-pages";
+import { assemblePages, splitPages } from "./snapshot-pages";
 
 const ALL = SITE_SNAPSHOT_KINDS;
 const DERIVED = new Set(["insights"]);
@@ -117,7 +117,7 @@ export async function prepareRefresh(
 	requested: string[],
 	fetchedAt: string,
 	written: Record<string, Collected> = {},
-	options: { measureBytes?: boolean; deriveInsights?: boolean } = {},
+	options: { deriveInsights?: boolean } = {},
 ) {
 	async function loaded(kind: string): Promise<Collected | null> {
 		const current = written[kind];
@@ -210,30 +210,15 @@ export async function prepareRefresh(
 	}
 
 	const stmts = [];
-	let bytes = 0;
 	for (const [kind, payload] of Object.entries(written)) {
 		const preview = splitPages(kind, payload);
 		payload.truncated = preview.truncated;
-		bytes += preview.pages.reduce(
-			(sum, page) => sum + new TextEncoder().encode(page.payload).length,
-			0,
-		);
 		stmts.push(...replaceSnapshotStmts(db, accountId, kind, payload, fetchedAt));
-	}
-	const kinds = Object.keys(written).flatMap(physicalKinds);
-	if (options.measureBytes && kinds.length) {
-		const old = await db
-			.prepare(
-				`SELECT COALESCE(SUM(length(CAST(payload AS BLOB))),0) AS bytes FROM snapshots WHERE account_id=? AND kind IN (${kinds.map(() => "?").join(",")})`,
-			)
-			.bind(accountId, ...kinds)
-			.first<{ bytes: number }>();
-		bytes -= old?.bytes ?? 0;
 	}
 	const cutoff = new Date(Date.parse(fetchedAt) - 29 * 86_400_000).toISOString().slice(0, 10);
 	stmts.push(pruneDaysStmt(db, accountId, cutoff));
 	if (gh.count > 0) {
 		stmts.push(touchLastUsedStmt(db, accountId, fetchedAt));
 	}
-	return { written, stmts, bytes };
+	return { written, stmts };
 }

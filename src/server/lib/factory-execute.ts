@@ -25,7 +25,6 @@ import {
 	restoreLegacyRepo,
 } from "./factory-publish";
 import { FACTORY_REPO_QUERY } from "./factory-queries";
-import { checkFactoryCapacity, resourceDelta } from "./factory-retention";
 import { collectSitePage } from "./factory-site";
 import { createGithubClient } from "./github-client";
 import { assertRefreshCapabilities } from "./refresh";
@@ -179,7 +178,7 @@ export async function executeRunPage(
 				finish(step, "skipped", clock());
 				step.error = (await aiConfigured(db)) ? "ai_source_missing" : "ai_not_configured";
 			} else {
-				step.error = review.error === "factory_capacity" ? "ai_capacity" : review.error;
+				step.error = review.error;
 				step.attempts = Math.max(step.attempts, review.attempts);
 				if (review.stage === "complete" || review.stage === "failed")
 					finish(
@@ -252,9 +251,6 @@ export async function executeRunPage(
 					return row ? (JSON.parse(row.payload) as FactoryStreamData) : null;
 				},
 				write: async (_key: string, data: FactoryStreamData) => {
-					lease.extraBytes =
-						(lease.extraBytes ?? 0) +
-						(await resourceDelta(db, run.id, String(step.repo), String(stream), boundedJson(data)));
 					writes.push(
 						fenced(
 							db,
@@ -284,13 +280,7 @@ export async function executeRunPage(
 		}
 		step.pages += gh.count;
 		step.retryFailures = 0;
-		await checkFactoryCapacity(
-			db,
-			run.account_id,
-			(lease.extraBytes ?? 0) +
-				new TextEncoder().encode(boundedJson(run)).length -
-				(lease.storedBytes ?? 0),
-		);
+		boundedJson(run);
 		run.nextAttemptAt = step.kind === "assessment" ? nextAttemptAt : clock();
 	} catch (error) {
 		run.checkpoint = before;
@@ -299,7 +289,6 @@ export async function executeRunPage(
 		else step.snapshotCursor = savedSnapshotCursor;
 		step.finishedAt = null;
 		writes = [];
-		lease.extraBytes = 0;
 		const code = error instanceof ApiError ? error.code : "internal_error";
 		step.error = code;
 		if (

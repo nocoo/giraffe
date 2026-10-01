@@ -6,7 +6,6 @@ import { AiModelFailure, judgeRepository, MODEL_FAILURES, summarizeRepository } 
 import { loadAiConfig } from "./ai-settings";
 import { createDb, type Db } from "./db/d1";
 import { ApiError } from "./errors";
-import { checkFactoryCapacity } from "./factory-retention";
 
 type ReviewRow = {
 	account_id: string;
@@ -119,7 +118,6 @@ export async function executeAssessment(
 							row.judgment ? (JSON.parse(row.judgment) as JudgmentResult) : null,
 						),
 					);
-		await checkFactoryCapacity(db, row.account_id, bytes(inputJson) + bytes(result ?? ""));
 		const now = clock();
 		const sql =
 			row.stage === "judgment"
@@ -142,7 +140,6 @@ export async function executeAssessment(
 				"ai_capacity",
 				"ai_source_missing",
 				"ai_not_configured",
-				"factory_capacity",
 			].includes(error.code)
 				? error.code
 				: "ai_error";

@@ -4,7 +4,7 @@
 
 ## 有效意见与处理
 
-- **存储增长及引用安全**：0002 保存 publication 引用清单并有界清理；0003 覆盖运行/检查点、仓库状态与版本、资源、所有 factory 快照及引用的字节计量。256 MB 预算保留 2 MB 控制空间，不以资源流字节冒充总工厂数据。
+- **存储增长及引用安全**：0002 保存 publication 引用清单并有界清理；0003 覆盖运行/检查点、仓库状态与版本、资源、所有 factory 快照及引用的字节计量。The former 256 MB application quota was removed in v0.12.1. Accounting remains observability-only, alongside bounded reference-safe retention; resource bytes are not presented as total stored data.
 - **贡献与混合窗口**：贡献来源单独保存；失败保留旧日历并标本次 unavailable。日历/账本按各仓库窗口并集计算每日覆盖，未知零与观测下界分别表示，不把混合数据当统一 90 天趋势。
 - **并发及中断**：启动和冷却同事务；claim 后 fenced 保存当前步骤再请求 GitHub；凭据暂停和网络失败分开计数；取消/暂停已开始仓库同事务保留冷却。
 - **计划语义**：成员与优先级分别使用 repos/order，filter 由服务端解析，selection 保存条件和最终顺序；selected 的优先级同样在服务端生效。

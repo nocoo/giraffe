@@ -5,7 +5,6 @@ import { fenced, type RunLease } from "./db/factory-runs";
 import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
 import { ApiError } from "./errors";
 import { boundedJson } from "./factory-publish";
-import { resourceDelta } from "./factory-retention";
 import type { GithubClient } from "./github-client";
 import { buildInsights, type InsightAlert } from "./insights";
 import { assertKind, prepareRefresh } from "./refresh";
@@ -103,10 +102,6 @@ export async function collectSitePage(
 		const bytes = new TextEncoder().encode(JSON.stringify(payload)).length;
 		if (bytes > 1_500_000)
 			throw new ApiError(422, "snapshot_incomplete", "Insights exceed bounded storage");
-		lease.extraBytes =
-			(lease.extraBytes ?? 0) +
-			bytes -
-			(previous ? new TextEncoder().encode(JSON.stringify(previous)).length : 0);
 		return {
 			writes: replaceSnapshotStmts(
 				db,
@@ -167,8 +162,6 @@ export async function collectSitePage(
 			throw new ApiError(422, "snapshot_incomplete", "page list exceeds bounded storage");
 		step.snapshotCursor = Math.min(names.length, cursor + 10);
 		if (step.snapshotCursor < names.length) {
-			lease.extraBytes =
-				(lease.extraBytes ?? 0) + (await resourceDelta(db, run.id, "", stream, encoded));
 			writes.push(
 				fenced(
 					db,
@@ -242,7 +235,6 @@ export async function collectSitePage(
 		written[resource].source_head = metadata.sourceHead;
 	}
 	const prepared = await prepareRefresh(db, run.account_id, gh, token, [resource], now, written, {
-		measureBytes: true,
 		deriveInsights: resource === "insights" || !run.steps.some((s) => s.resource === "insights"),
 	});
 	assertComplete(prepared.written[resource]);
@@ -299,12 +291,8 @@ export async function collectSitePage(
 					String(previous?.fetched_at ?? now),
 				),
 			);
-			prepared.bytes +=
-				new TextEncoder().encode(JSON.stringify(merged)).length -
-				(previous ? new TextEncoder().encode(JSON.stringify(previous)).length : 0);
 		}
 	}
-	lease.extraBytes = (lease.extraBytes ?? 0) + prepared.bytes;
 	return { writes: prepared.stmts, done: true };
 }
 

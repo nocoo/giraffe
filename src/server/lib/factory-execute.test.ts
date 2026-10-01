@@ -370,7 +370,7 @@ it.each(["pause", "cancel"] as const)(
 );
 it.each([
 	["ai_not_configured", "skipped", "completed", "ai_not_configured"],
-	["factory_capacity", "failed", "partial", "ai_capacity"],
+	["ai_capacity", "failed", "partial", "ai_capacity"],
 ] as const)(
 	"isolates terminal AI %s from repository publication",
 	async (error, status, outcome, code) => {
@@ -765,14 +765,16 @@ it("keeps interrupted repository cooldown while allowing the same frozen run to 
 	await controlRun(createDb(env.DB), snap.account_id, "r1", "resume", now);
 	expect((await drive(env))?.status).toBe("partial");
 });
-it("pauses at total factory capacity without replacing the published snapshot", async () => {
+it("continues above the former quota and publishes through the normal fenced path", async () => {
 	const env = await setup();
 	await createDb(env.DB).prepare("UPDATE factory_budget SET bytes=?").bind(255_000_000).run();
 	await executeRunPage(env, "r1", () => now);
 	const run = (await getRun(createDb(env.DB), snap.account_id, "r1"))?.run;
-	expect(run?.status).toBe("paused");
-	expect(run?.steps[0]).toMatchObject({ error: "factory_capacity", pages: 0, finishedAt: null });
+	expect(run?.status).toBe("running");
+	expect(run?.steps[0]).toMatchObject({ error: null, status: "success" });
 	expect((await publishedFactory(createDb(env.DB), snap.account_id))?.runId).toBe(snap.runId);
+	await drive(env);
+	expect((await publishedFactory(createDb(env.DB), snap.account_id))?.runId).toBe("r1");
 });
 
 it("does not shorten an existing repository cooldown on repeated pause/cancel controls", async () => {

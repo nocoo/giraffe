@@ -99,7 +99,7 @@ function consoleFixture() {
 			nextAllowedAt: snapshot.fetched_at,
 			coverage: index < 2 ? 6 : 7,
 		})),
-		storage: { resourceBytes: 31800000, limitBytes: 256000000 },
+		storage: { resourceBytes: 31800000, totalBytes: 42000000 },
 	};
 	return { snapshot, state, older };
 }

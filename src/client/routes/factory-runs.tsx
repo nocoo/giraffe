@@ -672,9 +672,7 @@ function FactoryRuns({
 							</p>
 							{data?.storage ? (
 								<p>
-									全站数据占用{" "}
-									{((data.storage.totalBytes ?? data.storage.resourceBytes) / 1e6).toFixed(1)} /{" "}
-									{data.storage.limitBytes / 1e6} MB。保留最近 20
+									全站数据占用 {(data.storage.totalBytes / 1e6).toFixed(1)} MB。保留最近 20
 									次运行，以及当前页面使用的历史数据。
 								</p>
 							) : null}
