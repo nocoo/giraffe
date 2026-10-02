@@ -670,3 +670,69 @@ it("stops repeated invalid tool calls after a bounded number of model turns", as
 		await runtime.close();
 	}
 });
+
+it("resumes an interrupted specialist with the same assignment and model submission", async () => {
+	const directory = await mkdtemp(join(tmpdir(), "giraffe-specialist-recovery-"));
+	const models = createModels();
+	const faux = fauxProvider({ models: [{ id: "planner" }, { id: "worker" }] });
+	models.setProvider(faux.provider);
+	let ready: () => void = () => {};
+	const started = new Promise<void>((resolve) => {
+		ready = resolve;
+	});
+	faux.setResponses([
+		fauxAssistantMessage(
+			[
+				fauxToolCall("schedule_specialists", {
+					jobId: "specialist-restart",
+					order: ["issues"],
+					rationale: "inspect",
+				}),
+			],
+			{ stopReason: "toolUse" },
+		),
+		async (_context, options) => {
+			ready();
+			await new Promise<void>((resolve) =>
+				options?.signal?.addEventListener("abort", () => resolve(), { once: true }),
+			);
+			return fauxAssistantMessage("interrupted", { stopReason: "aborted" });
+		},
+		fauxAssistantMessage(
+			[fauxToolCall("submit_analysis", { jobId: "specialist-restart", ...result })],
+			{ stopReason: "toolUse" },
+		),
+	]);
+	const database = join(directory, "agent.sqlite");
+	let runtime = await openRuntime({
+		storage: await openNodeSqliteStorage(database),
+		config,
+		models,
+		decide: async () => ({ issues: judgment }),
+		publish: async () => {},
+		now: () => now,
+	});
+	try {
+		const running = runtime.run("specialist-restart", [input()]);
+		const stopped = expect(running).rejects.toThrow();
+		await started;
+		await runtime.close();
+		await stopped;
+		runtime = await openRuntime({
+			storage: await openNodeSqliteStorage(database),
+			config,
+			models,
+			decide: async () => {
+				throw new Error("decision must not repeat");
+			},
+			publish: async () => {},
+			now: () => now,
+		});
+		const reports = await runtime.run("specialist-restart", [input()]);
+		expect(reports[0]?.summary).toBe(result.summary);
+		expect(faux.state.callCount).toBe(3);
+	} finally {
+		await runtime.close();
+		await rm(directory, { recursive: true, force: true });
+	}
+});

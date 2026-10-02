@@ -328,11 +328,9 @@ export async function openRuntime(options: RuntimeOptions): Promise<AgentRuntime
 				if (!job.plan) {
 					const root = await harness.root(callContext);
 					await runtime.commit(async (tx) => {
-						Object.assign(await tx.doc(AssignmentDoc, root.id), {
-							jobId: job.id,
-							domain: null,
-							turns: 0,
-						});
+						const assignment = await tx.doc(AssignmentDoc, root.id);
+						if (assignment.jobId !== job.id)
+							Object.assign(assignment, { jobId: job.id, domain: null, turns: 0 });
 						return undefined;
 					}, callContext);
 					await observe(root.id, "主控", callContext);
@@ -439,11 +437,9 @@ export async function openRuntime(options: RuntimeOptions): Promise<AgentRuntime
 							thinkingLevel: config.roles.executor.thinkingLevel,
 							instructions: `${POLICY}\n${SPECIALISTS[domain]}\nA pass means only that the available observations contain no identified blocker, never approval to modify GitHub.`,
 						});
-						Object.assign(await tx.doc(AssignmentDoc, id), {
-							jobId: job.id,
-							domain,
-							turns: 0,
-						});
+						const assignment = await tx.doc(AssignmentDoc, id);
+						if (assignment.jobId !== job.id)
+							Object.assign(assignment, { jobId: job.id, domain, turns: 0 });
 						conversationId = id;
 						return undefined;
 					}, callContext);
