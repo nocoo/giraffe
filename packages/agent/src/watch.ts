@@ -18,6 +18,7 @@ import {
 	ownedRepositories,
 	validReports,
 } from "./evidence.ts";
+import { pruneRemote } from "./retention.ts";
 import type { AgentRuntime } from "./runtime.ts";
 
 export function reportInput(id: string, report: AnalysisReport) {
@@ -272,6 +273,7 @@ export function createWatcher(options: {
 					});
 			}
 			await heartbeat("idle");
+			if (!runtime.closing) await pruneRemote(client);
 		},
 		async watch(signal: AbortSignal) {
 			let ticking = false;

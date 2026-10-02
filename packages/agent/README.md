@@ -60,8 +60,12 @@ retry failed work. Source facts and operation state are separate.
 
 Default source staleness is 36 hours; watch interval is 120 seconds, configurable
 as `watch.intervalSeconds`. Models are not called when source versions and freshness
-class are unchanged. Historical payload retention needs an explicit product policy
-before long-running multi-account operation.
+class are unchanged. After each completed sweep, remote retention keeps the latest
+two valid reports per repository/global domain, the latest 20 terminal jobs, and
+the latest terminal and failed job per repository/type. Pending/running jobs and
+unrecognized resources are never pruned. Cleanup is capped at 100 records per
+collection per sweep and uses revision checks. Local execution history remains on
+disk; multi-account retention and multi-host scheduling are not part of this MVP.
 
 Development: `bun run typecheck`, `bun run test:coverage`, `bun run build`. Tests use fake tokens
 and loopback callbacks; never production GitHub or D1 resources.
