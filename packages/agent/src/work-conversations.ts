@@ -11,6 +11,7 @@ import {
 } from "@earendil-works/pi-durable";
 import type { z } from "zod";
 import type { Config } from "./config.ts";
+import { safeDiagnostics } from "./repair-workspace.ts";
 import type { AgentRuntime } from "./runtime.ts";
 import type { WorkerRole } from "./work-priority.ts";
 
@@ -62,7 +63,16 @@ export function workConversations(options: {
 			options.log(
 				`[工具 ${api.conversationId} ${ticket.key}] ${args.operation} ${JSON.stringify({ path: details.path, name: details.name, issues: details.issues, files: details.files })}`,
 			);
-			const value = await ticket.action(args.operation, details);
+			let value: unknown;
+			try {
+				value = await ticket.action(args.operation, details);
+			} catch (error) {
+				const message = safeDiagnostics(
+					error instanceof Error ? error.message : "Workspace action failed.",
+				);
+				options.log(`[工具失败 ${api.conversationId}] ${args.operation}: ${message}`);
+				throw new Error(message);
+			}
 			options.log(
 				`[工具完成 ${api.conversationId}] ${args.operation}${["latest", "commit", "check", "install"].includes(args.operation) ? ` ${JSON.stringify(value)}` : ""}`,
 			);

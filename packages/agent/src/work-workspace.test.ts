@@ -198,6 +198,25 @@ it("blocks changed baseline, failed checks and install mutations", async () => {
 	await expect(driver.check(initial)).rejects.toThrow(/Baseline/);
 });
 
+it("adopts instructions from a clean fast-forward before baseline checks", async () => {
+	const { driver, path, state, run } = await fixture();
+	const initial = await driver.inspect("owner/repo");
+	const original = run.getMockImplementation() as NonNullable<
+		ReturnType<typeof run.getMockImplementation>
+	>;
+	run.mockImplementation(async (request) => {
+		if (request.args[0] === "pull") {
+			state.head = "upstream";
+			await writeFile(join(path, "AGENTS.md"), "Updated upstream instructions.");
+		}
+		return original(request);
+	});
+	const prepared = await driver.prepare(initial, false);
+	expect(prepared.head).toBe("upstream");
+	expect(prepared.instructions).toContain("Updated upstream");
+	expect(prepared.policy).not.toBe(initial.policy);
+});
+
 it("stages only owned files, keeps hooks and refuses dirty baseline/staged/unsafe files", async () => {
 	const { driver, state, calls } = await fixture();
 	const initial = await driver.inspect("owner/repo");

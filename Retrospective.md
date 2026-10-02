@@ -377,3 +377,13 @@ rehearsals with exit code 0. Preparation conversation 47 was reused; workers 66,
 88, 110, 132 and 154 were distinct for basalt, bat, bogo, lyre and backy. No online
 report or GitHub mutation was performed. This verifies scheduling only, not actual
 repair, push or issue closure.
+
+## 2026-10-03 — Refresh preparation baseline after fast-forward
+
+The first real no-push coordinator run fetched and fast-forwarded Backy normally,
+then rejected its upstream Biome/instruction changes against the pre-pull policy.
+No worker edit, commit, push or issue closure occurred. The baseline must be pinned
+after a clean fast-forward, while worker-time changes remain forbidden. A failing
+regression test reproduced the stale-policy rejection before the fix. Tool errors
+are now printed with credential-safe diagnostics instead of only a missing-handoff
+message. The random repository selection remains unchanged during debugging.

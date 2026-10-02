@@ -253,7 +253,7 @@ export class WorkWorkspace {
 			throw new Error("Remote advanced while dirty; preserve user work and re-plan.");
 		if (!current.status)
 			await this.command(current.path, "git", ["pull", "--ff-only", "origin", "main"], signal);
-		current = await this.policy(inspection);
+		current = await this.inspect(inspection.repository);
 		await this.command(
 			current.path,
 			current.manager,
