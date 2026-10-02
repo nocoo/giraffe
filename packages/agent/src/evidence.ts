@@ -1,6 +1,13 @@
 import { createHash } from "node:crypto";
 import { ApiError, type GiraffeClient } from "./client.ts";
-import type { AnalysisReport, Domain, Evidence, Observation, Source } from "./contracts.ts";
+import type {
+	AnalysisReport,
+	Domain,
+	Evidence,
+	Observation,
+	Resource,
+	Source,
+} from "./contracts.ts";
 import { analysisReportSchema, repositorySchema } from "./contracts.ts";
 
 export type AnalysisInput = {
@@ -368,9 +375,16 @@ export function globalInput(
 	};
 }
 
-export function validReports(items: { payload: unknown }[]): AnalysisReport[] {
+export function validReports(
+	items: Pick<Resource, "payload" | "status" | "source_version" | "repository">[],
+): AnalysisReport[] {
 	return items.flatMap((item) => {
 		const parsed = analysisReportSchema.safeParse(item.payload);
-		return parsed.success ? [parsed.data] : [];
+		return parsed.success &&
+			item.status === "completed" &&
+			item.repository === parsed.data.repository &&
+			item.source_version === parsed.data.sourceVersion
+			? [parsed.data]
+			: [];
 	});
 }

@@ -308,7 +308,21 @@ it("marks stale global summaries and never invents missing reports", () => {
 	);
 	expect(input.omitted).toBe(6);
 	expect(input.evidence.every((item) => item.state === "unknown")).toBe(true);
-	expect(validReports([{ payload: reports[0] }, { payload: {} }])).toHaveLength(1);
+	const stored = {
+		payload: reports[0] as AnalysisReport,
+		status: "completed",
+		repository: "owner/repo0",
+		source_version: "v0",
+	};
+	expect(
+		validReports([
+			stored,
+			{ ...stored, payload: {} },
+			{ ...stored, status: "failed" },
+			{ ...stored, source_version: "different" },
+			{ ...stored, repository: "other/repo" },
+		]),
+	).toHaveLength(1);
 	const directory = temp();
 	writePrivateJson(join(directory, "output.json"), input);
 	expect(JSON.parse(readFileSync(join(directory, "output.json"), "utf8")).sources).toHaveLength(30);
