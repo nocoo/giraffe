@@ -190,10 +190,7 @@ test("list, grid and detail share project identity without replacing Giraffe bra
 	await expect(page.locator("aside img")).toHaveAttribute("src", giraffe.navigationIcon);
 	await expect(page.locator("aside")).toContainText(giraffe.title);
 	await page.getByRole("button", { name: "折叠侧栏", exact: true }).click();
-	await expect(page.getByAltText("Giraffe")).toHaveAttribute(
-		"apps/web/src",
-		giraffe.navigationIcon,
-	);
+	await expect(page.getByAltText("Giraffe")).toHaveAttribute("src", giraffe.navigationIcon);
 	await page.getByRole("button", { name: "展开侧栏", exact: true }).click();
 	expect(requests.get(repository)).toBe(1);
 	expect(requests.get("nocoo/giraffe")).toBe(1);
