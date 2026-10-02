@@ -1,7 +1,7 @@
 import { hostname } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
-import { ApiError, type GiraffeClient } from "./client.ts";
+import { ApiError, type GiraffeClient, retryableApiError } from "./client.ts";
 import type { Config } from "./config.ts";
 import {
 	type AnalysisReport,
@@ -126,7 +126,7 @@ export function createWatcher(options: {
 			});
 			log(`[任务完成] ${job.id}`);
 		} catch (error) {
-			if (runtime.closing) throw error;
+			if (runtime.closing || retryableApiError(error)) throw error;
 			const live = await client.get("jobs", id);
 			if (live && live.status !== "cancelled")
 				await client.update("jobs", live, {
@@ -217,8 +217,9 @@ export function createWatcher(options: {
 					status: "completed",
 					payload: { ...claimed.payload, completedAt: now() },
 				});
-			} catch {
+			} catch (error) {
 				if (runtime.closing) return;
+				if (retryableApiError(error)) throw error;
 				const latest = await client.get("jobs", job.id);
 				if (latest?.status === "running")
 					await client.update("jobs", latest, {
@@ -235,7 +236,12 @@ export function createWatcher(options: {
 			if (runtime.closing) return;
 			cachedReports = validReports(await client.list("reports", { type: "github-analysis" }));
 			await heartbeat("working");
-			for (const id of await runtime.pending()) {
+			const remotePending = (
+				await client.list("jobs", { type: "github-analysis", status: "running" })
+			)
+				.filter((job) => job.payload.runnerId === runnerId)
+				.map((job) => job.id);
+			for (const id of new Set([...(await runtime.pending()), ...remotePending])) {
 				const job = await runtime.job(id);
 				if (job) await execute(id, job.inputs);
 			}

@@ -408,4 +408,35 @@ describe("watch service", () => {
 		expect(f.run).not.toHaveBeenCalled();
 		expect(f.update.mock.calls.some((call) => call[1].id === "late")).toBe(false);
 	});
+
+	it("reconciles a failed completed-job PATCH on the next sweep instead of marking permanent failure", async () => {
+		const f = fixture();
+		const normal = f.update.getMockImplementation();
+		let failed = false;
+		f.update.mockImplementation(async (collection, existing, patch) => {
+			if (collection === "jobs" && patch.status === "completed" && !failed) {
+				failed = true;
+				throw new ApiError(503, "unavailable");
+			}
+			if (!normal) throw new Error("fixture");
+			return normal(collection, existing, patch);
+		});
+		await expect(f.watcher.once(request)).rejects.toThrow("503");
+		expect([...f.data.jobs.values()][0]?.status).toBe("running");
+		await f.watcher.once(request);
+		expect([...f.data.jobs.values()][0]?.status).toBe("completed");
+	});
+
+	it("retains web requests for API recovery and resumes their saved job", async () => {
+		const f = fixture();
+		f.data.jobs.set("web", row({ id: "web", type: "analysis-request", payload: request }));
+		f.run.mockRejectedValueOnce(new ApiError(503, "unavailable"));
+		await expect(f.watcher.once(request)).rejects.toThrow("503");
+		expect(f.data.jobs.get("web")?.status).toBe("running");
+		for (const job of f.data.jobs.values())
+			if (job.type === "github-analysis")
+				f.saved.set(job.id, { inputs: [input("owner/repo", "issues")] });
+		await f.watcher.once(request);
+		expect(f.data.jobs.get("web")?.status).toBe("completed");
+	});
 });

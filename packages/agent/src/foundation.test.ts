@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, GiraffeClient } from "./client.ts";
+import { ApiError, GiraffeClient, retryableApiError } from "./client.ts";
 import {
 	type Credential,
 	configSchema,
@@ -250,6 +250,18 @@ describe("authenticated client", () => {
 		expect(await client.get("reports", "missing")).toBeNull();
 		await expect(client.update("reports", item, {})).rejects.toBeInstanceOf(ApiError);
 	});
+
+	it("propagates cancellation through publication and duplicate reconciliation", async () => {
+		const controller = new AbortController();
+		const send = transport([
+			json({ error: { code: "resource_exists" } }, 409),
+			json({ account_id: credential.account_id, item }),
+		]);
+		const client = new GiraffeClient(credential, send);
+		await client.create("reports", item, controller.signal);
+		controller.abort();
+		expect(send.mock.calls.every((call) => call[1]?.signal?.aborted)).toBe(true);
+	});
 	it("validates observation envelopes without deriving successful zero from absence", async () => {
 		const envelope = {
 			account_id: credential.account_id,
@@ -362,4 +374,13 @@ describe("browser login", () => {
 		).rejects.toThrow(/401/);
 		expect(() => readCredential(dir)).toThrow(/login/);
 	});
+});
+
+it("distinguishes recoverable service failures from terminal bad requests", () => {
+	for (const status of [0, 401, 403, 408, 429, 500, 503])
+		expect(retryableApiError(new ApiError(status, "unavailable"))).toBe(true);
+	expect(retryableApiError(new ApiError(409, "revision_conflict"))).toBe(true);
+	expect(retryableApiError(new ApiError(409, "resource_exists"))).toBe(false);
+	expect(retryableApiError(new ApiError(400, "validation_failed"))).toBe(false);
+	expect(retryableApiError(new Error("model failed"))).toBe(false);
 });

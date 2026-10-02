@@ -64,8 +64,8 @@ async function main() {
 				models: configuredModels(config),
 				decide: decisionClient(config),
 				log: console.log,
-				publish: async (id, report) => {
-					await client.create("reports", reportInput(id, report));
+				publish: async (id, report, signal) => {
+					await client.create("reports", reportInput(id, report), signal);
 				},
 			});
 			const watcher = createWatcher({

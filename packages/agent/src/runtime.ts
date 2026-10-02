@@ -18,6 +18,7 @@ import {
 	watchEvents,
 } from "@earendil-works/pi-durable";
 import { z } from "zod";
+import { ApiError, retryableApiError } from "./client.ts";
 import type { Config } from "./config.ts";
 import {
 	type AnalysisReport,
@@ -48,6 +49,7 @@ type Job = {
 	decisions: Partial<Record<Domain, Judgment>>;
 	reports: Partial<Record<Domain, AnalysisReport>>;
 	published: Domain[];
+	publicationError: { status: number; code: string } | null;
 };
 const Jobs = defineDocFamily<Job, { id: string; inputs: AnalysisInput[] }>({
 	kind: "giraffe.jobs",
@@ -61,6 +63,7 @@ const Jobs = defineDocFamily<Job, { id: string; inputs: AnalysisInput[] }>({
 		decisions: {},
 		reports: {},
 		published: [],
+		publicationError: null,
 	}),
 	checkpointWhen: () => true,
 });
@@ -318,10 +321,14 @@ export async function openRuntime(options: RuntimeOptions): Promise<AgentRuntime
 		});
 	}
 
-	const JobTask = defineTask<{ jobId: string }, Checkpoint, { jobId: string }>({
+	const JobTask = defineTask<
+		{ jobId: string; phase: "plan" | "publish" },
+		Checkpoint,
+		{ jobId: string }
+	>({
 		name: "giraffe.analysis",
 		version: 1,
-		initial: () => ({ phase: "plan", index: 0 }),
+		initial: (input) => ({ phase: input.phase, index: 0 }),
 		phases: {
 			plan: async (task, runtime, callContext) => {
 				const job = required(await harness.snapshot(Jobs, task.input.jobId, callContext), "Job");
@@ -490,7 +497,23 @@ export async function openRuntime(options: RuntimeOptions): Promise<AgentRuntime
 					if (job.published.includes(domain)) continue;
 					const report = required(job.reports[domain], "Report");
 					const id = `analysis-${digest({ job: job.id, domain }).slice(0, 48)}`;
-					await options.publish(id, report, runtime.signal);
+					try {
+						await options.publish(id, report, runtime.signal);
+					} catch (error) {
+						if (runtime.signal.aborted || !retryableApiError(error)) throw error;
+						await runtime.commit(async (tx) => {
+							const draft = await tx.doc(Jobs, job.id, { id: job.id, inputs: [] });
+							draft.publicationError = { status: error.status, code: error.code };
+							return {
+								status: "terminal",
+								outcome: {
+									status: "failed",
+									error: { message: "Publication deferred until API recovery." },
+								},
+							};
+						}, callContext);
+						return;
+					}
 					await runtime.commit(async (tx) => {
 						const draft = await tx.doc(Jobs, job.id, {
 							id: job.id,
@@ -572,18 +595,26 @@ export async function openRuntime(options: RuntimeOptions): Promise<AgentRuntime
 					const job = await tx.doc(Jobs, id, { id, inputs });
 					if (digest(job.inputs) !== digest(inputs))
 						throw new Error("Job ID already belongs to different evidence.");
-					if (job.taskId === null)
+					const existing = job.taskId === null ? undefined : await tx.task(job.taskId);
+					if (
+						job.taskId === null ||
+						(job.publicationError !== null && existing?.state.status === "terminal")
+					) {
 						job.taskId = await tx.createTask(
 							JobTask,
-							{ jobId: id },
+							{ jobId: id, phase: job.publicationError ? ("publish" as const) : ("plan" as const) },
 							{ ownership: { kind: "conversation" }, background: true },
 						);
-					return job.taskId;
+						job.publicationError = null;
+					}
+					return required(job.taskId ?? undefined, "Job task");
 				}, context);
 				const settled = await harness.waitForTask(taskId, context);
+				const job = required(await harness.snapshot(Jobs, id, context), "Job");
+				if (job.publicationError)
+					throw new ApiError(job.publicationError.status, job.publicationError.code);
 				if (settled.state.outcome.status !== "completed")
 					throw new Error(`Analysis job ${settled.state.outcome.status}.`);
-				const job = required(await harness.snapshot(Jobs, id, context), "Job");
 				return Object.values(job.reports);
 			} finally {
 				activeRun = null;

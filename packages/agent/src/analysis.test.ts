@@ -11,6 +11,7 @@ import {
 import { MemoryStorage } from "@earendil-works/pi-durable";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { describe, expect, it, vi } from "vitest";
+import { ApiError } from "./client.ts";
 import { configSchema } from "./config.ts";
 import type { AnalysisReport, Judgment, Observation, SpecialistResult } from "./contracts.ts";
 import { buildInput, globalInput, ownedRepositories } from "./evidence.ts";
@@ -734,5 +735,50 @@ it("resumes an interrupted specialist with the same assignment and model submiss
 	} finally {
 		await runtime.close();
 		await rm(directory, { recursive: true, force: true });
+	}
+});
+
+it("retries publication API outages without repeating any model work", async () => {
+	const models = createModels();
+	const faux = fauxProvider({ models: [{ id: "planner" }, { id: "worker" }] });
+	models.setProvider(faux.provider);
+	faux.setResponses([
+		fauxAssistantMessage(
+			[
+				fauxToolCall("schedule_specialists", {
+					jobId: "publish-retry",
+					order: ["issues"],
+					rationale: "inspect",
+				}),
+			],
+			{ stopReason: "toolUse" },
+		),
+		fauxAssistantMessage([fauxToolCall("submit_analysis", { jobId: "publish-retry", ...result })], {
+			stopReason: "toolUse",
+		}),
+	]);
+	const publish = vi
+		.fn()
+		.mockRejectedValueOnce(new ApiError(503, "unavailable"))
+		.mockResolvedValue(undefined);
+	const decide = vi.fn(async () => ({ issues: judgment }));
+	const runtime = await openRuntime({
+		storage: new MemoryStorage(),
+		models,
+		config,
+		decide,
+		publish,
+		now: () => now,
+	});
+	try {
+		await expect(runtime.run("publish-retry", [input()])).rejects.toThrow("503");
+		expect((await runtime.job("publish-retry"))?.publicationError?.status).toBe(503);
+		await runtime.run("publish-retry", [input()]);
+		expect(publish).toHaveBeenCalledTimes(2);
+		expect(publish.mock.calls[0]?.[0]).toBe(publish.mock.calls[1]?.[0]);
+		expect(faux.state.callCount).toBe(2);
+		expect(decide).toHaveBeenCalledOnce();
+	} finally {
+		await runtime.close();
 	}
 });

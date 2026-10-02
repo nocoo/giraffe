@@ -11,6 +11,14 @@ export class ApiError extends Error {
 		this.code = code;
 	}
 }
+export function retryableApiError(error: unknown): error is ApiError {
+	return (
+		error instanceof ApiError &&
+		([0, 401, 403, 408, 429].includes(error.status) ||
+			error.status >= 500 ||
+			(error.status === 409 && error.code === "revision_conflict"))
+	);
+}
 export type Collection = "records" | "reports" | "jobs";
 export type ResourceInput = Pick<
 	Resource,
@@ -96,9 +104,9 @@ export class GiraffeClient {
 		return result;
 	}
 
-	async get(collection: Collection, id: string): Promise<Resource | null> {
+	async get(collection: Collection, id: string, signal?: AbortSignal): Promise<Resource | null> {
 		try {
-			return this.item(await this.request("GET", this.path(collection, id)));
+			return this.item(await this.request("GET", this.path(collection, id), undefined, signal));
 		} catch (error) {
 			if (error instanceof ApiError && error.status === 404) return null;
 			throw error;
@@ -134,14 +142,18 @@ export class GiraffeClient {
 		throw new ApiError(502, "pagination_limit");
 	}
 
-	async create(collection: Collection, input: ResourceInput): Promise<Resource> {
+	async create(
+		collection: Collection,
+		input: ResourceInput,
+		signal?: AbortSignal,
+	): Promise<Resource> {
 		if (Buffer.byteLength(JSON.stringify(input.payload)) > 64 * 1024)
 			throw new ApiError(413, "payload_too_large");
 		try {
-			return this.item(await this.request("POST", this.path(collection), input));
+			return this.item(await this.request("POST", this.path(collection), input, signal));
 		} catch (error) {
 			if (error instanceof ApiError && error.status === 409 && error.code === "resource_exists") {
-				const existing = await this.get(collection, input.id);
+				const existing = await this.get(collection, input.id, signal);
 				if (
 					existing &&
 					existing.type === input.type &&
