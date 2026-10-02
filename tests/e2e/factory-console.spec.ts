@@ -539,6 +539,8 @@ test("refresh center configures daily and weekly jobs, keeps drafts while pollin
 		],
 	};
 	await page.route("**/api/refresh/**", (route) => {
+		if (new URL(route.request().url()).pathname === "/api/refresh/times")
+			return route.fulfill({ json: { account_id: fixture.state.account_id, runs: [] } });
 		if (route.request().method() === "POST") {
 			const input = route.request().postDataJSON();
 			expect(input.account_id).toBe(fixture.state.account_id);
