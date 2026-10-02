@@ -5,6 +5,7 @@ import { BrowserRouter, Link, Route, Routes } from "react-router";
 import { AppShell } from "./components/layout/app-shell";
 import { BusinessOutlet } from "./components/layout/repository-scope";
 import { APP_PATHS, type AppPath } from "./lib/routes";
+import { AuthorizePage } from "./routes/authorize";
 
 const RefreshPage = lazy(() =>
 	import("./routes/factory-runs").then((m) => ({ default: m.RefreshPage })),
@@ -74,9 +75,10 @@ const PAGES: Record<(typeof APP_PATHS)[number], ReactNode> = {
 	"/inbox": <InboxPage />,
 	"/repos/:owner/:name": <RepoDetailPage />,
 	"/settings": <SettingsPage />,
+	"/authorize": <AuthorizePage />,
 };
 
-const standalone = new Set<AppPath>(["/refresh", "/repos/:owner/:name", "/settings"]);
+const standalone = new Set<AppPath>(["/refresh", "/repos/:owner/:name", "/settings", "/authorize"]);
 
 function pageRoutes(paths: readonly AppPath[]) {
 	return paths.map((path) => (

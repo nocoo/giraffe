@@ -33,7 +33,7 @@ returns a callback URL containing only `code` and `state`. Callbacks must be HTT
 query or fragment. The code expires after five minutes and is one-time only.
 POST `/api/v1/auth/exchange` with `{ code, code_verifier, redirect_uri }` atomically
 consumes the hashed code after S256 and exact callback verification, then returns
-`{ token, account_id, expires_at, scopes }`. Invalid exchange attempts never mint
+`{ token, account_id, expires_at, scopes }`. Invalid exchange attempts return 400 `invalid_grant` and never mint
 a token. The CLI saves the returned token; neither code nor bearer belongs in logs.
 `@nocoo/base-cli` uses `loginPath: '/authorize'`, `tokenParam: 'code'`, `extraParams`
 for PKCE/scopes, `state`, and captures the code through `onSaveToken` for exchange.
@@ -143,3 +143,15 @@ the single application version. Root `wrangler.toml` deliberately remains the
 production deployment manifest and points to `apps/web/src/server/index.ts`;
 root migrations and the existing D1/queue bindings keep their identities.
 `packages/agent` is reserved, with no Agent implementation in this release.
+
+## Access deployment change
+
+A dedicated self-hosted Access application `giraffe-machine-api` covers exactly
+`giraffe.hexly.ai/api/v1/*` and attaches an existing reusable Bypass policy by ID.
+No shared-bypass application destinations or dashboard application policies change.
+The Worker is deployed before this path is made reachable. Unauthenticated machine
+resources must return JSON 401, never login redirects; malformed exchange returns
+400. Dashboard, `/authorize`, `/api/tokens` and `/api/cli/authorize` continue to
+redirect unauthenticated browsers through the existing Access application.
+Rollback deletes only the dedicated machine application, restoring dashboard-level
+Access coverage on that path; additive D1 tables and old data are retained.

@@ -62,3 +62,18 @@ describe("origin", () => {
 		).toThrow(ApiError);
 	});
 });
+
+it("requires same-origin on token PATCH and configuration PUT", () => {
+	for (const method of ["PATCH", "PUT"]) {
+		expect(() =>
+			assertOrigin(new Request("https://giraffe.hexly.ai/api/tokens/x", { method }), "production"),
+		).toThrow(ApiError);
+		assertOrigin(
+			new Request("https://giraffe.hexly.ai/api/tokens/x", {
+				method,
+				headers: { Origin: "https://giraffe.hexly.ai" },
+			}),
+			"production",
+		);
+	}
+});

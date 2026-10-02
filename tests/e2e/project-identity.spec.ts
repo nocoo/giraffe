@@ -6,7 +6,7 @@ import { createUiFixtures } from "./ui-fixtures";
 
 const repository = "octocat/hello-world";
 const longRepository = "octocat/a-repository-with-a-very-long-name-for-layout-verification";
-const imageBody = readFileSync("public/apple-touch-icon.png");
+const imageBody = readFileSync("apps/web/public/apple-touch-icon.png");
 
 function identity(repo: string, title: string): ProjectIdentity {
 	const [owner, name] = repo.split("/");

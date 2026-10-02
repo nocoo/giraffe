@@ -113,3 +113,11 @@ HTTP 与浏览器脚本自动准备隔离的本地 D1 和 GitHub stub，不需�
 ## 许可证
 
 [MIT](LICENSE)。
+
+## Monorepo and local Agent API
+
+The Worker and React/Basalt application live in `apps/web`. Root Bun scripts,
+Wrangler configuration and migrations remain the operational entrypoints.
+`packages/agent` is reserved for the separately developed local Agent.
+See [the v1 API contract](docs/11-agent-api.md) for token management, browser
+PKCE consent, saved observation envelopes and revisioned resource CRUD.

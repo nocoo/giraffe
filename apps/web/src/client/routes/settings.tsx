@@ -24,6 +24,7 @@ import {
 import { ExternalLink, KeyRound, ShieldCheck, Trash2, Users } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 import { AiSettings } from "../components/ai-settings";
+import { ApiTokens } from "../components/api-tokens";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ResultCount, TableScroll } from "../components/layout/collection-chrome";
 import { IconLabel } from "../components/layout/icon-label";
@@ -295,6 +296,7 @@ export function SettingsPage() {
 					</LayerCard.Well>
 				</LayerCard>
 			</SectionRule>
+			<ApiTokens accounts={accounts} />
 			<AiSettings />
 			<ConfirmDialog
 				open={pendingId !== null}

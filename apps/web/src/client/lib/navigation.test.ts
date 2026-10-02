@@ -33,6 +33,7 @@ describe("navigation", () => {
 			"/inbox",
 			"/repos/:owner/:name",
 			"/settings",
+			"/authorize",
 		]);
 		expect(breadcrumbsFor("/")).toEqual([{ href: "/", label: "仓库" }]);
 		expect(breadcrumbsFor("/repos/o/n")).toEqual([

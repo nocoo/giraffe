@@ -9,12 +9,10 @@ export function allowedOrigin(mode: EnvMode): string {
 }
 
 export function assertOrigin(request: Request, mode: EnvMode, bypass = false): void {
-	if (request.method === "GET" || request.method === "HEAD") {
+	if (request.method === "GET" || request.method === "HEAD" || request.method === "OPTIONS") {
 		return;
 	}
-	if (request.method !== "POST" && request.method !== "DELETE") {
-		return;
-	}
+	if (!["POST", "PUT", "PATCH", "DELETE"].includes(request.method)) return;
 	const origin = request.headers.get("Origin");
 	if (!origin) {
 		throw new ApiError(403, "origin_forbidden", "origin not allowed");

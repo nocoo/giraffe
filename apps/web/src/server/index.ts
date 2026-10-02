@@ -12,10 +12,12 @@ import {
 	postAiSettings,
 	testAiSettings,
 } from "./routes/ai-settings";
+import { browserAuthorize, browserTokens } from "./routes/api-tokens";
 import { getCi } from "./routes/ci";
 import { getFactory, getFactoryStream } from "./routes/factory";
 import { getFactoryRuns, postFactoryControl, postFactoryRun } from "./routes/factory-runs";
 import { liveResponse } from "./routes/live";
+import { machineApi } from "./routes/machine";
 import { getMe } from "./routes/me";
 import { postRead, postReadAll } from "./routes/notifications";
 import { getProjectIdentity } from "./routes/project-identity";
@@ -61,6 +63,10 @@ export function createApp(): Hono<{ Bindings: Env; Variables: AppVars }> {
 		return c.env.ASSETS.fetch(c.req.raw);
 	});
 	app.use("/api/*", async (c, next) => {
+		if (c.req.path.startsWith("/api/v1/")) {
+			await next();
+			return;
+		}
 		c.set("db", createDb(c.env.DB));
 		const liveGet = c.req.path === "/api/live" && c.req.raw.method === "GET";
 		if (!liveGet) {
@@ -69,6 +75,13 @@ export function createApp(): Hono<{ Bindings: Env; Variables: AppVars }> {
 		}
 		await next();
 	});
+	app.route("/api/v1", machineApi());
+	allow(app, "/api/tokens", ["GET", "POST"]);
+	app.on(["GET", "POST"], "/api/tokens", browserTokens);
+	allow(app, "/api/tokens/:id", ["PATCH", "DELETE"]);
+	app.on(["PATCH", "DELETE"], "/api/tokens/:id", browserTokens);
+	allow(app, "/api/cli/authorize", ["POST"]);
+	app.post("/api/cli/authorize", browserAuthorize);
 	allow(app, "/api/live", ["GET"]);
 	onGet(app, "/api/live", (c) => liveResponse(c.env, c.get("db")));
 	allow(app, "/api/me", ["GET"]);

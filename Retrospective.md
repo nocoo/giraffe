@@ -305,3 +305,8 @@ all resolved lock entries. Strip registry-specific download URLs introduced by l
 regeneration and verify a frozen offline install. Do not downgrade unrelated dependencies
 to solve registry lag. Moving source also requires updating schema fixture filesystem paths
 and generated Worker entry-module types, not only TypeScript imports.
+
+Monorepo acceptance also caught a browser fixture reading the old `public/` path and
+an overbroad CSRF guard that changed unsupported-method responses from 405 to 403.
+Keep the Origin check on real write verbs (POST/PUT/PATCH/DELETE), and leave unsupported
+verbs to the method gate. Search asset filesystem reads as well as source imports.

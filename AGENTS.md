@@ -84,3 +84,10 @@ Verify `GET https://giraffe.hexly.ai/api/live`: current top-level version and a 
 ## Retrospective
 
 Narratives remain in [Retrospective.md](Retrospective.md); keep only recurring rules here, cross-project lessons in global rules/nmem and deterministic requirements in hooks/tests.
+
+## Machine API boundary
+
+- `/api/v1/*` uses Worker-enforced hash-only, fixed-account, scoped, expiring bearer tokens; only the PKCE code exchange is tokenless. Access bypass is restricted to that path, never the dashboard host.
+- Browser token management and `/authorize` consent remain Access protected; browser writes require same-origin. Raw API tokens are returned only at mint/exchange and must not enter logs, URLs, persisted browser state or D1.
+- Agent records/reports/jobs are mutable local application resources with revisions. GitHub observations and factory publications remain read-only. GET never collects upstream or records token activity.
+- Model execution/configuration belongs to the future local agent; never submit model secrets to the web application. Existing cloud AI is retained until the replacement is verified. Contract: [Agent API](docs/11-agent-api.md).

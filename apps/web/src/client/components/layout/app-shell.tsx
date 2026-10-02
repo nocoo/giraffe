@@ -120,7 +120,9 @@ export function AppShell() {
 						title={title}
 						actions={
 							<>
-								{location.pathname !== "/settings" ? <DataTimeControl /> : null}
+								{!["/settings", "/authorize"].includes(location.pathname) ? (
+									<DataTimeControl />
+								) : null}
 								<HeaderTooltip label="GitHub repository">
 									<Button variant="ghost" size="icon" className="h-8 w-8" asChild>
 										<a

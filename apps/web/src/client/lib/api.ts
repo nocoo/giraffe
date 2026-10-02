@@ -39,3 +39,17 @@ export async function apiPost<T>(resource: string, body?: unknown): Promise<T> {
 export async function apiDelete(resource: string): Promise<void> {
 	await parse(await send(resource, { method: "DELETE" }));
 }
+
+export async function apiWrite<T>(
+	resource: string,
+	method: "PATCH" | "DELETE",
+	body: unknown,
+): Promise<T> {
+	return parse<T>(
+		await send(resource, {
+			method,
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify(body),
+		}),
+	);
+}

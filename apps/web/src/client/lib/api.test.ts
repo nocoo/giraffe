@@ -89,3 +89,23 @@ describe("api client", () => {
 		await expect(apiGet("d")).rejects.toMatchObject({ code: "internal_error", status: 500 });
 	});
 });
+
+it("sends scoped JSON PATCH and DELETE without bypassing the API adapter", async () => {
+	const request = vi.fn().mockResolvedValue(Response.json({ ok: true }));
+	vi.stubGlobal("fetch", request);
+	const { apiWrite } = await import("./api");
+	expect(await apiWrite("tokens/x", "PATCH", { account_id: "a", label: "new" })).toEqual({
+		ok: true,
+	});
+	expect(request).toHaveBeenCalledWith(
+		"/api/tokens/x",
+		expect.objectContaining({
+			method: "PATCH",
+			credentials: "same-origin",
+			body: '{"account_id":"a","label":"new"}',
+		}),
+	);
+	vi.stubGlobal("fetch", () => {
+		throw new Error("network denied in L1");
+	});
+});
