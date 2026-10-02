@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.14.0 — 2026-10-02
+
+### Added
+
+- Local `packages/agent` CLI with private user-level model configuration and browser-consent PKCE login through `@nocoo/base-cli`
+- One Pi Durable Harness, one Astra planner, one shared Jev decision client, and persistent Sol specialists for repository/global Issues, PRs, CI and CD
+- Authenticated read/write report, job and heartbeat publication with stable IDs, revision conflicts, restart recovery and bounded remote history
+- Basalt analysis workbench with four domains, repository/portfolio scope, evidence versions and age, Jev distributions, runner presence and queued requests
+- Browser API access to Agent resources under existing Access and same-origin checks
+
+### Changed
+
+- Read GitHub facts from the existing Giraffe collector instead of duplicating collection in the Agent
+- Separate current source time, report-generation time and model judgments; stale or incomplete evidence remains unknown
+- Bound each model run to eight responses and retain current workflow outcomes ahead of historical failure samples
+- Include the Node Agent workspace in root typecheck, lint, build and coverage gates
+
+### Removed
+
+- Cloud AI model settings, provider execution, assessment endpoints and old report consumers; no compatibility fallback remains
+- Unused cloud AI dependencies; legacy D1 tables remain intact and frozen collection skips only retired AI stages
+
+### Verification Boundary
+
+- Automated acceptance uses isolated SQLite/Worker/GitHub fixtures; the real model pipeline was exercised visibly using synthetic evidence
+- Production browser consent and authenticated Agent publication require the owner to complete `giraffe login`; model success alone does not establish that production acceptance
+
 ## v0.13.0 — 2026-10-02
 
 ### Added
