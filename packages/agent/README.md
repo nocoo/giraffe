@@ -141,6 +141,7 @@ The same account's analysis and repair CLI cannot own its Harness concurrently.
 
 ```sh
 bun run agent work --dry-run --limit 5
+bun run agent work --no-push --limit 2 --repos owner/first,owner/second
 bun run agent work --dry-run --limit 5 --repos nocoo/basalt,nocoo/bat,nocoo/bogo,nocoo/lyre,nocoo/backy
 ```
 
@@ -174,6 +175,13 @@ They cannot overwrite pre-existing dirty files or weaken baseline gates. Changes
 outside their written file set cannot enter their commits. The controller verifies
 the final HEAD/checks and retained changes, pushes normally, verifies remote main,
 then closes completed issues. A failed push never closes issues.
+
+Use `--no-push` for local repair acceptance: checks and normal atomic commits still
+run, but the coordinator neither pushes nor closes issues. Workers query `latest`
+through the configured approved mirror, examine engines/peer requirements and actual
+usage, and prefer the latest stable release over an older issue target. Preparation
+uses reproducible installation; updates use ordinary mirror-backed installation.
+Tool calls and sanitized check/commit results are visible in the terminal.
 
 This is trusted native execution, not OS isolation. Root npm/Bun manifests and check
 scripts are required; other ecosystems are blocked rather than guessed. Resident

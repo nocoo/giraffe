@@ -33,7 +33,7 @@ export function workConversations(options: {
 	const { harness, registry } = options.runtime;
 	const active = new Map<
 		ConversationId,
-		{ schema: z.ZodType; result?: unknown; action?: WorkAction; turns: number }
+		{ schema: z.ZodType; result?: unknown; action?: WorkAction; turns: number; key: string }
 	>();
 	const submit = defineTool({
 		name: "submit_work_result",
@@ -58,14 +58,21 @@ export function workConversations(options: {
 		execute: async (args, api) => {
 			const ticket = active.get(api.conversationId);
 			if (!ticket?.action) throw new Error("Workspace actions are disabled in dry run.");
-			const value = await ticket.action(args.operation, JSON.parse(args.json));
+			const details = JSON.parse(args.json) as Record<string, unknown>;
+			options.log(
+				`[工具 ${api.conversationId} ${ticket.key}] ${args.operation} ${JSON.stringify({ path: details.path, name: details.name, issues: details.issues, files: details.files })}`,
+			);
+			const value = await ticket.action(args.operation, details);
+			options.log(
+				`[工具完成 ${api.conversationId}] ${args.operation}${["latest", "commit", "check", "install"].includes(args.operation) ? ` ${JSON.stringify(value)}` : ""}`,
+			);
 			return { content: [{ type: "text", text: JSON.stringify(value) }] };
 		},
 	});
 	const guard = hook(GenerationTask, {
 		afterResponse: async (_message, api) => {
 			const ticket = active.get(api.conversationId);
-			if (ticket && ++ticket.turns >= 24 && ticket.result === undefined)
+			if (ticket && ++ticket.turns >= (ticket.action ? 120 : 24) && ticket.result === undefined)
 				void harness
 					.conversation(api.conversationId, context)
 					.then((conversation) => conversation?.abort(context))
@@ -121,9 +128,10 @@ export function workConversations(options: {
 			if (!conversation) throw new Error("Conversation missing.");
 			const ticket = {
 				schema: request.schema,
+				key: request.key,
 				turns: 0,
 				...(request.action ? { action: request.action } : {}),
-			} as { schema: z.ZodType; result?: unknown; action?: WorkAction; turns: number };
+			} as { schema: z.ZodType; result?: unknown; action?: WorkAction; turns: number; key: string };
 			active.set(conversationId, ticket);
 			options.log(
 				`[会话 ${conversationId}] ${request.key} | ${request.role.model} | thinking=${request.role.thinkingLevel} | ${request.action ? "受限执行" : "只读规划"}`,

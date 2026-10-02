@@ -32,6 +32,7 @@ export type WorkHandoff = {
 
 export async function runCoordinator(options: {
 	dryRun: boolean;
+	push?: boolean;
 	limit: number;
 	repositories?: string[];
 	runId?: string;
@@ -134,7 +135,7 @@ export async function runCoordinator(options: {
 					workspace,
 					retainChanges: plan.retainChanges,
 					dryRun: options.dryRun,
-					registry: "https://packagefeedproxy.microsoft.io/npm/",
+					registry: config.repairs?.registry,
 				},
 				...(!options.dryRun
 					? {
@@ -157,18 +158,20 @@ export async function runCoordinator(options: {
 				? ordered
 				: await verifyWorkIssues(repository.repository, ordered);
 			const actions = workerActions(driver, workspace, plan.issues, options.signal);
+			const files = options.dryRun ? [] : await driver.files(workspace);
 			const worker = await conversations.run({
 				key: `worker:${plan.repository}`,
 				requestId: `${runId}:worker:${plan.repository}`,
 				role,
 				schema: handoffSchema,
-				instructions: `You are the dedicated worker for this repository. Process supplied issues one by one in exact priority order on main, obey repository instructions, TDD and atomic commits with normal hooks. No branches/worktrees/push/issue closure. ${options.dryRun ? "DRY RUN: do not run code. Repeat every assigned issue, workdir, priority and approximate fix/test/commit process; honestly state nothing executed." : "Available workspace_action operations: read {path}, write {path,content}, install {} (temporary mirror), check {}, commit {issue,files:[explicit paths],message}. Commit each issue in order after checks; never incorporate unrelated user changes. No arbitrary shell. If blocked, return ready:false. Host owns push and issue closure."} Return {summary,steps:[...],issues:[all assigned numbers],ready:boolean}.`,
+				instructions: `You are the dedicated worker for this repository. Process supplied issues in priority order on main, obey repository instructions, TDD and atomic commits with normal hooks. No branches/worktrees/push/issue closure. ${options.dryRun ? "DRY RUN: do not run code. Repeat every assigned issue, workdir, priority and approximate fix/test/commit process; honestly state nothing executed." : "Available workspace_action operations: read {path}, write {path,content}, latest {name} (queries the current stable npm release and peers/engines from approved mirror), install {} (temporary mirror), check {}, commit {issues:[issue numbers],files:[explicit paths],message}. Before editing each dependency, MUST call latest and inspect actual package manifests and lockfile/usage. Upgrade to the LATEST verified stable version, not blindly the stale issue target; never downgrade or invent versions. Include inseparable peer upgrades AND their assigned issue numbers in the same buildable atomic commit (for example vitest and coverage-v8); start each commit group with the highest-priority remaining issue. Do not create empty commits for issues already addressed by a group. Inspect transitive owners and existing overrides before upgrading. Do not manually fabricate lockfile resolutions. Commit after checks; never incorporate unrelated user changes. No arbitrary shell. If blocked, return ready:false with actual error. Commit message lowercase Conventional Commits <=50 chars, only explicit paths. Read relevant source/test files from supplied tracked file list; do not use the read tool on directories."} ${options.push === false ? "This occurrence is local-only: no push, release or issue closure." : "Only the host coordinator may publish after your verified handoff."} Return {summary,steps:[...],issues:[all assigned numbers in original priority order],ready:boolean}.`,
 				input: {
 					repository: plan.repository,
 					workdir: workspace.path,
 					branch: "main",
 					instructions: workspace.instructions,
 					tasks: liveIssues,
+					files,
 					model: role.model,
 					thinkingLevel: role.thinkingLevel,
 					dryRun: options.dryRun,
@@ -184,13 +187,28 @@ export async function runCoordinator(options: {
 				if (!worker.result.ready || actions.committed.length !== plan.issues.length)
 					throw new Error("Worker has not verified and committed every assigned issue.");
 				await verifyWorkIssues(repository.repository, ordered);
-				await driver.publish(
-					workspace,
-					(actions.committed.at(-1) as { head: string }).head,
-					plan.issues,
-					options.signal,
-				);
-				log(`[主控发布] ${plan.repository} 已验证 push，然后关闭 ${plan.issues.length} 个 Issue`);
+				if (options.push !== false) {
+					await driver.publish(
+						workspace,
+						(actions.committed.at(-1) as { head: string }).head,
+						plan.issues,
+						options.signal,
+					);
+					log(`[主控发布] ${plan.repository} 已验证 push，然后关闭 ${plan.issues.length} 个 Issue`);
+				} else {
+					await driver.check(workspace, options.signal);
+					const final = await driver.inspect(plan.repository);
+					if (
+						final.branch !== "main" ||
+						final.head !== actions.committed.at(-1)?.head ||
+						final.status !== workspace.status ||
+						final.diff !== workspace.diff
+					)
+						throw new Error(
+							"Final local handoff does not match committed HEAD and retained baseline.",
+						);
+					log(`[本地完成] ${plan.repository} HEAD=${final.head}，验证通过；不推送、不关闭 Issue`);
+				}
 			} else log(`[DRY RUN 完成] ${plan.repository}：未 pull/安装/改码/测试/提交/push/关闭 Issue`);
 			handoffs.push({
 				repository: plan.repository,

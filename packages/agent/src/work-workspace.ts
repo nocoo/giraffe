@@ -6,6 +6,7 @@ import { z } from "zod";
 import { repositorySchema } from "./contracts.ts";
 import { digest } from "./evidence.ts";
 import { type LocalRunner, runLocal } from "./repair-local.ts";
+import { safeDiagnostics } from "./repair-workspace.ts";
 
 export type WorkInspection = {
 	repository: string;
@@ -49,18 +50,33 @@ export class WorkWorkspace {
 	private readonly root: string;
 	private readonly run: LocalRunner;
 	private readonly registry: string;
-	constructor(options: { root?: string; run?: LocalRunner; registry?: string } = {}) {
+	private readonly log: (line: string) => void;
+	constructor(
+		options: {
+			root?: string;
+			run?: LocalRunner;
+			registry?: string;
+			log?: (line: string) => void;
+		} = {},
+	) {
 		this.root = options.root ?? join(homedir(), "workspace/personal");
 		this.run = options.run ?? runLocal;
 		this.registry = options.registry ?? "https://packagefeedproxy.microsoft.io/npm/";
+		this.log = options.log ?? (() => {});
+	}
+	get packageRegistry() {
+		return this.registry;
 	}
 	private async command(path: string, command: string, args: string[], signal?: AbortSignal) {
+		const visible =
+			command !== "git" || ["fetch", "pull", "commit", "push", "switch"].includes(args[0] ?? "");
+		if (visible) this.log(`[本机执行] ${path} $ ${command} ${args.join(" ")}`);
 		const result = await this.run({
 			command,
 			args,
 			cwd: path,
-			timeoutMs: 180000,
-			maxOutputBytes: 256000,
+			timeoutMs: 600000,
+			maxOutputBytes: 1024 * 1024,
 			env: {
 				GIT_OPTIONAL_LOCKS: "0",
 				GIT_TERMINAL_PROMPT: "0",
@@ -70,9 +86,13 @@ export class WorkWorkspace {
 			},
 			...(signal ? { signal } : {}),
 		});
+		if (visible)
+			this.log(
+				`[执行结果] exit=${result.exitCode}\n${safeDiagnostics(`${result.stdout}\n${result.stderr}`).slice(-18000)}`,
+			);
 		if (result.exitCode)
 			throw new Error(
-				`${command} ${args[0] ?? ""} failed in ${path}; inspect local tool/check configuration.`,
+				`${command} ${args[0] ?? ""} failed in ${path}: ${safeDiagnostics(`${result.stdout}\n${result.stderr}`).slice(-18000)}`,
 			);
 		return result.stdout.replace(/\n$/, "");
 	}
@@ -107,7 +127,12 @@ export class WorkWorkspace {
 		);
 		if (!test || !manifest.scripts.lint)
 			throw new Error("Missing root unit-test/coverage or lint scripts.");
-		const checks = [test, "lint", ...(manifest.scripts.typecheck ? ["typecheck"] : [])];
+		const checks = [
+			test,
+			"lint",
+			...(manifest.scripts.typecheck ? ["typecheck"] : []),
+			...(manifest.scripts.build ? ["build"] : []),
+		];
 		let manager: "bun" | "npm" = "npm";
 		try {
 			await access(join(path, "bun.lock"));
@@ -192,6 +217,12 @@ export class WorkWorkspace {
 		);
 		await this.policy(inspection);
 	}
+	async files(inspection: WorkInspection): Promise<string[]> {
+		await this.policy(inspection);
+		return (await this.command(inspection.path, "git", ["ls-files"]))
+			.split("\n")
+			.filter((file) => file && !blockedFile(file));
+	}
 	async check(inspection: WorkInspection, signal?: AbortSignal): Promise<void> {
 		await this.policy(inspection);
 		for (const script of inspection.checks)
@@ -223,7 +254,14 @@ export class WorkWorkspace {
 		if (!current.status)
 			await this.command(current.path, "git", ["pull", "--ff-only", "origin", "main"], signal);
 		current = await this.policy(inspection);
-		await this.install(current, signal);
+		await this.command(
+			current.path,
+			current.manager,
+			current.manager === "bun"
+				? ["install", "--frozen-lockfile"]
+				: ["ci", "--no-audit", "--no-fund"],
+			signal,
+		);
 		await this.check(current, signal);
 		const after = await this.policy(current);
 		if (after.status !== current.status || after.diff !== current.diff)

@@ -3,10 +3,25 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { githubRead } from "./repair-source.ts";
+import { latestPackage } from "./work-packages.ts";
 import { verifyWorkIssues, workerActions } from "./work-tools.ts";
 
 vi.mock("./repair-source.ts", () => ({ githubRead: vi.fn() }));
+vi.mock("./work-packages.ts", () => ({ latestPackage: vi.fn() }));
 afterEach(() => vi.resetAllMocks());
+
+it("gives workers a read-only latest-version lookup using the configured mirror", async () => {
+	vi.mocked(latestPackage).mockResolvedValue({
+		name: "demo",
+		version: "2.0.0",
+		registry: "https://mirrors.tencent.com/npm/",
+		verifiedAt: "now",
+	});
+	const driver = { packageRegistry: "https://mirrors.tencent.com/npm/" };
+	const worker = workerActions(driver as never, { status: "" } as never, [1]);
+	expect(await worker.action("latest", { name: "demo" })).toMatchObject({ version: "2.0.0" });
+	expect(latestPackage).toHaveBeenCalledWith("demo", driver.packageRegistry);
+});
 
 it("revalidates owner, main and every issue before native execution", async () => {
 	const identity = { login: "owner" };
@@ -68,7 +83,7 @@ it("restricts worker IO, preserves dirty files and commits checked issues in ord
 	};
 	const workspace = { path: directory, status: ' M dirty.ts\n?? "other.ts"' };
 	const controller = new AbortController();
-	const worker = workerActions(driver as never, workspace as never, [1, 2], controller.signal);
+	const worker = workerActions(driver as never, workspace as never, [1, 2, 3], controller.signal);
 	try {
 		await writeFile(join(directory, "code.ts"), "old");
 		expect(await worker.action("read", { path: "code.ts" })).toEqual({ content: "old" });
@@ -98,17 +113,30 @@ it("restricts worker IO, preserves dirty files and commits checked issues in ord
 		await worker.action("write", { path: "code.ts", content: "fixed" });
 		expect(await readFile(join(directory, "code.ts"), "utf8")).toBe("fixed");
 		await expect(
-			worker.action("commit", { issue: 2, files: ["code.ts"], message: "fix: bug" }),
+			worker.action("commit", { issues: [2], files: ["code.ts"], message: "fix: bug" }),
 		).rejects.toThrow(/next/);
 		await expect(
-			worker.action("commit", { issue: 1, files: ["unowned"], message: "fix: bug" }),
+			worker.action("commit", { issues: [1], files: ["unowned"], message: "fix: bug" }),
 		).rejects.toThrow(/next/);
 		await worker.action("check", {});
 		await worker.action("install", {});
 		expect(driver.install).toHaveBeenCalled();
-		await worker.action("commit", { issue: 1, files: ["code.ts"], message: "fix: bug" });
-		expect(worker.committed).toEqual([{ issue: 1, head: "head" }]);
+		for (const issues of [
+			[1, 1],
+			[1, 99],
+		])
+			await expect(
+				worker.action("commit", { issues, files: ["code.ts"], message: "fix: bug" }),
+			).rejects.toThrow(/next/);
+		await worker.action("commit", { issues: [1, 3], files: ["code.ts"], message: "fix: bug" });
+		expect(worker.committed).toEqual([
+			{ issue: 1, head: "head" },
+			{ issue: 3, head: "head" },
+		]);
 		expect(driver.check).toHaveBeenCalledTimes(2);
+		await worker.action("write", { path: "code.ts", content: "fixed again" });
+		await worker.action("commit", { issues: [2], files: ["code.ts"], message: "fix: next" });
+		expect(worker.committed.at(-1)?.issue).toBe(2);
 		await expect(worker.action("push", {})).rejects.toThrow(/permitted/);
 		await writeFile(
 			join(directory, "package.json"),

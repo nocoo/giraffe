@@ -91,6 +91,8 @@ async function fixture() {
 it("inspects native main without mutating, preserves ahead commits and identifies npm checks", async () => {
 	const { driver, path, calls } = await fixture();
 	const inspection = await driver.inspect("owner/repo");
+	expect(await driver.files(inspection)).toContain("package.json");
+	expect(driver.packageRegistry).toContain("packagefeedproxy");
 	expect(inspection).toMatchObject({
 		path,
 		branch: "main",
@@ -157,7 +159,7 @@ it("prepares with fast-forward, temporary mirror and baseline tests without losi
 	expect((await driver.prepare(initial, false)).branch).toBe("main");
 	expect(calls.map((call) => call.args.join(" "))).toContain("pull --ff-only origin main");
 	expect(calls.filter((call) => call.command === "bun").map((call) => call.args.join(" "))).toEqual(
-		["install", "run test:coverage", "run lint", "run typecheck"],
+		["install --frozen-lockfile", "run test:coverage", "run lint", "run typecheck"],
 	);
 	expect(calls.find((call) => call.command === "bun")?.env?.BUN_CONFIG_REGISTRY).toContain(
 		"packagefeedproxy",
@@ -283,4 +285,21 @@ it("handles npm installation and read-only cancellation failures explicitly", as
 	await expect(driver.inspect("owner/repo")).rejects.toThrow(/hooks/);
 	state.hooks = "/tmp/hooks";
 	await expect(driver.inspect("owner/repo")).rejects.toThrow(/hooks/);
+});
+
+it("logs sanitized native results and includes the build gate when present", async () => {
+	const { root, path, run, state } = await fixture();
+	await writeFile(
+		join(path, "package.json"),
+		JSON.stringify({ scripts: { "test:unit:coverage": "vitest", lint: "lint", build: "build" } }),
+	);
+	const log = vi.fn();
+	const driver = new WorkWorkspace({ root, run, log });
+	const inspection = await driver.inspect("owner/repo");
+	expect(inspection.checks).toEqual(["test:unit:coverage", "lint", "build"]);
+	await driver.check(inspection);
+	expect(log).toHaveBeenCalledWith(expect.stringContaining("run build"));
+	state.fail = "run lint";
+	await expect(driver.check(inspection)).rejects.toThrow(/failed/);
+	expect(log).toHaveBeenCalledWith(expect.stringContaining("exit=1"));
 });

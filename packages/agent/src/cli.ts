@@ -26,6 +26,7 @@ async function main() {
 			once: { type: "boolean" },
 			domain: { type: "string" },
 			"dry-run": { type: "boolean" },
+			"no-push": { type: "boolean" },
 			limit: { type: "string" },
 			repos: { type: "string" },
 		},
@@ -33,13 +34,16 @@ async function main() {
 	const command = positionals[0] ?? "help";
 	if (values.help || command === "help") {
 		console.log(
-			"giraffe login   在网页中授权本机\ngiraffe status  检查账户与模型配置\ngiraffe watch [--once]  观察已采集数据并更新分析\ngiraffe repair [--once]  持久化 cron 依赖修复（需本机配置授权）\ngiraffe work [--dry-run] [--limit 5] [--repos owner/repo,...]  主控调度本机 main 工作区\ngiraffe analyze <owner/repo|all> [--domain issues|prs|ci|cd]\n配置：~/.config/giraffe/config.json",
+			"giraffe login   在网页中授权本机\ngiraffe status  检查账户与模型配置\ngiraffe watch [--once]  观察已采集数据并更新分析\ngiraffe repair [--once]  持久化 cron 依赖修复（需本机配置授权）\ngiraffe work [--dry-run] [--no-push] [--limit 5] [--repos owner/repo,...]  主控调度本机 main 工作区；--no-push 仅本地提交\ngiraffe analyze <owner/repo|all> [--domain issues|prs|ci|cd]\n配置：~/.config/giraffe/config.json",
 		);
 		return;
 	}
-	if (command !== "work" && (values["dry-run"] || values.limit || values.repos))
+	if (
+		command !== "work" &&
+		(values["dry-run"] || values["no-push"] || values.limit || values.repos)
+	)
 		throw new Error(
-			"--dry-run, --limit and --repos are supported only by work; no operation was started.",
+			"--dry-run, --no-push, --limit and --repos are supported only by work; no operation was started.",
 		);
 	if (
 		command === "work" &&
@@ -118,11 +122,12 @@ async function main() {
 				try {
 					await runCoordinator({
 						dryRun: values["dry-run"] ?? false,
+						push: !values["no-push"],
 						limit,
 						...(values.repos ? { repositories: values.repos.split(",") } : {}),
 						load: () => loadPortfolio(client),
 						decisions: workDecisions(config),
-						driver: new WorkWorkspace(),
+						driver: new WorkWorkspace({ registry: config.repairs.registry, log: console.log }),
 						conversations,
 						config,
 						analyze: residentAnalysis({

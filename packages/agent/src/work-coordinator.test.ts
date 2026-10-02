@@ -145,6 +145,8 @@ function fixture() {
 			},
 			driver: {
 				inspect: vi.fn(async () => workspace),
+				files: vi.fn(async () => []),
+				check: vi.fn(async () => {}),
 				prepare: vi.fn(async () => workspace),
 				publish: vi.fn(async () => {}),
 			},
@@ -172,6 +174,28 @@ it("prepares then runs checked workers and publishes only their completed issue 
 	expect(verifyWorkIssues).toHaveBeenCalled();
 	expect(result[0]?.dryRun).toBe(false);
 	expect(options.conversations.run.mock.calls[2]?.[0]).toHaveProperty("action");
+});
+
+it("verifies local completion without push or issue closure when publication is disabled", async () => {
+	const { options } = fixture();
+	const inspect = options.driver.inspect.getMockImplementation() as NonNullable<
+		ReturnType<typeof options.driver.inspect.getMockImplementation>
+	>;
+	options.driver.inspect
+		.mockImplementationOnce(inspect)
+		.mockImplementation(async () => ({ ...(await inspect()), head: "committed-head" }));
+	const result = await runCoordinator({ ...options, push: false } as never);
+	expect(result).toHaveLength(1);
+	expect(options.driver.publish).not.toHaveBeenCalled();
+	expect(options.log).toHaveBeenCalledWith(expect.stringContaining("不推送、不关闭"));
+});
+
+it("rejects mismatched local HEAD even when push is disabled", async () => {
+	const { options } = fixture();
+	await expect(runCoordinator({ ...options, push: false } as never)).rejects.toThrow(
+		/local handoff/,
+	);
+	expect(options.driver.publish).not.toHaveBeenCalled();
 });
 
 it("rejects invented/duplicated repositories and omitted/duplicated issues", async () => {

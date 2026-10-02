@@ -36,6 +36,14 @@ The command is one-shot, not an installed service. Conversation storage is separ
 for work, work dry run, and existing analysis/repair. Native work must be re-inspected
 after interruption; no implicit replay of commits or issue closure is promised.
 
+`work --no-push` performs local execution and verifies the final commit/checks but
+does not push or close issues. The worker's `latest` operation verifies current
+stable package metadata against the configured approved mirror; stale issue target
+versions are not assumed to be current. Metadata includes engine and peer constraints.
+Inseparable peer upgrades share one checked atomic commit and all covered issue
+numbers; remaining issues retain their priority order. Empty commits are not a
+substitute for verified work.
+
 ## Boundaries
 
 Only existing owned, non-fork, non-archived repositories with main, npm/Bun root

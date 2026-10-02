@@ -2,6 +2,7 @@ import { readFile, realpath, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { z } from "zod";
 import { githubRead } from "./repair-source.ts";
+import { latestPackage } from "./work-packages.ts";
 import type { WorkItem } from "./work-priority.ts";
 import type { WorkInspection, WorkWorkspace } from "./work-workspace.ts";
 
@@ -100,6 +101,8 @@ export function workerActions(
 		committed,
 		async action(operation: string, raw: Record<string, unknown>) {
 			if (signal?.aborted) throw new Error("Worker cancelled.");
+			if (operation === "latest")
+				return latestPackage(z.string().parse(raw.name), driver.packageRegistry);
 			if (operation === "read" || operation === "write") {
 				const name = z.string().parse(raw.path);
 				const path = await safePath(workspace.path, name);
@@ -145,13 +148,19 @@ export function workerActions(
 			if (operation === "commit") {
 				const args = z
 					.object({
-						issue: z.number().int(),
+						issues: z.array(z.number().int().positive()).min(1),
 						files: z.array(z.string()).min(1),
-						message: z.string().min(1).max(200),
+						message: z
+							.string()
+							.max(50)
+							.regex(/^(fix|feat|chore|refactor|test|docs): [a-z0-9].*$/),
 					})
 					.parse(raw);
+				const remaining = issues.filter((issue) => !committed.some((done) => done.issue === issue));
 				if (
-					args.issue !== issues[committed.length] ||
+					args.issues[0] !== remaining[0] ||
+					new Set(args.issues).size !== args.issues.length ||
+					args.issues.some((issue) => !remaining.includes(issue)) ||
 					args.files.some((path) => !written.has(path))
 				)
 					throw new Error(
@@ -159,7 +168,7 @@ export function workerActions(
 					);
 				await driver.check(workspace, signal);
 				const head = await driver.commit(workspace, args.files, args.message, signal);
-				committed.push({ issue: args.issue, head });
+				committed.push(...args.issues.map((issue) => ({ issue, head })));
 				written.clear();
 				return { head };
 			}

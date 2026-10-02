@@ -77,7 +77,7 @@ export class WorkspaceError extends Error {
 	}
 }
 
-function safeDiagnostics(output: string): string {
+export function safeDiagnostics(output: string): string {
 	const bounded = output
 		.split("\n")
 		.slice(0, 100)
