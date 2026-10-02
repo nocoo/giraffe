@@ -56,7 +56,11 @@ export async function browserTokens(c: Ctx) {
 			201,
 		);
 	}
-	if (method === "PATCH" && id) return c.json(await updateApiToken(c.get("db"), a, id, input));
+	if (method === "PATCH" && id) {
+		const item = await updateApiToken(c.get("db"), a, id, input);
+		if (!item) throw new ApiError(404, "not_found", "token unavailable");
+		return c.json(item);
+	}
 	if (method === "DELETE" && id) {
 		if (Object.keys(input).length) throw new ApiError(400, "validation_failed", "invalid revoke");
 		if (!(await revokeApiToken(c.get("db"), a, id)))

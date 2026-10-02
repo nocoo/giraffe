@@ -36,6 +36,9 @@ it("keeps token CRUD and explicit PKCE consent behind Access and Origin", async 
 		);
 	expect((await call("tokens")).status).toBe(400);
 	expect((await call(`tokens?account_id=${"b".repeat(21)}`)).status).toBe(404);
+	expect((await call("tokens/missing", "PATCH", { account_id: id, label: "missing" })).status).toBe(
+		404,
+	);
 	const created = await call("tokens", "POST", {
 		account_id: id,
 		label: "CLI",
