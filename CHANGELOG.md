@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.13.0 — 2026-10-02
+
+### Added
+
+- Account-bound, scoped and expiring machine API tokens with hash-only storage, web management and immediate revocation
+- Explicit browser consent and one-time S256 PKCE authorization for local CLI consumers
+- Read-only `/api/v1` saved GitHub observations with source versions, timestamps, coverage and publication references
+- Revisioned CRUD for Agent records, reports and jobs, plus explicit local settings and durable refresh management
+
+### Changed
+
+- Move the Worker and React/Basalt application into `apps/web` in a Bun monorepo; reserve `packages/agent` without implementing the Agent
+- Keep root version, migrations, operational commands and existing production D1/queue bindings authoritative
+- Retain existing cloud AI until the separately developed local replacement is verified
+
+### Operations
+
+- Add token, authorization-code and Agent resource tables through additive migrations; existing observations and immutable publications remain untouched
+- Limit machine ingress to `giraffe.hexly.ai/api/v1/*` with Worker bearer checks; dashboard and authorization management remain Access protected
+
 ## v0.12.3 — 2026-10-02
 
 ### Changed

@@ -3,7 +3,7 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"build": "vite build --config ../../vite.config.ts"
+		"build": "bun --cwd ../.. run build"
 	},
 	"dependencies": {
 		"@nocoo/basalt": "2.1.8",
