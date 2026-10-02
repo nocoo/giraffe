@@ -395,3 +395,9 @@ Prompt wording alone did not recover the resident conversation. The handoff tool
 now rejects completion until the required operation was attempted in the current
 assignment, and each input carries its assignment ID. This is a runtime workflow
 invariant, not reliance on a model remembering the reset instruction.
+
+The first worker correctly refused to guess an Undici upgrade when its large
+lockfile response was truncated and runtime evidence was missing. Reads now expose
+bounded windows and literal-match offsets; assignments include the actual local
+Node version. A blocked repository is retained and reported while other selected
+repositories continue, rather than aborting the entire portfolio.

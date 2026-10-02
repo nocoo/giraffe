@@ -146,6 +146,17 @@ it("restricts worker IO, preserves dirty files and commits checked issues in ord
 	try {
 		await writeFile(join(directory, "code.ts"), "old");
 		expect(await worker.action("read", { path: "code.ts" })).toEqual({ content: "old" });
+		await writeFile(join(directory, "window.txt"), `${"x".repeat(20000)}needle details`);
+		expect(await worker.action("read", { path: "window.txt" })).toMatchObject({
+			nextOffset: 16000,
+			total: 20014,
+		});
+		expect(await worker.action("read", { path: "window.txt", match: "needle" })).toMatchObject({
+			content: expect.stringContaining("needle details"),
+		});
+		await expect(worker.action("read", { path: "window.txt", match: "absent" })).rejects.toThrow(
+			/not found/,
+		);
 		for (const path of [
 			"",
 			"/tmp/file",

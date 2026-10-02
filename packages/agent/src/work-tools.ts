@@ -148,7 +148,32 @@ export function workerActions(
 				if (operation === "read") {
 					const content = await readFile(path, "utf8");
 					if (Buffer.byteLength(content) > 256000) throw new Error("File exceeds worker budget.");
-					return { content };
+					const match = raw.match === undefined ? undefined : z.string().min(1).parse(raw.match);
+					const offset =
+						match === undefined
+							? z
+									.number()
+									.int()
+									.nonnegative()
+									.parse(raw.offset ?? 0)
+							: content.indexOf(match);
+					if (offset < 0) throw new Error("Literal match not found in file.");
+					const limit = z
+						.number()
+						.int()
+						.min(1)
+						.max(16000)
+						.parse(raw.limit ?? 16000);
+					return {
+						content: content.slice(offset, offset + limit),
+						...(content.length > limit || offset
+							? {
+									total: content.length,
+									offset,
+									nextOffset: offset + limit < content.length ? offset + limit : null,
+								}
+							: {}),
+					};
 				}
 				const content = z.string().max(256000).parse(raw.content);
 				if (dirtyPaths.some((dirty) => name === dirty || name.startsWith(`${dirty}/`)))

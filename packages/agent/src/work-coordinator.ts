@@ -97,6 +97,7 @@ export async function runCoordinator(options: {
 		)
 			throw new Error("Controller omitted or duplicated a repository.");
 		const handoffs: WorkHandoff[] = [];
+		const failures: string[] = [];
 		for (const plan of planned.result.repositories) {
 			if (options.signal?.aborted) throw new Error("Coordinator cancelled.");
 			const candidate = selected.find((item) => item.repository.repository === plan.repository);
@@ -117,112 +118,127 @@ export async function runCoordinator(options: {
 					) as WorkRepository["issues"][number],
 			);
 			const repository = { ...candidate.repository, issues: ordered };
-			const role = await options.decisions.worker(repository);
-			log(
-				`[主控调度] ${plan.repository} | ${plan.reason}\n[任务顺序] ${ordered.map((issue) => `#${issue.number} ${issue.title}`).join(" → ")}\n[Jev 配置] ${role.model} / ${role.thinkingLevel}\n[工作目录] ${candidate.workspace.path}`,
-			);
-			if (!options.dryRun) await verifyWorkIssues(repository.repository, ordered);
-			let workspace = candidate.workspace;
-			let prepared = false;
-			const preparation = await conversations.run({
-				key: "preparation",
-				requestId: `${runId}:prepare:${plan.repository}`,
-				role: config.roles.executor,
-				schema: handoffSchema,
-				instructions: `You are the resident workspace preparation specialist. This is a NEW assignment ${runId}, not a continuation of earlier attempts. Host prepared=false at the start of THIS assignment. Earlier tool errors/results are historical and cannot satisfy this assignment. ${options.dryRun ? "Dry run: describe preparation only; no tool can change the workspace." : "Call workspace_action operation prepare with {} exactly once IN THIS ASSIGNMENT even if an earlier assignment failed; host enforces main/preservation/fast-forward/mirror installation/L1. Report ready only after it succeeds now."} Return {summary,steps:[...],issues:[...],ready:boolean}. Steps must include main, pull --ff-only when safe, mirror install, UT+lint and handoff. Preserve unpushed commits and explicitly approved changes.`,
-				input: {
-					repository,
-					workspace,
-					retainChanges: plan.retainChanges,
-					dryRun: options.dryRun,
-					registry: config.repairs?.registry,
-				},
-				...(!options.dryRun
-					? {
-							requiredOperation: "prepare",
-							action: async (operation: string) => {
-								if (operation !== "prepare" || prepared)
-									throw new Error("Only one workspace preparation is allowed.");
-								workspace = await driver.prepare(workspace, plan.retainChanges, options.signal);
-								prepared = true;
-								return workspace;
-							},
-						}
-					: {}),
-			});
-			log(
-				`[准备交接 ${preparation.conversationId}] ${preparation.result.summary}\n${preparation.result.steps.map((step, index) => `  ${index + 1}. ${step}`).join("\n")}`,
-			);
-			if (!options.dryRun && (!prepared || !preparation.result.ready))
-				throw new Error("Preparation did not pass baseline L1.");
-			const liveIssues = options.dryRun
-				? ordered
-				: await verifyWorkIssues(repository.repository, ordered);
-			const actions = workerActions(driver, workspace, plan.issues, options.signal);
-			const files = options.dryRun ? [] : await driver.files(workspace);
-			const worker = await conversations.run({
-				key: `worker:${plan.repository}`,
-				requestId: `${runId}:worker:${plan.repository}`,
-				role,
-				schema: handoffSchema,
-				instructions: `You are the dedicated worker for this repository. Process supplied issues in priority order on main, obey repository instructions, TDD and atomic commits with normal hooks. No branches/worktrees/push/issue closure. ${options.dryRun ? "DRY RUN: do not run code. Repeat every assigned issue, workdir, priority and approximate fix/test/commit process; honestly state nothing executed." : "Available workspace_action operations: read {path}, write {path,content}, latest {name} (queries the current stable npm release and peers/engines from approved mirror), install {} (temporary mirror), check {}, commit {issues:[issue numbers],files:[explicit paths],message}. Before editing each dependency, MUST call latest and inspect actual package manifests and lockfile/usage. Upgrade to the LATEST verified stable version, not blindly the stale issue target; never downgrade or invent versions. Include inseparable peer upgrades AND their assigned issue numbers in the same buildable atomic commit (for example vitest and coverage-v8); start each commit group with the highest-priority remaining issue. Do not create empty commits for issues already addressed by a group. Inspect transitive owners and existing overrides before upgrading. Do not manually fabricate lockfile resolutions. Commit after checks; never incorporate unrelated user changes. No arbitrary shell. If blocked, return ready:false with actual error. Commit message lowercase Conventional Commits <=50 chars, only explicit paths. Read relevant source/test files from supplied tracked file list; do not use the read tool on directories."} ${options.push === false ? "This occurrence is local-only: no push, release or issue closure." : "Only the host coordinator may publish after your verified handoff."} Return {summary,steps:[...],issues:[all assigned numbers in original priority order],ready:boolean}.`,
-				input: {
-					repository: plan.repository,
-					workdir: workspace.path,
-					branch: "main",
-					instructions: workspace.instructions,
-					tasks: liveIssues,
-					files,
-					alreadyCurrent:
-						"For an issue already satisfied upstream or by earlier verified work, call workspace_action satisfied {issue,name}. Host rechecks exact latest manifest and lock, clean baseline and tests; it records verification without an empty commit. Do not make unrelated edits to manufacture a commit.",
-					model: role.model,
-					thinkingLevel: role.thinkingLevel,
-					dryRun: options.dryRun,
-				},
-				...(!options.dryRun ? { action: actions.action } : {}),
-			});
-			if (JSON.stringify(worker.result.issues) !== JSON.stringify(plan.issues))
-				throw new Error("Worker handoff omitted or reordered issues.");
-			log(
-				`[Worker 交接 ${worker.conversationId}] ${worker.result.summary}\n${worker.result.steps.map((step, index) => `  ${index + 1}. ${step}`).join("\n")}`,
-			);
-			if (!options.dryRun) {
-				if (!worker.result.ready || actions.committed.length !== plan.issues.length)
-					throw new Error("Worker has not verified and committed every assigned issue.");
-				await verifyWorkIssues(repository.repository, ordered);
-				if (options.push !== false) {
-					await driver.publish(
+			try {
+				const role = await options.decisions.worker(repository);
+				log(
+					`[主控调度] ${plan.repository} | ${plan.reason}\n[任务顺序] ${ordered.map((issue) => `#${issue.number} ${issue.title}`).join(" → ")}\n[Jev 配置] ${role.model} / ${role.thinkingLevel}\n[工作目录] ${candidate.workspace.path}`,
+				);
+				if (!options.dryRun) await verifyWorkIssues(repository.repository, ordered);
+				let workspace = candidate.workspace;
+				let prepared = false;
+				const preparation = await conversations.run({
+					key: "preparation",
+					requestId: `${runId}:prepare:${plan.repository}`,
+					role: config.roles.executor,
+					schema: handoffSchema,
+					instructions: `You are the resident workspace preparation specialist. This is a NEW assignment ${runId}, not a continuation of earlier attempts. Host prepared=false at the start of THIS assignment. Earlier tool errors/results are historical and cannot satisfy this assignment. ${options.dryRun ? "Dry run: describe preparation only; no tool can change the workspace." : "Call workspace_action operation prepare with {} exactly once IN THIS ASSIGNMENT even if an earlier assignment failed; host enforces main/preservation/fast-forward/mirror installation/L1. Report ready only after it succeeds now."} Return {summary,steps:[...],issues:[...],ready:boolean}. Steps must include main, pull --ff-only when safe, mirror install, UT+lint and handoff. Preserve unpushed commits and explicitly approved changes.`,
+					input: {
+						repository,
 						workspace,
-						(actions.committed.at(-1) as { head: string }).head,
-						plan.issues,
-						options.signal,
-					);
-					log(`[主控发布] ${plan.repository} 已验证 push，然后关闭 ${plan.issues.length} 个 Issue`);
-				} else {
-					await driver.check(workspace, options.signal);
-					const final = await driver.inspect(plan.repository);
-					if (
-						final.branch !== "main" ||
-						final.head !== actions.committed.at(-1)?.head ||
-						final.status !== workspace.status ||
-						final.diff !== workspace.diff
-					)
-						throw new Error(
-							"Final local handoff does not match committed HEAD and retained baseline.",
+						retainChanges: plan.retainChanges,
+						dryRun: options.dryRun,
+						registry: config.repairs?.registry,
+					},
+					...(!options.dryRun
+						? {
+								requiredOperation: "prepare",
+								action: async (operation: string) => {
+									if (operation !== "prepare" || prepared)
+										throw new Error("Only one workspace preparation is allowed.");
+									workspace = await driver.prepare(workspace, plan.retainChanges, options.signal);
+									prepared = true;
+									return workspace;
+								},
+							}
+						: {}),
+				});
+				log(
+					`[准备交接 ${preparation.conversationId}] ${preparation.result.summary}\n${preparation.result.steps.map((step, index) => `  ${index + 1}. ${step}`).join("\n")}`,
+				);
+				if (!options.dryRun && (!prepared || !preparation.result.ready))
+					throw new Error("Preparation did not pass baseline L1.");
+				const liveIssues = options.dryRun
+					? ordered
+					: await verifyWorkIssues(repository.repository, ordered);
+				const actions = workerActions(driver, workspace, plan.issues, options.signal);
+				const files = options.dryRun ? [] : await driver.files(workspace);
+				const worker = await conversations.run({
+					key: `worker:${plan.repository}`,
+					requestId: `${runId}:worker:${plan.repository}`,
+					role,
+					schema: handoffSchema,
+					instructions: `You are the dedicated worker for this repository. Process supplied issues in priority order on main, obey repository instructions, TDD and atomic commits with normal hooks. No branches/worktrees/push/issue closure. ${options.dryRun ? "DRY RUN: do not run code. Repeat every assigned issue, workdir, priority and approximate fix/test/commit process; honestly state nothing executed." : "Available workspace_action operations: read {path}, write {path,content}, latest {name} (queries the current stable npm release and peers/engines from approved mirror), install {} (temporary mirror), check {}, commit {issues:[issue numbers],files:[explicit paths],message}. Before editing each dependency, MUST call latest and inspect actual package manifests and lockfile/usage. Upgrade to the LATEST verified stable version, not blindly the stale issue target; never downgrade or invent versions. Include inseparable peer upgrades AND their assigned issue numbers in the same buildable atomic commit (for example vitest and coverage-v8); start each commit group with the highest-priority remaining issue. Do not create empty commits for issues already addressed by a group. Inspect transitive owners and existing overrides before upgrading. Do not manually fabricate lockfile resolutions. Commit after checks; never incorporate unrelated user changes. No arbitrary shell. If blocked, return ready:false with actual error. Commit message lowercase Conventional Commits <=50 chars, only explicit paths. Read relevant source/test files from supplied tracked file list; do not use the read tool on directories."} ${options.push === false ? "This occurrence is local-only: no push, release or issue closure." : "Only the host coordinator may publish after your verified handoff."} Return {summary,steps:[...],issues:[all assigned numbers in original priority order],ready:boolean}.`,
+					input: {
+						repository: plan.repository,
+						workdir: workspace.path,
+						branch: "main",
+						instructions: workspace.instructions,
+						tasks: liveIssues,
+						files,
+						alreadyCurrent:
+							"For an issue already satisfied upstream or by earlier verified work, call workspace_action satisfied {issue,name}. Host rechecks exact latest manifest and lock, clean baseline and tests; it records verification without an empty commit. Do not make unrelated edits to manufacture a commit.",
+						reading:
+							"read supports {path,match:literal substring} or {path,offset,limit<=16000}. Use match on large lockfiles to inspect dependency owners/resolutions; follow nextOffset instead of claiming truncated files cannot be examined. node_modules is not readable. Existing transitive prereleases in the lock are evidence, not a request to upgrade them; latest rejects prereleases by design.",
+						nodeVersion: process.version,
+						runtimePolicy:
+							"This local Node version is real execution evidence. If a new dependency raises the supported Node minimum, update package.json engines accordingly and report the new requirement. Do not alter AGENTS, CI or hooks. Do not upgrade unrelated dependencies just to explore their latest metadata.",
+						model: role.model,
+						thinkingLevel: role.thinkingLevel,
+						dryRun: options.dryRun,
+					},
+					...(!options.dryRun ? { action: actions.action } : {}),
+				});
+				if (JSON.stringify(worker.result.issues) !== JSON.stringify(plan.issues))
+					throw new Error("Worker handoff omitted or reordered issues.");
+				log(
+					`[Worker 交接 ${worker.conversationId}] ${worker.result.summary}\n${worker.result.steps.map((step, index) => `  ${index + 1}. ${step}`).join("\n")}`,
+				);
+				if (!options.dryRun) {
+					if (!worker.result.ready || actions.committed.length !== plan.issues.length)
+						throw new Error("Worker has not verified and committed every assigned issue.");
+					await verifyWorkIssues(repository.repository, ordered);
+					if (options.push !== false) {
+						await driver.publish(
+							workspace,
+							(actions.committed.at(-1) as { head: string }).head,
+							plan.issues,
+							options.signal,
 						);
-					log(`[本地完成] ${plan.repository} HEAD=${final.head}，验证通过；不推送、不关闭 Issue`);
-				}
-			} else log(`[DRY RUN 完成] ${plan.repository}：未 pull/安装/改码/测试/提交/push/关闭 Issue`);
-			handoffs.push({
-				repository: plan.repository,
-				path: workspace.path,
-				conversationId: worker.conversationId,
-				summary: worker.result.summary,
-				dryRun: options.dryRun,
-			});
+						log(
+							`[主控发布] ${plan.repository} 已验证 push，然后关闭 ${plan.issues.length} 个 Issue`,
+						);
+					} else {
+						await driver.check(workspace, options.signal);
+						const final = await driver.inspect(plan.repository);
+						if (
+							final.branch !== "main" ||
+							final.head !== actions.committed.at(-1)?.head ||
+							final.status !== workspace.status ||
+							final.diff !== workspace.diff
+						)
+							throw new Error(
+								"Final local handoff does not match committed HEAD and retained baseline.",
+							);
+						log(`[本地完成] ${plan.repository} HEAD=${final.head}，验证通过；不推送、不关闭 Issue`);
+					}
+				} else
+					log(`[DRY RUN 完成] ${plan.repository}：未 pull/安装/改码/测试/提交/push/关闭 Issue`);
+				handoffs.push({
+					repository: plan.repository,
+					path: workspace.path,
+					conversationId: worker.conversationId,
+					summary: worker.result.summary,
+					dryRun: options.dryRun,
+				});
+			} catch (error) {
+				const message = `${plan.repository}: ${error instanceof Error ? error.message : "Repository work failed"}`;
+				log(`[仓库阻塞] ${message}`);
+				failures.push(message);
+			}
 		}
 		const error = await analysis;
 		if (error) throw error;
+		if (failures.length) throw new Error(failures.join("; "));
 		return handoffs;
 	} finally {
 		await analysis;
