@@ -102,7 +102,8 @@ it("gives live roles bounded host actions and fails invalid or unanswered handof
 		decide: vi.fn(),
 		publish: vi.fn(),
 	});
-	const conversations = workConversations({ runtime, config, log: vi.fn() });
+	const log = vi.fn();
+	const conversations = workConversations({ runtime, config, log });
 	const action = vi.fn(async () => ({ passed: true }));
 	const request = {
 		key: "controller",
@@ -122,6 +123,17 @@ it("gives live roles bounded host actions and fails invalid or unanswered handof
 		await expect(conversations.run({ ...request, requestId: "no-tool" })).rejects.toThrow(
 			/validated handoff/,
 		);
+		fake.setResponses([
+			fauxAssistantMessage([fauxToolCall("workspace_action", { operation: "check", json: "{}" })], {
+				stopReason: "toolUse",
+			}),
+			response({ summary: "blocked" }),
+		]);
+		action.mockRejectedValueOnce(new Error("Baseline changed"));
+		expect(
+			(await conversations.run({ ...request, requestId: "failed-action" })).result.summary,
+		).toBe("blocked");
+		expect(log).toHaveBeenCalledWith(expect.stringContaining("Baseline changed"));
 	} finally {
 		await conversations.close();
 		await runtime.close();

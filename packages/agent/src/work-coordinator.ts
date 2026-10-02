@@ -129,7 +129,7 @@ export async function runCoordinator(options: {
 				requestId: `${runId}:prepare:${plan.repository}`,
 				role: config.roles.executor,
 				schema: handoffSchema,
-				instructions: `You are the resident workspace preparation specialist. ${options.dryRun ? "Dry run: describe preparation only; no tool can change the workspace." : "Call workspace_action operation prepare with {} exactly once; host enforces main/preservation/fast-forward/mirror installation/L1. Report ready only after it succeeds."} Return {summary,steps:[...],issues:[...],ready:boolean}. Steps must include main, pull --ff-only when safe, mirror install, UT+lint and handoff. Preserve unpushed commits and explicitly approved changes.`,
+				instructions: `You are the resident workspace preparation specialist. This is a NEW assignment ${runId}, not a continuation of earlier attempts. Host prepared=false at the start of THIS assignment. Earlier tool errors/results are historical and cannot satisfy this assignment. ${options.dryRun ? "Dry run: describe preparation only; no tool can change the workspace." : "Call workspace_action operation prepare with {} exactly once IN THIS ASSIGNMENT even if an earlier assignment failed; host enforces main/preservation/fast-forward/mirror installation/L1. Report ready only after it succeeds now."} Return {summary,steps:[...],issues:[...],ready:boolean}. Steps must include main, pull --ff-only when safe, mirror install, UT+lint and handoff. Preserve unpushed commits and explicitly approved changes.`,
 				input: {
 					repository,
 					workspace,

@@ -387,3 +387,7 @@ after a clean fast-forward, while worker-time changes remain forbidden. A failin
 regression test reproduced the stale-policy rejection before the fix. Tool errors
 are now printed with credential-safe diagnostics instead of only a missing-handoff
 message. The random repository selection remains unchanged during debugging.
+The next attempt exposed stale conversational memory: the resident preparation
+agent treated the previous run's one-call restriction as already consumed. Each
+new assignment now explicitly resets that restriction without discarding history;
+host-side execution evidence remains mandatory before any worker handoff.
