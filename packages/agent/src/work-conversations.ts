@@ -87,7 +87,7 @@ export function workConversations(options: {
 				throw new Error(message);
 			}
 			options.log(
-				`[工具完成 ${api.conversationId}] ${args.operation}${["latest", "commit", "check", "install"].includes(args.operation) ? ` ${JSON.stringify(value)}` : ""}`,
+				`[工具完成 ${api.conversationId}] ${args.operation}${["latest", "commit", "satisfied", "check", "install"].includes(args.operation) ? ` ${JSON.stringify(value)}` : ""}`,
 			);
 			return { content: [{ type: "text", text: JSON.stringify(value) }] };
 		},

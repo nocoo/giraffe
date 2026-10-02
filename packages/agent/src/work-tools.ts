@@ -103,6 +103,45 @@ export function workerActions(
 			if (signal?.aborted) throw new Error("Worker cancelled.");
 			if (operation === "latest")
 				return latestPackage(z.string().parse(raw.name), driver.packageRegistry);
+			if (operation === "satisfied") {
+				const args = z.object({ issue: z.number().int(), name: z.string() }).parse(raw);
+				if (args.issue !== issues.find((issue) => !committed.some((done) => done.issue === issue)))
+					throw new Error("Verification must cover the next assigned issue.");
+				const metadata = await latestPackage(args.name, driver.packageRegistry);
+				const manifest = JSON.parse(
+					await readFile(resolve(workspace.path, "package.json"), "utf8"),
+				);
+				const declared = [
+					"dependencies",
+					"devDependencies",
+					"optionalDependencies",
+					"overrides",
+				].some((section) => manifest[section]?.[args.name] === metadata.version);
+				const lock = await readFile(
+					resolve(workspace.path, workspace.manager === "bun" ? "bun.lock" : "package-lock.json"),
+					"utf8",
+				);
+				const locked =
+					workspace.manager === "bun"
+						? lock.includes(
+								`${JSON.stringify(args.name)}: [${JSON.stringify(`${args.name}@${metadata.version}`)},`,
+							)
+						: JSON.parse(lock).packages?.[`node_modules/${args.name}`]?.version ===
+							metadata.version;
+				const current = await driver.inspect(workspace.repository);
+				if (
+					!declared ||
+					!locked ||
+					current.status !== workspace.status ||
+					current.diff !== workspace.diff
+				)
+					throw new Error(
+						"Already-current verification requires exact latest manifest/lock and no pending changes.",
+					);
+				await driver.check(workspace, signal);
+				committed.push({ issue: args.issue, head: current.head });
+				return { alreadyCurrent: true, head: current.head, version: metadata.version };
+			}
 			if (operation === "read" || operation === "write") {
 				const name = z.string().parse(raw.path);
 				const path = await safePath(workspace.path, name);

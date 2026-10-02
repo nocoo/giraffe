@@ -23,6 +23,65 @@ it("gives workers a read-only latest-version lookup using the configured mirror"
 	expect(latestPackage).toHaveBeenCalledWith("demo", driver.packageRegistry);
 });
 
+it("verifies already-current issues without manufacturing commits", async () => {
+	const directory = await mkdtemp(join(tmpdir(), "giraffe-current-"));
+	const driver = {
+		packageRegistry: "https://mirrors.tencent.com/npm/",
+		check: vi.fn(),
+		inspect: vi.fn(async () => ({ head: "existing", status: "", diff: "" })),
+	};
+	const worker = workerActions(
+		driver as never,
+		{ path: directory, status: "", diff: "", manager: "bun" } as never,
+		[1],
+	);
+	vi.mocked(latestPackage).mockResolvedValue({
+		name: "jsdom",
+		version: "30.1.1",
+		registry: driver.packageRegistry,
+		verifiedAt: "now",
+	});
+	try {
+		await writeFile(
+			join(directory, "package.json"),
+			JSON.stringify({ devDependencies: { jsdom: "30.1.1" } }),
+		);
+		await writeFile(join(directory, "bun.lock"), '"jsdom": ["jsdom@30.1.1", "", {}]');
+		await expect(worker.action("satisfied", { issue: 2, name: "jsdom" })).rejects.toThrow(/next/);
+		driver.inspect.mockResolvedValueOnce({
+			head: "existing",
+			status: " M package.json",
+			diff: "change",
+		});
+		await expect(worker.action("satisfied", { issue: 1, name: "jsdom" })).rejects.toThrow(
+			/pending/,
+		);
+		await writeFile(join(directory, "bun.lock"), "old lock");
+		await expect(worker.action("satisfied", { issue: 1, name: "jsdom" })).rejects.toThrow(/exact/);
+		await writeFile(join(directory, "bun.lock"), '"jsdom": ["jsdom@30.1.1", "", {}]');
+		expect(await worker.action("satisfied", { issue: 1, name: "jsdom" })).toMatchObject({
+			alreadyCurrent: true,
+			head: "existing",
+		});
+		expect(worker.committed).toEqual([{ issue: 1, head: "existing" }]);
+		expect(driver.check).toHaveBeenCalledOnce();
+		const npmWorker = workerActions(
+			driver as never,
+			{ path: directory, status: "", diff: "", manager: "npm" } as never,
+			[2],
+		);
+		await writeFile(
+			join(directory, "package-lock.json"),
+			JSON.stringify({ packages: { "node_modules/jsdom": { version: "30.1.1" } } }),
+		);
+		expect(await npmWorker.action("satisfied", { issue: 2, name: "jsdom" })).toMatchObject({
+			alreadyCurrent: true,
+		});
+	} finally {
+		await rm(directory, { recursive: true, force: true });
+	}
+});
+
 it("revalidates owner, main and every issue before native execution", async () => {
 	const identity = { login: "owner" };
 	const repo = {

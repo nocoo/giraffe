@@ -43,6 +43,9 @@ versions are not assumed to be current. Metadata includes engine and peer constr
 Inseparable peer upgrades share one checked atomic commit and all covered issue
 numbers; remaining issues retain their priority order. Empty commits are not a
 substitute for verified work.
+Already-current issues use a read-only `satisfied` action: current registry metadata,
+exact manifest/lock versions, unchanged workspace and passing checks are required.
+This records existing HEAD evidence rather than creating an empty commit.
 
 ## Boundaries
 

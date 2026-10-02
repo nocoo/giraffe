@@ -173,6 +173,8 @@ export async function runCoordinator(options: {
 					instructions: workspace.instructions,
 					tasks: liveIssues,
 					files,
+					alreadyCurrent:
+						"For an issue already satisfied upstream or by earlier verified work, call workspace_action satisfied {issue,name}. Host rechecks exact latest manifest and lock, clean baseline and tests; it records verification without an empty commit. Do not make unrelated edits to manufacture a commit.",
 					model: role.model,
 					thinkingLevel: role.thinkingLevel,
 					dryRun: options.dryRun,
