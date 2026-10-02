@@ -340,4 +340,10 @@ it("logs sanitized native results and includes the build gate when present", asy
 	state.fail = "run lint";
 	await expect(driver.check(inspection)).rejects.toThrow(/failed/);
 	expect(log).toHaveBeenCalledWith(expect.stringContaining("exit=1"));
+	run.mockResolvedValueOnce({
+		exitCode: 1,
+		stdout: `${"passed\n".repeat(300)}FAIL: specific assertion`,
+		stderr: "",
+	});
+	await expect(driver.inspect("owner/repo")).rejects.toThrow(/specific assertion/);
 });

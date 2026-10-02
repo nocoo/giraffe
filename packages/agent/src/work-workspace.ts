@@ -2,6 +2,7 @@ import { constants } from "node:fs";
 import { access, lstat, readFile, realpath, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve, sep } from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import { z } from "zod";
 import { repositorySchema } from "./contracts.ts";
 import { digest } from "./evidence.ts";
@@ -96,14 +97,16 @@ export class WorkWorkspace {
 			},
 			...(signal ? { signal } : {}),
 		});
-		if (visible)
-			this.log(
-				`[执行结果] exit=${result.exitCode}\n${safeDiagnostics(`${result.stdout}\n${result.stderr}`).slice(-18000)}`,
-			);
+		const diagnostics = safeDiagnostics(
+			stripVTControlCharacters(`${result.stdout}\n${result.stderr}`)
+				.split("\n")
+				.slice(-60)
+				.join("\n")
+				.slice(-5000),
+		);
+		if (visible) this.log(`[执行结果] exit=${result.exitCode}\n${diagnostics}`);
 		if (result.exitCode)
-			throw new Error(
-				`${command} ${args[0] ?? ""} failed in ${path}: ${safeDiagnostics(`${result.stdout}\n${result.stderr}`).slice(-18000)}`,
-			);
+			throw new Error(`${command} ${args[0] ?? ""} failed in ${path}: ${diagnostics}`);
 		return result.stdout.replace(/\n$/, "");
 	}
 	async inspect(repository: string): Promise<WorkInspection> {
