@@ -391,3 +391,7 @@ The next attempt exposed stale conversational memory: the resident preparation
 agent treated the previous run's one-call restriction as already consumed. Each
 new assignment now explicitly resets that restriction without discarding history;
 host-side execution evidence remains mandatory before any worker handoff.
+Prompt wording alone did not recover the resident conversation. The handoff tool
+now rejects completion until the required operation was attempted in the current
+assignment, and each input carries its assignment ID. This is a runtime workflow
+invariant, not reliance on a model remembering the reset instruction.

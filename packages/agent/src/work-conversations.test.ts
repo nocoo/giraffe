@@ -87,6 +87,7 @@ it("gives live roles bounded host actions and fails invalid or unanswered handof
 	const fake = fauxProvider({ models: [{ id: "astra" }, { id: "sol" }] });
 	models.setProvider(fake.provider);
 	fake.setResponses([
+		response({ summary: "stale success" }),
 		fauxAssistantMessage([fauxToolCall("workspace_action", { operation: "check", json: "{}" })], {
 			stopReason: "toolUse",
 		}),
@@ -115,7 +116,9 @@ it("gives live roles bounded host actions and fails invalid or unanswered handof
 		action,
 	};
 	try {
-		expect((await conversations.run(request)).result).toEqual({ summary: "checked" });
+		expect((await conversations.run({ ...request, requiredOperation: "check" })).result).toEqual({
+			summary: "checked",
+		});
 		expect(action).toHaveBeenCalledWith("check", {});
 		expect((await conversations.run({ ...request, requestId: "correct" })).result.summary).toBe(
 			"corrected",

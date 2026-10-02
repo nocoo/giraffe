@@ -139,6 +139,7 @@ export async function runCoordinator(options: {
 				},
 				...(!options.dryRun
 					? {
+							requiredOperation: "prepare",
 							action: async (operation: string) => {
 								if (operation !== "prepare" || prepared)
 									throw new Error("Only one workspace preparation is allowed.");

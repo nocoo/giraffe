@@ -34,7 +34,15 @@ export function workConversations(options: {
 	const { harness, registry } = options.runtime;
 	const active = new Map<
 		ConversationId,
-		{ schema: z.ZodType; result?: unknown; action?: WorkAction; turns: number; key: string }
+		{
+			schema: z.ZodType;
+			result?: unknown;
+			action?: WorkAction;
+			turns: number;
+			key: string;
+			requiredOperation?: string;
+			attempted?: boolean;
+		}
 	>();
 	const submit = defineTool({
 		name: "submit_work_result",
@@ -44,6 +52,10 @@ export function workConversations(options: {
 		execute: async (args, api) => {
 			const ticket = active.get(api.conversationId);
 			if (!ticket) throw new Error("No active assignment.");
+			if (ticket.requiredOperation && !ticket.attempted)
+				throw new Error(
+					`No ${ticket.requiredOperation} call occurred in THIS assignment. Call workspace_action now; historical calls do not count.`,
+				);
 			ticket.result = ticket.schema.parse(JSON.parse(args.json));
 			return {
 				content: [{ type: "text", text: "Validated handoff saved." }],
@@ -65,6 +77,7 @@ export function workConversations(options: {
 			);
 			let value: unknown;
 			try {
+				if (args.operation === ticket.requiredOperation) ticket.attempted = true;
 				value = await ticket.action(args.operation, details);
 			} catch (error) {
 				const message = safeDiagnostics(
@@ -110,6 +123,7 @@ export function workConversations(options: {
 			input: unknown;
 			schema: z.ZodType<Output>;
 			action?: WorkAction;
+			requiredOperation?: string;
 		}) {
 			let conversationId: ConversationId;
 			if (request.key === "controller") conversationId = (await harness.root(context)).id;
@@ -140,8 +154,17 @@ export function workConversations(options: {
 				schema: request.schema,
 				key: request.key,
 				turns: 0,
+				...(request.requiredOperation ? { requiredOperation: request.requiredOperation } : {}),
 				...(request.action ? { action: request.action } : {}),
-			} as { schema: z.ZodType; result?: unknown; action?: WorkAction; turns: number; key: string };
+			} as {
+				schema: z.ZodType;
+				result?: unknown;
+				action?: WorkAction;
+				turns: number;
+				key: string;
+				requiredOperation?: string;
+				attempted?: boolean;
+			};
 			active.set(conversationId, ticket);
 			options.log(
 				`[会话 ${conversationId}] ${request.key} | ${request.role.model} | thinking=${request.role.thinkingLevel} | ${request.action ? "受限执行" : "只读规划"}`,
@@ -154,7 +177,15 @@ export function workConversations(options: {
 			);
 			try {
 				const submitted = await conversation.submit(
-					{ type: "input", content: JSON.stringify(request.input), requestId: request.requestId },
+					{
+						type: "input",
+						content: JSON.stringify({
+							assignmentId: request.requestId,
+							requiredOperation: request.requiredOperation,
+							input: request.input,
+						}),
+						requestId: request.requestId,
+					},
 					context,
 				);
 				const settled = await submitted.wait(context);
