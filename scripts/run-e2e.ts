@@ -10,7 +10,7 @@ import { hasApiRoutes } from "./has-api-routes";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const persist = join(root, ".wrangler/e2e");
-const schema = join(root, "src/server/lib/db/schema.sql");
+const schema = join(root, "apps/web/src/server/lib/db/schema.sql");
 const wranglerBin = join(root, "node_modules/.bin/wrangler");
 const ZERO_KEY = "0".repeat(64);
 const tokens = { jwt: "", jwtBadAud: "", jwtBadSig: "" };
@@ -163,8 +163,8 @@ async function suite(name: "A" | "B"): Promise<void> {
 				`directory = ${JSON.stringify(join(tmp, "dist/client"))}`,
 			)
 			.replaceAll(
-				'main = "src/server/index.ts"',
-				`main = ${JSON.stringify(join(root, "src/server/index.ts"))}`,
+				'main = "apps/web/src/server/index.ts"',
+				`main = ${JSON.stringify(join(root, "apps/web/src/server/index.ts"))}`,
 			),
 	);
 	await writeFile(join(tmp, "dist/client/index.html"), "<!doctype html><title>giraffe</title>\n");

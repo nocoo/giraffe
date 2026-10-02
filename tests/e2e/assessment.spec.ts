@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import type { RepoAssessment } from "../../src/lib/repo-assessment";
+import type { RepoAssessment } from "../../apps/web/src/lib/repo-assessment";
 import { createUiFixtures } from "./ui-fixtures";
 
 test.use({ timezoneId: "Asia/Shanghai" });

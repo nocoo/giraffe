@@ -4,8 +4,8 @@ import { Database } from "bun:sqlite";
 import { randomBytes } from "node:crypto";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import type { FactorySnapshot } from "../src/lib/factory-types";
-import { encryptToken, parseKeyBytes } from "../src/server/lib/token-crypto";
+import type { FactorySnapshot } from "../apps/web/src/lib/factory-types";
+import { encryptToken, parseKeyBytes } from "../apps/web/src/server/lib/token-crypto";
 
 const source = resolve(process.argv[2] ?? ".factory-cache/audit");
 const snapshot = JSON.parse(await readFile(`${source}/snapshot.json`, "utf8")) as FactorySnapshot;
@@ -15,7 +15,7 @@ await mkdir(dir, { recursive: true, mode: 0o700 });
 const key = Buffer.from(randomBytes(32)).toString("hex");
 const id = "local_audit_account_1";
 
-const schema = await readFile("src/server/lib/db/schema.sql", "utf8");
+const schema = await readFile("apps/web/src/server/lib/db/schema.sql", "utf8");
 const initSql = schema
 	.replace(/CREATE TABLE (?!IF NOT EXISTS )/g, "CREATE TABLE IF NOT EXISTS ")
 	.replace(/CREATE (UNIQUE )?INDEX (?!IF NOT EXISTS )/g, "CREATE $1INDEX IF NOT EXISTS ");

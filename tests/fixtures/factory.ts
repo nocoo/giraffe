@@ -1,8 +1,8 @@
-import type { FactoryStreamData, FactoryStreamName } from "../../src/lib/factory-types";
-import type { Env } from "../../src/server/env";
-import { newFactory } from "../../src/server/lib/factory-collect";
-import { mapFactoryRepo } from "../../src/server/lib/factory-map";
-import { createGithubClient } from "../../src/server/lib/github-client";
+import type { FactoryStreamData, FactoryStreamName } from "../../apps/web/src/lib/factory-types";
+import type { Env } from "../../apps/web/src/server/env";
+import { newFactory } from "../../apps/web/src/server/lib/factory-collect";
+import { mapFactoryRepo } from "../../apps/web/src/server/lib/factory-map";
+import { createGithubClient } from "../../apps/web/src/server/lib/github-client";
 
 export const NOW = "2026-09-15T22:00:00.000Z";
 export const rawRepo = {

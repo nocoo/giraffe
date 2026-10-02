@@ -1,0 +1,21 @@
+{
+	"name": "@giraffe/web",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"build": "vite build --config ../../vite.config.ts"
+	},
+	"dependencies": {
+		"@nocoo/basalt": "2.1.8",
+		"@nocoo/next-ai": "0.4.0",
+		"@typesafe-ai/sdk": "0.6.0",
+		"ai": "7.0.2",
+		"hono": "^4.13.12",
+		"lucide-react": "^1.49.0",
+		"react": "^19.3.0",
+		"react-dom": "^19.3.0",
+		"react-router": "^8.4.0",
+		"recharts": "^3.10.1",
+		"zod": "^4.5.0-canary.20260825T041357"
+	}
+}

@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import type { FactoryRunResponse } from "../../src/lib/factory-run";
+import type { FactoryRunResponse } from "../../apps/web/src/lib/factory-run";
 
 const PAT = `ghp_${"A".repeat(36)}`;
 

@@ -1,5 +1,7 @@
 # Giraffe
 
+Bun monorepo: `apps/web` owns the Worker and SPA; `packages/agent` is reserved for a later local agent. Root `package.json` is the authoritative version and root commands run all gates.
+
 Personal GitHub console with account snapshots, inboxes, repository detail and resumable software-factory runs.
 Profile: ts-worker-web.
 Direction: [architecture](docs/01-architecture.md), [quality](docs/02-quality.md) and [factory runs](docs/09-factory-runs.md). Frameworks must not rewrite this file.
@@ -8,13 +10,13 @@ Direction: [architecture](docs/01-architecture.md), [quality](docs/02-quality.md
 
 - This file is the only project handbook; nested files do not compete with it. Do not create a `CLAUDE.md` alias or copy.
 - This file is the contract; hooks, CI and configuration enforce it. Raise weaker enforcement instead of lowering this contract.
-- Human docs: [README.md](README.md) and the [docs index](docs/README.md). Version: `package.json`, read through `src/lib/version.ts` as `APP_VERSION`. Enforcement: `.husky/`, CI/release workflows, Vitest/Playwright configs and `scripts/gate-*.ts`. Local secrets: ignored `.dev.vars` initialized from `dev.vars.example`; test runners generate their own env files. Machine rules/accidents: global `AGENTS.md` and `rules/`; [Retrospective.md](Retrospective.md).
+- Human docs: [README.md](README.md) and the [docs index](docs/README.md). Version: `package.json`, read through `apps/web/src/lib/version.ts` as `APP_VERSION`. Enforcement: `.husky/`, CI/release workflows, Vitest/Playwright configs and `scripts/gate-*.ts`. Local secrets: ignored `.dev.vars` initialized from `dev.vars.example`; test runners generate their own env files. Machine rules/accidents: global `AGENTS.md` and `rules/`; [Retrospective.md](Retrospective.md).
 
 ## Project invariants
 
 - Plaintext classic GitHub PAT exists only in the settings input until submission, that request body, decrypted Worker memory and outbound Authorization. Never persist, bundle, log, trace or return it. D1 stores AES-GCM envelopes; error records store safe codes, not raw upstream failures.
 - `workers_dev = false`; Cloudflare Access validates JWT issuer/audience/JWKS. There is no in-app login. Authorized users of one deployment share its accounts/snapshots; do not claim per-user tenancy.
-- Browser calls go through `src/client/lib/api.ts` using relative `/api/` URLs; GitHub calls use `createGithubClient(env)`. Production ignores fixture GitHub/JWKS overrides. GET snapshots are read-only and must not silently fetch upstream or write data.
+- Browser calls go through `apps/web/src/client/lib/api.ts` using relative `/api/` URLs; GitHub calls use `createGithubClient(env)`. Production ignores fixture GitHub/JWKS overrides. GET snapshots are read-only and must not silently fetch upstream or write data.
 - Server tests must not import the client. Viewmodels stay free of View/DOM imports and views/routes stay thin. The React/Basalt client now exists; historical phase-1 exclusions are no longer the current project scope.
 - Automated tests use local Wrangler/SQLite and GitHub/JWKS stubs, never real PATs, daily `.dev.vars` or `api.github.com`. Never use remote D1 or deploy remote `-test` resources.
 - Preserve leased/fenced factory writes, bounded retention and immutable per-repository/global publication. Failed or limited collection retains prior good data and its original window; missing coverage is not a successful zero. Preserve old rows through additive migrations and rollback. Details: [factory contract](docs/06-software-factory.md), [run/storage rules](docs/09-factory-runs.md).
@@ -22,7 +24,7 @@ Direction: [architecture](docs/01-architecture.md), [quality](docs/02-quality.md
 
 ## Setup and commands
 
-TypeScript 7 strict, Bun 1.4, Node ≥22.22; Hono Cloudflare Worker. Vite React/Basalt SPA; D1 `giraffe-db` through `DB`. Biome and AST boundary gates; Vitest/V8, real HTTP and Playwright Chromium. `src/server/` and `src/lib/` hold API, Access, encrypted accounts, GitHub collection, storage and shared types; `src/client/` and `tests/{api,e2e}/` hold routes/viewmodels and API/browser journeys; `scripts/`, `migrations/`, `docs/` hold runners, schema evolution and numbered design/runbooks.
+TypeScript 7 strict, Bun 1.4, Node ≥22.22; Hono Cloudflare Worker. Vite React/Basalt SPA; D1 `giraffe-db` through `DB`. Biome and AST boundary gates; Vitest/V8, real HTTP and Playwright Chromium. `apps/web/src/server/` and `apps/web/src/lib/` hold API, Access, encrypted accounts, GitHub collection, storage and shared types; `apps/web/src/client/` and `tests/{api,e2e}/` hold routes/viewmodels and API/browser journeys; `scripts/`, `migrations/`, `docs/` hold runners, schema evolution and numbered design/runbooks.
 
 Run from the root. API/browser runners generate fake keys and test configuration without `.dev.vars`. Install Chromium for browser checks; Gitleaks and OSV Scanner are required by push gates.
 

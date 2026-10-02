@@ -1,5 +1,5 @@
 name = "giraffe"
-main = "src/server/index.ts"
+main = "apps/web/src/server/index.ts"
 compatibility_date = "2026-04-01"
 workers_dev = false
 preview_urls = false

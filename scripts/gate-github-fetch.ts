@@ -4,12 +4,12 @@ import { parseSync } from "oxc-parser";
 import { collectFetchAliases, isFetchCall, walk } from "./fetch-ast";
 
 const ALLOW = new Set([
-	"src/server/lib/github-client.ts",
-	"src/server/middleware/access.ts",
-	"src/server/lib/author-profile.ts",
-	"src/server/lib/project-identity.ts",
+	"apps/web/src/server/lib/github-client.ts",
+	"apps/web/src/server/middleware/access.ts",
+	"apps/web/src/server/lib/author-profile.ts",
+	"apps/web/src/server/lib/project-identity.ts",
 ]);
-const ROOTS = ["src/server", "src/lib"];
+const ROOTS = ["apps/web/src/server", "apps/web/src/lib"];
 
 async function collect(dir: string, acc: string[]): Promise<void> {
 	const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);

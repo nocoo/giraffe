@@ -9,7 +9,7 @@ import { factoryGraphqlStub } from "./factory-stub";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const persist = join(root, ".wrangler/e2e-pw");
 const tmp = join(root, ".wrangler/e2e-pw-run");
-const schema = join(root, "src/server/lib/db/schema.sql");
+const schema = join(root, "apps/web/src/server/lib/db/schema.sql");
 const wranglerBin = join(root, "node_modules/.bin/wrangler");
 const ZERO_KEY = "0".repeat(64);
 const workerPort = 27045;
@@ -321,8 +321,8 @@ try {
 			.replaceAll("port = 7045", `port = ${workerPort}`)
 			.replaceAll('directory = "./dist/client"', `directory = ${JSON.stringify(assets)}`)
 			.replaceAll(
-				'main = "src/server/index.ts"',
-				`main = ${JSON.stringify(join(root, "src/server/index.ts"))}`,
+				'main = "apps/web/src/server/index.ts"',
+				`main = ${JSON.stringify(join(root, "apps/web/src/server/index.ts"))}`,
 			),
 	);
 	const envFile = join(tmp, ".env.A");

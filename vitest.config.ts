@@ -8,20 +8,20 @@ export default defineConfig({
 	test: {
 		environment: "node",
 		setupFiles: ["./vitest.setup.ts"],
-		include: ["src/**/*.test.ts", "src/**/*.test.tsx", "scripts/**/*.test.ts"],
+		include: ["apps/web/src/**/*.test.ts", "apps/web/src/**/*.test.tsx", "scripts/**/*.test.ts"],
 		exclude: ["node_modules/**"],
 		coverage: {
 			provider: "v8",
 			reporter: ["text", "json"],
-			include: ["src/**/*.{ts,tsx}"],
+			include: ["apps/web/src/**/*.{ts,tsx}"],
 			exclude: [
 				"**/*.test.ts",
 				"**/*.test.tsx",
 				"**/__tests__/**",
-				"src/client/routes/**/*.tsx",
-				"src/client/components/layout/**/*.tsx",
-				"src/client/main.tsx",
-				"src/client/app.tsx",
+				"apps/web/src/client/routes/**/*.tsx",
+				"apps/web/src/client/components/layout/**/*.tsx",
+				"apps/web/src/client/main.tsx",
+				"apps/web/src/client/app.tsx",
 			],
 			thresholds: {
 				statements: 95,

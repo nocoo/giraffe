@@ -5,7 +5,7 @@ export function sqliteFixture(): D1Database {
 	const db = new DatabaseSync(":memory:");
 	db.exec("PRAGMA foreign_keys=ON");
 	const runners = new WeakMap<D1PreparedStatement, () => D1Result>();
-	db.exec(readFileSync("src/server/lib/db/schema.sql", "utf8"));
+	db.exec(readFileSync("apps/web/src/server/lib/db/schema.sql", "utf8"));
 	function statement(sql: string, values: SQLInputValue[] = []): D1PreparedStatement {
 		const run = () => db.prepare(sql);
 		const execute = () =>

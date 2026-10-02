@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { APP_VERSION } from "../../src/lib/version";
+import { APP_VERSION } from "../../apps/web/src/lib/version";
 import { factoryFixture } from "../fixtures/factory-snapshot";
 import { createUiFixtures } from "./ui-fixtures";
 

@@ -2,10 +2,10 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { FactorySnapshot, FactoryStreamData } from "../src/lib/factory-types";
-import type { Env } from "../src/server/env";
-import { newFactory, stepFactory } from "../src/server/lib/factory-collect";
-import { createGithubClient } from "../src/server/lib/github-client";
+import type { FactorySnapshot, FactoryStreamData } from "../apps/web/src/lib/factory-types";
+import type { Env } from "../apps/web/src/server/env";
+import { newFactory, stepFactory } from "../apps/web/src/server/lib/factory-collect";
+import { createGithubClient } from "../apps/web/src/server/lib/github-client";
 
 const dir = process.argv[2] ?? ".factory-cache/audit";
 await mkdir(join(dir, "http"), { recursive: true, mode: 0o700 });

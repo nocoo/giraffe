@@ -10,7 +10,7 @@ it.each([false, true])("prepares refresh tables on startup with existing data: %
 	const db = new DatabaseSync(":memory:");
 	try {
 		if (existing) {
-			const schema = readFileSync("src/server/lib/db/schema.sql", "utf8");
+			const schema = readFileSync("apps/web/src/server/lib/db/schema.sql", "utf8");
 			db.exec(schema.slice(0, schema.indexOf("CREATE TABLE IF NOT EXISTS repo_stars")));
 			db.exec(`
 				INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at)

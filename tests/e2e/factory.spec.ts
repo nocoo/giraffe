@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
-import type { FactoryRunResponse } from "../../src/lib/factory-run";
-import { REPO_SNAPSHOT_TABS, SITE_SNAPSHOT_KINDS } from "../../src/lib/snapshot-kinds";
+import type { FactoryRunResponse } from "../../apps/web/src/lib/factory-run";
+import { REPO_SNAPSHOT_TABS, SITE_SNAPSHOT_KINDS } from "../../apps/web/src/lib/snapshot-kinds";
 
 test("factory run survives reload, refreshes the whole site and preserves the last snapshot", async ({
 	page,

@@ -54,7 +54,7 @@
 			"!**/playwright-report",
 			"!**/bun.lock",
 			"!**/*.d.ts",
-			"!src/client/index.css"
+			"!apps/web/src/client/index.css"
 		]
 	}
 }

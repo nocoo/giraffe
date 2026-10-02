@@ -1,9 +1,9 @@
-import { emptyMetrics } from "../../src/lib/factory";
+import { emptyMetrics } from "../../apps/web/src/lib/factory";
 import {
 	FACTORY_STREAMS,
 	type FactoryRepo,
 	type FactorySnapshot,
-} from "../../src/lib/factory-types";
+} from "../../apps/web/src/lib/factory-types";
 export function factoryFixture(): FactorySnapshot {
 	const now = "2026-09-15T22:00:00.000Z";
 	const repo: FactoryRepo = {

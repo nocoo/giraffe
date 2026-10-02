@@ -3,7 +3,7 @@ import { join, relative } from "node:path";
 import { parseSync } from "oxc-parser";
 import { collectFetchAliases, isFetchCall, walk } from "./fetch-ast";
 
-const ALLOW = "src/client/lib/api.ts";
+const ALLOW = "apps/web/src/client/lib/api.ts";
 
 async function collect(dir: string, acc: string[]): Promise<void> {
 	const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
@@ -38,7 +38,7 @@ function urlIsApi(node: Record<string, unknown>): boolean {
 }
 
 const files: string[] = [];
-await collect("src/client", files);
+await collect("apps/web/src/client", files);
 
 let failed = false;
 for (const file of files) {

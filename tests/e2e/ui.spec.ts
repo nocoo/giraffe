@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { defaultAiSettings } from "../../src/lib/ai-settings";
+import { defaultAiSettings } from "../../apps/web/src/lib/ai-settings";
 import { createUiFixtures } from "./ui-fixtures";
 
 async function mockSnapshots(page: Page) {

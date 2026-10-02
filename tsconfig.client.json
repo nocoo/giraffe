@@ -18,8 +18,13 @@
 		"noFallthroughCasesInSwitch": true,
 		"types": ["vite/client"],
 		"paths": {
-			"@/*": ["./src/*"]
+			"@/*": ["./apps/web/src/*"]
 		}
 	},
-	"include": ["src/client/**/*.ts", "src/client/**/*.tsx", "src/lib/version.ts", "vite.config.ts"]
+	"include": [
+		"apps/web/src/client/**/*.ts",
+		"apps/web/src/client/**/*.tsx",
+		"apps/web/src/lib/version.ts",
+		"vite.config.ts"
+	]
 }

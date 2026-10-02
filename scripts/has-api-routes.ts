@@ -20,7 +20,7 @@ async function collect(dir: string, acc: string[]): Promise<void> {
 
 export function resolveImport(fromFile: string, spec: string, root = "."): string {
 	const base = spec.startsWith("@/")
-		? resolve(root, "src", spec.slice(2))
+		? resolve(root, "apps/web/src", spec.slice(2))
 		: resolve(dirname(fromFile), spec);
 	if (base.endsWith(".ts")) {
 		return base;
@@ -30,14 +30,14 @@ export function resolveImport(fromFile: string, spec: string, root = "."): strin
 
 export async function hasApiRoutes(root = "."): Promise<boolean> {
 	const routed: string[] = [];
-	await collect(join(root, "src/server/routes"), routed);
+	await collect(join(root, "apps/web/src/server/routes"), routed);
 	if (routed.length > 0) {
 		return true;
 	}
 	const files: string[] = [];
-	await collect(join(root, "src/server"), files);
+	await collect(join(root, "apps/web/src/server"), files);
 	const exportFiles: string[] = [...files];
-	await collect(join(root, "src/lib"), exportFiles);
+	await collect(join(root, "apps/web/src/lib"), exportFiles);
 	const programs = new Map<string, unknown>();
 	const exports = new Map<string, Map<string, string>>();
 	for (const file of exportFiles) {

@@ -1,6 +1,6 @@
-import type { RepositoryReport, ReviewInput } from "../../src/lib/ai-review";
-import { emptyDay, emptyMetrics } from "../../src/lib/factory";
-import { FACTORY_STREAMS, type FactoryStreamName } from "../../src/lib/factory-types";
+import type { RepositoryReport, ReviewInput } from "../../apps/web/src/lib/ai-review";
+import { emptyDay, emptyMetrics } from "../../apps/web/src/lib/factory";
+import { FACTORY_STREAMS, type FactoryStreamName } from "../../apps/web/src/lib/factory-types";
 
 function streamRecord<T>(value: (stream: FactoryStreamName) => T) {
 	return Object.fromEntries(FACTORY_STREAMS.map((stream) => [stream, value(stream)])) as Record<

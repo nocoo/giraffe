@@ -294,3 +294,14 @@ old browser assertions still looking for timestamps in page subtitles and assess
 When moving shared UI, search the entire browser suite for the removed semantic elements,
 not only the component name; preserve the timestamp, scope and layout assertions at their
 new accessible location before publishing.
+
+## 2026-10-02 — Preserve locked packages when adding a workspace
+
+Moving the application into a Bun workspace caused dependency resolution against the
+corporate mirror, which lacked some already-pinned versions. An offline retry against
+that registry could not use the Tencent-keyed cache and removed unresolved install links.
+Probe the allowed secondary mirror, reuse its exact-version offline cache, and preserve
+all resolved lock entries. Strip registry-specific download URLs introduced by lock
+regeneration and verify a frozen offline install. Do not downgrade unrelated dependencies
+to solve registry lag. Moving source also requires updating schema fixture filesystem paths
+and generated Worker entry-module types, not only TypeScript imports.

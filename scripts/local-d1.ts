@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const wranglerBin = join(root, "node_modules/.bin/wrangler");
-const schema = join(root, "src/server/lib/db/schema.sql");
+const schema = join(root, "apps/web/src/server/lib/db/schema.sql");
 
 function d1(args: string[]): string {
 	return execFileSync(wranglerBin, ["d1", "execute", "giraffe-db", "--local", ...args], {

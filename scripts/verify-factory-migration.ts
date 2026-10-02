@@ -24,7 +24,7 @@ try {
 		.sort()
 		.map((name) => readFileSync(`migrations/${name}`, "utf8"))
 		.join("\n");
-	if (!readFileSync("src/server/lib/db/schema.sql", "utf8").endsWith(migration))
+	if (!readFileSync("apps/web/src/server/lib/db/schema.sql", "utf8").endsWith(migration))
 		throw new Error("Initial schema and migration disagree");
 	db.exec(migration);
 	db.exec(migration);

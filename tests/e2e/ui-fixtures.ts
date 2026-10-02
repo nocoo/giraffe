@@ -1,5 +1,5 @@
-import { defaultAiSettings } from "../../src/lib/ai-settings";
-import { ciReport } from "../../src/lib/ci-health";
+import { defaultAiSettings } from "../../apps/web/src/lib/ai-settings";
+import { ciReport } from "../../apps/web/src/lib/ci-health";
 
 const fetchedAt = "2026-09-08T08:30:00.000Z";
 const envelope = { account_id: "ui-account", fetched_at: fetchedAt, truncated: false };

@@ -30,11 +30,14 @@ describe("hasApiRoutes", () => {
 	it("detects /api prefix imported from src/lib via @/", async () => {
 		await withFixture(
 			async (root) => {
-				await mkdir(join(root, "src/lib"), { recursive: true });
-				await mkdir(join(root, "src/server"), { recursive: true });
-				await writeFile(join(root, "src/lib/api-root.ts"), 'export const API_ROOT = "/api";\n');
+				await mkdir(join(root, "apps/web/src/lib"), { recursive: true });
+				await mkdir(join(root, "apps/web/src/server"), { recursive: true });
 				await writeFile(
-					join(root, "src/server/mount.ts"),
+					join(root, "apps/web/src/lib/api-root.ts"),
+					'export const API_ROOT = "/api";\n',
+				);
+				await writeFile(
+					join(root, "apps/web/src/server/mount.ts"),
 					'import { API_ROOT } from "@/lib/api-root";\napp.route(API_ROOT, r);\n',
 				);
 			},

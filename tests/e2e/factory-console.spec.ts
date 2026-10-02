@@ -4,8 +4,8 @@ import {
 	type FactoryRunView,
 	makeRun,
 	runProgress,
-} from "../../src/lib/factory-run";
-import { defaultSchedule } from "../../src/lib/refresh-schedule";
+} from "../../apps/web/src/lib/factory-run";
+import { defaultSchedule } from "../../apps/web/src/lib/refresh-schedule";
 import { factoryFixture } from "../fixtures/factory-snapshot";
 import { createUiFixtures } from "./ui-fixtures";
 
