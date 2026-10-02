@@ -8,7 +8,8 @@
 		"giraffe": "./bin/giraffe.mjs"
 	},
 	"exports": {
-		"./contracts": "./src/contracts.ts"
+		"./contracts": "./src/contracts.ts",
+		"./repair-contracts": "./src/repair-contracts.ts"
 	},
 	"engines": {
 		"node": ">=22.22.0"
@@ -27,13 +28,16 @@
 		"@earendil-works/pi-durable": "1.0.0",
 		"@nocoo/base-cli": "0.3.0",
 		"@typesafe-ai/sdk": "0.6.0",
-		"zod": "4.5.0-canary.20260825T041357"
+		"zod": "4.5.0-canary.20260825T041357",
+		"cron-parser": "5.10.1",
+		"semver": "7.8.5"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.5.15",
 		"@types/node": "26.4.1",
 		"@vitest/coverage-v8": "5.0.3",
 		"typescript": "7.0.2",
-		"vitest": "5.0.3"
+		"vitest": "5.0.3",
+		"@types/semver": "7.7.1"
 	}
 }

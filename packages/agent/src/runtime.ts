@@ -13,6 +13,7 @@ import {
 	GenerationTask,
 	Harness,
 	hook,
+	type Registry,
 	type Storage,
 	type TaskId,
 	watchEvents,
@@ -192,6 +193,7 @@ function required<T>(value: T | undefined, label: string): T {
 
 export type AgentRuntime = {
 	harness: Harness;
+	registry: Registry;
 	readonly closing: boolean;
 	run(id: string, inputs: AnalysisInput[]): Promise<AnalysisReport[]>;
 	pending(): Promise<string[]>;
@@ -582,6 +584,7 @@ export async function openRuntime(options: RuntimeOptions): Promise<AgentRuntime
 	let activeRun: string | null = null;
 	return {
 		harness,
+		registry,
 		get closing() {
 			return closing !== undefined;
 		},
@@ -591,6 +594,13 @@ export async function openRuntime(options: RuntimeOptions): Promise<AgentRuntime
 			if (closing) throw new Error("Runtime is closing.");
 			activeRun = id;
 			try {
+				await root.configure(
+					{
+						extensions: [Planner],
+						instructions: `${POLICY}\nYou are the single orchestrator. Schedule all requested analysis domains.`,
+					},
+					context,
+				);
 				const taskId = await root.commit(async (tx) => {
 					const job = await tx.doc(Jobs, id, { id, inputs });
 					if (digest(job.inputs) !== digest(inputs))

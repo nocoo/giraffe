@@ -12,6 +12,7 @@ import {
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { z } from "zod";
+import { nextOccurrence } from "./cron.ts";
 
 export const homeDirectory = () => join(homedir(), ".config", "giraffe");
 export const serviceUrl = z
@@ -45,6 +46,35 @@ const roleSchema = z.strictObject({
 	maxTokens: z.number().int().min(512).max(32000).default(4096),
 	thinkingLevel: z.enum(["off", "minimal", "low", "medium", "high"]).default("off"),
 });
+export const repairProfileSchema = z.strictObject({
+	manager: z.enum(["npm", "bun"]),
+	checks: z
+		.array(z.string().regex(/^[a-zA-Z0-9:_-]+$/))
+		.min(1)
+		.max(10),
+	files: z.array(z.string().min(1)).min(1).max(100),
+	hooksPath: z.string().min(1),
+});
+const repairsSchema = z
+	.strictObject({
+		enabled: z.boolean().default(false),
+		cron: z.string().default("0 * * * *"),
+		timezone: z.string().default("Asia/Shanghai"),
+		maxRounds: z.number().int().min(1).max(20).default(20),
+		profiles: z
+			.record(z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/), repairProfileSchema)
+			.default({}),
+		push: z.boolean().default(false),
+		sandbox: z.strictObject({ image: z.string().min(1), registry: z.string().url() }).optional(),
+	})
+	.default({
+		enabled: false,
+		cron: "0 * * * *",
+		timezone: "Asia/Shanghai",
+		maxRounds: 20,
+		profiles: {},
+		push: false,
+	});
 export const configSchema = z
 	.strictObject({
 		providers: z.record(z.string(), providerSchema),
@@ -61,8 +91,18 @@ export const configSchema = z
 				intervalSeconds: z.number().int().min(30).max(86400).default(120),
 			})
 			.default({ intervalSeconds: 120 }),
+		repairs: repairsSchema,
 	})
 	.superRefine((value, ctx) => {
+		try {
+			nextOccurrence(value.repairs.cron, value.repairs.timezone, "2026-01-01T00:00:00Z");
+		} catch {
+			ctx.addIssue({
+				code: "custom",
+				path: ["repairs", "cron"],
+				message: "Invalid cron or timezone",
+			});
+		}
 		for (const [name, role] of Object.entries(value.roles)) {
 			const provider = value.providers[role.provider];
 			if (

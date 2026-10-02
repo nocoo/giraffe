@@ -9,6 +9,7 @@ import { digest } from "./evidence.ts";
 import { acquireInstance } from "./instance.ts";
 import { login } from "./login.ts";
 import { configuredModels } from "./models.ts";
+import { repairDaemon } from "./repair-daemon.ts";
 import { openRuntime } from "./runtime.ts";
 import { createWatcher, parseAnalysisTarget, reportInput } from "./watch.ts";
 
@@ -24,7 +25,7 @@ async function main() {
 	const command = positionals[0] ?? "help";
 	if (values.help || command === "help") {
 		console.log(
-			"giraffe login   在网页中授权本机\ngiraffe status  检查账户与模型配置\ngiraffe watch [--once]  观察已采集数据并更新分析\ngiraffe analyze <owner/repo|all> [--domain issues|prs|ci|cd]\n配置：~/.config/giraffe/config.json",
+			"giraffe login   在网页中授权本机\ngiraffe status  检查账户与模型配置\ngiraffe watch [--once]  观察已采集数据并更新分析\ngiraffe repair [--once]  持久化 cron 依赖修复（需本机配置授权）\ngiraffe analyze <owner/repo|all> [--domain issues|prs|ci|cd]\n配置：~/.config/giraffe/config.json",
 		);
 		return;
 	}
@@ -37,7 +38,7 @@ async function main() {
 		console.log(
 			`账户：${account.login}\n主控：${config.roles.orchestrator.model}\n决策：${config.roles.decision.model}\n执行：${config.roles.executor.model}`,
 		);
-	} else if (command === "watch" || command === "analyze") {
+	} else if (command === "watch" || command === "analyze" || command === "repair") {
 		const credential = readCredential();
 		if (new URL(credential.baseUrl).origin !== new URL(config.service.baseUrl).origin)
 			throw new Error("Service changed; run giraffe login again.");
@@ -82,7 +83,15 @@ async function main() {
 			console.log(
 				`giraffe | ${identity.login}\n主控 ${config.roles.orchestrator.model} → 决策 ${config.roles.decision.model} → 执行 ${config.roles.executor.model}`,
 			);
-			if (command === "analyze")
+			if (command === "repair") {
+				const daemon = await repairDaemon({ runtime, client, config, log: console.log });
+				try {
+					if (values.once) await daemon.tick(controller.signal, true);
+					else await daemon.serve(controller.signal);
+				} finally {
+					await daemon.close();
+				}
+			} else if (command === "analyze")
 				await watcher.once(parseAnalysisTarget(positionals[1], values.domain));
 			else if (values.once) await watcher.once();
 			else await watcher.watch(controller.signal);
