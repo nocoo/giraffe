@@ -315,3 +315,7 @@ Adding a second account selector made a global account-name browser assertion am
 Scope the assertion to the account table cell's accessible name, which includes its avatar
 initials; `getByText(..., exact: true)` does not match a composite cell. Verify a targeted
 browser check before committing a selector correction.
+
+A broad monorepo string replacement accidentally changed browser `src` attribute assertions
+to the new source directory. Filesystem paths and DOM attribute names are different contracts:
+review every exact bare-string replacement and run the full browser suite before release.
