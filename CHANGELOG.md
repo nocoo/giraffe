@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.12.3 — 2026-10-02
+
+### Changed
+
+- Consolidate page, chart and AI source timestamps in one top-right data freshness control
+- Show the most recent update as a relative age; expand to inspect precise local source times, older data and missing coverage
+- Group collection times from the same finished refresh by its end without modifying stored provenance or statistics windows
+- Clear registered sources on navigation and repository-scope changes; retain business event dates and execution diagnostics
+
+### Operations
+
+- Add an authenticated read-only refresh-time metadata endpoint with bounded account-scoped history
+- No database migration, new binding or refresh scheduling change is required
+
 ## v0.12.2 — 2026-10-01
 
 ### Fixed
