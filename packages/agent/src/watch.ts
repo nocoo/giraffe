@@ -96,7 +96,7 @@ export function createWatcher(options: {
 					domains: inputs.map((input) => input.domain),
 				},
 				runnerId,
-				progress: "planning",
+				progress: "analyzing",
 				startedAt: now(),
 			},
 		};
@@ -180,6 +180,7 @@ export function createWatcher(options: {
 				job.status === "pending" || (job.status === "running" && job.payload.runnerId === runnerId),
 		);
 		for (const job of jobs) {
+			if (runtime.closing) return;
 			const parsed = analysisRequestSchema.safeParse({
 				scope: job.payload.scope,
 				repository: job.payload.repository,
@@ -256,6 +257,7 @@ export function createWatcher(options: {
 				log(`[观察] ${identity.login}，${names.length} 个未归档自有非 fork 仓库`);
 				for (const repository of names) {
 					if (runtime.closing) break;
+					await requests();
 					try {
 						await analyze({ scope: "repo", repository, domains: [...DOMAINS] });
 					} catch {

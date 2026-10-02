@@ -161,6 +161,49 @@ describe("bounded evidence", () => {
 			).evidence[0]?.state,
 		).toBe("published");
 	});
+
+	it("does not hide latest workflow success behind old failed runs", () => {
+		const data = buildInput(
+			"owner/repo",
+			"ci",
+			[
+				observation({
+					runs: [
+						...Array.from({ length: 30 }, (_, id) => ({
+							id,
+							name: "CI",
+							head_branch: "main",
+							conclusion: "failure",
+							status: "completed",
+							created_at: "2026-09-01T00:00:00Z",
+						})),
+						{
+							id: 100,
+							name: "CI",
+							head_branch: "main",
+							conclusion: "success",
+							status: "completed",
+							created_at: now,
+						},
+						{
+							id: 101,
+							name: "Release",
+							head_branch: "main",
+							conclusion: null,
+							status: "in_progress",
+							created_at: now,
+						},
+					],
+				}),
+			],
+			now,
+		);
+		expect(data.counts["latest-workflows.success"]).toBe(1);
+		expect(data.counts["latest-workflows.pending"]).toBe(1);
+		expect(data.evidence[0]?.kind).toBe("latest-workflow");
+		expect(data.evidence.slice(0, 2).some((entry) => entry.detail.includes("success"))).toBe(true);
+		expect(data.evidence[0]?.detail).toContain("observedAt=");
+	});
 	it("never upgrades stale evidence to a pass or accepts invented citations", () => {
 		const stale = input();
 		stale.sources[0] = {
@@ -593,4 +636,37 @@ it("keeps passes scoped to sufficient observations and enforces publication byte
 		limitations: Array.from({ length: 20 }, (_, i) => `${i}${"x".repeat(950)}`),
 	};
 	expect(() => finalizeReport(huge, input(), judgment, producer, now)).toThrow(/size budget/);
+});
+
+it("stops repeated invalid tool calls after a bounded number of model turns", async () => {
+	const models = createModels();
+	const faux = fauxProvider({ models: [{ id: "planner" }, { id: "worker" }] });
+	models.setProvider(faux.provider);
+	faux.setResponses(
+		Array.from({ length: 10 }, () =>
+			fauxAssistantMessage(
+				[
+					fauxToolCall("schedule_specialists", {
+						jobId: "wrong",
+						order: ["issues"],
+						rationale: "wrong job",
+					}),
+				],
+				{ stopReason: "toolUse" },
+			),
+		),
+	);
+	const runtime = await openRuntime({
+		storage: new MemoryStorage(),
+		models,
+		config,
+		decide: vi.fn(),
+		publish: vi.fn(),
+	});
+	try {
+		await expect(runtime.run("bounded", [input()])).rejects.toThrow();
+		expect(faux.state.callCount).toBeLessThanOrEqual(8);
+	} finally {
+		await runtime.close();
+	}
 });

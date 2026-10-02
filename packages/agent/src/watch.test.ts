@@ -393,4 +393,19 @@ describe("watch service", () => {
 		await g.watcher.once();
 		expect(g.data.jobs.get("web")?.status).toBe("running");
 	});
+
+	it("leaves unclaimed requests pending when shutdown starts during the read", async () => {
+		const f = fixture();
+		const list = vi.mocked(f.client.list).getMockImplementation();
+		vi.mocked(f.client.list).mockImplementation(async (collection, filters) => {
+			if (collection === "jobs") {
+				Object.defineProperty(f.runtime, "closing", { value: true });
+				return [row({ id: "late", type: "analysis-request", payload: request })];
+			}
+			return list ? list(collection, filters) : [];
+		});
+		await f.watcher.once();
+		expect(f.run).not.toHaveBeenCalled();
+		expect(f.update.mock.calls.some((call) => call[1].id === "late")).toBe(false);
+	});
 });

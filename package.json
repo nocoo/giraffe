@@ -44,18 +44,12 @@
 		"vitest": "5.0.3",
 		"wrangler": "4.145.0"
 	},
-	"overrides": {
-		"@ai-sdk/provider-utils": "5.0.43"
-	},
 	"workspaces": [
 		"apps/*",
 		"packages/*"
 	],
 	"dependencies": {
 		"@nocoo/basalt": "2.1.8",
-		"@nocoo/next-ai": "0.4.0",
-		"@typesafe-ai/sdk": "0.6.0",
-		"ai": "7.0.2",
 		"hono": "^4.13.12",
 		"lucide-react": "^1.49.0",
 		"react": "^19.3.0",

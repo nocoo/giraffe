@@ -10,12 +10,13 @@ import {
 	defineExtension,
 	defineTask,
 	defineTool,
+	GenerationTask,
 	Harness,
+	hook,
 	type Storage,
 	type TaskId,
 	watchEvents,
 } from "@earendil-works/pi-durable";
-import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { z } from "zod";
 import type { Config } from "./config.ts";
 import {
@@ -36,7 +37,7 @@ const planSchema = z.strictObject({
 	rationale: z.string().min(1).max(1000),
 });
 type Plan = z.infer<typeof planSchema>;
-type Assignment = { jobId: string; domain: Domain | null };
+type Assignment = { jobId: string; domain: Domain | null; turns: number };
 type Phase = "plan" | "decide" | "analyze" | "publish";
 type Checkpoint = { [P in Phase]: { phase: P; index: number } }[Phase];
 type Job = {
@@ -75,7 +76,7 @@ const AssignmentDoc = defineDoc<Assignment>({
 	scope: "conversation",
 	history: "latest",
 	fork: "initial",
-	initial: () => ({ jobId: "", domain: null }),
+	initial: () => ({ jobId: "", domain: null, turns: 0 }),
 });
 const value = Type.String({ minLength: 1, maxLength: 4000 });
 const domains = Type.Union([
@@ -201,7 +202,6 @@ export async function openRuntime(options: RuntimeOptions): Promise<AgentRuntime
 	const now = options.now ?? (() => new Date().toISOString());
 	const config = options.config;
 	const registry = createRegistry();
-	registry.install(CodingTools);
 	const watches = new Map<number, Awaited<ReturnType<typeof watchEvents>>>();
 	let harness: Harness;
 
@@ -275,13 +275,31 @@ export async function openRuntime(options: RuntimeOptions): Promise<AgentRuntime
 			};
 		},
 	});
+	const guard = hook(GenerationTask, {
+		afterResponse: async (_message, api, callContext) => {
+			const assignment = await harness.snapshot(AssignmentDoc, api.conversationId, callContext);
+			if (!assignment) return;
+			const turns = await api.memo("giraffe:turns", assignment.turns + 1, callContext);
+			await harness.commit(async (tx) => {
+				(await tx.doc(AssignmentDoc, api.conversationId)).turns = turns;
+			}, callContext);
+			if (turns >= 8) {
+				void harness
+					.conversation(api.conversationId, context)
+					.then((conversation) => conversation?.abort(context))
+					.catch(() => {});
+			}
+		},
+	});
 	const Planner = defineExtension({
 		name: "giraffe.planner",
 		tools: [savePlan],
+		hooks: [guard],
 	});
 	const Specialist = defineExtension({
 		name: "giraffe.specialist",
 		tools: [saveReport],
+		hooks: [guard],
 	});
 	registry.install(Planner);
 	registry.install(Specialist);
@@ -313,6 +331,7 @@ export async function openRuntime(options: RuntimeOptions): Promise<AgentRuntime
 						Object.assign(await tx.doc(AssignmentDoc, root.id), {
 							jobId: job.id,
 							domain: null,
+							turns: 0,
 						});
 						return undefined;
 					}, callContext);
@@ -423,6 +442,7 @@ export async function openRuntime(options: RuntimeOptions): Promise<AgentRuntime
 						Object.assign(await tx.doc(AssignmentDoc, id), {
 							jobId: job.id,
 							domain,
+							turns: 0,
 						});
 						conversationId = id;
 						return undefined;

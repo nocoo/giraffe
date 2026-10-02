@@ -28,6 +28,10 @@ Sol specialist conversations keyed by repository/global scope and domain. A sing
 Jev client judges the requested domains in one batch; its urgency distribution orders
 the specialists without replacing hard evidence rules. Models submit typed reports
 through tools, and unknown evidence IDs are rejected.
+Each planning/specialist run is bounded to eight model responses; repeated invalid
+tool calls terminate rather than consuming an unbounded model budget. Jev and model
+requests also have finite timeouts. Long portfolio scans check pending web requests
+between repositories rather than waiting for the next complete sweep.
 
 Each job checkpoints planning, decisions, specialist output and publication. A process
 exit preserves unfinished work. Restarting resumes the same model submissions and

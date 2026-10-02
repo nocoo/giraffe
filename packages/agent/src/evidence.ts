@@ -133,6 +133,7 @@ export function buildInput(
 		if (!source.complete) limitations.add(`Incomplete source: ${source.resource}`);
 		if (source.stale) limitations.add(`Stale or undated source: ${source.resource}`);
 		const data = observation.data;
+		const sourceDescription = `Source=${source.resource}; observedAt=${source.fetchedAt ?? "unknown"}. `;
 		if (typeof data.default_branch === "string")
 			limitations.add(
 				`Default branch observed: ${data.default_branch}. Workflow names indicate roles heuristically only.`,
@@ -156,17 +157,41 @@ export function buildInput(
 			items = rows(data.items);
 		} else continue;
 		counts[`${kind}.total`] = items.length;
+		if (kind === "actions") {
+			const latest = new Map<string, Record<string, unknown>>();
+			for (const item of [...items].sort((a, b) =>
+				text(b.created_at).localeCompare(text(a.created_at)),
+			)) {
+				const key = `${text(item.name)}:${text(item.head_branch)}`;
+				if (!latest.has(key)) latest.set(key, item);
+			}
+			for (const item of latest.values()) {
+				const state = text(item.conclusion) || "pending";
+				counts[`latest-workflows.${state}`] = (counts[`latest-workflows.${state}`] ?? 0) + 1;
+				evidence.push({
+					...evidenceOf(item, "latest-workflow", repository),
+					detail: `${sourceDescription}${evidenceOf(item, kind, repository).detail}`.slice(0, 900),
+				});
+			}
+		}
 		for (const item of items) {
 			const state =
 				text(item.conclusion ?? item.state ?? item.status) ||
 				(kind === "issues" || kind === "prs" ? "open" : "unknown");
 			counts[`${kind}.${state}`] = (counts[`${kind}.${state}`] ?? 0) + 1;
-			evidence.push(evidenceOf(item, kind, repository));
+			const mapped = evidenceOf(item, kind, repository);
+			evidence.push({ ...mapped, detail: `${sourceDescription}${mapped.detail}`.slice(0, 900) });
 		}
 	}
 	evidence.sort((a, b) => {
 		const risk = (item: Evidence) =>
-			/failure|timed_out|action_required/.test(item.detail) ? 3 : item.state === "open" ? 2 : 0;
+			item.kind === "latest-workflow"
+				? 4
+				: item.state === "open"
+					? 3
+					: /failure|timed_out|action_required/.test(item.detail)
+						? 2
+						: 0;
 		return risk(b) - risk(a) || (b.at ?? "").localeCompare(a.at ?? "");
 	});
 	if (domain === "issues" || domain === "prs")
@@ -272,7 +297,6 @@ export function globalInput(
 			});
 			continue;
 		}
-		counts[report.verdict] = (counts[report.verdict] ?? 0) + 1;
 		const stale = report.sources.some(
 			(source) =>
 				source.stale ||
@@ -280,6 +304,8 @@ export function globalInput(
 				Date.parse(now) - Date.parse(source.fetchedAt) > STALE_MS,
 		);
 		const complete = report.sources.every((source) => source.complete);
+		const verdict = stale || !complete ? "unknown" : report.verdict;
+		counts[verdict] = (counts[verdict] ?? 0) + 1;
 		const sourceTimes = report.sources
 			.map((source) => source.fetchedAt)
 			.filter((time): time is string => time !== null && Number.isFinite(Date.parse(time)))
@@ -296,7 +322,7 @@ export function globalInput(
 			repository,
 			kind: "repository-analysis",
 			title: report.summary.slice(0, 300),
-			state: stale || !complete ? "unknown" : report.verdict,
+			state: verdict,
 			detail: report.limitations.join("; ").slice(0, 900),
 			url: `https://github.com/${repository}`,
 			at: report.generatedAt,
@@ -314,7 +340,19 @@ export function globalInput(
 		scope: "global",
 		repository: null,
 		domain,
-		sourceVersion: digest({ domain, sources }),
+		sourceVersion: digest({
+			domain,
+			sources,
+			reports: selected.map((report) =>
+				report
+					? {
+							sourceVersion: report.sourceVersion,
+							generatedAt: report.generatedAt,
+							verdict: report.verdict,
+						}
+					: null,
+			),
+		}),
 		observedAt: now,
 		sources,
 		evidence: evidence.slice(0, MAX_EVIDENCE),
