@@ -16,7 +16,9 @@ test("settings PAT, unified refresh, repo list, and repo detail", async ({ page 
 	);
 	await expect(page.locator("body")).not.toContainText(PAT);
 	expect(await page.content()).not.toContain(PAT);
-	await expect(page.getByRole("table").getByText("octocat", { exact: true })).toBeVisible();
+	await expect(
+		page.getByRole("table").getByRole("cell", { name: "OC octocat", exact: true }),
+	).toBeVisible();
 	// This journey also runs on its own, without the factory smoke's saved data.
 	if (!(await page.request.get("/api/repos/octocat/hello-world")).ok()) {
 		await page.goto("/refresh");

@@ -310,3 +310,8 @@ Monorepo acceptance also caught a browser fixture reading the old `public/` path
 an overbroad CSRF guard that changed unsupported-method responses from 405 to 403.
 Keep the Origin check on real write verbs (POST/PUT/PATCH/DELETE), and leave unsupported
 verbs to the method gate. Search asset filesystem reads as well as source imports.
+
+Adding a second account selector made a global account-name browser assertion ambiguous.
+Scope the assertion to the account table cell's accessible name, which includes its avatar
+initials; `getByText(..., exact: true)` does not match a composite cell. Verify a targeted
+browser check before committing a selector correction.
