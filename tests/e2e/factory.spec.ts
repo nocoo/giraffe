@@ -61,7 +61,7 @@ test("factory run survives reload, refreshes the whole site and preserves the la
 	await expect(page.locator("code").getByText(run.id, { exact: true })).toBeVisible();
 	await expect(page.getByRole("progressbar", { name: "本次刷新进度" })).toHaveAttribute(
 		"max",
-		"27",
+		"26",
 	);
 	await expect
 		.poll(
@@ -77,7 +77,7 @@ test("factory run survives reload, refreshes the whole site and preserves the la
 	await page.getByRole("button", { name: "更新状态", exact: true }).click();
 	await expect(page.getByRole("progressbar", { name: "本次刷新进度" })).toHaveAttribute(
 		"value",
-		"27",
+		"26",
 	);
 	const completed = (await (
 		await page.request.get("/api/factory/runs")
@@ -92,8 +92,8 @@ test("factory run survives reload, refreshes the whole site and preserves the la
 			.find((entry) => entry.id === run.id)
 			?.steps.find((step) => step.kind === "assessment"),
 	).toMatchObject({ status: "skipped", error: "ai_not_configured" });
-	await expect(page.locator(".factory-run-phases>li").filter({ hasText: "AI 分析" })).toContainText(
-		"1 步跳过",
+	await expect(page.locator(".factory-run-phases>li").filter({ hasText: "AI 分析" })).toHaveCount(
+		0,
 	);
 	await expect(page.locator(".factory-run-issues")).toHaveCount(0);
 	const after = await (await page.request.get("/api/factory")).json();
