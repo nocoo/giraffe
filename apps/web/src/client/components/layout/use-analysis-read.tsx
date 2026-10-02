@@ -3,6 +3,7 @@ export function useAnalysisRead<T>(
 	load: () => Promise<T>,
 	receive: (data: T) => void,
 	fail: () => void,
+	intervalMs = 15000,
 ) {
 	const read = useEffectEvent(load),
 		apply = useEffectEvent(receive),
@@ -31,7 +32,7 @@ export function useAnalysisRead<T>(
 			} finally {
 				pending = false;
 				if (!cancelled)
-					timer = setTimeout(() => void poll(), Math.min(60000, 15000 * 2 ** failures));
+					timer = setTimeout(() => void poll(), Math.min(60000, intervalMs * 2 ** failures));
 			}
 		}
 		const visible = () => {
@@ -47,5 +48,5 @@ export function useAnalysisRead<T>(
 			document.removeEventListener("visibilitychange", visible);
 			window.removeEventListener("focus", visible);
 		};
-	}, []);
+	}, [intervalMs]);
 }

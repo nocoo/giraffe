@@ -42,3 +42,32 @@ it("pauses hidden polling, backs off failures, resumes focus and discards unmoun
 		vi.unstubAllGlobals();
 	}
 });
+
+it("supports a five-second repair poll without polling hidden pages", async () => {
+	vi.useFakeTimers();
+	vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+	vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+	const root = createRoot(document.createElement("div"));
+	const load = vi.fn().mockResolvedValue(1);
+	function Reader() {
+		useAnalysisRead(
+			load,
+			() => {},
+			() => {},
+			5000,
+		);
+		return null;
+	}
+	try {
+		await act(async () => root.render(<Reader />));
+		await act(async () => vi.advanceTimersByTimeAsync(4999));
+		expect(load).toHaveBeenCalledOnce();
+		await act(async () => vi.advanceTimersByTimeAsync(1));
+		expect(load).toHaveBeenCalledTimes(2);
+	} finally {
+		await act(async () => root.unmount());
+		vi.useRealTimers();
+		vi.restoreAllMocks();
+		vi.unstubAllGlobals();
+	}
+});

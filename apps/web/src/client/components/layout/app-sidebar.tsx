@@ -37,6 +37,7 @@ import {
 	Settings,
 	ShieldAlert,
 	Workflow,
+	Wrench,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
@@ -61,6 +62,7 @@ const ICONS: Record<string, LucideIcon> = {
 	RefreshCw,
 	Settings,
 	Workflow,
+	Wrench,
 };
 
 function NavIcon({ name, className }: { name: string; className?: string }) {

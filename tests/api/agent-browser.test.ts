@@ -41,3 +41,44 @@ it("uses browser Access and CSRF for Agent requests and removes old cloud endpoi
 	])
 		expect((await call(path)).status).toBe(404);
 });
+
+it("stores pause control as a revisioned record without granting local repair permissions", async () => {
+	const created = await call("accounts", "POST", { token: `ghp_${"A".repeat(36)}` });
+	expect(created.ok).toBe(true);
+	const account = (await created.json()) as { id: string };
+	await call(`accounts/${account.id}/activate`, "POST");
+	const path = `agent/accounts/${account.id}/records`;
+	const input = {
+		id: "repair-control",
+		type: "repair-control",
+		status: "paused",
+		repository: null,
+		source_version: null,
+		payload: { paused: true },
+	};
+	expect((await call(path, "POST", input, "https://evil.test")).status).toBe(403);
+	const result = await call(path, "POST", input);
+	expect(result.status).toBe(201);
+	expect(await (await call(`${path}/repair-control`)).json()).toMatchObject({
+		item: { revision: 1, payload: { paused: true } },
+	});
+	expect(
+		(
+			await call(`${path}/repair-control`, "PATCH", {
+				revision: 1,
+				status: "enabled",
+				payload: { paused: false },
+			})
+		).status,
+	).toBe(200);
+	expect(
+		(
+			await call(`${path}/repair-control`, "PATCH", {
+				revision: 1,
+				status: "paused",
+				payload: { paused: true },
+			})
+		).status,
+	).toBe(409);
+	expect((await call(`${path}/repair-control?revision=2`, "DELETE")).status).toBe(204);
+});
