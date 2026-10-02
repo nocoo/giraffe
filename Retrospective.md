@@ -401,3 +401,9 @@ lockfile response was truncated and runtime evidence was missing. Reads now expo
 bounded windows and literal-match offsets; assignments include the actual local
 Node version. A blocked repository is retained and reported while other selected
 repositories continue, rather than aborting the entire portfolio.
+
+Bun 1.4 rewrote hundreds of default lockfile tarball locations to the temporary
+Tencent mirror during a one-package upgrade. The resulting diff hit the review
+budget before the worker could commit. Installation now removes only approved
+temporary mirror locations, preserving package versions, metadata and integrity
+hashes. Existing work remains in place; no reset, stash or hook bypass is used.

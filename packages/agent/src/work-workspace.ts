@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { access, lstat, readFile, realpath } from "node:fs/promises";
+import { access, lstat, readFile, realpath, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { z } from "zod";
@@ -45,6 +45,16 @@ const dirtyFiles = (status: string) =>
 				.split(" -> ")
 				.map((name) => (name.startsWith('"') ? (JSON.parse(name) as string) : name)),
 		);
+
+export async function normalizeBunMirror(path: string) {
+	const file = join(path, "bun.lock");
+	const content = await readFile(file, "utf8");
+	const normalized = content.replace(
+		/(\["[^"\n]+", )"https:\/\/(?:mirrors\.tencent\.com|packagefeedproxy\.microsoft\.io)\/npm\/[^"\n]+"/g,
+		'$1""',
+	);
+	if (normalized !== content) await writeFile(file, normalized);
+}
 
 export class WorkWorkspace {
 	private readonly root: string;
@@ -215,6 +225,7 @@ export class WorkWorkspace {
 			inspection.manager === "bun" ? ["install"] : ["install", "--no-audit", "--no-fund"],
 			signal,
 		);
+		if (inspection.manager === "bun") await normalizeBunMirror(inspection.path);
 		await this.policy(inspection);
 	}
 	async files(inspection: WorkInspection): Promise<string[]> {

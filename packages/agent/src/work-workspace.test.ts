@@ -1,4 +1,13 @@
-import { chmod, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import {
+	chmod,
+	mkdir,
+	mkdtemp,
+	readFile,
+	realpath,
+	rm,
+	symlink,
+	writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
@@ -176,6 +185,16 @@ it("prepares with fast-forward, temporary mirror and baseline tests without losi
 	state.counts = "0 0";
 	state.branch = "feature";
 	await expect(driver.prepare(await driver.inspect("owner/repo"), true)).rejects.toThrow(/Dirty/);
+});
+
+it("removes only temporary mirror tarball locations after Bun install", async () => {
+	const { driver, path } = await fixture();
+	const lock =
+		'"demo": ["demo@2.0.0", "https://mirrors.tencent.com/npm/demo/-/demo-2.0.0.tgz", {}, "sha512-proof"]';
+	await writeFile(join(path, "bun.lock"), lock);
+	await driver.install(await driver.inspect("owner/repo"));
+	const normalized = await readFile(join(path, "bun.lock"), "utf8");
+	expect(normalized).toBe('"demo": ["demo@2.0.0", "", {}, "sha512-proof"]');
 });
 
 it("blocks changed baseline, failed checks and install mutations", async () => {
