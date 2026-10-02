@@ -90,8 +90,8 @@ test("factory run survives reload, refreshes the whole site and preserves the la
 	expect(
 		completed.history
 			.find((entry) => entry.id === run.id)
-			?.steps.find((step) => step.kind === "assessment"),
-	).toMatchObject({ status: "skipped", error: "ai_not_configured" });
+			?.steps.find((step) => String(step.kind) === "assessment"),
+	).toBeUndefined();
 	await expect(page.locator(".factory-run-phases>li").filter({ hasText: "AI 分析" })).toHaveCount(
 		0,
 	);
