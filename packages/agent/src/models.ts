@@ -18,7 +18,7 @@ export function configuredModels(config: Config) {
 				provider: id,
 				api: provider.api,
 				baseUrl: provider.baseUrl,
-				reasoning: role.thinkingLevel !== "off",
+				reasoning: true,
 				input: ["text"],
 				contextWindow: role.contextWindow,
 				maxTokens: role.maxTokens,

@@ -13,7 +13,11 @@ import {
 import { getActiveAccount } from "../lib/db/accounts";
 import { publishedFactory } from "../lib/db/factory-runs";
 import { ApiError } from "../lib/errors";
-import { observationEnvelope, requireCatalogRepo } from "../lib/machine-observations";
+import {
+	observationEnvelope,
+	readObservation,
+	requireCatalogRepo,
+} from "../lib/machine-observations";
 import { readJson } from "../lib/read-body";
 import { repoPolicy } from "../lib/repo-statistics";
 import { assemblePages, type SnapshotPage } from "../lib/snapshot-pages";
@@ -63,6 +67,22 @@ export function agentBrowserApi() {
 				};
 			}),
 		);
+		for (const resource of ["issues", "prs", "ci", "factory", "repos"]) {
+			try {
+				const envelope = await readObservation(c.get("db"), account, resource, "all");
+				sources.push({
+					resource: `account:${resource}`,
+					version: envelope.sourceVersion,
+					fetchedAt: envelope.fetchedAt,
+					freshness: envelope.freshness,
+					coverage: envelope.coverage,
+					truncated: envelope.truncated,
+					unavailable: envelope.unavailable,
+				});
+			} catch (error) {
+				if (!(error instanceof ApiError) || error.code !== "snapshot_missing") throw error;
+			}
+		}
 		const active = await getActiveAccount(c.get("db"));
 		const policy = await repoPolicy(c.get("db"), account);
 		const repositories = policy.repos

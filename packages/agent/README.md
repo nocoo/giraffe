@@ -136,3 +136,51 @@ bun run agent repair
 Keep this command running (or supervise it through a separately configured process
 manager). The CLI does not silently install a LaunchAgent or change system ACLs.
 The same account's analysis and repair CLI cannot own its Harness concurrently.
+
+## Repository coordinator
+
+```sh
+bun run agent work --dry-run --limit 5
+bun run agent work --dry-run --limit 5 --repos nocoo/basalt,nocoo/bat,nocoo/bogo,nocoo/lyre,nocoo/backy
+```
+
+The coordinator loads saved portfolio snapshots, ranks all issues and PRs with Jev
+(one question per repository, batches of at most 25 repositories), and asks the
+controller to schedule every issue in the selected repositories. Choice probability
+means relative preference within that repository, not severity or probability of a
+defect. Repository ordering uses the probability of actionable work, followed by
+the controller's judgment. Small provider probability rounding is retained; missing
+choices or materially invalid distributions fail closed.
+
+Four persistent Issues/PR/CI/CD conversations analyze concurrently. The preparation
+conversation is shared; workers are persistent per repository. Before dispatch, Jev
+selects executor/low, executor/medium, or orchestrator/high from the configured
+models. Every log identifies its conversation, model, thinking level, directory,
+ordered issue list and handoff. Model names are not separately hard-coded.
+
+Dry run calls real APIs and models but offers no workspace mutation tools and does
+not publish online reports. It only reads existing workspaces and stores private
+conversation history in a separate `*-work-dry-run.sqlite` file. Worker summaries
+are plans, never claims that installation, tests or repairs succeeded.
+
+Without `--dry-run`, this one-shot command executes in existing verified repositories
+under `~/workspace/personal`, on main, without worktrees or new branches. It checks
+live GitHub ownership and unchanged open issues before preparation. Preparation
+preserves local commits and approved unrelated changes, fetches and fast-forwards
+only when safe, installs with a per-command mirror, and runs unit tests, lint and
+available type checking. Missing tools, instructions or executable hooks block work.
+Workers have bounded file/install/check/commit tools, never arbitrary shell or push.
+They cannot overwrite pre-existing dirty files or weaken baseline gates. Changes
+outside their written file set cannot enter their commits. The controller verifies
+the final HEAD/checks and retained changes, pushes normally, verifies remote main,
+then closes completed issues. A failed push never closes issues.
+
+This is trusted native execution, not OS isolation. Root npm/Bun manifests and check
+scripts are required; other ecosystems are blocked rather than guessed. Resident
+analysis reports retain raw account-source versions, omissions and stale coverage.
+No automatic refresh, deployment, service installation or release is implied.
+
+Each command occurrence is bounded and conversations persist between occurrences.
+Interrupted native mutations are not blindly replayed: inspect the workspace and
+issue state before requesting another occurrence. The older `repair` cron retains
+its independent dedicated-clone/dependency-only behavior.

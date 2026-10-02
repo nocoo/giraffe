@@ -53,7 +53,11 @@ export function sourceQuality(
 	let current = report.sources.length > 0,
 		complete = current,
 		stale = !current;
-	if (report.scope === "global" && expectedRepositories) {
+	const accountSources =
+		report.scope === "global" &&
+		report.sources.length > 0 &&
+		report.sources.every((source) => source.resource.startsWith("account:"));
+	if (report.scope === "global" && !accountSources && expectedRepositories) {
 		const names = report.sources.map((source) => source.resource).sort();
 		current = JSON.stringify(names) === JSON.stringify([...expectedRepositories].sort());
 		complete &&= current;
@@ -63,7 +67,7 @@ export function sourceQuality(
 		if (source.fetchedAt) times.push(source.fetchedAt);
 		stale ||= aged(source.fetchedAt, now);
 		complete &&= source.complete;
-		if (report.scope === "global") {
+		if (report.scope === "global" && !accountSources) {
 			const child = repoReports.find(
 				(r) => r.repository === source.resource && r.domain === report.domain,
 			);

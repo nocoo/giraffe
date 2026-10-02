@@ -128,6 +128,8 @@ it("uses Access and active account with same-origin CRUD and read-only provenanc
 	};
 	expect(saved.repositories).toEqual(["nocoo/app"]);
 	expect(saved.sources.find((source) => source.resource === "repo:nocoo/app:details")).toBeTruthy();
+	expect(saved.sources.find((source) => source.resource === "account:repos")).toBeTruthy();
+	expect(saved.sources.find((source) => source.resource === "account:ci")).toBeTruthy();
 	expect(saved.sources.find((source) => source.resource === "factory:nocoo/app:prs")?.version).toBe(
 		"immutable-v1",
 	);

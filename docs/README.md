@@ -23,3 +23,5 @@
 - [Local Agent analysis desk](12-agent-analysis.md)
 
 - [Dependency repair cron and workbench](13-dependency-repairs.md)
+
+- [Repository coordinator and dry run](14-repository-coordinator.md)

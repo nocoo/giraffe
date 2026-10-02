@@ -9,6 +9,39 @@ import {
 } from "./analysis";
 
 const at = "2026-10-02T08:00:00Z";
+it("validates resident portfolio reports against direct account snapshots", () => {
+	const global = {
+		...report,
+		scope: "global" as const,
+		repository: null,
+		sources: [
+			{ resource: "account:prs", version: "v1", fetchedAt: at, complete: true, stale: false },
+		],
+	};
+	const current = [
+		{
+			resource: "account:prs",
+			version: "v1",
+			fetchedAt: at,
+			freshness: { missing: 0 },
+			coverage: null,
+			truncated: false,
+			unavailable: false,
+		},
+	];
+	expect(sourceQuality(global, current, Date.parse(at), [], ["nocoo/app"])).toMatchObject({
+		current: true,
+		complete: true,
+		stale: false,
+	});
+	expect(
+		sourceQuality(
+			global,
+			[{ ...current[0], resource: "account:prs", version: "v2" }] as never,
+			Date.parse(at),
+		).current,
+	).toBe(false);
+});
 const report: AnalysisReport = {
 	schemaVersion: 1,
 	scope: "repo",

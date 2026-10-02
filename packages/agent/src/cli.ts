@@ -12,6 +12,11 @@ import { configuredModels } from "./models.ts";
 import { repairDaemon } from "./repair-daemon.ts";
 import { openRuntime } from "./runtime.ts";
 import { createWatcher, parseAnalysisTarget, reportInput } from "./watch.ts";
+import { residentAnalysis } from "./work-analysis.ts";
+import { workConversations } from "./work-conversations.ts";
+import { runCoordinator } from "./work-coordinator.ts";
+import { loadPortfolio, workDecisions } from "./work-priority.ts";
+import { WorkWorkspace } from "./work-workspace.ts";
 
 async function main() {
 	const { positionals, values } = parseArgs({
@@ -20,15 +25,29 @@ async function main() {
 			help: { type: "boolean", short: "h" },
 			once: { type: "boolean" },
 			domain: { type: "string" },
+			"dry-run": { type: "boolean" },
+			limit: { type: "string" },
+			repos: { type: "string" },
 		},
 	});
 	const command = positionals[0] ?? "help";
 	if (values.help || command === "help") {
 		console.log(
-			"giraffe login   在网页中授权本机\ngiraffe status  检查账户与模型配置\ngiraffe watch [--once]  观察已采集数据并更新分析\ngiraffe repair [--once]  持久化 cron 依赖修复（需本机配置授权）\ngiraffe analyze <owner/repo|all> [--domain issues|prs|ci|cd]\n配置：~/.config/giraffe/config.json",
+			"giraffe login   在网页中授权本机\ngiraffe status  检查账户与模型配置\ngiraffe watch [--once]  观察已采集数据并更新分析\ngiraffe repair [--once]  持久化 cron 依赖修复（需本机配置授权）\ngiraffe work [--dry-run] [--limit 5] [--repos owner/repo,...]  主控调度本机 main 工作区\ngiraffe analyze <owner/repo|all> [--domain issues|prs|ci|cd]\n配置：~/.config/giraffe/config.json",
 		);
 		return;
 	}
+	if (command !== "work" && (values["dry-run"] || values.limit || values.repos))
+		throw new Error(
+			"--dry-run, --limit and --repos are supported only by work; no operation was started.",
+		);
+	if (
+		command === "work" &&
+		(!Number.isInteger(Number(values.limit ?? "5")) ||
+			Number(values.limit ?? "5") < 1 ||
+			Number(values.limit ?? "5") > 25)
+	)
+		throw new Error("Work limit must be 1–25.");
 	const config = readConfig();
 	if (command === "login") {
 		const result = await login(config.service.baseUrl, { log: console.log });
@@ -38,7 +57,12 @@ async function main() {
 		console.log(
 			`账户：${account.login}\n主控：${config.roles.orchestrator.model}\n决策：${config.roles.decision.model}\n执行：${config.roles.executor.model}`,
 		);
-	} else if (command === "watch" || command === "analyze" || command === "repair") {
+	} else if (
+		command === "watch" ||
+		command === "analyze" ||
+		command === "repair" ||
+		command === "work"
+	) {
 		const credential = readCredential();
 		if (new URL(credential.baseUrl).origin !== new URL(config.service.baseUrl).origin)
 			throw new Error("Service changed; run giraffe login again.");
@@ -60,7 +84,12 @@ async function main() {
 		process.once("SIGTERM", stop);
 		try {
 			runtime = await openRuntime({
-				storage: await openNodeSqliteStorage(join(directory, `${key}.sqlite`)),
+				storage: await openNodeSqliteStorage(
+					join(
+						directory,
+						`${key}${command === "work" ? (values["dry-run"] ? "-work-dry-run" : "-work") : ""}.sqlite`,
+					),
+				),
 				config,
 				models: configuredModels(config),
 				decide: decisionClient(config),
@@ -83,7 +112,33 @@ async function main() {
 			console.log(
 				`giraffe | ${identity.login}\n主控 ${config.roles.orchestrator.model} → 决策 ${config.roles.decision.model} → 执行 ${config.roles.executor.model}`,
 			);
-			if (command === "repair") {
+			if (command === "work") {
+				const limit = Number(values.limit ?? "5");
+				const conversations = workConversations({ runtime, config, log: console.log });
+				try {
+					await runCoordinator({
+						dryRun: values["dry-run"] ?? false,
+						limit,
+						...(values.repos ? { repositories: values.repos.split(",") } : {}),
+						load: () => loadPortfolio(client),
+						decisions: workDecisions(config),
+						driver: new WorkWorkspace(),
+						conversations,
+						config,
+						analyze: residentAnalysis({
+							client,
+							config,
+							conversations,
+							dryRun: values["dry-run"] ?? false,
+							log: console.log,
+						}),
+						log: console.log,
+						signal: controller.signal,
+					});
+				} finally {
+					await conversations.close();
+				}
+			} else if (command === "repair") {
 				const daemon = await repairDaemon({ runtime, client, config, log: console.log });
 				try {
 					if (values.once) await daemon.tick(controller.signal, true);

@@ -352,3 +352,28 @@ and propagate a typed cleanup failure without touching the index or rolling file
 back while a process may still be active. The job must block for operator attention
 instead of starting another model round. Keep tests for single signalling, explicit
 permission failure and each descendant-cleanup mode; do not weaken or bypass hooks.
+
+# 2026-10-03 — Coordinator dry-run integration
+
+The first live priority batch failed because Jev returns rounded probabilities
+whose sum can be 0.99. Exact key coverage remains mandatory; the coordinator now
+accepts only a small explicit rounding tolerance and preserves raw probabilities.
+A regression test rejects materially invalid or missing distributions.
+
+The first five-worker rehearsal completed all handoffs but correctly exited as
+failed when one resident analysis hit the decision proxy's source request limit.
+Four domain judgments now share one batch instead of four concurrent requests.
+Bounded SDK rate-limit retries are enabled for coordinator prioritization. A
+successful worker rehearsal must never hide a failed parallel analysis lane.
+
+Workspace delegation stalled in repeated exploration without producing files.
+The coordinator reclaimed the critical path and closed its owned helper pane;
+future bounded delegation should produce the minimal callable module before
+expanding test coverage. No personal target repository was mutated during this
+debugging session.
+
+The corrected second run completed all four resident analyses and all five worker
+rehearsals with exit code 0. Preparation conversation 47 was reused; workers 66,
+88, 110, 132 and 154 were distinct for basalt, bat, bogo, lyre and backy. No online
+report or GitHub mutation was performed. This verifies scheduling only, not actual
+repair, push or issue closure.

@@ -1,0 +1,159 @@
+import { createModels } from "@earendil-works/pi-ai/models";
+import {
+	fauxAssistantMessage,
+	fauxProvider,
+	fauxToolCall,
+} from "@earendil-works/pi-ai/providers/faux";
+import { MemoryStorage } from "@earendil-works/pi-durable";
+import { expect, it, vi } from "vitest";
+import { z } from "zod";
+import { configSchema } from "./config.ts";
+import { openRuntime } from "./runtime.ts";
+import { workConversations } from "./work-conversations.ts";
+
+const config = configSchema.parse({
+	providers: {
+		faux: { api: "openai-completions", baseUrl: "http://localhost:1", apiKey: "test" },
+		jev: { api: "typesafe-systemone", baseUrl: "http://localhost:2", apiKey: "test" },
+	},
+	roles: {
+		orchestrator: { provider: "faux", model: "astra" },
+		executor: { provider: "faux", model: "sol" },
+		decision: { provider: "jev", model: "jev" },
+	},
+});
+const response = (value: unknown) =>
+	fauxAssistantMessage([fauxToolCall("submit_work_result", { json: JSON.stringify(value) })], {
+		stopReason: "toolUse",
+	});
+
+it("reuses resident conversations, isolates dry-run tools and validates handoffs", async () => {
+	const models = createModels();
+	const fake = fauxProvider({ models: [{ id: "astra" }, { id: "sol" }] });
+	models.setProvider(fake.provider);
+	fake.setResponses([
+		response({ summary: "first" }),
+		response({ summary: "second" }),
+		response({ summary: "prep" }),
+	]);
+	const runtime = await openRuntime({
+		storage: new MemoryStorage(),
+		config,
+		models,
+		decide: vi.fn(),
+		publish: vi.fn(),
+	});
+	const logs: string[] = [];
+	const conversations = workConversations({ runtime, config, log: (line) => logs.push(line) });
+	try {
+		const first = await conversations.run({
+			key: "worker:owner/repo",
+			requestId: "one",
+			role: config.roles.executor,
+			instructions: "Rehearse only",
+			input: {},
+			schema: z.object({ summary: z.string() }),
+		});
+		const second = await conversations.run({
+			key: "worker:owner/repo",
+			requestId: "two",
+			role: config.roles.executor,
+			instructions: "Rehearse only",
+			input: {},
+			schema: z.object({ summary: z.string() }),
+		});
+		expect(first.conversationId).toBe(second.conversationId);
+		expect(
+			(
+				await conversations.run({
+					key: "preparation",
+					requestId: "three",
+					role: config.roles.executor,
+					instructions: "Prepare plan",
+					input: {},
+					schema: z.object({ summary: z.string() }),
+				})
+			).conversationId,
+		).not.toBe(first.conversationId);
+		expect(logs.join("\n")).toContain("worker:owner/repo");
+	} finally {
+		await conversations.close();
+		await runtime.close();
+	}
+});
+
+it("gives live roles bounded host actions and fails invalid or unanswered handoffs", async () => {
+	const models = createModels();
+	const fake = fauxProvider({ models: [{ id: "astra" }, { id: "sol" }] });
+	models.setProvider(fake.provider);
+	fake.setResponses([
+		fauxAssistantMessage([fauxToolCall("workspace_action", { operation: "check", json: "{}" })], {
+			stopReason: "toolUse",
+		}),
+		response({ summary: "checked" }),
+		response({ wrong: true }),
+		response({ summary: "corrected" }),
+		fauxAssistantMessage([{ type: "text", text: "No structured handoff" }], { stopReason: "stop" }),
+	]);
+	const runtime = await openRuntime({
+		storage: new MemoryStorage(),
+		config,
+		models,
+		decide: vi.fn(),
+		publish: vi.fn(),
+	});
+	const conversations = workConversations({ runtime, config, log: vi.fn() });
+	const action = vi.fn(async () => ({ passed: true }));
+	const request = {
+		key: "controller",
+		requestId: "live",
+		role: config.roles.orchestrator,
+		instructions: "Do checks",
+		input: {},
+		schema: z.object({ summary: z.string() }),
+		action,
+	};
+	try {
+		expect((await conversations.run(request)).result).toEqual({ summary: "checked" });
+		expect(action).toHaveBeenCalledWith("check", {});
+		expect((await conversations.run({ ...request, requestId: "correct" })).result.summary).toBe(
+			"corrected",
+		);
+		await expect(conversations.run({ ...request, requestId: "no-tool" })).rejects.toThrow(
+			/validated handoff/,
+		);
+	} finally {
+		await conversations.close();
+		await runtime.close();
+	}
+});
+
+it("bounds repeated invalid outputs without hanging the coordinator", async () => {
+	const models = createModels();
+	const fake = fauxProvider({ models: [{ id: "astra" }, { id: "sol" }] });
+	models.setProvider(fake.provider);
+	fake.setResponses(Array.from({ length: 26 }, () => response({ invalid: true })));
+	const runtime = await openRuntime({
+		storage: new MemoryStorage(),
+		config,
+		models,
+		decide: vi.fn(),
+		publish: vi.fn(),
+	});
+	const conversations = workConversations({ runtime, config, log: vi.fn() });
+	try {
+		await expect(
+			conversations.run({
+				key: "worker",
+				requestId: "invalid",
+				role: config.roles.executor,
+				instructions: "Return result",
+				input: {},
+				schema: z.object({ summary: z.string() }),
+			}),
+		).rejects.toThrow(/validated handoff/);
+	} finally {
+		await conversations.close();
+		await runtime.close();
+	}
+});
