@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.15.0 — 2026-10-02
+
+### Added
+
+- Persistent local dependency-repair cron with timezone-aware schedules, missed-run coalescing, durable candidate cursors and restart recovery
+- Dedicated Sol issue workers and one independent Astra reviewer with exact-code signoff and at most 20 repair/review rounds
+- Isolated task-owned Git workspaces, baseline check/hook enforcement, Git metadata integrity seals, durable commit-intent recovery and no-force dedicated-branch publication
+- Live repair workbench with cron/heartbeat status, review progress, safe diagnostics, exact commit proofs, bounded events and pause-only web controls
+
+### Safety and Scope
+
+- Repairs initially support explicitly profiled root npm/Bun manifests and dependency-upgrade issues only; all other work is deferred or blocked
+- Installs, checks and hooks require a trusted isolated runner; no unsandboxed fallback, automatic merge, default-branch push or release
+- Actual target-repository repair execution is not established by fixture tests: a working trusted Docker image/cache and per-repository grants are required
+- Model calls, review rounds, diff size, output and web payloads are bounded; telemetry failures do not disable watchdogs or misclassify completed local work
+
 ## v0.14.0 — 2026-10-02
 
 ### Added

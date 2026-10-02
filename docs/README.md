@@ -21,3 +21,5 @@
 - [Local Agent API](11-agent-api.md)
 
 - [Local Agent analysis desk](12-agent-analysis.md)
+
+- [Dependency repair cron and workbench](13-dependency-repairs.md)

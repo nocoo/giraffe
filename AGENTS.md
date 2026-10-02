@@ -100,4 +100,13 @@ Narratives remain in [Retrospective.md](Retrospective.md); keep only recurring r
 - Runtime SQLite state is local user data, not D1. D1 stores published reports/jobs and runner heartbeat via authenticated CRUD. GET observations never initiates upstream collection.
 - Agent tests: `bun run --cwd packages/agent test:coverage`; four metrics each >=95%. Root `typecheck`, `build`, `lint`, and `test:coverage` include the workspace. Tests use fake models, fake credentials and loopback only.
 - `packages/agent/src/contracts.ts` is the browser-safe report contract; do not import Node runtime modules into the dashboard. Root version is authoritative for displayed runner version.
-- Analysis tools do not execute shell commands. A pass describes saved observations, not permission to merge/deploy. Missing/stale coverage remains visible; automatic GitHub repairs are outside this MVP.
+- Analysis tools do not execute shell commands. A pass describes saved observations, not permission to merge/deploy. Missing/stale coverage remains visible; dependency repair cron is a separate explicit local grant with exact-code Astra review before dedicated-branch push.
+
+## Dependency Repair Runtime
+
+- `bun run agent repair` runs a persistent five-field cron; `--once` requests one bounded occurrence. Local `repairs.enabled` controls activation, `push` separately controls dedicated-branch publication.
+- Only dependency-upgrade issues, configured npm/Bun root manifests, owner-eligible repositories, unchanged baseline checks/hooks and verified isolation are supported. Missing prerequisites are blocked, never bypassed.
+- A separate persistent Astra reviewer must sign the exact HEAD/content/check digest with zero findings; at most 20 fix/review rounds. Any changed code/proof invalidates approval. No merges, releases, default-branch or force pushes.
+- Install/check/commit/pre-push processes receive no model/API credentials. Preserve the filesystem Git metadata seal, isolated pre-push, and clean metadata-only host publication boundary.
+- Repair state, cron occurrences and candidate cursors survive restarts. Publish bounded progress/heartbeats through the API, preserve safe diagnostics, and distinguish terminal live-state changes from retryable transport failures.
+- Tests use fake models/APIs and temporary local Git repositories; root four-metric coverage gates stay >=95%. Do not enable real repair profiles without an independently reviewed execution image/check contract.
