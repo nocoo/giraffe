@@ -75,7 +75,6 @@ export type InsightsBoard = {
 	issues: IssuesSnapshot | null;
 	pulls: PullsSnapshot | null;
 	ci: Awaited<ReturnType<typeof loadFocusSources>>["ci"];
-	assessments: Awaited<ReturnType<typeof loadFocusSources>>["assessments"];
 };
 
 const WORKLOAD_LIMIT = 8;

@@ -1,13 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AssessmentDigest } from "../../lib/assessment-digest";
 import type { CiRepo, CiStream } from "./ci";
-import {
-	aiCoverage,
-	type FocusSources,
-	focusFindings,
-	focusRanking,
-	loadFocusSources,
-} from "./focus";
+import { type FocusSources, focusFindings, focusRanking, loadFocusSources } from "./focus";
 import type { InsightRow } from "./insights";
 import type { IssueRow } from "./issues";
 import type { PullRow } from "./pulls";
@@ -50,24 +43,6 @@ const pull = (repo: string, over: Partial<PullRow> = {}): PullRow => ({
 	head_ref: "x",
 	...over,
 });
-const assessment = (repo: string, over: Partial<AssessmentDigest> = {}): AssessmentDigest => ({
-	repo,
-	status: "complete",
-	current: true,
-	reportAt: now,
-	overall: "healthy",
-	sections: {
-		security: "healthy",
-		pullRequests: "healthy",
-		issues: "healthy",
-		delivery: "healthy",
-	},
-	trend: "steady",
-	actions: [],
-	flags: [],
-	error: null,
-	...over,
-});
 const stream = (repo: string, over: Partial<CiStream> = {}) =>
 	({
 		repo,
@@ -87,13 +62,12 @@ const sources = (over: Partial<FocusSources>): FocusSources => ({
 	issues: [],
 	pulls: [],
 	ci: null,
-	assessments: null,
 	fetchedAt: now,
 	...over,
 });
 
 describe("focus ranking", () => {
-	it("combines AI, Jev, CI, alerts and work into ranked reasons", () => {
+	it("combines deterministic CI, alerts and work into ranked reasons", () => {
 		const ranked = focusRanking(
 			sources({
 				rows: [
@@ -134,39 +108,6 @@ describe("focus ranking", () => {
 						stream("nocoo/c", { workflow: "Branch", scope: "branch" }),
 					],
 				},
-				assessments: {
-					account_id: "a",
-					fetched_at: now,
-					truncated: false,
-					configured: true,
-					items: [
-						assessment("NOCOO/A", {
-							overall: "urgent",
-							sections: {
-								security: "urgent",
-								pullRequests: "attention",
-								issues: "healthy",
-								delivery: "healthy",
-							},
-							trend: "slowing",
-							actions: [
-								{ priority: "now", title: "修复" },
-								{ priority: "next", title: "跟进" },
-								{ priority: "next", title: "其次" },
-							],
-							flags: [
-								{ id: "security_urgency", choice: "urgent", uncertain: false },
-								{ id: "item_issues_0", choice: "urgent", uncertain: true },
-								{ id: "issue_flow", choice: "urgent", uncertain: false },
-								{ id: "blocking_issues", choice: "urgent", uncertain: false },
-								{ id: "review_backlog", choice: "review", uncertain: false },
-								{ id: "x", choice: "review", uncertain: true },
-								{ id: "y", choice: "review", uncertain: false },
-								{ id: "z", choice: "review", uncertain: false },
-							],
-						}),
-					],
-				},
 			}),
 		);
 		expect(ranked.map((r) => r.repo)).toEqual(["nocoo/a", "nocoo/c", "nocoo/b"]);
@@ -174,27 +115,15 @@ describe("focus ranking", () => {
 		expect(a).toMatchObject({
 			level: "urgent",
 			primary: "security",
-			ai: { overall: "urgent", current: true },
 		});
-		expect(a?.reasons[0]?.text).toBe("AI 总评：优先处理");
 		expect(a?.reasons.map((r) => r.text)).toEqual(
 			expect.arrayContaining([
 				"1 个高危/严重安全告警",
 				"1 个安全相关 Issue 未关闭",
 				"1 个 Issue 超过 30 天未关闭",
-				"AI 判定安全需优先处理",
-				"AI 判定PR需要关注",
-				"AI 观察到交付放缓",
-				"立即：修复",
-				"接下来：其次",
-				"Jev：安全风险需立即处理",
-				"Jev：单项事项需立即处理（低置信）",
-				"Jev：PR 审查积压需人工判断",
 			]),
 		);
-		expect(a?.reasons.filter((r) => r.text.includes("需立即处理"))).toHaveLength(3);
-		expect(a?.reasons.filter((r) => r.text.includes("需人工判断"))).toHaveLength(3);
-		expect(c).toMatchObject({ level: "urgent", primary: "delivery", ai: null });
+		expect(c).toMatchObject({ level: "urgent", primary: "delivery" });
 		expect(c?.reasons.map((r) => r.text)).toEqual([
 			"CI 连续 3 次失败",
 			"发布流水线失败，最新版本 v1",
@@ -209,7 +138,7 @@ describe("focus ranking", () => {
 		expect(focusRanking(sources({ rows: [row("a/b")] }))).toEqual([]);
 	});
 
-	it("discounts stale reports, notes failed runs and falls back to snapshot counts", () => {
+	it("uses saved CI facts and falls back to snapshot counts", () => {
 		const ranked = focusRanking(
 			sources({
 				rows: [
@@ -238,42 +167,10 @@ describe("focus ranking", () => {
 						stream("o/stale", { verdict: "broken", scope: "branch" }),
 					],
 				},
-				assessments: {
-					account_id: "a",
-					fetched_at: now,
-					truncated: false,
-					configured: true,
-					items: [
-						assessment("o/stale", {
-							current: false,
-							overall: "attention",
-							actions: [{ priority: "next", title: "t" }],
-						}),
-						assessment("o/failed", {
-							status: "failed",
-							overall: null,
-							sections: null,
-							trend: null,
-						}),
-					],
-				},
 			}),
-			3,
+			6,
 		);
-		expect(ranked).toHaveLength(3);
-		const stale = ranked.find((r) => r.repo === "o/stale");
-		expect(stale?.reasons.map((r) => r.text)).toEqual([
-			"AI 总评：需要关注（基于旧版本）",
-			"1 个安全告警",
-			"接下来：t",
-		]);
-		expect(stale?.score).toBe(19);
-		const failed = ranked.find((r) => r.repo === "o/failed");
-		expect(failed?.reasons.map((r) => r.text)).toEqual([
-			"AI 评估失败，结论缺失需人工查看",
-			"没有推送记录",
-		]);
-		expect(failed?.primary).toBe("activity");
+		expect(ranked).toHaveLength(5);
 		expect(ranked.find((r) => r.repo === "o/flaky")?.reasons.map((r) => r.text)).toEqual([
 			"Deploy 反复失败（1 条工作流）",
 			"发布流水线失败，尚无成功发布",
@@ -330,38 +227,18 @@ describe("focus findings", () => {
 					pull("nocoo/a", { author_login: null }),
 				],
 				ci: { repos: [], streams: [stream("nocoo/a"), stream("nocoo/b", { scope: "branch" })] },
-				assessments: {
-					account_id: "a",
-					fetched_at: now,
-					truncated: false,
-					configured: true,
-					items: [
-						assessment("nocoo/a", { overall: "urgent" }),
-						assessment("nocoo/b", { current: false }),
-						assessment("nocoo/c", { status: "failed", current: false, overall: null }),
-					],
-				},
 			}),
 		);
 		expect(findings.map((f) => f.text)).toEqual([
 			"1 个仓库默认分支 CI 持续失败，交付被阻塞",
 			"1 个仓库存在高危或严重安全告警",
-			"AI 将 1 个仓库评为优先处理",
 			"67% 的 open Issue（12 个）是依赖更新，分布在 1 个仓库，适合批量合并处理",
 			"本周新增 16 个仍未关闭的 Issue，上周为 2 个，积压在加速",
 			"Issue 高度集中：前 3 个仓库占 83%",
 			"1 个外部贡献者 PR 等待回复，及时审查有助于留住贡献者",
 			"2 个参与统计的仓库超过 90 天未推送，可考虑归档或排除出统计",
-			"AI 评估覆盖不完整：3 个没有报告，1 个基于旧版本，1 个失败；刷新仓库后会重新评估",
 		]);
 		expect(findings[0]?.tone).toBe("red");
-		expect(aiCoverage(sources({ rows: repos.map((r) => row(r)) }))).toEqual({
-			configured: false,
-			current: 0,
-			stale: 0,
-			failed: 0,
-			total: 6,
-		});
 	});
 
 	it("stays quiet without evidence", () => {
@@ -376,13 +253,6 @@ describe("focus findings", () => {
 						issue("a/b", 1),
 						issue("a/b", 1),
 					],
-					assessments: {
-						account_id: "a",
-						fetched_at: now,
-						truncated: false,
-						configured: true,
-						items: [assessment("a/b")],
-					},
 				}),
 			),
 		).toEqual([]);
@@ -391,7 +261,7 @@ describe("focus findings", () => {
 
 describe("focus sources", () => {
 	afterEach(() => vi.unstubAllGlobals());
-	it("loads optional CI and AI data without failing the page", async () => {
+	it("loads optional CI data without failing the page", async () => {
 		vi.stubGlobal(
 			"fetch",
 			vi.fn(async (url: string) => {
@@ -403,19 +273,17 @@ describe("focus sources", () => {
 						{ error: { code: "snapshot_missing", message: "m" } },
 						{ status: 409 },
 					);
-				if (url === "/api/insights/assessments?scope=starred")
-					return Response.json({ account_id: "acct", configured: true, items: [] });
+
 				throw new Error(url);
 			}),
 		);
 		expect(await loadFocusSources()).toEqual({
 			ci: null,
-			assessments: { account_id: "acct", configured: true, items: [] },
 		});
 		vi.stubGlobal(
 			"fetch",
 			vi.fn(async () => Promise.reject(new Error("offline"))),
 		);
-		expect(await loadFocusSources()).toEqual({ ci: null, assessments: null });
+		expect(await loadFocusSources()).toEqual({ ci: null });
 	});
 });

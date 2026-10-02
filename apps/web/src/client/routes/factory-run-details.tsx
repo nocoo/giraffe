@@ -98,15 +98,7 @@ function StepTimeline({ steps, status }: { steps: FactoryRunStep[]; status: RunS
 								{step.strategy && step.strategy !== "full" ? (
 									<span>{step.strategy === "reused" ? "复用已核对数据" : "增量合并"}</span>
 								) : null}
-								<span>
-									{stopped
-										? "未执行完"
-										: paused
-											? "已暂停"
-											: step.kind === "assessment" && step.status === "running"
-												? "正在分析"
-												: STEP_STATUS[step.status]}
-								</span>
+								<span>{stopped ? "未执行完" : paused ? "已暂停" : STEP_STATUS[step.status]}</span>
 								{step.startedAt ? (
 									<small>
 										{step.pages > 0 ? `${step.pages} 页 · ` : ""}
@@ -149,11 +141,7 @@ export function FactoryRunDetails({
 			(!onlyProblems || problemRepos.has(row.repo)) &&
 			row.repo.toLowerCase().includes(query.toLowerCase()),
 	);
-	const analyzing =
-		run.progress.current?.kind === "assessment" &&
-		run.progress.current.status === "running" &&
-		!run.progress.current.error;
-	const waiting = run.status === "running" && !analyzing ? secondsUntil(run.nextAttemptAt, now) : 0;
+	const waiting = run.status === "running" ? secondsUntil(run.nextAttemptAt, now) : 0;
 	const active = run.status === "running" || run.status === "paused";
 	const current = active ? run.progress.current : null;
 	const globalSteps = run.steps.filter((step) => !step.repo);

@@ -3,7 +3,6 @@ import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
 import {
 	Activity,
-	BrainCircuit,
 	CircleDot,
 	GitPullRequest,
 	Lightbulb,
@@ -16,9 +15,7 @@ import { CandyBadge } from "../components/layout/candy-badge";
 import { IconLabel } from "../components/layout/icon-label";
 import { ProjectLabel } from "../components/layout/project-identity";
 import { formatCount } from "../lib/format";
-import { REPORT_STATUS } from "../viewmodels/assessment-presentation";
 import {
-	type aiCoverage,
 	type Finding,
 	FOCUS_CATEGORY,
 	type FocusCategory,
@@ -31,7 +28,6 @@ const CATEGORY_ICON: Record<FocusCategory, LucideIcon> = {
 	delivery: Workflow,
 	review: GitPullRequest,
 	issues: CircleDot,
-	ai: BrainCircuit,
 	activity: Activity,
 };
 const LEVEL = {
@@ -41,23 +37,14 @@ const LEVEL = {
 } as const;
 const REASONS_SHOWN = 3;
 
-export function FocusSection({
-	ranked,
-	findings,
-	coverage,
-}: {
-	ranked: FocusRepo[];
-	findings: Finding[];
-	coverage: ReturnType<typeof aiCoverage>;
-}) {
-	const source = coverage.configured
-		? `结合 ${coverage.current} 份当前 AI 报告${coverage.stale ? `、${coverage.stale} 份旧版报告` : ""}、Jev 判断、CI、安全告警与待办计算`
-		: "未配置 AI，仅按 CI、安全告警与待办规则计算";
+export function FocusSection({ ranked, findings }: { ranked: FocusRepo[]; findings: Finding[] }) {
 	return (
 		<SectionRule
 			title={<IconLabel icon={Target}>最值得关注的仓库</IconLabel>}
-			hint="每条原因带权重：AI 总评与立即行动、Jev 紧急判断、默认分支持续失败、高危告警权重最高；旧版本报告按 60% 计入。分数只用于排序。"
-			actions={<span className="text-xs text-basalt-muted-foreground">{source}</span>}
+			hint="根据默认分支 CI、安全告警与待办事实排序；Agent 判断在分析台独立查看。"
+			actions={
+				<span className="text-xs text-basalt-muted-foreground">按 CI、安全告警与待办规则计算</span>
+			}
 		>
 			<div className="giraffe-focus" data-testid="insight-focus">
 				{ranked.length ? (
@@ -102,7 +89,6 @@ function FocusItem({ item, rank }: { item: FocusRepo; rank: number }) {
 	const Icon = CATEGORY_ICON[item.primary];
 	const shown = item.reasons.slice(0, REASONS_SHOWN);
 	const hidden = item.reasons.length - shown.length;
-	const ai = item.ai?.overall ? REPORT_STATUS[item.ai.overall] : null;
 	return (
 		<li className="giraffe-focus-item" data-level={item.level}>
 			<span className="giraffe-focus-rank" aria-hidden="true">
@@ -152,21 +138,7 @@ function FocusItem({ item, rank }: { item: FocusRepo; rank: number }) {
 						{FOCUS_CATEGORY[item.primary]}
 					</dd>
 				</div>
-				<div>
-					<dt>AI 总评</dt>
-					<dd>
-						{ai ? (
-							<CandyBadge tone={ai.tone}>
-								{ai.label}
-								{item.ai?.current ? "" : " · 旧版"}
-							</CandyBadge>
-						) : (
-							<span className="text-basalt-muted-foreground">
-								{item.ai?.status === "failed" ? "失败" : "—"}
-							</span>
-						)}
-					</dd>
-				</div>
+
 				<div>
 					<dt>待办</dt>
 					<dd className="tabular-nums">

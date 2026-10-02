@@ -1,16 +1,10 @@
-import {
-	type FactoryRunStep,
-	isUnconfiguredAssessment,
-	RUN_MAX_RETRIES,
-	retryDelay,
-} from "../../lib/factory-run";
+import { type FactoryRunStep, RUN_MAX_RETRIES, retryDelay } from "../../lib/factory-run";
 import {
 	FACTORY_STREAMS,
 	type FactoryStreamData,
 	type FactoryStreamName,
 } from "../../lib/factory-types";
 import { type Env, encryptionKey } from "../env";
-import { aiConfigured, dispatchAssessment } from "./ai-assessment";
 import { getAccount } from "./db/accounts";
 import { createDb } from "./db/d1";
 import { claimRun, fenced, saveRun } from "./db/factory-runs";
@@ -40,6 +34,23 @@ export async function executeRunPage(
 	const lease = await claimRun(db, id, clock());
 	if (!lease) return null;
 	const run = lease.run;
+	const retired = run.steps.filter(
+		(step) => String(step.kind) === "assessment" && ["pending", "running"].includes(step.status),
+	);
+	if (retired.length) {
+		const now = clock();
+		for (const step of retired) {
+			finish(step, "skipped", now);
+			step.error = "cloud_ai_retired";
+		}
+		while (
+			run.steps[run.cursor] &&
+			!["pending", "running"].includes(run.steps[run.cursor]?.status ?? "")
+		)
+			run.cursor++;
+		run.nextAttemptAt = now;
+		return (await saveRun(db, lease, [], clock())) ? now : null;
+	}
 	while (
 		run.steps[run.cursor] &&
 		!["pending", "running"].includes(run.steps[run.cursor]?.status ?? "")
@@ -47,11 +58,7 @@ export async function executeRunPage(
 		run.cursor++;
 	const step = run.steps[run.cursor];
 	if (!step) {
-		run.status = run.steps.some(
-			(s) => (s.status === "failed" || s.status === "skipped") && !isUnconfiguredAssessment(s),
-		)
-			? "partial"
-			: "completed";
+		run.status = run.steps.some(incomplete) ? "partial" : "completed";
 		run.finishedAt = clock();
 		await saveRun(db, lease, [], clock());
 		return null;
@@ -60,8 +67,7 @@ export async function executeRunPage(
 	const savedPages = step.pages;
 	const savedSnapshotCursor = step.snapshotCursor;
 	step.startedAt ??= started;
-	step.attempts =
-		step.error && step.kind !== "assessment" ? step.attempts + 1 : Math.max(1, step.attempts);
+	step.attempts = step.error ? step.attempts + 1 : Math.max(1, step.attempts);
 	step.status = "running";
 	step.error = null;
 	const began = await fenced(
@@ -75,7 +81,6 @@ export async function executeRunPage(
 	const before = structuredClone(run.checkpoint);
 	const gh = createGithubClient(env, undefined, 4_000_000);
 	let writes: D1PreparedStatement[] = [];
-	let nextAttemptAt = clock();
 	try {
 		if (step.kind === "metadata") {
 			const state = await db
@@ -93,10 +98,7 @@ export async function executeRunPage(
 				throw new ApiError(409, "repository_cooldown", "repository cooldown");
 		}
 		let token = "";
-		if (
-			!["restore", "commit", "assessment", "publish"].includes(step.kind) &&
-			step.resource !== "insights"
-		) {
+		if (!["restore", "commit", "publish"].includes(step.kind) && step.resource !== "insights") {
 			const account = await getAccount(db, run.account_id);
 			if (!account) throw new ApiError(409, "account_missing", "account missing");
 			if (step.kind === "snapshot")
@@ -162,49 +164,10 @@ export async function executeRunPage(
 			};
 			writes = await repositoryWrites(db, lease, clock(), repo, repo.name, null);
 			finish(step, "success", clock());
-		} else if (step.kind === "assessment") {
-			const review = await db
-				.prepare(
-					"SELECT stage,error,attempts,next_at FROM ai_reviews WHERE account_id=? AND repo=? AND source_version=?",
-				)
-				.bind(run.account_id, step.repo, run.id)
-				.first<{
-					stage: "judgment" | "summary" | "complete" | "failed";
-					error: string | null;
-					attempts: number;
-					next_at: string;
-				}>();
-			if (!review) {
-				finish(step, "skipped", clock());
-				step.error = (await aiConfigured(db)) ? "ai_source_missing" : "ai_not_configured";
-			} else {
-				step.error = review.error;
-				step.attempts = Math.max(step.attempts, review.attempts);
-				if (review.stage === "complete" || review.stage === "failed")
-					finish(
-						step,
-						review.stage === "complete"
-							? "success"
-							: review.error === "ai_not_configured"
-								? "skipped"
-								: "failed",
-						clock(),
-					);
-				else {
-					step.assessmentStage = review.stage;
-					nextAttemptAt = new Date(
-						Math.max(Date.parse(clock()) + 5000, Date.parse(review.next_at)),
-					).toISOString();
-				}
-			}
 		} else if (step.kind === "publish") {
 			writes = await publicationWrites(db, lease, clock());
 			finish(step, "success", clock());
-			run.status = run.steps.some(
-				(s) => (s.status === "failed" || s.status === "skipped") && !isUnconfiguredAssessment(s),
-			)
-				? "partial"
-				: "completed";
+			run.status = run.steps.some(incomplete) ? "partial" : "completed";
 			run.finishedAt = clock();
 		} else {
 			run.checkpoint ??= newFactory(run.account_id, run.owner, run.startedAt);
@@ -281,7 +244,7 @@ export async function executeRunPage(
 		step.pages += gh.count;
 		step.retryFailures = 0;
 		boundedJson(run);
-		run.nextAttemptAt = step.kind === "assessment" ? nextAttemptAt : clock();
+		run.nextAttemptAt = clock();
 	} catch (error) {
 		run.checkpoint = before;
 		step.pages = savedPages;
@@ -349,8 +312,7 @@ export async function executeRunPage(
 			).toISOString();
 		} else {
 			finish(step, "failed", clock());
-			if (step.kind === "snapshot" || step.kind === "assessment") {
-				// Page and AI failures must not invalidate accepted repository data.
+			if (step.kind === "snapshot") {
 				run.nextAttemptAt = clock();
 			} else if (step.repo) {
 				for (const later of run.steps)
@@ -370,10 +332,7 @@ export async function executeRunPage(
 			}
 		}
 	}
-	step.durationMs =
-		step.kind === "assessment"
-			? Math.max(0, Date.parse(clock()) - Date.parse(step.startedAt))
-			: step.durationMs + Math.max(0, Date.parse(clock()) - Date.parse(started));
+	step.durationMs += Math.max(0, Date.parse(clock()) - Date.parse(started));
 	run.requests += gh.count;
 	while (
 		run.steps[run.cursor] &&
@@ -381,9 +340,12 @@ export async function executeRunPage(
 	)
 		run.cursor++;
 	const saved = await saveRun(db, lease, writes, clock());
-	if (saved && step.kind === "commit" && step.repo)
-		await dispatchAssessment(env, run.account_id, step.repo, run.id);
 	return saved && run.status === "running" ? run.nextAttemptAt : null;
+}
+function incomplete(step: FactoryRunStep) {
+	return (
+		step.status === "failed" || (step.status === "skipped" && step.error !== "cloud_ai_retired")
+	);
 }
 function finish(step: FactoryRunStep, status: "success" | "failed" | "skipped", now: string) {
 	step.status = status;

@@ -23,7 +23,6 @@ const GETS = [
 	"/api/issues",
 	"/api/prs",
 	"/api/insights",
-	"/api/insights/assessments",
 	"/api/alerts",
 	"/api/notifications",
 	"/api/repos/octocat/hello-world",
@@ -657,11 +656,7 @@ describe("api method matrix", () => {
 			expect(res.status).toBe(200);
 			const body = await res.json();
 			noSecrets(body);
-			if (path === "/api/insights/assessments" && !body.items.length) {
-				expect(body.fetched_at).toBe("");
-				expect(body.freshness.latestAt).toBeNull();
-				expect(body.account_id).toBe(account.id);
-			} else snapshotMeta(body as Record<string, unknown>);
+			snapshotMeta(body as Record<string, unknown>);
 		}
 		expect(await githubCount()).toBe(before);
 		expect(d1Rows("SELECT kind, payload, fetched_at FROM snapshots ORDER BY kind")).toEqual(
@@ -773,7 +768,7 @@ describe("api method matrix", () => {
 			repos: ["octocat/hello-world"],
 		});
 		expect(refreshRun.status).toBe(202);
-		expect(await refreshRun.json()).toMatchObject({ totalSteps: 20 });
+		expect(await refreshRun.json()).toMatchObject({ totalSteps: 19 });
 		expect(await (await api("/api/factory")).json()).toEqual(factoryBefore);
 		await expect
 			.poll(
@@ -824,7 +819,6 @@ describe("api method matrix", () => {
 			"insights",
 			"ci",
 			"factory",
-			"insights/assessments",
 		]) {
 			const scoped = await api(`/api/${path}?scope=starred`);
 			expect(scoped.status, path).toBe(200);

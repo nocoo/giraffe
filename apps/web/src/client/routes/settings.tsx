@@ -23,7 +23,6 @@ import {
 } from "@nocoo/basalt/components/table";
 import { ExternalLink, KeyRound, ShieldCheck, Trash2, Users } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
-import { AiSettings } from "../components/ai-settings";
 import { ApiTokens } from "../components/api-tokens";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ResultCount, TableScroll } from "../components/layout/collection-chrome";
@@ -297,7 +296,6 @@ export function SettingsPage() {
 				</LayerCard>
 			</SectionRule>
 			<ApiTokens accounts={accounts} />
-			<AiSettings />
 			<ConfirmDialog
 				open={pendingId !== null}
 				onOpenChange={(open) => {

@@ -167,19 +167,21 @@ it("serializes competing controls instead of overwriting a newer run version", a
 	});
 });
 
-it("does not change factory metric cooldowns when pausing or cancelling a site page", async () => {
-	for (const action of ["pause", "cancel"] as const) {
-		const { db, run } = await setup();
-		run.cursor = run.steps.findIndex((step) => step.resource === "repo:nocoo/app:traffic");
-		const step = run.steps[run.cursor];
-		if (!step) throw new Error("fixture");
-		step.status = "running";
-		step.startedAt = now;
-		await startRun(db, run);
-		await controlRun(db, snap.account_id, run.id, action, now);
-		expect((await db.prepare("SELECT * FROM factory_repo_state").all()).results).toEqual([]);
-	}
-});
+it.each(["snapshot", "assessment"] as const)(
+	"does not change factory metric cooldowns when controlling a stored %s step",
+	async (kind) => {
+		for (const action of ["pause", "cancel"] as const) {
+			const { db, run } = await setup();
+			run.cursor = run.steps.findIndex((step) => step.resource === "repo:nocoo/app:traffic");
+			const step = run.steps[run.cursor];
+			if (!step) throw new Error("fixture");
+			Object.assign(step, { kind, status: "running", startedAt: now });
+			await startRun(db, run);
+			await controlRun(db, snap.account_id, run.id, action, now);
+			expect((await db.prepare("SELECT * FROM factory_repo_state").all()).results).toEqual([]);
+		}
+	},
+);
 
 it("rolls every staged write back if the lease expires between preparing writes and committing the batch", async () => {
 	const { db, run } = await setup();

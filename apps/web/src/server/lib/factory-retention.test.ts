@@ -151,3 +151,31 @@ it("includes all page snapshots and daily baselines in the same account storage 
 		.first<{ bytes: number }>();
 	expect((await factoryStorage(db, account)).totalBytes).toBe((stored?.bytes ?? 0) + 2);
 });
+
+it("preserves historical cloud reports and diagnostics in retention and storage accounting", async () => {
+	const { db } = await setup();
+	const input = '{"pending":true}';
+	const report = '{"saved":true}';
+	const diagnostic = '{"stage":"summary"}';
+	await db
+		.prepare(
+			"INSERT INTO ai_reviews(account_id,repo,job_id,source_version,source_at,stage,input,report,next_at) VALUES(?,'nocoo/app','old-job','old-source',?,'summary',?,?,?)",
+		)
+		.bind(account, snap.fetched_at, input, report, snap.fetched_at)
+		.run();
+	await db
+		.prepare(
+			"INSERT INTO ai_review_attempts(job_id,stage,attempt,source_version,error,diagnostic,recorded_at) VALUES('old-job','summary',1,'old-source','ai_error',?,?)",
+		)
+		.bind(diagnostic, snap.fetched_at)
+		.run();
+	const review = await db.prepare("SELECT * FROM ai_reviews").all();
+	const attempts = await db.prepare("SELECT * FROM ai_review_attempts").all();
+	await pruneFactory(db, "2026-10-02T00:00:00.000Z");
+	expect(await db.prepare("SELECT * FROM ai_reviews").all()).toEqual(review);
+	expect(await db.prepare("SELECT * FROM ai_review_attempts").all()).toEqual(attempts);
+	expect(await factoryStorage(db, account)).toEqual({
+		resourceBytes: 0,
+		totalBytes: new TextEncoder().encode(input + report + diagnostic).length,
+	});
+});

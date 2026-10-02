@@ -22,7 +22,6 @@ export type StepKind =
 	| FactoryStreamName
 	| "commit"
 	| "snapshot"
-	| "assessment"
 	| "publish";
 export type FactoryRunStep = {
 	kind: StepKind;
@@ -30,7 +29,6 @@ export type FactoryRunStep = {
 	strategy?: "full" | "incremental" | "reused";
 	resource?: string;
 	snapshotCursor?: number;
-	assessmentStage?: "judgment" | "summary";
 	repo: string | null;
 	status: StepStatus;
 	attempts: number;
@@ -196,7 +194,6 @@ export function makeRun(
 						REPO_SNAPSHOT_TABS.map((tab) => snapshot(`repo:${repo}:${tab}`, repo)),
 					),
 					...(dailyPages && !full ? [snapshot("insights")] : []),
-					...repos.map((repo) => step("assessment", repo.name)),
 					step("publish"),
 				];
 	for (const s of steps)
@@ -235,8 +232,6 @@ export function makeRun(
 		restoreCursor: 0,
 	};
 }
-export const isUnconfiguredAssessment = (step: FactoryRunStep) =>
-	step.kind === "assessment" && step.status === "skipped" && step.error === "ai_not_configured";
 export function runProgress(run: FactoryRun, now: string) {
 	const count = (status: StepStatus) => run.steps.filter((s) => s.status === status).length;
 	const success = count("success"),

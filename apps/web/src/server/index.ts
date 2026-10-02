@@ -6,12 +6,7 @@ import { consumeFactory, continueFactory } from "./lib/factory-dispatch";
 import { accessBypass, resolveIdentity } from "./middleware/access";
 import { assertOrigin } from "./middleware/origin";
 import { activateAccount, getAccounts, postAccount, removeAccount } from "./routes/accounts";
-import {
-	deleteAiSettings,
-	getAiSettings,
-	postAiSettings,
-	testAiSettings,
-} from "./routes/ai-settings";
+import { agentBrowserApi } from "./routes/agent-browser";
 import { browserAuthorize, browserTokens } from "./routes/api-tokens";
 import { getCi } from "./routes/ci";
 import { getFactory, getFactoryStream } from "./routes/factory";
@@ -24,7 +19,6 @@ import { getProjectIdentity } from "./routes/project-identity";
 import { postRefresh } from "./routes/refresh";
 import { getRefreshSettings, postRefreshSchedule } from "./routes/refresh-settings";
 import { getRefreshTimes } from "./routes/refresh-times";
-import { getAssessmentDigests, getRepoAssessment } from "./routes/repo-assessment";
 import { repoGet, setRepoStar, setRepoStatistics } from "./routes/repos";
 import { snapshotGet } from "./routes/snapshots";
 
@@ -76,6 +70,7 @@ export function createApp(): Hono<{ Bindings: Env; Variables: AppVars }> {
 		await next();
 	});
 	app.route("/api/v1", machineApi());
+	app.route("/api/agent", agentBrowserApi());
 	allow(app, "/api/tokens", ["GET", "POST"]);
 	app.on(["GET", "POST"], "/api/tokens", browserTokens);
 	allow(app, "/api/tokens/:id", ["PATCH", "DELETE"]);
@@ -95,15 +90,6 @@ export function createApp(): Hono<{ Bindings: Env; Variables: AppVars }> {
 	app.post("/api/accounts/:id/activate", (c) => activateAccount(c));
 	allow(app, "/api/accounts/:id", ["DELETE"]);
 	app.delete("/api/accounts/:id", (c) => removeAccount(c));
-	allow(app, "/api/ai/settings", ["GET"]);
-	onGet(app, "/api/ai/settings", getAiSettings);
-	allow(app, "/api/ai/settings/:kind", ["POST", "DELETE"]);
-	app.delete("/api/ai/settings/:kind", deleteAiSettings);
-	app.post("/api/ai/settings/:kind", postAiSettings);
-	allow(app, "/api/ai/settings/:kind/test", ["POST"]);
-	app.post("/api/ai/settings/:kind/test", testAiSettings);
-	allow(app, "/api/repos/:owner/:name/assessment", ["GET"]);
-	onGet(app, "/api/repos/:owner/:name/assessment", getRepoAssessment);
 	allow(app, "/api/refresh/times", ["GET"]);
 	onGet(app, "/api/refresh/times", getRefreshTimes);
 	allow(app, "/api/refresh/settings", ["GET"]);
@@ -137,8 +123,6 @@ export function createApp(): Hono<{ Bindings: Env; Variables: AppVars }> {
 	onGet(app, "/api/prs", (c) => snapshotGet(c, "prs"));
 	allow(app, "/api/insights", ["GET"]);
 	onGet(app, "/api/insights", (c) => snapshotGet(c, "insights"));
-	allow(app, "/api/insights/assessments", ["GET"]);
-	onGet(app, "/api/insights/assessments", getAssessmentDigests);
 	allow(app, "/api/alerts", ["GET"]);
 	onGet(app, "/api/alerts", (c) => snapshotGet(c, "alerts"));
 	allow(app, "/api/notifications", ["GET"]);

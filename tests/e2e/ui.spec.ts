@@ -1,5 +1,4 @@
 import { expect, type Page, test } from "@playwright/test";
-import { defaultAiSettings } from "../../apps/web/src/lib/ai-settings";
 import { createUiFixtures } from "./ui-fixtures";
 
 async function mockSnapshots(page: Page) {
@@ -157,23 +156,17 @@ for (const [path, label, list] of [
 	});
 }
 
-test("insights ranks repositories to watch with AI, CI and alert reasons", async ({ page }) => {
+test("insights keeps deterministic CI and alert reasons separate from Agent analysis", async ({
+	page,
+}) => {
 	await page.goto("/insights");
-	const focus = page.getByRole("list", { name: "Top 10 关注仓库" });
-	await expect(focus).toBeVisible();
-	const first = focus.locator(":scope > li").first();
-	await expect(first.getByRole("link", { name: /octocat\/basalt/ })).toHaveAttribute(
+	await expect(page.getByRole("list", { name: "Top 10 关注仓库" })).toBeVisible();
+	await expect(page.getByTestId("insight-focus")).toContainText("Release 连续 2 次失败");
+	await expect(page.getByRole("link", { name: /查看本地 Agent/ })).toHaveAttribute(
 		"href",
-		"/repos/octocat/basalt",
+		"/analysis",
 	);
-	await expect(first).toContainText("优先处理");
-	await expect(first).toContainText("AI 总评：优先处理");
-	await expect(first).toContainText("立即：修复共享控件中的权限绕过");
-	await expect(focus).toContainText("Release 连续 2 次失败");
-	await expect(page.getByRole("list", { name: "跨仓发现" })).toContainText(
-		"AI 将 1 个仓库评为优先处理",
-	);
-	await expect(page.getByTestId("insight-focus")).toBeVisible();
+	await expect(page.getByText("AI 总评：优先处理")).toHaveCount(0);
 });
 
 test("marking a notification shows progress and applies the returned unread state", async ({
@@ -508,35 +501,4 @@ test("CI page separates consecutive failures from recurring ones and filters the
 	const releases = page.getByTestId("release-list");
 	await expect(releases.getByRole("row").nth(1)).toContainText("v2.1.0");
 	await expect(releases.getByRole("row").nth(1)).toContainText("连续失败");
-});
-
-test("optional Jev can be disabled and restored without replacing the key on narrow screens", async ({
-	page,
-}) => {
-	await page.setViewportSize({ width: 390, height: 844 });
-	let saved = { ...defaultAiSettings("judgment"), hasApiKey: true };
-	await page.route("**/api/ai/settings", (route) =>
-		route.fulfill({ json: { settings: [defaultAiSettings("summary"), saved] } }),
-	);
-	await page.route("**/api/ai/settings/judgment", async (route) => {
-		const body = route.request().postDataJSON();
-		expect(body.apiKey).toBe("");
-		saved = { ...saved, enabled: body.enabled };
-		await route.fulfill({ json: saved });
-	});
-	await page.goto("/settings");
-	const card = page.getByTestId("ai-judgment-card");
-	const toggle = card.getByRole("switch", { name: "报告生成前使用 JEV 判断" });
-	await expect(toggle).toBeChecked();
-	await toggle.click();
-	await card.getByRole("button", { name: "保存配置", exact: true }).click();
-	await expect(card.getByText("已停用", { exact: true })).toBeVisible();
-	await page.reload();
-	await expect(toggle).not.toBeChecked();
-	await toggle.click();
-	await card.getByRole("button", { name: "保存配置", exact: true }).click();
-	await expect(card.getByText("已配置", { exact: true })).toBeVisible();
-	const bounds = await card.boundingBox();
-	expect(bounds).not.toBeNull();
-	expect((bounds?.x ?? 0) + (bounds?.width ?? 0)).toBeLessThanOrEqual(390);
 });

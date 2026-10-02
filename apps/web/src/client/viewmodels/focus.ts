@@ -1,13 +1,11 @@
-import type { AssessmentDigest, AssessmentDigests } from "../../lib/assessment-digest";
 import type { CiRepo, CiStream } from "./ci";
 import { loadCi } from "./ci";
 import type { InsightRow } from "./insights";
 import type { IssueRow } from "./issues";
 import type { PullRow } from "./pulls";
-import { getRepositoryScope, scopedResource } from "./scope";
-import { loadKind } from "./snapshot";
+import { getRepositoryScope } from "./scope";
 
-export type FocusCategory = "security" | "delivery" | "review" | "issues" | "ai" | "activity";
+export type FocusCategory = "security" | "delivery" | "review" | "issues" | "activity";
 export type FocusReason = { category: FocusCategory; weight: number; text: string };
 export type FocusRepo = {
 	repo: string;
@@ -15,11 +13,6 @@ export type FocusRepo = {
 	level: "urgent" | "attention" | "watch";
 	primary: FocusCategory;
 	reasons: FocusReason[];
-	ai: {
-		overall: AssessmentDigest["overall"];
-		current: boolean;
-		status: AssessmentDigest["status"];
-	} | null;
 	issues: number;
 	pulls: number;
 	days: number;
@@ -29,7 +22,6 @@ export type FocusSources = {
 	issues: IssueRow[] | null;
 	pulls: PullRow[] | null;
 	ci: { repos: CiRepo[]; streams: CiStream[] } | null;
-	assessments: AssessmentDigests | null;
 	fetchedAt: string;
 };
 
@@ -44,35 +36,7 @@ export const FOCUS_CATEGORY: Record<FocusCategory, string> = {
 	delivery: "交付",
 	review: "审查",
 	issues: "Issue",
-	ai: "AI 评估",
 	activity: "活跃度",
-};
-
-export const QUESTION_LABEL: Record<string, string> = {
-	security_urgency: "安全风险",
-	external_pr_review: "外部 PR 审查",
-	unusual_pr_risk: "非常规变更",
-	blocking_issues: "阻塞性 Issue",
-	delivery_cadence: "交付节奏",
-	review_backlog: "PR 审查积压",
-	delivery_reliability: "交付可靠性",
-	issue_flow: "Issue 处理进展",
-};
-const SECTION: Record<keyof NonNullable<AssessmentDigest["sections"]>, [FocusCategory, string]> = {
-	security: ["security", "安全"],
-	pullRequests: ["review", "PR"],
-	issues: ["issues", "Issue"],
-	delivery: ["delivery", "交付"],
-};
-const QUESTION_CATEGORY: Record<string, FocusCategory> = {
-	security_urgency: "security",
-	external_pr_review: "review",
-	unusual_pr_risk: "review",
-	blocking_issues: "issues",
-	delivery_cadence: "delivery",
-	review_backlog: "review",
-	delivery_reliability: "delivery",
-	issue_flow: "issues",
 };
 
 const ageDays = (now: number, at: string) => Math.max(0, Math.floor((now - Date.parse(at)) / DAY));
@@ -86,56 +50,6 @@ function group<T>(rows: T[] | null, repo: (row: T) => string): Map<string, T[]> 
 		map.set(k, [...(map.get(k) ?? []), row]);
 	}
 	return map;
-}
-
-function aiReasons(a: AssessmentDigest): FocusReason[] {
-	const out: FocusReason[] = [];
-	const stale = a.current ? "" : "（基于旧版本）";
-	const scale = a.current ? 1 : 0.6;
-	if (a.status === "failed")
-		out.push({ category: "ai", weight: 6, text: "AI 评估失败，结论缺失需人工查看" });
-	if (a.overall === "urgent")
-		out.push({ category: "ai", weight: 40 * scale, text: `AI 总评：优先处理${stale}` });
-	else if (a.overall === "attention")
-		out.push({ category: "ai", weight: 18 * scale, text: `AI 总评：需要关注${stale}` });
-	for (const [field, [category, label]] of Object.entries(SECTION) as [
-		keyof typeof SECTION,
-		[FocusCategory, string],
-	][]) {
-		const status = a.sections?.[field];
-		if (status === "urgent")
-			out.push({ category, weight: 10 * scale, text: `AI 判定${label}需优先处理` });
-		else if (status === "attention")
-			out.push({ category, weight: 4 * scale, text: `AI 判定${label}需要关注` });
-	}
-	if (a.trend === "slowing")
-		out.push({ category: "delivery", weight: 5 * scale, text: "AI 观察到交付放缓" });
-	a.actions.forEach((action, i) => {
-		out.push({
-			category: "ai",
-			weight: (action.priority === "now" ? 12 : 4) * scale * (i < 2 ? 1 : 0.5),
-			text: `${action.priority === "now" ? "立即" : "接下来"}：${action.title}`,
-		});
-	});
-	let urgent = 0;
-	let review = 0;
-	for (const flag of a.flags) {
-		const label = QUESTION_LABEL[flag.id] ?? "单项事项";
-		const category = QUESTION_CATEGORY[flag.id] ?? "ai";
-		if (flag.choice === "urgent" && urgent++ < 3)
-			out.push({
-				category,
-				weight: (flag.uncertain ? 6 : 10) * scale,
-				text: `Jev：${label}需立即处理${flag.uncertain ? "（低置信）" : ""}`,
-			});
-		else if (flag.choice === "review" && review++ < 3)
-			out.push({
-				category,
-				weight: (flag.uncertain ? 1.5 : 3) * scale,
-				text: `Jev：${label}需人工判断`,
-			});
-	}
-	return out;
 }
 
 function ciReasons(repo: CiRepo | undefined, streams: CiStream[]): FocusReason[] {
@@ -253,15 +167,12 @@ export function focusRanking(src: FocusSources, limit = FOCUS_LIMIT): FocusRepo[
 		(src.ci?.streams ?? []).filter((s) => s.scope !== "bot"),
 		(s) => s.repo,
 	);
-	const ai = new Map((src.assessments?.items ?? []).map((a) => [key(a.repo), a]));
 	const ranked: FocusRepo[] = [];
 	for (const row of src.rows) {
 		const k = key(row.name_with_owner);
 		const repoIssues = issues.get(k) ?? [];
 		const repoPulls = pulls.get(k) ?? [];
-		const assessment = ai.get(k);
 		const reasons = [
-			...(assessment ? aiReasons(assessment) : []),
 			...ciReasons(ciRepos.get(k), streams.get(k) ?? []),
 			...workReasons(row, repoIssues, repoPulls, now),
 		].sort((a, b) => b.weight - a.weight);
@@ -270,18 +181,14 @@ export function focusRanking(src: FocusSources, limit = FOCUS_LIMIT): FocusRepo[
 		const byCategory = new Map<FocusCategory, number>();
 		for (const r of reasons)
 			byCategory.set(r.category, (byCategory.get(r.category) ?? 0) + r.weight);
-		// "AI" is a source, not a domain; name the concrete area whenever one carries weight.
-		const domains = [...byCategory].filter(([c]) => c !== "ai").sort((a, b) => b[1] - a[1]);
-		const primary = domains[0]?.[0] ?? "ai";
+		const domains = [...byCategory].sort((a, b) => b[1] - a[1]);
+		const primary = domains[0]?.[0] ?? "activity";
 		ranked.push({
 			repo: row.name_with_owner,
 			score,
 			level: levelOf(score, reasons),
 			primary,
 			reasons,
-			ai: assessment
-				? { overall: assessment.overall, current: assessment.current, status: assessment.status }
-				: null,
 			issues: src.issues ? repoIssues.length : row.open_issue_count,
 			pulls: repoPulls.length,
 			days: row.days_since_push,
@@ -308,9 +215,6 @@ export function focusFindings(src: FocusSources): Finding[] {
 		r.alerts.some((a) => a.severity === "critical" || a.severity === "high"),
 	);
 	if (high.length) out.push({ tone: "red", text: `${high.length} 个仓库存在高危或严重安全告警` });
-	const items = src.assessments?.items ?? [];
-	const urgent = items.filter((a) => a.overall === "urgent").length;
-	if (urgent) out.push({ tone: "red", text: `AI 将 ${urgent} 个仓库评为优先处理` });
 	if (src.issues?.length) {
 		const deps = src.issues.filter((i) => i.labels.some((l) => DEPENDENCY_LABEL.test(l.name)));
 		const share = deps.length / src.issues.length;
@@ -360,33 +264,8 @@ export function focusFindings(src: FocusSources): Finding[] {
 			tone: "gray",
 			text: `${quiet} 个参与统计的仓库超过 90 天未推送，可考虑归档或排除出统计`,
 		});
-	if (src.assessments?.configured) {
-		const stale = items.filter((a) => !a.current && a.status !== "failed").length;
-		const failed = items.filter((a) => a.status === "failed").length;
-		const missing = repos - items.length;
-		const gaps = [
-			missing > 0 ? `${missing} 个没有报告` : "",
-			stale ? `${stale} 个基于旧版本` : "",
-			failed ? `${failed} 个失败` : "",
-		].filter(Boolean);
-		if (gaps.length)
-			out.push({
-				tone: "gray",
-				text: `AI 评估覆盖不完整：${gaps.join("，")}；刷新仓库后会重新评估`,
-			});
-	}
-	return out;
-}
 
-export function aiCoverage(src: FocusSources) {
-	const items = src.assessments?.items ?? [];
-	return {
-		configured: src.assessments?.configured === true,
-		current: items.filter((a) => a.current).length,
-		stale: items.filter((a) => !a.current && a.status !== "failed" && a.overall).length,
-		failed: items.filter((a) => a.status === "failed").length,
-		total: src.rows.length,
-	};
+	return out;
 }
 
 async function optional<T>(load: () => Promise<T | { missing: true }>): Promise<T | null> {
@@ -398,11 +277,7 @@ async function optional<T>(load: () => Promise<T | { missing: true }>): Promise<
 	}
 }
 
-/** Optional enrichments: missing CI or AI data narrows the evidence, never blocks the page. */
+/** Saved deterministic CI facts stay independent of local Agent analysis. */
 export async function loadFocusSources(scope = getRepositoryScope()) {
-	const [ci, assessments] = await Promise.all([
-		optional(() => loadCi(scope)),
-		optional(() => loadKind<AssessmentDigests>(scopedResource("insights/assessments", scope))),
-	]);
-	return { ci, assessments };
+	return { ci: await optional(() => loadCi(scope)) };
 }

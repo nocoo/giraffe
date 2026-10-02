@@ -1,4 +1,3 @@
-import { defaultAiSettings } from "../../apps/web/src/lib/ai-settings";
 import { ciReport } from "../../apps/web/src/lib/ci-health";
 
 const fetchedAt = "2026-09-08T08:30:00.000Z";
@@ -78,7 +77,6 @@ export function createUiFixtures() {
 	);
 	const repoPath = "/api/repos/octocat/hello-world";
 	return {
-		"/api/ai/settings": { settings: [defaultAiSettings("summary"), defaultAiSettings("judgment")] },
 		"/api/me": { name: "演示账号", email: "demo@example.test", avatar: null },
 		"/api/accounts": {
 			accounts: [
@@ -107,29 +105,7 @@ export function createUiFixtures() {
 				opportunities: [],
 			})),
 		},
-		"/api/insights/assessments": {
-			...envelope,
-			configured: true,
-			items: [
-				{
-					repo: "octocat/basalt",
-					status: "complete",
-					current: true,
-					reportAt: fetchedAt,
-					overall: "urgent",
-					sections: {
-						security: "urgent",
-						pullRequests: "healthy",
-						issues: "attention",
-						delivery: "healthy",
-					},
-					trend: "steady",
-					actions: [{ priority: "now", title: "修复共享控件中的权限绕过" }],
-					flags: [{ id: "security_urgency", choice: "urgent", uncertain: false }],
-					error: null,
-				},
-			],
-		},
+
 		"/api/alerts": {
 			...envelope,
 			unavailable: false,

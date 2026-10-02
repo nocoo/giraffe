@@ -20,7 +20,7 @@ it("updates global pages and explicitly derives Insights before repository colle
 	expect(run.steps[6]?.kind).toBe("contributions");
 	expect(run.steps[7]).toMatchObject({ kind: "metadata", repo: "nocoo/app" });
 });
-it("tracks one AI assessment per selected statistics repository before publication", () => {
+it("publishes collected repositories without scheduling cloud analysis", () => {
 	const run = makeRun(
 		"ai",
 		"a",
@@ -32,12 +32,9 @@ it("tracks one AI assessment per selected statistics repository before publicati
 		[],
 		["nocoo/app", "org/other"],
 	);
-	const assessment = run.steps.findIndex((step) => step.kind === "assessment");
-	expect(run.steps.filter((step) => step.kind === "assessment").map((step) => step.repo)).toEqual([
-		"nocoo/app",
-	]);
-	expect(assessment).toBeGreaterThan(run.steps.map((step) => step.kind).lastIndexOf("snapshot"));
-	expect(run.steps[assessment + 1]?.kind).toBe("publish");
+	expect(run.steps.map((step) => step.kind)).not.toContain("assessment");
+	expect(run.steps.at(-2)?.kind).toBe("snapshot");
+	expect(run.steps.at(-1)?.kind).toBe("publish");
 });
 describe("frozen refresh plans", () => {
 	it("freezes selected order, scope, window and logical total independently of page counts", () => {
@@ -50,15 +47,15 @@ describe("frozen refresh plans", () => {
 		const run = makeRun("run", snapshot.account_id, "nocoo", "request", "refresh", selection, now);
 		selection.reverse();
 		expect(run.repos).toEqual(["nocoo/two", "nocoo/app"]);
-		expect(run.steps).toHaveLength(46);
+		expect(run.steps).toHaveLength(44);
 		expect(run.steps.find((step) => step.kind === "metadata")).toMatchObject({ repo: "nocoo/two" });
 		run.requests = 900;
-		expect(runProgress(run, now)).toMatchObject({ total: 46, completed: 0, etaSeconds: null });
+		expect(runProgress(run, now)).toMatchObject({ total: 44, completed: 0, etaSeconds: null });
 		Object.assign(run.steps[0] ?? {}, { status: "success", durationMs: 1000 });
 		Object.assign(run.steps[1] ?? {}, { status: "failed" });
 		Object.assign(run.steps[2] ?? {}, { status: "skipped" });
 		expect(runProgress(run, now)).toMatchObject({
-			total: 46,
+			total: 44,
 			completed: 3,
 			success: 1,
 			failed: 1,
@@ -103,7 +100,7 @@ describe("frozen refresh plans", () => {
 				nextAllowedAt: "2999-01-01T00:00:00.000Z",
 			},
 		]);
-		expect(runProgress(r, now).skipped).toBe(10);
+		expect(runProgress(r, now).skipped).toBe(9);
 		expect(makeRun("r", "a", "nocoo", "k", "catalog", [], now).steps.map((s) => s.kind)).toEqual([
 			"inventory",
 			"snapshot",
@@ -185,7 +182,7 @@ it.each(["selected", "filter", "stale", "failed"] as const)(
 			scope,
 		});
 		expect(run.siteRepos).toEqual(["nocoo/app"]);
-		expect(run.steps).toHaveLength(20);
+		expect(run.steps).toHaveLength(19);
 		expect(run.steps.filter((step) => step.kind === "snapshot")).toHaveLength(9);
 		expect(run.steps.filter((step) => step.repo === null).map((step) => step.kind)).toEqual([
 			"publish",

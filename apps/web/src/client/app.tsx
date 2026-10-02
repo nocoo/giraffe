@@ -7,6 +7,10 @@ import { BusinessOutlet } from "./components/layout/repository-scope";
 import { APP_PATHS, type AppPath } from "./lib/routes";
 import { AuthorizePage } from "./routes/authorize";
 
+const AnalysisPage = lazy(() =>
+	import("./routes/analysis").then((m) => ({ default: m.AnalysisPage })),
+);
+
 const RefreshPage = lazy(() =>
 	import("./routes/factory-runs").then((m) => ({ default: m.RefreshPage })),
 );
@@ -66,6 +70,7 @@ function RouterLink({
 const PAGES: Record<(typeof APP_PATHS)[number], ReactNode> = {
 	"/": <ReposPage />,
 	"/factory": <FactoryPage />,
+	"/analysis": <AnalysisPage />,
 	"/refresh": <RefreshPage />,
 	"/issues": <IssuesPage />,
 	"/pulls": <PullsPage />,
@@ -78,7 +83,13 @@ const PAGES: Record<(typeof APP_PATHS)[number], ReactNode> = {
 	"/authorize": <AuthorizePage />,
 };
 
-const standalone = new Set<AppPath>(["/refresh", "/repos/:owner/:name", "/settings", "/authorize"]);
+const standalone = new Set<AppPath>([
+	"/refresh",
+	"/repos/:owner/:name",
+	"/settings",
+	"/authorize",
+	"/analysis",
+]);
 
 function pageRoutes(paths: readonly AppPath[]) {
 	return paths.map((path) => (

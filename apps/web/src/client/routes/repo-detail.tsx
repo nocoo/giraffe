@@ -2,6 +2,7 @@ import {
 	Avatar,
 	AvatarFallback,
 	AvatarImage,
+	Button,
 	Link,
 	Tabs,
 	TabsContent,
@@ -97,10 +98,10 @@ import {
 	trafficForbidden,
 	trafficPoints,
 } from "../viewmodels/repo-detail";
-import { RepoAssessmentPanel } from "./repo-assessment";
+
 import { ReleaseTimeline, RepoActivityChart, RunOutcomeChart } from "./repo-charts";
 
-type DetailTab = RepoTab | "assessment";
+type DetailTab = RepoTab | "analysis";
 
 async function fetchTab<T extends { account_id: string }>(
 	owner: string,
@@ -150,7 +151,7 @@ export function RepoDetailPage() {
 		async () => ({
 			key: `${owner}/${name}/${tab}`,
 			value:
-				tab === "assessment"
+				tab === "analysis"
 					? null
 					: await fetchTab<
 							| RepoDetails
@@ -197,7 +198,7 @@ export function RepoDetailPage() {
 			}
 		},
 		() => undefined,
-		valid && tab !== "assessment",
+		valid && tab !== "analysis",
 		false,
 	);
 
@@ -253,7 +254,7 @@ export function RepoDetailPage() {
 	}, [owner, name, valid]);
 
 	useEffect(() => {
-		if (!valid || tab === "assessment") {
+		if (!valid || tab === "analysis") {
 			return;
 		}
 		const snapshotTab = tab;
@@ -382,7 +383,7 @@ export function RepoDetailPage() {
 	}
 
 	const activeSnapshot =
-		tab === "assessment"
+		tab === "analysis"
 			? null
 			: tab === "details"
 				? snap
@@ -452,9 +453,9 @@ export function RepoDetailPage() {
 							<Box className="size-3.5" aria-hidden="true" />
 							概览
 						</TabsTrigger>
-						<TabsTrigger value="assessment" className="gap-1.5 whitespace-nowrap">
+						<TabsTrigger value="analysis" className="gap-1.5 whitespace-nowrap">
 							<Sparkles className="size-3.5" aria-hidden="true" />
-							AI 评估
+							Agent 分析
 						</TabsTrigger>
 						<TabsTrigger value="security" className="gap-1.5 whitespace-nowrap">
 							<ShieldAlert className="size-3.5" aria-hidden="true" />
@@ -490,9 +491,21 @@ export function RepoDetailPage() {
 						</TabsTrigger>
 					</TabsList>
 				</ScrollArea>
-				<TabsContent value="assessment">
-					{tab === "assessment" ? (
-						<RepoAssessmentPanel key={`${owner}/${name}`} owner={owner} name={name} />
+				<TabsContent value="analysis">
+					{tab === "analysis" ? (
+						<LayerCard>
+							<LayerCard.Empty
+								title="本地 Agent 分析"
+								description="查看 Issues、PR、CI 和 CD 的来源、判断与待办，不再在云端运行模型。"
+								action={
+									<Button asChild>
+										<Link href={`/analysis?repo=${encodeURIComponent(`${owner}/${name}`)}`}>
+											打开仓库分析台
+										</Link>
+									</Button>
+								}
+							/>
+						</LayerCard>
 					) : null}
 				</TabsContent>
 				<TabsContent value="details">

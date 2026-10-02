@@ -141,13 +141,7 @@ test("defaults to starred, updates totals and charts, retains session selection 
 	await expect(page.getByTestId("insight-metrics")).toContainText("1个 open Issue");
 	await expect(page.getByTestId("insight-metrics")).toContainText("0个 open PR");
 	expect(requests.filter((request) => request.method !== "GET")).toEqual([]);
-	for (const pathname of [
-		"/api/issues",
-		"/api/insights",
-		"/api/prs",
-		"/api/ci",
-		"/api/insights/assessments",
-	]) {
+	for (const pathname of ["/api/issues", "/api/insights", "/api/prs", "/api/ci"]) {
 		expect(
 			requests.some((request) => request.pathname === pathname && request.scope === "starred"),
 		).toBe(true);

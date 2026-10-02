@@ -83,6 +83,51 @@ it("fails closed at storage limits and for missing publication input", async () 
 		code: "snapshot_missing",
 	});
 });
+
+it.each([false, true])(
+	"publishes observations without creating or changing cloud AI rows (saved review: %s)",
+	async (savedReview) => {
+		const { db, lease, repo } = await setup();
+		await db
+			.prepare(
+				"INSERT INTO ai_settings(kind,api_key_ciphertext,key_version,model,base_url,sdk_type,auth_type,updated_at) VALUES('summary','encrypted',1,'fake','https://models.example.test','openai','apiKey','old')",
+			)
+			.run();
+		await db.prepare("INSERT INTO ai_provider_options(kind,enabled) VALUES('summary',1)").run();
+		if (savedReview) {
+			await db
+				.prepare(
+					"INSERT INTO ai_reviews(account_id,repo,job_id,source_version,source_at,stage,report,report_version,next_at) VALUES(?,?,'old-job','old-source',?,'summary','{\"saved\":true}','old-source',?)",
+				)
+				.bind(snap.account_id, repo.name, now, now)
+				.run();
+			await db
+				.prepare(
+					"INSERT INTO ai_review_attempts(job_id,stage,attempt,source_version,error,diagnostic,recorded_at) VALUES('old-job','summary',1,'old-source','ai_error','{}',?)",
+				)
+				.bind(now)
+				.run();
+		}
+		const tables = ["ai_settings", "ai_provider_options", "ai_reviews", "ai_review_attempts"];
+		const previous = await Promise.all(
+			tables.map((table) => db.prepare(`SELECT * FROM ${table}`).all()),
+		);
+		repo.observation = {
+			version: lease.run.id,
+			window: lease.run.window,
+			refreshedAt: now,
+			source: "run",
+		};
+		const writes = await repositoryWrites(db, lease, now, repo, repo.name, null);
+		expect(await saveRun(db, lease, writes, now)).toBe(true);
+		expect((await currentRepo(db, snap.account_id, repo.name))?.observation?.version).toBe(
+			lease.run.id,
+		);
+		expect(
+			await Promise.all(tables.map((table) => db.prepare(`SELECT * FROM ${table}`).all())),
+		).toEqual(previous);
+	},
+);
 it("does not overwrite a published global version when updating only the catalog", async () => {
 	const { db, lease, repo } = await setup();
 	await db.batch(replaceSnapshotStmts(db, snap.account_id, "factory:v:existing", { ...snap }, now));

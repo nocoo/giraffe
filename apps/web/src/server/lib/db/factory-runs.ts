@@ -255,8 +255,7 @@ export async function controlRun(
 	if (
 		action !== "resume" &&
 		current?.repo &&
-		current.kind !== "snapshot" &&
-		current.kind !== "assessment" &&
+		!["snapshot", "assessment"].includes(current.kind) &&
 		run.steps.some((s) => s.repo === current.repo && s.startedAt)
 	) {
 		const prior = await db

@@ -120,7 +120,6 @@ describe("repository scope", () => {
 			issues: { fetched_at: freshness.latestAt, freshness, issues: [] },
 			pulls: { fetched_at: freshness.latestAt, freshness, pull_requests: [] },
 			ci: { fetched_at: freshness.latestAt, freshness },
-			assessments: { fetched_at: freshness.latestAt, freshness },
 		});
 		const reads = requests.filter((url) => url.pathname !== "/api/accounts");
 		expect(new Set(reads.map((url) => url.pathname))).toEqual(
@@ -133,7 +132,6 @@ describe("repository scope", () => {
 				"/api/ci",
 				"/api/factory",
 				"/api/insights",
-				"/api/insights/assessments",
 			]),
 		);
 		expect(reads.every((url) => url.searchParams.get("scope") === "starred")).toBe(true);

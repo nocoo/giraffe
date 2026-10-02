@@ -80,7 +80,6 @@ it("shows only repository statistics, details and publication for a scoped run",
 	expect(runStages(view).map((stage) => [stage.title, stage.total])).toEqual([
 		["工厂统计", 9],
 		["仓库页面", 9],
-		["AI 分析", 1],
 		["更新页面", 1],
 	]);
 	expect(runRepositoryRows(view, []).map((row) => row.repo)).toEqual(["nocoo/app"]);
@@ -106,56 +105,10 @@ const state: FactoryRunResponse = {
 	nextAllowedAt: null,
 	publication: null,
 };
-it("shows AI stages and keeps an unconfigured skip out of refresh warnings", () => {
-	const plan = structuredClone(run);
-	for (const step of plan.steps) step.status = "success";
-	const ai = plan.steps.find((step) => step.kind === "assessment");
-	if (!ai) throw new Error("AI step missing");
-	expect(stepLabel(ai)).toBe("AI 分析");
-	ai.assessmentStage = "judgment";
-	expect(stepLabel(ai)).toContain("JEV 判断");
-	ai.assessmentStage = "summary";
-	expect(stepLabel(ai)).toContain("生成报告");
-	ai.status = "running";
-	expect(
-		runRepositoryRows(
-			{ ...plan, leaseUntil: null, progress: runProgress(plan, snap.fetched_at) },
-			[],
-		)[0]?.label,
-	).toBe("正在分析");
-	ai.status = "skipped";
-	ai.error = "ai_not_configured";
-	const view = { ...plan, leaseUntil: null, progress: runProgress(plan, snap.fetched_at) };
-	expect(runIssues(view)).toEqual([]);
-	expect(runRepositoryRows(view, [])[0]).toMatchObject({
-		status: "success",
-		label: "刷新完成（AI 未配置）",
-	});
-	expect(runStages(view).find((stage) => stage.title === "AI 分析")).toMatchObject({
-		total: 1,
-		skipped: 1,
-		completed: 1,
-	});
-	expect(describeRunIssue(ai.error, ai.kind)).toMatchObject({ settings: true });
-	ai.status = "failed";
-	ai.error = "ai_error";
-	expect(runRepositoryRows(view, [])[0]?.label).toBe("数据已更新，AI 分析未完成");
-	expect(runIssues(view)[0]?.impact).toContain("仓库数据");
-	for (const code of ["ai_capacity", "ai_source_missing", "factory_capacity"])
-		expect(describeRunIssue(code, "assessment").impact).toContain("数据");
-});
-it.each([
-	["ai_input_too_large", "上下文", false],
-	["ai_request_rejected", "请求", true],
-	["ai_auth_failed", "权限", true],
-	["ai_timeout", "超时", false],
-	["ai_rate_limited", "请求频率", false],
-	["ai_invalid_judgment", "校验", false],
-	["ai_invalid_report", "校验", false],
-])("explains %s without exposing provider diagnostics", (code, reason, settings) => {
-	expect(describeRunIssue(code as string, "assessment")).toMatchObject({
-		reason: expect.stringContaining(reason as string),
-		settings,
+it("explains retired cloud analysis without offering model settings", () => {
+	expect(describeRunIssue("cloud_ai_retired", "publish")).toMatchObject({
+		settings: false,
+		action: expect.stringContaining("分析台"),
 	});
 });
 beforeEach(() => {
@@ -228,7 +181,7 @@ it("reports only actual step completion and server-clock cooldowns", () => {
 	expect(runRepositoryRows(state.current, state.repositories)[0]).toMatchObject({
 		repo: "nocoo/app",
 		completed: 0,
-		total: 19,
+		total: 18,
 		status: "pending",
 	});
 	expect(runRepositoryRows(null, [])).toEqual([]);
@@ -294,7 +247,7 @@ it("derives repository outcome from persisted steps, retaining last success time
 			},
 		]);
 		expect(rows[0]?.status).toBe(status);
-		expect(rows[0]?.durationMs).toBe(19000);
+		expect(rows[0]?.durationMs).toBe(18000);
 		expect(rows[0]?.state?.refreshedAt).toBe(snap.fetched_at);
 	}
 });
@@ -374,7 +327,6 @@ it("separates a finished refresh from missing data and groups the same problem a
 		["账号贡献", 1, 1],
 		["工厂统计", 18, 18],
 		["仓库页面", 18, 18],
-		["AI 分析", 2, 2],
 		["更新页面", 1, 1],
 	]);
 	const problems = runIssues(view);
@@ -542,7 +494,7 @@ it("groups a cooldown once per repository and distinguishes stopped work from qu
 			.filter((step) => step.kind === "snapshot")
 			.every((step) => step.status === "pending"),
 	).toBe(true);
-	expect(runIssues(view)).toMatchObject([{ kind: "metadata", repos: ["nocoo/app"], count: 10 }]);
+	expect(runIssues(view)).toMatchObject([{ kind: "metadata", repos: ["nocoo/app"], count: 9 }]);
 	for (const step of view.steps) if (step.kind === "snapshot") step.status = "success";
 	expect(runRepositoryRows(view, [])[0]).toMatchObject({
 		status: "skipped",

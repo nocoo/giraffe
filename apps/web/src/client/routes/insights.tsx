@@ -20,7 +20,7 @@ import { chartColor } from "../lib/chart-theme";
 import { catchLoad } from "../lib/error-ui";
 import { formatCount } from "../lib/format";
 import { PAGE_DESCRIPTIONS } from "../lib/navigation";
-import { aiCoverage, focusFindings, focusRanking } from "../viewmodels/focus";
+import { focusFindings, focusRanking } from "../viewmodels/focus";
 import {
 	buildInsightsCharts,
 	healthTiles,
@@ -90,10 +90,9 @@ export function InsightsPage() {
 			issues: board.issues?.issues ?? null,
 			pulls: board.pulls?.pull_requests ?? null,
 			ci: board.ci,
-			assessments: board.assessments,
 			fetchedAt: board.insights.fetched_at,
 		};
-		return { ranked: focusRanking(src), findings: focusFindings(src), coverage: aiCoverage(src) };
+		return { ranked: focusRanking(src), findings: focusFindings(src) };
 	}, [board]);
 
 	if (board && "missing" in board) {
@@ -152,11 +151,6 @@ export function InsightsPage() {
 									freshness: board.pulls?.freshness,
 								},
 								{ label: "CI 与发布", at: board.ci?.fetched_at, freshness: board.ci?.freshness },
-								{
-									label: "AI 报告",
-									at: board.assessments?.fetched_at,
-									freshness: board.assessments?.freshness,
-								},
 							]}
 						/>
 					</>
@@ -164,6 +158,9 @@ export function InsightsPage() {
 			/>
 			<ScopeEmpty count={board.insights.insights.length} />
 			<FocusSection {...focus} />
+			<Link href="/analysis" className="inline-flex text-sm">
+				查看本地 Agent 分析与证据 →
+			</Link>
 			<SectionRule title={<IconLabel icon={Layers3}>工作量</IconLabel>}>
 				<div className="space-y-3" data-testid="insight-metrics">
 					<p className="giraffe-stat-inline">
