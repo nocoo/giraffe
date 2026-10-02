@@ -22,7 +22,7 @@ const progress: RepairProgress = {
 	startedAt: at,
 	updatedAt: at,
 	sequence: 3,
-	reason: "Verified sandbox unavailable. Docker daemon is not running.",
+	reason: "Required local npm/Bun tool or repository check profile is not configured.",
 	plan: {
 		decision: "repair",
 		reason: "Explicit dependency upgrade request.",
@@ -142,6 +142,9 @@ for (const width of [1440, 390])
 			await expect(page.getByText("守护进程离线", { exact: true })).toBeVisible();
 			await expect(page.getByRole("button", { name: "恢复调度", exact: true })).toBeEnabled();
 			await expect(page.getByText("本机授权：未启用")).toBeVisible();
+			await expect(page.getByText(/脚本与 Git hooks 直接在本机执行/)).toBeAttached();
+			await expect(page.locator("body")).not.toContainText("沙箱");
+			await expect(page.locator("body")).not.toContainText("Docker");
 			expect(await page.locator("body").evaluate((el) => el.scrollWidth)).toBeLessThanOrEqual(
 				width,
 			);

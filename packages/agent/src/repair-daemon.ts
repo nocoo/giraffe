@@ -8,7 +8,6 @@ import type { IssueCandidate } from "./repair-contracts.ts";
 import { repairDecision } from "./repair-decision.ts";
 import { createRepairEngine } from "./repair-engine.ts";
 import { repairModels } from "./repair-models.ts";
-import { dockerSandbox, hostGitTransport } from "./repair-sandbox.ts";
 import { dependencyCandidates, packageTarget, verifyLiveIssue } from "./repair-source.ts";
 import { repairTelemetry } from "./repair-telemetry.ts";
 import { WorkspaceDriver } from "./repair-workspace.ts";
@@ -34,8 +33,7 @@ export async function repairDaemon(options: {
 	const telemetry = repairTelemetry(client);
 	const driver = new WorkspaceDriver({
 		profiles: config.repairs.profiles,
-		gitTransport: hostGitTransport,
-		...(config.repairs.sandbox ? { sandbox: dockerSandbox(config.repairs.sandbox.image) } : {}),
+		registry: config.repairs.registry,
 	});
 	let engine: ReturnType<typeof createRepairEngine>;
 	const models = repairModels({
@@ -58,15 +56,9 @@ export async function repairDaemon(options: {
 					reason:
 						"No trusted repository repair profile; configure checks, hooks and writable files locally.",
 				};
-			if (!config.repairs.sandbox)
-				return {
-					eligible: false,
-					reason: "No verified sandbox image configured; source discovery only, no edits or push.",
-				};
 			return decide(issue);
 		},
-		verifyPackage: (plan) =>
-			packageTarget(plan, config.repairs.sandbox?.registry ?? "https://mirrors.tencent.com/npm"),
+		verifyPackage: (plan) => packageTarget(plan, config.repairs.registry),
 		publish: telemetry.progress,
 		isPaused: telemetry.paused,
 		maxRounds: config.repairs.maxRounds,
@@ -75,9 +67,7 @@ export async function repairDaemon(options: {
 		prerequisite: (candidate) =>
 			!config.repairs.profiles[candidate.repository]
 				? "No trusted repository profile; configure checks, hooks and writable files locally."
-				: !config.repairs.sandbox
-					? "No isolated execution image configured; discovery only, no edits or push."
-					: null,
+				: null,
 		log,
 	});
 	const cron = await createCron({
@@ -100,7 +90,7 @@ export async function repairDaemon(options: {
 			}
 			const candidates = cycle?.candidates ?? [];
 			log(
-				`[发现] ${candidates.length} 个依赖升级候选，按仓库串行执行；未配置隔离环境或检查策略的仓库将阻塞。`,
+				`[发现] ${candidates.length} 个依赖升级候选，使用本机工具链串行执行；未配置仓库检查策略的任务将阻塞。`,
 			);
 			for (let index = cycle?.cursor ?? 0; index < candidates.length; index++) {
 				if (signal.aborted || (await telemetry.paused())) break;

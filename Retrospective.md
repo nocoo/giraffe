@@ -319,3 +319,36 @@ browser check before committing a selector correction.
 A broad monorepo string replacement accidentally changed browser `src` attribute assertions
 to the new source directory. Filesystem paths and DOM attribute names are different contracts:
 review every exact bare-string replacement and run the full browser suite before release.
+
+## 2026-10-03 - Keep repair execution native and explicit
+
+The first dependency-repair implementation made a Docker image, offline dependency
+caches, metadata sealing and a separate bare publication bridge prerequisites before
+one real repair had been accepted. This expanded the requested local workflow into
+an execution platform and left the usable path blocked. The owner explicitly chose
+ordinary local execution. Remove the obsolete adapter and configuration instead of
+maintaining two modes. Keep dedicated clones, configured checks, normal Git hooks,
+exact-code independent review and the 20-round bound. Do not describe native scripts
+as isolated: they run with the user's filesystem and network authority.
+
+The initial native runner prepended project binaries even for host-owned Git, only
+killed the direct subprocess, and used a no-op wrapper as a Husky activation fixture.
+Independent review caught all three. Keep host command lookup separate from npm/Bun
+script lookup, terminate the owned process group before returning, and test actual
+Husky-generated hooks with marker and failure assertions. Pass cancellation through
+installation and retain its resumable checkpoint rather than permanently blocking it.
+
+One injected test transport mapped the clone URL but missed the later `origin` push
+argument. It attempted a GitHub connection and failed during credential acquisition;
+no credentials were supplied and no remote mutation occurred. Map both forms and
+enforce `GIT_ALLOW_PROTOCOL=file` in the fixture Git helper. A temporary repository
+alone does not guarantee a network-free test. Final fixture evidence must remain
+separate from real-target execution or publication acceptance.
+
+Normal commit hooks then rejected the first attempt: process cleanup could signal
+the same process group from timeout, exit and close callbacks, and a macOS `EPERM`
+escaped an event listener. Signal the owned group once, never retry its reaped PID,
+and propagate a typed cleanup failure without touching the index or rolling files
+back while a process may still be active. The job must block for operator attention
+instead of starting another model round. Keep tests for single signalling, explicit
+permission failure and each descendant-cleanup mode; do not weaken or bypass hooks.

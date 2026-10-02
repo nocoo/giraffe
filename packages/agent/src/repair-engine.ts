@@ -13,6 +13,7 @@ import {
 	repairProgressSchema,
 	repairReviewSchema,
 } from "./repair-contracts.ts";
+import { LocalCleanupError } from "./repair-local.ts";
 import { assertSameIssue, LiveStateChanged } from "./repair-source.ts";
 import type {
 	CheckReceipt,
@@ -312,13 +313,14 @@ export function createRepairEngine(options: RepairEngineOptions) {
 							baseSha: issue.baseSha,
 							defaultBranch: issue.defaultBranch,
 						});
-					} catch {
+					} catch (error) {
+						if (error instanceof LocalCleanupError) throw error;
 						await change(
 							id,
 							(value) => {
 								value.progress.stage = "blocked";
 							},
-							"Workspace preparation blocked; verify profile, hooks and isolation.",
+							"Workspace preparation blocked; verify the repository profile and local Git setup.",
 						);
 						return (await get(id)).progress;
 					}
@@ -329,7 +331,7 @@ export function createRepairEngine(options: RepairEngineOptions) {
 							value.progress.branch = prepared.branch;
 							value.progress.stage = "planning";
 						},
-						"Isolated repair workspace prepared.",
+						"Dedicated repair workspace prepared.",
 					);
 				}
 				state = await get(id);
@@ -492,14 +494,17 @@ export function createRepairEngine(options: RepairEngineOptions) {
 									section: plan.section,
 									name: plan.dependency,
 									version: plan.targetVersion,
+									signal,
 								});
-							} catch {
+							} catch (error) {
+								if (error instanceof LocalCleanupError) throw error;
+								if (signal.aborted) return (await get(id)).progress;
 								await change(
 									id,
 									(value) => {
 										value.progress.stage = "blocked";
 									},
-									"Dependency installation blocked; sandbox or supported manifest prerequisites missing.",
+									"Dependency installation failed; verify the local package manager, registry and supported manifest.",
 								);
 								return (await get(id)).progress;
 							}
@@ -508,7 +513,7 @@ export function createRepairEngine(options: RepairEngineOptions) {
 								(value) => {
 									value.updatedDependency = true;
 								},
-								"Dependency manifest and lockfile updated with lifecycle scripts disabled.",
+								"Dependency manifest and lockfile updated using the local package manager.",
 							);
 						}
 						const work = await options.models.work({
@@ -551,6 +556,7 @@ export function createRepairEngine(options: RepairEngineOptions) {
 							signal,
 						});
 					} catch (error) {
+						if (error instanceof LocalCleanupError) throw error;
 						await change(
 							id,
 							(value) => {
@@ -605,6 +611,16 @@ export function createRepairEngine(options: RepairEngineOptions) {
 						review.summary,
 					);
 				}
+				return (await get(id)).progress;
+			} catch (error) {
+				if (!(error instanceof LocalCleanupError)) throw error;
+				await change(
+					id,
+					(value) => {
+						value.progress.stage = "blocked";
+					},
+					error.message,
+				);
 				return (await get(id)).progress;
 			} finally {
 				running = false;

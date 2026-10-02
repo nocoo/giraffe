@@ -1,5 +1,11 @@
+import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
+import { EventEmitter } from "node:events";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 
+vi.setConfig({ testTimeout: 20000 });
 const mocked = vi.hoisted(() => ({ execute: vi.fn(), input: vi.fn() }));
 vi.mock("node:child_process", async (original) => {
 	const actual = await original<typeof import("node:child_process")>();
@@ -12,93 +18,90 @@ vi.mock("node:child_process", async (original) => {
 			return promise;
 		},
 	});
-	return { ...actual, execFile: fake };
+	return { ...actual, execFile: fake, spawn: vi.fn(actual.spawn) };
 });
 
-import { dockerSandbox, hostGitTransport } from "./repair-sandbox.ts";
+import { hostGitTransport, LocalCleanupError, runLocal } from "./repair-local.ts";
 import { githubRead } from "./repair-source.ts";
 
 afterEach(() => {
+	vi.restoreAllMocks();
 	vi.clearAllMocks();
+	vi.unstubAllEnvs();
 });
-const workspace = {
-	path: "/isolated/repair",
-	id: "deps-1",
-	repository: "owner/repo",
-	branch: "giraffe/deps-1",
-	baseSha: "a".repeat(40),
-};
-it("isolates container filesystem, network and resources without model credentials", async () => {
-	mocked.execute.mockResolvedValue({ stdout: "passed", stderr: "" });
-	const runner = dockerSandbox("giraffe-tools:1");
-	const result = await runner.run({
-		workspace,
-		argv: ["npm", "install", "--ignore-scripts"],
-		purpose: "install",
-		timeoutMs: 1000,
-		signal: new AbortController().signal,
-	});
-	expect(result.exitCode).toBe(0);
-	const call = mocked.execute.mock.calls[0];
-	expect(call?.[0]).toBe("docker");
-	expect(call?.[1]).toContain("--network=none");
-	expect(call?.[1]).toContain("--offline");
-	expect(call?.[1]).toContain("--pids-limit=128");
-	expect(Object.keys(call?.[2].env)).toEqual(["PATH", "HOME"]);
-	await runner.run({
-		workspace,
-		argv: ["/isolated/repair/.husky/pre-push", "origin"],
-		purpose: "prepush",
-		stdin: "refs heads",
-		timeoutMs: 1000,
-	});
-	expect(mocked.execute.mock.calls[2]?.[1]).toContain("/work/.husky/pre-push");
-	expect(mocked.input).toHaveBeenCalledWith("refs heads");
-	expect(() => dockerSandbox("latest")).toThrow();
-	await runner.run({
-		workspace,
-		argv: ["git", "commit", "-m", "fix"],
-		purpose: "commit",
-		timeoutMs: 1000,
-	});
-	expect(
-		mocked.execute.mock.calls.some((call) => call[0] === "docker" && call[1][0] === "rm"),
-	).toBe(true);
-	mocked.execute.mockRejectedValueOnce(new Error("secret token failure"));
-	expect(
-		(await runner.run({ workspace, argv: ["npm", "test"], purpose: "check", timeoutMs: 1 })).stderr,
-	).not.toContain("secret token");
-});
-it("uses only fixed host Git operations and read-only gh requests with scrubbed model env", async () => {
+it("uses only read-only gh requests and hides upstream failures", async () => {
 	mocked.execute.mockResolvedValue({ stdout: "ok", stderr: "sensitive" });
-	const base = {
-		operation: "remoteHead" as const,
-		repository: "owner/repo",
-		cwd: "/fixture",
-		timeoutMs: 1000,
-		maxOutputBytes: 1000,
-	};
-	expect(
-		await hostGitTransport({
-			...base,
-			command: { command: "git", args: ["ls-remote", "https://github.com/owner/repo.git"] },
-		}),
-	).toEqual({ exitCode: 0, stdout: "ok", stderr: "" });
-	await hostGitTransport({
-		...base,
-		signal: new AbortController().signal,
-		command: { command: "git", args: ["ls-remote", "https://github.com/owner/repo.git"] },
-	});
-	await expect(
-		hostGitTransport({ ...base, command: { command: "sh", args: ["-c", "bad"] } }),
-	).rejects.toThrow();
-	mocked.execute.mockRejectedValueOnce(new Error("private"));
-	expect(
-		(await hostGitTransport({ ...base, command: { command: "git", args: ["push"] } })).exitCode,
-	).toBe(1);
 	mocked.execute.mockResolvedValueOnce({ stdout: '{"login":"owner"}', stderr: "" });
 	expect(await githubRead("user", new AbortController().signal)).toEqual({ login: "owner" });
 	expect(mocked.execute.mock.lastCall?.[1]).toContain("GET");
 	mocked.execute.mockRejectedValueOnce(new Error("private"));
 	await expect(githubRead("repos/owner/repo")).rejects.toThrow("GitHub read failed");
+});
+it("restricts host Git commands and never exposes transport stderr", async () => {
+	const cwd = await mkdtemp(join(tmpdir(), "giraffe-transport-"));
+	try {
+		await writeFile(
+			join(cwd, "git"),
+			"#!/bin/sh\nprintf '%s' \"$*\"\nprintf private >&2\nexit 7\n",
+			{ mode: 0o755 },
+		);
+		vi.stubEnv("PATH", cwd);
+		const request = {
+			operation: "remoteHead" as const,
+			repository: "fixture/repo",
+			cwd,
+			timeoutMs: 10000,
+			maxOutputBytes: 4096,
+		};
+		for (const command of [
+			{ command: "sh", args: [] },
+			{ command: "git", args: [] },
+			{ command: "git", args: ["reset"] },
+		])
+			await expect(hostGitTransport({ ...request, command })).rejects.toThrow(/Unsupported/);
+		const result = await hostGitTransport({
+			...request,
+			command: { command: "git", args: ["ls-remote", "fixture"] },
+			signal: new AbortController().signal,
+		});
+		expect(result).toMatchObject({ exitCode: 7, stderr: "" });
+		expect(result.stdout).toContain("credential.helper=!gh auth git-credential");
+	} finally {
+		await rm(cwd, { recursive: true, force: true });
+	}
+});
+it("stops retaining output after a failed process cleanup without claiming termination", async () => {
+	const child = Object.assign(new EventEmitter(), {
+		pid: 999999,
+		stdout: new EventEmitter(),
+		stderr: new EventEmitter(),
+	});
+	vi.mocked(spawn).mockReturnValueOnce(child as unknown as ChildProcessWithoutNullStreams);
+	vi.spyOn(process, "kill").mockImplementation(() => {
+		throw Object.assign(new Error("fixture denied"), { code: "EPERM" });
+	});
+	const subarray = vi.spyOn(Buffer.prototype, "subarray");
+	const result = runLocal({
+		command: "fixture",
+		args: [],
+		cwd: "/fixture",
+		timeoutMs: 1000,
+		maxOutputBytes: 1024,
+	});
+	const rejection = expect(result).rejects.toBeInstanceOf(LocalCleanupError);
+	const chunk = Buffer.alloc(2048, "x");
+	child.stdout.emit("data", chunk);
+	await rejection;
+	const captured = subarray.mock.calls.length;
+	for (let i = 0; i < 1000; i++) {
+		child.stdout.emit("data", chunk);
+		child.stderr.emit("data", chunk);
+	}
+	expect(captured).toBe(1);
+	expect(subarray).toHaveBeenCalledTimes(captured);
+	child.emit("exit", 1);
+	child.emit("close", 1);
+	child.removeAllListeners();
+	child.stdout.removeAllListeners();
+	child.stderr.removeAllListeners();
 });

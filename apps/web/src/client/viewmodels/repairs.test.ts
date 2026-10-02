@@ -37,7 +37,7 @@ const progress: RepairProgress = {
 	startedAt: at,
 	updatedAt: at,
 	sequence: 1,
-	reason: "Verified sandbox unavailable",
+	reason: "Required local package manager or check profile unavailable",
 	plan: null,
 	review: null,
 	events: [],

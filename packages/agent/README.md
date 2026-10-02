@@ -88,10 +88,7 @@ Configure the existing private `config.json` with a `repairs` object:
   "maxRounds": 20,
   "push": false,
   "profiles": {},
-  "sandbox": {
-    "image": "trusted-repair-toolchain:1",
-    "registry": "https://mirrors.tencent.com/npm"
-  }
+  "registry": "https://mirrors.tencent.com/npm/"
 }
 ```
 
@@ -99,16 +96,22 @@ An empty profile map permits discovery and blocked-state reporting, not modifica
 Each trusted repository profile specifies `manager` (`npm` or `bun`), baseline npm
 script names in `checks`, exact editable `files`, and an activated `hooksPath`.
 The first implementation supports root `package.json` plus its lockfile. It rejects
-tracked symlinks/submodules, Git attributes/credential paths, oversized diffs and
-unsupported hooks rather than guessing. Some legitimate repositories will be blocked.
+model access to credential paths, symlink writes, oversized diffs and changes outside
+the profile. Ordinary tracked templates, symlinks and attributes do not disqualify a
+repository. Model file allowlists are not a boundary for repository scripts.
 
-The owner must provide a trusted locally available Docker image with Git, the selected
-package manager and offline dependency caches. Container execution uses network none,
-read-only root, bounded memory/process/output/time and a workspace-only mount; Git
-metadata is read-only except during commit. The host driver verifies sealed metadata
-before Git, and pre-push hooks run without credentials before a metadata-only host push.
-There is no unsandboxed fallback. Workspace disk has no quota and this is not advertised
-as hostile multi-tenant execution. Docker daemon or package-cache absence blocks repair.
+Git, npm/Bun, the configured checks and normal Git hooks execute directly on the local
+macOS/Linux machine as the current user, from a dedicated repair clone. There is no OS isolation
+or Docker prerequisite. Use only trusted repositories and scripts: they can access
+the user's home directory, credentials and network just like manually run commands.
+Install uses `npm install --no-audit --no-fund` or `bun install`, with lifecycle scripts
+enabled so normal setup such as Husky can run. The registry is passed per command,
+not written to global package-manager configuration. Activate the configured hooks;
+Husky 9 profiles use `.husky/_` and keep tracked `.husky/pre-commit` and
+`.husky/pre-push` unchanged. GitHub reads and publication use the local `gh` login.
+Timeouts, cancellation and excess output terminate the owned process group. A cleanup
+permission failure blocks the job for operator intervention without racing file/index
+recovery against a potentially active child. This is not hostile-process containment.
 
 One Astra reviewer conversation is separate from the controller and all dedicated Sol
 workers. Each worker phase is bounded to 12 model responses and three minutes. At most
@@ -120,9 +123,10 @@ force push, issue close or release occurs. Local `push: true` is a separate owne
 `/repairs` receives revisioned stage events and ten-second cron heartbeats. It polls
 while visible every five seconds and distinguishes desired pause from acknowledged
 pause. Pausing stops new work and is rechecked immediately before push. Config changes
-can retry missing-profile/image blocks without resetting the existing job's round count;
-other environment failures require intervention. Model/API credentials never enter the
-worker, reviewer, child environment or web payloads.
+can retry missing-profile blocks without resetting the existing job's round count;
+other environment failures require intervention. Model/API credentials are not passed
+to workers, reviewers, child environments or web payloads. This does not prevent native
+repository code from reading files accessible to the current user.
 
 ```sh
 bun run agent repair --once
@@ -130,5 +134,5 @@ bun run agent repair
 ```
 
 Keep this command running (or supervise it through a separately configured process
-manager). The CLI does not silently install a LaunchAgent, change system ACLs or start
-Docker. The same account's analysis and repair CLI cannot own its Harness concurrently.
+manager). The CLI does not silently install a LaunchAgent or change system ACLs.
+The same account's analysis and repair CLI cannot own its Harness concurrently.

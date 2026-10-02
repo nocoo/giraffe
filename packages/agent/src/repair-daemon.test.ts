@@ -10,7 +10,6 @@ const mocked = vi.hoisted(() => ({
 	paused: vi.fn(),
 	telemetry: vi.fn(),
 	driver: vi.fn(),
-	sandbox: vi.fn(),
 	trace: vi.fn(),
 }));
 vi.mock("./repair-workspace.ts", () => ({
@@ -41,10 +40,6 @@ vi.mock("./repair-source.ts", () => ({
 vi.mock("./repair-telemetry.ts", () => ({
 	repairTelemetry: () => ({ progress: vi.fn(), cron: vi.fn(), paused: mocked.paused }),
 }));
-vi.mock("./repair-sandbox.ts", () => ({
-	dockerSandbox: mocked.sandbox,
-	hostGitTransport: vi.fn(),
-}));
 vi.mock("./cron.ts", () => ({
 	createCron: mocked.cron,
 	nextOccurrence: () => "2026-10-03T00:00:00Z",
@@ -73,10 +68,10 @@ const base = {
 	},
 };
 it("wires persistent cron, source verification, execution and telemetry without secrets", async () => {
-	for (const sandbox of [undefined, { image: "tools:1", registry: "https://registry.test" }]) {
+	for (const registry of [undefined, "https://registry.test"]) {
 		const config = configSchema.parse({
 			...base,
-			repairs: { enabled: true, ...(sandbox ? { sandbox } : {}) },
+			repairs: { enabled: true, ...(registry ? { registry } : {}) },
 		});
 		mocked.cron.mockResolvedValue({ tick: vi.fn() });
 		mocked.candidates.mockResolvedValue([{ repository: "owner/repo" }]);
@@ -116,8 +111,8 @@ it("wires persistent cron, source verification, execution and telemetry without 
 	}
 });
 
-it("requires both a trusted profile and sandbox before consulting Jev", async () => {
-	for (const sandbox of [undefined, { image: "tools:1", registry: "https://registry.test" }]) {
+it("requires only a trusted profile before consulting Jev in local mode", async () => {
+	for (const registry of [undefined, "https://registry.test"]) {
 		const config = configSchema.parse({
 			...base,
 			repairs: {
@@ -130,7 +125,7 @@ it("requires both a trusted profile and sandbox before consulting Jev", async ()
 						hooksPath: ".husky",
 					},
 				},
-				...(sandbox ? { sandbox } : {}),
+				...(registry ? { registry } : {}),
 			},
 		});
 		mocked.cron.mockResolvedValue({});
@@ -141,11 +136,12 @@ it("requires both a trusted profile and sandbox before consulting Jev", async ()
 			log: vi.fn(),
 		});
 		const engine = mocked.telemetry.mock.lastCall?.[0] as RepairEngineOptions;
-		expect(engine.prerequisite?.({ repository: "owner/repo" } as never)).toBe(
-			sandbox ? null : "No isolated execution image configured; discovery only, no edits or push.",
-		);
+		expect(engine.prerequisite?.({ repository: "owner/repo" } as never)).toBe(null);
 		const result = await engine.admit({ repository: "owner/repo" } as never);
-		if (!sandbox) expect(result.eligible).toBe(false);
-		else expect(result).toBeUndefined();
+		expect(result).toBeUndefined();
+		expect(mocked.driver.mock.lastCall?.[0]).toEqual({
+			profiles: config.repairs.profiles,
+			registry: config.repairs.registry,
+		});
 	}
 });

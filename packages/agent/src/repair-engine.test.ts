@@ -20,6 +20,7 @@ import {
 	createRepairEngine,
 	type RepairModels,
 } from "./repair-engine.ts";
+import { LocalCleanupError } from "./repair-local.ts";
 import { LiveStateChanged } from "./repair-source.ts";
 import {
 	type CheckReceipt,
@@ -246,7 +247,7 @@ it("defer, missing workspace, unavailable installs and pause cannot edit/push", 
 		const f = await setup();
 		if (mode === "defer")
 			f.admission.mockResolvedValue({ eligible: false, reason: "out of scope" });
-		if (mode === "workspace") f.prepare.mockRejectedValue(new Error("no sandbox"));
+		if (mode === "workspace") f.prepare.mockRejectedValue(new Error("missing local Git"));
 		if (mode === "install")
 			vi.mocked(f.driver.updateDependency).mockRejectedValue(new Error("offline"));
 		if (mode === "plan")
@@ -381,7 +382,7 @@ it("retries prerequisite-blocked issues only after local grants change without r
 		const before = createRepairEngine({
 			...f.opts,
 			grantVersion: "none",
-			prerequisite: () => "No sandbox configured",
+			prerequisite: () => "Local tools unavailable",
 		});
 		expect((await before.run(candidate)).stage).toBe("blocked");
 		expect(f.verify).not.toHaveBeenCalled();
@@ -484,3 +485,43 @@ it("pause or cancellation arriving during final checks prevents publication", as
 		}
 	}
 });
+it("keeps an interrupted install resumable without consuming another round", async () => {
+	const f = await setup();
+	const controller = new AbortController();
+	vi.mocked(f.driver.updateDependency).mockImplementationOnce(async (_workspace, input) => {
+		expect(input.signal).toBe(controller.signal);
+		controller.abort();
+		throw new WorkspaceError("Repair operation cancelled");
+	});
+	try {
+		const engine = createRepairEngine(f.opts);
+		const paused = await engine.run(candidate, controller.signal);
+		expect(paused.stage).toBe("fixing");
+		expect(paused.round).toBe(1);
+		expect(f.models.work).not.toHaveBeenCalled();
+		expect(f.push).not.toHaveBeenCalled();
+		const result = await engine.run(candidate);
+		expect(result.stage).toBe("pushed");
+		expect(result.round).toBe(1);
+		expect(f.driver.updateDependency).toHaveBeenCalledTimes(2);
+	} finally {
+		await f.harness.close(BACKGROUND_CONTEXT);
+	}
+});
+it.each(["prepare", "updateDependency", "check", "commit", "push"] as const)(
+	"blocks for operator intervention after %s process cleanup failure",
+	async (method) => {
+		const f = await setup();
+		vi.mocked(f.driver[method]).mockRejectedValueOnce(new LocalCleanupError());
+		try {
+			const engine = createRepairEngine(f.opts);
+			const state = await engine.run(candidate);
+			expect(state.stage).toBe("blocked");
+			expect(state.reason).toContain("operator intervention");
+			expect((await engine.run(candidate)).stage).toBe("blocked");
+			expect(f.driver[method]).toHaveBeenCalledOnce();
+		} finally {
+			await f.harness.close(BACKGROUND_CONTEXT);
+		}
+	},
+);

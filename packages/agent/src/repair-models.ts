@@ -105,7 +105,7 @@ export function repairModels(options: {
 	});
 	const read = defineTool({
 		name: "read_repair_file",
-		description: "Read a permitted file in this issue's isolated workspace.",
+		description: "Read a permitted file in this issue's dedicated local workspace.",
 		parameters: Type.Object({ path: Type.String() }),
 		replay: "safe",
 		execute: async (args, api) => {

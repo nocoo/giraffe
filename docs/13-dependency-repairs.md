@@ -2,7 +2,7 @@
 
 `/repairs` is a read-only execution workbench with one limited control: request pause
 or resume of the local scheduler. It cannot enable repairs, add a repository profile,
-configure a sandbox, reveal model credentials or grant Git push permission.
+change local tool configuration, reveal model credentials or grant Git push permission.
 
 ## Stored contracts
 
@@ -50,19 +50,21 @@ links must match the GitHub repository and issue number. Branch links are restri
 ## Driver prerequisites and acceptance
 
 The host driver requires an explicitly configured repository profile, unchanged baseline
-check scripts and activated executable hooks. Install/check/commit/pre-push execution
-requires an injected verified sandbox runner; no unsandboxed fallback exists. Package
-installs disable lifecycle scripts. Docker binary availability is not daemon or isolation
-proof. Missing profiles or a working verified runner is an actionable blocked state.
+check scripts, activated executable hooks and available local Git and npm/Bun tools.
+Package installation, checks, commits and push hooks execute directly on the local
+machine. There is no operating-system isolation boundary. Use only repositories and
+scripts the owner trusts; allowlisted model file tools do not restrict what repository
+scripts or hooks can access. Missing tools or check profiles are actionable blocked states.
 
-Workspace tests use only private temporary repositories and synthetic adapters, never
-GitHub, production worktrees, real credentials or model calls. Checks bind complete bounded
-content fingerprints. A durable commit intent recovers only task-owned index staging while
-preserving worktree files. Push requires exact reviewer and validation proofs, clean state,
-isolated normal pre-push execution and a credentialed host transport operating on a fresh
-metadata-only bare repository. No live repair push is claimed by these fixture tests.
+Workspace tests use only temporary repositories and fixture tools, never GitHub,
+production worktrees, real credentials or model calls. Repairs use independent clones,
+leaving the owner's original checkout untouched. Checks bind complete bounded content
+fingerprints. Push requires exact reviewer and validation proofs, clean state and normal
+Git hooks, with no force push or hook bypass. Credentials are not exposed through model
+tools or dashboard payloads; direct local execution is not a security containment claim.
+No live repair push is claimed by these fixture tests.
 
 Browser acceptance covers desktop/mobile light/dark, offline heartbeat, paused scheduler,
-missing sandbox, 20-round exhaustion, exact signoff and safe pause-only writes. Production
+missing local tools/profile, 20-round exhaustion, exact signoff and safe pause-only writes. Production
 execution requires local owner grants and independent review; this document does not
 authorize deployment or an actual repair push.

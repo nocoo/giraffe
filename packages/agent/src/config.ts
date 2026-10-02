@@ -65,7 +65,7 @@ const repairsSchema = z
 			.record(z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/), repairProfileSchema)
 			.default({}),
 		push: z.boolean().default(false),
-		sandbox: z.strictObject({ image: z.string().min(1), registry: z.string().url() }).optional(),
+		registry: serviceUrl.default("https://mirrors.tencent.com/npm/"),
 	})
 	.default({
 		enabled: false,
@@ -74,6 +74,7 @@ const repairsSchema = z
 		maxRounds: 20,
 		profiles: {},
 		push: false,
+		registry: "https://mirrors.tencent.com/npm/",
 	});
 export const configSchema = z
 	.strictObject({

@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import {
 	chmod,
+	cp,
 	link,
 	mkdir,
 	mkdtemp,
@@ -12,77 +13,94 @@ import {
 	writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, expect, it, vi } from "vitest";
-import { type HostGitTransport, type SandboxRunner, WorkspaceDriver } from "./repair-workspace.ts";
+import { hostGitTransport, LocalCleanupError, type LocalRunner, runLocal } from "./repair-local.ts";
+import {
+	type HostGitTransport,
+	type RepairProfile,
+	WorkspaceDriver,
+	WorkspaceError,
+} from "./repair-workspace.ts";
 
 vi.setConfig({ testTimeout: 20000 });
-
 const roots: string[] = [];
 afterEach(async () => {
+	vi.unstubAllEnvs();
 	for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
 });
 const git = (cwd: string, ...args: string[]) =>
 	execFileSync("git", args, {
 		cwd,
 		encoding: "utf8",
+		stdio: ["ignore", "pipe", "pipe"],
 		env: {
 			PATH: process.env.PATH,
 			HOME: cwd,
 			GIT_CONFIG_NOSYSTEM: "1",
 			GIT_CONFIG_GLOBAL: "/dev/null",
+			GIT_ALLOW_PROTOCOL: "file",
+			GIT_TERMINAL_PROMPT: "0",
 			GIT_AUTHOR_NAME: "Fixture",
 			GIT_AUTHOR_EMAIL: "fixture@example.invalid",
 			GIT_COMMITTER_NAME: "Fixture",
 			GIT_COMMITTER_EMAIL: "fixture@example.invalid",
 		},
 	}).trim();
-async function fixture(
-	adapters: { sandbox?: SandboxRunner; gitTransport?: HostGitTransport } = {},
-) {
-	const root = await realpath(await mkdtemp(join(tmpdir(), "repair-workspace-")));
+const manifest = (version = "1.0.0") =>
+	JSON.stringify({
+		name: "fixture",
+		scripts: { test: "node test.cjs" },
+		dependencies: { demo: version },
+	});
+async function fixture(options: { run?: LocalRunner; transport?: HostGitTransport } = {}) {
+	const root = await realpath(await mkdtemp(join(tmpdir(), "repair-native-")));
 	roots.push(root);
 	const source = join(root, "source");
 	await mkdir(source);
 	git(source, "init", "-b", "main");
-	await writeFile(
-		join(source, "package.json"),
-		JSON.stringify({
-			name: "fixture",
-			scripts: { test: "node test.cjs" },
-			dependencies: { demo: "1.0.0" },
-		}),
-	);
+	await writeFile(join(source, "package.json"), manifest());
 	await writeFile(join(source, "package-lock.json"), "{}\n");
 	await writeFile(join(source, "AGENTS.md"), "Checks: npm run test\n");
+	await writeFile(join(source, "test.cjs"), "console.log('local-check-passed')\n");
+	await writeFile(join(source, ".gitignore"), "node_modules/\n.husky/_/\nhook-result\n");
 	await mkdir(join(source, ".hooks"));
-	await writeFile(join(source, ".hooks/pre-commit"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
-	await writeFile(join(source, ".hooks/pre-push"), "#!/bin/sh\ncat >/dev/null\nexit 0\n", {
-		mode: 0o755,
-	});
+	await writeFile(
+		join(source, ".hooks/pre-commit"),
+		"#!/bin/sh\nprintf pre-commit >> hook-result\n",
+		{ mode: 0o755 },
+	);
+	await writeFile(
+		join(source, ".hooks/pre-push"),
+		"#!/bin/sh\ncat >/dev/null\nprintf pre-push >> hook-result\n",
+		{ mode: 0o755 },
+	);
 	git(
 		source,
 		"add",
 		"package.json",
 		"package-lock.json",
 		"AGENTS.md",
+		"test.cjs",
+		".gitignore",
 		".hooks/pre-commit",
 		".hooks/pre-push",
 	);
 	git(source, "commit", "-m", "fixture");
 	const baseSha = git(source, "rev-parse", "HEAD");
+	const profile = {
+		manager: "npm" as const,
+		files: ["package.json", "package-lock.json", "src/fix.ts"],
+		checks: ["test"],
+		hooksPath: ".hooks",
+	};
 	const driver = new WorkspaceDriver({
 		root: join(root, "workspaces"),
-		...adapters,
+		profiles: { "fixture/repo": profile },
 		localSources: { "fixture/repo": source },
-		profiles: {
-			"fixture/repo": {
-				manager: "npm",
-				files: ["package.json", "package-lock.json", "src/fix.ts"],
-				checks: ["test"],
-				hooksPath: ".hooks",
-			},
-		},
+		...(options.run ? { run: options.run } : {}),
+		...(options.transport ? { gitTransport: options.transport } : {}),
 	});
 	const workspace = await driver.prepare({
 		id: "deps-issue-1",
@@ -90,115 +108,68 @@ async function fixture(
 		baseSha,
 		defaultBranch: "main",
 	});
-	return { driver, workspace, source, root, baseSha };
+	return { root, source, driver, workspace, baseSha, profile };
 }
-it("isolates a stable repair branch and snapshots exact bounded file contents", async () => {
-	const { driver, workspace, source, baseSha } = await fixture();
-	expect(workspace.branch).toBe("giraffe/deps-issue-1");
-	expect(git(source, "rev-parse", "HEAD")).toBe(baseSha);
-	const before = await driver.snapshot(workspace);
-	expect(before.changedPaths).toEqual([]);
-	await driver.writeFile(
-		workspace,
-		"package.json",
-		'{"name":"fixture","scripts":{"test":"node test.cjs"},"dependencies":{"demo":"2.0.0"}}',
+const runner = () =>
+	vi.fn<LocalRunner>(async (request) =>
+		request.command === "git"
+			? { exitCode: 0, stdout: git(request.cwd, ...request.args), stderr: "" }
+			: { exitCode: 0, stdout: "local test passed", stderr: "" },
 	);
-	const after = await driver.snapshot(workspace);
-	expect(after.changedPaths).toEqual(["package.json"]);
-	expect(after.contentFingerprint).not.toBe(before.contentFingerprint);
-	expect(after.manifestBeforeAfter["package.json"]?.after).toContain("2.0.0");
-	expect(await readFile(join(source, "package.json"), "utf8")).toContain("1.0.0");
-	await expect(
-		driver.check(workspace, { contentFingerprint: after.contentFingerprint, commands: ["test"] }),
-	).rejects.toThrow(/sandbox/i);
-});
-it("rejects path escapes, credentials, symlinks and dirty index", async () => {
-	const { driver, workspace, root } = await fixture();
-	for (const path of [
-		"../outside",
-		"/tmp/outside",
-		".git/config",
-		".env",
-		"nested/.env.local",
-		".npmrc",
-		"unknown.txt",
-	]) {
-		await expect(driver.readFile(workspace, path)).rejects.toThrow();
-		await expect(driver.writeFile(workspace, path, "bad")).rejects.toThrow();
-	}
-	await symlink(root, join(workspace.path, "src"));
-	await expect(driver.writeFile(workspace, "src/fix.ts", "bad")).rejects.toThrow(/symlink/i);
-	await rm(join(workspace.path, "src"));
-	await driver.writeFile(
-		workspace,
-		"package.json",
-		'{"name":"changed","scripts":{"test":"node test.cjs"}}',
-	);
-	git(workspace.path, "add", "package.json");
-	await expect(driver.snapshot(workspace)).rejects.toThrow(/index/i);
-});
-it("rejects default/invalid refs, stale signoff and unavailable publication transport", async () => {
-	const { driver, workspace } = await fixture();
-	const snap = await driver.snapshot(workspace);
-	await expect(
-		driver.push(workspace, {
-			head: snap.head,
-			contentFingerprint: snap.contentFingerprint,
-			signoff: {
-				head: "0".repeat(40),
-				contentFingerprint: snap.contentFingerprint,
-				validationDigest: "fake",
-			},
-			checks: {
-				contentFingerprint: snap.contentFingerprint,
-				validationDigest: "fake",
-				commands: ["test"],
-				results: [],
-			},
-		}),
-	).rejects.toThrow();
-	await expect(
-		driver.prepare({
-			id: "../main",
-			repository: "fixture/repo",
-			baseSha: snap.head,
-			defaultBranch: "main",
-		}),
-	).rejects.toThrow();
-	await expect(driver.snapshot({ ...workspace, branch: "main" })).rejects.toThrow();
-	await expect(
-		driver.prepare({
-			id: "new",
-			repository: "https://evil/repo",
-			baseSha: snap.head,
-			defaultBranch: "main",
-		}),
-	).rejects.toThrow();
-});
-
-function fixtureRunner(): SandboxRunner {
+async function prepared() {
+	const run = runner();
+	const f = await fixture({ run });
+	await f.driver.writeFile(f.workspace, "src/fix.ts", "fixed\n");
+	const snapshot = await f.driver.snapshot(f.workspace);
+	const checks = await f.driver.check(f.workspace, {
+		contentFingerprint: snapshot.contentFingerprint,
+	});
 	return {
-		verified: true,
-		capabilities: { filesystem: true, network: true, resourceLimits: true },
-		limitations: ["Synthetic temp fixture only; no production isolation claimed"],
-		run: vi.fn(async (request) => {
-			if (request.purpose === "commit") git(request.workspace.path, ...request.argv.slice(1));
-			else if (request.purpose === "prepush")
-				execFileSync(request.argv[0] as string, request.argv.slice(1), {
-					cwd: request.workspace.path,
-					input: request.stdin,
-					env: { PATH: process.env.PATH, HOME: request.workspace.path },
-					timeout: 5000,
-				});
-			else if (request.purpose === "install")
-				await writeFile(join(request.workspace.path, "package-lock.json"), '{"updated":true}\n');
-			return { exitCode: 0, stdout: "fixture check passed", stderr: "" };
-		}),
+		...f,
+		run,
+		snapshot,
+		checks,
+		commit: {
+			contentFingerprint: snapshot.contentFingerprint,
+			files: snapshot.changedPaths,
+			message: "fix: update fixture",
+			checks,
+		},
 	};
 }
-it("checks and commits unchanged content, runs prepush isolated, publishes exact SHA to a bare fixture and reconciles retries", async () => {
-	const runner = fixtureRunner();
+const proofFor = (
+	snapshot: { head: string; contentFingerprint: string },
+	checks: Awaited<ReturnType<WorkspaceDriver["check"]>>,
+) => ({
+	head: snapshot.head,
+	contentFingerprint: snapshot.contentFingerprint,
+	checks,
+	signoff: {
+		head: snapshot.head,
+		contentFingerprint: snapshot.contentFingerprint,
+		validationDigest: checks.validationDigest,
+	},
+});
+
+it("runs actual local npm checks with no runner configuration and preserves the original checkout", async () => {
+	const f = await fixture();
+	const snapshot = await f.driver.snapshot(f.workspace);
+	const receipt = await f.driver.check(f.workspace, {
+		contentFingerprint: snapshot.contentFingerprint,
+	});
+	expect(receipt.results[0]?.stdout).toContain("local-check-passed");
+	expect(f.workspace.branch).toBe("giraffe/deps-issue-1");
+	await f.driver.writeFile(f.workspace, "package.json", manifest("2.0.0"));
+	const changed = await f.driver.snapshot(f.workspace);
+	expect(changed.changedPaths).toEqual(["package.json"]);
+	expect(changed.contentFingerprint).not.toBe(snapshot.contentFingerprint);
+	expect(changed.manifestBeforeAfter["package.json"]?.before).toContain("1.0.0");
+	expect(await readFile(join(f.source, "package.json"), "utf8")).toContain("1.0.0");
+});
+it("performs native commit and push hooks in the working clone with exact signoff and idempotent retry", async () => {
+	const run = runner();
 	let remote = "";
+	let remotePath = "";
 	const transport: HostGitTransport = async (request) => {
 		expect(request.command.args).not.toContain("--force");
 		expect(request.command.args).not.toContain("--no-verify");
@@ -208,1044 +179,26 @@ it("checks and commits unchanged content, runs prepush isolated, publishes exact
 				stdout: remote ? `${remote}\trefs/heads/giraffe/deps-issue-1` : "",
 				stderr: "",
 			};
-		expect(request.operation).toBe("push");
-		expect(git(request.cwd, "rev-parse", "--is-bare-repository")).toBe("true");
-		expect(await readFile(join(request.cwd, "config"), "utf8")).not.toContain("hooksPath");
-		const ref = request.command.args.at(-1) as string;
-		remote = ref.split(":")[0] as string;
-		return { exitCode: 0, stdout: "pushed fixture", stderr: "" };
+		expect(git(request.cwd, "rev-parse", "--is-bare-repository")).toBe("false");
+		git(request.cwd, "push", remotePath, request.command.args.at(-1) as string);
+		remote = request.command.args.at(-1)?.split(":")[0] ?? "";
+		return { exitCode: 0, stdout: "pushed", stderr: "" };
 	};
-	const { driver, workspace } = await fixture({ sandbox: runner, gitTransport: transport });
-	const updated = await driver.updateDependency(workspace, {
-		manifest: "package.json",
-		section: "dependencies",
-		name: "demo",
-		version: "2.0.0",
-	});
-	expect(updated.changedPaths).toEqual(["package-lock.json", "package.json"]);
-	const checks = await driver.check(workspace, { contentFingerprint: updated.contentFingerprint });
-	expect(checks.results[0]?.exitCode).toBe(0);
-	const committed = await driver.commit(workspace, {
-		contentFingerprint: updated.contentFingerprint,
-		files: updated.changedPaths,
-		message: "fix: update fixture dependency",
-		checks,
-	});
-	expect(committed.head).not.toBe(workspace.baseSha);
-	expect(committed.contentFingerprint).toBe(updated.contentFingerprint);
-	const input = {
-		head: committed.head,
-		contentFingerprint: committed.contentFingerprint,
-		checks,
-		signoff: {
-			head: committed.head,
-			contentFingerprint: committed.contentFingerprint,
-			validationDigest: checks.validationDigest,
-		},
-	};
-	expect(await driver.push(workspace, input)).toMatchObject({ reconciled: false });
-	expect(await driver.push(workspace, input)).toMatchObject({ reconciled: true });
-	expect(
-		vi.mocked(runner.run).mock.calls.find(([r]) => r.purpose === "prepush")?.[0].stdin,
-	).toContain(committed.head);
-	remote = "a".repeat(40);
-	await expect(driver.push(workspace, input)).rejects.toThrow(/differs/);
-});
-it("includes untracked file content, refuses scripts weakening, forged check proof and postcheck mutation", async () => {
-	const runner = fixtureRunner();
-	const { driver, workspace } = await fixture({ sandbox: runner });
-	await expect(
-		driver.writeFile(workspace, "package.json", '{"scripts":{"test":"true"}}'),
-	).rejects.toThrow(/scripts/);
-	await driver.writeFile(workspace, "src/fix.ts", "export const fixed = true;\n");
-	const snap = await driver.snapshot(workspace);
-	expect(snap.diff).toContain("fixed");
-	await expect(driver.check(workspace, { contentFingerprint: "old" })).rejects.toThrow(/Stale/);
-	await expect(
-		driver.check(workspace, { contentFingerprint: snap.contentFingerprint, commands: ["evil"] }),
-	).rejects.toThrow(/configured/);
-	const checks = await driver.check(workspace, { contentFingerprint: snap.contentFingerprint });
-	checks.validationDigest = "forged";
-	await expect(
-		driver.commit(workspace, {
-			contentFingerprint: snap.contentFingerprint,
-			files: snap.changedPaths,
-			message: "fix",
-			checks,
-		}),
-	).rejects.toThrow(/Checks/);
-	const fresh = await driver.check(workspace, { contentFingerprint: snap.contentFingerprint });
-	await driver.writeFile(workspace, "src/fix.ts", "export const fixed = false;\n");
-	await expect(
-		driver.commit(workspace, {
-			contentFingerprint: snap.contentFingerprint,
-			files: snap.changedPaths,
-			message: "fix",
-			checks: fresh,
-		}),
-	).rejects.toThrow(/Stale/);
-});
-it("fails closed on hook and sandbox errors and restores manifest/lock after installer failure", async () => {
-	const runner = fixtureRunner();
-	const { driver, workspace } = await fixture({ sandbox: runner });
-	const original = await driver.readFile(workspace, "package.json");
-	vi.mocked(runner.run).mockResolvedValueOnce({
-		exitCode: 1,
-		stdout: "",
-		stderr: "private detail",
-	});
-	await expect(
-		driver.updateDependency(workspace, {
-			manifest: "package.json",
-			section: "dependencies",
-			name: "demo",
-			version: "2.0.0",
-		}),
-	).rejects.toThrow("Sandbox operation failed");
-	expect(await driver.readFile(workspace, "package.json")).toBe(original);
-	await writeFile(join(workspace.path, ".hooks/pre-commit"), "");
-	const snap = await driver.snapshot(workspace).catch(() => null);
-	expect(snap).toBeNull();
-});
-
-it("reopens only the same workspace identity and rejects mismatched bases and profiles", async () => {
-	const { driver, workspace, baseSha, source, root } = await fixture();
-	expect(
-		await driver.prepare({
-			id: workspace.id,
-			repository: workspace.repository,
-			baseSha,
-			defaultBranch: "main",
-		}),
-	).toEqual(workspace);
-	await expect(
-		driver.prepare({
-			id: workspace.id,
-			repository: workspace.repository,
-			baseSha: "a".repeat(40),
-			defaultBranch: "main",
-		}),
-	).rejects.toThrow(/identity/);
-	await expect(
-		driver.prepare({
-			id: "deps-new",
-			repository: workspace.repository,
-			baseSha: "a".repeat(40),
-			defaultBranch: "main",
-		}),
-	).rejects.toThrow(/Git|SHA/);
-	const noProfile = new WorkspaceDriver({
-		root: join(root, "empty"),
-		profiles: {},
-		localSources: { "fixture/repo": source },
-	});
-	await expect(
-		noProfile.prepare({
-			id: "deps-new",
-			repository: "fixture/repo",
-			baseSha,
-			defaultBranch: "main",
-		}),
-	).rejects.toThrow(/profile/);
-	for (const patch of [{ checks: ["bad script"] }, { files: [".env"] }, { hooksPath: "" }]) {
-		const p = new WorkspaceDriver({
-			root: join(root, `invalid-${Math.random()}`),
-			profiles: {
-				"fixture/repo": {
-					manager: "npm",
-					checks: ["test"],
-					files: ["package.json"],
-					hooksPath: ".hooks",
-					...patch,
-				},
-			},
-		});
-		await expect(
-			p.prepare({ id: "deps-invalid", repository: "fixture/repo", baseSha, defaultBranch: "main" }),
-		).rejects.toThrow();
-	}
-});
-it("rejects symlink roots, tracked symlinks, unsafe attributes and binary or oversized writes", async () => {
-	const { driver, workspace, source, root, baseSha } = await fixture();
-	await symlink(join(root, "workspaces"), join(root, "alias"));
-	const alias = new WorkspaceDriver({
-		root: join(root, "alias"),
-		profiles: {
-			"fixture/repo": {
-				manager: "npm",
-				checks: ["test"],
-				files: ["package.json"],
-				hooksPath: ".hooks",
-			},
-		},
-	});
-	await expect(
-		alias.prepare({ id: "deps-x", repository: "fixture/repo", baseSha, defaultBranch: "main" }),
-	).rejects.toThrow(/symlink/);
-	await expect(driver.writeFile(workspace, "src/fix.ts", "\0")).rejects.toThrow(/binary/);
-	await expect(driver.writeFile(workspace, "src/fix.ts", "x".repeat(270000))).rejects.toThrow(
-		/limit/,
-	);
-	await writeFile(join(workspace.path, "src.txt"), "not allowed");
-	await expect(driver.snapshot(workspace)).rejects.toThrow(/allowlist/);
-	await rm(join(workspace.path, "src.txt"));
-	await writeFile(join(source, ".gitattributes"), "*.txt filter=evil");
-	git(source, "add", ".gitattributes");
-	git(source, "commit", "-m", "attributes");
-	await expect(
-		driver.prepare({
-			id: "deps-attrs",
-			repository: "fixture/repo",
-			baseSha: git(source, "rev-parse", "HEAD"),
-			defaultBranch: "main",
-		}),
-	).rejects.toThrow(/filters/);
-	await rm(join(source, ".gitattributes"));
-	git(source, "add", ".gitattributes");
-	await symlink("/tmp", join(source, "link"));
-	git(source, "add", "link");
-	git(source, "commit", "-m", "symlink");
-	await expect(
-		driver.prepare({
-			id: "deps-link",
-			repository: "fixture/repo",
-			baseSha: git(source, "rev-parse", "HEAD"),
-			defaultBranch: "main",
-		}),
-	).rejects.toThrow(/Symlinks/);
-});
-it("requires complete review and captures deleted/new files without silent truncation", async () => {
-	const { driver, workspace } = await fixture();
-	await driver.writeFile(workspace, "src/fix.ts", "x".repeat(45000));
-	await expect(driver.snapshot(workspace)).rejects.toThrow(/40 KiB/);
-	await rm(join(workspace.path, "src"), { recursive: true });
-	await rm(join(workspace.path, "package.json"));
-	const snapshot = await driver.snapshot(workspace);
-	expect(snapshot.manifestBeforeAfter["package.json"]?.after).toBeNull();
-	await writeFile(join(workspace.path, "package.json"), Buffer.from([0, 1, 2]));
-	await expect(driver.snapshot(workspace)).rejects.toThrow(/binary/);
-});
-it("rejects stale/invalid package updates and sandbox capability or output errors", async () => {
-	const runner = fixtureRunner();
-	const { driver, workspace } = await fixture({ sandbox: runner });
-	for (const input of [
-		{ manifest: "nested/package.json", section: "dependencies", name: "demo", version: "2.0.0" },
-		{ manifest: "package.json", section: "dependencies", name: "demo", version: "https://evil" },
-		{ manifest: "package.json", section: "dependencies", name: "missing", version: "2.0.0" },
-	] as const)
-		await expect(driver.updateDependency(workspace, input)).rejects.toThrow();
-	const baseline = await driver.snapshot(workspace);
-	runner.capabilities.network = false;
-	await expect(
-		driver.check(workspace, { contentFingerprint: baseline.contentFingerprint }),
-	).rejects.toThrow(/sandbox/);
-	runner.capabilities.network = true;
-	vi.mocked(runner.run).mockResolvedValueOnce({
-		exitCode: 0,
-		stdout: "x".repeat(1100000),
-		stderr: "",
-	});
-	await expect(
-		driver.check(workspace, { contentFingerprint: baseline.contentFingerprint }),
-	).rejects.toThrow(/bounds/);
-	vi.mocked(runner.run).mockImplementationOnce(async () => {
-		await driver.writeFile(workspace, "src/fix.ts", "changed");
-		return { exitCode: 0, stdout: "", stderr: "" };
-	});
-	await expect(
-		driver.check(workspace, { contentFingerprint: baseline.contentFingerprint }),
-	).rejects.toThrow(/changed/);
-	await expect(
-		driver.updateDependency(workspace, {
-			manifest: "package.json",
-			section: "dependencies",
-			name: "demo",
-			version: "2.0.0",
-		}),
-	).rejects.toThrow(/replay/);
-});
-it("blocks missing executable hooks and preserves deterministic check proofs across fresh checks", async () => {
-	const runner = fixtureRunner();
-	const { driver, workspace } = await fixture({ sandbox: runner });
-	const snap = await driver.snapshot(workspace);
-	const a = await driver.check(workspace, { contentFingerprint: snap.contentFingerprint });
-	vi.mocked(runner.run).mockResolvedValueOnce({
-		exitCode: 0,
-		stdout: "different timestamp",
-		stderr: "",
-	});
-	const b = await driver.check(workspace, { contentFingerprint: snap.contentFingerprint });
-	expect(a.validationDigest).toBe(b.validationDigest);
-	await expect(
-		driver.commit(workspace, {
-			contentFingerprint: snap.contentFingerprint,
-			files: [],
-			message: "empty",
-			checks: b,
-		}),
-	).rejects.toThrow(/explicitly/);
-	await chmod(join(workspace.path, ".hooks/pre-commit"), 0o644);
-	await expect(
-		driver.check(workspace, { contentFingerprint: snap.contentFingerprint }),
-	).rejects.toThrow();
-});
-
-it("replays dependency installation and an already successful commit without duplicating the commit", async () => {
-	const runner = fixtureRunner();
-	const { driver, workspace } = await fixture({ sandbox: runner });
-	const input = {
-		manifest: "package.json",
-		section: "dependencies" as const,
-		name: "demo",
-		version: "2.0.0",
-	};
-	await driver.updateDependency(workspace, input);
-	const snap = await driver.updateDependency(workspace, input);
-	const checks = await driver.check(workspace, { contentFingerprint: snap.contentFingerprint });
-	const command = {
-		contentFingerprint: snap.contentFingerprint,
-		files: snap.changedPaths,
-		message: "fix",
-		checks,
-	};
-	const committed = await driver.commit(workspace, command);
-	expect(await driver.commit(workspace, command)).toEqual(committed);
-	expect(vi.mocked(runner.run).mock.calls.filter(([r]) => r.purpose === "commit")).toHaveLength(1);
-});
-
-it("blocks exact-code push mismatches, dirty work, prepush changes and remote races", {
-	timeout: 20000,
-}, async () => {
-	const runner = fixtureRunner();
-	let state = "empty",
-		reads = 0;
-	const transport: HostGitTransport = async (req) => {
-		if (req.operation === "remoteHead") {
-			reads++;
-			return {
-				exitCode: 0,
-				stdout: state === "race" && reads > 1 ? "a".repeat(40) : "",
-				stderr: "",
-			};
-		}
-		return { exitCode: state === "fail" ? 1 : 0, stdout: "", stderr: "" };
-	};
-	const { driver, workspace } = await fixture({ sandbox: runner, gitTransport: transport });
-	await driver.writeFile(workspace, "src/fix.ts", "fixed");
-	const snap = await driver.snapshot(workspace);
-	let checks = await driver.check(workspace, { contentFingerprint: snap.contentFingerprint });
-	let committed = await driver.commit(workspace, {
-		contentFingerprint: snap.contentFingerprint,
-		files: snap.changedPaths,
-		message: "fix",
-		checks,
-	});
-	const proof = () => ({
-		head: committed.head,
-		contentFingerprint: committed.contentFingerprint,
-		checks,
-		signoff: {
-			head: committed.head,
-			contentFingerprint: committed.contentFingerprint,
-			validationDigest: checks.validationDigest,
-		},
-	});
-	await expect(driver.push(workspace, { ...proof(), head: "a".repeat(40) })).rejects.toThrow(
-		/signoff/,
-	);
-	await expect(
-		driver.push(workspace, {
-			...proof(),
-			signoff: { ...proof().signoff, validationDigest: "bad" },
-		}),
-	).rejects.toThrow(/signoff/);
-	await driver.writeFile(workspace, "src/fix.ts", "new");
-	const dirty = await driver.snapshot(workspace);
-	checks = await driver.check(workspace, { contentFingerprint: dirty.contentFingerprint });
-	await expect(
-		driver.push(workspace, {
-			head: dirty.head,
-			contentFingerprint: dirty.contentFingerprint,
-			checks,
-			signoff: {
-				head: dirty.head,
-				contentFingerprint: dirty.contentFingerprint,
-				validationDigest: checks.validationDigest,
-			},
-		}),
-	).rejects.toThrow(/clean/);
-	await driver.writeFile(workspace, "src/fix.ts", "fixed");
-	checks = await driver.check(workspace, { contentFingerprint: committed.contentFingerprint });
-	state = "race";
-	reads = 0;
-	await expect(driver.push(workspace, proof())).rejects.toThrow(/changed during hooks/);
-	state = "empty";
-	reads = 0;
-	await expect(driver.push(workspace, proof())).rejects.toThrow(/not confirmed/);
-	state = "fail";
-	await expect(driver.push(workspace, proof())).rejects.toThrow(/transport failed/);
-	vi.mocked(runner.run).mockImplementationOnce(async () => {
-		await driver.writeFile(workspace, "src/fix.ts", "mutated");
-		return { exitCode: 0, stdout: "", stderr: "" };
-	});
-	await expect(driver.push(workspace, proof())).rejects.toThrow(/changed signed/);
-	committed = await driver.snapshot(workspace);
-	expect(committed.contentFingerprint).not.toBe(snap.contentFingerprint);
-});
-it("validates tracked secrets, hook activation, managers and installer side effects", async () => {
-	const { root, source, baseSha } = await fixture();
-	const profile = {
-		manager: "bun" as const,
-		checks: ["test"],
-		files: ["package.json", "bun.lock", "src/fix.ts"],
-		hooksPath: ".hooks",
-	};
-	await writeFile(join(source, "bun.lock"), "{}");
-	git(source, "add", "bun.lock");
-	git(source, "commit", "-m", "bun lock");
-	const base = git(source, "rev-parse", "HEAD");
-	const runner = fixtureRunner();
-	vi.mocked(runner.run).mockImplementation(async (req) => {
-		if (req.purpose === "install") {
-			expect(req.argv).toEqual(["bun", "install", "--ignore-scripts"]);
-			await writeFile(join(req.workspace.path, "bun.lock"), '{"v":2}');
-		}
-		return { exitCode: 0, stdout: "", stderr: "" };
-	});
-	const driver = new WorkspaceDriver({
-		root: join(root, "bun-workspaces"),
-		profiles: { "fixture/repo": profile },
-		localSources: { "fixture/repo": source },
-		sandbox: runner,
-	});
-	const ws = await driver.prepare({
-		id: "deps-bun",
-		repository: "fixture/repo",
-		baseSha: base,
-		defaultBranch: "main",
-	});
-	await driver.updateDependency(ws, {
-		manifest: "package.json",
-		section: "dependencies",
-		name: "demo",
-		version: "2.0.0",
-	});
-	const snap = await driver.snapshot(ws);
-	const checks = await driver.check(ws, { contentFingerprint: snap.contentFingerprint });
-	git(ws.path, "config", "core.hooksPath", ".wrong");
-	await expect(
-		driver.commit(ws, {
-			contentFingerprint: snap.contentFingerprint,
-			files: snap.changedPaths,
-			message: "fix",
-			checks,
-		}),
-	).rejects.toThrow(/seal changed/);
-	await writeFile(join(source, ".env"), "FAKE=fixture");
-	git(source, "add", ".env");
-	git(source, "commit", "-m", "credential path");
-	await expect(
-		driver.prepare({
-			id: "deps-secret",
-			repository: "fixture/repo",
-			baseSha: git(source, "rev-parse", "HEAD"),
-			defaultBranch: "main",
-		}),
-	).rejects.toThrow(/Credential/);
-	await expect(
-		driver.prepare({
-			id: "deps-bad",
-			repository: "fixture/repo",
-			baseSha,
-			defaultBranch: "giraffe/deps-bad",
-		}),
-	).rejects.toThrow(/Default branch/);
-});
-it("prevents branch mutation, unsafe file types, hardlinks and ignored review files", async () => {
-	const { driver, workspace, root } = await fixture();
-	git(workspace.path, "checkout", "-b", "other");
-	await expect(driver.snapshot(workspace)).rejects.toThrow(/branch changed/);
-	git(workspace.path, "checkout", workspace.branch);
-	await mkdir(join(workspace.path, "src/fix.ts"), { recursive: true });
-	await expect(driver.writeFile(workspace, "src/fix.ts", "x")).rejects.toThrow(/Unsafe file/);
-	await expect(driver.readFile(workspace, "src/fix.ts")).rejects.toThrow(/regular/);
-	await rm(join(workspace.path, "src"), { recursive: true });
-	await writeFile(join(root, "hard"), "x");
-	await mkdir(join(workspace.path, "src"));
-	await link(join(root, "hard"), join(workspace.path, "src/fix.ts"));
-	await expect(driver.writeFile(workspace, "src/fix.ts", "x")).rejects.toThrow(/Unsafe file/);
-	await rm(join(workspace.path, "src/fix.ts"));
-	await mkdir(join(workspace.path, ".git/info"), { recursive: true });
-	await writeFile(join(workspace.path, ".git/info/exclude"), "src/fix.ts\n");
-	await writeFile(join(workspace.path, "src/fix.ts"), "ignored");
-	await expect(driver.snapshot(workspace)).rejects.toThrow(/seal changed/);
-});
-
-it("uses only explicit host clone transport, blocks missing transport and verifies prepare identity", async () => {
-	const f = await fixture();
-	const profiles = {
-		"fixture/repo": {
-			manager: "npm" as const,
-			checks: ["test"],
-			files: ["package.json", "package-lock.json", "src/fix.ts", "README.md"],
-			hooksPath: ".hooks",
-		},
-	};
-	const host: HostGitTransport = async (req) => {
-		expect(req.operation).toBe("clone");
-		const args = [...req.command.args];
-		args[args.length - 2] = f.source;
-		git(req.cwd, ...args);
-		return { exitCode: 0, stdout: "", stderr: "" };
-	};
-	const driver = new WorkspaceDriver({ root: join(f.root, "host"), profiles, gitTransport: host });
-	const ws = await driver.prepare({
-		id: "deps-host",
-		repository: "fixture/repo",
-		baseSha: f.baseSha,
-		defaultBranch: "main",
-	});
-	await expect(driver.writeFile(ws, "README.md", "change")).rejects.toThrow(/Protected/);
-	const missing = new WorkspaceDriver({ root: join(f.root, "no-transport"), profiles });
-	await expect(
-		missing.prepare({
-			id: "deps-missing",
-			repository: "fixture/repo",
-			baseSha: f.baseSha,
-			defaultBranch: "main",
-		}),
-	).rejects.toThrow(/transport required/);
-	await rename(ws.path, `${ws.path}-old`);
-	await symlink(`${ws.path}-old`, ws.path);
-	await expect(driver.snapshot(ws)).rejects.toThrow(/symlink/);
-});
-it("checks immutable baseline scripts and actual active executable hooks before trusting receipts", async () => {
-	const runner = fixtureRunner();
-	const f = await fixture({ sandbox: runner });
-	const snapshot = await f.driver.snapshot(f.workspace);
-	await writeFile(join(f.workspace.path, "package.json"), '{"scripts":{"test":"true"}}');
-	const changed = await f.driver.snapshot(f.workspace);
-	await expect(
-		f.driver.check(f.workspace, { contentFingerprint: changed.contentFingerprint }),
-	).rejects.toThrow(/scripts/);
-	await writeFile(
-		join(f.workspace.path, "package.json"),
-		await readFile(join(f.source, "package.json")),
-	);
-	await chmod(join(f.workspace.path, ".hooks/pre-commit"), 0o644);
-	await expect(
-		f.driver.check(f.workspace, { contentFingerprint: snapshot.contentFingerprint }),
-	).rejects.toThrow();
-	await chmod(join(f.workspace.path, ".hooks/pre-commit"), 0o755);
-	await writeFile(join(f.workspace.path, ".hooks/pre-commit"), "#!/bin/sh\nexit 1\n");
-	await expect(
-		f.driver.check(f.workspace, { contentFingerprint: snapshot.contentFingerprint }),
-	).rejects.toThrow();
-});
-
-it("refuses unavailable profiles scripts, unexpected installer edits and post-commit content mutations", async () => {
-	const runner = fixtureRunner();
-	const f = await fixture({ sandbox: runner });
-	vi.mocked(runner.run).mockImplementationOnce(async () => {
-		await f.driver.writeFile(f.workspace, "src/fix.ts", "unexpected");
-		return { exitCode: 0, stdout: "", stderr: "" };
-	});
-	await expect(
-		f.driver.updateDependency(f.workspace, {
-			manifest: "package.json",
-			section: "dependencies",
-			name: "demo",
-			version: "2.0.0",
-		}),
-	).rejects.toThrow(/unexpected/);
-	await rm(join(f.workspace.path, "src"), { recursive: true });
-	await f.driver.writeFile(f.workspace, "src/fix.ts", "expected");
+	const f = await fixture({ run, transport });
+	remotePath = join(f.root, "remote.git");
+	git(f.root, "init", "--bare", "-b", "main", remotePath);
+	await f.driver.writeFile(f.workspace, "src/fix.ts", "fixed\n");
 	const snapshot = await f.driver.snapshot(f.workspace);
 	const checks = await f.driver.check(f.workspace, {
 		contentFingerprint: snapshot.contentFingerprint,
 	});
-	vi.mocked(runner.run).mockImplementationOnce(async (req) => {
-		git(req.workspace.path, ...req.argv.slice(1));
-		await f.driver.writeFile(f.workspace, "src/fix.ts", "hook changed");
-		return { exitCode: 0, stdout: "", stderr: "" };
-	});
-	await expect(
-		f.driver.commit(f.workspace, {
-			contentFingerprint: snapshot.contentFingerprint,
-			files: snapshot.changedPaths,
-			message: "fix",
-			checks,
-		}),
-	).rejects.toThrow(/intent content mismatch/);
-	const p = new WorkspaceDriver({
-		root: join(f.root, "badcheck"),
-		localSources: { "fixture/repo": f.source },
-		profiles: {
-			"fixture/repo": {
-				manager: "npm",
-				checks: ["missing"],
-				files: ["package.json"],
-				hooksPath: ".hooks",
-			},
-		},
-		sandbox: runner,
-	});
-	const w = await p.prepare({
-		id: "deps-check",
-		repository: "fixture/repo",
-		baseSha: f.baseSha,
-		defaultBranch: "main",
-	});
-	await expect(
-		p.check(w, { contentFingerprint: (await p.snapshot(w)).contentFingerprint }),
-	).rejects.toThrow(/missing/);
-});
-
-it("bounds total changed paths and requires a tracked configured lockfile", async () => {
-	expect(new WorkspaceDriver({ profiles: {} }).root).toContain("giraffe/worktrees");
-	const f = await fixture();
-	const files = Array.from({ length: 101 }, (_, i) => `files/${i}.txt`);
-	const driver = new WorkspaceDriver({
-		root: join(f.root, "many"),
-		localSources: { "fixture/repo": f.source },
-		profiles: {
-			"fixture/repo": {
-				manager: "npm",
-				checks: ["test"],
-				files: ["package.json", ...files],
-				hooksPath: ".hooks",
-			},
-		},
-		sandbox: fixtureRunner(),
-	});
-	const ws = await driver.prepare({
-		id: "deps-many",
-		repository: "fixture/repo",
-		baseSha: f.baseSha,
-		defaultBranch: "main",
-	});
-	await expect(
-		driver.updateDependency(ws, {
-			manifest: "package.json",
-			section: "dependencies",
-			name: "demo",
-			version: "2.0.0",
-		}),
-	).rejects.toThrow(/Lockfile/);
-	await mkdir(join(ws.path, "files"));
-	await Promise.all(files.map((file) => writeFile(join(ws.path, file), "x")));
-	await expect(driver.snapshot(ws)).rejects.toThrow(/Too many/);
-});
-
-it("restores only its own staged index after failed hooks and resumes commit intents across restart", {
-	timeout: 20000,
-}, async () => {
-	const runner = fixtureRunner();
-	const f = await fixture({ sandbox: runner });
-	await f.driver.writeFile(f.workspace, "src/fix.ts", "retained");
-	const snap = await f.driver.snapshot(f.workspace);
-	const checks = await f.driver.check(f.workspace, { contentFingerprint: snap.contentFingerprint });
-	vi.mocked(runner.run).mockResolvedValueOnce({ exitCode: 1, stdout: "", stderr: "hook failed" });
-	await expect(
-		f.driver.commit(f.workspace, {
-			contentFingerprint: snap.contentFingerprint,
-			files: snap.changedPaths,
-			message: "fix",
-			checks,
-		}),
-	).rejects.toThrow();
-	expect(git(f.workspace.path, "diff", "--cached", "--name-only")).toBe("");
-	expect(await f.driver.readFile(f.workspace, "src/fix.ts")).toBe("retained");
-	expect((await f.driver.snapshot(f.workspace)).contentFingerprint).toBe(snap.contentFingerprint);
-	const intent = join(f.root, "workspaces", `${f.workspace.id}.commit.json`);
-	await writeFile(
-		intent,
-		JSON.stringify({
-			beforeHead: snap.head,
-			contentFingerprint: snap.contentFingerprint,
-			files: snap.changedPaths,
-		}),
-	);
-	git(f.workspace.path, "add", "src/fix.ts");
-	const fresh = new WorkspaceDriver({
-		root: join(f.root, "workspaces"),
-		profiles: {
-			"fixture/repo": {
-				manager: "npm",
-				checks: ["test"],
-				files: ["package.json", "package-lock.json", "src/fix.ts"],
-				hooksPath: ".hooks",
-			},
-		},
-		sandbox: runner,
-	});
-	const ws = await fresh.prepare({
-		id: f.workspace.id,
-		repository: f.workspace.repository,
-		baseSha: f.baseSha,
-		defaultBranch: "main",
-	});
-	expect(git(ws.path, "diff", "--cached", "--name-only")).toBe("");
-	const receipt = await fresh.check(ws, { contentFingerprint: snap.contentFingerprint });
-	const committed = await fresh.commit(ws, {
-		contentFingerprint: snap.contentFingerprint,
-		files: snap.changedPaths,
-		message: "fix",
-		checks: receipt,
-	});
-	await writeFile(
-		intent,
-		JSON.stringify({
-			beforeHead: snap.head,
-			contentFingerprint: snap.contentFingerprint,
-			files: snap.changedPaths,
-		}),
-	);
-	expect(await fresh.snapshot(ws)).toEqual(committed);
-	await writeFile(
-		intent,
-		JSON.stringify({
-			beforeHead: snap.head,
-			contentFingerprint: "wrong",
-			files: snap.changedPaths,
-		}),
-	);
-	await expect(fresh.snapshot(ws)).rejects.toThrow(/intent/);
-});
-
-it("rejects unrelated index/head edits and malformed recovery markers", async () => {
-	const runner = fixtureRunner();
-	const f = await fixture({ sandbox: runner });
-	await f.driver.writeFile(f.workspace, "src/fix.ts", "intended");
-	const snap = await f.driver.snapshot(f.workspace);
-	const marker = join(f.root, "workspaces", `${f.workspace.id}.commit.json`);
-	const intent = {
-		beforeHead: snap.head,
-		contentFingerprint: snap.contentFingerprint,
-		files: snap.changedPaths,
-	};
-	await writeFile(marker, JSON.stringify({ ...intent, files: [".git/config"] }));
-	await expect(f.driver.snapshot(f.workspace)).rejects.toThrow(/Invalid commit intent/);
-	await writeFile(marker, JSON.stringify(intent));
-	git(f.workspace.path, "add", "src/fix.ts");
-	await writeFile(join(f.workspace.path, "src/fix.ts"), "changed after staging");
-	await expect(f.driver.snapshot(f.workspace)).rejects.toThrow(/intent content/);
-	await writeFile(join(f.workspace.path, "src/fix.ts"), "intended");
-	git(f.workspace.path, "commit", "-m", "first");
-	git(f.workspace.path, "commit", "--allow-empty", "-m", "unrelated");
-	await expect(f.driver.snapshot(f.workspace)).rejects.toThrow(/head mismatch/);
-});
-
-it("recovers an intent before staging but rejects an index with bytes different from the marked working tree", async () => {
-	const f = await fixture();
-	await f.driver.writeFile(f.workspace, "src/fix.ts", "intended");
-	const snap = await f.driver.snapshot(f.workspace);
-	const marker = join(f.root, "workspaces", `${f.workspace.id}.commit.json`);
-	const intent = {
-		beforeHead: snap.head,
-		contentFingerprint: snap.contentFingerprint,
-		files: snap.changedPaths,
-	};
-	await writeFile(marker, JSON.stringify(intent));
-	expect((await f.driver.snapshot(f.workspace)).contentFingerprint).toBe(snap.contentFingerprint);
-	await f.driver.writeFile(f.workspace, "src/fix.ts", "other indexed");
-	git(f.workspace.path, "add", "src/fix.ts");
-	await f.driver.writeFile(f.workspace, "src/fix.ts", "intended");
-	await writeFile(marker, JSON.stringify(intent));
-	await expect(f.driver.snapshot(f.workspace)).rejects.toThrow(/staged content changed/);
-});
-
-it("seals Git metadata against sandbox helper injection before any host Git can execute it", async () => {
-	const runner = fixtureRunner();
-	const f = await fixture({ sandbox: runner });
-	const snapshot = await f.driver.snapshot(f.workspace);
-	const marker = join(f.root, "executed");
-	vi.mocked(runner.run).mockImplementationOnce(async () => {
-		await writeFile(
-			join(f.workspace.path, ".git/config"),
-			`[core]\n repositoryformatversion = 0\n worktree = ${f.workspace.path}\n[filter "evil"]\n clean = touch ${marker}\n[include]\n path = /tmp/host-config\n`,
-		);
-		return { exitCode: 0, stdout: "passed", stderr: "" };
-	});
-	await expect(
-		f.driver.check(f.workspace, { contentFingerprint: snapshot.contentFingerprint }),
-	).rejects.toThrow(/Git|metadata/);
-	await expect(readFile(marker)).rejects.toMatchObject({ code: "ENOENT" });
-	await expect(f.driver.snapshot(f.workspace)).rejects.toThrow(/Git|metadata/);
-});
-it("rejects metadata symlinks/alternates and checks cancellation before sandbox work", async () => {
-	const runner = fixtureRunner();
-	const f = await fixture({ sandbox: runner });
-	const snap = await f.driver.snapshot(f.workspace);
-	const controller = new AbortController();
-	controller.abort();
-	await expect(
-		f.driver.check(f.workspace, {
-			contentFingerprint: snap.contentFingerprint,
-			signal: controller.signal,
-		}),
-	).rejects.toThrow(/cancelled/);
-	expect(runner.run).not.toHaveBeenCalled();
-	await mkdir(join(f.workspace.path, ".git/objects/info"), { recursive: true });
-	await writeFile(join(f.workspace.path, ".git/objects/info/alternates"), "/tmp/alternate");
-	await expect(f.driver.snapshot(f.workspace)).rejects.toThrow(/metadata forbidden/);
-	await rm(join(f.workspace.path, ".git/objects/info/alternates"));
-	await symlink(f.root, join(f.workspace.path, ".git/escape"));
-	await expect(f.driver.snapshot(f.workspace)).rejects.toThrow(/metadata path/);
-});
-
-it("forwards abort during check/commit and blocks before remote operations", async () => {
-	const runner = fixtureRunner();
-	const host: HostGitTransport = vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" }));
-	const f = await fixture({ sandbox: runner, gitTransport: host });
-	await f.driver.writeFile(f.workspace, "src/fix.ts", "fix");
-	const snap = await f.driver.snapshot(f.workspace);
-	const controller = new AbortController();
-	const normal = vi.mocked(runner.run).getMockImplementation();
-	vi.mocked(runner.run).mockImplementationOnce(async (req) => {
-		expect(req.signal).toBe(controller.signal);
-		controller.abort();
-		return { exitCode: 0, stdout: "", stderr: "" };
-	});
-	await expect(
-		f.driver.check(f.workspace, {
-			contentFingerprint: snap.contentFingerprint,
-			signal: controller.signal,
-		}),
-	).rejects.toThrow(/cancelled/);
-	if (!normal) throw new Error("fixture");
-	vi.mocked(runner.run).mockImplementation(normal);
-	const checks = await f.driver.check(f.workspace, { contentFingerprint: snap.contentFingerprint });
-	await expect(
-		f.driver.commit(f.workspace, {
-			contentFingerprint: snap.contentFingerprint,
-			files: snap.changedPaths,
-			message: "fix",
-			checks,
-			signal: controller.signal,
-		}),
-	).rejects.toThrow(/cancelled/);
-	const committed = await f.driver.commit(f.workspace, {
-		contentFingerprint: snap.contentFingerprint,
-		files: snap.changedPaths,
-		message: "fix",
-		checks,
-	});
-	await expect(
-		f.driver.push(f.workspace, {
-			head: committed.head,
-			contentFingerprint: committed.contentFingerprint,
-			checks,
-			signoff: {
-				head: committed.head,
-				contentFingerprint: committed.contentFingerprint,
-				validationDigest: checks.validationDigest,
-			},
-			signal: controller.signal,
-		}),
-	).rejects.toThrow(/cancelled/);
-	expect(host).not.toHaveBeenCalled();
-});
-it("detects changed hooks/config, metadata hardlinks and forged metadata directory without running git", async () => {
-	const f = await fixture();
-	const gitDir = join(f.workspace.path, ".git");
-	const config = await readFile(join(gitDir, "config"), "utf8");
-	await writeFile(join(gitDir, "config"), `${config}\n[extensions]\nworktreeConfig=true\n`);
-	await expect(f.driver.snapshot(f.workspace)).rejects.toThrow(/extensions/);
-	await writeFile(join(gitDir, "config"), config);
-	await writeFile(join(f.root, "metadata"), "safe");
-	await link(join(f.root, "metadata"), join(gitDir, "extra"));
-	await expect(f.driver.snapshot(f.workspace)).rejects.toThrow(/hardlink/);
-	await rm(join(gitDir, "extra"));
-	await rename(join(f.workspace.path, ".hooks"), join(f.workspace.path, ".saved-hooks"));
-	await expect(f.driver.snapshot(f.workspace)).rejects.toThrow(/seal changed/);
-	await rename(join(f.workspace.path, ".saved-hooks"), join(f.workspace.path, ".hooks"));
-	await rename(gitDir, `${gitDir}-safe`);
-	await writeFile(gitDir, "gitdir: /tmp/evil");
-	await expect(f.driver.snapshot(f.workspace)).rejects.toThrow(/metadata directory/);
-});
-it("allows a configured safe signal to reach prepush and host transport only with clean exact signoff", async () => {
-	const runner = fixtureRunner();
-	let sha = "";
-	const controller = new AbortController();
-	const transport: HostGitTransport = async (request) => {
-		expect(request.signal).toBe(controller.signal);
-		if (request.operation === "push") {
-			sha = (request.command.args.at(-1) as string).split(":")[0] as string;
-		} else expect(request.cwd).not.toContain("/deps-issue-1");
-		return {
-			exitCode: 0,
-			stdout:
-				request.operation === "remoteHead" && sha ? `${sha}\trefs/heads/giraffe/deps-issue-1` : "",
-			stderr: "",
-		};
-	};
-	const f = await fixture({ sandbox: runner, gitTransport: transport });
-	await f.driver.writeFile(f.workspace, "src/fix.ts", "safe");
-	const snap = await f.driver.snapshot(f.workspace);
-	const checks = await f.driver.check(f.workspace, {
-		contentFingerprint: snap.contentFingerprint,
-		signal: controller.signal,
-	});
-	const commit = await f.driver.commit(f.workspace, {
-		contentFingerprint: snap.contentFingerprint,
-		files: snap.changedPaths,
-		message: "fix",
-		checks,
-		signal: controller.signal,
-	});
-	await f.driver.push(f.workspace, {
-		head: commit.head,
-		contentFingerprint: commit.contentFingerprint,
-		checks,
-		signoff: {
-			head: commit.head,
-			contentFingerprint: commit.contentFingerprint,
-			validationDigest: checks.validationDigest,
-		},
-		signal: controller.signal,
-	});
-	expect(vi.mocked(runner.run).mock.calls.find(([r]) => r.purpose === "prepush")?.[0].signal).toBe(
-		controller.signal,
-	);
-});
-
-it("checks ignored paths and binary diffs from the trusted initial tree", async () => {
-	const f = await fixture();
-	await writeFile(join(f.source, ".gitignore"), "src/fix.ts\n");
-	await writeFile(join(f.source, "package-lock.json"), Buffer.from([0, 1, 2]));
-	git(f.source, "add", ".gitignore", "package-lock.json");
-	git(f.source, "commit", "-m", "binary baseline");
-	const driver = new WorkspaceDriver({
-		root: join(f.root, "binary"),
-		localSources: { "fixture/repo": f.source },
-		profiles: {
-			"fixture/repo": {
-				manager: "npm",
-				checks: ["test"],
-				files: ["package.json", "package-lock.json", "src/fix.ts"],
-				hooksPath: ".hooks",
-			},
-		},
-	});
-	const ws = await driver.prepare({
-		id: "deps-binary",
-		repository: "fixture/repo",
-		baseSha: git(f.source, "rev-parse", "HEAD"),
-		defaultBranch: "main",
-	});
-	await driver.writeFile(ws, "src/fix.ts", "ignored");
-	await expect(driver.snapshot(ws)).rejects.toThrow(/ignored/);
-	await rm(join(ws.path, "src/fix.ts"));
-	await driver.writeFile(ws, "package-lock.json", "text");
-	await expect(driver.snapshot(ws)).rejects.toThrow(/Binary diff/);
-});
-it("enforces sandbox metadata bounds before accepting a returned check result", async () => {
-	const runner = fixtureRunner();
-	const f = await fixture({ sandbox: runner });
-	const snapshot = await f.driver.snapshot(f.workspace);
-	vi.mocked(runner.run).mockImplementationOnce(async () => {
-		await writeFile(join(f.workspace.path, ".hooks/pre-commit"), "#!/bin/sh\nexit 0\n#changed\n");
-		return { exitCode: 0, stdout: "", stderr: "" };
-	});
-	await expect(
-		f.driver.check(f.workspace, { contentFingerprint: snapshot.contentFingerprint }),
-	).rejects.toThrow(/seal changed/);
-});
-
-it("blocks a new allowlisted manifest section not evidenced in the immutable baseline on replay", async () => {
-	const f = await fixture({ sandbox: fixtureRunner() });
-	const text = JSON.parse(await f.driver.readFile(f.workspace, "package.json")) as Record<
-		string,
-		unknown
-	>;
-	text.optionalDependencies = { demo: "2.0.0" };
-	await f.driver.writeFile(f.workspace, "package.json", JSON.stringify(text));
-	await expect(
-		f.driver.updateDependency(f.workspace, {
-			manifest: "package.json",
-			section: "optionalDependencies",
-			name: "demo",
-			version: "2.0.0",
-		}),
-	).rejects.toThrow(/baseline/);
-});
-
-it("exposes actionable bounded check/install diagnostics with common credentials redacted", async () => {
-	const runner = fixtureRunner();
-	const f = await fixture({ sandbox: runner });
-	const snapshot = await f.driver.snapshot(f.workspace);
-	const pat = `ghp_${"a".repeat(36)}`,
-		bearer = `giraffe_${"b".repeat(43)}`,
-		key = `sk-${"c".repeat(32)}`;
-	vi.mocked(runner.run).mockResolvedValueOnce({
-		exitCode: 1,
-		stdout: "src/fix.ts(8,3): error TS2322: string is not assignable to number.\n",
-		stderr: `Authorization: Bearer ${bearer}\nGITHUB_TOKEN=${pat}\n{"apiKey":"${key}"}\nhttps://user:password@example.invalid/private\n`,
-	});
-	const error = await f.driver
-		.check(f.workspace, { contentFingerprint: snapshot.contentFingerprint })
-		.catch((value) => value);
-	expect(error.code).toBe("repair_workspace_blocked");
-	expect(error.details).toContain("TS2322");
-	expect(error.details).toContain("[redacted]");
-	for (const secret of [pat, bearer, key, "user:password"])
-		expect(error.details).not.toContain(secret);
-	expect(error.message).not.toContain("TS2322");
-	vi.mocked(runner.run).mockResolvedValueOnce({
-		exitCode: 1,
-		stdout: `npm ERR! Could not resolve dependency demo@2.0.0\n${"界".repeat(1000)}`,
-		stderr: "",
-	});
-	const install = await f.driver
-		.updateDependency(f.workspace, {
-			manifest: "package.json",
-			section: "dependencies",
-			name: "demo",
-			version: "2.0.0",
-		})
-		.catch((value) => value);
-	expect(install.details).toContain("Could not resolve dependency");
-	expect(Buffer.byteLength(install.details)).toBeLessThanOrEqual(2048);
-	expect(install.details).not.toContain("\uFFFD");
-	expect((await f.driver.snapshot(f.workspace)).contentFingerprint).toBe(
-		snapshot.contentFingerprint,
-	);
-});
-it("never returns commit/prepush or host transport output as worker diagnostics", async () => {
-	const runner = fixtureRunner();
-	const transport: HostGitTransport = vi.fn(async () => ({
-		exitCode: 1,
-		stdout: "host credential",
-		stderr: "private host token",
-	}));
-	const f = await fixture({ sandbox: runner, gitTransport: transport });
-	await f.driver.writeFile(f.workspace, "src/fix.ts", "fixed");
-	const snapshot = await f.driver.snapshot(f.workspace);
-	const checks = await f.driver.check(f.workspace, {
-		contentFingerprint: snapshot.contentFingerprint,
-	});
-	vi.mocked(runner.run).mockResolvedValueOnce({
-		exitCode: 1,
-		stdout: "private commit output",
-		stderr: "secret hook output",
-	});
-	const failed = await f.driver
-		.commit(f.workspace, {
-			contentFingerprint: snapshot.contentFingerprint,
-			files: snapshot.changedPaths,
-			message: "fix",
-			checks,
-		})
-		.catch((value) => value);
-	expect(failed.details).toBeUndefined();
-	expect(failed.message).not.toContain("secret");
 	const committed = await f.driver.commit(f.workspace, {
 		contentFingerprint: snapshot.contentFingerprint,
 		files: snapshot.changedPaths,
 		message: "fix",
 		checks,
 	});
+	expect(committed.contentFingerprint).toBe(snapshot.contentFingerprint);
 	const proof = {
 		head: committed.head,
 		contentFingerprint: committed.contentFingerprint,
@@ -1256,56 +209,767 @@ it("never returns commit/prepush or host transport output as worker diagnostics"
 			validationDigest: checks.validationDigest,
 		},
 	};
-	const host = await f.driver.push(f.workspace, proof).catch((value) => value);
-	expect(host.details).toBeUndefined();
-	expect(host.message).not.toContain("private");
-	vi.mocked(transport).mockRejectedValueOnce(new Error("host secret thrown"));
-	const thrown = await f.driver.push(f.workspace, proof).catch((value) => value);
-	expect(thrown.message).not.toContain("host secret");
-	expect(thrown.details).toBeUndefined();
-	vi.mocked(transport).mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
-	vi.mocked(runner.run).mockResolvedValueOnce({
-		exitCode: 1,
-		stdout: "private prepush output",
-		stderr: "secret prepush output",
-	});
-	const hook = await f.driver.push(f.workspace, proof).catch((value) => value);
-	expect(hook.details).toBeUndefined();
-	expect(hook.message).not.toContain("private");
+	expect(await f.driver.push(f.workspace, proof)).toMatchObject({ reconciled: false });
+	expect(await readFile(join(f.workspace.path, "hook-result"), "utf8")).toBe("pre-commitpre-push");
+	expect(await f.driver.push(f.workspace, proof)).toMatchObject({ reconciled: true });
+	remote = "a".repeat(40);
+	await expect(f.driver.push(f.workspace, proof)).rejects.toThrow(/differs/);
+	await expect(f.driver.push(f.workspace, { ...proof, head: f.baseSha })).rejects.toThrow(
+		/signoff/,
+	);
+	await expect(
+		f.driver.push(f.workspace, { ...proof, signal: AbortSignal.abort() }),
+	).rejects.toThrow(/cancelled/);
 });
-it("sanitizes multiline secrets and adapter failures without introducing credential diagnostics", async () => {
-	const runner = fixtureRunner();
-	const f = await fixture({ sandbox: runner });
-	const snap = await f.driver.snapshot(f.workspace);
-	vi.mocked(runner.run).mockResolvedValueOnce({
-		exitCode: 1,
-		stdout:
-			"Error:\tmissing module\r\n-----BEGIN PRIVATE KEY-----\nfixture-private-material\n-----END PRIVATE KEY-----\nCookie: session=private-cookie\n",
-		stderr: "",
+it("retains a full diff but does not reject ordinary tracked templates, symlinks or attributes", async () => {
+	const f = await fixture();
+	await writeFile(join(f.source, ".env.example"), "PLACEHOLDER=\n");
+	await writeFile(join(f.source, ".gitattributes"), "*.ts text eol=lf\n");
+	await symlink("test.cjs", join(f.source, "test-link"));
+	git(f.source, "add", ".env.example", ".gitattributes", "test-link");
+	git(f.source, "commit", "-m", "templates");
+	const ws = await f.driver.prepare({
+		id: "deps-templates",
+		repository: f.workspace.repository,
+		defaultBranch: "main",
+		baseSha: git(f.source, "rev-parse", "HEAD"),
 	});
-	const error = await f.driver
-		.check(f.workspace, { contentFingerprint: snap.contentFingerprint })
-		.catch((value) => value);
-	expect(error.details).toContain("missing module");
-	expect(error.details).not.toContain("fixture-private-material");
-	expect(error.details).not.toContain("private-cookie");
-	vi.mocked(runner.run).mockRejectedValueOnce(new Error("adapter host secret"));
-	const thrown = await f.driver
-		.check(f.workspace, { contentFingerprint: snap.contentFingerprint })
-		.catch((value) => value);
-	expect(thrown.message).not.toContain("adapter host secret");
-	expect(thrown.details).toBeUndefined();
+	expect((await f.driver.snapshot(ws)).changedPaths).toEqual([]);
+	await expect(f.driver.readFile(ws, ".env.example")).rejects.toThrow(/Unsafe/);
+});
+it("rejects unsafe model file writes and unreviewed changes without claiming an OS boundary", async () => {
+	const f = await fixture();
+	for (const path of [
+		"../outside",
+		"/tmp/outside",
+		".git/config",
+		".env",
+		"nested/.env.local",
+		".npmrc",
+		"unknown.ts",
+		".hooks/pre-commit",
+		"AGENTS.md",
+	]) {
+		await expect(f.driver.writeFile(f.workspace, path, "bad")).rejects.toThrow();
+	}
+	await expect(f.driver.readFile(f.workspace, "unknown.ts")).rejects.toThrow(/allowlist/);
+	await expect(
+		f.driver.writeFile(f.workspace, "package.json", '{"scripts":{"test":"true"}}'),
+	).rejects.toThrow(/scripts/);
+	await symlink(f.root, join(f.workspace.path, "src"));
+	await expect(f.driver.writeFile(f.workspace, "src/fix.ts", "bad")).rejects.toThrow(/symlink/);
+	await rm(join(f.workspace.path, "src"));
+	await f.driver.writeFile(f.workspace, "src/fix.ts", "new");
+	git(f.workspace.path, "add", "src/fix.ts");
+	await expect(f.driver.snapshot(f.workspace)).rejects.toThrow(/index/);
+});
+it("validates complete check proofs, unchanged scripts and stale code before commit", async () => {
+	const f = await prepared();
+	await expect(f.driver.check(f.workspace, { contentFingerprint: "stale" })).rejects.toThrow(
+		/Stale/,
+	);
+	await expect(
+		f.driver.check(f.workspace, {
+			contentFingerprint: f.snapshot.contentFingerprint,
+			commands: ["unchecked"],
+		}),
+	).rejects.toThrow(/configured/);
+	await expect(
+		f.driver.commit(f.workspace, { ...f.commit, checks: { ...f.checks } }),
+	).rejects.toThrow(/Checks/);
+	await expect(f.driver.commit(f.workspace, { ...f.commit, files: [] })).rejects.toThrow(
+		/explicitly/,
+	);
+	await expect(
+		f.driver.commit(f.workspace, { ...f.commit, message: "line\nbreak" }),
+	).rejects.toThrow(/explicitly/);
+	const next = await f.driver.check(f.workspace, {
+		contentFingerprint: f.snapshot.contentFingerprint,
+	});
+	expect(next.validationDigest).toBe(f.checks.validationDigest);
+	await f.driver.writeFile(f.workspace, "src/fix.ts", "different");
+	await expect(f.driver.commit(f.workspace, f.commit)).rejects.toThrow(/Stale/);
+});
+it("restores only task-owned staging after a failed commit and can replay successful commits", async () => {
+	const f = await prepared();
+	f.run.mockResolvedValueOnce({ exitCode: 1, stdout: "", stderr: "commit failed" });
+	await expect(f.driver.commit(f.workspace, f.commit)).rejects.toThrow(/Local command/);
+	expect(git(f.workspace.path, "diff", "--cached", "--name-only")).toBe("");
+	expect(await f.driver.readFile(f.workspace, "src/fix.ts")).toBe("fixed\n");
+	const committed = await f.driver.commit(f.workspace, f.commit);
+	expect(await f.driver.commit(f.workspace, f.commit)).toEqual(committed);
+	expect(f.run.mock.calls.filter(([req]) => req.command === "git")).toHaveLength(2);
+});
+it("reopens persisted workspaces and reconciles interrupted owned commit staging", async () => {
+	const f = await prepared();
+	await writeFile(
+		join(f.root, "workspaces", `${f.workspace.id}.commit.json`),
+		JSON.stringify({
+			beforeHead: f.snapshot.head,
+			contentFingerprint: f.snapshot.contentFingerprint,
+			files: f.snapshot.changedPaths,
+		}),
+	);
+	git(f.workspace.path, "add", "src/fix.ts");
+	const next = new WorkspaceDriver({
+		root: f.driver.root,
+		profiles: { "fixture/repo": f.profile },
+		localSources: { "fixture/repo": f.source },
+		run: f.run,
+	});
+	const ws = await next.prepare({
+		id: f.workspace.id,
+		repository: f.workspace.repository,
+		baseSha: f.baseSha,
+		defaultBranch: "main",
+	});
+	expect(git(ws.path, "diff", "--cached", "--name-only")).toBe("");
+	expect((await next.snapshot(ws)).contentFingerprint).toBe(f.snapshot.contentFingerprint);
+	await expect(
+		next.prepare({
+			id: ws.id,
+			repository: ws.repository,
+			baseSha: "c".repeat(40),
+			defaultBranch: "main",
+		}),
+	).rejects.toThrow(/identity/);
+});
+it("performs scripts-enabled installs with a per-command registry and rolls back failed upgrades", async () => {
+	const run = runner();
+	const f = await fixture({ run });
+	run.mockImplementation(async (request) => {
+		expect(request.args).not.toContain("--offline");
+		expect(request.args).not.toContain("--ignore-scripts");
+		expect(request.env?.npm_config_registry).toBe("https://mirrors.tencent.com/npm/");
+		await writeFile(join(request.cwd, "package-lock.json"), '{"updated":true}\n');
+		return { exitCode: 0, stdout: "installed", stderr: "" };
+	});
+	const input = {
+		manifest: "package.json",
+		section: "dependencies" as const,
+		name: "demo",
+		version: "2.0.0",
+	};
+	const updated = await f.driver.updateDependency(f.workspace, input);
+	expect(updated.changedPaths).toEqual(["package-lock.json", "package.json"]);
+	expect((await f.driver.updateDependency(f.workspace, input)).contentFingerprint).toBe(
+		updated.contentFingerprint,
+	);
+	run.mockResolvedValueOnce({ exitCode: 2, stdout: "npm ERR! dependency missing", stderr: "" });
+	const before = await f.driver.readFile(f.workspace, "package.json");
+	await expect(f.driver.updateDependency(f.workspace, input)).rejects.toThrow(/Local command/);
+	expect(await f.driver.readFile(f.workspace, "package.json")).toBe(before);
+});
+it("executes real generated Husky hooks and refuses inactive wrappers", async () => {
+	const f = await fixture();
+	await mkdir(join(f.source, ".husky"));
+	await writeFile(
+		join(f.source, ".husky/pre-commit"),
+		"printf pre-commit >> hook-result\ntest ! -e .git/block-commit\n",
+	);
+	await writeFile(
+		join(f.source, ".husky/pre-push"),
+		"cat >.git/push-input\nprintf pre-push >> hook-result\ntest ! -e .git/block-push\n",
+	);
+	git(f.source, "add", ".husky/pre-commit", ".husky/pre-push");
+	git(f.source, "commit", "-m", "husky");
+	const run = runner();
+	run.mockImplementation(async (request) => {
+		if (request.args[0] === "install") {
+			await cp(
+				dirname(fileURLToPath(import.meta.resolve("husky"))),
+				join(request.cwd, "node_modules/husky"),
+				{ recursive: true },
+			);
+			await writeFile(join(request.cwd, "package-lock.json"), '{"updated":true}');
+			return runLocal({
+				...request,
+				command: process.execPath,
+				args: [join(request.cwd, "node_modules/husky/bin.js")],
+				env: { ...request.env, HOME: f.root },
+			});
+		}
+		return runLocal({
+			...request,
+			env: {
+				...request.env,
+				HOME: f.root,
+				GIT_AUTHOR_NAME: "Fixture",
+				GIT_AUTHOR_EMAIL: "fixture@example.invalid",
+				GIT_COMMITTER_NAME: "Fixture",
+				GIT_COMMITTER_EMAIL: "fixture@example.invalid",
+			},
+		});
+	});
+	const remote = join(f.root, "husky-remote.git");
+	git(f.root, "init", "--bare", "-b", "main", remote);
+	const driver = new WorkspaceDriver({
+		root: join(f.root, "husky-work"),
+		profiles: { "fixture/repo": { ...f.profile, hooksPath: ".husky/_" } },
+		localSources: { "fixture/repo": f.source },
+		run,
+		gitTransport: (request) =>
+			hostGitTransport({
+				...request,
+				command: {
+					command: "git",
+					args: request.command.args.map((value) =>
+						value === "https://github.com/fixture/repo.git" ? remote : value,
+					),
+				},
+			}),
+	});
+	const ws = await driver.prepare({
+		id: "deps-husky",
+		repository: "fixture/repo",
+		baseSha: git(f.source, "rev-parse", "HEAD"),
+		defaultBranch: "main",
+	});
+	await driver.updateDependency(ws, {
+		manifest: "package.json",
+		section: "dependencies",
+		name: "demo",
+		version: "2.0.0",
+	});
+	const snap = await driver.snapshot(ws);
+	const checks = await driver.check(ws, { contentFingerprint: snap.contentFingerprint });
+	const args = {
+		contentFingerprint: snap.contentFingerprint,
+		files: snap.changedPaths,
+		message: "fix: fixture",
+		checks,
+	};
+	await writeFile(join(ws.path, ".git/block-commit"), "");
+	await expect(driver.commit(ws, args)).rejects.toThrow(/Local command/);
+	expect(git(ws.path, "diff", "--cached", "--name-only")).toBe("");
+	await rm(join(ws.path, ".git/block-commit"));
+	const committed = await driver.commit(ws, args);
+	git(ws.path, "remote", "set-url", "origin", remote);
+	const proof = {
+		head: committed.head,
+		contentFingerprint: committed.contentFingerprint,
+		checks,
+		signoff: {
+			head: committed.head,
+			contentFingerprint: committed.contentFingerprint,
+			validationDigest: checks.validationDigest,
+		},
+	};
+	await writeFile(join(ws.path, ".git/block-push"), "");
+	await expect(driver.push(ws, proof)).rejects.toThrow(/transport/);
+	expect(git(f.root, "ls-remote", remote)).toBe("");
+	await rm(join(ws.path, ".git/block-push"));
+	expect(await driver.push(ws, proof)).toMatchObject({ reconciled: false });
+	expect(await readFile(join(ws.path, "hook-result"), "utf8")).toBe(
+		"pre-commitpre-commitpre-pushpre-push",
+	);
+	expect(await readFile(join(ws.path, ".git/push-input"), "utf8")).toContain(
+		`${committed.head} refs/heads/${ws.branch}`,
+	);
+	await writeFile(join(ws.path, ".husky/_/pre-commit"), "#!/bin/sh\nexit 0\n");
+	await expect(
+		driver.check(ws, { contentFingerprint: committed.contentFingerprint }),
+	).rejects.toThrow(/Husky/);
+});
+it("cancels dependency installation and preserves the exact retry input", async () => {
+	const run = runner();
+	const f = await fixture({ run });
+	const controller = new AbortController();
+	run.mockImplementationOnce(async (request) => {
+		expect(request.signal).toBe(controller.signal);
+		await writeFile(join(request.cwd, "package-lock.json"), "partial");
+		controller.abort();
+		return { exitCode: 1, stdout: "", stderr: "aborted" };
+	});
+	const input = {
+		manifest: "package.json",
+		section: "dependencies" as const,
+		name: "demo",
+		version: "2.0.0",
+		signal: controller.signal,
+	};
+	await expect(f.driver.updateDependency(f.workspace, input)).rejects.toThrow(/cancelled/);
+	expect(await f.driver.readFile(f.workspace, "package.json")).toBe(manifest());
+	expect(await f.driver.readFile(f.workspace, "package-lock.json")).toBe("{}\n");
+	expect(
+		(
+			await f.driver.updateDependency(f.workspace, {
+				...input,
+				signal: new AbortController().signal,
+			})
+		).changedPaths,
+	).toEqual(["package.json"]);
+});
+it("reports bounded safe native diagnostics and rejects cancelled or changed checks", async () => {
+	const f = await prepared();
+	f.run.mockResolvedValueOnce({
+		exitCode: 1,
+		stdout: "TS2322: fix the import",
+		stderr: "Authorization: Bearer private-token",
+	});
+	try {
+		await f.driver.check(f.workspace, { contentFingerprint: f.snapshot.contentFingerprint });
+		throw new Error("expected failure");
+	} catch (error) {
+		expect(error).toBeInstanceOf(WorkspaceError);
+		expect((error as WorkspaceError).details).toContain("TS2322");
+		expect((error as WorkspaceError).details).not.toContain("private-token");
+	}
+	await expect(
+		f.driver.check(f.workspace, {
+			contentFingerprint: f.snapshot.contentFingerprint,
+			signal: AbortSignal.abort(),
+		}),
+	).rejects.toThrow(/cancelled/);
+	f.run.mockImplementationOnce(async () => {
+		await f.driver.writeFile(f.workspace, "src/fix.ts", "mutated");
+		return { exitCode: 0, stdout: "", stderr: "" };
+	});
+	await expect(
+		f.driver.check(f.workspace, { contentFingerprint: f.snapshot.contentFingerprint }),
+	).rejects.toThrow(/changed/);
+});
+it("refuses invalid identities, missing profile and incomplete or unsafe diff contents", async () => {
+	const f = await fixture();
+	for (const change of [
+		{ id: "../main" },
+		{ repository: "https://evil/repo" },
+		{ baseSha: "bad" },
+		{ defaultBranch: "--bad" },
+	])
+		await expect(
+			f.driver.prepare({
+				id: "deps-new",
+				repository: "fixture/repo",
+				baseSha: f.baseSha,
+				defaultBranch: "main",
+				...change,
+			}),
+		).rejects.toThrow();
+	const empty = new WorkspaceDriver({ root: join(f.root, "empty"), profiles: {} });
+	await expect(
+		empty.prepare({
+			id: "deps-test",
+			repository: "fixture/repo",
+			baseSha: f.baseSha,
+			defaultBranch: "main",
+		}),
+	).rejects.toThrow(/profile/);
+	await expect(
+		f.driver.readFile({ ...f.workspace, branch: "main" }, "package.json"),
+	).rejects.toThrow(/identity/);
+	await f.driver.writeFile(f.workspace, "src/fix.ts", "x".repeat(45000));
+	await expect(f.driver.snapshot(f.workspace)).rejects.toThrow(/40 KiB/);
+	await rm(join(f.workspace.path, "src"), { recursive: true });
+	await writeFile(join(f.workspace.path, "package.json"), Buffer.from([0, 1]));
+	await expect(f.driver.snapshot(f.workspace)).rejects.toThrow(/binary/);
+});
+it("requires unchanged active hooks rather than silently bypassing local checks", async () => {
+	const f = await prepared();
+	git(f.workspace.path, "config", "core.hooksPath", ".elsewhere");
+	await expect(
+		f.driver.check(f.workspace, { contentFingerprint: f.snapshot.contentFingerprint }),
+	).rejects.toThrow(/hooks/);
+	git(f.workspace.path, "config", "core.hooksPath", ".hooks");
+	await writeFile(join(f.workspace.path, ".hooks/pre-commit"), "#!/bin/sh\nexit 1\n");
+	await expect(
+		f.driver.check(f.workspace, { contentFingerprint: f.snapshot.contentFingerprint }),
+	).rejects.toThrow(/allowlist/);
+	await writeFile(
+		join(f.workspace.path, ".hooks/pre-commit"),
+		"#!/bin/sh\nprintf pre-commit >> hook-result\n",
+	);
+	await chmod(join(f.workspace.path, ".hooks/pre-commit"), 0o644);
+	await expect(
+		f.driver.check(f.workspace, { contentFingerprint: f.snapshot.contentFingerprint }),
+	).rejects.toThrow(/allowlist/);
 });
 
-it("omits oversized diagnostic lines before redaction without leaking truncated credential fragments", async () => {
-	const { WorkspaceError } = await import("./repair-workspace.ts");
-	const secret = `giraffe_${"x".repeat(10000)}`;
-	const error = new WorkspaceError(
-		"check failed",
-		`error TS1005: expected semicolon\n${secret}\n${"line\n".repeat(150)}`,
+it("refuses changed bases, default branches, invalid profiles and replaced workspace paths", async () => {
+	const f = await fixture();
+	const input = {
+		id: "deps-next",
+		repository: "fixture/repo",
+		baseSha: f.baseSha,
+		defaultBranch: "main",
+	};
+	await expect(f.driver.prepare({ ...input, baseSha: "a".repeat(40) })).rejects.toThrow(/SHA/);
+	await expect(f.driver.prepare({ ...input, defaultBranch: "giraffe/deps-next" })).rejects.toThrow(
+		/Default/,
 	);
-	expect(error.details).toContain("expected semicolon");
-	expect(error.details).toContain("oversized diagnostic line omitted");
-	expect(error.details).not.toContain("giraffe_");
-	expect(Buffer.byteLength(error.details ?? "")).toBeLessThanOrEqual(2048);
+	for (const patch of [{ checks: ["bad script"] }, { files: [".env"] }, { hooksPath: "" }]) {
+		const driver = new WorkspaceDriver({
+			root: join(f.root, "invalid"),
+			profiles: { "fixture/repo": { ...f.profile, ...patch } },
+		});
+		await expect(driver.prepare(input)).rejects.toThrow();
+	}
+	await symlink(f.driver.root, join(f.root, "alias"));
+	const alias = new WorkspaceDriver({
+		root: join(f.root, "alias"),
+		profiles: { "fixture/repo": f.profile },
+	});
+	await expect(alias.prepare(input)).rejects.toThrow(/symlink/);
+	git(f.workspace.path, "checkout", "-b", "other");
+	await expect(f.driver.snapshot(f.workspace)).rejects.toThrow(/branch/);
+	git(f.workspace.path, "checkout", f.workspace.branch);
+	await rename(f.workspace.path, `${f.workspace.path}-old`);
+	await symlink(`${f.workspace.path}-old`, f.workspace.path);
+	await expect(f.driver.snapshot(f.workspace)).rejects.toThrow(/symlink/);
+});
+it("rejects unsafe file types, ignored review inputs, oversized writes and preserves deletions", async () => {
+	const f = await fixture();
+	await expect(f.driver.writeFile(f.workspace, "src/fix.ts", "\0")).rejects.toThrow(/binary/);
+	await expect(f.driver.writeFile(f.workspace, "src/fix.ts", "x".repeat(270000))).rejects.toThrow(
+		/limit/,
+	);
+	await mkdir(join(f.workspace.path, "src/fix.ts"), { recursive: true });
+	await expect(f.driver.writeFile(f.workspace, "src/fix.ts", "x")).rejects.toThrow(/Unsafe file/);
+	await expect(f.driver.readFile(f.workspace, "src/fix.ts")).rejects.toThrow(/regular/);
+	await rm(join(f.workspace.path, "src/fix.ts"), { recursive: true });
+	await writeFile(join(f.root, "hard"), "x");
+	await link(join(f.root, "hard"), join(f.workspace.path, "src/fix.ts"));
+	await expect(f.driver.readFile(f.workspace, "src/fix.ts")).rejects.toThrow(/regular/);
+	await expect(f.driver.writeFile(f.workspace, "src/fix.ts", "x")).rejects.toThrow(/Unsafe file/);
+	await rm(join(f.workspace.path, "src/fix.ts"));
+	await mkdir(join(f.workspace.path, ".git/info"), { recursive: true });
+	await writeFile(join(f.workspace.path, ".git/info/exclude"), "src/fix.ts\n");
+	await writeFile(join(f.workspace.path, "src/fix.ts"), "ignored");
+	await expect(f.driver.snapshot(f.workspace)).rejects.toThrow(/ignored/);
+	await rm(join(f.workspace.path, "src/fix.ts"));
+	await rm(join(f.workspace.path, "package.json"));
+	expect(
+		(await f.driver.snapshot(f.workspace)).manifestBeforeAfter["package.json"]?.after,
+	).toBeNull();
+	await writeFile(join(f.workspace.path, "package.json"), "x".repeat(270000));
+	await expect(f.driver.snapshot(f.workspace)).rejects.toThrow(/limit/);
+});
+it("rejects ambiguous commit intents and leaves unrelated index and head changes untouched", async () => {
+	const f = await prepared();
+	const marker = join(f.driver.root, `${f.workspace.id}.commit.json`);
+	const intent = {
+		beforeHead: f.snapshot.head,
+		contentFingerprint: f.snapshot.contentFingerprint,
+		files: f.snapshot.changedPaths,
+	};
+	await writeFile(marker, JSON.stringify({ ...intent, files: [".git/config"] }));
+	await expect(f.driver.snapshot(f.workspace)).rejects.toThrow(/Invalid commit intent/);
+	await writeFile(marker, JSON.stringify({ ...intent, contentFingerprint: "wrong" }));
+	await expect(f.driver.snapshot(f.workspace)).rejects.toThrow(/intent content/);
+	await writeFile(marker, JSON.stringify(intent));
+	expect((await f.driver.snapshot(f.workspace)).contentFingerprint).toBe(
+		f.snapshot.contentFingerprint,
+	);
+	await f.driver.writeFile(f.workspace, "src/fix.ts", "different staged bytes");
+	git(f.workspace.path, "add", "src/fix.ts");
+	await f.driver.writeFile(f.workspace, "src/fix.ts", "fixed\n");
+	await writeFile(marker, JSON.stringify(intent));
+	await expect(f.driver.snapshot(f.workspace)).rejects.toThrow(/staged content/);
+	git(f.workspace.path, "restore", "--staged", "--", "src/fix.ts");
+	await f.driver.snapshot(f.workspace);
+	git(f.workspace.path, "add", "src/fix.ts");
+	git(f.workspace.path, "commit", "-m", "intended");
+	git(f.workspace.path, "commit", "--allow-empty", "-m", "unrelated");
+	await writeFile(marker, JSON.stringify(intent));
+	await expect(f.driver.snapshot(f.workspace)).rejects.toThrow(/head mismatch/);
+	expect(git(f.workspace.path, "log", "-1", "--format=%s")).toBe("unrelated");
+});
+it("rejects non-root dependency plans, baseline policy weakening and replay drift", async () => {
+	const run = runner();
+	const f = await fixture({ run });
+	const input = {
+		manifest: "package.json",
+		section: "dependencies" as const,
+		name: "demo",
+		version: "2.0.0",
+	};
+	for (const patch of [
+		{ manifest: "nested/package.json" },
+		{ version: "https://evil" },
+		{ name: "missing" },
+	])
+		await expect(f.driver.updateDependency(f.workspace, { ...input, ...patch })).rejects.toThrow();
+	await writeFile(join(f.workspace.path, "package.json"), '{"scripts":{"test":"true"}}');
+	let snapshot = await f.driver.snapshot(f.workspace);
+	await expect(
+		f.driver.check(f.workspace, { contentFingerprint: snapshot.contentFingerprint }),
+	).rejects.toThrow(/scripts/);
+	await f.driver.writeFile(f.workspace, "package.json", manifest());
+	await f.driver.writeFile(f.workspace, "src/fix.ts", "unrelated");
+	await expect(f.driver.updateDependency(f.workspace, input)).rejects.toThrow(/replay/);
+	await rm(join(f.workspace.path, "src/fix.ts"));
+	const original = JSON.parse(manifest());
+	original.optionalDependencies = { demo: "2.0.0" };
+	await f.driver.writeFile(f.workspace, "package.json", JSON.stringify(original));
+	await expect(
+		f.driver.updateDependency(f.workspace, { ...input, section: "optionalDependencies" }),
+	).rejects.toThrow(/baseline/);
+	await f.driver.writeFile(f.workspace, "package.json", manifest());
+	run.mockImplementationOnce(async () => {
+		await f.driver.writeFile(f.workspace, "src/fix.ts", "side effect");
+		return { exitCode: 0, stdout: "", stderr: "" };
+	});
+	await expect(f.driver.updateDependency(f.workspace, input)).rejects.toThrow(/unexpected files/);
+	expect(await f.driver.readFile(f.workspace, "package.json")).toBe(manifest());
+	await rm(join(f.workspace.path, "src/fix.ts"));
+	snapshot = await f.driver.snapshot(f.workspace);
+	expect(snapshot.changedPaths).toEqual([]);
+});
+it("supports Bun and custom registry while requiring tracked checks, lockfile and hook activation", async () => {
+	const f = await fixture();
+	await writeFile(join(f.source, "bun.lock"), "{}\n");
+	git(f.source, "add", "bun.lock");
+	git(f.source, "commit", "-m", "bun fixture");
+	const run = runner();
+	const driverFor = (name: string, patch: Partial<RepairProfile>) =>
+		new WorkspaceDriver({
+			root: join(f.root, name),
+			profiles: { "fixture/repo": { ...f.profile, ...patch } },
+			localSources: { "fixture/repo": f.source },
+			run,
+			registry: "https://mirror.example.invalid/",
+		});
+	const input = {
+		id: "deps-bun",
+		repository: "fixture/repo",
+		baseSha: git(f.source, "rev-parse", "HEAD"),
+		defaultBranch: "main",
+	};
+	const plan = {
+		manifest: "package.json",
+		section: "dependencies" as const,
+		name: "demo",
+		version: "2.0.0",
+	};
+	const missing = driverFor("missing", { files: ["package.json"] });
+	await expect(missing.updateDependency(await missing.prepare(input), plan)).rejects.toThrow(
+		/Lockfile/,
+	);
+	const unchecked = driverFor("unchecked", { checks: ["absent"] });
+	const unknown = await unchecked.prepare(input);
+	await expect(
+		unchecked.check(unknown, {
+			contentFingerprint: (await unchecked.snapshot(unknown)).contentFingerprint,
+		}),
+	).rejects.toThrow(/missing from baseline/);
+	const driver = driverFor("bun", {
+		manager: "bun",
+		files: ["package.json", "bun.lock", "src/fix.ts"],
+	});
+	const ws = await driver.prepare(input);
+	run.mockImplementationOnce(async (request) => {
+		expect(request.command).toBe("bun");
+		expect(request.args).toEqual(["install"]);
+		expect(request.env?.BUN_CONFIG_REGISTRY).toBe("https://mirror.example.invalid/");
+		await writeFile(join(request.cwd, "bun.lock"), '{"v":2}\n');
+		return { exitCode: 0, stdout: "", stderr: "" };
+	});
+	const changed = await driver.updateDependency(ws, plan);
+	const checks = await driver.check(ws, { contentFingerprint: changed.contentFingerprint });
+	git(ws.path, "config", "core.hooksPath", ".wrong");
+	await expect(
+		driver.commit(ws, {
+			contentFingerprint: changed.contentFingerprint,
+			files: changed.changedPaths,
+			message: "fix",
+			checks,
+		}),
+	).rejects.toThrow(/hooks/);
+});
+it("bounds and redacts diagnostics and hides thrown adapter and commit errors", async () => {
+	const secret = `giraffe_${"x".repeat(10000)}`;
+	const diagnostic = new WorkspaceError(
+		"check failed",
+		`TS1005: expected semicolon\n${secret}\n${"line\n".repeat(150)}`,
+	);
+	expect(diagnostic.details).toContain("oversized diagnostic line omitted");
+	expect(diagnostic.details).not.toContain("giraffe_");
+	const privateOutput =
+		"TS2322:\tmissing import\r\n-----BEGIN PRIVATE KEY-----\nprivate-material\n-----END PRIVATE KEY-----\nCookie: session=cookie-secret\nAuthorization: Bearer bearer-secret\n";
+	const redacted = new WorkspaceError("check failed", `${privateOutput}${"\u754c".repeat(1000)}`);
+	expect(Buffer.byteLength(redacted.details ?? "")).toBeLessThanOrEqual(2048);
+	expect(redacted.details).not.toMatch(/private-material|cookie-secret|bearer-secret|\uFFFD/);
+	const f = await prepared();
+	f.run.mockRejectedValueOnce(new Error("adapter-secret"));
+	const thrown = await f.driver
+		.check(f.workspace, { contentFingerprint: f.snapshot.contentFingerprint })
+		.catch((error) => error);
+	expect(thrown.details).toBeUndefined();
+	expect(thrown.message).not.toContain("adapter-secret");
+	f.run.mockResolvedValueOnce({ exitCode: 0, stdout: "x".repeat(1100000), stderr: "" });
+	await expect(
+		f.driver.check(f.workspace, { contentFingerprint: f.snapshot.contentFingerprint }),
+	).rejects.toThrow(/bounds/);
+	f.run.mockResolvedValueOnce({ exitCode: 1, stdout: "commit-secret", stderr: "host-secret" });
+	const error = await f.driver.commit(f.workspace, f.commit).catch((value) => value);
+	expect(error.details).toBeUndefined();
+	expect(error.message).not.toContain("secret");
+});
+it("requires clean exact-code publication and rejects failed, unconfirmed and mutating transports", async () => {
+	let mode = "empty";
+	const transport: HostGitTransport = async (request) => {
+		expect(request.signal).toBeDefined();
+		if (mode === "throw") throw new Error("private transport error");
+		if (mode === "fail") return { exitCode: 1, stdout: "private", stderr: "secret" };
+		if (mode === "mutate" && request.operation === "push")
+			await writeFile(join(request.cwd, "src/fix.ts"), "changed during prepush");
+		return { exitCode: 0, stdout: "", stderr: "" };
+	};
+	const run = runner();
+	const f = await fixture({ run, transport });
+	await f.driver.writeFile(f.workspace, "src/fix.ts", "fixed");
+	const before = await f.driver.snapshot(f.workspace);
+	const checked = await f.driver.check(f.workspace, {
+		contentFingerprint: before.contentFingerprint,
+	});
+	const signal = new AbortController().signal;
+	await expect(
+		f.driver.push(f.workspace, { ...proofFor(before, checked), signal }),
+	).rejects.toThrow(/clean/);
+	const committed = await f.driver.commit(f.workspace, {
+		contentFingerprint: before.contentFingerprint,
+		files: before.changedPaths,
+		message: "fix",
+		checks: checked,
+	});
+	const proof = { ...proofFor(committed, checked), signal };
+	await expect(
+		f.driver.push(f.workspace, {
+			...proof,
+			signoff: { ...proof.signoff, validationDigest: "stale" },
+		}),
+	).rejects.toThrow(/signoff/);
+	await expect(f.driver.push(f.workspace, proof)).rejects.toThrow(/not confirmed/);
+	for (const value of ["throw", "fail"]) {
+		mode = value;
+		const failed = await f.driver.push(f.workspace, proof).catch((error) => error);
+		expect(failed.message).toMatch(/transport/);
+		expect(failed.details).toBeUndefined();
+		expect(failed.message).not.toMatch(/private|secret/);
+	}
+	mode = "mutate";
+	await expect(f.driver.push(f.workspace, proof)).rejects.toThrow(/changed signed content/);
+});
+it("clones through the native transport without trusting a different remote or modifying provenance", async () => {
+	const f = await fixture({ run: runner() });
+	const transport: HostGitTransport = async (request) => {
+		const args = request.command.args.map((arg) =>
+			arg === "https://github.com/fixture/repo.git" || arg === "origin" ? f.source : arg,
+		);
+		return { exitCode: 0, stdout: git(request.cwd, ...args), stderr: "" };
+	};
+	const profile = { ...f.profile, files: [...f.profile.files, "README.md"] };
+	const driver = new WorkspaceDriver({
+		root: join(f.root, "host"),
+		profiles: { "fixture/repo": profile },
+		gitTransport: transport,
+		run: runner(),
+	});
+	const ws = await driver.prepare({
+		id: "deps-host",
+		repository: "fixture/repo",
+		baseSha: f.baseSha,
+		defaultBranch: "main",
+	});
+	await expect(driver.writeFile(ws, "README.md", "changed")).rejects.toThrow(/Protected/);
+	await driver.writeFile(ws, "src/fix.ts", "fixed");
+	const before = await driver.snapshot(ws);
+	const checks = await driver.check(ws, { contentFingerprint: before.contentFingerprint });
+	const snapshot = await driver.commit(ws, {
+		contentFingerprint: before.contentFingerprint,
+		files: before.changedPaths,
+		message: "fix",
+		checks,
+	});
+	await expect(driver.push(ws, proofFor(snapshot, checks))).rejects.toThrow(/remote changed/);
+	git(ws.path, "remote", "set-url", "origin", "https://github.com/fixture/repo.git");
+	expect((await driver.push(ws, proofFor(snapshot, checks))).reconciled).toBe(false);
+	expect((await driver.push(ws, proofFor(snapshot, checks))).reconciled).toBe(true);
+});
+it("rejects an inactive baseline hook and binary or excessive review diffs", async () => {
+	const f = await fixture({ run: runner() });
+	await writeFile(join(f.source, ".hooks/pre-commit"), "");
+	await writeFile(join(f.source, "binary.txt"), Buffer.from([0, 1, 2]));
+	git(f.source, "add", ".hooks/pre-commit", "binary.txt");
+	git(f.source, "commit", "-m", "inactive fixture hook");
+	const driver = new WorkspaceDriver({
+		root: join(f.root, "edge"),
+		profiles: {
+			"fixture/repo": {
+				...f.profile,
+				files: [...f.profile.files, "binary.txt", ".hooks/pre-commit"],
+			},
+		},
+		localSources: { "fixture/repo": f.source },
+		run: runner(),
+	});
+	const ws = await driver.prepare({
+		id: "deps-edge",
+		repository: "fixture/repo",
+		baseSha: git(f.source, "rev-parse", "HEAD"),
+		defaultBranch: "main",
+	});
+	const snapshot = await driver.snapshot(ws);
+	await expect(
+		driver.check(ws, { contentFingerprint: snapshot.contentFingerprint }),
+	).rejects.toThrow(/hook unavailable/);
+	await writeFile(join(ws.path, ".hooks/pre-commit"), "#!/bin/sh\nexit 0\n");
+	await expect(
+		driver.check(ws, { contentFingerprint: (await driver.snapshot(ws)).contentFingerprint }),
+	).rejects.toThrow(/hook changed/);
+	await writeFile(join(ws.path, ".hooks/pre-commit"), "");
+	await driver.writeFile(ws, "binary.txt", "text replacement\n");
+	await expect(driver.snapshot(ws)).rejects.toThrow(/Binary diff/);
+	for (let index = 0; index < 101; index++) await writeFile(join(ws.path, `extra-${index}`), "x");
+	await expect(driver.snapshot(ws)).rejects.toThrow(/Too many/);
+});
+it("does not race rollback against a process whose cleanup failed", async () => {
+	const run = runner();
+	const f = await fixture({ run });
+	const before = await f.driver.snapshot(f.workspace);
+	run.mockRejectedValueOnce(new LocalCleanupError());
+	await expect(
+		f.driver.check(f.workspace, { contentFingerprint: before.contentFingerprint }),
+	).rejects.toBeInstanceOf(LocalCleanupError);
+	run.mockImplementationOnce(async (request) => {
+		await writeFile(join(request.cwd, "package-lock.json"), "partial");
+		throw new LocalCleanupError();
+	});
+	await expect(
+		f.driver.updateDependency(f.workspace, {
+			manifest: "package.json",
+			section: "dependencies",
+			name: "demo",
+			version: "2.0.0",
+		}),
+	).rejects.toBeInstanceOf(LocalCleanupError);
+	expect(await f.driver.readFile(f.workspace, "package.json")).toContain("2.0.0");
+	expect(await f.driver.readFile(f.workspace, "package-lock.json")).toBe("partial");
+	const g = await prepared();
+	g.run.mockRejectedValueOnce(new LocalCleanupError());
+	await expect(g.driver.commit(g.workspace, g.commit)).rejects.toBeInstanceOf(LocalCleanupError);
+	expect(git(g.workspace.path, "diff", "--cached", "--name-only")).toBe("src/fix.ts");
+	expect(await readFile(join(g.driver.root, `${g.workspace.id}.commit.json`), "utf8")).toContain(
+		g.snapshot.contentFingerprint,
+	);
+});
+it("retains a host transport cleanup failure for operator intervention", async () => {
+	const f = await fixture({
+		run: runner(),
+		transport: async () => {
+			throw new LocalCleanupError();
+		},
+	});
+	await f.driver.writeFile(f.workspace, "src/fix.ts", "fixed");
+	const snap = await f.driver.snapshot(f.workspace);
+	const checks = await f.driver.check(f.workspace, { contentFingerprint: snap.contentFingerprint });
+	const committed = await f.driver.commit(f.workspace, {
+		contentFingerprint: snap.contentFingerprint,
+		files: snap.changedPaths,
+		message: "fix",
+		checks,
+	});
+	await expect(f.driver.push(f.workspace, proofFor(committed, checks))).rejects.toBeInstanceOf(
+		LocalCleanupError,
+	);
 });

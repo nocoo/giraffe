@@ -105,8 +105,8 @@ Narratives remain in [Retrospective.md](Retrospective.md); keep only recurring r
 ## Dependency Repair Runtime
 
 - `bun run agent repair` runs a persistent five-field cron; `--once` requests one bounded occurrence. Local `repairs.enabled` controls activation, `push` separately controls dedicated-branch publication.
-- Only dependency-upgrade issues, configured npm/Bun root manifests, owner-eligible repositories, unchanged baseline checks/hooks and verified isolation are supported. Missing prerequisites are blocked, never bypassed.
+- Only dependency-upgrade issues, configured npm/Bun root manifests, owner-eligible repositories and unchanged baseline checks/hooks are supported. Missing local tools or check profiles are blocked, never bypassed.
 - A separate persistent Astra reviewer must sign the exact HEAD/content/check digest with zero findings; at most 20 fix/review rounds. Any changed code/proof invalidates approval. No merges, releases, default-branch or force pushes.
-- Install/check/commit/pre-push processes receive no model/API credentials. Preserve the filesystem Git metadata seal, isolated pre-push, and clean metadata-only host publication boundary.
+- Use dedicated clones and the local Git/npm/Bun toolchain, with normal lifecycle scripts and Git hooks. There is no Docker adapter or OS isolation: repository scripts run as the current user and can access that user's files/network. Enable only trusted repositories. Do not inject model/API keys into child environments or expose them through model tools, logs or web payloads.
 - Repair state, cron occurrences and candidate cursors survive restarts. Publish bounded progress/heartbeats through the API, preserve safe diagnostics, and distinguish terminal live-state changes from retryable transport failures.
-- Tests use fake models/APIs and temporary local Git repositories; root four-metric coverage gates stay >=95%. Do not enable real repair profiles without an independently reviewed execution image/check contract.
+- Tests use fake models/APIs and temporary local Git repositories; root four-metric coverage gates stay >=95%. Native fixture success is not real-target acceptance or authorization to enable profiles/push.

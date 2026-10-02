@@ -1,10 +1,17 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
-import { chmod, lstat, mkdir, open, readdir, realpath, rm, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, open, realpath, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
+import {
+	type CommandResult,
+	hostGitTransport,
+	LocalCleanupError,
+	type LocalRunner,
+	runLocal,
+} from "./repair-local.ts";
 
 export type CheckCommand = { command: string; args: string[] };
 export type RepairProfile = {
@@ -38,20 +45,6 @@ export type CheckReceipt = {
 	results: { command: string; exitCode: 0; stdout: string; stderr: string }[];
 };
 export type ReviewSignoff = { head: string; contentFingerprint: string; validationDigest: string };
-export type SandboxRequest = {
-	workspace: Workspace;
-	argv: string[];
-	purpose: "install" | "check" | "commit" | "prepush";
-	stdin?: string;
-	timeoutMs: number;
-	signal?: AbortSignal;
-};
-export type SandboxRunner = {
-	verified: true;
-	capabilities: { filesystem: boolean; network: boolean; resourceLimits: boolean };
-	limitations: string[];
-	run(request: SandboxRequest): Promise<{ exitCode: number; stdout: string; stderr: string }>;
-};
 export type GitTransportRequest = {
 	operation: "clone" | "remoteHead" | "push";
 	repository: string;
@@ -67,7 +60,8 @@ export type HostGitTransport = (
 export type WorkspaceDriverOptions = {
 	root?: string;
 	profiles: Record<string, RepairProfile>;
-	sandbox?: SandboxRunner;
+	run?: LocalRunner;
+	registry?: string;
 	gitTransport?: HostGitTransport;
 	localSources?: Record<string, string>;
 	gitExecutable?: string;
@@ -200,60 +194,6 @@ export class WorkspaceDriver {
 		fileName(p.hooksPath);
 		return { ...p, hooksPath: p.hooksPath };
 	}
-	private sealPath(ws: Workspace) {
-		return join(this.root, `${ws.id}.seal.json`);
-	}
-	private async metadata(ws: Workspace) {
-		const gitDir = join(ws.path, ".git");
-		if (!(await lstat(gitDir)).isDirectory() || (await lstat(gitDir)).isSymbolicLink())
-			fail("Untrusted Git metadata directory");
-		const records: Record<string, string> = {};
-		let count = 0;
-		const walk = async (path: string, protectedFiles: boolean) => {
-			const stat = await lstat(path);
-			if (stat.isSymbolicLink() || (!stat.isDirectory() && !stat.isFile()))
-				fail("Untrusted Git metadata path");
-			if (++count > 50000) fail("Git metadata exceeds safety bound");
-			if (stat.isDirectory()) {
-				if (protectedFiles) records[relative(ws.path, path)] = "directory";
-				for (const name of await readdir(path)) await walk(join(path, name), protectedFiles);
-			} else {
-				if (stat.nlink !== 1) fail("Untrusted Git metadata hardlink");
-				if (protectedFiles)
-					records[relative(ws.path, path)] = `${stat.mode & 0o777}:${sha(await boundedRead(path))}`;
-			}
-		};
-		await walk(gitDir, false);
-		for (const name of [
-			"commondir",
-			"gitdir",
-			"config.worktree",
-			"objects/info/alternates",
-			"objects/info/http-alternates",
-			"info/grafts",
-			"refs/replace",
-		])
-			if (!(await absent(join(gitDir, name))))
-				fail("External or replacement Git metadata forbidden");
-		for (const name of ["config", "info", "hooks"]) {
-			const path = join(gitDir, name);
-			if (await absent(path)) records[`.git/${name}`] = "absent";
-			else await walk(path, true);
-		}
-		const config = await boundedRead(join(gitDir, "config"));
-		if (/^\s*\[(?:include|includeIf|extensions)(?:\s|\])/im.test(config))
-			fail("Git includes and extensions forbidden");
-		const hooks = join(ws.path, this.profile(ws).hooksPath);
-		if (await absent(hooks)) records[this.profile(ws).hooksPath] = "absent";
-		else await walk(await plainPath(ws.path, this.profile(ws).hooksPath), true);
-		return records;
-	}
-	private async assertSeal(ws: Workspace) {
-		if ((await realpath(ws.path)) !== ws.path) fail("Workspace symlink rejected");
-		const expected = await boundedRead(this.sealPath(ws));
-		if (expected !== JSON.stringify(await this.metadata(ws)))
-			fail("Git metadata seal changed; workspace blocked");
-	}
 	private abort(signal?: AbortSignal) {
 		if (signal?.aborted) fail("Repair operation cancelled");
 	}
@@ -283,8 +223,6 @@ export class WorkspaceDriver {
 		};
 	}
 	private async git(cwd: string, args: string[], extra: Record<string, string> = {}) {
-		const workspace = [...this.issued.values()].find((value) => value.path === cwd);
-		if (workspace && !(await absent(this.sealPath(workspace)))) await this.assertSeal(workspace);
 		const home = join(this.root, ".scratch");
 		await mkdir(home, { recursive: true, mode: 0o700 });
 		try {
@@ -311,23 +249,6 @@ export class WorkspaceDriver {
 			return result.stdout;
 		} catch {
 			fail("Git operation failed or exceeded bounds");
-		}
-	}
-	private async safeTree(ws: Workspace) {
-		const raw = await this.git(ws.path, ["ls-tree", "-rz", ws.baseSha]);
-		for (const row of raw.split("\0").filter(Boolean)) {
-			const mode = row.slice(0, 6);
-			const name = row.slice(row.indexOf("\t") + 1);
-			if (mode === "120000" || mode === "160000") fail("Symlinks and submodules are unsupported");
-			if (name.split("/").some((part) => denied.test(part)))
-				fail("Credential paths in repository are unsupported");
-			if (name.split("/").some((p) => p === ".gitattributes" || p === ".gitmodules"))
-				fail("Git filters and submodules are unsupported");
-		}
-		const attrs = await this.git(ws.path, ["ls-files", "--others", "--exclude-standard", "-z"]);
-		for (const name of attrs.split("\0").filter(Boolean)) {
-			fileName(name);
-			if (!this.profile(ws).files.includes(name)) fail("Untracked file outside repair allowlist");
 		}
 	}
 	async prepare(input: {
@@ -364,7 +285,6 @@ export class WorkspaceDriver {
 			if (JSON.stringify(state) !== JSON.stringify(normalized))
 				fail("Existing workspace identity mismatch");
 			this.issued.set(input.id, structuredClone(normalized));
-			await this.assertSeal(normalized);
 			await this.identity(normalized);
 			await this.snapshot(normalized);
 			return normalized;
@@ -405,7 +325,6 @@ export class WorkspaceDriver {
 		}
 		this.issued.set(input.id, structuredClone(normalized));
 		try {
-			await this.safeTree(normalized);
 			const base = await this.git(path, [
 				"rev-parse",
 				`refs/remotes/origin/${input.defaultBranch}^{commit}`,
@@ -413,10 +332,6 @@ export class WorkspaceDriver {
 			if (base.trim() !== input.baseSha) fail("Default branch base SHA changed");
 			await this.git(path, ["checkout", "-b", branch, input.baseSha, "--"]);
 			await this.git(path, ["config", "core.hooksPath", this.profile(normalized).hooksPath]);
-			await writeFile(this.sealPath(normalized), JSON.stringify(await this.metadata(normalized)), {
-				mode: 0o600,
-				flag: "wx",
-			});
 			await writeFile(join(this.root, `${input.id}.json`), JSON.stringify(normalized), {
 				mode: 0o600,
 				flag: "wx",
@@ -536,7 +451,6 @@ export class WorkspaceDriver {
 	}
 	private async capture(ws: Workspace, allowStaged = false): Promise<WorkspaceSnapshot> {
 		await this.identity(ws);
-		await this.safeTree(ws);
 		if (!allowStaged && (await this.git(ws.path, ["diff", "--cached", "--name-only"])).trim())
 			fail("Dirty index rejected");
 		const changed = (await this.git(ws.path, ["diff", "--name-only", "-z", ws.baseSha, "--"]))
@@ -606,7 +520,7 @@ export class WorkspaceDriver {
 			await rm(index, { force: true });
 		}
 	}
-	private async baselinePolicy(ws: Workspace) {
+	private async baselinePolicy(ws: Workspace, hooks = true) {
 		const profile = this.profile(ws);
 		const baseline = JSON.parse(
 			await this.git(ws.path, ["show", `${ws.baseSha}:package.json`]),
@@ -619,62 +533,65 @@ export class WorkspaceDriver {
 		for (const name of profile.checks)
 			if (typeof baseline.scripts?.[name] !== "string" || !baseline.scripts[name])
 				fail("Configured check missing from baseline scripts");
-		const hook = await plainPath(ws.path, `${profile.hooksPath}/pre-commit`);
+		if (hooks) await this.checkHook(ws, "pre-commit");
+	}
+	private async checkHook(ws: Workspace, name: "pre-commit" | "pre-push") {
+		const configured = this.profile(ws).hooksPath;
+		if ((await this.git(ws.path, ["config", "--get", "core.hooksPath"])).trim() !== configured)
+			fail("Required hooks not configured");
+		const hook = await plainPath(ws.path, `${configured}/${name}`);
 		const stat = await lstat(hook);
 		if (!stat.isFile() || !(stat.mode & 0o111) || stat.size === 0)
-			fail("Required pre-commit hook unavailable");
-		const before = await this.git(ws.path, [
-			"show",
-			`${ws.baseSha}:${profile.hooksPath}/pre-commit`,
-		]);
-		if ((await boundedRead(hook)) !== before) fail("Required hook changed");
+			fail(`Required ${name} hook unavailable`);
+		const source = configured === ".husky/_" ? `.husky/${name}` : `${configured}/${name}`;
+		const before = await this.git(ws.path, ["show", `${ws.baseSha}:${source}`]);
+		if ((await boundedRead(await plainPath(ws.path, source))) !== before)
+			fail("Required hook changed");
+		if (configured === ".husky/_") {
+			const wrapper = '#!/usr/bin/env sh\n. "$(dirname "$0")/h"';
+			const installed = await boundedRead(join(ws.path, "node_modules/husky/husky"));
+			if (
+				(await boundedRead(hook)).trim() !== wrapper ||
+				(await boundedRead(await plainPath(ws.path, ".husky/_/h"))) !== installed ||
+				!installed.includes('sh -e "$s" "$@"')
+			)
+				fail("Husky hook dispatch is not activated");
+		}
 	}
-	private async sandbox(
+	private async execute(
 		ws: Workspace,
-		operation: SandboxRequest["purpose"],
+		operation: "install" | "check" | "commit",
 		command: CheckCommand,
-		stdin?: string,
 		signal?: AbortSignal,
 	) {
 		this.abort(signal);
-		await this.assertSeal(ws);
-		const runner = this.options.sandbox;
-		if (
-			!runner?.verified ||
-			!runner.capabilities.filesystem ||
-			!runner.capabilities.network ||
-			!runner.capabilities.resourceLimits
-		)
-			fail("Verified sandbox runner required");
-		const scratch = join(this.root, ".scratch", ws.id);
-		await mkdir(scratch, { recursive: true, mode: 0o700 });
-		let result: Awaited<ReturnType<SandboxRunner["run"]>>;
+		let result: CommandResult;
 		try {
-			result = await runner.run({
-				purpose: operation,
-				...(signal ? { signal } : {}),
-				...(stdin === undefined ? {} : { stdin }),
-				workspace: ws,
-				argv: [command.command, ...command.args],
+			result = await (this.options.run ?? runLocal)({
+				command: command.command,
+				args: command.args,
+				cwd: ws.path,
 				timeoutMs: 120000,
+				maxOutputBytes: MAX_DIFF,
+				env: {
+					npm_config_registry: this.options.registry ?? "https://mirrors.tencent.com/npm/",
+					BUN_CONFIG_REGISTRY: this.options.registry ?? "https://mirrors.tencent.com/npm/",
+				},
+				...(signal ? { signal } : {}),
 			});
-		} catch {
-			fail("Sandbox runner failed");
-		} finally {
-			await this.assertSeal(ws);
+		} catch (error) {
+			if (error instanceof LocalCleanupError) throw error;
+			fail("Local command failed");
 		}
 		this.abort(signal);
 		if (
 			result.exitCode !== 0 ||
 			Buffer.byteLength(result.stdout) + Buffer.byteLength(result.stderr) > MAX_DIFF
-		) {
+		)
 			throw new WorkspaceError(
-				"Sandbox operation failed or exceeded bounds",
-				operation === "check" || operation === "install"
-					? `${result.stdout}\n${result.stderr}`
-					: undefined,
+				"Local command failed or exceeded bounds",
+				operation === "commit" ? undefined : `${result.stdout}\n${result.stderr}`,
 			);
-		}
 		return result;
 	}
 	async check(
@@ -690,14 +607,13 @@ export class WorkspaceDriver {
 			fail("Only configured checks allowed");
 		const results: CheckReceipt["results"] = [];
 		for (const name of commands) {
-			const output = await this.sandbox(
+			const output = await this.execute(
 				ws,
 				"check",
 				{
 					command: this.profile(ws).manager,
 					args: ["run", name],
 				},
-				undefined,
 				input.signal,
 			);
 			results.push({ command: name, exitCode: 0, stdout: output.stdout, stderr: output.stderr });
@@ -728,10 +644,12 @@ export class WorkspaceDriver {
 			section: "dependencies" | "devDependencies" | "optionalDependencies" | "peerDependencies";
 			name: string;
 			version: string;
+			signal?: AbortSignal;
 		},
 	) {
+		this.abort(input.signal);
 		const before = await this.snapshot(ws);
-		await this.baselinePolicy(ws);
+		await this.baselinePolicy(ws, false);
 
 		if (
 			input.manifest !== "package.json" ||
@@ -774,18 +692,22 @@ export class WorkspaceDriver {
 		(section as Record<string, unknown>)[input.name] = input.version;
 		try {
 			await this.writeFile(ws, input.manifest, `${JSON.stringify(manifest, null, 2)}\n`);
-			await this.sandbox(ws, "install", {
-				command: manager,
-				args:
-					manager === "npm"
-						? ["install", "--ignore-scripts", "--no-audit", "--no-fund"]
-						: ["install", "--ignore-scripts"],
-			});
+			await this.execute(
+				ws,
+				"install",
+				{
+					command: manager,
+					args: manager === "npm" ? ["install", "--no-audit", "--no-fund"] : ["install"],
+				},
+				input.signal,
+			);
+			await this.baselinePolicy(ws);
 			const after = await this.snapshot(ws);
 			if (after.changedPaths.some((p) => p !== input.manifest && p !== lock))
 				fail("Install modified unexpected files");
 			return after;
 		} catch (error) {
+			if (error instanceof LocalCleanupError) throw error;
 			await this.writeFile(ws, input.manifest, original);
 			await this.writeFile(ws, lock, oldLock);
 			throw error;
@@ -846,17 +768,17 @@ export class WorkspaceDriver {
 		}
 		try {
 			await this.git(ws.path, ["add", "--", ...input.files]);
-			await this.sandbox(
+			await this.execute(
 				ws,
 				"commit",
 				{
 					command: this.gitExecutable,
 					args: ["commit", "-m", input.message, "--", ...input.files],
 				},
-				undefined,
 				input.signal,
 			);
 		} catch (error) {
+			if (error instanceof LocalCleanupError) throw error;
 			await this.recoverCommit(ws);
 			throw error;
 		}
@@ -874,9 +796,7 @@ export class WorkspaceDriver {
 		signal?: AbortSignal,
 	) {
 		this.abort(signal);
-		if (operation !== "clone") await this.assertSeal(ws);
-		const fn = this.options.gitTransport;
-		if (!fn) fail("Host Git transport required");
+		const fn = this.options.gitTransport ?? hostGitTransport;
 		let result: Awaited<ReturnType<HostGitTransport>>;
 		try {
 			result = await fn({
@@ -888,7 +808,8 @@ export class WorkspaceDriver {
 				maxOutputBytes: MAX_DIFF,
 				...(signal ? { signal } : {}),
 			});
-		} catch {
+		} catch (error) {
+			if (error instanceof LocalCleanupError) throw error;
 			fail("Host Git transport failed");
 		}
 		if (
@@ -924,6 +845,11 @@ export class WorkspaceDriver {
 		if ((await this.git(ws.path, ["status", "--porcelain", "--untracked-files=all"])).trim())
 			fail("Push requires clean workspace");
 		const url = `https://github.com/${ws.repository}.git`;
+		if (
+			!this.options.localSources?.[ws.repository] &&
+			(await this.git(ws.path, ["remote", "get-url", "--push", "origin"])).trim() !== url
+		)
+			fail("Repair remote changed");
 		if (!ws.branch.startsWith("giraffe/deps-")) fail("Invalid repair ref");
 		const read = () =>
 			this.transport(
@@ -942,20 +868,15 @@ export class WorkspaceDriver {
 				return { head: input.head, branch: ws.branch, reconciled: true };
 			fail("Remote branch already differs");
 		}
-		const hookPath = await plainPath(ws.path, `${this.profile(ws).hooksPath}/pre-push`);
-		const hook = await lstat(hookPath);
-		if (!hook.isFile() || !hook.size || !(hook.mode & 0o111))
-			fail("Required pre-push hook unavailable");
-		if (
-			(await boundedRead(hookPath)) !==
-			(await this.git(ws.path, ["show", `${ws.baseSha}:${this.profile(ws).hooksPath}/pre-push`]))
-		)
-			fail("Pre-push hook changed");
-		await this.sandbox(
+		await this.checkHook(ws, "pre-push");
+		await this.transport(
+			"push",
 			ws,
-			"prepush",
-			{ command: hookPath, args: ["origin", url] },
-			`refs/heads/${ws.branch} ${input.head} refs/heads/${ws.branch} ${"0".repeat(40)}\n`,
+			{
+				command: this.gitExecutable,
+				args: ["push", "origin", `${input.head}:refs/heads/${ws.branch}`],
+			},
+			ws.path,
 			input.signal,
 		);
 		const checked = await this.snapshot(ws);
@@ -965,36 +886,6 @@ export class WorkspaceDriver {
 			(await this.git(ws.path, ["status", "--porcelain", "--untracked-files=all"])).trim()
 		)
 			fail("Pre-push changed signed content");
-		if (await read()) fail("Remote branch changed during hooks");
-		const publication = join(this.root, ".scratch", `publish-${ws.id}-${input.head}`);
-		if (!(await absent(publication))) fail("Publication scratch already exists");
-		try {
-			this.abort(input.signal);
-			await this.assertSeal(ws);
-			await this.git(this.root, [
-				"-c",
-				"protocol.file.allow=always",
-				"clone",
-				"--bare",
-				"--no-local",
-				"--template=",
-				"--",
-				ws.path,
-				publication,
-			]);
-			await this.transport(
-				"push",
-				ws,
-				{
-					command: this.gitExecutable,
-					args: ["push", url, `${input.head}:refs/heads/${ws.branch}`],
-				},
-				publication,
-				input.signal,
-			);
-		} finally {
-			await rm(publication, { recursive: true, force: true });
-		}
 		if ((await read()).split(/\s+/)[0] !== input.head) fail("Remote push not confirmed");
 		return { head: input.head, branch: ws.branch, reconciled: false };
 	}

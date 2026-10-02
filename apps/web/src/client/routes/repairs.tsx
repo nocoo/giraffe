@@ -164,7 +164,7 @@ export function RepairsPage() {
 							<LayerCard.Empty
 								icon={<Wrench />}
 								title={data ? "暂无匹配的依赖修复任务" : "正在读取修复状态…"}
-								description="需要本机配置仓库范围、明确检查脚本、已验证沙箱并启动守护进程。网页不能授权代码执行或推送。"
+								description="需要本机配置仓库范围、明确检查脚本，准备 Git、npm 或 Bun 并启动守护进程。网页不能授权代码执行或推送。"
 								action={
 									<Button variant="secondary" size="sm" asChild>
 										<Link href="/settings">查看 Agent 令牌设置</Link>
@@ -258,7 +258,8 @@ export function RepairsPage() {
 							<p>每个 Issue 独立 Sol 工作会话；专用 Astra reviewer 只对精确提交签核。</p>
 							<p>先检查并提交，再审查。签核不等于推送；推送必须再次核对代码与检查凭证。</p>
 							<p>仅推送 giraffe/deps-* 分支，不强推、不合并、不推默认分支、不发布版本。</p>
-							<p>网页只能暂停／恢复调度；本机 profile、沙箱和 push 授权不能在这里修改。</p>
+							<p>脚本与 Git hooks 直接在本机执行，没有操作系统隔离边界；仅用于你信任的仓库。</p>
+							<p>网页只能暂停／恢复调度；本机工具、检查 profile 和 push 授权不能在这里修改。</p>
 						</LayerCard.Body>
 					</LayerCard>
 				</aside>
@@ -323,7 +324,8 @@ function RepairDetail({ job, now }: { job: RepairProgress; now: number }) {
 				</p>
 				{job.stage === "blocked" ? (
 					<p className="text-xs text-basalt-muted-foreground">
-						前置条件未满足，没有执行成功承诺。请在本机检查 profile、沙箱、仓库来源和授权。
+						前置条件未满足，没有执行成功承诺。请在本机检查 Git、包管理器、检查
+						profile、仓库来源和授权。
 					</p>
 				) : null}
 				{job.stage === "exhausted" ? (
