@@ -369,13 +369,21 @@ test("missing repository tabs remain read-only and show fresh data after a facto
 		}),
 	);
 	await page.goto("/repos/octocat/hello-world");
-	const updated = page.getByTestId("repo-detail").locator(":scope > header time");
-	await expect(updated).toHaveAttribute("datetime", "2026-09-08T08:30:00.000Z");
+	const expectTime = async (at: string) => {
+		await page.getByRole("button", { name: /^数据更新时间：/ }).click();
+		const source = page
+			.getByRole("dialog", { name: "数据更新时间" })
+			.locator("dl > div")
+			.filter({ has: page.getByText("当前标签页", { exact: true }) });
+		await expect(source.locator("time")).toHaveAttribute("datetime", at);
+		await page.keyboard.press("Escape");
+	};
+	await expectTime("2026-09-08T08:30:00.000Z");
 	await page.getByRole("tab", { name: "安全", exact: true }).click();
-	await expect(updated).toHaveAttribute("datetime", previous);
+	await expectTime(previous);
 	await page.getByRole("tab", { name: "语言", exact: true }).click();
 	await expect(page.getByRole("tabpanel").getByText("等待统一刷新", { exact: true })).toBeVisible();
-	await expect(updated).toBeHidden();
+	await expect(page.getByRole("button", { name: "数据更新时间：暂无数据时间" })).toBeVisible();
 	expect(await page.getByTestId("repo-detail").ariaSnapshot()).not.toContain("上次刷新");
 	await expect(page.getByRole("tabpanel").getByRole("status")).toHaveCount(0);
 	await page.getByRole("link", { name: "前往刷新中心", exact: true }).click();
@@ -384,10 +392,9 @@ test("missing repository tabs remain read-only and show fresh data after a facto
 	await page.goBack();
 	await page.getByRole("tab", { name: "语言", exact: true }).click();
 	await expectChart(page, "languages");
-	await expect(updated).toHaveAttribute("datetime", "2026-09-08T08:30:00.000Z");
-	await expect(updated).toBeVisible();
+	await expectTime("2026-09-08T08:30:00.000Z");
 	await page.getByRole("tab", { name: "概览", exact: true }).click();
-	await expect(updated).toHaveAttribute("datetime", "2026-09-08T08:30:00.000Z");
+	await expectTime("2026-09-08T08:30:00.000Z");
 	expect(writes).toEqual([]);
 });
 

@@ -147,7 +147,7 @@ test("one header clock groups a refresh by its end and clears sources on navigat
 	await expect(dialog).not.toContainText("部分数据仍来自较早的刷新");
 	await page.keyboard.press("Escape");
 	await expect(trigger).toBeFocused();
-	await page.getByRole("link", { name: "仓库", exact: true }).first().click();
+	await page.getByRole("button", { name: "仓库", exact: true }).click();
 	await trigger.click();
 	await expect(dialog).toContainText("仓库列表");
 	await expect(dialog).not.toContainText("Issues");

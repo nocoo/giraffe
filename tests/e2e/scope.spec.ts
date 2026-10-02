@@ -131,7 +131,9 @@ test("defaults to starred, updates totals and charts, retains session selection 
 	await scopeControl(page).getByRole("radio", { name: "全部", exact: true }).click();
 	await expect(page.getByTestId("issue-summary")).toContainText("3个 open Issue");
 	await expect(page).toHaveURL(/\/issues\?retained=yes$/);
-	await expect(page.getByText("1/4 项缺少数据", { exact: false })).toBeVisible();
+	await page.getByRole("button", { name: /^数据更新时间：/ }).click();
+	await expect(page.getByRole("dialog", { name: "数据更新时间" })).toContainText("1 项缺少数据");
+	await page.keyboard.press("Escape");
 	await page.getByRole("button", { name: "Insights", exact: true }).click();
 	await expect(scopeControl(page).getByRole("radio", { name: "全部", exact: true })).toBeChecked();
 	await expect(page.getByTestId("insight-metrics")).toContainText("3个 open Issue");
