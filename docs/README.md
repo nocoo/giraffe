@@ -18,4 +18,6 @@
 
 - [软件工厂独立审查与验证](08-factory-review.md)
 
-- [Repository AI assessments](10-ai-assessments.md)
+- [Local Agent API](11-agent-api.md)
+
+- [Local Agent analysis desk](12-agent-analysis.md)

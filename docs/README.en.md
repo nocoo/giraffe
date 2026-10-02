@@ -19,7 +19,7 @@
 
 Giraffe is a personal GitHub console. Add classic PATs for one or more accounts to review repositories, open issues and pull requests, security alerts, and notifications, then compare repository metrics across days.
 
-A Worker fetches GitHub data into D1, and the browser displays snapshots with their refresh times. Refreshes happen on demand, with no scheduled background collection. Insights apply rules to repository activity, open work, and security alerts; daily reports calculate differences between snapshots.
+A Worker collects GitHub snapshots into D1 through manual, daily quick and weekly deep refreshes. A local Pi Durable Agent uses one Astra orchestrator, a shared Jev decision client and Sol specialists to analyze Issues, PRs, CI and CD. It publishes evidence-bound reports through the token API. Insights retain deterministic prioritization; the previous cloud AI pipeline is removed.
 
 PATs are encrypted with AES-256-GCM before storage in D1. Data snapshots are stored as JSON without additional application-level encryption. This is a personal deployment: everyone allowed into the same deployment shares its accounts and snapshots.
 
@@ -31,7 +31,9 @@ PATs are encrypted with AES-256-GCM before storage in D1. Data snapshots are sto
 - **Repository details**: nine tabs for details, security, Actions, pull requests, issues, releases, traffic, languages, and contributors.
 - **Insights and alerts**: rule-based classifications and GitHub security alerts from the current snapshots, with truncation, permission, and availability states.
 - **Notifications**: browse notifications and mark one or all as read. These actions also update GitHub.
-- **Daily changes**: compare stars, forks, and open issue counts by UTC date and copy Markdown. A missing previous-day baseline is shown as missing data.
+- **Scope and schedules**: business pages default to Giraffe-starred repositories, with an explicit All scope and scheduled quick/deep refresh.
+- **Local analysis desk**: repository and portfolio reports for four domains, evidence versions and age, Jev probabilities, runner presence and resumable jobs. Missing or stale evidence remains unknown.
+- **Machine API**: account-bound, scoped, expiring and revocable tokens managed on the web; browser consent plus PKCE CLI login; full CRUD for Agent records, reports and jobs.
 
 Visible repositories and alerts depend on PAT permissions and GitHub API responses. The console does not run continuous monitoring or perform its own code security scans.
 
@@ -39,14 +41,15 @@ Visible repositories and alerts depend on PAT permissions and GitHub API respons
 
 1. Open the [website](https://giraffe.hexly.ai) through the deployment's Cloudflare Access policy. There is no separate application sign-up or login page.
 2. Add a GitHub **classic PAT** in Settings with the `repo`, `read:org`, `read:user`, and `notifications` scopes. Fine-grained PATs are not currently accepted. The token input clears immediately on submission.
-3. The first account becomes active and triggers a repository refresh. Switch to later accounts manually to refresh their repositories. After deleting the active account, select another account yourself.
-4. Use the refresh action on the relevant page to fetch new data. Repository detail tabs attempt an initial fetch when their snapshot is missing; ordinary reads use existing snapshots.
+3. The first account becomes active. Discover repositories in the refresh center and star those you follow; adding or switching accounts never silently collects GitHub data.
+4. Configure daily quick and weekly deep refresh. Ordinary GETs read saved snapshots only.
+5. Configure three model roles in `~/.config/giraffe/config.json`, run `bun run agent login`, approve the browser request and run `bun run agent watch`. The analysis desk can enqueue repository or portfolio requests.
 
 The sidebar identity comes from Cloudflare Access. Names and avatars are looked up through the `lizheng.blog` author profile service using a SHA-256 digest of the email address, with an identity fallback when the service is unavailable.
 
 ## Development
 
-Use Bun 1.4 and Node.js 22.12+ locally. Install dependencies from the repository root and prepare the local environment file on first setup:
+Use Bun 1.4 and Node.js 22.22+ locally. Install dependencies from the repository root and prepare the local environment file on first setup:
 
 ```bash
 bun install --frozen-lockfile
@@ -71,7 +74,7 @@ bun run build
 
 Build output goes to `dist/client`; `build` does not include type checking. Self-hosting requires D1, production encryption keys, and Cloudflare Access covering the whole site. Update the custom domain, Access team and audience, and write-request Origin allowlist together. See the [server documentation](04-server.md) and [wrangler.toml](../wrangler.toml).
 
-The main code lives in `src/client/routes` (pages), `src/client/viewmodels` (interface data logic), `src/server/routes` (HTTP endpoints), and `src/server/lib` (GitHub collection, derived metrics, and storage).
+The main code lives in `apps/web/src/client` (Views and ViewModels), `apps/web/src/server` (API and collection), and `packages/agent/src` (local Agent). Root commands own versioning, installation, tests and deployment.
 
 ## Tests
 
@@ -113,3 +116,7 @@ Browser tests use the development authentication path. Live GitHub and real Acce
 ## License
 
 [MIT](../LICENSE).
+
+## Local Agent boundary
+
+Model keys stay only in the private user configuration. API login credentials live beside it in `credentials.json`; never commit either file. The MVP does not modify or merge GitHub code. A passing analysis describes saved observations, not authorization to merge or proof of deployment. See [the Agent API](11-agent-api.md), [analysis desk](12-agent-analysis.md), and [CLI guide](../packages/agent/README.md).

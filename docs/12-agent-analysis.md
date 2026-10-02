@@ -59,6 +59,20 @@ its Node launcher, or the root `bun run agent -- ...` script which explicitly
 invokes Node. Do not run Agent source directly with Bun: its durable SQLite runtime
 uses Node's `node:sqlite` semantics. The web bundle imports contracts only.
 
-This second-stage implementation is not a release authorization. The coordinator owns
-root versioning and will decide publication only after integrated acceptance; the
-foundation production release remains v0.13.0 until that separate approval.
+The local analysis implementation targets v0.14.0 after the v0.13.0 API foundation.
+Release claims require matching CI and deployment evidence. Browser-consent and
+authenticated production analysis remain separate acceptance checks.
+
+## Retention and execution limits
+
+The local watcher keeps two valid reports per repository/global domain, the latest
+20 terminal jobs, and the latest terminal and failed job per repository/type.
+Pending/running jobs and unrelated records are preserved. Revision-guarded cleanup
+removes at most 100 records per collection per completed sweep. Local transcript
+history is not removed by this remote retention policy.
+
+Each planner/specialist run is limited to eight model responses. Provider calls
+have finite deadlines; malformed output cannot spin indefinitely. Polling does not
+call models for unchanged source versions/freshness classes. There is one local
+process owner per account, enforced with a SQLite transaction lock; the MVP does
+not implement multi-machine execution leases.

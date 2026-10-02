@@ -1,6 +1,6 @@
 # Local Agent API v1
 
-Foundation contract for v0.13.0. The dashboard remains behind Cloudflare Access.
+Foundation contract introduced in v0.13.0, consumed by the local Agent in v0.14.0. The dashboard remains behind Cloudflare Access.
 Only `https://giraffe.hexly.ai/api/v1/*` is reachable without an Access browser
 session; the Worker authenticates every resource request with an opaque bearer token.
 `/authorize`, `/api/tokens` and `/api/cli/authorize` remain Access protected.
@@ -133,7 +133,7 @@ POST `/refresh-runs` explicitly starts the existing durable refresh plan;
 POST `/refresh-runs/:id/control` accepts `{ action: 'pause'|'resume'|'cancel' }`.
 GET `/refresh-runs` lists saved runs. No management GET has upstream side effects.
 No API grants arbitrary SQL, edits immutable publications, or returns stored GitHub
-PAT/model secrets. Existing cloud AI remains until its replacement is verified.
+PAT/model secrets. Cloud AI execution is retired; model execution belongs to the local Agent.
 
 ## Repository layout
 
@@ -142,7 +142,7 @@ test, migration and deployment commands remain stable. Root `package.json` is
 the single application version. Root `wrangler.toml` deliberately remains the
 production deployment manifest and points to `apps/web/src/server/index.ts`;
 root migrations and the existing D1/queue bindings keep their identities.
-`packages/agent` is reserved, with no Agent implementation in this release.
+`packages/agent` contains the local Node.js Pi Durable runtime, browser-safe report contracts and CLI.
 
 ## Access deployment change
 

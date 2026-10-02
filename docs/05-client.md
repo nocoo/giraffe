@@ -335,7 +335,7 @@ Notification bulk-read is limited to the selected repository scope, and never
 advances the inbox collection timestamp. See 09 for the precise daily run contract.
 
 
-- Full refresh updates the site catalog, Issues, PRs, security alerts, notifications, Insights and all accessible repository detail tabs. Selected, filtered, stale and failed scopes update only the resolved repositories: nine statistics steps, nine detail tabs and one AI analysis checkpoint each, plus publication. One selected repository is 20 steps; selected repository entries merge into existing global lists while unrelated rows and the original full-scan timestamps are preserved. The console labels this phase as repository pages and omits the account-contribution phase. Known manual selections remain available when the full site catalog is incomplete. The AI phase follows the existing background job through Jev judgment and report generation. Unconfigured AI is shown as skipped without a warning; failed analysis does not label collected repository data as lost.
+- Full refresh updates saved site sources and repository details. Scoped runs contain nine statistics and nine detail steps per included repository plus publication (19 steps for one repository). Local Agent analysis runs independently through `/analysis`, not through collection checkpoints. Frozen old cloud AI steps retire while other collection work continues.
 - 首次使用或旧数据升级时先「同步仓库列表」，再「开始刷新」。清单不完整时禁止在界面启动刷新，不能把未扫描的数据当空数组。
 - 各页面仅 GET；缺少快照统一使用 `SnapshotPending` 导航至 `/refresh` 刷新中心。缺账号则前往设置，不混同于缺数据。
 - 添加、激活、删除账号只更新账号状态与本地 stamp，不自动采集。通知标记已读仍是独立的业务写操作，不属于刷新。
@@ -356,7 +356,7 @@ advances the inbox collection timestamp. See 09 for the precise daily run contra
 |------|------|----------------|----|
 | `/factory` | 软件工厂 | `Factory` | `GET /api/factory`; links to refresh center |
 | `/refresh` | 刷新中心 | `RefreshCw` | `GET /api/factory/runs`, `GET /api/refresh/settings`; manual runs and automatic schedules |
-| `/insights` | Insights | `Activity` | `GET /api/insights`，并读已有 `issues` / `prs` / `ci` 与 `insights/assessments` |
+| `/insights` | Insights | `Activity` | `GET /api/insights`，并读已有 `issues` / `prs` / `ci` |
 | `/` | 仓库 | `Box` | `GET /api/repos` |
 | `/issues` | Issues | `CircleDot` | `GET /api/issues` |
 | `/pulls` | Pull Requests | `GitPullRequest` | `GET /api/prs` |
@@ -392,7 +392,7 @@ Issues KPI：打开 Issues / 涉及仓库（`issueMetrics`）。PRs KPI：草稿
 
 总览组第二项。不重复仓库全表。首区「最值得关注的仓库」给出 Top 10 与跨仓发现，其后用 `SectionRule` 分「工作量 / 审查与节奏 / 健康与活跃」。
 
-Top 10 由 `viewmodels/focus.ts` 纯函数计算，读取已保存的 insights、issues、prs、`GET /api/ci` 与 `GET /api/insights/assessments`；CI 与 AI 缺失只缩小证据，不阻塞页面。每条加权原因都可读：AI 总评与 `now` 行动、Jev `urgent`/`review` 判断、AI 分域状态与交付放缓、默认分支持续失败或反复失败、发布流水线失败、高危告警与安全标签 Issue、外部贡献者 PR、待审查或停滞 PR、陈旧 Issue 积压、长期未推送但仍有待办。报告不再对应当前仓库版本时按 60% 计入并标「旧版」；低置信 Jev 判断降权。分数只用于排序，界面显示等级（优先处理 / 需要关注 / 持续观察）、主要方面、AI 总评、待办与推送天数，前三条原因可见，其余在提示中。跨仓发现汇总阻塞交付、高危告警、AI 优先项、依赖更新占比、新增 Issue 加速、Issue 集中度、外部 PR、长期未推送与 AI 覆盖缺口，只在证据达到阈值时出现。
+Top 10 is derived by `apps/web/src/client/viewmodels/focus.ts` from saved Insights, Issues, PRs, CI and security signals. It no longer reads cloud AI assessments or discounts stale cloud reports. The analysis desk is a separate view over local Agent reports with explicit source freshness and evidence. See [the analysis desk](12-agent-analysis.md).
 
 每区：最多四张 KPI（共享 `StatCard`，主题色 icon）+ 两张图卡（一卡一图，使用 `LayerCard.Header` 放标题与指标说明，`Body` 放图表）。
 

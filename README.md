@@ -19,7 +19,7 @@
 
 Giraffe 是面向个人的 GitHub 控制台。添加一个或多个账号的 classic PAT 后，可以集中查看仓库、开放的 Issue / PR、安全告警和通知，并按规则与 AI 评估找出最值得关注的仓库。
 
-Worker 从 GitHub 获取数据并保存到 D1，浏览器展示快照及其更新时间。数据按需刷新，没有后台定时采集。Insights 结合仓库活跃度、待办数量、CI、安全告警规则与已保存的 AI 评估给出优先关注清单。
+Worker 从 GitHub 获取数据并保存到 D1，支持手动刷新、每日快速刷新与每周深度刷新。浏览器展示原始快照和来源时间；本机 Pi Durable Agent 使用 Astra 主控、Jev 决策和 Sol 专员，分别分析 Issues、PR、CI 与 CD，并通过 Token API 发布报告。Insights 保留确定性的待办与健康排序，不再调用旧云端 AI。
 
 PAT 使用 AES-256-GCM 加密后存入 D1；数据快照以 JSON 保存，未做应用层加密。这是个人部署，获准访问同一部署的人共享其中的账号与快照。
 
@@ -31,7 +31,9 @@ PAT 使用 AES-256-GCM 加密后存入 D1；数据快照以 JSON 保存，未做
 - **单仓详情**：详情、安全、Actions、PR、Issue、Release、流量、语言和贡献者九个页签。
 - **Insights 与告警**：按当前快照展示规则分类及 GitHub 安全告警，标明截断、权限不足或数据不可用状态。
 - **通知处理**：浏览通知，标记单条或全部已读；这些操作会同步写回 GitHub。
-- **Starred / All scope**: business pages default to Giraffe-starred repositories. Daily quick refresh updates their data; weekly deep refresh calibrates history. Page times describe the selected saved sources.
+- **关注范围与定时刷新**：业务页面默认只看 Giraffe 关注仓库，可切换全部；每日快速刷新与每周深度刷新由云端执行。
+- **本地分析台**：单仓库和全局四类报告、证据与版本、Jev 概率、执行器状态和可恢复任务；来源缺失或过期明确标为证据不足。
+- **机器 API**：网页管理账户绑定、可撤销、有限期的 Token；CLI 通过浏览器同意与 PKCE 登录，支持 Agent 记录、报告和任务的完整 CRUD。
 
 可见仓库与告警取决于 PAT 权限及 GitHub API 的返回结果。控制台不是持续运行的监控服务，也不执行独立的代码安全扫描。
 
@@ -39,8 +41,9 @@ PAT 使用 AES-256-GCM 加密后存入 D1；数据快照以 JSON 保存，未做
 
 1. 打开[站点](https://giraffe.hexly.ai)，通过该部署的 Cloudflare Access 访问策略。应用没有单独的注册或登录页。
 2. 在「设置」添加 GitHub **classic PAT**，需要 `repo`、`read:org`、`read:user` 和 `notifications` scope。当前不接受 fine-grained PAT。令牌输入框在提交时立即清空。
-3. The first account becomes active. Open the refresh center to discover repositories, then star the repositories you follow. Adding or switching an account does not silently collect GitHub data.
-4. Configure daily quick and weekly deep refresh in the refresh center. Business pages read saved snapshots and default to Starred; select All to include other repositories and their original source times.
+3. 首个账号成为当前账号。在刷新中心发现仓库并选择关注项，添加或切换账号不会静默采集。
+4. 配置每日快速与每周深度刷新。页面读取已保存快照，不通过 GET 自动采集。
+5. 在本机配置 `~/.config/giraffe/config.json` 的三个模型角色，然后运行 `bun run agent login`，在网页确认授权后运行 `bun run agent watch`。网页分析台可请求单仓库或全局分析。
 
 侧栏身份来自 Cloudflare Access。姓名与头像会通过邮箱的 SHA-256 摘要查询 `lizheng.blog` 作者档案，服务不可用时使用身份信息回退。
 
@@ -71,7 +74,7 @@ bun run build
 
 构建产物在 `dist/client`；`build` 不包含类型检查。自托管需要准备 D1、生产加密密钥和整站 Cloudflare Access，并同步修改自定义域名、Access team / audience 与写入 Origin 白名单。部署配置见 [Server 文档](docs/04-server.md)和 [wrangler.toml](wrangler.toml)。
 
-主要代码位于 `src/client/routes`（页面）、`src/client/viewmodels`（界面数据逻辑）、`src/server/routes`（HTTP 接口）和 `src/server/lib`（GitHub 采集、派生指标与存储）。
+主要代码位于 `apps/web/src/client`（页面与 ViewModel）、`apps/web/src/server`（API 与采集）及 `packages/agent/src`（本机 Agent）。根目录统一版本、安装、测试和部署。
 
 ## 测试
 
@@ -118,6 +121,8 @@ HTTP 与浏览器脚本自动准备隔离的本地 D1 和 GitHub stub，不需�
 
 The Worker and React/Basalt application live in `apps/web`. Root Bun scripts,
 Wrangler configuration and migrations remain the operational entrypoints.
-`packages/agent` is reserved for the separately developed local Agent.
+`packages/agent` contains the Node.js CLI and local Pi Durable runtime.
 See [the v1 API contract](docs/11-agent-api.md) for token management, browser
 PKCE consent, saved observation envelopes and revisioned resource CRUD.
+
+模型 Key 只保存在本机全局配置，API Token 保存在同目录 `credentials.json`；不要提交这两个文件。MVP 不自动修改或合并 GitHub 代码，“通过”只描述已观察证据，不代表合并许可。见[本地分析台](docs/12-agent-analysis.md)和[Agent 使用说明](packages/agent/README.md)。
