@@ -96,29 +96,6 @@ export function formatCount(value: number): string {
 	return new Intl.NumberFormat("zh-CN").format(value);
 }
 
-export function formatSnapshotFreshness(
-	fetchedAt: string | null | undefined,
-	freshness: SnapshotFreshness | undefined,
-	now = Date.now(),
-	timeZone?: string,
-): string {
-	if (freshness?.total === 0) return "当前范围暂无数据";
-	const latest = freshness ? freshness.latestAt : fetchedAt;
-	const oldest = freshness?.oldestAt;
-	const available = latest && Number.isFinite(Date.parse(latest));
-	const range = oldest && available && Date.parse(oldest) < Date.parse(latest);
-	const time = range
-		? `${formatDate(oldest, timeZone)} → ${formatDate(latest, timeZone)}`
-		: available
-			? `${formatDate(latest, timeZone)}（${formatTimeAgo(latest, now, true)}）`
-			: freshness
-				? "未采集"
-				: "时间未知";
-	return freshness?.missing
-		? `${time} · ${formatCount(freshness.missing)}/${formatCount(freshness.total)} 项缺少数据`
-		: time;
-}
-
 export function formatDays(value: number): string {
 	return `${formatCount(value)} 天`;
 }
@@ -399,5 +376,3 @@ export function formatConclusion(conclusion: string | null): string {
 	}
 	return conclusion;
 }
-
-import type { SnapshotFreshness } from "../../lib/snapshot-freshness";

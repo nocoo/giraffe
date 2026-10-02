@@ -1,20 +1,14 @@
-import { Button, Link, toast } from "@nocoo/basalt";
+import { Link, toast } from "@nocoo/basalt";
 import { BarChart } from "@nocoo/basalt/charts/bar";
 import { StackedBarChart } from "@nocoo/basalt/charts/stacked-bar";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
-import {
-	Popover,
-	PopoverContent,
-	PopoverTitle,
-	PopoverTrigger,
-} from "@nocoo/basalt/components/popover";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
 import { Activity, GitPullRequest, Layers3 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { BusinessPageHeader as PageHeader } from "../components/layout/business-page-header";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ChartBrick, ChartEmpty, ChartRow } from "../components/layout/chart-brick";
-import { SnapshotDescription, SnapshotTime } from "../components/layout/collection-chrome";
+import { DataTimeSource } from "../components/layout/data-time";
 import { DonutChart } from "../components/layout/donut-chart";
 import { IconLabel } from "../components/layout/icon-label";
 import { InsightsSkeleton } from "../components/layout/page-skeleton";
@@ -129,51 +123,42 @@ export function InsightsPage() {
 			<PageHeader
 				title="Insights"
 				description={
-					<SnapshotDescription
-						description={PAGE_DESCRIPTIONS["/insights"]}
-						fetchedAt={board.insights.fetched_at}
-						freshness={board.insights.freshness}
-					/>
+					<>
+						{PAGE_DESCRIPTIONS["/insights"]}
+						<DataTimeSource
+							entries={[
+								{
+									label: "Insights",
+									at: board.insights.fetched_at,
+									freshness: board.insights.freshness,
+								},
+							]}
+						/>
+					</>
 				}
 				actions={
 					<>
 						{board.insights.truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
-						<Popover>
-							<PopoverTrigger asChild>
-								<Button size="sm" variant="ghost">
-									来源数据时间
-								</Button>
-							</PopoverTrigger>
-							<PopoverContent
-								align="end"
-								aria-labelledby="insight-source-times"
-								className="w-96 max-w-[calc(100vw-2rem)] space-y-3"
-							>
-								<PopoverTitle id="insight-source-times">来源数据更新时间</PopoverTitle>
-								<div className="grid gap-3">
-									<SnapshotTime
-										label="Issues 数据更新"
-										fetchedAt={board.issues?.fetched_at}
-										freshness={board.issues?.freshness}
-									/>
-									<SnapshotTime
-										label="PR 数据更新"
-										fetchedAt={board.pulls?.fetched_at}
-										freshness={board.pulls?.freshness}
-									/>
-									<SnapshotTime
-										label="CI 数据更新"
-										fetchedAt={board.ci?.fetched_at}
-										freshness={board.ci?.freshness}
-									/>
-									<SnapshotTime
-										label="评估数据更新"
-										fetchedAt={board.assessments?.fetched_at}
-										freshness={board.assessments?.freshness}
-									/>
-								</div>
-							</PopoverContent>
-						</Popover>
+						<DataTimeSource
+							entries={[
+								{
+									label: "Issues",
+									at: board.issues?.fetched_at,
+									freshness: board.issues?.freshness,
+								},
+								{
+									label: "Pull Requests",
+									at: board.pulls?.fetched_at,
+									freshness: board.pulls?.freshness,
+								},
+								{ label: "CI 与发布", at: board.ci?.fetched_at, freshness: board.ci?.freshness },
+								{
+									label: "AI 报告",
+									at: board.assessments?.fetched_at,
+									freshness: board.assessments?.freshness,
+								},
+							]}
+						/>
 					</>
 				}
 			/>

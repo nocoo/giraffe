@@ -14,12 +14,8 @@ import { CircleDot } from "lucide-react";
 import { useMemo, useState } from "react";
 import { BusinessPageHeader as PageHeader } from "../components/layout/business-page-header";
 import { CandyBadge } from "../components/layout/candy-badge";
-import {
-	ResultCount,
-	SearchField,
-	SnapshotDescription,
-	TableScroll,
-} from "../components/layout/collection-chrome";
+import { ResultCount, SearchField, TableScroll } from "../components/layout/collection-chrome";
+import { DataTimeSource } from "../components/layout/data-time";
 import { IconLabel } from "../components/layout/icon-label";
 import {
 	ActiveFilters,
@@ -127,11 +123,12 @@ export function IssuesPage() {
 			<PageHeader
 				title="Issues"
 				description={
-					<SnapshotDescription
-						description={PAGE_DESCRIPTIONS["/issues"]}
-						fetchedAt={snap.fetched_at}
-						freshness={snap.freshness}
-					/>
+					<>
+						{PAGE_DESCRIPTIONS["/issues"]}
+						<DataTimeSource
+							entries={[{ label: "Issues", at: snap.fetched_at, freshness: snap.freshness }]}
+						/>
+					</>
 				}
 				actions={snap.truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
 				filters={filters}

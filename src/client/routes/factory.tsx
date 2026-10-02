@@ -33,8 +33,9 @@ import {
 	type FactorySnapshot,
 	type FactoryStreamName,
 } from "../../lib/factory-types";
+import { snapshotFreshness } from "../../lib/snapshot-freshness";
 import { BusinessPageHeader as PageHeader } from "../components/layout/business-page-header";
-import { SnapshotDescription } from "../components/layout/collection-chrome";
+import { DataTimeSource } from "../components/layout/data-time";
 import { IconLabel } from "../components/layout/icon-label";
 import { Kpi, KpiRow } from "../components/layout/kpi";
 import { LanguageLabel } from "../components/layout/labels";
@@ -199,11 +200,20 @@ export function FactoryPage() {
 				title="软件工厂"
 				description={
 					snapshot ? (
-						<SnapshotDescription
-							description="GitHub 的仓库、工作流与交付节奏"
-							fetchedAt={snapshot.fetched_at}
-							freshness={freshness}
-						/>
+						<>
+							GitHub 的仓库、工作流与交付节奏
+							<DataTimeSource
+								entries={[
+									{ label: "活动统计", at: snapshot.fetched_at, freshness },
+									{
+										label: "仓库信息",
+										freshness: snapshotFreshness(
+											scope.map((repo) => repo.metadataAt ?? repo.observation?.metadataAt),
+										),
+									},
+								]}
+							/>
+						</>
 					) : (
 						"GitHub 的仓库、工作流与交付节奏"
 					)

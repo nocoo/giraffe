@@ -46,11 +46,8 @@ import { useParams } from "react-router";
 import type { FactoryRepo, FactorySnapshot } from "../../lib/factory-types";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ChartBrick, ChartEmpty, ChartRow } from "../components/layout/chart-brick";
-import {
-	SnapshotDescription,
-	SnapshotTime,
-	TableScroll,
-} from "../components/layout/collection-chrome";
+import { TableScroll } from "../components/layout/collection-chrome";
+import { DataTimeSource } from "../components/layout/data-time";
 import { DonutChart } from "../components/layout/donut-chart";
 import { Kpi, KpiRow } from "../components/layout/kpi";
 import {
@@ -434,13 +431,12 @@ export function RepoDetailPage() {
 			<PageHeader
 				title={<ProjectName repo={`${owner}/${name}`} project={identity} size={48} showTitle />}
 				description={
-					<SnapshotDescription
-						description={
-							identity?.description || snap.description || "仓库概览、开发动态与协作数据"
-						}
-						fetchedAt={current?.fetched_at}
-						hideTimestamp={!current}
-					/>
+					<>
+						{identity?.description || snap.description || "仓库概览、开发动态与协作数据"}
+						<DataTimeSource
+							entries={current ? [{ label: "当前标签页", at: current.fetched_at }] : []}
+						/>
+					</>
 				}
 				actions={
 					<>
@@ -539,9 +535,13 @@ export function RepoDetailPage() {
 									title="90 天活动"
 									description="来自软件工厂的该仓库数据：每日默认分支提交与合并 PR（左轴），截至当日 7 天 CI 成功率（右轴）。"
 								>
-									<SnapshotTime
-										fetchedAt={null}
-										freshness={factoryFreshness(factory ? [factory.repo] : [])}
+									<DataTimeSource
+										entries={[
+											{
+												label: "活动统计",
+												freshness: factoryFreshness(factory ? [factory.repo] : []),
+											},
+										]}
 									/>
 									<p className="giraffe-stat-inline mb-2">
 										<span>
@@ -563,8 +563,13 @@ export function RepoDetailPage() {
 									title="版本节奏"
 									description="已发布版本按时间排列，空心点为预发布；点的疏密即发布节奏。"
 								>
-									<SnapshotTime
-										fetchedAt={releases && !("missing" in releases) ? releases.fetched_at : null}
+									<DataTimeSource
+										entries={[
+											{
+												label: "版本发布",
+												at: releases && !("missing" in releases) ? releases.fetched_at : null,
+											},
+										]}
 									/>
 									{activity ? <ReleaseTimeline releases={activity.releases} /> : null}
 								</ChartBrick>

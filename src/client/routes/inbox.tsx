@@ -14,11 +14,8 @@ import { CheckCheck, Inbox, MailCheck } from "lucide-react";
 import { useMemo, useState } from "react";
 import { BusinessPageHeader as PageHeader } from "../components/layout/business-page-header";
 import { CandyBadge } from "../components/layout/candy-badge";
-import {
-	ResultCount,
-	SnapshotDescription,
-	TableScroll,
-} from "../components/layout/collection-chrome";
+import { ResultCount, TableScroll } from "../components/layout/collection-chrome";
+import { DataTimeSource } from "../components/layout/data-time";
 import { IconLabel } from "../components/layout/icon-label";
 import {
 	ActiveFilters,
@@ -113,11 +110,12 @@ export function InboxPage() {
 			<PageHeader
 				title="通知"
 				description={
-					<SnapshotDescription
-						description={PAGE_DESCRIPTIONS["/inbox"]}
-						fetchedAt={snap.fetched_at}
-						freshness={snap.freshness}
-					/>
+					<>
+						{PAGE_DESCRIPTIONS["/inbox"]}
+						<DataTimeSource
+							entries={[{ label: "通知", at: snap.fetched_at, freshness: snap.freshness }]}
+						/>
+					</>
 				}
 				actions={
 					<>

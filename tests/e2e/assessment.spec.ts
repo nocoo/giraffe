@@ -224,8 +224,11 @@ test("assessment is lazy, structured, read-only and renders model content as saf
 	}
 	await expect(panel.getByText(fixture.report?.summary ?? "", { exact: true })).toBeVisible();
 	await expect(panel.locator("img")).toHaveCount(0);
-	await expect(panel.locator("time").first()).toHaveAttribute("datetime", fixture.sourceAt ?? "");
-	await expect(panel.locator("time").last()).toHaveAttribute("datetime", fixture.reportAt ?? "");
+	await page.getByRole("button", { name: /^数据更新时间：/ }).click();
+	const times = page.getByRole("dialog", { name: "数据更新时间" }).locator("time");
+	await expect(times.first()).toHaveAttribute("datetime", fixture.sourceAt ?? "");
+	await expect(times.last()).toHaveAttribute("datetime", fixture.reportAt ?? "");
+	await page.keyboard.press("Escape");
 	await expect(panel.locator("ol h4")).toHaveText(["检查漏洞影响", "审查外部 PR", "整理说明文档"]);
 	await panel.getByRole("heading", { name: "仓库评估", exact: true }).scrollIntoViewIfNeeded();
 	await page.screenshot({ path: ".factory-cache/assessment-desktop.png", animations: "disabled" });
@@ -321,7 +324,11 @@ test("a failed newer assessment preserves the last successful report with its or
 	await expect(panel.getByRole("note")).toContainText("保留上次成功结果");
 	await expect(panel.getByText("本次评估失败", { exact: true })).toBeVisible();
 	await expect(panel.getByText(fixture.report?.summary ?? "", { exact: true })).toBeVisible();
-	await expect(panel.locator("time").last()).toHaveAttribute("datetime", fixture.reportAt ?? "");
+	await page.getByRole("button", { name: /^数据更新时间：/ }).click();
+	await expect(
+		page.getByRole("dialog", { name: "数据更新时间" }).locator("time").last(),
+	).toHaveAttribute("datetime", fixture.reportAt ?? "");
+	await page.keyboard.press("Escape");
 	await expect(panel.getByText(/模型返回的判断或报告未通过结构与证据校验/)).toBeVisible();
 	await expect(panel.getByRole("link", { name: "检查 AI 设置", exact: true })).toHaveCount(0);
 });

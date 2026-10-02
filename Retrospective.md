@@ -279,3 +279,18 @@ Connect PopoverContent to its title explicitly and test Escape/focus behavior. M
 missing API resources as missing responses, not successful empty objects that can
 break unrelated identity consumers. In zsh, avoid `path` as a loop variable: it is
 tied to PATH and can hide commands for the rest of the shell invocation.
+
+## 2026-10-02 — Verify the allowed local execution boundary
+
+The first local typecheck used Wrangler's default log destination outside the writable
+workspace. Redirect subsequent Wrangler logs to an owned temporary path before invoking
+project scripts. Local development then failed at loopback binding with EPERM, and Chromium
+failed at its macOS Mach service registration. These are execution-environment restrictions,
+not application failures. Do not claim browser acceptance or a running dev server based on
+unit tests/build output, and do not bypass the restrictions to obtain a green result.
+
+The release follow-up could run Chromium after the execution boundary changed. It exposed
+old browser assertions still looking for timestamps in page subtitles and assessment cards.
+When moving shared UI, search the entire browser suite for the removed semantic elements,
+not only the component name; preserve the timestamp, scope and layout assertions at their
+new accessible location before publishing.

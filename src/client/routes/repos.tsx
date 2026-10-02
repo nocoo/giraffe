@@ -16,12 +16,8 @@ import { type CSSProperties, useMemo, useState } from "react";
 import { participates } from "../../lib/repo-statistics";
 import { BusinessPageHeader as PageHeader } from "../components/layout/business-page-header";
 import { CandyBadge } from "../components/layout/candy-badge";
-import {
-	ResultCount,
-	SearchField,
-	SnapshotDescription,
-	TableScroll,
-} from "../components/layout/collection-chrome";
+import { ResultCount, SearchField, TableScroll } from "../components/layout/collection-chrome";
+import { DataTimeSource } from "../components/layout/data-time";
 import { IconLabel } from "../components/layout/icon-label";
 import { LanguageLabel } from "../components/layout/labels";
 import {
@@ -245,11 +241,12 @@ export function ReposPage() {
 			<PageHeader
 				title="仓库"
 				description={
-					<SnapshotDescription
-						description={PAGE_DESCRIPTIONS["/"]}
-						fetchedAt={snap.fetched_at}
-						freshness={snap.freshness}
-					/>
+					<>
+						{PAGE_DESCRIPTIONS["/"]}
+						<DataTimeSource
+							entries={[{ label: "仓库列表", at: snap.fetched_at, freshness: snap.freshness }]}
+						/>
+					</>
 				}
 				actions={snap.truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
 				filters={filters}

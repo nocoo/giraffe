@@ -232,13 +232,19 @@ test("explicit unstarred repo detail and factory subviews use their own source t
 		)
 		.toBe(true);
 	await page.goto("/factory?repo=octocat%2Fhello-world&stream=prs&period=7");
-	const header = page
-		.getByRole("heading", { level: 1, name: "软件工厂", exact: true })
-		.locator("..");
-	await expect(header.locator("time")).toHaveAttribute("datetime", oldestAt);
+	const expectActivityTime = async () => {
+		await page.getByRole("button", { name: /^数据更新时间：/ }).click();
+		const source = page
+			.getByRole("dialog", { name: "数据更新时间" })
+			.locator("dl > div")
+			.filter({ has: page.getByText("活动统计", { exact: true }) });
+		await expect(source.locator("time")).toHaveAttribute("datetime", oldestAt);
+		await page.keyboard.press("Escape");
+	};
+	await expectActivityTime();
 	await scopeControl(page).getByRole("radio", { name: "全部", exact: true }).click();
 	await expect(page).toHaveURL(/repo=octocat%2Fhello-world&stream=prs&period=7$/);
-	await expect(header.locator("time")).toHaveAttribute("datetime", oldestAt);
+	await expectActivityTime();
 	await expect
 		.poll(() =>
 			requests.some(

@@ -575,3 +575,19 @@ L3 依赖步骤 1 的 Origin 补丁。未补丁前不算 L3 绿。L3 **不是** 
 - 把 L3 加进 pre-push
 - 提交红测试、`--no-verify`
 - 本文未 Sign Off 就开始步骤 1 及之后
+
+## Unified data-time control (2026-10-02)
+
+The AppHeader owns one top-right Basalt Popover for the current page's data age.
+Page subtitles, chart headings and assessment headings register named sources through
+`DataTimeSource`; they no longer render their own snapshot timestamps. Source registration
+is removed on unmount, and route/scope changes reset the registry. Event timestamps,
+observation windows, repository provenance dialogs and execution diagnostics remain local.
+
+The trigger shows the most recent source update as a compact relative age, not the oldest
+source or the browser's last GET. The popover shows second-precision local times, older
+source ranges and missing coverage. Sources collected within a saved refresh window are
+presented at that run's end; this is an approximate display grouping, not a change to stored
+provenance or observation windows. A partial/cancelled run may contribute a window only if
+it saved data. Older retained data stays old. When run history is unavailable or has expired,
+the saved source timestamps are displayed without grouping. No read starts collection.

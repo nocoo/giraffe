@@ -13,11 +13,8 @@ import { Bug, ShieldAlert } from "lucide-react";
 import { useMemo, useState } from "react";
 import { BusinessPageHeader as PageHeader } from "../components/layout/business-page-header";
 import { CandyBadge } from "../components/layout/candy-badge";
-import {
-	ResultCount,
-	SnapshotDescription,
-	TableScroll,
-} from "../components/layout/collection-chrome";
+import { ResultCount, TableScroll } from "../components/layout/collection-chrome";
+import { DataTimeSource } from "../components/layout/data-time";
 import { IconLabel } from "../components/layout/icon-label";
 import { Kpi, KpiRow } from "../components/layout/kpi";
 import { ActiveFilters, Breakdown, OverviewCard } from "../components/layout/overview-cards";
@@ -77,11 +74,12 @@ export function AlertsPage() {
 						"missing" in snap ? (
 							PAGE_DESCRIPTIONS["/alerts"]
 						) : (
-							<SnapshotDescription
-								description={PAGE_DESCRIPTIONS["/alerts"]}
-								fetchedAt={snap.fetched_at}
-								freshness={snap.freshness}
-							/>
+							<>
+								{PAGE_DESCRIPTIONS["/alerts"]}
+								<DataTimeSource
+									entries={[{ label: "安全告警", at: snap.fetched_at, freshness: snap.freshness }]}
+								/>
+							</>
 						)
 					}
 				/>
@@ -111,11 +109,12 @@ export function AlertsPage() {
 			<PageHeader
 				title="安全告警"
 				description={
-					<SnapshotDescription
-						description={PAGE_DESCRIPTIONS["/alerts"]}
-						fetchedAt={snap.fetched_at}
-						freshness={snap.freshness}
-					/>
+					<>
+						{PAGE_DESCRIPTIONS["/alerts"]}
+						<DataTimeSource
+							entries={[{ label: "安全告警", at: snap.fetched_at, freshness: snap.freshness }]}
+						/>
+					</>
 				}
 			/>
 			<ScopeEmpty count={snap.freshness?.total ?? snap.items.length} />

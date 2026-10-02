@@ -16,11 +16,8 @@ import type { CiReportResponse } from "../../lib/ci-health";
 import { BusinessPageHeader as PageHeader } from "../components/layout/business-page-header";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ChartBrick } from "../components/layout/chart-brick";
-import {
-	SearchField,
-	SnapshotDescription,
-	TableScroll,
-} from "../components/layout/collection-chrome";
+import { SearchField, TableScroll } from "../components/layout/collection-chrome";
+import { DataTimeSource } from "../components/layout/data-time";
 import { IconLabel } from "../components/layout/icon-label";
 import { CountBars } from "../components/layout/overview-cards";
 import { CiSkeleton } from "../components/layout/page-skeleton";
@@ -113,11 +110,12 @@ export function CiPage() {
 			<PageHeader
 				title="CI 与发布"
 				description={
-					<SnapshotDescription
-						description={PAGE_DESCRIPTIONS["/ci"]}
-						fetchedAt={report.fetched_at}
-						freshness={report.freshness}
-					/>
+					<>
+						{PAGE_DESCRIPTIONS["/ci"]}
+						<DataTimeSource
+							entries={[{ label: "CI 与发布", at: report.fetched_at, freshness: report.freshness }]}
+						/>
+					</>
 				}
 				actions={
 					<>

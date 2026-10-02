@@ -18,7 +18,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { type FactoryRunResponse, type RunSelection, selectRunRepos } from "../../lib/factory-run";
 import type { FactorySnapshot } from "../../lib/factory-types";
-import { SearchField, SnapshotTime } from "../components/layout/collection-chrome";
+import { SearchField } from "../components/layout/collection-chrome";
+import { DataTimeSource } from "../components/layout/data-time";
 import { ProjectLabel } from "../components/layout/project-identity";
 import { SelectField } from "../components/layout/select-field";
 import { formatPreciseDate } from "../lib/format";
@@ -247,9 +248,11 @@ function FactoryRuns({
 							</strong>
 							<span>{bannerError || health.detail}</span>
 							{snapshot ? (
-								<SnapshotTime
-									fetchedAt={snapshot.fetched_at}
-									label={snapshot.publication?.mixed ? "快照更新" : "上次刷新"}
+								<DataTimeSource
+									entries={[
+										{ label: "活动统计", at: snapshot.fetched_at, freshness: snapshot.freshness },
+										{ label: "仓库目录", at: data?.catalogUpdatedAt },
+									]}
 								/>
 							) : null}
 						</div>

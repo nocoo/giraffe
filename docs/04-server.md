@@ -594,3 +594,12 @@ L2 fixture 仓用 `octocat/hello-world`。
 - 生产或 test 白名单放行 loopback（development 短路下的同源 POST 除外，见 §5.3）
 - 响应或日志出现 PAT / 信封
 - 未实现 L2 runner 就合并第一个 `/api` 处理函数
+
+## Refresh-time display metadata (2026-10-02)
+
+`GET /api/refresh/times` returns `{ account_id, runs: [{ startedAt, finishedAt }] }`
+for the active account. It is authenticated, read-only and `private, no-store`; no GitHub,
+AI, queue or database write is performed. Missing active accounts return 409, other methods
+return 405. The query returns at most 20 ended runs that contain a successful snapshot,
+repository-save or publication step. Running/paused and wholly unsuccessful runs do not
+advance display times. No schema change is required; source timestamps remain immutable.

@@ -21,6 +21,7 @@ import { postRead, postReadAll } from "./routes/notifications";
 import { getProjectIdentity } from "./routes/project-identity";
 import { postRefresh } from "./routes/refresh";
 import { getRefreshSettings, postRefreshSchedule } from "./routes/refresh-settings";
+import { getRefreshTimes } from "./routes/refresh-times";
 import { getAssessmentDigests, getRepoAssessment } from "./routes/repo-assessment";
 import { repoGet, setRepoStar, setRepoStatistics } from "./routes/repos";
 import { snapshotGet } from "./routes/snapshots";
@@ -90,6 +91,8 @@ export function createApp(): Hono<{ Bindings: Env; Variables: AppVars }> {
 	app.post("/api/ai/settings/:kind/test", testAiSettings);
 	allow(app, "/api/repos/:owner/:name/assessment", ["GET"]);
 	onGet(app, "/api/repos/:owner/:name/assessment", getRepoAssessment);
+	allow(app, "/api/refresh/times", ["GET"]);
+	onGet(app, "/api/refresh/times", getRefreshTimes);
 	allow(app, "/api/refresh/settings", ["GET"]);
 	onGet(app, "/api/refresh/settings", getRefreshSettings);
 	allow(app, "/api/refresh/schedules/:kind", ["POST"]);

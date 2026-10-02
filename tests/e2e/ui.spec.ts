@@ -36,8 +36,14 @@ test("repository and Insights omit optional security warnings while showing save
 	);
 	await page.clock.setFixedTime(new Date(Date.parse(snapshot.fetched_at) + 5 * 86400000));
 	await page.goto("/");
-	const updated = page.locator("time").filter({ hasText: "5 天前" });
-	await expect(updated).toHaveAttribute("datetime", snapshot.fetched_at);
+	const updated = page.getByRole("button", { name: "数据更新时间：5 天前更新" });
+	await expect(updated).toBeVisible();
+	await updated.click();
+	await expect(page.getByRole("dialog", { name: "数据更新时间" }).locator("time")).toHaveAttribute(
+		"datetime",
+		snapshot.fetched_at,
+	);
+	await page.keyboard.press("Escape");
 	await expect(page.getByText("可选安全告警未完整获取")).toHaveCount(0);
 	await expect(page.getByText("告警不完整", { exact: true })).toHaveCount(0);
 	await page.goto("/insights");
@@ -66,7 +72,8 @@ for (const width of [1440, 390]) {
 		const repo = page.getByTestId("repo-detail");
 		const header = repo.locator(":scope > header");
 		const tabs = page.getByRole("tablist", { name: "仓库详情" });
-		await expect(header.locator("time")).toBeVisible();
+		await expect(page.getByRole("button", { name: /^数据更新时间：/ })).toBeVisible();
+		await expect(header.locator("time")).toHaveCount(0);
 		const initialTop = await tabs.evaluate((el) => el.getBoundingClientRect().top);
 		const initialHeight = await header.evaluate((el) => el.getBoundingClientRect().height);
 		const expectPosition = async () => {
@@ -97,7 +104,11 @@ for (const width of [1440, 390]) {
 			await expectPosition();
 			finish();
 			await expect(panel.getByRole("table")).toBeVisible();
-			await expect(header.locator("time")).toHaveAttribute("datetime", updated);
+			await page.getByRole("button", { name: /^数据更新时间：/ }).click();
+			await expect(
+				page.getByRole("dialog", { name: "数据更新时间" }).locator("time"),
+			).toHaveAttribute("datetime", updated);
+			await page.keyboard.press("Escape");
 			await expectPosition();
 			await page.clock.resume();
 			await page.getByRole("tab", { name: "概览", exact: true }).click();

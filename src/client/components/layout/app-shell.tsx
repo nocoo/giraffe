@@ -11,8 +11,10 @@ import { Outlet, useLocation, useNavigate } from "react-router";
 import { subscribeErrorUi } from "../../lib/error-ui";
 import { headerCrumbs, headerTitle } from "../../lib/navigation";
 import { AppSidebar } from "./app-sidebar";
+import { DataTimeControl, DataTimeProvider } from "./data-time";
 import { GithubIcon } from "./github-icon";
 import { HeaderTooltip, HexlyLink } from "./header-links";
+import { useRepositoryScope } from "./repository-scope";
 import { ThemeToggle } from "./theme-toggle";
 import { useIsMobile } from "./use-mobile";
 import { useProjectIdentity } from "./use-project-identity";
@@ -43,6 +45,7 @@ export function AppShell() {
 	const isMobile = useIsMobile();
 	const [mobileOpen, setMobileOpen] = useState(false);
 	const location = useLocation();
+	const scope = useRepositoryScope();
 	const navigate = useNavigate();
 	const { theme } = useTheme();
 	const title = headerTitle(location.pathname);
@@ -79,98 +82,101 @@ export function AppShell() {
 	}, [mobileOpen]);
 
 	return (
-		<Shell>
-			<AppSkipLink>跳到主内容</AppSkipLink>
-			{!isMobile ? (
-				<AppSidebar collapsed={collapsed} onToggle={() => setCollapsed((value) => !value)} />
-			) : (
-				<Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-					<SheetContent
-						side="left"
-						className="w-[260px] max-w-[260px] border-0 bg-basalt-background p-0"
-					>
-						<SheetTitle className="sr-only">打开导航</SheetTitle>
-						<AppSidebar collapsed={false} onToggle={() => setMobileOpen(false)} />
-					</SheetContent>
-				</Sheet>
-			)}
-			<AppMain tabIndex={-1}>
-				<AppHeader
-					className="[&_nav]:shrink-0 [&_nav]:whitespace-nowrap"
-					leading={
-						isMobile ? (
-							<HeaderTooltip label="打开导航">
-								<Button
-									variant="ghost"
-									size="icon"
-									className="h-8 w-8 shrink-0"
-									onClick={() => setMobileOpen(true)}
-									aria-label="打开导航"
-								>
-									<Menu aria-hidden="true" />
-								</Button>
-							</HeaderTooltip>
-						) : null
-					}
-					breadcrumbs={crumbs}
-					title={title}
-					actions={
-						<>
-							<HeaderTooltip label="GitHub repository">
-								<Button variant="ghost" size="icon" className="h-8 w-8" asChild>
-									<a
-										href="https://github.com/nocoo/giraffe"
-										target="_blank"
-										rel="noopener noreferrer"
-										aria-label="GitHub"
+		<DataTimeProvider key={`${location.pathname}:${scope}`}>
+			<Shell>
+				<AppSkipLink>跳到主内容</AppSkipLink>
+				{!isMobile ? (
+					<AppSidebar collapsed={collapsed} onToggle={() => setCollapsed((value) => !value)} />
+				) : (
+					<Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+						<SheetContent
+							side="left"
+							className="w-[260px] max-w-[260px] border-0 bg-basalt-background p-0"
+						>
+							<SheetTitle className="sr-only">打开导航</SheetTitle>
+							<AppSidebar collapsed={false} onToggle={() => setMobileOpen(false)} />
+						</SheetContent>
+					</Sheet>
+				)}
+				<AppMain tabIndex={-1}>
+					<AppHeader
+						className="[&_nav]:min-w-0 [&_nav]:truncate [&_nav]:whitespace-nowrap"
+						leading={
+							isMobile ? (
+								<HeaderTooltip label="打开导航">
+									<Button
+										variant="ghost"
+										size="icon"
+										className="h-8 w-8 shrink-0"
+										onClick={() => setMobileOpen(true)}
+										aria-label="打开导航"
 									>
-										<GithubIcon className="h-[18px] w-[18px]" strokeWidth={1.5} />
-									</a>
-								</Button>
-							</HeaderTooltip>
-							<HexlyLink />
-							<ThemeToggle aria-label={`切换主题（当前 ${theme}）`} />
-						</>
-					}
-				/>
-				<div className="flex min-h-0 flex-1 flex-col px-2 pb-2 md:px-3 md:pb-3">
-					<ContentIsland>
-						{accessDenied ? (
-							<div className="space-y-8">
-								<PageHeader
-									title="未通过 Access"
-									description="此应用需要 Cloudflare Access 身份。"
-								/>
-								<LayerCard>
-									<LayerCard.Well>
-										<LayerCard.Empty
-											icon={<ShieldAlert />}
-											title="未通过 Access"
-											description="此应用需要 Cloudflare Access 身份。"
-										/>
-									</LayerCard.Well>
-								</LayerCard>
-							</div>
-						) : (
+										<Menu aria-hidden="true" />
+									</Button>
+								</HeaderTooltip>
+							) : null
+						}
+						breadcrumbs={crumbs}
+						title={title}
+						actions={
 							<>
-								{accountMissing ? (
-									<Banner
-										className="mb-4"
-										variant="alert"
-										title="没有活跃账号"
-										action={
-											<Banner.Action type="button" onClick={() => navigate("/settings")}>
-												去设置
-											</Banner.Action>
-										}
-									/>
-								) : null}
-								<Outlet />
+								{location.pathname !== "/settings" ? <DataTimeControl /> : null}
+								<HeaderTooltip label="GitHub repository">
+									<Button variant="ghost" size="icon" className="h-8 w-8" asChild>
+										<a
+											href="https://github.com/nocoo/giraffe"
+											target="_blank"
+											rel="noopener noreferrer"
+											aria-label="GitHub"
+										>
+											<GithubIcon className="h-[18px] w-[18px]" strokeWidth={1.5} />
+										</a>
+									</Button>
+								</HeaderTooltip>
+								<HexlyLink />
+								<ThemeToggle aria-label={`切换主题（当前 ${theme}）`} />
 							</>
-						)}
-					</ContentIsland>
-				</div>
-			</AppMain>
-		</Shell>
+						}
+					/>
+					<div className="flex min-h-0 flex-1 flex-col px-2 pb-2 md:px-3 md:pb-3">
+						<ContentIsland>
+							{accessDenied ? (
+								<div className="space-y-8">
+									<PageHeader
+										title="未通过 Access"
+										description="此应用需要 Cloudflare Access 身份。"
+									/>
+									<LayerCard>
+										<LayerCard.Well>
+											<LayerCard.Empty
+												icon={<ShieldAlert />}
+												title="未通过 Access"
+												description="此应用需要 Cloudflare Access 身份。"
+											/>
+										</LayerCard.Well>
+									</LayerCard>
+								</div>
+							) : (
+								<>
+									{accountMissing ? (
+										<Banner
+											className="mb-4"
+											variant="alert"
+											title="没有活跃账号"
+											action={
+												<Banner.Action type="button" onClick={() => navigate("/settings")}>
+													去设置
+												</Banner.Action>
+											}
+										/>
+									) : null}
+									<Outlet />
+								</>
+							)}
+						</ContentIsland>
+					</div>
+				</AppMain>
+			</Shell>
+		</DataTimeProvider>
 	);
 }

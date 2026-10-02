@@ -15,13 +15,8 @@ import { useMemo, useState } from "react";
 import type { FactorySnapshot } from "../../lib/factory-types";
 import { BusinessPageHeader as PageHeader } from "../components/layout/business-page-header";
 import { CandyBadge } from "../components/layout/candy-badge";
-import {
-	ResultCount,
-	SearchField,
-	SnapshotDescription,
-	SnapshotTime,
-	TableScroll,
-} from "../components/layout/collection-chrome";
+import { ResultCount, SearchField, TableScroll } from "../components/layout/collection-chrome";
+import { DataTimeSource } from "../components/layout/data-time";
 import { IconLabel } from "../components/layout/icon-label";
 import {
 	ActiveFilters,
@@ -143,11 +138,12 @@ export function PullsPage() {
 			<PageHeader
 				title="Pull Requests"
 				description={
-					<SnapshotDescription
-						description={PAGE_DESCRIPTIONS["/pulls"]}
-						fetchedAt={snap.fetched_at}
-						freshness={snap.freshness}
-					/>
+					<>
+						{PAGE_DESCRIPTIONS["/pulls"]}
+						<DataTimeSource
+							entries={[{ label: "Pull Requests", at: snap.fetched_at, freshness: snap.freshness }]}
+						/>
+					</>
 				}
 				actions={snap.truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
 				filters={
@@ -195,7 +191,11 @@ export function PullsPage() {
 							title="近 30 天 PR 吞吐"
 							hint="来自软件工厂最近保存的数据：每日合并与新开的 PR。open 列表为空时，这里说明 PR 是否在持续流动。"
 						>
-							<SnapshotTime fetchedAt={factory?.fetched_at} freshness={factory?.freshness} />
+							<DataTimeSource
+								entries={[
+									{ label: "合并历史", at: factory?.fetched_at, freshness: factory?.freshness },
+								]}
+							/>
 							<CountBars
 								data={history.daily}
 								series={[

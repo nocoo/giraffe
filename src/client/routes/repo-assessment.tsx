@@ -24,10 +24,10 @@ import {
 import { useEffect, useState } from "react";
 import type { RepoAssessment } from "../../lib/repo-assessment";
 import { CandyBadge } from "../components/layout/candy-badge";
+import { DataTimeSource } from "../components/layout/data-time";
 import { IconLabel } from "../components/layout/icon-label";
 import { DetailSkeleton } from "../components/layout/page-skeleton";
 import { reportError } from "../lib/error-ui";
-import { formatDate } from "../lib/format";
 import {
 	ACTION_PRIORITY,
 	DELIVERY_TREND,
@@ -178,18 +178,12 @@ export function RepoAssessmentPanel({ owner, name }: { owner: string; name: stri
 					</LayerCard.Header>
 					<LayerCard.Body className="space-y-3">
 						{saved?.sourceAt || saved?.reportAt ? (
-							<div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-basalt-muted-foreground">
-								<span className="inline-flex flex-wrap items-center gap-1.5">
-									<Clock3 className="size-4 shrink-0" strokeWidth={1.5} aria-hidden="true" />
-									来源数据更新{" "}
-									<time dateTime={saved.sourceAt ?? undefined}>{formatDate(saved.sourceAt)}</time>
-								</span>
-								<span className="inline-flex flex-wrap items-center gap-1.5">
-									<FileCheck2 className="size-4 shrink-0" strokeWidth={1.5} aria-hidden="true" />
-									报告生成{" "}
-									<time dateTime={saved.reportAt ?? undefined}>{formatDate(saved.reportAt)}</time>
-								</span>
-							</div>
+							<DataTimeSource
+								entries={[
+									{ label: "AI 来源数据", at: saved.sourceAt },
+									{ label: "AI 报告", at: saved.reportAt },
+								]}
+							/>
 						) : null}
 						{stale ? (
 							<p role="note" className="text-sm text-basalt-muted-foreground">
