@@ -1,0 +1,39 @@
+{
+	"name": "@nocoo/giraffe-agent",
+	"version": "0.13.0",
+	"private": true,
+	"type": "module",
+	"description": "Local durable GitHub analysis agent for Giraffe",
+	"bin": {
+		"giraffe": "./bin/giraffe.mjs"
+	},
+	"exports": {
+		"./contracts": "./src/contracts.ts"
+	},
+	"engines": {
+		"node": ">=22.22.0"
+	},
+	"scripts": {
+		"start": "node --experimental-strip-types src/cli.ts",
+		"typecheck": "tsc --noEmit",
+		"build": "tsc -p tsconfig.build.json",
+		"test": "vitest run",
+		"test:coverage": "vitest run --coverage",
+		"lint": "biome check --error-on-warnings src"
+	},
+	"dependencies": {
+		"@earendil-works/chord": "1.0.0",
+		"@earendil-works/pi-ai": "1.0.0",
+		"@earendil-works/pi-durable": "1.0.0",
+		"@nocoo/base-cli": "0.3.0",
+		"@typesafe-ai/sdk": "0.6.0",
+		"zod": "4.5.0-canary.20260825T041357"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.5.15",
+		"@types/node": "26.4.1",
+		"@vitest/coverage-v8": "5.0.3",
+		"typescript": "7.0.2",
+		"vitest": "5.0.3"
+	}
+}

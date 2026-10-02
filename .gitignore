@@ -13,3 +13,7 @@ test-results/
 playwright-report/
 
 .factory-cache/
+.giraffe/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal

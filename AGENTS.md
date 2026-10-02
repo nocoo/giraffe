@@ -1,6 +1,6 @@
 # Giraffe
 
-Bun monorepo: `apps/web` owns the Worker and SPA; `packages/agent` is reserved for a later local agent. Root `package.json` is the authoritative version and root commands run all gates.
+Bun monorepo: `apps/web` owns the Worker and SPA; `packages/agent` owns the local Pi Durable runtime. Root `package.json` is the authoritative version and root commands run all gates.
 
 Personal GitHub console with account snapshots, inboxes, repository detail and resumable software-factory runs.
 Profile: ts-worker-web.
@@ -90,4 +90,14 @@ Narratives remain in [Retrospective.md](Retrospective.md); keep only recurring r
 - `/api/v1/*` uses Worker-enforced hash-only, fixed-account, scoped, expiring bearer tokens; only the PKCE code exchange is tokenless. Access bypass is restricted to that path, never the dashboard host.
 - Browser token management and `/authorize` consent remain Access protected; browser writes require same-origin. Raw API tokens are returned only at mint/exchange and must not enter logs, URLs, persisted browser state or D1.
 - Agent records/reports/jobs are mutable local application resources with revisions. GitHub observations and factory publications remain read-only. GET never collects upstream or records token activity.
-- Model execution/configuration belongs to the future local agent; never submit model secrets to the web application. Existing cloud AI is retained until the replacement is verified. Contract: [Agent API](docs/11-agent-api.md).
+- Model execution/configuration belongs to the local agent; never submit model secrets to the web application. Existing cloud AI is retained until the replacement is verified. Contract: [Agent API](docs/11-agent-api.md).
+
+## Local Agent
+
+- `bun run agent --help`, `bun run agent login`, `bun run agent status`, `bun run agent analyze nocoo/giraffe`, and `bun run agent watch` run the Node.js Agent CLI.
+- Model connections and role mappings live in `~/.config/giraffe/config.json`; browser-authorized API tokens live in `credentials.json` next to it. Directories use `0700`, credential files `0600`. Never print or commit either file.
+- One local Harness per account; SQLite transaction locking prevents concurrent local owners. One Astra orchestrator, one shared Jev client, and persistent Sol specialist conversations cover repository/global Issues, PR, CI and CD analysis.
+- Runtime SQLite state is local user data, not D1. D1 stores published reports/jobs and runner heartbeat via authenticated CRUD. GET observations never initiates upstream collection.
+- Agent tests: `bun run --cwd packages/agent test:coverage`; four metrics each >=95%. Root `typecheck`, `build`, `lint`, and `test:coverage` include the workspace. Tests use fake models, fake credentials and loopback only.
+- `packages/agent/src/contracts.ts` is the browser-safe report contract; do not import Node runtime modules into the dashboard. Root version is authoritative for displayed runner version.
+- Analysis tools do not execute shell commands. A pass describes saved observations, not permission to merge/deploy. Missing/stale coverage remains visible; automatic GitHub repairs are outside this MVP.

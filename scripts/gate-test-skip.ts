@@ -1,7 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-const ROOTS = ["apps/web/src", "tests"];
+const ROOTS = ["apps/web/src", "packages/agent/src", "tests"];
 const PATTERN =
 	/\.(?:only|skip|todo|fails|runIf|skipIf)\b|\b(?:xtest|xdescribe|it\.todo|test\.concurrent\.todo)\b/;
 
