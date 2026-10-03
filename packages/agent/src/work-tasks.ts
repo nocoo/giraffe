@@ -50,6 +50,18 @@ function assertRepository(repository: string) {
 
 function dependencyRequest(title: string, tags: { name: string }[]) {
 	if (/\b(?:policy|documentation|docs|discussion)\b|政策|文档|讨论/i.test(title)) return false;
+	const arrowUpgrade =
+		/^(?:\[[^\]\r\n]+\]\s*)*((?:@[a-z0-9_.-]+\/)?[a-z0-9][a-z0-9_.-]*)\s+v?(\d+\.\d+\.\d+)\s*(?:→|->)\s*(?:>=|≥)?\s*v?(\d+\.\d+\.\d+)$/i.exec(
+			title,
+		);
+	if (
+		arrowUpgrade &&
+		(/\[deps\]/i.test(title) || tags.some(({ name }) => name.toLowerCase() === "dependencies"))
+	) {
+		const before = arrowUpgrade[2];
+		const after = arrowUpgrade[3];
+		return before !== undefined && after !== undefined && !!valid(before) && !!valid(after);
+	}
 	if (/依赖升级|升级依赖/.test(title)) return true;
 	const version = /\b(?:to|from)\s+v?\d+\.\d+(?:\.\d+)?\b/i;
 	const named =

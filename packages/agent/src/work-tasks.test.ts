@@ -170,6 +170,49 @@ it("requires explicit upgrade evidence and exact case-sensitive CO prefix", () =
 	).toEqual([]);
 });
 
+it("recognizes explicit choko package arrow upgrades for discovery and current issue evidence", async () => {
+	const titles = [
+		"[🥝 choko][deps] @biomejs/biome 2.5.14 → 2.5.15",
+		"[🥝 choko][deps] vitest 5.0.1 → 5.0.3",
+		"[🥝 choko][deps][security] undici 7.29.0 → ≥8.10.2",
+		"[🥝 choko][deps] @cloudflare/workers-types 5.20260921.1 → 5.20260922.1",
+		"[deps] vite v8.3.1 -> >=v8.3.2",
+		"vitest 5.0.1 -> v5.0.3",
+	];
+	for (const title of titles) {
+		const tags = [{ name: "dependencies" }];
+		const tasks = discoverWorkTasks(repository, {
+			issues: [{ ...issue, title, labels: tags }],
+			prs: [],
+			streams: [],
+		});
+		expect(tasks).toHaveLength(1);
+		const task = tasks[0];
+		if (!task) throw new Error("Expected dependency task");
+		expect(
+			(await readWorkTask(repository, task, async () => ({ ...currentIssue, title, labels: tags })))
+				.evidence.title,
+		).toBe(title);
+	}
+	expect(
+		discoverWorkTasks(repository, {
+			issues: [{ ...issue, title: titles[0] }],
+			prs: [],
+			streams: [],
+		}),
+	).toHaveLength(1);
+	for (const title of [
+		"vitest 5.0.1 → 5.0.3",
+		"[deps] vitest old → latest",
+		"[deps] vitest 5.0.1 → 5.0.3 policy",
+		"[deps] documentation: vitest 5.0.1 → 5.0.3",
+		"[deps] arbitrary claim vitest 5.0.1 → 5.0.3",
+	])
+		expect(
+			discoverWorkTasks(repository, { issues: [{ ...issue, title }], prs: [], streams: [] }),
+		).toEqual([]);
+});
+
 it("selects the latest failed main run only for consecutive or recurring investigations", () => {
 	const recent = [{ id: 10, outcome: "success", at: "2026-10-04T00:00:00Z" }, ...stream.recent];
 	const tasks = discoverWorkTasks(repository, {
