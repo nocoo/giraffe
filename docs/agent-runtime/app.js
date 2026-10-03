@@ -9,14 +9,14 @@
 		},
 		local: {
 			summary: "Real local work + reports. Atomic commits; no push or issue closure.",
-			command: "bun run agent work --no-push --limit 2 --repos nocoo/backy,nocoo/r2shot",
+			command: "bun run agent work --once --no-push --limit 2 --repos nocoo/backy,nocoo/r2shot",
 			title: "Verify · keep local",
 			policy: "workers never push or close issues",
 		},
 		publish: {
 			summary:
 				"CLI invocation is an explicit execution grant. Host may push, verify, then close issues.",
-			command: "bun run agent work --limit 2 --repos nocoo/backy,nocoo/r2shot",
+			command: "bun run agent work --once --limit 2 --repos nocoo/backy,nocoo/r2shot",
 			title: "Verify → push → close",
 			policy: "host-only publication · never worker authority",
 		},
@@ -101,12 +101,12 @@
 					"An SQLite transaction lock permits one Harness owner per service/account. Conversations reuse IDs across assignments.",
 				],
 				[
-					"Separate execution storage",
-					"work, work dry run and the existing analysis/repair runtime use separate SQLite storage paths.",
+					"Single schedule and execution runtime",
+					"One live work SQLite file, account lock and cron. Dry run uses isolated memory under the same account lock; no old watch/repair engines remain.",
 				],
 				[
-					"No automatic mutation recovery",
-					"A restarted work occurrence re-inspects the workspace. Real interruption recovery needed operator-reviewed, hash-pinned diffs.",
+					"Bounded persisted recovery",
+					"Rounds, findings and pushed SHA persist; mode/scope cannot change mid-occurrence. At most 20 review rounds and three ten-minute follow-up checks. Historical acceptance is not current unattended proof.",
 				],
 			],
 			permission:
@@ -125,7 +125,7 @@
 				],
 				[
 					"Establish the baseline",
-					"Install from an approved temporary mirror. Run root unit/coverage + lint and available type/build scripts; never weaken gates.",
+					"Install from an approved temporary mirror. Record failed baseline checks, then require final tests and independent review; never weaken tests or hooks.",
 				],
 				[
 					"Evidence from this assignment",
@@ -171,7 +171,7 @@
 				],
 				[
 					"Mode determines side effects",
-					"--no-push stops after local verification. Normal work pushes main, verifies the remote SHA, then closes its completed issue list.",
+					"An independent read-only reviewer approves exact checked HEAD in at most 20 persisted rounds. --no-push stops locally. Host pushes main, persists SHA, closes completed dependency issues and follows exact-SHA CI at ten-minute intervals, at most three checks. PR merge/closure is report-only.",
 				],
 				[
 					"Do not overclaim acceptance",

@@ -12,8 +12,8 @@ The web app imports only `@nocoo/giraffe-agent/contracts`, a browser-safe schema
 under Cloudflare Access and same-origin write checks. The requested account must be
 the dashboard's current account; no browser bearer secret is needed. Payload validation
 is explicit, with invalid reports/heartbeats shown as errors rather than old-report fallback.
-POST jobs uses `type: analysis-request`, `status: pending`, and
-`payload: { scope, repository, domains }`. The local runner claims it using revisions.
+Analysis is part of the single local `work` occurrence. The browser no longer
+queues independent analysis requests. Historical reports/jobs remain stored.
 
 `GET /api/agent/accounts/:account/sources` reads saved per-repository source versions,
 timestamps and coverage. Optional `repository` narrows the result. No request refreshes
@@ -54,7 +54,7 @@ light/dark themes. Real three-tier model execution was demonstrated by the coord
 against synthetic input. Production authenticated Agent publishing remains pending user
 browser consent; no current production report is claimed before that acceptance.
 
-The local CLI requires Node >=22.22. Use `giraffe login` / `giraffe watch` through
+The local CLI requires Node >=22.22. Use `giraffe login` / `giraffe work` through
 its Node launcher, or the root `bun run agent -- ...` script which explicitly
 invokes Node. Do not run Agent source directly with Bun: its durable SQLite runtime
 uses Node's `node:sqlite` semantics. The web bundle imports contracts only.
@@ -65,14 +65,9 @@ authenticated production analysis remain separate acceptance checks.
 
 ## Retention and execution limits
 
-The local watcher keeps two valid reports per repository/global domain, the latest
-20 terminal jobs, and the latest terminal and failed job per repository/type.
-Pending/running jobs and unrelated records are preserved. Revision-guarded cleanup
-removes at most 100 records per collection per completed sweep. Local transcript
-history is not removed by this remote retention policy.
-
-Each planner/specialist run is limited to eight model responses. Provider calls
-have finite deadlines; malformed output cannot spin indefinitely. Polling does not
-call models for unchanged source versions/freshness classes. There is one local
-process owner per account, enforced with a SQLite transaction lock; the MVP does
-not implement multi-machine execution leases.
+Work publishes bounded progress and finite-turn conversation results on its one
+schedule. Historical reports/jobs remain stored. The old watcher retention sweep
+and request queue no longer run; remote report retention needs a follow-up before
+claiming indefinitely bounded history. Local transcript history remains user data.
+One SQLite transaction lock enforces one account process; no multi-machine lease
+or automatic service installation is claimed. Fix/review rounds are capped at 20.

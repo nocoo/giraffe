@@ -1,6 +1,5 @@
 import { spawn } from "node:child_process";
 import { delimiter, isAbsolute } from "node:path";
-import type { HostGitTransport } from "./repair-workspace.ts";
 
 export type LocalCommand = {
 	command: string;
@@ -100,29 +99,4 @@ export const runLocal: LocalRunner = async (request) => {
 			});
 		});
 	});
-};
-
-export const hostGitTransport: HostGitTransport = async (request) => {
-	if (
-		request.command.command !== "git" ||
-		!["clone", "ls-remote", "push"].includes(request.command.args[0] ?? "")
-	) {
-		throw new Error("Unsupported host Git operation.");
-	}
-	const result = await runLocal({
-		command: "git",
-		args: [
-			"-c",
-			"credential.helper=",
-			"-c",
-			"credential.helper=!gh auth git-credential",
-			...request.command.args,
-		],
-		cwd: request.cwd,
-		timeoutMs: request.timeoutMs,
-		maxOutputBytes: request.maxOutputBytes,
-		env: { GIT_TERMINAL_PROMPT: "0", GH_PROMPT_DISABLED: "1" },
-		...(request.signal ? { signal: request.signal } : {}),
-	});
-	return { ...result, stderr: "" };
 };

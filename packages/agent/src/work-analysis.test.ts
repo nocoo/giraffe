@@ -122,4 +122,29 @@ it("runs four resident analysts concurrently, publishes only outside dry run and
 	run.mockRejectedValueOnce(new Error("offline"));
 	await expect(residentAnalysis(options as never)([workRepository], "run3")).rejects.toThrow();
 	expect(log).toHaveBeenCalledWith(expect.stringContaining("offline"));
+	observation.mockResolvedValueOnce({ ...(await observation()), data: {} } as never);
+	await residentAnalysis(options as never)([workRepository], "missing-rows");
+	vi.mocked(decisionClient).mockReturnValueOnce(async () => ({}));
+	await expect(
+		residentAnalysis(options as never)([workRepository], "missing-judgment"),
+	).rejects.toThrow();
+	run.mockRejectedValueOnce("not an error");
+	await expect(
+		residentAnalysis(options as never)([workRepository], "untyped-error"),
+	).rejects.toThrow();
+	run.mockResolvedValue({
+		conversationId: 1,
+		result: { verdict: "pass", summary: "partial", findings: [], actions: [], limitations: [] },
+	} as never);
+	const original = await observation();
+	observation.mockResolvedValue({
+		...original,
+		data: {
+			issues: Array.from({ length: 30 }, (_, index) => ({
+				name_with_owner: "owner/repo",
+				number: index + 1,
+			})),
+		},
+	} as never);
+	await residentAnalysis(options as never)([workRepository], "partial-pass");
 });

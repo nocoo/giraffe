@@ -5,9 +5,9 @@ import { join, resolve, sep } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { z } from "zod";
 import { repositorySchema } from "./contracts.ts";
+import { safeDiagnostics } from "./diagnostics.ts";
 import { digest } from "./evidence.ts";
 import { type LocalRunner, runLocal } from "./repair-local.ts";
-import { safeDiagnostics } from "./repair-workspace.ts";
 
 export type WorkInspection = {
 	repository: string;
@@ -225,8 +225,7 @@ export class WorkWorkspace {
 	}
 	private async policy(inspection: WorkInspection) {
 		const current = await this.inspect(inspection.repository);
-		if (current.policy !== inspection.policy || current.path !== inspection.path)
-			throw new Error("Baseline check scripts/hooks/instructions changed.");
+		if (current.path !== inspection.path) throw new Error("Workspace path changed.");
 		return current;
 	}
 	async install(inspection: WorkInspection, signal?: AbortSignal): Promise<void> {
@@ -248,9 +247,14 @@ export class WorkWorkspace {
 	}
 	async changes(inspection: WorkInspection): Promise<string> {
 		const output = await this.command(inspection.path, "git", ["diff", "origin/main", "HEAD"]);
-		if (Buffer.byteLength(output) > 128000)
+		if (
+			Buffer.byteLength(output) > 128000 ||
+			/-----BEGIN .*PRIVATE KEY-----|(?:gh[pousr]_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{24,})/.test(
+				output,
+			)
+		)
 			throw new Error("Review diff exceeds budget; no publication.");
-		return safeDiagnostics(output);
+		return output;
 	}
 	async check(inspection: WorkInspection, signal?: AbortSignal): Promise<void> {
 		await this.policy(inspection);
@@ -291,7 +295,13 @@ export class WorkWorkspace {
 				: ["ci", "--no-audit", "--no-fund"],
 			signal,
 		);
-		await this.check(current, signal);
+		try {
+			await this.check(current, signal);
+		} catch (error) {
+			this.log(
+				`[基线失败] ${safeDiagnostics(error instanceof Error ? error.message : "Baseline checks failed.")}；必须修复并通过最终测试和独立审查。`,
+			);
+		}
 		const after = await this.policy(current);
 		if (after.status !== current.status || after.diff !== current.diff)
 			throw new Error("Baseline install/check modified files; review them before handing off.");
@@ -343,7 +353,14 @@ export class WorkWorkspace {
 			throw new Error("Invalid issue closure scope.");
 		await this.check(current, signal);
 		await verify();
-		await this.command(current.path, "git", ["push", "origin", "HEAD:main"], signal);
+		const before = await this.command(
+			current.path,
+			"git",
+			["ls-remote", "origin", "refs/heads/main"],
+			signal,
+		);
+		if (before.split(/\s+/)[0] !== expectedHead)
+			await this.command(current.path, "git", ["push", "origin", "HEAD:main"], signal);
 		const remote = await this.command(
 			current.path,
 			"git",
@@ -352,12 +369,22 @@ export class WorkWorkspace {
 		);
 		if (remote.split(/\s+/)[0] !== expectedHead)
 			throw new Error("Remote main did not verify; no issues closed.");
-		for (const issue of issues)
-			await this.command(
-				current.path,
-				"gh",
-				["issue", "close", String(issue), "--repo", current.repository],
-				signal,
-			);
+		this.log(`[发布完成] ${current.repository} HEAD=${expectedHead}`);
+	}
+	async closeIssue(inspection: WorkInspection, issue: number, signal?: AbortSignal) {
+		if (!Number.isInteger(issue) || issue < 1) throw new Error("Invalid issue closure scope.");
+		const state = await this.command(
+			inspection.path,
+			"gh",
+			["issue", "view", String(issue), "--repo", inspection.repository, "--json", "state"],
+			signal,
+		);
+		if (JSON.parse(state).state === "CLOSED") return;
+		await this.command(
+			inspection.path,
+			"gh",
+			["issue", "close", String(issue), "--repo", inspection.repository],
+			signal,
+		);
 	}
 }

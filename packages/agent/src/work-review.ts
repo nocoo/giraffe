@@ -1,4 +1,4 @@
-import { safeDiagnostics } from "./repair-workspace.ts";
+import { safeDiagnostics } from "./diagnostics.ts";
 
 export type WorkReviewState = { round: number; findings: string[]; head: string | null };
 

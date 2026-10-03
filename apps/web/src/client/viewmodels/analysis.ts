@@ -6,7 +6,7 @@ import {
 	heartbeatSchema,
 	type Resource,
 } from "@nocoo/giraffe-agent/contracts";
-import { apiGet, apiPost } from "../lib/api";
+import { apiGet } from "../lib/api";
 import { ensureSession, getActiveAccountId } from "./session";
 
 export type CurrentSource = {
@@ -217,17 +217,4 @@ export async function loadAnalysis(): Promise<AnalysisData> {
 		sources: sources.sources,
 		repositories: sources.repositories,
 	};
-}
-export async function requestAnalysis(
-	account: string,
-	repository: string | null,
-	domains: Domain[],
-) {
-	if (getActiveAccountId() !== account) throw new Error("Account changed");
-	return apiPost(`agent/accounts/${account}/jobs`, {
-		type: "analysis-request",
-		status: "pending",
-		repository,
-		payload: { scope: repository ? "repo" : "global", repository, domains },
-	});
 }

@@ -34,6 +34,15 @@ export type WorkHandoff = {
 	summary: string;
 	dryRun: boolean;
 };
+export type RepositoryProgress = {
+	tasks: number[];
+	worker: number | null;
+	reviewer: number | null;
+	round: number;
+	findings: string[];
+	head: string | null;
+	status: string;
+};
 
 export async function runCoordinator(options: {
 	dryRun: boolean;
@@ -49,9 +58,19 @@ export async function runCoordinator(options: {
 	analyze: (repositories: WorkRepository[], runId: string) => Promise<void>;
 	log: (line: string) => void;
 	signal?: AbortSignal;
+	observe?: (repository: string, state: RepositoryProgress) => void;
 }): Promise<WorkHandoff[]> {
 	const { log, config, driver, conversations } = options;
 	const runId = options.runId ?? randomUUID();
+	const checkpoint = await conversations.checkpoint(runId);
+	const recovered = checkpoint
+		? (JSON.parse(checkpoint) as {
+				selected: { repository: RankedRepository; workspace: WorkInspection }[];
+				plan: z.infer<typeof planSchema>;
+				prepared: Record<string, WorkInspection>;
+				committed: Record<string, { issue: number; head: string }[]>;
+			})
+		: null;
 	const portfolio = await options.load();
 	log(
 		`[主控] API 快照：${portfolio.length} 个自有仓库，${portfolio.reduce((sum, repo) => sum + repo.issues.length, 0)} 条 Issue，${portfolio.reduce((sum, repo) => sum + repo.prs.length, 0)} 条 PR`,
@@ -62,11 +81,23 @@ export async function runCoordinator(options: {
 		() => new Error("Resident analysis failed; inspect source coverage/model/API before retrying."),
 	);
 	try {
-		const ranked = await options.decisions.prioritize(
-			portfolio.filter((repo) => repo.issues.length || repo.prs.length),
-			log,
-		);
-		for (const repository of ranked) {
+		const ranked = recovered
+			? []
+			: await options.decisions.prioritize(
+					portfolio.filter((repo) => repo.issues.length || repo.prs.length),
+					log,
+				);
+		for (const ranking of ranked) {
+			const repository = {
+				...ranking,
+				issues: [
+					...ranking.issues.filter((issue) =>
+						/\b(?:dependenc(?:y|ies)|dependency[- ]upgrade|upgrade deps|bump .* from .* to)\b/i.test(
+							issue.title,
+						),
+					),
+				],
+			};
 			if (options.repositories && !options.repositories.includes(repository.repository)) continue;
 			if (!repository.issues.length || selected.length >= options.limit) continue;
 			try {
@@ -81,20 +112,33 @@ export async function runCoordinator(options: {
 				);
 			}
 		}
-		if (!selected.length)
-			throw new Error("No eligible existing personal workspace with issues and L1 checks.");
-		const planned = await conversations.run({
-			key: "controller",
-			requestId: `${runId}:plan`,
-			role: config.roles.orchestrator,
-			schema: planSchema,
-			instructions:
-				"You are the sole coordinator. Order every repository and every issue using Jev priorities. Inspect dirty diffs, preserve reasonable user work and explain retainChanges; never discard it. Unpushed main commits are not dirty. Do not include PR numbers as issue tasks. You cannot approve unknown/truncated changes. Return {repositories:[{repository,issues:[ordered issue numbers],retainChanges:boolean,reason:string}]}. Include all provided repositories and all their issues exactly once.",
-			input: {
-				dryRun: options.dryRun,
-				repositories: selected.map(({ repository, workspace }) => ({ ...repository, workspace })),
-			},
-		});
+		if (recovered) selected.push(...recovered.selected);
+		if (!selected.length) {
+			log("[主控] 本周期无可执行仓库，保存分析后完成。");
+			const error = await analysis;
+			if (error) throw error;
+			return [];
+		}
+		const planned = recovered
+			? { result: recovered.plan }
+			: await conversations.run({
+					key: "controller",
+					requestId: `${runId}:plan`,
+					role: config.roles.orchestrator,
+					schema: planSchema,
+					instructions:
+						"You are the sole coordinator. Order every repository and authorized task using Jev priorities. Assigned issues includes exact [CO] PR candidates marked kind:pr; these authorize code review/fixes only, not merging or closing PRs. Inspect dirty diffs, preserve user work and explain retainChanges; never discard it. Unpushed main commits are not dirty. You cannot approve unknown/truncated changes or broaden host scope. Return {repositories:[{repository,issues:[ordered task numbers],retainChanges:boolean,reason:string}]}. Include all provided repositories and assigned tasks exactly once.",
+					input: {
+						dryRun: options.dryRun,
+						repositories: selected.map(({ repository, workspace }) => ({
+							...repository,
+							workspace,
+						})),
+					},
+				});
+		const state = recovered ?? { selected, plan: planned.result, prepared: {}, committed: {} };
+		const save = () => conversations.saveCheckpoint(runId, JSON.stringify(state));
+		await save();
 		if (
 			new Set(planned.result.repositories.map((item) => item.repository)).size !==
 				selected.length ||
@@ -104,6 +148,17 @@ export async function runCoordinator(options: {
 		const handoffs: WorkHandoff[] = [];
 		const failures: string[] = [];
 		for (const plan of planned.result.repositories) {
+			const progress: RepositoryProgress = {
+				tasks: plan.issues,
+				worker: null,
+				reviewer: null,
+				round: 0,
+				findings: [],
+				head: null,
+				status: "preparing",
+			};
+			const observe = () => options.observe?.(plan.repository, structuredClone(progress));
+			observe();
 			if (options.signal?.aborted) throw new Error("Coordinator cancelled.");
 			const candidate = selected.find((item) => item.repository.repository === plan.repository);
 			if (
@@ -129,34 +184,49 @@ export async function runCoordinator(options: {
 					`[主控调度] ${plan.repository} | ${plan.reason}\n[任务顺序] ${ordered.map((issue) => `#${issue.number} ${issue.title}`).join(" → ")}\n[Jev 配置] ${role.model} / ${role.thinkingLevel}\n[工作目录] ${candidate.workspace.path}`,
 				);
 				if (!options.dryRun) await verifyWorkIssues(repository.repository, ordered);
-				let workspace = candidate.workspace;
-				let prepared = false;
-				const preparation = await conversations.run({
-					key: "preparation",
-					requestId: `${runId}:prepare:${plan.repository}`,
-					role: config.roles.executor,
-					schema: handoffSchema,
-					instructions: `You are the resident workspace preparation specialist. This is a NEW assignment ${runId}, not a continuation of earlier attempts. Host prepared=false at the start of THIS assignment. Earlier tool errors/results are historical and cannot satisfy this assignment. ${options.dryRun ? "Dry run: describe preparation only; no tool can change the workspace." : "Call workspace_action operation prepare with {} exactly once IN THIS ASSIGNMENT even if an earlier assignment failed; host enforces main/preservation/fast-forward/mirror installation/L1. Report ready only after it succeeds now."} Return {summary,steps:[...],issues:[...],ready:boolean}. Steps must include main, pull --ff-only when safe, mirror install, UT+lint and handoff. Preserve unpushed commits and explicitly approved changes.`,
-					input: {
-						repository,
-						workspace,
-						retainChanges: plan.retainChanges,
-						dryRun: options.dryRun,
-						registry: config.repairs?.registry,
-					},
-					...(!options.dryRun
-						? {
-								requiredOperation: "prepare",
-								action: async (operation: string) => {
-									if (operation !== "prepare" || prepared)
-										throw new Error("Only one workspace preparation is allowed.");
-									workspace = await driver.prepare(workspace, plan.retainChanges, options.signal);
-									prepared = true;
-									return workspace;
-								},
-							}
-						: {}),
-				});
+				let workspace = state.prepared[plan.repository] ?? candidate.workspace;
+				let prepared = !!state.prepared[plan.repository];
+				const preparation = prepared
+					? {
+							conversationId: 0,
+							result: {
+								summary: "Recovered prepared workspace; re-inspect and preserve current work.",
+								steps: [],
+								ready: true,
+							},
+						}
+					: await conversations.run({
+							key: "preparation",
+							requestId: `${runId}:prepare:${plan.repository}`,
+							role: config.roles.executor,
+							schema: handoffSchema,
+							instructions: `You are the resident workspace preparation specialist. This is a NEW assignment ${runId}, not a continuation of earlier attempts. Host prepared=false at the start of THIS assignment. Earlier tool errors/results are historical and cannot satisfy this assignment. ${options.dryRun ? "Dry run: describe preparation only; no tool can change the workspace." : "Call workspace_action operation prepare with {} exactly once IN THIS ASSIGNMENT even if an earlier assignment failed; host enforces main/preservation/fast-forward/mirror installation/L1. Report ready only after it succeeds now."} Return {summary,steps:[...],issues:[...],ready:boolean}. Steps must include main, pull --ff-only when safe, mirror install, UT+lint and handoff. Preserve unpushed commits and explicitly approved changes.`,
+							input: {
+								repository,
+								workspace,
+								retainChanges: plan.retainChanges,
+								dryRun: options.dryRun,
+								registry: config.work?.registry,
+							},
+							...(!options.dryRun
+								? {
+										requiredOperation: "prepare",
+										action: async (operation: string) => {
+											if (operation !== "prepare" || prepared)
+												throw new Error("Only one workspace preparation is allowed.");
+											workspace = await driver.prepare(
+												workspace,
+												plan.retainChanges,
+												options.signal,
+											);
+											state.prepared[plan.repository] = workspace;
+											await save();
+											prepared = true;
+											return workspace;
+										},
+									}
+								: {}),
+						});
 				log(
 					`[准备交接 ${preparation.conversationId}] ${preparation.result.summary}\n${preparation.result.steps.map((step, index) => `  ${index + 1}. ${step}`).join("\n")}`,
 				);
@@ -166,8 +236,17 @@ export async function runCoordinator(options: {
 					? ordered
 					: await verifyWorkIssues(repository.repository, ordered);
 				const actions = workerActions(driver, workspace, plan.issues, options.signal);
+				actions.committed.push(...(state.committed[plan.repository] ?? []));
+				const action = async (operation: string, args: Record<string, unknown>) => {
+					const result = await actions.action(operation, args);
+					state.committed[plan.repository] = actions.committed;
+					await save();
+					return result;
+				};
 				const files = options.dryRun ? [] : await driver.files(workspace);
 				const runWorker = async (round: number, findings: string[]) => {
+					Object.assign(progress, { round, findings, status: "fixing" });
+					observe();
 					const worker = await conversations.run({
 						key: `worker:${plan.repository}`,
 						requestId: `${runId}:worker:${plan.repository}:${round}`,
@@ -175,6 +254,8 @@ export async function runCoordinator(options: {
 						schema: handoffSchema,
 						instructions: `You are the dedicated worker for this repository. Process supplied issues in priority order on main, obey repository instructions, TDD and atomic commits with normal hooks. No branches/worktrees/push/issue closure. ${options.dryRun ? "DRY RUN: do not run code. Repeat every assigned issue, workdir, priority and approximate fix/test/commit process; honestly state nothing executed." : "Available workspace_action operations: read {path}, write {path,content}, latest {name} (queries the current stable npm release and peers/engines from approved mirror), install {} (temporary mirror), check {}, commit {issues:[issue numbers],files:[explicit paths],message}. Before editing each dependency, MUST call latest and inspect actual package manifests and lockfile/usage. Upgrade to the LATEST verified stable version, not blindly the stale issue target; never downgrade or invent versions. Include inseparable peer upgrades AND their assigned issue numbers in the same buildable atomic commit (for example vitest and coverage-v8); start each commit group with the highest-priority remaining issue. Do not create empty commits for issues already addressed by a group. Inspect transitive owners and existing overrides before upgrading. Do not manually fabricate lockfile resolutions. Commit after checks; never incorporate unrelated user changes. No arbitrary shell. If blocked, return ready:false with actual error. Commit message lowercase Conventional Commits <=50 chars, only explicit paths. Read relevant source/test files from supplied tracked file list; do not use the read tool on directories."} ${options.push === false ? "This occurrence is local-only: no push, release or issue closure." : "Only the host coordinator may publish after your verified handoff."} Return {summary,steps:[...],issues:[all assigned numbers in original priority order],ready:boolean}.`,
 						input: {
+							policy:
+								"Only dependency-upgrade tasks and exact [CO] code fixes are authorized. Important runtime/framework/ecosystem major upgrades require manual attention, not blind installation. PR remote merge/closure is report-only. Never delete tests, lower coverage or fix credentials/infrastructure. Jev advises but cannot grant scope.",
 							round,
 							findings,
 							repository: plan.repository,
@@ -194,13 +275,15 @@ export async function runCoordinator(options: {
 							thinkingLevel: role.thinkingLevel,
 							dryRun: options.dryRun,
 						},
-						...(!options.dryRun ? { action: actions.action } : {}),
+						...(!options.dryRun ? { action } : {}),
 					});
 					if (JSON.stringify(worker.result.issues) !== JSON.stringify(plan.issues))
 						throw new Error("Worker handoff omitted or reordered issues.");
 					log(
 						`[Worker 交接 ${worker.conversationId}] ${worker.result.summary}\n${worker.result.steps.map((step, index) => `  ${index + 1}. ${step}`).join("\n")}`,
 					);
+					progress.worker = worker.conversationId;
+					observe();
 					if (
 						!options.dryRun &&
 						(!worker.result.ready || actions.committed.length !== plan.issues.length)
@@ -218,10 +301,14 @@ export async function runCoordinator(options: {
 							worker = await runWorker(round, findings);
 						},
 						check: async () => {
+							progress.status = "checking";
+							observe();
 							await driver.check(workspace, options.signal);
 							return (await driver.inspect(plan.repository)).head;
 						},
 						review: async (head, round) => {
+							Object.assign(progress, { head, round, status: "reviewing" });
+							observe();
 							const result = await conversations.run({
 								key: `reviewer:${plan.repository}`,
 								requestId: `${runId}:review:${plan.repository}:${round}`,
@@ -245,22 +332,31 @@ export async function runCoordinator(options: {
 							log(
 								`[独立审查 ${result.conversationId}] round=${round} HEAD=${head} findings=${JSON.stringify(result.result.findings)}`,
 							);
+							Object.assign(progress, {
+								reviewer: result.conversationId,
+								findings: result.result.findings,
+							});
+							observe();
 							return result.result;
 						},
 						...(options.signal ? { signal: options.signal } : {}),
 					});
 					await verifyWorkIssues(repository.repository, ordered);
+					Object.assign(progress, { head: approvedHead, status: "signed_off" });
+					observe();
 					if (options.push !== false) {
 						await driver.publish(workspace, approvedHead, plan.issues, options.signal);
 						log(
 							`[主控发布] ${plan.repository} 已验证 push，然后关闭 ${plan.issues.length} 个 Issue`,
 						);
+						progress.status = "pushed";
+						observe();
 					} else {
 						await driver.check(workspace, options.signal);
 						const final = await driver.inspect(plan.repository);
 						if (
 							final.branch !== "main" ||
-							final.head !== actions.committed.at(-1)?.head ||
+							final.head !== approvedHead ||
 							final.status !== workspace.status ||
 							final.diff !== workspace.diff
 						)
@@ -273,15 +369,16 @@ export async function runCoordinator(options: {
 					worker = await runWorker(0, []);
 					log(`[DRY RUN 完成] ${plan.repository}：未 pull/安装/改码/测试/提交/push/关闭 Issue`);
 				}
-				if (!worker) throw new Error("Worker handoff missing.");
 				handoffs.push({
 					repository: plan.repository,
 					path: workspace.path,
-					conversationId: worker.conversationId,
-					summary: worker.result.summary,
+					conversationId: worker?.conversationId ?? 0,
+					summary: worker?.result.summary ?? "Recovered independently approved checked HEAD.",
 					dryRun: options.dryRun,
 				});
 			} catch (error) {
+				progress.status = progress.round >= 20 ? "exhausted" : "blocked";
+				observe();
 				const message = `${plan.repository}: ${error instanceof Error ? error.message : "Repository work failed"}`;
 				log(`[仓库阻塞] ${message}`);
 				failures.push(message);

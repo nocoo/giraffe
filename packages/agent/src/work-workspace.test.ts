@@ -34,6 +34,29 @@ it("provides bounded exact committed changes to the independent reviewer", async
 		run: async () => ({ exitCode: 0, stderr: "", stdout: "x".repeat(128001) }),
 	});
 	await expect(oversized.changes(inspection)).rejects.toThrow("Review diff exceeds budget");
+	const credential = new WorkWorkspace({
+		run: async () => ({ exitCode: 0, stderr: "", stdout: "ghp_abcdefghijklmnopqrstuvw" }),
+	});
+	await expect(credential.changes(inspection)).rejects.toThrow("Review diff exceeds budget");
+});
+
+it("closes dependency issues idempotently and rejects invalid numbers", async () => {
+	const { driver, state, run } = await fixture();
+	const inspection = await driver.inspect("owner/repo");
+	const native = run.getMockImplementation();
+	if (!native) throw new Error("Missing fixture.");
+	let closed = false;
+	run.mockImplementation(async (request) =>
+		request.args[0] === "issue" && request.args[1] === "view"
+			? { exitCode: 0, stderr: "", stdout: JSON.stringify({ state: closed ? "CLOSED" : "OPEN" }) }
+			: native(request),
+	);
+	await driver.closeIssue(inspection, 1);
+	closed = true;
+	await driver.closeIssue(inspection, 1);
+	expect(run.mock.calls.filter(([request]) => request.args[1] === "close")).toHaveLength(1);
+	await expect(driver.closeIssue(inspection, -1)).rejects.toThrow("scope");
+	state.head = "head";
 });
 
 async function fixture() {
@@ -221,6 +244,7 @@ it("blocks changed baseline, failed checks and install mutations", async () => {
 	state.head = "head";
 	state.fail = "run lint";
 	await expect(driver.check(initial)).rejects.toThrow(/failed/);
+	await expect(driver.prepare(initial, false)).resolves.toBeDefined();
 	state.fail = "";
 	state.afterInstall = () => {
 		state.status = " M bun.lock";
@@ -230,7 +254,7 @@ it("blocks changed baseline, failed checks and install mutations", async () => {
 	state.status = "";
 	state.diff = "";
 	await writeFile(join(path, "AGENTS.md"), "changed instructions");
-	await expect(driver.check(initial)).rejects.toThrow(/Baseline/);
+	await expect(driver.check(initial)).resolves.toBeUndefined();
 });
 
 it("adopts instructions from a clean fast-forward before baseline checks", async () => {
@@ -272,7 +296,7 @@ it("stages only owned files, keeps hooks and refuses dirty baseline/staged/unsaf
 	await expect(driver.commit(initial, ["code.ts"], "fix: issue")).rejects.toThrow(/main/);
 });
 
-it("verifies checks and remote HEAD before issue closure, retaining only approved dirt", async () => {
+it("reconciles remote HEAD without duplicate push or implicit issue closure", async () => {
 	const { driver, state, calls } = await fixture();
 	state.status = " M code.ts";
 	state.diff = "retained";
@@ -282,10 +306,8 @@ it("verifies checks and remote HEAD before issue closure, retaining only approve
 		["push", "ls-remote", "issue"].includes(call.args[0] ?? ""),
 	);
 	expect(mutations.map((call) => call.args.join(" "))).toEqual([
-		"push origin HEAD:main",
 		"ls-remote origin refs/heads/main",
-		"issue close 1 --repo owner/repo",
-		"issue close 2 --repo owner/repo",
+		"ls-remote origin refs/heads/main",
 	]);
 	await expect(driver.publish(initial, "wrong", [1])).rejects.toThrow(/Publication/);
 	await expect(driver.publish(initial, "head", [])).rejects.toThrow(/scope/);
@@ -308,7 +330,7 @@ it("pins tracked gates, blocks symlink commits and detects a remote advance over
 		/Unsafe/,
 	);
 	await writeFile(join(path, "vitest.config.ts"), "thresholds=0");
-	await expect(driver.check(initial)).rejects.toThrow(/Baseline/);
+	await expect(driver.check(initial)).resolves.toBeUndefined();
 	await writeFile(join(path, "vitest.config.ts"), "thresholds=95");
 	state.status = " M code.ts";
 	state.diff = "approved";

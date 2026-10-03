@@ -7,7 +7,7 @@ import { createRegistry, Harness, MemoryStorage } from "@earendil-works/pi-durab
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { afterEach, expect, it, vi } from "vitest";
 import { createCron, nextOccurrence } from "./cron.ts";
-import type { CronStatus } from "./repair-contracts.ts";
+import type { CronStatus } from "./work-contracts.ts";
 
 afterEach(() => {
 	vi.useRealTimers();

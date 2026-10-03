@@ -46,34 +46,15 @@ const roleSchema = z.strictObject({
 	maxTokens: z.number().int().min(512).max(32000).default(4096),
 	thinkingLevel: z.enum(["off", "minimal", "low", "medium", "high"]).default("off"),
 });
-export const repairProfileSchema = z.strictObject({
-	manager: z.enum(["npm", "bun"]),
-	checks: z
-		.array(z.string().regex(/^[a-zA-Z0-9:_-]+$/))
-		.min(1)
-		.max(10),
-	files: z.array(z.string().min(1)).min(1).max(100),
-	hooksPath: z.string().min(1),
-});
-const repairsSchema = z
+const workSchema = z
 	.strictObject({
-		enabled: z.boolean().default(false),
 		cron: z.string().default("0 * * * *"),
 		timezone: z.string().default("Asia/Shanghai"),
-		maxRounds: z.number().int().min(1).max(20).default(20),
-		profiles: z
-			.record(z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/), repairProfileSchema)
-			.default({}),
-		push: z.boolean().default(false),
 		registry: serviceUrl.default("https://mirrors.tencent.com/npm/"),
 	})
 	.default({
-		enabled: false,
 		cron: "0 * * * *",
 		timezone: "Asia/Shanghai",
-		maxRounds: 20,
-		profiles: {},
-		push: false,
 		registry: "https://mirrors.tencent.com/npm/",
 	});
 export const configSchema = z
@@ -87,20 +68,15 @@ export const configSchema = z
 		service: z
 			.strictObject({ baseUrl: serviceUrl })
 			.default({ baseUrl: "https://giraffe.hexly.ai" }),
-		watch: z
-			.strictObject({
-				intervalSeconds: z.number().int().min(30).max(86400).default(120),
-			})
-			.default({ intervalSeconds: 120 }),
-		repairs: repairsSchema,
+		work: workSchema,
 	})
 	.superRefine((value, ctx) => {
 		try {
-			nextOccurrence(value.repairs.cron, value.repairs.timezone, "2026-01-01T00:00:00Z");
+			nextOccurrence(value.work.cron, value.work.timezone, "2026-01-01T00:00:00Z");
 		} catch {
 			ctx.addIssue({
 				code: "custom",
-				path: ["repairs", "cron"],
+				path: ["work", "cron"],
 				message: "Invalid cron or timezone",
 			});
 		}

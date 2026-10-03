@@ -43,7 +43,7 @@ PAT 使用 AES-256-GCM 加密后存入 D1；数据快照以 JSON 保存，未做
 2. 在「设置」添加 GitHub **classic PAT**，需要 `repo`、`read:org`、`read:user` 和 `notifications` scope。当前不接受 fine-grained PAT。令牌输入框在提交时立即清空。
 3. 首个账号成为当前账号。在刷新中心发现仓库并选择关注项，添加或切换账号不会静默采集。
 4. 配置每日快速与每周深度刷新。页面读取已保存快照，不通过 GET 自动采集。
-5. 在本机配置 `~/.config/giraffe/config.json` 的三个模型角色，然后运行 `bun run agent login`，在网页确认授权后运行 `bun run agent watch`。网页分析台可请求单仓库或全局分析。
+5. Configure local model roles and one `work` schedule in `~/.config/giraffe/config.json`, run `bun run agent login`, then `bun run agent work`. Use `--once` for one occurrence, `--dry-run` for an isolated rehearsal, or `--no-push` for local commits only. The Work desk shows bounded progress; analysis reports come from the same schedule.
 
 侧栏身份来自 Cloudflare Access。姓名与头像会通过邮箱的 SHA-256 摘要查询 `lizheng.blog` 作者档案，服务不可用时使用身份信息回退。
 

@@ -9,7 +9,7 @@
 	},
 	"exports": {
 		"./contracts": "./src/contracts.ts",
-		"./repair-contracts": "./src/repair-contracts.ts"
+		"./work-contracts": "./src/work-contracts.ts"
 	},
 	"engines": {
 		"node": ">=22.22.0"

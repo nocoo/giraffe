@@ -1,12 +1,22 @@
 import type { GiraffeClient } from "./client.ts";
 import type { Config } from "./config.ts";
-import { DOMAINS, type Domain, specialistSchema } from "./contracts.ts";
+import { type AnalysisReport, DOMAINS, type Domain, specialistSchema } from "./contracts.ts";
 import { decisionClient } from "./decision.ts";
 import { type AnalysisInput, buildInput, digest, object } from "./evidence.ts";
 import { finalizeReport } from "./runtime.ts";
-import { reportInput } from "./watch.ts";
 import type { workConversations } from "./work-conversations.ts";
 import type { WorkRepository } from "./work-priority.ts";
+
+export function reportInput(id: string, report: AnalysisReport) {
+	return {
+		id,
+		type: "github-analysis",
+		status: "completed",
+		repository: report.repository,
+		source_version: report.sourceVersion,
+		payload: report,
+	};
+}
 
 export function combineInputs(domain: Domain, inputs: AnalysisInput[], now: string): AnalysisInput {
 	const all = inputs.flatMap((input) => input.evidence);

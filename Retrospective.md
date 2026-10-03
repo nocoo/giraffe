@@ -423,3 +423,29 @@ controller/worker conversations and exact reviewed diff hashes, not automatic
 adoption of arbitrary user changes. R2Shot's first Chrome acceptance hit the
 capture API quota; a second unchanged run passed all 11 scenarios, so the first
 failure remains recorded rather than hidden as guaranteed stable acceptance.
+
+## 2026-10-03 — Unified Work recovery and evidence
+
+The first unification patch reused issue completion bookkeeping for review fixes,
+which could reject a second commit or compare publication against a stale task
+HEAD. Review completion now updates each task once and publication uses the exact
+independently approved checked HEAD. Recovered approval does not require an
+in-memory worker handoff or consume a twenty-first round.
+
+Pi Durable deduplicates request IDs, but validated handoffs initially lived only
+in an in-memory ticket. Replaying a settled request therefore returned no result.
+Persist validated result plus input identity, schema-validate reuse and reject
+changed input. SQLite reopen tests prove no extra model/tool execution. Freeze
+controller plan/prepared workspace/completion before recovery instead of asking
+the same request to evaluate a changed checkout. Keep unsafe tools non-replayed.
+
+Host push originally bundled issue closure before its durable marker; a closure
+failure could repeat publication. Persist SHA before idempotent dependency issue
+closure and follow-up. Reconcile remote SHA for uncertain push. A consumed third
+poll must settle timeout after restart without a fourth request. Skipped-only,
+cancelled, missing or paginated evidence never proves passed CI.
+
+Console-only tool logs initially bypassed Web progress. Route conversations and
+native driver through the current occurrence trace, retain compact per-repository
+summaries beside a byte-bounded tail, and flush queued traces before terminal
+status. Do not present dependency-only foundation as PR/CI repair acceptance.

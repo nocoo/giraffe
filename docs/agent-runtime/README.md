@@ -32,8 +32,12 @@ examples, not live telemetry or hard-coded production defaults. The two-reposito
 repair required operator-assisted recovery. A subsequent authorized push verified
 Backy `3be12bb` and R2Shot `b145913`; this page makes no current CI/CD claim.
 
-The separate opt-in `repair` cron retains its dedicated-clone/branch and reviewer
-contract. It must not be conflated with `work` on existing personal main workspaces.
+The separate `watch` and `repair` engines are removed. One `work` command owns the
+schedule/controller/account lock, main workspaces and independent repository
+reviewers. `--once` is one occurrence; normal invocation remains resident. The
+unified foundation currently executes dependency issues; exact [CO] PR and
+recurring CI/CD/flaky-test task execution remain unimplemented. Historical
+acceptance does not prove this new runtime. No service is automatically installed.
 
 ## Verify
 

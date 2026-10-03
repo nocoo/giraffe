@@ -2,12 +2,12 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
-import { githubRead } from "./repair-source.ts";
+import { githubRead } from "./github.ts";
 import { latestPackage } from "./work-packages.ts";
 import { reviewWork } from "./work-review.ts";
 import { verifyWorkIssues, workerActions } from "./work-tools.ts";
 
-vi.mock("./repair-source.ts", () => ({ githubRead: vi.fn() }));
+vi.mock("./github.ts", () => ({ githubRead: vi.fn() }));
 vi.mock("./work-packages.ts", () => ({ latestPackage: vi.fn() }));
 afterEach(() => vi.resetAllMocks());
 
@@ -146,6 +146,12 @@ it("revalidates owner, main and every issue before native execution", async () =
 			.mockResolvedValueOnce(current);
 	setup();
 	expect(await verifyWorkIssues("owner/repo", [issue])).toEqual([{ ...issue, body: "details" }]);
+	setup(repo, { ...live, title: "ordinary PR", pull_request: {} } as never);
+	await expect(verifyWorkIssues("owner/repo", [{ ...issue, kind: "pr" }])).rejects.toThrow(
+		"changed",
+	);
+	setup(repo, { ...live, title: "[CO] fix", pull_request: {} } as never);
+	await expect(verifyWorkIssues("owner/repo", [{ ...issue, kind: "pr" }])).resolves.toHaveLength(1);
 	for (const metadata of [
 		{ ...repo, fork: true },
 		{ ...repo, archived: true },
@@ -249,6 +255,8 @@ it("restricts worker IO, preserves dirty files and commits checked issues in ord
 		expect(worker.committed.at(-1)?.issue).toBe(2);
 		await worker.action("write", { path: "code.ts", content: "review correction" });
 		await worker.action("commit", { issues: [1], files: ["code.ts"], message: "fix: review" });
+		await worker.action("write", { path: "code.ts", content: "second task correction" });
+		await worker.action("commit", { issues: [2], files: ["code.ts"], message: "fix: second" });
 		expect(worker.committed).toHaveLength(3);
 		await expect(worker.action("push", {})).rejects.toThrow(/permitted/);
 		await writeFile(

@@ -68,7 +68,7 @@ export async function loadPortfolio(
 		return {
 			repository,
 			issues: items(issueRows),
-			prs: items(prRows),
+			prs: items(prRows).map((item) => ({ ...item, kind: "pr" as const })),
 			fetchedAt: times.includes(null) ? null : ([...times].sort()[0] ?? null),
 			stale: times.some(
 				(time) =>

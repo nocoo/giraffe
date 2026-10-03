@@ -1,3 +1,6 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createModels } from "@earendil-works/pi-ai/models";
 import {
 	fauxAssistantMessage,
@@ -5,6 +8,7 @@ import {
 	fauxToolCall,
 } from "@earendil-works/pi-ai/providers/faux";
 import { MemoryStorage } from "@earendil-works/pi-durable";
+import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { expect, it, vi } from "vitest";
 import { z } from "zod";
 import { configSchema } from "./config.ts";
@@ -26,6 +30,47 @@ const response = (value: unknown) =>
 	fauxAssistantMessage([fauxToolCall("submit_work_result", { json: JSON.stringify(value) })], {
 		stopReason: "toolUse",
 	});
+
+it("reuses validated controller handoff after reopening SQLite without another model turn", async () => {
+	const directory = await mkdtemp(join(tmpdir(), "giraffe-result-test-"));
+	const models = createModels();
+	const fake = fauxProvider({ models: [{ id: "astra" }, { id: "sol" }] });
+	models.setProvider(fake.provider);
+	fake.setResponses([response({ summary: "recorded" })]);
+	const request = {
+		key: "controller",
+		requestId: "same",
+		role: config.roles.orchestrator,
+		instructions: "Plan",
+		input: { scope: "one" },
+		schema: z.object({ summary: z.string() }),
+	};
+	try {
+		for (let index = 0; index < 2; index++) {
+			const runtime = await openRuntime({
+				storage: await openNodeSqliteStorage(join(directory, "state.sqlite")),
+				config,
+				models,
+				decide: vi.fn(),
+				publish: vi.fn(),
+			});
+			const conversations = workConversations({ runtime, config, log: vi.fn() });
+			try {
+				if (index === 0) {
+					expect(await conversations.checkpoint("new")).toBeNull();
+					await conversations.saveCheckpoint("new", '{"ready":true}');
+				}
+				expect(await conversations.checkpoint("new")).toBe('{"ready":true}');
+				expect((await conversations.run(request)).result).toEqual({ summary: "recorded" });
+			} finally {
+				await conversations.close();
+				await runtime.close();
+			}
+		}
+	} finally {
+		await rm(directory, { recursive: true, force: true });
+	}
+});
 
 it("reuses resident conversations, isolates dry-run tools and validates handoffs", async () => {
 	const models = createModels();
@@ -74,6 +119,25 @@ it("reuses resident conversations, isolates dry-run tools and validates handoffs
 			schema: z.object({ summary: z.string() }),
 		});
 		expect(first.conversationId).toBe(second.conversationId);
+		const repeat = await conversations.run({
+			key: "worker:owner/repo",
+			requestId: "one",
+			role: config.roles.executor,
+			instructions: "Rehearse only",
+			input: {},
+			schema: z.object({ summary: z.string() }),
+		});
+		expect(repeat.result.summary).toBe("first");
+		await expect(
+			conversations.run({
+				key: "worker:owner/repo",
+				requestId: "one",
+				role: config.roles.executor,
+				instructions: "Changed",
+				input: {},
+				schema: z.object({ summary: z.string() }),
+			}),
+		).rejects.toThrow("input changed");
 		expect(
 			(
 				await conversations.run({
@@ -178,6 +242,55 @@ it("bounds repeated invalid outputs without hanging the coordinator", async () =
 				schema: z.object({ summary: z.string() }),
 			}),
 		).rejects.toThrow(/validated handoff/);
+	} finally {
+		await conversations.close();
+		await runtime.close();
+	}
+});
+
+it("aborts active independent conversations on shutdown and rejects concurrent assignments", async () => {
+	let release: () => void = () => {};
+	const models = createModels();
+	const fake = fauxProvider({ models: [{ id: "astra" }, { id: "sol" }] });
+	models.setProvider(fake.provider);
+	fake.setResponses([
+		fauxAssistantMessage([fauxToolCall("workspace_action", { operation: "wait", json: "{}" })], {
+			stopReason: "toolUse",
+		}),
+	]);
+	const runtime = await openRuntime({
+		storage: new MemoryStorage(),
+		config,
+		models,
+		decide: vi.fn(),
+		publish: vi.fn(),
+	});
+	const log = vi.fn();
+	const conversations = workConversations({ runtime, config, log });
+	const request = {
+		key: "worker:shutdown",
+		requestId: "one",
+		role: config.roles.executor,
+		instructions: "Wait",
+		input: {},
+		schema: z.object({ summary: z.string() }),
+		action: async () => {
+			await new Promise<void>((resolve) => {
+				release = resolve;
+			});
+			return {};
+		},
+	};
+	try {
+		const pending = conversations.run(request).catch((error) => error);
+		await vi.waitFor(() => expect(log).toHaveBeenCalled());
+		await expect(conversations.run({ ...request, requestId: "two" })).rejects.toThrow(
+			"active assignment",
+		);
+		const closing = conversations.close();
+		release();
+		await closing;
+		expect(await pending).toBeInstanceOf(Error);
 	} finally {
 		await conversations.close();
 		await runtime.close();

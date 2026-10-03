@@ -11,7 +11,6 @@ import {
 	GitPullRequest,
 	Layers3,
 	ListChecks,
-	Play,
 	Radio,
 	RefreshCw,
 	TriangleAlert,
@@ -29,7 +28,6 @@ import {
 	analysisState,
 	DOMAIN_LABEL,
 	loadAnalysis,
-	requestAnalysis,
 	safeEvidenceUrl,
 	VERDICT_LABEL,
 } from "../viewmodels/analysis";
@@ -44,8 +42,6 @@ export function AnalysisPage() {
 	const [data, setData] = useState<AnalysisData | null>(null);
 	const repos = data?.repositories ?? [];
 	const [error, setError] = useState("");
-	const [message, setMessage] = useState("");
-	const [busy, setBusy] = useState(false);
 	const [now, setNow] = useState(Date.now);
 	useAnalysisRead(
 		loadAnalysis,
@@ -68,41 +64,21 @@ export function AnalysisPage() {
 	const card = board?.cards.find((c) => c.domain === domain);
 	const report = card?.report;
 	const online = board?.runners.filter((r) => r.online).length ?? 0;
-	async function enqueue() {
-		if (!data) return;
-		setBusy(true);
-		setError("");
-		try {
-			await requestAnalysis(data.account_id, repository, [domain]);
-			setMessage("分析请求已加入队列，由本地 Agent 执行。");
-			setData(await loadAnalysis());
-		} catch {
-			setError("请求未保存，请检查账号状态后重试。");
-		} finally {
-			setBusy(false);
-		}
-	}
 	return (
 		<div className="space-y-4" data-testid="analysis-desk">
 			<PageHeader
 				title="分析台"
 				description="本地 Agent 的判断与依据，和 GitHub 原始事实分开查看"
 				actions={
-					<>
-						<SelectField
-							label="分析范围"
-							value={repository ?? ""}
-							onValueChange={(value) => setParams(value ? { repo: value } : {})}
-							options={[
-								{ value: "", label: "全部仓库" },
-								...repos.map((name) => ({ value: name, label: name })),
-							]}
-						/>
-						<Button size="sm" disabled={busy || !data} onClick={() => void enqueue()}>
-							<Play className="size-4" aria-hidden="true" />
-							{busy ? "正在提交…" : "请求分析"}
-						</Button>
-					</>
+					<SelectField
+						label="分析范围"
+						value={repository ?? ""}
+						onValueChange={(value) => setParams(value ? { repo: value } : {})}
+						options={[
+							{ value: "", label: "全部仓库" },
+							...repos.map((name) => ({ value: name, label: name })),
+						]}
+					/>
 				}
 			/>
 			{card ? (
@@ -111,11 +87,6 @@ export function AnalysisPage() {
 			{error ? (
 				<p role="alert" className="text-sm text-basalt-destructive">
 					{error}
-				</p>
-			) : null}
-			{message ? (
-				<p role="status" className="text-sm">
-					{message}
 				</p>
 			) : null}
 			{board?.errors.length ? (
@@ -194,7 +165,7 @@ export function AnalysisPage() {
 							<LayerCard.Empty
 								icon={<Activity />}
 								title={data ? "这个范围尚无分析报告" : "正在读取分析报告…"}
-								description="先在本机运行 giraffe login，再运行 giraffe watch。这里读取 Agent 保存的报告；请求分析不会在云端调用模型。"
+								description="先运行 giraffe login，再运行 giraffe work。这里读取统一 Work 周期保存的报告，不再单独调度分析。"
 								action={
 									<Button variant="secondary" size="sm" asChild>
 										<Link href="/settings">管理 Agent 令牌</Link>
@@ -246,7 +217,7 @@ export function AnalysisPage() {
 									<code className="block rounded bg-basalt-control p-2 text-xs">
 										giraffe login
 										<br />
-										giraffe watch
+										giraffe work
 									</code>
 									<p className="text-xs text-basalt-muted-foreground">
 										离线时请求保留在队列，Agent 上线后处理。

@@ -154,15 +154,8 @@ for (const width of [1440, 390])
 				path: info.outputPath(`analysis-${width}-${theme}.png`),
 				fullPage: true,
 			});
-			await page.getByRole("button", { name: "请求分析", exact: true }).click();
-			await expect(
-				page.getByRole("status").filter({ hasText: "分析请求已加入队列" }),
-			).toBeVisible();
-			expect(writes[0]).toMatchObject({
-				type: "analysis-request",
-				status: "pending",
-				payload: { scope: "repo", repository: "octocat/hello-world", domains: ["prs"] },
-			});
+			await expect(page.getByRole("button", { name: "请求分析", exact: true })).toHaveCount(0);
+			expect(writes).toEqual([]);
 			await page.clock.setFixedTime(new Date("2026-10-04T09:00:00Z"));
 			await page.getByRole("tab", { name: /Issues/ }).click();
 			await page.getByRole("tab", { name: /Pull Requests/ }).click();

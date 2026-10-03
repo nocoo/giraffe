@@ -92,31 +92,15 @@ Narratives remain in [Retrospective.md](Retrospective.md); keep only recurring r
 - Agent records/reports/jobs are mutable local application resources with revisions. GitHub observations and factory publications remain read-only. GET never collects upstream or records token activity.
 - Model execution/configuration belongs to the local agent; never submit model secrets to the web application. Cloud AI inference/settings/endpoints are removed; legacy D1 tables remain for data preservation. Contract: [Agent API](docs/11-agent-api.md).
 
-## Local Agent
+## Local Work Runtime
 
-- `bun run agent --help`, `bun run agent login`, `bun run agent status`, `bun run agent analyze nocoo/giraffe`, and `bun run agent watch` run the Node.js Agent CLI.
-- Model connections and role mappings live in `~/.config/giraffe/config.json`; browser-authorized API tokens live in `credentials.json` next to it. Directories use `0700`, credential files `0600`. Never print or commit either file.
-- One local Harness per account; SQLite transaction locking prevents concurrent local owners. One Astra orchestrator, one shared Jev client, and persistent Sol specialist conversations cover repository/global Issues, PR, CI and CD analysis.
-- Runtime SQLite state is local user data, not D1. D1 stores published reports/jobs and runner heartbeat via authenticated CRUD. GET observations never initiates upstream collection.
-- Agent tests: `bun run --cwd packages/agent test:coverage`; four metrics each >=95%. Root `typecheck`, `build`, `lint`, and `test:coverage` include the workspace. Tests use fake models, fake credentials and loopback only.
-- `packages/agent/src/contracts.ts` is the browser-safe report contract; do not import Node runtime modules into the dashboard. Root version is authoritative for displayed runner version.
-- Analysis tools do not execute shell commands. A pass describes saved observations, not permission to merge/deploy. Missing/stale coverage remains visible; dependency repair cron is a separate explicit local grant with exact-code Astra review before dedicated-branch push.
-
-## Dependency Repair Runtime
-
-- `bun run agent repair` runs a persistent five-field cron; `--once` requests one bounded occurrence. Local `repairs.enabled` controls activation, `push` separately controls dedicated-branch publication.
-- Only dependency-upgrade issues, configured npm/Bun root manifests, owner-eligible repositories and unchanged baseline checks/hooks are supported. Missing local tools or check profiles are blocked, never bypassed.
-- A separate persistent Astra reviewer must sign the exact HEAD/content/check digest with zero findings; at most 20 fix/review rounds. Any changed code/proof invalidates approval. No merges, releases, default-branch or force pushes.
-- Use dedicated clones and the local Git/npm/Bun toolchain, with normal lifecycle scripts and Git hooks. There is no Docker adapter or OS isolation: repository scripts run as the current user and can access that user's files/network. Enable only trusted repositories. Do not inject model/API keys into child environments or expose them through model tools, logs or web payloads.
-- Repair state, cron occurrences and candidate cursors survive restarts. Publish bounded progress/heartbeats through the API, preserve safe diagnostics, and distinguish terminal live-state changes from retryable transport failures.
-- Tests use fake models/APIs and temporary local Git repositories; root four-metric coverage gates stay >=95%. Native fixture success is not real-target acceptance or authorization to enable profiles/push.
-
-## Repository Coordinator
-
-- `bun run agent work --dry-run --limit 5` rehearses one bounded portfolio scheduling occurrence. `--repos owner/repo,...` restricts worker selection, not portfolio priority analysis. Without `--dry-run`, the explicitly invoked command authorizes native main-workspace execution and coordinator publication.
-- This workflow supersedes the dedicated-clone restriction only for `work`; the existing dependency-only `repair` cron retains its separate grant and branch contract. `work` is not installed as an automatic service and never shares its SQLite file with analysis or repair execution.
-- Fetch saved API observations, ask Jev one issue/PR choice question per repository in batches of at most 25, then ask the controller to order all selected issues. Jev selects among configured executor low/medium and orchestrator high model profiles before each repository worker.
-- Four persistent domain conversations analyze in parallel. One persistent preparation conversation and one worker conversation per repository operate under the controller. Dry run exposes structured handoff only: no workspace tools, repository writes, online reports, push or issue closure.
-- Workspaces are existing verified GitHub repositories under `~/workspace/personal`. Preserve ahead commits and reviewed dirt; never reset, stash, clean, force push, create branches or worktrees. Do not overwrite or commit pre-existing dirty paths. Require executable hooks and unchanged baseline checks; use temporary package mirrors and unit tests plus lint before handoff.
-- Workers commit ordered issues with normal hooks but cannot push or close issues. The coordinator revalidates live owned/main issue scope, checks exact HEAD and retained changes, pushes normally, verifies remote main, and only then closes its completed issue list. Native scripts are trusted-user execution, not an OS sandbox. Dry-run evidence never proves real repairs.
-- `work --no-push` runs real repairs and local atomic commits, then verifies the final local handoff without push or issue closure. Before dependency edits workers query the configured approved mirror's latest stable metadata and check actual use, engines and peer requirements; never blindly copy an old issue target or downgrade an already newer version.
+- `bun run agent login`, `status`, and `work` are the only runtime commands. Normal `work` stays alive on one five-field `work.cron`/`work.timezone` schedule. `--once`, `--dry-run`, and `--no-push` are modes, not separate engines.
+- One account SQLite process lock, one live SQLite runtime and one controller. Dry run shares the account lock but uses isolated memory, no workspace actions and no remote writes. Active live occurrences freeze push mode, repository selection and limit; changed flags fail before tools.
+- Portfolio comes from saved Web snapshots, not a second collection. Four domain conversations preserve valuable reports. Jev ranks all candidates in batches of at most 25 repositories; host scope never comes from Jev.
+- Current execution foundation supports dependency-upgrade issues in existing personal main workspaces only. Exact `[CO]` PR execution and recurring CI/CD/flaky-test task discovery are not yet implemented; reports are not repair acceptance.
+- Workers use explicit-path atomic commits with normal hooks, never push. Each repository has a separate read-only reviewer. Persisted fix/check/review rounds are capped at 20; failed tests consume a round, exhaustion cannot push. Approval is checked against exact HEAD; reviewers inspect all commits ahead of origin/main.
+- Preserve ahead commits and reviewed dirt. No clones, branches, worktrees, reset, stash, clean or force push. Baseline failure is recorded, not a blocker for repairing code; final tests and independent review must pass. Never delete tests, lower coverage, bypass hooks or repair credentials/infrastructure.
+- Host publication is normal main push after checks/review, reconciling an already-pushed remote SHA. Persist push before closing completed dependency issues; closure retries are idempotent. PR merge/closure is report-only. No release, rollback, deployment or service installation.
+- Post-push reads only bounded live Actions evidence for the exact SHA, at ten-minute intervals and at most three checks across restart. Missing, partial, cancelled, skipped/neutral-only evidence is not passed. Follow-up records passed/failed/pending/timeout.
+- Work progress and heartbeat use existing generic D1 jobs/records, byte-bounded payloads. Historical runtime files and D1 rows are preserved, not migrated or deleted. Native scripts run as the trusted local user, not an OS sandbox.
+- Config and credentials remain local with private permissions; model/API keys never enter tools, child environments, logs or web payloads. Tests use fake models/APIs and temporary repositories. Root four-metric coverage remains >=95%.

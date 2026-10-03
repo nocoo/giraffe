@@ -1,12 +1,15 @@
 import { readFile, realpath, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { z } from "zod";
-import { githubRead } from "./repair-source.ts";
+import { githubRead } from "./github.ts";
 import { latestPackage } from "./work-packages.ts";
 import type { WorkItem } from "./work-priority.ts";
 import { gatePolicyContent, type WorkInspection, type WorkWorkspace } from "./work-workspace.ts";
 
-export async function verifyWorkIssues(repository: string, issues: WorkItem[]) {
+export async function verifyWorkIssues(
+	repository: string,
+	issues: (WorkItem & { kind?: "issue" | "pr" })[],
+) {
 	const owner = repository.split("/")[0];
 	const identity = z.object({ login: z.string() }).parse(await githubRead("user"));
 	const repo = z
@@ -42,7 +45,8 @@ export async function verifyWorkIssues(repository: string, issues: WorkItem[]) {
 			if (
 				live.number !== issue.number ||
 				live.state !== "open" ||
-				live.pull_request ||
+				!!live.pull_request !== (issue.kind === "pr") ||
+				(issue.kind === "pr" && !live.title.startsWith("[CO]")) ||
 				live.updated_at !== issue.updatedAt
 			)
 				throw new Error(`Issue #${issue.number} changed; refresh Giraffe and re-plan.`);
@@ -185,10 +189,12 @@ export function workerActions(
 				if (
 					name === "AGENTS.md" ||
 					name.startsWith(".husky/") ||
-					name.startsWith(".github/") ||
+					(name.startsWith(".github/") && !/^\.github\/workflows\/[^/]+\.ya?ml$/.test(name)) ||
 					(/(?:vitest|biome|eslint|tsconfig|jest|coverage)/.test(name) && !schemaOnly)
 				)
-					throw new Error("Worker cannot weaken baseline instructions or gates.");
+					throw new Error(
+						"Worker cannot weaken tests or hooks; workflow repairs must be narrowly relevant.",
+					);
 				if (name === "package.json") {
 					const before = JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
 					const after = JSON.parse(content) as Record<string, unknown>;
@@ -227,7 +233,7 @@ export function workerActions(
 				const pending = issues.filter((issue) => !committed.some((done) => done.issue === issue));
 				const remaining = pending.length ? pending : issues;
 				if (
-					args.issues[0] !== remaining[0] ||
+					(pending.length > 0 && args.issues[0] !== remaining[0]) ||
 					new Set(args.issues).size !== args.issues.length ||
 					args.issues.some((issue) => !remaining.includes(issue)) ||
 					args.files.some((path) => !written.has(path))

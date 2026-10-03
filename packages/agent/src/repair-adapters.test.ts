@@ -1,8 +1,5 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 
 vi.setConfig({ testTimeout: 20000 });
@@ -21,8 +18,8 @@ vi.mock("node:child_process", async (original) => {
 	return { ...actual, execFile: fake, spawn: vi.fn(actual.spawn) };
 });
 
-import { hostGitTransport, LocalCleanupError, runLocal } from "./repair-local.ts";
-import { githubRead } from "./repair-source.ts";
+import { githubRead } from "./github.ts";
+import { LocalCleanupError, runLocal } from "./repair-local.ts";
 
 afterEach(() => {
 	vi.restoreAllMocks();
@@ -36,39 +33,6 @@ it("uses only read-only gh requests and hides upstream failures", async () => {
 	expect(mocked.execute.mock.lastCall?.[1]).toContain("GET");
 	mocked.execute.mockRejectedValueOnce(new Error("private"));
 	await expect(githubRead("repos/owner/repo")).rejects.toThrow("GitHub read failed");
-});
-it("restricts host Git commands and never exposes transport stderr", async () => {
-	const cwd = await mkdtemp(join(tmpdir(), "giraffe-transport-"));
-	try {
-		await writeFile(
-			join(cwd, "git"),
-			"#!/bin/sh\nprintf '%s' \"$*\"\nprintf private >&2\nexit 7\n",
-			{ mode: 0o755 },
-		);
-		vi.stubEnv("PATH", cwd);
-		const request = {
-			operation: "remoteHead" as const,
-			repository: "fixture/repo",
-			cwd,
-			timeoutMs: 10000,
-			maxOutputBytes: 4096,
-		};
-		for (const command of [
-			{ command: "sh", args: [] },
-			{ command: "git", args: [] },
-			{ command: "git", args: ["reset"] },
-		])
-			await expect(hostGitTransport({ ...request, command })).rejects.toThrow(/Unsupported/);
-		const result = await hostGitTransport({
-			...request,
-			command: { command: "git", args: ["ls-remote", "fixture"] },
-			signal: new AbortController().signal,
-		});
-		expect(result).toMatchObject({ exitCode: 7, stderr: "" });
-		expect(result.stdout).toContain("credential.helper=!gh auth git-credential");
-	} finally {
-		await rm(cwd, { recursive: true, force: true });
-	}
 });
 it("stops retaining output after a failed process cleanup without claiming termination", async () => {
 	const child = Object.assign(new EventEmitter(), {

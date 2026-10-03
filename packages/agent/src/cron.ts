@@ -3,7 +3,7 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { defineDoc, type Harness } from "@earendil-works/pi-durable";
 import { CronExpressionParser } from "cron-parser";
 import { digest } from "./evidence.ts";
-import type { CronStatus } from "./repair-contracts.ts";
+import type { CronStatus } from "./work-contracts.ts";
 
 export function nextOccurrence(expression: string, timezone: string, after: string): string {
 	if (expression.trim().split(/\s+/).length !== 5 || /H|@/.test(expression))
@@ -25,7 +25,7 @@ type CronState = {
 	lastError: string | null;
 };
 const Schedule = defineDoc<CronState>({
-	kind: "giraffe.repair-schedule",
+	kind: "giraffe.work-schedule",
 	version: 1,
 	scope: "session",
 	initial: () => ({
@@ -50,6 +50,7 @@ export async function createCron(options: {
 	publish: (status: CronStatus) => Promise<void>;
 	isPaused: () => Promise<boolean>;
 	now?: () => string;
+	propagate?: boolean;
 	log?: (message: string) => void;
 }) {
 	const now = options.now ?? (() => new Date().toISOString());
@@ -85,8 +86,8 @@ export async function createCron(options: {
 			lastSeenAt: now(),
 			completed: state.completed,
 			lastError: state.lastError,
-			capability: "dependency-upgrades",
-			maxRounds: options.maxRounds,
+			capability: "authorized-work",
+			maxRounds: 20,
 		});
 	};
 	return {
@@ -130,13 +131,17 @@ export async function createCron(options: {
 						state.nextRunAt = nextOccurrence(state.expression, state.timezone, now());
 					}, context);
 					stateName = "idle";
-				} catch {
+				} catch (error) {
 					if (signal.aborted) return;
 					stateName = "error";
 					await options.harness.commit(async (tx) => {
-						(await tx.doc(Schedule)).lastError = "repair_cycle_failed";
+						(await tx.doc(Schedule)).lastError = "work_cycle_failed";
 					}, context);
 					log("修复周期失败，保留同一执行编号等待恢复。");
+					if (options.propagate) {
+						await publish();
+						throw error;
+					}
 				}
 				await publish();
 			} finally {

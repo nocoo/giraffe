@@ -143,3 +143,31 @@ it("loads saved catalog, issues and PRs without losing coverage or inventing fre
 	} as never);
 	await expect(loadPortfolio(client as never)).rejects.toThrow();
 });
+
+it("keeps absent, invalid and future timestamps unknown and validates provider and distributions", async () => {
+	for (const fetchedAt of [null, "invalid", "2027-01-01T00:00:00Z"]) {
+		const result = await loadPortfolio(
+			{
+				me: async () => ({ login: "owner" }),
+				observation: async (path: string) => ({
+					data: path.startsWith("repos")
+						? { repos: [{ name_with_owner: "owner/repo", owner_login: "owner" }] }
+						: { issues: [], pull_requests: [] },
+					fetchedAt,
+					unavailable: false,
+					truncated: false,
+				}),
+			} as never,
+			"2026-10-03T00:00:00Z",
+		);
+		expect(result[0]?.stale).toBe(true);
+	}
+	expect(() => workDecisions({ ...workConfig, providers: {} })).toThrow("provider missing");
+	for (const probabilities of [{ none: 1 }, { none: 0.5, issue_1: 0.5, invented: 0 }]) {
+		await expect(
+			workDecisions(workConfig, async () => ({
+				answers: { repo_0: { type: "choice", choice: "issue_1", confidence: 1, probabilities } },
+			})).prioritize([workRepository]),
+		).rejects.toThrow("distribution");
+	}
+});

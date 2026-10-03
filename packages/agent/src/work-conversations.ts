@@ -4,6 +4,7 @@ import {
 	type ConversationId,
 	configure,
 	defineDoc,
+	defineDocFamily,
 	defineExtension,
 	defineTool,
 	GenerationTask,
@@ -11,12 +12,29 @@ import {
 } from "@earendil-works/pi-durable";
 import type { z } from "zod";
 import type { Config } from "./config.ts";
-import { safeDiagnostics } from "./repair-workspace.ts";
+import { safeDiagnostics } from "./diagnostics.ts";
+import { digest } from "./evidence.ts";
 import type { AgentRuntime } from "./runtime.ts";
 import type { WorkerRole } from "./work-priority.ts";
 import type { WorkReviewState } from "./work-review.ts";
 
 const context = BACKGROUND_CONTEXT;
+const Results = defineDocFamily<{ identity: string; result: string }, null>({
+	kind: "giraffe.work-results",
+	version: 1,
+	scope: "session",
+	family: true,
+	initial: () => ({ identity: "", result: "null" }),
+	checkpointWhen: () => true,
+});
+const Checkpoints = defineDocFamily<{ json: string }, null>({
+	kind: "giraffe.work-checkpoints",
+	version: 1,
+	scope: "session",
+	family: true,
+	initial: () => ({ json: "null" }),
+	checkpointWhen: () => true,
+});
 const Reviews = defineDoc<{ repositories: Record<string, WorkReviewState> }>({
 	kind: "giraffe.work-reviews",
 	version: 1,
@@ -47,6 +65,8 @@ export function workConversations(options: {
 			action?: WorkAction;
 			turns: number;
 			key: string;
+			requestId: string;
+			identity: string;
 			requiredOperation?: string;
 			attempted?: boolean;
 		}
@@ -64,6 +84,11 @@ export function workConversations(options: {
 					`No ${ticket.requiredOperation} call occurred in THIS assignment. Call workspace_action now; historical calls do not count.`,
 				);
 			ticket.result = ticket.schema.parse(JSON.parse(args.json));
+			await harness.commit(async (tx) => {
+				const state = await tx.doc(Results, ticket.requestId, null);
+				state.identity = ticket.identity;
+				state.result = JSON.stringify(ticket.result);
+			}, context);
 			return {
 				content: [{ type: "text", text: "Validated handoff saved." }],
 				control: { terminate: true },
@@ -122,6 +147,14 @@ export function workConversations(options: {
 	registry.install(readOnly);
 	registry.install(execution);
 	return {
+		async checkpoint(key: string): Promise<string | null> {
+			return (await harness.snapshot(Checkpoints, key, context))?.json ?? null;
+		},
+		async saveCheckpoint(key: string, json: string) {
+			await harness.commit(async (tx) => {
+				(await tx.doc(Checkpoints, key, null)).json = json;
+			}, context);
+		},
 		async reviewState(key: string): Promise<WorkReviewState> {
 			const state = await harness.snapshot(Reviews, context);
 			return state?.repositories[key] ?? { round: 0, findings: [], head: null };
@@ -141,6 +174,16 @@ export function workConversations(options: {
 			action?: WorkAction;
 			requiredOperation?: string;
 		}) {
+			const identity = digest({
+				key: request.key,
+				role: request.role,
+				instructions: request.instructions,
+				input: request.input,
+				requiredOperation: request.requiredOperation ?? null,
+			});
+			const savedResult = await harness.snapshot(Results, request.requestId, context);
+			if (savedResult?.identity && savedResult.identity !== identity)
+				throw new Error("Work request input changed; refuse replay.");
 			let conversationId: ConversationId;
 			if (request.key === "controller") conversationId = (await harness.root(context)).id;
 			else
@@ -154,6 +197,8 @@ export function workConversations(options: {
 				}, context);
 			if (active.has(conversationId))
 				throw new Error("Conversation already has an active assignment.");
+			if (savedResult?.identity)
+				return { conversationId, result: request.schema.parse(JSON.parse(savedResult.result)) };
 			await harness.commit(
 				(tx) =>
 					configure(tx, conversationId, {
@@ -169,6 +214,8 @@ export function workConversations(options: {
 			const ticket = {
 				schema: request.schema,
 				key: request.key,
+				requestId: request.requestId,
+				identity,
 				turns: 0,
 				...(request.requiredOperation ? { requiredOperation: request.requiredOperation } : {}),
 				...(request.action ? { action: request.action } : {}),
@@ -178,6 +225,8 @@ export function workConversations(options: {
 				action?: WorkAction;
 				turns: number;
 				key: string;
+				requestId: string;
+				identity: string;
 				requiredOperation?: string;
 				attempted?: boolean;
 			};

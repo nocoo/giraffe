@@ -8,7 +8,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
 		label: "总览",
 		items: [
 			{ href: "/analysis", label: "分析台", icon: "Activity" },
-			{ href: "/repairs", label: "依赖修复", icon: "Wrench" },
+			{ href: "/repairs", label: "Work", icon: "Wrench" },
 			{ href: "/factory", label: "软件工厂", icon: "Factory" },
 			{ href: "/insights", label: "Insights", icon: "Activity" },
 		],
@@ -43,7 +43,7 @@ export const NAV_ITEMS: readonly NavItem[] = NAV_GROUPS.flatMap((group) => group
 export const PAGE_DESCRIPTIONS = {
 	"/": "当前账号下的仓库快照",
 	"/analysis": "本地 Agent 分析与证据",
-	"/repairs": "定时依赖修复、检查与独立审查",
+	"/repairs": "统一 Work 调度、检查与独立审查",
 	"/factory": "可追溯的软件工厂流量与交付",
 	"/refresh": "手动刷新、自动计划与运行记录",
 	"/issues": "跨仓打开的 Issue",
