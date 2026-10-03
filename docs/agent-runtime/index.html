@@ -30,7 +30,7 @@
 					</div>
 				</div>
 				<div class="snapshot">
-					<p class="eyebrow">RECORDED INPUT <span class="muted">2026-10-03</span></p>
+					<p class="eyebrow">PREVIOUS INPUT <span class="muted">2026-10-03</span></p>
 					<div>
 						<span><b>65</b> repos</span><span><b>458</b> issues</span><span><b>6</b> PRs</span>
 					</div>
@@ -77,7 +77,7 @@
 							><strong>Giraffe</strong><span class="node-subtitle">Worker + dashboard</span
 							><span class="node-divider"></span><span class="node-line">D1 saved observations</span
 							><span class="node-line">/api/v1 · scoped token</span
-							><span class="node-line">reports / jobs / records</span
+							><span class="node-line">/work · typed progress desk</span
 							><span class="node-foot">GET ≠ GitHub refresh</span>
 						</button>
 						<button
@@ -91,7 +91,7 @@
 							<span class="node-label">CONTROLLER <span class="node-symbol">◆</span></span
 							><strong>Astra orchestrator</strong
 							><span class="node-subtitle">order · assess · hand off</span
-							><span class="node-foot">one root conversation</span>
+							><span class="node-foot">one daemon · cron · lock · controller</span>
 						</button>
 						<div class="local-label">
 							<span class="status-dot"></span>
@@ -121,7 +121,7 @@
 						>
 							<span class="node-label">LOCAL / STATE <span class="node-symbol">▤</span></span
 							><strong>SQLite memory</strong
-							><span class="node-subtitle">persistent ≠ always running</span
+							><span class="node-subtitle">one live runtime · isolated dry run</span
 							><span class="node-divider"></span><span class="node-line">one owner / account</span
 							><span class="node-line">stable conversation IDs</span
 							><span class="node-line">one live DB / dry memory</span
@@ -200,10 +200,17 @@
 							<span class="node-label"
 								>ONE CONVERSATION / REPO <span class="node-symbol">⑂</span></span
 							><strong>Repository workers</strong
-							><span class="node-subtitle">read → latest → edit → check → commit</span
+							><span class="node-subtitle">dependency · exact [CO] · CI investigation</span
 							><span class="worker-route"><span>backy</span><b>Astra / high</b></span
 							><span class="worker-route"><span>r2shot</span><b>Sol / low</b></span
-							><span class="node-foot">recorded routes · executed sequentially</span>
+							><span class="node-foot">illustrative routes · paired with reviewer</span>
+						</button>
+						<button type="button" class="node reviewer" id="node-reviewer" data-node="reviewer"
+							aria-pressed="false" aria-label="Inspect independent reviewer">
+							<span class="node-label">PAIRED / READ-ONLY <span class="node-symbol">↶</span></span>
+							<strong>Independent reviewer</strong>
+							<span class="node-subtitle">all ahead commits · exact checked HEAD</span>
+							<span class="node-foot" id="review-loop">↶ fix / check / review · max 20 rounds</span>
 						</button>
 						<div class="scope-note">
 							<span class="eyebrow">ENFORCED BY CODE</span>
@@ -211,8 +218,8 @@
 							<ul>
 								<li>validated JSON handoff</li>
 								<li>bounded workspace tools</li>
-								<li>unchanged baseline gates</li>
-								<li>normal commit hooks</li>
+								<li>tests + independent review</li>
+								<li>normal Git hooks</li>
 							</ul>
 							<span class="muted"
 								>No arbitrary shell tool.<br>Native scripts are not sandboxed.</span
@@ -221,7 +228,7 @@
 						<div class="workspace-note">
 							<span class="eyebrow">WORKSPACE CONTRACT</span>
 							<p>~/workspace/personal/<br><span class="cyan">&lt;repository&gt;</span></p>
-							<span class="muted">main · no worktree<br>retain ahead commits</span>
+							<span class="muted">main · no clones / branches / worktrees<br>retain dirt &amp; ahead commits</span>
 						</div>
 						<button
 							type="button"
@@ -239,11 +246,18 @@
 								>workers never push or close issues</span
 							>
 						</button>
+						<button type="button" class="node followup" id="node-followup" data-node="followup"
+							aria-pressed="false" aria-label="Inspect post-push follow-up">
+							<span class="node-label">HOST / BOUNDED ACTIONS READS</span>
+							<strong>Exact-SHA follow-up</strong>
+							<span class="node-subtitle" id="followup-schedule">Not executed · local-only preview</span>
+							<span class="node-foot">publish only · 10 minutes · max 3 checks</span>
+						</button>
 					</div>
 					<div class="map-caption">
 						<span>└─</span>
-						Analysis is parallel. Repository execution is sequential. Model names are configured,
-						not hard-coded.
+						Parallel reports; sequential repository pairs. Integrated typed tasks · fixture-validated, not live unattended acceptance.
+						All models execute locally and are configurable. This map never starts work.
 					</div>
 				</section>
 				<aside class="inspector" aria-labelledby="detail-title">
@@ -291,7 +305,7 @@
 						<button type="button" id="play" aria-label="Play walkthrough">
 							▶ <span>Play</span>
 						</button><button type="button" id="previous" aria-label="Previous step">←</button
-						><span id="step-count">01 / 08</span
+						><span id="step-count">01 / 10</span
 						><button type="button" id="next" aria-label="Next step">→</button
 						><button type="button" id="reset" aria-label="Reset walkthrough">↺</button>
 					</div>
@@ -325,7 +339,7 @@
 				</div>
 				<div id="recorded-panel" role="tabpanel" aria-labelledby="tab-recorded" hidden>
 					<div class="recorded-header">
-						<strong>2026-10-03 / real local acceptance</strong
+						<strong>2026-10-03 / previous architecture evidence</strong
 						><span class="amber">operator-assisted recovery</span>
 					</div>
 					<div class="evidence-grid">
@@ -378,21 +392,22 @@
 						</p>
 					</article>
 					<article>
-						<h3>02 / Start an occurrence</h3>
-						<code>bun run agent work --no-push</code>
+						<h3>02 / Choose a lifetime</h3>
+						<code>bun run agent work --once --no-push</code>
 						<p>
 							<code>work</code>
-							is one-shot, not an installed service. SQLite restores conversations; an account lock
-							prevents a second local owner. No implicit replay of interrupted mutations.
+							without <code>--once</code> remains resident on one five-field
+							<code>work.cron</code> / <code>work.timezone</code> schedule; it is not an installed service.
+							One account lock, live SQLite runtime and controller resume bounded state.
 						</p>
 					</article>
 					<article>
-						<h3>03 / Other commands ≠ work</h3>
+						<h3>03 / One engine, three modes</h3>
 						<p>
-							<code>watch</code>
-							serves observation/report jobs while running. <code>repair</code> is the separate
-							opt-in dependency cron with dedicated clones/branches and exact-code Astra review. Its
-							grants do not describe this main-workspace flow.
+							<code>login</code>, <code>status</code>, <code>work</code> only;
+							watch / repair / analyze are removed. <code>--dry-run</code> uses isolated memory
+							and the same lock, without target writes, reports or push. <code>--no-push</code>
+							performs real local commits and independent review. No OS service is auto-installed.
 						</p>
 					</article>
 				</div>
@@ -400,7 +415,8 @@
 			<footer>
 				<span
 					><span class="green">●</span>
-					SOURCE-SNAPSHOT <code>f95d6ff</code><span class="footer-divider">/</span>OFFLINE · NO
+					2026-10-03 SOURCE-SNAPSHOT <code>2be0862</code> + helper fix <code>e9ed54e</code>
+					· fixture-validated · no live unattended claim<span class="footer-divider">/</span>OFFLINE · NO
 					MODEL OR API CALLS</span
 				><a href="../README.md">Docs index ↗</a>
 			</footer>

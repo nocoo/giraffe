@@ -3,7 +3,7 @@
 		dry: {
 			summary:
 				"Rehearse only. No workspace tools or online writes. Models still run in the real CLI.",
-			command: "bun run agent work --dry-run --limit 5",
+			command: "bun run agent work --once --dry-run --limit 5",
 			title: "Describe · do not execute",
 			policy: "no pull, install, edits, checks, commits or publication",
 		},
@@ -30,7 +30,7 @@
 			facts: [
 				[
 					"Read snapshots, not upstream",
-					"The account API serves the latest saved repositories, issues, PRs and CI/factory sources. GET never silently refreshes GitHub.",
+					"Web automatic refresh saves repository, issue, PR and CI/factory sources. The local daemon reads snapshots, not a second full collection. GET never silently refreshes GitHub.",
 				],
 				[
 					"Two authentication boundaries",
@@ -38,7 +38,7 @@
 				],
 				[
 					"Write reports, not observations",
-					"Reports, records and jobs are mutable application resources. GitHub observations and factory publications remain read-only.",
+					"Existing jobs/records carry bounded progress. The online /work desk renders typed repository rows and events. This offline map only simulates the flow and never starts work. GitHub observations remain read-only.",
 				],
 			],
 			permission: "Scoped API CRUD only. No cloud model credentials or cloud inference.",
@@ -51,8 +51,8 @@
 				"One root conversation plans the portfolio. TypeScript code owns the workflow transitions and side effects.",
 			facts: [
 				[
-					"Plan every selected issue",
-					"Use Jev priorities to order repositories and all assigned issues. Assess dirty diffs; unpushed main commits are not dirty.",
+					"Rank observations; authorize typed tasks",
+					"Retain all observed issues/PRs for ranking. Integrated kinds: dependency upgrades, exact case-sensitive [CO] non-draft PR fixes, recurring main CI/CD investigation. Fake APIs/models and temporary SQLite/native Git fixtures validate code, not real unattended PR/CI runs. Preserve dirt; ahead main commits are not dirty.",
 				],
 				[
 					"A model plan is not authorization",
@@ -111,7 +111,7 @@
 			],
 			permission:
 				"Local config and credentials only. Neither secrets nor runtime SQLite are sent to D1.",
-			source: "packages/agent/src/cli.ts",
+			source: "packages/agent/src/work-daemon.ts",
 		},
 		preparation: {
 			kind: "RESIDENT / EXECUTOR ROLE",
@@ -140,15 +140,15 @@
 			kind: "PERSISTENT / ONE WORKER PER REPOSITORY",
 			title: "Repository workers",
 			summary:
-				"Each worker gets the verified directory, ordered issues and Jev-selected model profile. The host executes repositories sequentially.",
+				"Each persistent worker gets the verified main directory, typed tasks and Jev-selected model profile. The host executes repository pairs sequentially with a distinct read-only reviewer.",
 			facts: [
 				[
 					"Inspect before changing",
-					"Read manifests, actual usage and lockfile ownership. Query latest stable metadata and verify engines/peers rather than copying an issue target.",
+					"Dependency requests need verified stable versions; explicit critical-package majors require manual attention. [CO] fixes need complete patches and frozen PR head/base plus live main SHA. CI/CD needs exact failed SHA and job/step evidence; recurring failure does not prove a flaky test cause.",
 				],
 				[
 					"Atomic, buildable changes",
-					"Commit ordered tasks with normal hooks. Inseparable peers share a commit; satisfied verifies already-current issues without an empty commit.",
+					"Commit completed tasks with normal hooks and passing final checks. Noncritical majors are not blanket-blocked. No test deletion, coverage reduction or hook bypass. Already-current tasks need evidence, not empty commits.",
 				],
 				[
 					"Bounded tool capabilities",
@@ -183,6 +183,51 @@
 			source: "packages/agent/src/work-coordinator.ts",
 		},
 	};
+	nodes.reviewer = {
+		kind: "PERSISTENT / DISTINCT REVIEWER PER REPOSITORY",
+		title: "Independent reviewer",
+		summary:
+			"A separate read-only conversation pairs with each worker; it cannot edit, commit or push.",
+		facts: [
+			[
+				"Fix / check / review",
+				"At most 20 persisted rounds. Failed checks consume a round; findings return to the same Worker. Exhaustion cannot publish; recovery cannot create a twenty-first fix.",
+			],
+			[
+				"Exact-revision approval",
+				"Review every commit ahead of origin/main and preserved dirty paths, not just the last commit. Approval belongs to exact checked HEAD; changed HEAD invalidates it.",
+			],
+			[
+				"Independent acceptance",
+				"Read-only review is distinct from worker self-checks and domain reports. Baseline failure is visible, not a blocker for repairing code; final tests and independent review must pass.",
+			],
+		],
+		permission:
+			"Read-only local evidence. No writes, commits, push, PR merge/closure or credential/infrastructure repair.",
+		source: "packages/agent/src/work-review.ts",
+	};
+	nodes.followup = {
+		kind: "HOST / PERSISTED POST-PUSH FOLLOW-UP",
+		title: "Exact-SHA follow-up",
+		summary: "Read bounded live Actions evidence for the exact pushed SHA, not deployment success.",
+		facts: [
+			[
+				"Bounded across restart",
+				"Wait 10 minutes between checks, with at most three checks across restart. Persist outcome: passed, failed, pending or timeout.",
+			],
+			[
+				"Missing is not green",
+				"Missing, partial, cancelled or skipped/neutral-only evidence is not passed. Only complete successful workflow evidence passes; evidenced failures are failed.",
+			],
+			[
+				"No release automation",
+				"No automatic deployment, release or rollback. PR merge/closure is report-only; only completed dependency issues may close after the push marker persists.",
+			],
+		],
+		permission:
+			"Host-only bounded Actions reads after publication. No deployment mutations or ZIP-log download in task evidence helpers.",
+		source: "packages/agent/src/work-followup.ts",
+	};
 	const domains = {
 		issues: [
 			"Issues analyst",
@@ -213,7 +258,7 @@
 				],
 				[
 					"Saved, bounded evidence",
-					"The current combined portfolio input caps detailed evidence at 24 items. Omitted, missing and stale evidence stays visible, not successful coverage.",
+					"Saved provenance and bounded detailed evidence remain visible. Omitted, missing and stale evidence is not successful coverage. Reports never substitute for independent repair acceptance.",
 				],
 				[
 					"Validated online reports",
@@ -247,8 +292,8 @@
 			node: "controller",
 			actor: "astra",
 			color: "purple",
-			text: "Controller orders every selected issue; host validates scope and assesses workspace safety.",
-			log: "Validate repository + issue scope. Review dirty diffs; ahead main commits are not dirty.",
+			text: "Controller orders integrated dependency / exact [CO] / recurring CI tasks; host validates identity, current evidence and workspace safety. Fixture validation is not live unattended acceptance.",
+			log: "Original issue / PR / run identities. Keep unrelated observations for ranking, not repair scope.",
 		},
 		{
 			label: "Route worker",
@@ -263,7 +308,7 @@
 			node: "preparation",
 			actor: "preparation",
 			color: "cyan",
-			text: "Host prepares main, preserves work, installs from a mirror and proves the baseline checks.",
+			text: "Shared preparation uses existing personal main; preserves dirt/ahead commits and records baseline checks. No clones, branches or worktrees.",
 			log: "prepare → safe fast-forward → frozen install → UT / lint / types / build → validated handoff.",
 		},
 		{
@@ -271,8 +316,17 @@
 			node: "workers",
 			actor: "worker",
 			color: "cyan",
-			text: "Inspect latest stable versions and usage; repair, check and atomically commit in priority order.",
-			log: "latest → inspect peers/engines → edit → install → check → commit. Already current? Verify, no empty commit.",
+			text: "Persistent per-repository worker investigates evidence, fixes assigned code, checks and atomically commits with normal hooks.",
+			log: "Dependency versions / [CO] full diff / CI failed SHA + jobs. No invented flaky cause; workers never push or merge PRs.",
+		},
+		{
+			label: "Independent review",
+			short: "Review ↶ max 20",
+			node: "reviewer",
+			actor: "reviewer",
+			color: "blue",
+			text: "Distinct read-only Reviewer checks all ahead commits and exact tested HEAD. Findings return to Worker; fix / check / review is capped at 20 persisted rounds.",
+			log: "Worker ↔ Reviewer, max 20. Failed checks consume rounds; exhausted or changed-HEAD approval cannot push.",
 		},
 		{
 			label: "Publication boundary",
@@ -284,12 +338,21 @@
 			log: "Local-only boundary: final checks + exact committed HEAD. No push, no issue closure.",
 		},
 		{
+			label: "Post-push follow-up",
+			short: "Follow-up 10m × 3",
+			node: "followup",
+			actor: "host",
+			color: "green",
+			text: "No push in local-only mode, so no post-push follow-up. Review and commits remain local.",
+			log: "Publication-only: exact pushed SHA, every 10 minutes, at most three checks across restart. No deploy/release/rollback.",
+		},
+		{
 			label: "Finish handoff",
 			node: "state",
 			actor: "runtime",
 			color: "blue",
-			text: "Finish this bounded occurrence. Keep conversation history; do not install a background service.",
-			log: "Close the current runtime and release its account lock. Persistent history remains for a later invocation.",
+			text: "Complete one occurrence; normal work stays resident on cron. --once exits after this occurrence. No OS service is automatically installed.",
+			log: "Persist progress + heartbeat. Resident work awaits cron; --once releases the lock after completion. Dry run shares the lock but isolates memory.",
 		},
 	];
 	const state = { mode: "local", stage: 0, node: "controller", timer: null };
@@ -315,7 +378,10 @@
 		const node = nodes[key];
 		element("detail-kind").textContent = node.kind;
 		element("detail-title").textContent = node.title;
-		element("detail-summary").textContent = node.summary;
+		element("detail-summary").textContent =
+			key === "followup" && state.mode !== "publish"
+				? `Not executed in ${state.mode === "dry" ? "dry-run" : "local-only"} mode. ${node.summary}`
+				: node.summary;
 		element("detail-permissions").textContent = node.permission;
 		element("detail-source").href = sourcePath(node.source);
 		element("detail-source").textContent = `↗ ${node.source.split("/").at(-1)}`;
@@ -335,20 +401,23 @@
 	}
 
 	function stageText(index, log = false) {
-		if (state.mode === "dry" && index >= 4 && index <= 6) {
-			return index === 6
+		if (state.mode === "dry" && index >= 4 && index <= 8) {
+			return index >= 6
 				? "Rehearsal only. No repository changes, online reports, push or issue closure."
 				: `${index === 4 ? "Preparation" : "Worker"} explains the intended process only. No workspace action tool is available.`;
 		}
 		if (index === 1 && log)
 			return `${stages[index].log} ${state.mode === "dry" ? "Print findings; no online reports." : "Publish validated reports to Giraffe."}`;
-		if (index === 6 && state.mode === "publish")
-			return "Host checks exact HEAD → push main → verify remote SHA → close only completed issues.";
+		if (index === 7 && state.mode === "publish")
+			return "Host checks exact tested/reviewed HEAD → push main → verify remote SHA → persist push → close only completed dependency issues. PR merge/closure is report-only.";
+		if (index === 8 && state.mode === "publish")
+			return "Exact pushed SHA: every 10 minutes, at most three checks across restart. Missing/partial evidence stays pending or timeout, never green. No deploy/release/rollback.";
 		return stages[index][log ? "log" : "text"];
 	}
 
 	function renderStage() {
-		element("step-count").textContent = `${String(state.stage + 1).padStart(2, "0")} / 08`;
+		element("step-count").textContent =
+			`${String(state.stage + 1).padStart(2, "0")} / ${String(stages.length).padStart(2, "0")}`;
 		element("previous").disabled = state.stage === 0;
 		element("next").disabled = state.stage === stages.length - 1;
 		element("stage-outcome").textContent = stageText(state.stage);
@@ -406,6 +475,11 @@
 		element("command").textContent = settings.command;
 		element("publication-title").textContent = settings.title;
 		element("publication-policy").textContent = settings.policy;
+		element("followup-schedule").textContent =
+			mode === "publish"
+				? "Simulated only · every 10 minutes · max 3 checks"
+				: `Not executed · ${mode === "dry" ? "dry-run" : "local-only"} preview`;
+		inspect(state.node);
 		element("copy-status").textContent = "";
 		renderStage();
 	}
@@ -418,14 +492,20 @@
 					["controller", "jev"],
 					["jev", "preparation"],
 					["preparation", "workers"],
-					["workers", "publication"],
+					["workers", "reviewer"],
+					["reviewer", "workers"],
+					["reviewer", "publication"],
+					["publication", "followup"],
 				]
 			: [
 					["api", "controller"],
 					["controller", "jev"],
 					["jev", "preparation"],
 					["preparation", "workers"],
-					["workers", "publication"],
+					["workers", "reviewer"],
+					["reviewer", "workers"],
+					["reviewer", "publication"],
+					["publication", "followup"],
 					["state", "preparation"],
 					["controller", "analysts"],
 				];
@@ -440,6 +520,7 @@
 				const endY = (vertical ? end.top : end.top + end.height / 2) - grid.top;
 				const middle = (startX + endX) / 2;
 				const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+				path.dataset.edge = `${from}:${to}`;
 				path.setAttribute(
 					"d",
 					vertical
@@ -451,6 +532,13 @@
 					`wire${to === stages[state.stage].node || (to === "analysts" && state.stage === 1) ? " active" : ""}`,
 				);
 				path.setAttribute("marker-end", "url(#arrow)");
+				if (from === "reviewer" && to === "workers") {
+					const loopX = start.left - grid.left - 10;
+					path.setAttribute(
+						"d",
+						`M ${start.left - grid.left} ${start.top - grid.top + start.height / 2} H ${loopX} V ${end.top - grid.top + end.height / 2} H ${end.left - grid.left - 4}`,
+					);
+				}
 				return path;
 			}),
 		);

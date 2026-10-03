@@ -453,7 +453,15 @@ h1 > :where(span) {
 }
 .publication {
 	--accent: var(--green);
+	grid-area: 6 / 2;
+}
+.reviewer {
+	--accent: var(--blue);
 	grid-area: 5 / 2;
+}
+.followup {
+	--accent: var(--green);
+	grid-area: 7 / 2;
 }
 .worker-route {
 	display: flex;
@@ -683,7 +691,7 @@ h1 > :where(span) {
 	margin-inline: 0;
 	min-width: 0;
 	display: grid;
-	grid-template-columns: repeat(8, 1fr);
+	grid-template-columns: repeat(5, 1fr);
 	gap: 5px;
 	margin-top: 18px;
 }
@@ -1179,10 +1187,16 @@ footer a {
 		grid-area: 5 / 1 / 6 / 3;
 	}
 	.publication {
+		grid-area: 7 / 1 / 8 / 3;
+	}
+	.reviewer {
 		grid-area: 6 / 1 / 7 / 3;
 	}
+	.followup {
+		grid-area: 8 / 1 / 9 / 3;
+	}
 	.analysts {
-		grid-area: 7 / 1 / 8 / 3;
+		grid-area: 9 / 1 / 10 / 3;
 	}
 	.analysts h3 span {
 		font-size: 11px;
@@ -1197,14 +1211,14 @@ footer a {
 		font-size: 11px;
 	}
 	.scope-note {
-		grid-area: 8 / 2;
+		grid-area: 10 / 2;
 		padding-left: 12px;
 	}
 	.scope-note p {
 		font-size: 13px;
 	}
 	.workspace-note {
-		grid-area: 8 / 1;
+		grid-area: 10 / 1;
 	}
 	.batch-bars {
 		max-width: 200px;
