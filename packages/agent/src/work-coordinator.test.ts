@@ -219,6 +219,10 @@ it("prepares then runs checked workers and publishes only their completed issue 
 	expect(verifyWorkRepository).toHaveBeenCalled();
 	expect(result[0]?.dryRun).toBe(false);
 	expect(options.conversations.run.mock.calls[2]?.[0]).toHaveProperty("action");
+	const instructions = options.conversations.run.mock.calls[2]?.[0].instructions;
+	expect(instructions).toContain("repeat_test {script,count:2..5}");
+	expect(instructions).toContain("only declared baseline test scripts");
+	expect(instructions).toContain("repeated success is not proof of the original flaky cause");
 });
 
 it("verifies local completion without push or issue closure when publication is disabled", async () => {
