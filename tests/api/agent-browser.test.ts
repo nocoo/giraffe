@@ -49,8 +49,8 @@ it("stores pause control as a revisioned record without granting local repair pe
 	await call(`accounts/${account.id}/activate`, "POST");
 	const path = `agent/accounts/${account.id}/records`;
 	const input = {
-		id: "repair-control",
-		type: "repair-control",
+		id: "work-control",
+		type: "work-control",
 		status: "paused",
 		repository: null,
 		source_version: null,
@@ -59,12 +59,12 @@ it("stores pause control as a revisioned record without granting local repair pe
 	expect((await call(path, "POST", input, "https://evil.test")).status).toBe(403);
 	const result = await call(path, "POST", input);
 	expect(result.status).toBe(201);
-	expect(await (await call(`${path}/repair-control`)).json()).toMatchObject({
+	expect(await (await call(`${path}/work-control`)).json()).toMatchObject({
 		item: { revision: 1, payload: { paused: true } },
 	});
 	expect(
 		(
-			await call(`${path}/repair-control`, "PATCH", {
+			await call(`${path}/work-control`, "PATCH", {
 				revision: 1,
 				status: "enabled",
 				payload: { paused: false },
@@ -73,12 +73,12 @@ it("stores pause control as a revisioned record without granting local repair pe
 	).toBe(200);
 	expect(
 		(
-			await call(`${path}/repair-control`, "PATCH", {
+			await call(`${path}/work-control`, "PATCH", {
 				revision: 1,
 				status: "paused",
 				payload: { paused: true },
 			})
 		).status,
 	).toBe(409);
-	expect((await call(`${path}/repair-control?revision=2`, "DELETE")).status).toBe(204);
+	expect((await call(`${path}/work-control?revision=2`, "DELETE")).status).toBe(204);
 });

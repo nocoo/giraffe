@@ -45,6 +45,15 @@ PAT 使用 AES-256-GCM 加密后存入 D1；数据快照以 JSON 保存，未做
 4. 配置每日快速与每周深度刷新。页面读取已保存快照，不通过 GET 自动采集。
 5. Configure local model roles and one `work` schedule in `~/.config/giraffe/config.json`, run `bun run agent login`, then `bun run agent work`. Use `--once` for one occurrence, `--dry-run` for an isolated rehearsal, or `--no-push` for local commits only. The Work desk shows bounded progress; analysis reports come from the same schedule.
 
+Work supports authorized dependency requests, exact non-draft `[CO]` equivalent
+cleanup on main and recurring main CI/CD code failures from saved Web snapshots.
+Each repository has one worker and an independent reviewer, capped at 20 rounds.
+Namespaced tasks preserve deferred/no-change reasons; only completed dependency
+issues close after host push. Critical package majors require manual attention
+before writes. Post-push checks report exact-SHA CI/CD evidence at ten-minute
+intervals, at most three times. This is fake-model/local acceptance, not a claim
+of unattended real-target repair. See [the Work contract](docs/14-repository-coordinator.md).
+
 侧栏身份来自 Cloudflare Access。姓名与头像会通过邮箱的 SHA-256 摘要查询 `lizheng.blog` 作者档案，服务不可用时使用身份信息回退。
 
 ## 开发

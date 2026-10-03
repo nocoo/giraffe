@@ -4,12 +4,14 @@ const runSchema = z.object({
 	head_sha: z.string(),
 	status: z.string(),
 	conclusion: z.string().nullable(),
+	name: z.string().default(""),
 });
 export type FollowUpState = {
 	checks: number;
 	nextAt: number;
 	outcome: "pending" | "passed" | "failed" | "timeout";
 	runs: z.infer<typeof runSchema>[];
+	expected?: string[];
 };
 
 export async function followUp(options: {
@@ -48,6 +50,8 @@ export async function followUp(options: {
 				state.outcome = "failed";
 			else if (
 				state.runs.length &&
+				(state.expected?.length ?? 0) > 0 &&
+				state.expected?.every((name) => state.runs.some((run) => run.name === name)) &&
 				(result.total_count ?? result.workflow_runs.length) <= result.workflow_runs.length &&
 				state.runs.every((run) => run.status === "completed" && run.conclusion === "success")
 			)

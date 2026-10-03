@@ -33,7 +33,7 @@ it("bounds multibyte events and typed per-repository progress below the generic 
 		Array.from({ length: 30 }, (_, index) => [
 			`owner/repo-${index}`,
 			{
-				tasks: [1, 2],
+				tasks: ["dependency:1", "pr:2"],
 				worker: 1,
 				reviewer: 2,
 				round: 20,
@@ -53,4 +53,41 @@ it("bounds multibyte events and typed per-repository progress below the generic 
 	expect(workRunSchema.parse(bounded).repositories["owner/repo-0"]?.round).toBe(20);
 	expect(Object.keys(bounded.repositories)).toHaveLength(25);
 	expect(boundedProgress({ ...bounded, repositories: {}, events: [] }).events).toEqual([]);
+});
+
+it("preserves every task ID and outcome when multibyte disposition reasons exceed the payload budget", () => {
+	const tasks = Array.from({ length: 100 }, (_, index) => `dependency:${9007199254740000 + index}`);
+	const repositories = Object.fromEntries(
+		Array.from({ length: 25 }, (_, index) => [
+			`owner/repo-${index}`,
+			{
+				tasks,
+				worker: 1,
+				reviewer: 2,
+				round: 20,
+				findings: [],
+				head: "abc",
+				status: "deferred",
+				dispositions: tasks.map((task) => ({
+					task,
+					outcome: "deferred" as const,
+					reason: "汉".repeat(500),
+				})),
+			},
+		]),
+	);
+	const progress = boundedProgress({
+		occurrence: "run",
+		events: [],
+		updatedAt: "2026-10-03T00:00:00Z",
+		repositories,
+	});
+	expect(Buffer.byteLength(JSON.stringify(progress))).toBeLessThanOrEqual(60000);
+	for (const summary of Object.values(workRunSchema.parse(progress).repositories)) {
+		expect(summary.tasks).toEqual(tasks);
+		expect(summary.dispositionOutcomes ?? summary.dispositions?.map(() => "D").join("")).toBe(
+			"D".repeat(100),
+		);
+	}
+	expect(Object.values(progress.repositories).some((summary) => summary.detailsOmitted)).toBe(true);
 });

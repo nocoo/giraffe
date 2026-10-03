@@ -131,7 +131,7 @@ describe("run timeline", () => {
 			{ outcome: "failure" as const, at: "2026-09-18T10:00:00Z", id: 3 },
 			{ outcome: "success" as const, at: "2026-09-17T10:00:00Z", id: 2 },
 			{ outcome: "other" as const, at: "2026-09-16T10:00:00Z", id: 1 },
-		];
+		].map((run) => ({ ...run, event: "push", branch: "main" }));
 		const cells = runTimeline(recent);
 		expect(cells.map((c) => [c.id, c.latest])).toEqual([
 			[1, false],

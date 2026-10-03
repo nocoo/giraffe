@@ -18,7 +18,26 @@ export const cronStatusSchema = z.strictObject({
 });
 export type CronStatus = z.infer<typeof cronStatusSchema>;
 export const repositoryProgressSchema = z.object({
-	tasks: z.array(z.number().int().positive()).max(100),
+	tasks: z.array(z.string().regex(/^(dependency|pr|ci):[1-9]\d*$/)).max(100),
+	compactTasks: z.string().max(2000).optional(),
+	workerModel: z.string().max(100).optional(),
+	reviewerModel: z.string().max(100).optional(),
+	dispositionOutcomes: z
+		.string()
+		.regex(/^[CND-]*$/)
+		.max(100)
+		.optional(),
+	detailsOmitted: z.boolean().optional(),
+	dispositions: z
+		.array(
+			z.object({
+				task: z.string().max(100),
+				outcome: z.enum(["committed", "reviewed_no_change", "deferred"]),
+				reason: z.string().max(500).optional(),
+			}),
+		)
+		.max(100)
+		.optional(),
 	worker: z.number().int().nullable(),
 	reviewer: z.number().int().nullable(),
 	round: z.number().int().min(0).max(20),
@@ -37,7 +56,23 @@ export const workRunSchema = z.object({
 	occurrence: z.string().min(1),
 	events: z.array(z.string().max(1000)).max(40),
 	updatedAt: z.string().datetime({ offset: true }),
-	repositories: z.record(z.string(), repositoryProgressSchema).default({}),
+	analysisAttention: z.boolean().optional(),
+	repositories: z
+		.record(
+			z.string(),
+			repositoryProgressSchema.transform((value) => ({
+				...value,
+				tasks: value.compactTasks
+					? value.compactTasks
+							.split(",")
+							.map(
+								(task) =>
+									`${task[0] === "d" ? "dependency" : task[0] === "p" ? "pr" : "ci"}:${task.slice(1)}`,
+							)
+					: value.tasks,
+			})),
+		)
+		.default({}),
 });
 export type WorkProgress = z.infer<typeof workRunSchema>;
 
@@ -51,6 +86,14 @@ export function boundedProgress(progress: WorkProgress): WorkProgress {
 					...value,
 					tasks: value.tasks.slice(0, 100),
 					findings: value.findings.slice(0, 8).map((finding) => finding.slice(0, 500)),
+					...(value.dispositions
+						? {
+								dispositions: value.dispositions.slice(0, 100).map((item) => ({
+									...item,
+									...(item.reason ? { reason: item.reason.slice(0, 500) } : {}),
+								})),
+							}
+						: {}),
 				},
 			]),
 	);
@@ -60,8 +103,32 @@ export function boundedProgress(progress: WorkProgress): WorkProgress {
 		events: progress.events.slice(-40).map((event) => event.slice(0, 1000)),
 	};
 	while (new TextEncoder().encode(JSON.stringify(value)).length > 60000) {
-		if (value.events.length) value.events.shift();
+		const detailed = Object.values(value.repositories).find((repo) => repo.dispositions?.length);
+		if (detailed) {
+			detailed.dispositionOutcomes = detailed.tasks
+				.map((task) => {
+					const outcome = detailed.dispositions?.find((item) => item.task === task)?.outcome;
+					return outcome === "committed"
+						? "C"
+						: outcome === "reviewed_no_change"
+							? "N"
+							: outcome === "deferred"
+								? "D"
+								: "-";
+				})
+				.join("");
+			detailed.detailsOmitted = true;
+			delete detailed.dispositions;
+		} else if (value.events.length) value.events.shift();
 		else {
+			const verbose = Object.values(value.repositories).find((repo) => repo.tasks.length);
+			if (verbose) {
+				verbose.compactTasks = verbose.tasks
+					.map((task) => task.replace("dependency:", "d").replace("pr:", "p").replace("ci:", "c"))
+					.join(",");
+				verbose.tasks = [];
+				continue;
+			}
 			const largest = Object.values(value.repositories).sort(
 				(left, right) => right.findings.join("").length - left.findings.join("").length,
 			)[0];

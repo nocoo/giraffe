@@ -26,20 +26,23 @@ Old watch/repairs keys and commands are removed, not aliased. Historical local
 databases and D1 rows remain untouched. See [the runtime contract](../../docs/14-repository-coordinator.md).
 
 Work reads saved Web observations, runs four domain analyses and Jev portfolio
-ranking/model routing, then uses existing personal main checkouts for dependency
-tasks. One worker plus a dedicated read-only reviewer per repository, at most 20
+ranking/model routing, then uses existing personal main checkouts for dependency,
+exact non-draft [CO] PR and recurring main CI/CD failure tasks. One worker plus a dedicated read-only reviewer per repository, at most 20
 persisted rounds, final tests and exact-HEAD approval precede host publication.
 Workers atomically commit explicit paths through normal hooks, never push.
 The host persists pushed SHA before idempotent completed dependency issue closure.
 Post-push Actions reads are exact-SHA, ten-minute intervals, at most three checks.
-No rollback, release or deployment occurs. PR merge/closure is report-only.
+The host never directly rolls back, releases or deploys. Normal push may trigger
+the repository's existing CI/CD release/deployment workflows. PR merge/closure is report-only.
 
-Scope limitations: exact [CO] PR diff/head execution and recurring CI/CD/flaky-test
-discovery are not implemented in this foundation. Jev routing is currently a
-separate question after candidate ranking. The old watcher retention sweep is
-removed; remote history retention requires follow-up. No real-target unattended
-acceptance is claimed. Important ecosystem/runtime/framework majors require
-manual attention. Native scripts run as the trusted user, not in an OS sandbox.
+Scope remains discovered tasks only; ordinary issues cannot be authorized by Jev.
+PR diff/head and failed jobs/steps/logs are bounded live read-only evidence. Missing
+evidence defers its task. No-change PR cleanup is reviewed without fabricated
+commits; dependency no-change requires exact latest manifest/lock evidence.
+Critical package majors are rejected before writes and deferred individually;
+`work.criticalPackages` defaults cover runtime/framework/compiler/build/test stack.
+Remote retention uses the existing bounded sweep. No real-target unattended
+acceptance is claimed. Native scripts run as the trusted user, not an OS sandbox.
 
 The existing Work desk reads byte-bounded events, latest per-repository summaries
 and heartbeat through generic agent jobs/records. Reports retain missing/stale

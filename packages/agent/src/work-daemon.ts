@@ -134,6 +134,7 @@ export async function workDaemon(options: {
 			await publish("running");
 			let queue = Promise.resolve();
 			const trace = (line: string) => {
+				if (line.startsWith("[分析证据缺失]")) progress.analysisAttention = true;
 				progress.updatedAt = new Date().toISOString();
 				log(line);
 				progress.events.push(line.slice(0, 1000));
@@ -153,6 +154,7 @@ export async function workDaemon(options: {
 					const state = await runtime.harness.snapshot(Occurrences, occurrence, context);
 					const pushed = state?.published[workspace.repository];
 					if (!pushed) {
+						const expected = workspace.expectedWorkflows ?? [];
 						await nativePublish(workspace, head, issues, pushSignal);
 						await runtime.harness.commit(async (tx) => {
 							(await tx.doc(Occurrences, occurrence, null)).published[workspace.repository] = {
@@ -160,7 +162,13 @@ export async function workDaemon(options: {
 								head,
 								issues,
 								closed: [],
-								followup: { checks: 0, nextAt: Date.now() + 600000, outcome: "pending", runs: [] },
+								followup: {
+									checks: 0,
+									nextAt: Date.now() + 600000,
+									outcome: "pending",
+									runs: [],
+									expected,
+								},
 							};
 						}, context);
 					} else if (pushed.head !== head)
@@ -230,6 +238,9 @@ export async function workDaemon(options: {
 						log: trace,
 					}),
 					log: trace,
+					analysisAttention: () => {
+						progress.analysisAttention = true;
+					},
 					observe: (repository, state) => {
 						progress.repositories[repository] = { ...progress.repositories[repository], ...state };
 						trace(
@@ -241,11 +252,13 @@ export async function workDaemon(options: {
 				terminal = true;
 				if (timer) clearInterval(timer);
 				await queue;
-				const attention = Object.values(progress.repositories).some(
-					(repo) =>
-						["blocked", "exhausted"].includes(repo.status) ||
-						["failed", "timeout"].includes(repo.followup?.outcome ?? ""),
-				);
+				const attention =
+					progress.analysisAttention ||
+					Object.values(progress.repositories).some(
+						(repo) =>
+							["blocked", "exhausted", "deferred"].includes(repo.status) ||
+							["failed", "timeout"].includes(repo.followup?.outcome ?? ""),
+					);
 				const status = attention ? "attention" : "completed";
 				await runtime.harness.commit(async (tx) => {
 					const state = await tx.doc(Occurrences, occurrence, null);

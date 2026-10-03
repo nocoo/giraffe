@@ -46,16 +46,32 @@ const roleSchema = z.strictObject({
 	maxTokens: z.number().int().min(512).max(32000).default(4096),
 	thinkingLevel: z.enum(["off", "minimal", "low", "medium", "high"]).default("off"),
 });
+export const CRITICAL_PACKAGES = [
+	"react",
+	"react-dom",
+	"next",
+	"vue",
+	"@angular/core",
+	"hono",
+	"vite",
+	"vitest",
+	"@vitest/coverage-v8",
+	"typescript",
+	"wrangler",
+	"undici",
+];
 const workSchema = z
 	.strictObject({
 		cron: z.string().default("0 * * * *"),
 		timezone: z.string().default("Asia/Shanghai"),
 		registry: serviceUrl.default("https://mirrors.tencent.com/npm/"),
+		criticalPackages: z.array(z.string().min(1)).max(100).default(CRITICAL_PACKAGES),
 	})
 	.default({
 		cron: "0 * * * *",
 		timezone: "Asia/Shanghai",
 		registry: "https://mirrors.tencent.com/npm/",
+		criticalPackages: CRITICAL_PACKAGES,
 	});
 export const configSchema = z
 	.strictObject({

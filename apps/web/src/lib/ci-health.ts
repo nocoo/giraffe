@@ -108,9 +108,13 @@ export function classifyStream(runs: CiRun[], now: string) {
 					? ("streak" as const)
 					: ("chronic" as const),
 		pending: inWindow.filter((r) => outcomeOf(r) === "pending").length,
-		recent: inWindow
-			.slice(0, CI_RECENT)
-			.map((r) => ({ outcome: outcomeOf(r), at: r.created_at, id: r.id })),
+		recent: inWindow.slice(0, CI_RECENT).map((r) => ({
+			outcome: outcomeOf(r),
+			at: r.created_at,
+			id: r.id,
+			event: r.event,
+			branch: r.head_branch,
+		})),
 	};
 }
 export type StreamHealth = ReturnType<typeof classifyStream>;

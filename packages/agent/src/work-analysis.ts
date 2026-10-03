@@ -1,4 +1,4 @@
-import type { GiraffeClient } from "./client.ts";
+import { ApiError, type GiraffeClient } from "./client.ts";
 import type { Config } from "./config.ts";
 import { type AnalysisReport, DOMAINS, type Domain, specialistSchema } from "./contracts.ts";
 import { decisionClient } from "./decision.ts";
@@ -72,9 +72,22 @@ export function residentAnalysis(options: {
 			frozen?.collected ??
 			(await Promise.all(
 				DOMAINS.map(async (domain) => {
-					const source = await options.client.observation(
-						`${domain === "cd" ? "factory" : domain}?scope=all`,
-					);
+					let source: Awaited<ReturnType<GiraffeClient["observation"]>>;
+					try {
+						source = await options.client.observation(
+							`${domain === "cd" ? "factory" : domain}?scope=all`,
+						);
+					} catch (error) {
+						if (!(error instanceof ApiError) || error.code !== "snapshot_missing") throw error;
+						source = {
+							...catalog,
+							data: {},
+							sourceVersion: `missing:${domain}`,
+							fetchedAt: null,
+							unavailable: true,
+						};
+						options.log(`[分析证据缺失] ${domain} 快照不存在，报告保持 unknown。`);
+					}
 					return [domain, source] as const;
 				}),
 			));
@@ -156,7 +169,7 @@ export function residentAnalysis(options: {
 					{
 						...reply.result,
 						verdict:
-							input.omitted > 0 && reply.result.verdict === "pass"
+							(source.unavailable || input.omitted > 0) && reply.result.verdict === "pass"
 								? "unknown"
 								: reply.result.verdict,
 					},

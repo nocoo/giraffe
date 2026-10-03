@@ -3,7 +3,13 @@ import { type FollowUpState, followUp } from "./work-followup.ts";
 
 it("waits ten minutes for each of at most three exact SHA checks across restart", async () => {
 	let now = 0;
-	const state: FollowUpState = { checks: 0, nextAt: 600000, outcome: "pending", runs: [] };
+	const state: FollowUpState = {
+		checks: 0,
+		nextAt: 600000,
+		outcome: "pending",
+		runs: [],
+		expected: ["CI"],
+	};
 	const read = vi.fn(async () => ({
 		workflow_runs: [
 			{ head_sha: "other", status: "completed", conclusion: "success" },
@@ -31,7 +37,13 @@ it("waits ten minutes for each of at most three exact SHA checks across restart"
 
 it("records passed, failed and missing evidence truthfully", async () => {
 	for (const conclusion of ["success", "failure", null]) {
-		const state: FollowUpState = { checks: 0, nextAt: 0, outcome: "pending", runs: [] };
+		const state: FollowUpState = {
+			checks: 0,
+			nextAt: 0,
+			outcome: "pending",
+			runs: [],
+			expected: ["CI"],
+		};
 		await followUp({
 			sha: "sha",
 			state,
@@ -39,7 +51,9 @@ it("records passed, failed and missing evidence truthfully", async () => {
 			wait: async () => {},
 			save: async () => {},
 			read: async () => ({
-				workflow_runs: conclusion ? [{ head_sha: "sha", status: "completed", conclusion }] : [],
+				workflow_runs: conclusion
+					? [{ head_sha: "sha", name: "CI", status: "completed", conclusion }]
+					: [],
 			}),
 		});
 		expect(state.outcome).toBe(
@@ -49,7 +63,13 @@ it("records passed, failed and missing evidence truthfully", async () => {
 });
 
 it("persists poll consumption before transport and does not duplicate after report failure", async () => {
-	const state: FollowUpState = { checks: 2, nextAt: 0, outcome: "pending", runs: [] };
+	const state: FollowUpState = {
+		checks: 2,
+		nextAt: 0,
+		outcome: "pending",
+		runs: [],
+		expected: ["CI"],
+	};
 	const read = vi.fn(async () => {
 		throw new Error("offline");
 	});
@@ -62,7 +82,13 @@ it("persists poll consumption before transport and does not duplicate after repo
 });
 
 it("stops without consuming a check on cancellation", async () => {
-	const state: FollowUpState = { checks: 0, nextAt: 600000, outcome: "pending", runs: [] };
+	const state: FollowUpState = {
+		checks: 0,
+		nextAt: 600000,
+		outcome: "pending",
+		runs: [],
+		expected: ["CI"],
+	};
 	const read = vi.fn();
 	await followUp({
 		sha: "sha",
@@ -78,7 +104,13 @@ it("stops without consuming a check on cancellation", async () => {
 
 it("does not consume a poll if cancelled during its injected wait", async () => {
 	const controller = new AbortController();
-	const state: FollowUpState = { checks: 0, nextAt: 10, outcome: "pending", runs: [] };
+	const state: FollowUpState = {
+		checks: 0,
+		nextAt: 10,
+		outcome: "pending",
+		runs: [],
+		expected: ["CI"],
+	};
 	await followUp({
 		sha: "sha",
 		state,
@@ -95,14 +127,26 @@ it("does not consume a poll if cancelled during its injected wait", async () => 
 
 it("settles consumed third checks and never treats skipped or partial evidence as passing", async () => {
 	for (const result of [
-		{ workflow_runs: [{ head_sha: "sha", status: "completed", conclusion: "skipped" }] },
-		{ workflow_runs: [{ head_sha: "sha", status: "completed", conclusion: "cancelled" }] },
+		{
+			workflow_runs: [{ head_sha: "sha", name: "CI", status: "completed", conclusion: "skipped" }],
+		},
+		{
+			workflow_runs: [
+				{ head_sha: "sha", name: "CI", status: "completed", conclusion: "cancelled" },
+			],
+		},
 		{
 			total_count: 101,
-			workflow_runs: [{ head_sha: "sha", status: "completed", conclusion: "success" }],
+			workflow_runs: [{ head_sha: "sha", name: "CI", status: "completed", conclusion: "success" }],
 		},
 	]) {
-		const state: FollowUpState = { checks: 2, nextAt: 0, outcome: "pending", runs: [] };
+		const state: FollowUpState = {
+			checks: 2,
+			nextAt: 0,
+			outcome: "pending",
+			runs: [],
+			expected: ["CI"],
+		};
 		await followUp({
 			sha: "sha",
 			state,
@@ -113,7 +157,13 @@ it("settles consumed third checks and never treats skipped or partial evidence a
 		});
 		expect(state.outcome).toBe("timeout");
 	}
-	const state: FollowUpState = { checks: 3, nextAt: 0, outcome: "pending", runs: [] };
+	const state: FollowUpState = {
+		checks: 3,
+		nextAt: 0,
+		outcome: "pending",
+		runs: [],
+		expected: ["CI"],
+	};
 	const read = vi.fn();
 	await followUp({
 		sha: "sha",
@@ -125,4 +175,33 @@ it("settles consumed third checks and never treats skipped or partial evidence a
 	});
 	expect(state.outcome).toBe("timeout");
 	expect(read).not.toHaveBeenCalled();
+});
+
+it("waits for expected CD after CI succeeds and reports unknown expectations as timeout", async () => {
+	for (const expected of [["CI", "CD"], []]) {
+		const state: FollowUpState = {
+			checks: 0,
+			nextAt: 600000,
+			outcome: "pending",
+			runs: [],
+			expected,
+		};
+		const read = vi.fn(async () => ({
+			workflow_runs: [{ head_sha: "sha", name: "CI", status: "completed", conclusion: "success" }],
+		}));
+		let now = 0;
+		await followUp({
+			sha: "sha",
+			state,
+			now: () => now,
+			wait: async (ms) => {
+				now += ms;
+			},
+			save: async () => {},
+			read,
+		});
+		expect(read).toHaveBeenCalledTimes(3);
+		expect(now).toBe(1800000);
+		expect(state.outcome).toBe("timeout");
+	}
 });

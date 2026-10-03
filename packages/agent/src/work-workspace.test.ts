@@ -310,7 +310,7 @@ it("reconciles remote HEAD without duplicate push or implicit issue closure", as
 		"ls-remote origin refs/heads/main",
 	]);
 	await expect(driver.publish(initial, "wrong", [1])).rejects.toThrow(/Publication/);
-	await expect(driver.publish(initial, "head", [])).rejects.toThrow(/scope/);
+	await expect(driver.publish(initial, "head", [])).resolves.toBeUndefined();
 	await expect(driver.publish(initial, "head", [-1])).rejects.toThrow(/scope/);
 	state.remote = "other";
 	await expect(driver.publish(initial, "head", [1])).rejects.toThrow(/Remote/);
@@ -384,4 +384,44 @@ it("logs sanitized native results and includes the build gate when present", asy
 		stderr: "",
 	});
 	await expect(driver.inspect("owner/repo")).rejects.toThrow(/specific assertion/);
+});
+
+it("reads bounded fixed-run diagnostics and npm versions", async () => {
+	const { driver, path, run } = await fixture();
+	const inspection = await driver.inspect("owner/repo");
+	await expect(driver.failureLog(inspection, -1)).rejects.toThrow("assigned");
+	await expect(driver.repeatTest(inspection, "lint", 2)).rejects.toThrow("declared");
+	await expect(driver.repeatTest(inspection, "test", 6)).rejects.toThrow("declared");
+	expect(await driver.repeatTest({ ...inspection, checks: ["test"] }, "test", 2)).toMatchObject({
+		count: 2,
+		passed: true,
+	});
+	run.mockResolvedValueOnce({
+		exitCode: 0,
+		stdout: "Assertion failed ghp_abcdefghijklmnopqrstuvw",
+		stderr: "",
+	});
+	expect(await driver.failureLog(inspection, 1)).toMatchObject({
+		complete: true,
+		content: expect.not.stringContaining("ghp_"),
+	});
+	run.mockResolvedValueOnce({ exitCode: 0, stdout: "x".repeat(3000), stderr: "" });
+	expect((await driver.failureLog(inspection, 1)).complete).toBe(false);
+	run.mockResolvedValueOnce({
+		exitCode: 0,
+		stdout: `${"a\n".repeat(101)}Assertion failed`,
+		stderr: "",
+	});
+	const tail = await driver.failureLog(inspection, 1);
+	expect(tail.complete).toBe(false);
+	expect(tail.content).toContain("Assertion failed");
+	await writeFile(
+		join(path, "package-lock.json"),
+		JSON.stringify({ packages: { "": {}, "node_modules/demo": { version: "1.0.0" } } }),
+	);
+	expect(await driver.resolvedPackages({ ...inspection, manager: "npm" })).toEqual({
+		demo: "1.0.0",
+	});
+	await writeFile(join(path, "package-lock.json"), "{}");
+	expect(await driver.resolvedPackages({ ...inspection, manager: "npm" })).toEqual({});
 });

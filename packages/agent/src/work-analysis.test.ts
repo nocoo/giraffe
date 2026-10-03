@@ -6,6 +6,7 @@ import {
 } from "@earendil-works/pi-ai/providers/faux";
 import { MemoryStorage } from "@earendil-works/pi-durable";
 import { expect, it, vi } from "vitest";
+import { ApiError } from "./client.ts";
 import { configSchema } from "./config.ts";
 import { decisionClient } from "./decision.ts";
 import { openRuntime } from "./runtime.ts";
@@ -28,6 +29,9 @@ const workRepository = {
 	repository: "owner/repo",
 	issues: [],
 	prs: [],
+	tasks: [],
+	workflows: [],
+	limitations: [],
 	fetchedAt: null,
 	stale: true,
 };
@@ -231,4 +235,15 @@ it("runs four resident analysts concurrently, publishes only outside dry run and
 		},
 	} as never);
 	await residentAnalysis(options as never)([workRepository], "partial-pass");
+	observation.mockImplementation(async (path?: string) => {
+		if (path?.startsWith("ci") || path?.startsWith("factory"))
+			throw new ApiError(404, "snapshot_missing");
+		return original;
+	});
+	await residentAnalysis(options as never)([workRepository], "missing-optional");
+	expect(log).toHaveBeenCalledWith(expect.stringContaining("报告保持 unknown"));
+	observation.mockRejectedValueOnce(new ApiError(500, "offline"));
+	await expect(
+		residentAnalysis(options as never)([workRepository], "source-offline"),
+	).rejects.toThrow("offline");
 });

@@ -456,3 +456,12 @@ terminal repositories while transport failures retain recovery. Priority order i
 not task identity. Local no-push approval is not permanent publication completion.
 Persist terminal progress before delivery and retry delivery alone on Web failure;
 the native pipeline must not restart after a completed local occurrence.
+
+Task integration initially used numeric issue identities for CI/PR work and raw
+JSON.parse for Bun's JSONC lock. Use namespaced tasks end-to-end and the existing
+Bun parser through a fixed host operation. Package scope must be token-bound to
+the task's verified issue text, not substring matches across repository tasks.
+Keep host-unavailable evidence fixed deferred and expose each disposition to the
+independent reviewer. Follow-up expectations use actual recorded main push and
+workflow_run events, not every named workflow; schedules and tag releases are not
+missing main checks. Bound disposition details without losing identities/results.

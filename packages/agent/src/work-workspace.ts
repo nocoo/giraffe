@@ -9,6 +9,7 @@ import { safeDiagnostics } from "./diagnostics.ts";
 import { type LocalRunner, runLocal } from "./repair-local.ts";
 
 export type WorkInspection = {
+	expectedWorkflows?: string[];
 	repository: string;
 	path: string;
 	branch: string;
@@ -336,7 +337,7 @@ export class WorkWorkspace {
 			return current;
 		};
 		const current = await verify();
-		if (!issues.length || issues.some((issue) => !Number.isInteger(issue) || issue < 1))
+		if (issues.some((issue) => !Number.isInteger(issue) || issue < 1))
 			throw new Error("Invalid issue closure scope.");
 		await this.check(current, signal);
 		await verify();
@@ -382,5 +383,69 @@ export class WorkWorkspace {
 			["issue", "close", String(issue), "--repo", inspection.repository],
 			signal,
 		);
+	}
+	async failureLog(inspection: WorkInspection, run: number, signal?: AbortSignal) {
+		if (!Number.isSafeInteger(run) || run < 1) throw new Error("Invalid assigned run.");
+		const output = await this.command(
+			inspection.path,
+			"gh",
+			["run", "view", String(run), "--repo", inspection.repository, "--log-failed"],
+			signal,
+		);
+		return {
+			content: safeDiagnostics(output.split("\n").slice(-100).join("\n")),
+			complete: Buffer.byteLength(output) <= 2048 && output.split("\n").length <= 100,
+			limitation:
+				"Failed logs are bounded diagnostics; truncated or unavailable evidence is not successful verification.",
+		};
+	}
+	async repeatTest(
+		inspection: WorkInspection,
+		script: string,
+		count: number,
+		signal?: AbortSignal,
+	) {
+		if (
+			!inspection.checks.includes(script) ||
+			!/^test(?::[a-z0-9_-]+)*$/.test(script) ||
+			!Number.isInteger(count) ||
+			count < 2 ||
+			count > 5
+		)
+			throw new Error("Only declared baseline test scripts can repeat 2–5 times.");
+		for (let index = 0; index < count; index++)
+			await this.command(inspection.path, inspection.manager, ["run", script], signal);
+		return {
+			script,
+			count,
+			passed: true,
+			limitation: "Repeated success alone does not prove the original flaky cause.",
+		};
+	}
+	async resolvedPackages(
+		inspection: WorkInspection,
+		signal?: AbortSignal,
+	): Promise<Record<string, string>> {
+		if (inspection.manager === "npm") {
+			const lock = JSON.parse(await readFile(join(inspection.path, "package-lock.json"), "utf8"));
+			return Object.fromEntries(
+				Object.entries(lock.packages ?? {})
+					.filter(([name]) => name.startsWith("node_modules/"))
+					.map(([name, value]) => [
+						name.slice(13),
+						z.object({ version: z.string() }).parse(value).version,
+					]),
+			);
+		}
+		const output = await this.command(
+			inspection.path,
+			"bun",
+			[
+				"-e",
+				'const lock = Bun.JSONC.parse(await Bun.file("bun.lock").text()); console.log(JSON.stringify(Object.fromEntries(Object.entries(lock.packages ?? {}).map(([name, value]) => [name, value[0].slice(name.length + 1)]))));',
+			],
+			signal,
+		);
+		return z.record(z.string(), z.string()).parse(JSON.parse(output));
 	}
 }

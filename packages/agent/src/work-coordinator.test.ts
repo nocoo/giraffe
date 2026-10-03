@@ -5,12 +5,18 @@ import { createCron } from "./cron.ts";
 import { WorkTransportError } from "./github.ts";
 import { openRuntime } from "./runtime.ts";
 import { runCoordinator } from "./work-coordinator.ts";
-import { verifyWorkIssues, workerActions } from "./work-tools.ts";
+import { readWorkTask } from "./work-tasks.ts";
+import { verifyWorkRepository, workerActions } from "./work-tools.ts";
+
+vi.mock("./work-tasks.ts", async (original) => ({
+	...(await original<typeof import("./work-tasks.ts")>()),
+	readWorkTask: vi.fn(async (_repo, task) => ({ task, evidence: {} })),
+}));
 
 vi.mock("./work-tools.ts", () => ({
-	verifyWorkIssues: vi.fn(async (_repository, issues) => issues),
+	verifyWorkRepository: vi.fn(async () => {}),
 	workerActions: vi.fn(() => ({
-		committed: [{ issue: 1, head: "committed-head" }],
+		committed: [{ task: "dependency:1", head: "committed-head", outcome: "committed" }],
 		action: vi.fn(),
 	})),
 }));
@@ -19,8 +25,10 @@ it("dry-runs workers with ordered issues, workdirs and model choices without wor
 	const repositories = [
 		{
 			repository: "owner/repo",
-			issues: [
+			tasks: [
 				{
+					id: "dependency:1",
+					kind: "dependency",
 					number: 1,
 					title: "Upgrade dependencies",
 					url: "https://github.com/owner/repo/issues/1",
@@ -28,6 +36,9 @@ it("dry-runs workers with ordered issues, workdirs and model choices without wor
 				},
 			],
 			prs: [],
+			issues: [],
+			workflows: ["CI"],
+			choice: "dependency:1",
 			fetchedAt: "today",
 			stale: true,
 			importance: 1,
@@ -56,13 +67,18 @@ it("dry-runs workers with ordered issues, workdirs and model choices without wor
 			request.key === "controller"
 				? {
 						repositories: [
-							{ repository: "owner/repo", issues: [1], retainChanges: false, reason: "ready" },
+							{
+								repository: "owner/repo",
+								tasks: ["dependency:1"],
+								retainChanges: false,
+								reason: "ready",
+							},
 						],
 					}
 				: {
 						summary: "rehearsed",
 						steps: ["read issue", "test", "commit"],
-						issues: [1],
+						tasks: ["dependency:1"],
 						ready: true,
 					},
 	}));
@@ -96,6 +112,8 @@ it("dry-runs workers with ordered issues, workdirs and model choices without wor
 
 function fixture() {
 	const issue = {
+		id: "dependency:1",
+		kind: "dependency",
 		number: 1,
 		title: "Upgrade dependencies",
 		url: "https://github.com/owner/repo/issues/1",
@@ -103,7 +121,9 @@ function fixture() {
 	};
 	const repository = {
 		repository: "owner/repo",
-		issues: [issue],
+		issues: [],
+		tasks: [issue],
+		workflows: ["CI"],
 		prs: [],
 		fetchedAt: "now",
 		stale: false,
@@ -126,7 +146,12 @@ function fixture() {
 	};
 	const plan = {
 		repositories: [
-			{ repository: "owner/repo", issues: [1], retainChanges: true, reason: "Keep user work" },
+			{
+				repository: "owner/repo",
+				tasks: ["dependency:1"],
+				retainChanges: true,
+				reason: "Keep user work",
+			},
 		],
 	};
 	const run = vi.fn(async (request) => {
@@ -134,7 +159,7 @@ function fixture() {
 		if (request.key === "preparation" && request.action) await request.action("prepare", {});
 		return {
 			conversationId: 2,
-			result: { summary: "done", steps: ["tested"], issues: [1], ready: true },
+			result: { summary: "done", steps: ["tested"], tasks: ["dependency:1"], ready: true },
 		};
 	});
 	return {
@@ -149,7 +174,7 @@ function fixture() {
 				worker: async () => ({ model: "sol", thinkingLevel: "low" }),
 			},
 			driver: {
-				inspect: vi.fn(async () => ({ ...workspace, head: "committed-head" })),
+				inspect: vi.fn(async (_repository: string) => ({ ...workspace, head: "committed-head" })),
 				files: vi.fn(async () => []),
 				changes: vi.fn(async () => "checked diff"),
 				check: vi.fn(async () => {}),
@@ -191,7 +216,7 @@ it("prepares then runs checked workers and publishes only their completed issue 
 		[1],
 		undefined,
 	);
-	expect(verifyWorkIssues).toHaveBeenCalled();
+	expect(verifyWorkRepository).toHaveBeenCalled();
 	expect(result[0]?.dryRun).toBe(false);
 	expect(options.conversations.run.mock.calls[2]?.[0]).toHaveProperty("action");
 });
@@ -203,7 +228,7 @@ it("verifies local completion without push or issue closure when publication is 
 	>;
 	options.driver.inspect
 		.mockImplementationOnce(inspect)
-		.mockImplementation(async () => ({ ...(await inspect()), head: "committed-head" }));
+		.mockImplementation(async () => ({ ...(await inspect("owner/repo")), head: "committed-head" }));
 	const result = await runCoordinator({ ...options, push: false } as never);
 	expect(result).toHaveLength(1);
 	expect(options.driver.publish).not.toHaveBeenCalled();
@@ -230,7 +255,7 @@ it("rejects invented/duplicated repositories and omitted/duplicated issues", asy
 			for (const item of plan.repositories) item.repository = "other/repo";
 		},
 		(plan: ReturnType<typeof fixture>["plan"]) => {
-			for (const item of plan.repositories) item.issues = [2];
+			for (const item of plan.repositories) item.tasks = ["dependency:2"];
 		},
 		(plan: ReturnType<typeof fixture>["plan"]) => {
 			plan.repositories.push(...plan.repositories);
@@ -265,7 +290,7 @@ it("does not accept fictional preparation, incomplete worker handoffs or cancell
 			if (mode === "prepare" && request.key === "preparation")
 				return {
 					conversationId: 2,
-					result: { summary: "pretend", steps: [], issues: [1], ready: true },
+					result: { summary: "pretend", steps: [], tasks: ["dependency:1"], ready: true },
 				} as never;
 			const result = await original(request);
 			if (request.key.startsWith("worker:"))
@@ -274,7 +299,7 @@ it("does not accept fictional preparation, incomplete worker handoffs or cancell
 					result: {
 						summary: "blocked",
 						steps: [],
-						issues: mode === "scope" ? [] : [1],
+						tasks: mode === "scope" ? [] : ["dependency:1"],
 						ready: mode !== "ready",
 					},
 				} as never;
@@ -293,11 +318,15 @@ it("does not accept fictional preparation, incomplete worker handoffs or cancell
 	await expect(runCoordinator(options as never)).resolves.toEqual([]);
 });
 
-it("awaits parallel analysts and propagates failure without reporting successful completion", async () => {
+it("keeps analyst failure visible without making it a publication prerequisite", async () => {
 	const { options } = fixture();
-	options.dryRun = true;
 	options.analyze.mockRejectedValue(new Error("analysis failed"));
-	await expect(runCoordinator(options as never)).rejects.toThrow(/Resident analysis failed/);
+	const attention = vi.fn();
+	await expect(
+		runCoordinator({ ...options, analysisAttention: attention } as never),
+	).resolves.toHaveLength(1);
+	expect(options.driver.publish).toHaveBeenCalledOnce();
+	expect(attention).toHaveBeenCalledOnce();
 });
 
 it("retries independent findings and forbids reviewer writes", async () => {
@@ -382,7 +411,7 @@ it("rejects unknown preparation actions and repeated prepare", async () => {
 			await expect(request.action("prepare", {})).rejects.toThrow("Only one");
 			return {
 				conversationId: 2,
-				result: { summary: "ready", steps: ["baseline"], issues: [1], ready: true },
+				result: { summary: "ready", steps: ["baseline"], tasks: ["dependency:1"], ready: true },
 			} as never;
 		}
 		return run(request);
@@ -430,31 +459,31 @@ it("persists actual worker tool completion before interruption", async () => {
 
 it("never treats ordinary issues or report-only PRs as executable dependency work", async () => {
 	const { options, repository } = fixture();
-	const issue = repository.issues[0];
+	const issue = repository.tasks[0];
 	if (!issue) throw new Error("Missing fixture issue.");
-	issue.title = "Build a new feature";
+	repository.tasks = [];
 	await expect(runCoordinator(options as never)).resolves.toEqual([]);
 	expect(options.driver.prepare).not.toHaveBeenCalled();
 });
 
 it("shares terminal task identity across occurrences and priority order, but not changed evidence", async () => {
 	const { options, repository } = fixture();
-	const firstIssue = repository.issues[0];
+	const firstIssue = repository.tasks[0];
 	if (!firstIssue) throw new Error("Missing issue.");
-	repository.issues.push({ ...firstIssue, number: 2 });
+	repository.tasks.push({ ...firstIssue, id: "dependency:2", number: 2 });
 	const saved = new Map<string, string>();
 	options.conversations.checkpoint = async (key) => saved.get(key) ?? null;
 	options.conversations.saveCheckpoint.mockImplementation(async (key, json) => {
 		saved.set(key, json);
 	});
-	let order = [1, 2];
+	let order = ["dependency:1", "dependency:2"];
 	options.conversations.run.mockImplementation(async (request) => {
 		if (request.key === "controller")
 			return {
 				conversationId: 1,
 				result: {
 					repositories: [
-						{ repository: "owner/repo", issues: order, retainChanges: true, reason: "priority" },
+						{ repository: "owner/repo", tasks: order, retainChanges: true, reason: "priority" },
 					],
 				},
 			} as never;
@@ -463,13 +492,13 @@ it("shares terminal task identity across occurrences and priority order, but not
 	await runCoordinator(options as never);
 	const first = options.conversations.run.mock.calls.length;
 	options.runId = "second-occurrence";
-	order = [2, 1];
+	order = ["dependency:2", "dependency:1"];
 	await runCoordinator(options as never);
-	expect(options.conversations.run.mock.calls.length).toBe(first + 1);
+	expect(options.conversations.run.mock.calls.length).toBe(first);
 	firstIssue.updatedAt = "changed";
 	options.runId = "third-occurrence";
 	await runCoordinator(options as never);
-	expect(options.conversations.run.mock.calls.length).toBe(first + 3);
+	expect(options.conversations.run.mock.calls.length).toBe(first + 2);
 });
 
 it("keeps reviewed local work publishable in a later occurrence without another fix", async () => {
@@ -499,7 +528,7 @@ it("keeps reviewed local work publishable in a later occurrence without another 
 
 it("does not cache a transport verification failure as terminal work", async () => {
 	const { options } = fixture();
-	vi.mocked(verifyWorkIssues).mockRejectedValueOnce(new WorkTransportError("offline"));
+	vi.mocked(verifyWorkRepository).mockRejectedValueOnce(new WorkTransportError("offline"));
 	await expect(runCoordinator(options as never)).rejects.toThrow("offline");
 	expect(
 		options.conversations.saveCheckpoint.mock.calls.some(([key]) => key.startsWith("task-")),
@@ -517,9 +546,9 @@ it("skips a recovered published repository before verifying its now closed issue
 	});
 	options.driver.publish.mockRejectedValueOnce(new Error("closure failed after push"));
 	await expect(runCoordinator(options as never)).rejects.toThrow("closure failed");
-	vi.mocked(verifyWorkIssues).mockClear();
+	vi.mocked(verifyWorkRepository).mockClear();
 	await runCoordinator({ ...options, completedPublications: ["owner/repo"] } as never);
-	expect(verifyWorkIssues).not.toHaveBeenCalled();
+	expect(verifyWorkRepository).not.toHaveBeenCalled();
 });
 
 it("finishes exhausted repositories over two cron occurrences and restarts only changed source tasks", async () => {
@@ -573,7 +602,7 @@ it("finishes exhausted repositories over two cron occurrences and restarts only 
 		await cron.tick(undefined, true);
 		expect(workers()).toBe(20);
 		expect(statuses.at(-1)?.completed).toBe(2);
-		const issue = repository.issues[0];
+		const issue = repository.tasks[0];
 		if (!issue) throw new Error("Missing issue.");
 		issue.updatedAt = "new-evidence";
 		Object.assign(review, { round: 0, findings: [], head: null });
@@ -585,4 +614,221 @@ it("finishes exhausted repositories over two cron occurrences and restarts only 
 	} finally {
 		await runtime.close();
 	}
+});
+
+it("honors Jev none before workspace inspection or mutation", async () => {
+	const { options, repository } = fixture();
+	options.decisions.prioritize = async () => [{ ...repository, choice: "none" }] as never;
+	await expect(runCoordinator(options as never)).resolves.toEqual([]);
+	expect(options.driver.inspect).not.toHaveBeenCalled();
+	expect(options.driver.prepare).not.toHaveBeenCalled();
+});
+
+it("dispatches CI-only typed tasks and excludes PR/CI and deferred dependency numbers from closure", async () => {
+	const { options, repository } = fixture();
+	const seed = repository.tasks[0];
+	if (!seed) throw new Error("Missing seed.");
+	const tasks = ["dependency:1", "pr:1", "ci:1", "dependency:2"];
+	repository.tasks = tasks.map((id) => ({
+		...seed,
+		id,
+		kind: id.split(":")[0],
+		number: Number(id.split(":")[1]),
+	})) as never;
+	const run = options.conversations.run.getMockImplementation();
+	if (!run) throw new Error("Missing model fixture.");
+	options.conversations.run.mockImplementation(async (request) => {
+		if (request.key === "preparation") {
+			await request.action("prepare", {});
+			return {
+				conversationId: 2,
+				result: { summary: "ready", steps: ["checked"], tasks: ["dependency:1"], ready: true },
+			} as never;
+		}
+		return request.key === "controller"
+			? ({
+					conversationId: 1,
+					result: {
+						repositories: [
+							{ repository: "owner/repo", tasks, retainChanges: true, reason: "mixed" },
+						],
+					},
+				} as never)
+			: request.key.startsWith("worker:")
+				? ({
+						conversationId: 2,
+						result: { summary: "mixed", steps: ["checked"], tasks, ready: true },
+					} as never)
+				: run(request);
+	});
+	vi.mocked(workerActions).mockReturnValueOnce({
+		committed: tasks.map((task) => ({
+			task,
+			head: "committed-head",
+			outcome: task === "dependency:2" ? "deferred" : "committed",
+			reason: "major",
+		})),
+		action: vi.fn(),
+	} as never);
+	await runCoordinator(options as never);
+	expect(options.driver.publish).toHaveBeenCalledWith(
+		expect.anything(),
+		"committed-head",
+		[1],
+		undefined,
+	);
+	const review = options.conversations.run.mock.calls.find(([request]) =>
+		request.key.startsWith("reviewer:"),
+	)?.[0];
+	expect(review?.input.dispositions).toHaveLength(4);
+	expect(review?.input.tasks.map((item: { task: { id: string } }) => item.task.id)).toEqual(tasks);
+});
+
+it("reviews PR no-change without an empty commit or push", async () => {
+	const { options, repository } = fixture();
+	const seed = repository.tasks[0];
+	if (!seed) throw new Error("Missing seed.");
+	repository.tasks = [{ ...seed, id: "pr:1", kind: "pr", title: "[CO] redundant" }] as never;
+	const run = options.conversations.run.getMockImplementation();
+	if (!run) throw new Error("Missing model fixture.");
+	options.conversations.run.mockImplementation(async (request) =>
+		request.key === "controller"
+			? ({
+					conversationId: 1,
+					result: {
+						repositories: [
+							{ repository: "owner/repo", tasks: ["pr:1"], retainChanges: true, reason: "review" },
+						],
+					},
+				} as never)
+			: request.key.startsWith("worker:")
+				? ({
+						conversationId: 2,
+						result: {
+							summary: "already present",
+							steps: ["reviewed main"],
+							tasks: ["pr:1"],
+							ready: true,
+						},
+					} as never)
+				: run(request),
+	);
+	vi.mocked(workerActions).mockReturnValueOnce({
+		committed: [
+			{
+				task: "pr:1",
+				head: "committed-head",
+				outcome: "reviewed_no_change",
+				reason: "Equivalent cleanup already present.",
+			},
+		],
+		action: vi.fn(),
+	} as never);
+	await runCoordinator(options as never);
+	expect(options.driver.publish).not.toHaveBeenCalled();
+	expect(options.conversations.saveCheckpoint).toHaveBeenCalledWith(
+		expect.stringContaining("task-"),
+		expect.stringContaining("reviewed_no_change"),
+	);
+});
+
+it("defers missing PR evidence without blocking another dependency task", async () => {
+	const { options, repository } = fixture();
+	const seed = repository.tasks[0];
+	if (!seed) throw new Error("Missing seed.");
+	repository.tasks.push({ ...seed, id: "pr:1", kind: "pr" } as never);
+	const run = options.conversations.run.getMockImplementation();
+	if (!run) throw new Error("Missing model.");
+	options.conversations.run.mockImplementation(async (request) =>
+		request.key === "controller"
+			? ({
+					conversationId: 1,
+					result: {
+						repositories: [
+							{
+								repository: "owner/repo",
+								tasks: ["dependency:1", "pr:1"],
+								retainChanges: true,
+								reason: "mixed",
+							},
+						],
+					},
+				} as never)
+			: request.key.startsWith("worker:")
+				? ({
+						conversationId: 2,
+						result: {
+							summary: "dependency done",
+							steps: ["tests"],
+							tasks: ["dependency:1", "pr:1"],
+							ready: true,
+						},
+					} as never)
+				: run(request),
+	);
+	vi.mocked(readWorkTask).mockResolvedValueOnce({ task: seed, evidence: {} } as never);
+	vi.mocked(readWorkTask).mockRejectedValueOnce(new Error("PR patch missing"));
+	await runCoordinator(options as never);
+	expect(options.driver.publish).toHaveBeenCalledWith(
+		expect.anything(),
+		"committed-head",
+		[1],
+		undefined,
+	);
+	const report = options.conversations.saveCheckpoint.mock.calls.find(([key]) =>
+		key.startsWith("task-"),
+	);
+	expect(report?.[1]).toContain("deferred");
+});
+
+it("does not let an unchanged terminal top repository starve lower repositories under limit one", async () => {
+	const { options, repository } = fixture();
+	const saved = new Map<string, string>();
+	options.conversations.checkpoint = async (key) => saved.get(key) ?? null;
+	options.conversations.saveCheckpoint.mockImplementation(async (key, json) => {
+		saved.set(key, json);
+	});
+	await runCoordinator(options as never);
+	const lower = { ...repository, repository: "owner/lower" };
+	options.repositories = ["owner/repo", "owner/lower"];
+	options.runId = "next-cycle";
+	options.decisions.prioritize = async () => [repository, lower];
+	options.load = async () => [repository, lower];
+	options.driver.inspect.mockClear();
+	options.conversations.run.mockImplementation(async (request) => {
+		if (request.key === "preparation") {
+			await request.action("prepare", {});
+			return {
+				conversationId: 2,
+				result: { summary: "ready", steps: ["checked"], tasks: ["dependency:1"], ready: true },
+			} as never;
+		}
+		return request.key === "controller"
+			? ({
+					conversationId: 1,
+					result: {
+						repositories: [
+							{
+								repository: "owner/lower",
+								tasks: ["dependency:1"],
+								retainChanges: true,
+								reason: "not terminal",
+							},
+						],
+					},
+				} as never)
+			: request.key.startsWith("reviewer:")
+				? ({ conversationId: 3, result: { head: "committed-head", findings: [] } } as never)
+				: ({
+						conversationId: 2,
+						result: {
+							summary: "ready",
+							steps: ["checked"],
+							tasks: ["dependency:1"],
+							ready: true,
+						},
+					} as never);
+	});
+	await runCoordinator(options as never);
+	expect(options.driver.inspect.mock.calls[0]?.[0]).toBe("owner/lower");
 });

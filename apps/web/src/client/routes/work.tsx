@@ -89,10 +89,30 @@ export function WorkPage() {
 											<strong>{repository}</strong>
 											<span>{state.status}</span>
 										</div>
+										{state.dispositions?.map((item) => (
+											<p key={item.task}>
+												{item.task} · {item.outcome} {item.reason ?? ""}
+											</p>
+										))}
+										{state.detailsOmitted ? (
+											<p>
+												详细原因已省略；任务结果：
+												{state.tasks
+													.map(
+														(task, index) =>
+															`${task}=${state.dispositionOutcomes?.[index] === "C" ? "committed" : state.dispositionOutcomes?.[index] === "N" ? "reviewed_no_change" : state.dispositionOutcomes?.[index] === "D" ? "deferred" : "pending"}`,
+													)
+													.join(", ")}
+											</p>
+										) : null}
 										<div className="flex flex-wrap gap-x-4 gap-y-1">
-											<span>任务 {state.tasks.map((task) => `#${task}`).join(", ")}</span>
-											<span>Worker {state.worker ?? "—"}</span>
-											<span>Reviewer {state.reviewer ?? "—"}</span>
+											<span>任务 {state.tasks.join(", ")}</span>
+											<span>
+												Worker {state.worker ?? "—"} {state.workerModel ?? "执行模型"}
+											</span>
+											<span>
+												Reviewer {state.reviewer ?? "—"} {state.reviewerModel ?? "独立审查模型"}
+											</span>
 											<span>轮次 {state.round}/20</span>
 										</div>
 										<p className="break-all">SHA {state.head ?? "未提交"}</p>

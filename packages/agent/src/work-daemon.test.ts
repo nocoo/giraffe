@@ -18,6 +18,7 @@ vi.mock("./work-workspace.ts", () => ({
 			this.log = options.log;
 		}
 		publish = vi.fn(async () => {});
+		expectedWorkflows = async () => ["CI"];
 		closeIssue = vi.fn(async () => {});
 		check = async () => {
 			this.log("[执行结果] tests passed HEAD=abc");
@@ -131,7 +132,7 @@ it("respects pause and records upsert failures without losing local run completi
 it("completes no-work occurrences, byte-bounds telemetry and never writes in dry run", async () => {
 	vi.mocked(runCoordinator).mockImplementation(async (options) => {
 		options.observe?.("owner/repo", {
-			tasks: [1],
+			tasks: ["dependency:1"],
 			worker: 7,
 			reviewer: 8,
 			round: 2,
@@ -167,11 +168,15 @@ it("completes no-work occurrences, byte-bounds telemetry and never writes in dry
 it("persists push and follow-up then resumes without duplicate publication after failure", async () => {
 	vi.useFakeTimers();
 	vi.mocked(githubRead).mockResolvedValue({
-		workflow_runs: [{ head_sha: "head", status: "completed", conclusion: "success" }],
+		workflow_runs: [{ head_sha: "head", status: "completed", conclusion: "success", name: "CI" }],
 	});
 	let attempts = 0;
 	vi.mocked(runCoordinator).mockImplementation(async (options) => {
-		await options.driver.publish({ repository: "owner/repo" } as never, "head", [1]);
+		await options.driver.publish(
+			{ repository: "owner/repo", expectedWorkflows: ["CI"] } as never,
+			"head",
+			[1],
+		);
 		if (++attempts === 1) throw new Error("report failed after push");
 		return [];
 	});
@@ -196,7 +201,7 @@ it("heartbeats during injected follow-up wait and flushes terminal progress last
 	vi.mocked(githubRead).mockResolvedValue({ workflow_runs: [] });
 	vi.mocked(runCoordinator).mockImplementation(async (options) => {
 		options.observe?.("owner/repo", {
-			tasks: [1],
+			tasks: ["dependency:1"],
 			worker: 7,
 			reviewer: 8,
 			round: 1,
@@ -204,7 +209,11 @@ it("heartbeats during injected follow-up wait and flushes terminal progress last
 			head: "head",
 			status: "signed_off",
 		});
-		await options.driver.publish({ repository: "owner/repo" } as never, "head", [1]);
+		await options.driver.publish(
+			{ repository: "owner/repo", expectedWorkflows: ["CI"] } as never,
+			"head",
+			[1],
+		);
 		return [];
 	});
 	const { runtime, client, rows, daemon } = await fixture();
@@ -246,11 +255,15 @@ it("heartbeats during injected follow-up wait and flushes terminal progress last
 it("rejects changed recovered publication HEAD and reports failed trace uploads safely", async () => {
 	let head = "one";
 	vi.mocked(githubRead).mockResolvedValue({
-		workflow_runs: [{ head_sha: "one", status: "completed", conclusion: "success" }],
+		workflow_runs: [{ head_sha: "one", status: "completed", conclusion: "success", name: "CI" }],
 	});
 	vi.mocked(runCoordinator).mockImplementation(async (options) => {
 		await options.load();
-		await options.driver.publish({ repository: "owner/repo" } as never, head, []);
+		await options.driver.publish(
+			{ repository: "owner/repo", expectedWorkflows: ["CI"] } as never,
+			head,
+			[],
+		);
 		throw new Error("retry");
 	});
 	const { runtime, client, daemon } = await fixture();
@@ -286,7 +299,7 @@ it("retries only persisted terminal delivery after final Web upload fails", asyn
 	vi.setSystemTime(new Date("2026-10-03T00:00:00Z"));
 	vi.mocked(runCoordinator).mockImplementation(async (options) => {
 		options.observe?.("owner/repo", {
-			tasks: [1],
+			tasks: ["dependency:1"],
 			worker: 7,
 			reviewer: 8,
 			round: 20,
@@ -317,6 +330,23 @@ it("retries only persisted terminal delivery after final Web upload fails", asyn
 		const job = [...rows.values()].find((row) => row.type === "work-run");
 		expect(job?.status).toBe("attention");
 		expect(job?.payload).toEqual(terminal);
+	} finally {
+		await daemon.close();
+		await runtime.close();
+	}
+});
+
+it("finishes missing optional analysis sources as attention instead of pinning the work occurrence", async () => {
+	vi.mocked(runCoordinator).mockImplementation(async (options) => {
+		options.log("[分析证据缺失] ci/factory unknown");
+		options.analysisAttention?.();
+		return [];
+	});
+	const { runtime, rows, daemon } = await fixture();
+	try {
+		await daemon.tick(undefined, true);
+		expect(rows.get("work-cron")?.payload.completed).toBe(1);
+		expect([...rows.values()].find((row) => row.type === "work-run")?.status).toBe("attention");
 	} finally {
 		await daemon.close();
 		await runtime.close();
