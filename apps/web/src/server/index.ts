@@ -156,8 +156,8 @@ const app = createApp();
 
 export default {
 	queue: consumeFactory,
-	scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext) {
-		ctx.waitUntil(continueFactory(env));
+	scheduled(event: ScheduledController, env: Env, ctx: ExecutionContext) {
+		ctx.waitUntil(continueFactory(env, event.scheduledTime));
 	},
 	fetch(request: Request, env: Env, ctx: ExecutionContext): Response | Promise<Response> {
 		const path = new URL(request.url).pathname;
