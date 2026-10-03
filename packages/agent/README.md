@@ -36,6 +36,12 @@ The host never directly rolls back, releases or deploys. Normal push may trigger
 the repository's existing CI/CD release/deployment workflows. PR merge/closure is report-only.
 
 Scope remains discovered tasks only; ordinary issues cannot be authorized by Jev.
+Priority, worker routing and domain decisions each enforce a 16 KiB serialized
+UTF-8 body cap including `model` (not an exact token guarantee). Requests split by
+actual bytes, priority batches contain at most 25 repositories, and descriptions
+are clipped with omission markers/counts. IDs and original observations remain
+intact. All batches preflight before inference; an oversized single scope requires
+manual inspection/narrowing and fails without a provider call or oversized retry.
 PR diff/head and failed jobs/steps/logs are bounded live read-only evidence. Missing
 evidence defers its task. No-change PR cleanup is reviewed without fabricated
 commits; dependency no-change requires exact latest manifest/lock evidence.

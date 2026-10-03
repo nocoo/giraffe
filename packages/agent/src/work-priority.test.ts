@@ -1,6 +1,7 @@
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { ApiError } from "./client.ts";
 import { configSchema } from "./config.ts";
+import { JEV_MAX_REQUEST_BYTES, requestBytes } from "./jev-input.ts";
 import { loadPortfolio, type WorkRepository, workDecisions } from "./work-priority.ts";
 
 const workConfig = configSchema.parse({
@@ -31,6 +32,194 @@ const workRepository: WorkRepository = {
 	fetchedAt: "2026-10-03T00:00:00Z",
 	stale: false,
 };
+
+afterEach(() => vi.unstubAllGlobals());
+
+it("sends exactly the budgeted official SDK wire body including the model field", async () => {
+	let projected: unknown;
+	const reply = {
+		answers: {
+			worker: {
+				type: "choice",
+				choice: "executor_low",
+				confidence: 1,
+				probabilities: { executor_low: 1, executor_medium: 0, orchestrator_high: 0 },
+			},
+		},
+	};
+	await workDecisions(workConfig, async (input) => {
+		projected = input;
+		return reply;
+	}).worker(workRepository);
+	const model = 'jev"\\\n😀';
+	const config = {
+		...workConfig,
+		roles: { ...workConfig.roles, decision: { ...workConfig.roles.decision, model } },
+	};
+	const measured = { ...(projected as object), model };
+	config.roles.decision.model += "x".repeat(JEV_MAX_REQUEST_BYTES - requestBytes(measured));
+	const send = vi.fn<typeof fetch>(async (_url, init) => {
+		expect(Buffer.byteLength(String(init?.body))).toBe(JEV_MAX_REQUEST_BYTES);
+		expect(JSON.parse(String(init?.body))).toEqual({
+			...(projected as object),
+			model: config.roles.decision.model,
+		});
+		return Response.json({ ...reply, model: "fake", usage: { input_tokens: 1, output_tokens: 1 } });
+	});
+	vi.stubGlobal("fetch", send);
+	await workDecisions(config).worker(workRepository);
+	config.roles.decision.model += "x";
+	await expect(workDecisions(config).worker(workRepository)).rejects.toThrow(/16385.*16384/);
+	expect(send).toHaveBeenCalledTimes(1);
+});
+
+it("bounds every priority body, preserves all candidates and leaves originals untouched", async () => {
+	const repositories = Array.from({ length: 26 }, (_, index) => ({
+		...workRepository,
+		repository: `owner/repo${index}`,
+		issues: Array.from({ length: 12 }, (_, number) => ({
+			...(workRepository.issues[0] as WorkRepository["issues"][number]),
+			number: number + 1,
+			title: '😀"\\\n'.repeat(300),
+		})),
+		limitations: Array.from({ length: 20 }, () => "界".repeat(500)),
+	}));
+	const before = structuredClone(repositories);
+	const request = vi.fn(async (input) => {
+		expect(requestBytes(input)).toBeLessThanOrEqual(JEV_MAX_REQUEST_BYTES);
+		expect(input.model).toBe("jev");
+		expect(input.state.repositories[0].limitationsOmitted).toBe(16);
+		expect(input.state.repositories[0].limitations).toHaveLength(4);
+		return {
+			answers: Object.fromEntries(
+				Object.entries(input.questions).map(([key, question]) => {
+					const criteria = (question as { criteria: Record<string, string> }).criteria;
+					expect(Object.keys(criteria)).toHaveLength(13);
+					expect(criteria["dependency:1"]).toContain("clipped");
+					return [
+						key,
+						{
+							type: "choice",
+							choice: "none",
+							confidence: 1,
+							probabilities: Object.fromEntries(
+								Object.keys(criteria).map((id) => [id, id === "none" ? 1 : 0]),
+							),
+						},
+					];
+				}),
+			),
+		};
+	});
+	const ranked = await workDecisions(workConfig, request).prioritize(repositories);
+	expect(request.mock.calls.length).toBeGreaterThan(2);
+	expect(ranked.map((repository) => repository.repository)).toEqual(
+		repositories.map((repository) => repository.repository),
+	);
+	expect(ranked[0]?.items).toHaveLength(12);
+	expect(ranked[0]?.items[0]?.title).toBe(repositories[0]?.issues[0]?.title);
+	expect(repositories).toEqual(before);
+});
+
+it("preflights the entire portfolio and routing before any provider call", async () => {
+	const request = vi.fn();
+	const decisions = workDecisions(workConfig, request);
+	const large = {
+		...workRepository,
+		issues: Array.from({ length: 1000 }, (_, index) => ({
+			...(workRepository.issues[0] as WorkRepository["issues"][number]),
+			number: index + 1,
+		})),
+	};
+	await expect(decisions.prioritize([workRepository, large])).rejects.toThrow(
+		/priority.*owner\/repo.*bytes.*16384/,
+	);
+	await expect(
+		decisions.worker({ ...workRepository, repository: "x".repeat(17000) }),
+	).rejects.toThrow(/worker.*bytes.*16384/);
+	expect(request).not.toHaveBeenCalled();
+	expect(await decisions.prioritize([])).toEqual([]);
+});
+
+it("preserves CI candidate identities and full ranked titles", async () => {
+	const task: WorkRepository["tasks"][number] = {
+		id: "ci:1",
+		kind: "ci",
+		number: 1,
+		title: "CI".repeat(200),
+		url: "https://example.test",
+		updatedAt: "today",
+	};
+	const request = vi.fn(async (input) => {
+		expect(input.questions.repo_0.criteria["ci:1"]).toContain("clipped");
+		return {
+			answers: {
+				repo_0: {
+					type: "choice",
+					choice: "ci:1",
+					confidence: 1,
+					probabilities: { "dependency:1": 0, "ci:1": 1, none: 0 },
+				},
+			},
+		};
+	});
+	const result = await workDecisions(workConfig, request).prioritize([
+		{ ...workRepository, tasks: [task] },
+	]);
+	expect(result[0]?.items[0]).toEqual({ id: task.id, title: task.title, probability: 1 });
+});
+
+it("routes only all ordered authorized tasks with bounded titles and flags", async () => {
+	const repository = {
+		...workRepository,
+		tasks: Array.from({ length: 20 }, (_, index) => ({
+			id: `ci:${index}`,
+			kind: "ci" as const,
+			number: index + 1,
+			title: "😀".repeat(500),
+			url: "https://example.test",
+			updatedAt: "today",
+		})),
+		limitations: ["limited"],
+	};
+	const before = structuredClone(repository);
+	const request = vi.fn(async (input) => {
+		expect(requestBytes(input)).toBeLessThanOrEqual(JEV_MAX_REQUEST_BYTES);
+		expect(input.state.repository).toEqual({
+			repository: "owner/repo",
+			stale: false,
+			limited: true,
+			tasks: repository.tasks.map(({ id, kind }) => ({
+				id,
+				kind,
+				title: `${"😀".repeat(180)} [clipped 320 codepoints]`,
+			})),
+		});
+		expect(JSON.stringify(input)).not.toMatch(/issues|https:\/\/|updatedAt|workflows/);
+		return {
+			answers: {
+				worker: {
+					type: "choice",
+					choice: "executor_low",
+					confidence: 1,
+					probabilities: { executor_low: 1, executor_medium: 0, orchestrator_high: 0 },
+				},
+			},
+		};
+	});
+	await workDecisions(workConfig, request).worker(repository);
+	expect(repository).toEqual(before);
+	await expect(
+		workDecisions(workConfig, request).worker({
+			...repository,
+			tasks: Array.from({ length: 1000 }, (_, index) => ({
+				...(repository.tasks[0] as WorkRepository["tasks"][number]),
+				id: `ci:${index}`,
+			})),
+		}),
+	).rejects.toThrow(/worker.*bytes/);
+	expect(request).toHaveBeenCalledTimes(1);
+});
 
 it("asks once per repository in batches of 25 and preserves every issue/PR", async () => {
 	const calls: unknown[] = [];
@@ -73,9 +262,12 @@ it("asks once per repository in batches of 25 and preserves every issue/PR", asy
 		stale: false,
 		fetchedAt: "2026-10-03T00:00:00Z",
 		limitations: [],
+		limitationsOmitted: 0,
 	});
 	expect(input.state.instructions).toContain("untrusted");
-	expect(input.questions.repo_0?.instructions).toBe("Prioritize owner/repo0.");
+	expect(input.questions.repo_0?.instructions).toBe(
+		"Prioritize the repository at state.repositories[0].",
+	);
 	expect(input.questions.repo_0?.criteria["dependency:1"]).toBe("Fix test");
 	expect(JSON.stringify(input)).not.toContain("github.com");
 });

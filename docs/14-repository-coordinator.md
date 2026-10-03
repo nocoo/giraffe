@@ -20,6 +20,18 @@ GitHub collection occurs. Jev asks one candidate-priority question per repositor
 in batches of at most 25, then selects configured worker model/thinking level.
 Four domain conversations save reports alongside controller planning.
 
+All three Jev paths cap the serialized UTF-8 request body, including `model`, at
+16 KiB. This is a byte budget, not an exact token guarantee. Priority batches are
+greedily packed by bytes and repository count; domain questions split sequentially
+when necessary. Descriptions are clipped by Unicode codepoint with explicit
+markers; omitted limitations, count entries and evidence have numeric totals.
+Repository, candidate and evidence identities remain intact. Worker routing sends
+only repository flags and ordered authorized task IDs, kinds and clipped titles.
+Original observations and ranked results retain full descriptions. All batches
+are preflighted before the first provider call. An oversized single scope fails
+with its lane, repository, byte count and limit for manual inspection/narrowing;
+no candidates are silently dropped and the oversized payload is never retried.
+
 Each selected repository uses its existing personal main checkout. Preserve ahead
 commits and reviewed dirty paths. Workers cannot overwrite/commit pre-existing
 dirty files, create branches/worktrees/clones, push or discard changes. Baseline
