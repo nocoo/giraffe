@@ -4,15 +4,15 @@ import { PageHeader } from "@nocoo/basalt/components/page-header";
 import { useEffect, useMemo, useState } from "react";
 import { useAnalysisRead } from "../components/layout/use-analysis-read";
 import { formatPreciseDate } from "../lib/format";
-import { loadRepairs, type RepairsData, repairBoard, setRepairPaused } from "../viewmodels/repairs";
+import { loadWork, setWorkPaused, type WorkData, workBoard } from "../viewmodels/work";
 
-export function RepairsPage() {
-	const [data, setData] = useState<RepairsData | null>(null);
+export function WorkPage() {
+	const [data, setData] = useState<WorkData | null>(null);
 	const [error, setError] = useState("");
 	const [busy, setBusy] = useState(false);
 	const [now, setNow] = useState(Date.now);
 	useAnalysisRead(
-		loadRepairs,
+		loadWork,
 		(value) => {
 			setData(value);
 			setError("");
@@ -24,12 +24,12 @@ export function RepairsPage() {
 		const timer = setInterval(() => setNow(Date.now()), 5000);
 		return () => clearInterval(timer);
 	}, []);
-	const board = useMemo(() => (data ? repairBoard(data, now) : null), [data, now]);
+	const board = useMemo(() => (data ? workBoard(data, now) : null), [data, now]);
 	async function pause() {
 		if (!data || !board) return;
 		setBusy(true);
 		try {
-			const control = await setRepairPaused(data.account_id, data.control, !board.desiredPaused);
+			const control = await setWorkPaused(data.account_id, data.control, !board.desiredPaused);
 			setData({ ...data, control });
 		} catch {
 			setError("控制保存失败，请重新读取后重试。");
@@ -38,7 +38,7 @@ export function RepairsPage() {
 		}
 	}
 	return (
-		<div className="space-y-4" data-testid="repairs-desk">
+		<div className="space-y-4" data-testid="work-desk">
 			<PageHeader
 				title="Work"
 				description="一个本机 cron · main 原子提交 · 独立审查 ≤20 轮 · 主机推送与三次 SHA 跟进"
@@ -83,13 +83,31 @@ export function RepairsPage() {
 								<time>{formatPreciseDate(job.updatedAt)}</time>
 							</div>
 							<ol className="mt-3 space-y-2 break-words text-sm">
-								{job.repositories ? (
-									<li>
-										<pre className="whitespace-pre-wrap">
-											{JSON.stringify(job.repositories, null, 2)}
-										</pre>
+								{Object.entries(job.repositories).map(([repository, state]) => (
+									<li key={repository} className="rounded-md border border-basalt-border p-3">
+										<div className="flex flex-wrap justify-between gap-2">
+											<strong>{repository}</strong>
+											<span>{state.status}</span>
+										</div>
+										<div className="flex flex-wrap gap-x-4 gap-y-1">
+											<span>任务 {state.tasks.map((task) => `#${task}`).join(", ")}</span>
+											<span>Worker {state.worker ?? "—"}</span>
+											<span>Reviewer {state.reviewer ?? "—"}</span>
+											<span>轮次 {state.round}/20</span>
+										</div>
+										<p className="break-all">SHA {state.head ?? "未提交"}</p>
+										{state.followup ? (
+											<p>
+												跟进 {state.followup.checks}/3 · {state.followup.outcome}
+											</p>
+										) : null}
+										{state.findings.map((finding) => (
+											<p key={finding} className="text-basalt-muted-foreground">
+												{finding}
+											</p>
+										))}
 									</li>
-								) : null}
+								))}
 								{[...new Set(job.events)].map((event) => (
 									<li key={event}>{event}</li>
 								))}

@@ -1,4 +1,9 @@
+import { createModels } from "@earendil-works/pi-ai/models";
+import { MemoryStorage } from "@earendil-works/pi-durable";
 import { expect, it, vi } from "vitest";
+import { createCron } from "./cron.ts";
+import { WorkTransportError } from "./github.ts";
+import { openRuntime } from "./runtime.ts";
 import { runCoordinator } from "./work-coordinator.ts";
 import { verifyWorkIssues, workerActions } from "./work-tools.ts";
 
@@ -152,7 +157,7 @@ function fixture() {
 				publish: vi.fn(async () => {}),
 			},
 			conversations: {
-				checkpoint: async (): Promise<string | null> => null,
+				checkpoint: async (_key: string): Promise<string | null> => null,
 				saveCheckpoint: vi.fn(),
 				run: vi.fn(async (request) =>
 					request.key.startsWith("reviewer:")
@@ -211,9 +216,8 @@ it("rejects mismatched local HEAD even when push is disabled", async () => {
 		.mockImplementationOnce(async () => workspace)
 		.mockImplementationOnce(async () => ({ ...workspace, head: "committed-head" }))
 		.mockImplementation(async () => workspace);
-	await expect(runCoordinator({ ...options, push: false } as never)).rejects.toThrow(
-		/local handoff/,
-	);
+	await expect(runCoordinator({ ...options, push: false } as never)).resolves.toEqual([]);
+	expect(options.log).toHaveBeenCalledWith(expect.stringContaining("local handoff"));
 	expect(options.driver.publish).not.toHaveBeenCalled();
 });
 
@@ -276,17 +280,17 @@ it("does not accept fictional preparation, incomplete worker handoffs or cancell
 				} as never;
 			return result;
 		});
-		await expect(
-			runCoordinator({
-				...options,
-				...(mode === "cancel" ? { signal: AbortSignal.abort() } : {}),
-			} as never),
-		).rejects.toThrow();
+		const running = runCoordinator({
+			...options,
+			...(mode === "cancel" ? { signal: AbortSignal.abort() } : {}),
+		} as never);
+		if (mode === "cancel") await expect(running).rejects.toThrow();
+		else await expect(running).resolves.toEqual([]);
 		expect(options.driver.publish).not.toHaveBeenCalled();
 	}
 	const { options } = fixture();
 	vi.mocked(workerActions).mockReturnValueOnce({ committed: [], action: vi.fn() });
-	await expect(runCoordinator(options as never)).rejects.toThrow(/exhausted/);
+	await expect(runCoordinator(options as never)).resolves.toEqual([]);
 });
 
 it("awaits parallel analysts and propagates failure without reporting successful completion", async () => {
@@ -326,11 +330,14 @@ it("retries independent findings and forbids reviewer writes", async () => {
 	);
 	expect(reviews).toBe(2);
 	expect(options.driver.publish).toHaveBeenCalledTimes(1);
-	expect(options.conversations.saveReviewState).toHaveBeenLastCalledWith("run:owner/repo", {
-		round: 2,
-		findings: [],
-		head: "committed-head",
-	});
+	expect(options.conversations.saveReviewState).toHaveBeenLastCalledWith(
+		expect.stringContaining("task-"),
+		{
+			round: 2,
+			findings: [],
+			head: "committed-head",
+		},
+	);
 });
 
 it("does not push when independent findings exhaust all rounds", async () => {
@@ -345,7 +352,7 @@ it("does not push when independent findings exhaust all rounds", async () => {
 				} as never)
 			: run(request),
 	);
-	await expect(runCoordinator(options as never)).rejects.toThrow("20 rounds exhausted");
+	await expect(runCoordinator(options as never)).resolves.toEqual([]);
 	expect(options.driver.publish).not.toHaveBeenCalled();
 });
 
@@ -385,10 +392,10 @@ it("rejects unknown preparation actions and repeated prepare", async () => {
 
 it("resumes frozen plan, prepared workspace and approval after restart without replaying tools", async () => {
 	const { options } = fixture();
-	let saved: string | null = null;
-	options.conversations.checkpoint = async () => saved;
-	options.conversations.saveCheckpoint.mockImplementation(async (_key, json) => {
-		saved = json;
+	const saved = new Map<string, string>();
+	options.conversations.checkpoint = async (key: string) => saved.get(key) ?? null;
+	options.conversations.saveCheckpoint.mockImplementation(async (key, json) => {
+		saved.set(key, json);
 	});
 	options.driver.publish.mockRejectedValueOnce(new Error("transport failed"));
 	await expect(runCoordinator(options as never)).rejects.toThrow("transport failed");
@@ -428,4 +435,154 @@ it("never treats ordinary issues or report-only PRs as executable dependency wor
 	issue.title = "Build a new feature";
 	await expect(runCoordinator(options as never)).resolves.toEqual([]);
 	expect(options.driver.prepare).not.toHaveBeenCalled();
+});
+
+it("shares terminal task identity across occurrences and priority order, but not changed evidence", async () => {
+	const { options, repository } = fixture();
+	const firstIssue = repository.issues[0];
+	if (!firstIssue) throw new Error("Missing issue.");
+	repository.issues.push({ ...firstIssue, number: 2 });
+	const saved = new Map<string, string>();
+	options.conversations.checkpoint = async (key) => saved.get(key) ?? null;
+	options.conversations.saveCheckpoint.mockImplementation(async (key, json) => {
+		saved.set(key, json);
+	});
+	let order = [1, 2];
+	options.conversations.run.mockImplementation(async (request) => {
+		if (request.key === "controller")
+			return {
+				conversationId: 1,
+				result: {
+					repositories: [
+						{ repository: "owner/repo", issues: order, retainChanges: true, reason: "priority" },
+					],
+				},
+			} as never;
+		throw new Error("blocked preparation");
+	});
+	await runCoordinator(options as never);
+	const first = options.conversations.run.mock.calls.length;
+	options.runId = "second-occurrence";
+	order = [2, 1];
+	await runCoordinator(options as never);
+	expect(options.conversations.run.mock.calls.length).toBe(first + 1);
+	firstIssue.updatedAt = "changed";
+	options.runId = "third-occurrence";
+	await runCoordinator(options as never);
+	expect(options.conversations.run.mock.calls.length).toBe(first + 3);
+});
+
+it("keeps reviewed local work publishable in a later occurrence without another fix", async () => {
+	const { options } = fixture();
+	const saved = new Map<string, string>();
+	options.conversations.checkpoint = async (key) => saved.get(key) ?? null;
+	options.conversations.saveCheckpoint.mockImplementation(async (key, json) => {
+		saved.set(key, json);
+	});
+	await runCoordinator({ ...options, push: false } as never);
+	expect([...saved.values()].some((json) => JSON.parse(json).status === "locally_reviewed")).toBe(
+		true,
+	);
+	options.runId = "later-live-occurrence";
+	options.conversations.reviewState = async () => ({
+		round: 1,
+		head: "committed-head",
+		findings: [],
+	});
+	options.conversations.run.mockClear();
+	await runCoordinator(options as never);
+	expect(options.driver.publish).toHaveBeenCalledOnce();
+	expect(
+		options.conversations.run.mock.calls.some(([request]) => request.key.startsWith("worker:")),
+	).toBe(false);
+});
+
+it("does not cache a transport verification failure as terminal work", async () => {
+	const { options } = fixture();
+	vi.mocked(verifyWorkIssues).mockRejectedValueOnce(new WorkTransportError("offline"));
+	await expect(runCoordinator(options as never)).rejects.toThrow("offline");
+	expect(
+		options.conversations.saveCheckpoint.mock.calls.some(([key]) => key.startsWith("task-")),
+	).toBe(false);
+	await runCoordinator(options as never);
+	expect(options.driver.publish).toHaveBeenCalledOnce();
+});
+
+it("skips a recovered published repository before verifying its now closed issues", async () => {
+	const { options } = fixture();
+	const saved = new Map<string, string>();
+	options.conversations.checkpoint = async (key) => saved.get(key) ?? null;
+	options.conversations.saveCheckpoint.mockImplementation(async (key, json) => {
+		saved.set(key, json);
+	});
+	options.driver.publish.mockRejectedValueOnce(new Error("closure failed after push"));
+	await expect(runCoordinator(options as never)).rejects.toThrow("closure failed");
+	vi.mocked(verifyWorkIssues).mockClear();
+	await runCoordinator({ ...options, completedPublications: ["owner/repo"] } as never);
+	expect(verifyWorkIssues).not.toHaveBeenCalled();
+});
+
+it("finishes exhausted repositories over two cron occurrences and restarts only changed source tasks", async () => {
+	const { options, repository } = fixture();
+	const saved = new Map<string, string>();
+	options.conversations.checkpoint = async (key) => saved.get(key) ?? null;
+	options.conversations.saveCheckpoint.mockImplementation(async (key, json) => {
+		saved.set(key, json);
+	});
+	const review = { round: 0, findings: [] as string[], head: null as string | null };
+	options.conversations.reviewState = async () => review;
+	options.conversations.saveReviewState.mockImplementation(async (_key, value) => {
+		Object.assign(review, value);
+	});
+	const run = options.conversations.run.getMockImplementation();
+	if (!run) throw new Error("Missing model fixture.");
+	options.conversations.run.mockImplementation(async (request) =>
+		request.key.startsWith("reviewer:")
+			? ({
+					conversationId: 4,
+					result: { head: "committed-head", findings: ["test cause still unresolved"] },
+				} as never)
+			: run(request),
+	);
+	const runtime = await openRuntime({ storage: new MemoryStorage(), models: createModels() });
+	let now = "2026-10-03T00:00:00Z";
+	const statuses: { completed: number }[] = [];
+	const cron = await createCron({
+		harness: runtime.harness,
+		expression: "0 * * * *",
+		timezone: "UTC",
+		enabled: true,
+		maxRounds: 20,
+		now: () => now,
+		isPaused: async () => false,
+		publish: async (status) => {
+			statuses.push(status);
+		},
+		run: async (runId) => {
+			await runCoordinator({ ...options, runId } as never);
+		},
+	});
+	try {
+		await cron.tick(undefined, true);
+		expect(review.round).toBe(20);
+		const workers = () =>
+			options.conversations.run.mock.calls.filter(([request]) => request.key.startsWith("worker:"))
+				.length;
+		expect(workers()).toBe(20);
+		now = "2026-10-03T01:00:00Z";
+		await cron.tick(undefined, true);
+		expect(workers()).toBe(20);
+		expect(statuses.at(-1)?.completed).toBe(2);
+		const issue = repository.issues[0];
+		if (!issue) throw new Error("Missing issue.");
+		issue.updatedAt = "new-evidence";
+		Object.assign(review, { round: 0, findings: [], head: null });
+		now = "2026-10-03T02:00:00Z";
+		await cron.tick(undefined, true);
+		expect(workers()).toBe(40);
+		expect(statuses.at(-1)?.completed).toBe(3);
+		expect(options.driver.publish).not.toHaveBeenCalled();
+	} finally {
+		await runtime.close();
+	}
 });

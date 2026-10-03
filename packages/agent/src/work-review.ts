@@ -1,4 +1,5 @@
 import { safeDiagnostics } from "./diagnostics.ts";
+import { WorkTransportError } from "./github.ts";
 
 export type WorkReviewState = { round: number; findings: string[]; head: string | null };
 
@@ -34,6 +35,11 @@ export async function reviewWork(options: {
 				return head;
 			}
 		} catch (error) {
+			if (error instanceof WorkTransportError || options.signal?.aborted) {
+				state.round--;
+				await options.save(state);
+				throw error;
+			}
 			state.findings = [
 				safeDiagnostics(error instanceof Error ? error.message : "Work round failed."),
 			];

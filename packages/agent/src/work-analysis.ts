@@ -63,29 +63,41 @@ export function residentAnalysis(options: {
 	log: (line: string) => void;
 }) {
 	return async (repositories: WorkRepository[], runId: string) => {
-		const now = new Date().toISOString();
-		const catalog = await options.client.observation("repos?scope=all");
-		const collected = await Promise.all(
-			DOMAINS.map(async (domain) => {
-				const source = await options.client.observation(
-					`${domain === "cd" ? "factory" : domain}?scope=all`,
-				);
-				return [domain, source] as const;
-			}),
-		);
+		const key = `${runId}:analysis-input`;
+		const saved = await options.conversations.checkpoint(key);
+		const frozen = saved ? JSON.parse(saved) : null;
+		const now: string = frozen?.now ?? new Date().toISOString();
+		const catalog = frozen?.catalog ?? (await options.client.observation("repos?scope=all"));
+		const collected: [Domain, Awaited<ReturnType<GiraffeClient["observation"]>>][] =
+			frozen?.collected ??
+			(await Promise.all(
+				DOMAINS.map(async (domain) => {
+					const source = await options.client.observation(
+						`${domain === "cd" ? "factory" : domain}?scope=all`,
+					);
+					return [domain, source] as const;
+				}),
+			));
 		const prepared = new Map<Domain, AnalysisInput>();
 		for (const [domain, source] of collected) {
 			const input = buildInput("portfolio/all", domain, [source], now);
 			prepared.set(domain, { ...input, scope: "global", repository: null });
 		}
-		const judgments = await decisionClient(options.config)([...prepared.values()]);
+		const judgments: Awaited<ReturnType<ReturnType<typeof decisionClient>>> =
+			frozen?.judgments ?? (await decisionClient(options.config)([...prepared.values()]));
+		if (!frozen)
+			await options.conversations.saveCheckpoint(
+				key,
+				JSON.stringify({ now, catalog, collected, judgments, repositories }),
+			);
+		const portfolio: WorkRepository[] = frozen?.repositories ?? repositories;
 		const outputs = await Promise.allSettled(
 			DOMAINS.map(async (domain) => {
 				const source = collected.find(([key]) => key === domain)?.[1];
 				if (!source) throw new Error("Analysis source missing.");
 				const inputs: AnalysisInput[] = [];
 				const rows = (value: unknown) => (Array.isArray(value) ? value.map(object) : []);
-				for (const repository of repositories) {
+				for (const repository of portfolio) {
 					const data =
 						domain === "issues"
 							? {
@@ -159,11 +171,11 @@ export function residentAnalysis(options: {
 					},
 					now,
 				);
-				if (!options.dryRun)
-					await options.client.create(
-						"reports",
-						reportInput(`analysis-${digest({ runId, domain }).slice(0, 48)}`, report),
-					);
+				if (!options.dryRun) {
+					const id = `analysis-${digest({ runId, domain }).slice(0, 48)}`;
+					if (!(await options.client.get("reports", id)))
+						await options.client.create("reports", reportInput(id, report));
+				}
 				options.log(
 					`[常驻 ${domain} 会话 ${reply.conversationId}] ${report.verdict}：${report.summary} | ${options.dryRun ? "dry run 不写线上" : "已写线上报告"}`,
 				);

@@ -4,13 +4,13 @@ import { apiGet, apiPost, apiWrite } from "../lib/api";
 import { ApiError } from "../lib/errors";
 import { ensureSession, getActiveAccountId } from "./session";
 
-export type RepairsData = {
+export type WorkData = {
 	account_id: string;
 	jobs: Resource[];
 	cron: Resource | null;
 	control: Resource | null;
 };
-export function repairBoard(data: RepairsData, now: number) {
+export function workBoard(data: WorkData, now: number) {
 	const errors: string[] = [];
 	const jobs = data.jobs
 		.flatMap((row) => {
@@ -56,7 +56,7 @@ async function record(account: string, id: string): Promise<Resource | null> {
 		throw error;
 	}
 }
-export async function loadRepairs(): Promise<RepairsData> {
+export async function loadWork(): Promise<WorkData> {
 	const account = await ensureSession();
 	const [cron, control] = await Promise.all([
 		record(account, "work-cron"),
@@ -88,7 +88,7 @@ export async function loadRepairs(): Promise<RepairsData> {
 	}
 	throw new Error("Work history exceeds display bound");
 }
-export async function setRepairPaused(account: string, current: Resource | null, paused: boolean) {
+export async function setWorkPaused(account: string, current: Resource | null, paused: boolean) {
 	if (getActiveAccountId() !== account || (current && current.account_id !== account))
 		throw new Error("Account changed");
 	const path = `agent/accounts/${account}/records`;

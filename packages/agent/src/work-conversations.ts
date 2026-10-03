@@ -14,6 +14,7 @@ import type { z } from "zod";
 import type { Config } from "./config.ts";
 import { safeDiagnostics } from "./diagnostics.ts";
 import { digest } from "./evidence.ts";
+import { WorkTransportError } from "./github.ts";
 import type { AgentRuntime } from "./runtime.ts";
 import type { WorkerRole } from "./work-priority.ts";
 import type { WorkReviewState } from "./work-review.ts";
@@ -255,7 +256,7 @@ export function workConversations(options: {
 				);
 				const settled = await submitted.wait(context);
 				if (settled.status !== "done" || ticket.result === undefined)
-					throw new Error(
+					throw new WorkTransportError(
 						`Conversation ${request.key} did not return a validated handoff (${settled.status}).`,
 					);
 				return { conversationId, result: request.schema.parse(ticket.result) };

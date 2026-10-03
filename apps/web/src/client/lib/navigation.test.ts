@@ -13,7 +13,7 @@ import { APP_PATHS } from "./routes";
 describe("navigation", () => {
 	it("covers 01 section 9 paths and breadcrumbs", () => {
 		expect(NAV_GROUPS.map((group) => [group.label, group.items.map((item) => item.href)])).toEqual([
-			["总览", ["/analysis", "/repairs", "/factory", "/insights"]],
+			["总览", ["/analysis", "/work", "/factory", "/insights"]],
 			["仓库健康", ["/", "/ci", "/alerts"]],
 			["待办", ["/issues", "/pulls", "/inbox"]],
 			["系统", ["/refresh", "/settings"]],
@@ -25,7 +25,7 @@ describe("navigation", () => {
 			"/",
 			"/factory",
 			"/analysis",
-			"/repairs",
+			"/work",
 			"/refresh",
 			"/issues",
 			"/pulls",

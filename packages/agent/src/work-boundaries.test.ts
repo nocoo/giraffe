@@ -2,7 +2,7 @@ import { expect, it } from "vitest";
 import { configSchema } from "./config.ts";
 import { safeDiagnostics } from "./diagnostics.ts";
 import { githubRead } from "./github.ts";
-import { cronStatusSchema, workRunSchema } from "./work-contracts.ts";
+import { boundedProgress, cronStatusSchema, workRunSchema } from "./work-contracts.ts";
 
 it("keeps diagnostic credentials out of bounded persisted progress", () => {
 	const output = safeDiagnostics(
@@ -26,4 +26,31 @@ it("rejects unsafe live read paths and old schedules", async () => {
 			.success,
 	).toBe(true);
 	expect(cronStatusSchema.safeParse({}).success).toBe(false);
+});
+
+it("bounds multibyte events and typed per-repository progress below the generic API budget", () => {
+	const repositories = Object.fromEntries(
+		Array.from({ length: 30 }, (_, index) => [
+			`owner/repo-${index}`,
+			{
+				tasks: [1, 2],
+				worker: 1,
+				reviewer: 2,
+				round: 20,
+				findings: Array(8).fill("汉".repeat(500)),
+				head: "abc",
+				status: "exhausted",
+			},
+		]),
+	);
+	const bounded = boundedProgress({
+		occurrence: "run",
+		events: Array(80).fill("汉".repeat(2000)),
+		updatedAt: "2026-10-03T00:00:00Z",
+		repositories,
+	});
+	expect(Buffer.byteLength(JSON.stringify(bounded))).toBeLessThanOrEqual(60000);
+	expect(workRunSchema.parse(bounded).repositories["owner/repo-0"]?.round).toBe(20);
+	expect(Object.keys(bounded.repositories)).toHaveLength(25);
+	expect(boundedProgress({ ...bounded, repositories: {}, events: [] }).events).toEqual([]);
 });

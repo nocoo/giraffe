@@ -46,22 +46,6 @@ export const resourceSchema = z.object({
 });
 export type Resource = z.infer<typeof resourceSchema>;
 
-export const analysisRequestSchema = z
-	.strictObject({
-		scope: scopeSchema,
-		repository: repositorySchema.nullable(),
-		domains: z
-			.array(domainSchema)
-			.min(1)
-			.max(4)
-			.refine((items) => new Set(items).size === items.length),
-	})
-	.refine(
-		(request) => (request.scope === "repo") === (request.repository !== null),
-		"Repository must match scope",
-	);
-export type AnalysisRequest = z.infer<typeof analysisRequestSchema>;
-
 export const sourceSchema = z.strictObject({
 	resource: z.string(),
 	version: z.string().nullable(),
@@ -154,18 +138,3 @@ export const analysisReportSchema = specialistSchema.extend({
 	}),
 });
 export type AnalysisReport = z.infer<typeof analysisReportSchema>;
-
-export const heartbeatSchema = z.strictObject({
-	schemaVersion: z.literal(1),
-	runnerId: z.string(),
-	version: z.string(),
-	lastSeenAt: time,
-	state: z.enum(["idle", "working", "offline", "error"]),
-	currentJob: z.string().nullable(),
-	models: z.strictObject({
-		orchestrator: z.string(),
-		decision: z.string(),
-		executor: z.string(),
-	}),
-	domains: z.array(domainSchema),
-});

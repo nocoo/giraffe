@@ -20,7 +20,7 @@ it("uses browser Access and CSRF for Agent requests and removes old cloud endpoi
 	await call(`accounts/${account.id}/activate`, "POST");
 	const prefix = `agent/accounts/${account.id}`;
 	const input = {
-		type: "analysis-request",
+		type: "work-run",
 		status: "pending",
 		payload: { scope: "global", repository: null, domains: ["issues", "prs", "ci", "cd"] },
 	};
@@ -28,7 +28,7 @@ it("uses browser Access and CSRF for Agent requests and removes old cloud endpoi
 	const response = await call(`${prefix}/jobs`, "POST", input);
 	expect(response.status).toBe(201);
 	const item = ((await response.json()) as { item: { id: string } }).item;
-	expect((await call(`${prefix}/jobs?type=analysis-request`)).status).toBe(200);
+	expect((await call(`${prefix}/jobs?type=work-run`)).status).toBe(200);
 	expect(
 		(await call(`${prefix}/jobs/${item.id}`, "PATCH", { revision: 1, status: "cancelled" })).status,
 	).toBe(200);

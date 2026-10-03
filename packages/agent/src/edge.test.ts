@@ -1,12 +1,11 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
-import { GiraffeClient } from "./client.ts";
 import { configSchema, homeDirectory, writePrivateJson } from "./config.ts";
-import type { AnalysisReport, Domain, Observation } from "./contracts.ts";
+import type { Domain, Observation } from "./contracts.ts";
 import { decisionClient } from "./decision.ts";
-import { buildInput, collectInput, globalInput, object, validReports } from "./evidence.ts";
+import { buildInput, object } from "./evidence.ts";
 import { acquireInstance } from "./instance.ts";
 import { configuredModels } from "./models.ts";
 
@@ -58,13 +57,6 @@ const envelope = (
 	selection: { scope: "all", statisticsFilter: false },
 	...changes,
 });
-const credential = {
-	baseUrl: "http://localhost:2",
-	token: "test",
-	account_id: "a",
-	expires_at: "2099-01-01T00:00:00.000Z",
-	scopes: [],
-};
 
 it("uses an OS-released SQLite transaction as the single-instance lock", () => {
 	const directory = temp();
@@ -232,98 +224,4 @@ it("builds every source type, flags incomplete history and safely handles URL/te
 	expect(buildInput("owner/repo", "issues", [envelope({ issues: "invalid" })], now).counts).toEqual(
 		{},
 	);
-});
-
-it("fetches exactly the requested domain sources and distinguishes missing data from API failures", async () => {
-	const send = vi.fn<typeof fetch>(async () => Response.json(envelope({ issues: [] })));
-	const client = new GiraffeClient(credential, send);
-	for (const domain of ["issues", "prs", "ci", "cd"] as const)
-		expect((await collectInput(client, "owner/repo", domain, now)).domain).toBe(domain);
-	expect(send).toHaveBeenCalledTimes(9);
-	send.mockResolvedValueOnce(
-		Response.json({ error: { code: "snapshot_missing" } }, { status: 409 }),
-	);
-	expect((await collectInput(client, "owner/repo", "issues", now)).sources[0]?.complete).toBe(
-		false,
-	);
-	send.mockResolvedValueOnce(
-		Response.json({ error: { code: "token_unauthorized" } }, { status: 401 }),
-	);
-	await expect(collectInput(client, "owner/repo", "issues", now)).rejects.toThrow(/401/);
-});
-
-it("marks stale global summaries and never invents missing reports", () => {
-	const reports = Array.from(
-		{ length: 30 },
-		(_, index): AnalysisReport => ({
-			schemaVersion: 1,
-			scope: "repo",
-			repository: `owner/repo${index}`,
-			domain: "ci",
-			sourceVersion: `v${index}`,
-			observedAt: now,
-			generatedAt: now,
-			verdict: "attention",
-			summary: "An observed issue",
-			findings: [],
-			actions: [],
-			limitations: [],
-			sources: [
-				{
-					resource: "ci",
-					version: "v",
-					fetchedAt: "2026-09-01T00:00:00Z",
-					stale: false,
-					complete: true,
-				},
-			],
-			evidence: [],
-			omitted: 0,
-			judgment: {
-				model: "jev",
-				choice: "review",
-				confidence: 1,
-				probabilities: { review: 1, routine: 0, urgent: 0, unknown: 0 },
-			},
-			producer: {
-				orchestrator: "planner",
-				executor: "worker",
-				decision: "jev",
-				conversationId: 1,
-				jobId: "job",
-			},
-		}),
-	);
-	const input = globalInput(
-		"ci",
-		[
-			...reports,
-			{
-				...(reports[0] as AnalysisReport),
-				generatedAt: "2026-10-01T10:00:00Z",
-			},
-		],
-		reports.map((report) => report.repository as string),
-		now,
-	);
-	expect(input.omitted).toBe(6);
-	expect(input.evidence.every((item) => item.state === "unknown")).toBe(true);
-	const stored = {
-		payload: reports[0] as AnalysisReport,
-		status: "completed",
-		repository: "owner/repo0",
-		source_version: "v0",
-	};
-	expect(
-		validReports([
-			stored,
-			{ ...stored, payload: {} },
-			{ ...stored, status: "failed" },
-			{ ...stored, source_version: "different" },
-			{ ...stored, repository: "other/repo" },
-		]),
-	).toHaveLength(1);
-	const directory = temp();
-	writePrivateJson(join(directory, "output.json"), input);
-	expect(JSON.parse(readFileSync(join(directory, "output.json"), "utf8")).sources).toHaveLength(30);
 });

@@ -6,7 +6,6 @@ import { stripVTControlCharacters } from "node:util";
 import { z } from "zod";
 import { repositorySchema } from "./contracts.ts";
 import { safeDiagnostics } from "./diagnostics.ts";
-import { digest } from "./evidence.ts";
 import { type LocalRunner, runLocal } from "./repair-local.ts";
 
 export type WorkInspection = {
@@ -21,7 +20,6 @@ export type WorkInspection = {
 	checks: string[];
 	manager: "bun" | "npm";
 	instructions: string;
-	policy: string;
 	hooksPath: string;
 };
 const blockedFile = (name: string) =>
@@ -192,19 +190,9 @@ export class WorkWorkspace {
 		const hooksPath = await git("config", "--get", "core.hooksPath");
 		if (!hooksPath || hooksPath.startsWith("/") || hooksPath.split("/").includes(".."))
 			throw new Error("Local executable Git hooks are required.");
-		const hooks: string[] = [];
 		for (const hook of ["pre-commit", "pre-push"]) {
 			const file = join(path, hooksPath, hook);
 			await access(file, constants.X_OK);
-			hooks.push(await readFile(file, "utf8"));
-		}
-		for (const file of paths.filter(
-			(file) =>
-				file.startsWith(".husky/") || /(?:vitest|biome|eslint|tsconfig|jest|coverage)/.test(file),
-		)) {
-			const target = join(path, file);
-			if (!(await lstat(target)).isSymbolicLink())
-				hooks.push(`${file}\n${gatePolicyContent(file, await readFile(target, "utf8"))}`);
 		}
 		const instructions = await readFile(join(path, "AGENTS.md"), "utf8");
 		return {
@@ -220,16 +208,15 @@ export class WorkWorkspace {
 			manager,
 			instructions,
 			hooksPath,
-			policy: digest({ scripts: manifest.scripts, hooksPath, hooks, instructions }),
 		};
 	}
-	private async policy(inspection: WorkInspection) {
+	private async verifyWorkspace(inspection: WorkInspection) {
 		const current = await this.inspect(inspection.repository);
 		if (current.path !== inspection.path) throw new Error("Workspace path changed.");
 		return current;
 	}
 	async install(inspection: WorkInspection, signal?: AbortSignal): Promise<void> {
-		await this.policy(inspection);
+		await this.verifyWorkspace(inspection);
 		await this.command(
 			inspection.path,
 			inspection.manager,
@@ -237,10 +224,10 @@ export class WorkWorkspace {
 			signal,
 		);
 		if (inspection.manager === "bun") await normalizeBunMirror(inspection.path);
-		await this.policy(inspection);
+		await this.verifyWorkspace(inspection);
 	}
 	async files(inspection: WorkInspection): Promise<string[]> {
-		await this.policy(inspection);
+		await this.verifyWorkspace(inspection);
 		return (await this.command(inspection.path, "git", ["ls-files"]))
 			.split("\n")
 			.filter((file) => file && !blockedFile(file));
@@ -257,17 +244,17 @@ export class WorkWorkspace {
 		return output;
 	}
 	async check(inspection: WorkInspection, signal?: AbortSignal): Promise<void> {
-		await this.policy(inspection);
+		await this.verifyWorkspace(inspection);
 		for (const script of inspection.checks)
 			await this.command(inspection.path, inspection.manager, ["run", script], signal);
-		await this.policy(inspection);
+		await this.verifyWorkspace(inspection);
 	}
 	async prepare(
 		inspection: WorkInspection,
 		retainChanges: boolean,
 		signal?: AbortSignal,
 	): Promise<WorkInspection> {
-		let current = await this.policy(inspection);
+		let current = await this.verifyWorkspace(inspection);
 		if (
 			current.status !== inspection.status ||
 			current.diff !== inspection.diff ||
@@ -281,7 +268,7 @@ export class WorkWorkspace {
 		if (current.branch !== "main")
 			await this.command(current.path, "git", ["switch", "main"], signal);
 		await this.command(current.path, "git", ["fetch", "origin", "main"], signal);
-		const fetched = await this.policy(inspection);
+		const fetched = await this.verifyWorkspace(inspection);
 		if (current.status && fetched.behind)
 			throw new Error("Remote advanced while dirty; preserve user work and re-plan.");
 		if (!current.status)
@@ -302,7 +289,7 @@ export class WorkWorkspace {
 				`[基线失败] ${safeDiagnostics(error instanceof Error ? error.message : "Baseline checks failed.")}；必须修复并通过最终测试和独立审查。`,
 			);
 		}
-		const after = await this.policy(current);
+		const after = await this.verifyWorkspace(current);
 		if (after.status !== current.status || after.diff !== current.diff)
 			throw new Error("Baseline install/check modified files; review them before handing off.");
 		return after;
@@ -313,7 +300,7 @@ export class WorkWorkspace {
 		message: string,
 		signal?: AbortSignal,
 	): Promise<string> {
-		const current = await this.policy(inspection);
+		const current = await this.verifyWorkspace(inspection);
 		if (
 			current.branch !== "main" ||
 			!files.length ||
@@ -338,7 +325,7 @@ export class WorkWorkspace {
 		signal?: AbortSignal,
 	): Promise<void> {
 		const verify = async () => {
-			const current = await this.policy(inspection);
+			const current = await this.verifyWorkspace(inspection);
 			if (
 				current.branch !== "main" ||
 				current.head !== expectedHead ||
@@ -360,7 +347,12 @@ export class WorkWorkspace {
 			signal,
 		);
 		if (before.split(/\s+/)[0] !== expectedHead)
-			await this.command(current.path, "git", ["push", "origin", "HEAD:main"], signal);
+			await this.command(
+				current.path,
+				"git",
+				["push", "origin", `${expectedHead}:refs/heads/main`],
+				signal,
+			);
 		const remote = await this.command(
 			current.path,
 			"git",
@@ -371,7 +363,11 @@ export class WorkWorkspace {
 			throw new Error("Remote main did not verify; no issues closed.");
 		this.log(`[发布完成] ${current.repository} HEAD=${expectedHead}`);
 	}
-	async closeIssue(inspection: WorkInspection, issue: number, signal?: AbortSignal) {
+	async closeIssue(
+		inspection: Pick<WorkInspection, "path" | "repository">,
+		issue: number,
+		signal?: AbortSignal,
+	) {
 		if (!Number.isInteger(issue) || issue < 1) throw new Error("Invalid issue closure scope.");
 		const state = await this.command(
 			inspection.path,

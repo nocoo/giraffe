@@ -118,7 +118,7 @@ Payloads are bounded JSON objects (64 KiB per item); model credentials, PATs and
 secrets must never be submitted. Report-specific schema belongs to the local agent
 and consuming UI, not this generic store.
 
-Use records with `type: 'heartbeat'` and a stable runner ID for runner presence.
+Use the `work-cron` record with `type: 'work-cron'` for unified runner presence.
 Payload may contain runner version, last-seen timestamp and capabilities, never local
 credentials. Jobs can represent pending web analysis requests, reports use
 `type: 'github-analysis'` with domains `issues|prs|ci|cd` and `repo|global` scope.

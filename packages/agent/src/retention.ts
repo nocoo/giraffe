@@ -20,14 +20,14 @@ export function expiredResources(reports: Resource[], jobs: Resource[]) {
 	const terminal = jobs
 		.filter(
 			(row) =>
-				["github-analysis", "analysis-request"].includes(row.type) &&
-				["completed", "failed", "cancelled"].includes(row.status),
+				["github-analysis", "work-run"].includes(row.type) &&
+				["completed", "attention", "failed", "cancelled"].includes(row.status),
 		)
 		.sort((a, b) => b.updated_at.localeCompare(a.updated_at) || b.id.localeCompare(a.id));
 	const keepJobs = new Set(terminal.slice(0, 20).map((row) => row.id));
 	const latest = new Set<string>();
 	for (const row of terminal) {
-		const key = `${row.repository ?? "all"}:${row.type}:${row.status === "failed" ? "failed" : "terminal"}`;
+		const key = `${row.repository ?? "all"}:${row.type}:${["failed", "attention"].includes(row.status) ? "failed" : "terminal"}`;
 		if (!latest.has(key)) keepJobs.add(row.id);
 		latest.add(key);
 	}

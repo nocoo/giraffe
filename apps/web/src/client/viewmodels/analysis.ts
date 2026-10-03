@@ -3,9 +3,9 @@ import {
 	analysisReportSchema,
 	DOMAINS,
 	type Domain,
-	heartbeatSchema,
 	type Resource,
 } from "@nocoo/giraffe-agent/contracts";
+import { cronStatusSchema } from "@nocoo/giraffe-agent/work-contracts";
 import { apiGet } from "../lib/api";
 import { ensureSession, getActiveAccountId } from "./session";
 
@@ -96,11 +96,11 @@ export function sourceQuality(
 	};
 }
 export function runnerState(row: Resource, now: number) {
-	const parsed = heartbeatSchema.safeParse(row.payload);
+	const parsed = cronStatusSchema.safeParse(row.payload);
 	if (!parsed.success) return null;
 	const p = parsed.data;
 	const age = now - Date.parse(p.lastSeenAt);
-	return { ...p, online: age >= -60000 && age <= 90000 && !["offline", "error"].includes(p.state) };
+	return { ...p, runnerId: row.id, online: age >= -60000 && age <= 45000 && p.state !== "offline" };
 }
 export function safeEvidenceUrl(value: string | null) {
 	if (!value) return null;
@@ -158,7 +158,7 @@ export function analysisState(data: AnalysisData, repository: string | null, now
 		};
 	});
 	const runners = data.records
-		.filter((r) => r.type === "heartbeat")
+		.filter((r) => r.type === "work-cron")
 		.flatMap((row) => {
 			const runner = runnerState(row, now);
 			if (!runner) {
@@ -168,7 +168,7 @@ export function analysisState(data: AnalysisData, repository: string | null, now
 			return [runner];
 		});
 	const jobs = data.jobs
-		.filter((j) => ["analysis-request", "github-analysis"].includes(j.type))
+		.filter((j) => j.type === "work-run")
 		.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
 	return { cards, runners, jobs, errors };
 }
@@ -201,7 +201,7 @@ export async function loadAnalysis(): Promise<AnalysisData> {
 	const account = await ensureSession();
 	const [reports, records, jobs, sources] = await Promise.all([
 		allPages(account, "reports", "github-analysis"),
-		allPages(account, "records", "heartbeat"),
+		allPages(account, "records", "work-cron"),
 		allPages(account, "jobs"),
 		apiGet<{ account_id: string; sources: CurrentSource[]; repositories: string[] }>(
 			`agent/accounts/${account}/sources`,

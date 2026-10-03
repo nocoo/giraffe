@@ -449,3 +449,10 @@ Console-only tool logs initially bypassed Web progress. Route conversations and
 native driver through the current occurrence trace, retain compact per-repository
 summaries beside a byte-bounded tail, and flush queued traces before terminal
 status. Do not present dependency-only foundation as PR/CI repair acceptance.
+
+Terminal repository failures originally escaped into the global cron retry path,
+pinning an occurrence indefinitely. Persist source-set task outcomes and finish
+terminal repositories while transport failures retain recovery. Priority order is
+not task identity. Local no-push approval is not permanent publication completion.
+Persist terminal progress before delivery and retry delivery alone on Web failure;
+the native pipeline must not restart after a completed local occurrence.

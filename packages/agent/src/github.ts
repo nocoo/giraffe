@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 export type GithubRead = (path: string, signal?: AbortSignal) => Promise<unknown>;
 const runFile = promisify(execFile);
+export class WorkTransportError extends Error {}
 export const githubRead: GithubRead = async (path, signal) => {
 	if (!/^(?:user|repos\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_%?=&.+/-]+)?)$/.test(path))
 		throw new Error("Invalid GitHub read path.");
@@ -23,6 +24,6 @@ export const githubRead: GithubRead = async (path, signal) => {
 		);
 		return JSON.parse(result.stdout);
 	} catch {
-		throw new Error("GitHub read failed; no mutation was attempted.");
+		throw new WorkTransportError("GitHub read failed; no mutation was attempted.");
 	}
 };

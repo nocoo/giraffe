@@ -11,9 +11,7 @@ const AnalysisPage = lazy(() =>
 	import("./routes/analysis").then((m) => ({ default: m.AnalysisPage })),
 );
 
-const RepairsPage = lazy(() =>
-	import("./routes/repairs").then((m) => ({ default: m.RepairsPage })),
-);
+const WorkPage = lazy(() => import("./routes/work").then((m) => ({ default: m.WorkPage })));
 
 const RefreshPage = lazy(() =>
 	import("./routes/factory-runs").then((m) => ({ default: m.RefreshPage })),
@@ -75,7 +73,7 @@ const PAGES: Record<(typeof APP_PATHS)[number], ReactNode> = {
 	"/": <ReposPage />,
 	"/factory": <FactoryPage />,
 	"/analysis": <AnalysisPage />,
-	"/repairs": <RepairsPage />,
+	"/work": <WorkPage />,
 	"/refresh": <RefreshPage />,
 	"/issues": <IssuesPage />,
 	"/pulls": <PullsPage />,
@@ -94,7 +92,7 @@ const standalone = new Set<AppPath>([
 	"/settings",
 	"/authorize",
 	"/analysis",
-	"/repairs",
+	"/work",
 ]);
 
 function pageRoutes(paths: readonly AppPath[]) {

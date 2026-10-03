@@ -96,7 +96,7 @@ it("uses Access and active account with same-origin CRUD and read-only provenanc
 	).toBe(401);
 	expect((await call(`/api/agent/accounts/${other}/reports`)).status).toBe(409);
 	const body = {
-		type: "analysis-request",
+		type: "work-run",
 		status: "pending",
 		payload: { scope: "repo", repository: "nocoo/app", domains: ["issues"] },
 	};
@@ -116,7 +116,7 @@ it("uses Access and active account with same-origin CRUD and read-only provenanc
 		(
 			await call(`${prefix}/jobs`, "POST", {
 				...body,
-				payload: { scope: "global", repository: "nocoo/app", domains: ["ci"] },
+				payload: "invalid",
 			})
 		).status,
 	).toBe(400);

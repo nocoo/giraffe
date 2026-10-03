@@ -15,7 +15,7 @@ import type { LocalCommand } from "./repair-local.ts";
 import { gatePolicyContent, WorkWorkspace } from "./work-workspace.ts";
 
 const directories: string[] = [];
-it("pins every gate setting except the official Biome schema version", () => {
+it("recognizes only official Biome schema version changes as equivalent", () => {
 	expect(
 		gatePolicyContent("biome.jsonc", '"$schema": "https://biomejs.dev/schemas/2.5.15/schema.json"'),
 	).toBe('"$schema": "biome-schema"');
@@ -273,7 +273,7 @@ it("adopts instructions from a clean fast-forward before baseline checks", async
 	const prepared = await driver.prepare(initial, false);
 	expect(prepared.head).toBe("upstream");
 	expect(prepared.instructions).toContain("Updated upstream");
-	expect(prepared.policy).not.toBe(initial.policy);
+	expect(prepared.instructions).not.toBe(initial.instructions);
 });
 
 it("stages only owned files, keeps hooks and refuses dirty baseline/staged/unsafe files", async () => {
@@ -320,7 +320,7 @@ it("reconciles remote HEAD without duplicate push or implicit issue closure", as
 	await expect(driver.publish(initial, "head", [1])).rejects.toThrow(/Publication/);
 });
 
-it("pins tracked gates, blocks symlink commits and detects a remote advance over dirty work", async () => {
+it("reads instructions, blocks symlink commits and detects a remote advance over dirty work", async () => {
 	const { driver, path, state, run } = await fixture();
 	await writeFile(join(path, "vitest.config.ts"), "thresholds=95");
 	await symlink(join(path, "code.ts"), join(path, "eslint.config.js"));

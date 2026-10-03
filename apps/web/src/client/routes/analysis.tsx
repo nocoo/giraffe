@@ -193,21 +193,19 @@ export function AnalysisPage() {
 										<p className="break-all font-medium">{r.runnerId}</p>
 										<p>
 											{r.online
-												? r.state === "working"
+												? r.state === "running"
 													? "正在分析"
 													: "等待任务"
-												: "超过 90 秒无心跳 / 已停止"}
+												: "超过 45 秒无心跳 / 已停止"}
 										</p>
 										<p className="text-basalt-muted-foreground">
 											{formatPreciseDate(r.lastSeenAt)}
 										</p>
 										<dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-1 text-basalt-muted-foreground">
-											<dt>规划</dt>
-											<dd className="break-all">{r.models.orchestrator}</dd>
-											<dt>判断</dt>
-											<dd className="break-all">{r.models.decision}</dd>
-											<dt>执行</dt>
-											<dd className="break-all">{r.models.executor}</dd>
+											<dt>调度</dt>
+											<dd>
+												{r.expression} · {r.timezone}
+											</dd>
 										</dl>
 									</div>
 								))

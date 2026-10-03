@@ -73,7 +73,7 @@ test("Work shows persisted rounds, publication follow-up and pause without execu
 					json: { error: { code: "snapshot_missing", message: "fixture" } },
 				});
 	});
-	await page.goto("/repairs");
+	await page.goto("/work");
 	await expect(page.getByRole("heading", { name: "Work", exact: true })).toBeVisible();
 	await expect(page.getByText("本机在线", { exact: true })).toBeVisible();
 	await expect(page.getByText("SHA=abc checks=3/3 timeout")).toBeVisible();

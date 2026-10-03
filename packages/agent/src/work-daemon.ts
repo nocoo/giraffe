@@ -6,20 +6,31 @@ import type { Config } from "./config.ts";
 import { createCron } from "./cron.ts";
 import { digest } from "./evidence.ts";
 import { githubRead } from "./github.ts";
+import { pruneRemote } from "./retention.ts";
 import type { AgentRuntime } from "./runtime.ts";
 import { residentAnalysis } from "./work-analysis.ts";
+import { boundedProgress, type WorkProgress } from "./work-contracts.ts";
 import { workConversations } from "./work-conversations.ts";
-import { type RepositoryProgress, runCoordinator } from "./work-coordinator.ts";
+import { runCoordinator } from "./work-coordinator.ts";
 import { type FollowUpState, followUp } from "./work-followup.ts";
 import { loadPortfolio, workDecisions } from "./work-priority.ts";
+import type { WorkInspection } from "./work-workspace.ts";
 import { WorkWorkspace } from "./work-workspace.ts";
 
 type Occurrence = {
 	grant: string | null;
 	completed: boolean;
+	progress: string | null;
+	status: string;
 	published: Record<
 		string,
-		{ head: string; issues: number[]; closed: number[]; followup: FollowUpState }
+		{
+			workspace: WorkInspection;
+			head: string;
+			issues: number[];
+			closed: number[];
+			followup: FollowUpState;
+		}
 	>;
 };
 const Occurrences = defineDocFamily<Occurrence, null>({
@@ -27,7 +38,13 @@ const Occurrences = defineDocFamily<Occurrence, null>({
 	version: 1,
 	scope: "session",
 	family: true,
-	initial: () => ({ grant: null, completed: false, published: {} }),
+	initial: () => ({
+		grant: null,
+		completed: false,
+		progress: null,
+		status: "running",
+		published: {},
+	}),
 	checkpointWhen: () => true,
 });
 
@@ -79,18 +96,25 @@ export async function workDaemon(options: {
 		propagate: options.once ?? false,
 		run: async (occurrence, signal) => {
 			const id = `work-${digest(occurrence).slice(0, 40)}`;
-			const progress = {
-				occurrence,
-				events: [] as string[],
-				repositories: {} as Record<string, RepositoryProgress & { followup?: FollowUpState }>,
-				updatedAt: new Date().toISOString(),
-			};
+			const saved = await runtime.harness.snapshot(Occurrences, occurrence, context);
+			const progress: WorkProgress = saved?.progress
+				? JSON.parse(saved.progress)
+				: {
+						occurrence,
+						events: [] as string[],
+						repositories: {},
+						updatedAt: new Date().toISOString(),
+					};
 			let terminal = false;
 			const publish = async (status: string) => {
-				progress.updatedAt = new Date().toISOString();
-				if (!options.dryRun) await upsert("jobs", id, "work-run", status, progress);
+				const payload = boundedProgress(progress);
+				await runtime.harness.commit(async (tx) => {
+					const state = await tx.doc(Occurrences, occurrence, null);
+					state.progress = JSON.stringify(payload);
+					state.status = status;
+				}, context);
+				if (!options.dryRun) await upsert("jobs", id, "work-run", status, payload);
 			};
-			const saved = await runtime.harness.snapshot(Occurrences, occurrence, context);
 			const grant = digest({
 				dryRun: options.dryRun,
 				push: options.push,
@@ -102,10 +126,15 @@ export async function workDaemon(options: {
 			await runtime.harness.commit(async (tx) => {
 				(await tx.doc(Occurrences, occurrence, null)).grant = grant;
 			}, context);
-			if (saved?.completed) return;
+			if (saved?.completed) {
+				await publish(saved.status);
+				if (!options.dryRun) await pruneRemote(client);
+				return;
+			}
 			await publish("running");
 			let queue = Promise.resolve();
 			const trace = (line: string) => {
+				progress.updatedAt = new Date().toISOString();
 				log(line);
 				progress.events.push(line.slice(0, 1000));
 				progress.events = progress.events.slice(-40);
@@ -127,6 +156,7 @@ export async function workDaemon(options: {
 						await nativePublish(workspace, head, issues, pushSignal);
 						await runtime.harness.commit(async (tx) => {
 							(await tx.doc(Occurrences, occurrence, null)).published[workspace.repository] = {
+								workspace,
 								head,
 								issues,
 								closed: [],
@@ -163,7 +193,7 @@ export async function workDaemon(options: {
 							),
 						save: async (value) => {
 							const summary = progress.repositories[workspace.repository];
-							if (summary) summary.followup = value;
+							if (summary) summary.followup = { checks: value.checks, outcome: value.outcome };
 							await runtime.harness.commit(async (tx) => {
 								const item = (await tx.doc(Occurrences, occurrence, null)).published[
 									workspace.repository
@@ -176,15 +206,19 @@ export async function workDaemon(options: {
 						},
 						signal,
 					});
+					const summary = progress.repositories[workspace.repository];
+					if (summary) summary.status = "pushed";
+					trace(`[发布恢复完成] ${workspace.repository} HEAD=${head}`);
 				};
-				for (const [repository, published] of Object.entries(saved?.published ?? {})) {
-					await driver.publish({ repository } as never, published.head, published.issues, signal);
+				for (const published of Object.values(saved?.published ?? {})) {
+					await driver.publish(published.workspace, published.head, published.issues, signal);
 				}
 				await runCoordinator({
 					...options,
 					driver,
 					conversations,
 					runId: occurrence,
+					completedPublications: Object.keys(saved?.published ?? {}),
 					load: async () =>
 						(await loadPortfolio(client)).filter((repo) => !saved?.published[repo.repository]),
 					decisions: workDecisions(config),
@@ -204,18 +238,29 @@ export async function workDaemon(options: {
 					},
 					signal,
 				});
-				await runtime.harness.commit(async (tx) => {
-					(await tx.doc(Occurrences, occurrence, null)).completed = true;
-				}, context);
 				terminal = true;
 				if (timer) clearInterval(timer);
 				await queue;
-				await publish("completed");
+				const attention = Object.values(progress.repositories).some(
+					(repo) =>
+						["blocked", "exhausted"].includes(repo.status) ||
+						["failed", "timeout"].includes(repo.followup?.outcome ?? ""),
+				);
+				const status = attention ? "attention" : "completed";
+				await runtime.harness.commit(async (tx) => {
+					const state = await tx.doc(Occurrences, occurrence, null);
+					state.completed = true;
+					state.progress = JSON.stringify(boundedProgress(progress));
+					state.status = status;
+				}, context);
+				await publish(status);
+				if (!options.dryRun) await pruneRemote(client);
 			} catch (error) {
 				terminal = true;
 				if (timer) clearInterval(timer);
 				await queue;
-				await publish("blocked");
+				const state = await runtime.harness.snapshot(Occurrences, occurrence, context);
+				if (!state?.completed) await publish("blocked");
 				throw error;
 			} finally {
 				activeLog = log;

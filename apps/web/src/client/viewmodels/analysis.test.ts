@@ -143,16 +143,22 @@ it("surfaces invalid reports and picks current source version before newer histo
 it("ages heartbeats and allows only safe evidence links", () => {
 	const heartbeat = {
 		schemaVersion: 1,
-		runnerId: "r",
-		version: "1",
 		lastSeenAt: at,
-		state: "working",
-		currentJob: "j",
-		models: { orchestrator: "a", decision: "j", executor: "s" },
-		domains: ["prs"],
+		state: "running",
+		expression: "0 * * * *",
+		timezone: "UTC",
+		enabled: true,
+		paused: false,
+		nextRunAt: at,
+		lastRunAt: null,
+		activeOccurrence: "one",
+		completed: 0,
+		lastError: null,
+		capability: "authorized-work",
+		maxRounds: 20,
 	};
-	expect(runnerState(row(heartbeat), Date.parse(at) + 90001)?.online).toBe(false);
-	expect(runnerState(row(heartbeat), Date.parse(at) + 90000)?.online).toBe(true);
+	expect(runnerState(row(heartbeat), Date.parse(at) + 45001)?.online).toBe(false);
+	expect(runnerState(row(heartbeat), Date.parse(at) + 45000)?.online).toBe(true);
 	expect(runnerState(row({}), 0)).toBeNull();
 	expect(safeEvidenceUrl("javascript:alert(1)")).toBeNull();
 	expect(safeEvidenceUrl("https://github.com/nocoo/app")).toBeTruthy();
@@ -212,10 +218,10 @@ it("matches global sources to the latest domain reports and recomputes missing/s
 	const state = analysisState(
 		{
 			...data,
-			records: [{ ...row({}), type: "heartbeat" }],
+			records: [{ ...row({}), type: "work-cron" }],
 			jobs: [
-				{ ...row({}, "j"), type: "analysis-request" },
-				{ ...row({}, "k"), type: "github-analysis" },
+				{ ...row({}, "j"), type: "work-run" },
+				{ ...row({}, "k"), type: "work-run" },
 			],
 		},
 		null,

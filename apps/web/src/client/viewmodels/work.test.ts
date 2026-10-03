@@ -2,8 +2,8 @@ import type { Resource } from "@nocoo/giraffe-agent/contracts";
 import { beforeEach, expect, it, vi } from "vitest";
 import { apiGet, apiPost, apiWrite } from "../lib/api";
 import { ApiError } from "../lib/errors";
-import { loadRepairs, repairBoard, setRepairPaused } from "./repairs";
 import { setActiveAccountId } from "./session";
+import { loadWork, setWorkPaused, workBoard } from "./work";
 
 vi.mock("../lib/api", () => ({ apiGet: vi.fn(), apiPost: vi.fn(), apiWrite: vi.fn() }));
 const at = "2026-10-03T00:00:00Z";
@@ -52,21 +52,19 @@ it("shows bounded work history, heartbeat and acknowledged pause separately", ()
 		cron: row("work-cron", "work-cron", cron),
 		control: row("work-control", "work-control", { paused: true }),
 	};
-	expect(repairBoard(data, Date.parse(at))).toMatchObject({
+	expect(workBoard(data, Date.parse(at))).toMatchObject({
 		online: true,
 		desiredPaused: true,
 		pausePending: true,
 	});
-	expect(repairBoard(data, Date.parse(at) + 45001).online).toBe(false);
-	expect(repairBoard({ ...data, cron: null, control: null }, 0).desiredPaused).toBe(false);
+	expect(workBoard(data, Date.parse(at) + 45001).online).toBe(false);
+	expect(workBoard({ ...data, cron: null, control: null }, 0).desiredPaused).toBe(false);
 	expect(
-		repairBoard(
-			{ ...data, jobs: [row("bad", "work-run", {})], cron: row("bad", "work-cron", {}) },
-			0,
-		).errors,
+		workBoard({ ...data, jobs: [row("bad", "work-run", {})], cron: row("bad", "work-cron", {}) }, 0)
+			.errors,
 	).toHaveLength(2);
 	expect(
-		repairBoard({ ...data, jobs: [{ ...(data.jobs[0] as Resource), account_id: "other" }] }, 0)
+		workBoard({ ...data, jobs: [{ ...(data.jobs[0] as Resource), account_id: "other" }] }, 0)
 			.errors,
 	).toHaveLength(1);
 });
@@ -81,13 +79,13 @@ it("loads work jobs and updates only revision-protected pause control", async ()
 						item: row(path.endsWith("work-cron") ? "work-cron" : "work-control", "work-cron", cron),
 					},
 	);
-	const data = await loadRepairs();
+	const data = await loadWork();
 	expect(data.jobs).toEqual([]);
 	vi.mocked(apiWrite).mockResolvedValue({
 		account_id: "a",
 		item: row("work-control", "work-control", { paused: true }),
 	});
-	await setRepairPaused("a", data.control, true);
+	await setWorkPaused("a", data.control, true);
 	expect(apiWrite).toHaveBeenCalledWith("agent/accounts/a/records/work-control", "PATCH", {
 		revision: 1,
 		status: "paused",
@@ -97,10 +95,10 @@ it("loads work jobs and updates only revision-protected pause control", async ()
 		account_id: "a",
 		item: row("work-control", "work-control", { paused: false }),
 	});
-	await setRepairPaused("a", null, false);
-	await expect(setRepairPaused("other", null, false)).rejects.toThrow("Account changed");
+	await setWorkPaused("a", null, false);
+	await expect(setWorkPaused("other", null, false)).rejects.toThrow("Account changed");
 	vi.mocked(apiPost).mockResolvedValue({ account_id: "other" });
-	await expect(setRepairPaused("a", null, false)).rejects.toThrow("Account changed");
+	await expect(setWorkPaused("a", null, false)).rejects.toThrow("Account changed");
 });
 it("preserves missing and failed evidence and rejects pagination/account changes", async () => {
 	const accounts = { accounts: [{ id: "a", is_active: true }] };
@@ -109,16 +107,16 @@ it("preserves missing and failed evidence and rejects pagination/account changes
 		if (path.includes("/records/")) throw new ApiError(404, "not_found", "missing");
 		return { account_id: "a", items: [], nextCursor: "same" };
 	});
-	await expect(loadRepairs()).rejects.toThrow("pagination");
+	await expect(loadWork()).rejects.toThrow("pagination");
 	vi.mocked(apiGet).mockImplementation(async (path) =>
 		path === "accounts"
 			? accounts
 			: { account_id: "other", item: row("bad", "bad", {}), items: [], nextCursor: null },
 	);
-	await expect(loadRepairs()).rejects.toThrow("Account changed");
+	await expect(loadWork()).rejects.toThrow("Account changed");
 	vi.mocked(apiGet).mockImplementation(async (path) => {
 		if (path === "accounts") return accounts;
 		throw new Error("offline");
 	});
-	await expect(loadRepairs()).rejects.toThrow("offline");
+	await expect(loadWork()).rejects.toThrow("offline");
 });

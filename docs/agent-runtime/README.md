@@ -17,7 +17,7 @@ controls keep this documentation independent of the React/Basalt application.
 
 ## Accuracy
 
-The implementation snapshot is Giraffe `f95d6ff`, checked on 2026-10-03 against
+The current unified implementation is checked on 2026-10-03 against
 `packages/agent/src/{cli,work-coordinator,work-priority,work-conversations,work-tools,work-workspace,work-analysis}.ts`
 and [the coordinator contract](../14-repository-coordinator.md).
 
@@ -38,6 +38,9 @@ reviewers. `--once` is one occurrence; normal invocation remains resident. The
 unified foundation currently executes dependency issues; exact [CO] PR and
 recurring CI/CD/flaky-test task execution remain unimplemented. Historical
 acceptance does not prove this new runtime. No service is automatically installed.
+The live execution desk is `/work`; `/analysis` reads saved reports and unified
+work-cron presence. Terminal progress delivery and published issue closure resume
+from SQLite without repeating worker tools or push.
 
 ## Verify
 

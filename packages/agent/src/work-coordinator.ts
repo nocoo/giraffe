@@ -1,11 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { Config } from "./config.ts";
+import { digest } from "./evidence.ts";
+import { WorkTransportError } from "./github.ts";
+import type { RepositoryProgress } from "./work-contracts.ts";
 import type { workConversations } from "./work-conversations.ts";
 import type { RankedRepository, WorkRepository, workDecisions } from "./work-priority.ts";
 import { reviewWork } from "./work-review.ts";
 import { verifyWorkIssues, workerActions } from "./work-tools.ts";
 import type { WorkInspection, WorkWorkspace } from "./work-workspace.ts";
+
+export type { RepositoryProgress } from "./work-contracts.ts";
 
 const planSchema = z.object({
 	repositories: z.array(
@@ -34,15 +39,6 @@ export type WorkHandoff = {
 	summary: string;
 	dryRun: boolean;
 };
-export type RepositoryProgress = {
-	tasks: number[];
-	worker: number | null;
-	reviewer: number | null;
-	round: number;
-	findings: string[];
-	head: string | null;
-	status: string;
-};
 
 export async function runCoordinator(options: {
 	dryRun: boolean;
@@ -59,6 +55,7 @@ export async function runCoordinator(options: {
 	log: (line: string) => void;
 	signal?: AbortSignal;
 	observe?: (repository: string, state: RepositoryProgress) => void;
+	completedPublications?: string[];
 }): Promise<WorkHandoff[]> {
 	const { log, config, driver, conversations } = options;
 	const runId = options.runId ?? randomUUID();
@@ -107,6 +104,7 @@ export async function runCoordinator(options: {
 					`[候选] ${repository.repository} | ${repository.issues.length} Issues / ${repository.prs.length} PRs | ${repository.stale ? "快照过期，执行前需复核" : "快照有效"} | ${workspace.path} | ${workspace.branch} ahead=${workspace.ahead} behind=${workspace.behind} | ${workspace.status ? "有未提交改动，交主控审查" : "工作区干净"}`,
 				);
 			} catch (error) {
+				if (error instanceof WorkTransportError) throw error;
 				log(
 					`[工作区阻塞] ${repository.repository}：${error instanceof Error ? error.message : "inspection failed"}`,
 				);
@@ -146,8 +144,8 @@ export async function runCoordinator(options: {
 		)
 			throw new Error("Controller omitted or duplicated a repository.");
 		const handoffs: WorkHandoff[] = [];
-		const failures: string[] = [];
 		for (const plan of planned.result.repositories) {
+			if (options.completedPublications?.includes(plan.repository)) continue;
 			const progress: RepositoryProgress = {
 				tasks: plan.issues,
 				worker: null,
@@ -178,6 +176,15 @@ export async function runCoordinator(options: {
 					) as WorkRepository["issues"][number],
 			);
 			const repository = { ...candidate.repository, issues: ordered };
+			const taskKey = `task-${digest({ repository: plan.repository, items: ordered.map((item) => ({ kind: "issue", number: item.number, updatedAt: item.updatedAt })).sort((left, right) => left.number - right.number) })}`;
+			const terminalTask = await conversations.checkpoint(taskKey);
+			if (terminalTask && JSON.parse(terminalTask).status !== "locally_reviewed") {
+				Object.assign(progress, JSON.parse(terminalTask));
+				observe();
+				log(`[任务终态] ${plan.repository} ${progress.status}；来源未变，不重新执行。`);
+				continue;
+			}
+			let publishing = false;
 			try {
 				const role = await options.decisions.worker(repository);
 				log(
@@ -293,7 +300,7 @@ export async function runCoordinator(options: {
 				};
 				let worker: Awaited<ReturnType<typeof runWorker>> | undefined;
 				if (!options.dryRun) {
-					const reviewKey = `${runId}:${plan.repository}`;
+					const reviewKey = taskKey;
 					const approvedHead = await reviewWork({
 						load: () => conversations.reviewState(reviewKey),
 						save: (state) => conversations.saveReviewState(reviewKey, state),
@@ -345,7 +352,9 @@ export async function runCoordinator(options: {
 					Object.assign(progress, { head: approvedHead, status: "signed_off" });
 					observe();
 					if (options.push !== false) {
+						publishing = true;
 						await driver.publish(workspace, approvedHead, plan.issues, options.signal);
+						publishing = false;
 						log(
 							`[主控发布] ${plan.repository} 已验证 push，然后关闭 ${plan.issues.length} 个 Issue`,
 						);
@@ -364,11 +373,14 @@ export async function runCoordinator(options: {
 								"Final local handoff does not match committed HEAD and retained baseline.",
 							);
 						log(`[本地完成] ${plan.repository} HEAD=${final.head}，验证通过；不推送、不关闭 Issue`);
+						progress.status = "locally_reviewed";
+						observe();
 					}
 				} else {
 					worker = await runWorker(0, []);
 					log(`[DRY RUN 完成] ${plan.repository}：未 pull/安装/改码/测试/提交/push/关闭 Issue`);
 				}
+				if (!options.dryRun) await conversations.saveCheckpoint(taskKey, JSON.stringify(progress));
 				handoffs.push({
 					repository: plan.repository,
 					path: workspace.path,
@@ -377,16 +389,22 @@ export async function runCoordinator(options: {
 					dryRun: options.dryRun,
 				});
 			} catch (error) {
+				if (publishing || error instanceof WorkTransportError || options.signal?.aborted)
+					throw error;
+				const reviewed = await conversations.reviewState(taskKey);
+				progress.round = reviewed.round;
+				progress.findings = reviewed.findings;
 				progress.status = progress.round >= 20 ? "exhausted" : "blocked";
 				observe();
 				const message = `${plan.repository}: ${error instanceof Error ? error.message : "Repository work failed"}`;
 				log(`[仓库阻塞] ${message}`);
-				failures.push(message);
+				if (!progress.findings.length) progress.findings = [message.slice(0, 2000)];
+				observe();
+				await conversations.saveCheckpoint(taskKey, JSON.stringify(progress));
 			}
 		}
 		const error = await analysis;
 		if (error) throw error;
-		if (failures.length) throw new Error(failures.join("; "));
 		return handoffs;
 	} finally {
 		await analysis;

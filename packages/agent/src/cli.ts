@@ -4,13 +4,11 @@ import { MemoryStorage } from "@earendil-works/pi-durable";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { GiraffeClient } from "./client.ts";
 import { homeDirectory, readConfig, readCredential } from "./config.ts";
-import { decisionClient } from "./decision.ts";
 import { digest } from "./evidence.ts";
 import { acquireInstance } from "./instance.ts";
 import { login } from "./login.ts";
 import { configuredModels } from "./models.ts";
 import { openRuntime } from "./runtime.ts";
-import { reportInput } from "./work-analysis.ts";
 import { workDaemon } from "./work-daemon.ts";
 
 async function main() {
@@ -68,13 +66,7 @@ async function main() {
 			storage: values["dry-run"]
 				? new MemoryStorage()
 				: await openNodeSqliteStorage(join(directory, `${key}-work.sqlite`)),
-			config,
 			models: configuredModels(config),
-			decide: decisionClient(config),
-			log: console.log,
-			publish: async (id, report, signal) => {
-				await client.create("reports", reportInput(id, report), signal);
-			},
 		});
 		const daemon = await workDaemon({
 			runtime,

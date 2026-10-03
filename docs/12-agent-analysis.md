@@ -11,7 +11,7 @@ The web app imports only `@nocoo/giraffe-agent/contracts`, a browser-safe schema
 `/api/agent/accounts/:account/{records,reports,jobs}` mirrors generic resource CRUD
 under Cloudflare Access and same-origin write checks. The requested account must be
 the dashboard's current account; no browser bearer secret is needed. Payload validation
-is explicit, with invalid reports/heartbeats shown as errors rather than old-report fallback.
+is explicit, with invalid reports/work-cron records shown as errors rather than old-report fallback.
 Analysis is part of the single local `work` occurrence. The browser no longer
 queues independent analysis requests. Historical reports/jobs remain stored.
 
@@ -33,8 +33,8 @@ priority distribution and confidence separately from pass/fail status.
 
 Reports and upstream content render as plain text. Evidence links allow HTTPS only,
 without URL credentials, and use noopener/noreferrer. No report text is an instruction
-to run commands. Models and runner roles are read from report/heartbeat metadata, never
-from browser model credentials. Heartbeats older than 90 seconds are offline. Polling
+to run commands. Models are read from report metadata; runner presence uses the unified
+work-cron record, never browser model credentials. Heartbeats older than 45 seconds are offline. Polling
 runs only while visible, retries with backoff, and resumes on focus/visibility change.
 
 ## Cloud AI retirement
@@ -66,8 +66,9 @@ authenticated production analysis remain separate acceptance checks.
 ## Retention and execution limits
 
 Work publishes bounded progress and finite-turn conversation results on its one
-schedule. Historical reports/jobs remain stored. The old watcher retention sweep
-and request queue no longer run; remote report retention needs a follow-up before
-claiming indefinitely bounded history. Local transcript history remains user data.
+schedule. The existing bounded remote retention keeps recent reports/terminal jobs
+and the latest report and failure for each scope. Historical rows are not bulk
+deleted or migrated by engine cleanup. The old analysis request queue and planner
+are removed. Local transcript history remains user data.
 One SQLite transaction lock enforces one account process; no multi-machine lease
 or automatic service installation is claimed. Fix/review rounds are capped at 20.

@@ -2,7 +2,7 @@ export const APP_PATHS = [
 	"/",
 	"/factory",
 	"/analysis",
-	"/repairs",
+	"/work",
 	"/refresh",
 	"/issues",
 	"/pulls",

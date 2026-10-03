@@ -1,7 +1,16 @@
+import { createModels } from "@earendil-works/pi-ai/models";
+import {
+	fauxAssistantMessage,
+	fauxProvider,
+	fauxToolCall,
+} from "@earendil-works/pi-ai/providers/faux";
+import { MemoryStorage } from "@earendil-works/pi-durable";
 import { expect, it, vi } from "vitest";
 import { configSchema } from "./config.ts";
 import { decisionClient } from "./decision.ts";
+import { openRuntime } from "./runtime.ts";
 import { combineInputs, residentAnalysis } from "./work-analysis.ts";
+import { workConversations } from "./work-conversations.ts";
 
 vi.mock("./decision.ts", () => ({ decisionClient: vi.fn() }));
 const workConfig = configSchema.parse({
@@ -22,6 +31,81 @@ const workRepository = {
 	fetchedAt: null,
 	stale: true,
 };
+
+it("freezes analysis evidence and judgment when the same durable occurrence resumes on a later clock", async () => {
+	const decide = vi.fn(async (inputs) =>
+		Object.fromEntries(
+			inputs.map((input: { domain: string }) => [
+				input.domain,
+				{
+					model: "jev",
+					choice: "unknown",
+					confidence: 1,
+					probabilities: { unknown: 1, urgent: 0, review: 0, routine: 0 },
+				},
+			]),
+		),
+	);
+	vi.mocked(decisionClient).mockReturnValue(decide);
+	const models = createModels();
+	const fake = fauxProvider({ models: [{ id: "astra" }, { id: "sol" }] });
+	models.setProvider(fake.provider);
+	fake.setResponses(
+		Array.from({ length: 4 }, () =>
+			fauxAssistantMessage(
+				[
+					fauxToolCall("submit_work_result", {
+						json: JSON.stringify({
+							verdict: "unknown",
+							summary: "saved",
+							findings: [],
+							actions: [],
+							limitations: [],
+						}),
+					}),
+				],
+				{ stopReason: "toolUse" },
+			),
+		),
+	);
+	const config = {
+		...workConfig,
+		roles: { ...workConfig.roles, executor: { ...workConfig.roles.executor, provider: "faux" } },
+	};
+	const runtime = await openRuntime({ storage: new MemoryStorage(), models });
+	const conversations = workConversations({ runtime, config, log: vi.fn() });
+	const observation = vi.fn(async () => ({
+		account_id: "owner",
+		data: {},
+		sourceVersion: "one",
+		fetchedAt: "2026-10-03T00:00:00Z",
+		freshness: {},
+		coverage: null,
+		truncated: false,
+		unavailable: false,
+		source: { resource: "saved", kind: "snapshot", publicationId: null },
+		selection: { scope: "all", statisticsFilter: false },
+	}));
+	try {
+		const analyze = residentAnalysis({
+			client: { observation } as never,
+			config,
+			conversations,
+			dryRun: true,
+			log: vi.fn(),
+		});
+		await analyze([workRepository], "same-occurrence");
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-10-05T00:00:00Z"));
+		await analyze([workRepository], "same-occurrence");
+		expect(decide).toHaveBeenCalledOnce();
+		expect(observation).toHaveBeenCalledTimes(5);
+	} finally {
+		vi.useRealTimers();
+		await conversations.close();
+		await runtime.close();
+	}
+});
 
 it("bounds aggregate evidence and makes omissions visible", () => {
 	const evidence = Array.from({ length: 30 }, (_, index) => ({
@@ -108,9 +192,9 @@ it("runs four resident analysts concurrently, publishes only outside dry run and
 	}));
 	const log = vi.fn();
 	const options = {
-		client: { observation, create },
+		client: { observation, create, get: async () => null },
 		config: workConfig,
-		conversations: { run },
+		conversations: { run, checkpoint: async () => null, saveCheckpoint: vi.fn() },
 		dryRun: true,
 		log,
 	};

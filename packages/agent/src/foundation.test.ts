@@ -13,7 +13,7 @@ import {
 	serviceUrl,
 	writePrivateJson,
 } from "./config.ts";
-import { analysisRequestSchema, judgmentSchema } from "./contracts.ts";
+import { judgmentSchema } from "./contracts.ts";
 import { login } from "./login.ts";
 
 const directories: string[] = [];
@@ -143,20 +143,6 @@ describe("global configuration", () => {
 });
 
 it("validates analysis scope and decision probability distributions", () => {
-	expect(
-		analysisRequestSchema.safeParse({
-			scope: "repo",
-			repository: null,
-			domains: ["ci"],
-		}).success,
-	).toBe(false);
-	expect(
-		analysisRequestSchema.safeParse({
-			scope: "global",
-			repository: null,
-			domains: ["ci", "ci"],
-		}).success,
-	).toBe(false);
 	const decision = {
 		model: "jev",
 		choice: "review",

@@ -1,4 +1,3 @@
-import { analysisRequestSchema } from "@nocoo/giraffe-agent/contracts";
 import { Hono } from "hono";
 import { resourceCollection, resourceId } from "../../lib/agent-resource";
 import { FACTORY_STREAMS } from "../../lib/factory-types";
@@ -139,18 +138,6 @@ export function agentBrowserApi() {
 		}
 		if (method === "POST" && !id) {
 			const body = await readJson(c.req.raw, 70000);
-			if (
-				kind === "jobs" &&
-				body &&
-				typeof body === "object" &&
-				"type" in body &&
-				body.type === "analysis-request"
-			) {
-				const input = analysisRequestSchema.safeParse("payload" in body ? body.payload : null);
-				if (!input.success)
-					throw new ApiError(400, "validation_failed", "invalid analysis request");
-				if (input.data.repository) await requireCatalogRepo(db, account, input.data.repository);
-			}
 			return c.json(
 				{ account_id: account, item: await createResource(db, account, kind, body) },
 				201,

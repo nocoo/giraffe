@@ -49,10 +49,7 @@ it("reuses validated controller handoff after reopening SQLite without another m
 		for (let index = 0; index < 2; index++) {
 			const runtime = await openRuntime({
 				storage: await openNodeSqliteStorage(join(directory, "state.sqlite")),
-				config,
 				models,
-				decide: vi.fn(),
-				publish: vi.fn(),
 			});
 			const conversations = workConversations({ runtime, config, log: vi.fn() });
 			try {
@@ -83,10 +80,7 @@ it("reuses resident conversations, isolates dry-run tools and validates handoffs
 	]);
 	const runtime = await openRuntime({
 		storage: new MemoryStorage(),
-		config,
 		models,
-		decide: vi.fn(),
-		publish: vi.fn(),
 	});
 	const logs: string[] = [];
 	const conversations = workConversations({ runtime, config, log: (line) => logs.push(line) });
@@ -173,10 +167,7 @@ it("gives live roles bounded host actions and fails invalid or unanswered handof
 	]);
 	const runtime = await openRuntime({
 		storage: new MemoryStorage(),
-		config,
 		models,
-		decide: vi.fn(),
-		publish: vi.fn(),
 	});
 	const log = vi.fn();
 	const conversations = workConversations({ runtime, config, log });
@@ -225,10 +216,7 @@ it("bounds repeated invalid outputs without hanging the coordinator", async () =
 	fake.setResponses(Array.from({ length: 26 }, () => response({ invalid: true })));
 	const runtime = await openRuntime({
 		storage: new MemoryStorage(),
-		config,
 		models,
-		decide: vi.fn(),
-		publish: vi.fn(),
 	});
 	const conversations = workConversations({ runtime, config, log: vi.fn() });
 	try {
@@ -260,10 +248,7 @@ it("aborts active independent conversations on shutdown and rejects concurrent a
 	]);
 	const runtime = await openRuntime({
 		storage: new MemoryStorage(),
-		config,
 		models,
-		decide: vi.fn(),
-		publish: vi.fn(),
 	});
 	const log = vi.fn();
 	const conversations = workConversations({ runtime, config, log });

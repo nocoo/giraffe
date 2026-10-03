@@ -92,7 +92,7 @@ for (const width of [1440, 390])
 					if (route.request().method() === "POST") {
 						const body = route.request().postDataJSON();
 						writes.push(body);
-						jobs = [resource("request", "analysis-request", body.payload, body.repository)];
+						jobs = [resource("request", "work-run", body.payload, body.repository)];
 						return route.fulfill({
 							status: 201,
 							json: { account_id: "ui-account", item: jobs[0] },
@@ -112,19 +112,21 @@ for (const width of [1440, 390])
 							? [resource("report", "github-analysis", report, report.repository)]
 							: collection === "records"
 								? [
-										resource("runner", "heartbeat", {
+										resource("work-cron", "work-cron", {
 											schemaVersion: 1,
-											runnerId: "my-local-runner",
-											version: "0.13.0",
 											lastSeenAt: "2026-10-02T08:59:30Z",
-											state: "working",
-											currentJob: "job1",
-											models: {
-												orchestrator: "planner-configured",
-												decision: "jev-configured",
-												executor: "executor-configured",
-											},
-											domains: ["prs"],
+											state: "running",
+											expression: "0 * * * *",
+											timezone: "Asia/Shanghai",
+											enabled: true,
+											paused: false,
+											nextRunAt: "2026-10-02T10:00:00Z",
+											lastRunAt: at,
+											activeOccurrence: "job1",
+											completed: 0,
+											lastError: null,
+											capability: "authorized-work",
+											maxRounds: 20,
 										}),
 									]
 								: jobs;
@@ -216,10 +218,8 @@ for (const width of [1440, 390])
 									: collection === "jobs"
 										? [
 												{
-													...resource("pending", "analysis-request", {
-														scope: "global",
-														repository: null,
-														domains: ["cd"],
+													...resource("pending", "work-run", {
+														occurrence: "pending",
 													}),
 													status: "pending",
 												},

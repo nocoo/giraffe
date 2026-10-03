@@ -1,4 +1,5 @@
 import { expect, it, vi } from "vitest";
+import { WorkTransportError } from "./github.ts";
 import { reviewWork } from "./work-review.ts";
 
 function fixture() {
@@ -68,4 +69,13 @@ it("rechecks recovered approval without a twenty-first fix", async () => {
 	options.check.mockResolvedValue("changed");
 	await expect(reviewWork(options)).rejects.toThrow("20 rounds exhausted");
 	expect(options.state.head).toBeNull();
+});
+
+it("preserves rounds on retryable transport failure rather than exhausting tests", async () => {
+	const options = fixture();
+	options.fix.mockRejectedValueOnce(new WorkTransportError("offline"));
+	await expect(reviewWork(options)).rejects.toThrow("offline");
+	expect(options.state.round).toBe(0);
+	await expect(reviewWork(options)).resolves.toBe("head");
+	expect(options.state.round).toBe(1);
 });

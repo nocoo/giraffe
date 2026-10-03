@@ -25,6 +25,7 @@ vi.mock("./work-workspace.ts", () => ({
 	},
 }));
 vi.mock("./github.ts", () => ({ githubRead: vi.fn() }));
+vi.mock("./retention.ts", () => ({ pruneRemote: vi.fn(async () => {}) }));
 afterEach(() => {
 	vi.useRealTimers();
 	vi.clearAllMocks();
@@ -46,10 +47,7 @@ async function fixture(dryRun = false) {
 	vi.mocked(loadPortfolio).mockResolvedValue([]);
 	const runtime = await openRuntime({
 		storage: new MemoryStorage(),
-		config,
 		models: createModels(),
-		decide: vi.fn(),
-		publish: vi.fn(),
 	});
 	const rows = new Map<
 		string,
@@ -65,9 +63,9 @@ async function fixture(dryRun = false) {
 		}),
 	};
 	const daemon = await workDaemon({
+		config,
 		runtime,
 		client: client as never,
-		config,
 		log: vi.fn(),
 		dryRun,
 		push: true,
@@ -83,9 +81,9 @@ it("freezes active authority and propagates once failures before any new tools",
 	try {
 		await daemon.tick(undefined, true);
 		const changed = await workDaemon({
+			config,
 			runtime,
 			client: client as never,
-			config,
 			log: vi.fn(),
 			dryRun: false,
 			push: false,
@@ -212,9 +210,9 @@ it("heartbeats during injected follow-up wait and flushes terminal progress last
 	const { runtime, client, rows, daemon } = await fixture();
 	let release: () => void = () => {};
 	const waiting = await workDaemon({
+		config,
 		runtime,
 		client: client as never,
-		config,
 		log: vi.fn(),
 		dryRun: false,
 		push: true,
@@ -235,9 +233,9 @@ it("heartbeats during injected follow-up wait and flushes terminal progress last
 		release();
 		await tick;
 		const job = [...rows.values()].find((row) => row.type === "work-run");
-		expect(job?.status).toBe("completed");
+		expect(job?.status).toBe("attention");
 		await vi.advanceTimersByTimeAsync(20000);
-		expect(job?.status).toBe("completed");
+		expect(job?.status).toBe("attention");
 	} finally {
 		await waiting.close();
 		await daemon.close();
@@ -277,6 +275,48 @@ it("completed local occurrence can be acknowledged again without another coordin
 		await daemon.tick(undefined, true);
 		await daemon.tick(undefined, true);
 		expect(runCoordinator).toHaveBeenCalledTimes(1);
+	} finally {
+		await daemon.close();
+		await runtime.close();
+	}
+});
+
+it("retries only persisted terminal delivery after final Web upload fails", async () => {
+	vi.useFakeTimers();
+	vi.setSystemTime(new Date("2026-10-03T00:00:00Z"));
+	vi.mocked(runCoordinator).mockImplementation(async (options) => {
+		options.observe?.("owner/repo", {
+			tasks: [1],
+			worker: 7,
+			reviewer: 8,
+			round: 20,
+			findings: ["exhausted"],
+			head: null,
+			status: "exhausted",
+		});
+		return [];
+	});
+	const { runtime, client, rows, daemon } = await fixture();
+	const update = client.update.getMockImplementation();
+	if (!update) throw new Error("Missing update fixture.");
+	let fail = true;
+	let terminal: unknown;
+	client.update.mockImplementation(async (collection, old, value) => {
+		if (value.type === "work-run" && value.status === "attention" && fail) {
+			fail = false;
+			terminal = structuredClone(value.payload);
+			throw new Error("Web offline");
+		}
+		return update(collection, old, value);
+	});
+	try {
+		await daemon.tick(undefined, true);
+		await vi.advanceTimersByTimeAsync(15000);
+		await daemon.tick(undefined, true);
+		expect(runCoordinator).toHaveBeenCalledOnce();
+		const job = [...rows.values()].find((row) => row.type === "work-run");
+		expect(job?.status).toBe("attention");
+		expect(job?.payload).toEqual(terminal);
 	} finally {
 		await daemon.close();
 		await runtime.close();

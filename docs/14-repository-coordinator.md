@@ -42,9 +42,18 @@ skipped-only evidence is pending or timeout, never passed. A complete set of
 successful workflow runs is passed; evidenced failures are failed.
 
 Generic agent jobs/records carry bounded Work events, repository pair/round/check/
-review/commit/publication trace and cron heartbeat. The existing `/repairs` route
-is presented as Work. Terminal publication follows queued trace writes; no new
+review/commit/publication trace and cron heartbeat. The `/work` route renders
+typed repository summaries alongside a bounded event tail. Terminal publication follows queued trace writes; no new
 streaming or cloud service is introduced. Historical rows and runtime files stay.
+
+Task identity uses the sorted authorized issue identity/version set, not model
+priority order or cron timestamps. Unchanged terminal tasks retain their outcome
+across occurrences; changed source evidence creates a new task. Local no-push
+approval stays publishable with the same round counter in a later live occurrence.
+Transport verification failures remain retryable, not permanent terminal blocks.
+Published repositories resume issue closure and SHA follow-up without verifying
+now-closed issues again. Terminal Web delivery retries reuse saved timestamps and
+never rerun completed native work. Failed/timeout follow-up is attention, not green.
 
 ## Implementation Scope
 

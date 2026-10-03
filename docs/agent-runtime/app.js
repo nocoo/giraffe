@@ -106,7 +106,7 @@
 				],
 				[
 					"Bounded persisted recovery",
-					"Rounds, findings and pushed SHA persist; mode/scope cannot change mid-occurrence. At most 20 review rounds and three ten-minute follow-up checks. Historical acceptance is not current unattended proof.",
+					"Source-set task identity, rounds, findings and pushed SHA persist; priority order cannot reset rounds and mode/scope cannot change mid-occurrence. Closure/follow-up and terminal Web delivery resume without replaying native work. At most 20 review rounds and three ten-minute checks. /work renders repository summaries. Historical acceptance is not current unattended proof.",
 				],
 			],
 			permission:
