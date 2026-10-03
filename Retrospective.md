@@ -465,3 +465,26 @@ Keep host-unavailable evidence fixed deferred and expose each disposition to the
 independent reviewer. Follow-up expectations use actual recorded main push and
 workflow_run events, not every named workflow; schedules and tag releases are not
 missing main checks. Bound disposition details without losing identities/results.
+
+## 2026-10-03 — Unified Work integration acceptance
+
+Normal root hooks accepted the unification with 609 Web tests, 156 Agent tests
+and all four coverage metrics at least 95%. Local API suites A/B and dependency
+and secret scans passed. Fake models with real SQLite reopen and temporary native
+Git repositories with active hooks verified the paired fix/review loop and
+publication recovery. No new real-target repair service was enabled.
+
+The full local browser runs encountered two separate five-second visibility/count
+timeouts in unchanged UI: the Insights chart in the first run and the factory
+signal list in the repeat. Final full-suite acceptance was not entirely green.
+Each exact failing test was rerun twice on the same source and assertions; all
+four targeted reruns passed. The pre-integration baseline passed 87/87. Retain
+this potential-flakiness evidence; never weaken assertions or rerun indefinitely
+to erase failures. No unrelated UI fix was made.
+
+The parent attempted `git push` with double-quoted `$expected:refs/heads/main` in
+zsh. Its `:r` modifier mangled the refspec, and Git rejected the command before
+any remote mutation; this was not an actual remote push. Bracing the variable as
+`${expected}:refs/heads/main` preserved the literal boundary. The corrected
+normal-hook push at `3073625` succeeded and its exact remote SHA was confirmed.
+Brace shell variables adjacent to colons in zsh and verify the exact remote SHA.
