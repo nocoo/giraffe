@@ -414,3 +414,12 @@ only official schema-URL version changes with byte-identical remaining settings;
 all actual rules, thresholds, scripts and hooks remain pinned. Interrupted workers
 require operator-reviewed exact workspace evidence before resuming; historical
 success alone is never permission to adopt arbitrary dirty files.
+
+The recovered real run produced Backy commit 3be12bb and seven R2Shot commits
+ending at b145913 with normal hooks, no push and no issue closures. Only the
+temporary mirror URL normalization was performed by the supervising operator;
+workers authored dependency changes, tests and commits. Recovery used the same
+controller/worker conversations and exact reviewed diff hashes, not automatic
+adoption of arbitrary user changes. R2Shot's first Chrome acceptance hit the
+capture API quota; a second unchanged run passed all 11 scenarios, so the first
+failure remains recorded rather than hidden as guaranteed stable acceptance.

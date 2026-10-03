@@ -47,6 +47,39 @@ Already-current issues use a read-only `satisfied` action: current registry meta
 exact manifest/lock versions, unchanged workspace and passing checks are required.
 This records existing HEAD evidence rather than creating an empty commit.
 
+Preparation completion requires a `prepare` call in the current assignment, not
+historical conversation evidence. A clean fast-forward establishes the new check
+baseline before installation. Worker reads support bounded character windows and
+literal matching, including large lockfiles. Native diagnostics retain redacted
+failure tails. Bun installations remove temporary approved-mirror tarball URLs
+without changing resolved versions or integrity hashes. Only official Biome schema
+URL version changes are exempt from the otherwise immutable gate-content check.
+
+## Real local acceptance — 2026-10-03
+
+Two repositories were randomly selected without replacement from 25 eligible,
+unoccupied npm/Bun main workspaces: `nocoo/backy` and `nocoo/r2shot`. No target
+push, issue closure, release or deployment was authorized or performed.
+
+- Backy worker 198 (Astra/high): commit `3be12bb`, Undici 7.29.1 to 8.11.2,
+  Node >=22.19 and three dependency-policy regressions. 781 tests, lint, types,
+  build and normal commit hooks passed. Coverage: 98.24/95.70/96.92/98.92 percent
+  (statements/branches/functions/lines). A separate local Miniflare HTTP smoke
+  passed with the installed Undici 8.11.2; full Backy L2/L3 was not run.
+- R2Shot worker 341 (Sol/low): seven commits ending at `b145913`; eight package
+  upgrades, with Vitest/coverage coupled. Vite 8.3.2, AWS SDK 3.1146.0 and Node
+  types 26.6.4 supersede the issue targets. Existing jsdom 30.1.1 was verified
+  without an empty commit. 160 unit tests, 9 integration tests, lint, types, build
+  and hooks passed. Coverage: 99.76/99.13/100/99.75 percent. Chrome's first E2E
+  attempt hit screenshot quota; the unchanged repeat passed all 11 scenarios.
+
+The first real execution was not unattended success: preparation policy/memory,
+oversized mirror diffs and schema guards caused stops. An operator inspected exact
+interrupted diffs and pinned their hashes before continuing the same conversations
+using a one-off local recovery harness. General automatic crash recovery remains
+unimplemented; this evidence does not claim otherwise. The final worktrees are
+clean with Backy ahead one commit and R2Shot ahead seven; all ten issues stay open.
+
 ## Boundaries
 
 Only existing owned, non-fork, non-archived repositories with main, npm/Bun root
