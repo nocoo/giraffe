@@ -144,13 +144,22 @@ function fixture() {
 				worker: async () => ({ model: "sol", thinkingLevel: "low" }),
 			},
 			driver: {
-				inspect: vi.fn(async () => workspace),
+				inspect: vi.fn(async () => ({ ...workspace, head: "committed-head" })),
 				files: vi.fn(async () => []),
+				changes: vi.fn(async () => "checked diff"),
 				check: vi.fn(async () => {}),
 				prepare: vi.fn(async () => workspace),
 				publish: vi.fn(async () => {}),
 			},
-			conversations: { run },
+			conversations: {
+				run: vi.fn(async (request) =>
+					request.key.startsWith("reviewer:")
+						? { conversationId: 4, result: { head: request.input.head, findings: [] } }
+						: run(request),
+				),
+				reviewState: async () => ({ round: 0, findings: [], head: null }),
+				saveReviewState: vi.fn(),
+			},
 			config: { roles: { orchestrator: { model: "astra" }, executor: { model: "sol" } } },
 			analyze: vi.fn(async () => {}),
 			log: vi.fn(),
@@ -191,7 +200,8 @@ it("verifies local completion without push or issue closure when publication is 
 });
 
 it("rejects mismatched local HEAD even when push is disabled", async () => {
-	const { options } = fixture();
+	const { options, workspace } = fixture();
+	options.driver.inspect.mockImplementation(async () => workspace);
 	await expect(runCoordinator({ ...options, push: false } as never)).rejects.toThrow(
 		/local handoff/,
 	);
@@ -267,7 +277,7 @@ it("does not accept fictional preparation, incomplete worker handoffs or cancell
 	}
 	const { options } = fixture();
 	vi.mocked(workerActions).mockReturnValueOnce({ committed: [], action: vi.fn() });
-	await expect(runCoordinator(options as never)).rejects.toThrow(/committed/);
+	await expect(runCoordinator(options as never)).rejects.toThrow(/exhausted/);
 });
 
 it("awaits parallel analysts and propagates failure without reporting successful completion", async () => {
@@ -275,4 +285,46 @@ it("awaits parallel analysts and propagates failure without reporting successful
 	options.dryRun = true;
 	options.analyze.mockRejectedValue(new Error("analysis failed"));
 	await expect(runCoordinator(options as never)).rejects.toThrow(/Resident analysis failed/);
+});
+
+it("retries independent findings and forbids reviewer writes", async () => {
+	const { options } = fixture();
+	const run = options.conversations.run.getMockImplementation();
+	if (!run) throw new Error("Missing fixture.");
+	let reviews = 0;
+	options.conversations.run.mockImplementation(async (request) => {
+		if (request.key.startsWith("reviewer:")) {
+			await expect(request.action("write", {})).rejects.toThrow("read-only");
+			await request.action("read", { path: "code.ts" });
+			return {
+				conversationId: 4,
+				result: { head: request.input.head, findings: ++reviews === 1 ? ["fix cause"] : [] },
+			} as never;
+		}
+		return run(request);
+	});
+	await runCoordinator(options as never);
+	expect(reviews).toBe(2);
+	expect(options.driver.publish).toHaveBeenCalledTimes(1);
+	expect(options.conversations.saveReviewState).toHaveBeenLastCalledWith("run:owner/repo", {
+		round: 2,
+		findings: [],
+		head: "committed-head",
+	});
+});
+
+it("does not push when independent findings exhaust all rounds", async () => {
+	const { options } = fixture();
+	const run = options.conversations.run.getMockImplementation();
+	if (!run) throw new Error("Missing fixture.");
+	options.conversations.run.mockImplementation(async (request) =>
+		request.key.startsWith("reviewer:")
+			? ({
+					conversationId: 4,
+					result: { head: "committed-head", findings: ["still broken"] },
+				} as never)
+			: run(request),
+	);
+	await expect(runCoordinator(options as never)).rejects.toThrow("20 rounds exhausted");
+	expect(options.driver.publish).not.toHaveBeenCalled();
 });

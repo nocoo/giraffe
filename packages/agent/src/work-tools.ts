@@ -224,7 +224,8 @@ export function workerActions(
 							.regex(/^(fix|feat|chore|refactor|test|docs): [a-z0-9].*$/),
 					})
 					.parse(raw);
-				const remaining = issues.filter((issue) => !committed.some((done) => done.issue === issue));
+				const pending = issues.filter((issue) => !committed.some((done) => done.issue === issue));
+				const remaining = pending.length ? pending : issues;
 				if (
 					args.issues[0] !== remaining[0] ||
 					new Set(args.issues).size !== args.issues.length ||
@@ -236,7 +237,11 @@ export function workerActions(
 					);
 				await driver.check(workspace, signal);
 				const head = await driver.commit(workspace, args.files, args.message, signal);
-				committed.push(...args.issues.map((issue) => ({ issue, head })));
+				for (const issue of args.issues) {
+					const previous = committed.find((done) => done.issue === issue);
+					if (previous) previous.head = head;
+					else committed.push({ issue, head });
+				}
 				written.clear();
 				return { head };
 			}

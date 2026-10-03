@@ -4,11 +4,51 @@ import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { githubRead } from "./repair-source.ts";
 import { latestPackage } from "./work-packages.ts";
+import { reviewWork } from "./work-review.ts";
 import { verifyWorkIssues, workerActions } from "./work-tools.ts";
 
 vi.mock("./repair-source.ts", () => ({ githubRead: vi.fn() }));
 vi.mock("./work-packages.ts", () => ({ latestPackage: vi.fn() }));
 afterEach(() => vi.resetAllMocks());
+
+it("commits actual worker review corrections without duplicate task completion", async () => {
+	const directory = await mkdtemp(join(tmpdir(), "giraffe-review-tools-"));
+	let head = "base";
+	const driver = {
+		check: vi.fn(async () => {}),
+		commit: vi.fn(async () => {
+			head = `${head}-commit`;
+			return head;
+		}),
+	};
+	const worker = workerActions(driver as never, { path: directory, status: "" } as never, [1]);
+	const state = { round: 0, findings: [] as string[], head: null as string | null };
+	try {
+		await writeFile(join(directory, "code.ts"), "old");
+		const approved = await reviewWork({
+			load: async () => state,
+			save: async (value) => Object.assign(state, value),
+			fix: async (round) => {
+				await worker.action("write", { path: "code.ts", content: `round ${round}` });
+				await worker.action("commit", { issues: [1], files: ["code.ts"], message: "fix: cause" });
+			},
+			check: async () => {
+				await driver.check();
+				return head;
+			},
+			review: async (checked, round) => ({
+				head: checked,
+				findings: round === 1 ? ["fix actual cause"] : [],
+			}),
+		});
+		expect(approved).toBe("base-commit-commit");
+		expect(worker.committed).toEqual([{ issue: 1, head: approved }]);
+		expect(driver.commit).toHaveBeenCalledTimes(2);
+		expect(await readFile(join(directory, "code.ts"), "utf8")).toBe("round 2");
+	} finally {
+		await rm(directory, { recursive: true, force: true });
+	}
+});
 
 it("gives workers a read-only latest-version lookup using the configured mirror", async () => {
 	vi.mocked(latestPackage).mockResolvedValue({
@@ -207,6 +247,9 @@ it("restricts worker IO, preserves dirty files and commits checked issues in ord
 		await worker.action("write", { path: "code.ts", content: "fixed again" });
 		await worker.action("commit", { issues: [2], files: ["code.ts"], message: "fix: next" });
 		expect(worker.committed.at(-1)?.issue).toBe(2);
+		await worker.action("write", { path: "code.ts", content: "review correction" });
+		await worker.action("commit", { issues: [1], files: ["code.ts"], message: "fix: review" });
+		expect(worker.committed).toHaveLength(3);
 		await expect(worker.action("push", {})).rejects.toThrow(/permitted/);
 		await writeFile(
 			join(directory, "package.json"),

@@ -246,6 +246,12 @@ export class WorkWorkspace {
 			.split("\n")
 			.filter((file) => file && !blockedFile(file));
 	}
+	async changes(inspection: WorkInspection): Promise<string> {
+		const output = await this.command(inspection.path, "git", ["diff", "origin/main", "HEAD"]);
+		if (Buffer.byteLength(output) > 128000)
+			throw new Error("Review diff exceeds budget; no publication.");
+		return safeDiagnostics(output);
+	}
 	async check(inspection: WorkInspection, signal?: AbortSignal): Promise<void> {
 		await this.policy(inspection);
 		for (const script of inspection.checks)

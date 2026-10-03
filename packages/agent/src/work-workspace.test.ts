@@ -26,6 +26,16 @@ afterEach(async () => {
 		await rm(directory, { recursive: true, force: true });
 });
 
+it("provides bounded exact committed changes to the independent reviewer", async () => {
+	const { driver } = await fixture();
+	const inspection = await driver.inspect("owner/repo");
+	expect(await driver.changes(inspection)).toBe("");
+	const oversized = new WorkWorkspace({
+		run: async () => ({ exitCode: 0, stderr: "", stdout: "x".repeat(128001) }),
+	});
+	await expect(oversized.changes(inspection)).rejects.toThrow("Review diff exceeds budget");
+});
+
 async function fixture() {
 	const root = await realpath(await mkdtemp(join(tmpdir(), "giraffe-main-test-")));
 	directories.push(root);

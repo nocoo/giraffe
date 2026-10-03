@@ -14,8 +14,15 @@ import type { Config } from "./config.ts";
 import { safeDiagnostics } from "./repair-workspace.ts";
 import type { AgentRuntime } from "./runtime.ts";
 import type { WorkerRole } from "./work-priority.ts";
+import type { WorkReviewState } from "./work-review.ts";
 
 const context = BACKGROUND_CONTEXT;
+const Reviews = defineDoc<{ repositories: Record<string, WorkReviewState> }>({
+	kind: "giraffe.work-reviews",
+	version: 1,
+	scope: "session",
+	initial: () => ({ repositories: {} }),
+});
 const Conversations = defineDoc<{ ids: Record<string, ConversationId> }>({
 	kind: "giraffe.work-conversations",
 	version: 1,
@@ -115,6 +122,15 @@ export function workConversations(options: {
 	registry.install(readOnly);
 	registry.install(execution);
 	return {
+		async reviewState(key: string): Promise<WorkReviewState> {
+			const state = await harness.snapshot(Reviews, context);
+			return state?.repositories[key] ?? { round: 0, findings: [], head: null };
+		},
+		async saveReviewState(key: string, state: WorkReviewState) {
+			await harness.commit(async (tx) => {
+				(await tx.doc(Reviews)).repositories[key] = structuredClone(state);
+			}, context);
+		},
 		async run<Output>(request: {
 			key: string;
 			requestId: string;

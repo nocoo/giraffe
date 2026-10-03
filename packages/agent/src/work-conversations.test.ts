@@ -46,6 +46,17 @@ it("reuses resident conversations, isolates dry-run tools and validates handoffs
 	const logs: string[] = [];
 	const conversations = workConversations({ runtime, config, log: (line) => logs.push(line) });
 	try {
+		expect(await conversations.reviewState("run:repo")).toEqual({
+			round: 0,
+			findings: [],
+			head: null,
+		});
+		await conversations.saveReviewState("run:repo", { round: 3, findings: ["fix"], head: null });
+		expect(await conversations.reviewState("run:repo")).toEqual({
+			round: 3,
+			findings: ["fix"],
+			head: null,
+		});
 		const first = await conversations.run({
 			key: "worker:owner/repo",
 			requestId: "one",
