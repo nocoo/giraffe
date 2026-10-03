@@ -4,7 +4,7 @@ import { z } from "zod";
 import { githubRead } from "./repair-source.ts";
 import { latestPackage } from "./work-packages.ts";
 import type { WorkItem } from "./work-priority.ts";
-import type { WorkInspection, WorkWorkspace } from "./work-workspace.ts";
+import { gatePolicyContent, type WorkInspection, type WorkWorkspace } from "./work-workspace.ts";
 
 export async function verifyWorkIssues(repository: string, issues: WorkItem[]) {
 	const owner = repository.split("/")[0];
@@ -176,13 +176,17 @@ export function workerActions(
 					};
 				}
 				const content = z.string().max(256000).parse(raw.content);
+				const schemaOnly =
+					/^biome\.jsonc?$/.test(name) &&
+					gatePolicyContent(name, await readFile(path, "utf8")) ===
+						gatePolicyContent(name, content);
 				if (dirtyPaths.some((dirty) => name === dirty || name.startsWith(`${dirty}/`)))
 					throw new Error("Worker cannot overwrite pre-existing dirty files.");
 				if (
 					name === "AGENTS.md" ||
 					name.startsWith(".husky/") ||
 					name.startsWith(".github/") ||
-					/(?:vitest|biome|eslint|tsconfig|jest|coverage)/.test(name)
+					(/(?:vitest|biome|eslint|tsconfig|jest|coverage)/.test(name) && !schemaOnly)
 				)
 					throw new Error("Worker cannot weaken baseline instructions or gates.");
 				if (name === "package.json") {

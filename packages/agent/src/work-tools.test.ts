@@ -219,6 +219,22 @@ it("restricts worker IO, preserves dirty files and commits checked issues in ord
 			path: "package.json",
 			content: JSON.stringify({ scripts: { test: "test" }, dependencies: { dep: "2" } }),
 		});
+		await writeFile(
+			join(directory, "biome.jsonc"),
+			'{"$schema":"https://biomejs.dev/schemas/2.5.14/schema.json","linter":{"enabled":true}}',
+		);
+		await worker.action("write", {
+			path: "biome.jsonc",
+			content:
+				'{"$schema":"https://biomejs.dev/schemas/2.5.15/schema.json","linter":{"enabled":true}}',
+		});
+		await expect(
+			worker.action("write", {
+				path: "biome.jsonc",
+				content:
+					'{"$schema":"https://biomejs.dev/schemas/2.5.15/schema.json","linter":{"enabled":false}}',
+			}),
+		).rejects.toThrow(/weaken/);
 		await writeFile(join(directory, "large"), "x".repeat(256001));
 		await expect(worker.action("read", { path: "large" })).rejects.toThrow(/budget/);
 		controller.abort();

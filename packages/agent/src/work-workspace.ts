@@ -47,6 +47,15 @@ const dirtyFiles = (status: string) =>
 				.map((name) => (name.startsWith('"') ? (JSON.parse(name) as string) : name)),
 		);
 
+export function gatePolicyContent(name: string, content: string) {
+	return /^biome\.jsonc?$/.test(name)
+		? content.replace(
+				/("\$schema"\s*:\s*)"https:\/\/biomejs\.dev\/schemas\/[0-9]+\.[0-9]+\.[0-9]+\/schema\.json"/,
+				'$1"biome-schema"',
+			)
+		: content;
+}
+
 export async function normalizeBunMirror(path: string) {
 	const file = join(path, "bun.lock");
 	const content = await readFile(file, "utf8");
@@ -195,7 +204,7 @@ export class WorkWorkspace {
 		)) {
 			const target = join(path, file);
 			if (!(await lstat(target)).isSymbolicLink())
-				hooks.push(`${file}\n${await readFile(target, "utf8")}`);
+				hooks.push(`${file}\n${gatePolicyContent(file, await readFile(target, "utf8"))}`);
 		}
 		const instructions = await readFile(join(path, "AGENTS.md"), "utf8");
 		return {

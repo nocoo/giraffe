@@ -407,3 +407,10 @@ Tencent mirror during a one-package upgrade. The resulting diff hit the review
 budget before the worker could commit. Installation now removes only approved
 temporary mirror locations, preserving package versions, metadata and integrity
 hashes. Existing work remains in place; no reset, stash or hook bypass is used.
+
+R2Shot's worker completed six atomic upgrades but could not synchronize Biome's
+schema version because the gate guard rejected all configuration writes. Permit
+only official schema-URL version changes with byte-identical remaining settings;
+all actual rules, thresholds, scripts and hooks remain pinned. Interrupted workers
+require operator-reviewed exact workspace evidence before resuming; historical
+success alone is never permission to adopt arbitrary dirty files.

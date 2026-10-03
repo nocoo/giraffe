@@ -12,9 +12,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import type { LocalCommand } from "./repair-local.ts";
-import { WorkWorkspace } from "./work-workspace.ts";
+import { gatePolicyContent, WorkWorkspace } from "./work-workspace.ts";
 
 const directories: string[] = [];
+it("pins every gate setting except the official Biome schema version", () => {
+	expect(
+		gatePolicyContent("biome.jsonc", '"$schema": "https://biomejs.dev/schemas/2.5.15/schema.json"'),
+	).toBe('"$schema": "biome-schema"');
+	expect(gatePolicyContent("vitest.config.ts", "threshold=95")).toBe("threshold=95");
+});
 afterEach(async () => {
 	for (const directory of directories.splice(0))
 		await rm(directory, { recursive: true, force: true });
