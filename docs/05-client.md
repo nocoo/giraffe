@@ -1,5 +1,13 @@
 # 05 — Client 设计
 
+## Agent workspace
+
+The `/work` route is labeled **Agent** in navigation, breadcrumbs and the command palette. It reads existing work-run, work-cron and work-control resources without starting execution. A compact, keyboard-selectable topology explains observation, coordination, Jev, preparation, independent worker/reviewer conversations, publication and follow-up, alongside four-domain analysis. Completed empty cycles remain analysis history, not successful worker deliveries.
+
+Run selection survives polling; returning to live explicitly selects the current occurrence or latest history. Only a matching active occurrence, fresh heartbeat and running job prove a live run. Historical topology never receives live highlighting. Repository phases, rounds, dispositions, publication and follow-up remain distinct; compressed outcomes retain omitted-detail notices. Activities preserve order without invented timestamps. A bounded allowlist presents product-language categories and safe counters; raw events, findings, reasons, errors, command lines, paths, cron syntax and occurrence identifiers never render. Unknown activities contribute only an omitted count. The shell clock labels run updates, not source freshness.
+
+Pause/resume is the only write, using existing revision and account checks. Malformed cron/control records disable it; acknowledgement differs from saving, and save errors persist across successful polls. Installed Basalt 2.1.8 components and existing theme tokens own surfaces and controls. No runtime, wire-contract or dependency changes are required.
+
 Business pages compose Basalt PageHeader through BusinessPageHeader: the title shares its row with the repository scope and available controls; subtitle and primary-data time share a wrapping second line. 列表首列为“参与统计”开关，可见性和归档状态独立成列。开关保存到服务端，作用于所有跨仓统计和软件工厂；管理清单保留禁用仓库以便重新开启。语言圆点、语言分布图、工厂规模地图统一使用 `chart-theme.ts` 的多色色板，已知语言固定映射，其他分类按规范化名称稳定映射，排序和筛选不会改变颜色。
 
 Vite SPA 契约。页面、MVVM、控件复用、刷新时机与 L1/L3 以本文为准；§11–12 保留阶段 2 的历史实施记录。当前全站刷新以 §7 和 [09](09-factory-runs.md) 为准。01 第 9 节只是信息架构摘要。HTTP 以 [04](04-server.md) 为准，JSON 以 [03](03-schema.md) 为准，测试分层以 [02](02-quality.md) 为准。

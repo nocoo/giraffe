@@ -1,141 +1,391 @@
-import { Button } from "@nocoo/basalt";
+import { Badge, Button } from "@nocoo/basalt";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
+import {
+	Activity,
+	ArrowRight,
+	Bot,
+	Brain,
+	CheckCheck,
+	Clock3,
+	Database,
+	GitBranch,
+	GitPullRequest,
+	History,
+	ListChecks,
+	Pause,
+	Play,
+	Radar,
+	ShieldCheck,
+	Workflow,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { DataTimeSource } from "../components/layout/data-time";
 import { useAnalysisRead } from "../components/layout/use-analysis-read";
 import { formatPreciseDate } from "../lib/format";
-import { loadWork, setWorkPaused, type WorkData, workBoard } from "../viewmodels/work";
+import { getActiveAccountId } from "../viewmodels/session";
+import { loadWork, setWorkPaused, type WorkData, workExperience } from "../viewmodels/work";
+import "./work.css";
+
+const nodeIcons = {
+	observations: Database,
+	coordinator: Workflow,
+	jev: Brain,
+	preparation: GitBranch,
+	worker: Bot,
+	reviewer: ShieldCheck,
+	publish: GitPullRequest,
+	followup: Radar,
+	analysts: ListChecks,
+};
 
 export function WorkPage() {
 	const [data, setData] = useState<WorkData | null>(null);
 	const [error, setError] = useState("");
+	const [controlError, setControlError] = useState("");
 	const [busy, setBusy] = useState(false);
 	const [now, setNow] = useState(Date.now);
+	const [selection, setSelection] = useState<{ account: string; id: string } | null>(null);
+	const [nodeId, setNodeId] = useState("coordinator");
 	useAnalysisRead(
 		loadWork,
 		(value) => {
 			setData(value);
 			setError("");
 		},
-		() => setError("Work 状态暂时不可用，保留上次记录。"),
+		() => setError("Agent 状态暂时不可用，保留上次记录。"),
 		5000,
 	);
 	useEffect(() => {
 		const timer = setInterval(() => setNow(Date.now()), 5000);
 		return () => clearInterval(timer);
 	}, []);
-	const board = useMemo(() => (data ? workBoard(data, now) : null), [data, now]);
+	const board = useMemo(
+		() =>
+			data
+				? workExperience(data, now, selection?.account === data.account_id ? selection.id : null)
+				: null,
+		[data, now, selection],
+	);
+	const selected = board?.selected;
+	const node = board?.nodes.find((item) => item.id === nodeId);
 	async function pause() {
-		if (!data || !board) return;
+		if (!data || !board?.canPause || busy) return;
 		setBusy(true);
+		setControlError("");
 		try {
 			const control = await setWorkPaused(data.account_id, data.control, !board.desiredPaused);
-			setData({ ...data, control });
+			if (getActiveAccountId() === data.account_id)
+				setData((latest) =>
+					latest?.account_id === data.account_id ? { ...latest, control } : latest,
+				);
 		} catch {
-			setError("控制保存失败，请重新读取后重试。");
+			setControlError("控制保存失败，请重新读取后重试。");
 		} finally {
 			setBusy(false);
 		}
 	}
 	return (
-		<div className="space-y-4" data-testid="work-desk">
+		<div className="agent-desk" data-testid="work-desk">
+			<DataTimeSource entries={[{ label: "Agent 运行记录", at: selected?.updatedAt ?? null }]} />
 			<PageHeader
-				title="Work"
-				description="一个本机 cron · main 原子提交 · 独立审查 ≤20 轮 · 主机推送与三次 SHA 跟进"
+				title="Agent"
+				description="从观察到交付 · 一个主控，独立审查，四域分析"
 				actions={
 					<Button
 						size="sm"
 						variant="secondary"
-						disabled={!board || busy}
+						disabled={!board?.canPause || busy || board.pausePending}
+						icon={board?.desiredPaused ? <Play size={16} /> : <Pause size={16} />}
 						onClick={() => void pause()}
 					>
 						{busy ? "正在保存…" : board?.desiredPaused ? "恢复调度" : "暂停调度"}
 					</Button>
 				}
 			/>
-			<div className="flex flex-wrap gap-4 text-sm">
-				<span>{board?.online ? "本机在线" : "本机离线"}</span>
-				<span>{board?.cron?.expression ?? "未读取 cron"}</span>
-				<span>{board?.cron?.timezone}</span>
+			<div className="agent-status-strip">
+				<Badge variant={board?.runtime.includes("在线") ? "teal" : "secondary"} dot>
+					{board?.runtime ?? "正在读取状态"}
+				</Badge>
+				{board?.pausePending ? (
+					<Badge variant="warning">{board.desiredPaused ? "等待暂停确认" : "等待恢复确认"}</Badge>
+				) : null}
 				<span>
-					{board?.pausePending ? "等待暂停确认" : board?.cron?.paused ? "已暂停" : "未暂停"}
+					<Clock3 size={15} /> 下一周期 <time>{formatPreciseDate(board?.nextRunAt ?? null)}</time>
 				</span>
-				<span>下一次：{formatPreciseDate(board?.cron?.nextRunAt ?? null)}</span>
+				<span className="agent-muted">只读观察 · 仅可暂停或恢复调度</span>
 			</div>
-			{error || board?.errors.length ? (
-				<p role="alert" className="text-sm text-basalt-destructive">
-					{error || board?.errors.join("；")}
+			{error || controlError || board?.errors.length ? (
+				<p role="alert" className="text-basalt-destructive">
+					{[error, controlError, ...(board?.errors ?? [])].filter(Boolean).join("；")}
 				</p>
 			) : null}
-			{!board?.jobs.length ? (
-				<LayerCard>
+			<LayerCard className="agent-architecture">
+				<LayerCard.Header>
+					<div className="agent-section-title">
+						<Workflow size={18} />
+						<h2>协作架构</h2>
+						<span className="agent-muted">
+							{selected?.current ? "当前周期" : "职责与已保存证据"}
+						</span>
+					</div>
+				</LayerCard.Header>
+				<LayerCard.Body>
+					{!board ? (
+						<p className="agent-muted">
+							{error ? "暂时无法读取架构状态，请等待重新连接。" : "正在读取架构状态…"}
+						</p>
+					) : (
+						<>
+							<section className="agent-topology" aria-label="Agent 协作架构">
+								{board.nodes.map((item, index) => {
+									const Icon = nodeIcons[item.id as keyof typeof nodeIcons];
+									return (
+										<div
+											className={`agent-node-wrap agent-node-${item.id}`}
+											key={item.id}
+											data-tone={item.tone}
+										>
+											<Button
+												variant="ghost"
+												className="agent-node"
+												aria-pressed={nodeId === item.id}
+												aria-controls="agent-node-detail"
+												onClick={() => setNodeId(item.id)}
+											>
+												<span className="agent-node-icon">
+													<Icon size={21} />
+												</span>
+												<span className="agent-node-copy">
+													<strong>{item.title}</strong>
+													<span>{item.subtitle}</span>
+													<small data-active={item.state === "进行中"}>{item.state}</small>
+												</span>
+											</Button>
+											{index < 7 ? (
+												<ArrowRight className="agent-connector" size={16} aria-hidden="true" />
+											) : null}
+										</div>
+									);
+								})}
+								<div className="agent-analyst-domains">
+									<span className="agent-branch-label">
+										<Workflow size={16} />
+										主控分支 → 并行分析
+									</span>
+									{board.analysts.map((domain) => (
+										<Badge
+											key={domain.id}
+											variant={domain.state === "需关注" ? "warning" : "purple"}
+										>
+											{domain.label} · {domain.state}
+										</Badge>
+									))}
+									<span className="agent-muted">与仓库执行并行 · 报告独立保留</span>
+								</div>
+							</section>
+							<LayerCard.Well
+								className="agent-node-detail"
+								id="agent-node-detail"
+								role="region"
+								aria-label="节点详情"
+								aria-live="polite"
+							>
+								<strong>{node?.title}</strong>
+								<span>{node?.responsibility}</span>
+								<span className="agent-muted">
+									{node?.state}
+									{node?.models.length
+										? ` · ${node.models.join(" · ")}`
+										: ["coordinator", "worker", "reviewer", "analysts"].includes(nodeId)
+											? " · 模型未上报"
+											: ""}
+								</span>
+							</LayerCard.Well>
+						</>
+					)}
+				</LayerCard.Body>
+			</LayerCard>
+			<div className="agent-records">
+				<LayerCard className="agent-history">
+					<LayerCard.Header>
+						<div className="agent-section-title">
+							<History size={18} />
+							<h2>周期记录</h2>
+							<span className="agent-muted">{board?.runs.length ?? 0} 次</span>
+						</div>
+					</LayerCard.Header>
 					<LayerCard.Body>
-						暂无 Work 周期。运行 bun run agent work；网页不能授权代码执行、合并或部署。
+						<section className="agent-history-list" aria-label="周期记录选择">
+							{board?.runs.map((run) => (
+								<Button
+									variant="ghost"
+									key={run.id}
+									className="agent-history-item"
+									aria-pressed={selected?.id === run.id}
+									onClick={() => data && setSelection({ account: data.account_id, id: run.id })}
+								>
+									<time>{formatPreciseDate(run.createdAt)}</time>
+									<span>
+										{run.current ? "实时周期" : "历史记录"} · {run.status}
+									</span>
+									<small>
+										{run.repositories.length} 个仓库 · {run.activities.length} 条活动
+									</small>
+								</Button>
+							))}
+						</section>
+						{!board?.runs.length ? (
+							<p className="agent-muted">
+								{data ? "尚无周期记录；架构职责已就绪，等待本机上报。" : "正在读取周期记录…"}
+							</p>
+						) : null}
 					</LayerCard.Body>
 				</LayerCard>
-			) : (
-				board.jobs.map((job) => (
-					<LayerCard key={job.id}>
-						<LayerCard.Body>
-							<div className="flex flex-wrap justify-between gap-3 text-sm">
-								<strong>{job.status}</strong>
-								<span>{job.occurrence}</span>
-								<time>{formatPreciseDate(job.updatedAt)}</time>
+				<div className="agent-run-column">
+					<LayerCard>
+						<LayerCard.Header>
+							<div className="agent-section-title">
+								<Activity size={18} />
+								<h2>{selected?.current ? "当前运行" : "周期概览"}</h2>
+								<Badge variant="secondary">{selected?.current ? "实时周期" : "历史记录"}</Badge>
+								{selection ? (
+									<Button size="sm" variant="ghost" onClick={() => setSelection(null)}>
+										返回实时
+									</Button>
+								) : null}
 							</div>
-							<ol className="mt-3 space-y-2 break-words text-sm">
-								{Object.entries(job.repositories).map(([repository, state]) => (
-									<li key={repository} className="rounded-md border border-basalt-border p-3">
-										<div className="flex flex-wrap justify-between gap-2">
-											<strong>{repository}</strong>
-											<span>{state.status}</span>
+						</LayerCard.Header>
+						<LayerCard.Body>
+							{selected ? (
+								<>
+									<div className="agent-run-summary">
+										<strong>{selected.status}</strong>
+										<span>{selected.repositories.length} 个仓库</span>
+										<span>
+											{selected.repositories.reduce((sum, repo) => sum + repo.tasks.length, 0)}{" "}
+											项任务
+										</span>
+										<span className="agent-muted">
+											更新 <time>{formatPreciseDate(selected.updatedAt)}</time>
+										</span>
+									</div>
+									{selected.analysisAttention ? (
+										<p className="text-basalt-destructive">分析或报告交付需关注，未视为成功。</p>
+									) : null}
+									{selected.empty ? (
+										<div className="agent-idle">
+											<CheckCheck size={24} />
+											<div>
+												<strong>
+													{selected.status === "已完成"
+														? "周期已结束，未选择执行仓库"
+														: "等待仓库执行证据"}
+												</strong>
+												<p>{selected.empty}</p>
+												<span className="agent-muted">
+													没有 Worker 或发布证据时，不展示成功交付。
+												</span>
+											</div>
 										</div>
-										{state.dispositions?.map((item) => (
-											<p key={item.task}>
-												{item.task} · {item.outcome} {item.reason ?? ""}
-											</p>
+									) : null}
+									<div className="agent-repositories">
+										{selected.repositories.map((repo) => (
+											<LayerCard.Well className="agent-repository" key={repo.key}>
+												<div className="agent-repo-heading">
+													<strong>{repo.name}</strong>
+													<Badge variant="secondary">{repo.status}</Badge>
+													<span>轮次 {repo.round}/20</span>
+												</div>
+												<ol className="agent-phases" aria-label={`${repo.name} 执行阶段`}>
+													{repo.phases.map((phase, phaseIndex) => (
+														<li key={phase} data-current={phaseIndex === repo.phase}>
+															<span>{phaseIndex + 1}</span>
+															{phase}
+														</li>
+													))}
+												</ol>
+												<div className="agent-pair">
+													<div>
+														<Bot size={16} />
+														<strong>Worker</strong>
+														<span>
+															{repo.worker} · {repo.workerModel}
+														</span>
+													</div>
+													<div>
+														<ShieldCheck size={16} />
+														<strong>Reviewer</strong>
+														<span>
+															{repo.reviewer} · {repo.reviewerModel}
+														</span>
+													</div>
+												</div>
+												<div className="agent-task-list">
+													{repo.tasks.map((task) => (
+														<span key={task.key}>
+															{task.label} · {task.outcome}
+															{task.reason ? ` · ${task.reason}` : ""}
+														</span>
+													))}
+												</div>
+												{repo.detailsOmitted ? (
+													<p className="agent-muted">详细原因已省略；保留已上报的任务结果。</p>
+												) : null}
+												<div className="agent-repo-footer">
+													<span>{repo.findings}</span>
+													{repo.findingCategories.map((category) => (
+														<Badge key={category} variant="warning">
+															{category}
+														</Badge>
+													))}
+													<span>
+														{repo.pushed ? "已有推送记录" : "尚未推送"} · {repo.followup}
+													</span>
+												</div>
+											</LayerCard.Well>
 										))}
-										{state.detailsOmitted ? (
-											<p>
-												详细原因已省略；任务结果：
-												{state.tasks
-													.map(
-														(task, index) =>
-															`${task}=${state.dispositionOutcomes?.[index] === "C" ? "committed" : state.dispositionOutcomes?.[index] === "N" ? "reviewed_no_change" : state.dispositionOutcomes?.[index] === "D" ? "deferred" : "pending"}`,
-													)
-													.join(", ")}
-											</p>
-										) : null}
-										<div className="flex flex-wrap gap-x-4 gap-y-1">
-											<span>任务 {state.tasks.join(", ")}</span>
-											<span>
-												Worker {state.worker ?? "—"} {state.workerModel ?? "执行模型"}
-											</span>
-											<span>
-												Reviewer {state.reviewer ?? "—"} {state.reviewerModel ?? "独立审查模型"}
-											</span>
-											<span>轮次 {state.round}/20</span>
-										</div>
-										<p className="break-all">SHA {state.head ?? "未提交"}</p>
-										{state.followup ? (
-											<p>
-												跟进 {state.followup.checks}/3 · {state.followup.outcome}
-											</p>
-										) : null}
-										{state.findings.map((finding) => (
-											<p key={finding} className="text-basalt-muted-foreground">
-												{finding}
-											</p>
-										))}
-									</li>
-								))}
-								{[...new Set(job.events)].map((event) => (
-									<li key={event}>{event}</li>
-								))}
-							</ol>
+									</div>
+								</>
+							) : (
+								<p className="agent-muted">
+									{data ? "尚无执行周期。本机在线状态与下一周期见页首。" : "正在读取运行概览…"}
+								</p>
+							)}
 						</LayerCard.Body>
 					</LayerCard>
-				))
-			)}
+					<LayerCard>
+						<LayerCard.Header>
+							<div className="agent-section-title">
+								<Activity size={18} />
+								<h2>活动轨迹</h2>
+								<span className="agent-muted">按发生顺序 · 无单条时间戳</span>
+							</div>
+						</LayerCard.Header>
+						<LayerCard.Body>
+							<ol className="agent-activities">
+								{selected?.activities.map((activity) => (
+									<li key={activity.key}>
+										<span className="agent-activity-order">{activity.order}</span>
+										<Badge variant={activity.category === "关注" ? "warning" : "secondary"}>
+											{activity.category}
+										</Badge>
+										<span>{activity.label}</span>
+									</li>
+								))}
+							</ol>
+							{selected?.omittedEvents ? (
+								<p className="agent-muted">
+									另有 {selected.omittedEvents} 条未分类活动；为避免显示工具输出，未展示原文。
+								</p>
+							) : null}
+							{!selected?.activities.length ? (
+								<p className="agent-muted">尚无可展示的结构化活动；心跳不代表执行成功。</p>
+							) : null}
+						</LayerCard.Body>
+					</LayerCard>
+				</div>
+			</div>
 		</div>
 	);
 }

@@ -46,6 +46,9 @@ describe("navigation", () => {
 		expect(breadcrumbsFor("/ci")).toEqual([{ href: "/ci", label: "CI 与发布" }]);
 		expect(breadcrumbsFor("/nope")).toEqual([{ href: "/nope", label: "未找到" }]);
 		expect(headerTitle("/")).toBe("仓库");
+		expect(headerTitle("/work")).toBe("Agent");
+		expect(breadcrumbsFor("/work")).toEqual([{ href: "/work", label: "Agent" }]);
+		expect(paletteItems(null).find((item) => item.href === "/work")?.label).toBe("Agent");
 		expect(headerCrumbs("/")).toEqual([{ href: "/", label: "Giraffe" }]);
 		expect(headerCrumbs("/settings")).toEqual([{ href: "/", label: "Giraffe" }]);
 		expect(headerTitle("/repos/o/n")).toBe("o/n");
