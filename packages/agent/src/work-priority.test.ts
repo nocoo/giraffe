@@ -64,6 +64,20 @@ it("asks once per repository in batches of 25 and preserves every issue/PR", asy
 		["dependency:1", 0.8],
 		["pr:2", 0.1],
 	]);
+	const input = calls[0] as {
+		state: { repositories: Record<string, unknown>[]; instructions: string };
+		questions: Record<string, { instructions: string; criteria: Record<string, string> }>;
+	};
+	expect(input.state.repositories[0]).toEqual({
+		repository: "owner/repo0",
+		stale: false,
+		fetchedAt: "2026-10-03T00:00:00Z",
+		limitations: [],
+	});
+	expect(input.state.instructions).toContain("untrusted");
+	expect(input.questions.repo_0?.instructions).toBe("Prioritize owner/repo0.");
+	expect(input.questions.repo_0?.criteria["dependency:1"]).toBe("Fix test");
+	expect(JSON.stringify(input)).not.toContain("github.com");
 });
 
 it("restricts model/think selection and rejects incomplete Jev answers", async () => {
