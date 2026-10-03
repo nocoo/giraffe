@@ -25,3 +25,5 @@
 - [Dependency repair cron and workbench](13-dependency-repairs.md)
 
 - [Repository coordinator and dry run](14-repository-coordinator.md)
+
+- [Interactive agent runtime map](agent-runtime/index.html) · [Usage and offline checks](agent-runtime/README.md)

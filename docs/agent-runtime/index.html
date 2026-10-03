@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<meta name="color-scheme" content="dark">
+		<meta
+			name="description"
+			content="An offline, interactive map of Giraffe's local agent architecture and repository workflow."
+		>
+		<title>Giraffe / Agent Runtime</title>
+		<link rel="stylesheet" href="style.css">
+		<script src="app.js" defer></script>
+	</head>
+	<body>
+		<a class="skip-link" href="#walkthrough">Skip to walkthrough</a>
+		<main class="terminal">
+			<div class="titlebar">
+				<span class="window-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+				<span>~/giraffe <span class="muted">/</span> agent-runtime</span>
+				<span id="offline-label">OFFLINE EXPLAINER</span>
+			</div>
+			<header class="masthead">
+				<div class="identity">
+					<div class="terminal-mark" aria-hidden="true">g<span>_</span></div>
+					<div>
+						<p class="eyebrow">SYSTEM MAP <span class="muted">/ 01</span></p>
+						<h1>GIRAFFE <span>AGENT RUNTIME</span></h1>
+						<p class="subtitle">One controller. Persistent conversations. Enforced boundaries.</p>
+					</div>
+				</div>
+				<div class="snapshot">
+					<p class="eyebrow">RECORDED INPUT <span class="muted">2026-10-03</span></p>
+					<div>
+						<span><b>65</b> repos</span><span><b>458</b> issues</span><span><b>6</b> PRs</span>
+					</div>
+				</div>
+			</header>
+			<section class="modebar" aria-label="Execution mode preview">
+				<fieldset class="mode-controls" aria-label="Preview mode">
+					<span class="eyebrow">MODE</span>
+					<button type="button" data-mode="dry" aria-pressed="false">Dry run</button>
+					<button type="button" data-mode="local" aria-pressed="true">Local only</button>
+					<button type="button" data-mode="publish" aria-pressed="false">Publish</button>
+				</fieldset>
+				<p id="mode-summary"></p>
+			</section>
+			<div class="workspace">
+				<section class="architecture" aria-labelledby="map-heading">
+					<div class="section-heading">
+						<h2 id="map-heading">01 <span>CONVERSATION TOPOLOGY</span></h2>
+						<span class="hint">select a node to inspect ↗</span>
+					</div>
+					<div class="legend">
+						<span class="purple">■ orchestration</span><span class="green">■ decisions</span
+						><span class="cyan">■ execution</span><span class="blue">■ analysis</span>
+					</div>
+					<div class="map-grid" id="map-grid">
+						<svg id="connections" aria-hidden="true">
+							<title>Workflow connections</title>
+							<defs>
+								<marker id="arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+									<path d="M0,0 L6,3 L0,6" fill="currentColor"></path>
+								</marker>
+							</defs>
+							<g id="connection-paths"></g>
+						</svg>
+						<button
+							type="button"
+							class="node cloud"
+							id="node-api"
+							data-node="api"
+							aria-pressed="false"
+							aria-label="Inspect Giraffe web and API"
+						>
+							<span class="node-label">CLOUD / apps/web <span class="node-symbol">↧</span></span
+							><strong>Giraffe</strong><span class="node-subtitle">Worker + dashboard</span
+							><span class="node-divider"></span><span class="node-line">D1 saved observations</span
+							><span class="node-line">/api/v1 · scoped token</span
+							><span class="node-line">reports / jobs / records</span
+							><span class="node-foot">GET ≠ GitHub refresh</span>
+						</button>
+						<button
+							type="button"
+							class="node controller"
+							id="node-controller"
+							data-node="controller"
+							aria-pressed="true"
+							aria-label="Inspect Astra orchestrator"
+						>
+							<span class="node-label">CONTROLLER <span class="node-symbol">◆</span></span
+							><strong>Astra orchestrator</strong
+							><span class="node-subtitle">order · assess · hand off</span
+							><span class="node-foot">one root conversation</span>
+						</button>
+						<div class="local-label">
+							<span class="status-dot"></span>
+							LOCAL NODE.JS<br><span class="muted">Pi Durable harness</span>
+						</div>
+						<button
+							type="button"
+							class="node decision"
+							id="node-jev"
+							data-node="jev"
+							aria-pressed="false"
+							aria-label="Inspect Jev decision layer"
+						>
+							<span class="node-label">JEV / DECISION LAYER <span class="node-symbol">◇</span></span
+							><strong>Prioritize → route</strong
+							><span class="node-subtitle">one question per repository</span
+							><span class="batch-bars"><span>25</span><span>25</span><span>2</span></span
+							><span class="node-foot">then choose model + thinking</span>
+						</button>
+						<button
+							type="button"
+							class="node state"
+							id="node-state"
+							data-node="state"
+							aria-pressed="false"
+							aria-label="Inspect runtime state"
+						>
+							<span class="node-label">LOCAL / STATE <span class="node-symbol">▤</span></span
+							><strong>SQLite memory</strong
+							><span class="node-subtitle">persistent ≠ always running</span
+							><span class="node-divider"></span><span class="node-line">one owner / account</span
+							><span class="node-line">stable conversation IDs</span
+							><span class="node-line">separate work / dry DBs</span
+							><span class="node-foot">secrets stay on this machine</span>
+						</button>
+						<button
+							type="button"
+							class="node preparation"
+							id="node-preparation"
+							data-node="preparation"
+							aria-pressed="false"
+							aria-label="Inspect workspace preparation"
+						>
+							<span class="node-label"
+								>RESIDENT / PREPARATION <span class="node-symbol">⌘</span></span
+							><strong>Prepare the workspace</strong
+							><span class="node-subtitle">main → safe pull → mirror install</span
+							><span class="node-foot">UT + lint + available type/build gates</span>
+						</button>
+						<section
+							class="analysts"
+							id="node-analysts"
+							aria-label="Four resident analysis conversations"
+						>
+							<p class="node-label">SOL / RESIDENT ANALYSIS</p>
+							<h3>4 domains <span>in parallel</span></h3>
+							<button
+								type="button"
+								class="analyst"
+								data-node="issues"
+								aria-label="Inspect issues analysis"
+								aria-pressed="false"
+							>
+								<span>01</span><strong>Issues</strong><span>backlog ↗</span>
+							</button>
+							<button
+								type="button"
+								class="analyst"
+								data-node="prs"
+								aria-label="Inspect PR analysis"
+								aria-pressed="false"
+							>
+								<span>02</span><strong>PRs</strong><span>readiness ↗</span>
+							</button>
+							<button
+								type="button"
+								class="analyst"
+								data-node="ci"
+								aria-label="Inspect CI analysis"
+								aria-pressed="false"
+							>
+								<span>03</span><strong>CI</strong><span>checks ↗</span>
+							</button>
+							<button
+								type="button"
+								class="analyst"
+								data-node="cd"
+								aria-label="Inspect CD analysis"
+								aria-pressed="false"
+							>
+								<span>04</span><strong>CD</strong><span>delivery ↗</span>
+							</button>
+							<p class="node-foot">
+								saved evidence → online reports<br>
+								<span class="muted">no report writes in dry run</span>
+							</p>
+						</section>
+						<button
+							type="button"
+							class="node workers"
+							id="node-workers"
+							data-node="workers"
+							aria-pressed="false"
+							aria-label="Inspect repository workers"
+						>
+							<span class="node-label"
+								>ONE CONVERSATION / REPO <span class="node-symbol">⑂</span></span
+							><strong>Repository workers</strong
+							><span class="node-subtitle">read → latest → edit → check → commit</span
+							><span class="worker-route"><span>backy</span><b>Astra / high</b></span
+							><span class="worker-route"><span>r2shot</span><b>Sol / low</b></span
+							><span class="node-foot">recorded routes · executed sequentially</span>
+						</button>
+						<div class="scope-note">
+							<span class="eyebrow">ENFORCED BY CODE</span>
+							<p>Models choose.<br>The host permits.</p>
+							<ul>
+								<li>validated JSON handoff</li>
+								<li>bounded workspace tools</li>
+								<li>unchanged baseline gates</li>
+								<li>normal commit hooks</li>
+							</ul>
+							<span class="muted"
+								>No arbitrary shell tool.<br>Native scripts are not sandboxed.</span
+							>
+						</div>
+						<div class="workspace-note">
+							<span class="eyebrow">WORKSPACE CONTRACT</span>
+							<p>~/workspace/personal/<br><span class="cyan">&lt;repository&gt;</span></p>
+							<span class="muted">main · no worktree<br>retain ahead commits</span>
+						</div>
+						<button
+							type="button"
+							class="node publication"
+							id="node-publication"
+							data-node="publication"
+							aria-pressed="false"
+							aria-label="Inspect publication boundary"
+						>
+							<span class="node-label">HOST / FINAL GATE <span class="node-symbol">▣</span></span
+							><strong id="publication-title">Verify · keep local</strong
+							><span class="node-subtitle" id="publication-subtitle"
+								>exact HEAD + clean / retained baseline</span
+							><span class="node-foot" id="publication-policy"
+								>workers never push or close issues</span
+							>
+						</button>
+					</div>
+					<div class="map-caption">
+						<span>└─</span>
+						Analysis is parallel. Repository execution is sequential. Model names are configured,
+						not hard-coded.
+					</div>
+				</section>
+				<aside class="inspector" aria-labelledby="detail-title">
+					<div class="section-heading">
+						<h2>02 <span>NODE INSPECTOR</span></h2>
+						<span class="inspect-cross" aria-hidden="true">⌖</span>
+					</div>
+					<div class="inspector-body">
+						<p class="eyebrow" id="detail-kind">LOCAL / ORCHESTRATOR ROLE</p>
+						<h3 id="detail-title">Astra orchestrator</h3>
+						<p class="detail-summary" id="detail-summary">
+							One root conversation plans the portfolio. Select a node to inspect its boundaries.
+						</p>
+						<div id="detail-body"></div>
+						<p class="eyebrow permission-label">CAPABILITY BOUNDARY</p>
+						<div id="detail-permissions"></div>
+						<a
+							class="source-link"
+							id="detail-source"
+							href="../../packages/agent/src/work-coordinator.ts"
+							>↗ Read implementation</a
+						>
+					</div>
+					<div class="truth-note">
+						<span class="amber">◇ NOT THE REFERENCE DIAGRAM</span>
+						<p>
+							Astra is the current orchestrator, not an on-call reviewer. Jev ranks and routes; it
+							does not choose every tool call.
+						</p>
+						<p>
+							No explorer/researcher pool or six-worker fan-out exists in this
+							<code>work</code> path.
+						</p>
+					</div>
+				</aside>
+			</div>
+			<section class="walkthrough" id="walkthrough" aria-labelledby="walkthrough-heading">
+				<div class="section-heading">
+					<h2 id="walkthrough-heading">03 <span>WORKFLOW WALKTHROUGH</span></h2>
+					<span class="hint">illustrated sequence · not live telemetry</span>
+				</div>
+				<fieldset class="steps" aria-label="Workflow stages" id="steps"></fieldset>
+				<div class="playback">
+					<div class="transport">
+						<button type="button" id="play" aria-label="Play walkthrough">
+							▶ <span>Play</span>
+						</button><button type="button" id="previous" aria-label="Previous step">←</button
+						><span id="step-count">01 / 08</span
+						><button type="button" id="next" aria-label="Next step">→</button
+						><button type="button" id="reset" aria-label="Reset walkthrough">↺</button>
+					</div>
+					<p id="stage-outcome" role="status" aria-live="polite"></p>
+				</div>
+			</section>
+			<section class="activity" aria-label="Workflow logs and recorded evidence">
+				<div class="activity-tabs" role="tablist" aria-label="Activity view">
+					<button
+						type="button"
+						role="tab"
+						id="tab-replay"
+						aria-controls="replay-panel"
+						aria-selected="true"
+						tabindex="0"
+					>
+						Illustrated log
+					</button><button
+						type="button"
+						role="tab"
+						id="tab-recorded"
+						aria-controls="recorded-panel"
+						aria-selected="false"
+						tabindex="-1"
+					>
+						Recorded run
+					</button><span class="activity-caption">NO COMMANDS ARE EXECUTED HERE</span>
+				</div>
+				<div id="replay-panel" role="tabpanel" aria-labelledby="tab-replay">
+					<ol id="session-log"></ol>
+				</div>
+				<div id="recorded-panel" role="tabpanel" aria-labelledby="tab-recorded" hidden>
+					<div class="recorded-header">
+						<strong>2026-10-03 / real local acceptance</strong
+						><span class="amber">operator-assisted recovery</span>
+					</div>
+					<div class="evidence-grid">
+						<article>
+							<p class="eyebrow cyan">BACKY / CONV 198</p>
+							<h3>Astra · high</h3>
+							<p>Undici <b>8.11.2</b> + Node ≥22.19 + regression tests.</p>
+							<p><code>3be12bb</code> · 1 atomic commit</p>
+							<span class="evidence-check">✓ 781 UT · lint · types · build</span
+							><small>Local Miniflare HTTP smoke passed. Full Backy L2/L3 was not run.</small>
+						</article>
+						<article>
+							<p class="eyebrow cyan">R2SHOT / CONV 341</p>
+							<h3>Sol · low</h3>
+							<p>
+								8 dependency upgrades / 7 commits. Already-current jsdom verified without an empty
+								commit.
+							</p>
+							<p><code>b145913</code> · final HEAD</p>
+							<span class="evidence-check">✓ 160 UT · 9 integration · 11 Chrome scenarios*</span
+							><small>*First Chrome run hit capture quota; unchanged repeat passed.</small>
+						</article>
+					</div>
+					<p class="recorded-caveat">
+						Recovery required reviewed diff hashes, not automatic crash recovery. A later authorized
+						push verified both remote SHAs; all 10 issues were still open at that check. This is
+						historical evidence, not current CI/CD status.
+					</p>
+					<a class="source-link" href="../14-repository-coordinator.md"
+						>↗ Acceptance details & limitations</a
+					>
+				</div>
+			</section>
+			<section class="commandbar" aria-label="Illustrative CLI command">
+				<span class="prompt" aria-hidden="true">giraffe $</span><code id="command"></code
+				><button type="button" id="copy-command" aria-label="Copy command">Copy</button
+				><span id="copy-status" role="status" aria-live="polite"></span>
+			</section>
+			<details class="startup" id="startup">
+				<summary>
+					Startup &amp; persistence<span class="muted">manual invocation ≠ automatic service</span>
+				</summary>
+				<div class="startup-grid">
+					<article>
+						<h3>01 / Authorize once</h3>
+						<code>bun run agent login</code>
+						<p>
+							Browser consent + PKCE. Scoped API credentials and model configuration stay in
+							<code>~/.config/giraffe/</code>. This page reads neither.
+						</p>
+					</article>
+					<article>
+						<h3>02 / Start an occurrence</h3>
+						<code>bun run agent work --no-push</code>
+						<p>
+							<code>work</code>
+							is one-shot, not an installed service. SQLite restores conversations; an account lock
+							prevents a second local owner. No implicit replay of interrupted mutations.
+						</p>
+					</article>
+					<article>
+						<h3>03 / Other commands ≠ work</h3>
+						<p>
+							<code>watch</code>
+							serves observation/report jobs while running. <code>repair</code> is the separate
+							opt-in dependency cron with dedicated clones/branches and exact-code Astra review. Its
+							grants do not describe this main-workspace flow.
+						</p>
+					</article>
+				</div>
+			</details>
+			<footer>
+				<span
+					><span class="green">●</span>
+					SOURCE-SNAPSHOT <code>f95d6ff</code><span class="footer-divider">/</span>OFFLINE · NO
+					MODEL OR API CALLS</span
+				><a href="../README.md">Docs index ↗</a>
+			</footer>
+			<noscript
+				><p class="no-script">
+					JavaScript is disabled. The architecture and startup notes remain readable; enable it for
+					mode previews, node inspection and the walkthrough.
+				</p></noscript
+			>
+		</main>
+	</body>
+</html>
