@@ -295,6 +295,10 @@
 	align-items: baseline;
 	overflow-wrap: anywhere;
 }
+.agent-activities li > span:nth-child(2) {
+	flex-shrink: 0;
+	white-space: nowrap;
+}
 .agent-activity-order {
 	width: 18px;
 	flex-shrink: 0;

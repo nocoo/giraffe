@@ -290,7 +290,10 @@ export function workExperience(data: WorkData, now: number, selectedId: string |
 	const board = workBoard(data, now);
 	const runs = board.jobs.map((job) => {
 		const current =
-			board.online && job.status === "running" && job.occurrence === board.cron?.activeOccurrence;
+			board.online &&
+			board.cron?.state === "running" &&
+			job.status === "running" &&
+			job.occurrence === board.cron.activeOccurrence;
 		const repositories = Object.entries(job.repositories).map(([name, progress], position) => ({
 			...repositoryView(name, progress),
 			key: `repository-${position}`,

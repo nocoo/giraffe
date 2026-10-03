@@ -39,6 +39,42 @@ beforeEach(() => {
 	vi.resetAllMocks();
 	setActiveAccountId("a");
 });
+it("requires a running heartbeat state as well as freshness and occurrence identity", () => {
+	for (const state of ["idle", "error", "running"]) {
+		const board = workExperience(
+			{
+				account_id: "a",
+				control: null,
+				cron: row("work-cron", "work-cron", { ...cron, state, activeOccurrence: "one" }),
+				jobs: [
+					{
+						...row("run", "work-run", {
+							occurrence: "one",
+							updatedAt: at,
+							events: [],
+							repositories: {
+								"o/r": {
+									tasks: [],
+									worker: 1,
+									reviewer: 2,
+									round: 1,
+									findings: [],
+									head: null,
+									status: "reviewing",
+								},
+							},
+						}),
+						status: "running",
+					},
+				],
+			},
+			Date.parse(at),
+			null,
+		);
+		expect(board.selected?.current).toBe(state === "running");
+		expect(board.nodes.some((node) => node.state === "进行中")).toBe(state === "running");
+	}
+});
 it("presents idle analysis history without inventing execution or leaking tool output", () => {
 	const data = {
 		account_id: "a",
