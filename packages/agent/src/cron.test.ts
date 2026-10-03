@@ -5,8 +5,10 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { createRegistry, Harness, MemoryStorage } from "@earendil-works/pi-durable";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
+import { APIError, BadRequestError } from "@typesafe-ai/sdk";
 import { afterEach, expect, it, vi } from "vitest";
-import { createCron, nextOccurrence } from "./cron.ts";
+import { ApiError } from "./client.ts";
+import { createCron, nextOccurrence, workErrorDiagnostics } from "./cron.ts";
 import type { CronStatus } from "./work-contracts.ts";
 
 afterEach(() => {
@@ -210,7 +212,7 @@ it("recovers heartbeat and scheduler connection errors without silently advancin
 		await vi.advanceTimersByTimeAsync(12000);
 		controller.abort();
 		await serving;
-		expect(log.mock.calls.flat().join(" ")).toContain("连接失败");
+		expect(log.mock.calls.flat().join(" ")).toContain("work_publish_failed: offline");
 		expect(log.mock.calls.flat().join(" ")).toContain("暂时无法上报");
 	} finally {
 		await harness.close(BACKGROUND_CONTEXT);
@@ -246,4 +248,190 @@ it("retains active occurrence when cancellation happens inside the callback", as
 			await harness.close(BACKGROUND_CONTEXT);
 		}
 	}
+});
+
+it("serializes tick, heartbeat and shutdown CAS publications without stale offline overwrites", async () => {
+	vi.useFakeTimers();
+	const harness = await open();
+	const controller = new AbortController();
+	const reports: CronStatus[] = [];
+	let revision = 0;
+	let release: () => void = () => {};
+	let entered: () => void = () => {};
+	const firstWrite = new Promise<void>((resolve) => {
+		entered = resolve;
+	});
+	const blocked = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	const log = vi.fn();
+	const cron = await createCron({
+		harness,
+		expression: "0 * * * *",
+		timezone: "UTC",
+		enabled: false,
+		maxRounds: 20,
+		run: vi.fn(),
+		isPaused: async () => false,
+		log,
+		publish: async (status) => {
+			const expected = revision;
+			if (reports.length === 0) {
+				entered();
+				await blocked;
+			}
+			if (revision !== expected) throw new ApiError(409, "revision_conflict");
+			revision++;
+			reports.push(status);
+		},
+	});
+	try {
+		const serving = cron.serve(controller.signal);
+		await firstWrite;
+		await vi.advanceTimersByTimeAsync(10000);
+		controller.abort();
+		release();
+		await serving;
+		expect(log).not.toHaveBeenCalled();
+		expect(reports).toHaveLength(3);
+		expect(reports.at(-1)?.state).toBe("offline");
+		await vi.advanceTimersByTimeAsync(20000);
+		expect(reports).toHaveLength(3);
+	} finally {
+		await harness.close(BACKGROUND_CONTEXT);
+	}
+});
+
+it("persists bounded safe run diagnostics without labeling model failures as connection failures", async () => {
+	const harness = await open();
+	const reports: CronStatus[] = [];
+	const log = vi.fn();
+	const cron = await createCron({
+		harness,
+		expression: "0 * * * *",
+		timezone: "UTC",
+		enabled: true,
+		maxRounds: 20,
+		isPaused: async () => false,
+		publish: async (status) => {
+			reports.push(status);
+		},
+		log,
+		run: async () => {
+			throw new BadRequestError(
+				400,
+				{
+					detail: {
+						error_type: "max_tokens_exceeded",
+						message: `Bearer private-bearer api_key=private-key sk-secret ${"x".repeat(2500)}`,
+					},
+					config: { private: "private-config" },
+				},
+				new Headers({ authorization: "Bearer private-header" }),
+			);
+		},
+	});
+	try {
+		await cron.tick(undefined, true);
+		await cron.publish();
+		expect(reports.at(-1)?.lastError).toContain("work_cycle_failed");
+		expect(reports.at(-1)?.lastError).toContain("400");
+		expect(reports.at(-1)?.lastError).toContain("max_tokens_exceeded");
+		expect(Buffer.byteLength(reports.at(-1)?.lastError ?? "")).toBeLessThanOrEqual(2048);
+		const diagnostics = JSON.stringify([reports, log.mock.calls]);
+		for (const secret of [
+			"private-bearer",
+			"private-key",
+			"sk-secret",
+			"private-config",
+			"private-header",
+		])
+			expect(diagnostics).not.toContain(secret);
+		expect(diagnostics).not.toContain("连接失败");
+		expect(diagnostics).toContain("15 秒");
+	} finally {
+		await harness.close(BACKGROUND_CONTEXT);
+	}
+});
+
+it("keeps heartbeats active throughout long runs and publishes offline last", async () => {
+	vi.useFakeTimers();
+	const harness = await open();
+	const controller = new AbortController();
+	const reports: CronStatus[] = [];
+	let release: () => void = () => {};
+	const run = vi.fn(
+		async () =>
+			new Promise<void>((resolve) => {
+				release = resolve;
+			}),
+	);
+	const cron = await createCron({
+		harness,
+		expression: "* * * * *",
+		timezone: "UTC",
+		enabled: true,
+		maxRounds: 20,
+		run,
+		isPaused: async () => false,
+		publish: async (status) => {
+			reports.push(status);
+		},
+	});
+	try {
+		await cron.tick();
+		const tick = cron.tick(controller.signal, true);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(run).toHaveBeenCalledOnce();
+		const serving = cron.serve(controller.signal);
+		await vi.advanceTimersByTimeAsync(30000);
+		expect(reports.filter((status) => status.state === "running")).toHaveLength(4);
+		controller.abort();
+		release();
+		await tick;
+		await serving;
+		expect(reports.at(-1)?.state).toBe("offline");
+	} finally {
+		await harness.close(BACKGROUND_CONTEXT);
+	}
+});
+
+it("reports tick failures safely and resumes after a successful connection", async () => {
+	vi.useFakeTimers();
+	const harness = await open();
+	const controller = new AbortController();
+	const log = vi.fn();
+	const reports: CronStatus[] = [];
+	const cron = await createCron({
+		harness,
+		expression: "0 * * * *",
+		timezone: "UTC",
+		enabled: false,
+		maxRounds: 20,
+		run: vi.fn(),
+		log,
+		isPaused: vi
+			.fn()
+			.mockRejectedValueOnce(new ApiError(0, "connection_failed"))
+			.mockResolvedValue(false),
+		publish: async (status) => {
+			reports.push(status);
+		},
+	});
+	try {
+		const serving = cron.serve(controller.signal);
+		await vi.advanceTimersByTimeAsync(16000);
+		controller.abort();
+		await serving;
+		expect(reports.at(-1)?.lastError).toContain(
+			"work_tick_failed: Giraffe API 0: connection_failed",
+		);
+		expect(log.mock.calls.flat().join(" ")).toContain("15 秒后重试");
+	} finally {
+		await harness.close(BACKGROUND_CONTEXT);
+	}
+	expect(workErrorDiagnostics(new APIError(503, null, new Headers()))).toContain(
+		"status=503 request_failed",
+	);
+	expect(workErrorDiagnostics("secret-bearing non-error")).toBe("Unknown work error.");
 });

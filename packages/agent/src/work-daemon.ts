@@ -3,7 +3,7 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { defineDocFamily } from "@earendil-works/pi-durable";
 import type { GiraffeClient } from "./client.ts";
 import type { Config } from "./config.ts";
-import { createCron } from "./cron.ts";
+import { createCron, workErrorDiagnostics } from "./cron.ts";
 import { digest } from "./evidence.ts";
 import { githubRead } from "./github.ts";
 import { pruneRemote } from "./retention.ts";
@@ -273,7 +273,11 @@ export async function workDaemon(options: {
 				if (timer) clearInterval(timer);
 				await queue;
 				const state = await runtime.harness.snapshot(Occurrences, occurrence, context);
-				if (!state?.completed) await publish("blocked");
+				if (!state?.completed) {
+					trace(`[修复周期失败] ${workErrorDiagnostics(error)}`);
+					await queue;
+					await publish("blocked");
+				}
 				throw error;
 			} finally {
 				activeLog = log;

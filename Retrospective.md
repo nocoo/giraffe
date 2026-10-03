@@ -488,3 +488,24 @@ any remote mutation; this was not an actual remote push. Bracing the variable as
 `${expected}:refs/heads/main` preserved the literal boundary. The corrected
 normal-hook push at `3073625` succeeded and its exact remote SHA was confirmed.
 Brace shell variables adjacent to colons in zsh and verify the exact remote SHA.
+
+## 2026-10-03 — Work priority limit and hidden failure causes
+
+The real first 25-repository Work priority request duplicated the full policy and
+candidate data, exceeding Jev's token limit. Its HTTP 400
+`detail.error_type=max_tokens_exceeded` was swallowed and presented as a generic
+scheduler connection failure. Share policy and repository metadata, include each
+candidate title only once, and retain every candidate. The parent verified the
+same 25 repositories and 210 choices: 19,128 request bytes, 10,434 input tokens,
+2,514 output tokens, with all 25 answers validated. This is priority-call proof,
+not acceptance of a restarted Work occurrence; the live runtime remains stopped.
+
+Tick and heartbeat independently read and patched the same cron record revision.
+A deterministic fake CAS regression proves they could self-collide with 409;
+no live 409 is claimed and the observed live cause was not established as a CAS
+collision. Serialize tick, heartbeat and shutdown publication, reading fresh
+state inside the chain, while retaining heartbeats during long runs and writing
+offline last. Persist bounded redacted failure causes in cron state and append
+them to online Work events before the terminal blocked report. Distinguish
+publication/check failures from actual run failures instead of hiding upstream
+codes or claiming a retry waits for the next cron occurrence.

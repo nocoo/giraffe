@@ -1,5 +1,6 @@
 import { createModels } from "@earendil-works/pi-ai/models";
 import { MemoryStorage } from "@earendil-works/pi-durable";
+import { BadRequestError } from "@typesafe-ai/sdk";
 import { afterEach, expect, it, vi } from "vitest";
 import { configSchema } from "./config.ts";
 import { githubRead } from "./github.ts";
@@ -347,6 +348,44 @@ it("finishes missing optional analysis sources as attention instead of pinning t
 		await daemon.tick(undefined, true);
 		expect(rows.get("work-cron")?.payload.completed).toBe(1);
 		expect([...rows.values()].find((row) => row.type === "work-run")?.status).toBe("attention");
+	} finally {
+		await daemon.close();
+		await runtime.close();
+	}
+});
+
+it("appends safe model failure evidence before the terminal blocked report", async () => {
+	vi.mocked(runCoordinator).mockRejectedValue(
+		new BadRequestError(
+			400,
+			{
+				detail: {
+					error_type: "max_tokens_exceeded",
+					message: "Bearer private-bearer api_key=private-key sk-secret",
+				},
+				config: { private: "private-config" },
+			},
+			new Headers({ authorization: "Bearer private-header" }),
+		),
+	);
+	const { runtime, client, rows, daemon } = await fixture();
+	try {
+		await daemon.tick(undefined, true);
+		const job = [...rows.values()].find((row) => row.type === "work-run");
+		expect(job?.status).toBe("blocked");
+		expect(job?.payload.events).toEqual([expect.stringContaining("max_tokens_exceeded")]);
+		expect(JSON.stringify(job?.payload)).toContain("400");
+		const diagnostics = JSON.stringify([job, rows.get("work-cron"), client.update.mock.calls]);
+		for (const secret of [
+			"private-bearer",
+			"private-key",
+			"sk-secret",
+			"private-config",
+			"private-header",
+		])
+			expect(diagnostics).not.toContain(secret);
+		await new Promise<void>((resolve) => setTimeout(resolve, 0));
+		expect(job?.status).toBe("blocked");
 	} finally {
 		await daemon.close();
 		await runtime.close();

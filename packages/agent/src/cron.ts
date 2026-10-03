@@ -1,9 +1,22 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { defineDoc, type Harness } from "@earendil-works/pi-durable";
+import { APIError } from "@typesafe-ai/sdk";
 import { CronExpressionParser } from "cron-parser";
+import { safeDiagnostics } from "./diagnostics.ts";
 import { digest } from "./evidence.ts";
 import type { CronStatus } from "./work-contracts.ts";
+
+export function workErrorDiagnostics(error: unknown): string {
+	if (error instanceof APIError) {
+		const body = error.body as { detail?: { error_type?: unknown; message?: unknown } } | null;
+		const detail = body?.detail;
+		return safeDiagnostics(
+			`${error.name} status=${error.status} ${typeof detail?.error_type === "string" ? detail.error_type : "request_failed"} ${typeof detail?.message === "string" ? detail.message : ""}`,
+		);
+	}
+	return safeDiagnostics(error instanceof Error ? error.message : "Unknown work error.");
+}
 
 export function nextOccurrence(expression: string, timezone: string, after: string): string {
 	if (expression.trim().split(/\s+/).length !== 5 || /H|@/.test(expression))
@@ -70,33 +83,53 @@ export async function createCron(options: {
 	let stateName: CronStatus["state"] = "idle";
 	let running = false;
 	let paused = false;
-	const publish = async () => {
-		const state = await options.harness.snapshot(Schedule, context);
-		if (!state) throw new Error("Cron state missing.");
-		await options.publish({
-			schemaVersion: 1,
-			expression: state.expression,
-			timezone: state.timezone,
-			enabled: options.enabled,
-			paused,
-			state: stateName,
-			nextRunAt: state.nextRunAt,
-			lastRunAt: state.lastRunAt,
-			activeOccurrence: state.active,
-			lastSeenAt: now(),
-			completed: state.completed,
-			lastError: state.lastError,
-			capability: "authorized-work",
-			maxRounds: 20,
-		});
+	const recordError = async (code: string, error: unknown) => {
+		const diagnostics = safeDiagnostics(`${code}: ${workErrorDiagnostics(error)}`);
+		await options.harness.commit(async (tx) => {
+			(await tx.doc(Schedule)).lastError = diagnostics;
+		}, context);
+		return diagnostics;
+	};
+	let publishing = Promise.resolve();
+	const publish = () => {
+		const next = publishing
+			.then(async () => {
+				const state = await options.harness.snapshot(Schedule, context);
+				if (!state) throw new Error("Cron state missing.");
+				await options.publish({
+					schemaVersion: 1,
+					expression: state.expression,
+					timezone: state.timezone,
+					enabled: options.enabled,
+					paused,
+					state: stateName,
+					nextRunAt: state.nextRunAt,
+					lastRunAt: state.lastRunAt,
+					activeOccurrence: state.active,
+					lastSeenAt: now(),
+					completed: state.completed,
+					lastError: state.lastError,
+					capability: "authorized-work",
+					maxRounds: 20,
+				});
+			})
+			.catch(async (error: unknown) => {
+				const diagnostics = await recordError("work_publish_failed", error);
+				log(`修复调度状态暂时无法上报：${diagnostics}`);
+				throw error;
+			});
+		publishing = next.catch(() => {});
+		return next;
 	};
 	return {
 		async tick(signal = new AbortController().signal, force = false) {
 			if (running || signal.aborted) return;
 			running = true;
+			let checking = true;
 			try {
 				paused = await options.isPaused();
 				if (!options.enabled || paused) {
+					checking = false;
 					await publish();
 					return;
 				}
@@ -111,6 +144,7 @@ export async function createCron(options: {
 					state.lastError = null;
 					return state.active;
 				}, context);
+				checking = false;
 				if (!occurrence) {
 					await publish();
 					return;
@@ -134,16 +168,23 @@ export async function createCron(options: {
 				} catch (error) {
 					if (signal.aborted) return;
 					stateName = "error";
-					await options.harness.commit(async (tx) => {
-						(await tx.doc(Schedule)).lastError = "work_cycle_failed";
-					}, context);
-					log("修复周期失败，保留同一执行编号等待恢复。");
+					const diagnostics = await recordError("work_cycle_failed", error);
+					log(
+						`修复周期失败，保留同一执行编号${options.propagate ? "等待恢复" : "，15 秒后重试"}：${diagnostics}`,
+					);
 					if (options.propagate) {
 						await publish();
 						throw error;
 					}
 				}
 				await publish();
+			} catch (error) {
+				if (checking) {
+					stateName = "error";
+					const diagnostics = await recordError("work_tick_failed", error);
+					log(`修复调度检查失败，15 秒后重试：${diagnostics}`);
+				}
+				throw error;
 			} finally {
 				running = false;
 			}
@@ -155,7 +196,7 @@ export async function createCron(options: {
 				if (inFlight) return;
 				inFlight = true;
 				void publish()
-					.catch(() => log("修复调度状态暂时无法上报。"))
+					.catch(() => {})
 					.finally(() => {
 						inFlight = false;
 					});
@@ -164,9 +205,7 @@ export async function createCron(options: {
 				while (!signal.aborted) {
 					try {
 						await this.tick(signal);
-					} catch {
-						log("修复调度连接失败，将在下一周期重试。");
-					}
+					} catch {}
 					if (!signal.aborted) await sleep(15000, undefined, { signal }).catch(() => {});
 				}
 			} finally {
