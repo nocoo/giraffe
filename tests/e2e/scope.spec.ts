@@ -152,7 +152,7 @@ test("empty starred scope offers an all-data path and star toggles remove rows i
 	page,
 }) => {
 	await mockScope(page, true);
-	await page.goto("/");
+	await page.goto("/repos");
 	await expect(page.getByText("当前星标范围暂无数据", { exact: true })).toBeVisible();
 	await page.getByRole("button", { name: "查看全部仓库", exact: true }).click();
 	await expect(page.getByTestId("repo-list").getByRole("row")).toHaveCount(5);

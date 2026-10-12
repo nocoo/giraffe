@@ -15,7 +15,7 @@ export function NotFoundPage() {
 						description="链接可能已失效，也可以从侧栏继续浏览。"
 						action={
 							<Button size="sm" asChild>
-								<Link href="/">返回仓库</Link>
+								<Link href="/repos">返回仓库</Link>
 							</Button>
 						}
 					/>

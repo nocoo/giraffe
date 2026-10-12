@@ -71,8 +71,8 @@ function NavIcon({ name, className }: { name: string; className?: string }) {
 }
 
 function navActive(pathname: string, href: string): boolean {
-	if (href === "/") {
-		return pathname === "/" || pathname.startsWith("/repos/");
+	if (href === "/repos") {
+		return pathname === "/repos" || pathname.startsWith("/repos/");
 	}
 	return pathname === href;
 }

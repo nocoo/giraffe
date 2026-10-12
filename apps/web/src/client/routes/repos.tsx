@@ -210,7 +210,7 @@ export function ReposPage() {
 	if (snap && "missing" in snap) {
 		return (
 			<div className="space-y-8">
-				<PageHeader title="仓库" description={PAGE_DESCRIPTIONS["/"]} />
+				<PageHeader title="仓库" description={PAGE_DESCRIPTIONS["/repos"]} />
 				<LayerCard>
 					<LayerCard.Well>
 						<SnapshotPending state={snap} />
@@ -223,7 +223,7 @@ export function ReposPage() {
 	if (!snap) {
 		return (
 			<div className="space-y-8">
-				<PageHeader title="仓库" description={PAGE_DESCRIPTIONS["/"]} />
+				<PageHeader title="仓库" description={PAGE_DESCRIPTIONS["/repos"]} />
 				<ListPageSkeleton
 					label="加载仓库"
 					cards={["rank", "columns", "rank", "rank"]}
@@ -242,7 +242,7 @@ export function ReposPage() {
 				title="仓库"
 				description={
 					<>
-						{PAGE_DESCRIPTIONS["/"]}
+						{PAGE_DESCRIPTIONS["/repos"]}
 						<DataTimeSource
 							entries={[{ label: "仓库列表", at: snap.fetched_at, freshness: snap.freshness }]}
 						/>

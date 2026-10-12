@@ -1,7 +1,7 @@
 import { LinkProvider, ThemeProvider, Toaster, TooltipProvider } from "@nocoo/basalt";
 import { AccentProvider } from "@nocoo/basalt/providers/accent";
 import { lazy, type ReactNode, Suspense } from "react";
-import { BrowserRouter, Link, Route, Routes } from "react-router";
+import { BrowserRouter, Link, Navigate, Route, Routes } from "react-router";
 import { AppShell } from "./components/layout/app-shell";
 import { BusinessOutlet } from "./components/layout/repository-scope";
 import { APP_PATHS, type AppPath } from "./lib/routes";
@@ -70,8 +70,9 @@ function RouterLink({
 }
 
 const PAGES: Record<(typeof APP_PATHS)[number], ReactNode> = {
-	"/": <ReposPage />,
+	"/": <Navigate to="/factory" replace />,
 	"/factory": <FactoryPage />,
+	"/repos": <ReposPage />,
 	"/analysis": <AnalysisPage />,
 	"/work": <WorkPage />,
 	"/refresh": <RefreshPage />,

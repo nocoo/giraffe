@@ -2,21 +2,23 @@ export type NavItem = { href: string; label: string; icon: string };
 
 export type NavGroup = { label: string; items: readonly NavItem[] };
 
-/** Grouped by purpose: account-wide overviews, per-repository health, then work to act on. */
 export const NAV_GROUPS: readonly NavGroup[] = [
 	{
 		label: "总览",
+		items: [{ href: "/factory", label: "软件工厂", icon: "Factory" }],
+	},
+	{
+		label: "AI",
 		items: [
 			{ href: "/analysis", label: "分析台", icon: "Activity" },
 			{ href: "/work", label: "Agent", icon: "Wrench" },
-			{ href: "/factory", label: "软件工厂", icon: "Factory" },
 			{ href: "/insights", label: "Insights", icon: "Activity" },
 		],
 	},
 	{
 		label: "仓库健康",
 		items: [
-			{ href: "/", label: "仓库", icon: "Box" },
+			{ href: "/repos", label: "仓库", icon: "Box" },
 			{ href: "/ci", label: "CI 与发布", icon: "Workflow" },
 			{ href: "/alerts", label: "安全告警", icon: "ShieldAlert" },
 		],
@@ -41,7 +43,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
 export const NAV_ITEMS: readonly NavItem[] = NAV_GROUPS.flatMap((group) => group.items);
 
 export const PAGE_DESCRIPTIONS = {
-	"/": "当前账号下的仓库快照",
+	"/repos": "当前账号下的仓库快照",
 	"/analysis": "本地 Agent 分析与证据",
 	"/work": "Agent 协作架构、运行历史与活动",
 	"/factory": "可追溯的软件工厂流量与交付",
@@ -80,12 +82,12 @@ export function paletteItems(
 
 export function breadcrumbsFor(pathname: string): { href: string; label: string }[] {
 	if (pathname === "/") {
-		return [{ href: "/", label: "仓库" }];
+		return [{ href: "/factory", label: "软件工厂" }];
 	}
 	const repo = /^\/repos\/([^/]+)\/([^/]+)/.exec(pathname);
 	if (repo?.[1] && repo[2]) {
 		return [
-			{ href: "/", label: "仓库" },
+			{ href: "/repos", label: "仓库" },
 			{ href: `/repos/${repo[1]}/${repo[2]}`, label: `${repo[1]}/${repo[2]}` },
 		];
 	}

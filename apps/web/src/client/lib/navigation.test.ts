@@ -11,10 +11,11 @@ import {
 import { APP_PATHS } from "./routes";
 
 describe("navigation", () => {
-	it("covers 01 section 9 paths and breadcrumbs", () => {
+	it("opens with the factory and groups analysis tools under AI", () => {
 		expect(NAV_GROUPS.map((group) => [group.label, group.items.map((item) => item.href)])).toEqual([
-			["总览", ["/analysis", "/work", "/factory", "/insights"]],
-			["仓库健康", ["/", "/ci", "/alerts"]],
+			["总览", ["/factory"]],
+			["AI", ["/analysis", "/work", "/insights"]],
+			["仓库健康", ["/repos", "/ci", "/alerts"]],
 			["待办", ["/issues", "/pulls", "/inbox"]],
 			["系统", ["/refresh", "/settings"]],
 		]);
@@ -24,6 +25,7 @@ describe("navigation", () => {
 		expect([...APP_PATHS]).toEqual([
 			"/",
 			"/factory",
+			"/repos",
 			"/analysis",
 			"/work",
 			"/refresh",
@@ -37,24 +39,30 @@ describe("navigation", () => {
 			"/settings",
 			"/authorize",
 		]);
-		expect(breadcrumbsFor("/")).toEqual([{ href: "/", label: "仓库" }]);
+		expect(breadcrumbsFor("/")).toEqual([{ href: "/factory", label: "软件工厂" }]);
+		expect(breadcrumbsFor("/repos")).toEqual([{ href: "/repos", label: "仓库" }]);
 		expect(breadcrumbsFor("/repos/o/n")).toEqual([
-			{ href: "/", label: "仓库" },
+			{ href: "/repos", label: "仓库" },
 			{ href: "/repos/o/n", label: "o/n" },
 		]);
 		expect(breadcrumbsFor("/settings")).toEqual([{ href: "/settings", label: "设置" }]);
 		expect(breadcrumbsFor("/ci")).toEqual([{ href: "/ci", label: "CI 与发布" }]);
 		expect(breadcrumbsFor("/nope")).toEqual([{ href: "/nope", label: "未找到" }]);
-		expect(headerTitle("/")).toBe("仓库");
+		expect(headerTitle("/")).toBe("软件工厂");
+		expect(headerTitle("/repos")).toBe("仓库");
 		expect(headerTitle("/work")).toBe("Agent");
 		expect(breadcrumbsFor("/work")).toEqual([{ href: "/work", label: "Agent" }]);
 		expect(paletteItems(null).find((item) => item.href === "/work")?.label).toBe("Agent");
 		expect(headerCrumbs("/")).toEqual([{ href: "/", label: "Giraffe" }]);
 		expect(headerCrumbs("/settings")).toEqual([{ href: "/", label: "Giraffe" }]);
 		expect(headerTitle("/repos/o/n")).toBe("o/n");
-		expect(headerCrumbs("/repos/o/n")).toEqual([{ href: "/", label: "仓库" }]);
+		expect(headerCrumbs("/repos/o/n")).toEqual([{ href: "/repos", label: "仓库" }]);
 		expect(paletteItems(null).map((item) => item.href)).toEqual(NAV_ITEMS.map((item) => item.href));
-		expect(paletteItems(null)[0]?.icon).toBe("Activity");
+		expect(paletteItems(null)[0]).toEqual({
+			href: "/factory",
+			label: "软件工厂",
+			icon: "Factory",
+		});
 		expect(
 			paletteItems([
 				{ name_with_owner: "octocat/hello-world", owner_login: "octocat", name: "hello-world" },

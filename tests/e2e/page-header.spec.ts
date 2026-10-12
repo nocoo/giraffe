@@ -3,7 +3,7 @@ import { factoryFixture } from "../fixtures/factory-snapshot";
 import { createUiFixtures } from "./ui-fixtures";
 
 const pages = [
-	["/", "仓库"],
+	["/repos", "仓库"],
 	["/factory", "软件工厂"],
 	["/insights", "Insights"],
 	["/ci", "CI 与发布"],

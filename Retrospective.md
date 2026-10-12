@@ -509,3 +509,12 @@ offline last. Persist bounded redacted failure causes in cron state and append
 them to online Work events before the terminal blocked report. Distinguish
 publication/check failures from actual run failures instead of hiding upstream
 codes or claiming a retry waits for the next cron occurrence.
+
+## 2026-10-13 - Route replacements must target navigation expressions
+
+While moving the repository list from `/` to `/repos`, a scripted replacement
+of every `"/"` literal in selected browser tests also changed two repository-name
+`split("/")` expressions. Diff review caught both before commit, and their
+delimiters were restored. Route migrations must target navigation calls and
+route-table entries, not every matching string; inspect each replacement before
+running the affected journeys.

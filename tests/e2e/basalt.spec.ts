@@ -586,7 +586,7 @@ test("other pages are read-only and missing data leads to the unified factory co
 			writes.push(request.url());
 	});
 	for (const [path, content] of [
-		["/", "repo-list"],
+		["/repos", "repo-list"],
 		["/issues", "issue-list"],
 		["/pulls", "pr-list"],
 		["/alerts", "alert-list"],

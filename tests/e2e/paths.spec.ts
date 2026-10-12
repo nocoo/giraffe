@@ -64,7 +64,7 @@ test("settings PAT, unified refresh, repo list, and repo detail", async ({ page 
 			.toBe("completed");
 	}
 
-	await page.goto("/");
+	await page.goto("/repos");
 	await page
 		.getByRole("group", { name: "仓库范围" })
 		.getByRole("radio", { name: "全部", exact: true })
@@ -87,7 +87,7 @@ test("settings PAT, unified refresh, repo list, and repo detail", async ({ page 
 	await page.reload();
 	await page.getByRole("tab", { name: "自动刷新", exact: true }).click();
 	await expect(page.getByLabel("每日快速刷新时间", { exact: true })).toHaveValue("09:15");
-	await page.goto("/");
+	await page.goto("/repos");
 	const toggle = page.getByRole("switch", { name: "octocat/hello-world 参与统计", exact: true });
 	await expect(toggle).toBeChecked();
 	await toggle.click();
@@ -99,7 +99,7 @@ test("settings PAT, unified refresh, repo list, and repo detail", async ({ page 
 	expect((await factory.json()).repos).toEqual([]);
 	await page.goto("/factory");
 	await expect(page.locator(".factory-repo-link")).toHaveCount(0);
-	await page.goto("/");
+	await page.goto("/repos");
 	await toggle.click();
 	await expect(toggle).toBeChecked();
 	await expect(toggle).toBeEnabled();

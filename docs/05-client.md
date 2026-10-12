@@ -358,14 +358,14 @@ advances the inbox collection timestamp. See 09 for the precise daily run contra
 
 ## 8. 页面
 
-中文。侧栏按用途分四组，顺序固定：总览（软件工厂、Insights）、仓库健康（仓库、CI 与发布、安全告警）、待办（Issues、Pull Requests、通知）、系统（刷新中心、设置）。分组与顺序只在 `src/client/lib/navigation.ts` 的 `NAV_GROUPS` 定义，命令面板沿用同一顺序。
+The Chinese sidebar has five ordered groups: Overview (Software Factory), AI (Analysis, Agent, Insights), Repository Health (Repositories, CI and Releases, Security Alerts), Work (Issues, Pull Requests, Notifications), and System (Refresh Center, Settings). `apps/web/src/client/lib/navigation.ts` defines `NAV_GROUPS` for expanded, collapsed and mobile navigation and the command palette. Opening `/` redirects to `/factory` with history replacement; the repository list lives at `/repos`.
 
 | 路由 | 侧栏 | 图标（lucide） | 读 |
 |------|------|----------------|----|
 | `/factory` | 软件工厂 | `Factory` | `GET /api/factory`; links to refresh center |
 | `/refresh` | 刷新中心 | `RefreshCw` | `GET /api/factory/runs`, `GET /api/refresh/settings`; manual runs and automatic schedules |
 | `/insights` | Insights | `Activity` | `GET /api/insights`，并读已有 `issues` / `prs` / `ci` |
-| `/` | 仓库 | `Box` | `GET /api/repos` |
+| `/repos` | 仓库 | `Box` | `GET /api/repos` |
 | `/issues` | Issues | `CircleDot` | `GET /api/issues` |
 | `/pulls` | Pull Requests | `GitPullRequest` | `GET /api/prs` |
 | `/ci` | CI 与发布 | `Workflow` | `GET /api/ci` |
@@ -376,7 +376,7 @@ advances the inbox collection timestamp. See 09 for the precise daily run contra
 
 未知路径：岛内 404 文案，不调用 API。
 
-### 8.1 `/` 仓库
+### 8.1 `/repos` Repositories
 
 `BusinessPageHeader` presents the repository title, subtitle and data time. Repository scope, search, sorting and status badges share the title row when space permits; search/sorting wrap below at narrower widths. 列表 / 网格切换和结果数放在仓库 `SectionRule.actions`。排序通过 VM 完成，不靠 Table 内置排序。
 
@@ -490,7 +490,7 @@ export function breadcrumbsFor(pathname: string): { href: string; label: string 
 | `alerts` | unavailable |
 | `inbox` | 已读与 **read-all** 后 unread false（对返回体归约） |
 | `repo-detail` | 非法 owner 不请求；九个 tab 各绑定正确 GET path；forbidden traffic；unavailable security；languages 排序 |
-| `navigation.ts` | breadcrumbsFor `/`、`/repos/o/n`、未知路径 |
+| `navigation.ts` | breadcrumbsFor `/`、`/repos`、`/repos/o/n`、未知路径 |
 | `routes.ts` | 01 §9 九条路径全部在表中；与 NAV_ITEMS href 一致 |
 | 命令面板数据 | 静态 NAV_ITEMS；有 repos 缓存时含仓库项 |
 | health 展示 | `alerts_incomplete` →「告警不完整」 |
@@ -505,7 +505,7 @@ Client 单测：文件顶 `// @vitest-environment happy-dom` 或 vitest 对 `src
 02 §6 最低三条，本文不可减：
 
 1. 打开 `/settings`，在 PAT 框填 L2 同款 fixture PAT，提交。输入框为空。响应不得在 DOM 留下 PAT。
-2. 在工厂同步清单并全站刷新，随后 `/` 仓库列表 **有至少一行**（GitHub stub 仓库为 `octocat/hello-world`）；创建账号本身不触发采集。
+2. 在工厂同步清单并全站刷新，随后 `/repos` 仓库列表 **有至少一行**（GitHub stub 仓库为 `octocat/hello-world`）；创建账号本身不触发采集。
 3. 点进该仓详情，概览可见描述或名称。
 
 Runner：`scripts/run-e2e-bdd.ts`。先 `vite build`，persist `.wrangler/e2e-pw/`，端口 27045，schema + `_test_marker`，`GET /api/live` 且 `d1_marker=test`，GitHub stub 不得占用 17045。套件 **只 A**。Playwright Chromium。`baseURL = http://127.0.0.1:27045`。
@@ -547,7 +547,7 @@ L3 依赖步骤 1 的 Origin 补丁。未补丁前不算 L3 绿。L3 **不是** 
 | 4 | `feat: add refresh coordinator` | `session.ts` + `refresh.ts` 单例、stamp、排队、归一 04 两种 200 | L1 互斥/排队/201 stamp/切换丢弃 |
 | 5 | `feat: add app shell layout` | layout 组合 Basalt；`navigation.ts`；`routes.ts`；`me.ts`；Router 空岛；`LinkProvider`；`AppMain tabIndex={-1}` | L1 navigation + routes 九路径 + me |
 | 6 | `feat: add settings accounts page` | settings + accounts VM；PAT 清空；仅 active/activate 经 refresh.ts 刷 repos | L1 activate/delete |
-| 7 | `feat: add repos list page` | `/` | L1 筛选排序 |
+| 7 | `feat: add repos list page` | `/repos` | L1 筛选排序 |
 | 8 | `feat: add issues page` | `/issues` | L1 |
 | 9 | `feat: add pulls page` | `/pulls` | L1 |
 | 10 | `feat: add insights page` | 隐式 insights GET | L1 health 分组 |

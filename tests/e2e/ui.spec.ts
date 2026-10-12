@@ -34,7 +34,7 @@ test("repository and Insights omit optional security warnings while showing save
 			route.fulfill({ json: { ...createUiFixtures()["/api/insights"], alerts_incomplete: true } }),
 	);
 	await page.clock.setFixedTime(new Date(Date.parse(snapshot.fetched_at) + 5 * 86400000));
-	await page.goto("/");
+	await page.goto("/repos");
 	const updated = page.getByRole("button", { name: "数据更新时间：5 天前更新" });
 	await expect(updated).toBeVisible();
 	await updated.click();
@@ -135,7 +135,7 @@ async function expectChart(page: Page, label: string) {
 }
 
 for (const [path, label, list] of [
-	["/", "搜索仓库", "repo-list"],
+	["/repos", "搜索仓库", "repo-list"],
 	["/issues", "搜索 Issues", "issue-list"],
 	["/pulls", "搜索 Pull Requests", "pr-list"],
 ] as const) {
@@ -220,7 +220,7 @@ test("marking a notification shows progress and applies the returned unread stat
 
 test("mobile tables can be scrolled with the keyboard", async ({ page }) => {
 	await page.setViewportSize({ width: 390, height: 844 });
-	await page.goto("/");
+	await page.goto("/repos");
 	const region = page.getByRole("region", { name: "仓库列表", exact: true });
 	await expect(region).toBeVisible();
 	await region.focus();
@@ -266,7 +266,7 @@ test("repository grid retains the search and links to the selected repository", 
 	page,
 }) => {
 	await page.setViewportSize({ width: 390, height: 844 });
-	await page.goto("/");
+	await page.goto("/repos");
 	await page.getByLabel("搜索仓库", { exact: true }).fill("hello-world");
 	await page.getByText("网格", { exact: true }).click();
 	const grid = page.getByTestId("repo-list");
@@ -291,7 +291,7 @@ test("missing snapshots lead to the unified factory console", async ({ page }) =
 	});
 	await page.goto("/alerts");
 	await expect(page.getByText("暂无告警数据", { exact: true })).toBeVisible();
-	for (const path of ["/", "/issues", "/pulls", "/inbox", "/insights"]) {
+	for (const path of ["/repos", "/issues", "/pulls", "/inbox", "/insights"]) {
 		await page.goto(path);
 		await expect(page.getByText("等待统一刷新", { exact: true })).toBeVisible();
 		await expect(page.getByRole("main").getByRole("button", { name: /刷新/ })).toHaveCount(0);
@@ -401,7 +401,7 @@ for (const mode of ["light", "dark", "mobile"] as const) {
 		const errors: string[] = [];
 		page.on("pageerror", (error) => errors.push(error.message));
 		for (const [path, ready] of [
-			["/", "repo-list"],
+			["/repos", "repo-list"],
 			["/issues", "issue-list"],
 			["/pulls", "pr-list"],
 			["/alerts", "alert-list"],

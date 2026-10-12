@@ -160,7 +160,7 @@ test("list, grid and detail share project identity without replacing Giraffe bra
 }) => {
 	await page.setViewportSize({ width: 1440, height: 1000 });
 	const requests = await mockProjects(page);
-	await page.goto("/");
+	await page.goto("/repos");
 	await expect(summary(page).getByText(hello.title, { exact: true })).toBeVisible();
 	await expect(summary(page).getByText(repository, { exact: true })).toBeVisible();
 	await expect(summary(page).getByText(hello.description, { exact: true })).toBeVisible();
@@ -222,7 +222,7 @@ test("temporary lookup failures retain repository content and retry on the next 
 	page,
 }) => {
 	const requests = await mockProjects(page, { failure: true });
-	await page.goto("/");
+	await page.goto("/repos");
 	await expect(summary(page).getByText(repository, { exact: true })).toBeVisible();
 	await expect(summary(page)).toContainText("A demo repo");
 	await expect(summary(page)).not.toContainText(hello.title);
@@ -253,7 +253,7 @@ test("broken CDN artwork uses a neutral repository mark and the local Giraffe ic
 	page,
 }) => {
 	await mockProjects(page, { brokenImages: true });
-	await page.goto("/");
+	await page.goto("/repos");
 	await expect(summary(page)).toContainText(hello.title);
 	await summary(page).scrollIntoViewIfNeeded();
 	await expect(summary(page).locator("img")).toHaveCount(0);
@@ -272,7 +272,7 @@ for (const width of [390, 1440]) {
 			await mockProjects(page);
 			const errors: string[] = [];
 			page.on("pageerror", (error) => errors.push(error.message));
-			await page.goto("/");
+			await page.goto("/repos");
 			await page.getByRole("radio", { name: "网格", exact: true }).check();
 			await expect(summary(page, longRepository)).toContainText(long.title);
 			await expectMark(summary(page, longRepository).locator("img"), 48);
