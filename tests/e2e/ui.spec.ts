@@ -483,7 +483,7 @@ test("CI page separates consecutive failures from recurring ones and filters the
 	await expect(act).toContainText("hello-world");
 	await expect(act).toContainText("连续 2 次");
 	await expect(page.getByRole("heading", { name: /^反复失败 · 1/ })).toBeVisible();
-	const strip = act.locator(".giraffe-run-cells i");
+	const strip = act.locator(".giraffe-run-cells i:not([data-empty])");
 	await expect(strip).toHaveCount(3);
 	await expect(strip.last()).toHaveAttribute("data-latest", "true");
 	await expect(strip.last()).toHaveAttribute("title", /失败 · 最新$/);
@@ -502,3 +502,98 @@ test("CI page separates consecutive failures from recurring ones and filters the
 	await expect(releases.getByRole("row").nth(1)).toContainText("v2.1.0");
 	await expect(releases.getByRole("row").nth(1)).toContainText("连续失败");
 });
+
+for (const width of [1440, 390]) {
+	for (const theme of ["light", "dark"] as const) {
+		test(`CI run strips align empty slots and use outcome outlines at ${width}px in ${theme}`, async ({
+			page,
+		}, info) => {
+			await page.setViewportSize({ width, height: 1000 });
+			await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
+			const report = createUiFixtures()["/api/ci"];
+			const template = report.streams[0];
+			if (!template) throw new Error("Missing CI fixture stream");
+			const histories = [
+				["success", 1],
+				["failure", 3],
+				["other", 5],
+				["pending", 10],
+			] as const;
+			report.streams = histories.map(([outcome, count]) => ({
+				...template,
+				workflow: outcome,
+				recent: Array.from({ length: count }, (_, id) => ({
+					outcome,
+					id,
+					at: report.now,
+					event: "push",
+					branch: "main",
+				})),
+			}));
+			report.streams.push({ ...template, workflow: "empty", recent: [] });
+			await page.route("**/api/ci?*", (route) => route.fulfill({ json: report }));
+			await page.goto("/ci");
+			const list = page.getByTestId("ci-list");
+			const rows = list.locator("tbody tr");
+			await expect(rows).toHaveCount(5);
+			const edges: { left: number; right: number }[] = [];
+			for (const [index, [outcome, count]] of histories.entries()) {
+				const strip = rows.nth(index).locator(".giraffe-run-cells");
+				await expect(strip.locator("i")).toHaveCount(10);
+				await expect(strip.locator("[data-empty]")).toHaveCount(10 - count);
+				await expect(strip.locator("i:not([data-empty])")).toHaveCount(count);
+				expect(
+					await strip
+						.locator("i")
+						.evaluateAll((cells) => cells.map((cell) => cell.hasAttribute("data-empty"))),
+				).toEqual([...Array(10 - count).fill(true), ...Array(count).fill(false)]);
+				const latest = strip.locator("i").last();
+				await expect(latest).toHaveAttribute("data-latest", "true");
+				const appearance = await latest.evaluate((element) => {
+					const style = getComputedStyle(element);
+					const box = element.getBoundingClientRect();
+					return {
+						background: style.backgroundColor,
+						outline: style.boxShadow,
+						left: box.left,
+						right: box.right,
+					};
+				});
+				expect(appearance.outline, outcome).toContain(`${appearance.background} 0px 0px 0px 3px`);
+				edges.push(appearance);
+			}
+			expect(new Set(edges.map((box) => box.left)).size).toBe(1);
+			expect(new Set(edges.map((box) => box.right)).size).toBe(1);
+			const empty = rows.last().locator(".giraffe-run-cells");
+			await expect(empty).toHaveAttribute("aria-label", "没有运行记录");
+			await expect(empty.locator("[data-empty][aria-hidden=true]")).toHaveCount(10);
+			await expect(empty.locator("[data-latest]")).toHaveCount(0);
+			const placeholder = empty.locator("i").first();
+			const emptyColor = await placeholder.evaluate(
+				(element) => getComputedStyle(element).backgroundColor,
+			);
+			expect(emptyColor).not.toBe("rgba(0, 0, 0, 0)");
+			expect(emptyColor).not.toBe(
+				await rows
+					.nth(2)
+					.locator("[data-latest]")
+					.evaluate((element) => getComputedStyle(element).backgroundColor),
+			);
+			const opacity = await placeholder.evaluate((element) => {
+				const canvas = document.createElement("canvas");
+				const context = canvas.getContext("2d");
+				if (!context) throw new Error("Canvas is unavailable");
+				context.fillStyle = getComputedStyle(element).backgroundColor;
+				context.fillRect(0, 0, 1, 1);
+				return context.getImageData(0, 0, 1, 1).data[3];
+			});
+			expect(opacity).toBeGreaterThan(0);
+			expect(opacity).toBeLessThanOrEqual(40);
+			await list.scrollIntoViewIfNeeded();
+			await page.screenshot({ path: info.outputPath("ci-run-strips.png"), animations: "disabled" });
+			expect(
+				await page.locator("body").evaluate((element) => element.scrollWidth),
+			).toBeLessThanOrEqual(width);
+		});
+	}
+}

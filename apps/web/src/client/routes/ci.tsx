@@ -12,7 +12,7 @@ import {
 } from "@nocoo/basalt/components/table";
 import { ArrowUpRight, CircleAlert, Eye, ShieldCheck, Tag, Workflow } from "lucide-react";
 import { useMemo, useState } from "react";
-import type { CiReportResponse } from "../../lib/ci-health";
+import { CI_RECENT, type CiReportResponse } from "../../lib/ci-health";
 import { BusinessPageHeader as PageHeader } from "../components/layout/business-page-header";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ChartBrick } from "../components/layout/chart-brick";
@@ -61,6 +61,7 @@ const OUTCOME_COLOR = {
 	other: "var(--color-basalt-muted-foreground)",
 	pending: "var(--color-giraffe-yellow)",
 };
+const RUN_SLOTS = Array.from({ length: CI_RECENT }, (_, slot) => slot);
 
 export function CiPage() {
 	const [snap, setSnap] = useState<CiReportResponse | { missing: true } | null>(null);
@@ -224,7 +225,7 @@ export function CiPage() {
 
 			<SectionRule
 				title={<IconLabel icon={Workflow}>全部工作流</IconLabel>}
-				hint="每行一条工作流线。方块为最近 10 次运行，从左到右由旧到新，最右侧加框的一格是最新一次。"
+				hint="每行一条工作流线。方块为最近 10 次运行，从左到右由旧到新，最右侧加框的一格是最新一次；不足 10 次时，左侧以极淡灰色补位，不代表运行状态。"
 				actions={
 					<FilterBar label="工作流筛选">
 						<SearchField
@@ -397,11 +398,14 @@ function RunStrip({ s, axis = false }: { s: CiStream; axis?: boolean }) {
 	return (
 		<span className="giraffe-run-strip" data-axis={axis || undefined}>
 			<span className="giraffe-run-cells" role="img" aria-label={runSummary(cells)}>
+				{RUN_SLOTS.slice(cells.length).map((slot) => (
+					<i key={`empty-${slot}`} data-empty aria-hidden="true" />
+				))}
 				{cells.map((c) => (
 					<i
 						key={c.id}
 						data-latest={c.latest || undefined}
-						style={{ background: OUTCOME_COLOR[c.outcome] }}
+						style={{ color: OUTCOME_COLOR[c.outcome] }}
 						title={c.label}
 					/>
 				))}

@@ -518,3 +518,10 @@ of every `"/"` literal in selected browser tests also changed two repository-nam
 delimiters were restored. Route migrations must target navigation calls and
 route-table entries, not every matching string; inspect each replacement before
 running the affected journeys.
+
+## 2026-10-13 - Use explicit search paths
+
+During the CI strip inspection, an unmatched zsh glob prevented an `rg` search,
+and an `fd` call treated a directory as its pattern. Both searches were corrected
+before editing. Pass known paths to `rg` and use `fd -e css . <directory>` rather
+than relying on shell expansion or an omitted pattern.
