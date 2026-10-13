@@ -58,7 +58,7 @@
       "dependencies": {
         "@earendil-works/chord": "1.1.0",
         "@earendil-works/pi-ai": "1.1.0",
-        "@earendil-works/pi-durable": "1.0.0",
+        "@earendil-works/pi-durable": "1.1.0",
         "@nocoo/base-cli": "0.3.0",
         "@typesafe-ai/sdk": "0.6.0",
         "cron-parser": "5.10.2",
@@ -172,7 +172,7 @@
 
     "@earendil-works/pi-ai": ["@earendil-works/pi-ai@1.1.0", "", { "dependencies": { "@anthropic-ai/sdk": "0.129.0", "@aws-sdk/client-bedrock-runtime": "3.1127.0", "@earendil-works/pi-telemetry": "^1.1.0", "@google/genai": "2.21.0", "@smithy/node-http-handler": "4.12.1", "http-proxy-agent": "9.1.0", "https-proxy-agent": "9.1.0", "openai": "7.19.0", "partial-json": "0.1.7", "typebox": "1.3.27" }, "bin": { "pi-ai": "dist/cli.js" } }, "sha512-1T7LAkc/5Bvc0v6w4vAGVdCrli0o/E0pEmYKTnixu95vSFArBjvbhS/G4ZwI0RUePgf0Imcu0VyqlM4EcXxqfw=="],
 
-    "@earendil-works/pi-durable": ["@earendil-works/pi-durable@1.0.0", "", { "dependencies": { "@earendil-works/chord": "^1.0.0", "@earendil-works/pi-ai": "^1.0.0", "diff": "8.0.4", "typebox": "1.3.27" } }, "sha512-PvjCIdy5jRsBoJDRpCCI0RfwBax2ZPnMT5aw/tRQxcQOqbGGj2mq1z0WuVxoyimWWi+WYSYT2VySg3RO1qzySw=="],
+    "@earendil-works/pi-durable": ["@earendil-works/pi-durable@1.1.0", "", { "dependencies": { "@earendil-works/chord": "^1.1.0", "@earendil-works/pi-ai": "^1.1.0", "diff": "8.0.4", "typebox": "1.3.27" } }, "sha512-NtuB3RY24vQ+0/rWYpeHupyFWBfXuKq17to3VMYUYqfD/uuGnz6F6UTPBEm51VSxxA6LZwRcDwLX2LtRehnIgQ=="],
 
     "@earendil-works/pi-telemetry": ["@earendil-works/pi-telemetry@1.2.0", "", {}, "sha512-NZ3aJE6dr7aTgzzXDe53OW7BsAsF8ZUKHPJTtnjaQcxtlagkUT0Ew8Qas0EvYQsZqR/KpF1lB+z209XBzIC7xg=="],
 
