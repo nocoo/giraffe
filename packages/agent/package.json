@@ -29,7 +29,7 @@
 		"@nocoo/base-cli": "0.3.0",
 		"@typesafe-ai/sdk": "0.6.0",
 		"zod": "4.6.7",
-		"cron-parser": "5.10.1",
+		"cron-parser": "5.10.2",
 		"semver": "7.8.5"
 	},
 	"devDependencies": {
