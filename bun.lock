@@ -68,7 +68,7 @@
       "devDependencies": {
         "@biomejs/biome": "2.5.15",
         "@types/node": "26.4.1",
-        "@types/semver": "7.7.1",
+        "@types/semver": "7.8.0",
         "@vitest/coverage-v8": "5.0.4",
         "typescript": "7.0.2",
         "vitest": "5.0.4",
@@ -604,7 +604,7 @@
 
     "@types/retry": ["@types/retry@0.12.0", "", {}, "sha512-wWKOClTTiizcZhXnPY4wikVAwmdYHp8q6DmC+EJUzAMsycb7HB32Kh9RN4+0gExjmPmZSAQjgURXIGATPegAvA=="],
 
-    "@types/semver": ["@types/semver@7.7.1", "", {}, "sha512-FmgJfu+MOcQ370SD0ev7EI8TlCAfKYU+B4m5T3yXc1CiRN94g/SZPtsCkk506aUDtlMnFZvasDwHHUcZUEaYuA=="],
+    "@types/semver": ["@types/semver@7.8.0", "", {}, "sha512-1mAINjtQCXXeLkJ9ehXkwOcBpqtLxiVtKhpUf83DdRNdQKV0iXZpaHYqRr7nj+wvxuJzoAmAwXI+sCNMv1CzLQ=="],
 
     "@types/use-sync-external-store": ["@types/use-sync-external-store@0.0.6", "", {}, "sha1-YL6NIbqrjDBRMuucuRLtSXhSqtw="],
 
