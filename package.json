@@ -50,7 +50,7 @@
 	],
 	"dependencies": {
 		"@nocoo/basalt": "2.1.8",
-		"hono": "^4.13.12",
+		"hono": "^4.13.13",
 		"lucide-react": "^1.55.0",
 		"react": "^19.3.0",
 		"react-dom": "^19.3.0",
