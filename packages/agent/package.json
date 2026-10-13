@@ -1,6 +1,6 @@
 {
 	"name": "@nocoo/giraffe-agent",
-	"version": "0.15.0",
+	"version": "0.15.1",
 	"private": true,
 	"type": "module",
 	"description": "Local durable GitHub analysis agent for Giraffe",
@@ -23,21 +23,21 @@
 		"lint": "biome check --error-on-warnings src"
 	},
 	"dependencies": {
-		"@earendil-works/chord": "1.0.0",
-		"@earendil-works/pi-ai": "1.0.0",
-		"@earendil-works/pi-durable": "1.0.0",
+		"@earendil-works/chord": "1.1.0",
+		"@earendil-works/pi-ai": "1.1.0",
+		"@earendil-works/pi-durable": "1.1.0",
 		"@nocoo/base-cli": "0.3.0",
 		"@typesafe-ai/sdk": "0.6.0",
-		"zod": "4.5.0-canary.20260825T041357",
-		"cron-parser": "5.10.1",
+		"zod": "4.6.7",
+		"cron-parser": "5.10.2",
 		"semver": "7.8.5"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.5.15",
-		"@types/node": "26.4.1",
-		"@vitest/coverage-v8": "5.0.3",
+		"@types/node": "26.6.5",
+		"@vitest/coverage-v8": "5.0.4",
 		"typescript": "7.0.2",
-		"vitest": "5.0.3",
-		"@types/semver": "7.7.1"
+		"vitest": "5.0.4",
+		"@types/semver": "7.8.0"
 	}
 }
