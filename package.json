@@ -51,7 +51,7 @@
 	"dependencies": {
 		"@nocoo/basalt": "2.1.8",
 		"hono": "^4.13.12",
-		"lucide-react": "^1.49.0",
+		"lucide-react": "^1.55.0",
 		"react": "^19.3.0",
 		"react-dom": "^19.3.0",
 		"react-router": "^8.4.0",
