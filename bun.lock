@@ -51,7 +51,7 @@
     },
     "packages/agent": {
       "name": "@nocoo/giraffe-agent",
-      "version": "0.15.1",
+      "version": "0.15.2",
       "bin": {
         "giraffe": "./bin/giraffe.mjs",
       },
