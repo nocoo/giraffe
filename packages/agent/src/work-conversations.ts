@@ -91,7 +91,7 @@ export function workConversations(options: {
 				state.result = JSON.stringify(ticket.result);
 			}, context);
 			return {
-				content: [{ type: "text", text: "Validated handoff saved." }],
+				output: [{ type: "text", text: "Validated handoff saved." }],
 				control: { terminate: true },
 			};
 		},
@@ -122,7 +122,7 @@ export function workConversations(options: {
 			options.log(
 				`[工具完成 ${api.conversationId}] ${args.operation}${["latest", "commit", "satisfied", "check", "install"].includes(args.operation) ? ` ${JSON.stringify(value)}` : ""}`,
 			);
-			return { content: [{ type: "text", text: JSON.stringify(value) }] };
+			return { output: [{ type: "text", text: JSON.stringify(value) }] };
 		},
 	});
 	const guard = hook(GenerationTask, {

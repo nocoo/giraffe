@@ -26,6 +26,7 @@ export function decisionClient(config: Config): Decide {
 		baseURL: provider.baseUrl,
 		defaultModel: role.model,
 		timeout: 35000,
+		compression: false,
 		retry: { maxRetries: 0 },
 		logLevel: "off",
 		defaultHeaders: {
