@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.15.4 — 2026-10-17
+
+### Changed
+
+- Upgrade `happy-dom` from 20.14.5 to 21.0.3. Happy DOM v21 disables CSS and iframe document loading by default (SSRF mitigation); client L1 tests do not rely on external stylesheets or iframe navigation, so no Vitest setup changes were required.
+
 ## v0.15.0 — 2026-10-02
 
 ### Added
