@@ -162,6 +162,7 @@ export function workDecisions(config: Config, transport?: DecisionRequest) {
 		baseURL: provider.baseUrl,
 		defaultModel: config.roles.decision.model,
 		timeout: 35000,
+		compression: false,
 		retry: {
 			maxRetries: 2,
 			httpStatuses: new Set([429]),
