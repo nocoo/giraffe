@@ -70,8 +70,10 @@ for (const width of [1440, 390]) {
 			await page.locator("header").getByRole("link", { name: "仓库", exact: true }).click();
 			await expect(page).toHaveURL(/\/repos$/);
 			if (width === 390) await page.getByRole("button", { name: "打开导航" }).click();
-			await page.keyboard.press("ControlOrMeta+k");
-			await page.getByPlaceholder("搜索页面或仓库").fill("软件工厂");
+			await page.getByRole("button", { name: /搜索/ }).click();
+			const search = page.getByPlaceholder("搜索页面或仓库");
+			await expect(search).toBeVisible();
+			await search.fill("软件工厂");
 			await expect(page.getByRole("option", { name: "软件工厂", exact: true })).toBeVisible();
 			await page.keyboard.press("Enter");
 			await expect(page).toHaveURL(/\/factory$/);

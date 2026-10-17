@@ -458,10 +458,14 @@ test("factory visualizations use Basalt chart frames and preserve keyboard drill
 	});
 	await expect(page.locator(".factory-repo-link")).toHaveCount(3);
 	const partialSpark = page.getByRole("group", { name: "nocoo/tools 每日提交", exact: true });
-	const partialLine = partialSpark.locator(".recharts-line-curve");
-	await expect(partialLine).toBeVisible();
-	// Only two adjacent days were observed; missing days must not extend a zero baseline.
-	expect((await partialLine.boundingBox())?.width).toBeLessThan(10);
+	const partialBars = partialSpark.locator(".recharts-bar-rectangle path");
+	await expect(partialBars.first()).toBeVisible();
+	// Basalt 3 sparklines use compact bars; only two days were observed in the fixture window.
+	expect(
+		await partialBars.evaluateAll(
+			(elements) => elements.filter((element) => element.getBoundingClientRect().height > 1).length,
+		),
+	).toBe(2);
 	const tile = page.getByRole("button", {
 		name: "nocoo/app，150,000 语言字节，打开仓库",
 		exact: true,
