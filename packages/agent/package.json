@@ -1,6 +1,6 @@
 {
 	"name": "@nocoo/giraffe-agent",
-	"version": "0.15.2",
+	"version": "0.15.3",
 	"private": true,
 	"type": "module",
 	"description": "Local durable GitHub analysis agent for Giraffe",
@@ -35,9 +35,9 @@
 	"devDependencies": {
 		"@biomejs/biome": "2.5.15",
 		"@types/node": "26.6.5",
-		"@vitest/coverage-v8": "5.0.4",
+		"@vitest/coverage-v8": "5.0.5",
 		"typescript": "7.0.2",
-		"vitest": "5.0.4",
+		"vitest": "5.0.5",
 		"@types/semver": "7.8.0"
 	}
 }
