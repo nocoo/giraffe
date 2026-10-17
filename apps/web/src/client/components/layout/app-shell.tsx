@@ -2,11 +2,12 @@ import { Button, ContentIsland, Sheet, SheetContent, SheetTitle } from "@nocoo/b
 import { AppHeader } from "@nocoo/basalt/components/app-header";
 import { AppMain, AppSkipLink, AppShell as Shell } from "@nocoo/basalt/components/app-shell";
 import { Banner } from "@nocoo/basalt/components/banner";
+import { LinkButton } from "@nocoo/basalt/components/button";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
 import { useTheme } from "@nocoo/basalt/providers/theme";
 import { Menu, ShieldAlert } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router";
 import { subscribeErrorUi } from "../../lib/error-ui";
 import { headerCrumbs, headerTitle } from "../../lib/navigation";
@@ -45,6 +46,7 @@ export function AppShell() {
 	const [collapsed, setCollapsed] = useState(false);
 	const isMobile = useIsMobile();
 	const [mobileOpen, setMobileOpen] = useState(false);
+	const mobileTriggerRef = useRef<HTMLButtonElement>(null);
 	const location = useLocation();
 	const scope = useRepositoryScope();
 	const navigate = useNavigate();
@@ -76,29 +78,30 @@ export function AppShell() {
 	}, [location.pathname]);
 
 	useEffect(() => {
-		document.body.style.overflow = mobileOpen ? "hidden" : "";
-		return () => {
-			document.body.style.overflow = "";
-		};
-	}, [mobileOpen]);
+		if (!isMobile) setMobileOpen(false);
+	}, [isMobile]);
 
 	return (
-		<DataTimeProvider key={`${location.pathname}:${scope}`}>
-			<Shell>
-				<AppSkipLink>跳到主内容</AppSkipLink>
-				{!isMobile ? (
-					<AppSidebar collapsed={collapsed} onToggle={() => setCollapsed((value) => !value)} />
-				) : (
-					<Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-						<SheetContent
-							side="left"
-							className="w-[260px] max-w-[260px] border-0 bg-basalt-background p-0"
-						>
-							<SheetTitle className="sr-only">打开导航</SheetTitle>
-							<AppSidebar collapsed={false} onToggle={() => setMobileOpen(false)} />
-						</SheetContent>
-					</Sheet>
-				)}
+		<Shell>
+			<AppSkipLink>跳到主内容</AppSkipLink>
+			{!isMobile ? (
+				<AppSidebar collapsed={collapsed} onToggle={() => setCollapsed((value) => !value)} />
+			) : (
+				<Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+					<SheetContent
+						side="left"
+						onCloseAutoFocus={(event) => {
+							event.preventDefault();
+							mobileTriggerRef.current?.focus();
+						}}
+						className="w-[260px] max-w-[260px] border-0 bg-basalt-background p-0"
+					>
+						<SheetTitle className="sr-only">打开导航</SheetTitle>
+						<AppSidebar collapsed={false} onToggle={() => setMobileOpen(false)} />
+					</SheetContent>
+				</Sheet>
+			)}
+			<DataTimeProvider key={`${location.pathname}:${scope}`}>
 				<AppMain tabIndex={-1}>
 					<AppHeader
 						className="[&_nav]:min-w-0 [&_nav]:truncate [&_nav]:whitespace-nowrap"
@@ -106,6 +109,7 @@ export function AppShell() {
 							isMobile ? (
 								<HeaderTooltip label="打开导航">
 									<Button
+										ref={mobileTriggerRef}
 										variant="ghost"
 										size="icon"
 										className="h-8 w-8 shrink-0"
@@ -127,16 +131,17 @@ export function AppShell() {
 								) : null}
 								{!isMobile && (
 									<HeaderTooltip label="GitHub repository">
-										<Button variant="ghost" size="icon" className="h-8 w-8" asChild>
-											<a
-												href="https://github.com/nocoo/giraffe"
-												target="_blank"
-												rel="noopener noreferrer"
-												aria-label="GitHub"
-											>
-												<GithubIcon className="h-[18px] w-[18px]" strokeWidth={1.5} />
-											</a>
-										</Button>
+										<LinkButton
+											variant="ghost"
+											size="icon"
+											href="https://github.com/nocoo/giraffe"
+											target="_blank"
+											rel="noopener noreferrer"
+											aria-label="GitHub"
+											className="w-8 rounded-basalt-md text-basalt-muted-foreground hover:text-basalt-foreground [&_svg]:size-[1.125rem]"
+										>
+											<GithubIcon aria-hidden="true" strokeWidth={1.5} />
+										</LinkButton>
 									</HeaderTooltip>
 								)}
 								{!isMobile && <HexlyLink />}
@@ -144,7 +149,7 @@ export function AppShell() {
 							</>
 						}
 					/>
-					<div className="flex min-h-0 flex-1 flex-col px-2 pb-2 md:px-3 md:pb-3">
+					<div className="flex min-h-0 min-w-0 flex-1 flex-col px-basalt-space-lg pb-basalt-space-lg md:px-basalt-layout-sm md:pb-basalt-layout-sm">
 						<ContentIsland>
 							{accessDenied ? (
 								<div className="space-y-8">
@@ -182,7 +187,7 @@ export function AppShell() {
 						</ContentIsland>
 					</div>
 				</AppMain>
-			</Shell>
-		</DataTimeProvider>
+			</DataTimeProvider>
+		</Shell>
 	);
 }

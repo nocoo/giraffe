@@ -1,4 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
+import { NAV_GROUPS } from "../../apps/web/src/client/lib/navigation";
+import { APP_VERSION } from "../../apps/web/src/lib/version";
 import { factoryFixture } from "../fixtures/factory-snapshot";
 import { createUiFixtures } from "./ui-fixtures";
 
@@ -66,10 +68,27 @@ for (const width of [1440, 390]) {
 			if (width === 390) await page.getByRole("button", { name: "打开导航" }).click();
 			const sidebar = page.getByRole("complementary");
 			const nav = sidebar.getByRole("navigation");
-			await expect(nav.getByRole("button").first()).toHaveText("软件工厂");
+			await expect(nav.locator("button:not([aria-expanded])").first()).toHaveText("软件工厂");
 			await expect(nav.locator("[aria-current=page]")).toHaveText("软件工厂");
-			const ai = nav.locator(":scope > div").filter({ has: page.getByText("AI", { exact: true }) });
+			await expect(nav.locator("button[aria-expanded]")).toHaveText(
+				NAV_GROUPS.map((group) => group.label),
+			);
+			const aiToggle = nav.getByRole("button", { name: "AI", exact: true });
+			const ai = page.locator(`[id="${await aiToggle.getAttribute("aria-controls")}"]`);
 			await expect(ai.getByRole("button")).toHaveText(["分析台", "Agent", "Insights"]);
+			await aiToggle.click();
+			await expect(aiToggle).toHaveAttribute("aria-expanded", "false");
+			await expect(ai.getByRole("button", { name: "分析台", exact: true })).toBeHidden();
+			await aiToggle.focus();
+			await page.keyboard.press("Enter");
+			await expect(aiToggle).toHaveAttribute("aria-expanded", "true");
+			await expect(ai.getByRole("button", { name: "分析台", exact: true })).toBeVisible();
+			const home = sidebar.getByRole("link", { name: "Giraffe 首页" });
+			await expect(home).toHaveAttribute("href", "/");
+			await expect(home.getByText(`v${APP_VERSION}`, { exact: true })).toBeVisible();
+			await expect(sidebar.getByText(`v${APP_VERSION}`, { exact: true })).toHaveCount(1);
+			const expandedLogo = await home.locator("img").boundingBox();
+			expect(expandedLogo?.width).toBe(28);
 
 			for (const [label, path] of [
 				["分析台", "/analysis"],
@@ -89,6 +108,13 @@ for (const width of [1440, 390]) {
 
 			if (width === 390) await page.keyboard.press("Escape");
 			else await sidebar.getByRole("button", { name: "折叠侧栏" }).click();
+			if (width === 1440) {
+				const collapsedLogo = await home.locator("img").boundingBox();
+				expect(collapsedLogo?.x).toBe(expandedLogo?.x);
+				expect(collapsedLogo?.y).toBe(expandedLogo?.y);
+				await expect(sidebar.getByText(`v${APP_VERSION}`, { exact: true })).toHaveCount(0);
+				await expect(nav.getByRole("button").first()).toHaveAccessibleName("搜索 (⌘K)");
+			}
 			await page
 				.getByTestId("repo-list")
 				.getByRole("link", { name: "octocat/hello-world" })
@@ -138,5 +164,48 @@ test("command palette opens from collapsed sidebar search control", async ({ pag
 	await waitForReposRouteSettled(page, 1440);
 	await sidebar.getByRole("button", { name: /搜索/ }).click();
 	await expect(page.getByPlaceholder("搜索页面或仓库")).toBeVisible();
+	expect(writes).toEqual([]);
+});
+
+test("group disclosure stays collapsed when another group navigates", async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	const writes: string[] = [];
+	await stubApi(page, createUiFixtures(), writes);
+	await gotoAndWaitForSidebar(page, "/repos");
+	const sidebar = page.getByRole("complementary");
+	const ai = sidebar.getByRole("button", { name: "AI", exact: true });
+	await ai.click();
+	await expect(ai).toHaveAttribute("aria-expanded", "false");
+	await sidebar.getByRole("button", { name: "Issues", exact: true }).click();
+	await expect(page).toHaveURL(/\/issues$/);
+	await expect(page.getByRole("heading", { name: "Issues", exact: true })).toBeVisible();
+	await expect(ai).toHaveAttribute("aria-expanded", "false");
+	expect(writes).toEqual([]);
+});
+
+test("mobile navigation restores focus and closes across the desktop breakpoint", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 390, height: 900 });
+	const writes: string[] = [];
+	await stubApi(page, createUiFixtures(), writes);
+	await page.goto("/repos");
+	await expect(page.getByText("当前账号下的仓库快照")).toBeVisible();
+	const opener = page.getByRole("button", { name: "打开导航" });
+	await opener.click();
+	const drawer = page.getByRole("dialog", { name: "打开导航" });
+	await expect(drawer).toBeVisible();
+	await page.keyboard.press("Escape");
+	await expect(drawer).toBeHidden();
+	await expect(opener).toBeFocused();
+	await opener.click();
+	await expect(drawer).toBeVisible();
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await expect(drawer).toBeHidden();
+	await expect(page.getByRole("complementary")).toHaveCount(1);
+	await expect(page.locator("body")).not.toHaveCSS("overflow", "hidden");
+	await page.setViewportSize({ width: 390, height: 900 });
+	await expect(drawer).toBeHidden();
+	await expect(opener).toBeVisible();
 	expect(writes).toEqual([]);
 });

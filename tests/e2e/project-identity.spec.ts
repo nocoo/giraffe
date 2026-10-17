@@ -190,7 +190,10 @@ test("list, grid and detail share project identity without replacing Giraffe bra
 	await expect(page.locator("aside img")).toHaveAttribute("src", giraffe.navigationIcon);
 	await expect(page.locator("aside")).toContainText(giraffe.title);
 	await page.getByRole("button", { name: "折叠侧栏", exact: true }).click();
-	await expect(page.getByAltText("Giraffe")).toHaveAttribute("src", giraffe.navigationIcon);
+	await expect(page.getByRole("link", { name: "Giraffe 首页" }).locator("img")).toHaveAttribute(
+		"src",
+		giraffe.navigationIcon,
+	);
 	await page.getByRole("button", { name: "展开侧栏", exact: true }).click();
 	expect(requests.get(repository)).toBe(1);
 	expect(requests.get("nocoo/giraffe")).toBe(1);
@@ -227,7 +230,10 @@ test("temporary lookup failures retain repository content and retry on the next 
 	await expect(summary(page)).toContainText("A demo repo");
 	await expect(summary(page)).not.toContainText(hello.title);
 	await expect(page.locator('link[rel="icon"]')).toHaveAttribute("href", "/logo-32.png");
-	await expect(page.locator("aside img")).toHaveAttribute("src", "/logo-24.png");
+	await expect(page.getByRole("link", { name: "Giraffe 首页" }).locator("img")).toHaveAttribute(
+		"src",
+		"/logo-32.png",
+	);
 	await page.getByRole("radio", { name: "网格", exact: true }).check();
 	await expect(summary(page)).toContainText(hello.title);
 	expect(requests.get(repository)).toBe(2);
@@ -258,7 +264,10 @@ test("broken CDN artwork uses a neutral repository mark and the local Giraffe ic
 	await summary(page).scrollIntoViewIfNeeded();
 	await expect(summary(page).locator("img")).toHaveCount(0);
 	await expect(summary(page).locator("svg.lucide-box")).toBeVisible();
-	await expect(page.locator("aside img")).toHaveAttribute("src", "/logo-24.png");
+	await expect(page.getByRole("link", { name: "Giraffe 首页" }).locator("img")).toHaveAttribute(
+		"src",
+		"/logo-32.png",
+	);
 	await expect(page.locator('link[rel="icon"]')).toHaveAttribute("href", "/logo-32.png");
 });
 
