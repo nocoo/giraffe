@@ -90,7 +90,7 @@ export function DataTimeControl() {
 					aria-label={`数据更新时间：${summary.label}`}
 				>
 					<Clock3 className="size-4" aria-hidden="true" />
-					{summary.label}
+					<span className="hidden sm:inline">{summary.label}</span>
 					<ChevronDown className="size-3" aria-hidden="true" />
 				</Button>
 			</PopoverTrigger>

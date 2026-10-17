@@ -12,6 +12,7 @@ import { subscribeErrorUi } from "../../lib/error-ui";
 import { headerCrumbs, headerTitle } from "../../lib/navigation";
 import { AppSidebar } from "./app-sidebar";
 import { DataTimeControl, DataTimeProvider } from "./data-time";
+import { EnvironmentSwitch } from "./environment-switch";
 import { GithubIcon } from "./github-icon";
 import { HeaderTooltip, HexlyLink } from "./header-links";
 import { useRepositoryScope } from "./repository-scope";
@@ -120,22 +121,25 @@ export function AppShell() {
 						title={title}
 						actions={
 							<>
+								<EnvironmentSwitch />
 								{!["/settings", "/authorize"].includes(location.pathname) ? (
 									<DataTimeControl />
 								) : null}
-								<HeaderTooltip label="GitHub repository">
-									<Button variant="ghost" size="icon" className="h-8 w-8" asChild>
-										<a
-											href="https://github.com/nocoo/giraffe"
-											target="_blank"
-											rel="noopener noreferrer"
-											aria-label="GitHub"
-										>
-											<GithubIcon className="h-[18px] w-[18px]" strokeWidth={1.5} />
-										</a>
-									</Button>
-								</HeaderTooltip>
-								<HexlyLink />
+								{!isMobile && (
+									<HeaderTooltip label="GitHub repository">
+										<Button variant="ghost" size="icon" className="h-8 w-8" asChild>
+											<a
+												href="https://github.com/nocoo/giraffe"
+												target="_blank"
+												rel="noopener noreferrer"
+												aria-label="GitHub"
+											>
+												<GithubIcon className="h-[18px] w-[18px]" strokeWidth={1.5} />
+											</a>
+										</Button>
+									</HeaderTooltip>
+								)}
+								{!isMobile && <HexlyLink />}
 								<ThemeToggle aria-label={`切换主题（当前 ${theme}）`} />
 							</>
 						}
