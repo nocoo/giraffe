@@ -5,6 +5,7 @@
 	"type": "module",
 	"scripts": {
 		"dev": "bun run scripts/dev.ts",
+		"login:prod": "cloudflared access login https://giraffe.hexly.ai > /dev/null",
 		"factory:audit": "bun run scripts/factory-audit.ts",
 		"factory:preview": "bun run scripts/factory-preview.ts",
 		"dev:server": "bun run scripts/dev-server.ts",
