@@ -536,3 +536,10 @@ found that a route-keyed data provider remounted the sidebar, resetting the newl
 collapsible groups. Keep page-data resets inside the main column and exercise
 disclosure state across navigation. Before replacing a brand mark, search existing
 browser assertions for its accessible name and fallback asset, not just callers.
+
+The version-bump command also chained lockfile generation directly into staging
+and commit. Bun expanded the temporary registry override into tarball URLs, so
+the pending commit was interrupted before completion. Removing only those
+generated URLs left the intended single version-entry change; the normal hooks
+then ran again. Inspect generated lockfile changes before staging, even when the
+package versions have not changed, and never chain generation into publication.
