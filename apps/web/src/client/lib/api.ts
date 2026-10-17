@@ -1,7 +1,18 @@
 import { ApiError, asErrorCode } from "./errors";
+import { getLocalEnvironment, isRemoteReadOnly } from "./local-environment";
 
 async function send(resource: string, init?: RequestInit): Promise<Response> {
-	return fetch(`/api/${resource}`, { credentials: "same-origin", ...init });
+	const environment = getLocalEnvironment();
+	const selection = resource === "__local/environment";
+	if (isRemoteReadOnly() && !selection && init?.method && init.method !== "GET") {
+		throw new ApiError(403, "local_read_only", "线上数据为只读，请切回 Local 后操作");
+	}
+	const headers = new Headers(init?.headers);
+	if (environment) {
+		headers.set("x-giraffe-local-instance", environment.instanceId);
+		if (selection) headers.set("x-giraffe-local-csrf", environment.csrfToken);
+	}
+	return fetch(`/api/${resource}`, { credentials: "same-origin", ...init, headers });
 }
 
 async function parse<T>(res: Response): Promise<T> {

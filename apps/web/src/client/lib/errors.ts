@@ -1,4 +1,8 @@
 export const ERROR_CODES = [
+	"local_read_only",
+	"local_environment_expired",
+	"local_prod_login_required",
+	"local_proxy_unavailable",
 	"ai_connection_failed",
 	"validation_failed",
 	"refresh_cooldown",
