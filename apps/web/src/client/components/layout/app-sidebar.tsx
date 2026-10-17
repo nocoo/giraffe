@@ -97,16 +97,30 @@ export function AppSidebar({ collapsed, onToggle }: { collapsed: boolean; onTogg
 		}
 	}, []);
 
+	const openSearch = useCallback(() => {
+		setSearchQuery("");
+		setSearchOpen(true);
+	}, []);
+
 	useEffect(() => {
-		function onKey(event: KeyboardEvent) {
-			if ((event.metaKey || event.ctrlKey) && event.key === "k") {
-				event.preventDefault();
-				handleSearchOpenChange(!searchOpen);
-			}
+		function isShortcut(event: KeyboardEvent) {
+			return (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k";
 		}
-		document.addEventListener("keydown", onKey);
-		return () => document.removeEventListener("keydown", onKey);
-	}, [handleSearchOpenChange, searchOpen]);
+		function onKeyDown(event: KeyboardEvent) {
+			if (!isShortcut(event)) return;
+			event.preventDefault();
+			window.setTimeout(() => {
+				const trigger = document.querySelector<HTMLElement>('[data-sidebar-search-trigger="true"]');
+				if (trigger) {
+					trigger.click();
+					return;
+				}
+				openSearch();
+			}, 0);
+		}
+		document.addEventListener("keydown", onKeyDown, true);
+		return () => document.removeEventListener("keydown", onKeyDown, true);
+	}, [openSearch]);
 
 	useEffect(() => {
 		void loadMe()
@@ -163,7 +177,8 @@ export function AppSidebar({ collapsed, onToggle }: { collapsed: boolean; onTogg
 						<TooltipTrigger asChild>
 							<SidebarIconItem
 								className="mb-2 self-center"
-								onClick={() => setSearchOpen(true)}
+								data-sidebar-search-trigger="true"
+								onClick={openSearch}
 								aria-label="搜索 (⌘K)"
 							>
 								<Search className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
@@ -228,7 +243,9 @@ export function AppSidebar({ collapsed, onToggle }: { collapsed: boolean; onTogg
 						</div>
 					</SidebarHeader>
 					<div className="px-3 pb-1">
-						<SidebarSearch onClick={() => setSearchOpen(true)}>搜索</SidebarSearch>
+						<SidebarSearch data-sidebar-search-trigger="true" onClick={openSearch}>
+							搜索
+						</SidebarSearch>
 					</div>
 					<SidebarNav className="pt-1">
 						{NAV_GROUPS.map((group) => (
@@ -259,6 +276,9 @@ export function AppSidebar({ collapsed, onToggle }: { collapsed: boolean; onTogg
 					placeholder="搜索页面或仓库"
 					value={searchQuery}
 					onValueChange={setSearchQuery}
+					onInput={(event) => {
+						setSearchQuery(event.currentTarget.value);
+					}}
 				/>
 				<CommandList>
 					<CommandEmpty>没有匹配项</CommandEmpty>
