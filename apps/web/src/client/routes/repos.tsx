@@ -1,8 +1,7 @@
-import { Button, SegmentControl, toast } from "@nocoo/basalt";
+import { Button, SegmentControl, Switch, toast } from "@nocoo/basalt";
 import { FilterBar } from "@nocoo/basalt/components/filter-bar";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
-import { Switch } from "@nocoo/basalt/components/switch";
 import {
 	Table,
 	TableBody,
