@@ -50,7 +50,7 @@
 		"packages/*"
 	],
 	"dependencies": {
-		"@nocoo/basalt": "2.1.8",
+		"@nocoo/basalt": "3.1.0",
 		"hono": "^4.13.13",
 		"lucide-react": "^1.57.0",
 		"react": "^19.3.1",
