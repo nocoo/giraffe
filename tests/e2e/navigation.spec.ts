@@ -1,6 +1,54 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { factoryFixture } from "../fixtures/factory-snapshot";
 import { createUiFixtures } from "./ui-fixtures";
+
+async function gotoAndWaitForSidebar(page: Page, url: string) {
+	await Promise.all([
+		page.goto(url),
+		page.waitForResponse((response) => response.url().includes("/api/me") && response.ok()),
+	]);
+}
+
+async function waitForReposRouteSettled(page: Page, width: number) {
+	await expect(page).toHaveURL(/\/repos$/);
+	await expect(page.getByText("当前账号下的仓库快照")).toBeVisible();
+	const sidebar = page.getByRole("complementary");
+	if (width === 1440) {
+		await expect(sidebar.getByRole("button", { name: "展开侧栏" })).toBeVisible();
+		await expect(sidebar.getByRole("button", { name: /搜索/ })).toBeVisible();
+		await expect(sidebar.getByRole("button", { name: "仓库", exact: true })).toHaveAttribute(
+			"aria-current",
+			"page",
+		);
+	} else {
+		await expect(page.getByRole("dialog", { name: "打开导航" })).toBeHidden();
+	}
+	await page.evaluate(
+		() =>
+			new Promise<void>((resolve) => {
+				requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+			}),
+	);
+}
+
+function stubApi(page: Page, fixtures: Record<string, unknown>, writes: string[]) {
+	return page.route("**/api/**", (route) => {
+		const request = route.request();
+		if (request.method() !== "GET") writes.push(request.url());
+		const path = new URL(request.url()).pathname;
+		if (path.startsWith("/api/agent/accounts/")) {
+			return route.fulfill({
+				json: { account_id: "ui-account", items: [], repositories: [], sources: [] },
+			});
+		}
+		return path in fixtures
+			? route.fulfill({ json: fixtures[path] })
+			: route.fulfill({
+					status: 409,
+					json: { error: { code: "snapshot_missing", message: "No fixture" } },
+				});
+	});
+}
 
 for (const width of [1440, 390]) {
 	for (const theme of ["light", "dark"] as const) {
@@ -10,24 +58,9 @@ for (const width of [1440, 390]) {
 			const fixtures: Record<string, unknown> = createUiFixtures();
 			fixtures["/api/factory"] = { ...factoryFixture(), account_id: "ui-account" };
 			const writes: string[] = [];
-			await page.route("**/api/**", (route) => {
-				const request = route.request();
-				if (request.method() !== "GET") writes.push(request.url());
-				const path = new URL(request.url()).pathname;
-				if (path.startsWith("/api/agent/accounts/")) {
-					return route.fulfill({
-						json: { account_id: "ui-account", items: [], repositories: [], sources: [] },
-					});
-				}
-				return path in fixtures
-					? route.fulfill({ json: fixtures[path] })
-					: route.fulfill({
-							status: 409,
-							json: { error: { code: "snapshot_missing", message: "No fixture" } },
-						});
-			});
+			await stubApi(page, fixtures, writes);
 
-			await page.goto("/");
+			await gotoAndWaitForSidebar(page, "/");
 			await expect(page).toHaveURL(/\/factory$/);
 			await expect(page.getByRole("heading", { name: "软件工厂", exact: true })).toBeVisible();
 			if (width === 390) await page.getByRole("button", { name: "打开导航" }).click();
@@ -68,15 +101,17 @@ for (const width of [1440, 390]) {
 				);
 			}
 			await page.locator("header").getByRole("link", { name: "仓库", exact: true }).click();
-			await expect(page).toHaveURL(/\/repos$/);
-			if (width === 390) await page.getByRole("button", { name: "打开导航" }).click();
-			await page.getByRole("button", { name: /搜索/ }).click();
+			await waitForReposRouteSettled(page, width);
+			if (width === 390) {
+				await page.getByRole("button", { name: "打开导航" }).click();
+				await expect(nav.locator("[aria-current=page]")).toHaveText("仓库");
+			}
+			await page.keyboard.press("ControlOrMeta+k");
 			const search = page.getByPlaceholder("搜索页面或仓库");
 			await expect(search).toBeVisible();
 			await search.fill("软件工厂");
-			const factoryOption = page.getByRole("option", { name: "软件工厂", exact: true });
-			await expect(factoryOption).toBeVisible();
-			await factoryOption.click();
+			await expect(page.getByRole("option", { name: "软件工厂", exact: true })).toBeVisible();
+			await page.keyboard.press("Enter");
 			await expect(page).toHaveURL(/\/factory$/);
 			await page.goBack();
 			await expect(page).toHaveURL(/\/repos$/);
@@ -87,3 +122,21 @@ for (const width of [1440, 390]) {
 		});
 	}
 }
+
+test("command palette opens from collapsed sidebar search control", async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
+	const fixtures: Record<string, unknown> = createUiFixtures();
+	fixtures["/api/factory"] = { ...factoryFixture(), account_id: "ui-account" };
+	const writes: string[] = [];
+	await stubApi(page, fixtures, writes);
+
+	await gotoAndWaitForSidebar(page, "/repos");
+	await expect(page).toHaveURL(/\/repos$/);
+	const sidebar = page.getByRole("complementary");
+	await sidebar.getByRole("button", { name: "折叠侧栏" }).click();
+	await waitForReposRouteSettled(page, 1440);
+	await sidebar.getByRole("button", { name: /搜索/ }).click();
+	await expect(page.getByPlaceholder("搜索页面或仓库")).toBeVisible();
+	expect(writes).toEqual([]);
+});
