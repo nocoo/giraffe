@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.15.5 — 2026-10-17
+
+### Changed
+
+- Upgrade `@nocoo/basalt` from 2.1.8 to 3.1.0 across the web client, adopting v3 spacing tokens, segmented `Meter` and bar-based `Sparkline` while keeping existing import paths and chart configuration helpers.
+
+### Fixed
+
+- Resolve the workspace lockfile so `@giraffe/web` installs Basalt 3.1.0 instead of a stale 2.1.8 copy that broke L3 visual assertions.
+
 ## v0.15.0 — 2026-10-02
 
 ### Added
