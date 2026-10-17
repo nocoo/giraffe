@@ -11,6 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Upgrade `happy-dom` from 20.14.5 to 21.0.3. Happy DOM v21 disables CSS and iframe document loading by default (SSRF mitigation); client L1 tests do not rely on external stylesheets or iframe navigation, so no Vitest setup changes were required.
 
+## v0.15.3 — 2026-10-17
+
+### Added
+
+- Local environment gateway plugin, API routing by selected environment, header environment switch, and Vite wiring for local multi-environment development
+
+### Changed
+
+- Factory is the default dashboard landing view
+- CI history and latest-run chart outlines use aligned colors
+- Dependency updates: `@cloudflare/workers-types` 5.20261016.1, `@earendil-works/chord` / `pi-ai` / `pi-durable` 1.3.0, `@vitest/coverage-v8` and `vitest` 5.0.5, `lucide-react` 1.58.0, `wrangler` 4.151.1
+
 ## v0.15.0 — 2026-10-02
 
 ### Added
