@@ -218,6 +218,70 @@ it("lists saved source versions for the token account without writes", async () 
 		before,
 	);
 });
+
+it("retains incrementally merged global sources with newer repository observation times", async () => {
+	const { db, call, prefix } = await setup();
+	const oldAt = "2026-10-01T00:00:00Z";
+	const newAt = "2026-10-03T00:00:00Z";
+	const snapshots = {
+		repos: { repos: [{ name_with_owner: "nocoo/app" }] },
+		issues: { issues: [] },
+		prs: { pull_requests: [] },
+	};
+	for (const [kind, payload] of Object.entries(snapshots))
+		await db.batch(replaceSnapshotStmts(db, account, kind, payload, oldAt));
+	const before = (await (await call(`${prefix}/sources`)).json()) as {
+		sources: { resource: string; version: string }[];
+	};
+	for (const [kind, payload] of Object.entries(snapshots))
+		await db.batch(
+			replaceSnapshotStmts(
+				db,
+				account,
+				kind,
+				{ ...payload, repository_fetched_at: { "nocoo/app": newAt } },
+				oldAt,
+			),
+		);
+	const response = await call(`${prefix}/sources?since=2026-10-02T00%3A00%3A00Z`);
+	expect(response.status).toBe(200);
+	const after = (await response.json()) as { sources: { resource: string; version: string }[] };
+	for (const kind of Object.keys(snapshots)) {
+		const current = after.sources.find((source) => source.resource === `account:${kind}`);
+		expect(current).toMatchObject({ fetchedAt: oldAt, freshness: { latestAt: newAt } });
+		expect(current?.version).not.toBe(
+			before.sources.find((source) => source.resource === `account:${kind}`)?.version,
+		);
+	}
+});
+
+it.each([
+	["2026-10-03T00:00:00Z", "2026-10-01T00:00:00Z", true],
+	["2026-10-01T00:00:00Z", "2026-10-03T00:00:00Z", true],
+	["2026-10-01T00:00:00Z", "2026-10-02T00:00:00Z", false],
+	["invalid", "2026-10-03T00:00:00Z", true],
+	["2026-10-03T00:00:00Z", null, true],
+	["invalid", "invalid", true],
+	["invalid", null, true],
+] as const)(
+	"filters by the newest valid source time (%s, %s)",
+	async (fetchedAt, latestAt, retained) => {
+		const { db, call, prefix } = await setup();
+		await db.batch(
+			replaceSnapshotStmts(
+				db,
+				account,
+				"issues",
+				{ issues: [], freshness: { latestAt } },
+				fetchedAt,
+			),
+		);
+		const result = (await (
+			await call(`${prefix}/sources?since=2026-10-02T00%3A00%3A00Z`)
+		).json()) as { sources: { resource: string }[] };
+		expect(result.sources.some((source) => source.resource === "account:issues")).toBe(retained);
+	},
+);
 it("manages only explicit local configuration and durable refresh controls", async () => {
 	const s = await setup();
 	const p = s.prefix;

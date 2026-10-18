@@ -104,8 +104,10 @@ export async function readSources(db: Db, account: string, query: Record<string,
 				typeof freshness === "object" && freshness !== null && "latestAt" in freshness
 					? freshness.latestAt
 					: null;
-			const at = source.fetchedAt ?? latestAt;
-			return typeof at !== "string" || !Number.isFinite(Date.parse(at)) || Date.parse(at) > since;
+			const times = [source.fetchedAt, latestAt]
+				.map((at) => (typeof at === "string" ? Date.parse(at) : NaN))
+				.filter(Number.isFinite);
+			return times.length === 0 || Math.max(...times) > since;
 		}),
 	};
 }
