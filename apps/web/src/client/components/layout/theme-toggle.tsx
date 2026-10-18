@@ -1,16 +1,14 @@
 "use client";
 
-import { Button } from "@nocoo/basalt/components/button";
+import { ThemeToggle as BasaltThemeToggle } from "@nocoo/basalt/components/theme-toggle";
 import { useTheme } from "@nocoo/basalt/providers/theme";
-import { Monitor, Moon, Sun } from "lucide-react";
 import { HeaderTooltip } from "./header-links";
 
 export type ThemeToggleProps = { "aria-label"?: string };
 
 export function ThemeToggle({ "aria-label": ariaLabel = "切换主题" }: ThemeToggleProps = {}) {
-	const { theme, setTheme } = useTheme();
+	const { theme } = useTheme();
 	const nextTheme = theme === "system" ? "light" : theme === "light" ? "dark" : "system";
-	const Icon = theme === "system" ? Monitor : theme === "dark" ? Moon : Sun;
 	return (
 		<HeaderTooltip
 			label={
@@ -21,14 +19,9 @@ export function ThemeToggle({ "aria-label": ariaLabel = "切换主题" }: ThemeT
 						: "切换为浅色主题"
 			}
 		>
-			<Button
-				variant="ghost"
-				size="icon"
-				onClick={() => setTheme(nextTheme)}
-				aria-label={ariaLabel}
-			>
-				<Icon className="h-4 w-4" aria-hidden="true" strokeWidth={1.5} />
-			</Button>
+			<span className="inline-flex">
+				<BasaltThemeToggle aria-label={ariaLabel} />
+			</span>
 		</HeaderTooltip>
 	);
 }

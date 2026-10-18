@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.15.6 — 2026-10-18
+
+### Fixed
+
+- Align sidebar disclosures, brand home link, version pill, search placement, collapsed rail and footer with the Basalt template while preserving all navigation destinations and the command palette.
+- Preserve sidebar group state across navigation, forward internal link accessibility attributes, and restore mobile drawer focus and breakpoint cleanup.
+- Reuse Basalt link buttons and theme switching, with template spacing and regression coverage for branding and navigation in both themes and viewport sizes.
+
 ## v0.15.5 — 2026-10-17
 
 ### Changed

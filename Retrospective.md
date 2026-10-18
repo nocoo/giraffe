@@ -525,3 +525,21 @@ During the CI strip inspection, an unmatched zsh glob prevented an `rg` search,
 and an `fd` call treated a directory as its pattern. Both searches were corrected
 before editing. Pass known paths to `rg` and use `fd -e css . <directory>` rather
 than relying on shell expansion or an omitted pattern.
+
+## 2026-10-18 - Test sidebar changes through the real shell
+
+The first sidebar structure tests rendered Basalt without the application's
+LinkProvider. They passed while the production router adapter discarded the new
+home link's accessible name. Browser checks and independent review exposed this;
+the tests now use the real adapter and verify the icon-only home link. Review also
+found that a route-keyed data provider remounted the sidebar, resetting the newly
+collapsible groups. Keep page-data resets inside the main column and exercise
+disclosure state across navigation. Before replacing a brand mark, search existing
+browser assertions for its accessible name and fallback asset, not just callers.
+
+The version-bump command also chained lockfile generation directly into staging
+and commit. Bun expanded the temporary registry override into tarball URLs, so
+the pending commit was interrupted before completion. Removing only those
+generated URLs left the intended single version-entry change; the normal hooks
+then ran again. Inspect generated lockfile changes before staging, even when the
+package versions have not changed, and never chain generation into publication.

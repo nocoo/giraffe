@@ -9,13 +9,14 @@ import {
 	CommandItem,
 	CommandList,
 	CommandPalette,
+	Link,
 	Sidebar,
 	SidebarFooter,
+	SidebarGroup,
 	SidebarHeader,
 	SidebarIconItem,
 	SidebarItem,
 	SidebarNav,
-	SidebarPartition,
 	SidebarSearch,
 	SidebarUser,
 	Tooltip,
@@ -149,53 +150,82 @@ export function AppSidebar({ collapsed, onToggle }: { collapsed: boolean; onTogg
 		(item) => item.href.startsWith("/repos/") && commandSearchMatches(item.label, searchQuery),
 	);
 	const name = me ? displayName(me) : "Giraffe";
-	const email = me?.email ?? `v${APP_VERSION}`;
+	const email = me?.email;
 	const avatar = (
 		<Avatar className="h-9 w-9 shrink-0">
 			{me?.avatar ? <AvatarImage src={me.avatar} alt={name} /> : null}
-			<AvatarFallback className="text-xs">{initials(name)}</AvatarFallback>
+			<AvatarFallback className="text-basalt-sm">{initials(name)}</AvatarFallback>
 		</Avatar>
 	);
 
 	return (
 		<Sidebar collapsed={collapsed}>
+			<SidebarHeader>
+				<div
+					className={`flex w-full items-center ${collapsed ? "justify-center" : "justify-between pl-basalt-layout-sm"}`}
+				>
+					<Link
+						href="/"
+						aria-label="Giraffe 首页"
+						className="flex min-w-0 items-center gap-basalt-space-lg text-basalt-foreground no-underline hover:no-underline"
+					>
+						<BrandMark />
+						{collapsed ? null : (
+							<>
+								<span className="truncate text-basalt-xl font-semibold text-basalt-foreground md:text-basalt-2xl">
+									{project?.title ?? "Giraffe"}
+								</span>
+								<span className="shrink-0 rounded-basalt-md bg-basalt-secondary px-basalt-space-md py-basalt-space-xs font-mono text-basalt-xs leading-basalt-tight font-medium text-basalt-muted-foreground">
+									v{APP_VERSION}
+								</span>
+							</>
+						)}
+					</Link>
+					{collapsed ? null : (
+						<Button
+							variant="ghost"
+							size="icon"
+							className="w-7 shrink-0"
+							onClick={onToggle}
+							aria-label="折叠侧栏"
+						>
+							<PanelLeft aria-hidden="true" />
+						</Button>
+					)}
+				</div>
+			</SidebarHeader>
 			{collapsed ? (
 				<>
-					<SidebarHeader className="justify-start px-0 pl-6">
-						<BrandMark alt="Giraffe" />
-					</SidebarHeader>
 					<Button
 						variant="ghost"
 						size="icon"
-						className="mb-1 self-center"
+						className="mb-basalt-space-sm self-center"
 						onClick={onToggle}
 						aria-label="展开侧栏"
 					>
 						<PanelLeft aria-hidden="true" />
 					</Button>
-					<Tooltip delayDuration={0}>
-						<TooltipTrigger asChild>
-							<SidebarIconItem
-								className="mb-2 self-center"
-								data-sidebar-search-trigger="true"
-								onClick={openSearch}
-								aria-label="搜索 (⌘K)"
-							>
-								<Search className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
-							</SidebarIconItem>
-						</TooltipTrigger>
-						<TooltipContent side="right" sideOffset={8}>
-							搜索 (⌘K)
-						</TooltipContent>
-					</Tooltip>
-					<SidebarNav className="w-full items-center gap-1 pt-1">
+					<SidebarNav>
+						<Tooltip delayDuration={0}>
+							<TooltipTrigger asChild>
+								<SidebarIconItem
+									data-sidebar-search-trigger="true"
+									onClick={openSearch}
+									aria-label="搜索 (⌘K)"
+								>
+									<Search className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
+								</SidebarIconItem>
+							</TooltipTrigger>
+							<TooltipContent side="right" sideOffset={8}>
+								搜索 (⌘K)
+							</TooltipContent>
+						</Tooltip>
 						{NAV_ITEMS.map((item) => (
 							<Tooltip key={item.href} delayDuration={0}>
 								<TooltipTrigger asChild>
 									<SidebarIconItem
 										active={navActive(pathname, item.href)}
 										aria-label={item.label}
-										className="self-center"
 										onClick={() => navigate(item.href)}
 									>
 										<NavIcon name={item.icon} className="h-4 w-4" />
@@ -207,7 +237,7 @@ export function AppSidebar({ collapsed, onToggle }: { collapsed: boolean; onTogg
 							</Tooltip>
 						))}
 					</SidebarNav>
-					<SidebarFooter className="flex w-full justify-center px-0">
+					<SidebarFooter>
 						<Tooltip delayDuration={0}>
 							<TooltipTrigger asChild>
 								<span className="inline-flex">{avatar}</span>
@@ -220,50 +250,25 @@ export function AppSidebar({ collapsed, onToggle }: { collapsed: boolean; onTogg
 				</>
 			) : (
 				<>
-					<SidebarHeader>
-						<div className="flex w-full items-center justify-between">
-							<div className="flex min-w-0 items-center gap-3 pl-3">
-								<BrandMark />
-								<span className="truncate text-lg font-semibold text-basalt-foreground md:text-xl">
-									{project?.title ?? "Giraffe"}
-								</span>
-								<span className="shrink-0 rounded-md bg-basalt-secondary px-1.5 py-0.5 font-mono text-xs leading-none font-medium text-basalt-muted-foreground">
-									v{APP_VERSION}
-								</span>
-							</div>
-							<Button
-								variant="ghost"
-								size="icon"
-								className="h-7 w-7 shrink-0"
-								onClick={onToggle}
-								aria-label="折叠侧栏"
-							>
-								<PanelLeft aria-hidden="true" />
-							</Button>
-						</div>
-					</SidebarHeader>
-					<div className="px-3 pb-1">
+					<div className="px-basalt-nav-inset">
 						<SidebarSearch data-sidebar-search-trigger="true" onClick={openSearch}>
 							搜索
 						</SidebarSearch>
 					</div>
-					<SidebarNav className="pt-1">
+					<SidebarNav>
 						{NAV_GROUPS.map((group) => (
-							<div key={group.label}>
-								<SidebarPartition>{group.label}</SidebarPartition>
-								<div className="flex flex-col gap-0.5 px-3">
-									{group.items.map((item) => (
-										<SidebarItem
-											key={item.href}
-											active={navActive(pathname, item.href)}
-											onClick={() => navigate(item.href)}
-										>
-											<NavIcon name={item.icon} />
-											<span className="flex-1 truncate text-left">{item.label}</span>
-										</SidebarItem>
-									))}
-								</div>
-							</div>
+							<SidebarGroup key={group.label} label={group.label} defaultOpen>
+								{group.items.map((item) => (
+									<SidebarItem
+										key={item.href}
+										active={navActive(pathname, item.href)}
+										onClick={() => navigate(item.href)}
+									>
+										<NavIcon name={item.icon} />
+										<span className="flex-1 truncate text-left">{item.label}</span>
+									</SidebarItem>
+								))}
+							</SidebarGroup>
 						))}
 					</SidebarNav>
 					<SidebarFooter>
@@ -289,7 +294,7 @@ export function AppSidebar({ collapsed, onToggle }: { collapsed: boolean; onTogg
 									key={item.href}
 									value={`${item.label} ${item.href}`}
 									onSelect={() => handleSelect(item.href)}
-									className="cursor-pointer gap-3"
+									className="cursor-pointer gap-basalt-space-lg"
 								>
 									<NavIcon name={item.icon} className="h-4 w-4 text-basalt-muted-foreground" />
 									<span>{item.label}</span>
@@ -304,7 +309,7 @@ export function AppSidebar({ collapsed, onToggle }: { collapsed: boolean; onTogg
 									key={item.href}
 									value={`${item.label} ${item.href}`}
 									onSelect={() => handleSelect(item.href)}
-									className="cursor-pointer gap-3"
+									className="cursor-pointer gap-basalt-space-lg"
 								>
 									<ProjectLabel repo={item.label} />
 								</CommandItem>

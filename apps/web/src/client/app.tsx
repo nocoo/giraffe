@@ -42,7 +42,7 @@ const CANDY_PALETTE = {
 	amber: { light: "43 92% 48%", dark: "43 92% 60%" },
 };
 
-function RouterLink({
+export function RouterLink({
 	href,
 	className,
 	children,
@@ -59,11 +59,8 @@ function RouterLink({
 			</a>
 		);
 	}
-	if (className === undefined) {
-		return <Link to={href}>{children}</Link>;
-	}
 	return (
-		<Link to={href} className={className}>
+		<Link to={href} className={className} {...props}>
 			{children}
 		</Link>
 	);
