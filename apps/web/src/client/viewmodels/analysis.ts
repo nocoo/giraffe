@@ -4,8 +4,8 @@ import {
 	DOMAINS,
 	type Domain,
 	type Resource,
-} from "@nocoo/giraffe-agent/contracts";
-import { cronStatusSchema } from "@nocoo/giraffe-agent/work-contracts";
+} from "../../lib/analysis-contracts";
+import { cronStatusSchema } from "../../lib/work-contracts";
 import { apiGet } from "../lib/api";
 import { ensureSession, getActiveAccountId } from "./session";
 

@@ -1,6 +1,11 @@
 import { createHash } from "node:crypto";
-import type { Domain, Evidence, Observation, Source } from "./contracts.ts";
-import { repositorySchema } from "./contracts.ts";
+import type {
+	Domain,
+	Evidence,
+	Observation,
+	Source,
+} from "../../../apps/web/src/lib/analysis-contracts.ts";
+import { repositorySchema } from "../../../apps/web/src/lib/analysis-contracts.ts";
 
 export type AnalysisInput = {
 	scope: "repo" | "global";

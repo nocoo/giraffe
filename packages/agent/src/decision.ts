@@ -1,6 +1,10 @@
 import { type Questions, type SystemOneRequest, TypeSafeClient } from "@typesafe-ai/sdk";
+import {
+	type Domain,
+	type Judgment,
+	judgmentSchema,
+} from "../../../apps/web/src/lib/analysis-contracts.ts";
 import type { Config } from "./config.ts";
-import { type Domain, type Judgment, judgmentSchema } from "./contracts.ts";
 import type { AnalysisInput } from "./evidence.ts";
 import { boundedBatches, boundedLimitations, clipText } from "./jev-input.ts";
 

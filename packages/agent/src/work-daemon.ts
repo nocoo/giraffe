@@ -1,6 +1,7 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { defineDocFamily } from "@earendil-works/pi-durable";
+import type { WorkProgress } from "../../../apps/web/src/lib/work-contracts.ts";
 import type { GiraffeClient } from "./client.ts";
 import type { Config } from "./config.ts";
 import { createCron, workErrorDiagnostics } from "./cron.ts";
@@ -9,11 +10,11 @@ import { githubRead } from "./github.ts";
 import { pruneRemote } from "./retention.ts";
 import type { AgentRuntime } from "./runtime.ts";
 import { residentAnalysis } from "./work-analysis.ts";
-import { boundedProgress, type WorkProgress } from "./work-contracts.ts";
 import { workConversations } from "./work-conversations.ts";
 import { runCoordinator } from "./work-coordinator.ts";
 import { type FollowUpState, followUp } from "./work-followup.ts";
 import { loadPortfolio, workDecisions } from "./work-priority.ts";
+import { boundedProgress } from "./work-progress.ts";
 import type { WorkInspection } from "./work-workspace.ts";
 import { WorkWorkspace } from "./work-workspace.ts";
 

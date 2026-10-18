@@ -86,6 +86,8 @@ for (const width of [1440, 390])
 			const fixtures: Record<string, unknown> = createUiFixtures();
 			const writes: unknown[] = [];
 			let jobs: unknown[] = [];
+			let externalReport = false;
+			const { producer: _producer, ...externalPayload } = report;
 			await page.route("**/api/**", (route) => {
 				const url = new URL(route.request().url());
 				if (url.pathname.includes("/api/agent/accounts/")) {
@@ -109,7 +111,16 @@ for (const width of [1440, 390])
 						});
 					const items =
 						collection === "reports"
-							? [resource("report", "github-analysis", report, report.repository)]
+							? [
+									resource(
+										"report",
+										"github-analysis",
+										externalReport
+											? { ...externalPayload, judgment: { model: "grok-bot", choice: "review" } }
+											: report,
+										report.repository,
+									),
+								]
 							: collection === "records"
 								? [
 										resource("work-cron", "work-cron", {
@@ -149,7 +160,7 @@ for (const width of [1440, 390])
 			expect(await page.locator("body").evaluate((el) => el.scrollWidth)).toBeLessThanOrEqual(
 				width,
 			);
-			await page.getByText("来源与 Jev 判断", { exact: true }).click();
+			await page.getByText("来源与优先级判断", { exact: true }).click();
 			await expect(page.getByText(/不是成功率/)).toBeVisible();
 			await expect(page.getByRole("progressbar", { name: "review 优先级概率" })).toBeVisible();
 			await page.screenshot({
@@ -158,6 +169,15 @@ for (const width of [1440, 390])
 			});
 			await expect(page.getByRole("button", { name: "请求分析", exact: true })).toHaveCount(0);
 			expect(writes).toEqual([]);
+			externalReport = true;
+			await page.reload();
+			await page.getByRole("tab", { name: /Pull Requests/ }).click();
+			await expect(page.getByText(report.summary, { exact: true })).toBeVisible();
+			await page.getByText("来源与优先级判断", { exact: true }).click();
+			await expect(page.getByText(/模型：grok-bot/)).toBeVisible();
+			await expect(page.getByText(/判断置信度/)).toHaveCount(0);
+			await expect(page.getByRole("progressbar", { name: "review 优先级概率" })).toHaveCount(0);
+			await expect(page.getByText(/planner-configured/)).toHaveCount(0);
 			await page.clock.setFixedTime(new Date("2026-10-04T09:00:00Z"));
 			await page.getByRole("tab", { name: /Issues/ }).click();
 			await page.getByRole("tab", { name: /Pull Requests/ }).click();

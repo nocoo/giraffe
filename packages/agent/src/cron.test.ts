@@ -7,9 +7,9 @@ import { createRegistry, Harness, MemoryStorage } from "@earendil-works/pi-durab
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { APIError, BadRequestError } from "@typesafe-ai/sdk";
 import { afterEach, expect, it, vi } from "vitest";
+import type { CronStatus } from "../../../apps/web/src/lib/work-contracts.ts";
 import { ApiError } from "./client.ts";
 import { createCron, nextOccurrence, workErrorDiagnostics } from "./cron.ts";
-import type { CronStatus } from "./work-contracts.ts";
 
 afterEach(() => {
 	vi.useRealTimers();

@@ -1,5 +1,8 @@
+import {
+	analysisReportSchema,
+	type Resource,
+} from "../../../apps/web/src/lib/analysis-contracts.ts";
 import { ApiError, type GiraffeClient } from "./client.ts";
-import { analysisReportSchema, type Resource } from "./contracts.ts";
 
 export function expiredResources(reports: Resource[], jobs: Resource[]) {
 	const keepReports = new Set<string>();

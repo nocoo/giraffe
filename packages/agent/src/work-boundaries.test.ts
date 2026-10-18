@@ -1,8 +1,9 @@
 import { expect, it } from "vitest";
+import { cronStatusSchema, workRunSchema } from "../../../apps/web/src/lib/work-contracts.ts";
 import { configSchema } from "./config.ts";
 import { safeDiagnostics } from "./diagnostics.ts";
 import { githubRead } from "./github.ts";
-import { boundedProgress, cronStatusSchema, workRunSchema } from "./work-contracts.ts";
+import { boundedProgress } from "./work-progress.ts";
 
 it("keeps diagnostic credentials out of bounded persisted progress", () => {
 	const output = safeDiagnostics(

@@ -1,5 +1,5 @@
-import type { Resource } from "@nocoo/giraffe-agent/contracts";
 import { beforeEach, expect, it, vi } from "vitest";
+import type { Resource } from "../../lib/analysis-contracts";
 import { apiGet, apiPost, apiWrite } from "../lib/api";
 import { ApiError } from "../lib/errors";
 import { setActiveAccountId } from "./session";

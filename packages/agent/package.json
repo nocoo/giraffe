@@ -7,10 +7,6 @@
 	"bin": {
 		"giraffe": "./bin/giraffe.mjs"
 	},
-	"exports": {
-		"./contracts": "./src/contracts.ts",
-		"./work-contracts": "./src/work-contracts.ts"
-	},
 	"engines": {
 		"node": ">=22.22.0"
 	},

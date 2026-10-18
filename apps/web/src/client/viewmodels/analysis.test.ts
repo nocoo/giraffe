@@ -1,5 +1,5 @@
-import type { AnalysisReport, Resource } from "@nocoo/giraffe-agent/contracts";
 import { expect, it } from "vitest";
+import type { AnalysisReport, Resource } from "../../lib/analysis-contracts";
 import {
 	type AnalysisData,
 	analysisState,
@@ -9,6 +9,22 @@ import {
 } from "./analysis";
 
 const at = "2026-10-02T08:00:00Z";
+it("renders external reports without local decision metadata", () => {
+	const { producer: _producer, ...external } = report;
+	const state = analysisState(
+		{
+			...data,
+			reports: [row({ ...external, judgment: { model: "grok-bot", choice: "routine" } })],
+		},
+		"nocoo/app",
+		Date.parse(at),
+	);
+	expect(state.errors).toEqual([]);
+	expect(state.cards.find((card) => card.domain === "prs")?.report?.judgment).toEqual({
+		model: "grok-bot",
+		choice: "routine",
+	});
+});
 it("validates resident portfolio reports against direct account snapshots", () => {
 	const global = {
 		...report,
