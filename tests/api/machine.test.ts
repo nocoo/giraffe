@@ -41,6 +41,20 @@ it("exercises machine bearer CRUD and PKCE over real local HTTP, independently o
 			login: "octocat",
 		});
 		expect((await machine(`v1/accounts/${"z".repeat(21)}/repos`)).status).toBe(403);
+		const sources = await machine(`${prefix}/sources`);
+		expect(sources.status).toBe(200);
+		expect(sources.headers.get("cache-control")).toBe("private, no-store");
+		expect(await sources.json()).toMatchObject({
+			account_id: account.id,
+			repositories: expect.any(Array),
+			sources: expect.any(Array),
+		});
+		expect((await machine(`${prefix}/sources?since=2026-01-01T00%3A00%3A00Z`)).status).toBe(200);
+		expect((await machine(`${prefix}/sources?since=invalid`)).status).toBe(400);
+		expect((await machine(`${prefix}/sources?repository=outside%2Fcatalog`)).status).toBe(404);
+		expect((await machine(`${prefix}/sources`, "POST", {})).status).toBe(405);
+		expect((await machine(`${prefix}/sources`, "GET", undefined, "invalid")).status).toBe(401);
+		expect((await machine(`v1/accounts/${"z".repeat(21)}/sources`)).status).toBe(403);
 		for (const kind of ["records", "reports", "jobs"]) {
 			const path = `${prefix}/agent/${kind}`;
 			const id = `acceptance-${kind}`;
@@ -89,6 +103,9 @@ it("exercises machine bearer CRUD and PKCE over real local HTTP, independently o
 		const exchanged = await machine("v1/auth/exchange", "POST", exchange, "");
 		expect(exchanged.status).toBe(200);
 		const readToken = (await exchanged.json()) as { token: string };
+		expect((await machine(`${prefix}/sources`, "GET", undefined, readToken.token)).status).toBe(
+			403,
+		);
 		expect(
 			(
 				await machine(

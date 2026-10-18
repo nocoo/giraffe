@@ -140,6 +140,84 @@ it("performs all agent CRUD methods with validation and concurrency errors", asy
 	expect((await s.call(path, "POST", [])).status).toBe(400);
 	expect((await s.call(`${path}?limit=101`)).status).toBe(400);
 });
+
+it("lists saved source versions for the token account without writes", async () => {
+	const setupResult = await setup();
+	const { db, call, prefix, token } = setupResult;
+	await db.batch(
+		replaceSnapshotStmts(
+			db,
+			account,
+			"repo:nocoo/app:issues",
+			{ issues: [] },
+			"2026-10-02T08:00:00Z",
+		),
+	);
+	await db.batch(
+		replaceSnapshotStmts(
+			db,
+			other,
+			"repo:other/private:issues",
+			{ issues: [] },
+			"2026-10-03T08:00:00Z",
+		),
+	);
+	const before = await db.prepare("SELECT * FROM api_tokens WHERE id=?").bind(token.id).first();
+	const response = await call(`${prefix}/sources?repository=NOCOO%2FAPP`);
+	expect(response.status).toBe(200);
+	expect(response.headers.get("cache-control")).toBe("private, no-store");
+	const result = (await response.json()) as {
+		sources: { resource: string; version: string; fetchedAt: string | null }[];
+		repositories: string[];
+	};
+	expect(result.repositories).toEqual(["nocoo/app"]);
+	expect(result.sources).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				resource: "repo:nocoo/app:issues",
+				fetchedAt: "2026-10-02T08:00:00Z",
+			}),
+			expect.objectContaining({ resource: "account:repos" }),
+		]),
+	);
+	expect(result.sources.some((source) => source.resource.includes("other/private"))).toBe(false);
+	const incremental = await call(`${prefix}/sources?since=2026-10-02T08%3A00%3A00Z`);
+	expect(await incremental.json()).toMatchObject({
+		sources: [expect.objectContaining({ resource: "account:ci", fetchedAt: null })],
+	});
+	expect(
+		await (await call(`${prefix}/sources?since=2026-10-02T09%3A00%3A00%2B02%3A00`)).json(),
+	).toMatchObject({
+		sources: expect.arrayContaining([
+			expect.objectContaining({ resource: "repo:nocoo/app:issues" }),
+		]),
+	});
+	for (const query of [
+		"since=bad",
+		"since=2026-02-30T00%3A00%3A00Z",
+		"repository=bad",
+		"since=",
+		"repository=",
+	])
+		expect((await call(`${prefix}/sources?${query}`)).status).toBe(400);
+	expect((await call(`${prefix}/sources?repository=nocoo%2Fmissing`)).status).toBe(404);
+	expect((await call(`${prefix}/sources`, "POST", {})).status).toBe(405);
+	expect((await call(`${prefix}/sources`, "GET", undefined, null)).status).toBe(401);
+	expect((await call(`/accounts/${other}/sources`)).status).toBe(403);
+	const noObservations = await createApiToken(db, {
+		accountId: account,
+		label: "agent only",
+		scopes: ["agent:read"],
+		expiresInDays: 1,
+		creator: "test",
+	});
+	expect((await call(`${prefix}/sources`, "GET", undefined, noObservations.token)).status).toBe(
+		403,
+	);
+	expect(await db.prepare("SELECT * FROM api_tokens WHERE id=?").bind(token.id).first()).toEqual(
+		before,
+	);
+});
 it("manages only explicit local configuration and durable refresh controls", async () => {
 	const s = await setup();
 	const p = s.prefix;
