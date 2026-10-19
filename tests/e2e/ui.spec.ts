@@ -24,6 +24,24 @@ test.beforeEach(async ({ page }) => {
 	await mockSnapshots(page);
 });
 
+test("retired Work routes expose no controls or runtime requests", async ({ page }) => {
+	const runtimeRequests: string[] = [];
+	page.on("request", (request) => {
+		const url = new URL(request.url());
+		if (url.pathname.startsWith("/api/agent/") || url.pathname.startsWith("/api/cli/"))
+			runtimeRequests.push(url.pathname);
+	});
+	await page.goto("/work");
+	await expect(page.getByText("页面不存在", { exact: true })).toBeVisible();
+	await expect(page.locator('a[href="/work"]')).toHaveCount(0);
+	await expect(page.getByRole("button", { name: "Agent", exact: true })).toHaveCount(0);
+	await expect(page.getByRole("button", { name: /暂停|恢复执行/ })).toHaveCount(0);
+	expect(runtimeRequests).toEqual([]);
+	await page.goto("/repos");
+	await expect(page.getByTestId("repo-list")).toBeVisible();
+	await expect(page.getByRole("button", { name: "分析台", exact: true })).toBeVisible();
+});
+
 test("repository and Insights omit optional security warnings while showing saved data", async ({
 	page,
 }) => {
@@ -156,13 +174,13 @@ for (const [path, label, list] of [
 	});
 }
 
-test("insights keeps deterministic CI and alert reasons separate from Agent analysis", async ({
+test("insights keeps deterministic CI and alert reasons separate from external analysis", async ({
 	page,
 }) => {
 	await page.goto("/insights");
 	await expect(page.getByRole("list", { name: "Top 10 关注仓库" })).toBeVisible();
 	await expect(page.getByTestId("insight-focus")).toContainText("Release 连续 2 次失败");
-	await expect(page.getByRole("link", { name: /查看本地 Agent/ })).toHaveAttribute(
+	await expect(page.getByRole("link", { name: /查看分析报告与证据/ })).toHaveAttribute(
 		"href",
 		"/analysis",
 	);

@@ -75,7 +75,8 @@ for (const width of [1440, 390]) {
 			);
 			const aiToggle = nav.getByRole("button", { name: "AI", exact: true });
 			const ai = page.locator(`[id="${await aiToggle.getAttribute("aria-controls")}"]`);
-			await expect(ai.getByRole("button")).toHaveText(["分析台", "Agent", "Insights"]);
+			await expect(ai.getByRole("button")).toHaveText(["分析台", "Insights"]);
+			await expect(nav.getByRole("button", { name: "Agent", exact: true })).toHaveCount(0);
 			await aiToggle.click();
 			await expect(aiToggle).toHaveAttribute("aria-expanded", "false");
 			await expect(ai.getByRole("button", { name: "分析台", exact: true })).toBeHidden();
@@ -92,7 +93,6 @@ for (const width of [1440, 390]) {
 
 			for (const [label, path] of [
 				["分析台", "/analysis"],
-				["Agent", "/work"],
 				["Insights", "/insights"],
 				["仓库", "/repos"],
 			] as const) {

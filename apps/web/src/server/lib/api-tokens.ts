@@ -3,12 +3,9 @@ import {
 	type ApiScope,
 	type ApiToken,
 	type ApiTokenPrincipal,
-	type AuthorizationCode,
 	apiScopesSchema,
 	type CreatedApiToken,
 	createApiTokenSchema,
-	createAuthorizationCodeSchema,
-	exchangeAuthorizationCodeSchema,
 	updateApiTokenSchema,
 } from "../../lib/api-access";
 import type { Db } from "./db/d1";
@@ -18,13 +15,6 @@ import { createId } from "./id";
 const TOKEN_COLUMNS =
 	"id,account_id,label,scopes,creator,created_at,expires_at,revoked_at,last_used_at";
 type TokenRow = Omit<ApiToken, "scopes"> & { scopes: string };
-type GrantRow = {
-	account_id: string;
-	label: string;
-	scopes: string;
-	creator: string;
-	expires_in_days: number;
-};
 
 function parseInput<Output>(schema: z.ZodType<Output>, input: unknown): Output {
 	const parsed = schema.safeParse(input);
@@ -206,82 +196,4 @@ export async function authenticateApiToken(
 				expiresAt: row.expires_at,
 			}
 		: null;
-}
-
-export async function createAuthorizationCode(
-	db: Db,
-	input: unknown,
-	now = new Date().toISOString(),
-): Promise<AuthorizationCode> {
-	const parsed = parseInput(createAuthorizationCodeSchema, input);
-	await requireAccount(db, parsed.accountId);
-	const code = `giraffe_code_${randomSecret()}`;
-	const expiresAt = new Date(Date.parse(now) + 5 * 60_000).toISOString();
-	await db.batch([
-		db
-			.prepare(
-				"DELETE FROM api_authorization_codes WHERE code_hash IN (SELECT code_hash FROM api_authorization_codes WHERE expires_at<=? ORDER BY expires_at LIMIT 100)",
-			)
-			.bind(now),
-		db
-			.prepare(
-				"INSERT INTO api_authorization_codes(code_hash,account_id,label,scopes,creator,expires_in_days,redirect_uri,code_challenge,created_at,expires_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
-			)
-			.bind(
-				await hashSecret(code),
-				parsed.accountId,
-				parsed.label,
-				JSON.stringify(parsed.scopes),
-				parsed.creator,
-				parsed.expiresInDays,
-				parsed.redirectUri,
-				parsed.codeChallenge,
-				now,
-				expiresAt,
-			),
-	]);
-	return { code, redirectUri: parsed.redirectUri, state: parsed.state, expiresAt };
-}
-
-export async function exchangeAuthorizationCode(
-	db: Db,
-	input: unknown,
-	now = new Date().toISOString(),
-): Promise<CreatedApiToken> {
-	const parsed = parseInput(exchangeAuthorizationCodeSchema, input);
-	const codeHash = await hashSecret(parsed.code);
-	const codeChallenge = base64url(await sha256(parsed.codeVerifier));
-	const grant = await db
-		.prepare(
-			"SELECT account_id,label,scopes,creator,expires_in_days FROM api_authorization_codes WHERE code_hash=? AND redirect_uri=? AND code_challenge=? AND consumed_at IS NULL AND expires_at>?",
-		)
-		.bind(codeHash, parsed.redirectUri, codeChallenge, now)
-		.first<GrantRow>();
-	if (!grant) throw new ApiError(400, "invalid_grant", "Authorization code is invalid or expired");
-	const { created, hash } = await mintToken(
-		{
-			accountId: grant.account_id,
-			label: grant.label,
-			scopes: parseScopes(grant.scopes),
-			creator: grant.creator,
-			expiresInDays: grant.expires_in_days,
-		},
-		now,
-	);
-	const [consumed, inserted] = await db.batch([
-		db
-			.prepare(
-				"UPDATE api_authorization_codes SET consumed_at=?,token_id=? WHERE code_hash=? AND redirect_uri=? AND code_challenge=? AND consumed_at IS NULL AND expires_at>?",
-			)
-			.bind(now, created.id, codeHash, parsed.redirectUri, codeChallenge, now),
-		db
-			.prepare(
-				`INSERT INTO api_tokens(${TOKEN_COLUMNS},token_hash) SELECT ?,account_id,label,scopes,creator,?,?,NULL,NULL,? FROM api_authorization_codes WHERE code_hash=? AND token_id=? AND consumed_at=?`,
-			)
-			.bind(created.id, now, created.expires_at, hash, codeHash, created.id, now),
-	]);
-	if (consumed?.meta.changes !== 1 || inserted?.meta.changes !== 1) {
-		throw new ApiError(400, "invalid_grant", "Authorization code is invalid or expired");
-	}
-	return created;
 }

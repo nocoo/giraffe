@@ -5,13 +5,10 @@ import { BrowserRouter, Link, Navigate, Route, Routes } from "react-router";
 import { AppShell } from "./components/layout/app-shell";
 import { BusinessOutlet } from "./components/layout/repository-scope";
 import { APP_PATHS, type AppPath } from "./lib/routes";
-import { AuthorizePage } from "./routes/authorize";
 
 const AnalysisPage = lazy(() =>
 	import("./routes/analysis").then((m) => ({ default: m.AnalysisPage })),
 );
-
-const WorkPage = lazy(() => import("./routes/work").then((m) => ({ default: m.WorkPage })));
 
 const RefreshPage = lazy(() =>
 	import("./routes/factory-runs").then((m) => ({ default: m.RefreshPage })),
@@ -71,7 +68,6 @@ const PAGES: Record<(typeof APP_PATHS)[number], ReactNode> = {
 	"/factory": <FactoryPage />,
 	"/repos": <ReposPage />,
 	"/analysis": <AnalysisPage />,
-	"/work": <WorkPage />,
 	"/refresh": <RefreshPage />,
 	"/issues": <IssuesPage />,
 	"/pulls": <PullsPage />,
@@ -81,17 +77,9 @@ const PAGES: Record<(typeof APP_PATHS)[number], ReactNode> = {
 	"/inbox": <InboxPage />,
 	"/repos/:owner/:name": <RepoDetailPage />,
 	"/settings": <SettingsPage />,
-	"/authorize": <AuthorizePage />,
 };
 
-const standalone = new Set<AppPath>([
-	"/refresh",
-	"/repos/:owner/:name",
-	"/settings",
-	"/authorize",
-	"/analysis",
-	"/work",
-]);
+const standalone = new Set<AppPath>(["/refresh", "/repos/:owner/:name", "/settings", "/analysis"]);
 
 function pageRoutes(paths: readonly AppPath[]) {
 	return paths.map((path) => (

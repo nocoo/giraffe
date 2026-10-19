@@ -103,8 +103,6 @@ it("enforces bearer, scopes and fixed account independently of dashboard activat
 	expect((await s.call(`${s.prefix}/repos/nocoo/missing`)).status).toBe(404);
 	expect((await s.call(`${s.prefix}/repos/nocoo/app`)).status).toBe(409);
 	expect((await s.call(`${s.prefix}/factory/repos/nocoo/app/commits`)).status).toBe(404);
-	expect((await s.call("/auth/exchange")).status).toBe(405);
-	expect((await s.call("/auth/exchange", "POST", {})).status).toBe(400);
 	const prod = { ...s.env, ENVIRONMENT: "production" };
 	expect((await s.app.request("http://localhost/api/repos", {}, prod)).status).toBe(401);
 	expect((await s.app.request("http://localhost/api/tokens", {}, prod)).status).toBe(401);

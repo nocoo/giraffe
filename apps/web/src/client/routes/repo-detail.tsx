@@ -495,7 +495,7 @@ export function RepoDetailPage() {
 					{tab === "analysis" ? (
 						<LayerCard>
 							<LayerCard.Empty
-								title="本地 Agent 分析"
+								title="外部分析报告"
 								description="查看 Issues、PR、CI 和 CD 的来源、判断与待办，不再在云端运行模型。"
 								action={
 									<Button asChild>

@@ -9,12 +9,12 @@
 		"factory:audit": "bun run scripts/factory-audit.ts",
 		"factory:preview": "bun run scripts/factory-preview.ts",
 		"dev:server": "bun run scripts/dev-server.ts",
-		"typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.client.json && tsc --noEmit -p tsconfig.scripts.json && bun run scripts/check-wrangler-types.ts && bun run --cwd packages/agent typecheck",
-		"build": "vite build && bun run --cwd packages/agent build",
+		"typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.client.json && tsc --noEmit -p tsconfig.scripts.json && bun run scripts/check-wrangler-types.ts",
+		"build": "vite build",
 		"lint": "biome check --error-on-warnings .",
 		"lint:fix": "biome check --write .",
 		"test": "vitest run",
-		"test:coverage": "vitest run --coverage && bun run --cwd packages/agent test:coverage",
+		"test:coverage": "vitest run --coverage",
 		"test:e2e:api": "bun run scripts/run-e2e.ts",
 		"test:e2e:bdd": "bun run scripts/run-e2e-bdd.ts",
 		"gate:test-skip": "bun run scripts/gate-test-skip.ts",
@@ -22,9 +22,7 @@
 		"gate:github-fetch": "bun run scripts/gate-github-fetch.ts",
 		"gate:client-fetch": "bun run scripts/gate-client-fetch.ts",
 		"gate:security": "bun run scripts/gate-security.ts",
-		"prepare": "husky",
-		"test:agent": "bun run --cwd packages/agent test",
-		"agent": "node packages/agent/src/cli.ts"
+		"prepare": "husky"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.5.15",
@@ -46,8 +44,7 @@
 		"wrangler": "4.151.1"
 	},
 	"workspaces": [
-		"apps/*",
-		"packages/*"
+		"apps/*"
 	],
 	"dependencies": {
 		"@nocoo/basalt": "3.1.0",
@@ -57,8 +54,7 @@
 		"react-dom": "^19.3.1",
 		"react-router": "^8.4.0",
 		"recharts": "^3.10.1",
-		"zod": "^4.6.7",
-		"@nocoo/giraffe-agent": "workspace:*"
+		"zod": "^4.6.7"
 	},
 	"overrides": {
 		"source-map-js": "^1.2.2",
