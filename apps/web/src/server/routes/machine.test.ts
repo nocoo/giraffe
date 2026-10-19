@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { expect, it, vi } from "vitest";
+import { factoryFixture } from "../../../../../tests/fixtures/factory-snapshot";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import type { Env } from "../env";
 import { createApp } from "../index";
@@ -140,6 +141,200 @@ it("performs all agent CRUD methods with validation and concurrency errors", asy
 	expect((await s.call(path, "POST", [])).status).toBe(400);
 	expect((await s.call(`${path}?limit=101`)).status).toBe(400);
 });
+
+it("lists saved source versions for the token account without writes", async () => {
+	const setupResult = await setup();
+	const { db, call, prefix, token } = setupResult;
+	await db.batch(
+		replaceSnapshotStmts(
+			db,
+			account,
+			"repo:nocoo/app:issues",
+			{ issues: [] },
+			"2026-10-02T08:00:00Z",
+		),
+	);
+	await db.batch(
+		replaceSnapshotStmts(
+			db,
+			other,
+			"repo:other/private:issues",
+			{ issues: [] },
+			"2026-10-03T08:00:00Z",
+		),
+	);
+	const before = await db.prepare("SELECT * FROM api_tokens WHERE id=?").bind(token.id).first();
+	const response = await call(`${prefix}/sources?repository=NOCOO%2FAPP`);
+	expect(response.status).toBe(200);
+	expect(response.headers.get("cache-control")).toBe("private, no-store");
+	const result = (await response.json()) as {
+		sources: { resource: string; version: string; fetchedAt: string | null }[];
+		repositories: string[];
+	};
+	expect(result.repositories).toEqual(["nocoo/app"]);
+	expect(result.sources).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				resource: "repo:nocoo/app:issues",
+				fetchedAt: "2026-10-02T08:00:00Z",
+			}),
+			expect.objectContaining({ resource: "account:repos" }),
+		]),
+	);
+	expect(result.sources.some((source) => source.resource.includes("other/private"))).toBe(false);
+	const incremental = await call(`${prefix}/sources?since=2026-10-02T08%3A00%3A00Z`);
+	expect(await incremental.json()).toMatchObject({
+		sources: [expect.objectContaining({ resource: "account:ci", fetchedAt: null })],
+	});
+	expect(
+		await (await call(`${prefix}/sources?since=2026-10-02T09%3A00%3A00%2B02%3A00`)).json(),
+	).toMatchObject({
+		sources: expect.arrayContaining([
+			expect.objectContaining({ resource: "repo:nocoo/app:issues" }),
+		]),
+	});
+	for (const query of [
+		"since=bad",
+		"since=2026-02-30T00%3A00%3A00Z",
+		"repository=bad",
+		"since=",
+		"repository=",
+	])
+		expect((await call(`${prefix}/sources?${query}`)).status).toBe(400);
+	expect((await call(`${prefix}/sources?repository=nocoo%2Fmissing`)).status).toBe(404);
+	expect((await call(`${prefix}/sources`, "POST", {})).status).toBe(405);
+	expect((await call(`${prefix}/sources`, "GET", undefined, null)).status).toBe(401);
+	expect((await call(`/accounts/${other}/sources`)).status).toBe(403);
+	const noObservations = await createApiToken(db, {
+		accountId: account,
+		label: "agent only",
+		scopes: ["agent:read"],
+		expiresInDays: 1,
+		creator: "test",
+	});
+	expect((await call(`${prefix}/sources`, "GET", undefined, noObservations.token)).status).toBe(
+		403,
+	);
+	expect(await db.prepare("SELECT * FROM api_tokens WHERE id=?").bind(token.id).first()).toEqual(
+		before,
+	);
+});
+
+it("retains incrementally merged global sources with newer repository observation times", async () => {
+	const { db, call, prefix } = await setup();
+	const oldAt = "2026-10-01T00:00:00Z";
+	const newAt = "2026-10-03T00:00:00Z";
+	const snapshots = {
+		repos: { repos: [{ name_with_owner: "nocoo/app" }] },
+		issues: { issues: [] },
+		prs: { pull_requests: [] },
+	};
+	for (const [kind, payload] of Object.entries(snapshots))
+		await db.batch(replaceSnapshotStmts(db, account, kind, payload, oldAt));
+	const before = (await (await call(`${prefix}/sources`)).json()) as {
+		sources: { resource: string; version: string }[];
+	};
+	for (const [kind, payload] of Object.entries(snapshots))
+		await db.batch(
+			replaceSnapshotStmts(
+				db,
+				account,
+				kind,
+				{ ...payload, repository_fetched_at: { "nocoo/app": newAt } },
+				oldAt,
+			),
+		);
+	const response = await call(`${prefix}/sources?since=2026-10-02T00%3A00%3A00Z`);
+	expect(response.status).toBe(200);
+	const after = (await response.json()) as { sources: { resource: string; version: string }[] };
+	for (const kind of Object.keys(snapshots)) {
+		const current = after.sources.find((source) => source.resource === `account:${kind}`);
+		expect(current).toMatchObject({ fetchedAt: oldAt, freshness: { latestAt: newAt } });
+		expect(current?.version).not.toBe(
+			before.sources.find((source) => source.resource === `account:${kind}`)?.version,
+		);
+	}
+});
+
+it("filters retained factory publications case-insensitively without rewriting their identities", async () => {
+	const { db, call, prefix } = await setup();
+	await db.batch(
+		replaceSnapshotStmts(
+			db,
+			account,
+			"repos",
+			{ repos: [{ name_with_owner: "NoCoo/App" }] },
+			"2026-10-03T00:00:00Z",
+		),
+	);
+	const publication = factoryFixture();
+	const repository = publication.repos[0];
+	if (!repository) throw new Error("fixture missing");
+	repository.observation = {
+		version: "immutable-v1",
+		window: publication.window,
+		refreshedAt: publication.fetched_at,
+		source: "legacy",
+	};
+	await db.batch(
+		replaceSnapshotStmts(db, account, "factory:v:pub", publication, publication.fetched_at),
+	);
+	await db
+		.prepare("INSERT INTO factory_state(account_id,published_id,next_at) VALUES(?,'pub','t')")
+		.bind(account)
+		.run();
+	await db.batch(
+		replaceSnapshotStmts(
+			db,
+			account,
+			"factory:nocoo/app:commits",
+			{ runId: "immutable-v1", coverage: repository.coverage.commits, events: [] },
+			publication.fetched_at,
+		),
+	);
+	const response = await call(`${prefix}/sources?repository=NOCOO%2FAPP`);
+	expect(response.status).toBe(200);
+	const result = (await response.json()) as { sources: { resource: string; version: string }[] };
+	expect(result.sources.filter((source) => source.resource.startsWith("factory:"))).toEqual(
+		Object.keys(repository.coverage).map((stream) =>
+			expect.objectContaining({ resource: `factory:nocoo/app:${stream}`, version: "immutable-v1" }),
+		),
+	);
+	const resource = await call(`${prefix}/factory/repos/NoCoo/App/commits`);
+	expect(resource.status).toBe(200);
+	expect(await resource.json()).toMatchObject({
+		sourceVersion: "immutable-v1",
+		source: { resource: "factory:nocoo/app:commits" },
+	});
+});
+
+it.each([
+	["2026-10-03T00:00:00Z", "2026-10-01T00:00:00Z", true],
+	["2026-10-01T00:00:00Z", "2026-10-03T00:00:00Z", true],
+	["2026-10-01T00:00:00Z", "2026-10-02T00:00:00Z", false],
+	["invalid", "2026-10-03T00:00:00Z", true],
+	["2026-10-03T00:00:00Z", null, true],
+	["invalid", "invalid", true],
+	["invalid", null, true],
+] as const)(
+	"filters by the newest valid source time (%s, %s)",
+	async (fetchedAt, latestAt, retained) => {
+		const { db, call, prefix } = await setup();
+		await db.batch(
+			replaceSnapshotStmts(
+				db,
+				account,
+				"issues",
+				{ issues: [], freshness: { latestAt } },
+				fetchedAt,
+			),
+		);
+		const result = (await (
+			await call(`${prefix}/sources?since=2026-10-02T00%3A00%3A00Z`)
+		).json()) as { sources: { resource: string }[] };
+		expect(result.sources.some((source) => source.resource === "account:issues")).toBe(retained);
+	},
+);
 it("manages only explicit local configuration and durable refresh controls", async () => {
 	const s = await setup();
 	const p = s.prefix;

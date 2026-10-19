@@ -3,9 +3,9 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { defineDoc, type Harness } from "@earendil-works/pi-durable";
 import { APIError } from "@typesafe-ai/sdk";
 import { CronExpressionParser } from "cron-parser";
+import type { CronStatus } from "../../../apps/web/src/lib/work-contracts.ts";
 import { safeDiagnostics } from "./diagnostics.ts";
 import { digest } from "./evidence.ts";
-import type { CronStatus } from "./work-contracts.ts";
 
 export function workErrorDiagnostics(error: unknown): string {
 	if (error instanceof APIError) {

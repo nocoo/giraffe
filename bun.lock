@@ -39,7 +39,6 @@
       "name": "@giraffe/web",
       "dependencies": {
         "@nocoo/basalt": "3.1.0",
-        "@nocoo/giraffe-agent": "workspace:*",
         "hono": "^4.13.13",
         "lucide-react": "1.58.0",
         "react": "^19.3.1",
@@ -51,7 +50,7 @@
     },
     "packages/agent": {
       "name": "@nocoo/giraffe-agent",
-      "version": "0.15.6",
+      "version": "0.15.7",
       "bin": {
         "giraffe": "./bin/giraffe.mjs",
       },

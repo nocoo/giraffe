@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
+import type {
+	Judgment,
+	Observation,
+	SpecialistResult,
+} from "../../../apps/web/src/lib/analysis-contracts.ts";
 import { configSchema } from "./config.ts";
-import type { Judgment, Observation, SpecialistResult } from "./contracts.ts";
 import { buildInput, ownedRepositories } from "./evidence.ts";
 import { configuredModels } from "./models.ts";
 import { finalizeReport } from "./runtime.ts";

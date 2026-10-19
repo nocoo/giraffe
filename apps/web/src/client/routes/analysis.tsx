@@ -2,7 +2,6 @@ import { Button, Link, Tabs, TabsList, TabsTrigger } from "@nocoo/basalt";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { Meter } from "@nocoo/basalt/components/meter";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
-import type { AnalysisReport, Domain } from "@nocoo/giraffe-agent/contracts";
 import {
 	Activity,
 	ArrowUpRight,
@@ -18,6 +17,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
+import type { AnalysisReport, Domain } from "../../lib/analysis-contracts";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { DataTimeSource } from "../components/layout/data-time";
 import { SelectField } from "../components/layout/select-field";
@@ -388,13 +388,15 @@ function ReportDetail({
 					</section>
 				) : null}
 				<details className="space-y-3">
-					<summary className="cursor-pointer text-sm font-medium">来源与 Jev 判断</summary>
+					<summary className="cursor-pointer text-sm font-medium">来源与优先级判断</summary>
 					<p className="text-xs text-basalt-muted-foreground">
-						Jev 表示处理优先级，不是成功率。模型：{report.judgment.model} · 判断置信度{" "}
-						{Math.round(report.judgment.confidence * 100)}%
+						判断表示处理优先级，不是成功率。模型：{report.judgment.model}
+						{report.judgment.confidence !== undefined
+							? ` · 判断置信度 ${Math.round(report.judgment.confidence * 100)}%`
+							: null}
 					</p>
 					<div className="grid gap-2 sm:grid-cols-2">
-						{Object.entries(report.judgment.probabilities).map(([key, value]) => (
+						{Object.entries(report.judgment.probabilities ?? {}).map(([key, value]) => (
 							<div key={key} className="space-y-1 text-xs">
 								<div className="flex justify-between">
 									<span>
@@ -427,10 +429,19 @@ function ReportDetail({
 							</div>
 						))}
 					</dl>
-					<p className="break-all text-xs text-basalt-muted-foreground">
-						规划 {report.producer.orchestrator} · 执行 {report.producer.executor} · 对话{" "}
-						{report.producer.conversationId} · 任务 {report.producer.jobId}
-					</p>
+					{report.producer ? (
+						<p className="break-all text-xs text-basalt-muted-foreground">
+							{[
+								report.producer.orchestrator && `规划 ${report.producer.orchestrator}`,
+								report.producer.executor && `执行 ${report.producer.executor}`,
+								report.producer.conversationId !== undefined &&
+									`对话 ${report.producer.conversationId}`,
+								report.producer.jobId && `任务 ${report.producer.jobId}`,
+							]
+								.filter(Boolean)
+								.join(" · ")}
+						</p>
+					) : null}
 				</details>
 			</LayerCard.Body>
 		</LayerCard>

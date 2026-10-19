@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
+import type { Resource } from "../../../apps/web/src/lib/analysis-contracts.ts";
 import { ApiError, GiraffeClient } from "./client.ts";
-import type { Resource } from "./contracts.ts";
 import { expiredResources, pruneRemote } from "./retention.ts";
 
 const time = "2026-10-02T12:00:00.000Z";

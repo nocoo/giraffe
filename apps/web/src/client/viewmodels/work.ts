@@ -1,9 +1,5 @@
-import type { Resource } from "@nocoo/giraffe-agent/contracts";
-import {
-	cronStatusSchema,
-	type RepositoryProgress,
-	workRunSchema,
-} from "@nocoo/giraffe-agent/work-contracts";
+import type { Resource } from "../../lib/analysis-contracts";
+import { cronStatusSchema, type RepositoryProgress, workRunSchema } from "../../lib/work-contracts";
 import { apiGet, apiPost, apiWrite } from "../lib/api";
 import { ApiError } from "../lib/errors";
 import { ensureSession, getActiveAccountId } from "./session";

@@ -4,7 +4,7 @@
 		"noEmit": false,
 		"declaration": true,
 		"outDir": "dist",
-		"rootDir": "src",
+		"rootDir": "../..",
 		"rewriteRelativeImportExtensions": true
 	},
 	"include": ["src/**/*.ts"],

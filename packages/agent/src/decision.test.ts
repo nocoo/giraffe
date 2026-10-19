@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
+import type { Domain } from "../../../apps/web/src/lib/analysis-contracts.ts";
 import { configSchema } from "./config.ts";
-import type { Domain } from "./contracts.ts";
 import { decisionClient } from "./decision.ts";
 import type { AnalysisInput } from "./evidence.ts";
 import { JEV_MAX_REQUEST_BYTES } from "./jev-input.ts";

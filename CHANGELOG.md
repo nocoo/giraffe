@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.15.7 — 2026-10-19
+
+### Added
+
+- Expose the saved source index through the account-bound machine API with repository and incremental time filters, preserving observation coverage, immutable factory identities and read-only behavior.
+- Document every machine API endpoint, token rotation, deterministic report publication, revisioned bot run records and the external analysis routine contract.
+
+### Changed
+
+- Move browser-consumed analysis and Work contracts into the web application; the remaining local runtime consumes those contracts instead of exporting them to the browser.
+- Accept external analysis reports without local producer metadata or decision probabilities, while preserving required evidence, provenance and validation of supplied probability distributions.
+
+### Fixed
+
+- Keep incrementally merged global sources discoverable using their newest valid observation time, and match retained factory publications across repository capitalization changes.
+
 ## v0.15.6 — 2026-10-18
 
 ### Fixed

@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { z } from "zod";
-import { repositorySchema } from "./contracts.ts";
+import { repositorySchema } from "../../../apps/web/src/lib/analysis-contracts.ts";
 import { safeDiagnostics } from "./diagnostics.ts";
 import { type LocalRunner, runLocal } from "./repair-local.ts";
 

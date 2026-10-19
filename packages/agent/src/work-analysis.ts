@@ -1,6 +1,11 @@
+import {
+	type AnalysisReport,
+	DOMAINS,
+	type Domain,
+	specialistSchema,
+} from "../../../apps/web/src/lib/analysis-contracts.ts";
 import { ApiError, type GiraffeClient } from "./client.ts";
 import type { Config } from "./config.ts";
-import { type AnalysisReport, DOMAINS, type Domain, specialistSchema } from "./contracts.ts";
 import { decisionClient } from "./decision.ts";
 import { type AnalysisInput, buildInput, digest, object } from "./evidence.ts";
 import { finalizeReport } from "./runtime.ts";

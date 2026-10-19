@@ -1,6 +1,10 @@
 import { z } from "zod";
+import {
+	observationSchema,
+	type Resource,
+	resourceSchema,
+} from "../../../apps/web/src/lib/analysis-contracts.ts";
 import { type Credential, serviceUrl } from "./config.ts";
-import { observationSchema, type Resource, resourceSchema } from "./contracts.ts";
 
 export class ApiError extends Error {
 	readonly status: number;

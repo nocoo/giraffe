@@ -6,7 +6,7 @@ import {
 	analysisReportSchema,
 	type Judgment,
 	type SpecialistResult,
-} from "./contracts.ts";
+} from "../../../apps/web/src/lib/analysis-contracts.ts";
 import type { AnalysisInput } from "./evidence.ts";
 
 export function finalizeReport(

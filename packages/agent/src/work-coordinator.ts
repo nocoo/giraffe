@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import type { RepositoryProgress } from "../../../apps/web/src/lib/work-contracts.ts";
 import type { Config } from "./config.ts";
 import { digest } from "./evidence.ts";
 import { githubRead, WorkTransportError } from "./github.ts";
-import type { RepositoryProgress } from "./work-contracts.ts";
 import type { workConversations } from "./work-conversations.ts";
 import type { RankedRepository, WorkRepository, workDecisions } from "./work-priority.ts";
 import { reviewWork } from "./work-review.ts";
@@ -11,7 +11,7 @@ import { readWorkTask } from "./work-tasks.ts";
 import { verifyWorkRepository, workerActions } from "./work-tools.ts";
 import type { WorkInspection, WorkWorkspace } from "./work-workspace.ts";
 
-export type { RepositoryProgress } from "./work-contracts.ts";
+export type { RepositoryProgress } from "../../../apps/web/src/lib/work-contracts.ts";
 
 const planSchema = z.object({
 	repositories: z.array(

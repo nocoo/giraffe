@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { judgmentSchema } from "../../../apps/web/src/lib/analysis-contracts.ts";
 import { ApiError, GiraffeClient, retryableApiError } from "./client.ts";
 import {
 	type Credential,
@@ -13,7 +14,6 @@ import {
 	serviceUrl,
 	writePrivateJson,
 } from "./config.ts";
-import { judgmentSchema } from "./contracts.ts";
 import { login } from "./login.ts";
 
 const directories: string[] = [];

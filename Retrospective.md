@@ -543,3 +543,20 @@ the pending commit was interrupted before completion. Removing only those
 generated URLs left the intended single version-entry change; the normal hooks
 then ran again. Inspect generated lockfile changes before staging, even when the
 package versions have not changed, and never chain generation into publication.
+
+## Incremental source filtering must include merged observation times
+
+The first machine sources filter used `fetchedAt ?? freshness.latestAt`. Review
+found that scoped factory refreshes intentionally preserve a global snapshot's
+old `fetched_at` while updating `repository_fetched_at`. The global source version
+therefore changed, but an incremental caller could miss it because the old time
+took precedence. Regression tests for account issues, PRs and the catalog failed
+before the fix and passed after selecting the newest valid timestamp. Keep sources
+with no valid time, preserve the original provenance fields, and verify both time
+directions and the exclusive boundary when filtering composite observations.
+
+A second review found that catalog-only refresh can adopt a new capitalization
+while retaining an older immutable factory publication. Match repository filters
+case-insensitively, like the factory resource reader, without rewriting persisted
+resource identities or versions. The regression exercises both source discovery
+and the corresponding immutable resource read across the capitalization change.

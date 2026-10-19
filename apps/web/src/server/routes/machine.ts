@@ -23,6 +23,7 @@ import {
 	readObservation,
 	requireCatalogRepo,
 } from "../lib/machine-observations";
+import { readSources } from "../lib/machine-sources";
 import { readJson } from "../lib/read-body";
 import { snapshotScope } from "../lib/snapshot-scope";
 import { getMachineSettings, machineRuns, machineSetting } from "./machine-settings";
@@ -147,6 +148,9 @@ export function machineApi() {
 		throw new ApiError(405, "method_not_allowed", "method not allowed");
 	});
 	app.get("/accounts/:account/settings", getMachineSettings);
+	app.get("/accounts/:account/sources", async (c) =>
+		c.json(await readSources(c.get("db"), c.get("principal").accountId, c.req.query())),
+	);
 	app.all("/accounts/:account/stars/:owner/:name", machineSetting);
 	app.all("/accounts/:account/statistics/:owner/:name", machineSetting);
 	app.all("/accounts/:account/schedules/:kind", machineSetting);

@@ -70,15 +70,18 @@ export const judgmentSchema = z
 	.strictObject({
 		model: z.string().min(1),
 		choice: prioritySchema,
-		confidence: probability,
-		probabilities: z.strictObject({
-			routine: probability,
-			review: probability,
-			urgent: probability,
-			unknown: probability,
-		}),
+		confidence: probability.optional(),
+		probabilities: z
+			.strictObject({
+				routine: probability,
+				review: probability,
+				urgent: probability,
+				unknown: probability,
+			})
+			.optional(),
 	})
 	.superRefine((value, ctx) => {
+		if (!value.probabilities) return;
 		const values = Object.values(value.probabilities);
 		if (
 			Math.abs(values.reduce((sum, item) => sum + item, 0) - 1) > 0.001 ||
@@ -129,12 +132,15 @@ export const analysisReportSchema = specialistSchema.extend({
 	evidence: z.array(evidenceSchema).max(24),
 	omitted: z.number().int().nonnegative(),
 	judgment: judgmentSchema,
-	producer: z.strictObject({
-		orchestrator: z.string(),
-		executor: z.string(),
-		decision: z.string(),
-		conversationId: z.number().int(),
-		jobId: z.string(),
-	}),
+	producer: z
+		.strictObject({
+			orchestrator: z.string(),
+			executor: z.string(),
+			decision: z.string(),
+			conversationId: z.number().int(),
+			jobId: z.string(),
+		})
+		.partial()
+		.optional(),
 });
 export type AnalysisReport = z.infer<typeof analysisReportSchema>;

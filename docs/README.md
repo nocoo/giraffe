@@ -20,6 +20,8 @@
 
 - [Local Agent API](11-agent-api.md)
 
+- [Machine API v1 reference (English): endpoints, tokens and external bot reports](api.md)
+
 - [Local Agent analysis desk](12-agent-analysis.md)
 
 - [Dependency repair cron and workbench](13-dependency-repairs.md)
