@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.15.9 — 2026-10-19
+
+### Removed
+
+- Remove the bundled local agent runtime, Pi Durable dependencies, runtime commands and build targets, and the Work automatic code-change interface.
+- Remove the CLI-only PKCE authorization and token exchange flow; every machine API request now requires a scoped bearer token.
+- Remove obsolete runtime and Work documentation, including the legacy agent contract import.
+
+### Changed
+
+- Document Giraffe as an auto-refresh information center with externally published analysis, browser-managed tokens and rotation within 90 days.
+- Preserve refresh collection, machine read and analysis-write APIs, the analysis layout, generic revisioned resources and all historical database tables and rows.
+
 ## v0.15.8 — 2026-10-19
 
 ### Changed
