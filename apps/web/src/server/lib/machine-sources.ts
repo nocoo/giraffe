@@ -70,7 +70,7 @@ export async function readSources(db: Db, account: string, query: Record<string,
 	const repositories = policy.repos.map((repo) => repo.name_with_owner).sort();
 	const publication = await publishedFactory(db, account);
 	for (const repo of publication?.repos ?? []) {
-		if (repository && repo.name !== repository) continue;
+		if (repository && repo.name.toLowerCase() !== repository.toLowerCase()) continue;
 		for (const stream of FACTORY_STREAMS) {
 			const coverage = repo.coverage[stream];
 			sources.push({

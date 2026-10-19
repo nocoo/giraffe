@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { expect, it, vi } from "vitest";
+import { factoryFixture } from "../../../../../tests/fixtures/factory-snapshot";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import type { Env } from "../env";
 import { createApp } from "../index";
@@ -253,6 +254,58 @@ it("retains incrementally merged global sources with newer repository observatio
 			before.sources.find((source) => source.resource === `account:${kind}`)?.version,
 		);
 	}
+});
+
+it("filters retained factory publications case-insensitively without rewriting their identities", async () => {
+	const { db, call, prefix } = await setup();
+	await db.batch(
+		replaceSnapshotStmts(
+			db,
+			account,
+			"repos",
+			{ repos: [{ name_with_owner: "NoCoo/App" }] },
+			"2026-10-03T00:00:00Z",
+		),
+	);
+	const publication = factoryFixture();
+	const repository = publication.repos[0];
+	if (!repository) throw new Error("fixture missing");
+	repository.observation = {
+		version: "immutable-v1",
+		window: publication.window,
+		refreshedAt: publication.fetched_at,
+		source: "legacy",
+	};
+	await db.batch(
+		replaceSnapshotStmts(db, account, "factory:v:pub", publication, publication.fetched_at),
+	);
+	await db
+		.prepare("INSERT INTO factory_state(account_id,published_id,next_at) VALUES(?,'pub','t')")
+		.bind(account)
+		.run();
+	await db.batch(
+		replaceSnapshotStmts(
+			db,
+			account,
+			"factory:nocoo/app:commits",
+			{ runId: "immutable-v1", coverage: repository.coverage.commits, events: [] },
+			publication.fetched_at,
+		),
+	);
+	const response = await call(`${prefix}/sources?repository=NOCOO%2FAPP`);
+	expect(response.status).toBe(200);
+	const result = (await response.json()) as { sources: { resource: string; version: string }[] };
+	expect(result.sources.filter((source) => source.resource.startsWith("factory:"))).toEqual(
+		Object.keys(repository.coverage).map((stream) =>
+			expect.objectContaining({ resource: `factory:nocoo/app:${stream}`, version: "immutable-v1" }),
+		),
+	);
+	const resource = await call(`${prefix}/factory/repos/NoCoo/App/commits`);
+	expect(resource.status).toBe(200);
+	expect(await resource.json()).toMatchObject({
+		sourceVersion: "immutable-v1",
+		source: { resource: "factory:nocoo/app:commits" },
+	});
 });
 
 it.each([
