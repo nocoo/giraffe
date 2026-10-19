@@ -1,6 +1,6 @@
 # Machine API v1 Reference
 
-The v0.15.7 API reads saved GitHub observations, stores reports/records/jobs, and
+The machine API reads saved GitHub observations, stores reports/records/jobs, and
 optionally manages refresh settings. It is not a live GitHub proxy or a model
 inference service. Only `https://giraffe.hexly.ai/api/v1/*` has an Access bypass;
 the Worker authenticates resource requests. The dashboard and credential-management
@@ -450,7 +450,7 @@ incomplete rows or collisions need explicit reconciliation, not blind skipping,
 overwriting or random replacement IDs. No `Idempotency-Key`, automatic upsert or
 report-specific server deduplication exists beyond account/collection/ID uniqueness.
 
-### Bot run record and PR1 UI boundary
+### Bot run record and analysis UI
 
 Use record ID **and** type `grok-bot-run`, repository null, payload
 `{ lastRunAt, status, analyzed, skipped, error? }`. Recommend ISO timestamp,
@@ -459,9 +459,20 @@ Error is a short safe code/message, never raw provider output. This is a produce
 convention, not a server-enforced bot schema. Create once; then GET/PATCH with
 current revision and complete replacement payload. Reconcile create/revision 409s.
 
-The existing analysis page can read reports, but **PR1 still reads `work-cron` for
-runner presence**. `grok-bot-run` last-run UI and stale warnings are planned for
-PR2 (0.15.8). Do not synthesize fake `work-cron` heartbeats for an external bot.
+The analysis page reads saved reports and the account-wide record with both ID
+and type `grok-bot-run`. It shows `lastRunAt`, status and analyzed/skipped counts;
+failed runs also show the safe error text. The browser requires an ISO datetime
+with an offset, nonnegative integer counts, one of the three statuses and a
+matching row status. Malformed payloads, non-null repository or times more than
+one minute in the future are errors, not successful runs.
+
+The default routine cadence is 24 hours. A run becomes overdue when `lastRunAt`
+is more than 48 hours old, independently of the 36-hour report evidence age.
+There is no schedule configuration or heartbeat dependency in this view. Legacy
+`work-cron` records and Work jobs are not displayed or requested; their stored
+data is retained. An absent valid record shows an empty state, not an offline
+runner. Loading and visible polling are read-only and never invoke a model or
+refresh GitHub. Do not synthesize fake Work heartbeats for an external bot.
 
 ## Application management
 
@@ -660,8 +671,8 @@ Giraffe with private token/model configuration and persisted pending-work state.
    set. Keep incomplete/failed domains pending. Create/PATCH `grok-bot-run` with
    current revision, accurate counts/status/time and safe errors; a failed status
    write must not erase pending work or blindly recreate reports. It is not a cursor.
-6. Reconcile full scans even after empty polls; rotate tokens before expiry. PR1's
-   presence UI remains `work-cron`; bot last-run display is planned for PR2.
+6. Reconcile full scans even after empty polls; rotate tokens before expiry. The
+   analysis page shows the bot's last-run record, not the presence of a local runner.
 
 ## Credential endpoints and retained CLI PKCE
 

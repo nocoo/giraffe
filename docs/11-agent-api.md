@@ -3,8 +3,9 @@
 Foundation contract introduced in v0.13.0, consumed by the local Agent in v0.14.0. The dashboard remains behind Cloudflare Access.
 The complete machine API reference, including external bot publication, limits,
 rotation and curl examples, is [Machine API v1](api.md). PR1 (v0.15.7) adds the
-shared saved-source index and web-owned report contracts; it does not install a
-bot routine, change the analysis presence UI, or require a schema migration.
+shared saved-source index and web-owned report contracts. v0.15.8 uses the bot's
+last-run record in the analysis UI. Neither installs a bot routine or requires a
+schema migration.
 Only `https://giraffe.hexly.ai/api/v1/*` is reachable without an Access browser
 session; the Worker authenticates every resource request with an opaque bearer token.
 `/authorize`, `/api/tokens` and `/api/cli/authorize` remain Access protected.
@@ -157,8 +158,13 @@ credentials. Jobs can represent pending web analysis requests, reports use
 `type: 'github-analysis'` with domains `issues|prs|ci|cd` and `repo|global` scope.
 External bots use record ID/type `grok-bot-run` with
 `{ lastRunAt, status, analyzed, skipped, error? }`, recommending statuses
-`running|completed|failed`. Create once, then use revisioned PATCH. Its last-run UI
-and stale warning are planned for PR2 (v0.15.8), not part of PR1.
+`running|completed|failed`. Create once, then use revisioned PATCH. The analysis
+page displays the account-wide record's last-run time, status and counts, with
+an overdue warning after 48 hours under the default daily cadence. Invalid
+payloads, row/payload status mismatch, non-null repository and timestamps more
+than one minute in the future are errors. Legacy Work records/jobs remain stored
+but are not loaded by the analysis page. Report evidence freshness is independent
+of the bot's last-run time; see the [bot run contract](api.md#bot-run-record-and-analysis-ui).
 
 ## Explicit application management (`app:read` / `app:write`)
 
