@@ -1,12 +1,13 @@
 # 05 — Client 设计
 
-## Agent workspace
+## Analysis desk
 
-The `/work` route is labeled **Agent** in navigation, breadcrumbs and the command palette. It reads existing work-run, work-cron and work-control resources without starting execution. A compact, keyboard-selectable topology explains observation, coordination, Jev, preparation, independent worker/reviewer conversations, publication and follow-up, alongside four-domain analysis. Completed empty cycles remain analysis history, not successful worker deliveries.
-
-Run selection survives polling; returning to live explicitly selects the current occurrence or latest history. Only a matching active occurrence, fresh heartbeat and running job prove a live run. Historical topology never receives live highlighting. Repository phases, rounds, dispositions, publication and follow-up remain distinct; compressed outcomes retain omitted-detail notices. Activities preserve order without invented timestamps. A bounded allowlist presents product-language categories and safe counters; raw events, findings, reasons, errors, command lines, paths, cron syntax and occurrence identifiers never render. Unknown activities contribute only an omitted count. The shell clock labels run updates, not source freshness.
-
-Pause/resume is the only write, using existing revision and account checks. Malformed cron/control records disable it; acknowledgement differs from saving, and save errors persist across successful polls. Installed Basalt 2.1.8 components and existing theme tokens own surfaces and controls. No runtime, wire-contract or dependency changes are required.
+`/analysis` reads saved reports published by an external analysis program. It shows
+the four report domains, source versions, evidence quality and the account-wide
+`grok-bot-run` record. Evidence age is evaluated independently from the bot's
+last-run time: reports become stale after 36 hours, while a run becomes overdue
+after 48 hours. The page is read-only; it does not enqueue work, invoke a model,
+refresh GitHub or execute code. Legacy Work records and jobs are not displayed.
 
 Business pages compose Basalt PageHeader through BusinessPageHeader: the title shares its row with the repository scope and available controls; subtitle and primary-data time share a wrapping second line. 列表首列为“参与统计”开关，可见性和归档状态独立成列。开关保存到服务端，作用于所有跨仓统计和软件工厂；管理清单保留禁用仓库以便重新开启。语言圆点、语言分布图、工厂规模地图统一使用 `chart-theme.ts` 的多色色板，已知语言固定映射，其他分类按规范化名称稳定映射，排序和筛选不会改变颜色。
 
@@ -343,7 +344,7 @@ Notification bulk-read is limited to the selected repository scope, and never
 advances the inbox collection timestamp. See 09 for the precise daily run contract.
 
 
-- Full refresh updates saved site sources and repository details. Scoped runs contain nine statistics and nine detail steps per included repository plus publication (19 steps for one repository). Local Agent analysis runs independently through `/analysis`, not through collection checkpoints. Frozen old cloud AI steps retire while other collection work continues.
+- Full refresh updates saved site sources and repository details. Scoped runs contain nine statistics and nine detail steps per included repository plus publication (19 steps for one repository). External analysis publishes separately through the machine API and is not a collection checkpoint. Frozen old cloud AI steps retire while other collection work continues.
 - 首次使用或旧数据升级时先「同步仓库列表」，再「开始刷新」。清单不完整时禁止在界面启动刷新，不能把未扫描的数据当空数组。
 - 各页面仅 GET；缺少快照统一使用 `SnapshotPending` 导航至 `/refresh` 刷新中心。缺账号则前往设置，不混同于缺数据。
 - 添加、激活、删除账号只更新账号状态与本地 stamp，不自动采集。通知标记已读仍是独立的业务写操作，不属于刷新。
@@ -358,12 +359,13 @@ advances the inbox collection timestamp. See 09 for the precise daily run contra
 
 ## 8. 页面
 
-The Chinese sidebar has five ordered groups: Overview (Software Factory), AI (Analysis, Agent, Insights), Repository Health (Repositories, CI and Releases, Security Alerts), Work (Issues, Pull Requests, Notifications), and System (Refresh Center, Settings). `apps/web/src/client/lib/navigation.ts` defines `NAV_GROUPS` for expanded, collapsed and mobile navigation and the command palette. Opening `/` redirects to `/factory` with history replacement; the repository list lives at `/repos`.
+The Chinese sidebar has five ordered groups: Overview (Software Factory), AI (Analysis, Insights), Repository Health (Repositories, CI and Releases, Security Alerts), Work (Issues, Pull Requests, Notifications), and System (Refresh Center, Settings). `apps/web/src/client/lib/navigation.ts` defines `NAV_GROUPS` for expanded, collapsed and mobile navigation and the command palette. Opening `/` redirects to `/factory` with history replacement; the repository list lives at `/repos`.
 
 | 路由 | 侧栏 | 图标（lucide） | 读 |
 |------|------|----------------|----|
 | `/factory` | 软件工厂 | `Factory` | `GET /api/factory`; links to refresh center |
 | `/refresh` | 刷新中心 | `RefreshCw` | `GET /api/factory/runs`, `GET /api/refresh/settings`; manual runs and automatic schedules |
+| `/analysis` | 分析台 | `Activity` | Access-protected reads of saved reports, source evidence and `grok-bot-run` status |
 | `/insights` | Insights | `Activity` | `GET /api/insights`，并读已有 `issues` / `prs` / `ci` |
 | `/repos` | 仓库 | `Box` | `GET /api/repos` |
 | `/issues` | Issues | `CircleDot` | `GET /api/issues` |
@@ -400,7 +402,7 @@ Issues KPI：打开 Issues / 涉及仓库（`issueMetrics`）。PRs KPI：草稿
 
 总览组第二项。不重复仓库全表。首区「最值得关注的仓库」给出 Top 10 与跨仓发现，其后用 `SectionRule` 分「工作量 / 审查与节奏 / 健康与活跃」。
 
-Top 10 is derived by `apps/web/src/client/viewmodels/focus.ts` from saved Insights, Issues, PRs, CI and security signals. It no longer reads cloud AI assessments or discounts stale cloud reports. The analysis desk is a separate view over local Agent reports with explicit source freshness and evidence. See [the analysis desk](12-agent-analysis.md).
+Top 10 is derived by `apps/web/src/client/viewmodels/focus.ts` from saved Insights, Issues, PRs, CI and security signals. It does not depend on analysis reports. The analysis desk separately displays reports written by an external producer with explicit source freshness and evidence; see [the machine API contract](11-agent-api.md).
 
 每区：最多四张 KPI（共享 `StatCard`，主题色 icon）+ 两张图卡（一卡一图，使用 `LayerCard.Header` 放标题与指标说明，`Body` 放图表）。
 

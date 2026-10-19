@@ -1,6 +1,6 @@
 # Giraffe
 
-Bun monorepo: `apps/web` owns the Worker and SPA; `packages/agent` owns the local Pi Durable runtime. Root `package.json` is the authoritative version and root commands run all gates.
+Bun monorepo: `apps/web` owns the Worker and SPA. Root `package.json` is the authoritative version and root commands run all web gates.
 
 Personal GitHub console with account snapshots, inboxes, repository detail and resumable software-factory runs.
 Profile: ts-worker-web.
@@ -87,21 +87,7 @@ Narratives remain in [Retrospective.md](Retrospective.md); keep only recurring r
 
 ## Machine API boundary
 
-- `/api/v1/*` uses Worker-enforced hash-only, fixed-account, scoped, expiring bearer tokens; only the PKCE code exchange is tokenless. Access bypass is restricted to that path, never the dashboard host.
-- Browser token management and `/authorize` consent remain Access protected; browser writes require same-origin. Raw API tokens are returned only at mint/exchange and must not enter logs, URLs, persisted browser state or D1.
+- Every `/api/v1/*` request requires a Worker-enforced hash-only, fixed-account, scoped, expiring bearer token; there are no tokenless machine endpoints. Access bypass is restricted to that path, never the dashboard host.
+- Browser token management remains Access protected and browser writes require same-origin. Tokens expire within 90 days and must be rotated before expiry. Raw tokens are returned only when minted and must not enter logs, URLs, browser persistence or D1.
 - Agent records/reports/jobs are mutable local application resources with revisions. GitHub observations and factory publications remain read-only. GET never collects upstream or records token activity.
-- Model execution/configuration belongs to the local agent; never submit model secrets to the web application. Cloud AI inference/settings/endpoints are removed; legacy D1 tables remain for data preservation. Contract: [Agent API](docs/11-agent-api.md).
-
-## Local Work Runtime
-
-- `bun run agent login`, `status`, and `work` are the only runtime commands. Normal `work` stays alive on one five-field `work.cron`/`work.timezone` schedule. `--once`, `--dry-run`, and `--no-push` are modes, not separate engines.
-- One account SQLite process lock, one live SQLite runtime and one controller. Dry run shares the account lock but uses isolated memory, no workspace actions and no remote writes. Active live occurrences freeze push mode, repository selection and limit; changed flags fail before tools.
-- Portfolio comes from saved Web snapshots, not a second collection. Four domain conversations preserve valuable reports. Jev ranks all candidates in batches of at most 25 repositories; host scope never comes from Jev.
-- Execution supports discovered dependency requests, exact non-draft `[CO]` PR equivalent main cleanup and recurring failed main CI/CD tasks with namespaced identities. Live bounded task evidence is supplied to worker and reviewer; missing evidence defers only that task. No-change PR outcomes are reviewed, not merged. Only completed dependency issues are closed after push. Reports are not real-target repair acceptance.
-- Workers use explicit-path atomic commits with normal hooks, never push. Each repository has a separate read-only reviewer. Persisted fix/check/review rounds are capped at 20; failed tests consume a round, exhaustion cannot push. Approval is checked against exact HEAD; reviewers inspect all commits ahead of origin/main.
-- Preserve ahead commits and reviewed dirt. No clones, branches, worktrees, reset, stash, clean or force push. Baseline failure is recorded, not a blocker for repairing code; final tests and independent review must pass. Never delete tests, lower coverage, bypass hooks or repair credentials/infrastructure.
-- Host publication is normal main push after checks/review, reconciling an already-pushed remote SHA. Persist push before closing completed dependency issues; closure retries are idempotent. PR merge/closure is report-only. No release, rollback, deployment or service installation.
-- Post-push reads only bounded live Actions evidence for the exact SHA, at ten-minute intervals and at most three checks across restart. Missing, partial, cancelled, skipped/neutral-only evidence is not passed. Follow-up records passed/failed/pending/timeout.
-- Work progress and heartbeat use existing generic D1 jobs/records, byte-bounded payloads. Historical runtime files and D1 rows are preserved, not migrated or deleted. Native scripts run as the trusted local user, not an OS sandbox.
-- `/work` renders typed repository/round/publication summaries; `/analysis` reads saved reports and the same work-cron presence. Sorted authorized source identities/versions share rounds across occurrences; unchanged terminal tasks do not restart. Local no-push approval remains publishable later, while active occurrence authority cannot change. Transport failures resume; terminal delivery retries do not rerun native work. Failed/timeout follow-up requires attention.
-- Config and credentials remain local with private permissions; model/API keys never enter tools, child environments, logs or web payloads. Tests use fake models/APIs and temporary repositories. Root four-metric coverage remains >=95%.
+- `/analysis` reads externally published reports and the account-wide `grok-bot-run` record. Evidence freshness (36 hours) and overdue status (48 hours) are independent. The web application has no bundled analysis runtime, model inference/settings, automatic code-change engine or API endpoint that executes local code. External producers use the machine API; never submit their model secrets to Giraffe. Legacy AI tables and historical resource rows remain preserved. Contract: [Machine API](docs/11-agent-api.md).

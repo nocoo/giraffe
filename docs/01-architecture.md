@@ -93,7 +93,7 @@ Cloudflare Access          生产：giraffe.hexly.ai
 Worker `giraffe`
   ├── 非 /api/*  → ASSETS（Vite SPA）
   └── /api/*     → Hono
-        ├── Access JWT 中间件（生产必验；本机跳过）
+        ├── 浏览器 API 的 Access JWT；`/api/v1/*` 由 Bearer Token 中间件鉴权
         ├── PAT 管理（加密读写 D1）
         ├── GitHub Client（Bearer PAT，只在 Worker 内）
         └── Snapshot 读写（D1）
@@ -182,9 +182,9 @@ database_id = "<prod>"
 - 中间件读取 `Cf-Access-Jwt-Assertion`，用该 team 的 JWKS 验签，并校验 `iss`、`aud`、`exp`。只验签名不够。失败 401。
 - 从 JWT 取 email / name，仅用于顶栏展示，不作为 GitHub 身份。
 - Access 短路当且仅当：`ENVIRONMENT === "development"`，且已设 `GITHUB_API_BASE`，且 `CF_ACCESS_TEAM_DOMAIN` 与 `CF_ACCESS_AUD` 都未设。该值**禁止**写入会随 `wrangler deploy` 上去的 `[vars]`。本机 `dev:server` 只用 `.dev.vars`。L2/L3 只用 runner `--env-file`。缺省、未知、或生产部署中出现 `development` 但没有 `GITHUB_API_BASE` → **不得短路**，按生产验 JWT。禁止用 `Host`、`X-Forwarded-*` 或域名后缀判断。细则见 [04](04-server.md)。
-- `wrangler.toml` 设 `workers_dev = false`，关闭 `*.workers.dev` 与 preview URL。只通过 Access 保护的 `giraffe.hexly.ai` 对外。
+- `wrangler.toml` 设 `workers_dev = false`，关闭 `*.workers.dev` 与 preview URL。控制台通过 Access 保护的 `giraffe.hexly.ai` 对外；仅 `/api/v1/*` 配置 Access bypass，由 Worker 对每个请求强制校验固定账号 Bearer Token。
 - 自定义域未挂好 Access 应用与策略前，禁止 `wrangler deploy` 把该域对外。部署检查清单见 [04 §13](04-server.md)。
-- 所有会改状态的 `/api`（POST / DELETE）必须校验 `Origin` 与允许列表一致，否则 403。无 JSON body 的 POST **仅** activate。`refresh` / `notifications/read` / `read-all` 必带 JSON `account_id`（见 04）。GET 不得回源 GitHub、不得写 D1。
+- 浏览器 API 中所有会改状态的请求必须校验 `Origin` 与允许列表一致；`/api/v1/*` 使用固定账号 Bearer Token 鉴权，不依赖浏览器 Origin，且没有 tokenless endpoint。无 JSON body 的浏览器 POST **仅** activate。`refresh` / `notifications/read` / `read-all` 必带 JSON `account_id`（见 04）。GET 不得回源 GitHub、不得写 D1。
 - 应用内无 `/login`、无 OAuth、无 session cookie。
 
 文件约定：
