@@ -571,3 +571,15 @@ while retaining an older immutable factory publication. Match repository filters
 case-insensitively, like the factory resource reader, without rewriting persisted
 resource identities or versions. The regression exercises both source discovery
 and the corresponding immutable resource read across the capitalization change.
+
+## 2026-10-19 — API skill consumer limits
+
+The first API skill draft correctly described the absence of a server resource-count
+quota but omitted the analysis reader's separate 50-page, 100-row limit. Review
+traced `loadAnalysis` through `allPages`: more than 5,000 reports of the requested
+type fail the whole page load even when publication succeeds. The skill now
+distinguishes this consumer ceiling, counts all matching statuses/repositories,
+and requires explicit authorization for retention rather than deleting history.
+The same review clarified that global child-report identities use the browser's
+filtered repository set, not the full machine catalog. Verify downstream reader
+limits and selection rules alongside endpoint schemas when documenting a routine.

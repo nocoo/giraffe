@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.15.10 — 2026-10-19
+
+### Added
+
+- Add a repository-owned Giraffe API skill covering saved refresh observations, scoped browser-issued tokens and rotation, revisioned analysis publication, bot run status, and explicitly authorized refresh management.
+- Include curl examples, deterministic report identities, safe retry and reconciliation rules, and analysis reader limits verified against the current API and consumer contracts.
+
 ## v0.15.9 — 2026-10-19
 
 ### Removed
