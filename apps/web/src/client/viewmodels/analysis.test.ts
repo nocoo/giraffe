@@ -1,12 +1,6 @@
 import { expect, it } from "vitest";
 import type { AnalysisReport, Resource } from "../../lib/analysis-contracts";
-import {
-	type AnalysisData,
-	analysisState,
-	runnerState,
-	safeEvidenceUrl,
-	sourceQuality,
-} from "./analysis";
+import { type AnalysisData, analysisState, safeEvidenceUrl, sourceQuality } from "./analysis";
 
 const at = "2026-10-02T08:00:00Z";
 it("renders external reports without local decision metadata", () => {
@@ -107,7 +101,6 @@ const data: AnalysisData = {
 	repositories: ["nocoo/app"],
 	reports: [row(report)],
 	records: [],
-	jobs: [],
 	sources: [
 		{
 			resource: "repo:nocoo/app:prs",
@@ -156,26 +149,7 @@ it("surfaces invalid reports and picks current source version before newer histo
 	expect(state.cards.find((c) => c.domain === "prs")?.report?.sourceVersion).toBe("composite");
 	expect(state.cards.find((c) => c.domain === "issues")?.report).toBeNull();
 });
-it("ages heartbeats and allows only safe evidence links", () => {
-	const heartbeat = {
-		schemaVersion: 1,
-		lastSeenAt: at,
-		state: "running",
-		expression: "0 * * * *",
-		timezone: "UTC",
-		enabled: true,
-		paused: false,
-		nextRunAt: at,
-		lastRunAt: null,
-		activeOccurrence: "one",
-		completed: 0,
-		lastError: null,
-		capability: "authorized-work",
-		maxRounds: 20,
-	};
-	expect(runnerState(row(heartbeat), Date.parse(at) + 45001)?.online).toBe(false);
-	expect(runnerState(row(heartbeat), Date.parse(at) + 45000)?.online).toBe(true);
-	expect(runnerState(row({}), 0)).toBeNull();
+it("allows only safe evidence links", () => {
 	expect(safeEvidenceUrl("javascript:alert(1)")).toBeNull();
 	expect(safeEvidenceUrl("https://github.com/nocoo/app")).toBeTruthy();
 	expect(safeEvidenceUrl(null)).toBeNull();
@@ -235,16 +209,90 @@ it("matches global sources to the latest domain reports and recomputes missing/s
 		{
 			...data,
 			records: [{ ...row({}), type: "work-cron" }],
-			jobs: [
-				{ ...row({}, "j"), type: "work-run" },
-				{ ...row({}, "k"), type: "work-run" },
+		},
+		null,
+		Date.parse(at),
+	);
+	expect(state.errors).toHaveLength(0);
+	expect(state.lastRun).toBeNull();
+});
+
+const botRun = (payload: Resource["payload"] = {}): Resource => ({
+	...row({ lastRunAt: at, status: "completed", analyzed: 4, skipped: 2, ...payload }),
+	id: "grok-bot-run",
+	type: "grok-bot-run",
+	repository: null,
+});
+it.each(["running", "completed", "failed"])(
+	"reads the bot's %s run without heartbeat semantics",
+	(status) => {
+		const state = analysisState(
+			{ ...data, records: [{ ...botRun({ status, error: "provider_unavailable" }), status }] },
+			null,
+			Date.parse(at) + 45001,
+		);
+		expect(state.errors).toEqual([]);
+		expect(state.lastRun).toEqual({
+			lastRunAt: at,
+			status,
+			analyzed: 4,
+			skipped: 2,
+			error: "provider_unavailable",
+			stale: false,
+		});
+	},
+);
+it.each([
+	[-60000, false],
+	[0, false],
+	[48 * 3600000, false],
+	[48 * 3600000 + 1, true],
+])("ages daily bot runs at the 48-hour boundary (%i ms)", (age, stale) => {
+	expect(
+		analysisState({ ...data, records: [botRun()] }, null, Date.parse(at) + age).lastRun,
+	).toMatchObject({ stale });
+});
+it.each([
+	{ lastRunAt: null },
+	{ lastRunAt: "invalid" },
+	{ lastRunAt: "2026-10-02" },
+	{ lastRunAt: "2026-10-02T08:01:00.001Z" },
+	{ status: "unknown" },
+	{ analyzed: -1 },
+	{ analyzed: 0.5 },
+	{ skipped: -1 },
+	{ skipped: 0.5 },
+	{ error: 1 },
+])("rejects invalid bot payload %j", (payload) => {
+	const state = analysisState({ ...data, records: [botRun(payload)] }, null, Date.parse(at));
+	expect(state.lastRun).toBeNull();
+	expect(state.errors).toEqual(["分析运行记录格式或状态无效"]);
+});
+it("requires matching row status and account-wide bot identity, ignoring legacy records", () => {
+	for (const record of [
+		{ ...botRun(), status: "failed" },
+		{ ...botRun(), repository: "nocoo/app" },
+	]) {
+		const state = analysisState({ ...data, records: [record] }, null, Date.parse(at));
+		expect(state.lastRun).toBeNull();
+		expect(state.errors).toHaveLength(1);
+	}
+	const state = analysisState(
+		{
+			...data,
+			records: [
+				{ ...botRun(), type: "work-cron" },
+				{ ...botRun(), type: "work-run" },
+				{ ...botRun(), id: "other-bot" },
+				botRun({ analyzed: 0, skipped: 0 }),
 			],
 		},
 		null,
 		Date.parse(at),
 	);
-	expect(state.errors).toHaveLength(1);
-	expect(state.jobs).toHaveLength(2);
+	expect(state.errors).toEqual([]);
+	expect(state.lastRun).toMatchObject({ analyzed: 0, skipped: 0, stale: false });
+	expect(analysisState(data, null, Date.parse(at)).lastRun).toBeNull();
 });
 
 it("marks portfolio membership changes without comparing repository composite versions to raw resources", () => {

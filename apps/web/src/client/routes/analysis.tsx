@@ -10,8 +10,6 @@ import {
 	GitPullRequest,
 	Layers3,
 	ListChecks,
-	Radio,
-	RefreshCw,
 	TriangleAlert,
 	Workflow,
 } from "lucide-react";
@@ -63,12 +61,12 @@ export function AnalysisPage() {
 	);
 	const card = board?.cards.find((c) => c.domain === domain);
 	const report = card?.report;
-	const online = board?.runners.filter((r) => r.online).length ?? 0;
+	const lastRun = board?.lastRun;
 	return (
 		<div className="space-y-4" data-testid="analysis-desk">
 			<PageHeader
 				title="分析台"
-				description="本地 Agent 的判断与依据，和 GitHub 原始事实分开查看"
+				description="通过 API 保存的分析判断与依据，和 GitHub 原始事实分开查看"
 				actions={
 					<SelectField
 						label="分析范围"
@@ -165,7 +163,7 @@ export function AnalysisPage() {
 							<LayerCard.Empty
 								icon={<Activity />}
 								title={data ? "这个范围尚无分析报告" : "正在读取分析报告…"}
-								description="先运行 giraffe login，再运行 giraffe work。这里读取统一 Work 周期保存的报告，不再单独调度分析。"
+								description="外部分析程序通过 API 保存报告后会显示在这里。页面只读取结果，不触发模型或 GitHub 刷新。"
 								action={
 									<Button variant="secondary" size="sm" asChild>
 										<Link href="/settings">管理 Agent 令牌</Link>
@@ -175,50 +173,51 @@ export function AnalysisPage() {
 						</LayerCard>
 					)}
 				</main>
-				<aside className="min-w-0 space-y-3" aria-label="执行器与任务">
+				<aside className="min-w-0 space-y-3" aria-label="分析运行状态">
 					<LayerCard>
 						<LayerCard.Header>
 							<span className="inline-flex items-center gap-2">
-								<Radio className="size-4" aria-hidden="true" />
-								本地执行器
+								<Clock3 className="size-4" aria-hidden="true" />
+								上次分析运行
 							</span>
-							<CandyBadge tone={online ? "green" : "gray"}>
-								{online ? `${online} 在线` : "离线"}
+							<CandyBadge
+								tone={
+									!lastRun
+										? "gray"
+										: lastRun.status === "failed"
+											? "red"
+											: lastRun.stale || lastRun.status === "running"
+												? "amber"
+												: "green"
+								}
+							>
+								{!lastRun
+									? "暂无记录"
+									: lastRun.stale
+										? "已逾期"
+										: { running: "运行中", completed: "已完成", failed: "失败" }[lastRun.status]}
 							</CandyBadge>
 						</LayerCard.Header>
 						<LayerCard.Body className="space-y-3">
-							{board?.runners.length ? (
-								board.runners.map((r) => (
-									<div className="space-y-1 text-xs" key={r.runnerId}>
-										<p className="break-all font-medium">{r.runnerId}</p>
-										<p>
-											{r.online
-												? r.state === "running"
-													? "正在分析"
-													: "等待任务"
-												: "超过 45 秒无心跳 / 已停止"}
+							{lastRun ? (
+								<div className="space-y-2 text-sm">
+									<p>{formatPreciseDate(lastRun.lastRunAt)}</p>
+									{lastRun.stale ? <p role="alert">Grok Bot 已超过 48 小时未运行。</p> : null}
+									{lastRun.status === "failed" ? (
+										<p role="alert" className="break-words text-basalt-destructive">
+											最近一次分析失败
+											{lastRun.error ? `：${lastRun.error}` : "，请检查外部分析程序。"}
 										</p>
-										<p className="text-basalt-muted-foreground">
-											{formatPreciseDate(r.lastSeenAt)}
-										</p>
-										<dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-1 text-basalt-muted-foreground">
-											<dt>调度</dt>
-											<dd>
-												{r.expression} · {r.timezone}
-											</dd>
-										</dl>
-									</div>
-								))
+									) : null}
+									<p className="text-xs text-basalt-muted-foreground">
+										每日运行约定；超过 48 小时显示逾期提醒。运行状态不代表报告证据仍然新鲜。
+									</p>
+								</div>
 							) : (
 								<div className="space-y-2 text-sm">
-									<p>没有检测到本地 Agent。</p>
-									<code className="block rounded bg-basalt-control p-2 text-xs">
-										giraffe login
-										<br />
-										giraffe work
-									</code>
+									<p>{board ? "尚无有效分析运行记录。" : "正在读取运行记录…"}</p>
 									<p className="text-xs text-basalt-muted-foreground">
-										离线时请求保留在队列，Agent 上线后处理。
+										外部分析程序使用 grok-bot-run 记录保存上次运行时间与结果。
 									</p>
 								</div>
 							)}
@@ -227,44 +226,21 @@ export function AnalysisPage() {
 					<LayerCard>
 						<LayerCard.Header>
 							<span className="inline-flex items-center gap-2">
-								<RefreshCw className="size-4" aria-hidden="true" />
-								任务队列
-							</span>
-							<span className="text-xs text-basalt-muted-foreground">
-								{board?.jobs.length ?? 0}
+								<ListChecks className="size-4" aria-hidden="true" />
+								本次分析统计
 							</span>
 						</LayerCard.Header>
 						<LayerCard.Body className="space-y-3">
-							{board?.jobs.slice(0, 12).map((job) => (
-								<div className="space-y-1 text-xs" key={job.id}>
-									<div className="flex justify-between gap-2">
-										<strong className="truncate">{job.repository ?? "全部仓库"}</strong>
-										<span>
-											{(
-												{
-													pending: "等待执行",
-													running: "执行中",
-													completed: "已完成",
-													failed: "失败",
-													cancelled: "已取消",
-												} as Record<string, string>
-											)[job.status] ?? job.status}
-										</span>
-									</div>
-									<p className="break-all text-basalt-muted-foreground">{job.id}</p>
-									<p>{typeof job.payload.progress === "string" ? job.payload.progress : ""}</p>
-									{job.status === "failed" ? (
-										<p className="text-basalt-destructive">
-											执行失败；检查本地 Agent 日志后可重新请求。
-										</p>
-									) : null}
-								</div>
-							)) ?? null}
-							{!board?.jobs.length ? (
-								<p className="text-sm text-basalt-muted-foreground">
-									暂无任务。选择领域后请求分析。
-								</p>
-							) : null}
+							{lastRun ? (
+								<dl className="grid grid-cols-2 gap-2 text-sm">
+									<dt>已分析</dt>
+									<dd>{lastRun.analyzed}</dd>
+									<dt>已跳过</dt>
+									<dd>{lastRun.skipped}</dd>
+								</dl>
+							) : (
+								<p className="text-sm text-basalt-muted-foreground">尚无运行统计。</p>
+							)}
 						</LayerCard.Body>
 					</LayerCard>
 				</aside>

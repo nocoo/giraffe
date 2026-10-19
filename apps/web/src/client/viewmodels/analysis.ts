@@ -5,7 +5,6 @@ import {
 	type Domain,
 	type Resource,
 } from "../../lib/analysis-contracts";
-import { cronStatusSchema } from "../../lib/work-contracts";
 import { apiGet } from "../lib/api";
 import { ensureSession, getActiveAccountId } from "./session";
 
@@ -22,7 +21,6 @@ export type AnalysisData = {
 	account_id: string;
 	reports: Resource[];
 	records: Resource[];
-	jobs: Resource[];
 	sources: CurrentSource[];
 	repositories: string[];
 };
@@ -39,6 +37,15 @@ export const VERDICT_LABEL = {
 	unknown: "证据不足",
 };
 export const STALE_MS = 36 * 3600000;
+const botRunSchema = z
+	.object({
+		lastRunAt: z.string().datetime({ offset: true }),
+		status: z.enum(["running", "completed", "failed"]),
+		analyzed: z.number().int().nonnegative(),
+		skipped: z.number().int().nonnegative(),
+		error: z.string().optional(),
+	})
+	.strict();
 function aged(at: string | null, now: number) {
 	const time = at ? Date.parse(at) : NaN;
 	return !Number.isFinite(time) || now - time > STALE_MS || time > now + 60000;
@@ -95,13 +102,6 @@ export function sourceQuality(
 		oldestAt: times.sort((a, b) => Date.parse(a) - Date.parse(b))[0] ?? null,
 	};
 }
-export function runnerState(row: Resource, now: number) {
-	const parsed = cronStatusSchema.safeParse(row.payload);
-	if (!parsed.success) return null;
-	const p = parsed.data;
-	const age = now - Date.parse(p.lastSeenAt);
-	return { ...p, runnerId: row.id, online: age >= -60000 && age <= 45000 && p.state !== "offline" };
-}
 export function safeEvidenceUrl(value: string | null) {
 	if (!value) return null;
 	try {
@@ -157,20 +157,24 @@ export function analysisState(data: AnalysisData, repository: string | null, now
 			quality: best?.quality ?? { current: false, complete: false, stale: true, oldestAt: null },
 		};
 	});
-	const runners = data.records
-		.filter((r) => r.type === "work-cron")
-		.flatMap((row) => {
-			const runner = runnerState(row, now);
-			if (!runner) {
-				errors.push(`心跳 ${row.id} 格式无效`);
-				return [];
-			}
-			return [runner];
-		});
-	const jobs = data.jobs
-		.filter((j) => j.type === "work-run")
-		.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
-	return { cards, runners, jobs, errors };
+	const record = data.records.find(
+		(row) => row.id === "grok-bot-run" && row.type === "grok-bot-run",
+	);
+	let lastRun: (z.infer<typeof botRunSchema> & { stale: boolean }) | null = null;
+	if (record) {
+		const parsed = botRunSchema.safeParse(record.payload);
+		if (
+			!parsed.success ||
+			record.repository !== null ||
+			record.status !== parsed.data.status ||
+			Date.parse(parsed.data.lastRunAt) > now + 60000
+		) {
+			errors.push("分析运行记录格式或状态无效");
+		} else {
+			lastRun = { ...parsed.data, stale: now - Date.parse(parsed.data.lastRunAt) > 48 * 3600000 };
+		}
+	}
+	return { cards, lastRun, errors };
 }
 async function allPages(account: string, collection: string, type?: string) {
 	const items: Resource[] = [];
@@ -199,10 +203,9 @@ async function allPages(account: string, collection: string, type?: string) {
 }
 export async function loadAnalysis(): Promise<AnalysisData> {
 	const account = await ensureSession();
-	const [reports, records, jobs, sources] = await Promise.all([
+	const [reports, records, sources] = await Promise.all([
 		allPages(account, "reports", "github-analysis"),
-		allPages(account, "records", "work-cron"),
-		allPages(account, "jobs"),
+		allPages(account, "records", "grok-bot-run"),
 		apiGet<{ account_id: string; sources: CurrentSource[]; repositories: string[] }>(
 			`agent/accounts/${account}/sources`,
 		),
@@ -213,8 +216,9 @@ export async function loadAnalysis(): Promise<AnalysisData> {
 		account_id: account,
 		reports,
 		records,
-		jobs,
 		sources: sources.sources,
 		repositories: sources.repositories,
 	};
 }
+
+import { z } from "zod";
