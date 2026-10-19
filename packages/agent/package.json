@@ -1,6 +1,6 @@
 {
 	"name": "@nocoo/giraffe-agent",
-	"version": "0.15.6",
+	"version": "0.15.7",
 	"private": true,
 	"type": "module",
 	"description": "Local durable GitHub analysis agent for Giraffe",
