@@ -98,7 +98,7 @@ export function describeRunIssue(code: string | null, kind: StepKind, resource?:
 				...base,
 				title: "旧云端分析已退役",
 				reason: "此历史刷新使用了已经停用的云端步骤。",
-				action: "重新刷新原始数据，并在分析台请求本地 Agent 分析。",
+				action: "重新刷新原始数据；外部分析服务发布报告后，可在分析台查看。",
 			};
 		case "catalog_changed":
 			return {

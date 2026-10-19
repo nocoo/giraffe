@@ -1,5 +1,4 @@
 import { Hono } from "hono";
-import { z } from "zod";
 import { resourceCollection, resourceId } from "../../lib/agent-resource";
 import { REPO_SNAPSHOT_TABS } from "../../lib/snapshot-kinds";
 import type { AppVars, Env } from "../env";
@@ -10,14 +9,10 @@ import {
 	listResources,
 	updateResource,
 } from "../lib/agent-resources";
-import {
-	authenticateApiToken,
-	exchangeAuthorizationCode,
-	recordApiTokenUse,
-} from "../lib/api-tokens";
+import { authenticateApiToken, recordApiTokenUse } from "../lib/api-tokens";
 import { getAccount } from "../lib/db/accounts";
 import { createDb } from "../lib/db/d1";
-import { ApiError, jsonOk } from "../lib/errors";
+import { ApiError } from "../lib/errors";
 import {
 	readFactoryResource,
 	readObservation,
@@ -36,13 +31,6 @@ export function machineApi() {
 		c.set("db", createDb(c.env.DB));
 		c.header("Cache-Control", "private, no-store");
 		c.header("Referrer-Policy", "no-referrer");
-		const exchange = c.req.path === "/api/v1/auth/exchange";
-		if (exchange) {
-			if (c.req.method !== "POST")
-				throw new ApiError(405, "method_not_allowed", "method not allowed");
-			await next();
-			return;
-		}
 		const principal = await authenticateApiToken(
 			c.get("db"),
 			c.req.header("Authorization") ?? null,
@@ -76,25 +64,6 @@ export function machineApi() {
 		await next();
 		if (!["GET", "HEAD"].includes(c.req.method) && c.res.status < 400)
 			await recordApiTokenUse(c.get("db"), principal.accountId, principal.id);
-	});
-	app.post("/auth/exchange", async (c) => {
-		const raw = await readJson(c.req.raw, 4096);
-		const parsed = z
-			.object({ code: z.string(), code_verifier: z.string(), redirect_uri: z.string() })
-			.strict()
-			.safeParse(raw);
-		if (!parsed.success) throw new ApiError(400, "validation_failed", "invalid exchange");
-		const value = await exchangeAuthorizationCode(c.get("db"), {
-			code: parsed.data.code,
-			codeVerifier: parsed.data.code_verifier,
-			redirectUri: parsed.data.redirect_uri,
-		});
-		return jsonOk({
-			token: value.token,
-			account_id: value.account_id,
-			expires_at: value.expires_at,
-			scopes: value.scopes,
-		});
 	});
 	app.get("/me", async (c) => {
 		const p = c.get("principal");

@@ -7,7 +7,7 @@ import { accessBypass, resolveIdentity } from "./middleware/access";
 import { assertOrigin } from "./middleware/origin";
 import { activateAccount, getAccounts, postAccount, removeAccount } from "./routes/accounts";
 import { agentBrowserApi } from "./routes/agent-browser";
-import { browserAuthorize, browserTokens } from "./routes/api-tokens";
+import { browserTokens } from "./routes/api-tokens";
 import { getCi } from "./routes/ci";
 import { getFactory, getFactoryStream } from "./routes/factory";
 import { getFactoryRuns, postFactoryControl, postFactoryRun } from "./routes/factory-runs";
@@ -75,8 +75,6 @@ export function createApp(): Hono<{ Bindings: Env; Variables: AppVars }> {
 	app.on(["GET", "POST"], "/api/tokens", browserTokens);
 	allow(app, "/api/tokens/:id", ["PATCH", "DELETE"]);
 	app.on(["PATCH", "DELETE"], "/api/tokens/:id", browserTokens);
-	allow(app, "/api/cli/authorize", ["POST"]);
-	app.post("/api/cli/authorize", browserAuthorize);
 	allow(app, "/api/live", ["GET"]);
 	onGet(app, "/api/live", (c) => liveResponse(c.env, c.get("db")));
 	allow(app, "/api/me", ["GET"]);

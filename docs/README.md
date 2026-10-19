@@ -18,14 +18,6 @@
 
 - [软件工厂独立审查与验证](08-factory-review.md)
 
-- [Local Agent API](11-agent-api.md)
+- [Machine API v1 and external analysis contract](11-agent-api.md)
 
 - [Machine API v1 reference (English): endpoints, tokens and external bot reports](api.md)
-
-- [Local Agent analysis desk](12-agent-analysis.md)
-
-- [Dependency repair cron and workbench](13-dependency-repairs.md)
-
-- [Repository coordinator and dry run](14-repository-coordinator.md)
-
-- [Interactive agent runtime map](agent-runtime/index.html) · [Usage and offline checks](agent-runtime/README.md)

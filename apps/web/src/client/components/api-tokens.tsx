@@ -18,7 +18,7 @@ export function ApiTokens({ accounts }: { accounts: PublicAccount[] }) {
 	const [account, setAccount] = useState("");
 	const selected = account || accounts.find((a) => a.is_active)?.id || accounts[0]?.id || "";
 	const [rows, setRows] = useState<ApiTokenRow[]>([]);
-	const [label, setLabel] = useState("Local Agent");
+	const [label, setLabel] = useState("External Bot");
 	const [scopes, setScopes] = useState<string[]>([
 		"observations:read",
 		"agent:read",
@@ -58,7 +58,7 @@ export function ApiTokens({ accounts }: { accounts: PublicAccount[] }) {
 	}
 	return (
 		<LayerCard>
-			<LayerCard.Header>本地 Agent API 令牌</LayerCard.Header>
+			<LayerCard.Header>外部 Bot API 令牌</LayerCard.Header>
 			<LayerCard.Body className="space-y-4">
 				<p className="text-sm text-basalt-muted-foreground">
 					令牌仅绑定所选账号。原文只显示一次；撤销立即生效。不要提交模型密钥或 GitHub PAT。

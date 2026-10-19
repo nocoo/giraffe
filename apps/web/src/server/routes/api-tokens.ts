@@ -1,13 +1,7 @@
 import type { Context } from "hono";
 import { z } from "zod";
 import type { AppVars, Env } from "../env";
-import {
-	createApiToken,
-	createAuthorizationCode,
-	listApiTokens,
-	revokeApiToken,
-	updateApiToken,
-} from "../lib/api-tokens";
+import { createApiToken, listApiTokens, revokeApiToken, updateApiToken } from "../lib/api-tokens";
 import { getAccount } from "../lib/db/accounts";
 import { ApiError } from "../lib/errors";
 import { readJson } from "../lib/read-body";
@@ -68,39 +62,4 @@ export async function browserTokens(c: Ctx) {
 		return c.body(null, 204);
 	}
 	throw new ApiError(405, "method_not_allowed", "method not allowed");
-}
-export async function browserAuthorize(c: Ctx) {
-	const parsed = z
-		.object({
-			account_id: accountInput,
-			label: z.string(),
-			scopes: z.array(z.string()),
-			expires_in_days: z.number().optional(),
-			redirect_uri: z.string(),
-			state: z.string(),
-			code_challenge: z.string(),
-			code_challenge_method: z.literal("S256"),
-			consent: z.literal(true),
-		})
-		.strict()
-		.safeParse(await readJson(c.req.raw, 8192));
-	if (!parsed.success) throw new ApiError(400, "validation_failed", "invalid consent");
-	const p = parsed.data;
-	const a = await account(c, p.account_id);
-	const result = await createAuthorizationCode(c.get("db"), {
-		accountId: a,
-		label: p.label,
-		scopes: p.scopes,
-		expiresInDays: p.expires_in_days ?? 30,
-		creator: c.get("identity").email,
-		redirectUri: p.redirect_uri,
-		state: p.state,
-		codeChallenge: p.code_challenge,
-	});
-	const callback = new URL(result.redirectUri);
-	callback.searchParams.set("code", result.code);
-	callback.searchParams.set("state", result.state);
-	c.header("Cache-Control", "private, no-store");
-	c.header("Referrer-Policy", "no-referrer");
-	return c.json({ redirect_uri: callback.toString(), expires_at: result.expiresAt });
 }

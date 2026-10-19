@@ -19,7 +19,7 @@
 
 Giraffe is a personal GitHub console. Add classic PATs for one or more accounts to review repositories, open issues and pull requests, security alerts, and notifications, then compare repository metrics across days.
 
-A Worker collects GitHub snapshots into D1 through manual, daily quick and weekly deep refreshes. A local Pi Durable Agent uses one Astra orchestrator, a shared Jev decision client and Sol specialists to analyze Issues, PRs, CI and CD. It publishes evidence-bound reports through the token API. Insights retain deterministic prioritization; the previous cloud AI pipeline is removed.
+A Worker collects GitHub snapshots into D1 through manual, daily quick and weekly deep refreshes. The analysis desk reads evidence-bound Issues, PR, CI and CD reports published by an external analysis program through the machine API. Giraffe does not run model inference or automatically change code. Insights retain deterministic prioritization.
 
 PATs are encrypted with AES-256-GCM before storage in D1. Data snapshots are stored as JSON without additional application-level encryption. This is a personal deployment: everyone allowed into the same deployment shares its accounts and snapshots.
 
@@ -32,8 +32,8 @@ PATs are encrypted with AES-256-GCM before storage in D1. Data snapshots are sto
 - **Insights and alerts**: rule-based classifications and GitHub security alerts from the current snapshots, with truncation, permission, and availability states.
 - **Notifications**: browse notifications and mark one or all as read. These actions also update GitHub.
 - **Scope and schedules**: business pages default to Giraffe-starred repositories, with an explicit All scope and scheduled quick/deep refresh.
-- **Local analysis desk**: repository and portfolio reports for four domains, evidence versions and age, Jev probabilities, runner presence and resumable jobs. Missing or stale evidence remains unknown.
-- **Machine API**: account-bound, scoped, expiring and revocable tokens managed on the web; browser consent plus PKCE CLI login; full CRUD for Agent records, reports and jobs.
+- **Analysis desk**: read-only repository and portfolio reports, source versions, evidence freshness, and the latest `grok-bot-run` status. Evidence older than 36 hours is stale; a last run older than 48 hours is overdue. The page does not execute jobs.
+- **Machine API**: every `/api/v1/*` endpoint requires a fixed-account, scoped bearer token. Manage tokens through the Cloudflare Access-protected dashboard; tokens expire within 90 days and must be rotated before expiry. The API reads saved observations and supports CRUD for generic records, reports and jobs.
 
 Visible repositories and alerts depend on PAT permissions and GitHub API responses. The console does not run continuous monitoring or perform its own code security scans.
 
@@ -43,7 +43,7 @@ Visible repositories and alerts depend on PAT permissions and GitHub API respons
 2. Add a GitHub **classic PAT** in Settings with the `repo`, `read:org`, `read:user`, and `notifications` scopes. Fine-grained PATs are not currently accepted. The token input clears immediately on submission.
 3. The first account becomes active. Discover repositories in the refresh center and star those you follow; adding or switching accounts never silently collects GitHub data.
 4. Configure daily quick and weekly deep refresh. Ordinary GETs read saved snapshots only.
-5. Configure three model roles in `~/.config/giraffe/config.json`, run `bun run agent login`, approve the browser request and run `bun run agent watch`. The analysis desk can enqueue repository or portfolio requests.
+5. If using an external analysis program, create a least-privilege API token for the intended account and keep it in the external system's private configuration. Giraffe does not install or schedule that program; the analysis desk displays only reports and run status it publishes. Rotate the token before its maximum 90-day expiry.
 
 The sidebar identity comes from Cloudflare Access. Names and avatars are looked up through the `lizheng.blog` author profile service using a SHA-256 digest of the email address, with an identity fallback when the service is unavailable.
 
@@ -72,9 +72,9 @@ bun run lint
 bun run build
 ```
 
-Build output goes to `dist/client`; `build` does not include type checking. Self-hosting requires D1, production encryption keys, and Cloudflare Access covering the whole site. Update the custom domain, Access team and audience, and write-request Origin allowlist together. See the [server documentation](04-server.md) and [wrangler.toml](../wrangler.toml).
+Build output goes to `dist/client`; `build` does not include type checking. Self-hosting requires D1, production encryption keys, and Cloudflare Access for the dashboard and all paths except `/api/v1/*`. Configure Access bypass only for `/api/v1/*`; the Worker requires a bearer token on every request there. Update the custom domain, Access team and audience, and browser-write Origin allowlist together. See the [server documentation](04-server.md) and [wrangler.toml](../wrangler.toml).
 
-The main code lives in `apps/web/src/client` (Views and ViewModels), `apps/web/src/server` (API and collection), and `packages/agent/src` (local Agent). Root commands own versioning, installation, tests and deployment.
+The main code lives in `apps/web/src/client` (Views and ViewModels) and `apps/web/src/server` (API and collection). Root commands own versioning, installation, tests and deployment.
 
 ## Tests
 
@@ -117,6 +117,9 @@ Browser tests use the development authentication path. Live GitHub and real Acce
 
 [MIT](../LICENSE).
 
-## Local Agent boundary
+## Machine API and external analysis
 
-Model keys stay only in the private user configuration. API login credentials live beside it in `credentials.json`; never commit either file. The MVP does not modify or merge GitHub code. A passing analysis describes saved observations, not authorization to merge or proof of deployment. See [the Agent API](11-agent-api.md), [analysis desk](12-agent-analysis.md), and [CLI guide](../packages/agent/README.md).
+The machine API reads saved observations and stores externally produced reports,
+records and jobs. It does not run local code or model inference. A passing analysis
+describes saved observations, not authorization to merge or proof of deployment.
+See the [v1 API contract](11-agent-api.md) and [complete API reference](api.md).

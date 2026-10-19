@@ -277,7 +277,6 @@ async function optional<T>(load: () => Promise<T | { missing: true }>): Promise<
 	}
 }
 
-/** Saved deterministic CI facts stay independent of local Agent analysis. */
 export async function loadFocusSources(scope = getRepositoryScope()) {
 	return { ci: await optional(() => loadCi(scope)) };
 }

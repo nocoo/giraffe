@@ -14,7 +14,7 @@ async function browser(path: string, method = "GET", body?: unknown) {
 		...(body === undefined ? {} : { body: JSON.stringify(body) }),
 	});
 }
-it("exercises machine bearer CRUD and PKCE over real local HTTP, independently of Access sessions", async () => {
+it("retains machine bearer CRUD and retires PKCE over real local HTTP", async () => {
 	const response = await browser("accounts", "POST", { token: `ghp_${"A".repeat(36)}` });
 	expect(response.ok).toBe(true);
 	const account = (await response.json()) as { id: string };
@@ -22,10 +22,11 @@ it("exercises machine bearer CRUD and PKCE over real local HTTP, independently o
 		account_id: account.id,
 		label: "local API acceptance",
 		scopes: ["observations:read", "agent:read", "agent:write", "app:read", "app:write"],
-		expires_in_days: 1,
+		expires_in_days: 90,
 	});
 	expect(created.status).toBe(201);
 	const token = (await created.json()) as { id: string; token: string };
+	const tokenIds = [token.id];
 	const prefix = `v1/accounts/${account.id}`;
 	const machine = (path: string, method = "GET", body?: unknown, bearer = token.token) =>
 		fetch(`${base}/api/${path}`, {
@@ -78,9 +79,7 @@ it("exercises machine bearer CRUD and PKCE over real local HTTP, independently o
 			).toBe(409);
 			expect((await machine(`${path}/${id}?revision=2`, "DELETE")).status).toBe(204);
 		}
-		const verifier = "x".repeat(43);
-		const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
-		const challenge = Buffer.from(hash).toString("base64url");
+		const beforeRetirement = await (await browser(`tokens?account_id=${account.id}`)).json();
 		const consent = await browser("cli/authorize", "POST", {
 			account_id: account.id,
 			label: "PKCE local acceptance",
@@ -88,21 +87,58 @@ it("exercises machine bearer CRUD and PKCE over real local HTTP, independently o
 			expires_in_days: 1,
 			redirect_uri: "http://localhost:23456/callback",
 			state: "safe",
-			code_challenge: challenge,
+			code_challenge: "x".repeat(43),
 			code_challenge_method: "S256",
 			consent: true,
 		});
-		expect(consent.status).toBe(200);
-		const url = new URL(((await consent.json()) as { redirect_uri: string }).redirect_uri);
-		expect([...url.searchParams.keys()].sort()).toEqual(["code", "state"]);
+		expect(consent.status).toBe(404);
+		expect(await consent.json()).toMatchObject({ error: { code: "not_found" } });
 		const exchange = {
-			code: url.searchParams.get("code"),
-			code_verifier: verifier,
+			code: `giraffe_code_${"x".repeat(43)}`,
+			code_verifier: "x".repeat(43),
 			redirect_uri: "http://localhost:23456/callback",
 		};
-		const exchanged = await machine("v1/auth/exchange", "POST", exchange, "");
-		expect(exchanged.status).toBe(200);
-		const readToken = (await exchanged.json()) as { token: string };
+		const tokenless = await fetch(`${base}/api/v1/auth/exchange`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify(exchange),
+		});
+		expect(tokenless.status).toBe(401);
+		expect(await tokenless.json()).toMatchObject({ error: { code: "token_unauthorized" } });
+		for (const [method, status] of [
+			["GET", 404],
+			["POST", 405],
+		] as const) {
+			const retired = await machine(
+				"v1/auth/exchange",
+				method,
+				method === "POST" ? exchange : undefined,
+			);
+			expect(retired.status).toBe(status);
+			expect(await retired.text()).not.toMatch(/giraffe_|redirect_uri|code_verifier/);
+		}
+		expect(await (await browser(`tokens?account_id=${account.id}`)).json()).toEqual(
+			beforeRetirement,
+		);
+		expect(
+			(
+				await browser("tokens", "POST", {
+					account_id: account.id,
+					label: "Invalid expiry",
+					scopes: ["agent:read"],
+					expires_in_days: 91,
+				})
+			).status,
+		).toBe(400);
+		const readonly = await browser("tokens", "POST", {
+			account_id: account.id,
+			label: "External read-only bot",
+			scopes: ["agent:read"],
+			expires_in_days: 1,
+		});
+		expect(readonly.status).toBe(201);
+		const readToken = (await readonly.json()) as { id: string; token: string };
+		tokenIds.push(readToken.id);
 		expect((await machine(`${prefix}/sources`, "GET", undefined, readToken.token)).status).toBe(
 			403,
 		);
@@ -116,18 +152,11 @@ it("exercises machine bearer CRUD and PKCE over real local HTTP, independently o
 				)
 			).status,
 		).toBe(403);
-		expect((await machine("v1/auth/exchange", "POST", exchange, "")).status).toBe(400);
-		const list = (await (await browser(`tokens?account_id=${account.id}`)).json()) as {
-			items: { id: string; label: string }[];
-		};
-		for (const t of list.items.filter((t) => t.label === "PKCE local acceptance"))
-			expect((await browser(`tokens/${t.id}`, "DELETE", { account_id: account.id })).status).toBe(
+	} finally {
+		for (const id of tokenIds)
+			expect((await browser(`tokens/${id}`, "DELETE", { account_id: account.id })).status).toBe(
 				204,
 			);
-	} finally {
-		expect((await browser(`tokens/${token.id}`, "DELETE", { account_id: account.id })).status).toBe(
-			204,
-		);
 	}
 	expect((await machine("v1/me")).status).toBe(401);
 });

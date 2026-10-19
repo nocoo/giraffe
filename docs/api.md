@@ -27,7 +27,7 @@ Use HTTPS, disable shell tracing and keep the bot token in private configuration
 Never put credentials in URLs, logs, report payloads or persisted browser state.
 
 - Tokens are hash-only, fixed-account, revocable and expiring: **1-90 days,
-  default 30**. Raw tokens are returned once, at mint/exchange. Revocation applies
+  default 30**. Raw tokens are returned once, when minted. Revocation applies
   on the next request. Tokens cannot change the dashboard's active account.
 - Scopes are independent: write does not imply read. Mint requires at least one
   unique known scope. An analysis bot needs only `observations:read`, `agent:read`,
@@ -613,7 +613,6 @@ Machine errors are JSON, not Access redirects; no standardized details array or
 | HTTP | Code | Meaning/action |
 | --- | --- | --- |
 | 400 | `validation_failed` | Invalid JSON/content type, oversized body, schema/query/revision error; fix input |
-| 400 | `invalid_grant` | Well-shaped PKCE grant wrong/expired/consumed; restart CLI consent |
 | 401 | `token_unauthorized` | Missing/malformed/expired/revoked bearer or unavailable account |
 | 403 | `account_forbidden`, `scope_forbidden` | Wrong account or missing required scope |
 | 404 | `not_found` | Unknown endpoint/resource/repo, missing item/run/publication repository |
@@ -639,8 +638,7 @@ Implemented application limits, not inferred Cloudflare/GitHub quotas:
 | Refresh selection/priority / generated plan | 500 entries each / 1,800,000 bytes |
 | Refresh concurrency/cooldown | One running/paused run per account; 60-second run-start and 15-minute repository cooldown where applicable |
 | Refresh run list | Maximum 21, no pagination |
-| PKCE exchange / browser token-consent JSON | 4,096 / 8,192 bytes |
-| PKCE grant | Five minutes, one successful exchange |
+| Browser token management JSON | 8,192 bytes |
 
 There is **no application requests-per-second/minute quota**, per-token throttle,
 standard rate-limit headers, documented total resource-count limit, or source-index
@@ -674,7 +672,7 @@ Giraffe with private token/model configuration and persisted pending-work state.
 6. Reconcile full scans even after empty polls; rotate tokens before expiry. The
    analysis page shows the bot's last-run record, not the presence of a local runner.
 
-## Credential endpoints and retained CLI PKCE
+## Access-protected browser token management
 
 These Access-protected browser endpoints are not bearer management APIs. Prefer
 the dashboard. Direct examples require an Access session cookie, and writes require
@@ -714,57 +712,4 @@ jq -n --arg account "$ACCOUNT" '{account_id:$account}' |
   browser_json -X DELETE "$BASE/api/tokens/$TOKEN_ID" --data-binary @-
 ```
 
-Mint/exchange responses contain credentials: never send them to shared logs.
-
-### Bundled CLI consent
-
-The bundled CLI is the only current PKCE consumer. PR1 retains this flow because
-the CLI remains; **delete it with the CLI in PR3**. It is not a promised reusable
-external-client interface. Bots use dashboard-minted tokens with rotation instead.
-
-`GET /authorize` serves the SPA. Query: `redirect_uri`, `state`, `code_challenge`,
-`code_challenge_method=S256`, optional `scopes` (comma/space-separated, default the
-three analysis scopes). The user selects an account and explicitly consents.
-`POST /api/cli/authorize` requires Access/same-origin and strict JSON
-`{ account_id, label, scopes, expires_in_days?, redirect_uri, state,
-code_challenge, code_challenge_method:"S256", consent:true }`. Returns
-`{ redirect_uri, expires_at }`, callback query containing only `code` and `state`.
-
-Callback must be exactly `http://127.0.0.1:PORT/callback` or
-`http://localhost:PORT/callback`, port 1-65535, no credentials/query/fragment.
-State: 1-512 characters without controls. Challenge: 43 base64url characters.
-Codes are hashed, five-minute, one-use. The current consent UI grants 30 days.
-Using the CLI's actual `REDIRECT_URI`, `STATE`, `CHALLENGE` (S256 of its verifier):
-
-```bash
-browser -G "$BASE/authorize" --data-urlencode "redirect_uri=$REDIRECT_URI" \
-  --data-urlencode "state=$STATE" --data-urlencode "code_challenge=$CHALLENGE" \
-  --data-urlencode 'code_challenge_method=S256' \
-  --data-urlencode 'scopes=observations:read,agent:read,agent:write'
-jq -n --arg account "$ACCOUNT" --arg redirect "$REDIRECT_URI" --arg state "$STATE" --arg challenge "$CHALLENGE" \
-  '{account_id:$account,label:"Bundled CLI",scopes:["observations:read","agent:read","agent:write"],
-    redirect_uri:$redirect,state:$state,code_challenge:$challenge,code_challenge_method:"S256",consent:true}' |
-  browser_json -X POST "$BASE/api/cli/authorize" --data-binary @-
-```
-
-GET is not a JSON grant; the POST represents user consent, not a consent bypass.
-CLI must verify callback state and never log code/token.
-
-### POST /api/v1/auth/exchange
-
-Only tokenless machine operation; no query. Strict JSON `{ code, code_verifier,
-redirect_uri }`. Code is `giraffe_code_` plus 43 base64url characters; verifier
-43-128 characters `[A-Za-z0-9._~-]`. Use the identical consent redirect URI without
-the returned callback query. With the code/verifier received/retained by the CLI:
-
-```bash
-jq -n --arg code "$CODE" --arg verifier "$VERIFIER" --arg redirect "$REDIRECT_URI" \
-  '{code:$code,code_verifier:$verifier,redirect_uri:$redirect}' |
-  curl --fail-with-body -sS -X POST "$BASE/api/v1/auth/exchange" \
-    -H 'Content-Type: application/json' --data-binary @-
-```
-
-Returns 200 `{ token, account_id, expires_at, scopes }`. Malformed input returns
-400 `validation_failed`; validly shaped wrong/expired/consumed grant returns
-400 `invalid_grant`. A successful exchange consumes the grant atomically; a lost
-response requires fresh consent, not code replay. No PAT or renewable grant returns.
+Mint responses contain credentials: never send them to shared logs.

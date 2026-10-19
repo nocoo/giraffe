@@ -14,7 +14,7 @@ describe("navigation", () => {
 	it("opens with the factory and groups analysis tools under AI", () => {
 		expect(NAV_GROUPS.map((group) => [group.label, group.items.map((item) => item.href)])).toEqual([
 			["总览", ["/factory"]],
-			["AI", ["/analysis", "/work", "/insights"]],
+			["AI", ["/analysis", "/insights"]],
 			["仓库健康", ["/repos", "/ci", "/alerts"]],
 			["待办", ["/issues", "/pulls", "/inbox"]],
 			["系统", ["/refresh", "/settings"]],
@@ -27,7 +27,6 @@ describe("navigation", () => {
 			"/factory",
 			"/repos",
 			"/analysis",
-			"/work",
 			"/refresh",
 			"/issues",
 			"/pulls",
@@ -37,7 +36,6 @@ describe("navigation", () => {
 			"/inbox",
 			"/repos/:owner/:name",
 			"/settings",
-			"/authorize",
 		]);
 		expect(breadcrumbsFor("/")).toEqual([{ href: "/factory", label: "软件工厂" }]);
 		expect(breadcrumbsFor("/repos")).toEqual([{ href: "/repos", label: "仓库" }]);
@@ -50,9 +48,11 @@ describe("navigation", () => {
 		expect(breadcrumbsFor("/nope")).toEqual([{ href: "/nope", label: "未找到" }]);
 		expect(headerTitle("/")).toBe("软件工厂");
 		expect(headerTitle("/repos")).toBe("仓库");
-		expect(headerTitle("/work")).toBe("Agent");
-		expect(breadcrumbsFor("/work")).toEqual([{ href: "/work", label: "Agent" }]);
-		expect(paletteItems(null).find((item) => item.href === "/work")?.label).toBe("Agent");
+		for (const retired of ["/work", "/authorize"]) {
+			expect(headerTitle(retired)).toBe("未找到");
+			expect(breadcrumbsFor(retired)).toEqual([{ href: retired, label: "未找到" }]);
+			expect(paletteItems(null).find((item) => item.href === retired)).toBeUndefined();
+		}
 		expect(headerCrumbs("/")).toEqual([{ href: "/", label: "Giraffe" }]);
 		expect(headerCrumbs("/settings")).toEqual([{ href: "/", label: "Giraffe" }]);
 		expect(headerTitle("/repos/o/n")).toBe("o/n");

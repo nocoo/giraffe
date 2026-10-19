@@ -5,7 +5,7 @@ import type { Env } from "../env";
 import { createApp } from "../index";
 
 const id = "a".repeat(21);
-it("keeps token CRUD and explicit PKCE consent behind Access and Origin", async () => {
+it("keeps browser token CRUD behind Access and Origin", async () => {
 	const raw = sqliteFixture();
 	for (const sql of readFileSync("migrations/0011_api_access.sql", "utf8")
 		.split(";")
@@ -41,7 +41,7 @@ it("keeps token CRUD and explicit PKCE consent behind Access and Origin", async 
 	);
 	const created = await call("tokens", "POST", {
 		account_id: id,
-		label: "CLI",
+		label: "External bot",
 		scopes: ["agent:read", "agent:write"],
 		expires_in_days: 1,
 	});
@@ -83,36 +83,4 @@ it("keeps token CRUD and explicit PKCE consent behind Access and Origin", async 
 	);
 	expect((await call(`tokens/${token.id}`, "DELETE", { account_id: id })).status).toBe(204);
 	expect((await call(`v1/me`, "GET", undefined)).status).toBe(401);
-	const verifier = "v".repeat(43);
-	const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
-	const challenge = btoa(String.fromCharCode(...new Uint8Array(digest)))
-		.replaceAll("+", "-")
-		.replaceAll("/", "_")
-		.replaceAll("=", "");
-	const body = {
-		account_id: id,
-		label: "Browser consent",
-		scopes: ["agent:read"],
-		redirect_uri: "http://127.0.0.1:12345/callback",
-		state: "opaque",
-		code_challenge: challenge,
-		code_challenge_method: "S256",
-		consent: true,
-	};
-	expect((await call("cli/authorize", "POST", { ...body, consent: false })).status).toBe(400);
-	expect((await call("cli/authorize", "POST", body, "https://evil.test")).status).toBe(403);
-	const consent = await call("cli/authorize", "POST", body);
-	expect(consent.status).toBe(200);
-	const redirect = new URL(((await consent.json()) as { redirect_uri: string }).redirect_uri);
-	expect([...redirect.searchParams.keys()].sort()).toEqual(["code", "state"]);
-	expect(redirect.searchParams.get("state")).toBe("opaque");
-	const exchange = {
-		code: redirect.searchParams.get("code"),
-		code_verifier: verifier,
-		redirect_uri: body.redirect_uri,
-	};
-	const response = await call("v1/auth/exchange", "POST", exchange);
-	expect(response.status).toBe(200);
-	expect(await response.json()).toMatchObject({ account_id: id, scopes: ["agent:read"] });
-	expect((await call("v1/auth/exchange", "POST", exchange)).status).toBe(400);
 });

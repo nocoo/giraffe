@@ -126,9 +126,7 @@ export function AppShell() {
 						actions={
 							<>
 								<EnvironmentSwitch />
-								{!["/settings", "/authorize"].includes(location.pathname) ? (
-									<DataTimeControl />
-								) : null}
+								{location.pathname !== "/settings" ? <DataTimeControl /> : null}
 								{!isMobile && (
 									<HeaderTooltip label="GitHub repository">
 										<LinkButton
