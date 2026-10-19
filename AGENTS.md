@@ -64,7 +64,7 @@ For daily development, prepare `.dev.vars` from the example without overwriting 
 | pre-commit | Working-tree typecheck, full lint, four structural gates and coverage | Unified L1 on an index snapshot, <30s |
 | pre-push | Local L2 and G2 in parallel; Gitleaks consumes stdin ranges | Test the same pushed commit snapshots as well, <3min |
 
-Install restores Husky. Hooks are check-only; never use `--no-verify` on commits or branch pushes. CI/CD pins shared workflows at `ad43150de3a2be2fa464b5cd2f921dc4fa9f8f0f`.
+Install restores Husky. Hooks are check-only; never use `--no-verify` on commits or branch pushes. CI/CD pins shared `nocoo/base-ci` workflows at `0394178ebcff0418c442d84a84119220f31f8987` (v2026.9).
 
 ## Resources and isolation
 
@@ -77,6 +77,28 @@ Install restores Husky. Hooks are check-only; never use `--no-verify` on commits
 Keep these ports free; a conflict fails instead of falling back to development. Required runners allocate per-run local persistence, reject remote bindings/credential fallback, prove test context and verify `_test_marker(key,value)` with `env=test` before reset/cleanup. Existing fixed directory names are implementation gaps, not the desired contract.
 
 ## Operations / release
+
+### CI checks
+
+`.github/workflows/ci.yml` (workflow `CI`) runs on pull requests and pushes to `main` through the shared `quality.yml`. A PR is green only when every required check passes:
+
+| Check | Runs |
+|---|---|
+| `quality / L1: Quality & Tests` | the four `gate:*` scripts, `bun run typecheck`, `bun run lint`, `bun run test:coverage` |
+| `quality / L2: API E2E / Test (bun on ubuntu-latest)` | `bun run test:e2e:api` |
+| `quality / L3: Browser E2E / Test (bun on ubuntu-latest)` | `bun run test:e2e:bdd` (Chromium) |
+| `quality / G2: Security / Security (Secrets & Vulnerabilities)` | Gitleaks and OSV |
+| `quality / Quality Gate Aggregate` | requires all of the above |
+
+`Build`, `Package Check` and `Worker Tests` report as skipped; that is expected.
+
+### Release command and deploy target
+
+- Deploy target: Cloudflare Worker `giraffe` on custom domain `giraffe.hexly.ai` (`wrangler.toml`), D1 `giraffe-db` (`DB`), GitHub environment `production`.
+- Every green `CI` run on `main` triggers `.github/workflows/release.yml`, which builds, applies D1 migrations and deploys automatically. Merging a PR is a deploy.
+- Versioned release (tag must equal root `package.json` version): `git tag vX.Y.Z <main-sha> && git push origin vX.Y.Z`, then `gh release create vX.Y.Z --generate-notes`.
+- Redeploy an existing tag: `gh workflow run release.yml -f tag=vX.Y.Z`.
+- Watch: `gh run list --workflow release.yml --limit 3`, then `gh run watch <id>`. The workflow verifies `/api/live` reports the expected version (6 retries, 5s apart).
 
 Authorized publication uses `.github/workflows/release.yml`: trusted successful main CI or an explicitly requested version tag/manual dispatch, shared migration/build/deploy workflow and production secrets. Do not deploy concurrently from a laptop. Apply additive migrations before code needing the new schema; validate factory migrations against a local backup copy as documented.
 Verify `GET https://giraffe.hexly.ai/api/live`: current top-level version and a real D1 `SELECT 1`; database failure returns uncached 503 with `status: "error"`. `_test_marker` is test metadata, not the production health probe, and private diagnostics never enter the response. Runbook: [server](docs/04-server.md).
