@@ -50,7 +50,7 @@
     },
     "packages/agent": {
       "name": "@nocoo/giraffe-agent",
-      "version": "0.15.7",
+      "version": "0.15.8",
       "bin": {
         "giraffe": "./bin/giraffe.mjs",
       },

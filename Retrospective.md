@@ -1,5 +1,16 @@
 # Retrospective
 
+## 2026-10-19: Offline version metadata retained mirror URLs
+
+While preparing v0.15.8, an offline `bun install --lockfile-only` run inherited
+the temporary package mirror and expanded the lockfile's registry fields. The
+version commit passed the existing hooks, which do not check registry neutrality;
+the controller caught the unrelated diff before any branch push. The unpublished
+version commit was corrected to retain the original package entries and only
+change the workspace version. Check the lockfile diff and the absence of pinned
+mirror URLs before staging, even when installation is offline; a version-only
+change must not silently change CI's package source.
+
 ## 2026-09-24 — Neutral badges followed the system theme
 
 The assessment's dark-theme screenshot exposed pale text on the pale gray status badge. Its Tailwind `dark:` foreground variant followed the system color scheme while Basalt's theme toggle used the application theme. The foreground now uses `basalt-dark:`, matching the provider. Browser checks measure neutral badge contrast in both application themes; a screenshot that merely fits the viewport is not proof that its labels are readable.
