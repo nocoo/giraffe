@@ -77,7 +77,7 @@ const resource = (
 });
 for (const width of [1440, 390])
 	for (const theme of ["light", "dark"] as const)
-		test(`analysis desk ${width}px ${theme}: evidence, requests and runner states`, async ({
+		test(`analysis desk ${width}px ${theme}: evidence and bot run states`, async ({
 			page,
 		}, info) => {
 			await page.setViewportSize({ width, height: 1000 });
@@ -87,6 +87,7 @@ for (const width of [1440, 390])
 			const writes: unknown[] = [];
 			let jobs: unknown[] = [];
 			let externalReport = false;
+			let runStatus = "completed";
 			const { producer: _producer, ...externalPayload } = report;
 			await page.route("**/api/**", (route) => {
 				const url = new URL(route.request().url());
@@ -123,22 +124,19 @@ for (const width of [1440, 390])
 								]
 							: collection === "records"
 								? [
-										resource("work-cron", "work-cron", {
-											schemaVersion: 1,
-											lastSeenAt: "2026-10-02T08:59:30Z",
-											state: "running",
-											expression: "0 * * * *",
-											timezone: "Asia/Shanghai",
-											enabled: true,
-											paused: false,
-											nextRunAt: "2026-10-02T10:00:00Z",
-											lastRunAt: at,
-											activeOccurrence: "job1",
-											completed: 0,
-											lastError: null,
-											capability: "authorized-work",
-											maxRounds: 20,
-										}),
+										{
+											...resource("grok-bot-run", "grok-bot-run", {
+												lastRunAt: at,
+												status: runStatus,
+												analyzed: 4,
+												skipped: 2,
+												error:
+													runStatus === "failed"
+														? "provider_unavailable <script>alert(1)</script>"
+														: undefined,
+											}),
+											status: runStatus,
+										},
 									]
 								: jobs;
 					return route.fulfill({ json: { account_id: "ui-account", items, nextCursor: null } });
@@ -155,7 +153,10 @@ for (const width of [1440, 390])
 			await page.getByRole("tab", { name: /Pull Requests/ }).click();
 			await expect(page.getByText(report.summary, { exact: true })).toBeVisible();
 			await expect(page.getByText(/通过.*不代表可合并/)).toBeVisible();
-			await expect(page.getByText("1 在线", { exact: true })).toBeVisible();
+			const runPanel = page.getByRole("complementary", { name: "分析运行状态" });
+			await expect(runPanel.getByText("已完成", { exact: true })).toBeVisible();
+			await expect(runPanel.getByText("4", { exact: true })).toBeVisible();
+			await expect(runPanel.getByText("2", { exact: true })).toBeVisible();
 			await expect(page.locator('a[href^="javascript:"]')).toHaveCount(0);
 			expect(await page.locator("body").evaluate((el) => el.scrollWidth)).toBeLessThanOrEqual(
 				width,
@@ -179,13 +180,27 @@ for (const width of [1440, 390])
 			await expect(page.getByRole("progressbar", { name: "review 优先级概率" })).toHaveCount(0);
 			await expect(page.getByText(/planner-configured/)).toHaveCount(0);
 			await page.clock.setFixedTime(new Date("2026-10-04T09:00:00Z"));
-			await page.getByRole("tab", { name: /Issues/ }).click();
-			await page.getByRole("tab", { name: /Pull Requests/ }).click();
+			await page.reload();
+			await expect(runPanel.getByText("已逾期", { exact: true })).toBeVisible();
+			await expect(runPanel.getByRole("alert")).toContainText("超过 48 小时");
+			await page.clock.setFixedTime(new Date("2026-10-02T09:00:00Z"));
+			runStatus = "running";
+			await page.reload();
+			await expect(runPanel.getByText("运行中", { exact: true })).toBeVisible();
+			runStatus = "failed";
+			await page.reload();
+			await expect(runPanel.getByText("失败", { exact: true })).toBeVisible();
+			await expect(runPanel.getByRole("alert")).toContainText(
+				"provider_unavailable <script>alert(1)</script>",
+			);
+			expect(writes).toEqual([]);
 		});
 
 for (const width of [1440, 390])
 	for (const theme of ["light", "dark"] as const)
-		test(`portfolio offline and unknown CD ${width}px ${theme}`, async ({ page }, info) => {
+		test(`portfolio without bot runs and unknown CD ${width}px ${theme}`, async ({
+			page,
+		}, info) => {
 			await page.setViewportSize({ width, height: 1000 });
 			await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
 			await page.clock.setFixedTime(new Date("2026-10-04T09:00:00Z"));
@@ -244,7 +259,7 @@ for (const width of [1440, 390])
 													status: "pending",
 												},
 											]
-										: [],
+										: [resource("work-cron", "work-cron", { lastSeenAt: "2026-10-04T09:00:00Z" })],
 							nextCursor: null,
 						},
 					});
@@ -260,9 +275,10 @@ for (const width of [1440, 390])
 			await page.goto("/analysis");
 			await page.getByRole("tab", { name: /CD 交付/ }).click();
 			await expect(page.getByText("No deployment evidence is available.")).toBeVisible();
-			await expect(page.getByText("离线", { exact: true })).toBeVisible();
-			await expect(page.getByText("等待执行", { exact: true })).toBeVisible();
-			await expect(page.getByText("giraffe login", { exact: false })).toBeVisible();
+			await expect(page.getByText("尚无有效分析运行记录。", { exact: true })).toBeVisible();
+			await expect(page.getByText("等待执行", { exact: true })).toHaveCount(0);
+			await expect(page.getByText("giraffe login", { exact: false })).toHaveCount(0);
+			await expect(page.getByText("本地执行器", { exact: true })).toHaveCount(0);
 			await expect(page.getByRole("tab", { name: /CD 交付/ })).toContainText("证据不足");
 			await page
 				.getByRole("heading", { name: "分析台", exact: true })

@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.15.8 — 2026-10-19
+
+### Changed
+
+- Show external analysis last-run time, status and analyzed/skipped counts from the account-wide `grok-bot-run` record, with an overdue warning after 48 hours under the default daily cadence.
+- Validate bot run payloads without confusing execution status with report evidence freshness; surface failed or malformed records and preserve the existing report layout.
+- Stop loading Work heartbeats and jobs on the analysis page while retaining their stored history and the separate Work feature.
+
 ## v0.15.7 — 2026-10-19
 
 ### Added

@@ -20,11 +20,16 @@ it("loads all report pages without redundant execution requests", async () => {
 		account_id: "a",
 		reports: [],
 		records: [],
-		jobs: [],
 		sources: [],
 		repositories: [],
 	});
 	expect(apiPost).not.toHaveBeenCalled();
+	const paths = vi.mocked(apiGet).mock.calls.map(([path]) => path);
+	expect(paths.filter((path) => path.includes("/records"))).toEqual([
+		"agent/accounts/a/records?limit=100&type=grok-bot-run",
+		"agent/accounts/a/records?limit=100&type=grok-bot-run&cursor=next",
+	]);
+	expect(paths.some((path) => path.includes("/jobs") || path.includes("work-cron"))).toBe(false);
 });
 it("rejects account changes and invalid or excessive cursor traversal", async () => {
 	for (const mode of ["account", "repeat", "limit", "source"]) {
