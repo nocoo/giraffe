@@ -13,6 +13,7 @@ import {
 	Pause,
 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { Link } from "react-router";
 import type {
 	FactoryRunStep,
 	FactoryRunView,
@@ -323,9 +324,9 @@ export function FactoryRunDetails({
 								</div>
 								<div className="factory-issue-actions">
 									{issue.settings ? (
-										<a href="/settings">
+										<Link to="/settings">
 											账号设置 <ArrowUpRight aria-hidden="true" />
-										</a>
+										</Link>
 									) : null}
 									{!active && (issue.repos.length || issue.kind === "snapshot") ? (
 										<Button

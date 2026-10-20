@@ -145,6 +145,31 @@ async function mockConsole(page: Page, fixture: ReturnType<typeof consoleFixture
 	});
 }
 
+test("account settings guidance navigates without replacing the document", async ({ page }) => {
+	const fixture = consoleFixture();
+	const run = fixture.state.history[0];
+	if (!run) throw new Error("fixture run missing");
+	for (const step of run.steps) {
+		if (step.status === "failed") step.error = "github_forbidden";
+	}
+	await mockConsole(page, fixture);
+	await page.goto("/refresh");
+	const settings = page.getByRole("link", { name: "账号设置", exact: true }).first();
+	await expect(settings).toBeVisible();
+	const headerNode = await page.locator("[data-basalt-header]").elementHandle();
+	const documents: string[] = [];
+	page.on("request", (request) => {
+		if (request.resourceType() === "document") documents.push(request.url());
+	});
+	await settings.click();
+	await expect(page).toHaveURL(/\/settings$/);
+	await expect(page.getByRole("heading", { name: "设置", exact: true }).first()).toBeVisible();
+	expect(documents).toEqual([]);
+	expect(
+		await headerNode?.evaluate((node) => node === document.querySelector("[data-basalt-header]")),
+	).toBe(true);
+});
+
 for (const width of [1440, 390]) {
 	test(`page update results keep the card gutters at ${width}px`, async ({ page }) => {
 		await mockConsole(page, consoleFixture());

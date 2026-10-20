@@ -33,9 +33,18 @@ afterEach(async () => {
 	vi.useRealTimers();
 	vi.unstubAllGlobals();
 });
-function Page({ at = "2026-10-02T08:00:00Z", visible = true }: { at?: string; visible?: boolean }) {
+function Page({
+	at = "2026-10-02T08:00:00Z",
+	visible = true,
+	scope = "issues:starred",
+}: {
+	at?: string;
+	visible?: boolean;
+	scope?: string;
+}) {
 	return (
-		<DataTimeProvider>
+		<DataTimeProvider scope={scope}>
+			<header>Shared header</header>
 			<DataTimeControl />
 			{visible ? <DataTimeSource entries={[{ label: "Issues", at }]} /> : null}
 		</DataTimeProvider>
@@ -51,6 +60,23 @@ it("registers sources, ticks relative age, replaces data and cleans up on naviga
 	expect(container.textContent).toContain("2 天前更新");
 	await act(async () => root.render(<Page visible={false} />));
 	expect(container.textContent).toContain("暂无数据时间");
+});
+it("resets scoped sources without remounting children and re-registers unchanged entries", async () => {
+	await act(async () => root.render(<Page />));
+	const header = container.querySelector("header");
+	expect(container.textContent).toContain("2 小时前更新");
+	vi.mocked(fetchKind).mockClear();
+	await act(async () => root.render(<Page scope="issues:all" />));
+	expect(container.querySelector("header")).toBe(header);
+	expect(container.textContent).toContain("2 小时前更新");
+	expect(fetchKind).toHaveBeenCalledWith("refresh/times");
+	await act(async () => root.render(<Page scope="repos:all" visible={false} />));
+	expect(container.textContent).toContain("暂无数据时间");
+	await act(async () => root.render(<Page scope="issues:starred" />));
+	expect(container.textContent).toContain("2 小时前更新");
+	await act(async () => root.render(<Page scope="issues:starred" visible={false} />));
+	expect(container.textContent).toContain("暂无数据时间");
+	expect(container.querySelector("header")).toBe(header);
 });
 it("does not replace saved times with another account's refresh completion", async () => {
 	const times: RefreshTimes = {
@@ -73,7 +99,7 @@ it("keeps data age when refresh records cannot be read", async () => {
 it("opens one named popover with precise times and mixed/missing source notices", async () => {
 	await act(async () =>
 		root.render(
-			<DataTimeProvider>
+			<DataTimeProvider scope="issues:starred">
 				<DataTimeControl />
 				<DataTimeSource
 					entries={[

@@ -583,3 +583,15 @@ and requires explicit authorization for retention rather than deleting history.
 The same review clarified that global child-report identities use the browser's
 filtered repository set, not the full machine catalog. Verify downstream reader
 limits and selection rules alongside endpoint schemas when documenting a routine.
+
+## 2026-10-21 — Verify navigation failures before calling them regressions
+
+The first navigation regression captured `header`, which matched both the shared
+AppHeader and a page-owned title on some routes. Its strict-locator failure was
+mistakenly reported as a reproduced remount before the failure detail was read.
+The assertion now targets Basalt's existing `data-basalt-header` marker. The
+incomplete browser runs were stopped, and a fresh old-revision fixture runs only
+the relevant regressions before the complete fixed-code suite. Test stores remain
+inside task-owned temporary clones; no daily or production data is used. Inspect
+the actual assertion failure before reporting red evidence, and scope chrome
+selectors to their existing stable semantic markers rather than HTML tag names.

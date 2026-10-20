@@ -90,6 +90,13 @@ for (const width of [1440, 390]) {
 			await expect(sidebar.getByText(`v${APP_VERSION}`, { exact: true })).toHaveCount(1);
 			const expandedLogo = await home.locator("img").boundingBox();
 			expect(expandedLogo?.width).toBe(28);
+			const headerNode = await page.locator("[data-basalt-header]").elementHandle();
+			const mainNode = await page.locator("main").elementHandle();
+			const sidebarNode = width === 1440 ? await sidebar.elementHandle() : null;
+			const documents: string[] = [];
+			page.on("request", (request) => {
+				if (request.resourceType() === "document") documents.push(request.url());
+			});
 
 			for (const [label, path] of [
 				["分析台", "/analysis"],
@@ -99,6 +106,14 @@ for (const width of [1440, 390]) {
 				await nav.getByRole("button", { name: label, exact: true }).click();
 				await expect(page).toHaveURL(new RegExp(`${path}$`));
 				await expect(page.getByRole("heading", { name: label, exact: true })).toBeVisible();
+				expect(
+					await headerNode?.evaluate(
+						(node) => node === document.querySelector("[data-basalt-header]"),
+					),
+				).toBe(true);
+				expect(await mainNode?.evaluate((node) => node === document.querySelector("main"))).toBe(
+					true,
+				);
 				if (width === 390) {
 					await expect(page.getByRole("dialog", { name: "打开导航" })).toBeHidden();
 					await page.getByRole("button", { name: "打开导航" }).click();
@@ -128,6 +143,11 @@ for (const width of [1440, 390]) {
 			}
 			await page.locator("header").getByRole("link", { name: "仓库", exact: true }).click();
 			await waitForReposRouteSettled(page, width);
+			expect(documents).toEqual([]);
+			if (width === 1440) {
+				await expect(sidebar.getByRole("button", { name: "展开侧栏" })).toBeVisible();
+				expect(await sidebarNode?.evaluate((node) => node.isConnected)).toBe(true);
+			}
 			if (width === 390) {
 				await page.getByRole("button", { name: "打开导航" }).click();
 				await expect(nav.locator("[aria-current=page]")).toHaveText("仓库");

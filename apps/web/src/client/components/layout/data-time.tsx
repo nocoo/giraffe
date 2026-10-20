@@ -9,6 +9,7 @@ import { ChevronDown, Clock3 } from "lucide-react";
 import {
 	createContext,
 	type ReactNode,
+	useCallback,
 	useContext,
 	useEffect,
 	useId,
@@ -25,12 +26,24 @@ import { useSnapshotRead } from "./use-snapshot-read";
 type Registry = Map<string, DataTime[]>;
 const DataTimeContext = createContext<{
 	sources: Registry;
-	setSources: React.Dispatch<React.SetStateAction<Registry>>;
+	setSources: (update: (sources: Registry) => Registry) => void;
 } | null>(null);
 
-export function DataTimeProvider({ children }: { children: ReactNode }) {
-	const [sources, setSources] = useState<Registry>(new Map());
-	const value = useMemo(() => ({ sources, setSources }), [sources]);
+export function DataTimeProvider({ children, scope }: { children: ReactNode; scope: string }) {
+	const [registry, setRegistry] = useState({ scope, sources: new Map<string, DataTime[]>() });
+	if (registry.scope !== scope) setRegistry({ scope, sources: new Map() });
+	const setSources = useCallback(
+		(update: (sources: Registry) => Registry) => {
+			setRegistry((current) =>
+				current.scope === scope ? { scope, sources: update(current.sources) } : current,
+			);
+		},
+		[scope],
+	);
+	const value = useMemo(
+		() => ({ sources: registry.sources, setSources }),
+		[registry.sources, setSources],
+	);
 	return <DataTimeContext value={value}>{children}</DataTimeContext>;
 }
 

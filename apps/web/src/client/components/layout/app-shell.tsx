@@ -101,7 +101,7 @@ export function AppShell() {
 					</SheetContent>
 				</Sheet>
 			)}
-			<DataTimeProvider key={`${location.pathname}:${scope}`}>
+			<DataTimeProvider scope={`${location.pathname}:${scope}`}>
 				<AppMain tabIndex={-1}>
 					<AppHeader
 						className="[&_nav]:min-w-0 [&_nav]:truncate [&_nav]:whitespace-nowrap"
@@ -126,7 +126,9 @@ export function AppShell() {
 						actions={
 							<>
 								<EnvironmentSwitch />
-								{location.pathname !== "/settings" ? <DataTimeControl /> : null}
+								{location.pathname !== "/settings" ? (
+									<DataTimeControl key={`${location.pathname}:${scope}`} />
+								) : null}
 								{!isMobile && (
 									<HeaderTooltip label="GitHub repository">
 										<LinkButton
@@ -179,7 +181,7 @@ export function AppShell() {
 											}
 										/>
 									) : null}
-									<Outlet />
+									<Outlet key={location.pathname} />
 								</>
 							)}
 						</ContentIsland>

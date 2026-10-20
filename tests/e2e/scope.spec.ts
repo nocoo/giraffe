@@ -122,6 +122,8 @@ test("defaults to starred, updates totals and charts, retains session selection 
 	await page.goto("/issues?retained=yes");
 	await expect(scopeControl(page).getByRole("radio", { name: "星标", exact: true })).toBeChecked();
 	await expect(page.getByTestId("issue-summary")).toContainText("1个 open Issue");
+	const headerNode = await page.locator("[data-basalt-header]").elementHandle();
+	const mainNode = await page.getByRole("main").elementHandle();
 	await expect(
 		page.getByRole("link", { name: "为共享控件补充使用说明", exact: true }),
 	).toBeVisible();
@@ -130,6 +132,10 @@ test("defaults to starred, updates totals and charts, retains session selection 
 	).toHaveCount(0);
 	await scopeControl(page).getByRole("radio", { name: "全部", exact: true }).click();
 	await expect(page.getByTestId("issue-summary")).toContainText("3个 open Issue");
+	expect(
+		await headerNode?.evaluate((node) => node === document.querySelector("[data-basalt-header]")),
+	).toBe(true);
+	expect(await mainNode?.evaluate((node) => node === document.querySelector("main"))).toBe(true);
 	await expect(page).toHaveURL(/\/issues\?retained=yes$/);
 	await page.getByRole("button", { name: /^数据更新时间：/ }).click();
 	await expect(page.getByRole("dialog", { name: "数据更新时间" })).toContainText("1 项缺少数据");
