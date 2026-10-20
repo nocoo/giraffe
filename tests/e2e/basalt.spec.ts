@@ -95,7 +95,7 @@ test("Basalt card typography is consistent across factory, insights and reposito
 		await page.goto(path);
 		await expect(page.getByRole("heading", { name: heading, exact: true })).toHaveCSS(
 			"font-size",
-			"16px",
+			"18px",
 		);
 	}
 	await expect(page.getByText(`v${APP_VERSION}`, { exact: true })).toHaveCSS(
@@ -106,7 +106,7 @@ test("Basalt card typography is consistent across factory, insights and reposito
 	await page.getByRole("tab", { name: "流量", exact: true }).click();
 	await expect(page.getByRole("heading", { name: "浏览趋势", exact: true })).toHaveCSS(
 		"font-size",
-		"16px",
+		"18px",
 	);
 	await expect(page.getByText("最近 14 天的仓库页面访问", { exact: true })).not.toBeVisible();
 	await page.getByRole("button", { name: "浏览趋势说明", exact: true }).hover();
@@ -118,6 +118,19 @@ test("Basalt card typography is consistent across factory, insights and reposito
 			items.every((item) => Number.parseFloat(getComputedStyle(item).fontSize) >= 12),
 		),
 	).toBe(true);
+});
+
+test("data tables keep single row separators in both themes", async ({ page }) => {
+	for (const colorScheme of ["light", "dark"] as const) {
+		await page.emulateMedia({ colorScheme });
+		for (const path of ["/repos", "/issues", "/pulls"]) {
+			await page.goto(path);
+			const rows = page.locator(".giraffe-data-table tbody tr");
+			await expect(rows.nth(1)).toBeVisible();
+			await expect(rows.first().locator("td").first()).toHaveCSS("border-bottom-width", "1px");
+			await expect(rows.nth(1).locator("td").first()).toHaveCSS("border-top-width", "0px");
+		}
+	}
 });
 
 test("multicolor chart series stay distinct in both themes across factory, insights and repo detail", async ({

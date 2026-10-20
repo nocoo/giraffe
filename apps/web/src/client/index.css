@@ -3,7 +3,6 @@
 @import "@nocoo/basalt/styles/tailwind";
 @import "tailwindcss";
 
-/* App type scale: Basalt headings 16px, body 14px, supporting text 13px. */
 @theme {
 	--text-xs: 0.8125rem;
 	--text-xs--line-height: 1.25rem;
@@ -540,7 +539,6 @@ a.giraffe-health-tile:hover { background:color-mix(in srgb,var(--tile) 36%,trans
 .giraffe-data-table th { white-space:nowrap; }
 .giraffe-data-table td { vertical-align:middle;padding-block:10px; }
 .giraffe-data-table tbody tr:hover td { background:color-mix(in srgb,var(--color-basalt-foreground) 3%,transparent); }
-.giraffe-data-table tbody tr+tr td { border-top:1px solid color-mix(in srgb,var(--color-basalt-border) 60%,transparent); }
 .giraffe-project-row-line { display:flex;align-items:center;gap:8px 12px;min-width:0; }
 a.giraffe-icon-link { display:inline-flex;align-items:center;justify-content:center;width:1.5rem;height:1.5rem;border-radius:6px;color:var(--color-basalt-muted-foreground); }
 a.giraffe-icon-link:hover { color:var(--color-basalt-primary);background:color-mix(in srgb,var(--color-basalt-primary) 10%,transparent); }
