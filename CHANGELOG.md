@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.15.12 — 2026-10-20
+
+### Changed
+
+- Upgrade `@nocoo/basalt` from 3.1.0 to 3.2.0 across both workspaces and verify the updated page-heading typography in browser tests.
+- Upgrade `lucide-react` from 1.58.0 to 1.59.0, `react-router` from 8.4.0 to 8.5.0, and `oxc-parser` from 0.154.0 to 0.155.0 (#72, #79, #78).
+- Upgrade `wrangler` from 4.151.1 to 4.151.2 and `@cloudflare/workers-types` from 5.20261016.1 to 5.20261019.1, including the matching Wrangler runtime dependencies (#71, #80).
+
+### Fixed
+
+- Remove the redundant application-owned table row border so Basalt renders one separator between adjacent rows, with browser regression coverage.
+
 ## v0.15.11 — 2026-10-19
 
 ### Changed
