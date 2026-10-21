@@ -368,6 +368,11 @@ unknown, never proof of success. See the [exact CI contract](../../docs/api.md#s
 The `daily` histogram counts completed non-bot runs across all branches; it is not
 a workflow/repository health verdict.
 
+PR lifecycle `state` is `open|closed|merged|null` across all three surfaces.
+New collection preserves lowercase state; a saved merge timestamp means merged.
+Older rows missing lifecycle evidence return null until refreshed, not inferred
+open; GET never rewrites saved rows or immutable publication versions.
+
 PR items on account `/prs`, repository `/repos/:owner/:name/prs` and factory
 `/factory/repos/:owner/:name/prs` share `mergeable:boolean|null`,
 `mergeStateStatus:string|null`, and

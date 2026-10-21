@@ -10,6 +10,17 @@ function record(value: unknown): Record<string, unknown> {
 		: {};
 }
 
+export function prLifecycleState(value: unknown): "open" | "closed" | "merged" | null {
+	const row = record(value);
+	if (
+		(typeof row.mergedAt === "string" && row.mergedAt) ||
+		(typeof row.merged_at === "string" && row.merged_at)
+	)
+		return "merged";
+	const state = typeof row.state === "string" ? row.state.toLowerCase() : null;
+	return state === "open" || state === "closed" || state === "merged" ? state : null;
+}
+
 export function prState(value: unknown): PrState {
 	const row = record(value);
 	const commits = record(row.commits).nodes;
@@ -47,6 +58,7 @@ export function prSnapshot(data: Record<string, unknown>): Record<string, unknow
 				...data,
 				pull_requests: data.pull_requests.map((item: unknown) => ({
 					...record(item),
+					state: prLifecycleState(item),
 					...prState(item),
 				})),
 			}

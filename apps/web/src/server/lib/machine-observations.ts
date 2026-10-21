@@ -7,7 +7,7 @@ import type {
 	FactoryStreamName,
 } from "../../lib/factory-types";
 import { FACTORY_STREAMS } from "../../lib/factory-types";
-import { prSnapshot, prState } from "../../lib/pull-request";
+import { prLifecycleState, prSnapshot, prState } from "../../lib/pull-request";
 import { snapshotFreshness } from "../../lib/snapshot-freshness";
 import {
 	composeContent,
@@ -321,7 +321,13 @@ export function factoryResourceData(
 	return {
 		...data,
 		...(stream === "prs"
-			? { items: data.items.map((item) => ({ ...item, ...prState(item) })) }
+			? {
+					items: data.items.map((item) => ({
+						...item,
+						state: prLifecycleState(item),
+						...prState(item),
+					})),
+				}
 			: {}),
 		...(stream === "dependencies"
 			? dependencyEvidence(data.items, [...(repo.manifests ?? []), ...(data.manifests ?? [])])

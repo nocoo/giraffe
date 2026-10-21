@@ -401,7 +401,7 @@ Item fields (saved metadata can add fields; do not reject unknown observation da
   `author_login`, `labels: [{ name, color }]`, `comments_count`.
 - `PullRequest`: `name_with_owner`, `number`, `title`, `url`, `created_at`,
   `updated_at`, `author_login`, `is_draft`, `review_decision`, `additions`,
-  `deletions`, `base_ref`, `head_ref`, `mergeable`, `mergeStateStatus`, `checks`.
+  `deletions`, `base_ref`, `head_ref`, `state`, `mergeable`, `mergeStateStatus`, `checks`.
 - CI `totals`: explicit workflow and repository counts documented below;
   `daily` entries: `{ x, success, failure, other }`, with date string `x`.
   Full nested summaries: [`ci-health.ts`](../apps/web/src/lib/ci-health.ts).
@@ -409,6 +409,13 @@ Item fields (saved metadata can add fields; do not reject unknown observation da
   publication fields: [`factory-types.ts`](../apps/web/src/lib/factory-types.ts).
 
 #### PR merge and checks state
+
+PR lifecycle `state` is `open|closed|merged|null` on account, repository and
+factory PR reads. Newly collected GraphQL states are normalized to lowercase;
+REST closed PRs with a saved merge timestamp are `merged`, not `closed`.
+Legacy snapshots whose collector omitted lifecycle state return null until an
+ordinary refresh records it. Missing/invalid state is never inferred to be open.
+Read normalization does not rewrite rows or change saved immutable versions.
 
 Every PR on `/prs`, `/repos/:owner/:name/prs` and
 `/factory/repos/:owner/:name/prs` includes the same additive fields:

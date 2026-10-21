@@ -82,7 +82,7 @@ it("projects old saved PR fields as null without rewriting rows or desynchronizi
 	const saved = { pull_requests: [{ number: 1 }], fetched_at: NOW };
 	const before = structuredClone(saved);
 	const envelope = await observationEnvelope("a", "prs", saved);
-	expect(envelope.data.pull_requests).toEqual([{ number: 1, ...unknownState }]);
+	expect(envelope.data.pull_requests).toEqual([{ number: 1, state: null, ...unknownState }]);
 	expect(saved).toEqual(before);
 	expect(envelope.sourceVersion).toBe(await observationVersion(envelope.data));
 	expect(envelope.sourceVersion).toBe(await observationVersion(prSnapshot(saved)));
@@ -104,7 +104,9 @@ it("retains saved booleans and every GitHub status enum while rejecting malforme
 		{ commits: { nodes: [null] } },
 	])
 		expect(prState(value)).toEqual(unknownState);
-	expect(prSnapshot({ pull_requests: [null] })).toEqual({ pull_requests: [unknownState] });
+	expect(prSnapshot({ pull_requests: [null] })).toEqual({
+		pull_requests: [{ state: null, ...unknownState }],
+	});
 	for (const data of [null, [], "value"])
 		expect(await observationVersion(data)).toMatch(/^sha256:/);
 });

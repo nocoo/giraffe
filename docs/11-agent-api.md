@@ -97,6 +97,10 @@ Other read paths include:
 - `/factory/repos/:owner/:name/:stream` for immutable published factory streams.
 
 All three PR surfaces (account, repository snapshot and factory PR stream) expose
+`state:open|closed|merged|null`; missing legacy lifecycle evidence stays null
+until refreshed, never inferred open. GraphQL uppercase states normalize to
+lowercase and saved merge timestamps distinguish merged from closed PRs.
+They also expose
 `mergeable:boolean|null`, `mergeStateStatus:string|null`, and
 `checks:{state:SUCCESS|FAILURE|PENDING|ERROR|EXPECTED|null}`. Checks come from
 GitHub's latest-head `statusCheckRollup`; absent/legacy values remain null,

@@ -65,7 +65,9 @@ beforeAll(() => {
 	delete repo.observation;
 	const list = [
 		{ number: 1, name_with_owner: repo.name },
-		{ number: 2, name_with_owner: repo.name, ...known },
+		{ number: 2, name_with_owner: repo.name, state: "open", ...known },
+		{ number: 3, name_with_owner: repo.name, state: "closed" },
+		{ number: 4, name_with_owner: repo.name, state: "closed", merged_at: at },
 	];
 	const now = new Date().toISOString();
 	seeded = true;
@@ -116,8 +118,10 @@ it("returns consistent known and legacy PR state on all three read-only endpoint
 		const body = (await response.json()) as { data: Record<string, unknown>; fetchedAt: string };
 		expect(body.fetchedAt).toBe(at);
 		expect(body.data[path.startsWith("factory") ? "items" : "pull_requests"]).toMatchObject([
-			{ number: 1, ...unknown },
-			{ number: 2, ...known },
+			{ number: 1, state: null, ...unknown },
+			{ number: 2, state: "open", ...known },
+			{ number: 3, state: "closed", ...unknown },
+			{ number: 4, state: "merged", ...unknown },
 		]);
 	}
 	expect(await (await fetch("http://127.0.0.1:17046/_count")).text()).toBe(calls);
