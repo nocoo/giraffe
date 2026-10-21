@@ -3,6 +3,7 @@ import { factoryFixture } from "../../../../../tests/fixtures/factory-snapshot";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import { createDb } from "./db/d1";
 import { replaceSnapshotStmts } from "./db/snapshots";
+import { startRefresh } from "./factory-start";
 import { nextScheduleAt, readSchedules, saveSchedule, scheduleRefreshes } from "./refresh-schedule";
 
 const snap = factoryFixture();
@@ -365,6 +366,62 @@ it("never advances past missed slots if their durable audit transaction fails", 
 	await scheduleRefreshes(s.raw, now);
 	expect((await s.db.prepare("SELECT id FROM factory_runs").all()).results).toHaveLength(2);
 });
+
+it.each(["missed", "empty"] as const)(
+	"does not audit or acknowledge a %s slot accepted after its preliminary read",
+	async (scenario) => {
+		const s = await setup();
+		const kind = scenario === "missed" ? "catalog" : "daily";
+		const due = scenario === "missed" ? "2026-09-26T00:00:00.000Z" : now;
+		await saveSchedule(
+			s.db,
+			snap.account_id,
+			kind,
+			{ enabled: true, time: "08:00", weekday: 0, scope: kind === "catalog" ? "all" : "starred" },
+			scenario === "missed" ? "2026-09-25T00:01:00.000Z" : "2026-09-26T00:01:00.000Z",
+		);
+		const batch = s.raw.batch.bind(s.raw);
+		let acceptedId = "";
+		vi.spyOn(s.raw, "batch").mockImplementationOnce(async (writes) => {
+			const accepted = await startRefresh(
+				s.db,
+				{ id: snap.account_id, login: "nocoo" },
+				{
+					account_id: snap.account_id,
+					requestKey: `${kind}:${due}`,
+					mode: kind === "catalog" ? "catalog" : "refresh",
+					depth: "quick",
+					scope: "all",
+				},
+				now,
+				"daily",
+				{ kind, dueAt: due },
+			);
+			acceptedId = accepted.id;
+			return batch(writes);
+		});
+		await scheduleRefreshes(s.raw, now);
+		expect((await s.db.prepare("SELECT id FROM factory_runs").all()).results).toEqual([
+			{ id: acceptedId },
+		]);
+		expect(
+			(await readSchedules(s.db, snap.account_id)).find((row) => row.kind === kind),
+		).toMatchObject({
+			nextAt: due,
+			lastRunId: null,
+			lastError: null,
+		});
+		await scheduleRefreshes(s.raw, now);
+		expect((await s.db.prepare("SELECT id FROM factory_runs").all()).results).toEqual([
+			{ id: acceptedId },
+		]);
+		expect(
+			(await readSchedules(s.db, snap.account_id)).find((row) => row.kind === kind),
+		).toMatchObject({
+			lastRunId: acceptedId,
+		});
+	},
+);
 
 it("records weekly missed intervals and never mutates a prior interval on a later tick", async () => {
 	const s = await setup();

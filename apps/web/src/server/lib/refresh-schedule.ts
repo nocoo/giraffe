@@ -66,7 +66,7 @@ function skippedRun(row: DueSchedule, owner: string, now: string, error: string)
 function skippedRunInsert(db: Db, row: DueSchedule, run: FactoryRun): D1PreparedStatement {
 	return db
 		.prepare(
-			`INSERT OR IGNORE INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) SELECT ?,?,?,'failed',?,?,?,? WHERE EXISTS(SELECT 1 FROM ${scheduleTable(row.kind)} WHERE account_id=? AND kind=? AND enabled=1 AND next_at=?)`,
+			`INSERT OR IGNORE INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) SELECT ?,?,?,'failed',?,?,?,? WHERE EXISTS(SELECT 1 FROM ${scheduleTable(row.kind)} WHERE account_id=? AND kind=? AND enabled=1 AND next_at=?) AND NOT EXISTS(SELECT 1 FROM factory_runs WHERE account_id=? AND request_key=?)`,
 		)
 		.bind(
 			run.id,
@@ -79,6 +79,8 @@ function skippedRunInsert(db: Db, row: DueSchedule, run: FactoryRun): D1Prepared
 			row.account_id,
 			row.kind,
 			row.next_at,
+			row.account_id,
+			`${row.kind}:${row.next_at}`,
 		);
 }
 
@@ -117,16 +119,16 @@ async function coalesceMissedSlots(
 		skippedRunInsert(db, row, run),
 		db
 			.prepare(
-				`UPDATE ${scheduleTable(row.kind)} SET next_at=?,last_error='scheduled_slots_missed' WHERE account_id=? AND kind=? AND enabled=1 AND next_at=? AND EXISTS(SELECT 1 FROM factory_runs WHERE account_id=? AND request_key=? AND json_extract(payload,'$.missedSlots.lastDueAt')=?)`,
+				`UPDATE ${scheduleTable(row.kind)} SET next_at=?,last_error='scheduled_slots_missed' WHERE account_id=? AND kind=? AND enabled=1 AND next_at=? AND EXISTS(SELECT 1 FROM factory_runs WHERE id=?) AND NOT EXISTS(SELECT 1 FROM factory_runs WHERE account_id=? AND request_key=?)`,
 			)
 			.bind(
 				latest,
 				row.account_id,
 				row.kind,
 				row.next_at,
+				run.id,
 				row.account_id,
-				run.requestKey,
-				run.missedSlots.lastDueAt,
+				`${row.kind}:${row.next_at}`,
 			),
 	]);
 	if (!results[1]?.meta.changes) return false;
@@ -290,7 +292,7 @@ export async function scheduleRefreshes(raw: D1Database, now: string): Promise<v
 		}
 		const update = db
 			.prepare(
-				`UPDATE ${scheduleTable(row.kind)} SET next_at=?,last_run_id=COALESCE(?,last_run_id),last_error=CASE WHEN last_error IN ('run_timed_out','scheduled_slots_missed') THEN last_error ELSE ? END WHERE account_id=? AND kind=? AND enabled=1 AND next_at=?`,
+				`UPDATE ${scheduleTable(row.kind)} SET next_at=?,last_run_id=COALESCE(?,last_run_id),last_error=CASE WHEN last_error IN ('run_timed_out','scheduled_slots_missed') THEN last_error ELSE ? END WHERE account_id=? AND kind=? AND enabled=1 AND next_at=? AND (? IS NULL OR EXISTS(SELECT 1 FROM factory_runs WHERE id=?))`,
 			)
 			.bind(
 				advance ? nextScheduleAt(row.kind, row.time, row.weekday, now) : row.next_at,
@@ -299,6 +301,8 @@ export async function scheduleRefreshes(raw: D1Database, now: string): Promise<v
 				row.account_id,
 				row.kind,
 				row.next_at,
+				skipped?.id ?? null,
+				skipped?.id ?? null,
 			);
 		await db.batch([...(skipped ? [skippedRunInsert(db, row, skipped)] : []), update]);
 	}

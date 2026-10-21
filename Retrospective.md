@@ -671,3 +671,10 @@ checking only `reason_code`; distinguish matcher defects from behavioral failure
 The new browser assertion also matched a nested diagnostic `summary` instead of
 only the repository disclosure. Scope the click to the row's direct child summary
 and the subsequent explanation to that same repository row.
+
+Independent review found that checking an accepted scheduled occurrence before
+the audit transaction leaves a race: another cron can accept that slot before
+the missed ledger is inserted. Recheck acceptance inside the ledger transaction
+and advance the cursor only for its own inserted audit row. Apply the same rule
+to empty selections so settings never reference a nonexistent audit row. A
+deterministic interleaving test catches this; simultaneous cron calls alone did not.
