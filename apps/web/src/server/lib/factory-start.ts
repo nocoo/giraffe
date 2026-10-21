@@ -2,7 +2,7 @@ import { z } from "zod";
 import { type FactoryRun, makeRun, selectRunRepos } from "../../lib/factory-run";
 import type { AccountRow } from "./db/accounts";
 import type { Db } from "./db/d1";
-import { catalogFactory, getRun, repoStates, startRun } from "./db/factory-runs";
+import { catalogFactory, expireRuns, getRun, repoStates, startRun } from "./db/factory-runs";
 import { ApiError } from "./errors";
 import { boundedJson } from "./factory-publish";
 import { siteCatalog } from "./factory-site";
@@ -30,6 +30,7 @@ export async function startRefresh(
 	trigger: NonNullable<FactoryRun["trigger"]> = "manual",
 	schedule?: FactoryRun["schedule"],
 ): Promise<FactoryRun> {
+	await expireRuns(db, now, row.id);
 	const prior = await db
 		.prepare("SELECT id,status FROM factory_runs WHERE account_id=? AND request_key=?")
 		.bind(row.id, data.requestKey)

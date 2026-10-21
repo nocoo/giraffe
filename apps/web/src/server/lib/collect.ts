@@ -15,6 +15,7 @@ import {
 	mapRepos,
 	mapTraffic,
 } from "./github-map";
+import { githubUnavailability, unavailableReason } from "./github-unavailable";
 
 export type Collected = { truncated: boolean } & Record<string, unknown>;
 
@@ -107,20 +108,32 @@ export function nextPath(res: Response): string | null {
 	if (!link) {
 		return null;
 	}
-	const match = /<([^>]+)>\s*;\s*rel="next"/i.exec(link);
+	const match = /<([^>]+)>\s*;\s*rel\s*=\s*(?:"next"|next\b)/i.exec(link);
 	if (!match?.[1]) {
+		if (/\brel\s*=\s*(?:"[^"]*\bnext\b[^"]*"|next\b)/i.test(link)) throw new TruncatedError();
 		return null;
 	}
 	try {
 		const url = new URL(match[1]);
+		if (!["http:", "https:"].includes(url.protocol)) throw new TruncatedError();
 		return `${url.pathname}${url.search}`;
 	} catch {
-		return null;
+		throw new TruncatedError();
 	}
 }
 
 function skipSoft(err: unknown): boolean {
 	return err instanceof ApiError && (err.code === "github_forbidden" || err.code === "not_found");
+}
+
+function isRecordList(
+	value: unknown,
+	nullable = false,
+): value is (Record<string, unknown> | null)[] {
+	return (
+		Array.isArray(value) &&
+		value.every((row) => (row === null ? nullable : typeof row === "object" && !Array.isArray(row)))
+	);
 }
 
 function exceedsBudget(payload: Collected, budget: number): boolean {
@@ -132,7 +145,6 @@ async function searchList(
 	token: string,
 	repos: string[],
 	isPr: boolean,
-	strict = false,
 	budget = MAX_STAGED_BYTES,
 ): Promise<Collected> {
 	const names = [...repos].sort();
@@ -158,18 +170,28 @@ async function searchList(
 							nodes?: unknown[];
 					  }
 					| undefined;
-				if (!Array.isArray(search?.nodes)) {
-					if (strict) {
-						if (gh.graphqlErrors.some((err) => err.type === "NOT_FOUND")) {
-							throw new ApiError(404, "not_found", "github not found");
-						}
-						throw new ApiError(403, "github_forbidden", "github forbidden");
-					}
+				if (
+					i === 0 &&
+					after === null &&
+					!Array.isArray(search?.nodes) &&
+					gh.graphqlErrors.length > 0 &&
+					gh.graphqlErrors.every(
+						(error) => error.type === "FORBIDDEN" || error.type === "NOT_FOUND",
+					)
+				) {
+					if (gh.graphqlErrors.some((err) => err.type === "NOT_FOUND"))
+						throw new ApiError(404, "not_found", "github not found");
+					throw new ApiError(403, "github_forbidden", "github forbidden");
+				}
+				if (
+					!isRecordList(search?.nodes, true) ||
+					typeof search.pageInfo?.hasNextPage !== "boolean"
+				) {
 					truncated = true;
 					stop = true;
 					break;
 				}
-				const nodes = search.nodes;
+				const nodes = search.nodes.filter((node) => node !== null);
 				items.push(...nodes);
 				groupCount += nodes.length;
 				const staged = isPr
@@ -185,13 +207,9 @@ async function searchList(
 					truncated = true;
 				}
 				if (gh.graphqlErrors.length > 0) {
-					if (strict) {
-						if (gh.graphqlErrors.some((err) => err.type === "NOT_FOUND")) {
-							throw new ApiError(404, "not_found", "github not found");
-						}
-						throw new ApiError(403, "github_forbidden", "github forbidden");
-					}
 					truncated = true;
+					stop = true;
+					break;
 				}
 				if (
 					nodes.some((node) => {
@@ -205,7 +223,11 @@ async function searchList(
 					truncated = true;
 				}
 				if (search.pageInfo?.hasNextPage) {
-					if (!search.pageInfo.endCursor || search.pageInfo.endCursor === after) {
+					if (
+						typeof search.pageInfo.endCursor !== "string" ||
+						!search.pageInfo.endCursor ||
+						search.pageInfo.endCursor === after
+					) {
 						truncated = true;
 						break;
 					}
@@ -217,7 +239,7 @@ async function searchList(
 				}
 				break;
 			} catch (err) {
-				if (err instanceof TruncatedError) {
+				if (err instanceof TruncatedError || (skipSoft(err) && (after !== null || i > 0))) {
 					truncated = true;
 					stop = true;
 					break;
@@ -256,14 +278,11 @@ export async function collectRepos(
 				  }
 				| undefined;
 			const conn = viewer?.repositories;
-			if (!Array.isArray(conn?.nodes)) {
+			if (!isRecordList(conn?.nodes, true) || typeof conn.pageInfo?.hasNextPage !== "boolean") {
 				truncated = true;
 				break;
 			}
-			const page = conn.nodes.filter((node): node is Record<string, unknown> =>
-				Boolean(node && typeof node === "object"),
-			);
-			nodes.push(...page);
+			nodes.push(...conn.nodes.filter((node) => node !== null));
 			if (gh.graphqlErrors.length > 0) {
 				truncated = true;
 			}
@@ -271,13 +290,18 @@ export async function collectRepos(
 				truncated = true;
 				break;
 			}
-			if (conn?.pageInfo?.hasNextPage && conn.pageInfo.endCursor) {
-				after = conn.pageInfo.endCursor;
+			if (conn.pageInfo?.hasNextPage) {
+				const next = conn.pageInfo.endCursor;
+				if (typeof next !== "string" || !next || next === after) {
+					truncated = true;
+					break;
+				}
+				after = next;
 				continue;
 			}
 			break;
 		} catch (err) {
-			if (err instanceof TruncatedError) {
+			if (err instanceof TruncatedError || (after !== null && skipSoft(err))) {
 				truncated = true;
 				break;
 			}
@@ -295,10 +319,10 @@ export async function collectKind(
 	budget = MAX_STAGED_BYTES,
 ): Promise<Collected> {
 	if (kind === "issues") {
-		return searchList(gh, token, repoNames, false, false, budget);
+		return searchList(gh, token, repoNames, false, budget);
 	}
 	if (kind === "prs") {
-		return searchList(gh, token, repoNames, true, false, budget);
+		return searchList(gh, token, repoNames, true, budget);
 	}
 	if (kind === "alerts") {
 		return collectAlerts(gh, token, repoNames, budget);
@@ -325,6 +349,8 @@ async function collectAlerts(
 	let dependabot = 0;
 	let scanning = 0;
 	let stop = false;
+	let unavailable = false;
+	let reason: ReturnType<typeof unavailableReason> | null = null;
 	for (const full of names) {
 		if (stop) {
 			break;
@@ -341,16 +367,25 @@ async function collectAlerts(
 						nodes?: unknown[];
 					};
 				} | null;
-				if (!Array.isArray(repo?.vulnerabilityAlerts?.nodes)) {
-					truncated = true;
+				if (gh.graphqlErrors.length > 0) {
+					unavailable = true;
+					const error = gh.graphqlErrors[0];
+					reason ??= unavailableReason(
+						error?.reasonCode ?? (error?.type === "NOT_FOUND" ? "not_found" : "unknown"),
+					);
+					if (after !== null || Array.isArray(repo?.vulnerabilityAlerts?.nodes)) truncated = true;
 					break;
 				}
-				if (gh.graphqlErrors.length > 0) {
+				if (
+					!isRecordList(repo?.vulnerabilityAlerts?.nodes, true) ||
+					typeof repo.vulnerabilityAlerts.pageInfo?.hasNextPage !== "boolean"
+				) {
 					truncated = true;
+					unavailable = true;
 					break;
 				}
 				got = true;
-				const nodes = repo.vulnerabilityAlerts?.nodes ?? [];
+				const nodes = repo.vulnerabilityAlerts.nodes.filter((node) => node !== null);
 				dependabot += nodes.length;
 				items.push(...mapDependabotAlerts(full, nodes));
 				if (
@@ -369,15 +404,24 @@ async function collectAlerts(
 					stop = true;
 					break;
 				}
-				if (
-					repo.vulnerabilityAlerts?.pageInfo?.hasNextPage &&
-					repo.vulnerabilityAlerts.pageInfo.endCursor
-				) {
-					after = repo.vulnerabilityAlerts.pageInfo.endCursor;
+				if (repo.vulnerabilityAlerts?.pageInfo?.hasNextPage) {
+					const next = repo.vulnerabilityAlerts.pageInfo.endCursor;
+					if (typeof next !== "string" || !next || next === after) {
+						truncated = true;
+						break;
+					}
+					after = next;
 					continue;
 				}
 				break;
 			} catch (err) {
+				const denied = githubUnavailability(err);
+				if (denied) {
+					unavailable = true;
+					reason ??= denied;
+					if (after) truncated = true;
+					break;
+				}
 				if (err instanceof TruncatedError) {
 					truncated = true;
 					stop = true;
@@ -416,7 +460,11 @@ async function collectAlerts(
 				`/repos/${owner}/${name}/code-scanning/alerts?state=open&per_page=100`,
 			);
 			const body = (await res.json()) as unknown;
-			const mapped = mapCodeScanningAlerts(full, Array.isArray(body) ? body : []);
+			if (!isRecordList(body)) {
+				truncated = true;
+				break;
+			}
+			const mapped = mapCodeScanningAlerts(full, body);
 			scanning += mapped.length;
 			items.push(...mapped);
 			ok += 1;
@@ -424,8 +472,10 @@ async function collectAlerts(
 				truncated = true;
 			}
 		} catch (err) {
-			if (skipSoft(err)) {
-				truncated = true;
+			const denied = githubUnavailability(err);
+			if (denied) {
+				unavailable = true;
+				reason ??= denied;
 				continue;
 			}
 			if (err instanceof TruncatedError) {
@@ -437,7 +487,8 @@ async function collectAlerts(
 	}
 	return {
 		truncated,
-		unavailable: ok === 0,
+		unavailable: unavailable || ok === 0,
+		...(reason ?? {}),
 		items,
 		dependabot_open: dependabot,
 		code_scanning_open: scanning,
@@ -449,28 +500,16 @@ async function collectNotifications(
 	token: string,
 	budget = MAX_STAGED_BYTES,
 ): Promise<Collected> {
-	const items: unknown[] = [];
-	let path: string | null = "/notifications?per_page=100";
-	let truncated = false;
-	while (path) {
-		try {
-			const res = await gh.githubApi(token, path);
-			const body = (await res.json()) as unknown;
-			items.push(...(Array.isArray(body) ? body : []));
-			path = nextPath(res);
-			if (exceedsBudget({ truncated: true, notifications: items }, budget)) {
-				truncated = true;
-				break;
-			}
-		} catch (err) {
-			if (err instanceof TruncatedError) {
-				truncated = true;
-				break;
-			}
-			throw err;
-		}
-	}
-	return { truncated, notifications: mapNotifications(items) };
+	return collectRestList(
+		gh,
+		token,
+		"/notifications?per_page=100",
+		(rows, truncated) => ({
+			truncated,
+			notifications: mapNotifications(rows),
+		}),
+		budget,
+	);
 }
 
 export function emptyCollected(kind: string, fetchedAt: string): Collected {
@@ -549,6 +588,7 @@ async function collectRepoKind(
 				runs: mapActionRuns({ workflow_runs: rows }),
 			}),
 			budget,
+			"workflow_runs",
 		);
 	}
 	if (suffix === "traffic") {
@@ -582,95 +622,14 @@ async function collectRepoKind(
 		}
 	}
 	if (suffix === "security") {
-		let after: string | null = null;
-		let count = 0;
-		let truncated = false;
-		let unavailable = false;
-		let scanning = 0;
-		try {
-			for (;;) {
-				const data = await gh.githubGraphql(token, ALERTS_QUERY, { o: owner, n: name, after });
-				const repo = data.repository as {
-					vulnerabilityAlerts?: {
-						pageInfo?: { hasNextPage?: boolean; endCursor?: string | null };
-						nodes?: unknown[];
-					};
-				} | null;
-				if (!Array.isArray(repo?.vulnerabilityAlerts?.nodes)) {
-					unavailable = true;
-					break;
-				}
-				if (gh.graphqlErrors.length > 0) {
-					truncated = true;
-					unavailable = true;
-				}
-				count += repo.vulnerabilityAlerts?.nodes?.length ?? 0;
-				if (
-					repo.vulnerabilityAlerts?.pageInfo?.hasNextPage &&
-					repo.vulnerabilityAlerts.pageInfo.endCursor
-				) {
-					after = repo.vulnerabilityAlerts.pageInfo.endCursor;
-					continue;
-				}
-				break;
-			}
-		} catch (err) {
-			if (err instanceof TruncatedError) {
-				truncated = true;
-			} else if (skipSoft(err)) {
-				truncated = true;
-				unavailable = true;
-			} else {
-				throw err;
-			}
-		}
-		if (
-			exceedsBudget(
-				{
-					truncated: true,
-					unavailable,
-					dependabot_open: count,
-					code_scanning_open: scanning,
-				},
-				budget,
-			)
-		) {
-			return {
-				truncated: true,
-				unavailable,
-				dependabot_open: count,
-				code_scanning_open: scanning,
-			};
-		}
-		try {
-			const res = await gh.githubApi(token, `${base}/code-scanning/alerts?state=open&per_page=100`);
-			const body = (await res.json()) as unknown;
-			scanning += Array.isArray(body) ? body.length : 0;
-			if (nextPath(res)) {
-				truncated = true;
-			}
-		} catch (err) {
-			if (skipSoft(err)) {
-				truncated = true;
-				unavailable = true;
-			} else if (err instanceof TruncatedError) {
-				truncated = true;
-			} else {
-				throw err;
-			}
-		}
-		return {
-			truncated,
-			unavailable,
-			dependabot_open: count,
-			code_scanning_open: scanning,
-		};
+		return collectAlerts(gh, token, [full], budget);
 	}
+
 	if (suffix === "issues") {
-		return searchList(gh, token, [full], false, true, budget);
+		return searchList(gh, token, [full], false, budget);
 	}
 	if (suffix === "prs") {
-		return searchList(gh, token, [full], true, true, budget);
+		return searchList(gh, token, [full], true, budget);
 	}
 	if (suffix === "releases") {
 		return collectRestList(
@@ -710,33 +669,35 @@ async function collectRestList(
 	start: string,
 	finish: (rows: unknown[], truncated: boolean) => Collected,
 	budget = MAX_STAGED_BYTES,
+	responseKey?: "workflow_runs",
 ): Promise<Collected> {
 	const rows: unknown[] = [];
 	let path: string | null = start;
 	let truncated = false;
+	let started = false;
 	while (path) {
 		try {
 			const res = await gh.githubApi(token, path);
 			const body = (await res.json()) as unknown;
-			if (
-				body &&
-				typeof body === "object" &&
-				Array.isArray((body as { workflow_runs?: unknown[] }).workflow_runs)
-			) {
-				rows.push(...(body as { workflow_runs: unknown[] }).workflow_runs);
-			} else if (Array.isArray(body)) {
-				rows.push(...body);
-			} else {
+			const items =
+				responseKey === undefined
+					? body
+					: body && typeof body === "object"
+						? (body as Record<string, unknown>)[responseKey]
+						: null;
+			if (!isRecordList(items)) {
 				truncated = true;
 				break;
 			}
+			rows.push(...items);
+			started = true;
 			path = nextPath(res);
 			if (exceedsBudget(finish(rows, true), budget)) {
 				truncated = true;
 				break;
 			}
 		} catch (err) {
-			if (err instanceof TruncatedError) {
+			if (err instanceof TruncatedError || (started && skipSoft(err))) {
 				truncated = true;
 				break;
 			}

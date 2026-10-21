@@ -330,17 +330,14 @@ export function statisticsFactory(
 	policy: Policy,
 	statisticsFilter = true,
 ): FactorySnapshot {
-	const { contributionObservation, ...base } = snap;
-	void contributionObservation;
 	const repos = snap.repos.filter((r) =>
 		statisticsFilter ? policy.enabled(r.name) : policy.includes(r.name),
 	);
 	const excluded = snap.repos
 		.filter((r) => statisticsFilter && policy.includes(r.name) && !policy.enabled(r.name))
 		.map((r) => ({ name: r.name, reason: "statistics-disabled" }));
-	// GitHub's account calendar has no repository breakdown, so it cannot honor this scope.
-	return {
-		...base,
+	const projected = {
+		...snap,
 		repos,
 		inventory: {
 			...snap.inventory,
@@ -351,6 +348,12 @@ export function statisticsFactory(
 				...excluded,
 			],
 		},
+	};
+	if (policy.scope === "all") return projected;
+	const { contributionObservation, ...base } = projected;
+	void contributionObservation;
+	return {
+		...base,
 		contribution: null,
 		contributionExcluded: true,
 		contributionStatus: "unavailable",

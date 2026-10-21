@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { factoryFixture } from "../../../../../../tests/fixtures/factory-snapshot";
 import { sqliteFixture } from "../../../../../../tests/fixtures/sqlite";
 import { makeRun } from "../../../lib/factory-run";
@@ -9,6 +9,7 @@ import { claimRun, controlRun, getRun, saveRun, startRun } from "./factory-runs"
 
 const snap = factoryFixture();
 const now = snap.fetched_at;
+afterEach(() => vi.useRealTimers());
 async function setup() {
 	const raw = sqliteFixture();
 	const db = createDb(raw);
@@ -220,4 +221,73 @@ it("uses the latest prepared fence timestamp even if the caller clock moves back
 	);
 	expect(await saveRun(db, lease, [late, earlier], now)).toBe(false);
 	expect((await db.prepare("SELECT * FROM factory_resources").all()).results).toEqual([]);
+});
+
+it.each([
+	["catalog", "quick", 30 * 60_000, "running"],
+	["refresh", "quick", 6 * 3600_000, "running"],
+	["refresh", "deep", 12 * 3600_000, "paused"],
+] as const)(
+	"recovers expired %s/%s %s locks before a new start",
+	async (mode, depth, bound, status) => {
+		vi.useFakeTimers();
+		vi.setSystemTime(now);
+		const { db, raw, run } = await setup();
+		Object.assign(run, { mode, depth });
+		await startRun(db, run);
+		const oldLease = await claimRun(db, run.id, now);
+		if (status === "paused") await controlRun(db, run.account_id, run.id, "pause", now);
+		vi.advanceTimersByTime(bound);
+		const later = new Date().toISOString();
+		const next = makeRun(
+			"replacement",
+			run.account_id,
+			"nocoo",
+			"replacement",
+			"catalog",
+			[],
+			later,
+		);
+		await Promise.allSettled([
+			startRun(createDb(raw), next),
+			startRun(createDb(raw), { ...next, id: "duplicate", requestKey: "duplicate" }),
+		]);
+		const expired = await getRun(createDb(raw), run.account_id, run.id);
+		expect(expired).toMatchObject({
+			run: { status: "failed", error: "run_timed_out", finishedAt: later },
+			leaseUntil: null,
+		});
+		expect(
+			(
+				await createDb(raw)
+					.prepare("SELECT id FROM factory_runs WHERE status IN ('running','paused')")
+					.all()
+			).results,
+		).toHaveLength(1);
+		if (!oldLease) throw new Error("fixture");
+		expect(await saveRun(createDb(raw), oldLease, [], later)).toBe(false);
+	},
+);
+
+it("caps the final lease at the hard deadline and rolls back all writes at the boundary", async () => {
+	const { db, run } = await setup();
+	run.mode = "catalog";
+	await startRun(db, run);
+	const before = new Date(Date.parse(now) + 30 * 60_000 - 1000).toISOString();
+	const deadline = new Date(Date.parse(now) + 30 * 60_000).toISOString();
+	const lease = await claimRun(db, run.id, before);
+	if (!lease) throw new Error("fixture");
+	expect(lease.leaseUntil).toBe(deadline);
+	const { fenced } = await import("./factory-runs");
+	const stage = fenced(
+		db,
+		lease,
+		before,
+		"INSERT INTO factory_resources SELECT 'r1','nocoo/app','commits','{}' WHERE $guard",
+	);
+	expect(await saveRun(db, lease, [stage], deadline)).toBe(false);
+	expect((await db.prepare("SELECT * FROM factory_resources").all()).results).toEqual([]);
+	expect((await getRun(db, run.account_id, run.id))?.run.error).toBe("run_timed_out");
+	expect(await claimRun(db, run.id, deadline)).toBeNull();
+	expect((await controlRun(db, run.account_id, run.id, "resume", deadline)).status).toBe("failed");
 });

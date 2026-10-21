@@ -40,6 +40,13 @@ token activity.
 
 ## Saved observation contract
 
+Security snapshots persist expected feature/access absence as `unavailable:true`
+with safe `reason` and `reason_code`; factory alerts coverage uses the same codes:
+`alerts_disabled`, `permission_denied`, `not_found`, `unknown`. Disabled requires
+explicit upstream wording; a generic 404 is `not_found` because GitHub hides some
+inaccessible resources. Raw upstream messages are never persisted. Unavailability
+does not prove zero alerts; truncation and lost pagination remain real failures.
+
 All observation paths are GET-only and require `observations:read`. The account in
 the path must match the token's fixed account. Reads expose saved data; they are not
 a live GitHub proxy and never collect upstream or mutate snapshots.
@@ -80,7 +87,11 @@ uniform freshness. Source-index account entries use the same projection.
 Factory freshness likewise counts the selected catalog, using only immutable
 per-repository observation times and counting absent publications/observations as
 missing. Publication inventory counters remain historical collection metadata.
-The unprojectable account-wide contribution calendar is excluded explicitly.
+Default/`scope=all` preserves the exact saved 90-day account contribution calendar,
+status and provenance, independently of repository filtering. Only `scope=starred`
+excludes it (`contribution:null`, `contributionExcluded:true`,
+`contributionStatus:"unavailable"`, no `contributionObservation`), because the
+account-wide calendar cannot be projected to a repository subset. GET is read-only.
 CI freshness counts three saved dependencies per repository, not one timestamp.
 
 CI verdicts use the known default branch only; missing branch metadata, PR/feature
@@ -93,6 +104,15 @@ Other branch failures remain separate 30-day run counts. Workflow/repository tot
 use explicit `*Workflows`/`*Repos` names, with `nonDefaultBranchFailures` measured in
 runs; ambiguous legacy count names are removed. See the
 [CI rules and fields](api.md#saved-ci-verdicts-and-units) before consuming totals.
+
+Non-default branch streams require a run created within 30 days of the saved
+evaluation clock (inclusive cutoff). Older branch-only streams are omitted in both
+all and starred views, without deleting history; idle default-branch workflows and
+grouped bot streams remain visible. No `branches` parameter is supported.
+
+Workflow verdicts are `broken | flaky | healthy | idle`. Repository verdicts add
+`unknown` for no default-workflow evidence (`none` before 0.15.14; breaking rename).
+The independent release pipeline sentinel stays `none` for no release workflow.
 
 ## Generic records, reports and jobs
 
@@ -130,6 +150,26 @@ imply a live runner. Legacy Work records/jobs remain stored but are not read by 
 analysis page.
 
 ## Refresh management and storage boundary
+
+Refresh history includes `counts:{total,success,failed,unavailable,skipped}` even
+when old step arrays are omitted. Expected feature/access unavailability is a
+terminal `unavailable` step, separate from real failures. It does not make a run
+partial and never means observed zero. Factory publications from that same run
+use `complete` for `completed` and `partial` for `partial`; compare run IDs because
+failed newer attempts preserve older publications. Historical rows are unchanged.
+An explicit first-page denial is distinct from an incomplete paginated list.
+Missing search `nodes` without a permission error, or a 403/404 after an accepted
+page (including an empty one), fails the snapshot as `snapshot_incomplete` and
+retains prior evidence/time; it is never counted as benign unavailable work.
+
+Absolute run deadlines include paused/backoff time: catalog 30 minutes, quick
+refresh 6 hours, deep refresh or missing legacy depth 12 hours. `deadlineAt` is
+optional on old rows and derived from their start. Scheduler/mutating operations
+expire active runs as `failed` / `error:run_timed_out`, revoke leases, release locks
+and set schedule `lastError`; GET stays read-only. Earlier overdue schedule slots
+are coalesced into failed audit rows with `error:scheduled_slots_missed` and
+`missedSlots:{firstDueAt,lastDueAt,count}`; only the latest due slot is attempted.
+Timeout/missed-slot `lastError` warnings persist until an explicit schedule save.
 
 `app:read`/`app:write` can read settings and refresh runs, update stars/statistics/
 schedules, or explicitly start and control the existing durable GitHub refresh

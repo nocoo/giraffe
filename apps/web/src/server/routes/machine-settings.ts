@@ -106,10 +106,10 @@ export async function machineRuns(c: Ctx) {
 	if (c.req.method === "GET" && !id)
 		return c.json({
 			account_id: accountId,
-			items: (await listRuns(db, accountId)).map(({ run }) => {
+			items: (await listRuns(db, accountId)).map(({ run, counts }) => {
 				const { checkpoint, ...data } = run;
 				void checkpoint;
-				return data;
+				return { ...data, counts };
 			}),
 		});
 	if (c.req.method !== "POST") throw new ApiError(405, "method_not_allowed", "method not allowed");

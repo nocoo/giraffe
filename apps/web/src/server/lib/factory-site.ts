@@ -6,6 +6,7 @@ import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
 import { ApiError } from "./errors";
 import { boundedJson } from "./factory-publish";
 import type { GithubClient } from "./github-client";
+import { githubUnavailability } from "./github-unavailable";
 import { buildInsights, type InsightAlert } from "./insights";
 import { assertKind, prepareRefresh } from "./refresh";
 import { repoPolicy } from "./repo-statistics";
@@ -29,10 +30,23 @@ function catalogNames(snapshot: Record<string, unknown> | null): string[] | null
 }
 
 function assertComplete(payload: Collected | null | undefined): asserts payload is Collected {
-	if (payload?.forbidden || payload?.unavailable)
-		throw new ApiError(403, "snapshot_unavailable", "page source unavailable");
 	if (!payload || payload.truncated)
 		throw new ApiError(422, "snapshot_incomplete", "page source incomplete");
+	if (payload.forbidden || payload.unavailable)
+		throw new ApiError(403, "snapshot_unavailable", "page source unavailable");
+}
+
+function assertSources(steps: FactoryRunStep[], resources: string[]): void {
+	const missing = resources
+		.map((resource) => steps.find((step) => step.resource === resource))
+		.filter((step) => step?.status !== "success");
+	if (!missing.length) return;
+	const unavailable = missing.every((step) => step?.status === "unavailable");
+	throw new ApiError(
+		unavailable ? 403 : 409,
+		unavailable ? "snapshot_unavailable" : "snapshot_sources_incomplete",
+		"Insights sources were not updated",
+	);
 }
 
 /** One bounded page of site work. All writes commit with the run's lease and cursor. */
@@ -50,15 +64,10 @@ export async function collectSitePage(
 	const scoped = run.selection?.scope !== "all";
 	if (resource === "insights" && scoped) {
 		const names = run.siteRepos ?? run.repos;
-		if (
-			names.some((repo) =>
-				["details", "issues"].some(
-					(tab) =>
-						!run.steps.some((s) => s.resource === `repo:${repo}:${tab}` && s.status === "success"),
-				),
-			)
-		)
-			throw new ApiError(409, "snapshot_sources_incomplete", "Insights sources were not updated");
+		assertSources(
+			run.steps,
+			names.flatMap((repo) => ["details", "issues"].map((tab) => `repo:${repo}:${tab}`)),
+		);
 		const policy = await repoPolicy(db, run.account_id);
 		const catalog = await siteCatalog(db, run.account_id);
 		if (!catalog || names.some((name) => !catalog.includes(name)))
@@ -113,13 +122,7 @@ export async function collectSitePage(
 			done: true,
 		};
 	}
-	if (
-		resource === "insights" &&
-		["repos", "issues"].some(
-			(source) => !run.steps.some((s) => s.resource === source && s.status === "success"),
-		)
-	)
-		throw new ApiError(409, "snapshot_sources_incomplete", "Insights sources were not updated");
+	if (resource === "insights") assertSources(run.steps, ["repos", "issues"]);
 	const written: Record<string, Collected> = {};
 	const writes: D1PreparedStatement[] = [];
 	if (["issues", "prs", "alerts"].includes(resource)) {
@@ -132,7 +135,13 @@ export async function collectSitePage(
 			.first<{ payload: string }>();
 		const previous: Collected = old ? JSON.parse(old.payload) : { truncated: false };
 		const page = names.length
-			? await collectKind(gh, token, resource, names.slice(cursor, cursor + 10), 1_500_000)
+			? await collectKind(gh, token, resource, names.slice(cursor, cursor + 10), 1_500_000).catch(
+					(error: unknown) => {
+						if (cursor > 0 && githubUnavailability(error))
+							throw new ApiError(422, "snapshot_incomplete", "page collection interrupted");
+						throw error;
+					},
+				)
 			: {
 					truncated: false,
 					unavailable: false,
@@ -142,6 +151,13 @@ export async function collectSitePage(
 					dependabot_open: 0,
 					code_scanning_open: 0,
 				};
+		if (resource === "alerts" && page.unavailable && !page.truncated)
+			return {
+				writes: [],
+				done: true,
+				unavailable: true,
+				reasonCode: String(page.reason_code ?? "unknown"),
+			};
 		assertComplete(page);
 		const key = resource === "issues" ? "issues" : resource === "prs" ? "pull_requests" : "items";
 		const payload: Collected = {
@@ -213,7 +229,31 @@ export async function collectSitePage(
 		step.strategy = "reused";
 	}
 	if (suffix === "security" && !written[resource])
-		written[resource] = await collectKind(gh, token, "alerts", [String(step.repo)], 1_500_000);
+		written[resource] = await collectKind(gh, token, resource, [], 1_500_000);
+	const security = suffix === "security" ? written[resource] : null;
+	if (security?.unavailable && !security.truncated) {
+		const previous = await readSnapshot(db, run.account_id, resource);
+		const retained = previous && !previous.truncated ? previous : null;
+		const fetchedAt = retained ? String(retained.fetched_at) : now;
+		return {
+			writes: replaceSnapshotStmts(
+				db,
+				run.account_id,
+				resource,
+				{
+					...security,
+					...retained,
+					unavailable: true,
+					reason: security.reason,
+					reason_code: security.reason_code,
+				},
+				fetchedAt,
+			),
+			done: true,
+			unavailable: true,
+			reasonCode: String(security.reason_code ?? "unknown"),
+		};
+	}
 	const metadata = run.steps.find(
 		(s) => s.kind === "metadata" && s.repo === step.repo && s.status === "success",
 	);

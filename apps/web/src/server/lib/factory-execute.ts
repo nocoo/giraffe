@@ -1,4 +1,9 @@
-import { type FactoryRunStep, RUN_MAX_RETRIES, retryDelay } from "../../lib/factory-run";
+import {
+	completedRunStatus,
+	type FactoryRunStep,
+	RUN_MAX_RETRIES,
+	retryDelay,
+} from "../../lib/factory-run";
 import {
 	FACTORY_STREAMS,
 	type FactoryStreamData,
@@ -58,7 +63,7 @@ export async function executeRunPage(
 		run.cursor++;
 	const step = run.steps[run.cursor];
 	if (!step) {
-		run.status = run.steps.some(incomplete) ? "partial" : "completed";
+		run.status = completedRunStatus(run);
 		run.finishedAt = clock();
 		await saveRun(db, lease, [], clock());
 		return null;
@@ -110,13 +115,21 @@ export async function executeRunPage(
 		if (step.kind === "snapshot") {
 			const result = await collectSitePage(db, lease, step, gh, token, clock());
 			writes = result.writes;
-			if (result.done) finish(step, "success", clock());
+			if (result.done) {
+				finish(step, result.unavailable ? "unavailable" : "success", clock());
+				if (result.unavailable)
+					step.error =
+						result.reasonCode && result.reasonCode !== "unknown"
+							? result.reasonCode
+							: "snapshot_unavailable";
+			}
 		} else if (step.kind === "metadata") {
 			const [owner, name] = String(step.repo).split("/");
 			const data = await gh.githubGraphql(token, FACTORY_REPO_QUERY, { owner, name });
 			const repo = object(data.repository);
+			if (gh.graphqlErrors.length)
+				throw new ApiError(403, "github_forbidden", "repository access unavailable");
 			if (
-				gh.graphqlErrors.length ||
 				exclusion(repo, run.owner, true) ||
 				!(await repoPolicy(db, run.account_id)).enabled(String(step.repo)) ||
 				repo.id !== run.repoIds[String(step.repo)]
@@ -164,7 +177,7 @@ export async function executeRunPage(
 		} else if (step.kind === "publish") {
 			writes = await publicationWrites(db, lease, clock());
 			finish(step, "success", clock());
-			run.status = run.steps.some(incomplete) ? "partial" : "completed";
+			run.status = completedRunStatus(run);
 			run.finishedAt = clock();
 		} else {
 			run.checkpoint ??= newFactory(run.account_id, run.owner, run.startedAt);
@@ -227,14 +240,36 @@ export async function executeRunPage(
 				if (checkpoint.repos.length > 500)
 					throw new ApiError(422, "factory_capacity", "catalog exceeds 500 repositories");
 				if (checkpoint.inventory.complete) finish(step, "success", clock());
-			} else if (step.kind === "contributions")
-				finish(step, checkpoint.contributionStatus === "complete" ? "success" : "failed", clock());
-			else if (stream) {
+			} else if (step.kind === "contributions") {
+				finish(
+					step,
+					checkpoint.contributionStatus === "complete"
+						? "success"
+						: gh.graphqlErrors.length
+							? "unavailable"
+							: "failed",
+					clock(),
+				);
+				if (checkpoint.contributionStatus !== "complete")
+					step.error = gh.graphqlErrors.length ? "coverage_unavailable" : "snapshot_incomplete";
+			} else if (stream) {
 				const coverage = checkpoint.repos[0]?.coverage[stream];
 				if (coverage && coverage.status !== "partial") {
 					if (coverage.strategy) step.strategy = coverage.strategy;
-					finish(step, coverage.status === "complete" ? "success" : "failed", clock());
-					if (coverage.status !== "complete") step.error = `coverage_${coverage.status}`;
+					finish(
+						step,
+						coverage.status === "complete"
+							? "success"
+							: coverage.status === "unavailable"
+								? "unavailable"
+								: "failed",
+						clock(),
+					);
+					if (coverage.status !== "complete")
+						step.error =
+							coverage.reason_code && coverage.reason_code !== "unknown"
+								? coverage.reason_code
+								: `coverage_${coverage.status}`;
 				}
 			}
 		}
@@ -308,7 +343,13 @@ export async function executeRunPage(
 				Date.parse(clock()) + retryDelay(step.retryFailures ?? 1) * 1000,
 			).toISOString();
 		} else {
-			finish(step, "failed", clock());
+			const unavailable = [
+				"capability_missing",
+				"snapshot_unavailable",
+				"github_forbidden",
+				"not_found",
+			].includes(code);
+			finish(step, unavailable ? "unavailable" : "failed", clock());
 			if (step.kind === "snapshot") {
 				run.nextAttemptAt = clock();
 			} else if (step.repo) {
@@ -316,6 +357,10 @@ export async function executeRunPage(
 					if (later.repo === step.repo && later.kind !== "snapshot" && later.status === "pending") {
 						finish(later, "skipped", clock());
 						later.error = "repository_failed";
+						if (unavailable) {
+							later.status = "unavailable";
+							later.error = code;
+						}
 					}
 				writes = await repositoryWrites(db, lease, clock(), null, step.repo, code);
 			} else if (step.kind !== "contributions") {
@@ -339,12 +384,11 @@ export async function executeRunPage(
 	const saved = await saveRun(db, lease, writes, clock());
 	return saved && run.status === "running" ? run.nextAttemptAt : null;
 }
-function incomplete(step: FactoryRunStep) {
-	return (
-		step.status === "failed" || (step.status === "skipped" && step.error !== "cloud_ai_retired")
-	);
-}
-function finish(step: FactoryRunStep, status: "success" | "failed" | "skipped", now: string) {
+function finish(
+	step: FactoryRunStep,
+	status: "success" | "failed" | "skipped" | "unavailable",
+	now: string,
+) {
 	step.status = status;
 	step.finishedAt = now;
 }

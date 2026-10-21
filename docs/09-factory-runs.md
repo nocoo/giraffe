@@ -111,8 +111,10 @@ leased runs through the same planner as manual refresh. Occurrence request keys
 make restart/duplicate dispatch idempotent. The insert also verifies that the
 schedule is still enabled at its original due time. Active runs, cooldowns and
 missing catalogues defer the occurrence; safe status codes appear in settings.
-A missed occurrence runs once when service recovers, then advances to the next
-future wall-clock time. Empty starred sets record a skip and advance. Weekly deep
+Only the latest overdue occurrence is attempted when service recovers. Earlier
+slots are coalesced into an immutable failed audit run with
+`error:scheduled_slots_missed` and `missedSlots:{firstDueAt,lastDueAt,count}`.
+Empty starred sets record a skip and advance. Weekly deep
 wins equal-time ties; daily waits for it to finish. Queue outage recovery uses the
 existing durable outbox. Disabling a schedule stops future occurrences, not an
 already accepted run; pause/cancel controls remain available for that run.
@@ -120,6 +122,26 @@ already accepted run; pause/cancel controls remain available for that run.
 Migration `0007_refresh_schedules.sql` adds account-cascaded stars and schedules.
 Apply it before the new Worker. Rollback the Worker without dropping these tables;
 previous snapshots, immutable evidence and run rows are retained.
+
+Every run has an absolute wall deadline: catalog 30 minutes, quick refresh 6 hours,
+deep refresh (including missing legacy depth) 12 hours. Pauses and retries do not
+extend it. Old payloads derive the deadline from `startedAt`; new runs store
+`deadlineAt`. Expiration changes active runs to failed with `error:run_timed_out`,
+revokes their lease, increments their fence version and releases the account lock.
+The owning schedule records `lastError`; scheduler and mutating operations perform
+recovery, never GET. All fenced writes also enforce the hard deadline, independently
+of the renewable 90-second page lease. No schema migration or old-row rewrite is
+needed for these JSON payload fields.
+Timeout/missed-slot schedule warnings are sticky until an explicit schedule save,
+so successful recovery in the same tick cannot erase the incident.
+
+Expected feature/access absence finishes a step as `unavailable`, counted separately
+from `failed` and visible in the console. Truncation, malformed inputs and exhausted
+upstream failures still make a run partial. For a matching run ID, a publication's
+`status` is complete exactly when its run is completed, otherwise partial. New failed
+attempts retain the old publication under its old run ID. Coverage remains a separate
+data-quality signal: a completed run can contain unavailable sources and retained
+older evidence. Historical outcomes and publications remain immutable.
 
 ## Page scope and daily collection
 

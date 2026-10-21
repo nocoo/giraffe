@@ -44,6 +44,7 @@ const STATUS_ICON = {
 	running: LoaderCircle,
 	success: Check,
 	failed: AlertCircle,
+	unavailable: Info,
 	skipped: Minus,
 };
 
@@ -66,7 +67,7 @@ export function FactoryProgressBar({ run, label }: { run: FactoryRunView; label:
 				aria-label={label}
 			/>
 			<div className="factory-progress-segments" aria-hidden="true">
-				{(["success", "failed", "skipped"] as const).map((status) => (
+				{(["success", "failed", "unavailable", "skipped"] as const).map((status) => (
 					<span
 						key={status}
 						data-status={status}
@@ -194,6 +195,10 @@ export function FactoryRunDetails({
 						<Minus aria-hidden="true" />
 						已跳过 {run.progress.skipped}
 					</span>
+					<span data-status="unavailable">
+						<Info aria-hidden="true" />
+						数据不可用 {run.progress.unavailable}
+					</span>
 					{active ? (
 						<span className="ml-auto">
 							<Clock3 aria-hidden="true" />
@@ -242,6 +247,7 @@ export function FactoryRunDetails({
 								<small>
 									{stage.completed} / {stage.total} 步
 									{stage.failed ? ` · ${stage.failed} 步未完成` : ""}
+									{stage.unavailable ? ` · ${stage.unavailable} 步不可用` : ""}
 									{stage.skipped ? ` · ${stage.skipped} 步跳过` : ""}
 								</small>
 							</div>
@@ -277,6 +283,13 @@ export function FactoryRunDetails({
 					</dl>
 				</LayerCard.Body>
 			</LayerCard>
+			{run.error ? (
+				<p className="factory-console-note" role="status">
+					<Info aria-hidden="true" />
+					{describeRunIssue(run.error, "publish").title}
+					{run.missedSlots ? ` · ${run.missedSlots.count} 个调度时间` : ""}
+				</p>
+			) : null}
 			{waiting > 0 ? (
 				<p className="factory-console-note" role="status">
 					<Clock3 aria-hidden="true" />

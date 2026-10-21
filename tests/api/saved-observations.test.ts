@@ -186,9 +186,20 @@ beforeAll(async () => {
 			runs: [
 				...runs("L3 Stress Reproduction", ["failure", "failure"], "trunk", 5),
 				...runs("CI", ["failure", "failure"], "cursor/deleted"),
+				...Array.from({ length: 30 }, (_, i) => ({
+					...runs("CI", ["success"], `expired/${i}`)[0],
+					created_at: "2026-04-01T00:00:00.000Z",
+					updated_at: "2026-04-01T00:00:00.000Z",
+				})),
+				...["boundary", "outside"].map((branch, i) => ({
+					...runs("CI", ["success"], branch)[0],
+					created_at: new Date(Date.parse(latest) - 30 * 86400_000 - i).toISOString(),
+					updated_at: new Date(Date.parse(latest) - 30 * 86400_000 - i).toISOString(),
+				})),
 			],
 		}),
 		snapshot("repo:nocoo/broken:actions", { runs: runs("CI", ["failure", "failure"]) }),
+		snapshot("repo:nocoo/missing:actions", { runs: runs("CI", ["success"], "feature/only") }),
 		snapshot(`repo:${removed}:actions`, { runs: runs("CI", ["failure", "failure"]) }),
 		`INSERT INTO repo_stars(account_id,repo) VALUES(${quote(account)},'NOCOO/RECOVERED'),(${quote(account)},'nocoo/baseline'),(${quote(account)},${quote(removed)});`,
 	);
@@ -301,6 +312,12 @@ it("separates default-branch workflow and repository verdict units over saved HT
 	const report = machineReport.data;
 	expect(report.repos.find((repo) => repo.repo === "nocoo/recovered")?.verdict).toBe("flaky");
 	expect(report.repos.find((repo) => repo.repo === "nocoo/baseline")?.verdict).toBe("idle");
+	expect(report.repos.find((repo) => repo.repo === "nocoo/missing")).toMatchObject({
+		verdict: "unknown",
+		release: { pipeline: "none" },
+	});
+	expect(report.totals.unknownRepos).toBe(1);
+	expect(report.repos.some((repo) => String(repo.verdict) === "none")).toBe(false);
 	expect(
 		report.streams.find((stream) => stream.workflow === "L3 Stress Reproduction")?.verdict,
 	).toBe("idle");
@@ -318,4 +335,27 @@ it("separates default-branch workflow and repository verdict units over saved HT
 	expect(response.status).toBe(200);
 	const browserReport = (await response.json()) as CiReport;
 	expect(browserReport.totals).toEqual(report.totals);
+});
+
+it("bounds branch streams at the saved 30-day cutoff through machine and browser HTTP", async () => {
+	const upstream = await (await fetch("http://127.0.0.1:17046/_count")).text();
+	for (const scope of ["all", "starred"]) {
+		const report = (await (await machine(`ci?scope=${scope}`)).json()) as { data: CiReport };
+		expect(report.data.streams).toHaveLength(scope === "all" ? 8 : 6);
+		expect(report.data.totals.nonDefaultBranchStreams).toBe(scope === "all" ? 4 : 3);
+		expect(report.data.streams.some((stream) => stream.branch === "boundary")).toBe(true);
+		expect(report.data.streams.some((stream) => stream.branch === "outside")).toBe(false);
+		expect(report.data.streams.some((stream) => stream.branch?.startsWith("expired/"))).toBe(false);
+		expect(
+			report.data.streams.find((stream) => stream.workflow === "L3 Stress Reproduction"),
+		).toMatchObject({
+			scope: "main",
+			verdict: "idle",
+		});
+		expect(new TextEncoder().encode(JSON.stringify(report.data)).length).toBeLessThan(15_000);
+		const response = await browser(`ci?scope=${scope}`);
+		expect(response.status).toBe(200);
+		expect(((await response.json()) as CiReport).streams).toEqual(report.data.streams);
+	}
+	expect(await (await fetch("http://127.0.0.1:17046/_count")).text()).toBe(upstream);
 });

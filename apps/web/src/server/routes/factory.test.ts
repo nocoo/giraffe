@@ -7,6 +7,7 @@ import { insertAccountStmt } from "../lib/db/accounts";
 import { createDb } from "../lib/db/d1";
 import { readSnapshot, replaceSnapshotStmts } from "../lib/db/snapshots";
 import { mapFactoryEvents } from "../lib/factory-map";
+import { readObservation } from "../lib/machine-observations";
 import { encryptToken, parseKeyBytes } from "../lib/token-crypto";
 
 const KEY = "0".repeat(64);
@@ -57,6 +58,60 @@ async function setup(withAccount = true) {
 	};
 }
 afterEach(() => vi.unstubAllGlobals());
+
+it("retains saved contribution metadata for default/all browser and machine reads only", async () => {
+	const fixture = await setup();
+	const state = ready();
+	state.contribution = {
+		days: [
+			{ date: "2026-09-14", count: 0 },
+			{ date: "2026-09-15", count: 48 },
+		],
+		total: 48,
+		restricted: 7,
+		fetchedAt: NOW,
+	};
+	state.contributionObservation = { version: "calendar-v1", window: state.window, fetchedAt: NOW };
+	await fixture.db.batch(replaceSnapshotStmts(fixture.db, ID, "factory", { ...state }, NOW));
+	await fixture.db.prepare("INSERT INTO repo_stars VALUES(?,'NOCOO/APP')").bind(ID).run();
+	const before = await fixture.env.DB.prepare("SELECT * FROM snapshots ORDER BY kind").all();
+	const network = vi.fn(() => {
+		throw new Error("factory GET must not fetch upstream");
+	});
+	vi.stubGlobal("fetch", network);
+	for (const scope of ["", "?scope=all"]) {
+		const response = await fixture.call(`/api/factory${scope}`);
+		expect(response.status).toBe(200);
+		const body = await response.json();
+		expect(body).toMatchObject({
+			contribution: state.contribution,
+			contributionStatus: state.contributionStatus,
+			contributionObservation: state.contributionObservation,
+		});
+		expect(body).not.toHaveProperty("contributionExcluded");
+		expect((await readObservation(fixture.db, ID, "factory", "all")).data).toMatchObject({
+			contribution: state.contribution,
+			contributionStatus: state.contributionStatus,
+			contributionObservation: state.contributionObservation,
+		});
+	}
+	const starred = await (await fixture.call("/api/factory?scope=starred")).json();
+	expect(starred).toMatchObject({
+		contribution: null,
+		contributionStatus: "unavailable",
+		contributionExcluded: true,
+	});
+	expect(starred).not.toHaveProperty("contributionObservation");
+	expect((await readObservation(fixture.db, ID, "factory", "starred")).data).toMatchObject({
+		contribution: null,
+		contributionStatus: "unavailable",
+		contributionExcluded: true,
+	});
+	expect(await fixture.env.DB.prepare("SELECT * FROM snapshots ORDER BY kind").all()).toEqual(
+		before,
+	);
+	expect(network).not.toHaveBeenCalled();
+});
 
 it("projects starred factory repositories and dates from their observations, not unrelated publication time", async () => {
 	const fixture = await setup();

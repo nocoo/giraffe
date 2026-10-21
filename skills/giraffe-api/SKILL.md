@@ -134,7 +134,7 @@ api -G "$API/sources" --data-urlencode 'since=2026-10-19T08:00:00+08:00' \
 | `/repos/:owner/:name/actions` | Actions `runs` |
 | `/repos/:owner/:name/releases` | `releases` |
 | `/repos/:owner/:name/traffic` | `views`, `clones`, `forbidden` |
-| `/repos/:owner/:name/security` | `dependabot_open`, `code_scanning_open`, `unavailable` |
+| `/repos/:owner/:name/security` | `dependabot_open`, `code_scanning_open`, `unavailable`, optional `reason`, `reason_code` |
 | `/repos/:owner/:name/languages` | Language-to-byte-count `languages` map |
 | `/repos/:owner/:name/contributors` | `contributors` |
 | `/factory/repos/:owner/:name/:stream` | Exactly `commits`, `issues`, `prs`, `actions`, `releases`, `alerts`, `dependencies` |
@@ -149,6 +149,13 @@ All these data endpoints, unlike `/sources`, return
 `{account_id, data, sourceVersion, fetchedAt, freshness, coverage, truncated,
 unavailable, source:{kind,resource,publicationId}, selection:{scope,statisticsFilter}}`.
 
+Known security access/feature absence produces a saved `unavailable:true` snapshot,
+not a 409. Security and factory alerts coverage share safe `reason` text and
+`reason_code:alerts_disabled|permission_denied|not_found|unknown`. Disabled requires
+explicit upstream wording; never infer it from a plain 404, which can hide access
+denial. Unavailable counts do not prove zero alerts. Truncation, malformed data and
+access loss during pagination remain failures, not expected absence.
+
 - Treat `sourceVersion` as opaque and compare its full value. Snapshot versions
   use `sha256:` plus hex; factory versions need not be hashes. `fetchedAt` is source
   time or null, never response time. `coverage` can be null.
@@ -162,8 +169,11 @@ unavailable, source:{kind,resource,publicationId}, selection:{scope,statisticsFi
   account entries use the same projection.
 - Factory freshness counts selected catalog repos, including missing publications,
   and uses only immutable repository observation times. Inventory counters remain
-  historical collection metadata; the account-wide contribution calendar is
-  excluded because it cannot honor repository membership. CI freshness counts
+  historical collection metadata. Default/`scope=all` preserves the saved account
+  calendar's exact 90 `days[]`, totals, status and `contributionObservation`.
+  Only `scope=starred` excludes the unprojectable calendar (`contribution:null`,
+  `contributionExcluded:true`, `contributionStatus:"unavailable"`, no provenance).
+  Repository filtering never rewrites account calendar evidence. CI freshness counts
   three dependencies per repo: Actions, releases and details.
 - Factory stream `data` includes `runId`, `items`, `next`, `ranges:[{since,until}]`,
   `coverage`, `fetched_at`, optional `observation`, and flags. `next` is saved
@@ -190,6 +200,19 @@ the newest saved input time, so check source freshness independently of verdict.
 All `pull_request*` events are observational, including fork PRs whose source branch
 is also named `main`; their failures belong to `nonDefaultBranchFailures`, not
 default-branch workflow or repository verdicts.
+
+Non-default branch streams require run activity (`created_at`) within 30 days of
+the saved evaluation clock, including the exact cutoff. Older branch-only streams
+are omitted from the response; saved history is untouched. Default-branch and
+grouped bot streams remain unchanged, including idle default workflows. The rule
+applies to all/starred scope. There is no `branches=all` option.
+
+Workflow `streams[].verdict` values are `broken | flaky | healthy | idle`.
+Repository `repos[].verdict` adds `unknown` for no default-workflow evidence;
+otherwise its precedence is broken, flaky, healthy, idle. Starting in 0.15.14,
+repository `none` is renamed to `unknown` (breaking; migrate consumers).
+`release.pipeline` remains `broken | flaky | healthy | idle | none`; this separate
+`none` means no default-branch release workflow and is not renamed.
 
 The latest 10 decisive completed runs within 30 days describe recent stability.
 A latest success is healthy or flaky, never broken despite older failures. Two
@@ -439,6 +462,32 @@ key/body; duplicate keys return the existing run even if the body differs. A new
 key means new work. Acceptance is not publication success: poll run status and
 inspect source versions/coverage. Terminal control is unchanged; resume preserves
 backoff deadlines. Run list omits checkpoints and older inactive step history.
+
+Every listed run includes `counts:{total,success,failed,unavailable,skipped}`, even
+when its steps are compacted. Step status adds terminal `unavailable` for expected
+feature/access absence; it does not make the run partial. Limits, malformed data
+and exhausted retries still fail. For matching run IDs, factory publication
+`status:complete|partial` matches run `completed|partial`; an unsuccessful newer
+attempt retains the older publication. Completion does not prove complete coverage.
+Paginated lists distinguish explicit first-page denial from incomplete collection:
+missing search `nodes` without access errors, or 403/404 after any accepted page
+(even empty), yields a failed `snapshot_incomplete` step, retained prior data/time
+and a partial run/publication, not expected unavailable work.
+Global and repository searches use the same whole-source first-page denial rule.
+Insights blocked solely by explicitly unavailable sources also retain prior data
+as unavailable; failed or missing required sources remain real failures.
+
+Absolute wall deadlines include pauses and backoff: catalog 30 minutes, quick
+refresh 6 hours, deep/legacy missing-depth refresh 12 hours. Optional `deadlineAt`
+records the deadline; old rows derive it from `startedAt`. Expired active runs become
+`failed` with `error:run_timed_out` on scheduler/mutation recovery, release the lock
+and set schedule `lastError`; GET never recovers or writes. Do not resume a terminal
+run. Overdue schedules attempt only the latest due slot; earlier slots are recorded
+as an immutable failed audit run with `error:scheduled_slots_missed` and
+`missedSlots:{firstDueAt,lastDueAt,count}`. Inspect these records rather than assuming
+missing daily data was refreshed.
+Timeout/missed-slot schedule warnings remain until an explicit schedule save;
+a later successful attempt does not silently clear them.
 
 ## Errors, limits and retries
 

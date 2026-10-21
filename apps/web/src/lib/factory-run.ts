@@ -13,7 +13,7 @@ export const REPO_COOLDOWN_MS = 15 * 60_000;
 export const RUN_LEASE_MS = 90_000;
 export const RUN_MAX_RETRIES = 3;
 export type RunStatus = "running" | "paused" | "completed" | "partial" | "cancelled" | "failed";
-export type StepStatus = "pending" | "running" | "success" | "failed" | "skipped";
+export type StepStatus = "pending" | "running" | "success" | "failed" | "skipped" | "unavailable";
 export type StepKind =
 	| "inventory"
 	| "restore"
@@ -56,6 +56,9 @@ export type FactoryRun = {
 	steps: FactoryRunStep[];
 	cursor: number;
 	status: RunStatus;
+	deadlineAt?: string;
+	error?: string;
+	missedSlots?: { firstDueAt: string; lastDueAt: string; count: number };
 	startedAt: string;
 	updatedAt: string;
 	finishedAt: string | null;
@@ -236,8 +239,9 @@ export function runProgress(run: FactoryRun, now: string) {
 	const count = (status: StepStatus) => run.steps.filter((s) => s.status === status).length;
 	const success = count("success"),
 		failed = count("failed"),
+		unavailable = count("unavailable"),
 		skipped = count("skipped");
-	const completed = success + failed + skipped;
+	const completed = success + failed + skipped + unavailable;
 	const measured = run.steps.filter((s) => s.status === "success" && s.durationMs > 0);
 	const average = measured.length
 		? measured.reduce((sum, s) => sum + s.durationMs, 0) / measured.length
@@ -247,6 +251,7 @@ export function runProgress(run: FactoryRun, now: string) {
 		completed,
 		success,
 		failed,
+		unavailable,
 		skipped,
 		current: run.steps[run.cursor] ?? null,
 		etaSeconds:
@@ -257,5 +262,13 @@ export function runProgress(run: FactoryRun, now: string) {
 					)
 				: null,
 	};
+}
+export function completedRunStatus(run: Pick<FactoryRun, "steps">): "partial" | "completed" {
+	return run.steps.some(
+		(step) =>
+			step.status === "failed" || (step.status === "skipped" && step.error !== "cloud_ai_retired"),
+	)
+		? "partial"
+		: "completed";
 }
 export const retryDelay = (attempt: number) => Math.min(900, 30 * 2 ** Math.max(0, attempt - 1));

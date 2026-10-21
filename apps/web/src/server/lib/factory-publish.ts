@@ -1,5 +1,5 @@
 import { factoryWindow, mergeMetrics, summarizeEvents } from "../../lib/factory";
-import { REPO_COOLDOWN_MS, type RepoRefreshState } from "../../lib/factory-run";
+import { completedRunStatus, REPO_COOLDOWN_MS, type RepoRefreshState } from "../../lib/factory-run";
 import {
 	FACTORY_STREAMS,
 	type FactoryRepo,
@@ -264,7 +264,7 @@ export async function publicationWrites(
 		});
 	} else snapshot.repos = [...map.values()];
 	snapshot.runId = run.id;
-	snapshot.status = "complete";
+	snapshot.status = completedRunStatus(run) === "completed" ? "complete" : "partial";
 	snapshot.fetched_at = now;
 	snapshot.startedAt = run.startedAt;
 	snapshot.window = run.window;

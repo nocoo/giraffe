@@ -642,3 +642,86 @@ using the existing Actions mapper and saved event fields. Keep all pull-request
 event contexts observational, even when branch names match, and include scope in
 rendered stream keys so default and PR lanes remain distinct. Verify default health,
 separate failed-run counts and the unchanged all-branch daily histogram together.
+
+## 2026-10-21 - Refresh reliability investigation
+
+The refresh pipeline treated expected security access restrictions as incomplete
+snapshots and failed steps. It also reported every published factory snapshot as
+complete, independently of its run outcome. Regression tests now distinguish
+expected unavailability from truncation and malformed evidence, and bind publication
+status to the same run's outcome. Retained evidence must survive repeated unavailable
+attempts without changing its observation time; testing only the first failure is
+insufficient.
+
+The renewable page lease did not bound total run lifetime. A hard wall deadline must
+also fence writes, include paused runs, and expire before idempotency lookup or
+scheduling. Missed-slot audit records must not impose collection cooldowns on actual
+recovery work. Historical-clock queue tests now explicitly control the clock rather
+than relying on the fixture's old date still being runnable.
+
+During pane setup, `herdr pane resize --current` resolved to a different focused
+pane despite the caller context. The response reported no change; the subsequent
+resize used this controller's explicit pane ID. Inspect returned pane IDs and use
+explicit IDs for layout mutations instead of assuming caller resolution is reliable.
+
+The first L2 availability run reached the correct persisted reason codes, but a
+nested coverage assertion inside `objectContaining` required an exact object and
+rejected the additional valid coverage fields. Use a nested partial matcher when
+checking only `reason_code`; distinguish matcher defects from behavioral failures.
+The new browser assertion also matched a nested diagnostic `summary` instead of
+only the repository disclosure. Scope the click to the row's direct child summary
+and the subsequent explanation to that same repository row.
+
+Independent review found that checking an accepted scheduled occurrence before
+the audit transaction leaves a race: another cron can accept that slot before
+the missed ledger is inserted. Recheck acceptance inside the ledger transaction
+and advance the cursor only for its own inserted audit row. Apply the same rule
+to empty selections so settings never reference a nonexistent audit row. A
+deterministic interleaving test catches this; simultaneous cron calls alone did not.
+
+The controller staged a worker's green implementation before its final freeze;
+the worker's last strict-type test fixes then remained unstaged. Wait for final
+handoff, not an intermediate green report, before staging shared-worktree changes.
+Final gate wrappers also assigned the reserved zsh variable `status`, causing a
+shell error after successful tests. Use a nonreserved `rc` variable and preserve
+the command's exit code; rerun affected verification rather than confuse wrapper
+failure with application failure or silently discard an exit status.
+
+PR review found that collector error provenance was lost before executor outcome
+classification: a malformed search connection manufactured `github_forbidden`,
+and a later-page 403 escaped as if it were first-page absence. The earlier review
+and tests covered security pagination but not ordinary saved-page collectors.
+Require explicit access errors for first-page absence, and record accepted pages
+independently of row counts so empty pages cannot hide interrupted pagination.
+Executor regressions must assert the failed step, partial run and same-run
+publication, history counts, and unchanged prior snapshot/time together.
+The next MAX pass also reproduced access loss across global Issues/PR queue
+chunks: local page counters reset, but the durable snapshot cursor remains.
+Completeness guards must use both boundaries, not only pagination within one call.
+Security GraphQL errors must also distinguish a missing connection from a partial
+connection. If a nodes array survives error-path filtering, the response is
+incomplete even when every denied node was removed and the array is now empty.
+Catalog pagination also needs a nonempty new string cursor whenever it advertises
+another page. Missing cursors previously published a false complete empty catalog;
+invalid or repeated cursors now fail without replacing saved repositories/time.
+Checking only a truthy pagination flag was still insufficient: omitted flags
+silently looked terminal. Require an explicit boolean flag, and validate cursor
+types before issuing a continuation request, across ordinary GraphQL connections.
+An invalid REST next link is also incomplete, not absent. Returning null from a
+failed URL parse silently converted a declared continuation into successful EOF;
+the parser now preserves that distinction and ordinary collectors retain old data.
+Apply the surviving-connection rule consistently to search as well as security:
+an empty array after denied nodes are removed is still partial evidence, not whole
+source unavailability. Denial fixtures must model a missing connection explicitly.
+The old global/repository search switch also classified the same first-page
+GraphQL denial differently. Remove that split, retain durable-cursor checks for
+later chunks, and propagate known source unavailability to dependent Insights
+without masking failed or absent prerequisites. Full-plan controls must isolate
+other malformed fixture responses, not mistake an unrelated failure for denial.
+The same boundary check found that the shared REST list helper accepted either an
+array or an Actions envelope for every endpoint. Require the endpoint's actual
+container so a wrong-but-empty JSON shape cannot erase evidence as a successful zero.
+The final row-shape pass reproduced the same false-zero outcome after invalid list
+elements were silently filtered. Validate record elements before filtering or
+mapping; null REST rows, primitives and nested arrays must make collection
+incomplete. Legitimate empty lists and nullable optional record fields remain valid.

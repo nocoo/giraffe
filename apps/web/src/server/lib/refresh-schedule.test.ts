@@ -1,12 +1,14 @@
-import { expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { factoryFixture } from "../../../../../tests/fixtures/factory-snapshot";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import { createDb } from "./db/d1";
 import { replaceSnapshotStmts } from "./db/snapshots";
+import { startRefresh } from "./factory-start";
 import { nextScheduleAt, readSchedules, saveSchedule, scheduleRefreshes } from "./refresh-schedule";
 
 const snap = factoryFixture();
 const now = "2026-09-27T00:00:00.000Z";
+afterEach(() => vi.useRealTimers());
 async function setup() {
 	const raw = sqliteFixture();
 	const db = createDb(raw);
@@ -91,7 +93,11 @@ it("records empty selections, defers active runs and never starts disabled tasks
 	);
 	await scheduleRefreshes(s.raw, now);
 	expect(
-		(await s.db.prepare("SELECT payload FROM factory_runs").first<{ payload: string }>())?.payload,
+		(
+			await s.db
+				.prepare("SELECT payload FROM factory_runs WHERE status='running'")
+				.first<{ payload: string }>()
+		)?.payload,
 	).toContain('"depth":"deep"');
 	await saveSchedule(
 		s.db,
@@ -248,4 +254,211 @@ it("schedules catalogue discovery daily without requiring existing catalogues or
 	);
 	await scheduleRefreshes(s.raw, "2026-09-29T00:00:00.000Z");
 	expect((await s.db.prepare("SELECT id FROM factory_runs").all()).results).toHaveLength(1);
+});
+
+it("durably coalesces every superseded slot once and starts only the latest due occurrence", async () => {
+	vi.useFakeTimers();
+	vi.setSystemTime(now);
+	const s = await setup();
+	await saveSchedule(
+		s.db,
+		snap.account_id,
+		"catalog",
+		{ enabled: true, time: "08:00", weekday: 0, scope: "all" },
+		"2026-09-24T00:01:00.000Z",
+	);
+	await Promise.all([
+		scheduleRefreshes(s.raw, new Date().toISOString()),
+		scheduleRefreshes(s.raw, new Date().toISOString()),
+	]);
+	const rows = (
+		await s.db.prepare("SELECT payload FROM factory_runs").all<{ payload: string }>()
+	).results.map((row) => JSON.parse(row.payload));
+	expect(rows).toHaveLength(2);
+	expect(rows.find((run) => run.error === "scheduled_slots_missed")).toMatchObject({
+		status: "failed",
+		schedule: { kind: "catalog", dueAt: "2026-09-25T00:00:00.000Z" },
+		missedSlots: {
+			firstDueAt: "2026-09-25T00:00:00.000Z",
+			lastDueAt: "2026-09-26T00:00:00.000Z",
+			count: 2,
+		},
+	});
+	expect(rows.find((run) => run.status === "running")?.schedule.dueAt).toBe(now);
+	expect((await readSchedules(s.db, snap.account_id))[2]).toMatchObject({
+		nextAt: "2026-09-28T00:00:00.000Z",
+		lastError: "scheduled_slots_missed",
+	});
+	await scheduleRefreshes(s.raw, new Date().toISOString());
+	expect((await s.db.prepare("SELECT id FROM factory_runs").all()).results).toHaveLength(2);
+});
+
+it("expires a scheduled paused lock before planning and retains the safe timeout in settings", async () => {
+	const s = await setup();
+	await saveSchedule(
+		s.db,
+		snap.account_id,
+		"catalog",
+		{ enabled: true, time: "08:00", weekday: 0, scope: "all" },
+		"2026-09-26T00:01:00.000Z",
+	);
+	await scheduleRefreshes(s.raw, now);
+	await s.db
+		.prepare(
+			"UPDATE factory_runs SET status='paused',payload=json_set(payload,'$.status','paused')",
+		)
+		.run();
+	await scheduleRefreshes(s.raw, "2026-09-27T00:30:00.000Z");
+	expect((await readSchedules(s.db, snap.account_id))[2]?.lastError).toBe("run_timed_out");
+	const rows = await s.db
+		.prepare("SELECT status,lease_token,lease_until,payload FROM factory_runs")
+		.all();
+	expect(rows.results[0]).toMatchObject({ status: "failed", lease_token: null, lease_until: null });
+});
+
+it("does not count an accepted occurrence as missed after a crash before schedule acknowledgement", async () => {
+	const s = await setup();
+	await saveSchedule(
+		s.db,
+		snap.account_id,
+		"catalog",
+		{ enabled: true, time: "08:00", weekday: 0, scope: "all" },
+		"2026-09-26T00:01:00.000Z",
+	);
+	await scheduleRefreshes(s.raw, now);
+	await s.db.prepare("UPDATE catalog_refresh_schedules SET next_at=?").bind(now).run();
+	await scheduleRefreshes(s.raw, "2026-09-29T00:00:00.000Z");
+	const rows = (
+		await s.db.prepare("SELECT payload FROM factory_runs").all<{ payload: string }>()
+	).results.map((row) => JSON.parse(row.payload));
+	expect(rows.find((run) => run.missedSlots)?.missedSlots).toEqual({
+		firstDueAt: "2026-09-28T00:00:00.000Z",
+		lastDueAt: "2026-09-28T00:00:00.000Z",
+		count: 1,
+	});
+	expect(rows.filter((run) => run.status === "running")).toHaveLength(1);
+});
+
+it("never advances past missed slots if their durable audit transaction fails", async () => {
+	const s = await setup();
+	await saveSchedule(
+		s.db,
+		snap.account_id,
+		"catalog",
+		{ enabled: true, time: "08:00", weekday: 0, scope: "all" },
+		"2026-09-24T00:01:00.000Z",
+	);
+	const batch = s.raw.batch.bind(s.raw);
+	vi.spyOn(s.raw, "batch").mockImplementationOnce((writes) =>
+		batch([
+			...writes,
+			s.raw.prepare(
+				"INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES(NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL)",
+			),
+		]),
+	);
+	await scheduleRefreshes(s.raw, now);
+	expect((await readSchedules(s.db, snap.account_id))[2]).toMatchObject({
+		nextAt: "2026-09-25T00:00:00.000Z",
+		lastError: "db_error",
+	});
+	expect((await s.db.prepare("SELECT id FROM factory_runs").all()).results).toHaveLength(0);
+	await scheduleRefreshes(s.raw, now);
+	expect((await s.db.prepare("SELECT id FROM factory_runs").all()).results).toHaveLength(2);
+});
+
+it.each(["missed", "empty"] as const)(
+	"does not audit or acknowledge a %s slot accepted after its preliminary read",
+	async (scenario) => {
+		const s = await setup();
+		const kind = scenario === "missed" ? "catalog" : "daily";
+		const due = scenario === "missed" ? "2026-09-26T00:00:00.000Z" : now;
+		await saveSchedule(
+			s.db,
+			snap.account_id,
+			kind,
+			{ enabled: true, time: "08:00", weekday: 0, scope: kind === "catalog" ? "all" : "starred" },
+			scenario === "missed" ? "2026-09-25T00:01:00.000Z" : "2026-09-26T00:01:00.000Z",
+		);
+		const batch = s.raw.batch.bind(s.raw);
+		let acceptedId = "";
+		vi.spyOn(s.raw, "batch").mockImplementationOnce(async (writes) => {
+			const accepted = await startRefresh(
+				s.db,
+				{ id: snap.account_id, login: "nocoo" },
+				{
+					account_id: snap.account_id,
+					requestKey: `${kind}:${due}`,
+					mode: kind === "catalog" ? "catalog" : "refresh",
+					depth: "quick",
+					scope: "all",
+				},
+				now,
+				"daily",
+				{ kind, dueAt: due },
+			);
+			acceptedId = accepted.id;
+			return batch(writes);
+		});
+		await scheduleRefreshes(s.raw, now);
+		expect((await s.db.prepare("SELECT id FROM factory_runs").all()).results).toEqual([
+			{ id: acceptedId },
+		]);
+		expect(
+			(await readSchedules(s.db, snap.account_id)).find((row) => row.kind === kind),
+		).toMatchObject({
+			nextAt: due,
+			lastRunId: null,
+			lastError: null,
+		});
+		await scheduleRefreshes(s.raw, now);
+		expect((await s.db.prepare("SELECT id FROM factory_runs").all()).results).toEqual([
+			{ id: acceptedId },
+		]);
+		expect(
+			(await readSchedules(s.db, snap.account_id)).find((row) => row.kind === kind),
+		).toMatchObject({
+			lastRunId: acceptedId,
+		});
+	},
+);
+
+it("records weekly missed intervals and never mutates a prior interval on a later tick", async () => {
+	const s = await setup();
+	await saveSchedule(
+		s.db,
+		snap.account_id,
+		"weekly",
+		{ enabled: true, time: "08:00", weekday: 0, scope: "starred" },
+		"2026-09-05T00:01:00.000Z",
+	);
+	await scheduleRefreshes(s.raw, now);
+	const initial = await s.db
+		.prepare(
+			"SELECT id,payload FROM factory_runs WHERE json_extract(payload,'$.missedSlots') IS NOT NULL",
+		)
+		.all<{ id: string; payload: string }>();
+	expect(JSON.parse(initial.results[0]?.payload ?? "{}").missedSlots).toEqual({
+		firstDueAt: "2026-09-06T00:00:00.000Z",
+		lastDueAt: "2026-09-20T00:00:00.000Z",
+		count: 3,
+	});
+	await scheduleRefreshes(s.raw, "2026-10-18T00:00:00.000Z");
+	expect(
+		await s.db
+			.prepare("SELECT payload FROM factory_runs WHERE id=?")
+			.bind(initial.results[0]?.id)
+			.first(),
+	).toEqual({ payload: initial.results[0]?.payload });
+	const intervals = await s.db
+		.prepare(
+			"SELECT payload FROM factory_runs WHERE json_extract(payload,'$.missedSlots') IS NOT NULL ORDER BY created_at",
+		)
+		.all<{ payload: string }>();
+	expect(intervals.results).toHaveLength(2);
+	expect(JSON.parse(intervals.results[1]?.payload ?? "{}").missedSlots).toEqual({
+		firstDueAt: "2026-10-04T00:00:00.000Z",
+		lastDueAt: "2026-10-11T00:00:00.000Z",
+		count: 2,
+	});
 });

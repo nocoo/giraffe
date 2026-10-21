@@ -164,12 +164,12 @@ export type CiEntry = {
 	default_branch?: string;
 	releases?: CiRelease[] | null;
 };
-const RANK: Record<Verdict | "none", number> = {
+const RANK: Record<Verdict | "unknown", number> = {
 	broken: 0,
 	flaky: 1,
 	healthy: 2,
 	idle: 3,
-	none: 4,
+	unknown: 4,
 };
 
 export const BOT_WORKFLOW = "Dependabot 更新任务";
@@ -195,8 +195,8 @@ function laneOf(run: CiRun, main: string | undefined) {
 function repoSummary(entry: CiEntry, own: ReturnType<typeof repoStreams>, now: string) {
 	const main = own.filter((s) => s.scope === "main");
 	const count = (v: Verdict) => main.filter((s) => s.verdict === v).length;
-	const verdict: Verdict | "none" = !main.length
-		? "none"
+	const verdict: Verdict | "unknown" = !main.length
+		? "unknown"
 		: count("broken")
 			? "broken"
 			: count("flaky")
@@ -239,12 +239,14 @@ function repoSummary(entry: CiEntry, own: ReturnType<typeof repoStreams>, now: s
 }
 
 function repoStreams(entry: CiEntry, now: string) {
+	const since = Date.parse(now) - CI_WINDOW_DAYS * DAY;
 	const lanes = new Map<
 		string,
 		{ workflow: string; branch: string | null; scope: Scope; runs: CiRun[] }
 	>();
 	for (const run of entry.runs) {
 		const lane = laneOf(run, entry.default_branch);
+		if (lane.scope === "branch" && !(Date.parse(run.created_at) >= since)) continue;
 		const key = JSON.stringify([lane.workflow, lane.scope, lane.branch]);
 		const slot = lanes.get(key) ?? { ...lane, runs: [] };
 		slot.runs.push(run);
@@ -295,7 +297,7 @@ export function ciReport(entries: CiEntry[], now: string) {
 	);
 	const main = streams.filter((s) => s.scope === "main");
 	const tally = (v: Verdict) => main.filter((s) => s.verdict === v).length;
-	const repoTally = (v: Verdict | "none") => repos.filter((r) => r.verdict === v).length;
+	const repoTally = (v: Verdict | "unknown") => repos.filter((r) => r.verdict === v).length;
 	return {
 		streams,
 		repos,
@@ -310,7 +312,7 @@ export function ciReport(entries: CiEntry[], now: string) {
 			flakyRepos: repoTally("flaky"),
 			healthyRepos: repoTally("healthy"),
 			idleRepos: repoTally("idle"),
-			unknownRepos: repoTally("none"),
+			unknownRepos: repoTally("unknown"),
 			totalRepos: repos.length,
 			totalWorkflows: main.length,
 			nonDefaultBranchStreams: streams.filter((s) => s.scope === "branch").length,

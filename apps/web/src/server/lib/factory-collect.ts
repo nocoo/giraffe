@@ -29,6 +29,7 @@ import {
 	FACTORY_INVENTORY_QUERY,
 } from "./factory-queries";
 import type { GithubClient } from "./github-client";
+import { githubUnavailability } from "./github-unavailable";
 
 export const FACTORY_ITEM_CAP = 5000;
 export const FACTORY_BYTE_CAP = 1_200_000;
@@ -267,12 +268,14 @@ async function collectStream(
 				variables[String(alias)] = `${repo.head}:${path}`;
 			const result = await gh.githubGraphql(token, FACTORY_DEPENDENCIES_QUERY, variables);
 			rateFromData(s, result);
-			if (gh.graphqlErrors.length || !result.repository)
+			if (gh.graphqlErrors.length)
 				throw new ApiError(403, "github_forbidden", "manifest unavailable");
+			if (!result.repository || typeof result.repository !== "object")
+				throw new ApiError(502, "github_error", "manifest response incomplete");
 			try {
 				data.items = mapDependencies(object(result.repository), repo);
 			} catch {
-				data.coverage.status = "unavailable";
+				data.coverage.status = "limited";
 				data.coverage.reason =
 					"Root package.json is not valid JSON; dependency evidence unavailable";
 			}
@@ -352,13 +355,18 @@ async function collectStream(
 				error.code === "not_found" ||
 				error.code === "github_response_too_large")
 		) {
-			data.coverage.status = data.items.length ? "limited" : "unavailable";
+			data.coverage.status =
+				data.items.length || data.coverage.pages > 0 || error.code === "github_response_too_large"
+					? "limited"
+					: "unavailable";
+			const unavailable = githubUnavailability(error);
+			if (unavailable) data.coverage.reason_code = unavailable.reason_code;
 			data.coverage.reason =
 				error.code === "github_response_too_large"
 					? "GitHub response exceeds the 4 MB memory budget; evidence unavailable"
 					: data.items.length
 						? "GitHub access lost during pagination (403/404); incomplete observed subset only"
-						: "GitHub denied access or resource not available (403/404)";
+						: (unavailable?.reason ?? "GitHub resource unavailable");
 			data.next = null;
 			data.ranges = [];
 		} else throw error;
@@ -387,7 +395,7 @@ export async function stepFactory(
 	now: string,
 	includeDisabled = false,
 ): Promise<void> {
-	if (s.status === "complete") return;
+	if (s.status === "complete" || s.status === "partial") return;
 	if (
 		s.rate &&
 		s.rate.remaining < 50 &&

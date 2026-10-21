@@ -7,6 +7,11 @@ const now = snapshot.fetched_at;
 const firstRepo = snapshot.repos[0];
 if (!firstRepo) throw new Error("fixture");
 const repos = [firstRepo, { ...firstRepo, id: "R_2", name: "nocoo/two", language: "Go" }];
+it("counts unavailable steps as terminal without counting failures", () => {
+	const run = makeRun("r", "a", "nocoo", "k", "catalog", [], now);
+	Object.assign(run.steps[0] ?? {}, { status: "unavailable", error: "permission_denied" });
+	expect(runProgress(run, now)).toMatchObject({ completed: 1, unavailable: 1, failed: 0 });
+});
 it("updates global pages and explicitly derives Insights before repository collection", () => {
 	const run = makeRun("all", "a", "nocoo", "key", "refresh", repos, now);
 	expect(run.steps.slice(0, 6).map((step) => step.resource)).toEqual([

@@ -11,7 +11,13 @@ export const FACTORY_STREAMS = [
 ] as const;
 export type FactoryStreamName = (typeof FACTORY_STREAMS)[number];
 export type CoverageStatus = "pending" | "partial" | "complete" | "unavailable" | "limited";
+export type UnavailableReasonCode =
+	| "alerts_disabled"
+	| "permission_denied"
+	| "not_found"
+	| "unknown";
 export type FactoryCoverage = {
+	reason_code?: UnavailableReasonCode;
 	strategy?: "full" | "incremental" | "reused";
 	sourceFetchedAt?: string | null;
 	status: CoverageStatus;
@@ -120,7 +126,7 @@ export type FactorySnapshot = {
 	startedAt: string;
 	fetched_at: string;
 	window: FactoryWindow;
-	status: "collecting" | "complete";
+	status: "collecting" | "complete" | "partial";
 	inventory: {
 		total: number;
 		scanned: number;

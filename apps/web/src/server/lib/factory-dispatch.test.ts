@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Env } from "../env";
-import { dueRuns } from "./db/factory-runs";
+import { dueRuns, expireRuns } from "./db/factory-runs";
 import { consumeFactory, continueFactory, enqueueRun } from "./factory-dispatch";
 import { executeRunPage } from "./factory-execute";
 import { pruneFactory } from "./factory-retention";
@@ -9,7 +9,7 @@ import { scheduleRefreshes } from "./refresh-schedule";
 vi.mock("./refresh-schedule", () => ({ scheduleRefreshes: vi.fn() }));
 vi.mock("./factory-retention", () => ({ pruneFactory: vi.fn() }));
 vi.mock("./factory-execute", () => ({ executeRunPage: vi.fn() }));
-vi.mock("./db/factory-runs", () => ({ dueRuns: vi.fn() }));
+vi.mock("./db/factory-runs", () => ({ dueRuns: vi.fn(), expireRuns: vi.fn() }));
 const hour = Date.parse("2026-10-03T11:00:00Z");
 beforeEach(() => {
 	vi.resetAllMocks();
@@ -133,4 +133,26 @@ it("acknowledges retired review messages without inference, retries or reschedul
 	vi.mocked(dueRuns).mockResolvedValue([]);
 	await continueFactory(env, hour);
 	expect(send).not.toHaveBeenCalled();
+});
+
+it("expires hard deadlines before scheduler work and before every queue claim", async () => {
+	const env = { FACTORY_QUEUE: { send: vi.fn() } } as unknown as Env;
+	await continueFactory(env, hour);
+	expect(expireRuns).toHaveBeenCalledWith(expect.anything(), "2026-10-03T11:00:00.000Z");
+	expect(vi.mocked(expireRuns).mock.invocationCallOrder[0]).toBeLessThan(
+		vi.mocked(scheduleRefreshes).mock.invocationCallOrder[0] ?? 0,
+	);
+	vi.mocked(executeRunPage).mockResolvedValue(null);
+	const message = { body: { id: "expired" }, ack: vi.fn(), retry: vi.fn() };
+	await consumeFactory({ messages: [message] } as unknown as MessageBatch<unknown>, env);
+	expect(expireRuns).toHaveBeenLastCalledWith(
+		expect.anything(),
+		"2026-10-03T11:00:00.000Z",
+		"",
+		"expired",
+	);
+	expect(vi.mocked(expireRuns).mock.invocationCallOrder[1]).toBeLessThan(
+		vi.mocked(executeRunPage).mock.invocationCallOrder[0] ?? 0,
+	);
+	expect(message.ack).toHaveBeenCalledOnce();
 });

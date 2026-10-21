@@ -235,7 +235,7 @@ it("does not certify health from unavailable CI dependencies and exposes any dep
 		freshness: { total: 3, missing: 2 },
 		data: {
 			totals: { totalWorkflows: 0, healthyRepos: 0, unknownRepos: 1, truncatedRepos: 1 },
-			repos: [{ release: null, verdict: "none", truncated: true }],
+			repos: [{ release: null, verdict: "unknown", truncated: true }],
 		},
 	});
 	await save("repo:owner/app:actions", { unavailable: true, truncated: true });

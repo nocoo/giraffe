@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.15.14 - 2026-10-21
+
+### Fixed
+
+- Persist unavailable repository security snapshots with safe, shared reason codes for disabled alerts, denied permissions and missing resources instead of reporting every security refresh as incomplete.
+- Count expected unavailable steps separately from failures in refresh history and the console; align factory publication status with the publishing run while retaining prior good evidence and original observation times.
+- Bound catalog, quick and deep runs by absolute deadlines, revoke expired leases, release account locks and retain timeout diagnostics in schedule settings.
+- Record missed schedule intervals durably and attempt only the latest due slot, without letting audit records delay recovery through collection cooldowns.
+- Bound non-default CI branch streams to 30 days of saved activity, retaining idle default-branch workflows without using the GET wall clock or deleting history.
+- Restore the exact saved 90-day account contribution calendar, status and provenance for default/all factory reads; only starred projections exclude the account-wide calendar.
+- Keep malformed Issues/PR search responses and interrupted list pagination as real failures rather than unavailable outcomes; retain prior snapshots and publish partial status.
+
+### Changed
+
+- Document refresh outcome counts, security reason codes, timeout bounds and missed-slot records for machine API consumers. No D1 schema migration is required; existing historical rows remain unchanged.
+
+### Breaking Change
+
+- Rename `/ci` repository `repos[].verdict` from `none` to `unknown` to match `totals.unknownRepos`. Workflow verdicts remain `broken | flaky | healthy | idle`; the independent `release.pipeline: none` sentinel is unchanged.
+
 ## v0.15.13 — 2026-10-21
 
 ### Fixed

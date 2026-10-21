@@ -7,6 +7,130 @@ import { claimRun, saveRun, startRun } from "./db/factory-runs";
 import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
 import { collectSitePage, siteCatalog } from "./factory-site";
 
+it("persists unavailable repository security instead of failing the snapshot, without erasing good global data", async () => {
+	const raw = await setup("repo:nocoo/app:security");
+	const db = createDb(raw);
+	const prior = {
+		truncated: false,
+		items: [{ name_with_owner: "nocoo/app", source: "dependabot" }],
+		dependabot_open: 1,
+		code_scanning_open: 0,
+	};
+	await db.batch(replaceSnapshotStmts(db, "account", "alerts", prior, "2026-01-01"));
+	const result = await page(raw, (url) =>
+		url.endsWith("/graphql")
+			? Response.json({
+					data: { repository: null },
+					errors: [
+						{
+							type: "FORBIDDEN",
+							message: "Dependabot alerts are disabled for this repository.",
+							path: ["repository"],
+						},
+					],
+				})
+			: Response.json(
+					{ message: "Dependabot alerts are disabled for this repository." },
+					{ status: 403 },
+				),
+	);
+	expect(result).toMatchObject({ done: true, unavailable: true, reasonCode: "alerts_disabled" });
+	expect(await readSnapshot(db, "account", "repo:nocoo/app:security")).toMatchObject({
+		unavailable: true,
+		truncated: false,
+		reason_code: "alerts_disabled",
+	});
+	expect(await readSnapshot(db, "account", "alerts")).toMatchObject({
+		...prior,
+		fetched_at: "2026-01-01",
+	});
+});
+
+it("retains good security evidence through repeated unavailable refreshes with its original timestamp", async () => {
+	const raw = await setup("repo:nocoo/app:security");
+	const db = createDb(raw);
+	await db.batch(
+		replaceSnapshotStmts(
+			db,
+			"account",
+			"repo:nocoo/app:security",
+			{
+				truncated: false,
+				unavailable: false,
+				dependabot_open: 7,
+				code_scanning_open: 2,
+				items: [{ source: "dependabot", name_with_owner: "nocoo/app" }],
+			},
+			"2026-01-01",
+		),
+	);
+	for (let index = 0; index < 2; index++) {
+		await page(raw, (url) =>
+			url.endsWith("/graphql")
+				? Response.json({
+						data: { repository: null },
+						errors: [
+							{
+								type: "FORBIDDEN",
+								message: "Resource not accessible by integration",
+								path: ["repository"],
+							},
+						],
+					})
+				: Response.json({ message: "Resource not accessible by integration" }, { status: 403 }),
+		);
+		expect(await readSnapshot(db, "account", "repo:nocoo/app:security")).toMatchObject({
+			unavailable: true,
+			dependabot_open: 7,
+			code_scanning_open: 2,
+			fetched_at: "2026-01-01",
+			items: [{ source: "dependabot", name_with_owner: "nocoo/app" }],
+		});
+	}
+});
+
+it("never replaces global alerts with an unavailable page and never publishes truncated security", async () => {
+	const raw = await setup("alerts");
+	const db = createDb(raw);
+	const prior = {
+		truncated: false,
+		items: [{ source: "dependabot", name_with_owner: "nocoo/app" }],
+		dependabot_open: 1,
+		code_scanning_open: 0,
+	};
+	await db.batch(replaceSnapshotStmts(db, "account", "alerts", prior, "2026-01-01"));
+	expect(
+		await page(raw, () =>
+			Response.json(
+				{ message: "Dependabot alerts are disabled for this repository." },
+				{ status: 403 },
+			),
+		),
+	).toMatchObject({ unavailable: true, reasonCode: "alerts_disabled" });
+	expect(await readSnapshot(db, "account", "alerts")).toMatchObject({
+		...prior,
+		fetched_at: "2026-01-01",
+	});
+	const security = await setup("repo:nocoo/app:security");
+	await expect(
+		page(security, (url) =>
+			url.endsWith("/graphql")
+				? Response.json({
+						data: {
+							repository: {
+								vulnerabilityAlerts: {
+									nodes: [],
+									pageInfo: { hasNextPage: true, endCursor: "same" },
+								},
+							},
+						},
+					})
+				: Response.json([]),
+		),
+	).rejects.toMatchObject({ code: "snapshot_incomplete" });
+	expect(await readSnapshot(createDb(security), "account", "repo:nocoo/app:security")).toBeNull();
+});
+
 async function setup(resource: string, names = ["nocoo/app"]) {
 	const raw = sqliteFixture();
 	const db = createDb(raw);

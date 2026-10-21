@@ -252,6 +252,13 @@ function ciFixture() {
 	const report = ciReport(
 		[
 			{
+				repo: "octocat/no-default",
+				fetched_at: now,
+				truncated: false,
+				runs: [],
+				releases: [],
+			},
+			{
 				repo: "octocat/hello-world",
 				fetched_at: now,
 				default_branch: "main",

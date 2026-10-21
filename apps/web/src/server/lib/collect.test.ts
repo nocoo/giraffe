@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { github } from "../../../../../tests/fixtures/factory";
 import {
 	clampToBudget,
 	collectKind,
@@ -60,9 +61,19 @@ describe("collect helpers", () => {
 		expect(
 			nextPath(new Response("[]", { headers: { link: '<https://x>; rel="prev"' } })),
 		).toBeNull();
+		for (const link of [
+			'<not-a-url>; rel="next"',
+			'not-a-url; rel="next"',
+			'<ftp://example.org/page2>; rel="next"',
+		])
+			expect(() => nextPath(new Response("[]", { headers: { link } }))).toThrow(TruncatedError);
 		expect(
-			nextPath(new Response("[]", { headers: { link: '<not-a-url>; rel="next"' } })),
-		).toBeNull();
+			nextPath(
+				new Response("[]", {
+					headers: { link: "<https://api.github.com/notifications?page=2>; rel=next" },
+				}),
+			),
+		).toBe("/notifications?page=2");
 		expect(
 			nextPath(
 				new Response("[]", {
@@ -156,26 +167,34 @@ describe("collectRepos", () => {
 		expect(out.truncated).toBe(false);
 		expect((out.repos as unknown[]).length).toBe(2);
 		expect(page).toBe(2);
-		const withNull = client({
-			graphql: () => ({
-				viewer: {
-					repositories: {
-						nodes: [null as unknown as Record<string, unknown>, { nameWithOwner: "o/c" }],
-						pageInfo: { hasNextPage: false },
+		const withNull = github(() =>
+			Response.json({
+				data: {
+					viewer: {
+						repositories: {
+							nodes: [null, { nameWithOwner: "o/c" }],
+							pageInfo: { hasNextPage: false },
+						},
 					},
 				},
 			}),
-		});
-		expect(((await collectRepos(withNull, "tok")).repos as unknown[]).length).toBe(1);
+		);
+		const nullable = await collectRepos(withNull, "tok");
+		expect(nullable.truncated).toBe(false);
+		expect(nullable.repos).toHaveLength(1);
 		const soft = client({
 			graphql: () => ({
-				viewer: { repositories: { nodes: [{ nameWithOwner: "o/a" }], pageInfo: {} } },
+				viewer: {
+					repositories: { nodes: [{ nameWithOwner: "o/a" }], pageInfo: { hasNextPage: false } },
+				},
 			}),
 		});
 		soft.githubGraphql = async () => {
 			soft.graphqlErrors = [{ type: "FORBIDDEN" }];
 			return {
-				viewer: { repositories: { nodes: [{ nameWithOwner: "o/a" }], pageInfo: {} } },
+				viewer: {
+					repositories: { nodes: [{ nameWithOwner: "o/a" }], pageInfo: { hasNextPage: false } },
+				},
 			};
 		};
 		expect((await collectRepos(soft, "tok")).truncated).toBe(true);
@@ -249,7 +268,9 @@ describe("collectRepos", () => {
 		});
 		expect((await collectKind(fatSec, "tok", "repo:o/n:security", [], 20)).truncated).toBe(true);
 		const skipScan = client({
-			graphql: () => ({ repository: { vulnerabilityAlerts: { nodes: [] } } }),
+			graphql: () => ({
+				repository: { vulnerabilityAlerts: { nodes: [], pageInfo: { hasNextPage: false } } },
+			}),
 			api: async () => {
 				throw new Error("scan skipped");
 			},
@@ -447,16 +468,18 @@ describe("collectKind", () => {
 		});
 		denied.githubGraphql = async () => {
 			denied.graphqlErrors = [{ type: "FORBIDDEN" }];
-			return { repository: { vulnerabilityAlerts: { nodes: [] } } };
+			return { repository: null };
 		};
 		const deniedOut = await collectKind(denied, "tok", "alerts", ["o/n"]);
 		expect(deniedOut.unavailable).toBe(true);
-		expect(deniedOut.truncated).toBe(true);
+		expect(deniedOut.truncated).toBe(false);
 		expect(deniedOut.items).toEqual([]);
 		const many = Array.from({ length: 11 }, (_, i) => `o/r${i}`);
 		const truncated = await collectKind(
 			client({
-				graphql: () => ({ repository: { vulnerabilityAlerts: { nodes: [] } } }),
+				graphql: () => ({
+					repository: { vulnerabilityAlerts: { nodes: [], pageInfo: { hasNextPage: false } } },
+				}),
 				api: () => Response.json([]),
 			}),
 			"tok",
@@ -475,8 +498,10 @@ describe("collectKind", () => {
 				throw new TruncatedError();
 			},
 		});
-		await expect(collectKind(soft, "tok", "alerts", ["o/n"])).rejects.toMatchObject({
-			code: "not_found",
+		expect(await collectKind(soft, "tok", "alerts", ["o/n"])).toMatchObject({
+			truncated: true,
+			unavailable: true,
+			reason_code: "not_found",
 		});
 		const capGql = client({
 			graphql: async () => {
@@ -494,7 +519,9 @@ describe("collectKind", () => {
 			code: "github_unauthorized",
 		});
 		const hardRest = client({
-			graphql: () => ({ repository: { vulnerabilityAlerts: { nodes: [] } } }),
+			graphql: () => ({
+				repository: { vulnerabilityAlerts: { nodes: [], pageInfo: { hasNextPage: false } } },
+			}),
 			api: async () => {
 				throw new ApiError(401, "github_unauthorized", "no");
 			},
@@ -572,7 +599,9 @@ describe("collectKind", () => {
 			},
 			graphql: () => ({
 				search: { issueCount: 0, pageInfo: { hasNextPage: false }, nodes: [] },
-				repository: { vulnerabilityAlerts: { nodes: [{ id: "1" }] } },
+				repository: {
+					vulnerabilityAlerts: { nodes: [{ id: "1" }], pageInfo: { hasNextPage: false } },
+				},
 			}),
 		});
 		expect((await collectKind(gh, "tok", "repo:o/n:details", [])).default_branch).toBe("main");
@@ -600,11 +629,15 @@ describe("collectKind", () => {
 						link: '<https://api.github.com/repos/o/n/code-scanning/alerts?page=2>; rel="next"',
 					},
 				}),
-			graphql: () => ({ repository: { vulnerabilityAlerts: { nodes: [] } } }),
+			graphql: () => ({
+				repository: { vulnerabilityAlerts: { nodes: [], pageInfo: { hasNextPage: false } } },
+			}),
 		});
 		expect((await collectKind(nextScan, "tok", "alerts", ["o/n"])).truncated).toBe(true);
 		const nextSec = client({
-			graphql: () => ({ repository: { vulnerabilityAlerts: { nodes: [] } } }),
+			graphql: () => ({
+				repository: { vulnerabilityAlerts: { nodes: [], pageInfo: { hasNextPage: false } } },
+			}),
 			api: () =>
 				new Response("[]", {
 					headers: {
@@ -616,7 +649,11 @@ describe("collectKind", () => {
 		const forbiddenSec = client({
 			graphql: async () => {
 				forbiddenSec.graphqlErrors = [{ type: "FORBIDDEN" }];
-				return { repository: { vulnerabilityAlerts: { nodes: [{ id: "1" }] } } };
+				return {
+					repository: {
+						vulnerabilityAlerts: { nodes: [{ id: "1" }], pageInfo: { hasNextPage: false } },
+					},
+				};
 			},
 			api: () => Response.json([]),
 		});
@@ -705,14 +742,14 @@ describe("collectKind", () => {
 		gqlErr.graphqlErrors = [{ type: "NOT_FOUND" }];
 		gqlErr.githubGraphql = async () => {
 			gqlErr.graphqlErrors = [{ type: "NOT_FOUND" }];
-			return { search: { issueCount: 0, nodes: [], pageInfo: { hasNextPage: false } } };
+			return { search: null };
 		};
 		await expect(collectKind(gqlErr, "tok", "repo:o/n:issues", [])).rejects.toMatchObject({
 			code: "not_found",
 		});
 		gqlErr.githubGraphql = async () => {
 			gqlErr.graphqlErrors = [{ type: "FORBIDDEN" }];
-			return { search: { issueCount: 0, nodes: [], pageInfo: { hasNextPage: false } } };
+			return { search: null };
 		};
 		await expect(collectKind(gqlErr, "tok", "repo:o/n:prs", [])).rejects.toMatchObject({
 			code: "github_forbidden",
@@ -810,7 +847,7 @@ describe("collectKind", () => {
 		});
 		const out = await collectKind(gh, "tok", "repo:o/n:security", []);
 		expect(out.dependabot_open).toBe(1);
-		expect(out.truncated).toBe(true);
+		expect(out.truncated).toBe(false);
 		const emptyAlerts = await collectKind(
 			client({
 				graphql: () => ({ repository: { vulnerabilityAlerts: {} } }),
@@ -823,14 +860,18 @@ describe("collectKind", () => {
 		expect(emptyAlerts.dependabot_open).toBe(0);
 		expect(emptyAlerts.code_scanning_open).toBe(0);
 		const capScan = client({
-			graphql: () => ({ repository: { vulnerabilityAlerts: { nodes: [] } } }),
+			graphql: () => ({
+				repository: { vulnerabilityAlerts: { nodes: [], pageInfo: { hasNextPage: false } } },
+			}),
 			api: async () => {
 				throw new TruncatedError();
 			},
 		});
 		expect((await collectKind(capScan, "tok", "repo:o/n:security", [])).truncated).toBe(true);
 		const hardScan = client({
-			graphql: () => ({ repository: { vulnerabilityAlerts: { nodes: [] } } }),
+			graphql: () => ({
+				repository: { vulnerabilityAlerts: { nodes: [], pageInfo: { hasNextPage: false } } },
+			}),
 			api: async () => {
 				throw new ApiError(401, "github_unauthorized", "no");
 			},
