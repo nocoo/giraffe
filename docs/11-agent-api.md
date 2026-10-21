@@ -157,6 +157,10 @@ terminal `unavailable` step, separate from real failures. It does not make a run
 partial and never means observed zero. Factory publications from that same run
 use `complete` for `completed` and `partial` for `partial`; compare run IDs because
 failed newer attempts preserve older publications. Historical rows are unchanged.
+An explicit first-page denial is distinct from an incomplete paginated list.
+Missing search `nodes` without a permission error, or a 403/404 after an accepted
+page (including an empty one), fails the snapshot as `snapshot_incomplete` and
+retains prior evidence/time; it is never counted as benign unavailable work.
 
 Absolute run deadlines include paused/backoff time: catalog 30 minutes, quick
 refresh 6 hours, deep refresh or missing legacy depth 12 hours. `deadlineAt` is

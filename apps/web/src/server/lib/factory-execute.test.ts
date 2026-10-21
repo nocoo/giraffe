@@ -6,7 +6,7 @@ import { makeRun, RUN_LEASE_MS, type RunSelection } from "../../lib/factory-run"
 import type { Env } from "../env";
 import { createApp } from "../index";
 import { createDb } from "./db/d1";
-import { controlRun, getRun, publishedFactory, startRun } from "./db/factory-runs";
+import { controlRun, getRun, listRuns, publishedFactory, startRun } from "./db/factory-runs";
 import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
 import { consumeFactory } from "./factory-dispatch";
 import { executeRunPage } from "./factory-execute";
@@ -167,6 +167,87 @@ it("publishes partial when a real page failure makes the run partial", async () 
 	expect(run?.status).toBe("partial");
 	expect((await publishedFactory(createDb(env.DB), snap.account_id))?.status).toBe("partial");
 });
+
+it.each(["issues", "prs"] as const)(
+	"fails malformed %s search through the executor without replacing saved evidence",
+	async (resource) => {
+		const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] });
+		const kind = `repo:nocoo/app:${resource}`;
+		const old = { truncated: false, fetched_at: "2025-01-01T00:00:00.000Z", marker: "retained" };
+		const db = createDb(env.DB);
+		await db.batch(replaceSnapshotStmts(db, snap.account_id, kind, old, old.fetched_at));
+		const base = vi.mocked(fetch).getMockImplementation();
+		if (!base) throw new Error("fixture");
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (url: string, init: RequestInit) =>
+				String(init?.body).includes(`is:${resource === "prs" ? "pr" : "issue"}`)
+					? Response.json({ data: { search: {} } })
+					: base(url, init),
+			),
+		);
+		const run = await drive(env);
+		expect(run?.steps.find((step) => step.resource === kind)).toMatchObject({
+			status: "failed",
+			error: "snapshot_incomplete",
+			attempts: 1,
+		});
+		expect(run?.status).toBe("partial");
+		expect(await publishedFactory(db, snap.account_id)).toMatchObject({
+			runId: "r1",
+			status: "partial",
+		});
+		expect((await listRuns(db, snap.account_id))[0]?.counts.failed).toBeGreaterThan(0);
+		expect(await readSnapshot(db, snap.account_id, kind)).toEqual(old);
+	},
+);
+
+it.each([403, 404])(
+	"fails interrupted Actions pagination (%s), even after an empty first page",
+	async (status) => {
+		const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] });
+		const kind = "repo:nocoo/app:actions";
+		const old = { truncated: false, fetched_at: "2025-01-01T00:00:00.000Z", runs: [{ id: 9001 }] };
+		const db = createDb(env.DB);
+		await db.batch(replaceSnapshotStmts(db, snap.account_id, kind, old, old.fetched_at));
+		const base = vi.mocked(fetch).getMockImplementation();
+		if (!base) throw new Error("fixture");
+		let pages = 0;
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (url: string, init: RequestInit) => {
+				if (url.includes("/actions/runs") && !new URL(url).searchParams.has("created")) {
+					pages++;
+					return new URL(url).searchParams.get("page") === "2"
+						? Response.json({ message: "Resource not accessible by integration" }, { status })
+						: Response.json(
+								{ workflow_runs: status === 403 ? [{ id: 1 }] : [] },
+								{
+									headers: {
+										link: '<https://api.github.com/repos/nocoo/app/actions/runs?page=2>; rel="next"',
+									},
+								},
+							);
+				}
+				return base(url, init);
+			}),
+		);
+		const run = await drive(env);
+		expect(pages).toBe(2);
+		expect(run?.steps.find((step) => step.resource === kind)).toMatchObject({
+			status: "failed",
+			error: "snapshot_incomplete",
+			attempts: 1,
+		});
+		expect(run?.status).toBe("partial");
+		expect(await publishedFactory(db, snap.account_id)).toMatchObject({
+			runId: "r1",
+			status: "partial",
+		});
+		expect((await listRuns(db, snap.account_id))[0]?.counts.failed).toBeGreaterThan(0);
+		expect(await readSnapshot(db, snap.account_id, kind)).toEqual(old);
+	},
+);
 
 it("keeps denied repository access separate from identity mismatches", async () => {
 	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] });

@@ -686,3 +686,12 @@ Final gate wrappers also assigned the reserved zsh variable `status`, causing a
 shell error after successful tests. Use a nonreserved `rc` variable and preserve
 the command's exit code; rerun affected verification rather than confuse wrapper
 failure with application failure or silently discard an exit status.
+
+PR review found that collector error provenance was lost before executor outcome
+classification: a malformed search connection manufactured `github_forbidden`,
+and a later-page 403 escaped as if it were first-page absence. The earlier review
+and tests covered security pagination but not ordinary saved-page collectors.
+Require explicit access errors for first-page absence, and record accepted pages
+independently of row counts so empty pages cannot hide interrupted pagination.
+Executor regressions must assert the failed step, partial run and same-run
+publication, history counts, and unchanged prior snapshot/time together.

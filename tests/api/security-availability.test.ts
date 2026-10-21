@@ -47,13 +47,16 @@ const browser = (path: string, method = "GET", body?: unknown) =>
 	});
 
 it.each([
-	["E", "alerts_disabled"],
-	["F", "permission_denied"],
-	["G", "not_found"],
-	["H", "unknown"],
+	["E", "alerts_disabled", ""],
+	["F", "permission_denied", ""],
+	["G", "not_found", ""],
+	["H", "unknown", ""],
+	["I", "alerts_disabled", "issues"],
+	["J", "alerts_disabled", "prs"],
+	["K", "alerts_disabled", "actions"],
 ])(
 	"publishes safe %s security diagnostics and separates unavailable run counts (%s)",
-	async (letter, reasonCode) => {
+	async (letter, reasonCode, incomplete) => {
 		expect(sql("SELECT value FROM _test_marker WHERE key='env'")).toEqual([{ value: "test" }]);
 		const created = await browser("accounts", "POST", { token: `ghp_${letter.repeat(36)}` });
 		expect(created.status).toBe(201);
@@ -77,7 +80,7 @@ it.each([
 			id: string;
 			status: string;
 			counts: { unavailable: number; failed: number };
-			steps: { status: string; reasonCode?: string }[];
+			steps: { status: string; resource?: string; error?: string }[];
 		};
 		const runs = async () =>
 			((await (await machine("refresh-runs")).json()) as { items: Run[] }).items;
@@ -95,23 +98,42 @@ it.each([
 					timeout: 30000,
 					interval: 200,
 				})
-				.toBe("completed");
+				.toBe(mode === "refresh" && incomplete ? "partial" : "completed");
 			return (await runs()).find((item) => item.id === run.id) as Run;
 		};
 		try {
 			await start("catalog");
 			expect(sql("SELECT value FROM _test_marker WHERE key='env'")).toEqual([{ value: "test" }]);
+			const kind = `repo:${account.login}/hello-world:${incomplete}`;
+			const old = {
+				fetched_at: "2025-01-01T00:00:00.000Z",
+				truncated: false,
+				[incomplete === "actions" ? "runs" : incomplete === "prs" ? "pull_requests" : "issues"]: [],
+			};
+			if (incomplete)
+				sql(
+					`INSERT INTO snapshots(account_id,kind,payload,fetched_at) VALUES('${account.id}','${kind}','${JSON.stringify(old)}','${old.fetched_at}')`,
+				);
 			sql(
 				`UPDATE factory_state SET next_at='2000-01-01T00:00:00.000Z' WHERE account_id='${account.id}'; UPDATE factory_runs SET created_at='2000-01-01T00:00:00.000Z' WHERE account_id='${account.id}'`,
 			);
 			const run = await start("refresh");
 			expect(run.counts.unavailable).toBeGreaterThan(0);
-			expect(run.counts.failed).toBe(0);
+			if (incomplete) {
+				expect(run.counts.failed).toBeGreaterThan(0);
+				expect(run.steps.find((step) => step.resource === kind)).toMatchObject({
+					status: "failed",
+					error: "snapshot_incomplete",
+				});
+				expect(
+					sql(`SELECT payload FROM snapshots WHERE account_id='${account.id}' AND kind='${kind}'`),
+				).toEqual([{ payload: JSON.stringify(old) }]);
+			} else expect(run.counts.failed).toBe(0);
 			expect(run.steps.filter((step) => step.status === "unavailable").length).toBeGreaterThan(0);
 			const factory = await browser("factory?scope=all");
 			expect(factory.status).toBe(200);
 			expect(await factory.json()).toMatchObject({
-				status: "complete",
+				status: incomplete ? "partial" : "complete",
 				runId: run.id,
 				repos: [{ coverage: { alerts: { status: "unavailable", reason_code: reasonCode } } }],
 			});

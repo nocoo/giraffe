@@ -2,10 +2,13 @@ import { githubUnavailableFixtures } from "../tests/fixtures/github-unavailable"
 import { factoryGraphqlStub, factoryRepoStub } from "./factory-stub";
 
 export function securityFixture(auth: string) {
-	const index = ["E", "F", "G", "H"].findIndex((letter) => auth.includes(letter.repeat(8)));
-	const fixture = githubUnavailableFixtures[[0, 2, 5, 6][index] ?? -1];
+	const index = ["E", "F", "G", "H", "I", "J", "K"].findIndex((letter) =>
+		auth.includes(letter.repeat(8)),
+	);
+	const fixture = githubUnavailableFixtures[[0, 2, 5, 6, 0, 0, 0][index] ?? -1];
 	if (!fixture) return null;
-	const owner = `availability-${fixture.code.replaceAll("_", "-")}`;
+	const regression = ["malformed-issues", "malformed-prs", "interrupted-actions"][index - 4];
+	const owner = `availability-${regression ?? fixture.code.replaceAll("_", "-")}`;
 	const repo = {
 		...factoryRepoStub,
 		id: `R_${owner}`,
@@ -37,11 +40,34 @@ export function securityFixture(auth: string) {
 						},
 					],
 				};
+			if (
+				query.includes("search") &&
+				((regression === "malformed-issues" && !query.includes("PullRequest")) ||
+					(regression === "malformed-prs" && query.includes("PullRequest")))
+			)
+				return { data: { search: {} } };
 			if (query.includes("search"))
 				return { data: { search: { issueCount: 0, nodes: [], pageInfo: { hasNextPage: false } } } };
 			return factoryGraphqlStub(query);
 		},
-		rest(path: string) {
+		rest(
+			path: string,
+			search = "",
+		): { status: number; body: unknown; headers?: Record<string, string> } {
+			const params = new URLSearchParams(search);
+			if (
+				regression === "interrupted-actions" &&
+				path.endsWith("/actions/runs") &&
+				!params.has("created")
+			) {
+				if (params.has("page"))
+					return { status: 403, body: { message: "Resource not accessible by integration" } };
+				return {
+					status: 200,
+					body: { workflow_runs: [{ id: 1 }] },
+					headers: { link: `<https://api.github.com${path}?page=2>; rel="next"` },
+				};
+			}
 			if (path.endsWith("/dependabot/alerts") || path.endsWith("/code-scanning/alerts"))
 				return {
 					status: fixture.status,

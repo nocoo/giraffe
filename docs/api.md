@@ -660,6 +660,12 @@ feature/access unavailability is terminal `unavailable`, not `failed`; it does
 not by itself make a run `partial`. Truncation, limits, malformed data and exhausted
 upstream retries remain failures. `completed` means the plan finished without
 failures or skipped required work, not that every data source is available.
+For paginated lists, only an explicit first-page access denial can represent
+expected absence. A search response without `nodes` and without an access error
+is malformed, not forbidden. A 403/404 after any accepted page (even an empty
+page with a next cursor) is interrupted collection: the snapshot step fails with
+`snapshot_incomplete`, retains the previous snapshot and its timestamp, and makes
+the run/publication partial rather than complete.
 For the **same run ID**, a published factory snapshot has `status:complete` for
 a completed run and `status:partial` for a partial run. A newer failed, paused or
 timed-out attempt can leave an older publication untouched; compare run IDs and

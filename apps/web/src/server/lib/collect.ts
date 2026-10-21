@@ -159,13 +159,21 @@ async function searchList(
 							nodes?: unknown[];
 					  }
 					| undefined;
+				if (
+					strict &&
+					i === 0 &&
+					after === null &&
+					!search?.nodes?.length &&
+					gh.graphqlErrors.length > 0 &&
+					gh.graphqlErrors.every(
+						(error) => error.type === "FORBIDDEN" || error.type === "NOT_FOUND",
+					)
+				) {
+					if (gh.graphqlErrors.some((err) => err.type === "NOT_FOUND"))
+						throw new ApiError(404, "not_found", "github not found");
+					throw new ApiError(403, "github_forbidden", "github forbidden");
+				}
 				if (!Array.isArray(search?.nodes)) {
-					if (strict) {
-						if (gh.graphqlErrors.some((err) => err.type === "NOT_FOUND")) {
-							throw new ApiError(404, "not_found", "github not found");
-						}
-						throw new ApiError(403, "github_forbidden", "github forbidden");
-					}
 					truncated = true;
 					stop = true;
 					break;
@@ -186,13 +194,9 @@ async function searchList(
 					truncated = true;
 				}
 				if (gh.graphqlErrors.length > 0) {
-					if (strict) {
-						if (gh.graphqlErrors.some((err) => err.type === "NOT_FOUND")) {
-							throw new ApiError(404, "not_found", "github not found");
-						}
-						throw new ApiError(403, "github_forbidden", "github forbidden");
-					}
 					truncated = true;
+					stop = true;
+					break;
 				}
 				if (
 					nodes.some((node) => {
@@ -218,7 +222,7 @@ async function searchList(
 				}
 				break;
 			} catch (err) {
-				if (err instanceof TruncatedError) {
+				if (err instanceof TruncatedError || (skipSoft(err) && (after !== null || i > 0))) {
 					truncated = true;
 					stop = true;
 					break;
@@ -278,7 +282,7 @@ export async function collectRepos(
 			}
 			break;
 		} catch (err) {
-			if (err instanceof TruncatedError) {
+			if (err instanceof TruncatedError || (after !== null && skipSoft(err))) {
 				truncated = true;
 				break;
 			}
@@ -474,28 +478,16 @@ async function collectNotifications(
 	token: string,
 	budget = MAX_STAGED_BYTES,
 ): Promise<Collected> {
-	const items: unknown[] = [];
-	let path: string | null = "/notifications?per_page=100";
-	let truncated = false;
-	while (path) {
-		try {
-			const res = await gh.githubApi(token, path);
-			const body = (await res.json()) as unknown;
-			items.push(...(Array.isArray(body) ? body : []));
-			path = nextPath(res);
-			if (exceedsBudget({ truncated: true, notifications: items }, budget)) {
-				truncated = true;
-				break;
-			}
-		} catch (err) {
-			if (err instanceof TruncatedError) {
-				truncated = true;
-				break;
-			}
-			throw err;
-		}
-	}
-	return { truncated, notifications: mapNotifications(items) };
+	return collectRestList(
+		gh,
+		token,
+		"/notifications?per_page=100",
+		(rows, truncated) => ({
+			truncated,
+			notifications: mapNotifications(rows),
+		}),
+		budget,
+	);
 }
 
 export function emptyCollected(kind: string, fetchedAt: string): Collected {
@@ -658,6 +650,7 @@ async function collectRestList(
 	const rows: unknown[] = [];
 	let path: string | null = start;
 	let truncated = false;
+	let started = false;
 	while (path) {
 		try {
 			const res = await gh.githubApi(token, path);
@@ -674,13 +667,14 @@ async function collectRestList(
 				truncated = true;
 				break;
 			}
+			started = true;
 			path = nextPath(res);
 			if (exceedsBudget(finish(rows, true), budget)) {
 				truncated = true;
 				break;
 			}
 		} catch (err) {
-			if (err instanceof TruncatedError) {
+			if (err instanceof TruncatedError || (started && skipSoft(err))) {
 				truncated = true;
 				break;
 			}

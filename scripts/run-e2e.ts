@@ -446,8 +446,8 @@ const github = await listen(17046, (req, res) => {
 			return;
 		}
 		if (security) {
-			const response = security.rest(url.pathname);
-			sendJson(res, response.status, response.body);
+			const response = security.rest(url.pathname, url.search);
+			sendJson(res, response.status, response.body, response.headers);
 			return;
 		}
 		if (req.method === "PATCH" && url.pathname.startsWith("/notifications/threads/")) {

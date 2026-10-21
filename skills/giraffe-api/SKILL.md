@@ -469,6 +469,10 @@ feature/access absence; it does not make the run partial. Limits, malformed data
 and exhausted retries still fail. For matching run IDs, factory publication
 `status:complete|partial` matches run `completed|partial`; an unsuccessful newer
 attempt retains the older publication. Completion does not prove complete coverage.
+Paginated lists distinguish explicit first-page denial from incomplete collection:
+missing search `nodes` without access errors, or 403/404 after any accepted page
+(even empty), yields a failed `snapshot_incomplete` step, retained prior data/time
+and a partial run/publication, not expected unavailable work.
 
 Absolute wall deadlines include pauses and backoff: catalog 30 minutes, quick
 refresh 6 hours, deep/legacy missing-depth refresh 12 hours. Optional `deadlineAt`
