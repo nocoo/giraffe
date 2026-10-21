@@ -25,6 +25,7 @@
 		"worker-configuration.d.ts",
 		"apps/web/src/**/*.ts",
 		"apps/web/src/**/*.tsx",
+		"tests/bench/**/*.ts",
 		"vitest.config.ts",
 		"vitest.setup.ts",
 		"scripts/factory-audit.ts",

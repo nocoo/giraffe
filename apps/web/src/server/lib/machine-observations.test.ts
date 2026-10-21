@@ -1,6 +1,8 @@
 import { expect, it } from "vitest";
 import { factoryFixture } from "../../../../../tests/fixtures/factory-snapshot";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
+import type { Env } from "../env";
+import { createApp } from "../index";
 import { createDb } from "./db/d1";
 import { replaceSnapshotStmts } from "./db/snapshots";
 import {
@@ -354,7 +356,10 @@ it("preserves immutable run resources, missing coverage and mixed source flags",
 		runId: "r",
 		coverage: { status: "limited", fetchedAt: snap.fetched_at },
 		items: [],
+		ranges: [{ since: "pending", until: "queue" }],
 	};
+	snap.window = { since: "2026-09-01T00:00:00Z", until: "2026-10-21T00:00:00Z" };
+	await save("factory:v:pub", snap);
 	await db
 		.prepare("INSERT INTO factory_resources VALUES(?,?,?,?)")
 		.bind("r", repo.name, "commits", JSON.stringify(resource))
@@ -363,6 +368,7 @@ it("preserves immutable run resources, missing coverage and mixed source flags",
 		sourceVersion: "r",
 		truncated: true,
 		source: { publicationId: "pub" },
+		data: { ranges: [repo.observation.window] },
 	});
 	resource.coverage.status = "unavailable";
 	await db.prepare("UPDATE factory_resources SET payload=?").bind(JSON.stringify(resource)).run();
@@ -376,7 +382,15 @@ it("preserves immutable run resources, missing coverage and mixed source flags",
 		coverage: { status: "complete", fetchedAt: snap.fetched_at },
 		items: [],
 	});
-	expect((await readFactoryResource(db, a, repo.name, "commits")).truncated).toBe(false);
+	expect(await readFactoryResource(db, a, repo.name, "commits")).toMatchObject({
+		truncated: false,
+		data: { ranges: [repo.observation.window] },
+	});
+	delete repo.observation;
+	await save("factory:v:pub", snap);
+	expect((await readFactoryResource(db, a, repo.name, "commits")).data.ranges).toEqual([
+		snap.window,
+	]);
 	expect(
 		(
 			await observationEnvelope(a, "x", {
@@ -387,3 +401,231 @@ it("preserves immutable run resources, missing coverage and mixed source flags",
 		).unavailable,
 	).toBe(true);
 });
+
+it.each(["run", "legacy"] as const)(
+	"normalizes saved %s dependency evidence without changing source rows or versions",
+	async (source) => {
+		const raw = sqliteFixture();
+		const db = createDb(raw);
+		const snap = factoryFixture();
+		const repo = snap.repos[0];
+		if (!repo) throw new Error("fixture");
+		await db
+			.prepare(
+				"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES(?,'nocoo','fake','fake','t','t')",
+			)
+			.bind(snap.account_id)
+			.run();
+		const save = (kind: string, payload: Record<string, unknown>) =>
+			db.batch(replaceSnapshotStmts(db, snap.account_id, kind, payload, snap.fetched_at));
+		repo.observation = { version: "r", source, window: snap.window, refreshedAt: snap.fetched_at };
+		repo.dependencies = [
+			{ name: "@scope/root", version: "1", path: "package.json#name", url: "root" },
+			{
+				name: "@scope/child",
+				version: "2",
+				path: "packages/child/package.json#name",
+				url: "child",
+			},
+			{
+				name: "@scope/child",
+				version: "workspace:*",
+				path: "package.json#dependencies",
+				url: "self",
+			},
+			{ name: "app", version: "^3", path: "package.json#dependencies", url: "external" },
+		];
+		repo.manifests = [
+			{ name: "@scope/known", version: "1", path: "packages/known/package.json", url: "known" },
+		];
+		const data = {
+			runId: "r",
+			next: null,
+			ranges: [],
+			coverage: { ...repo.coverage.dependencies, status: "complete", fetchedAt: snap.fetched_at },
+			manifests: [],
+			items: [
+				...repo.dependencies,
+				{
+					name: "@scope/known",
+					version: "workspace:*",
+					path: "package.json#dependencies",
+					url: "known",
+				},
+			].map((dependency, index) => ({
+				id: String(index),
+				title: dependency.name,
+				version: dependency.version,
+				path: dependency.path,
+				url: dependency.url,
+				at: "",
+				createdAt: "",
+				author: "",
+				closedAt: null,
+				mergedAt: null,
+				state: "declared",
+			})),
+		};
+		await save("repos", { repos: [{ name_with_owner: repo.name }] });
+		await save("factory", { ...snap });
+		if (source === "run") {
+			await db
+				.prepare(
+					"INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES('r',?,'k','completed','{}','t','t','t')",
+				)
+				.bind(snap.account_id)
+				.run();
+			await db
+				.prepare("INSERT INTO factory_resources VALUES('r',?,'dependencies',?)")
+				.bind(repo.name, JSON.stringify(data))
+				.run();
+		} else await save(`factory:${repo.name}:dependencies`, data);
+		const before = await db.prepare("SELECT kind,payload FROM snapshots ORDER BY kind").all();
+		const resources = await db.prepare("SELECT * FROM factory_resources").all();
+		const stream = await readFactoryResource(db, snap.account_id, repo.name, "dependencies");
+		expect(stream).toMatchObject({
+			sourceVersion: "r",
+			data: {
+				items: [{ title: "app", at: null, createdAt: null, author: null }],
+				manifests: [
+					{ name: "@scope/known", path: "packages/known/package.json" },
+					{ name: "@scope/root", path: "package.json" },
+					{ name: "@scope/child", path: "packages/child/package.json" },
+				],
+			},
+		});
+		const publication = await readObservation(db, snap.account_id, "factory", "all");
+		expect(publication.data.repos).toMatchObject([
+			{
+				dependencies: [{ name: "app" }],
+				manifests: [{ name: "@scope/known" }, { name: "@scope/root" }, { name: "@scope/child" }],
+			},
+		]);
+		expect(
+			(await db.prepare("SELECT kind,payload FROM snapshots ORDER BY kind").all()).results,
+		).toEqual(before.results);
+		expect((await db.prepare("SELECT * FROM factory_resources").all()).results).toEqual(
+			resources.results,
+		);
+	},
+);
+
+it.each(["running", "completed"])(
+	"projects the latest saved catalog rate over an older publication (%s)",
+	async (status) => {
+		const raw = sqliteFixture();
+		const db = createDb(raw);
+		const snap = factoryFixture();
+		await db
+			.prepare(
+				"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES(?,'nocoo','fake','fake','t','t')",
+			)
+			.bind(snap.account_id)
+			.run();
+		await db.prepare("UPDATE accounts SET is_active=1").run();
+		const read = async () =>
+			(
+				await createApp().request("http://localhost/api/factory", {}, {
+					DB: raw,
+					ENVIRONMENT: "development",
+					GITHUB_API_BASE: "http://127.0.0.1:17046",
+				} as Env)
+			).json();
+		await db.batch(
+			replaceSnapshotStmts(
+				db,
+				snap.account_id,
+				"repos",
+				{ repos: snap.repos.map((repo) => ({ name_with_owner: repo.name })) },
+				snap.fetched_at,
+			),
+		);
+		const older = {
+			remaining: 700,
+			resetAt: new Date(Date.now() + 3_600_000).toISOString(),
+			resource: "core",
+			observedAt: new Date(Date.now() - 120_000).toISOString(),
+		};
+		const latest = {
+			...older,
+			remaining: 600,
+			resource: "graphql",
+			observedAt: new Date(Date.now() - 60_000).toISOString(),
+		};
+		await db.batch(
+			replaceSnapshotStmts(
+				db,
+				snap.account_id,
+				"factory",
+				{ ...snap, rate: older },
+				snap.fetched_at,
+			),
+		);
+		await db
+			.prepare(
+				"INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES('catalog',?,'k',?,?,'t','t','2999-01-01')",
+			)
+			.bind(
+				snap.account_id,
+				status,
+				JSON.stringify({ mode: "catalog", checkpoint: { rate: latest } }),
+			)
+			.run();
+		const before = (await db.prepare("SELECT * FROM factory_runs").all()).results;
+		const saved = (await db.prepare("SELECT kind,payload FROM snapshots ORDER BY kind").all())
+			.results;
+		expect(await read()).toMatchObject({ runId: snap.runId, rate: latest });
+		await db
+			.prepare(
+				"UPDATE factory_runs SET payload=json_set(payload,'$.checkpoint.rate.resetAt',?) WHERE id='catalog'",
+			)
+			.bind(new Date(Date.now() - 1_000).toISOString())
+			.run();
+		expect(await read()).toMatchObject({ rate: null });
+		await db
+			.prepare("UPDATE factory_runs SET payload=? WHERE id='catalog'")
+			.bind(before[0]?.payload)
+			.run();
+		expect((await db.prepare("SELECT * FROM factory_runs").all()).results).toEqual(before);
+		expect(
+			(await db.prepare("SELECT kind,payload FROM snapshots ORDER BY kind").all()).results,
+		).toEqual(saved);
+	},
+);
+
+it.each([
+	{ remaining: 100, resetAt: "2999-01-01T00:00:00Z", resource: "core" },
+	{ remaining: 100, resetAt: "invalid", resource: "core", observedAt: "2026-10-20T00:00:00Z" },
+	{
+		remaining: 100,
+		resetAt: "2026-09-16T00:00:00Z",
+		resource: "core",
+		observedAt: "2026-09-15T22:00:00Z",
+	},
+])(
+	"hides invalid or undated saved publication rates without inventing observation times",
+	async (rate) => {
+		const raw = sqliteFixture();
+		const db = createDb(raw);
+		const snap = factoryFixture();
+		await db
+			.prepare(
+				"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES(?,'nocoo','fake','fake','t','t')",
+			)
+			.bind(snap.account_id)
+			.run();
+		await db.prepare("UPDATE accounts SET is_active=1").run();
+		await db.batch(
+			replaceSnapshotStmts(db, snap.account_id, "factory", { ...snap, rate }, snap.fetched_at),
+		);
+		expect(
+			await (
+				await createApp().request("http://localhost/api/factory", {}, {
+					DB: raw,
+					ENVIRONMENT: "development",
+					GITHUB_API_BASE: "http://127.0.0.1:17046",
+				} as Env)
+			).json(),
+		).toMatchObject({ rate: null });
+	},
+);

@@ -1,4 +1,5 @@
 import { emptyMetrics } from "../../lib/factory";
+import { dependencyEvidence } from "../../lib/factory-dependencies";
 import {
 	FACTORY_STREAMS,
 	type FactoryCoverage,
@@ -114,7 +115,7 @@ export function mapFactoryEvents(stream: FactoryStreamName, data: GithubObject[]
 		});
 }
 /** Manifest evidence only: direct root npm dependencies and two named CI entrypoints. */
-export function mapDependencies(data: GithubObject, repo: FactoryRepo): FactoryEvent[] {
+export function mapDependencies(data: GithubObject, repo: FactoryRepo) {
 	const items: FactoryEvent[] = [];
 	const base = `${repo.url}/blob/${repo.head}`;
 	const add = (name: string, version: string, path: string) =>
@@ -124,11 +125,11 @@ export function mapDependencies(data: GithubObject, repo: FactoryRepo): FactoryE
 			version,
 			path,
 			url: `${base}/${path}`,
-			at: "",
-			createdAt: "",
+			at: null,
+			createdAt: null,
 			closedAt: null,
 			mergedAt: null,
-			author: "",
+			author: null,
 			state: "declared",
 		});
 	const text = object(data.package).text;
@@ -162,5 +163,5 @@ export function mapDependencies(data: GithubObject, repo: FactoryRepo): FactoryE
 		["renovate", "renovate.json"],
 	] as const)
 		if (typeof object(data[key]).text === "string") add(key, "configured", path);
-	return items;
+	return dependencyEvidence(items);
 }

@@ -161,8 +161,9 @@ it.each(["1.0.0", undefined])(
 			});
 		});
 		await stepFactory(fixture.state, gh, "test", fixture.store, NOW);
-		expect((await fixture.read())?.items).toMatchObject([
-			{ title: "app", version: version ?? "", path: "package.json#name" },
+		expect((await fixture.read())?.items).toEqual([]);
+		expect((await fixture.read())?.manifests).toMatchObject([
+			{ name: "app", version: version ?? "", path: "package.json" },
 		]);
 		expect((await fixture.read())?.coverage).toMatchObject({
 			status: "complete",
@@ -171,6 +172,44 @@ it.each(["1.0.0", undefined])(
 		expect(gh.count).toBe(1);
 	},
 );
+it("normalizes old root and workspace identity evidence when reusing the same pinned head", async () => {
+	const fixture = setup("dependencies");
+	fixture.baseline.head = "abc";
+	const event = mapFactoryEvents("dependencies", [rawEvent()])[0];
+	if (!event) throw new Error("fixture");
+	fixture.baseline.data.items = [
+		{ ...event, id: "root", title: "@scope/root", path: "package.json#name" },
+		{ ...event, id: "workspace", title: "@scope/child", path: "packages/child/package.json#name" },
+		{ ...event, id: "self", title: "@scope/child", path: "package.json#dependencies" },
+		{
+			...event,
+			id: "external",
+			title: "external",
+			path: "package.json#dependencies",
+			at: "",
+			createdAt: "",
+			author: "",
+		},
+	];
+	const previous = structuredClone(fixture.baseline);
+	const gh = github(() => {
+		throw new Error("unexpected upstream call");
+	});
+	await stepFactory(fixture.state, gh, "test", fixture.store, NOW);
+	expect((await fixture.read())?.items).toEqual([
+		expect.objectContaining({ title: "external", at: null, createdAt: null, author: null }),
+	]);
+	expect((await fixture.read())?.manifests?.map((manifest) => manifest.name)).toEqual([
+		"@scope/root",
+		"@scope/child",
+	]);
+	expect(fixture.state.repos[0]?.dependencies.map((dependency) => dependency.name)).toEqual([
+		"external",
+	]);
+	expect(fixture.state.repos[0]?.manifests).toEqual((await fixture.read())?.manifests);
+	expect(fixture.baseline).toEqual(previous);
+	expect(gh.count).toBe(0);
+});
 it("does not reuse evidence outside its original window or merge open-only security lists", async () => {
 	for (const stream of ["actions", "alerts"] as const) {
 		const s = setup(stream);

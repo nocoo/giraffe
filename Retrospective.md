@@ -725,3 +725,68 @@ The final row-shape pass reproduced the same false-zero outcome after invalid li
 elements were silently filtered. Validate record elements before filtering or
 mapping; null REST rows, primitives and nested arrays must make collection
 incomplete. Legitimate empty lists and nullable optional record fields remain valid.
+
+## 2026-10-21 - Clean up acceptance accounts independently of test order
+
+After the unknown-query regression failed as intended, Vitest prioritized that
+previously failing HTTP file on its next run. The machine API acceptance test
+revoked its tokens but left a newly created active account behind. The later
+method matrix then received `snapshot_missing` instead of `account_missing`.
+The query fix passed its unit tests and commit hooks, but the complete HTTP run
+correctly caught this fixture leak. Record pre-existing account IDs and delete
+only the account created by this test in its cleanup; do not change the matrix's
+assertions or depend on cached file ordering. Wait for the full HTTP result before
+claiming acceptance, even when focused tests and commit hooks have passed.
+
+During this task a Herdr resize using `--current` resolved the UI-focused pane
+instead of the caller. The command reported `changed:false`, so no unrelated
+layout changed. The corrected command used the explicit owned pane ID. Use
+explicit pane IDs for layout mutations and verify the returned target.
+
+The factory-window HTTP regression repeated the earlier query-metadata mistake:
+its no-write assertion compared Wrangler's entire response, including variable
+`meta.duration`. A later run failed on 0 ms versus 1 ms with identical saved rows.
+Use the existing neighboring test's `statement.results` comparison for both reads.
+Review new fixture assertions against recorded incidents, not just one green run.
+
+## 2026-10-21 - Separate fixture transport failures from contract regressions
+
+The first green HTTP run for saved factory rate projection failed with
+`ECONNRESET` before any rate GET reached the Worker. Four synchronous Wrangler
+fixture commands preceded a pooled HTTP counter read; an expired keep-alive
+socket was a plausible cause, not a proven product defect. Move the counter
+baseline ahead of the blocking local SQL setup, which makes no upstream requests.
+The subsequent complete A/B suites passed without retries or a production
+fallback. Keep this transport failure separate from the earlier assertion-based
+red tests, and avoid long synchronous fixture blocks immediately before pooled
+HTTP reads when arranging read-only/network-count evidence.
+
+The source profiling fixture initially assumed the unit SQLite schema already
+contained `_test_marker`; it now creates and verifies its own marker before
+inserting data. An expiry test also initially violated the database constraint
+`expires_at > created_at`; both synthetic timestamps must describe a valid token
+that has subsequently expired. During conditional HTTP testing another redundant
+counter read after blocking CLI commands hit an idle connection close. That
+duplicate assertion was removed while independent source tests and the new
+read-only/network-denying profiler retained no-collection evidence. The corrected
+red run failed for the missing validator, not fixture setup or transport errors,
+and both complete HTTP suites subsequently passed. No existing or remote data was
+used by these fixture corrections.
+
+## 2026-10-21 - Include non-item metadata in bounded collection failures
+
+Moving package identities into `manifests` left the existing byte-limit loop
+shrinking only `items`. Independent review supplied a 1.3 MB package version,
+below the upstream 4 MB response limit but above the stream's 1.2 MB budget.
+After the last item was removed, metadata still exceeded the limit and the loop
+never terminated. Normal gates were green because they covered oversized items
+and responses, not metadata-only overflow.
+
+New tests first reproduced both fresh and reused paths in owned subprocesses
+with a three-second timeout, preventing the regression from blocking Vitest's
+own timer. The same scenarios then run in-process for coverage. Collection now
+raises the existing `factory_capacity` error when no items remain to trim; the
+existing run error path restores its checkpoint, pauses safely and preserves
+prior evidence. The tests assert no resource writes and unchanged prior data.
+Whenever a payload gains metadata outside a bounded list, verify that every
+capacity loop can still make progress or terminate with a controlled failure.

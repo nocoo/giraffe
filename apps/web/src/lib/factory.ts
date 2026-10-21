@@ -66,12 +66,16 @@ export function summarizeEvents(
 	for (const e of uniqueEvents(events)) {
 		if (stream === "commits" && inWindow(e.at, window)) {
 			count("commits", e.at);
-			m.authors[e.author] = (m.authors[e.author] ?? 0) + 1;
+			const author = e.author ?? "unlinked";
+			m.authors[author] = (m.authors[author] ?? 0) + 1;
 		}
 		if (stream === "issues") {
 			count("issueOpened", e.createdAt);
 			count("issueClosed", e.closedAt);
-			if (e.state === "open" && Date.parse(window.until) - Date.parse(e.createdAt) >= 14 * 86400000)
+			if (
+				e.state === "open" &&
+				Date.parse(window.until) - Date.parse(e.createdAt ?? "") >= 14 * 86400000
+			)
 				m.agedIssues++;
 		}
 		if (stream === "prs") {
@@ -79,12 +83,15 @@ export function summarizeEvents(
 			count("prMerged", e.mergedAt);
 			if (!e.mergedAt) count("prClosed", e.closedAt);
 			if (inWindow(e.mergedAt, window)) {
-				const hours = (Date.parse(e.mergedAt ?? "") - Date.parse(e.createdAt)) / 3600000;
+				const hours = (Date.parse(e.mergedAt ?? "") - Date.parse(e.createdAt ?? "")) / 3600000;
 				if (Number.isFinite(hours) && hours >= 0) m.cycleHours.push(hours);
 			}
-			if (e.state === "open" && Date.parse(window.until) - Date.parse(e.createdAt) >= 7 * 86400000)
+			if (
+				e.state === "open" &&
+				Date.parse(window.until) - Date.parse(e.createdAt ?? "") >= 7 * 86400000
+			)
 				m.agedPrs++;
-			if (/^(dependabot|renovate)(\[bot\])?$/.test(e.author)) {
+			if (/^(dependabot|renovate)(\[bot\])?$/.test(e.author ?? "")) {
 				if (e.state === "open") m.botOpen++;
 				if (inWindow(e.mergedAt, window)) m.botMerged++;
 			}

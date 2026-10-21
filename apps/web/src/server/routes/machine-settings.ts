@@ -7,6 +7,7 @@ import { ApiError } from "../lib/errors";
 import { enqueueRun } from "../lib/factory-dispatch";
 import { refreshInput, startRefresh } from "../lib/factory-start";
 import { requireCatalogRepo } from "../lib/machine-observations";
+import { assertMachineQuery } from "../lib/machine-query";
 import { readJson } from "../lib/read-body";
 import { readSchedules, saveSchedule, starredRepos } from "../lib/refresh-schedule";
 import type { MachineVars } from "./machine";
@@ -103,7 +104,8 @@ export async function machineRuns(c: Ctx) {
 	const account = await getAccount(db, accountId);
 	if (!account) throw new ApiError(404, "not_found", "account unavailable");
 	const id = c.req.param("id");
-	if (c.req.method === "GET" && !id)
+	if (c.req.method === "GET" && !id) {
+		assertMachineQuery(c.req.query());
 		return c.json({
 			account_id: accountId,
 			items: (await listRuns(db, accountId)).map(({ run, counts }) => {
@@ -112,6 +114,7 @@ export async function machineRuns(c: Ctx) {
 				return { ...data, counts };
 			}),
 		});
+	}
 	if (c.req.method !== "POST") throw new ApiError(405, "method_not_allowed", "method not allowed");
 	const body = await readJson(c.req.raw, 120000);
 	const now = new Date().toISOString();

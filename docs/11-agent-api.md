@@ -57,6 +57,19 @@ sources; `since` is an optimization, not a durable change cursor. Consumers must
 reconcile pending/failed work and periodically perform unfiltered scans. An empty
 filtered result does not prove that all sources have been analyzed.
 
+Every documented machine GET rejects unknown query keys with 400
+`validation_failed`, including identity, individual resources, settings and run
+lists. Repository pages and factory streams accept no query parameters; account
+observations accept only `scope`. Authentication and authorization run first.
+
+Machine source indexes support content-derived `ETag` / `If-None-Match` validation
+with bodyless 304 responses. Authorization and query validation are never bypassed.
+Responses retain private/no-store, Authorization variance and no-referrer policy;
+this is explicit polling, not a shared cache. Request-local input reuse reduces
+duplicate reads without changing observation versions or writing cache rows.
+Cloudflare handles production response compression. See the
+[local performance evidence and edge verification limits](12-source-performance.md).
+
 All account observation lists/aggregates and repository/factory source entries are
 intersected with the current saved catalog at read time, case-insensitively. Removed
 repositories do not leak through retained snapshots or publications; historical
@@ -70,6 +83,22 @@ Other read paths include:
   pages (details, issues, PRs, Actions, releases, traffic, security, languages and
   contributors).
 - `/factory/repos/:owner/:name/:stream` for immutable published factory streams.
+
+Factory stream `data.observation.window` supplies the repository's original
+window; `data.ranges` is a one-window array with that value (or the saved publication
+window for legacy data without an observation). It is not the internal pending
+collection queue. Dependency streams normalize unknown `at`, `createdAt` and
+`author` to null. Own root/workspace package identities move to separate
+`manifests` metadata and are excluded from npm dependency declarations when saved
+evidence identifies them. Existing rows are normalized at read time, with no new
+workspace scan, required refresh or schema migration.
+
+Account `/factory` rate metadata is the latest dated saved GitHub rate observation
+from publication/run checkpoints, including newer catalog or active runs. It
+includes `observedAt` and becomes null when usable current evidence is absent or
+its reset has expired. This account-wide metadata is independent of repository
+publication versions; GET neither invents a newer observation time nor contacts
+GitHub to refill it.
 
 Observation responses include the saved data, its opaque `sourceVersion`, actual
 `fetchedAt`, freshness and coverage metadata. Preserve full source versions and

@@ -143,12 +143,14 @@ export async function executeRunPage(
 			run.checkpoint.repos = [{ ...mapFactoryRepo(repo), metadataAt: clock() }];
 			run.checkpoint.contributionStatus = previous?.contributionStatus ?? "unavailable";
 			run.checkpoint.contribution = previous?.contribution ?? null;
+			run.checkpoint.rate = previous?.rate ?? null;
 			const rate = object(data.rateLimit);
 			if (typeof rate.remaining === "number")
 				run.checkpoint.rate = {
 					remaining: rate.remaining,
 					resetAt: typeof rate.resetAt === "string" ? rate.resetAt : null,
 					resource: "graphql",
+					observedAt: clock(),
 				};
 			finish(step, "success", clock());
 		} else if (step.kind === "restore") {
@@ -206,13 +208,11 @@ export async function executeRunPage(
 									)
 									.bind(repo.observation.version, step.repo, stream)
 									.first<{ payload: string }>();
-								return row
-									? {
-											data: JSON.parse(row.payload) as FactoryStreamData,
-											head: repo.head,
-											window: repo.observation.window,
-										}
-									: null;
+								if (!row) return null;
+								const data = JSON.parse(row.payload) as FactoryStreamData;
+								if (stream === "dependencies")
+									data.manifests = [...(repo.manifests ?? []), ...(data.manifests ?? [])];
+								return { data, head: repo.head, window: repo.observation.window };
 							},
 						}
 					: {}),

@@ -15,6 +15,9 @@ async function browser(path: string, method = "GET", body?: unknown) {
 	});
 }
 it("retains machine bearer CRUD and retires PKCE over real local HTTP", async () => {
+	const existing = (await (await browser("accounts")).json()) as {
+		accounts: { id: string }[];
+	};
 	const response = await browser("accounts", "POST", { token: `ghp_${"A".repeat(36)}` });
 	expect(response.ok).toBe(true);
 	const account = (await response.json()) as { id: string };
@@ -56,6 +59,44 @@ it("retains machine bearer CRUD and retires PKCE over real local HTTP", async ()
 		expect((await machine(`${prefix}/sources`, "POST", {})).status).toBe(405);
 		expect((await machine(`${prefix}/sources`, "GET", undefined, "invalid")).status).toBe(401);
 		expect((await machine(`v1/accounts/${"z".repeat(21)}/sources`)).status).toBe(403);
+		for (const path of [
+			"v1/me",
+			...[
+				"sources",
+				"repos",
+				"issues",
+				"prs",
+				"ci",
+				"factory",
+				"settings",
+				"refresh-runs",
+				"repos/nocoo/app",
+				...[
+					"details",
+					"issues",
+					"prs",
+					"actions",
+					"releases",
+					"traffic",
+					"security",
+					"languages",
+					"contributors",
+				].map((resource) => `repos/nocoo/app/${resource}`),
+				...["commits", "issues", "prs", "actions", "releases", "alerts", "dependencies"].map(
+					(stream) => `factory/repos/nocoo/app/${stream}`,
+				),
+				...["records", "reports", "jobs"].flatMap((collection) => [
+					`agent/${collection}`,
+					`agent/${collection}/saved`,
+				]),
+			].map((path) => `${prefix}/${path}`),
+		]) {
+			const invalid = await machine(`${path}?x=1`);
+			expect.soft(invalid.status, path).toBe(400);
+			expect.soft(await invalid.json(), path).toMatchObject({
+				error: { code: "validation_failed", message: expect.any(String) },
+			});
+		}
 		for (const kind of ["records", "reports", "jobs"]) {
 			const path = `${prefix}/agent/${kind}`;
 			const id = `acceptance-${kind}`;
@@ -157,6 +198,8 @@ it("retains machine bearer CRUD and retires PKCE over real local HTTP", async ()
 			expect((await browser(`tokens/${id}`, "DELETE", { account_id: account.id })).status).toBe(
 				204,
 			);
+		if (!existing.accounts.some((item) => item.id === account.id))
+			expect((await browser(`accounts/${account.id}`, "DELETE")).status).toBe(204);
 	}
 	expect((await machine("v1/me")).status).toBe(401);
 });

@@ -525,8 +525,7 @@ export function dependencyEdges(repos: FactoryRepo[]) {
 	const names = new Set(repos.map((r) => r.name));
 	const packages = new Map<string, string | null>();
 	for (const r of repos)
-		for (const d of r.dependencies) {
-			if (d.path !== "package.json#name") continue;
+		for (const d of r.manifests ?? []) {
 			if (!packages.has(d.name)) packages.set(d.name, r.name);
 			else if (packages.get(d.name) !== r.name) packages.set(d.name, null);
 		}
@@ -537,7 +536,6 @@ export function dependencyEdges(repos: FactoryRepo[]) {
 	>();
 	for (const r of repos)
 		for (const d of r.dependencies) {
-			if (d.path === "package.json#name") continue;
 			const target = d.path.startsWith(".github/workflows/")
 				? d.name.split("/").slice(0, 2).join("/")
 				: packages.get(d.name);

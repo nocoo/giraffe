@@ -21,3 +21,5 @@
 - [Machine API v1 and external analysis contract](11-agent-api.md)
 
 - [Machine API v1 reference (English): endpoints, tokens and external bot reports](api.md)
+
+- [Source index profiling, conditional responses and compression](12-source-performance.md)

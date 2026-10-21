@@ -112,6 +112,15 @@ api -G "$API/sources" --data-urlencode 'since=2026-10-19T08:00:00+08:00' \
 - Repository-page aliases differing only in case resolve to the newest saved page
   group. The index and data endpoint return the same selected resource spelling
   and content version; older aliases remain stored but are not separate sources.
+- Retain the opaque `ETag` from a successful machine source response and send it
+  as `If-None-Match` for the same query variant. A matching 304 has no JSON body;
+  an unmatched request returns 200 with current content. Weak/list validators are
+  accepted; `*` only tests existence and must not be used as a change cursor.
+  Authorization and query validation still run. Private/no-store remains in force:
+  do not create shared caches or assume automatic browser body caching. A 304 does
+  not clear pending analysis. Content changes without new timestamps can change
+  the tag. Cloudflare handles wire compression and can transform the validator;
+  send the received tag unchanged rather than calculating one locally.
 
 | Source identity | GET data path |
 | --- | --- |
@@ -145,6 +154,12 @@ no HTTP pagination or statistics filter. Repo/stream endpoints have no supported
 query parameters. Traffic/security/languages/contributors are readable but not
 listed in `/sources`. Open-item snapshots are not closed-event history.
 
+Every documented machine GET rejects unknown query keys with 400
+`validation_failed`, using the standard error envelope. This includes `/me`,
+individual records/reports/jobs, settings and refresh-run lists. Do not append
+cache-busters or `scope` to repository/stream requests. Bearer/account/scope
+authorization can fail before query validation.
+
 All these data endpoints, unlike `/sources`, return
 `{account_id, data, sourceVersion, fetchedAt, freshness, coverage, truncated,
 unavailable, source:{kind,resource,publicationId}, selection:{scope,statisticsFilter}}`.
@@ -175,11 +190,28 @@ access loss during pagination remain failures, not expected absence.
   `contributionExcluded:true`, `contributionStatus:"unavailable"`, no provenance).
   Repository filtering never rewrites account calendar evidence. CI freshness counts
   three dependencies per repo: Actions, releases and details.
+- `/factory` rate is null or `{remaining,resetAt,resource,observedAt}` from the
+  latest dated saved GitHub observation, including newer catalog/active checkpoints.
+  Invalid, undated, future-observed or expired-reset evidence is not current.
+  Do not treat a null rate as a refreshed quota or reuse an older unexpired rate
+  when the newest observation has expired. This account-wide metadata can change
+  independently of publication versions; it is not the machine API's request limit.
 - Factory stream `data` includes `runId`, `items`, `next`, `ranges:[{since,until}]`,
-  `coverage`, `fetched_at`, optional `observation`, and flags. `next` is saved
+  `coverage`, `fetched_at`, optional `observation`/`manifests`, and flags. `next` is saved
   collection metadata, not a machine pagination URL. Coverage status is
   `pending|partial|complete|unavailable|limited`; an empty list proves zero only
-  with complete coverage. Windows and reused observations keep their original time.
+  with complete coverage. Read the original window from `data.observation.window`.
+  `ranges` contains exactly that one window, or the saved publication window for
+  legacy data without an observation; it is not the collector's pending queue.
+  Never replace a retained repository window with a newer global publication window.
+- Dependency `at`, `createdAt` and `author` are null when unknown, including old
+  saved rows. Do not substitute `fetched_at` for package creation time. Own package
+  identities are separate `manifests:[{name,version,path,url}]` metadata, not items;
+  saved root/workspace names are excluded from npm dependency declarations.
+  Factory repository entries also expose these manifests for dependency graphs.
+  Config/workflow labels that happen to match a package name remain evidence.
+  Collection still scans only pinned root manifests/named workflow/config files;
+  absent workspace identity is not evidence that every dependency is external.
 - `source.publicationId` identifies the publication; `sourceVersion` identifies
   the immutable repository observation. Mixed publications can retain older repo
   versions. GET never starts refresh or modifies a publication.

@@ -106,6 +106,23 @@ beforeAll(async () => {
 	const publication = factoryFixture();
 	const repo = publication.repos[0];
 	if (!repo) throw new Error("factory fixture missing");
+	repo.dependencies = [
+		{ name: "@scope/root", version: "1", path: "package.json#name", url: "root" },
+		{ name: "@scope/child", version: "1", path: "packages/child/package.json#name", url: "child" },
+		{
+			name: "@scope/child",
+			version: "workspace:*",
+			path: "package.json#dependencies",
+			url: "self",
+		},
+		{ name: "recovered", version: "^1", path: "package.json#dependencies", url: "external" },
+	];
+	repo.coverage.dependencies = {
+		...repo.coverage.dependencies,
+		status: "complete",
+		fetchedAt: baseline,
+		observed: 4,
+	};
 	publication.account_id = account;
 	publication.repos = [names[0] as string, removed].map((name) => ({
 		...repo,
@@ -124,6 +141,37 @@ beforeAll(async () => {
 		snapshot("repos", { repos, repository_fetched_at: { "NOCOO/RECOVERED": latest } }, catalogAt),
 		snapshot("factory", { ...publication }),
 	];
+	for (const name of [names[0] as string, removed])
+		statements.push(
+			snapshot(`factory:${name}:commits`, {
+				runId: publication.runId,
+				items: [],
+				next: null,
+				ranges: [],
+				coverage: { ...repo.coverage.commits, status: "complete", fetchedAt: baseline },
+			}),
+		);
+	statements.push(
+		snapshot(`factory:${names[0]}:dependencies`, {
+			runId: publication.runId,
+			next: null,
+			ranges: [],
+			coverage: repo.coverage.dependencies,
+			items: repo.dependencies.map((dependency, index) => ({
+				id: String(index),
+				title: dependency.name,
+				version: dependency.version,
+				path: dependency.path,
+				url: dependency.url,
+				at: "",
+				createdAt: "",
+				author: "",
+				closedAt: null,
+				mergedAt: null,
+				state: "declared",
+			})),
+		}),
+	);
 	for (const [kind, key] of [
 		["issues", "issues"],
 		["prs", "pull_requests"],
@@ -307,6 +355,119 @@ it("includes baseline and missing repositories in all and starred freshness", as
 	}
 });
 
+it("exposes the saved factory stream window without changing collection state", async () => {
+	const before = sql(
+		`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
+	).map((statement) => statement.results);
+	const countBefore = await (await fetch("http://127.0.0.1:17046/_count")).text();
+	const result = await (await machine("factory/repos/nocoo/recovered/commits")).json();
+	expect(result).toMatchObject({
+		data: {
+			ranges: [factoryFixture().window],
+			observation: { window: factoryFixture().window },
+			coverage: { status: "complete" },
+		},
+	});
+	expect(
+		sql(`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`).map(
+			(statement) => statement.results,
+		),
+	).toEqual(before);
+	expect(await (await fetch("http://127.0.0.1:17046/_count")).text()).toBe(countBefore);
+});
+
+it("normalizes saved dependency unknowns and separates root and workspace identities over HTTP", async () => {
+	const before = sql(
+		`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
+	).map((statement) => statement.results);
+	const stream = await (await machine("factory/repos/nocoo/recovered/dependencies")).json();
+	expect(stream).toMatchObject({
+		sourceVersion: factoryFixture().runId,
+		data: {
+			items: [{ title: "recovered", at: null, createdAt: null, author: null }],
+			manifests: [
+				{ name: "@scope/root", path: "package.json" },
+				{ name: "@scope/child", path: "packages/child/package.json" },
+			],
+		},
+	});
+	const publication = await (await machine("factory")).json();
+	expect(publication.data.repos[0]).toMatchObject({
+		dependencies: [{ name: "recovered" }],
+		manifests: [{ name: "@scope/root" }, { name: "@scope/child" }],
+	});
+	const browserStream = await browser("factory/repos/nocoo/recovered/dependencies");
+	expect(browserStream.status).toBe(200);
+	expect(await browserStream.json()).toMatchObject({
+		total: 1,
+		items: [{ title: "recovered", at: null, createdAt: null, author: null }],
+	});
+	expect(
+		sql(`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`).map(
+			(statement) => statement.results,
+		),
+	).toEqual(before);
+});
+
+it("reads the latest timestamped catalog rate and hides an expired newest observation without writes", async () => {
+	const countBefore = await (await fetch("http://127.0.0.1:17046/_count")).text();
+	assertMarker();
+	const observedAt = new Date(Date.now() - 60_000).toISOString();
+	const fresh = {
+		remaining: 400,
+		resetAt: new Date(Date.now() + 3_600_000).toISOString(),
+		resource: "graphql",
+		observedAt,
+	};
+	const stale = {
+		...fresh,
+		remaining: 300,
+		resetAt: new Date(Date.now() - 1_000).toISOString(),
+		observedAt: new Date(Date.now() - 30_000).toISOString(),
+	};
+	sql(
+		`INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES('batch3-rate',${quote(account)},'batch3-rate','running',${quote(JSON.stringify({ mode: "catalog", checkpoint: { rate: fresh } }))},'t','t','2999-01-01');`,
+	);
+	try {
+		const before = sql(`SELECT payload FROM factory_runs WHERE id='batch3-rate'`).map(
+			(statement) => statement.results,
+		);
+		const snapshots = sql(
+			`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
+		).map((statement) => statement.results);
+		expect(await (await machine("factory")).json()).toMatchObject({ data: { rate: fresh } });
+		expect(await (await browser("factory")).json()).toMatchObject({ rate: fresh });
+		expect(
+			sql(`SELECT payload FROM factory_runs WHERE id='batch3-rate'`).map(
+				(statement) => statement.results,
+			),
+		).toEqual(before);
+		expect(
+			sql(
+				`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
+			).map((statement) => statement.results),
+		).toEqual(snapshots);
+		sql(
+			`UPDATE snapshots SET payload=json_set(payload,'$.rate',json(${quote(JSON.stringify(fresh))})) WHERE account_id=${quote(account)} AND kind='factory'; UPDATE factory_runs SET payload=json_set(payload,'$.checkpoint.rate',json(${quote(JSON.stringify(stale))})) WHERE id='batch3-rate';`,
+		);
+		expect(await (await machine("factory")).json()).toMatchObject({ data: { rate: null } });
+		expect(await (await browser("factory")).json()).toMatchObject({ rate: null });
+		sql(
+			`UPDATE factory_runs SET payload=json_set(payload,'$.checkpoint.rate',json(${quote(JSON.stringify({ ...stale, resetAt: fresh.resetAt, observedAt: null }))})) WHERE id='batch3-rate'; UPDATE snapshots SET payload=json_remove(payload,'$.rate.observedAt') WHERE account_id=${quote(account)} AND kind='factory';`,
+		);
+		expect(await (await machine("factory")).json()).toMatchObject({ data: { rate: null } });
+		expect(await (await fetch("http://127.0.0.1:17046/_count")).text()).toBe(countBefore);
+		const original = snapshots[0]?.find((row) => row.kind === "factory")?.payload;
+		if (typeof original !== "string") throw new Error("fixture");
+		sql(
+			`UPDATE snapshots SET payload=${quote(original)} WHERE account_id=${quote(account)} AND kind='factory';`,
+		);
+	} finally {
+		assertMarker();
+		sql("DELETE FROM factory_runs WHERE id='batch3-rate';");
+	}
+});
+
 it("separates default-branch workflow and repository verdict units over saved HTTP data", async () => {
 	const machineReport = (await (await machine("ci")).json()) as { data: CiReport };
 	const report = machineReport.data;
@@ -358,4 +519,173 @@ it("bounds branch streams at the saved 30-day cutoff through machine and browser
 		expect(((await response.json()) as CiReport).streams).toEqual(report.data.streams);
 	}
 	expect(await (await fetch("http://127.0.0.1:17046/_count")).text()).toBe(upstream);
+});
+
+it("keeps latest-any source versions distinct from latest-complete multipage inbox evidence", async () => {
+	assertMarker();
+	const kinds = [
+		"repo:NOCOO/BASELINE:issues",
+		"repo:NOCOO/BASELINE:issues#2",
+		"repo:nocoo/baseline:issues",
+	];
+	const before = sql(
+		`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
+	).map((statement) => statement.results);
+	const cleanup = `DELETE FROM snapshots WHERE account_id=${quote(account)} AND kind IN (${kinds.map(quote).join(",")});`;
+	try {
+		sql(
+			[
+				snapshot(kinds[0] as string, { issues: [{ number: 201 }] }, catalogAt),
+				snapshot(kinds[1] as string, { issues: [{ number: 202 }] }, catalogAt),
+				snapshot(kinds[2] as string, { issues: [{ number: 203 }], unavailable: true }),
+			].join("\n"),
+		);
+		const index = (await (await machine("sources?repository=NOCOO%2FBASELINE")).json()) as {
+			repositories: string[];
+			sources: { resource: string; version: string; unavailable: boolean }[];
+		};
+		const page = (await (await machine("repos/nocoo/baseline/issues")).json()) as {
+			sourceVersion: string;
+			data: { issues: { number: number }[] };
+		};
+		const inbox = (await (await machine("issues")).json()) as {
+			sourceVersion: string;
+			data: { issues: { number: number; name_with_owner: string }[] };
+		};
+		expect(index.repositories).toEqual([...names].sort());
+		expect(
+			index.sources.find((source) => source.resource === "repo:nocoo/baseline:issues"),
+		).toMatchObject({ version: page.sourceVersion, unavailable: true });
+		expect(page.data.issues).toEqual([{ number: 203 }]);
+		expect(inbox.data.issues.filter((item) => item.name_with_owner === "nocoo/baseline")).toEqual([
+			{ number: 201, name_with_owner: "nocoo/baseline" },
+			{ number: 202, name_with_owner: "nocoo/baseline" },
+		]);
+		expect(index.sources.find((source) => source.resource === "account:issues")?.version).toBe(
+			inbox.sourceVersion,
+		);
+		for (const resource of ["repos", "ci", "factory", "prs"])
+			expect(index.sources.some((source) => source.resource === `account:${resource}`)).toBe(true);
+	} finally {
+		assertMarker();
+		sql(cleanup);
+	}
+	expect(
+		sql(`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`).map(
+			(statement) => statement.results,
+		),
+	).toEqual(before);
+});
+
+function conditionalSources(tag: string, path = "sources", token: string | null = bearer) {
+	return fetch(`${base}/api/v1/accounts/${account}/${path}`, {
+		headers: { "If-None-Match": tag, ...(token ? { authorization: `Bearer ${token}` } : {}) },
+	});
+}
+
+it("revalidates private sources over HTTP with response-derived tags and no GET writes", async () => {
+	const before = sql(
+		`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
+	).map((statement) => statement.results);
+	const tokens = sql(`SELECT * FROM api_tokens WHERE account_id=${quote(account)} ORDER BY id`).map(
+		(statement) => statement.results,
+	);
+
+	const full = await machine("sources");
+	const tag = full.headers.get("etag");
+	expect(tag).toEqual(expect.stringMatching(/^"[a-f0-9]{64}"$/));
+	if (!tag) throw new Error("missing source validator");
+	for (const match of [tag, `W/${tag}`, `"other", W/${tag}`, "*"]) {
+		const response = await conditionalSources(match);
+		expect(response.status).toBe(304);
+		expect(await response.text()).toBe("");
+		expect(response.headers.get("etag")).toBe(tag);
+		expect(response.headers.get("cache-control")).toBe("private, no-store");
+		expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+		expect(response.headers.get("vary")).toBe("Authorization");
+	}
+	expect((await conditionalSources('"unmatched"')).status).toBe(200);
+	const selected = await conditionalSources(tag, "sources?repository=NOCOO%2FRECOVERED");
+	expect(selected.status).toBe(200);
+	expect(selected.headers.get("etag")).not.toBe(tag);
+	const since = await conditionalSources(tag, "sources?since=2099-01-01T00%3A00%3A00Z");
+	expect(since.status).toBe(200);
+	expect(since.headers.get("etag")).not.toBe(tag);
+	const original = sql(
+		`SELECT payload FROM snapshots WHERE account_id=${quote(account)} AND kind='factory'`,
+	)[0]?.results[0]?.payload;
+	if (typeof original !== "string") throw new Error("saved publication missing");
+	try {
+		assertMarker();
+		sql(
+			`UPDATE snapshots SET payload=json_set(payload,'$.repos[0].coverage.commits.observed',9999) WHERE account_id=${quote(account)} AND kind='factory';`,
+		);
+		const metadataChanged = await conditionalSources(tag);
+		expect(metadataChanged.status).toBe(200);
+		expect(metadataChanged.headers.get("etag")).not.toBe(tag);
+	} finally {
+		assertMarker();
+		sql(
+			`UPDATE snapshots SET payload=${quote(original)} WHERE account_id=${quote(account)} AND kind='factory';`,
+		);
+	}
+	expect(
+		sql(`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`).map(
+			(statement) => statement.results,
+		),
+	).toEqual(before);
+	expect(
+		sql(`SELECT * FROM api_tokens WHERE account_id=${quote(account)} ORDER BY id`).map(
+			(statement) => statement.results,
+		),
+	).toEqual(tokens);
+});
+
+it("checks authentication, account, scopes and filters before conditional success over HTTP", async () => {
+	const tag = (await machine("sources")).headers.get("etag") ?? '"missing"';
+	const mint = async (scopes: string[]) => {
+		const response = await browser("tokens", "POST", {
+			account_id: account,
+			label: "conditional local auth",
+			scopes,
+			expires_in_days: 1,
+		});
+		expect(response.status).toBe(201);
+		return (await response.json()) as { id: string; token: string };
+	};
+	const expired = await mint(["observations:read"]);
+	const revoked = await mint(["observations:read"]);
+	const wrongScope = await mint(["agent:read"]);
+	assertMarker();
+	sql(
+		`UPDATE api_tokens SET created_at='2024-12-31T00:00:00Z',expires_at='2025-01-01T00:00:00Z' WHERE id=${quote(expired.id)};UPDATE api_tokens SET revoked_at='2025-01-01T00:00:00Z' WHERE id=${quote(revoked.id)};`,
+	);
+	const before = sql(`SELECT * FROM api_tokens WHERE account_id=${quote(account)} ORDER BY id`).map(
+		(statement) => statement.results,
+	);
+	for (const [token, status] of [
+		[null, 401],
+		["invalid", 401],
+		[expired.token, 401],
+		[revoked.token, 401],
+		[wrongScope.token, 403],
+	] as const)
+		for (const match of [tag, "*"]) {
+			const response = await conditionalSources(match, "sources", token);
+			expect(response.status).toBe(status);
+			expect(response.headers.has("etag")).toBe(false);
+		}
+	for (const query of ["?x=1", "?since=invalid", "?repository=invalid"])
+		expect((await conditionalSources("*", `sources${query}`)).status).toBe(400);
+	expect((await conditionalSources("*", "sources?repository=outside%2Fcatalog")).status).toBe(404);
+	const other = await fetch(`${base}/api/v1/accounts/other/sources`, {
+		headers: { authorization: `Bearer ${bearer}`, "If-None-Match": "*" },
+	});
+	expect(other.status).toBe(403);
+	expect(other.headers.has("etag")).toBe(false);
+	expect(
+		sql(`SELECT * FROM api_tokens WHERE account_id=${quote(account)} ORDER BY id`).map(
+			(statement) => statement.results,
+		),
+	).toEqual(before);
 });

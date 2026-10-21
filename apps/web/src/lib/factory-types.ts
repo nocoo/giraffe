@@ -33,11 +33,11 @@ export type FactoryEvent = {
 	id: string;
 	title: string;
 	url: string;
-	at: string;
-	createdAt: string;
+	at: string | null;
+	createdAt: string | null;
 	closedAt: string | null;
 	mergedAt: string | null;
-	author: string;
+	author: string | null;
 	state: string;
 	conclusion?: string | null;
 	draft?: boolean;
@@ -68,6 +68,7 @@ export type FactoryMetrics = FactoryDay & {
 	days: Record<string, FactoryDay>;
 	authors: Record<string, number>;
 };
+export type FactoryDependency = { name: string; version: string; path: string; url: string };
 export type FactoryRepo = {
 	is_fork?: boolean;
 	is_archived?: boolean;
@@ -103,11 +104,13 @@ export type FactoryRepo = {
 	totalReleases: number;
 	coverage: Record<FactoryStreamName, FactoryCoverage>;
 	metrics: FactoryMetrics;
-	dependencies: { name: string; version: string; path: string; url: string }[];
+	dependencies: FactoryDependency[];
+	manifests?: FactoryDependency[];
 };
 export type FactoryStreamData = {
 	runId: string;
 	items: FactoryEvent[];
+	manifests?: FactoryDependency[];
 	next: string | null;
 	ranges: FactoryWindow[];
 	coverage: FactoryCoverage;
@@ -138,7 +141,7 @@ export type FactorySnapshot = {
 	repos: FactoryRepo[];
 	cursor: { repo: number; stream: number };
 	requests: number;
-	rate: { remaining: number; resetAt: string | null; resource: string } | null;
+	rate: { remaining: number; resetAt: string | null; resource: string; observedAt?: string } | null;
 	contribution: {
 		days: { date: string; count: number }[];
 		total: number;

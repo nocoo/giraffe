@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.15.15 — 2026-10-21
+
+### Fixed
+
+- Populate machine factory stream `data.ranges` with the saved repository observation window, retaining the existing field rather than removing it. `data.observation.window` remains authoritative; legacy data without an observation uses its saved publication window, not the internal pending-range queue.
+- Normalize saved dependency metadata and separate own root/workspace package identities into `manifests`, preserving known identities during collection reuse, restoration and dependency-graph projection without new workspace scanning or rewriting historical rows.
+- Bound resource trimming when manifest metadata alone exceeds the byte budget: collection fails with `factory_capacity` and retains prior evidence instead of looping after all items are removed.
+- Project the newest dated saved GitHub rate observation, including newer catalog/active checkpoints, with `observedAt`. Undated, invalid or expired evidence returns null instead of advertising an old reset as current; publication versions and repository windows remain immutable.
+- Reuse decoded source snapshots and account projections within each request. The 126-repository benchmark reduces full reader queries from 14 to 5, payload reads from 16.76 MB to 8.78 MB, full median read time from 37.1 to 27.9 ms and empty-since time from 34.5 to 14.0 ms, with unchanged response hashes. These are local SQLite results, not production latency claims.
+
+### Added
+
+- Strong content-derived ETags and authenticated, bodyless `If-None-Match` 304 responses for machine `/sources`, preserving private/no-store, Authorization variance and no-referrer policy. Cloudflare handles response compression; no manual gzip or shared cache is introduced.
+- Reproducible source profiling and query-count regressions in `tests/bench/sources.ts`, plus unit and real HTTP coverage for the aligned contracts. No schema migration or forced refresh is required; historical undated rate information stays null until normal collection supplies dated evidence.
+
+### Breaking Changes
+
+- Unknown query keys on every documented machine GET change from silently ignored to 400 `validation_failed`. Remove cache-busters and unsupported selectors; only account observation endpoints accept `scope`, while repository/stream endpoints accept no query parameters.
+- Unknown dependency `at`, `createdAt` and `author` change from `""` to `null`. Own `package.json#name` entries move from dependency items to `manifests:[{name,version,path,url}]`; declarations referencing identified own packages are excluded. Config/workflow evidence with colliding names is retained. See the [API reference](docs/api.md) and [performance evidence](docs/12-source-performance.md).
+
 ## v0.15.14 - 2026-10-21
 
 ### Fixed

@@ -8,6 +8,23 @@ import {
 } from "./factory";
 import type { FactoryEvent, FactoryRepo } from "./factory-types";
 
+it("keeps nullable event metadata unknown without inventing ages or cycle times", () => {
+	const unknown = event({
+		at: "2026-09-01T00:00:00Z",
+		createdAt: null,
+		author: null,
+		mergedAt: "2026-09-02T00:00:00Z",
+		state: "open",
+	});
+	expect(summarizeEvents("commits", [unknown], window).authors).toEqual({ unlinked: 1 });
+	expect(summarizeEvents("prs", [unknown], window)).toMatchObject({
+		agedPrs: 0,
+		cycleHours: [],
+		botOpen: 0,
+	});
+	expect(summarizeEvents("issues", [unknown], window).agedIssues).toBe(0);
+});
+
 const window = { since: "2026-06-18T00:00:00.000Z", until: "2026-09-16T00:00:00.000Z" };
 const event = (overrides: Partial<FactoryEvent> = {}): FactoryEvent => ({
 	id: "1",

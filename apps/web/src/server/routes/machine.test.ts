@@ -141,6 +141,54 @@ it("enforces bearer, scopes and fixed account independently of dashboard activat
 	expect((await s.app.request("http://localhost/api/repos", {}, prod)).status).toBe(401);
 	expect((await s.app.request("http://localhost/api/tokens", {}, prod)).status).toBe(401);
 });
+it("rejects unknown query keys on every documented machine GET", async () => {
+	const s = await setup();
+	const paths = [
+		"/me",
+		...[
+			"sources",
+			"repos",
+			"issues",
+			"prs",
+			"ci",
+			"factory",
+			"settings",
+			"refresh-runs",
+			"repos/nocoo/app",
+			...[
+				"details",
+				"issues",
+				"prs",
+				"actions",
+				"releases",
+				"traffic",
+				"security",
+				"languages",
+				"contributors",
+			].map((resource) => `repos/nocoo/app/${resource}`),
+			...["commits", "issues", "prs", "actions", "releases", "alerts", "dependencies"].map(
+				(stream) => `factory/repos/nocoo/app/${stream}`,
+			),
+			...["records", "reports", "jobs"].flatMap((collection) => [
+				`agent/${collection}`,
+				`agent/${collection}/saved`,
+			]),
+		].map((path) => `${s.prefix}/${path}`),
+	];
+	for (const path of paths) {
+		const response = await s.call(`${path}?x=1`);
+		expect.soft(response.status, path).toBe(400);
+		expect.soft(await response.json(), path).toMatchObject({
+			error: { code: "validation_failed", message: expect.any(String) },
+		});
+	}
+	expect((await s.call("/me?x=1", "GET", undefined, null)).status).toBe(401);
+	expect((await s.call(`/accounts/${other}/repos?x=1`)).status).toBe(403);
+	for (const path of ["repos/nocoo/app", "factory/repos/nocoo/app/commits"])
+		expect((await s.call(`${s.prefix}/${path}?scope=all`)).status).toBe(400);
+	expect((await s.call(`${s.prefix}/repos?scope=all`)).status).toBe(200);
+	expect((await s.call(`${s.prefix}/repos?scope=all&scope=all`)).status).toBe(400);
+});
 it("performs all agent CRUD methods with validation and concurrency errors", async () => {
 	const s = await setup();
 	const path = `${s.prefix}/agent/reports`;
@@ -338,6 +386,48 @@ it("filters retained factory publications case-insensitively without rewriting t
 		sourceVersion: "immutable-v1",
 		source: { resource: "factory:nocoo/app:commits" },
 	});
+});
+
+it("projects saved account rates independently of publication and dashboard activation without writes", async () => {
+	const { db, call, prefix, token } = await setup();
+	const publication = factoryFixture();
+	await db.batch(replaceSnapshotStmts(db, account, "factory", publication, publication.fetched_at));
+	const rate = {
+		remaining: 500,
+		resource: "graphql",
+		resetAt: new Date(Date.now() + 3_600_000).toISOString(),
+		observedAt: new Date(Date.now() - 60_000).toISOString(),
+	};
+	for (const id of [account, other])
+		await db
+			.prepare(
+				"INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES(?,?,?,'running',?,'t','t','t')",
+			)
+			.bind(
+				id,
+				id,
+				id,
+				JSON.stringify({
+					mode: "catalog",
+					checkpoint: { rate: id === account ? rate : { ...rate, remaining: 999 } },
+				}),
+			)
+			.run();
+	const before = (await db.prepare("SELECT * FROM factory_runs ORDER BY id").all()).results;
+	const tokenBefore = await db
+		.prepare("SELECT * FROM api_tokens WHERE id=?")
+		.bind(token.id)
+		.first();
+	expect(await (await call(`${prefix}/factory`)).json()).toMatchObject({
+		sourceVersion: publication.runId,
+		data: { rate },
+	});
+	expect((await db.prepare("SELECT * FROM factory_runs ORDER BY id").all()).results).toEqual(
+		before,
+	);
+	expect(await db.prepare("SELECT * FROM api_tokens WHERE id=?").bind(token.id).first()).toEqual(
+		tokenBefore,
+	);
 });
 
 it.each([

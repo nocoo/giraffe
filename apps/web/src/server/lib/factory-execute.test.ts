@@ -844,6 +844,45 @@ async function beforeMetadata(env: Env) {
 	throw new Error("metadata step not reached");
 }
 
+it.each([false, true])(
+	"timestamps metadata rates and preserves prior observations when absent (rate: %s)",
+	async (hasRate) => {
+		const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] });
+		await beforeMetadata(env);
+		const db = createDb(env.DB);
+		const observedAt = new Date(Date.parse(now) - 60_000).toISOString();
+		const previous = {
+			remaining: 500,
+			resetAt: "2026-09-15T23:00:00Z",
+			resource: "core",
+			observedAt,
+		};
+		await db
+			.prepare(
+				"UPDATE factory_runs SET payload=json_set(payload,'$.checkpoint',json(?)) WHERE id='r1'",
+			)
+			.bind(JSON.stringify({ ...snap, rate: previous }))
+			.run();
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () =>
+				Response.json({
+					data: {
+						repository: rawRepo,
+						...(hasRate ? { rateLimit: { remaining: 400, resetAt: "2026-09-15T23:00:00Z" } } : {}),
+					},
+				}),
+			),
+		);
+		await executeRunPage(env, "r1", () => now);
+		expect((await getRun(db, snap.account_id, "r1"))?.run.checkpoint?.rate).toEqual(
+			hasRate
+				? { remaining: 400, resetAt: "2026-09-15T23:00:00Z", resource: "graphql", observedAt: now }
+				: previous,
+		);
+	},
+);
+
 async function legacyAssessment(status: "pending" | "running" | "success") {
 	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] });
 	const db = createDb(env.DB);
@@ -1843,6 +1882,44 @@ it.each([
 it("loads accepted evidence across runs and copies pinned data into the new publication", async () => {
 	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] });
 	await drive(env);
+	const db = createDb(env.DB);
+	await db
+		.prepare(
+			"UPDATE factory_repo_versions SET payload=json_set(payload,'$.manifests',json(?)) WHERE account_id=?",
+		)
+		.bind(
+			JSON.stringify([
+				{
+					name: "known-workspace",
+					version: "1",
+					path: "packages/known/package.json",
+					url: "saved",
+				},
+			]),
+			snap.account_id,
+		)
+		.run();
+	await db
+		.prepare(
+			"UPDATE factory_resources SET payload=json_set(payload,'$.manifests',json('[]'),'$.items',json(?)) WHERE run_id='r1' AND stream='dependencies'",
+		)
+		.bind(
+			JSON.stringify([
+				{
+					id: "self",
+					title: "known-workspace",
+					path: "package.json#dependencies",
+					url: "saved",
+					at: "",
+					createdAt: "",
+					author: "",
+					closedAt: null,
+					mergedAt: null,
+					state: "declared",
+				},
+			]),
+		)
+		.run();
 	const later = new Date(Date.parse(now) + 3600000).toISOString();
 	const run = makeRun(
 		"r2",
@@ -1863,6 +1940,8 @@ it("loads accepted evidence across runs and copies pinned data into the new publ
 	expect(publication?.repos[0]?.observation?.version).toBe("r2");
 	expect(publication?.repos[0]?.coverage.commits.strategy).toBe("reused");
 	expect(publication?.repos[0]?.coverage.dependencies.strategy).toBe("reused");
+	expect(publication?.repos[0]?.dependencies).toEqual([]);
+	expect(publication?.repos[0]?.manifests).toMatchObject([{ name: "known-workspace" }]);
 	expect((await getRun(createDb(env.DB), snap.account_id, "r2"))?.run.depth).toBe("quick");
 	expect((await getRun(createDb(env.DB), snap.account_id, "r2"))?.run.requests).toBeLessThan(
 		(await getRun(createDb(env.DB), snap.account_id, "r1"))?.run.requests ?? 0,

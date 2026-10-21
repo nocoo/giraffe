@@ -1,5 +1,6 @@
 import type { Context } from "hono";
 import { filterFactoryEvents } from "../../lib/factory";
+import { dependencyEvidence } from "../../lib/factory-dependencies";
 import {
 	FACTORY_STREAMS,
 	type FactoryStreamData,
@@ -11,6 +12,7 @@ import { publishedFactory } from "../lib/db/factory-runs";
 import { readSnapshot } from "../lib/db/snapshots";
 import { ApiError, jsonOk } from "../lib/errors";
 import { newFactory, streamKey } from "../lib/factory-collect";
+import { readFactoryRate } from "../lib/factory-rate";
 import { factoryFreshness, repoPolicy, statisticsFactory } from "../lib/repo-statistics";
 import { snapshotScope } from "../lib/snapshot-scope";
 import { repoParts } from "./snapshots";
@@ -45,6 +47,7 @@ export async function getFactory(c: Ctx): Promise<Response> {
 	return jsonOk(
 		{
 			...projected,
+			rate: await readFactoryRate(c.get("db"), account.id, snap.rate),
 			fetched_at: freshness.latestAt ?? "",
 			freshness,
 			account_id: account.id,
@@ -100,7 +103,15 @@ export async function getFactoryStream(c: Ctx): Promise<Response> {
 				new Date(day).toISOString().slice(0, 10) !== day))
 	)
 		throw new ApiError(400, "validation_failed", "invalid detail filter");
-	const items = filterFactoryEvents(resource?.items ?? [], filter, day);
+	const evidence = resource?.items ?? [];
+	const items = filterFactoryEvents(
+		stream === "dependencies"
+			? dependencyEvidence(evidence, [...(repo.manifests ?? []), ...(resource?.manifests ?? [])])
+					.items
+			: evidence,
+		filter,
+		day,
+	);
 	return jsonOk(
 		{
 			account_id: account.id,
