@@ -493,7 +493,7 @@ describe("api method matrix", () => {
 		});
 		const prsBody = (await (await api("/api/prs")).json()) as Record<string, unknown>;
 		snapshotMeta(prsBody);
-		expect((prsBody.pull_requests as unknown[])[0]).toEqual({
+		const expectedPr = {
 			name_with_owner: "octocat/hello-world",
 			number: 2,
 			title: "pr",
@@ -510,7 +510,8 @@ describe("api method matrix", () => {
 			deletions: 1,
 			base_ref: "main",
 			head_ref: "feat",
-		});
+		};
+		expect((prsBody.pull_requests as unknown[])[0]).toEqual(expectedPr);
 		const alertsBody = (await (await api("/api/alerts")).json()) as Record<string, unknown>;
 		snapshotMeta(alertsBody);
 		expect(alertsBody).toMatchObject({
@@ -609,21 +610,7 @@ describe("api method matrix", () => {
 			unknown
 		>;
 		snapshotMeta(repoPrs);
-		expect((repoPrs.pull_requests as unknown[])[0]).toEqual({
-			name_with_owner: "octocat/hello-world",
-			number: 2,
-			title: "pr",
-			url: "https://github.com/octocat/hello-world/pull/2",
-			created_at: "2026-08-01T00:00:00.000Z",
-			updated_at: "2026-08-02T00:00:00.000Z",
-			author_login: "octocat",
-			is_draft: false,
-			review_decision: "APPROVED",
-			additions: 1,
-			deletions: 1,
-			base_ref: "main",
-			head_ref: "feat",
-		});
+		expect((repoPrs.pull_requests as unknown[])[0]).toEqual(expectedPr);
 		const oneKind = await api("/api/refresh", {
 			method: "POST",
 			headers: { origin, "content-type": "application/json" },
