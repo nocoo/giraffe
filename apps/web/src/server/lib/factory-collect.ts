@@ -15,6 +15,7 @@ import {
 	type FactoryWindow,
 } from "../../lib/factory-types";
 import { ApiError } from "./errors";
+import { collectContributions } from "./factory-contributions";
 import {
 	coverage,
 	exclusion,
@@ -24,13 +25,11 @@ import {
 	object,
 	rows,
 } from "./factory-map";
-import {
-	FACTORY_CONTRIBUTIONS_QUERY,
-	FACTORY_DEPENDENCIES_QUERY,
-	FACTORY_INVENTORY_QUERY,
-} from "./factory-queries";
+import { FACTORY_DEPENDENCIES_QUERY, FACTORY_INVENTORY_QUERY } from "./factory-queries";
+import { assertFactoryReserve, recordFactoryRate } from "./factory-rate";
 import type { GithubClient } from "./github-client";
 import { githubUnavailability } from "./github-unavailable";
+import { collectPrState } from "./pr-collect";
 
 export const FACTORY_ITEM_CAP = 5000;
 export const FACTORY_BYTE_CAP = 1_200_000;
@@ -118,12 +117,12 @@ export function factoryNext(link: string | null, current: string): string | null
 function rateFromData(s: FactorySnapshot, data: Record<string, unknown>, now: string) {
 	const rate = object(data.rateLimit);
 	if (typeof rate.remaining === "number")
-		s.rate = {
+		recordFactoryRate(s, {
 			remaining: rate.remaining,
 			resetAt: typeof rate.resetAt === "string" ? rate.resetAt : null,
 			resource: "graphql",
 			observedAt: now,
-		};
+		});
 }
 async function inventory(
 	s: FactorySnapshot,
@@ -164,31 +163,6 @@ async function inventory(
 	s.inventory.complete = !info.hasNextPage;
 	if (s.inventory.complete && s.inventory.scanned !== s.inventory.total)
 		throw new ApiError(502, "github_error", "inventory changed; restart required");
-}
-async function contributions(s: FactorySnapshot, gh: GithubClient, token: string, now: string) {
-	const data = await gh.githubGraphql(token, FACTORY_CONTRIBUTIONS_QUERY, {
-		owner: s.owner,
-		...s.window,
-	});
-	rateFromData(s, data, now);
-	const collection = object(object(data.user).contributionsCollection);
-	const calendar = object(collection.contributionCalendar);
-	if (gh.graphqlErrors.length || !Array.isArray(calendar.weeks)) {
-		s.contributionStatus = "unavailable";
-		return;
-	}
-	s.contribution = {
-		total: Number(calendar.totalContributions),
-		restricted: Number(collection.restrictedContributionsCount),
-		fetchedAt: now,
-		days: rows(calendar.weeks).flatMap((w) =>
-			rows(w.contributionDays).map((d) => ({
-				date: String(d.date),
-				count: Number(d.contributionCount),
-			})),
-		),
-	};
-	s.contributionStatus = "complete";
 }
 function advanceCursor(s: FactorySnapshot) {
 	s.cursor.stream++;
@@ -279,8 +253,7 @@ async function collectStream(
 				Object.assign(data, mapDependencies(object(result.repository), repo));
 			} catch {
 				data.coverage.status = "limited";
-				data.coverage.reason =
-					"Root package.json is not valid JSON; dependency evidence unavailable";
+				data.coverage.reason = "Dependency manifests cannot be parsed safely; evidence unavailable";
 			}
 			data.next = null;
 		} else if (stream === "commits" && !repo.head) {
@@ -291,12 +264,12 @@ async function collectStream(
 			const remaining = response.headers.get("x-ratelimit-remaining");
 			const reset = response.headers.get("x-ratelimit-reset");
 			if (remaining !== null)
-				s.rate = {
+				recordFactoryRate(s, {
 					remaining: Number(remaining),
 					resetAt: reset ? new Date(Number(reset) * 1000).toISOString() : null,
 					resource: "core",
 					observedAt: now,
-				};
+				});
 			const payload: unknown = await response.json();
 			if (stream === "actions" && Number(object(payload).total_count) > 1000) {
 				const range = new URL(path, "https://api.github.com").searchParams
@@ -317,9 +290,10 @@ async function collectStream(
 			} else {
 				const list = stream === "actions" ? object(payload).workflow_runs : payload;
 				if (!Array.isArray(list)) throw new ApiError(502, "github_error", "invalid resource list");
-				const page = mapFactoryEvents(stream, rows(list)).filter(
+				let page = mapFactoryEvents(stream, rows(list)).filter(
 					(e) => (stream !== "commits" && stream !== "actions") || inWindow(e.at, s.window),
 				);
+				if (stream === "prs") page = await collectPrState(s, gh, token, page, now);
 				data.items = uniqueEvents([...data.items, ...page]);
 				data.next = factoryNext(response.headers.get("link"), path);
 				const ids = new Set(retained.map((e) => e.id));
@@ -406,16 +380,11 @@ export async function stepFactory(
 	includeDisabled = false,
 ): Promise<void> {
 	if (s.status === "complete" || s.status === "partial") return;
-	if (
-		s.rate &&
-		s.rate.remaining < 50 &&
-		(!s.rate.resetAt || Date.parse(s.rate.resetAt) > Date.parse(now))
-	)
-		throw new ApiError(503, "github_rate_limited", "GitHub reserve reached");
+	assertFactoryReserve(s, now);
 	const before = gh.count;
 	try {
 		if (!s.inventory.complete) await inventory(s, gh, token, now, includeDisabled);
-		else if (s.contributionStatus === "pending") await contributions(s, gh, token, now);
+		else if (s.contributionStatus === "pending") await collectContributions(s, gh, token, now);
 		else await collectStream(s, gh, token, store, now);
 		s.fetched_at = now;
 		s.revision++;

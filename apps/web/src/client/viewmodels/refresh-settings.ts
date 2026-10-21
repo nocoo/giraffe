@@ -19,9 +19,11 @@ export async function saveRefreshSchedule(
 ): Promise<RefreshSettings> {
 	if (getActiveAccountId() !== account)
 		throw new ApiError(409, "account_conflict", "account changed");
+	const times = config.times ? [...new Set(config.times)].sort() : null;
 	const result = await apiPost<RefreshSettings>(`refresh/schedules/${kind}`, {
 		account_id: account,
 		...config,
+		...(times ? { times, time: times[0] } : {}),
 	});
 	if (result.account_id !== account || getActiveAccountId() !== account)
 		throw new ApiError(409, "account_conflict", "account changed");

@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.16.0 - 2026-10-21
+
+### Added
+
+- Support 1-6 normalized refresh times for daily, weekly and catalog schedules, with Basalt add/remove controls, earliest-slot scheduling and exact missed-slot accounting. Preserve fixed UTC+08:00 and the readable/writable single `time` alias.
+- Refresh the account contribution calendar on scheduled daily runs as well as weekly/full runs. Collect six nullable contribution types in bounded, resumable daily aggregate batches and retain prior good evidence after failures.
+- Expose `GET /api/v1/accounts/:account/contributions` with inclusive saved date filters, strict validation, observation provenance, missing/partial-day semantics and authenticated ETag/304 responses. Preserve GitHub calendar date/count attribution; explicitly label UTC type windows rather than claiming Shanghai-equivalent buckets.
+- Add consistent `mergeable`, `mergeStateStatus` and `checks.state` to account, repository and factory PR responses. Collect through existing GraphQL searches and bounded factory node batches; old/unavailable observations read as null.
+
+### Fixed
+
+- Stop terminally failed contribution checkpoints from being resumed by later repository streams or replacing prior calendars.
+- Preserve separate REST/GraphQL rate reserves across PR pages, metadata transitions and failed-page rollback while keeping the public latest-rate observation unchanged.
+- Explain legacy stream 409 responses with distinct missing-payload and version-mismatch messages. Matching pre-observation snapshots already support the publication-window fallback; preserve the immutable-source checks rather than fabricating missing evidence.
+- Make workflow dependency IDs unique during collection/reuse and machine/browser reads. Capture real job keys with a bounded indentation scan, collapse identical legacy saved evidence and preserve distinct refs/content without rewriting historical rows or adding dependencies.
+- Detect workflow jobs relative to the document's actual root indentation. Fail closed with limited coverage for missing or unsupported job structures instead of publishing a complete zero; retain stronger prior repository evidence and its original version/window.
+
+### Migration and Compatibility
+
+- Add migration `0013_refresh_schedule_times.sql`: an idempotent side table/backfill and legacy-column synchronization triggers, with no table rebuild or existing schedule changes. Local SQLite backup validation proves row preservation, rollback compatibility and integrity. Keep the table/triggers when rolling back code.
+- Existing `time`-only writes map to `times:[time]`; `time` reads as the first sorted slot. Existing contribution totals and immutable publication identities remain intact. Additional times are not enabled automatically and require the owner's choice.
+
+### Breaking Changes
+
+- Workflow dependency identity: `<file>:<target>` -> `<file>:<target>#job=<encoded-job-key>` for newly collected references, including singletons, so job/ref ordering and source HEAD changes cannot rename a job reference. Example: `.github/workflows/ci.yml:nocoo/base-ci/.github/workflows/test-job.yml` -> the same base with `#job=api` and `#job=browser`. Legacy identical copies collapse to one unchanged ID; legacy distinct refs change from the colliding base ID to `#ref=<encoded-ref>`. Multiple refs within a known job append `&ref=<encoded-ref>`; distinct same-ref evidence additionally appends `&entry=<canonical-content-rank>`. Legacy ranks are stable for the same saved evidence set, not inferred job identities. Consumers must rebuild dependency-ID indexes when these normalized shapes first appear. Non-workflow IDs, source versions and publication windows are unchanged.
+
 ## v0.15.15 — 2026-10-21
 
 ### Fixed

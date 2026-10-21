@@ -1,3 +1,5 @@
+import { prState } from "../../lib/pull-request";
+
 export type Capabilities = {
 	repo: boolean;
 	"read:org": boolean;
@@ -134,6 +136,7 @@ export function mapPullRequests(nodes: unknown[]): unknown[] {
 				deletions: Number(n.deletions ?? 0),
 				base_ref: String(n.baseRefName ?? n.base_ref ?? ""),
 				head_ref: String(n.headRefName ?? n.head_ref ?? ""),
+				...prState(n),
 			},
 		];
 	});

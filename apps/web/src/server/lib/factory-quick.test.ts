@@ -37,6 +37,7 @@ it.each(["issues", "prs", "actions", "releases"] as const)(
 		}));
 		const endpoint = stream === "prs" ? "pulls" : stream === "actions" ? "actions/runs" : stream;
 		const gh = github((url) => {
+			if (url.endsWith("/graphql")) return Response.json({ data: { nodes: [] } });
 			const second = new URL(url).searchParams.get("page") === "2";
 			const rows = current.slice(second ? 100 : 0, second ? 101 : 100);
 			return Response.json(
@@ -58,7 +59,7 @@ it.each(["issues", "prs", "actions", "releases"] as const)(
 		expect(data?.items[100]).toMatchObject({ id: "N_101", title: "updated" });
 		expect(data?.items.some((row) => row.id === "N_102")).toBe(false);
 		expect(data?.coverage).toMatchObject({ status: "complete", strategy: "full", pages: 2 });
-		expect(gh.count).toBe(2);
+		expect(gh.count).toBe(stream === "prs" ? 4 : 2);
 		const metrics = fixture.state.repos[0]?.metrics;
 		if (stream === "issues") expect(metrics?.issueClosed).toBe(101);
 		if (stream === "prs") expect(metrics?.prMerged).toBe(101);

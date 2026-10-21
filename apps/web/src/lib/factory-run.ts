@@ -187,7 +187,7 @@ export function makeRun(
 			: [
 					...(dailyPages && !full ? [snapshot("repos"), snapshot("notifications")] : []),
 					...(full ? [...SITE_SNAPSHOT_KINDS, "insights"].map((kind) => snapshot(kind)) : []),
-					...(full ? [step("contributions")] : []),
+					...(full || dailyPages ? [step("contributions")] : []),
 					...repos.flatMap((r) => [
 						step("metadata", r.name),
 						...FACTORY_STREAMS.map((s) => step(s, r.name)),

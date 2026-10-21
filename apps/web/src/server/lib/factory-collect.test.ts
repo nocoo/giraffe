@@ -1,6 +1,10 @@
 import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import {
+	dependencyWorkflow,
+	unsupportedWorkflowJobs,
+} from "../../../../../tests/fixtures/dependency-workflow";
+import {
 	github,
 	memoryStore,
 	NOW,
@@ -21,6 +25,41 @@ import {
 
 const invoke = (s = ready(), gh = github(() => Response.json([])), store = memoryStore()) =>
 	stepFactory(s, gh, "test-token", store, NOW);
+
+it("collects uniformly indented workflow references instead of a complete zero", async () => {
+	const state = ready("dependencies");
+	const store = memoryStore();
+	const text = dependencyWorkflow
+		.split("\n")
+		.map((line) => `  ${line}`)
+		.join("\n");
+	await invoke(
+		state,
+		github(() => Response.json({ data: { repository: { ci: { text } } } })),
+		store,
+	);
+	const data = await store.read(streamKey("nocoo/app", "dependencies"));
+	expect(data?.coverage).toMatchObject({ status: "complete", observed: 3 });
+	expect(data?.items.map((item) => item.job)).toEqual(["api", "browser", "checks"]);
+});
+
+it.each(unsupportedWorkflowJobs)(
+	"does not certify unparsed workflow jobs as complete: %s",
+	async (text) => {
+		const state = ready("dependencies");
+		const store = memoryStore();
+		await invoke(
+			state,
+			github(() => Response.json({ data: { repository: { ci: { text } } } })),
+			store,
+		);
+		expect((await store.read(streamKey("nocoo/app", "dependencies")))?.coverage).toMatchObject({
+			status: "limited",
+			observed: 0,
+			reason: "Dependency manifests cannot be parsed safely; evidence unavailable",
+		});
+	},
+);
 
 it.each(githubUnavailableFixtures)(
 	"records a safe factory alerts reason ($code)",
@@ -137,25 +176,54 @@ describe("factory incremental collection", () => {
 	it("separates account contribution calendar from repository commits and handles permissions", async () => {
 		const state = ready();
 		state.contributionStatus = "pending";
-		await invoke(
-			state,
-			github(() =>
-				Response.json({
+		const gh = github((_url, init) => {
+			const query = String(init?.body);
+			if (query.includes("day0:"))
+				return Response.json({
 					data: {
-						user: {
-							contributionsCollection: {
-								restrictedContributionsCount: 2,
-								contributionCalendar: {
-									totalContributions: 4,
-									weeks: [{ contributionDays: [{ date: "2026-09-01", contributionCount: 4 }] }],
+						user: Object.fromEntries(
+							Array.from({ length: 15 }, (_, index) => [
+								`day${index}`,
+								{
+									totalCommitContributions: 0,
+									totalIssueContributions: 0,
+									totalPullRequestContributions: 0,
+									totalPullRequestReviewContributions: 0,
+									totalRepositoryContributions: 0,
+									restrictedContributionsCount: 0,
 								},
+							]),
+						),
+					},
+				});
+			return Response.json({
+				data: {
+					user: {
+						contributionsCollection: {
+							restrictedContributionsCount: 2,
+							contributionCalendar: {
+								totalContributions: 4,
+								weeks: [
+									{
+										contributionDays: Array.from({ length: 90 }, (_, index) => {
+											const date = new Date(Date.parse(state.window.since) + index * 86400_000)
+												.toISOString()
+												.slice(0, 10);
+											return { date, contributionCount: date === "2026-09-01" ? 4 : 0 };
+										}),
+									},
+								],
 							},
 						},
-						rateLimit: { remaining: 200 },
 					},
-				}),
-			),
-		);
+					rateLimit: { remaining: 200 },
+				},
+			});
+		});
+		await invoke(state, gh);
+		expect(state.contributionStatus).toBe("pending");
+		while (state.contributionStatus === "pending") await invoke(state, gh);
+		expect(state.contributionStatus).toBe("complete");
 		expect(state.contribution?.total).toBe(4);
 		expect(state.contribution?.restricted).toBe(2);
 		expect(state.repos[0]?.metrics.commits).toBe(0);
@@ -170,28 +238,30 @@ describe("factory incremental collection", () => {
 		const state = ready("prs");
 		const store = memoryStore();
 		let page = 0;
-		const gh = github(() =>
-			Response.json(
-				[
-					rawEvent(),
-					{
-						...rawEvent(2),
-						merged_at: "2026-09-03T00:00:00Z",
-						closed_at: "2026-09-03T00:00:00Z",
-						state: "closed",
-					},
-				],
-				{
-					headers:
-						page++ === 0
-							? {
-									link: '<https://api.github.com/repos/nocoo/app/pulls?page=2>; rel="next"',
-									"x-ratelimit-remaining": "100",
-									"x-ratelimit-reset": "1789513200",
-								}
-							: {},
-				},
-			),
+		const gh = github((url) =>
+			url.endsWith("/graphql")
+				? Response.json({ data: { nodes: [] } })
+				: Response.json(
+						[
+							rawEvent(),
+							{
+								...rawEvent(2),
+								merged_at: "2026-09-03T00:00:00Z",
+								closed_at: "2026-09-03T00:00:00Z",
+								state: "closed",
+							},
+						],
+						{
+							headers:
+								page++ === 0
+									? {
+											link: '<https://api.github.com/repos/nocoo/app/pulls?page=2>; rel="next"',
+											"x-ratelimit-remaining": "100",
+											"x-ratelimit-reset": "1789513200",
+										}
+									: {},
+						},
+					),
 		);
 		await invoke(state, gh, store);
 		expect(state.rate).toMatchObject({ resource: "core", observedAt: NOW, remaining: 100 });
@@ -465,6 +535,7 @@ it("accepts only advancing same-resource Dependabot cursors and preserves filter
 it("prioritizes recently updated work when an oversized resource must be capped", async () => {
 	const state = ready("prs");
 	const gh = github((url) => {
+		if (url.endsWith("/graphql")) return Response.json({ data: { nodes: [] } });
 		expect(url).toContain("sort=updated&direction=desc");
 		return Response.json([rawEvent()]);
 	});

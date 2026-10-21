@@ -278,12 +278,41 @@ Item fields (saved metadata can add fields; do not reject unknown observation da
   `author_login`, `labels: [{ name, color }]`, `comments_count`.
 - `PullRequest`: `name_with_owner`, `number`, `title`, `url`, `created_at`,
   `updated_at`, `author_login`, `is_draft`, `review_decision`, `additions`,
-  `deletions`, `base_ref`, `head_ref`.
+  `deletions`, `base_ref`, `head_ref`, `mergeable`, `mergeStateStatus`, `checks`.
 - CI `totals`: explicit workflow and repository counts documented below;
   `daily` entries: `{ x, success, failure, other }`, with date string `x`.
   Full nested summaries: [`ci-health.ts`](../apps/web/src/lib/ci-health.ts).
 - Full factory repository metrics, observation versions/windows, coverage and
   publication fields: [`factory-types.ts`](../apps/web/src/lib/factory-types.ts).
+
+#### PR merge and checks state
+
+Every PR on `/prs`, `/repos/:owner/:name/prs` and
+`/factory/repos/:owner/:name/prs` includes the same additive fields:
+
+```json
+{"mergeable":true,"mergeStateStatus":"CLEAN","checks":{"state":"SUCCESS"}}
+```
+
+`mergeable` is `true` for GitHub `MERGEABLE`, `false` for `CONFLICTING`, and
+`null` for `UNKNOWN`, unavailable or not-yet-collected evidence.
+`mergeStateStatus` is the saved GitHub enum string (`CLEAN`, `DIRTY`, `BEHIND`,
+`BLOCKED`, `UNSTABLE`, `DRAFT`, `HAS_HOOKS`, `UNKNOWN`, or future GitHub values),
+or null. `checks.state` is `SUCCESS|FAILURE|PENDING|ERROR|EXPECTED|null`, taken
+directly from the latest head commit's `statusCheckRollup`, not inferred from
+review decisions, Actions history or mergeability. No rollup is null, not success.
+These are observations at collection time, not a guarantee that a PR can merge now.
+
+Account and repository searches collect these fields in their existing GraphQL
+request. Factory REST PR pages add one GraphQL node batch (at most 100 IDs per
+page), under the existing request/rate budgets. Core and GraphQL reserves remain
+separate across pages, metadata transitions and evidence rollback; the public
+`rate` field still describes the latest observation rather than a combined quota.
+Inaccessible nodes retain null
+details; retryable failures retain the prior good publication. Old saved items
+read with explicit null fields without database rewrites or upstream requests.
+The additions can change content-derived snapshot hashes but do not change
+immutable factory publication/observation IDs.
 
 `/factory` exposes `data.rate` as null or
 `{remaining,resetAt,resource,observedAt}` for GitHub's last saved rate observation.
@@ -355,6 +384,93 @@ Per-repository summaries likewise expose `brokenWorkflows`, `flakyWorkflows`,
 `nonDefaultBranchFailures` and `botStreams`. The ambiguous legacy totals and
 per-repository count names are removed; consumers must use the explicit-unit names.
 
+### GET /contributions
+
+`GET /api/v1/accounts/A/contributions` requires `observations:read` and reads the
+saved account-wide calendar, independent of repository stars/statistics. It never
+collects GitHub data or updates token activity. Optional `since` and `until` are
+inclusive, real `YYYY-MM-DD` dates; omitted bounds use the saved earliest/latest
+dates. Both bounds must lie inside the saved calendar and cover at most 90 days.
+Reversed ranges, invalid dates, repeated parameters and unknown keys (including
+`scope`) return 400 `validation_failed`. The endpoint does not extend missing
+history with zeroes. No saved publication/calendar returns 409 `snapshot_missing`;
+401/403 account/scope checks and unknown-path 404 follow the other machine reads.
+
+The standard observation envelope contains this `data` shape:
+
+```text
+{
+  since, until, total: number|null, observedAt, fetched_at,
+  timezone: "github", typeWindowTimezone: "UTC", partial: boolean,
+  window: {since,until}, collectionStatus: "complete"|"pending"|"unavailable",
+  days: [{date,count:number|null,partial,observedAt,unavailable,
+    types:{commits,issues,pullRequests,pullRequestReviews,restricted,repositories},
+    breakdown:"complete"|"unavailable"|"mismatch"}],
+  freshness, coverage, unavailable
+}
+```
+
+Each type count is a nonnegative integer or null, never a fabricated zero.
+`count` retains GitHub's authoritative calendar count; selected `total` sums
+these counts, not type aggregates. A missing/invalid saved day returns null count,
+`unavailable:true`, and null selected total. Calendar `coverage` reports selected
+`total` and `observed` days, status `complete|unavailable`, and independent
+`typesStatus:complete|partial|pending|unavailable`. Freshness uses original
+calendar observation times per selected day, with missing days counted explicitly.
+Known calendar counts remain usable when type details are unavailable.
+
+`sourceVersion` identifies the original calendar observation run, not necessarily
+the newest global publication. `source.publicationId` identifies that publication;
+`data.window` is the retained calendar's original frozen window. A newer failed
+collection keeps the prior calendar, version, window and timestamps, while
+`collectionStatus` reports the latest attempt's unavailable status. GET never
+advances freshness. Legacy calendars gain null type fields in this endpoint,
+without rewriting stored rows. `/factory` retains its original contribution
+shape and adds only optional fields on newly collected calendars.
+
+Strong content-derived ETags and authenticated `If-None-Match` 304 responses work
+as on `/sources`. Authentication and query validation still run; 304 has no body
+and retains `Cache-Control: private, no-store`, `Vary: Authorization` and
+`Referrer-Policy: no-referrer`. Keep validators per date-range query.
+
+#### Contribution dates, types and partial days
+
+Calendar `date` keys are GitHub's native `contributionCalendar` dates, unchanged.
+They are **not converted to Asia/Shanghai** and must not be assumed to match a
+consumer's Shanghai buckets. GitHub documents that commits use the timestamp's
+time zone (profile attribution uses author date), while issues/PRs use the browser
+or API creation time zone. GraphQL defines `ContributionCalendarDay.date` as the
+day represented by the square; it does not promise a uniform Shanghai/UTC re-bucket
+of every underlying event. Hence the explicit `timezone:"github"` label.
+
+Typed aggregates query `contributionsCollection` for each date's explicit UTC
+interval `00:00:00.000Z` through `23:59:59.999Z` (GitHub's `to` is inclusive),
+clipping the last day at the frozen run `window.until`. They include commit,
+issue, PR, PR-review, restricted/private and repository-creation counts; first
+and popular contributions are not excluded. Different attribution boundaries,
+permission visibility and GitHub counting rules can prevent their sum from
+matching the calendar count. `breakdown:"mismatch"` exposes that discrepancy;
+there is no inferred residual/private type and totals are never adjusted to fit.
+
+`partial` marks the final incomplete day of the frozen observation window, not
+the current GET date. Top-level `observedAt` is the calendar request observation
+time; each day's `observedAt` is its type-batch observation time, or the calendar
+time for legacy/missing type details. The day flag remains partial even tomorrow
+until a newer successful run observes it again. Normal daily scheduled refreshes
+now collect contributions as well as weekly/full runs; manual selected runs do
+not silently broaden to account-wide collection. One calendar request plus six
+15-day aggregate batches costs at most seven resumable lease pages for 90 days,
+with the existing request/rate reserve, fencing, publication and retention rules.
+
+Sources: [GitHub contribution time attribution](https://docs.github.com/en/account-and-profile/reference/profile-contributions-reference#how-contribution-event-times-are-calculated),
+[GraphQL calendar dates](https://docs.github.com/en/graphql/reference/users#contributioncalendarday),
+[GraphQL collection bounds](https://docs.github.com/en/graphql/reference/users#user).
+
+```bash
+api "$API/contributions"
+api -G "$API/contributions" --data-urlencode 'since=2026-10-01' --data-urlencode 'until=2026-10-21'
+```
+
 ### Repository endpoints
 
 `GET /repos/:owner/:name` reads `details`; `GET /repos/:owner/:name/:resource`
@@ -419,7 +535,7 @@ empty after completion. In mixed publications, never substitute the newer global
 
 Events have `id`, `title`, `url`, `at`, `createdAt`, `closedAt`, `mergedAt`, `author`,
 `state`, and optional `body`, `severity`, `conclusion`, `draft`, `review`, `version`,
-`path`. `observation` has `{ version, window, refreshedAt, source:"run"|"legacy",
+`path`, `job`. `observation` has `{ version, window, refreshedAt, source:"run"|"legacy",
 repo?, metadataAt? }`. Envelope `source.kind` is `factory`, `source.publicationId`
 identifies the publication, while `sourceVersion` identifies the immutable
 repository observation; mixed publications can contain older repository versions.
@@ -440,9 +556,70 @@ names or workspace directory paths. Collection still reads only the pinned root
 manifest and named workflow/config files; it does not newly discover workspace
 manifests or transitive dependencies.
 
+Workflow dependency IDs use `B = <workflow-path>:<uses-target>`, for example
+`.github/workflows/ci.yml:nocoo/base-ci/.github/workflows/test-job.yml`.
+Newly collected literal block-style `uses:` references carry the workflow job
+mapping key as `job` (not its display name) and use `B#job=<encoded-job>` even
+for a single job. Adding/removing other jobs, reordering jobs, changing the source
+HEAD or updating a single job's ref does not rename that reference. The bounded
+indentation scanner discovers the document's actual root indentation and supports
+job-level reusable workflows and step actions,
+quoted keys/references and comments, and ignores scalar script bodies. It is not
+a general YAML parser; flow-style objects, aliases and expression-valued `uses`
+are not resolved. Present workflow files with missing/ambiguous job mappings or
+unsupported job/step references produce `coverage.status: "limited"`, with reason
+`"Dependency manifests cannot be parsed safely; evidence unavailable"`, not a
+complete zero. Unrecognized non-scalar lines inside `jobs` also fail closed,
+including flow values on a following line and explicit YAML mapping keys.
+Null/empty job values, non-sequence steps, multiline quoted scalars and tagged or
+anchored values are unsupported and yield limited coverage. This is intentionally
+a conservative common-shape scanner, not a general YAML parser.
+Only direct job or step `uses` positions are recognized; nested `env.uses` or
+`with.uses` fields cause limited coverage rather than guessed dependency IDs.
+Existing stronger repository evidence and its original version/window
+remain published through the coverage-regression guard. Absent files and parsed
+run-only jobs can still prove no workflow dependencies. No additional files or
+upstream requests are introduced.
+
+Historical rows have no recoverable job key. Read normalization deduplicates only
+equal saved evidence (excluding generated `id`, recursively ignoring object-key
+order and normalizing unknown metadata); this does not assert the original jobs
+were identical. A single remaining legacy reference keeps its old ID. Distinct
+references under the same base ID remain separate as `B#ref=<encoded-ref>`.
+Multiple refs within a known job use `B#job=<encoded-job>&ref=<encoded-ref>`.
+If same-ref records still differ, `&entry=<1-based-rank>` orders their canonical
+full saved content, retaining all evidence rather than overwriting it. Encoding
+uses `encodeURIComponent`. The normalization is deterministic under input
+reordering and repeated reads, and idempotent; it never changes stored rows,
+coverage, observation versions or windows. Legacy rank/ref IDs identify saved
+evidence, not inferred job continuity across different evidence sets. The next
+full collection supplies real job-qualified IDs; unchanged-head reuse retains
+the legacy evidence. Non-workflow dependency IDs are unchanged.
+
 Unknown streams are 400; catalog/publication repository misses are 404; missing
 immutable source data is 409 `snapshot_missing`. No observation/publication writes
 are available through this API.
+
+### Legacy snapshot 409
+
+Pre-observation format alone is not an error. A legacy stream is served when its
+saved `runId` equals the publication's `runId` (or the repository observation's
+`version`, if present); `data.ranges` then uses the window described above.
+The publication summary is not a substitute for the saved stream payload.
+
+When that payload is absent, the response is HTTP 409 with
+`error.code: "snapshot_missing"` and
+`error.message: "immutable source missing; refresh this repository"`. A different
+or absent payload `runId` instead reports
+`"immutable source version mismatch; refresh this repository"`. These are intended
+immutability checks, not a reason to fabricate empty items or use another run's
+window. GET does not repair, collect or write anything.
+
+The conflict clears when a successful refresh of that repository publishes usable
+matching evidence: normally the next weekly run, a daily run if the repository is
+selected, or an explicitly requested repository refresh. A catalog-only refresh
+or failed refresh retaining the old version does not guarantee recovery. Consumers
+must retain pending work and retry after that publication, not treat 409 as zero.
 
 ## Records, reports and jobs
 
@@ -679,25 +856,40 @@ api -X DELETE "$API/statistics/$OWNER/$NAME"
 
 ### PUT / DELETE /schedules/:kind
 
-Requires `app:write`; kind `daily|weekly|catalog`; no query. PUT requires **all**
-fields in strict JSON `{ enabled, time, weekday, scope }`:
+Requires `app:write`; kind `daily|weekly|catalog`; no query. PUT requires
+`enabled`, `weekday`, `scope`, and either `times` or the single-slot `time` alias
+in a strict JSON object:
 
 | Field | Validation |
 | --- | --- |
 | `enabled` | Boolean |
-| `time` | `HH:MM`, `00:00`-`23:59`, fixed UTC+08:00 |
+| `times` | Array of 1-6 `HH:MM` values, `00:00`-`23:59`, fixed UTC+08:00 (Asia/Shanghai); deduplicated and sorted on save |
+| `time` | Optional legacy single-slot alias. Writing it alone sets `times:[time]`; when both fields are supplied it must equal the earliest sorted slot. |
 | `weekday` | Integer 0-6, Sunday 0. Weekly uses it; daily accepts but ignores it for timing; catalog requires 0. |
 | `scope` | `all|starred`; daily requires `starred`, catalog requires `all`, weekly permits either |
 
-PUT returns Settings. Each Schedule is `{ kind, enabled, time, weekday, scope,
+PUT returns Settings. Each Schedule is `{ kind, enabled, time, times, weekday, scope,
 nextAt, lastRunId, lastError }`; last three can be null. PUT recalculates `nextAt`
 and clears `lastError`, without resource revisions. DELETE has no body, returns
 204, and restores a disabled default on reads: daily `08:00/starred`, weekly
 `04:00/all`, catalog `07:00/all`, weekday 0. These are defaults, not a claim about
 production configuration. This schedules cloud refresh, not a bot routine.
 
+All three kinds support multiple slots. Weekly slots share one weekday; daily
+and catalog slots recur each day. `time` always reads as `times[0]` and remains
+supported, with no removal date; new consumers should write `times`. Invalid
+times, empty/overlong lists and conflicting aliases return 400 `validation_failed`.
+`nextAt` is the earliest slot strictly after the save or accepted attempt.
+Close slots remain distinct occurrences, but an active run or cooldown defers
+the next one. Recovery attempts only the latest due slot, never a catch-up burst;
+each older slot is counted once in `scheduled_slots_missed` audit records.
+Occurrence request keys and compare-and-swap updates prevent duplicate starts.
+Migration 0013 preserves every existing setting and `next_at`; it does not add
+morning runs. The owner must explicitly choose any additional times.
+
 ```bash
 json -X PUT "$API/schedules/daily" --data '{"enabled":true,"time":"08:00","weekday":0,"scope":"starred"}'
+json -X PUT "$API/schedules/daily" --data '{"enabled":true,"times":["05:30","19:30"],"weekday":0,"scope":"starred"}'
 json -X PUT "$API/schedules/weekly" --data '{"enabled":true,"time":"04:00","weekday":0,"scope":"all"}'
 json -X PUT "$API/schedules/catalog" --data '{"enabled":true,"time":"07:00","weekday":0,"scope":"all"}'
 KIND='catalog'; api -X DELETE "$API/schedules/$KIND"

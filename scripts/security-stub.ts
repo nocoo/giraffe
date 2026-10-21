@@ -18,7 +18,7 @@ export function securityFixture(auth: string) {
 	};
 	return {
 		owner,
-		graphql(query: string) {
+		graphql(query: string, variables: Record<string, unknown>) {
 			if (query.includes("viewer"))
 				return {
 					data: {
@@ -48,7 +48,7 @@ export function securityFixture(auth: string) {
 				return { data: { search: {} } };
 			if (query.includes("search"))
 				return { data: { search: { issueCount: 0, nodes: [], pageInfo: { hasNextPage: false } } } };
-			return factoryGraphqlStub(query);
+			return factoryGraphqlStub(query, variables);
 		},
 		rest(
 			path: string,

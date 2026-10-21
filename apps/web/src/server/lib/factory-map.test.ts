@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { dependencyWorkflow } from "../../../../../tests/fixtures/dependency-workflow";
 import { rawEvent, rawRepo } from "../../../../../tests/fixtures/factory";
 import {
 	coverage,
@@ -11,6 +12,133 @@ import {
 } from "./factory-map";
 
 describe("GitHub factory normalization", () => {
+	it.each([0, 2, 4])("finds jobs at the document root indentation of %s spaces", (indent) => {
+		const text = dependencyWorkflow
+			.split("\n")
+			.map((line) => " ".repeat(indent) + line)
+			.join("\n");
+		expect(
+			mapDependencies(
+				{ ci: { text: `# comment at column zero\n---\n${text}` } },
+				mapFactoryRepo(rawRepo),
+			),
+		).toEqual(mapDependencies({ ci: { text: dependencyWorkflow } }, mapFactoryRepo(rawRepo)));
+	});
+	it("distinguishes a parsed run-only job from missing workflow evidence", () => {
+		expect(
+			mapDependencies(
+				{ ci: { text: "  jobs:\n    build:\n      steps:\n        - run: echo hello" } },
+				mapFactoryRepo(rawRepo),
+			),
+		).toEqual({ items: [], manifests: [] });
+	});
+	it("accepts complete single-line quoted scalars without reading their contents", () => {
+		const text = `jobs:
+  build:
+    steps:
+      - name: "Checkout \\"code\\"" # uses: fake/comment@v1
+        uses: "actions/checkout@v4"
+      - run: 'echo ''hello'' uses: fake/script@v1' # complete scalar
+`;
+		expect(
+			mapDependencies({ ci: { text } }, mapFactoryRepo(rawRepo)).items.map((item) => item.title),
+		).toEqual(["actions/checkout"]);
+	});
+	it("handles a byte-order mark and document terminator without losing the root", () => {
+		expect(
+			mapDependencies(
+				{ ci: { text: `\uFEFF---\n  jobs:\n    build:\n      steps: []\n...\n` } },
+				mapFactoryRepo(rawRepo),
+			),
+		).toEqual({ items: [], manifests: [] });
+	});
+	it.each(["if", "name"])("retains uses after a folded step %s property", (key) => {
+		const text = `jobs:
+  build:
+    steps:
+      - ${key}: >-
+          github.event_name == 'push'
+        uses: actions/checkout@v4
+      - uses: actions/cache@v4
+`;
+		expect(
+			mapDependencies({ ci: { text } }, mapFactoryRepo(rawRepo)).items.map((item) => item.id),
+		).toEqual([
+			".github/workflows/ci.yml:actions/checkout#job=build",
+			".github/workflows/ci.yml:actions/cache#job=build",
+		]);
+	});
+	it("keeps workflow job identities unique and stable across refreshes", () => {
+		const read = (text: string, head = "abc") =>
+			mapDependencies({ ci: { text } }, { ...mapFactoryRepo(rawRepo), head }).items;
+		const items = read(dependencyWorkflow);
+		const base = ".github/workflows/ci.yml:nocoo/base-ci/.github/workflows/test-job.yml";
+		expect(items.map((item) => item.id)).toEqual([
+			`${base}#job=api`,
+			`${base}#job=browser`,
+			".github/workflows/ci.yml:actions/checkout#job=checks",
+		]);
+		expect(items).toMatchObject([{ job: "api" }, { job: "browser" }, { job: "checks" }]);
+		expect(read(dependencyWorkflow, "new-head").map((item) => item.id)).toEqual(
+			items.map((item) => item.id),
+		);
+		expect(
+			read(
+				`jobs:\n  browser:\n    uses: nocoo/base-ci/.github/workflows/test-job.yml@main\n  api:\n    uses: nocoo/base-ci/.github/workflows/test-job.yml@main`,
+			)
+				.map((item) => item.id)
+				.sort(),
+		).toEqual(
+			items
+				.slice(0, 2)
+				.map((item) => item.id)
+				.sort(),
+		);
+		expect(
+			read(`jobs:\n  api:\n    uses: nocoo/base-ci/.github/workflows/test-job.yml@v2`)[0]?.id,
+		).toBe(items[0]?.id);
+	});
+	it.each(["|", "|-", "|2-", "|-2", ">2+", ">+2", "|   ", ">2-   "])(
+		"ignores %s scalar bodies while scanning job and step references",
+		(header) => {
+			const text = `name: CI
+env:
+  uses: outside/workflow@v1
+jobs:
+   "unit-tests":
+     name: Display label
+     uses: 'nocoo/base-ci/.github/workflows/test-job.yml@feature/x' # pinned
+
+   'browser_tests':
+     steps:
+       - run: ${header}
+           uses: fake/script@v1
+           jobs:
+             wrong:
+               uses: fake/job@v1
+       - run: > # folded
+           uses: fake/folded@v1
+       # actual action
+       - name: Checkout
+         uses: actions/checkout@v4
+       - uses: ./local
+       - uses: docker://alpine:3
+permissions:
+  uses: outside/end@v1
+`;
+			const items = mapDependencies(
+				{ ci: { text: text.replaceAll("\n", "\r\n") } },
+				mapFactoryRepo(rawRepo),
+			).items;
+			expect(items.map(({ id, job }) => ({ id, job }))).toEqual([
+				{
+					id: ".github/workflows/ci.yml:nocoo/base-ci/.github/workflows/test-job.yml#job=unit-tests",
+					job: "unit-tests",
+				},
+				{ id: ".github/workflows/ci.yml:actions/checkout#job=browser_tests", job: "browser_tests" },
+			]);
+		},
+	);
 	it("normalizes private inventory, language bytes and explicit unknown languages", () => {
 		expect(mapFactoryRepo(rawRepo)).toMatchObject({
 			private: true,
@@ -104,7 +232,9 @@ describe("GitHub factory normalization", () => {
 						optionalDependencies: { four: "4" },
 					}),
 				},
-				ci: { text: "steps:\n - uses: nocoo/base-ci/action@abc\n - uses: './local'" },
+				ci: {
+					text: "jobs:\n build:\n  steps:\n   - uses: nocoo/base-ci/action@abc\n   - uses: './local'",
+				},
 				release: {
 					text: "jobs:\n build:\n  uses: 'nocoo/base-ci/.github/workflows/deploy.yml@main'",
 				},

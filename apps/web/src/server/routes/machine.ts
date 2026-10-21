@@ -16,6 +16,7 @@ import { getAccount } from "../lib/db/accounts";
 import { createDb } from "../lib/db/d1";
 import { ApiError } from "../lib/errors";
 import { readFactoryRate } from "../lib/factory-rate";
+import { readContributions } from "../lib/machine-contributions";
 import {
 	readFactoryResource,
 	readObservation,
@@ -141,6 +142,20 @@ export function machineApi() {
 			c.json(await readSources(c.get("db"), c.get("principal").accountId, c.req.query())),
 	);
 	app.all("/accounts/:account/stars/:owner/:name", machineSetting);
+	app.get(
+		"/accounts/:account/contributions",
+		async (c, next) => {
+			c.header("Vary", "Authorization", { append: true });
+			await next();
+		},
+		etag({
+			weak: false,
+			generateDigest: (body) => crypto.subtle.digest("SHA-256", body),
+			retainedHeaders: [...RETAINED_304_HEADERS, "referrer-policy"],
+		}),
+		async (c) =>
+			c.json(await readContributions(c.get("db"), c.get("principal").accountId, c.req.queries())),
+	);
 	app.all("/accounts/:account/statistics/:owner/:name", machineSetting);
 	app.all("/accounts/:account/schedules/:kind", machineSetting);
 	app.all("/accounts/:account/refresh-runs", machineRuns);

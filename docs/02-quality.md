@@ -268,3 +268,24 @@ L3 **只跑套件 A**（`ENVIRONMENT=development` Access 短路）。不做套�
 - 05 列出的页面有 L1 ViewModel/组件测试
 - 第 6 节最低 L3 路径绿
 - 覆盖率仍四项 ≥ 95%
+
+## v0.16.0 endpoint inventory additions
+
+These real local HTTP tests run in both L2 suites A and B; they do not replace
+the project's still-planned complete endpoint/method inventory. Paths below are
+relative to `/api/v1/accounts/:account` unless explicitly browser-prefixed.
+
+| Method/path | Contract assertions | L2 file |
+| --- | --- | --- |
+| GET `/contributions` | Typed/legacy days, inclusive bounds, missing data, invalid/order/range/repeated/unknown queries, 401/403, ETag/304, retained provenance, no writes/upstream calls, read-only methods | `tests/api/machine-contributions.test.ts` |
+| GET `/settings`; PUT/DELETE `/schedules/:kind` | All three kinds, normalized 1-6 times, single-time alias, 400 validation, 401/403, method rejection, side-effect-free reads, delete cleanup | `tests/api/refresh-schedules-multi.test.ts` |
+| GET `/prs` | Known and null legacy merge/check state, 401/403, strict queries, no writes/upstream calls | `tests/api/pr-state.test.ts` |
+| GET `/repos/:owner/:name/prs` | Same PR fields plus catalog 404 | `tests/api/pr-state.test.ts` |
+| GET `/factory/repos/:owner/:name/prs` | Same PR fields plus immutable resource/catalog boundaries | `tests/api/pr-state.test.ts` |
+| Browser GET `/api/prs` and `/api/repos/:owner/:name/prs` | Actual local-stub collection exposes the additional PR metadata | `tests/api/matrix.test.ts` |
+
+`tests/e2e/refresh-schedules-multi.spec.ts` exercises Basalt add/remove/save/reload
+for daily, weekly and catalog schedules in Chromium, including the six-slot limit
+and a mobile layout check. Unit tests separately exercise scheduler concurrency,
+adjacent slots, crash recovery, missed-slot accounting, local-backup migration,
+resumable daily contribution collection and failed-publication retention.

@@ -1,4 +1,6 @@
 import { expect, it } from "vitest";
+import { unsupportedWorkflowJobs } from "../../../../../tests/fixtures/dependency-workflow";
+import { github, memoryStore, ready } from "../../../../../tests/fixtures/factory";
 import { factoryFixture } from "../../../../../tests/fixtures/factory-snapshot";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import { makeRun } from "../../lib/factory-run";
@@ -13,6 +15,7 @@ import {
 	startRun,
 } from "./db/factory-runs";
 import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
+import { stepFactory } from "./factory-collect";
 import {
 	boundedJson,
 	currentRepo,
@@ -73,6 +76,44 @@ it("preserves stronger last-known-good coverage and failed-repository metadata i
 	expect(await saveRun(db, lease, writes, now)).toBe(false);
 	expect((await repoStates(createDb(raw), snap.account_id))[0]?.status).toBe("failed");
 });
+
+it.each(unsupportedWorkflowJobs)(
+	"retains the published repository for unparsed workflow jobs: %s",
+	async (text) => {
+		const { db, lease, repo } = await setup();
+		for (const stream of FACTORY_STREAMS) repo.coverage[stream].status = "complete";
+		repo.dependencies = [
+			{ name: "actions/checkout", version: "v4", path: ".github/workflows/ci.yml", url: "saved" },
+		];
+		repo.observation = { version: "r1", refreshedAt: now, window: snap.window, source: "run" };
+		await db.batch(await repositoryWrites(db, lease, now, repo, repo.name, null));
+		const before = await currentRepo(db, snap.account_id, repo.name);
+		const state = ready("dependencies");
+		state.repos = [structuredClone(repo)];
+		const candidate = state.repos[0];
+		if (!candidate) throw new Error("fixture");
+		candidate.observation = {
+			...repo.observation,
+			version: "r2",
+			refreshedAt: "2026-10-21T00:00:00Z",
+			window: { since: "2026-07-18T00:00:00.000Z", until: now },
+		};
+		state.window = candidate.observation.window;
+		await stepFactory(
+			state,
+			github(() => Response.json({ data: { repository: { ci: { text } } } })),
+			"test-token",
+			memoryStore(),
+			now,
+		);
+		await db.batch(await repositoryWrites(db, lease, now, candidate, repo.name, null));
+		expect(await currentRepo(db, snap.account_id, repo.name)).toEqual(before);
+		expect((await repoStates(db, snap.account_id))[0]).toMatchObject({
+			version: "r1",
+			error: "coverage_regression_retained",
+		});
+	},
+);
 it("fails closed at storage limits and for missing publication input", async () => {
 	const { db, lease } = await setup();
 	expect(() => boundedJson("x".repeat(1_800_001))).toThrow("capacity");

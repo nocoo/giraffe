@@ -790,3 +790,130 @@ existing run error path restores its checkpoint, pauses safely and preserves
 prior evidence. The tests assert no resource writes and unchanged prior data.
 Whenever a payload gains metadata outside a bounded list, verify that every
 capacity loop can still make progress or terminate with a controlled failure.
+
+## 2026-10-21 - Review resumable failures and both rate buckets
+
+The first batch-four unit run was green, but independent review reproduced a
+terminal contribution failure that the GraphQL-only denial fixture did not cover.
+An HTTP 403/404 or exhausted retry restored a pending checkpoint after finishing
+the contribution step. Later repository streams resumed that pending work, failed
+their own coverage checks and could publish the calendar that should have been
+retained as failed evidence. New tests first failed on the pending state, then
+proved terminal unavailability, successful downstream repository work and exact
+retention of the old calendar, original window and observation time. Test transport
+errors and exhausted retries as well as in-band GraphQL errors whenever a formerly
+single-page stage becomes resumable.
+
+The added PR node batch also replaced the preceding REST quota with GraphQL quota,
+so a low core reserve could disappear behind a healthy GraphQL balance. Separate
+bounded checkpoint buckets now survive page boundaries, metadata transitions and
+evidence rollback; the public rate remains the latest observation. Regressions
+first reproduced both alternating-resource exhaustion and loss of a spent REST
+budget when the details request failed. Rolling back data does not undo an
+upstream request or its observed quota consumption.
+
+Initial L2 acceptance additionally caught an expired synthetic token whose creation
+time was after expiry, and old exact PR assertions missing the newly additive
+fields. The expiry fixture now has a valid historical lifetime; account/repository
+PR checks share one expected shape. These repeat earlier fixture lessons: compare
+the real schema constraints and neighboring assertions before running a long suite,
+and do not equate focused unit success with HTTP acceptance. The enabled commit
+hook also rejected optional-property assignments until strict TypeScript passed;
+no failing commit or hook bypass was used.
+
+A repeated Herdr `--current` resize again resolved a different focused pane and
+reported `changed:false`; no unrelated layout changed. All subsequent mutations
+used explicit task-owned pane IDs. Read the existing orchestration lessons before
+issuing layout commands, not only after the same error recurs.
+
+## 2026-10-21 - Keep dependency identity fixes dependency-free
+
+The batch-four addendum initially chose a YAML library to recover workflow job
+keys. Although the registry override was per-command, Bun rewrote 411 existing
+lockfile resolution URLs to the temporary mirror. The steward rejected the new
+dependency and required restoring both package manifests and the lockfile. Those
+three files were restored before any commit; the lockfile was verified byte-for-
+byte against origin/main. The replacement uses the explicitly approved bounded
+indentation scan, with tests for job keys, steps, comments and scalar script
+bodies. Dependency maintenance is not an implicit part of a narrow identity fix;
+check the requested scope before installing, and verify lockfile bytes rather
+than assuming a temporary registry override leaves the file unchanged.
+
+A new legacy-stream unit test initially reused one request-scoped D1 wrapper for
+all seven streams, so its statement counter eventually hit the production cap.
+Each stream now gets an independent fixture through parameterized tests. An
+early shell command also continued to the commit attempt after focused checks
+failed because it used semicolons. The enabled hook correctly blocked the commit;
+subsequent validation-to-commit chains use short-circuit execution. Test-fixture
+failures must be fixed, never bypassed or mistaken for application regressions.
+
+The first addendum L2 rerun also rejected a browser assertion copied from the
+machine stream's collection order. Browser detail intentionally sorts by event
+time and ID, so the added workflow ID precedes the numeric package fixture ID.
+The expected browser order was corrected without changing either API's ordering.
+When sharing new evidence fixtures across readers, verify each reader's ordering
+contract instead of assuming identical arrays from identical source rows.
+
+Self-review then found that YAML block scalar headers permit both chomping/indent
+orders (`|-2` and `|2-`). The initial scanner recognized only one order and could
+misread script text as dependency declarations. Parameterized fixtures first
+reproduced literal and folded failures, then verified both orders. Even a scoped
+line scanner must exclude all supported scalar-header forms before reading body
+lines as structural keys.
+The same regression matrix also caught legal trailing spaces after the indicator;
+mapping values now trim trailing whitespace before structural classification.
+
+Independent review found that ID generation treated absent and empty refs as the
+same string while the collision bucket compared their raw values. Both records
+survived but received the same ID. A failing regression now preserves both raw
+records and checks unique IDs, reorder stability and idempotence. Collision
+classification must use the same normalized value as the generated identifier,
+while evidence equality still compares the complete original record.
+
+The review also reproduced dropped actions after folded `if` or `name` step
+properties. The scanner used the sequence dash's column as the scalar boundary,
+mistaking a later sibling `uses` key for scalar content. Separate red/green cases
+now prove the action survives; the scalar boundary uses the property key's column
+after any sequence prefix, without weakening exclusion of actual script bodies.
+
+## 2026-10-21 - Do not equate an unrecognized workflow with zero dependencies
+
+Steward review found that uniformly indenting a valid workflow made the scanner
+miss `jobs`, then publish complete coverage with zero observations. Earlier tests
+varied nested indentation but assumed column-zero root keys. New failing tests
+exercise root indentation at mapping and collection level, and reproduce loss of
+a prior repository version through the publication writer. The scanner now finds
+the actual root indentation, distinguishes missing files from unparsed present
+files, and marks unsupported job evidence limited. The existing regression guard
+then retains stronger data, its source version and original window. A bounded
+scanner must report uncertainty explicitly instead of treating an empty parse as
+proof of absence; parser regressions need collection/publication assertions too.
+
+Independent re-review found that recognizing a job key was still insufficient:
+flow mappings/sequences on the next line and explicit mapping keys were silently
+ignored. New failing collector/publication cases now cover these structures and
+use different old/new windows to prove window retention rather than equality by
+fixture coincidence. After excluding scalar bodies, every unrecognized line in
+the jobs block now fails closed. Unsupported syntax must be rejected by default,
+not handled through an ever-growing list of examples that happen to be rejected.
+
+The next review reproduced empty job values and null/mapping-valued steps being
+accepted solely because their keys existed. Twelve failing collection/publication
+cases now require a nested job mapping and a steps sequence (or an explicit empty
+sequence). Recognizing a property name does not establish the shape of its value;
+empty block headers need evidence from the following significant line.
+
+The same review found script text inside multiline quoted or tagged scalars
+being collected as dependencies. Failing regressions now reject unsupported
+quoted continuations, tags and anchors instead of extending YAML parsing. Mapping
+separators must also be real YAML separators, so colon-without-space text inside
+a continued plain scalar cannot become a uses key. Complete single-line quoted
+values and the already recognized literal/folded scalar headers remain supported.
+The scope is deliberately fail-closed, not comprehensive YAML compatibility.
+
+Final scoped review found that a nested env/with field named uses could still
+be mistaken for a dependency, including a false ref collision that renamed a
+real action. Six failing collection/publication cases now constrain uses to the
+direct job or step property column. Other uses positions fail closed instead of
+guessing their meaning. The scanner must establish both key and structural
+position before assigning identity; matching a name and value is insufficient.

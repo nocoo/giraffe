@@ -135,6 +135,7 @@ api -G "$API/sources" --data-urlencode 'since=2026-10-19T08:00:00+08:00' \
 | `/repos` | `repos`, `fetched_at`, `truncated`; each repo includes `name_with_owner`, local `starred` and `statistics_enabled` |
 | `/issues` | Open `issues`, saved times/flags, optional `repository_fetched_at` |
 | `/prs` | Open `pull_requests`, saved times/flags, optional `repository_fetched_at` |
+| `/contributions?since=&until=` | Inclusive saved calendar dates (at most 90 days), typed counts, original provenance, partial-day flags; no `scope` |
 | `/ci` | `streams`, `repos`, `daily`, `totals`, `fetched_at`, `freshness`, `unsaved` |
 | `/factory` | Published factory snapshot, inventory, repos, window and publication metadata |
 | `/repos/:owner/:name` or `/repos/:owner/:name/details` | Repository details |
@@ -148,11 +149,14 @@ api -G "$API/sources" --data-urlencode 'since=2026-10-19T08:00:00+08:00' \
 | `/repos/:owner/:name/contributors` | `contributors` |
 | `/factory/repos/:owner/:name/:stream` | Exactly `commits`, `issues`, `prs`, `actions`, `releases`, `alerts`, `dependencies` |
 
-The five account endpoints accept `scope=all|starred`, default `all`; invalid or
+The five account endpoints `/repos`, `/issues`, `/prs`, `/ci`, `/factory` accept
+`scope=all|starred`, default `all`; invalid or
 repeated scope is 400. Stars are local Giraffe stars, not GitHub stars. There is
 no HTTP pagination or statistics filter. Repo/stream endpoints have no supported
 query parameters. Traffic/security/languages/contributors are readable but not
-listed in `/sources`. Open-item snapshots are not closed-event history.
+listed in `/sources`; the separate `/contributions` endpoint accepts date bounds
+and is discoverable through the saved `account:factory` calendar, not its own
+source-index entry. Open-item snapshots are not closed-event history.
 
 Every documented machine GET rejects unknown query keys with 400
 `validation_failed`, using the standard error envelope. This includes `/me`,
@@ -204,6 +208,15 @@ access loss during pagination remain failures, not expected absence.
   `ranges` contains exactly that one window, or the saved publication window for
   legacy data without an observation; it is not the collector's pending queue.
   Never replace a retained repository window with a newer global publication window.
+- Legacy pre-observation streams are supported, not rejected by format. The saved
+  payload must exist and its `runId` must match the repository observation's
+  `version`, or the publication's `runId` when no observation exists. Otherwise
+  HTTP 409 `snapshot_missing` has `error.message` equal to
+  `immutable source missing; refresh this repository` or
+  `immutable source version mismatch; refresh this repository`. Keep work pending;
+  never interpret this as zero. It clears after a successful matching repository
+  refresh/publication (weekly, daily if selected, or an explicit repo refresh),
+  not merely a catalog update or a failed refresh retaining old evidence.
 - Dependency `at`, `createdAt` and `author` are null when unknown, including old
   saved rows. Do not substitute `fetched_at` for package creation time. Own package
   identities are separate `manifests:[{name,version,path,url}]` metadata, not items;
@@ -212,6 +225,32 @@ access loss during pagination remain failures, not expected absence.
   Config/workflow labels that happen to match a package name remain evidence.
   Collection still scans only pinned root manifests/named workflow/config files;
   absent workspace identity is not evidence that every dependency is external.
+- Workflow IDs: let `B=<workflow-path>:<uses-target>`. New literal block-style
+  references include the real job mapping key as `job` and use
+  `B#job=<encodeURIComponent(job)>`, including single references; display names,
+  source HEAD, job order and a single job's ref are not identity components.
+  Collection scans job-level reusable workflows and step actions, not general
+  YAML flow objects, aliases or expression-valued `uses`.
+  The document root may be uniformly indented. Present files whose job mappings
+  or references cannot be parsed safely yield `limited` coverage with reason
+  `Dependency manifests cannot be parsed safely; evidence unavailable`; never
+  treat this as complete zero. Unrecognized non-scalar lines inside `jobs`,
+  including next-line flow values and explicit YAML mapping keys, fail closed.
+  Null/empty jobs, non-sequence steps, multiline quoted scalars and tagged or
+  anchored values are unsupported and return limited coverage; the scanner does
+  not attempt general YAML support.
+  A `uses` key outside the direct job/step property position (such as `env.uses`
+  or `with.uses`) also yields limited coverage, never a guessed dependency ID.
+  Stronger published evidence keeps its original
+  version/window. Absent files and parsed run-only jobs still permit a real zero.
+  Equal legacy saved records collapse without inventing job keys; a remaining
+  singleton keeps its old ID. Distinct legacy refs use `B#ref=<encoded-ref>`;
+  multiple refs in one known job use `B#job=<encoded-job>&ref=<encoded-ref>`.
+  Distinct same-ref records add `&entry=<1-based canonical-content rank>` rather
+  than losing evidence. Reordered reads and repeated normalization are stable;
+  legacy IDs do not imply job continuity across changed evidence sets. Full
+  collection replaces legacy IDs with job IDs; unchanged-head reuse does not.
+  This read/write normalization preserves stored rows, coverage and versions.
 - `source.publicationId` identifies the publication; `sourceVersion` identifies
   the immutable repository observation. Mixed publications can retain older repo
   versions. GET never starts refresh or modifies a publication.
@@ -263,6 +302,36 @@ legacy count names are removed. `unsaved` and missing default-branch evidence ar
 unknown, never proof of success. See the [exact CI contract](../../docs/api.md#saved-ci-verdicts-and-units).
 The `daily` histogram counts completed non-bot runs across all branches; it is not
 a workflow/repository health verdict.
+
+PR items on account `/prs`, repository `/repos/:owner/:name/prs` and factory
+`/factory/repos/:owner/:name/prs` share `mergeable:boolean|null`,
+`mergeStateStatus:string|null`, and
+`checks:{state:SUCCESS|FAILURE|PENDING|ERROR|EXPECTED|null}`. The rollup is from
+the latest head commit, not inferred from Actions or reviews. Old/unavailable
+evidence is null; never treat it as mergeable or passing checks. See the
+[PR contract](../../docs/api.md#pr-merge-and-checks-state).
+
+### Contribution calendar
+
+`GET /contributions` accepts only optional real `YYYY-MM-DD` `since`/`until`,
+inclusive and within the saved range, at most 90 days. Omitted bounds select the
+saved full calendar. Repeated/unknown parameters, invalid/reversed/out-of-range
+dates return 400; no saved calendar returns 409 `snapshot_missing`. It uses the
+observation envelope and supports authenticated ETag/304 polling like `/sources`.
+
+`data.days[].count` and `data.total` use authoritative GitHub calendar counts;
+missing days/counts and the resulting total are null, not zero. Each day's nullable
+`types` contains `commits`, `issues`, `pullRequests`, `pullRequestReviews`,
+`restricted`, `repositories`; `breakdown` is `complete|unavailable|mismatch`.
+Never reconstruct calendar totals from a mismatched type sum.
+`timezone:"github"` preserves native calendar date keys; type-query intervals
+explicitly use `typeWindowTimezone:"UTC"`. Do not equate either with Shanghai
+date buckets. `partial` describes the frozen final observation day, not GET time.
+Top-level `observedAt` dates the calendar request, day-level `observedAt` the type
+batch. `sourceVersion`/`window` retain the calendar's original provenance after a
+failed newer run, even when `source.publicationId` is newer. Scheduled daily runs
+now refresh this source; consumers still must not trigger an unauthorized refresh.
+Details and official attribution references: [contributions](../../docs/api.md#get-contributions).
 
 ## Records, reports and jobs
 
@@ -459,18 +528,25 @@ Only use these with explicit refresh/settings authorization and the necessary
 | DELETE `/stars/:owner/:name` | `app:write` | No body; 204 |
 | PUT `/statistics/:owner/:name` | `app:write` | `{enabled:boolean}`; return settings |
 | DELETE `/statistics/:owner/:name` | `app:write` | Remove override, restore defaults; 204 |
-| PUT `/schedules/:kind` | `app:write` | All of `{enabled,time,weekday,scope}`; return settings |
+| PUT `/schedules/:kind` | `app:write` | `{enabled,weekday,scope,times}` or legacy `{enabled,weekday,scope,time}`; return settings |
 | DELETE `/schedules/:kind` | `app:write` | Restore disabled default; 204 |
 | GET `/refresh-runs` | `app:read` | `{account_id,items}`; at most 21, active first; no pagination/detail GET |
 | POST `/refresh-runs` | `app:write` | Start body below; 202 `{account_id,id,status}` |
 | POST `/refresh-runs/:id/control` | `app:write` | `{action:"pause"|"resume"|"cancel"}`; 202 `{account_id,id,status}` |
 
-Schedules: kind `daily|weekly|catalog`; time `HH:MM` in fixed UTC+08:00; weekday
+Schedules: kind `daily|weekly|catalog`; `times` is a 1-6 entry array of `HH:MM`
+values in fixed UTC+08:00, deduplicated and sorted. All kinds support multiple
+times; weekly slots share one weekday. `time` reads as the first slot and writing
+it alone resets to one slot. When both are supplied they must agree; malformed,
+empty, overlong or conflicting inputs return 400 `validation_failed`. Weekday
 0–6 (Sunday 0); scope `all|starred`. Daily requires starred and ignores weekday
 for timing; catalog requires all and weekday 0; weekly allows either scope.
 Defaults are disabled daily08:00/starred, weekly04:00/all, catalog07:00/all, all
 weekday0. These schedule GitHub refresh, not bot analysis. PUT recalculates nextAt
-and clears lastError; settings writes do not use resource revisions.
+and clears lastError; settings writes do not use resource revisions. `nextAt` is
+the earliest upcoming slot; missed-slot coalescing counts each elapsed slot once
+without a burst of catch-up runs. Migration 0013 preserves existing configuration;
+never add extra times without the owner's explicit choice.
 
 Refresh start requires UUID `requestKey`, `mode:catalog|refresh`; optional depth
 `quick|deep` (default deep), scope `all|selected|filter|stale|failed` (default

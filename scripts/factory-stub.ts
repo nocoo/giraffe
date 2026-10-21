@@ -26,7 +26,10 @@ export const factoryRepoStub = {
 	mergedPrs: { totalCount: 0 },
 	releases: { totalCount: 0 },
 };
-export function factoryGraphqlStub(query: string): unknown | null {
+export function factoryGraphqlStub(
+	query: string,
+	variables: Record<string, unknown>,
+): unknown | null {
 	if (query.includes("repositories(first:10,"))
 		return {
 			data: {
@@ -42,15 +45,45 @@ export function factoryGraphqlStub(query: string): unknown | null {
 		};
 	if (query.includes("nameWithOwner") && query.includes("openPrs:"))
 		return { data: { repository: factoryRepoStub } };
-	if (query.includes("contributionsCollection"))
+	if (query.includes("contributionsCollection") && query.includes("$since")) {
+		const start = Date.parse(String(variables.since));
+		const end = Date.parse(String(variables.until));
+		const contributionDays = Array.from(
+			{ length: Math.floor((end - start) / 86400_000) + 1 },
+			(_, index) => ({
+				date: new Date(start + index * 86400_000).toISOString().slice(0, 10),
+				contributionCount: 0,
+			}),
+		);
 		return {
 			data: {
 				user: {
 					contributionsCollection: {
 						restrictedContributionsCount: 0,
-						contributionCalendar: { totalContributions: 0, weeks: [] },
+						contributionCalendar: { totalContributions: 0, weeks: [{ contributionDays }] },
 					},
 				},
+			},
+		};
+	}
+	if (query.includes("contributionsCollection"))
+		return {
+			data: {
+				user: Object.fromEntries(
+					Object.keys(variables)
+						.filter((key) => key.startsWith("from"))
+						.map((key) => [
+							key.replace("from", "day"),
+							{
+								totalCommitContributions: 0,
+								totalIssueContributions: 0,
+								totalPullRequestContributions: 0,
+								totalPullRequestReviewContributions: 0,
+								restrictedContributionsCount: 0,
+								totalRepositoryContributions: 0,
+							},
+						]),
+				),
 			},
 		};
 	if (query.includes("object(expression")) return { data: { repository: {} } };

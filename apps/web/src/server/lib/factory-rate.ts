@@ -1,7 +1,28 @@
-import type { FactorySnapshot } from "../../lib/factory-types";
+import type { FactoryRate, FactorySnapshot } from "../../lib/factory-types";
 import type { Db } from "./db/d1";
+import { ApiError } from "./errors";
 
 type Rate = FactorySnapshot["rate"];
+
+export function recordFactoryRate(
+	snapshot: FactorySnapshot,
+	rate: FactoryRate & { resource: "core" | "graphql" },
+) {
+	if (snapshot.rate?.resource === "core" || snapshot.rate?.resource === "graphql")
+		snapshot.rateLimits = { ...snapshot.rateLimits, [snapshot.rate.resource]: snapshot.rate };
+	snapshot.rate = rate;
+	snapshot.rateLimits = { ...snapshot.rateLimits, [rate.resource]: rate };
+}
+
+export function assertFactoryReserve(snapshot: FactorySnapshot, now: string) {
+	const rates = {
+		...snapshot.rateLimits,
+		...(snapshot.rate ? { [snapshot.rate.resource]: snapshot.rate } : {}),
+	};
+	for (const rate of Object.values(rates))
+		if (rate.remaining < 50 && (!rate.resetAt || Date.parse(rate.resetAt) > Date.parse(now)))
+			throw new ApiError(503, "github_rate_limited", "GitHub reserve reached", rate.resetAt);
+}
 
 export function latestFactoryRate(...observations: (Rate | undefined)[]): Rate {
 	let latest: Rate = null;

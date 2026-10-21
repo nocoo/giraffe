@@ -68,6 +68,7 @@ it("retains machine bearer CRUD and retires PKCE over real local HTTP", async ()
 				"prs",
 				"ci",
 				"factory",
+				"contributions",
 				"settings",
 				"refresh-runs",
 				"repos/nocoo/app",

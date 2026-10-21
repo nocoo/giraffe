@@ -41,9 +41,13 @@ export type FactoryEvent = {
 	state: string;
 	conclusion?: string | null;
 	draft?: boolean;
+	mergeable?: boolean | null;
+	mergeStateStatus?: string | null;
+	checks?: import("./pull-request").PrState["checks"];
 	review?: string | null;
 	version?: string;
 	path?: string;
+	job?: string;
 };
 export type FactoryDay = {
 	commits: number;
@@ -115,6 +119,12 @@ export type FactoryStreamData = {
 	ranges: FactoryWindow[];
 	coverage: FactoryCoverage;
 };
+export type FactoryRate = {
+	remaining: number;
+	resetAt: string | null;
+	resource: string;
+	observedAt?: string;
+};
 export type FactorySnapshot = {
 	freshness?: import("./snapshot-freshness").SnapshotFreshness;
 	contributionExcluded?: boolean;
@@ -141,12 +151,32 @@ export type FactorySnapshot = {
 	repos: FactoryRepo[];
 	cursor: { repo: number; stream: number };
 	requests: number;
-	rate: { remaining: number; resetAt: string | null; resource: string; observedAt?: string } | null;
+	rate: FactoryRate | null;
+	rateLimits?: Partial<Record<"core" | "graphql", FactoryRate>>;
 	contribution: {
-		days: { date: string; count: number }[];
+		days: {
+			date: string;
+			count: number;
+			partial?: boolean;
+			observedAt?: string;
+			types?: {
+				commits: number | null;
+				issues: number | null;
+				pullRequests: number | null;
+				pullRequestReviews: number | null;
+				restricted: number | null;
+				repositories: number | null;
+			};
+			breakdown?: "complete" | "unavailable" | "mismatch";
+		}[];
 		total: number;
 		restricted: number;
 		fetchedAt: string;
+		observedAt?: string;
+		partial?: boolean;
+		timezone?: "github";
+		typeWindowTimezone?: "UTC";
+		typesStatus?: "pending" | "complete" | "partial";
 	} | null;
 	contributionStatus: "pending" | "complete" | "unavailable";
 };

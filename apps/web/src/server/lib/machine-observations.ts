@@ -6,6 +6,7 @@ import type {
 	FactoryStreamName,
 } from "../../lib/factory-types";
 import { FACTORY_STREAMS } from "../../lib/factory-types";
+import { prSnapshot, prState } from "../../lib/pull-request";
 import { snapshotFreshness } from "../../lib/snapshot-freshness";
 import type { Db } from "./db/d1";
 import { publishedFactory } from "./db/factory-runs";
@@ -43,6 +44,7 @@ export async function observationEnvelope(
 	publicationId: string | null = null,
 	version?: string,
 ) {
+	data = prSnapshot(data);
 	return {
 		account_id: account,
 		data,
@@ -217,13 +219,26 @@ export async function readFactoryResource(db: Db, account: string, name: string,
 			account,
 			streamKey(original, stream as FactoryStreamName),
 		)) as FactoryStreamData | null;
-	if (!data || data.runId !== version)
-		throw new ApiError(409, "snapshot_missing", "immutable source unavailable");
+	if (!data)
+		throw new ApiError(
+			409,
+			"snapshot_missing",
+			"immutable source missing; refresh this repository",
+		);
+	if (data.runId !== version)
+		throw new ApiError(
+			409,
+			"snapshot_missing",
+			"immutable source version mismatch; refresh this repository",
+		);
 	return observationEnvelope(
 		account,
 		`factory:${repo.name}:${stream}`,
 		{
 			...data,
+			...(stream === "prs"
+				? { items: data.items.map((item) => ({ ...item, ...prState(item) })) }
+				: {}),
 			...(stream === "dependencies"
 				? dependencyEvidence(data.items, [...(repo.manifests ?? []), ...(data.manifests ?? [])])
 				: {}),

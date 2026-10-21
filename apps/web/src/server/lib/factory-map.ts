@@ -7,6 +7,7 @@ import {
 	type FactoryRepo,
 	type FactoryStreamName,
 } from "../../lib/factory-types";
+import { prState } from "../../lib/pull-request";
 
 export type GithubObject = Record<string, unknown>;
 export function object(value: unknown): GithubObject {
@@ -96,6 +97,7 @@ export function mapFactoryEvents(stream: FactoryStreamName, data: GithubObject[]
 				event.state = "committed";
 			}
 			if (stream === "prs") {
+				Object.assign(event, prState(r));
 				event.state = event.mergedAt ? "merged" : event.state;
 				event.draft = r.draft === true;
 			}
@@ -118,12 +120,13 @@ export function mapFactoryEvents(stream: FactoryStreamName, data: GithubObject[]
 export function mapDependencies(data: GithubObject, repo: FactoryRepo) {
 	const items: FactoryEvent[] = [];
 	const base = `${repo.url}/blob/${repo.head}`;
-	const add = (name: string, version: string, path: string) =>
+	const add = (name: string, version: string, path: string, job?: string) =>
 		items.push({
 			id: `${path}:${name}`,
 			title: name,
 			version,
 			path,
+			...(job ? { job } : {}),
 			url: `${base}/${path}`,
 			at: null,
 			createdAt: null,
@@ -152,11 +155,9 @@ export function mapDependencies(data: GithubObject, repo: FactoryRepo) {
 		["release", ".github/workflows/release.yml"],
 	] as const) {
 		const content = object(data[key]).text;
-		if (typeof content === "string")
-			for (const match of content.matchAll(
-				/(?:^|\n)\s*(?:-\s*)?uses:\s*["']?([\w.-]+\/[\w./-]+)@([^\s"'#]+)/g,
-			))
-				add(match[1] ?? "", match[2] ?? "", path);
+		if (typeof content !== "string") continue;
+		for (const reference of workflowReferences(content))
+			add(reference.name, reference.version, path, reference.job);
 	}
 	for (const [key, path] of [
 		["dependabot", ".github/dependabot.yml"],
@@ -164,4 +165,92 @@ export function mapDependencies(data: GithubObject, repo: FactoryRepo) {
 	] as const)
 		if (typeof object(data[key]).text === "string") add(key, "configured", path);
 	return dependencyEvidence(items);
+}
+
+function workflowReferences(content: string) {
+	const references: { name: string; version: string; job: string }[] = [];
+	const lines = content
+		.replace(/^\uFEFF/, "")
+		.split(/\r?\n/)
+		.filter((line) => !/^\s*(?:#.*)?$/.test(line));
+	if (/^---(?:\s+#.*)?\s*$/.test(lines[0]?.trim() ?? "")) lines.shift();
+	if (/^\.\.\.(?:\s+#.*)?\s*$/.test(lines.at(-1)?.trim() ?? "")) lines.pop();
+	const indentation = (line: string) => line.length - line.trimStart().length;
+	const rootIndent = lines.reduce(
+		(minimum, line) => Math.min(minimum, indentation(line)),
+		Infinity,
+	);
+	const fail = () => {
+		throw new Error("Workflow jobs cannot be parsed safely");
+	};
+	const block = (value: string) => /^(?:#.*)?$/.test(value);
+	let foundJobs = false;
+	let jobs = 0;
+	let inJobs = false;
+	let jobIndent: number | null = null;
+	let jobPropertyIndent: number | null = null;
+	let stepPropertyIndent: number | null = null;
+	let job = "";
+	let scalarIndent: number | null = null;
+	for (const [index, line] of lines.entries()) {
+		const indent = indentation(line);
+		const next = lines[index + 1];
+		const sequence = /^\s*-\s+/.exec(line);
+		const propertyIndent = sequence?.[0].length ?? indent;
+		if (scalarIndent !== null && indent > scalarIndent) continue;
+		scalarIndent = null;
+		const property = /^\s*(?:-\s+)?(?:"([\w-]+)"|'([\w-]+)'|([\w-]+)):(?:\s+(.*)|$)/.exec(line);
+		const key = property?.[1] ?? property?.[2] ?? property?.[3];
+		const value = (property?.[4] ?? "").trimEnd();
+		if (indent === rootIndent) {
+			if (!key) fail();
+			inJobs = key === "jobs";
+			if (inJobs) {
+				if (foundJobs || !block(value)) fail();
+				foundJobs = true;
+			}
+			jobIndent = null;
+			job = "";
+			continue;
+		}
+		if (!inJobs) continue;
+		if (!property) fail();
+		if (
+			/^[!&*]/.test(value) ||
+			(value.startsWith('"') && !/^"(?:[^"\\]|\\.)*"(?:\s+#.*)?$/.test(value)) ||
+			(value.startsWith("'") && !/^'(?:[^']|'')*'(?:\s+#.*)?$/.test(value))
+		)
+			fail();
+		if (/^\s*(?:<<:|-\s*[*&{[])/.test(line)) fail();
+		if (key && (jobIndent === null || indent <= jobIndent)) {
+			if (!block(value) || !next || indentation(next) <= indent || /^\s*-(?:\s|$)/.test(next))
+				fail();
+			jobIndent = indent;
+			jobPropertyIndent = next ? indentation(next) : null;
+			stepPropertyIndent = null;
+			job = key;
+			jobs++;
+		}
+		if (indent === jobPropertyIndent && !sequence)
+			stepPropertyIndent =
+				key === "steps" ? (/^\s*-\s+/.exec(next ?? "")?.[0].length ?? null) : null;
+		if (
+			key === "steps" &&
+			value !== "[]" &&
+			(!block(value) || !next || indentation(next) < indent || !/^\s*-\s+\S/.test(next))
+		)
+			fail();
+		if (/^[|>]/.test(value)) {
+			if (!/^[|>](?:[+-]?[1-9]?|[1-9][+-]?)(?:\s+#.*)?$/.test(value)) fail();
+			scalarIndent = propertyIndent;
+		}
+		if (key !== "uses" || indent === jobIndent) continue;
+		if (!(indent === jobPropertyIndent && !sequence) && propertyIndent !== stepPropertyIndent)
+			fail();
+		const match = /^["']?([\w.-]+\/[\w./-]+)@([^\s"'#]+)["']?(?:\s+#.*)?\s*$/.exec(value);
+		if (match) references.push({ name: match[1] ?? "", version: match[2] ?? "", job });
+		else if (!/^["']?(?:\.\/|docker:\/\/)[^\s"']+["']?(?:\s+#.*)?$/.test(value)) fail();
+	}
+	if (!foundJobs || jobs === 0) fail();
+	return references;
 }

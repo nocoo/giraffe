@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { FactorySnapshot } from "../../lib/factory-types";
 import { FACTORY_STREAMS } from "../../lib/factory-types";
+import { prSnapshot } from "../../lib/pull-request";
 import type { Db } from "./db/d1";
 import { factoryHead, normalizePublication } from "./db/factory-runs";
 import { ApiError } from "./errors";
@@ -51,6 +52,7 @@ export async function readSources(db: Db, account: string, query: Record<string,
 	type Source = { resource: string; version: string } & ReturnType<typeof observationMetadata>;
 	const sources: Source[] = [];
 	const add = async (resource: string, data: Record<string, unknown>, version?: string) => {
+		data = prSnapshot(data);
 		const metadata = observationMetadata(data);
 		if (since !== null) {
 			const freshness = metadata.freshness;
