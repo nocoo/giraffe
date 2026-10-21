@@ -430,6 +430,7 @@ const github = await listen(17046, (req, res) => {
 				data: {
 					repository: {
 						vulnerabilityAlerts: {
+							pageInfo: { hasNextPage: false },
 							nodes: [
 								{
 									securityAdvisory: {

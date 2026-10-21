@@ -246,7 +246,11 @@ const github = await listen(githubPort, (req, res) => {
 				});
 				return;
 			}
-			sendJson(res, 200, { data: { repository: { vulnerabilityAlerts: { nodes: [] } } } });
+			sendJson(res, 200, {
+				data: {
+					repository: { vulnerabilityAlerts: { nodes: [], pageInfo: { hasNextPage: false } } },
+				},
+			});
 			return;
 		}
 		if (url.pathname === "/notifications") {
