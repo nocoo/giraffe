@@ -41,4 +41,7 @@ export const unsupportedWorkflowJobs = [
 	"jobs:\n  build:\n    steps:\n      - run: !!str |\n          uses: fake/script@v1",
 	"jobs:\n  build:\n    steps:\n      - run: &script |\n          uses: fake/script@v1",
 	"jobs:\n  build:\n    steps:\n      - run: echo hello\n          uses:fake/script@v1",
+	"jobs:\n  build:\n    env:\n      uses: fake/environment@v1\n    steps:\n      - run: echo hello",
+	"jobs:\n  build:\n    steps:\n      - run: echo hello\n        env:\n          uses: fake/environment@v1",
+	"jobs:\n  build:\n    steps:\n      - uses: actions/checkout@v4\n        with:\n          uses: actions/checkout@v3",
 ];

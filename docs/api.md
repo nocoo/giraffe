@@ -574,6 +574,8 @@ including flow values on a following line and explicit YAML mapping keys.
 Null/empty job values, non-sequence steps, multiline quoted scalars and tagged or
 anchored values are unsupported and yield limited coverage. This is intentionally
 a conservative common-shape scanner, not a general YAML parser.
+Only direct job or step `uses` positions are recognized; nested `env.uses` or
+`with.uses` fields cause limited coverage rather than guessed dependency IDs.
 Existing stronger repository evidence and its original version/window
 remain published through the coverage-regression guard. Absent files and parsed
 run-only jobs can still prove no workflow dependencies. No additional files or

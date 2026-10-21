@@ -910,3 +910,10 @@ separators must also be real YAML separators, so colon-without-space text inside
 a continued plain scalar cannot become a uses key. Complete single-line quoted
 values and the already recognized literal/folded scalar headers remain supported.
 The scope is deliberately fail-closed, not comprehensive YAML compatibility.
+
+Final scoped review found that a nested env/with field named uses could still
+be mistaken for a dependency, including a false ref collision that renamed a
+real action. Six failing collection/publication cases now constrain uses to the
+direct job or step property column. Other uses positions fail closed instead of
+guessing their meaning. The scanner must establish both key and structural
+position before assigning identity; matching a name and value is insufficient.

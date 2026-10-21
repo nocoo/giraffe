@@ -239,6 +239,8 @@ access loss during pagination remain failures, not expected absence.
   Null/empty jobs, non-sequence steps, multiline quoted scalars and tagged or
   anchored values are unsupported and return limited coverage; the scanner does
   not attempt general YAML support.
+  A `uses` key outside the direct job/step property position (such as `env.uses`
+  or `with.uses`) also yields limited coverage, never a guessed dependency ID.
   Stronger published evidence keeps its original
   version/window. Absent files and parsed run-only jobs still permit a real zero.
   Equal legacy saved records collapse without inventing job keys; a remaining
