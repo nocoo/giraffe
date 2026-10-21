@@ -5,7 +5,7 @@ import { publishedFactory } from "./db/factory-runs";
 import { ApiError } from "./errors";
 import { observationEnvelope, readObservation, requireCatalogRepo } from "./machine-observations";
 import { repoPolicy } from "./repo-statistics";
-import { assemblePages, type SnapshotPage } from "./snapshot-pages";
+import { latestSnapshotGroups, type SnapshotPage } from "./snapshot-pages";
 
 const sourceQuerySchema = z
 	.object({
@@ -31,17 +31,15 @@ export async function readSources(db: Db, account: string, query: Record<string,
 		)
 		.bind(account)
 		.all<SnapshotPage>();
-	const groups = new Map<string, SnapshotPage[]>();
-	for (const row of rows.results) {
-		const key = row.kind.replace(/#2$/, "");
-		const name = key.slice(5, key.lastIndexOf(":"));
-		if (!policy.includes(name)) continue;
-		if (repository && name.toLowerCase() !== repository.toLowerCase()) continue;
-		groups.set(key, [...(groups.get(key) ?? []), row]);
-	}
+	const groups = [...latestSnapshotGroups(rows.results).values()].filter(({ resource }) => {
+		const name = resource.slice(5, resource.lastIndexOf(":"));
+		return (
+			policy.includes(name) && (!repository || name.toLowerCase() === repository.toLowerCase())
+		);
+	});
 	const sources = await Promise.all(
-		[...groups].map(async ([resource, pages]) => {
-			const envelope = await observationEnvelope(account, resource, assemblePages(resource, pages));
+		groups.map(async ({ resource, data }) => {
+			const envelope = await observationEnvelope(account, resource, data);
 			return {
 				resource,
 				version: envelope.sourceVersion,

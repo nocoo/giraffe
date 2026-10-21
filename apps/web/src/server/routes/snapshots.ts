@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 import type { AppVars, Env } from "../env";
 import { getActiveAccount } from "../lib/db/accounts";
-import { readSnapshot } from "../lib/db/snapshots";
+import { readRepositorySnapshot, readSnapshot } from "../lib/db/snapshots";
 import { ApiError, jsonOk } from "../lib/errors";
 import { statisticsSnapshot } from "../lib/repo-statistics";
 import { snapshotScope, snapshotSelection } from "../lib/snapshot-scope";
@@ -15,7 +15,9 @@ export async function snapshotGet(
 	if (!account) {
 		throw new ApiError(409, "account_missing", "no active account");
 	}
-	let snap = await readSnapshot(c.get("db"), account.id, logical);
+	let snap = logical.startsWith("repo:")
+		? ((await readRepositorySnapshot(c.get("db"), account.id, logical))?.data ?? null)
+		: await readSnapshot(c.get("db"), account.id, logical);
 	if (!snap && scope === "starred" && !logical.startsWith("repo:")) {
 		const selection = await snapshotSelection(c.get("db"), account.id, scope);
 		const key = (

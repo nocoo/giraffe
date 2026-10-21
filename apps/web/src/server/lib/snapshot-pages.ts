@@ -4,6 +4,32 @@ const MAX = 1_500_000;
 
 export type SnapshotPage = { kind: string; payload: string };
 
+export function latestSnapshotGroups(rows: SnapshotPage[]) {
+	const groups = new Map<string, SnapshotPage[]>();
+	for (const row of rows) {
+		const resource = row.kind.replace(/#2$/, "");
+		groups.set(resource, [...(groups.get(resource) ?? []), row]);
+	}
+	const latest = new Map<string, { resource: string; data: Record<string, unknown> }>();
+	const time = (data: Record<string, unknown>) => {
+		const parsed = typeof data.fetched_at === "string" ? Date.parse(data.fetched_at) : NaN;
+		return Number.isFinite(parsed) ? parsed : -Infinity;
+	};
+	for (const [resource, pages] of groups) {
+		if (!pages.some((page) => page.kind === resource)) continue;
+		const data = assemblePages(resource, pages);
+		const key = resource.toLowerCase();
+		const previous = latest.get(key);
+		if (
+			!previous ||
+			time(data) > time(previous.data) ||
+			(time(data) === time(previous.data) && resource < previous.resource)
+		)
+			latest.set(key, { resource, data });
+	}
+	return latest;
+}
+
 function utf8Len(text: string): number {
 	return new TextEncoder().encode(text).length;
 }

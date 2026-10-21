@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import type { Env } from "../env";
 import { createApp } from "../index";
 import { MAX_STAGED_BYTES } from "../lib/collect";
 import { insertAccountStmt } from "../lib/db/accounts";
 import { createDb } from "../lib/db/d1";
 import { replaceSnapshotStmts } from "../lib/db/snapshots";
-import { openSqliteD1 } from "../lib/db/sqlite-d1";
 import { encryptToken, parseKeyBytes } from "../lib/token-crypto";
 
 const PAT = `ghp_${"A".repeat(36)}`;
@@ -14,7 +14,7 @@ const KEY = "0".repeat(64);
 function env(): Env {
 	return {
 		FACTORY_QUEUE: {} as Queue,
-		DB: openSqliteD1(true),
+		DB: sqliteFixture(),
 		ASSETS: { fetch: async () => new Response("x") } as unknown as Fetcher,
 		TOKEN_ENCRYPTION_KEY_CURRENT: "1",
 		TOKEN_ENCRYPTION_KEY_V1: KEY,

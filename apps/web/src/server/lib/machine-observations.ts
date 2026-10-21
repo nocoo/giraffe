@@ -4,7 +4,7 @@ import { FACTORY_STREAMS } from "../../lib/factory-types";
 import { snapshotFreshness } from "../../lib/snapshot-freshness";
 import type { Db } from "./db/d1";
 import { publishedFactory } from "./db/factory-runs";
-import { readSnapshot } from "./db/snapshots";
+import { readRepositorySnapshot, readSnapshot } from "./db/snapshots";
 import { ApiError } from "./errors";
 import { streamKey } from "./factory-collect";
 import {
@@ -14,7 +14,7 @@ import {
 	repoPolicy,
 	statisticsFactory,
 } from "./repo-statistics";
-import { assemblePages, type SnapshotPage } from "./snapshot-pages";
+import { latestSnapshotGroups, type SnapshotPage } from "./snapshot-pages";
 import type { SnapshotScope } from "./snapshot-scope";
 
 export async function requireCatalogRepo(db: Db, account: string, name: string) {
@@ -56,8 +56,6 @@ export async function observationEnvelope(
 		selection: { scope, statisticsFilter: false },
 	};
 }
-const KIND = /^repo:(.+):(actions|releases|details)(?:#2)?$/;
-
 export async function readCiObservation(
 	db: Db,
 	account: string,
@@ -73,15 +71,7 @@ export async function readCiObservation(
 		)
 		.bind(account)
 		.all<SnapshotPage & { fetched_at: string }>();
-	const groups = new Map<string, Map<string, SnapshotPage[]>>();
-	for (const row of rows.results) {
-		// The SQL filter guarantees the repo:<name>:<suffix> shape.
-		const [, repo, suffix] = KIND.exec(row.kind) as RegExpExecArray;
-		const byKind = groups.get(String(repo).toLowerCase()) ?? new Map<string, SnapshotPage[]>();
-		const logical = `repo:${repo}:${suffix}`;
-		byKind.set(logical, [...(byKind.get(logical) ?? []), row]);
-		groups.set(String(repo).toLowerCase(), byKind);
-	}
+	const groups = latestSnapshotGroups(rows.results);
 	const entries: CiEntry[] = [];
 	const unsaved: string[] = [];
 	const times: (string | null)[] = [];
@@ -89,13 +79,7 @@ export async function readCiObservation(
 	for (const repo of policy.repos) {
 		const name = repo.name_with_owner;
 		if (statisticsFilter && !policy.enabled(name)) continue;
-		const pages = groups.get(name.toLowerCase());
-		const read = (suffix: string) => {
-			const found = [...(pages ?? [])].find(
-				([k]) => k.toLowerCase() === `repo:${name}:${suffix}`.toLowerCase(),
-			);
-			return found ? assemblePages(found[0], found[1]) : null;
-		};
+		const read = (suffix: string) => groups.get(`repo:${name}:${suffix}`.toLowerCase())?.data;
 		const actions = read("actions");
 		const releases = read("releases");
 		const details = read("details");
@@ -153,6 +137,11 @@ export async function readObservation(
 	savedPolicy?: Policy,
 ) {
 	const policy = savedPolicy ?? (await repoPolicy(db, account, undefined, scope));
+	if (resource.startsWith("repo:")) {
+		const snapshot = await readRepositorySnapshot(db, account, resource);
+		if (!snapshot) throw new ApiError(409, "snapshot_missing", "no saved source");
+		return observationEnvelope(account, snapshot.resource, snapshot.data, scope);
+	}
 	if (resource === "factory") {
 		const snapshot = await publishedFactory(db, account);
 		if (!snapshot) throw new ApiError(409, "snapshot_missing", "no saved publication");

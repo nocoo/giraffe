@@ -146,6 +146,11 @@ security, languages and contributors are readable but not indexed here. Source
 ordering is unspecified. Factory repository filtering is case-insensitive even
 when a newer catalog spelling differs from a retained publication; source
 identities and versions retain their original published spelling.
+Retained repository-page keys can also differ from current catalog capitalization.
+The source index and page/CI readers resolve these keys case-insensitively, assemble
+each stored page group separately, and select the newest valid saved timestamp.
+The selected original resource spelling and content version are shared by the index
+and corresponding endpoint; older case variants remain stored, not indexed twice.
 
 `repository` narrows repository-page/factory entries but retains account/global
 entries and the full `repositories` array. `since` filters only `sources`: discard

@@ -9,7 +9,85 @@ import {
 	readObservation,
 	requireCatalogRepo,
 } from "./machine-observations";
+import { readSources } from "./machine-sources";
 import { statisticsSnapshot } from "./repo-statistics";
+
+it("uses the newest saved CI evidence across historical repository casing", async () => {
+	const db = createDb(sqliteFixture());
+	await db
+		.prepare(
+			"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES('a','owner','fake','fake','t','t')",
+		)
+		.run();
+	const old = "2026-10-18T00:00:00Z";
+	const latest = "2026-10-20T00:00:00Z";
+	const save = (kind: string, payload: Record<string, unknown>, at = latest) =>
+		db.batch(replaceSnapshotStmts(db, "a", kind, payload, at));
+	await save("repos", { repos: [{ name_with_owner: "owner/app" }] });
+	for (const [name, at, branch, conclusion] of [
+		["OWNER/APP", old, "main", "failure"],
+		["owner/app", latest, "trunk", "success"],
+	] as const) {
+		await save(`repo:${name}:details`, { default_branch: branch }, at);
+		await save(
+			`repo:${name}:actions`,
+			{
+				runs: [1, 2].map((id) => ({
+					id,
+					name: "CI",
+					status: "completed",
+					conclusion,
+					head_branch: branch,
+					created_at: at,
+					updated_at: at,
+					event: "push",
+				})),
+			},
+			at,
+		);
+		await save(
+			`repo:${name}:releases`,
+			{ releases: [{ id: 1, tag_name: at, draft: false, published_at: at }] },
+			at,
+		);
+	}
+	const result = await readObservation(db, "a", "ci", "all");
+	expect(result).toMatchObject({
+		freshness: { oldestAt: latest, latestAt: latest },
+		data: {
+			repos: [{ verdict: "healthy", release: { latest } }],
+			totals: { brokenWorkflows: 0, healthyWorkflows: 1 },
+		},
+	});
+});
+
+it("reads the same immutable page version advertised by a case-insensitive source index", async () => {
+	const db = createDb(sqliteFixture());
+	await db
+		.prepare(
+			"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES('a','owner','fake','fake','t','t')",
+		)
+		.run();
+	const save = (kind: string, payload: Record<string, unknown>, at = "2026-10-20T00:00:00Z") =>
+		db.batch(replaceSnapshotStmts(db, "a", kind, payload, at));
+	await save("repos", { repos: [{ name_with_owner: "owner/app" }] });
+	await save("repo:OWNER/APP:prs", { pull_requests: [{ number: 1 }] });
+	let sources = await readSources(db, "a", { repository: "OWNER/APP" });
+	let page = await readObservation(db, "a", "repo:owner/app:prs", "all");
+	expect(page.source.resource).toBe("repo:OWNER/APP:prs");
+	expect(page.sourceVersion).toBe(
+		sources.sources.find((source) => source.resource === page.source.resource)?.version,
+	);
+	await save("repo:owner/app:prs", { pull_requests: [{ number: 2 }] }, "2026-10-21T00:00:00Z");
+	sources = await readSources(db, "a", {});
+	page = await readObservation(db, "a", "repo:owner/app:prs", "all");
+	expect(page.data.pull_requests).toEqual([{ number: 2 }]);
+	expect(
+		sources.sources.filter((source) => source.resource.toLowerCase() === "repo:owner/app:prs"),
+	).toEqual([
+		expect.objectContaining({ resource: page.source.resource, version: page.sourceVersion }),
+	]);
+});
 
 it("shares catalog-wide provenance and page replacements with browser reads without statistics filtering", async () => {
 	const raw = sqliteFixture();

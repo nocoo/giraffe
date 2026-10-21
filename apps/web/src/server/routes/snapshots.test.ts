@@ -54,6 +54,18 @@ async function scopedSetup() {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("scoped snapshot projections", () => {
+	it("resolves browser repository pages using the newest stored case alias", async () => {
+		const setup = await scopedSetup();
+		await setup.save("repo:OWNER/APP:prs", { pull_requests: [{ number: 1 }] }, recentAt);
+		const response = await setup.request("repos/owner/app/prs");
+		expect(response.status).toBe(200);
+		expect(await response.json()).toMatchObject({ pull_requests: [{ number: 1 }] });
+		await setup.save("repo:owner/app:prs", { pull_requests: [{ number: 2 }] }, baselineAt);
+		expect(await (await setup.request("repos/owner/app/prs")).json()).toMatchObject({
+			pull_requests: [{ number: 1 }],
+		});
+	});
+
 	it("removes departed repositories from every browser inbox and aggregate at read time", async () => {
 		const setup = await scopedSetup();
 		for (const [kind, key] of [

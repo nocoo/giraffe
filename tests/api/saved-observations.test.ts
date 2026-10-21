@@ -136,6 +136,7 @@ beforeAll(async () => {
 			snapshot(
 				kind,
 				{
+					truncated: kind === "alerts",
 					[key]: [names[0], names[1], removed].map((name_with_owner, number) => ({
 						name_with_owner,
 						number,
@@ -158,6 +159,13 @@ beforeAll(async () => {
 		);
 	}
 	statements.push(
+		snapshot(
+			"repo:NOCOO/RECOVERED:actions",
+			{ runs: runs("CI", ["failure", "failure"], "main", 18) },
+			baseline,
+		),
+		snapshot("repo:NOCOO/RECOVERED:details", { default_branch: "main" }, baseline),
+		snapshot("repo:NOCOO/RECOVERED:releases", { releases: [] }, baseline),
 		snapshot("repo:NOCOO/RECOVERED:prs", {
 			pull_requests: [{ number: 40, title: "new per-repository data" }],
 		}),
@@ -228,11 +236,22 @@ it("excludes removed repositories from saved account observations without deleti
 	});
 	expect(details.status).toBe(404);
 	const sources = (await (await machine("sources?repository=NOCOO%2FRECOVERED")).json()) as {
-		sources: { resource: string }[];
+		sources: { resource: string; version: string }[];
 	};
 	expect(sources.sources.some((source) => source.resource === "repo:NOCOO/RECOVERED:prs")).toBe(
 		true,
 	);
+	const page = (await (await machine("repos/nocoo/recovered/prs")).json()) as {
+		sourceVersion: string;
+		source: { resource: string };
+	};
+	expect(page.source.resource).toBe("repo:NOCOO/RECOVERED:prs");
+	expect(page.sourceVersion).toBe(
+		sources.sources.find((source) => source.resource === page.source.resource)?.version,
+	);
+	const partial = await browser("alerts?scope=starred");
+	expect(partial.status).toBe(200);
+	expect(await partial.json()).toMatchObject({ truncated: true, freshness: { missing: 0 } });
 	expect(
 		sql(`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`).map(
 			(statement) => statement.results,

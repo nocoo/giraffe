@@ -614,3 +614,14 @@ time. Review reproduced the regression for issues, PRs and alerts. Track coverag
 separately from provenance; only complete baseline evidence or a complete replacement
 page can clear the selected projection's incomplete flag. Include a same-time full
 page regression because equal timestamps do not imply equal coverage.
+
+## 2026-10-21 - Resolve case aliases consistently across readers
+
+Case-insensitive catalog membership alone did not make stored snapshot keys
+case-insensitive. Review found that CI selected the first matching alias, sometimes
+old failed runs, while source discovery could advertise an uppercase page that a
+canonicalized data endpoint could not read. Resolve whole logical page groups
+before selecting the newest valid saved time, preserve the chosen resource identity,
+and share that selection between the index, CI and page reader. Regression tests
+follow indexed sources to their data and compare full content versions; aliases
+with equal or invalid timestamps must resolve independently of SQL row order.

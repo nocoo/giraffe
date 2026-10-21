@@ -109,6 +109,9 @@ api -G "$API/sources" --data-urlencode 'since=2026-10-19T08:00:00+08:00' \
 - Missing saved pages/publications may be omitted, not reported as successful
   zeroes. Source order is unspecified. Preserve original published identities and
   full versions even when catalog capitalization changes.
+- Repository-page aliases differing only in case resolve to the newest saved page
+  group. The index and data endpoint return the same selected resource spelling
+  and content version; older aliases remain stored but are not separate sources.
 
 | Source identity | GET data path |
 | --- | --- |
