@@ -1160,3 +1160,14 @@ the refresh write followed by both browser and machine repository reads, verify
 both physical pages and their metadata, and retain existing hashes on read-only
 legacy corrections. Fixture authorization failures were corrected before counting
 the four genuine available-versus-partial failures as RED evidence.
+
+## 2026-10-22 - Verify pane geometry and explicit targets
+
+During batch-9 documentation review, the controller interpreted a split ratio as
+the new right pane's share, leaving the controller at two-thirds width instead of
+one-third. A corrective resize using `--current` resolved to a focused pane in a
+different workspace; its response reported `changed:false`, so that workspace
+was not modified. Resizing with the controller's explicit pane ID restored the
+intended layout. Treat split ratios as the existing pane's share, use explicit
+pane IDs for resize operations, and verify returned workspace, tab and geometry
+before continuing. The review pane was closed after collecting its result.

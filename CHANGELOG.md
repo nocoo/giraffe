@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.17.3 - 2026-10-22
+
+### Docs
+
+- Reduce the machine API skill from 848 to 317 lines, replacing duplicated field, factory, dependency-parsing and application-management details with verified links to the API reference. Add linkable headings around existing dependency contracts without moving their content.
+- Describe the current API without version-history wording while retaining authentication/scopes, source discovery, full content-version skip checks, report publication, retries and the external bot loop.
+- Identify the analysis report projection as browser-only and explain how machine clients reconstruct the newest three reports per exact scope/repository/domain from generic paginated reports, including all statuses and exact timestamp/ID ordering.
+
+### Compatibility
+
+- Documentation-only release: no API, runtime, test, migration, dependency, lockfile or production configuration changes. The authoritative package version supplies the application and health endpoint displays.
+
 ## v0.17.2 - 2026-10-22
 
 ### Fixed
