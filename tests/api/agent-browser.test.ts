@@ -82,3 +82,47 @@ it("stores pause control as a revisioned record without granting local repair pe
 	).toBe(409);
 	expect((await call(`${path}/work-control?revision=2`, "DELETE")).status).toBe(204);
 });
+
+it("reads the bounded analysis projection over local HTTP without changing generic history", async () => {
+	const created = await call("accounts", "POST", { token: `ghp_${"A".repeat(36)}` });
+	expect(created.ok).toBe(true);
+	const account = (await created.json()) as { id: string };
+	await call(`accounts/${account.id}/activate`, "POST");
+	const prefix = `agent/accounts/${account.id}`;
+	for (const domain of ["issues", "prs"])
+		for (const [id, fraction] of [
+			["z", "000100"],
+			["y", "000200"],
+			["x", "000300"],
+			["a", "000400"],
+		]) {
+			const response = await call(`${prefix}/reports`, "POST", {
+				id: `http-${domain}-${id}`,
+				type: "github-analysis",
+				status: "completed",
+				payload: { scope: "global", domain, generatedAt: `2026-10-21T00:00:00.${fraction}Z` },
+			});
+			expect(response.status).toBe(201);
+		}
+	const response = await call(`${prefix}/analysis/reports`);
+	expect(response.status).toBe(200);
+	const projection = (await response.json()) as { account_id: string; items: { id: string }[] };
+	expect(projection.account_id).toBe(account.id);
+	expect(projection.items.map((item) => item.id)).toEqual([
+		"http-issues-a",
+		"http-issues-x",
+		"http-issues-y",
+		"http-prs-a",
+		"http-prs-x",
+		"http-prs-y",
+	]);
+	expect((await call(`${prefix}/analysis/reports?limit=100`)).status).toBe(400);
+	const generic = await call(`${prefix}/reports?type=github-analysis&limit=100`);
+	expect(generic.status).toBe(200);
+	expect(((await generic.json()) as { items: unknown[] }).items).toHaveLength(8);
+	for (const domain of ["issues", "prs"])
+		for (const id of ["z", "y", "x", "a"])
+			expect(
+				(await call(`${prefix}/reports/http-${domain}-${id}?revision=1`, "DELETE")).status,
+			).toBe(204);
+});
