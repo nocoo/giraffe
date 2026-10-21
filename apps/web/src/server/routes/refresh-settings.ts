@@ -6,15 +6,12 @@ import { ApiError, jsonOk } from "../lib/errors";
 import { ACCOUNT_ID_RE } from "../lib/id";
 import { readJson } from "../lib/read-body";
 import { readSchedules, saveSchedule, starredRepos } from "../lib/refresh-schedule";
+import { normalizeScheduleConfig, scheduleConfigInput } from "../lib/refresh-schedule-input";
 
 type Ctx = Context<{ Bindings: Env; Variables: AppVars }>;
-const configInput = z
-	.object({
+const configInput = scheduleConfigInput
+	.safeExtend({
 		account_id: z.string().regex(ACCOUNT_ID_RE),
-		enabled: z.boolean(),
-		time: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/),
-		weekday: z.number().int().min(0).max(6),
-		scope: z.enum(["all", "starred"]),
 	})
 	.strict();
 export async function getRefreshSettings(c: Ctx): Promise<Response> {
@@ -45,6 +42,12 @@ export async function postRefreshSchedule(c: Ctx): Promise<Response> {
 	if (!account) throw new ApiError(409, "account_missing", "no active account");
 	if (account.id !== parsed.data.account_id)
 		throw new ApiError(409, "account_conflict", "account changed");
-	await saveSchedule(c.get("db"), account.id, kind, parsed.data, new Date().toISOString());
+	await saveSchedule(
+		c.get("db"),
+		account.id,
+		kind,
+		normalizeScheduleConfig(parsed.data),
+		new Date().toISOString(),
+	);
 	return getRefreshSettings(c);
 }

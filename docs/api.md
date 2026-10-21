@@ -705,25 +705,40 @@ api -X DELETE "$API/statistics/$OWNER/$NAME"
 
 ### PUT / DELETE /schedules/:kind
 
-Requires `app:write`; kind `daily|weekly|catalog`; no query. PUT requires **all**
-fields in strict JSON `{ enabled, time, weekday, scope }`:
+Requires `app:write`; kind `daily|weekly|catalog`; no query. PUT requires
+`enabled`, `weekday`, `scope`, and either `times` or the single-slot `time` alias
+in a strict JSON object:
 
 | Field | Validation |
 | --- | --- |
 | `enabled` | Boolean |
-| `time` | `HH:MM`, `00:00`-`23:59`, fixed UTC+08:00 |
+| `times` | Array of 1-6 `HH:MM` values, `00:00`-`23:59`, fixed UTC+08:00 (Asia/Shanghai); deduplicated and sorted on save |
+| `time` | Optional legacy single-slot alias. Writing it alone sets `times:[time]`; when both fields are supplied it must equal the earliest sorted slot. |
 | `weekday` | Integer 0-6, Sunday 0. Weekly uses it; daily accepts but ignores it for timing; catalog requires 0. |
 | `scope` | `all|starred`; daily requires `starred`, catalog requires `all`, weekly permits either |
 
-PUT returns Settings. Each Schedule is `{ kind, enabled, time, weekday, scope,
+PUT returns Settings. Each Schedule is `{ kind, enabled, time, times, weekday, scope,
 nextAt, lastRunId, lastError }`; last three can be null. PUT recalculates `nextAt`
 and clears `lastError`, without resource revisions. DELETE has no body, returns
 204, and restores a disabled default on reads: daily `08:00/starred`, weekly
 `04:00/all`, catalog `07:00/all`, weekday 0. These are defaults, not a claim about
 production configuration. This schedules cloud refresh, not a bot routine.
 
+All three kinds support multiple slots. Weekly slots share one weekday; daily
+and catalog slots recur each day. `time` always reads as `times[0]` and remains
+supported, with no removal date; new consumers should write `times`. Invalid
+times, empty/overlong lists and conflicting aliases return 400 `validation_failed`.
+`nextAt` is the earliest slot strictly after the save or accepted attempt.
+Close slots remain distinct occurrences, but an active run or cooldown defers
+the next one. Recovery attempts only the latest due slot, never a catch-up burst;
+each older slot is counted once in `scheduled_slots_missed` audit records.
+Occurrence request keys and compare-and-swap updates prevent duplicate starts.
+Migration 0013 preserves every existing setting and `next_at`; it does not add
+morning runs. The owner must explicitly choose any additional times.
+
 ```bash
 json -X PUT "$API/schedules/daily" --data '{"enabled":true,"time":"08:00","weekday":0,"scope":"starred"}'
+json -X PUT "$API/schedules/daily" --data '{"enabled":true,"times":["05:30","19:30"],"weekday":0,"scope":"starred"}'
 json -X PUT "$API/schedules/weekly" --data '{"enabled":true,"time":"04:00","weekday":0,"scope":"all"}'
 json -X PUT "$API/schedules/catalog" --data '{"enabled":true,"time":"07:00","weekday":0,"scope":"all"}'
 KIND='catalog'; api -X DELETE "$API/schedules/$KIND"

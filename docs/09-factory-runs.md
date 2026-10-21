@@ -101,8 +101,12 @@ fixed Asia/Shanghai offset. Names are case insensitive; a renamed repository mus
 be starred again after catalogue synchronization.
 
 `GET /api/refresh/settings` reads stars and schedule status without side effects.
-`POST /api/refresh/schedules/:kind` saves `account_id`, `enabled`, `time` (HH:mm),
-`weekday` (Sunday=0), and `scope` (`starred` for daily; `all` or `starred` weekly).
+`POST /api/refresh/schedules/:kind` saves `account_id`, `enabled`, `times` (1-6
+HH:MM values, deduplicated/sorted), `weekday` (Sunday=0), and `scope` (`starred`
+for daily; `all` or `starred` weekly; `all` for catalog). All kinds allow multiple
+times; weekly uses one weekday, catalog requires weekday 0. Legacy `time`-only
+writes set one slot; `time` reads as the earliest slot and must match it when both
+fields are written. Fixed UTC+08:00 semantics are unchanged.
 Settings are per account and remain active when another account is selected.
 A starred repository excluded from statistics still receives detail snapshots.
 
@@ -114,6 +118,10 @@ missing catalogues defer the occurrence; safe status codes appear in settings.
 Only the latest overdue occurrence is attempted when service recovers. Earlier
 slots are coalesced into an immutable failed audit run with
 `error:scheduled_slots_missed` and `missedSlots:{firstDueAt,lastDueAt,count}`.
+With multiple times, each distinct elapsed slot is counted exactly once, including
+slots crossed while a prior run is active. Accepted occurrence recovery advances
+to the next configured slot, not a fixed 24-hour increment. `nextAt` is the
+earliest upcoming slot across the list; no catch-up burst is introduced.
 Empty starred sets record a skip and advance. Weekly deep
 wins equal-time ties; daily waits for it to finish. Queue outage recovery uses the
 existing durable outbox. Disabling a schedule stops future occurrences, not an
@@ -122,6 +130,12 @@ already accepted run; pause/cancel controls remain available for that run.
 Migration `0007_refresh_schedules.sql` adds account-cascaded stars and schedules.
 Apply it before the new Worker. Rollback the Worker without dropping these tables;
 previous snapshots, immutable evidence and run rows are retained.
+
+Migration `0013_refresh_schedule_times.sql` adds/backfills one-element time lists
+without changing existing schedule rows or due times. Its triggers preserve
+legacy single-time writes and deletion behavior on rollback. It enables no extra
+production slots; the owner chooses them separately. See the
+[schema and backup verification](03-schema.md#refresh_schedule_times-v0160).
 
 Every run has an absolute wall deadline: catalog 30 minutes, quick refresh 6 hours,
 deep refresh (including missing legacy depth) 12 hours. Pauses and retries do not

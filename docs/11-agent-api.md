@@ -40,6 +40,14 @@ token activity.
 
 ## Saved observation contract
 
+Schedule management accepts 1-6 sorted/deduplicated `times` per daily, weekly or
+catalog kind, in fixed UTC+08:00. Weekly slots share one weekday. The legacy
+`time` alias remains readable/writable; a single-field write replaces the list
+with one slot. Conflicting aliases are rejected. `nextAt` selects the earliest
+upcoming slot; recovery coalesces earlier missed slots and attempts only the
+latest due occurrence. Migration 0013 does not change existing configured times.
+See [schedule writes](api.md#put--delete-scheduleskind) for scopes and validation.
+
 Security snapshots persist expected feature/access absence as `unavailable:true`
 with safe `reason` and `reason_code`; factory alerts coverage uses the same codes:
 `alerts_disabled`, `permission_denied`, `not_found`, `unknown`. Disabled requires

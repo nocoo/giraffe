@@ -10,6 +10,7 @@ import { requireCatalogRepo } from "../lib/machine-observations";
 import { assertMachineQuery } from "../lib/machine-query";
 import { readJson } from "../lib/read-body";
 import { readSchedules, saveSchedule, starredRepos } from "../lib/refresh-schedule";
+import { normalizeScheduleConfig, scheduleConfigInput } from "../lib/refresh-schedule-input";
 import type { MachineVars } from "./machine";
 
 type Ctx = Context<{ Bindings: Env; Variables: MachineVars }>;
@@ -45,22 +46,14 @@ export async function machineSetting(c: Ctx) {
 				.bind(account, kind.data)
 				.run();
 		else {
-			const parsed = z
-				.object({
-					enabled: z.boolean(),
-					time: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/),
-					weekday: z.number().int().min(0).max(6),
-					scope: z.enum(["all", "starred"]),
-				})
-				.strict()
-				.safeParse(await readJson(c.req.raw, 2048));
+			const parsed = scheduleConfigInput.safeParse(await readJson(c.req.raw, 2048));
 			if (
 				!parsed.success ||
 				(kind.data === "daily" && parsed.data.scope !== "starred") ||
 				(kind.data === "catalog" && (parsed.data.scope !== "all" || parsed.data.weekday !== 0))
 			)
 				throw new ApiError(400, "validation_failed", "invalid schedule");
-			await saveSchedule(db, account, kind.data, parsed.data, now);
+			await saveSchedule(db, account, kind.data, normalizeScheduleConfig(parsed.data), now);
 		}
 	} else {
 		const repo = await requireCatalogRepo(

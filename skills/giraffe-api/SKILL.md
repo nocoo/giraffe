@@ -467,18 +467,25 @@ Only use these with explicit refresh/settings authorization and the necessary
 | DELETE `/stars/:owner/:name` | `app:write` | No body; 204 |
 | PUT `/statistics/:owner/:name` | `app:write` | `{enabled:boolean}`; return settings |
 | DELETE `/statistics/:owner/:name` | `app:write` | Remove override, restore defaults; 204 |
-| PUT `/schedules/:kind` | `app:write` | All of `{enabled,time,weekday,scope}`; return settings |
+| PUT `/schedules/:kind` | `app:write` | `{enabled,weekday,scope,times}` or legacy `{enabled,weekday,scope,time}`; return settings |
 | DELETE `/schedules/:kind` | `app:write` | Restore disabled default; 204 |
 | GET `/refresh-runs` | `app:read` | `{account_id,items}`; at most 21, active first; no pagination/detail GET |
 | POST `/refresh-runs` | `app:write` | Start body below; 202 `{account_id,id,status}` |
 | POST `/refresh-runs/:id/control` | `app:write` | `{action:"pause"|"resume"|"cancel"}`; 202 `{account_id,id,status}` |
 
-Schedules: kind `daily|weekly|catalog`; time `HH:MM` in fixed UTC+08:00; weekday
+Schedules: kind `daily|weekly|catalog`; `times` is a 1-6 entry array of `HH:MM`
+values in fixed UTC+08:00, deduplicated and sorted. All kinds support multiple
+times; weekly slots share one weekday. `time` reads as the first slot and writing
+it alone resets to one slot. When both are supplied they must agree; malformed,
+empty, overlong or conflicting inputs return 400 `validation_failed`. Weekday
 0–6 (Sunday 0); scope `all|starred`. Daily requires starred and ignores weekday
 for timing; catalog requires all and weekday 0; weekly allows either scope.
 Defaults are disabled daily08:00/starred, weekly04:00/all, catalog07:00/all, all
 weekday0. These schedule GitHub refresh, not bot analysis. PUT recalculates nextAt
-and clears lastError; settings writes do not use resource revisions.
+and clears lastError; settings writes do not use resource revisions. `nextAt` is
+the earliest upcoming slot; missed-slot coalescing counts each elapsed slot once
+without a burst of catch-up runs. Migration 0013 preserves existing configuration;
+never add extra times without the owner's explicit choice.
 
 Refresh start requires UUID `requestKey`, `mode:catalog|refresh`; optional depth
 `quick|deep` (default deep), scope `all|selected|filter|stale|failed` (default

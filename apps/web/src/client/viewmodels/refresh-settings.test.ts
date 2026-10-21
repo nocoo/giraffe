@@ -33,6 +33,7 @@ it("describes disabled, deferred, empty and ready schedules", () => {
 		kind: "daily" as const,
 		enabled: true,
 		time: "08:00",
+		times: ["08:00"],
 		weekday: 0,
 		scope: "starred" as const,
 		nextAt: null,
@@ -43,6 +44,7 @@ it("describes disabled, deferred, empty and ready schedules", () => {
 	expect(scheduleStatus({ ...schedule, lastError: "no_starred_repositories" })).toContain("星标");
 	expect(scheduleStatus({ ...schedule, lastError: "account_conflict" })).toContain("等待");
 	expect(scheduleStatus({ ...schedule, lastError: "catalog_incomplete" })).toContain("仓库列表");
+	expect(scheduleStatus({ ...schedule, lastError: "catalog_pending" })).toContain("仓库列表");
 	expect(scheduleStatus({ ...schedule, lastError: "run_timed_out" })).toContain("超时");
 	expect(scheduleStatus({ ...schedule, lastError: "scheduled_slots_missed" })).toContain("错过");
 	expect(scheduleStatus({ ...schedule, lastError: "internal_error" })).toContain("重试");
