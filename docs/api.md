@@ -859,7 +859,10 @@ REPORT_ID="analysis-repo-issues-${SOURCE_VERSION:0:12}"
 ```
 
 Prepare truthful `report-payload.json` using the required fields and actual
-sources/evidence/times. This minimal illustrative shape makes no passing claim;
+sources/evidence/times. For each source copy the observation's `sourceVersion`
+into `sources[].version` and its `contentVersion` into `sources[].contentVersion`;
+keep both, distinct from the report's composite `sourceVersion`. For globals use
+the corresponding `/sources` entries. This minimal illustrative shape makes no passing claim;
 replace its digest, source version and times with actual inputs:
 
 ```json
@@ -872,6 +875,7 @@ replace its digest, source version and times with actual inputs:
   "sources": [{
     "resource": "repo:nocoo/giraffe:issues",
     "version": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "contentVersion": "sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
     "fetchedAt": "2026-10-19T00:10:00Z", "complete": false, "stale": false
   }],
   "evidence": [], "omitted": 0,

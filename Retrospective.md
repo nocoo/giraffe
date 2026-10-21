@@ -929,3 +929,14 @@ deduplication now runs in `statisticsFactory`, the account/browser response
 projection, while storage readers and writers retain their prior behavior. Trace
 both read and write callers before choosing a response-only normalization point;
 read-only GET assertions alone do not prove unchanged subsequent writes.
+
+## 2026-10-21 - Keep producer identity and payload examples aligned
+
+The content-version guide updated the stable report ID recipe to use content
+hashes, but its two report payload examples still omitted source content hashes.
+Independent review caught that copying these examples would retain a stable ID
+while the page fell back to refresh-sensitive full-version matching. Both examples
+now preserve the observation's full version and content version separately from
+the report's composite digest. Validate example JSON against the real schema and
+trace the complete read/identity/publish/refresh sequence whenever a producer
+contract gains a field; prose and ID generation alone are not end-to-end proof.

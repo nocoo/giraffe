@@ -487,6 +487,10 @@ REPORT_ID="analysis-repo-issues-${SOURCE_VERSION:0:12}"
 ```
 
 Prepare `report-payload.json` with actual observations and the schema above. This
+requires copying each observation's `sourceVersion` to `sources[].version` and
+`contentVersion` to `sources[].contentVersion`, retaining both separately from
+the report's composite digest. Global reports copy the corresponding `/sources`
+entries instead. The following
 illustrative unknown report shows required shape; replace sample times, digest,
 source and conclusion with inspected evidence before publishing:
 
@@ -497,7 +501,7 @@ source and conclusion with inspected evidence before publishing:
   "observedAt": "2026-10-19T00:10:00Z", "generatedAt": "2026-10-19T01:30:00Z",
   "verdict": "unknown", "summary": "Saved issue coverage is incomplete.",
   "findings": [], "actions": [], "limitations": ["The saved issue source is truncated."],
-  "sources": [{"resource":"repo:nocoo/giraffe:issues","version":"sha256:example","fetchedAt":"2026-10-19T00:10:00Z","complete":false,"stale":false}],
+  "sources": [{"resource":"repo:nocoo/giraffe:issues","version":"sha256:example","contentVersion":"sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789","fetchedAt":"2026-10-19T00:10:00Z","complete":false,"stale":false}],
   "evidence": [], "omitted": 0,
   "judgment": {"model":"external-bot-model","choice":"unknown"}
 }
