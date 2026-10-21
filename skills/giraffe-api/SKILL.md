@@ -277,6 +277,9 @@ access loss during pagination remain failures, not expected absence.
   source HEAD, job order and a single job's ref are not identity components.
   Collection scans job-level reusable workflows and step actions, not general
   YAML flow objects, aliases or expression-valued `uses`.
+  Job/step `if:` values support plain multiline continuations and `|`/`>` block
+  scalars, including chomping/indent indicators. Condition bodies never supply
+  job keys or dependency references; expressions are not evaluated.
   The document root may be uniformly indented. Present files whose job mappings
   or references cannot be parsed safely yield `limited` coverage with reason
   `Dependency manifests cannot be parsed safely; evidence unavailable`; never

@@ -684,6 +684,9 @@ HEAD or updating a single job's ref does not rename that reference. The bounded
 indentation scanner discovers the document's actual root indentation and supports
 job-level reusable workflows and step actions,
 quoted keys/references and comments, and ignores scalar script bodies. It is not
+a general expression evaluator: job/step `if:` values support plain multiline
+continuations and `|`/`>` block scalars with chomping/indent indicators; indented
+condition bodies are scalar content, never job keys or dependency references. It is not
 a general YAML parser; flow-style objects, aliases and expression-valued `uses`
 are not resolved. Present workflow files with missing/ambiguous job mappings or
 unsupported job/step references produce `coverage.status: "limited"`, with reason

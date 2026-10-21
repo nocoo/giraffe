@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import {
 	dependencyWorkflow,
+	multilineReleaseWorkflow,
 	unsupportedWorkflowJobs,
 } from "../../../../../tests/fixtures/dependency-workflow";
 import {
@@ -25,6 +26,21 @@ import {
 
 const invoke = (s = ready(), gh = github(() => Response.json([])), store = memoryStore()) =>
 	stepFactory(s, gh, "test-token", store, NOW);
+
+it("collects an echo-like multiline release workflow with complete dependency coverage", async () => {
+	const state = ready("dependencies");
+	const store = memoryStore();
+	await invoke(
+		state,
+		github(() =>
+			Response.json({ data: { repository: { release: { text: multilineReleaseWorkflow } } } }),
+		),
+		store,
+	);
+	const data = await store.read(streamKey("nocoo/app", "dependencies"));
+	expect(data?.coverage).toMatchObject({ status: "complete", observed: 3 });
+	expect(data?.items.map((item) => item.job)).toEqual(["deploy", "verify", "verify"]);
+});
 
 it("collects uniformly indented workflow references instead of a complete zero", async () => {
 	const state = ready("dependencies");

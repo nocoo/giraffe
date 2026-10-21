@@ -243,6 +243,13 @@ function workflowReferences(content: string) {
 		if (/^[|>]/.test(value)) {
 			if (!/^[|>](?:[+-]?[1-9]?|[1-9][+-]?)(?:\s+#.*)?$/.test(value)) fail();
 			scalarIndent = propertyIndent;
+		} else if (
+			key === "if" &&
+			((indent === jobPropertyIndent && !sequence) || propertyIndent === stepPropertyIndent) &&
+			!value.startsWith('"') &&
+			!value.startsWith("'")
+		) {
+			scalarIndent = propertyIndent;
 		}
 		if (key !== "uses" || indent === jobIndent) continue;
 		if (!(indent === jobPropertyIndent && !sequence) && propertyIndent !== stepPropertyIndent)

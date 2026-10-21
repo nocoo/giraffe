@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { dependencyWorkflow } from "../../../../../tests/fixtures/dependency-workflow";
+import {
+	dependencyWorkflow,
+	multilineReleaseWorkflow,
+} from "../../../../../tests/fixtures/dependency-workflow";
 import { rawEvent, rawRepo } from "../../../../../tests/fixtures/factory";
 import {
 	coverage,
@@ -12,6 +15,46 @@ import {
 } from "./factory-map";
 
 describe("GitHub factory normalization", () => {
+	it.each(["plain", "|", ">-", "|2-", ">+2", "empty"])(
+		"scans job and step multiline if values (%s) without interpreting their contents",
+		(header) => {
+			const text = multilineReleaseWorkflow.replace(
+				/^([ ]*(?:- )?)if: (.*)/gm,
+				(_, indent: string, value: string) =>
+					header === "plain"
+						? `${indent}if: ${value}`
+						: `${indent}if: ${header === "empty" ? "" : header}\n${" ".repeat(indent.length)}  ${value}`,
+			);
+			const items = mapDependencies({ release: { text } }, mapFactoryRepo(rawRepo)).items;
+			expect(items.map(({ id, job }) => ({ id, job }))).toEqual([
+				{
+					id: ".github/workflows/release.yml:nocoo/base-ci/.github/workflows/deploy.yml#job=deploy",
+					job: "deploy",
+				},
+				{ id: ".github/workflows/release.yml:actions/checkout#job=verify", job: "verify" },
+				{ id: ".github/workflows/release.yml:actions/cache#job=verify", job: "verify" },
+			]);
+		},
+	);
+	it("does not interpret multiline condition contents as keys or workflow references", () => {
+		const text = `jobs:
+  deploy:
+    if: github.event_name == 'push'
+      uses: fake/condition@v1
+      jobs:
+        fake:
+          uses: fake/job@v1
+    uses: nocoo/base-ci/.github/workflows/deploy.yml@main
+  verify:
+    steps:
+      - if: github.event_name == 'push'
+          uses: fake/step@v1
+        uses: actions/checkout@v4
+`;
+		expect(
+			mapDependencies({ ci: { text } }, mapFactoryRepo(rawRepo)).items.map((item) => item.title),
+		).toEqual(["nocoo/base-ci/.github/workflows/deploy.yml", "actions/checkout"]);
+	});
 	it.each([0, 2, 4])("finds jobs at the document root indentation of %s spaces", (indent) => {
 		const text = dependencyWorkflow
 			.split("\n")

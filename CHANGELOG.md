@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Replace the analysis page's 5,000-row report traversal with a dedicated browser projection: newest three rows per exact `(payload.scope, row.repository, payload.domain)`, ordered by the actual `generatedAt` instant descending, then ID descending. Use indexed key seeks and hydrate only selected payloads in one read-only query, preserving generic machine list pagination and every historical row.
 - Derive factory freshness from enabled published repositories instead of the whole catalog, consistently across browser factory reads, machine `/factory` and `/sources`. Incomplete publication inventory sets machine `truncated:true`. This fixes the reported 126/1 total/missing caused by non-owned `chaconnewu/wuyu-nltk1`, the September 24 oldest time from archived/statistics-disabled `hermes-on-herdr`, and 47 legacy archived/fork entries dated September 29; these are reported production symptoms, not measurements from this local run.
+- Parse job/step multiline workflow `if:` conditions, including plain continuations and literal/folded block scalars with chomping/indent indicators, without interpreting their bodies as dependency references. Echo-like release fixtures retain complete coverage and stable job-qualified IDs; other unsupported workflow shapes remain fail closed.
 
 ### Migration and Compatibility
 
