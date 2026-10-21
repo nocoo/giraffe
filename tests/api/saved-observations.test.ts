@@ -576,3 +576,116 @@ it("keeps latest-any source versions distinct from latest-complete multipage inb
 		),
 	).toEqual(before);
 });
+
+function conditionalSources(tag: string, path = "sources", token: string | null = bearer) {
+	return fetch(`${base}/api/v1/accounts/${account}/${path}`, {
+		headers: { "If-None-Match": tag, ...(token ? { authorization: `Bearer ${token}` } : {}) },
+	});
+}
+
+it("revalidates private sources over HTTP with response-derived tags and no GET writes", async () => {
+	const before = sql(
+		`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
+	).map((statement) => statement.results);
+	const tokens = sql(`SELECT * FROM api_tokens WHERE account_id=${quote(account)} ORDER BY id`).map(
+		(statement) => statement.results,
+	);
+
+	const full = await machine("sources");
+	const tag = full.headers.get("etag");
+	expect(tag).toEqual(expect.stringMatching(/^"[a-f0-9]{64}"$/));
+	if (!tag) throw new Error("missing source validator");
+	for (const match of [tag, `W/${tag}`, `"other", W/${tag}`, "*"]) {
+		const response = await conditionalSources(match);
+		expect(response.status).toBe(304);
+		expect(await response.text()).toBe("");
+		expect(response.headers.get("etag")).toBe(tag);
+		expect(response.headers.get("cache-control")).toBe("private, no-store");
+		expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+		expect(response.headers.get("vary")).toBe("Authorization");
+	}
+	expect((await conditionalSources('"unmatched"')).status).toBe(200);
+	const selected = await conditionalSources(tag, "sources?repository=NOCOO%2FRECOVERED");
+	expect(selected.status).toBe(200);
+	expect(selected.headers.get("etag")).not.toBe(tag);
+	const since = await conditionalSources(tag, "sources?since=2099-01-01T00%3A00%3A00Z");
+	expect(since.status).toBe(200);
+	expect(since.headers.get("etag")).not.toBe(tag);
+	const original = sql(
+		`SELECT payload FROM snapshots WHERE account_id=${quote(account)} AND kind='factory'`,
+	)[0]?.results[0]?.payload;
+	if (typeof original !== "string") throw new Error("saved publication missing");
+	try {
+		assertMarker();
+		sql(
+			`UPDATE snapshots SET payload=json_set(payload,'$.repos[0].coverage.commits.observed',9999) WHERE account_id=${quote(account)} AND kind='factory';`,
+		);
+		const metadataChanged = await conditionalSources(tag);
+		expect(metadataChanged.status).toBe(200);
+		expect(metadataChanged.headers.get("etag")).not.toBe(tag);
+	} finally {
+		assertMarker();
+		sql(
+			`UPDATE snapshots SET payload=${quote(original)} WHERE account_id=${quote(account)} AND kind='factory';`,
+		);
+	}
+	expect(
+		sql(`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`).map(
+			(statement) => statement.results,
+		),
+	).toEqual(before);
+	expect(
+		sql(`SELECT * FROM api_tokens WHERE account_id=${quote(account)} ORDER BY id`).map(
+			(statement) => statement.results,
+		),
+	).toEqual(tokens);
+});
+
+it("checks authentication, account, scopes and filters before conditional success over HTTP", async () => {
+	const tag = (await machine("sources")).headers.get("etag") ?? '"missing"';
+	const mint = async (scopes: string[]) => {
+		const response = await browser("tokens", "POST", {
+			account_id: account,
+			label: "conditional local auth",
+			scopes,
+			expires_in_days: 1,
+		});
+		expect(response.status).toBe(201);
+		return (await response.json()) as { id: string; token: string };
+	};
+	const expired = await mint(["observations:read"]);
+	const revoked = await mint(["observations:read"]);
+	const wrongScope = await mint(["agent:read"]);
+	assertMarker();
+	sql(
+		`UPDATE api_tokens SET created_at='2024-12-31T00:00:00Z',expires_at='2025-01-01T00:00:00Z' WHERE id=${quote(expired.id)};UPDATE api_tokens SET revoked_at='2025-01-01T00:00:00Z' WHERE id=${quote(revoked.id)};`,
+	);
+	const before = sql(`SELECT * FROM api_tokens WHERE account_id=${quote(account)} ORDER BY id`).map(
+		(statement) => statement.results,
+	);
+	for (const [token, status] of [
+		[null, 401],
+		["invalid", 401],
+		[expired.token, 401],
+		[revoked.token, 401],
+		[wrongScope.token, 403],
+	] as const)
+		for (const match of [tag, "*"]) {
+			const response = await conditionalSources(match, "sources", token);
+			expect(response.status).toBe(status);
+			expect(response.headers.has("etag")).toBe(false);
+		}
+	for (const query of ["?x=1", "?since=invalid", "?repository=invalid"])
+		expect((await conditionalSources("*", `sources${query}`)).status).toBe(400);
+	expect((await conditionalSources("*", "sources?repository=outside%2Fcatalog")).status).toBe(404);
+	const other = await fetch(`${base}/api/v1/accounts/other/sources`, {
+		headers: { authorization: `Bearer ${bearer}`, "If-None-Match": "*" },
+	});
+	expect(other.status).toBe(403);
+	expect(other.headers.has("etag")).toBe(false);
+	expect(
+		sql(`SELECT * FROM api_tokens WHERE account_id=${quote(account)} ORDER BY id`).map(
+			(statement) => statement.results,
+		),
+	).toEqual(before);
+});

@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { etag, RETAINED_304_HEADERS } from "hono/etag";
 import { resourceCollection, resourceId } from "../../lib/agent-resource";
 import type { FactorySnapshot } from "../../lib/factory-types";
 import { REPO_SNAPSHOT_TABS } from "../../lib/snapshot-kinds";
@@ -125,8 +126,19 @@ export function machineApi() {
 		assertMachineQuery(c.req.query());
 		return getMachineSettings(c);
 	});
-	app.get("/accounts/:account/sources", async (c) =>
-		c.json(await readSources(c.get("db"), c.get("principal").accountId, c.req.query())),
+	app.get(
+		"/accounts/:account/sources",
+		async (c, next) => {
+			c.header("Vary", "Authorization", { append: true });
+			await next();
+		},
+		etag({
+			weak: false,
+			generateDigest: (body) => crypto.subtle.digest("SHA-256", body),
+			retainedHeaders: [...RETAINED_304_HEADERS, "referrer-policy"],
+		}),
+		async (c) =>
+			c.json(await readSources(c.get("db"), c.get("principal").accountId, c.req.query())),
 	);
 	app.all("/accounts/:account/stars/:owner/:name", machineSetting);
 	app.all("/accounts/:account/statistics/:owner/:name", machineSetting);
