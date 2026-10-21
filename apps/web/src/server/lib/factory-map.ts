@@ -192,7 +192,7 @@ function workflowReferences(content: string) {
 			jobIndent = indent;
 			job = key;
 		}
-		if (/^[|>][+-]?[1-9]?(?:\s+#.*)?$/.test(value)) scalarIndent = indent;
+		if (/^[|>](?:[+-]?[1-9]?|[1-9][+-]?)(?:\s+#.*)?$/.test(value)) scalarIndent = indent;
 		if (key !== "uses" || indent === jobIndent) continue;
 		const match = /^["']?([\w.-]+\/[\w./-]+)@([^\s"'#]+)["']?(?:\s+#.*)?\s*$/.exec(value);
 		if (match) references.push({ name: match[1] ?? "", version: match[2] ?? "", job });

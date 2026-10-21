@@ -42,8 +42,10 @@ describe("GitHub factory normalization", () => {
 			read(`jobs:\n  api:\n    uses: nocoo/base-ci/.github/workflows/test-job.yml@v2`)[0]?.id,
 		).toBe(items[0]?.id);
 	});
-	it("scans quoted job keys and step references without reading scalar bodies or other blocks", () => {
-		const text = `name: CI
+	it.each(["|", "|-", "|2-", "|-2", ">2+", ">+2"])(
+		"ignores %s scalar bodies while scanning job and step references",
+		(header) => {
+			const text = `name: CI
 env:
   uses: outside/workflow@v1
 jobs:
@@ -53,7 +55,7 @@ jobs:
 
    'browser_tests':
      steps:
-       - run: |-
+       - run: ${header}
            uses: fake/script@v1
            jobs:
              wrong:
@@ -69,18 +71,19 @@ jobs:
 permissions:
   uses: outside/end@v1
 `;
-		const items = mapDependencies(
-			{ ci: { text: text.replaceAll("\n", "\r\n") } },
-			mapFactoryRepo(rawRepo),
-		).items;
-		expect(items.map(({ id, job }) => ({ id, job }))).toEqual([
-			{
-				id: ".github/workflows/ci.yml:nocoo/base-ci/.github/workflows/test-job.yml#job=unit-tests",
-				job: "unit-tests",
-			},
-			{ id: ".github/workflows/ci.yml:actions/checkout#job=browser_tests", job: "browser_tests" },
-		]);
-	});
+			const items = mapDependencies(
+				{ ci: { text: text.replaceAll("\n", "\r\n") } },
+				mapFactoryRepo(rawRepo),
+			).items;
+			expect(items.map(({ id, job }) => ({ id, job }))).toEqual([
+				{
+					id: ".github/workflows/ci.yml:nocoo/base-ci/.github/workflows/test-job.yml#job=unit-tests",
+					job: "unit-tests",
+				},
+				{ id: ".github/workflows/ci.yml:actions/checkout#job=browser_tests", job: "browser_tests" },
+			]);
+		},
+	);
 	it("normalizes private inventory, language bytes and explicit unknown languages", () => {
 		expect(mapFactoryRepo(rawRepo)).toMatchObject({
 			private: true,

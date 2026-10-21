@@ -853,3 +853,10 @@ time and ID, so the added workflow ID precedes the numeric package fixture ID.
 The expected browser order was corrected without changing either API's ordering.
 When sharing new evidence fixtures across readers, verify each reader's ordering
 contract instead of assuming identical arrays from identical source rows.
+
+Self-review then found that YAML block scalar headers permit both chomping/indent
+orders (`|-2` and `|2-`). The initial scanner recognized only one order and could
+misread script text as dependency declarations. Parameterized fixtures first
+reproduced literal and folded failures, then verified both orders. Even a scoped
+line scanner must exclude all supported scalar-header forms before reading body
+lines as structural keys.
