@@ -805,6 +805,60 @@ it("discovers an empty catalog without fabricated observations", async () => {
 	expect((await drive(env))?.status).toBe("completed");
 	expect((await publishedFactory(createDb(env.DB), snap.account_id))?.repos).toEqual([]);
 });
+
+it.each([null, "", 7, "same"])(
+	"rejects invalid catalog continuation %s without clearing old repositories",
+	async (endCursor) => {
+		const env = await setup("catalog");
+		const db = createDb(env.DB);
+		const old = {
+			truncated: false,
+			fetched_at: "2025-01-01T00:00:00.000Z",
+			repos: [{ name_with_owner: "nocoo/app" }],
+		};
+		await db.batch(replaceSnapshotStmts(db, snap.account_id, "repos", old, old.fetched_at));
+		let catalogPages = 0;
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (_url: string, init: RequestInit) => {
+				if (String(init?.body).includes("ownerAffiliations"))
+					return Response.json({
+						data: {
+							viewer: {
+								login: "nocoo",
+								repositories: { totalCount: 1, nodes: [rawRepo], pageInfo: { hasNextPage: false } },
+							},
+						},
+					});
+				catalogPages++;
+				return Response.json({
+					data: {
+						viewer: {
+							repositories: {
+								nodes: [],
+								pageInfo: { hasNextPage: true, endCursor },
+							},
+						},
+					},
+				});
+			}),
+		);
+		const run = await drive(env);
+		expect(run?.steps.find((step) => step.resource === "repos")).toMatchObject({
+			status: "failed",
+			error: "snapshot_incomplete",
+			attempts: 1,
+		});
+		expect(catalogPages).toBe(endCursor === "same" ? 2 : 1);
+		expect(run?.status).toBe("partial");
+		expect(await publishedFactory(db, snap.account_id)).toMatchObject({
+			runId: "r1",
+			status: "partial",
+		});
+		expect((await listRuns(db, snap.account_id))[0]?.counts.failed).toBe(1);
+		expect(await readSnapshot(db, snap.account_id, "repos")).toEqual(old);
+	},
+);
 it("checkpoints pagination once, deduplicates overlapping pages and exposes immutable details", async () => {
 	const env = await setup();
 	const base = vi.mocked(fetch).getMockImplementation();

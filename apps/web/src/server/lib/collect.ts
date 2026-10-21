@@ -276,8 +276,13 @@ export async function collectRepos(
 				truncated = true;
 				break;
 			}
-			if (conn?.pageInfo?.hasNextPage && conn.pageInfo.endCursor) {
-				after = conn.pageInfo.endCursor;
+			if (conn.pageInfo?.hasNextPage) {
+				const next = conn.pageInfo.endCursor;
+				if (typeof next !== "string" || !next || next === after) {
+					truncated = true;
+					break;
+				}
+				after = next;
 				continue;
 			}
 			break;

@@ -672,6 +672,8 @@ determines whether collection has already started.
 Security GraphQL responses with field/node access errors and a surviving connection
 are partial responses, not whole-connection unavailability, even if filtering the
 denied nodes leaves an empty array.
+Catalog pages advertising a continuation require a nonempty new string cursor;
+missing, invalid or repeated cursors are incomplete, never a successful empty catalog.
 For the **same run ID**, a published factory snapshot has `status:complete` for
 a completed run and `status:partial` for a partial run. A newer failed, paused or
 timed-out attempt can leave an older publication untouched; compare run IDs and

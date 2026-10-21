@@ -701,3 +701,6 @@ Completeness guards must use both boundaries, not only pagination within one cal
 Security GraphQL errors must also distinguish a missing connection from a partial
 connection. If a nodes array survives error-path filtering, the response is
 incomplete even when every denied node was removed and the array is now empty.
+Catalog pagination also needs a nonempty new string cursor whenever it advertises
+another page. Missing cursors previously published a false complete empty catalog;
+invalid or repeated cursors now fail without replacing saved repositories/time.
