@@ -1,5 +1,21 @@
 import { expect, it } from "vitest";
-import { analysisReportSchema, judgmentSchema } from "./analysis-contracts";
+import { analysisReportSchema, judgmentSchema, sourceSchema } from "./analysis-contracts";
+
+it("accepts optional content versions without relaxing strict report sources", () => {
+	const source = {
+		resource: "account:issues",
+		version: "v1",
+		fetchedAt: null,
+		complete: true,
+		stale: false,
+	};
+	expect(sourceSchema.parse(source)).toEqual(source);
+	const contentVersion = `sha256:${"a".repeat(64)}`;
+	expect(sourceSchema.parse({ ...source, contentVersion })).toEqual({ ...source, contentVersion });
+	for (const value of ["", "short", null, 4])
+		expect(sourceSchema.safeParse({ ...source, contentVersion: value }).success).toBe(false);
+	expect(sourceSchema.safeParse({ ...source, contentVersion, extra: true }).success).toBe(false);
+});
 
 it("accepts external judgments without invented probabilities", () => {
 	expect(judgmentSchema.parse({ model: "grok-bot", choice: "review" })).toEqual({

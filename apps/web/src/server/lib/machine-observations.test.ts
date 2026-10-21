@@ -32,6 +32,7 @@ it.each(FACTORY_STREAMS)(
 		const save = (kind: string, payload: Record<string, unknown>) =>
 			db.batch(replaceSnapshotStmts(db, snap.account_id, kind, payload, snap.fetched_at));
 		await save("factory", snap);
+		await save("repos", { repos: [{ name_with_owner: repo.name }] });
 		const kind = `factory:${repo.name}:${stream}`;
 		const resource = {
 			runId: snap.runId,
@@ -47,7 +48,19 @@ it.each(FACTORY_STREAMS)(
 			data: { items: [], ranges: [snap.window], coverage: { status: "complete" } },
 		});
 		expect(await db.prepare("SELECT * FROM snapshots ORDER BY kind").all()).toEqual(before);
+		const indexed = (await readSources(db, snap.account_id, {})).sources.find(
+			(source) => source.resource === kind,
+		);
+		expect(indexed?.contentVersion).toMatch(/^sha256:[0-9a-f]{64}$/);
+		expect(indexed?.contentVersion).toBe(
+			(await readFactoryResource(db, snap.account_id, repo.name, stream)).contentVersion,
+		);
 		await save(kind, { ...resource, runId: "another-run" });
+		expect(
+			(await readSources(db, snap.account_id, {})).sources.find(
+				(source) => source.resource === kind,
+			)?.contentVersion,
+		).toBeNull();
 		await expect(readFactoryResource(db, snap.account_id, repo.name, stream)).rejects.toMatchObject(
 			{
 				status: 409,
@@ -549,6 +562,11 @@ it.each(["run", "legacy"] as const)(
 			},
 		});
 		const publication = await readObservation(db, snap.account_id, "factory", "all");
+		const indexed = (await readSources(db, snap.account_id, {})).sources.find(
+			(row) => row.resource === `factory:${repo.name}:dependencies`,
+		);
+		expect(indexed?.contentVersion).toBe(stream.contentVersion);
+		expect(stream.contentVersion).toMatch(/^sha256:[0-9a-f]{64}$/);
 		expect(publication.data.repos).toMatchObject([
 			{
 				dependencies: [{ name: "app" }],

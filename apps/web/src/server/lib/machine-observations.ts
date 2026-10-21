@@ -1,6 +1,7 @@
 import { type CiEntry, type CiRelease, type CiRun, ciReport } from "../../lib/ci-health";
 import { dependencyEvidence } from "../../lib/factory-dependencies";
 import type {
+	FactoryRepo,
 	FactorySnapshot,
 	FactoryStreamData,
 	FactoryStreamName,
@@ -8,6 +9,7 @@ import type {
 import { FACTORY_STREAMS } from "../../lib/factory-types";
 import { prSnapshot, prState } from "../../lib/pull-request";
 import { snapshotFreshness } from "../../lib/snapshot-freshness";
+import { contentData, contentVersion } from "./content-version";
 import type { Db } from "./db/d1";
 import { publishedFactory } from "./db/factory-runs";
 import { readRepositorySnapshot, readSnapshot } from "./db/snapshots";
@@ -43,12 +45,14 @@ export async function observationEnvelope(
 	scope: SnapshotScope = "all",
 	publicationId: string | null = null,
 	version?: string,
+	content?: Record<string, unknown>,
 ) {
 	data = prSnapshot(data);
 	return {
 		account_id: account,
 		data,
 		sourceVersion: version ?? (await observationVersion(data)),
+		contentVersion: await contentVersion(resource, content ?? data),
 		...observationMetadata(data),
 		source: { kind: publicationId ? "factory" : "snapshot", resource, publicationId },
 		selection: { scope, statisticsFilter: false },
@@ -75,8 +79,10 @@ export async function readCiObservation(
 	policy: Policy,
 	statisticsFilter = false,
 ) {
-	if (!policy.catalog && !policy.empty)
-		throw new ApiError(409, "snapshot_missing", "no repository catalog");
+	return projectCiObservation(policy, await readCiGroups(db, account), statisticsFilter);
+}
+
+async function readCiGroups(db: Db, account: string) {
 	// One statement for every repository keeps the Worker well inside the D1 statement cap.
 	const rows = await db
 		.prepare(
@@ -84,8 +90,21 @@ export async function readCiObservation(
 		)
 		.bind(account)
 		.all<SnapshotPage & { fetched_at: string }>();
-	const groups = latestSnapshotGroups(rows.results);
-	return projectCiObservation(policy, groups, statisticsFilter);
+	return latestSnapshotGroups(rows.results);
+}
+
+export function ciContent(policy: Policy, groups: ReturnType<typeof latestSnapshotGroups>) {
+	return Object.fromEntries(
+		policy.repos.map((repo) => [
+			repo.name_with_owner,
+			Object.fromEntries(
+				["actions", "releases", "details"].map((suffix) => {
+					const data = groups.get(`repo:${repo.name_with_owner}:${suffix}`.toLowerCase())?.data;
+					return [suffix, data ? contentData(suffix, data) : null];
+				}),
+			),
+		]),
+	);
 }
 
 export function projectCiObservation(
@@ -183,13 +202,18 @@ export async function readObservation(
 			snapshot.publication?.runId ?? snapshot.runId,
 		);
 	}
-	if (resource === "ci")
+	if (resource === "ci") {
+		const groups = await readCiGroups(db, account);
 		return observationEnvelope(
 			account,
 			resource,
-			await readCiObservation(db, account, policy),
+			projectCiObservation(policy, groups),
 			scope,
+			null,
+			undefined,
+			ciContent(policy, groups),
 		);
+	}
 	const snapshot = await readSnapshot(db, account, resource);
 	if (!snapshot) throw new ApiError(409, "snapshot_missing", "no saved source");
 	const data = await projectSnapshot(db, account, resource, snapshot, policy, false);
@@ -234,23 +258,32 @@ export async function readFactoryResource(db: Db, account: string, name: string,
 	return observationEnvelope(
 		account,
 		`factory:${repo.name}:${stream}`,
-		{
-			...data,
-			...(stream === "prs"
-				? { items: data.items.map((item) => ({ ...item, ...prState(item) })) }
-				: {}),
-			...(stream === "dependencies"
-				? dependencyEvidence(data.items, [...(repo.manifests ?? []), ...(data.manifests ?? [])])
-				: {}),
-			ranges: [observation?.window ?? snap.window],
-			fetched_at: data.coverage.fetchedAt,
-			observation,
-			coverage: data.coverage,
-			truncated: data.coverage.status === "limited",
-			unavailable: data.coverage.status === "unavailable",
-		},
+		factoryResourceData(snap, repo, stream, data),
 		"all",
 		snap.publication?.runId ?? snap.runId,
 		version,
 	);
+}
+
+export function factoryResourceData(
+	snap: FactorySnapshot,
+	repo: FactoryRepo,
+	stream: string,
+	data: FactoryStreamData,
+) {
+	return {
+		...data,
+		...(stream === "prs"
+			? { items: data.items.map((item) => ({ ...item, ...prState(item) })) }
+			: {}),
+		...(stream === "dependencies"
+			? dependencyEvidence(data.items, [...(repo.manifests ?? []), ...(data.manifests ?? [])])
+			: {}),
+		ranges: [repo.observation?.window ?? snap.window],
+		fetched_at: data.coverage.fetchedAt,
+		observation: repo.observation,
+		coverage: data.coverage,
+		truncated: data.coverage.status === "limited",
+		unavailable: data.coverage.status === "unavailable",
+	};
 }

@@ -110,7 +110,11 @@ async function savedFixture() {
 it("preserves exact realistic response content and all advertised snapshot versions", async () => {
 	const { raw, account } = await sourcesFixture();
 	const result = await readSources(createDb(raw), account, {});
-	expect(createHash("sha256").update(JSON.stringify(result)).digest("hex")).toBe(
+	const legacy = {
+		...result,
+		sources: result.sources.map(({ contentVersion: _contentVersion, ...source }) => source),
+	};
+	expect(createHash("sha256").update(JSON.stringify(legacy)).digest("hex")).toBe(
 		"36aaefea76bc2dde398677dde08a20af3c31dc305a276e582c17e8c0c186a393",
 	);
 	for (const source of result.sources.filter((row) => !row.resource.startsWith("factory:"))) {
@@ -119,6 +123,7 @@ it("preserves exact realistic response content and all advertised snapshot versi
 		expect(source).toEqual({
 			resource: source.resource,
 			version: envelope.sourceVersion,
+			contentVersion: envelope.contentVersion,
 			fetchedAt: envelope.fetchedAt,
 			freshness: envelope.freshness,
 			coverage: envelope.coverage,
@@ -126,6 +131,40 @@ it("preserves exact realistic response content and all advertised snapshot versi
 			unavailable: envelope.unavailable,
 		});
 	}
+});
+
+it("keeps content versions across identical refreshes, including time-derived CI", async () => {
+	const { raw, account, save } = await savedFixture();
+	const seed = async (at: string, title = "same") => {
+		await save("repos", { repos: [{ name_with_owner: "owner/app" }] }, at);
+		await save("issues", { issues: [{ name_with_owner: "owner/app", title }] }, at);
+		await save("prs", { pull_requests: [] }, at);
+		await save("repo:owner/app:details", { default_branch: "main" }, at);
+		await save("repo:owner/app:actions", { runs: [] }, at);
+		await save("repo:owner/app:releases", { releases: [] }, at);
+	};
+	await seed("2026-10-01T00:00:00Z");
+	const before = await readSources(createDb(raw), account, {});
+	await seed("2026-10-20T00:00:00Z");
+	const refreshed = await readSources(createDb(raw), account, {});
+	for (const source of refreshed.sources) {
+		const previous = before.sources.find((row) => row.resource === source.resource);
+		expect(source.contentVersion).toMatch(/^sha256:[0-9a-f]{64}$/);
+		expect(source.contentVersion).toBe(previous?.contentVersion);
+		expect(source.version).not.toBe(previous?.version);
+		const envelope = await readObservation(
+			createDb(raw),
+			account,
+			source.resource.replace(/^account:/, ""),
+			"all",
+		);
+		expect(source.contentVersion).toBe(envelope.contentVersion);
+	}
+	await seed("2026-10-20T00:00:00Z", "changed");
+	const changed = await readSources(createDb(raw), account, {});
+	expect(changed.sources.find((s) => s.resource === "account:issues")?.contentVersion).not.toBe(
+		refreshed.sources.find((s) => s.resource === "account:issues")?.contentVersion,
+	);
 });
 
 it("shares decoded alias pages without replacing latest-complete inbox evidence with latest-any", async () => {

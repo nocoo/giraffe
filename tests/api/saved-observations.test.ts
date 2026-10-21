@@ -96,6 +96,31 @@ async function machine(path: string, status = 200) {
 	return response;
 }
 
+it("exposes matching content versions on saved account and repository observations", async () => {
+	const index = (await (await machine("sources")).json()) as {
+		sources: { resource: string; contentVersion: string | null }[];
+	};
+	for (const resource of ["issues", "prs", "ci", "repos", "factory"]) {
+		const observation = await (await machine(resource)).json();
+		expect(observation.contentVersion).toMatch(/^sha256:[0-9a-f]{64}$/);
+		expect(
+			index.sources.find((source) => source.resource === `account:${resource}`)?.contentVersion,
+		).toBe(observation.contentVersion);
+	}
+	for (const path of [
+		"repos/nocoo/recovered/prs",
+		"factory/repos/nocoo/recovered/commits",
+		"factory/repos/nocoo/recovered/dependencies",
+	]) {
+		const observation = await (await machine(path)).json();
+		expect(observation.contentVersion).toMatch(/^sha256:[0-9a-f]{64}$/);
+		expect(
+			index.sources.find((source) => source.resource === observation.source.resource)
+				?.contentVersion,
+		).toBe(observation.contentVersion);
+	}
+});
+
 function runs(workflow: string, conclusions: string[], branch = "trunk", day = 20): CiRun[] {
 	return conclusions.map((conclusion, index) => ({
 		id: day * 100 + index,
