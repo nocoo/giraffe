@@ -669,6 +669,11 @@ code-scanning 404 yields `dependabot_open:6`, `code_scanning_open:null`,
 `features.dependabot.status:"available"`, code-scanning `reason_code:"not_found"`
 and `unavailable:false`. Incomplete collection remains `truncated:true` and does
 not publish a successful zero.
+Final storage truncation also downgrades `available` features to `partial` before
+serializing either physical page. Repository browser and machine reads apply the
+same correction to older stored truncated pages, without rewriting their rows or
+cached source/content versions. Unavailable siblings, safe reasons and observed
+counts are preserved; the count is not evidence of complete retained items.
 
 When a feature becomes unavailable, prior good evidence can appear separately in
 `retained.<feature>:{open,fetched_at,items}` with its original timestamp. It is not

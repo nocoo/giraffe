@@ -1,3 +1,4 @@
+import { securitySnapshot } from "../../lib/security";
 import { emptyCollected } from "./collect";
 import { decodeContent, withContent } from "./content-version";
 
@@ -63,7 +64,7 @@ function pageJson(
 	items: unknown[],
 	truncated: boolean,
 ): string {
-	return JSON.stringify({ ...base, [key]: items, truncated });
+	return JSON.stringify(securitySnapshot({ ...base, [key]: items, truncated }));
 }
 
 function fitsPage(
@@ -83,6 +84,7 @@ export function splitPages(
 	pages: SnapshotPage[];
 	truncated: boolean;
 } {
+	payload = securitySnapshot(payload);
 	const encoded = JSON.stringify(payload);
 	if (utf8Len(encoded) <= MAX) {
 		return { pages: [{ kind: logical, payload: encoded }], truncated: payload.truncated === true };
@@ -151,13 +153,13 @@ export function assemblePages(logical: string, rows: SnapshotPage[]): Record<str
 	const head = JSON.parse(first.payload) as Record<string, unknown>;
 	const key = arrayKey(head);
 	if (!key || !second) {
-		return withContent(head, decodeContent(first.content_meta));
+		return withContent(securitySnapshot(head), decodeContent(first.content_meta));
 	}
 	const tail = JSON.parse(second.payload) as Record<string, unknown>;
 	const a = head[key] as unknown[];
 	const b = Array.isArray(tail[key]) ? (tail[key] as unknown[]) : [];
 	return withContent(
-		{ ...head, [key]: [...a, ...b] },
+		securitySnapshot({ ...head, [key]: [...a, ...b] }),
 		first.content_meta === second.content_meta ? decodeContent(first.content_meta) : null,
 	);
 }

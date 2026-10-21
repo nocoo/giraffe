@@ -1148,3 +1148,15 @@ Earlier full gate runs also overlapped the last runtime edit and Worker reloads.
 Those logs were rejected as exact-revision proof. Freeze the clean candidate
 before build and complete HTTP/browser suites, record its SHA at both boundaries,
 and reject reloads rather than combining passing results from different versions.
+
+## 2026-10-22 - Normalize completeness at the final storage boundary
+
+The batch-8 account projection downgraded storage-truncated feature coverage, but
+repository reads bypassed that projection. An actual refresh collecting 100 code
+scanning alerts saved only 98 across its two bounded pages and still displayed
+the feature as available. Apply the same normalization before final serialization
+and when decoding older pages, rather than fixing each consumer separately. Test
+the refresh write followed by both browser and machine repository reads, verify
+both physical pages and their metadata, and retain existing hashes on read-only
+legacy corrections. Fixture authorization failures were corrected before counting
+the four genuine available-versus-partial failures as RED evidence.

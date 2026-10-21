@@ -200,6 +200,9 @@ Account projections may keep older complete evidence instead of a newer mixed
 repository page, preserving its original time. Feature metadata follows the
 evidence actually selected; legacy metadata remains unknown, missing catalog
 coverage is not zero, and stored truncation downgrades coverage to partial.
+This applies to repository browser and machine reads as well as account reads.
+New physical pages persist the downgrade; older truncated pages are corrected for
+presentation only, preserving stored hashes, counts and unavailable siblings.
 If current plus retained evidence exceeds page capacity, refresh fails and keeps
 the prior snapshot rather than publishing truncated items as complete.
 

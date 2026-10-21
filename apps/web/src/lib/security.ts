@@ -24,6 +24,20 @@ export type SecuritySnapshot = {
 	code_scanning_open: number | null;
 };
 
+export function securitySnapshot(snapshot: Record<string, unknown>) {
+	const features = snapshot.features as SecurityFeatures | undefined;
+	if (snapshot.truncated !== true || !features) return snapshot;
+	return {
+		...snapshot,
+		features: Object.fromEntries(
+			Object.entries(features).map(([name, feature]) => [
+				name,
+				{ ...feature, status: feature.status === "available" ? "partial" : feature.status },
+			]),
+		),
+	};
+}
+
 export function retainSecurity(
 	previous: Record<string, unknown> | null,
 	current: SecurityFeatures,
