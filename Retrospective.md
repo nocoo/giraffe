@@ -604,3 +604,13 @@ query duration changed from one millisecond to zero and caused a false failure.
 Compare the ordered result rows for read-only assertions, excluding execution
 metadata. Preserve the original failing data-correctness evidence separately from
 test-harness defects so a fixture correction is not mistaken for a product fix.
+
+## 2026-10-21 - Timestamp presence does not prove complete coverage
+
+Read-time freshness correctly retained timestamps for rows from truncated baselines,
+but starred projections still used missing timestamps to decide completeness. That
+cleared the truncation flag when a partial baseline supplied every selected repo's
+time. Review reproduced the regression for issues, PRs and alerts. Track coverage
+separately from provenance; only complete baseline evidence or a complete replacement
+page can clear the selected projection's incomplete flag. Include a same-time full
+page regression because equal timestamps do not imply equal coverage.

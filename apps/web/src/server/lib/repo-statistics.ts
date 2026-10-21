@@ -152,6 +152,7 @@ async function projectList(
 			: new Map<string, Record<string, unknown>>();
 	const times = new Map<string, string | null>();
 	const replacements = new Map<string, Record<string, unknown>[]>();
+	let incomplete = false;
 	for (const [lower, name] of names) {
 		let at =
 			recorded.get(lower) ??
@@ -161,15 +162,24 @@ async function projectList(
 			catalogProven
 				? baselineAt
 				: null);
+		let covered = at !== null && complete(snapshot);
 		const page = pages.get(lower);
 		const pageAt = savedTime(page?.fetched_at);
-		if (pageAt && Array.isArray(page?.[key]) && (!at || Date.parse(pageAt) > Date.parse(at))) {
+		if (
+			pageAt &&
+			Array.isArray(page?.[key]) &&
+			(!at ||
+				Date.parse(pageAt) > Date.parse(at) ||
+				(!covered && Date.parse(pageAt) === Date.parse(at)))
+		) {
 			at = pageAt;
+			covered = true;
 			replacements.set(
 				lower,
 				snapshotItems(page ?? null, key).map((row) => ({ ...row, name_with_owner: name })),
 			);
 		}
+		incomplete ||= !covered;
 		times.set(lower, at);
 	}
 	const emitted = new Set<string>();
@@ -183,7 +193,7 @@ async function projectList(
 	});
 	for (const [name, replacement] of replacements)
 		if (!emitted.has(name)) items.push(...replacement);
-	return { items, times, freshness: snapshotFreshness([...times.values()]) };
+	return { items, times, freshness: snapshotFreshness([...times.values()]), incomplete };
 }
 
 /** Project immutable/raw snapshots at read time so settings apply immediately, even to old data. */
@@ -280,7 +290,7 @@ export async function projectSnapshot(
 	}
 	const key = LIST_KEYS[kind];
 	if (!key || !Array.isArray(snap[key])) return snap;
-	const { items, freshness, times } = await projectList(
+	const { items, freshness, times, incomplete } = await projectList(
 		db,
 		account,
 		kind,
@@ -291,8 +301,7 @@ export async function projectSnapshot(
 	return {
 		...snap,
 		[key]: items,
-		truncated:
-			scope === "starred" && kind !== "notifications" ? freshness.missing > 0 : snap.truncated,
+		truncated: scope === "starred" && kind !== "notifications" ? incomplete : snap.truncated,
 		fetched_at: kind === "notifications" ? snap.fetched_at : (freshness.latestAt ?? ""),
 		freshness,
 		...(snap.repository_fetched_at

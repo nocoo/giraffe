@@ -133,6 +133,42 @@ it("keeps raw snapshots immutable and excludes factory entries without a saved c
 	).toMatchObject({ code_scanning_open: 0, dependabot_open: 0 });
 });
 
+it.each([
+	["issues", "issues", "issues"],
+	["prs", "pull_requests", "prs"],
+	["alerts", "items", "security"],
+])(
+	"preserves incomplete %s coverage independently of observed timestamps",
+	async (kind, key, suffix) => {
+		const db = createDb(sqliteFixture());
+		await db
+			.prepare(
+				"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES('a','owner','fake','fake','t','t')",
+			)
+			.run();
+		const at = "2026-10-18T12:50:00Z";
+		await db.batch(
+			replaceSnapshotStmts(db, "a", "repos", { repos: [{ name_with_owner: "owner/app" }] }, at),
+		);
+		await db.prepare("INSERT INTO repo_stars VALUES('a','owner/app')").run();
+		const partial = {
+			[key]: [{ name_with_owner: "owner/app", number: 1 }],
+			fetched_at: at,
+			truncated: true,
+		};
+		expect(await statisticsSnapshot(db, "a", kind, partial, "starred")).toMatchObject({
+			truncated: true,
+			freshness: { total: 1, missing: 0, oldestAt: at },
+		});
+		await db.batch(replaceSnapshotStmts(db, "a", `repo:owner/app:${suffix}`, { [key]: [] }, at));
+		expect(await statisticsSnapshot(db, "a", kind, partial, "starred")).toMatchObject({
+			[key]: [],
+			truncated: false,
+			freshness: { total: 1, missing: 0, oldestAt: at },
+		});
+	},
+);
+
 it("handles first-day baselines and incomplete source metadata without invented deltas", async () => {
 	const raw = sqliteFixture();
 	const db = createDb(raw);
