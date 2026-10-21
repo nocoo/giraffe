@@ -1055,3 +1055,19 @@ scalar modes now differ: every plain line is checked, while literal/folded block
 bodies deliberately ignore key-like text. Corrected block fixtures and valid
 multiline expressions protect both paths. Confirm fixture syntax independently;
 an indentation test must not turn unsupported structure into successful evidence.
+
+## 2026-10-22 - Separate response shape from reader latency
+
+The new consumer timing report also showed about 33 KB of additional source-index
+JSON. Dropping nullable content hashes would violate the documented eight-field
+contract without establishing the cause of the reported latency. Cross-release
+real-stream/all-null measurements instead isolated sub-millisecond metadata lookup
+cost and accounted for exactly 22 bytes per required null property. Keep raw body,
+reader CPU/SQL and network/edge timing distinct before choosing an optimization.
+
+The first scratch comparison harness failed parsing before producing any samples;
+its missing helper brace was corrected and that failed attempt was excluded. All
+reported results come from three completed, revision-rotated rounds with query,
+payload and response-shape assertions. Validate benchmark execution and fixture
+equivalence before interpreting timing differences, and never merge failed or
+incomplete runs into reported percentiles.

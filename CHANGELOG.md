@@ -26,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dependency safe-parse outcome: step `failed` / `error:coverage_limited` -> `limited` / `error:dependency_parse_unsupported`; refresh counts add `limited`, and this outcome alone changes run/publication `partial` -> `completed`/`complete`. Retained evidence previously appeared complete -> now `coverage.status:limited`, `reason_code:dependency_parse_unsupported`, `retained:true` and `truncated:true`. Its full evidence version/time stays unchanged, but a non-null content hash now composes the retained hash with frozen coverage; null remains null. Historical publications/runs are not rewritten and no schema migration is required for these JSON fields.
 - Ambiguous plain workflow conditions previously skipped as scalar content -> dependency `limited`, including flow collection headers, mapping/sequence-like continuations and lines after a comment-ended scalar. Literal/folded blocks keep ignoring key-like body text; valid plain conditions retain complete coverage.
 
+### Docs
+
+- Compare `/sources` across v0.16.1, v0.17.0 and batch 7 using the same 126-repository real-stream and all-null metadata fixtures. Record median/p95, query/payload/body evidence and isolated metadata lookup cost. No meaningful local latency regression matches the reported production timing; retain all eight source fields, including nullable `contentVersion`, and leave runtime code unchanged.
+
 ## v0.17.0 - 2026-10-21
 
 ### Added

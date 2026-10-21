@@ -205,6 +205,131 @@ rolling back Worker code, and stop collection/queue/cron as in the existing
 - Preserve missing coverage, flags, immutable publication versions and original
   observation windows. Saved source versions must agree with their data endpoints.
 
+## Batch-7 addendum: cross-release latency and body check
+
+The October 22 consumer report compares production v0.17.0 at 2.49-3.14 seconds /
+636 KB with v0.16.x at 1.71-2.33 seconds / 603 KB. These supplied end-to-end timings
+include network/edge behavior and are **not reproduced by the local reader test**.
+No production endpoint, remote D1, Access/WAF setting or refresh was used here.
+
+Compare immutable readers `91f7be2` (v0.16.1), `501ad56` (v0.17.0 / origin/main)
+and `890a417` (batch-7 v0.17.1). The two historical readers run in temporary
+detached worktrees with their own schema and fixture code; installed dependencies
+are shared through a symlink, and their lockfiles match. Only those temporary
+worktrees are removed after review. Version 0.17.1 remains unchanged.
+
+The audit harness extends the scenarios and boundaries in `tests/bench/sources.ts`:
+Bun 1.4.3, its SQLite 3.54.0, macOS arm64, 126 repositories, 644 snapshot rows /
+8,784,588 payload bytes, and 126 actual stream rows / 117,101,385 payload bytes.
+The existing `populateSourceStreams` supplies the real-stream variant; v0.16.1 uses
+the same stream payload construction without the then-absent metadata column.
+Fixture setup/hash writes are excluded. Three process rounds rotate revision
+order; each scenario has eight warmups and 40 samples per round. Tables pool the
+120 samples, using nearest-rank median/p95. Reads run serially, with network and
+reader writes forbidden. Query wrappers account for returned payload/metadata
+bytes inside read timing; final response serialization is measured separately.
+Detailed JSON/digest instrumentation is outside the timed samples.
+
+### Native/stored metadata fixture
+
+The 0.17.x fixture has saved hashes for existing snapshots and commits streams;
+other advertised stream identities have no saved resource/hash. The full result
+therefore still has 756 null content hashes. Version 0.16.1 has no content metadata
+column or response field, even in this comparison: it is the unchanged historical
+contract, not a modified current response.
+
+| Request | v0.16.1 median / p95 (ms) | v0.17.0 median / p95 (ms) | Batch-7 median / p95 (ms) |
+| --- | ---: | ---: | ---: |
+| Full | 30.433 / 33.833 | 24.468 / 27.021 | 24.719 / 27.117 |
+| Since, newer two-thirds | 27.826 / 31.545 | 24.031 / 26.944 | 23.940 / 26.033 |
+| Since, empty result | 16.620 / 18.309 | 12.872 / 14.224 | 12.569 / 14.304 |
+| One repository | 21.810 / 22.993 | 23.100 / 24.439 | 22.896 / 24.507 |
+
+### Legacy/all-null metadata fixture
+
+Only the owned fixture's `content_meta` columns are cleared after proving its test
+marker. Every 0.17.x source explicitly retains `contentVersion:null` and all eight
+documented fields. The 0.16.1 schema is already metadata-free; its independently
+repeated measurements show the normal timing variation of the same old reader.
+
+| Request | v0.16.1 median / p95 (ms) | v0.17.0 median / p95 (ms) | Batch-7 median / p95 (ms) |
+| --- | ---: | ---: | ---: |
+| Full | 30.536 / 32.521 | 31.686 / 34.671 | 31.121 / 35.123 |
+| Since, newer two-thirds | 27.897 / 31.591 | 28.271 / 31.305 | 28.654 / 30.749 |
+| Since, empty result | 16.370 / 18.755 | 11.939 / 13.641 | 12.105 / 13.448 |
+| One repository | 21.238 / 23.103 | 22.274 / 23.886 | 22.000 / 24.290 |
+
+**Every revision/mode/scenario uses five reader queries and returns exactly
+8,784,588 snapshot payload bytes from SQLite, with zero stream payload bytes.**
+Authentication and HTTP/ETag processing are outside this reader boundary.
+Response hashes stay identical across repeated samples of each revision/mode/query;
+cross-release hashes are not expected to match when fields or freshness semantics
+change. The byte counts below apply to both 0.17.x readers; v0.16.1 sizes are the
+same in its two independently timed modes.
+
+| Request | Sources | v0.16.1 response bytes | 0.17.x stored response bytes | 0.17.x legacy response bytes | Stored metadata bytes read |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Full | 1,517 | 593,822 | 679,705 | 627,196 | 134,338 |
+| Since, newer two-thirds | 1,012 | 397,022 | 454,338 | 419,286 | 126,064 |
+| Since, empty result | 0 | 2,841 | 2,841 | 2,841 | 109,516 |
+| One repository | 17 | 9,067 | 10,200 | 9,441 | 109,713 |
+
+Legacy metadata bytes read are zero. All response sizes are uncompressed UTF-8
+JSON, not measured wire bytes. The full legacy increase is exactly **33,374 bytes
+= 1,517 x 22**, the serialized `"contentVersion":null` property and separator.
+It is required contract data, not justification to omit the field. Saved non-null
+hashes are longer, so the stored fixture intentionally has a larger response.
+
+### Cost attribution and decision
+
+The largest directly isolated added work is the bounded metadata lookup, not
+repeated content hashing or response serialization. Full legacy SQLite median
+rises from 1.781 ms in 0.16.1 to 2.383 ms in 0.17.0. A separate three-round,
+120-sample 0.17.0 diagnostic suppresses only the bulk stream-metadata SQL branches
+in an external read adapter, **only for the proven all-null fixture**:
+
+| Request | Normal read / SQLite median (ms) | Diagnostic read / SQLite median (ms) |
+| --- | ---: | ---: |
+| Full | 30.725 / 2.349 | 30.343 / 1.878 |
+| Since, newer two-thirds | 27.832 / 2.182 | 27.463 / 1.868 |
+| Since, empty result | 11.743 / 1.990 | 11.660 / 1.861 |
+| One repository | 21.438 / 1.881 | 21.399 / 1.852 |
+
+All diagnostic response bytes/hashes match the normal legacy response, including
+all eight fields. This is an attribution probe, **not shipped code or a safe
+production shortcut**: a reader cannot assume that saved hashes remain absent
+after refresh. The normal reader and metadata indexes remain unchanged.
+
+Separate full-read traces show:
+
+- Legacy: 644 payload parses, no metadata JSON parses, and the same 634 full-version
+  digests over 12,736,040 bytes in all three readers. Null composite inputs already
+  avoid content-hash computation; caching or deduplicating absent metadata would
+  not remove the dominant payload/legacy-version work.
+- Stored 0.17.0: 770 metadata parses cost about 0.155 ms; persisted full versions
+  reduce digest work to nine calls / 4,913,502 bytes. Request inputs are already
+  shared. Extra canonical composite serialization is small and full reads are
+  faster than 0.16.1, not slower.
+- Full legacy final serialization medians are 0.318 / 0.338 / 0.328 ms for
+  0.16.1 / 0.17.0 / batch 7. The required null properties do not locally explain
+  a seconds-scale latency change. Digest submission timings are not summed as
+  synchronous elapsed time because asynchronous digest work can overlap.
+
+The measured 0.17.0 legacy median increases are 1.3-4.9% on nonempty requests;
+batch 7 is 1.9-3.6% above 0.16.1, while empty-since is about 26% faster. All remain
+within the existing approximate 15% local budget. There is **no meaningful local
+regression matching the production report**, so this addendum changes documentation
+only: no runtime optimization, schema/index change, response omission, new cache,
+dependency, ETag/304 change or quality-gate change. Production network/edge latency
+remains unmeasured here, and these results do not prove its cause.
+
+Raw samples, separate traces and the standalone comparison/diagnostic harness are
+archived locally under `$(git rev-parse --git-common-dir)/batch7-addendum-logs/`;
+the PR body includes these before/after tables and revision identities. The
+maintained benchmark still runs with `bun run tests/bench/sources.ts`; the audit
+harness merely broadens it to historical schemas, all-null metadata and more
+samples without modifying production readers.
+
 ## Conditional responses and compression
 
 The machine source endpoint uses a strong, content-derived validator and accepts
