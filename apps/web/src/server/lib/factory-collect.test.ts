@@ -72,6 +72,7 @@ it.each(unsupportedWorkflowJobs)(
 		expect((await store.read(streamKey("nocoo/app", "dependencies")))?.coverage).toMatchObject({
 			status: "limited",
 			observed: 0,
+			reason_code: "dependency_parse_unsupported",
 			reason: "Dependency manifests cannot be parsed safely; evidence unavailable",
 		});
 	},

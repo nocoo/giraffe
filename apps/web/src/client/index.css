@@ -244,6 +244,7 @@ header:has(.giraffe-page-title) > div:first-child > div:last-child { grid-column
 .factory-progress-segments>[data-status=failed] { background:var(--factory-warning); }
 .factory-progress-segments>[data-status=skipped] { background:var(--factory-skipped); }
 .factory-progress-segments>[data-status=unavailable] { background:var(--factory-info); }
+.factory-progress-segments>[data-status=limited] { background:var(--color-basalt-warning); }
 .factory-console { display:flex;flex-direction:column;width:100%;min-width:0;border:1px solid var(--color-basalt-border);border-radius:var(--radius-basalt-md);overflow:hidden; }
 .factory-console-tabs { display:flex;flex-direction:column;flex:1;min-height:0; }
 .factory-console-tabbar { display:flex;align-items:center;justify-content:space-between;padding:0 28px;border-bottom:1px solid var(--color-basalt-border); }
@@ -323,6 +324,7 @@ details[open]>summary>.factory-disclosure { transform:rotate(90deg); }
 .factory-mini-steps>[data-status=running] { background:var(--factory-info); }
 .factory-mini-steps>[data-status=skipped] { background:var(--color-basalt-muted);color:var(--color-basalt-muted-foreground); }
 .factory-mini-steps>[data-status=unavailable] { background:var(--color-basalt-muted);color:var(--color-basalt-muted-foreground); }
+.factory-mini-steps>[data-status=limited] { background:var(--color-basalt-warning-tint);color:var(--color-basalt-foreground); }
 .factory-queue-count { font-size:var(--text-xs);text-align:right;color:var(--color-basalt-muted-foreground);white-space:nowrap; }
 .factory-run-row[open]>summary { border-bottom:1px solid var(--color-basalt-border); }
 .factory-repo-steps { padding:16px 24px; }
@@ -335,6 +337,7 @@ details[open]>summary>.factory-disclosure { transform:rotate(90deg); }
 .factory-step-icon[data-status=failed]>svg { color:var(--color-basalt-warning); }
 .factory-step-icon[data-status=running]>svg { color:var(--color-basalt-info); }
 .factory-step-icon[data-status=unavailable]>svg { color:var(--color-basalt-info); }
+.factory-step-icon[data-status=limited]>svg { color:var(--color-basalt-warning); }
 .factory-step-title { display:flex;gap:10px;align-items:center;flex-wrap:wrap;min-height:26px;font-size:var(--text-sm); }
 .factory-step-title>strong { font-weight:500; }
 .factory-step-title>span,.factory-step-title>small { font-size:var(--text-xs);color:var(--color-basalt-muted-foreground); }

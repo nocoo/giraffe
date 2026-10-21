@@ -268,6 +268,21 @@ it("returns compact history with accurate totals and expands only the requested 
 		unavailable: 1,
 		failed: 0,
 	});
+	await s.db
+		.prepare(
+			"UPDATE factory_runs SET payload=json_set(payload,'$.steps[1].status','limited') WHERE id=?",
+		)
+		.bind(first.id)
+		.run();
+	const limited = (await (await s.call()).json()) as FactoryRunResponse;
+	expect(limited.history[0]?.progress).toMatchObject({
+		total: 19,
+		completed: 19,
+		skipped: 17,
+		unavailable: 1,
+		limited: 1,
+		failed: 0,
+	});
 	const detail = (await (
 		await s.call(`/api/factory/runs?history=${first.id}`)
 	).json()) as FactoryRunResponse;

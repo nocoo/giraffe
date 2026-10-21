@@ -12,6 +12,7 @@ import { snapshotFreshness } from "../../lib/snapshot-freshness";
 import {
 	composeContent,
 	decodeContent,
+	factoryStreamContent,
 	observationVersion,
 	storedContent,
 } from "./content-version";
@@ -304,7 +305,7 @@ export async function readFactoryResource(db: Db, account: string, name: string,
 		"all",
 		snap.publication?.runId ?? snap.runId,
 		version,
-		content,
+		await factoryStreamContent(content, repo.coverage[stream as FactoryStreamName]),
 	);
 }
 
@@ -314,6 +315,9 @@ export function factoryResourceData(
 	stream: string,
 	data: FactoryStreamData,
 ) {
+	const coverage = repo.coverage[stream as FactoryStreamName].retained
+		? repo.coverage[stream as FactoryStreamName]
+		: data.coverage;
 	return {
 		...data,
 		...(stream === "prs"
@@ -323,10 +327,10 @@ export function factoryResourceData(
 			? dependencyEvidence(data.items, [...(repo.manifests ?? []), ...(data.manifests ?? [])])
 			: {}),
 		ranges: [repo.observation?.window ?? snap.window],
-		fetched_at: data.coverage.fetchedAt,
+		fetched_at: coverage.fetchedAt,
 		observation: repo.observation,
-		coverage: data.coverage,
-		truncated: data.coverage.status === "limited",
-		unavailable: data.coverage.status === "unavailable",
+		coverage,
+		truncated: coverage.status === "limited",
+		unavailable: coverage.status === "unavailable",
 	};
 }

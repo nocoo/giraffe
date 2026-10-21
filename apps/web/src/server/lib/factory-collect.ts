@@ -253,6 +253,7 @@ async function collectStream(
 				Object.assign(data, mapDependencies(object(result.repository), repo));
 			} catch {
 				data.coverage.status = "limited";
+				data.coverage.reason_code = "dependency_parse_unsupported";
 				data.coverage.reason = "Dependency manifests cannot be parsed safely; evidence unavailable";
 			}
 			data.next = null;

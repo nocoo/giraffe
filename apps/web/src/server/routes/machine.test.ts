@@ -69,7 +69,7 @@ async function setup() {
 		);
 	return { db, raw, env, app, token, call, prefix: `/accounts/${account}` };
 }
-it("keeps unavailable counts in compact machine history without writes", async () => {
+it("keeps unavailable and limited counts in compact machine history without writes", async () => {
 	const s = await setup();
 	for (const [id, at] of [
 		["old", "2026-01-01T00:00:00.000Z"],
@@ -79,6 +79,7 @@ it("keeps unavailable counts in compact machine history without writes", async (
 		const run = makeRun(id, account, "nocoo", id, "catalog", [], at);
 		for (const step of run.steps) step.status = "success";
 		Object.assign(run.steps[1] ?? {}, { status: "unavailable", error: "permission_denied" });
+		Object.assign(run.steps[2] ?? {}, { status: "limited", error: "dependency_parse_unsupported" });
 		run.status = "completed";
 		await s.db
 			.prepare(
@@ -92,11 +93,14 @@ it("keeps unavailable counts in compact machine history without writes", async (
 	expect(response.status).toBe(200);
 	expect(await response.json()).toMatchObject({
 		items: [
-			{ id: "new", counts: { total: 4, success: 3, failed: 0, unavailable: 1, skipped: 0 } },
+			{
+				id: "new",
+				counts: { total: 4, success: 2, failed: 0, unavailable: 1, limited: 1, skipped: 0 },
+			},
 			{
 				id: "old",
 				steps: [],
-				counts: { total: 4, success: 3, failed: 0, unavailable: 1, skipped: 0 },
+				counts: { total: 4, success: 2, failed: 0, unavailable: 1, limited: 1, skipped: 0 },
 			},
 		],
 	});

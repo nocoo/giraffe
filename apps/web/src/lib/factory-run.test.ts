@@ -1,12 +1,31 @@
 import { describe, expect, it } from "vitest";
 import { factoryFixture } from "../../../../tests/fixtures/factory-snapshot";
-import { makeRun, retryDelay, runProgress, selectRunRepos } from "./factory-run";
+import {
+	completedRunStatus,
+	makeRun,
+	retryDelay,
+	runProgress,
+	selectRunRepos,
+} from "./factory-run";
 
 const snapshot = factoryFixture();
 const now = snapshot.fetched_at;
 const firstRepo = snapshot.repos[0];
 if (!firstRepo) throw new Error("fixture");
 const repos = [firstRepo, { ...firstRepo, id: "R_2", name: "nocoo/two", language: "Go" }];
+it("counts limited steps as terminal independently of failures and unavailable steps", () => {
+	const run = makeRun("r", "a", "nocoo", "k", "catalog", [], now);
+	Object.assign(run.steps[0] ?? {}, { status: "limited", error: "coverage_limited" });
+	expect(runProgress(run, now)).toMatchObject({
+		completed: 1,
+		limited: 1,
+		failed: 0,
+		unavailable: 0,
+	});
+	expect(completedRunStatus(run)).toBe("completed");
+	Object.assign(run.steps[1] ?? {}, { status: "failed", error: "github_error" });
+	expect(completedRunStatus(run)).toBe("partial");
+});
 it("counts unavailable steps as terminal without counting failures", () => {
 	const run = makeRun("r", "a", "nocoo", "k", "catalog", [], now);
 	Object.assign(run.steps[0] ?? {}, { status: "unavailable", error: "permission_denied" });

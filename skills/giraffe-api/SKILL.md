@@ -291,7 +291,17 @@ access loss during pagination remain failures, not expected absence.
   A `uses` key outside the direct job/step property position (such as `env.uses`
   or `with.uses`) also yields limited coverage, never a guessed dependency ID.
   Stronger published evidence keeps its original
-  version/window. Absent files and parsed run-only jobs still permit a real zero.
+  version/window/time. New publications freeze safe-parse limitations with
+  `reason_code:dependency_parse_unsupported`, `coverage.status:limited`,
+  `retained:true` and `truncated:true` when retaining prior data. Items/manifests,
+  observed count and evidence times stay original; an empty limited baseline is
+  not zero. Browser/machine streams and `/sources` share this frozen coverage,
+  never mutable GET/run-state overlays. For retained coverage, content hashes
+  compose the old stored hash with semantic published coverage; missing/mismatched
+  metadata stays null. Full evidence versions remain original, so check current
+  completeness even when versions match. Repeated identical limits keep hashes
+  and evidence age; successful accepted publication clears the diagnostic.
+  Absent files and parsed run-only jobs still permit a real zero.
   Equal legacy saved records collapse without inventing job keys; a remaining
   singleton keeps its old ID. Distinct legacy refs use `B#ref=<encoded-ref>`;
   multiple refs in one known job use `B#job=<encoded-job>&ref=<encoded-ref>`.
@@ -659,10 +669,14 @@ key means new work. Acceptance is not publication success: poll run status and
 inspect source versions/coverage. Terminal control is unchanged; resume preserves
 backoff deadlines. Run list omits checkpoints and older inactive step history.
 
-Every listed run includes `counts:{total,success,failed,unavailable,skipped}`, even
+Every listed run includes `counts:{total,success,failed,unavailable,limited,skipped}`, even
 when its steps are compacted. Step status adds terminal `unavailable` for expected
-feature/access absence; it does not make the run partial. Limits, malformed data
-and exhausted retries still fail. For matching run IDs, factory publication
+feature/access absence; it does not make the run partial. Dependency safe-parse
+limitations use terminal `limited` / `error:dependency_parse_unsupported` and add
+to `counts.limited` and completed progress, not failed/unavailable counts or run
+partial status. Only safe parsing gets this exception: capacity truncation,
+interrupted pagination/access loss, malformed upstream data and exhausted retries
+still fail. For matching run IDs, factory publication
 `status:complete|partial` matches run `completed|partial`; an unsuccessful newer
 attempt retains the older publication. Completion does not prove complete coverage.
 Paginated lists distinguish explicit first-page denial from incomplete collection:

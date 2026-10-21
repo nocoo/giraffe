@@ -331,6 +331,18 @@ actual saved items, not just coverage summaries. The index reads only their
 metadata through covering indexes, never their payloads; the data endpoint uses
 the same stored hash while decoding the payload needed for its response.
 
+A newly published dependency coverage diagnostic can retain an older raw resource
+whose coverage was complete. With `coverage.retained:true`, both the stream and
+`/sources` compose the retained resource hash as `{inputs:{evidence:storedHash},
+selection:{coverage:publishedCoverage}}`, using the same canonical encoding and
+removing the coverage collection fields listed above. Status, safe reason/code,
+observed count and `retained` remain semantic inputs. A missing/mismatched stored
+hash yields null, not an invented proof. Other stream hashes are unchanged.
+Repeated attempts with unchanged retained evidence/diagnostic keep this hash;
+collection times do not affect it. Full `sourceVersion` remains the retained
+evidence version; `source.publicationId` identifies the new frozen publication.
+Always check current coverage even when the full evidence version is unchanged.
+
 Account projections compose existing hashes cheaply rather than hash full lists
 on each request. The composite uses the same canonical SHA-256 encoding over
 `{inputs,selection}`. Input keys identify the saved dependencies, values are their
@@ -630,7 +642,7 @@ done
 Envelope `data` is `{ runId, items: FactoryEvent[], next: string|null, ranges:
 [{ since, until }], coverage, fetched_at, observation?, manifests?, truncated,
 unavailable }`.
-`coverage` is `{ status, pages, fetchedAt, source, reason, reason_code?, observed, strategy?,
+`coverage` is `{ status, pages, fetchedAt, source, reason, reason_code?, retained?, observed, strategy?,
 sourceFetchedAt? }`; status is `pending|partial|complete|unavailable|limited`,
 strategy `full|incremental|reused`. An empty list proves zero only with complete
 coverage. `next` is saved collection metadata, not a machine pagination URL.
@@ -683,14 +695,17 @@ for a single job. Adding/removing other jobs, reordering jobs, changing the sour
 HEAD or updating a single job's ref does not rename that reference. The bounded
 indentation scanner discovers the document's actual root indentation and supports
 job-level reusable workflows and step actions,
-quoted keys/references and comments, and ignores scalar script bodies. It is not
-a general expression evaluator: job/step `if:` values support plain multiline
+quoted keys/references and comments, and ignores scalar script bodies.
+Job/step `if:` values support plain multiline
 continuations and `|`/`>` block scalars with chomping/indent indicators; indented
-condition bodies are scalar content, never job keys or dependency references. It is not
+condition bodies are scalar content, never job keys or dependency references.
+Empty/comment-only headers must lead to a plain scalar, not a mapping or sequence.
+Expressions are not evaluated. It is not
 a general YAML parser; flow-style objects, aliases and expression-valued `uses`
 are not resolved. Present workflow files with missing/ambiguous job mappings or
 unsupported job/step references produce `coverage.status: "limited"`, with reason
-`"Dependency manifests cannot be parsed safely; evidence unavailable"`, not a
+`"Dependency manifests cannot be parsed safely; evidence unavailable"` and safe
+`reason_code:"dependency_parse_unsupported"`, not a
 complete zero. Unrecognized non-scalar lines inside `jobs` also fail closed,
 including flow values on a following line and explicit YAML mapping keys.
 Null/empty job values, non-sequence steps, multiline quoted scalars and tagged or
@@ -699,7 +714,21 @@ a conservative common-shape scanner, not a general YAML parser.
 Only direct job or step `uses` positions are recognized; nested `env.uses` or
 `with.uses` fields cause limited coverage rather than guessed dependency IDs.
 Existing stronger repository evidence and its original version/window
-remain published through the coverage-regression guard. Absent files and parsed
+remain published through the coverage-regression guard. New publications freeze
+the latest dependency safe-parse limitation as `coverage.status:"limited"`, with
+that safe reason/code and `retained:true`; older resource payloads and publications
+are not modified. Browser/machine stream reads and `/sources` agree on that
+coverage, with `truncated:true`, `unavailable:false` and missing freshness coverage
+in the source index. Items, manifests, `coverage.observed`, source URLs, original
+window and evidence timestamps remain those of the retained data, not the failed
+attempt. No retained empty list proves zero, including an empty limited baseline.
+Without a prior stronger baseline, the new limited resource is published directly
+without `retained`; its empty items are still not an observed zero. A successful
+accepted refresh publishes its new evidence and clears the retained diagnostic.
+Diagnostics are copied only at publication time, never overlaid from mutable run
+or repository state during GET. Changed diagnostic/content hashes can retain old
+timestamps, so `since` remains an optimization requiring unfiltered reconciliation.
+Absent files and parsed
 run-only jobs can still prove no workflow dependencies. No additional files or
 upstream requests are introduced.
 
@@ -1112,7 +1141,7 @@ Requires `app:read`; no body or supported query. Returns `{ account_id,
 items:Run[] }`, at most 21 runs, running/paused first, then newest creation time.
 No pagination or machine run-detail GET exists. Runs exclude `checkpoint`; older
 non-active runs have `steps:[]`, not full history. Every row includes
-`counts:{total,success,failed,unavailable,skipped}` computed from the stored steps,
+`counts:{total,success,failed,unavailable,limited,skipped}` computed from the stored steps,
 including compact history. No browser progress/lease summary is added.
 
 Run fields: `id`, `account_id`, `owner`, `requestKey`, `mode`, `repos`, `repoIds`,
@@ -1125,9 +1154,15 @@ Run fields: `id`, `account_id`, `owner`, `requestKey`, `mode`, `repos`, `repoIds
 optional `resource`, `sourceHead`, `strategy`, `snapshotCursor`, `retryFailures`.
 Nested types: [`factory-run.ts`](../apps/web/src/lib/factory-run.ts).
 
-Step status is `pending|running|success|failed|unavailable|skipped`. Expected
+Step status is `pending|running|success|failed|unavailable|limited|skipped`. Expected
 feature/access unavailability is terminal `unavailable`, not `failed`; it does
-not by itself make a run `partial`. Truncation, limits, malformed data and exhausted
+not by itself make a run `partial`. Dependency safe-parse failures alone finish
+as terminal `limited` with `error:"dependency_parse_unsupported"`; the collector
+uses that typed safe code for unsupported workflow structure or an unparseable
+manifest, never classification by display text. This adds `counts.limited` and
+completed browser progress without incrementing failed/unavailable counts or
+making the run partial. Capacity truncation, interrupted pagination/access loss,
+malformed upstream containers and exhausted
 upstream retries remain failures. `completed` means the plan finished without
 failures or skipped required work, not that every data source is available.
 For paginated lists, only an explicit first-page access denial can represent

@@ -45,6 +45,7 @@ const STATUS_ICON = {
 	success: Check,
 	failed: AlertCircle,
 	unavailable: Info,
+	limited: Info,
 	skipped: Minus,
 };
 
@@ -67,7 +68,7 @@ export function FactoryProgressBar({ run, label }: { run: FactoryRunView; label:
 				aria-label={label}
 			/>
 			<div className="factory-progress-segments" aria-hidden="true">
-				{(["success", "failed", "unavailable", "skipped"] as const).map((status) => (
+				{(["success", "failed", "unavailable", "limited", "skipped"] as const).map((status) => (
 					<span
 						key={status}
 						data-status={status}
@@ -199,6 +200,10 @@ export function FactoryRunDetails({
 						<Info aria-hidden="true" />
 						数据不可用 {run.progress.unavailable}
 					</span>
+					<span data-status="limited">
+						<Info aria-hidden="true" />
+						覆盖受限 {run.progress.limited}
+					</span>
 					{active ? (
 						<span className="ml-auto">
 							<Clock3 aria-hidden="true" />
@@ -248,6 +253,7 @@ export function FactoryRunDetails({
 									{stage.completed} / {stage.total} 步
 									{stage.failed ? ` · ${stage.failed} 步未完成` : ""}
 									{stage.unavailable ? ` · ${stage.unavailable} 步不可用` : ""}
+									{stage.limited ? ` · ${stage.limited} 步覆盖受限` : ""}
 									{stage.skipped ? ` · ${stage.skipped} 步跳过` : ""}
 								</small>
 							</div>

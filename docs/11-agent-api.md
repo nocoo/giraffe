@@ -122,6 +122,20 @@ collection queue. Dependency streams normalize unknown `at`, `createdAt` and
 evidence identifies them. Existing rows are normalized at read time, with no new
 workspace scan, required refresh or schema migration.
 
+Dependency safe-parse limitations use `reason_code:dependency_parse_unsupported`.
+New publications freeze this limited coverage even when stronger old evidence is
+retained: `coverage.retained:true`, `status:limited`, safe reason/code and
+`truncated:true`, while items/manifests, observed count, evidence version/window
+and timestamps stay original. Browser/machine streams and metadata-only `/sources`
+agree; GET never overlays mutable run/repository state. Their content hash composes
+the old stored hash with the frozen semantic coverage, preserving null for absent
+or mismatched metadata. Repeated identical limitations keep the hash; successful
+accepted evidence clears the diagnostic. An empty limited baseline is never zero.
+Full evidence versions can stay unchanged as coverage changes; consumers must
+check current completeness and reconcile unfiltered source indexes, not only time
+filters. Job/step multiline `if:` values support plain scalar continuations and
+literal/folded blocks; unsupported non-scalar shapes remain limited.
+
 Account `/factory` rate metadata is the latest dated saved GitHub rate observation
 from publication/run checkpoints, including newer catalog or active runs. It
 includes `observedAt` and becomes null when usable current evidence is absent or
@@ -242,10 +256,14 @@ matching rows). History remains intact; there is no automatic deletion or total
 
 ## Refresh management and storage boundary
 
-Refresh history includes `counts:{total,success,failed,unavailable,skipped}` even
+Refresh history includes `counts:{total,success,failed,unavailable,limited,skipped}` even
 when old step arrays are omitted. Expected feature/access unavailability is a
 terminal `unavailable` step, separate from real failures. It does not make a run
-partial and never means observed zero. Factory publications from that same run
+partial and never means observed zero. Dependency steps also allow terminal
+`limited` / `error:dependency_parse_unsupported`,
+counted separately without causing partial. This exception is only safe manifest/
+workflow parsing: capacity truncation, interrupted pagination/access loss and real
+failures retain their failure behavior. Factory publications from that same run
 use `complete` for `completed` and `partial` for `partial`; compare run IDs because
 failed newer attempts preserve older publications. Historical rows are unchanged.
 An explicit first-page denial is distinct from an incomplete paginated list.

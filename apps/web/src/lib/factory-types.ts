@@ -17,7 +17,8 @@ export type UnavailableReasonCode =
 	| "not_found"
 	| "unknown";
 export type FactoryCoverage = {
-	reason_code?: UnavailableReasonCode;
+	reason_code?: UnavailableReasonCode | "dependency_parse_unsupported";
+	retained?: true;
 	strategy?: "full" | "incremental" | "reused";
 	sourceFetchedAt?: string | null;
 	status: CoverageStatus;

@@ -50,6 +50,7 @@ export async function listRuns(db: Db, account: string, detail = "") {
  (SELECT COUNT(*) FROM json_each(payload,'$.steps') WHERE json_extract(value,'$.status')='success') AS success,
  (SELECT COUNT(*) FROM json_each(payload,'$.steps') WHERE json_extract(value,'$.status')='failed') AS failed,
  (SELECT COUNT(*) FROM json_each(payload,'$.steps') WHERE json_extract(value,'$.status')='unavailable') AS unavailable,
+ (SELECT COUNT(*) FROM json_each(payload,'$.steps') WHERE json_extract(value,'$.status')='limited') AS limited,
  (SELECT COUNT(*) FROM json_each(payload,'$.steps') WHERE json_extract(value,'$.status')='skipped') AS skipped
  FROM factory_runs WHERE account_id=? ORDER BY CASE WHEN status IN ('running','paused') THEN 0 ELSE 1 END,created_at DESC LIMIT 21`)
 		.bind(detail, account, account)
@@ -60,6 +61,7 @@ export async function listRuns(db: Db, account: string, detail = "") {
 				failed: number;
 				skipped: number;
 				unavailable: number;
+				limited: number;
 			}
 		>();
 	return rows.results.map((row) => {
@@ -73,6 +75,7 @@ export async function listRuns(db: Db, account: string, detail = "") {
 				failed: row.failed,
 				skipped: row.skipped,
 				unavailable: row.unavailable,
+				limited: row.limited,
 			},
 		};
 	});
