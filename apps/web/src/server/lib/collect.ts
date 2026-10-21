@@ -578,6 +578,7 @@ async function collectRepoKind(
 				runs: mapActionRuns({ workflow_runs: rows }),
 			}),
 			budget,
+			"workflow_runs",
 		);
 	}
 	if (suffix === "traffic") {
@@ -658,6 +659,7 @@ async function collectRestList(
 	start: string,
 	finish: (rows: unknown[], truncated: boolean) => Collected,
 	budget = MAX_STAGED_BYTES,
+	responseKey?: "workflow_runs",
 ): Promise<Collected> {
 	const rows: unknown[] = [];
 	let path: string | null = start;
@@ -667,18 +669,17 @@ async function collectRestList(
 		try {
 			const res = await gh.githubApi(token, path);
 			const body = (await res.json()) as unknown;
-			if (
-				body &&
-				typeof body === "object" &&
-				Array.isArray((body as { workflow_runs?: unknown[] }).workflow_runs)
-			) {
-				rows.push(...(body as { workflow_runs: unknown[] }).workflow_runs);
-			} else if (Array.isArray(body)) {
-				rows.push(...body);
-			} else {
+			const items =
+				responseKey === undefined
+					? body
+					: body && typeof body === "object"
+						? (body as Record<string, unknown>)[responseKey]
+						: null;
+			if (!Array.isArray(items)) {
 				truncated = true;
 				break;
 			}
+			rows.push(...items);
 			started = true;
 			path = nextPath(res);
 			if (exceedsBudget(finish(rows, true), budget)) {

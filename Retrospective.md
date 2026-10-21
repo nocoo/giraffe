@@ -718,3 +718,6 @@ GraphQL denial differently. Remove that split, retain durable-cursor checks for
 later chunks, and propagate known source unavailability to dependent Insights
 without masking failed or absent prerequisites. Full-plan controls must isolate
 other malformed fixture responses, not mistake an unrelated failure for denial.
+The same boundary check found that the shared REST list helper accepted either an
+array or an Actions envelope for every endpoint. Require the endpoint's actual
+container so a wrong-but-empty JSON shape cannot erase evidence as a successful zero.

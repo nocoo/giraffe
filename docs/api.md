@@ -679,6 +679,9 @@ missing pagination metadata is not proof of a terminal page. Search and security
 continuations also require nonempty new string cursors.
 Likewise, a declared REST next link that cannot be parsed is incomplete, not EOF;
 only absence of a next relation proves the list has ended.
+REST list containers must match the endpoint: Actions requires `workflow_runs`,
+while releases, contributors and notifications require arrays. A different JSON
+container is incomplete even when empty.
 Whole-source first-page denial is classified identically for global and repository
 Issues/PR search, whether returned as HTTP or GraphQL access errors. Derived
 Insights retain prior data and become unavailable when every unsatisfied required
