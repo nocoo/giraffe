@@ -28,7 +28,16 @@ export async function repoPolicy(
 		.prepare("SELECT repo,enabled FROM repo_statistics WHERE account_id=?")
 		.bind(account)
 		.all<{ repo: string; enabled: number }>();
-	const settings = new Map(overrides.results.map((r) => [r.repo.toLowerCase(), r.enabled === 1]));
+	return policyFromSaved(snapshot, selection, overrides.results);
+}
+
+export function policyFromSaved(
+	snapshot: Record<string, unknown> | null,
+	selection: Awaited<ReturnType<typeof snapshotSelection>>,
+	overrides: { repo: string; enabled: number }[],
+) {
+	const scope = selection.scope;
+	const settings = new Map(overrides.map((r) => [r.repo.toLowerCase(), r.enabled === 1]));
 	const repos = (Array.isArray(snapshot?.repos) ? snapshot.repos : []).filter(
 		(r): r is Repo => r !== null && typeof r === "object" && typeof r.name_with_owner === "string",
 	);

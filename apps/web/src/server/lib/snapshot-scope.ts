@@ -18,7 +18,11 @@ export async function snapshotSelection(db: Db, account: string, scope: Snapshot
 		.prepare("SELECT repo FROM repo_stars WHERE account_id=? ORDER BY repo")
 		.bind(account)
 		.all<{ repo: string }>();
-	const names = new Set(rows.results.map((row) => row.repo.toLowerCase()));
+	return selectionFromStars(rows.results, scope);
+}
+
+export function selectionFromStars(rows: { repo: string }[], scope: SnapshotScope) {
+	const names = new Set(rows.map((row) => row.repo.toLowerCase()));
 	const starred = (name: string) => names.has(name.toLowerCase());
 	return {
 		scope,

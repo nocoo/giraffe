@@ -156,7 +156,8 @@ export function machineApi() {
 			})(c, next),
 		async (c) => {
 			const timing = c.get("sourceTiming");
-			const read = () => readSources(c.get("db"), c.get("principal").accountId, c.req.query());
+			const read = () =>
+				readSources(c.get("db"), c.get("principal").accountId, c.req.query(), timing);
 			const data = timing ? await timing.measureAsync("build", read) : await read();
 			return timing ? timing.measure("serialize", () => c.json(data)) : c.json(data);
 		},

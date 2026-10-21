@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { Hono } from "hono";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { profileDb } from "../../../../../tests/fixtures/profile-db";
 import { sourcesFixture } from "../../../../../tests/fixtures/sources";
 import type { ApiScope } from "../../lib/api-access";
@@ -8,6 +8,7 @@ import type { Env } from "../env";
 import { createApp } from "../index";
 import { createApiToken } from "../lib/api-tokens";
 import { createDb } from "../lib/db/d1";
+import { SourceTiming } from "../lib/source-timing";
 
 async function setup() {
 	const fixture = await sourcesFixture();
@@ -54,6 +55,7 @@ function requireTag(response: Response) {
 it("exposes safe request-local phase timings on sources 200 and 304 only", async () => {
 	const fixture = await setup();
 	const response = await fixture.call();
+	expect(fixture.profile.trips.map((trip) => trip.statements)).toEqual([1, 5]);
 	const tag = requireTag(response);
 	for (const measured of [response, await fixture.call(tag)]) {
 		const header = measured.headers.get("server-timing");
@@ -65,6 +67,7 @@ it("exposes safe request-local phase timings on sources 200 and 304 only", async
 			);
 		for (const name of ["auth", "build", "decode", "hash", "serialize", "total", "d1_1"])
 			expect(metrics.some((metric) => metric.startsWith(`${name};dur=`))).toBe(true);
+		expect(metrics.filter((metric) => metric.startsWith("d1_"))).toHaveLength(2);
 		expect(header).not.toContain(fixture.account);
 		expect(header).not.toContain(fixture.token.token);
 	}
@@ -78,6 +81,24 @@ it("exposes safe request-local phase timings on sources 200 and 304 only", async
 		fixture.env,
 	);
 	expect(identity.headers.has("server-timing")).toBe(false);
+});
+
+it("measures source decoding and projection even with a coarsened worker clock", async () => {
+	const fixture = await setup();
+	const measure = vi.spyOn(SourceTiming.prototype, "measure");
+	const measureAsync = vi.spyOn(SourceTiming.prototype, "measureAsync");
+	const clock = vi.spyOn(performance, "now").mockReturnValue(0);
+	try {
+		const response = await fixture.call();
+		expect(response.status).toBe(200);
+		expect(measure.mock.calls.some(([phase]) => phase === "decode")).toBe(true);
+		expect(measureAsync.mock.calls.filter(([phase]) => phase === "hash").length).toBeGreaterThan(1);
+		expect(response.headers.get("server-timing")).toContain("decode;dur=0.00");
+	} finally {
+		measure.mockRestore();
+		measureAsync.mockRestore();
+		clock.mockRestore();
+	}
 });
 
 it("conditionally returns large source responses with strong folded tags and retained private headers", async () => {

@@ -15,8 +15,10 @@ import {
 	projectCiInputs,
 	projectFactoryObservation,
 } from "./machine-observations";
-import { projectSnapshot, repoPolicy } from "./repo-statistics";
+import { policyFromSaved, projectSnapshot } from "./repo-statistics";
 import { assembleSnapshotGroups, latestSnapshots, type SnapshotPage } from "./snapshot-pages";
+import { selectionFromStars } from "./snapshot-scope";
+import type { SourceTiming } from "./source-timing";
 
 const sourceQuerySchema = z
 	.object({
@@ -42,10 +44,82 @@ function afterSince(metadata: ReturnType<typeof observationMetadata>, since: num
 	return !times.length || Math.max(...times) > since;
 }
 
-export async function readSources(db: Db, account: string, query: Record<string, string>) {
+export async function readSources(
+	db: Db,
+	account: string,
+	query: Record<string, string>,
+	timing?: SourceTiming,
+) {
 	const parsed = sourceQuerySchema.safeParse(query);
 	if (!parsed.success) throw new ApiError(400, "validation_failed", "invalid source filters");
-	const policy = await repoPolicy(db, account);
+	const head = `SELECT coalesce((SELECT 'factory:v:' || nullif(published_id,'') FROM factory_state WHERE account_id=?),'factory') AS kind`;
+	const [catalogRows, stars, overrides, publicationRows, rows] = await db.batch<
+		SnapshotPage & { repo: string; enabled: number }
+	>([
+		db
+			.prepare(
+				"SELECT kind,payload,content_meta FROM snapshots WHERE account_id=? AND kind IN ('repos','repos#2')",
+			)
+			.bind(account),
+		db.prepare("SELECT repo FROM repo_stars WHERE account_id=? ORDER BY repo").bind(account),
+		db.prepare("SELECT repo,enabled FROM repo_statistics WHERE account_id=?").bind(account),
+		db
+			.prepare(
+				`WITH head AS (${head}) SELECT s.kind,s.payload,s.content_meta FROM snapshots s, head WHERE s.account_id=? AND s.kind IN (head.kind,head.kind || '#2')`,
+			)
+			.bind(account, account),
+		db
+			.prepare(
+				`WITH head AS (${head}), publication AS MATERIALIZED (
+					SELECT json_extract(s.payload,'$.repos') AS repos,json_extract(root.payload,'$.runId') AS run_id
+					FROM snapshots s,head JOIN snapshots root ON root.account_id=s.account_id AND root.kind=head.kind
+					WHERE s.account_id=? AND s.kind IN (head.kind,head.kind || '#2')
+				), refs AS MATERIALIZED (
+					SELECT json_extract(value,'$.name') AS name,
+						coalesce(json_extract(value,'$.observation.repo'),json_extract(value,'$.name')) AS repo,
+						coalesce(json_extract(value,'$.observation.version'),publication.run_id) AS version,
+						coalesce(json_extract(value,'$.observation.source'),'legacy') AS source
+					FROM publication,json_each(publication.repos)
+					WHERE (?='' OR lower(json_extract(value,'$.name'))=lower(?))
+				), legacy AS (
+					SELECT 'factory:' || repo || ':' || streams.value AS kind FROM refs, json_each(?) AS streams WHERE source!='run'
+				)
+				SELECT kind,payload,content_meta FROM snapshots WHERE account_id=? AND (
+					kind IN ('issues','issues#2','prs','prs#2')
+					OR (kind LIKE 'repo:%' AND (kind LIKE '%:issues' OR kind LIKE '%:issues#2' OR kind LIKE '%:prs' OR kind LIKE '%:prs#2' OR kind LIKE '%:actions' OR kind LIKE '%:actions#2' OR kind LIKE '%:releases' OR kind LIKE '%:releases#2' OR kind LIKE '%:details' OR kind LIKE '%:details#2'))
+				)
+				UNION ALL
+				SELECT 'stream:' || refs.name || ':' || f.stream AS kind,NULL AS payload,f.content_meta
+				FROM refs CROSS JOIN factory_runs r ON r.id=refs.version AND r.account_id=?
+				CROSS JOIN factory_resources f INDEXED BY factory_resources_content ON f.run_id=r.id AND f.repo=refs.repo
+				WHERE refs.source='run' AND f.stream IN (SELECT value FROM json_each(?))
+				UNION ALL
+				SELECT kind,NULL AS payload,content_meta FROM snapshots
+				WHERE account_id=? AND kind IN (SELECT kind FROM legacy)`,
+			)
+			.bind(
+				account,
+				account,
+				parsed.data.repository ?? "",
+				parsed.data.repository ?? "",
+				JSON.stringify(FACTORY_STREAMS),
+				account,
+				account,
+				JSON.stringify(FACTORY_STREAMS),
+				account,
+			),
+	]);
+	if (!catalogRows || !stars || !overrides || !publicationRows || !rows)
+		throw new ApiError(500, "db_error", "incomplete source batch");
+	const decode = <T>(fn: () => T) => (timing ? timing.measure("decode", fn) : fn());
+	const hash = <T>(fn: () => Promise<T>) => (timing ? timing.measureAsync("hash", fn) : fn());
+	const policy = decode(() =>
+		policyFromSaved(
+			assembleSnapshotGroups(catalogRows.results).get("repos") ?? null,
+			selectionFromStars(stars.results, "all"),
+			overrides.results,
+		),
+	);
 	const repository = parsed.data.repository
 		? policy.repos.find(
 				(repo) => repo.name_with_owner.toLowerCase() === parsed.data.repository?.toLowerCase(),
@@ -53,18 +127,9 @@ export async function readSources(db: Db, account: string, query: Record<string,
 		: undefined;
 	if (parsed.data.repository && !repository)
 		throw new ApiError(404, "not_found", "repository outside saved account catalog");
-	const publicationRows = await db
-		.prepare(
-			`WITH head AS (
-			SELECT coalesce((SELECT 'factory:v:' || nullif(published_id,'') FROM factory_state WHERE account_id=?),'factory') AS kind
-		)
-		SELECT s.kind,s.payload,s.content_meta FROM snapshots s, head WHERE s.account_id=? AND s.kind IN (head.kind,head.kind || '#2')`,
-		)
-		.bind(account, account)
-		.all<SnapshotPage>();
-	const rawPublication = assembleSnapshotGroups(publicationRows.results).values().next().value as
-		| FactorySnapshot
-		| undefined;
+	const rawPublication = decode(() => assembleSnapshotGroups(publicationRows.results))
+		.values()
+		.next().value as FactorySnapshot | undefined;
 	const publication = rawPublication ? normalizePublication(rawPublication) : null;
 	const since = parsed.data.since ? Date.parse(parsed.data.since) : null;
 	const streams = (publication?.repos ?? []).flatMap((repo) => {
@@ -93,55 +158,16 @@ export async function readSources(db: Db, account: string, query: Record<string,
 			return afterSince(observationMetadata(data), since) ? [{ repo, stream, data }] : [];
 		});
 	});
-	const selectedRepos = [...new Map(streams.map(({ repo }) => [repo.name, repo])).values()];
-	const refs = selectedRepos.map((repo) => [
-		repo.name,
-		repo.observation?.repo ?? repo.name,
-		repo.observation?.version ?? publication?.runId,
-		repo.observation?.source ?? "legacy",
-	]);
-	const rows = await db
-		.prepare(
-			`WITH refs AS MATERIALIZED (
-				SELECT json_extract(value,'$[0]') AS name,
-					json_extract(value,'$[1]') AS repo,
-					json_extract(value,'$[2]') AS version,
-					json_extract(value,'$[3]') AS source
-				FROM json_each(?)
-			), legacy AS (
-				SELECT 'factory:' || repo || ':' || streams.value AS kind FROM refs, json_each(?) AS streams WHERE source!='run'
-			)
-			SELECT kind,payload,content_meta FROM snapshots WHERE account_id=? AND (
-				kind IN ('issues','issues#2','prs','prs#2')
-				OR (kind LIKE 'repo:%' AND (kind LIKE '%:issues' OR kind LIKE '%:issues#2' OR kind LIKE '%:prs' OR kind LIKE '%:prs#2' OR kind LIKE '%:actions' OR kind LIKE '%:actions#2' OR kind LIKE '%:releases' OR kind LIKE '%:releases#2' OR kind LIKE '%:details' OR kind LIKE '%:details#2'))
-			)
-			UNION ALL
-			SELECT 'stream:' || refs.name || ':' || f.stream AS kind,NULL AS payload,f.content_meta
-			FROM refs CROSS JOIN factory_runs r ON r.id=refs.version AND r.account_id=?
-			CROSS JOIN factory_resources f INDEXED BY factory_resources_content ON f.run_id=r.id AND f.repo=refs.repo
-			WHERE refs.source='run' AND f.stream IN (SELECT value FROM json_each(?))
-			UNION ALL
-			SELECT kind,NULL AS payload,content_meta FROM snapshots
-			WHERE account_id=? AND kind IN (SELECT kind FROM legacy)`,
-		)
-		.bind(
-			JSON.stringify(refs),
-			JSON.stringify(FACTORY_STREAMS),
-			account,
-			account,
-			JSON.stringify(FACTORY_STREAMS),
-			account,
-		)
-		.all<{ kind: string; payload: string | null; content_meta: string | null }>();
-	const saved = assembleSnapshotGroups(
-		rows.results.filter(
-			(row): row is SnapshotPage & { content_meta: string | null } => row.payload !== null,
-		),
+	const saved = decode(() =>
+		assembleSnapshotGroups(rows.results.filter((row) => row.payload !== null)),
 	);
-	const streamMeta = new Map(
-		rows.results
-			.filter((row) => row.payload === null)
-			.map((row) => [row.kind, decodeContent(row.content_meta)]),
+	const streamMeta = decode(
+		() =>
+			new Map(
+				rows.results
+					.filter((row) => row.payload === null)
+					.map((row) => [row.kind, decodeContent(row.content_meta)]),
+			),
 	);
 	const groups = latestSnapshots(saved);
 	type Source = { resource: string; version: string; contentVersion: string | null } & ReturnType<
@@ -159,7 +185,7 @@ export async function readSources(db: Db, account: string, query: Record<string,
 		data = prSnapshot(data);
 		return {
 			resource,
-			version: version ?? (await observationVersion(data)),
+			version: version ?? (await hash(() => observationVersion(data))),
 			contentVersion: content,
 			...metadata,
 		};
@@ -188,11 +214,13 @@ export async function readSources(db: Db, account: string, query: Record<string,
 				const inputs = ciObservationInputs(policy, groups);
 				if (!afterSince(observationMetadata(inputs.metadata), since)) continue;
 				data = projectCiInputs(inputs);
-				content = await ciContent(policy, groups, inputs.metadata.freshness);
+				content = await hash(() => ciContent(policy, groups, inputs.metadata.freshness));
 			} else {
 				const snapshot = resource === "repos" ? policy.catalog : saved.get(resource);
 				if (!snapshot) continue;
-				data = await projectSnapshot(db, account, resource, snapshot, policy, false, saved);
+				data = await hash(() =>
+					projectSnapshot(db, account, resource, snapshot, policy, false, saved),
+				);
 			}
 			const source = await add(
 				`account:${resource}`,
@@ -201,7 +229,7 @@ export async function readSources(db: Db, account: string, query: Record<string,
 				resource === "ci"
 					? content
 					: resource === "factory" && publication
-						? await factoryContent(publication, policy)
+						? await hash(() => factoryContent(publication, policy))
 						: undefined,
 			);
 			if (source) sources.push(source);
@@ -222,9 +250,8 @@ export async function readSources(db: Db, account: string, query: Record<string,
 				`factory:${repo.name}:${stream}`,
 				metadata,
 				version,
-				await factoryStreamContent(
-					meta?.version === version ? meta.hash : null,
-					repo.coverage[stream],
+				await hash(async () =>
+					factoryStreamContent(meta?.version === version ? meta.hash : null, repo.coverage[stream]),
 				),
 			);
 			if (source) sources.push(source);
