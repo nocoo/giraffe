@@ -725,3 +725,20 @@ The final row-shape pass reproduced the same false-zero outcome after invalid li
 elements were silently filtered. Validate record elements before filtering or
 mapping; null REST rows, primitives and nested arrays must make collection
 incomplete. Legitimate empty lists and nullable optional record fields remain valid.
+
+## 2026-10-21 - Clean up acceptance accounts independently of test order
+
+After the unknown-query regression failed as intended, Vitest prioritized that
+previously failing HTTP file on its next run. The machine API acceptance test
+revoked its tokens but left a newly created active account behind. The later
+method matrix then received `snapshot_missing` instead of `account_missing`.
+The query fix passed its unit tests and commit hooks, but the complete HTTP run
+correctly caught this fixture leak. Record pre-existing account IDs and delete
+only the account created by this test in its cleanup; do not change the matrix's
+assertions or depend on cached file ordering. Wait for the full HTTP result before
+claiming acceptance, even when focused tests and commit hooks have passed.
+
+During this task a Herdr resize using `--current` resolved the UI-focused pane
+instead of the caller. The command reported `changed:false`, so no unrelated
+layout changed. The corrected command used the explicit owned pane ID. Use
+explicit pane IDs for layout mutations and verify the returned target.

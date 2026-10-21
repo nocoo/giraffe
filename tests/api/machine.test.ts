@@ -15,6 +15,9 @@ async function browser(path: string, method = "GET", body?: unknown) {
 	});
 }
 it("retains machine bearer CRUD and retires PKCE over real local HTTP", async () => {
+	const existing = (await (await browser("accounts")).json()) as {
+		accounts: { id: string }[];
+	};
 	const response = await browser("accounts", "POST", { token: `ghp_${"A".repeat(36)}` });
 	expect(response.ok).toBe(true);
 	const account = (await response.json()) as { id: string };
@@ -195,6 +198,8 @@ it("retains machine bearer CRUD and retires PKCE over real local HTTP", async ()
 			expect((await browser(`tokens/${id}`, "DELETE", { account_id: account.id })).status).toBe(
 				204,
 			);
+		if (!existing.accounts.some((item) => item.id === account.id))
+			expect((await browser(`accounts/${account.id}`, "DELETE")).status).toBe(204);
 	}
 	expect((await machine("v1/me")).status).toBe(401);
 });
