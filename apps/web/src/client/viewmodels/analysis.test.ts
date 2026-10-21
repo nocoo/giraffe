@@ -1,8 +1,49 @@
 import { expect, it } from "vitest";
+import { analysisTimeCases } from "../../../../../tests/fixtures/analysis-times";
 import type { AnalysisReport, Resource } from "../../lib/analysis-contracts";
 import { type AnalysisData, analysisState, safeEvidenceUrl, sourceQuality } from "./analysis";
 
 const at = "2026-10-02T08:00:00Z";
+
+it.each(analysisTimeCases)(
+	"selects the exact newest candidate with binary id ties: $name",
+	({ entries, expected }) => {
+		const state = analysisState(
+			{
+				...data,
+				reports: entries.map(([id, generatedAt]) =>
+					row({ ...report, generatedAt, summary: id }, id),
+				),
+			},
+			"nocoo/app",
+			Date.parse(at),
+		);
+		expect(state.errors).toEqual([]);
+		expect(state.cards.find((card) => card.domain === "prs")?.report?.summary).toBe(expected[0]);
+	},
+);
+
+it("rejects a child generated later by less than one millisecond", () => {
+	const child = { ...report, generatedAt: "2026-10-02T08:00:00.0002Z" };
+	const parent: AnalysisReport = {
+		...report,
+		scope: "global",
+		repository: null,
+		generatedAt: "2026-10-02T08:00:00.0001Z",
+		sources: [
+			{
+				resource: "nocoo/app",
+				version: child.sourceVersion,
+				fetchedAt: at,
+				complete: true,
+				stale: false,
+			},
+		],
+	};
+	expect(sourceQuality(parent, data.sources, Date.parse(at), [child], ["nocoo/app"]).current).toBe(
+		false,
+	);
+});
 
 it("uses actual generation instants and preserves server id order for ties", () => {
 	const state = analysisState(

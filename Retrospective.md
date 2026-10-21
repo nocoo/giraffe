@@ -1032,3 +1032,14 @@ query extraction now guard the full payload with `json_valid`; uninspectable
 components become null without deleting or rejecting the resource. Expression
 indexes over generic data must handle the storage schema's full legal domain,
 not just structurally valid consumer reports.
+
+## 2026-10-21 - Preserve accepted datetime precision in report ordering
+
+Independent review reproduced legal sub-millisecond report generations sorting by
+ID instead of time: SQLite `julianday` and client `Date.parse` collapsed distinct
+fractions. Date conversion could also round `.9999` into the next second. Red
+tests now cover microseconds, long fractions, trailing-zero/offset ties, the full
+Zod offset range and child/parent chronology. Index/query and client comparisons
+separate whole seconds from normalized fractional digit strings; fractions never
+enter numeric date conversion. Match ordering precision to the accepted schema,
+not the default precision of a convenient datetime API.

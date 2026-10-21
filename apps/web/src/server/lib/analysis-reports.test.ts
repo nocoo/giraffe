@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import { expect, it, vi } from "vitest";
+import { analysisTimeCases } from "../../../../../tests/fixtures/analysis-times";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
+import { analysisReportSchema } from "../../lib/analysis-contracts";
 import { createResource, getResource, listResources, updateResource } from "./agent-resources";
 import { readAnalysisReports } from "./analysis-reports";
 import { createDb } from "./db/d1";
@@ -14,6 +16,40 @@ async function fixture() {
 		.run();
 	return { raw, db: createDb(raw) };
 }
+
+it.each(analysisTimeCases)(
+	"orders exact accepted generation instants: $name",
+	async ({ entries, expected }) => {
+		const { db } = await fixture();
+		for (const [id, generatedAt] of entries) {
+			expect(analysisReportSchema.shape.generatedAt.safeParse(generatedAt).success).toBe(true);
+			await createResource(db, "a", "reports", {
+				id,
+				type: "github-analysis",
+				status: "completed",
+				payload: { scope: "global", domain: "ci", generatedAt },
+			});
+		}
+		expect((await readAnalysisReports(db, "a")).items.map((row) => row.id)).toEqual(expected);
+	},
+);
+
+it("keeps unparseable ISO-shaped times below valid candidates without rejecting generic rows", async () => {
+	const { db } = await fixture();
+	for (const [id, generatedAt] of [
+		["a", "2026-10-02T08:00:00.0001Z"],
+		["z", "2026-10-02T08:00:00.rubbishZ"],
+		["y", "2026-10-02T08:00:00.1junk"],
+		["x", "2026-10-02T08:00:00Zjunk"],
+	] as const)
+		await createResource(db, "a", "reports", {
+			id,
+			type: "github-analysis",
+			status: "pending",
+			payload: { scope: "global", domain: "ci", generatedAt },
+		});
+	expect((await readAnalysisReports(db, "a")).items.map((row) => row.id)).toEqual(["a", "z", "y"]);
+});
 
 it.each([6001, 60001])(
 	"seeks three rows per key across %i reports without historical payload reads",

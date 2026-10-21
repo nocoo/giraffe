@@ -1030,9 +1030,18 @@ upstream calls. It is not a machine endpoint or an Access-bypass route.
 It selects only `reports` of `type:github-analysis`, taking the newest **N=3 rows
 per exact `(payload.scope, row.repository, payload.domain)`** across all statuses.
 Repository matching is case-sensitive; global reports normally use null. Order
-within each key is `julianday(payload.generatedAt) DESC, id DESC` (binary ID order):
-timestamps with different offsets are compared as actual instants, equal instants
-use descending ID. Parsing is guarded by the ISO-shaped pattern `????-??-??T*`;
+within each key is `(utcWholeSecond DESC, fractionDigits DESC, id DESC)` using
+binary text order for fraction digits and IDs. Whole-second conversion removes
+the fraction first, then subtracts the explicit signed offset in seconds; it never
+rounds a `.9999` fraction into the next second. Fraction digits keep arbitrary
+precision and leading zeros, trim trailing zeros, and use `""` for zero/no fraction.
+Their lexicographic order exactly matches decimal order without floating-point
+conversion. Equivalent offsets/trailing-zero spellings tie and use descending ID.
+The accepted reader syntax stays Zod ISO datetime with required seconds, optional
+arbitrary-length fractional seconds and `Z` or `+/-HH:MM` (hours 00-23, minutes
+00-59). The index/query handle the same full offset range explicitly rather than
+relying on SQLite's narrower offset parser. Parsing is guarded by the ISO-shaped
+pattern `????-??-??T*`, timezone/fraction shape checks and whole-second conversion;
 missing, nonmatching or SQLite-unparseable values sort last. This excludes relative
 keywords such as `now`, which are unsafe in an expression index, without rejecting
 generic storage writes. Full report/date validation remains in the client. `created_at`,
@@ -1040,7 +1049,9 @@ generic storage writes. Full report/date validation remains in the client. `crea
 Malformed keys form their own groups; selected malformed or non-completed rows
 still reach the existing strict reader validation and consume a slot. Only valid
 completed candidates are displayed, preferring current sources within the selected
-three and then generation time; ties preserve the server's ID order. A current
+three and then exact generation instant and descending binary ID. The client uses
+the same whole-second/fraction comparison for candidates and child-report
+generation chronology, not millisecond `Date.parse` comparison. A current
 historical report outside those three is no longer a display candidate.
 
 Index/query JSON extraction first guards the entire payload with `json_valid`.

@@ -235,8 +235,15 @@ Report history is not traversed by the page. Its Access-protected, active-accoun
 exact `(payload.scope, row.repository, payload.domain)` for `type:github-analysis`
 in the reports collection, across all statuses. It returns `{account_id, items}`
 with no query parameters or cursor. Per-key order is
-`julianday(payload.generatedAt) DESC, id DESC`: actual time across offsets, then
-binary ID descending for ties. An ISO-shape guard (`????-??-??T*`) maps missing,
+`(utcWholeSecond DESC, fractionDigits DESC, id DESC)`: exact time across offsets,
+then binary ID descending for ties. The epoch strips fractional seconds before
+conversion and manually subtracts signed offsets through +/-23:59. Fractions
+remain arbitrary-precision digit strings, with trailing zeros trimmed and leading
+zeros retained; no fraction/all zeros use empty text. Equivalent instants and
+trailing-zero spellings tie. No `julianday`/millisecond rounding determines order.
+The client uses the same exact instant/ID ordering and exact child-generation
+chronology, without tightening the accepted ISO datetime schema. ISO-shape
+(`????-??-??T*`), timezone/fraction and whole-second guards map missing,
 nonmatching or SQLite-unparseable times to null/last, without making generic CRUD
 reject relative date strings such as `now`; strict report validation stays in the
 client. Edits/revisions

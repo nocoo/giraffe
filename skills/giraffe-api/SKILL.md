@@ -732,8 +732,15 @@ is a local budget choice, not an API limit.
 `GET /api/agent/accounts/A/analysis/reports` projection, not the generic machine
 list. It takes N=3 `github-analysis` report rows per exact
 `(payload.scope, row.repository, payload.domain)` across all statuses. Per-key order
-is `julianday(payload.generatedAt) DESC, id DESC`: actual instants across offsets,
-binary ID descending for ties. An ISO-shape guard (`????-??-??T*`) puts missing,
+is `(utcWholeSecond DESC, fractionDigits DESC, id DESC)`: exact instants across
+offsets, binary ID descending for ties. Strip fractions before epoch conversion,
+subtract signed offsets explicitly (full +/-23:59 range), and compare fractional
+digits as text after trimming trailing zeros. Keep leading zeros; zero/no fraction
+is empty text. Arbitrary fractional precision, equivalent offsets and trailing-zero
+ties are preserved without millisecond rounding or `.9999` carry. Client candidate
+selection and child-generation chronology use the same exact instant comparison;
+the accepted ISO datetime schema is unchanged. ISO-shape (`????-??-??T*`),
+timezone/fraction and whole-second guards put missing,
 nonmatching or SQLite-unparseable times last, allowing generic storage of relative
 keywords such as `now` without unsafe index evaluation. Strict report validation
 remains client-side. Repository keys are

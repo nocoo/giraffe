@@ -51,6 +51,35 @@ function aged(at: string | null, now: number) {
 	const time = at ? Date.parse(at) : NaN;
 	return !Number.isFinite(time) || now - time > STALE_MS || time > now + 60000;
 }
+
+function generationTime(at: string) {
+	const utc = at.endsWith("Z");
+	const zone = at.slice(-6);
+	const offset = utc
+		? 0
+		: (Number(zone.slice(1, 3)) * 60 + Number(zone.slice(4))) * 60000 * (zone[0] === "+" ? 1 : -1);
+	return {
+		second: Date.parse(`${at.slice(0, 19)}Z`) - offset,
+		fraction: at[19] === "." ? at.slice(20, utc ? -1 : -6).replace(/0+$/, "") : "",
+	};
+}
+
+function compareGeneration(left: string, right: string) {
+	const a = generationTime(left);
+	const b = generationTime(right);
+	if (a.second !== b.second) return a.second - b.second;
+	return a.fraction === b.fraction ? 0 : a.fraction < b.fraction ? -1 : 1;
+}
+
+function newestReport(
+	a: { id: string; report: AnalysisReport },
+	b: { id: string; report: AnalysisReport },
+) {
+	return (
+		compareGeneration(b.report.generatedAt, a.report.generatedAt) ||
+		(a.id === b.id ? 0 : a.id < b.id ? 1 : -1)
+	);
+}
 export function sourceQuality(
 	report: AnalysisReport,
 	sources: CurrentSource[],
@@ -82,7 +111,7 @@ export function sourceQuality(
 			current &&=
 				!!child &&
 				child.sourceVersion === source.version &&
-				Date.parse(child.generatedAt) <= Date.parse(report.generatedAt);
+				compareGeneration(child.generatedAt, report.generatedAt) <= 0;
 			if (child) {
 				const quality = sourceQuality(child, sources, now);
 				current &&= quality.current;
@@ -120,7 +149,7 @@ export function safeEvidenceUrl(value: string | null) {
 }
 export function analysisState(data: AnalysisData, repository: string | null, now: number) {
 	const errors: string[] = [];
-	const reports: AnalysisReport[] = [];
+	const reports: { id: string; report: AnalysisReport }[] = [];
 	for (const row of data.reports) {
 		const parsed = analysisReportSchema.safeParse(row.payload);
 		if (
@@ -132,27 +161,25 @@ export function analysisState(data: AnalysisData, repository: string | null, now
 			errors.push(`报告 ${row.id} 格式或来源不匹配`);
 			continue;
 		}
-		if (row.status === "completed") reports.push(parsed.data);
+		if (row.status === "completed") reports.push({ id: row.id, report: parsed.data });
 	}
 	const repoReports = reports
-		.filter((r) => r.scope === "repo")
-		.sort((a, b) => Date.parse(b.generatedAt) - Date.parse(a.generatedAt));
+		.filter(({ report }) => report.scope === "repo")
+		.sort(newestReport)
+		.map(({ report }) => report);
 	const bestRepos = repoReports.filter(
 		(r, i, all) =>
 			i === all.findIndex((x) => x.repository === r.repository && x.domain === r.domain),
 	);
 	const cards = DOMAINS.map((domain) => {
 		const matches = reports
-			.filter((r) => r.domain === domain && r.repository === repository)
-			.map((report) => ({
+			.filter(({ report }) => report.domain === domain && report.repository === repository)
+			.map(({ id, report }) => ({
+				id,
 				report,
 				quality: sourceQuality(report, data.sources, now, bestRepos, data.repositories),
 			}))
-			.sort(
-				(a, b) =>
-					Number(b.quality.current) - Number(a.quality.current) ||
-					Date.parse(b.report.generatedAt) - Date.parse(a.report.generatedAt),
-			);
+			.sort((a, b) => Number(b.quality.current) - Number(a.quality.current) || newestReport(a, b));
 		const best = matches[0];
 		return {
 			domain,
