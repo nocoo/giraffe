@@ -180,7 +180,7 @@ function workflowReferences(content: string) {
 		scalarIndent = null;
 		const property = /^\s*(?:-\s+)?(?:"([\w-]+)"|'([\w-]+)'|([\w-]+)):\s*(.*)$/.exec(line);
 		const key = property?.[1] ?? property?.[2] ?? property?.[3];
-		const value = property?.[4] ?? "";
+		const value = (property?.[4] ?? "").trimEnd();
 		if (indent === 0) {
 			inJobs = key === "jobs" && /^(?:#.*)?$/.test(value);
 			jobIndent = null;

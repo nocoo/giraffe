@@ -860,3 +860,5 @@ misread script text as dependency declarations. Parameterized fixtures first
 reproduced literal and folded failures, then verified both orders. Even a scoped
 line scanner must exclude all supported scalar-header forms before reading body
 lines as structural keys.
+The same regression matrix also caught legal trailing spaces after the indicator;
+mapping values now trim trailing whitespace before structural classification.
