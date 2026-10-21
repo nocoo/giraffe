@@ -179,6 +179,48 @@ it("recovers only matching legacy resource versions and does not invent missing 
 	expect(current?.observation?.refreshedAt).toBe(now);
 });
 
+it("restores old root and workspace identities separately from actual dependencies", async () => {
+	const { db, lease, repo } = await setup();
+	const declarations = [
+		{ name: "own", path: "package.json#name" },
+		{ name: "child", path: "packages/child/package.json#name" },
+		{ name: "child", path: "package.json#dependencies" },
+		{ name: "external", path: "package.json#dependencies" },
+	];
+	await db.batch(
+		replaceSnapshotStmts(
+			db,
+			snap.account_id,
+			`factory:${repo.name}:dependencies`,
+			{
+				runId: now,
+				items: declarations.map((declaration) => ({
+					id: declaration.path + declaration.name,
+					title: declaration.name,
+					path: declaration.path,
+					url: "saved",
+					at: "",
+					createdAt: "",
+					author: "",
+				})),
+				coverage: { ...repo.coverage.dependencies, status: "complete" },
+			},
+			now,
+		),
+	);
+	await db.batch(await restoreLegacyRepo(db, lease, now, repo));
+	const current = await currentRepo(db, snap.account_id, repo.name);
+	expect(current?.dependencies.map((dependency) => dependency.name)).toEqual(["external"]);
+	expect(current?.manifests?.map((manifest) => manifest.name)).toEqual(["own", "child"]);
+	const row = await db
+		.prepare("SELECT payload FROM factory_repo_versions")
+		.first<{ payload: string }>();
+	expect(JSON.parse(row?.payload ?? "{}")).toMatchObject({
+		dependencies: [{ name: "external" }],
+		manifests: [{ name: "own" }, { name: "child" }],
+	});
+});
+
 it("deduplicates renamed repositories by stable GitHub identity at publication", async () => {
 	const { db, lease, repo } = await setup();
 	await db.batch(replaceSnapshotStmts(db, snap.account_id, "factory", { ...snap }, now));

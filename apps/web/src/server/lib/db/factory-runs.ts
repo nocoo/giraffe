@@ -1,3 +1,4 @@
+import { normalizeRepoDependencies } from "../../../lib/factory-dependencies";
 import {
 	type FactoryRun,
 	REPO_COOLDOWN_MS,
@@ -82,11 +83,12 @@ export const factoryHead = (db: Db, account: string) =>
 		.first<FactoryHead>();
 export async function publishedFactory(db: Db, account: string): Promise<FactorySnapshot | null> {
 	const head = await factoryHead(db, account);
-	return (await readSnapshot(
+	const snapshot = (await readSnapshot(
 		db,
 		account,
 		head?.published_id ? `factory:v:${head.published_id}` : "factory",
 	)) as FactorySnapshot | null;
+	return snapshot ? { ...snapshot, repos: snapshot.repos.map(normalizeRepoDependencies) } : null;
 }
 export async function catalogFactory(db: Db, account: string): Promise<FactorySnapshot | null> {
 	const head = await factoryHead(db, account);

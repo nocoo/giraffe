@@ -5,6 +5,7 @@ import {
 	summarizeEvents,
 	uniqueEvents,
 } from "../../lib/factory";
+import { dependencyEvidence, dependencyFromEvent } from "../../lib/factory-dependencies";
 import {
 	FACTORY_STREAMS,
 	type FactoryRepo,
@@ -253,6 +254,7 @@ async function collectStream(
 			data.coverage.strategy = "reused";
 			data.coverage.sourceFetchedAt =
 				baseline.data.coverage.sourceFetchedAt ?? baseline.data.coverage.fetchedAt;
+			if (stream === "dependencies") data.manifests = baseline.data.manifests ?? [];
 		} else if (stream === "dependencies" && !repo.head) {
 			data.next = null;
 		} else if (stream === "dependencies") {
@@ -273,7 +275,7 @@ async function collectStream(
 			if (!result.repository || typeof result.repository !== "object")
 				throw new ApiError(502, "github_error", "manifest response incomplete");
 			try {
-				data.items = mapDependencies(object(result.repository), repo);
+				Object.assign(data, mapDependencies(object(result.repository), repo));
 			} catch {
 				data.coverage.status = "limited";
 				data.coverage.reason =
@@ -371,17 +373,16 @@ async function collectStream(
 			data.ranges = [];
 		} else throw error;
 	}
+	if (stream === "dependencies")
+		Object.assign(data, dependencyEvidence(data.items, data.manifests));
 	data.coverage.observed = data.items.length;
 	repo.coverage[stream] = data.coverage;
 	if (data.coverage.status !== "partial") {
 		repo.metrics = mergeMetrics([repo.metrics, summarizeEvents(stream, data.items, s.window)]);
-		if (stream === "dependencies")
-			repo.dependencies = data.items.map((e) => ({
-				name: e.title,
-				version: e.version ?? "",
-				path: e.path ?? "",
-				url: e.url,
-			}));
+		if (stream === "dependencies") {
+			repo.dependencies = data.items.map(dependencyFromEvent);
+			repo.manifests = data.manifests ?? [];
+		}
 		advanceCursor(s);
 	}
 	await store.write(key, data);

@@ -1,4 +1,9 @@
 import { factoryWindow, mergeMetrics, summarizeEvents } from "../../lib/factory";
+import {
+	dependencyEvidence,
+	dependencyFromEvent,
+	normalizeRepoDependencies,
+} from "../../lib/factory-dependencies";
 import { completedRunStatus, REPO_COOLDOWN_MS, type RepoRefreshState } from "../../lib/factory-run";
 import {
 	FACTORY_STREAMS,
@@ -73,7 +78,7 @@ export async function currentRepo(
 		)
 		.bind(account, repo)
 		.first<{ payload: string }>();
-	return result ? (JSON.parse(result.payload) as FactoryRepo) : null;
+	return result ? normalizeRepoDependencies(JSON.parse(result.payload) as FactoryRepo) : null;
 }
 export async function repositoryWrites(
 	db: Db,
@@ -84,6 +89,7 @@ export async function repositoryWrites(
 	error: string | null,
 	legacy = false,
 ): Promise<D1PreparedStatement[]> {
+	if (repo) repo = normalizeRepoDependencies(repo);
 	const previous = await currentRepo(db, lease.run.account_id, name);
 	const oldState = await db
 		.prepare("SELECT payload FROM factory_repo_state WHERE account_id=? AND repo=?")
@@ -175,13 +181,11 @@ export async function restoreLegacyRepo(
 		repo.coverage[stream] = data.coverage;
 		if (data.coverage.status !== "partial" && data.coverage.status !== "pending")
 			repo.metrics = mergeMetrics([repo.metrics, summarizeEvents(stream, data.items, window)]);
-		if (stream === "dependencies")
-			repo.dependencies = data.items.map((e) => ({
-				name: e.title,
-				version: e.version ?? "",
-				path: e.path ?? "",
-				url: e.url,
-			}));
+		if (stream === "dependencies") {
+			const evidence = dependencyEvidence(data.items, data.manifests);
+			repo.dependencies = evidence.items.map(dependencyFromEvent);
+			repo.manifests = evidence.manifests;
+		}
 	}
 	repo.observation = {
 		version: first.runId,
@@ -228,7 +232,9 @@ export async function publicationWrites(
 		)
 		.bind(run.account_id)
 		.all<{ payload: string }>();
-	const committed = result.results.map((r) => JSON.parse(r.payload) as FactoryRepo);
+	const committed = result.results.map((r) =>
+		normalizeRepoDependencies(JSON.parse(r.payload) as FactoryRepo),
+	);
 	for (const old of snapshot.repos) {
 		if (!old.observation)
 			old.observation = {

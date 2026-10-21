@@ -113,7 +113,7 @@ describe("GitHub factory normalization", () => {
 			},
 			repo,
 		);
-		expect(data.map((d) => d.title)).toEqual([
+		expect(data.items.map((d) => d.title)).toEqual([
 			"one",
 			"two",
 			"three",
@@ -123,8 +123,44 @@ describe("GitHub factory normalization", () => {
 			"dependabot",
 			"renovate",
 		]);
-		expect(data[0]?.url).toContain("/blob/abc/package.json#dependencies");
-		expect(mapDependencies({}, repo)).toEqual([]);
+		expect(data.items[0]?.url).toContain("/blob/abc/package.json#dependencies");
+		expect(mapDependencies({}, repo)).toEqual({ items: [], manifests: [] });
 		expect(() => mapDependencies({ package: { text: "{" } }, repo)).toThrow();
+	});
+	it("separates package identity from dependencies and keeps unknown event metadata null", () => {
+		const evidence = mapDependencies(
+			{
+				package: {
+					text: JSON.stringify({
+						name: "@scope/own",
+						version: "1.2.3",
+						dependencies: { "@scope/own": "workspace:*", external: "^2", app: "3" },
+					}),
+				},
+			},
+			mapFactoryRepo(rawRepo),
+		);
+		expect(evidence.items.map((item) => item.title)).toEqual(["external", "app"]);
+		expect(evidence.items[0]).toMatchObject({ at: null, createdAt: null, author: null });
+		expect(evidence.manifests).toEqual([
+			{
+				name: "@scope/own",
+				version: "1.2.3",
+				path: "package.json",
+				url: "https://github.com/nocoo/app/blob/abc/package.json#name",
+			},
+		]);
+	});
+	it("preserves configuration evidence when the root package has the same name", () => {
+		const evidence = mapDependencies(
+			{
+				package: { text: JSON.stringify({ name: "renovate", dependencies: { renovate: "1" } }) },
+				renovate: { text: "{}" },
+			},
+			mapFactoryRepo(rawRepo),
+		);
+		expect(evidence.items).toMatchObject([
+			{ title: "renovate", path: "renovate.json", version: "configured" },
+		]);
 	});
 });

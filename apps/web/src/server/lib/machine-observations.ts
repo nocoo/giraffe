@@ -1,4 +1,5 @@
 import { type CiEntry, type CiRelease, type CiRun, ciReport } from "../../lib/ci-health";
+import { dependencyEvidence } from "../../lib/factory-dependencies";
 import type { FactoryStreamData, FactoryStreamName } from "../../lib/factory-types";
 import { FACTORY_STREAMS } from "../../lib/factory-types";
 import { snapshotFreshness } from "../../lib/snapshot-freshness";
@@ -203,6 +204,9 @@ export async function readFactoryResource(db: Db, account: string, name: string,
 		`factory:${repo.name}:${stream}`,
 		{
 			...data,
+			...(stream === "dependencies"
+				? dependencyEvidence(data.items, [...(repo.manifests ?? []), ...(data.manifests ?? [])])
+				: {}),
 			ranges: [observation?.window ?? snap.window],
 			fetched_at: data.coverage.fetchedAt,
 			observation,

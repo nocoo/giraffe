@@ -206,13 +206,11 @@ export async function executeRunPage(
 									)
 									.bind(repo.observation.version, step.repo, stream)
 									.first<{ payload: string }>();
-								return row
-									? {
-											data: JSON.parse(row.payload) as FactoryStreamData,
-											head: repo.head,
-											window: repo.observation.window,
-										}
-									: null;
+								if (!row) return null;
+								const data = JSON.parse(row.payload) as FactoryStreamData;
+								if (stream === "dependencies")
+									data.manifests = [...(repo.manifests ?? []), ...(data.manifests ?? [])];
+								return { data, head: repo.head, window: repo.observation.window };
 							},
 						}
 					: {}),

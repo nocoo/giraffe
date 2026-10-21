@@ -106,6 +106,23 @@ beforeAll(async () => {
 	const publication = factoryFixture();
 	const repo = publication.repos[0];
 	if (!repo) throw new Error("factory fixture missing");
+	repo.dependencies = [
+		{ name: "@scope/root", version: "1", path: "package.json#name", url: "root" },
+		{ name: "@scope/child", version: "1", path: "packages/child/package.json#name", url: "child" },
+		{
+			name: "@scope/child",
+			version: "workspace:*",
+			path: "package.json#dependencies",
+			url: "self",
+		},
+		{ name: "recovered", version: "^1", path: "package.json#dependencies", url: "external" },
+	];
+	repo.coverage.dependencies = {
+		...repo.coverage.dependencies,
+		status: "complete",
+		fetchedAt: baseline,
+		observed: 4,
+	};
 	publication.account_id = account;
 	publication.repos = [names[0] as string, removed].map((name) => ({
 		...repo,
@@ -134,6 +151,27 @@ beforeAll(async () => {
 				coverage: { ...repo.coverage.commits, status: "complete", fetchedAt: baseline },
 			}),
 		);
+	statements.push(
+		snapshot(`factory:${names[0]}:dependencies`, {
+			runId: publication.runId,
+			next: null,
+			ranges: [],
+			coverage: repo.coverage.dependencies,
+			items: repo.dependencies.map((dependency, index) => ({
+				id: String(index),
+				title: dependency.name,
+				version: dependency.version,
+				path: dependency.path,
+				url: dependency.url,
+				at: "",
+				createdAt: "",
+				author: "",
+				closedAt: null,
+				mergedAt: null,
+				state: "declared",
+			})),
+		}),
+	);
 	for (const [kind, key] of [
 		["issues", "issues"],
 		["prs", "pull_requests"],
@@ -336,6 +374,39 @@ it("exposes the saved factory stream window without changing collection state", 
 		),
 	).toEqual(before);
 	expect(await (await fetch("http://127.0.0.1:17046/_count")).text()).toBe(countBefore);
+});
+
+it("normalizes saved dependency unknowns and separates root and workspace identities over HTTP", async () => {
+	const before = sql(
+		`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
+	).map((statement) => statement.results);
+	const stream = await (await machine("factory/repos/nocoo/recovered/dependencies")).json();
+	expect(stream).toMatchObject({
+		sourceVersion: factoryFixture().runId,
+		data: {
+			items: [{ title: "recovered", at: null, createdAt: null, author: null }],
+			manifests: [
+				{ name: "@scope/root", path: "package.json" },
+				{ name: "@scope/child", path: "packages/child/package.json" },
+			],
+		},
+	});
+	const publication = await (await machine("factory")).json();
+	expect(publication.data.repos[0]).toMatchObject({
+		dependencies: [{ name: "recovered" }],
+		manifests: [{ name: "@scope/root" }, { name: "@scope/child" }],
+	});
+	const browserStream = await browser("factory/repos/nocoo/recovered/dependencies");
+	expect(browserStream.status).toBe(200);
+	expect(await browserStream.json()).toMatchObject({
+		total: 1,
+		items: [{ title: "recovered", at: null, createdAt: null, author: null }],
+	});
+	expect(
+		sql(`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`).map(
+			(statement) => statement.results,
+		),
+	).toEqual(before);
 });
 
 it("separates default-branch workflow and repository verdict units over saved HTTP data", async () => {

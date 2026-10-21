@@ -1,5 +1,6 @@
 import type { Context } from "hono";
 import { filterFactoryEvents } from "../../lib/factory";
+import { dependencyEvidence } from "../../lib/factory-dependencies";
 import {
 	FACTORY_STREAMS,
 	type FactoryStreamData,
@@ -100,7 +101,15 @@ export async function getFactoryStream(c: Ctx): Promise<Response> {
 				new Date(day).toISOString().slice(0, 10) !== day))
 	)
 		throw new ApiError(400, "validation_failed", "invalid detail filter");
-	const items = filterFactoryEvents(resource?.items ?? [], filter, day);
+	const evidence = resource?.items ?? [];
+	const items = filterFactoryEvents(
+		stream === "dependencies"
+			? dependencyEvidence(evidence, [...(repo.manifests ?? []), ...(resource?.manifests ?? [])])
+					.items
+			: evidence,
+		filter,
+		day,
+	);
 	return jsonOk(
 		{
 			account_id: account.id,

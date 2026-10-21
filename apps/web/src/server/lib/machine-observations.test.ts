@@ -399,3 +399,111 @@ it("preserves immutable run resources, missing coverage and mixed source flags",
 		).unavailable,
 	).toBe(true);
 });
+
+it.each(["run", "legacy"] as const)(
+	"normalizes saved %s dependency evidence without changing source rows or versions",
+	async (source) => {
+		const raw = sqliteFixture();
+		const db = createDb(raw);
+		const snap = factoryFixture();
+		const repo = snap.repos[0];
+		if (!repo) throw new Error("fixture");
+		await db
+			.prepare(
+				"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES(?,'nocoo','fake','fake','t','t')",
+			)
+			.bind(snap.account_id)
+			.run();
+		const save = (kind: string, payload: Record<string, unknown>) =>
+			db.batch(replaceSnapshotStmts(db, snap.account_id, kind, payload, snap.fetched_at));
+		repo.observation = { version: "r", source, window: snap.window, refreshedAt: snap.fetched_at };
+		repo.dependencies = [
+			{ name: "@scope/root", version: "1", path: "package.json#name", url: "root" },
+			{
+				name: "@scope/child",
+				version: "2",
+				path: "packages/child/package.json#name",
+				url: "child",
+			},
+			{
+				name: "@scope/child",
+				version: "workspace:*",
+				path: "package.json#dependencies",
+				url: "self",
+			},
+			{ name: "app", version: "^3", path: "package.json#dependencies", url: "external" },
+		];
+		repo.manifests = [
+			{ name: "@scope/known", version: "1", path: "packages/known/package.json", url: "known" },
+		];
+		const data = {
+			runId: "r",
+			next: null,
+			ranges: [],
+			coverage: { ...repo.coverage.dependencies, status: "complete", fetchedAt: snap.fetched_at },
+			manifests: [],
+			items: [
+				...repo.dependencies,
+				{
+					name: "@scope/known",
+					version: "workspace:*",
+					path: "package.json#dependencies",
+					url: "known",
+				},
+			].map((dependency, index) => ({
+				id: String(index),
+				title: dependency.name,
+				version: dependency.version,
+				path: dependency.path,
+				url: dependency.url,
+				at: "",
+				createdAt: "",
+				author: "",
+				closedAt: null,
+				mergedAt: null,
+				state: "declared",
+			})),
+		};
+		await save("repos", { repos: [{ name_with_owner: repo.name }] });
+		await save("factory", { ...snap });
+		if (source === "run") {
+			await db
+				.prepare(
+					"INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES('r',?,'k','completed','{}','t','t','t')",
+				)
+				.bind(snap.account_id)
+				.run();
+			await db
+				.prepare("INSERT INTO factory_resources VALUES('r',?,'dependencies',?)")
+				.bind(repo.name, JSON.stringify(data))
+				.run();
+		} else await save(`factory:${repo.name}:dependencies`, data);
+		const before = await db.prepare("SELECT kind,payload FROM snapshots ORDER BY kind").all();
+		const resources = await db.prepare("SELECT * FROM factory_resources").all();
+		const stream = await readFactoryResource(db, snap.account_id, repo.name, "dependencies");
+		expect(stream).toMatchObject({
+			sourceVersion: "r",
+			data: {
+				items: [{ title: "app", at: null, createdAt: null, author: null }],
+				manifests: [
+					{ name: "@scope/known", path: "packages/known/package.json" },
+					{ name: "@scope/root", path: "package.json" },
+					{ name: "@scope/child", path: "packages/child/package.json" },
+				],
+			},
+		});
+		const publication = await readObservation(db, snap.account_id, "factory", "all");
+		expect(publication.data.repos).toMatchObject([
+			{
+				dependencies: [{ name: "app" }],
+				manifests: [{ name: "@scope/known" }, { name: "@scope/root" }, { name: "@scope/child" }],
+			},
+		]);
+		expect(
+			(await db.prepare("SELECT kind,payload FROM snapshots ORDER BY kind").all()).results,
+		).toEqual(before.results);
+		expect((await db.prepare("SELECT * FROM factory_resources").all()).results).toEqual(
+			resources.results,
+		);
+	},
+);

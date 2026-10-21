@@ -58,11 +58,12 @@ describe("software factory view model", () => {
 			...repo,
 			name: "nocoo/basalt",
 			id: "two",
-			dependencies: [
+			dependencies: [],
+			manifests: [
 				{
 					name: "@nocoo/basalt",
 					version: "2",
-					path: "package.json#name",
+					path: "packages/ui/package.json",
 					url: "https://github.com/nocoo/basalt/blob/abc/package.json",
 				},
 			],
@@ -259,10 +260,10 @@ it("does not invent dependency targets from ambiguous package names", () => {
 	const r = s.repos[0];
 	if (!r) throw new Error("fixture");
 	r.dependencies = [{ name: "shared", version: "1", path: "package.json#dependencies", url: "" }];
-	const dep = { name: "shared", version: "1", path: "package.json#name", url: "" };
+	const dep = { name: "shared", version: "1", path: "package.json", url: "" };
 	s.repos.push(
-		{ ...r, id: "b", name: "nocoo/b", dependencies: [dep, dep] },
-		{ ...r, id: "c", name: "nocoo/c", dependencies: [dep] },
+		{ ...r, id: "b", name: "nocoo/b", dependencies: [], manifests: [dep, dep] },
+		{ ...r, id: "c", name: "nocoo/c", dependencies: [], manifests: [dep] },
 	);
 	expect(dependencyEdges(s.repos)).toEqual([]);
 	expect(hasFactoryMeasurement(r, "commits")).toBe(false);
