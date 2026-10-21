@@ -1,9 +1,5 @@
 import type { SnapshotFreshness } from "./snapshot-freshness";
 
-/**
- * CI health classification from saved GitHub Actions runs. A stream is one workflow on one lane
- * (the default branch plus release tags, or a single feature branch).
- */
 export type CiRun = {
 	id: number;
 	name: string;
@@ -29,18 +25,17 @@ export type Verdict = "broken" | "flaky" | "healthy" | "idle";
 
 const DAY = 86_400_000;
 export const CI_WINDOW_DAYS = 30;
+export const CI_IDLE_DAYS = 14;
 /** How many of the newest decisive runs describe current stability. */
 export const CI_RECENT = 10;
 /** Consecutive failures that mark a stream as broken rather than flaky. */
 export const CI_BROKEN_STREAK = 2;
-/** A stream failing at least half of enough recent runs is chronically broken even between passes. */
 export const CI_CHRONIC_RATE = 0.5;
 const CI_CHRONIC_MIN = 4;
-const BRANCH_ACTIVE_DAYS = 7;
 const FAILED = new Set(["failure", "timed_out", "action_required", "startup_failure"]);
 
-export function outcomeOf(run: Pick<CiRun, "conclusion">): Outcome {
-	if (run.conclusion === null) return "pending";
+export function outcomeOf(run: Pick<CiRun, "status" | "conclusion">): Outcome {
+	if (run.status !== "completed" || run.conclusion === null) return "pending";
 	if (run.conclusion === "success") return "success";
 	return FAILED.has(run.conclusion) ? "failure" : "other";
 }
@@ -49,7 +44,10 @@ const byNewest = (a: CiRun, b: CiRun) => b.created_at.localeCompare(a.created_at
 
 export function classifyStream(runs: CiRun[], now: string) {
 	const since = Date.parse(now) - CI_WINDOW_DAYS * DAY;
-	const inWindow = [...runs].filter((r) => Date.parse(r.created_at) >= since).sort(byNewest);
+	const sorted = [...runs].sort(byNewest);
+	const lastRun = sorted[0]?.created_at ?? null;
+	const inactive = lastRun !== null && Date.parse(now) - Date.parse(lastRun) >= CI_IDLE_DAYS * DAY;
+	const inWindow = sorted.filter((r) => Date.parse(r.created_at) >= since);
 	const decisive = inWindow.filter((r) => {
 		const o = outcomeOf(r);
 		return o === "success" || o === "failure";
@@ -66,16 +64,19 @@ export function classifyStream(runs: CiRun[], now: string) {
 		if (outcomeOf(recent[i] as CiRun) !== outcomeOf(recent[i - 1] as CiRun)) flips++;
 	const lastSuccess = decisive.find((r) => outcomeOf(r) === "success")?.created_at ?? null;
 	const chronic = recent.length >= CI_CHRONIC_MIN && failures / recent.length >= CI_CHRONIC_RATE;
-	const verdict: Verdict = !recent.length
-		? "idle"
-		: streak >= CI_BROKEN_STREAK || chronic
-			? "broken"
-			: failures
-				? "flaky"
-				: "healthy";
+	const verdict: Verdict =
+		inactive || !recent.length
+			? "idle"
+			: streak > 0 && (streak >= CI_BROKEN_STREAK || chronic)
+				? "broken"
+				: failures
+					? "flaky"
+					: "healthy";
 	const reason =
 		verdict === "idle"
-			? `${CI_WINDOW_DAYS} 天内没有判定结果`
+			? inactive
+				? `${CI_IDLE_DAYS} 天没有运行`
+				: `${CI_WINDOW_DAYS} 天内没有判定结果`
 			: verdict === "broken"
 				? streak >= CI_BROKEN_STREAK
 					? `连续 ${streak} 次失败`
@@ -93,7 +94,7 @@ export function classifyStream(runs: CiRun[], now: string) {
 		streak,
 		failingSince: streak ? (recent[streak - 1] as CiRun).created_at : null,
 		lastSuccess,
-		lastRun: inWindow[0]?.created_at ?? [...runs].sort(byNewest)[0]?.created_at ?? null,
+		lastRun,
 		decided: recent.length,
 		failures,
 		rate: recent.length ? (recent.length - failures) / recent.length : null,
@@ -118,8 +119,6 @@ export function classifyStream(runs: CiRun[], now: string) {
 	};
 }
 export type StreamHealth = ReturnType<typeof classifyStream>;
-
-const isTag = (ref: string) => /^v?\d+\.\d+/.test(ref);
 
 export function releaseHealth(
 	releases: CiRelease[],
@@ -182,29 +181,25 @@ export function workflowName(run: Pick<CiRun, "name" | "event">): string {
 type Scope = "main" | "branch" | "bot";
 const SCOPE_RANK: Record<Scope, number> = { main: 0, branch: 1, bot: 2 };
 
-function laneOf(run: CiRun, main: string) {
-	const ref = run.head_branch ?? main;
+function laneOf(run: CiRun, main: string | undefined) {
 	const workflow = workflowName(run);
-	// Dependabot jobs fail on dependency conflicts, not on the project's own pipeline.
 	const scope: Scope =
-		workflow === BOT_WORKFLOW ? "bot" : ref === main || isTag(ref) ? "main" : "branch";
-	return { workflow, scope, branch: scope === "branch" ? ref : main };
+		workflow === BOT_WORKFLOW ? "bot" : main && run.head_branch === main ? "main" : "branch";
+	return { workflow, scope, branch: scope === "bot" ? (main ?? null) : run.head_branch };
 }
 
 function repoSummary(entry: CiEntry, own: ReturnType<typeof repoStreams>, now: string) {
-	const project = own.filter((s) => s.scope !== "bot");
-	const count = (v: Verdict, scope?: Scope) =>
-		project.filter((s) => s.verdict === v && (!scope || s.scope === scope)).length;
-	const verdict: Verdict | "none" = !entry.runs.length
+	const main = own.filter((s) => s.scope === "main");
+	const count = (v: Verdict) => main.filter((s) => s.verdict === v).length;
+	const verdict: Verdict | "none" = !main.length
 		? "none"
-		: count("broken", "main")
+		: count("broken")
 			? "broken"
-			: count("flaky") || count("broken")
+			: count("flaky")
 				? "flaky"
 				: count("healthy")
 					? "healthy"
 					: "idle";
-	const main = project.filter((s) => s.scope === "main");
 	const pipeline =
 		main
 			.filter((s) => /release|publish|deploy|cd\b/i.test(s.workflow))
@@ -214,15 +209,22 @@ function repoSummary(entry: CiEntry, own: ReturnType<typeof repoStreams>, now: s
 	return {
 		repo: entry.repo,
 		verdict,
-		broken: count("broken"),
-		flaky: count("flaky"),
-		healthy: count("healthy"),
-		idle: count("idle"),
-		bot: own.length - project.length,
-		streams: project.length,
+		brokenWorkflows: count("broken"),
+		flakyWorkflows: count("flaky"),
+		healthyWorkflows: count("healthy"),
+		idleWorkflows: count("idle"),
+		totalWorkflows: main.length,
+		nonDefaultBranchStreams: own.filter((s) => s.scope === "branch").length,
+		nonDefaultBranchFailures: entry.runs.filter(
+			(r) =>
+				laneOf(r, entry.default_branch).scope === "branch" &&
+				outcomeOf(r) === "failure" &&
+				Date.parse(r.created_at) >= Date.parse(now) - CI_WINDOW_DAYS * DAY,
+		).length,
+		botStreams: own.filter((s) => s.scope === "bot").length,
 		rate: decided ? (decided - failed) / decided : null,
 		lastRun:
-			project
+			main
 				.map((s) => s.lastRun ?? "")
 				.sort()
 				.at(-1) || null,
@@ -233,28 +235,22 @@ function repoSummary(entry: CiEntry, own: ReturnType<typeof repoStreams>, now: s
 }
 
 function repoStreams(entry: CiEntry, now: string) {
-	const main = entry.default_branch ?? "main";
 	const lanes = new Map<
 		string,
-		{ workflow: string; branch: string; scope: Scope; runs: CiRun[] }
+		{ workflow: string; branch: string | null; scope: Scope; runs: CiRun[] }
 	>();
 	for (const run of entry.runs) {
-		const lane = laneOf(run, main);
-		const key = `${lane.workflow}\u0000${lane.branch}`;
+		const lane = laneOf(run, entry.default_branch);
+		const key = JSON.stringify([lane.workflow, lane.scope, lane.branch]);
 		const slot = lanes.get(key) ?? { ...lane, runs: [] };
 		slot.runs.push(run);
 		lanes.set(key, slot);
 	}
-	return [...lanes.values()].flatMap(({ runs, ...lane }) => {
-		const health = classifyStream(runs, now);
-		// Feature branches only matter while active and failing; green or abandoned ones are noise.
-		const hidden =
-			lane.scope === "branch" &&
-			(health.verdict === "healthy" ||
-				health.verdict === "idle" ||
-				Date.parse(health.lastRun ?? "") < Date.parse(now) - BRANCH_ACTIVE_DAYS * DAY);
-		return hidden ? [] : [{ repo: entry.repo, ...lane, ...health }];
-	});
+	return [...lanes.values()].map(({ runs, ...lane }) => ({
+		repo: entry.repo,
+		...lane,
+		...classifyStream(runs, now),
+	}));
 }
 
 export function ciReport(entries: CiEntry[], now: string) {
@@ -267,13 +263,12 @@ export function ciReport(entries: CiEntry[], now: string) {
 	}));
 	const dayIndex = new Map(daily.map((d, i) => [d.x, i]));
 	const streams = [];
-	const repos = [];
+	const repos: ReturnType<typeof repoSummary>[] = [];
 	for (const entry of entries) {
-		const main = entry.default_branch ?? "main";
 		for (const run of entry.runs) {
 			const slot = daily[dayIndex.get(run.created_at.slice(0, 10)) ?? -1];
 			const o = outcomeOf(run);
-			if (slot && o !== "pending" && laneOf(run, main).scope !== "bot") slot[o]++;
+			if (slot && o !== "pending" && laneOf(run, entry.default_branch).scope !== "bot") slot[o]++;
 		}
 		const own = repoStreams(entry, now);
 		repos.push(repoSummary(entry, own, now));
@@ -286,27 +281,38 @@ export function ciReport(entries: CiEntry[], now: string) {
 			b.streak - a.streak ||
 			a.repo.localeCompare(b.repo) ||
 			a.workflow.localeCompare(b.workflow) ||
-			a.branch.localeCompare(b.branch),
+			(a.branch ?? "").localeCompare(b.branch ?? ""),
 	);
 	repos.sort(
 		(a, b) =>
-			RANK[a.verdict] - RANK[b.verdict] || b.broken - a.broken || a.repo.localeCompare(b.repo),
+			RANK[a.verdict] - RANK[b.verdict] ||
+			b.brokenWorkflows - a.brokenWorkflows ||
+			a.repo.localeCompare(b.repo),
 	);
-	const project = streams.filter((s) => s.scope !== "bot");
-	const tally = (v: Verdict) => project.filter((s) => s.verdict === v).length;
+	const main = streams.filter((s) => s.scope === "main");
+	const tally = (v: Verdict) => main.filter((s) => s.verdict === v).length;
+	const repoTally = (v: Verdict | "none") => repos.filter((r) => r.verdict === v).length;
 	return {
 		streams,
 		repos,
 		daily,
 		totals: {
-			broken: tally("broken"),
-			flaky: tally("flaky"),
-			recurring: project.filter((s) => s.recurring).length,
-			healthy: tally("healthy"),
-			idle: tally("idle"),
-			bot: streams.length - project.length,
-			repos: entries.length,
-			truncated: entries.filter((e) => e.truncated).length,
+			brokenWorkflows: tally("broken"),
+			flakyWorkflows: tally("flaky"),
+			recurringWorkflows: main.filter((s) => s.recurring).length,
+			healthyWorkflows: tally("healthy"),
+			idleWorkflows: tally("idle"),
+			brokenRepos: repoTally("broken"),
+			flakyRepos: repoTally("flaky"),
+			healthyRepos: repoTally("healthy"),
+			idleRepos: repoTally("idle"),
+			unknownRepos: repoTally("none"),
+			totalRepos: repos.length,
+			totalWorkflows: main.length,
+			nonDefaultBranchStreams: streams.filter((s) => s.scope === "branch").length,
+			nonDefaultBranchFailures: repos.reduce((n, r) => n + r.nonDefaultBranchFailures, 0),
+			botStreams: streams.filter((s) => s.scope === "bot").length,
+			truncatedRepos: entries.filter((e) => e.truncated).length,
 		},
 	};
 }

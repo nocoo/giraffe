@@ -200,6 +200,18 @@ describe("focus ranking", () => {
 });
 
 describe("focus findings", () => {
+	it("never promotes recurring non-default branch failures into repository attention", () => {
+		const src = sources({
+			rows: [row("nocoo/branch")],
+			ci: {
+				repos: [ciRepo("nocoo/branch")],
+				streams: [stream("nocoo/branch", { scope: "branch", verdict: "flaky", recurring: true })],
+			},
+		});
+		expect(focusRanking(src)).toEqual([]);
+		expect(focusFindings(src)).toEqual([]);
+	});
+
 	it("reports blocked delivery, concentration, dependency load and coverage gaps", () => {
 		const repos = ["a", "b", "c", "d", "e", "f"].map((n) => `nocoo/${n}`);
 		const issues = [

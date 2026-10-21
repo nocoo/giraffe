@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { type CiRun, ciReport, classifyStream, releaseHealth, workflowName } from "./ci-health";
 
 const NOW = "2026-09-18T12:00:00Z";
@@ -102,12 +102,12 @@ describe("classify one workflow stream", () => {
 		);
 		expect(old.verdict).toBe("healthy");
 		const idle = classifyStream([run("failure", "2026-07-01T00:00:00Z")], NOW);
-		expect(idle).toMatchObject({ verdict: "idle", reason: "30 天内没有判定结果" });
+		expect(idle).toMatchObject({ verdict: "idle", reason: "14 天没有运行" });
 		const pending = classifyStream([run(null, "2026-09-18T10:00:00Z")], NOW);
 		expect(pending).toMatchObject({ verdict: "idle", pending: 1 });
 	});
 
-	it("treats chronic failure as broken even when the latest run passed", () => {
+	it("treats a latest completed success as recovered despite chronic historical failure", () => {
 		const outcomes = [
 			"success",
 			"failure",
@@ -123,10 +123,12 @@ describe("classify one workflow stream", () => {
 			NOW,
 		);
 		expect(s).toMatchObject({
-			verdict: "broken",
+			verdict: "flaky",
 			streak: 0,
 			failures: 5,
-			reason: "近 8 次失败 5 次",
+			reason: "近 8 次判定失败 5 次",
+			brokenBy: null,
+			recurring: true,
 		});
 		const few = classifyStream(
 			[
@@ -146,6 +148,45 @@ describe("classify one workflow stream", () => {
 			NOW,
 		);
 		expect(thin.verdict).toBe("flaky");
+	});
+
+	it("uses only completed runs as decisive evidence during reruns", () => {
+		const s = classifyStream(
+			[
+				run("failure", "2026-09-18T11:00:00Z", { status: "in_progress" }),
+				run("success", "2026-09-18T10:00:00Z"),
+				run("failure", "2026-09-17T10:00:00Z"),
+				run("failure", "2026-09-16T10:00:00Z"),
+			],
+			NOW,
+		);
+		expect(s).toMatchObject({ verdict: "flaky", streak: 0, decided: 3, failures: 2, pending: 1 });
+		expect(s.recent[0]?.outcome).toBe("pending");
+	});
+
+	it("keeps chronic failure broken only while the latest decisive run is failing", () => {
+		const s = classifyStream(
+			["failure", "success", "failure", "failure"].map((outcome, i) =>
+				run(outcome, `2026-09-${18 - i}T10:00:00Z`),
+			),
+			NOW,
+		);
+		expect(s).toMatchObject({ verdict: "broken", streak: 1, brokenBy: "chronic", failures: 3 });
+	});
+
+	it("becomes idle at exactly 14 days without a run, not just after the 30-day window", () => {
+		const older = run("failure", "2026-09-03T12:00:00Z");
+		const boundary = classifyStream([run("failure", "2026-09-04T12:00:00Z"), older], NOW);
+		expect(boundary).toMatchObject({
+			verdict: "idle",
+			reason: "14 天没有运行",
+			brokenBy: null,
+			failures: 2,
+		});
+		expect(classifyStream([run("failure", "2026-09-04T12:00:00.001Z"), older], NOW).verdict).toBe(
+			"broken",
+		);
+		expect(classifyStream([run("success", "2026-09-04T12:00:00Z")], NOW).verdict).toBe("idle");
 	});
 
 	it("says when a single failed run is all the evidence there is", () => {
@@ -179,6 +220,7 @@ describe("workflow identity", () => {
 				{
 					repo: "a/bot",
 					fetched_at: NOW,
+					default_branch: "main",
 					truncated: false,
 					runs: [
 						run("failure", "2026-09-18T10:00:00Z", { name: "x - Update #1", event: "dynamic" }),
@@ -193,8 +235,12 @@ describe("workflow identity", () => {
 			["Dependabot 更新任务", "bot", "broken"],
 			["CI", "main", "healthy"],
 		]);
-		expect(report.repos[0]).toMatchObject({ verdict: "healthy", broken: 0, bot: 1 });
-		expect(report.totals.broken).toBe(0);
+		expect(report.repos[0]).toMatchObject({
+			verdict: "healthy",
+			brokenWorkflows: 0,
+			botStreams: 1,
+		});
+		expect(report.totals.brokenWorkflows).toBe(0);
 	});
 });
 
@@ -205,6 +251,7 @@ describe("repository and account report", () => {
 				{
 					repo: "a/one",
 					fetched_at: NOW,
+					default_branch: "main",
 					truncated: false,
 					runs: [
 						run("failure", "2026-09-18T10:00:00Z", { name: "Release" }),
@@ -217,6 +264,7 @@ describe("repository and account report", () => {
 				{
 					repo: "a/two",
 					fetched_at: NOW,
+					default_branch: "main",
 					truncated: true,
 					runs: [run("success", "2026-09-18T10:00:00Z")],
 				},
@@ -235,6 +283,7 @@ describe("repository and account report", () => {
 				{
 					repo: "a/g",
 					fetched_at: NOW,
+					default_branch: "main",
 					truncated: false,
 					runs: [
 						run("success", "2026-09-18T10:00:00Z", { head_branch: "chore/deps" }),
@@ -244,19 +293,26 @@ describe("repository and account report", () => {
 			],
 			NOW,
 		);
-		expect(green.streams.map((s) => s.branch)).toEqual(["main"]);
-		expect(report.repos.map((r) => [r.repo, r.verdict, r.broken, r.flaky])).toEqual([
-			["a/one", "broken", 1, 1],
+		expect(green.streams.map((s) => s.branch)).toEqual(["main", "chore/deps"]);
+		expect(
+			report.repos.map((r) => [r.repo, r.verdict, r.brokenWorkflows, r.flakyWorkflows]),
+		).toEqual([
+			["a/one", "broken", 1, 0],
 			["a/two", "healthy", 0, 0],
 			["a/none", "none", 0, 0],
 		]);
 		expect(report.totals).toMatchObject({
-			broken: 1,
-			flaky: 1,
-			healthy: 2,
-			idle: 0,
-			repos: 3,
-			truncated: 1,
+			brokenWorkflows: 1,
+			flakyWorkflows: 0,
+			healthyWorkflows: 2,
+			idleWorkflows: 0,
+			brokenRepos: 1,
+			healthyRepos: 1,
+			unknownRepos: 1,
+			totalRepos: 3,
+			truncatedRepos: 1,
+			nonDefaultBranchStreams: 1,
+			nonDefaultBranchFailures: 1,
 		});
 		expect(report.daily.at(-1)).toMatchObject({ x: "2026-09-18", success: 2, failure: 2 });
 		expect(report.daily).toHaveLength(30);
@@ -264,12 +320,135 @@ describe("repository and account report", () => {
 });
 
 describe("report edge cases", () => {
+	afterEach(() => vi.useRealTimers());
+
+	it("does not infer a default branch from main, tag names or null refs", () => {
+		const report = ciReport(
+			[
+				...([undefined, "", "trunk"] as const).map((branch, i) => ({
+					repo: `a/unknown-${i}`,
+					fetched_at: NOW,
+					truncated: false,
+					...(branch === undefined ? {} : { default_branch: branch }),
+					runs: ["main", "v1.2.3", null].flatMap((head_branch) => [
+						run("failure", "2026-09-18T10:00:00Z", { head_branch }),
+						run("failure", "2026-09-17T10:00:00Z", { head_branch }),
+					]),
+				})),
+			],
+			NOW,
+		);
+		expect(report.streams).toHaveLength(9);
+		expect(report.streams.every((s) => s.scope === "branch")).toBe(true);
+		expect(report.repos.every((r) => r.verdict === "none")).toBe(true);
+		expect(report.totals).toMatchObject({
+			brokenWorkflows: 0,
+			brokenRepos: 0,
+			unknownRepos: 3,
+			totalWorkflows: 0,
+			nonDefaultBranchStreams: 9,
+			nonDefaultBranchFailures: 18,
+		});
+	});
+
+	it("counts default-branch workflows, repositories and observational failed runs separately", () => {
+		const report = ciReport(
+			[
+				{
+					repo: "a/broken",
+					fetched_at: NOW,
+					default_branch: "main",
+					truncated: false,
+					runs: ["CI", "Build"].flatMap((name) => [
+						run("failure", "2026-09-18T10:00:00Z", { name }),
+						run("failure", "2026-09-17T10:00:00Z", { name }),
+					]),
+				},
+				{
+					repo: "a/healthy",
+					fetched_at: NOW,
+					default_branch: "main",
+					truncated: false,
+					runs: [
+						run("success", "2026-09-18T10:00:00Z"),
+						...Array.from({ length: 3 }, (_, i) =>
+							run("failure", `2026-09-${17 - i}T10:00:00Z`, { head_branch: "deleted/pr" }),
+						),
+						run("failure", "2026-07-01T00:00:00Z", { head_branch: "deleted/pr" }),
+						run("failure", "2026-09-18T11:00:00Z", {
+							head_branch: "deleted/pr",
+							status: "queued",
+						}),
+					],
+				},
+			],
+			NOW,
+		);
+		expect(report.repos.find((r) => r.repo === "a/healthy")).toMatchObject({
+			verdict: "healthy",
+			brokenWorkflows: 0,
+			totalWorkflows: 1,
+			nonDefaultBranchStreams: 1,
+			nonDefaultBranchFailures: 3,
+		});
+		expect(report.totals).toEqual({
+			brokenWorkflows: 2,
+			flakyWorkflows: 0,
+			healthyWorkflows: 1,
+			idleWorkflows: 0,
+			recurringWorkflows: 0,
+			brokenRepos: 1,
+			flakyRepos: 0,
+			healthyRepos: 1,
+			idleRepos: 0,
+			unknownRepos: 0,
+			totalRepos: 2,
+			totalWorkflows: 3,
+			nonDefaultBranchStreams: 1,
+			nonDefaultBranchFailures: 3,
+			botStreams: 0,
+			truncatedRepos: 0,
+		});
+		for (const old of [
+			"broken",
+			"flaky",
+			"healthy",
+			"idle",
+			"recurring",
+			"repos",
+			"bot",
+			"truncated",
+		])
+			expect(report.totals).not.toHaveProperty(old);
+		for (const old of ["broken", "flaky", "healthy", "idle", "streams", "bot"])
+			expect(report.repos[0]).not.toHaveProperty(old);
+	});
+
+	it("uses the saved observation reference instead of the GET wall clock", () => {
+		const entries = [
+			{
+				repo: "a/one",
+				fetched_at: NOW,
+				default_branch: "main",
+				truncated: false,
+				runs: [run("failure", "2026-09-18T10:00:00Z"), run("failure", "2026-09-17T10:00:00Z")],
+			},
+		];
+		vi.useFakeTimers();
+		vi.setSystemTime("2026-09-18T12:00:00Z");
+		const before = ciReport(entries, NOW);
+		vi.setSystemTime("2027-01-01T00:00:00Z");
+		expect(ciReport(entries, NOW)).toEqual(before);
+		expect(before.repos[0]?.verdict).toBe("broken");
+	});
+
 	it("keeps repository and stream order stable and tolerates idle-only and odd refs", () => {
 		const report = ciReport(
 			[
 				{
 					repo: "b/idle",
 					fetched_at: NOW,
+					default_branch: "main",
 					truncated: false,
 					runs: [run("success", "2026-07-01T00:00:00Z")],
 				},
@@ -290,6 +469,7 @@ describe("report edge cases", () => {
 				{
 					repo: "c/branch-only",
 					fetched_at: NOW,
+					default_branch: "main",
 					truncated: false,
 					runs: [run("failure", "2026-09-18T10:00:00Z", { head_branch: "wip" })],
 				},
@@ -300,14 +480,16 @@ describe("report edge cases", () => {
 			["a/multi", "Build", "fix/a"],
 			["a/multi", "Build", "fix/b"],
 			["c/branch-only", "CI", "wip"],
-			["a/multi", "Build", "trunk"],
 			["a/multi", "Lint", "trunk"],
+			["a/multi", "Build", null],
+			["a/multi", "Build", "v1.2.0"],
 			["b/idle", "CI", "main"],
+			["a/multi", "Build", "main"],
 		]);
 		expect(report.repos.map((r) => [r.repo, r.verdict])).toEqual([
-			["a/multi", "flaky"],
-			["c/branch-only", "flaky"],
+			["a/multi", "healthy"],
 			["b/idle", "idle"],
+			["c/branch-only", "none"],
 		]);
 		expect(report.repos.find((r) => r.repo === "b/idle")?.lastRun).toBe("2026-07-01T00:00:00Z");
 		expect(report.daily.every((d) => d.x >= "2026-08-20")).toBe(true);
@@ -316,12 +498,14 @@ describe("report edge cases", () => {
 				{
 					repo: "z/b",
 					fetched_at: NOW,
+					default_branch: "main",
 					truncated: false,
 					runs: [run("success", "2026-09-18T10:00:00Z")],
 				},
 				{
 					repo: "z/a",
 					fetched_at: NOW,
+					default_branch: "main",
 					truncated: false,
 					runs: [run("success", "2026-09-18T10:00:00Z")],
 				},

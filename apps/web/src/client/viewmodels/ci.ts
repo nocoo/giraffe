@@ -10,14 +10,14 @@ export type CiFilters = { verdict: string; repo: string; query: string };
 export const loadCi = (scope = getRepositoryScope()) =>
 	loadKind<CiReportResponse>(scopedResource("ci", scope));
 
-/** Act now: consecutive failures. Watch: failures that recovered. Bot jobs are reported apart. */
 export function ciBuckets(streams: CiStream[]) {
-	const project = streams.filter((s) => s.scope !== "bot");
+	const project = streams.filter((s) => s.scope === "main");
 	return {
 		act: project.filter((s) => s.verdict === "broken"),
 		watch: project.filter((s) => s.verdict === "flaky"),
 		stable: project.filter((s) => s.verdict === "healthy"),
 		idle: project.filter((s) => s.verdict === "idle").length,
+		branch: streams.filter((s) => s.scope === "branch"),
 		bot: streams.filter((s) => s.scope === "bot"),
 	};
 }

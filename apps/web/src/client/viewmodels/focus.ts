@@ -164,7 +164,7 @@ export function focusRanking(src: FocusSources, limit = FOCUS_LIMIT): FocusRepo[
 	const pulls = group(src.pulls, (r) => r.name_with_owner);
 	const ciRepos = new Map((src.ci?.repos ?? []).map((r) => [key(r.repo), r]));
 	const streams = group(
-		(src.ci?.streams ?? []).filter((s) => s.scope !== "bot"),
+		(src.ci?.streams ?? []).filter((s) => s.scope === "main"),
 		(s) => s.repo,
 	);
 	const ranked: FocusRepo[] = [];
