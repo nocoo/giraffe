@@ -99,12 +99,16 @@ export async function repositoryWrites(
 		.bind(lease.run.account_id, name)
 		.first<{ payload: string }>();
 	const old = oldState ? (JSON.parse(oldState.payload) as RepoRefreshState) : null;
+	const parseLimited =
+		repo?.coverage.dependencies.status === "limited" &&
+		repo.coverage.dependencies.reason_code === "dependency_parse_unsupported";
 	// An incomplete refresh must never replace a previously complete stream with less evidence.
 	const regression =
 		repo &&
 		previous &&
 		FACTORY_STREAMS.some(
 			(s) =>
+				(s === "dependencies" && parseLimited && previous.coverage[s].status === "limited") ||
 				(previous.coverage[s].status === "complete" && repo.coverage[s].status !== "complete") ||
 				(previous.coverage[s].status === "limited" &&
 					previous.coverage[s].observed > 0 &&
@@ -115,6 +119,16 @@ export async function repositoryWrites(
 	const accepted = error || regression ? null : repo;
 	const steps = lease.run.steps.filter((s) => s.repo === name);
 	const state: RepoRefreshState = {
+		...(!accepted && parseLimited && repo
+			? {
+					dependencyLimit: {
+						reason_code: "dependency_parse_unsupported" as const,
+						reason: repo.coverage.dependencies.reason,
+					},
+				}
+			: !accepted && old?.dependencyLimit
+				? { dependencyLimit: old.dependencyLimit }
+				: {}),
 		observation: accepted?.observation ?? old?.observation,
 		repo: name,
 		version: accepted?.observation?.version ?? old?.version ?? null,
@@ -233,13 +247,22 @@ export async function publicationWrites(
 		throw new ApiError(409, "snapshot_missing", "no catalog or committed factory data");
 	const result = await db
 		.prepare(
-			"SELECT v.payload FROM factory_repo_versions v JOIN factory_repo_state s ON s.account_id=v.account_id AND s.repo=v.repo AND s.version=v.version WHERE v.account_id=? ORDER BY v.refreshed_at,v.repo",
+			"SELECT v.payload,s.payload AS state FROM factory_repo_versions v JOIN factory_repo_state s ON s.account_id=v.account_id AND s.repo=v.repo AND s.version=v.version WHERE v.account_id=? ORDER BY v.refreshed_at,v.repo",
 		)
 		.bind(run.account_id)
-		.all<{ payload: string }>();
-	const committed = result.results.map((r) =>
-		normalizeRepoDependencies(JSON.parse(r.payload) as FactoryRepo),
-	);
+		.all<{ payload: string; state: string }>();
+	const committed = result.results.map((r) => {
+		const repo = normalizeRepoDependencies(JSON.parse(r.payload) as FactoryRepo);
+		const state = JSON.parse(r.state) as RepoRefreshState;
+		if (state.dependencyLimit)
+			repo.coverage.dependencies = {
+				...repo.coverage.dependencies,
+				...state.dependencyLimit,
+				status: "limited",
+				retained: true,
+			};
+		return repo;
+	});
 	for (const old of snapshot.repos) {
 		if (!old.observation)
 			old.observation = {

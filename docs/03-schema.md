@@ -24,6 +24,41 @@ GitHub 字段名跟 REST/GraphQL 对齐（`login`、`nameWithOwner`、`stargazer
 
 ## 2. 表
 
+### Analysis report read index (v0.17.1)
+
+Migration `0015_analysis_reports.sql` adds only the repeatable partial expression
+index `agent_analysis_recent` on existing `agent_resources` rows where
+`collection='reports' AND type='github-analysis'`. Its columns are account ID,
+the JSON-encoded scope/repository/domain tuple, guarded UTC whole-second epoch
+descending, normalized fractional digits descending, and `id DESC`. Epoch
+conversion consumes only the first 19 datetime characters, then subtracts the
+signed `HH:MM` offset explicitly (including Zod's full +/-23:59 range). Fractions
+never enter SQLite date conversion, avoiding rounding carry at `.9999`. Fraction
+digits remain text with trailing zeros trimmed, leading zeros retained and empty
+text for zero/no fraction; binary order preserves arbitrary fractional precision.
+Timezone/fraction shape checks keep malformed values null without constraining
+generic writes. Every JSON extraction uses
+`CASE WHEN json_valid(payload) THEN payload END` as its input, including key seeks
+and final ordering. JSON1-uninspectable payloads (such as schema-accepted deeply
+nested extensions) keep their rows and generic CRUD support; their scope/domain/
+time index components become null. The date guard excludes relative/nondeterministic time keywords without
+rejecting generic JSON writes; full report validation remains client-side. The encoded
+key preserves the exact scope/repository/domain tuple, including nulls, without
+delimiter collisions. Valid generation timestamps compare as exact instants;
+ties use binary descending IDs, and missing/nonmatching/unparseable times sort last.
+
+The browser's dedicated projection seeks each successive key and its newest three
+row IDs in one statement, then hydrates only those payloads. It does not scan or
+rank the full history, rebuild tables, rewrite payloads or remove resources.
+Statuses are not filtered. Generic machine lists keep their existing cursor and
+ID ordering. See [the projection contract](api.md#analysis-report-projection-and-retention).
+
+Apply the index before deploying the reader. Code rollback leaves the index in
+place; old-column CRUD continues to work. Regression coverage checks repeated
+application, exact row preservation, old CRUD writes, foreign keys/integrity, and
+the real SQLite plan/bytecode with 6,001 and 60,001 historical report rows. The prior content-metadata
+migration's local backup/rollback verifier also applies this migration.
+
 ### `refresh_schedule_times` (v0.16.0)
 
 Migration `0013_refresh_schedule_times.sql` adds an account-cascaded side table

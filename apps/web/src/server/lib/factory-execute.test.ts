@@ -152,6 +152,69 @@ it("finishes expected unavailable streams without a partial publication", async 
 	expect((await publishedFactory(createDb(env.DB), snap.account_id))?.status).toBe("complete");
 });
 
+it.each([false, true])(
+	"keeps dependency safe-parse limits separate from genuine failures (%s)",
+	async (failure) => {
+		const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] });
+		const base = vi.mocked(fetch).getMockImplementation();
+		if (!base) throw new Error("fixture");
+		let parsed = false;
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (url: string, init: RequestInit) => {
+				if (String(init?.body).includes("object(expression")) {
+					parsed = true;
+					return Response.json({ data: { repository: { ci: { text: "jobs: *unsupported" } } } });
+				}
+				return failure && parsed && url.includes("/releases")
+					? Response.json({ invalid: true })
+					: base(url, init);
+			}),
+		);
+		const run = await drive(env);
+		expect(run?.steps.find((step) => step.kind === "dependencies")).toMatchObject({
+			status: "limited",
+			error: "dependency_parse_unsupported",
+		});
+		expect(run?.status).toBe(failure ? "partial" : "completed");
+		const db = createDb(env.DB);
+		expect((await publishedFactory(db, snap.account_id))?.status).toBe(
+			failure ? "partial" : "complete",
+		);
+		expect((await listRuns(db, snap.account_id))[0]?.counts).toMatchObject({
+			limited: 1,
+			failed: failure ? 1 : 0,
+		});
+	},
+);
+
+it("still fails dependency capacity truncation instead of treating it as a safe-parse limit", async () => {
+	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] });
+	const base = vi.mocked(fetch).getMockImplementation();
+	if (!base) throw new Error("fixture");
+	const text = JSON.stringify({
+		dependencies: Object.fromEntries(Array.from({ length: 5001 }, (_, i) => [`dep-${i}`, "1"])),
+	});
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async (url: string, init: RequestInit) =>
+			String(init?.body).includes("object(expression")
+				? Response.json({ data: { repository: { package: { text } } } })
+				: base(url, init),
+		),
+	);
+	const run = await drive(env);
+	expect(run?.steps.find((step) => step.kind === "dependencies")).toMatchObject({
+		status: "failed",
+		error: "coverage_limited",
+	});
+	expect(run?.status).toBe("partial");
+	expect((await listRuns(createDb(env.DB), snap.account_id))[0]?.counts).toMatchObject({
+		limited: 0,
+		failed: 1,
+	});
+});
+
 it.each([
 	["issues", "graphql"],
 	["issues", "http"],

@@ -1,4 +1,4 @@
-import type { FactoryWindow } from "../../lib/factory-types";
+import type { FactoryCoverage, FactoryWindow } from "../../lib/factory-types";
 import { prSnapshot } from "../../lib/pull-request";
 
 export type ContentMetadata = { hash: string; version?: string; fullVersion?: string };
@@ -45,6 +45,12 @@ export async function composeContent(
 ) {
 	if (Object.values(inputs).some((value) => value === null)) return null;
 	return contentVersion("composite", { inputs, selection });
+}
+
+export function factoryStreamContent(saved: string | null, published: FactoryCoverage) {
+	return published.retained
+		? composeContent({ evidence: saved }, { coverage: coverage(published) })
+		: saved;
 }
 
 function omit(value: unknown, keys: string[]): Record<string, unknown> {

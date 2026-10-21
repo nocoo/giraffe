@@ -218,9 +218,16 @@ access loss during pagination remain failures, not expected absence.
   new catalog repos without proven observations count as missing. `fetchedAt` is
   the newest selected time, not a guarantee that every repo is current. `/sources`
   account entries use the same projection.
-- Factory freshness counts selected catalog repos, including missing publications,
-  and uses only immutable repository observation times. Inventory counters remain
-  historical collection metadata. Default/`scope=all` preserves the saved account
+- Factory freshness counts enabled published repos still in the selected catalog,
+  not non-owned/catalog-only or statistics-disabled archived/fork entries. Missing
+  valid observation times within this set still count as missing. Machine lists
+  remain statistics-unfiltered. `/factory` and `/sources`'s `account:factory` agree
+  and return `truncated:true` for incomplete publication inventory, independently
+  of missing counts. Their composite content hash includes enabled published
+  identities, total/missing and combined saved/inventory truncation; a saved
+  `truncated:true` never becomes false merely because inventory is complete.
+  Versions/windows stay intact.
+  Inventory counters remain historical metadata. Default/`scope=all` preserves the saved account
   calendar's exact 90 `days[]`, totals, status and `contributionObservation`.
   Only `scope=starred` excludes the unprojectable calendar (`contribution:null`,
   `contributionExcluded:true`, `contributionStatus:"unavailable"`, no provenance).
@@ -272,6 +279,13 @@ access loss during pagination remain failures, not expected absence.
   source HEAD, job order and a single job's ref are not identity components.
   Collection scans job-level reusable workflows and step actions, not general
   YAML flow objects, aliases or expression-valued `uses`.
+  Job/step `if:` values support plain multiline continuations and `|`/`>` block
+  scalars, including chomping/indent indicators. Condition bodies never supply
+  job keys or dependency references; expressions are not evaluated. Only block
+  scalar bodies ignore key-like text. Plain headers and every continuation reject
+  unsupported collection starts, mapping/sequence-like lines and continuations
+  after comments end the scalar. Empty/comment-only headers can still lead to
+  a plain condition, including after blank lines.
   The document root may be uniformly indented. Present files whose job mappings
   or references cannot be parsed safely yield `limited` coverage with reason
   `Dependency manifests cannot be parsed safely; evidence unavailable`; never
@@ -283,7 +297,17 @@ access loss during pagination remain failures, not expected absence.
   A `uses` key outside the direct job/step property position (such as `env.uses`
   or `with.uses`) also yields limited coverage, never a guessed dependency ID.
   Stronger published evidence keeps its original
-  version/window. Absent files and parsed run-only jobs still permit a real zero.
+  version/window/time. New publications freeze safe-parse limitations with
+  `reason_code:dependency_parse_unsupported`, `coverage.status:limited`,
+  `retained:true` and `truncated:true` when retaining prior data. Items/manifests,
+  observed count and evidence times stay original; an empty limited baseline is
+  not zero. Browser/machine streams and `/sources` share this frozen coverage,
+  never mutable GET/run-state overlays. For retained coverage, content hashes
+  compose the old stored hash with semantic published coverage; missing/mismatched
+  metadata stays null. Full evidence versions remain original, so check current
+  completeness even when versions match. Repeated identical limits keep hashes
+  and evidence age; successful accepted publication clears the diagnostic.
+  Absent files and parsed run-only jobs still permit a real zero.
   Equal legacy saved records collapse without inventing job keys; a remaining
   singleton keeps its old ID. Distinct legacy refs use `B#ref=<encoded-ref>`;
   multiple refs in one known job use `B#job=<encoded-job>&ref=<encoded-ref>`.
@@ -651,10 +675,14 @@ key means new work. Acceptance is not publication success: poll run status and
 inspect source versions/coverage. Terminal control is unchanged; resume preserves
 backoff deadlines. Run list omits checkpoints and older inactive step history.
 
-Every listed run includes `counts:{total,success,failed,unavailable,skipped}`, even
+Every listed run includes `counts:{total,success,failed,unavailable,limited,skipped}`, even
 when its steps are compacted. Step status adds terminal `unavailable` for expected
-feature/access absence; it does not make the run partial. Limits, malformed data
-and exhausted retries still fail. For matching run IDs, factory publication
+feature/access absence; it does not make the run partial. Dependency safe-parse
+limitations use terminal `limited` / `error:dependency_parse_unsupported` and add
+to `counts.limited` and completed progress, not failed/unavailable counts or run
+partial status. Only safe parsing gets this exception: capacity truncation,
+interrupted pagination/access loss, malformed upstream data and exhausted retries
+still fail. For matching run IDs, factory publication
 `status:complete|partial` matches run `completed|partial`; an unsuccessful newer
 attempt retains the older publication. Completion does not prove complete coverage.
 Paginated lists distinguish explicit first-page denial from incomplete collection:
@@ -704,17 +732,44 @@ There is no application requests-per-second quota, per-token throttle, standard
 rate-limit headers or documented total resource-count quota. A 25-repo bot batch
 is a local budget choice, not an API limit.
 
-**Separate UI ceiling:** the analysis reader fetches at most 50 pages of 100 rows
-for each account/type query. More than 5,000 `github-analysis` report rows causes
-the whole analysis load to fail, even though POST can still succeed. The reader
-does not filter reports by status or repository, so all such rows count; its
-`grok-bot-run` records query has the same ceiling. Track growth and alert before
-this limit. Request explicit approval for a reviewed historical-report retention
-plan, preserving needed current/child reports and audit history; never silently
-delete existing records or treat an analysis-run request as retention permission.
-There is no server-side automatic report cleanup. With explicit retention
-authorization, GET the current revision then DELETE
-`/agent/reports/:id?revision=N`; expect 204 and reconcile revision conflicts.
+**Analysis read rule:** the browser uses its Access-protected, active-account
+`GET /api/agent/accounts/A/analysis/reports` projection, not the generic machine
+list. It takes N=3 `github-analysis` report rows per exact
+`(payload.scope, row.repository, payload.domain)` across all statuses. Per-key order
+is `(utcWholeSecond DESC, fractionDigits DESC, id DESC)`: exact instants across
+offsets, binary ID descending for ties. Strip fractions before epoch conversion,
+subtract signed offsets explicitly (full +/-23:59 range), and compare fractional
+digits as text after trimming trailing zeros. Keep leading zeros; zero/no fraction
+is empty text. Arbitrary fractional precision, equivalent offsets and trailing-zero
+ties are preserved without millisecond rounding or `.9999` carry. Client candidate
+selection and child-generation chronology use the same exact instant comparison;
+the accepted ISO datetime schema is unchanged. ISO-shape (`????-??-??T*`),
+timezone/fraction and whole-second guards put missing,
+nonmatching or SQLite-unparseable times last, allowing generic storage of relative
+keywords such as `now` without unsafe index evaluation. Strict report validation
+remains client-side. Repository keys are
+case-sensitive; global rows normally use null. `updated_at` and revision do not
+promote older generations. Selected malformed/non-completed rows consume slots
+and still undergo strict UI validation; malformed keys form separate groups.
+The UI prefers current-source valid completed reports only within the selected
+three; an older current or child report outside that set is not a candidate.
+Index/query extraction guards `json_valid` before inspecting JSON: payloads deeper
+than JSON1 can parse remain legal for generic CRUD/migration, with null extracted
+scope/domain/time index components and unchanged original payloads.
+There are no query parameters/cursor on this `{account_id, items}` projection.
+Indexed key/top-three seeks hydrate at most 3K payloads for K keys in one read-only
+query, without scanning historical payloads. This is not a fixed account-wide byte
+limit. The generic machine `/agent/reports` list remains unchanged: ID-ascending
+cursor pagination over all matching rows, with no newest-three filter or total
+5,000-row cap. Use that list or individual GETs for historical reconciliation.
+
+The old report UI cap no longer requires retention. Only the separate
+`grok-bot-run` records traversal retains the 50-page/5,000-row ceiling; use one
+stable run-record ID. There is no server-side automatic report cleanup. Request
+explicit approval for any retention plan, preserving needed current/child reports
+and audit history; never silently delete records or treat analysis permission as
+deletion permission. With explicit authorization, GET the current revision then
+DELETE `/agent/reports/:id?revision=N`; expect 204 and reconcile conflicts.
 
 Use bounded exponential backoff with jitter for transport errors, edge 429 and
 5xx; honor Retry-After only when supplied. Reconcile uncertain mutations before
@@ -736,7 +791,7 @@ error. Do not retry 401/403 by attempting retired authorization endpoints.
 5. Publish authorized reports, reconcile uncertain outcomes/409s, then mark work
    complete locally. Aggregate globals only from the correct complete source or
    child-report set. Keep failed/deferred domains pending across runs. Monitor
-   stored report counts and arrange authorized retention before the UI ceiling.
+   selected report generations; generic history remains independently readable.
 6. Create/PATCH `grok-bot-run` with truthful status/counts/time and safe errors.
    Status-write failure must not lose pending work or duplicate confirmed reports.
 7. Reconcile full scans even after empty incremental polls, monitor 48-hour overdue

@@ -85,6 +85,7 @@ for (const width of [1440, 390])
 			await page.clock.setFixedTime(new Date("2026-10-02T09:00:00Z"));
 			const fixtures: Record<string, unknown> = createUiFixtures();
 			const writes: unknown[] = [];
+			const reportReads: string[] = [];
 			let jobs: unknown[] = [];
 			let externalReport = false;
 			let runStatus = "completed";
@@ -102,6 +103,7 @@ for (const width of [1440, 390])
 						});
 					}
 					const collection = url.pathname.split("/").at(-1);
+					if (collection === "reports") reportReads.push(url.pathname);
 					if (collection === "sources")
 						return route.fulfill({
 							json: {
@@ -152,6 +154,8 @@ for (const width of [1440, 390])
 			await page.goto("/analysis?repo=octocat%2Fhello-world");
 			await page.getByRole("tab", { name: /Pull Requests/ }).click();
 			await expect(page.getByText(report.summary, { exact: true })).toBeVisible();
+			expect(reportReads.length).toBeGreaterThan(0);
+			expect(reportReads.every((path) => path.endsWith("/analysis/reports"))).toBe(true);
 			await expect(page.getByText(/通过.*不代表可合并/)).toBeVisible();
 			const runPanel = page.getByRole("complementary", { name: "分析运行状态" });
 			await expect(runPanel.getByText("已完成", { exact: true })).toBeVisible();

@@ -48,7 +48,8 @@ export async function getFactoryRuns(c: Ctx): Promise<Response> {
 			progress: {
 				...runProgress(run, now),
 				...counts,
-				completed: counts.success + counts.failed + counts.skipped + counts.unavailable,
+				completed:
+					counts.success + counts.failed + counts.skipped + counts.unavailable + counts.limited,
 			},
 			leaseUntil,
 		};

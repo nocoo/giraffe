@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { FactorySnapshot } from "../../lib/factory-types";
 import { FACTORY_STREAMS } from "../../lib/factory-types";
 import { prSnapshot } from "../../lib/pull-request";
-import { decodeContent, storedContent } from "./content-version";
+import { decodeContent, factoryStreamContent, storedContent } from "./content-version";
 import type { Db } from "./db/d1";
 import { normalizePublication } from "./db/factory-runs";
 import { ApiError } from "./errors";
@@ -222,7 +222,10 @@ export async function readSources(db: Db, account: string, query: Record<string,
 				`factory:${repo.name}:${stream}`,
 				metadata,
 				version,
-				meta?.version === version ? meta.hash : null,
+				await factoryStreamContent(
+					meta?.version === version ? meta.hash : null,
+					repo.coverage[stream],
+				),
 			);
 			if (source) sources.push(source);
 		}

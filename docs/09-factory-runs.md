@@ -157,12 +157,36 @@ Timeout/missed-slot schedule warnings are sticky until an explicit schedule save
 so successful recovery in the same tick cannot erase the incident.
 
 Expected feature/access absence finishes a step as `unavailable`, counted separately
-from `failed` and visible in the console. Truncation, malformed inputs and exhausted
+from `failed` and visible in the console. Dependency safe-parse limitations finish
+as terminal `limited` with `error:dependency_parse_unsupported`, counted separately
+in progress and compact history without making the run partial. This exception
+does not include capacity truncation, interrupted pagination/access loss or other
+malformed upstream data. Truncation and exhausted
 upstream failures still make a run partial. For a matching run ID, a publication's
 `status` is complete exactly when its run is completed, otherwise partial. New failed
 attempts retain the old publication under its old run ID. Coverage remains a separate
 data-quality signal: a completed run can contain unavailable sources and retained
 older evidence. Historical outcomes and publications remain immutable.
+
+When dependency parsing regresses, the fenced repository commit retains its prior
+resource/version pointer and stores only the safe diagnostic for the next
+publication. Publication freezes `coverage.dependencies` as limited with its safe
+reason/code and `retained:true`; items/manifests, observed count, original window,
+version and timestamps remain unchanged, including an empty prior limited source.
+Browser/machine streams and metadata-only source indexes share this published
+coverage, never mutable run-state overlays. Their conservative content hash
+composes the retained stored hash with semantic coverage and stays null if the
+stored hash is absent/mismatched. Repeated identical limits do not change the hash
+or refresh evidence age. Failed later attempts cannot erase the frozen diagnostic;
+successful accepted publication clears it. Existing version references continue
+protecting retained resources from bounded cleanup. Job/step multiline workflow
+conditions support plain continuations and literal/folded block scalars without
+extracting dependencies from condition bodies. Block bodies may contain key-like
+text. Plain headers and every continuation are checked: collection starts,
+mapping/sequence-like lines and continuations after a comment-ended scalar remain
+unsupported and fail closed, even after an earlier valid plain line. Empty or
+comment-only headers can still lead to plain conditions. No schema migration or
+historical row rewrite is required.
 
 ## Page scope and daily collection
 

@@ -169,21 +169,30 @@ export function mapDependencies(data: GithubObject, repo: FactoryRepo) {
 
 function workflowReferences(content: string) {
 	const references: { name: string; version: string; job: string }[] = [];
-	const lines = content
-		.replace(/^\uFEFF/, "")
-		.split(/\r?\n/)
-		.filter((line) => !/^\s*(?:#.*)?$/.test(line));
-	if (/^---(?:\s+#.*)?\s*$/.test(lines[0]?.trim() ?? "")) lines.shift();
-	if (/^\.\.\.(?:\s+#.*)?\s*$/.test(lines.at(-1)?.trim() ?? "")) lines.pop();
+	const sourceLines = content.replace(/^\uFEFF/, "").split(/\r?\n/);
+	const lines = sourceLines
+		.map((text, lineNumber) => ({ text, lineNumber }))
+		.filter(({ text }) => !/^\s*(?:#.*)?$/.test(text));
+	if (/^---(?:\s+#.*)?\s*$/.test(lines[0]?.text.trim() ?? "")) lines.shift();
+	if (/^\.\.\.(?:\s+#.*)?\s*$/.test(lines.at(-1)?.text.trim() ?? "")) lines.pop();
 	const indentation = (line: string) => line.length - line.trimStart().length;
 	const rootIndent = lines.reduce(
-		(minimum, line) => Math.min(minimum, indentation(line)),
+		(minimum, { text }) => Math.min(minimum, indentation(text)),
 		Infinity,
 	);
 	const fail = () => {
 		throw new Error("Workflow jobs cannot be parsed safely");
 	};
 	const block = (value: string) => /^(?:#.*)?$/.test(value);
+	const plain = (value: string, first: boolean) => {
+		const text = value.replace(/\s+#.*$/, "");
+		if (
+			!text ||
+			/^[-?:](?:\s|$)|:(?:\s|$)/.test(text) ||
+			(first && /^[!&*,[\]{}"'|>%@`]/.test(text))
+		)
+			fail();
+	};
 	let foundJobs = false;
 	let jobs = 0;
 	let inJobs = false;
@@ -191,14 +200,25 @@ function workflowReferences(content: string) {
 	let jobPropertyIndent: number | null = null;
 	let stepPropertyIndent: number | null = null;
 	let job = "";
-	let scalarIndent: number | null = null;
-	for (const [index, line] of lines.entries()) {
+	let scalar: { indent: number; kind: "block" | "plain"; lineNumber: number | null } | null = null;
+	for (const [index, { text: line, lineNumber }] of lines.entries()) {
 		const indent = indentation(line);
-		const next = lines[index + 1];
+		const next = lines[index + 1]?.text;
 		const sequence = /^\s*-\s+/.exec(line);
 		const propertyIndent = sequence?.[0].length ?? indent;
-		if (scalarIndent !== null && indent > scalarIndent) continue;
-		scalarIndent = null;
+		if (scalar && indent > scalar.indent) {
+			if (scalar.kind === "plain") {
+				if (
+					scalar.lineNumber !== null &&
+					sourceLines.slice(scalar.lineNumber, lineNumber).some((text) => /(?:^|\s)#/.test(text))
+				)
+					fail();
+				plain(line.trimStart(), scalar.lineNumber === null);
+				scalar.lineNumber = lineNumber;
+			}
+			continue;
+		}
+		scalar = null;
 		const property = /^\s*(?:-\s+)?(?:"([\w-]+)"|'([\w-]+)'|([\w-]+)):(?:\s+(.*)|$)/.exec(line);
 		const key = property?.[1] ?? property?.[2] ?? property?.[3];
 		const value = (property?.[4] ?? "").trimEnd();
@@ -242,7 +262,21 @@ function workflowReferences(content: string) {
 			fail();
 		if (/^[|>]/.test(value)) {
 			if (!/^[|>](?:[+-]?[1-9]?|[1-9][+-]?)(?:\s+#.*)?$/.test(value)) fail();
-			scalarIndent = propertyIndent;
+			scalar = { indent: propertyIndent, kind: "block", lineNumber };
+		} else if (
+			key === "if" &&
+			((indent === jobPropertyIndent && !sequence) || propertyIndent === stepPropertyIndent) &&
+			!value.startsWith('"') &&
+			!value.startsWith("'")
+		) {
+			if (block(value)) {
+				if (!next || indentation(next) <= propertyIndent) fail();
+			} else plain(value, true);
+			scalar = {
+				indent: propertyIndent,
+				kind: "plain",
+				lineNumber: block(value) ? null : lineNumber,
+			};
 		}
 		if (key !== "uses" || indent === jobIndent) continue;
 		if (!(indent === jobPropertyIndent && !sequence) && propertyIndent !== stepPropertyIndent)

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { dependencyWorkflow } from "../../../../../tests/fixtures/dependency-workflow";
+import {
+	dependencyWorkflow,
+	multilineReleaseWorkflow,
+} from "../../../../../tests/fixtures/dependency-workflow";
 import { rawEvent, rawRepo } from "../../../../../tests/fixtures/factory";
 import {
 	coverage,
@@ -12,6 +15,119 @@ import {
 } from "./factory-map";
 
 describe("GitHub factory normalization", () => {
+	it.each(
+		(
+			[
+				["flow array", "[\n  true,\n  false\n  ]"],
+				["flow mapping", "{\n  allowed: true\n  }"],
+				["inline flow array", "[true, false]"],
+				["inline flow mapping", "{ allowed: true }"],
+				["mapping header", "uses: fake/condition@v1"],
+				["mapping continuation", "github.event_name == 'push'\n  uses: fake/condition@v1"],
+				[
+					"later mapping continuation",
+					"\n  github.event_name == 'push'\n  uses: fake/condition@v1",
+				],
+				["sequence continuation", "github.event_name == 'push'\n  - true"],
+				["comment-ended continuation", "github.event_name == 'push' # done\n  && true"],
+				["comment-interrupted continuation", "github.event_name == 'push'\n  # done\n  && true"],
+			] as const
+		).flatMap(([shape, condition]) => [false, true].map((step) => ({ shape, condition, step }))),
+	)("rejects ambiguous plain conditions ($shape, step=$step)", ({ condition, step }) => {
+		const text = step
+			? `jobs:\n  build:\n    steps:\n      - if: ${condition.replaceAll("\n", "\n        ")}\n        uses: actions/checkout@v4`
+			: `jobs:\n  build:\n    if: ${condition.replaceAll("\n", "\n    ")}\n    uses: nocoo/base-ci/.github/workflows/deploy.yml@main`;
+		expect(() => mapDependencies({ ci: { text } }, mapFactoryRepo(rawRepo))).toThrow();
+	});
+	it.each(["", "# condition"])(
+		"rejects non-scalar children after an empty/comment-only if (%s)",
+		(value) => {
+			for (const child of [
+				"uses: fake/action@v1",
+				"- uses: fake/action@v1",
+				"*shared",
+				"{ uses: fake/action@v1 }",
+			])
+				for (const step of [false, true]) {
+					const text = step
+						? `jobs:\n  build:\n    steps:\n      - if: ${value}\n          ${child}\n        uses: actions/checkout@v4`
+						: `jobs:\n  build:\n    if: ${value}\n      ${child}\n    uses: nocoo/base-ci/.github/workflows/deploy.yml@main`;
+					expect(() => mapDependencies({ ci: { text } }, mapFactoryRepo(rawRepo))).toThrow();
+				}
+		},
+	);
+	it("accepts a comment-only if header followed by a plain condition scalar", () => {
+		expect(
+			mapDependencies(
+				{
+					release: {
+						text: "jobs:\n  deploy:\n    if: # condition\n      github.event_name == 'push'\n        && github.ref == 'refs/heads/main'\n    uses: nocoo/base-ci/.github/workflows/deploy.yml@main",
+					},
+				},
+				mapFactoryRepo(rawRepo),
+			).items,
+		).toHaveLength(1);
+	});
+	it.each(["plain", "|", ">-", "|2-", ">+2", "empty"])(
+		"scans job and step multiline if values (%s) without interpreting their contents",
+		(header) => {
+			const text = multilineReleaseWorkflow.replace(
+				/^([ ]*(?:- )?)if: (.*)/gm,
+				(_, indent: string, value: string) =>
+					header === "plain"
+						? `${indent}if: ${value}`
+						: `${indent}if: ${header === "empty" ? "" : header}\n${" ".repeat(indent.length)}  ${value}`,
+			);
+			const items = mapDependencies({ release: { text } }, mapFactoryRepo(rawRepo)).items;
+			expect(items.map(({ id, job }) => ({ id, job }))).toEqual([
+				{
+					id: ".github/workflows/release.yml:nocoo/base-ci/.github/workflows/deploy.yml#job=deploy",
+					job: "deploy",
+				},
+				{ id: ".github/workflows/release.yml:actions/checkout#job=verify", job: "verify" },
+				{ id: ".github/workflows/release.yml:actions/cache#job=verify", job: "verify" },
+			]);
+		},
+	);
+	it.each(["|", ">-"])("ignores nested keys in %s condition block scalars", (header) => {
+		const text = `jobs:
+  deploy:
+    if: ${header}
+      github.event_name == 'push'
+      uses: fake/condition@v1
+      jobs:
+        fake:
+          uses: fake/job@v1
+    uses: nocoo/base-ci/.github/workflows/deploy.yml@main
+  verify:
+    steps:
+      - if: ${header}
+          github.event_name == 'push'
+          uses: fake/step@v1
+        uses: actions/checkout@v4
+`;
+		expect(
+			mapDependencies({ ci: { text } }, mapFactoryRepo(rawRepo)).items.map((item) => item.title),
+		).toEqual(["nocoo/base-ci/.github/workflows/deploy.yml", "actions/checkout"]);
+	});
+	it.each(["", "# condition", "${{", "github.event_name == 'push'"])(
+		"preserves valid plain continuations after %s headers",
+		(header) => {
+			const expression = [
+				header,
+				"",
+				...(header === "github.event_name == 'push'" ? [] : ["  github.event_name == 'push'"]),
+				"  && contains('https://example.test', ':')",
+				...(header === "${{" ? ["  }}"] : []),
+			].join("\n");
+			for (const step of [false, true]) {
+				const text = step
+					? `jobs:\n  build:\n    steps:\n      - if: ${expression.replaceAll("\n", "\n        ")}\n        uses: actions/checkout@v4`
+					: `jobs:\n  build:\n    if: ${expression.replaceAll("\n", "\n    ")}\n    uses: nocoo/base-ci/.github/workflows/deploy.yml@main`;
+				expect(mapDependencies({ ci: { text } }, mapFactoryRepo(rawRepo)).items).toHaveLength(1);
+			}
+		},
+	);
 	it.each([0, 2, 4])("finds jobs at the document root indentation of %s spaces", (indent) => {
 		const text = dependencyWorkflow
 			.split("\n")

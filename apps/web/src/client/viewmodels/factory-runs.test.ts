@@ -24,6 +24,25 @@ import { setActiveAccountId } from "./session";
 vi.mock("../lib/api", () => ({ apiGet: vi.fn(), apiPost: vi.fn() }));
 const snap = factoryFixture();
 const run = makeRun("r", snap.account_id, "nocoo", "key", "refresh", snap.repos, snap.fetched_at);
+it("shows limited dependencies as processed without a failure or permission recommendation", () => {
+	const plan = structuredClone(run);
+	for (const step of plan.steps) step.status = "success";
+	Object.assign(plan.steps.find((step) => step.kind === "dependencies") ?? {}, {
+		status: "limited",
+		error: "dependency_parse_unsupported",
+	});
+	const view = { ...plan, leaseUntil: null, progress: runProgress(plan, snap.fetched_at) };
+	expect(runStages(view).find((stage) => stage.title === "工厂统计")).toMatchObject({
+		completed: 9,
+		failed: 0,
+		limited: 1,
+	});
+	expect(runRepositoryRows(view, [])[0]).toMatchObject({ status: "limited", completed: 18 });
+	expect(describeRunIssue("dependency_parse_unsupported", "dependencies")).toMatchObject({
+		settings: false,
+		reason: expect.stringContaining("解析"),
+	});
+});
 it("shows unavailable work separately from problems and completed evidence", () => {
 	const plan = structuredClone(run);
 	for (const step of plan.steps) step.status = "success";

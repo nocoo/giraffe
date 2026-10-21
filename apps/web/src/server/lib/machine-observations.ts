@@ -12,6 +12,7 @@ import { snapshotFreshness } from "../../lib/snapshot-freshness";
 import {
 	composeContent,
 	decodeContent,
+	factoryStreamContent,
 	observationVersion,
 	storedContent,
 } from "./content-version";
@@ -22,6 +23,7 @@ import { ApiError } from "./errors";
 import { streamKey } from "./factory-collect";
 import {
 	factoryFreshness,
+	factoryObserved,
 	type Policy,
 	projectSnapshot,
 	repoPolicy,
@@ -110,7 +112,7 @@ export function ciContent(
 }
 
 export function factoryContent(snapshot: FactorySnapshot, policy: Policy) {
-	const freshness = factoryFreshness(snapshot, policy, false);
+	const freshness = factoryFreshness(snapshot, policy);
 	return composeContent(
 		{
 			publication: storedContent(snapshot)?.hash ?? null,
@@ -118,9 +120,11 @@ export function factoryContent(snapshot: FactorySnapshot, policy: Policy) {
 		},
 		{
 			repositories: policy.repos.map((repo) => repo.name_with_owner),
+			observed: factoryObserved(snapshot, policy).map((repo) => repo.name),
 			scope: policy.scope,
 			total: freshness.total,
 			missing: freshness.missing,
+			truncated: snapshot.truncated === true || snapshot.inventory.complete !== true,
 		},
 	);
 }
@@ -199,8 +203,13 @@ export function projectCiObservation(
 
 export function projectFactoryObservation(snapshot: FactorySnapshot, policy: Policy) {
 	const projected = statisticsFactory(snapshot, policy, false);
-	const freshness = factoryFreshness(projected, policy, false);
-	return { ...projected, fetched_at: freshness.latestAt ?? "", freshness };
+	const freshness = factoryFreshness(projected, policy);
+	return {
+		...projected,
+		fetched_at: freshness.latestAt ?? "",
+		freshness,
+		truncated: projected.truncated === true || projected.inventory.complete !== true,
+	};
 }
 
 export async function readObservation(
@@ -296,7 +305,7 @@ export async function readFactoryResource(db: Db, account: string, name: string,
 		"all",
 		snap.publication?.runId ?? snap.runId,
 		version,
-		content,
+		await factoryStreamContent(content, repo.coverage[stream as FactoryStreamName]),
 	);
 }
 
@@ -306,6 +315,9 @@ export function factoryResourceData(
 	stream: string,
 	data: FactoryStreamData,
 ) {
+	const coverage = repo.coverage[stream as FactoryStreamName].retained
+		? repo.coverage[stream as FactoryStreamName]
+		: data.coverage;
 	return {
 		...data,
 		...(stream === "prs"
@@ -315,10 +327,10 @@ export function factoryResourceData(
 			? dependencyEvidence(data.items, [...(repo.manifests ?? []), ...(data.manifests ?? [])])
 			: {}),
 		ranges: [repo.observation?.window ?? snap.window],
-		fetched_at: data.coverage.fetchedAt,
+		fetched_at: coverage.fetchedAt,
 		observation: repo.observation,
-		coverage: data.coverage,
-		truncated: data.coverage.status === "limited",
-		unavailable: data.coverage.status === "unavailable",
+		coverage,
+		truncated: coverage.status === "limited",
+		unavailable: coverage.status === "unavailable",
 	};
 }

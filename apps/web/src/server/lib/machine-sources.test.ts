@@ -345,8 +345,12 @@ it("preserves exact realistic response content and all advertised snapshot versi
 		...result,
 		sources: result.sources.map(({ contentVersion: _contentVersion, ...source }) => source),
 	};
+	expect(result.sources.find((source) => source.resource === "account:factory")).toMatchObject({
+		freshness: { total: 103, missing: 0 },
+		version: "publication-local-bench",
+	});
 	expect(createHash("sha256").update(JSON.stringify(legacy)).digest("hex")).toBe(
-		"36aaefea76bc2dde398677dde08a20af3c31dc305a276e582c17e8c0c186a393",
+		"2ebafc5288489326287eda2e7897cb111286ae3824fb3f66c17a7da404a4fe07",
 	);
 	for (const source of result.sources.filter((row) => !row.resource.startsWith("factory:"))) {
 		const resource = source.resource.replace(/^account:/, "");

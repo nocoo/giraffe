@@ -63,6 +63,7 @@ export const STEP_STATUS: Record<StepStatus, string> = {
 	success: "已完成",
 	failed: "未能完成",
 	unavailable: "数据不可用",
+	limited: "覆盖受限",
 	skipped: "已跳过",
 };
 export const formatRunDuration = (seconds: number) =>
@@ -170,6 +171,13 @@ export function describeRunIssue(code: string | null, kind: StepKind, resource?:
 					? "检查仓库的 Dependabot alerts 设置，以及令牌的 repo / security_events 权限；调整后重新刷新这些仓库。"
 					: "确认账号仍可访问仓库和对应功能，检查来源文件后重新刷新。",
 				settings: true,
+			};
+		case "dependency_parse_unsupported":
+			return {
+				...base,
+				title: "依赖覆盖受限",
+				reason: "部分依赖清单或工作流结构无法安全解析，不代表没有依赖。",
+				action: "查看来源文件中的不支持结构；已有证据及其原始时间保持不变，重复刷新不保证补齐。",
 			};
 		case "coverage_limited":
 		case "snapshot_incomplete":
@@ -318,10 +326,11 @@ export function runStages(run: FactoryRunView) {
 			...stage,
 			total: stage.steps.length,
 			completed: stage.steps.filter((s) =>
-				["success", "failed", "skipped", "unavailable"].includes(s.status),
+				["success", "failed", "skipped", "unavailable", "limited"].includes(s.status),
 			).length,
 			failed: stage.steps.filter((s) => s.status === "failed").length,
 			unavailable: stage.steps.filter((s) => s.status === "unavailable").length,
+			limited: stage.steps.filter((s) => s.status === "limited").length,
 			skipped: stage.steps.filter((s) => s.status === "skipped").length,
 		}));
 }
@@ -532,7 +541,7 @@ export function runRepositoryRows(run: FactoryRunView | null, states: RepoRefres
 	return [...new Set([...run.repos, ...(run.siteRepos ?? [])])].map((repo) => {
 		const steps = run.steps.filter((s) => s.repo === repo);
 		const completed = steps.filter((s) =>
-			["success", "failed", "skipped", "unavailable"].includes(s.status),
+			["success", "failed", "skipped", "unavailable", "limited"].includes(s.status),
 		).length;
 		const status: StepStatus = steps.some((s) => s.status === "running")
 			? "running"
@@ -541,9 +550,11 @@ export function runRepositoryRows(run: FactoryRunView | null, states: RepoRefres
 				: steps.length > 0 && completed === steps.length
 					? steps.some((s) => s.status === "skipped")
 						? "skipped"
-						: steps.some((s) => s.status === "unavailable")
-							? "unavailable"
-							: "success"
+						: steps.some((s) => s.status === "limited")
+							? "limited"
+							: steps.some((s) => s.status === "unavailable")
+								? "unavailable"
+								: "success"
 					: "pending";
 		return {
 			repo,

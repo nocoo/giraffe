@@ -271,7 +271,11 @@ export async function executeRunPage(
 							? "success"
 							: coverage.status === "unavailable"
 								? "unavailable"
-								: "failed",
+								: stream === "dependencies" &&
+										coverage.status === "limited" &&
+										coverage.reason_code === "dependency_parse_unsupported"
+									? "limited"
+									: "failed",
 						clock(),
 					);
 					if (coverage.status !== "complete")
@@ -401,7 +405,7 @@ export async function executeRunPage(
 }
 function finish(
 	step: FactoryRunStep,
-	status: "success" | "failed" | "skipped" | "unavailable",
+	status: "success" | "failed" | "skipped" | "unavailable" | "limited",
 	now: string,
 ) {
 	step.status = status;

@@ -8,7 +8,7 @@ beforeEach(() => {
 	vi.clearAllMocks();
 	setActiveAccountId("a");
 });
-it("loads all report pages without redundant execution requests", async () => {
+it("loads one report projection without generic report pagination or execution requests", async () => {
 	vi.mocked(apiGet).mockImplementation(async (path) =>
 		path === "accounts"
 			? { accounts: [{ id: "a", is_active: true }] }
@@ -25,6 +25,9 @@ it("loads all report pages without redundant execution requests", async () => {
 	});
 	expect(apiPost).not.toHaveBeenCalled();
 	const paths = vi.mocked(apiGet).mock.calls.map(([path]) => path);
+	expect(paths.filter((path) => path.includes("/reports"))).toEqual([
+		"agent/accounts/a/analysis/reports",
+	]);
 	expect(paths.filter((path) => path.includes("/records"))).toEqual([
 		"agent/accounts/a/records?limit=100&type=grok-bot-run",
 		"agent/accounts/a/records?limit=100&type=grok-bot-run&cursor=next",
@@ -32,7 +35,7 @@ it("loads all report pages without redundant execution requests", async () => {
 	expect(paths.some((path) => path.includes("/jobs") || path.includes("work-cron"))).toBe(false);
 });
 it("rejects account changes and invalid or excessive cursor traversal", async () => {
-	for (const mode of ["account", "repeat", "limit", "source"]) {
+	for (const mode of ["account", "repeat", "limit", "source", "report"]) {
 		let cursor = 0;
 		vi.mocked(apiGet).mockImplementation(async (path) =>
 			path === "accounts"
@@ -40,7 +43,10 @@ it("rejects account changes and invalid or excessive cursor traversal", async ()
 				: path.includes("/sources")
 					? { account_id: mode === "source" ? "b" : "a", sources: [], repositories: [] }
 					: {
-							account_id: mode === "account" ? "b" : "a",
+							account_id:
+								mode === "account" || (mode === "report" && path.includes("/analysis/reports"))
+									? "b"
+									: "a",
 							items: [],
 							nextCursor: mode === "repeat" ? "same" : mode === "limit" ? String(++cursor) : null,
 						},

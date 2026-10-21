@@ -10,6 +10,24 @@ jobs:
       - uses: actions/checkout@v4
 `;
 
+export const multilineReleaseWorkflow = `name: Release
+jobs:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success'
+      && github.event.workflow_run.head_repository.full_name == github.repository
+      && startsWith(github.event.workflow_run.head_branch, 'v'))
+    uses: nocoo/base-ci/.github/workflows/deploy.yml@main
+  verify:
+    steps:
+      - if: github.event_name == 'push'
+          && github.ref == 'refs/heads/main'
+        uses: actions/checkout@v4
+      - name: Verify
+        if: github.event_name == 'workflow_dispatch'
+          || github.event_name == 'workflow_run'
+        uses: actions/cache@v4
+`;
+
 export const unsupportedWorkflowJobs = [
 	"",
 	"# no jobs saved",

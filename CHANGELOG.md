@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.17.1 - 2026-10-21
+
+### Fixed
+
+- Replace the analysis page's 5,000-row report traversal with a dedicated browser projection: newest three rows per exact `(payload.scope, row.repository, payload.domain)`, ordered by the actual `generatedAt` instant descending, then ID descending. Use indexed key seeks and hydrate only selected payloads in one read-only query, preserving generic machine list pagination and every historical row.
+- Guard report index/query extraction with `json_valid` so schema-accepted JSON beyond SQLite JSON1's nesting depth preserves historical migration and generic POST/PATCH behavior. Uninspectable scope/domain/time components index as null without modifying or dropping payloads.
+- Preserve arbitrary fractional-second generation ordering in report index seeks, top-three selection, client candidate ranking and child-report chronology. Sort normalized whole-second epoch, trailing-zero-trimmed fraction digits and binary ID descending; normalize the full accepted signed-offset range and strip fractions before date conversion to prevent `.9999` rounding carry. Equivalent instants remain ties; generic/reader schemas are unchanged.
+- Derive factory freshness from enabled published repositories instead of the whole catalog, consistently across browser factory reads, machine `/factory` and `/sources`. Incomplete publication inventory sets machine `truncated:true`. This fixes the reported 126/1 total/missing caused by non-owned `chaconnewu/wuyu-nltk1`, the September 24 oldest time from archived/statistics-disabled `hermes-on-herdr`, and 47 legacy archived/fork entries dated September 29; these are reported production symptoms, not measurements from this local run.
+- Parse job/step multiline workflow `if:` conditions, including plain continuations and literal/folded block scalars with chomping/indent indicators, without interpreting their bodies as dependency references. Validate plain headers and every continuation; flow collection starts, mapping/sequence-like lines and comment-ended continuations fail closed, while key-like block scalar content stays ignored. Echo-like release fixtures retain complete coverage and stable job-qualified IDs; other unsupported workflow shapes remain fail closed.
+- Finish dependency safe-parse limits as terminal `limited`, with separate progress/history counts, instead of failing an otherwise completed run. Freeze `dependency_parse_unsupported` diagnostics into new publications while retaining stronger items, manifests and original evidence versions/windows/timestamps, including empty limited baselines. Browser/machine streams and metadata-only `/sources` expose the same retained limited coverage and null-preserving conservative content hash; subsequent successful publication clears the diagnostic. Capacity truncation, interrupted pagination and genuine failures still make runs partial.
+
+### Migration and Compatibility
+
+- Add `0015_analysis_reports.sql`, a repeatable partial expression index without a table rebuild or payload rewrite; apply it before deploying the reader and retain it on code rollback. UI candidate selection changes from all historical reports to the newest three rows per key across all statuses; current-source preference and strict validation apply only within that set. The separate `grok-bot-run` record-list ceiling remains unchanged. No new dependencies or automatic cleanup.
+
+### Breaking Changes
+
+- Account factory freshness: whole selected catalog -> enabled published repositories; absent/invalid observations within that set remain missing. Incomplete inventory previously could expose `truncated:false` -> now `true`. Machine list membership, publication versions and evidence windows do not change. Composite `contentVersion` adds enabled published identities and inventory truncation alongside corrected total/missing, so consumers must recompute affected account-factory reports.
+- Dependency safe-parse outcome: step `failed` / `error:coverage_limited` -> `limited` / `error:dependency_parse_unsupported`; refresh counts add `limited`, and this outcome alone changes run/publication `partial` -> `completed`/`complete`. Retained evidence previously appeared complete -> now `coverage.status:limited`, `reason_code:dependency_parse_unsupported`, `retained:true` and `truncated:true`. Its full evidence version/time stays unchanged, but a non-null content hash now composes the retained hash with frozen coverage; null remains null. Historical publications/runs are not rewritten and no schema migration is required for these JSON fields.
+- Ambiguous plain workflow conditions previously skipped as scalar content -> dependency `limited`, including flow collection headers, mapping/sequence-like continuations and lines after a comment-ended scalar. Literal/folded blocks keep ignoring key-like body text; valid plain conditions retain complete coverage.
+
+### Docs
+
+- Compare `/sources` across v0.16.1, v0.17.0 and batch 7 using the same 126-repository real-stream and all-null metadata fixtures. Record median/p95, query/payload/body evidence and isolated metadata lookup cost. No meaningful local latency regression matches the reported production timing; retain all eight source fields, including nullable `contentVersion`, and leave runtime code unchanged.
+
 ## v0.17.0 - 2026-10-21
 
 ### Added
@@ -21,7 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Docs
 
 - Clarify generic jobs do not execute analysis, recommend four account-sourced global reports for the default view, and document exact hashing, full-hash skip checks, ID-only prefixes and source identity mapping.
-- Document the strict `grok-bot-run` payload and revisioned full-replacement workflow, validation of non-completed analysis rows, explicit report deletion and the 5,000-row UI cap. Correct the distinction between generic server validation and strict reader validation: malformed rows raise errors but do not prevent valid cards from rendering.
+- Document the strict `grok-bot-run` payload and revisioned full-replacement workflow, validation of non-completed analysis rows and explicit report deletion. The historical 5,000-row report UI cap is removed in v0.17.1 by a newest-three-per-key projection; the run-record list retains its separate ceiling. Correct the distinction between generic server validation and strict reader validation: malformed selected rows raise errors but do not prevent valid cards from rendering.
 - Extend the 126-repository source benchmark with real near-cap factory streams, payload-byte and metadata-index regressions; distinguish historical batch-3 measurements from the persisted-hash performance evidence.
 
 ## v0.16.1 - 2026-10-21

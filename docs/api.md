@@ -244,11 +244,21 @@ the newest selected observation; neither implies that all data is that fresh. Ch
 `oldestAt` and `missing` before treating the response as current. This projection is
 shared with account entries in `/sources` and never refreshes data on GET.
 
-Factory freshness counts selected catalog repositories, including entries absent
-from the publication. Only immutable repository `observation.refreshedAt` supplies
-their time; absent/invalid observations count as missing. Its `fetchedAt` is the
-latest such observation, never the publication clock. Inventory `total`, `scanned`
-and `pages` remain historical collection metadata, not projected repository counts.
+Factory freshness counts `factoryObserved(publication, policy)`: published
+repositories still in the selected catalog with statistics enabled. The publication
+already excludes non-owned and effective-mirror repositories; disabled archived/fork
+entries do not enter the denominator. An enabled published repository without a
+valid `observation.refreshedAt` counts as missing. A catalog-only repository does not.
+This rule is shared by browser factory freshness, machine `/factory` and
+`/sources`'s `account:factory`. Machine repository lists remain unfiltered by
+statistics; this is a freshness-denominator rule, not a change to list selection.
+Machine `/factory` and `account:factory` expose `truncated:true` when
+`publication.inventory.complete !== true`, even when `freshness.missing` is zero.
+An existing saved `truncated:true` is also preserved, even with complete inventory;
+the same combined rule enters the account factory content hash.
+`fetchedAt` is the latest eligible immutable observation, never the publication
+clock. Inventory `total`, `scanned` and `pages` remain historical collection
+metadata, not projected repository counts.
 Default/`scope=all` factory reads preserve the saved account-wide contribution
 calendar exactly: all 90 `contribution.days[]` entries, totals, status and
 `contributionObservation` provenance. Repository/catalog/statistics filtering does
@@ -323,6 +333,18 @@ actual saved items, not just coverage summaries. The index reads only their
 metadata through covering indexes, never their payloads; the data endpoint uses
 the same stored hash while decoding the payload needed for its response.
 
+A newly published dependency coverage diagnostic can retain an older raw resource
+whose coverage was complete. With `coverage.retained:true`, both the stream and
+`/sources` compose the retained resource hash as `{inputs:{evidence:storedHash},
+selection:{coverage:publishedCoverage}}`, using the same canonical encoding and
+removing the coverage collection fields listed above. Status, safe reason/code,
+observed count and `retained` remain semantic inputs. A missing/mismatched stored
+hash yields null, not an invented proof. Other stream hashes are unchanged.
+Repeated attempts with unchanged retained evidence/diagnostic keep this hash;
+collection times do not affect it. Full `sourceVersion` remains the retained
+evidence version; `source.publicationId` identifies the new frozen publication.
+Always check current coverage even when the full evidence version is unchanged.
+
 Account projections compose existing hashes cheaply rather than hash full lists
 on each request. The composite uses the same canonical SHA-256 encoding over
 `{inputs,selection}`. Input keys identify the saved dependencies, values are their
@@ -333,7 +355,7 @@ An existing input without a stored hash makes the composite null.
 | --- | --- |
 | Account repos/issues/PRs and other projected lists | Catalog and aggregate snapshot hashes, plus hashes of the complete repository pages actually selected to replace aggregate rows; selected repository names, completeness, freshness `total`/`missing` and truncation. Repo catalogs also include local starred/statistics-enabled flags. |
 | Account CI | Catalog hash and selected repositories' latest saved `actions`, `releases`, `details` hashes, keyed by lowercase repository source identity; missing rows use `"missing"`; derived freshness `total`/`missing`. Refresh-clock-dependent verdicts, ages and histograms are not hashed. |
-| Account factory | Saved publication and catalog hashes, selected repository names, scope and derived freshness `total`/`missing`. |
+| Account factory | Saved publication and catalog hashes, selected catalog repository names, enabled published repository identities (`observed`), scope, derived freshness `total`/`missing` and combined saved/inventory `truncated`. |
 | Contributions | Saved publication hash and resolved inclusive `since`/`until` dates. |
 | Derived insights | Null; use the unchanged full `sourceVersion`. |
 
@@ -622,7 +644,7 @@ done
 Envelope `data` is `{ runId, items: FactoryEvent[], next: string|null, ranges:
 [{ since, until }], coverage, fetched_at, observation?, manifests?, truncated,
 unavailable }`.
-`coverage` is `{ status, pages, fetchedAt, source, reason, reason_code?, observed, strategy?,
+`coverage` is `{ status, pages, fetchedAt, source, reason, reason_code?, retained?, observed, strategy?,
 sourceFetchedAt? }`; status is `pending|partial|complete|unavailable|limited`,
 strategy `full|incremental|reused`. An empty list proves zero only with complete
 coverage. `next` is saved collection metadata, not a machine pagination URL.
@@ -675,11 +697,21 @@ for a single job. Adding/removing other jobs, reordering jobs, changing the sour
 HEAD or updating a single job's ref does not rename that reference. The bounded
 indentation scanner discovers the document's actual root indentation and supports
 job-level reusable workflows and step actions,
-quoted keys/references and comments, and ignores scalar script bodies. It is not
+quoted keys/references and comments, and ignores scalar script bodies.
+Job/step `if:` values support plain multiline
+continuations and `|`/`>` block scalars with chomping/indent indicators. Block
+scalar bodies may contain key-like text and never supply dependency references.
+Plain headers and every continuation are checked separately: collection/alias/tag
+starts are unsupported as the first scalar content, and mapping-like `key: value`
+or sequence-like lines fail closed, including after an earlier plain continuation.
+Empty/comment-only headers may lead to a plain scalar, including after blank lines;
+comments after scalar content end that scalar and cannot hide later continuations.
+Expressions are not evaluated. It is not
 a general YAML parser; flow-style objects, aliases and expression-valued `uses`
 are not resolved. Present workflow files with missing/ambiguous job mappings or
 unsupported job/step references produce `coverage.status: "limited"`, with reason
-`"Dependency manifests cannot be parsed safely; evidence unavailable"`, not a
+`"Dependency manifests cannot be parsed safely; evidence unavailable"` and safe
+`reason_code:"dependency_parse_unsupported"`, not a
 complete zero. Unrecognized non-scalar lines inside `jobs` also fail closed,
 including flow values on a following line and explicit YAML mapping keys.
 Null/empty job values, non-sequence steps, multiline quoted scalars and tagged or
@@ -688,7 +720,21 @@ a conservative common-shape scanner, not a general YAML parser.
 Only direct job or step `uses` positions are recognized; nested `env.uses` or
 `with.uses` fields cause limited coverage rather than guessed dependency IDs.
 Existing stronger repository evidence and its original version/window
-remain published through the coverage-regression guard. Absent files and parsed
+remain published through the coverage-regression guard. New publications freeze
+the latest dependency safe-parse limitation as `coverage.status:"limited"`, with
+that safe reason/code and `retained:true`; older resource payloads and publications
+are not modified. Browser/machine stream reads and `/sources` agree on that
+coverage, with `truncated:true`, `unavailable:false` and missing freshness coverage
+in the source index. Items, manifests, `coverage.observed`, source URLs, original
+window and evidence timestamps remain those of the retained data, not the failed
+attempt. No retained empty list proves zero, including an empty limited baseline.
+Without a prior stronger baseline, the new limited resource is published directly
+without `retained`; its empty items are still not an observed zero. A successful
+accepted refresh publishes its new evidence and clears the retained diagnostic.
+Diagnostics are copied only at publication time, never overlaid from mutable run
+or repository state during GET. Changed diagnostic/content hashes can retain old
+timestamps, so `since` remains an optimization requiring unfiltered reconciliation.
+Absent files and parsed
 run-only jobs can still prove no workflow dependencies. No additional files or
 upstream requests are introduced.
 
@@ -978,16 +1024,69 @@ data is retained. An absent valid record shows an empty state, not an offline
 runner. Loading and visible polling are read-only and never invoke a model or
 refresh GitHub. Do not synthesize fake Work heartbeats for an external bot.
 
-### Report retention
+### Analysis report projection and retention
 
-There is no server-side automatic cleanup of agent reports. The analysis reader
-loads all statuses and repositories for `type:github-analysis`, up to 50 pages of
-100 rows (5,000 total); more rows fail the whole load. The run-record query has
-the same cap. Arrange explicitly authorized retention before this limit, using
-GET for the current revision followed by
+The Access-protected browser endpoint
+`GET /api/agent/accounts/A/analysis/reports` returns `{account_id, items: Resource[]}`
+for the active account. It accepts no query parameters and performs no writes or
+upstream calls. It is not a machine endpoint or an Access-bypass route.
+
+It selects only `reports` of `type:github-analysis`, taking the newest **N=3 rows
+per exact `(payload.scope, row.repository, payload.domain)`** across all statuses.
+Repository matching is case-sensitive; global reports normally use null. Order
+within each key is `(utcWholeSecond DESC, fractionDigits DESC, id DESC)` using
+binary text order for fraction digits and IDs. Whole-second conversion removes
+the fraction first, then subtracts the explicit signed offset in seconds; it never
+rounds a `.9999` fraction into the next second. Fraction digits keep arbitrary
+precision and leading zeros, trim trailing zeros, and use `""` for zero/no fraction.
+Their lexicographic order exactly matches decimal order without floating-point
+conversion. Equivalent offsets/trailing-zero spellings tie and use descending ID.
+The accepted reader syntax stays Zod ISO datetime with required seconds, optional
+arbitrary-length fractional seconds and `Z` or `+/-HH:MM` (hours 00-23, minutes
+00-59). The index/query handle the same full offset range explicitly rather than
+relying on SQLite's narrower offset parser. Parsing is guarded by the ISO-shaped
+pattern `????-??-??T*`, timezone/fraction shape checks and whole-second conversion;
+missing, nonmatching or SQLite-unparseable values sort last. This excludes relative
+keywords such as `now`, which are unsafe in an expression index, without rejecting
+generic storage writes. Full report/date validation remains in the client. `created_at`,
+`updated_at`, revision and current source versions do not determine inclusion.
+Malformed keys form their own groups; selected malformed or non-completed rows
+still reach the existing strict reader validation and consume a slot. Only valid
+completed candidates are displayed, preferring current sources within the selected
+three and then exact generation instant and descending binary ID. The client uses
+the same whole-second/fraction comparison for candidates and child-report
+generation chronology, not millisecond `Date.parse` comparison. A current
+historical report outside those three is no longer a display candidate.
+
+Index/query JSON extraction first guards the entire payload with `json_valid`.
+Schema-accepted payloads beyond JSON1's nesting depth remain stored and writable;
+their extracted scope/domain/time components become null, while repository still
+participates in the key. Selected rows retain their original payloads for client
+validation. Migration, POST and PATCH do not reject or rewrite these resources.
+
+Migration `0015_analysis_reports.sql` adds a partial expression index. One SQL
+statement seeks distinct indexed keys, then at most three row IDs per key before
+loading payloads. The final sort covers only selected rows, not report history.
+For K distinct keys the response contains at most 3K resources; it is not a fixed
+account-wide byte cap. Adding history to existing keys does not add queries,
+returned payloads or a full historical scan. The SQLite regression uses 6,001
+historical rows, asserts three returned payloads below 5 KB, and checks actual
+`EXPLAIN QUERY PLAN` key-range/equality index seeks and rowid hydration. A second
+60,001-row case has the same query/payload bounds; SQLite bytecode assertions
+prove table columns are read only by the selected-row hydration cursor.
+
+The generic machine `GET /api/v1/accounts/A/agent/reports` and generic browser
+resource lists are unchanged: ID-ascending cursor pagination, all matching rows,
+no newest-per-key filtering or 5,000-row total limit. The analysis page's separate
+`grok-bot-run` record query still traverses at most 50 pages of 100 rows; excessive
+matching run records can still fail the load. Use the single stable run-record ID.
+
+There is no server-side automatic report cleanup. Report history no longer needs
+deletion to avoid the old UI cap. Retention still requires explicit authorization:
+GET the current revision then
 `DELETE /accounts/A/agent/reports/:id?revision=N` (204 on success). Preserve needed
 current/child reports and audit history; analysis permission is not deletion
-permission. Invalid rows under the cap raise errors independently of their status.
+permission. All old rows remain stored and individually/generically readable.
 
 ## Application management
 
@@ -1065,7 +1164,7 @@ Requires `app:read`; no body or supported query. Returns `{ account_id,
 items:Run[] }`, at most 21 runs, running/paused first, then newest creation time.
 No pagination or machine run-detail GET exists. Runs exclude `checkpoint`; older
 non-active runs have `steps:[]`, not full history. Every row includes
-`counts:{total,success,failed,unavailable,skipped}` computed from the stored steps,
+`counts:{total,success,failed,unavailable,limited,skipped}` computed from the stored steps,
 including compact history. No browser progress/lease summary is added.
 
 Run fields: `id`, `account_id`, `owner`, `requestKey`, `mode`, `repos`, `repoIds`,
@@ -1078,9 +1177,15 @@ Run fields: `id`, `account_id`, `owner`, `requestKey`, `mode`, `repos`, `repoIds
 optional `resource`, `sourceHead`, `strategy`, `snapshotCursor`, `retryFailures`.
 Nested types: [`factory-run.ts`](../apps/web/src/lib/factory-run.ts).
 
-Step status is `pending|running|success|failed|unavailable|skipped`. Expected
+Step status is `pending|running|success|failed|unavailable|limited|skipped`. Expected
 feature/access unavailability is terminal `unavailable`, not `failed`; it does
-not by itself make a run `partial`. Truncation, limits, malformed data and exhausted
+not by itself make a run `partial`. Dependency safe-parse failures alone finish
+as terminal `limited` with `error:"dependency_parse_unsupported"`; the collector
+uses that typed safe code for unsupported workflow structure or an unparseable
+manifest, never classification by display text. This adds `counts.limited` and
+completed browser progress without incrementing failed/unavailable counts or
+making the run partial. Capacity truncation, interrupted pagination/access loss,
+malformed upstream containers and exhausted
 upstream retries remain failures. `completed` means the plan finished without
 failures or skipped required work, not that every data source is available.
 For paginated lists, only an explicit first-page access denial can represent

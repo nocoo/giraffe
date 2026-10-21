@@ -981,3 +981,101 @@ A final metadata-only review also caught CI/factory composites dropping derived
 freshness quality when a saved observation time was missing or malformed. Their
 hashes now include `total`/`missing`, not the time values; regression tests cover
 loss, malformed time and restored confirmation without changing source content.
+
+## 2026-10-21 - Guard date parsing in generic JSON indexes
+
+The initial newest-report expression index applied `julianday` directly to the
+generic report payload's `generatedAt`. Generic storage deliberately does not
+validate analysis payloads, so an existing or newly written `generatedAt:"now"`
+made SQLite reject migration/CRUD as nondeterministic index use. Pre-commit
+adversarial tests reproduced both failures. An ISO-shape guard now maps relative,
+missing and unparseable values to null before indexed date evaluation, retaining
+the rows for normal client validation. Indexing a loosely validated JSON field
+must preserve its entire existing write domain, not only valid consumer examples;
+test malformed legacy rows during both migration and subsequent generic writes.
+
+## 2026-10-21 - Include fixture overrides in freshness expectations
+
+While updating the factory source regression, an initial expected denominator of
+114 excluded the fixture's fork/archive defaults but overlooked its explicit
+statistics-disabled overrides. The regression failed before commit; inspecting
+the complete fixture established 103 eligible observations. Derive expectations
+from all declared selection inputs, including settings seeded later in a fixture,
+rather than treating its catalog declaration as the entire policy.
+
+## 2026-10-21 - Compose independent truncation signals
+
+The factory freshness correction initially assigned truncation solely from inventory
+completeness. Independent review reproduced a stored truncated publication with a
+complete inventory: machine reads incorrectly cleared its existing quality flag.
+A failing regression now covers that combination, and both the response and its
+content-hash selection OR saved truncation with incomplete inventory. New quality
+signals must supplement existing evidence, not replace independent failure flags.
+
+## 2026-10-21 - Distinguish empty conditions from scalar continuations
+
+The initial multiline workflow condition scanner skipped every indented child
+after an empty or comment-only `if:`. Controller review found that a YAML mapping
+or sequence could therefore disappear as scalar content and falsely retain full
+dependency coverage. Adversarial tests reproduced the acceptance before the fix.
+Empty headers now require a plain scalar continuation; mappings, sequences,
+aliases and flow children fail closed. Test scalar-shape boundaries separately
+from literal/folded block bodies, where key-like text must remain uninterpreted.
+
+## 2026-10-21 - Guard JSON1 extraction over generic JSON
+
+Independent review found that a schema-accepted report extension containing 1,000
+nested arrays exceeded SQLite JSON1's depth, despite fitting the generic payload
+byte limit. The new expression index made migration and generic POST/PATCH fail
+with malformed JSON. Red regressions reproduced all three failures. Index and
+query extraction now guard the full payload with `json_valid`; uninspectable
+components become null without deleting or rejecting the resource. Expression
+indexes over generic data must handle the storage schema's full legal domain,
+not just structurally valid consumer reports.
+
+## 2026-10-21 - Preserve accepted datetime precision in report ordering
+
+Independent review reproduced legal sub-millisecond report generations sorting by
+ID instead of time: SQLite `julianday` and client `Date.parse` collapsed distinct
+fractions. Date conversion could also round `.9999` into the next second. Red
+tests now cover microseconds, long fractions, trailing-zero/offset ties, the full
+Zod offset range and child/parent chronology. Index/query and client comparisons
+separate whole seconds from normalized fractional digit strings; fractions never
+enter numeric date conversion. Match ordering precision to the accepted schema,
+not the default precision of a convenient datetime API.
+
+## 2026-10-21 - Validate every plain condition line
+
+Final review found the empty-header correction still skipped flow arrays/maps in
+nonempty `if:` headers and mapping-like lines after an initial plain condition.
+One positive fixture was itself invalid YAML: a plain condition followed by
+`uses: fake/...`. Ten red cases reproduced acceptance of flow collections,
+mapping/sequence-like lines and comment-ended continuations. Plain and block
+scalar modes now differ: every plain line is checked, while literal/folded block
+bodies deliberately ignore key-like text. Corrected block fixtures and valid
+multiline expressions protect both paths. Confirm fixture syntax independently;
+an indentation test must not turn unsupported structure into successful evidence.
+
+## 2026-10-22 - Separate response shape from reader latency
+
+The new consumer timing report also showed about 33 KB of additional source-index
+JSON. Dropping nullable content hashes would violate the documented eight-field
+contract without establishing the cause of the reported latency. Cross-release
+real-stream/all-null measurements instead isolated sub-millisecond metadata lookup
+cost and accounted for exactly 22 bytes per required null property. Keep raw body,
+reader CPU/SQL and network/edge timing distinct before choosing an optimization.
+
+The first scratch comparison harness failed parsing before producing any samples;
+its missing helper brace was corrected and that failed attempt was excluded. All
+reported results come from three completed, revision-rotated rounds with query,
+payload and response-shape assertions. Validate benchmark execution and fixture
+equivalence before interpreting timing differences, and never merge failed or
+incomplete runs into reported percentiles.
+
+The cleanup command initially assigned a worktree directory to zsh's special
+`path` variable, replacing command lookup paths; it stopped before deletion.
+After renaming it, the clean-tree guard also correctly stopped on the owned,
+untracked dependency symlink. Cleanup then verified tracked cleanliness, the
+exact untracked entry and symlink target before unlinking it and removing each
+worktree normally. Use descriptive shell variable names such as `worktree_path`,
+and distinguish verified owned setup artifacts from unexpected modifications.

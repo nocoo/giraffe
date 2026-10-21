@@ -13,7 +13,14 @@ export const REPO_COOLDOWN_MS = 15 * 60_000;
 export const RUN_LEASE_MS = 90_000;
 export const RUN_MAX_RETRIES = 3;
 export type RunStatus = "running" | "paused" | "completed" | "partial" | "cancelled" | "failed";
-export type StepStatus = "pending" | "running" | "success" | "failed" | "skipped" | "unavailable";
+export type StepStatus =
+	| "pending"
+	| "running"
+	| "success"
+	| "failed"
+	| "skipped"
+	| "unavailable"
+	| "limited";
 export type StepKind =
 	| "inventory"
 	| "restore"
@@ -69,6 +76,7 @@ export type FactoryRun = {
 	restoreCursor: number;
 };
 export type RepoRefreshState = {
+	dependencyLimit?: { reason_code: "dependency_parse_unsupported"; reason: string | null };
 	attemptRunId?: string;
 	attemptStatus?: string;
 	observation?: FactoryRepo["observation"];
@@ -240,8 +248,9 @@ export function runProgress(run: FactoryRun, now: string) {
 	const success = count("success"),
 		failed = count("failed"),
 		unavailable = count("unavailable"),
+		limited = count("limited"),
 		skipped = count("skipped");
-	const completed = success + failed + skipped + unavailable;
+	const completed = success + failed + skipped + unavailable + limited;
 	const measured = run.steps.filter((s) => s.status === "success" && s.durationMs > 0);
 	const average = measured.length
 		? measured.reduce((sum, s) => sum + s.durationMs, 0) / measured.length
@@ -252,6 +261,7 @@ export function runProgress(run: FactoryRun, now: string) {
 		success,
 		failed,
 		unavailable,
+		limited,
 		skipped,
 		current: run.steps[run.cursor] ?? null,
 		etaSeconds:

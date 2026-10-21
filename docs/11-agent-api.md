@@ -122,6 +122,24 @@ collection queue. Dependency streams normalize unknown `at`, `createdAt` and
 evidence identifies them. Existing rows are normalized at read time, with no new
 workspace scan, required refresh or schema migration.
 
+Dependency safe-parse limitations use `reason_code:dependency_parse_unsupported`.
+New publications freeze this limited coverage even when stronger old evidence is
+retained: `coverage.retained:true`, `status:limited`, safe reason/code and
+`truncated:true`, while items/manifests, observed count, evidence version/window
+and timestamps stay original. Browser/machine streams and metadata-only `/sources`
+agree; GET never overlays mutable run/repository state. Their content hash composes
+the old stored hash with the frozen semantic coverage, preserving null for absent
+or mismatched metadata. Repeated identical limitations keep the hash; successful
+accepted evidence clears the diagnostic. An empty limited baseline is never zero.
+Full evidence versions can stay unchanged as coverage changes; consumers must
+check current completeness and reconcile unfiltered source indexes, not only time
+filters. Job/step multiline `if:` values support plain scalar continuations and
+literal/folded blocks. Only block bodies may contain mapping-like text without
+inspection. Plain headers and every continuation fail closed on unsupported
+collection starts, mapping/sequence-like lines or continuations after comments
+have ended the scalar; empty/comment-only headers still accept a first plain line.
+These unsupported shapes yield limited coverage, never a successful zero.
+
 Account `/factory` rate metadata is the latest dated saved GitHub rate observation
 from publication/run checkpoints, including newer catalog or active runs. It
 includes `observedAt` and becomes null when usable current evidence is absent or
@@ -142,9 +160,18 @@ that supplied retained data; baseline data must remain visible in `oldestAt`.
 New catalog entries without proven baseline coverage or a saved observation count
 as missing. Top-level `fetchedAt` is the newest selected observation, not proof of
 uniform freshness. Source-index account entries use the same projection.
-Factory freshness likewise counts the selected catalog, using only immutable
-per-repository observation times and counting absent publications/observations as
-missing. Publication inventory counters remain historical collection metadata.
+Factory freshness instead counts enabled published repositories in the selected
+catalog (`factoryObserved`), not the whole catalog. Non-owned/catalog-only entries
+and statistics-disabled archived/fork entries do not inflate missing/oldest times.
+An eligible published repository without a valid immutable observation time still
+counts as missing. Machine `/factory` and `/sources`'s `account:factory` agree;
+both report `truncated:true` when publication inventory is not complete. Machine
+reads also retain any saved truncation flag when inventory is complete. Machine
+repository list membership remains statistics-unfiltered. The account factory
+content hash includes enabled published identities, freshness total/missing and
+inventory truncation, so changing enabled identities invalidates it even when
+counts stay equal. Publication versions/windows and stored rows are unchanged;
+inventory counters remain historical collection metadata.
 Default/`scope=all` preserves the exact saved 90-day account contribution calendar,
 status and provenance, independently of repository filtering. Only `scope=starred`
 excludes it (`contribution:null`, `contributionExcluded:true`,
@@ -207,12 +234,53 @@ source evidence older than 36 hours is stale. Invalid or absent run records do n
 imply a live runner. Legacy Work records/jobs remain stored but are not read by the
 analysis page.
 
+Report history is not traversed by the page. Its Access-protected, active-account
+`GET /api/agent/accounts/:account/analysis/reports` projection selects N=3 rows per
+exact `(payload.scope, row.repository, payload.domain)` for `type:github-analysis`
+in the reports collection, across all statuses. It returns `{account_id, items}`
+with no query parameters or cursor. Per-key order is
+`(utcWholeSecond DESC, fractionDigits DESC, id DESC)`: exact time across offsets,
+then binary ID descending for ties. The epoch strips fractional seconds before
+conversion and manually subtracts signed offsets through +/-23:59. Fractions
+remain arbitrary-precision digit strings, with trailing zeros trimmed and leading
+zeros retained; no fraction/all zeros use empty text. Equivalent instants and
+trailing-zero spellings tie. No `julianday`/millisecond rounding determines order.
+The client uses the same exact instant/ID ordering and exact child-generation
+chronology, without tightening the accepted ISO datetime schema. ISO-shape
+(`????-??-??T*`), timezone/fraction and whole-second guards map missing,
+nonmatching or SQLite-unparseable times to null/last, without making generic CRUD
+reject relative date strings such as `now`; strict report validation stays in the
+client. Edits/revisions
+do not promote an old generation unless the payload's generation time changes.
+Selected invalid/non-completed rows consume slots and still undergo client
+validation; malformed keys are retained as separate groups, not silently dropped.
+The UI chooses current-source, valid completed reports only among these three;
+older historical or child reports outside that set are no longer candidates.
+
+Every indexed/query JSON extraction guards the payload with `json_valid` first.
+Generic JSON deeper than JSON1 can inspect remains legal for storage and CRUD;
+its scope/domain/time index components are null, not a migration/write failure.
+Selected rows retain original payloads for normal client validation.
+
+The additive partial index `0015_analysis_reports.sql` supports one SQL read with
+successor-key and top-three equality seeks; only selected row IDs hydrate payloads
+and the final sort is bounded to those rows. K keys yield at most 3K rows, not a
+fixed account-wide byte limit. Generic machine `/agent/reports` and generic
+browser list semantics remain unchanged (ID-ascending cursor pagination over all
+matching rows). History remains intact; there is no automatic deletion or total
+5,000-report UI ceiling. The independent run-record traversal still has its
+50-page/5,000-row ceiling. See [the precise read rule](api.md#analysis-report-projection-and-retention).
+
 ## Refresh management and storage boundary
 
-Refresh history includes `counts:{total,success,failed,unavailable,skipped}` even
+Refresh history includes `counts:{total,success,failed,unavailable,limited,skipped}` even
 when old step arrays are omitted. Expected feature/access unavailability is a
 terminal `unavailable` step, separate from real failures. It does not make a run
-partial and never means observed zero. Factory publications from that same run
+partial and never means observed zero. Dependency steps also allow terminal
+`limited` / `error:dependency_parse_unsupported`,
+counted separately without causing partial. This exception is only safe manifest/
+workflow parsing: capacity truncation, interrupted pagination/access loss and real
+failures retain their failure behavior. Factory publications from that same run
 use `complete` for `completed` and `partial` for `partial`; compare run IDs because
 failed newer attempts preserve older publications. Historical rows are unchanged.
 An explicit first-page denial is distinct from an incomplete paginated list.
