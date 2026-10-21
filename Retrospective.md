@@ -875,3 +875,16 @@ properties. The scanner used the sequence dash's column as the scalar boundary,
 mistaking a later sibling `uses` key for scalar content. Separate red/green cases
 now prove the action survives; the scalar boundary uses the property key's column
 after any sequence prefix, without weakening exclusion of actual script bodies.
+
+## 2026-10-21 - Do not equate an unrecognized workflow with zero dependencies
+
+Steward review found that uniformly indenting a valid workflow made the scanner
+miss `jobs`, then publish complete coverage with zero observations. Earlier tests
+varied nested indentation but assumed column-zero root keys. New failing tests
+exercise root indentation at mapping and collection level, and reproduce loss of
+a prior repository version through the publication writer. The scanner now finds
+the actual root indentation, distinguishes missing files from unparsed present
+files, and marks unsupported job evidence limited. The existing regression guard
+then retains stronger data, its source version and original window. A bounded
+scanner must report uncertainty explicitly instead of treating an empty parse as
+proof of absence; parser regressions need collection/publication assertions too.

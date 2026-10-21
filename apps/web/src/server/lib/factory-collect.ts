@@ -253,8 +253,7 @@ async function collectStream(
 				Object.assign(data, mapDependencies(object(result.repository), repo));
 			} catch {
 				data.coverage.status = "limited";
-				data.coverage.reason =
-					"Root package.json is not valid JSON; dependency evidence unavailable";
+				data.coverage.reason = "Dependency manifests cannot be parsed safely; evidence unavailable";
 			}
 			data.next = null;
 		} else if (stream === "commits" && !repo.head) {

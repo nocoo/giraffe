@@ -1,6 +1,10 @@
 import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import {
+	dependencyWorkflow,
+	unsupportedWorkflowJobs,
+} from "../../../../../tests/fixtures/dependency-workflow";
+import {
 	github,
 	memoryStore,
 	NOW,
@@ -21,6 +25,41 @@ import {
 
 const invoke = (s = ready(), gh = github(() => Response.json([])), store = memoryStore()) =>
 	stepFactory(s, gh, "test-token", store, NOW);
+
+it("collects uniformly indented workflow references instead of a complete zero", async () => {
+	const state = ready("dependencies");
+	const store = memoryStore();
+	const text = dependencyWorkflow
+		.split("\n")
+		.map((line) => `  ${line}`)
+		.join("\n");
+	await invoke(
+		state,
+		github(() => Response.json({ data: { repository: { ci: { text } } } })),
+		store,
+	);
+	const data = await store.read(streamKey("nocoo/app", "dependencies"));
+	expect(data?.coverage).toMatchObject({ status: "complete", observed: 3 });
+	expect(data?.items.map((item) => item.job)).toEqual(["api", "browser", "checks"]);
+});
+
+it.each(unsupportedWorkflowJobs)(
+	"does not certify unparsed workflow jobs as complete: %s",
+	async (text) => {
+		const state = ready("dependencies");
+		const store = memoryStore();
+		await invoke(
+			state,
+			github(() => Response.json({ data: { repository: { ci: { text } } } })),
+			store,
+		);
+		expect((await store.read(streamKey("nocoo/app", "dependencies")))?.coverage).toMatchObject({
+			status: "limited",
+			observed: 0,
+			reason: "Dependency manifests cannot be parsed safely; evidence unavailable",
+		});
+	},
+);
 
 it.each(githubUnavailableFixtures)(
 	"records a safe factory alerts reason ($code)",

@@ -562,10 +562,17 @@ Newly collected literal block-style `uses:` references carry the workflow job
 mapping key as `job` (not its display name) and use `B#job=<encoded-job>` even
 for a single job. Adding/removing other jobs, reordering jobs, changing the source
 HEAD or updating a single job's ref does not rename that reference. The bounded
-indentation scanner supports job-level reusable workflows and step actions,
+indentation scanner discovers the document's actual root indentation and supports
+job-level reusable workflows and step actions,
 quoted keys/references and comments, and ignores scalar script bodies. It is not
 a general YAML parser; flow-style objects, aliases and expression-valued `uses`
-are not resolved. No additional files or upstream requests are introduced.
+are not resolved. Present workflow files with missing/ambiguous job mappings or
+unsupported job/step references produce `coverage.status: "limited"`, with reason
+`"Dependency manifests cannot be parsed safely; evidence unavailable"`, not a
+complete zero. Existing stronger repository evidence and its original version/window
+remain published through the coverage-regression guard. Absent files and parsed
+run-only jobs can still prove no workflow dependencies. No additional files or
+upstream requests are introduced.
 
 Historical rows have no recoverable job key. Read normalization deduplicates only
 equal saved evidence (excluding generated `id`, recursively ignoring object-key

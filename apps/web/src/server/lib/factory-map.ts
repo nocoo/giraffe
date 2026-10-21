@@ -169,34 +169,61 @@ export function mapDependencies(data: GithubObject, repo: FactoryRepo) {
 
 function workflowReferences(content: string) {
 	const references: { name: string; version: string; job: string }[] = [];
+	const lines = content
+		.replace(/^\uFEFF/, "")
+		.split(/\r?\n/)
+		.filter((line) => !/^\s*(?:#.*)?$/.test(line));
+	if (/^---(?:\s+#.*)?\s*$/.test(lines[0]?.trim() ?? "")) lines.shift();
+	if (/^\.\.\.(?:\s+#.*)?\s*$/.test(lines.at(-1)?.trim() ?? "")) lines.pop();
+	const indentation = (line: string) => line.length - line.trimStart().length;
+	const rootIndent = lines.reduce(
+		(minimum, line) => Math.min(minimum, indentation(line)),
+		Infinity,
+	);
+	const fail = () => {
+		throw new Error("Workflow jobs cannot be parsed safely");
+	};
+	const block = (value: string) => /^(?:#.*)?$/.test(value);
+	let foundJobs = false;
+	let jobs = 0;
 	let inJobs = false;
 	let jobIndent: number | null = null;
 	let job = "";
 	let scalarIndent: number | null = null;
-	for (const line of content.split(/\r?\n/)) {
-		if (/^\s*(?:#.*)?$/.test(line)) continue;
-		const indent = line.length - line.trimStart().length;
+	for (const line of lines) {
+		const indent = indentation(line);
 		if (scalarIndent !== null && indent > scalarIndent) continue;
 		scalarIndent = null;
 		const property = /^\s*(?:-\s+)?(?:"([\w-]+)"|'([\w-]+)'|([\w-]+)):\s*(.*)$/.exec(line);
 		const key = property?.[1] ?? property?.[2] ?? property?.[3];
 		const value = (property?.[4] ?? "").trimEnd();
-		if (indent === 0) {
-			inJobs = key === "jobs" && /^(?:#.*)?$/.test(value);
+		if (indent === rootIndent) {
+			if (!key) fail();
+			inJobs = key === "jobs";
+			if (inJobs) {
+				if (foundJobs || !block(value)) fail();
+				foundJobs = true;
+			}
 			jobIndent = null;
 			job = "";
 			continue;
 		}
 		if (!inJobs) continue;
+		if (/^\s*(?:<<:|-\s*[*&{[])/.test(line)) fail();
 		if (key && (jobIndent === null || indent <= jobIndent)) {
+			if (!block(value)) fail();
 			jobIndent = indent;
 			job = key;
+			jobs++;
 		}
+		if (key === "steps" && !block(value) && value !== "[]") fail();
 		if (/^[|>](?:[+-]?[1-9]?|[1-9][+-]?)(?:\s+#.*)?$/.test(value))
 			scalarIndent = /^\s*-\s+/.exec(line)?.[0].length ?? indent;
 		if (key !== "uses" || indent === jobIndent) continue;
 		const match = /^["']?([\w.-]+\/[\w./-]+)@([^\s"'#]+)["']?(?:\s+#.*)?\s*$/.exec(value);
 		if (match) references.push({ name: match[1] ?? "", version: match[2] ?? "", job });
+		else if (!/^["']?(?:\.\/|docker:\/\/)[^\s"']+["']?(?:\s+#.*)?$/.test(value)) fail();
 	}
+	if (!foundJobs || jobs === 0) fail();
 	return references;
 }

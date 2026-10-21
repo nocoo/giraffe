@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Preserve separate REST/GraphQL rate reserves across PR pages, metadata transitions and failed-page rollback while keeping the public latest-rate observation unchanged.
 - Explain legacy stream 409 responses with distinct missing-payload and version-mismatch messages. Matching pre-observation snapshots already support the publication-window fallback; preserve the immutable-source checks rather than fabricating missing evidence.
 - Make workflow dependency IDs unique during collection/reuse and machine/browser reads. Capture real job keys with a bounded indentation scan, collapse identical legacy saved evidence and preserve distinct refs/content without rewriting historical rows or adding dependencies.
+- Detect workflow jobs relative to the document's actual root indentation. Fail closed with limited coverage for missing or unsupported job structures instead of publishing a complete zero; retain stronger prior repository evidence and its original version/window.
 
 ### Migration and Compatibility
 

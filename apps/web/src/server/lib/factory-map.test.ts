@@ -12,6 +12,34 @@ import {
 } from "./factory-map";
 
 describe("GitHub factory normalization", () => {
+	it.each([0, 2, 4])("finds jobs at the document root indentation of %s spaces", (indent) => {
+		const text = dependencyWorkflow
+			.split("\n")
+			.map((line) => " ".repeat(indent) + line)
+			.join("\n");
+		expect(
+			mapDependencies(
+				{ ci: { text: `# comment at column zero\n---\n${text}` } },
+				mapFactoryRepo(rawRepo),
+			),
+		).toEqual(mapDependencies({ ci: { text: dependencyWorkflow } }, mapFactoryRepo(rawRepo)));
+	});
+	it("distinguishes a parsed run-only job from missing workflow evidence", () => {
+		expect(
+			mapDependencies(
+				{ ci: { text: "  jobs:\n    build:\n      steps:\n        - run: echo hello" } },
+				mapFactoryRepo(rawRepo),
+			),
+		).toEqual({ items: [], manifests: [] });
+	});
+	it("handles a byte-order mark and document terminator without losing the root", () => {
+		expect(
+			mapDependencies(
+				{ ci: { text: `\uFEFF---\n  jobs:\n    build:\n      steps: []\n...\n` } },
+				mapFactoryRepo(rawRepo),
+			),
+		).toEqual({ items: [], manifests: [] });
+	});
 	it.each(["if", "name"])("retains uses after a folded step %s property", (key) => {
 		const text = `jobs:
   build:
@@ -83,7 +111,6 @@ jobs:
          uses: actions/checkout@v4
        - uses: ./local
        - uses: docker://alpine:3
-       - uses: \${{ inputs.action }}
 permissions:
   uses: outside/end@v1
 `;

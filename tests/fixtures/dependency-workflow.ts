@@ -9,3 +9,20 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
 `;
+
+export const unsupportedWorkflowJobs = [
+	"",
+	"# no jobs saved",
+	"name: CI",
+	"jobs: { build: { uses: actions/checkout@v4 } }",
+	"jobs:\n  build: *shared",
+	"jobs:\n  build: { uses: actions/checkout@v4 }",
+	"jobs:\n  build:\n    steps: *shared",
+	"jobs:\n  build:\n    steps: [{ uses: actions/checkout@v4 }]",
+	`jobs:\n  build:\n    uses: \${{ inputs.workflow }}`,
+	"jobs:\n  build:\n    <<: *shared",
+	"jobs:\n  build:\n    steps:\n      - *shared",
+	"jobs:\n  build:\n    steps:\n      - { uses: actions/checkout@v4 }",
+	"jobs:\n  # no job mapping",
+	"jobs:\n  build:\n    steps: []\njobs:\n  another:\n    steps: []",
+];

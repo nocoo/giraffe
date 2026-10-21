@@ -231,6 +231,11 @@ access loss during pagination remain failures, not expected absence.
   source HEAD, job order and a single job's ref are not identity components.
   Collection scans job-level reusable workflows and step actions, not general
   YAML flow objects, aliases or expression-valued `uses`.
+  The document root may be uniformly indented. Present files whose job mappings
+  or references cannot be parsed safely yield `limited` coverage with reason
+  `Dependency manifests cannot be parsed safely; evidence unavailable`; never
+  treat this as complete zero. Stronger published evidence keeps its original
+  version/window. Absent files and parsed run-only jobs still permit a real zero.
   Equal legacy saved records collapse without inventing job keys; a remaining
   singleton keeps its old ID. Distinct legacy refs use `B#ref=<encoded-ref>`;
   multiple refs in one known job use `B#job=<encoded-job>&ref=<encoded-ref>`.
