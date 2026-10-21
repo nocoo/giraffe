@@ -367,3 +367,11 @@ ALTER TABLE snapshots ADD COLUMN content_meta TEXT;
 ALTER TABLE factory_resources ADD COLUMN content_meta TEXT;
 CREATE INDEX snapshots_content ON snapshots(account_id,kind,content_meta);
 CREATE INDEX factory_resources_content ON factory_resources(run_id,repo,stream,content_meta);
+
+CREATE INDEX IF NOT EXISTS agent_analysis_recent ON agent_resources(
+ account_id,
+ json_array(json_extract(payload,'$.scope'),repository,json_extract(payload,'$.domain')),
+ CASE WHEN json_extract(payload,'$.generatedAt') GLOB '????-??-??T*'
+  THEN julianday(json_extract(payload,'$.generatedAt')) END DESC,
+ id DESC
+) WHERE collection='reports' AND type='github-analysis';

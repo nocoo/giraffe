@@ -981,3 +981,15 @@ A final metadata-only review also caught CI/factory composites dropping derived
 freshness quality when a saved observation time was missing or malformed. Their
 hashes now include `total`/`missing`, not the time values; regression tests cover
 loss, malformed time and restored confirmation without changing source content.
+
+## 2026-10-21 - Guard date parsing in generic JSON indexes
+
+The initial newest-report expression index applied `julianday` directly to the
+generic report payload's `generatedAt`. Generic storage deliberately does not
+validate analysis payloads, so an existing or newly written `generatedAt:"now"`
+made SQLite reject migration/CRUD as nondeterministic index use. Pre-commit
+adversarial tests reproduced both failures. An ISO-shape guard now maps relative,
+missing and unparseable values to null before indexed date evaluation, retaining
+the rows for normal client validation. Indexing a loosely validated JSON field
+must preserve its entire existing write domain, not only valid consumer examples;
+test malformed legacy rows during both migration and subsequent generic writes.

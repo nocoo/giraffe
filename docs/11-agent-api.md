@@ -207,6 +207,31 @@ source evidence older than 36 hours is stale. Invalid or absent run records do n
 imply a live runner. Legacy Work records/jobs remain stored but are not read by the
 analysis page.
 
+Report history is not traversed by the page. Its Access-protected, active-account
+`GET /api/agent/accounts/:account/analysis/reports` projection selects N=3 rows per
+exact `(payload.scope, row.repository, payload.domain)` for `type:github-analysis`
+in the reports collection, across all statuses. It returns `{account_id, items}`
+with no query parameters or cursor. Per-key order is
+`julianday(payload.generatedAt) DESC, id DESC`: actual time across offsets, then
+binary ID descending for ties. An ISO-shape guard (`????-??-??T*`) maps missing,
+nonmatching or SQLite-unparseable times to null/last, without making generic CRUD
+reject relative date strings such as `now`; strict report validation stays in the
+client. Edits/revisions
+do not promote an old generation unless the payload's generation time changes.
+Selected invalid/non-completed rows consume slots and still undergo client
+validation; malformed keys are retained as separate groups, not silently dropped.
+The UI chooses current-source, valid completed reports only among these three;
+older historical or child reports outside that set are no longer candidates.
+
+The additive partial index `0015_analysis_reports.sql` supports one SQL read with
+successor-key and top-three equality seeks; only selected row IDs hydrate payloads
+and the final sort is bounded to those rows. K keys yield at most 3K rows, not a
+fixed account-wide byte limit. Generic machine `/agent/reports` and generic
+browser list semantics remain unchanged (ID-ascending cursor pagination over all
+matching rows). History remains intact; there is no automatic deletion or total
+5,000-report UI ceiling. The independent run-record traversal still has its
+50-page/5,000-row ceiling. See [the precise read rule](api.md#analysis-report-projection-and-retention).
+
 ## Refresh management and storage boundary
 
 Refresh history includes `counts:{total,success,failed,unavailable,skipped}` even

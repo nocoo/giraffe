@@ -4,6 +4,22 @@ import { type AnalysisData, analysisState, safeEvidenceUrl, sourceQuality } from
 
 const at = "2026-10-02T08:00:00Z";
 
+it("uses actual generation instants and preserves server id order for ties", () => {
+	const state = analysisState(
+		{
+			...data,
+			reports: [
+				row({ ...report, summary: "Newest by id", generatedAt: "2026-10-02T08:00:00Z" }, "z"),
+				row({ ...report, summary: "Same instant", generatedAt: "2026-10-02T16:00:00+08:00" }, "a"),
+				row({ ...report, summary: "Older", generatedAt: "2026-10-02T15:59:59+08:00" }, "old"),
+			],
+		},
+		"nocoo/app",
+		Date.parse(at),
+	);
+	expect(state.cards.find((card) => card.domain === "prs")?.report?.summary).toBe("Newest by id");
+});
+
 it("falls back to the full version when the saved source predates content metadata", () => {
 	const legacy = data.sources.map((source) => ({ ...source, contentVersion: null }));
 	const hashed = {

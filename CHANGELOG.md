@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.17.1 - 2026-10-21
+
+### Fixed
+
+- Replace the analysis page's 5,000-row report traversal with a dedicated browser projection: newest three rows per exact `(payload.scope, row.repository, payload.domain)`, ordered by the actual `generatedAt` instant descending, then ID descending. Use indexed key seeks and hydrate only selected payloads in one read-only query, preserving generic machine list pagination and every historical row.
+
+### Migration and Compatibility
+
+- Add `0015_analysis_reports.sql`, a repeatable partial expression index without a table rebuild or payload rewrite; apply it before deploying the reader and retain it on code rollback. UI candidate selection changes from all historical reports to the newest three rows per key across all statuses; current-source preference and strict validation apply only within that set. The separate `grok-bot-run` record-list ceiling remains unchanged. No new dependencies or automatic cleanup.
+
 ## v0.17.0 - 2026-10-21
 
 ### Added
@@ -21,7 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Docs
 
 - Clarify generic jobs do not execute analysis, recommend four account-sourced global reports for the default view, and document exact hashing, full-hash skip checks, ID-only prefixes and source identity mapping.
-- Document the strict `grok-bot-run` payload and revisioned full-replacement workflow, validation of non-completed analysis rows, explicit report deletion and the 5,000-row UI cap. Correct the distinction between generic server validation and strict reader validation: malformed rows raise errors but do not prevent valid cards from rendering.
+- Document the strict `grok-bot-run` payload and revisioned full-replacement workflow, validation of non-completed analysis rows and explicit report deletion. The historical 5,000-row report UI cap is removed in v0.17.1 by a newest-three-per-key projection; the run-record list retains its separate ceiling. Correct the distinction between generic server validation and strict reader validation: malformed selected rows raise errors but do not prevent valid cards from rendering.
 - Extend the 126-repository source benchmark with real near-cap factory streams, payload-byte and metadata-index regressions; distinguish historical batch-3 measurements from the persisted-hash performance evidence.
 
 ## v0.16.1 - 2026-10-21

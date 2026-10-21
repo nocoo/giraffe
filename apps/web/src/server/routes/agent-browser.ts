@@ -8,6 +8,7 @@ import {
 	listResources,
 	updateResource,
 } from "../lib/agent-resources";
+import { readAnalysisReports } from "../lib/analysis-reports";
 import { getActiveAccount } from "../lib/db/accounts";
 import { ApiError } from "../lib/errors";
 import { readSources } from "../lib/machine-sources";
@@ -37,6 +38,11 @@ export function agentBrowserApi() {
 			.map((repo) => repo.name_with_owner)
 			.sort();
 		return c.json({ ...result, repositories });
+	});
+	app.get("/accounts/:account/analysis/reports", async (c) => {
+		if (Object.keys(c.req.query()).length)
+			throw new ApiError(400, "validation_failed", "unexpected query parameters");
+		return c.json(await readAnalysisReports(c.get("db"), String(c.req.param("account"))));
 	});
 	app.all("/accounts/:account/:collection/:id?", async (c) => {
 		const parsed = resourceCollection.safeParse(c.req.param("collection"));

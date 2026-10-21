@@ -704,17 +704,34 @@ There is no application requests-per-second quota, per-token throttle, standard
 rate-limit headers or documented total resource-count quota. A 25-repo bot batch
 is a local budget choice, not an API limit.
 
-**Separate UI ceiling:** the analysis reader fetches at most 50 pages of 100 rows
-for each account/type query. More than 5,000 `github-analysis` report rows causes
-the whole analysis load to fail, even though POST can still succeed. The reader
-does not filter reports by status or repository, so all such rows count; its
-`grok-bot-run` records query has the same ceiling. Track growth and alert before
-this limit. Request explicit approval for a reviewed historical-report retention
-plan, preserving needed current/child reports and audit history; never silently
-delete existing records or treat an analysis-run request as retention permission.
-There is no server-side automatic report cleanup. With explicit retention
-authorization, GET the current revision then DELETE
-`/agent/reports/:id?revision=N`; expect 204 and reconcile revision conflicts.
+**Analysis read rule:** the browser uses its Access-protected, active-account
+`GET /api/agent/accounts/A/analysis/reports` projection, not the generic machine
+list. It takes N=3 `github-analysis` report rows per exact
+`(payload.scope, row.repository, payload.domain)` across all statuses. Per-key order
+is `julianday(payload.generatedAt) DESC, id DESC`: actual instants across offsets,
+binary ID descending for ties. An ISO-shape guard (`????-??-??T*`) puts missing,
+nonmatching or SQLite-unparseable times last, allowing generic storage of relative
+keywords such as `now` without unsafe index evaluation. Strict report validation
+remains client-side. Repository keys are
+case-sensitive; global rows normally use null. `updated_at` and revision do not
+promote older generations. Selected malformed/non-completed rows consume slots
+and still undergo strict UI validation; malformed keys form separate groups.
+The UI prefers current-source valid completed reports only within the selected
+three; an older current or child report outside that set is not a candidate.
+There are no query parameters/cursor on this `{account_id, items}` projection.
+Indexed key/top-three seeks hydrate at most 3K payloads for K keys in one read-only
+query, without scanning historical payloads. This is not a fixed account-wide byte
+limit. The generic machine `/agent/reports` list remains unchanged: ID-ascending
+cursor pagination over all matching rows, with no newest-three filter or total
+5,000-row cap. Use that list or individual GETs for historical reconciliation.
+
+The old report UI cap no longer requires retention. Only the separate
+`grok-bot-run` records traversal retains the 50-page/5,000-row ceiling; use one
+stable run-record ID. There is no server-side automatic report cleanup. Request
+explicit approval for any retention plan, preserving needed current/child reports
+and audit history; never silently delete records or treat analysis permission as
+deletion permission. With explicit authorization, GET the current revision then
+DELETE `/agent/reports/:id?revision=N`; expect 204 and reconcile conflicts.
 
 Use bounded exponential backoff with jitter for transport errors, edge 429 and
 5xx; honor Retry-After only when supplied. Reconcile uncertain mutations before
@@ -736,7 +753,7 @@ error. Do not retry 401/403 by attempting retired authorization endpoints.
 5. Publish authorized reports, reconcile uncertain outcomes/409s, then mark work
    complete locally. Aggregate globals only from the correct complete source or
    child-report set. Keep failed/deferred domains pending across runs. Monitor
-   stored report counts and arrange authorized retention before the UI ceiling.
+   selected report generations; generic history remains independently readable.
 6. Create/PATCH `grok-bot-run` with truthful status/counts/time and safe errors.
    Status-write failure must not lose pending work or duplicate confirmed reports.
 7. Reconcile full scans even after empty incremental polls, monitor 48-hour overdue

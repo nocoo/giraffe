@@ -136,7 +136,7 @@ export function analysisState(data: AnalysisData, repository: string | null, now
 	}
 	const repoReports = reports
 		.filter((r) => r.scope === "repo")
-		.sort((a, b) => b.generatedAt.localeCompare(a.generatedAt));
+		.sort((a, b) => Date.parse(b.generatedAt) - Date.parse(a.generatedAt));
 	const bestRepos = repoReports.filter(
 		(r, i, all) =>
 			i === all.findIndex((x) => x.repository === r.repository && x.domain === r.domain),
@@ -151,7 +151,7 @@ export function analysisState(data: AnalysisData, repository: string | null, now
 			.sort(
 				(a, b) =>
 					Number(b.quality.current) - Number(a.quality.current) ||
-					b.report.generatedAt.localeCompare(a.report.generatedAt),
+					Date.parse(b.report.generatedAt) - Date.parse(a.report.generatedAt),
 			);
 		const best = matches[0];
 		return {
@@ -211,17 +211,21 @@ async function allPages(account: string, collection: string, type?: string) {
 export async function loadAnalysis(): Promise<AnalysisData> {
 	const account = await ensureSession();
 	const [reports, records, sources] = await Promise.all([
-		allPages(account, "reports", "github-analysis"),
+		apiGet<{ account_id: string; items: Resource[] }>(`agent/accounts/${account}/analysis/reports`),
 		allPages(account, "records", "grok-bot-run"),
 		apiGet<{ account_id: string; sources: CurrentSource[]; repositories: string[] }>(
 			`agent/accounts/${account}/sources`,
 		),
 	]);
-	if (sources.account_id !== account || getActiveAccountId() !== account)
+	if (
+		reports.account_id !== account ||
+		sources.account_id !== account ||
+		getActiveAccountId() !== account
+	)
 		throw new Error("Account changed");
 	return {
 		account_id: account,
-		reports,
+		reports: reports.items,
 		records,
 		sources: sources.sources,
 		repositories: sources.repositories,

@@ -978,16 +978,52 @@ data is retained. An absent valid record shows an empty state, not an offline
 runner. Loading and visible polling are read-only and never invoke a model or
 refresh GitHub. Do not synthesize fake Work heartbeats for an external bot.
 
-### Report retention
+### Analysis report projection and retention
 
-There is no server-side automatic cleanup of agent reports. The analysis reader
-loads all statuses and repositories for `type:github-analysis`, up to 50 pages of
-100 rows (5,000 total); more rows fail the whole load. The run-record query has
-the same cap. Arrange explicitly authorized retention before this limit, using
-GET for the current revision followed by
+The Access-protected browser endpoint
+`GET /api/agent/accounts/A/analysis/reports` returns `{account_id, items: Resource[]}`
+for the active account. It accepts no query parameters and performs no writes or
+upstream calls. It is not a machine endpoint or an Access-bypass route.
+
+It selects only `reports` of `type:github-analysis`, taking the newest **N=3 rows
+per exact `(payload.scope, row.repository, payload.domain)`** across all statuses.
+Repository matching is case-sensitive; global reports normally use null. Order
+within each key is `julianday(payload.generatedAt) DESC, id DESC` (binary ID order):
+timestamps with different offsets are compared as actual instants, equal instants
+use descending ID. Parsing is guarded by the ISO-shaped pattern `????-??-??T*`;
+missing, nonmatching or SQLite-unparseable values sort last. This excludes relative
+keywords such as `now`, which are unsafe in an expression index, without rejecting
+generic storage writes. Full report/date validation remains in the client. `created_at`,
+`updated_at`, revision and current source versions do not determine inclusion.
+Malformed keys form their own groups; selected malformed or non-completed rows
+still reach the existing strict reader validation and consume a slot. Only valid
+completed candidates are displayed, preferring current sources within the selected
+three and then generation time; ties preserve the server's ID order. A current
+historical report outside those three is no longer a display candidate.
+
+Migration `0015_analysis_reports.sql` adds a partial expression index. One SQL
+statement seeks distinct indexed keys, then at most three row IDs per key before
+loading payloads. The final sort covers only selected rows, not report history.
+For K distinct keys the response contains at most 3K resources; it is not a fixed
+account-wide byte cap. Adding history to existing keys does not add queries,
+returned payloads or a full historical scan. The SQLite regression uses 6,001
+historical rows, asserts three returned payloads below 5 KB, and checks actual
+`EXPLAIN QUERY PLAN` key-range/equality index seeks and rowid hydration. A second
+60,001-row case has the same query/payload bounds; SQLite bytecode assertions
+prove table columns are read only by the selected-row hydration cursor.
+
+The generic machine `GET /api/v1/accounts/A/agent/reports` and generic browser
+resource lists are unchanged: ID-ascending cursor pagination, all matching rows,
+no newest-per-key filtering or 5,000-row total limit. The analysis page's separate
+`grok-bot-run` record query still traverses at most 50 pages of 100 rows; excessive
+matching run records can still fail the load. Use the single stable run-record ID.
+
+There is no server-side automatic report cleanup. Report history no longer needs
+deletion to avoid the old UI cap. Retention still requires explicit authorization:
+GET the current revision then
 `DELETE /accounts/A/agent/reports/:id?revision=N` (204 on success). Preserve needed
 current/child reports and audit history; analysis permission is not deletion
-permission. Invalid rows under the cap raise errors independently of their status.
+permission. All old rows remain stored and individually/generically readable.
 
 ## Application management
 

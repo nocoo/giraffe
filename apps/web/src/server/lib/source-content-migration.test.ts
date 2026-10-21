@@ -8,8 +8,8 @@ import { expect, it } from "vitest";
 it("adds nullable metadata on a backup without backfilling or breaking old-column writes", () => {
 	const migration = readFileSync("migrations/0014_source_content.sql", "utf8");
 	const schema = readFileSync("apps/web/src/server/lib/db/schema.sql", "utf8");
-	expect(schema.endsWith(migration)).toBe(true);
-	const oldSchema = schema.slice(0, -migration.length);
+	expect(schema.includes(migration)).toBe(true);
+	const oldSchema = schema.slice(0, schema.indexOf(migration));
 	const directory = mkdtempSync(join(tmpdir(), "giraffe-content-migration-"));
 	const sourceFile = join(directory, "source.sqlite");
 	const backupFile = join(directory, "backup.sqlite");

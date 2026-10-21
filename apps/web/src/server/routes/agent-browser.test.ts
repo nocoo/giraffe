@@ -8,6 +8,29 @@ import { replaceSnapshotStmts } from "../lib/db/snapshots";
 
 const account = "a".repeat(21),
 	other = "b".repeat(21);
+it("protects the dedicated read-only report projection and rejects query parameters", async () => {
+	const DB = sqliteFixture();
+	await DB.prepare(
+		"INSERT INTO accounts(id,login,token_ciphertext,token_last4,is_active,created_at,updated_at) VALUES(?,'nocoo','fake','fake',1,'t','t')",
+	)
+		.bind(account)
+		.run();
+	const env = { DB, ENVIRONMENT: "development", GITHUB_API_BASE: "http://fixture" } as Env;
+	const app = createApp();
+	const path = `/api/agent/accounts/${account}/analysis/reports`;
+	const response = await app.request(`http://localhost${path}`, {}, env);
+	expect(response.status).toBe(200);
+	expect(response.headers.get("cache-control")).toBe("private, no-store");
+	expect(await response.json()).toEqual({ account_id: account, items: [] });
+	expect((await app.request(`http://localhost${path}?limit=100`, {}, env)).status).toBe(400);
+	expect(
+		(await app.request(`http://localhost${path}`, {}, { ...env, ENVIRONMENT: "production" }))
+			.status,
+	).toBe(401);
+	expect(
+		(await app.request(`http://localhost${path.replace(account, other)}`, {}, env)).status,
+	).toBe(409);
+});
 it("selects eligible browser source repositories by catalog, never by a hardcoded repository name", async () => {
 	const DB = sqliteFixture();
 	const db = createDb(DB);
