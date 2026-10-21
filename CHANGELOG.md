@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.16.0 - 2026-10-21
+
+### Added
+
+- Support 1-6 normalized refresh times for daily, weekly and catalog schedules, with Basalt add/remove controls, earliest-slot scheduling and exact missed-slot accounting. Preserve fixed UTC+08:00 and the readable/writable single `time` alias.
+- Refresh the account contribution calendar on scheduled daily runs as well as weekly/full runs. Collect six nullable contribution types in bounded, resumable daily aggregate batches and retain prior good evidence after failures.
+- Expose `GET /api/v1/accounts/:account/contributions` with inclusive saved date filters, strict validation, observation provenance, missing/partial-day semantics and authenticated ETag/304 responses. Preserve GitHub calendar date/count attribution; explicitly label UTC type windows rather than claiming Shanghai-equivalent buckets.
+- Add consistent `mergeable`, `mergeStateStatus` and `checks.state` to account, repository and factory PR responses. Collect through existing GraphQL searches and bounded factory node batches; old/unavailable observations read as null.
+
+### Fixed
+
+- Stop terminally failed contribution checkpoints from being resumed by later repository streams or replacing prior calendars.
+- Preserve separate REST/GraphQL rate reserves across PR pages, metadata transitions and failed-page rollback while keeping the public latest-rate observation unchanged.
+
+### Migration and Compatibility
+
+- Add migration `0013_refresh_schedule_times.sql`: an idempotent side table/backfill and legacy-column synchronization triggers, with no table rebuild or existing schedule changes. Local SQLite backup validation proves row preservation, rollback compatibility and integrity. Keep the table/triggers when rolling back code.
+- No breaking changes. Existing `time`-only writes map to `times:[time]`; `time` reads as the first sorted slot. Existing contribution totals and immutable publication identities remain intact. Additional times are not enabled automatically and require the owner's choice.
+
 ## v0.15.15 — 2026-10-21
 
 ### Fixed
