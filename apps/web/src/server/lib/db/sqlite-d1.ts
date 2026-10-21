@@ -120,7 +120,7 @@ class Stmt {
 			this.mem.days = this.mem.days.filter((row) => row.account_id !== v[0]);
 			return [];
 		}
-		if (sql.startsWith("SELECT kind, payload FROM snapshots")) {
+		if (sql.startsWith("SELECT kind, payload, content_meta FROM snapshots")) {
 			return this.mem.snapshots.filter(
 				(row) => row.account_id === v[0] && (row.kind === v[1] || row.kind === v[2]),
 			);
@@ -132,12 +132,13 @@ class Stmt {
 			return [];
 		}
 		if (sql.startsWith("INSERT INTO snapshots")) {
-			for (let i = 0; i + 3 < v.length; i += 4) {
+			for (let i = 0; i + 4 < v.length; i += 5) {
 				this.mem.snapshots.push({
 					account_id: v[i],
 					kind: v[i + 1],
 					payload: v[i + 2],
 					fetched_at: v[i + 3],
+					content_meta: v[i + 4],
 				});
 			}
 			return [];

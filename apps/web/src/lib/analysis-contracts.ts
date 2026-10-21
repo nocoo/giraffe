@@ -15,7 +15,10 @@ export const observationSchema = z.object({
 	account_id: z.string().min(1),
 	data: z.record(z.string(), z.unknown()),
 	sourceVersion: z.string().min(1),
-	contentVersion: z.string().regex(/^sha256:[0-9a-f]{64}$/),
+	contentVersion: z
+		.string()
+		.regex(/^sha256:[0-9a-f]{64}$/)
+		.nullable(),
 	fetchedAt: z.string().nullable(),
 	freshness: z.unknown(),
 	coverage: z.unknown(),

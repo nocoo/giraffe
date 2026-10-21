@@ -4,6 +4,25 @@ import { type AnalysisData, analysisState, safeEvidenceUrl, sourceQuality } from
 
 const at = "2026-10-02T08:00:00Z";
 
+it("falls back to the full version when the saved source predates content metadata", () => {
+	const legacy = data.sources.map((source) => ({ ...source, contentVersion: null }));
+	const hashed = {
+		...report,
+		sources: report.sources.map((source) => ({
+			...source,
+			contentVersion: `sha256:${"a".repeat(64)}`,
+		})),
+	};
+	expect(sourceQuality(hashed, legacy, Date.parse(at)).current).toBe(true);
+	expect(
+		sourceQuality(
+			hashed,
+			legacy.map((source) => ({ ...source, version: "different" })),
+			Date.parse(at),
+		).current,
+	).toBe(false);
+});
+
 it("keeps unchanged content current using the latest confirmation time, not report age", () => {
 	const contentVersion = `sha256:${"a".repeat(64)}`;
 	const now = Date.parse(at) + 72 * 3600000;
@@ -36,7 +55,7 @@ it("keeps unchanged content current using the latest confirmation time, not repo
 		});
 		expect(sourceQuality(candidate, sources, now + 36 * 3600000).stale).toBe(false);
 		expect(sourceQuality(candidate, sources, now + 36 * 3600000 + 1).stale).toBe(true);
-		for (const changed of [null, `sha256:${"b".repeat(64)}`])
+		for (const changed of [`sha256:${"b".repeat(64)}`])
 			expect(
 				sourceQuality(candidate, [{ ...current, contentVersion: changed, version: "v1" }], now)
 					.current,

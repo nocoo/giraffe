@@ -9,25 +9,48 @@ const db = new Database(":memory:");
 try {
 	db.exec(readFileSync(backup, "utf8"));
 	db.exec("PRAGMA foreign_keys=ON");
+	const legacyColumns = Object.fromEntries(
+		["accounts", "snapshots", "snapshot_days"].map((table) => [
+			table,
+			(db.query(`PRAGMA table_info(${table})`).all() as { name: string }[])
+				.map(({ name }) => `"${name}"`)
+				.join(","),
+		]),
+	);
 	const digest = () =>
 		Object.fromEntries(
 			["accounts", "snapshots", "snapshot_days"].map((table) => [
 				table,
 				createHash("sha256")
-					.update(JSON.stringify(db.query(`SELECT * FROM ${table} ORDER BY 1,2`).all()))
+					.update(
+						JSON.stringify(
+							db.query(`SELECT ${legacyColumns[table]} FROM ${table} ORDER BY 1,2`).all(),
+						),
+					)
 					.digest("hex"),
 			]),
 		);
 	const before = digest();
-	const migration = readdirSync("migrations")
+	const migrations = readdirSync("migrations")
 		.filter((name) => name.endsWith(".sql"))
 		.sort()
-		.map((name) => readFileSync(`migrations/${name}`, "utf8"))
-		.join("\n");
+		.map((name) => ({ name, sql: readFileSync(`migrations/${name}`, "utf8") }));
+	const migration = migrations.map(({ sql }) => sql).join("\n");
 	if (!readFileSync("apps/web/src/server/lib/db/schema.sql", "utf8").endsWith(migration))
 		throw new Error("Initial schema and migration disagree");
-	db.exec(migration);
-	db.exec(migration);
+	for (let pass = 0; pass < 2; pass++)
+		for (const { name, sql } of migrations) {
+			if (name === "0014_source_content.sql") {
+				const migrated = ["snapshots", "factory_resources"].map((table) =>
+					Boolean(
+						db.query(`SELECT 1 FROM pragma_table_info('${table}') WHERE name='content_meta'`).get(),
+					),
+				);
+				if (migrated.every(Boolean)) continue;
+				if (migrated.some(Boolean)) throw new Error("Partial source content migration");
+			}
+			db.exec(sql);
+		}
 	const required = [
 		"factory_runs",
 		"factory_state",
@@ -58,6 +81,9 @@ try {
 		throw new Error("Active-run constraint missing");
 	if (!db.query("PRAGMA foreign_key_list(factory_resources)").all().length)
 		throw new Error("Resource foreign key missing");
+	for (const index of ["snapshots_content", "factory_resources_content"])
+		if (!db.query("SELECT 1 FROM sqlite_master WHERE type='index' AND name=?").get(index))
+			throw new Error("Source content index missing");
 	db.exec("SAVEPOINT factory_probe");
 	const probe = crypto.randomUUID();
 	db.query(
@@ -90,7 +116,9 @@ try {
 			.run(probe, probe).changes < 1
 	)
 		throw new Error("Valid fenced mutation failed");
-	db.query("INSERT INTO factory_resources VALUES(?,'probe/repo','commits','{}')").run(probe);
+	db.query(
+		"INSERT INTO factory_resources(run_id,repo,stream,payload) VALUES(?,'probe/repo','commits','{}')",
+	).run(probe);
 	const size = db.query("SELECT bytes FROM factory_storage WHERE account_id=?").get(probe) as {
 		bytes: number;
 	};
@@ -100,10 +128,9 @@ try {
 		probe,
 	);
 	db.query("INSERT INTO factory_repo_state VALUES(?,'probe/repo',?,'{}')").run(probe, probe);
-	db.query("INSERT INTO snapshots VALUES(?,?,'{\"repos\":[]}','2000')").run(
-		probe,
-		`factory:v:${probe}`,
-	);
+	db.query(
+		"INSERT INTO snapshots(account_id,kind,payload,fetched_at) VALUES(?,?,'{\"repos\":[]}','2000')",
+	).run(probe, `factory:v:${probe}`);
 	db.query("INSERT INTO factory_version_refs VALUES(?,?,'probe/repo',?,'run')").run(
 		probe,
 		probe,

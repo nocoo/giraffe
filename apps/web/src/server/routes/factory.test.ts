@@ -43,7 +43,13 @@ async function setup(withAccount = true) {
 		]);
 	if (withAccount)
 		await db.batch(
-			replaceSnapshotStmts(db, ID, "repos", { repos: [{ name_with_owner: "nocoo/app" }] }, NOW),
+			await replaceSnapshotStmts(
+				db,
+				ID,
+				"repos",
+				{ repos: [{ name_with_owner: "nocoo/app" }] },
+				NOW,
+			),
 		);
 	const app = createApp();
 	return {
@@ -72,7 +78,7 @@ it("retains saved contribution metadata for default/all browser and machine read
 		fetchedAt: NOW,
 	};
 	state.contributionObservation = { version: "calendar-v1", window: state.window, fetchedAt: NOW };
-	await fixture.db.batch(replaceSnapshotStmts(fixture.db, ID, "factory", { ...state }, NOW));
+	await fixture.db.batch(await replaceSnapshotStmts(fixture.db, ID, "factory", { ...state }, NOW));
 	await fixture.db.prepare("INSERT INTO repo_stars VALUES(?,'NOCOO/APP')").bind(ID).run();
 	const before = await fixture.env.DB.prepare("SELECT * FROM snapshots ORDER BY kind").all();
 	const network = vi.fn(() => {
@@ -139,7 +145,7 @@ it("projects starred factory repositories and dates from their observations, not
 		},
 	];
 	await fixture.db.batch(
-		replaceSnapshotStmts(
+		await replaceSnapshotStmts(
 			fixture.db,
 			ID,
 			"repos",
@@ -147,7 +153,7 @@ it("projects starred factory repositories and dates from their observations, not
 			NOW,
 		),
 	);
-	await fixture.db.batch(replaceSnapshotStmts(fixture.db, ID, "factory", { ...state }, NOW));
+	await fixture.db.batch(await replaceSnapshotStmts(fixture.db, ID, "factory", { ...state }, NOW));
 	for (const repo of ["NOCOO/APP", "nocoo/mixed", "nocoo/new"])
 		await fixture.db.prepare("INSERT INTO repo_stars VALUES(?,?)").bind(ID, repo).run();
 	const before = await readSnapshot(fixture.db, ID, "factory");
@@ -188,8 +194,14 @@ it("filters full resource WIP and UTC days before pagination, rejecting malforme
 		})),
 	);
 	await s.db.batch([
-		...replaceSnapshotStmts(s.db, ID, "factory", { ...state }, NOW),
-		...replaceSnapshotStmts(s.db, ID, "factory:nocoo/app:prs", { items, runId: state.runId }, NOW),
+		...(await replaceSnapshotStmts(s.db, ID, "factory", { ...state }, NOW)),
+		...(await replaceSnapshotStmts(
+			s.db,
+			ID,
+			"factory:nocoo/app:prs",
+			{ items, runId: state.runId },
+			NOW,
+		)),
 	]);
 	const response = await s.call("/api/factory/repos/nocoo/app/prs?state=open&day=2026-09-01");
 	expect(response.status).toBe(200);
@@ -213,14 +225,14 @@ it("never serves detail from another survey generation", async () => {
 	const state = ready("commits");
 	if (state.repos[0]) state.repos[0].coverage.commits.status = "complete";
 	await s.db.batch([
-		...replaceSnapshotStmts(s.db, ID, "factory", { ...state }, NOW),
-		...replaceSnapshotStmts(
+		...(await replaceSnapshotStmts(s.db, ID, "factory", { ...state }, NOW)),
+		...(await replaceSnapshotStmts(
 			s.db,
 			ID,
 			"factory:nocoo/app:commits",
 			{ items: [], runId: "other" },
 			NOW,
-		),
+		)),
 	]);
 	expect((await s.call("/api/factory/repos/nocoo/app/commits")).status).toBe(409);
 });
@@ -229,7 +241,7 @@ it("rejects legacy implicit full refresh without changing stored data", async ()
 	const s = await setup();
 	const old = ready();
 	old.status = "complete";
-	await s.db.batch(replaceSnapshotStmts(s.db, ID, "factory", { ...old }, NOW));
+	await s.db.batch(await replaceSnapshotStmts(s.db, ID, "factory", { ...old }, NOW));
 	expect((await s.call("/api/factory/refresh", { account_id: ID, restart: true })).status).toBe(
 		400,
 	);
@@ -244,7 +256,7 @@ it("keeps factory GET read-only and validates repository/stream/page boundaries"
 	const s = await setup();
 	expect((await s.call()).status).toBe(409);
 	const state = ready();
-	await s.db.batch(replaceSnapshotStmts(s.db, ID, "factory", { ...state }, NOW));
+	await s.db.batch(await replaceSnapshotStmts(s.db, ID, "factory", { ...state }, NOW));
 	expect((await s.call()).headers.get("cache-control")).toBe("private, no-store");
 	expect((await s.call("/api/factory/repos/nocoo/no/commits")).status).toBe(404);
 	expect((await s.call("/api/factory/repos/nocoo/app/other")).status).toBe(400);
@@ -258,7 +270,7 @@ it("does not invent an empty result when a published resource reference is missi
 	const repo = state.repos[0];
 	if (!repo) throw new Error("fixture");
 	repo.coverage.commits.status = "complete";
-	await s.db.batch(replaceSnapshotStmts(s.db, ID, "factory", { ...state }, NOW));
+	await s.db.batch(await replaceSnapshotStmts(s.db, ID, "factory", { ...state }, NOW));
 	expect((await s.call("/api/factory/repos/nocoo/app/commits")).status).toBe(409);
 });
 

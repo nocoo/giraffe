@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
-import { FACTORY_STREAMS, type FactoryRepo } from "../../apps/web/src/lib/factory-types";
+import {
+	FACTORY_STREAMS,
+	type FactoryRepo,
+	type FactoryStreamData,
+} from "../../apps/web/src/lib/factory-types";
+import { savedContentMeta } from "../../apps/web/src/server/lib/content-version";
 import { factoryFixture } from "./factory-snapshot";
 import { sqliteFixture } from "./sqlite";
 
@@ -15,8 +20,10 @@ export async function sourcesFixture() {
 	const save = async (kind: string, data: Record<string, unknown>, at = latest) => {
 		const payload = JSON.stringify({ ...data, fetched_at: at, truncated: data.truncated === true });
 		await raw
-			.prepare("INSERT INTO snapshots(account_id,kind,payload,fetched_at) VALUES(?,?,?,?)")
-			.bind(account, kind, payload, at)
+			.prepare(
+				"INSERT INTO snapshots(account_id,kind,payload,fetched_at,content_meta) VALUES(?,?,?,?,?)",
+			)
+			.bind(account, kind, payload, at, await savedContentMeta(kind, JSON.parse(payload)))
 			.run();
 	};
 	await raw.prepare("CREATE TABLE _test_marker(key TEXT PRIMARY KEY,value TEXT NOT NULL)").run();
@@ -189,4 +196,59 @@ export async function sourcesFixture() {
 		);
 	}
 	return { raw, account, names, save, latest, old, snapshot };
+}
+
+export async function populateSourceStreams(fixture: Awaited<ReturnType<typeof sourcesFixture>>) {
+	const { raw, account, snapshot } = fixture;
+	assert.equal(
+		(await raw.prepare("SELECT value FROM _test_marker WHERE key='env'").first<{ value: string }>())
+			?.value,
+		"test",
+	);
+	const payloadBytes = new Map<string, number>();
+	for (const repo of snapshot.repos) {
+		const version = repo.observation?.version;
+		assert.ok(version);
+		await raw
+			.prepare(
+				"INSERT OR IGNORE INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES(?,?,?,'completed','{}','t','t','t')",
+			)
+			.bind(version, account, version)
+			.run();
+		const coverage = repo.coverage.commits;
+		const data: FactoryStreamData = {
+			runId: version,
+			next: null,
+			ranges: [snapshot.window],
+			coverage,
+			items: Array.from({ length: coverage.observed }, (_, i) => ({
+				id: `${repo.id}-${i}`,
+				title: `Saved commit ${i}`,
+				body: "x".repeat(Math.floor(931_000 / coverage.observed) - 300),
+				url: `https://github.example/${repo.name}/commit/${i}`,
+				at: fixture.old,
+				createdAt: fixture.old,
+				closedAt: null,
+				mergedAt: null,
+				author: "fixture",
+				state: "committed",
+			})),
+		};
+		const payload = JSON.stringify(data);
+		const bytes = new TextEncoder().encode(payload).byteLength;
+		assert.ok(bytes > 900_000 && bytes < 1_200_000);
+		payloadBytes.set(repo.name, bytes);
+		await raw
+			.prepare(
+				"INSERT INTO factory_resources(run_id,repo,stream,payload,content_meta) VALUES(?,?,'commits',?,?)",
+			)
+			.bind(
+				version,
+				repo.name,
+				payload,
+				await savedContentMeta(`factory:${repo.name}:commits`, data, snapshot.window),
+			)
+			.run();
+	}
+	return payloadBytes;
 }

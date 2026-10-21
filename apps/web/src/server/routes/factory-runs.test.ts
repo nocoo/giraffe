@@ -27,9 +27,11 @@ async function setup(withAccount = true, withSnapshot = true) {
 			.bind(id, "nocoo", "encrypted", "fake", snapshot.fetched_at, snapshot.fetched_at)
 			.run();
 	if (withAccount && withSnapshot) {
-		await db.batch(replaceSnapshotStmts(db, id, "factory", { ...snapshot }, snapshot.fetched_at));
 		await db.batch(
-			replaceSnapshotStmts(
+			await replaceSnapshotStmts(db, id, "factory", { ...snapshot }, snapshot.fetched_at),
+		);
+		await db.batch(
+			await replaceSnapshotStmts(
 				db,
 				id,
 				"repos",
@@ -157,7 +159,9 @@ it("rejects empty, duplicate, foreign, cooling and incomplete all scopes; discov
 	expect(noState.catalog).toEqual([]);
 	expect(noState.catalogComplete).toBe(false);
 	const incomplete = { ...snapshot, inventory: { ...snapshot.inventory, complete: false } };
-	await s.db.batch(replaceSnapshotStmts(s.db, id, "factory", incomplete, snapshot.fetched_at));
+	await s.db.batch(
+		await replaceSnapshotStmts(s.db, id, "factory", incomplete, snapshot.fetched_at),
+	);
 	expect((await s.call("/api/factory/runs", { ...plan(), scope: "all" })).status).toBe(409);
 	await s.db
 		.prepare("INSERT INTO factory_repo_state(account_id,repo,payload) VALUES(?,?,?)")
@@ -184,7 +188,7 @@ it("applies explicit priority order to complete filtered scopes", async () => {
 	if (!first) throw new Error("fixture");
 	const repo2 = { ...first, id: "two", name: "nocoo/two" };
 	await s.db.batch(
-		replaceSnapshotStmts(
+		await replaceSnapshotStmts(
 			s.db,
 			id,
 			"factory",
@@ -193,7 +197,7 @@ it("applies explicit priority order to complete filtered scopes", async () => {
 		),
 	);
 	await s.db.batch(
-		replaceSnapshotStmts(
+		await replaceSnapshotStmts(
 			s.db,
 			id,
 			"repos",
@@ -274,7 +278,7 @@ it("returns compact history with accurate totals and expands only the requested 
 it("freezes all accessible detail pages, including repositories excluded from factory metrics", async () => {
 	const s = await setup();
 	await s.db.batch(
-		replaceSnapshotStmts(
+		await replaceSnapshotStmts(
 			s.db,
 			id,
 			"repos",
@@ -304,7 +308,7 @@ it("requires a complete site catalog before a full refresh, including on an exis
 		if (missing) await s.db.prepare("DELETE FROM snapshots WHERE kind='repos'").run();
 		else
 			await s.db.batch(
-				replaceSnapshotStmts(
+				await replaceSnapshotStmts(
 					s.db,
 					id,
 					"repos",
@@ -324,7 +328,7 @@ it.each(["selected", "filter", "stale", "failed"] as const)(
 	async (scope) => {
 		const s = await setup();
 		await s.db.batch(
-			replaceSnapshotStmts(
+			await replaceSnapshotStmts(
 				s.db,
 				id,
 				"repos",

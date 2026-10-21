@@ -93,7 +93,7 @@ export function sourceQuality(
 			const saved = sources.find((s) => s.resource === source.resource);
 			current &&=
 				!!saved &&
-				(source.contentVersion !== undefined
+				(source.contentVersion !== undefined && saved.contentVersion != null
 					? saved.contentVersion === source.contentVersion
 					: saved.version === source.version);
 			if (saved?.fetchedAt) times.push(saved.fetchedAt);

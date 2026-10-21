@@ -509,10 +509,10 @@ describe("refresh route", () => {
 		const db = createDb(e.DB);
 		const fetchedAt = "2026-09-01T00:00:00.000Z";
 		await db.batch(
-			replaceSnapshotStmts(db, id, "issues", { truncated: false, issues: [] }, fetchedAt),
+			await replaceSnapshotStmts(db, id, "issues", { truncated: false, issues: [] }, fetchedAt),
 		);
 		await db.batch(
-			replaceSnapshotStmts(
+			await replaceSnapshotStmts(
 				db,
 				id,
 				"alerts",
@@ -586,12 +586,20 @@ describe("refresh route", () => {
 		const odd = env();
 		const oddId = await createAccount(odd);
 		const oddDb = createDb(odd.DB);
-		await oddDb.batch(replaceSnapshotStmts(oddDb, oddId, "repos", { truncated: false }, fetchedAt));
 		await oddDb.batch(
-			replaceSnapshotStmts(oddDb, oddId, "issues", { truncated: false, issues: [] }, fetchedAt),
+			await replaceSnapshotStmts(oddDb, oddId, "repos", { truncated: false }, fetchedAt),
 		);
 		await oddDb.batch(
-			replaceSnapshotStmts(
+			await replaceSnapshotStmts(
+				oddDb,
+				oddId,
+				"issues",
+				{ truncated: false, issues: [] },
+				fetchedAt,
+			),
+		);
+		await oddDb.batch(
+			await replaceSnapshotStmts(
 				oddDb,
 				oddId,
 				"alerts",
@@ -623,7 +631,7 @@ describe("refresh route", () => {
 		const truncId = await createAccount(trunc);
 		const truncDb = createDb(trunc.DB);
 		await truncDb.batch(
-			replaceSnapshotStmts(
+			await replaceSnapshotStmts(
 				truncDb,
 				truncId,
 				"repos",
@@ -737,10 +745,16 @@ describe("refresh route", () => {
 		);
 		const fetchedAt = "2026-09-01T00:00:00.000Z";
 		await hugeDb.batch(
-			replaceSnapshotStmts(hugeDb, hugeId, "repos", { truncated: false, repos }, fetchedAt),
+			await replaceSnapshotStmts(hugeDb, hugeId, "repos", { truncated: false, repos }, fetchedAt),
 		);
 		await hugeDb.batch(
-			replaceSnapshotStmts(hugeDb, hugeId, "issues", { truncated: false, issues: [] }, fetchedAt),
+			await replaceSnapshotStmts(
+				hugeDb,
+				hugeId,
+				"issues",
+				{ truncated: false, issues: [] },
+				fetchedAt,
+			),
 		);
 		await hugeDb
 			.prepare("INSERT INTO snapshots (account_id, kind, payload, fetched_at) VALUES (?, ?, ?, ?)")
@@ -776,10 +790,16 @@ describe("refresh route", () => {
 		const skipId = await createAccount(skip);
 		const skipDb = createDb(skip.DB);
 		await skipDb.batch(
-			replaceSnapshotStmts(skipDb, skipId, "repos", { truncated: false, repos }, fetchedAt),
+			await replaceSnapshotStmts(skipDb, skipId, "repos", { truncated: false, repos }, fetchedAt),
 		);
 		await skipDb.batch(
-			replaceSnapshotStmts(skipDb, skipId, "issues", { truncated: false, issues: [] }, fetchedAt),
+			await replaceSnapshotStmts(
+				skipDb,
+				skipId,
+				"issues",
+				{ truncated: false, issues: [] },
+				fetchedAt,
+			),
 		);
 		await skipDb
 			.prepare("INSERT INTO snapshots (account_id, kind, payload, fetched_at) VALUES (?, ?, ?, ?)")
@@ -979,7 +999,7 @@ describe("refresh route", () => {
 		const db = createDb(e.DB);
 		const fetched = "2026-09-01T00:00:00.000Z";
 		await db.batch([
-			...replaceSnapshotStmts(
+			...(await replaceSnapshotStmts(
 				db,
 				id,
 				"repos",
@@ -995,21 +1015,21 @@ describe("refresh route", () => {
 					],
 				},
 				fetched,
-			),
-			...replaceSnapshotStmts(
+			)),
+			...(await replaceSnapshotStmts(
 				db,
 				id,
 				"issues",
 				{ fetched_at: fetched, truncated: false, issues: [] },
 				fetched,
-			),
-			...replaceSnapshotStmts(
+			)),
+			...(await replaceSnapshotStmts(
 				db,
 				id,
 				"alerts",
 				{ fetched_at: fetched, truncated: true, unavailable: false, items: [] },
 				fetched,
-			),
+			)),
 		]);
 		stubGithub();
 		const res = await createApp().request(

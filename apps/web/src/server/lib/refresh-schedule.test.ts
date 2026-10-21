@@ -18,9 +18,9 @@ async function setup() {
 		)
 		.bind(snap.account_id, "nocoo", "fake", "fake", now, now)
 		.run();
-	await db.batch(replaceSnapshotStmts(db, snap.account_id, "factory", snap, now));
+	await db.batch(await replaceSnapshotStmts(db, snap.account_id, "factory", snap, now));
 	await db.batch(
-		replaceSnapshotStmts(
+		await replaceSnapshotStmts(
 			db,
 			snap.account_id,
 			"repos",
@@ -200,7 +200,7 @@ it("prepares stale catalogues once without advancing or duplicating the schedule
 		now,
 	);
 	await s.db.prepare("UPDATE factory_runs SET status='completed'").run();
-	await s.db.batch(replaceSnapshotStmts(s.db, snap.account_id, "factory", snap, later));
+	await s.db.batch(await replaceSnapshotStmts(s.db, snap.account_id, "factory", snap, later));
 	await scheduleRefreshes(s.raw, "2026-09-28T00:03:00.000Z");
 	const ready = await s.db
 		.prepare("SELECT payload FROM factory_runs WHERE status='running'")

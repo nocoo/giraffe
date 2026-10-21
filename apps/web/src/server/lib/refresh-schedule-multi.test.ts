@@ -17,9 +17,9 @@ async function fixture() {
 		.bind(account, "schedule-test", now, now)
 		.run();
 	const snap = factoryFixture();
-	await db.batch(replaceSnapshotStmts(db, account, "factory", snap, now));
+	await db.batch(await replaceSnapshotStmts(db, account, "factory", snap, now));
 	await db.batch(
-		replaceSnapshotStmts(
+		await replaceSnapshotStmts(
 			db,
 			account,
 			"repos",

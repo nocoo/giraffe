@@ -9,7 +9,12 @@ import type {
 import { FACTORY_STREAMS } from "../../lib/factory-types";
 import { prSnapshot, prState } from "../../lib/pull-request";
 import { snapshotFreshness } from "../../lib/snapshot-freshness";
-import { contentData, contentVersion } from "./content-version";
+import {
+	composeContent,
+	decodeContent,
+	observationVersion,
+	storedContent,
+} from "./content-version";
 import type { Db } from "./db/d1";
 import { publishedFactory } from "./db/factory-runs";
 import { readRepositorySnapshot, readSnapshot } from "./db/snapshots";
@@ -31,28 +36,22 @@ export async function requireCatalogRepo(db: Db, account: string, name: string) 
 	if (!repo) throw new ApiError(404, "not_found", "repository outside saved account catalog");
 	return repo.name_with_owner;
 }
-export async function observationVersion(data: unknown) {
-	const bytes = await crypto.subtle.digest(
-		"SHA-256",
-		new TextEncoder().encode(JSON.stringify(data)),
-	);
-	return `sha256:${Array.from(new Uint8Array(bytes), (b) => b.toString(16).padStart(2, "0")).join("")}`;
-}
+export { observationVersion };
 export async function observationEnvelope(
 	account: string,
 	resource: string,
 	data: Record<string, unknown>,
 	scope: SnapshotScope = "all",
 	publicationId: string | null = null,
-	version?: string,
-	content?: Record<string, unknown>,
+	version: string | undefined = storedContent(data)?.fullVersion,
+	content: string | null = storedContent(data)?.hash ?? null,
 ) {
 	data = prSnapshot(data);
 	return {
 		account_id: account,
 		data,
 		sourceVersion: version ?? (await observationVersion(data)),
-		contentVersion: await contentVersion(resource, content ?? data),
+		contentVersion: content,
 		...observationMetadata(data),
 		source: { kind: publicationId ? "factory" : "snapshot", resource, publicationId },
 		selection: { scope, statisticsFilter: false },
@@ -86,7 +85,7 @@ async function readCiGroups(db: Db, account: string) {
 	// One statement for every repository keeps the Worker well inside the D1 statement cap.
 	const rows = await db
 		.prepare(
-			"SELECT kind, payload, fetched_at FROM snapshots WHERE account_id=? AND kind LIKE 'repo:%' AND (kind LIKE '%:actions' OR kind LIKE '%:actions#2' OR kind LIKE '%:releases' OR kind LIKE '%:releases#2' OR kind LIKE '%:details' OR kind LIKE '%:details#2')",
+			"SELECT kind, payload, fetched_at, content_meta FROM snapshots WHERE account_id=? AND kind LIKE 'repo:%' AND (kind LIKE '%:actions' OR kind LIKE '%:actions#2' OR kind LIKE '%:releases' OR kind LIKE '%:releases#2' OR kind LIKE '%:details' OR kind LIKE '%:details#2')",
 		)
 		.bind(account)
 		.all<SnapshotPage & { fetched_at: string }>();
@@ -94,20 +93,29 @@ async function readCiGroups(db: Db, account: string) {
 }
 
 export function ciContent(policy: Policy, groups: ReturnType<typeof latestSnapshotGroups>) {
-	return Object.fromEntries(
-		policy.repos.map((repo) => [
-			repo.name_with_owner,
-			Object.fromEntries(
-				["actions", "releases", "details"].map((suffix) => {
-					const data = groups.get(`repo:${repo.name_with_owner}:${suffix}`.toLowerCase())?.data;
-					return [suffix, data ? contentData(suffix, data) : null];
-				}),
-			),
-		]),
+	const inputs: Record<string, string | null> = {
+		catalog: storedContent(policy.catalog)?.hash ?? null,
+	};
+	for (const repo of policy.repos)
+		for (const suffix of ["actions", "releases", "details"]) {
+			const key = `repo:${repo.name_with_owner}:${suffix}`.toLowerCase();
+			const data = groups.get(key)?.data;
+			inputs[key] = data ? (storedContent(data)?.hash ?? null) : "missing";
+		}
+	return composeContent(inputs);
+}
+
+export function factoryContent(snapshot: FactorySnapshot, policy: Policy) {
+	return composeContent(
+		{
+			publication: storedContent(snapshot)?.hash ?? null,
+			catalog: storedContent(policy.catalog)?.hash ?? null,
+		},
+		{ repositories: policy.repos.map((repo) => repo.name_with_owner), scope: policy.scope },
 	);
 }
 
-export function projectCiObservation(
+export function ciObservationInputs(
 	policy: Policy,
 	groups: ReturnType<typeof latestSnapshotGroups>,
 	statisticsFilter = false,
@@ -159,16 +167,24 @@ export function projectCiObservation(
 	}
 	const freshness = snapshotFreshness(times);
 	const fetchedAt = freshness.latestAt ?? "";
-	const report = ciReport(entries, fetchedAt || "1970-01-01T00:00:00.000Z");
 	return {
-		...report,
-		daily: fetchedAt ? report.daily : [],
-		fetched_at: fetchedAt,
-		freshness,
-		truncated,
-		now: fetchedAt,
-		unsaved,
+		entries,
+		metadata: { fetched_at: fetchedAt, freshness, truncated, now: fetchedAt, unsaved },
 	};
+}
+
+export function projectCiInputs({ entries, metadata }: ReturnType<typeof ciObservationInputs>) {
+	const fetchedAt = metadata.fetched_at;
+	const report = ciReport(entries, fetchedAt || "1970-01-01T00:00:00.000Z");
+	return { ...report, daily: fetchedAt ? report.daily : [], ...metadata };
+}
+
+export function projectCiObservation(
+	policy: Policy,
+	groups: ReturnType<typeof latestSnapshotGroups>,
+	statisticsFilter = false,
+) {
+	return projectCiInputs(ciObservationInputs(policy, groups, statisticsFilter));
 }
 
 export function projectFactoryObservation(snapshot: FactorySnapshot, policy: Policy) {
@@ -200,6 +216,7 @@ export async function readObservation(
 			scope,
 			snapshot.publication?.runId ?? snapshot.runId,
 			snapshot.publication?.runId ?? snapshot.runId,
+			await factoryContent(snapshot, policy),
 		);
 	}
 	if (resource === "ci") {
@@ -211,7 +228,7 @@ export async function readObservation(
 			scope,
 			null,
 			undefined,
-			ciContent(policy, groups),
+			await ciContent(policy, groups),
 		);
 	}
 	const snapshot = await readSnapshot(db, account, resource);
@@ -229,20 +246,26 @@ export async function readFactoryResource(db: Db, account: string, name: string,
 	const version = observation?.version ?? snap.runId;
 	const original = observation?.repo ?? repo.name;
 	let data: FactoryStreamData | null = null;
+	let content: string | null = null;
 	if (observation?.source === "run") {
 		const row = await db
 			.prepare(
-				"SELECT payload FROM factory_resources WHERE run_id=? AND repo=? AND stream=? AND EXISTS(SELECT 1 FROM factory_runs WHERE id=? AND account_id=?)",
+				"SELECT payload,content_meta FROM factory_resources WHERE run_id=? AND repo=? AND stream=? AND EXISTS(SELECT 1 FROM factory_runs WHERE id=? AND account_id=?)",
 			)
 			.bind(version, original, stream, version, account)
-			.first<{ payload: string }>();
+			.first<{ payload: string; content_meta: string | null }>();
 		data = row ? (JSON.parse(row.payload) as FactoryStreamData) : null;
-	} else
+		const meta = decodeContent(row?.content_meta);
+		content = meta?.version === version ? meta.hash : null;
+	} else {
 		data = (await readSnapshot(
 			db,
 			account,
 			streamKey(original, stream as FactoryStreamName),
 		)) as FactoryStreamData | null;
+		const meta = storedContent(data);
+		content = meta?.version === version ? meta.hash : null;
+	}
 	if (!data)
 		throw new ApiError(
 			409,
@@ -262,6 +285,7 @@ export async function readFactoryResource(db: Db, account: string, name: string,
 		"all",
 		snap.publication?.runId ?? snap.runId,
 		version,
+		content,
 	);
 }
 

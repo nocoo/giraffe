@@ -62,9 +62,11 @@ it.each(["graphql", 403, 404, 500] as const)(
 				now,
 			)
 			.run();
-		await db.batch(replaceSnapshotStmts(db, snapshot.account_id, "factory", { ...snapshot }, old));
 		await db.batch(
-			replaceSnapshotStmts(
+			await replaceSnapshotStmts(db, snapshot.account_id, "factory", { ...snapshot }, old),
+		);
+		await db.batch(
+			await replaceSnapshotStmts(
 				db,
 				snapshot.account_id,
 				"repos",

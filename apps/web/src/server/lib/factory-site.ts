@@ -112,7 +112,7 @@ export async function collectSitePage(
 		if (bytes > 1_500_000)
 			throw new ApiError(422, "snapshot_incomplete", "Insights exceed bounded storage");
 		return {
-			writes: replaceSnapshotStmts(
+			writes: await replaceSnapshotStmts(
 				db,
 				run.account_id,
 				"insights",
@@ -236,7 +236,7 @@ export async function collectSitePage(
 		const retained = previous && !previous.truncated ? previous : null;
 		const fetchedAt = retained ? String(retained.fetched_at) : now;
 		return {
-			writes: replaceSnapshotStmts(
+			writes: await replaceSnapshotStmts(
 				db,
 				run.account_id,
 				resource,
@@ -323,13 +323,13 @@ export async function collectSitePage(
 			if (new TextEncoder().encode(JSON.stringify(merged)).length > 1_500_000)
 				throw new ApiError(422, "snapshot_incomplete", "global list exceeds bounded storage");
 			prepared.stmts.push(
-				...replaceSnapshotStmts(
+				...(await replaceSnapshotStmts(
 					db,
 					run.account_id,
 					global,
 					merged,
 					String(previous?.fetched_at ?? now),
-				),
+				)),
 			);
 		}
 	}

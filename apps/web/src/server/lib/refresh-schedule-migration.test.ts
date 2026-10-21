@@ -8,8 +8,8 @@ import { expect, it } from "vitest";
 it("applies repeatably to a local backup without changing legacy rows and supports old-column rollback", () => {
 	const migration = readFileSync("migrations/0013_refresh_schedule_times.sql", "utf8");
 	const schema = readFileSync("apps/web/src/server/lib/db/schema.sql", "utf8");
-	expect(schema.endsWith(migration)).toBe(true);
-	const oldSchema = schema.slice(0, -migration.length);
+	expect(schema.includes(migration)).toBe(true);
+	const oldSchema = schema.slice(0, schema.indexOf(migration));
 	const dir = mkdtempSync(join(tmpdir(), "giraffe-schedule-migration-"));
 	const sourceFile = join(dir, "source.sqlite");
 	const backupFile = join(dir, "backup.sqlite");
@@ -18,7 +18,7 @@ it("applies repeatably to a local backup without changing legacy rows and suppor
 CREATE TABLE _test_marker(key TEXT PRIMARY KEY,value TEXT NOT NULL);
 INSERT INTO _test_marker VALUES('env','test');
 INSERT INTO accounts(id,login,token_ciphertext,token_last4,is_active,created_at,updated_at) VALUES('schedule-backup','schedule-backup','not-a-credential','fake',1,'2026','2026');
-INSERT INTO snapshots VALUES('schedule-backup','repos','{"repos":[]}','2026-10-20T00:00:00Z');
+INSERT INTO snapshots(account_id,kind,payload,fetched_at) VALUES('schedule-backup','repos','{"repos":[]}','2026-10-20T00:00:00Z');
 INSERT INTO refresh_schedules VALUES('schedule-backup','daily',1,'19:30',0,'starred','2026-10-21T11:30:00Z','daily-run','scheduled_slots_missed');
 INSERT INTO refresh_schedules VALUES('schedule-backup','weekly',1,'04:00',0,'all','2026-10-24T20:00:00Z','weekly-run',NULL);
 INSERT INTO catalog_refresh_schedules VALUES('schedule-backup','catalog',0,'06:45',0,'all','2026-10-20T22:45:00Z',NULL,'catalog_pending');

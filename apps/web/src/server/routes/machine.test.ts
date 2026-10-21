@@ -27,7 +27,7 @@ async function setup() {
 			.run();
 	const db = createDb(raw);
 	await db.batch(
-		replaceSnapshotStmts(
+		await replaceSnapshotStmts(
 			db,
 			account,
 			"repos",
@@ -226,7 +226,7 @@ it("lists saved source versions for the token account without writes", async () 
 	const setupResult = await setup();
 	const { db, call, prefix, token } = setupResult;
 	await db.batch(
-		replaceSnapshotStmts(
+		await replaceSnapshotStmts(
 			db,
 			account,
 			"repo:nocoo/app:issues",
@@ -235,7 +235,7 @@ it("lists saved source versions for the token account without writes", async () 
 		),
 	);
 	await db.batch(
-		replaceSnapshotStmts(
+		await replaceSnapshotStmts(
 			db,
 			other,
 			"repo:other/private:issues",
@@ -310,13 +310,13 @@ it("retains incrementally merged global sources with newer repository observatio
 		prs: { pull_requests: [] },
 	};
 	for (const [kind, payload] of Object.entries(snapshots))
-		await db.batch(replaceSnapshotStmts(db, account, kind, payload, oldAt));
+		await db.batch(await replaceSnapshotStmts(db, account, kind, payload, oldAt));
 	const before = (await (await call(`${prefix}/sources`)).json()) as {
 		sources: { resource: string; version: string }[];
 	};
 	for (const [kind, payload] of Object.entries(snapshots))
 		await db.batch(
-			replaceSnapshotStmts(
+			await replaceSnapshotStmts(
 				db,
 				account,
 				kind,
@@ -339,7 +339,7 @@ it("retains incrementally merged global sources with newer repository observatio
 it("filters retained factory publications case-insensitively without rewriting their identities", async () => {
 	const { db, call, prefix } = await setup();
 	await db.batch(
-		replaceSnapshotStmts(
+		await replaceSnapshotStmts(
 			db,
 			account,
 			"repos",
@@ -357,14 +357,14 @@ it("filters retained factory publications case-insensitively without rewriting t
 		source: "legacy",
 	};
 	await db.batch(
-		replaceSnapshotStmts(db, account, "factory:v:pub", publication, publication.fetched_at),
+		await replaceSnapshotStmts(db, account, "factory:v:pub", publication, publication.fetched_at),
 	);
 	await db
 		.prepare("INSERT INTO factory_state(account_id,published_id,next_at) VALUES(?,'pub','t')")
 		.bind(account)
 		.run();
 	await db.batch(
-		replaceSnapshotStmts(
+		await replaceSnapshotStmts(
 			db,
 			account,
 			"factory:nocoo/app:commits",
@@ -391,7 +391,9 @@ it("filters retained factory publications case-insensitively without rewriting t
 it("projects saved account rates independently of publication and dashboard activation without writes", async () => {
 	const { db, call, prefix, token } = await setup();
 	const publication = factoryFixture();
-	await db.batch(replaceSnapshotStmts(db, account, "factory", publication, publication.fetched_at));
+	await db.batch(
+		await replaceSnapshotStmts(db, account, "factory", publication, publication.fetched_at),
+	);
 	const rate = {
 		remaining: 500,
 		resource: "graphql",
@@ -443,7 +445,7 @@ it.each([
 	async (fetchedAt, latestAt, retained) => {
 		const { db, call, prefix } = await setup();
 		await db.batch(
-			replaceSnapshotStmts(
+			await replaceSnapshotStmts(
 				db,
 				account,
 				"repo:nocoo/app:issues",

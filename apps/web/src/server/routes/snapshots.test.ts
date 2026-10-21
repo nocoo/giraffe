@@ -29,8 +29,8 @@ async function scopedSetup() {
 		)
 		.bind(baselineAt, baselineAt)
 		.run();
-	const save = (kind: string, payload: Record<string, unknown>, at = baselineAt) =>
-		db.batch(replaceSnapshotStmts(db, "active", kind, payload, at));
+	const save = async (kind: string, payload: Record<string, unknown>, at = baselineAt) =>
+		db.batch(await replaceSnapshotStmts(db, "active", kind, payload, at));
 	await save(
 		"repos",
 		{

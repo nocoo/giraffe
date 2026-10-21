@@ -1,3 +1,52 @@
+import type { FactoryWindow } from "../../lib/factory-types";
+import { prSnapshot } from "../../lib/pull-request";
+
+export type ContentMetadata = { hash: string; version?: string; fullVersion?: string };
+const CONTENT_META = new WeakMap<object, ContentMetadata>();
+
+export function storedContent(
+	data: Record<string, unknown> | null | undefined,
+): ContentMetadata | null {
+	return data ? (CONTENT_META.get(data) ?? null) : null;
+}
+
+export function withContent(data: Record<string, unknown>, meta: ContentMetadata | null) {
+	if (meta) CONTENT_META.set(data, meta);
+	else CONTENT_META.delete(data);
+	return data;
+}
+
+export function decodeContent(encoded: string | null | undefined): ContentMetadata | null {
+	if (!encoded) return null;
+	const meta = JSON.parse(encoded) as ContentMetadata;
+	return meta;
+}
+
+export async function savedContentMeta(
+	resource: string,
+	data: Record<string, unknown>,
+	window?: FactoryWindow,
+) {
+	const kind =
+		resource.startsWith("factory:v:") || resource.startsWith("factory:catalog:")
+			? "factory"
+			: resource;
+	const normalized = prSnapshot(data);
+	return JSON.stringify({
+		hash: await contentVersion(kind, window ? { ...normalized, ranges: [window] } : normalized),
+		fullVersion: await observationVersion(normalized),
+		...(typeof data.runId === "string" ? { version: data.runId } : {}),
+	});
+}
+
+export async function composeContent(
+	inputs: Record<string, string | null>,
+	selection: Record<string, unknown> = {},
+) {
+	if (Object.values(inputs).some((value) => value === null)) return null;
+	return contentVersion("composite", { inputs, selection });
+}
+
 function omit(value: unknown, keys: string[]): Record<string, unknown> {
 	return Object.fromEntries(
 		Object.entries((value ?? {}) as Record<string, unknown>).filter(([key]) => !keys.includes(key)),
@@ -5,7 +54,7 @@ function omit(value: unknown, keys: string[]): Record<string, unknown> {
 }
 
 function coverage(value: unknown) {
-	return omit(value, ["fetchedAt", "sourceFetchedAt", "pages", "strategy"]);
+	return omit(value, ["fetchedAt", "sourceFetchedAt", "pages", "strategy", "source"]);
 }
 
 function contribution(value: unknown) {
@@ -16,7 +65,7 @@ function contribution(value: unknown) {
 }
 
 export function contentData(resource: string, value: Record<string, unknown>) {
-	const data = omit(value, ["fetched_at", "repository_fetched_at"]);
+	const data = omit(value, ["fetched_at", "repository_fetched_at", "source_fetched_at"]);
 	if (data.freshness && typeof data.freshness === "object")
 		data.freshness = omit(data.freshness, ["oldestAt", "latestAt"]);
 	if (resource === "factory" || resource.startsWith("factory:")) {
@@ -84,10 +133,15 @@ function canonical(value: unknown): string {
 	return JSON.stringify(value);
 }
 
-export async function contentVersion(resource: string, data: Record<string, unknown>) {
-	const bytes = await crypto.subtle.digest(
-		"SHA-256",
-		new TextEncoder().encode(canonical(contentData(resource, data))),
-	);
+async function digest(text: string) {
+	const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
 	return `sha256:${Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+}
+
+export function observationVersion(data: unknown) {
+	return digest(JSON.stringify(data));
+}
+
+export function contentVersion(resource: string, data: Record<string, unknown>) {
+	return digest(canonical(contentData(resource, data)));
 }

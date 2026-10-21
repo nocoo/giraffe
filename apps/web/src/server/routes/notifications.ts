@@ -71,7 +71,7 @@ async function persist(
 		truncated: preview.truncated,
 	};
 	const stmts = [
-		...replaceSnapshotStmts(db, accountId, "notifications", assembled, fetchedAt),
+		...(await replaceSnapshotStmts(db, accountId, "notifications", assembled, fetchedAt)),
 		touchLastUsedStmt(db, accountId, usedAt),
 	];
 	await db.batch(stmts);

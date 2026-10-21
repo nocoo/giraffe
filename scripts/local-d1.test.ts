@@ -15,7 +15,7 @@ it.each([false, true])("prepares refresh tables on startup with existing data: %
 			db.exec(`
 				INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at)
 				VALUES('fixture','fixture','noncredential','fake','2000','2000');
-				INSERT INTO snapshots VALUES('fixture','repos','{"items":[]}','2000');
+				INSERT INTO snapshots(account_id,kind,payload,fetched_at) VALUES('fixture','repos','{"items":[]}','2000');
 			`);
 		}
 		execute.mockImplementation((_bin: string, args: string[]) => {
@@ -35,7 +35,13 @@ it.each([false, true])("prepares refresh tables on startup with existing data: %
 		ensureLocalSchema();
 		if (existing) {
 			expect(db.prepare("SELECT * FROM snapshots").all()).toEqual([
-				{ account_id: "fixture", kind: "repos", payload: '{"items":[]}', fetched_at: "2000" },
+				{
+					account_id: "fixture",
+					kind: "repos",
+					payload: '{"items":[]}',
+					fetched_at: "2000",
+					content_meta: null,
+				},
 			]);
 		}
 	} finally {

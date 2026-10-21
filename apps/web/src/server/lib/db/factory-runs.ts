@@ -7,6 +7,7 @@ import {
 	RUN_LEASE_MS,
 } from "../../../lib/factory-run";
 import type { FactorySnapshot } from "../../../lib/factory-types";
+import { storedContent, withContent } from "../content-version";
 import { ApiError } from "../errors";
 import { RUN_DEADLINE_SQL, runDeadlineAt, timedOutRun } from "../factory-timeout";
 import type { Db } from "./d1";
@@ -82,7 +83,10 @@ export const factoryHead = (db: Db, account: string) =>
 		.bind(account)
 		.first<FactoryHead>();
 export function normalizePublication(snapshot: FactorySnapshot): FactorySnapshot {
-	return { ...snapshot, repos: snapshot.repos.map(normalizeRepoDependencies) };
+	return withContent(
+		{ ...snapshot, repos: snapshot.repos.map(normalizeRepoDependencies) },
+		storedContent(snapshot),
+	) as FactorySnapshot;
 }
 export async function publishedFactory(db: Db, account: string): Promise<FactorySnapshot | null> {
 	const head = await factoryHead(db, account);

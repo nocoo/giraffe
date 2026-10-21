@@ -18,7 +18,7 @@ it("selects eligible browser source repositories by catalog, never by a hardcode
 		.bind(account)
 		.run();
 	await db.batch(
-		replaceSnapshotStmts(
+		await replaceSnapshotStmts(
 			db,
 			account,
 			"repos",
@@ -52,7 +52,7 @@ it("uses Access and active account with same-origin CRUD and read-only provenanc
 			.run();
 	const db = createDb(DB);
 	await db.batch(
-		replaceSnapshotStmts(
+		await replaceSnapshotStmts(
 			db,
 			account,
 			"repos",
@@ -66,7 +66,7 @@ it("uses Access and active account with same-origin CRUD and read-only provenanc
 		),
 	);
 	await db.batch(
-		replaceSnapshotStmts(
+		await replaceSnapshotStmts(
 			db,
 			account,
 			"repo:nocoo/app:issues",
@@ -75,7 +75,7 @@ it("uses Access and active account with same-origin CRUD and read-only provenanc
 		),
 	);
 	await db.batch(
-		replaceSnapshotStmts(
+		await replaceSnapshotStmts(
 			db,
 			account,
 			"repo:nocoo/app:details",
@@ -95,7 +95,7 @@ it("uses Access and active account with same-origin CRUD and read-only provenanc
 		source: "run",
 	};
 	await db.batch(
-		replaceSnapshotStmts(db, account, "factory:v:pub", publication, "2026-10-02T08:00:00Z"),
+		await replaceSnapshotStmts(db, account, "factory:v:pub", publication, "2026-10-02T08:00:00Z"),
 	);
 	await db
 		.prepare("INSERT INTO factory_state(account_id,published_id,next_at) VALUES(?,'pub','t')")

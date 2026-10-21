@@ -5,6 +5,7 @@ import { factoryFixture } from "../../../../../tests/fixtures/factory-snapshot";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import { makeRun } from "../../lib/factory-run";
 import { FACTORY_STREAMS } from "../../lib/factory-types";
+import { contentVersion, observationVersion } from "./content-version";
 import { createDb } from "./db/d1";
 import {
 	claimRun,
@@ -117,13 +118,41 @@ it.each(unsupportedWorkflowJobs)(
 it("fails closed at storage limits and for missing publication input", async () => {
 	const { db, lease } = await setup();
 	expect(() => boundedJson("x".repeat(1_800_001))).toThrow("capacity");
-	expect(() =>
+	await expect(
 		snapshotWrites(db, lease, now, "factory:v:large", { ...snap, owner: "x".repeat(3_100_000) }),
-	).toThrow("capacity");
+	).rejects.toThrow("capacity");
 	await expect(publicationWrites(db, lease, now)).rejects.toMatchObject({
 		code: "snapshot_missing",
 	});
 });
+
+it.each(["factory:v:content", "factory:catalog:content"])(
+	"persists the factory recipe with fenced %s publication writes",
+	async (kind) => {
+		const { raw, db, lease } = await setup();
+		await db.batch(await snapshotWrites(db, lease, now, kind, snap));
+		const first = await db
+			.prepare("SELECT payload,content_meta FROM snapshots WHERE account_id=? AND kind=?")
+			.bind(snap.account_id, kind)
+			.first<{ payload: string; content_meta: string }>();
+		if (!first) throw new Error("missing publication");
+		expect(JSON.parse(first.payload)).toEqual(snap);
+		expect(JSON.parse(first.content_meta)).toEqual({
+			hash: await contentVersion("factory", snap),
+			fullVersion: await observationVersion(snap),
+			version: snap.runId,
+		});
+		const writes = await snapshotWrites(db, lease, now, kind, { ...snap, owner: "changed" });
+		await controlRun(createDb(raw), snap.account_id, "r1", "pause", now);
+		expect(await saveRun(db, lease, writes, now)).toBe(false);
+		expect(
+			await db
+				.prepare("SELECT payload,content_meta FROM snapshots WHERE account_id=? AND kind=?")
+				.bind(snap.account_id, kind)
+				.first(),
+		).toEqual(first);
+	},
+);
 
 it.each([false, true])(
 	"publishes observations without creating or changing cloud AI rows (saved review: %s)",
@@ -171,7 +200,9 @@ it.each([false, true])(
 );
 it("does not overwrite a published global version when updating only the catalog", async () => {
 	const { db, lease, repo } = await setup();
-	await db.batch(replaceSnapshotStmts(db, snap.account_id, "factory:v:existing", { ...snap }, now));
+	await db.batch(
+		await replaceSnapshotStmts(db, snap.account_id, "factory:v:existing", { ...snap }, now),
+	);
 	await db
 		.prepare("UPDATE factory_state SET published_id=? WHERE account_id=?")
 		.bind("existing", snap.account_id)
@@ -193,7 +224,7 @@ it("retains identical legacy dependency summaries in subsequent publication writ
 	repo.dependencies = [dependency, { ...dependency }];
 	repo.observation = { source: "legacy", version: "old", window: snap.window, refreshedAt: now };
 	await db.batch(
-		replaceSnapshotStmts(db, snap.account_id, "factory", { ...snap, repos: [repo] }, now),
+		await replaceSnapshotStmts(db, snap.account_id, "factory", { ...snap, repos: [repo] }, now),
 	);
 	const before = await readSnapshot(db, snap.account_id, "factory");
 	await db.batch(await publicationWrites(db, lease, now));
@@ -207,21 +238,21 @@ it("recovers only matching legacy resource versions and does not invent missing 
 	const { db, lease, repo } = await setup();
 	expect(await restoreLegacyRepo(db, lease, now, repo)).toEqual([]);
 	await db.batch([
-		...replaceSnapshotStmts(
+		...(await replaceSnapshotStmts(
 			db,
 			snap.account_id,
 			"factory:nocoo/app:commits",
 			{ runId: now, items: [], coverage: { ...repo.coverage.commits, status: "partial" } },
 			now,
-		),
-		...replaceSnapshotStmts(
+		)),
+		...(await replaceSnapshotStmts(
 			db,
 			snap.account_id,
 			"factory:nocoo/app:issues",
 			{ runId: "another", items: [], coverage: repo.coverage.issues },
 			now,
-		),
-		...replaceSnapshotStmts(
+		)),
+		...(await replaceSnapshotStmts(
 			db,
 			snap.account_id,
 			"factory:nocoo/app:dependencies",
@@ -231,7 +262,7 @@ it("recovers only matching legacy resource versions and does not invent missing 
 				coverage: { ...repo.coverage.dependencies, status: "complete" },
 			},
 			now,
-		),
+		)),
 	]);
 	await db.batch(await restoreLegacyRepo(db, lease, now, repo));
 	const current = await currentRepo(db, snap.account_id, repo.name);
@@ -252,7 +283,7 @@ it("restores old root and workspace identities separately from actual dependenci
 		{ name: "external", path: "package.json#dependencies" },
 	];
 	await db.batch(
-		replaceSnapshotStmts(
+		await replaceSnapshotStmts(
 			db,
 			snap.account_id,
 			`factory:${repo.name}:dependencies`,
@@ -287,7 +318,7 @@ it("restores old root and workspace identities separately from actual dependenci
 
 it("deduplicates renamed repositories by stable GitHub identity at publication", async () => {
 	const { db, lease, repo } = await setup();
-	await db.batch(replaceSnapshotStmts(db, snap.account_id, "factory", { ...snap }, now));
+	await db.batch(await replaceSnapshotStmts(db, snap.account_id, "factory", { ...snap }, now));
 	lease.run.mode = "refresh";
 	repo.name = "nocoo/renamed";
 	repo.observation = { version: "r1", refreshedAt: now, window: snap.window, source: "run" };
@@ -302,7 +333,7 @@ it("uses the complete catalog for membership while preserving renamed repositori
 	const { db, lease, repo } = await setup();
 	lease.run.mode = "refresh";
 	await db.batch(
-		replaceSnapshotStmts(
+		await replaceSnapshotStmts(
 			db,
 			snap.account_id,
 			"factory",
@@ -311,7 +342,7 @@ it("uses the complete catalog for membership while preserving renamed repositori
 		),
 	);
 	await db.batch(
-		replaceSnapshotStmts(
+		await replaceSnapshotStmts(
 			db,
 			snap.account_id,
 			"factory:catalog:new",
@@ -343,7 +374,7 @@ it("aggregates only current repository pointers even when a newer historical ver
 	const { db, lease, repo } = await setup();
 	lease.run.mode = "refresh";
 	repo.observation = { source: "run", version: "r1", refreshedAt: now, window: snap.window };
-	await db.batch(replaceSnapshotStmts(db, snap.account_id, "factory", { ...snap }, now));
+	await db.batch(await replaceSnapshotStmts(db, snap.account_id, "factory", { ...snap }, now));
 	await db.batch(await repositoryWrites(db, lease, now, repo, repo.name, null));
 	await db
 		.prepare("INSERT INTO factory_repo_versions VALUES(?,?,?,?,?)")
@@ -382,7 +413,7 @@ it("retains contribution provenance across catalog-only and failed refresh publi
 	const calendar = { total: 2, restricted: 0, days: [], fetchedAt: now };
 	const observation = { version: "original", window: snap.window, fetchedAt: now };
 	await db.batch(
-		replaceSnapshotStmts(
+		await replaceSnapshotStmts(
 			db,
 			snap.account_id,
 			"factory",
@@ -419,7 +450,7 @@ it("publishes the latest rate observation without redating retained repository e
 		refreshedAt: saved.observedAt,
 	};
 	await db.batch(
-		replaceSnapshotStmts(
+		await replaceSnapshotStmts(
 			db,
 			snap.account_id,
 			"factory",
@@ -442,14 +473,14 @@ it("removes an obsolete second physical page when rewriting a publication with a
 	const kind = "factory:v:repair";
 	const big = { ...repo, description: "x".repeat(850000) };
 	await db.batch(
-		snapshotWrites(db, lease, now, kind, {
+		await snapshotWrites(db, lease, now, kind, {
 			...snap,
 			repos: [big, { ...big, id: "second", name: "nocoo/second" }],
 		}),
 	);
 	const { readSnapshot } = await import("./db/snapshots");
 	expect((await readSnapshot(db, snap.account_id, kind))?.repos).toHaveLength(2);
-	await db.batch(snapshotWrites(db, lease, now, kind, { ...snap, repos: [repo] }));
+	await db.batch(await snapshotWrites(db, lease, now, kind, { ...snap, repos: [repo] }));
 	expect((await readSnapshot(db, snap.account_id, kind))?.repos).toHaveLength(1);
 	expect(
 		(

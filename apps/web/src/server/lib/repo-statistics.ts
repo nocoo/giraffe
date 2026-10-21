@@ -2,6 +2,7 @@ import { uniqueDependencySummaries } from "../../lib/factory-dependencies";
 import type { FactorySnapshot } from "../../lib/factory-types";
 import { participates, type RepoStatistics } from "../../lib/repo-statistics";
 import { snapshotFreshness } from "../../lib/snapshot-freshness";
+import { composeContent, storedContent, withContent } from "./content-version";
 import type { Db } from "./db/d1";
 import { readSnapshot } from "./db/snapshots";
 import { buildInsights, type InsightAlert } from "./insights";
@@ -86,10 +87,14 @@ function complete(snapshot: Record<string, unknown> | null) {
 	);
 }
 
+function contentInput(snapshot: Record<string, unknown> | null) {
+	return snapshot ? (storedContent(snapshot)?.hash ?? null) : "missing";
+}
+
 async function repositoryPages(db: Db, account: string, suffix: string) {
 	const rows = await db
 		.prepare(
-			"SELECT kind, payload FROM snapshots WHERE account_id=? AND (kind LIKE ? OR kind LIKE ?)",
+			"SELECT kind, payload, content_meta FROM snapshots WHERE account_id=? AND (kind LIKE ? OR kind LIKE ?)",
 		)
 		.bind(account, `repo:%:${suffix}`, `repo:%:${suffix}#2`)
 		.all<SnapshotPage>();
@@ -163,6 +168,10 @@ async function projectList(
 	const times = new Map<string, string | null>();
 	const replacements = new Map<string, Record<string, unknown>[]>();
 	const completeRepos = new Set<string>();
+	const contentInputs: Record<string, string | null> = {
+		catalog: contentInput(policy.catalog),
+		[kind]: contentInput(snapshot),
+	};
 	for (const [lower, name] of names) {
 		let at =
 			recorded.get(lower) ??
@@ -184,6 +193,7 @@ async function projectList(
 		) {
 			at = pageAt;
 			covered = true;
+			contentInputs[`repo:${lower}:${suffix}`] = contentInput(page ?? null);
 			replacements.set(
 				lower,
 				snapshotItems(page ?? null, key).map((row) => ({ ...row, name_with_owner: name })),
@@ -209,6 +219,8 @@ async function projectList(
 		freshness: snapshotFreshness([...times.values()]),
 		completeRepos,
 		incomplete: completeRepos.size < names.size,
+		contentInputs,
+		repositories: [...names.values()],
 	};
 }
 
@@ -238,7 +250,7 @@ export async function projectSnapshot(
 	const scope = policy.scope;
 	if (kind === "repos") {
 		const source = await projectList(db, account, kind, snap, policy, true);
-		return {
+		const data = {
 			...snap,
 			fetched_at: source.freshness.latestAt ?? "",
 			freshness: source.freshness,
@@ -255,6 +267,17 @@ export async function projectSnapshot(
 				starred: policy.starred(r.name_with_owner),
 			})),
 		};
+		const hash = await composeContent(source.contentInputs, {
+			repositories: policy.repos.map((repo) => ({
+				name: repo.name_with_owner,
+				statistics_enabled: policy.enabled(repo.name_with_owner),
+				starred: policy.starred(repo.name_with_owner),
+			})),
+			total: source.freshness.total,
+			missing: source.freshness.missing,
+			complete: [...source.completeRepos],
+		});
+		return withContent(data, hash ? { hash } : null);
 	}
 	if (kind === "insights") {
 		const repos = await projectList(db, account, "repos", policy.catalog, policy);
@@ -308,16 +331,9 @@ export async function projectSnapshot(
 	}
 	const key = LIST_KEYS[kind];
 	if (!key || !Array.isArray(snap[key])) return snap;
-	const { items, freshness, times, incomplete } = await projectList(
-		db,
-		account,
-		kind,
-		snap,
-		policy,
-		!statisticsFilter,
-		savedPages,
-	);
-	return {
+	const { items, freshness, times, incomplete, contentInputs, repositories, completeRepos } =
+		await projectList(db, account, kind, snap, policy, !statisticsFilter, savedPages);
+	const data = {
 		...snap,
 		[key]: items,
 		truncated: scope === "starred" && kind !== "notifications" ? incomplete : snap.truncated,
@@ -335,6 +351,14 @@ export async function projectSnapshot(
 				}
 			: {}),
 	};
+	const hash = await composeContent(contentInputs, {
+		repositories,
+		total: freshness.total,
+		missing: freshness.missing,
+		complete: [...completeRepos],
+		truncated: data.truncated,
+	});
+	return withContent(data, hash ? { hash } : null);
 }
 
 export function statisticsFactory(

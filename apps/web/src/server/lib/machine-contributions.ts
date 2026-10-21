@@ -1,4 +1,5 @@
 import { snapshotFreshness } from "../../lib/snapshot-freshness";
+import { composeContent, storedContent } from "./content-version";
 import type { Db } from "./db/d1";
 import { publishedFactory } from "./db/factory-runs";
 import { ApiError } from "./errors";
@@ -85,5 +86,6 @@ export async function readContributions(db: Db, account: string, query: Record<s
 		"all",
 		snapshot.publication?.runId ?? snapshot.runId,
 		provenance?.version ?? snapshot.runId,
+		await composeContent({ publication: storedContent(snapshot)?.hash ?? null }, { since, until }),
 	);
 }

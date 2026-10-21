@@ -1,10 +1,13 @@
 import { createHash } from "node:crypto";
 import { expect, it, vi } from "vitest";
 import { factoryFixture } from "../../../../../tests/fixtures/factory-snapshot";
-import { sourcesFixture } from "../../../../../tests/fixtures/sources";
+import { profileDb } from "../../../../../tests/fixtures/profile-db";
+import { populateSourceStreams, sourcesFixture } from "../../../../../tests/fixtures/sources";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
+import * as ci from "../../lib/ci-health";
+import { savedContentMeta } from "./content-version";
 import { createDb } from "./db/d1";
-import { replaceSnapshotStmts } from "./db/snapshots";
+import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
 import { readFactoryResource, readObservation } from "./machine-observations";
 import { readSources } from "./machine-sources";
 
@@ -19,8 +22,8 @@ it("filters every repository source and factory inventory against the current ca
 		)
 		.bind(account)
 		.run();
-	const save = (kind: string, value: Record<string, unknown>) =>
-		db.batch(replaceSnapshotStmts(db, account, kind, value, snap.fetched_at));
+	const save = async (kind: string, value: Record<string, unknown>) =>
+		db.batch(await replaceSnapshotStmts(db, account, kind, value, snap.fetched_at));
 	await save("repos", { repos: [{ name_with_owner: "nocoo/app" }] });
 	for (const name of ["NOCOO/APP", "nocoo/removed"])
 		for (const suffix of ["details", "issues", "prs", "actions", "releases"])
@@ -56,11 +59,15 @@ it("filters every repository source and factory inventory against the current ca
 	}
 });
 
-it("reads 126 repositories within five queries and skips hashing sources excluded by since", async () => {
+it("reads 126 repositories within five queries and bounds empty-since hashing", async () => {
 	const { raw, account, names } = await sourcesFixture();
 	const before = (await raw.prepare("SELECT * FROM snapshots ORDER BY kind").all()).results;
 	const fullDb = createDb(raw);
+	const fullDigest = vi.spyOn(crypto.subtle, "digest");
 	const full = await readSources(fullDb, account, {});
+	const fullDigests = fullDigest.mock.calls.length;
+	fullDigest.mockRestore();
+	expect(fullDigests).toBeLessThan(10);
 	expect(fullDb.statements).toBeLessThanOrEqual(5);
 	expect(full.repositories).toEqual(names);
 	expect(full.sources).toHaveLength(1517);
@@ -79,7 +86,9 @@ it("reads 126 repositories within five queries and skips hashing sources exclude
 		expect(
 			(await readSources(createDb(raw), account, { since: "2099-01-01T00:00:00Z" })).sources,
 		).toEqual([]);
-		expect(digest).not.toHaveBeenCalled();
+		expect(digest.mock.calls.reduce((bytes, call) => bytes + call[1].byteLength, 0)).toBeLessThan(
+			100_000,
+		);
 	} finally {
 		digest.mockRestore();
 	}
@@ -88,7 +97,7 @@ it("reads 126 repositories within five queries and skips hashing sources exclude
 	);
 });
 
-async function savedFixture() {
+async function savedFixture(persist = true) {
 	const raw = sqliteFixture();
 	const account = "source-edge";
 	await raw
@@ -97,15 +106,191 @@ async function savedFixture() {
 		)
 		.bind(account)
 		.run();
-	const save = (kind: string, data: Record<string, unknown>, at = "2026-10-20T00:00:00Z") =>
-		raw
+	const save = async (kind: string, data: Record<string, unknown>, at = "2026-10-20T00:00:00Z") => {
+		await raw
 			.prepare(
-				"INSERT INTO snapshots VALUES(?,?,?,?) ON CONFLICT(account_id,kind) DO UPDATE SET payload=excluded.payload,fetched_at=excluded.fetched_at",
+				"INSERT INTO snapshots(account_id,kind,payload,fetched_at) VALUES(?,?,?,?) ON CONFLICT(account_id,kind) DO UPDATE SET payload=excluded.payload,fetched_at=excluded.fetched_at",
 			)
 			.bind(account, kind, JSON.stringify({ ...data, fetched_at: at }), at)
 			.run();
+		if (persist) {
+			const logical = kind.replace(/#2$/, "");
+			const data = await readSnapshot(createDb(raw), account, logical);
+			if (data)
+				await raw
+					.prepare("UPDATE snapshots SET content_meta=? WHERE account_id=? AND kind IN (?,?)")
+					.bind(await savedContentMeta(logical, data), account, logical, `${logical}#2`)
+					.run();
+		}
+	};
 	return { raw, account, save };
 }
+
+it("does not build a CI report excluded by since", async () => {
+	const fixture = await sourcesFixture();
+	const report = vi.spyOn(ci, "ciReport");
+	try {
+		expect(
+			(await readSources(createDb(fixture.raw), fixture.account, { since: fixture.latest }))
+				.sources,
+		).toEqual([]);
+		expect(report).not.toHaveBeenCalled();
+	} finally {
+		report.mockRestore();
+	}
+});
+
+it("never reads immutable payloads for full or filtered source indexes", async () => {
+	const fixture = await sourcesFixture();
+	const baseline = profileDb(fixture.raw);
+	await readSources(createDb(baseline.raw), fixture.account, {});
+	const baseBytes = baseline.queries.reduce((sum, query) => sum + query.payloadBytes, 0);
+	const payloads = await populateSourceStreams(fixture);
+	const repository = "fixture/project-001";
+	for (const [query, expectedBytes, count] of [
+		[{}, 0, 1517],
+		[{ since: "2026-10-21T00:00:00Z" }, 0, 0],
+		[{ repository: repository.toUpperCase() }, 0, 17],
+		[{ repository, since: fixture.latest }, 0, 0],
+	] as const) {
+		const profile = profileDb(fixture.raw);
+		const result = await readSources(createDb(profile.raw), fixture.account, query);
+		expect(result.sources).toHaveLength(count);
+		expect(profile.queries).toHaveLength(5);
+		expect(profile.queries.reduce((sum, row) => sum + row.payloadBytes, 0)).toBe(
+			baseBytes + Number(expectedBytes),
+		);
+		if (count === 17)
+			expect(
+				result.sources.find((source) => source.resource === `factory:${repository}:commits`)
+					?.contentVersion,
+			).toMatch(/^sha256:[0-9a-f]{64}$/);
+	}
+	expect(payloads.size).toBe(126);
+	const profile = profileDb(fixture.raw);
+	const before = await readSources(createDb(profile.raw), fixture.account, {});
+	const sql = profile.queries.at(-1)?.sql;
+	if (!sql) throw new Error("missing metadata query");
+	const plan = await fixture.raw
+		.prepare(`EXPLAIN QUERY PLAN ${sql}`)
+		.bind("[]", "[]", fixture.account, fixture.account, "[]", fixture.account)
+		.all<{ detail: string }>();
+	expect(
+		plan.results.some((row) => row.detail.includes("COVERING INDEX factory_resources_content")),
+	).toBe(true);
+	expect(plan.results.some((row) => row.detail.includes("COVERING INDEX snapshots_content"))).toBe(
+		true,
+	);
+	await fixture.raw.prepare("UPDATE factory_resources SET payload='not-json'").run();
+	expect(await readSources(createDb(fixture.raw), fixture.account, {})).toEqual(before);
+});
+
+it("does not invent content hashes for legacy saved sources", async () => {
+	const { raw, account, save } = await savedFixture(false);
+	await save("repos", { repos: [{ name_with_owner: "owner/app" }] });
+	await save("issues", { issues: [] });
+	await save("repo:owner/app:issues", { issues: [] });
+	const publication = factoryFixture();
+	const repo = publication.repos[0];
+	if (!repo) throw new Error("missing fixture");
+	repo.name = "owner/app";
+	await save("factory", publication);
+	await save("factory:owner/app:commits", {
+		runId: publication.runId,
+		items: [],
+		ranges: [],
+		next: null,
+		coverage: repo.coverage.commits,
+	});
+	const result = await readSources(createDb(raw), account, {});
+	for (const source of result.sources) expect(source.contentVersion).toBeNull();
+	for (const resource of ["repos", "issues", "repo:owner/app:issues", "ci", "factory"])
+		expect(
+			(await readObservation(createDb(raw), account, resource, "all")).contentVersion,
+		).toBeNull();
+	expect(
+		(await readFactoryResource(createDb(raw), account, "owner/app", "commits")).contentVersion,
+	).toBeNull();
+});
+
+it.each(["run", "legacy"] as const)(
+	"filters %s streams individually using both publication pages",
+	async (source) => {
+		const { raw, account, save } = await savedFixture();
+		const snap = factoryFixture();
+		const template = snap.repos[0];
+		if (!template) throw new Error("missing fixture");
+		const kept = structuredClone(template);
+		kept.name = "owner/kept";
+		kept.observation = {
+			source,
+			version: "original",
+			window: snap.window,
+			refreshedAt: snap.fetched_at,
+		};
+		kept.coverage.commits.fetchedAt = "2026-10-20T01:00:00+01:00";
+		kept.coverage.issues.fetchedAt = "2026-10-20T00:00:00.001Z";
+		const other = { ...kept, name: "owner/other" };
+		await save("repos", { repos: [kept, other].map((repo) => ({ name_with_owner: repo.name })) });
+		await save("factory", { ...snap, repos: [other] });
+		await save("factory#2", { ...snap, repos: [kept] });
+		const query = { repository: "OWNER/KEPT", since: "2026-10-20T00:00:00Z" };
+		const baseline = profileDb(raw);
+		await readSources(createDb(baseline.raw), account, query);
+		const baselineBytes = baseline.queries.reduce((sum, row) => sum + row.payloadBytes, 0);
+		await raw
+			.prepare(
+				"INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES('original',?,'original','completed','{}','t','t','t')",
+			)
+			.bind(account)
+			.run();
+		for (const [name, stream] of [
+			[kept.name, "issues"],
+			[kept.name, "commits"],
+			[other.name, "issues"],
+		] as const) {
+			const selected = name === kept.name && stream === "issues";
+			const payload = JSON.stringify({
+				runId: "original",
+				items: [{ id: "1", title: selected ? "selected" : "x".repeat(900_000) }],
+				next: null,
+				ranges: [],
+				coverage: kept.coverage[stream],
+				fetched_at: snap.fetched_at,
+			});
+			const meta = await savedContentMeta(`factory:${name}:${stream}`, JSON.parse(payload));
+			if (source === "run")
+				await raw
+					.prepare(
+						"INSERT INTO factory_resources(run_id,repo,stream,payload,content_meta) VALUES('original',?,?,?,?)",
+					)
+					.bind(name, stream, payload, meta)
+					.run();
+			else
+				await raw
+					.prepare(
+						"INSERT INTO snapshots(account_id,kind,payload,fetched_at,content_meta) VALUES(?,?,?,?,?)",
+					)
+					.bind(account, `factory:${name}:${stream}`, payload, snap.fetched_at, meta)
+					.run();
+		}
+		const profile = profileDb(raw);
+		const result = await readSources(createDb(profile.raw), account, query);
+		expect(profile.queries).toHaveLength(5);
+		expect(profile.queries.reduce((sum, row) => sum + row.payloadBytes, 0)).toBe(baselineBytes);
+		expect(result.sources.some((row) => row.resource === "factory:owner/kept:commits")).toBe(false);
+		expect(result.sources.some((row) => row.resource.startsWith("factory:owner/other:"))).toBe(
+			false,
+		);
+		expect(
+			result.sources.find((row) => row.resource === "factory:owner/kept:issues")?.contentVersion,
+		).toMatch(/^sha256:[0-9a-f]{64}$/);
+		expect(result.sources.find((row) => row.resource === "factory:owner/kept:prs")).toMatchObject({
+			fetchedAt: null,
+			contentVersion: null,
+		});
+	},
+);
 
 it("preserves exact realistic response content and all advertised snapshot versions", async () => {
 	const { raw, account } = await sourcesFixture();
@@ -179,7 +364,9 @@ it("shares decoded alias pages without replacing latest-complete inbox evidence 
 	await save("repo:OWNER/APP:issues#2", { issues: [{ number: 2 }] }, "2026-10-18T00:00:00Z");
 	await save("repo:owner/app:issues", { issues: [{ number: 3 }], truncated: true });
 	await raw
-		.prepare("INSERT INTO snapshots VALUES(?,'repo:owner/orphan:issues#2','invalid-json','bad')")
+		.prepare(
+			"INSERT INTO snapshots(account_id,kind,payload,fetched_at) VALUES(?,'repo:owner/orphan:issues#2','invalid-json','bad')",
+		)
 		.bind(account)
 		.run();
 	let result = await readSources(createDb(raw), account, {});
@@ -261,7 +448,7 @@ it("omits absent sources and never substitutes a legacy publication for a missin
 	).toBe(false);
 });
 
-it("hashes referenced immutable content, including second pages, not newer or foreign runs", async () => {
+it("projects stored immutable hashes, including second pages, not newer or foreign runs", async () => {
 	const { raw, account, save } = await savedFixture();
 	const publication = factoryFixture();
 	const template = publication.repos[0];
@@ -313,8 +500,15 @@ it("hashes referenced immutable content, including second pages, not newer or fo
 		["foreign", "owner/foreign"],
 	])
 		await raw
-			.prepare("INSERT INTO factory_resources VALUES(?,?,'commits',?)")
-			.bind(version, repo, JSON.stringify({ ...stream, runId: version }))
+			.prepare(
+				"INSERT INTO factory_resources(run_id,repo,stream,payload,content_meta) VALUES(?,?,'commits',?,?)",
+			)
+			.bind(
+				version,
+				repo,
+				JSON.stringify({ ...stream, runId: version }),
+				await savedContentMeta(`factory:${repo}:commits`, { ...stream, runId: version }),
+			)
 			.run();
 	await save("factory:owner/legacy:commits", stream);
 	await save("factory:owner/legacy:commits#2", {
@@ -340,8 +534,13 @@ it("hashes referenced immutable content, including second pages, not newer or fo
 		await raw.prepare("SELECT * FROM factory_resources ORDER BY run_id,repo,stream").all(),
 	).toEqual(before);
 	await raw
-		.prepare(
-			"UPDATE factory_resources SET payload=json_set(payload,'$.items[0].title','changed') WHERE run_id='original'",
+		.prepare("UPDATE factory_resources SET payload=?,content_meta=? WHERE run_id='original'")
+		.bind(
+			JSON.stringify({ ...stream, items: [{ ...stream.items[0], title: "changed" }] }),
+			await savedContentMeta("factory:OWNER/ORIGINAL:commits", {
+				...stream,
+				items: [{ ...stream.items[0], title: "changed" }],
+			}),
 		)
 		.run();
 	await save("factory:owner/legacy:commits#2", {
