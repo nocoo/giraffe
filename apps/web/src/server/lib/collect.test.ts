@@ -737,14 +737,14 @@ describe("collectKind", () => {
 		gqlErr.graphqlErrors = [{ type: "NOT_FOUND" }];
 		gqlErr.githubGraphql = async () => {
 			gqlErr.graphqlErrors = [{ type: "NOT_FOUND" }];
-			return { search: { issueCount: 0, nodes: [], pageInfo: { hasNextPage: false } } };
+			return { search: null };
 		};
 		await expect(collectKind(gqlErr, "tok", "repo:o/n:issues", [])).rejects.toMatchObject({
 			code: "not_found",
 		});
 		gqlErr.githubGraphql = async () => {
 			gqlErr.graphqlErrors = [{ type: "FORBIDDEN" }];
-			return { search: { issueCount: 0, nodes: [], pageInfo: { hasNextPage: false } } };
+			return { search: null };
 		};
 		await expect(collectKind(gqlErr, "tok", "repo:o/n:prs", [])).rejects.toMatchObject({
 			code: "github_forbidden",

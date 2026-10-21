@@ -165,7 +165,7 @@ async function searchList(
 					strict &&
 					i === 0 &&
 					after === null &&
-					!search?.nodes?.length &&
+					!Array.isArray(search?.nodes) &&
 					gh.graphqlErrors.length > 0 &&
 					gh.graphqlErrors.every(
 						(error) => error.type === "FORBIDDEN" || error.type === "NOT_FOUND",

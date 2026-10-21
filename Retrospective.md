@@ -710,3 +710,6 @@ types before issuing a continuation request, across ordinary GraphQL connections
 An invalid REST next link is also incomplete, not absent. Returning null from a
 failed URL parse silently converted a declared continuation into successful EOF;
 the parser now preserves that distinction and ordinary collectors retain old data.
+Apply the surviving-connection rule consistently to search as well as security:
+an empty array after denied nodes are removed is still partial evidence, not whole
+source unavailability. Denial fixtures must model a missing connection explicitly.

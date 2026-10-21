@@ -253,6 +253,46 @@ it.each(["issues", "prs"] as const)(
 	},
 );
 
+it.each(["issues", "prs"])(
+	"fails partial %s search even when every node is denied",
+	async (resource) => {
+		const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] });
+		const db = createDb(env.DB);
+		const kind = `repo:nocoo/app:${resource}`;
+		const old = {
+			truncated: false,
+			fetched_at: "2025-01-01T00:00:00.000Z",
+			[resource === "prs" ? "pull_requests" : "issues"]: [{ number: 9001 }],
+		};
+		await db.batch(replaceSnapshotStmts(db, snap.account_id, kind, old, old.fetched_at));
+		const base = vi.mocked(fetch).getMockImplementation();
+		if (!base) throw new Error("fixture");
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (url: string, init: RequestInit) =>
+				String(init?.body).includes(`is:${resource === "prs" ? "pr" : "issue"}`)
+					? Response.json({
+							data: { search: { nodes: [null], issueCount: 1, pageInfo: { hasNextPage: false } } },
+							errors: [{ type: "FORBIDDEN", path: ["search", "nodes", 0] }],
+						})
+					: base(url, init),
+			),
+		);
+		const run = await drive(env);
+		expect(run?.steps.find((step) => step.resource === kind)).toMatchObject({
+			status: "failed",
+			error: "snapshot_incomplete",
+		});
+		expect(run?.status).toBe("partial");
+		expect(await publishedFactory(db, snap.account_id)).toMatchObject({
+			runId: "r1",
+			status: "partial",
+		});
+		expect((await listRuns(db, snap.account_id))[0]?.counts.failed).toBeGreaterThan(0);
+		expect(await readSnapshot(db, snap.account_id, kind)).toEqual(old);
+	},
+);
+
 it.each(["repos", "issues", "prs", "security"])(
 	"fails %s GraphQL connections without an explicit pagination flag",
 	async (resource) => {
