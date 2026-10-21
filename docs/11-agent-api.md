@@ -134,7 +134,11 @@ accepted evidence clears the diagnostic. An empty limited baseline is never zero
 Full evidence versions can stay unchanged as coverage changes; consumers must
 check current completeness and reconcile unfiltered source indexes, not only time
 filters. Job/step multiline `if:` values support plain scalar continuations and
-literal/folded blocks; unsupported non-scalar shapes remain limited.
+literal/folded blocks. Only block bodies may contain mapping-like text without
+inspection. Plain headers and every continuation fail closed on unsupported
+collection starts, mapping/sequence-like lines or continuations after comments
+have ended the scalar; empty/comment-only headers still accept a first plain line.
+These unsupported shapes yield limited coverage, never a successful zero.
 
 Account `/factory` rate metadata is the latest dated saved GitHub rate observation
 from publication/run checkpoints, including newer catalog or active runs. It

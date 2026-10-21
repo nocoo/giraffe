@@ -1043,3 +1043,15 @@ Zod offset range and child/parent chronology. Index/query and client comparisons
 separate whole seconds from normalized fractional digit strings; fractions never
 enter numeric date conversion. Match ordering precision to the accepted schema,
 not the default precision of a convenient datetime API.
+
+## 2026-10-21 - Validate every plain condition line
+
+Final review found the empty-header correction still skipped flow arrays/maps in
+nonempty `if:` headers and mapping-like lines after an initial plain condition.
+One positive fixture was itself invalid YAML: a plain condition followed by
+`uses: fake/...`. Ten red cases reproduced acceptance of flow collections,
+mapping/sequence-like lines and comment-ended continuations. Plain and block
+scalar modes now differ: every plain line is checked, while literal/folded block
+bodies deliberately ignore key-like text. Corrected block fixtures and valid
+multiline expressions protect both paths. Confirm fixture syntax independently;
+an indentation test must not turn unsupported structure into successful evidence.

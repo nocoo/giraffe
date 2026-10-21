@@ -181,9 +181,12 @@ or refresh evidence age. Failed later attempts cannot erase the frozen diagnosti
 successful accepted publication clears it. Existing version references continue
 protecting retained resources from bounded cleanup. Job/step multiline workflow
 conditions support plain continuations and literal/folded block scalars without
-extracting dependencies from condition bodies; non-scalar empty-header children
-and other unsupported shapes still fail closed. No schema migration or historical
-row rewrite is required.
+extracting dependencies from condition bodies. Block bodies may contain key-like
+text. Plain headers and every continuation are checked: collection starts,
+mapping/sequence-like lines and continuations after a comment-ended scalar remain
+unsupported and fail closed, even after an earlier valid plain line. Empty or
+comment-only headers can still lead to plain conditions. No schema migration or
+historical row rewrite is required.
 
 ## Page scope and daily collection
 

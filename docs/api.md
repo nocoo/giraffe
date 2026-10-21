@@ -699,9 +699,13 @@ indentation scanner discovers the document's actual root indentation and support
 job-level reusable workflows and step actions,
 quoted keys/references and comments, and ignores scalar script bodies.
 Job/step `if:` values support plain multiline
-continuations and `|`/`>` block scalars with chomping/indent indicators; indented
-condition bodies are scalar content, never job keys or dependency references.
-Empty/comment-only headers must lead to a plain scalar, not a mapping or sequence.
+continuations and `|`/`>` block scalars with chomping/indent indicators. Block
+scalar bodies may contain key-like text and never supply dependency references.
+Plain headers and every continuation are checked separately: collection/alias/tag
+starts are unsupported as the first scalar content, and mapping-like `key: value`
+or sequence-like lines fail closed, including after an earlier plain continuation.
+Empty/comment-only headers may lead to a plain scalar, including after blank lines;
+comments after scalar content end that scalar and cannot hide later continuations.
 Expressions are not evaluated. It is not
 a general YAML parser; flow-style objects, aliases and expression-valued `uses`
 are not resolved. Present workflow files with missing/ambiguous job mappings or

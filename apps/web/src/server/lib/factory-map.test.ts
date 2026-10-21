@@ -15,6 +15,30 @@ import {
 } from "./factory-map";
 
 describe("GitHub factory normalization", () => {
+	it.each(
+		(
+			[
+				["flow array", "[\n  true,\n  false\n  ]"],
+				["flow mapping", "{\n  allowed: true\n  }"],
+				["inline flow array", "[true, false]"],
+				["inline flow mapping", "{ allowed: true }"],
+				["mapping header", "uses: fake/condition@v1"],
+				["mapping continuation", "github.event_name == 'push'\n  uses: fake/condition@v1"],
+				[
+					"later mapping continuation",
+					"\n  github.event_name == 'push'\n  uses: fake/condition@v1",
+				],
+				["sequence continuation", "github.event_name == 'push'\n  - true"],
+				["comment-ended continuation", "github.event_name == 'push' # done\n  && true"],
+				["comment-interrupted continuation", "github.event_name == 'push'\n  # done\n  && true"],
+			] as const
+		).flatMap(([shape, condition]) => [false, true].map((step) => ({ shape, condition, step }))),
+	)("rejects ambiguous plain conditions ($shape, step=$step)", ({ condition, step }) => {
+		const text = step
+			? `jobs:\n  build:\n    steps:\n      - if: ${condition.replaceAll("\n", "\n        ")}\n        uses: actions/checkout@v4`
+			: `jobs:\n  build:\n    if: ${condition.replaceAll("\n", "\n    ")}\n    uses: nocoo/base-ci/.github/workflows/deploy.yml@main`;
+		expect(() => mapDependencies({ ci: { text } }, mapFactoryRepo(rawRepo))).toThrow();
+	});
 	it.each(["", "# condition"])(
 		"rejects non-scalar children after an empty/comment-only if (%s)",
 		(value) => {
@@ -65,10 +89,11 @@ describe("GitHub factory normalization", () => {
 			]);
 		},
 	);
-	it("does not interpret multiline condition contents as keys or workflow references", () => {
+	it.each(["|", ">-"])("ignores nested keys in %s condition block scalars", (header) => {
 		const text = `jobs:
   deploy:
-    if: github.event_name == 'push'
+    if: ${header}
+      github.event_name == 'push'
       uses: fake/condition@v1
       jobs:
         fake:
@@ -76,7 +101,8 @@ describe("GitHub factory normalization", () => {
     uses: nocoo/base-ci/.github/workflows/deploy.yml@main
   verify:
     steps:
-      - if: github.event_name == 'push'
+      - if: ${header}
+          github.event_name == 'push'
           uses: fake/step@v1
         uses: actions/checkout@v4
 `;
@@ -84,6 +110,24 @@ describe("GitHub factory normalization", () => {
 			mapDependencies({ ci: { text } }, mapFactoryRepo(rawRepo)).items.map((item) => item.title),
 		).toEqual(["nocoo/base-ci/.github/workflows/deploy.yml", "actions/checkout"]);
 	});
+	it.each(["", "# condition", "${{", "github.event_name == 'push'"])(
+		"preserves valid plain continuations after %s headers",
+		(header) => {
+			const expression = [
+				header,
+				"",
+				...(header === "github.event_name == 'push'" ? [] : ["  github.event_name == 'push'"]),
+				"  && contains('https://example.test', ':')",
+				...(header === "${{" ? ["  }}"] : []),
+			].join("\n");
+			for (const step of [false, true]) {
+				const text = step
+					? `jobs:\n  build:\n    steps:\n      - if: ${expression.replaceAll("\n", "\n        ")}\n        uses: actions/checkout@v4`
+					: `jobs:\n  build:\n    if: ${expression.replaceAll("\n", "\n    ")}\n    uses: nocoo/base-ci/.github/workflows/deploy.yml@main`;
+				expect(mapDependencies({ ci: { text } }, mapFactoryRepo(rawRepo)).items).toHaveLength(1);
+			}
+		},
+	);
 	it.each([0, 2, 4])("finds jobs at the document root indentation of %s spaces", (indent) => {
 		const text = dependencyWorkflow
 			.split("\n")

@@ -281,7 +281,11 @@ access loss during pagination remain failures, not expected absence.
   YAML flow objects, aliases or expression-valued `uses`.
   Job/step `if:` values support plain multiline continuations and `|`/`>` block
   scalars, including chomping/indent indicators. Condition bodies never supply
-  job keys or dependency references; expressions are not evaluated.
+  job keys or dependency references; expressions are not evaluated. Only block
+  scalar bodies ignore key-like text. Plain headers and every continuation reject
+  unsupported collection starts, mapping/sequence-like lines and continuations
+  after comments end the scalar. Empty/comment-only headers can still lead to
+  a plain condition, including after blank lines.
   The document root may be uniformly indented. Present files whose job mappings
   or references cannot be parsed safely yield `limited` coverage with reason
   `Dependency manifests cannot be parsed safely; evidence unavailable`; never
