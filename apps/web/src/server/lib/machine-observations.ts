@@ -219,8 +219,18 @@ export async function readFactoryResource(db: Db, account: string, name: string,
 			account,
 			streamKey(original, stream as FactoryStreamName),
 		)) as FactoryStreamData | null;
-	if (!data || data.runId !== version)
-		throw new ApiError(409, "snapshot_missing", "immutable source unavailable");
+	if (!data)
+		throw new ApiError(
+			409,
+			"snapshot_missing",
+			"immutable source missing; refresh this repository",
+		);
+	if (data.runId !== version)
+		throw new ApiError(
+			409,
+			"snapshot_missing",
+			"immutable source version mismatch; refresh this repository",
+		);
 	return observationEnvelope(
 		account,
 		`factory:${repo.name}:${stream}`,

@@ -68,11 +68,11 @@ function browser(path: string, method = "GET", body?: unknown) {
 	});
 }
 
-async function machine(path: string) {
+async function machine(path: string, status = 200) {
 	const response = await fetch(`${base}/api/v1/accounts/${account}/${path}`, {
 		headers: { authorization: `Bearer ${bearer}` },
 	});
-	expect(response.status).toBe(200);
+	expect(response.status).toBe(status);
 	return response;
 }
 
@@ -407,6 +407,58 @@ it("normalizes saved dependency unknowns and separates root and workspace identi
 			(statement) => statement.results,
 		),
 	).toEqual(before);
+});
+
+it("serves pre-observation windows and explains missing or replaced legacy streams over HTTP", async () => {
+	assertMarker();
+	const rows = sql(
+		`SELECT kind,payload,fetched_at FROM snapshots WHERE account_id=${quote(account)} AND kind IN ('factory','factory:nocoo/recovered:commits') ORDER BY kind`,
+	)[0]?.results;
+	if (rows?.length !== 2) throw new Error("legacy fixture missing");
+	const countBefore = await (await fetch("http://127.0.0.1:17046/_count")).text();
+	try {
+		sql(
+			`UPDATE snapshots SET payload=json_remove(payload,'$.repos[0].observation') WHERE account_id=${quote(account)} AND kind='factory';`,
+		);
+		const path = "factory/repos/nocoo/recovered/commits";
+		expect(await (await machine(path)).json()).toMatchObject({
+			sourceVersion: factoryFixture().runId,
+			data: { ranges: [factoryFixture().window], items: [], coverage: { status: "complete" } },
+		});
+		for (const [command, message] of [
+			[
+				"UPDATE snapshots SET payload=json_set(payload,'$.runId','another-run')",
+				"immutable source version mismatch; refresh this repository",
+			],
+			["DELETE FROM snapshots", "immutable source missing; refresh this repository"],
+		]) {
+			sql(
+				`${command} WHERE account_id=${quote(account)} AND kind='factory:nocoo/recovered:commits';`,
+			);
+			const before = sql(
+				`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
+			)[0]?.results;
+			expect(await (await machine(path, 409)).json()).toMatchObject({
+				error: { code: "snapshot_missing", message },
+			});
+			expect(
+				sql(
+					`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
+				)[0]?.results,
+			).toEqual(before);
+		}
+		expect(await (await fetch("http://127.0.0.1:17046/_count")).text()).toBe(countBefore);
+	} finally {
+		assertMarker();
+		sql(
+			rows
+				.map(
+					(row) =>
+						`INSERT OR REPLACE INTO snapshots(account_id,kind,payload,fetched_at) VALUES(${quote(account)},${quote(String(row.kind))},${quote(String(row.payload))},${quote(String(row.fetched_at))});`,
+				)
+				.join(""),
+		);
+	}
 });
 
 it("reads the latest timestamped catalog rate and hides an expired newest observation without writes", async () => {

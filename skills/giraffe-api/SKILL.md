@@ -208,6 +208,15 @@ access loss during pagination remain failures, not expected absence.
   `ranges` contains exactly that one window, or the saved publication window for
   legacy data without an observation; it is not the collector's pending queue.
   Never replace a retained repository window with a newer global publication window.
+- Legacy pre-observation streams are supported, not rejected by format. The saved
+  payload must exist and its `runId` must match the repository observation's
+  `version`, or the publication's `runId` when no observation exists. Otherwise
+  HTTP 409 `snapshot_missing` has `error.message` equal to
+  `immutable source missing; refresh this repository` or
+  `immutable source version mismatch; refresh this repository`. Keep work pending;
+  never interpret this as zero. It clears after a successful matching repository
+  refresh/publication (weekly, daily if selected, or an explicit repo refresh),
+  not merely a catalog update or a failed refresh retaining old evidence.
 - Dependency `at`, `createdAt` and `author` are null when unknown, including old
   saved rows. Do not substitute `fetched_at` for package creation time. Own package
   identities are separate `manifests:[{name,version,path,url}]` metadata, not items;

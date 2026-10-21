@@ -560,6 +560,27 @@ Unknown streams are 400; catalog/publication repository misses are 404; missing
 immutable source data is 409 `snapshot_missing`. No observation/publication writes
 are available through this API.
 
+### Legacy snapshot 409
+
+Pre-observation format alone is not an error. A legacy stream is served when its
+saved `runId` equals the publication's `runId` (or the repository observation's
+`version`, if present); `data.ranges` then uses the window described above.
+The publication summary is not a substitute for the saved stream payload.
+
+When that payload is absent, the response is HTTP 409 with
+`error.code: "snapshot_missing"` and
+`error.message: "immutable source missing; refresh this repository"`. A different
+or absent payload `runId` instead reports
+`"immutable source version mismatch; refresh this repository"`. These are intended
+immutability checks, not a reason to fabricate empty items or use another run's
+window. GET does not repair, collect or write anything.
+
+The conflict clears when a successful refresh of that repository publishes usable
+matching evidence: normally the next weekly run, a daily run if the repository is
+selected, or an explicitly requested repository refresh. A catalog-only refresh
+or failed refresh retaining the old version does not guarantee recovery. Consumers
+must retain pending work and retry after that publication, not treat 409 as zero.
+
 ## Records, reports and jobs
 
 These three collections share one generic CRUD contract; creating a job does not

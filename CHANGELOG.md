@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Stop terminally failed contribution checkpoints from being resumed by later repository streams or replacing prior calendars.
 - Preserve separate REST/GraphQL rate reserves across PR pages, metadata transitions and failed-page rollback while keeping the public latest-rate observation unchanged.
+- Explain legacy stream 409 responses with distinct missing-payload and version-mismatch messages. Matching pre-observation snapshots already support the publication-window fallback; preserve the immutable-source checks rather than fabricating missing evidence.
 
 ### Migration and Compatibility
 
