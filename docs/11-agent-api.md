@@ -101,6 +101,11 @@ use explicit `*Workflows`/`*Repos` names, with `nonDefaultBranchFailures` measur
 runs; ambiguous legacy count names are removed. See the
 [CI rules and fields](api.md#saved-ci-verdicts-and-units) before consuming totals.
 
+Non-default branch streams require a run created within 30 days of the saved
+evaluation clock (inclusive cutoff). Older branch-only streams are omitted in both
+all and starred views, without deleting history; idle default-branch workflows and
+grouped bot streams remain visible. No `branches` parameter is supported.
+
 ## Generic records, reports and jobs
 
 The three generic resource collections live under

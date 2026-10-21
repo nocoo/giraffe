@@ -259,6 +259,13 @@ CI uses only saved Actions, releases and details. The evaluation clock is the ne
 valid saved input time, not the request's wall clock. A report can therefore be stale
 even when a verdict is healthy; inspect its freshness separately.
 
+Non-default (`scope:"branch"`) streams are included only if a saved run was created
+within the last 30 days, inclusive of the exact cutoff relative to that saved
+evaluation clock. Older branch-only streams are omitted, not deleted from saved
+history. Default-branch and grouped bot streams remain unchanged, including idle
+default workflows. This applies to both all and starred scope; no `branches` query
+parameter is supported.
+
 - Project verdicts use only runs on the **known default branch**
   from saved repository details. Missing/empty default branch, null run branch,
   feature/PR branches and tag refs are not assumed to be default-branch evidence.

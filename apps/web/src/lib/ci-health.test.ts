@@ -321,6 +321,69 @@ describe("repository and account report", () => {
 
 describe("report edge cases", () => {
 	afterEach(() => vi.useRealTimers());
+	it("bounds historical branch streams and payload on a large saved account", () => {
+		const entries = Array.from({ length: 44 }, (_, i) => ({
+			repo: `owner/project-${i}`,
+			fetched_at: NOW,
+			default_branch: "main",
+			truncated: false,
+			runs: [run("success", "2026-09-18T10:00:00Z")],
+		}));
+		for (let i = 0; i < 5194; i++) {
+			entries[i % entries.length]?.runs.push(
+				run("failure", i < 4597 ? "2026-04-01T00:00:00Z" : "2026-09-17T00:00:00Z", {
+					head_branch: `feature/retained-${i}`,
+					event: "pull_request",
+				}),
+			);
+		}
+		const report = ciReport(entries, NOW);
+		expect(report.streams).toHaveLength(641);
+		expect(report.totals).toMatchObject({
+			healthyRepos: 44,
+			totalWorkflows: 44,
+			nonDefaultBranchStreams: 597,
+			nonDefaultBranchFailures: 597,
+		});
+		expect(new TextEncoder().encode(JSON.stringify(report)).length).toBeLessThan(600_000);
+	});
+
+	it("bounds branch activity inclusively by the saved clock while retaining idle main and bot lanes", () => {
+		const cutoff = new Date(Date.parse(NOW) - 30 * 86400_000).toISOString();
+		const outside = new Date(Date.parse(cutoff) - 1).toISOString();
+		const entries = [
+			{
+				repo: "owner/app",
+				fetched_at: NOW,
+				default_branch: "main",
+				truncated: false,
+				runs: [
+					run("failure", cutoff, { head_branch: "boundary" }),
+					run("success", outside, { head_branch: "expired" }),
+					run("success", outside),
+					run("success", outside, { event: "dynamic" }),
+					run("success", "2026-09-17T00:00:00Z", { head_branch: "recent" }),
+				],
+			},
+		];
+		vi.useFakeTimers();
+		vi.setSystemTime("2027-01-01T00:00:00Z");
+		const report = ciReport(entries, NOW);
+		expect(report.streams.map((stream) => [stream.scope, stream.branch])).toEqual([
+			["branch", "recent"],
+			["main", "main"],
+			["branch", "boundary"],
+			["bot", "main"],
+		]);
+		expect(report.repos[0]).toMatchObject({
+			verdict: "idle",
+			totalWorkflows: 1,
+			nonDefaultBranchStreams: 2,
+		});
+		expect(report.streams.find((stream) => stream.branch === "boundary")?.recent).toHaveLength(1);
+		vi.setSystemTime("2030-01-01T00:00:00Z");
+		expect(ciReport(entries, NOW)).toEqual(report);
+	});
 
 	it.each([
 		"pull_request",
@@ -520,7 +583,6 @@ describe("report edge cases", () => {
 			["a/multi", "Build", null],
 			["a/multi", "Build", "v1.2.0"],
 			["b/idle", "CI", "main"],
-			["a/multi", "Build", "main"],
 		]);
 		expect(report.repos.map((r) => [r.repo, r.verdict])).toEqual([
 			["a/multi", "healthy"],

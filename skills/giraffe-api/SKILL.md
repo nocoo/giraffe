@@ -198,6 +198,12 @@ All `pull_request*` events are observational, including fork PRs whose source br
 is also named `main`; their failures belong to `nonDefaultBranchFailures`, not
 default-branch workflow or repository verdicts.
 
+Non-default branch streams require run activity (`created_at`) within 30 days of
+the saved evaluation clock, including the exact cutoff. Older branch-only streams
+are omitted from the response; saved history is untouched. Default-branch and
+grouped bot streams remain unchanged, including idle default workflows. The rule
+applies to all/starred scope. There is no `branches=all` option.
+
 The latest 10 decisive completed runs within 30 days describe recent stability.
 A latest success is healthy or flaky, never broken despite older failures. Two
 consecutive failures, or at least 50% failures over four or more decisive runs with

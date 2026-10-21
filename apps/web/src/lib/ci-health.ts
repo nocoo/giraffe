@@ -239,12 +239,14 @@ function repoSummary(entry: CiEntry, own: ReturnType<typeof repoStreams>, now: s
 }
 
 function repoStreams(entry: CiEntry, now: string) {
+	const since = Date.parse(now) - CI_WINDOW_DAYS * DAY;
 	const lanes = new Map<
 		string,
 		{ workflow: string; branch: string | null; scope: Scope; runs: CiRun[] }
 	>();
 	for (const run of entry.runs) {
 		const lane = laneOf(run, entry.default_branch);
+		if (lane.scope === "branch" && !(Date.parse(run.created_at) >= since)) continue;
 		const key = JSON.stringify([lane.workflow, lane.scope, lane.branch]);
 		const slot = lanes.get(key) ?? { ...lane, runs: [] };
 		slot.runs.push(run);

@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Count expected unavailable steps separately from failures in refresh history and the console; align factory publication status with the publishing run while retaining prior good evidence and original observation times.
 - Bound catalog, quick and deep runs by absolute deadlines, revoke expired leases, release account locks and retain timeout diagnostics in schedule settings.
 - Record missed schedule intervals durably and attempt only the latest due slot, without letting audit records delay recovery through collection cooldowns.
+- Bound non-default CI branch streams to 30 days of saved activity, retaining idle default-branch workflows without using the GET wall clock or deleting history.
 
 ### Changed
 
