@@ -140,6 +140,52 @@ it("does not build a CI report excluded by since", async () => {
 	}
 });
 
+it.each(["ci", "factory"])(
+	"hashes derived %s evidence quality, not observation times",
+	async (resource) => {
+		const { raw, account, save } = await savedFixture();
+		await save("repos", { repos: [{ name_with_owner: "owner/app" }] });
+		const publication = factoryFixture();
+		const template = publication.repos[0];
+		if (!template) throw new Error("missing fixture");
+		const seed = async (at: string | null) => {
+			await save("factory", {
+				...publication,
+				repos: [
+					{
+						...template,
+						name: "owner/app",
+						observation: {
+							version: "original",
+							source: "legacy",
+							window: publication.window,
+							refreshedAt: at,
+						},
+					},
+				],
+			});
+			await save("repo:owner/app:actions", { runs: [] });
+			await save("repo:owner/app:releases", { releases: [] });
+			await save("repo:owner/app:details", { default_branch: "main" }, at ?? "");
+			const result = await readSources(createDb(raw), account, {});
+			const source = result.sources.find((row) => row.resource === `account:${resource}`);
+			expect(source?.contentVersion).toBe(
+				(await readObservation(createDb(raw), account, resource, "all")).contentVersion,
+			);
+			return source;
+		};
+		const original = await seed("2026-10-20T00:00:00Z");
+		expect(original?.contentVersion).toMatch(/^sha256:[0-9a-f]{64}$/);
+		expect(original?.freshness).toMatchObject({ missing: 0 });
+		for (const at of [null, "bad-date"]) {
+			const missing = await seed(at);
+			expect(missing?.freshness).toMatchObject({ missing: 1 });
+			expect(missing?.contentVersion).not.toBe(original?.contentVersion);
+		}
+		expect((await seed("2026-10-21T00:00:00Z"))?.contentVersion).toBe(original?.contentVersion);
+	},
+);
+
 it("never reads immutable payloads for full or filtered source indexes", async () => {
 	const fixture = await sourcesFixture();
 	const baseline = profileDb(fixture.raw);

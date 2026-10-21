@@ -92,7 +92,11 @@ async function readCiGroups(db: Db, account: string) {
 	return latestSnapshotGroups(rows.results);
 }
 
-export function ciContent(policy: Policy, groups: ReturnType<typeof latestSnapshotGroups>) {
+export function ciContent(
+	policy: Policy,
+	groups: ReturnType<typeof latestSnapshotGroups>,
+	freshness: ReturnType<typeof snapshotFreshness>,
+) {
 	const inputs: Record<string, string | null> = {
 		catalog: storedContent(policy.catalog)?.hash ?? null,
 	};
@@ -102,16 +106,22 @@ export function ciContent(policy: Policy, groups: ReturnType<typeof latestSnapsh
 			const data = groups.get(key)?.data;
 			inputs[key] = data ? (storedContent(data)?.hash ?? null) : "missing";
 		}
-	return composeContent(inputs);
+	return composeContent(inputs, { total: freshness.total, missing: freshness.missing });
 }
 
 export function factoryContent(snapshot: FactorySnapshot, policy: Policy) {
+	const freshness = factoryFreshness(snapshot, policy, false);
 	return composeContent(
 		{
 			publication: storedContent(snapshot)?.hash ?? null,
 			catalog: storedContent(policy.catalog)?.hash ?? null,
 		},
-		{ repositories: policy.repos.map((repo) => repo.name_with_owner), scope: policy.scope },
+		{
+			repositories: policy.repos.map((repo) => repo.name_with_owner),
+			scope: policy.scope,
+			total: freshness.total,
+			missing: freshness.missing,
+		},
 	);
 }
 
@@ -221,14 +231,15 @@ export async function readObservation(
 	}
 	if (resource === "ci") {
 		const groups = await readCiGroups(db, account);
+		const data = projectCiObservation(policy, groups);
 		return observationEnvelope(
 			account,
 			resource,
-			projectCiObservation(policy, groups),
+			data,
 			scope,
 			null,
 			undefined,
-			await ciContent(policy, groups),
+			await ciContent(policy, groups, data.freshness),
 		);
 	}
 	const snapshot = await readSnapshot(db, account, resource);

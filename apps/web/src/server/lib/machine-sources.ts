@@ -179,6 +179,7 @@ export async function readSources(db: Db, account: string, query: Record<string,
 		try {
 			let data: Record<string, unknown>;
 			let version: string | undefined;
+			let content: string | null | undefined;
 			if (resource === "factory") {
 				if (!publication) continue;
 				data = projectFactoryObservation(publication, policy);
@@ -187,6 +188,7 @@ export async function readSources(db: Db, account: string, query: Record<string,
 				const inputs = ciObservationInputs(policy, groups);
 				if (!afterSince(observationMetadata(inputs.metadata), since)) continue;
 				data = projectCiInputs(inputs);
+				content = await ciContent(policy, groups, inputs.metadata.freshness);
 			} else {
 				const snapshot = resource === "repos" ? policy.catalog : saved.get(resource);
 				if (!snapshot) continue;
@@ -197,7 +199,7 @@ export async function readSources(db: Db, account: string, query: Record<string,
 				data,
 				version,
 				resource === "ci"
-					? await ciContent(policy, groups)
+					? content
 					: resource === "factory" && publication
 						? await factoryContent(publication, policy)
 						: undefined,
