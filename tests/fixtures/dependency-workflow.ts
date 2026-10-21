@@ -25,4 +25,9 @@ export const unsupportedWorkflowJobs = [
 	"jobs:\n  build:\n    steps:\n      - { uses: actions/checkout@v4 }",
 	"jobs:\n  # no job mapping",
 	"jobs:\n  build:\n    steps: []\njobs:\n  another:\n    steps: []",
+	"jobs: *shared",
+	"jobs:\n  build:\n    { uses: nocoo/base-ci/.github/workflows/test-job.yml@main }",
+	"jobs:\n  build:\n    steps:\n      [{ uses: actions/checkout@v4 }]",
+	"jobs:\n  build:\n    steps:\n      - ? uses\n        : actions/checkout@v4",
+	"jobs:\n  build:\n    *shared",
 ];

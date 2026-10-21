@@ -569,7 +569,9 @@ a general YAML parser; flow-style objects, aliases and expression-valued `uses`
 are not resolved. Present workflow files with missing/ambiguous job mappings or
 unsupported job/step references produce `coverage.status: "limited"`, with reason
 `"Dependency manifests cannot be parsed safely; evidence unavailable"`, not a
-complete zero. Existing stronger repository evidence and its original version/window
+complete zero. Unrecognized non-scalar lines inside `jobs` also fail closed,
+including flow values on a following line and explicit YAML mapping keys.
+Existing stronger repository evidence and its original version/window
 remain published through the coverage-regression guard. Absent files and parsed
 run-only jobs can still prove no workflow dependencies. No additional files or
 upstream requests are introduced.

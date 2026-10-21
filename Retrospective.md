@@ -888,3 +888,11 @@ files, and marks unsupported job evidence limited. The existing regression guard
 then retains stronger data, its source version and original window. A bounded
 scanner must report uncertainty explicitly instead of treating an empty parse as
 proof of absence; parser regressions need collection/publication assertions too.
+
+Independent re-review found that recognizing a job key was still insufficient:
+flow mappings/sequences on the next line and explicit mapping keys were silently
+ignored. New failing collector/publication cases now cover these structures and
+use different old/new windows to prove window retention rather than equality by
+fixture coincidence. After excluding scalar bodies, every unrecognized line in
+the jobs block now fails closed. Unsupported syntax must be rejected by default,
+not handled through an ever-growing list of examples that happen to be rejected.

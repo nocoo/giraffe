@@ -209,6 +209,7 @@ function workflowReferences(content: string) {
 			continue;
 		}
 		if (!inJobs) continue;
+		if (!property) fail();
 		if (/^\s*(?:<<:|-\s*[*&{[])/.test(line)) fail();
 		if (key && (jobIndent === null || indent <= jobIndent)) {
 			if (!block(value)) fail();

@@ -234,7 +234,9 @@ access loss during pagination remain failures, not expected absence.
   The document root may be uniformly indented. Present files whose job mappings
   or references cannot be parsed safely yield `limited` coverage with reason
   `Dependency manifests cannot be parsed safely; evidence unavailable`; never
-  treat this as complete zero. Stronger published evidence keeps its original
+  treat this as complete zero. Unrecognized non-scalar lines inside `jobs`,
+  including next-line flow values and explicit YAML mapping keys, fail closed.
+  Stronger published evidence keeps its original
   version/window. Absent files and parsed run-only jobs still permit a real zero.
   Equal legacy saved records collapse without inventing job keys; a remaining
   singleton keeps its old ID. Distinct legacy refs use `B#ref=<encoded-ref>`;
