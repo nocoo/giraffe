@@ -93,11 +93,11 @@ import {
 	type RepoSecurity,
 	type RepoTab,
 	type RepoTraffic,
-	securityUnavailable,
 	sortedLanguages,
 	trafficForbidden,
 	trafficPoints,
 } from "../viewmodels/repo-detail";
+import { securityKpi } from "../viewmodels/security";
 
 import { ReleaseTimeline, RepoActivityChart, RunOutcomeChart } from "./repo-charts";
 
@@ -782,29 +782,17 @@ export function RepoDetailPage() {
 					)}
 				</TabsContent>
 				<TabsContent value="security">
-					{security && ("missing" in security || securityUnavailable(security)) ? (
+					{security && "missing" in security ? (
 						<TabWell>
 							<LayerCard.Empty icon={<ShieldAlert />} title="暂无告警数据" />
 						</TabWell>
 					) : security ? (
 						<KpiRow>
-							<Kpi
-								icon={Bug}
-								label="Dependabot"
-								value={
-									(security.unavailable || security.truncated) && !security.dependabot_open
-										? "—"
-										: formatCount(security.dependabot_open)
-								}
-							/>
+							<Kpi icon={Bug} label="Dependabot" {...securityKpi(security, "dependabot")} />
 							<Kpi
 								icon={ShieldAlert}
 								label="Code scanning"
-								value={
-									(security.unavailable || security.truncated) && !security.code_scanning_open
-										? "—"
-										: formatCount(security.code_scanning_open)
-								}
+								{...securityKpi(security, "code_scanning")}
 							/>
 						</KpiRow>
 					) : null}

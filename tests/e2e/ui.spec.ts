@@ -319,7 +319,7 @@ test("missing snapshots lead to the unified factory console", async ({ page }) =
 	}
 });
 
-test("unavailable optional security is empty while traffic retains permission guidance", async ({
+test("legacy security stays unknown while traffic retains permission guidance", async ({
 	page,
 }) => {
 	const fixtures = createUiFixtures();
@@ -349,8 +349,12 @@ test("unavailable optional security is empty while traffic retains permission gu
 	await expect(page.getByText("检查账号权限", { exact: true })).toHaveCount(0);
 	await page.goto("/repos/octocat/hello-world");
 	await page.getByRole("tab", { name: "安全", exact: true }).click();
-	await expect(page.getByText("暂无告警数据", { exact: true })).toBeVisible();
-	await expect(page.getByRole("tabpanel").getByText("Dependabot", { exact: true })).toHaveCount(0);
+	await expect(
+		page.getByRole("img", { name: "Dependabot — 旧快照：功能状态未知", exact: true }),
+	).toBeVisible();
+	await expect(
+		page.getByRole("img", { name: "Code scanning — 旧快照：功能状态未知", exact: true }),
+	).toBeVisible();
 	await page.getByRole("tab", { name: "流量", exact: true }).click();
 	await expect(page.getByText("无法查看流量", { exact: true })).toBeVisible();
 	await expect(page.getByRole("group", { name: "views", exact: true })).toHaveCount(0);

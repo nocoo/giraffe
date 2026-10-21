@@ -1,3 +1,4 @@
+import { securityIncomplete } from "../../lib/security";
 import { REPO_SNAPSHOT_TABS, SITE_SNAPSHOT_KINDS } from "../../lib/snapshot-kinds";
 import {
 	type Collected,
@@ -191,8 +192,7 @@ export async function prepareRefresh(
 			throw new ApiError(409, "snapshot_missing", "derived sources missing");
 		}
 		if (insightsOk && reposSrc) {
-			const alertsIncomplete =
-				alertsSrc === null || alertsSrc.unavailable === true || alertsSrc.truncated === true;
+			const alertsIncomplete = securityIncomplete(alertsSrc);
 			const insights = buildInsights(
 				asRepos(reposSrc).filter((r) => policy.enabled(r.name_with_owner)),
 				Array.isArray(alertsSrc?.items) ? (alertsSrc.items as InsightAlert[]) : [],

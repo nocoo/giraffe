@@ -1,4 +1,5 @@
 import type { FactoryRunStep } from "../../lib/factory-run";
+import { retainSecurity, type SecurityFeatures, securityIncomplete } from "../../lib/security";
 import { type Collected, collectKind } from "./collect";
 import type { Db } from "./db/d1";
 import { fenced, type RunLease } from "./db/factory-runs";
@@ -10,6 +11,7 @@ import { githubUnavailability } from "./github-unavailable";
 import { buildInsights, type InsightAlert } from "./insights";
 import { assertKind, prepareRefresh } from "./refresh";
 import { repoPolicy } from "./repo-statistics";
+import { splitPages } from "./snapshot-pages";
 
 export async function siteCatalog(db: Db, account: string): Promise<string[] | null> {
 	return catalogNames(await readSnapshot(db, account, "repos"));
@@ -93,7 +95,7 @@ export async function collectSitePage(
 				})),
 			Array.isArray(alerts?.items) ? (alerts.items as InsightAlert[]) : [],
 			now,
-			!alerts || alerts.truncated === true || alerts.unavailable === true,
+			securityIncomplete(alerts),
 		);
 		const old = Array.isArray(previous?.insights)
 			? (previous.insights as { name_with_owner: string }[])
@@ -159,6 +161,21 @@ export async function collectSitePage(
 				reasonCode: String(page.reason_code ?? "unknown"),
 			};
 		assertComplete(page);
+		const features = page.features as SecurityFeatures | undefined;
+		const previousFeatures = previous.features as SecurityFeatures | undefined;
+		if (features && previousFeatures) {
+			for (const feature of ["dependabot", "code_scanning"] as const) {
+				const old = previousFeatures[feature];
+				const current = features[feature];
+				if (old.status !== current.status) current.status = "partial";
+				current.reason_code = old.reason_code ?? current.reason_code;
+				current.reason = old.reason ?? current.reason;
+			}
+		}
+		const alertCount = (feature: "dependabot" | "code_scanning") => {
+			const count = Number(previous[`${feature}_open`] ?? 0) + Number(page[`${feature}_open`] ?? 0);
+			return features?.[feature].status === "available" || count > 0 ? count : null;
+		};
 		const key = resource === "issues" ? "issues" : resource === "prs" ? "pull_requests" : "items";
 		const payload: Collected = {
 			...page,
@@ -166,9 +183,8 @@ export async function collectSitePage(
 			[key]: [...(Array.isArray(previous[key]) ? previous[key] : []), ...(page[key] as unknown[])],
 			...(resource === "alerts"
 				? {
-						dependabot_open: Number(previous.dependabot_open ?? 0) + Number(page.dependabot_open),
-						code_scanning_open:
-							Number(previous.code_scanning_open ?? 0) + Number(page.code_scanning_open),
+						dependabot_open: alertCount("dependabot"),
+						code_scanning_open: alertCount("code_scanning"),
 					}
 				: {}),
 		};
@@ -214,6 +230,7 @@ export async function collectSitePage(
 		step.repo &&
 		global &&
 		global !== "repos" &&
+		global !== "alerts" &&
 		run.steps.some((s) => s.resource === global && s.status === "success")
 	) {
 		const source = (await readSnapshot(db, run.account_id, global)) as Collected | null;
@@ -224,34 +241,29 @@ export async function collectSitePage(
 		written[resource] = {
 			truncated: false,
 			[key]: items,
-			...(global === "alerts" ? alertCounts(items) : {}),
 		};
 		step.strategy = "reused";
 	}
 	if (suffix === "security" && !written[resource])
 		written[resource] = await collectKind(gh, token, resource, [], 1_500_000);
 	const security = suffix === "security" ? written[resource] : null;
-	if (security?.unavailable && !security.truncated) {
+	const features = security?.features as SecurityFeatures | undefined;
+	const unavailableFeature =
+		features && Object.values(features).find((feature) => feature.status === "unavailable");
+	if (security && features && unavailableFeature && !security.truncated) {
 		const previous = await readSnapshot(db, run.account_id, resource);
-		const retained = previous && !previous.truncated ? previous : null;
-		const fetchedAt = retained ? String(retained.fetched_at) : now;
+		const payload = {
+			...security,
+			retained: retainSecurity(previous, features),
+			fetched_at: now,
+		};
+		if (splitPages(resource, payload).truncated)
+			throw new ApiError(422, "snapshot_incomplete", "retained security exceeds page capacity");
 		return {
-			writes: await replaceSnapshotStmts(
-				db,
-				run.account_id,
-				resource,
-				{
-					...security,
-					...retained,
-					unavailable: true,
-					reason: security.reason,
-					reason_code: security.reason_code,
-				},
-				fetchedAt,
-			),
+			writes: await replaceSnapshotStmts(db, run.account_id, resource, payload, now),
 			done: true,
 			unavailable: true,
-			reasonCode: String(security.reason_code ?? "unknown"),
+			reasonCode: unavailableFeature.reason_code ?? "unknown",
 		};
 	}
 	const metadata = run.steps.find(
@@ -333,7 +345,16 @@ export async function collectSitePage(
 			);
 		}
 	}
-	return { writes: prepared.stmts, done: true };
+	const unavailableAlert =
+		resource === "alerts" && (written.alerts?.features as SecurityFeatures | undefined);
+	const alertReason =
+		unavailableAlert &&
+		Object.values(unavailableAlert).find((feature) => feature.status !== "available");
+	return {
+		writes: prepared.stmts,
+		done: true,
+		...(alertReason ? { unavailable: true, reasonCode: alertReason.reason_code ?? "unknown" } : {}),
+	};
 }
 
 function alertCounts(items: Record<string, unknown>[]) {

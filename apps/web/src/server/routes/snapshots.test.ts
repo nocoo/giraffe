@@ -117,7 +117,7 @@ describe("scoped snapshot projections", () => {
 			expect(response.status).toBe(200);
 			expect(await response.json()).toMatchObject({
 				[key]: [{ name_with_owner: "owner/app" }],
-				...(kind === "alerts" ? { dependabot_open: 1, code_scanning_open: 0 } : {}),
+				...(kind === "alerts" ? { dependabot_open: 1, code_scanning_open: null } : {}),
 			});
 			const unscoped = await (await setup.request(kind)).json();
 			expect(unscoped).toEqual(await (await setup.request(`${kind}?scope=all`)).json());

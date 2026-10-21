@@ -133,7 +133,8 @@ describe("collectRepos", () => {
 			const gh = client({ graphql: () => ({ repository }) });
 			expect(await collectKind(gh, "tok", "alerts", ["o/n"])).toMatchObject({ truncated: true });
 			expect(await collectKind(gh, "tok", "repo:o/n:security", [])).toMatchObject({
-				unavailable: true,
+				truncated: true,
+				features: { dependabot: { status: "partial" } },
 			});
 		}
 	});
@@ -459,7 +460,7 @@ describe("collectKind", () => {
 			"alerts",
 			["o/n"],
 		);
-		expect(empty.unavailable).toBe(true);
+		expect(empty.unavailable).toBe(false);
 		expect(empty.truncated).toBe(true);
 		const denied = client({
 			api: async () => {
@@ -500,8 +501,8 @@ describe("collectKind", () => {
 		});
 		expect(await collectKind(soft, "tok", "alerts", ["o/n"])).toMatchObject({
 			truncated: true,
-			unavailable: true,
-			reason_code: "not_found",
+			unavailable: false,
+			features: { dependabot: { status: "unavailable", reason_code: "not_found" } },
 		});
 		const capGql = client({
 			graphql: async () => {
@@ -658,7 +659,7 @@ describe("collectKind", () => {
 			api: () => Response.json([]),
 		});
 		expect((await collectKind(forbiddenSec, "tok", "repo:o/n:security", [])).unavailable).toBe(
-			true,
+			false,
 		);
 		const gqlDenied = client({
 			graphql: async () => {
@@ -702,7 +703,7 @@ describe("collectKind", () => {
 				throw new ApiError(404, "not_found", "no");
 			},
 		});
-		expect((await collectKind(missing, "tok", "repo:o/n:security", [])).unavailable).toBe(true);
+		expect((await collectKind(missing, "tok", "repo:o/n:security", [])).unavailable).toBe(false);
 		const cap = client({
 			api: async () => {
 				throw new TruncatedError();
@@ -857,8 +858,8 @@ describe("collectKind", () => {
 			"repo:o/n:security",
 			[],
 		);
-		expect(emptyAlerts.dependabot_open).toBe(0);
-		expect(emptyAlerts.code_scanning_open).toBe(0);
+		expect(emptyAlerts.dependabot_open).toBeNull();
+		expect(emptyAlerts.code_scanning_open).toBeNull();
 		const capScan = client({
 			graphql: () => ({
 				repository: { vulnerabilityAlerts: { nodes: [], pageInfo: { hasNextPage: false } } },

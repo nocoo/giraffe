@@ -1,3 +1,4 @@
+import { type SecuritySnapshot, securityCount } from "../../lib/security";
 import { loadKind } from "./snapshot";
 
 export const REPO_TABS = [
@@ -14,13 +15,9 @@ export const REPO_TABS = [
 
 export type RepoTab = (typeof REPO_TABS)[number];
 
-export type RepoSecurity = {
+export type RepoSecurity = SecuritySnapshot & {
 	account_id: string;
 	fetched_at: string;
-	truncated: boolean;
-	unavailable: boolean;
-	dependabot_open: number;
-	code_scanning_open: number;
 };
 
 export type TrafficPoint = {
@@ -100,9 +97,7 @@ export function repoKind(owner: string, name: string, tab: RepoTab): string {
 
 export function securityUnavailable(snap: RepoSecurity): boolean {
 	return (
-		(snap.unavailable || snap.truncated) &&
-		snap.dependabot_open === 0 &&
-		snap.code_scanning_open === 0
+		securityCount(snap, "dependabot") === null && securityCount(snap, "code_scanning") === null
 	);
 }
 

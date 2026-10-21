@@ -24,11 +24,12 @@ import { ShareBar } from "../components/layout/rank-bars";
 import { ScopeEmpty } from "../components/layout/repository-scope";
 import { useSnapshotRead } from "../components/layout/use-snapshot-read";
 import { catchLoad } from "../lib/error-ui";
-import { formatCount, severityBadgeVariant, sourceBadgeVariant } from "../lib/format";
+import { severityBadgeVariant, sourceBadgeVariant } from "../lib/format";
 import { PAGE_DESCRIPTIONS } from "../lib/navigation";
 import { type AlertsSnapshot, loadAlerts } from "../viewmodels/alerts";
 import { alertsBoard, SEVERITIES } from "../viewmodels/boards";
 import { shortRepo } from "../viewmodels/overview";
+import { securityKpi } from "../viewmodels/security";
 
 const NO_FILTERS = { severity: "", repo: "", source: "" };
 const SEVERITY_LABELS: Record<string, string> = {
@@ -65,7 +66,11 @@ export function AlertsPage() {
 		}
 	});
 
-	if (snap && ("missing" in snap || ((snap.unavailable || snap.truncated) && !snap.items.length))) {
+	if (
+		snap &&
+		("missing" in snap ||
+			(!snap.features && (snap.unavailable || snap.truncated) && !snap.items.length))
+	) {
 		return (
 			<div className="space-y-8">
 				<PageHeader
@@ -119,24 +124,8 @@ export function AlertsPage() {
 			/>
 			<ScopeEmpty count={snap.freshness?.total ?? snap.items.length} />
 			<KpiRow>
-				<Kpi
-					icon={Bug}
-					label="Dependabot"
-					value={
-						(snap.unavailable || snap.truncated) && !snap.dependabot_open
-							? "—"
-							: formatCount(snap.dependabot_open)
-					}
-				/>
-				<Kpi
-					icon={ShieldAlert}
-					label="Code scanning"
-					value={
-						(snap.unavailable || snap.truncated) && !snap.code_scanning_open
-							? "—"
-							: formatCount(snap.code_scanning_open)
-					}
-				/>
+				<Kpi icon={Bug} label="Dependabot" {...securityKpi(snap, "dependabot")} />
+				<Kpi icon={ShieldAlert} label="Code scanning" {...securityKpi(snap, "code_scanning")} />
 			</KpiRow>
 			{all.length ? (
 				<>

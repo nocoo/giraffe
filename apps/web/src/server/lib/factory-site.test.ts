@@ -7,6 +7,51 @@ import { claimRun, saveRun, startRun } from "./db/factory-runs";
 import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
 import { collectSitePage, siteCatalog } from "./factory-site";
 
+it("retains the exact prior snapshot when retained evidence would truncate current security", async () => {
+	const raw = await setup("repo:nocoo/app:security");
+	const db = createDb(raw);
+	await db.batch(
+		await replaceSnapshotStmts(
+			db,
+			"account",
+			"repo:nocoo/app:security",
+			{
+				truncated: false,
+				unavailable: false,
+				dependabot_open: 0,
+				code_scanning_open: 100,
+				items: Array.from({ length: 100 }, (_, index) => ({
+					source: "code_scanning",
+					id: index,
+					title: "x".repeat(12_000),
+				})),
+			},
+			"2026-01-01T00:00:00.000Z",
+		),
+	);
+	const before = await raw.prepare("SELECT * FROM snapshots ORDER BY kind").all();
+	await expect(
+		page(raw, (url) =>
+			url.endsWith("/graphql")
+				? Response.json({
+						data: {
+							repository: {
+								vulnerabilityAlerts: {
+									nodes: Array.from({ length: 20 }, (_, index) => ({
+										id: String(index),
+										securityAdvisory: { summary: "y".repeat(60_000) },
+									})),
+									pageInfo: { hasNextPage: false },
+								},
+							},
+						},
+					})
+				: Response.json({ message: "Not Found" }, { status: 404 }),
+		),
+	).rejects.toMatchObject({ code: "snapshot_incomplete" });
+	expect(await raw.prepare("SELECT * FROM snapshots ORDER BY kind").all()).toEqual(before);
+});
+
 it("persists unavailable repository security instead of failing the snapshot, without erasing good global data", async () => {
 	const raw = await setup("repo:nocoo/app:security");
 	const db = createDb(raw);
@@ -46,7 +91,7 @@ it("persists unavailable repository security instead of failing the snapshot, wi
 	});
 });
 
-it("retains good security evidence through repeated unavailable refreshes with its original timestamp", async () => {
+it("keeps prior security evidence separately without relabeling unavailable feature counts", async () => {
 	const raw = await setup("repo:nocoo/app:security");
 	const db = createDb(raw);
 	await db.batch(
@@ -81,12 +126,41 @@ it("retains good security evidence through repeated unavailable refreshes with i
 		);
 		expect(await readSnapshot(db, "account", "repo:nocoo/app:security")).toMatchObject({
 			unavailable: true,
-			dependabot_open: 7,
-			code_scanning_open: 2,
-			fetched_at: "2026-01-01",
-			items: [{ source: "dependabot", name_with_owner: "nocoo/app" }],
+			dependabot_open: null,
+			code_scanning_open: null,
+			fetched_at: NOW,
+			items: [],
+			retained: {
+				dependabot: { open: 7, fetched_at: "2026-01-01" },
+				code_scanning: { open: 2, fetched_at: "2026-01-01" },
+			},
 		});
 	}
+});
+
+it("counts a mixed security snapshot as unavailable work without hiding its available feature", async () => {
+	const raw = await setup("repo:nocoo/app:security");
+	const result = await page(raw, (url) =>
+		url.endsWith("/graphql")
+			? Response.json({
+					data: {
+						repository: {
+							vulnerabilityAlerts: { nodes: [{ id: "1" }], pageInfo: { hasNextPage: false } },
+						},
+					},
+				})
+			: Response.json({ message: "Not Found" }, { status: 404 }),
+	);
+	expect(result).toMatchObject({ done: true, unavailable: true, reasonCode: "not_found" });
+	expect(await readSnapshot(createDb(raw), "account", "repo:nocoo/app:security")).toMatchObject({
+		unavailable: false,
+		dependabot_open: 1,
+		code_scanning_open: null,
+		features: {
+			dependabot: { status: "available" },
+			code_scanning: { status: "unavailable", reason_code: "not_found" },
+		},
+	});
 });
 
 it("never replaces global alerts with an unavailable page and never publishes truncated security", async () => {

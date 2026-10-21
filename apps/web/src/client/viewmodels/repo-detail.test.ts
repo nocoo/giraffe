@@ -37,6 +37,33 @@ describe("repo-detail viewmodel", () => {
 		expect(urls).toEqual([]);
 	});
 
+	it("does not hide a confirmed zero when the other security feature is unavailable", () => {
+		expect(
+			securityUnavailable({
+				account_id: "a",
+				fetched_at: "t",
+				truncated: false,
+				unavailable: false,
+				dependabot_open: 0,
+				code_scanning_open: null,
+				features: {
+					dependabot: { status: "available", reason_code: null, reason: null },
+					code_scanning: { status: "unavailable", reason_code: "not_found", reason: "Unavailable" },
+				},
+			}),
+		).toBe(false);
+		expect(
+			securityUnavailable({
+				account_id: "a",
+				fetched_at: "t",
+				truncated: false,
+				unavailable: true,
+				dependabot_open: null,
+				code_scanning_open: null,
+			}),
+		).toBe(true);
+	});
+
 	it("binds each tab to the correct GET path", async () => {
 		const urls: string[] = [];
 		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
