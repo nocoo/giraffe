@@ -145,7 +145,7 @@ it.each(["complete", "pending", "unavailable"] as const)(
 				);
 				expect(response.status).toBe(200);
 				const body = await response.json();
-				const data = (machine ? body.data : body) as FactorySnapshot;
+				const data = (machine ? (body as { data: FactorySnapshot }).data : body) as FactorySnapshot;
 				const starred = selector === "?scope=starred";
 				expect(data.repos.map((repo) => repo.name)).toEqual(
 					machine && !starred ? ["nocoo/app", "nocoo/disabled"] : ["nocoo/app"],
@@ -171,8 +171,10 @@ it.each(["complete", "pending", "unavailable"] as const)(
 					expect(data).not.toHaveProperty("contributionExcluded");
 				}
 				if (machine) {
-					expect(body.sourceVersion).toBe(publication.runId);
-					expect(body.source.publicationId).toBe(publication.runId);
+					expect(body).toMatchObject({
+						sourceVersion: publication.runId,
+						source: { publicationId: publication.runId },
+					});
 				}
 			}
 		}
