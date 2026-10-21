@@ -825,3 +825,24 @@ A repeated Herdr `--current` resize again resolved a different focused pane and
 reported `changed:false`; no unrelated layout changed. All subsequent mutations
 used explicit task-owned pane IDs. Read the existing orchestration lessons before
 issuing layout commands, not only after the same error recurs.
+
+## 2026-10-21 - Keep dependency identity fixes dependency-free
+
+The batch-four addendum initially chose a YAML library to recover workflow job
+keys. Although the registry override was per-command, Bun rewrote 411 existing
+lockfile resolution URLs to the temporary mirror. The steward rejected the new
+dependency and required restoring both package manifests and the lockfile. Those
+three files were restored before any commit; the lockfile was verified byte-for-
+byte against origin/main. The replacement uses the explicitly approved bounded
+indentation scan, with tests for job keys, steps, comments and scalar script
+bodies. Dependency maintenance is not an implicit part of a narrow identity fix;
+check the requested scope before installing, and verify lockfile bytes rather
+than assuming a temporary registry override leaves the file unchanged.
+
+A new legacy-stream unit test initially reused one request-scoped D1 wrapper for
+all seven streams, so its statement counter eventually hit the production cap.
+Each stream now gets an independent fixture through parameterized tests. An
+early shell command also continued to the commit attempt after focused checks
+failed because it used semicolons. The enabled hook correctly blocked the commit;
+subsequent validation-to-commit chains use short-circuit execution. Test-fixture
+failures must be fixed, never bypassed or mistaken for application regressions.
