@@ -869,3 +869,9 @@ survived but received the same ID. A failing regression now preserves both raw
 records and checks unique IDs, reorder stability and idempotence. Collision
 classification must use the same normalized value as the generated identifier,
 while evidence equality still compares the complete original record.
+
+The review also reproduced dropped actions after folded `if` or `name` step
+properties. The scanner used the sequence dash's column as the scalar boundary,
+mistaking a later sibling `uses` key for scalar content. Separate red/green cases
+now prove the action survives; the scalar boundary uses the property key's column
+after any sequence prefix, without weakening exclusion of actual script bodies.

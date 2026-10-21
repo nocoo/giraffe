@@ -12,6 +12,22 @@ import {
 } from "./factory-map";
 
 describe("GitHub factory normalization", () => {
+	it.each(["if", "name"])("retains uses after a folded step %s property", (key) => {
+		const text = `jobs:
+  build:
+    steps:
+      - ${key}: >-
+          github.event_name == 'push'
+        uses: actions/checkout@v4
+      - uses: actions/cache@v4
+`;
+		expect(
+			mapDependencies({ ci: { text } }, mapFactoryRepo(rawRepo)).items.map((item) => item.id),
+		).toEqual([
+			".github/workflows/ci.yml:actions/checkout#job=build",
+			".github/workflows/ci.yml:actions/cache#job=build",
+		]);
+	});
 	it("keeps workflow job identities unique and stable across refreshes", () => {
 		const read = (text: string, head = "abc") =>
 			mapDependencies({ ci: { text } }, { ...mapFactoryRepo(rawRepo), head }).items;
