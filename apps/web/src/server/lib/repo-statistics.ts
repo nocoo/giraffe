@@ -1,3 +1,4 @@
+import { uniqueDependencySummaries } from "../../lib/factory-dependencies";
 import type { FactorySnapshot } from "../../lib/factory-types";
 import { participates, type RepoStatistics } from "../../lib/repo-statistics";
 import { snapshotFreshness } from "../../lib/snapshot-freshness";
@@ -341,9 +342,9 @@ export function statisticsFactory(
 	policy: Policy,
 	statisticsFilter = true,
 ): FactorySnapshot {
-	const repos = snap.repos.filter((r) =>
-		statisticsFilter ? policy.enabled(r.name) : policy.includes(r.name),
-	);
+	const repos = snap.repos
+		.filter((r) => (statisticsFilter ? policy.enabled(r.name) : policy.includes(r.name)))
+		.map((repo) => ({ ...repo, dependencies: uniqueDependencySummaries(repo.dependencies) }));
 	const excluded = snap.repos
 		.filter((r) => statisticsFilter && policy.includes(r.name) && !policy.enabled(r.name))
 		.map((r) => ({ name: r.name, reason: "statistics-disabled" }));

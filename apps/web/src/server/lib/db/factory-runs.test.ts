@@ -5,16 +5,7 @@ import { factoryFixture } from "../../../../../../tests/fixtures/factory-snapsho
 import { sqliteFixture } from "../../../../../../tests/fixtures/sqlite";
 import { makeRun } from "../../../lib/factory-run";
 import { createDb } from "./d1";
-import {
-	claimRun,
-	controlRun,
-	getRun,
-	normalizePublication,
-	publishedFactory,
-	saveRun,
-	startRun,
-} from "./factory-runs";
-import { replaceSnapshotStmts } from "./snapshots";
+import { claimRun, controlRun, getRun, saveRun, startRun } from "./factory-runs";
 
 const snap = factoryFixture();
 const now = snap.fetched_at;
@@ -34,67 +25,6 @@ async function setup() {
 		run: makeRun("r1", snap.account_id, "nocoo", "key1", "refresh", snap.repos, now),
 	};
 }
-
-it("deduplicates legacy dependency summaries per repo in first-seen order without inventing ids", () => {
-	const publication = factoryFixture();
-	const repo = publication.repos[0];
-	if (!repo) throw new Error("fixture");
-	const upload = {
-		name: "actions/upload-artifact",
-		version: "v4",
-		path: ".github/workflows/ci.yml",
-		url: "https://github.com/nocoo/app/blob/abc/.github/workflows/ci.yml",
-	};
-	const distinct = [
-		upload,
-		{ ...upload, version: "v3" },
-		{ ...upload, path: ".github/workflows/release.yml" },
-		{ ...upload, name: "actions/download-artifact" },
-		{ ...upload, url: "other-saved-url" },
-		{ name: "external", version: "^1", path: "package.json#dependencies", url: "package" },
-	];
-	repo.dependencies = [
-		...Array.from({ length: 7 }, () => ({ ...upload })),
-		...distinct.slice(1),
-		...distinct.map(({ name, version, path, url }) => ({ url, path, version, name })),
-	];
-	publication.repos.push({ ...repo, name: "nocoo/second" });
-	const before = structuredClone(publication);
-	const normalized = normalizePublication(publication);
-	for (const item of normalized.repos) {
-		expect(item.dependencies).toEqual(distinct);
-		for (const dependency of item.dependencies) expect(dependency).not.toHaveProperty("id");
-	}
-	expect(normalized.repos[0]?.dependencies[0]).toBe(repo.dependencies[0]);
-	expect(normalizePublication(normalized)).toEqual(normalized);
-	expect(publication).toEqual(before);
-});
-
-it.each(["factory", "factory:v:r1"])(
-	"normalizes %s summary reads without extra queries or stored changes",
-	async (kind) => {
-		const { db, raw } = await setup();
-		const publication = factoryFixture();
-		const repo = publication.repos[0];
-		if (!repo) throw new Error("fixture");
-		const dependency = { name: "external", version: "^1", path: "package.json", url: "saved" };
-		repo.dependencies = [dependency, { ...dependency }];
-		await db.batch(replaceSnapshotStmts(db, snap.account_id, kind, publication, now));
-		if (kind !== "factory")
-			await db
-				.prepare("INSERT INTO factory_state(account_id,published_id,next_at) VALUES(?,'r1','t')")
-				.bind(snap.account_id)
-				.run();
-		const before = await raw.prepare("SELECT * FROM snapshots ORDER BY kind").all();
-		const reader = createDb(raw);
-		expect((await publishedFactory(reader, snap.account_id))?.repos[0]?.dependencies).toEqual([
-			dependency,
-		]);
-		expect(reader.statements).toBe(2);
-		expect(await raw.prepare("SELECT * FROM snapshots ORDER BY kind").all()).toEqual(before);
-	},
-);
-
 describe("D1 durable runs", () => {
 	it("migrates twice without changing legacy rows", () => {
 		const db = new DatabaseSync(":memory:");

@@ -1,7 +1,4 @@
-import {
-	normalizeRepoDependencies,
-	uniqueDependencySummaries,
-} from "../../../lib/factory-dependencies";
+import { normalizeRepoDependencies } from "../../../lib/factory-dependencies";
 import {
 	type FactoryRun,
 	REPO_COOLDOWN_MS,
@@ -85,13 +82,7 @@ export const factoryHead = (db: Db, account: string) =>
 		.bind(account)
 		.first<FactoryHead>();
 export function normalizePublication(snapshot: FactorySnapshot): FactorySnapshot {
-	return {
-		...snapshot,
-		repos: snapshot.repos.map((repo) => {
-			const normalized = normalizeRepoDependencies(repo);
-			return { ...normalized, dependencies: uniqueDependencySummaries(normalized.dependencies) };
-		}),
-	};
+	return { ...snapshot, repos: snapshot.repos.map(normalizeRepoDependencies) };
 }
 export async function publishedFactory(db: Db, account: string): Promise<FactorySnapshot | null> {
 	const head = await factoryHead(db, account);
