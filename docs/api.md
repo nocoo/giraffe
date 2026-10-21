@@ -571,6 +571,9 @@ unsupported job/step references produce `coverage.status: "limited"`, with reaso
 `"Dependency manifests cannot be parsed safely; evidence unavailable"`, not a
 complete zero. Unrecognized non-scalar lines inside `jobs` also fail closed,
 including flow values on a following line and explicit YAML mapping keys.
+Null/empty job values, non-sequence steps, multiline quoted scalars and tagged or
+anchored values are unsupported and yield limited coverage. This is intentionally
+a conservative common-shape scanner, not a general YAML parser.
 Existing stronger repository evidence and its original version/window
 remain published through the coverage-regression guard. Absent files and parsed
 run-only jobs can still prove no workflow dependencies. No additional files or

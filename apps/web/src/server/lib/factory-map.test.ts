@@ -32,6 +32,18 @@ describe("GitHub factory normalization", () => {
 			),
 		).toEqual({ items: [], manifests: [] });
 	});
+	it("accepts complete single-line quoted scalars without reading their contents", () => {
+		const text = `jobs:
+  build:
+    steps:
+      - name: "Checkout \\"code\\"" # uses: fake/comment@v1
+        uses: "actions/checkout@v4"
+      - run: 'echo ''hello'' uses: fake/script@v1' # complete scalar
+`;
+		expect(
+			mapDependencies({ ci: { text } }, mapFactoryRepo(rawRepo)).items.map((item) => item.title),
+		).toEqual(["actions/checkout"]);
+	});
 	it("handles a byte-order mark and document terminator without losing the root", () => {
 		expect(
 			mapDependencies(

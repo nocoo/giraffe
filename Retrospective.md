@@ -902,3 +902,11 @@ accepted solely because their keys existed. Twelve failing collection/publicatio
 cases now require a nested job mapping and a steps sequence (or an explicit empty
 sequence). Recognizing a property name does not establish the shape of its value;
 empty block headers need evidence from the following significant line.
+
+The same review found script text inside multiline quoted or tagged scalars
+being collected as dependencies. Failing regressions now reject unsupported
+quoted continuations, tags and anchors instead of extending YAML parsing. Mapping
+separators must also be real YAML separators, so colon-without-space text inside
+a continued plain scalar cannot become a uses key. Complete single-line quoted
+values and the already recognized literal/folded scalar headers remain supported.
+The scope is deliberately fail-closed, not comprehensive YAML compatibility.

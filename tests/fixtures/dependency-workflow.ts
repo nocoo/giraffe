@@ -36,4 +36,9 @@ export const unsupportedWorkflowJobs = [
 	"jobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:",
 	"jobs:\n  build:\n    steps: # empty steps\n    name: Build",
 	"jobs:\n  build:\n    steps:\n      run: echo hello",
+	'jobs:\n  build:\n    steps:\n      - run: "echo hello\n          uses: fake/script@v1"',
+	"jobs:\n  build:\n    steps:\n      - run: 'echo hello\n          uses: fake/script@v1'",
+	"jobs:\n  build:\n    steps:\n      - run: !!str |\n          uses: fake/script@v1",
+	"jobs:\n  build:\n    steps:\n      - run: &script |\n          uses: fake/script@v1",
+	"jobs:\n  build:\n    steps:\n      - run: echo hello\n          uses:fake/script@v1",
 ];

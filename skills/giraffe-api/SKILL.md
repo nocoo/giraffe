@@ -236,6 +236,9 @@ access loss during pagination remain failures, not expected absence.
   `Dependency manifests cannot be parsed safely; evidence unavailable`; never
   treat this as complete zero. Unrecognized non-scalar lines inside `jobs`,
   including next-line flow values and explicit YAML mapping keys, fail closed.
+  Null/empty jobs, non-sequence steps, multiline quoted scalars and tagged or
+  anchored values are unsupported and return limited coverage; the scanner does
+  not attempt general YAML support.
   Stronger published evidence keeps its original
   version/window. Absent files and parsed run-only jobs still permit a real zero.
   Equal legacy saved records collapse without inventing job keys; a remaining

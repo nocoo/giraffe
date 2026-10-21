@@ -195,7 +195,7 @@ function workflowReferences(content: string) {
 		const next = lines[index + 1];
 		if (scalarIndent !== null && indent > scalarIndent) continue;
 		scalarIndent = null;
-		const property = /^\s*(?:-\s+)?(?:"([\w-]+)"|'([\w-]+)'|([\w-]+)):\s*(.*)$/.exec(line);
+		const property = /^\s*(?:-\s+)?(?:"([\w-]+)"|'([\w-]+)'|([\w-]+)):(?:\s+(.*)|$)/.exec(line);
 		const key = property?.[1] ?? property?.[2] ?? property?.[3];
 		const value = (property?.[4] ?? "").trimEnd();
 		if (indent === rootIndent) {
@@ -211,6 +211,12 @@ function workflowReferences(content: string) {
 		}
 		if (!inJobs) continue;
 		if (!property) fail();
+		if (
+			/^[!&*]/.test(value) ||
+			(value.startsWith('"') && !/^"(?:[^"\\]|\\.)*"(?:\s+#.*)?$/.test(value)) ||
+			(value.startsWith("'") && !/^'(?:[^']|'')*'(?:\s+#.*)?$/.test(value))
+		)
+			fail();
 		if (/^\s*(?:<<:|-\s*[*&{[])/.test(line)) fail();
 		if (key && (jobIndent === null || indent <= jobIndent)) {
 			if (!block(value) || !next || indentation(next) <= indent || /^\s*-(?:\s|$)/.test(next))
@@ -225,8 +231,10 @@ function workflowReferences(content: string) {
 			(!block(value) || !next || indentation(next) < indent || !/^\s*-\s+\S/.test(next))
 		)
 			fail();
-		if (/^[|>](?:[+-]?[1-9]?|[1-9][+-]?)(?:\s+#.*)?$/.test(value))
+		if (/^[|>]/.test(value)) {
+			if (!/^[|>](?:[+-]?[1-9]?|[1-9][+-]?)(?:\s+#.*)?$/.test(value)) fail();
 			scalarIndent = /^\s*-\s+/.exec(line)?.[0].length ?? indent;
+		}
 		if (key !== "uses" || indent === jobIndent) continue;
 		const match = /^["']?([\w.-]+\/[\w./-]+)@([^\s"'#]+)["']?(?:\s+#.*)?\s*$/.exec(value);
 		if (match) references.push({ name: match[1] ?? "", version: match[2] ?? "", job });
