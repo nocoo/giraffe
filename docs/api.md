@@ -679,6 +679,11 @@ missing pagination metadata is not proof of a terminal page. Search and security
 continuations also require nonempty new string cursors.
 Likewise, a declared REST next link that cannot be parsed is incomplete, not EOF;
 only absence of a next relation proves the list has ended.
+Whole-source first-page denial is classified identically for global and repository
+Issues/PR search, whether returned as HTTP or GraphQL access errors. Derived
+Insights retain prior data and become unavailable when every unsatisfied required
+source is explicitly unavailable; a failed, absent or unfinished source still
+makes Insights fail as incomplete.
 For the **same run ID**, a published factory snapshot has `status:complete` for
 a completed run and `status:partial` for a partial run. A newer failed, paused or
 timed-out attempt can leave an older publication untouched; compare run IDs and

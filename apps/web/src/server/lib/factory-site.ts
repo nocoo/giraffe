@@ -36,6 +36,19 @@ function assertComplete(payload: Collected | null | undefined): asserts payload 
 		throw new ApiError(403, "snapshot_unavailable", "page source unavailable");
 }
 
+function assertSources(steps: FactoryRunStep[], resources: string[]): void {
+	const missing = resources
+		.map((resource) => steps.find((step) => step.resource === resource))
+		.filter((step) => step?.status !== "success");
+	if (!missing.length) return;
+	const unavailable = missing.every((step) => step?.status === "unavailable");
+	throw new ApiError(
+		unavailable ? 403 : 409,
+		unavailable ? "snapshot_unavailable" : "snapshot_sources_incomplete",
+		"Insights sources were not updated",
+	);
+}
+
 /** One bounded page of site work. All writes commit with the run's lease and cursor. */
 export async function collectSitePage(
 	db: Db,
@@ -51,15 +64,10 @@ export async function collectSitePage(
 	const scoped = run.selection?.scope !== "all";
 	if (resource === "insights" && scoped) {
 		const names = run.siteRepos ?? run.repos;
-		if (
-			names.some((repo) =>
-				["details", "issues"].some(
-					(tab) =>
-						!run.steps.some((s) => s.resource === `repo:${repo}:${tab}` && s.status === "success"),
-				),
-			)
-		)
-			throw new ApiError(409, "snapshot_sources_incomplete", "Insights sources were not updated");
+		assertSources(
+			run.steps,
+			names.flatMap((repo) => ["details", "issues"].map((tab) => `repo:${repo}:${tab}`)),
+		);
 		const policy = await repoPolicy(db, run.account_id);
 		const catalog = await siteCatalog(db, run.account_id);
 		if (!catalog || names.some((name) => !catalog.includes(name)))
@@ -114,13 +122,7 @@ export async function collectSitePage(
 			done: true,
 		};
 	}
-	if (
-		resource === "insights" &&
-		["repos", "issues"].some(
-			(source) => !run.steps.some((s) => s.resource === source && s.status === "success"),
-		)
-	)
-		throw new ApiError(409, "snapshot_sources_incomplete", "Insights sources were not updated");
+	if (resource === "insights") assertSources(run.steps, ["repos", "issues"]);
 	const written: Record<string, Collected> = {};
 	const writes: D1PreparedStatement[] = [];
 	if (["issues", "prs", "alerts"].includes(resource)) {

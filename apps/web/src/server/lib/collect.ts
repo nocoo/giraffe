@@ -135,7 +135,6 @@ async function searchList(
 	token: string,
 	repos: string[],
 	isPr: boolean,
-	strict = false,
 	budget = MAX_STAGED_BYTES,
 ): Promise<Collected> {
 	const names = [...repos].sort();
@@ -162,7 +161,6 @@ async function searchList(
 					  }
 					| undefined;
 				if (
-					strict &&
 					i === 0 &&
 					after === null &&
 					!Array.isArray(search?.nodes) &&
@@ -311,10 +309,10 @@ export async function collectKind(
 	budget = MAX_STAGED_BYTES,
 ): Promise<Collected> {
 	if (kind === "issues") {
-		return searchList(gh, token, repoNames, false, false, budget);
+		return searchList(gh, token, repoNames, false, budget);
 	}
 	if (kind === "prs") {
-		return searchList(gh, token, repoNames, true, false, budget);
+		return searchList(gh, token, repoNames, true, budget);
 	}
 	if (kind === "alerts") {
 		return collectAlerts(gh, token, repoNames, budget);
@@ -617,10 +615,10 @@ async function collectRepoKind(
 	}
 
 	if (suffix === "issues") {
-		return searchList(gh, token, [full], false, true, budget);
+		return searchList(gh, token, [full], false, budget);
 	}
 	if (suffix === "prs") {
-		return searchList(gh, token, [full], true, true, budget);
+		return searchList(gh, token, [full], true, budget);
 	}
 	if (suffix === "releases") {
 		return collectRestList(

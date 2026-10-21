@@ -713,3 +713,8 @@ the parser now preserves that distinction and ordinary collectors retain old dat
 Apply the surviving-connection rule consistently to search as well as security:
 an empty array after denied nodes are removed is still partial evidence, not whole
 source unavailability. Denial fixtures must model a missing connection explicitly.
+The old global/repository search switch also classified the same first-page
+GraphQL denial differently. Remove that split, retain durable-cursor checks for
+later chunks, and propagate known source unavailability to dependent Insights
+without masking failed or absent prerequisites. Full-plan controls must isolate
+other malformed fixture responses, not mistake an unrelated failure for denial.

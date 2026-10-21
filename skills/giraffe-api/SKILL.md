@@ -473,6 +473,9 @@ Paginated lists distinguish explicit first-page denial from incomplete collectio
 missing search `nodes` without access errors, or 403/404 after any accepted page
 (even empty), yields a failed `snapshot_incomplete` step, retained prior data/time
 and a partial run/publication, not expected unavailable work.
+Global and repository searches use the same whole-source first-page denial rule.
+Insights blocked solely by explicitly unavailable sources also retain prior data
+as unavailable; failed or missing required sources remain real failures.
 
 Absolute wall deadlines include pauses and backoff: catalog 30 minutes, quick
 refresh 6 hours, deep/legacy missing-depth refresh 12 hours. Optional `deadlineAt`
