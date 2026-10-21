@@ -26,20 +26,30 @@ import { assertMachineQuery } from "../lib/machine-query";
 import { readSources } from "../lib/machine-sources";
 import { readJson } from "../lib/read-body";
 import { snapshotScope } from "../lib/snapshot-scope";
+import { SourceTiming } from "../lib/source-timing";
 import { getMachineSettings, machineRuns, machineSetting } from "./machine-settings";
 
 type Principal = NonNullable<Awaited<ReturnType<typeof authenticateApiToken>>>;
-export type MachineVars = AppVars & { principal: Principal };
+export type MachineVars = AppVars & {
+	principal: Principal;
+	sourceTiming: SourceTiming | undefined;
+};
 export function machineApi() {
 	const app = new Hono<{ Bindings: Env; Variables: MachineVars }>();
 	app.use("*", async (c, next) => {
-		c.set("db", createDb(c.env.DB));
+		const timing =
+			c.req.method === "GET" && /^\/api\/v1\/accounts\/[^/]+\/sources$/.test(c.req.path)
+				? new SourceTiming()
+				: undefined;
+		c.set("sourceTiming", timing);
+		c.set("db", createDb(c.env.DB, timing?.recordD1.bind(timing)));
 		c.header("Cache-Control", "private, no-store");
 		c.header("Referrer-Policy", "no-referrer");
-		const principal = await authenticateApiToken(
-			c.get("db"),
-			c.req.header("Authorization") ?? null,
-		);
+		const authenticate = () =>
+			authenticateApiToken(c.get("db"), c.req.header("Authorization") ?? null);
+		const principal = timing
+			? await timing.measureAsync("auth", authenticate)
+			: await authenticate();
 		if (!principal) throw new ApiError(401, "token_unauthorized", "invalid API token");
 		c.set("principal", principal);
 		const account = c.req.path.match(/^\/api\/v1\/accounts\/([^/]+)/)?.[1];
@@ -67,6 +77,8 @@ export function machineApi() {
 				throw new ApiError(405, "method_not_allowed", "observations are read-only");
 		}
 		await next();
+		if (timing && (c.res.status === 200 || c.res.status === 304))
+			c.header("Server-Timing", timing.header());
 		if (!["GET", "HEAD"].includes(c.req.method) && c.res.status < 400)
 			await recordApiTokenUse(c.get("db"), principal.accountId, principal.id);
 	});
@@ -133,13 +145,21 @@ export function machineApi() {
 			c.header("Vary", "Authorization", { append: true });
 			await next();
 		},
-		etag({
-			weak: false,
-			generateDigest: (body) => crypto.subtle.digest("SHA-256", body),
-			retainedHeaders: [...RETAINED_304_HEADERS, "referrer-policy"],
-		}),
-		async (c) =>
-			c.json(await readSources(c.get("db"), c.get("principal").accountId, c.req.query())),
+		async (c, next) =>
+			etag({
+				weak: false,
+				generateDigest: (body) => {
+					const hash = () => crypto.subtle.digest("SHA-256", body);
+					return c.get("sourceTiming")?.measureAsync("hash", hash) ?? hash();
+				},
+				retainedHeaders: [...RETAINED_304_HEADERS, "referrer-policy"],
+			})(c, next),
+		async (c) => {
+			const timing = c.get("sourceTiming");
+			const read = () => readSources(c.get("db"), c.get("principal").accountId, c.req.query());
+			const data = timing ? await timing.measureAsync("build", read) : await read();
+			return timing ? timing.measure("serialize", () => c.json(data)) : c.json(data);
+		},
 	);
 	app.all("/accounts/:account/stars/:owner/:name", machineSetting);
 	app.get(

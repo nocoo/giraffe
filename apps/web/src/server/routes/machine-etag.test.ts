@@ -51,6 +51,35 @@ function requireTag(response: Response) {
 	return tag;
 }
 
+it("exposes safe request-local phase timings on sources 200 and 304 only", async () => {
+	const fixture = await setup();
+	const response = await fixture.call();
+	const tag = requireTag(response);
+	for (const measured of [response, await fixture.call(tag)]) {
+		const header = measured.headers.get("server-timing");
+		expect(header).not.toBeNull();
+		const metrics = (header ?? "").split(", ");
+		for (const metric of metrics)
+			expect(metric).toMatch(
+				/^(auth|build|decode|hash|serialize|total|d1_\d+|sql_\d+);dur=\d+\.\d{2}$/,
+			);
+		for (const name of ["auth", "build", "decode", "hash", "serialize", "total", "d1_1"])
+			expect(metrics.some((metric) => metric.startsWith(`${name};dur=`))).toBe(true);
+		expect(header).not.toContain(fixture.account);
+		expect(header).not.toContain(fixture.token.token);
+	}
+	for (const bearer of [null, "invalid"])
+		expect((await fixture.call(tag, bearer)).headers.has("server-timing")).toBe(false);
+	const identity = await fixture.app.request(
+		"http://localhost/api/v1/me",
+		{
+			headers: { Authorization: `Bearer ${fixture.token.token}` },
+		},
+		fixture.env,
+	);
+	expect(identity.headers.has("server-timing")).toBe(false);
+});
+
 it("conditionally returns large source responses with strong folded tags and retained private headers", async () => {
 	const s = await setup();
 	const snapshots = (await s.raw.prepare("SELECT * FROM snapshots ORDER BY kind").all()).results;
