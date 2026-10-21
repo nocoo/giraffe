@@ -354,7 +354,10 @@ it("preserves immutable run resources, missing coverage and mixed source flags",
 		runId: "r",
 		coverage: { status: "limited", fetchedAt: snap.fetched_at },
 		items: [],
+		ranges: [{ since: "pending", until: "queue" }],
 	};
+	snap.window = { since: "2026-09-01T00:00:00Z", until: "2026-10-21T00:00:00Z" };
+	await save("factory:v:pub", snap);
 	await db
 		.prepare("INSERT INTO factory_resources VALUES(?,?,?,?)")
 		.bind("r", repo.name, "commits", JSON.stringify(resource))
@@ -363,6 +366,7 @@ it("preserves immutable run resources, missing coverage and mixed source flags",
 		sourceVersion: "r",
 		truncated: true,
 		source: { publicationId: "pub" },
+		data: { ranges: [repo.observation.window] },
 	});
 	resource.coverage.status = "unavailable";
 	await db.prepare("UPDATE factory_resources SET payload=?").bind(JSON.stringify(resource)).run();
@@ -376,7 +380,15 @@ it("preserves immutable run resources, missing coverage and mixed source flags",
 		coverage: { status: "complete", fetchedAt: snap.fetched_at },
 		items: [],
 	});
-	expect((await readFactoryResource(db, a, repo.name, "commits")).truncated).toBe(false);
+	expect(await readFactoryResource(db, a, repo.name, "commits")).toMatchObject({
+		truncated: false,
+		data: { ranges: [repo.observation.window] },
+	});
+	delete repo.observation;
+	await save("factory:v:pub", snap);
+	expect((await readFactoryResource(db, a, repo.name, "commits")).data.ranges).toEqual([
+		snap.window,
+	]);
 	expect(
 		(
 			await observationEnvelope(a, "x", {

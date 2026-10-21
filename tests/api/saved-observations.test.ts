@@ -124,6 +124,16 @@ beforeAll(async () => {
 		snapshot("repos", { repos, repository_fetched_at: { "NOCOO/RECOVERED": latest } }, catalogAt),
 		snapshot("factory", { ...publication }),
 	];
+	for (const name of [names[0] as string, removed])
+		statements.push(
+			snapshot(`factory:${name}:commits`, {
+				runId: publication.runId,
+				items: [],
+				next: null,
+				ranges: [],
+				coverage: { ...repo.coverage.commits, status: "complete", fetchedAt: baseline },
+			}),
+		);
 	for (const [kind, key] of [
 		["issues", "issues"],
 		["prs", "pull_requests"],
@@ -305,6 +315,25 @@ it("includes baseline and missing repositories in all and starred freshness", as
 				expect(result.data.pull_requests).toContainEqual(expect.objectContaining({ number: 40 }));
 		}
 	}
+});
+
+it("exposes the saved factory stream window without changing collection state", async () => {
+	const before = sql(
+		`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
+	);
+	const countBefore = await (await fetch("http://127.0.0.1:17046/_count")).text();
+	const result = await (await machine("factory/repos/nocoo/recovered/commits")).json();
+	expect(result).toMatchObject({
+		data: {
+			ranges: [factoryFixture().window],
+			observation: { window: factoryFixture().window },
+			coverage: { status: "complete" },
+		},
+	});
+	expect(
+		sql(`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`),
+	).toEqual(before);
+	expect(await (await fetch("http://127.0.0.1:17046/_count")).text()).toBe(countBefore);
 });
 
 it("separates default-branch workflow and repository verdict units over saved HTTP data", async () => {

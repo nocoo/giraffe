@@ -203,6 +203,7 @@ export async function readFactoryResource(db: Db, account: string, name: string,
 		`factory:${repo.name}:${stream}`,
 		{
 			...data,
+			ranges: [observation?.window ?? snap.window],
 			fetched_at: data.coverage.fetchedAt,
 			observation,
 			coverage: data.coverage,
