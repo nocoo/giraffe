@@ -249,6 +249,13 @@ function workflowReferences(content: string) {
 			!value.startsWith('"') &&
 			!value.startsWith("'")
 		) {
+			if (
+				block(value) &&
+				(!next ||
+					indentation(next) <= propertyIndent ||
+					/^(?:[-?:](?:\s|$)|[!&*[\]{}"'])|:(?:\s|$)/.test(next.trimStart()))
+			)
+				fail();
 			scalarIndent = propertyIndent;
 		}
 		if (key !== "uses" || indent === jobIndent) continue;

@@ -1002,3 +1002,13 @@ statistics-disabled overrides. The regression failed before commit; inspecting
 the complete fixture established 103 eligible observations. Derive expectations
 from all declared selection inputs, including settings seeded later in a fixture,
 rather than treating its catalog declaration as the entire policy.
+
+## 2026-10-21 - Distinguish empty conditions from scalar continuations
+
+The initial multiline workflow condition scanner skipped every indented child
+after an empty or comment-only `if:`. Controller review found that a YAML mapping
+or sequence could therefore disappear as scalar content and falsely retain full
+dependency coverage. Adversarial tests reproduced the acceptance before the fix.
+Empty headers now require a plain scalar continuation; mappings, sequences,
+aliases and flow children fail closed. Test scalar-shape boundaries separately
+from literal/folded block bodies, where key-like text must remain uninterpreted.

@@ -15,6 +15,35 @@ import {
 } from "./factory-map";
 
 describe("GitHub factory normalization", () => {
+	it.each(["", "# condition"])(
+		"rejects non-scalar children after an empty/comment-only if (%s)",
+		(value) => {
+			for (const child of [
+				"uses: fake/action@v1",
+				"- uses: fake/action@v1",
+				"*shared",
+				"{ uses: fake/action@v1 }",
+			])
+				for (const step of [false, true]) {
+					const text = step
+						? `jobs:\n  build:\n    steps:\n      - if: ${value}\n          ${child}\n        uses: actions/checkout@v4`
+						: `jobs:\n  build:\n    if: ${value}\n      ${child}\n    uses: nocoo/base-ci/.github/workflows/deploy.yml@main`;
+					expect(() => mapDependencies({ ci: { text } }, mapFactoryRepo(rawRepo))).toThrow();
+				}
+		},
+	);
+	it("accepts a comment-only if header followed by a plain condition scalar", () => {
+		expect(
+			mapDependencies(
+				{
+					release: {
+						text: "jobs:\n  deploy:\n    if: # condition\n      github.event_name == 'push'\n        && github.ref == 'refs/heads/main'\n    uses: nocoo/base-ci/.github/workflows/deploy.yml@main",
+					},
+				},
+				mapFactoryRepo(rawRepo),
+			).items,
+		).toHaveLength(1);
+	});
 	it.each(["plain", "|", ">-", "|2-", ">+2", "empty"])(
 		"scans job and step multiline if values (%s) without interpreting their contents",
 		(header) => {
