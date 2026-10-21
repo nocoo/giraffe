@@ -351,6 +351,8 @@ export async function executeRunPage(
 				"not_found",
 			].includes(code);
 			finish(step, unavailable ? "unavailable" : "failed", clock());
+			if (step.kind === "contributions" && run.checkpoint)
+				run.checkpoint.contributionStatus = "unavailable";
 			if (step.kind === "snapshot") {
 				run.nextAttemptAt = clock();
 			} else if (step.repo) {
