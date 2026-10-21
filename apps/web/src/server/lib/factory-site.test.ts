@@ -16,7 +16,7 @@ it("persists unavailable repository security instead of failing the snapshot, wi
 		dependabot_open: 1,
 		code_scanning_open: 0,
 	};
-	await db.batch(replaceSnapshotStmts(db, "account", "alerts", prior, "2026-01-01"));
+	await db.batch(await replaceSnapshotStmts(db, "account", "alerts", prior, "2026-01-01"));
 	const result = await page(raw, (url) =>
 		url.endsWith("/graphql")
 			? Response.json({
@@ -50,7 +50,7 @@ it("retains good security evidence through repeated unavailable refreshes with i
 	const raw = await setup("repo:nocoo/app:security");
 	const db = createDb(raw);
 	await db.batch(
-		replaceSnapshotStmts(
+		await replaceSnapshotStmts(
 			db,
 			"account",
 			"repo:nocoo/app:security",
@@ -98,7 +98,7 @@ it("never replaces global alerts with an unavailable page and never publishes tr
 		dependabot_open: 1,
 		code_scanning_open: 0,
 	};
-	await db.batch(replaceSnapshotStmts(db, "account", "alerts", prior, "2026-01-01"));
+	await db.batch(await replaceSnapshotStmts(db, "account", "alerts", prior, "2026-01-01"));
 	expect(
 		await page(raw, () =>
 			Response.json(
@@ -163,7 +163,7 @@ it("persists global lists in bounded chunks and publishes only after every repos
 		const key = resource === "issues" ? "issues" : resource === "prs" ? "pull_requests" : "items";
 		const old = { truncated: false, fetched_at: "2025-01-01", [key]: [{ title: "previous data" }] };
 		const db = createDb(raw);
-		await db.batch(replaceSnapshotStmts(db, "account", resource, old, "2025-01-01"));
+		await db.batch(await replaceSnapshotStmts(db, "account", resource, old, "2025-01-01"));
 		const calls: string[] = [];
 		const upstream: Parameters<typeof github>[0] = (url, init) => {
 			if (!url.endsWith("/graphql")) return Response.json([]);
@@ -304,12 +304,12 @@ it("rejects malformed site catalogs and accepts an empty completed catalog", asy
 		{ truncated: false, repos: [{ name_with_owner: "o/repo" }, { name_with_owner: "o/repo" }] },
 	]) {
 		const db = createDb(raw);
-		await db.batch(replaceSnapshotStmts(db, "account", "repos", payload, NOW));
+		await db.batch(await replaceSnapshotStmts(db, "account", "repos", payload, NOW));
 		expect(await siteCatalog(createDb(raw), "account")).toBeNull();
 	}
 	const db = createDb(raw);
 	await db.batch(
-		replaceSnapshotStmts(db, "account", "repos", { truncated: false, repos: [] }, NOW),
+		await replaceSnapshotStmts(db, "account", "repos", { truncated: false, repos: [] }, NOW),
 	);
 	expect(await siteCatalog(createDb(raw), "account")).toEqual([]);
 });
@@ -323,7 +323,7 @@ it("reuses current-run global pages for repository details without another GitHu
 	if (!source) throw new Error("fixture");
 	source.status = "success";
 	await db.batch(
-		replaceSnapshotStmts(
+		await replaceSnapshotStmts(
 			db,
 			"account",
 			"issues",
@@ -358,7 +358,7 @@ it("merges selected repository updates into the global list while preserving unr
 	const raw = await setup("repo:nocoo/app:issues");
 	const db = createDb(raw);
 	await db.batch(
-		replaceSnapshotStmts(
+		await replaceSnapshotStmts(
 			db,
 			"account",
 			"issues",
@@ -401,7 +401,7 @@ it("reuses code-dependent page data only when its recorded head matches the curr
 		const raw = await setup("repo:nocoo/app:languages");
 		const db = createDb(raw);
 		await db.batch(
-			replaceSnapshotStmts(
+			await replaceSnapshotStmts(
 				db,
 				"account",
 				"repo:nocoo/app:languages",
@@ -461,9 +461,9 @@ it("derives scoped Insights only after selected sources succeed and preserves un
 	for (const existing of [false, true]) {
 		const raw = await setup("insights");
 		const db = createDb(raw);
-		await db.batch(replaceSnapshotStmts(db, "account", "issues", { issues: [] }, NOW));
+		await db.batch(await replaceSnapshotStmts(db, "account", "issues", { issues: [] }, NOW));
 		await db.batch(
-			replaceSnapshotStmts(
+			await replaceSnapshotStmts(
 				db,
 				"account",
 				"repos",
@@ -473,7 +473,7 @@ it("derives scoped Insights only after selected sources succeed and preserves un
 		);
 		if (existing) {
 			await db.batch(
-				replaceSnapshotStmts(
+				await replaceSnapshotStmts(
 					db,
 					"account",
 					"insights",
@@ -482,7 +482,7 @@ it("derives scoped Insights only after selected sources succeed and preserves un
 				),
 			);
 			await db.batch(
-				replaceSnapshotStmts(db, "account", "alerts", { items: [], truncated: false }, NOW),
+				await replaceSnapshotStmts(db, "account", "alerts", { items: [], truncated: false }, NOW),
 			);
 		}
 		const lease = await claimRun(db, "site", NOW);
@@ -518,9 +518,9 @@ it("derives scoped Insights only after selected sources succeed and preserves un
 it("rejects oversized scoped Insights without replacing its previous publication", async () => {
 	const raw = await setup("insights");
 	const db = createDb(raw);
-	await db.batch(replaceSnapshotStmts(db, "account", "issues", { issues: [] }, NOW));
+	await db.batch(await replaceSnapshotStmts(db, "account", "issues", { issues: [] }, NOW));
 	await db.batch(
-		replaceSnapshotStmts(
+		await replaceSnapshotStmts(
 			db,
 			"account",
 			"repos",
@@ -529,7 +529,7 @@ it("rejects oversized scoped Insights without replacing its previous publication
 		),
 	);
 	await db.batch(
-		replaceSnapshotStmts(
+		await replaceSnapshotStmts(
 			db,
 			"account",
 			"alerts",
@@ -575,7 +575,7 @@ it("retains Insights when selected metadata cannot be joined to a complete saved
 	]) {
 		const raw = await setup("insights");
 		const db = createDb(raw);
-		if (catalog) await db.batch(replaceSnapshotStmts(db, "account", "repos", catalog, NOW));
+		if (catalog) await db.batch(await replaceSnapshotStmts(db, "account", "repos", catalog, NOW));
 		const lease = await claimRun(db, "site", NOW);
 		if (!lease) throw new Error("fixture");
 		lease.run.selection = { scope: "selected", repos: ["nocoo/app"] };

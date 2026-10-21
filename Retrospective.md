@@ -929,3 +929,55 @@ deduplication now runs in `statisticsFactory`, the account/browser response
 projection, while storage readers and writers retain their prior behavior. Trace
 both read and write callers before choosing a response-only normalization point;
 read-only GET assertions alone do not prove unchanged subsequent writes.
+
+## 2026-10-21 - Keep producer identity and payload examples aligned
+
+The content-version guide updated the stable report ID recipe to use content
+hashes, but its two report payload examples still omitted source content hashes.
+Independent review caught that copying these examples would retain a stable ID
+while the page fell back to refresh-sensitive full-version matching. Both examples
+now preserve the observation's full version and content version separately from
+the report's composite digest. Validate example JSON against the real schema and
+trace the complete read/identity/publish/refresh sequence whenever a producer
+contract gains a field; prose and ID generation alone are not end-to-end proof.
+
+## 2026-10-21 - Count stream bytes, not only source queries
+
+The first content-version implementation preserved the five-query `/sources`
+bound but eagerly loaded and parsed every referenced immutable stream to compute
+hashes. The scale fixture represented factory streams only through publication
+metadata, so green query-count tests did not measure their actual payload cost.
+Adding one valid near-cap stream per repository exposed about 126 MB of payload
+reads on the 126-repository fixture, including requests returning no sources.
+Moving filters ahead of stream hashing fixed the empty case but still cost about
+255 ms for the newer two-thirds and 66 ms for one repository, well above the
+batch-3 baseline. A filtered expensive operation is not necessarily a bounded one.
+
+The correction moves content hashing to the existing snapshot/publication/stream
+write paths and saves nullable metadata atomically with the payload. Source reads
+project that metadata, using compact stored-hash compositions for account views;
+old rows remain null until normal refresh instead of triggering a GET backfill.
+Covering metadata indexes prevent large row/overflow-page reads during lookups.
+Failing regressions now include real payloads and byte/row assertions in addition
+to query counts, while the benchmark records full, partial, empty and repository
+requests against the prior latency baseline. Performance fixtures must represent
+the data newly accessed by a feature; constant query counts do not establish
+constant work, and an intermediate optimization needs the same acceptance target
+as the original contract.
+
+Independent maximum-reasoning review then found that hashing raw stream `ranges`
+did not preserve the observation window: collection drains that pagination queue
+to an empty array. Failing tests now bind content hashing to `[checkpoint.window]`
+without changing the saved payload or its full version. The same review exposed
+reuse timestamps and coverage request URLs as volatile inputs; content hashing
+now excludes root `source_fetched_at` and coverage `source` while retaining
+`source_head` and the separately bound semantic window. Stored `fullVersion`
+metadata reuses the exact prior raw-snapshot digest rather than silently changing
+its serialization recipe; account projections still derive full versions from
+their JSON. A write-time hash needs both the final saved data and its semantic
+collection context, not merely whichever transport/checkpoint fields survive.
+
+A final metadata-only review also caught CI/factory composites dropping derived
+freshness quality when a saved observation time was missing or malformed. Their
+hashes now include `total`/`missing`, not the time values; regression tests cover
+loss, malformed time and restored confirmation without changing source content.

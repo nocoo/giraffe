@@ -11,6 +11,7 @@ import {
 	type FactorySnapshot,
 	type FactoryStreamData,
 } from "../../lib/factory-types";
+import { savedContentMeta } from "./content-version";
 import type { Db } from "./db/d1";
 import {
 	catalogFactory,
@@ -23,7 +24,7 @@ import { readSnapshot } from "./db/snapshots";
 import { ApiError } from "./errors";
 import { streamKey } from "./factory-collect";
 import { latestFactoryRate } from "./factory-rate";
-import { physicalKinds, splitPages } from "./snapshot-pages";
+import { assemblePages, physicalKinds, splitPages } from "./snapshot-pages";
 
 export function boundedJson(value: unknown): string {
 	const text = JSON.stringify(value);
@@ -35,13 +36,13 @@ export function boundedJson(value: unknown): string {
 		);
 	return text;
 }
-export function snapshotWrites(
+export async function snapshotWrites(
 	db: Db,
 	lease: RunLease,
 	now: string,
 	kind: string,
 	snapshot: FactorySnapshot,
-): D1PreparedStatement[] {
+): Promise<D1PreparedStatement[]> {
 	const { pages, truncated } = splitPages(kind, { ...snapshot });
 	if (truncated)
 		throw new ApiError(
@@ -49,6 +50,7 @@ export function snapshotWrites(
 			"factory_capacity",
 			"publication capacity reached; previous data retained",
 		);
+	const metadata = await savedContentMeta(kind, assemblePages(kind, pages));
 	return [
 		fenced(
 			db,
@@ -62,8 +64,8 @@ export function snapshotWrites(
 				db,
 				lease,
 				now,
-				"INSERT INTO snapshots(account_id,kind,payload,fetched_at) SELECT ?,?,?,? WHERE $guard ON CONFLICT(account_id,kind) DO UPDATE SET payload=excluded.payload,fetched_at=excluded.fetched_at",
-				[lease.run.account_id, p.kind, p.payload, now],
+				"INSERT INTO snapshots(account_id,kind,payload,fetched_at,content_meta) SELECT ?,?,?,?,? WHERE $guard ON CONFLICT(account_id,kind) DO UPDATE SET payload=excluded.payload,fetched_at=excluded.fetched_at,content_meta=excluded.content_meta",
+				[lease.run.account_id, p.kind, p.payload, now, metadata],
 			),
 		),
 	];
@@ -212,7 +214,9 @@ export async function publicationWrites(
 	const head = await factoryHead(db, run.account_id);
 	const writes: D1PreparedStatement[] = [];
 	if (run.mode === "catalog" && run.checkpoint) {
-		writes.push(...snapshotWrites(db, lease, now, `factory:catalog:${run.id}`, run.checkpoint));
+		writes.push(
+			...(await snapshotWrites(db, lease, now, `factory:catalog:${run.id}`, run.checkpoint)),
+		);
 		writes.push(
 			fenced(
 				db,
@@ -326,7 +330,7 @@ export async function publicationWrites(
 			[run.account_id, run.id, JSON.stringify(refs)],
 		),
 	);
-	writes.push(...snapshotWrites(db, lease, now, `factory:v:${run.id}`, snapshot));
+	writes.push(...(await snapshotWrites(db, lease, now, `factory:v:${run.id}`, snapshot)));
 	writes.push(
 		fenced(
 			db,

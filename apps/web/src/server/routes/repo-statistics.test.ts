@@ -26,7 +26,7 @@ async function setup() {
 	} satisfies Env;
 	const save = async (kind: string, payload: Record<string, unknown>) => {
 		const db = createDb(raw);
-		await db.batch(replaceSnapshotStmts(db, id, kind, payload, at));
+		await db.batch(await replaceSnapshotStmts(db, id, kind, payload, at));
 	};
 	const repos = [
 		{

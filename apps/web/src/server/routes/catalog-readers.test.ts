@@ -16,8 +16,8 @@ it("shares saved CI evidence between browser and machine and never assumes a def
 		)
 		.run();
 	const at = "2026-10-20T00:00:00Z";
-	const save = (kind: string, value: Record<string, unknown>) =>
-		db.batch(replaceSnapshotStmts(db, "a", kind, value, at));
+	const save = async (kind: string, value: Record<string, unknown>) =>
+		db.batch(await replaceSnapshotStmts(db, "a", kind, value, at));
 	await save("repos", {
 		repos: ["owner/app", "owner/unknown", "owner/empty-branch", "owner/unsaved"].map(
 			(name_with_owner) => ({ name_with_owner }),
@@ -79,8 +79,8 @@ it("counts catalog repositories without factory publications and preserves publi
 		)
 		.bind(account)
 		.run();
-	const save = (kind: string, value: Record<string, unknown>) =>
-		db.batch(replaceSnapshotStmts(db, account, kind, value, snap.fetched_at));
+	const save = async (kind: string, value: Record<string, unknown>) =>
+		db.batch(await replaceSnapshotStmts(db, account, kind, value, snap.fetched_at));
 	await save("repos", {
 		repos: ["nocoo/app", "nocoo/missing", "nocoo/no-observation"].map((name_with_owner) => ({
 			name_with_owner,

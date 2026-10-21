@@ -15,6 +15,10 @@ export const observationSchema = z.object({
 	account_id: z.string().min(1),
 	data: z.record(z.string(), z.unknown()),
 	sourceVersion: z.string().min(1),
+	contentVersion: z
+		.string()
+		.regex(/^sha256:[0-9a-f]{64}$/)
+		.nullable(),
 	fetchedAt: z.string().nullable(),
 	freshness: z.unknown(),
 	coverage: z.unknown(),
@@ -49,6 +53,10 @@ export type Resource = z.infer<typeof resourceSchema>;
 export const sourceSchema = z.strictObject({
 	resource: z.string(),
 	version: z.string().nullable(),
+	contentVersion: z
+		.string()
+		.regex(/^sha256:[0-9a-f]{64}$/)
+		.optional(),
 	fetchedAt: z.string().nullable(),
 	complete: z.boolean(),
 	stale: z.boolean(),

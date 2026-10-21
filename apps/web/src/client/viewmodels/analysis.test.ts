@@ -3,6 +3,85 @@ import type { AnalysisReport, Resource } from "../../lib/analysis-contracts";
 import { type AnalysisData, analysisState, safeEvidenceUrl, sourceQuality } from "./analysis";
 
 const at = "2026-10-02T08:00:00Z";
+
+it("falls back to the full version when the saved source predates content metadata", () => {
+	const legacy = data.sources.map((source) => ({ ...source, contentVersion: null }));
+	const hashed = {
+		...report,
+		sources: report.sources.map((source) => ({
+			...source,
+			contentVersion: `sha256:${"a".repeat(64)}`,
+		})),
+	};
+	expect(sourceQuality(hashed, legacy, Date.parse(at)).current).toBe(true);
+	expect(
+		sourceQuality(
+			hashed,
+			legacy.map((source) => ({ ...source, version: "different" })),
+			Date.parse(at),
+		).current,
+	).toBe(false);
+});
+
+it("keeps unchanged content current using the latest confirmation time, not report age", () => {
+	const contentVersion = `sha256:${"a".repeat(64)}`;
+	const now = Date.parse(at) + 72 * 3600000;
+	const refreshedAt = new Date(now).toISOString();
+	const original = data.sources[0];
+	if (!original) throw new Error("missing source fixture");
+	const saved = { ...original, version: "v2", contentVersion, fetchedAt: refreshedAt };
+	const confirmed = {
+		...report,
+		sources: report.sources.map((source) => ({ ...source, contentVersion })),
+	};
+	for (const candidate of [
+		confirmed,
+		{
+			...confirmed,
+			scope: "global" as const,
+			repository: null,
+			sources: confirmed.sources.map((s) => ({ ...s, resource: "account:prs" })),
+		},
+	]) {
+		const resource = candidate.sources[0]?.resource;
+		if (!resource) throw new Error("missing report source fixture");
+		const current = { ...saved, resource };
+		const sources = [current];
+		expect(sourceQuality(candidate, sources, now)).toMatchObject({
+			current: true,
+			complete: true,
+			stale: false,
+			oldestAt: refreshedAt,
+		});
+		expect(sourceQuality(candidate, sources, now + 36 * 3600000).stale).toBe(false);
+		expect(sourceQuality(candidate, sources, now + 36 * 3600000 + 1).stale).toBe(true);
+		for (const changed of [`sha256:${"b".repeat(64)}`])
+			expect(
+				sourceQuality(candidate, [{ ...current, contentVersion: changed, version: "v1" }], now)
+					.current,
+			).toBe(false);
+		expect(sourceQuality(candidate, [], now)).toMatchObject({
+			current: false,
+			complete: false,
+			stale: true,
+		});
+		for (const fetchedAt of [null, "invalid", new Date(now + 60001).toISOString()])
+			expect(sourceQuality(candidate, [{ ...current, fetchedAt }], now).stale).toBe(true);
+	}
+	expect(sourceQuality(report, [{ ...saved, version: "v1" }], now)).toMatchObject({
+		current: true,
+		stale: false,
+		oldestAt: refreshedAt,
+	});
+	expect(sourceQuality(report, [saved], now).current).toBe(false);
+	expect(
+		analysisState(
+			{ ...data, reports: [row(confirmed)], sources: [saved] },
+			"nocoo/app",
+			now,
+		).cards.find((card) => card.domain === "prs")?.verdict,
+	).toBe("pass");
+});
 it("renders external reports without local decision metadata", () => {
 	const { producer: _producer, ...external } = report;
 	const state = analysisState(

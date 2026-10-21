@@ -3,10 +3,111 @@ import { DatabaseSync } from "node:sqlite";
 import { expect, it } from "vitest";
 import { factoryFixture } from "../../../../../tests/fixtures/factory-snapshot";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
+import { storedContent } from "./content-version";
 import { createDb } from "./db/d1";
-import { replaceSnapshotStmts } from "./db/snapshots";
+import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
 import { readObservation } from "./machine-observations";
-import { repoPolicy, statisticsFactory, statisticsSnapshot } from "./repo-statistics";
+import {
+	projectSnapshot,
+	repoPolicy,
+	statisticsFactory,
+	statisticsSnapshot,
+} from "./repo-statistics";
+
+it.each([
+	["issues", "issues"],
+	["prs", "pull_requests"],
+])(
+	"composes %s content from the selected repository snapshots, not observation times",
+	async (kind, key) => {
+		const db = createDb(sqliteFixture());
+		await db
+			.prepare(
+				"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES('a','owner','fake','fake','t','t')",
+			)
+			.run();
+		const save = async (resource: string, data: Record<string, unknown>, at: string) =>
+			db.batch(await replaceSnapshotStmts(db, "a", resource, data, at));
+		await save("repos", { repos: [{ name_with_owner: "owner/app" }] }, "2026-10-18T00:00:00Z");
+		await save(
+			kind,
+			{ [key]: [{ name_with_owner: "owner/app", number: 1 }] },
+			"2026-10-18T00:00:00Z",
+		);
+		const project = async () => {
+			const snapshot = await readSnapshot(db, "a", kind);
+			if (!snapshot) throw new Error("missing snapshot");
+			return projectSnapshot(db, "a", kind, snapshot, await repoPolicy(db, "a"), false);
+		};
+		const first = await project();
+		expect(storedContent(first)?.hash).toMatch(/^sha256:[a-f0-9]{64}$/);
+		const next = { [key]: [{ name_with_owner: "owner/app", number: 2 }] };
+		await save(`repo:owner/app:${kind}`, next, "2026-10-19T00:00:00Z");
+		const second = await project();
+		expect(second[key]).toEqual(next[key]);
+		expect(storedContent(second)?.hash).not.toBe(storedContent(first)?.hash);
+		await save(`repo:owner/app:${kind}`, next, "2026-10-20T00:00:00Z");
+		const refreshed = await project();
+		expect(refreshed.fetched_at).not.toBe(second.fetched_at);
+		expect(storedContent(refreshed)?.hash).toBe(storedContent(second)?.hash);
+		await db
+			.prepare("UPDATE snapshots SET content_meta=NULL WHERE kind=?")
+			.bind(`repo:owner/app:${kind}`)
+			.run();
+		expect(storedContent(await project())).toBeNull();
+		await save(kind, next, "2026-10-21T00:00:00Z");
+		expect(storedContent(await project())?.hash).toMatch(/^sha256:[a-f0-9]{64}$/);
+	},
+);
+
+it("keeps legacy dependencies null, absent dependencies distinct, and catalog flags in projected hashes", async () => {
+	const db = createDb(sqliteFixture());
+	await db
+		.prepare(
+			"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES('a','owner','fake','fake','t','t')",
+		)
+		.run();
+	const catalog = { repos: [{ name_with_owner: "owner/app" }] };
+	const save = async (
+		resource: string,
+		data: Record<string, unknown>,
+		at = "2026-10-18T00:00:00Z",
+	) => db.batch(await replaceSnapshotStmts(db, "a", resource, data, at));
+	const project = async (kind: string) => {
+		const snapshot = await readSnapshot(db, "a", kind);
+		if (!snapshot) throw new Error("missing snapshot");
+		return projectSnapshot(db, "a", kind, snapshot, await repoPolicy(db, "a"), false);
+	};
+	await save("issues", { issues: [] });
+	const absent = storedContent(await project("issues"))?.hash;
+	expect(absent).toMatch(/^sha256:[a-f0-9]{64}$/);
+	await save("repos", catalog);
+	await db.prepare("UPDATE snapshots SET content_meta=NULL WHERE kind='repos'").run();
+	expect(storedContent(await project("issues"))).toBeNull();
+	await save("repos", catalog);
+	expect(storedContent(await project("issues"))?.hash).not.toBe(absent);
+	const covered = await project("issues");
+	await save("repos", catalog, "2026-10-19T00:00:00Z");
+	const missing = await project("issues");
+	expect(missing.freshness).toMatchObject({ total: 1, missing: 1 });
+	expect(storedContent(missing)?.hash).not.toBe(storedContent(covered)?.hash);
+	await save("issues", { issues: [] }, "2026-10-19T00:00:00Z");
+	expect(storedContent(await project("issues"))?.hash).toBe(storedContent(covered)?.hash);
+	await db.prepare("UPDATE snapshots SET content_meta=NULL WHERE kind='issues'").run();
+	expect(storedContent(await project("issues"))).toBeNull();
+	const initial = await project("repos");
+	const initialJson = JSON.stringify(initial);
+	const first = storedContent(initial)?.hash;
+	await save("repos", catalog, "2026-10-19T00:00:00Z");
+	expect(storedContent(await project("repos"))?.hash).toBe(first);
+	await db.prepare("INSERT INTO repo_statistics VALUES('a','owner/app',0)").run();
+	const disabled = storedContent(await project("repos"))?.hash;
+	expect(disabled).not.toBe(first);
+	await db.prepare("INSERT INTO repo_stars VALUES('a','owner/app')").run();
+	expect(storedContent(await project("repos"))?.hash).not.toBe(disabled);
+	expect(JSON.stringify(initial)).toBe(initialJson);
+	expect(initial).not.toHaveProperty("content_meta");
+});
 
 it("uses saved catalog membership for all selectors and never revives removed repositories", async () => {
 	const raw = sqliteFixture();
@@ -17,7 +118,7 @@ it("uses saved catalog membership for all selectors and never revives removed re
 		)
 		.run();
 	await db.batch(
-		replaceSnapshotStmts(
+		await replaceSnapshotStmts(
 			db,
 			"a",
 			"repos",
@@ -61,7 +162,7 @@ it("includes baseline timestamps for the entire catalog and for served incomplet
 	const baseline = "2026-10-18T12:50:00Z";
 	const recent = "2026-10-20T12:02:00Z";
 	await db.batch(
-		replaceSnapshotStmts(
+		await replaceSnapshotStmts(
 			db,
 			"a",
 			"repos",
@@ -150,7 +251,7 @@ it.each(["pending", "complete", "unavailable"] as const)(
 			.bind(account)
 			.run();
 		await db.batch(
-			replaceSnapshotStmts(
+			await replaceSnapshotStmts(
 				db,
 				account,
 				"repos",
@@ -228,7 +329,13 @@ it.each([
 			.run();
 		const at = "2026-10-18T12:50:00Z";
 		await db.batch(
-			replaceSnapshotStmts(db, "a", "repos", { repos: [{ name_with_owner: "owner/app" }] }, at),
+			await replaceSnapshotStmts(
+				db,
+				"a",
+				"repos",
+				{ repos: [{ name_with_owner: "owner/app" }] },
+				at,
+			),
 		);
 		await db.prepare("INSERT INTO repo_stars VALUES('a','owner/app')").run();
 		const partial = {
@@ -240,7 +347,9 @@ it.each([
 			truncated: true,
 			freshness: { total: 1, missing: 0, oldestAt: at },
 		});
-		await db.batch(replaceSnapshotStmts(db, "a", `repo:owner/app:${suffix}`, { [key]: [] }, at));
+		await db.batch(
+			await replaceSnapshotStmts(db, "a", `repo:owner/app:${suffix}`, { [key]: [] }, at),
+		);
 		expect(await statisticsSnapshot(db, "a", kind, partial, "starred")).toMatchObject({
 			[key]: [],
 			truncated: false,
@@ -258,7 +367,7 @@ it("handles first-day baselines and incomplete source metadata without invented 
 		)
 		.run();
 	await db.batch(
-		replaceSnapshotStmts(
+		await replaceSnapshotStmts(
 			db,
 			"a",
 			"repos",
@@ -343,7 +452,7 @@ it.each(["factory", "factory:v:r1"])(
 		if (!repo) throw new Error("fixture");
 		const dependency = { name: "external", version: "^1", path: "package.json", url: "saved" };
 		repo.dependencies = [dependency, { ...dependency }];
-		await db.batch(replaceSnapshotStmts(db, account, kind, publication, now));
+		await db.batch(await replaceSnapshotStmts(db, account, kind, publication, now));
 		if (kind !== "factory")
 			await db
 				.prepare("INSERT INTO factory_state(account_id,published_id,next_at) VALUES(?,'r1','t')")

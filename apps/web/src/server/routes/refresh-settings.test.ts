@@ -34,7 +34,7 @@ it("keeps stars local and account scoped; validates schedules and exposes safe s
 		.bind(snap.account_id, "nocoo", "fake", "fake", snap.fetched_at, snap.fetched_at)
 		.run();
 	await db.batch(
-		replaceSnapshotStmts(
+		await replaceSnapshotStmts(
 			db,
 			snap.account_id,
 			"repos",

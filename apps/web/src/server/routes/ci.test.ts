@@ -39,7 +39,7 @@ async function setup(withAccount = true) {
 	} satisfies Env;
 	const save = async (kind: string, payload: Record<string, unknown>, fetchedAt = at) => {
 		const db = createDb(raw);
-		await db.batch(replaceSnapshotStmts(db, id, kind, payload, fetchedAt));
+		await db.batch(await replaceSnapshotStmts(db, id, kind, payload, fetchedAt));
 	};
 	const app = createApp();
 	return {

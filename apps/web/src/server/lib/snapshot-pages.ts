@@ -1,8 +1,9 @@
 import { emptyCollected } from "./collect";
+import { decodeContent, withContent } from "./content-version";
 
 const MAX = 1_500_000;
 
-export type SnapshotPage = { kind: string; payload: string };
+export type SnapshotPage = { kind: string; payload: string; content_meta?: string | null };
 export type SnapshotGroups = Map<string, Record<string, unknown>>;
 
 export function assembleSnapshotGroups(rows: SnapshotPage[]): SnapshotGroups {
@@ -150,12 +151,15 @@ export function assemblePages(logical: string, rows: SnapshotPage[]): Record<str
 	const head = JSON.parse(first.payload) as Record<string, unknown>;
 	const key = arrayKey(head);
 	if (!key || !second) {
-		return head;
+		return withContent(head, decodeContent(first.content_meta));
 	}
 	const tail = JSON.parse(second.payload) as Record<string, unknown>;
 	const a = head[key] as unknown[];
 	const b = Array.isArray(tail[key]) ? (tail[key] as unknown[]) : [];
-	return { ...head, [key]: [...a, ...b] };
+	return withContent(
+		{ ...head, [key]: [...a, ...b] },
+		first.content_meta === second.content_meta ? decodeContent(first.content_meta) : null,
+	);
 }
 
 export function physicalKinds(logical: string): [string, string] {

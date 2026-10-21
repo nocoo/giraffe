@@ -213,7 +213,7 @@ export async function prepareRefresh(
 	for (const [kind, payload] of Object.entries(written)) {
 		const preview = splitPages(kind, payload);
 		payload.truncated = preview.truncated;
-		stmts.push(...replaceSnapshotStmts(db, accountId, kind, payload, fetchedAt));
+		stmts.push(...(await replaceSnapshotStmts(db, accountId, kind, payload, fetchedAt)));
 	}
 	const cutoff = new Date(Date.parse(fetchedAt) - 29 * 86_400_000).toISOString().slice(0, 10);
 	stmts.push(pruneDaysStmt(db, accountId, cutoff));

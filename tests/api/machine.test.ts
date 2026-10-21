@@ -121,6 +121,47 @@ it("retains machine bearer CRUD and retires PKCE over real local HTTP", async ()
 			).toBe(409);
 			expect((await machine(`${path}/${id}?revision=2`, "DELETE")).status).toBe(204);
 		}
+		const report = {
+			id: "content-version-acceptance",
+			type: "github-analysis",
+			status: "completed",
+			source_version: "composite",
+			payload: {
+				schemaVersion: 1,
+				scope: "global",
+				repository: null,
+				domain: "issues",
+				sourceVersion: "composite",
+				observedAt: "2026-10-20T00:00:00Z",
+				generatedAt: "2026-10-20T01:00:00Z",
+				verdict: "unknown",
+				summary: "Local acceptance fixture",
+				findings: [],
+				actions: [],
+				limitations: [],
+				evidence: [],
+				omitted: 0,
+				judgment: { model: "fixture", choice: "unknown" },
+				sources: [
+					{
+						resource: "account:issues",
+						version: "v1",
+						contentVersion: `sha256:${"a".repeat(64)}`,
+						fetchedAt: null,
+						complete: false,
+						stale: true,
+					},
+				],
+			},
+		};
+		const path = `${prefix}/agent/reports`;
+		expect((await machine(path, "POST", { ...report, extra: true })).status).toBe(400);
+		expect((await machine(path, "POST", report)).status).toBe(201);
+		expect(await (await machine(`${path}/${report.id}`)).json()).toMatchObject({ item: report });
+		expect(
+			(await machine(`${path}/${report.id}`, "PATCH", { revision: 1, extra: true })).status,
+		).toBe(400);
+		expect((await machine(`${path}/${report.id}?revision=1`, "DELETE")).status).toBe(204);
 		const beforeRetirement = await (await browser(`tokens?account_id=${account.id}`)).json();
 		const consent = await browser("cli/authorize", "POST", {
 			account_id: account.id,

@@ -10,6 +10,7 @@ import {
 	type FactoryStreamName,
 } from "../../lib/factory-types";
 import { type Env, encryptionKey } from "../env";
+import { savedContentMeta } from "./content-version";
 import { getAccount } from "./db/accounts";
 import { createDb } from "./db/d1";
 import { claimRun, fenced, saveRun } from "./db/factory-runs";
@@ -226,13 +227,18 @@ export async function executeRunPage(
 					return row ? (JSON.parse(row.payload) as FactoryStreamData) : null;
 				},
 				write: async (_key: string, data: FactoryStreamData) => {
+					const metadata = await savedContentMeta(
+						`factory:${step.repo}:${stream}`,
+						data,
+						checkpoint.window,
+					);
 					writes.push(
 						fenced(
 							db,
 							lease,
 							clock(),
-							"INSERT INTO factory_resources(run_id,repo,stream,payload) SELECT ?,?,?,? WHERE $guard ON CONFLICT(run_id,repo,stream) DO UPDATE SET payload=excluded.payload",
-							[run.id, step.repo, stream, boundedJson(data)],
+							"INSERT INTO factory_resources(run_id,repo,stream,payload,content_meta) SELECT ?,?,?,?,? WHERE $guard ON CONFLICT(run_id,repo,stream) DO UPDATE SET payload=excluded.payload,content_meta=excluded.content_meta",
+							[run.id, step.repo, stream, boundedJson(data), metadata],
 						),
 					);
 				},

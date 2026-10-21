@@ -321,3 +321,65 @@ test("invalid reports are explicit and never fall back to old cloud reports", as
 	await expect(page.getByRole("alert")).toContainText("格式或来源不匹配");
 	await expect(page.getByText("这个范围尚无分析报告")).toBeVisible();
 });
+
+test("unchanged global reports stay current after refresh and age from the latest source", async ({
+	page,
+}) => {
+	const fixtures: Record<string, unknown> = createUiFixtures();
+	const contentVersion = `sha256:${"a".repeat(64)}`;
+	const latest = "2026-10-05T09:00:00Z";
+	let currentContent = contentVersion;
+	const global = {
+		...report,
+		scope: "global",
+		repository: null,
+		sources: [{ ...source, resource: "account:prs", contentVersion }],
+	};
+	await page.clock.setFixedTime(new Date(latest));
+	await page.route("**/api/**", (route) => {
+		const path = new URL(route.request().url()).pathname;
+		if (path.includes("/api/agent/accounts/"))
+			return route.fulfill({
+				json: path.endsWith("/sources")
+					? {
+							account_id: "ui-account",
+							repositories: [report.repository],
+							sources: [
+								{
+									resource: "account:prs",
+									version: "refreshed",
+									contentVersion: currentContent,
+									fetchedAt: latest,
+									truncated: false,
+									unavailable: false,
+								},
+							],
+						}
+					: {
+							account_id: "ui-account",
+							items: path.endsWith("/reports")
+								? [resource("global", "github-analysis", global)]
+								: [],
+							nextCursor: null,
+						},
+			});
+		return fixtures[path]
+			? route.fulfill({ json: fixtures[path] })
+			: route.fulfill({
+					status: 409,
+					json: { error: { code: "snapshot_missing", message: "No fixture" } },
+				});
+	});
+	await page.goto("/analysis");
+	const tab = page.getByRole("tab", { name: /Pull Requests/ });
+	await expect(tab).toContainText("需关注");
+	await tab.click();
+	await expect(page.getByText(report.summary, { exact: true })).toBeVisible();
+	currentContent = `sha256:${"b".repeat(64)}`;
+	await page.reload();
+	await expect(tab).toContainText("证据不足");
+	currentContent = contentVersion;
+	await page.clock.setFixedTime(new Date(Date.parse(latest) + 36 * 3600000 + 1));
+	await page.reload();
+	await expect(tab).toContainText("证据不足");
+});

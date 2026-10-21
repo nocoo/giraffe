@@ -362,3 +362,8 @@ END;
 CREATE TRIGGER IF NOT EXISTS catalog_times_delete AFTER DELETE ON catalog_refresh_schedules BEGIN
  DELETE FROM refresh_schedule_times WHERE account_id=OLD.account_id AND kind=OLD.kind;
 END;
+
+ALTER TABLE snapshots ADD COLUMN content_meta TEXT;
+ALTER TABLE factory_resources ADD COLUMN content_meta TEXT;
+CREATE INDEX snapshots_content ON snapshots(account_id,kind,content_meta);
+CREATE INDEX factory_resources_content ON factory_resources(run_id,repo,stream,content_meta);

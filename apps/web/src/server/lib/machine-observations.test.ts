@@ -5,6 +5,7 @@ import { FACTORY_STREAMS } from "../../lib/factory-types";
 import { prSnapshot } from "../../lib/pull-request";
 import type { Env } from "../env";
 import { createApp } from "../index";
+import { savedContentMeta } from "./content-version";
 import { createDb } from "./db/d1";
 import { replaceSnapshotStmts } from "./db/snapshots";
 import {
@@ -29,9 +30,10 @@ it.each(FACTORY_STREAMS)(
 			)
 			.bind(snap.account_id)
 			.run();
-		const save = (kind: string, payload: Record<string, unknown>) =>
-			db.batch(replaceSnapshotStmts(db, snap.account_id, kind, payload, snap.fetched_at));
+		const save = async (kind: string, payload: Record<string, unknown>) =>
+			db.batch(await replaceSnapshotStmts(db, snap.account_id, kind, payload, snap.fetched_at));
 		await save("factory", snap);
+		await save("repos", { repos: [{ name_with_owner: repo.name }] });
 		const kind = `factory:${repo.name}:${stream}`;
 		const resource = {
 			runId: snap.runId,
@@ -47,7 +49,19 @@ it.each(FACTORY_STREAMS)(
 			data: { items: [], ranges: [snap.window], coverage: { status: "complete" } },
 		});
 		expect(await db.prepare("SELECT * FROM snapshots ORDER BY kind").all()).toEqual(before);
+		const indexed = (await readSources(db, snap.account_id, {})).sources.find(
+			(source) => source.resource === kind,
+		);
+		expect(indexed?.contentVersion).toMatch(/^sha256:[0-9a-f]{64}$/);
+		expect(indexed?.contentVersion).toBe(
+			(await readFactoryResource(db, snap.account_id, repo.name, stream)).contentVersion,
+		);
 		await save(kind, { ...resource, runId: "another-run" });
+		expect(
+			(await readSources(db, snap.account_id, {})).sources.find(
+				(source) => source.resource === kind,
+			)?.contentVersion,
+		).toBeNull();
 		await expect(readFactoryResource(db, snap.account_id, repo.name, stream)).rejects.toMatchObject(
 			{
 				status: 409,
@@ -75,8 +89,8 @@ it("uses the newest saved CI evidence across historical repository casing", asyn
 		.run();
 	const old = "2026-10-18T00:00:00Z";
 	const latest = "2026-10-20T00:00:00Z";
-	const save = (kind: string, payload: Record<string, unknown>, at = latest) =>
-		db.batch(replaceSnapshotStmts(db, "a", kind, payload, at));
+	const save = async (kind: string, payload: Record<string, unknown>, at = latest) =>
+		db.batch(await replaceSnapshotStmts(db, "a", kind, payload, at));
 	await save("repos", { repos: [{ name_with_owner: "owner/app" }] });
 	for (const [name, at, branch, conclusion] of [
 		["OWNER/APP", old, "main", "failure"],
@@ -122,8 +136,11 @@ it("reads the same immutable page version advertised by a case-insensitive sourc
 			"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES('a','owner','fake','fake','t','t')",
 		)
 		.run();
-	const save = (kind: string, payload: Record<string, unknown>, at = "2026-10-20T00:00:00Z") =>
-		db.batch(replaceSnapshotStmts(db, "a", kind, payload, at));
+	const save = async (
+		kind: string,
+		payload: Record<string, unknown>,
+		at = "2026-10-20T00:00:00Z",
+	) => db.batch(await replaceSnapshotStmts(db, "a", kind, payload, at));
 	await save("repos", { repos: [{ name_with_owner: "owner/app" }] });
 	await save("repo:OWNER/APP:prs", { pull_requests: [{ number: 1 }] });
 	let sources = await readSources(db, "a", { repository: "OWNER/APP" });
@@ -155,8 +172,8 @@ it("shares catalog-wide provenance and page replacements with browser reads with
 		.run();
 	const baseline = "2026-10-18T12:50:00Z";
 	const recent = "2026-10-20T12:02:00Z";
-	const save = (kind: string, value: Record<string, unknown>, at = baseline) =>
-		db.batch(replaceSnapshotStmts(db, "a", kind, value, at));
+	const save = async (kind: string, value: Record<string, unknown>, at = baseline) =>
+		db.batch(await replaceSnapshotStmts(db, "a", kind, value, at));
 	await save("repos", {
 		repos: ["owner/app", "owner/baseline", "owner/empty", "owner/fork"].map((name_with_owner) => ({
 			name_with_owner,
@@ -216,8 +233,8 @@ it("assembles CI evidence case-insensitively and keeps missing dependencies unkn
 		)
 		.run();
 	const at = "2026-10-20T00:00:00Z";
-	const save = (kind: string, value: Record<string, unknown>) =>
-		db.batch(replaceSnapshotStmts(db, "a", kind, value, at));
+	const save = async (kind: string, value: Record<string, unknown>) =>
+		db.batch(await replaceSnapshotStmts(db, "a", kind, value, at));
 	await save("repos", {
 		repos: ["owner/app", "owner/missing", "owner/unavailable"].map((name_with_owner) => ({
 			name_with_owner,
@@ -258,8 +275,8 @@ it("does not certify health from unavailable CI dependencies and exposes any dep
 		)
 		.run();
 	const at = "2026-10-20T00:00:00Z";
-	const save = (kind: string, value: Record<string, unknown>) =>
-		db.batch(replaceSnapshotStmts(db, "a", kind, value, at));
+	const save = async (kind: string, value: Record<string, unknown>) =>
+		db.batch(await replaceSnapshotStmts(db, "a", kind, value, at));
 	await save("repos", { repos: [{ name_with_owner: "owner/app" }] });
 	await save("repo:owner/app:actions", {
 		runs: [
@@ -313,7 +330,7 @@ it("exposes saved unfiltered sources without writes or upstream fetches", async 
 		.bind(a)
 		.run();
 	const save = async (kind: string, value: Record<string, unknown>) =>
-		db.batch(replaceSnapshotStmts(db, a, kind, value, snap.fetched_at));
+		db.batch(await replaceSnapshotStmts(db, a, kind, value, snap.fetched_at));
 	await save("repos", {
 		repos: [
 			{ name_with_owner: "nocoo/app", is_archived: true },
@@ -374,7 +391,7 @@ it("preserves immutable run resources, missing coverage and mixed source flags",
 		.bind(a)
 		.run();
 	const save = async (kind: string, value: Record<string, unknown>) =>
-		db.batch(replaceSnapshotStmts(db, a, kind, value, snap.fetched_at));
+		db.batch(await replaceSnapshotStmts(db, a, kind, value, snap.fetched_at));
 	await save("repos", {
 		repos: [{ name_with_owner: repo.name }, { name_with_owner: "nocoo/empty" }],
 	});
@@ -415,7 +432,7 @@ it("preserves immutable run resources, missing coverage and mixed source flags",
 	snap.window = { since: "2026-09-01T00:00:00Z", until: "2026-10-21T00:00:00Z" };
 	await save("factory:v:pub", snap);
 	await db
-		.prepare("INSERT INTO factory_resources VALUES(?,?,?,?)")
+		.prepare("INSERT INTO factory_resources(run_id,repo,stream,payload) VALUES(?,?,?,?)")
 		.bind("r", repo.name, "commits", JSON.stringify(resource))
 		.run();
 	expect(await readFactoryResource(db, a, repo.name, "commits")).toMatchObject({
@@ -470,8 +487,8 @@ it.each(["run", "legacy"] as const)(
 			)
 			.bind(snap.account_id)
 			.run();
-		const save = (kind: string, payload: Record<string, unknown>) =>
-			db.batch(replaceSnapshotStmts(db, snap.account_id, kind, payload, snap.fetched_at));
+		const save = async (kind: string, payload: Record<string, unknown>) =>
+			db.batch(await replaceSnapshotStmts(db, snap.account_id, kind, payload, snap.fetched_at));
 		repo.observation = { version: "r", source, window: snap.window, refreshedAt: snap.fetched_at };
 		repo.dependencies = [
 			{ name: "@scope/root", version: "1", path: "package.json#name", url: "root" },
@@ -530,8 +547,14 @@ it.each(["run", "legacy"] as const)(
 				.bind(snap.account_id)
 				.run();
 			await db
-				.prepare("INSERT INTO factory_resources VALUES('r',?,'dependencies',?)")
-				.bind(repo.name, JSON.stringify(data))
+				.prepare(
+					"INSERT INTO factory_resources(run_id,repo,stream,payload,content_meta) VALUES('r',?,'dependencies',?,?)",
+				)
+				.bind(
+					repo.name,
+					JSON.stringify(data),
+					await savedContentMeta(`factory:${repo.name}:dependencies`, data),
+				)
 				.run();
 		} else await save(`factory:${repo.name}:dependencies`, data);
 		const before = await db.prepare("SELECT kind,payload FROM snapshots ORDER BY kind").all();
@@ -549,6 +572,11 @@ it.each(["run", "legacy"] as const)(
 			},
 		});
 		const publication = await readObservation(db, snap.account_id, "factory", "all");
+		const indexed = (await readSources(db, snap.account_id, {})).sources.find(
+			(row) => row.resource === `factory:${repo.name}:dependencies`,
+		);
+		expect(indexed?.contentVersion).toBe(stream.contentVersion);
+		expect(stream.contentVersion).toMatch(/^sha256:[0-9a-f]{64}$/);
 		expect(publication.data.repos).toMatchObject([
 			{
 				dependencies: [{ name: "app" }],
@@ -586,7 +614,7 @@ it.each(["running", "completed"])(
 				} as Env)
 			).json();
 		await db.batch(
-			replaceSnapshotStmts(
+			await replaceSnapshotStmts(
 				db,
 				snap.account_id,
 				"repos",
@@ -607,7 +635,7 @@ it.each(["running", "completed"])(
 			observedAt: new Date(Date.now() - 60_000).toISOString(),
 		};
 		await db.batch(
-			replaceSnapshotStmts(
+			await replaceSnapshotStmts(
 				db,
 				snap.account_id,
 				"factory",
@@ -670,7 +698,13 @@ it.each([
 			.run();
 		await db.prepare("UPDATE accounts SET is_active=1").run();
 		await db.batch(
-			replaceSnapshotStmts(db, snap.account_id, "factory", { ...snap, rate }, snap.fetched_at),
+			await replaceSnapshotStmts(
+				db,
+				snap.account_id,
+				"factory",
+				{ ...snap, rate },
+				snap.fetched_at,
+			),
 		);
 		expect(
 			await (

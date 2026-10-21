@@ -44,8 +44,8 @@ async function scopedFixture() {
 			collectedAt,
 		)
 		.run();
-	const save = (kind: string, payload: Record<string, unknown>) =>
-		db.batch(replaceSnapshotStmts(db, scopedAccount, kind, payload, collectedAt));
+	const save = async (kind: string, payload: Record<string, unknown>) =>
+		db.batch(await replaceSnapshotStmts(db, scopedAccount, kind, payload, collectedAt));
 	await save("repos", {
 		repos: [
 			{ name_with_owner: "owner/app" },
@@ -296,7 +296,7 @@ describe("notification write-through", () => {
 		const accountId = ((await created.json()) as { id: string }).id;
 		const db = createDb(e.DB);
 		await db.batch(
-			replaceSnapshotStmts(
+			await replaceSnapshotStmts(
 				db,
 				accountId,
 				"repos",
@@ -436,7 +436,7 @@ describe("notification write-through", () => {
 		const { createDb } = await import("../lib/db/d1");
 		const { replaceSnapshotStmts } = await import("../lib/db/snapshots");
 		const db = createDb(e.DB);
-		await db.batch(replaceSnapshotStmts(db, id, "notifications", { truncated: false }, "t"));
+		await db.batch(await replaceSnapshotStmts(db, id, "notifications", { truncated: false }, "t"));
 		vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
 			if (String(input).endsWith("/notifications") && init?.method === "PUT") {
 				return new Response(null, { status: 202 });
@@ -453,7 +453,7 @@ describe("notification write-through", () => {
 			).status,
 		).toBe(200);
 		await db.batch(
-			replaceSnapshotStmts(
+			await replaceSnapshotStmts(
 				db,
 				id,
 				"notifications",

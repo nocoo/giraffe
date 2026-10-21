@@ -2,9 +2,15 @@ import assert from "node:assert/strict";
 import { createDb } from "../../apps/web/src/server/lib/db/d1";
 import { readSources } from "../../apps/web/src/server/lib/machine-sources";
 import { profileDb } from "../fixtures/profile-db";
-import { sourcesFixture } from "../fixtures/sources";
+import { populateSourceStreams, sourcesFixture } from "../fixtures/sources";
 
-const { raw, account } = await sourcesFixture();
+const fixture = await sourcesFixture();
+const { raw, account } = fixture;
+const baseline = profileDb(raw);
+await readSources(createDb(baseline.raw), account, {});
+const baselineBytes = baseline.queries.reduce((sum, query) => sum + query.payloadBytes, 0);
+const streamBytes = await populateSourceStreams(fixture);
+const totalStreamBytes = [...streamBytes.values()].reduce((sum, bytes) => sum + bytes, 0);
 const rows = await raw
 	.prepare("SELECT COUNT(*) AS n,SUM(length(CAST(payload AS BLOB))) AS bytes FROM snapshots")
 	.first<{ n: number; bytes: number }>();
@@ -13,6 +19,12 @@ const scenarios: Record<string, Record<string, string>> = {
 	"since-two-thirds": { since: "2026-10-19T00:00:00.000Z" },
 	"since-empty": { since: "2026-10-21T00:00:00.000Z" },
 	"one-repository": { repository: "FIXTURE/PROJECT-001" },
+};
+const batch3Ms: Record<string, number> = {
+	full: 27.9,
+	"since-two-thirds": 25.5,
+	"since-empty": 14.0,
+	"one-repository": 19.5,
 };
 async function computationProfile(query: Record<string, string>) {
 	const stats = {
@@ -70,11 +82,20 @@ try {
 	console.log(
 		JSON.stringify({
 			runtime: `bun ${Bun.version}`,
-			fixture: { repositories: 126, sources: 1517, rows: rows?.n, payloadBytes: rows?.bytes },
+			fixture: {
+				repositories: 126,
+				sources: 1517,
+				rows: rows?.n,
+				payloadBytes: rows?.bytes,
+				streamRows: streamBytes.size,
+				streamPayloadBytes: totalStreamBytes,
+				baselineBytes,
+			},
 			warmups: 3,
 			samples: 12,
 		}),
 	);
+	const violations: string[] = [];
 	for (const [scenario, query] of Object.entries(scenarios)) {
 		for (let warmup = 0; warmup < 3; warmup++) await readSources(createDb(raw), account, query);
 		const samples: {
@@ -110,9 +131,14 @@ try {
 		const percentile = (key: "readMs" | "serializeMs" | "sqliteMs", p: number) =>
 			[...samples].sort((a, b) => a[key] - b[key])[Math.floor(samples.length * p)]?.[key];
 		const computation = await computationProfile(query);
+
+		if (samples.some((sample) => sample.payloadBytes !== baselineBytes)) violations.push(scenario);
 		console.log(
 			JSON.stringify({
 				scenario,
+				batch3Ms: batch3Ms[scenario],
+				changePercent: ((percentile("readMs", 0.5) ?? 0) / Number(batch3Ms[scenario]) - 1) * 100,
+				expectedPayloadBytes: baselineBytes,
 				computation,
 				...samples[0],
 				readMs: percentile("readMs", 0.5),
@@ -123,6 +149,7 @@ try {
 			}),
 		);
 	}
+	assert.deepEqual(violations, [], "sources must never read immutable stream payloads");
 } finally {
 	globalThis.fetch = originalFetch;
 }

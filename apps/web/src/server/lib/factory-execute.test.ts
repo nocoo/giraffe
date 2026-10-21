@@ -5,6 +5,7 @@ import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import { makeRun, RUN_LEASE_MS, type RunSelection } from "../../lib/factory-run";
 import type { Env } from "../env";
 import { createApp } from "../index";
+import { contentVersion, observationVersion } from "./content-version";
 import { createDb } from "./db/d1";
 import { controlRun, getRun, listRuns, publishedFactory, startRun } from "./db/factory-runs";
 import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
@@ -44,10 +45,10 @@ async function setup(
 		.prepare("UPDATE accounts SET capabilities=? WHERE id=?")
 		.bind(JSON.stringify({ repo: true, notifications: true }), snap.account_id)
 		.run();
-	await db.batch(replaceSnapshotStmts(db, snap.account_id, "factory", { ...snap }, now));
+	await db.batch(await replaceSnapshotStmts(db, snap.account_id, "factory", { ...snap }, now));
 	if (mode === "refresh")
 		await db.batch(
-			replaceSnapshotStmts(
+			await replaceSnapshotStmts(
 				db,
 				snap.account_id,
 				"repos",
@@ -167,9 +168,9 @@ it.each([
 			[resource === "prs" ? "pull_requests" : "issues"]: [],
 		};
 		const insights = { truncated: false, fetched_at: old.fetched_at, insights: [] };
-		await db.batch(replaceSnapshotStmts(db, snap.account_id, resource, old, old.fetched_at));
+		await db.batch(await replaceSnapshotStmts(db, snap.account_id, resource, old, old.fetched_at));
 		await db.batch(
-			replaceSnapshotStmts(db, snap.account_id, "insights", insights, insights.fetched_at),
+			await replaceSnapshotStmts(db, snap.account_id, "insights", insights, insights.fetched_at),
 		);
 		const base = vi.mocked(fetch).getMockImplementation();
 		if (!base) throw new Error("fixture");
@@ -226,7 +227,7 @@ it.each([1, 2])(
 			dependabot_open: 7,
 			code_scanning_open: 0,
 		};
-		await db.batch(replaceSnapshotStmts(db, snap.account_id, kind, old, old.fetched_at));
+		await db.batch(await replaceSnapshotStmts(db, snap.account_id, kind, old, old.fetched_at));
 		const base = vi.mocked(fetch).getMockImplementation();
 		if (!base) throw new Error("fixture");
 		vi.stubGlobal(
@@ -310,7 +311,7 @@ it.each([
 					],
 				}),
 	};
-	await db.batch(replaceSnapshotStmts(db, snap.account_id, kind, old, old.fetched_at));
+	await db.batch(await replaceSnapshotStmts(db, snap.account_id, kind, old, old.fetched_at));
 	const base = vi.mocked(fetch).getMockImplementation();
 	if (!base) throw new Error("fixture");
 	let injected = 0;
@@ -391,7 +392,7 @@ it.each(["issues", "prs"] as const)(
 		const kind = `repo:nocoo/app:${resource}`;
 		const old = { truncated: false, fetched_at: "2025-01-01T00:00:00.000Z", marker: "retained" };
 		const db = createDb(env.DB);
-		await db.batch(replaceSnapshotStmts(db, snap.account_id, kind, old, old.fetched_at));
+		await db.batch(await replaceSnapshotStmts(db, snap.account_id, kind, old, old.fetched_at));
 		const base = vi.mocked(fetch).getMockImplementation();
 		if (!base) throw new Error("fixture");
 		vi.stubGlobal(
@@ -429,7 +430,7 @@ it.each(["issues", "prs"])(
 			fetched_at: "2025-01-01T00:00:00.000Z",
 			[resource === "prs" ? "pull_requests" : "issues"]: [{ number: 9001 }],
 		};
-		await db.batch(replaceSnapshotStmts(db, snap.account_id, kind, old, old.fetched_at));
+		await db.batch(await replaceSnapshotStmts(db, snap.account_id, kind, old, old.fetched_at));
 		const base = vi.mocked(fetch).getMockImplementation();
 		if (!base) throw new Error("fixture");
 		vi.stubGlobal(
@@ -476,7 +477,7 @@ it.each(["repos", "issues", "prs", "security"])(
 			dependabot_open: 7,
 			code_scanning_open: 2,
 		};
-		await db.batch(replaceSnapshotStmts(db, snap.account_id, kind, old, old.fetched_at));
+		await db.batch(await replaceSnapshotStmts(db, snap.account_id, kind, old, old.fetched_at));
 		const base = vi.mocked(fetch).getMockImplementation();
 		if (!base) throw new Error("fixture");
 		vi.stubGlobal(
@@ -527,7 +528,7 @@ it.each([403, 404])(
 		const kind = "repo:nocoo/app:actions";
 		const old = { truncated: false, fetched_at: "2025-01-01T00:00:00.000Z", runs: [{ id: 9001 }] };
 		const db = createDb(env.DB);
-		await db.batch(replaceSnapshotStmts(db, snap.account_id, kind, old, old.fetched_at));
+		await db.batch(await replaceSnapshotStmts(db, snap.account_id, kind, old, old.fetched_at));
 		const base = vi.mocked(fetch).getMockImplementation();
 		if (!base) throw new Error("fixture");
 		let pages = 0;
@@ -580,7 +581,7 @@ it.each(
 		fetched_at: "2025-01-01T00:00:00.000Z",
 		[resource === "actions" ? "runs" : resource]: [{ id: 9001 }],
 	};
-	await db.batch(replaceSnapshotStmts(db, snap.account_id, kind, old, old.fetched_at));
+	await db.batch(await replaceSnapshotStmts(db, snap.account_id, kind, old, old.fetched_at));
 	const base = vi.mocked(fetch).getMockImplementation();
 	if (!base) throw new Error("fixture");
 	let calls = 0;
@@ -788,6 +789,25 @@ it("publishes only a complete committed repository set and survives every-page r
 	const published = await publishedFactory(createDb(env.DB), snap.account_id);
 	expect(published?.runId).toBe("r1");
 	expect(published?.repos[0]?.observation?.version).toBe("r1");
+	if (!published) throw new Error("missing publication");
+	const streams = await createDb(env.DB)
+		.prepare(
+			"SELECT repo,stream,payload,content_meta FROM factory_resources WHERE run_id='r1' AND repo!=''",
+		)
+		.all<{ repo: string; stream: string; payload: string; content_meta: string }>();
+	expect(streams.results).toHaveLength(7);
+	for (const row of streams.results) {
+		const data = JSON.parse(row.payload);
+		expect(data.ranges).toEqual([]);
+		expect(JSON.parse(row.content_meta)).toEqual({
+			hash: await contentVersion(`factory:${row.repo}:${row.stream}`, {
+				...data,
+				ranges: [published.window],
+			}),
+			fullVersion: await observationVersion(data),
+			version: "r1",
+		});
+	}
 	const count = vi.mocked(fetch).mock.calls.length;
 	await executeRunPage(env, "r1", () => now);
 	expect(fetch).toHaveBeenCalledTimes(count);
@@ -810,7 +830,7 @@ it("refreshes one repository without scanning or rewriting unrelated site data",
 	const calendar = { total: 2, restricted: 0, days: [], fetchedAt: now };
 	const observation = { version: "old", window: snap.window, fetchedAt: now };
 	await db.batch(
-		replaceSnapshotStmts(
+		await replaceSnapshotStmts(
 			db,
 			snap.account_id,
 			"factory",
@@ -838,7 +858,7 @@ it("refreshes one repository without scanning or rewriting unrelated site data",
 	};
 	for (const [kind, payload] of Object.entries(preserved))
 		await db.batch(
-			replaceSnapshotStmts(db, snap.account_id, kind, { ...payload, fetched_at: now }, now),
+			await replaceSnapshotStmts(db, snap.account_id, kind, { ...payload, fetched_at: now }, now),
 		);
 	const originals = new Map(
 		await Promise.all(
@@ -1196,7 +1216,7 @@ it("discovers inventory and restores legacy resource evidence with original wind
 	for (let i = 0; i < 7; i++) await stepFactory(state, gh, "fake", store, now);
 	for (const [kind, data] of store.data) {
 		const db = createDb(env.DB);
-		await db.batch(replaceSnapshotStmts(db, snap.account_id, kind, { ...data }, now));
+		await db.batch(await replaceSnapshotStmts(db, snap.account_id, kind, { ...data }, now));
 	}
 	vi.stubGlobal("fetch", async () =>
 		Response.json({
@@ -1241,7 +1261,7 @@ it.each([null, "", 7, "same"])(
 			fetched_at: "2025-01-01T00:00:00.000Z",
 			repos: [{ name_with_owner: "nocoo/app" }],
 		};
-		await db.batch(replaceSnapshotStmts(db, snap.account_id, "repos", old, old.fetched_at));
+		await db.batch(await replaceSnapshotStmts(db, snap.account_id, "repos", old, old.fetched_at));
 		let catalogPages = 0;
 		vi.stubGlobal(
 			"fetch",
@@ -1522,7 +1542,7 @@ it("retains an older contribution calendar with explicit provenance when the new
 		},
 	};
 	const db = createDb(env.DB);
-	await db.batch(replaceSnapshotStmts(db, snap.account_id, "factory", old, now));
+	await db.batch(await replaceSnapshotStmts(db, snap.account_id, "factory", old, now));
 	await drive(env);
 	const published = await publishedFactory(createDb(env.DB), snap.account_id);
 	expect(published?.contribution).toEqual(old.contribution);
@@ -1581,7 +1601,7 @@ it("refreshes all site pages through the durable run, including derived insights
 	const db = createDb(env.DB);
 	await db.prepare("UPDATE accounts SET is_active=1").run();
 	await db.batch(
-		replaceSnapshotStmts(
+		await replaceSnapshotStmts(
 			db,
 			snap.account_id,
 			"repos",
@@ -1662,7 +1682,7 @@ it("preserves Insights when its global sources fail and records the missing upda
 		alerts: { items: [], truncated: false },
 		insights: old,
 	}))
-		await db.batch(replaceSnapshotStmts(db, snap.account_id, kind, payload, old.fetched_at));
+		await db.batch(await replaceSnapshotStmts(db, snap.account_id, kind, payload, old.fetched_at));
 	const base = vi.mocked(fetch).getMockImplementation();
 	if (!base) throw new Error("fixture");
 	vi.stubGlobal(
@@ -1690,7 +1710,7 @@ it("updates Insights independently of notifications and clears an old incomplete
 	const env = await setup();
 	const db = createDb(env.DB);
 	await db.batch(
-		replaceSnapshotStmts(
+		await replaceSnapshotStmts(
 			db,
 			snap.account_id,
 			"insights",
@@ -1750,7 +1770,13 @@ it("retains prior page data on forbidden or limited collection and keeps other p
 			views: { count: 9 },
 		};
 		await db.batch(
-			replaceSnapshotStmts(db, snap.account_id, "repo:nocoo/app:traffic", old, old.fetched_at),
+			await replaceSnapshotStmts(
+				db,
+				snap.account_id,
+				"repo:nocoo/app:traffic",
+				old,
+				old.fetched_at,
+			),
 		);
 		vi.stubGlobal(
 			"fetch",
@@ -1827,7 +1853,7 @@ it("resumes a failed site-list chunk without advancing its cursor or duplicating
 		issues: [{ title: "last good result" }],
 	};
 	await db.batch(
-		replaceSnapshotStmts(db, snap.account_id, "issues", previous, previous.fetched_at),
+		await replaceSnapshotStmts(db, snap.account_id, "issues", previous, previous.fetched_at),
 	);
 	let calls = 0;
 	vi.stubGlobal(
@@ -1898,7 +1924,7 @@ it.each([
 		fetched_at: "2025-01-01T00:00:00.000Z",
 		[resource === "prs" ? "pull_requests" : "issues"]: [],
 	};
-	await db.batch(replaceSnapshotStmts(db, snap.account_id, resource, old, old.fetched_at));
+	await db.batch(await replaceSnapshotStmts(db, snap.account_id, resource, old, old.fetched_at));
 	const base = vi.mocked(fetch).getMockImplementation();
 	if (!base) throw new Error("fixture");
 	vi.stubGlobal(

@@ -2,13 +2,17 @@ import { z } from "zod";
 import type { FactorySnapshot } from "../../lib/factory-types";
 import { FACTORY_STREAMS } from "../../lib/factory-types";
 import { prSnapshot } from "../../lib/pull-request";
+import { decodeContent, storedContent } from "./content-version";
 import type { Db } from "./db/d1";
-import { factoryHead, normalizePublication } from "./db/factory-runs";
+import { normalizePublication } from "./db/factory-runs";
 import { ApiError } from "./errors";
 import {
+	ciContent,
+	ciObservationInputs,
+	factoryContent,
 	observationMetadata,
 	observationVersion,
-	projectCiObservation,
+	projectCiInputs,
 	projectFactoryObservation,
 } from "./machine-observations";
 import { projectSnapshot, repoPolicy } from "./repo-statistics";
@@ -25,6 +29,19 @@ const sourceQuerySchema = z
 	})
 	.strict();
 
+function afterSince(metadata: ReturnType<typeof observationMetadata>, since: number | null) {
+	if (since === null) return true;
+	const freshness = metadata.freshness;
+	const latestAt =
+		typeof freshness === "object" && freshness !== null && "latestAt" in freshness
+			? freshness.latestAt
+			: null;
+	const times = [metadata.fetchedAt, latestAt]
+		.map((at) => (typeof at === "string" ? Date.parse(at) : NaN))
+		.filter(Number.isFinite);
+	return !times.length || Math.max(...times) > since;
+}
+
 export async function readSources(db: Db, account: string, query: Record<string, string>) {
 	const parsed = sourceQuerySchema.safeParse(query);
 	if (!parsed.success) throw new ApiError(400, "validation_failed", "invalid source filters");
@@ -36,36 +53,116 @@ export async function readSources(db: Db, account: string, query: Record<string,
 		: undefined;
 	if (parsed.data.repository && !repository)
 		throw new ApiError(404, "not_found", "repository outside saved account catalog");
-	const head = await factoryHead(db, account);
-	const factoryKind = head?.published_id ? `factory:v:${head.published_id}` : "factory";
-	const rows = await db
+	const publicationRows = await db
 		.prepare(
-			"SELECT kind,payload FROM snapshots WHERE account_id=? AND (kind IN (?,?,?,?,?,?) OR (kind LIKE 'repo:%' AND (kind LIKE '%:issues' OR kind LIKE '%:issues#2' OR kind LIKE '%:prs' OR kind LIKE '%:prs#2' OR kind LIKE '%:actions' OR kind LIKE '%:actions#2' OR kind LIKE '%:releases' OR kind LIKE '%:releases#2' OR kind LIKE '%:details' OR kind LIKE '%:details#2')))",
+			`WITH head AS (
+			SELECT coalesce((SELECT 'factory:v:' || nullif(published_id,'') FROM factory_state WHERE account_id=?),'factory') AS kind
 		)
-		.bind(account, "issues", "issues#2", "prs", "prs#2", factoryKind, `${factoryKind}#2`)
+		SELECT s.kind,s.payload,s.content_meta FROM snapshots s, head WHERE s.account_id=? AND s.kind IN (head.kind,head.kind || '#2')`,
+		)
+		.bind(account, account)
 		.all<SnapshotPage>();
-	const saved = assembleSnapshotGroups(rows.results);
-	const groups = latestSnapshots(saved);
-	const rawPublication = saved.get(factoryKind) as FactorySnapshot | undefined;
+	const rawPublication = assembleSnapshotGroups(publicationRows.results).values().next().value as
+		| FactorySnapshot
+		| undefined;
 	const publication = rawPublication ? normalizePublication(rawPublication) : null;
 	const since = parsed.data.since ? Date.parse(parsed.data.since) : null;
-	type Source = { resource: string; version: string } & ReturnType<typeof observationMetadata>;
+	const streams = (publication?.repos ?? []).flatMap((repo) => {
+		if (
+			!policy.includes(repo.name) ||
+			(repository && repo.name.toLowerCase() !== repository.toLowerCase())
+		)
+			return [];
+		return FACTORY_STREAMS.flatMap((stream) => {
+			const coverage = repo.coverage[stream];
+			const data = {
+				fetched_at: coverage.fetchedAt,
+				freshness: {
+					oldestAt: coverage.fetchedAt,
+					latestAt: coverage.fetchedAt,
+					total: 1,
+					missing: coverage.status === "complete" ? 0 : 1,
+				},
+				coverage,
+				truncated: coverage.status === "limited",
+				unavailable:
+					coverage.status === "pending" ||
+					coverage.status === "partial" ||
+					coverage.status === "unavailable",
+			};
+			return afterSince(observationMetadata(data), since) ? [{ repo, stream, data }] : [];
+		});
+	});
+	const selectedRepos = [...new Map(streams.map(({ repo }) => [repo.name, repo])).values()];
+	const refs = selectedRepos.map((repo) => [
+		repo.name,
+		repo.observation?.repo ?? repo.name,
+		repo.observation?.version ?? publication?.runId,
+		repo.observation?.source ?? "legacy",
+	]);
+	const rows = await db
+		.prepare(
+			`WITH refs AS MATERIALIZED (
+				SELECT json_extract(value,'$[0]') AS name,
+					json_extract(value,'$[1]') AS repo,
+					json_extract(value,'$[2]') AS version,
+					json_extract(value,'$[3]') AS source
+				FROM json_each(?)
+			), legacy AS (
+				SELECT 'factory:' || repo || ':' || streams.value AS kind FROM refs, json_each(?) AS streams WHERE source!='run'
+			)
+			SELECT kind,payload,content_meta FROM snapshots WHERE account_id=? AND (
+				kind IN ('issues','issues#2','prs','prs#2')
+				OR (kind LIKE 'repo:%' AND (kind LIKE '%:issues' OR kind LIKE '%:issues#2' OR kind LIKE '%:prs' OR kind LIKE '%:prs#2' OR kind LIKE '%:actions' OR kind LIKE '%:actions#2' OR kind LIKE '%:releases' OR kind LIKE '%:releases#2' OR kind LIKE '%:details' OR kind LIKE '%:details#2'))
+			)
+			UNION ALL
+			SELECT 'stream:' || refs.name || ':' || f.stream AS kind,NULL AS payload,f.content_meta
+			FROM refs CROSS JOIN factory_runs r ON r.id=refs.version AND r.account_id=?
+			CROSS JOIN factory_resources f INDEXED BY factory_resources_content ON f.run_id=r.id AND f.repo=refs.repo
+			WHERE refs.source='run' AND f.stream IN (SELECT value FROM json_each(?))
+			UNION ALL
+			SELECT kind,NULL AS payload,content_meta FROM snapshots
+			WHERE account_id=? AND kind IN (SELECT kind FROM legacy)`,
+		)
+		.bind(
+			JSON.stringify(refs),
+			JSON.stringify(FACTORY_STREAMS),
+			account,
+			account,
+			JSON.stringify(FACTORY_STREAMS),
+			account,
+		)
+		.all<{ kind: string; payload: string | null; content_meta: string | null }>();
+	const saved = assembleSnapshotGroups(
+		rows.results.filter(
+			(row): row is SnapshotPage & { content_meta: string | null } => row.payload !== null,
+		),
+	);
+	const streamMeta = new Map(
+		rows.results
+			.filter((row) => row.payload === null)
+			.map((row) => [row.kind, decodeContent(row.content_meta)]),
+	);
+	const groups = latestSnapshots(saved);
+	type Source = { resource: string; version: string; contentVersion: string | null } & ReturnType<
+		typeof observationMetadata
+	>;
 	const sources: Source[] = [];
-	const add = async (resource: string, data: Record<string, unknown>, version?: string) => {
-		data = prSnapshot(data);
+	const add = async (
+		resource: string,
+		data: Record<string, unknown>,
+		version: string | undefined = storedContent(data)?.fullVersion,
+		content: string | null = storedContent(data)?.hash ?? null,
+	) => {
 		const metadata = observationMetadata(data);
-		if (since !== null) {
-			const freshness = metadata.freshness;
-			const latestAt =
-				typeof freshness === "object" && freshness !== null && "latestAt" in freshness
-					? freshness.latestAt
-					: null;
-			const times = [metadata.fetchedAt, latestAt]
-				.map((at) => (typeof at === "string" ? Date.parse(at) : NaN))
-				.filter(Number.isFinite);
-			if (times.length && Math.max(...times) <= since) return;
-		}
-		return { resource, version: version ?? (await observationVersion(data)), ...metadata };
+		if (!afterSince(metadata, since)) return;
+		data = prSnapshot(data);
+		return {
+			resource,
+			version: version ?? (await observationVersion(data)),
+			contentVersion: content,
+			...metadata,
+		};
 	};
 	const indexed = await Promise.all(
 		[...groups.values()].flatMap(({ resource, data }) => {
@@ -82,50 +179,53 @@ export async function readSources(db: Db, account: string, query: Record<string,
 		try {
 			let data: Record<string, unknown>;
 			let version: string | undefined;
+			let content: string | null | undefined;
 			if (resource === "factory") {
 				if (!publication) continue;
 				data = projectFactoryObservation(publication, policy);
 				version = publication.publication?.runId ?? publication.runId;
-			} else if (resource === "ci") data = projectCiObservation(policy, groups);
-			else {
+			} else if (resource === "ci") {
+				const inputs = ciObservationInputs(policy, groups);
+				if (!afterSince(observationMetadata(inputs.metadata), since)) continue;
+				data = projectCiInputs(inputs);
+				content = await ciContent(policy, groups, inputs.metadata.freshness);
+			} else {
 				const snapshot = resource === "repos" ? policy.catalog : saved.get(resource);
 				if (!snapshot) continue;
 				data = await projectSnapshot(db, account, resource, snapshot, policy, false, saved);
 			}
-			const source = await add(`account:${resource}`, data, version);
+			const source = await add(
+				`account:${resource}`,
+				data,
+				version,
+				resource === "ci"
+					? content
+					: resource === "factory" && publication
+						? await factoryContent(publication, policy)
+						: undefined,
+			);
 			if (source) sources.push(source);
 		} catch (error) {
 			if (!(error instanceof ApiError) || error.code !== "snapshot_missing") throw error;
 		}
 	}
 	const repositories = policy.repos.map((repo) => repo.name_with_owner).sort();
-	for (const repo of publication?.repos ?? []) {
-		if (!policy.includes(repo.name)) continue;
-		if (repository && repo.name.toLowerCase() !== repository.toLowerCase()) continue;
-		for (const stream of FACTORY_STREAMS) {
-			const coverage = repo.coverage[stream];
+	if (publication)
+		for (const { repo, stream, data: metadata } of streams) {
+			const version = repo.observation?.version ?? publication.runId;
+			const meta = streamMeta.get(
+				repo.observation?.source === "run"
+					? `stream:${repo.name}:${stream}`
+					: `factory:${repo.observation?.repo ?? repo.name}:${stream}`,
+			);
 			const source = await add(
 				`factory:${repo.name}:${stream}`,
-				{
-					fetched_at: coverage.fetchedAt,
-					freshness: {
-						oldestAt: coverage.fetchedAt,
-						latestAt: coverage.fetchedAt,
-						total: 1,
-						missing: coverage.status === "complete" ? 0 : 1,
-					},
-					coverage,
-					truncated: coverage.status === "limited",
-					unavailable:
-						coverage.status === "pending" ||
-						coverage.status === "partial" ||
-						coverage.status === "unavailable",
-				},
-				repo.observation?.version ?? publication?.runId ?? "",
+				metadata,
+				version,
+				meta?.version === version ? meta.hash : null,
 			);
 			if (source) sources.push(source);
 		}
-	}
 
 	return { account_id: account, repositories, sources };
 }

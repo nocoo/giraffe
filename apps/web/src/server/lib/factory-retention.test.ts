@@ -23,7 +23,7 @@ async function setup() {
 }
 it("records publication roots atomically and protects mixed-version detail when pruning old runs", async () => {
 	const { raw, db } = await setup();
-	await db.batch(replaceSnapshotStmts(db, account, "factory", { ...snap }, snap.fetched_at));
+	await db.batch(await replaceSnapshotStmts(db, account, "factory", { ...snap }, snap.fetched_at));
 	const run = makeRun("root-run", account, "nocoo", "key", "refresh", snap.repos, snap.fetched_at);
 	await startRun(db, run);
 	const lease = await claimRun(db, run.id, snap.fetched_at);
@@ -76,7 +76,7 @@ it("records publication roots atomically and protects mixed-version detail when 
 			.run();
 		const rowDb = createDb(raw);
 		await rowDb.batch(
-			replaceSnapshotStmts(
+			await replaceSnapshotStmts(
 				rowDb,
 				account,
 				`factory:v:${item.id}`,
@@ -126,7 +126,7 @@ it("reports storage telemetry without imposing an account quota", async () => {
 	const run = makeRun("r", account, "nocoo", "k", "catalog", [], snap.fetched_at);
 	await startRun(db, run);
 	await db
-		.prepare("INSERT INTO factory_resources VALUES(?,?,?,?)")
+		.prepare("INSERT INTO factory_resources(run_id,repo,stream,payload) VALUES(?,?,?,?)")
 		.bind("r", "repo", "commits", "{}")
 		.run();
 	await db.prepare("UPDATE factory_resources SET payload=?").bind('{"x":1}').run();
@@ -139,7 +139,13 @@ it("reports storage telemetry without imposing an account quota", async () => {
 it("includes all page snapshots and daily baselines in the same account storage budget", async () => {
 	const { db } = await setup();
 	await db.batch(
-		replaceSnapshotStmts(db, account, "issues", { issues: [], truncated: false }, snap.fetched_at),
+		await replaceSnapshotStmts(
+			db,
+			account,
+			"issues",
+			{ issues: [], truncated: false },
+			snap.fetched_at,
+		),
 	);
 	await db
 		.prepare("INSERT INTO snapshot_days(account_id,day,payload) VALUES(?,?,?)")

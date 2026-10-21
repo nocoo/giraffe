@@ -30,7 +30,7 @@ describe("D1 durable runs", () => {
 		const db = new DatabaseSync(":memory:");
 		db.exec(readFileSync("apps/web/src/server/lib/db/schema.sql", "utf8"));
 		db.exec(
-			"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES('a','user','encrypted','fake','date','date'); INSERT INTO snapshots VALUES('a','factory','{\"old\":true}','date')",
+			"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES('a','user','encrypted','fake','date','date'); INSERT INTO snapshots(account_id,kind,payload,fetched_at) VALUES('a','factory','{\"old\":true}','date')",
 		);
 		const before = db.prepare("SELECT * FROM snapshots").all();
 		const migration = readFileSync("migrations/0001_factory_runs.sql", "utf8");
@@ -80,7 +80,7 @@ it("keeps publications, catalog and history readable without GitHub and scopes a
 	const { replaceSnapshotStmts } = await import("./snapshots");
 	expect(await publishedFactory(db, snap.account_id)).toBeNull();
 	expect(await catalogFactory(db, snap.account_id)).toBeNull();
-	await db.batch(replaceSnapshotStmts(db, snap.account_id, "factory", { ...snap }, now));
+	await db.batch(await replaceSnapshotStmts(db, snap.account_id, "factory", { ...snap }, now));
 	expect((await catalogFactory(db, snap.account_id))?.runId).toBe(snap.runId);
 	await startRun(createDb(raw), run);
 	expect(await dueRuns(createDb(raw), now)).toEqual(["r1"]);
@@ -91,20 +91,20 @@ it("keeps publications, catalog and history readable without GitHub and scopes a
 		code: "not_found",
 	});
 	await db.batch([
-		...replaceSnapshotStmts(
+		...(await replaceSnapshotStmts(
 			db,
 			snap.account_id,
 			"factory:v:r1",
 			{ ...snap, runId: "published" },
 			now,
-		),
-		...replaceSnapshotStmts(
+		)),
+		...(await replaceSnapshotStmts(
 			db,
 			snap.account_id,
 			"factory:catalog:r1",
 			{ ...snap, runId: "catalog" },
 			now,
-		),
+		)),
 		db
 			.prepare("UPDATE factory_state SET published_id=?,catalog_id=? WHERE account_id=?")
 			.bind("r1", "r1", snap.account_id),
@@ -211,13 +211,13 @@ it("uses the latest prepared fence timestamp even if the caller clock moves back
 		db,
 		lease,
 		future,
-		"INSERT INTO factory_resources SELECT 'r1','nocoo/app','commits','{}' WHERE $guard",
+		"INSERT INTO factory_resources(run_id,repo,stream,payload) SELECT 'r1','nocoo/app','commits','{}' WHERE $guard",
 	);
 	const earlier = fenced(
 		db,
 		lease,
 		now,
-		"INSERT INTO factory_resources SELECT 'r1','nocoo/app','issues','{}' WHERE $guard",
+		"INSERT INTO factory_resources(run_id,repo,stream,payload) SELECT 'r1','nocoo/app','issues','{}' WHERE $guard",
 	);
 	expect(await saveRun(db, lease, [late, earlier], now)).toBe(false);
 	expect((await db.prepare("SELECT * FROM factory_resources").all()).results).toEqual([]);
@@ -283,7 +283,7 @@ it("caps the final lease at the hard deadline and rolls back all writes at the b
 		db,
 		lease,
 		before,
-		"INSERT INTO factory_resources SELECT 'r1','nocoo/app','commits','{}' WHERE $guard",
+		"INSERT INTO factory_resources(run_id,repo,stream,payload) SELECT 'r1','nocoo/app','commits','{}' WHERE $guard",
 	);
 	expect(await saveRun(db, lease, [stage], deadline)).toBe(false);
 	expect((await db.prepare("SELECT * FROM factory_resources").all()).results).toEqual([]);

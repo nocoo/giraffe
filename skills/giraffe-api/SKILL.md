@@ -86,7 +86,10 @@ the catalog. Generic records/reports/jobs are not filtered as GitHub observation
 `GET /sources` returns `{account_id, repositories, sources}`. `repositories` is the
 entire sorted saved catalog, including unstarred, archived, forked and
 statistics-disabled repositories. Each source is
-`{resource, version, fetchedAt, freshness, coverage, truncated, unavailable}`.
+`{resource, version, contentVersion, fetchedAt, freshness, coverage, truncated, unavailable}`.
+`contentVersion` is nullable for saved evidence predating hash metadata and for
+projections with an unhashed input. Hashes fill in after normal refresh, never by
+GET backfill. `/sources` reads factory stream metadata only, not stream payloads.
 
 Only `since` and `repository` query keys are supported. `since` must be a valid ISO
 datetime with `Z` or an explicit offset. `repository` is `owner/name`, max 200
@@ -165,7 +168,7 @@ cache-busters or `scope` to repository/stream requests. Bearer/account/scope
 authorization can fail before query validation.
 
 All these data endpoints, unlike `/sources`, return
-`{account_id, data, sourceVersion, fetchedAt, freshness, coverage, truncated,
+`{account_id, data, sourceVersion, contentVersion, fetchedAt, freshness, coverage, truncated,
 unavailable, source:{kind,resource,publicationId}, selection:{scope,statisticsFilter}}`.
 
 Known security access/feature absence produces a saved `unavailable:true` snapshot,
@@ -178,6 +181,35 @@ access loss during pagination remain failures, not expected absence.
 - Treat `sourceVersion` as opaque and compare its full value. Snapshot versions
   use `sha256:` plus hex; factory versions need not be hashes. `fetchedAt` is source
   time or null, never response time. `coverage` can be null.
+- Prefer `contentVersion` for skip-when-unchanged. Snapshot full versions include
+  `fetched_at` and change on refresh; factory/stream/calendar full versions are
+  run IDs instead. Hashes are computed at save time and persisted in nullable
+  `snapshots.content_meta` / `factory_resources.content_meta` columns, added by
+  migration 0014 without rebuilding tables. The metadata also saves optional
+  `fullVersion`, the exact existing digest of `JSON.stringify(prSnapshot(data))`:
+  raw snapshots reuse it, while account projections still hash their projected
+  JSON. Content hashes exclude only explicit collection metadata paths, including
+  root `source_fetched_at` and coverage request URL `source`, not GitHub content
+  timestamps or `source_head`. See the exact
+  [hash recipe](../../docs/api.md#content-version-recipe): size-bounded assembled
+  snapshots use root PR normalization; streams hash saved raw data, not response
+  wrappers, with content-only `ranges:[checkpoint.window]` substitution to retain
+  the original observation window rather than a drained pagination queue. Saved
+  payloads and full versions stay unchanged. Recursive UTF-16 key sorting preserves
+  array order and JSON primitive encoding, with no whitespace/Unicode
+  normalization. UTF-8 SHA-256 yields `sha256:` plus 64 lowercase hex characters
+  (71 total). Semantic observation windows, coverage status/counts and dependency
+  versions stay included.
+- Account projections cheaply compose stored dependency hashes and selection/
+  quality metadata rather than rehash payloads. CI includes saved catalog and
+  actions/releases/details hashes; factory includes publication/catalog/selection;
+  both include derived freshness `total`/`missing`, not timestamp values;
+  contributions includes publication plus resolved dates. This conservatively
+  invalidates when a dependency changes, even if the visible projection does not.
+  Derived insights have null content hashes. `/sources` agrees with default/all
+  observations. Missing/mismatched immutable stream metadata or an existing
+  unhashed dependency yields null; fall back to full versions, never treat null
+  as unchanged-content proof. ETags still cover the full response.
 - Inspect raw source flags, per-repository timestamps, freshness/missing inputs
   and coverage, not just top-level flags. Unknown/unavailable is not zero.
 - Account repos/issues/PR freshness counts the full selected catalog, not only
@@ -377,10 +409,14 @@ and compare desired state before deciding whether another revisioned write is ne
 api -G "$API/agent/reports" --data-urlencode 'type=github-analysis' \
   --data-urlencode 'status=completed' --data-urlencode 'limit=100' \
   --data-urlencode "repository=$REPOSITORY"
-json -X POST "$API/agent/jobs" --data '{"id":"analysis-request-1","type":"analysis-request","status":"pending","payload":{"domain":"issues"}}'
-REVISION="$(api "$API/agent/jobs/analysis-request-1" | jq -er '.item.revision')"
-api -X DELETE "$API/agent/jobs/analysis-request-1?revision=$REVISION"
+json -X POST "$API/agent/jobs" --data '{"id":"example-job-1","type":"example-job","status":"pending","payload":{"note":"Illustrative storage only"}}'
+REVISION="$(api "$API/agent/jobs/example-job-1" | jq -er '.item.revision')"
+api -X DELETE "$API/agent/jobs/example-job-1?revision=$REVISION"
 ```
+
+This job example is only generic storage. No application producer creates it and
+no consumer executes it; neither it nor an `analysis-request` type activates an
+analysis workflow.
 
 ## Publishing analysis reports
 
@@ -388,6 +424,20 @@ POST `/agent/reports` with `type:"github-analysis"`, `status:"completed"`, match
 row/payload repository and full `source_version`/`sourceVersion`. Repo scope uses
 the canonical repository; global scope uses null. Server acceptance alone does
 not prove the browser accepts a report; validate against `analysisReportSchema`.
+
+The default `/analysis` "all repositories" view displays only global reports
+(`repository:null`). Publish at least four completed globals: issues ->
+`account:issues`, prs -> `account:prs`, ci -> `account:ci`, cd -> `account:factory`,
+plus optional `account:repos` when needed. Repository reports appear only when
+that repository is selected. Copy global source `resource`, `version`,
+`contentVersion`, `fetchedAt` from `/sources`, never the account envelope's
+`source.resource` (`issues`, not `account:issues`).
+
+Never write draft/pending rows with type `github-analysis`. Payload validation
+runs before the status check, so any invalid row raises a page error and is
+ignored; other valid reports can still display. Unknown resource envelope fields
+return 400, but generic storage does not validate analysis payload keys. The
+browser's report and nested-object schemas remain strict.
 
 Required payload fields and limits:
 
@@ -399,7 +449,7 @@ Required payload fields and limits:
 | `findings` | Max 8 `{title,detail,evidenceIds}`; title 1–200, trimmed detail 1–4,000, max 20 evidence IDs |
 | `actions` | Max 6 `{title,reason,priority}`; title 1–200, trimmed reason 1–4,000, priority `now|next|later` |
 | `limitations` | Max 20 strings, each 1–1,000 |
-| `sources` | Max 500 `{resource,version:string|null,fetchedAt:string|null,complete:boolean,stale:boolean}` |
+| `sources` | Max 500 `{resource,version:string|null,contentVersion?:string,fetchedAt:string|null,complete:boolean,stale:boolean}`; optional hash matches `^sha256:[0-9a-f]{64}$`, never null |
 | `evidence` | Max 24 `{id,repository,kind,title,state,detail,url,at}`; ID 1–256; repository repo/null; string maxima 40/300/60/900 for kind/title/state/detail; valid URL/null; at string/null |
 | `omitted` | Nonnegative integer |
 | `judgment` | `{model,choice,confidence?,probabilities?}`; nonempty model; choice `routine|review|urgent|unknown` |
@@ -410,9 +460,10 @@ strict. Optional confidence is [0,1]. Optional probabilities require all four
 choice keys, values [0,1], sum 1 within 0.001, and chosen option maximal (ties OK).
 Omit probabilities rather than fabricate them. Empty evidence is not proof of health.
 
-Repo sources cite full source-index identities/versions. Global reports may cite
-`account:*` observations or canonical repository names as source identities with
-the child reports' full `sourceVersion` values. Child sources must cover the
+Repo sources cite full source-index identities/versions. Do not list repository
+names as sources of direct global reports: use `account:*`. The separate existing
+child-report aggregation mode uses canonical repository names with child reports'
+full `sourceVersion` values. Those child sources must cover the
 browser's expected repository set for that domain; that set can differ from the
 full machine catalog. Check the detailed reference and viewmodel before
 constructing global aggregation. Do not use report IDs as source identities.
@@ -429,7 +480,8 @@ is the expected child-report set.
 Use `analysis-{repo|global}-{domain}-{first12}`. `repo` is the literal scope word,
 not a slash-containing name. Compute a hex SHA-256 report digest from deterministic
 JSON containing scope, canonical repository/null, domain and source
-`{resource,version}` pairs sorted by resource then full version. Include repository
+`{resource,version}` pairs sorted by resource then full version, using each source's
+full `contentVersion` as identity `version` when available (otherwise full `version`). Include repository
 identity; exclude generation time and model confidence. Use the digest's first 12
 characters, not the raw observation's `sha256:` prefix. This is a producer
 convention, not server-side report deduplication.
@@ -440,7 +492,7 @@ the API reference (for multiple sources use the full set):
 ```bash
 jq -n --arg repository "$REPOSITORY" --slurpfile observations observation.json \
   '{scope:"repo",repository:$repository,domain:"issues",sources:[
-    $observations[0] | {resource:.source.resource,version:.sourceVersion}
+    $observations[0] | {resource:.source.resource,version:(.contentVersion // .sourceVersion)}
   ]}' > report-identity.json
 SOURCE_VERSION="$(node --input-type=module -e '
   import {createHash} from "node:crypto";
@@ -457,7 +509,12 @@ REPORT_ID="analysis-repo-issues-${SOURCE_VERSION:0:12}"
 ```
 
 Prepare `report-payload.json` with actual observations and the schema above. This
-illustrative unknown report shows required shape; replace sample times, digest,
+requires copying each observation's `sourceVersion` to `sources[].version` and
+non-null `contentVersion` to `sources[].contentVersion`, retaining both separately
+from the report's composite digest. Omit the optional report hash when the source
+returns null; report schemas reject explicit null hashes. Global reports copy the
+corresponding `/sources` entries instead. The following illustrative unknown report
+shows required shape; replace sample times, digest,
 source and conclusion with inspected evidence before publishing:
 
 ```json
@@ -467,7 +524,7 @@ source and conclusion with inspected evidence before publishing:
   "observedAt": "2026-10-19T00:10:00Z", "generatedAt": "2026-10-19T01:30:00Z",
   "verdict": "unknown", "summary": "Saved issue coverage is incomplete.",
   "findings": [], "actions": [], "limitations": ["The saved issue source is truncated."],
-  "sources": [{"resource":"repo:nocoo/giraffe:issues","version":"sha256:example","fetchedAt":"2026-10-19T00:10:00Z","complete":false,"stale":false}],
+  "sources": [{"resource":"repo:nocoo/giraffe:issues","version":"sha256:example","contentVersion":"sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789","fetchedAt":"2026-10-19T00:10:00Z","complete":false,"stale":false}],
   "evidence": [], "omitted": 0,
   "judgment": {"model":"external-bot-model","choice":"unknown"}
 }
@@ -488,10 +545,19 @@ version. A matching 12-character prefix is insufficient. Collisions, mismatches
 and incomplete rows require explicit reconciliation, not random replacement IDs
 or blind overwrite/skip. There is no `Idempotency-Key` header or automatic upsert.
 
+Before inference, skip only an existing completed report with valid payload,
+matching account/scope/repository/domain and a nonempty expected source set whose
+every source `contentVersion` equals the current `/sources` value when both hashes
+exist. If the report lacks a hash or the current source's hash is null, require
+full `version` equality instead. Never fall back when both hashes exist but differ,
+or skip on a missing source. The 12-character ID suffix alone proves nothing. Old
+valid reports without content hashes remain supported.
+
 ### Bot run status and freshness
 
 Use both record ID and type `grok-bot-run`, repository null. Payload is
-`{lastRunAt,status,analyzed,skipped,error?}`: offset ISO datetime, status
+strictly `{lastRunAt,status,analyzed,skipped,error?}`: extra fields invalidate the
+page's run record. Use an offset ISO datetime, status
 `running|completed|failed`, nonnegative integer counts, optional short safe error.
 Row status must match payload status. The browser rejects malformed data, a
 non-null repository, and timestamps more than one minute in the future.
@@ -520,8 +586,13 @@ jq -n --argjson revision "$REVISION" --arg now "$NOW" \
 
 Reload/reconcile revision conflicts; do not report completed when work failed.
 The default daily cadence is overdue only when `lastRunAt` is more than 48 hours
-old. Separately, report evidence older than 36 hours, incomplete, missing or
-superseded shows unknown regardless of fresh report generation. No heartbeat or
+old. Separately, direct report sources are current when every content hash matches
+(full-version equality when either hash is unavailable). Evidence age
+and displayed oldest time use the current `/sources.fetchedAt`, so unchanged
+reports stay fresh across refreshes. More than 36 hours, missing/invalid times or
+over one minute in the future is stale. Incomplete, missing, stale or superseded
+evidence shows unknown regardless of generation time; source completeness checks
+remain. Child-report aggregation retains its child-version/time checks. No heartbeat or
 bot schedule setting exists in this view. Legacy Work records/jobs remain stored
 but are not requested/displayed. The status record is not a durable work cursor.
 
@@ -641,6 +712,9 @@ does not filter reports by status or repository, so all such rows count; its
 this limit. Request explicit approval for a reviewed historical-report retention
 plan, preserving needed current/child reports and audit history; never silently
 delete existing records or treat an analysis-run request as retention permission.
+There is no server-side automatic report cleanup. With explicit retention
+authorization, GET the current revision then DELETE
+`/agent/reports/:id?revision=N`; expect 204 and reconcile revision conflicts.
 
 Use bounded exponential backoff with jitter for transport errors, edge 429 and
 5xx; honor Retry-After only when supplied. Reconcile uncertain mutations before

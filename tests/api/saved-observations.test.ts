@@ -2,8 +2,9 @@ import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import type { CiReport, CiRun } from "../../apps/web/src/lib/ci-health";
-import type { FactorySnapshot } from "../../apps/web/src/lib/factory-types";
+import type { FactorySnapshot, FactoryWindow } from "../../apps/web/src/lib/factory-types";
 import type { SnapshotFreshness } from "../../apps/web/src/lib/snapshot-freshness";
+import { savedContentMeta } from "../../apps/web/src/server/lib/content-version";
 import { factoryFixture } from "../fixtures/factory-snapshot";
 
 const base = process.env.GIRAFFE_E2E ?? "http://127.0.0.1:17045";
@@ -35,6 +36,12 @@ const legacyWorkflowDependency = {
 let bearer = "";
 let originalActive: string | null = null;
 let seeded = false;
+type SavedObservation = {
+	contentVersion: string | null;
+	sourceVersion: string;
+	source: { resource: string };
+	data: unknown;
+};
 
 function sql(command: string) {
 	const persist = process.env.GIRAFFE_PERSIST;
@@ -72,8 +79,27 @@ function assertMarker() {
 }
 
 const quote = (value: string) => `'${value.replaceAll("'", "''")}'`;
-function snapshot(kind: string, data: Record<string, unknown>, at = latest) {
-	return `INSERT INTO snapshots(account_id,kind,payload,fetched_at) VALUES(${quote(account)},${quote(kind)},${quote(JSON.stringify({ fetched_at: at, truncated: false, ...data }))},${quote(at)});`;
+async function snapshot(
+	kind: string,
+	data: Record<string, unknown>,
+	at = latest,
+	window?: FactoryWindow,
+) {
+	const payload = { fetched_at: at, truncated: false, ...data };
+	const metadata = await savedContentMeta(kind, payload, window);
+	return `INSERT INTO snapshots(account_id,kind,payload,fetched_at,content_meta) VALUES(${quote(account)},${quote(kind)},${quote(JSON.stringify(payload))},${quote(at)},${quote(metadata)});`;
+}
+
+function restoreSnapshots(rows: Record<string, unknown>[]) {
+	assertMarker();
+	sql(
+		rows
+			.map(
+				(row) =>
+					`INSERT OR REPLACE INTO snapshots(account_id,kind,payload,fetched_at,content_meta) VALUES(${quote(account)},${quote(String(row.kind))},${quote(String(row.payload))},${quote(String(row.fetched_at))},${typeof row.content_meta === "string" ? quote(row.content_meta) : "NULL"});`,
+			)
+			.join(""),
+	);
 }
 
 function browser(path: string, method = "GET", body?: unknown) {
@@ -95,6 +121,82 @@ async function machine(path: string, status = 200) {
 	expect(response.status).toBe(status);
 	return response;
 }
+
+it("exposes matching content versions on saved account and repository observations", async () => {
+	const index = (await (await machine("sources")).json()) as {
+		sources: { resource: string; contentVersion: string | null }[];
+	};
+	for (const resource of ["issues", "prs", "ci", "repos", "factory"]) {
+		const observation = (await (await machine(resource)).json()) as SavedObservation;
+		expect(observation.contentVersion).toMatch(/^sha256:[0-9a-f]{64}$/);
+		expect(
+			index.sources.find((source) => source.resource === `account:${resource}`)?.contentVersion,
+		).toBe(observation.contentVersion);
+	}
+	for (const path of [
+		"repos/nocoo/recovered/prs",
+		"factory/repos/nocoo/recovered/commits",
+		"factory/repos/nocoo/recovered/dependencies",
+	]) {
+		const observation = (await (await machine(path)).json()) as SavedObservation;
+		expect(observation.contentVersion).toMatch(/^sha256:[0-9a-f]{64}$/);
+		expect(
+			index.sources.find((source) => source.resource === observation.source.resource)
+				?.contentVersion,
+		).toBe(observation.contentVersion);
+	}
+});
+
+it("keeps legacy source hashes null without changing full versions or filling metadata on GET", async () => {
+	assertMarker();
+	const query = `SELECT kind,payload,fetched_at,content_meta FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`;
+	const rows = sql(query)[0]?.results;
+	if (!rows?.length) throw new Error("saved fixtures missing");
+	const paths = [
+		"issues",
+		"prs",
+		"ci",
+		"repos",
+		"factory",
+		"repos/nocoo/recovered/prs",
+		"factory/repos/nocoo/recovered/commits",
+	];
+	const observations = await Promise.all(
+		paths.map(async (path) => (await (await machine(path)).json()) as SavedObservation),
+	);
+	const before = (await (await machine("sources")).json()) as {
+		sources: { resource: string; version: string }[];
+	};
+	for (const observation of observations)
+		expect(observation.contentVersion).toMatch(/^sha256:[0-9a-f]{64}$/);
+	try {
+		assertMarker();
+		sql(`UPDATE snapshots SET content_meta=NULL WHERE account_id=${quote(account)};`);
+		const legacyRows = sql(query)[0]?.results;
+		const index = (await (await machine("sources")).json()) as {
+			sources: { resource: string; version: string; contentVersion: string | null }[];
+		};
+		for (const source of index.sources) {
+			expect(source.contentVersion).toBeNull();
+			expect(source.version).toBe(
+				before.sources.find((saved: { resource: string }) => saved.resource === source.resource)
+					?.version,
+			);
+		}
+		for (const [position, path] of paths.entries()) {
+			const observation = (await (await machine(path)).json()) as SavedObservation;
+			const original = observations[position];
+			if (!original) throw new Error("original observation missing");
+			expect(observation.contentVersion).toBeNull();
+			expect(observation.sourceVersion).toBe(original.sourceVersion);
+			expect(observation.data).toEqual(original.data);
+		}
+		expect(sql(query)[0]?.results).toEqual(legacyRows);
+	} finally {
+		restoreSnapshots(rows);
+	}
+	expect(sql(query)[0]?.results).toEqual(rows);
+});
 
 function runs(workflow: string, conclusions: string[], branch = "trunk", day = 20): CiRun[] {
 	return conclusions.map((conclusion, index) => ({
@@ -169,38 +271,48 @@ beforeAll(async () => {
 	];
 	for (const name of [names[0] as string, removed])
 		statements.push(
-			snapshot(`factory:${name}:commits`, {
-				runId: publication.runId,
-				items: [],
-				next: null,
-				ranges: [],
-				coverage: { ...repo.coverage.commits, status: "complete", fetchedAt: baseline },
-			}),
+			snapshot(
+				`factory:${name}:commits`,
+				{
+					runId: publication.runId,
+					items: [],
+					next: null,
+					ranges: [],
+					coverage: { ...repo.coverage.commits, status: "complete", fetchedAt: baseline },
+				},
+				latest,
+				publication.window,
+			),
 		);
 	statements.push(
-		snapshot(`factory:${names[0]}:dependencies`, {
-			runId: publication.runId,
-			next: null,
-			ranges: [],
-			coverage: repo.coverage.dependencies,
-			items: [
-				...repo.dependencies.map((dependency, index) => ({
-					id: String(index),
-					title: dependency.name,
-					version: dependency.version,
-					path: dependency.path,
-					url: dependency.url,
-					at: "",
-					createdAt: "",
-					author: "",
-					closedAt: null,
-					mergedAt: null,
-					state: "declared",
-				})),
-				legacyWorkflowDependency,
-				legacyWorkflowDependency,
-			],
-		}),
+		snapshot(
+			`factory:${names[0]}:dependencies`,
+			{
+				runId: publication.runId,
+				next: null,
+				ranges: [],
+				coverage: repo.coverage.dependencies,
+				items: [
+					...repo.dependencies.map((dependency, index) => ({
+						id: String(index),
+						title: dependency.name,
+						version: dependency.version,
+						path: dependency.path,
+						url: dependency.url,
+						at: "",
+						createdAt: "",
+						author: "",
+						closedAt: null,
+						mergedAt: null,
+						state: "declared",
+					})),
+					legacyWorkflowDependency,
+					legacyWorkflowDependency,
+				],
+			},
+			latest,
+			publication.window,
+		),
 	);
 	for (const [kind, key] of [
 		["issues", "issues"],
@@ -281,7 +393,7 @@ beforeAll(async () => {
 		snapshot(`repo:${removed}:actions`, { runs: runs("CI", ["failure", "failure"]) }),
 		`INSERT INTO repo_stars(account_id,repo) VALUES(${quote(account)},'NOCOO/RECOVERED'),(${quote(account)},'nocoo/baseline'),(${quote(account)},${quote(removed)});`,
 	);
-	sql(statements.join("\n"));
+	sql((await Promise.all(statements)).join("\n"));
 	seeded = true;
 	const response = await browser("tokens", "POST", {
 		account_id: account,
@@ -410,7 +522,9 @@ it("normalizes saved dependency unknowns and separates root and workspace identi
 	const before = sql(
 		`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
 	).map((statement) => statement.results);
-	const stream = await (await machine("factory/repos/nocoo/recovered/dependencies")).json();
+	const stream = (await (await machine("factory/repos/nocoo/recovered/dependencies")).json()) as {
+		data: { items: { id: string }[] };
+	};
 	expect(stream).toMatchObject({
 		sourceVersion: factoryFixture().runId,
 		data: {
@@ -426,7 +540,7 @@ it("normalizes saved dependency unknowns and separates root and workspace identi
 	});
 	const ids = stream.data.items.map((item: { id: string }) => item.id);
 	expect(new Set(ids).size).toBe(ids.length);
-	const publication = await (await machine("factory")).json();
+	const publication = (await (await machine("factory")).json()) as { data: FactorySnapshot };
 	expect(publication.data.repos[0]).toMatchObject({
 		dependencies: [{ name: "recovered" }, uploadSummary, { ...uploadSummary, version: "v3" }],
 		manifests: [{ name: "@scope/root" }, { name: "@scope/child" }],
@@ -485,7 +599,7 @@ it("deduplicates account dependency summaries over HTTP without stream reads or 
 it("serves pre-observation windows and explains missing or replaced legacy streams over HTTP", async () => {
 	assertMarker();
 	const rows = sql(
-		`SELECT kind,payload,fetched_at FROM snapshots WHERE account_id=${quote(account)} AND kind IN ('factory','factory:nocoo/recovered:commits') ORDER BY kind`,
+		`SELECT kind,payload,fetched_at,content_meta FROM snapshots WHERE account_id=${quote(account)} AND kind IN ('factory','factory:nocoo/recovered:commits') ORDER BY kind`,
 	)[0]?.results;
 	if (rows?.length !== 2) throw new Error("legacy fixture missing");
 	const countBefore = await (await fetch("http://127.0.0.1:17046/_count")).text();
@@ -522,15 +636,7 @@ it("serves pre-observation windows and explains missing or replaced legacy strea
 		}
 		expect(await (await fetch("http://127.0.0.1:17046/_count")).text()).toBe(countBefore);
 	} finally {
-		assertMarker();
-		sql(
-			rows
-				.map(
-					(row) =>
-						`INSERT OR REPLACE INTO snapshots(account_id,kind,payload,fetched_at) VALUES(${quote(account)},${quote(String(row.kind))},${quote(String(row.payload))},${quote(String(row.fetched_at))});`,
-				)
-				.join(""),
-		);
+		restoreSnapshots(rows);
 	}
 });
 
@@ -658,11 +764,19 @@ it("keeps latest-any source versions distinct from latest-complete multipage inb
 	).map((statement) => statement.results);
 	const cleanup = `DELETE FROM snapshots WHERE account_id=${quote(account)} AND kind IN (${kinds.map(quote).join(",")});`;
 	try {
+		const metadata = await savedContentMeta(kinds[0] as string, {
+			fetched_at: catalogAt,
+			truncated: false,
+			issues: [{ number: 201 }, { number: 202 }],
+		});
 		sql(
 			[
-				snapshot(kinds[0] as string, { issues: [{ number: 201 }] }, catalogAt),
-				snapshot(kinds[1] as string, { issues: [{ number: 202 }] }, catalogAt),
-				snapshot(kinds[2] as string, { issues: [{ number: 203 }], unavailable: true }),
+				...(await Promise.all([
+					snapshot(kinds[0] as string, { issues: [{ number: 201 }] }, catalogAt),
+					snapshot(kinds[1] as string, { issues: [{ number: 202 }] }, catalogAt),
+					snapshot(kinds[2] as string, { issues: [{ number: 203 }], unavailable: true }),
+				])),
+				`UPDATE snapshots SET content_meta=${quote(metadata)} WHERE account_id=${quote(account)} AND kind IN (${quote(kinds[0] as string)},${quote(kinds[1] as string)});`,
 			].join("\n"),
 		);
 		const index = (await (await machine("sources?repository=NOCOO%2FBASELINE")).json()) as {
