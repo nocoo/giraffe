@@ -19,11 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Stop terminally failed contribution checkpoints from being resumed by later repository streams or replacing prior calendars.
 - Preserve separate REST/GraphQL rate reserves across PR pages, metadata transitions and failed-page rollback while keeping the public latest-rate observation unchanged.
 - Explain legacy stream 409 responses with distinct missing-payload and version-mismatch messages. Matching pre-observation snapshots already support the publication-window fallback; preserve the immutable-source checks rather than fabricating missing evidence.
+- Make workflow dependency IDs unique during collection/reuse and machine/browser reads. Capture real job keys with a bounded indentation scan, collapse identical legacy saved evidence and preserve distinct refs/content without rewriting historical rows or adding dependencies.
 
 ### Migration and Compatibility
 
 - Add migration `0013_refresh_schedule_times.sql`: an idempotent side table/backfill and legacy-column synchronization triggers, with no table rebuild or existing schedule changes. Local SQLite backup validation proves row preservation, rollback compatibility and integrity. Keep the table/triggers when rolling back code.
-- No breaking changes. Existing `time`-only writes map to `times:[time]`; `time` reads as the first sorted slot. Existing contribution totals and immutable publication identities remain intact. Additional times are not enabled automatically and require the owner's choice.
+- Existing `time`-only writes map to `times:[time]`; `time` reads as the first sorted slot. Existing contribution totals and immutable publication identities remain intact. Additional times are not enabled automatically and require the owner's choice.
+
+### Breaking Changes
+
+- Workflow dependency identity: `<file>:<target>` -> `<file>:<target>#job=<encoded-job-key>` for newly collected references, including singletons, so job/ref ordering and source HEAD changes cannot rename a job reference. Example: `.github/workflows/ci.yml:nocoo/base-ci/.github/workflows/test-job.yml` -> the same base with `#job=api` and `#job=browser`. Legacy identical copies collapse to one unchanged ID; legacy distinct refs change from the colliding base ID to `#ref=<encoded-ref>`. Multiple refs within a known job append `&ref=<encoded-ref>`; distinct same-ref evidence additionally appends `&entry=<canonical-content-rank>`. Legacy ranks are stable for the same saved evidence set, not inferred job identities. Consumers must rebuild dependency-ID indexes when these normalized shapes first appear. Non-workflow IDs, source versions and publication windows are unchanged.
 
 ## v0.15.15 — 2026-10-21
 

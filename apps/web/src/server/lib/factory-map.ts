@@ -120,12 +120,13 @@ export function mapFactoryEvents(stream: FactoryStreamName, data: GithubObject[]
 export function mapDependencies(data: GithubObject, repo: FactoryRepo) {
 	const items: FactoryEvent[] = [];
 	const base = `${repo.url}/blob/${repo.head}`;
-	const add = (name: string, version: string, path: string) =>
+	const add = (name: string, version: string, path: string, job?: string) =>
 		items.push({
 			id: `${path}:${name}`,
 			title: name,
 			version,
 			path,
+			...(job ? { job } : {}),
 			url: `${base}/${path}`,
 			at: null,
 			createdAt: null,
@@ -154,11 +155,9 @@ export function mapDependencies(data: GithubObject, repo: FactoryRepo) {
 		["release", ".github/workflows/release.yml"],
 	] as const) {
 		const content = object(data[key]).text;
-		if (typeof content === "string")
-			for (const match of content.matchAll(
-				/(?:^|\n)\s*(?:-\s*)?uses:\s*["']?([\w.-]+\/[\w./-]+)@([^\s"'#]+)/g,
-			))
-				add(match[1] ?? "", match[2] ?? "", path);
+		if (typeof content !== "string") continue;
+		for (const reference of workflowReferences(content))
+			add(reference.name, reference.version, path, reference.job);
 	}
 	for (const [key, path] of [
 		["dependabot", ".github/dependabot.yml"],
@@ -166,4 +165,37 @@ export function mapDependencies(data: GithubObject, repo: FactoryRepo) {
 	] as const)
 		if (typeof object(data[key]).text === "string") add(key, "configured", path);
 	return dependencyEvidence(items);
+}
+
+function workflowReferences(content: string) {
+	const references: { name: string; version: string; job: string }[] = [];
+	let inJobs = false;
+	let jobIndent: number | null = null;
+	let job = "";
+	let scalarIndent: number | null = null;
+	for (const line of content.split(/\r?\n/)) {
+		if (/^\s*(?:#.*)?$/.test(line)) continue;
+		const indent = line.length - line.trimStart().length;
+		if (scalarIndent !== null && indent > scalarIndent) continue;
+		scalarIndent = null;
+		const property = /^\s*(?:-\s+)?(?:"([\w-]+)"|'([\w-]+)'|([\w-]+)):\s*(.*)$/.exec(line);
+		const key = property?.[1] ?? property?.[2] ?? property?.[3];
+		const value = property?.[4] ?? "";
+		if (indent === 0) {
+			inJobs = key === "jobs" && /^(?:#.*)?$/.test(value);
+			jobIndent = null;
+			job = "";
+			continue;
+		}
+		if (!inJobs) continue;
+		if (key && (jobIndent === null || indent <= jobIndent)) {
+			jobIndent = indent;
+			job = key;
+		}
+		if (/^[|>][+-]?[1-9]?(?:\s+#.*)?$/.test(value)) scalarIndent = indent;
+		if (key !== "uses" || indent === jobIndent) continue;
+		const match = /^["']?([\w.-]+\/[\w./-]+)@([^\s"'#]+)["']?(?:\s+#.*)?\s*$/.exec(value);
+		if (match) references.push({ name: match[1] ?? "", version: match[2] ?? "", job });
+	}
+	return references;
 }

@@ -535,7 +535,7 @@ empty after completion. In mixed publications, never substitute the newer global
 
 Events have `id`, `title`, `url`, `at`, `createdAt`, `closedAt`, `mergedAt`, `author`,
 `state`, and optional `body`, `severity`, `conclusion`, `draft`, `review`, `version`,
-`path`. `observation` has `{ version, window, refreshedAt, source:"run"|"legacy",
+`path`, `job`. `observation` has `{ version, window, refreshedAt, source:"run"|"legacy",
 repo?, metadataAt? }`. Envelope `source.kind` is `factory`, `source.publicationId`
 identifies the publication, while `sourceVersion` identifies the immutable
 repository observation; mixed publications can contain older repository versions.
@@ -555,6 +555,32 @@ when its label matches an own package name. Names are never guessed from reposit
 names or workspace directory paths. Collection still reads only the pinned root
 manifest and named workflow/config files; it does not newly discover workspace
 manifests or transitive dependencies.
+
+Workflow dependency IDs use `B = <workflow-path>:<uses-target>`, for example
+`.github/workflows/ci.yml:nocoo/base-ci/.github/workflows/test-job.yml`.
+Newly collected literal block-style `uses:` references carry the workflow job
+mapping key as `job` (not its display name) and use `B#job=<encoded-job>` even
+for a single job. Adding/removing other jobs, reordering jobs, changing the source
+HEAD or updating a single job's ref does not rename that reference. The bounded
+indentation scanner supports job-level reusable workflows and step actions,
+quoted keys/references and comments, and ignores scalar script bodies. It is not
+a general YAML parser; flow-style objects, aliases and expression-valued `uses`
+are not resolved. No additional files or upstream requests are introduced.
+
+Historical rows have no recoverable job key. Read normalization deduplicates only
+equal saved evidence (excluding generated `id`, recursively ignoring object-key
+order and normalizing unknown metadata); this does not assert the original jobs
+were identical. A single remaining legacy reference keeps its old ID. Distinct
+references under the same base ID remain separate as `B#ref=<encoded-ref>`.
+Multiple refs within a known job use `B#job=<encoded-job>&ref=<encoded-ref>`.
+If same-ref records still differ, `&entry=<1-based-rank>` orders their canonical
+full saved content, retaining all evidence rather than overwriting it. Encoding
+uses `encodeURIComponent`. The normalization is deterministic under input
+reordering and repeated reads, and idempotent; it never changes stored rows,
+coverage, observation versions or windows. Legacy rank/ref IDs identify saved
+evidence, not inferred job continuity across different evidence sets. The next
+full collection supplies real job-qualified IDs; unchanged-head reuse retains
+the legacy evidence. Non-workflow dependency IDs are unchanged.
 
 Unknown streams are 400; catalog/publication repository misses are 404; missing
 immutable source data is 409 `snapshot_missing`. No observation/publication writes

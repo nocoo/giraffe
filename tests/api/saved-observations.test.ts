@@ -12,6 +12,19 @@ const latest = "2026-10-20T12:02:00.000Z";
 const catalogAt = "2026-10-19T00:00:00.000Z";
 const removed = "nocoo/rsshub";
 const names = ["nocoo/recovered", "nocoo/baseline", "nocoo/missing", "nocoo/broken"];
+const legacyWorkflowDependency = {
+	id: ".github/workflows/ci.yml:nocoo/base-ci/.github/workflows/test-job.yml",
+	title: "nocoo/base-ci/.github/workflows/test-job.yml",
+	version: "main",
+	path: ".github/workflows/ci.yml",
+	url: "https://github.com/nocoo/recovered/blob/abc/.github/workflows/ci.yml",
+	at: null,
+	createdAt: null,
+	author: null,
+	closedAt: null,
+	mergedAt: null,
+	state: "declared",
+};
 let bearer = "";
 let originalActive: string | null = null;
 let seeded = false;
@@ -157,19 +170,23 @@ beforeAll(async () => {
 			next: null,
 			ranges: [],
 			coverage: repo.coverage.dependencies,
-			items: repo.dependencies.map((dependency, index) => ({
-				id: String(index),
-				title: dependency.name,
-				version: dependency.version,
-				path: dependency.path,
-				url: dependency.url,
-				at: "",
-				createdAt: "",
-				author: "",
-				closedAt: null,
-				mergedAt: null,
-				state: "declared",
-			})),
+			items: [
+				...repo.dependencies.map((dependency, index) => ({
+					id: String(index),
+					title: dependency.name,
+					version: dependency.version,
+					path: dependency.path,
+					url: dependency.url,
+					at: "",
+					createdAt: "",
+					author: "",
+					closedAt: null,
+					mergedAt: null,
+					state: "declared",
+				})),
+				legacyWorkflowDependency,
+				legacyWorkflowDependency,
+			],
 		}),
 	);
 	for (const [kind, key] of [
@@ -384,13 +401,18 @@ it("normalizes saved dependency unknowns and separates root and workspace identi
 	expect(stream).toMatchObject({
 		sourceVersion: factoryFixture().runId,
 		data: {
-			items: [{ title: "recovered", at: null, createdAt: null, author: null }],
+			items: [
+				{ title: "recovered", at: null, createdAt: null, author: null },
+				legacyWorkflowDependency,
+			],
 			manifests: [
 				{ name: "@scope/root", path: "package.json" },
 				{ name: "@scope/child", path: "packages/child/package.json" },
 			],
 		},
 	});
+	const ids = stream.data.items.map((item: { id: string }) => item.id);
+	expect(new Set(ids).size).toBe(ids.length);
 	const publication = await (await machine("factory")).json();
 	expect(publication.data.repos[0]).toMatchObject({
 		dependencies: [{ name: "recovered" }],
@@ -399,8 +421,11 @@ it("normalizes saved dependency unknowns and separates root and workspace identi
 	const browserStream = await browser("factory/repos/nocoo/recovered/dependencies");
 	expect(browserStream.status).toBe(200);
 	expect(await browserStream.json()).toMatchObject({
-		total: 1,
-		items: [{ title: "recovered", at: null, createdAt: null, author: null }],
+		total: 2,
+		items: [
+			{ title: "recovered", at: null, createdAt: null, author: null },
+			legacyWorkflowDependency,
+		],
 	});
 	expect(
 		sql(`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`).map(

@@ -225,6 +225,20 @@ access loss during pagination remain failures, not expected absence.
   Config/workflow labels that happen to match a package name remain evidence.
   Collection still scans only pinned root manifests/named workflow/config files;
   absent workspace identity is not evidence that every dependency is external.
+- Workflow IDs: let `B=<workflow-path>:<uses-target>`. New literal block-style
+  references include the real job mapping key as `job` and use
+  `B#job=<encodeURIComponent(job)>`, including single references; display names,
+  source HEAD, job order and a single job's ref are not identity components.
+  Collection scans job-level reusable workflows and step actions, not general
+  YAML flow objects, aliases or expression-valued `uses`.
+  Equal legacy saved records collapse without inventing job keys; a remaining
+  singleton keeps its old ID. Distinct legacy refs use `B#ref=<encoded-ref>`;
+  multiple refs in one known job use `B#job=<encoded-job>&ref=<encoded-ref>`.
+  Distinct same-ref records add `&entry=<1-based canonical-content rank>` rather
+  than losing evidence. Reordered reads and repeated normalization are stable;
+  legacy IDs do not imply job continuity across changed evidence sets. Full
+  collection replaces legacy IDs with job IDs; unchanged-head reuse does not.
+  This read/write normalization preserves stored rows, coverage and versions.
 - `source.publicationId` identifies the publication; `sourceVersion` identifies
   the immutable repository observation. Mixed publications can retain older repo
   versions. GET never starts refresh or modifies a publication.

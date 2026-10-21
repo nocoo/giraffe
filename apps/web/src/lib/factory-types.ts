@@ -47,6 +47,7 @@ export type FactoryEvent = {
 	review?: string | null;
 	version?: string;
 	path?: string;
+	job?: string;
 };
 export type FactoryDay = {
 	commits: number;
