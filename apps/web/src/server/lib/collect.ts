@@ -108,15 +108,17 @@ export function nextPath(res: Response): string | null {
 	if (!link) {
 		return null;
 	}
-	const match = /<([^>]+)>\s*;\s*rel="next"/i.exec(link);
+	const match = /<([^>]+)>\s*;\s*rel\s*=\s*(?:"next"|next\b)/i.exec(link);
 	if (!match?.[1]) {
+		if (/\brel\s*=\s*(?:"[^"]*\bnext\b[^"]*"|next\b)/i.test(link)) throw new TruncatedError();
 		return null;
 	}
 	try {
 		const url = new URL(match[1]);
+		if (!["http:", "https:"].includes(url.protocol)) throw new TruncatedError();
 		return `${url.pathname}${url.search}`;
 	} catch {
-		return null;
+		throw new TruncatedError();
 	}
 }
 

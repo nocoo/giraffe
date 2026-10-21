@@ -60,9 +60,19 @@ describe("collect helpers", () => {
 		expect(
 			nextPath(new Response("[]", { headers: { link: '<https://x>; rel="prev"' } })),
 		).toBeNull();
+		for (const link of [
+			'<not-a-url>; rel="next"',
+			'not-a-url; rel="next"',
+			'<ftp://example.org/page2>; rel="next"',
+		])
+			expect(() => nextPath(new Response("[]", { headers: { link } }))).toThrow(TruncatedError);
 		expect(
-			nextPath(new Response("[]", { headers: { link: '<not-a-url>; rel="next"' } })),
-		).toBeNull();
+			nextPath(
+				new Response("[]", {
+					headers: { link: "<https://api.github.com/notifications?page=2>; rel=next" },
+				}),
+			),
+		).toBe("/notifications?page=2");
 		expect(
 			nextPath(
 				new Response("[]", {

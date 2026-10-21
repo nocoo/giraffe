@@ -677,6 +677,8 @@ missing, invalid or repeated cursors are incomplete, never a successful empty ca
 Saved GraphQL connections require an explicit boolean `pageInfo.hasNextPage`;
 missing pagination metadata is not proof of a terminal page. Search and security
 continuations also require nonempty new string cursors.
+Likewise, a declared REST next link that cannot be parsed is incomplete, not EOF;
+only absence of a next relation proves the list has ended.
 For the **same run ID**, a published factory snapshot has `status:complete` for
 a completed run and `status:partial` for a partial run. A newer failed, paused or
 timed-out attempt can leave an older publication untouched; compare run IDs and

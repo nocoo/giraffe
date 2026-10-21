@@ -707,3 +707,6 @@ invalid or repeated cursors now fail without replacing saved repositories/time.
 Checking only a truthy pagination flag was still insufficient: omitted flags
 silently looked terminal. Require an explicit boolean flag, and validate cursor
 types before issuing a continuation request, across ordinary GraphQL connections.
+An invalid REST next link is also incomplete, not absent. Returning null from a
+failed URL parse silently converted a declared continuation into successful EOF;
+the parser now preserves that distinction and ordinary collectors retain old data.
