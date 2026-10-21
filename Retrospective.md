@@ -748,3 +748,27 @@ its no-write assertion compared Wrangler's entire response, including variable
 `meta.duration`. A later run failed on 0 ms versus 1 ms with identical saved rows.
 Use the existing neighboring test's `statement.results` comparison for both reads.
 Review new fixture assertions against recorded incidents, not just one green run.
+
+## 2026-10-21 - Separate fixture transport failures from contract regressions
+
+The first green HTTP run for saved factory rate projection failed with
+`ECONNRESET` before any rate GET reached the Worker. Four synchronous Wrangler
+fixture commands preceded a pooled HTTP counter read; an expired keep-alive
+socket was a plausible cause, not a proven product defect. Move the counter
+baseline ahead of the blocking local SQL setup, which makes no upstream requests.
+The subsequent complete A/B suites passed without retries or a production
+fallback. Keep this transport failure separate from the earlier assertion-based
+red tests, and avoid long synchronous fixture blocks immediately before pooled
+HTTP reads when arranging read-only/network-count evidence.
+
+The source profiling fixture initially assumed the unit SQLite schema already
+contained `_test_marker`; it now creates and verifies its own marker before
+inserting data. An expiry test also initially violated the database constraint
+`expires_at > created_at`; both synthetic timestamps must describe a valid token
+that has subsequently expired. During conditional HTTP testing another redundant
+counter read after blocking CLI commands hit an idle connection close. That
+duplicate assertion was removed while independent source tests and the new
+read-only/network-denying profiler retained no-collection evidence. The corrected
+red run failed for the missing validator, not fixture setup or transport errors,
+and both complete HTTP suites subsequently passed. No existing or remote data was
+used by these fixture corrections.

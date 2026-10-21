@@ -170,6 +170,30 @@ can remain pending. Retry pending/failed older work before advancing a local cut
 retain pending identity/full-version state, and reconcile periodic unfiltered full
 scans. An empty filtered result is not proof that all analysis is complete.
 
+#### Conditional source polling
+
+Successful machine `/sources` responses include a strong, quoted `ETag` derived
+from the exact response content. Send the received validator in `If-None-Match`
+on the same query variant: a match returns 304 with no body; a mismatch returns
+200 with the current JSON and validator. Weak validators and comma-separated
+validator lists are accepted for GET comparison. `*` tests representation existence,
+not whether your previous source index is unchanged; do not use it as a poll cursor.
+Treat validators as opaque, including any weak prefix added by the edge.
+
+Bearer authentication, expiry/revocation, account/scope authorization and query
+validation still run before a 304. Both 200 and 304 retain `Cache-Control: private,
+no-store`, `Vary: Authorization` and `Referrer-Policy: no-referrer`. This supports
+explicit validator polling, not shared caching or automatic browser body caching.
+GET/304 never records token activity or writes source metadata. Content/catalog/
+coverage changes can invalidate the tag even without newer observation timestamps;
+304 is not evidence that pending analysis has finished.
+
+The reader reuses saved inputs within the request. Conditional responses avoid
+body transfer, not all database/projection work. Cloudflare negotiates production
+response compression; the Worker does not manually gzip JSON. See the measured
+[source performance and compression notes](12-source-performance.md), including
+the distinction between the strong application tag and possible edge transforms.
+
 ### Observation envelope
 
 The following data endpoints return this envelope; `/sources` does not:
@@ -260,6 +284,21 @@ Item fields (saved metadata can add fields; do not reject unknown observation da
   Full nested summaries: [`ci-health.ts`](../apps/web/src/lib/ci-health.ts).
 - Full factory repository metrics, observation versions/windows, coverage and
   publication fields: [`factory-types.ts`](../apps/web/src/lib/factory-types.ts).
+
+`/factory` exposes `data.rate` as null or
+`{remaining,resetAt,resource,observedAt}` for GitHub's last saved rate observation.
+It compares the publication's dated evidence with retained run checkpoints,
+including newer catalog/active runs. `observedAt` records when the upstream rate
+was observed, not the later publication or control-update time. Undated, invalid,
+future-observed or expired-reset evidence is not advertised as current; the latest
+dated observation is validated before returning it, rather than falling back to an
+older unexpired bucket when the newest has expired. Missing usable evidence returns
+null, without contacting GitHub.
+
+Rate is account-wide request metadata, independent of the selected repository
+scope and immutable factory `sourceVersion`; it can change without a new factory
+publication. It is not a Giraffe machine-request quota. Saved historical rows stay
+unchanged; subsequent ordinary collection records dated rate evidence.
 
 ### Saved CI verdicts and units
 
@@ -364,11 +403,19 @@ done
 ```
 
 Envelope `data` is `{ runId, items: FactoryEvent[], next: string|null, ranges:
-[{ since, until }], coverage, fetched_at, observation?, truncated, unavailable }`.
+[{ since, until }], coverage, fetched_at, observation?, manifests?, truncated,
+unavailable }`.
 `coverage` is `{ status, pages, fetchedAt, source, reason, reason_code?, observed, strategy?,
 sourceFetchedAt? }`; status is `pending|partial|complete|unavailable|limited`,
 strategy `full|incremental|reused`. An empty list proves zero only with complete
 coverage. `next` is saved collection metadata, not a machine pagination URL.
+
+`data.observation.window` is the immutable repository observation's time window.
+`data.ranges` contains exactly that one `{since,until}` window; when a legacy
+publication has no repository observation, it uses the saved publication window.
+The response does not expose the collector's pending-range queue, which is often
+empty after completion. In mixed publications, never substitute the newer global
+`/factory` window for a repository's retained observation window.
 
 Events have `id`, `title`, `url`, `at`, `createdAt`, `closedAt`, `mergedAt`, `author`,
 `state`, and optional `body`, `severity`, `conclusion`, `draft`, `review`, `version`,
@@ -376,6 +423,22 @@ Events have `id`, `title`, `url`, `at`, `createdAt`, `closedAt`, `mergedAt`, `au
 repo?, metadataAt? }`. Envelope `source.kind` is `factory`, `source.publicationId`
 identifies the publication, while `sourceVersion` identifies the immutable
 repository observation; mixed publications can contain older repository versions.
+
+For `dependencies`, unknown `at`, `createdAt` and `author` are `null`, not empty
+strings. Observation time is not a package creation time. Own package identities
+are not dependency items: `manifests:[{name,version,path,url}]` retains them
+separately, with paths such as `package.json` or `packages/app/package.json`.
+Published factory repository entries expose the same optional `manifests` array
+alongside their normalized `dependencies` list.
+
+Read-time normalization extracts saved root/workspace `package.json#name` evidence
+and removes npm dependency declarations referring to those own package names.
+Existing rows benefit without refresh or migration; new and reused collection
+results also store normalized evidence. Config/workflow evidence is retained even
+when its label matches an own package name. Names are never guessed from repository
+names or workspace directory paths. Collection still reads only the pinned root
+manifest and named workflow/config files; it does not newly discover workspace
+manifests or transitive dependencies.
 
 Unknown streams are 400; catalog/publication repository misses are 404; missing
 immutable source data is 409 `snapshot_missing`. No observation/publication writes
