@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import type { CiReport, CiRun } from "../../apps/web/src/lib/ci-health";
+import type { FactorySnapshot } from "../../apps/web/src/lib/factory-types";
 import type { SnapshotFreshness } from "../../apps/web/src/lib/snapshot-freshness";
 import { factoryFixture } from "../fixtures/factory-snapshot";
 
@@ -12,6 +13,12 @@ const latest = "2026-10-20T12:02:00.000Z";
 const catalogAt = "2026-10-19T00:00:00.000Z";
 const removed = "nocoo/rsshub";
 const names = ["nocoo/recovered", "nocoo/baseline", "nocoo/missing", "nocoo/broken"];
+const uploadSummary = {
+	name: "actions/upload-artifact",
+	version: "v4",
+	path: ".github/workflows/ci.yml",
+	url: "https://github.com/nocoo/recovered/blob/abc/.github/workflows/ci.yml",
+};
 const legacyWorkflowDependency = {
 	id: ".github/workflows/ci.yml:nocoo/base-ci/.github/workflows/test-job.yml",
 	title: "nocoo/base-ci/.github/workflows/test-job.yml",
@@ -140,6 +147,12 @@ beforeAll(async () => {
 	publication.repos = [names[0] as string, removed].map((name) => ({
 		...repo,
 		name,
+		dependencies: [
+			...repo.dependencies,
+			...Array.from({ length: 7 }, () => ({ ...uploadSummary })),
+			{ ...uploadSummary, version: "v3" },
+			{ ...uploadSummary },
+		],
 		observation: {
 			version: publication.runId,
 			window: publication.window,
@@ -415,7 +428,7 @@ it("normalizes saved dependency unknowns and separates root and workspace identi
 	expect(new Set(ids).size).toBe(ids.length);
 	const publication = await (await machine("factory")).json();
 	expect(publication.data.repos[0]).toMatchObject({
-		dependencies: [{ name: "recovered" }],
+		dependencies: [{ name: "recovered" }, uploadSummary, { ...uploadSummary, version: "v3" }],
 		manifests: [{ name: "@scope/root" }, { name: "@scope/child" }],
 	});
 	const browserStream = await browser("factory/repos/nocoo/recovered/dependencies");
@@ -432,6 +445,41 @@ it("normalizes saved dependency unknowns and separates root and workspace identi
 			(statement) => statement.results,
 		),
 	).toEqual(before);
+});
+
+it("deduplicates account dependency summaries over HTTP without stream reads or writes", async () => {
+	const before = sql(
+		`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
+	)[0]?.results;
+	const countBefore = await (await fetch("http://127.0.0.1:17046/_count")).text();
+	for (const scope of ["all", "starred"]) {
+		const machineResult = (await (await machine(`factory?scope=${scope}`)).json()) as {
+			data: FactorySnapshot;
+		};
+		const browserResponse = await browser(`factory?scope=${scope}`);
+		expect(browserResponse.status).toBe(200);
+		const browserResult = (await browserResponse.json()) as FactorySnapshot;
+		for (const publication of [machineResult.data, browserResult]) {
+			expect(publication.repos).toHaveLength(1);
+			for (const repo of publication.repos) {
+				const keys = repo.dependencies.map(({ path, name, version, url }) =>
+					JSON.stringify([path, name, version, url]),
+				);
+				expect(new Set(keys).size).toBe(keys.length);
+				expect(repo.dependencies).toEqual([
+					{ name: "recovered", version: "^1", path: "package.json#dependencies", url: "external" },
+					uploadSummary,
+					{ ...uploadSummary, version: "v3" },
+				]);
+				for (const dependency of repo.dependencies) expect(dependency).not.toHaveProperty("id");
+			}
+		}
+	}
+	expect(
+		sql(`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`)[0]
+			?.results,
+	).toEqual(before);
+	expect(await (await fetch("http://127.0.0.1:17046/_count")).text()).toBe(countBefore);
 });
 
 it("serves pre-observation windows and explains missing or replaced legacy streams over HTTP", async () => {
