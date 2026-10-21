@@ -81,6 +81,9 @@ export const factoryHead = (db: Db, account: string) =>
 		.prepare("SELECT published_id,catalog_id,next_at FROM factory_state WHERE account_id=?")
 		.bind(account)
 		.first<FactoryHead>();
+export function normalizePublication(snapshot: FactorySnapshot): FactorySnapshot {
+	return { ...snapshot, repos: snapshot.repos.map(normalizeRepoDependencies) };
+}
 export async function publishedFactory(db: Db, account: string): Promise<FactorySnapshot | null> {
 	const head = await factoryHead(db, account);
 	const snapshot = (await readSnapshot(
@@ -88,7 +91,7 @@ export async function publishedFactory(db: Db, account: string): Promise<Factory
 		account,
 		head?.published_id ? `factory:v:${head.published_id}` : "factory",
 	)) as FactorySnapshot | null;
-	return snapshot ? { ...snapshot, repos: snapshot.repos.map(normalizeRepoDependencies) } : null;
+	return snapshot ? normalizePublication(snapshot) : null;
 }
 export async function catalogFactory(db: Db, account: string): Promise<FactorySnapshot | null> {
 	const head = await factoryHead(db, account);

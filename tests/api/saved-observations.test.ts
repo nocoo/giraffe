@@ -520,3 +520,59 @@ it("bounds branch streams at the saved 30-day cutoff through machine and browser
 	}
 	expect(await (await fetch("http://127.0.0.1:17046/_count")).text()).toBe(upstream);
 });
+
+it("keeps latest-any source versions distinct from latest-complete multipage inbox evidence", async () => {
+	assertMarker();
+	const kinds = [
+		"repo:NOCOO/BASELINE:issues",
+		"repo:NOCOO/BASELINE:issues#2",
+		"repo:nocoo/baseline:issues",
+	];
+	const before = sql(
+		`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
+	).map((statement) => statement.results);
+	const cleanup = `DELETE FROM snapshots WHERE account_id=${quote(account)} AND kind IN (${kinds.map(quote).join(",")});`;
+	try {
+		sql(
+			[
+				snapshot(kinds[0] as string, { issues: [{ number: 201 }] }, catalogAt),
+				snapshot(kinds[1] as string, { issues: [{ number: 202 }] }, catalogAt),
+				snapshot(kinds[2] as string, { issues: [{ number: 203 }], unavailable: true }),
+			].join("\n"),
+		);
+		const index = (await (await machine("sources?repository=NOCOO%2FBASELINE")).json()) as {
+			repositories: string[];
+			sources: { resource: string; version: string; unavailable: boolean }[];
+		};
+		const page = (await (await machine("repos/nocoo/baseline/issues")).json()) as {
+			sourceVersion: string;
+			data: { issues: { number: number }[] };
+		};
+		const inbox = (await (await machine("issues")).json()) as {
+			sourceVersion: string;
+			data: { issues: { number: number; name_with_owner: string }[] };
+		};
+		expect(index.repositories).toEqual([...names].sort());
+		expect(
+			index.sources.find((source) => source.resource === "repo:nocoo/baseline:issues"),
+		).toMatchObject({ version: page.sourceVersion, unavailable: true });
+		expect(page.data.issues).toEqual([{ number: 203 }]);
+		expect(inbox.data.issues.filter((item) => item.name_with_owner === "nocoo/baseline")).toEqual([
+			{ number: 201, name_with_owner: "nocoo/baseline" },
+			{ number: 202, name_with_owner: "nocoo/baseline" },
+		]);
+		expect(index.sources.find((source) => source.resource === "account:issues")?.version).toBe(
+			inbox.sourceVersion,
+		);
+		for (const resource of ["repos", "ci", "factory", "prs"])
+			expect(index.sources.some((source) => source.resource === `account:${resource}`)).toBe(true);
+	} finally {
+		assertMarker();
+		sql(cleanup);
+	}
+	expect(
+		sql(`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`).map(
+			(statement) => statement.results,
+		),
+	).toEqual(before);
+});

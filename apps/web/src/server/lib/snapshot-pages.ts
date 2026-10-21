@@ -3,21 +3,30 @@ import { emptyCollected } from "./collect";
 const MAX = 1_500_000;
 
 export type SnapshotPage = { kind: string; payload: string };
+export type SnapshotGroups = Map<string, Record<string, unknown>>;
 
-export function latestSnapshotGroups(rows: SnapshotPage[]) {
+export function assembleSnapshotGroups(rows: SnapshotPage[]): SnapshotGroups {
 	const groups = new Map<string, SnapshotPage[]>();
 	for (const row of rows) {
 		const resource = row.kind.replace(/#2$/, "");
 		groups.set(resource, [...(groups.get(resource) ?? []), row]);
 	}
+	return new Map(
+		[...groups].flatMap(([resource, pages]) =>
+			pages.some((page) => page.kind === resource)
+				? [[resource, assemblePages(resource, pages)] as const]
+				: [],
+		),
+	);
+}
+
+export function latestSnapshots(groups: SnapshotGroups) {
 	const latest = new Map<string, { resource: string; data: Record<string, unknown> }>();
 	const time = (data: Record<string, unknown>) => {
 		const parsed = typeof data.fetched_at === "string" ? Date.parse(data.fetched_at) : NaN;
 		return Number.isFinite(parsed) ? parsed : -Infinity;
 	};
-	for (const [resource, pages] of groups) {
-		if (!pages.some((page) => page.kind === resource)) continue;
-		const data = assemblePages(resource, pages);
+	for (const [resource, data] of groups) {
 		const key = resource.toLowerCase();
 		const previous = latest.get(key);
 		if (
@@ -28,6 +37,10 @@ export function latestSnapshotGroups(rows: SnapshotPage[]) {
 			latest.set(key, { resource, data });
 	}
 	return latest;
+}
+
+export function latestSnapshotGroups(rows: SnapshotPage[]) {
+	return latestSnapshots(assembleSnapshotGroups(rows));
 }
 
 function utf8Len(text: string): number {

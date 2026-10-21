@@ -4,7 +4,13 @@ import { snapshotFreshness } from "../../lib/snapshot-freshness";
 import type { Db } from "./db/d1";
 import { readSnapshot } from "./db/snapshots";
 import { buildInsights, type InsightAlert } from "./insights";
-import { assemblePages, type SnapshotPage, splitPages } from "./snapshot-pages";
+import {
+	assemblePages,
+	assembleSnapshotGroups,
+	type SnapshotGroups,
+	type SnapshotPage,
+	splitPages,
+} from "./snapshot-pages";
 import { type SnapshotScope, snapshotSelection } from "./snapshot-scope";
 
 type Repo = Record<string, unknown> & RepoStatistics & { name_with_owner: string };
@@ -86,14 +92,14 @@ async function repositoryPages(db: Db, account: string, suffix: string) {
 		)
 		.bind(account, `repo:%:${suffix}`, `repo:%:${suffix}#2`)
 		.all<SnapshotPage>();
-	const groups = new Map<string, SnapshotPage[]>();
-	for (const row of rows.results) {
-		const logical = row.kind.replace(/#2$/, "");
-		groups.set(logical, [...(groups.get(logical) ?? []), row]);
-	}
+	return completeRepositoryPages(assembleSnapshotGroups(rows.results), suffix);
+}
+
+function completeRepositoryPages(groups: SnapshotGroups, suffix: string) {
 	const snapshots = new Map<string, Record<string, unknown>>();
-	for (const [logical, pages] of groups) {
-		const snapshot = assemblePages(logical, pages);
+	for (const [logical, snapshot] of groups) {
+		const lower = logical.toLowerCase();
+		if (!lower.startsWith("repo:") || !lower.endsWith(`:${suffix}`)) continue;
 		if (!complete(snapshot)) continue;
 		const name = logical.slice(5, -suffix.length - 1).toLowerCase();
 		const previous = snapshots.get(name);
@@ -113,6 +119,7 @@ async function projectList(
 	snapshot: Record<string, unknown> | null,
 	policy: Policy,
 	includeDisabled = false,
+	savedPages?: SnapshotGroups,
 ) {
 	const key = LIST_KEYS[kind] as string;
 	const allowed = includeDisabled ? policy.includes : policy.enabled;
@@ -148,7 +155,9 @@ async function projectList(
 	];
 	const pages =
 		suffix && names.size
-			? await repositoryPages(db, account, suffix)
+			? savedPages
+				? completeRepositoryPages(savedPages, suffix)
+				: await repositoryPages(db, account, suffix)
 			: new Map<string, Record<string, unknown>>();
 	const times = new Map<string, string | null>();
 	const replacements = new Map<string, Record<string, unknown>[]>();
@@ -222,6 +231,7 @@ export async function projectSnapshot(
 	snap: Record<string, unknown>,
 	policy: Policy,
 	statisticsFilter = true,
+	savedPages?: SnapshotGroups,
 ): Promise<Record<string, unknown>> {
 	if (kind.startsWith("repo:")) return snap;
 	const scope = policy.scope;
@@ -304,6 +314,7 @@ export async function projectSnapshot(
 		snap,
 		policy,
 		!statisticsFilter,
+		savedPages,
 	);
 	return {
 		...snap,

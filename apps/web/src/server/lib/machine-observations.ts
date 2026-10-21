@@ -1,6 +1,10 @@
 import { type CiEntry, type CiRelease, type CiRun, ciReport } from "../../lib/ci-health";
 import { dependencyEvidence } from "../../lib/factory-dependencies";
-import type { FactoryStreamData, FactoryStreamName } from "../../lib/factory-types";
+import type {
+	FactorySnapshot,
+	FactoryStreamData,
+	FactoryStreamName,
+} from "../../lib/factory-types";
 import { FACTORY_STREAMS } from "../../lib/factory-types";
 import { snapshotFreshness } from "../../lib/snapshot-freshness";
 import type { Db } from "./db/d1";
@@ -24,7 +28,7 @@ export async function requireCatalogRepo(db: Db, account: string, name: string) 
 	if (!repo) throw new ApiError(404, "not_found", "repository outside saved account catalog");
 	return repo.name_with_owner;
 }
-async function digest(data: unknown) {
+export async function observationVersion(data: unknown) {
 	const bytes = await crypto.subtle.digest(
 		"SHA-256",
 		new TextEncoder().encode(JSON.stringify(data)),
@@ -39,22 +43,28 @@ export async function observationEnvelope(
 	publicationId: string | null = null,
 	version?: string,
 ) {
+	return {
+		account_id: account,
+		data,
+		sourceVersion: version ?? (await observationVersion(data)),
+		...observationMetadata(data),
+		source: { kind: publicationId ? "factory" : "snapshot", resource, publicationId },
+		selection: { scope, statisticsFilter: false },
+	};
+}
+
+export function observationMetadata(data: Record<string, unknown>) {
 	const fetchedAt = typeof data.fetched_at === "string" ? data.fetched_at : null;
 	const times =
 		data.repository_fetched_at && typeof data.repository_fetched_at === "object"
 			? Object.values(data.repository_fetched_at).map((v) => (typeof v === "string" ? v : null))
 			: [fetchedAt];
 	return {
-		account_id: account,
-		data,
-		sourceVersion: version ?? (await digest(data)),
 		fetchedAt,
 		freshness: data.freshness ?? snapshotFreshness(times),
 		coverage: data.coverage ?? null,
 		truncated: data.truncated === true,
 		unavailable: data.unavailable === true || data.forbidden === true,
-		source: { kind: publicationId ? "factory" : "snapshot", resource, publicationId },
-		selection: { scope, statisticsFilter: false },
 	};
 }
 export async function readCiObservation(
@@ -73,6 +83,16 @@ export async function readCiObservation(
 		.bind(account)
 		.all<SnapshotPage & { fetched_at: string }>();
 	const groups = latestSnapshotGroups(rows.results);
+	return projectCiObservation(policy, groups, statisticsFilter);
+}
+
+export function projectCiObservation(
+	policy: Policy,
+	groups: ReturnType<typeof latestSnapshotGroups>,
+	statisticsFilter = false,
+) {
+	if (!policy.catalog && !policy.empty)
+		throw new ApiError(409, "snapshot_missing", "no repository catalog");
 	const entries: CiEntry[] = [];
 	const unsaved: string[] = [];
 	const times: (string | null)[] = [];
@@ -130,6 +150,12 @@ export async function readCiObservation(
 	};
 }
 
+export function projectFactoryObservation(snapshot: FactorySnapshot, policy: Policy) {
+	const projected = statisticsFactory(snapshot, policy, false);
+	const freshness = factoryFreshness(projected, policy, false);
+	return { ...projected, fetched_at: freshness.latestAt ?? "", freshness };
+}
+
 export async function readObservation(
 	db: Db,
 	account: string,
@@ -146,16 +172,10 @@ export async function readObservation(
 	if (resource === "factory") {
 		const snapshot = await publishedFactory(db, account);
 		if (!snapshot) throw new ApiError(409, "snapshot_missing", "no saved publication");
-		const projected = statisticsFactory(snapshot, policy, false);
-		const freshness = factoryFreshness(projected, policy, false);
 		return observationEnvelope(
 			account,
 			resource,
-			{
-				...projected,
-				fetched_at: freshness.latestAt ?? "",
-				freshness,
-			},
+			projectFactoryObservation(snapshot, policy),
 			scope,
 			snapshot.publication?.runId ?? snapshot.runId,
 			snapshot.publication?.runId ?? snapshot.runId,
