@@ -1,6 +1,8 @@
+import type { UnavailableReasonCode } from "../../lib/factory-types";
 import { APP_VERSION } from "../../lib/version";
 import { type Env, envMode } from "../env";
 import { ApiError } from "./errors";
+import { classifyGithubUnavailable, GithubUnavailableError } from "./github-unavailable";
 
 const GITHUB_ORIGIN = "https://api.github.com";
 export const MAX_FETCHES = 40;
@@ -14,7 +16,7 @@ export class TruncatedError extends Error {
 
 export type GithubClient = {
 	count: number;
-	graphqlErrors: Array<{ type?: string }>;
+	graphqlErrors: Array<{ type?: string; reasonCode?: UnavailableReasonCode }>;
 	githubFetch: (url: string, init?: RequestInit) => Promise<Response>;
 	githubApi: (token: string, path: string, init?: RequestInit) => Promise<Response>;
 	githubGraphql: (
@@ -70,11 +72,12 @@ function mapStatus(res: Response, body: string): never {
 			new Date(until).toISOString(),
 		);
 	}
-	if (res.status === 403) {
-		throw new ApiError(403, "github_forbidden", "github forbidden");
-	}
-	if (res.status === 404) {
-		throw new ApiError(404, "not_found", "github not found");
+	if (res.status === 403 || res.status === 404) {
+		let message: unknown;
+		try {
+			message = (JSON.parse(body) as { message?: unknown } | null)?.message;
+		} catch {}
+		throw new GithubUnavailableError(res.status, message);
 	}
 	throw new ApiError(502, "github_error", "github error");
 }
@@ -276,7 +279,17 @@ export function createGithubClient(
 				throw new ApiError(502, "github_error", "github error");
 			}
 			const errors = payload.errors ?? [];
-			client.graphqlErrors = errors;
+			client.graphqlErrors = errors.map((error) => ({
+				...(error.type === undefined ? {} : { type: error.type }),
+				...(["FORBIDDEN", "NOT_FOUND"].includes(error.type ?? "")
+					? {
+							reasonCode: classifyGithubUnavailable(
+								error.type === "NOT_FOUND" ? 404 : 403,
+								error.message,
+							).reason_code,
+						}
+					: {}),
+			}));
 			if (errors.some((e) => e.type === "RATE_LIMITED")) {
 				throw new ApiError(503, "github_rate_limited", "github rate limited");
 			}
