@@ -2,6 +2,27 @@ import { expect, it } from "vitest";
 import { github } from "../../../../../tests/fixtures/factory";
 import { collectKind, collectRepos } from "./collect";
 
+it.each(["issues", "repo:a/b:issues", "repo:a/b:prs", "repo:a/b:security"])(
+	"rejects non-string %s continuation before accepting a later terminal page",
+	async (kind) => {
+		let pages = 0;
+		const gh = github((url) => {
+			if (!url.endsWith("/graphql")) return Response.json([]);
+			pages++;
+			const connection = {
+				nodes: [],
+				issueCount: 0,
+				pageInfo: { hasNextPage: pages === 1, endCursor: 7 },
+			};
+			return Response.json({
+				data: { search: connection, repository: { vulnerabilityAlerts: connection } },
+			});
+		});
+		expect(await collectKind(gh, "test", kind, ["a/b"])).toMatchObject({ truncated: true });
+		expect(pages).toBe(1);
+	},
+);
+
 it.each(["repo:a/b:issues", "repo:a/b:prs"])(
 	"requires an explicit first-page access error for unavailable %s",
 	async (kind) => {

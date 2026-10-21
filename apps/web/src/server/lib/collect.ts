@@ -173,7 +173,7 @@ async function searchList(
 						throw new ApiError(404, "not_found", "github not found");
 					throw new ApiError(403, "github_forbidden", "github forbidden");
 				}
-				if (!Array.isArray(search?.nodes)) {
+				if (!Array.isArray(search?.nodes) || typeof search.pageInfo?.hasNextPage !== "boolean") {
 					truncated = true;
 					stop = true;
 					break;
@@ -210,7 +210,11 @@ async function searchList(
 					truncated = true;
 				}
 				if (search.pageInfo?.hasNextPage) {
-					if (!search.pageInfo.endCursor || search.pageInfo.endCursor === after) {
+					if (
+						typeof search.pageInfo.endCursor !== "string" ||
+						!search.pageInfo.endCursor ||
+						search.pageInfo.endCursor === after
+					) {
 						truncated = true;
 						break;
 					}
@@ -261,7 +265,7 @@ export async function collectRepos(
 				  }
 				| undefined;
 			const conn = viewer?.repositories;
-			if (!Array.isArray(conn?.nodes)) {
+			if (!Array.isArray(conn?.nodes) || typeof conn.pageInfo?.hasNextPage !== "boolean") {
 				truncated = true;
 				break;
 			}
@@ -362,7 +366,10 @@ async function collectAlerts(
 					if (after !== null || Array.isArray(repo?.vulnerabilityAlerts?.nodes)) truncated = true;
 					break;
 				}
-				if (!Array.isArray(repo?.vulnerabilityAlerts?.nodes)) {
+				if (
+					!Array.isArray(repo?.vulnerabilityAlerts?.nodes) ||
+					typeof repo.vulnerabilityAlerts.pageInfo?.hasNextPage !== "boolean"
+				) {
 					truncated = true;
 					unavailable = true;
 					break;
@@ -389,7 +396,7 @@ async function collectAlerts(
 				}
 				if (repo.vulnerabilityAlerts?.pageInfo?.hasNextPage) {
 					const next = repo.vulnerabilityAlerts.pageInfo.endCursor;
-					if (!next || next === after) {
+					if (typeof next !== "string" || !next || next === after) {
 						truncated = true;
 						break;
 					}

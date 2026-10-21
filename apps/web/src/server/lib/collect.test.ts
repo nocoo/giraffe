@@ -169,13 +169,17 @@ describe("collectRepos", () => {
 		expect(((await collectRepos(withNull, "tok")).repos as unknown[]).length).toBe(1);
 		const soft = client({
 			graphql: () => ({
-				viewer: { repositories: { nodes: [{ nameWithOwner: "o/a" }], pageInfo: {} } },
+				viewer: {
+					repositories: { nodes: [{ nameWithOwner: "o/a" }], pageInfo: { hasNextPage: false } },
+				},
 			}),
 		});
 		soft.githubGraphql = async () => {
 			soft.graphqlErrors = [{ type: "FORBIDDEN" }];
 			return {
-				viewer: { repositories: { nodes: [{ nameWithOwner: "o/a" }], pageInfo: {} } },
+				viewer: {
+					repositories: { nodes: [{ nameWithOwner: "o/a" }], pageInfo: { hasNextPage: false } },
+				},
 			};
 		};
 		expect((await collectRepos(soft, "tok")).truncated).toBe(true);
@@ -249,7 +253,9 @@ describe("collectRepos", () => {
 		});
 		expect((await collectKind(fatSec, "tok", "repo:o/n:security", [], 20)).truncated).toBe(true);
 		const skipScan = client({
-			graphql: () => ({ repository: { vulnerabilityAlerts: { nodes: [] } } }),
+			graphql: () => ({
+				repository: { vulnerabilityAlerts: { nodes: [], pageInfo: { hasNextPage: false } } },
+			}),
 			api: async () => {
 				throw new Error("scan skipped");
 			},
@@ -456,7 +462,9 @@ describe("collectKind", () => {
 		const many = Array.from({ length: 11 }, (_, i) => `o/r${i}`);
 		const truncated = await collectKind(
 			client({
-				graphql: () => ({ repository: { vulnerabilityAlerts: { nodes: [] } } }),
+				graphql: () => ({
+					repository: { vulnerabilityAlerts: { nodes: [], pageInfo: { hasNextPage: false } } },
+				}),
 				api: () => Response.json([]),
 			}),
 			"tok",
@@ -496,7 +504,9 @@ describe("collectKind", () => {
 			code: "github_unauthorized",
 		});
 		const hardRest = client({
-			graphql: () => ({ repository: { vulnerabilityAlerts: { nodes: [] } } }),
+			graphql: () => ({
+				repository: { vulnerabilityAlerts: { nodes: [], pageInfo: { hasNextPage: false } } },
+			}),
 			api: async () => {
 				throw new ApiError(401, "github_unauthorized", "no");
 			},
@@ -574,7 +584,9 @@ describe("collectKind", () => {
 			},
 			graphql: () => ({
 				search: { issueCount: 0, pageInfo: { hasNextPage: false }, nodes: [] },
-				repository: { vulnerabilityAlerts: { nodes: [{ id: "1" }] } },
+				repository: {
+					vulnerabilityAlerts: { nodes: [{ id: "1" }], pageInfo: { hasNextPage: false } },
+				},
 			}),
 		});
 		expect((await collectKind(gh, "tok", "repo:o/n:details", [])).default_branch).toBe("main");
@@ -602,11 +614,15 @@ describe("collectKind", () => {
 						link: '<https://api.github.com/repos/o/n/code-scanning/alerts?page=2>; rel="next"',
 					},
 				}),
-			graphql: () => ({ repository: { vulnerabilityAlerts: { nodes: [] } } }),
+			graphql: () => ({
+				repository: { vulnerabilityAlerts: { nodes: [], pageInfo: { hasNextPage: false } } },
+			}),
 		});
 		expect((await collectKind(nextScan, "tok", "alerts", ["o/n"])).truncated).toBe(true);
 		const nextSec = client({
-			graphql: () => ({ repository: { vulnerabilityAlerts: { nodes: [] } } }),
+			graphql: () => ({
+				repository: { vulnerabilityAlerts: { nodes: [], pageInfo: { hasNextPage: false } } },
+			}),
 			api: () =>
 				new Response("[]", {
 					headers: {
@@ -618,7 +634,11 @@ describe("collectKind", () => {
 		const forbiddenSec = client({
 			graphql: async () => {
 				forbiddenSec.graphqlErrors = [{ type: "FORBIDDEN" }];
-				return { repository: { vulnerabilityAlerts: { nodes: [{ id: "1" }] } } };
+				return {
+					repository: {
+						vulnerabilityAlerts: { nodes: [{ id: "1" }], pageInfo: { hasNextPage: false } },
+					},
+				};
 			},
 			api: () => Response.json([]),
 		});
@@ -825,14 +845,18 @@ describe("collectKind", () => {
 		expect(emptyAlerts.dependabot_open).toBe(0);
 		expect(emptyAlerts.code_scanning_open).toBe(0);
 		const capScan = client({
-			graphql: () => ({ repository: { vulnerabilityAlerts: { nodes: [] } } }),
+			graphql: () => ({
+				repository: { vulnerabilityAlerts: { nodes: [], pageInfo: { hasNextPage: false } } },
+			}),
 			api: async () => {
 				throw new TruncatedError();
 			},
 		});
 		expect((await collectKind(capScan, "tok", "repo:o/n:security", [])).truncated).toBe(true);
 		const hardScan = client({
-			graphql: () => ({ repository: { vulnerabilityAlerts: { nodes: [] } } }),
+			graphql: () => ({
+				repository: { vulnerabilityAlerts: { nodes: [], pageInfo: { hasNextPage: false } } },
+			}),
 			api: async () => {
 				throw new ApiError(401, "github_unauthorized", "no");
 			},

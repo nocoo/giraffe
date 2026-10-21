@@ -253,6 +253,68 @@ it.each(["issues", "prs"] as const)(
 	},
 );
 
+it.each(["repos", "issues", "prs", "security"])(
+	"fails %s GraphQL connections without an explicit pagination flag",
+	async (resource) => {
+		const env = await setup(resource === "repos" ? "catalog" : "refresh", {
+			scope: "selected",
+			repos: ["nocoo/app"],
+		});
+		const db = createDb(env.DB);
+		const kind = resource === "repos" ? "repos" : `repo:nocoo/app:${resource}`;
+		const old = {
+			truncated: false,
+			fetched_at: "2025-01-01T00:00:00.000Z",
+			repos: [{ name_with_owner: "nocoo/app" }],
+			issues: [],
+			pull_requests: [],
+			dependabot_open: 7,
+			code_scanning_open: 2,
+		};
+		await db.batch(replaceSnapshotStmts(db, snap.account_id, kind, old, old.fetched_at));
+		const base = vi.mocked(fetch).getMockImplementation();
+		if (!base) throw new Error("fixture");
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (url: string, init: RequestInit) => {
+				const query = String(init?.body);
+				const connection = { nodes: [], issueCount: 0, pageInfo: {} };
+				if (resource === "repos" && query.includes("ownerAffiliations"))
+					return Response.json({
+						data: {
+							viewer: {
+								login: "nocoo",
+								repositories: { totalCount: 1, nodes: [rawRepo], pageInfo: { hasNextPage: false } },
+							},
+						},
+					});
+				if (resource === "repos" && query.includes("viewer"))
+					return Response.json({ data: { viewer: { repositories: connection } } });
+				if (resource === "security" && query.includes("vulnerabilityAlerts"))
+					return Response.json({ data: { repository: { vulnerabilityAlerts: connection } } });
+				if (
+					["issues", "prs"].includes(resource) &&
+					query.includes(`is:${resource === "prs" ? "pr" : "issue"}`)
+				)
+					return Response.json({ data: { search: connection } });
+				return base(url, init);
+			}),
+		);
+		const run = await drive(env);
+		expect(run?.steps.find((step) => step.resource === kind)).toMatchObject({
+			status: "failed",
+			error: "snapshot_incomplete",
+		});
+		expect(run?.status).toBe("partial");
+		expect(await publishedFactory(db, snap.account_id)).toMatchObject({
+			runId: "r1",
+			status: "partial",
+		});
+		expect((await listRuns(db, snap.account_id))[0]?.counts.failed).toBeGreaterThan(0);
+		expect(await readSnapshot(db, snap.account_id, kind)).toEqual(old);
+	},
+);
+
 it.each([403, 404])(
 	"fails interrupted Actions pagination (%s), even after an empty first page",
 	async (status) => {

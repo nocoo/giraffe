@@ -704,3 +704,6 @@ incomplete even when every denied node was removed and the array is now empty.
 Catalog pagination also needs a nonempty new string cursor whenever it advertises
 another page. Missing cursors previously published a false complete empty catalog;
 invalid or repeated cursors now fail without replacing saved repositories/time.
+Checking only a truthy pagination flag was still insufficient: omitted flags
+silently looked terminal. Require an explicit boolean flag, and validate cursor
+types before issuing a continuation request, across ordinary GraphQL connections.

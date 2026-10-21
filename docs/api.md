@@ -674,6 +674,9 @@ are partial responses, not whole-connection unavailability, even if filtering th
 denied nodes leaves an empty array.
 Catalog pages advertising a continuation require a nonempty new string cursor;
 missing, invalid or repeated cursors are incomplete, never a successful empty catalog.
+Saved GraphQL connections require an explicit boolean `pageInfo.hasNextPage`;
+missing pagination metadata is not proof of a terminal page. Search and security
+continuations also require nonempty new string cursors.
 For the **same run ID**, a published factory snapshot has `status:complete` for
 a completed run and `status:partial` for a partial run. A newer failed, paused or
 timed-out attempt can leave an older publication untouched; compare run IDs and
