@@ -87,7 +87,11 @@ uniform freshness. Source-index account entries use the same projection.
 Factory freshness likewise counts the selected catalog, using only immutable
 per-repository observation times and counting absent publications/observations as
 missing. Publication inventory counters remain historical collection metadata.
-The unprojectable account-wide contribution calendar is excluded explicitly.
+Default/`scope=all` preserves the exact saved 90-day account contribution calendar,
+status and provenance, independently of repository filtering. Only `scope=starred`
+excludes it (`contribution:null`, `contributionExcluded:true`,
+`contributionStatus:"unavailable"`, no `contributionObservation`), because the
+account-wide calendar cannot be projected to a repository subset. GET is read-only.
 CI freshness counts three saved dependencies per repository, not one timestamp.
 
 CI verdicts use the known default branch only; missing branch metadata, PR/feature

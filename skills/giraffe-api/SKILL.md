@@ -169,8 +169,11 @@ access loss during pagination remain failures, not expected absence.
   account entries use the same projection.
 - Factory freshness counts selected catalog repos, including missing publications,
   and uses only immutable repository observation times. Inventory counters remain
-  historical collection metadata; the account-wide contribution calendar is
-  excluded because it cannot honor repository membership. CI freshness counts
+  historical collection metadata. Default/`scope=all` preserves the saved account
+  calendar's exact 90 `days[]`, totals, status and `contributionObservation`.
+  Only `scope=starred` excludes the unprojectable calendar (`contribution:null`,
+  `contributionExcluded:true`, `contributionStatus:"unavailable"`, no provenance).
+  Repository filtering never rewrites account calendar evidence. CI freshness counts
   three dependencies per repo: Actions, releases and details.
 - Factory stream `data` includes `runId`, `items`, `next`, `ranges:[{since,until}]`,
   `coverage`, `fetched_at`, optional `observation`, and flags. `next` is saved

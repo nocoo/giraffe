@@ -133,6 +133,85 @@ it("keeps raw snapshots immutable and excludes factory entries without a saved c
 	).toMatchObject({ code_scanning_open: 0, dependabot_open: 0 });
 });
 
+it.each(["pending", "complete", "unavailable"] as const)(
+	"preserves the exact saved account calendar and %s status unless the scope is starred",
+	async (status) => {
+		const raw = sqliteFixture();
+		const db = createDb(raw);
+		const snapshot = factoryFixture();
+		const account = snapshot.account_id;
+		const repo = snapshot.repos[0];
+		if (!repo) throw new Error("fixture");
+		await db
+			.prepare(
+				"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES(?,'nocoo','fake','fake','t','t')",
+			)
+			.bind(account)
+			.run();
+		await db.batch(
+			replaceSnapshotStmts(
+				db,
+				account,
+				"repos",
+				{ repos: [{ name_with_owner: repo.name }, { name_with_owner: "nocoo/disabled" }] },
+				snapshot.fetched_at,
+			),
+		);
+		await db.prepare("INSERT INTO repo_stars VALUES(?,'NOCOO/APP')").bind(account).run();
+		await db
+			.prepare("INSERT INTO repo_statistics VALUES(?,'nocoo/disabled',0)")
+			.bind(account)
+			.run();
+		snapshot.repos.push({ ...repo, name: "nocoo/disabled" }, { ...repo, name: "nocoo/removed" });
+		snapshot.inventory.excluded = [{ name: "nocoo/removed", reason: "archived" }];
+		const counts = [48, 350, 329, 209, 298, 375];
+		snapshot.contribution = {
+			days: Array.from({ length: 90 }, (_, index) => ({
+				date: new Date(Date.UTC(2026, 6, 20 + index)).toISOString().slice(0, 10),
+				count: index < 84 ? index % 7 : (counts[index - 84] as number),
+			})),
+			total: 1861,
+			restricted: 71,
+			fetchedAt: "2026-10-18T00:00:00.000Z",
+		};
+		snapshot.contributionStatus = status;
+		snapshot.contributionObservation = {
+			version: "retained-calendar-version",
+			window: { since: "2026-07-20T00:00:00.000Z", until: "2026-10-18T00:00:00.000Z" },
+			fetchedAt: snapshot.contribution.fetchedAt,
+		};
+		const before = structuredClone(snapshot);
+		const saved = await raw.prepare("SELECT * FROM snapshots ORDER BY kind").all();
+		for (const statisticsFilter of [true, false]) {
+			const all = statisticsFactory(snapshot, await repoPolicy(db, account), statisticsFilter);
+			expect(all.contribution).toEqual(before.contribution);
+			expect(all.contributionStatus).toBe(status);
+			expect(all.contributionObservation).toEqual(before.contributionObservation);
+			expect(all).not.toHaveProperty("contributionExcluded");
+			expect(all.repos.map((item) => item.name)).toEqual(
+				statisticsFilter ? [repo.name] : [repo.name, "nocoo/disabled"],
+			);
+			expect(all.inventory.excluded).toEqual(
+				statisticsFilter ? [{ name: "nocoo/disabled", reason: "statistics-disabled" }] : [],
+			);
+			const starred = statisticsFactory(
+				snapshot,
+				await repoPolicy(db, account, undefined, "starred"),
+				statisticsFilter,
+			);
+			expect(starred).toMatchObject({
+				repos: [{ name: repo.name }],
+				contribution: null,
+				contributionExcluded: true,
+				contributionStatus: "unavailable",
+			});
+			expect(starred).not.toHaveProperty("contributionObservation");
+		}
+		expect(snapshot).toEqual(before);
+		expect(await raw.prepare("SELECT * FROM snapshots ORDER BY kind").all()).toEqual(saved);
+	},
+);
+
 it.each([
 	["issues", "issues", "issues"],
 	["prs", "pull_requests", "prs"],

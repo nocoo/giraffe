@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bound catalog, quick and deep runs by absolute deadlines, revoke expired leases, release account locks and retain timeout diagnostics in schedule settings.
 - Record missed schedule intervals durably and attempt only the latest due slot, without letting audit records delay recovery through collection cooldowns.
 - Bound non-default CI branch streams to 30 days of saved activity, retaining idle default-branch workflows without using the GET wall clock or deleting history.
+- Restore the exact saved 90-day account contribution calendar, status and provenance for default/all factory reads; only starred projections exclude the account-wide calendar.
 
 ### Changed
 

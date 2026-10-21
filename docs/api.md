@@ -211,10 +211,14 @@ from the publication. Only immutable repository `observation.refreshedAt` suppli
 their time; absent/invalid observations count as missing. Its `fetchedAt` is the
 latest such observation, never the publication clock. Inventory `total`, `scanned`
 and `pages` remain historical collection metadata, not projected repository counts.
-The account-wide contribution calendar has no repository breakdown, so projections
-return `contribution:null`, `contributionExcluded:true` and
-`contributionStatus:"unavailable"` rather than attributing excluded data to the
-selection. Original publication windows and repository versions are retained.
+Default/`scope=all` factory reads preserve the saved account-wide contribution
+calendar exactly: all 90 `contribution.days[]` entries, totals, status and
+`contributionObservation` provenance. Repository/catalog/statistics filtering does
+not rewrite this account-wide evidence. Only `scope=starred` returns
+`contribution:null`, `contributionExcluded:true` and `contributionStatus:"unavailable"`
+without `contributionObservation`: the calendar has no repository breakdown and
+cannot be attributed to that subset. Original publication windows and repository
+versions are retained; GET neither recollects nor rewrites the calendar.
 CI freshness counts three dependencies per selected repository (Actions, releases,
 details); missing/unavailable dependencies count as missing.
 

@@ -117,8 +117,9 @@ it("counts catalog repositories without factory publications and preserves publi
 		freshness: { total: 3, missing: 2, oldestAt: "2026-09-01T00:00:00Z" },
 		inventory: { excluded: [] },
 		contribution: null,
-		contributionExcluded: true,
+		contributionStatus: snap.contributionStatus,
 	});
+	expect(browser).not.toHaveProperty("contributionExcluded");
 	expect((await readObservation(createDb(raw), account, "factory", "all")).data).toEqual({
 		...browser,
 		account_id: account,
