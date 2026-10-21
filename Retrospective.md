@@ -698,3 +698,6 @@ publication, history counts, and unchanged prior snapshot/time together.
 The next MAX pass also reproduced access loss across global Issues/PR queue
 chunks: local page counters reset, but the durable snapshot cursor remains.
 Completeness guards must use both boundaries, not only pagination within one call.
+Security GraphQL errors must also distinguish a missing connection from a partial
+connection. If a nodes array survives error-path filtering, the response is
+incomplete even when every denied node was removed and the array is now empty.

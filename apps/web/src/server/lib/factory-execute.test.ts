@@ -151,6 +151,57 @@ it("finishes expected unavailable streams without a partial publication", async 
 	expect((await publishedFactory(createDb(env.DB), snap.account_id))?.status).toBe("complete");
 });
 
+it.each([1, 2])(
+	"fails partial security GraphQL nodes without replacing retained evidence (%s nodes)",
+	async (nodes) => {
+		const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] });
+		const db = createDb(env.DB);
+		const kind = "repo:nocoo/app:security";
+		const old = {
+			truncated: false,
+			unavailable: false,
+			fetched_at: "2025-01-01T00:00:00.000Z",
+			dependabot_open: 7,
+			code_scanning_open: 0,
+		};
+		await db.batch(replaceSnapshotStmts(db, snap.account_id, kind, old, old.fetched_at));
+		const base = vi.mocked(fetch).getMockImplementation();
+		if (!base) throw new Error("fixture");
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (url: string, init: RequestInit) =>
+				String(init?.body).includes("vulnerabilityAlerts")
+					? Response.json({
+							data: {
+								repository: {
+									vulnerabilityAlerts: {
+										nodes: Array.from({ length: nodes }, (_, i) => ({ id: `alert-${i}` })),
+										pageInfo: { hasNextPage: false },
+									},
+								},
+							},
+							errors: [
+								{ type: "FORBIDDEN", path: ["repository", "vulnerabilityAlerts", "nodes", 0] },
+							],
+						})
+					: base(url, init),
+			),
+		);
+		const run = await drive(env);
+		expect(run?.steps.find((step) => step.resource === kind)).toMatchObject({
+			status: "failed",
+			error: "snapshot_incomplete",
+		});
+		expect(run?.status).toBe("partial");
+		expect(await publishedFactory(db, snap.account_id)).toMatchObject({
+			runId: "r1",
+			status: "partial",
+		});
+		expect((await listRuns(db, snap.account_id))[0]?.counts.failed).toBeGreaterThan(0);
+		expect(await readSnapshot(db, snap.account_id, kind)).toEqual(old);
+	},
+);
+
 it("publishes partial when a real page failure makes the run partial", async () => {
 	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] });
 	const base = vi.mocked(fetch).getMockImplementation();

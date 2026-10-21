@@ -354,7 +354,7 @@ async function collectAlerts(
 					reason ??= unavailableReason(
 						error?.reasonCode ?? (error?.type === "NOT_FOUND" ? "not_found" : "unknown"),
 					);
-					if (after) truncated = true;
+					if (after !== null || Array.isArray(repo?.vulnerabilityAlerts?.nodes)) truncated = true;
 					break;
 				}
 				if (!Array.isArray(repo?.vulnerabilityAlerts?.nodes)) {

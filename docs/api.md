@@ -669,6 +669,9 @@ the run/publication partial rather than complete.
 This includes global Issues/PR chunks resumed in another queue invocation: the
 durable snapshot cursor, not just the current request's local page counter,
 determines whether collection has already started.
+Security GraphQL responses with field/node access errors and a surviving connection
+are partial responses, not whole-connection unavailability, even if filtering the
+denied nodes leaves an empty array.
 For the **same run ID**, a published factory snapshot has `status:complete` for
 a completed run and `status:partial` for a partial run. A newer failed, paused or
 timed-out attempt can leave an older publication untouched; compare run IDs and

@@ -447,7 +447,7 @@ describe("collectKind", () => {
 		});
 		denied.githubGraphql = async () => {
 			denied.graphqlErrors = [{ type: "FORBIDDEN" }];
-			return { repository: { vulnerabilityAlerts: { nodes: [] } } };
+			return { repository: null };
 		};
 		const deniedOut = await collectKind(denied, "tok", "alerts", ["o/n"]);
 		expect(deniedOut.unavailable).toBe(true);
