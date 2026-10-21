@@ -152,3 +152,39 @@ it("keeps per-node GraphQL denials unknown, handles absent rate reset and reject
 	).rejects.toMatchObject({ code: "github_error" });
 	expect(good.count).toBe(1);
 });
+
+it.each([
+	[49, 900],
+	[900, 49],
+])("retains independent core/GraphQL reserves across PR pages (%s/%s)", async (core, graphql) => {
+	const state = ready("prs");
+	const store = memoryStore();
+	const reset = "2026-09-16T00:00:00.000Z";
+	const gh = github((url) =>
+		url.endsWith("/graphql")
+			? Response.json({ data: { nodes: [], rateLimit: { remaining: graphql, resetAt: reset } } })
+			: Response.json([rawEvent()], {
+					headers: {
+						"x-ratelimit-remaining": String(core),
+						"x-ratelimit-reset": String(Date.parse(reset) / 1000),
+						link: '<https://api.github.com/repos/nocoo/app/pulls?page=2>; rel="next"',
+					},
+				}),
+	);
+	await stepFactory(state, gh, "fixture", store, NOW);
+	expect(state.rate?.resource).toBe("graphql");
+	const calls = gh.count;
+	await expect(
+		stepFactory(structuredClone(state), gh, "fixture", store, NOW),
+	).rejects.toMatchObject({ code: "github_rate_limited", retryAt: reset });
+	expect(gh.count).toBe(calls);
+	const resumed = github((url) =>
+		url.endsWith("/graphql")
+			? Response.json({
+					data: { nodes: [], rateLimit: { remaining: 900, resetAt: "2026-09-17T00:00:00Z" } },
+				})
+			: Response.json([rawEvent(2)], { headers: { "x-ratelimit-remaining": "900" } }),
+	);
+	await stepFactory(state, resumed, "fixture", store, reset);
+	expect(state.repos[0]?.coverage.prs.status).toBe("complete");
+});

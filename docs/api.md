@@ -305,7 +305,10 @@ These are observations at collection time, not a guarantee that a PR can merge n
 
 Account and repository searches collect these fields in their existing GraphQL
 request. Factory REST PR pages add one GraphQL node batch (at most 100 IDs per
-page), under the existing request/rate budgets. Inaccessible nodes retain null
+page), under the existing request/rate budgets. Core and GraphQL reserves remain
+separate across pages, metadata transitions and evidence rollback; the public
+`rate` field still describes the latest observation rather than a combined quota.
+Inaccessible nodes retain null
 details; retryable failures retain the prior good publication. Old saved items
 read with explicit null fields without database rewrites or upstream requests.
 The additions can change content-derived snapshot hashes but do not change

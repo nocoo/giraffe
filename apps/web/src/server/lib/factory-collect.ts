@@ -26,6 +26,7 @@ import {
 	rows,
 } from "./factory-map";
 import { FACTORY_DEPENDENCIES_QUERY, FACTORY_INVENTORY_QUERY } from "./factory-queries";
+import { assertFactoryReserve, recordFactoryRate } from "./factory-rate";
 import type { GithubClient } from "./github-client";
 import { githubUnavailability } from "./github-unavailable";
 import { collectPrState } from "./pr-collect";
@@ -116,12 +117,12 @@ export function factoryNext(link: string | null, current: string): string | null
 function rateFromData(s: FactorySnapshot, data: Record<string, unknown>, now: string) {
 	const rate = object(data.rateLimit);
 	if (typeof rate.remaining === "number")
-		s.rate = {
+		recordFactoryRate(s, {
 			remaining: rate.remaining,
 			resetAt: typeof rate.resetAt === "string" ? rate.resetAt : null,
 			resource: "graphql",
 			observedAt: now,
-		};
+		});
 }
 async function inventory(
 	s: FactorySnapshot,
@@ -264,12 +265,12 @@ async function collectStream(
 			const remaining = response.headers.get("x-ratelimit-remaining");
 			const reset = response.headers.get("x-ratelimit-reset");
 			if (remaining !== null)
-				s.rate = {
+				recordFactoryRate(s, {
 					remaining: Number(remaining),
 					resetAt: reset ? new Date(Number(reset) * 1000).toISOString() : null,
 					resource: "core",
 					observedAt: now,
-				};
+				});
 			const payload: unknown = await response.json();
 			if (stream === "actions" && Number(object(payload).total_count) > 1000) {
 				const range = new URL(path, "https://api.github.com").searchParams
@@ -380,12 +381,7 @@ export async function stepFactory(
 	includeDisabled = false,
 ): Promise<void> {
 	if (s.status === "complete" || s.status === "partial") return;
-	if (
-		s.rate &&
-		s.rate.remaining < 50 &&
-		(!s.rate.resetAt || Date.parse(s.rate.resetAt) > Date.parse(now))
-	)
-		throw new ApiError(503, "github_rate_limited", "GitHub reserve reached");
+	assertFactoryReserve(s, now);
 	const before = gh.count;
 	try {
 		if (!s.inventory.complete) await inventory(s, gh, token, now, includeDisabled);

@@ -1,8 +1,8 @@
 import { z } from "zod";
 import type { FactorySnapshot } from "../../lib/factory-types";
-import { ApiError } from "./errors";
 import { object, rows } from "./factory-map";
 import { FACTORY_CONTRIBUTIONS_QUERY } from "./factory-queries";
+import { assertFactoryReserve, recordFactoryRate } from "./factory-rate";
 import type { GithubClient } from "./github-client";
 
 export const CONTRIBUTION_BATCH_DAYS = 15;
@@ -40,12 +40,7 @@ export async function collectContributions(
 	token: string,
 	now: string,
 ) {
-	if (
-		snapshot.rate &&
-		snapshot.rate.remaining < 50 &&
-		(!snapshot.rate.resetAt || Date.parse(snapshot.rate.resetAt) > Date.parse(now))
-	)
-		throw new ApiError(503, "github_rate_limited", "GitHub reserve reached");
+	assertFactoryReserve(snapshot, now);
 	const pending = snapshot.contribution?.typesStatus === "pending";
 	const contribution = snapshot.contribution;
 	const batch = pending
@@ -65,12 +60,12 @@ export async function collectContributions(
 	);
 	const rate = object(data.rateLimit);
 	if (typeof rate.remaining === "number")
-		snapshot.rate = {
+		recordFactoryRate(snapshot, {
 			remaining: rate.remaining,
 			resetAt: typeof rate.resetAt === "string" ? rate.resetAt : null,
 			resource: "graphql",
 			observedAt: now,
-		};
+		});
 	if (gh.graphqlErrors.length) {
 		snapshot.contributionStatus = "unavailable";
 		return;

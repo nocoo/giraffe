@@ -24,6 +24,7 @@ import {
 	restoreLegacyRepo,
 } from "./factory-publish";
 import { FACTORY_REPO_QUERY } from "./factory-queries";
+import { recordFactoryRate } from "./factory-rate";
 import { collectSitePage } from "./factory-site";
 import { createGithubClient } from "./github-client";
 import { assertRefreshCapabilities } from "./refresh";
@@ -144,14 +145,15 @@ export async function executeRunPage(
 			run.checkpoint.contributionStatus = previous?.contributionStatus ?? "unavailable";
 			run.checkpoint.contribution = previous?.contribution ?? null;
 			run.checkpoint.rate = previous?.rate ?? null;
+			if (previous?.rateLimits) run.checkpoint.rateLimits = previous.rateLimits;
 			const rate = object(data.rateLimit);
 			if (typeof rate.remaining === "number")
-				run.checkpoint.rate = {
+				recordFactoryRate(run.checkpoint, {
 					remaining: rate.remaining,
 					resetAt: typeof rate.resetAt === "string" ? rate.resetAt : null,
 					resource: "graphql",
 					observedAt: clock(),
-				};
+				});
 			finish(step, "success", clock());
 		} else if (step.kind === "restore") {
 			const repo = run.checkpoint?.repos[run.restoreCursor];
@@ -279,6 +281,10 @@ export async function executeRunPage(
 		boundedJson(run);
 		run.nextAttemptAt = clock();
 	} catch (error) {
+		if (before && run.checkpoint) {
+			before.rate = run.checkpoint.rate;
+			if (run.checkpoint.rateLimits) before.rateLimits = run.checkpoint.rateLimits;
+		}
 		run.checkpoint = before;
 		step.pages = savedPages;
 		if (savedSnapshotCursor === undefined) delete step.snapshotCursor;

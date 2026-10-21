@@ -2,6 +2,7 @@ import type { FactoryEvent, FactorySnapshot } from "../../lib/factory-types";
 import { prState } from "../../lib/pull-request";
 import { ApiError } from "./errors";
 import { object, rows } from "./factory-map";
+import { recordFactoryRate } from "./factory-rate";
 import type { GithubClient } from "./github-client";
 
 export const PR_STATE_FIELDS =
@@ -31,12 +32,12 @@ export async function collectPrState(
 	}
 	const rate = object(result.rateLimit);
 	if (typeof rate.remaining === "number")
-		snapshot.rate = {
+		recordFactoryRate(snapshot, {
 			remaining: rate.remaining,
 			resetAt: typeof rate.resetAt === "string" ? rate.resetAt : null,
 			resource: "graphql",
 			observedAt: now,
-		};
+		});
 	if (!Array.isArray(result.nodes)) {
 		if (gh.graphqlErrors.length) return items;
 		throw new ApiError(502, "github_error", "PR state response incomplete");
