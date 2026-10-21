@@ -678,3 +678,11 @@ the missed ledger is inserted. Recheck acceptance inside the ledger transaction
 and advance the cursor only for its own inserted audit row. Apply the same rule
 to empty selections so settings never reference a nonexistent audit row. A
 deterministic interleaving test catches this; simultaneous cron calls alone did not.
+
+The controller staged a worker's green implementation before its final freeze;
+the worker's last strict-type test fixes then remained unstaged. Wait for final
+handoff, not an intermediate green report, before staging shared-worktree changes.
+Final gate wrappers also assigned the reserved zsh variable `status`, causing a
+shell error after successful tests. Use a nonreserved `rc` variable and preserve
+the command's exit code; rerun affected verification rather than confuse wrapper
+failure with application failure or silently discard an exit status.
