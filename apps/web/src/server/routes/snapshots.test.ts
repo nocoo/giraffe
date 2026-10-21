@@ -54,6 +54,30 @@ async function scopedSetup() {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("scoped snapshot projections", () => {
+	it("removes departed repositories from every browser inbox and aggregate at read time", async () => {
+		const setup = await scopedSetup();
+		for (const [kind, key] of [
+			["issues", "issues"],
+			["prs", "pull_requests"],
+			["alerts", "items"],
+			["notifications", "notifications"],
+		]) {
+			await setup.save(String(kind), {
+				[String(key)]: [{ name_with_owner: "OWNER/APP" }, { name_with_owner: "owner/removed" }],
+				truncated: true,
+			});
+			const before = await setup.bindings.DB.prepare("SELECT * FROM snapshots ORDER BY kind").all();
+			const body = await (await setup.request(`${kind}?scope=all`)).json();
+			expect(body).toMatchObject({
+				[String(key)]: [{ name_with_owner: "OWNER/APP" }],
+				freshness: { oldestAt: baselineAt, total: 4, missing: 3 },
+			});
+			expect(
+				await setup.bindings.DB.prepare("SELECT * FROM snapshots ORDER BY kind").all(),
+			).toEqual(before);
+		}
+	});
+
 	it("projects saved rows before counters, keeps disabled catalog entries and leaves storage untouched", async () => {
 		const setup = await scopedSetup();
 		for (const [kind, key] of [

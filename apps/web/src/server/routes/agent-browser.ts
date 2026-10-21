@@ -32,10 +32,7 @@ export function agentBrowserApi() {
 		const repositories = policy.repos
 			.filter(
 				(repo) =>
-					repo.owner_login === active?.login &&
-					repo.is_archived !== true &&
-					repo.is_fork !== true &&
-					repo.name_with_owner.toLowerCase() !== "nocoo/rsshub",
+					repo.owner_login === active?.login && repo.is_archived !== true && repo.is_fork !== true,
 			)
 			.map((repo) => repo.name_with_owner)
 			.sort();

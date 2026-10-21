@@ -40,6 +40,10 @@ async function setup(withAccount = true) {
 				last_used_at: null,
 			}),
 		]);
+	if (withAccount)
+		await db.batch(
+			replaceSnapshotStmts(db, ID, "repos", { repos: [{ name_with_owner: "nocoo/app" }] }, NOW),
+		);
 	const app = createApp();
 	return {
 		env,
@@ -79,6 +83,15 @@ it("projects starred factory repositories and dates from their observations, not
 			observation: { version: "newest", window: state.window, source: "legacy", refreshedAt: NOW },
 		},
 	];
+	await fixture.db.batch(
+		replaceSnapshotStmts(
+			fixture.db,
+			ID,
+			"repos",
+			{ repos: state.repos.map((repo) => ({ name_with_owner: repo.name })) },
+			NOW,
+		),
+	);
 	await fixture.db.batch(replaceSnapshotStmts(fixture.db, ID, "factory", { ...state }, NOW));
 	for (const repo of ["NOCOO/APP", "nocoo/mixed", "nocoo/new"])
 		await fixture.db.prepare("INSERT INTO repo_stars VALUES(?,?)").bind(ID, repo).run();

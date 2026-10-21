@@ -60,7 +60,7 @@ export async function getFactoryRuns(c: Ctx): Promise<Response> {
 		nextAllowedAt: head?.next_at ?? null,
 		current: views.find((r) => r.status === "running" || r.status === "paused") ?? null,
 		history: views.filter((r) => r.status !== "running" && r.status !== "paused").slice(0, 20),
-		repositories: states,
+		repositories: states.filter((state) => policy.includes(state.repo)),
 		catalog: catalog?.repos ?? [],
 		catalogUpdatedAt: catalog?.fetched_at ?? null,
 		catalogComplete: Boolean(catalog?.inventory.complete && siteRepos !== null),

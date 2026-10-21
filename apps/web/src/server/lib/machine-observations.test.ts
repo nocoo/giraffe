@@ -9,6 +9,163 @@ import {
 	readObservation,
 	requireCatalogRepo,
 } from "./machine-observations";
+import { statisticsSnapshot } from "./repo-statistics";
+
+it("shares catalog-wide provenance and page replacements with browser reads without statistics filtering", async () => {
+	const raw = sqliteFixture();
+	const db = createDb(raw);
+	await db
+		.prepare(
+			"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES('a','owner','fake','fake','t','t')",
+		)
+		.run();
+	const baseline = "2026-10-18T12:50:00Z";
+	const recent = "2026-10-20T12:02:00Z";
+	const save = (kind: string, value: Record<string, unknown>, at = baseline) =>
+		db.batch(replaceSnapshotStmts(db, "a", kind, value, at));
+	await save("repos", {
+		repos: ["owner/app", "owner/baseline", "owner/empty", "owner/fork"].map((name_with_owner) => ({
+			name_with_owner,
+			is_fork: name_with_owner === "owner/fork",
+		})),
+	});
+	for (const name of ["OWNER/APP", "owner/baseline", "owner/empty", "owner/removed"])
+		await db.prepare("INSERT INTO repo_stars VALUES('a',?)").bind(name).run();
+	const before = await raw.prepare("SELECT * FROM snapshots ORDER BY kind").all();
+	for (const [resource, key] of [
+		["issues", "issues"],
+		["prs", "pull_requests"],
+	]) {
+		const snapshot = {
+			[String(key)]: ["owner/app", "owner/baseline", "owner/removed", "owner/fork"].map(
+				(name_with_owner) => ({ name_with_owner, number: 1 }),
+			),
+			repository_fetched_at: { "owner/app": recent, "owner/removed": recent },
+		};
+		await save(String(resource), snapshot);
+		await save(`repo:OWNER/EMPTY:${resource}`, { [String(key)]: [{ number: 2 }] }, recent);
+		const all = await readObservation(db, "a", String(resource), "all");
+		expect(all).toMatchObject({
+			fetchedAt: recent,
+			freshness: { oldestAt: baseline, latestAt: recent, total: 4, missing: 0 },
+			selection: { statisticsFilter: false },
+		});
+		expect(all.data[String(key)]).toEqual(
+			expect.arrayContaining([
+				{ name_with_owner: "owner/fork", number: 1 },
+				{ name_with_owner: "owner/empty", number: 2 },
+			]),
+		);
+		expect(all.data[String(key)]).not.toEqual(
+			expect.arrayContaining([expect.objectContaining({ name_with_owner: "owner/removed" })]),
+		);
+		const starred = await readObservation(db, "a", String(resource), "starred");
+		const browser = await statisticsSnapshot(
+			db,
+			"a",
+			String(resource),
+			{ ...snapshot, fetched_at: baseline, truncated: false },
+			"starred",
+		);
+		expect(starred.data).toEqual(browser);
+	}
+	expect((await raw.prepare("SELECT * FROM snapshots WHERE kind='repos'").all()).results).toEqual(
+		before.results,
+	);
+});
+
+it("assembles CI evidence case-insensitively and keeps missing dependencies unknown", async () => {
+	const db = createDb(sqliteFixture());
+	await db
+		.prepare(
+			"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES('a','owner','fake','fake','t','t')",
+		)
+		.run();
+	const at = "2026-10-20T00:00:00Z";
+	const save = (kind: string, value: Record<string, unknown>) =>
+		db.batch(replaceSnapshotStmts(db, "a", kind, value, at));
+	await save("repos", {
+		repos: ["owner/app", "owner/missing", "owner/unavailable"].map((name_with_owner) => ({
+			name_with_owner,
+		})),
+	});
+	await save("repo:OWNER/APP:actions", {
+		runs: [
+			{
+				id: 1,
+				name: "CI",
+				status: "completed",
+				conclusion: "failure",
+				head_branch: "main",
+				created_at: at,
+				updated_at: at,
+				event: "push",
+			},
+		],
+	});
+	await save("repo:owner/missing:releases", { releases: [] });
+	await save("repo:owner/unavailable:actions", { unavailable: true });
+	const ci = await readObservation(db, "a", "ci", "all");
+	expect(ci.data.unsaved).toEqual(["owner/missing", "owner/unavailable"]);
+	expect(ci.freshness).toEqual({ oldestAt: at, latestAt: at, total: 9, missing: 7 });
+	expect(ci.data.totals).toMatchObject({
+		totalRepos: 1,
+		brokenRepos: 0,
+		nonDefaultBranchFailures: 1,
+	});
+});
+
+it("does not certify health from unavailable CI dependencies and exposes any dependency truncation", async () => {
+	const raw = sqliteFixture();
+	const db = createDb(raw);
+	await db
+		.prepare(
+			"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES('a','owner','fake','fake','t','t')",
+		)
+		.run();
+	const at = "2026-10-20T00:00:00Z";
+	const save = (kind: string, value: Record<string, unknown>) =>
+		db.batch(replaceSnapshotStmts(db, "a", kind, value, at));
+	await save("repos", { repos: [{ name_with_owner: "owner/app" }] });
+	await save("repo:owner/app:actions", {
+		runs: [
+			{
+				id: 1,
+				name: "CI",
+				status: "completed",
+				conclusion: "success",
+				head_branch: "main",
+				created_at: at,
+				updated_at: at,
+				event: "push",
+			},
+		],
+	});
+	await save("repo:owner/app:details", {
+		default_branch: "main",
+		forbidden: true,
+		truncated: true,
+	});
+	await save("repo:owner/app:releases", {
+		releases: [{ id: 1, tag_name: "v1", draft: false, published_at: at }],
+		unavailable: true,
+		truncated: true,
+	});
+	const ci = await readObservation(db, "a", "ci", "all");
+	expect(ci).toMatchObject({
+		truncated: true,
+		freshness: { total: 3, missing: 2 },
+		data: {
+			totals: { totalWorkflows: 0, healthyRepos: 0, unknownRepos: 1, truncatedRepos: 1 },
+			repos: [{ release: null, verdict: "none", truncated: true }],
+		},
+	});
+	await save("repo:owner/app:actions", { unavailable: true, truncated: true });
+	expect(await readObservation(createDb(raw), "a", "ci", "all")).toMatchObject({
+		truncated: true,
+		data: { repos: [], unsaved: ["owner/app"] },
+	});
+});
 
 it("exposes saved unfiltered sources without writes or upstream fetches", async () => {
 	const raw = sqliteFixture();

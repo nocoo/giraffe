@@ -118,10 +118,7 @@ export async function executeRunPage(
 			if (
 				gh.graphqlErrors.length ||
 				exclusion(repo, run.owner, true) ||
-				!(await repoPolicy(db, run.account_id)).enabled(String(step.repo), {
-					is_fork: repo.isFork === true,
-					is_archived: repo.isArchived === true,
-				}) ||
+				!(await repoPolicy(db, run.account_id)).enabled(String(step.repo)) ||
 				repo.id !== run.repoIds[String(step.repo)]
 			)
 				throw new ApiError(403, "repository_unavailable", "repository identity/access changed");

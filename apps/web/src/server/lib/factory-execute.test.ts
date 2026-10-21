@@ -45,6 +45,16 @@ async function setup(
 		.bind(JSON.stringify({ repo: true, notifications: true }), snap.account_id)
 		.run();
 	await db.batch(replaceSnapshotStmts(db, snap.account_id, "factory", { ...snap }, now));
+	if (mode === "refresh")
+		await db.batch(
+			replaceSnapshotStmts(
+				db,
+				snap.account_id,
+				"repos",
+				{ repos: snap.repos.map((repo) => ({ name_with_owner: repo.name })) },
+				now,
+			),
+		);
 	const run = makeRun(
 		"r1",
 		snap.account_id,

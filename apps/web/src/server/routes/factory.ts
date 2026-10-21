@@ -5,14 +5,13 @@ import {
 	type FactoryStreamData,
 	type FactoryStreamName,
 } from "../../lib/factory-types";
-import { snapshotFreshness } from "../../lib/snapshot-freshness";
 import type { AppVars, Env } from "../env";
 import { getActiveAccount } from "../lib/db/accounts";
 import { publishedFactory } from "../lib/db/factory-runs";
 import { readSnapshot } from "../lib/db/snapshots";
 import { ApiError, jsonOk } from "../lib/errors";
 import { newFactory, streamKey } from "../lib/factory-collect";
-import { repoPolicy, statisticsFactory } from "../lib/repo-statistics";
+import { factoryFreshness, repoPolicy, statisticsFactory } from "../lib/repo-statistics";
 import { snapshotScope } from "../lib/snapshot-scope";
 import { repoParts } from "./snapshots";
 
@@ -42,7 +41,7 @@ export async function getFactory(c: Ctx): Promise<Response> {
 	}
 	if (!snap) throw new ApiError(409, "snapshot_missing", "no factory snapshot");
 	const projected = statisticsFactory(snap, policy);
-	const freshness = snapshotFreshness(projected.repos.map((repo) => repo.observation?.refreshedAt));
+	const freshness = factoryFreshness(projected, policy);
 	return jsonOk(
 		{
 			...projected,
@@ -66,10 +65,7 @@ export async function getFactoryStream(c: Ctx): Promise<Response> {
 		throw new ApiError(400, "validation_failed", "invalid page");
 	const snap = await publishedFactory(c.get("db"), account.id);
 	const repo = snap?.repos.find((r) => r.name.toLowerCase() === `${owner}/${name}`.toLowerCase());
-	if (
-		repo &&
-		!(await repoPolicy(c.get("db"), account.id, undefined, scope)).enabled(repo.name, repo)
-	)
+	if (repo && !(await repoPolicy(c.get("db"), account.id, undefined, scope)).enabled(repo.name))
 		throw new ApiError(404, "not_found", "repository excluded from statistics");
 	if (!repo || !snap) throw new ApiError(404, "not_found", "repository outside factory inventory");
 	let resource: FactoryStreamData | null = null;

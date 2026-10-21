@@ -1,4 +1,4 @@
-import { type CiEntry, ciReport } from "../../lib/ci-health";
+import { type CiEntry, type CiRelease, type CiRun, ciReport } from "../../lib/ci-health";
 import type { FactoryStreamData, FactoryStreamName } from "../../lib/factory-types";
 import { FACTORY_STREAMS } from "../../lib/factory-types";
 import { snapshotFreshness } from "../../lib/snapshot-freshness";
@@ -7,7 +7,13 @@ import { publishedFactory } from "./db/factory-runs";
 import { readSnapshot } from "./db/snapshots";
 import { ApiError } from "./errors";
 import { streamKey } from "./factory-collect";
-import { repoPolicy } from "./repo-statistics";
+import {
+	factoryFreshness,
+	type Policy,
+	projectSnapshot,
+	repoPolicy,
+	statisticsFactory,
+} from "./repo-statistics";
 import { assemblePages, type SnapshotPage } from "./snapshot-pages";
 import type { SnapshotScope } from "./snapshot-scope";
 
@@ -50,101 +56,131 @@ export async function observationEnvelope(
 		selection: { scope, statisticsFilter: false },
 	};
 }
+const KIND = /^repo:(.+):(actions|releases|details)(?:#2)?$/;
+
+export async function readCiObservation(
+	db: Db,
+	account: string,
+	policy: Policy,
+	statisticsFilter = false,
+) {
+	if (!policy.catalog && !policy.empty)
+		throw new ApiError(409, "snapshot_missing", "no repository catalog");
+	// One statement for every repository keeps the Worker well inside the D1 statement cap.
+	const rows = await db
+		.prepare(
+			"SELECT kind, payload, fetched_at FROM snapshots WHERE account_id=? AND kind LIKE 'repo:%' AND (kind LIKE '%:actions' OR kind LIKE '%:actions#2' OR kind LIKE '%:releases' OR kind LIKE '%:releases#2' OR kind LIKE '%:details' OR kind LIKE '%:details#2')",
+		)
+		.bind(account)
+		.all<SnapshotPage & { fetched_at: string }>();
+	const groups = new Map<string, Map<string, SnapshotPage[]>>();
+	for (const row of rows.results) {
+		// The SQL filter guarantees the repo:<name>:<suffix> shape.
+		const [, repo, suffix] = KIND.exec(row.kind) as RegExpExecArray;
+		const byKind = groups.get(String(repo).toLowerCase()) ?? new Map<string, SnapshotPage[]>();
+		const logical = `repo:${repo}:${suffix}`;
+		byKind.set(logical, [...(byKind.get(logical) ?? []), row]);
+		groups.set(String(repo).toLowerCase(), byKind);
+	}
+	const entries: CiEntry[] = [];
+	const unsaved: string[] = [];
+	const times: (string | null)[] = [];
+	let truncated = false;
+	for (const repo of policy.repos) {
+		const name = repo.name_with_owner;
+		if (statisticsFilter && !policy.enabled(name)) continue;
+		const pages = groups.get(name.toLowerCase());
+		const read = (suffix: string) => {
+			const found = [...(pages ?? [])].find(
+				([k]) => k.toLowerCase() === `repo:${name}:${suffix}`.toLowerCase(),
+			);
+			return found ? assemblePages(found[0], found[1]) : null;
+		};
+		const actions = read("actions");
+		const releases = read("releases");
+		const details = read("details");
+		const limited = [actions, releases, details].some((snapshot) => snapshot?.truncated === true);
+		truncated ||= limited;
+		const dependencies = [actions, releases, details].map((snapshot) =>
+			snapshot?.unavailable !== true &&
+			snapshot?.forbidden !== true &&
+			typeof snapshot?.fetched_at === "string"
+				? snapshot.fetched_at
+				: null,
+		);
+		times.push(...dependencies);
+		if (!actions || actions.unavailable === true || actions.forbidden === true) {
+			unsaved.push(name);
+			continue;
+		}
+		entries.push({
+			repo: name,
+			fetched_at: snapshotFreshness(dependencies).latestAt ?? "",
+			truncated: limited,
+			runs: Array.isArray(actions.runs) ? (actions.runs as CiRun[]) : [],
+			...(details?.unavailable !== true &&
+			details?.forbidden !== true &&
+			typeof details?.default_branch === "string"
+				? { default_branch: details.default_branch }
+				: {}),
+			releases:
+				releases?.unavailable !== true &&
+				releases?.forbidden !== true &&
+				Array.isArray(releases?.releases)
+					? (releases.releases as CiRelease[])
+					: null,
+		});
+	}
+	const freshness = snapshotFreshness(times);
+	const fetchedAt = freshness.latestAt ?? "";
+	const report = ciReport(entries, fetchedAt || "1970-01-01T00:00:00.000Z");
+	return {
+		...report,
+		daily: fetchedAt ? report.daily : [],
+		fetched_at: fetchedAt,
+		freshness,
+		truncated,
+		now: fetchedAt,
+		unsaved,
+	};
+}
+
 export async function readObservation(
 	db: Db,
 	account: string,
 	resource: string,
 	scope: SnapshotScope,
+	savedPolicy?: Policy,
 ) {
-	const policy = await repoPolicy(db, account, undefined, scope);
+	const policy = savedPolicy ?? (await repoPolicy(db, account, undefined, scope));
 	if (resource === "factory") {
 		const snapshot = await publishedFactory(db, account);
 		if (!snapshot) throw new ApiError(409, "snapshot_missing", "no saved publication");
-		const repos = snapshot.repos.filter((repo) => policy.includes(repo.name));
+		const projected = statisticsFactory(snapshot, policy, false);
+		const freshness = factoryFreshness(projected, policy, false);
 		return observationEnvelope(
 			account,
 			resource,
 			{
-				...snapshot,
-				repos,
-				freshness: snapshotFreshness(repos.map((r) => r.observation?.refreshedAt)),
-			},
-			scope,
-			snapshot.publication?.runId ?? snapshot.runId,
-			snapshot.publication?.runId ?? snapshot.runId,
-		);
-	}
-	if (resource === "ci") {
-		const rows = await db
-			.prepare(
-				"SELECT kind,payload FROM snapshots WHERE account_id=? AND kind LIKE 'repo:%' AND (kind LIKE '%:actions' OR kind LIKE '%:actions#2' OR kind LIKE '%:releases' OR kind LIKE '%:releases#2' OR kind LIKE '%:details')",
-			)
-			.bind(account)
-			.all<SnapshotPage>();
-		const read = (name: string, suffix: string) => {
-			const key = `repo:${name}:${suffix}`;
-			const pages = rows.results.filter((r) => r.kind === key || r.kind === `${key}#2`);
-			return pages.length ? assemblePages(key, pages) : null;
-		};
-		const entries: CiEntry[] = [];
-		const times: (string | null)[] = [];
-		const missing: string[] = [];
-		for (const repo of policy.repos) {
-			const actions = read(repo.name_with_owner, "actions");
-			const releases = read(repo.name_with_owner, "releases");
-			const details = read(repo.name_with_owner, "details");
-			for (const s of [actions, releases, details])
-				times.push(typeof s?.fetched_at === "string" ? s.fetched_at : null);
-			if (!actions && !releases) {
-				missing.push(repo.name_with_owner);
-				continue;
-			}
-			entries.push({
-				repo: repo.name_with_owner,
-				fetched_at: String(actions?.fetched_at ?? releases?.fetched_at ?? ""),
-				default_branch:
-					typeof details?.default_branch === "string" ? details.default_branch : "main",
-				runs: (actions?.runs ?? []) as CiEntry["runs"],
-				releases: (releases?.releases ?? []) as NonNullable<CiEntry["releases"]>,
-				truncated: actions?.truncated === true || releases?.truncated === true,
-			});
-		}
-		const freshness = snapshotFreshness(times);
-		return observationEnvelope(
-			account,
-			resource,
-			{
-				...ciReport(entries, freshness.latestAt ?? "1970-01-01T00:00:00Z"),
-				fetched_at: freshness.latestAt,
+				...projected,
+				fetched_at: freshness.latestAt ?? "",
 				freshness,
-				unsaved: missing,
 			},
 			scope,
+			snapshot.publication?.runId ?? snapshot.runId,
+			snapshot.publication?.runId ?? snapshot.runId,
 		);
 	}
+	if (resource === "ci")
+		return observationEnvelope(
+			account,
+			resource,
+			await readCiObservation(db, account, policy),
+			scope,
+		);
 	const snapshot = await readSnapshot(db, account, resource);
 	if (!snapshot) throw new ApiError(409, "snapshot_missing", "no saved source");
-	let data = { ...snapshot };
-	if (resource === "repos")
-		data = {
-			...data,
-			repos: policy.repos.map((r) => ({
-				...r,
-				statistics_enabled: policy.enabled(r.name_with_owner),
-				starred: policy.starred(r.name_with_owner),
-			})),
-		};
-	if (scope === "starred" && !resource.startsWith("repo:")) {
-		for (const key of ["issues", "pull_requests"])
-			if (Array.isArray(data[key]))
-				data[key] = data[key].filter((r: Record<string, unknown>) =>
-					policy.includes(String(r.name_with_owner)),
-				);
-		if (data.repository_fetched_at && typeof data.repository_fetched_at === "object")
-			data.repository_fetched_at = Object.fromEntries(
-				Object.entries(data.repository_fetched_at).filter(([name]) => policy.includes(name)),
-			);
-	}
+	const data = await projectSnapshot(db, account, resource, snapshot, policy, false);
 	return observationEnvelope(account, resource, data, scope);
 }
 export async function readFactoryResource(db: Db, account: string, name: string, stream: string) {

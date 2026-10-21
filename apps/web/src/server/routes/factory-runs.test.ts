@@ -192,6 +192,15 @@ it("applies explicit priority order to complete filtered scopes", async () => {
 			snapshot.fetched_at,
 		),
 	);
+	await s.db.batch(
+		replaceSnapshotStmts(
+			s.db,
+			id,
+			"repos",
+			{ repos: [first, repo2].map((repo) => ({ name_with_owner: repo.name })) },
+			snapshot.fetched_at,
+		),
+	);
 	expect(
 		(
 			await s.call("/api/factory/runs", {
@@ -343,10 +352,11 @@ it.each(["selected", "filter", "stale", "failed"] as const)(
 	},
 );
 
-it("allows a known selected repository without rescanning an incomplete site catalog", async () => {
+it("rejects a selected repository without a saved catalog while allowing initial catalog discovery", async () => {
 	const s = await setup();
 	await s.db.prepare("DELETE FROM snapshots WHERE kind='repos'").run();
-	expect((await s.call("/api/factory/runs", plan())).status).toBe(202);
+	expect((await s.call("/api/factory/runs", plan())).status).toBe(400);
+	expect((await s.call("/api/factory/runs", { ...plan(), mode: "catalog" })).status).toBe(202);
 });
 
 it("rejects ambiguous scope/order but allows work above the former account quota", async () => {
