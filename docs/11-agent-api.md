@@ -40,6 +40,13 @@ token activity.
 
 ## Saved observation contract
 
+Security snapshots persist expected feature/access absence as `unavailable:true`
+with safe `reason` and `reason_code`; factory alerts coverage uses the same codes:
+`alerts_disabled`, `permission_denied`, `not_found`, `unknown`. Disabled requires
+explicit upstream wording; a generic 404 is `not_found` because GitHub hides some
+inaccessible resources. Raw upstream messages are never persisted. Unavailability
+does not prove zero alerts; truncation and lost pagination remain real failures.
+
 All observation paths are GET-only and require `observations:read`. The account in
 the path must match the token's fixed account. Reads expose saved data; they are not
 a live GitHub proxy and never collect upstream or mutate snapshots.
@@ -130,6 +137,22 @@ imply a live runner. Legacy Work records/jobs remain stored but are not read by 
 analysis page.
 
 ## Refresh management and storage boundary
+
+Refresh history includes `counts:{total,success,failed,unavailable,skipped}` even
+when old step arrays are omitted. Expected feature/access unavailability is a
+terminal `unavailable` step, separate from real failures. It does not make a run
+partial and never means observed zero. Factory publications from that same run
+use `complete` for `completed` and `partial` for `partial`; compare run IDs because
+failed newer attempts preserve older publications. Historical rows are unchanged.
+
+Absolute run deadlines include paused/backoff time: catalog 30 minutes, quick
+refresh 6 hours, deep refresh or missing legacy depth 12 hours. `deadlineAt` is
+optional on old rows and derived from their start. Scheduler/mutating operations
+expire active runs as `failed` / `error:run_timed_out`, revoke leases, release locks
+and set schedule `lastError`; GET stays read-only. Earlier overdue schedule slots
+are coalesced into failed audit rows with `error:scheduled_slots_missed` and
+`missedSlots:{firstDueAt,lastDueAt,count}`; only the latest due slot is attempted.
+Timeout/missed-slot `lastError` warnings persist until an explicit schedule save.
 
 `app:read`/`app:write` can read settings and refresh runs, update stars/statistics/
 schedules, or explicitly start and control the existing durable GitHub refresh

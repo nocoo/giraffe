@@ -642,3 +642,32 @@ using the existing Actions mapper and saved event fields. Keep all pull-request
 event contexts observational, even when branch names match, and include scope in
 rendered stream keys so default and PR lanes remain distinct. Verify default health,
 separate failed-run counts and the unchanged all-branch daily histogram together.
+
+## 2026-10-21 - Refresh reliability investigation
+
+The refresh pipeline treated expected security access restrictions as incomplete
+snapshots and failed steps. It also reported every published factory snapshot as
+complete, independently of its run outcome. Regression tests now distinguish
+expected unavailability from truncation and malformed evidence, and bind publication
+status to the same run's outcome. Retained evidence must survive repeated unavailable
+attempts without changing its observation time; testing only the first failure is
+insufficient.
+
+The renewable page lease did not bound total run lifetime. A hard wall deadline must
+also fence writes, include paused runs, and expire before idempotency lookup or
+scheduling. Missed-slot audit records must not impose collection cooldowns on actual
+recovery work. Historical-clock queue tests now explicitly control the clock rather
+than relying on the fixture's old date still being runnable.
+
+During pane setup, `herdr pane resize --current` resolved to a different focused
+pane despite the caller context. The response reported no change; the subsequent
+resize used this controller's explicit pane ID. Inspect returned pane IDs and use
+explicit IDs for layout mutations instead of assuming caller resolution is reliable.
+
+The first L2 availability run reached the correct persisted reason codes, but a
+nested coverage assertion inside `objectContaining` required an exact object and
+rejected the additional valid coverage fields. Use a nested partial matcher when
+checking only `reason_code`; distinguish matcher defects from behavioral failures.
+The new browser assertion also matched a nested diagnostic `summary` instead of
+only the repository disclosure. Scope the click to the row's direct child summary
+and the subsequent explanation to that same repository row.

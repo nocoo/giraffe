@@ -134,7 +134,7 @@ api -G "$API/sources" --data-urlencode 'since=2026-10-19T08:00:00+08:00' \
 | `/repos/:owner/:name/actions` | Actions `runs` |
 | `/repos/:owner/:name/releases` | `releases` |
 | `/repos/:owner/:name/traffic` | `views`, `clones`, `forbidden` |
-| `/repos/:owner/:name/security` | `dependabot_open`, `code_scanning_open`, `unavailable` |
+| `/repos/:owner/:name/security` | `dependabot_open`, `code_scanning_open`, `unavailable`, optional `reason`, `reason_code` |
 | `/repos/:owner/:name/languages` | Language-to-byte-count `languages` map |
 | `/repos/:owner/:name/contributors` | `contributors` |
 | `/factory/repos/:owner/:name/:stream` | Exactly `commits`, `issues`, `prs`, `actions`, `releases`, `alerts`, `dependencies` |
@@ -148,6 +148,13 @@ listed in `/sources`. Open-item snapshots are not closed-event history.
 All these data endpoints, unlike `/sources`, return
 `{account_id, data, sourceVersion, fetchedAt, freshness, coverage, truncated,
 unavailable, source:{kind,resource,publicationId}, selection:{scope,statisticsFilter}}`.
+
+Known security access/feature absence produces a saved `unavailable:true` snapshot,
+not a 409. Security and factory alerts coverage share safe `reason` text and
+`reason_code:alerts_disabled|permission_denied|not_found|unknown`. Disabled requires
+explicit upstream wording; never infer it from a plain 404, which can hide access
+denial. Unavailable counts do not prove zero alerts. Truncation, malformed data and
+access loss during pagination remain failures, not expected absence.
 
 - Treat `sourceVersion` as opaque and compare its full value. Snapshot versions
   use `sha256:` plus hex; factory versions need not be hashes. `fetchedAt` is source
@@ -439,6 +446,25 @@ key/body; duplicate keys return the existing run even if the body differs. A new
 key means new work. Acceptance is not publication success: poll run status and
 inspect source versions/coverage. Terminal control is unchanged; resume preserves
 backoff deadlines. Run list omits checkpoints and older inactive step history.
+
+Every listed run includes `counts:{total,success,failed,unavailable,skipped}`, even
+when its steps are compacted. Step status adds terminal `unavailable` for expected
+feature/access absence; it does not make the run partial. Limits, malformed data
+and exhausted retries still fail. For matching run IDs, factory publication
+`status:complete|partial` matches run `completed|partial`; an unsuccessful newer
+attempt retains the older publication. Completion does not prove complete coverage.
+
+Absolute wall deadlines include pauses and backoff: catalog 30 minutes, quick
+refresh 6 hours, deep/legacy missing-depth refresh 12 hours. Optional `deadlineAt`
+records the deadline; old rows derive it from `startedAt`. Expired active runs become
+`failed` with `error:run_timed_out` on scheduler/mutation recovery, release the lock
+and set schedule `lastError`; GET never recovers or writes. Do not resume a terminal
+run. Overdue schedules attempt only the latest due slot; earlier slots are recorded
+as an immutable failed audit run with `error:scheduled_slots_missed` and
+`missedSlots:{firstDueAt,lastDueAt,count}`. Inspect these records rather than assuming
+missing daily data was refreshed.
+Timeout/missed-slot schedule warnings remain until an explicit schedule save;
+a later successful attempt does not silently clear them.
 
 ## Errors, limits and retries
 

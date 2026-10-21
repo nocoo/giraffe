@@ -306,7 +306,7 @@ accepts exactly these resources, without query/body and always with scope `all`:
 | `actions` | `runs: [{ id, name, html_url, status, conclusion, event, head_branch, created_at, updated_at }]` |
 | `releases` | `releases: [{ id, tag_name, name, html_url, draft, prerelease, published_at }]` |
 | `traffic` | `forbidden`, `views: { count, uniques, points }`, `clones: { count, uniques, points }`; points retain GitHub timestamp/count/uniques |
-| `security` | `unavailable`, `dependabot_open`, `code_scanning_open`; not alert-event details |
+| `security` | `unavailable`, `dependabot_open`, `code_scanning_open`; optional safe `reason`, `reason_code`; not alert-event details |
 | `languages` | `languages: { [languageName]: byteCount }` |
 | `contributors` | `contributors: [{ login, avatar_url, html_url, contributions }]` |
 
@@ -318,6 +318,16 @@ done
 ```
 
 Unknown resource names are 404; absent saved pages are 409 `snapshot_missing`.
+
+Known security feature/access absence is saved as an unavailable snapshot, not a
+missing snapshot. Its counts are not evidence of zero. Security snapshots and
+factory stream coverage share `reason_code` values: `alerts_disabled` (explicit
+Dependabot disabled/not-enabled response), `permission_denied` (documented
+integration/PAT permission or insufficient-scope response), `not_found` (generic
+404), and `unknown` (other access restriction). `reason` is fixed safe human text,
+never raw upstream diagnostics. A plain 404 cannot distinguish a missing, hidden
+or disabled resource and must not be called `alerts_disabled`. Pagination access
+loss, malformed responses and byte/page limits remain incomplete/limited failures.
 
 ### Factory stream endpoints
 
@@ -332,7 +342,7 @@ done
 
 Envelope `data` is `{ runId, items: FactoryEvent[], next: string|null, ranges:
 [{ since, until }], coverage, fetched_at, observation?, truncated, unavailable }`.
-`coverage` is `{ status, pages, fetchedAt, source, reason, observed, strategy?,
+`coverage` is `{ status, pages, fetchedAt, source, reason, reason_code?, observed, strategy?,
 sourceFetchedAt? }`; status is `pending|partial|complete|unavailable|limited`,
 strategy `full|incremental|reused`. An empty list proves zero only with complete
 coverage. `next` is saved collection metadata, not a machine pagination URL.
@@ -612,17 +622,46 @@ KIND='catalog'; api -X DELETE "$API/schedules/$KIND"
 Requires `app:read`; no body or supported query. Returns `{ account_id,
 items:Run[] }`, at most 21 runs, running/paused first, then newest creation time.
 No pagination or machine run-detail GET exists. Runs exclude `checkpoint`; older
-non-active runs have `steps:[]`, not full history. No browser progress/lease summary
-is added.
+non-active runs have `steps:[]`, not full history. Every row includes
+`counts:{total,success,failed,unavailable,skipped}` computed from the stored steps,
+including compact history. No browser progress/lease summary is added.
 
 Run fields: `id`, `account_id`, `owner`, `requestKey`, `mode`, `repos`, `repoIds`,
 `window:{since,until}`, `steps`, `cursor`, `status`, `startedAt`, `updatedAt`,
 `finishedAt`, `nextAttemptAt`, `requests`, `version`, `restoreCursor`, plus optional
-`selection`, `depth`, `trigger`, `schedule`, `siteRepos`. Status is
+`selection`, `depth`, `trigger`, `schedule`, `siteRepos`, `deadlineAt`, `error`,
+`missedSlots:{firstDueAt,lastDueAt,count}`. Status is
 `running|paused|completed|partial|cancelled|failed`. Steps carry `kind`, `repo`,
 `status`, `attempts`, `startedAt`, `finishedAt`, `durationMs`, `pages`, `error`, and
 optional `resource`, `sourceHead`, `strategy`, `snapshotCursor`, `retryFailures`.
 Nested types: [`factory-run.ts`](../apps/web/src/lib/factory-run.ts).
+
+Step status is `pending|running|success|failed|unavailable|skipped`. Expected
+feature/access unavailability is terminal `unavailable`, not `failed`; it does
+not by itself make a run `partial`. Truncation, limits, malformed data and exhausted
+upstream retries remain failures. `completed` means the plan finished without
+failures or skipped required work, not that every data source is available.
+For the **same run ID**, a published factory snapshot has `status:complete` for
+a completed run and `status:partial` for a partial run. A newer failed, paused or
+timed-out attempt can leave an older publication untouched; compare run IDs and
+per-stream coverage, not status strings from different runs. Historical rows and
+publications are not rewritten.
+
+All runs have absolute wall-clock deadlines from `startedAt`: catalog **30 minutes**,
+quick refresh **6 hours**, deep refresh (including legacy missing depth) **12 hours**.
+Paused time and retry backoff count toward the same deadline. Legacy rows without
+`deadlineAt` derive it from their original start. On the next scheduler tick or
+mutating start/control/queue operation, expired running/paused rows become `failed`
+with `error:run_timed_out`, release their lease/account lock, and update the owning
+schedule's `lastError`. Lease fencing rejects writes after the deadline; GET never
+performs this recovery.
+
+When multiple schedule slots are overdue, only the latest due slot is attempted.
+Earlier slots are coalesced into an immutable failed run with
+`error:scheduled_slots_missed`, `schedule`, and `missedSlots` covering the first/last
+due times and count. These audit rows perform no GitHub work. Settings expose safe
+`lastError` diagnostics; timeout/missed-slot warnings remain until an explicit
+schedule save clears them. Inspect run history for the durable missed interval.
 
 ```bash
 api "$API/refresh-runs"

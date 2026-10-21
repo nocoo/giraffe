@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.15.14 - 2026-10-21
+
+### Fixed
+
+- Persist unavailable repository security snapshots with safe, shared reason codes for disabled alerts, denied permissions and missing resources instead of reporting every security refresh as incomplete.
+- Count expected unavailable steps separately from failures in refresh history and the console; align factory publication status with the publishing run while retaining prior good evidence and original observation times.
+- Bound catalog, quick and deep runs by absolute deadlines, revoke expired leases, release account locks and retain timeout diagnostics in schedule settings.
+- Record missed schedule intervals durably and attempt only the latest due slot, without letting audit records delay recovery through collection cooldowns.
+
+### Changed
+
+- Document refresh outcome counts, security reason codes, timeout bounds and missed-slot records for machine API consumers. No D1 schema migration is required; existing historical rows remain unchanged.
+
 ## v0.15.13 — 2026-10-21
 
 ### Fixed
