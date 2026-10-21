@@ -507,15 +507,15 @@ test("CI page separates consecutive failures from recurring ones and filters the
 	await expect(strip.last()).toHaveAttribute("title", /失败 · 最新$/);
 	await expect(page.getByText("1 个仓库未采集", { exact: true })).toBeVisible();
 	const list = page.getByTestId("ci-list");
-	await expect(list.getByRole("row")).toHaveCount(9);
+	await expect(list.getByRole("row")).toHaveCount(10);
 	await page.getByRole("radio", { name: "持续失败", exact: true }).click();
-	await expect(list.getByRole("row")).toHaveCount(5);
+	await expect(list.getByRole("row")).toHaveCount(6);
 	await page
 		.getByLabel("工作流筛选", { exact: true })
 		.getByRole("radio", { name: "全部", exact: true })
 		.click();
 	await page.getByLabel("搜索工作流", { exact: true }).fill("field");
-	await expect(list.getByRole("row")).toHaveCount(6);
+	await expect(list.getByRole("row")).toHaveCount(7);
 	const releases = page.getByTestId("release-list");
 	await expect(releases.getByRole("row").nth(1)).toContainText("v2.1.0");
 	await expect(releases.getByRole("row").nth(1)).toContainText("持续失败");
@@ -534,9 +534,12 @@ test("CI health uses saved default-branch verdicts and labels observational unit
 	await expect(tile("继续观察").locator("strong")).toHaveText("1");
 	await expect(tile("无近期运行").locator("strong")).toHaveText("1");
 	await expect(summary).toContainText("14 天");
-	await expect(summary).toContainText("非默认分支 3 条观察线、6 次失败运行");
+	await expect(summary).toContainText("非默认分支 4 条观察线、8 次失败运行");
 	await expect(summary).toContainText("不影响仓库和工作流健康");
 	const list = page.getByTestId("ci-list");
+	await expect(
+		list.getByRole("row").filter({ hasText: "field-notes" }).filter({ hasText: "分支观察" }),
+	).toHaveCount(4);
 	const recovered = list.getByRole("row").filter({ hasText: "basalt" });
 	await expect(recovered).toContainText("偶发失败");
 	await expect(recovered).not.toContainText("持续失败");
@@ -553,8 +556,8 @@ test("CI health uses saved default-branch verdicts and labels observational unit
 		brokenWorkflows: 1,
 		brokenRepos: 1,
 		idleWorkflows: 1,
-		nonDefaultBranchStreams: 3,
-		nonDefaultBranchFailures: 6,
+		nonDefaultBranchStreams: 4,
+		nonDefaultBranchFailures: 8,
 	});
 });
 

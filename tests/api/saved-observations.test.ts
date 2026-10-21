@@ -175,6 +175,11 @@ beforeAll(async () => {
 			runs: [
 				...runs("Performance lab", ["success", ...Array<string>(6).fill("failure")]),
 				...runs("CI", ["success", "failure", "failure"]),
+				...runs("CI", ["failure", "failure"]).map((run, index) => ({
+					...run,
+					event: "pull_request",
+					created_at: `2026-10-20T${index === 0 ? "09" : "08"}:00:00.000Z`,
+				})),
 			],
 		}),
 		snapshot("repo:nocoo/baseline:actions", {
@@ -306,7 +311,7 @@ it("separates default-branch workflow and repository verdict units over saved HT
 		flakyRepos: 1,
 		idleWorkflows: 1,
 		idleRepos: 1,
-		nonDefaultBranchFailures: 2,
+		nonDefaultBranchFailures: 4,
 	});
 	expect(report.totals).not.toHaveProperty("broken");
 	const response = await browser("ci");

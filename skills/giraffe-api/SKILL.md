@@ -187,6 +187,9 @@ Missing branch metadata, null run refs, feature/PR branches and
 tags never imply default-branch health. Other branch/bot streams are observational;
 GET does not look up branch existence or current PRs. The classification clock is
 the newest saved input time, so check source freshness independently of verdict.
+All `pull_request*` events are observational, including fork PRs whose source branch
+is also named `main`; their failures belong to `nonDefaultBranchFailures`, not
+default-branch workflow or repository verdicts.
 
 The latest 10 decisive completed runs within 30 days describe recent stability.
 A latest success is healthy or flaky, never broken despite older failures. Two

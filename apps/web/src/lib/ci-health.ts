@@ -184,7 +184,11 @@ const SCOPE_RANK: Record<Scope, number> = { main: 0, branch: 1, bot: 2 };
 function laneOf(run: CiRun, main: string | undefined) {
 	const workflow = workflowName(run);
 	const scope: Scope =
-		workflow === BOT_WORKFLOW ? "bot" : main && run.head_branch === main ? "main" : "branch";
+		workflow === BOT_WORKFLOW
+			? "bot"
+			: main && run.head_branch === main && !run.event.startsWith("pull_request")
+				? "main"
+				: "branch";
 	return { workflow, scope, branch: scope === "bot" ? (main ?? null) : run.head_branch };
 }
 

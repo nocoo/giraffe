@@ -264,6 +264,8 @@ even when a verdict is healthy; inspect its freshness separately.
   feature/PR branches and tag refs are not assumed to be default-branch evidence.
   No branch-existence or open-PR lookup is performed. Branch and bot streams remain
   observational and never make project workflow/repository verdicts broken or flaky.
+  All `pull_request*` events are observational even when `head_branch` matches the
+  default branch name: a fork PR can also have a source branch named `main`.
 - Classify the latest 10 decisive completed runs in the 30-day history. A latest
   successful result cannot be `broken`: prior failures make it `flaky` (and recurring
   when more than one failed); without failures it is `healthy`. A currently failing
@@ -280,7 +282,8 @@ even when a verdict is healthy; inspect its freshness separately.
   in `unsaved`; absence is not a healthy verdict.
 - `nonDefaultBranchStreams` counts observational non-default streams;
   `nonDefaultBranchFailures` counts their failed runs in the last 30 days, not
-  workflows or repositories. `botStreams` counts bot streams; `truncatedRepos`
+  workflows or repositories, including PR-event contexts with matching branch names.
+  `botStreams` counts bot streams; `truncatedRepos`
   counts repository summaries whose saved inputs are truncated.
 - `daily` remains an all-branch, non-bot completed-run histogram, not a health
   verdict; its success/failure/other values are run counts.

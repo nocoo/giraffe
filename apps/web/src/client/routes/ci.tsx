@@ -175,7 +175,7 @@ export function CiPage() {
 					汇总单位为默认分支工作流（{formatCount(t.totalWorkflows)} 条），仓库单独计数（
 					{formatCount(t.totalRepos)} 个，其中 {formatCount(t.unknownRepos)} 个无默认分支判定）。
 					非默认分支 {formatCount(t.nonDefaultBranchStreams)} 条观察线、
-					{formatCount(t.nonDefaultBranchFailures)} 次失败运行（近 30 天，含标签和未知引用），
+					{formatCount(t.nonDefaultBranchFailures)} 次失败运行（近 30 天，含 PR、标签和未知引用），
 					不影响仓库和工作流健康。Dependabot 更新任务另计 {formatCount(t.botStreams)} 条。
 					基准时间采用已保存观测的时间 {formatDate(report.now)}。
 				</p>
@@ -188,7 +188,11 @@ export function CiPage() {
 				{buckets.act.length ? (
 					<ul className="giraffe-ci-cards">
 						{buckets.act.map((s) => (
-							<StreamCard key={`${s.repo}:${s.workflow}:${s.branch}`} s={s} now={report.now} />
+							<StreamCard
+								key={`${s.repo}:${s.workflow}:${s.scope}:${s.branch}`}
+								s={s}
+								now={report.now}
+							/>
 						))}
 					</ul>
 				) : (
@@ -268,7 +272,7 @@ export function CiPage() {
 								</TableHeader>
 								<TableBody>
 									{streams.map((s) => (
-										<TableRow key={`${s.repo}:${s.workflow}:${s.branch}`}>
+										<TableRow key={`${s.repo}:${s.workflow}:${s.scope}:${s.branch}`}>
 											<TableCell>
 												<ProjectLink repo={s.repo} className="font-medium text-basalt-foreground" />
 												<div className="text-xs text-basalt-muted-foreground">
@@ -488,7 +492,7 @@ function WatchList({
 			{items.length ? (
 				<ul>
 					{items.slice(0, 12).map((s) => (
-						<li key={`${s.repo}:${s.workflow}:${s.branch}`}>
+						<li key={`${s.repo}:${s.workflow}:${s.scope}:${s.branch}`}>
 							<div className="giraffe-watch-name">
 								<ProjectLink repo={s.repo} />
 								<small>{s.workflow}</small>

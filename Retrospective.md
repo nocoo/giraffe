@@ -632,3 +632,13 @@ before selecting the newest valid saved time, preserve the chosen resource ident
 and share that selection between the index, CI and page reader. Regression tests
 follow indexed sources to their data and compare full content versions; aliases
 with equal or invalid timestamps must resolve independently of SQL row order.
+
+## 2026-10-21 - Branch names do not identify pull-request execution context
+
+Default-branch CI classification originally compared only `head_branch` with the
+saved default branch. A fork PR may also originate from a branch named `main`, so
+its failures could override a successful repository push. Review reproduced this
+using the existing Actions mapper and saved event fields. Keep all pull-request
+event contexts observational, even when branch names match, and include scope in
+rendered stream keys so default and PR lanes remain distinct. Verify default health,
+separate failed-run counts and the unchanged all-branch daily histogram together.

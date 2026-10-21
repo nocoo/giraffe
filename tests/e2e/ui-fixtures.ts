@@ -298,6 +298,7 @@ function ciFixture() {
 				runs: [
 					run("CI", "success", 3),
 					run("CI", "success", 30),
+					...[2, 20].map((hours) => ({ ...run("CI", "failure", hours), event: "pull_request" })),
 					run("L3 Stress Reproduction", "failure", 14 * 24),
 					run("L3 Stress Reproduction", "failure", 15 * 24),
 					...["deleted/pr", "v1.2.3", null].flatMap((branch) => [

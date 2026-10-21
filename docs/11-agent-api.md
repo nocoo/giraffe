@@ -84,8 +84,10 @@ The unprojectable account-wide contribution calendar is excluded explicitly.
 CI freshness counts three saved dependencies per repository, not one timestamp.
 
 CI verdicts use the known default branch only; missing branch metadata, PR/feature
-branches, null refs and tag refs do not establish default-branch health. Recovered
-latest completed successes are flaky/healthy rather than broken; workflows with
+branches, null refs and tag refs do not establish default-branch health.
+PR-event runs are observational even if their source branch is named like the
+default branch; a matching name alone cannot prove repository branch context.
+Recovered latest completed successes are flaky/healthy rather than broken; workflows with
 no runs for 14 days are idle. The clock is saved observation time, not GET time.
 Other branch failures remain separate 30-day run counts. Workflow/repository totals
 use explicit `*Workflows`/`*Repos` names, with `nonDefaultBranchFailures` measured in

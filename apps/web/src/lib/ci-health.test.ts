@@ -322,6 +322,42 @@ describe("repository and account report", () => {
 describe("report edge cases", () => {
 	afterEach(() => vi.useRealTimers());
 
+	it.each([
+		"pull_request",
+		"pull_request_target",
+		"pull_request_review",
+		"pull_request_review_comment",
+	])("keeps %s runs observational when their branch name matches the default", (event) => {
+		const report = ciReport(
+			[
+				{
+					repo: "owner/app",
+					default_branch: "main",
+					fetched_at: NOW,
+					truncated: false,
+					runs: [
+						run("success", "2026-09-18T09:00:00Z"),
+						run("failure", "2026-09-18T10:00:00Z", { event }),
+						run("failure", "2026-09-18T11:00:00Z", { event }),
+					],
+				},
+			],
+			NOW,
+		);
+		expect(report.repos[0]).toMatchObject({ verdict: "healthy", totalWorkflows: 1 });
+		expect(report.totals).toMatchObject({
+			brokenWorkflows: 0,
+			healthyWorkflows: 1,
+			nonDefaultBranchStreams: 1,
+			nonDefaultBranchFailures: 2,
+		});
+		expect(report.streams.map((stream) => [stream.scope, stream.branch])).toEqual([
+			["branch", "main"],
+			["main", "main"],
+		]);
+		expect(report.daily.at(-1)).toMatchObject({ success: 1, failure: 2 });
+	});
+
 	it("does not infer a default branch from main, tag names or null refs", () => {
 		const report = ciReport(
 			[
