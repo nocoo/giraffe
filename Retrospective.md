@@ -862,3 +862,10 @@ line scanner must exclude all supported scalar-header forms before reading body
 lines as structural keys.
 The same regression matrix also caught legal trailing spaces after the indicator;
 mapping values now trim trailing whitespace before structural classification.
+
+Independent review found that ID generation treated absent and empty refs as the
+same string while the collision bucket compared their raw values. Both records
+survived but received the same ID. A failing regression now preserves both raw
+records and checks unique IDs, reorder stability and idempotence. Collision
+classification must use the same normalized value as the generated identifier,
+while evidence equality still compares the complete original record.

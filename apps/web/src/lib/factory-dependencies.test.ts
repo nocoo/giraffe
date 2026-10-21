@@ -103,3 +103,27 @@ it("retains distinct evidence with the same ref and canonicalizes nested extensi
 	const missingRef = dependencyEvidence([noVersion, { ...noVersion, author: "other" }]).items;
 	expect(new Set(missingRef.map((item) => item.id)).size).toBe(2);
 });
+
+it("disambiguates missing and empty saved refs without dropping either record", () => {
+	const base = ".github/workflows/ci.yml:actions/checkout";
+	const missing = {
+		...event,
+		id: base,
+		title: "actions/checkout",
+		path: ".github/workflows/ci.yml",
+	};
+	const input = [missing, { ...missing, version: "" }];
+	const items = dependencyEvidence(input).items;
+	expect(items).toHaveLength(2);
+	expect(items.map((item) => item.id).sort()).toEqual([
+		`${base}#ref=&entry=1`,
+		`${base}#ref=&entry=2`,
+	]);
+	expect(
+		dependencyEvidence([...input].reverse())
+			.items.map((item) => item.id)
+			.sort(),
+	).toEqual(items.map((item) => item.id).sort());
+	expect(dependencyEvidence(items).items).toEqual(items);
+	expect(items.map((item) => Object.hasOwn(item, "version"))).toEqual([false, true]);
+});

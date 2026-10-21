@@ -71,7 +71,7 @@ function uniqueWorkflowItems(items: FactoryEvent[]) {
 		if (group.size > 1) {
 			id += `${item.job ? "&" : "#"}ref=${encodeURIComponent(item.version ?? "")}`;
 			const sameRef = [...group.values()]
-				.filter((other) => other.version === item.version)
+				.filter((other) => (other.version ?? "") === (item.version ?? ""))
 				.map(key)
 				.sort();
 			if (sameRef.length > 1) id += `&entry=${sameRef.indexOf(identity) + 1}`;
