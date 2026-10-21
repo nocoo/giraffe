@@ -11,6 +11,7 @@ import { ensureSession, getActiveAccountId } from "./session";
 export type CurrentSource = {
 	resource: string;
 	version: string | null;
+	contentVersion?: string | null;
 	fetchedAt: string | null;
 	freshness?: unknown;
 	coverage?: unknown;
@@ -71,10 +72,10 @@ export function sourceQuality(
 	}
 	const times: string[] = [];
 	for (const source of report.sources) {
-		if (source.fetchedAt) times.push(source.fetchedAt);
-		stale ||= aged(source.fetchedAt, now);
 		complete &&= source.complete;
 		if (report.scope === "global" && !accountSources) {
+			if (source.fetchedAt) times.push(source.fetchedAt);
+			stale ||= aged(source.fetchedAt, now);
 			const child = repoReports.find(
 				(r) => r.repository === source.resource && r.domain === report.domain,
 			);
@@ -90,7 +91,13 @@ export function sourceQuality(
 			} else complete = false;
 		} else {
 			const saved = sources.find((s) => s.resource === source.resource);
-			current &&= !!saved && saved.version === source.version;
+			current &&=
+				!!saved &&
+				(source.contentVersion !== undefined
+					? saved.contentVersion === source.contentVersion
+					: saved.version === source.version);
+			if (saved?.fetchedAt) times.push(saved.fetchedAt);
+			stale ||= aged(saved?.fetchedAt ?? null, now);
 			const freshness = saved?.freshness as { missing?: number } | null | undefined;
 			complete &&= !!saved && !saved.truncated && !saved.unavailable && !freshness?.missing;
 		}
