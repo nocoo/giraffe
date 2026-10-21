@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.15.13 — 2026-10-21
+
+### Fixed
+
+- Exclude repositories outside the current saved catalog from account observations, source indexes, factory aggregates and browser inboxes at read time, without deleting historical data.
+- Include retained baseline observations and missing repositories in catalog-wide freshness, using consistent source times for all and starred selections.
+- Classify recovered CI workflows as flaky or healthy and workflows without runs for 14 days as idle; default-branch evidence alone determines project health.
+
+### Changed
+
+- Replace ambiguous CI counters with explicit workflow/repository totals and separate non-default-branch failed-run counts; update the dashboard and machine API documentation.
+
 ## v0.15.12 — 2026-10-20
 
 ### Changed
