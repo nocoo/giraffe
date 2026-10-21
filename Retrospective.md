@@ -595,3 +595,12 @@ the relevant regressions before the complete fixed-code suite. Test stores remai
 inside task-owned temporary clones; no daily or production data is used. Inspect
 the actual assertion failure before reporting red evidence, and scope chrome
 selectors to their existing stable semantic markers rather than HTML tag names.
+
+## 2026-10-21 - Compare saved rows, not query execution metadata
+
+The new HTTP observation regression initially compared complete Wrangler D1 query
+responses before and after GET requests. The saved rows were identical, but the
+query duration changed from one millisecond to zero and caused a false failure.
+Compare the ordered result rows for read-only assertions, excluding execution
+metadata. Preserve the original failing data-correctness evidence separately from
+test-harness defects so a fixture correction is not mistaken for a product fix.
