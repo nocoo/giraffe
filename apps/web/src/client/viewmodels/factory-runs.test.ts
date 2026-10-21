@@ -24,6 +24,21 @@ import { setActiveAccountId } from "./session";
 vi.mock("../lib/api", () => ({ apiGet: vi.fn(), apiPost: vi.fn() }));
 const snap = factoryFixture();
 const run = makeRun("r", snap.account_id, "nocoo", "key", "refresh", snap.repos, snap.fetched_at);
+it("shows unavailable work separately from problems and completed evidence", () => {
+	const plan = structuredClone(run);
+	for (const step of plan.steps) step.status = "success";
+	const alerts = plan.steps.find((step) => step.kind === "alerts");
+	if (!alerts) throw new Error("fixture");
+	Object.assign(alerts, { status: "unavailable", error: "alerts_disabled" });
+	const view = { ...plan, leaseUntil: null, progress: runProgress(plan, snap.fetched_at) };
+	expect(runIssues(view)).toEqual([]);
+	expect(runStages(view).find((stage) => stage.title === "工厂统计")).toMatchObject({
+		completed: 9,
+		failed: 0,
+		unavailable: 1,
+	});
+	expect(runRepositoryRows(view, [])[0]).toMatchObject({ status: "unavailable", completed: 18 });
+});
 
 it("reports page updates separately from factory publication and scoped exclusions", () => {
 	const plan = structuredClone(run);
@@ -442,6 +457,10 @@ it("names page steps, explains incomplete page data, and includes non-metric rep
 });
 
 it("shows actionable distinctions for credential, capacity, access and upstream failures", () => {
+	expect(describeRunIssue("alerts_disabled", "alerts").reason).toContain("未启用");
+	expect(describeRunIssue("permission_denied", "alerts").settings).toBe(true);
+	expect(describeRunIssue("run_timed_out", "publish").reason).toContain("释放账号锁");
+	expect(describeRunIssue("scheduled_slots_missed", "publish").reason).toContain("历史任务");
 	for (const code of ["github_unauthorized", "account_missing"]) {
 		expect(describeRunIssue(code, "metadata")).toMatchObject({ settings: true });
 		expect(describeRunIssue(code, "metadata").impact).toContain("保留");

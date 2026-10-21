@@ -62,6 +62,7 @@ export const STEP_STATUS: Record<StepStatus, string> = {
 	running: "正在获取",
 	success: "已完成",
 	failed: "未能完成",
+	unavailable: "数据不可用",
 	skipped: "已跳过",
 };
 export const formatRunDuration = (seconds: number) =>
@@ -93,6 +94,35 @@ export function describeRunIssue(code: string | null, kind: StepKind, resource?:
 	const label = stepLabel({ kind, ...(resource ? { resource } : {}) });
 	const security = kind === "alerts" || resource === "alerts" || resource?.endsWith(":security");
 	switch (code) {
+		case "alerts_disabled":
+			return {
+				...base,
+				title: "仓库未启用安全告警",
+				reason: "GitHub 明确返回此仓库未启用安全告警。",
+				action: "如需这项数据，请在 GitHub 仓库设置中启用 Dependabot alerts。",
+			};
+		case "permission_denied":
+			return {
+				...base,
+				title: "令牌缺少访问权限",
+				reason: "GitHub 拒绝当前令牌读取此资源。",
+				action: "检查令牌权限与仓库访问授权后重新刷新。",
+				settings: true,
+			};
+		case "run_timed_out":
+			return {
+				...base,
+				title: "刷新已超时",
+				reason: "本次刷新超过执行时限，系统已释放账号锁。",
+				action: "检查刷新记录和 GitHub 权限，再按需重新发起刷新。",
+			};
+		case "scheduled_slots_missed":
+			return {
+				...base,
+				title: "自动刷新错过执行时间",
+				reason: "过期的调度时间已记录，不会集中补跑历史任务。",
+				action: "系统只尝试最新的调度时间；请检查服务可用性与刷新记录。",
+			};
 		case "cloud_ai_retired":
 			return {
 				...base,
@@ -233,6 +263,7 @@ export function runIssues(run: FactoryRunView | null) {
 		}
 	>();
 	for (const step of run?.steps ?? []) {
+		if (step.status === "unavailable") continue;
 		if (step.status !== "failed" && !step.error) continue;
 		if (step.error === "repository_failed" || step.error === "run_failed") continue;
 		const kind = step.error === "repository_cooldown" ? "metadata" : step.kind;
@@ -286,9 +317,11 @@ export function runStages(run: FactoryRunView) {
 		.map((stage) => ({
 			...stage,
 			total: stage.steps.length,
-			completed: stage.steps.filter((s) => ["success", "failed", "skipped"].includes(s.status))
-				.length,
+			completed: stage.steps.filter((s) =>
+				["success", "failed", "skipped", "unavailable"].includes(s.status),
+			).length,
 			failed: stage.steps.filter((s) => s.status === "failed").length,
+			unavailable: stage.steps.filter((s) => s.status === "unavailable").length,
 			skipped: stage.steps.filter((s) => s.status === "skipped").length,
 		}));
 }
@@ -326,6 +359,7 @@ export function runPageUpdates(run: FactoryRunView) {
 	return pages.map(({ resource, name, matches }) => {
 		const steps = run.steps.filter(matches);
 		const updated = steps.filter((step) => step.status === "success");
+		const unavailable = steps.filter((step) => step.status === "unavailable").length;
 		const active = run.status === "running" || run.status === "paused";
 		const pending = steps.some((step) => step.status === "pending" || step.status === "running");
 		return {
@@ -350,9 +384,11 @@ export function runPageUpdates(run: FactoryRunView) {
 						? steps.some((step) => step.status === "running")
 							? "正在更新"
 							: "等待更新"
-						: updated.length
-							? `部分更新 ${updated.length}/${steps.length}`
-							: "未更新，保留原数据",
+						: unavailable > 0 && updated.length + unavailable === steps.length
+							? `已处理，${unavailable} 项数据不可用`
+							: updated.length
+								? `部分更新 ${updated.length}/${steps.length}`
+								: "未更新，保留原数据",
 		};
 	});
 }
@@ -496,7 +532,7 @@ export function runRepositoryRows(run: FactoryRunView | null, states: RepoRefres
 	return [...new Set([...run.repos, ...(run.siteRepos ?? [])])].map((repo) => {
 		const steps = run.steps.filter((s) => s.repo === repo);
 		const completed = steps.filter((s) =>
-			["success", "failed", "skipped"].includes(s.status),
+			["success", "failed", "skipped", "unavailable"].includes(s.status),
 		).length;
 		const status: StepStatus = steps.some((s) => s.status === "running")
 			? "running"
@@ -505,7 +541,9 @@ export function runRepositoryRows(run: FactoryRunView | null, states: RepoRefres
 				: steps.length > 0 && completed === steps.length
 					? steps.some((s) => s.status === "skipped")
 						? "skipped"
-						: "success"
+						: steps.some((s) => s.status === "unavailable")
+							? "unavailable"
+							: "success"
 					: "pending";
 		return {
 			repo,

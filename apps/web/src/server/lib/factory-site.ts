@@ -29,10 +29,10 @@ function catalogNames(snapshot: Record<string, unknown> | null): string[] | null
 }
 
 function assertComplete(payload: Collected | null | undefined): asserts payload is Collected {
-	if (payload?.forbidden || payload?.unavailable)
-		throw new ApiError(403, "snapshot_unavailable", "page source unavailable");
 	if (!payload || payload.truncated)
 		throw new ApiError(422, "snapshot_incomplete", "page source incomplete");
+	if (payload.forbidden || payload.unavailable)
+		throw new ApiError(403, "snapshot_unavailable", "page source unavailable");
 }
 
 /** One bounded page of site work. All writes commit with the run's lease and cursor. */
@@ -142,6 +142,13 @@ export async function collectSitePage(
 					dependabot_open: 0,
 					code_scanning_open: 0,
 				};
+		if (resource === "alerts" && page.unavailable && !page.truncated)
+			return {
+				writes: [],
+				done: true,
+				unavailable: true,
+				reasonCode: String(page.reason_code ?? "unknown"),
+			};
 		assertComplete(page);
 		const key = resource === "issues" ? "issues" : resource === "prs" ? "pull_requests" : "items";
 		const payload: Collected = {
@@ -213,7 +220,31 @@ export async function collectSitePage(
 		step.strategy = "reused";
 	}
 	if (suffix === "security" && !written[resource])
-		written[resource] = await collectKind(gh, token, "alerts", [String(step.repo)], 1_500_000);
+		written[resource] = await collectKind(gh, token, resource, [], 1_500_000);
+	const security = suffix === "security" ? written[resource] : null;
+	if (security?.unavailable && !security.truncated) {
+		const previous = await readSnapshot(db, run.account_id, resource);
+		const retained = previous && !previous.truncated ? previous : null;
+		const fetchedAt = retained ? String(retained.fetched_at) : now;
+		return {
+			writes: replaceSnapshotStmts(
+				db,
+				run.account_id,
+				resource,
+				{
+					...security,
+					...retained,
+					unavailable: true,
+					reason: security.reason,
+					reason_code: security.reason_code,
+				},
+				fetchedAt,
+			),
+			done: true,
+			unavailable: true,
+			reasonCode: String(security.reason_code ?? "unknown"),
+		};
+	}
 	const metadata = run.steps.find(
 		(s) => s.kind === "metadata" && s.repo === step.repo && s.status === "success",
 	);

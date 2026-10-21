@@ -47,16 +47,31 @@ export async function listRuns(db: Db, account: string, detail = "") {
  lease_until,json_array_length(payload,'$.steps') AS total,
  (SELECT COUNT(*) FROM json_each(payload,'$.steps') WHERE json_extract(value,'$.status')='success') AS success,
  (SELECT COUNT(*) FROM json_each(payload,'$.steps') WHERE json_extract(value,'$.status')='failed') AS failed,
+ (SELECT COUNT(*) FROM json_each(payload,'$.steps') WHERE json_extract(value,'$.status')='unavailable') AS unavailable,
  (SELECT COUNT(*) FROM json_each(payload,'$.steps') WHERE json_extract(value,'$.status')='skipped') AS skipped
  FROM factory_runs WHERE account_id=? ORDER BY CASE WHEN status IN ('running','paused') THEN 0 ELSE 1 END,created_at DESC LIMIT 21`)
 		.bind(detail, account, account)
-		.all<RunRow & { total: number; success: number; failed: number; skipped: number }>();
+		.all<
+			RunRow & {
+				total: number;
+				success: number;
+				failed: number;
+				skipped: number;
+				unavailable: number;
+			}
+		>();
 	return rows.results.map((row) => {
 		const entry = parse(row);
 		entry.run.steps ??= [];
 		return {
 			...entry,
-			counts: { total: row.total, success: row.success, failed: row.failed, skipped: row.skipped },
+			counts: {
+				total: row.total,
+				success: row.success,
+				failed: row.failed,
+				skipped: row.skipped,
+				unavailable: row.unavailable,
+			},
 		};
 	});
 }

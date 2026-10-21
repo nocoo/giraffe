@@ -43,6 +43,8 @@ it("describes disabled, deferred, empty and ready schedules", () => {
 	expect(scheduleStatus({ ...schedule, lastError: "no_starred_repositories" })).toContain("星标");
 	expect(scheduleStatus({ ...schedule, lastError: "account_conflict" })).toContain("等待");
 	expect(scheduleStatus({ ...schedule, lastError: "catalog_incomplete" })).toContain("仓库列表");
+	expect(scheduleStatus({ ...schedule, lastError: "run_timed_out" })).toContain("超时");
+	expect(scheduleStatus({ ...schedule, lastError: "scheduled_slots_missed" })).toContain("错过");
 	expect(scheduleStatus({ ...schedule, lastError: "internal_error" })).toContain("重试");
 	expect(scheduleStatus(schedule)).toBe("等待首次安排");
 	expect(scheduleStatus({ ...schedule, nextAt: "2026-09-28T00:00:00.000Z" })).toContain("2026");

@@ -15,6 +15,7 @@ import {
 	mapRepos,
 	mapTraffic,
 } from "./github-map";
+import { githubUnavailability, unavailableReason } from "./github-unavailable";
 
 export type Collected = { truncated: boolean } & Record<string, unknown>;
 
@@ -325,6 +326,8 @@ async function collectAlerts(
 	let dependabot = 0;
 	let scanning = 0;
 	let stop = false;
+	let unavailable = false;
+	let reason: ReturnType<typeof unavailableReason> | null = null;
 	for (const full of names) {
 		if (stop) {
 			break;
@@ -341,12 +344,18 @@ async function collectAlerts(
 						nodes?: unknown[];
 					};
 				} | null;
-				if (!Array.isArray(repo?.vulnerabilityAlerts?.nodes)) {
-					truncated = true;
+				if (gh.graphqlErrors.length > 0) {
+					unavailable = true;
+					const error = gh.graphqlErrors[0];
+					reason ??= unavailableReason(
+						error?.reasonCode ?? (error?.type === "NOT_FOUND" ? "not_found" : "unknown"),
+					);
+					if (after) truncated = true;
 					break;
 				}
-				if (gh.graphqlErrors.length > 0) {
+				if (!Array.isArray(repo?.vulnerabilityAlerts?.nodes)) {
 					truncated = true;
+					unavailable = true;
 					break;
 				}
 				got = true;
@@ -369,15 +378,24 @@ async function collectAlerts(
 					stop = true;
 					break;
 				}
-				if (
-					repo.vulnerabilityAlerts?.pageInfo?.hasNextPage &&
-					repo.vulnerabilityAlerts.pageInfo.endCursor
-				) {
-					after = repo.vulnerabilityAlerts.pageInfo.endCursor;
+				if (repo.vulnerabilityAlerts?.pageInfo?.hasNextPage) {
+					const next = repo.vulnerabilityAlerts.pageInfo.endCursor;
+					if (!next || next === after) {
+						truncated = true;
+						break;
+					}
+					after = next;
 					continue;
 				}
 				break;
 			} catch (err) {
+				const denied = githubUnavailability(err);
+				if (denied) {
+					unavailable = true;
+					reason ??= denied;
+					if (after) truncated = true;
+					break;
+				}
 				if (err instanceof TruncatedError) {
 					truncated = true;
 					stop = true;
@@ -416,7 +434,11 @@ async function collectAlerts(
 				`/repos/${owner}/${name}/code-scanning/alerts?state=open&per_page=100`,
 			);
 			const body = (await res.json()) as unknown;
-			const mapped = mapCodeScanningAlerts(full, Array.isArray(body) ? body : []);
+			if (!Array.isArray(body)) {
+				truncated = true;
+				break;
+			}
+			const mapped = mapCodeScanningAlerts(full, body);
 			scanning += mapped.length;
 			items.push(...mapped);
 			ok += 1;
@@ -424,8 +446,10 @@ async function collectAlerts(
 				truncated = true;
 			}
 		} catch (err) {
-			if (skipSoft(err)) {
-				truncated = true;
+			const denied = githubUnavailability(err);
+			if (denied) {
+				unavailable = true;
+				reason ??= denied;
 				continue;
 			}
 			if (err instanceof TruncatedError) {
@@ -437,7 +461,8 @@ async function collectAlerts(
 	}
 	return {
 		truncated,
-		unavailable: ok === 0,
+		unavailable: unavailable || ok === 0,
+		...(reason ?? {}),
 		items,
 		dependabot_open: dependabot,
 		code_scanning_open: scanning,
@@ -582,90 +607,9 @@ async function collectRepoKind(
 		}
 	}
 	if (suffix === "security") {
-		let after: string | null = null;
-		let count = 0;
-		let truncated = false;
-		let unavailable = false;
-		let scanning = 0;
-		try {
-			for (;;) {
-				const data = await gh.githubGraphql(token, ALERTS_QUERY, { o: owner, n: name, after });
-				const repo = data.repository as {
-					vulnerabilityAlerts?: {
-						pageInfo?: { hasNextPage?: boolean; endCursor?: string | null };
-						nodes?: unknown[];
-					};
-				} | null;
-				if (!Array.isArray(repo?.vulnerabilityAlerts?.nodes)) {
-					unavailable = true;
-					break;
-				}
-				if (gh.graphqlErrors.length > 0) {
-					truncated = true;
-					unavailable = true;
-				}
-				count += repo.vulnerabilityAlerts?.nodes?.length ?? 0;
-				if (
-					repo.vulnerabilityAlerts?.pageInfo?.hasNextPage &&
-					repo.vulnerabilityAlerts.pageInfo.endCursor
-				) {
-					after = repo.vulnerabilityAlerts.pageInfo.endCursor;
-					continue;
-				}
-				break;
-			}
-		} catch (err) {
-			if (err instanceof TruncatedError) {
-				truncated = true;
-			} else if (skipSoft(err)) {
-				truncated = true;
-				unavailable = true;
-			} else {
-				throw err;
-			}
-		}
-		if (
-			exceedsBudget(
-				{
-					truncated: true,
-					unavailable,
-					dependabot_open: count,
-					code_scanning_open: scanning,
-				},
-				budget,
-			)
-		) {
-			return {
-				truncated: true,
-				unavailable,
-				dependabot_open: count,
-				code_scanning_open: scanning,
-			};
-		}
-		try {
-			const res = await gh.githubApi(token, `${base}/code-scanning/alerts?state=open&per_page=100`);
-			const body = (await res.json()) as unknown;
-			scanning += Array.isArray(body) ? body.length : 0;
-			if (nextPath(res)) {
-				truncated = true;
-			}
-		} catch (err) {
-			if (skipSoft(err)) {
-				truncated = true;
-				unavailable = true;
-			} else if (err instanceof TruncatedError) {
-				truncated = true;
-			} else {
-				throw err;
-			}
-		}
-		return {
-			truncated,
-			unavailable,
-			dependabot_open: count,
-			code_scanning_open: scanning,
-		};
+		return collectAlerts(gh, token, [full], budget);
 	}
+
 	if (suffix === "issues") {
 		return searchList(gh, token, [full], false, true, budget);
 	}

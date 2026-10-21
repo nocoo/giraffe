@@ -126,7 +126,7 @@ export type FactorySnapshot = {
 	startedAt: string;
 	fetched_at: string;
 	window: FactoryWindow;
-	status: "collecting" | "complete";
+	status: "collecting" | "complete" | "partial";
 	inventory: {
 		total: number;
 		scanned: number;

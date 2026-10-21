@@ -30,6 +30,10 @@ export async function saveRefreshSchedule(
 export function scheduleStatus(schedule: RefreshSchedule): string {
 	if (!schedule.enabled) return "已停用";
 	switch (schedule.lastError) {
+		case "run_timed_out":
+			return "上次刷新超时，账号锁已释放；请查看执行记录";
+		case "scheduled_slots_missed":
+			return "曾错过调度时间，已保留记录；仅尝试最新时段";
 		case "no_starred_repositories":
 			return "上次跳过：没有星标仓库";
 		case "account_conflict":

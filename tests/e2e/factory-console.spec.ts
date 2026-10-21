@@ -145,6 +145,71 @@ async function mockConsole(page: Page, fixture: ReturnType<typeof consoleFixture
 	});
 }
 
+test("unavailable steps stay visible without drowning real failures", async ({ page }) => {
+	const fixture = consoleFixture();
+	const run = fixture.state.history[0];
+	if (!run) throw new Error("fixture run missing");
+	for (const step of run.steps) {
+		if (step.kind === "alerts" && step.status === "failed") {
+			step.status = "unavailable";
+			step.error = "alerts_disabled";
+		}
+	}
+	run.status = "completed";
+	run.progress = runProgress(run, run.startedAt);
+	await mockConsole(page, fixture);
+	await page.goto("/refresh");
+	await expect(page.getByText("数据不可用 2", { exact: true })).toBeVisible();
+	await expect(page.getByText("未完成 0", { exact: true })).toBeVisible();
+	await expect(page.getByLabel("刷新问题与处理建议")).toHaveCount(0);
+	const row = page.locator(".factory-run-row").filter({ hasText: "nocoo/app" });
+	await row.locator(":scope > summary").click();
+	await expect(row.getByText("仓库未启用安全告警。", { exact: false })).toBeVisible();
+});
+
+test("expired and missed runs show their durable diagnostic", async ({ page }) => {
+	const fixture = consoleFixture();
+	const run = fixture.state.history[0];
+	if (!run) throw new Error("fixture run missing");
+	run.status = "failed";
+	run.error = "scheduled_slots_missed";
+	run.missedSlots = { firstDueAt: run.startedAt, lastDueAt: run.startedAt, count: 2 };
+	await mockConsole(page, fixture);
+	await page.goto("/refresh");
+	await expect(
+		page.getByText("自动刷新错过执行时间 · 2 个调度时间", { exact: true }),
+	).toBeVisible();
+});
+
+test("schedule incidents do not promise to retry terminal or missed work", async ({ page }) => {
+	const fixture = consoleFixture();
+	await mockConsole(page, fixture);
+	await page.route("**/api/refresh/settings", (route) =>
+		route.fulfill({
+			json: {
+				account_id: fixture.state.account_id,
+				starred: [],
+				schedules: (["daily", "weekly"] as const).map((kind) => ({
+					...defaultSchedule(kind),
+					kind,
+					enabled: true,
+					nextAt: null,
+					lastRunId: null,
+					lastError: kind === "daily" ? "run_timed_out" : "scheduled_slots_missed",
+				})),
+			},
+		}),
+	);
+	await page.goto("/refresh");
+	await page.getByRole("tab", { name: "自动刷新", exact: true }).click();
+	await expect(
+		page.getByText("上次刷新超时，账号锁已释放；请查看执行记录", { exact: true }),
+	).toBeVisible();
+	await expect(
+		page.getByText("曾错过调度时间，已保留记录；仅尝试最新时段", { exact: true }),
+	).toBeVisible();
+});
+
 test("account settings guidance navigates without replacing the document", async ({ page }) => {
 	const fixture = consoleFixture();
 	const run = fixture.state.history[0];

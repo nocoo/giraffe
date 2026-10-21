@@ -451,7 +451,7 @@ describe("collectKind", () => {
 		};
 		const deniedOut = await collectKind(denied, "tok", "alerts", ["o/n"]);
 		expect(deniedOut.unavailable).toBe(true);
-		expect(deniedOut.truncated).toBe(true);
+		expect(deniedOut.truncated).toBe(false);
 		expect(deniedOut.items).toEqual([]);
 		const many = Array.from({ length: 11 }, (_, i) => `o/r${i}`);
 		const truncated = await collectKind(
@@ -475,8 +475,10 @@ describe("collectKind", () => {
 				throw new TruncatedError();
 			},
 		});
-		await expect(collectKind(soft, "tok", "alerts", ["o/n"])).rejects.toMatchObject({
-			code: "not_found",
+		expect(await collectKind(soft, "tok", "alerts", ["o/n"])).toMatchObject({
+			truncated: true,
+			unavailable: true,
+			reason_code: "not_found",
 		});
 		const capGql = client({
 			graphql: async () => {
@@ -810,7 +812,7 @@ describe("collectKind", () => {
 		});
 		const out = await collectKind(gh, "tok", "repo:o/n:security", []);
 		expect(out.dependabot_open).toBe(1);
-		expect(out.truncated).toBe(true);
+		expect(out.truncated).toBe(false);
 		const emptyAlerts = await collectKind(
 			client({
 				graphql: () => ({ repository: { vulnerabilityAlerts: {} } }),

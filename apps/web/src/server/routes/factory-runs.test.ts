@@ -250,6 +250,20 @@ it("returns compact history with accurate totals and expands only the requested 
 	const compact = (await (await s.call()).json()) as FactoryRunResponse;
 	expect(compact.history[0]?.steps).toHaveLength(19);
 	expect(compact.history[0]?.progress).toMatchObject({ total: 19, completed: 19, skipped: 19 });
+	await s.db
+		.prepare(
+			"UPDATE factory_runs SET payload=json_set(payload,'$.steps[0].status','unavailable') WHERE id=?",
+		)
+		.bind(first.id)
+		.run();
+	const unavailable = (await (await s.call()).json()) as FactoryRunResponse;
+	expect(unavailable.history[0]?.progress).toMatchObject({
+		total: 19,
+		completed: 19,
+		skipped: 18,
+		unavailable: 1,
+		failed: 0,
+	});
 	const detail = (await (
 		await s.call(`/api/factory/runs?history=${first.id}`)
 	).json()) as FactoryRunResponse;

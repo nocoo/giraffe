@@ -7,6 +7,7 @@ import {
 	rawRepo,
 	ready,
 } from "../../../../../tests/fixtures/factory";
+import { githubUnavailableFixtures } from "../../../../../tests/fixtures/github-unavailable";
 import { FACTORY_STREAMS } from "../../lib/factory-types";
 import {
 	factoryNext,
@@ -18,6 +19,55 @@ import {
 
 const invoke = (s = ready(), gh = github(() => Response.json([])), store = memoryStore()) =>
 	stepFactory(s, gh, "test-token", store, NOW);
+
+it.each(githubUnavailableFixtures)(
+	"records a safe factory alerts reason ($code)",
+	async ({ status, message, code }) => {
+		const state = ready("alerts");
+		await invoke(
+			state,
+			github(() => Response.json({ message }, { status })),
+		);
+		expect(state.repos[0]?.coverage.alerts).toMatchObject({
+			status: "unavailable",
+			reason_code: code,
+		});
+	},
+);
+
+it("keeps access loss after an empty first page limited, and never resumes a published partial snapshot", async () => {
+	const state = ready("alerts");
+	const store = memoryStore();
+	await invoke(
+		state,
+		github(() =>
+			Response.json([], {
+				headers: {
+					link: '<https://api.github.com/repos/nocoo/app/dependabot/alerts?after=next>; rel="next"',
+				},
+			}),
+		),
+		store,
+	);
+	await invoke(
+		state,
+		github(() =>
+			Response.json({ message: "Resource not accessible by integration" }, { status: 403 }),
+		),
+		store,
+	);
+	expect(state.repos[0]?.coverage.alerts).toMatchObject({ status: "limited", observed: 0 });
+	state.status = "partial";
+	const before = structuredClone(state);
+	await invoke(
+		state,
+		github(() => {
+			throw new Error("published snapshot must not collect");
+		}),
+		store,
+	);
+	expect(state).toEqual(before);
+});
 
 describe("factory incremental collection", () => {
 	it("pages the complete owned inventory, deduplicates ids and records mutually exclusive exclusions", async () => {
@@ -202,6 +252,20 @@ describe("factory incremental collection", () => {
 			expect(state.repos[0]?.coverage.alerts.source).toContain("dependabot/alerts");
 		},
 	);
+	it("keeps oversized responses and malformed dependency manifests as real limited coverage", async () => {
+		const large = ready("alerts");
+		await invoke(
+			large,
+			github(() => Response.json([], { headers: { "content-length": "30000000" } })),
+		);
+		expect(large.repos[0]?.coverage.alerts.status).toBe("limited");
+		const malformed = ready("dependencies");
+		await invoke(
+			malformed,
+			github(() => Response.json({ data: { repository: { package: { text: "{" } } } })),
+		);
+		expect(malformed.repos[0]?.coverage.dependencies.status).toBe("limited");
+	});
 	it("preserves retryable failures, protects rate reserve, and follows no foreign redirects/links", async () => {
 		await expect(
 			invoke(
@@ -292,14 +356,15 @@ describe("factory incremental collection", () => {
 			malformed,
 			github(() => Response.json({ data: { repository: { package: { text: "bad-json" } } } })),
 		);
-		expect(malformed.repos[0]?.coverage.dependencies.status).toBe("unavailable");
+		expect(malformed.repos[0]?.coverage.dependencies.status).toBe("limited");
 		expect(malformed.cursor.repo).toBe(1);
 		const denied = ready("dependencies");
-		await invoke(
-			denied,
-			github(() => Response.json({ data: { repository: null } })),
-		);
-		expect(denied.repos[0]?.coverage.dependencies.status).toBe("unavailable");
+		await expect(
+			invoke(
+				denied,
+				github(() => Response.json({ data: { repository: null } })),
+			),
+		).rejects.toMatchObject({ code: "github_error" });
 	});
 	it("handles empty default branches and every empty resource without inventing events", async () => {
 		const s = ready();
@@ -483,14 +548,14 @@ it("labels access lost between split CI windows as an incomplete subset", async 
 	expect(store.data.get(streamKey("nocoo/app", "actions"))?.ranges).toEqual([]);
 });
 
-it("marks oversized manifest responses unavailable before decoding their contents", async () => {
+it("marks oversized manifest responses limited before decoding their contents", async () => {
 	const state = ready("dependencies");
 	await invoke(
 		state,
 		github(() => new Response("{}", { headers: { "content-length": "90000000" } })),
 	);
 	expect(state.repos[0]?.coverage.dependencies).toMatchObject({
-		status: "unavailable",
+		status: "limited",
 		observed: 0,
 	});
 	expect(state.repos[0]?.coverage.dependencies.reason).toContain("memory budget");

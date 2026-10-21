@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { hexlyProjectFixture } from "../tests/fixtures/project-identity";
 import { factoryGraphqlStub } from "./factory-stub";
 import { hasApiRoutes } from "./has-api-routes";
+import { securityFixture } from "./security-stub";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const persist = join(root, ".wrangler/e2e");
@@ -304,7 +305,17 @@ const github = await listen(17046, (req, res) => {
 	githubHits += 1;
 	void (async () => {
 		const auth = req.headers.authorization ?? "";
+		const security = securityFixture(auth);
 		if (url.pathname === "/user") {
+			if (security) {
+				sendJson(
+					res,
+					200,
+					{ login: security.owner, avatar_url: "" },
+					{ "X-OAuth-Scopes": "repo, read:org, read:user, notifications" },
+				);
+				return;
+			}
 			if (auth.includes("B".repeat(8))) {
 				sendJson(res, 401, {});
 				return;
@@ -327,6 +338,10 @@ const github = await listen(17046, (req, res) => {
 		if (url.pathname === "/graphql") {
 			const raw = await readBody(req);
 			const query = String((JSON.parse(raw || "{}") as { query?: string }).query ?? "");
+			if (security) {
+				sendJson(res, 200, security.graphql(query));
+				return;
+			}
 			const factoryResponse = factoryGraphqlStub(query);
 			if (factoryResponse) {
 				await Bun.sleep(300);
@@ -428,6 +443,11 @@ const github = await listen(17046, (req, res) => {
 					},
 				},
 			});
+			return;
+		}
+		if (security) {
+			const response = security.rest(url.pathname);
+			sendJson(res, response.status, response.body);
 			return;
 		}
 		if (req.method === "PATCH" && url.pathname.startsWith("/notifications/threads/")) {

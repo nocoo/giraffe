@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { expect, it, vi } from "vitest";
 import { factoryFixture } from "../../../../../tests/fixtures/factory-snapshot";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
+import { makeRun } from "../../lib/factory-run";
 import type { Env } from "../env";
 import { createApp } from "../index";
 import { createApiToken } from "../lib/api-tokens";
@@ -68,6 +69,39 @@ async function setup() {
 		);
 	return { db, raw, env, app, token, call, prefix: `/accounts/${account}` };
 }
+it("keeps unavailable counts in compact machine history without writes", async () => {
+	const s = await setup();
+	for (const [id, at] of [
+		["old", "2026-01-01T00:00:00.000Z"],
+		["new", "2026-01-02T00:00:00.000Z"],
+	]) {
+		if (!id || !at) throw new Error("fixture");
+		const run = makeRun(id, account, "nocoo", id, "catalog", [], at);
+		for (const step of run.steps) step.status = "success";
+		Object.assign(run.steps[1] ?? {}, { status: "unavailable", error: "permission_denied" });
+		run.status = "completed";
+		await s.db
+			.prepare(
+				"INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES(?,?,?,'completed',?,?,?,?)",
+			)
+			.bind(id, account, id, JSON.stringify(run), at, at, at)
+			.run();
+	}
+	const before = await s.db.prepare("SELECT * FROM factory_runs ORDER BY id").all();
+	const response = await s.call(`${s.prefix}/refresh-runs`);
+	expect(response.status).toBe(200);
+	expect(await response.json()).toMatchObject({
+		items: [
+			{ id: "new", counts: { total: 4, success: 3, failed: 0, unavailable: 1, skipped: 0 } },
+			{
+				id: "old",
+				steps: [],
+				counts: { total: 4, success: 3, failed: 0, unavailable: 1, skipped: 0 },
+			},
+		],
+	});
+	expect(await s.db.prepare("SELECT * FROM factory_runs ORDER BY id").all()).toEqual(before);
+});
 it("enforces bearer, scopes and fixed account independently of dashboard activation", async () => {
 	const s = await setup();
 	expect((await s.call("/me", "GET", undefined, null)).status).toBe(401);
