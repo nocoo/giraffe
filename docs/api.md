@@ -136,10 +136,13 @@ api -G "$API/sources" --data-urlencode 'since=2026-10-18T16:00:00+08:00' \
 }
 ```
 
-Each source has all eight fields shown. `contentVersion` is null for a factory
-stream whose immutable payload is missing or has the wrong run ID; its existing
-version/coverage metadata is retained, but null is not proof of unchanged content.
-Source identities map to data endpoints:
+Each source has all eight fields shown. `contentVersion` is nullable: rows saved
+before content metadata was introduced have no stored hash, and a projection with
+an unhashed input also returns null. Factory streams require stored metadata for
+the advertised immutable version; missing/mismatched metadata returns null while
+the existing version/coverage remains. Null is not a content proof: fall back to
+full-version equality. Hashes fill in after the source's next ordinary refresh;
+GET never backfills them. Source identities map to data endpoints:
 
 | Resource identity | Data endpoint |
 | --- | --- |
@@ -192,9 +195,11 @@ GET/304 never records token activity or writes source metadata. Content/catalog/
 coverage changes can invalidate the tag even without newer observation timestamps;
 304 is not evidence that pending analysis has finished.
 
-The reader reuses saved inputs within the request. Conditional responses avoid
-body transfer, not all database/projection work. Cloudflare negotiates production
-response compression; the Worker does not manually gzip JSON. See the measured
+The reader reuses saved inputs within the request. Factory stream hashes come
+only from small persisted metadata: `/sources` never reads stream payload bytes
+to produce them. Conditional responses avoid body transfer, not all
+database/projection work. Cloudflare negotiates production response compression;
+the Worker does not manually gzip JSON. See the measured
 [source performance and compression notes](12-source-performance.md), including
 the distinction between the strong application tag and possible edge transforms.
 
@@ -259,35 +264,44 @@ details); missing/unavailable dependencies count as missing.
 
 `version` in `/sources` and `sourceVersion` in observation envelopes are unchanged:
 snapshot versions hash `JSON.stringify(projectedData)`, including `fetched_at`,
-so a new saved refresh timestamp changes them. Factory/publication/stream/calendar
-versions instead use their original run IDs. The additive `contentVersion` is
-computed on every read from saved evidence, without writes or upstream requests.
-It is not an ETag; `/sources` ETags still describe the full response, so refresh
-metadata can change an ETag while content versions stay equal.
+so a new saved refresh timestamp changes them. Raw snapshots reuse this exact full
+digest from saved metadata when available; account projections still derive full
+versions from their projected JSON. Factory/publication/stream/calendar
+versions instead use their original run IDs. The additive, nullable
+`contentVersion` is computed when evidence is saved, not by decoding and hashing
+stream payloads on GET. It is not an ETag; `/sources` ETags still describe the full
+response, so refresh metadata can change an ETag while content versions stay equal.
 
 The exact recipe in [content-version.ts](../apps/web/src/server/lib/content-version.ts):
 
-1. Start with the same PR-normalized, selected observation data. Exception: CI
-   uses an object keyed by canonical selected repository name, each containing
-   `actions`, `releases`, `details`: their latest saved page data or null. Strip
-   snapshot metadata from each input. This includes all saved input fields rather
-   than CI's refresh-clock-dependent verdicts, ages, recent-run subsets and histogram.
+1. At write time, start with the saved logical snapshot after page splitting and
+   size limits, reassemble its pages, and apply `prSnapshot` to normalize a root
+   `pull_requests` list. Factory stream writes start with saved raw
+   `FactoryStreamData`, not the later machine response wrapper or its dependency/PR
+   projections. For content hashing only, replace `ranges` with
+   `[checkpoint.window]`: raw stream ranges are a drainable pagination queue, not
+   reliable evidence of the original observation window. The persisted payload
+   and its full-version digest are not changed by this substitution.
+   Factory publications use the same snapshot-write recipe. No row is rewritten
+   merely to introduce a hash.
 2. Remove only these paths (never recursively remove similarly named GitHub keys):
 
 | Context | Removed fields |
 | --- | --- |
-| Every snapshot root | `fetched_at`, `repository_fetched_at` |
+| Every snapshot root | `fetched_at`, `repository_fetched_at`, `source_fetched_at` |
 | Root `freshness` object | `oldestAt`, `latestAt`; retain `total` and `missing` |
 | Factory root/stream root | `runId`, `revision`, `leaseUntil`, `startedAt`, `requests`, `rate`, `rateLimits`, `cursor`, `publication`, `next` |
-| Factory stream `coverage` and factory `repos[].coverage[stream]` | `fetchedAt`, `sourceFetchedAt`, `pages`, `strategy` |
+| Factory stream `coverage` and factory `repos[].coverage[stream]` | `fetchedAt`, `sourceFetchedAt`, `pages`, `strategy`, `source` |
 | Factory stream `observation` and factory `repos[].observation` | `version`, `refreshedAt`, `metadataAt`, `source`, `repo`; retain the original `window` |
 | Factory `repos[]`; `inventory` | `metadataAt`; `pages`, `after`, respectively |
 | Factory `contribution`; its `days[]`; `contributionObservation` | `fetchedAt`, `observedAt`; `observedAt`; `version`, `fetchedAt`, respectively |
-| `/contributions` root and `days[]` | `observedAt` |
 
 3. Preserve all other fields, including GitHub `created_at`, `updated_at`,
-   `published_at`, `pushedAt`, dependency `version`, titles/bodies/checks, coverage
-   status/reason/counts, partial flags, original windows/ranges and selected dates.
+   `published_at`, `pushedAt`, `source_head`, dependency `version`,
+   titles/bodies/checks, coverage status/reason/counts, partial flags and semantic
+   observation windows. Coverage `source` is excluded request-URL metadata whose
+   query can vary with pagination/window selection; the original stream window
+   is bound separately through the write-time `ranges` substitution.
    Window or coverage changes can invalidate a hash even with unchanged item lists.
 4. Serialize canonical JSON: recursively sort object keys by ascending JavaScript
    UTF-16 code-unit order, retain array order, use `JSON.stringify` string/primitive
@@ -295,11 +309,47 @@ The exact recipe in [content-version.ts](../apps/web/src/server/lib/content-vers
    undefined array entries become null. Hash UTF-8 bytes using SHA-256; encode all
    32 bytes as 64 lowercase hex characters prefixed with `sha256:` (71 characters).
 
-Factory stream hashes include the actual immutable items and dependency/PR
-normalizations, not just coverage summaries. The index bulk-loads publication-
-referenced streams within its existing five-query reader budget; original versions
-and windows stay untouched. `since` filtering still precedes digest work. Scope
-and date filters determine input selection; compare the same resource/selection.
+The hash is stored atomically alongside the payload in nullable TEXT
+`snapshots.content_meta` or `factory_resources.content_meta`. This small JSON is
+`{hash,version?,fullVersion?}`; `version` records the saved `runId` when present.
+`fullVersion` is the existing `sha256:` plus lowercase hex digest of UTF-8
+`JSON.stringify(prSnapshot(finalSavedData))`, with no canonical key sorting or
+timestamp removal. Saving it avoids rehashing raw snapshots on each read without
+changing any full-version bytes. Account projections still hash their projected
+JSON as before. All physical pages of a snapshot carry the same logical hashes.
+A factory stream's stored version
+must match the publication's advertised observation version. Stream hashes cover
+actual saved items, not just coverage summaries. The index reads only their
+metadata through covering indexes, never their payloads; the data endpoint uses
+the same stored hash while decoding the payload needed for its response.
+
+Account projections compose existing hashes cheaply rather than hash full lists
+on each request. The composite uses the same canonical SHA-256 encoding over
+`{inputs,selection}`. Input keys identify the saved dependencies, values are their
+stored content hashes, and an absent required saved row is the literal `"missing"`.
+An existing input without a stored hash makes the composite null.
+
+| Projection | Composite inputs and selection |
+| --- | --- |
+| Account repos/issues/PRs and other projected lists | Catalog and aggregate snapshot hashes, plus hashes of the complete repository pages actually selected to replace aggregate rows; selected repository names, completeness, freshness `total`/`missing` and truncation. Repo catalogs also include local starred/statistics-enabled flags. |
+| Account CI | Catalog hash and selected repositories' latest saved `actions`, `releases`, `details` hashes, keyed by lowercase repository source identity; missing rows use `"missing"`; derived freshness `total`/`missing`. Refresh-clock-dependent verdicts, ages and histograms are not hashed. |
+| Account factory | Saved publication and catalog hashes, selected repository names, scope and derived freshness `total`/`missing`. |
+| Contributions | Saved publication hash and resolved inclusive `since`/`until` dates. |
+| Derived insights | Null; use the unchanged full `sourceVersion`. |
+
+These composites conservatively invalidate on dependency changes, even if a
+particular projected list or calendar is unchanged. For example, another part of
+the publication can change the contributions hash. Scope/date selections matter;
+compare the same resource and selection. `/sources` account hashes agree with the
+corresponding default/all observation endpoints.
+
+Migration `0014_source_content.sql` adds the two nullable columns and covering
+indexes `snapshots_content(account_id,kind,content_meta)` and
+`factory_resources_content(run_id,repo,stream,content_meta)`, without rebuilding
+tables or backfilling legacy payloads. Pre-release rows return null until their
+next normal save; a composite remains null while any existing dependency lacks a
+hash. Do not refresh upstream or decode old payloads to repair hashes on GET.
+See [migration and performance evidence](12-source-performance.md#persisted-content-versions-v0170).
 
 ### Account endpoints
 
@@ -767,8 +817,10 @@ The default `/analysis` "all repositories" view displays only global reports
 The recommended minimum is four completed global reports: `issues` using
 `account:issues`, `prs` using `account:prs`, `ci` using `account:ci`, and `cd` using
 `account:factory`; add `account:repos` where catalog evidence is needed. Copy source
-`resource`, `version`, `contentVersion` and `fetchedAt` from `/sources`. Account
-observation `source.resource` is only `issues`/`prs`/etc., not `account:issues`.
+`resource`, `version`, non-null `contentVersion` and `fetchedAt` from `/sources`.
+Omit the report source's optional `contentVersion` when the index value is null.
+Account observation `source.resource` is only `issues`/`prs`/etc., not
+`account:issues`.
 
 Validate every payload before writing `type:github-analysis`, even if its row status
 is not completed. The page validates all returned rows before checking status:
@@ -811,10 +863,11 @@ entire expected repository set; machine catalog membership and browser activatio
 differ. Existing reports without `contentVersion` remain valid.
 
 For direct sources, a report is current only when it has sources and every source's
-`contentVersion` equals the current source's value. If that report source omits
-`contentVersion`, compare full `version` instead; do not fall back on a content
-mismatch/null current hash. Evidence age and displayed oldest time use current
-`/sources.fetchedAt`, not the report's old time or `generatedAt`. More than 36 hours,
+`contentVersion` equals the current source's value when both hashes exist. If the
+report omits it or the current source's hash is null, compare full `version`
+instead; two present but unequal hashes never fall back. Evidence age and displayed
+oldest time use current `/sources.fetchedAt`, not the report's old time or
+`generatedAt`. More than 36 hours,
 missing/invalid time or over one minute in the future is stale. Incomplete report
 sources, missing current sources, truncation, unavailability or missing freshness
 coverage prevent a passing verdict. Missing/stale/superseded/incomplete evidence
@@ -824,10 +877,10 @@ shows `unknown`. Child-report aggregation retains its own child-version/time che
 
 Before inference, skip only an existing `status:completed` report with a valid
 payload, matching account/scope/repository/domain and a nonempty expected source
-set whose **every full content version** matches the current index. Fall back to
-full version equality only for report sources without `contentVersion`. Do not
-skip on a missing source or a null current content hash. The 12-character prefix
-only names an ID, never proves equality. For global identity construction use
+set whose **every full content version** matches the current index when both
+hashes exist. If either hash is absent/null, require full-version equality instead.
+Do not skip on a missing source or mismatching present hashes. The 12-character
+prefix only names an ID, never proves equality. For global identity construction use
 `/sources` entries such as `account:issues`, not envelope `source.resource`.
 
 Use `analysis-{repo|global}-{domain}-{first12}`: `repo` is a literal scope word,
@@ -860,8 +913,9 @@ REPORT_ID="analysis-repo-issues-${SOURCE_VERSION:0:12}"
 
 Prepare truthful `report-payload.json` using the required fields and actual
 sources/evidence/times. For each source copy the observation's `sourceVersion`
-into `sources[].version` and its `contentVersion` into `sources[].contentVersion`;
-keep both, distinct from the report's composite `sourceVersion`. For globals use
+into `sources[].version` and its non-null `contentVersion` into
+`sources[].contentVersion`; omit that optional field when null. Keep both when
+available, distinct from the report's composite `sourceVersion`. For globals use
 the corresponding `/sources` entries. This minimal illustrative shape makes no passing claim;
 replace its digest, source version and times with actual inputs:
 

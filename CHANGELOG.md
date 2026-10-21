@@ -9,14 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Add read-time `contentVersion` to saved observation envelopes and every source-index entry, preserving full versions, immutable windows, read-only behavior and the five-query source reader. Canonical UTF-8 JSON uses recursively sorted keys and SHA-256; only explicit collection/request metadata paths are excluded. Missing or mismatched immutable streams expose null rather than a content proof.
-- Accept optional content hashes on strict analysis report sources. Direct reports remain current across refreshes with unchanged content and age from current source confirmation times; reports without hashes still compare full versions. Preserve completeness checks, 36-hour evidence freshness and independent 48-hour bot overdue status.
+- Add nullable `contentVersion` to saved observation envelopes and every source-index entry, preserving full versions, immutable windows, read-only behavior and the five-query source reader. Compute hashes at save time from size-bounded snapshots and raw factory streams with their original checkpoint window; account projections compose persisted dependency hashes. Canonical UTF-8 JSON uses recursively sorted keys and SHA-256, excluding only explicit collection/request metadata paths, including `source_fetched_at` and coverage request URLs while retaining `source_head`. `/sources` reads no factory stream payload bytes.
+- Persist the exact existing full-version digest alongside content hashes so raw snapshots avoid repeat hashing; account projections keep their existing JSON-derived full versions. The content-only stream window substitution does not change saved payloads or full versions.
+- Accept optional content hashes on strict analysis report sources. Direct reports remain current across refreshes with unchanged content and age from current source confirmation times; if either hash is absent/null, compare full versions. Preserve completeness checks, 36-hour evidence freshness and independent 48-hour bot overdue status.
+
+### Migration and Compatibility
+
+- Add migration `0014_source_content.sql`: nullable `content_meta` columns on snapshots and factory resources, plus covering metadata indexes; no table rebuild or old-payload backfill. Legacy sources return null until their next ordinary save, and composites remain null while an existing dependency has no hash. Producers omit null report-source hashes and use full-version fallback. Preserve the additive schema on rollback.
+- Non-breaking: existing full versions and valid reports remain supported; no new dependencies, lockfile changes or automatic cleanup. Derived insights expose null content hashes. Composite hashes conservatively invalidate when saved dependencies or selection/quality metadata change, even if the projected output does not.
 
 ### Docs
 
 - Clarify generic jobs do not execute analysis, recommend four account-sourced global reports for the default view, and document exact hashing, full-hash skip checks, ID-only prefixes and source identity mapping.
 - Document the strict `grok-bot-run` payload and revisioned full-replacement workflow, validation of non-completed analysis rows, explicit report deletion and the 5,000-row UI cap. Correct the distinction between generic server validation and strict reader validation: malformed rows raise errors but do not prevent valid cards from rendering.
-- Non-breaking: existing versions and valid reports remain supported; no new dependencies, lockfile changes, schema migration or automatic cleanup.
+- Extend the 126-repository source benchmark with real near-cap factory streams, payload-byte and metadata-index regressions; distinguish historical batch-3 measurements from the persisted-hash performance evidence.
 
 ## v0.16.1 - 2026-10-21
 

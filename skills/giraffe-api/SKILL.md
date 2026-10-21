@@ -87,6 +87,9 @@ the catalog. Generic records/reports/jobs are not filtered as GitHub observation
 entire sorted saved catalog, including unstarred, archived, forked and
 statistics-disabled repositories. Each source is
 `{resource, version, contentVersion, fetchedAt, freshness, coverage, truncated, unavailable}`.
+`contentVersion` is nullable for saved evidence predating hash metadata and for
+projections with an unhashed input. Hashes fill in after normal refresh, never by
+GET backfill. `/sources` reads factory stream metadata only, not stream payloads.
 
 Only `since` and `repository` query keys are supported. `since` must be a valid ISO
 datetime with `Z` or an explicit offset. `repository` is `owner/name`, max 200
@@ -180,14 +183,33 @@ access loss during pagination remain failures, not expected absence.
   time or null, never response time. `coverage` can be null.
 - Prefer `contentVersion` for skip-when-unchanged. Snapshot full versions include
   `fetched_at` and change on refresh; factory/stream/calendar full versions are
-  run IDs instead. Content hashes exclude only explicit collection metadata paths,
-  not GitHub content timestamps. See the exact [hash recipe](../../docs/api.md#content-version-recipe):
-  selected PR-normalized data (CI uses raw saved actions/releases/details inputs),
-  recursive UTF-16 key sorting, array order preserved, JSON primitive encoding,
-  no whitespace/Unicode normalization, UTF-8 SHA-256, `sha256:` plus 64 lowercase
-  hex characters (71 total). Windows/ranges, coverage and dependency versions stay
-  included. `/sources` exposes the same hash; a missing/mismatched immutable factory
-  stream has null, never unchanged-content proof. ETags still cover the full response.
+  run IDs instead. Hashes are computed at save time and persisted in nullable
+  `snapshots.content_meta` / `factory_resources.content_meta` columns, added by
+  migration 0014 without rebuilding tables. The metadata also saves optional
+  `fullVersion`, the exact existing digest of `JSON.stringify(prSnapshot(data))`:
+  raw snapshots reuse it, while account projections still hash their projected
+  JSON. Content hashes exclude only explicit collection metadata paths, including
+  root `source_fetched_at` and coverage request URL `source`, not GitHub content
+  timestamps or `source_head`. See the exact
+  [hash recipe](../../docs/api.md#content-version-recipe): size-bounded assembled
+  snapshots use root PR normalization; streams hash saved raw data, not response
+  wrappers, with content-only `ranges:[checkpoint.window]` substitution to retain
+  the original observation window rather than a drained pagination queue. Saved
+  payloads and full versions stay unchanged. Recursive UTF-16 key sorting preserves
+  array order and JSON primitive encoding, with no whitespace/Unicode
+  normalization. UTF-8 SHA-256 yields `sha256:` plus 64 lowercase hex characters
+  (71 total). Semantic observation windows, coverage status/counts and dependency
+  versions stay included.
+- Account projections cheaply compose stored dependency hashes and selection/
+  quality metadata rather than rehash payloads. CI includes saved catalog and
+  actions/releases/details hashes; factory includes publication/catalog/selection;
+  both include derived freshness `total`/`missing`, not timestamp values;
+  contributions includes publication plus resolved dates. This conservatively
+  invalidates when a dependency changes, even if the visible projection does not.
+  Derived insights have null content hashes. `/sources` agrees with default/all
+  observations. Missing/mismatched immutable stream metadata or an existing
+  unhashed dependency yields null; fall back to full versions, never treat null
+  as unchanged-content proof. ETags still cover the full response.
 - Inspect raw source flags, per-repository timestamps, freshness/missing inputs
   and coverage, not just top-level flags. Unknown/unavailable is not zero.
 - Account repos/issues/PR freshness counts the full selected catalog, not only
@@ -488,10 +510,11 @@ REPORT_ID="analysis-repo-issues-${SOURCE_VERSION:0:12}"
 
 Prepare `report-payload.json` with actual observations and the schema above. This
 requires copying each observation's `sourceVersion` to `sources[].version` and
-`contentVersion` to `sources[].contentVersion`, retaining both separately from
-the report's composite digest. Global reports copy the corresponding `/sources`
-entries instead. The following
-illustrative unknown report shows required shape; replace sample times, digest,
+non-null `contentVersion` to `sources[].contentVersion`, retaining both separately
+from the report's composite digest. Omit the optional report hash when the source
+returns null; report schemas reject explicit null hashes. Global reports copy the
+corresponding `/sources` entries instead. The following illustrative unknown report
+shows required shape; replace sample times, digest,
 source and conclusion with inspected evidence before publishing:
 
 ```json
@@ -524,10 +547,11 @@ or blind overwrite/skip. There is no `Idempotency-Key` header or automatic upser
 
 Before inference, skip only an existing completed report with valid payload,
 matching account/scope/repository/domain and a nonempty expected source set whose
-every source `contentVersion` equals the current `/sources` value. If a report
-source lacks `contentVersion`, require full `version` equality instead. Never
-fall back on content mismatch/null current hash. The 12-character ID suffix alone
-proves nothing. Old valid reports without content hashes remain supported.
+every source `contentVersion` equals the current `/sources` value when both hashes
+exist. If the report lacks a hash or the current source's hash is null, require
+full `version` equality instead. Never fall back when both hashes exist but differ,
+or skip on a missing source. The 12-character ID suffix alone proves nothing. Old
+valid reports without content hashes remain supported.
 
 ### Bot run status and freshness
 
@@ -563,7 +587,7 @@ jq -n --argjson revision "$REVISION" --arg now "$NOW" \
 Reload/reconcile revision conflicts; do not report completed when work failed.
 The default daily cadence is overdue only when `lastRunAt` is more than 48 hours
 old. Separately, direct report sources are current when every content hash matches
-(full-version equality only when the report source omits its hash). Evidence age
+(full-version equality when either hash is unavailable). Evidence age
 and displayed oldest time use the current `/sources.fetchedAt`, so unchanged
 reports stay fresh across refreshes. More than 36 hours, missing/invalid times or
 over one minute in the future is stale. Incomplete, missing, stale or superseded
