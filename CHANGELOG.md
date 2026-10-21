@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.17.2 - 2026-10-22
+
+### Fixed
+
+- Track Dependabot and code-scanning availability independently. A shared unavailable flag previously allowed one denied feature to contradict the other feature's collected alerts. Save per-feature status and safe reasons, keep unavailable counts null, and retain older evidence separately instead of overwriting current counts. Expected-unavailable refresh steps remain unavailable, not failed. Read-time Insights and account projections use selected feature coverage, retain prior complete evidence with its original time, and never call missing or storage-truncated coverage an available zero. Validate combined current/retained page capacity before writing.
+- Request only `OPEN` GraphQL vulnerability alerts, matching the factory REST `state=open` contract. Neither path filters open alerts by the factory time window. The omitted GraphQL state filter was a proven query-contract gap; the reported production six-alert discrepancy is not conclusively attributable to it because the reads were 28 minutes apart and saved upstream responses are unavailable.
+- Recognize explicit disabled code-scanning messages with a fixed safe reason code; preserve the existing explicit Dependabot-disabled classification without returning upstream bodies. The historical Dependabot `unknown` observation is not explained by the current classifier alone.
+- Preserve PR lifecycle state discarded by the GraphQL mapper. Account, repository and factory PR projections expose lowercase `open`, `closed` or `merged`; legacy unknown state stays null rather than inventing an open PR.
+- Batch the five source-index SELECTs into one D1 round trip after authorization, reducing `/sources` from six sequential trips to two without changing fields, ordering, versions or ETag semantics. Geographic D1 wait, not hashing CPU, best explains the steward's production wall/CPU evidence. Add safe `Server-Timing` phase and round-trip metrics to authenticated 200/304 responses.
+
+### Policy Verification
+
+- Preserve existing weekly/daily statistics selection. Tests confirm all 13 explicitly statistics-disabled repositories are excluded from factory metrics; repository-detail snapshots use an independent lane that still plans all nine pages, including for starred disabled repositories. Observed timestamps alone do not prove security-only execution. No eligibility, settings or catalog-failure behavior changes.
+
+### Migration and Compatibility
+
+- No migration, dependency, lockfile or production configuration change. Existing snapshots and immutable publication rows are not rewritten. Old security snapshots without feature metadata remain readable with unknown feature availability; only newly collected snapshots gain the explicit feature contract. Smart Placement, read replication and batching other routes remain follow-up decisions, not enabled settings.
+
+### Breaking Changes
+
+- Security summary: any unavailable feature previously meant top-level `unavailable:true` -> now true only when both features are unavailable. Consumers must inspect `features.dependabot` and `features.code_scanning`; each has `status:available|unavailable|partial`, `reason_code` and a fixed safe `reason`.
+- Unavailable feature counts: misleading zero or overwritten prior counts -> null. Prior evidence is separate under `retained.<feature>` with its original timestamp and items; it is not current availability. Missing legacy feature metadata means unknown, not confirmed available zero.
+- Explicit code-scanning disablement: `unknown` -> `code_scanning_disabled`; existing Dependabot `alerts_disabled` is unchanged. Open-alert collection: unspecified GraphQL states -> explicit `OPEN`.
+- Newly collected PR state: missing/null -> lowercase lifecycle enum. Legacy snapshots without lifecycle evidence continue returning null; old persisted hashes are not rewritten.
+
 ## v0.17.1 - 2026-10-21
 
 ### Fixed

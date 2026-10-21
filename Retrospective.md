@@ -1079,3 +1079,49 @@ untracked dependency symlink. Cleanup then verified tracked cleanliness, the
 exact untracked entry and symlink target before unlinking it and removing each
 worktree normally. Use descriptive shell variable names such as `worktree_path`,
 and distinguish verified owned setup artifacts from unexpected modifications.
+
+## 2026-10-22 - Verify participation before changing refresh policy
+
+The batch-8 report initially described thirteen repositories missing from weekly
+statistics and two starred repositories apparently receiving only security work.
+Code inspection found intentionally independent statistics and detail-page lanes,
+but an early proposed fix would have unified their membership and introduced a
+new incomplete-catalog failure. Before runtime edits, corrected evidence reported
+all thirteen repositories had statistics disabled. Local fixtures reproduced the
+omissions under explicit overrides and showed all nine detail pages still planned
+for the two starred repositories. The behavior change was cancelled; no selection
+runtime edits or production settings changes were made. Distinguish participation,
+planned steps and observed changed snapshots before treating separate lanes as a
+bug. The exact production execution history remains unverified locally.
+
+## 2026-10-22 - Count database trips before optimizing source CPU
+
+Local source benchmarks measured near-zero database transport latency. They could
+not explain production wall time by themselves: supplied observability separated
+roughly 2.2 seconds of wall time from 152 milliseconds of CPU, with single-query
+latency increasing by edge distance. The existing authentication lookup followed
+by five sequential source queries explained the amplified transport cost. Measure
+actual D1 round trips, not just statement counts, and test with injected latency.
+Keep query execution time distinct from transport and overlapping response phases;
+do not label wall-clock measurements as CPU time or change deployment placement
+without authorization. Instrumentation must stay outside response bodies and
+content validators, and never expose SQL, identities or credentials.
+
+## 2026-10-22 - Audit derived reads after changing summary flags
+
+The per-feature security implementation corrected collection and refresh-time
+Insights, but its first integration still used the old top-level unavailable
+predicate when rebuilding Insights on GET. Independent review reproduced a
+false-clear result and unavailable counts recomputed as zero. Follow-up fixtures
+covered actual all/starred browser reads, mixed repository replacement, legacy
+metadata, and catalog members absent from older evidence. Feature metadata must
+follow the selected evidence and its time; copying an aggregate flag or a newer
+timestamp onto other evidence silently changes its meaning.
+
+The same review found that separately bounded current and retained security
+could exceed page capacity when combined. Preview the final payload, including
+retained metadata and its saved timestamp, before producing write statements;
+assert exact prior rows survive a near-cap failure. A successful unavailable
+outcome is not permission to publish truncated available data. Full API/browser
+gates also exposed stale PR-state and security-empty assertions missed by focused
+unit tests; update them to verify the new contract, not to suppress failures.

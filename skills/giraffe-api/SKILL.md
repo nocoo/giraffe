@@ -124,6 +124,13 @@ api -G "$API/sources" --data-urlencode 'since=2026-10-19T08:00:00+08:00' \
   not clear pending analysis. Content changes without new timestamps can change
   the tag. Cloudflare handles wire compression and can transform the validator;
   send the received tag unchanged rather than calculating one locally.
+- Authenticated source 200/304 responses expose safe `Server-Timing`: `auth`,
+  `d1_N` per actual round trip (one batch is one trip), optional D1 `sql_N`
+  execution durations, `build`, `decode`, `hash`, `serialize`, `total`.
+  Names and millisecond durations only; no SQL, IDs or secrets. Timings never
+  affect JSON/ETags. Phases overlap and are not a CPU profiler; compare D1 waits
+  with SQL durations rather than summing all phases. See the
+  [timing contract](../../docs/api.md#source-request-timing).
 
 | Source identity | GET data path |
 | --- | --- |
@@ -147,7 +154,7 @@ api -G "$API/sources" --data-urlencode 'since=2026-10-19T08:00:00+08:00' \
 | `/repos/:owner/:name/actions` | Actions `runs` |
 | `/repos/:owner/:name/releases` | `releases` |
 | `/repos/:owner/:name/traffic` | `views`, `clones`, `forbidden` |
-| `/repos/:owner/:name/security` | `dependabot_open`, `code_scanning_open`, `unavailable`, optional `reason`, `reason_code` |
+| `/repos/:owner/:name/security` | `features`, nullable `dependabot_open`, `code_scanning_open`, `unavailable`, summary `items`, optional `reason`, `reason_code`, `retained` |
 | `/repos/:owner/:name/languages` | Language-to-byte-count `languages` map |
 | `/repos/:owner/:name/contributors` | `contributors` |
 | `/factory/repos/:owner/:name/:stream` | Exactly `commits`, `issues`, `prs`, `actions`, `releases`, `alerts`, `dependencies` |
@@ -171,12 +178,30 @@ All these data endpoints, unlike `/sources`, return
 `{account_id, data, sourceVersion, contentVersion, fetchedAt, freshness, coverage, truncated,
 unavailable, source:{kind,resource,publicationId}, selection:{scope,statisticsFilter}}`.
 
-Known security access/feature absence produces a saved `unavailable:true` snapshot,
+Known security access/feature absence produces a saved feature-unavailable snapshot,
 not a 409. Security and factory alerts coverage share safe `reason` text and
-`reason_code:alerts_disabled|permission_denied|not_found|unknown`. Disabled requires
+`reason_code:alerts_disabled|code_scanning_disabled|permission_denied|not_found|unknown`. Disabled requires
 explicit upstream wording; never infer it from a plain 404, which can hide access
 denial. Unavailable counts do not prove zero alerts. Truncation, malformed data and
 access loss during pagination remain failures, not expected absence.
+
+Read `features.dependabot` and `features.code_scanning` independently, each with
+`status:available|unavailable|partial`, `reason_code` and safe `reason` (null when
+available). Top-level `unavailable:true` means both are unavailable; unavailable
+feature counts are null, never zero. Optional `retained.<feature>` has the prior
+`open`, `fetched_at`, and `items`, not a current count. Mixed expected absence
+counts as an unavailable refresh step, not failed. Legacy rows without feature
+fields keep their saved shape; per-feature coverage is unknown until refreshed.
+Factory alerts use REST `state=open`; security uses GraphQL `states:[OPEN]` and
+additionally reads code scanning. Neither filters open Dependabot alerts by
+created/updated time. Compare collection timestamps: separate steps within a run
+can observe different upstream states, and old snapshots are not rewritten.
+Account projections may keep older complete evidence instead of a newer mixed
+repository page, preserving its original time. Feature metadata follows the
+evidence actually selected; legacy metadata remains unknown, missing catalog
+coverage is not zero, and stored truncation downgrades coverage to partial.
+If current plus retained evidence exceeds page capacity, refresh fails and keeps
+the prior snapshot rather than publishing truncated items as complete.
 
 - Treat `sourceVersion` as opaque and compare its full value. Snapshot versions
   use `sha256:` plus hex; factory versions need not be hashes. `fetchedAt` is source
@@ -664,6 +689,18 @@ max 500 names of max 200; repo max 200; other filters max 100. For refresh, `rep
 is only for selected scope; non-selected scopes require complete catalog.
 Selection must be valid/unique and follows factory participation policy, unlike
 the unfiltered machine catalog. `order` changes priority, not membership.
+
+For both weekly and daily runs, `statistics_enabled:false` excludes factory
+metadata, seven streams and per-repository publication. Explicit overrides win
+over default archived/fork exclusion; factory inventory also excludes non-owner
+repositories and the effective mirror. Size, empty history and pushed time do not
+filter membership; 500 is a hard limit, not silent truncation.
+The detail-page lane is independent: `all` uses the accessible site catalog and
+daily-starred/selected runs can refresh all nine detail tabs of a known repository
+whose statistics are disabled. Security-only planning is not the policy. Compare
+`/repos` statistics flags with run `repos`, `siteRepos`, `selection` and available
+steps; compact history cannot establish which individual steps executed. Do not
+enable statistics or change settings merely to make the factory list larger.
 
 ```bash
 REQUEST_KEY="$(node -p 'crypto.randomUUID()')"
