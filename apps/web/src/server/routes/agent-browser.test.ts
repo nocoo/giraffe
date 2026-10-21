@@ -8,6 +8,40 @@ import { replaceSnapshotStmts } from "../lib/db/snapshots";
 
 const account = "a".repeat(21),
 	other = "b".repeat(21);
+it("selects eligible browser source repositories by catalog, never by a hardcoded repository name", async () => {
+	const DB = sqliteFixture();
+	const db = createDb(DB);
+	await db
+		.prepare(
+			"INSERT INTO accounts(id,login,token_ciphertext,token_last4,is_active,created_at,updated_at) VALUES(?,'nocoo','fake','fake',1,'t','t')",
+		)
+		.bind(account)
+		.run();
+	await db.batch(
+		replaceSnapshotStmts(
+			db,
+			account,
+			"repos",
+			{
+				repos: [
+					{ name_with_owner: "nocoo/rsshub", owner_login: "nocoo" },
+					{ name_with_owner: "nocoo/fork", owner_login: "nocoo", is_fork: true },
+					{ name_with_owner: "nocoo/archive", owner_login: "nocoo", is_archived: true },
+					{ name_with_owner: "org/other", owner_login: "org" },
+				],
+			},
+			"2026-10-20T00:00:00Z",
+		),
+	);
+	const response = await createApp().request(
+		`http://localhost/api/agent/accounts/${account}/sources`,
+		{},
+		{ DB, ENVIRONMENT: "development", GITHUB_API_BASE: "http://fixture" } as Env,
+	);
+	expect(response.status).toBe(200);
+	expect(await response.json()).toMatchObject({ repositories: ["nocoo/rsshub"] });
+});
+
 it("uses Access and active account with same-origin CRUD and read-only provenance", async () => {
 	const DB = sqliteFixture();
 	for (const id of [account, other])

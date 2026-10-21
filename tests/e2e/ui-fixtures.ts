@@ -233,7 +233,12 @@ function ciFixture() {
 	const now = fetchedAt;
 	const at = (hoursAgo: number) => new Date(Date.parse(now) - hoursAgo * 3_600_000).toISOString();
 	let id = 0;
-	const run = (name: string, conclusion: string, hoursAgo: number, head_branch = "main") => ({
+	const run = (
+		name: string,
+		conclusion: string,
+		hoursAgo: number,
+		head_branch: string | null = "main",
+	) => ({
 		id: ++id,
 		name,
 		html_url: `https://github.com/octocat/hello-world/actions/runs/${id}`,
@@ -249,6 +254,7 @@ function ciFixture() {
 			{
 				repo: "octocat/hello-world",
 				fetched_at: now,
+				default_branch: "main",
 				truncated: false,
 				runs: [
 					run("Release", "failure", 1),
@@ -271,16 +277,35 @@ function ciFixture() {
 			{
 				repo: "octocat/basalt",
 				fetched_at: now,
+				default_branch: "main",
 				truncated: false,
-				runs: ["success", "failure", "success", "failure", "success"].map((c, i) =>
-					run("CI", c, i * 10 + 1),
-				),
+				runs: [
+					"success",
+					"failure",
+					"failure",
+					"success",
+					"failure",
+					"failure",
+					"success",
+					"failure",
+				].map((c, i) => run("CI", c, i * 10 + 1)),
 			},
 			{
 				repo: "octocat/field-notes",
 				fetched_at: now,
+				default_branch: "main",
 				truncated: false,
-				runs: [run("CI", "success", 3), run("CI", "success", 30)],
+				runs: [
+					run("CI", "success", 3),
+					run("CI", "success", 30),
+					...[2, 20].map((hours) => ({ ...run("CI", "failure", hours), event: "pull_request" })),
+					run("L3 Stress Reproduction", "failure", 14 * 24),
+					run("L3 Stress Reproduction", "failure", 15 * 24),
+					...["deleted/pr", "v1.2.3", null].flatMap((branch) => [
+						run("CI", "failure", 2, branch),
+						run("CI", "failure", 20, branch),
+					]),
+				],
 			},
 		],
 		now,

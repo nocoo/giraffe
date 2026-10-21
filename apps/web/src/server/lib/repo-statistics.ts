@@ -30,21 +30,23 @@ export async function repoPolicy(
 			participates({ is_fork: r.is_fork === true, is_archived: r.is_archived === true }),
 		]),
 	);
+	const includes = (name: string) => defaults.has(name.toLowerCase()) && selection.includes(name);
+	const selected = repos.filter((repo) => includes(repo.name_with_owner));
 	return {
 		...selection,
+		includes,
+		empty: scope === "starred" && selected.length === 0,
 		catalog: snapshot,
-		repos: repos.filter((repo) => selection.includes(repo.name_with_owner)),
-		enabled(name: string, fallback: RepoStatistics = {}) {
+		repos: selected,
+		enabled(name: string) {
 			return (
-				selection.includes(name) &&
-				(settings.get(name.toLowerCase()) ??
-					defaults.get(name.toLowerCase()) ??
-					participates(fallback))
+				includes(name) &&
+				(settings.get(name.toLowerCase()) ?? defaults.get(name.toLowerCase())) === true
 			);
 		},
 	};
 }
-type Policy = Awaited<ReturnType<typeof repoPolicy>>;
+export type Policy = Awaited<ReturnType<typeof repoPolicy>>;
 
 const LIST_KEYS: Record<string, string> = {
 	repos: "repos",
@@ -134,10 +136,13 @@ async function projectList(
 			([name, time]) => [name.toLowerCase(), savedTime(time)],
 		),
 	);
-	const baselineAt = complete(snapshot) ? savedTime(snapshot?.fetched_at) : null;
+	const baselineAt = savedTime(snapshot?.fetched_at);
 	const catalogAt = complete(policy.catalog) ? savedTime(policy.catalog?.fetched_at) : null;
 	const catalogProven =
-		baselineAt !== null && catalogAt !== null && Date.parse(catalogAt) <= Date.parse(baselineAt);
+		complete(snapshot) &&
+		baselineAt !== null &&
+		catalogAt !== null &&
+		Date.parse(catalogAt) <= Date.parse(baselineAt);
 	const suffix = ({ issues: "issues", prs: "prs", alerts: "security" } as Record<string, string>)[
 		kind
 	];
@@ -147,21 +152,34 @@ async function projectList(
 			: new Map<string, Record<string, unknown>>();
 	const times = new Map<string, string | null>();
 	const replacements = new Map<string, Record<string, unknown>[]>();
+	const completeRepos = new Set<string>();
 	for (const [lower, name] of names) {
 		let at =
 			recorded.get(lower) ??
-			(kind === "repos" || kind === "notifications" || represented.has(lower) || catalogProven
+			(kind === "repos" ||
+			(kind === "notifications" && complete(snapshot)) ||
+			represented.has(lower) ||
+			catalogProven
 				? baselineAt
 				: null);
+		let covered = at !== null && complete(snapshot);
 		const page = pages.get(lower);
 		const pageAt = savedTime(page?.fetched_at);
-		if (pageAt && Array.isArray(page?.[key]) && (!at || Date.parse(pageAt) > Date.parse(at))) {
+		if (
+			pageAt &&
+			Array.isArray(page?.[key]) &&
+			(!at ||
+				Date.parse(pageAt) > Date.parse(at) ||
+				(!covered && Date.parse(pageAt) === Date.parse(at)))
+		) {
 			at = pageAt;
+			covered = true;
 			replacements.set(
 				lower,
 				snapshotItems(page ?? null, key).map((row) => ({ ...row, name_with_owner: name })),
 			);
 		}
+		if (covered) completeRepos.add(lower);
 		times.set(lower, at);
 	}
 	const emitted = new Set<string>();
@@ -175,7 +193,13 @@ async function projectList(
 	});
 	for (const [name, replacement] of replacements)
 		if (!emitted.has(name)) items.push(...replacement);
-	return { items, times, freshness: snapshotFreshness([...times.values()]) };
+	return {
+		items,
+		times,
+		freshness: snapshotFreshness([...times.values()]),
+		completeRepos,
+		incomplete: completeRepos.size < names.size,
+	};
 }
 
 /** Project immutable/raw snapshots at read time so settings apply immediately, even to old data. */
@@ -188,6 +212,19 @@ export async function statisticsSnapshot(
 ): Promise<Record<string, unknown>> {
 	if (kind.startsWith("repo:")) return snap;
 	const policy = await repoPolicy(db, account, kind === "repos" ? snap : undefined, scope);
+	return projectSnapshot(db, account, kind, snap, policy);
+}
+
+export async function projectSnapshot(
+	db: Db,
+	account: string,
+	kind: string,
+	snap: Record<string, unknown>,
+	policy: Policy,
+	statisticsFilter = true,
+): Promise<Record<string, unknown>> {
+	if (kind.startsWith("repo:")) return snap;
+	const scope = policy.scope;
 	if (kind === "repos") {
 		const source = await projectList(db, account, kind, snap, policy, true);
 		return {
@@ -238,7 +275,7 @@ export async function statisticsSnapshot(
 			...buildInsights(
 				repos.items.map((r) => ({
 					name_with_owner: String(r.name_with_owner),
-					open_issue_count: issues.times.get(String(r.name_with_owner).toLowerCase())
+					open_issue_count: issues.completeRepos.has(String(r.name_with_owner).toLowerCase())
 						? (issueCounts.get(String(r.name_with_owner).toLowerCase()) ?? 0)
 						: Number(r.open_issue_count ?? 0),
 					pushed_at: typeof r.pushed_at === "string" ? r.pushed_at : null,
@@ -252,19 +289,26 @@ export async function statisticsSnapshot(
 				!complete(alerts) || security.freshness.missing > 0,
 			),
 			freshness,
-			truncated: (scope === "all" && snap.truncated === true) || freshness.missing > 0,
+			truncated:
+				(scope === "all" && snap.truncated === true) || repos.incomplete || issues.incomplete,
 		};
 		const preview = splitPages(kind, derived);
 		return { ...assemblePages(kind, preview.pages), truncated: preview.truncated };
 	}
 	const key = LIST_KEYS[kind];
 	if (!key || !Array.isArray(snap[key])) return snap;
-	const { items, freshness, times } = await projectList(db, account, kind, snap, policy);
+	const { items, freshness, times, incomplete } = await projectList(
+		db,
+		account,
+		kind,
+		snap,
+		policy,
+		!statisticsFilter,
+	);
 	return {
 		...snap,
 		[key]: items,
-		truncated:
-			scope === "starred" && kind !== "notifications" ? freshness.missing > 0 : snap.truncated,
+		truncated: scope === "starred" && kind !== "notifications" ? incomplete : snap.truncated,
 		fetched_at: kind === "notifications" ? snap.fetched_at : (freshness.latestAt ?? ""),
 		freshness,
 		...(snap.repository_fetched_at
@@ -281,12 +325,18 @@ export async function statisticsSnapshot(
 	};
 }
 
-export function statisticsFactory(snap: FactorySnapshot, policy: Policy): FactorySnapshot {
+export function statisticsFactory(
+	snap: FactorySnapshot,
+	policy: Policy,
+	statisticsFilter = true,
+): FactorySnapshot {
 	const { contributionObservation, ...base } = snap;
 	void contributionObservation;
-	const repos = snap.repos.filter((r) => policy.enabled(r.name, r));
+	const repos = snap.repos.filter((r) =>
+		statisticsFilter ? policy.enabled(r.name) : policy.includes(r.name),
+	);
 	const excluded = snap.repos
-		.filter((r) => policy.includes(r.name) && !policy.enabled(r.name, r))
+		.filter((r) => statisticsFilter && policy.includes(r.name) && !policy.enabled(r.name))
 		.map((r) => ({ name: r.name, reason: "statistics-disabled" }));
 	// GitHub's account calendar has no repository breakdown, so it cannot honor this scope.
 	return {
@@ -305,4 +355,15 @@ export function statisticsFactory(snap: FactorySnapshot, policy: Policy): Factor
 		contributionExcluded: true,
 		contributionStatus: "unavailable",
 	};
+}
+
+export function factoryFreshness(snap: FactorySnapshot, policy: Policy, statisticsFilter = true) {
+	const times = new Map(
+		snap.repos.map((repo) => [repo.name.toLowerCase(), repo.observation?.refreshedAt]),
+	);
+	return snapshotFreshness(
+		policy.repos
+			.filter((repo) => !statisticsFilter || policy.enabled(repo.name_with_owner))
+			.map((repo) => times.get(repo.name_with_owner.toLowerCase())),
+	);
 }

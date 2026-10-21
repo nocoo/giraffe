@@ -5,7 +5,7 @@ import { publishedFactory } from "./db/factory-runs";
 import { ApiError } from "./errors";
 import { observationEnvelope, readObservation, requireCatalogRepo } from "./machine-observations";
 import { repoPolicy } from "./repo-statistics";
-import { assemblePages, type SnapshotPage } from "./snapshot-pages";
+import { latestSnapshotGroups, type SnapshotPage } from "./snapshot-pages";
 
 const sourceQuerySchema = z
 	.object({
@@ -24,21 +24,22 @@ export async function readSources(db: Db, account: string, query: Record<string,
 	const repository = parsed.data.repository
 		? await requireCatalogRepo(db, account, parsed.data.repository)
 		: undefined;
+	const policy = await repoPolicy(db, account);
 	const rows = await db
 		.prepare(
 			"SELECT kind,payload FROM snapshots WHERE account_id=? AND kind LIKE 'repo:%' AND (kind LIKE '%:issues' OR kind LIKE '%:issues#2' OR kind LIKE '%:prs' OR kind LIKE '%:prs#2' OR kind LIKE '%:actions' OR kind LIKE '%:actions#2' OR kind LIKE '%:releases' OR kind LIKE '%:releases#2' OR kind LIKE '%:details' OR kind LIKE '%:details#2')",
 		)
 		.bind(account)
 		.all<SnapshotPage>();
-	const groups = new Map<string, SnapshotPage[]>();
-	for (const row of rows.results) {
-		const key = row.kind.replace(/#2$/, "");
-		if (repository && !key.startsWith(`repo:${repository}:`)) continue;
-		groups.set(key, [...(groups.get(key) ?? []), row]);
-	}
+	const groups = [...latestSnapshotGroups(rows.results).values()].filter(({ resource }) => {
+		const name = resource.slice(5, resource.lastIndexOf(":"));
+		return (
+			policy.includes(name) && (!repository || name.toLowerCase() === repository.toLowerCase())
+		);
+	});
 	const sources = await Promise.all(
-		[...groups].map(async ([resource, pages]) => {
-			const envelope = await observationEnvelope(account, resource, assemblePages(resource, pages));
+		groups.map(async ({ resource, data }) => {
+			const envelope = await observationEnvelope(account, resource, data);
 			return {
 				resource,
 				version: envelope.sourceVersion,
@@ -52,7 +53,7 @@ export async function readSources(db: Db, account: string, query: Record<string,
 	);
 	for (const resource of ["issues", "prs", "ci", "factory", "repos"]) {
 		try {
-			const envelope = await readObservation(db, account, resource, "all");
+			const envelope = await readObservation(db, account, resource, "all", policy);
 			sources.push({
 				resource: `account:${resource}`,
 				version: envelope.sourceVersion,
@@ -66,10 +67,10 @@ export async function readSources(db: Db, account: string, query: Record<string,
 			if (!(error instanceof ApiError) || error.code !== "snapshot_missing") throw error;
 		}
 	}
-	const policy = await repoPolicy(db, account);
 	const repositories = policy.repos.map((repo) => repo.name_with_owner).sort();
 	const publication = await publishedFactory(db, account);
 	for (const repo of publication?.repos ?? []) {
+		if (!policy.includes(repo.name)) continue;
 		if (repository && repo.name.toLowerCase() !== repository.toLowerCase()) continue;
 		for (const stream of FACTORY_STREAMS) {
 			const coverage = repo.coverage[stream];

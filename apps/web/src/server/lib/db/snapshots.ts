@@ -1,5 +1,22 @@
-import { assemblePages, physicalKinds, type SnapshotPage, splitPages } from "../snapshot-pages";
+import {
+	assemblePages,
+	latestSnapshotGroups,
+	physicalKinds,
+	type SnapshotPage,
+	splitPages,
+} from "../snapshot-pages";
 import type { Db } from "./d1";
+
+export async function readRepositorySnapshot(db: Db, accountId: string, logical: string) {
+	const [a, b] = physicalKinds(logical);
+	const rows = await db
+		.prepare(
+			"SELECT kind,payload FROM snapshots WHERE account_id=? AND kind COLLATE NOCASE IN (?,?)",
+		)
+		.bind(accountId, a, b)
+		.all<SnapshotPage>();
+	return latestSnapshotGroups(rows.results).get(logical.toLowerCase()) ?? null;
+}
 
 export async function readSnapshot(
 	db: Db,

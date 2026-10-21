@@ -85,7 +85,13 @@ describe("GET /api/ci", () => {
 		const body = (await response.json()) as CiReportResponse;
 		expect(body.repos.map((repo) => repo.repo)).toEqual(["nocoo/app", "nocoo/empty"]);
 		expect(body.unsaved).toEqual(["nocoo/unseen"]);
-		expect(body.totals).toMatchObject({ repos: 2, broken: 0, healthy: 1 });
+		expect(body.totals).toMatchObject({
+			totalRepos: 2,
+			brokenWorkflows: 0,
+			healthyWorkflows: 1,
+			healthyRepos: 1,
+			unknownRepos: 1,
+		});
 		expect(body.daily.reduce((total, day) => total + day.failure, 0)).toBe(0);
 		expect(body).toMatchObject({
 			fetched_at: recent,
@@ -108,7 +114,7 @@ describe("GET /api/ci", () => {
 			repos: [],
 			streams: [],
 			unsaved: [],
-			totals: { repos: 0 },
+			totals: { totalRepos: 0, totalWorkflows: 0 },
 			fetched_at: "",
 			freshness: { oldestAt: null, latestAt: null, total: 0, missing: 0 },
 		});
@@ -172,6 +178,7 @@ describe("GET /api/ci", () => {
 		await s.save("repo:nocoo/quiet:actions", {
 			runs: [run("CI", "success", "2026-09-18T08:00:00Z")],
 		});
+		await s.save("repo:nocoo/quiet:details", { default_branch: "main" });
 		await s.save("repo:nocoo/old:actions", {
 			runs: [
 				run("CI", "failure", "2026-09-18T08:00:00Z"),
@@ -202,7 +209,13 @@ describe("GET /api/ci", () => {
 		expect(body.unsaved).toEqual([]);
 		expect(body.fetched_at).toBe(at);
 		expect(body.truncated).toBe(false);
-		expect(body.totals).toMatchObject({ broken: 1, healthy: 2, repos: 2 });
+		expect(body.totals).toMatchObject({
+			brokenWorkflows: 1,
+			healthyWorkflows: 2,
+			totalRepos: 2,
+			brokenRepos: 1,
+			healthyRepos: 1,
+		});
 	});
 
 	it("reports repositories without saved runs instead of counting them healthy", async () => {

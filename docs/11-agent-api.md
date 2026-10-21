@@ -50,6 +50,12 @@ sources; `since` is an optimization, not a durable change cursor. Consumers must
 reconcile pending/failed work and periodically perform unfiltered scans. An empty
 filtered result does not prove that all sources have been analyzed.
 
+All account observation lists/aggregates and repository/factory source entries are
+intersected with the current saved catalog at read time, case-insensitively. Removed
+repositories do not leak through retained snapshots or publications; historical
+rows are not deleted. Local stars further narrow this catalog, never expand it.
+Generic agent resources keep their independent storage/CRUD contract.
+
 Other read paths include:
 
 - `/repos`, `/issues`, `/prs`, `/ci`, `/factory` for saved account observations.
@@ -64,6 +70,29 @@ original windows. Missing, stale, truncated, unavailable or limited evidence is 
 a successful zero. Factory publication and GitHub observations are immutable via
 this API. See [saved observations](api.md#saved-observations) for paths, filters,
 field shapes and examples.
+
+Repos/issues/PR freshness covers every selected catalog repository, including empty
+and missing observations. Per-repository source times fall back to the baseline
+that supplied retained data; baseline data must remain visible in `oldestAt`.
+New catalog entries without proven baseline coverage or a saved observation count
+as missing. Top-level `fetchedAt` is the newest selected observation, not proof of
+uniform freshness. Source-index account entries use the same projection.
+Factory freshness likewise counts the selected catalog, using only immutable
+per-repository observation times and counting absent publications/observations as
+missing. Publication inventory counters remain historical collection metadata.
+The unprojectable account-wide contribution calendar is excluded explicitly.
+CI freshness counts three saved dependencies per repository, not one timestamp.
+
+CI verdicts use the known default branch only; missing branch metadata, PR/feature
+branches, null refs and tag refs do not establish default-branch health.
+PR-event runs are observational even if their source branch is named like the
+default branch; a matching name alone cannot prove repository branch context.
+Recovered latest completed successes are flaky/healthy rather than broken; workflows with
+no runs for 14 days are idle. The clock is saved observation time, not GET time.
+Other branch failures remain separate 30-day run counts. Workflow/repository totals
+use explicit `*Workflows`/`*Repos` names, with `nonDefaultBranchFailures` measured in
+runs; ambiguous legacy count names are removed. See the
+[CI rules and fields](api.md#saved-ci-verdicts-and-units) before consuming totals.
 
 ## Generic records, reports and jobs
 

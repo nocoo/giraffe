@@ -595,3 +595,50 @@ the relevant regressions before the complete fixed-code suite. Test stores remai
 inside task-owned temporary clones; no daily or production data is used. Inspect
 the actual assertion failure before reporting red evidence, and scope chrome
 selectors to their existing stable semantic markers rather than HTML tag names.
+
+## 2026-10-21 - Compare saved rows, not query execution metadata
+
+The new HTTP observation regression initially compared complete Wrangler D1 query
+responses before and after GET requests. The saved rows were identical, but the
+query duration changed from one millisecond to zero and caused a false failure.
+Compare the ordered result rows for read-only assertions, excluding execution
+metadata. Preserve the original failing data-correctness evidence separately from
+test-harness defects so a fixture correction is not mistaken for a product fix.
+
+## 2026-10-21 - Timestamp presence does not prove complete coverage
+
+Read-time freshness correctly retained timestamps for rows from truncated baselines,
+but starred projections still used missing timestamps to decide completeness. That
+cleared the truncation flag when a partial baseline supplied every selected repo's
+time. Review reproduced the regression for issues, PRs and alerts. Track coverage
+separately from provenance; only complete baseline evidence or a complete replacement
+page can clear the selected projection's incomplete flag. Include a same-time full
+page regression because equal timestamps do not imply equal coverage.
+
+The next review found that derived Insights still used timestamp presence as proof
+that an issue count was exhaustive. A partial list could replace a catalog count
+of 90 with one issue and incorrectly lower the health warning. Expose per-repository
+coverage to every derived consumer, retain catalog counts when issue coverage is
+incomplete, and propagate primary-source incompleteness independently of freshness.
+Test complete and incomplete repositories together in both all and starred scopes.
+
+## 2026-10-21 - Resolve case aliases consistently across readers
+
+Case-insensitive catalog membership alone did not make stored snapshot keys
+case-insensitive. Review found that CI selected the first matching alias, sometimes
+old failed runs, while source discovery could advertise an uppercase page that a
+canonicalized data endpoint could not read. Resolve whole logical page groups
+before selecting the newest valid saved time, preserve the chosen resource identity,
+and share that selection between the index, CI and page reader. Regression tests
+follow indexed sources to their data and compare full content versions; aliases
+with equal or invalid timestamps must resolve independently of SQL row order.
+
+## 2026-10-21 - Branch names do not identify pull-request execution context
+
+Default-branch CI classification originally compared only `head_branch` with the
+saved default branch. A fork PR may also originate from a branch named `main`, so
+its failures could override a successful repository push. Review reproduced this
+using the existing Actions mapper and saved event fields. Keep all pull-request
+event contexts observational, even when branch names match, and include scope in
+rendered stream keys so default and PR lanes remain distinct. Verify default health,
+separate failed-run counts and the unchanged all-branch daily histogram together.

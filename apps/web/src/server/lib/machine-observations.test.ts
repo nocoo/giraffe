@@ -9,6 +9,241 @@ import {
 	readObservation,
 	requireCatalogRepo,
 } from "./machine-observations";
+import { readSources } from "./machine-sources";
+import { statisticsSnapshot } from "./repo-statistics";
+
+it("uses the newest saved CI evidence across historical repository casing", async () => {
+	const db = createDb(sqliteFixture());
+	await db
+		.prepare(
+			"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES('a','owner','fake','fake','t','t')",
+		)
+		.run();
+	const old = "2026-10-18T00:00:00Z";
+	const latest = "2026-10-20T00:00:00Z";
+	const save = (kind: string, payload: Record<string, unknown>, at = latest) =>
+		db.batch(replaceSnapshotStmts(db, "a", kind, payload, at));
+	await save("repos", { repos: [{ name_with_owner: "owner/app" }] });
+	for (const [name, at, branch, conclusion] of [
+		["OWNER/APP", old, "main", "failure"],
+		["owner/app", latest, "trunk", "success"],
+	] as const) {
+		await save(`repo:${name}:details`, { default_branch: branch }, at);
+		await save(
+			`repo:${name}:actions`,
+			{
+				runs: [1, 2].map((id) => ({
+					id,
+					name: "CI",
+					status: "completed",
+					conclusion,
+					head_branch: branch,
+					created_at: at,
+					updated_at: at,
+					event: "push",
+				})),
+			},
+			at,
+		);
+		await save(
+			`repo:${name}:releases`,
+			{ releases: [{ id: 1, tag_name: at, draft: false, published_at: at }] },
+			at,
+		);
+	}
+	const result = await readObservation(db, "a", "ci", "all");
+	expect(result).toMatchObject({
+		freshness: { oldestAt: latest, latestAt: latest },
+		data: {
+			repos: [{ verdict: "healthy", release: { latest } }],
+			totals: { brokenWorkflows: 0, healthyWorkflows: 1 },
+		},
+	});
+});
+
+it("reads the same immutable page version advertised by a case-insensitive source index", async () => {
+	const db = createDb(sqliteFixture());
+	await db
+		.prepare(
+			"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES('a','owner','fake','fake','t','t')",
+		)
+		.run();
+	const save = (kind: string, payload: Record<string, unknown>, at = "2026-10-20T00:00:00Z") =>
+		db.batch(replaceSnapshotStmts(db, "a", kind, payload, at));
+	await save("repos", { repos: [{ name_with_owner: "owner/app" }] });
+	await save("repo:OWNER/APP:prs", { pull_requests: [{ number: 1 }] });
+	let sources = await readSources(db, "a", { repository: "OWNER/APP" });
+	let page = await readObservation(db, "a", "repo:owner/app:prs", "all");
+	expect(page.source.resource).toBe("repo:OWNER/APP:prs");
+	expect(page.sourceVersion).toBe(
+		sources.sources.find((source) => source.resource === page.source.resource)?.version,
+	);
+	await save("repo:owner/app:prs", { pull_requests: [{ number: 2 }] }, "2026-10-21T00:00:00Z");
+	sources = await readSources(db, "a", {});
+	page = await readObservation(db, "a", "repo:owner/app:prs", "all");
+	expect(page.data.pull_requests).toEqual([{ number: 2 }]);
+	expect(
+		sources.sources.filter((source) => source.resource.toLowerCase() === "repo:owner/app:prs"),
+	).toEqual([
+		expect.objectContaining({ resource: page.source.resource, version: page.sourceVersion }),
+	]);
+});
+
+it("shares catalog-wide provenance and page replacements with browser reads without statistics filtering", async () => {
+	const raw = sqliteFixture();
+	const db = createDb(raw);
+	await db
+		.prepare(
+			"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES('a','owner','fake','fake','t','t')",
+		)
+		.run();
+	const baseline = "2026-10-18T12:50:00Z";
+	const recent = "2026-10-20T12:02:00Z";
+	const save = (kind: string, value: Record<string, unknown>, at = baseline) =>
+		db.batch(replaceSnapshotStmts(db, "a", kind, value, at));
+	await save("repos", {
+		repos: ["owner/app", "owner/baseline", "owner/empty", "owner/fork"].map((name_with_owner) => ({
+			name_with_owner,
+			is_fork: name_with_owner === "owner/fork",
+		})),
+	});
+	for (const name of ["OWNER/APP", "owner/baseline", "owner/empty", "owner/removed"])
+		await db.prepare("INSERT INTO repo_stars VALUES('a',?)").bind(name).run();
+	const before = await raw.prepare("SELECT * FROM snapshots ORDER BY kind").all();
+	for (const [resource, key] of [
+		["issues", "issues"],
+		["prs", "pull_requests"],
+	]) {
+		const snapshot = {
+			[String(key)]: ["owner/app", "owner/baseline", "owner/removed", "owner/fork"].map(
+				(name_with_owner) => ({ name_with_owner, number: 1 }),
+			),
+			repository_fetched_at: { "owner/app": recent, "owner/removed": recent },
+		};
+		await save(String(resource), snapshot);
+		await save(`repo:OWNER/EMPTY:${resource}`, { [String(key)]: [{ number: 2 }] }, recent);
+		const all = await readObservation(db, "a", String(resource), "all");
+		expect(all).toMatchObject({
+			fetchedAt: recent,
+			freshness: { oldestAt: baseline, latestAt: recent, total: 4, missing: 0 },
+			selection: { statisticsFilter: false },
+		});
+		expect(all.data[String(key)]).toEqual(
+			expect.arrayContaining([
+				{ name_with_owner: "owner/fork", number: 1 },
+				{ name_with_owner: "owner/empty", number: 2 },
+			]),
+		);
+		expect(all.data[String(key)]).not.toEqual(
+			expect.arrayContaining([expect.objectContaining({ name_with_owner: "owner/removed" })]),
+		);
+		const starred = await readObservation(db, "a", String(resource), "starred");
+		const browser = await statisticsSnapshot(
+			db,
+			"a",
+			String(resource),
+			{ ...snapshot, fetched_at: baseline, truncated: false },
+			"starred",
+		);
+		expect(starred.data).toEqual(browser);
+	}
+	expect((await raw.prepare("SELECT * FROM snapshots WHERE kind='repos'").all()).results).toEqual(
+		before.results,
+	);
+});
+
+it("assembles CI evidence case-insensitively and keeps missing dependencies unknown", async () => {
+	const db = createDb(sqliteFixture());
+	await db
+		.prepare(
+			"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES('a','owner','fake','fake','t','t')",
+		)
+		.run();
+	const at = "2026-10-20T00:00:00Z";
+	const save = (kind: string, value: Record<string, unknown>) =>
+		db.batch(replaceSnapshotStmts(db, "a", kind, value, at));
+	await save("repos", {
+		repos: ["owner/app", "owner/missing", "owner/unavailable"].map((name_with_owner) => ({
+			name_with_owner,
+		})),
+	});
+	await save("repo:OWNER/APP:actions", {
+		runs: [
+			{
+				id: 1,
+				name: "CI",
+				status: "completed",
+				conclusion: "failure",
+				head_branch: "main",
+				created_at: at,
+				updated_at: at,
+				event: "push",
+			},
+		],
+	});
+	await save("repo:owner/missing:releases", { releases: [] });
+	await save("repo:owner/unavailable:actions", { unavailable: true });
+	const ci = await readObservation(db, "a", "ci", "all");
+	expect(ci.data.unsaved).toEqual(["owner/missing", "owner/unavailable"]);
+	expect(ci.freshness).toEqual({ oldestAt: at, latestAt: at, total: 9, missing: 7 });
+	expect(ci.data.totals).toMatchObject({
+		totalRepos: 1,
+		brokenRepos: 0,
+		nonDefaultBranchFailures: 1,
+	});
+});
+
+it("does not certify health from unavailable CI dependencies and exposes any dependency truncation", async () => {
+	const raw = sqliteFixture();
+	const db = createDb(raw);
+	await db
+		.prepare(
+			"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES('a','owner','fake','fake','t','t')",
+		)
+		.run();
+	const at = "2026-10-20T00:00:00Z";
+	const save = (kind: string, value: Record<string, unknown>) =>
+		db.batch(replaceSnapshotStmts(db, "a", kind, value, at));
+	await save("repos", { repos: [{ name_with_owner: "owner/app" }] });
+	await save("repo:owner/app:actions", {
+		runs: [
+			{
+				id: 1,
+				name: "CI",
+				status: "completed",
+				conclusion: "success",
+				head_branch: "main",
+				created_at: at,
+				updated_at: at,
+				event: "push",
+			},
+		],
+	});
+	await save("repo:owner/app:details", {
+		default_branch: "main",
+		forbidden: true,
+		truncated: true,
+	});
+	await save("repo:owner/app:releases", {
+		releases: [{ id: 1, tag_name: "v1", draft: false, published_at: at }],
+		unavailable: true,
+		truncated: true,
+	});
+	const ci = await readObservation(db, "a", "ci", "all");
+	expect(ci).toMatchObject({
+		truncated: true,
+		freshness: { total: 3, missing: 2 },
+		data: {
+			totals: { totalWorkflows: 0, healthyRepos: 0, unknownRepos: 1, truncatedRepos: 1 },
+			repos: [{ release: null, verdict: "none", truncated: true }],
+		},
+	});
+	await save("repo:owner/app:actions", { unavailable: true, truncated: true });
+	expect(await readObservation(createDb(raw), "a", "ci", "all")).toMatchObject({
+		truncated: true,
+		data: { repos: [], unsaved: ["owner/app"] },
+	});
+});
 
 it("exposes saved unfiltered sources without writes or upstream fetches", async () => {
 	const raw = sqliteFixture();

@@ -85,6 +85,14 @@ to `/api/v1/accounts/A`; `A` must equal the token account. Repository lookup is
 case-insensitive against the saved catalog and resolves to canonical `owner/name`.
 A repository outside that catalog is 404, even if it exists on GitHub.
 
+Account observation lists, aggregates and source indexes also exclude repositories
+outside the current saved catalog, case-insensitively, including retained factory
+publications. Filtering happens at read time: historical snapshots and publications
+remain stored. Browser inbox/statistics views use the same membership boundary;
+their statistics participation rules still apply. Generic records/reports/jobs are
+application resources, not GitHub observations, and retain their independent CRUD
+contract.
+
 ### GET /accounts/A/sources
 
 Shares saved-source assembly with the browser's `/api/agent/accounts/A/sources`.
@@ -138,6 +146,11 @@ security, languages and contributors are readable but not indexed here. Source
 ordering is unspecified. Factory repository filtering is case-insensitive even
 when a newer catalog spelling differs from a retained publication; source
 identities and versions retain their original published spelling.
+Retained repository-page keys can also differ from current catalog capitalization.
+The source index and page/CI readers resolve these keys case-insensitively, assemble
+each stored page group separately, and select the newest valid saved timestamp.
+The selected original resource spelling and content version are shared by the index
+and corresponding endpoint; older case variants remain stored, not indexed twice.
 
 `repository` narrows repository-page/factory entries but retains account/global
 entries and the full `repositories` array. `since` filters only `sources`: discard
@@ -180,6 +193,31 @@ coverage and per-repository unavailable/forbidden flags. `coverage` is null when
 absent. Top-level flags alone do not establish completeness; inspect freshness,
 raw source flags, coverage and CI missing inputs. Unknown is never an observed zero.
 
+For account repos/issues/PRs, `freshness.total` counts the selected catalog repositories,
+including repositories with no open items (`all` is the full catalog; `starred` is its
+intersection with local stars). Each repository contributes the saved time of the
+data actually served: a newer complete per-repository page when available, otherwise
+its recorded aggregate time or the baseline time supplying its retained rows. An
+empty baseline proves coverage only when its complete snapshot covered the catalog
+at that time; repositories added later without observations count as `missing`.
+Invalid/absent times also count as missing. `oldestAt` includes old baseline data,
+not just the recently refreshed subset. `latestAt` and top-level `fetchedAt` identify
+the newest selected observation; neither implies that all data is that fresh. Check
+`oldestAt` and `missing` before treating the response as current. This projection is
+shared with account entries in `/sources` and never refreshes data on GET.
+
+Factory freshness counts selected catalog repositories, including entries absent
+from the publication. Only immutable repository `observation.refreshedAt` supplies
+their time; absent/invalid observations count as missing. Its `fetchedAt` is the
+latest such observation, never the publication clock. Inventory `total`, `scanned`
+and `pages` remain historical collection metadata, not projected repository counts.
+The account-wide contribution calendar has no repository breakdown, so projections
+return `contribution:null`, `contributionExcluded:true` and
+`contributionStatus:"unavailable"` rather than attributing excluded data to the
+selection. Original publication windows and repository versions are retained.
+CI freshness counts three dependencies per selected repository (Actions, releases,
+details); missing/unavailable dependencies count as missing.
+
 ### Account endpoints
 
 | GET path | `data` shape |
@@ -187,7 +225,7 @@ raw source flags, coverage and CI missing inputs. Unknown is never an observed z
 | `/repos` | `{ repos: Repo[], fetched_at, truncated, ...savedMetadata }`; all saved catalog repositories by default, with `statistics_enabled` and `starred` |
 | `/issues` | `{ issues: Issue[], fetched_at, truncated, repository_fetched_at?, freshness?, ...savedMetadata }`; saved open issues |
 | `/prs` | `{ pull_requests: PullRequest[], fetched_at, truncated, repository_fetched_at?, freshness?, ...savedMetadata }`; saved open PRs |
-| `/ci` | `{ streams, repos, daily, totals, fetched_at, freshness, unsaved }`; deterministic saved Actions/releases/details summaries; `unsaved` lists repos with neither Actions nor releases saved |
+| `/ci` | `{ streams, repos, daily, totals, fetched_at, freshness, unsaved }`; deterministic saved Actions/releases/details summaries; `unsaved` lists repos without an available saved Actions input |
 | `/factory` | Published `FactorySnapshot`: `{ schema:1, account_id, owner, runId, revision, leaseUntil, startedAt, fetched_at, window, status, inventory, repos, cursor, requests, rate, contribution, contributionStatus, ...publicationMetadata }` |
 
 Each accepts only the documented selector `scope=all|starred`, default `all`;
@@ -209,11 +247,51 @@ Item fields (saved metadata can add fields; do not reject unknown observation da
 - `PullRequest`: `name_with_owner`, `number`, `title`, `url`, `created_at`,
   `updated_at`, `author_login`, `is_draft`, `review_decision`, `additions`,
   `deletions`, `base_ref`, `head_ref`.
-- CI `totals`: `broken`, `flaky`, `recurring`, `healthy`, `idle`, `bot`, `repos`,
-  `truncated`; `daily` entries: `{ x, success, failure, other }`, with date string `x`.
+- CI `totals`: explicit workflow and repository counts documented below;
+  `daily` entries: `{ x, success, failure, other }`, with date string `x`.
   Full nested summaries: [`ci-health.ts`](../apps/web/src/lib/ci-health.ts).
 - Full factory repository metrics, observation versions/windows, coverage and
   publication fields: [`factory-types.ts`](../apps/web/src/lib/factory-types.ts).
+
+### Saved CI verdicts and units
+
+CI uses only saved Actions, releases and details. The evaluation clock is the newest
+valid saved input time, not the request's wall clock. A report can therefore be stale
+even when a verdict is healthy; inspect its freshness separately.
+
+- Project verdicts use only runs on the **known default branch**
+  from saved repository details. Missing/empty default branch, null run branch,
+  feature/PR branches and tag refs are not assumed to be default-branch evidence.
+  No branch-existence or open-PR lookup is performed. Branch and bot streams remain
+  observational and never make project workflow/repository verdicts broken or flaky.
+  All `pull_request*` events are observational even when `head_branch` matches the
+  default branch name: a fork PR can also have a source branch named `main`.
+- Classify the latest 10 decisive completed runs in the 30-day history. A latest
+  successful result cannot be `broken`: prior failures make it `flaky` (and recurring
+  when more than one failed); without failures it is `healthy`. A currently failing
+  stream is `broken` after two consecutive failures or at least 50% failures in a
+  sample of at least four decisive runs. Otherwise it is `flaky`.
+- With no runs in the last **14 days**, a workflow is `idle`, not broken, including
+  manually dispatched workflows. No decisive result also yields idle. In-progress
+  runs do not supply a completed verdict.
+- `totals.brokenWorkflows`, `flakyWorkflows`, `healthyWorkflows`, `idleWorkflows` and
+  `recurringWorkflows` count default-branch workflow streams. `totalWorkflows` is
+  their total, not all branch/bot streams.
+- `totals.brokenRepos`, `flakyRepos`, `healthyRepos`, `idleRepos`, `unknownRepos` and
+  `totalRepos` count repository summaries. Missing Actions inputs remain explicit
+  in `unsaved`; absence is not a healthy verdict.
+- `nonDefaultBranchStreams` counts observational non-default streams;
+  `nonDefaultBranchFailures` counts their failed runs in the last 30 days, not
+  workflows or repositories, including PR-event contexts with matching branch names.
+  `botStreams` counts bot streams; `truncatedRepos`
+  counts repository summaries whose saved inputs are truncated.
+- `daily` remains an all-branch, non-bot completed-run histogram, not a health
+  verdict; its success/failure/other values are run counts.
+
+Per-repository summaries likewise expose `brokenWorkflows`, `flakyWorkflows`,
+`healthyWorkflows`, `idleWorkflows`, `totalWorkflows`, `nonDefaultBranchStreams`,
+`nonDefaultBranchFailures` and `botStreams`. The ambiguous legacy totals and
+per-repository count names are removed; consumers must use the explicit-unit names.
 
 ### Repository endpoints
 

@@ -54,6 +54,42 @@ async function scopedSetup() {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("scoped snapshot projections", () => {
+	it("resolves browser repository pages using the newest stored case alias", async () => {
+		const setup = await scopedSetup();
+		await setup.save("repo:OWNER/APP:prs", { pull_requests: [{ number: 1 }] }, recentAt);
+		const response = await setup.request("repos/owner/app/prs");
+		expect(response.status).toBe(200);
+		expect(await response.json()).toMatchObject({ pull_requests: [{ number: 1 }] });
+		await setup.save("repo:owner/app:prs", { pull_requests: [{ number: 2 }] }, baselineAt);
+		expect(await (await setup.request("repos/owner/app/prs")).json()).toMatchObject({
+			pull_requests: [{ number: 1 }],
+		});
+	});
+
+	it("removes departed repositories from every browser inbox and aggregate at read time", async () => {
+		const setup = await scopedSetup();
+		for (const [kind, key] of [
+			["issues", "issues"],
+			["prs", "pull_requests"],
+			["alerts", "items"],
+			["notifications", "notifications"],
+		]) {
+			await setup.save(String(kind), {
+				[String(key)]: [{ name_with_owner: "OWNER/APP" }, { name_with_owner: "owner/removed" }],
+				truncated: true,
+			});
+			const before = await setup.bindings.DB.prepare("SELECT * FROM snapshots ORDER BY kind").all();
+			const body = await (await setup.request(`${kind}?scope=all`)).json();
+			expect(body).toMatchObject({
+				[String(key)]: [{ name_with_owner: "OWNER/APP" }],
+				freshness: { oldestAt: baselineAt, total: 4, missing: 3 },
+			});
+			expect(
+				await setup.bindings.DB.prepare("SELECT * FROM snapshots ORDER BY kind").all(),
+			).toEqual(before);
+		}
+	});
+
 	it("projects saved rows before counters, keeps disabled catalog entries and leaves storage untouched", async () => {
 		const setup = await scopedSetup();
 		for (const [kind, key] of [
@@ -172,6 +208,68 @@ describe("scoped snapshot projections", () => {
 			],
 		});
 	});
+
+	it.each(["all", "starred"])(
+		"keeps incomplete issue counts conservative in %s insights",
+		async (scope) => {
+			const setup = await scopedSetup();
+			await setup.save(
+				"repos",
+				{
+					repos: ["owner/app", "owner/empty"].map((name_with_owner) => ({
+						name_with_owner,
+						open_issue_count: 90,
+						pushed_at: recentAt,
+					})),
+				},
+				recentAt,
+			);
+			await setup.save(
+				"issues",
+				{
+					issues: ["owner/app", "owner/empty"].map((name_with_owner) => ({
+						name_with_owner,
+						number: 1,
+					})),
+					truncated: true,
+				},
+				recentAt,
+			);
+			await setup.save("alerts", { items: [] }, recentAt);
+			await setup.save("insights", { insights: [] }, recentAt);
+			const read = async () => (await setup.request(`insights?scope=${scope}`)).json();
+			expect(await read()).toMatchObject({
+				truncated: true,
+				freshness: { total: 4, missing: 0 },
+				insights: [
+					{ name_with_owner: "owner/app", open_issue_count: 90, health: "watch" },
+					{ name_with_owner: "owner/empty", open_issue_count: 90, health: "watch" },
+				],
+			});
+			await setup.save("repo:owner/empty:issues", { issues: [] }, recentAt);
+			expect(await read()).toMatchObject({
+				truncated: true,
+				insights: [
+					{ name_with_owner: "owner/app", open_issue_count: 90, health: "watch" },
+					{ name_with_owner: "owner/empty", open_issue_count: 0, health: "strong" },
+				],
+			});
+			await setup.save("repo:owner/app:issues", { issues: [] }, recentAt);
+			expect(await read()).toMatchObject({
+				truncated: false,
+				insights: [{ open_issue_count: 0 }, { open_issue_count: 0 }],
+			});
+			await setup.save(
+				"repos",
+				{
+					repos: [{ name_with_owner: "owner/app", open_issue_count: 90, pushed_at: recentAt }],
+					truncated: true,
+				},
+				recentAt,
+			);
+			expect(await read()).toMatchObject({ truncated: true, freshness: { missing: 0 } });
+		},
+	);
 
 	it("rejects invalid scope and preserves direct detail access while an empty star set stays empty", async () => {
 		const setup = await scopedSetup();

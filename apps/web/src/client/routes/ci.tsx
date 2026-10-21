@@ -12,7 +12,7 @@ import {
 } from "@nocoo/basalt/components/table";
 import { ArrowUpRight, CircleAlert, Eye, ShieldCheck, Tag, Workflow } from "lucide-react";
 import { useMemo, useState } from "react";
-import { CI_RECENT, type CiReportResponse } from "../../lib/ci-health";
+import { CI_IDLE_DAYS, CI_RECENT, type CiReportResponse } from "../../lib/ci-health";
 import { BusinessPageHeader as PageHeader } from "../components/layout/business-page-header";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ChartBrick } from "../components/layout/chart-brick";
@@ -49,11 +49,11 @@ import {
 import { daysAgo } from "../viewmodels/overview";
 
 const VERDICT = {
-	broken: { label: "连续失败", tone: "red", color: "hsl(var(--basalt-accent-8))" },
+	broken: { label: "持续失败", tone: "red", color: "hsl(var(--basalt-accent-8))" },
 	flaky: { label: "偶发失败", tone: "amber", color: "var(--color-giraffe-yellow)" },
 	healthy: { label: "稳定", tone: "green", color: "var(--color-basalt-chart-5)" },
 	idle: { label: "无近期运行", tone: "gray", color: "var(--color-basalt-border)" },
-	none: { label: "无工作流", tone: "gray", color: "var(--color-basalt-border)" },
+	none: { label: "无默认分支判定", tone: "gray", color: "var(--color-basalt-border)" },
 } as const;
 const OUTCOME_COLOR = {
 	success: "var(--color-basalt-chart-5)",
@@ -120,8 +120,8 @@ export function CiPage() {
 				}
 				actions={
 					<>
-						{t.truncated ? (
-							<CandyBadge tone="amber">{t.truncated} 个仓库运行记录已截断</CandyBadge>
+						{t.truncatedRepos ? (
+							<CandyBadge tone="amber">{t.truncatedRepos} 个仓库运行记录已截断</CandyBadge>
 						) : null}
 						{report.unsaved.length ? (
 							<CandyBadge tone="gray">{report.unsaved.length} 个仓库未采集</CandyBadge>
@@ -132,12 +132,12 @@ export function CiPage() {
 			<ScopeEmpty count={report.repos.length + report.unsaved.length} />
 			<section className="giraffe-ci-summary" aria-label="CI 判定汇总" data-testid="ci-summary">
 				<ShareBar
-					label="工作流判定"
+					label="默认分支工作流判定"
 					legend={false}
 					parts={(["broken", "flaky", "healthy", "idle"] as const).map((k) => ({
 						key: k,
 						label: VERDICT[k].label,
-						value: t[k],
+						value: t[`${k}Workflows`],
 						color: VERDICT[k].color,
 					}))}
 				/>
@@ -146,52 +146,58 @@ export function CiPage() {
 						icon={CircleAlert}
 						tone="broken"
 						label="需要处理"
-						value={t.broken}
-						note="连续 ≥2 次失败"
+						value={t.brokenWorkflows}
+						note={`${t.brokenRepos} 个仓库 · 默认分支持续失败`}
 					/>
 					<Tile
 						icon={Eye}
 						tone="flaky"
 						label="继续观察"
-						value={t.flaky}
-						note={`其中 ${t.recurring} 个反复失败`}
+						value={t.flakyWorkflows}
+						note={`${t.flakyRepos} 个仓库 · ${t.recurringWorkflows} 条反复失败`}
 					/>
 					<Tile
 						icon={ShieldCheck}
 						tone="healthy"
 						label="稳定"
-						value={t.healthy}
-						note="近 10 次全部成功"
+						value={t.healthyWorkflows}
+						note={`${t.healthyRepos} 个仓库 · 近 10 次全部成功`}
 					/>
 					<Tile
 						icon={Workflow}
 						tone="idle"
 						label="无近期运行"
-						value={t.idle}
-						note="30 天内无判定结果"
+						value={t.idleWorkflows}
+						note={`${t.idleRepos} 个仓库 · ${CI_IDLE_DAYS} 天无运行或无判定`}
 					/>
 				</dl>
 				<p>
-					按「工作流 ×
-					分支」判定：默认分支和版本标签归为一条线，活跃的功能分支仅在失败时列出，Dependabot
-					更新任务单独统计（{formatCount(t.bot)} 条），不影响仓库结论。基准时间{" "}
-					{formatDate(report.now)}。
+					汇总单位为默认分支工作流（{formatCount(t.totalWorkflows)} 条），仓库单独计数（
+					{formatCount(t.totalRepos)} 个，其中 {formatCount(t.unknownRepos)} 个无默认分支判定）。
+					非默认分支 {formatCount(t.nonDefaultBranchStreams)} 条观察线、
+					{formatCount(t.nonDefaultBranchFailures)} 次失败运行（近 30 天，含 PR、标签和未知引用），
+					不影响仓库和工作流健康。Dependabot 更新任务另计 {formatCount(t.botStreams)} 条。
+					基准时间采用已保存观测的时间 {formatDate(report.now)}。
 				</p>
 			</section>
 
 			<SectionRule
 				title={<IconLabel icon={CircleAlert}>需要处理</IconLabel>}
-				hint="两种情况：最近至少连续 2 次失败，最后一次成功后再没通过；或近 4 次以上判定中失败过半，偶尔通过也不算恢复。"
+				hint={`仅默认分支：最新完成判定失败，且连续至少 2 次失败，或近 4 次以上判定中至少半数失败。最新完成判定成功即恢复；${CI_IDLE_DAYS} 天无运行归为空闲。`}
 			>
 				{buckets.act.length ? (
 					<ul className="giraffe-ci-cards">
 						{buckets.act.map((s) => (
-							<StreamCard key={`${s.repo}:${s.workflow}:${s.branch}`} s={s} now={report.now} />
+							<StreamCard
+								key={`${s.repo}:${s.workflow}:${s.scope}:${s.branch}`}
+								s={s}
+								now={report.now}
+							/>
 						))}
 					</ul>
 				) : (
 					<p className="giraffe-ci-clear" role="status">
-						没有连续失败的工作流。
+						没有持续失败的默认分支工作流。
 					</p>
 				)}
 			</SectionRule>
@@ -199,14 +205,14 @@ export function CiPage() {
 			<div className="giraffe-overview" style={{ "--cols": 2 } as React.CSSProperties}>
 				<ChartBrick
 					title="继续观察"
-					description="有失败但最近又恢复成功。反复失败：近 10 次判定失败超过 1 次；偶发：只失败 1 次。"
+					description="默认分支近期有失败，但已恢复或尚未达到持续失败阈值。反复失败：近 10 次判定失败超过 1 次；偶发：只失败 1 次。"
 				>
 					<WatchList title={`反复失败 · ${recurring.length}`} items={recurring} now={report.now} />
 					<WatchList title={`偶发一次 · ${oneOff.length}`} items={oneOff} now={report.now} muted />
 				</ChartBrick>
 				<ChartBrick
 					title="近 30 天运行结果"
-					description="全部仓库每日运行按结果堆叠，不含 Dependabot 更新任务。"
+					description="所有分支每日完成运行按结果堆叠，不含 Dependabot 更新任务；此处单位是运行次数，不是工作流健康。"
 				>
 					<CountBars
 						data={report.daily}
@@ -224,8 +230,8 @@ export function CiPage() {
 			</div>
 
 			<SectionRule
-				title={<IconLabel icon={Workflow}>全部工作流</IconLabel>}
-				hint="每行一条工作流线。方块为最近 10 次运行，从左到右由旧到新，最右侧加框的一格是最新一次；不足 10 次时，左侧以极淡灰色补位，不代表运行状态。"
+				title={<IconLabel icon={Workflow}>工作流与分支观察</IconLabel>}
+				hint="每行一条工作流分支线，分支观察不计入健康汇总。方块为最近 10 次运行，从左到右由旧到新，最右侧加框的一格是最新一次；不足 10 次时，左侧以极淡灰色补位，不代表运行状态。"
 				actions={
 					<FilterBar label="工作流筛选">
 						<SearchField
@@ -241,7 +247,7 @@ export function CiPage() {
 							onValueChange={(v) => setFilters((f) => ({ ...f, verdict: v === "all" ? "" : v }))}
 							options={[
 								{ value: "all", label: "全部" },
-								{ value: "broken", label: "连续失败" },
+								{ value: "broken", label: "持续失败" },
 								{ value: "recurring", label: "反复失败" },
 								{ value: "flaky", label: "偶发" },
 								{ value: "healthy", label: "稳定" },
@@ -266,18 +272,21 @@ export function CiPage() {
 								</TableHeader>
 								<TableBody>
 									{streams.map((s) => (
-										<TableRow key={`${s.repo}:${s.workflow}:${s.branch}`}>
+										<TableRow key={`${s.repo}:${s.workflow}:${s.scope}:${s.branch}`}>
 											<TableCell>
 												<ProjectLink repo={s.repo} className="font-medium text-basalt-foreground" />
 												<div className="text-xs text-basalt-muted-foreground">
 													{s.workflow}
-													{s.scope === "branch" ? ` · ${s.branch}` : ""}
+													{s.scope === "branch" ? ` · ${s.branch ?? "未知引用"}` : ""}
 												</div>
 											</TableCell>
 											<TableCell>
 												<CandyBadge tone={VERDICT[s.verdict].tone}>
 													{VERDICT[s.verdict].label}
 												</CandyBadge>
+												{s.scope === "branch" ? (
+													<CandyBadge tone="gray">分支观察</CandyBadge>
+												) : null}
 												<div className="mt-1 text-xs text-basalt-muted-foreground">{s.reason}</div>
 											</TableCell>
 											<TableCell>
@@ -483,7 +492,7 @@ function WatchList({
 			{items.length ? (
 				<ul>
 					{items.slice(0, 12).map((s) => (
-						<li key={`${s.repo}:${s.workflow}:${s.branch}`}>
+						<li key={`${s.repo}:${s.workflow}:${s.scope}:${s.branch}`}>
 							<div className="giraffe-watch-name">
 								<ProjectLink repo={s.repo} />
 								<small>{s.workflow}</small>

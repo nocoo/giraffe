@@ -46,11 +46,12 @@ describe("ci viewmodel", () => {
 			stream("a/7", "broken", { scope: "bot", workflow: "Dependabot 更新任务" }),
 		];
 		const b = ciBuckets(streams);
-		expect(b.act.map((s) => s.repo)).toEqual(["a/1", "a/6"]);
+		expect(b.act.map((s) => s.repo)).toEqual(["a/1"]);
 		expect(b.watch.map((s) => s.repo)).toEqual(["a/2", "a/3"]);
 		expect(b.stable.map((s) => s.repo)).toEqual(["a/4"]);
 		expect(b.idle).toBe(1);
 		expect(b.bot.map((s) => s.repo)).toEqual(["a/7"]);
+		expect(b.branch.map((s) => s.repo)).toEqual(["a/6"]);
 	});
 
 	it("filters streams by verdict, repository and text", () => {

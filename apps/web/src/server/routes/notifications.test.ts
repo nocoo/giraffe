@@ -294,6 +294,16 @@ describe("notification write-through", () => {
 		);
 		expect(created.status).toBe(201);
 		const accountId = ((await created.json()) as { id: string }).id;
+		const db = createDb(e.DB);
+		await db.batch(
+			replaceSnapshotStmts(
+				db,
+				accountId,
+				"repos",
+				{ repos: [{ name_with_owner: "o/n" }] },
+				collectedAt,
+			),
+		);
 		expect(
 			(
 				await createApp().request(
