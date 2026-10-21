@@ -13,9 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Include retained baseline observations and missing repositories in catalog-wide freshness, using consistent source times for all and starred selections.
 - Classify recovered CI workflows as flaky or healthy and workflows without runs for 14 days as idle; default-branch evidence alone determines project health.
 
-### Changed
+### Breaking Change
 
-- Replace ambiguous CI counters with explicit workflow/repository totals and separate non-default-branch failed-run counts; update the dashboard and machine API documentation.
+- Remove legacy ambiguous CI counters and replace them with explicit workflow/repository totals and separate non-default-branch failed-run counts. API consumers must migrate to the fields documented in [CI verdicts and units](docs/api.md#saved-ci-verdicts-and-units).
 
 ## v0.15.12 — 2026-10-20
 
