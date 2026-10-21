@@ -5,7 +5,7 @@ import { sourcesFixture } from "../../../../../tests/fixtures/sources";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import { createDb } from "./db/d1";
 import { replaceSnapshotStmts } from "./db/snapshots";
-import { readObservation } from "./machine-observations";
+import { readFactoryResource, readObservation } from "./machine-observations";
 import { readSources } from "./machine-sources";
 
 it("filters every repository source and factory inventory against the current catalog without deleting history", async () => {
@@ -259,4 +259,100 @@ it("omits absent sources and never substitutes a legacy publication for a missin
 			row.resource.includes("factory"),
 		),
 	).toBe(false);
+});
+
+it("hashes referenced immutable content, including second pages, not newer or foreign runs", async () => {
+	const { raw, account, save } = await savedFixture();
+	const publication = factoryFixture();
+	const template = publication.repos[0];
+	if (!template) throw new Error("missing repository fixture");
+	const names = ["owner/renamed", "owner/legacy", "owner/foreign"];
+	await save("repos", { repos: names.map((name) => ({ name_with_owner: name })) });
+	publication.repos = names.map((name, i) => ({
+		...structuredClone(template),
+		name,
+		observation: {
+			repo: i === 0 ? "OWNER/ORIGINAL" : name,
+			version: i === 2 ? "foreign" : "original",
+			source: i === 1 ? "legacy" : "run",
+			refreshedAt: publication.fetched_at,
+			window: publication.window,
+		},
+	}));
+	await save("factory", publication);
+	await raw
+		.prepare(
+			"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES('foreign','foreign','fake','fake','t','t')",
+		)
+		.run();
+	for (const [id, owner] of [
+		["original", account],
+		["newer", account],
+		["foreign", "foreign"],
+	])
+		await raw
+			.prepare(
+				"INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES(?,?,?,'completed','{}','t','t','t')",
+			)
+			.bind(id, owner, id)
+			.run();
+	const stream = {
+		runId: "original",
+		items: [{ id: "1", title: "original", at: "2026-10-01T00:00:00Z" }],
+		next: null,
+		ranges: [publication.window],
+		coverage: {
+			...template.coverage.commits,
+			status: "complete",
+			fetchedAt: publication.fetched_at,
+		},
+	};
+	for (const [version, repo] of [
+		["original", "OWNER/ORIGINAL"],
+		["newer", "owner/renamed"],
+		["foreign", "owner/foreign"],
+	])
+		await raw
+			.prepare("INSERT INTO factory_resources VALUES(?,?,'commits',?)")
+			.bind(version, repo, JSON.stringify({ ...stream, runId: version }))
+			.run();
+	await save("factory:owner/legacy:commits", stream);
+	await save("factory:owner/legacy:commits#2", {
+		...stream,
+		items: [{ id: "2", title: "second page" }],
+	});
+	const before = await raw
+		.prepare("SELECT * FROM factory_resources ORDER BY run_id,repo,stream")
+		.all();
+	const db = createDb(raw);
+	const index = await readSources(db, account, {});
+	expect(db.statements).toBeLessThanOrEqual(5);
+	for (const name of names.slice(0, 2)) {
+		const envelope = await readFactoryResource(createDb(raw), account, name, "commits");
+		expect(
+			index.sources.find((s) => s.resource === `factory:${name}:commits`)?.contentVersion,
+		).toBe(envelope.contentVersion);
+	}
+	expect(
+		index.sources.find((s) => s.resource === "factory:owner/foreign:commits")?.contentVersion,
+	).toBeNull();
+	expect(
+		await raw.prepare("SELECT * FROM factory_resources ORDER BY run_id,repo,stream").all(),
+	).toEqual(before);
+	await raw
+		.prepare(
+			"UPDATE factory_resources SET payload=json_set(payload,'$.items[0].title','changed') WHERE run_id='original'",
+		)
+		.run();
+	await save("factory:owner/legacy:commits#2", {
+		...stream,
+		items: [{ id: "2", title: "changed second page" }],
+	});
+	const changed = await readSources(createDb(raw), account, {});
+	for (const name of names.slice(0, 2)) {
+		const previous = index.sources.find((s) => s.resource === `factory:${name}:commits`);
+		const current = changed.sources.find((s) => s.resource === `factory:${name}:commits`);
+		expect(current?.version).toBe(previous?.version);
+		expect(current?.contentVersion).not.toBe(previous?.contentVersion);
+	}
 });
