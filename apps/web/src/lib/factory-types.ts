@@ -41,6 +41,9 @@ export type FactoryEvent = {
 	state: string;
 	conclusion?: string | null;
 	draft?: boolean;
+	mergeable?: boolean | null;
+	mergeStateStatus?: string | null;
+	checks?: import("./pull-request").PrState["checks"];
 	review?: string | null;
 	version?: string;
 	path?: string;

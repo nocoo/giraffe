@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import { factoryFixture } from "../../../../../tests/fixtures/factory-snapshot";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
+import { prSnapshot } from "../../lib/pull-request";
 import type { Env } from "../env";
 import { createApp } from "../index";
 import { createDb } from "./db/d1";
@@ -83,7 +84,9 @@ it("reads the same immutable page version advertised by a case-insensitive sourc
 	await save("repo:owner/app:prs", { pull_requests: [{ number: 2 }] }, "2026-10-21T00:00:00Z");
 	sources = await readSources(db, "a", {});
 	page = await readObservation(db, "a", "repo:owner/app:prs", "all");
-	expect(page.data.pull_requests).toEqual([{ number: 2 }]);
+	expect(page.data.pull_requests).toEqual([
+		{ number: 2, mergeable: null, mergeStateStatus: null, checks: { state: null } },
+	]);
 	expect(
 		sources.sources.filter((source) => source.resource.toLowerCase() === "repo:owner/app:prs"),
 	).toEqual([
@@ -132,8 +135,8 @@ it("shares catalog-wide provenance and page replacements with browser reads with
 		});
 		expect(all.data[String(key)]).toEqual(
 			expect.arrayContaining([
-				{ name_with_owner: "owner/fork", number: 1 },
-				{ name_with_owner: "owner/empty", number: 2 },
+				expect.objectContaining({ name_with_owner: "owner/fork", number: 1 }),
+				expect.objectContaining({ name_with_owner: "owner/empty", number: 2 }),
 			]),
 		);
 		expect(all.data[String(key)]).not.toEqual(
@@ -147,7 +150,7 @@ it("shares catalog-wide provenance and page replacements with browser reads with
 			{ ...snapshot, fetched_at: baseline, truncated: false },
 			"starred",
 		);
-		expect(starred.data).toEqual(browser);
+		expect(starred.data).toEqual(prSnapshot(browser));
 	}
 	expect((await raw.prepare("SELECT * FROM snapshots WHERE kind='repos'").all()).results).toEqual(
 		before.results,

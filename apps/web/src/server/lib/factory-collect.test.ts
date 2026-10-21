@@ -170,28 +170,30 @@ describe("factory incremental collection", () => {
 		const state = ready("prs");
 		const store = memoryStore();
 		let page = 0;
-		const gh = github(() =>
-			Response.json(
-				[
-					rawEvent(),
-					{
-						...rawEvent(2),
-						merged_at: "2026-09-03T00:00:00Z",
-						closed_at: "2026-09-03T00:00:00Z",
-						state: "closed",
-					},
-				],
-				{
-					headers:
-						page++ === 0
-							? {
-									link: '<https://api.github.com/repos/nocoo/app/pulls?page=2>; rel="next"',
-									"x-ratelimit-remaining": "100",
-									"x-ratelimit-reset": "1789513200",
-								}
-							: {},
-				},
-			),
+		const gh = github((url) =>
+			url.endsWith("/graphql")
+				? Response.json({ data: { nodes: [] } })
+				: Response.json(
+						[
+							rawEvent(),
+							{
+								...rawEvent(2),
+								merged_at: "2026-09-03T00:00:00Z",
+								closed_at: "2026-09-03T00:00:00Z",
+								state: "closed",
+							},
+						],
+						{
+							headers:
+								page++ === 0
+									? {
+											link: '<https://api.github.com/repos/nocoo/app/pulls?page=2>; rel="next"',
+											"x-ratelimit-remaining": "100",
+											"x-ratelimit-reset": "1789513200",
+										}
+									: {},
+						},
+					),
 		);
 		await invoke(state, gh, store);
 		expect(state.rate).toMatchObject({ resource: "core", observedAt: NOW, remaining: 100 });
@@ -465,6 +467,7 @@ it("accepts only advancing same-resource Dependabot cursors and preserves filter
 it("prioritizes recently updated work when an oversized resource must be capped", async () => {
 	const state = ready("prs");
 	const gh = github((url) => {
+		if (url.endsWith("/graphql")) return Response.json({ data: { nodes: [] } });
 		expect(url).toContain("sort=updated&direction=desc");
 		return Response.json([rawEvent()]);
 	});

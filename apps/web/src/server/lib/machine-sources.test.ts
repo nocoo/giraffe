@@ -111,7 +111,7 @@ it("preserves exact realistic response content and all advertised snapshot versi
 	const { raw, account } = await sourcesFixture();
 	const result = await readSources(createDb(raw), account, {});
 	expect(createHash("sha256").update(JSON.stringify(result)).digest("hex")).toBe(
-		"130bad945dd47b45fa079e73c989e5250f1fff886e3623030e11193f20ad7c2f",
+		"36aaefea76bc2dde398677dde08a20af3c31dc305a276e582c17e8c0c186a393",
 	);
 	for (const source of result.sources.filter((row) => !row.resource.startsWith("factory:"))) {
 		const resource = source.resource.replace(/^account:/, "");

@@ -31,6 +31,7 @@ import {
 } from "./factory-queries";
 import type { GithubClient } from "./github-client";
 import { githubUnavailability } from "./github-unavailable";
+import { collectPrState } from "./pr-collect";
 
 export const FACTORY_ITEM_CAP = 5000;
 export const FACTORY_BYTE_CAP = 1_200_000;
@@ -317,9 +318,10 @@ async function collectStream(
 			} else {
 				const list = stream === "actions" ? object(payload).workflow_runs : payload;
 				if (!Array.isArray(list)) throw new ApiError(502, "github_error", "invalid resource list");
-				const page = mapFactoryEvents(stream, rows(list)).filter(
+				let page = mapFactoryEvents(stream, rows(list)).filter(
 					(e) => (stream !== "commits" && stream !== "actions") || inWindow(e.at, s.window),
 				);
+				if (stream === "prs") page = await collectPrState(s, gh, token, page, now);
 				data.items = uniqueEvents([...data.items, ...page]);
 				data.next = factoryNext(response.headers.get("link"), path);
 				const ids = new Set(retained.map((e) => e.id));

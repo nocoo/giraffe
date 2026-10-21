@@ -84,6 +84,13 @@ Other read paths include:
   contributors).
 - `/factory/repos/:owner/:name/:stream` for immutable published factory streams.
 
+All three PR surfaces (account, repository snapshot and factory PR stream) expose
+`mergeable:boolean|null`, `mergeStateStatus:string|null`, and
+`checks:{state:SUCCESS|FAILURE|PENDING|ERROR|EXPECTED|null}`. Checks come from
+GitHub's latest-head `statusCheckRollup`; absent/legacy values remain null,
+never inferred success. These are saved observations, not live merge permission.
+See [PR merge and checks state](api.md#pr-merge-and-checks-state).
+
 Factory stream `data.observation.window` supplies the repository's original
 window; `data.ranges` is a one-window array with that value (or the saved publication
 window for legacy data without an observation). It is not the internal pending

@@ -278,12 +278,38 @@ Item fields (saved metadata can add fields; do not reject unknown observation da
   `author_login`, `labels: [{ name, color }]`, `comments_count`.
 - `PullRequest`: `name_with_owner`, `number`, `title`, `url`, `created_at`,
   `updated_at`, `author_login`, `is_draft`, `review_decision`, `additions`,
-  `deletions`, `base_ref`, `head_ref`.
+  `deletions`, `base_ref`, `head_ref`, `mergeable`, `mergeStateStatus`, `checks`.
 - CI `totals`: explicit workflow and repository counts documented below;
   `daily` entries: `{ x, success, failure, other }`, with date string `x`.
   Full nested summaries: [`ci-health.ts`](../apps/web/src/lib/ci-health.ts).
 - Full factory repository metrics, observation versions/windows, coverage and
   publication fields: [`factory-types.ts`](../apps/web/src/lib/factory-types.ts).
+
+#### PR merge and checks state
+
+Every PR on `/prs`, `/repos/:owner/:name/prs` and
+`/factory/repos/:owner/:name/prs` includes the same additive fields:
+
+```json
+{"mergeable":true,"mergeStateStatus":"CLEAN","checks":{"state":"SUCCESS"}}
+```
+
+`mergeable` is `true` for GitHub `MERGEABLE`, `false` for `CONFLICTING`, and
+`null` for `UNKNOWN`, unavailable or not-yet-collected evidence.
+`mergeStateStatus` is the saved GitHub enum string (`CLEAN`, `DIRTY`, `BEHIND`,
+`BLOCKED`, `UNSTABLE`, `DRAFT`, `HAS_HOOKS`, `UNKNOWN`, or future GitHub values),
+or null. `checks.state` is `SUCCESS|FAILURE|PENDING|ERROR|EXPECTED|null`, taken
+directly from the latest head commit's `statusCheckRollup`, not inferred from
+review decisions, Actions history or mergeability. No rollup is null, not success.
+These are observations at collection time, not a guarantee that a PR can merge now.
+
+Account and repository searches collect these fields in their existing GraphQL
+request. Factory REST PR pages add one GraphQL node batch (at most 100 IDs per
+page), under the existing request/rate budgets. Inaccessible nodes retain null
+details; retryable failures retain the prior good publication. Old saved items
+read with explicit null fields without database rewrites or upstream requests.
+The additions can change content-derived snapshot hashes but do not change
+immutable factory publication/observation IDs.
 
 `/factory` exposes `data.rate` as null or
 `{remaining,resetAt,resource,observedAt}` for GitHub's last saved rate observation.

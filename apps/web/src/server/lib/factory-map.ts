@@ -7,6 +7,7 @@ import {
 	type FactoryRepo,
 	type FactoryStreamName,
 } from "../../lib/factory-types";
+import { prState } from "../../lib/pull-request";
 
 export type GithubObject = Record<string, unknown>;
 export function object(value: unknown): GithubObject {
@@ -96,6 +97,7 @@ export function mapFactoryEvents(stream: FactoryStreamName, data: GithubObject[]
 				event.state = "committed";
 			}
 			if (stream === "prs") {
+				Object.assign(event, prState(r));
 				event.state = event.mergedAt ? "merged" : event.state;
 				event.draft = r.draft === true;
 			}

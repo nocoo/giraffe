@@ -6,6 +6,7 @@ import type {
 	FactoryStreamName,
 } from "../../lib/factory-types";
 import { FACTORY_STREAMS } from "../../lib/factory-types";
+import { prSnapshot, prState } from "../../lib/pull-request";
 import { snapshotFreshness } from "../../lib/snapshot-freshness";
 import type { Db } from "./db/d1";
 import { publishedFactory } from "./db/factory-runs";
@@ -43,6 +44,7 @@ export async function observationEnvelope(
 	publicationId: string | null = null,
 	version?: string,
 ) {
+	data = prSnapshot(data);
 	return {
 		account_id: account,
 		data,
@@ -224,6 +226,9 @@ export async function readFactoryResource(db: Db, account: string, name: string,
 		`factory:${repo.name}:${stream}`,
 		{
 			...data,
+			...(stream === "prs"
+				? { items: data.items.map((item) => ({ ...item, ...prState(item) })) }
+				: {}),
 			...(stream === "dependencies"
 				? dependencyEvidence(data.items, [...(repo.manifests ?? []), ...(data.manifests ?? [])])
 				: {}),

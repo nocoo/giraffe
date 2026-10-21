@@ -264,6 +264,14 @@ unknown, never proof of success. See the [exact CI contract](../../docs/api.md#s
 The `daily` histogram counts completed non-bot runs across all branches; it is not
 a workflow/repository health verdict.
 
+PR items on account `/prs`, repository `/repos/:owner/:name/prs` and factory
+`/factory/repos/:owner/:name/prs` share `mergeable:boolean|null`,
+`mergeStateStatus:string|null`, and
+`checks:{state:SUCCESS|FAILURE|PENDING|ERROR|EXPECTED|null}`. The rollup is from
+the latest head commit, not inferred from Actions or reviews. Old/unavailable
+evidence is null; never treat it as mergeable or passing checks. See the
+[PR contract](../../docs/api.md#pr-merge-and-checks-state).
+
 ## Records, reports and jobs
 
 `C` means exactly `records`, `reports` or `jobs`; every row is generic stored data.
