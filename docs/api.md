@@ -747,6 +747,8 @@ repo?, metadataAt? }`. Envelope `source.kind` is `factory`, `source.publicationI
 identifies the publication, while `sourceVersion` identifies the immutable
 repository observation; mixed publications can contain older repository versions.
 
+#### Dependency metadata and summaries
+
 For `dependencies`, unknown `at`, `createdAt` and `author` are `null`, not empty
 strings. Observation time is not a package creation time. Own package identities
 are not dependency items: `manifests:[{name,version,path,url}]` retains them
@@ -772,6 +774,8 @@ when its label matches an own package name. Names are never guessed from reposit
 names or workspace directory paths. Collection still reads only the pinned root
 manifest and named workflow/config files; it does not newly discover workspace
 manifests or transitive dependencies.
+
+#### Workflow dependency parsing and identity
 
 Workflow dependency IDs use `B = <workflow-path>:<uses-target>`, for example
 `.github/workflows/ci.yml:nocoo/base-ci/.github/workflows/test-job.yml`.
