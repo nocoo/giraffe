@@ -10,10 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Replace the analysis page's 5,000-row report traversal with a dedicated browser projection: newest three rows per exact `(payload.scope, row.repository, payload.domain)`, ordered by the actual `generatedAt` instant descending, then ID descending. Use indexed key seeks and hydrate only selected payloads in one read-only query, preserving generic machine list pagination and every historical row.
+- Derive factory freshness from enabled published repositories instead of the whole catalog, consistently across browser factory reads, machine `/factory` and `/sources`. Incomplete publication inventory sets machine `truncated:true`. This fixes the reported 126/1 total/missing caused by non-owned `chaconnewu/wuyu-nltk1`, the September 24 oldest time from archived/statistics-disabled `hermes-on-herdr`, and 47 legacy archived/fork entries dated September 29; these are reported production symptoms, not measurements from this local run.
 
 ### Migration and Compatibility
 
 - Add `0015_analysis_reports.sql`, a repeatable partial expression index without a table rebuild or payload rewrite; apply it before deploying the reader and retain it on code rollback. UI candidate selection changes from all historical reports to the newest three rows per key across all statuses; current-source preference and strict validation apply only within that set. The separate `grok-bot-run` record-list ceiling remains unchanged. No new dependencies or automatic cleanup.
+
+### Breaking Changes
+
+- Account factory freshness: whole selected catalog -> enabled published repositories; absent/invalid observations within that set remain missing. Incomplete inventory previously could expose `truncated:false` -> now `true`. Machine list membership, publication versions and evidence windows do not change. Composite `contentVersion` adds enabled published identities and inventory truncation alongside corrected total/missing, so consumers must recompute affected account-factory reports.
 
 ## v0.17.0 - 2026-10-21
 

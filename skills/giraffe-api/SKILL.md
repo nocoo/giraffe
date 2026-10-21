@@ -218,9 +218,14 @@ access loss during pagination remain failures, not expected absence.
   new catalog repos without proven observations count as missing. `fetchedAt` is
   the newest selected time, not a guarantee that every repo is current. `/sources`
   account entries use the same projection.
-- Factory freshness counts selected catalog repos, including missing publications,
-  and uses only immutable repository observation times. Inventory counters remain
-  historical collection metadata. Default/`scope=all` preserves the saved account
+- Factory freshness counts enabled published repos still in the selected catalog,
+  not non-owned/catalog-only or statistics-disabled archived/fork entries. Missing
+  valid observation times within this set still count as missing. Machine lists
+  remain statistics-unfiltered. `/factory` and `/sources`'s `account:factory` agree
+  and return `truncated:true` for incomplete publication inventory, independently
+  of missing counts. Their composite content hash includes enabled published
+  identities, total/missing and inventory truncation; versions/windows stay intact.
+  Inventory counters remain historical metadata. Default/`scope=all` preserves the saved account
   calendar's exact 90 `days[]`, totals, status and `contributionObservation`.
   Only `scope=starred` excludes the unprojectable calendar (`contribution:null`,
   `contributionExcluded:true`, `contributionStatus:"unavailable"`, no provenance).

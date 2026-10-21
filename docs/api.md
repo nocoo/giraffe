@@ -244,11 +244,19 @@ the newest selected observation; neither implies that all data is that fresh. Ch
 `oldestAt` and `missing` before treating the response as current. This projection is
 shared with account entries in `/sources` and never refreshes data on GET.
 
-Factory freshness counts selected catalog repositories, including entries absent
-from the publication. Only immutable repository `observation.refreshedAt` supplies
-their time; absent/invalid observations count as missing. Its `fetchedAt` is the
-latest such observation, never the publication clock. Inventory `total`, `scanned`
-and `pages` remain historical collection metadata, not projected repository counts.
+Factory freshness counts `factoryObserved(publication, policy)`: published
+repositories still in the selected catalog with statistics enabled. The publication
+already excludes non-owned and effective-mirror repositories; disabled archived/fork
+entries do not enter the denominator. An enabled published repository without a
+valid `observation.refreshedAt` counts as missing. A catalog-only repository does not.
+This rule is shared by browser factory freshness, machine `/factory` and
+`/sources`'s `account:factory`. Machine repository lists remain unfiltered by
+statistics; this is a freshness-denominator rule, not a change to list selection.
+Machine `/factory` and `account:factory` expose `truncated:true` when
+`publication.inventory.complete !== true`, even when `freshness.missing` is zero.
+`fetchedAt` is the latest eligible immutable observation, never the publication
+clock. Inventory `total`, `scanned` and `pages` remain historical collection
+metadata, not projected repository counts.
 Default/`scope=all` factory reads preserve the saved account-wide contribution
 calendar exactly: all 90 `contribution.days[]` entries, totals, status and
 `contributionObservation` provenance. Repository/catalog/statistics filtering does
@@ -333,7 +341,7 @@ An existing input without a stored hash makes the composite null.
 | --- | --- |
 | Account repos/issues/PRs and other projected lists | Catalog and aggregate snapshot hashes, plus hashes of the complete repository pages actually selected to replace aggregate rows; selected repository names, completeness, freshness `total`/`missing` and truncation. Repo catalogs also include local starred/statistics-enabled flags. |
 | Account CI | Catalog hash and selected repositories' latest saved `actions`, `releases`, `details` hashes, keyed by lowercase repository source identity; missing rows use `"missing"`; derived freshness `total`/`missing`. Refresh-clock-dependent verdicts, ages and histograms are not hashed. |
-| Account factory | Saved publication and catalog hashes, selected repository names, scope and derived freshness `total`/`missing`. |
+| Account factory | Saved publication and catalog hashes, selected catalog repository names, enabled published repository identities (`observed`), scope, derived freshness `total`/`missing` and inventory-derived `truncated`. |
 | Contributions | Saved publication hash and resolved inclusive `since`/`until` dates. |
 | Derived insights | Null; use the unchanged full `sourceVersion`. |
 

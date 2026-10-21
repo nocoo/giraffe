@@ -22,6 +22,7 @@ import { ApiError } from "./errors";
 import { streamKey } from "./factory-collect";
 import {
 	factoryFreshness,
+	factoryObserved,
 	type Policy,
 	projectSnapshot,
 	repoPolicy,
@@ -110,7 +111,7 @@ export function ciContent(
 }
 
 export function factoryContent(snapshot: FactorySnapshot, policy: Policy) {
-	const freshness = factoryFreshness(snapshot, policy, false);
+	const freshness = factoryFreshness(snapshot, policy);
 	return composeContent(
 		{
 			publication: storedContent(snapshot)?.hash ?? null,
@@ -118,9 +119,11 @@ export function factoryContent(snapshot: FactorySnapshot, policy: Policy) {
 		},
 		{
 			repositories: policy.repos.map((repo) => repo.name_with_owner),
+			observed: factoryObserved(snapshot, policy).map((repo) => repo.name),
 			scope: policy.scope,
 			total: freshness.total,
 			missing: freshness.missing,
+			truncated: snapshot.inventory.complete !== true,
 		},
 	);
 }
@@ -199,8 +202,13 @@ export function projectCiObservation(
 
 export function projectFactoryObservation(snapshot: FactorySnapshot, policy: Policy) {
 	const projected = statisticsFactory(snapshot, policy, false);
-	const freshness = factoryFreshness(projected, policy, false);
-	return { ...projected, fetched_at: freshness.latestAt ?? "", freshness };
+	const freshness = factoryFreshness(projected, policy);
+	return {
+		...projected,
+		fetched_at: freshness.latestAt ?? "",
+		freshness,
+		truncated: projected.inventory.complete !== true,
+	};
 }
 
 export async function readObservation(

@@ -993,3 +993,12 @@ missing and unparseable values to null before indexed date evaluation, retaining
 the rows for normal client validation. Indexing a loosely validated JSON field
 must preserve its entire existing write domain, not only valid consumer examples;
 test malformed legacy rows during both migration and subsequent generic writes.
+
+## 2026-10-21 - Include fixture overrides in freshness expectations
+
+While updating the factory source regression, an initial expected denominator of
+114 excluded the fixture's fork/archive defaults but overlooked its explicit
+statistics-disabled overrides. The regression failed before commit; inspecting
+the complete fixture established 103 eligible observations. Derive expectations
+from all declared selection inputs, including settings seeded later in a fixture,
+rather than treating its catalog declaration as the entire policy.

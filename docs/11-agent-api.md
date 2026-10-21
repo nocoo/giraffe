@@ -142,9 +142,17 @@ that supplied retained data; baseline data must remain visible in `oldestAt`.
 New catalog entries without proven baseline coverage or a saved observation count
 as missing. Top-level `fetchedAt` is the newest selected observation, not proof of
 uniform freshness. Source-index account entries use the same projection.
-Factory freshness likewise counts the selected catalog, using only immutable
-per-repository observation times and counting absent publications/observations as
-missing. Publication inventory counters remain historical collection metadata.
+Factory freshness instead counts enabled published repositories in the selected
+catalog (`factoryObserved`), not the whole catalog. Non-owned/catalog-only entries
+and statistics-disabled archived/fork entries do not inflate missing/oldest times.
+An eligible published repository without a valid immutable observation time still
+counts as missing. Machine `/factory` and `/sources`'s `account:factory` agree;
+both report `truncated:true` when publication inventory is not complete. Machine
+repository list membership remains statistics-unfiltered. The account factory
+content hash includes enabled published identities, freshness total/missing and
+inventory truncation, so changing enabled identities invalidates it even when
+counts stay equal. Publication versions/windows and stored rows are unchanged;
+inventory counters remain historical collection metadata.
 Default/`scope=all` preserves the exact saved 90-day account contribution calendar,
 status and provenance, independently of repository filtering. Only `scope=starred`
 excludes it (`contribution:null`, `contributionExcluded:true`,

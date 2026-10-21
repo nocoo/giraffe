@@ -396,13 +396,12 @@ export function statisticsFactory(
 	};
 }
 
-export function factoryFreshness(snap: FactorySnapshot, policy: Policy, statisticsFilter = true) {
-	const times = new Map(
-		snap.repos.map((repo) => [repo.name.toLowerCase(), repo.observation?.refreshedAt]),
-	);
+export function factoryObserved(publication: FactorySnapshot, policy: Policy) {
+	return publication.repos.filter((repo) => policy.enabled(repo.name));
+}
+
+export function factoryFreshness(snap: FactorySnapshot, policy: Policy) {
 	return snapshotFreshness(
-		policy.repos
-			.filter((repo) => !statisticsFilter || policy.enabled(repo.name_with_owner))
-			.map((repo) => times.get(repo.name_with_owner.toLowerCase())),
+		factoryObserved(snap, policy).map((repo) => repo.observation?.refreshedAt),
 	);
 }
