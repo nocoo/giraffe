@@ -126,6 +126,16 @@ function skipSoft(err: unknown): boolean {
 	return err instanceof ApiError && (err.code === "github_forbidden" || err.code === "not_found");
 }
 
+function isRecordList(
+	value: unknown,
+	nullable = false,
+): value is (Record<string, unknown> | null)[] {
+	return (
+		Array.isArray(value) &&
+		value.every((row) => (row === null ? nullable : typeof row === "object" && !Array.isArray(row)))
+	);
+}
+
 function exceedsBudget(payload: Collected, budget: number): boolean {
 	return utf8Bytes(JSON.stringify(payload)) > budget;
 }
@@ -173,12 +183,15 @@ async function searchList(
 						throw new ApiError(404, "not_found", "github not found");
 					throw new ApiError(403, "github_forbidden", "github forbidden");
 				}
-				if (!Array.isArray(search?.nodes) || typeof search.pageInfo?.hasNextPage !== "boolean") {
+				if (
+					!isRecordList(search?.nodes, true) ||
+					typeof search.pageInfo?.hasNextPage !== "boolean"
+				) {
 					truncated = true;
 					stop = true;
 					break;
 				}
-				const nodes = search.nodes;
+				const nodes = search.nodes.filter((node) => node !== null);
 				items.push(...nodes);
 				groupCount += nodes.length;
 				const staged = isPr
@@ -265,14 +278,11 @@ export async function collectRepos(
 				  }
 				| undefined;
 			const conn = viewer?.repositories;
-			if (!Array.isArray(conn?.nodes) || typeof conn.pageInfo?.hasNextPage !== "boolean") {
+			if (!isRecordList(conn?.nodes, true) || typeof conn.pageInfo?.hasNextPage !== "boolean") {
 				truncated = true;
 				break;
 			}
-			const page = conn.nodes.filter((node): node is Record<string, unknown> =>
-				Boolean(node && typeof node === "object"),
-			);
-			nodes.push(...page);
+			nodes.push(...conn.nodes.filter((node) => node !== null));
 			if (gh.graphqlErrors.length > 0) {
 				truncated = true;
 			}
@@ -367,7 +377,7 @@ async function collectAlerts(
 					break;
 				}
 				if (
-					!Array.isArray(repo?.vulnerabilityAlerts?.nodes) ||
+					!isRecordList(repo?.vulnerabilityAlerts?.nodes, true) ||
 					typeof repo.vulnerabilityAlerts.pageInfo?.hasNextPage !== "boolean"
 				) {
 					truncated = true;
@@ -375,7 +385,7 @@ async function collectAlerts(
 					break;
 				}
 				got = true;
-				const nodes = repo.vulnerabilityAlerts?.nodes ?? [];
+				const nodes = repo.vulnerabilityAlerts.nodes.filter((node) => node !== null);
 				dependabot += nodes.length;
 				items.push(...mapDependabotAlerts(full, nodes));
 				if (
@@ -450,7 +460,7 @@ async function collectAlerts(
 				`/repos/${owner}/${name}/code-scanning/alerts?state=open&per_page=100`,
 			);
 			const body = (await res.json()) as unknown;
-			if (!Array.isArray(body)) {
+			if (!isRecordList(body)) {
 				truncated = true;
 				break;
 			}
@@ -675,7 +685,7 @@ async function collectRestList(
 					: body && typeof body === "object"
 						? (body as Record<string, unknown>)[responseKey]
 						: null;
-			if (!Array.isArray(items)) {
+			if (!isRecordList(items)) {
 				truncated = true;
 				break;
 			}

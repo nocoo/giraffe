@@ -721,3 +721,7 @@ other malformed fixture responses, not mistake an unrelated failure for denial.
 The same boundary check found that the shared REST list helper accepted either an
 array or an Actions envelope for every endpoint. Require the endpoint's actual
 container so a wrong-but-empty JSON shape cannot erase evidence as a successful zero.
+The final row-shape pass reproduced the same false-zero outcome after invalid list
+elements were silently filtered. Validate record elements before filtering or
+mapping; null REST rows, primitives and nested arrays must make collection
+incomplete. Legitimate empty lists and nullable optional record fields remain valid.

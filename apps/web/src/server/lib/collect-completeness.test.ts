@@ -2,6 +2,30 @@ import { expect, it } from "vitest";
 import { github } from "../../../../../tests/fixtures/factory";
 import { collectKind, collectRepos } from "./collect";
 
+it.each([null, 7, [], false, "invalid"])("rejects invalid REST list element %j", async (row) => {
+	expect(
+		await collectKind(
+			github(() => Response.json([row])),
+			"test",
+			"repo:a/b:contributors",
+			[],
+		),
+	).toMatchObject({ truncated: true });
+});
+
+it("keeps empty lists and records with nullable optional metadata complete", async () => {
+	for (const rows of [[], [{ login: "a", contributions: 1, avatar_url: null }]]) {
+		const result = await collectKind(
+			github(() => Response.json(rows)),
+			"test",
+			"repo:a/b:contributors",
+			[],
+		);
+		expect(result.truncated).toBe(false);
+		expect(result.contributors).toHaveLength(rows.length);
+	}
+});
+
 it.each(["issues", "repo:a/b:issues", "repo:a/b:prs", "repo:a/b:security"])(
 	"rejects non-string %s continuation before accepting a later terminal page",
 	async (kind) => {

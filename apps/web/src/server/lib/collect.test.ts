@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { github } from "../../../../../tests/fixtures/factory";
 import {
 	clampToBudget,
 	collectKind,
@@ -166,17 +167,21 @@ describe("collectRepos", () => {
 		expect(out.truncated).toBe(false);
 		expect((out.repos as unknown[]).length).toBe(2);
 		expect(page).toBe(2);
-		const withNull = client({
-			graphql: () => ({
-				viewer: {
-					repositories: {
-						nodes: [null as unknown as Record<string, unknown>, { nameWithOwner: "o/c" }],
-						pageInfo: { hasNextPage: false },
+		const withNull = github(() =>
+			Response.json({
+				data: {
+					viewer: {
+						repositories: {
+							nodes: [null, { nameWithOwner: "o/c" }],
+							pageInfo: { hasNextPage: false },
+						},
 					},
 				},
 			}),
-		});
-		expect(((await collectRepos(withNull, "tok")).repos as unknown[]).length).toBe(1);
+		);
+		const nullable = await collectRepos(withNull, "tok");
+		expect(nullable.truncated).toBe(false);
+		expect(nullable.repos).toHaveLength(1);
 		const soft = client({
 			graphql: () => ({
 				viewer: {

@@ -682,6 +682,11 @@ only absence of a next relation proves the list has ended.
 REST list containers must match the endpoint: Actions requires `workflow_runs`,
 while releases, contributors and notifications require arrays. A different JSON
 container is incomplete even when empty.
+List elements must be records before filtering/mapping; invalid elements cannot
+be silently dropped to manufacture a successful empty observation. Legitimate
+empty lists and nullable optional record fields remain valid.
+Legal GraphQL null nodes remain supported; this is not
+full validation of optional metadata fields.
 Whole-source first-page denial is classified identically for global and repository
 Issues/PR search, whether returned as HTTP or GraphQL access errors. Derived
 Insights retain prior data and become unavailable when every unsatisfied required

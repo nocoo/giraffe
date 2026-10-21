@@ -281,6 +281,109 @@ it("publishes partial when a real page failure makes the run partial", async () 
 	expect((await publishedFactory(createDb(env.DB), snap.account_id))?.status).toBe("partial");
 });
 
+it.each([
+	"repos",
+	"issues",
+	"prs",
+	"actions",
+	"releases",
+	"contributors",
+	"notifications",
+	"security",
+])("rejects invalid %s list elements instead of publishing successful zero", async (resource) => {
+	const env = await setup(
+		resource === "repos" ? "catalog" : "refresh",
+		resource === "notifications" ? { scope: "all" } : { scope: "selected", repos: ["nocoo/app"] },
+	);
+	const db = createDb(env.DB);
+	const kind = ["repos", "notifications"].includes(resource)
+		? resource
+		: `repo:nocoo/app:${resource}`;
+	const old = {
+		truncated: false,
+		fetched_at: "2025-01-01T00:00:00.000Z",
+		...(resource === "security"
+			? { dependabot_open: 7, code_scanning_open: 2 }
+			: {
+					[resource === "actions" ? "runs" : resource === "prs" ? "pull_requests" : resource]: [
+						{ name_with_owner: "nocoo/app", id: 9001, number: 9001, login: "retained" },
+					],
+				}),
+	};
+	await db.batch(replaceSnapshotStmts(db, snap.account_id, kind, old, old.fetched_at));
+	const base = vi.mocked(fetch).getMockImplementation();
+	if (!base) throw new Error("fixture");
+	let injected = 0;
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async (url: string, init: RequestInit) => {
+			const query = String(init?.body);
+			if (query.includes("contributionsCollection"))
+				return Response.json({
+					data: { user: null },
+					errors: [{ type: "FORBIDDEN", path: ["user"] }],
+				});
+			if (resource === "repos" && query.includes("ownerAffiliations"))
+				return Response.json({
+					data: {
+						viewer: {
+							login: "nocoo",
+							repositories: { totalCount: 1, nodes: [rawRepo], pageInfo: { hasNextPage: false } },
+						},
+					},
+				});
+			if (resource === "repos" && query.includes("viewer")) {
+				injected++;
+				return Response.json({
+					data: { viewer: { repositories: { nodes: [7], pageInfo: { hasNextPage: false } } } },
+				});
+			}
+			if (
+				["issues", "prs"].includes(resource) &&
+				query.includes(`is:${resource === "prs" ? "pr" : "issue"}`)
+			) {
+				injected++;
+				return Response.json({
+					data: { search: { nodes: [7], issueCount: 1, pageInfo: { hasNextPage: false } } },
+				});
+			}
+			const target = new URL(url);
+			const suffix =
+				resource === "actions"
+					? "/actions/runs"
+					: resource === "security"
+						? "/code-scanning/alerts"
+						: `/${resource}`;
+			if (
+				!["repos", "issues", "prs"].includes(resource) &&
+				target.pathname.endsWith(suffix) &&
+				!target.searchParams.has("created") &&
+				!target.searchParams.has("page")
+			) {
+				injected++;
+				return Response.json(
+					resource === "actions" ? { total_count: 1, workflow_runs: [null] } : [null],
+				);
+			}
+			return base(url, init);
+		}),
+	);
+	const run = await drive(env);
+	expect(injected).toBe(1);
+	expect(run?.steps.find((step) => step.resource === kind)).toMatchObject({
+		status: "failed",
+		error: "snapshot_incomplete",
+		attempts: 1,
+	});
+	expect(run?.status).toBe("partial");
+	expect(await publishedFactory(db, snap.account_id)).toMatchObject({
+		runId: "r1",
+		status: "partial",
+	});
+	expect((await listRuns(db, snap.account_id))[0]?.counts.failed).toBeGreaterThan(0);
+	expect(await readSnapshot(db, snap.account_id, kind)).toEqual(old);
+});
+
 it.each(["issues", "prs"] as const)(
 	"fails malformed %s search through the executor without replacing saved evidence",
 	async (resource) => {
