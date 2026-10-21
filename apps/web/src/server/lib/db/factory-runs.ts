@@ -7,6 +7,7 @@ import {
 } from "../../../lib/factory-run";
 import type { FactorySnapshot } from "../../../lib/factory-types";
 import { ApiError } from "../errors";
+import { RUN_DEADLINE_SQL, runDeadlineAt, timedOutRun } from "../factory-timeout";
 import type { Db } from "./d1";
 import { readSnapshot } from "./snapshots";
 
@@ -90,6 +91,8 @@ export async function repoStates(db: Db, account: string): Promise<RepoRefreshSt
 	return rows.results.map((r) => JSON.parse(r.payload) as RepoRefreshState);
 }
 export async function startRun(db: Db, run: FactoryRun): Promise<FactoryRun> {
+	await expireRuns(db, run.startedAt, run.account_id);
+	run.deadlineAt = runDeadlineAt(run);
 	const old = await db
 		.prepare("SELECT payload FROM factory_runs WHERE account_id=? AND request_key=?")
 		.bind(run.account_id, run.requestKey)
@@ -98,7 +101,7 @@ export async function startRun(db: Db, run: FactoryRun): Promise<FactoryRun> {
 	const insert = db
 		.prepare(`INSERT OR IGNORE INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at)
  SELECT ?,?,?,'running',?,?,?,? WHERE NOT EXISTS(SELECT 1 FROM factory_runs WHERE account_id=? AND status IN ('running','paused'))
- AND NOT EXISTS(SELECT 1 FROM factory_runs WHERE account_id=? AND created_at>?)
+ AND NOT EXISTS(SELECT 1 FROM factory_runs WHERE account_id=? AND created_at>? AND COALESCE(json_extract(payload,'$.error'),'') NOT IN ('scheduled_slots_missed','no_starred_repositories'))
  AND NOT EXISTS(SELECT 1 FROM factory_state WHERE account_id=? AND next_at>?)
  AND NOT EXISTS(SELECT 1 FROM snapshots WHERE account_id=? AND kind='factory:lock' AND fetched_at>?)
  AND (? IS NULL OR EXISTS(SELECT 1 FROM (SELECT * FROM refresh_schedules UNION ALL SELECT * FROM catalog_refresh_schedules) WHERE account_id=? AND kind=? AND next_at=? AND enabled=1))`)
@@ -157,20 +160,21 @@ export async function startRun(db: Db, run: FactoryRun): Promise<FactoryRun> {
 	return run;
 }
 export async function claimRun(db: Db, id: string, now: string): Promise<RunLease | null> {
+	await expireRuns(db, now, "", id);
 	const token = crypto.randomUUID();
 	const until = new Date(Date.parse(now) + RUN_LEASE_MS).toISOString();
 	const row = await db
 		.prepare(
-			"UPDATE factory_runs SET lease_token=?,lease_until=?,updated_at=?,payload=json_set(payload,'$.updatedAt',?,'$.version',version+1),version=version+1 WHERE id=? AND status='running' AND next_at<=? AND (lease_until IS NULL OR lease_until<=?) RETURNING payload,version",
+			`UPDATE factory_runs SET lease_token=?,lease_until=MIN(?,${RUN_DEADLINE_SQL}),updated_at=?,payload=json_set(payload,'$.updatedAt',?,'$.deadlineAt',${RUN_DEADLINE_SQL},'$.version',version+1),version=version+1 WHERE id=? AND status='running' AND next_at<=? AND (lease_until IS NULL OR lease_until<=?) AND ${RUN_DEADLINE_SQL}>? RETURNING payload,version,lease_until`,
 		)
-		.bind(token, until, now, now, id, now, now)
+		.bind(token, until, now, now, id, now, now, now)
 		.first<RunRow>();
 	return row
 		? {
 				run: JSON.parse(row.payload) as FactoryRun,
 				token,
 				version: row.version,
-				leaseUntil: until,
+				leaseUntil: String(row.lease_until),
 			}
 		: null;
 }
@@ -182,11 +186,10 @@ export function fenced(
 	values: unknown[] = [],
 ): D1PreparedStatement {
 	lease.fenceAt = lease.fenceAt && lease.fenceAt > now ? lease.fenceAt : now;
-	const guard =
-		"EXISTS(SELECT 1 FROM factory_runs WHERE id=? AND lease_token=? AND version=? AND lease_until>? AND status='running')";
+	const guard = `EXISTS(SELECT 1 FROM factory_runs WHERE id=? AND lease_token=? AND version=? AND lease_until>? AND ${RUN_DEADLINE_SQL}>? AND status='running')`;
 	return db
 		.prepare(sql.replace("$guard", guard))
-		.bind(...values, lease.run.id, lease.token, lease.version, now);
+		.bind(...values, lease.run.id, lease.token, lease.version, now, now);
 }
 export async function saveRun(
 	db: Db,
@@ -195,12 +198,13 @@ export async function saveRun(
 	now: string,
 ): Promise<boolean> {
 	const run = lease.run;
+	await expireRuns(db, now, run.account_id, run.id);
+	run.deadlineAt = runDeadlineAt(run);
 	run.updatedAt = now;
 	run.version = lease.version + 1;
 	const expiresAfter = lease.fenceAt && lease.fenceAt > now ? lease.fenceAt : now;
-	const validSql =
-		"SELECT 1 FROM factory_runs WHERE id=? AND lease_token=? AND version=? AND lease_until>? AND status='running'";
-	const args = [run.id, lease.token, lease.version, expiresAfter];
+	const validSql = `SELECT 1 FROM factory_runs WHERE id=? AND lease_token=? AND version=? AND lease_until>? AND ${RUN_DEADLINE_SQL}>? AND status='running'`;
+	const args = [run.id, lease.token, lease.version, expiresAfter, expiresAfter];
 	try {
 		const result = await db.batch([
 			// A failed final CAS must not leave earlier writes committed. Abort the transaction first.
@@ -233,6 +237,7 @@ export async function controlRun(
 	action: "pause" | "resume" | "cancel",
 	now: string,
 ): Promise<FactoryRun> {
+	await expireRuns(db, now, account, id);
 	const found = await getRun(db, account, id);
 	if (!found) throw new ApiError(404, "not_found", "run not found");
 	const run = found.run;
@@ -308,6 +313,7 @@ export async function controlRun(
 	return { ...run, version: run.version + 1 };
 }
 export async function dueRuns(db: Db, now: string) {
+	await expireRuns(db, now);
 	const result = await db
 		.prepare(
 			"SELECT id FROM factory_runs WHERE status='running' AND next_at<=? AND (lease_until IS NULL OR lease_until<=?) ORDER BY next_at LIMIT 5",
@@ -315,4 +321,43 @@ export async function dueRuns(db: Db, now: string) {
 		.bind(now, now)
 		.all<{ id: string }>();
 	return result.results.map((r) => r.id);
+}
+
+export async function expireRuns(db: Db, now: string, account = "", id = ""): Promise<void> {
+	const rows = await db
+		.prepare(
+			`SELECT payload,version FROM factory_runs WHERE status IN ('running','paused') AND ${RUN_DEADLINE_SQL}<=? AND (?='' OR account_id=?) AND (?='' OR id=?) ORDER BY updated_at LIMIT 10`,
+		)
+		.bind(now, account, account, id, id)
+		.all<RunRow>();
+	for (const row of rows.results) {
+		const run = timedOutRun(JSON.parse(row.payload) as FactoryRun, now);
+		if (!run) continue;
+		run.version = row.version + 1;
+		const writes: D1PreparedStatement[] = [];
+		if (run.schedule)
+			writes.push(
+				db
+					.prepare(
+						`UPDATE ${run.schedule.kind === "catalog" ? "catalog_refresh_schedules" : "refresh_schedules"} SET last_error='run_timed_out' WHERE account_id=? AND kind=? AND (last_run_id=? OR next_at=?) AND EXISTS(SELECT 1 FROM factory_runs WHERE id=? AND version=? AND status IN ('running','paused') AND ${RUN_DEADLINE_SQL}<=?)`,
+					)
+					.bind(
+						run.account_id,
+						run.schedule.kind,
+						run.id,
+						run.schedule.dueAt,
+						run.id,
+						row.version,
+						now,
+					),
+			);
+		writes.push(
+			db
+				.prepare(
+					`UPDATE factory_runs SET payload=?,status='failed',version=version+1,lease_token=NULL,lease_until=NULL,updated_at=? WHERE id=? AND version=? AND status IN ('running','paused') AND ${RUN_DEADLINE_SQL}<=?`,
+				)
+				.bind(JSON.stringify(run), now, run.id, row.version, now),
+		);
+		await db.batch(writes);
+	}
 }

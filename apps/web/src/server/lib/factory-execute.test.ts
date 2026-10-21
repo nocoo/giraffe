@@ -105,7 +105,10 @@ beforeEach(() =>
 		}),
 	),
 );
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+	vi.unstubAllGlobals();
+	vi.useRealTimers();
+});
 it("daily starred refresh publishes all default page sources without requiring old global lists", async () => {
 	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] }, true);
 	const run = await drive(env);
@@ -396,6 +399,8 @@ it("fences retirement against an expired lease and recovers on the next claim", 
 });
 
 it("continues queued collection work after retiring future cloud assessment steps", async () => {
+	vi.useFakeTimers({ toFake: ["Date"] });
+	vi.setSystemTime(now);
 	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] });
 	const send = vi.fn();
 	env.FACTORY_QUEUE = { send } as unknown as Queue;

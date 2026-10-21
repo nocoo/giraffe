@@ -56,6 +56,9 @@ export type FactoryRun = {
 	steps: FactoryRunStep[];
 	cursor: number;
 	status: RunStatus;
+	deadlineAt?: string;
+	error?: string;
+	missedSlots?: { firstDueAt: string; lastDueAt: string; count: number };
 	startedAt: string;
 	updatedAt: string;
 	finishedAt: string | null;

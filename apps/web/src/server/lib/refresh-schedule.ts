@@ -1,3 +1,4 @@
+import { type FactoryRun, makeRun } from "../../lib/factory-run";
 import {
 	defaultSchedule,
 	type RefreshSchedule,
@@ -6,7 +7,7 @@ import {
 } from "../../lib/refresh-schedule";
 import { getAccount } from "./db/accounts";
 import { createDb, type Db } from "./db/d1";
-import { catalogFactory } from "./db/factory-runs";
+import { catalogFactory, expireRuns } from "./db/factory-runs";
 import { ApiError } from "./errors";
 import { startRefresh } from "./factory-start";
 import { repoPolicy, statisticsFactory } from "./repo-statistics";
@@ -36,6 +37,102 @@ type ScheduleRow = {
 	last_run_id: string | null;
 	last_error: string | null;
 };
+type DueSchedule = ScheduleRow & { account_id: string };
+const scheduleTable = (kind: ScheduleKind) =>
+	kind === "catalog" ? "catalog_refresh_schedules" : "refresh_schedules";
+
+function skippedRun(row: DueSchedule, owner: string, now: string, error: string): FactoryRun {
+	const run = makeRun(
+		crypto.randomUUID(),
+		row.account_id,
+		owner,
+		`${row.kind}:${row.next_at}:skipped`,
+		row.kind === "catalog" ? "catalog" : "refresh",
+		[],
+		now,
+	);
+	return {
+		...run,
+		depth: row.kind === "weekly" ? "deep" : "quick",
+		trigger: row.kind === "weekly" ? "weekly" : "daily",
+		schedule: { kind: row.kind, dueAt: row.next_at },
+		steps: [],
+		status: "failed",
+		error,
+		finishedAt: now,
+	};
+}
+
+function skippedRunInsert(db: Db, row: DueSchedule, run: FactoryRun): D1PreparedStatement {
+	return db
+		.prepare(
+			`INSERT OR IGNORE INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) SELECT ?,?,?,'failed',?,?,?,? WHERE EXISTS(SELECT 1 FROM ${scheduleTable(row.kind)} WHERE account_id=? AND kind=? AND enabled=1 AND next_at=?)`,
+		)
+		.bind(
+			run.id,
+			row.account_id,
+			run.requestKey,
+			JSON.stringify(run),
+			run.startedAt,
+			run.startedAt,
+			run.startedAt,
+			row.account_id,
+			row.kind,
+			row.next_at,
+		);
+}
+
+async function coalesceMissedSlots(
+	db: Db,
+	row: DueSchedule,
+	owner: string,
+	now: string,
+): Promise<boolean> {
+	const period = (row.kind === "weekly" ? 7 : 1) * 86400_000;
+	const accepted = await db
+		.prepare("SELECT id FROM factory_runs WHERE account_id=? AND request_key=?")
+		.bind(row.account_id, `${row.kind}:${row.next_at}`)
+		.first<{ id: string }>();
+	if (accepted) {
+		const next = new Date(Date.parse(row.next_at) + period).toISOString();
+		const result = await db
+			.prepare(
+				`UPDATE ${scheduleTable(row.kind)} SET next_at=?,last_run_id=? WHERE account_id=? AND kind=? AND enabled=1 AND next_at=?`,
+			)
+			.bind(next, accepted.id, row.account_id, row.kind, row.next_at)
+			.run();
+		if (!result.meta.changes || next > now) return false;
+		row.next_at = next;
+	}
+	const count = Math.floor((Date.parse(now) - Date.parse(row.next_at)) / period);
+	if (count === 0) return true;
+	const latest = new Date(Date.parse(row.next_at) + count * period).toISOString();
+	const run = skippedRun(row, owner, now, "scheduled_slots_missed");
+	run.missedSlots = {
+		firstDueAt: row.next_at,
+		lastDueAt: new Date(Date.parse(latest) - period).toISOString(),
+		count,
+	};
+	const results = await db.batch([
+		skippedRunInsert(db, row, run),
+		db
+			.prepare(
+				`UPDATE ${scheduleTable(row.kind)} SET next_at=?,last_error='scheduled_slots_missed' WHERE account_id=? AND kind=? AND enabled=1 AND next_at=? AND EXISTS(SELECT 1 FROM factory_runs WHERE account_id=? AND request_key=? AND json_extract(payload,'$.missedSlots.lastDueAt')=?)`,
+			)
+			.bind(
+				latest,
+				row.account_id,
+				row.kind,
+				row.next_at,
+				row.account_id,
+				run.requestKey,
+				run.missedSlots.lastDueAt,
+			),
+	]);
+	if (!results[1]?.meta.changes) return false;
+	row.next_at = latest;
+	return true;
+}
 export async function readSchedules(db: Db, account: string): Promise<RefreshSchedule[]> {
 	const rows = await db
 		.prepare(
@@ -107,20 +204,23 @@ export async function enableDefaultSchedules(db: Db, account: string, now: strin
 	}
 }
 export async function scheduleRefreshes(raw: D1Database, now: string): Promise<void> {
+	await expireRuns(createDb(raw), now);
 	const due = await createDb(raw)
 		.prepare(
 			"SELECT * FROM (SELECT * FROM refresh_schedules UNION ALL SELECT * FROM catalog_refresh_schedules) WHERE enabled=1 AND next_at<=? ORDER BY next_at,kind DESC LIMIT 10",
 		)
 		.bind(now)
-		.all<ScheduleRow & { account_id: string }>();
+		.all<DueSchedule>();
 	for (const row of due.results) {
 		const db = createDb(raw);
 		let runId: string | null = null;
 		let error: string | null = null;
 		let advance = false;
+		let skipped: FactoryRun | null = null;
 		try {
 			const account = await getAccount(db, row.account_id);
 			if (!account) continue;
+			if (!(await coalesceMissedSlots(db, row, account.login, now))) continue;
 			let repos: string[] = [];
 			if (row.kind !== "catalog") {
 				const catalog = await catalogFactory(db, account.id);
@@ -165,6 +265,7 @@ export async function scheduleRefreshes(raw: D1Database, now: string): Promise<v
 			if (row.kind !== "catalog" && !repos.length) {
 				error = "no_starred_repositories";
 				advance = true;
+				skipped = skippedRun(row, account.login, now, error);
 			} else {
 				const run = await startRefresh(
 					db,
@@ -187,18 +288,18 @@ export async function scheduleRefreshes(raw: D1Database, now: string): Promise<v
 		} catch (e) {
 			error = e instanceof ApiError ? e.code : "internal_error";
 		}
-		await db
+		const update = db
 			.prepare(
-				`UPDATE ${row.kind === "catalog" ? "catalog_refresh_schedules" : "refresh_schedules"} SET next_at=?,last_run_id=COALESCE(?,last_run_id),last_error=? WHERE account_id=? AND kind=? AND enabled=1 AND next_at=?`,
+				`UPDATE ${scheduleTable(row.kind)} SET next_at=?,last_run_id=COALESCE(?,last_run_id),last_error=CASE WHEN last_error IN ('run_timed_out','scheduled_slots_missed') THEN last_error ELSE ? END WHERE account_id=? AND kind=? AND enabled=1 AND next_at=?`,
 			)
 			.bind(
 				advance ? nextScheduleAt(row.kind, row.time, row.weekday, now) : row.next_at,
-				runId,
+				runId ?? skipped?.id ?? null,
 				error,
 				row.account_id,
 				row.kind,
 				row.next_at,
-			)
-			.run();
+			);
+		await db.batch([...(skipped ? [skippedRunInsert(db, row, skipped)] : []), update]);
 	}
 }

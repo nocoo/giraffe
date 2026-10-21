@@ -1,6 +1,6 @@
 import type { Env } from "../env";
 import { createDb } from "./db/d1";
-import { dueRuns } from "./db/factory-runs";
+import { dueRuns, expireRuns } from "./db/factory-runs";
 import { executeRunPage } from "./factory-execute";
 import { pruneFactory } from "./factory-retention";
 import { scheduleRefreshes } from "./refresh-schedule";
@@ -22,6 +22,7 @@ export async function consumeFactory(batch: MessageBatch<unknown>, env: Env): Pr
 			continue;
 		}
 		try {
+			await expireRuns(createDb(env.DB), new Date().toISOString(), "", id);
 			const next = await executeRunPage(env, id);
 			if (next) await enqueueRun(env, id, next);
 			message.ack();
@@ -33,6 +34,7 @@ export async function consumeFactory(batch: MessageBatch<unknown>, env: Env): Pr
 /** D1 is the durable outbox: missing messages and expired leases are redispatched every minute. */
 export async function continueFactory(env: Env, scheduledTime: number): Promise<void> {
 	try {
+		await expireRuns(createDb(env.DB), new Date().toISOString());
 		await scheduleRefreshes(env.DB, new Date().toISOString());
 		const ids = await dueRuns(createDb(env.DB), new Date().toISOString());
 		for (const id of ids) await enqueueRun(env, id);
