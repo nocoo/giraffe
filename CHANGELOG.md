@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.17.0 - 2026-10-21
+
+### Added
+
+- Add read-time `contentVersion` to saved observation envelopes and every source-index entry, preserving full versions, immutable windows, read-only behavior and the five-query source reader. Canonical UTF-8 JSON uses recursively sorted keys and SHA-256; only explicit collection/request metadata paths are excluded. Missing or mismatched immutable streams expose null rather than a content proof.
+- Accept optional content hashes on strict analysis report sources. Direct reports remain current across refreshes with unchanged content and age from current source confirmation times; reports without hashes still compare full versions. Preserve completeness checks, 36-hour evidence freshness and independent 48-hour bot overdue status.
+
+### Docs
+
+- Clarify generic jobs do not execute analysis, recommend four account-sourced global reports for the default view, and document exact hashing, full-hash skip checks, ID-only prefixes and source identity mapping.
+- Document the strict `grok-bot-run` payload and revisioned full-replacement workflow, validation of non-completed analysis rows, explicit report deletion and the 5,000-row UI cap. Correct the distinction between generic server validation and strict reader validation: malformed rows raise errors but do not prevent valid cards from rendering.
+- Non-breaking: existing versions and valid reports remain supported; no new dependencies, lockfile changes, schema migration or automatic cleanup.
+
 ## v0.16.1 - 2026-10-21
 
 ### Fixed
