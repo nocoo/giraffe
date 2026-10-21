@@ -31,7 +31,7 @@ const ISSUE_SEARCH =
 const PR_SEARCH = `query($q:String!,$after:String){ search(query:$q, type:ISSUE, first:100, after:$after){ issueCount pageInfo{ hasNextPage endCursor } nodes{ __typename ... on PullRequest { number title url state createdAt updatedAt author{ login } isDraft reviewDecision additions deletions baseRefName headRefName repository{ nameWithOwner } ${PR_STATE_FIELDS} } } } }`;
 
 const ALERTS_QUERY =
-	"query($o:String!,$n:String!,$after:String){ repository(owner:$o,name:$n){ vulnerabilityAlerts(first:20, after:$after){ pageInfo{ hasNextPage endCursor } nodes{ id securityAdvisory{ summary permalink } securityVulnerability{ severity } } } } }";
+	"query($o:String!,$n:String!,$after:String){ repository(owner:$o,name:$n){ vulnerabilityAlerts(first:20, after:$after, states:OPEN){ pageInfo{ hasNextPage endCursor } nodes{ id securityAdvisory{ summary permalink } securityVulnerability{ severity } } } } }";
 
 export function utf8Bytes(text: string): number {
 	return new TextEncoder().encode(text).length;
