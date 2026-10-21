@@ -209,6 +209,68 @@ describe("scoped snapshot projections", () => {
 		});
 	});
 
+	it.each(["all", "starred"])(
+		"keeps incomplete issue counts conservative in %s insights",
+		async (scope) => {
+			const setup = await scopedSetup();
+			await setup.save(
+				"repos",
+				{
+					repos: ["owner/app", "owner/empty"].map((name_with_owner) => ({
+						name_with_owner,
+						open_issue_count: 90,
+						pushed_at: recentAt,
+					})),
+				},
+				recentAt,
+			);
+			await setup.save(
+				"issues",
+				{
+					issues: ["owner/app", "owner/empty"].map((name_with_owner) => ({
+						name_with_owner,
+						number: 1,
+					})),
+					truncated: true,
+				},
+				recentAt,
+			);
+			await setup.save("alerts", { items: [] }, recentAt);
+			await setup.save("insights", { insights: [] }, recentAt);
+			const read = async () => (await setup.request(`insights?scope=${scope}`)).json();
+			expect(await read()).toMatchObject({
+				truncated: true,
+				freshness: { total: 4, missing: 0 },
+				insights: [
+					{ name_with_owner: "owner/app", open_issue_count: 90, health: "watch" },
+					{ name_with_owner: "owner/empty", open_issue_count: 90, health: "watch" },
+				],
+			});
+			await setup.save("repo:owner/empty:issues", { issues: [] }, recentAt);
+			expect(await read()).toMatchObject({
+				truncated: true,
+				insights: [
+					{ name_with_owner: "owner/app", open_issue_count: 90, health: "watch" },
+					{ name_with_owner: "owner/empty", open_issue_count: 0, health: "strong" },
+				],
+			});
+			await setup.save("repo:owner/app:issues", { issues: [] }, recentAt);
+			expect(await read()).toMatchObject({
+				truncated: false,
+				insights: [{ open_issue_count: 0 }, { open_issue_count: 0 }],
+			});
+			await setup.save(
+				"repos",
+				{
+					repos: [{ name_with_owner: "owner/app", open_issue_count: 90, pushed_at: recentAt }],
+					truncated: true,
+				},
+				recentAt,
+			);
+			expect(await read()).toMatchObject({ truncated: true, freshness: { missing: 0 } });
+		},
+	);
+
 	it("rejects invalid scope and preserves direct detail access while an empty star set stays empty", async () => {
 		const setup = await scopedSetup();
 		await setup.save("issues", { issues: [{ name_with_owner: "owner/hidden" }] });

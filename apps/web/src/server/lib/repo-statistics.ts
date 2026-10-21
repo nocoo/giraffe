@@ -152,7 +152,7 @@ async function projectList(
 			: new Map<string, Record<string, unknown>>();
 	const times = new Map<string, string | null>();
 	const replacements = new Map<string, Record<string, unknown>[]>();
-	let incomplete = false;
+	const completeRepos = new Set<string>();
 	for (const [lower, name] of names) {
 		let at =
 			recorded.get(lower) ??
@@ -179,7 +179,7 @@ async function projectList(
 				snapshotItems(page ?? null, key).map((row) => ({ ...row, name_with_owner: name })),
 			);
 		}
-		incomplete ||= !covered;
+		if (covered) completeRepos.add(lower);
 		times.set(lower, at);
 	}
 	const emitted = new Set<string>();
@@ -193,7 +193,13 @@ async function projectList(
 	});
 	for (const [name, replacement] of replacements)
 		if (!emitted.has(name)) items.push(...replacement);
-	return { items, times, freshness: snapshotFreshness([...times.values()]), incomplete };
+	return {
+		items,
+		times,
+		freshness: snapshotFreshness([...times.values()]),
+		completeRepos,
+		incomplete: completeRepos.size < names.size,
+	};
 }
 
 /** Project immutable/raw snapshots at read time so settings apply immediately, even to old data. */
@@ -269,7 +275,7 @@ export async function projectSnapshot(
 			...buildInsights(
 				repos.items.map((r) => ({
 					name_with_owner: String(r.name_with_owner),
-					open_issue_count: issues.times.get(String(r.name_with_owner).toLowerCase())
+					open_issue_count: issues.completeRepos.has(String(r.name_with_owner).toLowerCase())
 						? (issueCounts.get(String(r.name_with_owner).toLowerCase()) ?? 0)
 						: Number(r.open_issue_count ?? 0),
 					pushed_at: typeof r.pushed_at === "string" ? r.pushed_at : null,
@@ -283,7 +289,8 @@ export async function projectSnapshot(
 				!complete(alerts) || security.freshness.missing > 0,
 			),
 			freshness,
-			truncated: (scope === "all" && snap.truncated === true) || freshness.missing > 0,
+			truncated:
+				(scope === "all" && snap.truncated === true) || repos.incomplete || issues.incomplete,
 		};
 		const preview = splitPages(kind, derived);
 		return { ...assemblePages(kind, preview.pages), truncated: preview.truncated };

@@ -615,6 +615,13 @@ separately from provenance; only complete baseline evidence or a complete replac
 page can clear the selected projection's incomplete flag. Include a same-time full
 page regression because equal timestamps do not imply equal coverage.
 
+The next review found that derived Insights still used timestamp presence as proof
+that an issue count was exhaustive. A partial list could replace a catalog count
+of 90 with one issue and incorrectly lower the health warning. Expose per-repository
+coverage to every derived consumer, retain catalog counts when issue coverage is
+incomplete, and propagate primary-source incompleteness independently of freshness.
+Test complete and incomplete repositories together in both all and starred scopes.
+
 ## 2026-10-21 - Resolve case aliases consistently across readers
 
 Case-insensitive catalog membership alone did not make stored snapshot keys

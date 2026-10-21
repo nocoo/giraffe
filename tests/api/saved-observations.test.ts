@@ -101,7 +101,7 @@ beforeAll(async () => {
 		is_archived: false,
 		is_fork: false,
 		pushed_at: baseline,
-		open_issue_count: 0,
+		open_issue_count: 90,
 	}));
 	const publication = factoryFixture();
 	const repo = publication.repos[0];
@@ -136,7 +136,7 @@ beforeAll(async () => {
 			snapshot(
 				kind,
 				{
-					truncated: kind === "alerts",
+					truncated: kind === "alerts" || kind === "issues",
 					[key]: [names[0], names[1], removed].map((name_with_owner, number) => ({
 						name_with_owner,
 						number,
@@ -252,6 +252,16 @@ it("excludes removed repositories from saved account observations without deleti
 	const partial = await browser("alerts?scope=starred");
 	expect(partial.status).toBe(200);
 	expect(await partial.json()).toMatchObject({ truncated: true, freshness: { missing: 0 } });
+	const insights = await browser("insights?scope=starred");
+	expect(insights.status).toBe(200);
+	expect(await insights.json()).toMatchObject({
+		truncated: true,
+		freshness: { missing: 0 },
+		insights: [
+			{ name_with_owner: "nocoo/recovered", open_issue_count: 90, health: "watch" },
+			{ name_with_owner: "nocoo/baseline", open_issue_count: 90, health: "watch" },
+		],
+	});
 	expect(
 		sql(`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`).map(
 			(statement) => statement.results,
