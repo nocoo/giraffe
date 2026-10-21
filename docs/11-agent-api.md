@@ -57,6 +57,11 @@ sources; `since` is an optimization, not a durable change cursor. Consumers must
 reconcile pending/failed work and periodically perform unfiltered scans. An empty
 filtered result does not prove that all sources have been analyzed.
 
+Every documented machine GET rejects unknown query keys with 400
+`validation_failed`, including identity, individual resources, settings and run
+lists. Repository pages and factory streams accept no query parameters; account
+observations accept only `scope`. Authentication and authorization run first.
+
 All account observation lists/aggregates and repository/factory source entries are
 intersected with the current saved catalog at read time, case-insensitively. Removed
 repositories do not leak through retained snapshots or publications; historical

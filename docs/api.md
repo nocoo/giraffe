@@ -106,6 +106,10 @@ It does not depend on the dashboard active account or browser activation filter.
 | `repository` | Optional `owner/name`, at most 200 characters, matching `[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+`; resolve to canonical catalog name, or 404. |
 
 Unknown query keys fail with 400; there is no scope, pagination or cursor.
+This strict-key rule applies to every documented machine GET: only that endpoint's
+listed query keys are accepted; endpoints without query parameters reject all
+keys. Errors use `{error:{code:"validation_failed",message}}`, after bearer,
+account and scope checks. Do not append cache-busters or a repository-level `scope`.
 Use URL encoding so `+` in offsets is not interpreted as a space:
 
 ```bash

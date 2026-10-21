@@ -145,6 +145,12 @@ no HTTP pagination or statistics filter. Repo/stream endpoints have no supported
 query parameters. Traffic/security/languages/contributors are readable but not
 listed in `/sources`. Open-item snapshots are not closed-event history.
 
+Every documented machine GET rejects unknown query keys with 400
+`validation_failed`, using the standard error envelope. This includes `/me`,
+individual records/reports/jobs, settings and refresh-run lists. Do not append
+cache-busters or `scope` to repository/stream requests. Bearer/account/scope
+authorization can fail before query validation.
+
 All these data endpoints, unlike `/sources`, return
 `{account_id, data, sourceVersion, fetchedAt, freshness, coverage, truncated,
 unavailable, source:{kind,resource,publicationId}, selection:{scope,statisticsFilter}}`.

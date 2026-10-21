@@ -141,6 +141,54 @@ it("enforces bearer, scopes and fixed account independently of dashboard activat
 	expect((await s.app.request("http://localhost/api/repos", {}, prod)).status).toBe(401);
 	expect((await s.app.request("http://localhost/api/tokens", {}, prod)).status).toBe(401);
 });
+it("rejects unknown query keys on every documented machine GET", async () => {
+	const s = await setup();
+	const paths = [
+		"/me",
+		...[
+			"sources",
+			"repos",
+			"issues",
+			"prs",
+			"ci",
+			"factory",
+			"settings",
+			"refresh-runs",
+			"repos/nocoo/app",
+			...[
+				"details",
+				"issues",
+				"prs",
+				"actions",
+				"releases",
+				"traffic",
+				"security",
+				"languages",
+				"contributors",
+			].map((resource) => `repos/nocoo/app/${resource}`),
+			...["commits", "issues", "prs", "actions", "releases", "alerts", "dependencies"].map(
+				(stream) => `factory/repos/nocoo/app/${stream}`,
+			),
+			...["records", "reports", "jobs"].flatMap((collection) => [
+				`agent/${collection}`,
+				`agent/${collection}/saved`,
+			]),
+		].map((path) => `${s.prefix}/${path}`),
+	];
+	for (const path of paths) {
+		const response = await s.call(`${path}?x=1`);
+		expect.soft(response.status, path).toBe(400);
+		expect.soft(await response.json(), path).toMatchObject({
+			error: { code: "validation_failed", message: expect.any(String) },
+		});
+	}
+	expect((await s.call("/me?x=1", "GET", undefined, null)).status).toBe(401);
+	expect((await s.call(`/accounts/${other}/repos?x=1`)).status).toBe(403);
+	for (const path of ["repos/nocoo/app", "factory/repos/nocoo/app/commits"])
+		expect((await s.call(`${s.prefix}/${path}?scope=all`)).status).toBe(400);
+	expect((await s.call(`${s.prefix}/repos?scope=all`)).status).toBe(200);
+	expect((await s.call(`${s.prefix}/repos?scope=all&scope=all`)).status).toBe(400);
+});
 it("performs all agent CRUD methods with validation and concurrency errors", async () => {
 	const s = await setup();
 	const path = `${s.prefix}/agent/reports`;
