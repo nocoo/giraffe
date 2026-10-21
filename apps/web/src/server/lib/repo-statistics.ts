@@ -214,10 +214,22 @@ async function projectList(
 			);
 		}
 		if (covered) completeRepos.add(lower);
-		if (kind === "alerts")
+		if (kind === "alerts") {
+			const features = at === null ? undefined : (source?.features as SecurityFeatures | undefined);
 			securitySources.push(
-				at === null ? undefined : (source?.features as SecurityFeatures | undefined),
+				features && source?.truncated === true
+					? (Object.fromEntries(
+							Object.entries(features).map(([name, feature]) => [
+								name,
+								{
+									...feature,
+									status: feature.status === "available" ? "partial" : feature.status,
+								},
+							]),
+						) as SecurityFeatures)
+					: features,
 			);
+		}
 		times.set(lower, at);
 	}
 	const emitted = new Set<string>();
