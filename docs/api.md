@@ -203,6 +203,31 @@ the Worker does not manually gzip JSON. See the measured
 [source performance and compression notes](12-source-performance.md), including
 the distinction between the strong application tag and possible edge transforms.
 
+#### Source request timing
+
+Authenticated `/sources` 200 and 304 responses include `Server-Timing` with fixed
+names and millisecond durations only. It contains no SQL, IDs, token material,
+repository names or upstream diagnostics. Timings are request-local headers;
+they do not enter the JSON body, source versions or ETag input.
+
+- `auth`: bearer hashing, token lookup and token validation.
+- `d1_1`, `d1_2`, ...: each actual D1 round trip in execution order, including
+  authentication. A batch is one round trip, not one per SQL statement.
+- `sql_1`, `sql_2`, ...: D1-reported statement execution time when available;
+  absent metadata is omitted, never fabricated as zero. Indices include the
+  authentication query even when its `first()` result lacks execution metadata.
+- `build`: complete source-reader wall time, including its D1 waits.
+- `decode`: instrumented saved-JSON decoding; `hash`: hash-producing source
+  projections and ETag digest work, including their input preparation;
+  `serialize`: response JSON construction; `total`: measured machine-route duration
+  through ETag/304 processing, before network delivery.
+
+Phases can overlap (`build` contains reader phases); do not sum them to estimate
+CPU time. Worker clocks can coarsen synchronous durations to zero. Compare D1
+round-trip wall time with available SQL execution time to separate transport
+latency from query cost. Header values vary even when the body and ETag do not.
+No timing header is returned for denied requests or unrelated endpoints.
+
 ### Observation envelope
 
 The following data endpoints return this envelope; `/sources` does not:
@@ -401,7 +426,7 @@ Item fields (saved metadata can add fields; do not reject unknown observation da
   `author_login`, `labels: [{ name, color }]`, `comments_count`.
 - `PullRequest`: `name_with_owner`, `number`, `title`, `url`, `created_at`,
   `updated_at`, `author_login`, `is_draft`, `review_decision`, `additions`,
-  `deletions`, `base_ref`, `head_ref`, `mergeable`, `mergeStateStatus`, `checks`.
+  `deletions`, `base_ref`, `head_ref`, `state`, `mergeable`, `mergeStateStatus`, `checks`.
 - CI `totals`: explicit workflow and repository counts documented below;
   `daily` entries: `{ x, success, failure, other }`, with date string `x`.
   Full nested summaries: [`ci-health.ts`](../apps/web/src/lib/ci-health.ts).
@@ -409,6 +434,18 @@ Item fields (saved metadata can add fields; do not reject unknown observation da
   publication fields: [`factory-types.ts`](../apps/web/src/lib/factory-types.ts).
 
 #### PR merge and checks state
+
+PR lifecycle `state` is `open|closed|merged|null` on account, repository and
+factory PR reads. Newly collected GraphQL states are normalized to lowercase;
+REST closed PRs with a saved merge timestamp are `merged`, not `closed`.
+Legacy snapshots whose collector omitted lifecycle state return null until an
+ordinary refresh records it. Missing/invalid state is never inferred to be open.
+Read normalization does not rewrite rows or change saved immutable versions.
+Lifecycle presentation is separate from version inputs: unchanged legacy PR rows
+retain their 0.17.1 `version`, `sourceVersion`, `contentVersion` and `/sources`
+ETag, including rows without `content_meta`. A response-only `state:null` or
+normalized lifecycle value does not enter the legacy digest. Treat versions as
+opaque evidence identifiers, not hashes to recompute from presentation fields.
 
 Every PR on `/prs`, `/repos/:owner/:name/prs` and
 `/factory/repos/:owner/:name/prs` includes the same additive fields:
@@ -607,7 +644,7 @@ accepts exactly these resources, without query/body and always with scope `all`:
 | `actions` | `runs: [{ id, name, html_url, status, conclusion, event, head_branch, created_at, updated_at }]` |
 | `releases` | `releases: [{ id, tag_name, name, html_url, draft, prerelease, published_at }]` |
 | `traffic` | `forbidden`, `views: { count, uniques, points }`, `clones: { count, uniques, points }`; points retain GitHub timestamp/count/uniques |
-| `security` | `unavailable`, `dependabot_open`, `code_scanning_open`; optional safe `reason`, `reason_code`; not alert-event details |
+| `security` | `features`, `unavailable`, nullable `dependabot_open` / `code_scanning_open`, alert-summary `items`; optional safe `reason`, `reason_code`, `retained` |
 | `languages` | `languages: { [languageName]: byteCount }` |
 | `contributors` | `contributors: [{ login, avatar_url, html_url, contributions }]` |
 
@@ -620,10 +657,48 @@ done
 
 Unknown resource names are 404; absent saved pages are 409 `snapshot_missing`.
 
-Known security feature/access absence is saved as an unavailable snapshot, not a
-missing snapshot. Its counts are not evidence of zero. Security snapshots and
-factory stream coverage share `reason_code` values: `alerts_disabled` (explicit
-Dependabot disabled/not-enabled response), `permission_denied` (documented
+Security snapshots record independent `features.dependabot` and
+`features.code_scanning`, each `{status,reason_code,reason}`. Status is `available`
+for a complete feature, `unavailable` for expected feature/access absence, or
+`partial` for incomplete collection. Available features have null reason fields;
+unavailable features have fixed safe reasons and null counts, never zero.
+Top-level `unavailable` is true only when **both** features are unavailable;
+top-level reasons summarize that case only. One inaccessible feature cannot hide
+the other's current items/counts. Example: six Dependabot alerts plus a generic
+code-scanning 404 yields `dependabot_open:6`, `code_scanning_open:null`,
+`features.dependabot.status:"available"`, code-scanning `reason_code:"not_found"`
+and `unavailable:false`. Incomplete collection remains `truncated:true` and does
+not publish a successful zero.
+Final storage truncation also downgrades `available` features to `partial` before
+serializing either physical page. Repository browser and machine reads apply the
+same correction to older stored truncated pages, without rewriting their rows or
+cached source/content versions. Unavailable siblings, safe reasons and observed
+counts are preserved; the count is not evidence of complete retained items.
+
+When a feature becomes unavailable, prior good evidence can appear separately in
+`retained.<feature>:{open,fetched_at,items}` with its original timestamp. It is not
+current evidence and never fills the current null count. A mixed available /
+expected-unavailable snapshot is saved and its refresh step counts as
+`unavailable`, not failed; a wholly unavailable snapshot is likewise saved, not
+409 missing. Existing saved snapshots without `features` retain their historical
+shape and hashes: per-feature availability is unknown until refreshed, and old
+zeroes or contradictory top-level flags are not per-feature coverage proof.
+
+Account alert/Insights projections apply the same completeness rules on GET.
+An incomplete repository security page cannot replace a prior complete account
+baseline and relabel its counts with a newer time. The baseline keeps its original
+evidence time; a repository-detail response can legitimately be newer and mixed.
+When complete repository pages replace account evidence, feature metadata comes
+from the selected pages, not the superseded account snapshot. Legacy pages retain
+unknown feature availability. A catalog member not covered by the older baseline
+is missing coverage, never an available zero. Combining current and retained
+security must fit the bounded physical pages; capacity truncation fails the step
+and preserves the exact prior snapshot instead of saving contradictory totals.
+
+Security snapshots and factory stream coverage share `reason_code` values:
+`alerts_disabled` (explicit Dependabot disabled/not-enabled response),
+`code_scanning_disabled` (explicit code-scanning disabled/not-enabled response),
+`permission_denied` (documented
 integration/PAT permission or insufficient-scope response), `not_found` (generic
 404), and `unknown` (other access restriction). `reason` is fixed safe human text,
 never raw upstream diagnostics. A plain 404 cannot distinguish a missing, hidden
@@ -648,6 +723,15 @@ unavailable }`.
 sourceFetchedAt? }`; status is `pending|partial|complete|unavailable|limited`,
 strategy `full|incremental|reused`. An empty list proves zero only with complete
 coverage. `next` is saved collection metadata, not a machine pagination URL.
+
+The alerts stream is the current **open Dependabot set**, not alerts created or
+updated inside the factory time window. It uses REST `state=open`; security
+snapshots explicitly request GraphQL `states:[OPEN]`. Old open alerts remain
+included regardless of creation/update time. The security snapshot additionally
+collects code-scanning alerts, which are not part of the factory alerts stream.
+The two steps observe GitHub separately: compare their saved `fetched_at` /
+`coverage.fetchedAt`, not just run ID. A run does not provide an atomic upstream
+snapshot; alerts can change between steps. Historical data is not rewritten.
 
 `data.observation.window` is the immutable repository observation's time window.
 `data.ranges` contains exactly that one `{since,until}` window; when a legacy
@@ -1268,6 +1352,28 @@ substring query. Stale selects missing, non-success or at-least-24-hour-old stat
 failed selects failed state. Existing factory participation policy applies, unlike
 the unfiltered machine catalog. Refresh selection is bounded to 500 repositories
 and must be nonempty except for existing `all` behavior.
+
+Refresh has two intentional lanes. Factory statistics participation follows the
+saved catalog's `statistics_enabled` value: an explicit false excludes a repository
+from metadata, the seven factory streams and per-repository factory publication
+in both weekly and daily runs. Without an override, archived/fork repositories
+default off; an explicit true can enable them. Factory inventory separately
+excludes non-owner repositories and the effective mirror `nocoo/rsshub`.
+There is no eligibility cutoff based on size, empty history or `pushed_at`, and
+`order` never changes membership; exceeding 500 is an error, not truncation.
+
+Detail snapshots are separate from statistics. `all` refreshes the accessible
+site catalog; selected/daily-starred refreshes include requested known site
+repositories even when statistics are disabled. Those repositories plan all nine
+detail tabs (details, issues, prs, actions, releases, traffic, security, languages,
+contributors), not only security. The independent page lane keeps the repository
+console readable without opting a repository into factory statistics. Inspect
+`/repos` for `statistics_enabled`, and `/refresh-runs` for frozen `repos`,
+`siteRepos`, `selection` and retained step outcomes; statistics projections expose
+`inventory.excluded` with `statistics-disabled` where applicable. Machine catalog
+reads themselves remain unfiltered. Older compact runs may lack full steps, so
+one newly changed security snapshot alone does not prove a security-only plan.
+Batch 8 does not change these policies or any repository setting.
 
 ```bash
 REQUEST_KEY="$(node -p 'crypto.randomUUID()')"

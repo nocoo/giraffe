@@ -7,7 +7,7 @@ import type {
 	FactoryStreamName,
 } from "../../lib/factory-types";
 import { FACTORY_STREAMS } from "../../lib/factory-types";
-import { prSnapshot, prState } from "../../lib/pull-request";
+import { prLifecycleState, prSnapshot, prState } from "../../lib/pull-request";
 import { snapshotFreshness } from "../../lib/snapshot-freshness";
 import {
 	composeContent,
@@ -48,11 +48,12 @@ export async function observationEnvelope(
 	version: string | undefined = storedContent(data)?.fullVersion,
 	content: string | null = storedContent(data)?.hash ?? null,
 ) {
-	data = prSnapshot(data);
+	const sourceVersion = version ?? (await observationVersion(prSnapshot(data)));
+	data = prSnapshot(data, { lifecycle: true });
 	return {
 		account_id: account,
 		data,
-		sourceVersion: version ?? (await observationVersion(data)),
+		sourceVersion,
 		contentVersion: content,
 		...observationMetadata(data),
 		source: { kind: publicationId ? "factory" : "snapshot", resource, publicationId },
@@ -321,7 +322,13 @@ export function factoryResourceData(
 	return {
 		...data,
 		...(stream === "prs"
-			? { items: data.items.map((item) => ({ ...item, ...prState(item) })) }
+			? {
+					items: data.items.map((item) => ({
+						...item,
+						state: prLifecycleState(item),
+						...prState(item),
+					})),
+				}
 			: {}),
 		...(stream === "dependencies"
 			? dependencyEvidence(data.items, [...(repo.manifests ?? []), ...(data.manifests ?? [])])

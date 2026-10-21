@@ -153,7 +153,7 @@ it("reads the same immutable page version advertised by a case-insensitive sourc
 	sources = await readSources(db, "a", {});
 	page = await readObservation(db, "a", "repo:owner/app:prs", "all");
 	expect(page.data.pull_requests).toEqual([
-		{ number: 2, mergeable: null, mergeStateStatus: null, checks: { state: null } },
+		{ number: 2, state: null, mergeable: null, mergeStateStatus: null, checks: { state: null } },
 	]);
 	expect(
 		sources.sources.filter((source) => source.resource.toLowerCase() === "repo:owner/app:prs"),
@@ -218,7 +218,7 @@ it("shares catalog-wide provenance and page replacements with browser reads with
 			{ ...snapshot, fetched_at: baseline, truncated: false },
 			"starred",
 		);
-		expect(starred.data).toEqual(prSnapshot(browser));
+		expect(starred.data).toEqual(prSnapshot(browser, { lifecycle: true }));
 	}
 	expect((await raw.prepare("SELECT * FROM snapshots WHERE kind='repos'").all()).results).toEqual(
 		before.results,

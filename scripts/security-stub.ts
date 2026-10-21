@@ -2,13 +2,23 @@ import { githubUnavailableFixtures } from "../tests/fixtures/github-unavailable"
 import { factoryGraphqlStub, factoryRepoStub } from "./factory-stub";
 
 export function securityFixture(auth: string) {
-	const index = ["E", "F", "G", "H", "I", "J", "K"].findIndex((letter) =>
-		auth.includes(letter.repeat(8)),
-	);
-	const fixture = githubUnavailableFixtures[[0, 2, 5, 6, 0, 0, 0][index] ?? -1];
+	const letters = ["E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O"];
+	const index = letters.findIndex((letter) => auth.includes(letter.repeat(8)));
+	const letter = letters[index];
+	const code =
+		["alerts_disabled", "permission_denied", "not_found", "unknown"][index] ?? "alerts_disabled";
+	const fixture = index < 0 ? null : githubUnavailableFixtures.find((item) => item.code === code);
 	if (!fixture) return null;
 	const regression = ["malformed-issues", "malformed-prs", "interrupted-actions"][index - 4];
-	const owner = `availability-${regression ?? fixture.code.replaceAll("_", "-")}`;
+	const owner =
+		`availability-${regression ?? (index >= 7 ? letter : fixture.code.replaceAll("_", "-"))}`.toLowerCase();
+	const openAlerts = Array.from({ length: letter === "M" ? 2 : 0 }, (_, id) => ({
+		number: id + 1,
+		id: `A_${id}`,
+		state: "open",
+		created_at: "2020-01-01T00:00:00Z",
+		security_advisory: { severity: "high", summary: "Open dependency alert" },
+	}));
 	const repo = {
 		...factoryRepoStub,
 		id: `R_${owner}`,
@@ -29,6 +39,26 @@ export function securityFixture(auth: string) {
 					},
 				};
 			if (query.includes("openPrs:")) return { data: { repository: repo } };
+			if (query.includes("vulnerabilityAlerts") && (letter === "M" || letter === "O")) {
+				const nodes = openAlerts.map((alert) => ({
+					id: alert.id,
+					state: "OPEN",
+					securityAdvisory: { summary: "Open dependency alert" },
+				}));
+				if (!/states:\s*OPEN/.test(query))
+					nodes.push(
+						...Array.from({ length: 6 }, (_, id) => ({
+							id: `FIXED_${id}`,
+							state: "FIXED",
+							securityAdvisory: { summary: "Fixed dependency alert" },
+						})),
+					);
+				return {
+					data: {
+						repository: { vulnerabilityAlerts: { nodes, pageInfo: { hasNextPage: false } } },
+					},
+				};
+			}
 			if (query.includes("vulnerabilityAlerts"))
 				return {
 					data: { repository: null },
@@ -55,6 +85,15 @@ export function securityFixture(auth: string) {
 			search = "",
 		): { status: number; body: unknown; headers?: Record<string, string> } {
 			const params = new URLSearchParams(search);
+			if (path.endsWith("/dependabot/alerts") && (letter === "M" || letter === "O"))
+				return { status: 200, body: params.get("state") === "open" ? openAlerts : null };
+			if (path.endsWith("/code-scanning/alerts") && (letter === "N" || letter === "O"))
+				return { status: 200, body: [] };
+			if (path.endsWith("/code-scanning/alerts") && (letter === "L" || letter === "M"))
+				return {
+					status: letter === "L" ? 403 : 404,
+					body: { message: letter === "L" ? "Code scanning is not enabled" : "Not Found" },
+				};
 			if (
 				regression === "interrupted-actions" &&
 				path.endsWith("/actions/runs") &&

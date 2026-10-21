@@ -387,6 +387,7 @@ const github = await listen(17046, (req, res) => {
 								nodes: [
 									{
 										__typename: "PullRequest",
+										state: "OPEN",
 										number: 2,
 										title: "pr",
 										url: "https://github.com/octocat/hello-world/pull/2",

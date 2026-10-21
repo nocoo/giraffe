@@ -147,7 +147,16 @@ it("finishes expected unavailable streams without a partial publication", async 
 	});
 	expect(
 		await readSnapshot(createDb(env.DB), snap.account_id, "repo:nocoo/app:security"),
-	).toMatchObject({ unavailable: true, reason_code: "alerts_disabled", truncated: false });
+	).toMatchObject({
+		unavailable: false,
+		truncated: false,
+		dependabot_open: null,
+		code_scanning_open: 0,
+		features: {
+			dependabot: { status: "unavailable", reason_code: "alerts_disabled" },
+			code_scanning: { status: "available" },
+		},
+	});
 	expect(run?.status).toBe("completed");
 	expect((await publishedFactory(createDb(env.DB), snap.account_id))?.status).toBe("complete");
 });

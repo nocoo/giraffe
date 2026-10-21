@@ -2,6 +2,8 @@ import { ApiError } from "../errors";
 
 const CAP = 80;
 
+export type D1TimingObserver = (duration: number, queries: readonly (number | null)[]) => void;
+
 export type Db = {
 	readonly statements: number;
 	prepare: D1Database["prepare"];
@@ -16,9 +18,29 @@ async function d1Try<T>(fn: () => Promise<T>): Promise<T> {
 	}
 }
 
-export function createDb(raw: D1Database): Db {
+export function createDb(raw: D1Database, observe?: D1TimingObserver): Db {
 	let statements = 0;
 	let inBatch = false;
+	async function execute<Result>(operation: () => Promise<Result>, count = 1): Promise<Result> {
+		if (!observe) return d1Try(operation);
+		const startedAt = performance.now();
+		let durations: (number | null)[] = Array.from({ length: count }, () => null);
+		try {
+			const result = await d1Try(operation);
+			const results: unknown[] = Array.isArray(result) ? result : [result];
+			durations = results.map((item) => {
+				const meta = item && typeof item === "object" && "meta" in item ? item.meta : null;
+				const duration =
+					meta && typeof meta === "object" && "duration" in meta ? meta.duration : null;
+				return typeof duration === "number" && Number.isFinite(duration) && duration >= 0
+					? duration
+					: null;
+			});
+			return result;
+		} finally {
+			observe(performance.now() - startedAt, durations);
+		}
+	}
 	function bump(n = 1): void {
 		if (inBatch) {
 			return;
@@ -40,7 +62,7 @@ export function createDb(raw: D1Database): Db {
 			},
 			first: async <T = Record<string, unknown>>(col?: string) => {
 				bump();
-				return d1Try(async () => {
+				return execute(async () => {
 					const row = await stmt.first<Record<string, unknown>>();
 					if (col === undefined) {
 						return row as T | null;
@@ -50,11 +72,11 @@ export function createDb(raw: D1Database): Db {
 			},
 			all: async <T = Record<string, unknown>>() => {
 				bump();
-				return d1Try(() => stmt.all<T>());
+				return execute(() => stmt.all<T>());
 			},
 			run: async () => {
 				bump();
-				return d1Try(() => stmt.run());
+				return execute(() => stmt.run());
 			},
 		} as D1PreparedStatement;
 		originals.set(wrapped, stmt);
@@ -75,8 +97,9 @@ export function createDb(raw: D1Database): Db {
 			bump(statementsToRun.length);
 			inBatch = true;
 			try {
-				return await d1Try(() =>
-					raw.batch(statementsToRun.map((stmt) => originals.get(stmt) ?? stmt)),
+				return await execute(
+					() => raw.batch(statementsToRun.map((stmt) => originals.get(stmt) ?? stmt)),
+					statementsToRun.length,
 				);
 			} finally {
 				inBatch = false;

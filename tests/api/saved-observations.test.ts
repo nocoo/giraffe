@@ -831,12 +831,15 @@ it("revalidates private sources over HTTP with response-derived tags and no GET 
 	);
 
 	const full = await machine("sources");
+	expect(full.headers.get("server-timing")).toMatch(/d1_1;dur=\d+\.\d{2}/);
+	expect(full.headers.get("server-timing")).toMatch(/total;dur=\d+\.\d{2}/);
 	const tag = full.headers.get("etag");
 	expect(tag).toEqual(expect.stringMatching(/^"[a-f0-9]{64}"$/));
 	if (!tag) throw new Error("missing source validator");
 	for (const match of [tag, `W/${tag}`, `"other", W/${tag}`, "*"]) {
 		const response = await conditionalSources(match);
 		expect(response.status).toBe(304);
+		expect(response.headers.get("server-timing")).toMatch(/auth;dur=\d+\.\d{2}/);
 		expect(await response.text()).toBe("");
 		expect(response.headers.get("etag")).toBe(tag);
 		expect(response.headers.get("cache-control")).toBe("private, no-store");

@@ -215,11 +215,11 @@ it("never reads immutable payloads for full or filtered source indexes", async (
 	expect(payloads.size).toBe(126);
 	const profile = profileDb(fixture.raw);
 	const before = await readSources(createDb(profile.raw), fixture.account, {});
-	const sql = profile.queries.at(-1)?.sql;
-	if (!sql) throw new Error("missing metadata query");
+	const query = profile.queries.at(-1);
+	if (!query) throw new Error("missing metadata query");
 	const plan = await fixture.raw
-		.prepare(`EXPLAIN QUERY PLAN ${sql}`)
-		.bind("[]", "[]", fixture.account, fixture.account, "[]", fixture.account)
+		.prepare(`EXPLAIN QUERY PLAN ${query.sql}`)
+		.bind(...query.bindings)
 		.all<{ detail: string }>();
 	expect(
 		plan.results.some((row) => row.detail.includes("COVERING INDEX factory_resources_content")),

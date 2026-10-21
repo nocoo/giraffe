@@ -18,4 +18,14 @@ export const githubUnavailableFixtures = [
 	{ status: 403, message: "Insufficient scope", code: "permission_denied" },
 	{ status: 404, message: "Not Found", code: "not_found" },
 	{ status: 403, message: "Unrecognized private upstream diagnostics", code: "unknown" },
+	{
+		status: 403,
+		message: "Code scanning is not enabled for this repository.",
+		code: "code_scanning_disabled",
+	},
+	{
+		status: 404,
+		message: "Code scanning alerts are disabled for this repository.",
+		code: "code_scanning_disabled",
+	},
 ] as const;

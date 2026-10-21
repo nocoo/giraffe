@@ -54,9 +54,15 @@ it.each([
 	["I", "alerts_disabled", "issues"],
 	["J", "alerts_disabled", "prs"],
 	["K", "alerts_disabled", "actions"],
+	["L", "alerts_disabled", ""],
+	["M", "not_found", ""],
+	["N", "alerts_disabled", ""],
+	["O", "", ""],
 ])(
 	"publishes safe %s security diagnostics and separates unavailable run counts (%s)",
 	async (letter, reasonCode, incomplete) => {
+		const openSet = letter === "M" || letter === "O";
+		const anyUnavailable = letter !== "O";
 		expect(sql("SELECT value FROM _test_marker WHERE key='env'")).toEqual([{ value: "test" }]);
 		const created = await browser("accounts", "POST", { token: `ghp_${letter.repeat(36)}` });
 		expect(created.status).toBe(201);
@@ -118,7 +124,7 @@ it.each([
 				`UPDATE factory_state SET next_at='2000-01-01T00:00:00.000Z' WHERE account_id='${account.id}'; UPDATE factory_runs SET created_at='2000-01-01T00:00:00.000Z' WHERE account_id='${account.id}'`,
 			);
 			const run = await start("refresh");
-			expect(run.counts.unavailable).toBeGreaterThan(0);
+			if (anyUnavailable) expect(run.counts.unavailable).toBeGreaterThan(0);
 			if (incomplete) {
 				expect(run.counts.failed).toBeGreaterThan(0);
 				expect(run.steps.find((step) => step.resource === kind)).toMatchObject({
@@ -129,32 +135,71 @@ it.each([
 					sql(`SELECT payload FROM snapshots WHERE account_id='${account.id}' AND kind='${kind}'`),
 				).toEqual([{ payload: JSON.stringify(old) }]);
 			} else expect(run.counts.failed).toBe(0);
-			expect(run.steps.filter((step) => step.status === "unavailable").length).toBeGreaterThan(0);
+			if (anyUnavailable)
+				expect(run.steps.filter((step) => step.status === "unavailable").length).toBeGreaterThan(0);
 			const factory = await browser("factory?scope=all");
 			expect(factory.status).toBe(200);
 			expect(await factory.json()).toMatchObject({
 				status: incomplete ? "partial" : "complete",
 				runId: run.id,
-				repos: [{ coverage: { alerts: { status: "unavailable", reason_code: reasonCode } } }],
+				repos: [
+					{
+						coverage: {
+							alerts: openSet
+								? { status: "complete" }
+								: { status: "unavailable", reason_code: reasonCode },
+						},
+					},
+				],
 			});
 			const readsBefore = Number(await (await fetch("http://127.0.0.1:17046/_count")).text());
 			const security = await machine(`repos/${account.login}/hello-world/security`);
 			expect(security.status).toBe(200);
 			const snapshot = await security.json();
 			expect(snapshot).toMatchObject({
-				unavailable: true,
+				unavailable: !["M", "N", "O"].includes(letter),
 				truncated: false,
-				data: { reason_code: reasonCode, dependabot_open: 0, code_scanning_open: 0 },
+				data: {
+					dependabot_open: letter === "M" ? 2 : letter === "O" ? 0 : null,
+					code_scanning_open: letter === "N" || letter === "O" ? 0 : null,
+					features: {
+						dependabot: {
+							status: openSet ? "available" : "unavailable",
+							reason_code: openSet ? null : reasonCode,
+						},
+						code_scanning: {
+							status: letter === "N" || letter === "O" ? "available" : "unavailable",
+							reason_code:
+								letter === "N" || letter === "O"
+									? null
+									: letter === "L"
+										? "code_scanning_disabled"
+										: reasonCode,
+						},
+					},
+				},
 			});
 			expect(JSON.stringify(snapshot)).not.toContain("private upstream diagnostics");
 			expect(await (await machine("sources")).json()).toMatchObject({
 				sources: expect.arrayContaining([
 					expect.objectContaining({
 						resource: `factory:${account.login}/hello-world:alerts`,
-						unavailable: true,
-						coverage: expect.objectContaining({ reason_code: reasonCode }),
+						unavailable: !openSet,
+						coverage: expect.objectContaining(
+							openSet
+								? { status: "complete", observed: letter === "M" ? 2 : 0 }
+								: { reason_code: reasonCode },
+						),
 					}),
 				]),
+			});
+			const alerts = await machine(`factory/repos/${account.login}/hello-world/alerts`);
+			expect(alerts.status).toBe(200);
+			expect(await alerts.json()).toMatchObject({
+				data: {
+					items: openSet ? (letter === "M" ? [expect.any(Object), expect.any(Object)] : []) : [],
+					coverage: { status: openSet ? "complete" : "unavailable" },
+				},
 			});
 			expect(Number(await (await fetch("http://127.0.0.1:17046/_count")).text())).toBe(readsBefore);
 		} finally {

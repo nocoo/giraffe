@@ -494,6 +494,7 @@ describe("api method matrix", () => {
 		const prsBody = (await (await api("/api/prs")).json()) as Record<string, unknown>;
 		snapshotMeta(prsBody);
 		const expectedPr = {
+			state: "open",
 			name_with_owner: "octocat/hello-world",
 			number: 2,
 			title: "pr",

@@ -48,12 +48,28 @@ upcoming slot; recovery coalesces earlier missed slots and attempts only the
 latest due occurrence. Migration 0013 does not change existing configured times.
 See [schedule writes](api.md#put--delete-scheduleskind) for scopes and validation.
 
-Security snapshots persist expected feature/access absence as `unavailable:true`
-with safe `reason` and `reason_code`; factory alerts coverage uses the same codes:
-`alerts_disabled`, `permission_denied`, `not_found`, `unknown`. Disabled requires
+Security snapshots persist independent `features.dependabot` and
+`features.code_scanning` availability (`available|unavailable|partial`), with
+safe `reason` / `reason_code` and null unavailable counts. Top-level `unavailable`
+means both features are unavailable; one unavailable feature never hides the
+other. Prior evidence is separate in `retained` with its original timestamp.
+Old snapshots without feature fields retain unknown per-feature coverage until
+refreshed. Factory alerts coverage uses the same safe codes:
+`alerts_disabled`, `code_scanning_disabled`, `permission_denied`, `not_found`, `unknown`. Disabled requires
 explicit upstream wording; a generic 404 is `not_found` because GitHub hides some
 inaccessible resources. Raw upstream messages are never persisted. Unavailability
 does not prove zero alerts; truncation and lost pagination remain real failures.
+Account read projections preserve prior complete evidence and its original time
+instead of replacing it with a newer mixed page. Feature metadata follows selected
+evidence, missing catalog coverage never implies zero, and stored truncation is
+partial coverage. Current plus retained security must fit the bounded pages;
+otherwise refresh fails without replacing prior good rows.
+
+Factory alerts and security Dependabot collection both explicitly request open
+alerts, without creation/update-window filtering. Security also includes a
+separate code-scanning feature. Their saved collection times can differ within
+one run; they are not an atomic upstream observation. See the
+[security contract](api.md#repository-endpoints).
 
 All observation paths are GET-only and require `observations:read`. The account in
 the path must match the token's fixed account. Reads expose saved data; they are not
@@ -79,6 +95,11 @@ duplicate reads without changing observation versions or writing cache rows.
 Cloudflare handles production response compression. See the
 [local performance evidence and edge verification limits](12-source-performance.md).
 
+Authenticated `/sources` 200/304 responses also expose safe `Server-Timing`
+phase durations, including each D1 round trip. They are headers only, excluded
+from JSON, source hashes and ETags; no query text, repository identity or token
+data is included. See [timing fields and interpretation](api.md#source-request-timing).
+
 All account observation lists/aggregates and repository/factory source entries are
 intersected with the current saved catalog at read time, case-insensitively. Removed
 repositories do not leak through retained snapshots or publications; historical
@@ -97,6 +118,14 @@ Other read paths include:
 - `/factory/repos/:owner/:name/:stream` for immutable published factory streams.
 
 All three PR surfaces (account, repository snapshot and factory PR stream) expose
+`state:open|closed|merged|null`; missing legacy lifecycle evidence stays null
+until refreshed, never inferred open. GraphQL uppercase states normalize to
+lowercase and saved merge timestamps distinguish merged from closed PRs.
+Lifecycle presentation does not alter legacy source-version inputs. Unchanged
+saved PR rows, with or without cached content metadata, keep their 0.17.1 source
+versions and `/sources` conditional ETag; do not hash the displayed lifecycle
+fields to reconstruct these opaque identifiers.
+They also expose
 `mergeable:boolean|null`, `mergeStateStatus:string|null`, and
 `checks:{state:SUCCESS|FAILURE|PENDING|ERROR|EXPECTED|null}`. Checks come from
 GitHub's latest-head `statusCheckRollup`; absent/legacy values remain null,

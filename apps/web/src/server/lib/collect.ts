@@ -1,3 +1,4 @@
+import type { SecurityFeature } from "../../lib/security";
 import { ApiError } from "./errors";
 import type { GithubClient } from "./github-client";
 import { TruncatedError } from "./github-client";
@@ -31,7 +32,7 @@ const ISSUE_SEARCH =
 const PR_SEARCH = `query($q:String!,$after:String){ search(query:$q, type:ISSUE, first:100, after:$after){ issueCount pageInfo{ hasNextPage endCursor } nodes{ __typename ... on PullRequest { number title url state createdAt updatedAt author{ login } isDraft reviewDecision additions deletions baseRefName headRefName repository{ nameWithOwner } ${PR_STATE_FIELDS} } } } }`;
 
 const ALERTS_QUERY =
-	"query($o:String!,$n:String!,$after:String){ repository(owner:$o,name:$n){ vulnerabilityAlerts(first:20, after:$after){ pageInfo{ hasNextPage endCursor } nodes{ id securityAdvisory{ summary permalink } securityVulnerability{ severity } } } } }";
+	"query($o:String!,$n:String!,$after:String){ repository(owner:$o,name:$n){ vulnerabilityAlerts(first:20, after:$after, states:OPEN){ pageInfo{ hasNextPage endCursor } nodes{ id securityAdvisory{ summary permalink } securityVulnerability{ severity } } } } }";
 
 export function utf8Bytes(text: string): number {
 	return new TextEncoder().encode(text).length;
@@ -345,19 +346,23 @@ async function collectAlerts(
 	const names = [...repoNames].sort();
 	const items: unknown[] = [];
 	let truncated = names.length > 10;
-	let ok = 0;
 	let dependabot = 0;
 	let scanning = 0;
 	let stop = false;
-	let unavailable = false;
 	let reason: ReturnType<typeof unavailableReason> | null = null;
+	let dependabotOk = 0;
+	let scanningOk = 0;
+	let dependabotPartial = false;
+	let scanningPartial = names.length > 10;
+	let dependabotReason: ReturnType<typeof unavailableReason> | null = null;
+	let scanningReason: ReturnType<typeof unavailableReason> | null = null;
 	for (const full of names) {
 		if (stop) {
 			break;
 		}
 		const { owner, name } = ownerName(full);
 		let after: string | null = null;
-		let got = false;
+		let complete = false;
 		for (;;) {
 			try {
 				const data = await gh.githubGraphql(token, ALERTS_QUERY, { o: owner, n: name, after });
@@ -368,11 +373,13 @@ async function collectAlerts(
 					};
 				} | null;
 				if (gh.graphqlErrors.length > 0) {
-					unavailable = true;
 					const error = gh.graphqlErrors[0];
-					reason ??= unavailableReason(
+					const denied = unavailableReason(
 						error?.reasonCode ?? (error?.type === "NOT_FOUND" ? "not_found" : "unknown"),
 					);
+					reason ??= denied;
+					dependabotReason ??= denied;
+					dependabotPartial ||= after !== null || Array.isArray(repo?.vulnerabilityAlerts?.nodes);
 					if (after !== null || Array.isArray(repo?.vulnerabilityAlerts?.nodes)) truncated = true;
 					break;
 				}
@@ -381,10 +388,9 @@ async function collectAlerts(
 					typeof repo.vulnerabilityAlerts.pageInfo?.hasNextPage !== "boolean"
 				) {
 					truncated = true;
-					unavailable = true;
+					dependabotPartial = true;
 					break;
 				}
-				got = true;
 				const nodes = repo.vulnerabilityAlerts.nodes.filter((node) => node !== null);
 				dependabot += nodes.length;
 				items.push(...mapDependabotAlerts(full, nodes));
@@ -402,47 +408,51 @@ async function collectAlerts(
 				) {
 					truncated = true;
 					stop = true;
+					dependabotPartial = true;
 					break;
 				}
 				if (repo.vulnerabilityAlerts?.pageInfo?.hasNextPage) {
 					const next = repo.vulnerabilityAlerts.pageInfo.endCursor;
 					if (typeof next !== "string" || !next || next === after) {
 						truncated = true;
+						dependabotPartial = true;
 						break;
 					}
 					after = next;
 					continue;
 				}
+				complete = true;
 				break;
 			} catch (err) {
 				const denied = githubUnavailability(err);
 				if (denied) {
-					unavailable = true;
 					reason ??= denied;
+					dependabotReason ??= denied;
+					dependabotPartial ||= after !== null;
 					if (after) truncated = true;
 					break;
 				}
 				if (err instanceof TruncatedError) {
 					truncated = true;
 					stop = true;
+					dependabotPartial = true;
 					break;
 				}
 				throw err;
 			}
 		}
-		if (got) {
-			ok += 1;
-		}
+		if (complete) dependabotOk++;
 	}
 	for (const full of names.slice(0, 10)) {
 		if (stop) {
+			scanningPartial = true;
 			break;
 		}
 		if (
 			exceedsBudget(
 				{
 					truncated: true,
-					unavailable: ok === 0,
+					unavailable: dependabotOk === 0 && scanningOk === 0,
 					items,
 					dependabot_open: dependabot,
 					code_scanning_open: scanning,
@@ -451,6 +461,7 @@ async function collectAlerts(
 			)
 		) {
 			truncated = true;
+			scanningPartial = true;
 			break;
 		}
 		const { owner, name } = ownerName(full);
@@ -462,36 +473,60 @@ async function collectAlerts(
 			const body = (await res.json()) as unknown;
 			if (!isRecordList(body)) {
 				truncated = true;
+				scanningPartial = true;
 				break;
 			}
 			const mapped = mapCodeScanningAlerts(full, body);
 			scanning += mapped.length;
 			items.push(...mapped);
-			ok += 1;
 			if (nextPath(res)) {
 				truncated = true;
-			}
+				scanningPartial = true;
+			} else scanningOk++;
 		} catch (err) {
 			const denied = githubUnavailability(err);
 			if (denied) {
-				unavailable = true;
 				reason ??= denied;
+				scanningReason ??= denied;
 				continue;
 			}
 			if (err instanceof TruncatedError) {
 				truncated = true;
+				scanningPartial = true;
 				break;
 			}
 			throw err;
 		}
 	}
+	const feature = (
+		complete: number,
+		partial: boolean,
+		denied: ReturnType<typeof unavailableReason> | null,
+	): SecurityFeature => ({
+		status:
+			partial || (complete > 0 && complete < names.length)
+				? "partial"
+				: complete === names.length
+					? "available"
+					: "unavailable",
+		reason_code: denied?.reason_code ?? null,
+		reason: denied?.reason ?? null,
+	});
+	const features = {
+		dependabot: feature(dependabotOk, dependabotPartial, dependabotReason),
+		code_scanning: feature(scanningOk, scanningPartial, scanningReason),
+	};
+	const unavailable = Object.values(features).every((value) => value.status === "unavailable");
 	return {
 		truncated,
-		unavailable: unavailable || ok === 0,
-		...(reason ?? {}),
+		unavailable,
+		...(unavailable ? reason : {}),
+		features,
 		items,
-		dependabot_open: dependabot,
-		code_scanning_open: scanning,
+		dependabot_open:
+			features.dependabot.status === "available" || dependabot > 0 ? dependabot : null,
+		code_scanning_open:
+			features.code_scanning.status === "available" || scanning > 0 ? scanning : null,
 	};
 }
 
@@ -524,7 +559,13 @@ export function emptyCollected(kind: string, fetchedAt: string): Collected {
 		return { ...base, pull_requests: [] };
 	}
 	if (kind === "alerts") {
-		return { ...base, unavailable: true, items: [], dependabot_open: 0, code_scanning_open: 0 };
+		return {
+			...base,
+			unavailable: true,
+			items: [],
+			dependabot_open: null,
+			code_scanning_open: null,
+		};
 	}
 	if (kind === "notifications") {
 		return { ...base, notifications: [] };
@@ -539,7 +580,7 @@ export function emptyCollected(kind: string, fetchedAt: string): Collected {
 		return { ...base, forbidden: false, views: emptyTraffic(), clones: emptyTraffic() };
 	}
 	if (kind.endsWith(":security")) {
-		return { ...base, unavailable: true, dependabot_open: 0, code_scanning_open: 0 };
+		return { ...base, unavailable: true, dependabot_open: null, code_scanning_open: null };
 	}
 	if (kind.endsWith(":issues")) {
 		return { ...base, issues: [] };

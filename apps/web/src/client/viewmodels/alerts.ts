@@ -1,3 +1,4 @@
+import type { SecuritySnapshot } from "../../lib/security";
 import type { SnapshotFreshness } from "../../lib/snapshot-freshness";
 import { getRepositoryScope, scopedResource } from "./scope";
 import { loadKind } from "./snapshot";
@@ -10,14 +11,10 @@ export type AlertItem = {
 	url: string;
 };
 
-export type AlertsSnapshot = {
+export type AlertsSnapshot = SecuritySnapshot & {
 	freshness?: SnapshotFreshness;
 	account_id: string;
 	fetched_at: string;
-	truncated: boolean;
-	unavailable: boolean;
-	dependabot_open: number;
-	code_scanning_open: number;
 	items: AlertItem[];
 };
 

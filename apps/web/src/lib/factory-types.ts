@@ -13,6 +13,7 @@ export type FactoryStreamName = (typeof FACTORY_STREAMS)[number];
 export type CoverageStatus = "pending" | "partial" | "complete" | "unavailable" | "limited";
 export type UnavailableReasonCode =
 	| "alerts_disabled"
+	| "code_scanning_disabled"
 	| "permission_denied"
 	| "not_found"
 	| "unknown";

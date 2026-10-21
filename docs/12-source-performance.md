@@ -1,5 +1,67 @@
 # Source Index Performance
 
+## v0.17.2: database round trips
+
+The steward's read-only Workers Observability sample (October 22, 2026) reports
+CMH `/sources` median wall 2,235 ms versus CPU 152 ms (50 requests), and one-query
+`/api/live` medians of 38 ms at KIX, 50 ms at NRT and 339 ms at CMH. This supports
+geographic D1 wait as the main cause: the old reader awaited three policy reads,
+publication and source rows sequentially, after a separate bearer lookup. No
+production request or database inspection was performed for this implementation.
+
+The five reader SELECTs now execute in one read-only `db.batch`. A CTE derives
+stream metadata references directly from the selected publication, eliminating
+the JavaScript dependency between publication and metadata reads. Authorization
+still completes first. `/sources` therefore uses two actual D1 round trips
+(one auth, one five-statement batch), not six. Other routes are unchanged.
+
+Reproduce the local comparison against the pinned pre-batching revision:
+
+```bash
+bun tests/bench/source-roundtrips.ts bddef05
+```
+
+The fixture extends the 126-repository dataset with 126 near-cap immutable stream
+rows (117,101,385 bytes) and 2,000 unrelated historical rows (32,050,000 bytes).
+Three samples per case inject 300 ms per actual round trip. Exact JSON equality
+includes ordering, full versions and all eight source fields. Reader-only medians
+exclude the unchanged authorization trip:
+
+| Request | Trips before / after | Total before / after (ms) |
+| --- | ---: | ---: |
+| Full | 5 / 1 | 1585.13 / 352.97 |
+| Since, newer two-thirds | 5 / 1 | 1585.09 / 357.27 |
+| Since, empty result | 5 / 1 | 1574.02 / 355.60 |
+| One repository | 5 / 1 | 1583.69 / 369.42 |
+
+Full D1 wall time is 1537.97 -> 319.87 ms; serialization is 0.38 -> 0.39 ms.
+After batching, decode is 13.29 ms and hash-producing projection is 10.03 ms;
+the baseline has no corresponding phase instrumentation, so those before values
+are unknown, not zero. Hash timing includes preparation of hash inputs, not just
+SHA CPU. Cold, non-delayed full reads are 38.43 -> 34.10 ms, while empty reads
+are 14.77 -> 19.32 ms: SQL JSON expansion has a small local cost.
+
+Both paths read the same 8,784,588 snapshot payload bytes and never read immutable
+stream payloads. Current versions still require snapshot content; this patch does
+not introduce another stored projection or rewrite saved data. EXPLAIN shows
+indexed account/kind seeks and covering `factory_resources_content` and
+`snapshots_content` indexes. JSON virtual-table/CTE scans are expected; there is
+no full snapshot/resource table scan and no new index is warranted by this fixture.
+
+`Server-Timing` on authenticated 200 and 304 responses exposes `auth`, `build`,
+`decode`, `hash`, `serialize`, `total`, `d1_N` wall durations and optional `sql_N`
+durations supplied by D1 metadata. Names and numeric durations are the entire
+header: no SQL, identifiers, tokens or upstream text. Nested metrics overlap;
+they must not be summed as exclusive CPU time. ETag processing remains included
+in total/hash and conditional requests still perform the source reads.
+
+At 300 ms per trip the expected saving is about 1.2 seconds; adding the unchanged
+auth trip gives roughly 0.65 seconds in the simulation. This is not a deployed
+latency guarantee. Smart Placement could move execution closer to D1; read
+replication would require explicit consistency/session design. Both need owner
+approval and neither is configured here. Batching other account/detail routes is
+deferred to avoid broadening the read-contract change.
+
 ## Measurement boundary
 
 The October 2026 consumer report measured about 606 KB / 9.7 s for `/sources`

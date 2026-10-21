@@ -1,6 +1,7 @@
 import { uniqueDependencySummaries } from "../../lib/factory-dependencies";
 import type { FactorySnapshot } from "../../lib/factory-types";
 import { participates, type RepoStatistics } from "../../lib/repo-statistics";
+import { type SecurityFeatures, securityCount, securityIncomplete } from "../../lib/security";
 import { snapshotFreshness } from "../../lib/snapshot-freshness";
 import { composeContent, storedContent, withContent } from "./content-version";
 import type { Db } from "./db/d1";
@@ -28,7 +29,16 @@ export async function repoPolicy(
 		.prepare("SELECT repo,enabled FROM repo_statistics WHERE account_id=?")
 		.bind(account)
 		.all<{ repo: string; enabled: number }>();
-	const settings = new Map(overrides.results.map((r) => [r.repo.toLowerCase(), r.enabled === 1]));
+	return policyFromSaved(snapshot, selection, overrides.results);
+}
+
+export function policyFromSaved(
+	snapshot: Record<string, unknown> | null,
+	selection: Awaited<ReturnType<typeof snapshotSelection>>,
+	overrides: { repo: string; enabled: number }[],
+) {
+	const scope = selection.scope;
+	const settings = new Map(overrides.map((r) => [r.repo.toLowerCase(), r.enabled === 1]));
 	const repos = (Array.isArray(snapshot?.repos) ? snapshot.repos : []).filter(
 		(r): r is Repo => r !== null && typeof r === "object" && typeof r.name_with_owner === "string",
 	);
@@ -83,7 +93,8 @@ function complete(snapshot: Record<string, unknown> | null) {
 		snapshot !== null &&
 		snapshot.truncated !== true &&
 		snapshot.unavailable !== true &&
-		snapshot.forbidden !== true
+		snapshot.forbidden !== true &&
+		(snapshot.features === undefined || !securityIncomplete(snapshot))
 	);
 }
 
@@ -152,7 +163,7 @@ async function projectList(
 	const baselineAt = savedTime(snapshot?.fetched_at);
 	const catalogAt = complete(policy.catalog) ? savedTime(policy.catalog?.fetched_at) : null;
 	const catalogProven =
-		complete(snapshot) &&
+		(complete(snapshot) || (kind === "alerts" && snapshot?.features !== undefined)) &&
 		baselineAt !== null &&
 		catalogAt !== null &&
 		Date.parse(catalogAt) <= Date.parse(baselineAt);
@@ -168,11 +179,13 @@ async function projectList(
 	const times = new Map<string, string | null>();
 	const replacements = new Map<string, Record<string, unknown>[]>();
 	const completeRepos = new Set<string>();
+	const securitySources: (SecurityFeatures | undefined)[] = [];
 	const contentInputs: Record<string, string | null> = {
 		catalog: contentInput(policy.catalog),
 		[kind]: contentInput(snapshot),
 	};
 	for (const [lower, name] of names) {
+		let source = snapshot;
 		let at =
 			recorded.get(lower) ??
 			(kind === "repos" ||
@@ -193,6 +206,7 @@ async function projectList(
 		) {
 			at = pageAt;
 			covered = true;
+			source = page ?? null;
 			contentInputs[`repo:${lower}:${suffix}`] = contentInput(page ?? null);
 			replacements.set(
 				lower,
@@ -200,6 +214,10 @@ async function projectList(
 			);
 		}
 		if (covered) completeRepos.add(lower);
+		if (kind === "alerts") {
+			const features = at === null ? undefined : (source?.features as SecurityFeatures | undefined);
+			securitySources.push(features);
+		}
 		times.set(lower, at);
 	}
 	const emitted = new Set<string>();
@@ -213,7 +231,28 @@ async function projectList(
 	});
 	for (const [name, replacement] of replacements)
 		if (!emitted.has(name)) items.push(...replacement);
+	const features = securitySources.some(Boolean)
+		? (Object.fromEntries(
+				(["dependabot", "code_scanning"] as const).map((feature) => {
+					const inputs = securitySources.map((source) => source?.[feature]);
+					const denied = inputs.find((input) => input?.reason_code);
+					return [
+						feature,
+						{
+							status: inputs.every((input) => input?.status === "available")
+								? "available"
+								: inputs.every((input) => input?.status === "unavailable")
+									? "unavailable"
+									: "partial",
+							reason_code: denied?.reason_code ?? null,
+							reason: denied?.reason ?? null,
+						},
+					];
+				}),
+			) as SecurityFeatures)
+		: undefined;
 	return {
+		features,
 		items,
 		times,
 		freshness: snapshotFreshness([...times.values()]),
@@ -320,7 +359,7 @@ export async function projectSnapshot(
 						names.get(String(alert.name_with_owner).toLowerCase()) ?? String(alert.name_with_owner),
 				})) as InsightAlert[],
 				freshness.latestAt ?? "",
-				!complete(alerts) || security.freshness.missing > 0,
+				security.incomplete || security.freshness.missing > 0,
 			),
 			freshness,
 			truncated:
@@ -331,8 +370,19 @@ export async function projectSnapshot(
 	}
 	const key = LIST_KEYS[kind];
 	if (!key || !Array.isArray(snap[key])) return snap;
-	const { items, freshness, times, incomplete, contentInputs, repositories, completeRepos } =
-		await projectList(db, account, kind, snap, policy, !statisticsFilter, savedPages);
+	const {
+		items,
+		freshness,
+		times,
+		incomplete,
+		contentInputs,
+		repositories,
+		completeRepos,
+		features,
+	} = await projectList(db, account, kind, snap, policy, !statisticsFilter, savedPages);
+	const alertsUnavailable = features
+		? Object.values(features).every((feature) => feature.status === "unavailable")
+		: incomplete && snap.unavailable === true;
 	const data = {
 		...snap,
 		[key]: items,
@@ -346,8 +396,26 @@ export async function projectSnapshot(
 			: {}),
 		...(kind === "alerts"
 			? {
-					dependabot_open: items.filter((r) => r.source === "dependabot").length,
-					code_scanning_open: items.filter((r) => r.source === "code_scanning").length,
+					features,
+					unavailable: alertsUnavailable,
+					reason_code: alertsUnavailable ? snap.reason_code : undefined,
+					reason: alertsUnavailable ? snap.reason : undefined,
+					...Object.fromEntries(
+						(["dependabot", "code_scanning"] as const).map((feature) => [
+							`${feature}_open`,
+							securityCount(
+								{
+									...(features ? { features } : {}),
+									unavailable: alertsUnavailable,
+									truncated: incomplete || snap.truncated === true,
+									dependabot_open: items.filter((item) => item.source === "dependabot").length,
+									code_scanning_open: items.filter((item) => item.source === "code_scanning")
+										.length,
+								},
+								feature,
+							),
+						]),
+					),
 				}
 			: {}),
 	};
