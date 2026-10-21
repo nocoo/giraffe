@@ -1071,3 +1071,11 @@ reported results come from three completed, revision-rotated rounds with query,
 payload and response-shape assertions. Validate benchmark execution and fixture
 equivalence before interpreting timing differences, and never merge failed or
 incomplete runs into reported percentiles.
+
+The cleanup command initially assigned a worktree directory to zsh's special
+`path` variable, replacing command lookup paths; it stopped before deletion.
+After renaming it, the clean-tree guard also correctly stopped on the owned,
+untracked dependency symlink. Cleanup then verified tracked cleanliness, the
+exact untracked entry and symlink target before unlinking it and removing each
+worktree normally. Use descriptive shell variable names such as `worktree_path`,
+and distinguish verified owned setup artifacts from unexpected modifications.
