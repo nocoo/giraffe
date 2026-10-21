@@ -1021,3 +1021,14 @@ dependency coverage. Adversarial tests reproduced the acceptance before the fix.
 Empty headers now require a plain scalar continuation; mappings, sequences,
 aliases and flow children fail closed. Test scalar-shape boundaries separately
 from literal/folded block bodies, where key-like text must remain uninterpreted.
+
+## 2026-10-21 - Guard JSON1 extraction over generic JSON
+
+Independent review found that a schema-accepted report extension containing 1,000
+nested arrays exceeded SQLite JSON1's depth, despite fitting the generic payload
+byte limit. The new expression index made migration and generic POST/PATCH fail
+with malformed JSON. Red regressions reproduced all three failures. Index and
+query extraction now guard the full payload with `json_valid`; uninspectable
+components become null without deleting or rejecting the resource. Expression
+indexes over generic data must handle the storage schema's full legal domain,
+not just structurally valid consumer reports.

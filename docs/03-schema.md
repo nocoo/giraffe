@@ -29,9 +29,12 @@ GitHub 字段名跟 REST/GraphQL 对齐（`login`、`nameWithOwner`、`stargazer
 Migration `0015_analysis_reports.sql` adds only the repeatable partial expression
 index `agent_analysis_recent` on existing `agent_resources` rows where
 `collection='reports' AND type='github-analysis'`. Its columns are account ID,
-`json_array(json_extract(payload,'$.scope'),repository,json_extract(payload,'$.domain'))`,
-`CASE WHEN json_extract(payload,'$.generatedAt') GLOB '????-??-??T*' THEN julianday(json_extract(payload,'$.generatedAt')) END DESC`,
-and `id DESC`. The guard excludes relative/nondeterministic time keywords without
+the JSON-encoded scope/repository/domain tuple, guarded generation time descending,
+and `id DESC`. Every JSON extraction uses
+`CASE WHEN json_valid(payload) THEN payload END` as its input, including key seeks
+and final ordering. JSON1-uninspectable payloads (such as schema-accepted deeply
+nested extensions) keep their rows and generic CRUD support; their scope/domain/
+time index components become null. The date guard excludes relative/nondeterministic time keywords without
 rejecting generic JSON writes; full report validation remains client-side. The encoded
 key preserves the exact scope/repository/domain tuple, including nulls, without
 delimiter collisions. Valid generation timestamps compare as actual instants;

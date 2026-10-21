@@ -246,6 +246,11 @@ validation; malformed keys are retained as separate groups, not silently dropped
 The UI chooses current-source, valid completed reports only among these three;
 older historical or child reports outside that set are no longer candidates.
 
+Every indexed/query JSON extraction guards the payload with `json_valid` first.
+Generic JSON deeper than JSON1 can inspect remains legal for storage and CRUD;
+its scope/domain/time index components are null, not a migration/write failure.
+Selected rows retain original payloads for normal client validation.
+
 The additive partial index `0015_analysis_reports.sql` supports one SQL read with
 successor-key and top-three equality seeks; only selected row IDs hydrate payloads
 and the final sort is bounded to those rows. K keys yield at most 3K rows, not a

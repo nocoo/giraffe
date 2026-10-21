@@ -69,6 +69,28 @@ async function setup() {
 		);
 	return { db, raw, env, app, token, call, prefix: `/accounts/${account}` };
 }
+
+it.each(["POST", "PATCH"])(
+	"preserves generic %s of JSON beyond JSON1's nesting depth",
+	async (method) => {
+		const s = await setup();
+		const payload = JSON.parse(
+			`{"scope":"global","domain":"prs","generatedAt":"2026-10-21T00:00:00Z","extension":${"[".repeat(1000)}0${"]".repeat(1000)}}`,
+		);
+		const path = `${s.prefix}/agent/reports`;
+		const body = { id: "deep", type: "github-analysis", status: "completed", payload };
+		if (method === "PATCH")
+			expect((await s.call(path, "POST", { ...body, payload: {} })).status).toBe(201);
+		const response = await s.call(
+			method === "POST" ? path : `${path}/deep`,
+			method,
+			method === "POST" ? body : { revision: 1, payload },
+		);
+		expect(response.status).toBe(method === "POST" ? 201 : 200);
+		expect(await response.json()).toMatchObject({ item: { payload } });
+		expect(await (await s.call(`${path}/deep`)).json()).toMatchObject({ item: { payload } });
+	},
+);
 it("keeps unavailable and limited counts in compact machine history without writes", async () => {
 	const s = await setup();
 	for (const [id, at] of [

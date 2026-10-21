@@ -742,6 +742,9 @@ promote older generations. Selected malformed/non-completed rows consume slots
 and still undergo strict UI validation; malformed keys form separate groups.
 The UI prefers current-source valid completed reports only within the selected
 three; an older current or child report outside that set is not a candidate.
+Index/query extraction guards `json_valid` before inspecting JSON: payloads deeper
+than JSON1 can parse remain legal for generic CRUD/migration, with null extracted
+scope/domain/time index components and unchanged original payloads.
 There are no query parameters/cursor on this `{account_id, items}` projection.
 Indexed key/top-three seeks hydrate at most 3K payloads for K keys in one read-only
 query, without scanning historical payloads. This is not a fixed account-wide byte

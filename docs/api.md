@@ -1043,6 +1043,12 @@ completed candidates are displayed, preferring current sources within the select
 three and then generation time; ties preserve the server's ID order. A current
 historical report outside those three is no longer a display candidate.
 
+Index/query JSON extraction first guards the entire payload with `json_valid`.
+Schema-accepted payloads beyond JSON1's nesting depth remain stored and writable;
+their extracted scope/domain/time components become null, while repository still
+participates in the key. Selected rows retain their original payloads for client
+validation. Migration, POST and PATCH do not reject or rewrite these resources.
+
 Migration `0015_analysis_reports.sql` adds a partial expression index. One SQL
 statement seeks distinct indexed keys, then at most three row IDs per key before
 loading payloads. The final sort covers only selected rows, not report history.

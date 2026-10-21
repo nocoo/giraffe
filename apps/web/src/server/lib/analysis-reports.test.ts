@@ -193,3 +193,29 @@ it("preserves generic CRUD for malformed and relative generation times", async (
 		"invalid-2",
 	]);
 });
+
+it("migrates schema-accepted JSON deeper than JSON1 can inspect without changing rows", async () => {
+	const { raw, db } = await fixture();
+	await raw.prepare("DROP INDEX agent_analysis_recent").run();
+	const payload = JSON.parse(
+		`{"scope":"global","domain":"prs","generatedAt":"2026-10-21T00:00:00Z","extension":${"[".repeat(1000)}0${"]".repeat(1000)}}`,
+	);
+	await createResource(db, "a", "reports", {
+		id: "deep",
+		type: "github-analysis",
+		status: "completed",
+		payload,
+	});
+	const before = await raw.prepare("SELECT * FROM agent_resources").all();
+	expect(
+		await raw.prepare("SELECT json_valid(payload) AS valid FROM agent_resources").first(),
+	).toEqual({ valid: 0 });
+	const migration = readFileSync("migrations/0015_analysis_reports.sql", "utf8");
+	await raw.prepare(migration).run();
+	await raw.prepare(migration).run();
+	expect(await raw.prepare("SELECT * FROM agent_resources").all()).toEqual(before);
+	expect((await readAnalysisReports(db, "a")).items).toMatchObject([{ id: "deep", payload }]);
+	await updateResource(db, "a", "reports", "deep", { revision: 1, payload });
+	expect((await getResource(db, "a", "reports", "deep"))?.revision).toBe(2);
+	expect(await raw.prepare("PRAGMA integrity_check").first()).toEqual({ integrity_check: "ok" });
+});
