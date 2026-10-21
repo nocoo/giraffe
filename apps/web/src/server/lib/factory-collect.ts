@@ -344,8 +344,15 @@ async function collectStream(
 			new TextEncoder().encode(JSON.stringify(data)).length > FACTORY_BYTE_CAP
 		) {
 			data.items = data.items.slice(0, FACTORY_ITEM_CAP);
-			while (new TextEncoder().encode(JSON.stringify(data)).length > FACTORY_BYTE_CAP)
+			while (new TextEncoder().encode(JSON.stringify(data)).length > FACTORY_BYTE_CAP) {
+				if (!data.items.length)
+					throw new ApiError(
+						422,
+						"factory_capacity",
+						"resource metadata exceeds capacity; previous data retained",
+					);
 				data.items = data.items.slice(0, Math.floor(data.items.length * 0.9));
+			}
 			data.coverage.status = "limited";
 			data.coverage.reason = "Resource exceeds 5,000 records or 1.2 MB; observed subset only";
 			data.next = null;

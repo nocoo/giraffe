@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import {
 	github,
@@ -7,6 +8,7 @@ import {
 	rawRepo,
 	ready,
 } from "../../../../../tests/fixtures/factory";
+import { factoryCapacityOutcome } from "../../../../../tests/fixtures/factory-capacity";
 import { githubUnavailableFixtures } from "../../../../../tests/fixtures/github-unavailable";
 import { FACTORY_STREAMS } from "../../lib/factory-types";
 import {
@@ -561,3 +563,24 @@ it("marks oversized manifest responses limited before decoding their contents", 
 	});
 	expect(state.repos[0]?.coverage.dependencies.reason).toContain("memory budget");
 });
+
+it.each(["fresh", "reused"] as const)(
+	"bounds oversized %s manifest metadata without replacing prior evidence",
+	async (mode) => {
+		// A child timeout also catches a synchronous loop that would block Vitest's timers.
+		const child = spawnSync("bun", ["run", "tests/fixtures/factory-capacity.ts", mode], {
+			encoding: "utf8",
+			timeout: 3000,
+		});
+		expect(child.error).toBeUndefined();
+		expect(child.status, child.stderr).toBe(0);
+		const expected = {
+			code: "factory_capacity",
+			writes: 0,
+			unchanged: true,
+			requests: mode === "fresh" ? 1 : 0,
+		};
+		expect(JSON.parse(child.stdout)).toEqual(expected);
+		expect(await factoryCapacityOutcome(mode)).toEqual(expected);
+	},
+);

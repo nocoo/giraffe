@@ -772,3 +772,21 @@ read-only/network-denying profiler retained no-collection evidence. The correcte
 red run failed for the missing validator, not fixture setup or transport errors,
 and both complete HTTP suites subsequently passed. No existing or remote data was
 used by these fixture corrections.
+
+## 2026-10-21 - Include non-item metadata in bounded collection failures
+
+Moving package identities into `manifests` left the existing byte-limit loop
+shrinking only `items`. Independent review supplied a 1.3 MB package version,
+below the upstream 4 MB response limit but above the stream's 1.2 MB budget.
+After the last item was removed, metadata still exceeded the limit and the loop
+never terminated. Normal gates were green because they covered oversized items
+and responses, not metadata-only overflow.
+
+New tests first reproduced both fresh and reused paths in owned subprocesses
+with a three-second timeout, preventing the regression from blocking Vitest's
+own timer. The same scenarios then run in-process for coverage. Collection now
+raises the existing `factory_capacity` error when no items remain to trim; the
+existing run error path restores its checkpoint, pauses safely and preserves
+prior evidence. The tests assert no resource writes and unchanged prior data.
+Whenever a payload gains metadata outside a bounded list, verify that every
+capacity loop can still make progress or terminate with a controlled failure.

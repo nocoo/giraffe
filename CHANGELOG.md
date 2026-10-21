@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Populate machine factory stream `data.ranges` with the saved repository observation window, retaining the existing field rather than removing it. `data.observation.window` remains authoritative; legacy data without an observation uses its saved publication window, not the internal pending-range queue.
 - Normalize saved dependency metadata and separate own root/workspace package identities into `manifests`, preserving known identities during collection reuse, restoration and dependency-graph projection without new workspace scanning or rewriting historical rows.
+- Bound resource trimming when manifest metadata alone exceeds the byte budget: collection fails with `factory_capacity` and retains prior evidence instead of looping after all items are removed.
 - Project the newest dated saved GitHub rate observation, including newer catalog/active checkpoints, with `observedAt`. Undated, invalid or expired evidence returns null instead of advertising an old reset as current; publication versions and repository windows remain immutable.
 - Reuse decoded source snapshots and account projections within each request. The 126-repository benchmark reduces full reader queries from 14 to 5, payload reads from 16.76 MB to 8.78 MB, full median read time from 37.1 to 27.9 ms and empty-since time from 34.5 to 14.0 ms, with unchanged response hashes. These are local SQLite results, not production latency claims.
 
