@@ -35,6 +35,16 @@ export function dependencyFromEvent(event: FactoryEvent): FactoryDependency {
 	};
 }
 
+export function uniqueDependencySummaries(dependencies: FactoryDependency[]) {
+	const seen = new Set<string>();
+	return dependencies.filter(({ path, name, version, url }) => {
+		const key = JSON.stringify([path, name, version, url]);
+		if (seen.has(key)) return false;
+		seen.add(key);
+		return true;
+	});
+}
+
 function canonical(value: unknown): unknown {
 	if (Array.isArray(value)) return value.map(canonical);
 	if (value && typeof value === "object")

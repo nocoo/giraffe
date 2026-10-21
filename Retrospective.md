@@ -917,3 +917,15 @@ real action. Six failing collection/publication cases now constrain uses to the
 direct job or step property column. Other uses positions fail closed instead of
 guessing their meaning. The scanner must establish both key and structural
 position before assigning identity; matching a name and value is insufficient.
+
+## 2026-10-21 - Keep response-only normalization outside shared storage readers
+
+The aggregate dependency fix initially deduplicated summaries in
+`normalizePublication`. GET tests proved unchanged stored rows and query counts,
+but independent review found that `publicationWrites` reused that reader as its
+baseline and consequently wrote deduplicated legacy summaries into the next
+publication. A failing writer regression reproduced the unintended change. The
+deduplication now runs in `statisticsFactory`, the account/browser response
+projection, while storage readers and writers retain their prior behavior. Trace
+both read and write callers before choosing a response-only normalization point;
+read-only GET assertions alone do not prove unchanged subsequent writes.

@@ -225,6 +225,15 @@ access loss during pagination remain failures, not expected absence.
   Config/workflow labels that happen to match a package name remain evidence.
   Collection still scans only pinned root manifests/named workflow/config files;
   absent workspace identity is not evidence that every dependency is external.
+- Account `/factory` aggregate `repos[].dependencies` contains
+  `{name, version, path, url}` summaries, not events, and carries no `id`.
+  Summaries are unique per repo by exact `(path, name, version, url)` equality in
+  first-seen order; distinct versions/refs, paths, names or URLs remain separate.
+  The browser aggregate and dependency graph share this read-time normalization.
+  Removing identical duplicates is non-breaking: no extra D1 reads, writer/schema
+  changes or stored-row updates. Do not infer job identity or job counts from
+  summaries; job-level `#job=` and legacy `#ref=` IDs live only on the per-repo
+  dependencies stream.
 - Workflow IDs: let `B=<workflow-path>:<uses-target>`. New literal block-style
   references include the real job mapping key as `job` and use
   `B#job=<encodeURIComponent(job)>`, including single references; display names,

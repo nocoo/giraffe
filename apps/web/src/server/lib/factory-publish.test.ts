@@ -180,6 +180,29 @@ it("does not overwrite a published global version when updating only the catalog
 	await db.batch(await publicationWrites(db, lease, now));
 	expect((await publishedFactory(db, snap.account_id))?.runId).toBe(snap.runId);
 });
+
+it("retains identical legacy dependency summaries in subsequent publication writes", async () => {
+	const { db, lease, repo } = await setup();
+	lease.run.mode = "refresh";
+	const dependency = {
+		name: "actions/upload-artifact",
+		version: "v4",
+		path: ".github/workflows/ci.yml",
+		url: "saved",
+	};
+	repo.dependencies = [dependency, { ...dependency }];
+	repo.observation = { source: "legacy", version: "old", window: snap.window, refreshedAt: now };
+	await db.batch(
+		replaceSnapshotStmts(db, snap.account_id, "factory", { ...snap, repos: [repo] }, now),
+	);
+	const before = await readSnapshot(db, snap.account_id, "factory");
+	await db.batch(await publicationWrites(db, lease, now));
+	expect(await readSnapshot(db, snap.account_id, `factory:v:${lease.run.id}`)).toMatchObject({
+		repos: [{ dependencies: repo.dependencies, observation: repo.observation }],
+	});
+	expect(await readSnapshot(db, snap.account_id, "factory")).toEqual(before);
+});
+
 it("recovers only matching legacy resource versions and does not invent missing data", async () => {
 	const { db, lease, repo } = await setup();
 	expect(await restoreLegacyRepo(db, lease, now, repo)).toEqual([]);

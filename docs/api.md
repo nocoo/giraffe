@@ -547,6 +547,16 @@ separately, with paths such as `package.json` or `packages/app/package.json`.
 Published factory repository entries expose the same optional `manifests` array
 alongside their normalized `dependencies` list.
 
+Account `/factory` aggregate `repos[].dependencies` contains summaries shaped as
+`{name, version, path, url}`, with no `id`. Summaries are unique per repository by
+exact `(path, name, version, url)` equality, preserving first-seen order. Different
+versions/refs, paths, names or URLs remain separate; summaries do not identify
+individual workflow jobs. The browser aggregate and its dependency graph use the
+same summary normalization. This is a non-breaking removal of identical duplicates
+at read time, with no extra D1 reads, writer/schema changes or stored-row updates.
+Job-level unique IDs (`#job=`) and legacy evidence IDs (`#ref=`) belong only to the
+per-repository dependencies stream, not aggregate summaries.
+
 Read-time normalization extracts saved root/workspace `package.json#name` evidence
 and removes npm dependency declarations referring to those own package names.
 Existing rows benefit without refresh or migration; new and reused collection

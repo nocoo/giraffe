@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.16.1 - 2026-10-21
+
+### Fixed
+
+- Deduplicate account `/factory` dependency summaries per repository by exact `(path, name, version, url)` equality, preserving first-seen order and distinct refs. The browser aggregate and its dependency graph use the same read-time projection, without extra D1 reads or changes to writers, schema, saved rows, coverage or publication versions/windows.
+
+### Compatibility
+
+- Non-breaking: only identical duplicate summaries are removed. Aggregate `repos[].dependencies` retains `{name, version, path, url}` without an `id`; job-level `#job=` and legacy `#ref=` IDs remain exclusive to the per-repository dependencies stream.
+
 ## v0.16.0 - 2026-10-21
 
 ### Added
