@@ -254,6 +254,8 @@ This rule is shared by browser factory freshness, machine `/factory` and
 statistics; this is a freshness-denominator rule, not a change to list selection.
 Machine `/factory` and `account:factory` expose `truncated:true` when
 `publication.inventory.complete !== true`, even when `freshness.missing` is zero.
+An existing saved `truncated:true` is also preserved, even with complete inventory;
+the same combined rule enters the account factory content hash.
 `fetchedAt` is the latest eligible immutable observation, never the publication
 clock. Inventory `total`, `scanned` and `pages` remain historical collection
 metadata, not projected repository counts.
@@ -353,7 +355,7 @@ An existing input without a stored hash makes the composite null.
 | --- | --- |
 | Account repos/issues/PRs and other projected lists | Catalog and aggregate snapshot hashes, plus hashes of the complete repository pages actually selected to replace aggregate rows; selected repository names, completeness, freshness `total`/`missing` and truncation. Repo catalogs also include local starred/statistics-enabled flags. |
 | Account CI | Catalog hash and selected repositories' latest saved `actions`, `releases`, `details` hashes, keyed by lowercase repository source identity; missing rows use `"missing"`; derived freshness `total`/`missing`. Refresh-clock-dependent verdicts, ages and histograms are not hashed. |
-| Account factory | Saved publication and catalog hashes, selected catalog repository names, enabled published repository identities (`observed`), scope, derived freshness `total`/`missing` and inventory-derived `truncated`. |
+| Account factory | Saved publication and catalog hashes, selected catalog repository names, enabled published repository identities (`observed`), scope, derived freshness `total`/`missing` and combined saved/inventory `truncated`. |
 | Contributions | Saved publication hash and resolved inclusive `since`/`until` dates. |
 | Derived insights | Null; use the unchanged full `sourceVersion`. |
 

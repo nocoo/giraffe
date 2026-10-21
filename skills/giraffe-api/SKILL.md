@@ -224,7 +224,9 @@ access loss during pagination remain failures, not expected absence.
   remain statistics-unfiltered. `/factory` and `/sources`'s `account:factory` agree
   and return `truncated:true` for incomplete publication inventory, independently
   of missing counts. Their composite content hash includes enabled published
-  identities, total/missing and inventory truncation; versions/windows stay intact.
+  identities, total/missing and combined saved/inventory truncation; a saved
+  `truncated:true` never becomes false merely because inventory is complete.
+  Versions/windows stay intact.
   Inventory counters remain historical metadata. Default/`scope=all` preserves the saved account
   calendar's exact 90 `days[]`, totals, status and `contributionObservation`.
   Only `scope=starred` excludes the unprojectable calendar (`contribution:null`,

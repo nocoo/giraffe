@@ -127,6 +127,7 @@ export type FactoryRate = {
 	observedAt?: string;
 };
 export type FactorySnapshot = {
+	truncated?: boolean;
 	freshness?: import("./snapshot-freshness").SnapshotFreshness;
 	contributionExcluded?: boolean;
 	contributionObservation?: { version: string; window: FactoryWindow; fetchedAt: string };

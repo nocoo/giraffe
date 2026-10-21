@@ -162,6 +162,7 @@ and statistics-disabled archived/fork entries do not inflate missing/oldest time
 An eligible published repository without a valid immutable observation time still
 counts as missing. Machine `/factory` and `/sources`'s `account:factory` agree;
 both report `truncated:true` when publication inventory is not complete. Machine
+reads also retain any saved truncation flag when inventory is complete. Machine
 repository list membership remains statistics-unfiltered. The account factory
 content hash includes enabled published identities, freshness total/missing and
 inventory truncation, so changing enabled identities invalidates it even when

@@ -124,7 +124,7 @@ export function factoryContent(snapshot: FactorySnapshot, policy: Policy) {
 			scope: policy.scope,
 			total: freshness.total,
 			missing: freshness.missing,
-			truncated: snapshot.inventory.complete !== true,
+			truncated: snapshot.truncated === true || snapshot.inventory.complete !== true,
 		},
 	);
 }
@@ -208,7 +208,7 @@ export function projectFactoryObservation(snapshot: FactorySnapshot, policy: Pol
 		...projected,
 		fetched_at: freshness.latestAt ?? "",
 		freshness,
-		truncated: projected.inventory.complete !== true,
+		truncated: projected.truncated === true || projected.inventory.complete !== true,
 	};
 }
 

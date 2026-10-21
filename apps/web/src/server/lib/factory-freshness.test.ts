@@ -141,3 +141,21 @@ it("includes enabled identities in hashes even when freshness counts do not chan
 	expect(starred.contentVersion).not.toBe(second.contentVersion);
 	expect(publication.repos).toHaveLength(4);
 });
+
+it("preserves stored truncation independently of complete inventory", async () => {
+	const { raw, db, account, publication, save } = await fixture();
+	const complete = await readObservation(db, account, "factory", "all");
+	await save("factory", { ...publication, truncated: true });
+	const truncated = await readObservation(db, account, "factory", "all");
+	expect(truncated).toMatchObject({
+		truncated: true,
+		freshness: { total: 1, missing: 0 },
+		data: { truncated: true, inventory: { complete: true } },
+	});
+	expect(truncated.contentVersion).not.toBe(complete.contentVersion);
+	expect(
+		(await readSources(createDb(raw), account, {})).sources.find(
+			(source) => source.resource === "account:factory",
+		),
+	).toMatchObject({ truncated: true, contentVersion: truncated.contentVersion });
+});

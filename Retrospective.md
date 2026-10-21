@@ -1003,6 +1003,15 @@ the complete fixture established 103 eligible observations. Derive expectations
 from all declared selection inputs, including settings seeded later in a fixture,
 rather than treating its catalog declaration as the entire policy.
 
+## 2026-10-21 - Compose independent truncation signals
+
+The factory freshness correction initially assigned truncation solely from inventory
+completeness. Independent review reproduced a stored truncated publication with a
+complete inventory: machine reads incorrectly cleared its existing quality flag.
+A failing regression now covers that combination, and both the response and its
+content-hash selection OR saved truncation with incomplete inventory. New quality
+signals must supplement existing evidence, not replace independent failure flags.
+
 ## 2026-10-21 - Distinguish empty conditions from scalar continuations
 
 The initial multiline workflow condition scanner skipped every indented child
