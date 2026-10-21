@@ -135,6 +135,7 @@ api -G "$API/sources" --data-urlencode 'since=2026-10-19T08:00:00+08:00' \
 | `/repos` | `repos`, `fetched_at`, `truncated`; each repo includes `name_with_owner`, local `starred` and `statistics_enabled` |
 | `/issues` | Open `issues`, saved times/flags, optional `repository_fetched_at` |
 | `/prs` | Open `pull_requests`, saved times/flags, optional `repository_fetched_at` |
+| `/contributions?since=&until=` | Inclusive saved calendar dates (at most 90 days), typed counts, original provenance, partial-day flags; no `scope` |
 | `/ci` | `streams`, `repos`, `daily`, `totals`, `fetched_at`, `freshness`, `unsaved` |
 | `/factory` | Published factory snapshot, inventory, repos, window and publication metadata |
 | `/repos/:owner/:name` or `/repos/:owner/:name/details` | Repository details |
@@ -148,11 +149,14 @@ api -G "$API/sources" --data-urlencode 'since=2026-10-19T08:00:00+08:00' \
 | `/repos/:owner/:name/contributors` | `contributors` |
 | `/factory/repos/:owner/:name/:stream` | Exactly `commits`, `issues`, `prs`, `actions`, `releases`, `alerts`, `dependencies` |
 
-The five account endpoints accept `scope=all|starred`, default `all`; invalid or
+The five account endpoints `/repos`, `/issues`, `/prs`, `/ci`, `/factory` accept
+`scope=all|starred`, default `all`; invalid or
 repeated scope is 400. Stars are local Giraffe stars, not GitHub stars. There is
 no HTTP pagination or statistics filter. Repo/stream endpoints have no supported
 query parameters. Traffic/security/languages/contributors are readable but not
-listed in `/sources`. Open-item snapshots are not closed-event history.
+listed in `/sources`; the separate `/contributions` endpoint accepts date bounds
+and is discoverable through the saved `account:factory` calendar, not its own
+source-index entry. Open-item snapshots are not closed-event history.
 
 Every documented machine GET rejects unknown query keys with 400
 `validation_failed`, using the standard error envelope. This includes `/me`,
@@ -271,6 +275,28 @@ PR items on account `/prs`, repository `/repos/:owner/:name/prs` and factory
 the latest head commit, not inferred from Actions or reviews. Old/unavailable
 evidence is null; never treat it as mergeable or passing checks. See the
 [PR contract](../../docs/api.md#pr-merge-and-checks-state).
+
+### Contribution calendar
+
+`GET /contributions` accepts only optional real `YYYY-MM-DD` `since`/`until`,
+inclusive and within the saved range, at most 90 days. Omitted bounds select the
+saved full calendar. Repeated/unknown parameters, invalid/reversed/out-of-range
+dates return 400; no saved calendar returns 409 `snapshot_missing`. It uses the
+observation envelope and supports authenticated ETag/304 polling like `/sources`.
+
+`data.days[].count` and `data.total` use authoritative GitHub calendar counts;
+missing days/counts and the resulting total are null, not zero. Each day's nullable
+`types` contains `commits`, `issues`, `pullRequests`, `pullRequestReviews`,
+`restricted`, `repositories`; `breakdown` is `complete|unavailable|mismatch`.
+Never reconstruct calendar totals from a mismatched type sum.
+`timezone:"github"` preserves native calendar date keys; type-query intervals
+explicitly use `typeWindowTimezone:"UTC"`. Do not equate either with Shanghai
+date buckets. `partial` describes the frozen final observation day, not GET time.
+Top-level `observedAt` dates the calendar request, day-level `observedAt` the type
+batch. `sourceVersion`/`window` retain the calendar's original provenance after a
+failed newer run, even when `source.publicationId` is newer. Scheduled daily runs
+now refresh this source; consumers still must not trigger an unauthorized refresh.
+Details and official attribution references: [contributions](../../docs/api.md#get-contributions).
 
 ## Records, reports and jobs
 

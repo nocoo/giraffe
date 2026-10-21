@@ -208,8 +208,12 @@ const github = await listen(githubPort, (req, res) => {
 		}
 		if (url.pathname === "/graphql") {
 			const raw = await readBody(req);
-			const query = String((JSON.parse(raw || "{}") as { query?: string }).query ?? "");
-			const factoryResponse = factoryGraphqlStub(query);
+			const request = JSON.parse(raw || "{}") as {
+				query?: string;
+				variables?: Record<string, unknown>;
+			};
+			const query = String(request.query ?? "");
+			const factoryResponse = factoryGraphqlStub(query, request.variables ?? {});
 			if (factoryResponse) {
 				await Bun.sleep(300);
 				sendJson(res, 200, factoryResponse);

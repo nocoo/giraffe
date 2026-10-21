@@ -49,6 +49,21 @@ writes. It also runs `scripts/verify-factory-migration.ts` on pre/post-migration
 SQL backups, including operational probes and rollback checks. No production
 backup, PAT or remote D1 is involved; production settings are not changed.
 
+### Additive contribution and PR payloads (v0.16.0)
+
+No observation table migration is needed. Factory contribution JSON keeps
+`days[].date/count`, `total`, `restricted` and `fetchedAt`. New observations add
+`observedAt`, `partial`, `timezone:"github"`, `typeWindowTimezone:"UTC"`,
+`typesStatus`, and nullable per-day `types` plus `breakdown`/observation metadata.
+Calendar provenance remains the existing immutable `contributionObservation`.
+Pending type batches remain fenced run checkpoints; a failed run does not publish
+them over prior good data. Existing publication/retention references remain intact.
+
+PR snapshot items and factory PR events add `mergeable:boolean|null`,
+`mergeStateStatus:string|null` and `checks:{state:string|null}`. Legacy rows remain
+stored unchanged; machine reads project explicit nulls. See the
+[API reference](api.md#pr-merge-and-checks-state) for enum and date semantics.
+
 ### `repo_statistics`
 
 仓库参与统计的手动覆盖值，主键 `(account_id, repo)`，仓库名不区分大小写，`enabled` 为 0/1。无覆盖值时，Fork 或已归档仓库默认不参与，其余默认参与。设置独立于 GitHub 快照保存，重新同步不会重置；删除账号时级联删除。增量迁移为 `migrations/0004_repo_statistics.sql`，可重复执行；回滚代码时保留该表即可，无需删除原始快照或设置。

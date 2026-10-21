@@ -68,7 +68,8 @@ filtered result does not prove that all sources have been analyzed.
 Every documented machine GET rejects unknown query keys with 400
 `validation_failed`, including identity, individual resources, settings and run
 lists. Repository pages and factory streams accept no query parameters; account
-observations accept only `scope`. Authentication and authorization run first.
+observations accept only `scope`, except `/contributions`, which accepts only
+`since`/`until` dates. Authentication and authorization run first.
 
 Machine source indexes support content-derived `ETag` / `If-None-Match` validation
 with bodyless 304 responses. Authorization and query validation are never bypassed.
@@ -87,6 +88,9 @@ Generic agent resources keep their independent storage/CRUD contract.
 Other read paths include:
 
 - `/repos`, `/issues`, `/prs`, `/ci`, `/factory` for saved account observations.
+- `/contributions?since=YYYY-MM-DD&until=YYYY-MM-DD` for the saved account-wide
+  calendar, with inclusive dates inside its saved range (at most 90 days), strict
+  query validation, observation provenance and authenticated ETag/304 support.
 - `/repos/:owner/:name` and `/repos/:owner/:name/:resource` for saved repository
   pages (details, issues, PRs, Actions, releases, traffic, security, languages and
   contributors).
@@ -98,6 +102,16 @@ All three PR surfaces (account, repository snapshot and factory PR stream) expos
 GitHub's latest-head `statusCheckRollup`; absent/legacy values remain null,
 never inferred success. These are saved observations, not live merge permission.
 See [PR merge and checks state](api.md#pr-merge-and-checks-state).
+
+Daily scheduled runs now refresh contributions through seven bounded resumable
+pages (one calendar and six 15-day type batches). Calendar totals stay authoritative;
+daily commits/issues/PRs/reviews/restricted/repository counts are nullable, with
+explicit unavailable/mismatch markers rather than invented zeros. Calendar dates
+retain GitHub attribution (`timezone:github`); type windows use UTC, neither is
+promised to match Asia/Shanghai buckets. `observedAt` and `partial` describe the
+frozen evidence, not the current GET time. Failed runs retain the prior good
+calendar and its original version/window/time. See the
+[complete contribution contract](api.md#get-contributions).
 
 Factory stream `data.observation.window` supplies the repository's original
 window; `data.ranges` is a one-window array with that value (or the saved publication

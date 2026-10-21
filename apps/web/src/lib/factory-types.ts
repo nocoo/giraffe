@@ -146,10 +146,29 @@ export type FactorySnapshot = {
 	requests: number;
 	rate: { remaining: number; resetAt: string | null; resource: string; observedAt?: string } | null;
 	contribution: {
-		days: { date: string; count: number }[];
+		days: {
+			date: string;
+			count: number;
+			partial?: boolean;
+			observedAt?: string;
+			types?: {
+				commits: number | null;
+				issues: number | null;
+				pullRequests: number | null;
+				pullRequestReviews: number | null;
+				restricted: number | null;
+				repositories: number | null;
+			};
+			breakdown?: "complete" | "unavailable" | "mismatch";
+		}[];
 		total: number;
 		restricted: number;
 		fetchedAt: string;
+		observedAt?: string;
+		partial?: boolean;
+		timezone?: "github";
+		typeWindowTimezone?: "UTC";
+		typesStatus?: "pending" | "complete" | "partial";
 	} | null;
 	contributionStatus: "pending" | "complete" | "unavailable";
 };

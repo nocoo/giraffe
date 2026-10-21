@@ -15,6 +15,16 @@
 
 ## API、成本与存储
 
+Since v0.16.0, scheduled daily quick runs refresh the account contribution calendar
+as well as weekly/full runs. Collection uses one calendar page plus six bounded
+15-day type-query pages, with existing lease/fence/rate/retention boundaries.
+`GET /api/v1/accounts/:account/contributions` serves inclusive saved date ranges
+without collecting upstream. GitHub calendar dates/totals are retained verbatim;
+nullable type counts use explicit UTC intervals and may not sum to those native
+calendar buckets. Neither is promised to match Asia/Shanghai. A failed collection
+retains prior data and original provenance; today's frozen partial day is explicit.
+See [the contribution API and source references](api.md#get-contributions).
+
 持久刷新设计、迁移与回滚见 [09 — 持久化工厂刷新](09-factory-runs.md)。
 
 仓库页的“参与统计”开关统一约束工厂列表、图表、汇总、引用图及刷新计划。设置在响应读取时应用，不修改不可变发布版本；重新开启会恢复已有观测。旧清单未保存的 Fork/归档仓库，需要同步仓库列表后再采集，缺失观测不算作零。GitHub 全账号贡献日历无法按仓库排除，因此不展示该汇总，保留参与统计仓库的提交日历。全站原始快照与单仓详情继续保留，方便管理和重新纳入。页面缺数据时统一导航到控制台，失败保留已有数据与原时间。

@@ -381,6 +381,93 @@ Per-repository summaries likewise expose `brokenWorkflows`, `flakyWorkflows`,
 `nonDefaultBranchFailures` and `botStreams`. The ambiguous legacy totals and
 per-repository count names are removed; consumers must use the explicit-unit names.
 
+### GET /contributions
+
+`GET /api/v1/accounts/A/contributions` requires `observations:read` and reads the
+saved account-wide calendar, independent of repository stars/statistics. It never
+collects GitHub data or updates token activity. Optional `since` and `until` are
+inclusive, real `YYYY-MM-DD` dates; omitted bounds use the saved earliest/latest
+dates. Both bounds must lie inside the saved calendar and cover at most 90 days.
+Reversed ranges, invalid dates, repeated parameters and unknown keys (including
+`scope`) return 400 `validation_failed`. The endpoint does not extend missing
+history with zeroes. No saved publication/calendar returns 409 `snapshot_missing`;
+401/403 account/scope checks and unknown-path 404 follow the other machine reads.
+
+The standard observation envelope contains this `data` shape:
+
+```text
+{
+  since, until, total: number|null, observedAt, fetched_at,
+  timezone: "github", typeWindowTimezone: "UTC", partial: boolean,
+  window: {since,until}, collectionStatus: "complete"|"pending"|"unavailable",
+  days: [{date,count:number|null,partial,observedAt,unavailable,
+    types:{commits,issues,pullRequests,pullRequestReviews,restricted,repositories},
+    breakdown:"complete"|"unavailable"|"mismatch"}],
+  freshness, coverage, unavailable
+}
+```
+
+Each type count is a nonnegative integer or null, never a fabricated zero.
+`count` retains GitHub's authoritative calendar count; selected `total` sums
+these counts, not type aggregates. A missing/invalid saved day returns null count,
+`unavailable:true`, and null selected total. Calendar `coverage` reports selected
+`total` and `observed` days, status `complete|unavailable`, and independent
+`typesStatus:complete|partial|pending|unavailable`. Freshness uses original
+calendar observation times per selected day, with missing days counted explicitly.
+Known calendar counts remain usable when type details are unavailable.
+
+`sourceVersion` identifies the original calendar observation run, not necessarily
+the newest global publication. `source.publicationId` identifies that publication;
+`data.window` is the retained calendar's original frozen window. A newer failed
+collection keeps the prior calendar, version, window and timestamps, while
+`collectionStatus` reports the latest attempt's unavailable status. GET never
+advances freshness. Legacy calendars gain null type fields in this endpoint,
+without rewriting stored rows. `/factory` retains its original contribution
+shape and adds only optional fields on newly collected calendars.
+
+Strong content-derived ETags and authenticated `If-None-Match` 304 responses work
+as on `/sources`. Authentication and query validation still run; 304 has no body
+and retains `Cache-Control: private, no-store`, `Vary: Authorization` and
+`Referrer-Policy: no-referrer`. Keep validators per date-range query.
+
+#### Contribution dates, types and partial days
+
+Calendar `date` keys are GitHub's native `contributionCalendar` dates, unchanged.
+They are **not converted to Asia/Shanghai** and must not be assumed to match a
+consumer's Shanghai buckets. GitHub documents that commits use the timestamp's
+time zone (profile attribution uses author date), while issues/PRs use the browser
+or API creation time zone. GraphQL defines `ContributionCalendarDay.date` as the
+day represented by the square; it does not promise a uniform Shanghai/UTC re-bucket
+of every underlying event. Hence the explicit `timezone:"github"` label.
+
+Typed aggregates query `contributionsCollection` for each date's explicit UTC
+interval `00:00:00.000Z` through `23:59:59.999Z` (GitHub's `to` is inclusive),
+clipping the last day at the frozen run `window.until`. They include commit,
+issue, PR, PR-review, restricted/private and repository-creation counts; first
+and popular contributions are not excluded. Different attribution boundaries,
+permission visibility and GitHub counting rules can prevent their sum from
+matching the calendar count. `breakdown:"mismatch"` exposes that discrepancy;
+there is no inferred residual/private type and totals are never adjusted to fit.
+
+`partial` marks the final incomplete day of the frozen observation window, not
+the current GET date. Top-level `observedAt` is the calendar request observation
+time; each day's `observedAt` is its type-batch observation time, or the calendar
+time for legacy/missing type details. The day flag remains partial even tomorrow
+until a newer successful run observes it again. Normal daily scheduled refreshes
+now collect contributions as well as weekly/full runs; manual selected runs do
+not silently broaden to account-wide collection. One calendar request plus six
+15-day aggregate batches costs at most seven resumable lease pages for 90 days,
+with the existing request/rate reserve, fencing, publication and retention rules.
+
+Sources: [GitHub contribution time attribution](https://docs.github.com/en/account-and-profile/reference/profile-contributions-reference#how-contribution-event-times-are-calculated),
+[GraphQL calendar dates](https://docs.github.com/en/graphql/reference/users#contributioncalendarday),
+[GraphQL collection bounds](https://docs.github.com/en/graphql/reference/users#user).
+
+```bash
+api "$API/contributions"
+api -G "$API/contributions" --data-urlencode 'since=2026-10-01' --data-urlencode 'until=2026-10-21'
+```
+
 ### Repository endpoints
 
 `GET /repos/:owner/:name` reads `details`; `GET /repos/:owner/:name/:resource`

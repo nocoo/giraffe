@@ -15,6 +15,7 @@ import {
 	type FactoryWindow,
 } from "../../lib/factory-types";
 import { ApiError } from "./errors";
+import { collectContributions } from "./factory-contributions";
 import {
 	coverage,
 	exclusion,
@@ -24,11 +25,7 @@ import {
 	object,
 	rows,
 } from "./factory-map";
-import {
-	FACTORY_CONTRIBUTIONS_QUERY,
-	FACTORY_DEPENDENCIES_QUERY,
-	FACTORY_INVENTORY_QUERY,
-} from "./factory-queries";
+import { FACTORY_DEPENDENCIES_QUERY, FACTORY_INVENTORY_QUERY } from "./factory-queries";
 import type { GithubClient } from "./github-client";
 import { githubUnavailability } from "./github-unavailable";
 import { collectPrState } from "./pr-collect";
@@ -165,31 +162,6 @@ async function inventory(
 	s.inventory.complete = !info.hasNextPage;
 	if (s.inventory.complete && s.inventory.scanned !== s.inventory.total)
 		throw new ApiError(502, "github_error", "inventory changed; restart required");
-}
-async function contributions(s: FactorySnapshot, gh: GithubClient, token: string, now: string) {
-	const data = await gh.githubGraphql(token, FACTORY_CONTRIBUTIONS_QUERY, {
-		owner: s.owner,
-		...s.window,
-	});
-	rateFromData(s, data, now);
-	const collection = object(object(data.user).contributionsCollection);
-	const calendar = object(collection.contributionCalendar);
-	if (gh.graphqlErrors.length || !Array.isArray(calendar.weeks)) {
-		s.contributionStatus = "unavailable";
-		return;
-	}
-	s.contribution = {
-		total: Number(calendar.totalContributions),
-		restricted: Number(collection.restrictedContributionsCount),
-		fetchedAt: now,
-		days: rows(calendar.weeks).flatMap((w) =>
-			rows(w.contributionDays).map((d) => ({
-				date: String(d.date),
-				count: Number(d.contributionCount),
-			})),
-		),
-	};
-	s.contributionStatus = "complete";
 }
 function advanceCursor(s: FactorySnapshot) {
 	s.cursor.stream++;
@@ -417,7 +389,7 @@ export async function stepFactory(
 	const before = gh.count;
 	try {
 		if (!s.inventory.complete) await inventory(s, gh, token, now, includeDisabled);
-		else if (s.contributionStatus === "pending") await contributions(s, gh, token, now);
+		else if (s.contributionStatus === "pending") await collectContributions(s, gh, token, now);
 		else await collectStream(s, gh, token, store, now);
 		s.fetched_at = now;
 		s.revision++;

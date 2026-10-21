@@ -675,9 +675,77 @@ it("separates denied contributions from malformed contribution evidence", async 
 });
 it("daily starred refresh publishes all default page sources without requiring old global lists", async () => {
 	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] }, true);
+	const base = vi.mocked(fetch).getMockImplementation();
+	if (!base) throw new Error("fixture");
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async (url: string, init: RequestInit) => {
+			const query = String(init?.body);
+			if (query.includes("day0:"))
+				return Response.json({
+					data: {
+						user: Object.fromEntries(
+							Array.from({ length: 15 }, (_, index) => [
+								`day${index}`,
+								{
+									totalCommitContributions: 0,
+									totalIssueContributions: 0,
+									totalPullRequestContributions: 0,
+									totalPullRequestReviewContributions: 0,
+									totalRepositoryContributions: 0,
+									restrictedContributionsCount: 0,
+								},
+							]),
+						),
+					},
+				});
+			if (query.includes("contributionsCollection"))
+				return Response.json({
+					data: {
+						user: {
+							contributionsCollection: {
+								restrictedContributionsCount: 0,
+								contributionCalendar: {
+									totalContributions: 0,
+									weeks: [
+										{
+											contributionDays: Array.from({ length: 90 }, (_, index) => ({
+												date: new Date(Date.parse(snap.window.since) + index * 86400_000)
+													.toISOString()
+													.slice(0, 10),
+												contributionCount: 0,
+											})),
+										},
+									],
+								},
+							},
+						},
+					},
+				});
+			return base(url, init);
+		}),
+	);
+	await executeRunPage(env, "r1", () => now);
+	await executeRunPage(env, "r1", () => now);
+	await executeRunPage(env, "r1", () => now);
+	const pending = (await getRun(createDb(env.DB), snap.account_id, "r1"))?.run;
+	expect(pending?.steps[pending.cursor]).toMatchObject({
+		kind: "contributions",
+		status: "running",
+		pages: 1,
+	});
+	expect(pending?.checkpoint?.contributionStatus).toBe("pending");
+	expect((await publishedFactory(createDb(env.DB), snap.account_id))?.runId).toBe(snap.runId);
 	const run = await drive(env);
 	expect(run?.status).toBe("completed");
-	expect(run?.steps).toHaveLength(22);
+	expect(run?.steps).toHaveLength(23);
+	expect(run?.steps.find((step) => step.kind === "contributions")).toMatchObject({
+		status: "success",
+		pages: 7,
+	});
+	expect(
+		(await publishedFactory(createDb(env.DB), snap.account_id))?.contribution?.days,
+	).toHaveLength(90);
 	for (const kind of ["repos", "issues", "prs", "notifications", "insights"]) {
 		const saved = await readSnapshot(createDb(env.DB), snap.account_id, kind);
 		expect(saved, kind).not.toBeNull();
@@ -709,7 +777,7 @@ it("daily starred refresh publishes all default page sources without requiring o
 		vi
 			.mocked(fetch)
 			.mock.calls.some(([, init]) => String(init?.body).includes("contributionsCollection")),
-	).toBe(false);
+	).toBe(true);
 });
 it("publishes only a complete committed repository set and survives every-page restarts", async () => {
 	const env = await setup();
@@ -1352,20 +1420,14 @@ it("records unavailable coverage, metadata limits, catalog failure and malformed
 		} else {
 			const run = await drive(env);
 			expect(run?.status).toBe(
-				mode === "inventory"
-					? "failed"
-					: mode === "capacity"
-						? "paused"
-						: mode === "contributions"
-							? "completed"
-							: "partial",
+				mode === "inventory" ? "failed" : mode === "capacity" ? "paused" : "partial",
 			);
 			if (mode === "coverage")
 				expect(run?.steps.find((s) => s.kind === "alerts")?.error).toBe("coverage_unavailable");
 			if (mode === "contributions")
 				expect(
 					(await publishedFactory(createDb(env.DB), snap.account_id))?.contribution?.total,
-				).toBe(1);
+				).toBeUndefined();
 		}
 	}
 });

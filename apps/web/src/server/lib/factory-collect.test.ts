@@ -137,25 +137,54 @@ describe("factory incremental collection", () => {
 	it("separates account contribution calendar from repository commits and handles permissions", async () => {
 		const state = ready();
 		state.contributionStatus = "pending";
-		await invoke(
-			state,
-			github(() =>
-				Response.json({
+		const gh = github((_url, init) => {
+			const query = String(init?.body);
+			if (query.includes("day0:"))
+				return Response.json({
 					data: {
-						user: {
-							contributionsCollection: {
-								restrictedContributionsCount: 2,
-								contributionCalendar: {
-									totalContributions: 4,
-									weeks: [{ contributionDays: [{ date: "2026-09-01", contributionCount: 4 }] }],
+						user: Object.fromEntries(
+							Array.from({ length: 15 }, (_, index) => [
+								`day${index}`,
+								{
+									totalCommitContributions: 0,
+									totalIssueContributions: 0,
+									totalPullRequestContributions: 0,
+									totalPullRequestReviewContributions: 0,
+									totalRepositoryContributions: 0,
+									restrictedContributionsCount: 0,
 								},
+							]),
+						),
+					},
+				});
+			return Response.json({
+				data: {
+					user: {
+						contributionsCollection: {
+							restrictedContributionsCount: 2,
+							contributionCalendar: {
+								totalContributions: 4,
+								weeks: [
+									{
+										contributionDays: Array.from({ length: 90 }, (_, index) => {
+											const date = new Date(Date.parse(state.window.since) + index * 86400_000)
+												.toISOString()
+												.slice(0, 10);
+											return { date, contributionCount: date === "2026-09-01" ? 4 : 0 };
+										}),
+									},
+								],
 							},
 						},
-						rateLimit: { remaining: 200 },
 					},
-				}),
-			),
-		);
+					rateLimit: { remaining: 200 },
+				},
+			});
+		});
+		await invoke(state, gh);
+		expect(state.contributionStatus).toBe("pending");
+		while (state.contributionStatus === "pending") await invoke(state, gh);
+		expect(state.contributionStatus).toBe("complete");
 		expect(state.contribution?.total).toBe(4);
 		expect(state.contribution?.restricted).toBe(2);
 		expect(state.repos[0]?.metrics.commits).toBe(0);

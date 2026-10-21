@@ -241,16 +241,17 @@ export async function executeRunPage(
 					throw new ApiError(422, "factory_capacity", "catalog exceeds 500 repositories");
 				if (checkpoint.inventory.complete) finish(step, "success", clock());
 			} else if (step.kind === "contributions") {
-				finish(
-					step,
-					checkpoint.contributionStatus === "complete"
-						? "success"
-						: gh.graphqlErrors.length
-							? "unavailable"
-							: "failed",
-					clock(),
-				);
-				if (checkpoint.contributionStatus !== "complete")
+				if (checkpoint.contributionStatus !== "pending")
+					finish(
+						step,
+						checkpoint.contributionStatus === "complete"
+							? "success"
+							: gh.graphqlErrors.length
+								? "unavailable"
+								: "failed",
+						clock(),
+					);
+				if (checkpoint.contributionStatus === "unavailable")
 					step.error = gh.graphqlErrors.length ? "coverage_unavailable" : "snapshot_incomplete";
 			} else if (stream) {
 				const coverage = checkpoint.repos[0]?.coverage[stream];

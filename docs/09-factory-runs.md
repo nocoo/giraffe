@@ -79,6 +79,13 @@ API 的 `repos` 只表示 selected 成员；`order` 是独立的优先级顺序�
 Daily quick refresh updates the current starred view. Weekly deep refresh calibrates
 history across its configured scope. Depth and repository membership are separate;
 both modes publish the same snapshots and preserve prior good data on failed reads.
+Scheduled daily refresh also plans the account-wide contribution step, even for
+starred selection. Manual selected refresh does not add that account-wide work.
+The 90-day calendar and six 15-day type batches each consume one leased page;
+checkpoint progress, request/rate accounting and publication remain fenced.
+An interrupted or unavailable collection retains the previous good calendar and
+its original provenance. Type details are optional/null where GitHub lacks them;
+calendar totals are never reconstructed from a possibly mismatched type sum.
 Quick mode reuses complete pinned commit/manifests evidence only when the verified
 head and rolling window permit it. Immutable commit history can stop at a verified
 baseline intersection. Mutable Issues, PRs, Actions, releases and contributor lists
