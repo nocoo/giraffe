@@ -441,6 +441,11 @@ REST closed PRs with a saved merge timestamp are `merged`, not `closed`.
 Legacy snapshots whose collector omitted lifecycle state return null until an
 ordinary refresh records it. Missing/invalid state is never inferred to be open.
 Read normalization does not rewrite rows or change saved immutable versions.
+Lifecycle presentation is separate from version inputs: unchanged legacy PR rows
+retain their 0.17.1 `version`, `sourceVersion`, `contentVersion` and `/sources`
+ETag, including rows without `content_meta`. A response-only `state:null` or
+normalized lifecycle value does not enter the legacy digest. Treat versions as
+opaque evidence identifiers, not hashes to recompute from presentation fields.
 
 Every PR on `/prs`, `/repos/:owner/:name/prs` and
 `/factory/repos/:owner/:name/prs` includes the same additive fields:

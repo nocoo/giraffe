@@ -52,13 +52,16 @@ export function prState(value: unknown): PrState {
 	};
 }
 
-export function prSnapshot(data: Record<string, unknown>): Record<string, unknown> {
+export function prSnapshot(
+	data: Record<string, unknown>,
+	{ lifecycle = false }: { lifecycle?: boolean } = {},
+): Record<string, unknown> {
 	return Array.isArray(data.pull_requests)
 		? {
 				...data,
 				pull_requests: data.pull_requests.map((item: unknown) => ({
 					...record(item),
-					state: prLifecycleState(item),
+					...(lifecycle ? { state: prLifecycleState(item) } : {}),
 					...prState(item),
 				})),
 			}

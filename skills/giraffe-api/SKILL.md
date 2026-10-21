@@ -397,6 +397,10 @@ PR lifecycle `state` is `open|closed|merged|null` across all three surfaces.
 New collection preserves lowercase state; a saved merge timestamp means merged.
 Older rows missing lifecycle evidence return null until refreshed, not inferred
 open; GET never rewrites saved rows or immutable publication versions.
+Lifecycle-only presentation changes do not invalidate legacy `sourceVersion`,
+`contentVersion`, source-index `version` or `/sources` ETag, even without saved
+content metadata. Compare supplied opaque versions rather than hashing the
+normalized response yourself.
 
 PR items on account `/prs`, repository `/repos/:owner/:name/prs` and factory
 `/factory/repos/:owner/:name/prs` share `mergeable:boolean|null`,

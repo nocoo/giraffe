@@ -121,6 +121,10 @@ All three PR surfaces (account, repository snapshot and factory PR stream) expos
 `state:open|closed|merged|null`; missing legacy lifecycle evidence stays null
 until refreshed, never inferred open. GraphQL uppercase states normalize to
 lowercase and saved merge timestamps distinguish merged from closed PRs.
+Lifecycle presentation does not alter legacy source-version inputs. Unchanged
+saved PR rows, with or without cached content metadata, keep their 0.17.1 source
+versions and `/sources` conditional ETag; do not hash the displayed lifecycle
+fields to reconstruct these opaque identifiers.
 They also expose
 `mergeable:boolean|null`, `mergeStateStatus:string|null`, and
 `checks:{state:SUCCESS|FAILURE|PENDING|ERROR|EXPECTED|null}`. Checks come from

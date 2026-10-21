@@ -218,7 +218,7 @@ it("shares catalog-wide provenance and page replacements with browser reads with
 			{ ...snapshot, fetched_at: baseline, truncated: false },
 			"starred",
 		);
-		expect(starred.data).toEqual(prSnapshot(browser));
+		expect(starred.data).toEqual(prSnapshot(browser, { lifecycle: true }));
 	}
 	expect((await raw.prepare("SELECT * FROM snapshots WHERE kind='repos'").all()).results).toEqual(
 		before.results,

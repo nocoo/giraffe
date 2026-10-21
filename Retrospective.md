@@ -1125,3 +1125,26 @@ assert exact prior rows survive a near-cap failure. A successful unavailable
 outcome is not permission to publish truncated available data. Full API/browser
 gates also exposed stale PR-state and security-empty assertions missed by focused
 unit tests; update them to verify the new contract, not to suppress failures.
+
+## 2026-10-22 - Isolate version baselines from presentation changes
+
+Batch-8 lifecycle normalization added a response-only state field before fallback
+version hashing. Unmodified legacy PR rows therefore changed source-index versions
+and conditional ETags. The first performance comparison could not catch it:
+only its reader came from the baseline revision while relative imports resolved
+to the current checkout. Separate presentation from the established digest shape,
+and compare full exported baseline dependency trees against identical saved rows,
+both with null and populated content metadata. Check the old ETag returns 304 and
+that reads leave every stored row unchanged; a current-to-current hash assertion
+is not cross-version evidence.
+
+The standalone `bun test tests/bench/source-legacy-version.test.ts` comparison
+requires local Git object `8c20328c46ae4ef64325c156007dba7d0857216a` and forbids
+network access. It is separate from L1 because the shared CI checkout is shallow;
+L1 retains an explicit legacy digest-shape regression without fetching history.
+The performance runner now exports all baseline source dependencies as well.
+
+Earlier full gate runs also overlapped the last runtime edit and Worker reloads.
+Those logs were rejected as exact-revision proof. Freeze the clean candidate
+before build and complete HTTP/browser suites, record its SHA at both boundaries,
+and reject reloads rather than combining passing results from different versions.

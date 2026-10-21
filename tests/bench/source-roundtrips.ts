@@ -1,18 +1,14 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
 import { createDb } from "../../apps/web/src/server/lib/db/d1";
 import { readSources } from "../../apps/web/src/server/lib/machine-sources";
 import { SourceTiming } from "../../apps/web/src/server/lib/source-timing";
 import { profileDb } from "../fixtures/profile-db";
+import { revisionFixture } from "../fixtures/revision";
 import { populateSourceStreams, sourcesFixture } from "../fixtures/sources";
 
-const revision = process.argv[2] ?? "bddef05";
+const revision = process.argv[2] ?? "8c20328c46ae4ef64325c156007dba7d0857216a";
 const modulePath = "apps/web/src/server/lib/machine-sources.ts";
-const folder = mkdtempSync(join(tmpdir(), "giraffe-source-roundtrips-"));
+const baselineRevision = revisionFixture(revision);
 const originalFetch = globalThis.fetch;
 const denyNetwork = () => {
 	throw new Error("source round-trip benchmark forbids network");
@@ -20,20 +16,7 @@ const denyNetwork = () => {
 globalThis.fetch = Object.assign(denyNetwork, { preconnect: denyNetwork });
 
 try {
-	const original = execFileSync("git", ["show", `${revision}:${modulePath}`], { encoding: "utf8" });
-	const baselinePath = join(folder, "baseline.ts");
-	writeFileSync(
-		baselinePath,
-		original.replace(
-			/from "(\.{1,2}\/[^"]+)"/g,
-			(_match, specifier: string) =>
-				`from ${JSON.stringify(resolve(dirname(resolve(modulePath)), specifier))}`,
-		),
-	);
-	symlinkSync(resolve("node_modules"), join(folder, "node_modules"));
-	const baseline = (await import(pathToFileURL(baselinePath).href)) as {
-		readSources: typeof readSources;
-	};
+	const baseline = await baselineRevision.load<{ readSources: typeof readSources }>(modulePath);
 	const fixture = await sourcesFixture();
 	const streamBytes = await populateSourceStreams(fixture);
 	const history = JSON.stringify({ repos: [], history: "x".repeat(16_000) });
@@ -162,5 +145,5 @@ try {
 	}
 } finally {
 	globalThis.fetch = originalFetch;
-	rmSync(folder, { recursive: true, force: true });
+	baselineRevision.close();
 }

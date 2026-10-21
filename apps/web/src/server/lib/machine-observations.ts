@@ -48,11 +48,12 @@ export async function observationEnvelope(
 	version: string | undefined = storedContent(data)?.fullVersion,
 	content: string | null = storedContent(data)?.hash ?? null,
 ) {
-	data = prSnapshot(data);
+	const sourceVersion = version ?? (await observationVersion(prSnapshot(data)));
+	data = prSnapshot(data, { lifecycle: true });
 	return {
 		account_id: account,
 		data,
-		sourceVersion: version ?? (await observationVersion(data)),
+		sourceVersion,
 		contentVersion: content,
 		...observationMetadata(data),
 		source: { kind: publicationId ? "factory" : "snapshot", resource, publicationId },

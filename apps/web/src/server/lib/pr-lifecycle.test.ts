@@ -55,7 +55,7 @@ it("reads legacy lifecycle evidence without inventing open state or rewriting ro
 		],
 	};
 	const before = structuredClone(saved);
-	expect(prSnapshot(saved).pull_requests).toMatchObject([
+	expect(prSnapshot(saved, { lifecycle: true }).pull_requests).toMatchObject([
 		{ state: null },
 		{ state: "open" },
 		{ state: "merged" },
