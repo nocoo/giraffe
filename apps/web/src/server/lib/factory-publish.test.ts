@@ -12,7 +12,7 @@ import {
 	saveRun,
 	startRun,
 } from "./db/factory-runs";
-import { replaceSnapshotStmts } from "./db/snapshots";
+import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
 import {
 	boundedJson,
 	currentRepo,
@@ -336,6 +336,41 @@ it("retains contribution provenance across catalog-only and failed refresh publi
 	expect((await publishedFactory(db, snap.account_id))?.contributionObservation).toEqual(
 		observation,
 	);
+});
+
+it("publishes the latest rate observation without redating retained repository evidence", async () => {
+	const { db, lease, repo } = await setup();
+	lease.run.mode = "refresh";
+	const saved = {
+		remaining: 900,
+		resetAt: "2026-09-15T23:00:00Z",
+		resource: "graphql",
+		observedAt: "2026-09-15T21:00:00Z",
+	};
+	const latest = { ...saved, remaining: 800, resource: "core", observedAt: now };
+	repo.observation = {
+		source: "legacy",
+		version: "old",
+		window: snap.window,
+		refreshedAt: saved.observedAt,
+	};
+	await db.batch(
+		replaceSnapshotStmts(
+			db,
+			snap.account_id,
+			"factory",
+			{ ...snap, rate: saved, repos: [repo] },
+			now,
+		),
+	);
+	lease.run.checkpoint = { ...snap, rate: latest };
+	await db.batch(await publicationWrites(db, lease, now));
+	const published = await readSnapshot(db, snap.account_id, "factory:v:r1");
+	expect(published).toMatchObject({
+		rate: latest,
+		publication: { mixed: true },
+		repos: [{ observation: repo.observation }],
+	});
 });
 
 it("removes an obsolete second physical page when rewriting a publication with a smaller payload", async () => {

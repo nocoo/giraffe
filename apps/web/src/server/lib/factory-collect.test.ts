@@ -107,7 +107,7 @@ describe("factory incremental collection", () => {
 			"effective-mirror",
 			"not-owner",
 		]);
-		expect(state.rate?.resource).toBe("graphql");
+		expect(state.rate).toMatchObject({ resource: "graphql", observedAt: NOW });
 	});
 	it.each([
 		{ viewer: { login: "someone", repositories: { nodes: [] } } },
@@ -192,6 +192,7 @@ describe("factory incremental collection", () => {
 			),
 		);
 		await invoke(state, gh, store);
+		expect(state.rate).toMatchObject({ resource: "core", observedAt: NOW, remaining: 100 });
 		expect(state.repos[0]?.coverage.prs.status).toBe("partial");
 		expect(state.repos[0]?.metrics.prMerged).toBe(0);
 		await invoke(state, gh, store);

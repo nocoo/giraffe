@@ -141,7 +141,7 @@ export type FactorySnapshot = {
 	repos: FactoryRepo[];
 	cursor: { repo: number; stream: number };
 	requests: number;
-	rate: { remaining: number; resetAt: string | null; resource: string } | null;
+	rate: { remaining: number; resetAt: string | null; resource: string; observedAt?: string } | null;
 	contribution: {
 		days: { date: string; count: number }[];
 		total: number;

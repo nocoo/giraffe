@@ -844,6 +844,45 @@ async function beforeMetadata(env: Env) {
 	throw new Error("metadata step not reached");
 }
 
+it.each([false, true])(
+	"timestamps metadata rates and preserves prior observations when absent (rate: %s)",
+	async (hasRate) => {
+		const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] });
+		await beforeMetadata(env);
+		const db = createDb(env.DB);
+		const observedAt = new Date(Date.parse(now) - 60_000).toISOString();
+		const previous = {
+			remaining: 500,
+			resetAt: "2026-09-15T23:00:00Z",
+			resource: "core",
+			observedAt,
+		};
+		await db
+			.prepare(
+				"UPDATE factory_runs SET payload=json_set(payload,'$.checkpoint',json(?)) WHERE id='r1'",
+			)
+			.bind(JSON.stringify({ ...snap, rate: previous }))
+			.run();
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () =>
+				Response.json({
+					data: {
+						repository: rawRepo,
+						...(hasRate ? { rateLimit: { remaining: 400, resetAt: "2026-09-15T23:00:00Z" } } : {}),
+					},
+				}),
+			),
+		);
+		await executeRunPage(env, "r1", () => now);
+		expect((await getRun(db, snap.account_id, "r1"))?.run.checkpoint?.rate).toEqual(
+			hasRate
+				? { remaining: 400, resetAt: "2026-09-15T23:00:00Z", resource: "graphql", observedAt: now }
+				: previous,
+		);
+	},
+);
+
 async function legacyAssessment(status: "pending" | "running" | "success") {
 	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] });
 	const db = createDb(env.DB);

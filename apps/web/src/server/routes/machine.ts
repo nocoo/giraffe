@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { resourceCollection, resourceId } from "../../lib/agent-resource";
+import type { FactorySnapshot } from "../../lib/factory-types";
 import { REPO_SNAPSHOT_TABS } from "../../lib/snapshot-kinds";
 import type { AppVars, Env } from "../env";
 import {
@@ -13,6 +14,7 @@ import { authenticateApiToken, recordApiTokenUse } from "../lib/api-tokens";
 import { getAccount } from "../lib/db/accounts";
 import { createDb } from "../lib/db/d1";
 import { ApiError } from "../lib/errors";
+import { readFactoryRate } from "../lib/factory-rate";
 import {
 	readFactoryResource,
 	readObservation,
@@ -166,14 +168,19 @@ export function machineApi() {
 		if (!["repos", "issues", "prs", "ci", "factory"].includes(kind))
 			throw new ApiError(404, "not_found", "unknown source");
 		assertMachineQuery(c.req.query(), ["scope"]);
-		return c.json(
-			await readObservation(
+		const observation = await readObservation(
+			c.get("db"),
+			c.get("principal").accountId,
+			kind,
+			snapshotScope(c.req.queries("scope")),
+		);
+		if (kind === "factory")
+			observation.data.rate = await readFactoryRate(
 				c.get("db"),
 				c.get("principal").accountId,
-				kind,
-				snapshotScope(c.req.queries("scope")),
-			),
-		);
+				observation.data.rate as FactorySnapshot["rate"],
+			);
+		return c.json(observation);
 	});
 	app.notFound(() => {
 		throw new ApiError(404, "not_found", "unknown machine endpoint");

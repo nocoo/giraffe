@@ -12,6 +12,7 @@ import { publishedFactory } from "../lib/db/factory-runs";
 import { readSnapshot } from "../lib/db/snapshots";
 import { ApiError, jsonOk } from "../lib/errors";
 import { newFactory, streamKey } from "../lib/factory-collect";
+import { readFactoryRate } from "../lib/factory-rate";
 import { factoryFreshness, repoPolicy, statisticsFactory } from "../lib/repo-statistics";
 import { snapshotScope } from "../lib/snapshot-scope";
 import { repoParts } from "./snapshots";
@@ -46,6 +47,7 @@ export async function getFactory(c: Ctx): Promise<Response> {
 	return jsonOk(
 		{
 			...projected,
+			rate: await readFactoryRate(c.get("db"), account.id, snap.rate),
 			fetched_at: freshness.latestAt ?? "",
 			freshness,
 			account_id: account.id,

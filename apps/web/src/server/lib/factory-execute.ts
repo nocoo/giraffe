@@ -143,12 +143,14 @@ export async function executeRunPage(
 			run.checkpoint.repos = [{ ...mapFactoryRepo(repo), metadataAt: clock() }];
 			run.checkpoint.contributionStatus = previous?.contributionStatus ?? "unavailable";
 			run.checkpoint.contribution = previous?.contribution ?? null;
+			run.checkpoint.rate = previous?.rate ?? null;
 			const rate = object(data.rateLimit);
 			if (typeof rate.remaining === "number")
 				run.checkpoint.rate = {
 					remaining: rate.remaining,
 					resetAt: typeof rate.resetAt === "string" ? rate.resetAt : null,
 					resource: "graphql",
+					observedAt: clock(),
 				};
 			finish(step, "success", clock());
 		} else if (step.kind === "restore") {

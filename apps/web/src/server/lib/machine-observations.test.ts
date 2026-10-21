@@ -1,6 +1,8 @@
 import { expect, it } from "vitest";
 import { factoryFixture } from "../../../../../tests/fixtures/factory-snapshot";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
+import type { Env } from "../env";
+import { createApp } from "../index";
 import { createDb } from "./db/d1";
 import { replaceSnapshotStmts } from "./db/snapshots";
 import {
@@ -505,5 +507,125 @@ it.each(["run", "legacy"] as const)(
 		expect((await db.prepare("SELECT * FROM factory_resources").all()).results).toEqual(
 			resources.results,
 		);
+	},
+);
+
+it.each(["running", "completed"])(
+	"projects the latest saved catalog rate over an older publication (%s)",
+	async (status) => {
+		const raw = sqliteFixture();
+		const db = createDb(raw);
+		const snap = factoryFixture();
+		await db
+			.prepare(
+				"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES(?,'nocoo','fake','fake','t','t')",
+			)
+			.bind(snap.account_id)
+			.run();
+		await db.prepare("UPDATE accounts SET is_active=1").run();
+		const read = async () =>
+			(
+				await createApp().request("http://localhost/api/factory", {}, {
+					DB: raw,
+					ENVIRONMENT: "development",
+					GITHUB_API_BASE: "http://127.0.0.1:17046",
+				} as Env)
+			).json();
+		await db.batch(
+			replaceSnapshotStmts(
+				db,
+				snap.account_id,
+				"repos",
+				{ repos: snap.repos.map((repo) => ({ name_with_owner: repo.name })) },
+				snap.fetched_at,
+			),
+		);
+		const older = {
+			remaining: 700,
+			resetAt: new Date(Date.now() + 3_600_000).toISOString(),
+			resource: "core",
+			observedAt: new Date(Date.now() - 120_000).toISOString(),
+		};
+		const latest = {
+			...older,
+			remaining: 600,
+			resource: "graphql",
+			observedAt: new Date(Date.now() - 60_000).toISOString(),
+		};
+		await db.batch(
+			replaceSnapshotStmts(
+				db,
+				snap.account_id,
+				"factory",
+				{ ...snap, rate: older },
+				snap.fetched_at,
+			),
+		);
+		await db
+			.prepare(
+				"INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES('catalog',?,'k',?,?,'t','t','2999-01-01')",
+			)
+			.bind(
+				snap.account_id,
+				status,
+				JSON.stringify({ mode: "catalog", checkpoint: { rate: latest } }),
+			)
+			.run();
+		const before = (await db.prepare("SELECT * FROM factory_runs").all()).results;
+		const saved = (await db.prepare("SELECT kind,payload FROM snapshots ORDER BY kind").all())
+			.results;
+		expect(await read()).toMatchObject({ runId: snap.runId, rate: latest });
+		await db
+			.prepare(
+				"UPDATE factory_runs SET payload=json_set(payload,'$.checkpoint.rate.resetAt',?) WHERE id='catalog'",
+			)
+			.bind(new Date(Date.now() - 1_000).toISOString())
+			.run();
+		expect(await read()).toMatchObject({ rate: null });
+		await db
+			.prepare("UPDATE factory_runs SET payload=? WHERE id='catalog'")
+			.bind(before[0]?.payload)
+			.run();
+		expect((await db.prepare("SELECT * FROM factory_runs").all()).results).toEqual(before);
+		expect(
+			(await db.prepare("SELECT kind,payload FROM snapshots ORDER BY kind").all()).results,
+		).toEqual(saved);
+	},
+);
+
+it.each([
+	{ remaining: 100, resetAt: "2999-01-01T00:00:00Z", resource: "core" },
+	{ remaining: 100, resetAt: "invalid", resource: "core", observedAt: "2026-10-20T00:00:00Z" },
+	{
+		remaining: 100,
+		resetAt: "2026-09-16T00:00:00Z",
+		resource: "core",
+		observedAt: "2026-09-15T22:00:00Z",
+	},
+])(
+	"hides invalid or undated saved publication rates without inventing observation times",
+	async (rate) => {
+		const raw = sqliteFixture();
+		const db = createDb(raw);
+		const snap = factoryFixture();
+		await db
+			.prepare(
+				"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES(?,'nocoo','fake','fake','t','t')",
+			)
+			.bind(snap.account_id)
+			.run();
+		await db.prepare("UPDATE accounts SET is_active=1").run();
+		await db.batch(
+			replaceSnapshotStmts(db, snap.account_id, "factory", { ...snap, rate }, snap.fetched_at),
+		);
+		expect(
+			await (
+				await createApp().request("http://localhost/api/factory", {}, {
+					DB: raw,
+					ENVIRONMENT: "development",
+					GITHUB_API_BASE: "http://127.0.0.1:17046",
+				} as Env)
+			).json(),
+		).toMatchObject({ rate: null });
 	},
 );

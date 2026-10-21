@@ -409,6 +409,65 @@ it("normalizes saved dependency unknowns and separates root and workspace identi
 	).toEqual(before);
 });
 
+it("reads the latest timestamped catalog rate and hides an expired newest observation without writes", async () => {
+	const countBefore = await (await fetch("http://127.0.0.1:17046/_count")).text();
+	assertMarker();
+	const observedAt = new Date(Date.now() - 60_000).toISOString();
+	const fresh = {
+		remaining: 400,
+		resetAt: new Date(Date.now() + 3_600_000).toISOString(),
+		resource: "graphql",
+		observedAt,
+	};
+	const stale = {
+		...fresh,
+		remaining: 300,
+		resetAt: new Date(Date.now() - 1_000).toISOString(),
+		observedAt: new Date(Date.now() - 30_000).toISOString(),
+	};
+	sql(
+		`INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES('batch3-rate',${quote(account)},'batch3-rate','running',${quote(JSON.stringify({ mode: "catalog", checkpoint: { rate: fresh } }))},'t','t','2999-01-01');`,
+	);
+	try {
+		const before = sql(`SELECT payload FROM factory_runs WHERE id='batch3-rate'`).map(
+			(statement) => statement.results,
+		);
+		const snapshots = sql(
+			`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
+		).map((statement) => statement.results);
+		expect(await (await machine("factory")).json()).toMatchObject({ data: { rate: fresh } });
+		expect(await (await browser("factory")).json()).toMatchObject({ rate: fresh });
+		expect(
+			sql(`SELECT payload FROM factory_runs WHERE id='batch3-rate'`).map(
+				(statement) => statement.results,
+			),
+		).toEqual(before);
+		expect(
+			sql(
+				`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
+			).map((statement) => statement.results),
+		).toEqual(snapshots);
+		sql(
+			`UPDATE snapshots SET payload=json_set(payload,'$.rate',json(${quote(JSON.stringify(fresh))})) WHERE account_id=${quote(account)} AND kind='factory'; UPDATE factory_runs SET payload=json_set(payload,'$.checkpoint.rate',json(${quote(JSON.stringify(stale))})) WHERE id='batch3-rate';`,
+		);
+		expect(await (await machine("factory")).json()).toMatchObject({ data: { rate: null } });
+		expect(await (await browser("factory")).json()).toMatchObject({ rate: null });
+		sql(
+			`UPDATE factory_runs SET payload=json_set(payload,'$.checkpoint.rate',json(${quote(JSON.stringify({ ...stale, resetAt: fresh.resetAt, observedAt: null }))})) WHERE id='batch3-rate'; UPDATE snapshots SET payload=json_remove(payload,'$.rate.observedAt') WHERE account_id=${quote(account)} AND kind='factory';`,
+		);
+		expect(await (await machine("factory")).json()).toMatchObject({ data: { rate: null } });
+		expect(await (await fetch("http://127.0.0.1:17046/_count")).text()).toBe(countBefore);
+		const original = snapshots[0]?.find((row) => row.kind === "factory")?.payload;
+		if (typeof original !== "string") throw new Error("fixture");
+		sql(
+			`UPDATE snapshots SET payload=${quote(original)} WHERE account_id=${quote(account)} AND kind='factory';`,
+		);
+	} finally {
+		assertMarker();
+		sql("DELETE FROM factory_runs WHERE id='batch3-rate';");
+	}
+});
+
 it("separates default-branch workflow and repository verdict units over saved HTTP data", async () => {
 	const machineReport = (await (await machine("ci")).json()) as { data: CiReport };
 	const report = machineReport.data;

@@ -115,13 +115,14 @@ export function factoryNext(link: string | null, current: string): string | null
 	}
 	return `${before.pathname}${before.search}`;
 }
-function rateFromData(s: FactorySnapshot, data: Record<string, unknown>) {
+function rateFromData(s: FactorySnapshot, data: Record<string, unknown>, now: string) {
 	const rate = object(data.rateLimit);
 	if (typeof rate.remaining === "number")
 		s.rate = {
 			remaining: rate.remaining,
 			resetAt: typeof rate.resetAt === "string" ? rate.resetAt : null,
 			resource: "graphql",
+			observedAt: now,
 		};
 }
 async function inventory(
@@ -132,7 +133,7 @@ async function inventory(
 	includeDisabled: boolean,
 ) {
 	const data = await gh.githubGraphql(token, FACTORY_INVENTORY_QUERY, { after: s.inventory.after });
-	rateFromData(s, data);
+	rateFromData(s, data, now);
 	const viewer = object(data.viewer);
 	const conn = object(viewer.repositories);
 	const info = object(conn.pageInfo);
@@ -169,7 +170,7 @@ async function contributions(s: FactorySnapshot, gh: GithubClient, token: string
 		owner: s.owner,
 		...s.window,
 	});
-	rateFromData(s, data);
+	rateFromData(s, data, now);
 	const collection = object(object(data.user).contributionsCollection);
 	const calendar = object(collection.contributionCalendar);
 	if (gh.graphqlErrors.length || !Array.isArray(calendar.weeks)) {
@@ -269,7 +270,7 @@ async function collectStream(
 			])
 				variables[String(alias)] = `${repo.head}:${path}`;
 			const result = await gh.githubGraphql(token, FACTORY_DEPENDENCIES_QUERY, variables);
-			rateFromData(s, result);
+			rateFromData(s, result, now);
 			if (gh.graphqlErrors.length)
 				throw new ApiError(403, "github_forbidden", "manifest unavailable");
 			if (!result.repository || typeof result.repository !== "object")
@@ -294,6 +295,7 @@ async function collectStream(
 					remaining: Number(remaining),
 					resetAt: reset ? new Date(Number(reset) * 1000).toISOString() : null,
 					resource: "core",
+					observedAt: now,
 				};
 			const payload: unknown = await response.json();
 			if (stream === "actions" && Number(object(payload).total_count) > 1000) {

@@ -388,6 +388,48 @@ it("filters retained factory publications case-insensitively without rewriting t
 	});
 });
 
+it("projects saved account rates independently of publication and dashboard activation without writes", async () => {
+	const { db, call, prefix, token } = await setup();
+	const publication = factoryFixture();
+	await db.batch(replaceSnapshotStmts(db, account, "factory", publication, publication.fetched_at));
+	const rate = {
+		remaining: 500,
+		resource: "graphql",
+		resetAt: new Date(Date.now() + 3_600_000).toISOString(),
+		observedAt: new Date(Date.now() - 60_000).toISOString(),
+	};
+	for (const id of [account, other])
+		await db
+			.prepare(
+				"INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES(?,?,?,'running',?,'t','t','t')",
+			)
+			.bind(
+				id,
+				id,
+				id,
+				JSON.stringify({
+					mode: "catalog",
+					checkpoint: { rate: id === account ? rate : { ...rate, remaining: 999 } },
+				}),
+			)
+			.run();
+	const before = (await db.prepare("SELECT * FROM factory_runs ORDER BY id").all()).results;
+	const tokenBefore = await db
+		.prepare("SELECT * FROM api_tokens WHERE id=?")
+		.bind(token.id)
+		.first();
+	expect(await (await call(`${prefix}/factory`)).json()).toMatchObject({
+		sourceVersion: publication.runId,
+		data: { rate },
+	});
+	expect((await db.prepare("SELECT * FROM factory_runs ORDER BY id").all()).results).toEqual(
+		before,
+	);
+	expect(await db.prepare("SELECT * FROM api_tokens WHERE id=?").bind(token.id).first()).toEqual(
+		tokenBefore,
+	);
+});
+
 it.each([
 	["2026-10-03T00:00:00Z", "2026-10-01T00:00:00Z", true],
 	["2026-10-01T00:00:00Z", "2026-10-03T00:00:00Z", true],

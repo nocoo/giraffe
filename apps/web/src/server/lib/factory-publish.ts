@@ -22,6 +22,7 @@ import {
 import { readSnapshot } from "./db/snapshots";
 import { ApiError } from "./errors";
 import { streamKey } from "./factory-collect";
+import { latestFactoryRate } from "./factory-rate";
 import { physicalKinds, splitPages } from "./snapshot-pages";
 
 export function boundedJson(value: unknown): string {
@@ -275,6 +276,7 @@ export async function publicationWrites(
 	snapshot.startedAt = run.startedAt;
 	snapshot.window = run.window;
 	snapshot.requests = run.requests;
+	snapshot.rate = latestFactoryRate(base?.rate, run.checkpoint?.rate);
 	const fresh =
 		run.mode === "refresh" && run.checkpoint?.contributionStatus === "complete"
 			? run.checkpoint.contribution
