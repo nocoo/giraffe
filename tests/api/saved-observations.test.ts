@@ -320,7 +320,7 @@ it("includes baseline and missing repositories in all and starred freshness", as
 it("exposes the saved factory stream window without changing collection state", async () => {
 	const before = sql(
 		`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
-	);
+	).map((statement) => statement.results);
 	const countBefore = await (await fetch("http://127.0.0.1:17046/_count")).text();
 	const result = await (await machine("factory/repos/nocoo/recovered/commits")).json();
 	expect(result).toMatchObject({
@@ -331,7 +331,9 @@ it("exposes the saved factory stream window without changing collection state", 
 		},
 	});
 	expect(
-		sql(`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`),
+		sql(`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`).map(
+			(statement) => statement.results,
+		),
 	).toEqual(before);
 	expect(await (await fetch("http://127.0.0.1:17046/_count")).text()).toBe(countBefore);
 });

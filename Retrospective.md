@@ -742,3 +742,9 @@ During this task a Herdr resize using `--current` resolved the UI-focused pane
 instead of the caller. The command reported `changed:false`, so no unrelated
 layout changed. The corrected command used the explicit owned pane ID. Use
 explicit pane IDs for layout mutations and verify the returned target.
+
+The factory-window HTTP regression repeated the earlier query-metadata mistake:
+its no-write assertion compared Wrangler's entire response, including variable
+`meta.duration`. A later run failed on 0 ms versus 1 ms with identical saved rows.
+Use the existing neighboring test's `statement.results` comparison for both reads.
+Review new fixture assertions against recorded incidents, not just one green run.
