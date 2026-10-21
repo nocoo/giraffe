@@ -790,3 +790,38 @@ existing run error path restores its checkpoint, pauses safely and preserves
 prior evidence. The tests assert no resource writes and unchanged prior data.
 Whenever a payload gains metadata outside a bounded list, verify that every
 capacity loop can still make progress or terminate with a controlled failure.
+
+## 2026-10-21 - Review resumable failures and both rate buckets
+
+The first batch-four unit run was green, but independent review reproduced a
+terminal contribution failure that the GraphQL-only denial fixture did not cover.
+An HTTP 403/404 or exhausted retry restored a pending checkpoint after finishing
+the contribution step. Later repository streams resumed that pending work, failed
+their own coverage checks and could publish the calendar that should have been
+retained as failed evidence. New tests first failed on the pending state, then
+proved terminal unavailability, successful downstream repository work and exact
+retention of the old calendar, original window and observation time. Test transport
+errors and exhausted retries as well as in-band GraphQL errors whenever a formerly
+single-page stage becomes resumable.
+
+The added PR node batch also replaced the preceding REST quota with GraphQL quota,
+so a low core reserve could disappear behind a healthy GraphQL balance. Separate
+bounded checkpoint buckets now survive page boundaries, metadata transitions and
+evidence rollback; the public rate remains the latest observation. Regressions
+first reproduced both alternating-resource exhaustion and loss of a spent REST
+budget when the details request failed. Rolling back data does not undo an
+upstream request or its observed quota consumption.
+
+Initial L2 acceptance additionally caught an expired synthetic token whose creation
+time was after expiry, and old exact PR assertions missing the newly additive
+fields. The expiry fixture now has a valid historical lifetime; account/repository
+PR checks share one expected shape. These repeat earlier fixture lessons: compare
+the real schema constraints and neighboring assertions before running a long suite,
+and do not equate focused unit success with HTTP acceptance. The enabled commit
+hook also rejected optional-property assignments until strict TypeScript passed;
+no failing commit or hook bypass was used.
+
+A repeated Herdr `--current` resize again resolved a different focused pane and
+reported `changed:false`; no unrelated layout changed. All subsequent mutations
+used explicit task-owned pane IDs. Read the existing orchestration lessons before
+issuing layout commands, not only after the same error recurs.
