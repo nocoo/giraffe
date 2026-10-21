@@ -207,6 +207,13 @@ are omitted from the response; saved history is untouched. Default-branch and
 grouped bot streams remain unchanged, including idle default workflows. The rule
 applies to all/starred scope. There is no `branches=all` option.
 
+Workflow `streams[].verdict` values are `broken | flaky | healthy | idle`.
+Repository `repos[].verdict` adds `unknown` for no default-workflow evidence;
+otherwise its precedence is broken, flaky, healthy, idle. Starting in 0.15.14,
+repository `none` is renamed to `unknown` (breaking; migrate consumers).
+`release.pipeline` remains `broken | flaky | healthy | idle | none`; this separate
+`none` means no default-branch release workflow and is not renamed.
+
 The latest 10 decisive completed runs within 30 days describe recent stability.
 A latest success is healthy or flaky, never broken despite older failures. Two
 consecutive failures, or at least 50% failures over four or more decisive runs with

@@ -270,6 +270,14 @@ history. Default-branch and grouped bot streams remain unchanged, including idle
 default workflows. This applies to both all and starred scope; no `branches` query
 parameter is supported.
 
+`streams[].verdict` (workflow-level) is exactly `broken | flaky | healthy | idle`.
+`repos[].verdict` is exactly `broken | flaky | healthy | idle | unknown`: take the
+first available default-workflow verdict in that order; `unknown` means no
+default-workflow evidence exists. It is not a successful zero. `unknown` replaces
+the former repository sentinel `none` (breaking change in 0.15.14).
+`repos[].release.pipeline` independently remains `broken | flaky | healthy | idle |
+none`; its `none` means no default-branch release workflow, not repository health.
+
 - Project verdicts use only runs on the **known default branch**
   from saved repository details. Missing/empty default branch, null run branch,
   feature/PR branches and tag refs are not assumed to be default-branch evidence.

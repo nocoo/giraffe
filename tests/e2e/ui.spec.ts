@@ -525,6 +525,11 @@ test("CI health uses saved default-branch verdicts and labels observational unit
 	page,
 }) => {
 	const fixture = createUiFixtures()["/api/ci"];
+	expect(fixture.repos.find((repo) => repo.repo === "octocat/no-default")).toMatchObject({
+		verdict: "unknown",
+		release: { pipeline: "none" },
+	});
+	expect(fixture.totals.unknownRepos).toBe(1);
 	await page.clock.setFixedTime(new Date("2027-01-01T00:00:00Z"));
 	await page.goto("/ci");
 	const summary = page.getByTestId("ci-summary");
@@ -552,6 +557,9 @@ test("CI health uses saved default-branch verdicts and labels observational unit
 	}
 	await expect(page.locator(".giraffe-ci-card")).toHaveCount(1);
 	await expect(page.locator(".giraffe-ci-card")).not.toContainText("field-notes");
+	await expect(
+		page.getByTestId("release-list").getByRole("row").filter({ hasText: "no-default" }),
+	).toBeVisible();
 	expect(fixture.totals).toMatchObject({
 		brokenWorkflows: 1,
 		brokenRepos: 1,

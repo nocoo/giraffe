@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Document refresh outcome counts, security reason codes, timeout bounds and missed-slot records for machine API consumers. No D1 schema migration is required; existing historical rows remain unchanged.
 
+### Breaking Change
+
+- Rename `/ci` repository `repos[].verdict` from `none` to `unknown` to match `totals.unknownRepos`. Workflow verdicts remain `broken | flaky | healthy | idle`; the independent `release.pipeline: none` sentinel is unchanged.
+
 ## v0.15.13 — 2026-10-21
 
 ### Fixed

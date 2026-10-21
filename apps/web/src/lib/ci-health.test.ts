@@ -299,7 +299,7 @@ describe("repository and account report", () => {
 		).toEqual([
 			["a/one", "broken", 1, 0],
 			["a/two", "healthy", 0, 0],
-			["a/none", "none", 0, 0],
+			["a/none", "unknown", 0, 0],
 		]);
 		expect(report.totals).toMatchObject({
 			brokenWorkflows: 1,
@@ -439,7 +439,7 @@ describe("report edge cases", () => {
 		);
 		expect(report.streams).toHaveLength(9);
 		expect(report.streams.every((s) => s.scope === "branch")).toBe(true);
-		expect(report.repos.every((r) => r.verdict === "none")).toBe(true);
+		expect(report.repos.every((r) => r.verdict === "unknown")).toBe(true);
 		expect(report.totals).toMatchObject({
 			brokenWorkflows: 0,
 			brokenRepos: 0,
@@ -587,7 +587,7 @@ describe("report edge cases", () => {
 		expect(report.repos.map((r) => [r.repo, r.verdict])).toEqual([
 			["a/multi", "healthy"],
 			["b/idle", "idle"],
-			["c/branch-only", "none"],
+			["c/branch-only", "unknown"],
 		]);
 		expect(report.repos.find((r) => r.repo === "b/idle")?.lastRun).toBe("2026-07-01T00:00:00Z");
 		expect(report.daily.every((d) => d.x >= "2026-08-20")).toBe(true);

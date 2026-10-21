@@ -110,6 +110,10 @@ evaluation clock (inclusive cutoff). Older branch-only streams are omitted in bo
 all and starred views, without deleting history; idle default-branch workflows and
 grouped bot streams remain visible. No `branches` parameter is supported.
 
+Workflow verdicts are `broken | flaky | healthy | idle`. Repository verdicts add
+`unknown` for no default-workflow evidence (`none` before 0.15.14; breaking rename).
+The independent release pipeline sentinel stays `none` for no release workflow.
+
 ## Generic records, reports and jobs
 
 The three generic resource collections live under
