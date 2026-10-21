@@ -1354,6 +1354,64 @@ it("resumes a failed site-list chunk without advancing its cursor or duplicating
 	expect(calls).toBe(3);
 });
 
+it.each(["issues", "prs"])(
+	"fails %s access loss across durable site-list chunks",
+	async (resource) => {
+		const env = await setup();
+		const db = createDb(env.DB);
+		const found = await getRun(db, snap.account_id, "r1");
+		if (!found) throw new Error("fixture");
+		found.run.siteRepos = ["nocoo/app", ...Array.from({ length: 10 }, (_, i) => `zz/repo${i}`)];
+		await db
+			.prepare("UPDATE factory_runs SET payload=? WHERE id='r1'")
+			.bind(JSON.stringify(found.run))
+			.run();
+		const old = {
+			truncated: false,
+			fetched_at: "2025-01-01T00:00:00.000Z",
+			[resource === "prs" ? "pull_requests" : "issues"]: [],
+		};
+		await db.batch(replaceSnapshotStmts(db, snap.account_id, resource, old, old.fetched_at));
+		const base = vi.mocked(fetch).getMockImplementation();
+		if (!base) throw new Error("fixture");
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (url: string, init: RequestInit) =>
+				String(init?.body).includes(`is:${resource === "prs" ? "pr" : "issue"}`) &&
+				String(init?.body).includes("repo:zz/repo9")
+					? Response.json({ message: "Resource not accessible by integration" }, { status: 403 })
+					: base(url, init),
+			),
+		);
+		for (let i = 0; i < 20; i++) {
+			await executeRunPage(env, "r1", () => now);
+			const saved = (await getRun(createDb(env.DB), snap.account_id, "r1"))?.run;
+			if (saved?.steps.find((step) => step.resource === resource)?.snapshotCursor === 10) break;
+		}
+		expect(
+			(await getRun(db, snap.account_id, "r1"))?.run.steps.find(
+				(step) => step.resource === resource,
+			),
+		).toMatchObject({
+			status: "running",
+			snapshotCursor: 10,
+		});
+		const run = await drive(env);
+		expect(run?.steps.find((step) => step.resource === resource)).toMatchObject({
+			status: "failed",
+			error: "snapshot_incomplete",
+			snapshotCursor: 10,
+		});
+		expect(run?.status).toBe("partial");
+		expect(await publishedFactory(db, snap.account_id)).toMatchObject({
+			runId: "r1",
+			status: "partial",
+		});
+		expect((await listRuns(db, snap.account_id))[0]?.counts.failed).toBeGreaterThan(0);
+		expect(await readSnapshot(db, snap.account_id, resource)).toEqual(old);
+	},
+);
+
 it("loads accepted evidence across runs and copies pinned data into the new publication", async () => {
 	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] });
 	await drive(env);

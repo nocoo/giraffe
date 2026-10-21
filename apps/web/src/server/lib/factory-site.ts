@@ -6,6 +6,7 @@ import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
 import { ApiError } from "./errors";
 import { boundedJson } from "./factory-publish";
 import type { GithubClient } from "./github-client";
+import { githubUnavailability } from "./github-unavailable";
 import { buildInsights, type InsightAlert } from "./insights";
 import { assertKind, prepareRefresh } from "./refresh";
 import { repoPolicy } from "./repo-statistics";
@@ -132,7 +133,13 @@ export async function collectSitePage(
 			.first<{ payload: string }>();
 		const previous: Collected = old ? JSON.parse(old.payload) : { truncated: false };
 		const page = names.length
-			? await collectKind(gh, token, resource, names.slice(cursor, cursor + 10), 1_500_000)
+			? await collectKind(gh, token, resource, names.slice(cursor, cursor + 10), 1_500_000).catch(
+					(error: unknown) => {
+						if (cursor > 0 && githubUnavailability(error))
+							throw new ApiError(422, "snapshot_incomplete", "page collection interrupted");
+						throw error;
+					},
+				)
 			: {
 					truncated: false,
 					unavailable: false,

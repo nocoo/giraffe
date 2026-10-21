@@ -695,3 +695,6 @@ Require explicit access errors for first-page absence, and record accepted pages
 independently of row counts so empty pages cannot hide interrupted pagination.
 Executor regressions must assert the failed step, partial run and same-run
 publication, history counts, and unchanged prior snapshot/time together.
+The next MAX pass also reproduced access loss across global Issues/PR queue
+chunks: local page counters reset, but the durable snapshot cursor remains.
+Completeness guards must use both boundaries, not only pagination within one call.
