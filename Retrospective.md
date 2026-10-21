@@ -896,3 +896,9 @@ use different old/new windows to prove window retention rather than equality by
 fixture coincidence. After excluding scalar bodies, every unrecognized line in
 the jobs block now fails closed. Unsupported syntax must be rejected by default,
 not handled through an ever-growing list of examples that happen to be rejected.
+
+The next review reproduced empty job values and null/mapping-valued steps being
+accepted solely because their keys existed. Twelve failing collection/publication
+cases now require a nested job mapping and a steps sequence (or an explicit empty
+sequence). Recognizing a property name does not establish the shape of its value;
+empty block headers need evidence from the following significant line.

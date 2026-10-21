@@ -30,4 +30,10 @@ export const unsupportedWorkflowJobs = [
 	"jobs:\n  build:\n    steps:\n      [{ uses: actions/checkout@v4 }]",
 	"jobs:\n  build:\n    steps:\n      - ? uses\n        : actions/checkout@v4",
 	"jobs:\n  build:\n    *shared",
+	"jobs:\n  build:",
+	"jobs:\n  build: # empty job\n  next:\n    steps: []",
+	"jobs:\n  build:\n    - run: echo hello",
+	"jobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:",
+	"jobs:\n  build:\n    steps: # empty steps\n    name: Build",
+	"jobs:\n  build:\n    steps:\n      run: echo hello",
 ];

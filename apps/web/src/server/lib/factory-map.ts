@@ -190,8 +190,9 @@ function workflowReferences(content: string) {
 	let jobIndent: number | null = null;
 	let job = "";
 	let scalarIndent: number | null = null;
-	for (const line of lines) {
+	for (const [index, line] of lines.entries()) {
 		const indent = indentation(line);
+		const next = lines[index + 1];
 		if (scalarIndent !== null && indent > scalarIndent) continue;
 		scalarIndent = null;
 		const property = /^\s*(?:-\s+)?(?:"([\w-]+)"|'([\w-]+)'|([\w-]+)):\s*(.*)$/.exec(line);
@@ -212,12 +213,18 @@ function workflowReferences(content: string) {
 		if (!property) fail();
 		if (/^\s*(?:<<:|-\s*[*&{[])/.test(line)) fail();
 		if (key && (jobIndent === null || indent <= jobIndent)) {
-			if (!block(value)) fail();
+			if (!block(value) || !next || indentation(next) <= indent || /^\s*-(?:\s|$)/.test(next))
+				fail();
 			jobIndent = indent;
 			job = key;
 			jobs++;
 		}
-		if (key === "steps" && !block(value) && value !== "[]") fail();
+		if (
+			key === "steps" &&
+			value !== "[]" &&
+			(!block(value) || !next || indentation(next) < indent || !/^\s*-\s+\S/.test(next))
+		)
+			fail();
 		if (/^[|>](?:[+-]?[1-9]?|[1-9][+-]?)(?:\s+#.*)?$/.test(value))
 			scalarIndent = /^\s*-\s+/.exec(line)?.[0].length ?? indent;
 		if (key !== "uses" || indent === jobIndent) continue;
