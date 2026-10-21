@@ -76,6 +76,11 @@ All paths in the following tables are relative to `$API`, require
 case-insensitively against the saved catalog; an unknown catalog repo is 404 even
 if it exists on GitHub. Use canonical names for report repository fields.
 
+Every account observation list/aggregate and repository/factory source is also
+filtered against the current saved catalog, case-insensitively. Removed repositories
+are excluded at read time without deleting historical rows. Local stars only narrow
+the catalog. Generic records/reports/jobs are not filtered as GitHub observations.
+
 ### Source index
 
 `GET /sources` returns `{account_id, repositories, sources}`. `repositories` is the
@@ -146,6 +151,17 @@ unavailable, source:{kind,resource,publicationId}, selection:{scope,statisticsFi
   time or null, never response time. `coverage` can be null.
 - Inspect raw source flags, per-repository timestamps, freshness/missing inputs
   and coverage, not just top-level flags. Unknown/unavailable is not zero.
+- Account repos/issues/PR freshness counts the full selected catalog, not only
+  recently refreshed repositories. The time for each repo comes from its actual
+  per-repo data or retained aggregate baseline. `oldestAt` includes that baseline;
+  new catalog repos without proven observations count as missing. `fetchedAt` is
+  the newest selected time, not a guarantee that every repo is current. `/sources`
+  account entries use the same projection.
+- Factory freshness counts selected catalog repos, including missing publications,
+  and uses only immutable repository observation times. Inventory counters remain
+  historical collection metadata; the account-wide contribution calendar is
+  excluded because it cannot honor repository membership. CI freshness counts
+  three dependencies per repo: Actions, releases and details.
 - Factory stream `data` includes `runId`, `items`, `next`, `ranges:[{since,until}]`,
   `coverage`, `fetched_at`, optional `observation`, and flags. `next` is saved
   collection metadata, not a machine pagination URL. Coverage status is
@@ -160,6 +176,32 @@ api "$API/repos?scope=all"
 api "$API/repos/$OWNER/$NAME/issues" > observation.json
 api "$API/factory/repos/$OWNER/$NAME/commits"
 ```
+
+### CI interpretation
+
+Only the known default branch from saved details contributes to project verdicts.
+Missing branch metadata, null run refs, feature/PR branches and
+tags never imply default-branch health. Other branch/bot streams are observational;
+GET does not look up branch existence or current PRs. The classification clock is
+the newest saved input time, so check source freshness independently of verdict.
+
+The latest 10 decisive completed runs within 30 days describe recent stability.
+A latest success is healthy or flaky, never broken despite older failures. Two
+consecutive failures, or at least 50% failures over four or more decisive runs with
+a failing latest result, can be broken. No runs for 14 days means idle. More than
+one failure in a flaky stream is recurring.
+
+Read explicit units: `totals.{broken,flaky,healthy,idle,recurring}Workflows` and
+`totalWorkflows` count default-branch workflow streams; `{broken,flaky,healthy,idle,
+unknown}Repos` and `totalRepos` count repository summaries. `nonDefaultBranchStreams`
+counts observational streams, `nonDefaultBranchFailures` counts failed runs in 30
+days, `botStreams` counts bot streams and `truncatedRepos` counts truncated repo
+inputs. Per-repo counts likewise use `*Workflows`, `totalWorkflows`,
+`nonDefaultBranchStreams`, `nonDefaultBranchFailures` and `botStreams`. The ambiguous
+legacy count names are removed. `unsaved` and missing default-branch evidence are
+unknown, never proof of success. See the [exact CI contract](../../docs/api.md#saved-ci-verdicts-and-units).
+The `daily` histogram counts completed non-bot runs across all branches; it is not
+a workflow/repository health verdict.
 
 ## Records, reports and jobs
 
@@ -237,8 +279,9 @@ full machine catalog. Check the detailed reference and viewmodel before
 constructing global aggregation. Do not use report IDs as source identities.
 Prefer direct `account:*` sources for global reports when they supply the required
 evidence. The [browser source route](../../apps/web/src/server/routes/agent-browser.ts)
-currently selects repositories whose `owner_login` equals the active account's
-login, excluding archived repos, forks and `nocoo/rsshub` (case-insensitive).
+currently selects saved catalog repositories whose `owner_login` equals the active
+account's login, excluding archived repos and forks. No repository name has a
+special-case exclusion; the shared catalog membership boundary handles removals.
 This is not a starred/statistics filter; do not assume the full machine catalog
 is the expected child-report set.
 
