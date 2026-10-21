@@ -846,3 +846,10 @@ early shell command also continued to the commit attempt after focused checks
 failed because it used semicolons. The enabled hook correctly blocked the commit;
 subsequent validation-to-commit chains use short-circuit execution. Test-fixture
 failures must be fixed, never bypassed or mistaken for application regressions.
+
+The first addendum L2 rerun also rejected a browser assertion copied from the
+machine stream's collection order. Browser detail intentionally sorts by event
+time and ID, so the added workflow ID precedes the numeric package fixture ID.
+The expected browser order was corrected without changing either API's ordering.
+When sharing new evidence fixtures across readers, verify each reader's ordering
+contract instead of assuming identical arrays from identical source rows.

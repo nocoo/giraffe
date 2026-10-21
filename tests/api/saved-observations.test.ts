@@ -423,8 +423,8 @@ it("normalizes saved dependency unknowns and separates root and workspace identi
 	expect(await browserStream.json()).toMatchObject({
 		total: 2,
 		items: [
-			{ title: "recovered", at: null, createdAt: null, author: null },
 			legacyWorkflowDependency,
+			{ title: "recovered", at: null, createdAt: null, author: null },
 		],
 	});
 	expect(
