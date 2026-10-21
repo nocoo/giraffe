@@ -8,12 +8,14 @@ export function sqliteFixture(): D1Database {
 	db.exec(readFileSync("apps/web/src/server/lib/db/schema.sql", "utf8"));
 	function statement(sql: string, values: SQLInputValue[] = []): D1PreparedStatement {
 		const run = () => db.prepare(sql);
-		const execute = () =>
-			({
+		const execute = () => {
+			const query = run();
+			return {
 				success: true,
-				results: [],
-				meta: { changes: Number(run().run(...values).changes) },
-			}) as unknown as D1Result;
+				results: query.columns().length ? query.all(...values) : [],
+				meta: { changes: query.columns().length ? 0 : Number(query.run(...values).changes) },
+			} as unknown as D1Result;
+		};
 		const prepared = {
 			bind: (...v: unknown[]) => statement(sql, v as SQLInputValue[]),
 			first: async () => run().get(...values) ?? null,
