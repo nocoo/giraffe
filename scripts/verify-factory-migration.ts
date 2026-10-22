@@ -69,6 +69,8 @@ try {
 		"factory_version_refs",
 		"factory_storage",
 		"factory_budget",
+		"activity_publications",
+		"activity_pages",
 		"repo_stars",
 		"refresh_schedules",
 		"catalog_refresh_schedules",
@@ -149,6 +151,27 @@ try {
 		probe,
 	);
 	db.query("INSERT INTO factory_state VALUES(?,?,NULL,'2000')").run(probe, probe);
+	const budgetBefore = (
+		db.query("SELECT bytes FROM factory_budget WHERE account_id=?").get(probe) as { bytes: number }
+	).bytes;
+	db.query(
+		"INSERT INTO activity_publications(account_id,run_id,until_at,fetched_at,payload,content_version) VALUES(?,?,'2000','2000','{}','fixture')",
+	).run(probe, probe);
+	db.query("INSERT INTO activity_pages VALUES(?,?,0,'[]')").run(probe, probe);
+	const budgetAfter = (
+		db.query("SELECT bytes FROM factory_budget WHERE account_id=?").get(probe) as { bytes: number }
+	).bytes;
+	if (budgetAfter - budgetBefore !== 4) throw new Error("Activity byte accounting failed");
+	db.query("DELETE FROM activity_publications WHERE account_id=?").run(probe);
+	if (
+		(
+			db.query("SELECT COUNT(*) AS n FROM activity_pages WHERE account_id=?").get(probe) as {
+				n: number;
+			}
+		).n !== 0
+	)
+		throw new Error("Activity page cascade failed");
+
 	if (db.query("PRAGMA foreign_key_check").all().length)
 		throw new Error("Operational foreign keys failed");
 	db.exec("ROLLBACK TO factory_probe; RELEASE factory_probe");

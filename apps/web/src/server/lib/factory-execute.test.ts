@@ -5,6 +5,7 @@ import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import { makeRun, RUN_LEASE_MS, type RunSelection } from "../../lib/factory-run";
 import type { Env } from "../env";
 import { createApp } from "../index";
+import { readActivity } from "./activity-store";
 import { contentVersion, observationVersion } from "./content-version";
 import { createDb } from "./db/d1";
 import { controlRun, getRun, listRuns, publishedFactory, startRun } from "./db/factory-runs";
@@ -81,6 +82,15 @@ beforeEach(() =>
 			if (url.includes("/dependabot/alerts") && new URL(url).searchParams.has("page"))
 				return Response.json({ message: "Numeric pagination is unsupported" }, { status: 400 });
 			const q = String(init?.body);
+			if (q.includes("query ActivityRefs"))
+				return Response.json({
+					data: {
+						repository: {
+							refs: { nodes: [], pageInfo: { hasNextPage: false } },
+							tags: { nodes: [], pageInfo: { hasNextPage: false } },
+						},
+					},
+				});
 			if (q.includes("affiliations:[OWNER, COLLABORATOR"))
 				return Response.json({
 					data: {
@@ -746,7 +756,7 @@ it("separates denied contributions from malformed contribution evidence", async 
 	});
 	expect(run?.status).toBe("completed");
 });
-it("daily starred refresh publishes all default page sources without requiring old global lists", async () => {
+it("R4 eligible daily executor freezes supplemental activity and publishes a readable immutable window", async () => {
 	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] }, true);
 	const base = vi.mocked(fetch).getMockImplementation();
 	if (!base) throw new Error("fixture");
@@ -811,7 +821,28 @@ it("daily starred refresh publishes all default page sources without requiring o
 	expect((await publishedFactory(createDb(env.DB), snap.account_id))?.runId).toBe(snap.runId);
 	const run = await drive(env);
 	expect(run?.status).toBe("completed");
-	expect(run?.steps).toHaveLength(23);
+	expect(run?.steps).toHaveLength(25);
+	const activity = await readActivity(createDb(env.DB), snap.account_id, {});
+	expect(activity).toMatchObject({
+		runId: "r1",
+		previousRunId: null,
+		window: { first: true, gap: true },
+		repos: [{ repo: "nocoo/app", ci_runs: [], commits: { default: 0, other: 0 } }],
+	});
+	expect(run?.steps.find((step) => step.kind === "activity")).toMatchObject({
+		status: "success",
+		pages: 2,
+	});
+	expect(
+		(
+			await createDb(env.DB)
+				.prepare(
+					"SELECT payload FROM factory_resources WHERE run_id='r1' AND stream='activity-snapshot'",
+				)
+				.first<{ payload: string }>()
+		)?.payload,
+	).toContain('"repo":"nocoo/app"');
+
 	expect(run?.steps.find((step) => step.kind === "contributions")).toMatchObject({
 		status: "success",
 		pages: 7,

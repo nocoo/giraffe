@@ -28,6 +28,8 @@ export const STEP_LABELS: Record<StepKind, string> = {
 	inventory: "获取仓库列表",
 	restore: "读取已有数据",
 	contributions: "账号贡献日历",
+	activity: "当次活动补充",
+	"activity-contributions": "北京日贡献",
 	metadata: "仓库信息",
 	commits: "代码提交",
 	issues: "Issue 记录",
@@ -81,6 +83,8 @@ const STEP_IMPACT: Record<StepKind, string> = {
 	inventory: "无法确定完整的仓库范围，已有数据仍可查看。",
 	restore: "部分历史数据可能尚未显示在页面上。",
 	contributions: "账号贡献日历未更新；仓库提交日历单独计算。",
+	activity: "当次活动窗口的补充数据不完整，不能当成没有活动。",
+	"activity-contributions": "北京日贡献构成未完整采集，不能当成零贡献。",
 	metadata: "这个仓库本次无法更新；有历史数据时继续显示原来的数据。",
 	commits: "提交数量和提交日历可能不完整。",
 	issues: "Issue 数量和处理节奏可能不完整。",
@@ -324,7 +328,12 @@ export function runStages(run: FactoryRunView) {
 						title: "全站列表",
 						steps: run.steps.filter((s) => s.kind === "snapshot" && s.repo === null),
 					},
-					{ title: "账号贡献", steps: run.steps.filter((s) => s.kind === "contributions") },
+					{
+						title: "账号贡献",
+						steps: run.steps.filter(
+							(s) => s.kind === "contributions" || s.kind === "activity-contributions",
+						),
+					},
 					{
 						title: "工厂统计",
 						steps: run.steps.filter(

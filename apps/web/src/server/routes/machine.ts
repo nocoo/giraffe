@@ -3,6 +3,7 @@ import { etag, RETAINED_304_HEADERS } from "hono/etag";
 import { resourceCollection, resourceId } from "../../lib/agent-resource";
 import { REPO_SNAPSHOT_TABS } from "../../lib/snapshot-kinds";
 import type { AppVars, Env } from "../env";
+import { readActivity } from "../lib/activity-store";
 import {
 	createResource,
 	deleteResource,
@@ -27,6 +28,7 @@ import type { AccountObservationResource } from "../lib/saved-observation-statem
 import { snapshotScope } from "../lib/snapshot-scope";
 import { SourceTiming } from "../lib/source-timing";
 import { timedJson } from "../lib/timed-json";
+import { activityEtag } from "./activity";
 import {
 	getMachineSettings,
 	getMachineStars,
@@ -174,6 +176,16 @@ export function machineApi() {
 		},
 	);
 	app.get("/accounts/:account/stars", getMachineStars);
+	app.get(
+		"/accounts/:account/activity",
+		async (c, next) => {
+			c.header("Vary", "Authorization", { append: true });
+			await next();
+		},
+		activityEtag,
+		async (c) =>
+			c.json(await readActivity(c.get("db"), c.get("principal").accountId, c.req.queries())),
+	);
 	app.all("/accounts/:account/stars/:owner/:name", machineSetting);
 	app.get(
 		"/accounts/:account/contributions",

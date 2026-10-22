@@ -22,7 +22,7 @@ export async function collectPrState(
 	try {
 		result = await gh.githubGraphql(
 			token,
-			`query($ids:[ID!]!){nodes(ids:$ids){... on PullRequest{id ${PR_STATE_FIELDS}}} rateLimit{remaining resetAt}}`,
+			`query($ids:[ID!]!){nodes(ids:$ids){... on PullRequest{id ${PR_STATE_FIELDS} mergedBy{login} baseRefName reviewDecision}} rateLimit{remaining resetAt}}`,
 			{ ids },
 		);
 	} catch (error) {
@@ -42,6 +42,19 @@ export async function collectPrState(
 		if (gh.graphqlErrors.length) return items;
 		throw new ApiError(502, "github_error", "PR state response incomplete");
 	}
-	const states = new Map(rows(result.nodes).map((node) => [node.id, prState(node)]));
+	const states = new Map(
+		rows(result.nodes).map((node) => [
+			node.id,
+			{
+				...prState(node),
+				merged_by:
+					typeof object(node.mergedBy).login === "string"
+						? String(object(node.mergedBy).login)
+						: null,
+				base_ref: typeof node.baseRefName === "string" ? node.baseRefName : null,
+				review: typeof node.reviewDecision === "string" ? node.reviewDecision : null,
+			},
+		]),
+	);
 	return items.map((item) => ({ ...item, ...(states.get(item.id) ?? prState(null)) }));
 }

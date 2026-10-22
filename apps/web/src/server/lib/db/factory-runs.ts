@@ -8,6 +8,7 @@ import {
 	RUN_LEASE_MS,
 } from "../../../lib/factory-run";
 import type { FactorySnapshot } from "../../../lib/factory-types";
+import { activityWindow, isActivityRun } from "../activity";
 import { storedContent, withContent } from "../content-version";
 import { ApiError } from "../errors";
 import { RUN_DEADLINE_SQL, runDeadlineAt, timedOutRun } from "../factory-timeout";
@@ -128,10 +129,15 @@ export async function repoStates(db: Db, account: string): Promise<RepoRefreshSt
 		.all<{ payload: string }>();
 	return rows.results.map((r) => JSON.parse(r.payload) as RepoRefreshState);
 }
+const ACTIVITY_ELIGIBLE_SQL =
+	"json_extract(payload,'$.mode')='refresh' AND json_extract(payload,'$.depth')='quick' AND coalesce(json_extract(payload,'$.trigger'),'manual')!='weekly' AND (json_extract(payload,'$.trigger')='daily' OR json_extract(payload,'$.selection.scope')='all') AND coalesce(json_extract(payload,'$.selection.repo'),'')=''";
+const ACTIVITY_PREVIOUS_SQL = `FROM factory_runs WHERE account_id=? AND status='completed' AND ${ACTIVITY_ELIGIBLE_SQL} AND julianday(json_extract(payload,'$.window.until')) IS NOT NULL AND json_extract(payload,'$.window.until')<? ORDER BY json_extract(payload,'$.window.until') DESC,id LIMIT 1`;
+const ACTIVITY_INTERRUPTED_SQL = `FROM factory_runs WHERE account_id=? AND status IN ('failed','cancelled','partial') AND created_at>? AND ${ACTIVITY_ELIGIBLE_SQL} LIMIT 1`;
 export async function startRun(
 	db: Db,
 	run: FactoryRun,
 	clock = () => run.startedAt,
+	admissionAttempt = 0,
 ): Promise<FactoryRun> {
 	await expireRuns(db, clock(), run.account_id);
 	const old = await db
@@ -146,6 +152,27 @@ export async function startRun(
 		run.nextAttemptAt = acceptedAt;
 		run.window = factoryWindow(acceptedAt);
 	}
+	let previousActivityStart = "";
+	let activityInterrupted = false;
+	if (isActivityRun(run)) {
+		const history = await db
+			.prepare(`SELECT payload ${ACTIVITY_PREVIOUS_SQL}`)
+			.bind(run.account_id, run.window.until)
+			.first<{ payload: string }>();
+		const previous = history ? (JSON.parse(history.payload) as FactoryRun) : null;
+		const interrupted = await db
+			.prepare(`SELECT 1 AS n ${ACTIVITY_INTERRUPTED_SQL}`)
+			.bind(run.account_id, previous?.startedAt ?? "")
+			.first();
+		previousActivityStart = previous?.startedAt ?? "";
+		activityInterrupted = Boolean(interrupted);
+		run.activityWindow = activityWindow(run, previous, Boolean(interrupted));
+		run.previousActivityRunId = previous?.id ?? null;
+	}
+	if (!isActivityRun(run))
+		run.steps = run.steps.filter(
+			(step) => !["activity", "activity-contributions"].includes(step.kind),
+		);
 	run.deadlineAt = runDeadlineAt(run);
 	const insert = db
 		.prepare(`INSERT OR IGNORE INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at)
@@ -153,6 +180,7 @@ export async function startRun(
 	 AND (? OR NOT EXISTS(SELECT 1 FROM factory_runs WHERE account_id=? AND created_at>? AND json_array_length(payload,'$.steps')>0))
 	 AND (? OR NOT EXISTS(SELECT 1 FROM factory_state WHERE account_id=? AND next_at>?))
  AND NOT EXISTS(SELECT 1 FROM snapshots WHERE account_id=? AND kind='factory:lock' AND fetched_at>?)
+ AND (?=0 OR (coalesce((SELECT id ${ACTIVITY_PREVIOUS_SQL}),'')=? AND EXISTS(SELECT 1 ${ACTIVITY_INTERRUPTED_SQL})=?))
 	 AND (? IS NULL OR ${SCHEDULE_ADMISSION})`)
 		.bind(
 			run.id,
@@ -171,6 +199,13 @@ export async function startRun(
 			run.startedAt,
 			run.account_id,
 			run.startedAt,
+			Number(isActivityRun(run)),
+			run.account_id,
+			run.window.until,
+			run.previousActivityRunId ?? "",
+			run.account_id,
+			previousActivityStart,
+			Number(activityInterrupted),
 			run.schedule?.kind ?? null,
 			run.account_id,
 			run.startedAt,
@@ -204,6 +239,31 @@ export async function startRun(
 			.prepare("SELECT id FROM factory_runs WHERE account_id=? AND status IN ('running','paused')")
 			.bind(run.account_id)
 			.first();
+		if (!active && isActivityRun(run)) {
+			const changed = await db
+				.prepare(
+					`SELECT (coalesce((SELECT id ${ACTIVITY_PREVIOUS_SQL}),'')!=? OR EXISTS(SELECT 1 ${ACTIVITY_INTERRUPTED_SQL})!=?) AS changed`,
+				)
+				.bind(
+					run.account_id,
+					run.window.until,
+					run.previousActivityRunId ?? "",
+					run.account_id,
+					previousActivityStart,
+					Number(activityInterrupted),
+				)
+				.first<{ changed: number }>();
+			if (changed?.changed) {
+				if (admissionAttempt >= 2)
+					throw new ApiError(
+						409,
+						"account_conflict",
+						"Activity predecessor changed during admission; retry",
+					);
+				return startRun(db, run, clock, admissionAttempt + 1);
+			}
+		}
+
 		if (!active && run.schedule)
 			throw new ApiError(
 				409,

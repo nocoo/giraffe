@@ -7,6 +7,7 @@ import { SourceTiming } from "./lib/source-timing";
 import { accessBypass, resolveIdentity } from "./middleware/access";
 import { assertOrigin } from "./middleware/origin";
 import { activateAccount, getAccounts, postAccount, removeAccount } from "./routes/accounts";
+import { activityEtag, getActivity } from "./routes/activity";
 import { agentBrowserApi } from "./routes/agent-browser";
 import { browserTokens } from "./routes/api-tokens";
 import { getCi } from "./routes/ci";
@@ -87,6 +88,8 @@ export function createApp(): Hono<{ Bindings: Env; Variables: AppVars }> {
 	});
 	app.route("/api/v1", machineApi());
 	app.route("/api/agent", agentBrowserApi());
+	allow(app, "/api/activity", ["GET"]);
+	app.get("/api/activity", activityEtag, getActivity);
 	allow(app, "/api/tokens", ["GET", "POST"]);
 	app.on(["GET", "POST"], "/api/tokens", browserTokens);
 	allow(app, "/api/tokens/:id", ["PATCH", "DELETE"]);

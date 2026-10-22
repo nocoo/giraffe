@@ -10,6 +10,12 @@ import {
 	type FactoryStreamName,
 } from "../../lib/factory-types";
 import { type Env, encryptionKey } from "../env";
+import {
+	type ActivitySupplement,
+	collectActivityContributions,
+	collectActivitySupplement,
+} from "./activity-collect";
+import { freezeActivityRepo } from "./activity-store";
 import { savedContentMeta } from "./content-version";
 import { getAccount } from "./db/accounts";
 import { createDb } from "./db/d1";
@@ -115,7 +121,59 @@ export async function executeRunPage(
 			if (!key) throw new ApiError(500, "encryption_key_missing", "encryption key missing");
 			token = await decryptToken(account.token_ciphertext, parseKeyBytes(key));
 		}
-		if (step.kind === "snapshot") {
+		if (step.kind === "activity-contributions") {
+			if (!run.activityWindow) finish(step, "skipped", clock());
+			else {
+				run.activityContributions = await collectActivityContributions(run, gh, token);
+				finish(
+					step,
+					run.activityContributions.days.some((day) => day.coverage.status !== "unavailable")
+						? "success"
+						: "unavailable",
+					clock(),
+				);
+			}
+		} else if (step.kind === "activity") {
+			const repo = await currentRepo(db, run.account_id, String(step.repo));
+			if (!repo || !run.activityWindow) finish(step, "unavailable", clock());
+			else {
+				const saved = await db
+					.prepare(
+						"SELECT stream,payload FROM factory_resources WHERE run_id=? AND repo=? AND stream IN ('activity','actions')",
+					)
+					.bind(run.id, repo.name)
+					.all<{ stream: string; payload: string }>();
+				const previous = saved.results.find((row) => row.stream === "activity");
+				const actions = saved.results.find((row) => row.stream === "actions");
+				const result = await collectActivitySupplement(
+					run,
+					repo,
+					gh,
+					token,
+					previous ? (JSON.parse(previous.payload) as ActivitySupplement) : null,
+					actions ? (JSON.parse(actions.payload) as FactoryStreamData) : null,
+				);
+				writes.push(
+					fenced(
+						db,
+						lease,
+						clock(),
+						"INSERT INTO factory_resources(run_id,repo,stream,payload) SELECT ?,?,'activity',? WHERE $guard ON CONFLICT(run_id,repo,stream) DO UPDATE SET payload=excluded.payload",
+						[run.id, repo.name, boundedJson(result.state)],
+					),
+				);
+				if (result.done) {
+					writes.push(await freezeActivityRepo(db, lease, clock(), repo, result.state));
+					finish(
+						step,
+						Object.values(result.state.coverage).some((value) => value.truncated)
+							? "limited"
+							: "success",
+						clock(),
+					);
+				}
+			}
+		} else if (step.kind === "snapshot") {
 			const result = await collectSitePage(db, lease, step, gh, token, clock());
 			writes = result.writes;
 			if (result.done) {
@@ -188,6 +246,7 @@ export async function executeRunPage(
 		} else {
 			run.checkpoint ??= newFactory(run.account_id, run.owner, run.startedAt);
 			const checkpoint = run.checkpoint;
+			if (run.activityWindow) checkpoint.activityWindow = run.activityWindow;
 			checkpoint.runId = run.id;
 			if (step.kind === "contributions") {
 				checkpoint.inventory.complete = true;

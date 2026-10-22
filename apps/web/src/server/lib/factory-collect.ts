@@ -208,7 +208,12 @@ async function collectStream(
 			? prior
 			: null;
 	const retained =
-		baseline?.data.items.filter((e) => stream !== "commits" || inWindow(e.at, s.window)) ?? [];
+		baseline?.data.items.filter(
+			(e) =>
+				stream !== "commits" ||
+				inWindow(e.at, s.window) ||
+				(Boolean(s.activityWindow) && Date.parse(e.at ?? "") === Date.parse(s.window.until)),
+		) ?? [];
 	data.coverage.strategy = "full";
 	data.coverage.status = "partial";
 	data.coverage.fetchedAt = now;
@@ -286,7 +291,10 @@ async function collectStream(
 				const list = stream === "actions" ? object(payload).workflow_runs : payload;
 				if (!Array.isArray(list)) throw new ApiError(502, "github_error", "invalid resource list");
 				let page = mapFactoryEvents(stream, rows(list)).filter(
-					(e) => (stream !== "commits" && stream !== "actions") || inWindow(e.at, s.window),
+					(e) =>
+						(stream !== "commits" && stream !== "actions") ||
+						inWindow(e.at, s.window) ||
+						(Boolean(s.activityWindow) && Date.parse(e.at ?? "") === Date.parse(s.window.until)),
 				);
 				if (stream === "prs") page = await collectPrState(s, gh, token, page, now);
 				data.items = uniqueEvents([...data.items, ...page]);
@@ -303,6 +311,12 @@ async function collectStream(
 			}
 		}
 		if (data.coverage.strategy !== "reused") data.coverage.pages++;
+		if (stream === "actions" && data.coverage.pages >= 100 && (data.next || data.ranges.length)) {
+			data.coverage.status = "limited";
+			data.coverage.reason = "Workflow pagination exceeds 100-page budget; observed subset only";
+			data.next = null;
+			data.ranges = [];
+		}
 		if (!data.next && data.ranges.length && data.coverage.status !== "limited") {
 			const range = data.ranges.shift();
 			if (range)

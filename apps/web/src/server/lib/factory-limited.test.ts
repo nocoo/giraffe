@@ -235,7 +235,7 @@ it.each([
 			const indexed = (await readSources(reader, account, {})).sources.find(
 				(item) => item.resource === `factory:${repo.name}:dependencies`,
 			);
-			expect(reader.statements).toBeLessThanOrEqual(5);
+			expect(reader.statements).toBeLessThanOrEqual(6);
 			expect(
 				profile.queries.find((query) => query.sql.includes("CROSS JOIN factory_resources"))
 					?.payloadBytes,

@@ -30,6 +30,13 @@ export function factoryGraphqlStub(
 	query: string,
 	variables: Record<string, unknown>,
 ): unknown | null {
+	const emptyConnection = { nodes: [], pageInfo: { hasNextPage: false } };
+	if (query.includes("query ActivityRefs"))
+		return { data: { repository: { refs: emptyConnection, tags: emptyConnection } } };
+	if (query.includes("query ActivityTags"))
+		return { data: { repository: { tags: emptyConnection } } };
+	if (query.includes("query ActivityBranchHistory"))
+		return { data: { repository: { object: { history: emptyConnection } } } };
 	if (query.includes("repositories(first:10,"))
 		return {
 			data: {
@@ -75,6 +82,7 @@ export function factoryGraphqlStub(
 						.map((key) => [
 							key.replace("from", "day"),
 							{
+								contributionCalendar: { totalContributions: 0, weeks: [] },
 								totalCommitContributions: 0,
 								totalIssueContributions: 0,
 								totalPullRequestContributions: 0,

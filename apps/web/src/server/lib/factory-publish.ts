@@ -11,6 +11,7 @@ import {
 	type FactorySnapshot,
 	type FactoryStreamData,
 } from "../../lib/factory-types";
+import { activityPublicationWrites } from "./activity-store";
 import { savedContentMeta } from "./content-version";
 import type { Db } from "./db/d1";
 import {
@@ -354,6 +355,7 @@ export async function publicationWrites(
 		),
 	);
 	writes.push(...(await snapshotWrites(db, lease, now, `factory:v:${run.id}`, snapshot)));
+	writes.push(...(await activityPublicationWrites(db, lease, now, snapshot.repos)));
 	writes.push(
 		fenced(
 			db,

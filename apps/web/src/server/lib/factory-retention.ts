@@ -26,6 +26,12 @@ export async function pruneFactory(db: Db, now: string) {
 	const cutoff = new Date(Date.parse(now) - 7 * 86400_000).toISOString();
 	await db.batch([
 		db
+			.prepare(`DELETE FROM activity_publications WHERE (account_id,run_id) IN (
+ SELECT a.account_id,a.run_id FROM activity_publications a WHERE a.fetched_at<?
+ AND a.run_id NOT IN (SELECT p.run_id FROM activity_publications p JOIN factory_runs r ON r.id=p.run_id AND r.account_id=p.account_id WHERE p.account_id=a.account_id AND r.status='completed' ORDER BY p.until_at DESC,p.run_id LIMIT 2)
+ AND a.run_id NOT IN (SELECT r.id FROM factory_runs r WHERE r.account_id=a.account_id ORDER BY r.created_at DESC LIMIT 20) LIMIT 50)`)
+			.bind(cutoff),
+		db
 			.prepare(`DELETE FROM snapshots WHERE (account_id,kind) IN (
    SELECT s.account_id,s.kind FROM snapshots s WHERE (s.kind LIKE 'factory:v:%' OR s.kind LIKE 'factory:catalog:%') AND s.fetched_at<?
    AND NOT EXISTS(SELECT 1 FROM factory_state h WHERE h.account_id=s.account_id AND (s.kind IN ('factory:v:'||h.published_id,'factory:v:'||h.published_id||'#2','factory:catalog:'||h.catalog_id,'factory:catalog:'||h.catalog_id||'#2')))
@@ -53,6 +59,7 @@ export async function pruneFactory(db: Db, now: string) {
    AND NOT EXISTS(SELECT 1 FROM factory_resources s WHERE s.run_id=r.id)
    AND NOT EXISTS(SELECT 1 FROM factory_repo_versions v WHERE v.account_id=r.account_id AND v.version=r.id)
    AND NOT EXISTS(SELECT 1 FROM factory_version_refs f WHERE f.account_id=r.account_id AND (f.version=r.id OR f.publication_id=r.id))
+	 AND NOT EXISTS(SELECT 1 FROM activity_publications a WHERE a.account_id=r.account_id AND a.run_id=r.id)
    AND NOT EXISTS(SELECT 1 FROM snapshots s WHERE s.account_id=r.account_id AND s.kind IN ('factory:v:'||r.id,'factory:catalog:'||r.id)) LIMIT 50)`)
 			.bind(cutoff),
 	]);

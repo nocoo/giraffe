@@ -74,7 +74,7 @@ it("counts every owned published repository without changing visible lists or st
 		expect(envelope.selection.statisticsFilter).toBe(false);
 		const reader = createDb(raw);
 		const index = await readSources(reader, account, {});
-		expect(reader.statements).toBe(5);
+		expect(reader.statements).toBe(6);
 		expect(index.sources.find((s) => s.resource === "account:factory")).toMatchObject({
 			freshness: expected,
 			truncated: false,
