@@ -33,8 +33,12 @@ Public candidates require this complete listing to retain a previously known
 private owned identity (`scope_unverifiable` otherwise), followed by unambiguous
 not-found evidence from a stable-ID node lookup. Tokens without private access
 never auto-remove. Permission-hidden 404s, SAML/SSO, 401/403, limits, network errors
-and 5xx retain all state. More than `max(3, 10% of owned repos)`
-missing candidates suppress all removals. Confirmed removal clears stars and
+and 5xx retain all state. More than `max(3, 10% of previously current owned repos)`
+missing, not-yet-removed identities suppress all removals, including quarantined
+identities from earlier replacements. Quarantined identities count as candidates
+but not in the denominator. All candidates then report `mass_removal_guard` in
+`unconfirmed[]`, and both current and quarantined state are preserved. Exactly the
+threshold still requires the normal identity/privacy checks. Confirmed removal clears stars and
 mutable participation/overrides but preserves immutable evidence and generic
 agent records. Reappearance is added without restoring stars. Default-star and
 archive-unstar policy remains in the external bot, respecting owner overrides;

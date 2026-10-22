@@ -817,10 +817,17 @@ deletion. Other safe reasons are `mass_removal_guard`, `identity_unavailable`,
 `budget_exhausted`, `permission_denied`, `github_unauthorized`,
 `github_rate_limited`, `github_error` and `lookup_unverifiable`.
 
-If missing candidates
-exceed `max(3, owned_before * 0.1)` (no rounding), all removals are suppressed and
-a safe warning is recorded without confirmation calls. The owned denominator
-includes forks and archived repositories, not departed or displaced identities.
+Count every missing, not-yet-removed identity as a candidate, including quarantined
+identities displaced by earlier same-name replacements, even if another safety
+guard would also block it. If their total exceeds `max(3, owned_before * 0.1)`
+(no rounding), suppress all removals and confirmation calls, preserve current and
+quarantined mutable state, set `catalog_mass_removal_guard`, and report every
+candidate in `unconfirmed[]` with reason `mass_removal_guard`. This batch reason
+takes precedence over individual private/scope reasons. Conservatively,
+`owned_before` counts only previously current-name, non-removed owned identities,
+including forks and archived repositories; non-owned, departed and quarantined
+identities cannot inflate the denominator. Exactly the threshold is not blocked
+by this guard; all other identity/privacy checks still apply.
 
 Confirmed deletion atomically clears star records (including owner-unstar
 tombstones), statistics residue and mutable factory participation. It does not

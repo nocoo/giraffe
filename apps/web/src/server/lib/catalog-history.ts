@@ -232,8 +232,7 @@ export async function planCatalog(
 			!row.removed_at &&
 			row.repo.split("/")[0]?.toLowerCase() === owner.toLowerCase(),
 	).length;
-	const guarded =
-		missing.filter((row) => row.name_current !== 0).length > Math.max(3, ownedBefore * 0.1);
+	const guarded = missing.length > Math.max(3, ownedBefore * 0.1);
 	if (guarded) plan.warning = "catalog_mass_removal_guard";
 	const privateProof = plan.rows.some(
 		(row) =>
@@ -252,18 +251,17 @@ export async function planCatalog(
 	);
 	for (const previous of missing) {
 		let removed = false;
-		let reason: CatalogUnconfirmedReason =
-			previous.visibility !== "PUBLIC"
+		let reason: CatalogUnconfirmedReason = guarded
+			? "mass_removal_guard"
+			: previous.visibility !== "PUBLIC"
 				? "private_unverifiable"
 				: !privateProof
 					? "scope_unverifiable"
-					: guarded
-						? "mass_removal_guard"
-						: !previous.github_id
-							? "identity_unavailable"
-							: gh.count >= MAX_FETCHES
-								? "budget_exhausted"
-								: "lookup_unverifiable";
+					: !previous.github_id
+						? "identity_unavailable"
+						: gh.count >= MAX_FETCHES
+							? "budget_exhausted"
+							: "lookup_unverifiable";
 		let row = { ...previous };
 		if (reason === "lookup_unverifiable") {
 			try {

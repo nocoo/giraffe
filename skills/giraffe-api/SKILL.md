@@ -342,6 +342,11 @@ Different-ID name reuse cannot inherit departed factory evidence; included remov
 rows never inherit the current same-name repository's stars or provenance.
 Same-run name replacement belongs to the listed ID; unresolved old mutable state
 is preserved separately and restores only to that same identity, never to the new ID.
+The mass guard counts all missing, not-yet-removed identities, including quarantined
+replacement generations, against `max(3, current_owned_before * 0.1)`. Quarantined,
+removed and non-owned identities do not enlarge the denominator. Above the exact
+threshold, no removals or confirmation calls occur; every candidate reports
+`mass_removal_guard`, preserving current and quarantined mutable state.
 See [discovery](../../docs/api.md#get-catalogchanges) for exact bounds and fields.
 
 ## Errors, limits and retries

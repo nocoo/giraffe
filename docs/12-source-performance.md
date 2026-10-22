@@ -25,7 +25,10 @@ Catalog stable IDs are fields in the existing listing query, not separate
 requests. Only missing candidates require direct repository confirmation; a
 normal complete rediscovery adds no GitHub calls. More than
 `max(3, owned_before * 0.1)` missing candidates suppress all removal confirmation
-calls and preserve membership. Denied/failed confirmations never prove deletion.
+calls and preserve membership and quarantined state. Candidates include every
+missing, not-yet-removed identity across replacement generations; `owned_before`
+excludes quarantined, removed and non-owned identities. Guarded candidates all
+report `mass_removal_guard` without upstream calls. Denied/failed confirmations never prove deletion.
 Discovery GET uses saved rows and never triggers upstream collection. Fixture
 request counts and scheduler-step costs are distinct from deployed latency.
 

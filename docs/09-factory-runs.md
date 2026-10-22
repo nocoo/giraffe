@@ -311,6 +311,12 @@ missing members out of 40 owned members therefore add four requests. Four
 missing out of 31 owned members exceed the exact ten-percent threshold, so all
 removals and confirmation calls are suppressed. Archived and forked owned members
 count in that denominator; non-owned, departed and displaced identities do not.
+The candidate count includes all missing, not-yet-removed identities, including
+quarantined identities from multiple replacement generations. Four quarantined
+identities with five current owned members therefore trigger the guard: zero
+lookups/removals, unchanged mutable state and `mass_removal_guard` for every
+candidate. Three such identities are exactly the threshold and still require
+the normal identity/privacy checks before deletion.
 
 The listing fixture uses one GraphQL request; the factory path also has its
 existing inventory request. Confirmations execute inside the existing repository

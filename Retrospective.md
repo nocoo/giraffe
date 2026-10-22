@@ -1,5 +1,19 @@
 # Retrospective
 
+## 2026-10-22 - Removal guards must cover quarantined identities
+
+The identity-safety repair preserved old mutable state during name replacement,
+but its mass-removal numerator counted only current-name identities. A later
+refresh could confirm and clear four quarantined identities while five current
+repositories kept the threshold at three. Count all missing, not-yet-removed
+identities before any confirmation or cleanup, including prior replacement
+generations. Do not let those historical identities inflate the owned denominator.
+When guarded, preserve all mutable state and report the same batch-level reason
+for every candidate. Multi-refresh RED fixtures now check the original four-old
+identity case, mixed current/quarantined candidates, missing private proof, and
+both the absolute-three and exact-ten-percent boundaries. Compare full raw
+quarantine/current payloads and persisted change events, not only planner counts.
+
 ## 2026-10-22 - Contract fixtures cannot depend on unreachable Git objects
 
 The cross-version repository contract test archived a local pre-rebase commit at

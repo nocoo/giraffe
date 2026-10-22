@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- R7: include quarantined identities from earlier replacements in the mass-removal guard. Keep the denominator limited to current owned membership; above the exact threshold, preserve all current/quarantined state and report every candidate as `mass_removal_guard` without confirmation calls.
+
 - R7: same-run different-ID name replacement no longer blocks discovery. The listed identity owns the name while unresolved old state is preserved by identity, without inheriting old stars or factory evidence. Stable-ID lookup detects renames without name-based deletion guesses.
 
 - P3: enforce the 1,500,000-byte UTF-8 snapshot-page limit using the final truncation flag, including exact multibyte boundaries. Oversized non-list metadata uses a bounded, explicitly truncated compact form; metadata that cannot fit even that form fails instead of storing an oversized page. Keep the two-page limit.
