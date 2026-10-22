@@ -291,11 +291,15 @@ is a saved immutable account-wide quick/daily publication. It uses the existing
 contentVersion and fetchedAt. GET never rebuilds activity from raw event history,
 collects GitHub, changes run status or records token usage.
 
-The window is `(previous successful quick/daily until, current until]`. First
+The window is `(last published completed-or-partial quick/daily until, current until]`. First
 publication uses a marked 24-hour lookback; failures or missing Beijing days widen
 the interval and mark a gap. Selected-repository and weekly/deep runs do not
 consume this account-wide window. A nullable list/count is unavailable, never
-empty/zero. Per-list coverage and overall truncation remain part of the evidence.
+empty/zero. Partial runs publish when publication finishes; failed/cancelled and
+unpublished runs do not advance the window. `latest` and source discovery include
+partial publications. Failed/unavailable/limited repo steps mark `coverage.run`
+partial, while missing source totals stay null. Collector capacity limits count
+as `counts.limited`, not failed. Per-list coverage and truncation remain evidence.
 Current snapshot alert counts preserve each feature's independent unknown state.
 
 The browser `/today` route and repository activity panel read this same saved

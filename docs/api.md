@@ -687,15 +687,20 @@ The response is an `ActivitySnapshot`, not the generic observation envelope:
 ```
 
 The interval is `(since, until]`, ending at the run's frozen collection cutoff,
-not its completion time. The previous successful account-wide quick refresh
-supplies `since`, including reliable persisted runs from before activity storage
-existed. Eligible runs are quick refreshes triggered by daily scheduling or a
+not its completion time. The last published account-wide quick refresh whose
+terminal status is `completed` or `partial` supplies `since`. A completed run
+without an activity publication (including pre-activity history) does not advance
+the window. Eligible runs are quick refreshes triggered by daily scheduling or a
 manual `scope:all` request, not weekly/deep, catalog or selected-repository work.
 Daily membership remains starred-owned even when it contains zero or one repo.
 The first run uses a bounded 24-hour lookback and sets `first:true,gap:true`.
-Failed/interrupted eligible runs or a missing Beijing calendar day set `gap:true`;
-the window still starts at the last success. Collection-time jitter alone does
-not create a gap. Adjacent successful windows share the exact boundary timestamp.
+Failed/cancelled or unpublished terminal eligible runs, or a missing Beijing
+calendar day, set `gap:true`; the window still starts at the last eligible
+publication. A published partial run advances the window without itself creating
+a gap. Collection-time jitter alone does not create a gap. Adjacent publications
+share the exact boundary timestamp. `latest`, `/sources` discovery and retention
+use the same completed-or-partial publication eligibility; failed/cancelled runs
+remain excluded. A finished partial publication is readable, not a 409.
 
 Lists distinguish known empty (`[]`) from unavailable (`null`). Coverage entries
 are `{status:complete|partial|unavailable,truncated,reason}`. A bounded pagination
@@ -703,6 +708,9 @@ or storage cut marks the affected list and the whole response truncated; nullabl
 totals must not be interpreted as zero. Old good observations are not relabeled
 as newly collected evidence. The source index registers `account:activity` with
 its publication version, content version and saved `fetchedAt`.
+Repositories with failed, unavailable or limited steps have `coverage.run.status`
+`partial`. Per-source missing evidence remains unavailable/null; a total whose
+source evidence is partial or unavailable stays null, never a fabricated zero.
 `membership` freezes repository names independently of stored pages, so capacity
 cuts cannot make a selected member look unselected. An unclassifiable failed
 workflow leaves the red default-branch total null and `default_branch` coverage
@@ -1543,8 +1551,10 @@ as terminal `limited` with `error:"dependency_parse_unsupported"`; the collector
 uses that typed safe code for unsupported workflow structure or an unparseable
 manifest, never classification by display text. This adds `counts.limited` and
 completed browser progress without incrementing failed/unavailable counts or
-making the run partial. Capacity truncation, interrupted pagination/access loss,
-malformed upstream containers and exhausted
+making the run partial. Collector `coverage.status:"limited"`, including capacity
+truncation with `error:"coverage_limited"`, likewise increments `counts.limited`,
+not `counts.failed`; its evidence remains limited, never complete. Interrupted
+pagination/access loss, malformed upstream containers and exhausted
 upstream retries remain failures. `completed` means the plan finished without
 failures or skipped required work, not that every data source is available.
 For paginated lists, only an explicit first-page access denial can represent

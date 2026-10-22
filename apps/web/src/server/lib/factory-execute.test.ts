@@ -207,7 +207,35 @@ it.each([false, true])(
 	},
 );
 
-it("still fails dependency capacity truncation instead of treating it as a safe-parse limit", async () => {
+it("B2 publishes daily activity despite a failed repository collection step", async () => {
+	const env = await setup("refresh", { scope: "all" }, true);
+	const base = vi.mocked(fetch).getMockImplementation();
+	if (!base) throw new Error("fixture");
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async (url: string, init: RequestInit) =>
+			url.includes("/releases") ? Response.json({ invalid: true }) : base(url, init),
+		),
+	);
+	const run = await drive(env);
+	expect(run?.status).toBe("partial");
+	expect(run?.steps.find((step) => step.kind === "releases")?.status).toBe("failed");
+	expect(run?.steps.find((step) => step.kind === "publish")?.status).toBe("success");
+	expect(await readActivity(createDb(env.DB), snap.account_id, {})).toMatchObject({
+		runId: "r1",
+		repos: [
+			{
+				repo: "nocoo/app",
+				coverage: { run: { status: "partial" }, releases: { status: "unavailable" } },
+				releases: null,
+			},
+		],
+		totals: { releases: null },
+		coverage: { repos: { status: "partial" } },
+	});
+});
+
+it("B2 counts dependency capacity truncation as limited rather than failed", async () => {
 	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] });
 	const base = vi.mocked(fetch).getMockImplementation();
 	if (!base) throw new Error("fixture");
@@ -224,13 +252,13 @@ it("still fails dependency capacity truncation instead of treating it as a safe-
 	);
 	const run = await drive(env);
 	expect(run?.steps.find((step) => step.kind === "dependencies")).toMatchObject({
-		status: "failed",
+		status: "limited",
 		error: "coverage_limited",
 	});
-	expect(run?.status).toBe("partial");
+	expect(run?.status).toBe("completed");
 	expect((await listRuns(createDb(env.DB), snap.account_id))[0]?.counts).toMatchObject({
-		limited: 0,
-		failed: 1,
+		limited: 1,
+		failed: 0,
 	});
 });
 

@@ -72,9 +72,13 @@ Use `account:activity` in `/sources` and authenticated ETag/304 for polling.
 The direct response contains `window`, `runId`, `previousRunId`, `fetchedAt`,
 `repos`, `totals`, `contributions`, `coverage` and `truncated`.
 
-The interval is `(previous successful account-wide quick/daily until, this until]`.
+The interval is `(last published completed-or-partial account-wide quick/daily until, this until]`.
 First publication is a marked 24-hour lookback; a failed/missing run widens the
-interval and sets `gap:true`. Repository-only and deep refreshes do not advance it.
+interval and sets `gap:true`. A finished partial publication is readable and
+advances the window; failed/cancelled/unpublished runs never advance it.
+Repository-only and deep refreshes do not advance it. `latest` and `/sources`
+include partial publications; failed/unavailable/limited repo steps mark
+`coverage.run` partial. `coverage_limited` increments `counts.limited`, not failed.
 Do not treat a null list/count as an empty list/zero, or truncated coverage as
 complete. CI runs include branch/event/attempt/duration; PR/issue lifecycle,
 release/tag and branch commit evidence accompany current open-item/security
