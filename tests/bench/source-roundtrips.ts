@@ -6,7 +6,7 @@ import { profileDb } from "../fixtures/profile-db";
 import { revisionFixture } from "../fixtures/revision";
 import { populateSourceStreams, sourcesFixture } from "../fixtures/sources";
 
-const revision = process.argv[2] ?? "6f87d669eb67d92d1ad8a404c8a1fa0e4ffcf3b3";
+const revision = process.argv[2] ?? "9bbecde5b3a8037e5a44b8e9e2e9610dcb71cff3";
 const modulePath = "apps/web/src/server/lib/machine-sources.ts";
 const baselineRevision = revisionFixture(revision);
 const originalFetch = globalThis.fetch;

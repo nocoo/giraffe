@@ -8,7 +8,7 @@ import { readSources } from "../../apps/web/src/server/lib/machine-sources";
 import { revisionFixture } from "../fixtures/revision";
 import { sqliteFixture } from "../fixtures/sqlite";
 
-const revision = revisionFixture("6f87d669eb67d92d1ad8a404c8a1fa0e4ffcf3b3");
+const revision = revisionFixture("9bbecde5b3a8037e5a44b8e9e2e9610dcb71cff3");
 let baselineApp: typeof import("../../apps/web/src/server/index");
 let baselineSources: typeof import("../../apps/web/src/server/lib/machine-sources");
 let baselineObservations: typeof import("../../apps/web/src/server/lib/machine-observations");

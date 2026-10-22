@@ -10,7 +10,7 @@ import { profileDb } from "../fixtures/profile-db";
 import { revisionFixture } from "../fixtures/revision";
 import { populateSourceStreams, sourcesFixture } from "../fixtures/sources";
 
-const baselineSha = process.env.GIRAFFE_PERF_BASELINE ?? "6f87d669eb67d92d1ad8a404c8a1fa0e4ffcf3b3";
+const baselineSha = process.env.GIRAFFE_PERF_BASELINE ?? "9bbecde5b3a8037e5a44b8e9e2e9610dcb71cff3";
 const revision = revisionFixture(baselineSha);
 const OriginalDate = globalThis.Date;
 const fixedNow = Date.parse("2026-10-22T08:00:00.000Z");
@@ -63,6 +63,8 @@ try {
 	}
 	await fixture.save("repo:fixture/project-001:traffic", { views: [], clones: [] });
 	await fixture.save("repo:fixture/project-001:security", { features: {}, alerts: [] });
+	await fixture.save("repo:fixture/project-001:languages", { languages: { TypeScript: 4096 } });
+	await fixture.save("repo:fixture/project-001:contributors", { contributors: [] });
 	await fixture.raw
 		.prepare(
 			"INSERT INTO snapshots(account_id,kind,payload,fetched_at) VALUES(?,'repo:fixture/orphan:actions#2','invalid-json','invalid-time')",
@@ -142,9 +144,20 @@ try {
 			...["repos", "issues", "prs", "ci", "factory"].flatMap((resource) =>
 				["all", "starred"].map((scope) => `${prefix}/${resource}?scope=${scope}`),
 			),
-			...["", "/issues", "/prs", "/actions", "/releases", "/traffic", "/security"].map(
-				(tab) => `${prefix}/repos/fixture/project-001${tab}`,
-			),
+			...[
+				"",
+				"/details",
+				"/issues",
+				"/prs",
+				"/actions",
+				"/releases",
+				"/traffic",
+				"/security",
+				"/languages",
+				"/contributors",
+			]
+				.filter((tab) => prefix !== browser || tab !== "/details")
+				.map((tab) => `${prefix}/repos/fixture/project-001${tab}`),
 			...FACTORY_STREAMS.map((stream) => `${prefix}/factory/repos/fixture/project-001/${stream}`),
 			`${prefix}/repos/fixture/removed-history/issues`,
 			`${prefix}/repos?scope=invalid`,
