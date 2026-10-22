@@ -7,7 +7,7 @@ for (const [width, theme] of [
 ] as const)
 	test(`R5 read-only repository state survives missing snapshots at ${width}px ${theme}`, async ({
 		page,
-	}) => {
+	}, info) => {
 		await page.setViewportSize({ width, height: 900 });
 		await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
 		const fixtures: Record<string, unknown> = createUiFixtures();
@@ -20,6 +20,8 @@ for (const [width, theme] of [
 		const list = fixtures["/api/repos"] as { repos: Record<string, unknown>[] };
 		list.repos[0] = { ...list.repos[0], agent_state: summary };
 		const writes: string[] = [];
+		const errors: string[] = [];
+		page.on("pageerror", (error) => errors.push(error.message));
 		let missing = false;
 		await page.route("**/api/**", (route) => {
 			const url = new URL(route.request().url());
@@ -44,9 +46,12 @@ for (const [width, theme] of [
 					status: 409,
 					json: { error: { code: "snapshot_missing", message: "Not collected" } },
 				});
-			return route.fulfill({
-				json: fixtures[url.pathname] ?? { account_id: "ui-account", items: [] },
-			});
+			return url.pathname in fixtures
+				? route.fulfill({ json: fixtures[url.pathname] })
+				: route.fulfill({
+						status: 404,
+						json: { error: { code: "not_found", message: "No fixture" } },
+					});
 		});
 		await page.goto("/repos");
 		await expect(page.getByLabel("管家状态：attention")).toBeVisible();
@@ -55,6 +60,7 @@ for (const [width, theme] of [
 		await page.goto("/repos/octocat/hello-world");
 		await expect(page.getByText("Review deployment evidence", { exact: true })).toBeVisible();
 		await expect(page.getByText("最近审阅", { exact: true })).toBeVisible();
+		await page.screenshot({ path: info.outputPath("agent-state.png"), fullPage: true });
 		expect(
 			await page.locator("main").evaluate((node) => node.scrollWidth <= node.clientWidth + 1),
 		).toBe(true);
@@ -63,4 +69,5 @@ for (const [width, theme] of [
 		await expect(page.getByText("仓库已移除 · 备注保留", { exact: true })).toBeVisible();
 		await expect(page.getByText("Review deployment evidence", { exact: true })).toBeVisible();
 		expect(writes).toEqual([]);
+		expect(errors).toEqual([]);
 	});

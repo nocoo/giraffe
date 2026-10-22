@@ -1,5 +1,14 @@
 # Retrospective
 
+## 2026-10-22 - Mock endpoint contracts rather than generic successful objects
+
+The new R5 browser fixture returned a generic successful object for every unknown
+API endpoint. Project-identity loading treated that object as a real identity and
+crashed when its icon fields were missing, so even the corrected radio selector
+could not find the disappeared page controls. Return explicit 404 responses for
+unmodeled endpoints, assert that no page error occurs, and use the existing L3
+runner's optional file filter for diagnosis before repeating full acceptance.
+
 ## 2026-10-22 - Exercise identity and opaque-JSON boundaries before approval
 
 R5 review found four cases missing from the ordinary state tests: a repository
