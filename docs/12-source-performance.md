@@ -34,6 +34,40 @@ measurement describes the withdrawn proposal, not the current implementation
 | Since, empty | 5.12 -> 32.72 | 7.20 -> 6.14 | 1.83 -> 3.79 | <0.01 -> <0.01 | 15.32 -> 44.67 |
 | One repository | 4.21 -> 33.05 | 6.97 -> 6.14 | 6.94 -> 7.14 | 0.01 -> 0.01 | 23.90 -> 53.41 |
 
+### Fix-round-1 alternating measurement
+
+`source-roundtrips.ts` now loads five complete revision trees against the same
+126-repository fixture, populated immutable streams and 2,000 unrelated history
+rows. It records one cold sample, then 15 measured samples per variant/scenario,
+alternating forward/reverse variant order each round. Network and database writes
+are denied during reads; no artificial latency is injected. All results remain
+one reader trip/five statements. HTTP authentication is not executed here and
+adds its unchanged separate trip. The profiler measures raw SQLite batch time
+separately from D1-wrapper wall time, which also includes byte-accounting overhead.
+
+Each cell below is **SQLite execution median / read-and-serialize total median**
+in milliseconds, measured locally with Bun 1.4.3:
+
+| Request | Main 0.17.3 `9b95192` | 0.17.2 `86f39d3` | Functional `9bbecde` | Rejected `d673307` | Fixed runtime `34d43b5` |
+| --- | --- | --- | --- | --- | --- |
+| Full | 4.47 / 28.12 | 4.59 / 26.77 | 4.57 / 27.44 | 31.31 / 54.80 | 4.55 / 28.72 |
+| Since, two thirds | 4.46 / 26.93 | 4.49 / 26.87 | 4.47 / 27.17 | 30.79 / 53.62 | 4.64 / 28.73 |
+| Since, empty | 4.42 / 15.38 | 4.47 / 15.18 | 4.43 / 16.52 | 31.31 / 42.66 | 4.48 / 17.62 |
+| One repository | 3.48 / 24.75 | 3.49 / 24.21 | 3.49 / 25.80 | 30.67 / 52.09 | 3.49 / 25.73 |
+
+Fixed D1-wrapper medians are 5.28 / 6.07 / 5.07 / 4.32 ms respectively;
+fixed total p95 values are 34.50 / 35.09 / 19.12 / 28.54 ms. Every variant reads
+8,784,588 payload bytes except the rejected projection (7,707,069). The final
+runtime restores baseline database cost, not a claimed speedup over 0.17.x:
+functional projection changes and honest work instrumentation remain, and some
+total medians are still above the older versions. No deployed latency is measured.
+
+Every sample asserts a stable exact body within its revision. Fixed, functional
+baseline and rejected-projection bodies also match one another byte-for-byte;
+older 0.17.x bodies intentionally differ where R1/R2 changed the contract.
+The separate 207-case HTTP matrix verifies ETags/status/private headers against
+`9bbecde`, rather than pretending the pre-functional API is byte-compatible.
+
 Reproduce the current comparison with `bun run tests/bench/source-roundtrips.ts`,
 `bun test tests/bench/source-legacy-version.test.ts` and
 `bun run tests/bench/route-parity.ts`. The latter archives the complete pinned

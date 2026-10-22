@@ -8,7 +8,14 @@ import { populateSourceStreams, sourcesFixture } from "../fixtures/sources";
 
 const revision = process.argv[2] ?? "9bbecde5b3a8037e5a44b8e9e2e9610dcb71cff3";
 const modulePath = "apps/web/src/server/lib/machine-sources.ts";
-const baselineRevision = revisionFixture(revision);
+const historical = [
+	{ label: "main-0.17.3", revision: "9b95192310339dd96d55d4440e3332a4f5aea5bc" },
+	{ label: "release-0.17.2", revision: "86f39d3549e0f84e08abb10d822367e8f8352872" },
+	{ label: "functional-baseline", revision },
+	{ label: "rejected-projection", revision: "d6733075f7401c0411cd96cbe1c896c9ddd39f40" },
+];
+const revisions: ReturnType<typeof revisionFixture>[] = [];
+const sampleCount = 15;
 const originalFetch = globalThis.fetch;
 const denyNetwork = () => {
 	throw new Error("source round-trip benchmark forbids network");
@@ -16,7 +23,14 @@ const denyNetwork = () => {
 globalThis.fetch = Object.assign(denyNetwork, { preconnect: denyNetwork });
 
 try {
-	const baseline = await baselineRevision.load<{ readSources: typeof readSources }>(modulePath);
+	const variants: { label: string; revision: string; reader: typeof readSources }[] = [];
+	for (const entry of historical) {
+		const archived = revisionFixture(entry.revision);
+		revisions.push(archived);
+		const loaded = await archived.load<{ readSources: typeof readSources }>(modulePath);
+		variants.push({ ...entry, reader: loaded.readSources });
+	}
+	variants.push({ label: "final", revision: "working-tree", reader: readSources });
 	const fixture = await sourcesFixture();
 	const streamBytes = await populateSourceStreams(fixture);
 	const history = JSON.stringify({ repos: [], history: "x".repeat(16_000) });
@@ -37,6 +51,12 @@ try {
 	console.log(
 		JSON.stringify({
 			baseline: revision,
+			variants: variants.map(({ label, revision: sourceRevision }) => ({
+				label,
+				revision: sourceRevision,
+			})),
+			sampleCount,
+			order: "alternating forward/reverse variant order per round",
 			runtime: `bun ${Bun.version}`,
 			repositories: fixture.names.length,
 			streamRows: streamBytes.size,
@@ -68,6 +88,7 @@ try {
 			timing
 				.header()
 				.split(", ")
+				.filter((metric) => metric.includes(";dur="))
 				.map((metric) => {
 					const [name, duration] = metric.split(";dur=");
 					return [name, Number(duration)];
@@ -94,6 +115,34 @@ try {
 			},
 		};
 	}
+	type Sample = Awaited<ReturnType<typeof sample>>;
+	const metrics = [
+		"d1Ms",
+		"sqliteMs",
+		"buildMs",
+		"buildWithoutD1Ms",
+		"decodeMs",
+		"hashProjectionMs",
+		"serializeMs",
+		"totalMs",
+	] as const;
+	function summary(samples: Sample["stats"][]) {
+		return Object.fromEntries(
+			metrics.map((metric) => {
+				const values = samples.map((row) => row[metric]).filter((value) => value !== null);
+				assert.equal(values.length, sampleCount);
+				assert.ok(values.every(Number.isFinite));
+				values.sort((first, second) => first - second);
+				return [
+					metric,
+					{
+						median: values[Math.floor(values.length / 2)],
+						p95: values[Math.ceil(values.length * 0.95) - 1],
+					},
+				];
+			}),
+		);
+	}
 
 	for (const [scenario, query] of Object.entries({
 		full: {},
@@ -101,31 +150,54 @@ try {
 		"since-empty": { since: "2026-10-21T00:00:00.000Z" },
 		"one-repository": { repository: "FIXTURE/PROJECT-001" },
 	})) {
-		const coldBefore = await sample(baseline.readSources, query, 0, true);
-		const coldAfter = await sample(readSources, query, 0, true);
-		assert.equal(coldAfter.body, coldBefore.body, `${scenario} must preserve exact response JSON`);
-		const samples = [];
-		for (let round = 0; round < 3; round++) {
-			const before = await sample(baseline.readSources, query, 0, true);
-			const after = await sample(readSources, query, 0, true);
-			assert.equal(before.body, coldBefore.body);
-			assert.equal(after.body, before.body);
-			assert.equal(before.stats.trips, 1);
-			assert.equal(after.stats.trips, 1);
-			assert.equal(after.stats.queries, 5);
-			assert.equal(after.stats.payloadBytes, before.stats.payloadBytes);
-			samples.push({ round, before: before.stats, after: after.stats });
+		const cold = new Map<string, Sample>();
+		const samples = new Map<string, Sample["stats"][]>();
+		for (const variant of variants) {
+			cold.set(variant.label, await sample(variant.reader, query, 0, true));
+			samples.set(variant.label, []);
+		}
+		const functional = cold.get("functional-baseline");
+		const final = cold.get("final");
+		assert.ok(functional && final);
+		assert.equal(final.body, functional.body, `${scenario} must preserve functional-baseline JSON`);
+		assert.equal(final.body, cold.get("rejected-projection")?.body);
+		assert.equal(final.stats.payloadBytes, functional.stats.payloadBytes);
+		const orders = [];
+		for (let round = 0; round < sampleCount; round++) {
+			const order: typeof variants = round % 2 === 0 ? variants : [...variants].reverse();
+			orders.push(order.map(({ label }) => label));
+			for (const variant of order) {
+				const measured = await sample(variant.reader, query, 0, true);
+				const initial = cold.get(variant.label);
+				assert.ok(initial);
+				assert.equal(measured.body, initial.body, `${scenario}/${variant.label} must stay stable`);
+				assert.equal(measured.stats.trips, 1);
+				assert.equal(measured.stats.queries, 5);
+				assert.equal(measured.stats.payloadBytes, initial.stats.payloadBytes);
+				samples.get(variant.label)?.push(measured.stats);
+			}
 		}
 		console.log(
 			JSON.stringify({
 				scenario,
-				cold: { before: coldBefore.stats, after: coldAfter.stats },
 				latencyMs: 0,
-				samples,
+				orders,
+				variants: variants.map(({ label, revision: sourceRevision }) => {
+					const measured = samples.get(label);
+					assert.ok(measured);
+					return {
+						label,
+						revision: sourceRevision,
+						cold: cold.get(label)?.stats,
+						summary: summary(measured),
+						samples: measured,
+					};
+				}),
 			}),
 		);
 		if (scenario === "full") {
-			const statement = coldAfter.profile.queries.at(-1);
+			const statement: Sample["profile"]["queries"][number] | undefined =
+				final.profile.queries.at(-1);
 			assert.ok(statement);
 			const plan = await fixture.raw
 				.prepare(`EXPLAIN QUERY PLAN ${statement.sql}`)
@@ -145,5 +217,5 @@ try {
 	}
 } finally {
 	globalThis.fetch = originalFetch;
-	baselineRevision.close();
+	for (const archived of revisions) archived.close();
 }
