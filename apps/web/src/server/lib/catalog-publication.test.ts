@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { github, rawRepo } from "../../../../../tests/fixtures/factory";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
-import { makeRun } from "../../lib/factory-run";
+import { makeRun, RUN_MAX_RETRIES } from "../../lib/factory-run";
 import type { Env } from "../env";
 import { beginCatalog, planCatalog } from "./catalog-history";
 import { createDb } from "./db/d1";
@@ -15,6 +15,155 @@ import { mapRepos } from "./github-map";
 import { encryptToken, parseKeyBytes } from "./token-crypto";
 
 afterEach(() => vi.unstubAllGlobals());
+
+it.each([false, true])(
+	"R7 executor never reuses old-name factory metadata for a known replacement ID (inventoryCurrent=%s)",
+	async (inventoryCurrent) => {
+		const previous = "2026-10-21T20:00:00.000Z";
+		const now = "2026-10-22T20:00:00.000Z";
+		const account = "interleaved-catalog";
+		const raw = sqliteFixture();
+		const db = createDb(raw);
+		const original = { ...rawRepo, id: "R_OLD", nameWithOwner: "nocoo/shared" };
+		const replacement = { ...original, id: "R_NEW", description: "new identity" };
+		await raw
+			.prepare(
+				"INSERT INTO accounts(id,login,token_ciphertext,token_last4,capabilities,created_at,updated_at) VALUES(?,'nocoo',?,'fake',?,?,?)",
+			)
+			.bind(
+				account,
+				await encryptToken("fake", parseKeyBytes("0".repeat(64))),
+				JSON.stringify({ repo: true }),
+				previous,
+				previous,
+			)
+			.run();
+		const factory = newFactory(account, "nocoo", previous);
+		factory.inventory.complete = true;
+		factory.repos = [mapFactoryRepo(original)];
+		await db.batch(await replaceSnapshotStmts(db, account, "factory:v:old", factory, previous));
+		await db.batch(
+			await replaceSnapshotStmts(db, account, "repos", { repos: mapRepos([original]) }, previous),
+		);
+		await raw
+			.prepare("INSERT INTO factory_state(account_id,published_id,next_at) VALUES(?,'old',?)")
+			.bind(account, previous)
+			.run();
+		await raw
+			.prepare(
+				"INSERT INTO repo_stars(account_id,repo,starred,source,updated_at,reason) VALUES(?,'nocoo/shared',0,'owner',?,'old identity choice')",
+			)
+			.bind(account, previous)
+			.run();
+		await raw.prepare("INSERT INTO repo_statistics VALUES(?,'nocoo/shared',0)").bind(account).run();
+		await raw
+			.prepare("INSERT INTO factory_repo_versions VALUES(?,'nocoo/shared','old',?,?)")
+			.bind(account, JSON.stringify(mapFactoryRepo(original)), previous)
+			.run();
+		await raw
+			.prepare("INSERT INTO factory_repo_state VALUES(?,'nocoo/shared','old',?)")
+			.bind(
+				account,
+				JSON.stringify({
+					repo: "nocoo/shared",
+					status: "success",
+					observation: { source: "run", repo: "nocoo/shared", version: "old" },
+				}),
+			)
+			.run();
+		const requests: string[] = [];
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+			expect(new URL(String(input)).pathname).toBe("/graphql");
+			const query = (JSON.parse(String(init?.body)) as { query: string }).query;
+			requests.push(query);
+			const nodes =
+				query.includes("repositories(first:10,") && !inventoryCurrent ? [original] : [replacement];
+			return Response.json({
+				data: {
+					viewer: {
+						login: "nocoo",
+						repositories: { nodes, totalCount: 1, pageInfo: { hasNextPage: false } },
+					},
+				},
+			});
+		});
+		const env = {
+			DB: raw,
+			ENVIRONMENT: "development",
+			GITHUB_API_BASE: "http://fixture",
+			TOKEN_ENCRYPTION_KEY_V1: "0".repeat(64),
+		} as unknown as Env;
+		await startRun(db, makeRun("interleaved", account, "nocoo", "interleaved", "catalog", [], now));
+		let milliseconds = Date.parse(now);
+		for (let page = 0; page < 10; page++) {
+			const saved = await getRun(createDb(raw), account, "interleaved");
+			if (saved?.run.steps[saved.run.cursor]?.kind === "publish") break;
+			await executeRunPage(env, "interleaved", () => new Date(milliseconds).toISOString());
+			milliseconds += 1000;
+		}
+		const staged = await raw
+			.prepare(
+				"SELECT payload FROM factory_resources WHERE run_id='interleaved' AND stream='catalog-plan'",
+			)
+			.first<{ payload: string }>();
+		expect(JSON.parse(staged?.payload ?? "{}")).toMatchObject({
+			displaced: [{ identity_key: "R_OLD", repo: "nocoo/shared" }],
+			unconfirmed: [{ github_id: "R_OLD", reason: "private_unverifiable" }],
+			rows: [
+				{ github_id: "R_NEW", name_current: 1 },
+				{ github_id: "R_OLD", name_current: 0, removed_at: null },
+			],
+		});
+		const tables = [
+			"snapshots",
+			"factory_state",
+			"catalog_state",
+			"catalog_repositories",
+			"catalog_changes",
+			"catalog_unconfirmed",
+			"catalog_displaced_state",
+			"repo_stars",
+			"repo_statistics",
+			"factory_repo_state",
+			"factory_repo_versions",
+		];
+		const durable = () =>
+			Promise.all(tables.map((table) => raw.prepare(`SELECT * FROM ${table} ORDER BY 1,2`).all()));
+		const beforePublication = await durable();
+		await executeRunPage(env, "interleaved", () => new Date(milliseconds).toISOString());
+		const run = (await getRun(createDb(raw), account, "interleaved"))?.run;
+		if (inventoryCurrent) {
+			expect(run?.status).toBe("completed");
+			expect(
+				(await readSnapshot(createDb(raw), account, "factory:catalog:interleaved"))?.repos,
+			).toMatchObject([{ id: "R_NEW", name: "nocoo/shared" }]);
+			expect(
+				await raw.prepare("SELECT COUNT(*) AS n FROM catalog_displaced_state").first(),
+			).toEqual({ n: 3 });
+		} else {
+			expect(run?.steps.find((step) => step.kind === "publish")).toMatchObject({
+				status: "pending",
+				error: "catalog_incomplete",
+			});
+			expect(run?.status).toBe("running");
+			expect(await durable()).toEqual(beforePublication);
+			let retried = run;
+			for (let attempt = 0; attempt < RUN_MAX_RETRIES; attempt++) {
+				milliseconds = Date.parse(retried?.nextAttemptAt ?? "");
+				await executeRunPage(env, "interleaved", () => new Date(milliseconds).toISOString());
+				retried = (await getRun(createDb(raw), account, "interleaved"))?.run;
+				expect(await durable()).toEqual(beforePublication);
+			}
+			expect(retried?.status).toBe("failed");
+			expect(retried?.steps.find((step) => step.kind === "publish")).toMatchObject({
+				status: "failed",
+				error: "catalog_incomplete",
+			});
+			expect(await readSnapshot(createDb(raw), account, "factory:catalog:interleaved")).toBeNull();
+		}
+		expect(requests).toHaveLength(2);
+	},
+);
 
 it("R7 real catalog executor stages discovery then atomically publishes history even with an existing head", async () => {
 	const now = "2026-10-22T20:00:00.000Z";

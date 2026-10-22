@@ -312,9 +312,9 @@ export async function publicationWrites(
 						row.repo.split("/")[0]?.toLowerCase() === run.owner.toLowerCase(),
 				)
 				.map((row) => {
-					const repo =
-						(row.github_id ? metadata.get(row.github_id) : null) ??
-						previous?.repos.find((repo) => repo.name.toLowerCase() === row.repo.toLowerCase());
+					const repo = row.github_id
+						? metadata.get(row.github_id)
+						: previous?.repos.find((repo) => repo.name.toLowerCase() === row.repo.toLowerCase());
 					if (!repo)
 						throw new ApiError(
 							409,

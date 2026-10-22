@@ -1,5 +1,17 @@
 # Retrospective
 
+## 2026-10-22 - Catalog listings can disagree across leased steps
+
+The first identity-safety repair tested replacement against consistent inventory
+and catalog fixtures. Independent executor replay replaced the same name between
+those two real collection steps: the complete catalog carried the new stable ID,
+but publication fell back to old factory metadata by name when the ID lookup
+missed. That produced a completed factory catalog for the wrong identity. Known
+IDs must never fall back to names; unavailable matching metadata must fail closed
+without partially publishing catalog history or mutable state. Exercise the actual
+multi-step executor with different identities across responses, not only the pure
+planner. Repeat all frozen-tree gates after repairing the published branch.
+
 ## 2026-10-22 - Repository absence did not prove deletion
 
 The first batch-11 review accepted a name-based HTTP 404 as deletion evidence.
