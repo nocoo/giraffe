@@ -1198,3 +1198,18 @@ Use focused isolated tests for concurrent TDD; freeze implementation and schema
 before starting the real HTTP runner, which initializes its database only once.
 Recreate the runner's fixture database after migrations change and rerun all
 acceptance checks against the frozen candidate.
+
+## 2026-10-22 - Prove the intended failure and response boundary
+
+Two batch-10 test drafts failed for the wrong reason: a timing fixture used an
+obsolete account column, and a scheduler race interceptor matched different SQL
+from the actual idempotency lookup. Correct the fixtures first, then rerun the
+original implementation to prove the intended RED before counting GREEN evidence.
+Repeated independent reads in a single test also exhausted the request-scoped
+D1 statement budget; each simulated request needs its own database wrapper.
+
+A standalone JSON Response bypassed Hono's prepared private headers before ETag
+handling, dropping cache-control and referrer policy on 304 responses. Construct
+the response through the context and assert conditional headers alongside exact
+body bytes and ETags in cross-version tests. HTTP status/body parity alone is not
+proof that authorization-sensitive caching behavior has survived refactoring.
