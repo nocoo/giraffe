@@ -80,8 +80,10 @@ complete. CI runs include branch/event/attempt/duration; PR/issue lifecycle,
 release/tag and branch commit evidence accompany current open-item/security
 snapshots. Deployment last success can predate the interval. Beijing contribution
 intervals are distinct from the GitHub-native 90-day calendar. Giraffe stores and
-displays GitHub-reported interval totals and original native calendar provenance,
-not timezone-rebucketed native squares. Unknown runs return 404; unpublished runs
+displays a count only for one matching native date/cell, queried with that date's
+`00:00:00Z..23:59:59Z` bounds. Multiple/wrong-date cells yield null and partial
+coverage, never a sum; original native calendar provenance is retained.
+Unknown runs return 404; unpublished runs
 return 409. Compute comparisons outside Giraffe. Read the complete
 [activity contract](../../docs/api.md#get-activity) before interpreting coverage.
 

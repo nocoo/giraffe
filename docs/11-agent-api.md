@@ -301,8 +301,10 @@ Current snapshot alert counts preserve each feature's independent unknown state.
 The browser `/today` route and repository activity panel read this same saved
 publication. Activity contributions use explicit Beijing intervals and are not
 the GitHub-native date labels of the separate 90-day `/contributions` endpoint.
-Their counts are GitHub-reported totals for the requested interval, with native
-calendar dates preserved as `timezone:"github"` provenance, not relabeled squares.
+For Beijing date `D`, query bounds are `D T00:00:00Z..D T23:59:59Z` because GitHub
+truncates to UTC dates. Counts require exactly one native cell dated `D` matching
+the reported total; multiple/wrong-date cells yield null and partial coverage,
+never a summed count. Native dates/totals remain `timezone:"github"` provenance.
 Cross-day comparisons and conclusions remain the external producer's job; no
 analysis runtime or writable repository state/meta API is introduced here.
 See [activity fields and window rules](api.md#get-activity).

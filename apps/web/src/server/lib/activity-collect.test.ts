@@ -21,14 +21,14 @@ const run = () => ({
 	),
 	activityWindow: { since: "2026-10-21T20:00:00.000Z", until: now, gap: false, first: false },
 });
-it("R4 Beijing contribution types use real UTC+08 boundaries without inventing calendar composition", async () => {
+it("R4 Beijing contribution dates query one UTC date without inventing calendar composition", async () => {
 	const gh = github((_url, init) => {
 		const body = JSON.parse(String(init?.body));
 		expect(body.variables).toMatchObject({
-			from0: "2026-10-21T16:00:00.000Z",
-			to0: "2026-10-22T15:59:59.999Z",
-			from1: "2026-10-22T16:00:00.000Z",
-			to1: now,
+			from0: "2026-10-22T00:00:00Z",
+			to0: "2026-10-22T23:59:59Z",
+			from1: "2026-10-23T00:00:00Z",
+			to1: "2026-10-23T23:59:59Z",
 		});
 		return Response.json({
 			data: {
@@ -57,6 +57,62 @@ it("R4 Beijing contribution types use real UTC+08 boundaries without inventing c
 	});
 	expect(result.days.at(-1)?.partial).toBe(true);
 	expect(gh.count).toBe(1);
+});
+it.each([
+	{ dates: ["2026-10-20", "2026-10-21"], counts: [242, 359], total: 601, expected: null },
+	{ dates: ["2026-10-20"], counts: [359], total: 359, expected: null },
+	{ dates: [], counts: [], total: 0, expected: null },
+	{ dates: ["2026-10-21"], counts: [359], total: 601, expected: null },
+	{ dates: ["2026-10-21"], counts: [359], total: 359, expected: 359 },
+])("B1 validates the single native calendar cell: $dates / $total", async (probe) => {
+	const current = run();
+	current.activityWindow = {
+		since: "2026-10-20T23:00:00.000Z",
+		until: "2026-10-21T23:00:00.000Z",
+		gap: false,
+		first: false,
+	};
+	const result = await collectActivityContributions(
+		current,
+		github((_url, init) => {
+			expect(JSON.parse(String(init?.body)).variables).toMatchObject({
+				from0: "2026-10-21T00:00:00Z",
+				to0: "2026-10-21T23:59:59Z",
+			});
+			return Response.json({
+				data: {
+					user: {
+						day0: {
+							totalCommitContributions: probe.total === 601 ? 335 : 209,
+							totalIssueContributions: probe.total === 601 ? 106 : 64,
+							totalPullRequestContributions: probe.total === 601 ? 42 : 28,
+							totalPullRequestReviewContributions: 0,
+							totalRepositoryContributions: 0,
+							restrictedContributionsCount: probe.total === 601 ? 118 : 58,
+							contributionCalendar: {
+								totalContributions: probe.total,
+								weeks: [
+									{
+										contributionDays: probe.dates.map((date, index) => ({
+											date,
+											contributionCount: probe.counts[index],
+										})),
+									},
+								],
+							},
+						},
+					},
+				},
+			});
+		}),
+		"fake",
+	);
+	expect(result.days[0]).toMatchObject({
+		date: "2026-10-21",
+		count: probe.expected,
+		nativeCalendar: { total: probe.total },
+		coverage: { status: probe.expected === null ? "partial" : "complete" },
+	});
 });
 it("R4 supplements branch commits and annotated tags with measured bounded request overhead", async () => {
 	const gh = github((url) =>

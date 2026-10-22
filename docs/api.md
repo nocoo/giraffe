@@ -742,12 +742,18 @@ issues, releases, CI runs and red default-branch workflow runs. Contributions
 describe explicit `Asia/Shanghai` intervals, the previous full Beijing day and
 today's partial interval, with independently nullable composition. This is a
 separate bounded query, not a timezone relabeling of `/contributions`' GitHub-native
-calendar. Each day's `count` is GitHub's reported `contributionCalendar.totalContributions`
-for that requested interval, not a sum invented from type counts. Optional
+calendar. For Beijing date `D`, the query uses `D T00:00:00Z` through
+`D T23:59:59Z`: GitHub truncates the query to UTC dates and its calendar cells
+already use the account's timezone. Each day's `count` is GitHub's reported
+`contributionCalendar.totalContributions`, accepted only when exactly one valid
+native cell has date `D` and the same count. Optional
 `nativeCalendar:{timezone:"github",total,days:[{date,count}]}` preserves returned
 native date labels unchanged. Neither field promises a re-bucketing of GitHub's
-native squares into Beijing days. Missing totals/types stay null; an attribution
-or composition mismatch marks coverage partial without rewriting the known count.
+native squares into Beijing days. Missing totals/types stay null. Multiple cells,
+an incorrect date or inconsistent calendar total produce a null day count and
+partial coverage, never a sum of cells. A type-composition mismatch keeps the
+validated single-cell count but marks coverage partial. The current day remains
+`partial:true`; day `since`/`until` describe Beijing boundaries, not query variables.
 See `apps/web/src/lib/activity-types.ts` for the complete field contract.
 
 The supplementary collector normally adds one refs/tags GraphQL request per repo,
