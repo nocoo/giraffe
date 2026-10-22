@@ -151,6 +151,26 @@ the new columns and rows during a rollback; use a provenance-aware code revision
 or restore an explicitly approved pre-migration backup. No automated destructive
 rollback is provided.
 
+Migration `0021_star_provenance_correction.sql` makes one guarded data correction,
+not a new write API. For accounts whose login is case-insensitively `nocoo`, it
+changes only `source='owner'` to `agent` for the exact 18 fully qualified
+`nocoo/<repository>` keys in the migration (case-insensitive), and only while
+`starred=1`, `reason IS NULL`, and
+`updated_at='2026-10-18T12:03:11.294Z'` exactly. This is the untouched timestamp
+seeded by 0017 from the account, not the actual star-event time. A 2026-10-22
+time-window guard would match none of these rows. Later owner actions, tombstones,
+other names/accounts, and non-null reasons are not corrected.
+
+The expected production match count is 18; it has not been checked by a live
+write or refresh. Preserve `starred`, `updated_at` and all other fields. Replay
+matches zero after the first correction. The marked local backup regression
+starts from 60 baseline stars plus decoys, verifies exactly 18 changes, unchanged
+source-backup bytes and all non-target values, and tests each guard independently.
+Apply through the normal release migration workflow. Code rollback keeps the
+corrected provenance; do not bulk-change agent rows back to owner, since later
+authorized writes may have occurred. Any data reversal requires a separately
+approved, row-specific comparison with the pre-migration backup.
+
 ### Star membership consolidation
 
 Migration `0016_star_membership.sql` preserves explicit daily-exclusion intent:

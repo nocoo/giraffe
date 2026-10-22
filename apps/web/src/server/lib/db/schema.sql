@@ -519,3 +519,19 @@ CREATE TABLE IF NOT EXISTS catalog_unconfirmed (
  PRIMARY KEY(account_id,event_id)
 );
 CREATE INDEX IF NOT EXISTS catalog_unconfirmed_cursor ON catalog_unconfirmed(account_id,at,repo,event_id);
+
+UPDATE repo_stars
+SET source = 'agent'
+WHERE account_id IN (SELECT id FROM accounts WHERE lower(login) = 'nocoo')
+  AND lower(repo) IN (
+    'nocoo/base-ci', 'nocoo/base-cli', 'nocoo/base-mcp',
+    'nocoo/diorama-journey', 'nocoo/eagle', 'nocoo/falcon',
+    'nocoo/gaga', 'nocoo/hexly.ai', 'nocoo/his.fm',
+    'nocoo/kite', 'nocoo/lizheng.dev', 'nocoo/next-ai',
+    'nocoo/octo', 'nocoo/rhino', 'nocoo/rio',
+    'nocoo/sleepy', 'nocoo/zeppelin', 'nocoo/zoo'
+  )
+  AND source = 'owner'
+  AND starred = 1
+  AND reason IS NULL
+  AND updated_at = '2026-10-18T12:03:11.294Z';
