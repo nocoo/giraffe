@@ -27,6 +27,7 @@ import { readSources } from "../lib/machine-sources";
 import { readJson } from "../lib/read-body";
 import { snapshotScope } from "../lib/snapshot-scope";
 import { SourceTiming } from "../lib/source-timing";
+import { timedJson } from "../lib/timed-json";
 import {
 	getMachineSettings,
 	getMachineStars,
@@ -37,14 +38,16 @@ import {
 type Principal = NonNullable<Awaited<ReturnType<typeof authenticateApiToken>>>;
 export type MachineVars = AppVars & {
 	principal: Principal;
-	sourceTiming: SourceTiming | undefined;
 	starUnchanged: boolean | undefined;
 };
 export function machineApi() {
 	const app = new Hono<{ Bindings: Env; Variables: MachineVars }>();
 	app.use("*", async (c, next) => {
 		const timing =
-			c.req.method === "GET" && /^\/api\/v1\/accounts\/[^/]+\/sources$/.test(c.req.path)
+			c.req.method === "GET" &&
+			/^\/api\/v1\/accounts\/[^/]+\/(?:sources$|repos(?:\/|$)|issues$|prs$|ci$|factory(?:\/|$)|contributions$|settings$|refresh-runs$)/.test(
+				c.req.path,
+			)
 				? new SourceTiming()
 				: undefined;
 		c.set("sourceTiming", timing);
@@ -82,7 +85,8 @@ export function machineApi() {
 			if (!read && !agent && !management)
 				throw new ApiError(405, "method_not_allowed", "observations are read-only");
 		}
-		await next();
+		if (timing) await timing.measureAsync("build", next);
+		else await next();
 		if (timing && (c.res.status === 200 || c.res.status === 304))
 			c.header("Server-Timing", timing.header());
 		if (!["GET", "HEAD"].includes(c.req.method) && c.res.status < 400 && !c.get("starUnchanged"))
@@ -178,13 +182,20 @@ export function machineApi() {
 			c.header("Vary", "Authorization", { append: true });
 			await next();
 		},
-		etag({
-			weak: false,
-			generateDigest: (body) => crypto.subtle.digest("SHA-256", body),
-			retainedHeaders: [...RETAINED_304_HEADERS, "referrer-policy"],
-		}),
+		async (c, next) =>
+			etag({
+				weak: false,
+				generateDigest: (body) => {
+					const hash = () => crypto.subtle.digest("SHA-256", body);
+					return c.get("sourceTiming")?.measureAsync("hash", hash) ?? hash();
+				},
+				retainedHeaders: [...RETAINED_304_HEADERS, "referrer-policy"],
+			})(c, next),
 		async (c) =>
-			c.json(await readContributions(c.get("db"), c.get("principal").accountId, c.req.queries())),
+			timedJson(
+				c,
+				await readContributions(c.get("db"), c.get("principal").accountId, c.req.queries()),
+			),
 	);
 	app.all("/accounts/:account/statistics/:owner/:name", machineSetting);
 	app.all("/accounts/:account/schedules/:kind", machineSetting);
@@ -192,7 +203,8 @@ export function machineApi() {
 	app.all("/accounts/:account/refresh-runs/:id/control", machineRuns);
 	app.get("/accounts/:account/factory/repos/:owner/:name/:stream", async (c) => {
 		assertMachineQuery(c.req.query());
-		return c.json(
+		return timedJson(
+			c,
 			await readFactoryResource(
 				c.get("db"),
 				c.get("principal").accountId,
@@ -216,7 +228,8 @@ export function machineApi() {
 			p.accountId,
 			`${c.req.param("owner")}/${c.req.param("name")}`,
 		);
-		return c.json(
+		return timedJson(
+			c,
 			await readObservation(c.get("db"), p.accountId, `repo:${name}:${resource}`, "all"),
 		);
 	});
@@ -237,7 +250,7 @@ export function machineApi() {
 				c.get("principal").accountId,
 				observation.data.rate as FactorySnapshot["rate"],
 			);
-		return c.json(observation);
+		return timedJson(c, observation);
 	});
 	app.notFound(() => {
 		throw new ApiError(404, "not_found", "unknown machine endpoint");

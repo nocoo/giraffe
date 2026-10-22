@@ -3,6 +3,7 @@ import { type AppVars, type Env, envMode } from "./env";
 import { createDb } from "./lib/db/d1";
 import { jsonError, toErrorResponse } from "./lib/errors";
 import { consumeFactory, continueFactory } from "./lib/factory-dispatch";
+import { SourceTiming } from "./lib/source-timing";
 import { accessBypass, resolveIdentity } from "./middleware/access";
 import { assertOrigin } from "./middleware/origin";
 import { activateAccount, getAccounts, postAccount, removeAccount } from "./routes/accounts";
@@ -61,13 +62,28 @@ export function createApp(): Hono<{ Bindings: Env; Variables: AppVars }> {
 			await next();
 			return;
 		}
-		c.set("db", createDb(c.env.DB));
+		const timing =
+			c.req.method === "GET" &&
+			/^\/api\/(?:repos(?:\/|$)|issues$|prs$|ci$|factory(?:\/|$)|refresh\/settings$)/.test(
+				c.req.path,
+			)
+				? new SourceTiming()
+				: undefined;
+		c.set("sourceTiming", timing);
+		c.set("db", createDb(c.env.DB, timing?.recordD1.bind(timing)));
 		const liveGet = c.req.path === "/api/live" && c.req.raw.method === "GET";
 		if (!liveGet) {
-			c.set("identity", await resolveIdentity(c.req.raw, c.env));
+			const authenticate = () => resolveIdentity(c.req.raw, c.env);
+			c.set(
+				"identity",
+				timing ? await timing.measureAsync("auth", authenticate) : await authenticate(),
+			);
 			assertOrigin(c.req.raw, envMode(c.env.ENVIRONMENT), accessBypass(c.env));
 		}
-		await next();
+		if (timing) await timing.measureAsync("build", next);
+		else await next();
+		if (timing && (c.res.status === 200 || c.res.status === 304))
+			c.header("Server-Timing", timing.header());
 	});
 	app.route("/api/v1", machineApi());
 	app.route("/api/agent", agentBrowserApi());

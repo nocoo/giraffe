@@ -182,6 +182,12 @@ try {
 			status: response.status,
 			body,
 			etag: response.headers.get("etag"),
+			privateHeaders: JSON.stringify(
+				["cache-control", "vary", "referrer-policy", "content-type"].map((name) => [
+					name,
+					response.headers.get(name),
+				]),
+			),
 			timing: response.headers.get("server-timing"),
 			trips: profile.trips.length,
 			queries: profile.queries.length,
@@ -208,12 +214,12 @@ try {
 			const after = await request(afterApp, route);
 			if (!/invalid|removed-history|fixture\/missing/.test(route))
 				assert.equal(before.status, 200, `${metadata} ${route} fixture must exercise success`);
-			for (const key of ["status", "body", "etag"] as const)
+			for (const key of ["status", "body", "etag", "privateHeaders"] as const)
 				assert.equal(after[key], before[key], `${metadata} ${route} ${key}`);
 			if (before.etag) {
 				const conditionalBefore = await request(beforeApp, route, before.etag);
 				const conditionalAfter = await request(afterApp, route, before.etag);
-				for (const key of ["status", "body", "etag"] as const)
+				for (const key of ["status", "body", "etag", "privateHeaders"] as const)
 					assert.equal(conditionalAfter[key], conditionalBefore[key], `${route} 304 ${key}`);
 				assert.equal(conditionalAfter.status, 304);
 			}
