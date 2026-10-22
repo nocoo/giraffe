@@ -327,6 +327,23 @@ and zero-work runs are excluded. No eligible same-kind history yields null with
 `expectedFinishAtReason:"no_completed_history"`; another kind is not substituted.
 Do not infer collection success from cron health or ETA.
 
+## Repository agent state
+
+GET `/repos/:o/:n/agent-state` (`app:read`) returns payload, revision, timestamps,
+writer and `repo_removed`. PUT (`app:write`) accepts `{revision?,payload}`:
+first write omits revision and needs an active catalog identity; updates need
+the current revision (missing 428, stale 409 `revision_conflict`). `If-Match`
+with a quoted positive revision overrides the body revision; GET returns that
+ETag (`"0"` for absent state). GET stays uncached/200, including after catalog
+rename/removal; the tag is for concurrency, not caching. No weak/wildcard tags.
+Revisions are account-monotonic, not per-repo counters: use the returned value.
+Payload must be a JSON object ≤16,384 UTF-8 bytes and 64 container levels (root 1).
+State survives refresh, rename
+and removal; removed identities permit updates only to existing state.
+`/repos.agent_state` exposes revision/time, summary ≤200 characters and a valid
+`ok|attention|blocked` status, otherwise null. Other fields remain opaque.
+The browser shows notes/status/review time read-only; it cannot edit them.
+
 ## Run readiness
 
 Poll `/refresh-runs/latest?kind=daily` with `app:read`; supported kinds also include

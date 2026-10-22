@@ -42,6 +42,49 @@ Catalog/deep/selected runs do not replace the account activity head. Separate GE
 can straddle a subsequent publication; compare IDs or pin `/activity?run=<id>`.
 GET never starts work, records token use or changes run state.
 
+## Repository agent state
+
+`GET /accounts/:account/repos/:owner/:name/agent-state` requires `app:read`.
+The Access-protected browser equivalent is `/api/repos/:owner/:name/agent-state`
+for the active account; the browser has no write endpoint. GET returns
+`{account_id,repo,repo_removed,payload,revision,updated_at,updated_by}`. A known
+repository with no state returns null state fields, revision null and ETag `"0"`;
+an unknown identity is 404. The ETag is a revision concurrency token. GET is
+uncached and always returns the current representation (not 304), because catalog
+rename/removal can change context without changing the state revision.
+
+`PUT` on the machine route requires `app:write` and a strict body
+`{revision?,payload}`. Payload must be a JSON object; serialized UTF-8 JSON must
+not exceed 16,384 bytes, with at most 64 nested object/array containers (the root
+object is depth 1). Own JSON keys, including `__proto__`, remain opaque and are
+preserved without changing prototypes. Invalid/deeper bodies return 400 `invalid_payload`; oversized
+payloads return 400 `payload_too_large`. Giraffe stores other fields opaquely.
+The complete request body has a 100,000-byte transport cap, independent of the
+serialized-payload cap; excess whitespace/escaping does not bypass it.
+
+- Create without a revision. The repository must currently belong to the saved
+  catalog. Revisions are allocated monotonically across the account, not per
+  repository; clients must use the returned value, never assume 1 or increment it.
+  A removed/replaced identity cannot reuse another identity's old revision.
+- On update, supply the current positive revision or `If-Match: "<revision>"`.
+  The header takes precedence when both are present. Missing revision is 428;
+  a stale/nonexistent revision is 409 `revision_conflict`. Weak tags, wildcard
+  tags and malformed tags are rejected with 400.
+- GET's ETag is the quoted revision. PUT returns the saved representation.
+- State is account-scoped and keyed by stable catalog identity, not name.
+  Catalog refreshes, renames, removal and factory publication do not modify it.
+  A removed repository remains readable with `repo_removed:true`; existing state
+  may still be updated with its current revision, but no first write is allowed.
+- `/repos` adds nullable `agent_state:{revision,updated_at,summary,status}`.
+  A string summary of at most 200 characters is exposed; otherwise it is null.
+  Status is `ok|attention|blocked`, or null for any other payload value. No other
+  payload fields are projected into the list. The read-only detail panel also
+  displays a valid `last_reviewed_at` supplied in the payload.
+
+State is not a GitHub observation. These contextual `/repos` additions do not
+change its saved source version/content fingerprint or add `/sources` queries.
+Reusing a repository name for a different GitHub identity never transfers notes.
+
 ## Authentication and examples
 
 Examples use Bash, curl and jq; the identity/UUID examples also use Node.js. These

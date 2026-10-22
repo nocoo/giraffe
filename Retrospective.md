@@ -1,5 +1,32 @@
 # Retrospective
 
+## 2026-10-22 - Exercise identity and opaque-JSON boundaries before approval
+
+R5 review found four cases missing from the ordinary state tests: a repository
+segment named agent changed the scope classifier; per-identity revision 1 could
+overwrite a replacement identity; transformed validation silently dropped an own
+__proto__ JSON key before measuring bytes; and deeply nested small JSON reached
+SQLite's parser limit as a 500. Anchor scope classification to fixed route prefixes,
+never reuse revision tokens across identities, validate without transforming opaque
+payloads, and enforce a documented application depth bound before storage. Test
+these through authenticated routes as well as helpers. Browser selectors must also
+use the rendered radio role rather than infer button semantics from visible text.
+
+## 2026-10-22 - Verify component slots and account bootstrap in fixtures
+
+The first R5 grid marker used a ProjectSummary slot that only its table mode
+renders. The list/grid regression caught the missing marker, so the grid now
+places it in its existing status row. The first loader fixture also answered the
+account bootstrap request with a repository payload. Keep browser fixtures faithful
+to the session handshake and verify both render modes rather than assuming that
+one component prop has identical placement in every mode.
+
+The schema append initially used an ad-hoc Python append instead of the required
+patch tool. Subsequent edits returned to apply_patch, and the exact migration
+concatenation and replay verifier were checked. Complete fast static gates before
+starting long frozen-tree HTTP/browser runs: running them concurrently exposed a
+Context variance error that had to wait for those runs to finish before correction.
+
 ## 2026-10-22 - Audit every consumer when moving publication boundaries
 
 The first R9 staging change left activity security reading the former live table,

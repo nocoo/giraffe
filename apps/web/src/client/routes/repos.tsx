@@ -40,6 +40,7 @@ import { INLINE_SEGMENT } from "../components/layout/segment";
 import { SnapshotPending } from "../components/layout/snapshot-pending";
 import { Meter, SortButton } from "../components/layout/table-chrome";
 import { useSnapshotRead } from "../components/layout/use-snapshot-read";
+import { AgentStateBadge } from "../components/repo-agent-state";
 import { categoryColor } from "../lib/chart-theme";
 import { catchLoad, reportError } from "../lib/error-ui";
 import {
@@ -420,6 +421,7 @@ export function ReposPage() {
 										</div>
 
 										<div className="mt-auto flex flex-wrap items-center gap-2 pt-4 text-xs text-basalt-muted-foreground">
+											<AgentStateBadge status={row.agent_state?.status} />
 											<LanguageLabel name={row.primary_language} />
 											<span>·</span>
 											<span className="inline-flex items-center gap-1 tabular-nums">
@@ -491,7 +493,10 @@ export function ReposPage() {
 															repo={row.name_with_owner}
 															description={row.description}
 															badges={
-																row.is_fork ? <CandyBadge tone="teal">Fork</CandyBadge> : null
+																<>
+																	<AgentStateBadge status={row.agent_state?.status} />
+																	{row.is_fork ? <CandyBadge tone="teal">Fork</CandyBadge> : null}
+																</>
 															}
 														/>
 													</TableCell>

@@ -18,6 +18,21 @@ your separate reads. Historical 0022 markers, including resumed pre-upgrade runs
 remain conservatively null. The latest
 reader never collects, expires runs or mutates token activity.
 
+## Per-repository state consumption
+
+Use the dedicated `/repos/:owner/:name/agent-state` resource for persistent notes,
+not a generic report. Read with `app:read`, then write with `app:write`, keeping
+the returned revision or ETag for the next PUT. Missing update preconditions
+return 428; conflicts return 409, requiring another read rather than a blind
+retry. `If-Match` overrides body revision. Each payload is a JSON object limited
+to 16 KiB of UTF-8 JSON and 64 object/array nesting levels (root is 1).
+Revisions are account-monotonic, never reused across repository identities;
+always retain the returned revision rather than computing the next one.
+The small `/repos.agent_state` projection is not the
+full payload. Stable catalog identity carries notes across renames and removal.
+Removed identities retain readable/updateable existing notes, but cannot acquire
+their first state. Browser views are read-only and do not write on refresh.
+
 ## Catalog discovery consumption
 
 Catalog history starts at initialization: migrated accounts use 0019 application

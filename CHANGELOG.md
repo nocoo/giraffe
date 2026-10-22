@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - R9: latest refresh readiness by kind, explicit publication timestamps and failure summaries. Site snapshots now remain staged until the fenced publication transaction; completed and partial runs expose readiness only after their published sources and activity are visible together.
+- R5: persistent per-repository agent state with stable catalog identity, revision/If-Match concurrency, a 16 KiB JSON limit and read-only repository summary/status/review-time views. Renames, refreshes and removals preserve notes.
 
 ### Migration
 

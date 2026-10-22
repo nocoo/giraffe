@@ -25,6 +25,7 @@ import {
 import { assertMachineQuery } from "../lib/machine-query";
 import { readSources } from "../lib/machine-sources";
 import { readJson } from "../lib/read-body";
+import { enrichRepoAgentStates } from "../lib/repo-agent-state";
 import type { AccountObservationResource } from "../lib/saved-observation-statements";
 import { snapshotScope } from "../lib/snapshot-scope";
 import { SourceTiming } from "../lib/source-timing";
@@ -36,6 +37,7 @@ import {
 	machineRuns,
 	machineSetting,
 } from "./machine-settings";
+import { machineRepoAgentState, repoAgentStateHeaders } from "./repo-agent-state";
 import { getMachineLatestRun } from "./run-readiness";
 
 type Principal = NonNullable<Awaited<ReturnType<typeof authenticateApiToken>>>;
@@ -69,11 +71,11 @@ export function machineApi() {
 			throw new ApiError(403, "account_forbidden", "token belongs to another account");
 		if (c.req.path !== "/api/v1/me") {
 			const read = c.req.method === "GET";
-			const agent = /\/agent\//.test(c.req.path);
+			const agent = /^\/api\/v1\/accounts\/[^/]+\/agent\//.test(c.req.path);
 			const management =
-				/\/accounts\/[^/]+\/(settings|stars|statistics|schedules|refresh-runs)(\/|$)/.test(
+				/^\/api\/v1\/accounts\/[^/]+\/(settings|stars|statistics|schedules|refresh-runs)(\/|$)/.test(
 					c.req.path,
-				);
+				) || /^\/api\/v1\/accounts\/[^/]+\/repos\/[^/]+\/[^/]+\/agent-state$/.test(c.req.path);
 			const scope = agent
 				? read
 					? "agent:read"
@@ -248,6 +250,11 @@ export function machineApi() {
 			),
 		);
 	});
+	app.all(
+		"/accounts/:account/repos/:owner/:name/agent-state",
+		repoAgentStateHeaders,
+		machineRepoAgentState,
+	);
 	app.get("/accounts/:account/repos/:owner/:name/:resource?", async (c) => {
 		const resource = c.req.param("resource") ?? "details";
 		if (!REPO_SNAPSHOT_TABS.includes(resource as (typeof REPO_SNAPSHOT_TABS)[number]))
@@ -277,6 +284,12 @@ export function machineApi() {
 			snapshotScope(c.req.queries("scope")),
 			includeRemoved,
 		);
+		if (kind === "repos")
+			observation.data = await enrichRepoAgentStates(
+				c.get("db"),
+				c.get("principal").accountId,
+				observation.data,
+			);
 		return timedJson(c, observation);
 	});
 	app.notFound(() => {

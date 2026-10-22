@@ -1,5 +1,19 @@
 # 03 — 数据 Schema
 
+## Repository agent state (0023)
+
+`0023_repo_agent_state.sql` adds `repo_agent_state` keyed by
+`(account_id,identity_key)`, referencing stable catalog identity rather than a
+mutable repository name. It stores object JSON payloads up to 16,384 UTF-8 bytes,
+positive account-unique revision, `updated_at` and `updated_by`. Indexed account-wide
+maximum plus one is allocated inside each write; updates use compare-and-swap
+revision predicates. Catalog renames/removal leave rows untouched; account
+deletion follows the existing account cascade boundary. This additive table
+requires no historical backfill. Code rollback leaves the table/data preserved.
+`first_seen_at` and removal evidence continue to belong to catalog history.
+Catalog retention keeps identities referenced by agent state so removed notes
+remain addressable; ordinary unreferenced tombstones keep the existing bounds.
+
 ## Run readiness (0022)
 
 After `0021_star_provenance_correction.sql`, `0022_run_readiness.sql` adds nullable

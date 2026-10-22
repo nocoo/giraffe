@@ -3,6 +3,7 @@ import type {
 	CatalogTimestamps,
 	CatalogUnconfirmedReason,
 } from "../../lib/catalog-types";
+import { identifyCatalogRow } from "./catalog-identity";
 import { catalogMutableWrites } from "./catalog-mutable";
 import type { Collected } from "./collect";
 import type { Db } from "./db/d1";
@@ -367,13 +368,16 @@ export function catalogSnapshot(plan: CatalogPlan): Collected {
 	};
 }
 export function catalogWireRow(row: CatalogRow): Record<string, unknown> {
-	return {
-		...JSON.parse(row.row_payload),
-		first_seen_at: row.first_seen_at,
-		last_seen_at: row.last_seen_at,
-		removed_at: row.removed_at,
-		archived_changed_at: row.archived_changed_at,
-	};
+	return identifyCatalogRow(
+		{
+			...JSON.parse(row.row_payload),
+			first_seen_at: row.first_seen_at,
+			last_seen_at: row.last_seen_at,
+			removed_at: row.removed_at,
+			archived_changed_at: row.archived_changed_at,
+		},
+		row.identity_key,
+	);
 }
 
 export function catalogPlanWrites(
@@ -450,7 +454,7 @@ export function catalogRetentionWrites(db: Db, account: string, now: string) {
 			.bind(account, account),
 		db
 			.prepare(
-				`DELETE FROM catalog_repositories WHERE account_id=? AND removed_at IS NOT NULL AND (removed_at<? OR removed_at<=(SELECT removed_at FROM catalog_repositories WHERE account_id=? AND removed_at IS NOT NULL ORDER BY removed_at DESC,identity_key DESC LIMIT 1 OFFSET 1000))`,
+				`DELETE FROM catalog_repositories WHERE account_id=? AND removed_at IS NOT NULL AND NOT EXISTS(SELECT 1 FROM repo_agent_state s WHERE s.account_id=catalog_repositories.account_id AND s.identity_key=catalog_repositories.identity_key) AND (removed_at<? OR removed_at<=(SELECT removed_at FROM catalog_repositories WHERE account_id=? AND removed_at IS NOT NULL ORDER BY removed_at DESC,identity_key DESC LIMIT 1 OFFSET 1000))`,
 			)
 			.bind(account, cutoff, account),
 	];

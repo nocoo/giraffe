@@ -1117,7 +1117,9 @@ it.each(["all", "starred"] as const)(
 			{ DB: context.raw, ENVIRONMENT: "development", GITHUB_API_BASE: "http://fixture" } as Env,
 		);
 		expect(response.status).toBe(200);
-		expect(((await response.json()) as { repos: unknown[] }).repos).toEqual(rows);
+		expect(((await response.json()) as { repos: unknown[] }).repos).toEqual(
+			rows.map((row) => ({ ...row, agent_state: null })),
+		);
 	},
 );
 
