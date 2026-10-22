@@ -187,6 +187,10 @@ PAT `POST /api/accounts` 成功**与失败**路径（400 缺 scope、GitHub stub
 
 ## 6. L3 界面
 
+The runner forwards optional Playwright arguments for focused local diagnostics:
+`bun run test:e2e:bdd tests/e2e/repo-agent-state.spec.ts`. With no arguments it
+still runs the full suite; CI and required acceptance use the unchanged full command.
+
 阶段 2 才有。Playwright，Chromium。
 
 L3 **只跑套件 A**（`ENVIRONMENT=development` Access 短路）。不做套件 B，浏览器不注入 CF Access JWT。隔离目录、`--env-file`、GitHub `githubFetch` 边界与 L2 套件 A 相同。L2 写请求仍手设 Origin `https://giraffe.dev.hexly.ai`。L3 Playwright 的页源是 `http://127.0.0.1:27045`，浏览器会带该 Origin；04 在 Access 短路条件下允许 `Origin === request URL origin`。这不是把 loopback 写入生产白名单。差异：

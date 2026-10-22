@@ -377,7 +377,7 @@ try {
 		await waitLive(60_000);
 		await run(
 			join(root, "node_modules/.bin/playwright"),
-			["test", "--config", "playwright.config.ts"],
+			["test", "--config", "playwright.config.ts", ...process.argv.slice(2)],
 			{
 				GIRAFFE_E2E: `http://127.0.0.1:${workerPort}`,
 			},
