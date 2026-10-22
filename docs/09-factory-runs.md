@@ -32,7 +32,24 @@ The console lists this run's result for each page, distinguishing updated, parti
 
 ## 迁移与回滚
 
-部署前：导出 D1；记录旧表逐行摘要；运行 `bun scripts/verify-factory-migration.ts <local-export.sql>` 在本地 SQLite 备份副本上应用迁移两次，核验所有旧行完全一致。通过本地并发/崩溃测试后才启用 release workflow 的 D1 migrations。部署后再查旧行摘要、表结构、run/publication 一致性。回滚 Worker 到前版本无需逆向删表；停止队列/cron 后旧程序仍可读原 legacy snapshots。新表与版本保留供修复，禁止为回滚清空数据。
+Before an authorized deployment, export D1 and record row digests. Run
+`bun scripts/verify-factory-migration.ts <local-export.sql>` against a local backup
+copy; the verifier checks preserved account/snapshot rows and repeat application.
+Observation, run and publication history must remain intact. Configuration rows
+have explicit exceptions: `0016` removes existing stars matching false statistics
+overrides and empties all overrides; `0017` adds owner provenance and deterministic
+timestamps to surviving stars. Verify those exact expected changes, not a blanket
+claim that every old row remains identical. See the affected-row query and full
+[migration contract](03-schema.md#star-membership-consolidation). After separately
+authorized deployment, compare preserved-row digests, schema and publication
+consistency. This batch performs no production export, migration or deployment.
+
+Do not roll back to a pre-provenance Worker: it would treat owner-unstar tombstones
+as stars and could erase their protection. Use provenance-aware rollback code, or
+an explicitly approved pre-migration backup restoration procedure. Retain additive
+tables, columns, tombstones and versions; stopping queues/cron does not make old
+star semantics safe. Never clear data merely to roll back. Follow the
+[star provenance rollback requirements](03-schema.md#star-provenance).
 
 ## UI 与验证
 

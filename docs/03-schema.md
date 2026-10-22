@@ -71,7 +71,8 @@ WHERE EXISTS (
 SELECT count(*) AS overrides_removed FROM repo_statistics;
 ```
 
-Keep the emptied table for old-schema/code rollback; do not drop or rebuild it.
+Keep the emptied table for schema rollback; do not drop or rebuild it. This does
+not authorize running pre-provenance code against tombstones.
 This authorized cleanup changes configuration intent, not observations, publication
 history or agent resources. Rollback retains the resulting stars and the empty
 table; restoring pre-cleanup preferences requires a separately retained backup.

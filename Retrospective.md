@@ -1229,3 +1229,11 @@ Verify explanatory UI copy as well as error labels when scheduling semantics
 change. A schema-doc correction then omitted the machine endpoint's account
 segment. Copy full mounted paths from route registration, not from a local
 handler path or recollection, and independently review the correction itself.
+
+Final review found duplicate current-contract paragraphs still describing the
+retired membership policy, latest-only schedule recovery and unrestricted old-code
+rollback. Updating the new sections alone left contradictory operational advice.
+Search every current runbook for superseded concepts when contracts change, while
+preserving clearly dated investigation evidence. Review rollback instructions
+separately from additive schema safety: retained tables do not make old semantics
+safe for new tombstone rows.
