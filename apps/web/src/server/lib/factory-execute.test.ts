@@ -235,6 +235,44 @@ it("B2 publishes daily activity despite a failed repository collection step", as
 	});
 });
 
+it.each([
+	{ status: 403, message: "Resource not accessible by integration", code: "permission_denied" },
+	{ status: 404, message: "Not Found", code: "not_found" },
+	{ status: 403, message: "Forbidden", code: "coverage_limited" },
+	{ status: 403, message: "Dependabot alerts are disabled", code: "alerts_disabled" },
+])("B2 keeps mid-pagination access loss failed: $message", async ({ status, message, code }) => {
+	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] });
+	const base = vi.mocked(fetch).getMockImplementation();
+	if (!base) throw new Error("fixture");
+	let pages = 0;
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async (url: string, init: RequestInit) => {
+			if (!url.includes("/dependabot/alerts")) return base(url, init);
+			pages++;
+			return new URL(url).searchParams.has("after")
+				? Response.json({ message }, { status })
+				: Response.json([], {
+						headers: {
+							Link: '<https://api.github.com/repos/nocoo/app/dependabot/alerts?after=next>; rel="next"',
+						},
+					});
+		}),
+	);
+	const run = await drive(env);
+	expect(pages).toBe(2);
+	expect(run?.steps.find((step) => step.kind === "alerts")).toMatchObject({
+		status: "failed",
+		error: code,
+	});
+	expect(run?.status).toBe("partial");
+	expect((await listRuns(createDb(env.DB), snap.account_id))[0]?.counts).toMatchObject({
+		failed: 1,
+		limited: 0,
+	});
+	expect((await publishedFactory(createDb(env.DB), snap.account_id))?.status).toBe("partial");
+});
+
 it("B2 counts dependency capacity truncation as limited rather than failed", async () => {
 	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] });
 	const base = vi.mocked(fetch).getMockImplementation();

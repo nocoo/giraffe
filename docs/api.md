@@ -1570,12 +1570,16 @@ as terminal `limited` with `error:"dependency_parse_unsupported"`; the collector
 uses that typed safe code for unsupported workflow structure or an unparseable
 manifest, never classification by display text. This adds `counts.limited` and
 completed browser progress without incrementing failed/unavailable counts or
-making the run partial. Collector `coverage.status:"limited"`, including capacity
-truncation with `error:"coverage_limited"`, likewise increments `counts.limited`,
-not `counts.failed`; its evidence remains limited, never complete. Interrupted
+making the run partial. Collector capacity truncation with no access-failure
+reason code likewise increments `counts.limited`, not `counts.failed`; its
+`coverage.status:"limited"` evidence remains limited, never complete. Interrupted
 pagination/access loss, malformed upstream containers and exhausted
 upstream retries remain failures. `completed` means the plan finished without
 failures or skipped required work, not that every data source is available.
+In particular, a limited observed subset with `permission_denied`, `not_found`,
+disabled-feature or `unknown` access restriction remains a failed step/partial
+run. Do not classify by the `coverage_limited` error string alone: older fallback
+error mapping can also use it for an unknown mid-pagination restriction.
 For paginated lists, only an explicit first-page access denial can represent
 expected absence. A search response without `nodes` and without an access error
 is malformed, not forbidden. A 403/404 after any accepted page (even an empty

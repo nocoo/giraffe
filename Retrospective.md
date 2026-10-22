@@ -1,5 +1,15 @@
 # Retrospective
 
+## 2026-10-22 - Limited evidence does not always mean a capacity limit
+
+The first hotfix classification treated every limited collector result as a
+non-failing limited step. Review reproduced an empty accepted alerts page followed
+by a denied continuation: the collector correctly retained limited evidence, but
+the executor incorrectly completed the run. Restrict non-failing limits to parser
+and capacity cases without an access-failure reason code. Exercise 403, 404,
+disabled-feature and unknown restrictions through the complete executor, including
+an empty first page with a continuation, rather than only testing collector status.
+
 ## 2026-10-22 - Shared-tree hooks need a coordinated green boundary
 
 The hotfix controller tried to commit a green contribution fix while independent

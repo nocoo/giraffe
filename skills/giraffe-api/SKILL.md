@@ -78,7 +78,9 @@ interval and sets `gap:true`. A finished partial publication is readable and
 advances the window; failed/cancelled/unpublished runs never advance it.
 Repository-only and deep refreshes do not advance it. `latest` and `/sources`
 include partial publications; failed/unavailable/limited repo steps mark
-`coverage.run` partial. `coverage_limited` increments `counts.limited`, not failed.
+`coverage.run` partial. Capacity limits increment `counts.limited`, not failed;
+mid-pagination access loss remains failed/partial, even if its fallback error
+string is `coverage_limited`. Interpret status and source coverage together.
 Do not treat a null list/count as an empty list/zero, or truncated coverage as
 complete. CI runs include branch/event/attempt/duration; PR/issue lifecycle,
 release/tag and branch commit evidence accompany current open-item/security

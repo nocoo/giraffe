@@ -331,7 +331,9 @@ export async function executeRunPage(
 							? "success"
 							: coverage.status === "unavailable"
 								? "unavailable"
-								: coverage.status === "limited"
+								: coverage.status === "limited" &&
+										(coverage.reason_code === undefined ||
+											coverage.reason_code === "dependency_parse_unsupported")
 									? "limited"
 									: "failed",
 						clock(),
