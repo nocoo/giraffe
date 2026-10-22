@@ -9,6 +9,7 @@ import { APP_PATHS, type AppPath } from "./lib/routes";
 const AnalysisPage = lazy(() =>
 	import("./routes/analysis").then((m) => ({ default: m.AnalysisPage })),
 );
+const TodayPage = lazy(() => import("./routes/today").then((m) => ({ default: m.TodayPage })));
 
 const RefreshPage = lazy(() =>
 	import("./routes/factory-runs").then((m) => ({ default: m.RefreshPage })),
@@ -66,6 +67,7 @@ export function RouterLink({
 const PAGES: Record<(typeof APP_PATHS)[number], ReactNode> = {
 	"/": <Navigate to="/factory" replace />,
 	"/factory": <FactoryPage />,
+	"/today": <TodayPage />,
 	"/repos": <ReposPage />,
 	"/analysis": <AnalysisPage />,
 	"/refresh": <RefreshPage />,
@@ -79,7 +81,13 @@ const PAGES: Record<(typeof APP_PATHS)[number], ReactNode> = {
 	"/settings": <SettingsPage />,
 };
 
-const standalone = new Set<AppPath>(["/refresh", "/repos/:owner/:name", "/settings", "/analysis"]);
+const standalone = new Set<AppPath>([
+	"/refresh",
+	"/repos/:owner/:name",
+	"/settings",
+	"/analysis",
+	"/today",
+]);
 
 function pageRoutes(paths: readonly AppPath[]) {
 	return paths.map((path) => (

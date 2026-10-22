@@ -30,6 +30,15 @@ export type FactoryCoverage = {
 	observed: number;
 };
 export type FactoryEvent = {
+	activityRun?: Omit<import("./activity-types").ActivityRun, "is_default_branch">;
+	merged_by?: string | null;
+	base_ref?: string | null;
+	bot?: boolean;
+	dependency?: boolean;
+	closed_by?: string | null;
+	state_reason?: string | null;
+	labels?: string[];
+	tag_name?: string | null;
 	body?: string;
 	severity?: string | null;
 	id: string;
@@ -128,6 +137,7 @@ export type FactoryRate = {
 	observedAt?: string;
 };
 export type FactorySnapshot = {
+	activityWindow?: import("./activity-types").ActivityWindow;
 	truncated?: boolean;
 	freshness?: import("./snapshot-freshness").SnapshotFreshness;
 	contributionExcluded?: boolean;

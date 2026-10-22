@@ -20,13 +20,13 @@ it("profiles a read-only SELECT batch as one round trip while retaining each sta
 	await expect(profile.raw.batch([profile.raw.prepare("DELETE FROM snapshots")])).rejects.toThrow();
 });
 
-it("reads the complete source index with one reader D1 round trip and five read-only statements", async () => {
+it("reads the complete source index with one reader D1 round trip and seven read-only statements", async () => {
 	const fixture = await sourcesFixture();
 	const profile = profileDb(fixture.raw);
 	const result = await readSources(createDb(profile.raw), fixture.account, {});
 	expect(result.repositories).toEqual(fixture.names);
 	expect(result.sources).toHaveLength(1517);
-	expect(profile.queries).toHaveLength(5);
+	expect(profile.queries).toHaveLength(7);
 	expect(profile.trips).toHaveLength(1);
 });
 

@@ -168,7 +168,7 @@ it.each([{}, { since: "2099-01-01T00:00:00.000Z" }, { repository }])(
 		if (!("since" in query))
 			expect(JSON.stringify(read.result)).toBe(JSON.stringify(await source.expected()));
 		else expect(read.result.sources).toEqual([]);
-		expect(read.profile.queries).toHaveLength(5);
+		expect(read.profile.queries).toHaveLength(7);
 		expect(read.profile.trips).toHaveLength(1);
 		expect(read.bytes).toBe(originalBytes);
 		expect(read.profile.queries.map((statement) => statement.sql).join("\n")).not.toMatch(

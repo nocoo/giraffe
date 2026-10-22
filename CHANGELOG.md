@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.19.0 - 2026-10-22
+
+### Added
+
+- R4: persist immutable, bounded current-run activity for eligible account-wide quick/daily refreshes, with seamless successful-run boundaries, explicit first/gap windows, workflow metadata, PR/issue lifecycle, release/tag events, branch commits, current open items/security and deployment evidence. Nullable coverage never becomes a fabricated zero. Add read-only browser `/api/activity`, scoped machine `/activity`, ETag/304 and `account:activity` source discovery.
+- R4: add the Basalt `/today` page and repository current-run panel, including gap/truncation, lifecycle/release/red-CI/deploy sections and Beijing-requested contribution totals/composition with honest GitHub-native calendar provenance. Keep `/` landing on `/factory`.
+- R7: track catalog additions, confirmed deletions, archive/unarchive, visibility/fork changes and stable-ID renames. Add read-only `/catalog/changes`, four repository discovery timestamps and explicit `include=removed`, with bounded retention and authenticated ETag/304.
+
+### Changed
+
+- R7: confirm disappearance by stable ID, not name. Never auto-remove previously private repositories; public candidates require a previously known private-owned identity still visible in the complete listing and unambiguous identity-not-found evidence. Permission-hidden 404s and all uncertain lookups preserve state and report `unconfirmed[]`. Missing candidates above `max(3, 10% of owned repositories)` suppress all removals. Confirmed deletion atomically clears stars and mutable residue, while immutable evidence and generic agent resources survive. Default-star policy stays external.
+
+### Fixed
+
+- R7: include quarantined identities from earlier replacements in the mass-removal guard. Keep the denominator limited to current owned membership; above the exact threshold, preserve all current/quarantined state and report every candidate as `mass_removal_guard` without confirmation calls.
+
+- R7: same-run different-ID name replacement no longer blocks discovery. The listed identity owns the name while unresolved old state is preserved by identity, without inheriting old stars or factory evidence. Stable-ID lookup detects renames without name-based deletion guesses.
+
+- P3: enforce the 1,500,000-byte UTF-8 snapshot-page limit using the final truncation flag, including exact multibyte boundaries. Oversized non-list metadata uses a bounded, explicitly truncated compact form; metadata that cannot fit even that form fails instead of storing an oversized page. Keep the two-page limit.
+
+### Migration and Compatibility
+
+- Apply additive `0018_activity.sql` before code deployment; retain its immutable header/pages on rollback. No historical activity body is backfilled. Pre-migration successful run metadata can supply the next boundary. Activity bytes participate in account budgets and the latest two usable publications survive newer failed runs.
+- GitHub管家 can poll `account:activity` and then `/activity?run=latest`; use saved window and coverage instead of reconstructing daily activity from the 90-day streams. Unknown runs return 404 and known unpublished runs return 409. Missing lists/counts remain null. Native contribution dates are not relabeled Beijing squares. Seven-day comparison against live `gh` remains a post-release operator acceptance task; automated proof uses isolated fixtures only.
+- Apply additive `0019_catalog_history.sql`; existing saved catalog rows receive their saved fetch timestamps without fabricated change events. `/repos` excludes removed rows by default; request `include=removed` when needed. Poll the inclusive discovery cursor with event-ID deduplication; 409 means not initialized, and 410 means the 90-day/10,000-event history expired and requires catalog resynchronization. No R5/R6 agent-state/meta endpoints are introduced.
+- Apply `0020_catalog_identity_safety.sql` before the repaired writer. Preserve current-name ownership, displaced mutable state and unconfirmed history on rollback; do not roll back to a writer that deletes on ambiguous 404s or ignores identity ownership. Discovery responses add required `unconfirmed[]`; the 90-day/10,000-event bound covers changes and unconfirmed observations together.
+
 ## v0.18.0 - 2026-10-22
 
 ### Performance

@@ -181,7 +181,7 @@ describe("collectRepos", () => {
 			}),
 		);
 		const nullable = await collectRepos(withNull, "tok");
-		expect(nullable.truncated).toBe(false);
+		expect(nullable.truncated).toBe(true);
 		expect(nullable.repos).toHaveLength(1);
 		const soft = client({
 			graphql: () => ({

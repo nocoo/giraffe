@@ -151,6 +151,7 @@ GET never backfills them. Source identities map to data endpoints:
 | --- | --- |
 | `repo:owner/name:details`, `:issues`, `:prs`, `:actions`, `:releases` | `/repos/owner/name/:resource` |
 | `account:repos`, `account:issues`, `account:prs`, `account:ci`, `account:factory` | Corresponding account endpoint |
+| `account:activity` | `/activity?run=latest` |
 | `factory:owner/name:commits`, `:issues`, `:prs`, `:actions`, `:releases`, `:alerts`, `:dependencies` | `/factory/repos/owner/name/:stream` |
 
 Only saved repository pages appear. Missing account snapshots/publications are
@@ -430,6 +431,7 @@ See [migration and performance evidence](12-source-performance.md#persisted-cont
 Each accepts only the documented selector `scope=all|starred`, default `all`;
 invalid/repeated scope returns 400. `starred` means local Giraffe stars, not GitHub
 stars. Both scopes exclude non-owned repositories and include eligible archives/forks.
+`/repos` additionally accepts `include=removed`; other account resources do not.
 `statistics_enabled` equals `starred` and is deprecated; it is not a selection policy.
 No statistics override or HTTP pagination is applied. Open-item
 lists are not closed-event history; use factory streams for that.
@@ -443,7 +445,8 @@ Item fields (saved metadata can add fields; do not reject unknown observation da
 - `Repo`: `name_with_owner`, `name`, `owner_login`, `description`, `stargazer_count`,
   `fork_count`, `open_issue_count`, `primary_language`, `pushed_at`, `visibility`,
   `is_private`, `is_archived`, `is_fork`, `url`, `statistics_enabled`, `starred`,
-  `star_source`, `star_updated_at`.
+  `star_source`, `star_updated_at`, `first_seen_at`, `last_seen_at`, `removed_at`,
+  `archived_changed_at`. The four discovery timestamps are nullable.
 - `Issue`: `name_with_owner`, `number`, `title`, `url`, `created_at`, `updated_at`,
   `author_login`, `labels: [{ name, color }]`, `comments_count`.
 - `PullRequest`: `name_with_owner`, `number`, `title`, `url`, `created_at`,
@@ -652,6 +655,205 @@ Sources: [GitHub contribution time attribution](https://docs.github.com/en/accou
 api "$API/contributions"
 api -G "$API/contributions" --data-urlencode 'since=2026-10-01' --data-urlencode 'until=2026-10-21'
 ```
+
+### GET /activity
+
+`GET /api/v1/accounts/:account/activity?run=latest&repository=owner/name`
+requires `observations:read`. `run` defaults to `latest`; an explicit saved run ID
+selects that immutable publication. `repository` is optional. Unknown query keys
+are rejected. The Access-protected browser reads the active account through
+`GET /api/activity` with the same selectors. Neither endpoint collects GitHub or
+updates token activity. Both support private, authenticated ETag/304 polling.
+Duplicate filters also return 400 `validation_failed`. Unknown run IDs return
+404 `not_found`; a known run without a successful publication (including a running,
+failed or historical pre-migration run) returns 409 `activity_unpublished`.
+`latest` returns the latest usable publication despite newer failed runs; without
+one it returns 409. A repository in the frozen publication remains readable even
+if later removed from the catalog. A current catalog repo outside that frozen
+membership returns empty `repos`, zero member totals and null contributions;
+a repo in neither set returns 404. Repository filtering never invents a per-repo
+contribution calendar. A member omitted by storage capacity is not an unselected
+repository: its filtered response retains truncation and unknown totals.
+
+The response is an `ActivitySnapshot`, not the generic observation envelope:
+
+```text
+{ account_id, runId, previousRunId, fetchedAt, membership?,
+  window: { since, until, gap, first },
+  repos: [{ repo, ci_runs, prs: { opened, merged, closed },
+    issues: { opened, closed }, releases, commits: { default, other, items },
+    deploy: { last_success_at, runs }, snapshot, coverage }],
+  totals, contributions, coverage, truncated }
+```
+
+The interval is `(since, until]`, ending at the run's frozen collection cutoff,
+not its completion time. The previous successful account-wide quick refresh
+supplies `since`, including reliable persisted runs from before activity storage
+existed. Eligible runs are quick refreshes triggered by daily scheduling or a
+manual `scope:all` request, not weekly/deep, catalog or selected-repository work.
+Daily membership remains starred-owned even when it contains zero or one repo.
+The first run uses a bounded 24-hour lookback and sets `first:true,gap:true`.
+Failed/interrupted eligible runs or a missing Beijing calendar day set `gap:true`;
+the window still starts at the last success. Collection-time jitter alone does
+not create a gap. Adjacent successful windows share the exact boundary timestamp.
+
+Lists distinguish known empty (`[]`) from unavailable (`null`). Coverage entries
+are `{status:complete|partial|unavailable,truncated,reason}`. A bounded pagination
+or storage cut marks the affected list and the whole response truncated; nullable
+totals must not be interpreted as zero. Old good observations are not relabeled
+as newly collected evidence. The source index registers `account:activity` with
+its publication version, content version and saved `fetchedAt`.
+`membership` freezes repository names independently of stored pages, so capacity
+cuts cannot make a selected member look unselected. An unclassifiable failed
+workflow leaves the red default-branch total null and `default_branch` coverage
+partial rather than claiming no red workflows.
+Publication first profiles frozen repository payload lengths and loads at most
+4,000,000 UTF-8 bytes in frozen membership order, independently of the 16-page
+output limit. Input-budget omissions retain membership, partial/truncated
+coverage and null account totals, never complete zero results.
+
+Every CI run exposes `id`, `workflow_id`, `workflow_name`, `event`, `head_branch`,
+`head_sha`, `is_default_branch`, `status`, `conclusion`, `run_attempt`, `created_at`,
+`updated_at`, `run_started_at`, `duration_s`, `html_url`, `actor` and workflow `path`.
+PR events include `merged_at`, `merged_by`, `base_ref`, `bot` and `dependency`;
+issue events include `closed_by`, `state_reason` and labels. Lifecycle lists are
+independent timestamp slices, not disjoint partitions: a PR opened and merged in
+the same window appears in both, and a merge with `closed_at` also appears closed.
+Commits include SHA,
+author, first message line, time, branch and default-branch identity. The current
+snapshot includes open PR lifecycle/merge/check/review/draft fields, open issues
+classified as dependency/security/other and independent nullable Dependabot and
+code-scanning counts. Deploy runs are a classified subset of CI; the last known
+successful deployment may precede the activity window or finish after its frozen
+cutoff during collection; it describes current observed state, not a window event.
+Deployment classification matches standalone name/path terms `deploy`,
+`deployment`, `release`, `publish` or `pages`, case-insensitively; it has no
+repository-specific exceptions. The classifier is centralized for future policy
+changes, not exposed as a new settings API. Dependency PRs match Dependabot or
+Renovate author identities or dependency labels; bot identity also recognizes the
+GitHub Bot actor type and `[bot]` suffix. Security issue labels take precedence
+over dependency labels, with the remaining issues in `other`. Release totals
+count releases, not additional tag events; matching release tag names are deduped.
+Annotated tags use the tagger timestamp. Lightweight tags have no creation time
+and therefore leave tag coverage partial, never use commit time as tag time.
+
+Account totals include merged PRs split into dependency/other, opened/closed
+issues, releases, CI runs and red default-branch workflow runs. Contributions
+describe explicit `Asia/Shanghai` intervals, the previous full Beijing day and
+today's partial interval, with independently nullable composition. This is a
+separate bounded query, not a timezone relabeling of `/contributions`' GitHub-native
+calendar. Each day's `count` is GitHub's reported `contributionCalendar.totalContributions`
+for that requested interval, not a sum invented from type counts. Optional
+`nativeCalendar:{timezone:"github",total,days:[{date,count}]}` preserves returned
+native date labels unchanged. Neither field promises a re-bucketing of GitHub's
+native squares into Beijing days. Missing totals/types stay null; an attribution
+or composition mismatch marks coverage partial without rewriting the known count.
+See `apps/web/src/lib/activity-types.ts` for the complete field contract.
+
+The supplementary collector normally adds one refs/tags GraphQL request per repo,
+plus a successful-workflow REST request only when the complete saved 90-day action
+stream cannot provide deployment success. Continuations are bounded at 20 requests
+per repo and explicitly truncated. Account contribution intervals use one bounded
+GraphQL request. The normal two-request fixture adds 85 leased pages for 42 repos
+or 121 for 60; at the historical 48 min / 778 pages cadence this is about 5.2 or
+7.5 minutes. A 60-repo nominal total extrapolates to about 76 minutes, not a tested
+production SLA. Rate limits, unusually many branches/tags or deployment pages can
+increase this cost. Existing PR/issue/action/release streams are reused.
+
+The `/today` page shows the frozen interval, data timestamp, gap and truncation,
+activity sections and contribution composition. Repository links lead to the
+existing detail page, which embeds the repository's current-run activity.
+
+### GET /catalog/changes
+
+`GET /api/v1/accounts/A/catalog/changes?since=<ISO datetime>` requires
+`observations:read`. It reads persisted discovery history only; it never queries
+GitHub, updates token activity or changes stars. `since` is required, must include
+a timezone, and is normalized to UTC. Unknown/duplicate query keys and a cursor
+after the last complete publication return 400. Responses use authenticated
+ETag/304 and `Cache-Control: private, no-store`.
+
+The body contains `account_id`, normalized `since`, `until` (the last complete
+catalog publication), `history_since`, nullable `warning_code`, and `added`, `removed`, `archived`, `unarchived`,
+`visibility_changed`, `fork_changed`, `renamed` and `unconfirmed` arrays. Each event includes
+`event_id`, `repo`, `at`, nullable `github_id`, and
+`source: {kind: "factory" | "legacy", runId: string | null}`, with the relevant
+before/after values. Renames also include `previous_repo`; unconfirmed observations
+include a safe `reason`, never raw upstream diagnostics. Arrays sort ascending
+by `(at, repo, event_id)`. Selection is inclusive (`at >= since`); retain event IDs
+to deduplicate when polling from the previous `until`.
+
+No completed discovery publication returns 409 `catalog_unpublished`. Event
+retention is bounded to 90 days and 10,000 combined change/unconfirmed events per account. Eviction removes
+whole timestamp cohorts and advances the history floor beyond the evicted time;
+a request before that floor returns 410 `catalog_history_expired`, never a
+silently incomplete success. Resynchronize the current catalog after expiry.
+
+`GET /repos` adds nullable `first_seen_at`, `last_seen_at`, `removed_at` and
+`archived_changed_at` to each row. Other existing row fields retain their meaning.
+Removed repositories are excluded by default; `include=removed` includes retained
+departed rows. This option applies only to `/repos`, alongside `scope=all|starred`.
+Scope still selects owned repositories, and removal clears stars, so removed rows
+do not reappear in starred scope. Removed row payloads have a separate 90-day,
+1,000-row-per-account bound; they are not an unlimited archive.
+
+Discovery runs at every successful complete catalog publication, including the
+catalog preparation before quick refresh. Partial/error/truncated lists cannot
+advance history or replace prior membership. Absence or a name-based 404 does not
+prove deletion. Confirm against the previously saved stable GitHub ID with a
+GraphQL node lookup. A matching ID at another name is a rename; a new ID at the
+old name neither confirms deletion nor blocks the old identity's resolution.
+
+A candidate last seen private is never auto-removed (`private_unverifiable`). A
+public candidate is eligible only when this same complete listing still contains
+at least one private owned repository with the same stable ID previously observed
+as private (`scope_unverifiable` otherwise). Tokens without private access therefore
+never auto-remove repositories. Only a recognized, unambiguous identity-not-found
+response can then confirm removal. A missing/malformed response, 401/403, rate or
+secondary limit, 5xx, network failure, or access/permission/SAML/SSO wording in a
+404 retains all state and the original `last_seen_at`. The publication records a
+warning and an `unconfirmed` event so consumers can distinguish uncertainty from
+deletion. Other safe reasons are `mass_removal_guard`, `identity_unavailable`,
+`budget_exhausted`, `permission_denied`, `github_unauthorized`,
+`github_rate_limited`, `github_error` and `lookup_unverifiable`.
+
+Count every missing, not-yet-removed identity as a candidate, including quarantined
+identities displaced by earlier same-name replacements, even if another safety
+guard would also block it. If their total exceeds `max(3, owned_before * 0.1)`
+(no rounding), suppress all removals and confirmation calls, preserve current and
+quarantined mutable state, set `catalog_mass_removal_guard`, and report every
+candidate in `unconfirmed[]` with reason `mass_removal_guard`. This batch reason
+takes precedence over individual private/scope reasons. Conservatively,
+`owned_before` counts only previously current-name, non-removed owned identities,
+including forks and archived repositories; non-owned, departed and quarantined
+identities cannot inflate the denominator. Exactly the threshold is not blocked
+by this guard; all other identity/privacy checks still apply.
+
+Confirmed deletion atomically clears star records (including owner-unstar
+tombstones), statistics residue and mutable factory participation. It does not
+delete immutable observation/publication history or generic agent resources.
+Reappearance emits `added` without restoring an old star. Stable GitHub repository
+IDs identify renames: mutable names move with their star provenance, while frozen
+historical names stay unchanged. Giraffe never auto-stars newly discovered repos;
+the external bot owns that policy and must respect owner overrides.
+
+A name reused by a different GitHub repository ID is a distinct identity.
+Current-name ownership follows the identity in the complete listing, even if the
+old identity remains unconfirmed. Its catalog row retains `removed_at:null`;
+mutable stars/statistics/factory state are preserved by old identity in isolated
+storage, not inherited by the replacement. Recovery restores that preserved state
+only to the same identity, never across IDs or after confirmed deletion. Repeated
+catalogs cannot be blocked merely by this same-name replacement.
+
+Retained factory evidence from the departed ID cannot become the replacement's current
+observation or complete source. In `include=removed` responses, the departed row
+stays unstarred with null star provenance even if the new owner of that name is
+starred; only the current identity can enter starred scope. Same-ID reappearance
+can retain original observation provenance, but never restores deleted stars.
+
+Existing saved catalog rows seed their first/last-seen timestamps from the saved
+fetch time without creating change events. This is observation provenance, not
+the repository's creation time. No historical additions/deletions are invented.
 
 ### Repository endpoints
 

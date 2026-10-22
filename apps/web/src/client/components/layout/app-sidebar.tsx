@@ -27,6 +27,7 @@ import {
 import {
 	Activity,
 	Box,
+	CalendarDays,
 	CircleDot,
 	Factory,
 	GitPullRequest,
@@ -53,6 +54,7 @@ import { ProjectLabel } from "./project-identity";
 import { useProjectIdentity } from "./use-project-identity";
 
 const ICONS: Record<string, LucideIcon> = {
+	CalendarDays,
 	Factory,
 	Box,
 	CircleDot,

@@ -285,7 +285,9 @@ it.each(["run", "legacy"] as const)(
 			expect(actual.coverage).toEqual(s.repo.coverage.prs);
 			expect(actual.truncated).toBe(true);
 			expect(profile.trips).toHaveLength(1);
-			expect(profile.queries.at(-1)?.rows).toBe(source === "run" ? 1 : 2);
+			expect(
+				profile.queries.find((query) => query.sql.includes("refs AS MATERIALIZED"))?.rows,
+			).toBe(source === "run" ? 1 : 2);
 			if (metadata === "legacy" || (source === "legacy" && metadata === "mismatched"))
 				expect(actual.contentVersion).toBeNull();
 			expect((await browser(s.raw, "factory/repos/nocoo/app/prs")).status).toBe(200);

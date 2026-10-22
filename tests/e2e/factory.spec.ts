@@ -61,7 +61,7 @@ test("factory run survives reload, refreshes the whole site and preserves the la
 	await expect(page.locator("code").getByText(run.id, { exact: true })).toBeVisible();
 	await expect(page.getByRole("progressbar", { name: "本次刷新进度" })).toHaveAttribute(
 		"max",
-		"26",
+		"28",
 	);
 	await expect
 		.poll(
@@ -77,7 +77,7 @@ test("factory run survives reload, refreshes the whole site and preserves the la
 	await page.getByRole("button", { name: "更新状态", exact: true }).click();
 	await expect(page.getByRole("progressbar", { name: "本次刷新进度" })).toHaveAttribute(
 		"value",
-		"26",
+		"28",
 	);
 	const completed = (await (
 		await page.request.get("/api/factory/runs")

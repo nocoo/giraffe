@@ -24,6 +24,110 @@ GitHub 字段名跟 REST/GraphQL 对齐（`login`、`nameWithOwner`、`stargazer
 
 ## 2. 表
 
+### Catalog membership history
+
+Apply additive `0019_catalog_history.sql` after the activity migration. It adds
+three account-cascading tables without a factory-run foreign key, so discovery
+history survives ordinary run garbage collection:
+
+- `catalog_repositories`: `(account_id, identity_key)` primary key, nullable
+  stable `github_id`, case-insensitive `repo`, last-known `row_payload` (plain
+  existing repository JSON, at most 16,000 UTF-8 bytes), four nullable discovery
+  timestamps, `visibility`, boolean `is_archived`/`is_fork`,
+  `first_seen_source` (`saved_catalog|github_catalog`) and nullable
+  `last_source_run_id`. A non-null GitHub ID is unique per account; current names
+  are unique only while `removed_at IS NULL AND name_current=1`, preserving
+  departed and unresolved displaced identities after the safety migration below.
+- `catalog_changes`: `(account_id, event_id)` primary key, `kind`, `repo`, nullable
+  `github_id`, `at`, `source_kind` (`factory|legacy`), nullable `source_run_id` and
+  `details` JSON (at most 1,024 UTF-8 bytes). Seven kinds cover addition, removal,
+  archive/unarchive, visibility/fork change and stable-ID rename.
+- `catalog_state`: account primary key, non-null `history_since`, nullable
+  `checked_at`, monotonic `revision`, nullable `source_run_id` and `warning_code`.
+
+Migration seeds existing saved catalog rows with their saved fetch timestamps and
+`first_seen_source=saved_catalog`, without emitting events. Later discovery adopts
+the stable ID by name rather than inventing an addition. `checked_at` remains
+unset until a complete successful discovery, and partial listings do not advance
+history or replace membership. A complete publication commits membership, events,
+confirmed-removal cleanup and current catalog together; factory writes retain the
+existing lease/fence and legacy writes compare the catalog revision.
+
+Combined change/unconfirmed event retention is 90 days and 10,000 rows per account, evicting whole timestamp
+cohorts and advancing the inclusive-query floor beyond the last evicted time.
+Removed repository payload retention is independently 90 days and 1,000 rows per
+account. Catalog bytes count toward the account storage budget. Confirmed removal
+deletes mutable stars/overrides/participation only; immutable observations,
+factory/activity publications and generic agent resources are not rewritten.
+Legacy restoration requires matching stable ID, physical repository key, source
+and version evidence; a missing member in the current head is not authorization
+to reuse a same-name historical snapshot. Proven recovery retains the original
+observation window and time; unknown identity stays missing until collected.
+Retain the additive tables on code rollback. Rollback does not restore legitimately
+removed mutable stars or synthesize history; restore a verified backup only under
+separate operational authorization.
+
+Apply `0020_catalog_identity_safety.sql` before the repaired catalog writer:
+
+- Add `catalog_repositories.name_current INTEGER NOT NULL DEFAULT 1`, constrained
+  to 0/1, and replace `catalog_current_name` with the current-ownership predicate.
+  Existing rows remain current; a same-name replacement can keep its unresolved
+  old identity with `name_current=0` and unchanged `removed_at=NULL`/last-seen time.
+- Add `catalog_displaced_state`, keyed by `(account_id, identity_key, table_name)`
+  with a cascading catalog-identity foreign key. Separate `repo` and nullable
+  `version` columns preserve the physical key and version; `payload` keeps the
+  original raw factory-state string (or the complete star/statistics row JSON),
+  capped at 1,500,000 UTF-8 bytes without double-encoding a JSON envelope.
+  Displacement and live-name removal occur in the same fenced/revision-CAS batch;
+  only the same unresolved identity can restore this state. Confirmed deletion
+  does not preserve a star for later resurrection. Immutable observation roots
+  referenced by preserved factory state remain protected from ordinary GC.
+- Add account-cascading `catalog_unconfirmed`, keyed by `(account_id, event_id)`
+  with `repo`, nullable `github_id`, `at`, `source_kind`, nullable `source_run_id`
+  and a safe `reason`. `/catalog/changes.unconfirmed[]` shares inclusive cursor
+  ordering and the combined retention floor with normal change events.
+
+Both new stores participate in account byte accounting. The migration preserves
+existing records and emits no discovery events. Local verification reapplies the
+migration set without duplicate-column errors, name conflicts or resurrection.
+Keep the new schema/state on code rollback. An old writer that ignores current
+identity ownership or deletes on an ambiguous 404 is not a safe rollback target;
+deploy a forward repair instead. No production schema or data is changed by the
+local migration verifier.
+
+### Immutable current-run activity
+
+Migration `0018_activity.sql` adds `activity_publications` and `activity_pages`.
+Publication identity is `(account_id, run_id)`; the run foreign key preserves
+account cleanup and bounded run retention. Header columns are `previous_run_id`,
+`until_at`, `fetched_at`, `payload` and `content_version`. The header payload is
+the complete `ActivitySnapshot` with `repos:[]`, including frozen totals,
+contributions, coverage, window and frozen `membership` names. The source index reads this stored header,
+not SQL-reconstructed event arrays.
+
+Pages use `(account_id, run_id, page)` with a composite foreign key to the
+publication. Page numbers start at zero; each payload is a plain `ActivityRepo[]`.
+Both header and page payloads enforce at most 1,500,000 UTF-8 bytes. A publication
+has at most 16 repository pages; any data cut is explicitly truncated with
+nullable counts where completeness is unknown. Publication writes are leased,
+fenced and immutable; reads use the saved header/pages without contacting GitHub.
+Each repository is projected immediately after its current-run collection into
+an `activity-snapshot` factory resource, so final publication does not load every
+repository's 90-day streams together. Before fetching projected payloads, the
+publisher reads only byte-length metadata for the frozen membership (at most 500
+repositories), then selects at most 4,000,000 UTF-8 input bytes in frozen order.
+The payload read rechecks those lengths. Omitted members remain in `membership`,
+with partial/truncated input coverage and null account totals; the output page
+cap is an independent limit, not a bound on input memory. Activity header/page bytes participate in
+the existing account storage budget. Retention preserves the latest two usable
+activity publications even when newer failed runs fill the normal history limit.
+
+No historical activity is fabricated or backfilled. Reliable prior successful
+quick/daily run metadata can establish the next window boundary, but an old run
+without an activity publication does not acquire a fabricated body. Apply the
+additive migration before deploying the reader/writer; retain these tables on
+code rollback. Existing observations, reports and publication payloads stay intact.
+
 ### Star provenance
 
 Apply `0017_star_provenance.sql` after the membership cleanup. It additively extends
@@ -263,6 +367,12 @@ CREATE TABLE snapshot_days (
 第 1 页 kind **不加** `#1`。最多 **2** 页。第 3 页起丢弃并 `truncated: true`。读取时：一条 SELECT 取 `kind` 与 `kind#2`。写入时一条 `DELETE … kind IN (logical, logical#2)` 加一条多行 `INSERT … VALUES`。禁止 `LIKE`，禁止每页一条 INSERT。
 
 切分页：在数组根字段上切（`repos` / `issues` / `pull_requests` 等），单元素超过 1,500,000 则拒绝该元素并记 `truncated: true`。
+
+The byte check includes the serialized final `truncated` value: `false` is longer
+than `true`. Every stored page, including the compact fallback for oversized
+non-list metadata, stays at or below 1,500,000 UTF-8 bytes. If even compact metadata
+cannot fit, serialization fails with `snapshot_capacity` rather than writing an
+oversized row. Truncation remains explicit; the two-page limit is unchanged.
 
 ---
 

@@ -1,4 +1,6 @@
 import type { FactorySnapshot } from "../../lib/factory-types";
+import type { CatalogRow } from "./catalog-history";
+import { catalogView } from "./catalog-read";
 import type { Db } from "./db/d1";
 import { normalizePublication } from "./db/factory-runs";
 import { snapshotFromRows } from "./db/snapshots";
@@ -7,6 +9,8 @@ import { factoryRateStatement, type SavedFactoryRateRow } from "./factory-rate";
 import type { StarRow } from "./repo-stars";
 import {
 	type AccountObservationResource,
+	accountBindings,
+	accountIdSql,
 	ciPagesStatement,
 	logicalSnapshotStatement,
 	observationAccountStatement,
@@ -28,6 +32,7 @@ export type SavedAccountRead = {
 	ciPages: SnapshotPage[];
 	stars: StarRow[];
 	rateRows: SavedFactoryRateRow[];
+	catalogHistory: CatalogRow[];
 };
 export function decodePublication(rows: PublicationPage[]): FactorySnapshot | null {
 	const snapshot = snapshotFromRows(rows[0]?.logical ?? "factory", rows) as FactorySnapshot | null;
@@ -37,11 +42,13 @@ export function savedAccountPolicy(
 	saved: SavedAccountRead,
 	scope: SnapshotScope,
 	catalog = snapshotFromRows("repos", saved.catalogPages),
+	includeRemoved = false,
 ) {
 	return policyFromSaved(
-		catalog,
+		catalogView(catalog, saved.catalogHistory, includeRemoved),
 		selectionFromStars(saved.stars, scope),
 		saved.account?.login ?? "",
+		saved.catalogHistory,
 	);
 }
 export function accountReadPlan(
@@ -67,6 +74,14 @@ export function accountReadPlan(
 	if (resource === "ci") statements.push(ciPagesStatement(db, account));
 	const rateIndex = statements.length;
 	if (resource === "factory" && options.rate) statements.push(factoryRateStatement(db, account));
+	const historyIndex = statements.length;
+	statements.push(
+		db
+			.prepare(
+				`SELECT * FROM catalog_repositories WHERE account_id=${accountIdSql(account)} ORDER BY repo,identity_key`,
+			)
+			.bind(...accountBindings(account)),
+	);
 	return {
 		statements,
 		decode(results: D1Result<unknown>[]): SavedAccountRead {
@@ -83,6 +98,7 @@ export function accountReadPlan(
 				ciPages: resource === "ci" ? rows<SnapshotPage>(ciIndex) : [],
 				rateRows:
 					resource === "factory" && options.rate ? rows<SavedFactoryRateRow>(rateIndex) : [],
+				catalogHistory: rows<CatalogRow>(historyIndex),
 			};
 		},
 	};

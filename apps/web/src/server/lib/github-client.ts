@@ -2,7 +2,12 @@ import type { UnavailableReasonCode } from "../../lib/factory-types";
 import { APP_VERSION } from "../../lib/version";
 import { type Env, envMode } from "../env";
 import { ApiError } from "./errors";
-import { classifyGithubUnavailable, GithubUnavailableError } from "./github-unavailable";
+import {
+	classifyGithubUnavailable,
+	GithubUnavailableError,
+	githubAccessRestricted,
+	unambiguousGithubNotFound,
+} from "./github-unavailable";
 
 const GITHUB_ORIGIN = "https://api.github.com";
 export const MAX_FETCHES = 40;
@@ -16,7 +21,12 @@ export class TruncatedError extends Error {
 
 export type GithubClient = {
 	count: number;
-	graphqlErrors: Array<{ type?: string; reasonCode?: UnavailableReasonCode }>;
+	graphqlErrors: Array<{
+		type?: string;
+		reasonCode?: UnavailableReasonCode;
+		unambiguousNotFound?: true;
+		nodeNotFound?: true;
+	}>;
 	githubFetch: (url: string, init?: RequestInit) => Promise<Response>;
 	githubApi: (token: string, path: string, init?: RequestInit) => Promise<Response>;
 	githubGraphql: (
@@ -74,10 +84,17 @@ function mapStatus(res: Response, body: string): never {
 	}
 	if (res.status === 403 || res.status === 404) {
 		let message: unknown;
+		let diagnostics: unknown;
 		try {
-			message = (JSON.parse(body) as { message?: unknown } | null)?.message;
+			diagnostics = JSON.parse(body);
+			message = (diagnostics as { message?: unknown } | null)?.message;
 		} catch {}
-		throw new GithubUnavailableError(res.status, message);
+		throw new GithubUnavailableError(
+			res.status,
+			message,
+			res.headers.has("x-github-sso") ||
+				githubAccessRestricted(JSON.stringify(diagnostics) ?? body),
+		);
 	}
 	throw new ApiError(502, "github_error", "github error");
 }
@@ -279,17 +296,40 @@ export function createGithubClient(
 				throw new ApiError(502, "github_error", "github error");
 			}
 			const errors = payload.errors ?? [];
-			client.graphqlErrors = errors.map((error) => ({
-				...(error.type === undefined ? {} : { type: error.type }),
-				...(["FORBIDDEN", "NOT_FOUND"].includes(error.type ?? "")
-					? {
-							reasonCode: classifyGithubUnavailable(
-								error.type === "NOT_FOUND" ? 404 : 403,
-								error.message,
-							).reason_code,
-						}
-					: {}),
-			}));
+			const accessRestricted =
+				res.headers.has("x-github-sso") ||
+				githubAccessRestricted(JSON.stringify({ ...payload, data: undefined }));
+			client.graphqlErrors = errors.map((error) => {
+				const reportedId = /global id of ['"]([^'"\r\n]+)['"]/i.exec(error.message ?? "")?.[1];
+				const unambiguousNotFound =
+					!accessRestricted &&
+					error.type === "NOT_FOUND" &&
+					Array.isArray(error.path) &&
+					error.path.length === 1 &&
+					error.path[0] === "node" &&
+					unambiguousGithubNotFound(404, error.message);
+				return {
+					...(error.type === undefined ? {} : { type: error.type }),
+					...(unambiguousNotFound ? { unambiguousNotFound: true as const } : {}),
+					...(unambiguousNotFound &&
+					typeof variables.id === "string" &&
+					(reportedId === undefined || reportedId === variables.id) &&
+					payload.data !== null &&
+					typeof payload.data === "object" &&
+					Object.hasOwn(payload.data, "node") &&
+					(payload.data as Record<string, unknown>).node === null
+						? { nodeNotFound: true as const }
+						: {}),
+					...(["FORBIDDEN", "NOT_FOUND"].includes(error.type ?? "")
+						? {
+								reasonCode: accessRestricted
+									? "permission_denied"
+									: classifyGithubUnavailable(error.type === "NOT_FOUND" ? 404 : 403, error.message)
+											.reason_code,
+							}
+						: {}),
+				};
+			});
 			if (errors.some((e) => e.type === "RATE_LIMITED")) {
 				throw new ApiError(503, "github_rate_limited", "github rate limited");
 			}

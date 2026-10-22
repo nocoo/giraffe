@@ -4,6 +4,7 @@ import type {
 	FactoryStreamData,
 	FactoryStreamName,
 } from "../../lib/factory-types";
+import type { CatalogRow } from "./catalog-history";
 import { decodeContent, storedContent } from "./content-version";
 import type { Db } from "./db/d1";
 import { snapshotFromRows } from "./db/snapshots";
@@ -51,6 +52,7 @@ export type SavedFactoryStream = {
 	catalogPages: SnapshotPage[];
 	publicationPages: PublicationPage[];
 	resourcePages: FactoryResourceRow[];
+	catalogHistory: CatalogRow[];
 };
 
 function referencedResourceStatement(db: Db, account: SavedAccount, name: string, stream: string) {
@@ -71,7 +73,7 @@ function referencedResourceStatement(db: Db, account: SavedAccount, name: string
  coalesce(json_extract(repo,'$.observation.repo'),json_extract(repo,'$.name')) AS repo,
  coalesce(json_extract(repo,'$.observation.version'),json_extract(root_payload,'$.runId')) AS version,
  coalesce(json_extract(repo,'$.observation.source'),'legacy') AS source
- FROM candidates WHERE lower(json_extract(repo,'$.name'))=lower(name) ORDER BY ordinal,position LIMIT 1)
+ FROM candidates WHERE (lower(json_extract(repo,'$.name'))=lower(name) AND NOT EXISTS(SELECT 1 FROM catalog_repositories c WHERE c.account_id=candidates.account AND lower(c.repo)=lower(candidates.name) AND c.removed_at IS NULL AND c.name_current=1 AND c.github_id IS NOT NULL)) OR json_extract(repo,'$.id')=(SELECT github_id FROM catalog_repositories c WHERE c.account_id=candidates.account AND lower(c.repo)=lower(candidates.name) AND c.removed_at IS NULL AND c.name_current=1) ORDER BY ordinal,position LIMIT 1)
  SELECT 'run' AS source,'' AS kind,f.payload,f.content_meta FROM refs
  JOIN factory_runs r ON r.id=refs.version AND r.account_id=refs.account
  JOIN factory_resources f ON f.run_id=r.id AND f.repo=refs.repo AND f.stream=refs.stream WHERE refs.source='run'
@@ -101,6 +103,14 @@ export function factoryStreamReadPlan(
 	statements.push(publicationSnapshotStatement(db, account));
 	const resourceIndex = statements.length;
 	statements.push(referencedResourceStatement(db, account, name, stream));
+	const historyIndex = statements.length;
+	statements.push(
+		db
+			.prepare(
+				`SELECT * FROM catalog_repositories WHERE account_id=${accountIdSql(account)} AND repo=? COLLATE NOCASE AND removed_at IS NULL`,
+			)
+			.bind(...accountBindings(account), name),
+	);
 	return {
 		statements,
 		decode(results: D1Result<unknown>[]): SavedFactoryStream {
@@ -113,6 +123,7 @@ export function factoryStreamReadPlan(
 				catalogPages: options.catalog || options.policy ? rows<SnapshotPage>(catalogIndex) : [],
 				publicationPages: rows<PublicationPage>(publicationIndex),
 				resourcePages: rows<FactoryResourceRow>(resourceIndex),
+				catalogHistory: rows<CatalogRow>(historyIndex),
 			};
 		},
 	};
@@ -123,6 +134,7 @@ export function factoryStreamPolicy(saved: SavedFactoryStream, scope: SnapshotSc
 		snapshotFromRows("repos", saved.catalogPages),
 		selectionFromStars(saved.stars, scope),
 		saved.account?.login ?? "",
+		saved.catalogHistory,
 	);
 }
 
@@ -134,7 +146,14 @@ export function decodeFactoryResource(
 	withContent = false,
 ) {
 	const version = repo.observation?.version ?? snap.runId;
-	const original = repo.observation?.repo ?? repo.name;
+	const original =
+		repo.observation?.repo ??
+		snap.repos.find(
+			(original) =>
+				original.name.toLowerCase() === repo.name.toLowerCase() && original.id === repo.id,
+		)?.name ??
+		snap.repos.find((original) => repo.id && original.id === repo.id)?.name ??
+		repo.name;
 	let data: FactoryStreamData | null;
 	let content: string | null = null;
 	if (repo.observation?.source === "run") {

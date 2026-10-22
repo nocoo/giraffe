@@ -97,9 +97,50 @@ export function mapFactoryEvents(stream: FactoryStreamName, data: GithubObject[]
 				Object.assign(event, prState(r));
 				event.state = event.mergedAt ? "merged" : event.state;
 				event.draft = r.draft === true;
+				event.merged_by = nullable(object(r.merged_by).login);
+				event.base_ref = nullable(object(r.base).ref);
+				event.review = nullable(r.reviewDecision);
+				event.bot = object(r.user).type === "Bot" || /\[bot\]$/i.test(event.author ?? "");
+				event.dependency =
+					/^(?:dependabot|renovate)(?:\[bot\])?$/i.test(event.author ?? "") ||
+					rows(r.labels).some((label) => /dependenc|dependabot|renovate/i.test(str(label.name)));
 			}
-			if (stream === "actions") event.conclusion = nullable(r.conclusion);
+			if (stream === "prs" || stream === "issues")
+				event.labels = rows(r.labels).map((label) => str(label.name));
+			if (stream === "issues") {
+				event.closed_by = nullable(object(r.closed_by).login);
+				event.state_reason = nullable(r.state_reason);
+			}
+			if (stream === "actions") {
+				event.conclusion = nullable(r.conclusion);
+				const started = nullable(r.run_started_at);
+				const updated = nullable(r.updated_at);
+				const duration =
+					r.status === "completed" && started && updated
+						? (Date.parse(updated) - Date.parse(started)) / 1000
+						: null;
+				event.activityRun = {
+					id: Number(r.id),
+					workflow_id: typeof r.workflow_id === "number" ? r.workflow_id : null,
+					workflow_name: str(r.name),
+					event: nullable(r.event),
+					head_branch: nullable(r.head_branch),
+					head_sha: nullable(r.head_sha),
+					status: str(r.status),
+					conclusion: nullable(r.conclusion),
+					run_attempt: typeof r.run_attempt === "number" ? r.run_attempt : null,
+					created_at: nullable(r.created_at),
+					updated_at: updated,
+					run_started_at: started,
+					duration_s:
+						duration !== null && Number.isFinite(duration) && duration >= 0 ? duration : null,
+					html_url: str(r.html_url),
+					actor: nullable(object(r.actor).login),
+					path: nullable(r.path),
+				};
+			}
 			if (stream === "releases") {
+				event.tag_name = nullable(r.tag_name);
 				event.at = str(r.published_at);
 				event.state =
 					r.draft === true ? "draft" : r.prerelease === true ? "prerelease" : "published";

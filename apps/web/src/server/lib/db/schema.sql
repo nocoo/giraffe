@@ -396,3 +396,126 @@ SET updated_at=COALESCE(
  strftime('%Y-%m-%dT%H:%M:%fZ',(SELECT updated_at FROM accounts WHERE accounts.id=repo_stars.account_id)),
  '1970-01-01T00:00:00.000Z'
 );
+
+CREATE TABLE IF NOT EXISTS activity_publications (
+ account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+ run_id TEXT NOT NULL REFERENCES factory_runs(id) ON DELETE CASCADE,
+ previous_run_id TEXT,
+ until_at TEXT NOT NULL,
+ fetched_at TEXT NOT NULL,
+ payload TEXT NOT NULL CHECK(length(CAST(payload AS BLOB))<=1500000),
+ content_version TEXT NOT NULL,
+ PRIMARY KEY(account_id,run_id)
+);
+CREATE INDEX IF NOT EXISTS activity_latest ON activity_publications(account_id,until_at DESC,run_id);
+CREATE TABLE IF NOT EXISTS activity_pages (
+ account_id TEXT NOT NULL,
+ run_id TEXT NOT NULL,
+ page INTEGER NOT NULL CHECK(page>=0 AND page<16),
+ payload TEXT NOT NULL CHECK(length(CAST(payload AS BLOB))<=1500000),
+ PRIMARY KEY(account_id,run_id,page),
+ FOREIGN KEY(account_id,run_id) REFERENCES activity_publications(account_id,run_id) ON DELETE CASCADE
+);
+CREATE TRIGGER IF NOT EXISTS activity_publications_ai AFTER INSERT ON activity_publications BEGIN
+ INSERT INTO factory_budget(account_id,bytes) VALUES(NEW.account_id,length(CAST(NEW.payload AS BLOB))) ON CONFLICT(account_id) DO UPDATE SET bytes=bytes+excluded.bytes;
+END;
+CREATE TRIGGER IF NOT EXISTS activity_publications_au AFTER UPDATE ON activity_publications BEGIN
+ UPDATE factory_budget SET bytes=bytes+length(CAST(NEW.payload AS BLOB))-length(CAST(OLD.payload AS BLOB)) WHERE account_id=NEW.account_id;
+END;
+CREATE TRIGGER IF NOT EXISTS activity_publications_ad AFTER DELETE ON activity_publications BEGIN
+ UPDATE factory_budget SET bytes=bytes-length(CAST(OLD.payload AS BLOB)) WHERE account_id=OLD.account_id;
+END;
+CREATE TRIGGER IF NOT EXISTS activity_pages_ai AFTER INSERT ON activity_pages BEGIN
+ INSERT INTO factory_budget(account_id,bytes) VALUES(NEW.account_id,length(CAST(NEW.payload AS BLOB))) ON CONFLICT(account_id) DO UPDATE SET bytes=bytes+excluded.bytes;
+END;
+CREATE TRIGGER IF NOT EXISTS activity_pages_au AFTER UPDATE ON activity_pages BEGIN
+ UPDATE factory_budget SET bytes=bytes+length(CAST(NEW.payload AS BLOB))-length(CAST(OLD.payload AS BLOB)) WHERE account_id=NEW.account_id;
+END;
+CREATE TRIGGER IF NOT EXISTS activity_pages_ad AFTER DELETE ON activity_pages BEGIN
+ UPDATE factory_budget SET bytes=bytes-length(CAST(OLD.payload AS BLOB)) WHERE account_id=OLD.account_id;
+END;
+
+CREATE TABLE IF NOT EXISTS catalog_repositories (
+ account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+ identity_key TEXT NOT NULL,
+ github_id TEXT,
+ repo TEXT NOT NULL COLLATE NOCASE,
+ row_payload TEXT NOT NULL CHECK(length(CAST(row_payload AS BLOB))<=16000),
+ first_seen_at TEXT,
+ last_seen_at TEXT,
+ removed_at TEXT,
+ archived_changed_at TEXT,
+ is_archived INTEGER NOT NULL CHECK(is_archived IN (0,1)),
+ visibility TEXT NOT NULL,
+ is_fork INTEGER NOT NULL CHECK(is_fork IN (0,1)),
+ first_seen_source TEXT NOT NULL CHECK(first_seen_source IN ('saved_catalog','github_catalog')),
+ last_source_run_id TEXT,
+ PRIMARY KEY(account_id,identity_key)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS catalog_github_id ON catalog_repositories(account_id,github_id) WHERE github_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS catalog_current_name ON catalog_repositories(account_id,repo) WHERE removed_at IS NULL;
+CREATE INDEX IF NOT EXISTS catalog_removed ON catalog_repositories(account_id,removed_at);
+
+CREATE TABLE IF NOT EXISTS catalog_changes (
+ account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+ event_id TEXT NOT NULL,
+ kind TEXT NOT NULL CHECK(kind IN ('added','removed','archived','unarchived','visibility_changed','fork_changed','renamed')),
+ repo TEXT NOT NULL,
+ github_id TEXT,
+ at TEXT NOT NULL,
+ source_kind TEXT NOT NULL CHECK(source_kind IN ('factory','legacy')),
+ source_run_id TEXT,
+ details TEXT NOT NULL CHECK(length(CAST(details AS BLOB))<=1024),
+ PRIMARY KEY(account_id,event_id)
+);
+CREATE INDEX IF NOT EXISTS catalog_changes_cursor ON catalog_changes(account_id,at,repo,event_id);
+
+CREATE TABLE IF NOT EXISTS catalog_state (
+ account_id TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+ history_since TEXT NOT NULL,
+ checked_at TEXT,
+ revision INTEGER NOT NULL DEFAULT 0,
+ source_run_id TEXT,
+ warning_code TEXT
+);
+
+INSERT INTO catalog_state(account_id,history_since)
+SELECT account_id,strftime('%Y-%m-%dT%H:%M:%fZ','now') FROM snapshots WHERE kind IN ('repos','repos#2') GROUP BY account_id
+ON CONFLICT(account_id) DO NOTHING;
+INSERT INTO catalog_repositories(account_id,identity_key,repo,row_payload,first_seen_at,last_seen_at,is_archived,visibility,is_fork,first_seen_source)
+SELECT s.account_id,'legacy:'||lower(json_extract(CASE WHEN j.type='object' THEN j.value ELSE '{}' END,'$.name_with_owner')),json_extract(CASE WHEN j.type='object' THEN j.value ELSE '{}' END,'$.name_with_owner'),j.value,
+ strftime('%Y-%m-%dT%H:%M:%fZ',s.fetched_at),strftime('%Y-%m-%dT%H:%M:%fZ',s.fetched_at),
+ json_extract(CASE WHEN j.type='object' THEN j.value ELSE '{}' END,'$.is_archived') IS 1,COALESCE(json_extract(CASE WHEN j.type='object' THEN j.value ELSE '{}' END,'$.visibility'),CASE WHEN json_extract(CASE WHEN j.type='object' THEN j.value ELSE '{}' END,'$.is_private') IS 1 THEN 'PRIVATE' ELSE 'PUBLIC' END),
+ json_extract(CASE WHEN j.type='object' THEN j.value ELSE '{}' END,'$.is_fork') IS 1,'saved_catalog'
+FROM snapshots s,json_each(CASE WHEN json_valid(s.payload) THEN s.payload ELSE '{}' END,'$.repos') j
+WHERE s.kind IN ('repos','repos#2') AND json_type(CASE WHEN j.type='object' THEN j.value ELSE '{}' END,'$.name_with_owner')='text' AND length(CAST(j.value AS BLOB))<=16000
+AND NOT EXISTS(SELECT 1 FROM catalog_repositories known WHERE known.account_id=s.account_id AND known.repo=json_extract(CASE WHEN j.type='object' THEN j.value ELSE '{}' END,'$.name_with_owner') COLLATE NOCASE)
+ON CONFLICT(account_id,identity_key) DO NOTHING;
+
+ALTER TABLE catalog_repositories ADD COLUMN name_current INTEGER NOT NULL DEFAULT 1 CHECK(name_current IN (0,1));
+DROP INDEX IF EXISTS catalog_current_name;
+CREATE UNIQUE INDEX IF NOT EXISTS catalog_current_name ON catalog_repositories(account_id,repo) WHERE removed_at IS NULL AND name_current=1;
+
+CREATE TABLE IF NOT EXISTS catalog_displaced_state (
+ account_id TEXT NOT NULL,
+ identity_key TEXT NOT NULL,
+ table_name TEXT NOT NULL CHECK(table_name IN ('repo_stars','repo_statistics','factory_repo_state')),
+ repo TEXT NOT NULL,
+ version TEXT,
+ payload TEXT NOT NULL CHECK(length(CAST(payload AS BLOB))<=1500000),
+ PRIMARY KEY(account_id,identity_key,table_name),
+ FOREIGN KEY(account_id,identity_key) REFERENCES catalog_repositories(account_id,identity_key) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS catalog_unconfirmed (
+ account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+ event_id TEXT NOT NULL,
+ repo TEXT NOT NULL,
+ github_id TEXT,
+ at TEXT NOT NULL,
+ source_kind TEXT NOT NULL CHECK(source_kind IN ('factory','legacy')),
+ source_run_id TEXT,
+ reason TEXT NOT NULL CHECK(reason IN ('private_unverifiable','scope_unverifiable','mass_removal_guard','identity_unavailable','budget_exhausted','permission_denied','github_unauthorized','github_rate_limited','github_error','lookup_unverifiable')),
+ PRIMARY KEY(account_id,event_id)
+);
+CREATE INDEX IF NOT EXISTS catalog_unconfirmed_cursor ON catalog_unconfirmed(account_id,at,repo,event_id);

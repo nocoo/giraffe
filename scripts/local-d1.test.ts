@@ -78,3 +78,44 @@ it("rejects a partially applied star provenance migration", () => {
 		db.close();
 	}
 });
+
+it.each(["column_only", "missing_index", "missing_cascade"] as const)(
+	"rejects partial catalog identity safety startup: %s",
+	(mode) => {
+		const db = new DatabaseSync(":memory:");
+		try {
+			const schema = readFileSync("apps/web/src/server/lib/db/schema.sql", "utf8");
+			const migration = readFileSync("migrations/0020_catalog_identity_safety.sql", "utf8");
+			if (mode === "column_only") {
+				db.exec(schema.slice(0, schema.indexOf(migration)));
+				db.exec(
+					"ALTER TABLE catalog_repositories ADD COLUMN name_current INTEGER NOT NULL DEFAULT 1",
+				);
+			} else {
+				db.exec(
+					mode === "missing_cascade"
+						? schema.replace(
+								"FOREIGN KEY(account_id,identity_key) REFERENCES catalog_repositories(account_id,identity_key) ON DELETE CASCADE",
+								"FOREIGN KEY(account_id,identity_key) REFERENCES catalog_repositories(account_id,identity_key)",
+							)
+						: schema,
+				);
+				if (mode === "missing_index") db.exec("DROP INDEX catalog_unconfirmed_cursor");
+			}
+			execute.mockImplementation((_bin: string, args: string[]) => {
+				const file = args.find((arg) => arg.startsWith("--file="));
+				if (file) {
+					db.exec(readFileSync(file.slice("--file=".length), "utf8"));
+					return "";
+				}
+				const query = args[args.indexOf("--command") + 1];
+				if (!query) throw new Error("Missing schema query");
+				return JSON.stringify([{ results: db.prepare(query).all() }]);
+			});
+			expect(() => ensureLocalSchema()).toThrow("Partial catalog identity safety migration");
+		} finally {
+			execute.mockReset();
+			db.close();
+		}
+	},
+);

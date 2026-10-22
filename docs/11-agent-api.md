@@ -6,6 +6,48 @@ does not bundle an analysis runtime, run model inference, or execute code change
 The complete endpoint reference, request examples, validation limits and recommended
 consumer flow are in [Machine API v1](api.md).
 
+## Catalog discovery consumption
+
+Use `GET /catalog/changes?since=<ISO>` with `observations:read` before applying
+authorized bot policy. The inclusive cursor returns stable event IDs: deduplicate
+them, and advance from the returned `until` only after processing the response.
+409 `catalog_unpublished` means no complete discovery history yet; 410
+`catalog_history_expired` requires a full catalog resynchronization. History is
+bounded to 90 days and 10,000 combined change/unconfirmed events per account; see the
+[discovery contract](api.md#get-catalogchanges) for ordering and retention.
+
+`/repos` adds `first_seen_at`, `last_seen_at`, `removed_at` and
+`archived_changed_at`. Default reads exclude removed repositories; explicitly use
+`include=removed` to inspect retained departed rows. Existing catalog timestamps
+are seeded from saved fetch times without invented events. A detected stable-ID
+rename preserves mutable star provenance, not a delete/unstar/add sequence.
+Names are not immutable identities: a different-ID replacement cannot inherit
+departed factory evidence or source completeness. An explicitly included departed
+row remains unstarred even when a same-name replacement is starred.
+
+Process the required `unconfirmed[]` alongside changes: each item has the normal
+event ID/repository/stable-ID/time/source fields and a safe `reason`. Do not
+interpret an unconfirmed observation as deletion or authorize bot cleanup from it.
+Previously private candidates are never auto-removed (`private_unverifiable`).
+Public candidates require this complete listing to retain a previously known
+private owned identity (`scope_unverifiable` otherwise), followed by unambiguous
+not-found evidence from a stable-ID node lookup. Tokens without private access
+never auto-remove. Permission-hidden 404s, SAML/SSO, 401/403, limits, network errors
+and 5xx retain all state. More than `max(3, 10% of previously current owned repos)`
+missing, not-yet-removed identities suppress all removals, including quarantined
+identities from earlier replacements. Quarantined identities count as candidates
+but not in the denominator. All candidates then report `mass_removal_guard` in
+`unconfirmed[]`, and both current and quarantined state are preserved. Exactly the
+threshold still requires the normal identity/privacy checks. Confirmed removal clears stars and
+mutable participation/overrides but preserves immutable evidence and generic
+agent records. Reappearance is added without restoring stars. Default-star and
+archive-unstar policy remains in the external bot, respecting owner overrides;
+Giraffe performs no automatic starring and adds no R5/R6 agent-state/meta API.
+In a same-run different-ID name replacement, the listed identity owns the current
+name and emits `added`; the old identity is independently removed or unconfirmed.
+Unconfirmed old mutable state is preserved by identity and cannot leak into the
+replacement. Only the same unresolved identity can reclaim preserved state.
+
 ## Authentication and token management
 
 Only `https://giraffe.hexly.ai/api/v1/*` is outside the dashboard's Cloudflare
@@ -88,7 +130,8 @@ Every documented machine GET rejects unknown query keys with 400
 `validation_failed`, including identity, individual resources, settings and run
 lists. Repository pages and factory streams accept no query parameters; account
 observations accept only `scope`, except `/contributions`, which accepts only
-`since`/`until` dates. Authentication and authorization run first.
+`since`/`until` dates, and `/activity`, which accepts `run`/`repository`.
+Authentication and authorization run first.
 
 Machine source indexes support content-derived `ETag` / `If-None-Match` validation
 with bodyless 304 responses. Authorization and query validation are never bypassed.
@@ -238,6 +281,31 @@ grouped bot streams remain visible. No `branches` parameter is supported.
 Workflow verdicts are `broken | flaky | healthy | idle`. Repository verdicts add
 `unknown` for no default-workflow evidence (`none` before 0.15.14; breaking rename).
 The independent release pipeline sentinel stays `none` for no release workflow.
+
+## Current-run activity
+
+`GET /api/v1/accounts/:account_id/activity?run=latest&repository=owner/name`
+is a saved immutable account-wide quick/daily publication. It uses the existing
+`observations:read` scope, strict query validation and authenticated ETag/304.
+`account:activity` in `/sources` exposes the same publication's version,
+contentVersion and fetchedAt. GET never rebuilds activity from raw event history,
+collects GitHub, changes run status or records token usage.
+
+The window is `(previous successful quick/daily until, current until]`. First
+publication uses a marked 24-hour lookback; failures or missing Beijing days widen
+the interval and mark a gap. Selected-repository and weekly/deep runs do not
+consume this account-wide window. A nullable list/count is unavailable, never
+empty/zero. Per-list coverage and overall truncation remain part of the evidence.
+Current snapshot alert counts preserve each feature's independent unknown state.
+
+The browser `/today` route and repository activity panel read this same saved
+publication. Activity contributions use explicit Beijing intervals and are not
+the GitHub-native date labels of the separate 90-day `/contributions` endpoint.
+Their counts are GitHub-reported totals for the requested interval, with native
+calendar dates preserved as `timezone:"github"` provenance, not relabeled squares.
+Cross-day comparisons and conclusions remain the external producer's job; no
+analysis runtime or writable repository state/meta API is introduced here.
+See [activity fields and window rules](api.md#get-activity).
 
 ## Generic records, reports and jobs
 

@@ -1,5 +1,72 @@
 # Retrospective
 
+## 2026-10-22 - Removal guards must cover quarantined identities
+
+The identity-safety repair preserved old mutable state during name replacement,
+but its mass-removal numerator counted only current-name identities. A later
+refresh could confirm and clear four quarantined identities while five current
+repositories kept the threshold at three. Count all missing, not-yet-removed
+identities before any confirmation or cleanup, including prior replacement
+generations. Do not let those historical identities inflate the owned denominator.
+When guarded, preserve all mutable state and report the same batch-level reason
+for every candidate. Multi-refresh RED fixtures now check the original four-old
+identity case, mixed current/quarantined candidates, missing private proof, and
+both the absolute-three and exact-ten-percent boundaries. Compare full raw
+quarantine/current payloads and persisted change events, not only planner counts.
+
+## 2026-10-22 - Contract fixtures cannot depend on unreachable Git objects
+
+The cross-version repository contract test archived a local pre-rebase commit at
+runtime. Local L1 and push hooks passed because that object still existed, but
+the GitHub checkout had never received it, so the suite failed before its two
+assertion bodies ran. Reproducing with an empty Git object store exposed the same
+failure. Capture the actual pinned reader's complete expected wire rows and
+envelope fields as a checked-in fixture, including revision/tree/archive hashes,
+then compare against that fixture without Git or network access. Keep every
+existing assertion; verify both scopes with no historical objects available.
+Local success does not establish that test inputs are available in CI.
+
+## 2026-10-22 - Catalog listings can disagree across leased steps
+
+The first identity-safety repair tested replacement against consistent inventory
+and catalog fixtures. Independent executor replay replaced the same name between
+those two real collection steps: the complete catalog carried the new stable ID,
+but publication fell back to old factory metadata by name when the ID lookup
+missed. That produced a completed factory catalog for the wrong identity. Known
+IDs must never fall back to names; unavailable matching metadata must fail closed
+without partially publishing catalog history or mutable state. Exercise the actual
+multi-step executor with different identities across responses, not only the pure
+planner. Repeat all frozen-tree gates after repairing the published branch.
+
+## 2026-10-22 - Repository absence did not prove deletion
+
+The first batch-11 review accepted a name-based HTTP 404 as deletion evidence.
+That interpretation ignored GitHub's permission-hiding behavior: losing private
+access can return 404, including an explicit personal-access-token restriction.
+It also ignored successful same-name replacement responses, leaving an old stable
+identity blocking every later catalog publication. The steward reproduced both
+after the branch was pushed. The repair requires positive stable-ID not-found
+evidence, never auto-removes a previously private repository, and requires a
+previously known private-owned identity to remain visible before removing a public
+candidate. Unknown/access-denied results persist as unconfirmed history rather
+than cleanup. Same-name ownership follows the complete listing while unresolved
+old identity state is preserved separately. Tests must include permission changes,
+identity replacement within one run and repeated discovery, not just an ordinary
+404 followed by a later addition. Published history is repaired by forward commits.
+
+## 2026-10-22 - Keep HTTP catalog fixtures identity-consistent
+
+The second full HTTP run exposed two fixture gaps after the earlier catalog
+fixture repair. The activity fixture also reused the matrix account's unique
+login. The matrix catalog publication stayed pending with `catalog_incomplete`
+because the legacy catalog HTTP stub omitted the newly requested stable ID,
+while the inventory stub returned one. Inspecting the marked local test database
+identified the missing identity instead of treating the failure as a slow queue.
+Both HTTP and browser catalog stubs now return the shared inventory identity;
+independent seeded activity accounts use their own login. Keep fixture identities
+consistent across collection paths and unique across independently seeded suites;
+never increase polling timeouts to conceal a deterministic publication error.
+
 ## 2026-10-19: Offline version metadata retained mirror URLs
 
 While preparing v0.15.8, an offline `bun install --lockfile-only` run inherited
@@ -1247,3 +1314,129 @@ tradeoff a useful optimization. Independent review rejected it, and fix round 1
 restores direct payload reads in a forward commit. Compare alternating repeated
 samples of database and whole-request cost before accepting a transport-byte
 optimization; do not infer lower remote latency from smaller payloads alone.
+
+## 2026-10-22 - Verify fenced writes by reading physical children
+
+During batch 11 activity publication work, an immutable-page existence predicate
+was appended after `$guard`. The shared `fenced()` helper appends lease bindings
+after all caller-provided values, so the SQL placeholder order no longer matched
+the values. The header and run save could succeed while every page insert affected
+zero rows. Focused publication readback and independent review reproduced the
+missing pages before any commit or external publication. The fix puts caller
+predicates before the guard and keeps physical page-count, nonempty readback,
+immutability and revoked-lease assertions. A successful transaction or parent-row
+write is not proof that fenced child writes stored the intended data; check both
+the placeholder contract and the returned publication contents.
+
+The same integration pass found that the Today missing-publication browser
+fixture used the older `snapshot_missing` code while the API returned
+`activity_unpublished`. Adding a display mapping alone was insufficient because
+the client normalizes unknown error codes to `internal_error`. Tests now exercise
+the real API code through normalization as well as the pending-state UI. Keep
+fixtures, the accepted error-code registry and the displayed state on one contract.
+
+Independent review also completed an active predecessor between history lookup
+and new-run admission. The new activity window had already frozen the older
+predecessor and overlapped the just-completed window. Admission now compares the
+predecessor/interruption fingerprint atomically and retries on change; an explicit
+interleaving regression preserves seamless boundaries. A read followed by an
+atomic insert does not make the earlier derived values atomic with admission.
+
+The controller started L2 and L3 together after checking their documented HTTP
+and fixture ports. L3 failed before tests with a Wrangler socket-address conflict.
+Distinct application ports did not prove full process isolation. Port 9229 was
+owned by an unrelated existing service, not this task; no unrelated process was
+terminated. The controller retained the running L2 lane and reran L3 serially
+after cleanup, without changing deploy configuration. Check auxiliary listeners too,
+or serialize these existing runners; a startup failure is not passing UI evidence.
+
+The first activity HTTP fixture incorrectly assumed that a response ETag used the
+same SHA-256 representation as the stored content fingerprint. The installed Hono
+middleware uses SHA-1 for response ETags, while source content versions are a
+separate contract. The fixture now checks the middleware's actual quoted tag and
+conditional 304 behavior rather than conflating these identifiers.
+
+The next browser run started while its progress assertion was still being fixed.
+It loaded the new maximum (28) but the previous expected value (26), then failed
+even though the checked-in file eventually contained both corrections. This was
+not a second production defect and not passing full-suite evidence. Freeze test
+files as well as production code/schema before starting a full runner; bind the
+recorded result to that frozen tree and rerun after any test correction.
+
+## 2026-10-22 - Replay catalog backfill after identity changes
+
+The initial discovery migration ignored conflicts on its historical identity key
+but also introduced a unique current repository name. Independent review replayed
+the migration after a stable-ID rename: the existing identity kept its old key,
+while the current saved catalog held the new name. Backfill attempted a different
+key with that same current name and failed the unique index. Initial double-apply
+alone did not cover this valid post-migration state. Guard existing identities and
+current names, then replay after ID adoption, rename and removal; assert no new
+events, no resurrection and no immutable-history changes. Backup verification
+must cover evolved application data, not only a pristine migrated fixture.
+
+## 2026-10-22 - Count the final serialized page envelope
+
+The snapshot splitter tested candidates with `truncated:true` but could later
+serialize `truncated:false`, which is one byte longer. Exact multibyte fixtures
+reproduced a 1,500,001-byte page. The same check also missed oversized metadata
+outside the selected array, including its empty-array fallback. Candidate checks
+now use the current final flag (later truncation can only shorten it); compact
+fallbacks are checked separately and unrepresentable metadata fails before write.
+Keep boundary assertions on serialized UTF-8 bytes, not string lengths or item
+sizes, and cover the no-item/no-array paths as well as normal two-page output.
+
+## 2026-10-22 - Preserve identity through simultaneous renames
+
+Single-repository rename fixtures hid two valid production cases. A rename chain
+or swap collided with current-name uniqueness before the old names were released.
+Also, the normal run writer omits the optional physical `observation.repo`, while
+the fixture always supplied it; moving the mutable key then lost the immutable
+version join and its garbage-collection root. Stage name changes inside the same
+atomic publication and capture the original physical key before moving state.
+Exercise both listing orders, owner/agent star provenance, the real quick executor
+and garbage collection after old publication/recent-run roots retire. A fixture
+must include the actual writer's minimal valid shape, not only enriched examples.
+
+## 2026-10-22 - A reused repository name is not its old identity
+
+Discovery retained immutable history correctly but readers still matched it by
+name. After a confirmed deletion and different-ID recreation, old factory streams
+could appear current; catalog restore could even bind old legacy resources to the
+new ID. A removed row also inherited a same-name replacement's owner star. Match
+known stable IDs before current projection, stream reads, source completeness and
+legacy restore. Keep removed rows unstarred independently of mutable name-based
+selection. Regression fixtures must perform actual removal and recreation, cover
+both run and legacy evidence, and distinguish same-ID reappearance from new-ID
+replacement while asserting that immutable history remains byte-identical.
+
+## 2026-10-22 - Native SQLite does not prove D1 SQL limits
+
+Adding three catalog tables to the storage telemetry UNION raised the compound
+SELECT from four terms to seven. Native SQLite tests passed, but real local D1
+rejected the query and `/factory/runs` returned 500. A local D1 replay confirmed
+five terms succeed and six fail. Keep the existing four-term compound query and
+add catalog scalar aggregates inside the same statement, preserving UTF-8 byte
+accounting, bindings and one round trip. Pair native transaction tests with a
+named D1-limit regression and real HTTP verification; native SQL compatibility
+does not imply identical engine resource limits.
+
+## 2026-10-22 - Absence is not positive legacy identity evidence
+
+The first replacement guard rejected a different ID only when the old name still
+appeared in the current factory publication. Independent replay advanced that
+head past the deletion, and restoration again rebound old legacy resources to a
+new ID. Restoration now requires positive agreement on stable ID, physical key,
+legacy source and original version from a retained publication/root or exact
+immutable version; unknown provenance yields no writes. Test the full lifecycle
+including the intervening empty publication, and retain original windows and
+timestamps rather than deriving fresh ones from unrelated stream versions.
+
+## 2026-10-22 - Isolate fixture logins as well as account IDs
+
+The new catalog HTTP fixture generated an account ID but reused `octocat`, which
+another journey already owned. The unique-login constraint aborted setup before
+the three assertions ran. Native seeding against an empty database did not expose
+the collision; replay against the marked L2 database did. Generate a unique
+fixture login and derive all owned repository names from it. A before-hook failure
+with skipped bodies is failed validation, never evidence that those cases passed.

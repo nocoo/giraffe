@@ -1,6 +1,14 @@
 import { securityIncomplete } from "../../lib/security";
 import { REPO_SNAPSHOT_TABS, SITE_SNAPSHOT_KINDS } from "../../lib/snapshot-kinds";
 import {
+	beginCatalog,
+	type CatalogPlan,
+	catalogIdentity,
+	catalogPlanWrites,
+	catalogSnapshot,
+	planCatalog,
+} from "./catalog-history";
+import {
 	type Collected,
 	clampToBudget,
 	collectKind,
@@ -118,9 +126,12 @@ export async function prepareRefresh(
 	requested: string[],
 	fetchedAt: string,
 	written: Record<string, Collected> = {},
-	options: { deriveInsights?: boolean } = {},
+	options: { deriveInsights?: boolean; deferCatalog?: boolean; catalogRunId?: string } = {},
 ) {
 	const owner = (await getAccount(db, accountId))?.login.toLowerCase();
+	const catalogBaseline = requested.includes("repos") ? await beginCatalog(db, accountId) : null;
+	let catalogPlan: CatalogPlan | null = null;
+	let preserveCatalog = false;
 	for (const kind of requested) {
 		if (kind.startsWith("repo:") && kind.slice(5).split("/")[0]?.toLowerCase() !== owner)
 			throw new ApiError(400, "validation_failed", "repository is not account-owned");
@@ -163,6 +174,26 @@ export async function prepareRefresh(
 						needsRepoNames(kind) ? await repoNames() : [],
 						remaining,
 					);
+		if (kind === "repos" && catalogBaseline) {
+			catalogPlan = await planCatalog(
+				catalogBaseline,
+				payload,
+				catalogIdentity(payload),
+				owner ?? "",
+				gh,
+				token,
+				fetchedAt,
+				{ kind: options.deferCatalog ? "factory" : "legacy", runId: options.catalogRunId ?? null },
+			);
+			if (!catalogPlan.complete) {
+				preserveCatalog = true;
+				if (catalogBaseline.saved) written.repos = catalogBaseline.saved as Collected;
+				if (!catalogBaseline.saved)
+					throw new ApiError(422, "snapshot_incomplete", "Catalog listing is incomplete");
+				break;
+			}
+			payload = catalogSnapshot(catalogPlan);
+		}
 		if (needsRepoNames(kind)) {
 			const reposPayload = await loaded("repos");
 			if (reposPayload?.truncated === true) {
@@ -176,6 +207,8 @@ export async function prepareRefresh(
 			break;
 		}
 		const preview = splitPages(kind, clamped.payload);
+		if (kind === "repos" && catalogPlan?.complete && (clamped.capped || preview.truncated))
+			throw new ApiError(422, "catalog_capacity", "Catalog exceeds bounded snapshot capacity");
 		written[kind] = { ...assemblePages(kind, preview.pages), truncated: preview.truncated };
 		used += clamped.bytes;
 		if (clamped.capped || gh.count >= MAX_FETCHES || used >= MAX_STAGED_BYTES) {
@@ -215,7 +248,18 @@ export async function prepareRefresh(
 	}
 
 	const stmts = [];
+	if (catalogPlan && !options.deferCatalog) {
+		stmts.push(
+			db
+				.prepare(
+					"SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM factory_runs WHERE account_id=? AND status IN ('running','paused')) THEN 1 ELSE json('{') END",
+				)
+				.bind(accountId),
+		);
+		stmts.push(...catalogPlanWrites(db, accountId, catalogPlan));
+	}
 	for (const [kind, payload] of Object.entries(written)) {
+		if (kind === "repos" && (preserveCatalog || options.deferCatalog)) continue;
 		const preview = splitPages(kind, payload);
 		payload.truncated = preview.truncated;
 		stmts.push(...(await replaceSnapshotStmts(db, accountId, kind, payload, fetchedAt)));
@@ -225,5 +269,5 @@ export async function prepareRefresh(
 	if (gh.count > 0) {
 		stmts.push(touchLastUsedStmt(db, accountId, fetchedAt));
 	}
-	return { written, stmts };
+	return { written, stmts, catalogPlan };
 }

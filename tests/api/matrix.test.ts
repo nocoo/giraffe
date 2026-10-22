@@ -38,6 +38,7 @@ const GETS = [
 ];
 
 const FACTORY_GETS = [
+	"/api/activity",
 	"/api/refresh/times",
 	"/api/refresh/settings",
 	"/api/factory/runs",

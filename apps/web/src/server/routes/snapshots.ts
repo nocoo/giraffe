@@ -1,5 +1,6 @@
 import type { Context } from "hono";
 import type { AppVars, Env } from "../env";
+import { catalogInclude } from "../lib/catalog-read";
 import { getActiveAccount } from "../lib/db/accounts";
 import { readRepositorySnapshot, readSnapshot, snapshotFromRows } from "../lib/db/snapshots";
 import { ApiError, jsonOk } from "../lib/errors";
@@ -13,6 +14,7 @@ export async function snapshotGet(
 	logical: string,
 ): Promise<Response> {
 	const scope = snapshotScope(c.req.queries("scope"));
+	const includeRemoved = logical === "repos" ? catalogInclude(c.req.queries()) : false;
 	if (logical === "repos" || logical === "issues" || logical === "prs") {
 		const db = c.get("db");
 		const plan = accountReadPlan(db, null, logical, scope);
@@ -23,7 +25,7 @@ export async function snapshotGet(
 			throw new ApiError(409, "snapshot_missing", `no snapshot for ${logical}`);
 		let policy =
 			logical === "repos"
-				? savedAccountPolicy(saved, scope, snap)
+				? savedAccountPolicy(saved, scope, snap, includeRemoved)
 				: savedAccountPolicy(saved, scope);
 		if (!snap && policy.empty) {
 			const key = { repos: "repos", issues: "issues", prs: "pull_requests" }[logical];

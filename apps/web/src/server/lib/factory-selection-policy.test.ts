@@ -126,14 +126,16 @@ it.each([
 		expect(
 			run.steps.filter((step) => step.repo === first.name && step.kind !== "snapshot"),
 		).toEqual(
-			["metadata", ...FACTORY_STREAMS, "commit"].map((stepKind) =>
-				expect.objectContaining({ kind: stepKind, status: "pending" }),
+			["metadata", ...FACTORY_STREAMS, "commit", ...(kind === "daily" ? ["activity"] : [])].map(
+				(stepKind) => expect.objectContaining({ kind: stepKind, status: "pending" }),
 			),
 		);
 		for (const name of legacyNames) {
 			const steps = run.steps.filter((step) => step.repo === name);
 			expect(steps.filter((step) => step.kind !== "snapshot").map((step) => step.kind)).toEqual(
-				pageNames.includes(name) ? ["metadata", ...FACTORY_STREAMS, "commit"] : [],
+				pageNames.includes(name)
+					? ["metadata", ...FACTORY_STREAMS, "commit", ...(kind === "daily" ? ["activity"] : [])]
+					: [],
 			);
 			expect(steps.filter((step) => step.kind === "snapshot").map((step) => step.resource)).toEqual(
 				pageNames.includes(name) ? REPO_SNAPSHOT_TABS.map((tab) => `repo:${name}:${tab}`) : [],

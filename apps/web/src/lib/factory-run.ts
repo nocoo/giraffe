@@ -25,6 +25,8 @@ export type StepKind =
 	| "inventory"
 	| "restore"
 	| "contributions"
+	| "activity"
+	| "activity-contributions"
 	| "metadata"
 	| FactoryStreamName
 	| "commit"
@@ -47,6 +49,9 @@ export type FactoryRunStep = {
 	error: string | null;
 };
 export type FactoryRun = {
+	activityWindow?: import("./activity-types").ActivityWindow;
+	previousActivityRunId?: string | null;
+	activityContributions?: import("./activity-types").ActivityContributions;
 	id: string;
 	account_id: string;
 	owner: string;
@@ -198,14 +203,20 @@ export function makeRun(
 					...(dailyPages && !full ? [snapshot("repos"), snapshot("notifications")] : []),
 					...(full ? [...SITE_SNAPSHOT_KINDS, "insights"].map((kind) => snapshot(kind)) : []),
 					...(full || dailyPages ? [step("contributions")] : []),
+					...(depth === "quick" && (dailyPages || full) ? [step("activity-contributions")] : []),
 					...repos.flatMap((r) => [
 						step("metadata", r.name),
 						...FACTORY_STREAMS.map((s) => step(s, r.name)),
 						step("commit", r.name),
 					]),
-					...pageRepos.flatMap((repo) =>
-						REPO_SNAPSHOT_TABS.map((tab) => snapshot(`repo:${repo}:${tab}`, repo)),
-					),
+					...pageRepos.flatMap((repo) => [
+						...REPO_SNAPSHOT_TABS.map((tab) => snapshot(`repo:${repo}:${tab}`, repo)),
+						...(depth === "quick" &&
+						(dailyPages || full) &&
+						repos.some((selected) => selected.name === repo)
+							? [step("activity", repo)]
+							: []),
+					]),
 					...(dailyPages && !full ? [snapshot("insights")] : []),
 					step("publish"),
 				];

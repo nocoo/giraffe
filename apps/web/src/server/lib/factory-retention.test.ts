@@ -21,6 +21,22 @@ async function setup() {
 		.run();
 	return { raw, db };
 }
+it("R7 storage accounting stays within D1 compound-select limits in one query", async () => {
+	const { raw } = await setup();
+	const prepare = raw.prepare.bind(raw);
+	const queries: string[] = [];
+	raw.prepare = (query) => {
+		queries.push(query);
+		if ((query.match(/UNION ALL/g) ?? []).length > 4)
+			throw new Error("too many terms in compound SELECT");
+		return prepare(query);
+	};
+	expect(await factoryStorage(createDb(raw), account)).toEqual({
+		resourceBytes: 0,
+		totalBytes: 0,
+	});
+	expect(queries).toHaveLength(1);
+});
 it("records publication roots atomically and protects mixed-version detail when pruning old runs", async () => {
 	const { raw, db } = await setup();
 	await db.batch(await replaceSnapshotStmts(db, account, "factory", { ...snap }, snap.fetched_at));

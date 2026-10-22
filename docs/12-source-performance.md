@@ -1,5 +1,37 @@
 # Source Index Performance
 
+## v0.19.0 activity and discovery budget
+
+The activity source adds one stored-header statement and discovery adds one
+history-metadata statement to the existing source-reader batch (seven statements,
+still one reader round trip). It does not fetch
+activity repository pages for source polling. Activity GET reads an immutable
+header and bounded pages in at most two reader rounds, excluding authentication.
+Publication first profiles at most 500 frozen repository names with byte lengths
+only, then fetches at most 4,000,000 UTF-8 bytes of projected repository payloads
+in frozen order. The payload read rechecks lengths; growth cannot bypass the
+input bound. Output is independently capped at 16 pages of 1,500,000 bytes.
+Omitted members retain explicit truncation/null totals, including filtered reads.
+
+R4 fixtures measure one supplemental request/leased page per repo when a complete
+90-day stream supplies successful deployment evidence; fallback adds a second
+successful-runs request/page. Beijing contributions add one account request.
+At the historical 48 minutes/778 steps cadence, the two-page fixture adds about
+5.2 minutes for 42 repos or 7.5 minutes for 60. Scaling the baseline to 60 yields
+a nominal 76-minute total, not a production SLA. Supplemental pagination is
+bounded at 20 requests per repo; rate limits can still stretch actual duration.
+
+Catalog stable IDs are fields in the existing listing query, not separate
+requests. Only missing candidates require direct repository confirmation; a
+normal complete rediscovery adds no GitHub calls. More than
+`max(3, owned_before * 0.1)` missing candidates suppress all removal confirmation
+calls and preserve membership and quarantined state. Candidates include every
+missing, not-yet-removed identity across replacement generations; `owned_before`
+excludes quarantined, removed and non-owned identities. Guarded candidates all
+report `mass_removal_guard` without upstream calls. Denied/failed confirmations never prove deletion.
+Discovery GET uses saved rows and never triggers upstream collection. Fixture
+request counts and scheduler-step costs are distinct from deployed latency.
+
 ## v0.18.0: timing and comparison boundary
 
 Smart Placement is enabled with `placement.mode = "smart"`. It needs time to
@@ -186,10 +218,11 @@ in total/hash and conditional requests still perform the source reads.
 
 At 300 ms per trip the expected saving is about 1.2 seconds; adding the unchanged
 auth trip gives roughly 0.65 seconds in the simulation. This is not a deployed
-latency guarantee. Smart Placement could move execution closer to D1; read
-replication would require explicit consistency/session design. Both need owner
-approval and neither is configured here. Batching other account/detail routes is
-deferred to avoid broadening the read-contract change.
+latency guarantee. Smart Placement is not configured here. On 2026-10-22 the
+owner declined D1 read replication, a stored source projection and early 304
+handling: `/sources` latency and its current read behavior remain unchanged.
+These are not open implementation options. Batching other account/detail routes
+is outside this change.
 
 ## Measurement boundary
 
@@ -532,8 +565,10 @@ of that serialized representation. `If-None-Match:*` must not bypass payload
 validation and turn existing errors into a successful conditional response.
 An exact pre-payload validator would require a separately designed save-time
 representation/validator or sufficient stored projection metadata, with invalidation
-for membership, publication and query variants. That schema/write-path work is
-explicitly deferred; no weaker validator, new cache or additional read is added.
+for membership, publication and query variants. The owner explicitly declined
+that stored projection and early-304 work on 2026-10-22, together with D1 read
+replication. Preserve the existing behavior; no weaker validator, new cache or
+additional read is added.
 
 The machine source endpoint uses a strong, content-derived validator and accepts
 `If-None-Match` after bearer, account and scope authorization. Matching requests

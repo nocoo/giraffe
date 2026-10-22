@@ -299,6 +299,36 @@ Insights uses refreshed selected sources; optional unavailable security does not
 core derivation. Assessment source time and report-generation time remain separate.
 The browser re-reads saved data while visible and on focus; background tabs pause.
 
+## Catalog discovery cost
+
+Discovery reuses the existing catalog listing and stable repository IDs. A normal
+single-page rediscovery adds zero GitHub requests and zero leased steps. Each
+eligible public missing member below the mass-removal guard adds one stable-ID
+GraphQL node lookup. Previously private candidates and accounts without a
+previously known private-owned identity still visible in the complete listing
+add no confirmation request and report `unconfirmed`. Four eligible public
+missing members out of 40 owned members therefore add four requests. Four
+missing out of 31 owned members exceed the exact ten-percent threshold, so all
+removals and confirmation calls are suppressed. Archived and forked owned members
+count in that denominator; non-owned, departed and displaced identities do not.
+The candidate count includes all missing, not-yet-removed identities, including
+quarantined identities from multiple replacement generations. Four quarantined
+identities with five current owned members therefore trigger the guard: zero
+lookups/removals, unchanged mutable state and `mass_removal_guard` for every
+candidate. Three such identities are exactly the threshold and still require
+the normal identity/privacy checks before deletion.
+
+The listing fixture uses one GraphQL request; the factory path also has its
+existing inventory request. Confirmations execute inside the existing repository
+snapshot lease, sharing that execution's `MAX_FETCHES=40` budget with listing
+requests. Budget exhaustion retains unconfirmed membership and original
+`last_seen_at`, with `catalog_removal_unconfirmed`; it never bypasses the client
+limit. This is a per-execution bound, not a whole-run request total. No extra
+scheduler tick or measured production latency improvement is claimed.
+When mutable state is missing, legacy restoration can make at most two additional
+bounded local reads to verify identity against a saved root or exact immutable
+version. It does not scan the historical publication set or call GitHub.
+
 ## Dashboard time presentation
 
 Dashboard timestamps use the browser's local timezone, including refresh history,

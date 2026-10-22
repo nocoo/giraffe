@@ -100,6 +100,7 @@ import {
 import { securityKpi } from "../viewmodels/security";
 
 import { ReleaseTimeline, RepoActivityChart, RunOutcomeChart } from "./repo-charts";
+import { RepoCurrentActivity } from "./today";
 
 type DetailTab = RepoTab | "analysis";
 
@@ -543,6 +544,7 @@ export function RepoDetailPage() {
 									}
 								/>
 							</KpiRow>
+							<RepoCurrentActivity repository={`${owner}/${name}`} />
 							{days.length ? (
 								<ChartBrick
 									title="90 天活动"

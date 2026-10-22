@@ -5,7 +5,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { hexlyProjectFixture } from "../tests/fixtures/project-identity";
-import { factoryGraphqlStub } from "./factory-stub";
+import { factoryGraphqlStub, factoryRepoStub } from "./factory-stub";
 import { hasApiRoutes } from "./has-api-routes";
 import { securityFixture } from "./security-stub";
 
@@ -360,6 +360,7 @@ const github = await listen(17046, (req, res) => {
 							repositories: {
 								nodes: [
 									{
+										id: factoryRepoStub.id,
 										nameWithOwner: "octocat/hello-world",
 										name: "hello-world",
 										owner: { login: "octocat" },

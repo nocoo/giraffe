@@ -28,6 +28,33 @@ const estimate = {
 	expectedFinishAtReason: "no_completed_history" as const,
 };
 const run = makeRun("r", snap.account_id, "nocoo", "key", "refresh", snap.repos, snap.fetched_at);
+it("labels current-run activity steps and includes Beijing contribution work in account progress", () => {
+	const plan = makeRun(
+		"quick",
+		snap.account_id,
+		"nocoo",
+		"quick",
+		"refresh",
+		snap.repos,
+		snap.fetched_at,
+		[],
+		undefined,
+		{ scope: "all" },
+		"quick",
+	);
+	const view = {
+		...plan,
+		...estimate,
+		leaseUntil: null,
+		progress: runProgress(plan, snap.fetched_at),
+	};
+	expect(stepLabel({ kind: "activity" })).toBe("当次活动补充");
+	expect(stepLabel({ kind: "activity-contributions" })).toBe("北京日贡献");
+	expect(describeRunIssue(null, "activity").impact).toContain("当次活动");
+	expect(describeRunIssue(null, "activity-contributions").impact).toContain("北京日");
+	expect(runStages(view).find((stage) => stage.title === "账号贡献")?.total).toBe(2);
+	expect(runStages(view).reduce((total, stage) => total + stage.total, 0)).toBe(plan.steps.length);
+});
 it("shows limited dependencies as processed without a failure or permission recommendation", () => {
 	const plan = structuredClone(run);
 	for (const step of plan.steps) step.status = "success";

@@ -1,4 +1,4 @@
-import { factoryWindow, mergeMetrics, summarizeEvents } from "../../lib/factory";
+import { mergeMetrics, summarizeEvents } from "../../lib/factory";
 import {
 	dependencyEvidence,
 	dependencyFromEvent,
@@ -11,6 +11,8 @@ import {
 	type FactorySnapshot,
 	type FactoryStreamData,
 } from "../../lib/factory-types";
+import { activityPublicationWrites } from "./activity-store";
+import { type CatalogPlan, catalogPlanWrites, catalogSnapshot } from "./catalog-history";
 import { savedContentMeta } from "./content-version";
 import type { Db } from "./db/d1";
 import {
@@ -20,7 +22,7 @@ import {
 	publishedFactory,
 	type RunLease,
 } from "./db/factory-runs";
-import { readSnapshot } from "./db/snapshots";
+import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
 import { ApiError } from "./errors";
 import { streamKey } from "./factory-collect";
 import { latestFactoryRate } from "./factory-rate";
@@ -77,11 +79,21 @@ export async function currentRepo(
 ): Promise<FactoryRepo | null> {
 	const result = await db
 		.prepare(
-			"SELECT v.payload FROM factory_repo_versions v JOIN factory_repo_state s ON s.account_id=v.account_id AND s.repo=v.repo AND s.version=v.version WHERE s.account_id=? AND s.repo=?",
+			"SELECT v.payload FROM factory_repo_versions v JOIN factory_repo_state s ON s.account_id=v.account_id AND COALESCE(json_extract(s.payload,'$.observation.repo'),s.repo)=v.repo AND s.version=v.version WHERE s.account_id=? AND s.repo=?",
 		)
 		.bind(account, repo)
 		.first<{ payload: string }>();
-	return result ? normalizeRepoDependencies(JSON.parse(result.payload) as FactoryRepo) : null;
+	if (!result) return null;
+	const value = normalizeRepoDependencies(JSON.parse(result.payload) as FactoryRepo);
+	return value.name === repo
+		? value
+		: {
+				...value,
+				name: repo,
+				...(value.observation
+					? { observation: { ...value.observation, repo: value.observation.repo ?? value.name } }
+					: {}),
+			};
 }
 export async function repositoryWrites(
 	db: Db,
@@ -179,6 +191,11 @@ export async function restoreLegacyRepo(
 	repo: FactoryRepo,
 ): Promise<D1PreparedStatement[]> {
 	if (await currentRepo(db, lease.run.account_id, repo.name)) return [];
+	const publication = await publishedFactory(db, lease.run.account_id);
+	const previous = publication?.repos.find(
+		(observed) => observed.name.toLowerCase() === repo.name.toLowerCase(),
+	);
+	if (previous?.id && previous.id !== repo.id) return [];
 	const resources = new Map<string, FactoryStreamData>();
 	for (const stream of FACTORY_STREAMS) {
 		const data = (await readSnapshot(
@@ -186,11 +203,45 @@ export async function restoreLegacyRepo(
 			lease.run.account_id,
 			streamKey(repo.name, stream),
 		)) as FactoryStreamData | null;
-		if (data?.coverage && data.items) resources.set(stream, data);
+		if (data?.coverage && Array.isArray(data.items)) resources.set(stream, data);
 	}
 	const first = [...resources.values()].find((d) => Number.isFinite(Date.parse(d.runId)));
 	if (!first) return [];
-	const window = factoryWindow(first.runId);
+	const boundWindow = (observed: FactoryRepo | undefined, root?: FactorySnapshot | null) => {
+		if (
+			!observed ||
+			!repo.id ||
+			observed.id !== repo.id ||
+			(observed.observation?.repo ?? observed.name) !== repo.name ||
+			(observed.observation?.version ?? root?.runId) !== first.runId ||
+			(observed.observation?.source ?? (root ? "legacy" : null)) !== "legacy"
+		)
+			return null;
+		const window = observed.observation ? observed.observation.window : root?.window;
+		return window && Date.parse(window.since) < Date.parse(window.until) ? window : null;
+	};
+	let window = boundWindow(previous, publication);
+	if (!window) {
+		const legacy = (await readSnapshot(
+			db,
+			lease.run.account_id,
+			"factory",
+		)) as FactorySnapshot | null;
+		window = boundWindow(
+			legacy?.repos.find((observed) => (observed.observation?.repo ?? observed.name) === repo.name),
+			legacy,
+		);
+	}
+	if (!window) {
+		const saved = await db
+			.prepare(
+				"SELECT payload FROM factory_repo_versions WHERE account_id=? AND repo=? AND version=?",
+			)
+			.bind(lease.run.account_id, repo.name, first.runId)
+			.first<{ payload: string }>();
+		window = boundWindow(saved ? (JSON.parse(saved.payload) as FactoryRepo) : undefined);
+	}
+	if (!window) return [];
 	// Bind the original logical keys, not URLs, to avoid confusing issues with PRs or GraphQL manifests.
 	for (const stream of FACTORY_STREAMS) {
 		const data = resources.get(stream);
@@ -209,6 +260,7 @@ export async function restoreLegacyRepo(
 		window,
 		refreshedAt:
 			[...resources.values()]
+				.filter((data) => data.runId === first.runId)
 				.map((d) => d.coverage.fetchedAt ?? first.runId)
 				.sort()
 				.at(-1) ?? first.runId,
@@ -227,7 +279,55 @@ export async function publicationWrites(
 	const base = await publishedFactory(db, run.account_id);
 	const head = await factoryHead(db, run.account_id);
 	const writes: D1PreparedStatement[] = [];
+	const staged = await db
+		.prepare(
+			"SELECT payload FROM factory_resources WHERE run_id=? AND repo='' AND stream='catalog-plan'",
+		)
+		.bind(run.id)
+		.first<{ payload: string }>();
+	let discovery: CatalogPlan | null = null;
+	if (staged && run.steps.some((step) => step.resource === "repos" && step.status === "success")) {
+		discovery = JSON.parse(staged.payload) as CatalogPlan;
+		writes.push(...catalogPlanWrites(db, run.account_id, discovery));
+		writes.push(
+			...(await replaceSnapshotStmts(
+				db,
+				run.account_id,
+				"repos",
+				catalogSnapshot(discovery),
+				discovery.at,
+			)),
+		);
+		if (discovery.warning) run.error = discovery.warning;
+		if (run.mode === "catalog" && run.checkpoint?.inventory.complete) {
+			const previous = await catalogFactory(db, run.account_id);
+			const metadata = new Map(
+				[...(previous?.repos ?? []), ...run.checkpoint.repos].map((repo) => [repo.id, repo]),
+			);
+			run.checkpoint.repos = discovery.rows
+				.filter(
+					(row) =>
+						!row.removed_at &&
+						row.name_current !== 0 &&
+						row.repo.split("/")[0]?.toLowerCase() === run.owner.toLowerCase(),
+				)
+				.map((row) => {
+					const repo = row.github_id
+						? metadata.get(row.github_id)
+						: previous?.repos.find((repo) => repo.name.toLowerCase() === row.repo.toLowerCase());
+					if (!repo)
+						throw new ApiError(
+							409,
+							"catalog_incomplete",
+							"Retained repository metadata is unavailable",
+						);
+					return { ...repo, name: row.repo };
+				});
+		}
+	}
 	if (run.mode === "catalog" && run.checkpoint) {
+		if (!discovery || !run.checkpoint.inventory.complete)
+			throw new ApiError(409, "catalog_incomplete", "Catalog completion evidence is unavailable");
 		writes.push(
 			...(await snapshotWrites(db, lease, now, `factory:catalog:${run.id}`, run.checkpoint)),
 		);
@@ -247,7 +347,7 @@ export async function publicationWrites(
 		throw new ApiError(409, "snapshot_missing", "no catalog or committed factory data");
 	const result = await db
 		.prepare(
-			"SELECT v.payload,s.payload AS state FROM factory_repo_versions v JOIN factory_repo_state s ON s.account_id=v.account_id AND s.repo=v.repo AND s.version=v.version WHERE v.account_id=? ORDER BY v.refreshed_at,v.repo",
+			"SELECT v.payload,s.payload AS state FROM factory_repo_versions v JOIN factory_repo_state s ON s.account_id=v.account_id AND COALESCE(json_extract(s.payload,'$.observation.repo'),s.repo)=v.repo AND s.version=v.version WHERE v.account_id=? ORDER BY v.refreshed_at,v.repo",
 		)
 		.bind(run.account_id)
 		.all<{ payload: string; state: string }>();
@@ -354,6 +454,7 @@ export async function publicationWrites(
 		),
 	);
 	writes.push(...(await snapshotWrites(db, lease, now, `factory:v:${run.id}`, snapshot)));
+	writes.push(...(await activityPublicationWrites(db, lease, now, snapshot.repos)));
 	writes.push(
 		fenced(
 			db,

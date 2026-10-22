@@ -17,6 +17,7 @@ export const ERROR_CODES = [
 	"method_not_allowed",
 	"account_missing",
 	"snapshot_missing",
+	"activity_unpublished",
 	"capability_missing",
 	"account_conflict",
 	"encryption_misconfigured",
