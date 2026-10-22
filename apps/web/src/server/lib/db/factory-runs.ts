@@ -50,8 +50,16 @@ export function dispatchRunState(db: Db, id: string) {
 		.bind(id)
 		.first<{ account_id: string; status: string }>();
 }
-export async function listRuns(db: Db, account: string, detail = "") {
-	const rows = await db
+export type RunListRow = RunRow & {
+	total: number;
+	success: number;
+	failed: number;
+	skipped: number;
+	unavailable: number;
+	limited: number;
+};
+export function listRunsStatement(db: Db, account: string, detail = ""): D1PreparedStatement {
+	return db
 		.prepare(`SELECT
  CASE WHEN status IN ('running','paused') OR id=COALESCE(NULLIF(?,''),(SELECT id FROM factory_runs WHERE account_id=? ORDER BY created_at DESC LIMIT 1)) THEN json_remove(payload,'$.checkpoint') ELSE json_remove(payload,'$.checkpoint','$.steps') END AS payload,
  lease_until,json_array_length(payload,'$.steps') AS total,
@@ -61,18 +69,13 @@ export async function listRuns(db: Db, account: string, detail = "") {
  (SELECT COUNT(*) FROM json_each(payload,'$.steps') WHERE json_extract(value,'$.status')='limited') AS limited,
  (SELECT COUNT(*) FROM json_each(payload,'$.steps') WHERE json_extract(value,'$.status')='skipped') AS skipped
  FROM factory_runs WHERE account_id=? ORDER BY CASE WHEN status IN ('running','paused') THEN 0 ELSE 1 END,created_at DESC LIMIT 21`)
-		.bind(detail, account, account)
-		.all<
-			RunRow & {
-				total: number;
-				success: number;
-				failed: number;
-				skipped: number;
-				unavailable: number;
-				limited: number;
-			}
-		>();
-	return rows.results.map((row) => {
+		.bind(detail, account, account);
+}
+export async function listRuns(db: Db, account: string, detail = "") {
+	return decodeRuns((await listRunsStatement(db, account, detail).all<RunListRow>()).results);
+}
+export function decodeRuns(rows: RunListRow[]) {
+	return rows.map((row) => {
 		const entry = parse(row);
 		entry.run.steps ??= [];
 		return {

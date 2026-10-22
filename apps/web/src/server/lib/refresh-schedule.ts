@@ -31,7 +31,7 @@ export function nextScheduleAt(
 		local.setUTCDate(local.getUTCDate() + (kind === "weekly" ? 7 : 1));
 	return new Date(local.getTime() - 8 * 3600000).toISOString();
 }
-type ScheduleRow = {
+export type ScheduleRow = {
 	kind: ScheduleKind;
 	enabled: number;
 	time: string;
@@ -170,12 +170,14 @@ async function normalizePending(
 }
 
 export async function readSchedules(db: Db, account: string): Promise<RefreshSchedule[]> {
-	const rows = await db
-		.prepare(`${scheduleRows} WHERE account_id=?`)
-		.bind(account)
-		.all<ScheduleRow>();
+	return decodeSchedules((await schedulesStatement(db, account).all<ScheduleRow>()).results);
+}
+export function schedulesStatement(db: Db, account: string): D1PreparedStatement {
+	return db.prepare(`${scheduleRows} WHERE account_id=?`).bind(account);
+}
+export function decodeSchedules(rows: ScheduleRow[]): RefreshSchedule[] {
 	return (["daily", "weekly", "catalog"] as const).map((kind) => {
-		const row = rows.results.find((r) => r.kind === kind);
+		const row = rows.find((item) => item.kind === kind);
 		return row
 			? {
 					kind,
@@ -219,11 +221,26 @@ export async function saveSchedule(
 	]);
 }
 export async function starredRepos(db: Db, account: string): Promise<string[]> {
-	const rows = await db
-		.prepare("SELECT repo FROM repo_stars WHERE account_id=? AND starred=1 ORDER BY repo")
-		.bind(account)
-		.all<{ repo: string }>();
+	const rows = await starredReposStatement(db, account).all<{ repo: string }>();
 	return rows.results.map((r) => r.repo);
+}
+export function starredReposStatement(db: Db, account: string): D1PreparedStatement {
+	return db
+		.prepare("SELECT repo FROM repo_stars WHERE account_id=? AND starred=1 ORDER BY repo")
+		.bind(account);
+}
+export async function readScheduleSettings(db: Db, account: string) {
+	const results = await db.batch([
+		schedulesStatement(db, account),
+		starredReposStatement(db, account),
+	]);
+	const schedules = results[0];
+	const stars = results[1];
+	if (!schedules || !stars) throw new ApiError(500, "db_error", "incomplete settings batch");
+	return {
+		schedules: decodeSchedules(schedules.results as ScheduleRow[]),
+		stars: (stars.results as { repo: string }[]).map((row) => row.repo),
+	};
 }
 export async function enableDefaultSchedules(db: Db, account: string, now: string): Promise<void> {
 	for (const kind of ["daily", "weekly"] as const) {

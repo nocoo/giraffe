@@ -2,17 +2,29 @@ import type { Context } from "hono";
 import { z } from "zod";
 import type { Env } from "../env";
 import { getAccount } from "../lib/db/accounts";
-import { controlRun, getRun, listRuns } from "../lib/db/factory-runs";
+import {
+	controlRun,
+	decodeRuns,
+	getRun,
+	listRunsStatement,
+	type RunListRow,
+} from "../lib/db/factory-runs";
 import { ApiError } from "../lib/errors";
 import { enqueueRun, handoffAccount } from "../lib/factory-dispatch";
 import { refreshInput, startRefresh } from "../lib/factory-start";
 import { requireCatalogRepo } from "../lib/machine-observations";
 import { assertMachineQuery } from "../lib/machine-query";
 import { readJson } from "../lib/read-body";
-import { readSchedules, saveSchedule, starredRepos } from "../lib/refresh-schedule";
+import { readScheduleSettings, saveSchedule } from "../lib/refresh-schedule";
 import { normalizeScheduleConfig, scheduleConfigInput } from "../lib/refresh-schedule-input";
 import { readStarReason, readStars, writeStar } from "../lib/repo-stars";
-import { estimateRunFinish, readRunEstimates } from "../lib/run-estimates";
+import {
+	decodeRunEstimates,
+	estimateRunFinish,
+	type RunEstimateRow,
+	runEstimateStatement,
+} from "../lib/run-estimates";
+import { timedJson } from "../lib/timed-json";
 import type { MachineVars } from "./machine";
 
 type Ctx = Context<{ Bindings: Env; Variables: MachineVars }>;
@@ -23,12 +35,13 @@ export async function getMachineStars(c: Ctx) {
 export async function getMachineSettings(c: Ctx) {
 	const account = c.get("principal").accountId;
 	const db = c.get("db");
-	return c.json({
+	const settings = await readScheduleSettings(db, account);
+	return timedJson(c, {
 		account_id: account,
-		stars: await starredRepos(db, account),
+		stars: settings.stars,
 		statistics: [],
 		statistics_deprecated: true,
-		schedules: await readSchedules(db, account),
+		schedules: settings.schedules,
 	});
 }
 export async function machineSetting(c: Ctx) {
@@ -84,21 +97,27 @@ export async function machineSetting(c: Ctx) {
 export async function machineRuns(c: Ctx) {
 	const accountId = c.get("principal").accountId;
 	const db = c.get("db");
-	const account = await getAccount(db, accountId);
-	if (!account) throw new ApiError(404, "not_found", "account unavailable");
 	const id = c.req.param("id");
 	if (c.req.method === "GET" && !id) {
 		assertMachineQuery(c.req.query());
-		const calibration = await readRunEstimates(db, accountId);
-		return c.json({
+		const results = await db.batch([
+			db.prepare("SELECT id FROM accounts WHERE id=?").bind(accountId),
+			runEstimateStatement(db, accountId),
+			listRunsStatement(db, accountId),
+		]);
+		if (!results[0]?.results.length) throw new ApiError(404, "not_found", "account unavailable");
+		const calibration = decodeRunEstimates(results[1]?.results as RunEstimateRow[]);
+		return timedJson(c, {
 			account_id: accountId,
-			items: (await listRuns(db, accountId)).map(({ run, counts }) => {
+			items: decodeRuns(results[2]?.results as RunListRow[]).map(({ run, counts }) => {
 				const { checkpoint, ...data } = run;
 				void checkpoint;
 				return { ...data, ...estimateRunFinish(run, counts.total, calibration), counts };
 			}),
 		});
 	}
+	const account = await getAccount(db, accountId);
+	if (!account) throw new ApiError(404, "not_found", "account unavailable");
 	if (c.req.method !== "POST") throw new ApiError(405, "method_not_allowed", "method not allowed");
 	const body = await readJson(c.req.raw, 120000);
 	const now = new Date().toISOString();

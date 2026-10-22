@@ -5,7 +5,7 @@ import { getActiveAccount } from "../lib/db/accounts";
 import { ApiError, jsonOk } from "../lib/errors";
 import { ACCOUNT_ID_RE } from "../lib/id";
 import { readJson } from "../lib/read-body";
-import { readSchedules, saveSchedule, starredRepos } from "../lib/refresh-schedule";
+import { readScheduleSettings, saveSchedule } from "../lib/refresh-schedule";
 import { normalizeScheduleConfig, scheduleConfigInput } from "../lib/refresh-schedule-input";
 
 type Ctx = Context<{ Bindings: Env; Variables: AppVars }>;
@@ -18,14 +18,16 @@ export async function getRefreshSettings(c: Ctx): Promise<Response> {
 	const db = c.get("db");
 	const account = await getActiveAccount(db);
 	if (!account) throw new ApiError(409, "account_missing", "no active account");
+	const settings = await readScheduleSettings(db, account.id);
 	return jsonOk(
 		{
 			account_id: account.id,
-			schedules: await readSchedules(db, account.id),
-			starred: await starredRepos(db, account.id),
+			schedules: settings.schedules,
+			starred: settings.stars,
 		},
 		200,
 		{ "cache-control": "private, no-store" },
+		c.get("sourceTiming"),
 	);
 }
 export async function postRefreshSchedule(c: Ctx): Promise<Response> {
