@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Trim only unused fields from metadata-backed single-page source payloads, retaining full legacy/split fallbacks and exact response bytes/ETags. The representative returned payload falls 12.266%; local SQL JSON projection adds CPU, so this is not a claimed production latency measurement.
+
 - Preserve each scheduled daily until same-day admission or an individual failed audit. Terminal work hands off deferred daily runs without manual cooldowns; exact-slot weekly ties win without cancelling active work. Replace latest-only recovery and invisible preparation failures with durable per-occurrence outcomes.
 - Add read-only `expectedFinishAt`/`expectedFinishAtReason` to every exposed run using the account's last five completed actual-kind wall durations, independently of the displayed history limit and absolute deadline.
 

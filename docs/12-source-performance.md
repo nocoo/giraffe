@@ -2,6 +2,39 @@
 
 ## v0.18.0: timing and comparison boundary
 
+Pinned baseline: `6f87d669eb67d92d1ad8a404c8a1fa0e4ffcf3b3`.
+
+Metadata-backed, single-page repository Actions, releases and details now omit
+fields unused by source/CI projections in the returned D1 payload. CI arrays and
+all observation metadata remain. Missing/invalid metadata, missing full versions,
+split pages, metadata mismatches and ignored orphan pages retain full fallbacks.
+This is a read projection, not a stored-data mutation or an early-304 shortcut.
+
+The 126-repository fixture returns 7,707,069 UTF-8 payload bytes instead of
+8,784,588 (1,077,519 fewer; 12.266%). Both versions use one five-statement reader
+batch plus one HTTP authentication trip. These counts exclude metadata and D1
+transport envelopes, and do not claim fewer database pages or billed rows read.
+SQLite still parses the stored JSON: local SQL cost increases while transport
+bytes decrease. Production latency improvement requires deployed observation;
+local results must not be presented as a production speedup.
+
+Local Bun 1.4.3 high-resolution medians (three warmed samples, milliseconds,
+no injected latency; before -> after):
+
+| Request | D1/SQLite wall | Decode | Hash/projection | Serialize | Total |
+| --- | --- | --- | --- | --- | --- |
+| Full | 5.25 -> 31.71 | 6.95 -> 6.34 | 7.59 -> 8.77 | 0.31 -> 0.29 | 28.93 -> 57.42 |
+| Since, two thirds | 5.08 -> 33.08 | 6.95 -> 6.20 | 6.73 -> 6.96 | 0.21 -> 0.21 | 25.79 -> 54.52 |
+| Since, empty | 5.28 -> 32.60 | 7.16 -> 5.96 | 1.84 -> 3.64 | 0.01 -> <0.01 | 15.57 -> 42.96 |
+| One repository | 4.06 -> 30.51 | 6.72 -> 6.05 | 9.33 -> 6.28 | 0.02 -> 0.01 | 27.67 -> 49.65 |
+
+Reproduce the current comparison with `bun run tests/bench/source-roundtrips.ts`,
+`bun test tests/bench/source-legacy-version.test.ts` and
+`bun run tests/bench/route-parity.ts`. The latter archives the complete pinned
+tree and compares 192 route/scenario responses plus conditional tags, using
+stored, mismatched and legacy metadata with network denied. Historical sections
+below describe their original revisions, not the default current benchmark.
+
 Performance changes are compared against the complete post-R1/R2/R3 source tree,
 not the earlier main API contract. The pinned revision is recorded in the batch
 PR body and cross-version benchmarks. Functional membership, provenance and ETA

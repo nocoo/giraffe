@@ -6,7 +6,7 @@ import { profileDb } from "../fixtures/profile-db";
 import { revisionFixture } from "../fixtures/revision";
 import { populateSourceStreams, sourcesFixture } from "../fixtures/sources";
 
-const revision = process.argv[2] ?? "8c20328c46ae4ef64325c156007dba7d0857216a";
+const revision = process.argv[2] ?? "6f87d669eb67d92d1ad8a404c8a1fa0e4ffcf3b3";
 const modulePath = "apps/web/src/server/lib/machine-sources.ts";
 const baselineRevision = revisionFixture(revision);
 const originalFetch = globalThis.fetch;
@@ -101,26 +101,26 @@ try {
 		"since-empty": { since: "2026-10-21T00:00:00.000Z" },
 		"one-repository": { repository: "FIXTURE/PROJECT-001" },
 	})) {
-		const coldBefore = await sample(baseline.readSources, query, 0, false);
+		const coldBefore = await sample(baseline.readSources, query, 0, true);
 		const coldAfter = await sample(readSources, query, 0, true);
 		assert.equal(coldAfter.body, coldBefore.body, `${scenario} must preserve exact response JSON`);
 		const samples = [];
 		for (let round = 0; round < 3; round++) {
-			const before = await sample(baseline.readSources, query, 300, false);
-			const after = await sample(readSources, query, 300, true);
+			const before = await sample(baseline.readSources, query, 0, true);
+			const after = await sample(readSources, query, 0, true);
 			assert.equal(before.body, coldBefore.body);
 			assert.equal(after.body, before.body);
-			assert.equal(before.stats.trips, 5);
+			assert.equal(before.stats.trips, 1);
 			assert.equal(after.stats.trips, 1);
 			assert.equal(after.stats.queries, 5);
-			assert.equal(after.stats.payloadBytes, before.stats.payloadBytes);
+			assert.ok(after.stats.payloadBytes < before.stats.payloadBytes);
 			samples.push({ round, before: before.stats, after: after.stats });
 		}
 		console.log(
 			JSON.stringify({
 				scenario,
 				cold: { before: coldBefore.stats, after: coldAfter.stats },
-				latencyMs: 300,
+				latencyMs: 0,
 				samples,
 			}),
 		);

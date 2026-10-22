@@ -89,9 +89,36 @@ export async function readSources(
 				), legacy AS (
 					SELECT 'factory:' || repo || ':' || streams.value AS kind FROM refs, json_each(?) AS streams WHERE source!='run'
 				)
-				SELECT kind,payload,content_meta FROM snapshots WHERE account_id=? AND (
-					kind IN ('issues','issues#2','prs','prs#2')
-					OR (kind LIKE 'repo:%' AND (kind LIKE '%:issues' OR kind LIKE '%:issues#2' OR kind LIKE '%:prs' OR kind LIKE '%:prs#2' OR kind LIKE '%:actions' OR kind LIKE '%:actions#2' OR kind LIKE '%:releases' OR kind LIKE '%:releases#2' OR kind LIKE '%:details' OR kind LIKE '%:details#2'))
+				SELECT s.kind,
+				CASE WHEN s.kind LIKE 'repo:%' AND (s.kind LIKE '%:actions' OR s.kind LIKE '%:releases' OR s.kind LIKE '%:details')
+					AND NOT EXISTS(SELECT 1 FROM snapshots tail WHERE tail.account_id=s.account_id AND tail.kind=s.kind || '#2')
+					AND json_type(CASE WHEN json_valid(s.payload) THEN s.payload END)='object'
+					AND json_type(CASE WHEN json_valid(s.content_meta) THEN s.content_meta END,'$.hash')='text'
+					AND json_type(CASE WHEN json_valid(s.content_meta) THEN s.content_meta END,'$.fullVersion')='text'
+					AND length(json_extract(CASE WHEN json_valid(s.content_meta) THEN s.content_meta END,'$.hash'))>0
+					AND length(json_extract(CASE WHEN json_valid(s.content_meta) THEN s.content_meta END,'$.fullVersion'))>0
+				THEN CASE
+					WHEN s.kind LIKE '%:details' THEN json_remove(s.payload,
+						'$.description','$.homepage','$.license','$.is_archived','$.open_issue_count',
+						'$.stargazer_count','$.fork_count','$.pushed_at','$.url','$.name_with_owner',
+						'$.owner_login','$.name','$.is_fork','$.primary_language','$.is_private','$.topics')
+					WHEN s.kind LIKE '%:actions' AND json_type(s.payload,'$.runs')='array'
+						AND NOT EXISTS(SELECT 1 FROM json_each(s.payload,'$.runs') WHERE type!='object')
+					THEN json_set(s.payload,'$.runs',json((
+						SELECT json_group_array(json_remove(value,'$.html_url','$.updated_at'))
+						FROM (SELECT value FROM json_each(s.payload,'$.runs') ORDER BY CAST(key AS INTEGER))
+					)))
+					WHEN s.kind LIKE '%:releases' AND json_type(s.payload,'$.releases')='array'
+						AND NOT EXISTS(SELECT 1 FROM json_each(s.payload,'$.releases') WHERE type!='object')
+					THEN json_set(s.payload,'$.releases',json((
+						SELECT json_group_array(json_remove(value,'$.id','$.name','$.html_url','$.prerelease'))
+						FROM (SELECT value FROM json_each(s.payload,'$.releases') ORDER BY CAST(key AS INTEGER))
+					)))
+					ELSE s.payload END
+				ELSE s.payload END AS payload,s.content_meta
+				FROM snapshots s WHERE s.account_id=? AND (
+					s.kind IN ('issues','issues#2','prs','prs#2')
+					OR (s.kind LIKE 'repo:%' AND (s.kind LIKE '%:issues' OR s.kind LIKE '%:issues#2' OR s.kind LIKE '%:prs' OR s.kind LIKE '%:prs#2' OR s.kind LIKE '%:actions' OR s.kind LIKE '%:actions#2' OR s.kind LIKE '%:releases' OR s.kind LIKE '%:releases#2' OR s.kind LIKE '%:details' OR s.kind LIKE '%:details#2'))
 				)
 				UNION ALL
 				SELECT 'stream:' || refs.name || ':' || f.stream AS kind,NULL AS payload,f.content_meta
