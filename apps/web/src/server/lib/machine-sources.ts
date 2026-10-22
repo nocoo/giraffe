@@ -85,14 +85,14 @@ export async function readSources(
 					FROM snapshots s,head JOIN snapshots root ON root.account_id=s.account_id AND root.kind=head.kind
 					WHERE s.account_id=? AND s.kind IN (head.kind,head.kind || '#2')
 				), refs AS MATERIALIZED (
-					SELECT coalesce((SELECT c.repo FROM catalog_repositories c WHERE c.account_id=? AND c.github_id=json_extract(value,'$.id') AND c.removed_at IS NULL),json_extract(value,'$.name')) AS name,
+					SELECT coalesce((SELECT c.repo FROM catalog_repositories c WHERE c.account_id=? AND c.github_id=json_extract(value,'$.id') AND c.removed_at IS NULL AND c.name_current=1),json_extract(value,'$.name')) AS name,
 						coalesce(json_extract(value,'$.observation.repo'),json_extract(value,'$.name')) AS repo,
 						coalesce(json_extract(value,'$.observation.version'),publication.run_id) AS version,
 						coalesce(json_extract(value,'$.observation.source'),'legacy') AS source
 					FROM publication,json_each(publication.repos)
-					WHERE (EXISTS(SELECT 1 FROM catalog_repositories c WHERE c.account_id=? AND c.github_id=json_extract(value,'$.id') AND c.removed_at IS NULL)
-					 OR NOT EXISTS(SELECT 1 FROM catalog_repositories c WHERE c.account_id=? AND c.repo=json_extract(value,'$.name') COLLATE NOCASE AND c.github_id IS NOT NULL AND c.removed_at IS NULL))
-					 AND (?='' OR lower(json_extract(value,'$.name'))=lower(?) OR json_extract(value,'$.id')=(SELECT c.github_id FROM catalog_repositories c WHERE c.account_id=? AND c.repo=? COLLATE NOCASE AND c.removed_at IS NULL))
+					WHERE (EXISTS(SELECT 1 FROM catalog_repositories c WHERE c.account_id=? AND c.github_id=json_extract(value,'$.id') AND c.removed_at IS NULL AND c.name_current=1)
+					 OR NOT EXISTS(SELECT 1 FROM catalog_repositories c WHERE c.account_id=? AND c.repo=json_extract(value,'$.name') COLLATE NOCASE AND c.github_id IS NOT NULL AND c.removed_at IS NULL AND c.name_current=1))
+					 AND (?='' OR lower(json_extract(value,'$.name'))=lower(?) OR json_extract(value,'$.id')=(SELECT c.github_id FROM catalog_repositories c WHERE c.account_id=? AND c.repo=? COLLATE NOCASE AND c.removed_at IS NULL AND c.name_current=1))
 				), legacy AS (
 					SELECT 'factory:' || repo || ':' || streams.value AS kind FROM refs, json_each(?) AS streams WHERE source!='run'
 				)
@@ -133,7 +133,7 @@ export async function readSources(
 				.bind(account),
 			db
 				.prepare(
-					"SELECT * FROM catalog_repositories WHERE account_id=? AND removed_at IS NULL ORDER BY repo,identity_key",
+					"SELECT * FROM catalog_repositories WHERE account_id=? AND removed_at IS NULL AND name_current=1 ORDER BY repo,identity_key",
 				)
 				.bind(account),
 		]);

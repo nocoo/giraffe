@@ -307,7 +307,9 @@ export async function publicationWrites(
 			run.checkpoint.repos = discovery.rows
 				.filter(
 					(row) =>
-						!row.removed_at && row.repo.split("/")[0]?.toLowerCase() === run.owner.toLowerCase(),
+						!row.removed_at &&
+						row.name_current !== 0 &&
+						row.repo.split("/")[0]?.toLowerCase() === run.owner.toLowerCase(),
 				)
 				.map((row) => {
 					const repo =

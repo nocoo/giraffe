@@ -107,6 +107,7 @@ it("R7 real catalog executor stages discovery then atomically publishes history 
 	expect((await getRun(createDb(raw), account, "new-catalog"))?.run.status).toBe("completed");
 	expect((await readSnapshot(createDb(raw), account, "repos"))?.repos).toMatchObject([
 		{ name_with_owner: "nocoo/new", is_archived: true },
+		{ name_with_owner: "nocoo/app", removed_at: null },
 	]);
 	expect(
 		await raw
@@ -115,15 +116,14 @@ it("R7 real catalog executor stages discovery then atomically publishes history 
 	).toMatchObject({
 		results: [
 			{ kind: "added", repo: "nocoo/new", source_kind: "factory", source_run_id: "new-catalog" },
-			{ kind: "removed", repo: "nocoo/app", source_kind: "factory", source_run_id: "new-catalog" },
 		],
 	});
 	expect(
 		await raw.prepare("SELECT * FROM repo_stars WHERE account_id=?").bind(account).all(),
-	).toMatchObject({ results: [] });
+	).toMatchObject({ results: [{ repo: "nocoo/app" }] });
 	expect(
 		(await readSnapshot(createDb(raw), account, "factory:catalog:new-catalog"))?.repos,
-	).toMatchObject([{ name: "nocoo/new" }]);
+	).toMatchObject([{ name: "nocoo/new" }, { name: "nocoo/app" }]);
 	expect((await readSnapshot(createDb(raw), account, "factory:v:old"))?.repos).toEqual(
 		factory.repos,
 	);
@@ -149,13 +149,16 @@ it("R7 revoked publication lease atomically preserves membership, stars, history
 		)
 		.bind(account, now)
 		.run();
+	const previousFactory = newFactory(account, "nocoo", now);
+	previousFactory.repos = [mapFactoryRepo(rawRepo)];
+	await db.batch(await replaceSnapshotStmts(db, account, "factory", previousFactory, now));
 	await startRun(db, makeRun("revoked-run", account, "nocoo", "revoked-key", "catalog", [], now));
 	const lease = await claimRun(db, "revoked-run", now);
 	if (!lease) throw new Error("Missing publication lease");
 	const next = { ...rawRepo, id: "R_NEW", nameWithOwner: "nocoo/new" };
 	const checkpoint = newFactory(account, "nocoo", now);
 	checkpoint.inventory.complete = true;
-	checkpoint.repos = [mapFactoryRepo(next)];
+	checkpoint.repos = [mapFactoryRepo(next), mapFactoryRepo(rawRepo)];
 	lease.run.checkpoint = checkpoint;
 	for (const step of lease.run.steps) if (step.kind !== "publish") step.status = "success";
 	const plan = await planCatalog(

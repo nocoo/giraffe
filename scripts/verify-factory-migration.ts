@@ -58,6 +58,39 @@ try {
 				if (migrated.every(Boolean)) continue;
 				if (migrated.some(Boolean)) throw new Error("Partial star provenance migration");
 			}
+			if (name === "0020_catalog_identity_safety.sql") {
+				const tables = ["catalog_displaced_state", "catalog_unconfirmed"];
+				const column = db
+					.query(
+						"SELECT 1 FROM pragma_table_info('catalog_repositories') WHERE name='name_current' AND type='INTEGER' AND \"notnull\"=1 AND dflt_value='1'",
+					)
+					.get();
+				const present = tables.map((table) =>
+					Boolean(db.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table)),
+				);
+				if (column || present.some(Boolean)) {
+					const expected = new Database(":memory:");
+					try {
+						expected.exec(readFileSync("apps/web/src/server/lib/db/schema.sql", "utf8"));
+						for (const object of [
+							"catalog_repositories",
+							...tables,
+							"catalog_current_name",
+							"catalog_unconfirmed_cursor",
+						]) {
+							const actual = db.query("SELECT sql FROM sqlite_master WHERE name=?").get(object);
+							const wanted = expected
+								.query("SELECT sql FROM sqlite_master WHERE name=?")
+								.get(object);
+							if (!actual || JSON.stringify(actual) !== JSON.stringify(wanted))
+								throw new Error("Partial catalog identity safety migration");
+						}
+					} finally {
+						expected.close();
+					}
+					continue;
+				}
+			}
 			db.exec(sql);
 		}
 	const required = [
@@ -74,6 +107,8 @@ try {
 		"catalog_repositories",
 		"catalog_changes",
 		"catalog_state",
+		"catalog_displaced_state",
+		"catalog_unconfirmed",
 		"repo_stars",
 		"refresh_schedules",
 		"catalog_refresh_schedules",

@@ -24,10 +24,25 @@ export type CatalogChange = {
 	after?: boolean | string;
 	previous_repo?: string;
 };
+export const CATALOG_UNCONFIRMED_REASONS = [
+	"private_unverifiable",
+	"scope_unverifiable",
+	"mass_removal_guard",
+	"identity_unavailable",
+	"budget_exhausted",
+	"permission_denied",
+	"github_unauthorized",
+	"github_rate_limited",
+	"github_error",
+	"lookup_unverifiable",
+] as const;
+export type CatalogUnconfirmedReason = (typeof CATALOG_UNCONFIRMED_REASONS)[number];
+export type CatalogUnconfirmed = CatalogChange & { reason: CatalogUnconfirmedReason };
 export type CatalogChanges = Record<CatalogChangeKind, CatalogChange[]> & {
 	account_id: string;
 	since: string;
 	until: string;
 	history_since: string;
 	warning_code: string | null;
+	unconfirmed: CatalogUnconfirmed[];
 };

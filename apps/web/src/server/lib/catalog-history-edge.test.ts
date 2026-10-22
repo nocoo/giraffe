@@ -303,7 +303,7 @@ it("R7 exhausted confirmation budgets preserve unconfirmed membership and origin
 	expect(gh.count).toBe(MAX_FETCHES);
 });
 
-it("R7 unauthorized confirmation aborts discovery instead of declaring deletion or a successful zero", async () => {
+it("R7 unverifiable scope preserves membership without attempting an unauthorized lookup", async () => {
 	const context = await fixture();
 	await context.repositories([{ id: "current", removed: null }]);
 	const gh = github(() => Response.json({ message: "fixture denial" }, { status: 401 }));
@@ -318,7 +318,11 @@ it("R7 unauthorized confirmation aborts discovery instead of declaring deletion 
 			"2026-10-23T00:00:00.000Z",
 			{ kind: "legacy", runId: null },
 		),
-	).rejects.toMatchObject({ status: 401, code: "github_unauthorized" });
+	).resolves.toMatchObject({
+		removed: [],
+		unconfirmed: [{ reason: "scope_unverifiable" }],
+		warning: "catalog_removal_unconfirmed",
+	});
 	expect(await context.count("catalog_changes")).toBe(0);
 	expect(
 		await context.raw.prepare("SELECT checked_at FROM catalog_state WHERE account_id='a'").first(),

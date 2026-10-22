@@ -48,12 +48,14 @@ function repository(index: number, options: { archived?: boolean; fork?: boolean
 }
 
 type Repository = ReturnType<typeof repository>;
+const privateProof = { ...repository(0), visibility: "PRIVATE", isPrivate: true };
 
 async function fixture(
 	before: Repository[],
 	after: Repository[],
-	options: { lookupStatus?: number; truncated?: boolean; nullNode?: boolean } = {},
+	options: { lookupStatus?: number; truncated?: boolean; nullNode?: boolean; proof?: boolean } = {},
 ) {
+	const seeded = options.proof ? [...before, privateProof] : before;
 	const raw = sqliteFixture();
 	const db = createDb(raw);
 	await db
@@ -67,20 +69,20 @@ async function fixture(
 			db,
 			account,
 			"repos",
-			{ repos: mapRepos(before), truncated: false },
+			{ repos: mapRepos(seeded), truncated: false },
 			previousAt,
 		),
 	);
 	const factory = newFactory(account, "nocoo", previousAt);
 	factory.inventory = {
-		total: before.length,
-		scanned: before.length,
+		total: seeded.length,
+		scanned: seeded.length,
 		complete: true,
 		after: null,
 		pages: 1,
 		excluded: [],
 	};
-	factory.repos = before.map((node) => ({
+	factory.repos = seeded.map((node) => ({
 		...mapFactoryRepo(node),
 		observation: {
 			version: "original-observation",
@@ -130,40 +132,39 @@ async function fixture(
 	const gh = github((url, init) => {
 		const pathname = new URL(url).pathname;
 		requests.push(pathname);
-		if (pathname === "/graphql") {
-			const body = JSON.parse(String(init?.body)) as { query: string };
-			queries.push(body.query);
-			return Response.json({
-				data: {
-					viewer: {
-						login: "nocoo",
-						repositories: {
-							totalCount: after.length,
-							nodes: options.nullNode ? [...after, null] : after,
-							pageInfo: {
-								hasNextPage: options.truncated ?? false,
-								endCursor: null,
+		if (pathname !== "/graphql") throw new Error("Only GraphQL is allowed");
+		const body = JSON.parse(String(init?.body)) as { query: string; variables: { id?: string } };
+		queries.push(body.query);
+		const listed = options.proof ? [...after, privateProof] : after;
+		if (body.query.includes("node(id:")) {
+			const found = listed.find((repo) => repo.id === body.variables.id);
+			if (found) return Response.json({ data: { node: found } });
+			const status = options.lookupStatus ?? 404;
+			return status === 404
+				? Response.json({
+						data: { node: null },
+						errors: [
+							{
+								type: "NOT_FOUND",
+								message: `Could not resolve to a node with the global id of '${body.variables.id}'`,
+								path: ["node"],
 							},
-						},
+						],
+					})
+				: Response.json({ message: "Fixture upstream unavailable" }, { status });
+		}
+		return Response.json({
+			data: {
+				viewer: {
+					login: "nocoo",
+					repositories: {
+						totalCount: listed.length,
+						nodes: options.nullNode ? [...listed, null] : listed,
+						pageInfo: { hasNextPage: options.truncated ?? false, endCursor: null },
 					},
 				},
-			});
-		}
-		const name = pathname.replace(/^\/repos\//, "");
-		const found = after.find((repo) => repo.nameWithOwner === name);
-		if (found)
-			return Response.json({
-				node_id: found.id,
-				full_name: found.nameWithOwner,
-				archived: found.isArchived,
-				fork: found.isFork,
-				visibility: found.visibility.toLowerCase(),
-			});
-		const status = options.lookupStatus ?? 404;
-		return Response.json(
-			{ message: status === 404 ? "Not Found" : "Fixture upstream unavailable" },
-			{ status },
-		);
+			},
+		});
 	});
 	const original = await readSnapshot(db, account, "repos");
 	const immutable = await raw
@@ -202,7 +203,7 @@ it("R7 requests stable catalog identity without changing existing mapped reposit
 it.each([403, 429, 500])(
 	"R7 preserves unconfirmed missing membership and stars after direct lookup %s",
 	async (lookupStatus) => {
-		const before = [repository(1), repository(2)];
+		const before = [{ ...repository(1), isPrivate: true, visibility: "PRIVATE" }, repository(2)];
 		const context = await fixture(before, [before[0] as Repository, repository(3)], {
 			lookupStatus,
 		});
@@ -215,7 +216,7 @@ it.each([403, 429, 500])(
 		).toMatchObject({
 			results: [{ repo: "nocoo/repo-01" }, { repo: "nocoo/repo-02" }],
 		});
-		expect(context.requests).toContain("/repos/nocoo/repo-02");
+		expect(context.queries.some((query) => query.includes("node(id:"))).toBe(true);
 	},
 );
 
@@ -226,21 +227,24 @@ it.each([
 ] as const)(
 	"R7 confirmed removal deletes $source star state $starred without touching history",
 	async ({ source, starred }) => {
-		const context = await fixture([repository(1)], []);
+		const context = await fixture([repository(1)], [], { proof: true });
 		await context.db
 			.prepare("UPDATE repo_stars SET source=?,starred=? WHERE account_id=?")
 			.bind(source, starred, account)
 			.run();
 		const saved = await context.refresh();
-		expect(names(saved)).toEqual([]);
+		expect(names(saved)).toEqual([privateProof.nameWithOwner]);
 		for (const table of ["repo_stars", "repo_statistics", "factory_repo_state"])
 			expect(
-				await context.raw.prepare(`SELECT * FROM ${table} WHERE account_id=?`).bind(account).all(),
+				await context.raw
+					.prepare(`SELECT * FROM ${table} WHERE account_id=? AND repo!='nocoo/repo-00'`)
+					.bind(account)
+					.all(),
 			).toMatchObject({ results: [] });
 		expect(
 			await context.raw.prepare("SELECT * FROM factory_repo_versions ORDER BY repo,version").all(),
 		).toEqual(context.immutable);
-		expect(context.requests).toContain("/repos/nocoo/repo-01");
+		expect(context.queries.some((query) => query.includes("node(id:"))).toBe(true);
 	},
 );
 
@@ -261,9 +265,10 @@ it("R7 guard denominator includes every owned archived and fork member at the ex
 	const before = Array.from({ length: 40 }, (_, index) =>
 		repository(index, { archived: index < 20, fork: index >= 20 && index < 35 }),
 	);
+	before[39] = { ...(before[39] as Repository), isPrivate: true, visibility: "PRIVATE" };
 	const context = await fixture(before, before.slice(4));
 	await context.refresh();
-	expect(context.requests.filter((request) => request.startsWith("/repos/"))).toHaveLength(4);
+	expect(context.queries.filter((query) => query.includes("node(id:"))).toHaveLength(4);
 	expect(await context.raw.prepare("SELECT count(*) AS count FROM repo_stars").first()).toEqual({
 		count: 36,
 	});
@@ -391,7 +396,7 @@ it("R7 ordinary catalog rediscovery adds no supplemental GitHub requests or auto
 it("R7 actual catalog collection records lifecycle changes and reappearance without restoring deleted stars", async () => {
 	const initial = repository(1);
 	const listing = [initial, repository(2)];
-	const context = await fixture([initial], listing);
+	const context = await fixture([initial], listing, { proof: true });
 	await context.refresh();
 	const secondAt = "2026-10-23T20:00:00.000Z";
 	listing.splice(0, listing.length, {
@@ -458,7 +463,7 @@ it("R7 actual catalog collection records lifecycle changes and reappearance with
 	expect(
 		await context.raw
 			.prepare(
-				"SELECT repo,first_seen_at,last_seen_at,archived_changed_at,removed_at FROM catalog_repositories ORDER BY repo",
+				"SELECT repo,first_seen_at,last_seen_at,archived_changed_at,removed_at FROM catalog_repositories WHERE repo!='nocoo/repo-00' ORDER BY repo",
 			)
 			.all(),
 	).toMatchObject({
@@ -480,7 +485,9 @@ it("R7 actual catalog collection records lifecycle changes and reappearance with
 		],
 	});
 	expect(
-		await context.raw.prepare("SELECT repo FROM repo_stars ORDER BY repo").all(),
+		await context.raw
+			.prepare("SELECT repo FROM repo_stars WHERE repo!='nocoo/repo-00' ORDER BY repo")
+			.all(),
 	).toMatchObject({ results: [{ repo: initial.nameWithOwner }] });
 });
 
@@ -905,7 +912,7 @@ it.each([false, true])(
 async function returnedCatalogEvidence(source: "run" | "legacy", sameId = false) {
 	const original = repository(1);
 	const listing: Repository[] = [];
-	const context = await fixture([original], listing);
+	const context = await fixture([original], listing, { proof: true });
 	const db = createDb(context.raw);
 	const factory = (await readSnapshot(db, account, "factory")) as FactorySnapshot;
 	const observed = factory.repos[0];
@@ -1002,8 +1009,8 @@ it.each(["run", "legacy"] as const)(
 		const context = await returnedCatalogEvidence(source);
 		const observation = await readObservation(createDb(context.raw), account, "factory", "all");
 		expect(observation.data).toMatchObject({
-			repos: [],
-			freshness: { total: 1, missing: 1 },
+			repos: [{ id: privateProof.id }],
+			freshness: { total: 2, missing: 1 },
 			truncated: true,
 		});
 	},
@@ -1016,10 +1023,13 @@ it.each(["run", "legacy"] as const)(
 		const result = await readSources(createDb(context.raw), account, {
 			repository: context.replacement.nameWithOwner,
 		});
-		expect(result.repositories).toEqual([context.replacement.nameWithOwner]);
+		expect(result.repositories).toEqual([
+			privateProof.nameWithOwner,
+			context.replacement.nameWithOwner,
+		]);
 		expect(result.sources.filter((item) => item.resource.startsWith("factory:"))).toEqual([]);
 		expect(result.sources.find((item) => item.resource === "account:factory")).toMatchObject({
-			freshness: { total: 1, missing: 1 },
+			freshness: { total: 2, missing: 1 },
 			truncated: true,
 		});
 	},
@@ -1050,8 +1060,10 @@ it.each(["run", "legacy"] as const)(
 		);
 		expect(
 			(await readObservation(createDb(context.raw), account, "factory", "all")).data.repos,
-		).toHaveLength(1);
-		expect(await context.raw.prepare("SELECT * FROM repo_stars").all()).toMatchObject({
+		).toHaveLength(2);
+		expect(
+			await context.raw.prepare("SELECT * FROM repo_stars WHERE repo!='nocoo/repo-00'").all(),
+		).toMatchObject({
 			results: [],
 		});
 		expect(
@@ -1080,8 +1092,13 @@ it.each(["all", "starred"] as const)(
 			true,
 		);
 		const rows = observation.data.repos as Record<string, unknown>[];
-		expect(rows).toHaveLength(scope === "all" ? 2 : 1);
-		expect(rows.find((row) => row.removed_at === null)).toMatchObject({
+		expect(rows).toHaveLength(scope === "all" ? 3 : 2);
+		expect(
+			rows.find(
+				(row) =>
+					row.name_with_owner === context.replacement.nameWithOwner && row.removed_at === null,
+			),
+		).toMatchObject({
 			starred: true,
 			star_source: "owner",
 			statistics_enabled: true,
@@ -1157,7 +1174,7 @@ it.each([
 	async ({ sameId, removeRoot, archivedProof, recovers }) => {
 		const original = repository(1);
 		const listing: Repository[] = [];
-		const context = await fixture([original], listing);
+		const context = await fixture([original], listing, { proof: true });
 		const db = createDb(context.raw);
 		const factory = (await readSnapshot(db, account, "factory")) as FactorySnapshot;
 		const observed = factory.repos[0];
@@ -1210,7 +1227,11 @@ it.each([
 				data: {
 					viewer: {
 						login: "nocoo",
-						repositories: { nodes: [], totalCount: 0, pageInfo: { hasNextPage: false } },
+						repositories: {
+							nodes: [privateProof],
+							totalCount: 1,
+							pageInfo: { hasNextPage: false },
+						},
 					},
 				},
 			});
@@ -1238,7 +1259,7 @@ it.each([
 		);
 		expect(await publishedFactory(createDb(context.raw), account)).toMatchObject({
 			runId: departure.id,
-			repos: [],
+			repos: [{ id: privateProof.id }],
 		});
 		const replacement = { ...original, id: sameId ? original.id : "R_REPLACEMENT" };
 		listing.push(replacement);

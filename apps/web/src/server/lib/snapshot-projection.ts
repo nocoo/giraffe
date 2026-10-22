@@ -30,7 +30,7 @@ export async function repoPolicy(
 	const owner = await getAccount(db, account);
 	const history = await db
 		.prepare(
-			"SELECT * FROM catalog_repositories WHERE account_id=? AND removed_at IS NULL ORDER BY repo,identity_key",
+			"SELECT * FROM catalog_repositories WHERE account_id=? AND removed_at IS NULL AND name_current=1 ORDER BY repo,identity_key",
 		)
 		.bind(account)
 		.all<CatalogRow>();

@@ -1,8 +1,9 @@
 import { z } from "zod";
-import {
-	CATALOG_CHANGE_KINDS,
-	type CatalogChangeKind,
-	type CatalogChanges,
+import type {
+	CatalogChange,
+	CatalogChangeKind,
+	CatalogChanges,
+	CatalogUnconfirmedReason,
 } from "../../lib/catalog-types";
 import type { FactoryRepo } from "../../lib/factory-types";
 import { type CatalogRow, type CatalogState, catalogWireRow } from "./catalog-history";
@@ -11,10 +12,15 @@ import type { Db } from "./db/d1";
 import { ApiError } from "./errors";
 
 export function catalogFactoryRepo(repo: FactoryRepo, rows: CatalogRow[]): FactoryRepo | null {
-	const current = rows.find((row) => row.github_id === repo.id && !row.removed_at);
+	const current = rows.find(
+		(row) => row.github_id === repo.id && !row.removed_at && row.name_current !== 0,
+	);
 	if (!current) {
 		const named = rows.find(
-			(row) => row.repo.toLowerCase() === repo.name.toLowerCase() && !row.removed_at,
+			(row) =>
+				row.repo.toLowerCase() === repo.name.toLowerCase() &&
+				!row.removed_at &&
+				row.name_current !== 0,
 		);
 		return named?.github_id ? null : repo;
 	}
@@ -47,13 +53,16 @@ export function catalogView(
 			return [value];
 		const row = rows.find(
 			(row) =>
-				row.repo.toLowerCase() === String(value.name_with_owner).toLowerCase() && !row.removed_at,
+				row.repo.toLowerCase() === String(value.name_with_owner).toLowerCase() &&
+				!row.removed_at &&
+				row.name_current !== 0,
 		);
 		if (
 			!row &&
 			rows.some(
 				(row) =>
-					row.repo.toLowerCase() === String(value.name_with_owner).toLowerCase() && row.removed_at,
+					row.repo.toLowerCase() === String(value.name_with_owner).toLowerCase() &&
+					(row.removed_at || row.name_current === 0),
 			)
 		)
 			return [];
@@ -91,21 +100,22 @@ export async function readCatalogChanges(
 	const [states, events] = await db.batch<
 		CatalogState & {
 			event_id: string;
-			kind: CatalogChangeKind;
+			kind: CatalogChangeKind | "unconfirmed";
 			repo: string;
 			github_id: string | null;
 			at: string;
 			source_kind: "factory" | "legacy";
 			source_run_id: string | null;
 			details: string;
+			reason: CatalogUnconfirmedReason | null;
 		}
 	>([
 		db.prepare("SELECT * FROM catalog_state WHERE account_id=?").bind(account),
 		db
 			.prepare(
-				"SELECT * FROM catalog_changes WHERE account_id=? AND at>=? AND at<=(SELECT checked_at FROM catalog_state WHERE account_id=?) ORDER BY at,repo,event_id LIMIT 10001",
+				"SELECT event_id,kind,repo,github_id,at,source_kind,source_run_id,details,NULL AS reason FROM catalog_changes WHERE account_id=? AND at>=? AND at<=(SELECT checked_at FROM catalog_state WHERE account_id=?) UNION ALL SELECT event_id,'unconfirmed' AS kind,repo,github_id,at,source_kind,source_run_id,'{}' AS details,reason FROM catalog_unconfirmed WHERE account_id=? AND at>=? AND at<=(SELECT checked_at FROM catalog_state WHERE account_id=?) ORDER BY at,repo,event_id LIMIT 10001",
 			)
-			.bind(account, since, account),
+			.bind(account, since, account, account, since, account),
 	]);
 	if (!states || !events) throw new ApiError(500, "db_error", "Incomplete catalog read");
 	const state = states.results[0];
@@ -121,22 +131,33 @@ export async function readCatalogChanges(
 		);
 	if (events.results.length > 10000)
 		throw new ApiError(409, "catalog_capacity", "Catalog retention must complete before reading");
-	const result = {
+	const result: CatalogChanges = {
 		account_id: account,
 		since,
 		until: state.checked_at,
 		history_since: state.history_since,
 		warning_code: state.warning_code,
-		...Object.fromEntries(CATALOG_CHANGE_KINDS.map((kind) => [kind, []])),
-	} as CatalogChanges;
-	for (const event of events.results)
-		result[event.kind].push({
+		unconfirmed: [],
+		added: [],
+		removed: [],
+		archived: [],
+		unarchived: [],
+		visibility_changed: [],
+		fork_changed: [],
+		renamed: [],
+	};
+	for (const event of events.results) {
+		const change: CatalogChange = {
 			event_id: event.event_id,
 			repo: event.repo,
 			github_id: event.github_id,
 			at: event.at,
 			source: { kind: event.source_kind, runId: event.source_run_id },
 			...JSON.parse(event.details),
-		});
+		};
+		if (event.kind === "unconfirmed")
+			result.unconfirmed.push({ ...change, reason: event.reason as CatalogUnconfirmedReason });
+		else result[event.kind].push(change);
+	}
 	return result;
 }

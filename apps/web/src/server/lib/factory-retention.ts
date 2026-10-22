@@ -12,8 +12,22 @@ export function factoryStorageStatement(db: Db, account: string): D1PreparedStat
 	))
 	 + (SELECT COALESCE(SUM(length(CAST(identity_key||COALESCE(github_id,'')||repo||row_payload||COALESCE(first_seen_at,'')||COALESCE(last_seen_at,'')||COALESCE(removed_at,'')||COALESCE(archived_changed_at,'')||visibility||first_seen_source||COALESCE(last_source_run_id,'') AS BLOB))),0) FROM catalog_repositories WHERE account_id=?)
 	 + (SELECT COALESCE(SUM(length(CAST(event_id||kind||repo||COALESCE(github_id,'')||at||source_kind||COALESCE(source_run_id,'')||details AS BLOB))),0) FROM catalog_changes WHERE account_id=?)
+	 + (SELECT COALESCE(SUM(length(CAST(event_id||repo||COALESCE(github_id,'')||at||source_kind||COALESCE(source_run_id,'')||reason AS BLOB))),0) FROM catalog_unconfirmed WHERE account_id=?)
+	 + (SELECT COALESCE(SUM(length(CAST(identity_key||table_name||repo||COALESCE(version,'')||payload AS BLOB))),0) FROM catalog_displaced_state WHERE account_id=?)
 	 + (SELECT COALESCE(SUM(length(CAST(history_since||COALESCE(checked_at,'')||COALESCE(source_run_id,'')||COALESCE(warning_code,'') AS BLOB))),0) FROM catalog_state WHERE account_id=?) AS totalBytes`)
-		.bind(account, account, account, account, account, account, account, account, account);
+		.bind(
+			account,
+			account,
+			account,
+			account,
+			account,
+			account,
+			account,
+			account,
+			account,
+			account,
+			account,
+		);
 }
 export function decodeFactoryStorage(row: FactoryStorage | undefined | null): FactoryStorage {
 	return {
@@ -47,6 +61,7 @@ export async function pruneFactory(db: Db, now: string) {
 		db
 			.prepare(`DELETE FROM factory_repo_versions WHERE (account_id,repo,version) IN (SELECT v.account_id,v.repo,v.version FROM factory_repo_versions v WHERE v.refreshed_at<?
    AND NOT EXISTS(SELECT 1 FROM factory_repo_state s WHERE s.account_id=v.account_id AND COALESCE(json_extract(s.payload,'$.observation.repo'),s.repo)=v.repo AND s.version=v.version)
+   AND NOT EXISTS(SELECT 1 FROM catalog_displaced_state d WHERE d.account_id=v.account_id AND d.table_name='factory_repo_state' AND COALESCE(json_extract(d.payload,'$.observation.repo'),d.repo)=v.repo AND d.version=v.version)
    AND NOT EXISTS(SELECT 1 FROM factory_version_refs f WHERE f.account_id=v.account_id AND f.repo=v.repo AND f.version=v.version)
    AND v.version NOT IN(SELECT id FROM factory_runs r WHERE r.account_id=v.account_id ORDER BY created_at DESC LIMIT 20) LIMIT 50)`)
 			.bind(cutoff),
@@ -54,11 +69,13 @@ export async function pruneFactory(db: Db, now: string) {
 			.prepare(`DELETE FROM factory_resources WHERE (run_id,repo,stream) IN (SELECT s.run_id,s.repo,s.stream FROM factory_resources s JOIN factory_runs r ON r.id=s.run_id WHERE r.status NOT IN ('running','paused') AND r.created_at<?
    AND r.id NOT IN(SELECT id FROM factory_runs recent WHERE recent.account_id=r.account_id ORDER BY created_at DESC LIMIT 20)
    AND NOT EXISTS(SELECT 1 FROM factory_repo_state h WHERE h.account_id=r.account_id AND COALESCE(json_extract(h.payload,'$.observation.repo'),h.repo)=s.repo AND h.version=s.run_id)
+   AND NOT EXISTS(SELECT 1 FROM catalog_displaced_state d WHERE d.account_id=r.account_id AND d.table_name='factory_repo_state' AND COALESCE(json_extract(d.payload,'$.observation.repo'),d.repo)=s.repo AND d.version=s.run_id)
    AND NOT EXISTS(SELECT 1 FROM factory_version_refs f WHERE f.account_id=r.account_id AND f.repo=s.repo AND f.version=s.run_id AND f.source='run') LIMIT 50)`)
 			.bind(cutoff),
 		db
 			.prepare(`DELETE FROM factory_runs WHERE id IN (SELECT r.id FROM factory_runs r WHERE r.status NOT IN ('running','paused') AND r.created_at<?
    AND r.id NOT IN(SELECT id FROM factory_runs recent WHERE recent.account_id=r.account_id ORDER BY created_at DESC LIMIT 20)
+   AND NOT EXISTS(SELECT 1 FROM catalog_displaced_state d WHERE d.account_id=r.account_id AND d.table_name='factory_repo_state' AND d.version=r.id)
    AND NOT EXISTS(SELECT 1 FROM factory_resources s WHERE s.run_id=r.id)
    AND NOT EXISTS(SELECT 1 FROM factory_repo_versions v WHERE v.account_id=r.account_id AND v.version=r.id)
    AND NOT EXISTS(SELECT 1 FROM factory_version_refs f WHERE f.account_id=r.account_id AND (f.version=r.id OR f.publication_id=r.id))
