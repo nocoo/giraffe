@@ -113,7 +113,7 @@ try {
 			assert.equal(before.stats.trips, 1);
 			assert.equal(after.stats.trips, 1);
 			assert.equal(after.stats.queries, 5);
-			assert.ok(after.stats.payloadBytes < before.stats.payloadBytes);
+			assert.equal(after.stats.payloadBytes, before.stats.payloadBytes);
 			samples.push({ round, before: before.stats, after: after.stats });
 		}
 		console.log(

@@ -158,52 +158,30 @@ async function fixture() {
 	return { raw, save, snapshots, expected, saved, payloadBytes, read };
 }
 
-it("slims only unused single-page metadata-backed fields with identical ordered sources and CI", async () => {
-	const source = await fixture();
-	const before = await source.saved();
-	const expected = await source.expected();
-	const originalBytes = await source.payloadBytes();
-	const read = await source.read();
-	expect(JSON.stringify(read.result)).toBe(JSON.stringify(expected));
-	expect(read.profile.queries).toHaveLength(5);
-	expect(read.profile.trips).toHaveLength(1);
-	expect(read.bytes).toBeLessThan(Number(originalBytes) / 2);
-	for (const row of read.rows) {
-		const original = source.snapshots.get(row.kind);
-		if (!original) throw new Error("missing fixture source");
-		if (row.kind.endsWith(":actions")) {
-			const runs = original.runs as Record<string, unknown>[];
-			expect(JSON.parse(row.payload)).toEqual({
-				...original,
-				runs: runs.map(({ html_url, updated_at, ...run }) => {
-					void html_url;
-					void updated_at;
-					return run;
-				}),
-			});
-		} else if (row.kind.endsWith(":releases")) {
-			const releases = original.releases as Record<string, unknown>[];
-			expect(JSON.parse(row.payload)).toEqual({
-				...original,
-				releases: releases.map(({ id, name, html_url, prerelease, ...release }) => {
-					void id;
-					void name;
-					void html_url;
-					void prerelease;
-					return release;
-				}),
-			});
-		} else if (row.kind.endsWith(":details")) {
-			expect(JSON.parse(row.payload)).toEqual({
-				default_branch: "main",
-				fetched_at: at,
-				truncated: false,
-			});
-		} else if (!targets.some((suffix) => row.kind.endsWith(`:${suffix}`)))
+it.each([{}, { since: "2099-01-01T00:00:00.000Z" }, { repository }])(
+	"reads stored payloads without SQL JSON rewriting: %j",
+	async (query) => {
+		const source = await fixture();
+		const before = await source.saved();
+		const originalBytes = await source.payloadBytes();
+		const read = await source.read(query);
+		if (!("since" in query))
+			expect(JSON.stringify(read.result)).toBe(JSON.stringify(await source.expected()));
+		else expect(read.result.sources).toEqual([]);
+		expect(read.profile.queries).toHaveLength(5);
+		expect(read.profile.trips).toHaveLength(1);
+		expect(read.bytes).toBe(originalBytes);
+		expect(read.profile.queries.map((statement) => statement.sql).join("\n")).not.toMatch(
+			/\bjson_(?:set|remove|group_array)\s*\(/i,
+		);
+		for (const row of read.rows) {
+			const original = source.snapshots.get(row.kind);
+			if (!original) throw new Error("missing fixture source");
 			expect(row.payload).toBe(JSON.stringify(original));
-	}
-	expect(await source.saved()).toEqual(before);
-});
+		}
+		expect(await source.saved()).toEqual(before);
+	},
+);
 
 it.each([
 	"null",

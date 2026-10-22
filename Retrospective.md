@@ -1237,3 +1237,13 @@ Search every current runbook for superseded concepts when contracts change, whil
 preserving clearly dated investigation evidence. Review rollback instructions
 separately from additive schema safety: retained tables do not make old semantics
 safe for new tombstone rows.
+
+## 2026-10-22 - Reject payload savings that increase database work
+
+Batch 10 reduced source payload bytes by rebuilding JSON arrays inside SQLite on
+every read. The measured SQL CPU increase outweighed the modest byte reduction,
+including requests that returned no changed sources. Disclosure did not make the
+tradeoff a useful optimization. Independent review rejected it, and fix round 1
+restores direct payload reads in a forward commit. Compare alternating repeated
+samples of database and whole-request cost before accepting a transport-byte
+optimization; do not infer lower remote latency from smaller payloads alone.

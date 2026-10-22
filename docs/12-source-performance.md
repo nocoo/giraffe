@@ -13,22 +13,19 @@ without any performance changes. The reference is retained as merged ancestry;
 existing commits were not rewritten. Its original functional ancestor is
 `6f87d669eb67d92d1ad8a404c8a1fa0e4ffcf3b3`.
 
-Metadata-backed, single-page repository Actions, releases and details now omit
-fields unused by source/CI projections in the returned D1 payload. CI arrays and
-all observation metadata remain. Missing/invalid metadata, missing full versions,
-split pages, metadata mismatches and ignored orphan pages retain full fallbacks.
-This is a read projection, not a stored-data mutation or an early-304 shortcut.
+The source reader returns stored snapshot payloads directly. Fix round 1 removes
+the per-request SQL JSON rewrite introduced by `50492d5`: rebuilding Actions and
+release arrays and removing detail fields increased SQLite CPU on every request,
+including empty-since and one-repository queries. Batching, honest timing and work
+counters remain intact. The representative fixture again returns 8,784,588 UTF-8
+payload bytes in one five-statement reader batch plus one HTTP authentication
+trip. These counts exclude metadata and transport envelopes; they do not claim
+fewer database pages or billed rows read.
 
-The 126-repository fixture returns 7,707,069 UTF-8 payload bytes instead of
-8,784,588 (1,077,519 fewer; 12.266%). Both versions use one five-statement reader
-batch plus one HTTP authentication trip. These counts exclude metadata and D1
-transport envelopes, and do not claim fewer database pages or billed rows read.
-SQLite still parses the stored JSON: local SQL cost increases while transport
-bytes decrease. Production latency improvement requires deployed observation;
-local results must not be presented as a production speedup.
-
-Local Bun 1.4.3 high-resolution medians (three warmed samples, milliseconds,
-no injected latency; before -> after):
+The rejected proposal returned 7,707,069 payload bytes (-12.266%) but its local
+SQL cost outweighed that reduction. The following historical three-sample
+measurement describes the withdrawn proposal, not the current implementation
+(Bun 1.4.3 high-resolution medians, milliseconds, no injected latency):
 
 | Request | D1/SQLite wall | Decode | Hash/projection | Serialize | Total |
 | --- | --- | --- | --- | --- | --- |
@@ -491,6 +488,18 @@ harness merely broadens it to historical schemas, all-null metadata and more
 samples without modifying production readers.
 
 ## Conditional responses and compression
+
+Fix round 1 does not add an early 304. Stored `content_meta` contains component
+hash/full-version identifiers, not the complete ordered source-index response or
+its strong HTTP validator. Source entries still derive freshness, coverage,
+availability and account-projected versions from payloads, including legacy rows
+without metadata. Component digests cannot be combined into the existing digest
+of that serialized representation. `If-None-Match:*` must not bypass payload
+validation and turn existing errors into a successful conditional response.
+An exact pre-payload validator would require a separately designed save-time
+representation/validator or sufficient stored projection metadata, with invalidation
+for membership, publication and query variants. That schema/write-path work is
+explicitly deferred; no weaker validator, new cache or additional read is added.
 
 The machine source endpoint uses a strong, content-derived validator and accepts
 `If-None-Match` after bearer, account and scope authorization. Matching requests
