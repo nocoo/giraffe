@@ -155,6 +155,7 @@ it.each([
 	"null",
 	"empty",
 	"invalid-hash",
+	"array-hash",
 	"invalid-version",
 	"orphan",
 	"disagreement",
@@ -178,6 +179,7 @@ it.each([
 			null: "null",
 			empty: "{}",
 			"invalid-hash": JSON.stringify({ ...valid, hash: "invalid" }),
+			"array-hash": JSON.stringify({ ...valid, hash: [valid.hash] }),
 			"invalid-version": JSON.stringify({ ...valid, fullVersion: "invalid" }),
 		};
 		await raw

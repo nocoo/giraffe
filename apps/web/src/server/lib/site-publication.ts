@@ -9,6 +9,7 @@ function publicationMetadata(encoded: string | null): ContentMetadata & { fullVe
 		const digest = /^sha256:[a-f0-9]{64}$/;
 		if (
 			metadata &&
+			typeof metadata.hash === "string" &&
 			digest.test(metadata.hash) &&
 			typeof metadata.fullVersion === "string" &&
 			digest.test(metadata.fullVersion)

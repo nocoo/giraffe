@@ -1576,3 +1576,7 @@ derivation, so the API recipe and consumer migration notes record the exception;
 canonical content, direct writes and historical versions remain unchanged.
 Regression tests forbid payload reads, cover the 500-repository/nine-tab metadata
 inventory, validate page agreement and prove rollback and atomic readiness.
+Independent review then found that a digest regexp coerced a one-element string
+array into valid-looking text. Validate JSON field types before regexp checks;
+the new malformed-array regression proves rejection without publishing invalid
+`contentVersion` values or changing visible data/readiness.
