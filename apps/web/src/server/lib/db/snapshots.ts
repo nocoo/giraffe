@@ -1,4 +1,5 @@
 import { savedContentMeta } from "../content-version";
+import { ApiError } from "../errors";
 import {
 	assemblePages,
 	latestSnapshotGroups,
@@ -60,13 +61,14 @@ export async function replaceSnapshotStmts(
 	stageRunId?: string,
 ): Promise<D1PreparedStatement[]> {
 	const [a, b] = physicalKinds(logical);
-	const { pages, truncated } = splitPages(logical, {
+	const { pages, capacityExceeded } = splitPages(logical, {
 		...payload,
 		...(stageRunId ? { publication: { runId: stageRunId, publishedAt: fetchedAt } } : {}),
 		fetched_at: fetchedAt,
 		truncated: payload.truncated === true,
 	});
-	void truncated;
+	if (stageRunId && capacityExceeded)
+		throw new ApiError(422, "snapshot_incomplete", "Final snapshot exceeds bounded storage");
 	const metadata = await savedContentMeta(logical, assemblePages(logical, pages));
 	if (stageRunId)
 		return [

@@ -5,7 +5,99 @@ import { makeRun } from "../../lib/factory-run";
 import { createDb } from "./db/d1";
 import { claimRun, saveRun, startRun } from "./db/factory-runs";
 import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
+import { newFactory } from "./factory-collect";
+import { publicationWrites } from "./factory-publish";
 import { collectSitePage, siteCatalog } from "./factory-site";
+import { mapActionRuns } from "./github-map";
+import { splitPages } from "./snapshot-pages";
+
+it("retains complete Actions when publication metadata overflows two exact 1500000-byte pages", async () => {
+	const resource = "repo:nocoo/app:actions";
+	const raw = await setup(resource);
+	const db = createDb(raw);
+	await db.batch(
+		await replaceSnapshotStmts(
+			db,
+			"account",
+			resource,
+			{ runs: [{ id: 7 }], truncated: false },
+			"2026-01-01T00:00:00.000Z",
+		),
+	);
+	const before = await raw.prepare("SELECT * FROM snapshots ORDER BY kind").all();
+	await db.batch(
+		await replaceSnapshotStmts(db, "account", "factory", newFactory("account", "nocoo", NOW), NOW),
+	);
+	const runs = Array.from({ length: 2000 }, (_, index) => ({
+		id: index + 1,
+		name: "x".repeat(1300),
+	}));
+	for (const start of [0, 1000]) {
+		const group = runs.slice(start, start + 1000);
+		const encoded = JSON.stringify({
+			truncated: false,
+			runs: mapActionRuns({ workflow_runs: group }),
+			fetched_at: NOW,
+		});
+		const padding = 1_500_000 - new TextEncoder().encode(encoded).length;
+		for (const item of group) item.name += "x".repeat(Math.floor(padding / 1000));
+		const last = group.at(-1);
+		if (!last) throw new Error("fixture group missing");
+		last.name += "x".repeat(padding % 1000);
+	}
+	const preview = splitPages(resource, {
+		truncated: false,
+		runs: mapActionRuns({ workflow_runs: runs }),
+		fetched_at: NOW,
+	});
+	expect(preview.truncated).toBe(false);
+	expect(preview.pages.map((page) => new TextEncoder().encode(page.payload).length)).toEqual([
+		1_500_000, 1_500_000,
+	]);
+	const lease = await claimRun(db, "site", NOW);
+	const step = lease?.run.steps[lease.run.cursor];
+	if (!lease || !step) throw new Error("fixture lease missing");
+	let cursor = 0;
+	await expect(
+		collectSitePage(
+			db,
+			lease,
+			step,
+			github(() => {
+				const items = runs.slice(cursor, cursor + 100);
+				cursor += 100;
+				return Response.json(
+					{ workflow_runs: items },
+					{
+						headers:
+							cursor < runs.length
+								? {
+										link: `<https://api.github.com/repos/nocoo/app/actions/runs?per_page=100&page=${cursor / 100 + 1}>; rel="next"`,
+									}
+								: {},
+					},
+				);
+			}),
+			"fake",
+			NOW,
+		),
+	).rejects.toMatchObject({ code: "snapshot_incomplete" });
+	expect(cursor).toBe(2000);
+	expect(
+		await raw
+			.prepare("SELECT count(*) AS total FROM factory_resources WHERE stream LIKE 'site:%'")
+			.first(),
+	).toEqual({ total: 0 });
+	step.status = "failed";
+	step.error = "snapshot_incomplete";
+	lease.run.status = "partial";
+	const writes = await publicationWrites(db, lease, NOW);
+	lease.run.publishedAt = NOW;
+	expect(await saveRun(db, lease, writes, NOW)).toBe(true);
+	expect(
+		await raw.prepare("SELECT * FROM snapshots WHERE kind LIKE 'repo:%' ORDER BY kind").all(),
+	).toEqual(before);
+});
 
 it("retains the exact prior snapshot when retained evidence would truncate current security", async () => {
 	const raw = await setup("repo:nocoo/app:security");

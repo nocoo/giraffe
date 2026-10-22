@@ -91,26 +91,34 @@ export function splitPages(
 ): {
 	pages: SnapshotPage[];
 	truncated: boolean;
+	capacityExceeded: boolean;
 } {
 	payload = securitySnapshot(payload);
 	const encoded = JSON.stringify(payload);
 	if (utf8Len(encoded) <= MAX) {
-		return { pages: [{ kind: logical, payload: encoded }], truncated: payload.truncated === true };
+		return {
+			pages: [{ kind: logical, payload: encoded }],
+			truncated: payload.truncated === true,
+			capacityExceeded: false,
+		};
 	}
 	const key = arrayKey(payload);
 	if (!key || !Array.isArray(payload[key]) || utf8Len(pageJson(payload, key, [], true)) > MAX) {
 		return {
 			pages: [compactPage(logical, payload)],
 			truncated: true,
+			capacityExceeded: true,
 		};
 	}
 	const items = payload[key] as unknown[];
 	let truncated = payload.truncated === true;
+	let capacityExceeded = false;
 	const pageItems: unknown[][] = [[], []];
 	let page = 0;
 	for (const item of items) {
 		if (!fitsPage(payload, key, [], item, truncated)) {
 			truncated = true;
+			capacityExceeded = true;
 			continue;
 		}
 		const slot = pageItems[page] as unknown[];
@@ -127,6 +135,7 @@ export function splitPages(
 			}
 		}
 		truncated = true;
+		capacityExceeded = true;
 		break;
 	}
 	const pages: SnapshotPage[] = [];
@@ -148,7 +157,7 @@ export function splitPages(
 		});
 		truncated = true;
 	}
-	return { pages, truncated };
+	return { pages, truncated, capacityExceeded };
 }
 
 export function assemblePages(logical: string, rows: SnapshotPage[]): Record<string, unknown> {

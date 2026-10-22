@@ -3,6 +3,18 @@ import { assemblePages, latestSnapshotGroups, physicalKinds, splitPages } from "
 
 describe("snapshot-pages", () => {
 	it.each([false, true])(
+		"distinguishes new capacity loss from inherited truncation (%s)",
+		(truncated) => {
+			expect(splitPages("issues", { truncated, issues: [] })).toMatchObject({
+				truncated,
+				capacityExceeded: false,
+			});
+			expect(
+				splitPages("issues", { truncated, issues: [{ title: "x".repeat(1_500_000) }] }),
+			).toMatchObject({ truncated: true, capacityExceeded: true });
+		},
+	);
+	it.each([false, true])(
 		"P3 includes the final truncated flag in exact UTF-8 page bounds (truncated=%s)",
 		(alreadyTruncated) => {
 			const limit = 1_500_000;

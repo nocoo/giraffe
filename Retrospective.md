@@ -1505,6 +1505,17 @@ Exercise both listing orders, owner/agent star provenance, the real quick execut
 and garbage collection after old publication/recent-run roots retire. A fixture
 must include the actual writer's minimal valid shape, not only enriched examples.
 
+## 2026-10-22 - Capacity includes publication metadata
+
+External batch-12 review reproduced 2,000 Actions fitting two exact 1,500,000-byte
+pages before publication metadata, but only 1,998 after the final writer repaged
+them. The writer discarded the new truncation result and the step reported
+success, allowing incomplete data to replace the prior complete snapshot.
+Track new capacity loss separately from inherited coverage flags and reject an
+overflowing final staged representation before creating any writes. The native
+SQLite regression now collects all 2,000 records and verifies that the limited
+run can publish without changing the previous snapshot or its original time.
+
 ## 2026-10-22 - A reused repository name is not its old identity
 
 Discovery retained immutable history correctly but readers still matched it by
