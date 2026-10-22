@@ -251,8 +251,10 @@ export async function freezeActivityRepo(
 			)
 			.bind(run.id, repo.name),
 		db
-			.prepare("SELECT kind,payload FROM snapshots WHERE account_id=? AND kind IN (?,?)")
-			.bind(run.account_id, `repo:${repo.name}:security`, `repo:${repo.name}:security#2`),
+			.prepare(
+				"SELECT substr(stream,6) AS kind,payload FROM factory_resources WHERE run_id=? AND repo='' AND stream IN (?,?)",
+			)
+			.bind(run.id, `site:repo:${repo.name}:security`, `site:repo:${repo.name}:security#2`),
 	]);
 	if (!resources || !snapshots)
 		throw new ApiError(500, "db_error", "Incomplete activity source batch");

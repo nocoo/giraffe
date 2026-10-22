@@ -1,5 +1,71 @@
 # 03 — 数据 Schema
 
+## Daily reports (0.20.0, no migration)
+
+`github-daily` uses the existing agent_resources table and account/collection/ID
+primary key. Canonical IDs `github-daily-YYYY-MM-DD` provide one authoritative
+global report per Beijing date without a new table or destructive backfill.
+POST uses an atomic guarded UPSERT, preserving created_at and increasing revision;
+same-date replacement is mutable history, not an immutable archive. Existing
+generic resource rows are untouched. Invalid/noncanonical legacy daily rows remain
+available through generic reads but are excluded from typed daily projections
+with a notice count. Latest/history reads scan only account/type-scoped rows;
+the existing github-analysis expression index and `/sources` contract are unchanged.
+
+## Repository metadata (0024)
+
+`0024_repo_meta.sql` adds account/stable-identity metadata storage for created_at,
+archived_at, category, exclusion_reason, updated_at and per-field provenance.
+first_seen_at and deleted_at are joined from catalog history rather than copied.
+Catalog writes fill only an empty creation date and record catalog provenance;
+agent updates patch supplied fields and record agent provenance. Refresh does not
+overwrite existing values. Removed identities referenced by metadata remain
+retained; account deletion retains the existing cascade boundary. The additive
+migration preserves prior snapshots, state, catalog history and runs. Rollback
+keeps the new table and data intact. GET remains read-only.
+
+## Repository agent state (0023)
+
+`0023_repo_agent_state.sql` adds `repo_agent_state` keyed by
+`(account_id,identity_key)`, referencing stable catalog identity rather than a
+mutable repository name. It stores object JSON payloads up to 16,384 UTF-8 bytes,
+positive account-unique revision, `updated_at` and `updated_by`. Indexed account-wide
+maximum plus one is allocated inside each write; updates use compare-and-swap
+revision predicates. Catalog renames/removal leave rows untouched; account
+deletion follows the existing account cascade boundary. This additive table
+requires no historical backfill. Code rollback leaves the table/data preserved.
+`first_seen_at` and removal evidence continue to belong to catalog history.
+Catalog retention keeps identities referenced by agent state so removed notes
+remain addressable; ordinary unreferenced tombstones keep the existing bounds.
+
+## Run readiness (0022)
+
+After `0021_star_provenance_correction.sql`, `0022_run_readiness.sql` adds nullable
+`publishedAt` to legacy `factory_runs.payload` without deleting or replacing rows.
+No historical marker is backfilled with a timestamp: incremental site publication
+before 0.20 cannot prove the stronger atomic-readiness contract. Replays preserve
+existing markers. New completed/partial publications persist the marker in the
+same leased/fenced transaction as all published heads.
+New runs carry `atomicPublication:true`; resumed pre-upgrade runs without it retain
+null readiness. This capability is never inferred from successful legacy steps.
+
+Site snapshots stage under existing `factory_resources` keys (`repo=''`,
+`stream='site:<physical-kind>'`); existing run retention, cascade and budget
+triggers apply. No extra source-read query or source projection table is introduced.
+Each snapshot carries `{publication:{runId,publishedAt}}`; its original
+`fetched_at` and per-repository freshness remain intact. A new run cannot expose
+staged pages before its final transaction. Code rollback leaves the additive JSON
+fields/resources intact, but older code loses the atomic-readiness guarantee.
+Per-version publication timestamps are held in mutable
+`factory_repo_state.payload.observation.publishedAt` and copied into global heads;
+retained versions keep that timestamp after later partial runs and run retention.
+Immutable repository versions are never rewritten. Activity freezes current-run
+staged security pages rather than the still-visible prior snapshots.
+
+The marked-copy migration regression is `run-readiness-migration.test.ts`; it
+proves preservation and replay on legacy completed/partial/running/failed/cancelled
+rows without relying on Git objects outside the published history.
+
 抓取、落库、展示共用的数据形状。建表与 JSON 载荷以本文为准。01 第 7 节只是方向摘要。
 
 > 返回 [文档目录](README.md)
@@ -139,14 +205,15 @@ update time, or the Unix epoch when unavailable, not claimed as historical star
 event time. R2-removed rows remain absent and create no owner tombstone.
 
 Owner unstars retain `starred=0` rows. Every membership reader selects only
-`starred=1`; provenance reads include tombstones. Atomic conditional writes allow
-owners to replace any record and agents to replace only agent records or create
-absent records. Same-direction agent writes preserve an owner record unchanged;
-opposite-direction writes return 409. The migration verifier recognizes all four
+`starred=1`; provenance reads include tombstones. From 0.20.0, every accepted
+browser or machine write atomically replaces state, source, timestamp and reason.
+Provenance is informational only; no owner-priority condition or 409 rejection
+remains. This behavior change adds no migration and preserves the 0021 correction.
+The migration verifier recognizes all four
 added columns, skips a fully applied migration, and rejects partial application.
 
 Do not roll application code back to a version that treats every `repo_stars` row
-as starred: it would misread tombstones and could erase owner protection. Preserve
+as starred: it would misread tombstones and restore removed memberships. Preserve
 the new columns and rows during a rollback; use a provenance-aware code revision
 or restore an explicitly approved pre-migration backup. No automated destructive
 rollback is provided.

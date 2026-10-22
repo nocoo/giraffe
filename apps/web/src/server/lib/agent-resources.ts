@@ -7,6 +7,11 @@ import {
 } from "../../lib/agent-resource";
 import type { Db } from "./db/d1";
 import { ApiError } from "./errors";
+import {
+	createDailyReport,
+	reportPatchEnvelopeSchema,
+	updateDailyReport,
+} from "./github-daily-write";
 import { createId } from "./id";
 
 type Row = Omit<AgentResource, "payload"> & { payload: string };
@@ -15,18 +20,22 @@ const decode = (row: Row): AgentResource => ({
 	payload: JSON.parse(row.payload) as AgentResource["payload"],
 });
 const invalid = () => new ApiError(400, "validation_failed", "invalid resource");
-export async function getResource(
-	db: Db,
-	account: string,
-	collection: ResourceCollection,
-	id: string,
-) {
+async function resourceRow(db: Db, account: string, collection: ResourceCollection, id: string) {
 	const row = await db
 		.prepare(
 			"SELECT id,account_id,repository,type,status,source_version,payload,revision,created_at,updated_at FROM agent_resources WHERE account_id=? AND collection=? AND id=?",
 		)
 		.bind(account, collection, id)
 		.first<Row>();
+	return row;
+}
+export async function getResource(
+	db: Db,
+	account: string,
+	collection: ResourceCollection,
+	id: string,
+) {
+	const row = await resourceRow(db, account, collection, id);
 	return row ? decode(row) : null;
 }
 export async function listResources(
@@ -64,6 +73,14 @@ export async function createResource(
 	collection: ResourceCollection,
 	input: unknown,
 ) {
+	if (
+		collection === "reports" &&
+		input &&
+		typeof input === "object" &&
+		"type" in input &&
+		input.type === "github-daily"
+	)
+		return createDailyReport(db, account, input);
 	const parsed = createResourceSchema.safeParse(input);
 	if (!parsed.success) throw invalid();
 	const value = parsed.data;
@@ -96,10 +113,18 @@ export async function updateResource(
 	id: string,
 	input: unknown,
 ) {
+	const envelope = (
+		collection === "reports" ? reportPatchEnvelopeSchema : updateResourceSchema
+	).safeParse(input);
+	if (!envelope.success) throw invalid();
+	const row = await resourceRow(db, account, collection, id);
+	if (collection === "reports" && row?.type === "github-daily")
+		return updateDailyReport(db, account, row, input);
 	const parsed = updateResourceSchema.safeParse(input);
 	if (!parsed.success) throw invalid();
-	const previous = await getResource(db, account, collection, id);
-	if (!previous) throw new ApiError(404, "not_found", "resource not found");
+	if (!row) throw new ApiError(404, "not_found", "resource not found");
+	if (collection === "reports" && parsed.data.type === "github-daily") throw invalid();
+	const previous = decode(row);
 	const item = {
 		...previous,
 		...parsed.data,
@@ -108,7 +133,7 @@ export async function updateResource(
 	};
 	const result = await db
 		.prepare(
-			"UPDATE agent_resources SET repository=?,type=?,status=?,source_version=?,payload=?,revision=revision+1,updated_at=? WHERE account_id=? AND collection=? AND id=? AND revision=?",
+			"UPDATE agent_resources SET repository=?,type=?,status=?,source_version=?,payload=?,revision=revision+1,updated_at=? WHERE account_id=? AND collection=? AND id=? AND revision=? AND (collection!='reports' OR type!='github-daily')",
 		)
 		.bind(
 			item.repository,

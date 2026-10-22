@@ -535,3 +535,37 @@ WHERE account_id IN (SELECT id FROM accounts WHERE lower(login) = 'nocoo')
   AND starred = 1
   AND reason IS NULL
   AND updated_at = '2026-10-18T12:03:11.294Z';
+
+UPDATE factory_runs
+SET payload=json_set(payload,'$.publishedAt',NULL)
+WHERE json_type(payload,'$.publishedAt') IS NULL;
+
+CREATE TABLE IF NOT EXISTS repo_agent_state (
+ account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+ identity_key TEXT NOT NULL,
+ payload TEXT NOT NULL CHECK(json_valid(payload) AND json_type(payload)='object' AND length(CAST(payload AS BLOB))<=16384),
+ revision INTEGER NOT NULL CHECK(revision>0 AND revision<=9007199254740991),
+ updated_at TEXT NOT NULL,
+ updated_by TEXT NOT NULL,
+ PRIMARY KEY(account_id,identity_key)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS repo_agent_state_revision ON repo_agent_state(account_id,revision);
+
+CREATE TABLE IF NOT EXISTS repo_meta (
+ account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+ identity_key TEXT NOT NULL,
+ created_at TEXT,
+ created_at_source TEXT CHECK(created_at_source IN ('agent','catalog')),
+ archived_at TEXT,
+ archived_at_source TEXT CHECK(archived_at_source IN ('agent','catalog')),
+ category TEXT CHECK(category IN ('app','docs-vault','profile','repro','derivative')),
+ category_source TEXT CHECK(category_source IN ('agent','catalog')),
+ exclusion_reason TEXT CHECK(length(exclusion_reason)<=200),
+ exclusion_reason_source TEXT CHECK(exclusion_reason_source IN ('agent','catalog')),
+ updated_at TEXT NOT NULL,
+ PRIMARY KEY(account_id,identity_key),
+ CHECK((created_at IS NULL)=(created_at_source IS NULL)),
+ CHECK((archived_at IS NULL)=(archived_at_source IS NULL)),
+ CHECK((category IS NULL)=(category_source IS NULL)),
+ CHECK((exclusion_reason IS NULL)=(exclusion_reason_source IS NULL))
+);

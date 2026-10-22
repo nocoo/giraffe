@@ -108,63 +108,80 @@ async function browserReference(raw: D1Database, kind: string, scope: SnapshotSc
 	}
 	const snap = await readSnapshot(db, account, kind);
 	if (!snap) throw new Error("fixture source missing");
-	return { ...(await scopedSnapshot(db, account, kind, snap, scope)), account_id: account };
+	const projected = await scopedSnapshot(db, account, kind, snap, scope);
+	if (kind === "repos" && Array.isArray(projected.repos))
+		projected.repos = projected.repos.map((repo: Record<string, unknown>) => ({
+			...repo,
+			agent_state: null,
+			meta: null,
+		}));
+	return { ...projected, account_id: account };
 }
 
 afterEach(() => vi.unstubAllGlobals());
 
-it.each(resources)("batches browser %s without changing bytes or provenance", async (kind) => {
-	const s = await fixture();
-	for (const metadata of ["stored", "mismatched", "legacy"]) {
-		if (metadata === "mismatched") {
-			const row = await s.raw
-				.prepare("SELECT payload FROM snapshots WHERE account_id=? AND kind='repos'")
-				.bind(account)
-				.first<{ payload: string }>();
-			if (!row) throw new Error("fixture catalog");
-			const data = JSON.parse(row.payload);
-			await s.raw
-				.prepare("UPDATE snapshots SET payload=? WHERE account_id=? AND kind='repos'")
-				.bind(JSON.stringify({ ...data, repos: data.repos.slice(0, 1) }), account)
-				.run();
-			await s.raw
-				.prepare(
-					"INSERT INTO snapshots(account_id,kind,payload,fetched_at,content_meta) VALUES(?,'repos#2',?,?,?)",
-				)
-				.bind(
-					account,
-					JSON.stringify({ ...data, repos: data.repos.slice(1) }),
-					at,
-					'{"hash":"different"}',
-				)
-				.run();
+it.each(resources)(
+	"batches browser %s observations with bounded contextual metadata",
+	async (kind) => {
+		const s = await fixture();
+		for (const metadata of ["stored", "mismatched", "legacy"]) {
+			if (metadata === "mismatched") {
+				const row = await s.raw
+					.prepare("SELECT payload FROM snapshots WHERE account_id=? AND kind='repos'")
+					.bind(account)
+					.first<{ payload: string }>();
+				if (!row) throw new Error("fixture catalog");
+				const data = JSON.parse(row.payload);
+				await s.raw
+					.prepare("UPDATE snapshots SET payload=? WHERE account_id=? AND kind='repos'")
+					.bind(JSON.stringify({ ...data, repos: data.repos.slice(0, 1) }), account)
+					.run();
+				await s.raw
+					.prepare(
+						"INSERT INTO snapshots(account_id,kind,payload,fetched_at,content_meta) VALUES(?,'repos#2',?,?,?)",
+					)
+					.bind(
+						account,
+						JSON.stringify({ ...data, repos: data.repos.slice(1) }),
+						at,
+						'{"hash":"different"}',
+					)
+					.run();
+			}
+			if (metadata === "legacy")
+				await s.raw.prepare("UPDATE snapshots SET content_meta=NULL").run();
+			for (const scope of ["all", "starred"] as const) {
+				const expected = JSON.stringify(await browserReference(s.raw, kind, scope));
+				const profile = profileDb(s.raw);
+				const network = vi.fn(() => {
+					throw new Error("saved reads cannot use network");
+				});
+				vi.stubGlobal("fetch", network);
+				const response = await createApp().request(
+					`http://localhost/api/${kind}?scope=${scope}`,
+					{},
+					{
+						DB: profile.raw,
+						ENVIRONMENT: "development",
+						GITHUB_API_BASE: "http://fixture",
+					} as Env,
+				);
+				expect(response.status).toBe(200);
+				expect(await response.text()).toBe(expected);
+				expect(response.headers.get("cache-control")).toBe("private, no-store");
+				expect(network).not.toHaveBeenCalled();
+				expect(profile.trips).toHaveLength(kind === "repos" ? 3 : 1);
+				expect(profile.trips[0]?.statements).toBeGreaterThan(1);
+				if (kind === "repos") {
+					expect(profile.trips[1]?.statements).toBe(1);
+					expect(profile.trips[2]?.statements).toBe(1);
+					expect(profile.queries.at(-2)?.sql).toContain("FROM repo_agent_state");
+					expect(profile.queries.at(-1)?.sql).toContain("LEFT JOIN repo_meta");
+				}
+			}
 		}
-		if (metadata === "legacy") await s.raw.prepare("UPDATE snapshots SET content_meta=NULL").run();
-		for (const scope of ["all", "starred"] as const) {
-			const expected = JSON.stringify(await browserReference(s.raw, kind, scope));
-			const profile = profileDb(s.raw);
-			const network = vi.fn(() => {
-				throw new Error("saved reads cannot use network");
-			});
-			vi.stubGlobal("fetch", network);
-			const response = await createApp().request(
-				`http://localhost/api/${kind}?scope=${scope}`,
-				{},
-				{
-					DB: profile.raw,
-					ENVIRONMENT: "development",
-					GITHUB_API_BASE: "http://fixture",
-				} as Env,
-			);
-			expect(response.status).toBe(200);
-			expect(await response.text()).toBe(expected);
-			expect(response.headers.get("cache-control")).toBe("private, no-store");
-			expect(network).not.toHaveBeenCalled();
-			expect(profile.trips).toHaveLength(1);
-			expect(profile.trips[0]?.statements).toBeGreaterThan(1);
-		}
-	}
-});
+	},
+);
 
 it.each(resources)(
 	"batches saved machine %s inputs without hidden projection queries",

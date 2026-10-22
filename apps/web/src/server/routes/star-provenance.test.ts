@@ -140,7 +140,7 @@ it("mints agent provenance, lists tombstones, and keeps settings and every selec
 });
 
 it.each([true, false])(
-	"protects owner %s against opposite agents and makes same-direction agent writes strict no-ops",
+	"lets agent writes replace owner %s in both directions with informational provenance",
 	async (starred) => {
 		const setup = await fixture();
 		const owner = await setup.owner(starred, { reason: "manual intent" });
@@ -152,32 +152,41 @@ it.each([true, false])(
 			star_source: "owner",
 			star_updated_at: expect.any(String),
 		});
-		const before = await setup.raw.prepare("SELECT * FROM repo_stars").all();
-		const tokens = await setup.raw.prepare("SELECT * FROM api_tokens").all();
 		const opposite = await setup.machine(
 			starred ? "DELETE" : "PUT",
 			"OWNER/APP",
 			JSON.stringify({ reason: "agent opposite" }),
 		);
-		expect(opposite.status).toBe(409);
-		expect(await opposite.json()).toMatchObject({ error: { code: "owner_override" } });
-		expect(await setup.raw.prepare("SELECT * FROM repo_stars").all()).toEqual(before);
-		expect(await setup.raw.prepare("SELECT * FROM api_tokens").all()).toEqual(tokens);
+		expect(opposite.status).toBe(200);
+		expect(await opposite.json()).toMatchObject({
+			starred: !starred,
+			source: "agent",
+			reason: "agent opposite",
+		});
+		expect(await setup.raw.prepare("SELECT last_used_at FROM api_tokens").first()).toMatchObject({
+			last_used_at: expect.any(String),
+		});
+		expect((await setup.owner(starred, { reason: "manual intent again" })).status).toBe(200);
 		const same = await setup.machine(
 			starred ? "PUT" : "DELETE",
 			"owner/APP",
-			JSON.stringify({ reason: "must not replace owner reason" }),
+			JSON.stringify({ reason: "agent same direction" }),
 		);
 		expect(same.status).toBe(200);
 		expect(await same.json()).toEqual({
 			repo: "owner/app",
 			starred,
-			source: "owner",
+			source: "agent",
 			updated_at: expect.any(String),
-			reason: "manual intent",
+			reason: "agent same direction",
 		});
-		expect(await setup.raw.prepare("SELECT * FROM repo_stars").all()).toEqual(before);
-		expect(await setup.raw.prepare("SELECT * FROM api_tokens").all()).toEqual(tokens);
+		expect(await setup.raw.prepare("SELECT starred,source,reason FROM repo_stars").first()).toEqual(
+			{
+				starred: Number(starred),
+				source: "agent",
+				reason: "agent same direction",
+			},
+		);
 	},
 );
 
@@ -248,7 +257,7 @@ it.each([
 	expect((await setup.raw.prepare("SELECT * FROM repo_stars").all()).results).toEqual([]);
 });
 
-it("keeps owner protection atomic when an owner arrives after the agent catalog read", async () => {
+it("lets the last star write win when an owner arrives after the agent catalog read", async () => {
 	const setup = await fixture();
 	const prepare = setup.raw.prepare.bind(setup.raw);
 	let injected = false;
@@ -264,12 +273,18 @@ it("keeps owner protection atomic when an owner arrives after the agent catalog 
 		return prepare(sql);
 	});
 	const response = await setup.machine("PUT");
-	expect(response.status).toBe(409);
+	expect(response.status).toBe(200);
 	expect(injected).toBe(true);
 	expect(
 		(await prepare("SELECT repo,starred,source,updated_at,reason FROM repo_stars").all()).results,
 	).toEqual([
-		{ repo: "OWNER/APP", starred: 0, source: "owner", updated_at: at, reason: "late owner" },
+		{
+			repo: "OWNER/APP",
+			starred: 1,
+			source: "agent",
+			updated_at: expect.any(String),
+			reason: null,
+		},
 	]);
 });
 

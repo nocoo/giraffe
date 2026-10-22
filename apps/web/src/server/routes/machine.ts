@@ -25,6 +25,8 @@ import {
 import { assertMachineQuery } from "../lib/machine-query";
 import { readSources } from "../lib/machine-sources";
 import { readJson } from "../lib/read-body";
+import { enrichRepoAgentStates } from "../lib/repo-agent-state";
+import { enrichRepoMeta } from "../lib/repo-meta";
 import type { AccountObservationResource } from "../lib/saved-observation-statements";
 import { snapshotScope } from "../lib/snapshot-scope";
 import { SourceTiming } from "../lib/source-timing";
@@ -36,6 +38,10 @@ import {
 	machineRuns,
 	machineSetting,
 } from "./machine-settings";
+import { machineRepoAgentState, repoAgentStateHeaders } from "./repo-agent-state";
+import { machineRepoMeta, repoMetaHeaders } from "./repo-meta";
+import { latestReport, reportLatestHeaders } from "./report-latest";
+import { getMachineLatestRun } from "./run-readiness";
 
 type Principal = NonNullable<Awaited<ReturnType<typeof authenticateApiToken>>>;
 export type MachineVars = AppVars & {
@@ -44,6 +50,7 @@ export type MachineVars = AppVars & {
 };
 export function machineApi() {
 	const app = new Hono<{ Bindings: Env; Variables: MachineVars }>();
+	app.use("/accounts/:account/agent/reports/latest", reportLatestHeaders);
 	app.use("*", async (c, next) => {
 		const timing =
 			c.req.method === "GET" &&
@@ -68,11 +75,12 @@ export function machineApi() {
 			throw new ApiError(403, "account_forbidden", "token belongs to another account");
 		if (c.req.path !== "/api/v1/me") {
 			const read = c.req.method === "GET";
-			const agent = /\/agent\//.test(c.req.path);
+			const agent = /^\/api\/v1\/accounts\/[^/]+\/agent\//.test(c.req.path);
 			const management =
-				/\/accounts\/[^/]+\/(settings|stars|statistics|schedules|refresh-runs)(\/|$)/.test(
+				/^\/api\/v1\/accounts\/[^/]+\/(settings|stars|statistics|schedules|refresh-runs)(\/|$)/.test(
 					c.req.path,
-				);
+				) ||
+				/^\/api\/v1\/accounts\/[^/]+\/repos\/[^/]+\/[^/]+\/(agent-state|meta)$/.test(c.req.path);
 			const scope = agent
 				? read
 					? "agent:read"
@@ -112,6 +120,7 @@ export function machineApi() {
 			},
 		});
 	});
+	app.get("/accounts/:account/agent/reports/latest", latestReport);
 	app.all("/accounts/:account/agent/:collection/:id?", async (c) => {
 		const kind = resourceCollection.safeParse(c.req.param("collection"));
 		const id = c.req.param("id");
@@ -128,14 +137,13 @@ export function machineApi() {
 			if (!item) throw new ApiError(404, "not_found", "resource not found");
 			return c.json({ account_id: account, item });
 		}
-		if (method === "POST" && !id)
+		if (method === "POST" && !id) {
+			const item = await createResource(db, account, kind.data, await readJson(c.req.raw, 70000));
 			return c.json(
-				{
-					account_id: account,
-					item: await createResource(db, account, kind.data, await readJson(c.req.raw, 70000)),
-				},
-				201,
+				{ account_id: account, item },
+				kind.data === "reports" && item.type === "github-daily" && item.revision > 1 ? 200 : 201,
 			);
+		}
 		if (method === "PATCH" && id)
 			return c.json({
 				account_id: account,
@@ -233,6 +241,7 @@ export function machineApi() {
 	app.all("/accounts/:account/statistics/:owner/:name", machineSetting);
 	app.all("/accounts/:account/schedules/:kind", machineSetting);
 	app.all("/accounts/:account/refresh-runs", machineRuns);
+	app.all("/accounts/:account/refresh-runs/latest", getMachineLatestRun);
 	app.all("/accounts/:account/refresh-runs/:id/control", machineRuns);
 	app.get("/accounts/:account/factory/repos/:owner/:name/:stream", async (c) => {
 		assertMachineQuery(c.req.query());
@@ -246,6 +255,12 @@ export function machineApi() {
 			),
 		);
 	});
+	app.all("/accounts/:account/repos/:owner/:name/meta", repoMetaHeaders, machineRepoMeta);
+	app.all(
+		"/accounts/:account/repos/:owner/:name/agent-state",
+		repoAgentStateHeaders,
+		machineRepoAgentState,
+	);
 	app.get("/accounts/:account/repos/:owner/:name/:resource?", async (c) => {
 		const resource = c.req.param("resource") ?? "details";
 		if (!REPO_SNAPSHOT_TABS.includes(resource as (typeof REPO_SNAPSHOT_TABS)[number]))
@@ -275,6 +290,18 @@ export function machineApi() {
 			snapshotScope(c.req.queries("scope")),
 			includeRemoved,
 		);
+		if (kind === "repos") {
+			observation.data = await enrichRepoAgentStates(
+				c.get("db"),
+				c.get("principal").accountId,
+				observation.data,
+			);
+			observation.data = await enrichRepoMeta(
+				c.get("db"),
+				c.get("principal").accountId,
+				observation.data,
+			);
+		}
 		return timedJson(c, observation);
 	});
 	app.notFound(() => {

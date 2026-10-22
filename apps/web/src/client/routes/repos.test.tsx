@@ -39,6 +39,12 @@ const repos = [
 			is_archived: true,
 			star_source: "owner",
 			star_updated_at: "2026-10-20T00:00:00Z",
+			agent_state: {
+				revision: 1,
+				updated_at: "2026-10-22T00:00:00Z",
+				summary: "Review",
+				status: "attention",
+			},
 		}),
 		statistics_enabled: false,
 	},
@@ -184,6 +190,9 @@ it("shows accessible owner and agent markers but no marker for an absent record"
 			await act(async () => toggle?.click());
 		}
 		const markers = [...container.querySelectorAll('[role="note"]')];
+		expect(container.querySelector('[aria-label="管家状态：attention"]')?.textContent).toBe(
+			"管家 · 需关注",
+		);
 		expect(markers.map((marker) => marker.getAttribute("aria-label"))).toEqual([
 			"owner/archived 星标来源：owner",
 			"owner/fork 星标来源：agent",

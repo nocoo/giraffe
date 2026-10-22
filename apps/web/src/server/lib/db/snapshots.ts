@@ -1,4 +1,5 @@
 import { savedContentMeta } from "../content-version";
+import { ApiError } from "../errors";
 import {
 	assemblePages,
 	latestSnapshotGroups,
@@ -23,8 +24,18 @@ export async function readSnapshot(
 	db: Db,
 	accountId: string,
 	logical: string,
+	stageRunId?: string,
 ): Promise<Record<string, unknown> | null> {
 	const [a, b] = physicalKinds(logical);
+	if (stageRunId) {
+		const staged = await db
+			.prepare(
+				"SELECT substr(stream,6) AS kind,payload,content_meta FROM factory_resources WHERE run_id=? AND repo='' AND stream IN (?,?)",
+			)
+			.bind(stageRunId, `site:${a}`, `site:${b}`)
+			.all<SnapshotPage>();
+		if (staged.results.length) return snapshotFromRows(logical, staged.results);
+	}
 	const result = await db
 		.prepare(
 			"SELECT kind, payload, content_meta FROM snapshots WHERE account_id = ? AND kind IN (?, ?)",
@@ -47,15 +58,33 @@ export async function replaceSnapshotStmts(
 	logical: string,
 	payload: Record<string, unknown>,
 	fetchedAt: string,
+	stageRunId?: string,
 ): Promise<D1PreparedStatement[]> {
 	const [a, b] = physicalKinds(logical);
-	const { pages, truncated } = splitPages(logical, {
+	const { pages, capacityExceeded } = splitPages(logical, {
 		...payload,
+		...(stageRunId
+			? { publication: { runId: stageRunId, publishedAt: "0000-01-01T00:00:00.000Z" } }
+			: {}),
 		fetched_at: fetchedAt,
 		truncated: payload.truncated === true,
 	});
-	void truncated;
+	if (stageRunId && capacityExceeded)
+		throw new ApiError(422, "snapshot_incomplete", "Final snapshot exceeds bounded storage");
 	const metadata = await savedContentMeta(logical, assemblePages(logical, pages));
+	if (stageRunId)
+		return [
+			db
+				.prepare("DELETE FROM factory_resources WHERE run_id=? AND repo='' AND stream IN (?,?)")
+				.bind(stageRunId, `site:${a}`, `site:${b}`),
+			...pages.map((page) =>
+				db
+					.prepare(
+						"INSERT INTO factory_resources(run_id,repo,stream,payload,content_meta) VALUES(?,'',?,?,?)",
+					)
+					.bind(stageRunId, `site:${page.kind}`, page.payload, metadata),
+			),
+		];
 	const del = db
 		.prepare("DELETE FROM snapshots WHERE account_id = ? AND kind IN (?, ?)")
 		.bind(accountId, a, b);

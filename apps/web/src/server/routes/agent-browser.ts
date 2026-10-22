@@ -14,9 +14,11 @@ import { ApiError } from "../lib/errors";
 import { readSources } from "../lib/machine-sources";
 import { readJson } from "../lib/read-body";
 import { repoPolicy } from "../lib/snapshot-projection";
+import { dailyReportHistory, latestReport, reportLatestHeaders } from "./report-latest";
 
 export function agentBrowserApi() {
 	const app = new Hono<{ Bindings: Env; Variables: AppVars }>();
+	app.use("/accounts/:account/reports/latest", reportLatestHeaders);
 	app.use("/accounts/:account/*", async (c, next) => {
 		const active = await getActiveAccount(c.get("db"));
 		if (!active) throw new ApiError(409, "account_missing", "active account required");
@@ -44,6 +46,8 @@ export function agentBrowserApi() {
 			throw new ApiError(400, "validation_failed", "unexpected query parameters");
 		return c.json(await readAnalysisReports(c.get("db"), String(c.req.param("account"))));
 	});
+	app.get("/accounts/:account/reports/latest", latestReport);
+	app.all("/accounts/:account/analysis/daily", dailyReportHistory);
 	app.all("/accounts/:account/:collection/:id?", async (c) => {
 		const parsed = resourceCollection.safeParse(c.req.param("collection"));
 		const id = c.req.param("id");
@@ -62,9 +66,10 @@ export function agentBrowserApi() {
 		}
 		if (method === "POST" && !id) {
 			const body = await readJson(c.req.raw, 70000);
+			const item = await createResource(db, account, kind, body);
 			return c.json(
-				{ account_id: account, item: await createResource(db, account, kind, body) },
-				201,
+				{ account_id: account, item },
+				kind === "reports" && item.type === "github-daily" && item.revision > 1 ? 200 : 201,
 			);
 		}
 		if (method === "PATCH" && id)

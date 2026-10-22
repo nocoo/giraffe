@@ -1,5 +1,92 @@
 # Retrospective
 
+## 2026-10-22 - Browser assertions need a specific landmark
+
+The daily-report browser test copied an overflow assertion using main, but the
+analysis page has both the Basalt shell main and an existing nested analysis
+main. Independent static rendering caught two matches before the browser run.
+Target the intended shell landmark by its existing main-content ID rather than
+assuming a tag selector is unique. Do not alter unrelated layout to repair a test.
+
+## 2026-10-22 - Staged metadata must use publication time
+
+The first repository metadata fill reused the catalog plan's collection time as
+updated_at. Independent review staged the catalog, wrote an agent category later,
+then published the plan and observed updated_at moving backwards. Catalog fills
+must use their publication write time and preserve a later existing update time
+in the atomic UPSERT. A fake-clock regression now covers that interleaving and
+verifies that a repeated fill leaves an already-populated metadata row unchanged.
+
+The first regression replayed the identical catalog event plan and correctly
+failed its stale publication fence. Its output was prematurely called green
+before the asynchronous command was collected. Replan against the new catalog
+revision for a second publication, and report validation only after checking the
+completed exit status. The final regression and independent re-review passed.
+
+## 2026-10-22 - Separate fill-only-empty writes from collection fields
+
+The first R6 draft introduced an extra GraphQL nodes request and known-value
+plumbing to avoid fetching an existing creation date. The requirement restricts
+metadata writes, not scalar fields in an existing catalog request. Remove that
+extra request, collect createdAt in the normal catalog query, and enforce the
+fill-only-empty rule atomically in storage. This keeps the simpler collection
+path and prevents new API latency from a static metadata feature.
+
+## 2026-10-22 - Mock endpoint contracts rather than generic successful objects
+
+The new R5 browser fixture returned a generic successful object for every unknown
+API endpoint. Project-identity loading treated that object as a real identity and
+crashed when its icon fields were missing, so even the corrected radio selector
+could not find the disappeared page controls. Return explicit 404 responses for
+unmodeled endpoints, assert that no page error occurs, and use the existing L3
+runner's optional file filter for diagnosis before repeating full acceptance.
+
+## 2026-10-22 - Exercise identity and opaque-JSON boundaries before approval
+
+R5 review found four cases missing from the ordinary state tests: a repository
+segment named agent changed the scope classifier; per-identity revision 1 could
+overwrite a replacement identity; transformed validation silently dropped an own
+__proto__ JSON key before measuring bytes; and deeply nested small JSON reached
+SQLite's parser limit as a 500. Anchor scope classification to fixed route prefixes,
+never reuse revision tokens across identities, validate without transforming opaque
+payloads, and enforce a documented application depth bound before storage. Test
+these through authenticated routes as well as helpers. Browser selectors must also
+use the rendered radio role rather than infer button semantics from visible text.
+
+## 2026-10-22 - Verify component slots and account bootstrap in fixtures
+
+The first R5 grid marker used a ProjectSummary slot that only its table mode
+renders. The list/grid regression caught the missing marker, so the grid now
+places it in its existing status row. The first loader fixture also answered the
+account bootstrap request with a repository payload. Keep browser fixtures faithful
+to the session handshake and verify both render modes rather than assuming that
+one component prop has identical placement in every mode.
+
+The schema append initially used an ad-hoc Python append instead of the required
+patch tool. Subsequent edits returned to apply_patch, and the exact migration
+concatenation and replay verifier were checked. Complete fast static gates before
+starting long frozen-tree HTTP/browser runs: running them concurrently exposed a
+Context variance error that had to wait for those runs to finish before correction.
+
+## 2026-10-22 - Audit every consumer when moving publication boundaries
+
+The first R9 staging change left activity security reading the former live table,
+and marked resumed pre-upgrade runs ready without proving their collection protocol.
+Review also found derived CI hashes polluted by provenance, visibility filtering
+using collection time, and retained streams losing their publication timestamp.
+Exercise a staged-only security fixture, an upgrade-resume fixture and successive
+partial publications. Keep immutable observation bytes separate from mutable
+publication provenance, and test source filtering and advertised hashes together.
+
+## 2026-10-22 - Prove publication fixtures before interpreting failures
+
+The first R9 revoked-fence fixture omitted the previously published factory base,
+so it failed before exercising the intended lease check. The staging visibility
+test still reproduced early writes, but that did not validate the second case.
+Seed a realistic prior publication, then assert both physical snapshot contents
+and the readiness marker after a revoked lease. Staged-page tests must read staged
+rows explicitly and separately prove that public snapshots remain unchanged.
+
 ## 2026-10-22 - Limited evidence does not always mean a capacity limit
 
 The first hotfix classification treated every limited collector result as a
@@ -1418,6 +1505,21 @@ Exercise both listing orders, owner/agent star provenance, the real quick execut
 and garbage collection after old publication/recent-run roots retire. A fixture
 must include the actual writer's minimal valid shape, not only enriched examples.
 
+## 2026-10-22 - Capacity includes publication metadata
+
+External batch-12 review reproduced 2,000 Actions fitting two exact 1,500,000-byte
+pages before publication metadata, but only 1,998 after the final writer repaged
+them. The writer discarded the new truncation result and the step reported
+success, allowing incomplete data to replace the prior complete snapshot.
+Track new capacity loss separately from inherited coverage flags and reject an
+overflowing final staged representation before creating any writes. The native
+SQLite regression now collects all 2,000 records and verifies that the limited
+run can publish without changing the previous snapshot or its original time.
+Follow-up review also reproduced a four-byte gap when a retained collection time
+omitted milliseconds. Reserve a fixed 24-character publication timestamp rather
+than borrowing the collection timestamp's variable width; the final-format guard
+must cover every field added or replaced during promotion.
+
 ## 2026-10-22 - A reused repository name is not its old identity
 
 Discovery retained immutable history correctly but readers still matched it by
@@ -1460,3 +1562,29 @@ the three assertions ran. Native seeding against an empty database did not expos
 the collision; replay against the marked L2 database did. Generate a unique
 fixture login and derive all owned repository names from it. A before-hook failure
 with skipped bodies is failed validation, never evidence that those cases passed.
+
+## 2026-10-22 - Atomic publication must not materialize the whole run
+
+External review found that final publication loaded every staged site page and
+hashed all assembled snapshots concurrently. Fifty two-page snapshots already
+held about 150 MB of raw JSON, before decoding, beyond the Worker isolate limit.
+Reading each logical snapshot separately would instead exceed the existing
+80-statement budget for ordinary multi-tab runs. Preparation now reads only the
+small hashes computed during bounded staging and derives one publication-bound
+composite digest at a time. This deliberately changes new staged-site full-version
+derivation, so the API recipe and consumer migration notes record the exception;
+canonical content, direct writes and historical versions remain unchanged.
+Regression tests forbid payload reads, cover the 500-repository/nine-tab metadata
+inventory, validate page agreement and prove rollback and atomic readiness.
+Independent review then found that a digest regexp coerced a one-element string
+array into valid-looking text. Validate JSON field types before regexp checks;
+the new malformed-array regression proves rejection without publishing invalid
+`contentVersion` values or changing visible data/readiness.
+
+## 2026-10-22 - Budget CI time for publication boundary fixtures
+
+The exact two-page Actions regression passed locally but exceeded Vitest's
+default five-second timeout on the GitHub runner. Large boundary fixtures need
+explicit per-test time budgets rather than assuming local runner speed. Give
+the new publication capacity and scale cases 30 seconds each while preserving
+their payload sizes, assertions and the global timeout and coverage thresholds.

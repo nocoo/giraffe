@@ -35,7 +35,7 @@ export type FactoryHead = {
 	next_at: string;
 };
 const parse = (row: RunRow) => ({
-	run: JSON.parse(row.payload) as FactoryRun,
+	run: { publishedAt: null, ...JSON.parse(row.payload) } as FactoryRun,
 	leaseUntil: row.lease_until,
 });
 export async function getRun(db: Db, account: string, id: string) {

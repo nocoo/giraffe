@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.20.0 - 2026-10-22
+
+### Added
+
+- R9: latest refresh readiness by kind, explicit publication timestamps and failure summaries. Site snapshots now remain staged until the fenced publication transaction; completed and partial runs expose readiness only after their published sources and activity are visible together.
+- R5: persistent per-repository agent state with stable catalog identity, revision/If-Match concurrency, a 16 KiB JSON limit and read-only repository summary/status/review-time views. Renames, refreshes and removals preserve notes.
+- R6: stable repository metadata with field provenance, strict machine updates and catalog-only creation-date filling. Repository details show creation time/category; agent values and catalog lifecycle history stay separate.
+- R8: strict global `github-daily` reports, atomic same-date revision replacement, authenticated generic latest-by-generation reads with ETag/304, and latest-seven daily browsing with safe text/Xray links beside existing analysis domains. Invalid legacy daily content is hidden with a notice and remains preserved in generic storage.
+
+### Changed
+
+- Behavior change: agent star writes no longer return 409 `owner_override`. All star writes are last-write-wins, including same-direction writes; provenance remains informational in unchanged read fields. No star-data migration or rollback of the 0.19.1 provenance correction is included.
+- `github-daily` now has a typed canonical/global/completed contract instead of an opaque generic payload. Noncanonical or invalid historical daily rows are preserved in generic reads but hidden from typed latest/history with a notice count; other generic report types remain unchanged.
+
+### Migration
+
+- Apply additive migration 0022 after 0.19.1's 0021. Historical runs receive a null readiness marker, including after resuming an active pre-upgrade run, because pre-0.20 site snapshots were published incrementally and complete atomic publication cannot be proven. No observations or runs are deleted.
+- Apply additive 0023 and 0024 next for identity-keyed agent state and repository metadata. Existing GitHub observations remain unchanged; metadata initializes only on explicit writes or future catalog publication. Catalog first-seen/removal timestamps are reused rather than duplicated.
+
+### Fixed
+
+- Reject new capacity loss after publication metadata is included in final snapshot pages; a limited collection preserves the previous complete snapshot and its original timestamp.
+- Prepare site publication from bounded per-page hash metadata instead of loading all staged payloads. New staged-site `sourceVersion` values use a documented publication-bound composite digest; consumers compare opaque versions rather than hashing response JSON. Canonical content hashes and historical/direct snapshot versions are unchanged.
+- Apply latest-report privacy headers to validation, missing-resource and account/reader errors on both browser and machine paths without changing typed latest's `200`/null result.
+- Remove stale owner-override policy and obsolete claims that repository agent-state/metadata write APIs do not exist.
+
 ## v0.19.1 - 2026-10-22
 
 ### Fixed

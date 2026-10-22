@@ -7,6 +7,7 @@ import type {
 } from "../../lib/catalog-types";
 import type { FactoryRepo } from "../../lib/factory-types";
 import { type CatalogRow, type CatalogState, catalogWireRow } from "./catalog-history";
+import { identifyCatalogRow } from "./catalog-identity";
 import { storedContent, withContent } from "./content-version";
 import type { Db } from "./db/d1";
 import { ApiError } from "./errors";
@@ -67,13 +68,16 @@ export function catalogView(
 		)
 			return [];
 		return [
-			{
-				...value,
-				first_seen_at: row?.first_seen_at ?? value.first_seen_at ?? null,
-				last_seen_at: row?.last_seen_at ?? value.last_seen_at ?? null,
-				removed_at: null,
-				archived_changed_at: row?.archived_changed_at ?? value.archived_changed_at ?? null,
-			},
+			identifyCatalogRow(
+				{
+					...value,
+					first_seen_at: row?.first_seen_at ?? value.first_seen_at ?? null,
+					last_seen_at: row?.last_seen_at ?? value.last_seen_at ?? null,
+					removed_at: null,
+					archived_changed_at: row?.archived_changed_at ?? value.archived_changed_at ?? null,
+				},
+				row?.identity_key,
+			),
 		];
 	});
 	return withContent(

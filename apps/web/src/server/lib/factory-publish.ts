@@ -26,6 +26,7 @@ import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
 import { ApiError } from "./errors";
 import { streamKey } from "./factory-collect";
 import { latestFactoryRate } from "./factory-rate";
+import { publishSiteSnapshots } from "./site-publication";
 import { assemblePages, physicalKinds, splitPages } from "./snapshot-pages";
 
 export function boundedJson(value: unknown): string {
@@ -278,7 +279,7 @@ export async function publicationWrites(
 	const run = lease.run;
 	const base = await publishedFactory(db, run.account_id);
 	const head = await factoryHead(db, run.account_id);
-	const writes: D1PreparedStatement[] = [];
+	const writes: D1PreparedStatement[] = await publishSiteSnapshots(db, lease, now);
 	const staged = await db
 		.prepare(
 			"SELECT payload FROM factory_resources WHERE run_id=? AND repo='' AND stream='catalog-plan'",
@@ -294,7 +295,7 @@ export async function publicationWrites(
 				db,
 				run.account_id,
 				"repos",
-				catalogSnapshot(discovery),
+				{ ...catalogSnapshot(discovery), publication: { runId: run.id, publishedAt: now } },
 				discovery.at,
 			)),
 		);
@@ -354,6 +355,11 @@ export async function publicationWrites(
 	const committed = result.results.map((r) => {
 		const repo = normalizeRepoDependencies(JSON.parse(r.payload) as FactoryRepo);
 		const state = JSON.parse(r.state) as RepoRefreshState;
+		if (repo.observation) {
+			const publishedAt =
+				repo.observation.version === run.id ? now : state.observation?.publishedAt;
+			if (publishedAt) repo.observation.publishedAt = publishedAt;
+		}
 		if (state.dependencyLimit)
 			repo.coverage.dependencies = {
 				...repo.coverage.dependencies,
@@ -363,6 +369,15 @@ export async function publicationWrites(
 			};
 		return repo;
 	});
+	writes.push(
+		fenced(
+			db,
+			lease,
+			now,
+			"UPDATE factory_repo_state SET payload=json_set(payload,'$.observation.publishedAt',?) WHERE account_id=? AND version=? AND json_extract(payload,'$.observation.version')=? AND $guard",
+			[now, run.account_id, run.id, run.id],
+		),
+	);
 	for (const old of snapshot.repos) {
 		if (!old.observation)
 			old.observation = {

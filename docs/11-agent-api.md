@@ -6,6 +6,76 @@ does not bundle an analysis runtime, run model inference, or execute code change
 The complete endpoint reference, request examples, validation limits and recommended
 consumer flow are in [Machine API v1](api.md).
 
+## Daily report consumption
+
+Publish `type:github-daily`, `status:completed`, `repository:null` through the
+existing report POST with `agent:write`. Use the strict payload in
+[the reference](api.md#daily-reports-and-latest-report): date, window,
+refreshRunId, headline, sections, comparisons, links, generatedAt and sources are
+all required. The explicit calendar date is a Beijing reporting key; backfills
+are allowed. Comparisons remain externally computed. There is no model runtime
+or GitHub collection during report reads or writes.
+
+Omit the ID or use `github-daily-YYYY-MM-DD`. Same-date POST replaces the canonical
+row atomically and increments revision (201 create,200 replacement); it does not
+archive old revisions. Keep revision for PATCH and do not change type/date/global
+scope. Other report types preserve their generic contract. No migration is needed.
+
+Payload≤65,536 UTF-8 bytes; sections≤12, each with≤50 items and≤12,000 markdown
+characters; headline≤300, title≤200, comparisons≤4,000 each, sources≤500. URLs are
+HTTPS on any host without embedded credentials. Daily text is rendered as escaped
+plain text, not active HTML or parsed Markdown. Xray and evidence anchors use
+noopener/noreferrer. Source completeness/freshness remain producer assertions.
+
+Read `/agent/reports/latest?type=github-daily` with `agent:read`; the same operation
+supports other types. It returns the newest exact generatedAt instant (ID descending
+tie-break), not the last edited row, and supports ETag/304. A missing match is a
+null item. Canonical daily validation failures are omitted and counted in
+invalidCount. Legacy noncanonical daily data stays in generic list/detail; repair
+requires explicit delete and canonical POST. The browser's latest-seven projection
+shares that selector, defaults to its first item, and shows invalid-report notices.
+The bare reports/latest path without type remains generic resource-ID access.
+
+## Readiness consumption
+
+Poll `refresh-runs/latest?kind=daily` with `app:read`. Wait for a non-null
+`publishedAt`, then inspect status/coverage: a partial publication is ready but not
+complete. Eligible activity and touched source heads publish atomically; untouched
+sources retain their original observations. `/sources.runId` identifies publication,
+`fetchedAt` is its common visibility time, and `observedAt`/freshness preserve
+collection timestamps. Pin the activity run ID when later publications can race
+your separate reads. Historical 0022 markers, including resumed pre-upgrade runs,
+remain conservatively null. The latest
+reader never collects, expires runs or mutates token activity.
+
+## Repository metadata consumption
+
+Use `/repos/:owner/:name/meta` (`app:read` GET, `app:write` PUT) for static fields.
+Write only the fields being changed: created_at, archived_at, category or
+exclusion_reason. Unknown fields and null clearing are rejected. Category is one
+of app/docs-vault/profile/repro/derivative; timestamps include a timezone and the
+reason is at most 200 characters. The body is limited to 4096 UTF-8 bytes;
+malformed or oversized bodies return 400 `invalid_payload`. Field provenance distinguishes agent writes from
+catalog-only creation-date fills. Catalog never replaces an existing creation date.
+Read first_seen_at/deleted_at from the returned catalog context; they are not writable.
+Retained removed identities remain usable and name reuse does not inherit metadata.
+`/repos.meta` is the small read projection; browser details show date/category only.
+
+## Per-repository state consumption
+
+Use the dedicated `/repos/:owner/:name/agent-state` resource for persistent notes,
+not a generic report. Read with `app:read`, then write with `app:write`, keeping
+the returned revision or ETag for the next PUT. Missing update preconditions
+return 428; conflicts return 409, requiring another read rather than a blind
+retry. `If-Match` overrides body revision. Each payload is a JSON object limited
+to 16 KiB of UTF-8 JSON and 64 object/array nesting levels (root is 1).
+Revisions are account-monotonic, never reused across repository identities;
+always retain the returned revision rather than computing the next one.
+The small `/repos.agent_state` projection is not the
+full payload. Stable catalog identity carries notes across renames and removal.
+Removed identities retain readable/updateable existing notes, but cannot acquire
+their first state. Browser views are read-only and do not write on refresh.
+
 ## Catalog discovery consumption
 
 Catalog history starts at initialization: migrated accounts use 0019 application
@@ -48,8 +118,11 @@ but not in the denominator. All candidates then report `mass_removal_guard` in
 threshold still requires the normal identity/privacy checks. Confirmed removal clears stars and
 mutable participation/overrides but preserves immutable evidence and generic
 agent records. Reappearance is added without restoring stars. Default-star and
-archive-unstar policy remains in the external bot, respecting owner overrides;
-Giraffe performs no automatic starring and adds no R5/R6 agent-state/meta API.
+archive-unstar policy remains in the authorized external bot; Giraffe performs no
+automatic starring. Every accepted star write is last-write-wins across browser
+and agent writers; `source` is informational provenance, never an owner lock or
+priority rule. Use `/repos/:owner/:name/agent-state` for persistent notes and
+`/repos/:owner/:name/meta` for static metadata through their dedicated endpoints.
 In a same-run different-ID name replacement, the listed identity owns the current
 name and emits `added`; the old identity is independently removed or unconfirmed.
 Unconfirmed old mutable state is preserved by identity and cannot leak into the
@@ -238,6 +311,12 @@ a successful zero. Factory publication and GitHub observations are immutable via
 this API. See [saved observations](api.md#saved-observations) for paths, filters,
 field shapes and examples.
 
+New staged site snapshots bind their opaque `sourceVersion` to the staged full
+digest and final publication identity/time; do not reconstruct it from response
+JSON alone. The data endpoint and `/sources.version` agree. Canonical
+`contentVersion`, historical/direct snapshot hashes and factory stream versions
+are unchanged. See the [version recipe](api.md#content-version-recipe).
+
 Repos/issues/PR freshness covers every selected catalog repository, including empty
 and missing observations. Per-repository source times fall back to the baseline
 that supplied retained data; baseline data must remain visible in `oldestAt`.
@@ -317,7 +396,8 @@ truncates to UTC dates. Counts require exactly one native cell dated `D` matchin
 the reported total; multiple/wrong-date cells yield null and partial coverage,
 never a summed count. Native dates/totals remain `timezone:"github"` provenance.
 Cross-day comparisons and conclusions remain the external producer's job; no
-analysis runtime or writable repository state/meta API is introduced here.
+analysis runtime is bundled. Activity reads never write repository state or
+metadata; authorized writes use the dedicated `agent-state` and `meta` endpoints.
 See [activity fields and window rules](api.md#get-activity).
 
 ## Generic records, reports and jobs
@@ -448,12 +528,14 @@ for daily membership and must not recreate a separate statistics preference.
 `GET /stars` returns `{items:[{repo,starred,source,updated_at,reason}]}`, including
 unstarred owner tombstones. PUT/DELETE accept an optional `{reason}` (at most
 200 characters), return 200 with the star record, and always use `source:agent`.
-Browser writes always use `source:owner`. Opposite-direction agent writes against
-owner records return 409 `owner_override` without writes; same-direction writes
-are 200 no-ops preserving owner provenance, timestamp and reason. `/repos` adds
-nullable `star_source` and `star_updated_at`. Existing surviving stars migrate to
-owner; cleanup removals create no tombstones. The settings `stars` list contains
-only currently starred names. Bots must stop on owner conflicts, not retry them.
+Browser writes always use `source:owner`. Stars are one shared concept and every
+accepted write is last-write-wins, even over owner rows or in the same direction.
+The latest writer replaces state, source, timestamp and reason; agent writes no
+longer return 409 `owner_override`. Provenance is informational only, never a lock
+or priority rule. GET `/stars` and nullable `/repos.star_source` and
+`star_updated_at` retain their shapes. Existing data and the 0.19.1 provenance
+correction remain unchanged; no new star migration is needed. The settings
+`stars` list contains only currently starred names.
 
 The existing `agent_resources` table stores generic resources, including analysis
 reports and run status. Historical Work/resource rows and legacy AI tables remain

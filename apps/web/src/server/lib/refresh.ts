@@ -126,7 +126,12 @@ export async function prepareRefresh(
 	requested: string[],
 	fetchedAt: string,
 	written: Record<string, Collected> = {},
-	options: { deriveInsights?: boolean; deferCatalog?: boolean; catalogRunId?: string } = {},
+	options: {
+		deriveInsights?: boolean;
+		deferCatalog?: boolean;
+		catalogRunId?: string;
+		stageRunId?: string;
+	} = {},
 ) {
 	const owner = (await getAccount(db, accountId))?.login.toLowerCase();
 	const catalogBaseline = requested.includes("repos") ? await beginCatalog(db, accountId) : null;
@@ -141,7 +146,7 @@ export async function prepareRefresh(
 		if (current) {
 			return current;
 		}
-		const snap = await readSnapshot(db, accountId, kind);
+		const snap = await readSnapshot(db, accountId, kind, options.stageRunId);
 		return snap as Collected | null;
 	}
 
@@ -262,7 +267,9 @@ export async function prepareRefresh(
 		if (kind === "repos" && (preserveCatalog || options.deferCatalog)) continue;
 		const preview = splitPages(kind, payload);
 		payload.truncated = preview.truncated;
-		stmts.push(...(await replaceSnapshotStmts(db, accountId, kind, payload, fetchedAt)));
+		stmts.push(
+			...(await replaceSnapshotStmts(db, accountId, kind, payload, fetchedAt, options.stageRunId)),
+		);
 	}
 	const cutoff = new Date(Date.parse(fetchedAt) - 29 * 86_400_000).toISOString().slice(0, 10);
 	stmts.push(pruneDaysStmt(db, accountId, cutoff));

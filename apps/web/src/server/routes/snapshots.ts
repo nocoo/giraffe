@@ -4,6 +4,8 @@ import { catalogInclude } from "../lib/catalog-read";
 import { getActiveAccount } from "../lib/db/accounts";
 import { readRepositorySnapshot, readSnapshot, snapshotFromRows } from "../lib/db/snapshots";
 import { ApiError, jsonOk } from "../lib/errors";
+import { enrichRepoAgentStates } from "../lib/repo-agent-state";
+import { enrichRepoMeta } from "../lib/repo-meta";
 import { accountReadPlan, savedAccountPolicy } from "../lib/saved-observation-read";
 import { assembleSnapshotGroups } from "../lib/snapshot-pages";
 import { projectSnapshot, repoPolicy, scopedSnapshot } from "../lib/snapshot-projection";
@@ -33,11 +35,16 @@ export async function snapshotGet(
 			if (logical === "repos") policy = { ...policy, catalog: snap };
 		}
 		if (!snap) throw new ApiError(409, "snapshot_missing", `no snapshot for ${logical}`);
+		let projected = await projectSnapshot(db, saved.account.id, logical, snap, policy, () =>
+			assembleSnapshotGroups(saved.repositoryPages),
+		);
+		if (logical === "repos") {
+			projected = await enrichRepoAgentStates(db, saved.account.id, projected);
+			projected = await enrichRepoMeta(db, saved.account.id, projected);
+		}
 		return jsonOk(
 			{
-				...(await projectSnapshot(db, saved.account.id, logical, snap, policy, () =>
-					assembleSnapshotGroups(saved.repositoryPages),
-				)),
+				...projected,
 				account_id: saved.account.id,
 			},
 			200,

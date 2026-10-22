@@ -92,6 +92,8 @@ for (const width of [1440, 390])
 			const { producer: _producer, ...externalPayload } = report;
 			await page.route("**/api/**", (route) => {
 				const url = new URL(route.request().url());
+				if (url.pathname.endsWith("/analysis/daily"))
+					return route.fulfill({ json: { account_id: "ui-account", items: [], invalidCount: 0 } });
 				if (url.pathname.includes("/api/agent/accounts/")) {
 					if (route.request().method() === "POST") {
 						const body = route.request().postDataJSON();
@@ -238,6 +240,8 @@ for (const width of [1440, 390])
 			);
 			await page.route("**/api/**", (route) => {
 				const url = new URL(route.request().url());
+				if (url.pathname.endsWith("/analysis/daily"))
+					return route.fulfill({ json: { account_id: "ui-account", items: [], invalidCount: 0 } });
 				if (url.pathname.includes("/api/agent/accounts/")) {
 					const collection = url.pathname.split("/").at(-1);
 					if (collection === "sources")
@@ -298,6 +302,8 @@ test("invalid reports are explicit and never fall back to old cloud reports", as
 	const fixtures: Record<string, unknown> = createUiFixtures();
 	await page.route("**/api/**", (route) => {
 		const url = new URL(route.request().url());
+		if (url.pathname.endsWith("/analysis/daily"))
+			return route.fulfill({ json: { account_id: "ui-account", items: [], invalidCount: 0 } });
 		if (url.pathname.includes("/api/agent/accounts/"))
 			return route.fulfill({
 				json: url.pathname.endsWith("/sources")
@@ -342,6 +348,8 @@ test("unchanged global reports stay current after refresh and age from the lates
 	await page.clock.setFixedTime(new Date(latest));
 	await page.route("**/api/**", (route) => {
 		const path = new URL(route.request().url()).pathname;
+		if (path.endsWith("/analysis/daily"))
+			return route.fulfill({ json: { account_id: "ui-account", items: [], invalidCount: 0 } });
 		if (path.includes("/api/agent/accounts/"))
 			return route.fulfill({
 				json: path.endsWith("/sources")

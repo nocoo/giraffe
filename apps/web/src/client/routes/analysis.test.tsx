@@ -66,6 +66,8 @@ it("renders global and repository cards from the bounded server projection", asy
 	vi.mocked(apiGet).mockImplementation(async (path) => {
 		if (path === "accounts") return { accounts: [{ id: "a", is_active: true }] };
 		if (path === "agent/accounts/a/analysis/reports") return { account_id: "a", items };
+		if (path === "agent/accounts/a/analysis/daily")
+			return { account_id: "a", items: [], invalidCount: 0 };
 		if (path.includes("/sources")) return { account_id: "a", sources, repositories: ["nocoo/app"] };
 		if (path.includes("/records")) return { account_id: "a", items: [], nextCursor: null };
 		throw new Error(`Unexpected request: ${path}`);

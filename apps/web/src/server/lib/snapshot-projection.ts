@@ -3,6 +3,7 @@ import type { FactorySnapshot, FactoryViewSnapshot } from "../../lib/factory-typ
 import { type SecurityFeatures, securityCount, securityIncomplete } from "../../lib/security";
 import { snapshotFreshness } from "../../lib/snapshot-freshness";
 import type { CatalogRow } from "./catalog-history";
+import { catalogRowIdentity, identifyCatalogRow } from "./catalog-identity";
 import { catalogFactoryRepo, catalogView } from "./catalog-read";
 import { composeContent, storedContent, withContent } from "./content-version";
 import { getAccount } from "./db/accounts";
@@ -300,17 +301,20 @@ export async function projectSnapshot(
 		const repos = policy.repos.map((repo) => {
 			const star = repo.removed_at ? null : policy.starRecord(repo.name_with_owner);
 			const starred = !repo.removed_at && policy.starred(repo.name_with_owner);
-			return {
-				...repo,
-				first_seen_at: repo.first_seen_at ?? null,
-				last_seen_at: repo.last_seen_at ?? null,
-				removed_at: repo.removed_at ?? null,
-				archived_changed_at: repo.archived_changed_at ?? null,
-				statistics_enabled: starred,
-				starred,
-				star_source: star?.source ?? null,
-				star_updated_at: star?.updated_at ?? null,
-			};
+			return identifyCatalogRow(
+				{
+					...repo,
+					first_seen_at: repo.first_seen_at ?? null,
+					last_seen_at: repo.last_seen_at ?? null,
+					removed_at: repo.removed_at ?? null,
+					archived_changed_at: repo.archived_changed_at ?? null,
+					statistics_enabled: starred,
+					starred,
+					star_source: star?.source ?? null,
+					star_updated_at: star?.updated_at ?? null,
+				},
+				catalogRowIdentity(repo),
+			);
 		});
 		const data = {
 			...snap,

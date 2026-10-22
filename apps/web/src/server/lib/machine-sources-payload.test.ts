@@ -130,6 +130,8 @@ async function fixture() {
 						coverage: envelope.coverage,
 						truncated: envelope.truncated,
 						unavailable: envelope.unavailable,
+						runId: null,
+						observedAt: envelope.fetchedAt,
 					};
 				}),
 			),

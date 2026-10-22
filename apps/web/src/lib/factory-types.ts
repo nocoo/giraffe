@@ -89,6 +89,7 @@ export type FactoryRepo = {
 	is_archived?: boolean;
 	metadataAt?: string;
 	observation?: {
+		publishedAt?: string;
 		metadataAt?: string;
 		repo?: string;
 		version: string;

@@ -175,6 +175,9 @@ full `contentVersion` for unchanged-content checks. Hashes describe saved conten
 and semantic coverage/windows, not collection time; they are not ETags.
 `contentVersion` can be null when saved metadata or an input hash is absent.
 GET never repairs hashes. See the [exact hash recipe](../../docs/api.md#content-version-recipe).
+New staged site `sourceVersion` values bind the staged digest to publication
+identity/time; compare them with `/sources.version`, never hash response JSON to
+reconstruct them. Historical/direct versions and canonical `contentVersion` stay unchanged.
 
 Skip inference only for an existing valid completed report with matching
 account/scope/canonical repository/domain and a nonempty expected source set:
@@ -299,6 +302,35 @@ Child aggregation keeps its child-version/time checks. The run record is not a
 durable work cursor or heartbeat; its separate UI traversal has a 5,000-row ceiling,
 so use the single stable ID. Never claim completion when analysis failed.
 
+## Daily reports and latest
+
+POST `/agent/reports` with `agent:write`, type `github-daily`, status `completed`,
+repository null. Required strict payload: `{date,window:{since,until},refreshRunId,
+headline,sections:[{title,markdown,items:[{repo,kind,url,severity}]}],
+comparisons:{vsYesterday,vs7d},links:{xray},generatedAt,sources}`.
+date is a valid Beijing reporting date; backfills/next-day regeneration are allowed.
+All timestamps need timezone,≤128 characters; window since≤until. Run ID uses
+the existing1–80-character resource syntax; retained-run existence is not required.
+Payload≤65,536 UTF-8 bytes; request≤70,000. Headline≤300, titles≤200, sections≤12,
+items≤50/section, markdown≤12,000, comparisons≤4,000 each, sources≤500.
+Item repo is owner/name≤200 or null; kind/severity are nonblank labels≤40.
+URLs are HTTPS on any host,≤2048, without credentials. Source schema is strict:
+resource≤240 nonblank, version≤200/null, optional contentVersion SHA-256,
+fetchedAt ISO/null, complete/stale booleans. Empty arrays/comparison text are allowed.
+ID is `github-daily-YYYY-MM-DD` (omit or match exactly). Same-date POST replaces
+atomically and increments revision:201 create,200 replacement. PATCH requires
+revision; type/date/global scope cannot change. No immutable revision archive.
+GET `/agent/reports/latest?type=<type>` needs `agent:read`, returns account_id/item
+(null if absent), with ETag/304. Daily adds invalidCount. Exact generatedAt instant
+descending, then binary ID descending; never use edit time or list-page order.
+Daily selection requires canonical/global/completed valid records; invalid or
+noncanonical legacy rows remain in generic reads but are hidden/countable here.
+Repair via explicit delete/canonical POST. The UI uses the same latest-seven
+selector and escapes markdown as plain text; no raw HTML or active Markdown.
+Without type, reports/latest remains access to the generic resource ID latest.
+Other generic reports keep their CRUD contract. New readers scan account/type
+reports, not `/sources`; no migration, model execution or collection is involved.
+
 ## Optional application management
 
 Only with explicit refresh/settings authorization and the required `app:*` scopes:
@@ -315,9 +347,10 @@ full scope is all-owned, including archives/forks. Statistics writes return 410
 `statistics_enabled` is only a deprecated alias of `starred`.
 `GET /stars` includes provenance and unstarred tombstones. PUT/DELETE accept optional
 `{reason}` (at most 200 characters) and return 200 with a star record. Machine writes
-are always `agent`; opposite owner decisions return 409 `owner_override` and must
-not be retried. Same-direction writes preserve owner provenance as a 200 no-op.
-Use nullable `/repos` fields `star_source` and `star_updated_at` for provenance.
+are always `agent`; every accepted write is last-write-wins, including owner rows
+and same-direction writes. Each write replaces state/source/time/reason; there is
+no 409 `owner_override`. Provenance in GET `/stars` and nullable `/repos` fields
+`star_source`/`star_updated_at` is informational only, not a lock or star category.
 Pending daily runs defer behind active work and start on terminal handoff; a daily
 that misses its Beijing day gets an explicit failed record, never a later-day run.
 Inspect schedule `lastError` and run outcomes independently. `expectedFinishAt` is
@@ -326,6 +359,46 @@ with real start/finish times and positive work, not a deadline. Failed/cancelled
 and zero-work runs are excluded. No eligible same-kind history yields null with
 `expectedFinishAtReason:"no_completed_history"`; another kind is not substituted.
 Do not infer collection success from cron health or ETA.
+
+## Repository metadata
+
+GET `/repos/:o/:n/meta` with app:read; PUT with app:write and at least one strict
+field: `{created_at?,archived_at?,category?,exclusion_reason?}`. Dates need ISO
+timezone; categories are app/docs-vault/profile/repro/derivative; reason ≤200.
+Unknown fields/null clearing/empty body return 400; body cap is 4096 UTF-8 bytes.
+Supplied fields gain agent
+provenance; catalog can only fill empty created_at, never replace existing values.
+`first_seen_at`/`deleted_at` are read-only catalog history. Retained removed identities
+remain readable/writable; rename preserves metadata and name reuse never inherits it.
+`/repos.meta` exposes these fields and field_sources. The browser is read-only.
+
+## Repository agent state
+
+GET `/repos/:o/:n/agent-state` (`app:read`) returns payload, revision, timestamps,
+writer and `repo_removed`. PUT (`app:write`) accepts `{revision?,payload}`:
+first write omits revision and needs an active catalog identity; updates need
+the current revision (missing 428, stale 409 `revision_conflict`). `If-Match`
+with a quoted positive revision overrides the body revision; GET returns that
+ETag (`"0"` for absent state). GET stays uncached/200, including after catalog
+rename/removal; the tag is for concurrency, not caching. No weak/wildcard tags.
+Revisions are account-monotonic, not per-repo counters: use the returned value.
+Payload must be a JSON object ≤16,384 UTF-8 bytes and 64 container levels (root 1).
+State survives refresh, rename
+and removal; removed identities permit updates only to existing state.
+`/repos.agent_state` exposes revision/time, summary ≤200 characters and a valid
+`ok|attention|blocked` status, otherwise null. Other fields remain opaque.
+The browser shows notes/status/review time read-only; it cannot edit them.
+
+## Run readiness
+
+Poll `/refresh-runs/latest?kind=daily` with `app:read`; supported kinds also include
+weekly, catalog, manual, quick and deep. Missing match is 404. A non-null
+`publishedAt` means the final publication is visible, not complete: inspect partial
+status, counts, failedSteps and coverage. ETA is historical, not a deadline.
+`/sources` returns publication `runId`/`fetchedAt` plus original `observedAt` and
+freshness. Untouched sources keep old provenance. Eligible activity matches that
+publication; pin its ID to avoid a later run racing separate reads. Old runs may
+have null readiness (also after resuming) because atomic publication cannot be proven.
 
 ## Catalog discovery
 
@@ -353,7 +426,9 @@ never a name-based 404. Permission/SAML/SSO/401/403/limits/failures and the mass
 retain all state and appear in `unconfirmed[]`. Confirmed deletion clears stars
 and mutable participation, not immutable evidence or generic agent resources.
 Stable-ID renames preserve stars; reappearance does not resurrect them. Giraffe
-never auto-stars. Apply only authorized bot policy and respect owner overrides.
+never auto-stars. Apply only authorized bot policy; every accepted star write is
+last-write-wins across browser and agent writers. `source` is informational
+provenance, never an owner lock or priority rule.
 Different-ID name reuse cannot inherit departed factory evidence; included removed
 rows never inherit the current same-name repository's stars or provenance.
 Same-run name replacement belongs to the listed ID; unresolved old mutable state

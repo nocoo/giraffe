@@ -63,6 +63,8 @@ import { SnapshotPending } from "../components/layout/snapshot-pending";
 import { ChurnMeter, LabelChips, PersonCell } from "../components/layout/table-chrome";
 import { useProjectIdentity } from "../components/layout/use-project-identity";
 import { useSnapshotRead } from "../components/layout/use-snapshot-read";
+import { RepoAgentStateCard } from "../components/repo-agent-state";
+import { RepoMetaCard } from "../components/repo-meta";
 import { categoryColor, chartColor } from "../lib/chart-theme";
 import { catchLoad } from "../lib/error-ui";
 import {
@@ -366,6 +368,8 @@ export function RepoDetailPage() {
 				<TabWell>
 					<SnapshotPending state={snap} />
 				</TabWell>
+				<RepoAgentStateCard owner={owner} name={name} />
+				<RepoMetaCard owner={owner} name={name} />
 			</div>
 		);
 	}
@@ -545,6 +549,8 @@ export function RepoDetailPage() {
 								/>
 							</KpiRow>
 							<RepoCurrentActivity repository={`${owner}/${name}`} />
+							<RepoAgentStateCard owner={owner} name={name} />
+							<RepoMetaCard owner={owner} name={name} />
 							{days.length ? (
 								<ChartBrick
 									title="90 天活动"

@@ -1,5 +1,25 @@
 # Source Index Performance
 
+## v0.20.0 bounded site publication preparation
+
+New site snapshots compute canonical and exact staged full digests while their
+logical data is bounded to two physical pages. Final publication reads only the
+small per-page metadata inventory, validates page agreement and hashes one
+publication-bound composite at a time. It never loads all staged payloads into
+JavaScript or adds per-repository payload queries. Preparation remains one
+metadata SELECT and two fenced promotion statements inside the readiness
+transaction; `/sources` remains seven statements in one batch.
+
+This deliberately changes only newly promoted staged-site full-version
+derivation. The [API recipe](api.md#content-version-recipe) specifies the exact
+composite and private fixed-width publication reservation. Canonical content
+hashes, historical/direct snapshot full digests, factory stream versions and
+account projections remain unchanged. The native SQLite regression seeds about
+150 MB in 50 two-page snapshots and forbids publication payload reads; another
+uses a count-equivalent 500-repository/nine-tab metadata inventory. These are
+structural boundedness/atomicity checks, not production latency or peak-memory
+measurements. Earlier benchmark results below remain historical evidence.
+
 ## v0.19.0 activity and discovery budget
 
 The activity source adds one stored-header statement and discovery adds one
@@ -347,7 +367,7 @@ observation window. The persisted payload/full version stays unchanged; root
 metadata, while `source_head` stays included. Metadata and payload are committed
 together under the existing transaction/fencing rules. Reads project the saved
 hash; account sources hash only a compact composition of saved dependency hashes and selection/quality
-metadata. An optional stored `fullVersion` also preserves the exact existing
+metadata. For historical/direct snapshots, an optional stored `fullVersion` preserves the exact existing
 UTF-8 SHA-256 of `JSON.stringify(prSnapshot(finalSavedData))`, avoiding raw
 snapshot full-version recomputation. Account projections still derive full
 versions from projected JSON as before. No GET backfill, cross-request cache or
@@ -400,7 +420,8 @@ The indexes cover metadata-only stream lookups. An ordinary non-covering lookup
 can touch large SQLite payload/overflow pages even when SQL omits `payload`.
 Neither table is rebuilt and no old payload is decoded or backfilled. Stored
 metadata is `{hash,version?,fullVersion?}`; version is the saved run ID where
-present, and fullVersion stores the unchanged full snapshot digest. Old rows
+present, and fullVersion stores the original full snapshot digest except for new
+staged-site promotion's documented publication-bound composite. Old rows
 remain null until their next ordinary refresh/save. Aggregates are null while an
 existing dependency is unhashed; consumers compare full versions whenever either
 content hash is absent/null and omit null hashes when publishing report sources.

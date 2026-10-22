@@ -79,14 +79,14 @@ export async function collectSitePage(
 		const catalog = await siteCatalog(db, run.account_id);
 		if (!catalog || names.some((name) => !catalog.includes(name)))
 			throw new ApiError(409, "snapshot_sources_incomplete", "selected catalogue sources missing");
-		const alerts = await readSnapshot(db, run.account_id, "alerts");
-		const issues = await readSnapshot(db, run.account_id, "issues");
+		const alerts = await readSnapshot(db, run.account_id, "alerts", run.id);
+		const issues = await readSnapshot(db, run.account_id, "issues", run.id);
 		if (!Array.isArray(issues?.issues))
 			throw new ApiError(409, "snapshot_sources_incomplete", "selected Issues sources missing");
 		const counts = new Map<string, number>();
 		for (const row of issues.issues as { name_with_owner: string }[])
 			counts.set(row.name_with_owner, (counts.get(row.name_with_owner) ?? 0) + 1);
-		const previous = await readSnapshot(db, run.account_id, "insights");
+		const previous = await readSnapshot(db, run.account_id, "insights", run.id);
 		const selected = new Set(names);
 		const fresh = buildInsights(
 			policy.repos
@@ -125,6 +125,7 @@ export async function collectSitePage(
 				"insights",
 				payload,
 				String(previous?.fetched_at ?? now),
+				run.id,
 			),
 			done: true,
 		};
@@ -238,7 +239,7 @@ export async function collectSitePage(
 		global !== "alerts" &&
 		run.steps.some((s) => s.resource === global && s.status === "success")
 	) {
-		const source = (await readSnapshot(db, run.account_id, global)) as Collected | null;
+		const source = (await readSnapshot(db, run.account_id, global, run.id)) as Collected | null;
 		assertComplete(source);
 		const items = (source[key] as Record<string, unknown>[]).filter(
 			(item) => item.name_with_owner === step.repo,
@@ -265,7 +266,7 @@ export async function collectSitePage(
 		if (splitPages(resource, payload).truncated)
 			throw new ApiError(422, "snapshot_incomplete", "retained security exceeds page capacity");
 		return {
-			writes: await replaceSnapshotStmts(db, run.account_id, resource, payload, now),
+			writes: await replaceSnapshotStmts(db, run.account_id, resource, payload, now, run.id),
 			done: true,
 			unavailable: true,
 			reasonCode: unavailableFeature.reason_code ?? "unknown",
@@ -295,6 +296,7 @@ export async function collectSitePage(
 		deriveInsights: resource === "insights" || !run.steps.some((s) => s.resource === "insights"),
 		deferCatalog: resource === "repos",
 		catalogRunId: run.id,
+		stageRunId: run.id,
 	});
 	if (resource === "repos" && !prepared.catalogPlan?.complete)
 		throw new ApiError(422, "snapshot_incomplete", "Catalog listing is incomplete");
@@ -326,7 +328,7 @@ export async function collectSitePage(
 		}
 	}
 	if (step.repo && global && run.selection?.scope !== "all") {
-		const previous = (await readSnapshot(db, run.account_id, global)) as Collected | null;
+		const previous = (await readSnapshot(db, run.account_id, global, run.id)) as Collected | null;
 		if ((previous && Array.isArray(previous[key])) || global !== "repos") {
 			const payload = prepared.written[resource] as Collected;
 			const oldItems = (previous?.[key] ?? []) as Record<string, unknown>[];
@@ -364,6 +366,7 @@ export async function collectSitePage(
 					global,
 					merged,
 					String(previous?.fetched_at ?? now),
+					run.id,
 				)),
 			);
 		}
