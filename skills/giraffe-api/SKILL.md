@@ -336,7 +336,7 @@ status, counts, failedSteps and coverage. ETA is historical, not a deadline.
 `/sources` returns publication `runId`/`fetchedAt` plus original `observedAt` and
 freshness. Untouched sources keep old provenance. Eligible activity matches that
 publication; pin its ID to avoid a later run racing separate reads. Old runs may
-have null readiness because atomic publication cannot be proven.
+have null readiness (also after resuming) because atomic publication cannot be proven.
 
 ## Catalog discovery
 

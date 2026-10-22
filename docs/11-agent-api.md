@@ -14,7 +14,8 @@ complete. Eligible activity and touched source heads publish atomically; untouch
 sources retain their original observations. `/sources.runId` identifies publication,
 `fetchedAt` is its common visibility time, and `observedAt`/freshness preserve
 collection timestamps. Pin the activity run ID when later publications can race
-your separate reads. Historical 0022 markers are conservatively null. The latest
+your separate reads. Historical 0022 markers, including resumed pre-upgrade runs,
+remain conservatively null. The latest
 reader never collects, expires runs or mutates token activity.
 
 ## Catalog discovery consumption

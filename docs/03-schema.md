@@ -8,6 +8,8 @@ No historical marker is backfilled with a timestamp: incremental site publicatio
 before 0.20 cannot prove the stronger atomic-readiness contract. Replays preserve
 existing markers. New completed/partial publications persist the marker in the
 same leased/fenced transaction as all published heads.
+New runs carry `atomicPublication:true`; resumed pre-upgrade runs without it retain
+null readiness. This capability is never inferred from successful legacy steps.
 
 Site snapshots stage under existing `factory_resources` keys (`repo=''`,
 `stream='site:<physical-kind>'`); existing run retention, cascade and budget
@@ -16,6 +18,11 @@ Each snapshot carries `{publication:{runId,publishedAt}}`; its original
 `fetched_at` and per-repository freshness remain intact. A new run cannot expose
 staged pages before its final transaction. Code rollback leaves the additive JSON
 fields/resources intact, but older code loses the atomic-readiness guarantee.
+Per-version publication timestamps are held in mutable
+`factory_repo_state.payload.observation.publishedAt` and copied into global heads;
+retained versions keep that timestamp after later partial runs and run retention.
+Immutable repository versions are never rewritten. Activity freezes current-run
+staged security pages rather than the still-visible prior snapshots.
 
 The marked-copy migration regression is `run-readiness-migration.test.ts`; it
 proves preservation and replay on legacy completed/partial/running/failed/cancelled

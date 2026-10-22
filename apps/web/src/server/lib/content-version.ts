@@ -98,6 +98,7 @@ export function contentData(resource: string, value: Record<string, unknown>) {
 			data.observation = omit(data.observation, [
 				"version",
 				"refreshedAt",
+				"publishedAt",
 				"metadataAt",
 				"source",
 				"repo",
@@ -110,6 +111,7 @@ export function contentData(resource: string, value: Record<string, unknown>) {
 					repo.observation = omit(repo.observation, [
 						"version",
 						"refreshedAt",
+						"publishedAt",
 						"metadataAt",
 						"source",
 						"repo",

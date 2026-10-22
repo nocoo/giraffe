@@ -244,7 +244,7 @@ export async function executeRunPage(
 			finish(step, "success", clock());
 			run.status = completedRunStatus(run);
 			run.finishedAt = clock();
-			run.publishedAt = publishedAt;
+			run.publishedAt = run.atomicPublication ? publishedAt : null;
 		} else {
 			run.checkpoint ??= newFactory(run.account_id, run.owner, run.startedAt);
 			const checkpoint = run.checkpoint;

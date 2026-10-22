@@ -355,6 +355,11 @@ export async function publicationWrites(
 	const committed = result.results.map((r) => {
 		const repo = normalizeRepoDependencies(JSON.parse(r.payload) as FactoryRepo);
 		const state = JSON.parse(r.state) as RepoRefreshState;
+		if (repo.observation) {
+			const publishedAt =
+				repo.observation.version === run.id ? now : state.observation?.publishedAt;
+			if (publishedAt) repo.observation.publishedAt = publishedAt;
+		}
 		if (state.dependencyLimit)
 			repo.coverage.dependencies = {
 				...repo.coverage.dependencies,
@@ -364,6 +369,15 @@ export async function publicationWrites(
 			};
 		return repo;
 	});
+	writes.push(
+		fenced(
+			db,
+			lease,
+			now,
+			"UPDATE factory_repo_state SET payload=json_set(payload,'$.observation.publishedAt',?) WHERE account_id=? AND version=? AND json_extract(payload,'$.observation.version')=? AND $guard",
+			[now, run.account_id, run.id, run.id],
+		),
+	);
 	for (const old of snapshot.repos) {
 		if (!old.observation)
 			old.observation = {

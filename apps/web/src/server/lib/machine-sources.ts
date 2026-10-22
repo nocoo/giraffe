@@ -34,6 +34,21 @@ const sourceQuerySchema = z
 	})
 	.strict();
 
+type SourcePublication = { runId?: string; publishedAt?: string | null };
+
+function sourceMetadata(
+	data: Record<string, unknown>,
+	publication = data.publication as SourcePublication | undefined,
+) {
+	const metadata = observationMetadata(data);
+	return {
+		...metadata,
+		runId: publication?.runId ?? null,
+		observedAt: metadata.fetchedAt,
+		fetchedAt: publication?.publishedAt ?? metadata.fetchedAt,
+	};
+}
+
 function afterSince(metadata: ReturnType<typeof observationMetadata>, since: number | null) {
 	if (since === null) return true;
 	const freshness = metadata.freshness;
@@ -196,6 +211,9 @@ export async function readSources(
 			(repository && repo.name.toLowerCase() !== repository.toLowerCase())
 		)
 			return [];
+		const provenance = {
+			...(repo.observation?.publishedAt ? { publishedAt: repo.observation.publishedAt } : {}),
+		};
 		return FACTORY_STREAMS.flatMap((stream) => {
 			const coverage = repo.coverage[stream];
 			const data = {
@@ -213,7 +231,9 @@ export async function readSources(
 					coverage.status === "partial" ||
 					coverage.status === "unavailable",
 			};
-			return afterSince(observationMetadata(data), since) ? [{ repo, stream, data }] : [];
+			return afterSince(sourceMetadata(data, provenance), since)
+				? [{ repo, stream, data, provenance }]
+				: [];
 		});
 	});
 	const saved = decode(() =>
@@ -263,9 +283,9 @@ export async function readSources(
 		data: Record<string, unknown>,
 		version: string | undefined = storedContent(data)?.fullVersion,
 		content: string | null = storedContent(data)?.hash ?? null,
-		publication = data.publication as { runId?: string; publishedAt?: string } | undefined,
+		publication = data.publication as SourcePublication | undefined,
 	) => {
-		const metadata = observationMetadata(data);
+		const metadata = sourceMetadata(data, publication);
 		if (!afterSince(metadata, since)) return;
 		data = prSnapshot(data);
 		return {
@@ -273,9 +293,6 @@ export async function readSources(
 			version: version ?? (await hash(() => observationVersion(data))),
 			contentVersion: content,
 			...metadata,
-			runId: publication?.runId ?? null,
-			observedAt: metadata.fetchedAt,
-			fetchedAt: publication?.publishedAt ?? metadata.fetchedAt,
 		};
 	};
 	const indexed = await Promise.all(
@@ -294,23 +311,26 @@ export async function readSources(
 			let data: Record<string, unknown>;
 			let version: string | undefined;
 			let content: string | null | undefined;
+			let provenance: SourcePublication | undefined;
 			if (resource === "factory") {
 				if (!publication) continue;
 				data = projectFactoryObservation(publication, policy);
 				version = publication.publication?.runId ?? publication.runId;
 			} else if (resource === "ci") {
 				const inputs = ciObservationInputs(policy, groups);
-				if (!afterSince(observationMetadata(inputs.metadata), since)) continue;
+				for (const repo of policy.repos)
+					for (const suffix of ["actions", "releases", "details"]) {
+						const snapshot = groups.get(`repo:${repo.name_with_owner}:${suffix}`.toLowerCase());
+						if (!snapshot) continue;
+						const metadata = sourceMetadata(snapshot.data);
+						if (
+							metadata.runId &&
+							(!provenance || String(metadata.fetchedAt) > String(provenance.publishedAt))
+						)
+							provenance = { runId: metadata.runId, publishedAt: metadata.fetchedAt };
+					}
+				if (!afterSince(sourceMetadata(inputs.metadata, provenance), since)) continue;
 				data = projectCiInputs(inputs);
-				const latest = sources
-					.filter(
-						(source) =>
-							/^repo:.*:(actions|releases|details)$/.test(source.resource) && source.runId,
-					)
-					.sort((first, second) =>
-						String(second.fetchedAt).localeCompare(String(first.fetchedAt)),
-					)[0];
-				if (latest) data.publication = { runId: latest.runId, publishedAt: latest.fetchedAt };
 				content = await hash(() => ciContent(policy, groups, inputs.metadata.freshness));
 			} else {
 				const snapshot = resource === "repos" ? policy.catalog : saved.get(resource);
@@ -326,6 +346,7 @@ export async function readSources(
 					: resource === "factory" && publication
 						? await hash(() => factoryContent(publication, policy))
 						: undefined,
+				provenance,
 			);
 			if (source) sources.push(source);
 		} catch (error) {
@@ -334,7 +355,7 @@ export async function readSources(
 	}
 	const repositories = policy.repos.map((repo) => repo.name_with_owner).sort();
 	if (publication)
-		for (const { repo, stream, data: metadata } of streams) {
+		for (const { repo, stream, data: metadata, provenance } of streams) {
 			const version = repo.observation?.version ?? publication.runId;
 			const meta = streamMeta.get(
 				repo.observation?.source === "run"
@@ -348,12 +369,7 @@ export async function readSources(
 				await hash(async () =>
 					factoryStreamContent(meta?.version === version ? meta.hash : null, repo.coverage[stream]),
 				),
-				{
-					runId: version,
-					...(version === publication.runId && publication.publication?.publishedAt
-						? { publishedAt: publication.publication?.publishedAt }
-						: {}),
-				},
+				{ ...provenance, runId: version },
 			);
 			if (source) sources.push(source);
 		}

@@ -1,5 +1,15 @@
 # Retrospective
 
+## 2026-10-22 - Audit every consumer when moving publication boundaries
+
+The first R9 staging change left activity security reading the former live table,
+and marked resumed pre-upgrade runs ready without proving their collection protocol.
+Review also found derived CI hashes polluted by provenance, visibility filtering
+using collection time, and retained streams losing their publication timestamp.
+Exercise a staged-only security fixture, an upgrade-resume fixture and successive
+partial publications. Keep immutable observation bytes separate from mutable
+publication provenance, and test source filtering and advertised hashes together.
+
 ## 2026-10-22 - Prove publication fixtures before interpreting failures
 
 The first R9 revoked-fence fixture omitted the previously published factory base,

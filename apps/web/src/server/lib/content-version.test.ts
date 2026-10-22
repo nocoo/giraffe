@@ -12,6 +12,23 @@ import {
 	withContent,
 } from "./content-version";
 
+it("R9 publication timestamps do not alter factory content fingerprints", async () => {
+	const snapshot = factoryFixture();
+	const original = await contentVersion("factory", snapshot);
+	for (const repo of snapshot.repos)
+		repo.observation = {
+			version: "r1",
+			window: snapshot.window,
+			refreshedAt: "old",
+			source: "run",
+		};
+	const before = await contentVersion("factory", snapshot);
+	for (const repo of snapshot.repos)
+		Object.assign(repo.observation ?? {}, { publishedAt: "2026-10-22T05:00:00Z" });
+	expect(await contentVersion("factory", snapshot)).toBe(before);
+	expect(original).toMatch(/^sha256:/);
+});
+
 it("projects saved metadata without exposing it in response JSON", async () => {
 	const data = { issues: [], fetched_at: "old" };
 	const encoded = await savedContentMeta("issues", data);

@@ -267,7 +267,7 @@ it("R4 freezes only accepted current-run resource evidence with fresh feature-le
 	step.finishedAt = now;
 	await s.db
 		.prepare(
-			"INSERT INTO snapshots(account_id,kind,payload,fetched_at) VALUES('account_123','repo:nocoo/app:security',?,?)",
+			"INSERT INTO factory_resources(run_id,repo,stream,payload) VALUES('r2','','site:repo:nocoo/app:security',?)",
 		)
 		.bind(
 			JSON.stringify({
@@ -276,7 +276,6 @@ it("R4 freezes only accepted current-run resource evidence with fresh feature-le
 				dependabot_open: 0,
 				code_scanning_open: 1,
 			}),
-			now,
 		)
 		.run();
 	await s.db.batch([await freezeActivityRepo(s.db, s.lease, now, s.repo, extra())]);
@@ -319,6 +318,41 @@ it("R4 stale observations and stream run mismatches never become current zero sn
 	expect(data.ci_runs).toBeNull();
 	expect(data.commits.default).toBeNull();
 	expect(data.coverage.actions).toMatchObject({ status: "partial", truncated: true });
+});
+it("R9 activity never substitutes live security snapshots for missing staged evidence", async () => {
+	const { freezeActivityRepo } = await import("./activity-store");
+	const s = await setup();
+	s.repo.observation = {
+		version: "r2",
+		window: s.lease.run.window,
+		refreshedAt: now,
+		source: "run",
+	};
+	const step = s.lease.run.steps.find((step) => step.resource === "repo:nocoo/app:security");
+	if (!step) throw new Error("fixture");
+	Object.assign(step, { status: "success", startedAt: now, finishedAt: now });
+	await s.db
+		.prepare(
+			"INSERT INTO snapshots(account_id,kind,payload,fetched_at) VALUES('account_123','repo:nocoo/app:security',?,?)",
+		)
+		.bind(
+			JSON.stringify({
+				fetched_at: now,
+				features: { dependabot: { status: "available" }, code_scanning: { status: "available" } },
+				dependabot_open: 7,
+				code_scanning_open: 9,
+			}),
+			now,
+		)
+		.run();
+	await s.db.batch([await freezeActivityRepo(s.db, s.lease, now, s.repo, extra())]);
+	const row = await s.db
+		.prepare("SELECT payload FROM factory_resources WHERE stream='activity-snapshot'")
+		.first<{ payload: string }>();
+	expect(JSON.parse(row?.payload ?? "{}").snapshot).toMatchObject({
+		dependabot: null,
+		code_scanning: null,
+	});
 });
 it("R4 incomplete source batches fail closed and missing metadata cannot publish a fake repository", async () => {
 	const { freezeActivityRepo } = await import("./activity-store");
@@ -520,9 +554,9 @@ it("R4 mixed current security retains an available feature without reviving stal
 	};
 	await s.db
 		.prepare(
-			"INSERT INTO snapshots(account_id,kind,payload,fetched_at) VALUES('account_123','repo:nocoo/app:security',?,?)",
+			"INSERT INTO factory_resources(run_id,repo,stream,payload) VALUES('r2','','site:repo:nocoo/app:security',?)",
 		)
-		.bind(JSON.stringify(payload), now)
+		.bind(JSON.stringify(payload))
 		.run();
 	await s.db.batch([await freezeActivityRepo(s.db, s.lease, now, s.repo, extra())]);
 	const row = await s.db
@@ -808,9 +842,9 @@ it.each(["missing-time", "missing-start", "missing-finish", "stale-time", "faile
 		};
 		await s.db
 			.prepare(
-				"INSERT INTO snapshots(account_id,kind,payload,fetched_at) VALUES('account_123','repo:nocoo/app:security',?,?)",
+				"INSERT INTO factory_resources(run_id,repo,stream,payload) VALUES('r2','','site:repo:nocoo/app:security',?)",
 			)
-			.bind(JSON.stringify(payload), now)
+			.bind(JSON.stringify(payload))
 			.run();
 		await s.db.batch([await freezeActivityRepo(s.db, s.lease, now, s.repo, extra())]);
 		const row = await s.db

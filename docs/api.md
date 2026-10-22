@@ -27,13 +27,17 @@ runs set it in the same fenced transaction as site snapshots, catalog changes,
 factory head and eligible activity. Running, failed and cancelled runs have null.
 Readiness is not completeness: inspect counts, failed steps and source coverage.
 Historical markers remain null when atomic publication is unprovable (0022).
+Runs created before the staging protocol also keep null when resumed to completion;
+only newly created runs carry the internal atomic-publication capability marker.
 
 `/sources` adds `runId` and `observedAt`. Sources touched by a new publication use
 its run ID and common publication time as `fetchedAt`; `observedAt` and `freshness`
 preserve collection times. Untouched/retained streams keep their original run/time;
 legacy snapshot sources have null runId. Derived CI uses its newest published
-input, without claiming every component is fresh. For eligible runs,
-`/activity?run=latest` and `account:activity` share the published run ID/time.
+input, without claiming every component is fresh.
+`since` compares visibility time, including sources collected before the cutoff
+but published afterwards. Publication provenance does not change CI source versions.
+For eligible runs, `/activity?run=latest` and `account:activity` share the published run ID/time.
 Catalog/deep/selected runs do not replace the account activity head. Separate GETs
 can straddle a subsequent publication; compare IDs or pin `/activity?run=<id>`.
 GET never starts work, records token use or changes run state.

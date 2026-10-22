@@ -1657,6 +1657,24 @@ it("uses server time for persisted heartbeat when no clock is injected", async (
 	expect(Date.parse(run?.updatedAt ?? "")).toBeGreaterThanOrEqual(before);
 });
 
+it("R9 resumed legacy runs finish without claiming atomic publication readiness", async () => {
+	const env = await setup();
+	const db = createDb(env.DB);
+	const found = await getRun(db, snap.account_id, "r1");
+	if (!found) throw new Error("fixture");
+	const legacy = { ...found.run } as Record<string, unknown>;
+	delete legacy.atomicPublication;
+	for (const step of found.run.steps) if (step.kind !== "publish") step.status = "success";
+	await db
+		.prepare("UPDATE factory_runs SET payload=? WHERE id='r1'")
+		.bind(JSON.stringify(legacy))
+		.run();
+	await executeRunPage(env, "r1", () => now);
+	const saved = (await getRun(db, snap.account_id, "r1"))?.run;
+	expect(saved?.status).toBe("completed");
+	expect(saved?.publishedAt).toBeNull();
+});
+
 it("never revives completed steps on claim and finalizes exhausted persisted plans", async () => {
 	for (const exhausted of [false, true]) {
 		const env = await setup();

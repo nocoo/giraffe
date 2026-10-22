@@ -49,6 +49,7 @@ export type FactoryRunStep = {
 	error: string | null;
 };
 export type FactoryRun = {
+	atomicPublication?: true;
 	publishedAt?: string | null;
 	activityWindow?: import("./activity-types").ActivityWindow;
 	previousActivityRunId?: string | null;
@@ -252,6 +253,7 @@ export function makeRun(
 		finishedAt: null,
 		nextAttemptAt: now,
 		publishedAt: null,
+		atomicPublication: true,
 		requests: 0,
 		version: 0,
 		checkpoint: null,
