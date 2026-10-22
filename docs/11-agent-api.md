@@ -311,6 +311,12 @@ a successful zero. Factory publication and GitHub observations are immutable via
 this API. See [saved observations](api.md#saved-observations) for paths, filters,
 field shapes and examples.
 
+New staged site snapshots bind their opaque `sourceVersion` to the staged full
+digest and final publication identity/time; do not reconstruct it from response
+JSON alone. The data endpoint and `/sources.version` agree. Canonical
+`contentVersion`, historical/direct snapshot hashes and factory stream versions
+are unchanged. See the [version recipe](api.md#content-version-recipe).
+
 Repos/issues/PR freshness covers every selected catalog repository, including empty
 and missing observations. Per-repository source times fall back to the baseline
 that supplied retained data; baseline data must remain visible in `oldestAt`.

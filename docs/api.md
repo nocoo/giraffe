@@ -563,11 +563,29 @@ The exact recipe in [content-version.ts](../apps/web/src/server/lib/content-vers
 The hash is stored atomically alongside the payload in nullable TEXT
 `snapshots.content_meta` or `factory_resources.content_meta`. This small JSON is
 `{hash,version?,fullVersion?}`; `version` records the saved `runId` when present.
-`fullVersion` is the existing `sha256:` plus lowercase hex digest of UTF-8
+For direct writes and factory streams, `fullVersion` is the existing `sha256:` plus lowercase hex digest of UTF-8
 `JSON.stringify(prSnapshot(finalSavedData))`, with no canonical key sorting or
 timestamp removal. Saving it avoids rehashing raw snapshots on each read without
 changing any full-version bytes. Account projections still hash their projected
 JSON as before. All physical pages of a snapshot carry the same logical hashes.
+
+New staged site snapshots use a publication-bound composite `fullVersion`.
+Staging computes the exact digest above for the bounded logical snapshot,
+including its reserved `publication:{runId,publishedAt:fetchedAt}` metadata.
+At promotion, hash the UTF-8 bytes of compact
+`JSON.stringify({snapshot:staged.fullVersion,publication:{runId,publishedAt}})`
+with SHA-256, preserving the shown object insertion order, and encode as
+`sha256:` plus 64 lowercase hex characters. The final `publishedAt` is the
+publication timestamp, not the staging time. This is intentionally not the
+digest of response data alone; consumers compare the complete opaque version.
+The canonical `hash`/`contentVersion` remains unchanged. Historical snapshots,
+direct-write hashes, factory stream versions and account projections are not
+rewritten. Publication reads only small per-page hash metadata and hashes one
+composite at a time; no staged payload is loaded into JavaScript. Both physical
+pages must agree on valid staged hashes before the two fenced promotion writes
+can be included in the atomic readiness transaction. Missing, malformed or
+inconsistent staged metadata fails safely with `snapshot_metadata_invalid`.
+
 A factory stream's stored version
 must match the publication's advertised observation version. Stream hashes cover
 actual saved items, not just coverage summaries. The index reads only their

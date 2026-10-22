@@ -1558,3 +1558,17 @@ the three assertions ran. Native seeding against an empty database did not expos
 the collision; replay against the marked L2 database did. Generate a unique
 fixture login and derive all owned repository names from it. A before-hook failure
 with skipped bodies is failed validation, never evidence that those cases passed.
+
+## 2026-10-22 - Atomic publication must not materialize the whole run
+
+External review found that final publication loaded every staged site page and
+hashed all assembled snapshots concurrently. Fifty two-page snapshots already
+held about 150 MB of raw JSON, before decoding, beyond the Worker isolate limit.
+Reading each logical snapshot separately would instead exceed the existing
+80-statement budget for ordinary multi-tab runs. Preparation now reads only the
+small hashes computed during bounded staging and derives one publication-bound
+composite digest at a time. This deliberately changes new staged-site full-version
+derivation, so the API recipe and consumer migration notes record the exception;
+canonical content, direct writes and historical versions remain unchanged.
+Regression tests forbid payload reads, cover the 500-repository/nine-tab metadata
+inventory, validate page agreement and prove rollback and atomic readiness.

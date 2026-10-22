@@ -175,6 +175,9 @@ full `contentVersion` for unchanged-content checks. Hashes describe saved conten
 and semantic coverage/windows, not collection time; they are not ETags.
 `contentVersion` can be null when saved metadata or an input hash is absent.
 GET never repairs hashes. See the [exact hash recipe](../../docs/api.md#content-version-recipe).
+New staged site `sourceVersion` values bind the staged digest to publication
+identity/time; compare them with `/sources.version`, never hash response JSON to
+reconstruct them. Historical/direct versions and canonical `contentVersion` stay unchanged.
 
 Skip inference only for an existing valid completed report with matching
 account/scope/canonical repository/domain and a nonempty expected source set:
