@@ -84,6 +84,59 @@ async function setup(at = now) {
 	return { raw, db, catalog, schedule, runs };
 }
 
+it("rechecks a catalog completed between readiness and idempotency reads", async () => {
+	const fixture = await setup();
+	const due = "2026-10-18T11:30:00.000Z";
+	await fixture.catalog("2026-10-16T00:00:00.000Z");
+	await fixture.schedule("daily", due);
+	await scheduleRefreshes(fixture.raw, now);
+	const preparation = (await fixture.runs())[0];
+	if (!preparation) throw new Error("missing catalog preparation");
+	const prepare = fixture.raw.prepare.bind(fixture.raw);
+	let released = false;
+	const intercept = vi.spyOn(fixture.raw, "prepare").mockImplementation((sql) => {
+		const statement = prepare(sql);
+		if (sql !== "SELECT id,status FROM factory_runs WHERE account_id=? AND request_key=?")
+			return statement;
+		return {
+			...statement,
+			bind: (...values: unknown[]) => {
+				const bound = statement.bind(...values);
+				return {
+					...bound,
+					first: async <Row>() => {
+						if (!released && values[1] === `${preparation.requestKey}`) {
+							released = true;
+							await fixture.catalog();
+							await prepare("UPDATE factory_runs SET status='completed',payload=? WHERE id=?")
+								.bind(
+									JSON.stringify({ ...preparation, status: "completed", finishedAt: now }),
+									preparation.id,
+								)
+								.run();
+						}
+						return bound.first<Row>();
+					},
+				} as D1PreparedStatement;
+			},
+		} as D1PreparedStatement;
+	});
+	try {
+		await scheduleRefreshes(fixture.raw, now);
+		await scheduleRefreshes(fixture.raw, now);
+		expect(released).toBe(true);
+		expect((await fixture.runs()).find((run) => run.requestKey === `daily:${due}`)).toMatchObject({
+			status: "running",
+			mode: "refresh",
+		});
+		expect((await fixture.runs()).some((run) => run.error === "catalog_preparation_failed")).toBe(
+			false,
+		);
+	} finally {
+		intercept.mockRestore();
+	}
+});
+
 it("records October 16 and 17 individually and starts the current-day daily before an older weekly", async () => {
 	const s = await setup();
 	await s.schedule("daily", "2026-10-16T11:30:00.000Z");
