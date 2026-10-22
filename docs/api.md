@@ -802,8 +802,18 @@ include a safe `reason`, never raw upstream diagnostics. Arrays sort ascending
 by `(at, repo, event_id)`. Selection is inclusive (`at >= since`); retain event IDs
 to deduplicate when polling from the previous `until`.
 
-No completed discovery publication returns 409 `catalog_unpublished`. Event
-retention is bounded to 90 days and 10,000 combined change/unconfirmed events per account. Eviction removes
+No completed discovery publication returns 409 `catalog_unpublished`. After the
+first publication, `since < history_since` returns 410 `catalog_history_expired`
+immediately, not only after retention eviction; it does not clamp the cursor or
+return a partial 200. `since == history_since` is accepted. For migrated accounts,
+0019 seeds this floor at migration application time (history initialization), not
+the saved catalog's fetch time or the first later publication; that publication
+preserves the floor. Resync from `/repos` after a 410, then poll from the published
+history boundary. The saved 2026-10-21 catalog baseline already excludes `rsshub`
+and `wiki`; their pre-history departures can never be reconstructed as `removed`
+events. Initialization does not invent additions, removals or archive events.
+
+Event retention is bounded to 90 days and 10,000 combined change/unconfirmed events per account. Eviction removes
 whole timestamp cohorts and advances the history floor beyond the evicted time;
 a request before that floor returns 410 `catalog_history_expired`, never a
 silently incomplete success. Resynchronize the current catalog after expiry.

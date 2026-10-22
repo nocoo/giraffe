@@ -331,8 +331,13 @@ Poll `/catalog/changes?since=<ISO>` with `observations:read`. Process `added`,
 `removed`, `archived`, `unarchived`, `visibility_changed`, `fork_changed` and
 `renamed` and `unconfirmed` (safe `reason`; never a deletion). Events sort by time/repo/event ID; `since` is inclusive, so deduplicate
 `event_id` and resume from the returned `until`. 409 `catalog_unpublished` means
-no complete publication; 410 `catalog_history_expired` requires a full catalog
-resync. Combined history retains at most 90 days/10,000 events; do not assume older polls
+no complete publication. After first publication, any `since < history_since`
+returns 410 `catalog_history_expired`, never a clamped/partial 200; equality is
+accepted. The floor starts at history initialization (0019 application time for
+migrated accounts), not only after eviction or at the first later publication.
+410 requires a full `/repos` resync. The saved 10-21 baseline lacked `rsshub/wiki`,
+so their pre-history departures cannot produce synthetic `removed` events.
+Combined history retains at most 90 days/10,000 events; do not assume older polls
 are complete. GET does not collect or write.
 
 `/repos` includes nullable `first_seen_at`, `last_seen_at`, `removed_at` and

@@ -8,6 +8,13 @@ consumer flow are in [Machine API v1](api.md).
 
 ## Catalog discovery consumption
 
+Catalog history starts at initialization: migrated accounts use 0019 application
+time as `history_since`, retained by first publication. Before publication,
+`/catalog/changes` returns 409; afterwards, `since < history_since` returns 410
+even before any eviction (equality is accepted). There is no clamped 200 and no
+synthetic removal for repositories such as `rsshub/wiki` absent from the saved
+10-21 baseline. See [catalog history](api.md#get-catalogchanges).
+
 Use `GET /catalog/changes?since=<ISO>` with `observations:read` before applying
 authorized bot policy. The inclusive cursor returns stable event IDs: deduplicate
 them, and advance from the returned `until` only after processing the response.

@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - B3: include valid positive-work partial runs in the last-five same-kind ETA median. Preserve failed/cancelled/zero-work exclusions and explicit null-with-reason when no eligible history exists.
 - B4: apply private no-store, credential-specific Vary and no-referrer headers to activity errors (400/404/409), successful responses and 304s for both browser and machine readers.
 - B5: add idempotent migration 0021 to correct only the 18 named untouched `nocoo` stars from owner to agent provenance, guarded by account, repository, starred state, null reason and the exact 0017 seed timestamp; preserve timestamps and every other field. The marked local backup changes exactly 18 rows and zero on replay.
+- B6: pin existing catalog semantics without changing behavior: after first publication, a cursor before the 0019 initialization floor returns 410 immediately, even without eviction; preserve that floor and never synthesize removals for pre-history absences such as rsshub/wiki.
 
 ## v0.19.0 - 2026-10-22
 
