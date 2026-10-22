@@ -240,7 +240,7 @@ it.each([
 	'{"reason":42}',
 	JSON.stringify({ reason: "x".repeat(201) }),
 	'{"starred":true}',
-	"",
+	" ",
 ])("rejects malformed optional star bodies without changing state: %s", async (body) => {
 	const setup = await fixture();
 	for (const method of ["PUT", "DELETE"] as const)

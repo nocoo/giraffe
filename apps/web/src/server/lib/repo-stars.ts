@@ -15,7 +15,8 @@ export type StarRow = {
 const record = (row: StarRow) => ({ ...row, starred: row.starred === 1 });
 
 export async function readStarReason(request: Request) {
-	const parsed = reasonInput.safeParse(request.body === null ? {} : await readJson(request, 2048));
+	const body = await readJson(request, 2048, true);
+	const parsed = reasonInput.safeParse(body === undefined ? {} : body);
 	if (!parsed.success) throw new ApiError(400, "validation_failed", "invalid star reason");
 	return parsed.data.reason ?? null;
 }
