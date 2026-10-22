@@ -215,10 +215,11 @@ in total/hash and conditional requests still perform the source reads.
 
 At 300 ms per trip the expected saving is about 1.2 seconds; adding the unchanged
 auth trip gives roughly 0.65 seconds in the simulation. This is not a deployed
-latency guarantee. Smart Placement could move execution closer to D1; read
-replication would require explicit consistency/session design. Both need owner
-approval and neither is configured here. Batching other account/detail routes is
-deferred to avoid broadening the read-contract change.
+latency guarantee. Smart Placement is not configured here. On 2026-10-22 the
+owner declined D1 read replication, a stored source projection and early 304
+handling: `/sources` latency and its current read behavior remain unchanged.
+These are not open implementation options. Batching other account/detail routes
+is outside this change.
 
 ## Measurement boundary
 
@@ -561,8 +562,10 @@ of that serialized representation. `If-None-Match:*` must not bypass payload
 validation and turn existing errors into a successful conditional response.
 An exact pre-payload validator would require a separately designed save-time
 representation/validator or sufficient stored projection metadata, with invalidation
-for membership, publication and query variants. That schema/write-path work is
-explicitly deferred; no weaker validator, new cache or additional read is added.
+for membership, publication and query variants. The owner explicitly declined
+that stored projection and early-304 work on 2026-10-22, together with D1 read
+replication. Preserve the existing behavior; no weaker validator, new cache or
+additional read is added.
 
 The machine source endpoint uses a strong, content-derived validator and accepts
 `If-None-Match` after bearer, account and scope authorization. Matching requests
