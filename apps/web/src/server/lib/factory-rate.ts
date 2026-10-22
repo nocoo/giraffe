@@ -1,6 +1,7 @@
 import type { FactoryRate, FactorySnapshot } from "../../lib/factory-types";
 import type { Db } from "./db/d1";
 import { ApiError } from "./errors";
+import { accountBindings, accountIdSql, type SavedAccount } from "./saved-observation-statements";
 
 type Rate = FactorySnapshot["rate"];
 
@@ -34,14 +35,27 @@ export function latestFactoryRate(...observations: (Rate | undefined)[]): Rate {
 	return latest;
 }
 
-export async function readFactoryRate(db: Db, account: string, published: Rate, now = Date.now()) {
-	const row = await db
-		.prepare(
-			"SELECT json_extract(payload,'$.checkpoint.rate') AS rate FROM factory_runs WHERE account_id=? AND json_type(payload,'$.checkpoint.rate')='object' ORDER BY julianday(json_extract(payload,'$.checkpoint.rate.observedAt')) DESC,updated_at DESC,id DESC LIMIT 1",
-		)
-		.bind(account)
-		.first<{ rate: string }>();
-	const rate = latestFactoryRate(published, row ? (JSON.parse(row.rate) as Rate) : null);
+export type SavedFactoryRateRow = { rate: string | null; malformed: number };
+
+export function factoryRateStatement(db: Db, account: SavedAccount) {
+	return db
+		.prepare(`WITH inputs AS MATERIALIZED (
+ SELECT id,updated_at,CASE WHEN json_valid(payload,2) THEN payload END AS payload,
+ NOT json_valid(payload,2) AS malformed FROM factory_runs WHERE account_id=${accountIdSql(account)}
+ ) SELECT (SELECT json_extract(payload,'$.checkpoint.rate') FROM inputs
+ WHERE json_type(payload,'$.checkpoint.rate')='object'
+ ORDER BY julianday(json_extract(payload,'$.checkpoint.rate.observedAt')) DESC,updated_at DESC,id DESC LIMIT 1) AS rate,
+ coalesce((SELECT max(malformed) FROM inputs),0) AS malformed`)
+		.bind(...accountBindings(account));
+}
+
+export function factoryRateFromRow(
+	row: SavedFactoryRateRow | null,
+	published: Rate,
+	now = Date.now(),
+) {
+	if (row?.malformed) throw new ApiError(500, "db_error", "d1 error");
+	const rate = latestFactoryRate(published, row?.rate ? (JSON.parse(row.rate) as Rate) : null);
 	if (
 		!rate ||
 		!Number.isInteger(rate.remaining) ||
@@ -53,4 +67,9 @@ export async function readFactoryRate(db: Db, account: string, published: Rate, 
 	)
 		return null;
 	return rate;
+}
+
+export async function readFactoryRate(db: Db, account: string, published: Rate, now = Date.now()) {
+	const row = await factoryRateStatement(db, account).first<SavedFactoryRateRow>();
+	return factoryRateFromRow(row, published, now);
 }

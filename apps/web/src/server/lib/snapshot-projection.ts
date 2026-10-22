@@ -124,7 +124,7 @@ async function projectList(
 	kind: string,
 	snapshot: Record<string, unknown> | null,
 	policy: Policy,
-	savedPages?: SnapshotGroups,
+	savedPages?: SnapshotGroups | (() => SnapshotGroups),
 ) {
 	const key = LIST_KEYS[kind] as string;
 	const allowed = policy.includes;
@@ -161,7 +161,10 @@ async function projectList(
 	const pages =
 		suffix && names.size
 			? savedPages
-				? completeRepositoryPages(savedPages, suffix)
+				? completeRepositoryPages(
+						typeof savedPages === "function" ? savedPages() : savedPages,
+						suffix,
+					)
 				: await repositoryPages(db, account, suffix)
 			: new Map<string, Record<string, unknown>>();
 	const times = new Map<string, string | null>();
@@ -270,7 +273,7 @@ export async function projectSnapshot(
 	kind: string,
 	snap: Record<string, unknown>,
 	policy: Policy,
-	savedPages?: SnapshotGroups,
+	savedPages?: SnapshotGroups | (() => SnapshotGroups),
 ): Promise<Record<string, unknown>> {
 	if (kind.startsWith("repo:")) return snap;
 	const scope = policy.scope;

@@ -18,10 +18,19 @@ import {
 } from "./content-version";
 import type { Db } from "./db/d1";
 import { publishedFactory } from "./db/factory-runs";
-import { readRepositorySnapshot, readSnapshot } from "./db/snapshots";
+import { readRepositorySnapshot, readSnapshot, snapshotFromRows } from "./db/snapshots";
 import { ApiError } from "./errors";
 import { streamKey } from "./factory-collect";
-import { latestSnapshotGroups, type SnapshotPage } from "./snapshot-pages";
+import { factoryRateFromRow } from "./factory-rate";
+import {
+	accountReadPlan,
+	decodePublication,
+	type PublicationPage,
+	type SavedAccountRead,
+	savedAccountPolicy,
+} from "./saved-observation-read";
+import type { AccountObservationResource } from "./saved-observation-statements";
+import { assembleSnapshotGroups, latestSnapshotGroups, type SnapshotPage } from "./snapshot-pages";
 import {
 	factoryFreshness,
 	factoryObserved,
@@ -223,14 +232,51 @@ export async function readObservation(
 	scope: SnapshotScope,
 	savedPolicy?: Policy,
 ) {
-	const policy = savedPolicy ?? (await repoPolicy(db, account, undefined, scope));
+	const plan =
+		!savedPolicy && ["repos", "issues", "prs", "ci", "factory"].includes(resource)
+			? accountReadPlan(db, account, resource as AccountObservationResource, scope)
+			: null;
+	const saved = plan ? plan.decode(await db.batch(plan.statements)) : undefined;
+	return projectObservation(db, account, resource, scope, savedPolicy, saved);
+}
+
+export async function readMachineAccountObservation(
+	db: Db,
+	account: string,
+	resource: AccountObservationResource,
+	scope: SnapshotScope,
+) {
+	const plan = accountReadPlan(db, account, resource, scope, { rate: true });
+	const saved = plan.decode(await db.batch(plan.statements));
+	const observation = await projectObservation(db, account, resource, scope, undefined, saved);
+	if (resource === "factory")
+		observation.data.rate = factoryRateFromRow(
+			saved.rateRows[0] ?? null,
+			observation.data.rate as FactorySnapshot["rate"],
+		);
+	return observation;
+}
+
+async function projectObservation(
+	db: Db,
+	account: string,
+	resource: string,
+	scope: SnapshotScope,
+	savedPolicy?: Policy,
+	saved?: SavedAccountRead,
+) {
+	const policy =
+		savedPolicy ??
+		(saved ? savedAccountPolicy(saved, scope) : await repoPolicy(db, account, undefined, scope));
 	if (resource.startsWith("repo:")) {
 		const snapshot = await readRepositorySnapshot(db, account, resource);
 		if (!snapshot) throw new ApiError(409, "snapshot_missing", "no saved source");
 		return observationEnvelope(account, snapshot.resource, snapshot.data, scope);
 	}
 	if (resource === "factory") {
-		const snapshot = await publishedFactory(db, account);
+		const snapshot = saved
+			? decodePublication(saved.sourcePages as PublicationPage[])
+			: await publishedFactory(db, account);
 		if (!snapshot) throw new ApiError(409, "snapshot_missing", "no saved publication");
 		return observationEnvelope(
 			account,
@@ -243,7 +289,7 @@ export async function readObservation(
 		);
 	}
 	if (resource === "ci") {
-		const groups = await readCiGroups(db, account);
+		const groups = saved ? latestSnapshotGroups(saved.ciPages) : await readCiGroups(db, account);
 		const data = projectCiObservation(policy, groups);
 		return observationEnvelope(
 			account,
@@ -255,9 +301,20 @@ export async function readObservation(
 			await ciContent(policy, groups, data.freshness),
 		);
 	}
-	const snapshot = await readSnapshot(db, account, resource);
+	const snapshot = saved
+		? resource === "repos"
+			? policy.catalog
+			: snapshotFromRows(resource, saved.sourcePages)
+		: await readSnapshot(db, account, resource);
 	if (!snapshot) throw new ApiError(409, "snapshot_missing", "no saved source");
-	const data = await projectSnapshot(db, account, resource, snapshot, policy);
+	const data = await projectSnapshot(
+		db,
+		account,
+		resource,
+		snapshot,
+		policy,
+		saved ? () => assembleSnapshotGroups(saved.repositoryPages) : undefined,
+	);
 	return observationEnvelope(account, resource, data, scope);
 }
 export async function readFactoryResource(db: Db, account: string, name: string, stream: string) {

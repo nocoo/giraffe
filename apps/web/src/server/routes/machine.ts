@@ -1,7 +1,6 @@
 import { Hono } from "hono";
 import { etag, RETAINED_304_HEADERS } from "hono/etag";
 import { resourceCollection, resourceId } from "../../lib/agent-resource";
-import type { FactorySnapshot } from "../../lib/factory-types";
 import { REPO_SNAPSHOT_TABS } from "../../lib/snapshot-kinds";
 import type { AppVars, Env } from "../env";
 import {
@@ -15,16 +14,17 @@ import { authenticateApiToken, recordApiTokenUse } from "../lib/api-tokens";
 import { getAccount } from "../lib/db/accounts";
 import { createDb } from "../lib/db/d1";
 import { ApiError } from "../lib/errors";
-import { readFactoryRate } from "../lib/factory-rate";
 import { readContributions } from "../lib/machine-contributions";
 import {
 	readFactoryResource,
+	readMachineAccountObservation,
 	readObservation,
 	requireCatalogRepo,
 } from "../lib/machine-observations";
 import { assertMachineQuery } from "../lib/machine-query";
 import { readSources } from "../lib/machine-sources";
 import { readJson } from "../lib/read-body";
+import type { AccountObservationResource } from "../lib/saved-observation-statements";
 import { snapshotScope } from "../lib/snapshot-scope";
 import { SourceTiming } from "../lib/source-timing";
 import { timedJson } from "../lib/timed-json";
@@ -238,18 +238,12 @@ export function machineApi() {
 		if (!["repos", "issues", "prs", "ci", "factory"].includes(kind))
 			throw new ApiError(404, "not_found", "unknown source");
 		assertMachineQuery(c.req.query(), ["scope"]);
-		const observation = await readObservation(
+		const observation = await readMachineAccountObservation(
 			c.get("db"),
 			c.get("principal").accountId,
-			kind,
+			kind as AccountObservationResource,
 			snapshotScope(c.req.queries("scope")),
 		);
-		if (kind === "factory")
-			observation.data.rate = await readFactoryRate(
-				c.get("db"),
-				c.get("principal").accountId,
-				observation.data.rate as FactorySnapshot["rate"],
-			);
 		return timedJson(c, observation);
 	});
 	app.notFound(() => {

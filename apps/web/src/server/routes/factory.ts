@@ -12,7 +12,13 @@ import { publishedFactory } from "../lib/db/factory-runs";
 import { readSnapshot } from "../lib/db/snapshots";
 import { ApiError, jsonOk } from "../lib/errors";
 import { newFactory, streamKey } from "../lib/factory-collect";
-import { readFactoryRate } from "../lib/factory-rate";
+import { factoryRateFromRow } from "../lib/factory-rate";
+import {
+	accountReadPlan,
+	decodePublication,
+	type PublicationPage,
+	savedAccountPolicy,
+} from "../lib/saved-observation-read";
 import { factoryFreshness, projectFactory, repoPolicy } from "../lib/snapshot-projection";
 import { snapshotScope } from "../lib/snapshot-scope";
 import { repoParts } from "./snapshots";
@@ -27,9 +33,13 @@ async function active(c: Ctx) {
 }
 export async function getFactory(c: Ctx): Promise<Response> {
 	const scope = snapshotScope(c.req.queries("scope"));
-	const account = await active(c);
-	const policy = await repoPolicy(c.get("db"), account.id, undefined, scope);
-	let snap = await publishedFactory(c.get("db"), account.id);
+	const db = c.get("db");
+	const plan = accountReadPlan(db, null, "factory", scope, { rate: true });
+	const saved = plan.decode(await db.batch(plan.statements));
+	const account = saved.account;
+	if (!account) throw new ApiError(409, "account_missing", "no active account");
+	const policy = savedAccountPolicy(saved, scope);
+	let snap = decodePublication(saved.sourcePages as PublicationPage[]);
 	if (!snap && policy.empty) {
 		const empty = newFactory(account.id, account.login, "1970-01-01T00:00:00.000Z");
 		snap = {
@@ -47,7 +57,7 @@ export async function getFactory(c: Ctx): Promise<Response> {
 	return jsonOk(
 		{
 			...projected,
-			rate: await readFactoryRate(c.get("db"), account.id, snap.rate),
+			rate: factoryRateFromRow(saved.rateRows[0] ?? null, snap.rate),
 			fetched_at: freshness.latestAt ?? "",
 			freshness,
 			truncated:
@@ -58,6 +68,7 @@ export async function getFactory(c: Ctx): Promise<Response> {
 		},
 		200,
 		PRIVATE,
+		c.get("sourceTiming"),
 	);
 }
 export async function getFactoryStream(c: Ctx): Promise<Response> {

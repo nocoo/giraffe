@@ -31,10 +31,14 @@ export async function readSnapshot(
 		)
 		.bind(accountId, a, b)
 		.all<SnapshotPage>();
-	if (result.results.length === 0) {
-		return null;
-	}
-	return assemblePages(logical, result.results);
+	return snapshotFromRows(logical, result.results);
+}
+
+export function snapshotFromRows(
+	logical: string,
+	rows: SnapshotPage[],
+): Record<string, unknown> | null {
+	return rows.length === 0 ? null : assemblePages(logical, rows);
 }
 
 export async function replaceSnapshotStmts(

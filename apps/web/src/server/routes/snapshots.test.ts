@@ -4,12 +4,11 @@ import type { Env } from "../env";
 import { createApp } from "../index";
 import { createDb } from "../lib/db/d1";
 import { readSnapshot, replaceSnapshotStmts } from "../lib/db/snapshots";
-import { openSqliteD1 } from "../lib/db/sqlite-d1";
 
 function env(): Env {
 	return {
 		FACTORY_QUEUE: {} as Queue,
-		DB: openSqliteD1(true),
+		DB: sqliteFixture(),
 		ASSETS: { fetch: async () => new Response("x") } as unknown as Fetcher,
 		TOKEN_ENCRYPTION_KEY_CURRENT: "1",
 		ENVIRONMENT: "development",
