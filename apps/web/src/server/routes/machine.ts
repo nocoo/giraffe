@@ -40,7 +40,7 @@ import {
 } from "./machine-settings";
 import { machineRepoAgentState, repoAgentStateHeaders } from "./repo-agent-state";
 import { machineRepoMeta, repoMetaHeaders } from "./repo-meta";
-import { latestReport } from "./report-latest";
+import { latestReport, reportLatestHeaders } from "./report-latest";
 import { getMachineLatestRun } from "./run-readiness";
 
 type Principal = NonNullable<Awaited<ReturnType<typeof authenticateApiToken>>>;
@@ -50,6 +50,7 @@ export type MachineVars = AppVars & {
 };
 export function machineApi() {
 	const app = new Hono<{ Bindings: Env; Variables: MachineVars }>();
+	app.use("/accounts/:account/agent/reports/latest", reportLatestHeaders);
 	app.use("*", async (c, next) => {
 		const timing =
 			c.req.method === "GET" &&

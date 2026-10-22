@@ -14,10 +14,11 @@ import { ApiError } from "../lib/errors";
 import { readSources } from "../lib/machine-sources";
 import { readJson } from "../lib/read-body";
 import { repoPolicy } from "../lib/snapshot-projection";
-import { dailyReportHistory, latestReport } from "./report-latest";
+import { dailyReportHistory, latestReport, reportLatestHeaders } from "./report-latest";
 
 export function agentBrowserApi() {
 	const app = new Hono<{ Bindings: Env; Variables: AppVars }>();
+	app.use("/accounts/:account/reports/latest", reportLatestHeaders);
 	app.use("/accounts/:account/*", async (c, next) => {
 		const active = await getActiveAccount(c.get("db"));
 		if (!active) throw new ApiError(409, "account_missing", "active account required");

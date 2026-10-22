@@ -9,6 +9,15 @@ const conditional = etag({
 	weak: false,
 	generateDigest: (body) => crypto.subtle.digest("SHA-256", body),
 });
+export async function reportLatestHeaders(context: Ctx, next: Next) {
+	await next();
+	context.header("Cache-Control", "private, no-store");
+	context.header("Referrer-Policy", "no-referrer");
+	context.header(
+		"Vary",
+		context.req.path.startsWith("/api/v1/") ? "Authorization" : "Cookie, Cf-Access-Jwt-Assertion",
+	);
+}
 export async function latestReport(context: Ctx, next: Next) {
 	if (context.req.method !== "GET") return next();
 	if (!("type" in context.req.queries())) return next();
@@ -21,12 +30,6 @@ export async function latestReport(context: Ctx, next: Next) {
 			),
 		);
 	});
-	context.header("Cache-Control", "private, no-store");
-	context.header("Referrer-Policy", "no-referrer");
-	context.header(
-		"Vary",
-		context.req.path.startsWith("/api/v1/") ? "Authorization" : "Cookie, Cf-Access-Jwt-Assertion",
-	);
 	return context.res;
 }
 export async function dailyReportHistory(context: Ctx) {

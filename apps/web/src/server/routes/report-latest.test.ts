@@ -6,6 +6,8 @@ import type { Env } from "../env";
 import { createApp } from "../index";
 import { createApiToken } from "../lib/api-tokens";
 import { createDb } from "../lib/db/d1";
+import { ApiError } from "../lib/errors";
+import * as reportLatest from "../lib/report-latest";
 
 async function fixture(active = true) {
 	const raw = sqliteFixture();
@@ -155,6 +157,73 @@ it.each([false, true])(
 		expect(await changed.json()).toMatchObject({ invalidCount: 1, item: { revision: 1 } });
 	},
 );
+
+it.each([
+	{ browser: false, status: 400, code: "validation_failed" },
+	{ browser: true, status: 400, code: "validation_failed" },
+	{ browser: false, status: 404, code: "not_found" },
+	{ browser: true, status: 404, code: "not_found" },
+	{ browser: false, status: 409, code: "snapshot_missing" },
+	{ browser: true, status: 409, code: "snapshot_missing" },
+])(
+	"keeps private latest-report reader error headers for $status (browser=$browser)",
+	async ({ browser, status, code }) => {
+		const state = await fixture();
+		const reader = vi.spyOn(reportLatest, "readLatestReport");
+		if (status !== 400)
+			reader.mockRejectedValueOnce(new ApiError(status, code, "Report unavailable"));
+		try {
+			const response = await state.call(
+				`/reports/latest?type=${status === 400 ? "" : "github-daily"}`,
+				browser,
+				"GET",
+				undefined,
+				{ "if-none-match": "*" },
+			);
+			expect(response.status).toBe(status);
+			expect(await response.json()).toMatchObject({ error: { code } });
+			expect(response.headers.get("cache-control")).toBe("private, no-store");
+			expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+			expect(response.headers.get("vary")).toBe(
+				browser ? "Cookie, Cf-Access-Jwt-Assertion" : "Authorization",
+			);
+			expect(response.headers.get("etag")).toBeNull();
+		} finally {
+			reader.mockRestore();
+		}
+	},
+);
+
+it.each([false, true])(
+	"keeps private latest-report generic not-found headers (browser=%s)",
+	async (browser) => {
+		const state = await fixture();
+		const response = await state.call("/reports/latest", browser, "GET", undefined, {
+			"if-none-match": "*",
+		});
+		expect(response.status).toBe(404);
+		expect(await response.json()).toMatchObject({ error: { code: "not_found" } });
+		expect(response.headers.get("cache-control")).toBe("private, no-store");
+		expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+		expect(response.headers.get("vary")).toBe(
+			browser ? "Cookie, Cf-Access-Jwt-Assertion" : "Authorization",
+		);
+		expect(response.headers.get("etag")).toBeNull();
+	},
+);
+
+it("keeps private latest-report browser account error headers before the reader", async () => {
+	const state = await fixture(false);
+	const response = await state.call("/reports/latest?type=github-daily", true, "GET", undefined, {
+		"if-none-match": "*",
+	});
+	expect(response.status).toBe(409);
+	expect(await response.json()).toMatchObject({ error: { code: "account_missing" } });
+	expect(response.headers.get("cache-control")).toBe("private, no-store");
+	expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+	expect(response.headers.get("vary")).toBe("Cookie, Cf-Access-Jwt-Assertion");
+	expect(response.headers.get("etag")).toBeNull();
+});
 
 it("R8 validates type/query/auth/account before conditional GET and keeps history GET-only", async () => {
 	const state = await fixture();
