@@ -64,6 +64,27 @@ Paths below are relative to `$API`. JSON writes require `application/json`
 Responses are private/no-store with no-referrer. GET does not record token
 activity; successful mutations do. See [authentication](../../docs/api.md#authentication-and-examples).
 
+## Current-run activity
+
+Read `/activity?run=latest` with `observations:read`; optional `repository=owner/name`
+narrows repository evidence, and an explicit `run` reads an immutable publication.
+Use `account:activity` in `/sources` and authenticated ETag/304 for polling.
+The direct response contains `window`, `runId`, `previousRunId`, `fetchedAt`,
+`repos`, `totals`, `contributions`, `coverage` and `truncated`.
+
+The interval is `(previous successful account-wide quick/daily until, this until]`.
+First publication is a marked 24-hour lookback; a failed/missing run widens the
+interval and sets `gap:true`. Repository-only and deep refreshes do not advance it.
+Do not treat a null list/count as an empty list/zero, or truncated coverage as
+complete. CI runs include branch/event/attempt/duration; PR/issue lifecycle,
+release/tag and branch commit evidence accompany current open-item/security
+snapshots. Deployment last success can predate the interval. Beijing contribution
+intervals are distinct from the GitHub-native 90-day calendar. Giraffe stores and
+displays GitHub-reported interval totals and original native calendar provenance,
+not timezone-rebucketed native squares. Unknown runs return 404; unpublished runs
+return 409. Compute comparisons outside Giraffe. Read the complete
+[activity contract](../../docs/api.md#get-activity) before interpreting coverage.
+
 ## Source discovery and saved observations
 
 `GET /sources` requires `observations:read` and returns

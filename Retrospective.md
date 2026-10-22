@@ -1247,3 +1247,44 @@ tradeoff a useful optimization. Independent review rejected it, and fix round 1
 restores direct payload reads in a forward commit. Compare alternating repeated
 samples of database and whole-request cost before accepting a transport-byte
 optimization; do not infer lower remote latency from smaller payloads alone.
+
+## 2026-10-22 - Verify fenced writes by reading physical children
+
+During batch 11 activity publication work, an immutable-page existence predicate
+was appended after `$guard`. The shared `fenced()` helper appends lease bindings
+after all caller-provided values, so the SQL placeholder order no longer matched
+the values. The header and run save could succeed while every page insert affected
+zero rows. Focused publication readback and independent review reproduced the
+missing pages before any commit or external publication. The fix puts caller
+predicates before the guard and keeps physical page-count, nonempty readback,
+immutability and revoked-lease assertions. A successful transaction or parent-row
+write is not proof that fenced child writes stored the intended data; check both
+the placeholder contract and the returned publication contents.
+
+The same integration pass found that the Today missing-publication browser
+fixture used the older `snapshot_missing` code while the API returned
+`activity_unpublished`. Adding a display mapping alone was insufficient because
+the client normalizes unknown error codes to `internal_error`. Tests now exercise
+the real API code through normalization as well as the pending-state UI. Keep
+fixtures, the accepted error-code registry and the displayed state on one contract.
+
+Independent review also completed an active predecessor between history lookup
+and new-run admission. The new activity window had already frozen the older
+predecessor and overlapped the just-completed window. Admission now compares the
+predecessor/interruption fingerprint atomically and retries on change; an explicit
+interleaving regression preserves seamless boundaries. A read followed by an
+atomic insert does not make the earlier derived values atomic with admission.
+
+The controller started L2 and L3 together after checking their documented HTTP
+and fixture ports. L3 failed before tests with a Wrangler socket-address conflict.
+Distinct application ports did not prove full process isolation. Port 9229 was
+owned by an unrelated existing service, not this task; no unrelated process was
+terminated. The controller retained the running L2 lane and reran L3 serially
+after cleanup, without changing deploy configuration. Check auxiliary listeners too,
+or serialize these existing runners; a startup failure is not passing UI evidence.
+
+The first activity HTTP fixture incorrectly assumed that a response ETag used the
+same SHA-256 representation as the stored content fingerprint. The installed Hono
+middleware uses SHA-1 for response ETags, while source content versions are a
+separate contract. The fixture now checks the middleware's actual quoted tag and
+conditional 304 behavior rather than conflating these identifiers.

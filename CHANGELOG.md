@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.19.0 - 2026-10-22
+
+### Added
+
+- R4: persist immutable, bounded current-run activity for eligible account-wide quick/daily refreshes, with seamless successful-run boundaries, explicit first/gap windows, workflow metadata, PR/issue lifecycle, release/tag events, branch commits, current open items/security and deployment evidence. Nullable coverage never becomes a fabricated zero. Add read-only browser `/api/activity`, scoped machine `/activity`, ETag/304 and `account:activity` source discovery.
+- R4: add the Basalt `/today` page and repository current-run panel, including gap/truncation, lifecycle/release/red-CI/deploy sections and Beijing-requested contribution totals/composition with honest GitHub-native calendar provenance. Keep `/` landing on `/factory`.
+
+### Migration and Compatibility
+
+- Apply additive `0018_activity.sql` before code deployment; retain its immutable header/pages on rollback. No historical activity body is backfilled. Pre-migration successful run metadata can supply the next boundary. Activity bytes participate in account budgets and the latest two usable publications survive newer failed runs.
+- GitHub管家 can poll `account:activity` and then `/activity?run=latest`; use saved window and coverage instead of reconstructing daily activity from the 90-day streams. Unknown runs return 404 and known unpublished runs return 409. Missing lists/counts remain null. Native contribution dates are not relabeled Beijing squares. Seven-day comparison against live `gh` remains a post-release operator acceptance task; automated proof uses isolated fixtures only.
+
 ## v0.18.0 - 2026-10-22
 
 ### Performance

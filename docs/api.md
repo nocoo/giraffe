@@ -151,6 +151,7 @@ GET never backfills them. Source identities map to data endpoints:
 | --- | --- |
 | `repo:owner/name:details`, `:issues`, `:prs`, `:actions`, `:releases` | `/repos/owner/name/:resource` |
 | `account:repos`, `account:issues`, `account:prs`, `account:ci`, `account:factory` | Corresponding account endpoint |
+| `account:activity` | `/activity?run=latest` |
 | `factory:owner/name:commits`, `:issues`, `:prs`, `:actions`, `:releases`, `:alerts`, `:dependencies` | `/factory/repos/owner/name/:stream` |
 
 Only saved repository pages appear. Missing account snapshots/publications are
@@ -652,6 +653,114 @@ Sources: [GitHub contribution time attribution](https://docs.github.com/en/accou
 api "$API/contributions"
 api -G "$API/contributions" --data-urlencode 'since=2026-10-01' --data-urlencode 'until=2026-10-21'
 ```
+
+### GET /activity
+
+`GET /api/v1/accounts/:account/activity?run=latest&repository=owner/name`
+requires `observations:read`. `run` defaults to `latest`; an explicit saved run ID
+selects that immutable publication. `repository` is optional. Unknown query keys
+are rejected. The Access-protected browser reads the active account through
+`GET /api/activity` with the same selectors. Neither endpoint collects GitHub or
+updates token activity. Both support private, authenticated ETag/304 polling.
+Duplicate filters also return 400 `validation_failed`. Unknown run IDs return
+404 `not_found`; a known run without a successful publication (including a running,
+failed or historical pre-migration run) returns 409 `activity_unpublished`.
+`latest` returns the latest usable publication despite newer failed runs; without
+one it returns 409. A repository in the frozen publication remains readable even
+if later removed from the catalog. A current catalog repo outside that frozen
+membership returns empty `repos`, zero member totals and null contributions;
+a repo in neither set returns 404. Repository filtering never invents a per-repo
+contribution calendar. A member omitted by storage capacity is not an unselected
+repository: its filtered response retains truncation and unknown totals.
+
+The response is an `ActivitySnapshot`, not the generic observation envelope:
+
+```text
+{ account_id, runId, previousRunId, fetchedAt, membership?,
+  window: { since, until, gap, first },
+  repos: [{ repo, ci_runs, prs: { opened, merged, closed },
+    issues: { opened, closed }, releases, commits: { default, other, items },
+    deploy: { last_success_at, runs }, snapshot, coverage }],
+  totals, contributions, coverage, truncated }
+```
+
+The interval is `(since, until]`, ending at the run's frozen collection cutoff,
+not its completion time. The previous successful account-wide quick refresh
+supplies `since`, including reliable persisted runs from before activity storage
+existed. Eligible runs are quick refreshes triggered by daily scheduling or a
+manual `scope:all` request, not weekly/deep, catalog or selected-repository work.
+Daily membership remains starred-owned even when it contains zero or one repo.
+The first run uses a bounded 24-hour lookback and sets `first:true,gap:true`.
+Failed/interrupted eligible runs or a missing Beijing calendar day set `gap:true`;
+the window still starts at the last success. Collection-time jitter alone does
+not create a gap. Adjacent successful windows share the exact boundary timestamp.
+
+Lists distinguish known empty (`[]`) from unavailable (`null`). Coverage entries
+are `{status:complete|partial|unavailable,truncated,reason}`. A bounded pagination
+or storage cut marks the affected list and the whole response truncated; nullable
+totals must not be interpreted as zero. Old good observations are not relabeled
+as newly collected evidence. The source index registers `account:activity` with
+its publication version, content version and saved `fetchedAt`.
+`membership` freezes repository names independently of stored pages, so capacity
+cuts cannot make a selected member look unselected. An unclassifiable failed
+workflow leaves the red default-branch total null and `default_branch` coverage
+partial rather than claiming no red workflows.
+Publication first profiles frozen repository payload lengths and loads at most
+4,000,000 UTF-8 bytes in frozen membership order, independently of the 16-page
+output limit. Input-budget omissions retain membership, partial/truncated
+coverage and null account totals, never complete zero results.
+
+Every CI run exposes `id`, `workflow_id`, `workflow_name`, `event`, `head_branch`,
+`head_sha`, `is_default_branch`, `status`, `conclusion`, `run_attempt`, `created_at`,
+`updated_at`, `run_started_at`, `duration_s`, `html_url`, `actor` and workflow `path`.
+PR events include `merged_at`, `merged_by`, `base_ref`, `bot` and `dependency`;
+issue events include `closed_by`, `state_reason` and labels. Lifecycle lists are
+independent timestamp slices, not disjoint partitions: a PR opened and merged in
+the same window appears in both, and a merge with `closed_at` also appears closed.
+Commits include SHA,
+author, first message line, time, branch and default-branch identity. The current
+snapshot includes open PR lifecycle/merge/check/review/draft fields, open issues
+classified as dependency/security/other and independent nullable Dependabot and
+code-scanning counts. Deploy runs are a classified subset of CI; the last known
+successful deployment may precede the activity window or finish after its frozen
+cutoff during collection; it describes current observed state, not a window event.
+Deployment classification matches standalone name/path terms `deploy`,
+`deployment`, `release`, `publish` or `pages`, case-insensitively; it has no
+repository-specific exceptions. The classifier is centralized for future policy
+changes, not exposed as a new settings API. Dependency PRs match Dependabot or
+Renovate author identities or dependency labels; bot identity also recognizes the
+GitHub Bot actor type and `[bot]` suffix. Security issue labels take precedence
+over dependency labels, with the remaining issues in `other`. Release totals
+count releases, not additional tag events; matching release tag names are deduped.
+Annotated tags use the tagger timestamp. Lightweight tags have no creation time
+and therefore leave tag coverage partial, never use commit time as tag time.
+
+Account totals include merged PRs split into dependency/other, opened/closed
+issues, releases, CI runs and red default-branch workflow runs. Contributions
+describe explicit `Asia/Shanghai` intervals, the previous full Beijing day and
+today's partial interval, with independently nullable composition. This is a
+separate bounded query, not a timezone relabeling of `/contributions`' GitHub-native
+calendar. Each day's `count` is GitHub's reported `contributionCalendar.totalContributions`
+for that requested interval, not a sum invented from type counts. Optional
+`nativeCalendar:{timezone:"github",total,days:[{date,count}]}` preserves returned
+native date labels unchanged. Neither field promises a re-bucketing of GitHub's
+native squares into Beijing days. Missing totals/types stay null; an attribution
+or composition mismatch marks coverage partial without rewriting the known count.
+See `apps/web/src/lib/activity-types.ts` for the complete field contract.
+
+The supplementary collector normally adds one refs/tags GraphQL request per repo,
+plus a successful-workflow REST request only when the complete saved 90-day action
+stream cannot provide deployment success. Continuations are bounded at 20 requests
+per repo and explicitly truncated. Account contribution intervals use one bounded
+GraphQL request. The normal two-request fixture adds 85 leased pages for 42 repos
+or 121 for 60; at the historical 48 min / 778 pages cadence this is about 5.2 or
+7.5 minutes. A 60-repo nominal total extrapolates to about 76 minutes, not a tested
+production SLA. Rate limits, unusually many branches/tags or deployment pages can
+increase this cost. Existing PR/issue/action/release streams are reused.
+
+The `/today` page shows the frozen interval, data timestamp, gap and truncation,
+activity sections and contribution composition. Repository links lead to the
+existing detail page, which embeds the repository's current-run activity.
 
 ### Repository endpoints
 

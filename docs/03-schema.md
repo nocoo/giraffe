@@ -24,6 +24,39 @@ GitHub 字段名跟 REST/GraphQL 对齐（`login`、`nameWithOwner`、`stargazer
 
 ## 2. 表
 
+### Immutable current-run activity
+
+Migration `0018_activity.sql` adds `activity_publications` and `activity_pages`.
+Publication identity is `(account_id, run_id)`; the run foreign key preserves
+account cleanup and bounded run retention. Header columns are `previous_run_id`,
+`until_at`, `fetched_at`, `payload` and `content_version`. The header payload is
+the complete `ActivitySnapshot` with `repos:[]`, including frozen totals,
+contributions, coverage, window and frozen `membership` names. The source index reads this stored header,
+not SQL-reconstructed event arrays.
+
+Pages use `(account_id, run_id, page)` with a composite foreign key to the
+publication. Page numbers start at zero; each payload is a plain `ActivityRepo[]`.
+Both header and page payloads enforce at most 1,500,000 UTF-8 bytes. A publication
+has at most 16 repository pages; any data cut is explicitly truncated with
+nullable counts where completeness is unknown. Publication writes are leased,
+fenced and immutable; reads use the saved header/pages without contacting GitHub.
+Each repository is projected immediately after its current-run collection into
+an `activity-snapshot` factory resource, so final publication does not load every
+repository's 90-day streams together. Before fetching projected payloads, the
+publisher reads only byte-length metadata for the frozen membership (at most 500
+repositories), then selects at most 4,000,000 UTF-8 input bytes in frozen order.
+The payload read rechecks those lengths. Omitted members remain in `membership`,
+with partial/truncated input coverage and null account totals; the output page
+cap is an independent limit, not a bound on input memory. Activity header/page bytes participate in
+the existing account storage budget. Retention preserves the latest two usable
+activity publications even when newer failed runs fill the normal history limit.
+
+No historical activity is fabricated or backfilled. Reliable prior successful
+quick/daily run metadata can establish the next window boundary, but an old run
+without an activity publication does not acquire a fabricated body. Apply the
+additive migration before deploying the reader/writer; retain these tables on
+code rollback. Existing observations, reports and publication payloads stay intact.
+
 ### Star provenance
 
 Apply `0017_star_provenance.sql` after the membership cleanup. It additively extends

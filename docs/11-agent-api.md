@@ -88,7 +88,8 @@ Every documented machine GET rejects unknown query keys with 400
 `validation_failed`, including identity, individual resources, settings and run
 lists. Repository pages and factory streams accept no query parameters; account
 observations accept only `scope`, except `/contributions`, which accepts only
-`since`/`until` dates. Authentication and authorization run first.
+`since`/`until` dates, and `/activity`, which accepts `run`/`repository`.
+Authentication and authorization run first.
 
 Machine source indexes support content-derived `ETag` / `If-None-Match` validation
 with bodyless 304 responses. Authorization and query validation are never bypassed.
@@ -238,6 +239,31 @@ grouped bot streams remain visible. No `branches` parameter is supported.
 Workflow verdicts are `broken | flaky | healthy | idle`. Repository verdicts add
 `unknown` for no default-workflow evidence (`none` before 0.15.14; breaking rename).
 The independent release pipeline sentinel stays `none` for no release workflow.
+
+## Current-run activity
+
+`GET /api/v1/accounts/:account_id/activity?run=latest&repository=owner/name`
+is a saved immutable account-wide quick/daily publication. It uses the existing
+`observations:read` scope, strict query validation and authenticated ETag/304.
+`account:activity` in `/sources` exposes the same publication's version,
+contentVersion and fetchedAt. GET never rebuilds activity from raw event history,
+collects GitHub, changes run status or records token usage.
+
+The window is `(previous successful quick/daily until, current until]`. First
+publication uses a marked 24-hour lookback; failures or missing Beijing days widen
+the interval and mark a gap. Selected-repository and weekly/deep runs do not
+consume this account-wide window. A nullable list/count is unavailable, never
+empty/zero. Per-list coverage and overall truncation remain part of the evidence.
+Current snapshot alert counts preserve each feature's independent unknown state.
+
+The browser `/today` route and repository activity panel read this same saved
+publication. Activity contributions use explicit Beijing intervals and are not
+the GitHub-native date labels of the separate 90-day `/contributions` endpoint.
+Their counts are GitHub-reported totals for the requested interval, with native
+calendar dates preserved as `timezone:"github"` provenance, not relabeled squares.
+Cross-day comparisons and conclusions remain the external producer's job; no
+analysis runtime or writable repository state/meta API is introduced here.
+See [activity fields and window rules](api.md#get-activity).
 
 ## Generic records, reports and jobs
 
