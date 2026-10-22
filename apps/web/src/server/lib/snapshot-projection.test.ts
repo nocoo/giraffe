@@ -7,7 +7,46 @@ import { storedContent } from "./content-version";
 import { createDb } from "./db/d1";
 import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
 import { readObservation } from "./machine-observations";
-import { projectFactory, projectSnapshot, repoPolicy, scopedSnapshot } from "./snapshot-projection";
+import {
+	policyFromSaved,
+	projectFactory,
+	projectSnapshot,
+	repoPolicy,
+	scopedSnapshot,
+} from "./snapshot-projection";
+import { selectionFromStars } from "./snapshot-scope";
+
+it.each(["all", "starred"] as const)(
+	"projects selected unpublished membership without inventing %s observations",
+	(scope) => {
+		const snapshot = factoryFixture();
+		const before = structuredClone(snapshot);
+		const catalog = {
+			repos: [
+				{ name_with_owner: "nocoo/app", primary_language: "TypeScript" },
+				{ name_with_owner: "nocoo/missing", description: "Unpublished", primary_language: "Swift" },
+				{ name_with_owner: "outside/foreign" },
+			],
+		};
+		const selection = selectionFromStars(
+			catalog.repos.map((repo) => ({
+				repo: repo.name_with_owner,
+				starred: 1,
+				source: "owner" as const,
+				updated_at: snapshot.fetched_at,
+				reason: null,
+			})),
+			scope,
+		);
+		const projected = projectFactory(snapshot, policyFromSaved(catalog, selection, "nocoo"));
+		expect(projected.selectedRepos).toEqual([
+			{ name: "nocoo/app", description: "Example", language: "TypeScript", topics: ["cli"] },
+			{ name: "nocoo/missing", description: "Unpublished", language: "Swift", topics: null },
+		]);
+		expect(projected.repos).toEqual(before.repos);
+		expect(snapshot).toEqual(before);
+	},
+);
 
 it.each([
 	["issues", "issues"],

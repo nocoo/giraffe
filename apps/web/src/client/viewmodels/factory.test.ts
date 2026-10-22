@@ -45,7 +45,7 @@ describe("software factory view model", () => {
 	});
 	it("reports coverage and raw sample sizes, never treating unknown security as healthy", () => {
 		const s = ready();
-		const board = factoryBoard(s, s.repos);
+		const board = factoryBoard(s, s.repos, s.repos);
 		expect(board.coverage.complete).toBe(0);
 		expect(board.aggregate.ciRate).toBeNull();
 		expect(board.days).toHaveLength(90);
@@ -139,7 +139,7 @@ describe("factory sampling signals", () => {
 				releases: 0,
 			},
 		};
-		const b = factoryBoard(s, s.repos);
+		const b = factoryBoard(s, s.repos, s.repos);
 		expect(b.periods[1]).toMatchObject({
 			days: 7,
 			current: { commits: 10 },
@@ -159,7 +159,7 @@ describe("factory sampling signals", () => {
 		second.coverage.actions.status = "limited";
 		second.coverage.alerts.status = "unavailable";
 		s.repos.push(second);
-		const next = factoryBoard(s, s.repos);
+		const next = factoryBoard(s, s.repos, s.repos);
 		expect(next.coverage.limited).toBe(1);
 		expect(next.coverage.unavailable).toBe(1);
 		expect(next.totals.private).toBe(1);
@@ -234,13 +234,13 @@ it("keeps unknown metrics distinct from observed zero and bounds rendered reposi
 	const s = ready();
 	const r = s.repos[0];
 	if (!r) throw new Error("fixture");
-	expect(factoryBoard(s, s.repos).observed.commits).toBe(false);
+	expect(factoryBoard(s, s.repos, s.repos).observed.commits).toBe(false);
 	r.coverage.commits.status = "complete";
 	r.coverage.prs.status = "limited";
 	r.coverage.prs.observed = 3;
 	r.coverage.releases.status = "partial";
 	r.coverage.actions.status = "unavailable";
-	const b = factoryBoard(s, s.repos);
+	const b = factoryBoard(s, s.repos, s.repos);
 	expect(b.observed.commits).toBe(true);
 	expect(b.observed.prs).toBe(true);
 	expect(b.observed.releases).toBe(false);
@@ -252,7 +252,7 @@ it("keeps unknown metrics distinct from observed zero and bounds rendered reposi
 	expect(factoryRepoPage(many, 3).rows).toHaveLength(17);
 	expect(factoryRepoPage([], 0)).toEqual({ rows: [], current: 1, pages: 1 });
 	s.repos.push({ ...r, id: "other" });
-	expect(factoryBoard(s, s.repos).languages[0]?.bytes).toBe(200);
+	expect(factoryBoard(s, s.repos, s.repos).languages[0]?.bytes).toBe(200);
 });
 
 it("does not invent dependency targets from ambiguous package names", () => {
@@ -279,7 +279,7 @@ it("does not invent dependency targets from ambiguous package names", () => {
 it("does not divide by zero for a returned language with zero bytes", () => {
 	const s = ready();
 	if (s.repos[0]) s.repos[0].languages = [{ name: "Unknown", bytes: 0 }];
-	expect(factoryBoard(s, s.repos).languages[0]?.share).toBe(0);
+	expect(factoryBoard(s, s.repos, s.repos).languages[0]?.share).toBe(0);
 });
 
 it("renders lower bounds consistently for truncated commit, merged PR and release table cells", () => {
@@ -323,16 +323,16 @@ it("builds mixed-window calendars from observed windows, with unknown dates rath
 			window: { since: "2026-08-01T00:00:00Z", until: "2026-09-01T00:00:00Z" },
 		},
 	};
-	const board = factoryBoard(snap, [first, second]);
+	const board = factoryBoard(snap, [first, second], [first, second]);
 	expect(board.mixedWindows).toBe(true);
 	expect(board.days[0]?.date).toBe("2026-07-01");
 	expect(board.days[0]?.complete.commits).toBe(false);
 	expect(board.days.at(-1)?.complete.commits).toBe(false);
-	const single = factoryBoard(snap, [first]);
+	const single = factoryBoard(snap, [first], [first]);
 	expect(single.days[0]?.complete.commits).toBe(true);
 	expect(single.displayWindow.until).toBe("2026-08-01T00:00:00.000Z");
 	first.observation.window = { since: "2000-01-01T00:00:00Z", until: "2000-02-01T00:00:00Z" };
-	expect(factoryBoard(snap, [first, second]).days.length).toBeLessThanOrEqual(366);
+	expect(factoryBoard(snap, [first, second], [first, second]).days.length).toBeLessThanOrEqual(366);
 });
 
 function day(commits: number, extra: Partial<Record<"prMerged" | "releases", number>> = {}) {
@@ -379,7 +379,7 @@ it("compares 1, 7 and 30 complete UTC days with the preceding equal period", () 
 	hot.metrics.days["2026-09-12"] = { ...day(0), ciSuccess: 3, ciFailure: 1 };
 	const quiet = withDays("quiet", { "2026-09-13": day(1) });
 	s.repos = [hot, quiet];
-	const [d1, d7, d30] = factoryBoard(s, s.repos).periods;
+	const [d1, d7, d30] = factoryBoard(s, s.repos, s.repos).periods;
 	expect(d1).toMatchObject({
 		days: 1,
 		since: "2026-09-14",
@@ -408,18 +408,18 @@ it("compares 1, 7 and 30 complete UTC days with the preceding equal period", () 
 		refreshedAt: "2026-09-14T23:00:00Z",
 		window: { since: "2026-06-16T00:00:00Z", until: "2026-09-14T23:00:00Z" },
 	};
-	const shifted = factoryBoard(s, [hot, behind]);
+	const shifted = factoryBoard(s, [hot, behind], [hot, behind]);
 	expect(shifted.periods[0]).toMatchObject({
 		since: "2026-09-13",
 		until: "2026-09-13",
 		complete: { commits: true },
 	});
 	expect(shifted.repoActivity[0]?.periods[1].commits).toBe(2);
-	const partial = factoryBoard(s, s.repos).periods;
+	const partial = factoryBoard(s, s.repos, s.repos).periods;
 	expect(partial[0]?.complete).toMatchObject({ commits: true, issues: false });
 	expect(partial[2]?.complete.commits).toBe(false);
 	expect(partial[1]?.previousComplete.commits).toBe(true);
-	expect(factoryBoard(s, []).periods[0]?.complete.commits).toBe(false);
+	expect(factoryBoard(s, [], []).periods[0]?.complete.commits).toBe(false);
 });
 
 it("summarizes each repository per period with stock, aged work and last commit", () => {
@@ -435,7 +435,7 @@ it("summarizes each repository per period with stock, aged work and last commit"
 	blind.coverage.commits.status = "pending";
 	blind.coverage.issues.status = "partial";
 	s.repos = [repo, blind];
-	const [app, other] = factoryBoard(s, s.repos).repoActivity;
+	const [app, other] = factoryBoard(s, s.repos, s.repos).repoActivity;
 	expect(app).toMatchObject({
 		name: "nocoo/app",
 		last: "2026-09-14",
@@ -456,7 +456,12 @@ it("summarizes each repository per period with stock, aged work and last commit"
 	expect(app?.periods[30].commits).toBe(8);
 	expect(other).toMatchObject({ agedIssues: null, known: { commits: false, issues: false } });
 	expect(other?.last).toBeUndefined();
-	expect(factoryBoard(s, s.repos).activity).toEqual({ week: 1, month: 0, dormant: 0, unknown: 1 });
+	expect(factoryBoard(s, s.repos, s.repos).activity).toEqual({
+		week: 1,
+		month: 0,
+		dormant: 0,
+		unknown: 1,
+	});
 });
 
 it("reconstructs open backlog backwards from the current count and rolls 7-day breadth and CI rate", () => {
@@ -470,7 +475,7 @@ it("reconstructs open backlog backwards from the current count and rolls 7-day b
 	const b = withDays("b", { "2026-09-13": day(1), "2026-09-01": day(1) });
 	Object.assign(b, { openIssues: 0, openPrs: 0 });
 	s.repos = [a, b];
-	const days = factoryBoard(s, s.repos).days;
+	const days = factoryBoard(s, s.repos, s.repos).days;
 	const at = (date: string) => days.find((d) => d.date === date);
 	expect(at("2026-09-15")).toMatchObject({ openIssues: 4, openPrs: 1, activeRepos7: 2 });
 	expect(at("2026-09-14")).toMatchObject({ openIssues: 2, openPrs: 0, ciRate7: 0.8 });
@@ -479,14 +484,19 @@ it("reconstructs open backlog backwards from the current count and rolls 7-day b
 	expect(at("2026-09-07")?.activeRepos7).toBe(1);
 	expect(at("2026-09-08")?.ciRate7).toBeNull();
 	expect(days[0]?.activeRepos7).toBeNull();
-	const d1 = factoryBoard(s, s.repos).periods[0];
+	const d1 = factoryBoard(s, s.repos, s.repos).periods[0];
 	expect(d1?.stock).toEqual({ openIssues: { from: 5, to: 2 }, openPrs: { from: 0, to: 0 } });
 	a.openIssues = 0;
-	expect(factoryBoard(s, s.repos).days.find((d) => d.date === "2026-09-13")?.openIssues).toBeNull();
-	expect(factoryBoard(s, s.repos).periods[0]?.stock.openIssues).toEqual({ from: null, to: null });
+	expect(
+		factoryBoard(s, s.repos, s.repos).days.find((d) => d.date === "2026-09-13")?.openIssues,
+	).toBeNull();
+	expect(factoryBoard(s, s.repos, s.repos).periods[0]?.stock.openIssues).toEqual({
+		from: null,
+		to: null,
+	});
 	a.coverage.issues.status = "limited";
 	b.coverage.actions.status = "pending";
-	const blind = factoryBoard(s, s.repos).days;
+	const blind = factoryBoard(s, s.repos, s.repos).days;
 	expect(blind.every((d) => d.openIssues === null && d.ciRate7 === null)).toBe(true);
 	expect(blind.at(-1)?.openPrs).toBe(1);
 });
@@ -502,7 +512,7 @@ it("ranks accumulated work with aged share and recent throughput", () => {
 	const clear = withDays("clear", {});
 	Object.assign(clear, { openIssues: 0, openPrs: 0 });
 	s.repos = [light, clear, heavy];
-	const backlog = backlogRows(factoryBoard(s, s.repos).repoActivity);
+	const backlog = backlogRows(factoryBoard(s, s.repos, s.repos).repoActivity);
 	expect(backlog.rows.map((r) => [r.name, r.total, r.done30])).toEqual([
 		["nocoo/heavy", 7, 6],
 		["nocoo/light", 1, 0],
@@ -513,10 +523,9 @@ it("ranks accumulated work with aged share and recent throughput", () => {
 	const tie = withDays("aa", {});
 	Object.assign(tie, { openIssues: 7, openPrs: 0 });
 	s.repos = [heavy, tie];
-	expect(backlogRows(factoryBoard(s, s.repos).repoActivity).rows.map((r) => r.name)).toEqual([
-		"nocoo/aa",
-		"nocoo/heavy",
-	]);
+	expect(
+		backlogRows(factoryBoard(s, s.repos, s.repos).repoActivity).rows.map((r) => r.name),
+	).toEqual(["nocoo/aa", "nocoo/heavy"]);
 });
 
 it("splits repositories into activity and backlog quadrants around medians", () => {
@@ -530,14 +539,14 @@ it("splits repositories into activity and backlog quadrants around medians", () 
 	const blind = withDays("blind", {});
 	blind.coverage.commits.status = "pending";
 	s.repos = [...repos, blind];
-	const q = activityQuadrant(factoryBoard(s, s.repos).repoActivity);
+	const q = activityQuadrant(factoryBoard(s, s.repos, s.repos).repoActivity);
 	expect(q.points.map((p) => p.name)).toEqual(["nocoo/r0", "nocoo/r1", "nocoo/r2", "nocoo/r3"]);
 	expect(q.medianCommits).toBe(6.5);
 	expect(q.medianBacklog).toBe(1.5);
 	expect(q.stalled.map((p) => p.name)).toEqual(["nocoo/r0", "nocoo/r1"]);
 	expect(activityQuadrant([])).toMatchObject({ points: [], medianCommits: 0, medianBacklog: 0 });
 	s.repos = repos.slice(0, 3);
-	expect(activityQuadrant(factoryBoard(s, s.repos).repoActivity).medianCommits).toBe(3);
+	expect(activityQuadrant(factoryBoard(s, s.repos, s.repos).repoActivity).medianCommits).toBe(3);
 });
 
 it("describes change against the previous period without inventing a baseline", () => {

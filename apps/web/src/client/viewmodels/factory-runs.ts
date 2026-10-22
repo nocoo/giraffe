@@ -8,7 +8,11 @@ import type {
 	StepKind,
 	StepStatus,
 } from "../../lib/factory-run";
-import { FACTORY_STREAMS, type FactorySnapshot } from "../../lib/factory-types";
+import {
+	FACTORY_STREAMS,
+	type FactorySnapshot,
+	type FactoryViewSnapshot,
+} from "../../lib/factory-types";
 import { apiGet, apiPost } from "../lib/api";
 import { ensureSession, getActiveAccountId } from "./session";
 
@@ -415,7 +419,7 @@ export function runPageUpdates(run: FactoryRunView) {
 	});
 }
 
-export function factoryDataHealth(snapshot: FactorySnapshot | null) {
+export function factoryDataHealth(snapshot: FactoryViewSnapshot | null) {
 	if (!snapshot)
 		return {
 			tone: "info",
@@ -427,6 +431,16 @@ export function factoryDataHealth(snapshot: FactorySnapshot | null) {
 			tone: "warning",
 			title: "仓库列表尚未获取完整",
 			detail: "当前统计只包含已找到的仓库，可在刷新中心继续同步。",
+		};
+	const observed = new Set(snapshot.repos.map((repo) => repo.name.toLowerCase()));
+	const unpublished = snapshot.selectedRepos.filter(
+		(repo) => !observed.has(repo.name.toLowerCase()),
+	);
+	if (unpublished.length)
+		return {
+			tone: "warning",
+			title: `${unpublished.length} 个所选仓库尚无工厂数据`,
+			detail: "所选范围尚未完整获取；缺失不代表零。请在刷新中心获取这些仓库的数据。",
 		};
 	const required = FACTORY_STREAMS.filter((kind) => kind !== "alerts");
 	const incomplete = snapshot.repos.filter((repo) =>
@@ -455,6 +469,12 @@ export function factoryDataHealth(snapshot: FactorySnapshot | null) {
 			tone: "warning",
 			title: "账号贡献日历尚未更新",
 			detail: "仓库数据可用；账号贡献日历可能显示旧数据，或暂时为空。",
+		};
+	if (snapshot.truncated === true || (snapshot.freshness?.missing ?? 0) > 0)
+		return {
+			tone: "warning",
+			title: "工厂数据尚不完整",
+			detail: "所选范围有缺失或截断的数据；缺失不代表零，请刷新后查看。",
 		};
 	if (snapshot.publication?.mixed)
 		return {

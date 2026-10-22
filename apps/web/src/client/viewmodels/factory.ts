@@ -5,8 +5,10 @@ import {
 	type FactoryDay,
 	type FactoryEvent,
 	type FactoryRepo,
+	type FactorySelectedRepo,
 	type FactorySnapshot,
 	type FactoryStreamName,
+	type FactoryViewSnapshot,
 	type FactoryWindow,
 } from "../../lib/factory-types";
 import { type SnapshotFreshness, snapshotFreshness } from "../../lib/snapshot-freshness";
@@ -44,9 +46,9 @@ export type FactoryDetail = {
 	items: FactoryEvent[];
 };
 export const loadFactory = (scope = getRepositoryScope()) =>
-	loadKind<FactorySnapshot>(scopedResource("factory", scope));
+	loadKind<FactoryViewSnapshot>(scopedResource("factory", scope));
 export const reloadFactory = (scope = getRepositoryScope()) =>
-	fetchKind<FactorySnapshot>(scopedResource("factory", scope));
+	fetchKind<FactoryViewSnapshot>(scopedResource("factory", scope));
 
 export function factoryFreshness(repos: FactoryRepo[]): SnapshotFreshness {
 	return snapshotFreshness(repos.map((repo) => repo.observation?.refreshedAt));
@@ -85,23 +87,39 @@ export function factoryError(error: unknown): string {
 	}
 	return "暂时无法完成操作。已有数据和刷新进度保留，请稍后重试。";
 }
-export function filterFactoryRepos(repos: FactoryRepo[], f: FactoryFilter): FactoryRepo[] {
+export function filterFactoryRepos<Repo extends FactorySelectedRepo>(
+	repos: Repo[],
+	f: FactoryFilter,
+): Repo[] {
 	const q = f.query.trim().toLowerCase();
 	return repos.filter(
 		(r) =>
-			(!f.language || r.language === f.language) &&
-			(!f.topic || r.topics.includes(f.topic)) &&
-			(!f.repo || r.name === f.repo) &&
+			(!f.language || r.language === null || r.language === f.language) &&
+			(!f.topic || r.topics === null || r.topics.includes(f.topic)) &&
+			(!f.repo || r.name.toLowerCase() === f.repo.toLowerCase()) &&
 			(!q || `${r.name} ${r.description ?? ""}`.toLowerCase().includes(q)),
 	);
 }
-export function factoryGroups(repos: FactoryRepo[]) {
+export function factoryGroups(repos: FactorySelectedRepo[]) {
 	return {
-		languages: [...new Set(repos.map((r) => r.language))].sort(),
-		topics: [...new Set(repos.flatMap((r) => r.topics))].sort(),
+		languages: [
+			...new Set(
+				repos.map((r) => r.language).filter((language): language is string => language !== null),
+			),
+		].sort(),
+		topics: [...new Set(repos.flatMap((r) => r.topics ?? []))].sort(),
 	};
 }
-export function factoryBoard(snapshot: FactorySnapshot, repos: FactoryRepo[]) {
+export function factoryBoard(
+	snapshot: FactorySnapshot,
+	repos: FactoryRepo[],
+	selectedRepos: FactorySelectedRepo[],
+) {
+	const selectedNames = new Set(selectedRepos.map((repo) => repo.name.toLowerCase()));
+	repos = repos.filter((repo) => selectedNames.has(repo.name.toLowerCase()));
+	const observations = new Map(repos.map((repo) => [repo.name.toLowerCase(), repo]));
+	const unpublished = selectedRepos.filter((repo) => !observations.has(repo.name.toLowerCase()));
+	const membershipComplete = unpublished.length === 0;
 	const aggregate = aggregateFactory(repos);
 	const windows = repos.length
 		? repos.map((r) => r.observation?.window ?? snapshot.window)
@@ -121,21 +139,23 @@ export function factoryBoard(snapshot: FactorySnapshot, repos: FactoryRepo[]) {
 		const complete = Object.fromEntries(
 			FACTORY_STREAMS.map((stream) => [
 				stream,
-				repos.every((r) => {
-					const window = r.observation?.window ?? snapshot.window;
-					return (
-						r.coverage[stream].status === "complete" &&
-						date >= Date.parse(window.since) &&
-						date < Date.parse(window.until)
-					);
-				}),
+				selectedRepos.length > 0 &&
+					membershipComplete &&
+					repos.every((r) => {
+						const window = r.observation?.window ?? snapshot.window;
+						return (
+							r.coverage[stream].status === "complete" &&
+							date >= Date.parse(window.since) &&
+							date < Date.parse(window.until)
+						);
+					}),
 			]),
 		) as Record<FactoryStreamName, boolean>;
 		days.push({ date: day, ...(aggregate.days[day] ?? emptyDay()), complete });
 	}
 	const coverage = {
 		complete: 0,
-		total: repos.length * FACTORY_STREAMS.length,
+		total: selectedRepos.length * FACTORY_STREAMS.length,
 		unavailable: 0,
 		limited: 0,
 	};
@@ -153,11 +173,11 @@ export function factoryBoard(snapshot: FactorySnapshot, repos: FactoryRepo[]) {
 		? Math.min(...repos.map((r) => Date.parse(windowOf(r).until.slice(0, 10))))
 		: midnight;
 	const repoActivity = repos.map((r) => activityOf(r, periodEnd));
-	const series = addStock(days, repos);
+	const series = addStock(days, repos, membershipComplete);
 	const stockOn = (date: string, key: "openIssues" | "openPrs") =>
 		series.find((d) => d.date === date)?.[key] ?? null;
 	const periods = PERIODS.map((length) => {
-		const summary = periodSummary(repos, windowOf, periodEnd, length);
+		const summary = periodSummary(repos, windowOf, periodEnd, length, membershipComplete);
 		const before = isoDay(Date.parse(summary.since) - DAY_MS);
 		return {
 			...summary,
@@ -190,8 +210,22 @@ export function factoryBoard(snapshot: FactorySnapshot, repos: FactoryRepo[]) {
 			),
 		]),
 	) as Record<FactoryStreamName, boolean>;
+	const activity = activityBuckets(repoActivity, periodEnd);
+	activity.unknown += unpublished.length;
 
 	return {
+		freshness: snapshotFreshness(
+			selectedRepos.map(
+				(repo) => observations.get(repo.name.toLowerCase())?.observation?.refreshedAt,
+			),
+		),
+		metadataFreshness: snapshotFreshness(
+			selectedRepos.map((repo) => {
+				const observed = observations.get(repo.name.toLowerCase());
+				return observed?.metadataAt ?? observed?.observation?.metadataAt;
+			}),
+		),
+		unpublished,
 		mixedWindows,
 		displayWindow: { since: new Date(start).toISOString(), until: new Date(end).toISOString() },
 		aggregate,
@@ -206,7 +240,7 @@ export function factoryBoard(snapshot: FactorySnapshot, repos: FactoryRepo[]) {
 		days: series,
 		coverage,
 		totals: {
-			repos: repos.length,
+			repos: selectedRepos.length,
 			private: repos.filter((r) => r.private).length,
 			sizeKiB: repos.reduce((n, r) => n + r.diskKiB, 0),
 			languageBytes: repos.reduce((n, r) => n + r.languageBytes, 0),
@@ -219,7 +253,7 @@ export function factoryBoard(snapshot: FactorySnapshot, repos: FactoryRepo[]) {
 		},
 		periods,
 		repoActivity,
-		activity: activityBuckets(repoActivity, periodEnd),
+		activity,
 		ranking: [...repos].sort(
 			(a, b) => b.metrics.commits - a.metrics.commits || a.name.localeCompare(b.name),
 		),
@@ -325,6 +359,7 @@ function periodSummary(
 	windowOf: (r: FactoryRepo) => FactoryWindow,
 	midnight: number,
 	length: Period,
+	membershipComplete: boolean,
 ) {
 	const since = midnight - length * DAY_MS;
 	const previousSince = since - length * DAY_MS;
@@ -332,7 +367,8 @@ function periodSummary(
 		Object.fromEntries(
 			PERIOD_STREAMS.map((stream) => [
 				stream,
-				repos.length > 0 &&
+				membershipComplete &&
+					repos.length > 0 &&
 					repos.every(
 						(r) =>
 							r.coverage[stream].status === "complete" &&
@@ -392,9 +428,11 @@ function walkBack(days: BoardDay[], now: number | null, net: (d: BoardDay) => nu
 	return out;
 }
 
-function addStock(days: BoardDay[], repos: FactoryRepo[]) {
+function addStock(days: BoardDay[], repos: FactoryRepo[], membershipComplete: boolean) {
 	const exact = (stream: "issues" | "prs") =>
-		repos.length > 0 && repos.every((r) => r.coverage[stream].status === "complete");
+		membershipComplete &&
+		repos.length > 0 &&
+		repos.every((r) => r.coverage[stream].status === "complete");
 	const sum = (key: "openIssues" | "openPrs") => repos.reduce((n, r) => n + r[key], 0);
 	const openIssues = walkBack(
 		days,
@@ -406,8 +444,14 @@ function addStock(days: BoardDay[], repos: FactoryRepo[]) {
 		exact("prs") ? sum("openPrs") : null,
 		(d) => d.prOpened - d.prMerged - d.prClosed,
 	);
-	const commitKnown = repos.length > 0 && repos.every((r) => hasFactoryMeasurement(r, "commits"));
-	const ciKnown = repos.length > 0 && repos.every((r) => r.coverage.actions.status === "complete");
+	const commitKnown =
+		membershipComplete &&
+		repos.length > 0 &&
+		repos.every((r) => hasFactoryMeasurement(r, "commits"));
+	const ciKnown =
+		membershipComplete &&
+		repos.length > 0 &&
+		repos.every((r) => r.coverage.actions.status === "complete");
 	const index = new Map(days.map((d, i) => [d.date, i]));
 	const commitDays = repos.map((r) =>
 		Object.entries(r.metrics.days)

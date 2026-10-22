@@ -30,10 +30,9 @@ import {
 import { Link, useSearchParams } from "react-router";
 import {
 	FACTORY_STREAMS,
-	type FactorySnapshot,
 	type FactoryStreamName,
+	type FactoryViewSnapshot,
 } from "../../lib/factory-types";
-import { snapshotFreshness } from "../../lib/snapshot-freshness";
 import { BusinessPageHeader as PageHeader } from "../components/layout/business-page-header";
 import { DataTimeSource } from "../components/layout/data-time";
 import { IconLabel } from "../components/layout/icon-label";
@@ -52,7 +51,6 @@ import {
 	type FactoryDetail,
 	factoryBoard,
 	factoryError,
-	factoryFreshness,
 	factoryGroups,
 	factoryParams,
 	factoryRepoCount,
@@ -89,7 +87,7 @@ const FLOW_STYLE = {
 } as CSSProperties;
 
 export function FactoryPage() {
-	const [snapshot, setSnapshot] = useState<FactorySnapshot | null>(null);
+	const [snapshot, setSnapshot] = useState<FactoryViewSnapshot | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState("");
 
@@ -146,7 +144,11 @@ export function FactoryPage() {
 		let cancelled = false;
 		setDetail(null);
 		setDetailError("");
-		if (!selected || !snapshot) return;
+		if (
+			!selected ||
+			!snapshot?.repos.some((repo) => repo.name.toLowerCase() === selected.toLowerCase())
+		)
+			return;
 		setDetailLoading(true);
 		void loadFactoryDetail(selected, stream, page, detailState, detailDay)
 			.then((result) => {
@@ -166,12 +168,12 @@ export function FactoryPage() {
 			cancelled = true;
 		};
 	}, [selected, stream, page, snapshot, detailState, detailDay]);
-	const groups = useMemo(() => factoryGroups(snapshot?.repos ?? []), [snapshot]);
+	const groups = useMemo(() => factoryGroups(snapshot?.selectedRepos ?? []), [snapshot]);
 	// Typing stays responsive; the board and charts follow at lower priority.
 	const deferredQuery = useDeferredValue(query);
-	const scope = useMemo(
+	const selection = useMemo(
 		() =>
-			filterFactoryRepos(snapshot?.repos ?? [], {
+			filterFactoryRepos(snapshot?.selectedRepos ?? [], {
 				language,
 				topic,
 				query: deferredQuery,
@@ -179,14 +181,15 @@ export function FactoryPage() {
 			}),
 		[snapshot, language, topic, deferredQuery, selected],
 	);
-	const board = useMemo(() => (snapshot ? factoryBoard(snapshot, scope) : null), [snapshot, scope]);
-	const freshness = useMemo(
-		() =>
-			selected || language || topic || deferredQuery
-				? factoryFreshness(scope)
-				: snapshot?.freshness,
-		[selected, language, topic, deferredQuery, scope, snapshot],
+	const scope = useMemo(() => {
+		const names = new Set(selection.map((repo) => repo.name.toLowerCase()));
+		return snapshot?.repos.filter((repo) => names.has(repo.name.toLowerCase())) ?? [];
+	}, [snapshot, selection]);
+	const board = useMemo(
+		() => (snapshot ? factoryBoard(snapshot, scope, selection) : null),
+		[snapshot, scope, selection],
 	);
+	const freshness = board?.freshness;
 	const stale = deferredQuery !== query;
 	const edges = useMemo(() => dependencyEdges(snapshot?.repos ?? []), [snapshot]);
 	const visibleEdges = edges.filter(
@@ -207,9 +210,7 @@ export function FactoryPage() {
 									{ label: "活动统计", at: snapshot.fetched_at, freshness },
 									{
 										label: "仓库信息",
-										freshness: snapshotFreshness(
-											scope.map((repo) => repo.metadataAt ?? repo.observation?.metadataAt),
-										),
+										freshness: board?.metadataFreshness,
 									},
 								]}
 							/>
@@ -224,7 +225,7 @@ export function FactoryPage() {
 					</Button>
 				}
 			/>
-			{!loading ? <ScopeEmpty count={snapshot?.repos.length ?? 0} /> : null}
+			{!loading ? <ScopeEmpty count={snapshot?.selectedRepos.length ?? 0} /> : null}
 			{error ? (
 				<p role="alert" className="text-sm">
 					{error}
@@ -270,7 +271,8 @@ export function FactoryPage() {
 						/>
 						<span className="ml-auto text-xs text-basalt-muted-foreground">
 							清单 {snapshot.inventory.scanned}/{snapshot.inventory.total} · 纳入{" "}
-							{snapshot.repos.length} · 排除 {snapshot.inventory.excluded.length}
+							{snapshot.selectedRepos.length} · 已有观测 {snapshot.repos.length} · 排除{" "}
+							{snapshot.inventory.excluded.length}
 						</span>
 					</div>
 					{selected ? (
@@ -286,7 +288,7 @@ export function FactoryPage() {
 							</Link>
 						</div>
 					) : null}
-					{!scope.length ? (
+					{!selection.length ? (
 						<div role="status" className="py-12 text-center text-sm">
 							{snapshot.inventory.complete
 								? "没有符合当前筛选的仓库。"
@@ -300,8 +302,18 @@ export function FactoryPage() {
 								重置筛选
 							</Button>
 						</div>
+					) : !scope.length ? (
+						<p role="status" className="py-8 text-sm text-basalt-muted-foreground">
+							所选 {selection.length} 个仓库尚无工厂观测；缺失不代表零。请前往刷新中心获取数据。
+						</p>
 					) : (
 						<>
+							{board.unpublished.length ? (
+								<p role="status" className="text-sm text-basalt-muted-foreground">
+									所选范围中 {board.unpublished.length}{" "}
+									个仓库尚无工厂观测；以下为已获取的数据，缺失不代表零。
+								</p>
+							) : null}
 							<PeriodStrip
 								periods={board.periods}
 								period={period}
@@ -410,7 +422,7 @@ export function FactoryPage() {
 											board.observed.commits
 												? formatObservedCount(
 														board.aggregate.commits,
-														board.streamComplete.commits === scope.length,
+														board.streamComplete.commits === selection.length,
 													)
 												: "—"
 										} · 默认分支`}
@@ -431,7 +443,7 @@ export function FactoryPage() {
 											board.observed.prs
 												? formatObservedCount(
 														board.aggregate.prMerged,
-														board.streamComplete.prs === scope.length,
+														board.streamComplete.prs === selection.length,
 													)
 												: "—"
 										} · P50 ${formatHours(board.aggregate.cycleP50)} · P90 ${formatHours(board.aggregate.cycleP90)}`}
@@ -451,7 +463,7 @@ export function FactoryPage() {
 										subtitle={
 											board.observed.actions
 												? `${n(board.aggregate.ciSuccess)} 成功 / ${n(board.aggregate.ciFailure)} 失败 · 窗口发布 ${n(board.aggregate.releases)}`
-												: `尚未采集 · 完整 ${board.streamComplete.actions}/${scope.length} 仓`
+												: `尚未采集 · 完整 ${board.streamComplete.actions}/${selection.length} 仓`
 										}
 									>
 										<FactorySpark
@@ -565,7 +577,7 @@ export function FactoryPage() {
 											))}
 											<p>
 												语言列表覆盖 {scope.filter((r) => r.languagesComplete).length}/
-												{scope.length} 仓库。比例以返回的语言字节之和计算。
+												{selection.length} 仓库。比例以返回的语言字节之和计算。
 											</p>
 										</details>
 										<p className="mt-2 text-xs text-basalt-muted-foreground">
