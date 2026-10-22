@@ -193,14 +193,15 @@ update time, or the Unix epoch when unavailable, not claimed as historical star
 event time. R2-removed rows remain absent and create no owner tombstone.
 
 Owner unstars retain `starred=0` rows. Every membership reader selects only
-`starred=1`; provenance reads include tombstones. Atomic conditional writes allow
-owners to replace any record and agents to replace only agent records or create
-absent records. Same-direction agent writes preserve an owner record unchanged;
-opposite-direction writes return 409. The migration verifier recognizes all four
+`starred=1`; provenance reads include tombstones. From 0.20.0, every accepted
+browser or machine write atomically replaces state, source, timestamp and reason.
+Provenance is informational only; no owner-priority condition or 409 rejection
+remains. This behavior change adds no migration and preserves the 0021 correction.
+The migration verifier recognizes all four
 added columns, skips a fully applied migration, and rejects partial application.
 
 Do not roll application code back to a version that treats every `repo_stars` row
-as starred: it would misread tombstones and could erase owner protection. Preserve
+as starred: it would misread tombstones and restore removed memberships. Preserve
 the new columns and rows during a rollback; use a provenance-aware code revision
 or restore an explicitly approved pre-migration backup. No automated destructive
 rollback is provided.

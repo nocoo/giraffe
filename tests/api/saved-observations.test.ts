@@ -413,7 +413,7 @@ afterAll(() => {
 	);
 });
 
-it("protects browser star decisions from machine writes over local HTTP", async () => {
+it("applies last-write-wins to browser and machine stars over local HTTP", async () => {
 	const created = await browser("tokens", "POST", {
 		account_id: account,
 		label: "star provenance acceptance",
@@ -462,7 +462,6 @@ it("protects browser star decisions from machine writes over local HTTP", async 
 			(await browser("repos/nocoo/missing/star", "POST", { account_id: account, enabled: false }))
 				.status,
 		).toBe(200);
-		const tombstone = row();
 		expect(await (await request("stars")).json()).toMatchObject({
 			items: expect.arrayContaining([
 				expect.objectContaining({ repo: "nocoo/missing", starred: false, source: "owner" }),
@@ -470,26 +469,34 @@ it("protects browser star decisions from machine writes over local HTTP", async 
 		});
 		const settings = (await (await request("settings")).json()) as { stars: string[] };
 		expect(settings.stars).not.toContain("nocoo/missing");
-		const conflict = await request(resource, "PUT", { reason: "must not override owner" });
-		expect(conflict.status).toBe(409);
-		expect(await conflict.json()).toMatchObject({ error: { code: "owner_override" } });
-		expect(row()).toEqual(tombstone);
-		expect((await request(resource, "DELETE", { reason: "no-op" })).status).toBe(200);
-		expect(row()).toEqual(tombstone);
+		const replacement = await request(resource, "PUT", { reason: "latest decision" });
+		expect(replacement.status).toBe(200);
+		expect(await replacement.json()).toMatchObject({
+			starred: true,
+			source: "agent",
+			reason: "latest decision",
+		});
+		expect(row()).toEqual([
+			expect.objectContaining({ starred: 1, source: "agent", reason: "latest decision" }),
+		]);
+		expect((await request(resource, "DELETE", { reason: "latest removal" })).status).toBe(200);
+		expect(row()).toEqual([
+			expect.objectContaining({ starred: 0, source: "agent", reason: "latest removal" }),
+		]);
 		expect(
 			(await browser("repos/nocoo/missing/star", "POST", { account_id: account, enabled: true }))
 				.status,
 		).toBe(200);
-		const ownerStar = row();
-		expect((await request(resource, "DELETE")).status).toBe(409);
+		expect((await request(resource, "DELETE")).status).toBe(200);
+		expect(row()).toEqual([expect.objectContaining({ starred: 0, source: "agent" })]);
 		expect((await request(resource, "PUT")).status).toBe(200);
-		expect(row()).toEqual(ownerStar);
+		expect(row()).toEqual([expect.objectContaining({ starred: 1, source: "agent" })]);
 		expect((await request(resource, "PUT", { source: "owner" })).status).toBe(400);
 		expect((await request(resource, "PUT", { reason: "x".repeat(201) })).status).toBe(400);
 		expect((await request("stars/outside/catalog", "PUT")).status).toBe(404);
 		expect(await (await request("stars")).json()).toMatchObject({
 			items: expect.arrayContaining([
-				expect.objectContaining({ repo: "nocoo/missing", starred: true, source: "owner" }),
+				expect.objectContaining({ repo: "nocoo/missing", starred: true, source: "agent" }),
 			]),
 		});
 	} finally {

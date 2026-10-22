@@ -315,9 +315,10 @@ full scope is all-owned, including archives/forks. Statistics writes return 410
 `statistics_enabled` is only a deprecated alias of `starred`.
 `GET /stars` includes provenance and unstarred tombstones. PUT/DELETE accept optional
 `{reason}` (at most 200 characters) and return 200 with a star record. Machine writes
-are always `agent`; opposite owner decisions return 409 `owner_override` and must
-not be retried. Same-direction writes preserve owner provenance as a 200 no-op.
-Use nullable `/repos` fields `star_source` and `star_updated_at` for provenance.
+are always `agent`; every accepted write is last-write-wins, including owner rows
+and same-direction writes. Each write replaces state/source/time/reason; there is
+no 409 `owner_override`. Provenance in GET `/stars` and nullable `/repos` fields
+`star_source`/`star_updated_at` is informational only, not a lock or star category.
 Pending daily runs defer behind active work and start on terminal handoff; a daily
 that misses its Beijing day gets an explicit failed record, never a later-day run.
 Inspect schedule `lastError` and run outcomes independently. `expectedFinishAt` is

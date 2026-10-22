@@ -43,7 +43,7 @@ export async function writeStar(
 	const [written, saved] = await db.batch<StarRow>([
 		db
 			.prepare(
-				"INSERT INTO repo_stars(account_id,repo,starred,source,updated_at,reason) VALUES(?,?,?,?,?,?) ON CONFLICT(account_id,repo) DO UPDATE SET starred=excluded.starred,source=excluded.source,updated_at=excluded.updated_at,reason=excluded.reason WHERE excluded.source='owner' OR repo_stars.source='agent' RETURNING repo,starred,source,updated_at,reason",
+				"INSERT INTO repo_stars(account_id,repo,starred,source,updated_at,reason) VALUES(?,?,?,?,?,?) ON CONFLICT(account_id,repo) DO UPDATE SET starred=excluded.starred,source=excluded.source,updated_at=excluded.updated_at,reason=excluded.reason RETURNING repo,starred,source,updated_at,reason",
 			)
 			.bind(account, repo, Number(starred), source, now, reason),
 		db
@@ -54,7 +54,5 @@ export async function writeStar(
 	]);
 	const row = saved?.results[0];
 	if (!row) throw new ApiError(500, "db_error", "star result missing");
-	if (row.starred !== Number(starred))
-		throw new ApiError(409, "owner_override", "owner star preference is protected");
 	return { item: record(row), changed: Boolean(written?.results.length) };
 }

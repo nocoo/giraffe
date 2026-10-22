@@ -1567,20 +1567,23 @@ optional `reason`. Machine writes always record `agent`; browser Access writes
 always record `owner`. Callers cannot supply provenance. Catalog membership is
 the only repository eligibility requirement for writes.
 
-An agent write opposite to an owner record returns 409 `owner_override` without
-changing storage. A same-direction agent write returns 200 without changing the
-owner source, timestamp or reason. Owner unstars persist as tombstones, so a bot
-cannot restore the star later. Settings `stars` includes only currently starred
+Stars are one shared concept: every accepted browser or machine write is
+last-write-wins, including writes over owner records and same-direction writes.
+Each write replaces the state, source, timestamp and reason. Provenance is
+informational only, never a priority or authorization rule; writes no longer
+return 409 `owner_override`. Unstars persist as tombstones but may be replaced
+by a later star. Settings `stars` includes only currently starred
 names. `/repos` adds nullable `star_source` and `star_updated_at`, including owner
 provenance on unstarred rows; the browser list shows a small source marker.
 Browser `POST /api/repos/:owner/:name/star` accepts `{account_id,enabled}` and
 returns `{account_id,name_with_owner,starred,star_source,star_updated_at}`. The
 client applies these server-confirmed fields immediately, then refreshes its view.
 
-Existing surviving stars migrate to `owner`. R2 cleanup removals create no owner
-tombstone, allowing a later agent star. Bots must read the returned star record
-instead of the old PUT settings response or expecting DELETE 204, and respect
-409 rather than retrying to override the owner.
+Existing stored provenance remains intact; 0.20.0 adds no star-data migration and
+does not reverse the 0.19.1 provenance correction. Bots must read the returned
+star record instead of expecting a settings response or DELETE 204. Source fields
+remain unchanged in GET responses, but consumers must not use them to infer an
+owner lock or a separate star category.
 
 ```bash
 api "$API/settings"
