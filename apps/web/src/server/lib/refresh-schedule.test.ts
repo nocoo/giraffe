@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { factoryFixture } from "../../../../../tests/fixtures/factory-snapshot";
+import { missedSlotFixture } from "../../../../../tests/fixtures/missed-slots";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import { createDb } from "./db/d1";
 import { replaceSnapshotStmts } from "./db/snapshots";
@@ -306,6 +307,48 @@ it("records every prior-day slot separately before starting the current occurren
 	});
 	await scheduleRefreshes(s.raw, new Date().toISOString());
 	expect((await s.db.prepare("SELECT id FROM factory_runs").all()).results).toHaveLength(3);
+});
+
+it.each([
+	"2026-10-23T00:00:00+08:00",
+	"2026-10-23T07:59:59+08:00",
+	"2026-10-23T08:00:00+08:00",
+	"2026-10-23T23:59:59+08:00",
+])("L2 missed-slot fixture stays correct at Beijing time %s", async (clock) => {
+	vi.useFakeTimers({ toFake: ["Date"] });
+	vi.setSystemTime(new Date(clock));
+	const { raw, db } = await setup();
+	const fixture = missedSlotFixture(new Date().toISOString());
+	await db
+		.prepare(
+			"INSERT INTO catalog_refresh_schedules(account_id,kind,enabled,time,weekday,scope,next_at) VALUES(?,'catalog',1,?,0,'all',?)",
+		)
+		.bind(snap.account_id, fixture.time, fixture.due)
+		.run();
+	await scheduleRefreshes(raw, new Date().toISOString());
+	const rows = await db.prepare("SELECT payload FROM factory_runs").all<{ payload: string }>();
+	const runs = rows.results.map((row) => JSON.parse(row.payload));
+	expect(runs).toHaveLength(4);
+	expect(
+		runs
+			.filter((run) => run.error === "scheduled_slot_missed")
+			.map((run) => run.requestKey)
+			.sort(),
+	).toEqual([
+		"catalog:2026-10-19T16:00:00.000Z",
+		"catalog:2026-10-20T16:00:00.000Z",
+		"catalog:2026-10-21T16:00:00.000Z",
+	]);
+	expect(runs.find((run) => run.status === "running")?.requestKey).toBe(
+		"catalog:2026-10-22T16:00:00.000Z",
+	);
+	const before = rows.results.map((row) => row.payload).sort();
+	await scheduleRefreshes(raw, new Date().toISOString());
+	expect(
+		(await db.prepare("SELECT payload FROM factory_runs").all<{ payload: string }>()).results
+			.map((row) => row.payload)
+			.sort(),
+	).toEqual(before);
 });
 
 it("expires a scheduled paused lock before planning and retains the safe timeout in settings", async () => {
