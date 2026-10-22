@@ -279,6 +279,14 @@ export function catalogPlanWrites(
 			),
 	];
 	if (!plan.complete) return writes;
+	// Release row-by-row uniqueness inside the atomic publication before applying rename cycles.
+	writes.push(
+		db
+			.prepare(
+				"UPDATE catalog_repositories SET removed_at=? WHERE account_id=? AND removed_at IS NULL AND identity_key IN (SELECT json_extract(value,'$.identity_key') FROM json_each(?))",
+			)
+			.bind(plan.at, account, JSON.stringify(plan.rows)),
+	);
 	writes.push(
 		db
 			.prepare(`INSERT INTO catalog_repositories(account_id,identity_key,github_id,repo,row_payload,first_seen_at,last_seen_at,removed_at,archived_changed_at,is_archived,visibility,is_fork,first_seen_source,last_source_run_id)
@@ -300,20 +308,31 @@ export function catalogPlanWrites(
 				)
 				.bind(account, JSON.stringify(plan.removed)),
 		);
+	const nonce = crypto.randomUUID();
+	const renames = JSON.stringify(
+		plan.renames.map((rename, index) => ({ ...rename, staged: `@catalog:${nonce}:${index}` })),
+	);
 	for (const table of ["repo_stars", "repo_statistics", "factory_repo_state"]) {
 		const mapping =
 			"(SELECT json_extract(value,'$.to') FROM json_each(?) WHERE lower(json_extract(value,'$.from'))=lower(repo))";
+		const staged =
+			"(SELECT json_extract(value,'$.staged') FROM json_each(?) WHERE lower(json_extract(value,'$.from'))=lower(repo))";
 		writes.push(
 			db
 				.prepare(
-					`UPDATE ${table} SET ${table === "factory_repo_state" ? `payload=json_set(payload,'$.repo',${mapping}),` : ""}repo=${mapping} WHERE account_id=? AND repo COLLATE NOCASE IN (SELECT json_extract(value,'$.from') FROM json_each(?))`,
+					`UPDATE ${table} SET ${table === "factory_repo_state" ? `payload=CASE WHEN json_type(payload,'$.observation')='object' THEN json_set(payload,'$.repo',${mapping},'$.observation.repo',COALESCE(json_extract(payload,'$.observation.repo'),repo)) ELSE json_set(payload,'$.repo',${mapping}) END,` : ""}repo=${staged} WHERE account_id=? AND repo COLLATE NOCASE IN (SELECT json_extract(value,'$.from') FROM json_each(?))`,
 				)
 				.bind(
-					...(table === "factory_repo_state" ? [JSON.stringify(plan.renames)] : []),
-					JSON.stringify(plan.renames),
+					...(table === "factory_repo_state" ? [renames, renames] : []),
+					renames,
 					account,
-					JSON.stringify(plan.renames),
+					renames,
 				),
+			db
+				.prepare(
+					`UPDATE ${table} SET repo=(SELECT json_extract(value,'$.to') FROM json_each(?) WHERE json_extract(value,'$.staged')=repo) WHERE account_id=? AND repo IN (SELECT json_extract(value,'$.staged') FROM json_each(?))`,
+				)
+				.bind(renames, account, renames),
 		);
 	}
 	writes.push(...catalogRetentionWrites(db, account, plan.at));

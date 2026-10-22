@@ -1318,3 +1318,15 @@ now use the current final flag (later truncation can only shorten it); compact
 fallbacks are checked separately and unrepresentable metadata fails before write.
 Keep boundary assertions on serialized UTF-8 bytes, not string lengths or item
 sizes, and cover the no-item/no-array paths as well as normal two-page output.
+
+## 2026-10-22 - Preserve identity through simultaneous renames
+
+Single-repository rename fixtures hid two valid production cases. A rename chain
+or swap collided with current-name uniqueness before the old names were released.
+Also, the normal run writer omits the optional physical `observation.repo`, while
+the fixture always supplied it; moving the mutable key then lost the immutable
+version join and its garbage-collection root. Stage name changes inside the same
+atomic publication and capture the original physical key before moving state.
+Exercise both listing orders, owner/agent star provenance, the real quick executor
+and garbage collection after old publication/recent-run roots retire. A fixture
+must include the actual writer's minimal valid shape, not only enriched examples.

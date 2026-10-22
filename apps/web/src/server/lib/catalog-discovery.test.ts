@@ -1,13 +1,16 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { github, rawRepo } from "../../../../../tests/fixtures/factory";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
+import { makeRun } from "../../lib/factory-run";
 import type { FactorySnapshot } from "../../lib/factory-types";
 import type { Env } from "../env";
 import { createApp } from "../index";
 import { collectRepos } from "./collect";
 import { createDb } from "./db/d1";
+import { getRun, startRun } from "./db/factory-runs";
 import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
 import { newFactory } from "./factory-collect";
+import { executeRunPage } from "./factory-execute";
 import { mapFactoryRepo } from "./factory-map";
 import { currentRepo } from "./factory-publish";
 import { pruneFactory } from "./factory-retention";
@@ -15,6 +18,7 @@ import { mapRepos } from "./github-map";
 import { readMachineFactoryStream } from "./machine-observations";
 import { readSources } from "./machine-sources";
 import { prepareRefresh } from "./refresh";
+import { encryptToken, parseKeyBytes } from "./token-crypto";
 
 const previousAt = "2026-10-21T20:00:00.000Z";
 const currentAt = "2026-10-22T20:00:00.000Z";
@@ -498,6 +502,275 @@ it.each([
 		).toEqual(context.immutable);
 	},
 );
+
+it.each([
+	{ kind: "chain", reverse: false },
+	{ kind: "chain", reverse: true },
+	{ kind: "swap", reverse: false },
+	{ kind: "swap", reverse: true },
+])(
+	"R7 actual discovery applies $kind renames independent of listing order (reverse=$reverse)",
+	async ({ kind, reverse }) => {
+		const original = [repository(1), repository(2)];
+		const listing = [...original];
+		const context = await fixture(original, listing);
+		await context.refresh();
+		await context.raw
+			.prepare(
+				"UPDATE repo_stars SET source='agent',starred=0,reason='second identity' WHERE repo=?",
+			)
+			.bind(original[1]?.nameWithOwner)
+			.run();
+		await context.raw
+			.prepare("UPDATE repo_statistics SET enabled=1 WHERE repo=?")
+			.bind(original[1]?.nameWithOwner)
+			.run();
+		const renamed = original.map((repo, index) => ({
+			...repo,
+			nameWithOwner:
+				index === 0 ? "nocoo/repo-02" : kind === "swap" ? "nocoo/repo-01" : "nocoo/third",
+		}));
+		listing.splice(0, listing.length, ...(reverse ? [...renamed].reverse() : renamed));
+		await context.refresh("2026-10-23T20:00:00.000Z");
+		for (const [index, repo] of renamed.entries()) {
+			expect(
+				await context.raw
+					.prepare("SELECT * FROM repo_stars WHERE repo=?")
+					.bind(repo.nameWithOwner)
+					.first(),
+			).toMatchObject({
+				source: index === 0 ? "owner" : "agent",
+				starred: index === 0 ? 1 : 0,
+				reason: index === 0 ? "manual choice" : "second identity",
+				updated_at: previousAt,
+			});
+			expect(
+				await context.raw
+					.prepare("SELECT enabled FROM repo_statistics WHERE repo=?")
+					.bind(repo.nameWithOwner)
+					.first(),
+			).toEqual({ enabled: index });
+			expect(await currentRepo(createDb(context.raw), account, repo.nameWithOwner)).toMatchObject({
+				id: repo.id,
+				name: repo.nameWithOwner,
+				observation: { repo: original[index]?.nameWithOwner, version: "original-observation" },
+			});
+			expect(
+				await context.raw
+					.prepare(
+						"SELECT repo,first_seen_at,removed_at FROM catalog_repositories WHERE github_id=?",
+					)
+					.bind(repo.id)
+					.first(),
+			).toEqual({ repo: repo.nameWithOwner, first_seen_at: previousAt, removed_at: null });
+		}
+		expect(
+			(
+				await context.raw
+					.prepare("SELECT kind,github_id,details FROM catalog_changes ORDER BY github_id")
+					.all()
+			).results,
+		).toEqual(
+			original.map((repo) => ({
+				kind: "renamed",
+				github_id: repo.id,
+				details: JSON.stringify({ previous_repo: repo.nameWithOwner }),
+			})),
+		);
+		expect(
+			await context.raw.prepare("SELECT * FROM factory_repo_versions ORDER BY repo,version").all(),
+		).toEqual(context.immutable);
+	},
+);
+
+async function renamedRunSource() {
+	const original = repository(1);
+	const renamed = { ...original, nameWithOwner: "nocoo/renamed" };
+	const context = await fixture([original], [renamed]);
+	const repo = mapFactoryRepo(original);
+	repo.coverage.commits = { ...repo.coverage.commits, status: "complete", fetchedAt: previousAt };
+	repo.observation = {
+		version: "original-observation",
+		source: "run",
+		window: newFactory(account, "nocoo", previousAt).window,
+		refreshedAt: previousAt,
+	};
+	await context.raw
+		.prepare("UPDATE factory_repo_versions SET payload=?")
+		.bind(JSON.stringify(repo))
+		.run();
+	await context.raw
+		.prepare("UPDATE factory_repo_state SET payload=json_set(payload,'$.observation',json(?))")
+		.bind(JSON.stringify(repo.observation))
+		.run();
+	await context.raw
+		.prepare(
+			"INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES('original-observation',?,'original','completed','{}',?,?,?)",
+		)
+		.bind(account, previousAt, previousAt, previousAt)
+		.run();
+	const resource = {
+		runId: "original-observation",
+		items: [],
+		next: null,
+		ranges: [repo.observation.window],
+		coverage: repo.coverage.commits,
+	};
+	await context.raw
+		.prepare(
+			"INSERT INTO factory_resources(run_id,repo,stream,payload) VALUES('original-observation',?,'commits',?)",
+		)
+		.bind(original.nameWithOwner, JSON.stringify(resource))
+		.run();
+	await context.refresh();
+	return { ...context, original, renamed, repo, resource };
+}
+
+it("R7 production run observation without optional repo retains its physical source before mutable rename", async () => {
+	const context = await renamedRunSource();
+	expect(
+		await currentRepo(createDb(context.raw), account, context.renamed.nameWithOwner),
+	).toMatchObject({
+		id: context.original.id,
+		name: context.renamed.nameWithOwner,
+		observation: {
+			source: "run",
+			version: "original-observation",
+			repo: context.original.nameWithOwner,
+		},
+	});
+	const state = await context.raw
+		.prepare("SELECT payload FROM factory_repo_state")
+		.first<{ payload: string }>();
+	expect(JSON.parse(state?.payload ?? "{}")).toMatchObject({
+		repo: context.renamed.nameWithOwner,
+		observation: { repo: context.original.nameWithOwner },
+	});
+});
+
+it("R7 real quick executor reuses renamed run evidence whose original observation omitted repo", async () => {
+	const context = await renamedRunSource();
+	const now = "2026-10-23T20:00:00.000Z";
+	await context.raw
+		.prepare("UPDATE accounts SET token_ciphertext=?")
+		.bind(await encryptToken("fake", parseKeyBytes("0".repeat(64))))
+		.run();
+	const repo = mapFactoryRepo(context.renamed);
+	const run = makeRun(
+		"renamed-quick",
+		account,
+		"nocoo",
+		"renamed-quick",
+		"refresh",
+		[repo],
+		now,
+		[],
+		[],
+		{ scope: "selected" },
+		"quick",
+	);
+	run.cursor = run.steps.findIndex((step) => step.kind === "commits");
+	for (const step of run.steps.slice(0, run.cursor)) step.status = "success";
+	run.checkpoint = newFactory(account, "nocoo", now);
+	run.checkpoint.inventory.complete = true;
+	run.checkpoint.contributionStatus = "unavailable";
+	run.checkpoint.repos = [repo];
+	await startRun(createDb(context.raw), run);
+	const upstream = vi.fn(() => {
+		throw new Error("matching head must reuse the physical baseline");
+	});
+	vi.stubGlobal("fetch", upstream);
+	try {
+		await executeRunPage(
+			{
+				DB: context.raw,
+				ENVIRONMENT: "development",
+				GITHUB_API_BASE: "http://fixture",
+				TOKEN_ENCRYPTION_KEY_V1: "0".repeat(64),
+			} as unknown as Env,
+			run.id,
+			() => now,
+		);
+	} finally {
+		vi.unstubAllGlobals();
+	}
+	const saved = await getRun(createDb(context.raw), account, run.id);
+	expect(saved?.run.steps.find((step) => step.kind === "commits")?.error).toBeNull();
+	expect(saved?.run.steps.find((step) => step.kind === "commits")).toMatchObject({
+		status: "success",
+	});
+	expect(saved?.run.checkpoint?.repos[0]?.coverage.commits).toMatchObject({
+		status: "complete",
+		strategy: "reused",
+		sourceFetchedAt: previousAt,
+	});
+	expect(upstream).not.toHaveBeenCalled();
+});
+
+it("R7 renamed production run state remains a GC root after old publication refs and recent-run roots retire", async () => {
+	const context = await renamedRunSource();
+	const db = createDb(context.raw);
+	const factory = newFactory(account, "nocoo", previousAt);
+	factory.repos = [context.repo];
+	await db.batch(
+		await replaceSnapshotStmts(db, account, "factory:v:original-observation", factory, previousAt),
+	);
+	await context.raw
+		.prepare(
+			"INSERT INTO factory_version_refs VALUES(?,'original-observation',?,'original-observation','run')",
+		)
+		.bind(account, context.original.nameWithOwner)
+		.run();
+	for (let index = 0; index < 22; index++) {
+		const at = `2027-01-${String(index + 1).padStart(2, "0")}T00:00:00.000Z`;
+		await context.raw
+			.prepare(
+				"INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES(?,?,?,'completed','{}',?,?,?)",
+			)
+			.bind(`newer-${index}`, account, `newer-${index}`, at, at, at)
+			.run();
+		if (index >= 20) {
+			const writeDb = createDb(context.raw);
+			await writeDb.batch(
+				await replaceSnapshotStmts(
+					writeDb,
+					account,
+					`factory:v:newer-${index}`,
+					newFactory(account, "nocoo", at),
+					at,
+				),
+			);
+		}
+	}
+	await context.raw
+		.prepare("INSERT INTO factory_state(account_id,published_id,next_at) VALUES(?,'newer-21',?)")
+		.bind(account, currentAt)
+		.run();
+	await pruneFactory(createDb(context.raw), "2027-02-01T00:00:00.000Z");
+	expect(
+		await context.raw
+			.prepare("SELECT * FROM factory_version_refs WHERE publication_id='original-observation'")
+			.all(),
+	).toMatchObject({ results: [] });
+	expect(
+		await context.raw
+			.prepare("SELECT * FROM snapshots WHERE kind='factory:v:original-observation'")
+			.all(),
+	).toMatchObject({ results: [] });
+	expect(
+		await currentRepo(createDb(context.raw), account, context.renamed.nameWithOwner),
+	).toMatchObject({
+		id: context.original.id,
+		observation: { source: "run", repo: context.original.nameWithOwner },
+	});
+	expect(
+		await context.raw
+			.prepare(
+				"SELECT payload FROM factory_resources WHERE run_id='original-observation' AND stream='commits'",
+			)
+			.first(),
+	).toEqual({ payload: JSON.stringify(context.resource) });
+});
 
 it("R7 legacy catalog revision race aborts every history, cleanup and snapshot write atomically", async () => {
 	const context = await fixture([repository(1)], [repository(2)]);
