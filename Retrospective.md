@@ -1171,3 +1171,18 @@ was not modified. Resizing with the controller's explicit pane ID restored the
 intended layout. Treat split ratios as the existing pane's share, use explicit
 pane IDs for resize operations, and verify returned workspace, tab and geometry
 before continuing. The review pane was closed after collecting its result.
+
+## 2026-10-22 - Respect shell names and verify delegated layout
+
+The batch-10 controller used `path` as a zsh loop variable while inspecting
+instruction locations, despite the brief prohibiting it. zsh aliases `path` to
+`PATH`, so later commands in that subprocess could not resolve. No repository or
+global shell configuration changed. A fresh command process restored the inherited
+environment. Use descriptive names such as `instruction_file` rather than zsh
+special variables, and check brief-specific command constraints before execution.
+
+The controller also repeated the split-ratio mistake already recorded above:
+`0.67` left the controller too wide. An explicit resize of `wH:p1T` corrected it,
+and the returned geometry confirmed 41 of 125 columns for the controller with
+workers only on its right. Verify actual geometry immediately after splitting;
+remembering the rule without checking the returned layout is insufficient.
