@@ -92,6 +92,15 @@ export function workflowRun(event: FactoryEvent, branch: string | null): Activit
 					!["pull_request", "pull_request_target"].includes(run.event ?? ""),
 	};
 }
+export function activityBranch(run: FactoryRun, repo: FactoryRepo): string | null {
+	const expectedRepoId = run.repoIds[repo.name];
+	if (expectedRepoId !== undefined && expectedRepoId !== repo.id) return null;
+	return (
+		run.steps.find(
+			(step) => step.kind === "metadata" && step.repo === repo.name && step.status === "success",
+		)?.sourceBranch ?? null
+	);
+}
 export function activityRepo(
 	repo: FactoryRepo,
 	streams: Map<string, FactoryStreamData>,
@@ -146,15 +155,22 @@ export function activityRepo(
 		: issues === null
 			? unknownActivity("Issue fields unavailable")
 			: completeActivity();
-	coverage.default_branch = runs?.some(
-		(run) =>
-			run.is_default_branch === null &&
-			["failure", "timed_out", "action_required", "startup_failure"].includes(run.conclusion ?? ""),
-	)
-		? { status: "partial", truncated: false, reason: "Failed workflow branch context unavailable" }
-		: runs === null
-			? unknownActivity("Workflow branch context unavailable")
-			: completeActivity();
+	coverage.default_branch =
+		!repo.branch || runs === null
+			? unknownActivity("Current-run workflow branch context unavailable")
+			: runs.some(
+						(run) =>
+							run.is_default_branch === null &&
+							["failure", "timed_out", "action_required", "startup_failure"].includes(
+								run.conclusion ?? "",
+							),
+					)
+				? {
+						status: "partial",
+						truncated: false,
+						reason: "Failed workflow branch context unavailable",
+					}
+				: completeActivity();
 	const releases =
 		read("releases")?.filter(
 			(event) => duringActivity(event.at, window) && event.state !== "draft",

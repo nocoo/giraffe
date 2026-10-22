@@ -1,5 +1,21 @@
 # Retrospective
 
+## 2026-10-23 - Current streams need current branch metadata
+
+The retained-version activity fix initially verified stream run IDs without
+separating their branch context from the retained repository. Review identified
+that a default-branch rename could suppress a current failed-CI warning and label
+current commits with the old branch. Persist sourceBranch on the existing
+successful metadata step and share its identity-checked lookup between supplement
+collection and freezing. Missing evidence stays unknown; do not revive a retained
+branch. Regression tests preserve the old repository while verifying renamed
+default-branch CI and commits on the former default branch.
+
+The first executor regression matched any GraphQL query containing nameWithOwner
+and accidentally replaced the catalog response. Narrow the mock to the metadata
+query and account explicitly for the shared fixture's unavailable contributions
+instead of assuming that unrelated stages succeed.
+
 ## 2026-10-23 - Preserve shell and pane execution context
 
 The hotfix preflight used `path` as a zsh loop variable. That special variable

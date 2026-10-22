@@ -937,6 +937,12 @@ step succeeded in this run, with the repository ID matching the frozen run ID
 when available. A retained dependency evidence version therefore does not discard
 successfully collected activity streams; absent successful commit evidence,
 stale observations remain unavailable.
+The metadata step saves the current run's default branch separately from retained
+repository observations. Activity supplement collection and freezing use only
+that successful same-repository metadata with matching identity when recorded.
+Without verifiable branch evidence, workflow `is_default_branch` and default
+commit branch labels are null, `coverage.default_branch` is unavailable and red
+default-branch totals remain null. A retained branch is never used as a fallback.
 Repositories with failed, unavailable or limited steps have `coverage.run.status`
 `partial`, except that `limited` with `error:dependency_parse_unsupported` alone
 does not mark run coverage partial or truncated. Dependency diagnostics retain

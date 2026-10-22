@@ -35,6 +35,7 @@ export type StepKind =
 export type FactoryRunStep = {
 	kind: StepKind;
 	sourceHead?: string | null;
+	sourceBranch?: string | null;
 	strategy?: "full" | "incremental" | "reused";
 	resource?: string;
 	snapshotCursor?: number;

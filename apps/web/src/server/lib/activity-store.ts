@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { ActivityRepo, ActivitySnapshot } from "../../lib/activity-types";
 import type { FactoryRepo, FactoryStreamData } from "../../lib/factory-types";
 import {
+	activityBranch,
 	activityRepo,
 	activityTotals,
 	completeActivity,
@@ -286,7 +287,13 @@ export async function freezeActivityRepo(
 		observedAt <= Date.parse(step.finishedAt ?? "") &&
 		observedAt >= Date.parse(run.startedAt);
 	const security = verified ? candidate : null;
-	const activity = activityRepo(repo, streams, requireActivityWindow(run), supplement, security);
+	const activity = activityRepo(
+		{ ...repo, branch: activityBranch(run, repo) },
+		streams,
+		requireActivityWindow(run),
+		supplement,
+		security,
+	);
 	if (Date.parse(requireActivityWindow(run).since) < Date.parse(run.window.since))
 		for (const key of ["commits", "actions"])
 			activity.coverage[key] = {
