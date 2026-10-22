@@ -116,6 +116,19 @@ export async function readSources(
 	]);
 	if (!catalogRows || !stars || !owners || !publicationRows || !rows)
 		throw new ApiError(500, "db_error", "incomplete source batch");
+	if (timing) {
+		const inputs = [...catalogRows.results, ...publicationRows.results, ...rows.results];
+		timing.work("decoded_rows", inputs.length);
+		timing.work(
+			"decoded_bytes",
+			inputs.reduce(
+				(total, row) =>
+					total +
+					new TextEncoder().encode(`${row.payload ?? ""}${row.content_meta ?? ""}`).byteLength,
+				0,
+			),
+		);
+	}
 	const decode = <T>(fn: () => T) => (timing ? timing.measure("decode", fn) : fn());
 	const hash = <T>(fn: () => Promise<T>) => (timing ? timing.measureAsync("hash", fn) : fn());
 	const policy = decode(() =>

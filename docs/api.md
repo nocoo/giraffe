@@ -208,7 +208,7 @@ the distinction between the strong application tag and possible edge transforms.
 #### Source request timing
 
 Authenticated `/sources` 200 and 304 responses include `Server-Timing` with fixed
-names and millisecond durations only. It contains no SQL, IDs, token material,
+names, millisecond durations and safe numeric work counters. It contains no SQL, IDs, token material,
 repository names or upstream diagnostics. Timings are request-local headers;
 they do not enter the JSON body, source versions or ETag input.
 
@@ -223,9 +223,15 @@ they do not enter the JSON body, source versions or ETag input.
   projections and ETag digest work, including their input preparation;
   `serialize`: response JSON construction; `total`: measured machine-route duration
   through ETag/304 processing, before network delivery.
+- `decoded_rows`, `decoded_bytes`, `hash_ops`, `serialized_bytes`: nonnegative
+  integer counts in `desc`, not durations. Bytes are UTF-8 JSON input/output
+  bytes, before response compression; decoding includes saved content metadata.
 
 Phases can overlap (`build` contains reader phases); do not sum them to estimate
-CPU time. Worker clocks can coarsen synchronous durations to zero. Compare D1
+CPU time. Overlapping operations in one phase are timed once. Worker clocks
+freeze during pure CPU work, so honest durations can be zero; no fake minimum
+or artificial I/O is used. Whole-request CPU comes from Workers Observability
+`cpuTimeMs`; local high-resolution measurements prove CPU-phase costs. Compare D1
 round-trip wall time with available SQL execution time to separate transport
 latency from query cost. Header values vary even when the body and ETag do not.
 No timing header is returned for denied requests or unrelated endpoints.

@@ -1,5 +1,35 @@
 # Source Index Performance
 
+## v0.18.0: timing and comparison boundary
+
+Performance changes are compared against the complete post-R1/R2/R3 source tree,
+not the earlier main API contract. The pinned revision is recorded in the batch
+PR body and cross-version benchmarks. Functional membership, provenance and ETA
+changes are intentional and precede this boundary. Performance-only changes must
+preserve exact response JSON bytes, ordering, status and existing ETags, including
+conditional 304 responses and legacy/null metadata.
+
+Workers freeze clocks during pure CPU execution. Decode, hash and serialization
+durations can honestly read `0.00` in production even when work occurs; no minimum
+duration or artificial I/O is inserted. Whole-request CPU is reported separately
+by Workers Observability `cpuTimeMs`. Local Bun `performance.now()` measurements
+use a high-resolution clock and demonstrate the cost without claiming deployed
+CPU timings or latency guarantees.
+
+`Server-Timing` adds numeric work counters in `desc`: `decoded_rows`,
+`decoded_bytes`, `hash_ops`, and `serialized_bytes`. Decoded bytes count UTF-8
+JSON inputs returned to the source assembler, including stored content metadata;
+serialized bytes count the actual UTF-8 response JSON before HTTP compression.
+The values are counts, not milliseconds. Names are fixed and values are safe
+nonnegative integers; no repository, SQL, token or error text enters this header.
+Concurrent operations in the same phase contribute the union of their elapsed
+intervals, not the sum of overlapping waits. Different phases still overlap:
+`build` contains D1/decode/hash/serialization work as applicable, so adding the
+phases is not a CPU measurement.
+
+The historical measurements below describe their original revisions and are not
+current v0.18.0 before/after results.
+
 ## v0.17.2: database round trips
 
 The steward's read-only Workers Observability sample (October 22, 2026) reports

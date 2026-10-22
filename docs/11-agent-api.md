@@ -96,7 +96,9 @@ Cloudflare handles production response compression. See the
 [local performance evidence and edge verification limits](12-source-performance.md).
 
 Authenticated `/sources` 200/304 responses also expose safe `Server-Timing`
-phase durations, including each D1 round trip. They are headers only, excluded
+phase durations, including each D1 round trip, and numeric work counters. Pure
+CPU durations may be zero because Workers clocks freeze; whole-request CPU is
+available in Workers Observability `cpuTimeMs`. They are headers only, excluded
 from JSON, source hashes and ETags; no query text, repository identity or token
 data is included. See [timing fields and interpretation](api.md#source-request-timing).
 

@@ -165,7 +165,9 @@ export function machineApi() {
 			const read = () =>
 				readSources(c.get("db"), c.get("principal").accountId, c.req.query(), timing);
 			const data = timing ? await timing.measureAsync("build", read) : await read();
-			return timing ? timing.measure("serialize", () => c.json(data)) : c.json(data);
+			return timing
+				? c.body(timing.stringify(data), 200, { "Content-Type": "application/json" })
+				: c.json(data);
 		},
 	);
 	app.get("/accounts/:account/stars", getMachineStars);

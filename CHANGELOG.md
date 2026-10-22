@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## v0.18.0 - 2026-10-22
 
+### Performance
+
+- Report honest CPU-phase timing, including production frozen-clock zeros, with safe numeric decoded row/byte, hash operation and serialized byte counters. Count overlapping hash intervals once rather than summing concurrent waits. Local high-resolution measurements and exact post-R1/R2/R3 cross-version comparisons keep timing evidence separate from response contracts.
+
 ### Changed
 
 - Preserve each scheduled daily until same-day admission or an individual failed audit. Terminal work hands off deferred daily runs without manual cooldowns; exact-slot weekly ties win without cancelling active work. Replace latest-only recovery and invisible preparation failures with durable per-occurrence outcomes.
