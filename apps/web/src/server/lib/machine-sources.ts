@@ -54,8 +54,8 @@ export async function readSources(
 	const parsed = sourceQuerySchema.safeParse(query);
 	if (!parsed.success) throw new ApiError(400, "validation_failed", "invalid source filters");
 	const head = `SELECT coalesce((SELECT 'factory:v:' || nullif(published_id,'') FROM factory_state WHERE account_id=?),'factory') AS kind`;
-	const [catalogRows, stars, owners, publicationRows, rows] = await db.batch<
-		SnapshotPage & StarRow & { login: string }
+	const [catalogRows, stars, owners, publicationRows, rows, activityRows] = await db.batch<
+		SnapshotPage & StarRow & { login: string; run_id: string; content_version: string }
 	>([
 		db
 			.prepare(
@@ -114,11 +114,21 @@ export async function readSources(
 				JSON.stringify(FACTORY_STREAMS),
 				account,
 			),
+		db
+			.prepare(
+				"SELECT a.run_id,a.payload,a.content_version FROM activity_publications a JOIN factory_runs r ON r.id=a.run_id AND r.account_id=a.account_id WHERE a.account_id=? AND r.status='completed' ORDER BY a.until_at DESC,a.run_id LIMIT 1",
+			)
+			.bind(account),
 	]);
-	if (!catalogRows || !stars || !owners || !publicationRows || !rows)
+	if (!catalogRows || !stars || !owners || !publicationRows || !rows || !activityRows)
 		throw new ApiError(500, "db_error", "incomplete source batch");
 	if (timing) {
-		const inputs = [...catalogRows.results, ...publicationRows.results, ...rows.results];
+		const inputs = [
+			...catalogRows.results,
+			...publicationRows.results,
+			...rows.results,
+			...(activityRows?.results ?? []),
+		];
 		timing.work("decoded_rows", inputs.length);
 		timing.work(
 			"decoded_bytes",
@@ -193,6 +203,26 @@ export async function readSources(
 		typeof observationMetadata
 	>;
 	const sources: Source[] = [];
+	const activity = activityRows?.results[0];
+	if (activity) {
+		const data = decode(() => JSON.parse(activity.payload)) as {
+			fetchedAt: string;
+			coverage: unknown;
+			truncated: boolean;
+		};
+		const metadata = observationMetadata({
+			fetched_at: data.fetchedAt,
+			coverage: data.coverage,
+			truncated: data.truncated,
+		});
+		if (afterSince(metadata, since))
+			sources.push({
+				resource: "account:activity",
+				version: activity.run_id,
+				contentVersion: activity.content_version,
+				...metadata,
+			});
+	}
 	const add = async (
 		resource: string,
 		data: Record<string, unknown>,
