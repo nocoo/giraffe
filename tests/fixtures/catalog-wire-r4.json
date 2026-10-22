@@ -1,0 +1,115 @@
+{
+	"provenance": {
+		"revision": "215f939727ae735bce05faa86760f206d7a9e37a",
+		"tree": "9645979b88bd7d69c1b793b785708c83aee057b9",
+		"archiveSha256": "54e0269463d91b0df0e6e1e32521902d1a450224693da2e0fb32cf18b57cf857"
+	},
+	"observations": {
+		"all": {
+			"repos": [
+				{
+					"name_with_owner": "nocoo/app",
+					"name": "app",
+					"owner_login": "nocoo",
+					"description": "Example",
+					"stargazer_count": 17,
+					"fork_count": 2,
+					"open_issue_count": 0,
+					"primary_language": "TypeScript",
+					"pushed_at": "2026-09-15T22:00:00.000Z",
+					"visibility": "PRIVATE",
+					"is_private": true,
+					"is_archived": true,
+					"is_fork": true,
+					"url": "https://github.com/nocoo/app",
+					"statistics_enabled": true,
+					"starred": true,
+					"star_source": "owner",
+					"star_updated_at": "2026-10-21T20:00:00.000Z"
+				},
+				{
+					"name_with_owner": "nocoo/second",
+					"name": "second",
+					"owner_login": "nocoo",
+					"description": "Example",
+					"stargazer_count": 0,
+					"fork_count": 0,
+					"open_issue_count": 0,
+					"primary_language": "TypeScript",
+					"pushed_at": "2026-09-15T22:00:00.000Z",
+					"visibility": "PUBLIC",
+					"is_private": false,
+					"is_archived": false,
+					"is_fork": false,
+					"url": "https://github.com/nocoo/second",
+					"statistics_enabled": false,
+					"starred": false,
+					"star_source": null,
+					"star_updated_at": null
+				}
+			],
+			"fetchedAt": "2026-10-21T20:00:00.000Z",
+			"freshness": {
+				"oldestAt": "2026-10-21T20:00:00.000Z",
+				"latestAt": "2026-10-21T20:00:00.000Z",
+				"total": 2,
+				"missing": 0
+			},
+			"coverage": null,
+			"truncated": false,
+			"unavailable": false,
+			"source": {
+				"kind": "snapshot",
+				"resource": "repos",
+				"publicationId": null
+			},
+			"selection": {
+				"scope": "all",
+				"statisticsFilter": false
+			}
+		},
+		"starred": {
+			"repos": [
+				{
+					"name_with_owner": "nocoo/app",
+					"name": "app",
+					"owner_login": "nocoo",
+					"description": "Example",
+					"stargazer_count": 17,
+					"fork_count": 2,
+					"open_issue_count": 0,
+					"primary_language": "TypeScript",
+					"pushed_at": "2026-09-15T22:00:00.000Z",
+					"visibility": "PRIVATE",
+					"is_private": true,
+					"is_archived": true,
+					"is_fork": true,
+					"url": "https://github.com/nocoo/app",
+					"statistics_enabled": true,
+					"starred": true,
+					"star_source": "owner",
+					"star_updated_at": "2026-10-21T20:00:00.000Z"
+				}
+			],
+			"fetchedAt": "2026-10-21T20:00:00.000Z",
+			"freshness": {
+				"oldestAt": "2026-10-21T20:00:00.000Z",
+				"latestAt": "2026-10-21T20:00:00.000Z",
+				"total": 1,
+				"missing": 0
+			},
+			"coverage": null,
+			"truncated": false,
+			"unavailable": false,
+			"source": {
+				"kind": "snapshot",
+				"resource": "repos",
+				"publicationId": null
+			},
+			"selection": {
+				"scope": "starred",
+				"statisticsFilter": false
+			}
+		}
+	}
+}

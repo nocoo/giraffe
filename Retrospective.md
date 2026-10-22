@@ -1,5 +1,17 @@
 # Retrospective
 
+## 2026-10-22 - Contract fixtures cannot depend on unreachable Git objects
+
+The cross-version repository contract test archived a local pre-rebase commit at
+runtime. Local L1 and push hooks passed because that object still existed, but
+the GitHub checkout had never received it, so the suite failed before its two
+assertion bodies ran. Reproducing with an empty Git object store exposed the same
+failure. Capture the actual pinned reader's complete expected wire rows and
+envelope fields as a checked-in fixture, including revision/tree/archive hashes,
+then compare against that fixture without Git or network access. Keep every
+existing assertion; verify both scopes with no historical objects available.
+Local success does not establish that test inputs are available in CI.
+
 ## 2026-10-22 - Catalog listings can disagree across leased steps
 
 The first identity-safety repair tested replacement against consistent inventory

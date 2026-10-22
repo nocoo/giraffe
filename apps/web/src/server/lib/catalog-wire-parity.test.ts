@@ -1,25 +1,13 @@
-import { afterAll, beforeAll, expect, it } from "vitest";
+import { expect, it } from "vitest";
+import baseline from "../../../../../tests/fixtures/catalog-wire-r4.json";
 import { rawRepo } from "../../../../../tests/fixtures/factory";
-import { revisionFixture } from "../../../../../tests/fixtures/revision";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import { createDb } from "./db/d1";
 import { replaceSnapshotStmts } from "./db/snapshots";
 import { mapRepos } from "./github-map";
 import { readObservation } from "./machine-observations";
 
-const baselineRevision = "215f939727ae735bce05faa86760f206d7a9e37a";
 const historyFields = ["first_seen_at", "last_seen_at", "removed_at", "archived_changed_at"];
-let baseline: typeof import("./machine-observations");
-let revision: ReturnType<typeof revisionFixture>;
-
-beforeAll(async () => {
-	revision = revisionFixture(baselineRevision);
-	baseline = await revision.load<typeof baseline>(
-		"apps/web/src/server/lib/machine-observations.ts",
-	);
-});
-
-afterAll(() => revision?.close());
 
 it.each(["all", "starred"] as const)(
 	"R7 pinned-R4 cross-version fixture preserves every non-history repository wire field for scope=%s",
@@ -63,12 +51,12 @@ it.each(["all", "starred"] as const)(
 			.bind(at)
 			.run();
 		const saved = await raw.prepare("SELECT * FROM snapshots ORDER BY kind").all();
-		const old = await baseline.readObservation(db, "a", "repos", scope);
+		const old = baseline.observations[scope];
 		const current = await readObservation(db, "a", "repos", scope);
 		const currentRepos = current.data.repos as Record<string, unknown>[];
 		const stripHistory = (repo: Record<string, unknown>) =>
 			Object.fromEntries(Object.entries(repo).filter(([key]) => !historyFields.includes(key)));
-		expect(currentRepos.map(stripHistory)).toEqual(old.data.repos);
+		expect(currentRepos.map(stripHistory)).toEqual(old.repos);
 		for (const field of [
 			"fetchedAt",
 			"freshness",
