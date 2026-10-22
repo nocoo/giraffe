@@ -1,4 +1,17 @@
 import { ciReport } from "../../apps/web/src/lib/ci-health";
+import type { FactorySnapshot, FactoryViewSnapshot } from "../../apps/web/src/lib/factory-types";
+
+export function projectFactoryFixture(snapshot: FactorySnapshot): FactoryViewSnapshot {
+	return {
+		...snapshot,
+		selectedRepos: snapshot.repos.map(({ name, description, language, topics }) => ({
+			name,
+			description,
+			language,
+			topics,
+		})),
+	};
+}
 
 const fetchedAt = "2026-09-08T08:30:00.000Z";
 const envelope = { account_id: "ui-account", fetched_at: fetchedAt, truncated: false };

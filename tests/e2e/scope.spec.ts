@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { factoryFixture } from "../fixtures/factory-snapshot";
-import { createUiFixtures } from "./ui-fixtures";
+import { createUiFixtures, projectFactoryFixture } from "./ui-fixtures";
 
 type SeenRequest = { pathname: string; scope: string | null; method: string };
 const selectedRepo = "octocat/basalt";
@@ -18,7 +18,15 @@ async function mockScope(page: Page, empty = false) {
 		requests.push({ pathname: url.pathname, scope, method: request.method() });
 		if (url.pathname.endsWith("/star")) {
 			starred = request.postDataJSON().enabled === true;
-			return route.fulfill({ json: { account_id: "ui-account" } });
+			return route.fulfill({
+				json: {
+					account_id: "ui-account",
+					name_with_owner: selectedRepo,
+					starred,
+					star_source: "owner",
+					star_updated_at: latestAt,
+				},
+			});
 		}
 		if (url.pathname.startsWith("/api/notifications/read")) {
 			const body = request.postDataJSON();
@@ -46,20 +54,22 @@ async function mockScope(page: Page, empty = false) {
 			const snapshot = factoryFixture();
 			return route.fulfill({
 				json: {
-					...snapshot,
-					account_id: "ui-account",
+					...projectFactoryFixture({
+						...snapshot,
+						account_id: "ui-account",
+						repos: snapshot.repos.map((repo) => ({
+							...repo,
+							name: "octocat/hello-world",
+							observation: {
+								source: "run",
+								version: "older",
+								window: snapshot.window,
+								refreshedAt: oldestAt,
+							},
+						})),
+					}),
 					freshness: fresh,
 					fetched_at: latestAt,
-					repos: snapshot.repos.map((repo) => ({
-						...repo,
-						name: "octocat/hello-world",
-						observation: {
-							source: "run",
-							version: "older",
-							window: snapshot.window,
-							refreshedAt: oldestAt,
-						},
-					})),
 				},
 			});
 		}

@@ -2,7 +2,7 @@ import { expect, type Page, test } from "@playwright/test";
 import { NAV_GROUPS } from "../../apps/web/src/client/lib/navigation";
 import { APP_VERSION } from "../../apps/web/src/lib/version";
 import { factoryFixture } from "../fixtures/factory-snapshot";
-import { createUiFixtures } from "./ui-fixtures";
+import { createUiFixtures, projectFactoryFixture } from "./ui-fixtures";
 
 async function gotoAndWaitForSidebar(page: Page, url: string) {
 	await Promise.all([
@@ -58,7 +58,10 @@ for (const width of [1440, 390]) {
 			await page.setViewportSize({ width, height: 900 });
 			await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
 			const fixtures: Record<string, unknown> = createUiFixtures();
-			fixtures["/api/factory"] = { ...factoryFixture(), account_id: "ui-account" };
+			fixtures["/api/factory"] = projectFactoryFixture({
+				...factoryFixture(),
+				account_id: "ui-account",
+			});
 			const writes: string[] = [];
 			await stubApi(page, fixtures, writes);
 
@@ -173,7 +176,10 @@ test("command palette opens from collapsed sidebar search control", async ({ pag
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
 	const fixtures: Record<string, unknown> = createUiFixtures();
-	fixtures["/api/factory"] = { ...factoryFixture(), account_id: "ui-account" };
+	fixtures["/api/factory"] = projectFactoryFixture({
+		...factoryFixture(),
+		account_id: "ui-account",
+	});
 	const writes: string[] = [];
 	await stubApi(page, fixtures, writes);
 

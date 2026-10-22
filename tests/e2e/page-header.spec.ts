@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { factoryFixture } from "../fixtures/factory-snapshot";
-import { createUiFixtures } from "./ui-fixtures";
+import { createUiFixtures, projectFactoryFixture } from "./ui-fixtures";
 
 const pages = [
 	["/repos", "仓库"],
@@ -18,7 +18,10 @@ for (const width of [1440, 390]) {
 		await page.setViewportSize({ width, height: 1000 });
 		await page.emulateMedia({ reducedMotion: "reduce" });
 		const fixtures: Record<string, unknown> = createUiFixtures();
-		fixtures["/api/factory"] = { ...factoryFixture(), account_id: "ui-account" };
+		fixtures["/api/factory"] = projectFactoryFixture({
+			...factoryFixture(),
+			account_id: "ui-account",
+		});
 		fixtures["/api/issues"] = { ...createUiFixtures()["/api/issues"], truncated: true };
 		const writes: string[] = [];
 		await page.route("**/api/**", (route) => {

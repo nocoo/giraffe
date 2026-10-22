@@ -7,7 +7,7 @@ import {
 } from "../../apps/web/src/lib/factory-run";
 import { defaultSchedule } from "../../apps/web/src/lib/refresh-schedule";
 import { factoryFixture } from "../fixtures/factory-snapshot";
-import { createUiFixtures } from "./ui-fixtures";
+import { createUiFixtures, projectFactoryFixture } from "./ui-fixtures";
 
 function consoleFixture() {
 	const snapshot = factoryFixture();
@@ -107,7 +107,7 @@ function consoleFixture() {
 async function mockConsole(page: Page, fixture: ReturnType<typeof consoleFixture>) {
 	const fixtures: Record<string, unknown> = {
 		...createUiFixtures(),
-		"/api/factory": fixture.snapshot,
+		"/api/factory": projectFactoryFixture(fixture.snapshot),
 		"/api/refresh/settings": {
 			account_id: fixture.state.account_id,
 			starred: [],

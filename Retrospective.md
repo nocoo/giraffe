@@ -1213,3 +1213,12 @@ handling, dropping cache-control and referrer policy on 304 responses. Construct
 the response through the context and assert conditional headers alongside exact
 body bytes and ETags in cross-version tests. HTTP status/body parity alone is not
 proof that authorization-sensitive caching behavior has survived refactoring.
+
+## 2026-10-22 - Keep browser fixtures on the projected contract
+
+Batch-10 browser mocks still returned raw stored factory snapshots after the API
+introduced required selected membership. The page could not render, although
+focused projection tests and real API checks passed. Build typed projected mock
+responses after fixture mutations, and update star-write acknowledgements with
+the server-confirmed fields. Keep raw storage fixtures unchanged; never repair
+test drift with a runtime denominator fallback that hides unpublished members.
