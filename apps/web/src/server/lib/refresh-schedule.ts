@@ -279,15 +279,15 @@ export async function scheduleRefreshes(
 				if (!account) continue;
 				let repos: string[] = [];
 				if (row.kind !== "catalog") {
-					const catalog = await catalogFactory(db, account.id);
-					const policy = await repoPolicy(db, account.id, undefined, row.scope);
-					if (
-						!catalog?.inventory.complete ||
-						Date.parse(now) - Date.parse(catalog.fetched_at) >= 86400_000 ||
-						policy.repos.some(
-							(repo) => !catalog.repos.some((entry) => entry.name === repo.name_with_owner),
-						)
-					) {
+					let catalog = await catalogFactory(db, account.id);
+					let policy = await repoPolicy(db, account.id, undefined, row.scope);
+					const ready = () =>
+						catalog?.inventory.complete &&
+						Date.parse(now) - Date.parse(catalog.fetched_at) < 86400_000 &&
+						policy.repos.every((repo) =>
+							catalog?.repos.some((entry) => entry.name === repo.name_with_owner),
+						);
+					if (!ready()) {
 						const preparation = await startRefresh(
 							db,
 							account,
@@ -303,11 +303,18 @@ export async function scheduleRefreshes(
 							{ kind: row.kind, dueAt: row.next_at },
 							clock,
 						);
-						if (["running", "paused"].includes(preparation.status))
+						if (["running", "paused"].includes(preparation.status)) {
 							await scheduleError(raw, row, "catalog_pending");
-						else
+							continue;
+						}
+						if (preparation.status === "completed") {
+							catalog = await catalogFactory(db, account.id);
+							policy = await repoPolicy(db, account.id, undefined, row.scope);
+						}
+						if (!ready()) {
 							await recordFailure(raw, row, account.login, clock(), "catalog_preparation_failed");
-						continue;
+							continue;
+						}
 					}
 					repos = policy.repos.map((repo) => repo.name_with_owner);
 				}
