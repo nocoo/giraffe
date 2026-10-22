@@ -94,9 +94,17 @@ test("settings PAT, unified refresh, repo list, and repo detail", async ({ page 
 	await expect(page.getByLabel("每日快速刷新时间", { exact: true })).toHaveValue("09:15");
 	await page.goto("/repos");
 	await expect(page.getByRole("switch", { name: /参与统计/ })).toHaveCount(0);
+	await page
+		.getByRole("group", { name: "仓库范围" })
+		.getByRole("radio", { name: "全部", exact: true })
+		.click();
 	await star.click();
 	await expect(star).toHaveAttribute("aria-pressed", "false");
 	await page.reload();
+	await page
+		.getByRole("group", { name: "仓库范围" })
+		.getByRole("radio", { name: "全部", exact: true })
+		.click();
 	await expect(star).toHaveAttribute("aria-pressed", "false");
 	await expect(ownerMarker).toBeVisible();
 	const factory = await page.request.get("/api/factory?scope=starred");
