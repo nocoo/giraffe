@@ -7,11 +7,8 @@ import {
 	type FactoryStreamName,
 } from "../../lib/factory-types";
 import type { AppVars, Env } from "../env";
-import { getActiveAccount } from "../lib/db/accounts";
-import { publishedFactory } from "../lib/db/factory-runs";
-import { readSnapshot } from "../lib/db/snapshots";
 import { ApiError, jsonOk } from "../lib/errors";
-import { newFactory, streamKey } from "../lib/factory-collect";
+import { newFactory } from "../lib/factory-collect";
 import { factoryRateFromRow } from "../lib/factory-rate";
 import {
 	accountReadPlan,
@@ -19,18 +16,18 @@ import {
 	type PublicationPage,
 	savedAccountPolicy,
 } from "../lib/saved-observation-read";
-import { factoryFreshness, projectFactory, repoPolicy } from "../lib/snapshot-projection";
+import {
+	decodeFactoryResource,
+	factoryStreamPolicy,
+	factoryStreamReadPlan,
+} from "../lib/saved-repository-read";
+import { factoryFreshness, projectFactory } from "../lib/snapshot-projection";
 import { snapshotScope } from "../lib/snapshot-scope";
 import { repoParts } from "./snapshots";
 
 type Ctx = Context<{ Bindings: Env; Variables: AppVars }>;
 const PRIVATE = { "cache-control": "private, no-store" };
 
-async function active(c: Ctx) {
-	const account = await getActiveAccount(c.get("db"));
-	if (!account) throw new ApiError(409, "account_missing", "no active account");
-	return account;
-}
 export async function getFactory(c: Ctx): Promise<Response> {
 	const scope = snapshotScope(c.req.queries("scope"));
 	const db = c.get("db");
@@ -73,7 +70,17 @@ export async function getFactory(c: Ctx): Promise<Response> {
 }
 export async function getFactoryStream(c: Ctx): Promise<Response> {
 	const scope = snapshotScope(c.req.queries("scope"));
-	const account = await active(c);
+	const db = c.get("db");
+	const plan = factoryStreamReadPlan(
+		db,
+		null,
+		`${c.req.param("owner") ?? ""}/${c.req.param("name") ?? ""}`,
+		c.req.param("stream") ?? "",
+		{ policy: true },
+	);
+	const saved = plan.decode(await db.batch(plan.statements));
+	const account = saved.account;
+	if (!account) throw new ApiError(409, "account_missing", "no active account");
 	const { owner, name } = repoParts(c.req.param("owner") ?? "", c.req.param("name") ?? "");
 	const stream = c.req.param("stream") as FactoryStreamName;
 	if (!FACTORY_STREAMS.includes(stream))
@@ -81,29 +88,15 @@ export async function getFactoryStream(c: Ctx): Promise<Response> {
 	const page = Number(c.req.query("page") ?? "1");
 	if (!Number.isInteger(page) || page < 1 || page > 50)
 		throw new ApiError(400, "validation_failed", "invalid page");
-	const snap = await publishedFactory(c.get("db"), account.id);
+	const snap = decodePublication(saved.publicationPages);
 	const repo = snap?.repos.find((r) => r.name.toLowerCase() === `${owner}/${name}`.toLowerCase());
-	if (repo && !(await repoPolicy(c.get("db"), account.id, undefined, scope)).includes(repo.name))
+	if (repo && !factoryStreamPolicy(saved, scope).includes(repo.name))
 		throw new ApiError(404, "not_found", "repository outside selected owned catalog");
 	if (!repo || !snap) throw new ApiError(404, "not_found", "repository outside factory inventory");
 	let resource: FactoryStreamData | null = null;
 	const version = repo.observation?.version ?? snap.runId;
-	const sourceRepo = repo.observation?.repo ?? repo.name;
-	if (repo.observation?.source === "run") {
-		const row = await c
-			.get("db")
-			.prepare(
-				"SELECT payload FROM factory_resources WHERE run_id=? AND repo=? AND stream=? AND EXISTS(SELECT 1 FROM factory_runs WHERE id=? AND account_id=?)",
-			)
-			.bind(version, sourceRepo, stream, version, account.id)
-			.first<{ payload: string }>();
-		resource = row ? (JSON.parse(row.payload) as FactoryStreamData) : null;
-	} else if (repo.coverage[stream].status !== "pending")
-		resource = (await readSnapshot(
-			c.get("db"),
-			account.id,
-			streamKey(sourceRepo, stream),
-		)) as FactoryStreamData | null;
+	if (repo.observation?.source === "run" || repo.coverage[stream].status !== "pending")
+		resource = decodeFactoryResource(saved, snap, repo, stream).data;
 	if (!resource && repo.coverage[stream].status !== "pending")
 		throw new ApiError(409, "snapshot_missing", "referenced resource unavailable");
 	if (resource && resource.runId !== version)
@@ -140,5 +133,6 @@ export async function getFactoryStream(c: Ctx): Promise<Response> {
 		},
 		200,
 		PRIVATE,
+		c.get("sourceTiming"),
 	);
 }

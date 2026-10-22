@@ -16,10 +16,9 @@ import { createDb } from "../lib/db/d1";
 import { ApiError } from "../lib/errors";
 import { readContributions } from "../lib/machine-contributions";
 import {
-	readFactoryResource,
 	readMachineAccountObservation,
-	readObservation,
-	requireCatalogRepo,
+	readMachineFactoryStream,
+	readMachineRepositoryObservation,
 } from "../lib/machine-observations";
 import { assertMachineQuery } from "../lib/machine-query";
 import { readSources } from "../lib/machine-sources";
@@ -205,14 +204,10 @@ export function machineApi() {
 		assertMachineQuery(c.req.query());
 		return timedJson(
 			c,
-			await readFactoryResource(
+			await readMachineFactoryStream(
 				c.get("db"),
 				c.get("principal").accountId,
-				await requireCatalogRepo(
-					c.get("db"),
-					c.get("principal").accountId,
-					`${c.req.param("owner")}/${c.req.param("name")}`,
-				),
+				`${c.req.param("owner")}/${c.req.param("name")}`,
 				c.req.param("stream"),
 			),
 		);
@@ -223,14 +218,14 @@ export function machineApi() {
 			throw new ApiError(404, "not_found", "unknown source");
 		assertMachineQuery(c.req.query());
 		const p = c.get("principal");
-		const name = await requireCatalogRepo(
-			c.get("db"),
-			p.accountId,
-			`${c.req.param("owner")}/${c.req.param("name")}`,
-		);
 		return timedJson(
 			c,
-			await readObservation(c.get("db"), p.accountId, `repo:${name}:${resource}`, "all"),
+			await readMachineRepositoryObservation(
+				c.get("db"),
+				p.accountId,
+				`${c.req.param("owner")}/${c.req.param("name")}`,
+				resource,
+			),
 		);
 	});
 	app.get("/accounts/:account/:resource", async (c) => {

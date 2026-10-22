@@ -11,7 +11,6 @@ import { prLifecycleState, prSnapshot, prState } from "../../lib/pull-request";
 import { snapshotFreshness } from "../../lib/snapshot-freshness";
 import {
 	composeContent,
-	decodeContent,
 	factoryStreamContent,
 	observationVersion,
 	storedContent,
@@ -20,7 +19,6 @@ import type { Db } from "./db/d1";
 import { publishedFactory } from "./db/factory-runs";
 import { readRepositorySnapshot, readSnapshot, snapshotFromRows } from "./db/snapshots";
 import { ApiError } from "./errors";
-import { streamKey } from "./factory-collect";
 import { factoryRateFromRow } from "./factory-rate";
 import {
 	accountReadPlan,
@@ -30,6 +28,12 @@ import {
 	savedAccountPolicy,
 } from "./saved-observation-read";
 import type { AccountObservationResource } from "./saved-observation-statements";
+import {
+	decodeFactoryResource,
+	factoryStreamReadPlan,
+	repositoryReadPlan,
+	type SavedFactoryStream,
+} from "./saved-repository-read";
 import { assembleSnapshotGroups, latestSnapshotGroups, type SnapshotPage } from "./snapshot-pages";
 import {
 	factoryFreshness,
@@ -43,6 +47,10 @@ import type { SnapshotScope } from "./snapshot-scope";
 
 export async function requireCatalogRepo(db: Db, account: string, name: string) {
 	const snapshot = await readSnapshot(db, account, "repos");
+	return catalogRepository(snapshot, name);
+}
+
+function catalogRepository(snapshot: Record<string, unknown> | null, name: string): string {
 	const repo = (Array.isArray(snapshot?.repos) ? snapshot.repos : []).find(
 		(row) =>
 			typeof row?.name_with_owner === "string" &&
@@ -50,6 +58,20 @@ export async function requireCatalogRepo(db: Db, account: string, name: string) 
 	);
 	if (!repo) throw new ApiError(404, "not_found", "repository outside saved account catalog");
 	return repo.name_with_owner;
+}
+
+export async function readMachineRepositoryObservation(
+	db: Db,
+	account: string,
+	name: string,
+	tab: string,
+) {
+	const plan = repositoryReadPlan(db, account, name, tab);
+	const saved = plan.decode(await db.batch<SnapshotPage>(plan.statements));
+	const canonical = catalogRepository(snapshotFromRows("repos", saved.catalogPages), name);
+	const snapshot = latestSnapshotGroups(saved.pages).get(`repo:${canonical}:${tab}`.toLowerCase());
+	if (!snapshot) throw new ApiError(409, "snapshot_missing", "no saved source");
+	return observationEnvelope(account, snapshot.resource, snapshot.data, "all");
 }
 export { observationVersion };
 export async function observationEnvelope(
@@ -320,33 +342,41 @@ async function projectObservation(
 export async function readFactoryResource(db: Db, account: string, name: string, stream: string) {
 	if (!FACTORY_STREAMS.includes(stream as FactoryStreamName))
 		throw new ApiError(400, "validation_failed", "unknown stream");
-	const snap = await publishedFactory(db, account);
+	const plan = factoryStreamReadPlan(db, account, name, stream);
+	return factoryObservationFromSaved(
+		account,
+		name,
+		stream,
+		plan.decode(await db.batch(plan.statements)),
+	);
+}
+
+export async function readMachineFactoryStream(
+	db: Db,
+	account: string,
+	name: string,
+	stream: string,
+) {
+	const plan = factoryStreamReadPlan(db, account, name, stream, { catalog: true });
+	const saved = plan.decode(await db.batch(plan.statements));
+	const canonical = catalogRepository(snapshotFromRows("repos", saved.catalogPages), name);
+	if (!FACTORY_STREAMS.includes(stream as FactoryStreamName))
+		throw new ApiError(400, "validation_failed", "unknown stream");
+	return factoryObservationFromSaved(account, canonical, stream, saved);
+}
+
+async function factoryObservationFromSaved(
+	account: string,
+	name: string,
+	stream: string,
+	saved: SavedFactoryStream,
+) {
+	const snap = decodePublication(saved.publicationPages);
 	const repo = snap?.repos.find((r) => r.name.toLowerCase() === name.toLowerCase());
 	if (!snap || !repo) throw new ApiError(404, "not_found", "repository outside publication");
 	const observation = repo.observation;
 	const version = observation?.version ?? snap.runId;
-	const original = observation?.repo ?? repo.name;
-	let data: FactoryStreamData | null = null;
-	let content: string | null = null;
-	if (observation?.source === "run") {
-		const row = await db
-			.prepare(
-				"SELECT payload,content_meta FROM factory_resources WHERE run_id=? AND repo=? AND stream=? AND EXISTS(SELECT 1 FROM factory_runs WHERE id=? AND account_id=?)",
-			)
-			.bind(version, original, stream, version, account)
-			.first<{ payload: string; content_meta: string | null }>();
-		data = row ? (JSON.parse(row.payload) as FactoryStreamData) : null;
-		const meta = decodeContent(row?.content_meta);
-		content = meta?.version === version ? meta.hash : null;
-	} else {
-		data = (await readSnapshot(
-			db,
-			account,
-			streamKey(original, stream as FactoryStreamName),
-		)) as FactoryStreamData | null;
-		const meta = storedContent(data);
-		content = meta?.version === version ? meta.hash : null;
-	}
+	const { data, content } = decodeFactoryResource(saved, snap, repo, stream, true);
 	if (!data)
 		throw new ApiError(
 			409,
