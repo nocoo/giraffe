@@ -2,6 +2,65 @@ import { describe, expect, it } from "vitest";
 import { assemblePages, latestSnapshotGroups, physicalKinds, splitPages } from "./snapshot-pages";
 
 describe("snapshot-pages", () => {
+	it.each([false, true])(
+		"P3 includes the final truncated flag in exact UTF-8 page bounds (truncated=%s)",
+		(alreadyTruncated) => {
+			const limit = 1_500_000;
+			const bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).length;
+			const base = { fetched_at: "t", truncated: alreadyTruncated, repos: [] };
+			const budget = limit - bytes({ ...base, truncated: true, repos: [{ blob: "" }] });
+			const item = { blob: `${"🦒".repeat(Math.floor(budget / 4))}${"x".repeat(budget % 4)}` };
+			expect(bytes({ ...base, truncated: true, repos: [item] })).toBe(limit);
+			const result = splitPages("repos", { ...base, repos: [item, item] });
+			for (const page of result.pages)
+				expect(new TextEncoder().encode(page.payload).length).toBeLessThanOrEqual(limit);
+			expect(result.pages.length).toBeLessThanOrEqual(2);
+			expect(result.truncated).toBe(true);
+			expect((assemblePages("repos", result.pages).repos as unknown[]).length).toBeGreaterThan(0);
+		},
+	);
+
+	it("P3 preserves complete multibyte items that exactly fit with truncated false", () => {
+		const limit = 1_500_000;
+		const base = { fetched_at: "t", truncated: false };
+		const overhead = new TextEncoder().encode(
+			JSON.stringify({ ...base, repos: [{ blob: "" }] }),
+		).length;
+		const budget = limit - overhead;
+		const item = { blob: `${"🦒".repeat(Math.floor(budget / 4))}${"x".repeat(budget % 4)}` };
+		const result = splitPages("repos", { ...base, repos: [item, item] });
+		expect(result.truncated).toBe(false);
+		expect(result.pages).toHaveLength(2);
+		for (const page of result.pages)
+			expect(new TextEncoder().encode(page.payload).length).toBe(limit);
+		expect(assemblePages("repos", result.pages).repos).toEqual([item, item]);
+	});
+
+	it("P3 compact fallback also bounds oversized non-list metadata without claiming complete emptiness", () => {
+		const result = splitPages("repos", {
+			fetched_at: "t",
+			truncated: false,
+			metadata: "🦒".repeat(400000),
+			repos: [{ name: "small" }],
+		});
+		expect(result.truncated).toBe(true);
+		expect(result.pages).toHaveLength(1);
+		expect(new TextEncoder().encode(result.pages[0]?.payload).length).toBeLessThanOrEqual(
+			1_500_000,
+		);
+		expect(assemblePages("repos", result.pages)).toMatchObject({
+			fetched_at: "t",
+			truncated: true,
+			repos: [],
+		});
+	});
+
+	it("P3 rejects metadata that cannot fit even the compact fallback instead of storing an oversized page", () => {
+		expect(() =>
+			splitPages("languages", { fetched_at: "🦒".repeat(400000), truncated: false, blob: "large" }),
+		).toThrow("snapshot metadata exceeds page capacity");
+	});
+
 	it("selects whole logical snapshots deterministically across casing and invalid times", () => {
 		const page = (kind: string, fetched_at: unknown, number: number) => ({
 			kind,

@@ -335,6 +335,12 @@ CREATE TABLE snapshot_days (
 
 切分页：在数组根字段上切（`repos` / `issues` / `pull_requests` 等），单元素超过 1,500,000 则拒绝该元素并记 `truncated: true`。
 
+The byte check includes the serialized final `truncated` value: `false` is longer
+than `true`. Every stored page, including the compact fallback for oversized
+non-list metadata, stays at or below 1,500,000 UTF-8 bytes. If even compact metadata
+cannot fit, serialization fails with `snapshot_capacity` rather than writing an
+oversized row. Truncation remains explicit; the two-page limit is unchanged.
+
 ---
 
 ## 4. 快照 JSON

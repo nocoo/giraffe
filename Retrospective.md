@@ -1307,3 +1307,14 @@ alone did not cover this valid post-migration state. Guard existing identities a
 current names, then replay after ID adoption, rename and removal; assert no new
 events, no resurrection and no immutable-history changes. Backup verification
 must cover evolved application data, not only a pristine migrated fixture.
+
+## 2026-10-22 - Count the final serialized page envelope
+
+The snapshot splitter tested candidates with `truncated:true` but could later
+serialize `truncated:false`, which is one byte longer. Exact multibyte fixtures
+reproduced a 1,500,001-byte page. The same check also missed oversized metadata
+outside the selected array, including its empty-array fallback. Candidate checks
+now use the current final flag (later truncation can only shorten it); compact
+fallbacks are checked separately and unrepresentable metadata fails before write.
+Keep boundary assertions on serialized UTF-8 bytes, not string lengths or item
+sizes, and cover the no-item/no-array paths as well as normal two-page output.

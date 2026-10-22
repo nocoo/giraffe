@@ -1,6 +1,7 @@
 import { securitySnapshot } from "../../lib/security";
 import { emptyCollected } from "./collect";
 import { decodeContent, withContent } from "./content-version";
+import { ApiError } from "./errors";
 
 const MAX = 1_500_000;
 
@@ -77,6 +78,13 @@ function fitsPage(
 	return utf8Len(pageJson(base, key, [...items, next], truncated)) <= MAX;
 }
 
+function compactPage(logical: string, payload: Record<string, unknown>): SnapshotPage {
+	const compact = JSON.stringify(emptyCollected(logical, String(payload.fetched_at ?? "")));
+	if (utf8Len(compact) > MAX)
+		throw new ApiError(422, "snapshot_capacity", "snapshot metadata exceeds page capacity");
+	return { kind: logical, payload: compact };
+}
+
 export function splitPages(
 	logical: string,
 	payload: Record<string, unknown>,
@@ -90,10 +98,9 @@ export function splitPages(
 		return { pages: [{ kind: logical, payload: encoded }], truncated: payload.truncated === true };
 	}
 	const key = arrayKey(payload);
-	if (!key || !Array.isArray(payload[key])) {
-		const compact = emptyCollected(logical, String(payload.fetched_at ?? ""));
+	if (!key || !Array.isArray(payload[key]) || utf8Len(pageJson(payload, key, [], true)) > MAX) {
 		return {
-			pages: [{ kind: logical, payload: JSON.stringify(compact) }],
+			pages: [compactPage(logical, payload)],
 			truncated: true,
 		};
 	}
@@ -102,19 +109,19 @@ export function splitPages(
 	const pageItems: unknown[][] = [[], []];
 	let page = 0;
 	for (const item of items) {
-		if (!fitsPage(payload, key, [], item, true)) {
+		if (!fitsPage(payload, key, [], item, truncated)) {
 			truncated = true;
 			continue;
 		}
 		const slot = pageItems[page] as unknown[];
-		if (fitsPage(payload, key, slot, item, true)) {
+		if (fitsPage(payload, key, slot, item, truncated)) {
 			slot.push(item);
 			continue;
 		}
 		if (page === 0) {
 			page = 1;
 			const second = pageItems[1] as unknown[];
-			if (fitsPage(payload, key, second, item, true)) {
+			if (fitsPage(payload, key, second, item, truncated)) {
 				second.push(item);
 				continue;
 			}

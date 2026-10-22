@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - R7: only complete catalog discovery with a confirming 404 removes membership; denied/failed lookups retain prior rows. Missing candidates above `max(3, 10% of owned repositories)` suppress all removals. Confirmed deletion atomically clears stars and mutable participation/override residue, while immutable evidence and generic agent resources survive. Renames preserve mutable star provenance; reappearance never resurrects stars. Default-star policy stays external.
 
+### Fixed
+
+- P3: enforce the 1,500,000-byte UTF-8 snapshot-page limit using the final truncation flag, including exact multibyte boundaries. Oversized non-list metadata uses a bounded, explicitly truncated compact form; metadata that cannot fit even that form fails instead of storing an oversized page. Keep the two-page limit.
+
 ### Migration and Compatibility
 
 - Apply additive `0018_activity.sql` before code deployment; retain its immutable header/pages on rollback. No historical activity body is backfilled. Pre-migration successful run metadata can supply the next boundary. Activity bytes participate in account budgets and the latest two usable publications survive newer failed runs.
