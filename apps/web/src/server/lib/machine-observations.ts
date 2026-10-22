@@ -383,7 +383,7 @@ async function factoryObservationFromSaved(
 	const snap = decodePublication(saved.publicationPages);
 	const repo = snap?.repos
 		.map((repo) => catalogFactoryRepo(repo, saved.catalogHistory))
-		.find((repo) => repo.name.toLowerCase() === name.toLowerCase());
+		.find((repo) => repo?.name.toLowerCase() === name.toLowerCase());
 	if (!snap || !repo) throw new ApiError(404, "not_found", "repository outside publication");
 	const observation = repo.observation;
 	const version = observation?.version ?? snap.runId;

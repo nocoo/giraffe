@@ -92,7 +92,7 @@ export async function getFactoryStream(c: Ctx): Promise<Response> {
 	const snap = decodePublication(saved.publicationPages);
 	const repo = snap?.repos
 		.map((repo) => catalogFactoryRepo(repo, saved.catalogHistory))
-		.find((repo) => repo.name.toLowerCase() === `${owner}/${name}`.toLowerCase());
+		.find((repo) => repo?.name.toLowerCase() === `${owner}/${name}`.toLowerCase());
 	if (repo && !factoryStreamPolicy(saved, scope).includes(repo.name))
 		throw new ApiError(404, "not_found", "repository outside selected owned catalog");
 	if (!repo || !snap) throw new ApiError(404, "not_found", "repository outside factory inventory");

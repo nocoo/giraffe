@@ -813,6 +813,13 @@ IDs identify renames: mutable names move with their star provenance, while froze
 historical names stay unchanged. Giraffe never auto-stars newly discovered repos;
 the external bot owns that policy and must respect owner overrides.
 
+A name reused by a different GitHub repository ID is a distinct identity. Retained
+factory evidence from the departed ID cannot become the replacement's current
+observation or complete source. In `include=removed` responses, the departed row
+stays unstarred with null star provenance even if the new owner of that name is
+starred; only the current identity can enter starred scope. Same-ID reappearance
+can retain original observation provenance, but never restores deleted stars.
+
 Existing saved catalog rows seed their first/last-seen timestamps from the saved
 fetch time without creating change events. This is observation provenance, not
 the repository's creation time. No historical additions/deletions are invented.

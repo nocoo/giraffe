@@ -58,7 +58,9 @@ export function policyFromSaved(
 			.map((repo) => repo.name_with_owner.toLowerCase()),
 	);
 	const includes = (name: string) => owned.has(name.toLowerCase()) && selection.includes(name);
-	const selected = repos.filter((repo) => includes(repo.name_with_owner));
+	const selected = repos.filter(
+		(repo) => includes(repo.name_with_owner) && (scope === "all" || !repo.removed_at),
+	);
 	return {
 		...selection,
 		canonicalRepo: (repo: import("../../lib/factory-types").FactoryRepo) =>
@@ -295,6 +297,21 @@ export async function projectSnapshot(
 	const scope = policy.scope;
 	if (kind === "repos") {
 		const source = await projectList(db, account, kind, snap, policy);
+		const repos = policy.repos.map((repo) => {
+			const star = repo.removed_at ? null : policy.starRecord(repo.name_with_owner);
+			const starred = !repo.removed_at && policy.starred(repo.name_with_owner);
+			return {
+				...repo,
+				first_seen_at: repo.first_seen_at ?? null,
+				last_seen_at: repo.last_seen_at ?? null,
+				removed_at: repo.removed_at ?? null,
+				archived_changed_at: repo.archived_changed_at ?? null,
+				statistics_enabled: starred,
+				starred,
+				star_source: star?.source ?? null,
+				star_updated_at: star?.updated_at ?? null,
+			};
+		});
 		const data = {
 			...snap,
 			fetched_at: source.freshness.latestAt ?? "",
@@ -306,25 +323,15 @@ export async function projectSnapshot(
 						),
 					}
 				: {}),
-			repos: policy.repos.map((r) => ({
-				...r,
-				first_seen_at: r.first_seen_at ?? null,
-				last_seen_at: r.last_seen_at ?? null,
-				removed_at: r.removed_at ?? null,
-				archived_changed_at: r.archived_changed_at ?? null,
-				statistics_enabled: policy.starred(r.name_with_owner),
-				starred: policy.starred(r.name_with_owner),
-				star_source: policy.starRecord(r.name_with_owner)?.source ?? null,
-				star_updated_at: policy.starRecord(r.name_with_owner)?.updated_at ?? null,
-			})),
+			repos,
 		};
 		const hash = await composeContent(source.contentInputs, {
-			repositories: policy.repos.map((repo) => ({
+			repositories: repos.map((repo) => ({
 				name: repo.name_with_owner,
-				statistics_enabled: policy.starred(repo.name_with_owner),
-				starred: policy.starred(repo.name_with_owner),
-				star_source: policy.starRecord(repo.name_with_owner)?.source ?? null,
-				star_updated_at: policy.starRecord(repo.name_with_owner)?.updated_at ?? null,
+				statistics_enabled: repo.statistics_enabled,
+				starred: repo.starred,
+				star_source: repo.star_source,
+				star_updated_at: repo.star_updated_at,
 			})),
 			total: source.freshness.total,
 			missing: source.freshness.missing,
@@ -448,10 +455,10 @@ export async function projectSnapshot(
 }
 
 export function projectFactory(snap: FactorySnapshot, policy: Policy): FactoryViewSnapshot {
-	const repos = snap.repos
-		.map(policy.canonicalRepo)
-		.filter((r) => policy.includes(r.name))
-		.map((repo) => ({ ...repo, dependencies: uniqueDependencySummaries(repo.dependencies) }));
+	const repos = factoryObserved(snap, policy).map((repo) => ({
+		...repo,
+		dependencies: uniqueDependencySummaries(repo.dependencies),
+	}));
 	const observations = new Map(repos.map((repo) => [repo.name.toLowerCase(), repo]));
 	const selectedRepos = policy.repos.map((member) => {
 		const observed = observations.get(member.name_with_owner.toLowerCase());
@@ -495,7 +502,10 @@ export function projectFactory(snap: FactorySnapshot, policy: Policy): FactoryVi
 }
 
 export function factoryObserved(publication: FactorySnapshot, policy: Policy) {
-	return publication.repos.map(policy.canonicalRepo).filter((repo) => policy.includes(repo.name));
+	return publication.repos.flatMap((repo) => {
+		const current = policy.canonicalRepo(repo);
+		return current && policy.includes(current.name) ? [current] : [];
+	});
 }
 
 export function factoryFreshness(snap: FactorySnapshot, policy: Policy) {

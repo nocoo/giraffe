@@ -191,6 +191,11 @@ export async function restoreLegacyRepo(
 	repo: FactoryRepo,
 ): Promise<D1PreparedStatement[]> {
 	if (await currentRepo(db, lease.run.account_id, repo.name)) return [];
+	const publication = await publishedFactory(db, lease.run.account_id);
+	const previous = publication?.repos.find(
+		(observed) => observed.name.toLowerCase() === repo.name.toLowerCase(),
+	);
+	if (previous?.id && previous.id !== repo.id) return [];
 	const resources = new Map<string, FactoryStreamData>();
 	for (const stream of FACTORY_STREAMS) {
 		const data = (await readSnapshot(

@@ -21,6 +21,9 @@ bounded to 90 days and 10,000 events per account; see the
 `include=removed` to inspect retained departed rows. Existing catalog timestamps
 are seeded from saved fetch times without invented events. A detected stable-ID
 rename preserves mutable star provenance, not a delete/unstar/add sequence.
+Names are not immutable identities: a different-ID replacement cannot inherit
+departed factory evidence or source completeness. An explicitly included departed
+row remains unstarred even when a same-name replacement is starred.
 
 Deletion requires a complete listing and confirming 404. Denied, failed or
 rate-limited lookups retain membership; more than `max(3, 10% of owned repos)`

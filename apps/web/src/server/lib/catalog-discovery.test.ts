@@ -6,16 +6,22 @@ import type { FactorySnapshot } from "../../lib/factory-types";
 import type { Env } from "../env";
 import { createApp } from "../index";
 import { collectRepos } from "./collect";
+import { savedContentMeta } from "./content-version";
 import { createDb } from "./db/d1";
-import { getRun, startRun } from "./db/factory-runs";
+import { claimRun, getRun, startRun } from "./db/factory-runs";
 import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
 import { newFactory } from "./factory-collect";
 import { executeRunPage } from "./factory-execute";
 import { mapFactoryRepo } from "./factory-map";
-import { currentRepo } from "./factory-publish";
+import { currentRepo, restoreLegacyRepo } from "./factory-publish";
 import { pruneFactory } from "./factory-retention";
 import { mapRepos } from "./github-map";
-import { readMachineFactoryStream } from "./machine-observations";
+import {
+	readFactoryResource,
+	readMachineAccountObservation,
+	readMachineFactoryStream,
+	readObservation,
+} from "./machine-observations";
 import { readSources } from "./machine-sources";
 import { prepareRefresh } from "./refresh";
 import { encryptToken, parseKeyBytes } from "./token-crypto";
@@ -893,5 +899,250 @@ it.each([false, true])(
 				)
 				.all(),
 		).toEqual(frozen);
+	},
+);
+
+async function returnedCatalogEvidence(source: "run" | "legacy", sameId = false) {
+	const original = repository(1);
+	const listing: Repository[] = [];
+	const context = await fixture([original], listing);
+	const db = createDb(context.raw);
+	const factory = (await readSnapshot(db, account, "factory")) as FactorySnapshot;
+	const observed = factory.repos[0];
+	if (!observed?.observation) throw new Error("Missing original observation");
+	observed.observation.source = source;
+	observed.coverage.commits = {
+		...observed.coverage.commits,
+		status: "complete",
+		fetchedAt: previousAt,
+	};
+	await db.batch(await replaceSnapshotStmts(db, account, "factory", factory, previousAt));
+	const resource = {
+		runId: "original-observation",
+		items: [],
+		next: null,
+		ranges: [],
+		coverage: observed.coverage.commits,
+	};
+	if (source === "run") {
+		await context.raw
+			.prepare(
+				"INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES('original-observation',?,'original','completed','{}',?,?,?)",
+			)
+			.bind(account, previousAt, previousAt, previousAt)
+			.run();
+		await context.raw
+			.prepare(
+				"INSERT INTO factory_resources(run_id,repo,stream,payload,content_meta) VALUES('original-observation',?,'commits',?,?)",
+			)
+			.bind(
+				original.nameWithOwner,
+				JSON.stringify(resource),
+				await savedContentMeta(`factory:${original.nameWithOwner}:commits`, resource),
+			)
+			.run();
+	} else {
+		await db.batch(
+			await replaceSnapshotStmts(
+				db,
+				account,
+				`factory:${original.nameWithOwner}:commits`,
+				resource,
+				previousAt,
+			),
+		);
+	}
+	const frozen = await context.raw
+		.prepare("SELECT * FROM snapshots WHERE kind LIKE 'factory%' ORDER BY kind")
+		.all();
+	await context.refresh();
+	const replacement = { ...original, id: sameId ? original.id : "R_REPLACEMENT" };
+	listing.push(replacement);
+	await context.refresh("2026-10-23T20:00:00.000Z");
+	return { ...context, original, replacement, frozen };
+}
+
+it.each(["run", "legacy"] as const)(
+	"R7 different-ID same-name replacement rejects old %s immutable stream without rewriting history",
+	async (source) => {
+		const context = await returnedCatalogEvidence(source);
+		await expect(
+			readMachineFactoryStream(
+				createDb(context.raw),
+				account,
+				context.replacement.nameWithOwner,
+				"commits",
+			),
+		).rejects.toMatchObject({ status: 404, code: "not_found" });
+		await expect(
+			readFactoryResource(
+				createDb(context.raw),
+				account,
+				context.replacement.nameWithOwner,
+				"commits",
+			),
+		).rejects.toMatchObject({ status: 404, code: "not_found" });
+		const browser = await createApp().request(
+			`http://localhost/api/factory/repos/${context.replacement.nameWithOwner}/commits`,
+			{},
+			{ DB: context.raw, ENVIRONMENT: "development", GITHUB_API_BASE: "http://fixture" } as Env,
+		);
+		expect(browser.status).toBe(404);
+		expect(
+			await context.raw
+				.prepare("SELECT * FROM snapshots WHERE kind LIKE 'factory%' ORDER BY kind")
+				.all(),
+		).toEqual(context.frozen);
+	},
+);
+
+it.each(["run", "legacy"] as const)(
+	"R7 current factory projection leaves replacement missing instead of accepting old %s identity by name",
+	async (source) => {
+		const context = await returnedCatalogEvidence(source);
+		const observation = await readObservation(createDb(context.raw), account, "factory", "all");
+		expect(observation.data).toMatchObject({
+			repos: [],
+			freshness: { total: 1, missing: 1 },
+			truncated: true,
+		});
+	},
+);
+
+it.each(["run", "legacy"] as const)(
+	"R7 sources excludes replaced %s identity and exposes missing current factory coverage",
+	async (source) => {
+		const context = await returnedCatalogEvidence(source);
+		const result = await readSources(createDb(context.raw), account, {
+			repository: context.replacement.nameWithOwner,
+		});
+		expect(result.repositories).toEqual([context.replacement.nameWithOwner]);
+		expect(result.sources.filter((item) => item.resource.startsWith("factory:"))).toEqual([]);
+		expect(result.sources.find((item) => item.resource === "account:factory")).toMatchObject({
+			freshness: { total: 1, missing: 1 },
+			truncated: true,
+		});
+	},
+);
+
+it.each(["run", "legacy"] as const)(
+	"R7 same-ID reappearance retains %s evidence and original provenance without restoring stars",
+	async (source) => {
+		const context = await returnedCatalogEvidence(source, true);
+		const observation = await readMachineFactoryStream(
+			createDb(context.raw),
+			account,
+			context.replacement.nameWithOwner,
+			"commits",
+		);
+		expect(observation).toMatchObject({
+			sourceVersion: "original-observation",
+			fetchedAt: previousAt,
+			data: { coverage: { status: "complete" }, observation: { source, refreshedAt: previousAt } },
+		});
+		expect(observation.contentVersion).toMatch(/^sha256:[0-9a-f]{64}$/);
+		expect((await readSources(createDb(context.raw), account, {})).sources).toContainEqual(
+			expect.objectContaining({
+				resource: `factory:${context.replacement.nameWithOwner}:commits`,
+				fetchedAt: previousAt,
+				version: "original-observation",
+			}),
+		);
+		expect(
+			(await readObservation(createDb(context.raw), account, "factory", "all")).data.repos,
+		).toHaveLength(1);
+		expect(await context.raw.prepare("SELECT * FROM repo_stars").all()).toMatchObject({
+			results: [],
+		});
+		expect(
+			await context.raw
+				.prepare("SELECT * FROM snapshots WHERE kind LIKE 'factory%' ORDER BY kind")
+				.all(),
+		).toEqual(context.frozen);
+	},
+);
+
+it.each(["all", "starred"] as const)(
+	"R7 %s removed inclusion never applies a replacement owner star to the departed identity",
+	async (scope) => {
+		const context = await returnedCatalogEvidence("run");
+		await context.raw
+			.prepare(
+				"INSERT INTO repo_stars(account_id,repo,starred,source,updated_at,reason) VALUES(?,?,1,'owner',?,'new identity choice')",
+			)
+			.bind(account, context.replacement.nameWithOwner, "2026-10-23T20:00:00.000Z")
+			.run();
+		const observation = await readMachineAccountObservation(
+			createDb(context.raw),
+			account,
+			"repos",
+			scope,
+			true,
+		);
+		const rows = observation.data.repos as Record<string, unknown>[];
+		expect(rows).toHaveLength(scope === "all" ? 2 : 1);
+		expect(rows.find((row) => row.removed_at === null)).toMatchObject({
+			starred: true,
+			star_source: "owner",
+			statistics_enabled: true,
+		});
+		if (scope === "all")
+			expect(rows.find((row) => row.removed_at !== null)).toMatchObject({
+				removed_at: currentAt,
+				starred: false,
+				star_source: null,
+				star_updated_at: null,
+				statistics_enabled: false,
+			});
+		const response = await createApp().request(
+			`http://localhost/api/repos?scope=${scope}&include=removed`,
+			{},
+			{ DB: context.raw, ENVIRONMENT: "development", GITHUB_API_BASE: "http://fixture" } as Env,
+		);
+		expect(response.status).toBe(200);
+		expect(((await response.json()) as { repos: unknown[] }).repos).toEqual(rows);
+	},
+);
+
+it.each([false, true])(
+	"R7 catalog restore never rebinds retired legacy evidence to another identity (sameId=%s)",
+	async (sameId) => {
+		const context = await returnedCatalogEvidence("legacy", sameId);
+		const db = createDb(context.raw);
+		const factory = (await readSnapshot(db, account, "factory")) as FactorySnapshot;
+		const observed = factory.repos[0];
+		if (!observed?.observation) throw new Error("Missing original observation");
+		observed.observation.version = previousAt;
+		await db.batch(await replaceSnapshotStmts(db, account, "factory", factory, previousAt));
+		await db.batch(
+			await replaceSnapshotStmts(
+				db,
+				account,
+				`factory:${context.original.nameWithOwner}:commits`,
+				{
+					runId: previousAt,
+					items: [],
+					next: null,
+					ranges: [],
+					coverage: observed.coverage.commits,
+				},
+				previousAt,
+			),
+		);
+		const now = "2026-10-24T20:00:00.000Z";
+		const run = makeRun("catalog-restore", account, "nocoo", "catalog-restore", "catalog", [], now);
+		await startRun(db, run);
+		const lease = await claimRun(db, run.id, now);
+		if (!lease) throw new Error("Missing catalog lease");
+		const writes = await restoreLegacyRepo(db, lease, now, mapFactoryRepo(context.replacement));
+		expect(writes).toHaveLength(sameId ? 2 : 0);
+		await db.batch(writes);
+		const restored = await currentRepo(db, account, context.replacement.nameWithOwner);
+		if (sameId)
+			expect(restored).toMatchObject({
+				id: context.original.id,
+				observation: { source: "legacy", version: previousAt, refreshedAt: previousAt },
+			});
+		else expect(restored).toBeNull();
 	},
 );

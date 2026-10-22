@@ -334,6 +334,8 @@ the mass-removal guard retain prior membership. Confirmed deletion clears stars
 and mutable participation, not immutable evidence or generic agent resources.
 Stable-ID renames preserve stars; reappearance does not resurrect them. Giraffe
 never auto-stars. Apply only authorized bot policy and respect owner overrides.
+Different-ID name reuse cannot inherit departed factory evidence; included removed
+rows never inherit the current same-name repository's stars or provenance.
 See [discovery](../../docs/api.md#get-catalogchanges) for exact bounds and fields.
 
 ## Errors, limits and retries

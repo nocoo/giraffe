@@ -19,7 +19,7 @@ import {
 } from "./machine-observations";
 import type { StarRow } from "./repo-stars";
 import { assembleSnapshotGroups, latestSnapshots, type SnapshotPage } from "./snapshot-pages";
-import { policyFromSaved, projectSnapshot } from "./snapshot-projection";
+import { factoryObserved, policyFromSaved, projectSnapshot } from "./snapshot-projection";
 import { selectionFromStars } from "./snapshot-scope";
 import type { SourceTiming } from "./source-timing";
 
@@ -90,7 +90,9 @@ export async function readSources(
 						coalesce(json_extract(value,'$.observation.version'),publication.run_id) AS version,
 						coalesce(json_extract(value,'$.observation.source'),'legacy') AS source
 					FROM publication,json_each(publication.repos)
-					WHERE (?='' OR lower(json_extract(value,'$.name'))=lower(?) OR json_extract(value,'$.id')=(SELECT c.github_id FROM catalog_repositories c WHERE c.account_id=? AND c.repo=? COLLATE NOCASE AND c.removed_at IS NULL))
+					WHERE (EXISTS(SELECT 1 FROM catalog_repositories c WHERE c.account_id=? AND c.github_id=json_extract(value,'$.id') AND c.removed_at IS NULL)
+					 OR NOT EXISTS(SELECT 1 FROM catalog_repositories c WHERE c.account_id=? AND c.repo=json_extract(value,'$.name') COLLATE NOCASE AND c.github_id IS NOT NULL AND c.removed_at IS NULL))
+					 AND (?='' OR lower(json_extract(value,'$.name'))=lower(?) OR json_extract(value,'$.id')=(SELECT c.github_id FROM catalog_repositories c WHERE c.account_id=? AND c.repo=? COLLATE NOCASE AND c.removed_at IS NULL))
 				), legacy AS (
 					SELECT 'factory:' || repo || ':' || streams.value AS kind FROM refs, json_each(?) AS streams WHERE source!='run'
 				)
@@ -109,6 +111,8 @@ export async function readSources(
 				WHERE account_id=? AND kind IN (SELECT kind FROM legacy)`,
 				)
 				.bind(
+					account,
+					account,
 					account,
 					account,
 					account,
@@ -186,7 +190,7 @@ export async function readSources(
 		.next().value as FactorySnapshot | undefined;
 	const publication = rawPublication ? normalizePublication(rawPublication) : null;
 	const since = parsed.data.since ? Date.parse(parsed.data.since) : null;
-	const streams = (publication?.repos ?? []).map(policy.canonicalRepo).flatMap((repo) => {
+	const streams = (publication ? factoryObserved(publication, policy) : []).flatMap((repo) => {
 		if (
 			!policy.includes(repo.name) ||
 			(repository && repo.name.toLowerCase() !== repository.toLowerCase())
@@ -316,7 +320,7 @@ export async function readSources(
 			const meta = streamMeta.get(
 				repo.observation?.source === "run"
 					? `stream:${repo.name}:${stream}`
-					: `factory:${repo.observation?.repo ?? publication.repos.find((original) => original.name.toLowerCase() === repo.name.toLowerCase())?.name ?? publication.repos.find((original) => repo.id && original.id === repo.id)?.name ?? repo.name}:${stream}`,
+					: `factory:${repo.observation?.repo ?? publication.repos.find((original) => original.name.toLowerCase() === repo.name.toLowerCase() && original.id === repo.id)?.name ?? publication.repos.find((original) => repo.id && original.id === repo.id)?.name ?? repo.name}:${stream}`,
 			);
 			const source = await add(
 				`factory:${repo.name}:${stream}`,

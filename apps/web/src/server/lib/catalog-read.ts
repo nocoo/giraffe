@@ -10,9 +10,15 @@ import { storedContent, withContent } from "./content-version";
 import type { Db } from "./db/d1";
 import { ApiError } from "./errors";
 
-export function catalogFactoryRepo(repo: FactoryRepo, rows: CatalogRow[]): FactoryRepo {
+export function catalogFactoryRepo(repo: FactoryRepo, rows: CatalogRow[]): FactoryRepo | null {
 	const current = rows.find((row) => row.github_id === repo.id && !row.removed_at);
-	if (!current || current.repo === repo.name) return repo;
+	if (!current) {
+		const named = rows.find(
+			(row) => row.repo.toLowerCase() === repo.name.toLowerCase() && !row.removed_at,
+		);
+		return named?.github_id ? null : repo;
+	}
+	if (current.repo === repo.name) return repo;
 	return {
 		...repo,
 		name: current.repo,

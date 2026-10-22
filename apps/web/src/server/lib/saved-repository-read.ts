@@ -73,7 +73,7 @@ function referencedResourceStatement(db: Db, account: SavedAccount, name: string
  coalesce(json_extract(repo,'$.observation.repo'),json_extract(repo,'$.name')) AS repo,
  coalesce(json_extract(repo,'$.observation.version'),json_extract(root_payload,'$.runId')) AS version,
  coalesce(json_extract(repo,'$.observation.source'),'legacy') AS source
- FROM candidates WHERE lower(json_extract(repo,'$.name'))=lower(name) OR json_extract(repo,'$.id')=(SELECT github_id FROM catalog_repositories c WHERE c.account_id=candidates.account AND lower(c.repo)=lower(candidates.name) AND c.removed_at IS NULL) ORDER BY ordinal,position LIMIT 1)
+ FROM candidates WHERE (lower(json_extract(repo,'$.name'))=lower(name) AND NOT EXISTS(SELECT 1 FROM catalog_repositories c WHERE c.account_id=candidates.account AND lower(c.repo)=lower(candidates.name) AND c.removed_at IS NULL AND c.github_id IS NOT NULL)) OR json_extract(repo,'$.id')=(SELECT github_id FROM catalog_repositories c WHERE c.account_id=candidates.account AND lower(c.repo)=lower(candidates.name) AND c.removed_at IS NULL) ORDER BY ordinal,position LIMIT 1)
  SELECT 'run' AS source,'' AS kind,f.payload,f.content_meta FROM refs
  JOIN factory_runs r ON r.id=refs.version AND r.account_id=refs.account
  JOIN factory_resources f ON f.run_id=r.id AND f.repo=refs.repo AND f.stream=refs.stream WHERE refs.source='run'
@@ -148,7 +148,10 @@ export function decodeFactoryResource(
 	const version = repo.observation?.version ?? snap.runId;
 	const original =
 		repo.observation?.repo ??
-		snap.repos.find((original) => original.name.toLowerCase() === repo.name.toLowerCase())?.name ??
+		snap.repos.find(
+			(original) =>
+				original.name.toLowerCase() === repo.name.toLowerCase() && original.id === repo.id,
+		)?.name ??
 		snap.repos.find((original) => repo.id && original.id === repo.id)?.name ??
 		repo.name;
 	let data: FactoryStreamData | null;

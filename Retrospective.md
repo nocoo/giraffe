@@ -1330,3 +1330,15 @@ atomic publication and capture the original physical key before moving state.
 Exercise both listing orders, owner/agent star provenance, the real quick executor
 and garbage collection after old publication/recent-run roots retire. A fixture
 must include the actual writer's minimal valid shape, not only enriched examples.
+
+## 2026-10-22 - A reused repository name is not its old identity
+
+Discovery retained immutable history correctly but readers still matched it by
+name. After a confirmed deletion and different-ID recreation, old factory streams
+could appear current; catalog restore could even bind old legacy resources to the
+new ID. A removed row also inherited a same-name replacement's owner star. Match
+known stable IDs before current projection, stream reads, source completeness and
+legacy restore. Keep removed rows unstarred independently of mutable name-based
+selection. Regression fixtures must perform actual removal and recreation, cover
+both run and legacy evidence, and distinguish same-ID reappearance from new-ID
+replacement while asserting that immutable history remains byte-identical.
