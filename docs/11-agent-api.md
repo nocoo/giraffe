@@ -418,9 +418,12 @@ otherwise pending current-day daily work precedes unstarted weekly/catalog work.
 Timeout/missed-slot `lastError` warnings persist until an explicit schedule save.
 
 All exposed runs add `expectedFinishAt` and `expectedFinishAtReason`: start time
-plus the median wall duration of the account's last five valid completed runs of
+plus the median wall duration of the account's last five valid completed or partial runs of
 the actual catalog/quick/deep kind, across retained history. Read-time calibration
-is not a deadline or guarantee. Null uses `no_completed_history`,
+is not a deadline or guarantee. Samples need valid start/finish times and positive
+work; failed/cancelled and zero-work runs are excluded. No same-kind sample means
+null with `no_completed_history` (no eligible completed-or-partial history), not
+an estimate borrowed from another kind. Other null reasons are
 `invalid_started_at` or `not_executed`; a valid estimate has a null reason.
 No GET backfill, upstream request or schema migration is introduced.
 

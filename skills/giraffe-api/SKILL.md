@@ -319,8 +319,11 @@ Use nullable `/repos` fields `star_source` and `star_updated_at` for provenance.
 Pending daily runs defer behind active work and start on terminal handoff; a daily
 that misses its Beijing day gets an explicit failed record, never a later-day run.
 Inspect schedule `lastError` and run outcomes independently. `expectedFinishAt` is
-a read-time same-kind historical median estimate, not a deadline; null includes
-`expectedFinishAtReason`. Do not infer collection success from cron health or ETA.
+a read-time median of the last five valid completed-or-partial same-kind runs
+with real start/finish times and positive work, not a deadline. Failed/cancelled
+and zero-work runs are excluded. No eligible same-kind history yields null with
+`expectedFinishAtReason:"no_completed_history"`; another kind is not substituted.
+Do not infer collection success from cron health or ETA.
 
 ## Catalog discovery
 

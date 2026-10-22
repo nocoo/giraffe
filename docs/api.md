@@ -1525,11 +1525,15 @@ including compact history. No browser progress/lease summary is added.
 
 Every run also includes `expectedFinishAt:string|null` and
 `expectedFinishAtReason:string|null`. The estimate is its start plus the median
-wall duration of the last five valid completed runs of that account and actual
+wall duration of the last five valid completed or partial runs of that account and actual
 kind (`catalog`, `quick`, `deep`), using all retained history, not only these 21
 rows. It is recalibrated at read time and may be in the past; it is not the hard
 `deadlineAt` or a completion guarantee. Catalog preparations are catalog samples
-regardless of daily/weekly trigger. Failed/partial runs are not successful samples.
+regardless of daily/weekly trigger. Samples require real valid start/finish times
+and positive work; failed/cancelled and zero-work runs remain excluded. With no
+eligible same-kind sample, the estimate stays null rather than borrowing a
+different kind's duration. `no_completed_history` means no eligible completed-or-partial
+same-kind history, including an account with no usable terminal duration.
 Null reasons are `no_completed_history`, `invalid_started_at` or `not_executed`
 (zero-work audit); a present estimate has a null reason. Browser run history and
 selected detail use the same projection without writing stored payloads.

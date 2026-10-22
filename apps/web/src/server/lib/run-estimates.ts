@@ -31,7 +31,7 @@ export function runEstimateStatement(db: Db, account: string): D1PreparedStateme
  json_extract(payload,'$.startedAt') AS started_at,
  json_extract(payload,'$.finishedAt') AS finished_at,
  json_array_length(payload,'$.steps') AS total
- FROM factory_runs WHERE account_id=? AND status='completed'
+ FROM factory_runs WHERE account_id=? AND status IN ('completed','partial')
  AND json_extract(payload,'$.mode') IN ('catalog','refresh')
 ), ranked AS (
  SELECT kind,started_at,finished_at,
