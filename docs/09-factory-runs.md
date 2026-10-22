@@ -303,11 +303,14 @@ The browser re-reads saved data while visible and on focus; background tabs paus
 
 Discovery reuses the existing catalog listing and stable repository IDs. A normal
 single-page rediscovery adds zero GitHub requests and zero leased steps. Each
-missing member below the mass-removal guard adds one direct repository lookup;
-four missing members out of 40 owned members therefore add four requests. Four
+eligible public missing member below the mass-removal guard adds one stable-ID
+GraphQL node lookup. Previously private candidates and accounts without a
+previously known private-owned identity still visible in the complete listing
+add no confirmation request and report `unconfirmed`. Four eligible public
+missing members out of 40 owned members therefore add four requests. Four
 missing out of 31 owned members exceed the exact ten-percent threshold, so all
 removals and confirmation calls are suppressed. Archived and forked owned members
-count in that denominator; non-owned and departed identities do not.
+count in that denominator; non-owned, departed and displaced identities do not.
 
 The listing fixture uses one GraphQL request; the factory path also has its
 existing inventory request. Confirmations execute inside the existing repository

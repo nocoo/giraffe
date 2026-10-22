@@ -94,10 +94,13 @@ beforeAll(() => {
 			`INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES(${quote(account)},${quote(owner)},'test-not-an-encrypted-pat','fake',${quote(now)},${quote(now)});`,
 			mint(bearer, "observations:read", "reader"),
 			mint(wrongScope, "app:read", "management"),
-			`INSERT INTO catalog_state(account_id,history_since,checked_at,revision,source_run_id) VALUES(${quote(account)},${quote(floor)},${quote(until)},1,'catalog-fixture');`,
+			`INSERT INTO catalog_state(account_id,history_since,checked_at,revision,source_run_id,warning_code) VALUES(${quote(account)},${quote(floor)},${quote(until)},1,'catalog-fixture','catalog_removal_unconfirmed');`,
 			repository("live", false),
 			repository("archive", false, true),
 			repository("removed", true),
+			`INSERT INTO catalog_repositories(account_id,identity_key,github_id,repo,row_payload,first_seen_at,last_seen_at,removed_at,is_archived,visibility,is_fork,first_seen_source,name_current) VALUES(${quote(account)},'previous-live','R_previous',${quote(`${owner}/live`)},${quote(JSON.stringify({ ...repoRow("live"), visibility: "PRIVATE", is_private: true }))},${quote(floor)},${quote(floor)},NULL,0,'PRIVATE',0,'github_catalog',0);`,
+			`INSERT INTO catalog_displaced_state(account_id,identity_key,table_name,repo,payload) VALUES(${quote(account)},'previous-live','repo_stars',${quote(`${owner}/live`)},${quote(JSON.stringify({ account_id: account, repo: `${owner}/live`, starred: 0, source: "owner", updated_at: floor, reason: "retained private choice" }))});`,
+			`INSERT INTO catalog_unconfirmed(account_id,event_id,repo,github_id,at,source_kind,source_run_id,reason) VALUES(${quote(account)},'unconfirmed-previous',${quote(`${owner}/live`)},'R_previous',${quote(until)},'factory','catalog-fixture','private_unverifiable');`,
 			event("added", "live"),
 			event("added", "archive"),
 			event("removed", "removed"),
@@ -121,6 +124,8 @@ it("R7 HTTP returns ordered inclusive discovery events, conditional responses an
 			[
 				"catalog_repositories",
 				"catalog_changes",
+				"catalog_unconfirmed",
+				"catalog_displaced_state",
 				"catalog_state",
 				"snapshots",
 				"repo_stars",
@@ -141,7 +146,7 @@ it("R7 HTTP returns ordered inclusive discovery events, conditional responses an
 		since: until,
 		until,
 		history_since: floor,
-		warning_code: null,
+		warning_code: "catalog_removal_unconfirmed",
 	});
 	expect(changes.added.map((event) => event.repo)).toEqual([`${owner}/archive`, `${owner}/live`]);
 	expect(changes.removed).toEqual([
@@ -156,6 +161,16 @@ it("R7 HTTP returns ordered inclusive discovery events, conditional responses an
 	expect(changes.unarchived).toEqual([]);
 	expect(changes.visibility_changed).toEqual([]);
 	expect(changes.fork_changed).toEqual([]);
+	expect(changes.unconfirmed).toEqual([
+		{
+			event_id: "unconfirmed-previous",
+			repo: `${owner}/live`,
+			github_id: "R_previous",
+			at: until,
+			source: { kind: "factory", runId: "catalog-fixture" },
+			reason: "private_unverifiable",
+		},
+	]);
 	const tag = response.headers.get("etag");
 	expect(tag).toMatch(/^"[a-f0-9]+"$/);
 	const conditional = await request(`catalog/changes?since=${until}`, bearer, "GET", `W/${tag}`);
@@ -192,6 +207,14 @@ it("R7 HTTP repository history distinguishes current, removed and starred member
 	expect(
 		(await catalog("?scope=starred&include=removed")).map((repo) => repo.name_with_owner),
 	).toEqual([`${owner}/live`]);
+	expect((await catalog("?include=removed")).filter((repo) => repo.name === "live")).toHaveLength(
+		1,
+	);
+	expect(
+		rows(
+			`SELECT removed_at,name_current FROM catalog_repositories WHERE account_id=${quote(account)} AND identity_key='previous-live';`,
+		),
+	).toEqual([{ removed_at: null, name_current: 0 }]);
 	const sources = await request("sources");
 	expect(sources.status).toBe(200);
 	expect(await sources.json()).toMatchObject({

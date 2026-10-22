@@ -775,15 +775,16 @@ ETag/304 and `Cache-Control: private, no-store`.
 
 The body contains `account_id`, normalized `since`, `until` (the last complete
 catalog publication), `history_since`, nullable `warning_code`, and `added`, `removed`, `archived`, `unarchived`,
-`visibility_changed`, `fork_changed` and `renamed` arrays. Each event includes
+`visibility_changed`, `fork_changed`, `renamed` and `unconfirmed` arrays. Each event includes
 `event_id`, `repo`, `at`, nullable `github_id`, and
 `source: {kind: "factory" | "legacy", runId: string | null}`, with the relevant
-before/after values. Renames also include `previous_repo`. Arrays sort ascending
+before/after values. Renames also include `previous_repo`; unconfirmed observations
+include a safe `reason`, never raw upstream diagnostics. Arrays sort ascending
 by `(at, repo, event_id)`. Selection is inclusive (`at >= since`); retain event IDs
 to deduplicate when polling from the previous `until`.
 
 No completed discovery publication returns 409 `catalog_unpublished`. Event
-retention is bounded to 90 days and 10,000 events per account. Eviction removes
+retention is bounded to 90 days and 10,000 combined change/unconfirmed events per account. Eviction removes
 whole timestamp cohorts and advances the history floor beyond the evicted time;
 a request before that floor returns 410 `catalog_history_expired`, never a
 silently incomplete success. Resynchronize the current catalog after expiry.
@@ -798,12 +799,28 @@ do not reappear in starred scope. Removed row payloads have a separate 90-day,
 
 Discovery runs at every successful complete catalog publication, including the
 catalog preparation before quick refresh. Partial/error/truncated lists cannot
-advance history or replace prior membership. Missing repositories are removed
-only after direct repository lookup returns 404. A 403, rate limit or upstream
-failure retains the prior row and original `last_seen_at`. If missing candidates
+advance history or replace prior membership. Absence or a name-based 404 does not
+prove deletion. Confirm against the previously saved stable GitHub ID with a
+GraphQL node lookup. A matching ID at another name is a rename; a new ID at the
+old name neither confirms deletion nor blocks the old identity's resolution.
+
+A candidate last seen private is never auto-removed (`private_unverifiable`). A
+public candidate is eligible only when this same complete listing still contains
+at least one private owned repository with the same stable ID previously observed
+as private (`scope_unverifiable` otherwise). Tokens without private access therefore
+never auto-remove repositories. Only a recognized, unambiguous identity-not-found
+response can then confirm removal. A missing/malformed response, 401/403, rate or
+secondary limit, 5xx, network failure, or access/permission/SAML/SSO wording in a
+404 retains all state and the original `last_seen_at`. The publication records a
+warning and an `unconfirmed` event so consumers can distinguish uncertainty from
+deletion. Other safe reasons are `mass_removal_guard`, `identity_unavailable`,
+`budget_exhausted`, `permission_denied`, `github_unauthorized`,
+`github_rate_limited`, `github_error` and `lookup_unverifiable`.
+
+If missing candidates
 exceed `max(3, owned_before * 0.1)` (no rounding), all removals are suppressed and
 a safe warning is recorded without confirmation calls. The owned denominator
-includes forks and archived repositories.
+includes forks and archived repositories, not departed or displaced identities.
 
 Confirmed deletion atomically clears star records (including owner-unstar
 tombstones), statistics residue and mutable factory participation. It does not
@@ -813,8 +830,15 @@ IDs identify renames: mutable names move with their star provenance, while froze
 historical names stay unchanged. Giraffe never auto-stars newly discovered repos;
 the external bot owns that policy and must respect owner overrides.
 
-A name reused by a different GitHub repository ID is a distinct identity. Retained
-factory evidence from the departed ID cannot become the replacement's current
+A name reused by a different GitHub repository ID is a distinct identity.
+Current-name ownership follows the identity in the complete listing, even if the
+old identity remains unconfirmed. Its catalog row retains `removed_at:null`;
+mutable stars/statistics/factory state are preserved by old identity in isolated
+storage, not inherited by the replacement. Recovery restores that preserved state
+only to the same identity, never across IDs or after confirmed deletion. Repeated
+catalogs cannot be blocked merely by this same-name replacement.
+
+Retained factory evidence from the departed ID cannot become the replacement's current
 observation or complete source. In `include=removed` responses, the departed row
 stays unstarred with null star provenance even if the new owner of that name is
 starred; only the current identity can enter starred scope. Same-ID reappearance

@@ -13,7 +13,7 @@ authorized bot policy. The inclusive cursor returns stable event IDs: deduplicat
 them, and advance from the returned `until` only after processing the response.
 409 `catalog_unpublished` means no complete discovery history yet; 410
 `catalog_history_expired` requires a full catalog resynchronization. History is
-bounded to 90 days and 10,000 events per account; see the
+bounded to 90 days and 10,000 combined change/unconfirmed events per account; see the
 [discovery contract](api.md#get-catalogchanges) for ordering and retention.
 
 `/repos` adds `first_seen_at`, `last_seen_at`, `removed_at` and
@@ -25,13 +25,24 @@ Names are not immutable identities: a different-ID replacement cannot inherit
 departed factory evidence or source completeness. An explicitly included departed
 row remains unstarred even when a same-name replacement is starred.
 
-Deletion requires a complete listing and confirming 404. Denied, failed or
-rate-limited lookups retain membership; more than `max(3, 10% of owned repos)`
+Process the required `unconfirmed[]` alongside changes: each item has the normal
+event ID/repository/stable-ID/time/source fields and a safe `reason`. Do not
+interpret an unconfirmed observation as deletion or authorize bot cleanup from it.
+Previously private candidates are never auto-removed (`private_unverifiable`).
+Public candidates require this complete listing to retain a previously known
+private owned identity (`scope_unverifiable` otherwise), followed by unambiguous
+not-found evidence from a stable-ID node lookup. Tokens without private access
+never auto-remove. Permission-hidden 404s, SAML/SSO, 401/403, limits, network errors
+and 5xx retain all state. More than `max(3, 10% of owned repos)`
 missing candidates suppress all removals. Confirmed removal clears stars and
 mutable participation/overrides but preserves immutable evidence and generic
 agent records. Reappearance is added without restoring stars. Default-star and
 archive-unstar policy remains in the external bot, respecting owner overrides;
 Giraffe performs no automatic starring and adds no R5/R6 agent-state/meta API.
+In a same-run different-ID name replacement, the listed identity owns the current
+name and emits `added`; the old identity is independently removed or unconfirmed.
+Unconfirmed old mutable state is preserved by identity and cannot leak into the
+replacement. Only the same unresolved identity can reclaim preserved state.
 
 ## Authentication and token management
 

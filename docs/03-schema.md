@@ -36,7 +36,8 @@ history survives ordinary run garbage collection:
   timestamps, `visibility`, boolean `is_archived`/`is_fork`,
   `first_seen_source` (`saved_catalog|github_catalog`) and nullable
   `last_source_run_id`. A non-null GitHub ID is unique per account; current names
-  are unique only while `removed_at IS NULL`, preserving departed identities.
+  are unique only while `removed_at IS NULL AND name_current=1`, preserving
+  departed and unresolved displaced identities after the safety migration below.
 - `catalog_changes`: `(account_id, event_id)` primary key, `kind`, `repo`, nullable
   `github_id`, `at`, `source_kind` (`factory|legacy`), nullable `source_run_id` and
   `details` JSON (at most 1,024 UTF-8 bytes). Seven kinds cover addition, removal,
@@ -52,7 +53,7 @@ history or replace membership. A complete publication commits membership, events
 confirmed-removal cleanup and current catalog together; factory writes retain the
 existing lease/fence and legacy writes compare the catalog revision.
 
-Event retention is 90 days and 10,000 rows per account, evicting whole timestamp
+Combined change/unconfirmed event retention is 90 days and 10,000 rows per account, evicting whole timestamp
 cohorts and advancing the inclusive-query floor beyond the last evicted time.
 Removed repository payload retention is independently 90 days and 1,000 rows per
 account. Catalog bytes count toward the account storage budget. Confirmed removal
@@ -65,6 +66,34 @@ observation window and time; unknown identity stays missing until collected.
 Retain the additive tables on code rollback. Rollback does not restore legitimately
 removed mutable stars or synthesize history; restore a verified backup only under
 separate operational authorization.
+
+Apply `0020_catalog_identity_safety.sql` before the repaired catalog writer:
+
+- Add `catalog_repositories.name_current INTEGER NOT NULL DEFAULT 1`, constrained
+  to 0/1, and replace `catalog_current_name` with the current-ownership predicate.
+  Existing rows remain current; a same-name replacement can keep its unresolved
+  old identity with `name_current=0` and unchanged `removed_at=NULL`/last-seen time.
+- Add `catalog_displaced_state`, keyed by `(account_id, identity_key, table_name)`
+  with a cascading catalog-identity foreign key. Separate `repo` and nullable
+  `version` columns preserve the physical key and version; `payload` keeps the
+  original raw factory-state string (or the complete star/statistics row JSON),
+  capped at 1,500,000 UTF-8 bytes without double-encoding a JSON envelope.
+  Displacement and live-name removal occur in the same fenced/revision-CAS batch;
+  only the same unresolved identity can restore this state. Confirmed deletion
+  does not preserve a star for later resurrection. Immutable observation roots
+  referenced by preserved factory state remain protected from ordinary GC.
+- Add account-cascading `catalog_unconfirmed`, keyed by `(account_id, event_id)`
+  with `repo`, nullable `github_id`, `at`, `source_kind`, nullable `source_run_id`
+  and a safe `reason`. `/catalog/changes.unconfirmed[]` shares inclusive cursor
+  ordering and the combined retention floor with normal change events.
+
+Both new stores participate in account byte accounting. The migration preserves
+existing records and emits no discovery events. Local verification reapplies the
+migration set without duplicate-column errors, name conflicts or resurrection.
+Keep the new schema/state on code rollback. An old writer that ignores current
+identity ownership or deletes on an ambiguous 404 is not a safe rollback target;
+deploy a forward repair instead. No production schema or data is changed by the
+local migration verifier.
 
 ### Immutable current-run activity
 

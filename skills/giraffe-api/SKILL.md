@@ -320,22 +320,28 @@ a read-time same-kind historical median estimate, not a deadline; null includes
 
 Poll `/catalog/changes?since=<ISO>` with `observations:read`. Process `added`,
 `removed`, `archived`, `unarchived`, `visibility_changed`, `fork_changed` and
-`renamed`. Events sort by time/repo/event ID; `since` is inclusive, so deduplicate
+`renamed` and `unconfirmed` (safe `reason`; never a deletion). Events sort by time/repo/event ID; `since` is inclusive, so deduplicate
 `event_id` and resume from the returned `until`. 409 `catalog_unpublished` means
 no complete publication; 410 `catalog_history_expired` requires a full catalog
-resync. History retains at most 90 days/10,000 events; do not assume older polls
+resync. Combined history retains at most 90 days/10,000 events; do not assume older polls
 are complete. GET does not collect or write.
 
 `/repos` includes nullable `first_seen_at`, `last_seen_at`, `removed_at` and
 `archived_changed_at`; saved fetch time is not GitHub creation time. Default
 reads omit removed repos; `include=removed` exposes bounded departed rows.
-Deletion requires complete discovery plus direct 404; denied/failed lookups and
-the mass-removal guard retain prior membership. Confirmed deletion clears stars
+Previously private candidates are never auto-removed (`private_unverifiable`).
+Public candidates need a previously known private owned ID still visible in the
+same complete listing, otherwise `scope_unverifiable`; tokens without private
+access never auto-remove. Confirm only unambiguous stable-ID node not-found,
+never a name-based 404. Permission/SAML/SSO/401/403/limits/failures and the mass guard
+retain all state and appear in `unconfirmed[]`. Confirmed deletion clears stars
 and mutable participation, not immutable evidence or generic agent resources.
 Stable-ID renames preserve stars; reappearance does not resurrect them. Giraffe
 never auto-stars. Apply only authorized bot policy and respect owner overrides.
 Different-ID name reuse cannot inherit departed factory evidence; included removed
 rows never inherit the current same-name repository's stars or provenance.
+Same-run name replacement belongs to the listed ID; unresolved old mutable state
+is preserved separately and restores only to that same identity, never to the new ID.
 See [discovery](../../docs/api.md#get-catalogchanges) for exact bounds and fields.
 
 ## Errors, limits and retries
