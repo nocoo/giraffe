@@ -276,6 +276,13 @@ it("recovers only matching legacy resource versions and does not invent missing 
 		...(await replaceSnapshotStmts(
 			db,
 			snap.account_id,
+			"factory",
+			{ ...snap, repos: [repo] },
+			now,
+		)),
+		...(await replaceSnapshotStmts(
+			db,
+			snap.account_id,
 			"factory:nocoo/app:commits",
 			{ runId: now, items: [], coverage: { ...repo.coverage.commits, status: "partial" } },
 			now,
@@ -284,7 +291,11 @@ it("recovers only matching legacy resource versions and does not invent missing 
 			db,
 			snap.account_id,
 			"factory:nocoo/app:issues",
-			{ runId: "another", items: [], coverage: repo.coverage.issues },
+			{
+				runId: "another",
+				items: [],
+				coverage: { ...repo.coverage.issues, fetchedAt: "2027-01-01T00:00:00.000Z" },
+			},
 			now,
 		)),
 		...(await replaceSnapshotStmts(
@@ -311,6 +322,9 @@ it("recovers only matching legacy resource versions and does not invent missing 
 
 it("restores old root and workspace identities separately from actual dependencies", async () => {
 	const { db, lease, repo } = await setup();
+	await db.batch(
+		await replaceSnapshotStmts(db, snap.account_id, "factory", { ...snap, repos: [repo] }, now),
+	);
 	const declarations = [
 		{ name: "own", path: "package.json#name" },
 		{ name: "child", path: "packages/child/package.json#name" },
@@ -349,6 +363,113 @@ it("restores old root and workspace identities separately from actual dependenci
 		dependencies: [{ name: "external" }],
 		manifests: [{ name: "own" }, { name: "child" }],
 	});
+});
+
+it.each([
+	{ proof: "publication", valid: true },
+	{ proof: "archive", valid: true },
+	{ proof: "physical-alias", valid: true },
+	{ proof: "missing", valid: false },
+	{ proof: "wrong-id", valid: false },
+	{ proof: "wrong-version", valid: false },
+	{ proof: "wrong-source", valid: false },
+	{ proof: "wrong-physical-key", valid: false },
+	{ proof: "invalid-window", valid: false },
+	{ proof: "reversed-window", valid: false },
+	{ proof: "missing-window", valid: false },
+	{ proof: "archive-metadata-only", valid: false },
+	{ proof: "archive-other-account", valid: false },
+])("R7 legacy restore requires a positive source binding ($proof)", async ({ proof, valid }) => {
+	const { raw, db, lease, repo } = await setup();
+	const source = structuredClone(repo);
+	const sourceWindow = { since: "2026-09-01T00:00:00.000Z", until: now };
+	source.observation = {
+		source: "legacy",
+		version: now,
+		repo: repo.name,
+		refreshedAt: now,
+		window: sourceWindow,
+	};
+	if (proof === "wrong-id") source.id = "R_OTHER";
+	if (proof === "wrong-version") source.observation.version = "other-version";
+	if (proof === "wrong-source") source.observation.source = "run";
+	if (proof === "wrong-physical-key") source.observation.repo = "nocoo/other";
+	if (proof === "invalid-window") source.observation.window = { ...sourceWindow, since: "invalid" };
+	if (proof === "reversed-window")
+		source.observation.window = { since: now, until: sourceWindow.since };
+	if (proof === "physical-alias") source.name = "nocoo/renamed";
+	const serialized = JSON.parse(JSON.stringify(source)) as Record<string, unknown>;
+	if (proof === "missing-window") delete (serialized.observation as Record<string, unknown>).window;
+	if (proof === "archive-metadata-only") delete serialized.observation;
+	if (proof === "archive-other-account")
+		await raw
+			.prepare(
+				"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES('foreign','foreign','fake','fake',?,?)",
+			)
+			.bind(now, now)
+			.run();
+	if (proof.startsWith("archive")) {
+		await db
+			.prepare(
+				"INSERT INTO factory_repo_versions(account_id,repo,version,payload,refreshed_at) VALUES(?,?,?,?,?)",
+			)
+			.bind(
+				proof === "archive-other-account" ? "foreign" : snap.account_id,
+				repo.name,
+				now,
+				JSON.stringify(serialized),
+				now,
+			)
+			.run();
+	} else if (proof !== "missing") {
+		await db.batch(
+			await replaceSnapshotStmts(
+				db,
+				snap.account_id,
+				"factory",
+				{ ...snap, repos: [serialized], window: sourceWindow },
+				now,
+			),
+		);
+	}
+	await db.batch(
+		await replaceSnapshotStmts(
+			db,
+			snap.account_id,
+			`factory:${repo.name}:commits`,
+			{
+				runId: now,
+				items: [],
+				coverage: { ...repo.coverage.commits, status: "complete", fetchedAt: now },
+			},
+			now,
+		),
+	);
+	const frozen = await raw.prepare("SELECT * FROM snapshots ORDER BY kind").all();
+	const immutable = await raw
+		.prepare("SELECT * FROM factory_repo_versions ORDER BY account_id,repo,version")
+		.all();
+	const writes = await restoreLegacyRepo(db, lease, now, repo);
+	expect(writes).toHaveLength(valid ? 2 : 0);
+	await db.batch(writes);
+	const current = await currentRepo(db, snap.account_id, repo.name);
+	if (valid)
+		expect(current).toMatchObject({
+			id: repo.id,
+			observation: {
+				source: "legacy",
+				version: now,
+				repo: repo.name,
+				refreshedAt: now,
+				window: sourceWindow,
+			},
+		});
+	else expect(current).toBeNull();
+	expect(await raw.prepare("SELECT * FROM snapshots ORDER BY kind").all()).toEqual(frozen);
+	const after = (
+		await raw.prepare("SELECT * FROM factory_repo_versions ORDER BY account_id,repo,version").all()
+	).results;
+	for (const row of immutable.results) expect(after).toContainEqual(row);
 });
 
 it("deduplicates renamed repositories by stable GitHub identity at publication", async () => {

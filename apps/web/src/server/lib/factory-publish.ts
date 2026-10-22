@@ -1,4 +1,4 @@
-import { factoryWindow, mergeMetrics, summarizeEvents } from "../../lib/factory";
+import { mergeMetrics, summarizeEvents } from "../../lib/factory";
 import {
 	dependencyEvidence,
 	dependencyFromEvent,
@@ -203,11 +203,45 @@ export async function restoreLegacyRepo(
 			lease.run.account_id,
 			streamKey(repo.name, stream),
 		)) as FactoryStreamData | null;
-		if (data?.coverage && data.items) resources.set(stream, data);
+		if (data?.coverage && Array.isArray(data.items)) resources.set(stream, data);
 	}
 	const first = [...resources.values()].find((d) => Number.isFinite(Date.parse(d.runId)));
 	if (!first) return [];
-	const window = factoryWindow(first.runId);
+	const boundWindow = (observed: FactoryRepo | undefined, root?: FactorySnapshot | null) => {
+		if (
+			!observed ||
+			!repo.id ||
+			observed.id !== repo.id ||
+			(observed.observation?.repo ?? observed.name) !== repo.name ||
+			(observed.observation?.version ?? root?.runId) !== first.runId ||
+			(observed.observation?.source ?? (root ? "legacy" : null)) !== "legacy"
+		)
+			return null;
+		const window = observed.observation ? observed.observation.window : root?.window;
+		return window && Date.parse(window.since) < Date.parse(window.until) ? window : null;
+	};
+	let window = boundWindow(previous, publication);
+	if (!window) {
+		const legacy = (await readSnapshot(
+			db,
+			lease.run.account_id,
+			"factory",
+		)) as FactorySnapshot | null;
+		window = boundWindow(
+			legacy?.repos.find((observed) => (observed.observation?.repo ?? observed.name) === repo.name),
+			legacy,
+		);
+	}
+	if (!window) {
+		const saved = await db
+			.prepare(
+				"SELECT payload FROM factory_repo_versions WHERE account_id=? AND repo=? AND version=?",
+			)
+			.bind(lease.run.account_id, repo.name, first.runId)
+			.first<{ payload: string }>();
+		window = boundWindow(saved ? (JSON.parse(saved.payload) as FactoryRepo) : undefined);
+	}
+	if (!window) return [];
 	// Bind the original logical keys, not URLs, to avoid confusing issues with PRs or GraphQL manifests.
 	for (const stream of FACTORY_STREAMS) {
 		const data = resources.get(stream);
@@ -226,6 +260,7 @@ export async function restoreLegacyRepo(
 		window,
 		refreshedAt:
 			[...resources.values()]
+				.filter((data) => data.runId === first.runId)
 				.map((d) => d.coverage.fetchedAt ?? first.runId)
 				.sort()
 				.at(-1) ?? first.runId,

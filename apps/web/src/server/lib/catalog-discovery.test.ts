@@ -8,7 +8,7 @@ import { createApp } from "../index";
 import { collectRepos } from "./collect";
 import { savedContentMeta } from "./content-version";
 import { createDb } from "./db/d1";
-import { claimRun, getRun, startRun } from "./db/factory-runs";
+import { claimRun, getRun, publishedFactory, startRun } from "./db/factory-runs";
 import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
 import { newFactory } from "./factory-collect";
 import { executeRunPage } from "./factory-execute";
@@ -1144,5 +1144,161 @@ it.each([false, true])(
 				observation: { source: "legacy", version: previousAt, refreshedAt: previousAt },
 			});
 		else expect(restored).toBeNull();
+	},
+);
+
+it.each([
+	{ sameId: false, removeRoot: false, archivedProof: false, recovers: false },
+	{ sameId: true, removeRoot: false, archivedProof: false, recovers: true },
+	{ sameId: true, removeRoot: true, archivedProof: false, recovers: false },
+	{ sameId: true, removeRoot: true, archivedProof: true, recovers: true },
+])(
+	"R7 discovery removes the old member from the real publication before same-name restore (sameId=$sameId, removeRoot=$removeRoot, archivedProof=$archivedProof)",
+	async ({ sameId, removeRoot, archivedProof, recovers }) => {
+		const original = repository(1);
+		const listing: Repository[] = [];
+		const context = await fixture([original], listing);
+		const db = createDb(context.raw);
+		const factory = (await readSnapshot(db, account, "factory")) as FactorySnapshot;
+		const observed = factory.repos[0];
+		if (!observed?.observation) throw new Error("Missing legacy source identity");
+		observed.observation.version = previousAt;
+		observed.coverage.commits = {
+			...observed.coverage.commits,
+			status: "complete",
+			fetchedAt: previousAt,
+		};
+		await db.batch(await replaceSnapshotStmts(db, account, "factory", factory, previousAt));
+		await db.batch(
+			await replaceSnapshotStmts(
+				db,
+				account,
+				`factory:${original.nameWithOwner}:commits`,
+				{
+					runId: previousAt,
+					items: [],
+					next: null,
+					ranges: [],
+					coverage: observed.coverage.commits,
+				},
+				previousAt,
+			),
+		);
+		await context.refresh();
+		await context.raw
+			.prepare("UPDATE accounts SET capabilities=?,token_ciphertext=?")
+			.bind(
+				JSON.stringify({ repo: true }),
+				await encryptToken("fake", parseKeyBytes("0".repeat(64))),
+			)
+			.run();
+		const headAt = "2026-10-23T20:00:00.000Z";
+		const departure = makeRun(
+			"departed-head",
+			account,
+			"nocoo",
+			"departed-head",
+			"catalog",
+			[],
+			headAt,
+		);
+		await startRun(createDb(context.raw), departure);
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+			if (new URL(String(input)).pathname !== "/graphql")
+				throw new Error("Unexpected catalog request");
+			return Response.json({
+				data: {
+					viewer: {
+						login: "nocoo",
+						repositories: { nodes: [], totalCount: 0, pageInfo: { hasNextPage: false } },
+					},
+				},
+			});
+		});
+		try {
+			for (let page = 0; page < 10; page++) {
+				if ((await getRun(createDb(context.raw), account, departure.id))?.run.status !== "running")
+					break;
+				await executeRunPage(
+					{
+						DB: context.raw,
+						ENVIRONMENT: "development",
+						GITHUB_API_BASE: "http://fixture",
+						TOKEN_ENCRYPTION_KEY_V1: "0".repeat(64),
+					} as unknown as Env,
+					departure.id,
+					() => headAt,
+				);
+			}
+		} finally {
+			vi.unstubAllGlobals();
+		}
+		expect((await getRun(createDb(context.raw), account, departure.id))?.run.status).toBe(
+			"completed",
+		);
+		expect(await publishedFactory(createDb(context.raw), account)).toMatchObject({
+			runId: departure.id,
+			repos: [],
+		});
+		const replacement = { ...original, id: sameId ? original.id : "R_REPLACEMENT" };
+		listing.push(replacement);
+		await context.refresh("2026-10-24T20:00:00.000Z");
+		if (removeRoot)
+			await context.raw
+				.prepare("DELETE FROM snapshots WHERE kind IN ('factory','factory#2')")
+				.run();
+		if (archivedProof)
+			await context.raw
+				.prepare(
+					"INSERT INTO factory_repo_versions(account_id,repo,version,payload,refreshed_at) VALUES(?,?,?,?,?)",
+				)
+				.bind(account, original.nameWithOwner, previousAt, JSON.stringify(observed), previousAt)
+				.run();
+		const frozen = await context.raw
+			.prepare("SELECT * FROM snapshots WHERE kind LIKE 'factory%' ORDER BY kind")
+			.all();
+		const immutable = await context.raw
+			.prepare("SELECT * FROM factory_repo_versions ORDER BY repo,version")
+			.all();
+		const now = "2026-10-25T20:00:00.000Z";
+		const restore = makeRun(
+			"positive-restore",
+			account,
+			"nocoo",
+			"positive-restore",
+			"catalog",
+			[],
+			now,
+		);
+		const restoreDb = createDb(context.raw);
+		await startRun(restoreDb, restore);
+		const lease = await claimRun(restoreDb, restore.id, now);
+		if (!lease) throw new Error("Missing restore lease");
+		const writes = await restoreLegacyRepo(restoreDb, lease, now, mapFactoryRepo(replacement));
+		expect(writes).toHaveLength(recovers ? 2 : 0);
+		await restoreDb.batch(writes);
+		const current = await currentRepo(restoreDb, account, replacement.nameWithOwner);
+		if (recovers)
+			expect(current).toMatchObject({
+				id: original.id,
+				coverage: { commits: { status: "complete" } },
+				observation: {
+					source: "legacy",
+					repo: original.nameWithOwner,
+					version: previousAt,
+					window: observed.observation.window,
+					refreshedAt: previousAt,
+				},
+			});
+		else expect(current).toBeNull();
+		expect(
+			await context.raw
+				.prepare("SELECT * FROM snapshots WHERE kind LIKE 'factory%' ORDER BY kind")
+				.all(),
+		).toEqual(frozen);
+		const after = (
+			await context.raw.prepare("SELECT * FROM factory_repo_versions ORDER BY repo,version").all()
+		).results;
+		for (const row of immutable.results) expect(after).toContainEqual(row);
 	},
 );

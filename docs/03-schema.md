@@ -58,6 +58,10 @@ Removed repository payload retention is independently 90 days and 1,000 rows per
 account. Catalog bytes count toward the account storage budget. Confirmed removal
 deletes mutable stars/overrides/participation only; immutable observations,
 factory/activity publications and generic agent resources are not rewritten.
+Legacy restoration requires matching stable ID, physical repository key, source
+and version evidence; a missing member in the current head is not authorization
+to reuse a same-name historical snapshot. Proven recovery retains the original
+observation window and time; unknown identity stays missing until collected.
 Retain the additive tables on code rollback. Rollback does not restore legitimately
 removed mutable stars or synthesize history; restore a verified backup only under
 separate operational authorization.

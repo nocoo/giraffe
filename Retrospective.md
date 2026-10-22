@@ -1353,3 +1353,14 @@ add catalog scalar aggregates inside the same statement, preserving UTF-8 byte
 accounting, bindings and one round trip. Pair native transaction tests with a
 named D1-limit regression and real HTTP verification; native SQL compatibility
 does not imply identical engine resource limits.
+
+## 2026-10-22 - Absence is not positive legacy identity evidence
+
+The first replacement guard rejected a different ID only when the old name still
+appeared in the current factory publication. Independent replay advanced that
+head past the deletion, and restoration again rebound old legacy resources to a
+new ID. Restoration now requires positive agreement on stable ID, physical key,
+legacy source and original version from a retained publication/root or exact
+immutable version; unknown provenance yields no writes. Test the full lifecycle
+including the intervening empty publication, and retain original windows and
+timestamps rather than deriving fresh ones from unrelated stream versions.

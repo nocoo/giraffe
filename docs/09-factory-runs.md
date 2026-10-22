@@ -316,6 +316,9 @@ requests. Budget exhaustion retains unconfirmed membership and original
 `last_seen_at`, with `catalog_removal_unconfirmed`; it never bypasses the client
 limit. This is a per-execution bound, not a whole-run request total. No extra
 scheduler tick or measured production latency improvement is claimed.
+When mutable state is missing, legacy restoration can make at most two additional
+bounded local reads to verify identity against a saved root or exact immutable
+version. It does not scan the historical publication set or call GitHub.
 
 ## Dashboard time presentation
 
