@@ -1,6 +1,6 @@
 import type { Env } from "../env";
 import { createDb } from "./db/d1";
-import { dueRuns, expireRuns } from "./db/factory-runs";
+import { dispatchRunState, dueRuns, expireRuns } from "./db/factory-runs";
 import { executeRunPage } from "./factory-execute";
 import { pruneFactory } from "./factory-retention";
 import { scheduleRefreshes } from "./refresh-schedule";
@@ -12,6 +12,13 @@ export async function enqueueRun(
 ): Promise<void> {
 	const delay = Math.min(43200, Math.max(0, Math.ceil((Date.parse(at) - Date.now()) / 1000)));
 	await env.FACTORY_QUEUE.send({ id }, { delaySeconds: delay });
+}
+export async function handoffAccount(env: Env, account: string): Promise<void> {
+	await scheduleRefreshes(env.DB, new Date().toISOString(), account, () =>
+		new Date().toISOString(),
+	);
+	for (const successor of await dueRuns(createDb(env.DB), new Date().toISOString(), account))
+		await enqueueRun(env, successor);
 }
 export async function consumeFactory(batch: MessageBatch<unknown>, env: Env): Promise<void> {
 	for (const message of batch.messages) {
@@ -25,6 +32,12 @@ export async function consumeFactory(batch: MessageBatch<unknown>, env: Env): Pr
 			await expireRuns(createDb(env.DB), new Date().toISOString(), "", id);
 			const next = await executeRunPage(env, id);
 			if (next) await enqueueRun(env, id, next);
+			else {
+				const finished = await dispatchRunState(createDb(env.DB), id);
+				if (finished && !["running", "paused"].includes(finished.status)) {
+					await handoffAccount(env, finished.account_id);
+				}
+			}
 			message.ack();
 		} catch {
 			message.retry({ delaySeconds: 120 });
@@ -35,7 +48,7 @@ export async function consumeFactory(batch: MessageBatch<unknown>, env: Env): Pr
 export async function continueFactory(env: Env, scheduledTime: number): Promise<void> {
 	try {
 		await expireRuns(createDb(env.DB), new Date().toISOString());
-		await scheduleRefreshes(env.DB, new Date().toISOString());
+		await scheduleRefreshes(env.DB, new Date().toISOString(), "", () => new Date().toISOString());
 		const ids = await dueRuns(createDb(env.DB), new Date().toISOString());
 		for (const id of ids) await enqueueRun(env, id);
 	} finally {

@@ -122,7 +122,21 @@ export function describeRunIssue(code: string | null, kind: StepKind, resource?:
 				...base,
 				title: "自动刷新错过执行时间",
 				reason: "过期的调度时间已记录，不会集中补跑历史任务。",
-				action: "系统只尝试最新的调度时间；请检查服务可用性与刷新记录。",
+				action: "请检查服务可用性与刷新记录；待处理时段会保留至执行或明确失败。",
+			};
+		case "scheduled_slot_missed":
+			return {
+				...base,
+				title: "自动刷新错过当日时限",
+				reason: "本次调度未能在北京时间当日结束前启动，已单独保留失败记录。",
+				action: "检查此前占用账号的刷新及服务可用性；过期时段不会跨天补跑。",
+			};
+		case "catalog_preparation_failed":
+			return {
+				...base,
+				title: "自动刷新准备失败",
+				reason: "前置仓库列表同步未成功，本次目标刷新已保留失败记录。",
+				action: "查看仓库列表同步记录，修复权限或上游问题后重新刷新。",
 			};
 		case "cloud_ai_retired":
 			return {

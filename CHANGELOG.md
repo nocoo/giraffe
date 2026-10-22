@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Preserve each scheduled daily until same-day admission or an individual failed audit. Terminal work hands off deferred daily runs without manual cooldowns; exact-slot weekly ties win without cancelling active work. Replace latest-only recovery and invisible preparation failures with durable per-occurrence outcomes.
+- Add read-only `expectedFinishAt`/`expectedFinishAtReason` to every exposed run using the account's last five completed actual-kind wall durations, independently of the displayed history limit and absolute deadline.
+
+### Root Causes
+
+- Historical scheduler revision `ac2d1e3` held later work behind the single active catalog and advanced the original daily cursor from recovery time, silently jumping over October 17/18. Page leases were renewable without an absolute lifetime. v0.15.14 bounded that lock but did not fix every missed-slot, failed-preparation or handoff path. The exact catalog stall mechanism is not provable without historical Queue/cursor/fence traces; healthy cron alone is not evidence of consumer progress.
+
+### Changed Membership And Stars
+
 - Protect browser star decisions with owner/agent provenance and durable owner-unstar tombstones. Agent conflicts return 409 `owner_override`; same-direction owner writes are preserved as 200 no-ops. Add GET `/stars`, optional write reasons and repository source markers. Star PUT/DELETE now return a 200 star record instead of settings/204.
 
 - Consolidate daily refresh membership into local stars. Daily selects starred-owned repositories; full refresh and all-scope projections select every owned catalog repository, including archives/forks. Non-owned repositories never enter refresh plans or coverage/freshness denominators. Selected but unpublished repositories count as missing. Remove the hard-coded mirror exclusion and browser statistics toggles; archived repositories retain the full collection plan.

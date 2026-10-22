@@ -1,3 +1,4 @@
+import { factoryWindow } from "../../../lib/factory";
 import { normalizeRepoDependencies } from "../../../lib/factory-dependencies";
 import {
 	type FactoryRun,
@@ -10,6 +11,7 @@ import type { FactorySnapshot } from "../../../lib/factory-types";
 import { storedContent, withContent } from "../content-version";
 import { ApiError } from "../errors";
 import { RUN_DEADLINE_SQL, runDeadlineAt, timedOutRun } from "../factory-timeout";
+import { beijingDayStart, SCHEDULE_ADMISSION } from "../schedule-admission";
 import type { Db } from "./d1";
 import { readSnapshot } from "./snapshots";
 
@@ -41,6 +43,12 @@ export async function getRun(db: Db, account: string, id: string) {
 		.bind(account, id)
 		.first<RunRow>();
 	return row ? parse(row) : null;
+}
+export function dispatchRunState(db: Db, id: string) {
+	return db
+		.prepare("SELECT account_id,status FROM factory_runs WHERE id=?")
+		.bind(id)
+		.first<{ account_id: string; status: string }>();
 }
 export async function listRuns(db: Db, account: string, detail = "") {
 	const rows = await db
@@ -117,21 +125,32 @@ export async function repoStates(db: Db, account: string): Promise<RepoRefreshSt
 		.all<{ payload: string }>();
 	return rows.results.map((r) => JSON.parse(r.payload) as RepoRefreshState);
 }
-export async function startRun(db: Db, run: FactoryRun): Promise<FactoryRun> {
-	await expireRuns(db, run.startedAt, run.account_id);
-	run.deadlineAt = runDeadlineAt(run);
+export async function startRun(
+	db: Db,
+	run: FactoryRun,
+	clock = () => run.startedAt,
+): Promise<FactoryRun> {
+	await expireRuns(db, clock(), run.account_id);
 	const old = await db
 		.prepare("SELECT payload FROM factory_runs WHERE account_id=? AND request_key=?")
 		.bind(run.account_id, run.requestKey)
 		.first<{ payload: string }>();
 	if (old) return JSON.parse(old.payload) as FactoryRun;
+	const acceptedAt = clock();
+	if (acceptedAt !== run.startedAt) {
+		run.startedAt = acceptedAt;
+		run.updatedAt = acceptedAt;
+		run.nextAttemptAt = acceptedAt;
+		run.window = factoryWindow(acceptedAt);
+	}
+	run.deadlineAt = runDeadlineAt(run);
 	const insert = db
 		.prepare(`INSERT OR IGNORE INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at)
  SELECT ?,?,?,'running',?,?,?,? WHERE NOT EXISTS(SELECT 1 FROM factory_runs WHERE account_id=? AND status IN ('running','paused'))
- AND NOT EXISTS(SELECT 1 FROM factory_runs WHERE account_id=? AND created_at>? AND COALESCE(json_extract(payload,'$.error'),'') NOT IN ('scheduled_slots_missed','no_starred_repositories'))
- AND NOT EXISTS(SELECT 1 FROM factory_state WHERE account_id=? AND next_at>?)
+	 AND (? OR NOT EXISTS(SELECT 1 FROM factory_runs WHERE account_id=? AND created_at>? AND json_array_length(payload,'$.steps')>0))
+	 AND (? OR NOT EXISTS(SELECT 1 FROM factory_state WHERE account_id=? AND next_at>?))
  AND NOT EXISTS(SELECT 1 FROM snapshots WHERE account_id=? AND kind='factory:lock' AND fetched_at>?)
- AND (? IS NULL OR EXISTS(SELECT 1 FROM (SELECT * FROM refresh_schedules UNION ALL SELECT * FROM catalog_refresh_schedules) WHERE account_id=? AND kind=? AND next_at=? AND enabled=1))`)
+	 AND (? IS NULL OR ${SCHEDULE_ADMISSION})`)
 		.bind(
 			run.id,
 			run.account_id,
@@ -141,14 +160,18 @@ export async function startRun(db: Db, run: FactoryRun): Promise<FactoryRun> {
 			run.startedAt,
 			run.startedAt,
 			run.account_id,
+			Number(Boolean(run.schedule)),
 			run.account_id,
 			new Date(Date.parse(run.startedAt) - RUN_COOLDOWN_MS).toISOString(),
+			Number(Boolean(run.schedule)),
 			run.account_id,
 			run.startedAt,
 			run.account_id,
 			run.startedAt,
 			run.schedule?.kind ?? null,
 			run.account_id,
+			run.startedAt,
+			beijingDayStart(run.startedAt),
 			run.schedule?.kind ?? null,
 			run.schedule?.dueAt ?? null,
 		);
@@ -178,6 +201,12 @@ export async function startRun(db: Db, run: FactoryRun): Promise<FactoryRun> {
 			.prepare("SELECT id FROM factory_runs WHERE account_id=? AND status IN ('running','paused')")
 			.bind(run.account_id)
 			.first();
+		if (!active && run.schedule)
+			throw new ApiError(
+				409,
+				"schedule_deferred",
+				"schedule changed or another occurrence has priority",
+			);
 		throw new ApiError(
 			409,
 			active ? "account_conflict" : "refresh_cooldown",
@@ -339,13 +368,13 @@ export async function controlRun(
 	if (!result?.meta.changes) throw new ApiError(409, "account_conflict", "run changed; reload");
 	return { ...run, version: run.version + 1 };
 }
-export async function dueRuns(db: Db, now: string) {
-	await expireRuns(db, now);
+export async function dueRuns(db: Db, now: string, account = "") {
+	await expireRuns(db, now, account);
 	const result = await db
 		.prepare(
-			"SELECT id FROM factory_runs WHERE status='running' AND next_at<=? AND (lease_until IS NULL OR lease_until<=?) ORDER BY next_at LIMIT 5",
+			"SELECT id FROM factory_runs WHERE status='running' AND next_at<=? AND (lease_until IS NULL OR lease_until<=?) AND (?='' OR account_id=?) ORDER BY next_at LIMIT 5",
 		)
-		.bind(now, now)
+		.bind(now, now, account, account)
 		.all<{ id: string }>();
 	return result.results.map((r) => r.id);
 }

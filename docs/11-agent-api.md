@@ -323,10 +323,23 @@ Absolute run deadlines include paused/backoff time: catalog 30 minutes, quick
 refresh 6 hours, deep refresh or missing legacy depth 12 hours. `deadlineAt` is
 optional on old rows and derived from their start. Scheduler/mutating operations
 expire active runs as `failed` / `error:run_timed_out`, revoke leases, release locks
-and set schedule `lastError`; GET stays read-only. Earlier overdue schedule slots
-are coalesced into failed audit rows with `error:scheduled_slots_missed` and
-`missedSlots:{firstDueAt,lastDueAt,count}`; only the latest due slot is attempted.
+and set schedule `lastError`; GET stays read-only. Each pending daily remains
+queued by its schedule cursor until accepted or individually recorded as failed.
+If it cannot start before its due day's next Beijing midnight, it receives
+`error:scheduled_slot_missed` and a one-slot `missedSlots` audit. Old grouped
+audits remain historical records. A due occurrence starts or records a reason
+within five minutes under the healthy minute cron. Active work is never cancelled
+for a daily; terminal completion immediately hands off same-day daily work,
+bypassing only manual cooldowns. Exact-slot weekly ties precede daily, then catalog;
+otherwise pending current-day daily work precedes unstarted weekly/catalog work.
 Timeout/missed-slot `lastError` warnings persist until an explicit schedule save.
+
+All exposed runs add `expectedFinishAt` and `expectedFinishAtReason`: start time
+plus the median wall duration of the account's last five valid completed runs of
+the actual catalog/quick/deep kind, across retained history. Read-time calibration
+is not a deadline or guarantee. Null uses `no_completed_history`,
+`invalid_started_at` or `not_executed`; a valid estimate has a null reason.
+No GET backfill, upstream request or schema migration is introduced.
 
 `app:read`/`app:write` can read settings and refresh runs, update stars/
 schedules, or explicitly start and control the existing durable GitHub refresh

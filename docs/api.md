@@ -1255,11 +1255,21 @@ All three kinds support multiple slots. Weekly slots share one weekday; daily
 and catalog slots recur each day. `time` always reads as `times[0]` and remains
 supported, with no removal date; new consumers should write `times`. Invalid
 times, empty/overlong lists and conflicting aliases return 400 `validation_failed`.
-`nextAt` is the earliest slot strictly after the save or accepted attempt.
-Close slots remain distinct occurrences, but an active run or cooldown defers
-the next one. Recovery attempts only the latest due slot, never a catch-up burst;
-each older slot is counted once in `scheduled_slots_missed` audit records.
-Occurrence request keys and compare-and-swap updates prevent duplicate starts.
+`nextAt` is the earliest unresolved slot, strictly after a save but potentially
+in the past while deferred. Recovery advances from each settled due time, not
+from recovery time. A due run starts or records a safe `lastError` on the next
+healthy minute tick (within five minutes). An active run is never cancelled for
+a daily; terminal completion immediately hands off pending daily work, bypassing
+only manual cooldowns. Current-day daily work precedes unstarted weekly/catalog
+work, except exact-slot ties where weekly precedes daily, then catalog.
+
+A daily not admitted before its due date's next Beijing midnight receives its
+own failed `scheduled_slot_missed` run and `missedSlots` count 1. It never starts
+on a later day. Failed catalog preparation and empty selection also create
+explicit target records. Old grouped audits remain readable. Occurrence request
+keys, transactional guards and compare-and-swap updates prevent duplicate starts
+or an audit racing with acceptance. Bounded backlog draining preserves unresolved
+cursors. GETs remain read-only; no production schedule times are changed.
 Migration 0013 preserves every existing setting and `next_at`; it does not add
 morning runs. The owner must explicitly choose any additional times.
 
@@ -1279,6 +1289,17 @@ No pagination or machine run-detail GET exists. Runs exclude `checkpoint`; older
 non-active runs have `steps:[]`, not full history. Every row includes
 `counts:{total,success,failed,unavailable,limited,skipped}` computed from the stored steps,
 including compact history. No browser progress/lease summary is added.
+
+Every run also includes `expectedFinishAt:string|null` and
+`expectedFinishAtReason:string|null`. The estimate is its start plus the median
+wall duration of the last five valid completed runs of that account and actual
+kind (`catalog`, `quick`, `deep`), using all retained history, not only these 21
+rows. It is recalibrated at read time and may be in the past; it is not the hard
+`deadlineAt` or a completion guarantee. Catalog preparations are catalog samples
+regardless of daily/weekly trigger. Failed/partial runs are not successful samples.
+Null reasons are `no_completed_history`, `invalid_started_at` or `not_executed`
+(zero-work audit); a present estimate has a null reason. Browser run history and
+selected detail use the same projection without writing stored payloads.
 
 Run fields: `id`, `account_id`, `owner`, `requestKey`, `mode`, `repos`, `repoIds`,
 `window:{since,until}`, `steps`, `cursor`, `status`, `startedAt`, `updatedAt`,

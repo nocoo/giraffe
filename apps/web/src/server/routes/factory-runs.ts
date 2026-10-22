@@ -12,12 +12,13 @@ import {
 	repoStates,
 } from "../lib/db/factory-runs";
 import { ApiError, jsonOk } from "../lib/errors";
-import { enqueueRun } from "../lib/factory-dispatch";
+import { enqueueRun, handoffAccount } from "../lib/factory-dispatch";
 import { factoryStorage } from "../lib/factory-retention";
 import { siteCatalog } from "../lib/factory-site";
 import { refreshInput, startRefresh } from "../lib/factory-start";
 import { ACCOUNT_ID_RE } from "../lib/id";
 import { readJson } from "../lib/read-body";
+import { estimateRunFinish, readRunEstimates } from "../lib/run-estimates";
 import { projectFactory, repoPolicy } from "../lib/snapshot-projection";
 
 type Ctx = Context<{ Bindings: Env; Variables: AppVars }>;
@@ -33,6 +34,7 @@ export async function getFactoryRuns(c: Ctx): Promise<Response> {
 	const detail = c.req.query("history") ?? "";
 	if (detail.length > 80) throw new ApiError(400, "validation_failed", "invalid history ID");
 	const runs = await listRuns(db, row.id, detail);
+	const calibration = await readRunEstimates(db, row.id);
 	const head = await factoryHead(db, row.id);
 	const rawCatalog = await catalogFactory(db, row.id);
 	const policy = await repoPolicy(db, row.id);
@@ -45,6 +47,7 @@ export async function getFactoryRuns(c: Ctx): Promise<Response> {
 		void checkpoint;
 		return {
 			...view,
+			...estimateRunFinish(run, counts.total, calibration),
 			progress: {
 				...runProgress(run, now),
 				...counts,
@@ -120,5 +123,12 @@ export async function postFactoryControl(c: Ctx): Promise<Response> {
 		} catch {
 			/* durable cron continuation */
 		}
+	else if (run.status !== "paused") {
+		try {
+			await handoffAccount(c.env, row.id);
+		} catch {
+			/* durable cron continuation */
+		}
+	}
 	return jsonOk({ account_id: row.id, id: run.id, status: run.status }, 200, PRIVATE);
 }

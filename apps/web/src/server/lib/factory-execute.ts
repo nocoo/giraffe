@@ -99,6 +99,7 @@ export async function executeRunPage(
 				: null;
 			if (
 				previousAttempt &&
+				!run.schedule &&
 				previousAttempt.nextAllowedAt > clock() &&
 				previousAttempt.attemptRunId !== run.id
 			)

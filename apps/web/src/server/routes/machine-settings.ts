@@ -4,7 +4,7 @@ import type { Env } from "../env";
 import { getAccount } from "../lib/db/accounts";
 import { controlRun, getRun, listRuns } from "../lib/db/factory-runs";
 import { ApiError } from "../lib/errors";
-import { enqueueRun } from "../lib/factory-dispatch";
+import { enqueueRun, handoffAccount } from "../lib/factory-dispatch";
 import { refreshInput, startRefresh } from "../lib/factory-start";
 import { requireCatalogRepo } from "../lib/machine-observations";
 import { assertMachineQuery } from "../lib/machine-query";
@@ -12,6 +12,7 @@ import { readJson } from "../lib/read-body";
 import { readSchedules, saveSchedule, starredRepos } from "../lib/refresh-schedule";
 import { normalizeScheduleConfig, scheduleConfigInput } from "../lib/refresh-schedule-input";
 import { readStarReason, readStars, writeStar } from "../lib/repo-stars";
+import { estimateRunFinish, readRunEstimates } from "../lib/run-estimates";
 import type { MachineVars } from "./machine";
 
 type Ctx = Context<{ Bindings: Env; Variables: MachineVars }>;
@@ -88,12 +89,13 @@ export async function machineRuns(c: Ctx) {
 	const id = c.req.param("id");
 	if (c.req.method === "GET" && !id) {
 		assertMachineQuery(c.req.query());
+		const calibration = await readRunEstimates(db, accountId);
 		return c.json({
 			account_id: accountId,
 			items: (await listRuns(db, accountId)).map(({ run, counts }) => {
 				const { checkpoint, ...data } = run;
 				void checkpoint;
-				return { ...data, counts };
+				return { ...data, ...estimateRunFinish(run, counts.total, calibration), counts };
 			}),
 		});
 	}
@@ -120,5 +122,12 @@ export async function machineRuns(c: Ctx) {
 		} catch {
 			/* Durable cron resumes a queued run. */
 		}
+	else if (id && run.status !== "paused") {
+		try {
+			await handoffAccount(c.env, accountId);
+		} catch {
+			/* Durable cron resumes a queued run. */
+		}
+	}
 	return c.json({ account_id: accountId, id: run.id, status: run.status }, 202);
 }

@@ -63,7 +63,7 @@ it("advances weekly times on the same weekday before moving to the next week", (
 });
 
 it.each(["daily", "catalog", "weekly"] as const)(
-	"coalesces every missed %s slot once under concurrent ticks",
+	"preserves each pending %s occurrence under concurrent ticks",
 	async (kind) => {
 		const s = await fixture();
 		await s.db
@@ -81,18 +81,20 @@ it.each(["daily", "catalog", "weekly"] as const)(
 		const rows = (
 			await s.db.prepare("SELECT payload FROM factory_runs").all<{ payload: string }>()
 		).results.map((row) => JSON.parse(row.payload));
-		const missed = rows.find((run) => run.error === "scheduled_slots_missed");
-		expect(rows).toHaveLength(2);
+		const missed = rows.filter((run) => run.error === "scheduled_slot_missed");
+		expect(rows).toHaveLength(kind === "weekly" ? 1 : 14);
+		expect(missed).toHaveLength(kind === "weekly" ? 0 : 13);
+		for (const run of missed)
+			expect(run.missedSlots).toEqual({
+				firstDueAt: run.schedule.dueAt,
+				lastDueAt: run.schedule.dueAt,
+				count: 1,
+			});
 		expect(rows.find((run) => run.status === "running")?.schedule.dueAt).toBe(
-			"2026-09-27T11:30:00.000Z",
+			kind === "weekly" ? "2026-09-20T11:30:00.000Z" : "2026-09-26T21:30:00.000Z",
 		);
-		expect(missed?.missedSlots).toEqual({
-			firstDueAt: "2026-09-20T11:30:00.000Z",
-			lastDueAt: "2026-09-26T21:30:00.000Z",
-			count: kind === "weekly" ? 2 : 14,
-		});
 		expect((await readSchedules(s.db, account)).find((row) => row.kind === kind)?.nextAt).toBe(
-			kind === "weekly" ? "2026-10-03T21:30:00.000Z" : "2026-09-27T21:30:00.000Z",
+			kind === "weekly" ? "2026-09-26T21:30:00.000Z" : "2026-09-27T11:30:00.000Z",
 		);
 		await scheduleRefreshes(s.raw, now);
 		expect((await s.db.prepare("SELECT id FROM factory_runs").all()).results).toHaveLength(

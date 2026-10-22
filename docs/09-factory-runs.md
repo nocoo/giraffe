@@ -115,24 +115,36 @@ times; weekly uses one weekday, catalog requires weekday 0. Legacy `time`-only
 writes set one slot; `time` reads as the earliest slot and must match it when both
 fields are written. Fixed UTC+08:00 semantics are unchanged.
 Settings are per account and remain active when another account is selected.
-A starred repository excluded from statistics still receives detail snapshots.
+Daily membership is starred-owned; full membership is every owned catalog
+repository, including archives and forks. There is no statistics participation
+override. Non-owned repositories enter neither refresh plans nor denominators.
 
-The existing minute cron checks at most ten due schedules and writes normal
-leased runs through the same planner as manual refresh. Occurrence request keys
-make restart/duplicate dispatch idempotent. The insert also verifies that the
-schedule is still enabled at its original due time. Active runs, cooldowns and
-missing catalogues defer the occurrence; safe status codes appear in settings.
-Only the latest overdue occurrence is attempted when service recovers. Earlier
-slots are coalesced into an immutable failed audit run with
-`error:scheduled_slots_missed` and `missedSlots:{firstDueAt,lastDueAt,count}`.
-With multiple times, each distinct elapsed slot is counted exactly once, including
-slots crossed while a prior run is active. Accepted occurrence recovery advances
-to the next configured slot, not a fixed 24-hour increment. `nextAt` is the
-earliest upcoming slot across the list; no catch-up burst is introduced.
-Empty starred sets record a skip and advance. Weekly deep
-wins equal-time ties; daily waits for it to finish. Queue outage recovery uses the
-existing durable outbox. Disabling a schedule stops future occurrences, not an
-already accepted run; pause/cancel controls remain available for that run.
+The minute cron writes ordinary leased runs through the same planner as manual
+refresh. `nextAt` is the earliest unresolved occurrence and may remain in the
+past while blocked. A due occurrence is accepted or receives a safe `lastError`
+on the next healthy tick, within the five-minute requirement. Canonical occurrence
+keys and transactional schedule guards prevent duplicate execution or a competing
+missed audit. Advance from the settled due time, never from recovery time.
+
+An active weekly, catalog or manual run is never cancelled for a daily. The daily
+waits and is scheduled directly after terminal publication/save, without waiting
+for another cron tick or the manual cooldown. Current-day deferred daily work
+has priority over other not-yet-started work, except a weekly with the exact same
+due instant: weekly wins that tie, then daily, then standalone catalog. Scheduled
+admission still respects active-account exclusion, leases/fences and real upstream
+backoff; only the manual account/repository cooldown is bypassed.
+
+A daily must start before the next Beijing midnight of its due date. An expired
+occurrence produces its own failed run with `scheduled_slot_missed` and
+`missedSlots:{firstDueAt:dueAt,lastDueAt:dueAt,count:1}`; it is never silently
+discarded or started on a later day. Multiple configured slots remain distinct.
+A started daily may finish after midnight under its absolute deadline. Failed
+catalog preparation produces an explicit failed target run rather than an
+invisible cursor advance. Empty selections also produce explicit failed records.
+Historical grouped missed audits remain readable and unchanged. Bounded recovery
+leaves remaining cursors pending for subsequent ticks. Disabling or saving a
+schedule explicitly replaces future pending configuration, without cancelling
+an already accepted run. Queue outage recovery keeps the durable outbox.
 
 Migration `0007_refresh_schedules.sql` adds account-cascaded stars and schedules.
 Apply it before the new Worker. Rollback the Worker without dropping these tables;
@@ -155,6 +167,51 @@ of the renewable 90-second page lease. No schema migration or old-row rewrite is
 needed for these JSON payload fields.
 Timeout/missed-slot schedule warnings are sticky until an explicit schedule save,
 so successful recovery in the same tick cannot erase the incident.
+
+### Historical incident and run estimates
+
+The supplied October 16-18 incident had healthy minute cron invocations but a
+catalog active until October 18 20:08 Beijing. At historical revision `ac2d1e3`,
+the single-active-account constraint blocked other kinds, and catalog preparation
+left the original daily cursor pending. Once the old daily was accepted at
+20:09, advancing from recovery time jumped directly to October 19, explaining
+the absent October 17/18 daily records. That old daily then held the weekly back.
+
+A renewable 90-second page lease was not an absolute run deadline. Successful
+page commits release it; ordinary retries are bounded and backed off. Repeated
+rate waits, queue retries or failed fenced progress could prolong the active run,
+but the supplied evidence contains no historical cursor/Queue/CAS trace that
+identifies the exact reason run `7c676d29` stalled. Healthy cron and its wall time
+alone do not prove consumer progress. Synthetic stall replay demonstrates the
+scheduling consequence, not an invented diagnosis of the original stalled step.
+
+Run `bun run tests/bench/schedule-history.ts` to load the complete historical
+`ac2d1e3e0131442b91f168861f6fa2640ef9535b` source tree and replay those supplied
+times against local SQLite with networking denied and a fake clock. The injected
+catalog release yields the October 16 daily starting October 18 20:09, weekly
+starting 20:49, and no October 17/18 daily records. Current scheduler tests cover
+the counterfactual individual outcomes, same-day admission, seven healthy daily
+slots, deadline recovery, terminal handoff and SQL race guards. The synthetic
+seven-day test is not a production runtime/SLA measurement.
+
+Revision `300b609` (v0.15.14) added catalog/quick/deep absolute deadlines. Under
+continued healthy processing, a catalog cannot retain the active lock for 48 hours.
+Those bounds do not ensure successful collection and did not by themselves fix
+coalesced slots, failed preparation audit gaps or immediate daily handoff.
+
+Every exposed run adds `expectedFinishAt` and `expectedFinishAtReason`. Read-time
+calibration uses the median wall duration of the latest five valid completed runs
+for that account and actual kind (`catalog`, `quick`, `deep`), across retained
+history rather than the 21 displayed rows. A daily-triggered catalog preparation
+is catalog, not quick. Missing legacy depth means deep. Pauses/backoff count in
+wall duration; failed/partial runs do not supply successful samples. A completed
+run with stored work and equal valid start/end times contributes a zero-duration
+sample. Compact history uses stored step totals, not its omitted step array, to
+distinguish executed work from audit records. The estimate is `startedAt + median`, can be
+in the past, and is distinct from the hard deadline. With no history it is null
+with `no_completed_history`; invalid legacy starts use `invalid_started_at` and
+zero-work audit records use `not_executed`. GET never writes estimates or fetches
+upstream. No new schema migration is needed for these response-only fields.
 
 Expected feature/access absence finishes a step as `unavailable`, counted separately
 from `failed` and visible in the console. Dependency safe-parse limitations finish
@@ -192,8 +249,8 @@ historical row rewrite is required.
 
 Cross-repository business pages default to the account's Giraffe stars and expose a
 Starred / All filter. Apply the scope before aggregating tables, totals, charts and
-rankings. Statistics participation remains an independent policy; a starred repository
-excluded from statistics still has its detail snapshots refreshed. An empty star set
+rankings. Starred scope selects starred-owned repositories; all scope selects all
+owned repositories, including archives and forks. An empty star set
 stays empty and offers the complete catalogue rather than silently switching scopes.
 Repository URLs identify a specific repository and are not hidden by this filter.
 Settings, automatic schedules and run history are account-level control surfaces.

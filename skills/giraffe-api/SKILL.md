@@ -285,6 +285,11 @@ full scope is all-owned, including archives/forks. Statistics writes return 410
 are always `agent`; opposite owner decisions return 409 `owner_override` and must
 not be retried. Same-direction writes preserve owner provenance as a 200 no-op.
 Use nullable `/repos` fields `star_source` and `star_updated_at` for provenance.
+Pending daily runs defer behind active work and start on terminal handoff; a daily
+that misses its Beijing day gets an explicit failed record, never a later-day run.
+Inspect schedule `lastError` and run outcomes independently. `expectedFinishAt` is
+a read-time same-kind historical median estimate, not a deadline; null includes
+`expectedFinishAtReason`. Do not infer collection success from cron health or ETA.
 
 ## Errors, limits and retries
 

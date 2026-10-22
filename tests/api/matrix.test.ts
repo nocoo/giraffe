@@ -713,6 +713,10 @@ describe("api method matrix", () => {
 			current: { status: string };
 		};
 		expect(paused.current.status).toBe("paused");
+		expect(paused.current).toMatchObject({
+			expectedFinishAt: null,
+			expectedFinishAtReason: "no_completed_history",
+		});
 		noSecrets(paused);
 		expect(
 			(

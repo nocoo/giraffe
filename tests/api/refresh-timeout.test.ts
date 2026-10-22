@@ -90,7 +90,16 @@ INSERT INTO ${table}(account_id,kind,enabled,time,weekday,scope,next_at,last_run
 			);
 			const read = await s.api("refresh-runs");
 			expect(read.status).toBe(200);
-			expect(await read.json()).toMatchObject({ items: [{ id: run.id, status }] });
+			expect(await read.json()).toMatchObject({
+				items: [
+					{
+						id: run.id,
+						status,
+						expectedFinishAt: null,
+						expectedFinishAtReason: "no_completed_history",
+					},
+				],
+			});
 			expect(
 				rows(
 					`SELECT payload,version,lease_token,lease_until FROM factory_runs WHERE id=${literal(run.id)}`,
@@ -153,34 +162,39 @@ it("publishes all missed slots durably and immutably through the local scheduled
 		const read = await s.api("refresh-runs");
 		expect(read.status).toBe(200);
 		const history = await read.json();
-		expect(
-			history.items.find((run: { error?: string }) => run.error === "scheduled_slots_missed"),
-		).toMatchObject({
-			status: "failed",
-			missedSlots: {
-				firstDueAt: due,
-				lastDueAt: new Date(today.getTime() - 86400_000).toISOString(),
-				count: 3,
-			},
-		});
+		const missed = history.items.filter(
+			(run: { error?: string }) => run.error === "scheduled_slot_missed",
+		);
+		expect(missed).toHaveLength(3);
+		for (let daysAgo = 1; daysAgo <= 3; daysAgo++) {
+			const dueAt = new Date(today.getTime() - daysAgo * 86400_000).toISOString();
+			expect(
+				missed.find((run: { requestKey: string }) => run.requestKey === `catalog:${dueAt}`),
+			).toMatchObject({
+				status: "failed",
+				missedSlots: { firstDueAt: dueAt, lastDueAt: dueAt, count: 1 },
+				expectedFinishAt: null,
+				expectedFinishAtReason: "not_executed",
+			});
+		}
 		expect(
 			history.items.filter(
 				(run: { requestKey: string }) => run.requestKey === `catalog:${today.toISOString()}`,
 			),
 		).toHaveLength(1);
 		const immutable = rows(
-			`SELECT id,payload FROM factory_runs WHERE account_id=${literal(s.account)} AND json_extract(payload,'$.error')='scheduled_slots_missed'`,
+			`SELECT id,payload FROM factory_runs WHERE account_id=${literal(s.account)} AND json_extract(payload,'$.error')='scheduled_slot_missed' ORDER BY id`,
 		);
 		expect((await cron()).status).toBe(200);
 		expect(
 			rows(
-				`SELECT id,payload FROM factory_runs WHERE account_id=${literal(s.account)} AND json_extract(payload,'$.error')='scheduled_slots_missed'`,
+				`SELECT id,payload FROM factory_runs WHERE account_id=${literal(s.account)} AND json_extract(payload,'$.error')='scheduled_slot_missed' ORDER BY id`,
 			),
 		).toEqual(immutable);
 		const settings = await (await s.api("settings")).json();
 		expect(
 			settings.schedules.find((entry: { kind: string }) => entry.kind === "catalog")?.lastError,
-		).toBe("scheduled_slots_missed");
+		).toBe("scheduled_slot_missed");
 	} finally {
 		s.cleanup();
 	}

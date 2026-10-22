@@ -35,7 +35,15 @@ export function scheduleStatus(schedule: RefreshSchedule): string {
 		case "run_timed_out":
 			return "上次刷新超时，账号锁已释放；请查看执行记录";
 		case "scheduled_slots_missed":
-			return "曾错过调度时间，已保留记录；仅尝试最新时段";
+			return "曾错过调度时间，已保留历史记录";
+		case "scheduled_slot_missed":
+			return "曾错过北京时间当日启动时限，已单独保留失败记录";
+		case "catalog_preparation_failed":
+			return "前置仓库列表同步失败，目标刷新已保留失败记录";
+		case "schedule_deferred":
+			return "等待更高优先级的调度，当前时段仍保留";
+		case "schedule_backlog":
+			return "历史时段正在逐条处理，剩余时段已保留";
 		case "no_starred_repositories":
 			return "上次跳过：没有星标仓库";
 		case "account_conflict":
