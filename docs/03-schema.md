@@ -1,5 +1,26 @@
 # 03 — 数据 Schema
 
+## Run readiness (0022)
+
+After `0021_star_provenance_correction.sql`, `0022_run_readiness.sql` adds nullable
+`publishedAt` to legacy `factory_runs.payload` without deleting or replacing rows.
+No historical marker is backfilled with a timestamp: incremental site publication
+before 0.20 cannot prove the stronger atomic-readiness contract. Replays preserve
+existing markers. New completed/partial publications persist the marker in the
+same leased/fenced transaction as all published heads.
+
+Site snapshots stage under existing `factory_resources` keys (`repo=''`,
+`stream='site:<physical-kind>'`); existing run retention, cascade and budget
+triggers apply. No extra source-read query or source projection table is introduced.
+Each snapshot carries `{publication:{runId,publishedAt}}`; its original
+`fetched_at` and per-repository freshness remain intact. A new run cannot expose
+staged pages before its final transaction. Code rollback leaves the additive JSON
+fields/resources intact, but older code loses the atomic-readiness guarantee.
+
+The marked-copy migration regression is `run-readiness-migration.test.ts`; it
+proves preservation and replay on legacy completed/partial/running/failed/cancelled
+rows without relying on Git objects outside the published history.
+
 抓取、落库、展示共用的数据形状。建表与 JSON 载荷以本文为准。01 第 7 节只是方向摘要。
 
 > 返回 [文档目录](README.md)

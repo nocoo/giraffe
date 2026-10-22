@@ -7,6 +7,37 @@ the Worker authenticates resource requests. The dashboard and credential-managem
 endpoints remain Access protected. Accounts/snapshots are deployment-shared, not
 per-user tenants. See [the boundary contract](11-agent-api.md).
 
+## Run readiness
+
+`GET /accounts/:account/refresh-runs/latest?kind=daily|weekly|catalog|manual|quick|deep`
+requires `app:read`. Browser equivalent: `GET /api/factory/runs/latest` with the
+same query, Access protection and active account. The required kind selects the
+latest retained matching run, not merely the latest 21 entries. Unknown or repeated
+filters return 400; an absent match returns 404. Daily/weekly select trigger,
+catalog selects mode, manual includes legacy unspecified trigger, and quick/deep
+select refresh depth (legacy unspecified depth is deep). Ties use stored creation
+time then ID descending. The response includes `account_id`, `id`, canonical
+`kind`, `status`, `window`, `startedAt`, `expectedFinishAt`,
+`expectedFinishAtReason`, `finishedAt`, `counts`, `failedSteps`, `lastError`, and
+`publishedAt`. Activity-eligible runs expose their activity window. ETA uses the
+existing last-five completed-or-partial same-kind calibration, not a deadline.
+
+`publishedAt` is also present on run list/detail views. Completed **or partial**
+runs set it in the same fenced transaction as site snapshots, catalog changes,
+factory head and eligible activity. Running, failed and cancelled runs have null.
+Readiness is not completeness: inspect counts, failed steps and source coverage.
+Historical markers remain null when atomic publication is unprovable (0022).
+
+`/sources` adds `runId` and `observedAt`. Sources touched by a new publication use
+its run ID and common publication time as `fetchedAt`; `observedAt` and `freshness`
+preserve collection times. Untouched/retained streams keep their original run/time;
+legacy snapshot sources have null runId. Derived CI uses its newest published
+input, without claiming every component is fresh. For eligible runs,
+`/activity?run=latest` and `account:activity` share the published run ID/time.
+Catalog/deep/selected runs do not replace the account activity head. Separate GETs
+can straddle a subsequent publication; compare IDs or pin `/activity?run=<id>`.
+GET never starts work, records token use or changes run state.
+
 ## Authentication and examples
 
 Examples use Bash, curl and jq; the identity/UUID examples also use Node.js. These

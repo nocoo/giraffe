@@ -26,6 +26,7 @@ import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
 import { ApiError } from "./errors";
 import { streamKey } from "./factory-collect";
 import { latestFactoryRate } from "./factory-rate";
+import { publishSiteSnapshots } from "./site-publication";
 import { assemblePages, physicalKinds, splitPages } from "./snapshot-pages";
 
 export function boundedJson(value: unknown): string {
@@ -278,7 +279,7 @@ export async function publicationWrites(
 	const run = lease.run;
 	const base = await publishedFactory(db, run.account_id);
 	const head = await factoryHead(db, run.account_id);
-	const writes: D1PreparedStatement[] = [];
+	const writes: D1PreparedStatement[] = await publishSiteSnapshots(db, lease, now);
 	const staged = await db
 		.prepare(
 			"SELECT payload FROM factory_resources WHERE run_id=? AND repo='' AND stream='catalog-plan'",
@@ -294,7 +295,7 @@ export async function publicationWrites(
 				db,
 				run.account_id,
 				"repos",
-				catalogSnapshot(discovery),
+				{ ...catalogSnapshot(discovery), publication: { runId: run.id, publishedAt: now } },
 				discovery.at,
 			)),
 		);

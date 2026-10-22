@@ -80,7 +80,7 @@ it("persists unavailable repository security instead of failing the snapshot, wi
 				),
 	);
 	expect(result).toMatchObject({ done: true, unavailable: true, reasonCode: "alerts_disabled" });
-	expect(await readSnapshot(db, "account", "repo:nocoo/app:security")).toMatchObject({
+	expect(await readSnapshot(db, "account", "repo:nocoo/app:security", "site")).toMatchObject({
 		unavailable: true,
 		truncated: false,
 		reason_code: "alerts_disabled",
@@ -124,7 +124,7 @@ it("keeps prior security evidence separately without relabeling unavailable feat
 					})
 				: Response.json({ message: "Resource not accessible by integration" }, { status: 403 }),
 		);
-		expect(await readSnapshot(db, "account", "repo:nocoo/app:security")).toMatchObject({
+		expect(await readSnapshot(db, "account", "repo:nocoo/app:security", "site")).toMatchObject({
 			unavailable: true,
 			dependabot_open: null,
 			code_scanning_open: null,
@@ -152,7 +152,9 @@ it("counts a mixed security snapshot as unavailable work without hiding its avai
 			: Response.json({ message: "Not Found" }, { status: 404 }),
 	);
 	expect(result).toMatchObject({ done: true, unavailable: true, reasonCode: "not_found" });
-	expect(await readSnapshot(createDb(raw), "account", "repo:nocoo/app:security")).toMatchObject({
+	expect(
+		await readSnapshot(createDb(raw), "account", "repo:nocoo/app:security", "site"),
+	).toMatchObject({
 		unavailable: false,
 		dependabot_open: 1,
 		code_scanning_open: null,
@@ -286,7 +288,8 @@ it("persists global lists in bounded chunks and publishes only after every repos
 		expect(await page(raw, upstream)).toMatchObject({ done: false, cursor: 20 });
 		expect(await readSnapshot(createDb(raw), "account", resource)).toEqual(old);
 		expect(await page(raw, upstream)).toMatchObject({ done: true, cursor: 21 });
-		const snapshot = await readSnapshot(createDb(raw), "account", resource);
+		expect(await readSnapshot(createDb(raw), "account", resource)).toEqual(old);
+		const snapshot = await readSnapshot(createDb(raw), "account", resource, "site");
 		expect(snapshot?.[key]).toHaveLength(21);
 		expect(snapshot?.truncated).toBe(false);
 		if (resource === "alerts") expect(snapshot?.dependabot_open).toBe(21);
@@ -302,7 +305,7 @@ it("treats an empty, fully known catalog as empty lists without GitHub requests"
 		await page(raw, () => {
 			throw new Error("No upstream calls for empty catalog");
 		});
-		expect(await readSnapshot(createDb(raw), "account", resource)).toMatchObject({
+		expect(await readSnapshot(createDb(raw), "account", resource, "site")).toMatchObject({
 			truncated: false,
 			unavailable: false,
 		});
@@ -424,9 +427,9 @@ it("reuses current-run global pages for repository details without another GitHu
 		NOW,
 	);
 	await saveRun(db, lease, result.writes, NOW);
-	expect((await readSnapshot(createDb(raw), "account", "repo:nocoo/app:issues"))?.issues).toEqual([
-		{ name_with_owner: "nocoo/app", number: 1 },
-	]);
+	expect(
+		(await readSnapshot(createDb(raw), "account", "repo:nocoo/app:issues", "site"))?.issues,
+	).toEqual([{ name_with_owner: "nocoo/app", number: 1 }]);
 });
 it("merges selected repository updates into the global list while preserving unrelated data and its full-scan time", async () => {
 	const raw = await setup("repo:nocoo/app:issues");
@@ -464,7 +467,7 @@ it("merges selected repository updates into the global list while preserving unr
 		NOW,
 	);
 	await saveRun(db, lease, result.writes, NOW);
-	const saved = await readSnapshot(createDb(raw), "account", "issues");
+	const saved = await readSnapshot(createDb(raw), "account", "issues", "site");
 	expect(saved?.issues).toEqual([{ name_with_owner: "other/app", number: 2 }]);
 	expect(saved?.fetched_at).toBe("2026-09-01T00:00:00.000Z");
 	expect(saved?.repository_fetched_at).toEqual({ "nocoo/app": NOW });
@@ -496,7 +499,7 @@ it("reuses code-dependent page data only when its recorded head matches the curr
 		const gh = github(() => Response.json({ New: 2 }));
 		const result = await collectSitePage(db, lease, step, gh, "fake", NOW);
 		await saveRun(db, lease, result.writes, NOW);
-		const saved = await readSnapshot(createDb(raw), "account", "repo:nocoo/app:languages");
+		const saved = await readSnapshot(createDb(raw), "account", "repo:nocoo/app:languages", "site");
 		expect(saved?.languages).toEqual(sourceHead === "current" ? { Old: 1 } : { New: 2 });
 		expect(saved?.source_head).toBe("current");
 		expect(gh.count).toBe(sourceHead === "current" ? 0 : 1);
@@ -524,7 +527,7 @@ it("bootstraps partial global lists without inventing coverage for unselected re
 		NOW,
 	);
 	await saveRun(db, lease, result.writes, NOW);
-	expect(await readSnapshot(createDb(raw), "account", "issues")).toMatchObject({
+	expect(await readSnapshot(createDb(raw), "account", "issues", "site")).toMatchObject({
 		issues: [],
 		truncated: true,
 		repository_fetched_at: { "nocoo/app": NOW },
@@ -575,7 +578,7 @@ it("derives scoped Insights only after selected sources succeed and preserves un
 				source.status = "success";
 		const result = await collectSitePage(db, lease, step, gh, "fake", NOW);
 		await saveRun(db, lease, result.writes, NOW);
-		const saved = await readSnapshot(createDb(raw), "account", "insights");
+		const saved = await readSnapshot(createDb(raw), "account", "insights", "site");
 		expect(saved).toMatchObject({
 			repository_fetched_at: { "nocoo/app": NOW },
 			truncated: !existing,

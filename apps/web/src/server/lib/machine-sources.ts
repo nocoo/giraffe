@@ -228,9 +228,13 @@ export async function readSources(
 			),
 	);
 	const groups = latestSnapshots(saved);
-	type Source = { resource: string; version: string; contentVersion: string | null } & ReturnType<
-		typeof observationMetadata
-	>;
+	type Source = {
+		resource: string;
+		version: string;
+		contentVersion: string | null;
+		runId: string | null;
+		observedAt: string | null;
+	} & ReturnType<typeof observationMetadata>;
 	const sources: Source[] = [];
 	const activity = activityRows?.results[0];
 	if (activity) {
@@ -250,6 +254,8 @@ export async function readSources(
 				version: activity.run_id,
 				contentVersion: activity.content_version,
 				...metadata,
+				runId: activity.run_id,
+				observedAt: metadata.fetchedAt,
 			});
 	}
 	const add = async (
@@ -257,6 +263,7 @@ export async function readSources(
 		data: Record<string, unknown>,
 		version: string | undefined = storedContent(data)?.fullVersion,
 		content: string | null = storedContent(data)?.hash ?? null,
+		publication = data.publication as { runId?: string; publishedAt?: string } | undefined,
 	) => {
 		const metadata = observationMetadata(data);
 		if (!afterSince(metadata, since)) return;
@@ -266,6 +273,9 @@ export async function readSources(
 			version: version ?? (await hash(() => observationVersion(data))),
 			contentVersion: content,
 			...metadata,
+			runId: publication?.runId ?? null,
+			observedAt: metadata.fetchedAt,
+			fetchedAt: publication?.publishedAt ?? metadata.fetchedAt,
 		};
 	};
 	const indexed = await Promise.all(
@@ -292,6 +302,15 @@ export async function readSources(
 				const inputs = ciObservationInputs(policy, groups);
 				if (!afterSince(observationMetadata(inputs.metadata), since)) continue;
 				data = projectCiInputs(inputs);
+				const latest = sources
+					.filter(
+						(source) =>
+							/^repo:.*:(actions|releases|details)$/.test(source.resource) && source.runId,
+					)
+					.sort((first, second) =>
+						String(second.fetchedAt).localeCompare(String(first.fetchedAt)),
+					)[0];
+				if (latest) data.publication = { runId: latest.runId, publishedAt: latest.fetchedAt };
 				content = await hash(() => ciContent(policy, groups, inputs.metadata.freshness));
 			} else {
 				const snapshot = resource === "repos" ? policy.catalog : saved.get(resource);
@@ -329,6 +348,12 @@ export async function readSources(
 				await hash(async () =>
 					factoryStreamContent(meta?.version === version ? meta.hash : null, repo.coverage[stream]),
 				),
+				{
+					runId: version,
+					...(version === publication.runId && publication.publication?.publishedAt
+						? { publishedAt: publication.publication?.publishedAt }
+						: {}),
+				},
 			);
 			if (source) sources.push(source);
 		}

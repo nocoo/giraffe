@@ -1,5 +1,14 @@
 # Retrospective
 
+## 2026-10-22 - Prove publication fixtures before interpreting failures
+
+The first R9 revoked-fence fixture omitted the previously published factory base,
+so it failed before exercising the intended lease check. The staging visibility
+test still reproduced early writes, but that did not validate the second case.
+Seed a realistic prior publication, then assert both physical snapshot contents
+and the readiness marker after a revoked lease. Staged-page tests must read staged
+rows explicitly and separately prove that public snapshots remain unchanged.
+
 ## 2026-10-22 - Limited evidence does not always mean a capacity limit
 
 The first hotfix classification treated every limited collector result as a

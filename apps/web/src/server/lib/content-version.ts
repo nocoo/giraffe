@@ -71,7 +71,12 @@ function contribution(value: unknown) {
 }
 
 export function contentData(resource: string, value: Record<string, unknown>) {
-	const data = omit(value, ["fetched_at", "repository_fetched_at", "source_fetched_at"]);
+	const data = omit(value, [
+		"fetched_at",
+		"repository_fetched_at",
+		"source_fetched_at",
+		"publication",
+	]);
 	if (data.freshness && typeof data.freshness === "object")
 		data.freshness = omit(data.freshness, ["oldestAt", "latestAt"]);
 	if (resource === "factory" || resource.startsWith("factory:")) {

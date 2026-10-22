@@ -22,6 +22,7 @@ import { postRefresh } from "./routes/refresh";
 import { getRefreshSettings, postRefreshSchedule } from "./routes/refresh-settings";
 import { getRefreshTimes } from "./routes/refresh-times";
 import { repoGet, setRepoStar, setRepoStatistics } from "./routes/repos";
+import { getLatestRun } from "./routes/run-readiness";
 import { snapshotGet } from "./routes/snapshots";
 
 function notAllowed(): Response {
@@ -124,6 +125,8 @@ export function createApp(): Hono<{ Bindings: Env; Variables: AppVars }> {
 	allow(app, "/api/factory/runs", ["GET", "POST"]);
 	onGet(app, "/api/factory/runs", getFactoryRuns);
 	app.post("/api/factory/runs", postFactoryRun);
+	allow(app, "/api/factory/runs/latest", ["GET"]);
+	onGet(app, "/api/factory/runs/latest", getLatestRun);
 	allow(app, "/api/factory/runs/:id/control", ["POST"]);
 	app.post("/api/factory/runs/:id/control", postFactoryControl);
 	allow(app, "/api/factory/repos/:owner/:name/:stream", ["GET"]);

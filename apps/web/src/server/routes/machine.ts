@@ -36,6 +36,7 @@ import {
 	machineRuns,
 	machineSetting,
 } from "./machine-settings";
+import { getMachineLatestRun } from "./run-readiness";
 
 type Principal = NonNullable<Awaited<ReturnType<typeof authenticateApiToken>>>;
 export type MachineVars = AppVars & {
@@ -233,6 +234,7 @@ export function machineApi() {
 	app.all("/accounts/:account/statistics/:owner/:name", machineSetting);
 	app.all("/accounts/:account/schedules/:kind", machineSetting);
 	app.all("/accounts/:account/refresh-runs", machineRuns);
+	app.all("/accounts/:account/refresh-runs/latest", getMachineLatestRun);
 	app.all("/accounts/:account/refresh-runs/:id/control", machineRuns);
 	app.get("/accounts/:account/factory/repos/:owner/:name/:stream", async (c) => {
 		assertMachineQuery(c.req.query());

@@ -6,6 +6,17 @@ does not bundle an analysis runtime, run model inference, or execute code change
 The complete endpoint reference, request examples, validation limits and recommended
 consumer flow are in [Machine API v1](api.md).
 
+## Readiness consumption
+
+Poll `refresh-runs/latest?kind=daily` with `app:read`. Wait for a non-null
+`publishedAt`, then inspect status/coverage: a partial publication is ready but not
+complete. Eligible activity and touched source heads publish atomically; untouched
+sources retain their original observations. `/sources.runId` identifies publication,
+`fetchedAt` is its common visibility time, and `observedAt`/freshness preserve
+collection timestamps. Pin the activity run ID when later publications can race
+your separate reads. Historical 0022 markers are conservatively null. The latest
+reader never collects, expires runs or mutates token activity.
+
 ## Catalog discovery consumption
 
 Catalog history starts at initialization: migrated accounts use 0019 application

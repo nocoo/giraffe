@@ -239,10 +239,12 @@ export async function executeRunPage(
 			writes = await repositoryWrites(db, lease, clock(), repo, repo.name, null);
 			finish(step, "success", clock());
 		} else if (step.kind === "publish") {
-			writes = await publicationWrites(db, lease, clock());
+			const publishedAt = clock();
+			writes = await publicationWrites(db, lease, publishedAt);
 			finish(step, "success", clock());
 			run.status = completedRunStatus(run);
 			run.finishedAt = clock();
+			run.publishedAt = publishedAt;
 		} else {
 			run.checkpoint ??= newFactory(run.account_id, run.owner, run.startedAt);
 			const checkpoint = run.checkpoint;

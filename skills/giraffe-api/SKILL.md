@@ -327,6 +327,17 @@ and zero-work runs are excluded. No eligible same-kind history yields null with
 `expectedFinishAtReason:"no_completed_history"`; another kind is not substituted.
 Do not infer collection success from cron health or ETA.
 
+## Run readiness
+
+Poll `/refresh-runs/latest?kind=daily` with `app:read`; supported kinds also include
+weekly, catalog, manual, quick and deep. Missing match is 404. A non-null
+`publishedAt` means the final publication is visible, not complete: inspect partial
+status, counts, failedSteps and coverage. ETA is historical, not a deadline.
+`/sources` returns publication `runId`/`fetchedAt` plus original `observedAt` and
+freshness. Untouched sources keep old provenance. Eligible activity matches that
+publication; pin its ID to avoid a later run racing separate reads. Old runs may
+have null readiness because atomic publication cannot be proven.
+
 ## Catalog discovery
 
 Poll `/catalog/changes?since=<ISO>` with `observations:read`. Process `added`,

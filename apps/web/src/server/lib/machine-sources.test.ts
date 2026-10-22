@@ -370,6 +370,8 @@ it("preserves exact realistic response content and all advertised snapshot versi
 		const envelope = await readObservation(createDb(raw), account, resource, "all");
 		expect(source).toEqual({
 			resource: source.resource,
+			runId: source.resource === "account:factory" ? source.version : null,
+			observedAt: envelope.fetchedAt,
 			version: envelope.sourceVersion,
 			contentVersion: envelope.contentVersion,
 			fetchedAt: envelope.fetchedAt,

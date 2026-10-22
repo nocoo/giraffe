@@ -535,3 +535,7 @@ WHERE account_id IN (SELECT id FROM accounts WHERE lower(login) = 'nocoo')
   AND starred = 1
   AND reason IS NULL
   AND updated_at = '2026-10-18T12:03:11.294Z';
+
+UPDATE factory_runs
+SET payload=json_set(payload,'$.publishedAt',NULL)
+WHERE json_type(payload,'$.publishedAt') IS NULL;
