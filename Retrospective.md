@@ -1,5 +1,19 @@
 # Retrospective
 
+## 2026-10-23 - Preserve shell and pane execution context
+
+The hotfix preflight used `path` as a zsh loop variable. That special variable
+rewrote the child shell's PATH, so later tool checks failed with command-not-found.
+The parent environment and repository were unchanged; repeating the checks in a
+fresh shell confirmed free test ports and the installed browser. Use descriptive
+ordinary names such as `stateDir`, not shell special variables, for loop targets.
+
+During review-pane setup, Herdr's resize command with `--current` resolved to an
+unrelated focused pane and returned `changed:false`. Retrying with the verified
+explicit controller pane ID changed only the intended split. For pane mutations,
+pass the inspected pane ID and verify the returned workspace, pane and layout
+instead of assuming caller context was honored.
+
 ## 2026-10-22 - Browser assertions need a specific landmark
 
 The daily-report browser test copied an overflow assertion using main, but the
