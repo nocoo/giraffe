@@ -17,14 +17,11 @@ type Ctx = Context<{ Bindings: Env; Variables: MachineVars }>;
 export async function getMachineSettings(c: Ctx) {
 	const account = c.get("principal").accountId;
 	const db = c.get("db");
-	const stats = await db
-		.prepare("SELECT repo,enabled FROM repo_statistics WHERE account_id=? ORDER BY repo")
-		.bind(account)
-		.all<{ repo: string; enabled: number }>();
 	return c.json({
 		account_id: account,
 		stars: await starredRepos(db, account),
-		statistics: stats.results.map((r) => ({ ...r, enabled: r.enabled === 1 })),
+		statistics: [],
+		statistics_deprecated: true,
 		schedules: await readSchedules(db, account),
 	});
 }
@@ -32,6 +29,8 @@ export async function machineSetting(c: Ctx) {
 	const method = c.req.method;
 	if (!["PUT", "DELETE"].includes(method))
 		throw new ApiError(405, "method_not_allowed", "method not allowed");
+	if (c.req.path.includes("/statistics/"))
+		throw new ApiError(410, "deprecated", "statistics settings are replaced by stars");
 	const account = c.get("principal").accountId;
 	const db = c.get("db");
 	const now = new Date().toISOString();
@@ -61,33 +60,18 @@ export async function machineSetting(c: Ctx) {
 			account,
 			`${c.req.param("owner")}/${c.req.param("name")}`,
 		);
-		const star = c.req.path.includes("/stars/");
-		const table = star ? "repo_stars" : "repo_statistics";
 		if (method === "DELETE")
 			await db
-				.prepare(`DELETE FROM ${table} WHERE account_id=? AND repo=?`)
+				.prepare("DELETE FROM repo_stars WHERE account_id=? AND repo=?")
 				.bind(account, repo)
 				.run();
-		else if (star)
+		else
 			await db
 				.prepare(
 					"INSERT INTO repo_stars(account_id,repo) VALUES(?,?) ON CONFLICT(account_id,repo) DO NOTHING",
 				)
 				.bind(account, repo)
 				.run();
-		else {
-			const parsed = z
-				.object({ enabled: z.boolean() })
-				.strict()
-				.safeParse(await readJson(c.req.raw, 2048));
-			if (!parsed.success) throw new ApiError(400, "validation_failed", "invalid statistics");
-			await db
-				.prepare(
-					"INSERT INTO repo_statistics(account_id,repo,enabled) VALUES(?,?,?) ON CONFLICT(account_id,repo) DO UPDATE SET enabled=excluded.enabled",
-				)
-				.bind(account, repo, Number(parsed.data.enabled))
-				.run();
-		}
 	}
 	return method === "DELETE" ? c.body(null, 204) : getMachineSettings(c);
 }

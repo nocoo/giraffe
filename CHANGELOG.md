@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.18.0 - 2026-10-22
+
+### Changed
+
+- Consolidate daily refresh membership into local stars. Daily selects starred-owned repositories; full refresh and all-scope projections select every owned catalog repository, including archives/forks. Non-owned repositories never enter refresh plans or coverage/freshness denominators. Selected but unpublished repositories count as missing. Remove the hard-coded mirror exclusion and browser statistics toggles; archived repositories retain the full collection plan.
+- Replace statistics writes with 410 `deprecated` and no writes. Settings returns `statistics:[]` with `statistics_deprecated:true`; the deprecated repository `statistics_enabled` field equals `starred`. Bots must replace statistics preferences with star management.
+- Normalize CI freshness units from three input slots per repository to selected repository count. A repository is missing if any required Actions/releases/details timestamp is absent; oldest/latest times still inspect all three dependencies.
+
+### Migration
+
+- Apply `0016_star_membership.sql`: unstar exactly those account/repository pairs with an explicit false statistics override, then clear all override rows, including departed repositories. Explicit true overrides do not create stars. Keep the empty table for schema rollback, preserve observations/history, and create no owner tombstones for removed stars. The cleanup is deterministic and idempotent; schema docs include the affected-row query.
+
 ## v0.17.3 - 2026-10-22
 
 ### Docs

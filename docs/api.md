@@ -88,16 +88,18 @@ A repository outside that catalog is 404, even if it exists on GitHub.
 Account observation lists, aggregates and source indexes also exclude repositories
 outside the current saved catalog, case-insensitively, including retained factory
 publications. Filtering happens at read time: historical snapshots and publications
-remain stored. Browser inbox/statistics views use the same membership boundary;
-their statistics participation rules still apply. Generic records/reports/jobs are
+remain stored. Account lists and browser views select account-owned repositories:
+`all` includes every owned catalog entry and `starred` intersects it with local stars.
+Archived and forked owned repositories remain eligible. Generic records/reports/jobs are
 application resources, not GitHub observations, and retain their independent CRUD
 contract.
 
 ### GET /accounts/A/sources
 
 Shares saved-source assembly with the browser's `/api/agent/accounts/A/sources`.
-Machine `repositories` is the sorted **entire saved catalog**, including unstarred,
-disabled-statistics, forked, archived and otherwise browser-inactive repositories.
+Machine `repositories` is the sorted **owned saved catalog**, including unstarred,
+forked and archived repositories. Non-owned entries never enter refresh membership
+or freshness/coverage denominators.
 It does not depend on the dashboard active account or browser activation filter.
 
 | Query | Validation / meaning |
@@ -257,7 +259,7 @@ absent. Top-level flags alone do not establish completeness; inspect freshness,
 raw source flags, coverage and CI missing inputs. Unknown is never an observed zero.
 
 For account repos/issues/PRs, `freshness.total` counts the selected catalog repositories,
-including repositories with no open items (`all` is the full catalog; `starred` is its
+including repositories with no open items (`all` is the owned catalog; `starred` is its
 intersection with local stars). Each repository contributes the saved time of the
 data actually served: a newer complete per-repository page when available, otherwise
 its recorded aggregate time or the baseline time supplying its retained rows. An
@@ -269,14 +271,12 @@ the newest selected observation; neither implies that all data is that fresh. Ch
 `oldestAt` and `missing` before treating the response as current. This projection is
 shared with account entries in `/sources` and never refreshes data on GET.
 
-Factory freshness counts `factoryObserved(publication, policy)`: published
-repositories still in the selected catalog with statistics enabled. The publication
-already excludes non-owned and effective-mirror repositories; disabled archived/fork
-entries do not enter the denominator. An enabled published repository without a
-valid `observation.refreshedAt` counts as missing. A catalog-only repository does not.
+Factory freshness counts the selected owned catalog: all owned repositories for
+`all`, and starred-owned repositories for `starred`. Archived and forked repositories
+are included. A selected repository absent from the publication or without a valid
+`observation.refreshedAt` counts as missing; non-owned repositories never count.
 This rule is shared by browser factory freshness, machine `/factory` and
-`/sources`'s `account:factory`. Machine repository lists remain unfiltered by
-statistics; this is a freshness-denominator rule, not a change to list selection.
+`/sources`'s `account:factory`. Statistics overrides have no selection effect.
 Machine `/factory` and `account:factory` expose `truncated:true` when
 `publication.inventory.complete !== true`, even when `freshness.missing` is zero.
 An existing saved `truncated:true` is also preserved, even with complete inventory;
@@ -286,14 +286,16 @@ clock. Inventory `total`, `scanned` and `pages` remain historical collection
 metadata, not projected repository counts.
 Default/`scope=all` factory reads preserve the saved account-wide contribution
 calendar exactly: all 90 `contribution.days[]` entries, totals, status and
-`contributionObservation` provenance. Repository/catalog/statistics filtering does
+`contributionObservation` provenance. Repository/catalog filtering does
 not rewrite this account-wide evidence. Only `scope=starred` returns
 `contribution:null`, `contributionExcluded:true` and `contributionStatus:"unavailable"`
 without `contributionObservation`: the calendar has no repository breakdown and
 cannot be attributed to that subset. Original publication windows and repository
 versions are retained; GET neither recollects nor rewrites the calendar.
-CI freshness counts three dependencies per selected repository (Actions, releases,
-details); missing/unavailable dependencies count as missing.
+CI freshness `total` counts selected owned repositories. A repository counts once
+as `missing` if any required Actions/releases/details dependency lacks a valid
+available timestamp. `oldestAt` and `latestAt` still inspect all three dependencies;
+they never collapse a partly missing repository into complete coverage.
 
 ### Content version recipe
 
@@ -402,7 +404,7 @@ See [migration and performance evidence](12-source-performance.md#persisted-cont
 
 | GET path | `data` shape |
 | --- | --- |
-| `/repos` | `{ repos: Repo[], fetched_at, truncated, ...savedMetadata }`; all saved catalog repositories by default, with `statistics_enabled` and `starred` |
+| `/repos` | `{ repos: Repo[], fetched_at, truncated, ...savedMetadata }`; owned saved catalog repositories by default, with `starred` and its deprecated alias `statistics_enabled` |
 | `/issues` | `{ issues: Issue[], fetched_at, truncated, repository_fetched_at?, freshness?, ...savedMetadata }`; saved open issues |
 | `/prs` | `{ pull_requests: PullRequest[], fetched_at, truncated, repository_fetched_at?, freshness?, ...savedMetadata }`; saved open PRs |
 | `/ci` | `{ streams, repos, daily, totals, fetched_at, freshness, unsaved }`; deterministic saved Actions/releases/details summaries; `unsaved` lists repos without an available saved Actions input |
@@ -410,7 +412,9 @@ See [migration and performance evidence](12-source-performance.md#persisted-cont
 
 Each accepts only the documented selector `scope=all|starred`, default `all`;
 invalid/repeated scope returns 400. `starred` means local Giraffe stars, not GitHub
-stars. No statistics participation filter or HTTP pagination is applied. Open-item
+stars. Both scopes exclude non-owned repositories and include eligible archives/forks.
+`statistics_enabled` equals `starred` and is deprecated; it is not a selection policy.
+No statistics override or HTTP pagination is applied. Open-item
 lists are not closed-event history; use factory streams for that.
 
 ```bash
@@ -1180,7 +1184,7 @@ permission. All old rows remain stored and individually/generically readable.
 
 An analysis bot does not need these permissions. All paths are under
 `/api/v1/accounts/A`; repository paths resolve against the saved catalog.
-Local stars/statistics are Giraffe configuration, not GitHub writes.
+Local stars are Giraffe configuration, not GitHub writes.
 
 ### Settings, stars and statistics
 
@@ -1189,20 +1193,19 @@ Local stars/statistics are Giraffe configuration, not GitHub writes.
 | GET `/settings` | `app:read` | None | Settings shape below |
 | PUT `/stars/:owner/:name` | `app:write` | None needed; add star | Settings |
 | DELETE `/stars/:owner/:name` | `app:write` | None; remove star | 204 |
-| PUT `/statistics/:owner/:name` | `app:write` | Strict `{ "enabled": boolean }` | Settings |
-| DELETE `/statistics/:owner/:name` | `app:write` | None; remove override, restore defaults | 204 |
+| PUT `/statistics/:owner/:name` | `app:write` | Ignored | 410 `deprecated`; never writes |
+| DELETE `/statistics/:owner/:name` | `app:write` | Ignored | 410 `deprecated`; never writes |
 
-No query parameters. Settings is `{ account_id, stars:string[], statistics:
-[{ repo, enabled:boolean }], schedules:Schedule[] }`. Statistics lists explicit
-overrides, not every effective value. PUT returns settings even without `app:read`.
-Repeated add/remove star or remove override is harmless.
+No query parameters. Settings is `{ account_id, stars:string[], statistics:[],
+statistics_deprecated:true, schedules:Schedule[] }`. The empty statistics field and
+deprecated `/repos[].statistics_enabled` alias remain for one version. Browser
+`POST /api/repos/:owner/:name/statistics` also returns 410 `deprecated` without writing.
+PUT star returns settings even without `app:read`. Repeated add/remove star is harmless.
 
 ```bash
 api "$API/settings"
 api -X PUT "$API/stars/$OWNER/$NAME"
 api -X DELETE "$API/stars/$OWNER/$NAME"
-json -X PUT "$API/statistics/$OWNER/$NAME" --data '{"enabled":true}'
-api -X DELETE "$API/statistics/$OWNER/$NAME"
 ```
 
 ### PUT / DELETE /schedules/:kind
@@ -1353,31 +1356,26 @@ Do not send `account_id`; token/path provide it. Refresh requires saved catalog;
 non-selected scopes require complete inventory. Selection/priorities must be unique
 and valid. Filter uses exact repo/language/topic and case-insensitive name/description
 substring query. Stale selects missing, non-success or at-least-24-hour-old state;
-failed selects failed state. Existing factory participation policy applies, unlike
-the unfiltered machine catalog. Refresh selection is bounded to 500 repositories
+failed selects failed state. All refresh scopes exclude non-owned repositories.
+Refresh selection is bounded to 500 repositories
 and must be nonempty except for existing `all` behavior.
 
-Refresh has two intentional lanes. Factory statistics participation follows the
-saved catalog's `statistics_enabled` value: an explicit false excludes a repository
-from metadata, the seven factory streams and per-repository factory publication
-in both weekly and daily runs. Without an override, archived/fork repositories
-default off; an explicit true can enable them. Factory inventory separately
-excludes non-owner repositories and the effective mirror `nocoo/rsshub`.
-There is no eligibility cutoff based on size, empty history or `pushed_at`, and
-`order` never changes membership; exceeding 500 is an error, not truncation.
-
-Detail snapshots are separate from statistics. `all` refreshes the accessible
-site catalog; selected/daily-starred refreshes include requested known site
-repositories even when statistics are disabled. Those repositories plan all nine
+Daily quick refresh selects starred-owned catalog repositories. Weekly full refresh
+selects every owned catalog repository, including unstarred, archived and forked
+entries. Statistics overrides no longer participate in selection. No repository
+name has a special mirror rule, and non-owned repositories enter neither factory
+streams nor detail-page plans. There is no eligibility cutoff based on size, empty
+history or `pushed_at`; archived repositories receive the same streams and nine
 detail tabs (details, issues, prs, actions, releases, traffic, security, languages,
-contributors), not only security. The independent page lane keeps the repository
-console readable without opting a repository into factory statistics. Inspect
-`/repos` for `statistics_enabled`, and `/refresh-runs` for frozen `repos`,
-`siteRepos`, `selection` and retained step outcomes; statistics projections expose
-`inventory.excluded` with `statistics-disabled` where applicable. Machine catalog
-reads themselves remain unfiltered. Older compact runs may lack full steps, so
-one newly changed security snapshot alone does not prove a security-only plan.
-Batch 8 does not change these policies or any repository setting.
+contributors). `order` never changes membership; exceeding 500 is an error.
+Inspect `/refresh-runs` for frozen `repos`, `siteRepos`, `selection` and step outcomes.
+Older compact runs may lack full steps; a single changed snapshot is not a full plan.
+
+For the analysis bot, replace statistics writes with local star writes. Migration
+`0016_star_membership.sql` removes stars only where the same account/repository has
+an explicit false statistics override, then empties (but retains) `repo_statistics`.
+Unstarred explicit true overrides do not create stars. See the
+[migration and rollback contract](03-schema.md#star-membership-consolidation).
 
 ```bash
 REQUEST_KEY="$(node -p 'crypto.randomUUID()')"

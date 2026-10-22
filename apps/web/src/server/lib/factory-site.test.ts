@@ -312,7 +312,7 @@ it("treats an empty, fully known catalog as empty lists without GitHub requests"
 it("does not publish over-budget aggregate data, or a newly discovered repository outside the frozen plan", async () => {
 	const raw = await setup(
 		"issues",
-		Array.from({ length: 11 }, (_, i) => `org/repo${i}`),
+		Array.from({ length: 11 }, (_, i) => `nocoo/repo${i}`),
 	);
 	const upstream = () =>
 		Response.json({
@@ -341,7 +341,7 @@ it("does not publish over-budget aggregate data, or a newly discovered repositor
 				data: {
 					viewer: {
 						repositories: {
-							nodes: [{ nameWithOwner: "org/new" }],
+							nodes: [{ nameWithOwner: "nocoo/new" }],
 							pageInfo: { hasNextPage: false },
 						},
 					},
@@ -357,7 +357,7 @@ it("does not publish over-budget aggregate data, or a newly discovered repositor
 				data: {
 					viewer: {
 						repositories: {
-							nodes: Array.from({ length: 501 }, (_, i) => ({ nameWithOwner: `org/repo${i}` })),
+							nodes: Array.from({ length: 501 }, (_, i) => ({ nameWithOwner: `nocoo/repo${i}` })),
 							pageInfo: { hasNextPage: false },
 						},
 					},

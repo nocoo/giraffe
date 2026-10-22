@@ -138,7 +138,10 @@ it("refreshes disabled-statistics stars and prepares missing catalogues before s
 	);
 	await scheduleRefreshes(s.raw, now);
 	const row = await s.db.prepare("SELECT payload FROM factory_runs").first<{ payload: string }>();
-	expect(JSON.parse(row?.payload ?? "{}")).toMatchObject({ repos: [], siteRepos: ["nocoo/app"] });
+	expect(JSON.parse(row?.payload ?? "{}")).toMatchObject({
+		repos: ["nocoo/app"],
+		siteRepos: ["nocoo/app"],
+	});
 	const missing = await setup();
 	await missing.db.prepare("DELETE FROM snapshots WHERE kind='factory'").run();
 	await saveSchedule(

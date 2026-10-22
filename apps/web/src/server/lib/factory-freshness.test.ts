@@ -5,7 +5,7 @@ import { createDb } from "./db/d1";
 import { replaceSnapshotStmts } from "./db/snapshots";
 import { readObservation } from "./machine-observations";
 import { readSources } from "./machine-sources";
-import { factoryFreshness, repoPolicy } from "./repo-statistics";
+import { factoryFreshness, repoPolicy } from "./snapshot-projection";
 
 async function fixture() {
 	const raw = sqliteFixture();
@@ -56,15 +56,15 @@ async function fixture() {
 	return { raw, db, account, publication, repo, save };
 }
 
-it("counts only enabled published repositories without changing visible lists or stored evidence", async () => {
+it("counts every owned published repository without changing visible lists or stored evidence", async () => {
 	const { raw, db, account, publication } = await fixture();
 	const before = (await raw.prepare("SELECT * FROM snapshots ORDER BY kind").all()).results;
 	const fetchSpy = vi.spyOn(globalThis, "fetch");
 	try {
 		const expected = {
-			oldestAt: publication.fetched_at,
+			oldestAt: "2026-09-01T00:00:00Z",
 			latestAt: publication.fetched_at,
-			total: 1,
+			total: 3,
 			missing: 0,
 		};
 		expect(factoryFreshness(publication, await repoPolicy(db, account))).toEqual(expected);
@@ -96,8 +96,13 @@ it("counts missing owned observations and marks incomplete inventory truncated",
 	await save("factory", publication);
 	const envelope = await readObservation(db, account, "factory", "all");
 	expect(envelope).toMatchObject({
-		freshness: { oldestAt: null, latestAt: null, total: 1, missing: 1 },
-		fetchedAt: "",
+		freshness: {
+			oldestAt: "2026-09-01T00:00:00Z",
+			latestAt: "2026-09-02T00:00:00Z",
+			total: 3,
+			missing: 1,
+		},
+		fetchedAt: "2026-09-02T00:00:00Z",
 		truncated: true,
 		data: { truncated: true },
 	});
@@ -112,7 +117,7 @@ it("counts missing owned observations and marks incomplete inventory truncated",
 	});
 });
 
-it("includes enabled identities in hashes even when freshness counts do not change", async () => {
+it("ignores legacy overrides and includes selected star identities in content hashes", async () => {
 	const { raw, db, account, publication } = await fixture();
 	const first = await readObservation(db, account, "factory", "all");
 	expect(first.contentVersion).toMatch(/^sha256:/);
@@ -123,10 +128,10 @@ it("includes enabled identities in hashes even when freshness counts do not chan
 		.bind(account, account)
 		.run();
 	const second = await readObservation(db, account, "factory", "all");
-	expect(first.freshness).toMatchObject({ total: 1, missing: 0 });
-	expect(second.freshness).toMatchObject({ total: 1, missing: 0 });
+	expect(first.freshness).toMatchObject({ total: 3, missing: 0 });
+	expect(second.freshness).toMatchObject({ total: 3, missing: 0 });
 	expect(second.data.repos).toEqual(first.data.repos);
-	expect(second.contentVersion).not.toBe(first.contentVersion);
+	expect(second.contentVersion).toBe(first.contentVersion);
 	expect(
 		(await readSources(createDb(raw), account, {})).sources.find(
 			(s) => s.resource === "account:factory",
@@ -137,7 +142,12 @@ it("includes enabled identities in hashes even when freshness counts do not chan
 		.bind(account)
 		.run();
 	const starred = await readObservation(db, account, "factory", "starred");
-	expect(starred.freshness).toEqual({ oldestAt: null, latestAt: null, total: 0, missing: 0 });
+	expect(starred.freshness).toEqual({
+		oldestAt: publication.fetched_at,
+		latestAt: publication.fetched_at,
+		total: 1,
+		missing: 0,
+	});
 	expect(starred.contentVersion).not.toBe(second.contentVersion);
 	expect(publication.repos).toHaveLength(4);
 });
@@ -149,7 +159,7 @@ it("preserves stored truncation independently of complete inventory", async () =
 	const truncated = await readObservation(db, account, "factory", "all");
 	expect(truncated).toMatchObject({
 		truncated: true,
-		freshness: { total: 1, missing: 0 },
+		freshness: { total: 3, missing: 0 },
 		data: { truncated: true, inventory: { complete: true } },
 	});
 	expect(truncated.contentVersion).not.toBe(complete.contentVersion);

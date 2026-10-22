@@ -95,6 +95,7 @@ describe("scoped notification write-through", () => {
 		expect(response.status).toBe(200);
 		expect(requests).toEqual([
 			"PATCH /notifications/threads/11",
+			"PATCH /notifications/threads/14",
 			"PATCH /notifications/threads/15",
 		]);
 		expect(await response.json()).toMatchObject({
@@ -102,6 +103,7 @@ describe("scoped notification write-through", () => {
 			notifications: [
 				{ id: "11", unread: false },
 				{ id: "12", unread: false },
+				{ id: "14", unread: false },
 				{ id: "15", unread: false },
 			],
 		});
@@ -111,7 +113,7 @@ describe("scoped notification write-through", () => {
 				{ id: "11", unread: false },
 				{ id: "12", unread: false },
 				{ id: "13", unread: true },
-				{ id: "14", unread: true },
+				{ id: "14", unread: false },
 				{ id: "15", unread: false },
 			],
 		});
@@ -141,7 +143,7 @@ describe("scoped notification write-through", () => {
 		expect((await fixture.post("read-all?scope=starred")).status).toBe(403);
 		expect(requests).toEqual([
 			"PATCH /notifications/threads/11",
-			"PATCH /notifications/threads/15",
+			"PATCH /notifications/threads/14",
 		]);
 		expect(await readSnapshot(fixture.db, scopedAccount, "notifications")).toEqual(before);
 		expect(
@@ -161,7 +163,7 @@ describe("scoped notification write-through", () => {
 				(await fixture.post(`${action}?scope=bad`, { account_id: scopedAccount, id: "11" })).status,
 			).toBe(400);
 		expect((await fixture.post("read-all?scope=all&scope=starred")).status).toBe(400);
-		for (const id of ["13", "14", "999"])
+		for (const id of ["13", "999"])
 			expect(
 				(await fixture.post("read?scope=starred", { account_id: scopedAccount, id })).status,
 			).toBe(404);
@@ -219,6 +221,7 @@ describe("scoped notification write-through", () => {
 			notifications: [
 				{ id: "11", unread: false },
 				{ id: "12", unread: false },
+				{ id: "14", unread: true },
 				{ id: "15", unread: true },
 			],
 		});
@@ -281,8 +284,18 @@ describe("notification write-through", () => {
 			}
 			if (url.includes("/notifications")) {
 				return Response.json([
-					{ id: "123", unread: true, subject: { title: "t" }, repository: { full_name: "o/n" } },
-					{ id: "456", unread: true, subject: { title: "u" }, repository: { full_name: "o/n" } },
+					{
+						id: "123",
+						unread: true,
+						subject: { title: "t" },
+						repository: { full_name: "octocat/n" },
+					},
+					{
+						id: "456",
+						unread: true,
+						subject: { title: "u" },
+						repository: { full_name: "octocat/n" },
+					},
 				]);
 			}
 			throw new Error(`unexpected ${url}`);
@@ -300,7 +313,7 @@ describe("notification write-through", () => {
 				db,
 				accountId,
 				"repos",
-				{ repos: [{ name_with_owner: "o/n" }] },
+				{ repos: [{ name_with_owner: "octocat/n" }] },
 				collectedAt,
 			),
 		);

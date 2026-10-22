@@ -1,10 +1,10 @@
-import { createHash } from "node:crypto";
 import { expect, it, vi } from "vitest";
 import { factoryFixture } from "../../../../../tests/fixtures/factory-snapshot";
 import { profileDb } from "../../../../../tests/fixtures/profile-db";
 import { populateSourceStreams, sourcesFixture } from "../../../../../tests/fixtures/sources";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import * as ci from "../../lib/ci-health";
+import { FACTORY_STREAMS } from "../../lib/factory-types";
 import { savedContentMeta } from "./content-version";
 import { createDb } from "./db/d1";
 import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
@@ -339,19 +339,32 @@ it.each(["run", "legacy"] as const)(
 );
 
 it("preserves exact realistic response content and all advertised snapshot versions", async () => {
-	const { raw, account } = await sourcesFixture();
+	const { raw, account, names, latest, old } = await sourcesFixture();
 	const result = await readSources(createDb(raw), account, {});
-	const legacy = {
-		...result,
-		sources: result.sources.map(({ contentVersion: _contentVersion, ...source }) => source),
-	};
+	expect(result.repositories).toEqual(names);
+	expect(result.sources.map((source) => source.resource).sort()).toEqual(
+		[
+			...names.flatMap((name) =>
+				["details", "issues", "prs", "actions", "releases"].map(
+					(suffix) => `repo:${name}:${suffix}`,
+				),
+			),
+			...["issues", "prs", "ci", "factory", "repos"].map((kind) => `account:${kind}`),
+			...names.flatMap((name) => FACTORY_STREAMS.map((stream) => `factory:${name}:${stream}`)),
+		].sort(),
+	);
+	for (const source of result.sources.filter((source) => source.resource.startsWith("account:")))
+		expect(source.freshness).toEqual({
+			oldestAt: old,
+			latestAt: source.resource === "account:repos" ? old : latest,
+			total: names.length,
+			missing: 0,
+		});
 	expect(result.sources.find((source) => source.resource === "account:factory")).toMatchObject({
-		freshness: { total: 103, missing: 0 },
+		freshness: { total: 126, missing: 0 },
 		version: "publication-local-bench",
 	});
-	expect(createHash("sha256").update(JSON.stringify(legacy)).digest("hex")).toBe(
-		"2ebafc5288489326287eda2e7897cb111286ae3824fb3f66c17a7da404a4fe07",
-	);
+	expect(await readSources(createDb(raw), account, {})).toEqual(result);
 	for (const source of result.sources.filter((row) => !row.resource.startsWith("factory:"))) {
 		const resource = source.resource.replace(/^account:/, "");
 		const envelope = await readObservation(createDb(raw), account, resource, "all");

@@ -8,8 +8,8 @@ import { ApiError, jsonOk } from "../lib/errors";
 import { createGithubClient, MAX_FETCHES } from "../lib/github-client";
 import { ACCOUNT_ID_RE } from "../lib/id";
 import { readJson } from "../lib/read-body";
-import { repoPolicy, statisticsSnapshot } from "../lib/repo-statistics";
 import { assemblePages, splitPages } from "../lib/snapshot-pages";
+import { repoPolicy, scopedSnapshot } from "../lib/snapshot-projection";
 import { type SnapshotScope, snapshotScope } from "../lib/snapshot-scope";
 import { decryptToken, parseKeyBytes } from "../lib/token-crypto";
 
@@ -76,7 +76,7 @@ async function persist(
 	];
 	await db.batch(stmts);
 	return jsonOk({
-		...(await statisticsSnapshot(db, accountId, "notifications", assembled, scope)),
+		...(await scopedSnapshot(db, accountId, "notifications", assembled, scope)),
 		account_id: accountId,
 	});
 }
@@ -93,7 +93,7 @@ export async function postRead(
 	if (scope === "starred") {
 		const policy = await repoPolicy(db, account.id, undefined, scope);
 		const selected = asList(snap).find((row) => String(row.id) === parsed.data.id);
-		if (!selected || !policy.enabled(String(selected.name_with_owner ?? "")))
+		if (!selected || !policy.includes(String(selected.name_with_owner ?? "")))
 			throw new ApiError(404, "not_found", "notification outside selected scope");
 	}
 	const gh = createGithubClient(c.env);
@@ -118,7 +118,7 @@ export async function postReadAll(
 	if (scope === "starred") {
 		const policy = await repoPolicy(db, account.id, undefined, scope);
 		for (const row of asList(snap))
-			if (row.unread === true && policy.enabled(String(row.name_with_owner ?? "")))
+			if (row.unread === true && policy.includes(String(row.name_with_owner ?? "")))
 				ids.add(String(row.id));
 		if (ids.size > MAX_FETCHES)
 			throw new ApiError(
@@ -132,7 +132,7 @@ export async function postReadAll(
 			await gh.githubApi(token, `/notifications/threads/${id}`, { method: "PATCH" });
 		if (!ids.size)
 			return jsonOk({
-				...(await statisticsSnapshot(db, account.id, "notifications", snap, scope)),
+				...(await scopedSnapshot(db, account.id, "notifications", snap, scope)),
 				account_id: account.id,
 			});
 	} else {

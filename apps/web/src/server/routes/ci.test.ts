@@ -96,7 +96,7 @@ describe("GET /api/ci", () => {
 		expect(body).toMatchObject({
 			fetched_at: recent,
 			now: recent,
-			freshness: { oldestAt: old, latestAt: recent, total: 9, missing: 5 },
+			freshness: { oldestAt: old, latestAt: recent, total: 3, missing: 2 },
 		});
 		expect(await fixture.raw.prepare("SELECT * FROM snapshots ORDER BY kind").all()).toEqual(
 			before,
@@ -141,7 +141,7 @@ describe("GET /api/ci", () => {
 		expect(await (await fixture.call()).json()).toMatchObject({
 			fetched_at: at,
 			unsaved: ["nocoo/unavailable"],
-			freshness: { oldestAt: at, latestAt: at, total: 6, missing: 5 },
+			freshness: { oldestAt: at, latestAt: at, total: 2, missing: 2 },
 		});
 	});
 
@@ -203,6 +203,7 @@ describe("GET /api/ci", () => {
 		expect(body.repos.map((r) => [r.repo, r.verdict])).toEqual([
 			["nocoo/app", "broken"],
 			["nocoo/quiet", "healthy"],
+			["nocoo/old", "unknown"],
 		]);
 		expect(body.repos[0]?.release).toMatchObject({ latest: "v1.1.0", pipeline: "broken" });
 		expect(body.streams[0]).toMatchObject({ repo: "nocoo/app", workflow: "Release", streak: 2 });
@@ -212,7 +213,8 @@ describe("GET /api/ci", () => {
 		expect(body.totals).toMatchObject({
 			brokenWorkflows: 1,
 			healthyWorkflows: 2,
-			totalRepos: 2,
+			totalRepos: 3,
+			unknownRepos: 1,
 			brokenRepos: 1,
 			healthyRepos: 1,
 		});

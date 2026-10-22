@@ -1,4 +1,4 @@
-import { Button, SegmentControl, Switch, toast } from "@nocoo/basalt";
+import { Button, SegmentControl, toast } from "@nocoo/basalt";
 import { FilterBar } from "@nocoo/basalt/components/filter-bar";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
@@ -12,7 +12,6 @@ import {
 } from "@nocoo/basalt/components/table";
 import { Box, Star } from "lucide-react";
 import { type CSSProperties, useMemo, useState } from "react";
-import { participates } from "../../lib/repo-statistics";
 import { BusinessPageHeader as PageHeader } from "../components/layout/business-page-header";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ResultCount, SearchField, TableScroll } from "../components/layout/collection-chrome";
@@ -64,7 +63,6 @@ import {
 	repoMetrics,
 	type SortKey,
 	saveRepoStar,
-	saveRepoStatistics,
 	type ViewMode,
 	visibleRepos,
 } from "../viewmodels/repos";
@@ -72,7 +70,6 @@ import {
 const NO_FILTERS = { language: "", status: "", age: "" };
 const STATUS_COLORS = [
 	"var(--color-basalt-chart-5)",
-	"color-mix(in srgb,var(--color-basalt-chart-5) 35%,var(--color-basalt-border))",
 	"var(--color-basalt-muted-foreground)",
 	"var(--color-giraffe-yellow)",
 ];
@@ -88,16 +85,12 @@ export function ReposPage() {
 	const [picked, setPicked] = useState(NO_FILTERS);
 	const pick = (key: keyof typeof NO_FILTERS) => (value: string) =>
 		setPicked((old) => ({ ...old, [key]: value }));
-	async function toggleStatistics(
-		repo: RepoRow,
-		enabled: boolean,
-		kind: "star" | "statistics" = "statistics",
-	) {
+	async function toggleStar(repo: RepoRow, enabled: boolean) {
 		if (!snap || "missing" in snap || saving) return;
 		const account = snap.account_id;
 		setSaving(repo.name_with_owner);
 		try {
-			await (kind === "star" ? saveRepoStar : saveRepoStatistics)(account, repo, enabled);
+			await saveRepoStar(account, repo, enabled);
 			setSnap((current) =>
 				current && !("missing" in current) && current.account_id === account
 					? {
@@ -106,16 +99,13 @@ export function ReposPage() {
 								.filter(
 									(row) =>
 										!(
-											kind === "star" &&
 											!enabled &&
 											scope === "starred" &&
 											row.name_with_owner === repo.name_with_owner
 										),
 								)
 								.map((r) =>
-									r.name_with_owner === repo.name_with_owner
-										? { ...r, [kind === "star" ? "starred" : "statistics_enabled"]: enabled }
-										: r,
+									r.name_with_owner === repo.name_with_owner ? { ...r, starred: enabled } : r,
 								),
 						}
 					: current,
@@ -126,27 +116,18 @@ export function ReposPage() {
 			setSaving(null);
 		}
 	}
-	const statisticsSwitch = (repo: RepoRow) => (
-		<div className="flex items-center gap-2">
-			<Button
-				size="icon"
-				variant="ghost"
-				aria-label={`星标 ${repo.name_with_owner}`}
-				aria-pressed={repo.starred === true}
-				disabled={saving !== null}
-				title="Giraffe 星标：每天自动刷新"
-				onClick={() => void toggleStatistics(repo, !repo.starred, "star")}
-			>
-				<Star className="size-4" fill={repo.starred ? "currentColor" : "none"} />
-			</Button>
-			<Switch
-				size="sm"
-				checked={participates(repo)}
-				disabled={saving !== null}
-				aria-label={`${repo.name_with_owner} 参与统计`}
-				onCheckedChange={(enabled) => void toggleStatistics(repo, enabled)}
-			/>
-		</div>
+	const starButton = (repo: RepoRow) => (
+		<Button
+			size="icon"
+			variant="ghost"
+			aria-label={`星标 ${repo.name_with_owner}`}
+			aria-pressed={repo.starred === true}
+			disabled={saving !== null}
+			title="Giraffe 星标：每天自动刷新"
+			onClick={() => void toggleStar(repo, !repo.starred)}
+		>
+			<Star className="size-4" fill={repo.starred ? "currentColor" : "none"} />
+		</Button>
 	);
 
 	useSnapshotRead(
@@ -253,23 +234,19 @@ export function ReposPage() {
 			<ScopeEmpty count={snap.repos.length} />
 			<div className="giraffe-stat-inline" data-testid="repo-summary">
 				<span>
-					<strong>{formatCount(snap.repos.length)}</strong>个仓库 · 其中{" "}
-					<strong>{formatCount(metrics.count)}</strong>个参与统计
+					<strong>{formatCount(metrics.count)}</strong>个仓库
 				</span>
 				<span>
 					<strong>{formatCount(board.privateCount)}</strong>个私有
 				</span>
 				<span>
-					参与统计的 Stars <strong>{formatCount(metrics.stars)}</strong>· Forks{" "}
+					Stars <strong>{formatCount(metrics.stars)}</strong>· Forks{" "}
 					<strong>{formatCount(metrics.forks)}</strong>· Open Issues{" "}
 					<strong>{formatCount(metrics.issues)}</strong>
 				</span>
 			</div>
 			<div className="giraffe-overview" style={{ "--cols": 4 } as CSSProperties}>
-				<OverviewCard
-					title="仓库构成"
-					hint="按参与统计、已排除、Fork 与已归档分组，点击下方状态筛选。"
-				>
+				<OverviewCard title="仓库构成" hint="按普通仓库、Fork 与已归档分组，点击下方状态筛选。">
 					<ShareBar
 						label="仓库构成"
 						legend={false}
@@ -355,7 +332,7 @@ export function ReposPage() {
 				}
 			>
 				<p className="mb-3 text-xs text-basalt-muted-foreground">
-					参与统计的设置全局生效，包含软件工厂。Fork 和已归档仓库默认关闭，可随时修改。
+					星标仓库每天刷新；全部自有仓库每周刷新，包含 Fork 和已归档仓库。
 				</p>
 				{rows.length === 0 ? (
 					<LayerCard>
@@ -392,7 +369,7 @@ export function ReposPage() {
 										className="flex h-full min-w-0 flex-col transition-shadow hover:ring-1 hover:ring-basalt-border"
 									>
 										<div className="flex items-start justify-between gap-2">
-											{statisticsSwitch(row)}
+											{starButton(row)}
 											<ProjectSummary
 												repo={row.name_with_owner}
 												description={row.description}
@@ -433,7 +410,7 @@ export function ReposPage() {
 								<Table className="giraffe-data-table min-w-[900px]" data-testid="repo-list">
 									<TableHeader>
 										<TableRow>
-											<TableHead>星标 / 统计</TableHead>
+											<TableHead>星标</TableHead>
 											<TableHead data-grow>
 												<SortButton
 													label="仓库"
@@ -471,7 +448,7 @@ export function ReposPage() {
 											const days = daysBetween(snap.fetched_at, row.pushed_at);
 											return (
 												<TableRow key={row.name_with_owner}>
-													<TableCell>{statisticsSwitch(row)}</TableCell>
+													<TableCell>{starButton(row)}</TableCell>
 													<TableCell className="w-full min-w-72 max-w-0">
 														<ProjectSummary
 															repo={row.name_with_owner}

@@ -221,8 +221,7 @@ export function describeRunIssue(code: string | null, kind: StepKind, resource?:
 				title: "本次刷新达到容量限制",
 				reason: "单条数据、发布内容或计划中的仓库数量超过安全上限。",
 				impact: "刷新已暂停，已有数据和进度保留。",
-				action:
-					"统计仓库过多时可取消后减少统计仓库；全站清单或单条数据过大时，请维护者检查采集范围。",
+				action: "仓库过多时可取消后缩小刷新范围；全站清单或单条数据过大时，请维护者检查采集范围。",
 			};
 		case "repository_cooldown":
 			return {

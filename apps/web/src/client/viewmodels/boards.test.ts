@@ -311,8 +311,7 @@ describe("repository boards", () => {
 		];
 		const board = reposBoard(rows, NOW, { language: "", status: "", age: "" });
 		expect(board.status.map((s) => [s.key, s.value])).toEqual([
-			["active", 2],
-			["disabled", 1],
+			["regular", 3],
 			["fork", 1],
 			["archived", 1],
 		]);
@@ -324,6 +323,9 @@ describe("repository boards", () => {
 		expect(reposBoard(rows, NOW, { language: "未标记", status: "", age: "" }).rows).toHaveLength(1);
 		expect(reposBoard(rows, NOW, { language: "", status: "archived", age: "" }).rows).toHaveLength(
 			1,
+		);
+		expect(reposBoard(rows, NOW, { language: "", status: "regular", age: "" }).rows).toHaveLength(
+			3,
 		);
 		expect(reposBoard(rows, NOW, { language: "", status: "", age: "old" }).rows).toHaveLength(1);
 	});

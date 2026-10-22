@@ -1,4 +1,3 @@
-import { participates } from "../../lib/repo-statistics";
 import type { SnapshotFreshness } from "../../lib/snapshot-freshness";
 import { apiPost } from "../lib/api";
 import { ApiError } from "../lib/errors";
@@ -7,7 +6,6 @@ import { getActiveAccountId } from "./session";
 import { loadKind } from "./snapshot";
 
 export type RepoRow = {
-	statistics_enabled?: boolean;
 	starred?: boolean;
 	name_with_owner: string;
 	name: string;
@@ -87,13 +85,12 @@ export function repoMetrics(repos: RepoRow[]): {
 	let stars = 0;
 	let forks = 0;
 	let issues = 0;
-	const selected = repos.filter(participates);
-	for (const row of selected) {
+	for (const row of repos) {
 		stars += row.stargazer_count;
 		forks += row.fork_count;
 		issues += row.open_issue_count;
 	}
-	return { count: selected.length, stars, forks, issues };
+	return { count: repos.length, stars, forks, issues };
 }
 
 export function healthMap(insights: InsightsSnapshot | null): Map<string, InsightRow["health"]> {
@@ -109,20 +106,15 @@ export function healthMap(insights: InsightsSnapshot | null): Map<string, Insigh
 
 let remembered: ReposSnapshot | null = null;
 
-export const saveRepoStatistics = (account: string, repo: RepoRow, enabled: boolean) =>
-	saveRepoSetting(account, repo, enabled, "statistics");
-export const saveRepoStar = (account: string, repo: RepoRow, enabled: boolean) =>
-	saveRepoSetting(account, repo, enabled, "star");
-async function saveRepoSetting(
+export async function saveRepoStar(
 	account: string,
 	repo: RepoRow,
 	enabled: boolean,
-	kind: "statistics" | "star",
 ): Promise<void> {
 	if (getActiveAccountId() !== account)
 		throw new ApiError(409, "account_conflict", "account changed");
 	const result = await apiPost<{ account_id: string }>(
-		`repos/${encodeURIComponent(repo.owner_login)}/${encodeURIComponent(repo.name)}/${kind}`,
+		`repos/${encodeURIComponent(repo.owner_login)}/${encodeURIComponent(repo.name)}/star`,
 		{ account_id: account, enabled },
 	);
 	if (result.account_id !== account || getActiveAccountId() !== account)
@@ -131,9 +123,7 @@ async function saveRepoSetting(
 		remembered = {
 			...remembered,
 			repos: remembered.repos.map((r) =>
-				r.name_with_owner === repo.name_with_owner
-					? { ...r, [kind === "star" ? "starred" : "statistics_enabled"]: enabled }
-					: r,
+				r.name_with_owner === repo.name_with_owner ? { ...r, starred: enabled } : r,
 			),
 		};
 }

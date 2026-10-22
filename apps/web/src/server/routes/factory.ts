@@ -13,7 +13,7 @@ import { readSnapshot } from "../lib/db/snapshots";
 import { ApiError, jsonOk } from "../lib/errors";
 import { newFactory, streamKey } from "../lib/factory-collect";
 import { readFactoryRate } from "../lib/factory-rate";
-import { factoryFreshness, repoPolicy, statisticsFactory } from "../lib/repo-statistics";
+import { factoryFreshness, projectFactory, repoPolicy } from "../lib/snapshot-projection";
 import { snapshotScope } from "../lib/snapshot-scope";
 import { repoParts } from "./snapshots";
 
@@ -42,7 +42,7 @@ export async function getFactory(c: Ctx): Promise<Response> {
 		};
 	}
 	if (!snap) throw new ApiError(409, "snapshot_missing", "no factory snapshot");
-	const projected = statisticsFactory(snap, policy);
+	const projected = projectFactory(snap, policy);
 	const freshness = factoryFreshness(projected, policy);
 	return jsonOk(
 		{
@@ -50,6 +50,10 @@ export async function getFactory(c: Ctx): Promise<Response> {
 			rate: await readFactoryRate(c.get("db"), account.id, snap.rate),
 			fetched_at: freshness.latestAt ?? "",
 			freshness,
+			truncated:
+				projected.truncated === true ||
+				projected.inventory.complete !== true ||
+				freshness.missing > 0,
 			account_id: account.id,
 		},
 		200,
@@ -68,8 +72,8 @@ export async function getFactoryStream(c: Ctx): Promise<Response> {
 		throw new ApiError(400, "validation_failed", "invalid page");
 	const snap = await publishedFactory(c.get("db"), account.id);
 	const repo = snap?.repos.find((r) => r.name.toLowerCase() === `${owner}/${name}`.toLowerCase());
-	if (repo && !(await repoPolicy(c.get("db"), account.id, undefined, scope)).enabled(repo.name))
-		throw new ApiError(404, "not_found", "repository excluded from statistics");
+	if (repo && !(await repoPolicy(c.get("db"), account.id, undefined, scope)).includes(repo.name))
+		throw new ApiError(404, "not_found", "repository outside selected owned catalog");
 	if (!repo || !snap) throw new ApiError(404, "not_found", "repository outside factory inventory");
 	let resource: FactoryStreamData | null = null;
 	const version = repo.observation?.version ?? snap.runId;

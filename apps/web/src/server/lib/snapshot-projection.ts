@@ -1,9 +1,9 @@
 import { uniqueDependencySummaries } from "../../lib/factory-dependencies";
 import type { FactorySnapshot } from "../../lib/factory-types";
-import { participates, type RepoStatistics } from "../../lib/repo-statistics";
 import { type SecurityFeatures, securityCount, securityIncomplete } from "../../lib/security";
 import { snapshotFreshness } from "../../lib/snapshot-freshness";
 import { composeContent, storedContent, withContent } from "./content-version";
+import { getAccount } from "./db/accounts";
 import type { Db } from "./db/d1";
 import { readSnapshot } from "./db/snapshots";
 import { buildInsights, type InsightAlert } from "./insights";
@@ -16,7 +16,7 @@ import {
 } from "./snapshot-pages";
 import { type SnapshotScope, snapshotSelection } from "./snapshot-scope";
 
-type Repo = Record<string, unknown> & RepoStatistics & { name_with_owner: string };
+type Repo = Record<string, unknown> & { name_with_owner: string };
 export async function repoPolicy(
 	db: Db,
 	account: string,
@@ -25,30 +25,25 @@ export async function repoPolicy(
 ) {
 	const snapshot = source === undefined ? await readSnapshot(db, account, "repos") : source;
 	const selection = await snapshotSelection(db, account, scope);
-	const overrides = await db
-		.prepare("SELECT repo,enabled FROM repo_statistics WHERE account_id=?")
-		.bind(account)
-		.all<{ repo: string; enabled: number }>();
-	return policyFromSaved(snapshot, selection, overrides.results);
+	const owner = await getAccount(db, account);
+	return policyFromSaved(snapshot, selection, owner?.login ?? "");
 }
 
 export function policyFromSaved(
 	snapshot: Record<string, unknown> | null,
 	selection: Awaited<ReturnType<typeof snapshotSelection>>,
-	overrides: { repo: string; enabled: number }[],
+	owner: string,
 ) {
 	const scope = selection.scope;
-	const settings = new Map(overrides.map((r) => [r.repo.toLowerCase(), r.enabled === 1]));
 	const repos = (Array.isArray(snapshot?.repos) ? snapshot.repos : []).filter(
 		(r): r is Repo => r !== null && typeof r === "object" && typeof r.name_with_owner === "string",
 	);
-	const defaults = new Map(
-		repos.map((r) => [
-			r.name_with_owner.toLowerCase(),
-			participates({ is_fork: r.is_fork === true, is_archived: r.is_archived === true }),
-		]),
+	const owned = new Set(
+		repos
+			.filter((repo) => repo.name_with_owner.split("/")[0]?.toLowerCase() === owner.toLowerCase())
+			.map((repo) => repo.name_with_owner.toLowerCase()),
 	);
-	const includes = (name: string) => defaults.has(name.toLowerCase()) && selection.includes(name);
+	const includes = (name: string) => owned.has(name.toLowerCase()) && selection.includes(name);
 	const selected = repos.filter((repo) => includes(repo.name_with_owner));
 	return {
 		...selection,
@@ -56,12 +51,6 @@ export function policyFromSaved(
 		empty: scope === "starred" && selected.length === 0,
 		catalog: snapshot,
 		repos: selected,
-		enabled(name: string) {
-			return (
-				includes(name) &&
-				(settings.get(name.toLowerCase()) ?? defaults.get(name.toLowerCase())) === true
-			);
-		},
 	};
 }
 export type Policy = Awaited<ReturnType<typeof repoPolicy>>;
@@ -135,11 +124,10 @@ async function projectList(
 	kind: string,
 	snapshot: Record<string, unknown> | null,
 	policy: Policy,
-	includeDisabled = false,
 	savedPages?: SnapshotGroups,
 ) {
 	const key = LIST_KEYS[kind] as string;
-	const allowed = includeDisabled ? policy.includes : policy.enabled;
+	const allowed = policy.includes;
 	const selectedItems = (kind === "repos" ? policy.repos : snapshotItems(snapshot, key)).filter(
 		(item) => allowed(String(item.name_with_owner ?? "")),
 	);
@@ -264,7 +252,7 @@ async function projectList(
 }
 
 /** Project immutable/raw snapshots at read time so settings apply immediately, even to old data. */
-export async function statisticsSnapshot(
+export async function scopedSnapshot(
 	db: Db,
 	account: string,
 	kind: string,
@@ -282,13 +270,12 @@ export async function projectSnapshot(
 	kind: string,
 	snap: Record<string, unknown>,
 	policy: Policy,
-	statisticsFilter = true,
 	savedPages?: SnapshotGroups,
 ): Promise<Record<string, unknown>> {
 	if (kind.startsWith("repo:")) return snap;
 	const scope = policy.scope;
 	if (kind === "repos") {
-		const source = await projectList(db, account, kind, snap, policy, true);
+		const source = await projectList(db, account, kind, snap, policy);
 		const data = {
 			...snap,
 			fetched_at: source.freshness.latestAt ?? "",
@@ -302,14 +289,14 @@ export async function projectSnapshot(
 				: {}),
 			repos: policy.repos.map((r) => ({
 				...r,
-				statistics_enabled: policy.enabled(r.name_with_owner),
+				statistics_enabled: policy.starred(r.name_with_owner),
 				starred: policy.starred(r.name_with_owner),
 			})),
 		};
 		const hash = await composeContent(source.contentInputs, {
 			repositories: policy.repos.map((repo) => ({
 				name: repo.name_with_owner,
-				statistics_enabled: policy.enabled(repo.name_with_owner),
+				statistics_enabled: policy.starred(repo.name_with_owner),
 				starred: policy.starred(repo.name_with_owner),
 			})),
 			total: source.freshness.total,
@@ -338,6 +325,10 @@ export async function projectSnapshot(
 		const freshness = snapshotFreshness(
 			[...names.keys()].flatMap((name) => [repos.times.get(name), issues.times.get(name)]),
 		);
+		freshness.total = names.size;
+		freshness.missing = [...names.keys()].filter(
+			(name) => !savedTime(repos.times.get(name)) || !savedTime(issues.times.get(name)),
+		).length;
 		const issueCounts = new Map<string, number>();
 		for (const issue of issues.items) {
 			if (issue.state && String(issue.state).toLowerCase() !== "open") continue;
@@ -379,7 +370,7 @@ export async function projectSnapshot(
 		repositories,
 		completeRepos,
 		features,
-	} = await projectList(db, account, kind, snap, policy, !statisticsFilter, savedPages);
+	} = await projectList(db, account, kind, snap, policy, savedPages);
 	const alertsUnavailable = features
 		? Object.values(features).every((feature) => feature.status === "unavailable")
 		: incomplete && snap.unavailable === true;
@@ -429,28 +420,16 @@ export async function projectSnapshot(
 	return withContent(data, hash ? { hash } : null);
 }
 
-export function statisticsFactory(
-	snap: FactorySnapshot,
-	policy: Policy,
-	statisticsFilter = true,
-): FactorySnapshot {
+export function projectFactory(snap: FactorySnapshot, policy: Policy): FactorySnapshot {
 	const repos = snap.repos
-		.filter((r) => (statisticsFilter ? policy.enabled(r.name) : policy.includes(r.name)))
+		.filter((r) => policy.includes(r.name))
 		.map((repo) => ({ ...repo, dependencies: uniqueDependencySummaries(repo.dependencies) }));
-	const excluded = snap.repos
-		.filter((r) => statisticsFilter && policy.includes(r.name) && !policy.enabled(r.name))
-		.map((r) => ({ name: r.name, reason: "statistics-disabled" }));
 	const projected = {
 		...snap,
 		repos,
 		inventory: {
 			...snap.inventory,
-			excluded: [
-				...snap.inventory.excluded.filter(
-					(r) => policy.includes(r.name) && !excluded.some((e) => e.name === r.name),
-				),
-				...excluded,
-			],
+			excluded: snap.inventory.excluded.filter((r) => policy.includes(r.name)),
 		},
 	};
 	if (policy.scope === "all") return projected;
@@ -465,11 +444,17 @@ export function statisticsFactory(
 }
 
 export function factoryObserved(publication: FactorySnapshot, policy: Policy) {
-	return publication.repos.filter((repo) => policy.enabled(repo.name));
+	return publication.repos.filter((repo) => policy.includes(repo.name));
 }
 
 export function factoryFreshness(snap: FactorySnapshot, policy: Policy) {
+	const observations = new Map(
+		factoryObserved(snap, policy).map((repo) => [
+			repo.name.toLowerCase(),
+			repo.observation?.refreshedAt,
+		]),
+	);
 	return snapshotFreshness(
-		factoryObserved(snap, policy).map((repo) => repo.observation?.refreshedAt),
+		policy.repos.map((repo) => observations.get(repo.name_with_owner.toLowerCase())),
 	);
 }

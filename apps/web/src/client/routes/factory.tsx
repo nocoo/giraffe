@@ -467,7 +467,7 @@ export function FactoryPage() {
 										hint={
 											calendar === "commits"
 												? "按提交时间统计当前筛选的仓库，悬停查看本地时间区间。各仓库更新时间不同时，显示它们的日期并集，最多一年；斜纹表示未完整获取，不是零提交。"
-												: "账号贡献无法按仓库排除，已停止展示。请使用参与统计仓库的提交日历。"
+												: "账号贡献无法按仓库范围筛选，已停止展示。请使用当前范围内仓库的提交日历。"
 										}
 									>
 										<div className="mb-3 flex items-center justify-between gap-2">

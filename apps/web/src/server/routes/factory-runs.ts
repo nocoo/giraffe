@@ -18,7 +18,7 @@ import { siteCatalog } from "../lib/factory-site";
 import { refreshInput, startRefresh } from "../lib/factory-start";
 import { ACCOUNT_ID_RE } from "../lib/id";
 import { readJson } from "../lib/read-body";
-import { repoPolicy, statisticsFactory } from "../lib/repo-statistics";
+import { projectFactory, repoPolicy } from "../lib/snapshot-projection";
 
 type Ctx = Context<{ Bindings: Env; Variables: AppVars }>;
 const PRIVATE = { "cache-control": "private, no-store" };
@@ -36,7 +36,7 @@ export async function getFactoryRuns(c: Ctx): Promise<Response> {
 	const head = await factoryHead(db, row.id);
 	const rawCatalog = await catalogFactory(db, row.id);
 	const policy = await repoPolicy(db, row.id);
-	const catalog = rawCatalog ? statisticsFactory(rawCatalog, policy) : null;
+	const catalog = rawCatalog ? projectFactory(rawCatalog, policy) : null;
 	const siteRepos = await siteCatalog(db, row.id);
 	const states = await repoStates(db, row.id);
 	const now = new Date().toISOString();
@@ -64,7 +64,10 @@ export async function getFactoryRuns(c: Ctx): Promise<Response> {
 		repositories: states.filter((state) => policy.includes(state.repo)),
 		catalog: catalog?.repos ?? [],
 		catalogUpdatedAt: catalog?.fetched_at ?? null,
-		catalogComplete: Boolean(catalog?.inventory.complete && siteRepos !== null),
+		catalogComplete: Boolean(
+			catalog?.inventory.complete &&
+				siteRepos?.every((name) => catalog.repos.some((repo) => repo.name === name)),
+		),
 		publication: head?.published_id ?? null,
 	};
 	return jsonOk(response, 200, PRIVATE);

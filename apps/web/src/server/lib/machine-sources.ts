@@ -15,8 +15,8 @@ import {
 	projectCiInputs,
 	projectFactoryObservation,
 } from "./machine-observations";
-import { policyFromSaved, projectSnapshot } from "./repo-statistics";
 import { assembleSnapshotGroups, latestSnapshots, type SnapshotPage } from "./snapshot-pages";
+import { policyFromSaved, projectSnapshot } from "./snapshot-projection";
 import { selectionFromStars } from "./snapshot-scope";
 import type { SourceTiming } from "./source-timing";
 
@@ -53,8 +53,8 @@ export async function readSources(
 	const parsed = sourceQuerySchema.safeParse(query);
 	if (!parsed.success) throw new ApiError(400, "validation_failed", "invalid source filters");
 	const head = `SELECT coalesce((SELECT 'factory:v:' || nullif(published_id,'') FROM factory_state WHERE account_id=?),'factory') AS kind`;
-	const [catalogRows, stars, overrides, publicationRows, rows] = await db.batch<
-		SnapshotPage & { repo: string; enabled: number }
+	const [catalogRows, stars, owners, publicationRows, rows] = await db.batch<
+		SnapshotPage & { repo: string; login: string }
 	>([
 		db
 			.prepare(
@@ -62,7 +62,7 @@ export async function readSources(
 			)
 			.bind(account),
 		db.prepare("SELECT repo FROM repo_stars WHERE account_id=? ORDER BY repo").bind(account),
-		db.prepare("SELECT repo,enabled FROM repo_statistics WHERE account_id=?").bind(account),
+		db.prepare("SELECT login FROM accounts WHERE id=?").bind(account),
 		db
 			.prepare(
 				`WITH head AS (${head}) SELECT s.kind,s.payload,s.content_meta FROM snapshots s, head WHERE s.account_id=? AND s.kind IN (head.kind,head.kind || '#2')`,
@@ -109,7 +109,7 @@ export async function readSources(
 				account,
 			),
 	]);
-	if (!catalogRows || !stars || !overrides || !publicationRows || !rows)
+	if (!catalogRows || !stars || !owners || !publicationRows || !rows)
 		throw new ApiError(500, "db_error", "incomplete source batch");
 	const decode = <T>(fn: () => T) => (timing ? timing.measure("decode", fn) : fn());
 	const hash = <T>(fn: () => Promise<T>) => (timing ? timing.measureAsync("hash", fn) : fn());
@@ -117,7 +117,7 @@ export async function readSources(
 		policyFromSaved(
 			assembleSnapshotGroups(catalogRows.results).get("repos") ?? null,
 			selectionFromStars(stars.results, "all"),
-			overrides.results,
+			owners.results[0]?.login ?? "",
 		),
 	);
 	const repository = parsed.data.repository
@@ -218,9 +218,7 @@ export async function readSources(
 			} else {
 				const snapshot = resource === "repos" ? policy.catalog : saved.get(resource);
 				if (!snapshot) continue;
-				data = await hash(() =>
-					projectSnapshot(db, account, resource, snapshot, policy, false, saved),
-				);
+				data = await hash(() => projectSnapshot(db, account, resource, snapshot, policy, saved));
 			}
 			const source = await add(
 				`account:${resource}`,

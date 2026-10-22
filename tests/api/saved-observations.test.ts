@@ -219,7 +219,7 @@ beforeAll(async () => {
 		null;
 	const repos = names.map((name) => ({
 		name_with_owner: name,
-		owner_login: "batch1",
+		owner_login: "nocoo",
 		is_archived: false,
 		is_fork: false,
 		pushed_at: baseline,
@@ -265,7 +265,7 @@ beforeAll(async () => {
 	publication.inventory.excluded = [{ name: removed, reason: "archived" }];
 	const statements = [
 		"UPDATE accounts SET is_active=0 WHERE is_active=1;",
-		`INSERT INTO accounts(id,login,token_ciphertext,token_last4,is_active,created_at,updated_at) VALUES(${quote(account)},'batch1','unused-test-envelope','test',1,${quote(latest)},${quote(latest)});`,
+		`INSERT INTO accounts(id,login,token_ciphertext,token_last4,is_active,created_at,updated_at) VALUES(${quote(account)},'nocoo','unused-test-envelope','test',1,${quote(latest)},${quote(latest)});`,
 		snapshot("repos", { repos, repository_fetched_at: { "NOCOO/RECOVERED": latest } }, catalogAt),
 		snapshot("factory", { ...publication }),
 	];

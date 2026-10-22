@@ -189,16 +189,16 @@ that supplied retained data; baseline data must remain visible in `oldestAt`.
 New catalog entries without proven baseline coverage or a saved observation count
 as missing. Top-level `fetchedAt` is the newest selected observation, not proof of
 uniform freshness. Source-index account entries use the same projection.
-Factory freshness instead counts enabled published repositories in the selected
-catalog (`factoryObserved`), not the whole catalog. Non-owned/catalog-only entries
-and statistics-disabled archived/fork entries do not inflate missing/oldest times.
-An eligible published repository without a valid immutable observation time still
-counts as missing. Machine `/factory` and `/sources`'s `account:factory` agree;
+Factory freshness uses the same selected owned catalog denominator: starred-owned
+for daily/starred scope, every owned entry for full/all scope, including archives
+and forks. Catalog-only members and members without a valid immutable observation
+time count as missing. Non-owned repositories never enter any refresh scope or
+denominator. Machine `/factory` and `/sources`'s `account:factory` agree;
 both report `truncated:true` when publication inventory is not complete. Machine
 reads also retain any saved truncation flag when inventory is complete. Machine
-repository list membership remains statistics-unfiltered. The account factory
-content hash includes enabled published identities, freshness total/missing and
-inventory truncation, so changing enabled identities invalidates it even when
+repository list membership has no separate statistics layer. The account factory
+content hash includes selected identities, freshness total/missing and
+inventory truncation, so changing selected identities invalidates it even when
 counts stay equal. Publication versions/windows and stored rows are unchanged;
 inventory counters remain historical collection metadata.
 Default/`scope=all` preserves the exact saved 90-day account contribution calendar,
@@ -206,7 +206,9 @@ status and provenance, independently of repository filtering. Only `scope=starre
 excludes it (`contribution:null`, `contributionExcluded:true`,
 `contributionStatus:"unavailable"`, no `contributionObservation`), because the
 account-wide calendar cannot be projected to a repository subset. GET is read-only.
-CI freshness counts three saved dependencies per repository, not one timestamp.
+CI freshness counts selected owned repositories, not input slots. Any missing or
+unavailable Actions/releases/details timestamp makes that repository missing once;
+oldest/latest timestamps still inspect all three saved dependencies.
 
 CI verdicts use the known default branch only; missing branch metadata, PR/feature
 branches, null refs and tag refs do not establish default-branch health.
@@ -326,10 +328,16 @@ are coalesced into failed audit rows with `error:scheduled_slots_missed` and
 `missedSlots:{firstDueAt,lastDueAt,count}`; only the latest due slot is attempted.
 Timeout/missed-slot `lastError` warnings persist until an explicit schedule save.
 
-`app:read`/`app:write` can read settings and refresh runs, update stars/statistics/
+`app:read`/`app:write` can read settings and refresh runs, update stars/
 schedules, or explicitly start and control the existing durable GitHub refresh
 plan. Refresh management does not execute external analysis or local code. The
 browser's account/token controls remain Access protected.
+
+Statistics writes return 410 `deprecated` without changing storage. Settings returns
+`statistics:[]` and `statistics_deprecated:true`; `/repos[].statistics_enabled` is a
+deprecated alias of `starred`. The migration removes existing stars with explicit
+false overrides, then empties but retains the override table. Bots must use stars
+for daily membership and must not recreate a separate statistics preference.
 
 The existing `agent_resources` table stores generic resources, including analysis
 reports and run status. Historical Work/resource rows and legacy AI tables remain

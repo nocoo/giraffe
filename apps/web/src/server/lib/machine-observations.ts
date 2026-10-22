@@ -21,20 +21,24 @@ import { publishedFactory } from "./db/factory-runs";
 import { readRepositorySnapshot, readSnapshot } from "./db/snapshots";
 import { ApiError } from "./errors";
 import { streamKey } from "./factory-collect";
+import { latestSnapshotGroups, type SnapshotPage } from "./snapshot-pages";
 import {
 	factoryFreshness,
 	factoryObserved,
 	type Policy,
+	projectFactory,
 	projectSnapshot,
 	repoPolicy,
-	statisticsFactory,
-} from "./repo-statistics";
-import { latestSnapshotGroups, type SnapshotPage } from "./snapshot-pages";
+} from "./snapshot-projection";
 import type { SnapshotScope } from "./snapshot-scope";
 
 export async function requireCatalogRepo(db: Db, account: string, name: string) {
-	const policy = await repoPolicy(db, account);
-	const repo = policy.repos.find((r) => r.name_with_owner.toLowerCase() === name.toLowerCase());
+	const snapshot = await readSnapshot(db, account, "repos");
+	const repo = (Array.isArray(snapshot?.repos) ? snapshot.repos : []).find(
+		(row) =>
+			typeof row?.name_with_owner === "string" &&
+			row.name_with_owner.toLowerCase() === name.toLowerCase(),
+	);
 	if (!repo) throw new ApiError(404, "not_found", "repository outside saved account catalog");
 	return repo.name_with_owner;
 }
@@ -75,13 +79,8 @@ export function observationMetadata(data: Record<string, unknown>) {
 		unavailable: data.unavailable === true || data.forbidden === true,
 	};
 }
-export async function readCiObservation(
-	db: Db,
-	account: string,
-	policy: Policy,
-	statisticsFilter = false,
-) {
-	return projectCiObservation(policy, await readCiGroups(db, account), statisticsFilter);
+export async function readCiObservation(db: Db, account: string, policy: Policy) {
+	return projectCiObservation(policy, await readCiGroups(db, account));
 }
 
 async function readCiGroups(db: Db, account: string) {
@@ -133,17 +132,16 @@ export function factoryContent(snapshot: FactorySnapshot, policy: Policy) {
 export function ciObservationInputs(
 	policy: Policy,
 	groups: ReturnType<typeof latestSnapshotGroups>,
-	statisticsFilter = false,
 ) {
 	if (!policy.catalog && !policy.empty)
 		throw new ApiError(409, "snapshot_missing", "no repository catalog");
 	const entries: CiEntry[] = [];
 	const unsaved: string[] = [];
 	const times: (string | null)[] = [];
+	let missing = 0;
 	let truncated = false;
 	for (const repo of policy.repos) {
 		const name = repo.name_with_owner;
-		if (statisticsFilter && !policy.enabled(name)) continue;
 		const read = (suffix: string) => groups.get(`repo:${name}:${suffix}`.toLowerCase())?.data;
 		const actions = read("actions");
 		const releases = read("releases");
@@ -158,6 +156,7 @@ export function ciObservationInputs(
 				: null,
 		);
 		times.push(...dependencies);
+		if (snapshotFreshness(dependencies).missing > 0) missing++;
 		if (!actions || actions.unavailable === true || actions.forbidden === true) {
 			unsaved.push(name);
 			continue;
@@ -181,6 +180,8 @@ export function ciObservationInputs(
 		});
 	}
 	const freshness = snapshotFreshness(times);
+	freshness.total = policy.repos.length;
+	freshness.missing = missing;
 	const fetchedAt = freshness.latestAt ?? "";
 	return {
 		entries,
@@ -197,19 +198,21 @@ export function projectCiInputs({ entries, metadata }: ReturnType<typeof ciObser
 export function projectCiObservation(
 	policy: Policy,
 	groups: ReturnType<typeof latestSnapshotGroups>,
-	statisticsFilter = false,
 ) {
-	return projectCiInputs(ciObservationInputs(policy, groups, statisticsFilter));
+	return projectCiInputs(ciObservationInputs(policy, groups));
 }
 
 export function projectFactoryObservation(snapshot: FactorySnapshot, policy: Policy) {
-	const projected = statisticsFactory(snapshot, policy, false);
+	const projected = projectFactory(snapshot, policy);
 	const freshness = factoryFreshness(projected, policy);
 	return {
 		...projected,
 		fetched_at: freshness.latestAt ?? "",
 		freshness,
-		truncated: projected.truncated === true || projected.inventory.complete !== true,
+		truncated:
+			projected.truncated === true ||
+			projected.inventory.complete !== true ||
+			freshness.missing > 0,
 	};
 }
 
@@ -254,7 +257,7 @@ export async function readObservation(
 	}
 	const snapshot = await readSnapshot(db, account, resource);
 	if (!snapshot) throw new ApiError(409, "snapshot_missing", "no saved source");
-	const data = await projectSnapshot(db, account, resource, snapshot, policy, false);
+	const data = await projectSnapshot(db, account, resource, snapshot, policy);
 	return observationEnvelope(account, resource, data, scope);
 }
 export async function readFactoryResource(db: Db, account: string, name: string, stream: string) {

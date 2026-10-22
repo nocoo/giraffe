@@ -105,12 +105,14 @@ async function setup() {
 	return { raw, env, save, request, get };
 }
 
-describe("global repository statistics selection", () => {
-	it("defaults forks/archives off across lists, counters, factory and insights", async () => {
-		const { get } = await setup();
-		expect(
-			(await get("repos")).repos.map((r: { statistics_enabled: boolean }) => r.statistics_enabled),
-		).toEqual([true, false, false]);
+describe("owned catalog and local star selection", () => {
+	it("includes owned forks and archives in all scope and derives the deprecated flag from stars", async () => {
+		const { get, request } = await setup();
+		expect((await get("repos")).repos.map((repo) => repo.statistics_enabled)).toEqual([
+			false,
+			false,
+			false,
+		]);
 		for (const [path, key] of [
 			["issues", "issues"],
 			["prs", "pull_requests"],
@@ -118,76 +120,107 @@ describe("global repository statistics selection", () => {
 			["notifications", "notifications"],
 			["alerts", "items"],
 		] as const)
-			expect((await get(path))[key]).toHaveLength(1);
-		expect((await get("alerts")).dependabot_open).toBe(1);
-		expect((await get("factory")).repos.map((r: { name: string }) => r.name)).toEqual([
+			expect((await get(path))[key]).toHaveLength(3);
+		expect((await get("alerts")).dependabot_open).toBe(3);
+		expect((await get("factory")).repos.map((repo) => repo.name)).toEqual([
 			"nocoo/app",
+			"nocoo/fork",
+			"nocoo/archive",
 		]);
-		expect((await get("factory")).contribution).toBeNull();
+		expect((await get("factory?scope=starred")).repos).toEqual([]);
+		expect((await request("repos/nocoo/fork/star", { account_id: id, enabled: true })).status).toBe(
+			200,
+		);
+		expect((await get("repos")).repos.map((repo) => repo.statistics_enabled)).toEqual([
+			false,
+			true,
+			false,
+		]);
+		expect((await get("factory?scope=starred")).repos.map((repo) => repo.name)).toEqual([
+			"nocoo/fork",
+		]);
+		expect((await get("issues?scope=starred")).issues).toHaveLength(1);
 	});
-	it("persists overrides across refreshes and can re-enable a fork without destroying snapshots", async () => {
-		const { request, get, save } = await setup();
-		expect(
-			(await request("repos/nocoo/fork/statistics", { account_id: id, enabled: true })).status,
-		).toBe(200);
-		expect((await get("issues")).issues).toHaveLength(2);
-		expect((await get("factory")).repos).toHaveLength(2);
-		expect(
-			(await request("repos/nocoo/app/statistics", { account_id: id, enabled: false })).status,
-		).toBe(200);
-		const current = await get("repos");
-		await save("repos", {
-			repos: current.repos.map((r: Record<string, unknown>) => ({
-				...r,
-				statistics_enabled: undefined,
-			})),
-		});
-		expect(
-			(await get("repos")).repos.map((r: { statistics_enabled: boolean }) => r.statistics_enabled),
-		).toEqual([false, true, false]);
-		expect(
-			(await request("repos/nocoo/app/statistics", { account_id: id, enabled: true })).status,
-		).toBe(200);
-		expect((await get("issues")).issues).toHaveLength(2);
+
+	it("rejects deprecated statistics writes without reading or changing legacy overrides", async () => {
+		const { request, raw } = await setup();
+		await raw.prepare("INSERT INTO repo_statistics VALUES(?, 'nocoo/fork', 0)").bind(id).run();
+		const before = await raw.prepare("SELECT * FROM repo_statistics").all();
+		for (const name of ["nocoo/fork", "nocoo/missing"])
+			for (const enabled of [true, false, "invalid"]) {
+				const response = await request(`repos/${name}/statistics`, { account_id: id, enabled });
+				expect(response.status).toBe(410);
+				expect(await response.json()).toMatchObject({ error: { code: "deprecated" } });
+			}
+		expect(await raw.prepare("SELECT * FROM repo_statistics").all()).toEqual(before);
 	});
-	it("rejects invalid settings, unknown repositories, stale accounts and cross-origin writes", async () => {
-		const { request, env, raw } = await setup();
+
+	it("validates stars against the whole saved catalog with account and Origin fences", async () => {
+		const { request, env, raw, save, get } = await setup();
+		expect(
+			(await request("repos/nocoo/app/star", { account_id: id, enabled: "false" })).status,
+		).toBe(400);
+		expect(
+			(await request("repos/nocoo/missing/star", { account_id: id, enabled: true })).status,
+		).toBe(404);
+		expect(
+			(
+				await request("repos/nocoo/app/star", {
+					account_id: "account_statistics_02",
+					enabled: true,
+				})
+			).status,
+		).toBe(409);
 		expect(
 			(
 				await createApp().request(
-					"http://localhost/api/repos/nocoo/app/statistics",
+					"http://localhost/api/repos/nocoo/app/star",
 					{
 						method: "POST",
 						headers: { origin: "https://evil.example", "content-type": "application/json" },
-						body: JSON.stringify({ account_id: id, enabled: false }),
+						body: JSON.stringify({ account_id: id, enabled: true }),
 					},
 					env,
 				)
 			).status,
 		).toBe(403);
+		await save("repos", {
+			repos: [{ name_with_owner: "external/fork", is_archived: true, is_fork: true }],
+		});
 		expect(
-			(await request("repos/nocoo/app/statistics", { account_id: id, enabled: "false" })).status,
-		).toBe(400);
+			(await request("repos/EXTERNAL/FORK/star", { account_id: id, enabled: true })).status,
+		).toBe(200);
+		expect((await raw.prepare("SELECT repo FROM repo_stars").all()).results).toEqual([
+			{ repo: "external/fork" },
+		]);
+		expect((await get("repos?scope=starred")).repos).toEqual([]);
 		expect(
-			(await request("repos/nocoo/missing/statistics", { account_id: id, enabled: false })).status,
-		).toBe(404);
-		expect(
-			(
-				await request("repos/nocoo/app/statistics", {
-					account_id: "account_statistics_02",
-					enabled: false,
-				})
-			).status,
-		).toBe(409);
+			(await request("repos/external/fork/star", { account_id: id, enabled: false })).status,
+		).toBe(200);
 		await raw.prepare("UPDATE accounts SET is_active=0").run();
 		expect(
-			(await request("repos/nocoo/app/statistics", { account_id: id, enabled: false })).status,
+			(await request("repos/external/fork/star", { account_id: id, enabled: true })).status,
 		).toBe(409);
 	});
-	it("keeps disabled repositories out of statistics while allowing detail refresh and isolates accounts", async () => {
-		const { request, get, raw } = await setup();
-		expect((await request("factory/repos/nocoo/fork/commits")).status).toBe(404);
-		expect((await get("factory/runs")).catalog).toHaveLength(1);
+
+	it("refreshes owned forks and rejects nonowned selected refresh membership", async () => {
+		const { request, get, save } = await setup();
+		expect((await request("factory/repos/nocoo/fork/commits")).status).toBe(200);
+		expect((await get("factory/runs")).catalog).toHaveLength(3);
+		await save("repos", {
+			repos: [{ name_with_owner: "nocoo/fork" }, { name_with_owner: "external/app" }],
+		});
+		expect(
+			(
+				await request("factory/runs", {
+					account_id: id,
+					requestKey: crypto.randomUUID(),
+					mode: "refresh",
+					scope: "selected",
+					repos: ["external/app"],
+				})
+			).status,
+		).toBe(400);
 		expect(
 			(
 				await request("factory/runs", {
@@ -199,20 +232,5 @@ describe("global repository statistics selection", () => {
 				})
 			).status,
 		).toBe(202);
-		await request("repos/nocoo/archive/statistics", { account_id: id, enabled: true });
-		expect((await get("factory")).repos).toHaveLength(2);
-		await request("repos/NOCOO/ARCHIVE/statistics", { account_id: id, enabled: false });
-		expect((await get("factory")).repos).toHaveLength(1);
-		await raw
-			.prepare(
-				"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES(?,?,?,?,?,?)",
-			)
-			.bind("account_statistics_02", "other", "encrypted", "fake", at, at)
-			.run();
-		await raw
-			.prepare("INSERT INTO repo_statistics(account_id,repo,enabled) VALUES(?,?,?)")
-			.bind("account_statistics_02", "nocoo/app", 0)
-			.run();
-		expect((await get("repos")).repos[0]?.statistics_enabled).toBe(true);
 	});
 });

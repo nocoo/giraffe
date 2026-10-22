@@ -14,7 +14,7 @@ async function fixture() {
 		.prepare(
 			"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES(?,?,'fake','fake',?,?)",
 		)
-		.bind(account, "schedule-test", now, now)
+		.bind(account, "nocoo", now, now)
 		.run();
 	const snap = factoryFixture();
 	await db.batch(await replaceSnapshotStmts(db, account, "factory", snap, now));

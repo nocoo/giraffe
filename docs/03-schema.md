@@ -24,6 +24,39 @@ GitHub 字段名跟 REST/GraphQL 对齐（`login`、`nameWithOwner`、`stargazer
 
 ## 2. 表
 
+### Star membership consolidation
+
+Migration `0016_star_membership.sql` preserves explicit daily-exclusion intent:
+delete a local star if and only if a matching statistics row has `enabled=0` for
+the same account and case-insensitive repository name. It then deletes every
+`repo_statistics` row, including entries whose repositories left the catalog.
+Explicit true overrides on unstarred repositories do not create stars. No production
+repository names are hard-coded. Reapplying the migration is a no-op.
+
+Before applying, the affected-star count is computed by this rule (not by assumed
+production counts):
+
+```sql
+SELECT count(*) AS stars_removed
+FROM repo_stars AS stars
+WHERE EXISTS (
+  SELECT 1 FROM repo_statistics AS statistics
+  WHERE statistics.account_id = stars.account_id
+    AND lower(statistics.repo) = lower(stars.repo)
+    AND statistics.enabled = 0
+);
+SELECT count(*) AS overrides_removed FROM repo_statistics;
+```
+
+Keep the emptied table for old-schema/code rollback; do not drop or rebuild it.
+This authorized cleanup changes configuration intent, not observations, publication
+history or agent resources. Rollback retains the resulting stars and the empty
+table; restoring pre-cleanup preferences requires a separately retained backup.
+The fixture migration covers starred false overrides, unstarred true overrides,
+archived entries, departed-repository residue and a non-owned repository. No remote
+database is accessed for this verification. Removed stars create no owner tombstones,
+so a future agent can star those catalog repositories again.
+
 ### Analysis report read index (v0.17.1)
 
 Migration `0015_analysis_reports.sql` adds only the repeatable partial expression

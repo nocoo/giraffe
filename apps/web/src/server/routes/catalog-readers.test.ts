@@ -53,7 +53,7 @@ it("shares saved CI evidence between browser and machine and never assumes a def
 	const machine = await readObservation(createDb(raw), "a", "ci", "all");
 	expect(machine.data).toEqual({ ...browser, account_id: undefined });
 	expect(browser).toMatchObject({
-		freshness: { total: 12, missing: 4 },
+		freshness: { total: 4, missing: 2 },
 		unsaved: ["owner/unsaved"],
 		totals: {
 			totalRepos: 3,
@@ -66,7 +66,7 @@ it("shares saved CI evidence between browser and machine and never assumes a def
 	expect(await raw.prepare("SELECT * FROM snapshots ORDER BY kind").all()).toEqual(before);
 });
 
-it("counts only published factory repositories and preserves original source windows", async () => {
+it("counts unpublished catalog members as missing and preserves original factory source windows", async () => {
 	const raw = sqliteFixture();
 	const db = createDb(raw);
 	const snap = factoryFixture();
@@ -114,7 +114,8 @@ it("counts only published factory repositories and preserves original source win
 			{ name: "nocoo/no-observation" },
 		],
 		fetched_at: "2026-09-01T00:00:00Z",
-		freshness: { total: 2, missing: 1, oldestAt: "2026-09-01T00:00:00Z" },
+		freshness: { total: 3, missing: 2, oldestAt: "2026-09-01T00:00:00Z" },
+		truncated: true,
 		inventory: { excluded: [] },
 		contribution: null,
 		contributionStatus: snap.contributionStatus,

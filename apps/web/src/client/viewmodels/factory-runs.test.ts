@@ -486,7 +486,7 @@ it("shows actionable distinctions for credential, capacity, access and upstream 
 	}
 	expect(describeRunIssue("encryption_key_missing", "metadata")).toMatchObject({ settings: false });
 	expect(describeRunIssue("encryption_key_missing", "metadata").action).toContain("维护者");
-	expect(describeRunIssue("factory_capacity", "metadata").action).toContain("减少统计仓库");
+	expect(describeRunIssue("factory_capacity", "metadata").action).toContain("缩小刷新范围");
 	expect(describeRunIssue("factory_capacity", "snapshot").action).toContain("全站清单");
 	expect(describeRunIssue("coverage_regression_retained", "commit").impact).toContain("上次的数据");
 	for (const code of [

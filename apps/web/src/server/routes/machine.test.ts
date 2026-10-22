@@ -491,13 +491,21 @@ it("manages only explicit local configuration and durable refresh controls", asy
 	const s = await setup();
 	const p = s.prefix;
 	expect((await s.call(`${p}/settings`)).status).toBe(200);
-	for (const kind of ["stars", "statistics"]) {
+	for (const kind of ["stars"]) {
 		const path = `${p}/${kind}/nocoo/app`;
 		expect((await s.call(path, "PUT", { enabled: false })).status).toBe(200);
 		expect((await s.call(path, "GET")).status).toBe(405);
 		expect((await s.call(path, "DELETE")).status).toBe(204);
 	}
-	expect((await s.call(`${p}/statistics/nocoo/app`, "PUT", {})).status).toBe(400);
+	for (const method of ["PUT", "DELETE"]) {
+		const response = await s.call(`${p}/statistics/nocoo/app`, method, {});
+		expect(response.status).toBe(410);
+		expect(await response.json()).toMatchObject({ error: { code: "deprecated" } });
+	}
+	expect(await (await s.call(`${p}/settings`)).json()).toMatchObject({
+		statistics: [],
+		statistics_deprecated: true,
+	});
 	for (const kind of ["daily", "weekly", "catalog"]) {
 		const path = `${p}/schedules/${kind}`;
 		const body = {

@@ -3,8 +3,8 @@ import type { AppVars, Env } from "../env";
 import { getActiveAccount } from "../lib/db/accounts";
 import { readRepositorySnapshot, readSnapshot } from "../lib/db/snapshots";
 import { ApiError, jsonOk } from "../lib/errors";
-import { statisticsSnapshot } from "../lib/repo-statistics";
-import { snapshotScope, snapshotSelection } from "../lib/snapshot-scope";
+import { repoPolicy, scopedSnapshot } from "../lib/snapshot-projection";
+import { snapshotScope } from "../lib/snapshot-scope";
 
 export async function snapshotGet(
 	c: Context<{ Bindings: Env; Variables: AppVars }>,
@@ -19,7 +19,7 @@ export async function snapshotGet(
 		? ((await readRepositorySnapshot(c.get("db"), account.id, logical))?.data ?? null)
 		: await readSnapshot(c.get("db"), account.id, logical);
 	if (!snap && scope === "starred" && !logical.startsWith("repo:")) {
-		const selection = await snapshotSelection(c.get("db"), account.id, scope);
+		const selection = await repoPolicy(c.get("db"), account.id, undefined, scope);
 		const key = (
 			{
 				repos: "repos",
@@ -37,7 +37,7 @@ export async function snapshotGet(
 	}
 	return jsonOk(
 		{
-			...(await statisticsSnapshot(c.get("db"), account.id, logical, snap, scope)),
+			...(await scopedSnapshot(c.get("db"), account.id, logical, snap, scope)),
 			account_id: account.id,
 		},
 		200,

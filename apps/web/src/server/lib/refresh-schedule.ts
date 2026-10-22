@@ -11,7 +11,7 @@ import { catalogFactory, expireRuns } from "./db/factory-runs";
 import { ApiError } from "./errors";
 import { startRefresh } from "./factory-start";
 import { normalizeScheduleConfig } from "./refresh-schedule-input";
-import { repoPolicy, statisticsFactory } from "./repo-statistics";
+import { repoPolicy } from "./snapshot-projection";
 
 export function nextScheduleAt(
 	kind: ScheduleKind,
@@ -254,9 +254,13 @@ export async function scheduleRefreshes(raw: D1Database, now: string): Promise<v
 			let repos: string[] = [];
 			if (row.kind !== "catalog") {
 				const catalog = await catalogFactory(db, account.id);
+				const policy = await repoPolicy(db, account.id, undefined, row.scope);
 				if (
 					!catalog?.inventory.complete ||
-					Date.parse(now) - Date.parse(catalog.fetched_at) >= 86400_000
+					Date.parse(now) - Date.parse(catalog.fetched_at) >= 86400_000 ||
+					policy.repos.some(
+						(repo) => !catalog.repos.some((entry) => entry.name === repo.name_with_owner),
+					)
 				) {
 					const preparation = await startRefresh(
 						db,
@@ -281,16 +285,7 @@ export async function scheduleRefreshes(raw: D1Database, now: string): Promise<v
 						"scheduled catalogue preparation",
 					);
 				}
-				const policy = await repoPolicy(db, account.id);
-				const stars = new Set(
-					(await starredRepos(db, account.id)).map((name) => name.toLowerCase()),
-				);
-				repos =
-					row.scope === "all"
-						? statisticsFactory(catalog, policy).repos.map((repo) => repo.name)
-						: policy.repos
-								.filter((repo) => stars.has(repo.name_with_owner.toLowerCase()))
-								.map((repo) => repo.name_with_owner);
+				repos = policy.repos.map((repo) => repo.name_with_owner);
 			}
 			if (row.kind !== "catalog" && !repos.length) {
 				error = "no_starred_repositories";

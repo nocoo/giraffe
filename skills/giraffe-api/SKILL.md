@@ -68,7 +68,8 @@ activity; successful mutations do. See [authentication](../../docs/api.md#authen
 
 `GET /sources` requires `observations:read` and returns
 `{account_id,repositories,sources}`. The sorted repository catalog includes
-unstarred, archived, forked and statistics-disabled repositories. Each source is
+owned unstarred, archived and forked repositories. Non-owned repositories are excluded.
+Each source is
 `{resource,version,contentVersion,fetchedAt,freshness,coverage,truncated,unavailable}`.
 Source order is unspecified; missing saved sources can be omitted, not zero.
 
@@ -275,7 +276,10 @@ read [settings/stars/statistics](../../docs/api.md#settings-stars-and-statistics
 [run control](../../docs/api.md#post-refresh-runsidcontrol).
 These manage GitHub refresh, not bot execution. Retry uncertain start with the
 same `requestKey` and body; acceptance is not publication success. Do not alter
-statistics or schedules merely to enlarge analysis coverage.
+stars or schedules merely to enlarge analysis coverage. Daily scope is starred-owned;
+full scope is all-owned, including archives/forks. Statistics writes return 410
+`deprecated`; settings exposes an empty deprecated statistics list, and
+`statistics_enabled` is only a deprecated alias of `starred`.
 
 ## Errors, limits and retries
 
@@ -292,6 +296,7 @@ can fail before validation; edge errors can have a different envelope.
 | 409 `snapshot_missing` | Preserve pending work; missing immutable evidence is not zero |
 | 409 `resource_exists` / `revision_conflict` | GET and reconcile full identity/current revision |
 | 409 `catalog_incomplete` / `refresh_cooldown` / `account_conflict` | Resolve catalog or defer authorized refresh/control |
+| 410 `deprecated` | Stop statistics writes; use authorized local star management |
 | 422 `factory_capacity` | Reduce authorized refresh selection; prior data is retained |
 | 500 `internal_error` / `db_error` | Bounded backoff, then operator diagnosis |
 

@@ -7,7 +7,7 @@ import { ApiError } from "./errors";
 import { boundedJson } from "./factory-publish";
 import { siteCatalog } from "./factory-site";
 import { ACCOUNT_ID_RE } from "./id";
-import { repoPolicy, statisticsFactory } from "./repo-statistics";
+import { projectFactory, repoPolicy } from "./snapshot-projection";
 export const refreshInput = z.object({
 	account_id: z.string().regex(ACCOUNT_ID_RE),
 	requestKey: z.string().uuid(),
@@ -41,7 +41,7 @@ export async function startRefresh(
 	}
 	const rawCatalog = await catalogFactory(db, row.id);
 	const policy = await repoPolicy(db, row.id);
-	const catalog = rawCatalog ? statisticsFactory(rawCatalog, policy) : null;
+	const catalog = rawCatalog ? projectFactory(rawCatalog, policy) : null;
 	const siteNames = data.mode === "refresh" ? await siteCatalog(db, row.id) : [];
 	const selectedNames = data.repos ?? [];
 	if (
@@ -59,7 +59,10 @@ export async function startRefresh(
 	const states = await repoStates(db, row.id);
 	if (
 		data.mode === "refresh" &&
-		(!catalog || siteRepos === null || (data.scope !== "selected" && !catalog.inventory.complete))
+		(!catalog ||
+			siteRepos === null ||
+			(data.scope !== "selected" && !catalog.inventory.complete) ||
+			(siteRepos ?? []).some((name) => !catalog.repos.some((repo) => repo.name === name)))
 	)
 		throw new ApiError(409, "catalog_incomplete", "discover complete catalog first");
 	let repos: NonNullable<Awaited<ReturnType<typeof catalogFactory>>>["repos"];

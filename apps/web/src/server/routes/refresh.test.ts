@@ -728,7 +728,7 @@ describe("refresh route", () => {
 		const hugeId = await createAccount(huge);
 		const hugeDb = createDb(huge.DB);
 		const repos = Array.from({ length: 40 }, (_, i) => ({
-			name_with_owner: `org/r${i}`,
+			name_with_owner: `octocat/r${i}`,
 			open_issue_count: 0,
 			pushed_at: "2026-08-01T00:00:00.000Z",
 			stargazer_count: 0,
@@ -841,9 +841,9 @@ describe("refresh route", () => {
 							viewer: {
 								repositories: {
 									nodes: Array.from({ length: 40 }, (_, i) => ({
-										nameWithOwner: `org/r${i}`,
+										nameWithOwner: `octocat/r${i}`,
 										name: `r${i}`,
-										owner: { login: "org" },
+										owner: { login: "octocat" },
 										pushedAt: "2026-08-01T00:00:00.000Z",
 										issues: { totalCount: 0 },
 									})),
