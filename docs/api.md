@@ -513,11 +513,12 @@ they never collapse a partly missing repository into complete coverage.
 
 ### Content version recipe
 
-`version` in `/sources` and `sourceVersion` in observation envelopes are unchanged:
-snapshot versions hash `JSON.stringify(projectedData)`, including `fetched_at`,
-so a new saved refresh timestamp changes them. Raw snapshots reuse this exact full
-digest from saved metadata when available; account projections still derive full
-versions from their projected JSON. Factory/publication/stream/calendar
+Historical/direct snapshot `version` in `/sources` and `sourceVersion` in
+observation envelopes retain their existing full JSON digest, including
+`fetched_at`, so a new saved refresh timestamp changes them. New staged site
+snapshots instead use the publication-bound composite rule below; do not derive
+their full version by hashing response JSON alone. Account projections still
+derive full versions from their projected JSON. Factory/publication/stream/calendar
 versions instead use their original run IDs. The additive, nullable
 `contentVersion` is computed when evidence is saved, not by decoding and hashing
 stream payloads on GET. It is not an ETag; `/sources` ETags still describe the full
@@ -539,11 +540,11 @@ The exact recipe in [content-version.ts](../apps/web/src/server/lib/content-vers
 
 | Context | Removed fields |
 | --- | --- |
-| Every snapshot root | `fetched_at`, `repository_fetched_at`, `source_fetched_at` |
+| Every snapshot root | `fetched_at`, `repository_fetched_at`, `source_fetched_at`, `publication` |
 | Root `freshness` object | `oldestAt`, `latestAt`; retain `total` and `missing` |
 | Factory root/stream root | `runId`, `revision`, `leaseUntil`, `startedAt`, `requests`, `rate`, `rateLimits`, `cursor`, `publication`, `next` |
 | Factory stream `coverage` and factory `repos[].coverage[stream]` | `fetchedAt`, `sourceFetchedAt`, `pages`, `strategy`, `source` |
-| Factory stream `observation` and factory `repos[].observation` | `version`, `refreshedAt`, `metadataAt`, `source`, `repo`; retain the original `window` |
+| Factory stream `observation` and factory `repos[].observation` | `version`, `refreshedAt`, `publishedAt`, `metadataAt`, `source`, `repo`; retain the original `window` |
 | Factory `repos[]`; `inventory` | `metadataAt`; `pages`, `after`, respectively |
 | Factory `contribution`; its `days[]`; `contributionObservation` | `fetchedAt`, `observedAt`; `observedAt`; `version`, `fetchedAt`, respectively |
 
