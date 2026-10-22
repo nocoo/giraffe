@@ -335,6 +335,7 @@ export function activityTotals(repos: ActivityRepo[]): ActivitySnapshot["totals"
 			(repo) =>
 				repo.ci_runs === null ||
 				repo.coverage.actions?.status !== "complete" ||
+				repo.coverage.default_branch?.status !== "complete" ||
 				repo.ci_runs.some(
 					(run) =>
 						run.is_default_branch === null &&

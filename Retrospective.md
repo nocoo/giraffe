@@ -1,5 +1,15 @@
 # Retrospective
 
+## 2026-10-23 - Unknown branch coverage must reach totals
+
+The branch-evidence regression included a failed workflow, so the existing
+unknown-failure guard already produced a null red-default-branch total. Review
+found that empty and all-successful workflow lists still returned an empty total
+despite unavailable branch coverage. Require complete default-branch coverage
+in the aggregate itself and test both list shapes against unknown and verified
+metadata. Propagate evidence availability independently of the observed outcome;
+an absent failure does not verify the branch.
+
 ## 2026-10-23 - Current streams need current branch metadata
 
 The retained-version activity fix initially verified stream run IDs without

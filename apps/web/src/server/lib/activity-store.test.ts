@@ -540,6 +540,60 @@ it.each(["missing-step", "failed-step", "missing-branch", "null-branch", "other-
 	},
 );
 it.each([
+	[null, false],
+	[null, true],
+	["main", false],
+	["main", true],
+] as const)(
+	"publishes red CI totals with branch %s and successful runs %s",
+	async (branch, hasRuns) => {
+		const { freezeActivityRepo } = await import("./activity-store");
+		const { db, lease, repo } = await setup();
+		for (const step of lease.run.steps) step.status = "success";
+		const metadata = lease.run.steps.find((step) => step.kind === "metadata");
+		if (!metadata) throw new Error("Missing metadata step");
+		metadata.sourceBranch = branch;
+		const items = hasRuns
+			? mapFactoryEvents("actions", [
+					{
+						id: 1,
+						created_at: now,
+						head_branch: "main",
+						event: "push",
+						status: "completed",
+						conclusion: "success",
+					},
+				])
+			: [];
+		await db
+			.prepare(
+				"UPDATE factory_resources SET payload=? WHERE run_id=? AND repo=? AND stream='actions'",
+			)
+			.bind(
+				JSON.stringify({
+					runId: lease.run.id,
+					items,
+					coverage: { ...repo.coverage.actions, status: "complete" },
+					next: null,
+					ranges: [],
+				}),
+				lease.run.id,
+				repo.name,
+			)
+			.run();
+		await db.batch([await freezeActivityRepo(db, lease, now, repo, extra())]);
+		const writes = await activityPublicationWrites(db, lease, now, [repo]);
+		lease.run.status = "completed";
+		expect(await saveRun(db, lease, writes, now)).toBe(true);
+		const data = await readActivity(db, "account_123", {});
+		expect(data.repos[0]?.coverage.default_branch?.status).toBe(
+			branch ? "complete" : "unavailable",
+		);
+		expect(data.totals.ci_runs).toBe(items.length);
+		expect(data.totals.red_default_branch).toEqual(branch ? [] : null);
+	},
+);
+it.each([
 	"success",
 	"missing-id",
 	"pending",
@@ -730,6 +784,7 @@ it("R4 red-workflow header copies obey the same UTF-8 cap as repository pages", 
 		coverage: {
 			...repo.coverage,
 			actions: { status: "complete" as const, truncated: false, reason: null },
+			default_branch: { status: "complete" as const, truncated: false, reason: null },
 		},
 	}));
 	const packed = packActivity(snapshotFor(snapshots));
