@@ -1515,6 +1515,10 @@ Track new capacity loss separately from inherited coverage flags and reject an
 overflowing final staged representation before creating any writes. The native
 SQLite regression now collects all 2,000 records and verifies that the limited
 run can publish without changing the previous snapshot or its original time.
+Follow-up review also reproduced a four-byte gap when a retained collection time
+omitted milliseconds. Reserve a fixed 24-character publication timestamp rather
+than borrowing the collection timestamp's variable width; the final-format guard
+must cover every field added or replaced during promotion.
 
 ## 2026-10-22 - A reused repository name is not its old identity
 

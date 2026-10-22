@@ -571,7 +571,10 @@ JSON as before. All physical pages of a snapshot carry the same logical hashes.
 
 New staged site snapshots use a publication-bound composite `fullVersion`.
 Staging computes the exact digest above for the bounded logical snapshot,
-including its reserved `publication:{runId,publishedAt:fetchedAt}` metadata.
+including its reserved
+`publication:{runId,publishedAt:"0000-01-01T00:00:00.000Z"}` metadata. This private
+24-character placeholder reserves the final timestamp width even when a retained
+collection time omits milliseconds; it is replaced before publication is visible.
 At promotion, hash the UTF-8 bytes of compact
 `JSON.stringify({snapshot:staged.fullVersion,publication:{runId,publishedAt}})`
 with SHA-256, preserving the shown object insertion order, and encode as

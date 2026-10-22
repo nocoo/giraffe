@@ -63,7 +63,9 @@ export async function replaceSnapshotStmts(
 	const [a, b] = physicalKinds(logical);
 	const { pages, capacityExceeded } = splitPages(logical, {
 		...payload,
-		...(stageRunId ? { publication: { runId: stageRunId, publishedAt: fetchedAt } } : {}),
+		...(stageRunId
+			? { publication: { runId: stageRunId, publishedAt: "0000-01-01T00:00:00.000Z" } }
+			: {}),
 		fetched_at: fetchedAt,
 		truncated: payload.truncated === true,
 	});

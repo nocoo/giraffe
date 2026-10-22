@@ -13,6 +13,31 @@ import { splitPages } from "./snapshot-pages";
 const collectedAt = "2026-10-22T04:00:00.000Z";
 const publishedAt = "2026-10-22T04:00:01.000Z";
 
+it("reserves the final timestamp width when retained collection timestamps omit milliseconds", async () => {
+	const db = createDb(sqliteFixture());
+	const shortTime = "2026-10-22T04:00:00Z";
+	const overhead = new TextEncoder().encode(
+		JSON.stringify({
+			items: [{ name: "" }],
+			truncated: false,
+			fetched_at: shortTime,
+			publication: { runId: "ready", publishedAt: shortTime },
+		}),
+	).length;
+	const item = { name: "x".repeat(1_500_000 - overhead) };
+	await expect(
+		replaceSnapshotStmts(
+			db,
+			"account",
+			"issues",
+			{ items: [item, item], truncated: false },
+			shortTime,
+			"ready",
+		),
+	).rejects.toMatchObject({ code: "snapshot_incomplete" });
+	expect(db.statements).toBe(0);
+});
+
 async function stagedFixture(pageCount = 1, observedAt = collectedAt) {
 	const raw = sqliteFixture();
 	const db = createDb(raw);
