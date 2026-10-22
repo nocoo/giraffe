@@ -24,7 +24,7 @@ Direction: [architecture](docs/01-architecture.md), [quality](docs/02-quality.md
 
 ## Setup and commands
 
-TypeScript 7 strict, Bun 1.4, Node ≥22.22; Hono Cloudflare Worker. Vite React/Basalt SPA; D1 `giraffe-db` through `DB`. Biome and AST boundary gates; Vitest/V8, real HTTP and Playwright Chromium. `apps/web/src/server/` and `apps/web/src/lib/` hold API, Access, encrypted accounts, GitHub collection, storage and shared types; `apps/web/src/client/` and `tests/{api,e2e}/` hold routes/viewmodels and API/browser journeys; `scripts/`, `migrations/`, `docs/` hold runners, schema evolution and numbered design/runbooks.
+TypeScript 7 strict, Bun 1.4, Node ≥22.23.4; Hono Cloudflare Worker. Vite React/Basalt SPA; D1 `giraffe-db` through `DB`. Biome and AST boundary gates; Vitest/V8, real HTTP and Playwright Chromium. `apps/web/src/server/` and `apps/web/src/lib/` hold API, Access, encrypted accounts, GitHub collection, storage and shared types; `apps/web/src/client/` and `tests/{api,e2e}/` hold routes/viewmodels and API/browser journeys; `scripts/`, `migrations/`, `docs/` hold runners, schema evolution and numbered design/runbooks.
 
 Run from the root. API/browser runners generate fake keys and test configuration without `.dev.vars`. Install Chromium for browser checks; Gitleaks and OSV Scanner are required by push gates.
 
@@ -64,7 +64,7 @@ For daily development, prepare `.dev.vars` from the example without overwriting 
 | pre-commit | Working-tree typecheck, full lint, four structural gates and coverage | Unified L1 on an index snapshot, <30s |
 | pre-push | Local L2 and G2 in parallel; Gitleaks consumes stdin ranges | Test the same pushed commit snapshots as well, <3min |
 
-Install restores Husky. Hooks are check-only; never use `--no-verify` on commits or branch pushes. CI/CD pins shared `nocoo/base-ci` workflows at `0394178ebcff0418c442d84a84119220f31f8987` (v2026.9).
+Install restores Husky. Hooks are check-only; never use `--no-verify` on commits or branch pushes. CI/CD pins shared `nocoo/base-ci` workflows at `ac635753a869cb85fad1f52aae4ccbd6119f3cae` (main 2026-10-22).
 
 ## Resources and isolation
 
