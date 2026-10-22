@@ -6,6 +6,30 @@ does not bundle an analysis runtime, run model inference, or execute code change
 The complete endpoint reference, request examples, validation limits and recommended
 consumer flow are in [Machine API v1](api.md).
 
+## Catalog discovery consumption
+
+Use `GET /catalog/changes?since=<ISO>` with `observations:read` before applying
+authorized bot policy. The inclusive cursor returns stable event IDs: deduplicate
+them, and advance from the returned `until` only after processing the response.
+409 `catalog_unpublished` means no complete discovery history yet; 410
+`catalog_history_expired` requires a full catalog resynchronization. History is
+bounded to 90 days and 10,000 events per account; see the
+[discovery contract](api.md#get-catalogchanges) for ordering and retention.
+
+`/repos` adds `first_seen_at`, `last_seen_at`, `removed_at` and
+`archived_changed_at`. Default reads exclude removed repositories; explicitly use
+`include=removed` to inspect retained departed rows. Existing catalog timestamps
+are seeded from saved fetch times without invented events. A detected stable-ID
+rename preserves mutable star provenance, not a delete/unstar/add sequence.
+
+Deletion requires a complete listing and confirming 404. Denied, failed or
+rate-limited lookups retain membership; more than `max(3, 10% of owned repos)`
+missing candidates suppress all removals. Confirmed removal clears stars and
+mutable participation/overrides but preserves immutable evidence and generic
+agent records. Reappearance is added without restoring stars. Default-star and
+archive-unstar policy remains in the external bot, respecting owner overrides;
+Giraffe performs no automatic starring and adds no R5/R6 agent-state/meta API.
+
 ## Authentication and token management
 
 Only `https://giraffe.hexly.ai/api/v1/*` is outside the dashboard's Cloudflare

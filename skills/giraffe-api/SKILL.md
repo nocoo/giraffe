@@ -123,6 +123,7 @@ api "$API/repos?scope=all"
 | Source identity | GET data path |
 | --- | --- |
 | `account:repos`, `account:issues`, `account:prs`, `account:ci`, `account:factory` | `/repos`, `/issues`, `/prs`, `/ci`, `/factory`, respectively |
+| `account:activity` | `/activity?run=latest` |
 | `repo:owner/name:details`, `:issues`, `:prs`, `:actions`, `:releases` | `/repos/:owner/:name/:resource` |
 | `factory:owner/name:commits`, `:issues`, `:prs`, `:actions`, `:releases`, `:alerts`, `:dependencies` | `/factory/repos/:owner/:name/:stream` |
 
@@ -130,7 +131,7 @@ Traffic/security/languages/contributors are readable repository pages but not
 indexed. `/contributions` reads the saved account calendar with inclusive date
 bounds, not `scope`; discover its evidence through `account:factory`.
 Account observations accept `scope=all|starred` (default all), where stars are local
-Giraffe stars. Repository/stream endpoints accept no query parameters. Every
+Giraffe stars; `/repos` also accepts `include=removed`. Repository/stream endpoints accept no query parameters. Every
 documented machine GET rejects unknown query keys with 400 `validation_failed`.
 Factory `selectedRepos` is the expected read-time membership; `repos` contains
 only real publications. Keep unpublished members in denominators and unknown
@@ -314,6 +315,26 @@ that misses its Beijing day gets an explicit failed record, never a later-day ru
 Inspect schedule `lastError` and run outcomes independently. `expectedFinishAt` is
 a read-time same-kind historical median estimate, not a deadline; null includes
 `expectedFinishAtReason`. Do not infer collection success from cron health or ETA.
+
+## Catalog discovery
+
+Poll `/catalog/changes?since=<ISO>` with `observations:read`. Process `added`,
+`removed`, `archived`, `unarchived`, `visibility_changed`, `fork_changed` and
+`renamed`. Events sort by time/repo/event ID; `since` is inclusive, so deduplicate
+`event_id` and resume from the returned `until`. 409 `catalog_unpublished` means
+no complete publication; 410 `catalog_history_expired` requires a full catalog
+resync. History retains at most 90 days/10,000 events; do not assume older polls
+are complete. GET does not collect or write.
+
+`/repos` includes nullable `first_seen_at`, `last_seen_at`, `removed_at` and
+`archived_changed_at`; saved fetch time is not GitHub creation time. Default
+reads omit removed repos; `include=removed` exposes bounded departed rows.
+Deletion requires complete discovery plus direct 404; denied/failed lookups and
+the mass-removal guard retain prior membership. Confirmed deletion clears stars
+and mutable participation, not immutable evidence or generic agent resources.
+Stable-ID renames preserve stars; reappearance does not resurrect them. Giraffe
+never auto-stars. Apply only authorized bot policy and respect owner overrides.
+See [discovery](../../docs/api.md#get-catalogchanges) for exact bounds and fields.
 
 ## Errors, limits and retries
 

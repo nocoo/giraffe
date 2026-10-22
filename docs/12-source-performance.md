@@ -1,5 +1,34 @@
 # Source Index Performance
 
+## v0.19.0 activity and discovery budget
+
+The activity source adds one stored-header statement and discovery adds one
+history-metadata statement to the existing source-reader batch (seven statements,
+still one reader round trip). It does not fetch
+activity repository pages for source polling. Activity GET reads an immutable
+header and bounded pages in at most two reader rounds, excluding authentication.
+Publication first profiles at most 500 frozen repository names with byte lengths
+only, then fetches at most 4,000,000 UTF-8 bytes of projected repository payloads
+in frozen order. The payload read rechecks lengths; growth cannot bypass the
+input bound. Output is independently capped at 16 pages of 1,500,000 bytes.
+Omitted members retain explicit truncation/null totals, including filtered reads.
+
+R4 fixtures measure one supplemental request/leased page per repo when a complete
+90-day stream supplies successful deployment evidence; fallback adds a second
+successful-runs request/page. Beijing contributions add one account request.
+At the historical 48 minutes/778 steps cadence, the two-page fixture adds about
+5.2 minutes for 42 repos or 7.5 minutes for 60. Scaling the baseline to 60 yields
+a nominal 76-minute total, not a production SLA. Supplemental pagination is
+bounded at 20 requests per repo; rate limits can still stretch actual duration.
+
+Catalog stable IDs are fields in the existing listing query, not separate
+requests. Only missing candidates require direct repository confirmation; a
+normal complete rediscovery adds no GitHub calls. More than
+`max(3, owned_before * 0.1)` missing candidates suppress all removal confirmation
+calls and preserve membership. Denied/failed confirmations never prove deletion.
+Discovery GET uses saved rows and never triggers upstream collection. Fixture
+request counts and scheduler-step costs are distinct from deployed latency.
+
 ## v0.18.0: timing and comparison boundary
 
 Smart Placement is enabled with `placement.mode = "smart"`. It needs time to

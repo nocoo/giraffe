@@ -11,11 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - R4: persist immutable, bounded current-run activity for eligible account-wide quick/daily refreshes, with seamless successful-run boundaries, explicit first/gap windows, workflow metadata, PR/issue lifecycle, release/tag events, branch commits, current open items/security and deployment evidence. Nullable coverage never becomes a fabricated zero. Add read-only browser `/api/activity`, scoped machine `/activity`, ETag/304 and `account:activity` source discovery.
 - R4: add the Basalt `/today` page and repository current-run panel, including gap/truncation, lifecycle/release/red-CI/deploy sections and Beijing-requested contribution totals/composition with honest GitHub-native calendar provenance. Keep `/` landing on `/factory`.
+- R7: track catalog additions, confirmed deletions, archive/unarchive, visibility/fork changes and stable-ID renames. Add read-only `/catalog/changes`, four repository discovery timestamps and explicit `include=removed`, with bounded retention and authenticated ETag/304.
+
+### Changed
+
+- R7: only complete catalog discovery with a confirming 404 removes membership; denied/failed lookups retain prior rows. Missing candidates above `max(3, 10% of owned repositories)` suppress all removals. Confirmed deletion atomically clears stars and mutable participation/override residue, while immutable evidence and generic agent resources survive. Renames preserve mutable star provenance; reappearance never resurrects stars. Default-star policy stays external.
 
 ### Migration and Compatibility
 
 - Apply additive `0018_activity.sql` before code deployment; retain its immutable header/pages on rollback. No historical activity body is backfilled. Pre-migration successful run metadata can supply the next boundary. Activity bytes participate in account budgets and the latest two usable publications survive newer failed runs.
 - GitHub管家 can poll `account:activity` and then `/activity?run=latest`; use saved window and coverage instead of reconstructing daily activity from the 90-day streams. Unknown runs return 404 and known unpublished runs return 409. Missing lists/counts remain null. Native contribution dates are not relabeled Beijing squares. Seven-day comparison against live `gh` remains a post-release operator acceptance task; automated proof uses isolated fixtures only.
+- Apply additive `0019_catalog_history.sql`; existing saved catalog rows receive their saved fetch timestamps without fabricated change events. `/repos` excludes removed rows by default; request `include=removed` when needed. Poll the inclusive discovery cursor with event-ID deduplication; 409 means not initialized, and 410 means the 90-day/10,000-event history expired and requires catalog resynchronization. No R5/R6 agent-state/meta endpoints are introduced.
 
 ## v0.18.0 - 2026-10-22
 

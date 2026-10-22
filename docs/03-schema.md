@@ -24,6 +24,44 @@ GitHub 字段名跟 REST/GraphQL 对齐（`login`、`nameWithOwner`、`stargazer
 
 ## 2. 表
 
+### Catalog membership history
+
+Apply additive `0019_catalog_history.sql` after the activity migration. It adds
+three account-cascading tables without a factory-run foreign key, so discovery
+history survives ordinary run garbage collection:
+
+- `catalog_repositories`: `(account_id, identity_key)` primary key, nullable
+  stable `github_id`, case-insensitive `repo`, last-known `row_payload` (plain
+  existing repository JSON, at most 16,000 UTF-8 bytes), four nullable discovery
+  timestamps, `visibility`, boolean `is_archived`/`is_fork`,
+  `first_seen_source` (`saved_catalog|github_catalog`) and nullable
+  `last_source_run_id`. A non-null GitHub ID is unique per account; current names
+  are unique only while `removed_at IS NULL`, preserving departed identities.
+- `catalog_changes`: `(account_id, event_id)` primary key, `kind`, `repo`, nullable
+  `github_id`, `at`, `source_kind` (`factory|legacy`), nullable `source_run_id` and
+  `details` JSON (at most 1,024 UTF-8 bytes). Seven kinds cover addition, removal,
+  archive/unarchive, visibility/fork change and stable-ID rename.
+- `catalog_state`: account primary key, non-null `history_since`, nullable
+  `checked_at`, monotonic `revision`, nullable `source_run_id` and `warning_code`.
+
+Migration seeds existing saved catalog rows with their saved fetch timestamps and
+`first_seen_source=saved_catalog`, without emitting events. Later discovery adopts
+the stable ID by name rather than inventing an addition. `checked_at` remains
+unset until a complete successful discovery, and partial listings do not advance
+history or replace membership. A complete publication commits membership, events,
+confirmed-removal cleanup and current catalog together; factory writes retain the
+existing lease/fence and legacy writes compare the catalog revision.
+
+Event retention is 90 days and 10,000 rows per account, evicting whole timestamp
+cohorts and advancing the inclusive-query floor beyond the last evicted time.
+Removed repository payload retention is independently 90 days and 1,000 rows per
+account. Catalog bytes count toward the account storage budget. Confirmed removal
+deletes mutable stars/overrides/participation only; immutable observations,
+factory/activity publications and generic agent resources are not rewritten.
+Retain the additive tables on code rollback. Rollback does not restore legitimately
+removed mutable stars or synthesize history; restore a verified backup only under
+separate operational authorization.
+
 ### Immutable current-run activity
 
 Migration `0018_activity.sql` adds `activity_publications` and `activity_pages`.

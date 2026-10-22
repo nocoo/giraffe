@@ -1288,3 +1288,22 @@ same SHA-256 representation as the stored content fingerprint. The installed Hon
 middleware uses SHA-1 for response ETags, while source content versions are a
 separate contract. The fixture now checks the middleware's actual quoted tag and
 conditional 304 behavior rather than conflating these identifiers.
+
+The next browser run started while its progress assertion was still being fixed.
+It loaded the new maximum (28) but the previous expected value (26), then failed
+even though the checked-in file eventually contained both corrections. This was
+not a second production defect and not passing full-suite evidence. Freeze test
+files as well as production code/schema before starting a full runner; bind the
+recorded result to that frozen tree and rerun after any test correction.
+
+## 2026-10-22 - Replay catalog backfill after identity changes
+
+The initial discovery migration ignored conflicts on its historical identity key
+but also introduced a unique current repository name. Independent review replayed
+the migration after a stable-ID rename: the existing identity kept its old key,
+while the current saved catalog held the new name. Backfill attempted a different
+key with that same current name and failed the unique index. Initial double-apply
+alone did not cover this valid post-migration state. Guard existing identities and
+current names, then replay after ID adoption, rename and removal; assert no new
+events, no resurrection and no immutable-history changes. Backup verification
+must cover evolved application data, not only a pristine migrated fixture.
