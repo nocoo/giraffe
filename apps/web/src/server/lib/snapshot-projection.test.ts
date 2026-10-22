@@ -98,7 +98,7 @@ it("keeps legacy dependencies null, absent dependencies distinct, and catalog fl
 	await db.prepare("INSERT INTO repo_statistics VALUES('a','owner/app',0)").run();
 	const disabled = storedContent(await project("repos"))?.hash;
 	expect(disabled).toBe(first);
-	await db.prepare("INSERT INTO repo_stars VALUES('a','owner/app')").run();
+	await db.prepare("INSERT INTO repo_stars(account_id,repo) VALUES('a','owner/app')").run();
 	expect(storedContent(await project("repos"))?.hash).not.toBe(disabled);
 	expect(JSON.stringify(initial)).toBe(initialJson);
 	expect(initial).not.toHaveProperty("content_meta");
@@ -121,7 +121,7 @@ it("uses saved catalog membership for all selectors and never revives removed re
 			"2026-10-18",
 		),
 	);
-	await db.prepare("INSERT INTO repo_stars VALUES('a','owner/removed')").run();
+	await db.prepare("INSERT INTO repo_stars(account_id,repo) VALUES('a','owner/removed')").run();
 	await db.prepare("INSERT INTO repo_statistics VALUES('a','owner/removed',1)").run();
 	const all = await repoPolicy(db, "a");
 	expect(all.includes("OWNER/APP")).toBe(true);
@@ -254,7 +254,10 @@ it.each(["pending", "complete", "unavailable"] as const)(
 				snapshot.fetched_at,
 			),
 		);
-		await db.prepare("INSERT INTO repo_stars VALUES(?,'NOCOO/APP')").bind(account).run();
+		await db
+			.prepare("INSERT INTO repo_stars(account_id,repo) VALUES(?,'NOCOO/APP')")
+			.bind(account)
+			.run();
 		await db
 			.prepare("INSERT INTO repo_statistics VALUES(?,'nocoo/disabled',0)")
 			.bind(account)
@@ -324,7 +327,7 @@ it.each([
 				at,
 			),
 		);
-		await db.prepare("INSERT INTO repo_stars VALUES('a','owner/app')").run();
+		await db.prepare("INSERT INTO repo_stars(account_id,repo) VALUES('a','owner/app')").run();
 		const partial = {
 			[key]: [{ name_with_owner: "owner/app", number: 1 }],
 			fetched_at: at,

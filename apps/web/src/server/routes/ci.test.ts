@@ -69,7 +69,10 @@ describe("GET /api/ci", () => {
 			].map((name_with_owner) => ({ name_with_owner })),
 		});
 		for (const repo of ["NOCOO/APP", "nocoo/empty", "nocoo/unseen"])
-			await fixture.raw.prepare("INSERT INTO repo_stars VALUES(?,?)").bind(id, repo).run();
+			await fixture.raw
+				.prepare("INSERT INTO repo_stars(account_id,repo) VALUES(?,?)")
+				.bind(id, repo)
+				.run();
 		await fixture.save("repo:nocoo/app:actions", { runs: [run("CI", "success", at)] });
 		await fixture.save("repo:nocoo/app:details", { default_branch: "main" }, old);
 		await fixture.save("repo:nocoo/app:releases", { releases: [] }, recent);

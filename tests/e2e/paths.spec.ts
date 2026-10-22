@@ -76,6 +76,11 @@ test("settings PAT, unified refresh, repo list, and repo detail", async ({ page 
 	const star = page.getByRole("button", { name: "星标 octocat/hello-world", exact: true });
 	await star.click();
 	await expect(star).toHaveAttribute("aria-pressed", "true");
+	const ownerMarker = page.getByRole("note", {
+		name: "octocat/hello-world 星标来源：owner",
+		exact: true,
+	});
+	await expect(ownerMarker).toBeVisible();
 	await page.reload();
 	await expect(star).toHaveAttribute("aria-pressed", "true");
 	await page.goto("/refresh");
@@ -93,6 +98,7 @@ test("settings PAT, unified refresh, repo list, and repo detail", async ({ page 
 	await expect(star).toHaveAttribute("aria-pressed", "false");
 	await page.reload();
 	await expect(star).toHaveAttribute("aria-pressed", "false");
+	await expect(ownerMarker).toBeVisible();
 	const factory = await page.request.get("/api/factory?scope=starred");
 	expect((await factory.json()).repos).toEqual([]);
 	expect((await (await page.request.get("/api/factory?scope=all")).json()).repos).toHaveLength(1);

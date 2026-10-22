@@ -291,6 +291,8 @@ export async function projectSnapshot(
 				...r,
 				statistics_enabled: policy.starred(r.name_with_owner),
 				starred: policy.starred(r.name_with_owner),
+				star_source: policy.starRecord(r.name_with_owner)?.source ?? null,
+				star_updated_at: policy.starRecord(r.name_with_owner)?.updated_at ?? null,
 			})),
 		};
 		const hash = await composeContent(source.contentInputs, {
@@ -298,6 +300,8 @@ export async function projectSnapshot(
 				name: repo.name_with_owner,
 				statistics_enabled: policy.starred(repo.name_with_owner),
 				starred: policy.starred(repo.name_with_owner),
+				star_source: policy.starRecord(repo.name_with_owner)?.source ?? null,
+				star_updated_at: policy.starRecord(repo.name_with_owner)?.updated_at ?? null,
 			})),
 			total: source.freshness.total,
 			missing: source.freshness.missing,

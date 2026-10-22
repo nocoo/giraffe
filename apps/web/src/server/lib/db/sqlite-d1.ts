@@ -21,7 +21,7 @@ class Stmt {
 	private exec(): Row[] {
 		const sql = this.sql.replace(/\s+/g, " ").trim();
 		const v = this.values;
-		if (sql.startsWith("SELECT repo FROM repo_stars")) return [];
+		if (/^SELECT repo(?:,starred,source,updated_at,reason)? FROM repo_stars/.test(sql)) return [];
 		if (sql === "SELECT 1 AS n") {
 			return [{ n: 1 }];
 		}

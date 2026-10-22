@@ -62,8 +62,14 @@ async function scopedFixture() {
 			{ id: "15", name_with_owner: "owner/app", unread: true },
 		],
 	});
-	await db.prepare("INSERT INTO repo_stars VALUES(?, 'OWNER/APP')").bind(scopedAccount).run();
-	await db.prepare("INSERT INTO repo_stars VALUES(?, 'owner/fork')").bind(scopedAccount).run();
+	await db
+		.prepare("INSERT INTO repo_stars(account_id,repo) VALUES(?, 'OWNER/APP')")
+		.bind(scopedAccount)
+		.run();
+	await db
+		.prepare("INSERT INTO repo_stars(account_id,repo) VALUES(?, 'owner/fork')")
+		.bind(scopedAccount)
+		.run();
 	return {
 		db,
 		save,

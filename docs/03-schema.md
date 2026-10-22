@@ -24,6 +24,29 @@ GitHub 字段名跟 REST/GraphQL 对齐（`login`、`nameWithOwner`、`stargazer
 
 ## 2. 表
 
+### Star provenance
+
+Apply `0017_star_provenance.sql` after the membership cleanup. It additively extends
+`repo_stars` with `starred` (0 or 1, default 1), `source` (`owner|agent`, default
+owner), non-null `updated_at`, and nullable `reason` (at most 200 characters).
+The existing account/repository primary key remains case-insensitive. Surviving
+stars become owner records; their timestamp is seeded from the account's stored
+update time, or the Unix epoch when unavailable, not claimed as historical star
+event time. R2-removed rows remain absent and create no owner tombstone.
+
+Owner unstars retain `starred=0` rows. Every membership reader selects only
+`starred=1`; provenance reads include tombstones. Atomic conditional writes allow
+owners to replace any record and agents to replace only agent records or create
+absent records. Same-direction agent writes preserve an owner record unchanged;
+opposite-direction writes return 409. The migration verifier recognizes all four
+added columns, skips a fully applied migration, and rejects partial application.
+
+Do not roll application code back to a version that treats every `repo_stars` row
+as starred: it would misread tombstones and could erase owner protection. Preserve
+the new columns and rows during a rollback; use a provenance-aware code revision
+or restore an explicitly approved pre-migration backup. No automated destructive
+rollback is provided.
+
 ### Star membership consolidation
 
 Migration `0016_star_membership.sql` preserves explicit daily-exclusion intent:

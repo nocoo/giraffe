@@ -1,4 +1,12 @@
-import { Button, SegmentControl, toast } from "@nocoo/basalt";
+import {
+	Badge,
+	Button,
+	SegmentControl,
+	Tooltip,
+	TooltipContent,
+	TooltipTrigger,
+	toast,
+} from "@nocoo/basalt";
 import { FilterBar } from "@nocoo/basalt/components/filter-bar";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
@@ -40,6 +48,7 @@ import {
 	formatCount,
 	formatDate,
 	formatHealth,
+	formatPreciseDate,
 	formatVisibility,
 	freshnessFilled,
 	freshnessTone,
@@ -90,7 +99,7 @@ export function ReposPage() {
 		const account = snap.account_id;
 		setSaving(repo.name_with_owner);
 		try {
-			await saveRepoStar(account, repo, enabled);
+			const saved = await saveRepoStar(account, repo, enabled);
 			setSnap((current) =>
 				current && !("missing" in current) && current.account_id === account
 					? {
@@ -99,14 +108,12 @@ export function ReposPage() {
 								.filter(
 									(row) =>
 										!(
-											!enabled &&
+											!saved.starred &&
 											scope === "starred" &&
 											row.name_with_owner === repo.name_with_owner
 										),
 								)
-								.map((r) =>
-									r.name_with_owner === repo.name_with_owner ? { ...r, starred: enabled } : r,
-								),
+								.map((r) => (r.name_with_owner === repo.name_with_owner ? { ...r, ...saved } : r)),
 						}
 					: current,
 			);
@@ -116,19 +123,49 @@ export function ReposPage() {
 			setSaving(null);
 		}
 	}
-	const starButton = (repo: RepoRow) => (
-		<Button
-			size="icon"
-			variant="ghost"
-			aria-label={`星标 ${repo.name_with_owner}`}
-			aria-pressed={repo.starred === true}
-			disabled={saving !== null}
-			title="Giraffe 星标：每天自动刷新"
-			onClick={() => void toggleStar(repo, !repo.starred)}
-		>
-			<Star className="size-4" fill={repo.starred ? "currentColor" : "none"} />
-		</Button>
-	);
+	const starButton = (repo: RepoRow) => {
+		const source = repo.star_source ? (repo.star_source === "owner" ? "手动" : "Agent") : null;
+		return (
+			<div className="flex shrink-0 items-center gap-1">
+				<Tooltip>
+					<TooltipTrigger asChild>
+						<Button
+							size="icon"
+							variant="ghost"
+							aria-label={`星标 ${repo.name_with_owner}`}
+							aria-pressed={repo.starred === true}
+							disabled={saving !== null}
+							onClick={() => void toggleStar(repo, !repo.starred)}
+						>
+							<Star className="size-4" fill={repo.starred ? "currentColor" : "none"} />
+						</Button>
+					</TooltipTrigger>
+					<TooltipContent>
+						<p>Giraffe 星标：每天自动刷新</p>
+						{source ? <p>星标来源：{source}</p> : null}
+						{repo.star_updated_at ? (
+							<p>
+								更新于{" "}
+								<time dateTime={repo.star_updated_at}>
+									{formatPreciseDate(repo.star_updated_at)}
+								</time>
+							</p>
+						) : null}
+					</TooltipContent>
+				</Tooltip>
+				{source ? (
+					<Badge
+						variant="secondary"
+						className="text-xs"
+						role="note"
+						aria-label={`${repo.name_with_owner} 星标来源：${repo.star_source}`}
+					>
+						{source}
+					</Badge>
+				) : null}
+			</div>
+		);
+	};
 
 	useSnapshotRead(
 		async () => {

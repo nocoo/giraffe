@@ -11,9 +11,14 @@ import { assertMachineQuery } from "../lib/machine-query";
 import { readJson } from "../lib/read-body";
 import { readSchedules, saveSchedule, starredRepos } from "../lib/refresh-schedule";
 import { normalizeScheduleConfig, scheduleConfigInput } from "../lib/refresh-schedule-input";
+import { readStarReason, readStars, writeStar } from "../lib/repo-stars";
 import type { MachineVars } from "./machine";
 
 type Ctx = Context<{ Bindings: Env; Variables: MachineVars }>;
+export async function getMachineStars(c: Ctx) {
+	assertMachineQuery(c.req.query());
+	return c.json({ items: await readStars(c.get("db"), c.get("principal").accountId) });
+}
 export async function getMachineSettings(c: Ctx) {
 	const account = c.get("principal").accountId;
 	const db = c.get("db");
@@ -60,18 +65,18 @@ export async function machineSetting(c: Ctx) {
 			account,
 			`${c.req.param("owner")}/${c.req.param("name")}`,
 		);
-		if (method === "DELETE")
-			await db
-				.prepare("DELETE FROM repo_stars WHERE account_id=? AND repo=?")
-				.bind(account, repo)
-				.run();
-		else
-			await db
-				.prepare(
-					"INSERT INTO repo_stars(account_id,repo) VALUES(?,?) ON CONFLICT(account_id,repo) DO NOTHING",
-				)
-				.bind(account, repo)
-				.run();
+		const reason = await readStarReason(c.req.raw);
+		const { item, changed } = await writeStar(
+			db,
+			account,
+			repo,
+			method === "PUT",
+			"agent",
+			reason,
+			now,
+		);
+		c.set("starUnchanged", !changed);
+		return c.json(item);
 	}
 	return method === "DELETE" ? c.body(null, 204) : getMachineSettings(c);
 }

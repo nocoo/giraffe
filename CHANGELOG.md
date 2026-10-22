@@ -9,11 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Protect browser star decisions with owner/agent provenance and durable owner-unstar tombstones. Agent conflicts return 409 `owner_override`; same-direction owner writes are preserved as 200 no-ops. Add GET `/stars`, optional write reasons and repository source markers. Star PUT/DELETE now return a 200 star record instead of settings/204.
+
 - Consolidate daily refresh membership into local stars. Daily selects starred-owned repositories; full refresh and all-scope projections select every owned catalog repository, including archives/forks. Non-owned repositories never enter refresh plans or coverage/freshness denominators. Selected but unpublished repositories count as missing. Remove the hard-coded mirror exclusion and browser statistics toggles; archived repositories retain the full collection plan.
 - Replace statistics writes with 410 `deprecated` and no writes. Settings returns `statistics:[]` with `statistics_deprecated:true`; the deprecated repository `statistics_enabled` field equals `starred`. Bots must replace statistics preferences with star management.
 - Normalize CI freshness units from three input slots per repository to selected repository count. A repository is missing if any required Actions/releases/details timestamp is absent; oldest/latest times still inspect all three dependencies.
 
 ### Migration
+
+- Apply additive `0017_star_provenance.sql` after membership cleanup. Surviving stars become owner records; cleaned-up stars remain absent. Keep unstar tombstones and new columns on rollback; old code that treats every row as starred is not a safe rollback target. Legacy timestamps use saved account metadata, not a claimed original star-event time.
 
 - Apply `0016_star_membership.sql`: unstar exactly those account/repository pairs with an explicit false statistics override, then clear all override rows, including departed repositories. Explicit true overrides do not create stars. Keep the empty table for schema rollback, preserve observations/history, and create no owner tombstones for removed stars. The cleanup is deterministic and idempotent; schema docs include the affected-row query.
 

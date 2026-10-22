@@ -181,7 +181,7 @@ it("shares catalog-wide provenance and page replacements with browser reads with
 		})),
 	});
 	for (const name of ["OWNER/APP", "owner/baseline", "owner/empty", "owner/removed"])
-		await db.prepare("INSERT INTO repo_stars VALUES('a',?)").bind(name).run();
+		await db.prepare("INSERT INTO repo_stars(account_id,repo) VALUES('a',?)").bind(name).run();
 	const before = await raw.prepare("SELECT * FROM snapshots ORDER BY kind").all();
 	for (const [resource, key] of [
 		["issues", "issues"],

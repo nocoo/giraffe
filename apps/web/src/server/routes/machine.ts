@@ -27,12 +27,18 @@ import { readSources } from "../lib/machine-sources";
 import { readJson } from "../lib/read-body";
 import { snapshotScope } from "../lib/snapshot-scope";
 import { SourceTiming } from "../lib/source-timing";
-import { getMachineSettings, machineRuns, machineSetting } from "./machine-settings";
+import {
+	getMachineSettings,
+	getMachineStars,
+	machineRuns,
+	machineSetting,
+} from "./machine-settings";
 
 type Principal = NonNullable<Awaited<ReturnType<typeof authenticateApiToken>>>;
 export type MachineVars = AppVars & {
 	principal: Principal;
 	sourceTiming: SourceTiming | undefined;
+	starUnchanged: boolean | undefined;
 };
 export function machineApi() {
 	const app = new Hono<{ Bindings: Env; Variables: MachineVars }>();
@@ -79,7 +85,7 @@ export function machineApi() {
 		await next();
 		if (timing && (c.res.status === 200 || c.res.status === 304))
 			c.header("Server-Timing", timing.header());
-		if (!["GET", "HEAD"].includes(c.req.method) && c.res.status < 400)
+		if (!["GET", "HEAD"].includes(c.req.method) && c.res.status < 400 && !c.get("starUnchanged"))
 			await recordApiTokenUse(c.get("db"), principal.accountId, principal.id);
 	});
 	app.get("/me", async (c) => {
@@ -162,6 +168,7 @@ export function machineApi() {
 			return timing ? timing.measure("serialize", () => c.json(data)) : c.json(data);
 		},
 	);
+	app.get("/accounts/:account/stars", getMachineStars);
 	app.all("/accounts/:account/stars/:owner/:name", machineSetting);
 	app.get(
 		"/accounts/:account/contributions",

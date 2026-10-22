@@ -170,7 +170,10 @@ export async function sourcesFixture() {
 		allIssues.push(...issues.slice(0, 6).map((row) => ({ ...row, name_with_owner: name })));
 		allPrs.push(...prs.slice(0, 4).map((row) => ({ ...row, name_with_owner: name })));
 		if (i % 7 === 0)
-			await raw.prepare("INSERT INTO repo_stars VALUES(?,?)").bind(account, name).run();
+			await raw
+				.prepare("INSERT INTO repo_stars(account_id,repo) VALUES(?,?)")
+				.bind(account, name)
+				.run();
 		if (i % 11 === 0)
 			await raw.prepare("INSERT INTO repo_statistics VALUES(?,?,0)").bind(account, name).run();
 	}

@@ -103,7 +103,7 @@ beforeAll(() => {
 			}),
 			snapshot(`factory:v:${publication.runId}`, publication),
 			`INSERT INTO factory_state(account_id,published_id,next_at) VALUES(${quote(account)},${quote(publication.runId)},${quote(at)});`,
-			`INSERT INTO repo_stars VALUES(${quote(account)},'NOCOO/APP'),(${quote(account)},'nocoo/removed');`,
+			`INSERT INTO repo_stars(account_id,repo) VALUES(${quote(account)},'NOCOO/APP'),(${quote(account)},'nocoo/removed');`,
 			`INSERT INTO repo_statistics VALUES(${quote(account)},'nocoo/disabled',0);`,
 		].join("\n"),
 	);

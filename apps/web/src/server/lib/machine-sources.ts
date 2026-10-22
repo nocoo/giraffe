@@ -15,6 +15,7 @@ import {
 	projectCiInputs,
 	projectFactoryObservation,
 } from "./machine-observations";
+import type { StarRow } from "./repo-stars";
 import { assembleSnapshotGroups, latestSnapshots, type SnapshotPage } from "./snapshot-pages";
 import { policyFromSaved, projectSnapshot } from "./snapshot-projection";
 import { selectionFromStars } from "./snapshot-scope";
@@ -54,14 +55,18 @@ export async function readSources(
 	if (!parsed.success) throw new ApiError(400, "validation_failed", "invalid source filters");
 	const head = `SELECT coalesce((SELECT 'factory:v:' || nullif(published_id,'') FROM factory_state WHERE account_id=?),'factory') AS kind`;
 	const [catalogRows, stars, owners, publicationRows, rows] = await db.batch<
-		SnapshotPage & { repo: string; login: string }
+		SnapshotPage & StarRow & { login: string }
 	>([
 		db
 			.prepare(
 				"SELECT kind,payload,content_meta FROM snapshots WHERE account_id=? AND kind IN ('repos','repos#2')",
 			)
 			.bind(account),
-		db.prepare("SELECT repo FROM repo_stars WHERE account_id=? ORDER BY repo").bind(account),
+		db
+			.prepare(
+				"SELECT repo,starred,source,updated_at,reason FROM repo_stars WHERE account_id=? ORDER BY repo",
+			)
+			.bind(account),
 		db.prepare("SELECT login FROM accounts WHERE id=?").bind(account),
 		db
 			.prepare(

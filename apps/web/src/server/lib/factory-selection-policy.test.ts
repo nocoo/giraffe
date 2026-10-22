@@ -202,7 +202,10 @@ it.each(["daily", "weekly"] as const)(
 				now,
 			),
 		);
-		await db.prepare("INSERT INTO repo_stars VALUES(?,?)").bind(snapshot.account_id, archive).run();
+		await db
+			.prepare("INSERT INTO repo_stars(account_id,repo) VALUES(?,?)")
+			.bind(snapshot.account_id, archive)
+			.run();
 		await saveSchedule(
 			db,
 			snapshot.account_id,

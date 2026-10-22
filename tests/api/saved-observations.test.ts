@@ -413,6 +413,96 @@ afterAll(() => {
 	);
 });
 
+it("protects browser star decisions from machine writes over local HTTP", async () => {
+	const created = await browser("tokens", "POST", {
+		account_id: account,
+		label: "star provenance acceptance",
+		scopes: ["app:read", "app:write", "observations:read"],
+		expires_in_days: 1,
+	});
+	expect(created.status).toBe(201);
+	const token = (await created.json()) as { id: string; token: string };
+	const request = (resource: string, method = "GET", body?: unknown) =>
+		fetch(`${base}/api/v1/accounts/${account}/${resource}`, {
+			method,
+			headers: { authorization: `Bearer ${token.token}`, "content-type": "application/json" },
+			...(body === undefined ? {} : { body: JSON.stringify(body) }),
+		});
+	const resource = "stars/nocoo/missing";
+	const row = () => {
+		assertMarker();
+		return sql(
+			`SELECT * FROM repo_stars WHERE account_id=${quote(account)} AND lower(repo)='nocoo/missing'`,
+		)[0]?.results;
+	};
+	try {
+		expect((await request(resource, "PUT", { reason: "daily policy" })).status).toBe(200);
+		expect(await (await request("stars")).json()).toMatchObject({
+			items: expect.arrayContaining([
+				{
+					repo: "nocoo/missing",
+					starred: true,
+					source: "agent",
+					updated_at: expect.any(String),
+					reason: "daily policy",
+				},
+			]),
+		});
+		const repos = (await (await request("repos")).json()) as {
+			data: { repos: Record<string, unknown>[] };
+		};
+		expect(repos.data.repos.find((repo) => repo.name_with_owner === "nocoo/missing")).toMatchObject(
+			{
+				starred: true,
+				star_source: "agent",
+				star_updated_at: expect.any(String),
+			},
+		);
+		expect(
+			(await browser("repos/nocoo/missing/star", "POST", { account_id: account, enabled: false }))
+				.status,
+		).toBe(200);
+		const tombstone = row();
+		expect(await (await request("stars")).json()).toMatchObject({
+			items: expect.arrayContaining([
+				expect.objectContaining({ repo: "nocoo/missing", starred: false, source: "owner" }),
+			]),
+		});
+		const settings = (await (await request("settings")).json()) as { stars: string[] };
+		expect(settings.stars).not.toContain("nocoo/missing");
+		const conflict = await request(resource, "PUT", { reason: "must not override owner" });
+		expect(conflict.status).toBe(409);
+		expect(await conflict.json()).toMatchObject({ error: { code: "owner_override" } });
+		expect(row()).toEqual(tombstone);
+		expect((await request(resource, "DELETE", { reason: "no-op" })).status).toBe(200);
+		expect(row()).toEqual(tombstone);
+		expect(
+			(await browser("repos/nocoo/missing/star", "POST", { account_id: account, enabled: true }))
+				.status,
+		).toBe(200);
+		const ownerStar = row();
+		expect((await request(resource, "DELETE")).status).toBe(409);
+		expect((await request(resource, "PUT")).status).toBe(200);
+		expect(row()).toEqual(ownerStar);
+		expect((await request(resource, "PUT", { source: "owner" })).status).toBe(400);
+		expect((await request(resource, "PUT", { reason: "x".repeat(201) })).status).toBe(400);
+		expect((await request("stars/outside/catalog", "PUT")).status).toBe(404);
+		expect(await (await request("stars")).json()).toMatchObject({
+			items: expect.arrayContaining([
+				expect.objectContaining({ repo: "nocoo/missing", starred: true, source: "owner" }),
+			]),
+		});
+	} finally {
+		assertMarker();
+		sql(
+			`DELETE FROM repo_stars WHERE account_id=${quote(account)} AND lower(repo)='nocoo/missing';`,
+		);
+		expect((await browser(`tokens/${token.id}`, "DELETE", { account_id: account })).status).toBe(
+			204,
+		);
+	}
+});
+
 it("excludes removed repositories from saved account observations without deleting history", async () => {
 	const countBefore = await (await fetch("http://127.0.0.1:17046/_count")).text();
 	const before = sql(

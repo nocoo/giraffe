@@ -274,6 +274,8 @@ describe("inbox and alerts boards", () => {
 
 describe("repository boards", () => {
 	const repo = (over: Record<string, unknown>) => ({
+		star_source: null,
+		star_updated_at: null,
 		name_with_owner: "nocoo/a",
 		name: "a",
 		owner_login: "nocoo",

@@ -280,6 +280,11 @@ stars or schedules merely to enlarge analysis coverage. Daily scope is starred-o
 full scope is all-owned, including archives/forks. Statistics writes return 410
 `deprecated`; settings exposes an empty deprecated statistics list, and
 `statistics_enabled` is only a deprecated alias of `starred`.
+`GET /stars` includes provenance and unstarred tombstones. PUT/DELETE accept optional
+`{reason}` (at most 200 characters) and return 200 with a star record. Machine writes
+are always `agent`; opposite owner decisions return 409 `owner_override` and must
+not be retried. Same-direction writes preserve owner provenance as a 200 no-op.
+Use nullable `/repos` fields `star_source` and `star_updated_at` for provenance.
 
 ## Errors, limits and retries
 

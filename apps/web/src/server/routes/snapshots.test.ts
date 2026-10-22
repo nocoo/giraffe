@@ -45,7 +45,7 @@ async function scopedSetup() {
 		recentAt,
 	);
 	for (const repo of ["OWNER/APP", "owner/empty", "owner/new", "owner/fork"])
-		await db.prepare("INSERT INTO repo_stars VALUES('active',?)").bind(repo).run();
+		await db.prepare("INSERT INTO repo_stars(account_id,repo) VALUES('active',?)").bind(repo).run();
 	const request = (path: string) =>
 		createApp().request(`http://localhost/api/${path}`, {}, bindings);
 	return { bindings, db, save, request };
@@ -57,7 +57,9 @@ describe("scoped snapshot projections", () => {
 	it("returns an empty starred view when all saved stars are nonowned", async () => {
 		const setup = await scopedSetup();
 		await setup.save("repos", { repos: [{ name_with_owner: "external/repo" }] });
-		await setup.db.prepare("INSERT INTO repo_stars VALUES('active','external/repo')").run();
+		await setup.db
+			.prepare("INSERT INTO repo_stars(account_id,repo) VALUES('active','external/repo')")
+			.run();
 		const response = await setup.request("issues?scope=starred");
 		expect(response.status).toBe(200);
 		expect(await response.json()).toMatchObject({
@@ -362,7 +364,9 @@ describe("scoped snapshot projections", () => {
 				"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES('other','other','encrypted','fake','t','t')",
 			)
 			.run();
-		await setup.db.prepare("INSERT INTO repo_stars VALUES('other','owner/hidden')").run();
+		await setup.db
+			.prepare("INSERT INTO repo_stars(account_id,repo) VALUES('other','owner/hidden')")
+			.run();
 		expect(await (await setup.request("notifications?scope=starred")).json()).toMatchObject({
 			notifications: [{ id: "1" }, { id: "2" }, { id: "3" }],
 		});

@@ -339,6 +339,16 @@ deprecated alias of `starred`. The migration removes existing stars with explici
 false overrides, then empties but retains the override table. Bots must use stars
 for daily membership and must not recreate a separate statistics preference.
 
+`GET /stars` returns `{items:[{repo,starred,source,updated_at,reason}]}`, including
+unstarred owner tombstones. PUT/DELETE accept an optional `{reason}` (at most
+200 characters), return 200 with the star record, and always use `source:agent`.
+Browser writes always use `source:owner`. Opposite-direction agent writes against
+owner records return 409 `owner_override` without writes; same-direction writes
+are 200 no-ops preserving owner provenance, timestamp and reason. `/repos` adds
+nullable `star_source` and `star_updated_at`. Existing surviving stars migrate to
+owner; cleanup removals create no tombstones. The settings `stars` list contains
+only currently starred names. Bots must stop on owner conflicts, not retry them.
+
 The existing `agent_resources` table stores generic resources, including analysis
 reports and run status. Historical Work/resource rows and legacy AI tables remain
 preserved; this change does not require destructive migrations. Do not add a bot

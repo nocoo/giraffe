@@ -16,6 +16,9 @@ import { setActiveAccountId } from "./session";
 
 const sample: RepoRow[] = [
 	{
+		starred: true,
+		star_source: "agent",
+		star_updated_at: "2026-10-21T00:00:00Z",
 		name_with_owner: "octocat/hello-world",
 		name: "hello-world",
 		owner_login: "octocat",
@@ -32,6 +35,8 @@ const sample: RepoRow[] = [
 		url: "https://github.com/octocat/hello-world",
 	},
 	{
+		star_source: null,
+		star_updated_at: null,
 		name_with_owner: "octocat/alpha",
 		name: "alpha",
 		owner_login: "octocat",
@@ -72,6 +77,7 @@ describe("repos viewmodel", () => {
 		let responseAccount = "acc1";
 		let switchAccount = false;
 		let fail = false;
+		const updatedAt = "2026-10-22T00:00:00Z";
 		vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
 			if (String(input) === "/api/accounts")
 				return Response.json({ accounts: [{ id: "acc1", login: "o", is_active: true }] });
@@ -87,17 +93,36 @@ describe("repos viewmodel", () => {
 			if (fail)
 				return Response.json({ error: { code: "db_error", message: "failed" } }, { status: 500 });
 			if (switchAccount) setActiveAccountId("acc2");
-			return Response.json({ account_id: responseAccount });
+			return Response.json({
+				account_id: responseAccount,
+				name_with_owner: first.name_with_owner,
+				starred: false,
+				star_source: "owner",
+				star_updated_at: updatedAt,
+			});
 		});
 		await loadRepos();
-		await saveRepoStar("acc1", first, false);
-		expect(cachedRepoRows()[0]?.starred).toBe(false);
+		expect(await saveRepoStar("acc1", first, false)).toEqual({
+			starred: false,
+			star_source: "owner",
+			star_updated_at: updatedAt,
+		});
+		expect(cachedRepoRows()[0]).toMatchObject({
+			starred: false,
+			star_source: "owner",
+			star_updated_at: updatedAt,
+		});
 		expect(cachedRepoRows()[1]?.starred).toBeUndefined();
+		expect(cachedRepoRows()[1]?.star_source).toBeNull();
 		fail = true;
 		await expect(saveRepoStar("acc1", first, true)).rejects.toMatchObject({
 			code: "db_error",
 		});
-		expect(cachedRepoRows()[0]?.starred).toBe(false);
+		expect(cachedRepoRows()[0]).toMatchObject({
+			starred: false,
+			star_source: "owner",
+			star_updated_at: updatedAt,
+		});
 		fail = false;
 		responseAccount = "other";
 		await expect(saveRepoStar("acc1", first, true)).rejects.toMatchObject({

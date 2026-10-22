@@ -212,7 +212,7 @@ export async function saveSchedule(
 }
 export async function starredRepos(db: Db, account: string): Promise<string[]> {
 	const rows = await db
-		.prepare("SELECT repo FROM repo_stars WHERE account_id=? ORDER BY repo")
+		.prepare("SELECT repo FROM repo_stars WHERE account_id=? AND starred=1 ORDER BY repo")
 		.bind(account)
 		.all<{ repo: string }>();
 	return rows.results.map((r) => r.repo);

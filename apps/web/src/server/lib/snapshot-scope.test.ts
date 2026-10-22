@@ -23,8 +23,8 @@ it("selects stars case-insensitively within one account and never broadens an em
 			)
 			.bind(account, account)
 			.run();
-	await db.prepare("INSERT INTO repo_stars VALUES('active','Owner/App')").run();
-	await db.prepare("INSERT INTO repo_stars VALUES('other','owner/hidden')").run();
+	await db.prepare("INSERT INTO repo_stars(account_id,repo) VALUES('active','Owner/App')").run();
+	await db.prepare("INSERT INTO repo_stars(account_id,repo) VALUES('other','owner/hidden')").run();
 	const starred = await snapshotSelection(db, "active", "starred");
 	expect(starred.includes("OWNER/APP")).toBe(true);
 	expect(starred.starred("owner/app")).toBe(true);

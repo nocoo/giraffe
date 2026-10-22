@@ -76,13 +76,14 @@ it("migrates four explicit exclusions out of eighteen stars on a preserved backu
 		"external/repo",
 	];
 	const original = new DatabaseSync(originalFile);
-	original.exec(schema.slice(0, -migration.length));
+	original.exec(schema.slice(0, schema.indexOf(migration)));
 	original.exec(
 		"CREATE TABLE _test_marker(key TEXT PRIMARY KEY,value TEXT); INSERT INTO _test_marker VALUES('env','test'); INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES('a','owner','fake','fake','t','t'),('b','other','fake','fake','t','t')",
 	);
-	for (const name of names) original.prepare("INSERT INTO repo_stars VALUES('a',?)").run(name);
+	for (const name of names)
+		original.prepare("INSERT INTO repo_stars(account_id,repo) VALUES('a',?)").run(name);
 	original.exec(
-		"INSERT INTO repo_stars VALUES('b','owner/repo-00'); INSERT INTO repo_statistics VALUES('a','OWNER/REPO-00',0),('a','owner/repo-01',0),('a','owner/repo-02',0),('a','owner/repo-03',0),('a','owner/unstarred',1),('a','nocoo/rsshub',1),('a','nocoo/wiki',0)",
+		"INSERT INTO repo_stars(account_id,repo) VALUES('b','owner/repo-00'); INSERT INTO repo_statistics VALUES('a','OWNER/REPO-00',0),('a','owner/repo-01',0),('a','owner/repo-02',0),('a','owner/repo-03',0),('a','owner/unstarred',1),('a','nocoo/rsshub',1),('a','nocoo/wiki',0)",
 	);
 	original
 		.prepare("INSERT INTO snapshots(account_id,kind,payload,fetched_at) VALUES('a','repos',?,'t')")
@@ -172,7 +173,9 @@ it("counts every selected owned catalog member, including unpublished and unsave
 		),
 	});
 	await db
-		.prepare("INSERT INTO repo_stars VALUES(?,'nocoo/app'),(?,'nocoo/missing'),(?,'external/repo')")
+		.prepare(
+			"INSERT INTO repo_stars(account_id,repo) VALUES(?,'nocoo/app'),(?,'nocoo/missing'),(?,'external/repo')",
+		)
 		.bind(account, account, account)
 		.run();
 	const repo = factory.repos[0];

@@ -7,10 +7,11 @@ import { ACCOUNT_ID_RE } from "../lib/id";
 import { requireCatalogRepo } from "../lib/machine-observations";
 import { readJson } from "../lib/read-body";
 import { enableDefaultSchedules } from "../lib/refresh-schedule";
+import { starReason, writeStar } from "../lib/repo-stars";
 import { repoParts, snapshotGet } from "./snapshots";
 
 const settingsInput = z
-	.object({ account_id: z.string().regex(ACCOUNT_ID_RE), enabled: z.boolean() })
+	.object({ account_id: z.string().regex(ACCOUNT_ID_RE), enabled: z.boolean(), reason: starReason })
 	.strict();
 export function setRepoStatistics(): never {
 	throw new ApiError(410, "deprecated", "statistics settings are replaced by stars");
@@ -27,23 +28,23 @@ export async function setRepoStar(
 	if (account.id !== parsed.data.account_id)
 		throw new ApiError(409, "account_conflict", "account changed");
 	const repo = await requireCatalogRepo(db, account.id, `${owner}/${name}`);
-	if (parsed.data.enabled) {
-		await db
-			.prepare(
-				"INSERT INTO repo_stars(account_id,repo) VALUES(?,?) ON CONFLICT(account_id,repo) DO NOTHING",
-			)
-			.bind(account.id, repo)
-			.run();
-		await enableDefaultSchedules(db, account.id, new Date().toISOString());
-	} else
-		await db
-			.prepare("DELETE FROM repo_stars WHERE account_id=? AND repo=?")
-			.bind(account.id, repo)
-			.run();
+	const now = new Date().toISOString();
+	const { item } = await writeStar(
+		db,
+		account.id,
+		repo,
+		parsed.data.enabled,
+		"owner",
+		parsed.data.reason ?? null,
+		now,
+	);
+	if (item.starred) await enableDefaultSchedules(db, account.id, now);
 	return jsonOk({
 		account_id: account.id,
 		name_with_owner: repo,
-		starred: parsed.data.enabled,
+		starred: item.starred,
+		star_source: item.source,
+		star_updated_at: item.updated_at,
 	});
 }
 

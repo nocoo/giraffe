@@ -79,7 +79,10 @@ it("retains saved contribution metadata for default/all browser and machine read
 	};
 	state.contributionObservation = { version: "calendar-v1", window: state.window, fetchedAt: NOW };
 	await fixture.db.batch(await replaceSnapshotStmts(fixture.db, ID, "factory", { ...state }, NOW));
-	await fixture.db.prepare("INSERT INTO repo_stars VALUES(?,'NOCOO/APP')").bind(ID).run();
+	await fixture.db
+		.prepare("INSERT INTO repo_stars(account_id,repo) VALUES(?,'NOCOO/APP')")
+		.bind(ID)
+		.run();
 	const before = await fixture.env.DB.prepare("SELECT * FROM snapshots ORDER BY kind").all();
 	const network = vi.fn(() => {
 		throw new Error("factory GET must not fetch upstream");
@@ -155,7 +158,10 @@ it("projects starred factory repositories and dates from their observations, not
 	);
 	await fixture.db.batch(await replaceSnapshotStmts(fixture.db, ID, "factory", { ...state }, NOW));
 	for (const repo of ["NOCOO/APP", "nocoo/mixed", "nocoo/new"])
-		await fixture.db.prepare("INSERT INTO repo_stars VALUES(?,?)").bind(ID, repo).run();
+		await fixture.db
+			.prepare("INSERT INTO repo_stars(account_id,repo) VALUES(?,?)")
+			.bind(ID, repo)
+			.run();
 	const before = await readSnapshot(fixture.db, ID, "factory");
 	const response = await fixture.call("/api/factory?scope=starred");
 	expect(response.status).toBe(200);

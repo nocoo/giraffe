@@ -425,7 +425,8 @@ Item fields (saved metadata can add fields; do not reject unknown observation da
 
 - `Repo`: `name_with_owner`, `name`, `owner_login`, `description`, `stargazer_count`,
   `fork_count`, `open_issue_count`, `primary_language`, `pushed_at`, `visibility`,
-  `is_private`, `is_archived`, `is_fork`, `url`, `statistics_enabled`, `starred`.
+  `is_private`, `is_archived`, `is_fork`, `url`, `statistics_enabled`, `starred`,
+  `star_source`, `star_updated_at`.
 - `Issue`: `name_with_owner`, `number`, `title`, `url`, `created_at`, `updated_at`,
   `author_login`, `labels: [{ name, color }]`, `comments_count`.
 - `PullRequest`: `name_with_owner`, `number`, `title`, `url`, `created_at`,
@@ -1191,8 +1192,9 @@ Local stars are Giraffe configuration, not GitHub writes.
 | Method/path | Scope | Body | Response |
 | --- | --- | --- | --- |
 | GET `/settings` | `app:read` | None | Settings shape below |
-| PUT `/stars/:owner/:name` | `app:write` | None needed; add star | Settings |
-| DELETE `/stars/:owner/:name` | `app:write` | None; remove star | 204 |
+| GET `/stars` | `app:read` | None | `{items:[{repo,starred,source,updated_at,reason}]}` |
+| PUT `/stars/:owner/:name` | `app:write` | Optional `{reason}`; add star | 200 star record |
+| DELETE `/stars/:owner/:name` | `app:write` | Optional `{reason}`; remove star | 200 star record |
 | PUT `/statistics/:owner/:name` | `app:write` | Ignored | 410 `deprecated`; never writes |
 | DELETE `/statistics/:owner/:name` | `app:write` | Ignored | 410 `deprecated`; never writes |
 
@@ -1200,7 +1202,27 @@ No query parameters. Settings is `{ account_id, stars:string[], statistics:[],
 statistics_deprecated:true, schedules:Schedule[] }`. The empty statistics field and
 deprecated `/repos[].statistics_enabled` alias remain for one version. Browser
 `POST /api/repos/:owner/:name/statistics` also returns 410 `deprecated` without writing.
-PUT star returns settings even without `app:read`. Repeated add/remove star is harmless.
+Star records include unstarred tombstones. `source` is `owner|agent`, `updated_at`
+is UTC ISO-8601, and `reason` is nullable text of at most 200 characters. Absent
+bodies are allowed; present bodies must be strict JSON objects with only the
+optional `reason`. Machine writes always record `agent`; browser Access writes
+always record `owner`. Callers cannot supply provenance. Catalog membership is
+the only repository eligibility requirement for writes.
+
+An agent write opposite to an owner record returns 409 `owner_override` without
+changing storage. A same-direction agent write returns 200 without changing the
+owner source, timestamp or reason. Owner unstars persist as tombstones, so a bot
+cannot restore the star later. Settings `stars` includes only currently starred
+names. `/repos` adds nullable `star_source` and `star_updated_at`, including owner
+provenance on unstarred rows; the browser list shows a small source marker.
+Browser `POST /api/repos/:owner/:name/star` accepts `{account_id,enabled}` and
+returns `{account_id,name_with_owner,starred,star_source,star_updated_at}`. The
+client applies these server-confirmed fields immediately, then refreshes its view.
+
+Existing surviving stars migrate to `owner`. R2 cleanup removals create no owner
+tombstone, allowing a later agent star. Bots must read the returned star record
+instead of the old PUT settings response or expecting DELETE 204, and respect
+409 rather than retrying to override the owner.
 
 ```bash
 api "$API/settings"
