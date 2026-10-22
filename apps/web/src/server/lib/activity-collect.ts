@@ -349,10 +349,11 @@ export async function collectActivityContributions(
 		const index = days.length;
 		const since = new Date(at).toISOString();
 		const end = new Date(Math.min(at + 86400_000 - 1, until)).toISOString();
-		variables[`from${index}`] = since;
-		variables[`to${index}`] = end;
+		const date = new Date(at + 8 * 3600_000).toISOString().slice(0, 10);
+		variables[`from${index}`] = `${date}T00:00:00Z`;
+		variables[`to${index}`] = `${date}T23:59:59Z`;
 		days.push({
-			date: new Date(at + 8 * 3600_000).toISOString().slice(0, 10),
+			date,
 			since,
 			until: end,
 			partial: at === today,
@@ -381,7 +382,7 @@ export async function collectActivityContributions(
 			day.types = contributionTypes(object(object(data.user)[`day${index}`]));
 			const calendar = object(object(object(data.user)[`day${index}`]).contributionCalendar);
 			const count = calendar.totalContributions;
-			day.count =
+			const total =
 				typeof count === "number" && Number.isSafeInteger(count) && count >= 0 ? count : null;
 			const nativeDays = rows(calendar.weeks).flatMap((week) => rows(week.contributionDays));
 			const validDays = nativeDays.every(
@@ -392,9 +393,15 @@ export async function collectActivityContributions(
 					Number.isSafeInteger(value.contributionCount) &&
 					value.contributionCount >= 0,
 			);
+			const matchingDay =
+				validDays &&
+				nativeDays.length === 1 &&
+				nativeDays[0]?.date === day.date &&
+				nativeDays[0]?.contributionCount === total;
+			day.count = matchingDay ? total : null;
 			day.nativeCalendar = {
 				timezone: "github",
-				total: day.count,
+				total,
 				days: validDays
 					? nativeDays.map((value) => ({
 							date: String(value.date),
@@ -407,16 +414,16 @@ export async function collectActivityContributions(
 				day.count !== null &&
 				values.every((value) => value !== null) &&
 				values.reduce<number>((sum, value) => sum + Number(value), 0) === day.count &&
-				validDays
+				matchingDay
 					? completeActivity()
 					: {
 							status:
-								day.count === null && values.every((value) => value === null)
+								total === null && values.every((value) => value === null)
 									? "unavailable"
 									: "partial",
 							truncated: false,
 							reason:
-								"GitHub-reported count for requested Beijing interval; native calendar dates remain GitHub-attributed; missing or mismatched type composition is not reconstructed",
+								"Expected one matching GitHub calendar date and consistent type composition; mismatched cells are not summed or reconstructed",
 						};
 		}
 	} catch (error) {

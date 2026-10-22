@@ -72,16 +72,24 @@ Use `account:activity` in `/sources` and authenticated ETag/304 for polling.
 The direct response contains `window`, `runId`, `previousRunId`, `fetchedAt`,
 `repos`, `totals`, `contributions`, `coverage` and `truncated`.
 
-The interval is `(previous successful account-wide quick/daily until, this until]`.
+The interval is `(last published completed-or-partial account-wide quick/daily until, this until]`.
 First publication is a marked 24-hour lookback; a failed/missing run widens the
-interval and sets `gap:true`. Repository-only and deep refreshes do not advance it.
+interval and sets `gap:true`. A finished partial publication is readable and
+advances the window; failed/cancelled/unpublished runs never advance it.
+Repository-only and deep refreshes do not advance it. `latest` and `/sources`
+include partial publications; failed/unavailable/limited repo steps mark
+`coverage.run` partial. Capacity limits increment `counts.limited`, not failed;
+mid-pagination access loss remains failed/partial, even if its fallback error
+string is `coverage_limited`. Interpret status and source coverage together.
 Do not treat a null list/count as an empty list/zero, or truncated coverage as
 complete. CI runs include branch/event/attempt/duration; PR/issue lifecycle,
 release/tag and branch commit evidence accompany current open-item/security
 snapshots. Deployment last success can predate the interval. Beijing contribution
 intervals are distinct from the GitHub-native 90-day calendar. Giraffe stores and
-displays GitHub-reported interval totals and original native calendar provenance,
-not timezone-rebucketed native squares. Unknown runs return 404; unpublished runs
+displays a count only for one matching native date/cell, queried with that date's
+`00:00:00Z..23:59:59Z` bounds. Multiple/wrong-date cells yield null and partial
+coverage, never a sum; original native calendar provenance is retained.
+Unknown runs return 404; unpublished runs
 return 409. Compute comparisons outside Giraffe. Read the complete
 [activity contract](../../docs/api.md#get-activity) before interpreting coverage.
 
@@ -313,8 +321,11 @@ Use nullable `/repos` fields `star_source` and `star_updated_at` for provenance.
 Pending daily runs defer behind active work and start on terminal handoff; a daily
 that misses its Beijing day gets an explicit failed record, never a later-day run.
 Inspect schedule `lastError` and run outcomes independently. `expectedFinishAt` is
-a read-time same-kind historical median estimate, not a deadline; null includes
-`expectedFinishAtReason`. Do not infer collection success from cron health or ETA.
+a read-time median of the last five valid completed-or-partial same-kind runs
+with real start/finish times and positive work, not a deadline. Failed/cancelled
+and zero-work runs are excluded. No eligible same-kind history yields null with
+`expectedFinishAtReason:"no_completed_history"`; another kind is not substituted.
+Do not infer collection success from cron health or ETA.
 
 ## Catalog discovery
 
@@ -322,8 +333,13 @@ Poll `/catalog/changes?since=<ISO>` with `observations:read`. Process `added`,
 `removed`, `archived`, `unarchived`, `visibility_changed`, `fork_changed` and
 `renamed` and `unconfirmed` (safe `reason`; never a deletion). Events sort by time/repo/event ID; `since` is inclusive, so deduplicate
 `event_id` and resume from the returned `until`. 409 `catalog_unpublished` means
-no complete publication; 410 `catalog_history_expired` requires a full catalog
-resync. Combined history retains at most 90 days/10,000 events; do not assume older polls
+no complete publication. After first publication, any `since < history_since`
+returns 410 `catalog_history_expired`, never a clamped/partial 200; equality is
+accepted. The floor starts at history initialization (0019 application time for
+migrated accounts), not only after eviction or at the first later publication.
+410 requires a full `/repos` resync. The saved 10-21 baseline lacked `rsshub/wiki`,
+so their pre-history departures cannot produce synthetic `removed` events.
+Combined history retains at most 90 days/10,000 events; do not assume older polls
 are complete. GET does not collect or write.
 
 `/repos` includes nullable `first_seen_at`, `last_seen_at`, `removed_at` and

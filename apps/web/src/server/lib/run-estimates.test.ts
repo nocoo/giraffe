@@ -88,8 +88,7 @@ describe("historical run calibration", () => {
 		}
 		for (let index = 0; index < 25; index++)
 			await seed(`recent-failed-${index}`, { status: "failed" });
-		for (const status of ["partial", "paused", "cancelled"] as const)
-			await seed(status, { status });
+		for (const status of ["paused", "cancelled"] as const) await seed(status, { status });
 		for (const [index, input] of [
 			{ startedAt: "invalid" },
 			{ finishedAt: "invalid" },
@@ -129,6 +128,39 @@ describe("historical run calibration", () => {
 		expect(await readRunEstimates(createDb(raw), "b")).toEqual({ ...empty, deep: 777 });
 		expect(await readRunEstimates(createDb(raw), "missing")).toEqual(empty);
 		expect(await raw.prepare("SELECT * FROM factory_runs ORDER BY id").all()).toEqual(before);
+	});
+
+	it("calibrates from the latest five positive-work partial runs without failed or cancelled samples", async () => {
+		const { raw, seed } = await fixture();
+		for (const [index, duration] of [500000, 10000, 20000, 30000, 40000, 60000].entries()) {
+			const start = started - (10 - index) * 86400000;
+			await seed(`partial-${index}`, {
+				status: "partial",
+				startedAt: stamp(start),
+				finishedAt: stamp(start + duration),
+			});
+		}
+		for (const status of ["failed", "cancelled"] as const)
+			await seed(status, { status, finishedAt: stamp(started + 999000) });
+		await seed("partial-audit", { status: "partial", steps: [] });
+		await seed("partial-unfinished", { status: "partial", finishedAt: null });
+		await seed("partial-invalid", { status: "partial", finishedAt: "invalid" });
+		await seed("partial-reversed", { status: "partial", finishedAt: stamp(started - 1000) });
+		await seed("other-account-partial", { status: "partial", account_id: "b" });
+		const before = await raw.prepare("SELECT * FROM factory_runs ORDER BY id").all();
+		expect(await readRunEstimates(createDb(raw), "a")).toEqual({ ...empty, deep: 30000 });
+		expect(await raw.prepare("SELECT * FROM factory_runs ORDER BY id").all()).toEqual(before);
+	});
+
+	it("combines completed and partial work but leaves uncalibrated kinds explicitly unavailable", async () => {
+		const { raw, seed } = await fixture();
+		await seed("completed", { finishedAt: stamp(started + 10000) });
+		await seed("partial", { status: "partial", finishedAt: stamp(started + 30000) });
+		const calibration = await readRunEstimates(createDb(raw), "a");
+		expect(calibration).toEqual({ ...empty, deep: 20000 });
+		expect(
+			estimateRunFinish({ mode: "refresh", depth: "quick", startedAt: now }, 1, calibration),
+		).toEqual({ expectedFinishAt: null, expectedFinishAtReason: "no_completed_history" });
 	});
 
 	it("breaks finish-time ties by descending ID before taking five samples", async () => {

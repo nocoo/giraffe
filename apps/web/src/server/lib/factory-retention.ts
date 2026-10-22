@@ -45,7 +45,7 @@ export async function pruneFactory(db: Db, now: string) {
 		db
 			.prepare(`DELETE FROM activity_publications WHERE (account_id,run_id) IN (
  SELECT a.account_id,a.run_id FROM activity_publications a WHERE a.fetched_at<?
- AND a.run_id NOT IN (SELECT p.run_id FROM activity_publications p JOIN factory_runs r ON r.id=p.run_id AND r.account_id=p.account_id WHERE p.account_id=a.account_id AND r.status='completed' ORDER BY p.until_at DESC,p.run_id LIMIT 2)
+ AND a.run_id NOT IN (SELECT p.run_id FROM activity_publications p JOIN factory_runs r ON r.id=p.run_id AND r.account_id=p.account_id WHERE p.account_id=a.account_id AND r.status IN ('completed','partial') ORDER BY p.until_at DESC,p.run_id LIMIT 2)
  AND a.run_id NOT IN (SELECT r.id FROM factory_runs r WHERE r.account_id=a.account_id ORDER BY r.created_at DESC LIMIT 20) LIMIT 50)`)
 			.bind(cutoff),
 		db

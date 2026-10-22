@@ -9,6 +9,7 @@ import { activityPublicationWrites, packActivity, readActivity } from "./activit
 import { createDb } from "./db/d1";
 import { claimRun, controlRun, saveRun, startRun } from "./db/factory-runs";
 import { mapFactoryRepo } from "./factory-map";
+import { readSources } from "./machine-sources";
 
 const now = "2026-10-22T20:00:00.000Z";
 async function setup() {
@@ -96,6 +97,72 @@ it("R4 revoked leases cannot leave activity pages and unpublished runs never ret
 		)?.n,
 	).toBe(0);
 });
+it.each(["failed", "unavailable", "limited"] as const)(
+	"B2 publishes partial runs with %s repository evidence, source discovery and chaining",
+	async (status) => {
+		const { raw, db, lease, repo } = await setup();
+		const step = lease.run.steps.find((step) => step.repo === repo.name);
+		if (!step) throw new Error("fixture");
+		step.status = status;
+		const writes = await activityPublicationWrites(db, lease, now, [repo]);
+		expect(writes.length).toBeGreaterThan(0);
+		lease.run.status = "partial";
+		lease.run.finishedAt = now;
+		expect(await saveRun(db, lease, writes, now)).toBe(true);
+		const data = await readActivity(createDb(raw), "account_123", {});
+		expect(data).toMatchObject({
+			runId: "r2",
+			coverage: { repos: { status: "partial" } },
+			repos: [{ coverage: { run: { status: "partial" } }, ci_runs: null }],
+			totals: { ci_runs: null, merged_prs: null, issues_opened: null, releases: null },
+		});
+		expect(await readActivity(createDb(raw), "account_123", { run: ["r2"] })).toEqual(data);
+		const sources = await readSources(createDb(raw), "account_123", {});
+		expect(sources.sources).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ resource: "account:activity", version: "r2" }),
+			]),
+		);
+		const next = makeRun(
+			"r3",
+			"account_123",
+			"nocoo",
+			"next",
+			"refresh",
+			[repo],
+			"2026-10-23T20:00:00.000Z",
+			[],
+			[repo.name],
+			{ scope: "all" },
+			"quick",
+		);
+		const admitted = await startRun(createDb(raw), next);
+		expect(admitted.previousActivityRunId).toBe("r2");
+		expect(admitted.activityWindow).toEqual({
+			since: now,
+			until: next.window.until,
+			first: false,
+			gap: false,
+		});
+	},
+);
+it.each(["failed", "cancelled", "paused"] as const)(
+	"B2 never exposes activity from a %s run even if publication rows exist",
+	async (status) => {
+		const { raw, db, lease, repo } = await setup();
+		const writes = await activityPublicationWrites(db, lease, now, [repo]);
+		await db.batch(writes);
+		await db.prepare("UPDATE factory_runs SET status=? WHERE id='r2'").bind(status).run();
+		await expect(readActivity(createDb(raw), "account_123", {})).rejects.toMatchObject({
+			status: 409,
+		});
+		await expect(readActivity(createDb(raw), "account_123", { run: ["r2"] })).rejects.toMatchObject(
+			{ status: 409 },
+		);
+		lease.run.status = status;
+		expect(await activityPublicationWrites(db, lease, now, [repo])).toEqual([]);
+	},
+);
 it("R4 every UTF-8 page stays within 1.5 MB even before shared page-cap repair", () => {
 	const repo = activityRepo(
 		mapFactoryRepo(rawRepo),
@@ -265,7 +332,7 @@ it("R4 incomplete source batches fail closed and missing metadata cannot publish
 		code: "snapshot_missing",
 	});
 	if (s.lease.run.steps[0]) s.lease.run.steps[0].status = "failed";
-	expect(await activityPublicationWrites(s.db, s.lease, now, [s.repo])).toEqual([]);
+	expect((await activityPublicationWrites(s.db, s.lease, now, [s.repo])).length).toBeGreaterThan(0);
 	s.lease.run.depth = "deep";
 	expect(await activityPublicationWrites(s.db, s.lease, now, [s.repo])).toEqual([]);
 });
@@ -381,50 +448,56 @@ it("R4 red-workflow header copies obey the same UTF-8 cap as repository pages", 
 	);
 	expect(packed.header.coverage.totals).toMatchObject({ truncated: true });
 });
-it("R4 budget accounting includes both page/header bytes and bounded GC keeps latest usable activity", async () => {
-	const { pruneFactory } = await import("./factory-retention");
-	const s = await setup();
-	for (let index = 0; index < 3; index++) {
-		const at = `2020-01-0${index + 1}T00:00:00.000Z`;
-		const id = `old${index}`;
-		await s.db
-			.prepare(
-				"INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES(?,'account_123',?,'completed','{}',?,?,?)",
-			)
-			.bind(id, id, at, at, at)
-			.run();
-		await s.db
-			.prepare(
-				"INSERT INTO activity_publications(account_id,run_id,until_at,fetched_at,payload,content_version) VALUES('account_123',?,?,?,'{}','h')",
-			)
-			.bind(id, at, at)
-			.run();
-		await s.db.prepare("INSERT INTO activity_pages VALUES('account_123',?,0,'[]')").bind(id).run();
-	}
-	const budget = await s.db
-		.prepare("SELECT bytes FROM factory_budget WHERE account_id='account_123'")
-		.first<{ bytes: number }>();
-	expect(budget?.bytes).toBeGreaterThanOrEqual(12);
-	for (let index = 0; index < 22; index++)
-		await createDb(s.raw)
-			.prepare(
-				"INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES(?,'account_123',?,'failed','{}',?,?,?)",
-			)
-			.bind(`failed${index}`, `failed${index}`, now, now, now)
-			.run();
-	await pruneFactory(createDb(s.raw), now);
-	const retained = await createDb(s.raw)
-		.prepare("SELECT run_id FROM activity_publications ORDER BY run_id")
-		.all<{ run_id: string }>();
-	expect(retained.results).toEqual([{ run_id: "old1" }, { run_id: "old2" }]);
-	expect(
-		(
+it.each(["completed", "partial"] as const)(
+	"B2 bounded GC keeps the latest two %s activity publications",
+	async (status) => {
+		const { pruneFactory } = await import("./factory-retention");
+		const s = await setup();
+		for (let index = 0; index < 3; index++) {
+			const at = `2020-01-0${index + 1}T00:00:00.000Z`;
+			const id = `old${index}`;
+			await s.db
+				.prepare(
+					"INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES(?,'account_123',?,?,'{}',?,?,?)",
+				)
+				.bind(id, id, status, at, at, at)
+				.run();
+			await s.db
+				.prepare(
+					"INSERT INTO activity_publications(account_id,run_id,until_at,fetched_at,payload,content_version) VALUES('account_123',?,?,?,'{}','h')",
+				)
+				.bind(id, at, at)
+				.run();
+			await s.db
+				.prepare("INSERT INTO activity_pages VALUES('account_123',?,0,'[]')")
+				.bind(id)
+				.run();
+		}
+		const budget = await s.db
+			.prepare("SELECT bytes FROM factory_budget WHERE account_id='account_123'")
+			.first<{ bytes: number }>();
+		expect(budget?.bytes).toBeGreaterThanOrEqual(12);
+		for (let index = 0; index < 22; index++)
 			await createDb(s.raw)
-				.prepare("SELECT COUNT(*) AS n FROM activity_pages")
-				.first<{ n: number }>()
-		)?.n,
-	).toBe(2);
-});
+				.prepare(
+					"INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES(?,'account_123',?,'failed','{}',?,?,?)",
+				)
+				.bind(`failed${index}`, `failed${index}`, now, now, now)
+				.run();
+		await pruneFactory(createDb(s.raw), now);
+		const retained = await createDb(s.raw)
+			.prepare("SELECT run_id FROM activity_publications ORDER BY run_id")
+			.all<{ run_id: string }>();
+		expect(retained.results).toEqual([{ run_id: "old1" }, { run_id: "old2" }]);
+		expect(
+			(
+				await createDb(s.raw)
+					.prepare("SELECT COUNT(*) AS n FROM activity_pages")
+					.first<{ n: number }>()
+			)?.n,
+		).toBe(2);
+	},
+);
 it("R4 mixed current security retains an available feature without reviving stale failed snapshots", async () => {
 	const { freezeActivityRepo } = await import("./activity-store");
 	const s = await setup();

@@ -1,6 +1,5 @@
 import { z } from "zod";
 import type { ActivityRepo, ActivitySnapshot } from "../../lib/activity-types";
-import { completedRunStatus } from "../../lib/factory-run";
 import type { FactoryRepo, FactoryStreamData } from "../../lib/factory-types";
 import {
 	activityRepo,
@@ -107,7 +106,11 @@ export async function activityPublicationWrites(
 	repositories: FactoryRepo[],
 ) {
 	const run = lease.run;
-	if (!isActivityRun(run) || !run.activityWindow || completedRunStatus(run) !== "completed")
+	if (
+		!isActivityRun(run) ||
+		!run.activityWindow ||
+		!["running", "completed", "partial"].includes(run.status)
+	)
 		return [];
 	const lengths = await db
 		.prepare(
@@ -140,9 +143,18 @@ export async function activityPublicationWrites(
 		if (!repo)
 			throw new ApiError(409, "snapshot_missing", "Frozen activity repository metadata missing");
 		if (sizes.has(name) && !frozen.has(name)) return [];
-		return [
-			frozen.get(name) ?? activityRepo(repo, new Map(), requireActivityWindow(run), null, null),
-		];
+		const activity =
+			frozen.get(name) ?? activityRepo(repo, new Map(), requireActivityWindow(run), null, null);
+		const incomplete = run.steps.filter(
+			(step) => step.repo === name && ["failed", "unavailable", "limited"].includes(step.status),
+		);
+		if (incomplete.length)
+			activity.coverage.run = {
+				status: "partial",
+				truncated: incomplete.some((step) => step.status === "limited"),
+				reason: "One or more repository steps failed, were unavailable or limited",
+			};
+		return [activity];
 	});
 	const contributions = run.activityContributions ?? null;
 	const snapshot: ActivitySnapshot = {
@@ -323,7 +335,7 @@ export async function readActivity(
 	if (!parsed.success) throw new ApiError(400, "validation_failed", "Invalid activity filters");
 	const id = parsed.data.run ?? "latest";
 	const target =
-		"SELECT a.run_id,a.payload FROM activity_publications a JOIN factory_runs r ON r.id=a.run_id AND r.account_id=a.account_id WHERE a.account_id=? AND (?='latest' OR a.run_id=?) AND r.status='completed' ORDER BY a.until_at DESC,a.run_id LIMIT 1";
+		"SELECT a.run_id,a.payload FROM activity_publications a JOIN factory_runs r ON r.id=a.run_id AND r.account_id=a.account_id WHERE a.account_id=? AND (?='latest' OR a.run_id=?) AND r.status IN ('completed','partial') ORDER BY a.until_at DESC,a.run_id LIMIT 1";
 	const [headers, pages, runs] = await db.batch<{ payload: string; status: string }>([
 		db.prepare(target).bind(account, id, id),
 		db

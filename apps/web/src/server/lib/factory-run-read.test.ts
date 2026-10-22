@@ -1,6 +1,7 @@
 import { expect, it, vi } from "vitest";
 import { profileDb } from "../../../../../tests/fixtures/profile-db";
 import { sourcesFixture } from "../../../../../tests/fixtures/sources";
+import { makeRun } from "../../lib/factory-run";
 import { createDb } from "./db/d1";
 import { catalogFactory, factoryHead, listRuns, repoStates } from "./db/factory-runs";
 import { factoryStorage } from "./factory-retention";
@@ -73,4 +74,34 @@ it("rejects incomplete run batches rather than inventing empty state", async () 
 	await expect(readFactoryRunInputs(db, fixture.account, "")).rejects.toMatchObject({
 		code: "db_error",
 	});
+});
+
+it("includes finished partial refresh history in the batched ETA calibration", async () => {
+	const fixture = await sourcesFixture();
+	const at = "2026-10-22T00:00:00.000Z";
+	for (const duration of [1000, 3000]) {
+		const run = {
+			...makeRun(
+				`partial-${duration}`,
+				fixture.account,
+				"fixture",
+				`key-${duration}`,
+				"refresh",
+				[],
+				at,
+			),
+			status: "partial",
+			finishedAt: new Date(Date.parse(at) + duration).toISOString(),
+		};
+		await fixture.raw
+			.prepare(
+				"INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",
+			)
+			.bind(run.id, fixture.account, run.requestKey, run.status, JSON.stringify(run), at, at, at)
+			.run();
+	}
+	const profile = profileDb(fixture.raw);
+	const result = await readFactoryRunInputs(createDb(profile.raw), fixture.account, "");
+	expect(result.calibration).toEqual({ catalog: null, quick: null, deep: 2000 });
+	expect(profile.trips).toHaveLength(1);
 });

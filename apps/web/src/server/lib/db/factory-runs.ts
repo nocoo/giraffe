@@ -131,8 +131,10 @@ export async function repoStates(db: Db, account: string): Promise<RepoRefreshSt
 }
 const ACTIVITY_ELIGIBLE_SQL =
 	"json_extract(payload,'$.mode')='refresh' AND json_extract(payload,'$.depth')='quick' AND coalesce(json_extract(payload,'$.trigger'),'manual')!='weekly' AND (json_extract(payload,'$.trigger')='daily' OR json_extract(payload,'$.selection.scope')='all') AND coalesce(json_extract(payload,'$.selection.repo'),'')=''";
-const ACTIVITY_PREVIOUS_SQL = `FROM factory_runs WHERE account_id=? AND status='completed' AND ${ACTIVITY_ELIGIBLE_SQL} AND julianday(json_extract(payload,'$.window.until')) IS NOT NULL AND json_extract(payload,'$.window.until')<? ORDER BY json_extract(payload,'$.window.until') DESC,id LIMIT 1`;
-const ACTIVITY_INTERRUPTED_SQL = `FROM factory_runs WHERE account_id=? AND status IN ('failed','cancelled','partial') AND created_at>? AND ${ACTIVITY_ELIGIBLE_SQL} LIMIT 1`;
+const ACTIVITY_PUBLISHED_SQL =
+	"EXISTS(SELECT 1 FROM activity_publications a WHERE a.account_id=factory_runs.account_id AND a.run_id=factory_runs.id)";
+const ACTIVITY_PREVIOUS_SQL = `FROM factory_runs WHERE account_id=? AND status IN ('completed','partial') AND ${ACTIVITY_PUBLISHED_SQL} AND ${ACTIVITY_ELIGIBLE_SQL} AND julianday(json_extract(payload,'$.window.until')) IS NOT NULL AND json_extract(payload,'$.window.until')<? ORDER BY json_extract(payload,'$.window.until') DESC,id LIMIT 1`;
+const ACTIVITY_INTERRUPTED_SQL = `FROM factory_runs WHERE account_id=? AND (status IN ('failed','cancelled') OR (status IN ('completed','partial') AND NOT ${ACTIVITY_PUBLISHED_SQL})) AND created_at>? AND ${ACTIVITY_ELIGIBLE_SQL} LIMIT 1`;
 export async function startRun(
 	db: Db,
 	run: FactoryRun,

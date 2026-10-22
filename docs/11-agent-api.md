@@ -8,6 +8,13 @@ consumer flow are in [Machine API v1](api.md).
 
 ## Catalog discovery consumption
 
+Catalog history starts at initialization: migrated accounts use 0019 application
+time as `history_since`, retained by first publication. Before publication,
+`/catalog/changes` returns 409; afterwards, `since < history_since` returns 410
+even before any eviction (equality is accepted). There is no clamped 200 and no
+synthetic removal for repositories such as `rsshub/wiki` absent from the saved
+10-21 baseline. See [catalog history](api.md#get-catalogchanges).
+
 Use `GET /catalog/changes?since=<ISO>` with `observations:read` before applying
 authorized bot policy. The inclusive cursor returns stable event IDs: deduplicate
 them, and advance from the returned `until` only after processing the response.
@@ -291,18 +298,24 @@ is a saved immutable account-wide quick/daily publication. It uses the existing
 contentVersion and fetchedAt. GET never rebuilds activity from raw event history,
 collects GitHub, changes run status or records token usage.
 
-The window is `(previous successful quick/daily until, current until]`. First
+The window is `(last published completed-or-partial quick/daily until, current until]`. First
 publication uses a marked 24-hour lookback; failures or missing Beijing days widen
 the interval and mark a gap. Selected-repository and weekly/deep runs do not
 consume this account-wide window. A nullable list/count is unavailable, never
-empty/zero. Per-list coverage and overall truncation remain part of the evidence.
+empty/zero. Partial runs publish when publication finishes; failed/cancelled and
+unpublished runs do not advance the window. `latest` and source discovery include
+partial publications. Failed/unavailable/limited repo steps mark `coverage.run`
+partial, while missing source totals stay null. Collector capacity limits count
+as `counts.limited`, not failed. Per-list coverage and truncation remain evidence.
 Current snapshot alert counts preserve each feature's independent unknown state.
 
 The browser `/today` route and repository activity panel read this same saved
 publication. Activity contributions use explicit Beijing intervals and are not
 the GitHub-native date labels of the separate 90-day `/contributions` endpoint.
-Their counts are GitHub-reported totals for the requested interval, with native
-calendar dates preserved as `timezone:"github"` provenance, not relabeled squares.
+For Beijing date `D`, query bounds are `D T00:00:00Z..D T23:59:59Z` because GitHub
+truncates to UTC dates. Counts require exactly one native cell dated `D` matching
+the reported total; multiple/wrong-date cells yield null and partial coverage,
+never a summed count. Native dates/totals remain `timezone:"github"` provenance.
 Cross-day comparisons and conclusions remain the external producer's job; no
 analysis runtime or writable repository state/meta API is introduced here.
 See [activity fields and window rules](api.md#get-activity).
@@ -412,9 +425,12 @@ otherwise pending current-day daily work precedes unstarted weekly/catalog work.
 Timeout/missed-slot `lastError` warnings persist until an explicit schedule save.
 
 All exposed runs add `expectedFinishAt` and `expectedFinishAtReason`: start time
-plus the median wall duration of the account's last five valid completed runs of
+plus the median wall duration of the account's last five valid completed or partial runs of
 the actual catalog/quick/deep kind, across retained history. Read-time calibration
-is not a deadline or guarantee. Null uses `no_completed_history`,
+is not a deadline or guarantee. Samples need valid start/finish times and positive
+work; failed/cancelled and zero-work runs are excluded. No same-kind sample means
+null with `no_completed_history` (no eligible completed-or-partial history), not
+an estimate borrowed from another kind. Other null reasons are
 `invalid_started_at` or `not_executed`; a valid estimate has a null reason.
 No GET backfill, upstream request or schema migration is introduced.
 

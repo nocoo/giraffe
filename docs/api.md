@@ -658,6 +658,11 @@ api -G "$API/contributions" --data-urlencode 'since=2026-10-01' --data-urlencode
 
 ### GET /activity
 
+All activity responses, including 400/404/409 and 304, carry
+`Cache-Control: private, no-store` and `Referrer-Policy: no-referrer`.
+Machine responses vary on `Authorization`; browser responses vary on
+`Cookie, Cf-Access-Jwt-Assertion`. Error responses do not receive an ETag.
+
 `GET /api/v1/accounts/:account/activity?run=latest&repository=owner/name`
 requires `observations:read`. `run` defaults to `latest`; an explicit saved run ID
 selects that immutable publication. `repository` is optional. Unknown query keys
@@ -687,15 +692,20 @@ The response is an `ActivitySnapshot`, not the generic observation envelope:
 ```
 
 The interval is `(since, until]`, ending at the run's frozen collection cutoff,
-not its completion time. The previous successful account-wide quick refresh
-supplies `since`, including reliable persisted runs from before activity storage
-existed. Eligible runs are quick refreshes triggered by daily scheduling or a
+not its completion time. The last published account-wide quick refresh whose
+terminal status is `completed` or `partial` supplies `since`. A completed run
+without an activity publication (including pre-activity history) does not advance
+the window. Eligible runs are quick refreshes triggered by daily scheduling or a
 manual `scope:all` request, not weekly/deep, catalog or selected-repository work.
 Daily membership remains starred-owned even when it contains zero or one repo.
 The first run uses a bounded 24-hour lookback and sets `first:true,gap:true`.
-Failed/interrupted eligible runs or a missing Beijing calendar day set `gap:true`;
-the window still starts at the last success. Collection-time jitter alone does
-not create a gap. Adjacent successful windows share the exact boundary timestamp.
+Failed/cancelled or unpublished terminal eligible runs, or a missing Beijing
+calendar day, set `gap:true`; the window still starts at the last eligible
+publication. A published partial run advances the window without itself creating
+a gap. Collection-time jitter alone does not create a gap. Adjacent publications
+share the exact boundary timestamp. `latest`, `/sources` discovery and retention
+use the same completed-or-partial publication eligibility; failed/cancelled runs
+remain excluded. A finished partial publication is readable, not a 409.
 
 Lists distinguish known empty (`[]`) from unavailable (`null`). Coverage entries
 are `{status:complete|partial|unavailable,truncated,reason}`. A bounded pagination
@@ -703,6 +713,9 @@ or storage cut marks the affected list and the whole response truncated; nullabl
 totals must not be interpreted as zero. Old good observations are not relabeled
 as newly collected evidence. The source index registers `account:activity` with
 its publication version, content version and saved `fetchedAt`.
+Repositories with failed, unavailable or limited steps have `coverage.run.status`
+`partial`. Per-source missing evidence remains unavailable/null; a total whose
+source evidence is partial or unavailable stays null, never a fabricated zero.
 `membership` freezes repository names independently of stored pages, so capacity
 cuts cannot make a selected member look unselected. An unclassifiable failed
 workflow leaves the red default-branch total null and `default_branch` coverage
@@ -742,12 +755,18 @@ issues, releases, CI runs and red default-branch workflow runs. Contributions
 describe explicit `Asia/Shanghai` intervals, the previous full Beijing day and
 today's partial interval, with independently nullable composition. This is a
 separate bounded query, not a timezone relabeling of `/contributions`' GitHub-native
-calendar. Each day's `count` is GitHub's reported `contributionCalendar.totalContributions`
-for that requested interval, not a sum invented from type counts. Optional
+calendar. For Beijing date `D`, the query uses `D T00:00:00Z` through
+`D T23:59:59Z`: GitHub truncates the query to UTC dates and its calendar cells
+already use the account's timezone. Each day's `count` is GitHub's reported
+`contributionCalendar.totalContributions`, accepted only when exactly one valid
+native cell has date `D` and the same count. Optional
 `nativeCalendar:{timezone:"github",total,days:[{date,count}]}` preserves returned
 native date labels unchanged. Neither field promises a re-bucketing of GitHub's
-native squares into Beijing days. Missing totals/types stay null; an attribution
-or composition mismatch marks coverage partial without rewriting the known count.
+native squares into Beijing days. Missing totals/types stay null. Multiple cells,
+an incorrect date or inconsistent calendar total produce a null day count and
+partial coverage, never a sum of cells. A type-composition mismatch keeps the
+validated single-cell count but marks coverage partial. The current day remains
+`partial:true`; day `since`/`until` describe Beijing boundaries, not query variables.
 See `apps/web/src/lib/activity-types.ts` for the complete field contract.
 
 The supplementary collector normally adds one refs/tags GraphQL request per repo,
@@ -783,8 +802,18 @@ include a safe `reason`, never raw upstream diagnostics. Arrays sort ascending
 by `(at, repo, event_id)`. Selection is inclusive (`at >= since`); retain event IDs
 to deduplicate when polling from the previous `until`.
 
-No completed discovery publication returns 409 `catalog_unpublished`. Event
-retention is bounded to 90 days and 10,000 combined change/unconfirmed events per account. Eviction removes
+No completed discovery publication returns 409 `catalog_unpublished`. After the
+first publication, `since < history_since` returns 410 `catalog_history_expired`
+immediately, not only after retention eviction; it does not clamp the cursor or
+return a partial 200. `since == history_since` is accepted. For migrated accounts,
+0019 seeds this floor at migration application time (history initialization), not
+the saved catalog's fetch time or the first later publication; that publication
+preserves the floor. Resync from `/repos` after a 410, then poll from the published
+history boundary. The saved 2026-10-21 catalog baseline already excludes `rsshub`
+and `wiki`; their pre-history departures can never be reconstructed as `removed`
+events. Initialization does not invent additions, removals or archive events.
+
+Event retention is bounded to 90 days and 10,000 combined change/unconfirmed events per account. Eviction removes
 whole timestamp cohorts and advances the history floor beyond the evicted time;
 a request before that floor returns 410 `catalog_history_expired`, never a
 silently incomplete success. Resynchronize the current catalog after expiry.
@@ -1511,11 +1540,15 @@ including compact history. No browser progress/lease summary is added.
 
 Every run also includes `expectedFinishAt:string|null` and
 `expectedFinishAtReason:string|null`. The estimate is its start plus the median
-wall duration of the last five valid completed runs of that account and actual
+wall duration of the last five valid completed or partial runs of that account and actual
 kind (`catalog`, `quick`, `deep`), using all retained history, not only these 21
 rows. It is recalibrated at read time and may be in the past; it is not the hard
 `deadlineAt` or a completion guarantee. Catalog preparations are catalog samples
-regardless of daily/weekly trigger. Failed/partial runs are not successful samples.
+regardless of daily/weekly trigger. Samples require real valid start/finish times
+and positive work; failed/cancelled and zero-work runs remain excluded. With no
+eligible same-kind sample, the estimate stays null rather than borrowing a
+different kind's duration. `no_completed_history` means no eligible completed-or-partial
+same-kind history, including an account with no usable terminal duration.
 Null reasons are `no_completed_history`, `invalid_started_at` or `not_executed`
 (zero-work audit); a present estimate has a null reason. Browser run history and
 selected detail use the same projection without writing stored payloads.
@@ -1537,10 +1570,16 @@ as terminal `limited` with `error:"dependency_parse_unsupported"`; the collector
 uses that typed safe code for unsupported workflow structure or an unparseable
 manifest, never classification by display text. This adds `counts.limited` and
 completed browser progress without incrementing failed/unavailable counts or
-making the run partial. Capacity truncation, interrupted pagination/access loss,
-malformed upstream containers and exhausted
+making the run partial. Collector capacity truncation with no access-failure
+reason code likewise increments `counts.limited`, not `counts.failed`; its
+`coverage.status:"limited"` evidence remains limited, never complete. Interrupted
+pagination/access loss, malformed upstream containers and exhausted
 upstream retries remain failures. `completed` means the plan finished without
 failures or skipped required work, not that every data source is available.
+In particular, a limited observed subset with `permission_denied`, `not_found`,
+disabled-feature or `unknown` access restriction remains a failed step/partial
+run. Do not classify by the `coverage_limited` error string alone: older fallback
+error mapping can also use it for an unknown mid-pagination restriction.
 For paginated lists, only an explicit first-page access denial can represent
 expected absence. A search response without `nodes` and without an access error
 is malformed, not forbidden. A 403/404 after any accepted page (even an empty

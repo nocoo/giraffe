@@ -128,7 +128,7 @@ export async function readSources(
 				),
 			db
 				.prepare(
-					"SELECT a.run_id,a.payload,a.content_version FROM activity_publications a JOIN factory_runs r ON r.id=a.run_id AND r.account_id=a.account_id WHERE a.account_id=? AND r.status='completed' ORDER BY a.until_at DESC,a.run_id LIMIT 1",
+					"SELECT a.run_id,a.payload,a.content_version FROM activity_publications a JOIN factory_runs r ON r.id=a.run_id AND r.account_id=a.account_id WHERE a.account_id=? AND r.status IN ('completed','partial') ORDER BY a.until_at DESC,a.run_id LIMIT 1",
 				)
 				.bind(account),
 			db

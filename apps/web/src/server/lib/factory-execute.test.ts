@@ -207,7 +207,73 @@ it.each([false, true])(
 	},
 );
 
-it("still fails dependency capacity truncation instead of treating it as a safe-parse limit", async () => {
+it("B2 publishes daily activity despite a failed repository collection step", async () => {
+	const env = await setup("refresh", { scope: "all" }, true);
+	const base = vi.mocked(fetch).getMockImplementation();
+	if (!base) throw new Error("fixture");
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async (url: string, init: RequestInit) =>
+			url.includes("/releases") ? Response.json({ invalid: true }) : base(url, init),
+		),
+	);
+	const run = await drive(env);
+	expect(run?.status).toBe("partial");
+	expect(run?.steps.find((step) => step.kind === "releases")?.status).toBe("failed");
+	expect(run?.steps.find((step) => step.kind === "publish")?.status).toBe("success");
+	expect(await readActivity(createDb(env.DB), snap.account_id, {})).toMatchObject({
+		runId: "r1",
+		repos: [
+			{
+				repo: "nocoo/app",
+				coverage: { run: { status: "partial" }, releases: { status: "unavailable" } },
+				releases: null,
+			},
+		],
+		totals: { releases: null },
+		coverage: { repos: { status: "partial" } },
+	});
+});
+
+it.each([
+	{ status: 403, message: "Resource not accessible by integration", code: "permission_denied" },
+	{ status: 404, message: "Not Found", code: "not_found" },
+	{ status: 403, message: "Forbidden", code: "coverage_limited" },
+	{ status: 403, message: "Dependabot alerts are disabled", code: "alerts_disabled" },
+])("B2 keeps mid-pagination access loss failed: $message", async ({ status, message, code }) => {
+	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] });
+	const base = vi.mocked(fetch).getMockImplementation();
+	if (!base) throw new Error("fixture");
+	let pages = 0;
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async (url: string, init: RequestInit) => {
+			if (!url.includes("/dependabot/alerts")) return base(url, init);
+			pages++;
+			return new URL(url).searchParams.has("after")
+				? Response.json({ message }, { status })
+				: Response.json([], {
+						headers: {
+							Link: '<https://api.github.com/repos/nocoo/app/dependabot/alerts?after=next>; rel="next"',
+						},
+					});
+		}),
+	);
+	const run = await drive(env);
+	expect(pages).toBe(2);
+	expect(run?.steps.find((step) => step.kind === "alerts")).toMatchObject({
+		status: "failed",
+		error: code,
+	});
+	expect(run?.status).toBe("partial");
+	expect((await listRuns(createDb(env.DB), snap.account_id))[0]?.counts).toMatchObject({
+		failed: 1,
+		limited: 0,
+	});
+	expect((await publishedFactory(createDb(env.DB), snap.account_id))?.status).toBe("partial");
+});
+
+it("B2 counts dependency capacity truncation as limited rather than failed", async () => {
 	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] });
 	const base = vi.mocked(fetch).getMockImplementation();
 	if (!base) throw new Error("fixture");
@@ -224,13 +290,13 @@ it("still fails dependency capacity truncation instead of treating it as a safe-
 	);
 	const run = await drive(env);
 	expect(run?.steps.find((step) => step.kind === "dependencies")).toMatchObject({
-		status: "failed",
+		status: "limited",
 		error: "coverage_limited",
 	});
-	expect(run?.status).toBe("partial");
+	expect(run?.status).toBe("completed");
 	expect((await listRuns(createDb(env.DB), snap.account_id))[0]?.counts).toMatchObject({
-		limited: 0,
-		failed: 1,
+		limited: 1,
+		failed: 0,
 	});
 });
 
