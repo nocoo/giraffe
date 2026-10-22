@@ -214,9 +214,17 @@ it("R4 HTTP preserves published counts, workflow fields, seamless windows and re
 });
 
 it("R4 HTTP rejects incomplete runs, unknown runs, malformed selectors and unauthorized conditional requests", async () => {
-	expect((await request("?run=unknown")).status).toBe(404);
-	expect((await request(`?run=${pendingId}`)).status).toBe(409);
-	expect((await request(`?repository=${encodeURIComponent(`${owner}/unknown`)}`)).status).toBe(404);
+	for (const [query, status] of [
+		["?run=unknown", 404],
+		[`?run=${pendingId}`, 409],
+		[`?repository=${encodeURIComponent(`${owner}/unknown`)}`, 404],
+	] as const) {
+		const response = await request(query);
+		expect(response.status).toBe(status);
+		expect(response.headers.get("cache-control")).toBe("private, no-store");
+		expect(response.headers.get("vary")).toBe("Authorization");
+		expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+	}
 	for (const query of [
 		"?x=1",
 		"?scope=starred",
@@ -224,8 +232,13 @@ it("R4 HTTP rejects incomplete runs, unknown runs, malformed selectors and unaut
 		"?repository=bad",
 		"?run=latest&run=other",
 		`?repository=${encodeURIComponent(repository)}&repository=${encodeURIComponent(`${owner}/other`)}`,
-	])
-		expect((await request(query, bearer, "*")).status, query).toBe(400);
+	]) {
+		const response = await request(query, bearer, "*");
+		expect(response.status, query).toBe(400);
+		expect(response.headers.get("cache-control")).toBe("private, no-store");
+		expect(response.headers.get("vary")).toBe("Authorization");
+		expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+	}
 	for (const [token, status] of [
 		[null, 401],
 		["invalid", 401],
@@ -245,8 +258,8 @@ it("R4 browser activity reads the active account publication with private condit
 		`UPDATE accounts SET is_active=0 WHERE is_active=1; UPDATE accounts SET is_active=1 WHERE id=${quote(account)};`,
 	);
 	const jwt = process.env.GIRAFFE_JWT;
-	const browser = (tag?: string) =>
-		fetch(`${base}/api/activity?run=latest`, {
+	const browser = (tag?: string, query = "run=latest") =>
+		fetch(`${base}/api/activity?${query}`, {
 			headers: {
 				...(jwt ? { "Cf-Access-Jwt-Assertion": jwt } : {}),
 				...(tag ? { "If-None-Match": tag } : {}),
@@ -264,6 +277,17 @@ it("R4 browser activity reads the active account publication with private condit
 		expect(await conditional.text()).toBe("");
 		expect(conditional.headers.get("cache-control")).toBe("private, no-store");
 		expect(conditional.headers.get("vary")).toContain("Cf-Access-Jwt-Assertion");
+		for (const [query, status] of [
+			["unknown=1", 400],
+			["run=unknown", 404],
+			[`run=${pendingId}`, 409],
+		] as const) {
+			const error = await browser("*", query);
+			expect(error.status).toBe(status);
+			expect(error.headers.get("cache-control")).toBe("private, no-store");
+			expect(error.headers.get("vary")).toBe("Cookie, Cf-Access-Jwt-Assertion");
+			expect(error.headers.get("referrer-policy")).toBe("no-referrer");
+		}
 		expect(await (await fetch("http://127.0.0.1:17046/_count")).text()).toBe(calls);
 	} finally {
 		marker();

@@ -658,6 +658,11 @@ api -G "$API/contributions" --data-urlencode 'since=2026-10-01' --data-urlencode
 
 ### GET /activity
 
+All activity responses, including 400/404/409 and 304, carry
+`Cache-Control: private, no-store` and `Referrer-Policy: no-referrer`.
+Machine responses vary on `Authorization`; browser responses vary on
+`Cookie, Cf-Access-Jwt-Assertion`. Error responses do not receive an ETag.
+
 `GET /api/v1/accounts/:account/activity?run=latest&repository=owner/name`
 requires `observations:read`. `run` defaults to `latest`; an explicit saved run ID
 selects that immutable publication. `repository` is optional. Unknown query keys
