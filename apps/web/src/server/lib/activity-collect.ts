@@ -418,7 +418,7 @@ export async function collectActivityContributions(
 					? completeActivity()
 					: {
 							status:
-								day.count === null && values.every((value) => value === null)
+								total === null && values.every((value) => value === null)
 									? "unavailable"
 									: "partial",
 							truncated: false,

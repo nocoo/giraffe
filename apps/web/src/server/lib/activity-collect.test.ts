@@ -114,6 +114,32 @@ it.each([
 		coverage: { status: probe.expected === null ? "partial" : "complete" },
 	});
 });
+it("B1 keeps a wrong-date calendar partial even when type counts are unavailable", async () => {
+	const result = await collectActivityContributions(
+		run(),
+		github(() =>
+			Response.json({
+				data: {
+					user: {
+						day0: {
+							contributionCalendar: {
+								totalContributions: 359,
+								weeks: [{ contributionDays: [{ date: "2026-10-21", contributionCount: 359 }] }],
+							},
+						},
+					},
+				},
+			}),
+		),
+		"fake",
+	);
+	expect(result.days[0]).toMatchObject({
+		date: "2026-10-22",
+		count: null,
+		nativeCalendar: { total: 359 },
+		coverage: { status: "partial" },
+	});
+});
 it("R4 supplements branch commits and annotated tags with measured bounded request overhead", async () => {
 	const gh = github((url) =>
 		url.endsWith("/graphql")
