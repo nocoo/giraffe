@@ -1,5 +1,18 @@
 # Retrospective
 
+## 2026-10-22 - Keep HTTP catalog fixtures identity-consistent
+
+The second full HTTP run exposed two fixture gaps after the earlier catalog
+fixture repair. The activity fixture also reused the matrix account's unique
+login. The matrix catalog publication stayed pending with `catalog_incomplete`
+because the legacy catalog HTTP stub omitted the newly requested stable ID,
+while the inventory stub returned one. Inspecting the marked local test database
+identified the missing identity instead of treating the failure as a slow queue.
+Both HTTP and browser catalog stubs now return the shared inventory identity;
+independent seeded activity accounts use their own login. Keep fixture identities
+consistent across collection paths and unique across independently seeded suites;
+never increase polling timeouts to conceal a deterministic publication error.
+
 ## 2026-10-19: Offline version metadata retained mirror URLs
 
 While preparing v0.15.8, an offline `bun install --lockfile-only` run inherited

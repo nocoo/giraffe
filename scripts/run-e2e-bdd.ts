@@ -4,7 +4,7 @@ import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { factoryGraphqlStub } from "./factory-stub";
+import { factoryGraphqlStub, factoryRepoStub } from "./factory-stub";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const persist = join(root, ".wrangler/e2e-pw");
@@ -226,6 +226,7 @@ const github = await listen(githubPort, (req, res) => {
 							repositories: {
 								nodes: [
 									{
+										id: factoryRepoStub.id,
 										nameWithOwner: "octocat/hello-world",
 										name: "hello-world",
 										owner: { login: "octocat" },

@@ -8,6 +8,8 @@ import { activityFixture, activityPr, activityRun } from "../e2e/activity-fixtur
 
 const base = process.env.GIRAFFE_E2E ?? "http://127.0.0.1:17045";
 const account = randomUUID().replaceAll("-", "").slice(0, 21);
+const owner = `activity-${account}`;
+const repository = `${owner}/hello-world`;
 const bearer = `giraffe_${randomBytes(32).toString("base64url")}`;
 const wrongScope = `giraffe_${randomBytes(32).toString("base64url")}`;
 const expired = `giraffe_${randomBytes(32).toString("base64url")}`;
@@ -72,18 +74,31 @@ beforeAll(() => {
 	snapshot.previousRunId = previousId;
 	const repo = snapshot.repos[0];
 	if (!repo) throw new Error("activity fixture missing");
-	repo.ci_runs = [activityRun()];
-	repo.prs.merged = [activityPr()];
+	repo.repo = repository;
+	const workflow = {
+		...activityRun(),
+		html_url: `https://github.com/${repository}/actions/runs/101`,
+		actor: owner,
+	};
+	repo.ci_runs = [workflow];
+	repo.prs.merged = [
+		{
+			...activityPr(),
+			url: `https://github.com/${repository}/pull/81`,
+			author: owner,
+			merged_by: owner,
+		},
+	];
 	repo.releases = [
 		{
 			id: "release-1",
 			title: "v1.0.0",
-			url: "https://github.com/octocat/hello-world/releases/tag/v1.0.0",
+			url: `https://github.com/${repository}/releases/tag/v1.0.0`,
 			at: snapshot.window.until,
 			createdAt: snapshot.window.until,
 			closedAt: null,
 			mergedAt: null,
-			author: "octocat",
+			author: owner,
 			state: "published",
 		},
 	];
@@ -93,7 +108,7 @@ beforeAll(() => {
 		merged_prs: 1,
 		other_prs: 1,
 		releases: 1,
-		red_default_branch: [{ ...activityRun(), repo: repo.repo }],
+		red_default_branch: [{ ...workflow, repo: repo.repo }],
 	};
 	const now = new Date().toISOString();
 	const mint = (token: string, scopes: string[], suffix: string, expiresAt: string) =>
@@ -102,7 +117,7 @@ beforeAll(() => {
 		const run = makeRun(
 			id,
 			account,
-			"octocat",
+			owner,
 			id,
 			"refresh",
 			[],
@@ -134,11 +149,11 @@ beforeAll(() => {
 	seeded = true;
 	rows(
 		[
-			`INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES(${quote(account)},'octocat','test-not-an-encrypted-pat','fake',${quote(now)},${quote(now)});`,
+			`INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES(${quote(account)},${quote(owner)},'test-not-an-encrypted-pat','fake',${quote(now)},${quote(now)});`,
 			mint(bearer, ["observations:read"], "reader", new Date(Date.now() + 86400_000).toISOString()),
 			mint(wrongScope, ["agent:read"], "agent", new Date(Date.now() + 86400_000).toISOString()),
 			mint(expired, ["observations:read"], "expired", "2025-01-01T00:00:00.000Z"),
-			`INSERT INTO snapshots(account_id,kind,payload,fetched_at) VALUES(${quote(account)},'repos',${quote(JSON.stringify({ repos: [{ name_with_owner: repo.repo, owner_login: "octocat" }], fetched_at: snapshot.fetchedAt, truncated: false }))},${quote(snapshot.fetchedAt)});`,
+			`INSERT INTO snapshots(account_id,kind,payload,fetched_at) VALUES(${quote(account)},'repos',${quote(JSON.stringify({ repos: [{ name_with_owner: repo.repo, owner_login: owner }], fetched_at: snapshot.fetchedAt, truncated: false }))},${quote(snapshot.fetchedAt)});`,
 			runRow(previousId, previous.window.until, "completed"),
 			runRow(currentId, snapshot.window.until, "completed"),
 			runRow(pendingId, "2026-10-24T21:00:00.000Z", "running"),
@@ -167,7 +182,7 @@ it("R4 HTTP preserves published counts, workflow fields, seamless windows and re
 	const prior = await request(`?run=${previousId}`);
 	expect(prior.status).toBe(200);
 	expect(((await prior.json()) as ActivitySnapshot).window.until).toBe(snapshot.window.since);
-	const scoped = await request("?repository=octocat%2Fhello-world");
+	const scoped = await request(`?repository=${encodeURIComponent(repository)}`);
 	expect(scoped.status).toBe(200);
 	expect(((await scoped.json()) as ActivitySnapshot).repos).toEqual(snapshot.repos);
 	const tag = response.headers.get("etag");
@@ -201,14 +216,14 @@ it("R4 HTTP preserves published counts, workflow fields, seamless windows and re
 it("R4 HTTP rejects incomplete runs, unknown runs, malformed selectors and unauthorized conditional requests", async () => {
 	expect((await request("?run=unknown")).status).toBe(404);
 	expect((await request(`?run=${pendingId}`)).status).toBe(409);
-	expect((await request("?repository=octocat%2Funknown")).status).toBe(404);
+	expect((await request(`?repository=${encodeURIComponent(`${owner}/unknown`)}`)).status).toBe(404);
 	for (const query of [
 		"?x=1",
 		"?scope=starred",
 		"?run=",
 		"?repository=bad",
 		"?run=latest&run=other",
-		"?repository=octocat%2Fhello-world&repository=octocat%2Fother",
+		`?repository=${encodeURIComponent(repository)}&repository=${encodeURIComponent(`${owner}/other`)}`,
 	])
 		expect((await request(query, bearer, "*")).status, query).toBe(400);
 	for (const [token, status] of [
