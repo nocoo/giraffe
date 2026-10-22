@@ -21,6 +21,7 @@ it("reads settings and machine runs in one post-auth batch", async () => {
 	});
 	for (const route of [
 		"/api/refresh/settings",
+		"/api/factory/runs",
 		`/api/v1/accounts/${fixture.account}/settings`,
 		`/api/v1/accounts/${fixture.account}/refresh-runs`,
 	]) {

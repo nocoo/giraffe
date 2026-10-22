@@ -3,23 +3,14 @@ import { z } from "zod";
 import { type FactoryRunResponse, runProgress } from "../../lib/factory-run";
 import type { AppVars, Env } from "../env";
 import { getActiveAccount } from "../lib/db/accounts";
-import {
-	catalogFactory,
-	controlRun,
-	factoryHead,
-	getRun,
-	listRuns,
-	repoStates,
-} from "../lib/db/factory-runs";
+import { controlRun, getRun } from "../lib/db/factory-runs";
 import { ApiError, jsonOk } from "../lib/errors";
 import { enqueueRun, handoffAccount } from "../lib/factory-dispatch";
-import { factoryStorage } from "../lib/factory-retention";
-import { siteCatalog } from "../lib/factory-site";
+import { readFactoryRunInputs } from "../lib/factory-run-read";
 import { refreshInput, startRefresh } from "../lib/factory-start";
 import { ACCOUNT_ID_RE } from "../lib/id";
 import { readJson } from "../lib/read-body";
-import { estimateRunFinish, readRunEstimates } from "../lib/run-estimates";
-import { projectFactory, repoPolicy } from "../lib/snapshot-projection";
+import { estimateRunFinish } from "../lib/run-estimates";
 
 type Ctx = Context<{ Bindings: Env; Variables: AppVars }>;
 const PRIVATE = { "cache-control": "private, no-store" };
@@ -33,14 +24,8 @@ export async function getFactoryRuns(c: Ctx): Promise<Response> {
 	const db = c.get("db");
 	const detail = c.req.query("history") ?? "";
 	if (detail.length > 80) throw new ApiError(400, "validation_failed", "invalid history ID");
-	const runs = await listRuns(db, row.id, detail);
-	const calibration = await readRunEstimates(db, row.id);
-	const head = await factoryHead(db, row.id);
-	const rawCatalog = await catalogFactory(db, row.id);
-	const policy = await repoPolicy(db, row.id);
-	const catalog = rawCatalog ? projectFactory(rawCatalog, policy) : null;
-	const siteRepos = await siteCatalog(db, row.id);
-	const states = await repoStates(db, row.id);
+	const { runs, calibration, head, catalog, policy, siteRepos, states, storage } =
+		await readFactoryRunInputs(db, row.id, detail);
 	const now = new Date().toISOString();
 	const views = runs.map(({ run, leaseUntil, counts }) => {
 		const { checkpoint, ...view } = run;
@@ -58,7 +43,7 @@ export async function getFactoryRuns(c: Ctx): Promise<Response> {
 		};
 	});
 	const response: FactoryRunResponse = {
-		storage: await factoryStorage(db, row.id),
+		storage,
 		account_id: row.id,
 		serverNow: now,
 		nextAllowedAt: head?.next_at ?? null,
@@ -73,7 +58,7 @@ export async function getFactoryRuns(c: Ctx): Promise<Response> {
 		),
 		publication: head?.published_id ?? null,
 	};
-	return jsonOk(response, 200, PRIVATE);
+	return jsonOk(response, 200, PRIVATE, c.get("sourceTiming"));
 }
 export async function postFactoryRun(c: Ctx): Promise<Response> {
 	const parsed = refreshInput.safeParse(await readJson(c.req.raw, 120_000));

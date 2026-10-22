@@ -11,10 +11,13 @@ import { githubUnavailability } from "./github-unavailable";
 import { buildInsights, type InsightAlert } from "./insights";
 import { assertKind, prepareRefresh } from "./refresh";
 import { splitPages } from "./snapshot-pages";
-import { repoPolicy } from "./snapshot-projection";
+import { type Policy, repoPolicy } from "./snapshot-projection";
 
 export async function siteCatalog(db: Db, account: string): Promise<string[] | null> {
 	const policy = await repoPolicy(db, account);
+	return siteCatalogFromPolicy(policy);
+}
+export function siteCatalogFromPolicy(policy: Pick<Policy, "catalog" | "includes">) {
 	const names = catalogNames(policy.catalog);
 	return names?.filter(policy.includes) ?? null;
 }

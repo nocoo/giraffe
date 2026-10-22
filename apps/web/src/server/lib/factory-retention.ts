@@ -1,27 +1,25 @@
 import type { Db } from "./db/d1";
-export async function factoryStorage(db: Db, account: string) {
-	const row = await db
-		.prepare("SELECT bytes FROM factory_storage WHERE account_id=?")
-		.bind(account)
-		.first<{ bytes: number }>();
-	const total = await db
-		.prepare("SELECT bytes FROM factory_budget WHERE account_id=?")
-		.bind(account)
-		.first<{ bytes: number }>();
-	// Existing triggers count factory rows; ordinary pages and daily baselines share the quota.
-	const pages = await db
-		.prepare(`SELECT COALESCE(SUM(bytes),0) AS bytes FROM (
+export type FactoryStorage = { resourceBytes: number; totalBytes: number };
+export function factoryStorageStatement(db: Db, account: string): D1PreparedStatement {
+	return db
+		.prepare(`SELECT
+ COALESCE((SELECT bytes FROM factory_storage WHERE account_id=?),0) AS resourceBytes,
+ COALESCE((SELECT bytes FROM factory_budget WHERE account_id=?),0) + (SELECT COALESCE(SUM(bytes),0) FROM (
 		SELECT length(CAST(payload AS BLOB)) AS bytes FROM snapshots WHERE account_id=? AND kind NOT LIKE 'factory%'
 		UNION ALL SELECT length(CAST(payload AS BLOB)) FROM snapshot_days WHERE account_id=?
 		UNION ALL SELECT length(CAST(COALESCE(input,'')||COALESCE(judgment,'')||COALESCE(report,'') AS BLOB)) FROM ai_reviews WHERE account_id=?
  UNION ALL SELECT length(CAST(a.diagnostic AS BLOB)) FROM ai_review_attempts a JOIN ai_reviews r ON r.job_id=a.job_id WHERE r.account_id=?
-	)`)
-		.bind(account, account, account, account)
-		.first<{ bytes: number }>();
+	)) AS totalBytes`)
+		.bind(account, account, account, account, account, account);
+}
+export function decodeFactoryStorage(row: FactoryStorage | undefined | null): FactoryStorage {
 	return {
-		resourceBytes: row?.bytes ?? 0,
-		totalBytes: (total?.bytes ?? 0) + (pages?.bytes ?? 0),
+		resourceBytes: row?.resourceBytes ?? 0,
+		totalBytes: row?.totalBytes ?? 0,
 	};
+}
+export async function factoryStorage(db: Db, account: string) {
+	return decodeFactoryStorage(await factoryStorageStatement(db, account).first<FactoryStorage>());
 }
 /** Bounded GC. Current heads, their manifests, two latest publications and 20 recent runs are roots. */
 export async function pruneFactory(db: Db, now: string) {
