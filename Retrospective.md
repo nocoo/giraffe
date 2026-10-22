@@ -1,5 +1,21 @@
 # Retrospective
 
+## 2026-10-22 - Repository absence did not prove deletion
+
+The first batch-11 review accepted a name-based HTTP 404 as deletion evidence.
+That interpretation ignored GitHub's permission-hiding behavior: losing private
+access can return 404, including an explicit personal-access-token restriction.
+It also ignored successful same-name replacement responses, leaving an old stable
+identity blocking every later catalog publication. The steward reproduced both
+after the branch was pushed. The repair requires positive stable-ID not-found
+evidence, never auto-removes a previously private repository, and requires a
+previously known private-owned identity to remain visible before removing a public
+candidate. Unknown/access-denied results persist as unconfirmed history rather
+than cleanup. Same-name ownership follows the complete listing while unresolved
+old identity state is preserved separately. Tests must include permission changes,
+identity replacement within one run and repeated discovery, not just an ordinary
+404 followed by a later addition. Published history is repaired by forward commits.
+
 ## 2026-10-22 - Keep HTTP catalog fixtures identity-consistent
 
 The second full HTTP run exposed two fixture gaps after the earlier catalog
