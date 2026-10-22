@@ -1,5 +1,15 @@
 # Retrospective
 
+## 2026-10-22 - Shared-tree hooks need a coordinated green boundary
+
+The hotfix controller tried to commit a green contribution fix while independent
+workers still had unformatted tests and an incomplete derived migration schema
+in the same working tree. Check-only hooks correctly blocked both attempts.
+Targeted worker success did not prove the full-tree gate: migration additions
+must also update the canonical schema concatenation. Collect worker readiness,
+finish scoped integration and pause writes before serial atomic commits. Keep
+RED tests in place and fix the cause rather than bypassing hooks or hiding files.
+
 ## 2026-10-22 - Removal guards must cover quarantined identities
 
 The identity-safety repair preserved old mutable state during name replacement,
