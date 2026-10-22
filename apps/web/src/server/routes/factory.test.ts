@@ -65,6 +65,65 @@ async function setup(withAccount = true) {
 }
 afterEach(() => vi.unstubAllGlobals());
 
+it.each(["all", "starred"])(
+	"exposes unpublished selected membership for browser %s without writing observations",
+	async (scope) => {
+		const fixture = await setup();
+		const snapshot = ready();
+		const repo = snapshot.repos[0];
+		if (!repo) throw new Error("missing fixture publication");
+		for (const coverage of Object.values(repo.coverage)) coverage.status = "complete";
+		repo.observation = {
+			source: "run",
+			version: snapshot.runId,
+			window: snapshot.window,
+			refreshedAt: NOW,
+		};
+		await fixture.db.batch(
+			await replaceSnapshotStmts(
+				fixture.db,
+				ID,
+				"repos",
+				{
+					repos: [
+						{ name_with_owner: "nocoo/app", primary_language: "TypeScript" },
+						{
+							name_with_owner: "nocoo/missing",
+							description: "Unpublished",
+							primary_language: "Swift",
+						},
+						{ name_with_owner: "outside/foreign" },
+					],
+				},
+				NOW,
+			),
+		);
+		for (const name of ["nocoo/app", "nocoo/missing", "outside/foreign"])
+			await fixture.db
+				.prepare("INSERT INTO repo_stars(account_id,repo) VALUES(?,?)")
+				.bind(ID, name)
+				.run();
+		await fixture.db.batch(
+			await replaceSnapshotStmts(fixture.db, ID, "factory", { ...snapshot }, NOW),
+		);
+		const before = await fixture.env.DB.prepare("SELECT * FROM snapshots ORDER BY kind").all();
+		const response = await fixture.call(`/api/factory?scope=${scope}`);
+		expect(response.status).toBe(200);
+		expect(await response.json()).toMatchObject({
+			selectedRepos: [
+				{ name: "nocoo/app", language: "TypeScript", topics: ["cli"] },
+				{ name: "nocoo/missing", description: "Unpublished", language: "Swift", topics: null },
+			],
+			repos: [{ name: "nocoo/app" }],
+			freshness: { total: 2, missing: 1 },
+			truncated: true,
+		});
+		expect(await fixture.env.DB.prepare("SELECT * FROM snapshots ORDER BY kind").all()).toEqual(
+			before,
+		);
+	},
+);
+
 it("retains saved contribution metadata for default/all browser and machine reads only", async () => {
 	const fixture = await setup();
 	const state = ready();

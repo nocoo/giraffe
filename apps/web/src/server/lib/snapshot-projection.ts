@@ -1,5 +1,5 @@
 import { uniqueDependencySummaries } from "../../lib/factory-dependencies";
-import type { FactorySnapshot } from "../../lib/factory-types";
+import type { FactorySnapshot, FactoryViewSnapshot } from "../../lib/factory-types";
 import { type SecurityFeatures, securityCount, securityIncomplete } from "../../lib/security";
 import { snapshotFreshness } from "../../lib/snapshot-freshness";
 import { composeContent, storedContent, withContent } from "./content-version";
@@ -424,13 +424,36 @@ export async function projectSnapshot(
 	return withContent(data, hash ? { hash } : null);
 }
 
-export function projectFactory(snap: FactorySnapshot, policy: Policy): FactorySnapshot {
+export function projectFactory(snap: FactorySnapshot, policy: Policy): FactoryViewSnapshot {
 	const repos = snap.repos
 		.filter((r) => policy.includes(r.name))
 		.map((repo) => ({ ...repo, dependencies: uniqueDependencySummaries(repo.dependencies) }));
+	const observations = new Map(repos.map((repo) => [repo.name.toLowerCase(), repo]));
+	const selectedRepos = policy.repos.map((member) => {
+		const observed = observations.get(member.name_with_owner.toLowerCase());
+		return {
+			name: member.name_with_owner,
+			description: observed
+				? observed.description
+				: typeof member.description === "string"
+					? member.description
+					: null,
+			language: observed
+				? observed.language
+				: typeof member.primary_language === "string"
+					? member.primary_language
+					: null,
+			topics: observed
+				? observed.topics
+				: Array.isArray(member.topics)
+					? member.topics.filter((topic): topic is string => typeof topic === "string")
+					: null,
+		};
+	});
 	const projected = {
 		...snap,
 		repos,
+		selectedRepos,
 		inventory: {
 			...snap.inventory,
 			excluded: snap.inventory.excluded.filter((r) => policy.includes(r.name)),

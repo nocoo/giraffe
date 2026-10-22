@@ -350,7 +350,8 @@ it("requests a specific run history without performing a mutation", async () => 
 });
 
 it("separates a finished refresh from missing data and groups the same problem across repositories", () => {
-	const snapshot = factoryFixture();
+	const rawSnapshot = factoryFixture();
+	const snapshot = { ...rawSnapshot, selectedRepos: rawSnapshot.repos };
 	snapshot.status = "complete";
 	snapshot.contributionStatus = "complete";
 	const repo = snapshot.repos[0];
@@ -358,6 +359,7 @@ it("separates a finished refresh from missing data and groups the same problem a
 	for (const coverage of Object.values(repo.coverage)) coverage.status = "complete";
 	repo.coverage.alerts.status = "unavailable";
 	snapshot.repos.push({ ...structuredClone(repo), id: "R_2", name: "nocoo/tools" });
+	snapshot.selectedRepos = snapshot.repos;
 	const completed = makeRun(
 		"partial",
 		snapshot.account_id,
@@ -440,7 +442,8 @@ it("explains recovery without treating rate limits, skipped steps or a paused ru
 
 it("reports missing inventory, healthy data and mixed update times in one health summary", () => {
 	expect(factoryDataHealth(null).title).toBe("还没有工厂数据");
-	const snapshot = factoryFixture();
+	const rawSnapshot = factoryFixture();
+	const snapshot = { ...rawSnapshot, selectedRepos: rawSnapshot.repos };
 	snapshot.inventory.complete = false;
 	expect(
 		factoryDataHealth({ ...snapshot, inventory: { ...snapshot.inventory, complete: true } }).detail,
