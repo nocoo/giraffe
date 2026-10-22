@@ -1,11 +1,12 @@
 import { snapshotFreshness } from "../../lib/snapshot-freshness";
 import { composeContent, storedContent } from "./content-version";
 import type { Db } from "./db/d1";
-import { publishedFactory } from "./db/factory-runs";
 import { ApiError } from "./errors";
 import { contributionDate, contributionDates, contributionTypes } from "./factory-contributions";
 import { observationEnvelope } from "./machine-observations";
 import { assertMachineQuery } from "./machine-query";
+import { decodePublication, type PublicationPage } from "./saved-observation-read";
+import { publicationSnapshotStatement } from "./saved-observation-statements";
 
 export async function readContributions(db: Db, account: string, query: Record<string, string[]>) {
 	assertMachineQuery(
@@ -24,7 +25,9 @@ export async function readContributions(db: Db, account: string, query: Record<s
 		!contributionDates(query.since[0], query.until[0]).length
 	)
 		throw new ApiError(400, "validation_failed", "invalid contribution date range");
-	const snapshot = await publishedFactory(db, account);
+	const snapshot = decodePublication(
+		(await publicationSnapshotStatement(db, account).all<PublicationPage>()).results,
+	);
 	const saved = snapshot?.contribution;
 	if (!snapshot || !saved?.days.length)
 		throw new ApiError(409, "snapshot_missing", "no saved contribution calendar");
