@@ -98,6 +98,61 @@ it("R4 revoked leases cannot leave activity pages and unpublished runs never ret
 		)?.n,
 	).toBe(0);
 });
+it.each([
+	["limited", "dependency_parse_unsupported", "success", false, false],
+	["limited", "coverage_limited", "success", true, true],
+	["failed", "dependency_parse_unsupported", "success", true, false],
+	["unavailable", "dependency_parse_unsupported", "success", true, false],
+	["limited", "dependency_parse_unsupported", "limited", true, true],
+	["limited", "dependency_parse_unsupported", "failed", true, false],
+	["limited", "dependency_parse_unsupported", "unavailable", true, false],
+] as const)(
+	"publishes activity run coverage for dependency %s/%s and actions %s",
+	async (status, error, otherStatus, partial, truncated) => {
+		const { raw, db, lease, repo } = await setup();
+		for (const step of lease.run.steps) step.status = "success";
+		const dependency = lease.run.steps.find((step) => step.kind === "dependencies");
+		const actions = lease.run.steps.find((step) => step.kind === "actions");
+		if (!dependency || !actions) throw new Error("Missing source steps");
+		Object.assign(dependency, { status, error });
+		actions.status = otherStatus;
+		const streams = new Map(
+			FACTORY_STREAMS.map((stream) => [
+				stream,
+				{
+					runId: lease.run.id,
+					items: [],
+					next: null,
+					ranges: [],
+					coverage: { ...repo.coverage[stream], status: "complete" as const },
+				},
+			]),
+		);
+		const activity = activityRepo(repo, streams, snapshotFor([]).window, extra(), {
+			features: { dependabot: { status: "available" }, code_scanning: { status: "available" } },
+			dependabot_open: 0,
+			code_scanning_open: 0,
+		});
+		await db
+			.prepare(
+				"INSERT INTO factory_resources(run_id,repo,stream,payload) VALUES(?,?,'activity-snapshot',?)",
+			)
+			.bind(lease.run.id, repo.name, JSON.stringify(activity))
+			.run();
+		const writes = await activityPublicationWrites(db, lease, now, [repo]);
+		lease.run.status = partial ? "partial" : "completed";
+		expect(await saveRun(db, lease, writes, now)).toBe(true);
+		const data = await readActivity(createDb(raw), lease.run.account_id, {});
+		expect(data.truncated).toBe(truncated);
+		expect(data.coverage.repos).toMatchObject({
+			status: partial ? "partial" : "complete",
+			truncated,
+		});
+		if (partial)
+			expect(data.repos[0]?.coverage.run).toMatchObject({ status: "partial", truncated });
+		else expect(data.repos[0]?.coverage.run).toBeUndefined();
+	},
+);
 it.each(["failed", "unavailable", "limited"] as const)(
 	"B2 publishes partial runs with %s repository evidence, source discovery and chaining",
 	async (status) => {

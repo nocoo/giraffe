@@ -938,7 +938,11 @@ when available. A retained dependency evidence version therefore does not discar
 successfully collected activity streams; absent successful commit evidence,
 stale observations remain unavailable.
 Repositories with failed, unavailable or limited steps have `coverage.run.status`
-`partial`. Per-source missing evidence remains unavailable/null; a total whose
+`partial`, except that `limited` with `error:dependency_parse_unsupported` alone
+does not mark run coverage partial or truncated. Dependency diagnostics retain
+their own limited coverage independently. Other limited steps still mark run
+coverage truncated; failed/unavailable steps alone do not. Per-source missing
+evidence remains unavailable/null; a total whose
 source evidence is partial or unavailable stays null, never a fabricated zero.
 `membership` freezes repository names independently of stored pages, so capacity
 cuts cannot make a selected member look unselected. An unclassifiable failed

@@ -146,7 +146,10 @@ export async function activityPublicationWrites(
 		const activity =
 			frozen.get(name) ?? activityRepo(repo, new Map(), requireActivityWindow(run), null, null);
 		const incomplete = run.steps.filter(
-			(step) => step.repo === name && ["failed", "unavailable", "limited"].includes(step.status),
+			(step) =>
+				step.repo === name &&
+				["failed", "unavailable", "limited"].includes(step.status) &&
+				!(step.status === "limited" && step.error === "dependency_parse_unsupported"),
 		);
 		if (incomplete.length)
 			activity.coverage.run = {
