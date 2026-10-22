@@ -1387,8 +1387,8 @@ schedule's `lastError`. Lease fencing rejects writes after the deadline; GET nev
 performs this recovery.
 
 `nextAt` identifies the earliest unresolved occurrence and may remain in the past
-while other work is active. Recovery processes retained occurrences individually,
-with at most 32 settlements per account per tick. A daily that cannot start before
+while other work is active. Recovery processes retained occurrences individually
+in bounded normalization passes. A daily that cannot start before
 the next Beijing midnight receives its own immutable failed audit with
 `error:scheduled_slot_missed`, `schedule`, and `missedSlots.count:1`; it performs
 no GitHub work. Advance from the settled due time, never from recovery time.
