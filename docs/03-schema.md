@@ -157,9 +157,21 @@ stored unchanged; machine reads project explicit nulls. See the
 
 ### `repo_statistics`
 
-仓库参与统计的手动覆盖值，主键 `(account_id, repo)`，仓库名不区分大小写，`enabled` 为 0/1。无覆盖值时，Fork 或已归档仓库默认不参与，其余默认参与。设置独立于 GitHub 快照保存，重新同步不会重置；删除账号时级联删除。增量迁移为 `migrations/0004_repo_statistics.sql`，可重复执行；回滚代码时保留该表即可，无需删除原始快照或设置。
+Retired. Migration `0016_star_membership.sql` preserves explicit exclusions by
+removing matching existing stars, then deletes every statistics override. The
+empty table is retained for schema rollback only; application selection and
+projection never read it, and retired mutation routes never write it. Keeping
+this table does not make pre-provenance code safe to run against owner tombstones;
+follow the migration and rollback requirements above.
 
-`POST /api/repos/:owner/:name/statistics` 接收 `{account_id, enabled: boolean}`，验证活动账号与仓库存在。读取时统一过滤工厂、Issues、PR、Insights、告警和通知，仓库管理页始终返回完整清单及有效 `statistics_enabled`。
+Browser `POST /api/repos/:owner/:name/statistics` and machine
+`PUT/DELETE /api/v1/statistics/:owner/:name` return `410 deprecated`.
+Machine settings expose an empty overrides array with a deprecation marker;
+the deprecated repository `statistics_enabled` field is only an alias for
+`starred`, not an independent participation setting. Daily membership is the
+starred, account-owned set; full membership is every account-owned catalog
+repository, including forks and archived repositories. Non-owned repositories
+never enter refresh or coverage denominators.
 
 ### `_test_marker`
 
