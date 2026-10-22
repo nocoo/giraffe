@@ -1060,7 +1060,9 @@ delete immutable observation/publication history or generic agent resources.
 Reappearance emits `added` without restoring an old star. Stable GitHub repository
 IDs identify renames: mutable names move with their star provenance, while frozen
 historical names stay unchanged. Giraffe never auto-stars newly discovered repos;
-the external bot owns that policy and must respect owner overrides.
+the external bot owns automatic starring policy and applies it only when authorized.
+Every accepted star write is last-write-wins across browser and agent writers;
+`source` is informational provenance, never an owner lock or priority rule.
 
 A name reused by a different GitHub repository ID is a distinct identity.
 Current-name ownership follows the identity in the complete listing, even if the

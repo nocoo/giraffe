@@ -423,7 +423,9 @@ never a name-based 404. Permission/SAML/SSO/401/403/limits/failures and the mass
 retain all state and appear in `unconfirmed[]`. Confirmed deletion clears stars
 and mutable participation, not immutable evidence or generic agent resources.
 Stable-ID renames preserve stars; reappearance does not resurrect them. Giraffe
-never auto-stars. Apply only authorized bot policy and respect owner overrides.
+never auto-stars. Apply only authorized bot policy; every accepted star write is
+last-write-wins across browser and agent writers. `source` is informational
+provenance, never an owner lock or priority rule.
 Different-ID name reuse cannot inherit departed factory evidence; included removed
 rows never inherit the current same-name repository's stars or provenance.
 Same-run name replacement belongs to the listed ID; unresolved old mutable state

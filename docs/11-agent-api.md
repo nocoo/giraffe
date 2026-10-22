@@ -118,8 +118,11 @@ but not in the denominator. All candidates then report `mass_removal_guard` in
 threshold still requires the normal identity/privacy checks. Confirmed removal clears stars and
 mutable participation/overrides but preserves immutable evidence and generic
 agent records. Reappearance is added without restoring stars. Default-star and
-archive-unstar policy remains in the external bot, respecting owner overrides;
-Giraffe performs no automatic starring and adds no R5/R6 agent-state/meta API.
+archive-unstar policy remains in the authorized external bot; Giraffe performs no
+automatic starring. Every accepted star write is last-write-wins across browser
+and agent writers; `source` is informational provenance, never an owner lock or
+priority rule. Use `/repos/:owner/:name/agent-state` for persistent notes and
+`/repos/:owner/:name/meta` for static metadata through their dedicated endpoints.
 In a same-run different-ID name replacement, the listed identity owns the current
 name and emits `added`; the old identity is independently removed or unconfirmed.
 Unconfirmed old mutable state is preserved by identity and cannot leak into the
@@ -387,7 +390,8 @@ truncates to UTC dates. Counts require exactly one native cell dated `D` matchin
 the reported total; multiple/wrong-date cells yield null and partial coverage,
 never a summed count. Native dates/totals remain `timezone:"github"` provenance.
 Cross-day comparisons and conclusions remain the external producer's job; no
-analysis runtime or writable repository state/meta API is introduced here.
+analysis runtime is bundled. Activity reads never write repository state or
+metadata; authorized writes use the dedicated `agent-state` and `meta` endpoints.
 See [activity fields and window rules](api.md#get-activity).
 
 ## Generic records, reports and jobs
