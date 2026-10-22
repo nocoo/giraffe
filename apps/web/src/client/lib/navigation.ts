@@ -5,7 +5,10 @@ export type NavGroup = { label: string; items: readonly NavItem[] };
 export const NAV_GROUPS: readonly NavGroup[] = [
 	{
 		label: "总览",
-		items: [{ href: "/factory", label: "软件工厂", icon: "Factory" }],
+		items: [
+			{ href: "/factory", label: "软件工厂", icon: "Factory" },
+			{ href: "/today", label: "今日活动", icon: "CalendarDays" },
+		],
 	},
 	{
 		label: "AI",
@@ -42,6 +45,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
 export const NAV_ITEMS: readonly NavItem[] = NAV_GROUPS.flatMap((group) => group.items);
 
 export const PAGE_DESCRIPTIONS = {
+	"/today": "当次成功快速刷新的活动窗口与当前快照",
 	"/repos": "当前账号下的仓库快照",
 	"/analysis": "外部分析报告与证据",
 	"/factory": "可追溯的软件工厂流量与交付",

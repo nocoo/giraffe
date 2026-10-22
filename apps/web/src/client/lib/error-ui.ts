@@ -35,6 +35,9 @@ export function errorUi(err: unknown): ErrorUi {
 	if (err.code === "snapshot_missing") {
 		return { kind: "empty", title: "等待统一刷新" };
 	}
+	if (err.code === "activity_unpublished") {
+		return { kind: "empty", title: "等待活动发布" };
+	}
 	if (err.code === "not_found") {
 		return { kind: "empty", title: "未找到" };
 	}

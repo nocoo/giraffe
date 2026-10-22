@@ -8,7 +8,7 @@ import {
 	reportOk,
 	subscribeErrorUi,
 } from "./error-ui";
-import { ApiError } from "./errors";
+import { ApiError, asErrorCode } from "./errors";
 
 describe("errorUi", () => {
 	it("maps envelope codes to page, empty, field, or toast", () => {
@@ -21,6 +21,11 @@ describe("errorUi", () => {
 			kind: "empty",
 			title: "等待统一刷新",
 		});
+		expect(errorUi(new ApiError(409, "activity_unpublished", "no"))).toEqual({
+			kind: "empty",
+			title: "等待活动发布",
+		});
+		expect(asErrorCode("activity_unpublished")).toBe("activity_unpublished");
 		expect(errorUi(new ApiError(400, "scopes_missing", "need repo"))).toEqual({
 			kind: "field",
 			message: "need repo",

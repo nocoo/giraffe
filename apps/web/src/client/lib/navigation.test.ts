@@ -13,7 +13,7 @@ import { APP_PATHS } from "./routes";
 describe("navigation", () => {
 	it("opens with the factory and groups analysis tools under AI", () => {
 		expect(NAV_GROUPS.map((group) => [group.label, group.items.map((item) => item.href)])).toEqual([
-			["总览", ["/factory"]],
+			["总览", ["/factory", "/today"]],
 			["AI", ["/analysis", "/insights"]],
 			["仓库健康", ["/repos", "/ci", "/alerts"]],
 			["待办", ["/issues", "/pulls", "/inbox"]],
@@ -25,6 +25,7 @@ describe("navigation", () => {
 		expect([...APP_PATHS]).toEqual([
 			"/",
 			"/factory",
+			"/today",
 			"/repos",
 			"/analysis",
 			"/refresh",
@@ -45,6 +46,12 @@ describe("navigation", () => {
 		]);
 		expect(breadcrumbsFor("/settings")).toEqual([{ href: "/settings", label: "设置" }]);
 		expect(breadcrumbsFor("/ci")).toEqual([{ href: "/ci", label: "CI 与发布" }]);
+		expect(breadcrumbsFor("/today")).toEqual([{ href: "/today", label: "今日活动" }]);
+		expect(paletteItems(null)).toContainEqual({
+			href: "/today",
+			label: "今日活动",
+			icon: "CalendarDays",
+		});
 		expect(breadcrumbsFor("/nope")).toEqual([{ href: "/nope", label: "未找到" }]);
 		expect(headerTitle("/")).toBe("软件工厂");
 		expect(headerTitle("/repos")).toBe("仓库");
