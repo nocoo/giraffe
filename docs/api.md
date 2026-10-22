@@ -1386,12 +1386,17 @@ with `error:run_timed_out`, release their lease/account lock, and update the own
 schedule's `lastError`. Lease fencing rejects writes after the deadline; GET never
 performs this recovery.
 
-When multiple schedule slots are overdue, only the latest due slot is attempted.
-Earlier slots are coalesced into an immutable failed run with
-`error:scheduled_slots_missed`, `schedule`, and `missedSlots` covering the first/last
-due times and count. These audit rows perform no GitHub work. Settings expose safe
-`lastError` diagnostics; timeout/missed-slot warnings remain until an explicit
-schedule save clears them. Inspect run history for the durable missed interval.
+`nextAt` identifies the earliest unresolved occurrence and may remain in the past
+while other work is active. Recovery processes retained occurrences individually,
+with at most 32 settlements per account per tick. A daily that cannot start before
+the next Beijing midnight receives its own immutable failed audit with
+`error:scheduled_slot_missed`, `schedule`, and `missedSlots.count:1`; it performs
+no GitHub work. Advance from the settled due time, never from recovery time.
+Existing plural `scheduled_slots_missed` records remain readable historical
+audits, not the rule for newly missed dailies. Settings expose safe `lastError`
+diagnostics for deferred, failed and missed work. Inspect run history for each
+durable outcome; an explicit schedule save clears its diagnostic and replaces
+the pending configuration without cancelling an active run.
 
 ```bash
 api "$API/refresh-runs"

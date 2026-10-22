@@ -43,9 +43,12 @@ token activity.
 Schedule management accepts 1-6 sorted/deduplicated `times` per daily, weekly or
 catalog kind, in fixed UTC+08:00. Weekly slots share one weekday. The legacy
 `time` alias remains readable/writable; a single-field write replaces the list
-with one slot. Conflicting aliases are rejected. `nextAt` selects the earliest
-upcoming slot; recovery coalesces earlier missed slots and attempts only the
-latest due occurrence. Migration 0013 does not change existing configured times.
+with one slot. Conflicting aliases are rejected. `nextAt` retains the earliest
+unresolved occurrence and can remain in the past. Recovery settles occurrences
+individually; a daily that misses its Beijing-day admission cutoff receives its
+own `scheduled_slot_missed` audit rather than being coalesced or silently skipped.
+Plural `scheduled_slots_missed` records describe retained historical audits only.
+Migration 0013 does not change existing configured times.
 See [schedule writes](api.md#put--delete-scheduleskind) for scopes and validation.
 
 Security snapshots persist independent `features.dependabot` and
