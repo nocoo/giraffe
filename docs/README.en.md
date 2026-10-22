@@ -49,7 +49,7 @@ The sidebar identity comes from Cloudflare Access. Names and avatars are looked 
 
 ## Development
 
-Use Bun 1.4 and Node.js 22.22+ locally. Install dependencies from the repository root and prepare the local environment file on first setup:
+Use Bun 1.4 and Node.js 22.23.4+ locally. Install dependencies from the repository root and prepare the local environment file on first setup:
 
 ```bash
 bun install --frozen-lockfile
