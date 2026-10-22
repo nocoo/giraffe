@@ -97,7 +97,7 @@ it("retains complete Actions when publication metadata overflows two exact 15000
 	expect(
 		await raw.prepare("SELECT * FROM snapshots WHERE kind LIKE 'repo:%' ORDER BY kind").all(),
 	).toEqual(before);
-});
+}, 30_000);
 
 it("retains the exact prior snapshot when retained evidence would truncate current security", async () => {
 	const raw = await setup("repo:nocoo/app:security");

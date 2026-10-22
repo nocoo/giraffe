@@ -36,7 +36,7 @@ it("reserves the final timestamp width when retained collection timestamps omit 
 		),
 	).rejects.toMatchObject({ code: "snapshot_incomplete" });
 	expect(db.statements).toBe(0);
-});
+}, 30_000);
 
 async function stagedFixture(pageCount = 1, observedAt = collectedAt) {
 	const raw = sqliteFixture();
@@ -132,6 +132,7 @@ it.each([1, 2])(
 			await raw.prepare("SELECT payload,content_meta FROM snapshots WHERE kind='repos'").first(),
 		).toEqual(originalCatalog);
 	},
+	30_000,
 );
 
 it("changes observation versions but not content for collection or publication time", async () => {
@@ -211,7 +212,7 @@ it("prepares 500 repositories with nine tabs within the unchanged statement budg
 	expect(
 		await raw.prepare("SELECT count(*) AS total FROM snapshots WHERE kind LIKE 'repo:%'").first(),
 	).toEqual({ total: 4501 });
-});
+}, 30_000);
 
 it("prepares 50 two-page publications without loading staged payloads and commits atomically", async () => {
 	const raw = sqliteFixture();
@@ -283,4 +284,4 @@ it("prepares 50 two-page publications without loading staged payloads and commit
 		truncated: false,
 		publication: { runId: "ready", publishedAt },
 	});
-});
+}, 30_000);

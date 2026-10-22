@@ -13,6 +13,7 @@ describe("snapshot-pages", () => {
 				splitPages("issues", { truncated, issues: [{ title: "x".repeat(1_500_000) }] }),
 			).toMatchObject({ truncated: true, capacityExceeded: true });
 		},
+		30_000,
 	);
 	it.each([false, true])(
 		"P3 includes the final truncated flag in exact UTF-8 page bounds (truncated=%s)",

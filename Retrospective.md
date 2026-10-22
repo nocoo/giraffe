@@ -1580,3 +1580,11 @@ Independent review then found that a digest regexp coerced a one-element string
 array into valid-looking text. Validate JSON field types before regexp checks;
 the new malformed-array regression proves rejection without publishing invalid
 `contentVersion` values or changing visible data/readiness.
+
+## 2026-10-22 - Budget CI time for publication boundary fixtures
+
+The exact two-page Actions regression passed locally but exceeded Vitest's
+default five-second timeout on the GitHub runner. Large boundary fixtures need
+explicit per-test time budgets rather than assuming local runner speed. Give
+the new publication capacity and scale cases 30 seconds each while preserving
+their payload sizes, assertions and the global timeout and coverage thresholds.
