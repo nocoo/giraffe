@@ -1364,3 +1364,12 @@ legacy source and original version from a retained publication/root or exact
 immutable version; unknown provenance yields no writes. Test the full lifecycle
 including the intervening empty publication, and retain original windows and
 timestamps rather than deriving fresh ones from unrelated stream versions.
+
+## 2026-10-22 - Isolate fixture logins as well as account IDs
+
+The new catalog HTTP fixture generated an account ID but reused `octocat`, which
+another journey already owned. The unique-login constraint aborted setup before
+the three assertions ran. Native seeding against an empty database did not expose
+the collision; replay against the marked L2 database did. Generate a unique
+fixture login and derive all owned repository names from it. A before-hook failure
+with skipped bodies is failed validation, never evidence that those cases passed.

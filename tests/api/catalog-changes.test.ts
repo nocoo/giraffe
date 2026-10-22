@@ -6,6 +6,7 @@ import type { CatalogChanges } from "../../apps/web/src/lib/catalog-types";
 
 const base = process.env.GIRAFFE_E2E ?? "http://127.0.0.1:17045";
 const account = randomUUID().replaceAll("-", "").slice(0, 21);
+const owner = `catalog-${account}`;
 const bearer = `giraffe_${randomBytes(32).toString("base64url")}`;
 const wrongScope = `giraffe_${randomBytes(32).toString("base64url")}`;
 const floor = "2026-10-20T00:00:00.000Z";
@@ -62,9 +63,9 @@ const request = (
 	});
 
 const repoRow = (name: string, archived = false) => ({
-	name_with_owner: `octocat/${name}`,
+	name_with_owner: `${owner}/${name}`,
 	name,
-	owner_login: "octocat",
+	owner_login: owner,
 	description: "fixture",
 	stargazer_count: 3,
 	fork_count: 1,
@@ -75,7 +76,7 @@ const repoRow = (name: string, archived = false) => ({
 	is_private: false,
 	is_archived: archived,
 	is_fork: false,
-	url: `https://github.com/octocat/${name}`,
+	url: `https://github.com/${owner}/${name}`,
 });
 
 beforeAll(() => {
@@ -85,12 +86,12 @@ beforeAll(() => {
 	const mint = (token: string, scope: string, suffix: string) =>
 		`INSERT INTO api_tokens(id,account_id,token_hash,label,scopes,creator,created_at,expires_at) VALUES(${quote(`${account}-${suffix}`)},${quote(account)},${quote(createHash("sha256").update(token).digest("hex"))},'catalog L2',${quote(JSON.stringify([scope]))},'local test',${quote(now)},${quote(new Date(Date.now() + 86400_000).toISOString())});`;
 	const repository = (name: string, removed: boolean, archived = false) =>
-		`INSERT INTO catalog_repositories(account_id,identity_key,github_id,repo,row_payload,first_seen_at,last_seen_at,removed_at,archived_changed_at,is_archived,visibility,is_fork,first_seen_source) VALUES(${quote(account)},${quote(name)},${quote(`R_${name}`)},${quote(`octocat/${name}`)},${quote(JSON.stringify(repoRow(name, archived)))},${quote(floor)},${quote(removed ? floor : until)},${removed ? quote(until) : "NULL"},${archived ? quote(until) : "NULL"},${archived ? 1 : 0},'PUBLIC',0,'github_catalog');`;
+		`INSERT INTO catalog_repositories(account_id,identity_key,github_id,repo,row_payload,first_seen_at,last_seen_at,removed_at,archived_changed_at,is_archived,visibility,is_fork,first_seen_source) VALUES(${quote(account)},${quote(name)},${quote(`R_${name}`)},${quote(`${owner}/${name}`)},${quote(JSON.stringify(repoRow(name, archived)))},${quote(floor)},${quote(removed ? floor : until)},${removed ? quote(until) : "NULL"},${archived ? quote(until) : "NULL"},${archived ? 1 : 0},'PUBLIC',0,'github_catalog');`;
 	const event = (kind: string, name: string, details: Record<string, unknown> = {}) =>
-		`INSERT INTO catalog_changes(account_id,event_id,kind,repo,github_id,at,source_kind,source_run_id,details) VALUES(${quote(account)},${quote(`${kind}-${name}`)},${quote(kind)},${quote(`octocat/${name}`)},${quote(`R_${name}`)},${quote(until)},'factory','catalog-fixture',${quote(JSON.stringify(details))});`;
+		`INSERT INTO catalog_changes(account_id,event_id,kind,repo,github_id,at,source_kind,source_run_id,details) VALUES(${quote(account)},${quote(`${kind}-${name}`)},${quote(kind)},${quote(`${owner}/${name}`)},${quote(`R_${name}`)},${quote(until)},'factory','catalog-fixture',${quote(JSON.stringify(details))});`;
 	rows(
 		[
-			`INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES(${quote(account)},'octocat','test-not-an-encrypted-pat','fake',${quote(now)},${quote(now)});`,
+			`INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES(${quote(account)},${quote(owner)},'test-not-an-encrypted-pat','fake',${quote(now)},${quote(now)});`,
 			mint(bearer, "observations:read", "reader"),
 			mint(wrongScope, "app:read", "management"),
 			`INSERT INTO catalog_state(account_id,history_since,checked_at,revision,source_run_id) VALUES(${quote(account)},${quote(floor)},${quote(until)},1,'catalog-fixture');`,
@@ -101,9 +102,9 @@ beforeAll(() => {
 			event("added", "archive"),
 			event("removed", "removed"),
 			event("archived", "archive", { before: false, after: true }),
-			event("renamed", "live", { previous_repo: "octocat/old" }),
+			event("renamed", "live", { previous_repo: `${owner}/old` }),
 			`INSERT INTO snapshots(account_id,kind,payload,fetched_at) VALUES(${quote(account)},'repos',${quote(JSON.stringify({ repos: [repoRow("live"), repoRow("archive", true)], fetched_at: until, truncated: false }))},${quote(until)});`,
-			`INSERT INTO repo_stars(account_id,repo,starred,source,updated_at) VALUES(${quote(account)},'octocat/live',1,'owner',${quote(floor)});`,
+			`INSERT INTO repo_stars(account_id,repo,starred,source,updated_at) VALUES(${quote(account)},${quote(`${owner}/live`)},1,'owner',${quote(floor)});`,
 		].join("\n"),
 	);
 });
@@ -142,16 +143,16 @@ it("R7 HTTP returns ordered inclusive discovery events, conditional responses an
 		history_since: floor,
 		warning_code: null,
 	});
-	expect(changes.added.map((event) => event.repo)).toEqual(["octocat/archive", "octocat/live"]);
+	expect(changes.added.map((event) => event.repo)).toEqual([`${owner}/archive`, `${owner}/live`]);
 	expect(changes.removed).toEqual([
 		expect.objectContaining({
-			repo: "octocat/removed",
+			repo: `${owner}/removed`,
 			at: until,
 			source: { kind: "factory", runId: "catalog-fixture" },
 		}),
 	]);
 	expect(changes.archived[0]).toMatchObject({ before: false, after: true });
-	expect(changes.renamed[0]).toMatchObject({ previous_repo: "octocat/old", github_id: "R_live" });
+	expect(changes.renamed[0]).toMatchObject({ previous_repo: `${owner}/old`, github_id: "R_live" });
 	expect(changes.unarchived).toEqual([]);
 	expect(changes.visibility_changed).toEqual([]);
 	expect(changes.fork_changed).toEqual([]);
@@ -174,8 +175,8 @@ it("R7 HTTP repository history distinguishes current, removed and starred member
 	};
 	const current = await catalog("?scope=all");
 	expect(current.map((repo) => repo.name_with_owner).sort()).toEqual([
-		"octocat/archive",
-		"octocat/live",
+		`${owner}/archive`,
+		`${owner}/live`,
 	]);
 	expect(current.find((repo) => repo.name === "live")).toMatchObject({
 		...repoRow("live"),
@@ -190,13 +191,13 @@ it("R7 HTTP repository history distinguishes current, removed and starred member
 	expect(departed).toMatchObject({ removed_at: until, last_seen_at: floor, starred: false });
 	expect(
 		(await catalog("?scope=starred&include=removed")).map((repo) => repo.name_with_owner),
-	).toEqual(["octocat/live"]);
+	).toEqual([`${owner}/live`]);
 	const sources = await request("sources");
 	expect(sources.status).toBe(200);
 	expect(await sources.json()).toMatchObject({
-		repositories: ["octocat/archive", "octocat/live"],
+		repositories: [`${owner}/archive`, `${owner}/live`],
 	});
-	expect((await request("sources?repository=octocat%2Fremoved")).status).toBe(404);
+	expect((await request(`sources?repository=${owner}%2Fremoved`)).status).toBe(404);
 });
 
 it("R7 HTTP rejects invalid history cursors, unauthorized conditions and expired history", async () => {
