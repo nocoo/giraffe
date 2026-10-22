@@ -5,6 +5,7 @@ import { factoryFixture } from "../../../../../tests/fixtures/factory-snapshot";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import { makeRun } from "../../lib/factory-run";
 import { FACTORY_STREAMS } from "../../lib/factory-types";
+import { beginCatalog, planCatalog } from "./catalog-history";
 import { contentVersion, observationVersion } from "./content-version";
 import { createDb } from "./db/d1";
 import {
@@ -44,6 +45,39 @@ async function setup() {
 	const repo = structuredClone(snap.repos[0]);
 	if (!repo) throw new Error("fixture");
 	return { raw, db, lease, repo };
+}
+async function completeCatalog(
+	db: ReturnType<typeof createDb>,
+	lease: NonNullable<Awaited<ReturnType<typeof claimRun>>>,
+) {
+	const repos = lease.run.checkpoint?.repos ?? [];
+	const plan = await planCatalog(
+		await beginCatalog(db, snap.account_id),
+		{
+			truncated: false,
+			repos: repos.map((repo) => ({
+				name_with_owner: repo.name,
+				is_archived: repo.is_archived ?? false,
+				is_fork: repo.is_fork ?? false,
+				is_private: repo.private,
+			})),
+		},
+		Object.fromEntries(repos.map((repo) => [repo.name.toLowerCase(), repo.id])),
+		"nocoo",
+		github(() => Response.json({ message: "Not Found" }, { status: 404 })),
+		"fixture",
+		now,
+		{ kind: "factory", runId: lease.run.id },
+	);
+	const step = lease.run.steps.find((step) => step.resource === "repos");
+	if (!step) throw new Error("Missing catalog fixture step");
+	step.status = "success";
+	await db
+		.prepare(
+			"INSERT INTO factory_resources(run_id,repo,stream,payload) VALUES(?,'','catalog-plan',?)",
+		)
+		.bind(lease.run.id, JSON.stringify(plan))
+		.run();
 }
 it("preserves stronger last-known-good coverage and failed-repository metadata in one atomic commit", async () => {
 	const { raw, db, lease, repo } = await setup();
@@ -208,6 +242,7 @@ it("does not overwrite a published global version when updating only the catalog
 		.bind("existing", snap.account_id)
 		.run();
 	lease.run.checkpoint = { ...snap, repos: [repo] };
+	await completeCatalog(db, lease);
 	await db.batch(await publicationWrites(db, lease, now));
 	expect((await publishedFactory(db, snap.account_id))?.runId).toBe(snap.runId);
 });
@@ -427,6 +462,7 @@ it("retains contribution provenance across catalog-only and failed refresh publi
 		),
 	);
 	lease.run.checkpoint = structuredClone(snap);
+	await completeCatalog(db, lease);
 	await db.batch(await publicationWrites(db, lease, now));
 	expect((await publishedFactory(db, snap.account_id))?.contributionObservation).toEqual(
 		observation,

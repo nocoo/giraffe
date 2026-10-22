@@ -269,7 +269,7 @@ export async function executeRunPage(
 									.prepare(
 										"SELECT payload FROM factory_resources WHERE run_id=? AND repo=? AND stream=?",
 									)
-									.bind(repo.observation.version, step.repo, stream)
+									.bind(repo.observation.version, repo.observation.repo ?? step.repo, stream)
 									.first<{ payload: string }>();
 								if (!row) return null;
 								const data = JSON.parse(row.payload) as FactoryStreamData;

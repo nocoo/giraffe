@@ -2,6 +2,8 @@ import { z } from "zod";
 import type { FactorySnapshot } from "../../lib/factory-types";
 import { FACTORY_STREAMS } from "../../lib/factory-types";
 import { prSnapshot } from "../../lib/pull-request";
+import type { CatalogRow } from "./catalog-history";
+import { catalogView } from "./catalog-read";
 import { decodeContent, factoryStreamContent, storedContent } from "./content-version";
 import type { Db } from "./db/d1";
 import { normalizePublication } from "./db/factory-runs";
@@ -54,38 +56,41 @@ export async function readSources(
 	const parsed = sourceQuerySchema.safeParse(query);
 	if (!parsed.success) throw new ApiError(400, "validation_failed", "invalid source filters");
 	const head = `SELECT coalesce((SELECT 'factory:v:' || nullif(published_id,'') FROM factory_state WHERE account_id=?),'factory') AS kind`;
-	const [catalogRows, stars, owners, publicationRows, rows, activityRows] = await db.batch<
-		SnapshotPage & StarRow & { login: string; run_id: string; content_version: string }
-	>([
-		db
-			.prepare(
-				"SELECT kind,payload,content_meta FROM snapshots WHERE account_id=? AND kind IN ('repos','repos#2')",
-			)
-			.bind(account),
-		db
-			.prepare(
-				"SELECT repo,starred,source,updated_at,reason FROM repo_stars WHERE account_id=? ORDER BY repo",
-			)
-			.bind(account),
-		db.prepare("SELECT login FROM accounts WHERE id=?").bind(account),
-		db
-			.prepare(
-				`WITH head AS (${head}) SELECT s.kind,s.payload,s.content_meta FROM snapshots s, head WHERE s.account_id=? AND s.kind IN (head.kind,head.kind || '#2')`,
-			)
-			.bind(account, account),
-		db
-			.prepare(
-				`WITH head AS (${head}), publication AS MATERIALIZED (
+	const [catalogRows, stars, owners, publicationRows, rows, activityRows, historyRows] =
+		await db.batch<
+			SnapshotPage &
+				StarRow &
+				CatalogRow & { login: string; run_id: string; content_version: string }
+		>([
+			db
+				.prepare(
+					"SELECT kind,payload,content_meta FROM snapshots WHERE account_id=? AND kind IN ('repos','repos#2')",
+				)
+				.bind(account),
+			db
+				.prepare(
+					"SELECT repo,starred,source,updated_at,reason FROM repo_stars WHERE account_id=? ORDER BY repo",
+				)
+				.bind(account),
+			db.prepare("SELECT login FROM accounts WHERE id=?").bind(account),
+			db
+				.prepare(
+					`WITH head AS (${head}) SELECT s.kind,s.payload,s.content_meta FROM snapshots s, head WHERE s.account_id=? AND s.kind IN (head.kind,head.kind || '#2')`,
+				)
+				.bind(account, account),
+			db
+				.prepare(
+					`WITH head AS (${head}), publication AS MATERIALIZED (
 					SELECT json_extract(s.payload,'$.repos') AS repos,json_extract(root.payload,'$.runId') AS run_id
 					FROM snapshots s,head JOIN snapshots root ON root.account_id=s.account_id AND root.kind=head.kind
 					WHERE s.account_id=? AND s.kind IN (head.kind,head.kind || '#2')
 				), refs AS MATERIALIZED (
-					SELECT json_extract(value,'$.name') AS name,
+					SELECT coalesce((SELECT c.repo FROM catalog_repositories c WHERE c.account_id=? AND c.github_id=json_extract(value,'$.id') AND c.removed_at IS NULL),json_extract(value,'$.name')) AS name,
 						coalesce(json_extract(value,'$.observation.repo'),json_extract(value,'$.name')) AS repo,
 						coalesce(json_extract(value,'$.observation.version'),publication.run_id) AS version,
 						coalesce(json_extract(value,'$.observation.source'),'legacy') AS source
 					FROM publication,json_each(publication.repos)
-					WHERE (?='' OR lower(json_extract(value,'$.name'))=lower(?))
+					WHERE (?='' OR lower(json_extract(value,'$.name'))=lower(?) OR json_extract(value,'$.id')=(SELECT c.github_id FROM catalog_repositories c WHERE c.account_id=? AND c.repo=? COLLATE NOCASE AND c.removed_at IS NULL))
 				), legacy AS (
 					SELECT 'factory:' || repo || ':' || streams.value AS kind FROM refs, json_each(?) AS streams WHERE source!='run'
 				)
@@ -102,25 +107,41 @@ export async function readSources(
 				UNION ALL
 				SELECT kind,NULL AS payload,content_meta FROM snapshots
 				WHERE account_id=? AND kind IN (SELECT kind FROM legacy)`,
-			)
-			.bind(
-				account,
-				account,
-				parsed.data.repository ?? "",
-				parsed.data.repository ?? "",
-				JSON.stringify(FACTORY_STREAMS),
-				account,
-				account,
-				JSON.stringify(FACTORY_STREAMS),
-				account,
-			),
-		db
-			.prepare(
-				"SELECT a.run_id,a.payload,a.content_version FROM activity_publications a JOIN factory_runs r ON r.id=a.run_id AND r.account_id=a.account_id WHERE a.account_id=? AND r.status='completed' ORDER BY a.until_at DESC,a.run_id LIMIT 1",
-			)
-			.bind(account),
-	]);
-	if (!catalogRows || !stars || !owners || !publicationRows || !rows || !activityRows)
+				)
+				.bind(
+					account,
+					account,
+					account,
+					parsed.data.repository ?? "",
+					parsed.data.repository ?? "",
+					account,
+					parsed.data.repository ?? "",
+					JSON.stringify(FACTORY_STREAMS),
+					account,
+					account,
+					JSON.stringify(FACTORY_STREAMS),
+					account,
+				),
+			db
+				.prepare(
+					"SELECT a.run_id,a.payload,a.content_version FROM activity_publications a JOIN factory_runs r ON r.id=a.run_id AND r.account_id=a.account_id WHERE a.account_id=? AND r.status='completed' ORDER BY a.until_at DESC,a.run_id LIMIT 1",
+				)
+				.bind(account),
+			db
+				.prepare(
+					"SELECT * FROM catalog_repositories WHERE account_id=? AND removed_at IS NULL ORDER BY repo,identity_key",
+				)
+				.bind(account),
+		]);
+	if (
+		!catalogRows ||
+		!stars ||
+		!owners ||
+		!publicationRows ||
+		!rows ||
+		!activityRows ||
+		!historyRows
+	)
 		throw new ApiError(500, "db_error", "incomplete source batch");
 	if (timing) {
 		const inputs = [
@@ -144,9 +165,13 @@ export async function readSources(
 	const hash = <T>(fn: () => Promise<T>) => (timing ? timing.measureAsync("hash", fn) : fn());
 	const policy = decode(() =>
 		policyFromSaved(
-			assembleSnapshotGroups(catalogRows.results).get("repos") ?? null,
+			catalogView(
+				assembleSnapshotGroups(catalogRows.results).get("repos") ?? null,
+				historyRows.results,
+			),
 			selectionFromStars(stars.results, "all"),
 			owners.results[0]?.login ?? "",
+			historyRows.results,
 		),
 	);
 	const repository = parsed.data.repository
@@ -161,7 +186,7 @@ export async function readSources(
 		.next().value as FactorySnapshot | undefined;
 	const publication = rawPublication ? normalizePublication(rawPublication) : null;
 	const since = parsed.data.since ? Date.parse(parsed.data.since) : null;
-	const streams = (publication?.repos ?? []).flatMap((repo) => {
+	const streams = (publication?.repos ?? []).map(policy.canonicalRepo).flatMap((repo) => {
 		if (
 			!policy.includes(repo.name) ||
 			(repository && repo.name.toLowerCase() !== repository.toLowerCase())
@@ -291,7 +316,7 @@ export async function readSources(
 			const meta = streamMeta.get(
 				repo.observation?.source === "run"
 					? `stream:${repo.name}:${stream}`
-					: `factory:${repo.observation?.repo ?? repo.name}:${stream}`,
+					: `factory:${repo.observation?.repo ?? publication.repos.find((original) => original.name.toLowerCase() === repo.name.toLowerCase())?.name ?? publication.repos.find((original) => repo.id && original.id === repo.id)?.name ?? repo.name}:${stream}`,
 			);
 			const source = await add(
 				`factory:${repo.name}:${stream}`,

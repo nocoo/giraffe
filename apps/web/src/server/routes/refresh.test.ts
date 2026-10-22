@@ -322,7 +322,7 @@ describe("refresh route", () => {
 		expect((await createApp().request("http://localhost/api/issues", {}, later)).status).toBe(409);
 	});
 
-	it("does not fetch later kinds when staged bytes equal the budget", async () => {
+	it("rejects over-capacity catalog metadata without fetching later kinds", async () => {
 		const e = env();
 		const id = await createAccount(e);
 		const fetchedAt = "2026-09-01T00:00:00.000Z";
@@ -388,11 +388,10 @@ describe("refresh route", () => {
 			},
 			e,
 		);
-		expect(res.status).toBe(200);
+		expect(res.status).toBe(422);
 		expect(notifications).toBe(0);
-		const body = (await res.json()) as { kinds: string[] };
-		expect(body.kinds).toEqual(["repos"]);
-		expect((await createApp().request("http://localhost/api/repos", {}, e)).status).toBe(200);
+		expect(await res.json()).toMatchObject({ error: { code: "catalog_capacity" } });
+		expect((await createApp().request("http://localhost/api/repos", {}, e)).status).toBe(409);
 		const later = await createApp().request("http://localhost/api/notifications", {}, e);
 		expect(later.status).toBe(409);
 		expect(await later.json()).toMatchObject({ error: { code: "snapshot_missing" } });
@@ -905,7 +904,7 @@ describe("refresh route", () => {
 		expect((await createApp().request("http://localhost/api/repos", {}, e)).status).toBe(200);
 	});
 
-	it("does not write later kinds after the fetch cap", async () => {
+	it("does not publish incomplete first catalog or later kinds after the fetch cap", async () => {
 		const e = env();
 		const id = await createAccount(e);
 		let pages = 0;
@@ -931,9 +930,8 @@ describe("refresh route", () => {
 			{ method: "POST", headers, body: JSON.stringify({ account_id: id }) },
 			e,
 		);
-		expect(res.status).toBe(200);
-		const body = (await res.json()) as { kinds: string[] };
-		expect(body.kinds).toEqual(["repos"]);
+		expect(res.status).toBe(422);
+		expect(await res.json()).toMatchObject({ error: { code: "snapshot_incomplete" } });
 		expect(pages).toBe(40);
 		expect((await createApp().request("http://localhost/api/issues", {}, e)).status).toBe(409);
 	});

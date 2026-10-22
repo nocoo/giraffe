@@ -59,7 +59,7 @@ it("filters every repository source and factory inventory against the current ca
 	}
 });
 
-it("reads 126 repositories within six queries and bounds empty-since hashing", async () => {
+it("reads 126 repositories within seven queries and bounds empty-since hashing", async () => {
 	const { raw, account, names } = await sourcesFixture();
 	const before = (await raw.prepare("SELECT * FROM snapshots ORDER BY kind").all()).results;
 	const fullDb = createDb(raw);
@@ -68,7 +68,7 @@ it("reads 126 repositories within six queries and bounds empty-since hashing", a
 	const fullDigests = fullDigest.mock.calls.length;
 	fullDigest.mockRestore();
 	expect(fullDigests).toBeLessThan(10);
-	expect(fullDb.statements).toBeLessThanOrEqual(6);
+	expect(fullDb.statements).toBeLessThanOrEqual(7);
 	expect(full.repositories).toEqual(names);
 	expect(full.sources).toHaveLength(1517);
 	for (const query of [
@@ -78,7 +78,7 @@ it("reads 126 repositories within six queries and bounds empty-since hashing", a
 	]) {
 		const db = createDb(raw);
 		const result = await readSources(db, account, query);
-		expect(db.statements).toBeLessThanOrEqual(6);
+		expect(db.statements).toBeLessThanOrEqual(7);
 		expect(result.repositories).toEqual(names);
 	}
 	const digest = vi.spyOn(crypto.subtle, "digest");
@@ -202,7 +202,7 @@ it("never reads immutable payloads for full or filtered source indexes", async (
 		const profile = profileDb(fixture.raw);
 		const result = await readSources(createDb(profile.raw), fixture.account, query);
 		expect(result.sources).toHaveLength(count);
-		expect(profile.queries).toHaveLength(6);
+		expect(profile.queries).toHaveLength(7);
 		expect(profile.queries.reduce((sum, row) => sum + row.payloadBytes, 0)).toBe(
 			baseBytes + Number(expectedBytes),
 		);
@@ -215,7 +215,7 @@ it("never reads immutable payloads for full or filtered source indexes", async (
 	expect(payloads.size).toBe(126);
 	const profile = profileDb(fixture.raw);
 	const before = await readSources(createDb(profile.raw), fixture.account, {});
-	const query = profile.queries.at(-2);
+	const query = profile.queries.find((query) => query.sql.includes("factory_resources_content"));
 	if (!query) throw new Error("missing metadata query");
 	const plan = await fixture.raw
 		.prepare(`EXPLAIN QUERY PLAN ${query.sql}`)
@@ -322,7 +322,7 @@ it.each(["run", "legacy"] as const)(
 		}
 		const profile = profileDb(raw);
 		const result = await readSources(createDb(profile.raw), account, query);
-		expect(profile.queries).toHaveLength(6);
+		expect(profile.queries).toHaveLength(7);
 		expect(profile.queries.reduce((sum, row) => sum + row.payloadBytes, 0)).toBe(baselineBytes);
 		expect(result.sources.some((row) => row.resource === "factory:owner/kept:commits")).toBe(false);
 		expect(result.sources.some((row) => row.resource.startsWith("factory:owner/other:"))).toBe(
@@ -583,7 +583,7 @@ it("projects stored immutable hashes, including second pages, not newer or forei
 		.all();
 	const db = createDb(raw);
 	const index = await readSources(db, account, {});
-	expect(db.statements).toBeLessThanOrEqual(6);
+	expect(db.statements).toBeLessThanOrEqual(7);
 	for (const name of names.slice(0, 2)) {
 		const envelope = await readFactoryResource(createDb(raw), account, name, "commits");
 		expect(

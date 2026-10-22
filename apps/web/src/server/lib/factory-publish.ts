@@ -12,6 +12,7 @@ import {
 	type FactoryStreamData,
 } from "../../lib/factory-types";
 import { activityPublicationWrites } from "./activity-store";
+import { type CatalogPlan, catalogPlanWrites, catalogSnapshot } from "./catalog-history";
 import { savedContentMeta } from "./content-version";
 import type { Db } from "./db/d1";
 import {
@@ -21,7 +22,7 @@ import {
 	publishedFactory,
 	type RunLease,
 } from "./db/factory-runs";
-import { readSnapshot } from "./db/snapshots";
+import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
 import { ApiError } from "./errors";
 import { streamKey } from "./factory-collect";
 import { latestFactoryRate } from "./factory-rate";
@@ -78,11 +79,21 @@ export async function currentRepo(
 ): Promise<FactoryRepo | null> {
 	const result = await db
 		.prepare(
-			"SELECT v.payload FROM factory_repo_versions v JOIN factory_repo_state s ON s.account_id=v.account_id AND s.repo=v.repo AND s.version=v.version WHERE s.account_id=? AND s.repo=?",
+			"SELECT v.payload FROM factory_repo_versions v JOIN factory_repo_state s ON s.account_id=v.account_id AND COALESCE(json_extract(s.payload,'$.observation.repo'),s.repo)=v.repo AND s.version=v.version WHERE s.account_id=? AND s.repo=?",
 		)
 		.bind(account, repo)
 		.first<{ payload: string }>();
-	return result ? normalizeRepoDependencies(JSON.parse(result.payload) as FactoryRepo) : null;
+	if (!result) return null;
+	const value = normalizeRepoDependencies(JSON.parse(result.payload) as FactoryRepo);
+	return value.name === repo
+		? value
+		: {
+				...value,
+				name: repo,
+				...(value.observation
+					? { observation: { ...value.observation, repo: value.observation.repo ?? value.name } }
+					: {}),
+			};
 }
 export async function repositoryWrites(
 	db: Db,
@@ -228,7 +239,53 @@ export async function publicationWrites(
 	const base = await publishedFactory(db, run.account_id);
 	const head = await factoryHead(db, run.account_id);
 	const writes: D1PreparedStatement[] = [];
+	const staged = await db
+		.prepare(
+			"SELECT payload FROM factory_resources WHERE run_id=? AND repo='' AND stream='catalog-plan'",
+		)
+		.bind(run.id)
+		.first<{ payload: string }>();
+	let discovery: CatalogPlan | null = null;
+	if (staged && run.steps.some((step) => step.resource === "repos" && step.status === "success")) {
+		discovery = JSON.parse(staged.payload) as CatalogPlan;
+		writes.push(...catalogPlanWrites(db, run.account_id, discovery));
+		writes.push(
+			...(await replaceSnapshotStmts(
+				db,
+				run.account_id,
+				"repos",
+				catalogSnapshot(discovery),
+				discovery.at,
+			)),
+		);
+		if (discovery.warning) run.error = discovery.warning;
+		if (run.mode === "catalog" && run.checkpoint?.inventory.complete) {
+			const previous = await catalogFactory(db, run.account_id);
+			const metadata = new Map(
+				[...(previous?.repos ?? []), ...run.checkpoint.repos].map((repo) => [repo.id, repo]),
+			);
+			run.checkpoint.repos = discovery.rows
+				.filter(
+					(row) =>
+						!row.removed_at && row.repo.split("/")[0]?.toLowerCase() === run.owner.toLowerCase(),
+				)
+				.map((row) => {
+					const repo =
+						(row.github_id ? metadata.get(row.github_id) : null) ??
+						previous?.repos.find((repo) => repo.name.toLowerCase() === row.repo.toLowerCase());
+					if (!repo)
+						throw new ApiError(
+							409,
+							"catalog_incomplete",
+							"Retained repository metadata is unavailable",
+						);
+					return { ...repo, name: row.repo };
+				});
+		}
+	}
 	if (run.mode === "catalog" && run.checkpoint) {
+		if (!discovery || !run.checkpoint.inventory.complete)
+			throw new ApiError(409, "catalog_incomplete", "Catalog completion evidence is unavailable");
 		writes.push(
 			...(await snapshotWrites(db, lease, now, `factory:catalog:${run.id}`, run.checkpoint)),
 		);
@@ -248,7 +305,7 @@ export async function publicationWrites(
 		throw new ApiError(409, "snapshot_missing", "no catalog or committed factory data");
 	const result = await db
 		.prepare(
-			"SELECT v.payload,s.payload AS state FROM factory_repo_versions v JOIN factory_repo_state s ON s.account_id=v.account_id AND s.repo=v.repo AND s.version=v.version WHERE v.account_id=? ORDER BY v.refreshed_at,v.repo",
+			"SELECT v.payload,s.payload AS state FROM factory_repo_versions v JOIN factory_repo_state s ON s.account_id=v.account_id AND COALESCE(json_extract(s.payload,'$.observation.repo'),s.repo)=v.repo AND s.version=v.version WHERE v.account_id=? ORDER BY v.refreshed_at,v.repo",
 		)
 		.bind(run.account_id)
 		.all<{ payload: string; state: string }>();

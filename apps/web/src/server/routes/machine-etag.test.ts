@@ -55,7 +55,7 @@ function requireTag(response: Response) {
 it("exposes safe request-local phase timings on sources 200 and 304 only", async () => {
 	const fixture = await setup();
 	const response = await fixture.call();
-	expect(fixture.profile.trips.map((trip) => trip.statements)).toEqual([1, 6]);
+	expect(fixture.profile.trips.map((trip) => trip.statements)).toEqual([1, 7]);
 	const tag = requireTag(response);
 	for (const measured of [response, await fixture.call(tag)]) {
 		const header = measured.headers.get("server-timing");

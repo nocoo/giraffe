@@ -2,6 +2,8 @@ import { uniqueDependencySummaries } from "../../lib/factory-dependencies";
 import type { FactorySnapshot, FactoryViewSnapshot } from "../../lib/factory-types";
 import { type SecurityFeatures, securityCount, securityIncomplete } from "../../lib/security";
 import { snapshotFreshness } from "../../lib/snapshot-freshness";
+import type { CatalogRow } from "./catalog-history";
+import { catalogFactoryRepo, catalogView } from "./catalog-read";
 import { composeContent, storedContent, withContent } from "./content-version";
 import { getAccount } from "./db/accounts";
 import type { Db } from "./db/d1";
@@ -26,13 +28,25 @@ export async function repoPolicy(
 	const snapshot = source === undefined ? await readSnapshot(db, account, "repos") : source;
 	const selection = await snapshotSelection(db, account, scope);
 	const owner = await getAccount(db, account);
-	return policyFromSaved(snapshot, selection, owner?.login ?? "");
+	const history = await db
+		.prepare(
+			"SELECT * FROM catalog_repositories WHERE account_id=? AND removed_at IS NULL ORDER BY repo,identity_key",
+		)
+		.bind(account)
+		.all<CatalogRow>();
+	return policyFromSaved(
+		catalogView(snapshot, history.results),
+		selection,
+		owner?.login ?? "",
+		history.results,
+	);
 }
 
 export function policyFromSaved(
 	snapshot: Record<string, unknown> | null,
 	selection: Awaited<ReturnType<typeof snapshotSelection>>,
 	owner: string,
+	history: CatalogRow[] = [],
 ) {
 	const scope = selection.scope;
 	const repos = (Array.isArray(snapshot?.repos) ? snapshot.repos : []).filter(
@@ -47,6 +61,8 @@ export function policyFromSaved(
 	const selected = repos.filter((repo) => includes(repo.name_with_owner));
 	return {
 		...selection,
+		canonicalRepo: (repo: import("../../lib/factory-types").FactoryRepo) =>
+			catalogFactoryRepo(repo, history),
 		includes,
 		empty: scope === "starred" && selected.length === 0,
 		catalog: snapshot,
@@ -292,6 +308,10 @@ export async function projectSnapshot(
 				: {}),
 			repos: policy.repos.map((r) => ({
 				...r,
+				first_seen_at: r.first_seen_at ?? null,
+				last_seen_at: r.last_seen_at ?? null,
+				removed_at: r.removed_at ?? null,
+				archived_changed_at: r.archived_changed_at ?? null,
 				statistics_enabled: policy.starred(r.name_with_owner),
 				starred: policy.starred(r.name_with_owner),
 				star_source: policy.starRecord(r.name_with_owner)?.source ?? null,
@@ -429,6 +449,7 @@ export async function projectSnapshot(
 
 export function projectFactory(snap: FactorySnapshot, policy: Policy): FactoryViewSnapshot {
 	const repos = snap.repos
+		.map(policy.canonicalRepo)
 		.filter((r) => policy.includes(r.name))
 		.map((repo) => ({ ...repo, dependencies: uniqueDependencySummaries(repo.dependencies) }));
 	const observations = new Map(repos.map((repo) => [repo.name.toLowerCase(), repo]));
@@ -474,7 +495,7 @@ export function projectFactory(snap: FactorySnapshot, policy: Policy): FactoryVi
 }
 
 export function factoryObserved(publication: FactorySnapshot, policy: Policy) {
-	return publication.repos.filter((repo) => policy.includes(repo.name));
+	return publication.repos.map(policy.canonicalRepo).filter((repo) => policy.includes(repo.name));
 }
 
 export function factoryFreshness(snap: FactorySnapshot, policy: Policy) {

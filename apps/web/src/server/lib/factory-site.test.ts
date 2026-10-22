@@ -364,7 +364,7 @@ it("does not publish over-budget aggregate data, or a newly discovered repositor
 				},
 			}),
 		),
-	).rejects.toMatchObject({ code: "factory_capacity" });
+	).rejects.toMatchObject({ code: "catalog_capacity" });
 });
 
 it("rejects malformed site catalogs and accepts an empty completed catalog", async () => {

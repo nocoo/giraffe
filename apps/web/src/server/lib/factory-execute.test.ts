@@ -458,11 +458,10 @@ it.each([
 		error: "snapshot_incomplete",
 		attempts: 1,
 	});
-	expect(run?.status).toBe("partial");
-	expect(await publishedFactory(db, snap.account_id)).toMatchObject({
-		runId: "r1",
-		status: "partial",
-	});
+	expect(run?.status).toBe(resource === "repos" ? "failed" : "partial");
+	expect(await publishedFactory(db, snap.account_id)).toMatchObject(
+		resource === "repos" ? { runId: snap.runId } : { runId: "r1", status: "partial" },
+	);
 	expect((await listRuns(db, snap.account_id))[0]?.counts.failed).toBeGreaterThan(0);
 	expect(await readSnapshot(db, snap.account_id, kind)).toEqual(old);
 });
@@ -593,11 +592,10 @@ it.each(["repos", "issues", "prs", "security"])(
 			status: "failed",
 			error: "snapshot_incomplete",
 		});
-		expect(run?.status).toBe("partial");
-		expect(await publishedFactory(db, snap.account_id)).toMatchObject({
-			runId: "r1",
-			status: "partial",
-		});
+		expect(run?.status).toBe(resource === "repos" ? "failed" : "partial");
+		expect(await publishedFactory(db, snap.account_id)).toMatchObject(
+			resource === "repos" ? { runId: snap.runId } : { runId: "r1", status: "partial" },
+		);
 		expect((await listRuns(db, snap.account_id))[0]?.counts.failed).toBeGreaterThan(0);
 		expect(await readSnapshot(db, snap.account_id, kind)).toEqual(old);
 	},
@@ -1398,12 +1396,9 @@ it.each([null, "", 7, "same"])(
 			attempts: 1,
 		});
 		expect(catalogPages).toBe(endCursor === "same" ? 2 : 1);
-		expect(run?.status).toBe("partial");
-		expect(await publishedFactory(db, snap.account_id)).toMatchObject({
-			runId: "r1",
-			status: "partial",
-		});
-		expect((await listRuns(db, snap.account_id))[0]?.counts.failed).toBe(1);
+		expect(run?.status).toBe("failed");
+		expect(await publishedFactory(db, snap.account_id)).toMatchObject({ runId: snap.runId });
+		expect((await listRuns(db, snap.account_id))[0]?.counts.failed).toBeGreaterThanOrEqual(1);
 		expect(await readSnapshot(db, snap.account_id, "repos")).toEqual(old);
 	},
 );

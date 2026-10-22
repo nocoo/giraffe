@@ -22,6 +22,7 @@ class Stmt {
 		const sql = this.sql.replace(/\s+/g, " ").trim();
 		const v = this.values;
 		if (/^SELECT repo(?:,starred,source,updated_at,reason)? FROM repo_stars/.test(sql)) return [];
+		if (/^SELECT \* FROM catalog_repositories WHERE account_id=/.test(sql)) return [];
 		if (sql === "SELECT 1 AS n") {
 			return [{ n: 1 }];
 		}

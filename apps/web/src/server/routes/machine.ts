@@ -12,9 +12,10 @@ import {
 	updateResource,
 } from "../lib/agent-resources";
 import { authenticateApiToken, recordApiTokenUse } from "../lib/api-tokens";
+import { catalogInclude, readCatalogChanges } from "../lib/catalog-read";
 import { getAccount } from "../lib/db/accounts";
 import { createDb } from "../lib/db/d1";
-import { ApiError } from "../lib/errors";
+import { ApiError, toErrorResponse } from "../lib/errors";
 import { readContributions } from "../lib/machine-contributions";
 import {
 	readMachineAccountObservation,
@@ -176,6 +177,27 @@ export function machineApi() {
 		},
 	);
 	app.get("/accounts/:account/stars", getMachineStars);
+	app.all(
+		"/accounts/:account/catalog/changes",
+		async (c, next) => {
+			if (c.req.method !== "GET")
+				throw new ApiError(405, "method_not_allowed", "Catalog history is read-only");
+			c.header("Vary", "Authorization");
+			await next();
+		},
+		etag({ weak: false, retainedHeaders: [...RETAINED_304_HEADERS, "referrer-policy"] }),
+		async (c) => {
+			try {
+				return c.json(
+					await readCatalogChanges(c.get("db"), c.get("principal").accountId, c.req.queries()),
+				);
+			} catch (error) {
+				const response = toErrorResponse(error);
+				response.headers.set("Cache-Control", "private, no-store");
+				return response;
+			}
+		},
+	);
 	app.get(
 		"/accounts/:account/activity",
 		async (c, next) => {
@@ -244,12 +266,14 @@ export function machineApi() {
 		const kind = c.req.param("resource");
 		if (!["repos", "issues", "prs", "ci", "factory"].includes(kind))
 			throw new ApiError(404, "not_found", "unknown source");
-		assertMachineQuery(c.req.query(), ["scope"]);
+		const includeRemoved = kind === "repos" ? catalogInclude(c.req.queries()) : false;
+		if (kind !== "repos") assertMachineQuery(c.req.query(), ["scope"]);
 		const observation = await readMachineAccountObservation(
 			c.get("db"),
 			c.get("principal").accountId,
 			kind as AccountObservationResource,
 			snapshotScope(c.req.queries("scope")),
+			includeRemoved,
 		);
 		return timedJson(c, observation);
 	});

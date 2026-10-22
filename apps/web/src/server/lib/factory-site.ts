@@ -293,7 +293,11 @@ export async function collectSitePage(
 	}
 	const prepared = await prepareRefresh(db, run.account_id, gh, token, [resource], now, written, {
 		deriveInsights: resource === "insights" || !run.steps.some((s) => s.resource === "insights"),
+		deferCatalog: resource === "repos",
+		catalogRunId: run.id,
 	});
+	if (resource === "repos" && !prepared.catalogPlan?.complete)
+		throw new ApiError(422, "snapshot_incomplete", "Catalog listing is incomplete");
 	assertComplete(prepared.written[resource]);
 	if (resource === "repos") {
 		const names = catalogNames(prepared.written.repos ?? null)?.filter(
@@ -308,6 +312,18 @@ export async function collectSitePage(
 			names.some((name) => !(run.siteRepos ?? run.repos).includes(name))
 		)
 			throw new ApiError(409, "catalog_changed", "sync catalog before refreshing new repositories");
+		if (prepared.catalogPlan) {
+			prepared.stmts.push(
+				fenced(
+					db,
+					lease,
+					now,
+					"INSERT INTO factory_resources(run_id,repo,stream,payload) SELECT ?,'','catalog-plan',? WHERE $guard ON CONFLICT(run_id,repo,stream) DO UPDATE SET payload=excluded.payload",
+					[run.id, boundedJson(prepared.catalogPlan)],
+				),
+			);
+			return { writes: prepared.stmts, done: true };
+		}
 	}
 	if (step.repo && global && run.selection?.scope !== "all") {
 		const previous = (await readSnapshot(db, run.account_id, global)) as Collected | null;

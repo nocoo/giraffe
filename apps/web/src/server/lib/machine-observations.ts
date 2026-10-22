@@ -9,6 +9,7 @@ import type {
 import { FACTORY_STREAMS } from "../../lib/factory-types";
 import { prLifecycleState, prSnapshot, prState } from "../../lib/pull-request";
 import { snapshotFreshness } from "../../lib/snapshot-freshness";
+import { catalogFactoryRepo } from "./catalog-read";
 import {
 	composeContent,
 	factoryStreamContent,
@@ -267,10 +268,18 @@ export async function readMachineAccountObservation(
 	account: string,
 	resource: AccountObservationResource,
 	scope: SnapshotScope,
+	includeRemoved = false,
 ) {
 	const plan = accountReadPlan(db, account, resource, scope, { rate: true });
 	const saved = plan.decode(await db.batch(plan.statements));
-	const observation = await projectObservation(db, account, resource, scope, undefined, saved);
+	const observation = await projectObservation(
+		db,
+		account,
+		resource,
+		scope,
+		resource === "repos" ? savedAccountPolicy(saved, scope, undefined, includeRemoved) : undefined,
+		saved,
+	);
 	if (resource === "factory")
 		observation.data.rate = factoryRateFromRow(
 			saved.rateRows[0] ?? null,
@@ -372,7 +381,9 @@ async function factoryObservationFromSaved(
 	saved: SavedFactoryStream,
 ) {
 	const snap = decodePublication(saved.publicationPages);
-	const repo = snap?.repos.find((r) => r.name.toLowerCase() === name.toLowerCase());
+	const repo = snap?.repos
+		.map((repo) => catalogFactoryRepo(repo, saved.catalogHistory))
+		.find((repo) => repo.name.toLowerCase() === name.toLowerCase());
 	if (!snap || !repo) throw new ApiError(404, "not_found", "repository outside publication");
 	const observation = repo.observation;
 	const version = observation?.version ?? snap.runId;

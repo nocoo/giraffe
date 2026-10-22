@@ -32,7 +32,7 @@ it("preserves catalog head and legacy fallback projections in one read batch", a
 		expect(actual.states).toEqual(await repoStates(reference, fixture.account));
 		expect(actual.storage).toEqual(await factoryStorage(reference, fixture.account));
 		expect(profile.trips).toHaveLength(1);
-		expect(profile.queries).toHaveLength(9);
+		expect(profile.queries).toHaveLength(10);
 	}
 	await fixture.raw
 		.prepare("DELETE FROM factory_state WHERE account_id=?")

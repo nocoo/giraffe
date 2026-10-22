@@ -7,6 +7,7 @@ import {
 	type FactoryStreamName,
 } from "../../lib/factory-types";
 import type { AppVars, Env } from "../env";
+import { catalogFactoryRepo } from "../lib/catalog-read";
 import { ApiError, jsonOk } from "../lib/errors";
 import { newFactory } from "../lib/factory-collect";
 import { factoryRateFromRow } from "../lib/factory-rate";
@@ -89,7 +90,9 @@ export async function getFactoryStream(c: Ctx): Promise<Response> {
 	if (!Number.isInteger(page) || page < 1 || page > 50)
 		throw new ApiError(400, "validation_failed", "invalid page");
 	const snap = decodePublication(saved.publicationPages);
-	const repo = snap?.repos.find((r) => r.name.toLowerCase() === `${owner}/${name}`.toLowerCase());
+	const repo = snap?.repos
+		.map((repo) => catalogFactoryRepo(repo, saved.catalogHistory))
+		.find((repo) => repo.name.toLowerCase() === `${owner}/${name}`.toLowerCase());
 	if (repo && !factoryStreamPolicy(saved, scope).includes(repo.name))
 		throw new ApiError(404, "not_found", "repository outside selected owned catalog");
 	if (!repo || !snap) throw new ApiError(404, "not_found", "repository outside factory inventory");
