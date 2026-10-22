@@ -1186,3 +1186,15 @@ The controller also repeated the split-ratio mistake already recorded above:
 and the returned geometry confirmed 41 of 125 columns for the controller with
 workers only on its right. Verify actual geometry immediately after splitting;
 remembering the rule without checking the returned layout is insufficient.
+
+## 2026-10-22 - Freeze code and schema during HTTP acceptance
+
+The batch-10 controller started the full local API runner while R1 workers were
+editing the watched Worker and adding a migration. The new provenance journey
+first failed because GET stars did not yet exist, but subsequent requests also
+saw reload-related connection loss and 500 responses. That mixed-revision run
+cannot establish integration health or attribute the later failures reliably.
+Use focused isolated tests for concurrent TDD; freeze implementation and schema
+before starting the real HTTP runner, which initializes its database only once.
+Recreate the runner's fixture database after migrations change and rerun all
+acceptance checks against the frozen candidate.
