@@ -1222,3 +1222,10 @@ focused projection tests and real API checks passed. Build typed projected mock
 responses after fixture mutations, and update star-write acknowledgements with
 the server-confirmed fields. Keep raw storage fixtures unchanged; never repair
 test drift with a runtime denominator fallback that hides unpublished members.
+
+The follow-up BDD run also caught an obsolete missed-slot expectation, and its
+page context exposed stale help text promising latest-slot-only processing.
+Verify explanatory UI copy as well as error labels when scheduling semantics
+change. A schema-doc correction then omitted the machine endpoint's account
+segment. Copy full mounted paths from route registration, not from a local
+handler path or recollection, and independently review the correction itself.

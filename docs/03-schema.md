@@ -165,7 +165,7 @@ this table does not make pre-provenance code safe to run against owner tombstone
 follow the migration and rollback requirements above.
 
 Browser `POST /api/repos/:owner/:name/statistics` and machine
-`PUT/DELETE /api/v1/statistics/:owner/:name` return `410 deprecated`.
+`PUT/DELETE /api/v1/accounts/:account/statistics/:owner/:name` return `410 deprecated`.
 Machine settings expose an empty overrides array with a deprecation marker;
 the deprecated repository `statistics_enabled` field is only an alias for
 `starred`, not an independent participation setting. Daily membership is the
