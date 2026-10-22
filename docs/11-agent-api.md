@@ -6,6 +6,36 @@ does not bundle an analysis runtime, run model inference, or execute code change
 The complete endpoint reference, request examples, validation limits and recommended
 consumer flow are in [Machine API v1](api.md).
 
+## Daily report consumption
+
+Publish `type:github-daily`, `status:completed`, `repository:null` through the
+existing report POST with `agent:write`. Use the strict payload in
+[the reference](api.md#daily-reports-and-latest-report): date, window,
+refreshRunId, headline, sections, comparisons, links, generatedAt and sources are
+all required. The explicit calendar date is a Beijing reporting key; backfills
+are allowed. Comparisons remain externally computed. There is no model runtime
+or GitHub collection during report reads or writes.
+
+Omit the ID or use `github-daily-YYYY-MM-DD`. Same-date POST replaces the canonical
+row atomically and increments revision (201 create,200 replacement); it does not
+archive old revisions. Keep revision for PATCH and do not change type/date/global
+scope. Other report types preserve their generic contract. No migration is needed.
+
+Payload≤65,536 UTF-8 bytes; sections≤12, each with≤50 items and≤12,000 markdown
+characters; headline≤300, title≤200, comparisons≤4,000 each, sources≤500. URLs are
+HTTPS on any host without embedded credentials. Daily text is rendered as escaped
+plain text, not active HTML or parsed Markdown. Xray and evidence anchors use
+noopener/noreferrer. Source completeness/freshness remain producer assertions.
+
+Read `/agent/reports/latest?type=github-daily` with `agent:read`; the same operation
+supports other types. It returns the newest exact generatedAt instant (ID descending
+tie-break), not the last edited row, and supports ETag/304. A missing match is a
+null item. Canonical daily validation failures are omitted and counted in
+invalidCount. Legacy noncanonical daily data stays in generic list/detail; repair
+requires explicit delete and canonical POST. The browser's latest-seven projection
+shares that selector, defaults to its first item, and shows invalid-report notices.
+The bare reports/latest path without type remains generic resource-ID access.
+
 ## Readiness consumption
 
 Poll `refresh-runs/latest?kind=daily` with `app:read`. Wait for a non-null

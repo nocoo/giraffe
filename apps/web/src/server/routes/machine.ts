@@ -40,6 +40,7 @@ import {
 } from "./machine-settings";
 import { machineRepoAgentState, repoAgentStateHeaders } from "./repo-agent-state";
 import { machineRepoMeta, repoMetaHeaders } from "./repo-meta";
+import { latestReport } from "./report-latest";
 import { getMachineLatestRun } from "./run-readiness";
 
 type Principal = NonNullable<Awaited<ReturnType<typeof authenticateApiToken>>>;
@@ -118,6 +119,7 @@ export function machineApi() {
 			},
 		});
 	});
+	app.get("/accounts/:account/agent/reports/latest", latestReport);
 	app.all("/accounts/:account/agent/:collection/:id?", async (c) => {
 		const kind = resourceCollection.safeParse(c.req.param("collection"));
 		const id = c.req.param("id");
@@ -134,14 +136,13 @@ export function machineApi() {
 			if (!item) throw new ApiError(404, "not_found", "resource not found");
 			return c.json({ account_id: account, item });
 		}
-		if (method === "POST" && !id)
+		if (method === "POST" && !id) {
+			const item = await createResource(db, account, kind.data, await readJson(c.req.raw, 70000));
 			return c.json(
-				{
-					account_id: account,
-					item: await createResource(db, account, kind.data, await readJson(c.req.raw, 70000)),
-				},
-				201,
+				{ account_id: account, item },
+				kind.data === "reports" && item.type === "github-daily" && item.revision > 1 ? 200 : 201,
 			);
+		}
 		if (method === "PATCH" && id)
 			return c.json({
 				account_id: account,

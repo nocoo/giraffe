@@ -1,5 +1,13 @@
 # Retrospective
 
+## 2026-10-22 - Browser assertions need a specific landmark
+
+The daily-report browser test copied an overflow assertion using main, but the
+analysis page has both the Basalt shell main and an existing nested analysis
+main. Independent static rendering caught two matches before the browser run.
+Target the intended shell landmark by its existing main-content ID rather than
+assuming a tag selector is unique. Do not alter unrelated layout to repair a test.
+
 ## 2026-10-22 - Staged metadata must use publication time
 
 The first repository metadata fill reused the catalog plan's collection time as

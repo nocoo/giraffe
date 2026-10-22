@@ -7,6 +7,92 @@ the Worker authenticates resource requests. The dashboard and credential-managem
 endpoints remain Access protected. Accounts/snapshots are deployment-shared, not
 per-user tenants. See [the boundary contract](11-agent-api.md).
 
+## Daily reports and latest report
+
+POST `/accounts/:account/agent/reports` with `agent:write` accepts the new
+`github-daily` type. The resource is global: `repository` must be null or omitted,
+`status` must be `completed`, and `source_version` remains optional opaque metadata.
+The payload is strict at every nesting level:
+
+```json
+{
+  "date": "2026-10-22",
+  "window": {"since": "2026-10-22T00:00:00+08:00", "until": "2026-10-22T06:00:00+08:00"},
+  "refreshRunId": "daily-run-id",
+  "headline": "Delivery review",
+  "sections": [{"title": "CI", "markdown": "One run needs review.", "items": [
+    {"repo": "nocoo/giraffe", "kind": "ci", "url": "https://github.com/nocoo/giraffe/actions", "severity": "review"}
+  ]}],
+  "comparisons": {"vsYesterday": "One fewer failure", "vs7d": "Stable"},
+  "links": {"xray": "https://example.com/daily"},
+  "generatedAt": "2026-10-22T06:10:00+08:00",
+  "sources": [{"resource": "account:ci", "version": "saved-version", "fetchedAt": "2026-10-22T05:30:00+08:00", "complete": true, "stale": false}]
+}
+```
+
+The calendar-valid `date` is the producer's Beijing reporting date, not a UTC-day
+slice. Backfills and next-day regeneration are allowed; it need not equal the
+window, generation date or server date. Window endpoints must be ISO timestamps
+with timezone and `since <= until`; all daily timestamps are at most 128 characters.
+`refreshRunId` uses the existing 1–80-character resource ID syntax, without a
+foreign key because retained runs can expire. Giraffe computes no comparisons.
+
+| Field | Limit |
+| --- | --- |
+| Whole payload | 65,536 serialized UTF-8 bytes; existing 70,000-byte request-envelope cap |
+| Headline / section title | Nonblank, 300 / 200 characters |
+| Sections / items per section | At most 12 / 50; empty arrays allowed |
+| Markdown / each comparison | 12,000 /4,000 characters; empty text allowed |
+| Item repo | Valid owner/name≤200 characters, or null for global evidence |
+| Item kind / severity | Nonblank producer labels≤40 characters; no inferred severity taxonomy |
+| Item URL / Xray URL | Absolute HTTPS≤2048 characters, any host, no credentials |
+| Sources | At most 500 strict source records |
+| Source fields | Nonblank resource≤240; nullable version≤200; optional SHA-256 contentVersion; nullable ISO fetchedAt; boolean complete/stale |
+
+The canonical ID is `github-daily-YYYY-MM-DD`; omit `id` or supply that exact value.
+The first POST returns 201/revision 1. A subsequent POST for the same account/date
+atomically replaces the same row, preserves created_at, increments revision and
+returns 200, even if the content is identical. This is mutable revisioning, not an
+immutable report-version archive. An ID collision with another resource or an
+untrustworthy legacy date returns 409 `resource_exists`, never overwrites it.
+PATCH retains the existing revision CAS contract; type, global scope and date are
+immutable, and any supplied payload is a full replacement. Invalid bodies return
+400 `validation_failed`; stale PATCH returns 409. Other generic resource types keep
+their existing create/list/detail/PATCH/DELETE contracts.
+
+GET `/accounts/:account/agent/reports/latest?type=<type>` requires `agent:read`.
+Browser equivalent: `/api/agent/accounts/:account/reports/latest?type=<type>`,
+protected by Access and the active account. Exactly one valid type query is
+required for this operation; unknown/repeated parameters return 400. Without a
+type query, the bare `reports/latest` path retains its existing meaning as the
+resource whose ID is `latest`, including its PATCH/DELETE operations.
+
+The response is `{account_id,item}` (null when absent); for daily it also includes
+`invalidCount`. Selection uses the exact generatedAt instant descending, including
+sub-millisecond fractions and timezone offsets, then binary ID descending. It
+does not use updated_at, insertion order or the generic list's first page. Generic
+types only require a valid generatedAt; no new status or analysis-schema filter is
+applied. Daily selection additionally requires the strict canonical/global/completed
+contract. Invalid or noncanonical legacy daily rows are hidden and counted, not
+deleted or repaired; their generic list/detail access remains unchanged. Repair
+requires explicit deletion and canonical POST, not an identity-changing PATCH.
+
+Latest supports strong response ETags and standard If-None-Match/304, including
+empty results. Authentication, account fencing and query validation precede
+conditional matching. Both 200 and 304 retain private/no-store, no-referrer and
+reader-specific Vary headers. GET never fetches GitHub or records token activity.
+
+Browser GET `/api/agent/accounts/:account/analysis/daily` accepts no query and returns
+`{account_id,items,invalidCount}` with the newest seven valid reporting dates through
+the same selector; its first item equals daily latest. The analysis page starts
+there, supports date browsing, and shows a notice for hidden reports. Markdown is
+displayed as escaped plain text with preserved whitespace, consistently with the
+existing report renderer; raw HTML and Markdown-generated links never execute.
+Explicit HTTPS evidence/Xray links open with noopener/noreferrer. Four existing
+domain cards remain available. The new readers scan only the selected account/type's
+retained reports; no indexed O(1) latest claim is made. Existing optimized analysis
+projection and `/sources` reads remain unchanged. No migration is required.
+
 ## Run readiness
 
 `GET /accounts/:account/refresh-runs/latest?kind=daily|weekly|catalog|manual|quick|deep`

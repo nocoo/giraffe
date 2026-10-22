@@ -40,7 +40,13 @@ function stubApi(page: Page, fixtures: Record<string, unknown>, writes: string[]
 		const path = new URL(request.url()).pathname;
 		if (path.startsWith("/api/agent/accounts/")) {
 			return route.fulfill({
-				json: { account_id: "ui-account", items: [], repositories: [], sources: [] },
+				json: {
+					account_id: "ui-account",
+					items: [],
+					repositories: [],
+					sources: [],
+					invalidCount: 0,
+				},
 			});
 		}
 		return path in fixtures

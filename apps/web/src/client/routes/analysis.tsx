@@ -16,6 +16,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import type { AnalysisReport, Domain } from "../../lib/analysis-contracts";
+import { GithubDailyCard } from "../components/github-daily";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { DataTimeSource } from "../components/layout/data-time";
 import { SelectField } from "../components/layout/select-field";
@@ -96,6 +97,7 @@ export function AnalysisPage() {
 					</LayerCard.Body>
 				</LayerCard>
 			) : null}
+			<GithubDailyCard />
 			<Tabs value={domain} onValueChange={(value) => setDomain(value as Domain)}>
 				<TabsList
 					aria-label="分析领域"

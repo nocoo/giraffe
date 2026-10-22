@@ -1,5 +1,17 @@
 # 03 — 数据 Schema
 
+## Daily reports (0.20.0, no migration)
+
+`github-daily` uses the existing agent_resources table and account/collection/ID
+primary key. Canonical IDs `github-daily-YYYY-MM-DD` provide one authoritative
+global report per Beijing date without a new table or destructive backfill.
+POST uses an atomic guarded UPSERT, preserving created_at and increasing revision;
+same-date replacement is mutable history, not an immutable archive. Existing
+generic resource rows are untouched. Invalid/noncanonical legacy daily rows remain
+available through generic reads but are excluded from typed daily projections
+with a notice count. Latest/history reads scan only account/type-scoped rows;
+the existing github-analysis expression index and `/sources` contract are unchanged.
+
 ## Repository metadata (0024)
 
 `0024_repo_meta.sql` adds account/stable-identity metadata storage for created_at,
