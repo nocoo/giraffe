@@ -25,6 +25,7 @@ export type CatalogRow = CatalogTimestamps & {
 	first_seen_source: "saved_catalog" | "github_catalog";
 	last_source_run_id: string | null;
 	name_current?: number;
+	created_at?: string | null;
 };
 export type CatalogState = {
 	history_since: string;
@@ -59,6 +60,11 @@ export type CatalogPlan = {
 	source: { kind: "factory" | "legacy"; runId: string | null };
 };
 const identities = new WeakMap<object, Record<string, string>>();
+const creationTimes = new WeakMap<object, Record<string, string>>();
+export function catalogCreationTimes(payload: object, values?: Record<string, string>) {
+	if (values) creationTimes.set(payload, values);
+	return creationTimes.get(payload) ?? {};
+}
 export function catalogIdentity(payload: object, ids?: Record<string, string>) {
 	if (ids) identities.set(payload, ids);
 	return identities.get(payload) ?? {};
@@ -192,6 +198,7 @@ export async function planCatalog(
 				(row) => row.name_current !== 0 && !id && row.repo.toLowerCase() === name.toLowerCase(),
 			);
 		const row = fromSaved(value, at, id);
+		row.created_at = (id && catalogCreationTimes(payload)[id]) || null;
 		row.first_seen_source = previous?.first_seen_source ?? "github_catalog";
 		row.last_source_run_id = source.runId;
 		if (previous) {
@@ -431,6 +438,17 @@ export function catalogPlanWrites(
 			.bind(account, plan.source.kind, plan.source.runId, JSON.stringify(plan.events)),
 	);
 	writes.push(...catalogMutableWrites(db, account, plan));
+	const created = plan.rows.flatMap((row) =>
+		row.created_at ? [{ identity_key: row.identity_key, created_at: row.created_at }] : [],
+	);
+	if (created.length)
+		writes.push(
+			db
+				.prepare(
+					"INSERT INTO repo_meta(account_id,identity_key,created_at,created_at_source,updated_at) SELECT ?,json_extract(value,'$.identity_key'),json_extract(value,'$.created_at'),'catalog',? FROM json_each(?) WHERE 1 ON CONFLICT(account_id,identity_key) DO UPDATE SET created_at=excluded.created_at,created_at_source='catalog',updated_at=MAX(repo_meta.updated_at,excluded.updated_at) WHERE repo_meta.created_at IS NULL",
+				)
+				.bind(account, new Date().toISOString(), JSON.stringify(created)),
+		);
 	writes.push(...catalogRetentionWrites(db, account, plan.at));
 	return writes;
 }
@@ -454,7 +472,7 @@ export function catalogRetentionWrites(db: Db, account: string, now: string) {
 			.bind(account, account),
 		db
 			.prepare(
-				`DELETE FROM catalog_repositories WHERE account_id=? AND removed_at IS NOT NULL AND NOT EXISTS(SELECT 1 FROM repo_agent_state s WHERE s.account_id=catalog_repositories.account_id AND s.identity_key=catalog_repositories.identity_key) AND (removed_at<? OR removed_at<=(SELECT removed_at FROM catalog_repositories WHERE account_id=? AND removed_at IS NOT NULL ORDER BY removed_at DESC,identity_key DESC LIMIT 1 OFFSET 1000))`,
+				`DELETE FROM catalog_repositories WHERE account_id=? AND removed_at IS NOT NULL AND NOT EXISTS(SELECT 1 FROM repo_agent_state s WHERE s.account_id=catalog_repositories.account_id AND s.identity_key=catalog_repositories.identity_key) AND NOT EXISTS(SELECT 1 FROM repo_meta m WHERE m.account_id=catalog_repositories.account_id AND m.identity_key=catalog_repositories.identity_key) AND (removed_at<? OR removed_at<=(SELECT removed_at FROM catalog_repositories WHERE account_id=? AND removed_at IS NOT NULL ORDER BY removed_at DESC,identity_key DESC LIMIT 1 OFFSET 1000))`,
 			)
 			.bind(account, cutoff, account),
 	];

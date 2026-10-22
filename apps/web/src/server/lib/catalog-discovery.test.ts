@@ -1118,7 +1118,20 @@ it.each(["all", "starred"] as const)(
 		);
 		expect(response.status).toBe(200);
 		expect(((await response.json()) as { repos: unknown[] }).repos).toEqual(
-			rows.map((row) => ({ ...row, agent_state: null })),
+			rows.map((row) => ({
+				...row,
+				agent_state: null,
+				meta: {
+					created_at: null,
+					first_seen_at: row.first_seen_at,
+					archived_at: null,
+					deleted_at: row.removed_at,
+					category: null,
+					exclusion_reason: null,
+					updated_at: null,
+					field_sources: {},
+				},
+			})),
 		);
 	},
 );

@@ -113,6 +113,7 @@ async function browserReference(raw: D1Database, kind: string, scope: SnapshotSc
 		projected.repos = projected.repos.map((repo: Record<string, unknown>) => ({
 			...repo,
 			agent_state: null,
+			meta: null,
 		}));
 	return { ...projected, account_id: account };
 }
@@ -169,11 +170,13 @@ it.each(resources)(
 				expect(await response.text()).toBe(expected);
 				expect(response.headers.get("cache-control")).toBe("private, no-store");
 				expect(network).not.toHaveBeenCalled();
-				expect(profile.trips).toHaveLength(kind === "repos" ? 2 : 1);
+				expect(profile.trips).toHaveLength(kind === "repos" ? 3 : 1);
 				expect(profile.trips[0]?.statements).toBeGreaterThan(1);
 				if (kind === "repos") {
 					expect(profile.trips[1]?.statements).toBe(1);
-					expect(profile.queries.at(-1)?.sql).toContain("FROM repo_agent_state");
+					expect(profile.trips[2]?.statements).toBe(1);
+					expect(profile.queries.at(-2)?.sql).toContain("FROM repo_agent_state");
+					expect(profile.queries.at(-1)?.sql).toContain("LEFT JOIN repo_meta");
 				}
 			}
 		}

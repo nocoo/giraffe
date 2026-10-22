@@ -1,5 +1,17 @@
 # 03 — 数据 Schema
 
+## Repository metadata (0024)
+
+`0024_repo_meta.sql` adds account/stable-identity metadata storage for created_at,
+archived_at, category, exclusion_reason, updated_at and per-field provenance.
+first_seen_at and deleted_at are joined from catalog history rather than copied.
+Catalog writes fill only an empty creation date and record catalog provenance;
+agent updates patch supplied fields and record agent provenance. Refresh does not
+overwrite existing values. Removed identities referenced by metadata remain
+retained; account deletion retains the existing cascade boundary. The additive
+migration preserves prior snapshots, state, catalog history and runs. Rollback
+keeps the new table and data intact. GET remains read-only.
+
 ## Repository agent state (0023)
 
 `0023_repo_agent_state.sql` adds `repo_agent_state` keyed by

@@ -22,6 +22,7 @@ import { postRefresh } from "./routes/refresh";
 import { getRefreshSettings, postRefreshSchedule } from "./routes/refresh-settings";
 import { getRefreshTimes } from "./routes/refresh-times";
 import { browserRepoAgentState, repoAgentStateHeaders } from "./routes/repo-agent-state";
+import { browserRepoMeta, repoMetaHeaders } from "./routes/repo-meta";
 import { repoGet, setRepoStar, setRepoStatistics } from "./routes/repos";
 import { getLatestRun } from "./routes/run-readiness";
 import { snapshotGet } from "./routes/snapshots";
@@ -150,6 +151,8 @@ export function createApp(): Hono<{ Bindings: Env; Variables: AppVars }> {
 	onGet(app, "/api/notifications", (c) => snapshotGet(c, "notifications"));
 	allow(app, "/api/repos/:owner/:name/agent-state", ["GET"]);
 	app.get("/api/repos/:owner/:name/agent-state", repoAgentStateHeaders, browserRepoAgentState);
+	allow(app, "/api/repos/:owner/:name/meta", ["GET"]);
+	app.get("/api/repos/:owner/:name/meta", repoMetaHeaders, browserRepoMeta);
 	allow(app, "/api/repos/:owner/:name", ["GET"]);
 	onGet(app, "/api/repos/:owner/:name", (c) => repoGet(c, "details"));
 	allow(app, "/api/repos/:owner/:name/actions", ["GET"]);

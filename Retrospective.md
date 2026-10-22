@@ -1,5 +1,29 @@
 # Retrospective
 
+## 2026-10-22 - Staged metadata must use publication time
+
+The first repository metadata fill reused the catalog plan's collection time as
+updated_at. Independent review staged the catalog, wrote an agent category later,
+then published the plan and observed updated_at moving backwards. Catalog fills
+must use their publication write time and preserve a later existing update time
+in the atomic UPSERT. A fake-clock regression now covers that interleaving and
+verifies that a repeated fill leaves an already-populated metadata row unchanged.
+
+The first regression replayed the identical catalog event plan and correctly
+failed its stale publication fence. Its output was prematurely called green
+before the asynchronous command was collected. Replan against the new catalog
+revision for a second publication, and report validation only after checking the
+completed exit status. The final regression and independent re-review passed.
+
+## 2026-10-22 - Separate fill-only-empty writes from collection fields
+
+The first R6 draft introduced an extra GraphQL nodes request and known-value
+plumbing to avoid fetching an existing creation date. The requirement restricts
+metadata writes, not scalar fields in an existing catalog request. Remove that
+extra request, collect createdAt in the normal catalog query, and enforce the
+fill-only-empty rule atomically in storage. This keeps the simpler collection
+path and prevents new API latency from a static metadata feature.
+
 ## 2026-10-22 - Mock endpoint contracts rather than generic successful objects
 
 The new R5 browser fixture returned a generic successful object for every unknown

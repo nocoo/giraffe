@@ -42,6 +42,38 @@ Catalog/deep/selected runs do not replace the account activity head. Separate GE
 can straddle a subsequent publication; compare IDs or pin `/activity?run=<id>`.
 GET never starts work, records token use or changes run state.
 
+## Repository metadata
+
+GET `/accounts/:account/repos/:owner/:name/meta` requires `app:read`; the
+Access-protected browser reads `/api/repos/:owner/:name/meta` for its active account.
+The result includes account/repository/removal context and
+`{created_at,first_seen_at,archived_at,deleted_at,category,exclusion_reason,updated_at,field_sources}`.
+Known catalog identities return null for unset values; unknown identities are 404.
+`/repos.meta` exposes the same metadata fields without account/repository context.
+Legacy rows without a known catalog identity have null meta.
+
+PUT on the machine route requires `app:write` and at least one field from the
+strict body `{created_at?,archived_at?,category?,exclusion_reason?}`. Dates must be
+ISO timestamps with a timezone; category is `app|docs-vault|profile|repro|derivative`;
+exclusion reason is a string of at most 200 characters. Empty bodies, null clearing,
+unknown fields, invalid dates and unknown categories return 400. The request body
+is limited to 4096 UTF-8 bytes; malformed or oversized bodies return 400
+`invalid_payload`. Each supplied field
+is patched atomically with `field_sources[field]="agent"`; omitted fields are retained.
+Metadata has no revision precondition: concurrent disjoint-field patches compose,
+and the last committed patch wins for the same field.
+
+Catalog collection may fill an empty created_at from GitHub createdAt with
+`field_sources.created_at="catalog"`, but never replaces a previously saved value.
+Creation-date fills stamp their publication write time without regressing a newer
+metadata update time; already-populated rows remain unchanged.
+Agent-written fields survive refreshes, renames and removals. Metadata is keyed by
+stable account/catalog identity. Retained removed identities may be read and written;
+their first_seen_at/deleted_at always come from catalog history, never caller input
+or duplicate metadata columns. GET does not initialize or update metadata. Browser
+details display creation time and category read-only. Metadata does not change
+the saved GitHub source fingerprint or add `/sources` queries.
+
 ## Repository agent state
 
 `GET /accounts/:account/repos/:owner/:name/agent-state` requires `app:read`.

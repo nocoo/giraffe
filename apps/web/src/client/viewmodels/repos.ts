@@ -1,4 +1,5 @@
 import type { RepoAgentStateSummary } from "../../lib/repo-agent-state";
+import type { RepoMetaFields } from "../../lib/repo-meta";
 import type { SnapshotFreshness } from "../../lib/snapshot-freshness";
 import { apiPost } from "../lib/api";
 import { ApiError } from "../lib/errors";
@@ -8,6 +9,7 @@ import { loadKind } from "./snapshot";
 
 export type RepoRow = {
 	agent_state?: RepoAgentStateSummary | null;
+	meta?: RepoMetaFields | null;
 	starred?: boolean;
 	star_source: "owner" | "agent" | null;
 	star_updated_at: string | null;

@@ -327,6 +327,18 @@ and zero-work runs are excluded. No eligible same-kind history yields null with
 `expectedFinishAtReason:"no_completed_history"`; another kind is not substituted.
 Do not infer collection success from cron health or ETA.
 
+## Repository metadata
+
+GET `/repos/:o/:n/meta` with app:read; PUT with app:write and at least one strict
+field: `{created_at?,archived_at?,category?,exclusion_reason?}`. Dates need ISO
+timezone; categories are app/docs-vault/profile/repro/derivative; reason ≤200.
+Unknown fields/null clearing/empty body return 400; body cap is 4096 UTF-8 bytes.
+Supplied fields gain agent
+provenance; catalog can only fill empty created_at, never replace existing values.
+`first_seen_at`/`deleted_at` are read-only catalog history. Retained removed identities
+remain readable/writable; rename preserves metadata and name reuse never inherits it.
+`/repos.meta` exposes these fields and field_sources. The browser is read-only.
+
 ## Repository agent state
 
 GET `/repos/:o/:n/agent-state` (`app:read`) returns payload, revision, timestamps,

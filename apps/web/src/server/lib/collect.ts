@@ -1,5 +1,6 @@
+import { repoMetaTimestampSchema } from "../../lib/repo-meta";
 import type { SecurityFeature } from "../../lib/security";
-import { catalogIdentity } from "./catalog-history";
+import { catalogCreationTimes, catalogIdentity } from "./catalog-history";
 import { ApiError } from "./errors";
 import type { GithubClient } from "./github-client";
 import { TruncatedError } from "./github-client";
@@ -25,7 +26,7 @@ export type Collected = { truncated: boolean } & Record<string, unknown>;
 export const MAX_STAGED_BYTES = 16 * 1024 * 1024;
 
 const REPOS_QUERY =
-	"query($after:String){ viewer { repositories(first:100, after:$after, affiliations:[OWNER, COLLABORATOR, ORGANIZATION_MEMBER]) { pageInfo { hasNextPage endCursor } nodes { id nameWithOwner name owner { login } description stargazerCount forkCount pushedAt isPrivate isArchived isFork visibility url primaryLanguage { name } issues(states:OPEN) { totalCount } } } } }";
+	"query($after:String){ viewer { repositories(first:100, after:$after, affiliations:[OWNER, COLLABORATOR, ORGANIZATION_MEMBER]) { pageInfo { hasNextPage endCursor } nodes { id nameWithOwner name owner { login } description stargazerCount forkCount pushedAt createdAt isPrivate isArchived isFork visibility url primaryLanguage { name } issues(states:OPEN) { totalCount } } } } }";
 
 const ISSUE_SEARCH =
 	"query($q:String!,$after:String){ search(query:$q, type:ISSUE, first:100, after:$after){ issueCount pageInfo{ hasNextPage endCursor } nodes{ __typename ... on Issue { number title url state createdAt updatedAt author{ login } labels(first:100){ pageInfo{ hasNextPage } nodes{ name color } } comments{ totalCount } repository{ nameWithOwner } } } } }";
@@ -312,6 +313,12 @@ export async function collectRepos(
 		}
 	}
 	const payload = { truncated, repos: mapRepos(nodes) };
+	const created: Record<string, string> = {};
+	for (const node of nodes) {
+		const time = repoMetaTimestampSchema.safeParse(node.createdAt);
+		if (typeof node.id === "string" && node.id && time.success) created[node.id] = time.data;
+	}
+	catalogCreationTimes(payload, created);
 	catalogIdentity(
 		payload,
 		Object.fromEntries(

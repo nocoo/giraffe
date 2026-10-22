@@ -60,6 +60,7 @@ for (const [width, theme] of [
 		await page.goto("/repos/octocat/hello-world");
 		await expect(page.getByText("Review deployment evidence", { exact: true })).toBeVisible();
 		await expect(page.getByText("最近审阅", { exact: true })).toBeVisible();
+		await page.getByText("Review deployment evidence", { exact: true }).scrollIntoViewIfNeeded();
 		await page.screenshot({ path: info.outputPath("agent-state.png"), fullPage: true });
 		expect(
 			await page.locator("main").evaluate((node) => node.scrollWidth <= node.clientWidth + 1),

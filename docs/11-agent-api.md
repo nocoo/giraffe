@@ -18,6 +18,19 @@ your separate reads. Historical 0022 markers, including resumed pre-upgrade runs
 remain conservatively null. The latest
 reader never collects, expires runs or mutates token activity.
 
+## Repository metadata consumption
+
+Use `/repos/:owner/:name/meta` (`app:read` GET, `app:write` PUT) for static fields.
+Write only the fields being changed: created_at, archived_at, category or
+exclusion_reason. Unknown fields and null clearing are rejected. Category is one
+of app/docs-vault/profile/repro/derivative; timestamps include a timezone and the
+reason is at most 200 characters. The body is limited to 4096 UTF-8 bytes;
+malformed or oversized bodies return 400 `invalid_payload`. Field provenance distinguishes agent writes from
+catalog-only creation-date fills. Catalog never replaces an existing creation date.
+Read first_seen_at/deleted_at from the returned catalog context; they are not writable.
+Retained removed identities remain usable and name reuse does not inherit metadata.
+`/repos.meta` is the small read projection; browser details show date/category only.
+
 ## Per-repository state consumption
 
 Use the dedicated `/repos/:owner/:name/agent-state` resource for persistent notes,

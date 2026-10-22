@@ -26,6 +26,7 @@ import { assertMachineQuery } from "../lib/machine-query";
 import { readSources } from "../lib/machine-sources";
 import { readJson } from "../lib/read-body";
 import { enrichRepoAgentStates } from "../lib/repo-agent-state";
+import { enrichRepoMeta } from "../lib/repo-meta";
 import type { AccountObservationResource } from "../lib/saved-observation-statements";
 import { snapshotScope } from "../lib/snapshot-scope";
 import { SourceTiming } from "../lib/source-timing";
@@ -38,6 +39,7 @@ import {
 	machineSetting,
 } from "./machine-settings";
 import { machineRepoAgentState, repoAgentStateHeaders } from "./repo-agent-state";
+import { machineRepoMeta, repoMetaHeaders } from "./repo-meta";
 import { getMachineLatestRun } from "./run-readiness";
 
 type Principal = NonNullable<Awaited<ReturnType<typeof authenticateApiToken>>>;
@@ -75,7 +77,8 @@ export function machineApi() {
 			const management =
 				/^\/api\/v1\/accounts\/[^/]+\/(settings|stars|statistics|schedules|refresh-runs)(\/|$)/.test(
 					c.req.path,
-				) || /^\/api\/v1\/accounts\/[^/]+\/repos\/[^/]+\/[^/]+\/agent-state$/.test(c.req.path);
+				) ||
+				/^\/api\/v1\/accounts\/[^/]+\/repos\/[^/]+\/[^/]+\/(agent-state|meta)$/.test(c.req.path);
 			const scope = agent
 				? read
 					? "agent:read"
@@ -250,6 +253,7 @@ export function machineApi() {
 			),
 		);
 	});
+	app.all("/accounts/:account/repos/:owner/:name/meta", repoMetaHeaders, machineRepoMeta);
 	app.all(
 		"/accounts/:account/repos/:owner/:name/agent-state",
 		repoAgentStateHeaders,
@@ -284,12 +288,18 @@ export function machineApi() {
 			snapshotScope(c.req.queries("scope")),
 			includeRemoved,
 		);
-		if (kind === "repos")
+		if (kind === "repos") {
 			observation.data = await enrichRepoAgentStates(
 				c.get("db"),
 				c.get("principal").accountId,
 				observation.data,
 			);
+			observation.data = await enrichRepoMeta(
+				c.get("db"),
+				c.get("principal").accountId,
+				observation.data,
+			);
+		}
 		return timedJson(c, observation);
 	});
 	app.notFound(() => {

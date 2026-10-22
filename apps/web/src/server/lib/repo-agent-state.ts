@@ -6,7 +6,7 @@ import {
 	type RepoAgentStateWrite,
 	repoAgentStateWriteSchema,
 } from "../../lib/repo-agent-state";
-import { catalogRowIdentity } from "./catalog-identity";
+import { catalogRowIdentity, identifyCatalogRow } from "./catalog-identity";
 import type { Db } from "./db/d1";
 import { ApiError } from "./errors";
 
@@ -160,7 +160,7 @@ export async function enrichRepoAgentStates(
 						...agentStateSummary({ summary: state.summary, status: state.status }),
 					}
 				: null;
-			return { ...repo, agent_state: summary };
+			return identifyCatalogRow({ ...repo, agent_state: summary }, identity);
 		}),
 	};
 }
