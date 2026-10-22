@@ -95,7 +95,7 @@ duplicate reads without changing observation versions or writing cache rows.
 Cloudflare handles production response compression. See the
 [local performance evidence and edge verification limits](12-source-performance.md).
 
-Authenticated `/sources` 200/304 responses also expose safe `Server-Timing`
+Authenticated observation, settings and run-list GET 200/304 responses also expose safe `Server-Timing`
 phase durations, including each D1 round trip, and numeric work counters. Pure
 CPU durations may be zero because Workers clocks freeze; whole-request CPU is
 available in Workers Observability `cpuTimeMs`. They are headers only, excluded
@@ -203,6 +203,10 @@ content hash includes selected identities, freshness total/missing and
 inventory truncation, so changing selected identities invalidates it even when
 counts stay equal. Publication versions/windows and stored rows are unchanged;
 inventory counters remain historical collection metadata.
+Projected factory `selectedRepos` lists read-time membership and nullable filter
+metadata separately from the real published `repos`. Clients filter membership
+first and retain unpublished members in coverage, freshness and health. Unknown
+topics conservatively match topic filters; missing observations are not zeroes.
 Default/`scope=all` preserves the exact saved 90-day account contribution calendar,
 status and provenance, independently of repository filtering. Only `scope=starred`
 excludes it (`contribution:null`, `contributionExcluded:true`,

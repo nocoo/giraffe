@@ -2,7 +2,16 @@
 
 ## v0.18.0: timing and comparison boundary
 
-Pinned baseline: `6f87d669eb67d92d1ad8a404c8a1fa0e4ffcf3b3`.
+Smart Placement is enabled with `placement.mode = "smart"`. It needs time to
+learn deployed traffic before deciding whether to relocate execution. This
+configuration alone is not evidence of a location change or latency improvement;
+compare request wall time and Workers Observability CPU after its learning period.
+
+Pinned baseline: `9bbecde5b3a8037e5a44b8e9e2e9610dcb71cff3`.
+This is the post-R1/R2/R3 tree plus its two reviewed functional corrections,
+without any performance changes. The reference is retained as merged ancestry;
+existing commits were not rewritten. Its original functional ancestor is
+`6f87d669eb67d92d1ad8a404c8a1fa0e4ffcf3b3`.
 
 Metadata-backed, single-page repository Actions, releases and details now omit
 fields unused by source/CI projections in the returned D1 payload. CI arrays and
@@ -23,15 +32,15 @@ no injected latency; before -> after):
 
 | Request | D1/SQLite wall | Decode | Hash/projection | Serialize | Total |
 | --- | --- | --- | --- | --- | --- |
-| Full | 5.25 -> 31.71 | 6.95 -> 6.34 | 7.59 -> 8.77 | 0.31 -> 0.29 | 28.93 -> 57.42 |
-| Since, two thirds | 5.08 -> 33.08 | 6.95 -> 6.20 | 6.73 -> 6.96 | 0.21 -> 0.21 | 25.79 -> 54.52 |
-| Since, empty | 5.28 -> 32.60 | 7.16 -> 5.96 | 1.84 -> 3.64 | 0.01 -> <0.01 | 15.57 -> 42.96 |
-| One repository | 4.06 -> 30.51 | 6.72 -> 6.05 | 9.33 -> 6.28 | 0.02 -> 0.01 | 27.67 -> 49.65 |
+| Full | 5.50 -> 33.78 | 7.01 -> 6.13 | 7.68 -> 9.69 | 0.30 -> 0.30 | 27.46 -> 59.05 |
+| Since, two thirds | 6.53 -> 31.94 | 7.38 -> 5.95 | 9.83 -> 8.51 | 0.22 -> 0.23 | 31.18 -> 54.13 |
+| Since, empty | 5.12 -> 32.72 | 7.20 -> 6.14 | 1.83 -> 3.79 | <0.01 -> <0.01 | 15.32 -> 44.67 |
+| One repository | 4.21 -> 33.05 | 6.97 -> 6.14 | 6.94 -> 7.14 | 0.01 -> 0.01 | 23.90 -> 53.41 |
 
 Reproduce the current comparison with `bun run tests/bench/source-roundtrips.ts`,
 `bun test tests/bench/source-legacy-version.test.ts` and
 `bun run tests/bench/route-parity.ts`. The latter archives the complete pinned
-tree and compares 192 route/scenario responses plus conditional tags, using
+tree and compares 207 route/scenario responses plus conditional tags, using
 stored, mismatched and legacy metadata with network denied. Historical sections
 below describe their original revisions, not the default current benchmark.
 
@@ -62,6 +71,32 @@ phases is not a CPU measurement.
 
 The historical measurements below describe their original revisions and are not
 current v0.18.0 before/after results.
+
+### Saved-route round trips
+
+These local HTTP counts include machine bearer lookup. Browser Access validation
+does not query D1; active-account selection is included in the count. Batching
+reduces transport waits, not necessarily SQL statement count. Successful reads
+remain read-only; ordering, errors, private headers and ETags are preserved.
+
+| Route group | Browser before -> after | Machine before -> after |
+| --- | --- | --- |
+| Repositories | 4 -> 1 | 5 -> 2 |
+| Issues / pull requests | 6 -> 1 | 6 -> 2 |
+| CI | 5 -> 1 | 5 -> 2 |
+| Factory summary | 7 -> 1 | 7 -> 2 |
+| Repository details and tabs | 2 -> 2 | 6 -> 2 |
+| Factory repository streams | 7 -> 1 | 5 -> 2 |
+| Settings | 3 -> 2 | 3 -> 2 |
+| Runs (`factory/runs` / `refresh-runs`) | 17 -> 2 | 4 -> 2 |
+| Contributions | N/A | 3 -> 2 |
+| Sources | N/A | 2 -> 2 |
+
+Browser repository tabs already have just active-account selection and one saved
+page read, so their two-trip path remains unchanged. Browser runs combine nine
+statements after active-account selection; machine reads keep bearer validation
+separate from the saved-data batch. No speculative upstream call, persistent
+cache or background work is introduced.
 
 ## v0.17.2: database round trips
 

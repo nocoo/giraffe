@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- Enable Smart Placement as the only deployment-configuration change. Placement needs time to learn real traffic; no immediate location or latency improvement is guaranteed.
+- Batch account observations, repository tabs, factory streams, settings and run lists after authorization; preserve exact response bodies, ETags and private conditional-response headers against the pure functional baseline. Resolve contribution publication heads inside their saved-data query.
 - Report honest CPU-phase timing, including production frozen-clock zeros, with safe numeric decoded row/byte, hash operation and serialized byte counters. Count overlapping hash intervals once rather than summing concurrent waits. Local high-resolution measurements and exact post-R1/R2/R3 cross-version comparisons keep timing evidence separate from response contracts.
 
 ### Changed
@@ -20,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Root Causes
 
+- Recheck completed catalog preparation and current membership before canonical admission: a completion between readiness and idempotency reads must not consume the daily key as a false failure.
+- Separate selected factory membership from published observations. Publication-only client denominators hid missing repositories and reported healthy 7/7 coverage for a 7/14 selection; filters, freshness and health now share explicit selected membership.
 - Historical scheduler revision `ac2d1e3` held later work behind the single active catalog and advanced the original daily cursor from recovery time, silently jumping over October 17/18. Page leases were renewable without an absolute lifetime. v0.15.14 bounded that lock but did not fix every missed-slot, failed-preparation or handoff path. The exact catalog stall mechanism is not provable without historical Queue/cursor/fence traces; healthy cron alone is not evidence of consumer progress.
 
 ### Changed Membership And Stars

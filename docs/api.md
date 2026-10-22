@@ -38,7 +38,8 @@ Never put credentials in URLs, logs, report payloads or persisted browser state.
 - JSON writes require `Content-Type: application/json`, UTF-8 if charset is given.
   Strict schemas reject extra fields. No body/query is defined unless listed.
 - Reads/updates return 200, resource creation 201, refresh start/control 202,
-  deletions 204 with no body. Separate reads are not a transaction; verify versions.
+  deletions 204 with no body except star deletion, which returns its 200 record.
+  Separate reads are not a transaction; verify versions.
 
 | Scope | Allowed operations |
 | --- | --- |
@@ -207,7 +208,9 @@ the distinction between the strong application tag and possible edge transforms.
 
 #### Source request timing
 
-Authenticated `/sources` 200 and 304 responses include `Server-Timing` with fixed
+Authenticated sources, account observations, repository details/tabs, factory
+streams, contributions, settings and run-list GET responses (200/304) include
+`Server-Timing` with fixed
 names, millisecond durations and safe numeric work counters. It contains no SQL, IDs, token material,
 repository names or upstream diagnostics. Timings are request-local headers;
 they do not enter the JSON body, source versions or ETag input.
@@ -283,6 +286,14 @@ are included. A selected repository absent from the publication or without a val
 `observation.refreshedAt` counts as missing; non-owned repositories never count.
 This rule is shared by browser factory freshness, machine `/factory` and
 `/sources`'s `account:factory`. Statistics overrides have no selection effect.
+Projected factory data includes `selectedRepos`, an explicit read-time list of
+`{name,description,language,topics}` members. Nullable metadata stays unknown;
+`repos` contains real publications only. Browser filters apply to membership
+before joining observations, so two selected repositories with only one complete
+publication produce 7/14 stream coverage, one missing repository and warning
+health. A missing-only selection has 0/7 coverage and unknown metrics/times, not
+invented zero observations. Unknown catalog topics cannot exclude a member from
+a topic filter. This metadata is not persisted into immutable publications.
 Machine `/factory` and `account:factory` expose `truncated:true` when
 `publication.inventory.complete !== true`, even when `freshness.missing` is zero.
 An existing saved `truncated:true` is also preserved, even with complete inventory;

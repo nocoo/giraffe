@@ -111,6 +111,9 @@ bounds, not `scope`; discover its evidence through `account:factory`.
 Account observations accept `scope=all|starred` (default all), where stars are local
 Giraffe stars. Repository/stream endpoints accept no query parameters. Every
 documented machine GET rejects unknown query keys with 400 `validation_failed`.
+Factory `selectedRepos` is the expected read-time membership; `repos` contains
+only real publications. Keep unpublished members in denominators and unknown
+metrics unknown. Nullable topic metadata cannot prove exclusion by a topic filter.
 
 ### Detailed field and collection contracts
 
