@@ -8,11 +8,12 @@ import { activityRepo } from "./activity";
 import { activityPublicationWrites, packActivity, readActivity } from "./activity-store";
 import { createDb } from "./db/d1";
 import { claimRun, controlRun, saveRun, startRun } from "./db/factory-runs";
-import { mapFactoryRepo } from "./factory-map";
+import { mapFactoryEvents, mapFactoryRepo } from "./factory-map";
+import { currentRepo, repositoryWrites } from "./factory-publish";
 import { readSources } from "./machine-sources";
 
 const now = "2026-10-22T20:00:00.000Z";
-async function setup() {
+async function setup(name = rawRepo.nameWithOwner) {
 	const raw = sqliteFixture();
 	const db = createDb(raw);
 	await db
@@ -21,7 +22,7 @@ async function setup() {
 		)
 		.bind(now, now)
 		.run();
-	const repo = mapFactoryRepo(rawRepo);
+	const repo = mapFactoryRepo({ ...rawRepo, nameWithOwner: name });
 	const run = makeRun(
 		"r2",
 		"account_123",
@@ -318,6 +319,119 @@ it("R4 stale observations and stream run mismatches never become current zero sn
 	expect(data.ci_runs).toBeNull();
 	expect(data.commits.default).toBeNull();
 	expect(data.coverage.actions).toMatchObject({ status: "partial", truncated: true });
+});
+it("freezes current activity when repeated dependency parse limits retain the previous repository", async () => {
+	const { freezeActivityRepo } = await import("./activity-store");
+	const fixture = await setup("nocoo/lizheng.dev");
+	const { db, lease, repo } = fixture;
+	for (const stream of FACTORY_STREAMS) repo.coverage[stream].status = "complete";
+	repo.coverage.dependencies = {
+		...repo.coverage.dependencies,
+		status: "limited",
+		reason_code: "dependency_parse_unsupported",
+		reason: "Workflow jobs cannot be parsed safely",
+	};
+	repo.observation = {
+		version: "r1",
+		window: { ...lease.run.window, until: "2026-10-21T20:00:00.000Z" },
+		refreshedAt: "2026-10-21T20:00:00.000Z",
+		source: "run",
+	};
+	await db.batch(await repositoryWrites(db, lease, now, repo, repo.name, null));
+	const refreshed = structuredClone(repo);
+	refreshed.observation = {
+		version: lease.run.id,
+		window: lease.run.window,
+		refreshedAt: now,
+		source: "run",
+	};
+	await db.batch(await repositoryWrites(db, lease, now, refreshed, repo.name, null));
+	const retained = await currentRepo(db, lease.run.account_id, repo.name);
+	expect(retained).toEqual(repo);
+	if (!retained) throw new Error("Missing retained repository");
+	for (const step of lease.run.steps) {
+		step.status = step.kind === "dependencies" ? "limited" : "success";
+		step.error = step.kind === "dependencies" ? "dependency_parse_unsupported" : null;
+	}
+	const events = {
+		prs: [{ id: 1, created_at: now, merged_at: now, base: { ref: "main" } }],
+		issues: [{ id: 2, created_at: now, state: "open" }],
+		actions: [{ id: 3, workflow_id: 4, created_at: now, status: "completed" }],
+		releases: [{ id: 5, published_at: now }],
+		commits: [{ sha: "current-sha", commit: { committer: { date: now }, message: "Current" } }],
+	};
+	for (const stream of ["prs", "issues", "actions", "releases", "commits"] as const)
+		await db
+			.prepare("UPDATE factory_resources SET payload=? WHERE run_id=? AND repo=? AND stream=?")
+			.bind(
+				JSON.stringify({
+					runId: lease.run.id,
+					items: mapFactoryEvents(stream, events[stream]),
+					coverage: repo.coverage[stream],
+					next: null,
+					ranges: [],
+				}),
+				lease.run.id,
+				repo.name,
+				stream,
+			)
+			.run();
+	await db.batch([await freezeActivityRepo(db, lease, now, retained, extra())]);
+	const writes = await activityPublicationWrites(db, lease, now, [retained]);
+	lease.run.status = "completed";
+	expect(await saveRun(db, lease, writes, now)).toBe(true);
+	const data = await readActivity(createDb(fixture.raw), lease.run.account_id, {});
+	const activity = data.repos[0];
+	expect(activity).toMatchObject({
+		prs: { merged: [{ id: "1" }] },
+		issues: { opened: [{ id: "2" }] },
+		ci_runs: [{ id: 3 }],
+		releases: [{ id: "5" }],
+		commits: { default: 1, other: 0, items: [{ sha: "current-sha" }] },
+		snapshot: { open_prs: [], open_issues: { other: [{ id: "2" }] } },
+	});
+	for (const stream of Object.keys(events))
+		expect(activity?.coverage[stream]).toMatchObject({ status: "complete", truncated: false });
+	expect(data.totals).toMatchObject({ ci_runs: 1, merged_prs: 1, issues_opened: 1, releases: 1 });
+	expect((await currentRepo(db, lease.run.account_id, repo.name))?.observation).toEqual(
+		repo.observation,
+	);
+});
+it.each([
+	"success",
+	"missing-id",
+	"pending",
+	"failed",
+	"missing-commit",
+	"other-repo",
+	"wrong-id",
+	"wrong-stream-run",
+])("R4 validates retained activity commit and identity evidence (%s)", async (mode) => {
+	const { freezeActivityRepo } = await import("./activity-store");
+	const { db, lease, repo } = await setup();
+	repo.observation = { version: "old", window: lease.run.window, refreshedAt: now, source: "run" };
+	const commit = lease.run.steps.find((step) => step.repo === repo.name && step.kind === "commit");
+	if (!commit) throw new Error("Missing commit step");
+	commit.status = mode === "pending" || mode === "failed" ? mode : "success";
+	if (mode === "missing-commit")
+		lease.run.steps = lease.run.steps.filter((step) => step !== commit);
+	if (mode === "other-repo") commit.repo = "nocoo/other";
+	if (mode === "wrong-id") lease.run.repoIds[repo.name] = "different-repository";
+	if (mode === "missing-id") delete lease.run.repoIds[repo.name];
+	if (mode === "wrong-stream-run")
+		await db
+			.prepare("UPDATE factory_resources SET payload=json_set(payload,'$.runId','old')")
+			.run();
+	await db.batch([await freezeActivityRepo(db, lease, now, repo, extra())]);
+	const row = await db
+		.prepare("SELECT payload FROM factory_resources WHERE stream='activity-snapshot'")
+		.first<{ payload: string }>();
+	const activity = JSON.parse(row?.payload ?? "{}");
+	const current = mode === "success" || mode === "missing-id";
+	expect(activity.snapshot.open_prs).toEqual(current ? [] : null);
+	expect(activity.ci_runs).toEqual(current ? [] : null);
+	expect(activity.commits.default).toBe(current ? 0 : null);
+	expect(activity.coverage.actions.status).toBe(current ? "complete" : "unavailable");
 });
 it("R9 activity never substitutes live security snapshots for missing staged evidence", async () => {
 	const { freezeActivityRepo } = await import("./activity-store");

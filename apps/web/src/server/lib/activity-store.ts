@@ -258,12 +258,17 @@ export async function freezeActivityRepo(
 	]);
 	if (!resources || !snapshots)
 		throw new ApiError(500, "db_error", "Incomplete activity source batch");
+	const expectedRepoId = run.repoIds[repo.name];
+	const currentRepo =
+		(expectedRepoId === undefined || expectedRepoId === repo.id) &&
+		(repo.observation?.version === run.id ||
+			run.steps.some(
+				(step) => step.repo === repo.name && step.kind === "commit" && step.status === "success",
+			));
 	const streams = new Map(
 		resources.results.flatMap((row) => {
 			const data = JSON.parse(row.payload) as FactoryStreamData;
-			return data.runId === run.id && repo.observation?.version === run.id
-				? [[row.stream, data] as const]
-				: [];
+			return data.runId === run.id && currentRepo ? [[row.stream, data] as const] : [];
 		}),
 	);
 	const kind = `repo:${repo.name}:security`;

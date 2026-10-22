@@ -931,6 +931,12 @@ or storage cut marks the affected list and the whole response truncated; nullabl
 totals must not be interpreted as zero. Old good observations are not relabeled
 as newly collected evidence. The source index registers `account:activity` with
 its publication version, content version and saved `fetchedAt`.
+Activity freezes only streams carrying this run's ID. Repository evidence is
+current when its observation version matches the run or its repository commit
+step succeeded in this run, with the repository ID matching the frozen run ID
+when available. A retained dependency evidence version therefore does not discard
+successfully collected activity streams; absent successful commit evidence,
+stale observations remain unavailable.
 Repositories with failed, unavailable or limited steps have `coverage.run.status`
 `partial`. Per-source missing evidence remains unavailable/null; a total whose
 source evidence is partial or unavailable stays null, never a fabricated zero.
