@@ -1342,3 +1342,14 @@ legacy restore. Keep removed rows unstarred independently of mutable name-based
 selection. Regression fixtures must perform actual removal and recreation, cover
 both run and legacy evidence, and distinguish same-ID reappearance from new-ID
 replacement while asserting that immutable history remains byte-identical.
+
+## 2026-10-22 - Native SQLite does not prove D1 SQL limits
+
+Adding three catalog tables to the storage telemetry UNION raised the compound
+SELECT from four terms to seven. Native SQLite tests passed, but real local D1
+rejected the query and `/factory/runs` returned 500. A local D1 replay confirmed
+five terms succeed and six fail. Keep the existing four-term compound query and
+add catalog scalar aggregates inside the same statement, preserving UTF-8 byte
+accounting, bindings and one round trip. Pair native transaction tests with a
+named D1-limit regression and real HTTP verification; native SQL compatibility
+does not imply identical engine resource limits.

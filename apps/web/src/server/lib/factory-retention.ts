@@ -9,10 +9,10 @@ export function factoryStorageStatement(db: Db, account: string): D1PreparedStat
 		UNION ALL SELECT length(CAST(payload AS BLOB)) FROM snapshot_days WHERE account_id=?
 		UNION ALL SELECT length(CAST(COALESCE(input,'')||COALESCE(judgment,'')||COALESCE(report,'') AS BLOB)) FROM ai_reviews WHERE account_id=?
  UNION ALL SELECT length(CAST(a.diagnostic AS BLOB)) FROM ai_review_attempts a JOIN ai_reviews r ON r.job_id=a.job_id WHERE r.account_id=?
-	 UNION ALL SELECT length(CAST(identity_key||COALESCE(github_id,'')||repo||row_payload||COALESCE(first_seen_at,'')||COALESCE(last_seen_at,'')||COALESCE(removed_at,'')||COALESCE(archived_changed_at,'')||visibility||first_seen_source||COALESCE(last_source_run_id,'') AS BLOB)) FROM catalog_repositories WHERE account_id=?
-	 UNION ALL SELECT length(CAST(event_id||kind||repo||COALESCE(github_id,'')||at||source_kind||COALESCE(source_run_id,'')||details AS BLOB)) FROM catalog_changes WHERE account_id=?
-	 UNION ALL SELECT length(CAST(history_since||COALESCE(checked_at,'')||COALESCE(source_run_id,'')||COALESCE(warning_code,'') AS BLOB)) FROM catalog_state WHERE account_id=?
-	)) AS totalBytes`)
+	))
+	 + (SELECT COALESCE(SUM(length(CAST(identity_key||COALESCE(github_id,'')||repo||row_payload||COALESCE(first_seen_at,'')||COALESCE(last_seen_at,'')||COALESCE(removed_at,'')||COALESCE(archived_changed_at,'')||visibility||first_seen_source||COALESCE(last_source_run_id,'') AS BLOB))),0) FROM catalog_repositories WHERE account_id=?)
+	 + (SELECT COALESCE(SUM(length(CAST(event_id||kind||repo||COALESCE(github_id,'')||at||source_kind||COALESCE(source_run_id,'')||details AS BLOB))),0) FROM catalog_changes WHERE account_id=?)
+	 + (SELECT COALESCE(SUM(length(CAST(history_since||COALESCE(checked_at,'')||COALESCE(source_run_id,'')||COALESCE(warning_code,'') AS BLOB))),0) FROM catalog_state WHERE account_id=?) AS totalBytes`)
 		.bind(account, account, account, account, account, account, account, account, account);
 }
 export function decodeFactoryStorage(row: FactoryStorage | undefined | null): FactoryStorage {
