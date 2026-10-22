@@ -2,6 +2,7 @@ import { ConfirmDialog, SegmentControl, useConfirm } from "@nocoo/basalt";
 import { useState } from "react";
 import { apiPost } from "../../lib/api";
 import { getLocalEnvironment } from "../../lib/local-environment";
+import { INLINE_SEGMENT } from "./segment";
 
 export function EnvironmentSwitch() {
 	const environment = getLocalEnvironment();
@@ -13,7 +14,7 @@ export function EnvironmentSwitch() {
 		<>
 			<SegmentControl
 				legend="数据源"
-				className="shrink-0 [&>legend]:sr-only [&_[data-slot=segment-control-viewport]]:overflow-visible [&_[data-slot=segment-control-viewport]]:pb-0"
+				className={`shrink-0 ${INLINE_SEGMENT} [&_[data-slot=segment-control-viewport]]:overflow-visible`}
 				value={environment.mode}
 				disabled={busy}
 				options={[

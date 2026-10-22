@@ -8,6 +8,7 @@ import {
 	setRepositoryScope,
 	subscribeRepositoryScope,
 } from "../../viewmodels/scope";
+import { INLINE_SEGMENT } from "./segment";
 
 export function useRepositoryScope() {
 	return useSyncExternalStore(subscribeRepositoryScope, getRepositoryScope, getRepositoryScope);
@@ -23,7 +24,7 @@ export function RepositoryScopeFilter() {
 	return (
 		<SegmentControl
 			legend="仓库范围"
-			className="shrink-0 [&>legend]:sr-only [&_[data-slot=segment-control-viewport]]:pb-0"
+			className={`shrink-0 ${INLINE_SEGMENT}`}
 			value={scope}
 			onValueChange={(value) => setRepositoryScope(value === "all" ? "all" : "starred")}
 			options={[
