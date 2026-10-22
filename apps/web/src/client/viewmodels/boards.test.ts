@@ -274,6 +274,8 @@ describe("inbox and alerts boards", () => {
 
 describe("repository boards", () => {
 	const repo = (over: Record<string, unknown>) => ({
+		star_source: null,
+		star_updated_at: null,
 		name_with_owner: "nocoo/a",
 		name: "a",
 		owner_login: "nocoo",
@@ -311,8 +313,7 @@ describe("repository boards", () => {
 		];
 		const board = reposBoard(rows, NOW, { language: "", status: "", age: "" });
 		expect(board.status.map((s) => [s.key, s.value])).toEqual([
-			["active", 2],
-			["disabled", 1],
+			["regular", 3],
 			["fork", 1],
 			["archived", 1],
 		]);
@@ -324,6 +325,9 @@ describe("repository boards", () => {
 		expect(reposBoard(rows, NOW, { language: "未标记", status: "", age: "" }).rows).toHaveLength(1);
 		expect(reposBoard(rows, NOW, { language: "", status: "archived", age: "" }).rows).toHaveLength(
 			1,
+		);
+		expect(reposBoard(rows, NOW, { language: "", status: "regular", age: "" }).rows).toHaveLength(
+			3,
 		);
 		expect(reposBoard(rows, NOW, { language: "", status: "", age: "old" }).rows).toHaveLength(1);
 	});

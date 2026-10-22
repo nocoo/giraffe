@@ -11,7 +11,8 @@ import { catalogFactory, expireRuns } from "./db/factory-runs";
 import { ApiError } from "./errors";
 import { startRefresh } from "./factory-start";
 import { normalizeScheduleConfig } from "./refresh-schedule-input";
-import { repoPolicy, statisticsFactory } from "./repo-statistics";
+import { beijingDayStart, SCHEDULE_PRIORITY } from "./schedule-admission";
+import { repoPolicy } from "./snapshot-projection";
 
 export function nextScheduleAt(
 	kind: ScheduleKind,
@@ -30,7 +31,7 @@ export function nextScheduleAt(
 		local.setUTCDate(local.getUTCDate() + (kind === "weekly" ? 7 : 1));
 	return new Date(local.getTime() - 8 * 3600000).toISOString();
 }
-type ScheduleRow = {
+export type ScheduleRow = {
 	kind: ScheduleKind;
 	enabled: number;
 	time: string;
@@ -47,34 +48,12 @@ const scheduleTable = (kind: ScheduleKind) =>
 const scheduleRows =
 	"SELECT s.*,t.times FROM (SELECT * FROM refresh_schedules UNION ALL SELECT * FROM catalog_refresh_schedules) s JOIN refresh_schedule_times t USING(account_id,kind)";
 
-function dueSlots(row: DueSchedule, now: string) {
-	const period = (row.kind === "weekly" ? 7 : 1) * 86400_000;
-	const due = Date.parse(row.next_at);
-	let count = 0;
-	const latest: number[] = [];
-	for (const time of JSON.parse(row.times) as string[]) {
-		const first = Date.parse(
-			nextScheduleAt(row.kind, time, row.weekday, new Date(due - 1).toISOString()),
-		);
-		const slots = Math.max(0, Math.floor((Date.parse(now) - first) / period) + 1);
-		count += slots;
-		if (slots > 0) latest.push(first + (slots - 1) * period);
-		if (slots > 1) latest.push(first + (slots - 2) * period);
-	}
-	latest.sort((a, b) => b - a);
-	return {
-		count: count - 1,
-		latest: new Date(latest[0] as number).toISOString(),
-		previous: latest[1],
-	};
-}
-
 function skippedRun(row: DueSchedule, owner: string, now: string, error: string): FactoryRun {
 	const run = makeRun(
 		crypto.randomUUID(),
 		row.account_id,
 		owner,
-		`${row.kind}:${row.next_at}:skipped`,
+		`${row.kind}:${row.next_at}`,
 		row.kind === "catalog" ? "catalog" : "refresh",
 		[],
 		now,
@@ -88,86 +67,117 @@ function skippedRun(row: DueSchedule, owner: string, now: string, error: string)
 		status: "failed",
 		error,
 		finishedAt: now,
+		...(error === "scheduled_slot_missed"
+			? { missedSlots: { firstDueAt: row.next_at, lastDueAt: row.next_at, count: 1 } }
+			: {}),
 	};
 }
 
-function skippedRunInsert(db: Db, row: DueSchedule, run: FactoryRun): D1PreparedStatement {
+function advanceSchedule(db: Db, row: DueSchedule, run: Pick<FactoryRun, "id" | "error">) {
 	return db
 		.prepare(
-			`INSERT OR IGNORE INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) SELECT ?,?,?,'failed',?,?,?,? WHERE EXISTS(SELECT 1 FROM ${scheduleTable(row.kind)} WHERE account_id=? AND kind=? AND enabled=1 AND next_at=?) AND NOT EXISTS(SELECT 1 FROM factory_runs WHERE account_id=? AND request_key=?)`,
+			`UPDATE ${scheduleTable(row.kind)} SET next_at=?,last_run_id=?,last_error=CASE WHEN last_error IN ('run_timed_out','scheduled_slots_missed','scheduled_slot_missed') THEN last_error WHEN ? IS NOT NULL THEN ? WHEN last_error='catalog_preparation_failed' THEN last_error ELSE NULL END WHERE account_id=? AND kind=? AND enabled=1 AND next_at=? AND EXISTS(SELECT 1 FROM factory_runs WHERE id=? AND account_id=? AND request_key=?)`,
 		)
 		.bind(
+			nextScheduleAt(row.kind, JSON.parse(row.times), row.weekday, row.next_at),
 			run.id,
-			row.account_id,
-			run.requestKey,
-			JSON.stringify(run),
-			run.startedAt,
-			run.startedAt,
-			run.startedAt,
+			run.error ?? null,
+			run.error ?? null,
 			row.account_id,
 			row.kind,
 			row.next_at,
+			run.id,
 			row.account_id,
 			`${row.kind}:${row.next_at}`,
 		);
 }
 
-async function coalesceMissedSlots(
-	db: Db,
+async function recordFailure(
+	raw: D1Database,
 	row: DueSchedule,
 	owner: string,
 	now: string,
-): Promise<boolean> {
-	const accepted = await db
-		.prepare("SELECT id FROM factory_runs WHERE account_id=? AND request_key=?")
-		.bind(row.account_id, `${row.kind}:${row.next_at}`)
-		.first<{ id: string }>();
-	if (accepted) {
-		const next = nextScheduleAt(row.kind, JSON.parse(row.times), row.weekday, row.next_at);
-		const result = await db
-			.prepare(
-				`UPDATE ${scheduleTable(row.kind)} SET next_at=?,last_run_id=? WHERE account_id=? AND kind=? AND enabled=1 AND next_at=?`,
-			)
-			.bind(next, accepted.id, row.account_id, row.kind, row.next_at)
-			.run();
-		if (!result.meta.changes || next > now) return false;
-		row.next_at = next;
-	}
-	const { count, latest, previous } = dueSlots(row, now);
-	if (count === 0) return true;
-	const run = skippedRun(row, owner, now, "scheduled_slots_missed");
-	run.missedSlots = {
-		firstDueAt: row.next_at,
-		lastDueAt: new Date(previous as number).toISOString(),
-		count,
-	};
-	const results = await db.batch([
-		skippedRunInsert(db, row, run),
+	error: string,
+) {
+	const db = createDb(raw);
+	const run = skippedRun(row, owner, now, error);
+	const result = await db.batch([
 		db
 			.prepare(
-				`UPDATE ${scheduleTable(row.kind)} SET next_at=?,last_error='scheduled_slots_missed' WHERE account_id=? AND kind=? AND enabled=1 AND next_at=? AND EXISTS(SELECT 1 FROM factory_runs WHERE id=?) AND NOT EXISTS(SELECT 1 FROM factory_runs WHERE account_id=? AND request_key=?)`,
+				`INSERT OR IGNORE INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) SELECT ?,?,?,'failed',?,?,?,? WHERE EXISTS(SELECT 1 FROM ${scheduleTable(row.kind)} WHERE account_id=? AND kind=? AND enabled=1 AND next_at=?)`,
 			)
 			.bind(
-				latest,
+				run.id,
+				row.account_id,
+				run.requestKey,
+				JSON.stringify(run),
+				now,
+				now,
+				now,
 				row.account_id,
 				row.kind,
 				row.next_at,
-				run.id,
-				row.account_id,
-				`${row.kind}:${row.next_at}`,
 			),
+		advanceSchedule(db, row, run),
 	]);
-	if (!results[1]?.meta.changes) return false;
-	row.next_at = latest;
-	return true;
+	return Boolean(result[1]?.meta.changes);
 }
+
+async function scheduleError(raw: D1Database, row: DueSchedule, error: string) {
+	await createDb(raw)
+		.prepare(
+			`UPDATE ${scheduleTable(row.kind)} SET last_error=CASE WHEN last_error IN ('run_timed_out','scheduled_slots_missed','scheduled_slot_missed') THEN last_error ELSE ? END WHERE account_id=? AND kind=? AND enabled=1 AND next_at=?`,
+		)
+		.bind(error, row.account_id, row.kind, row.next_at)
+		.run();
+}
+
+async function normalizePending(
+	raw: D1Database,
+	original: DueSchedule,
+	owner: string,
+	now: string,
+) {
+	let row = original;
+	for (let settled = 0; settled < 32 && row.next_at <= now; settled++) {
+		const db = createDb(raw);
+		const accepted = await db
+			.prepare(
+				"SELECT id,json_extract(payload,'$.error') AS error FROM factory_runs WHERE account_id=? AND request_key=?",
+			)
+			.bind(row.account_id, `${row.kind}:${row.next_at}`)
+			.first<{ id: string; error: string | null }>();
+		let advanced = false;
+		if (accepted)
+			advanced = Boolean(
+				(
+					await advanceSchedule(db, row, {
+						id: accepted.id,
+						...(accepted.error ? { error: accepted.error } : {}),
+					}).run()
+				).meta.changes,
+			);
+		else if (row.kind !== "weekly" && row.next_at < beijingDayStart(now))
+			advanced = await recordFailure(raw, row, owner, now, "scheduled_slot_missed");
+		else return;
+		if (!advanced) return;
+		row = {
+			...row,
+			next_at: nextScheduleAt(row.kind, JSON.parse(row.times), row.weekday, row.next_at),
+		};
+	}
+	if (row.next_at <= now) await scheduleError(raw, row, "schedule_backlog");
+}
+
 export async function readSchedules(db: Db, account: string): Promise<RefreshSchedule[]> {
-	const rows = await db
-		.prepare(`${scheduleRows} WHERE account_id=?`)
-		.bind(account)
-		.all<ScheduleRow>();
+	return decodeSchedules((await schedulesStatement(db, account).all<ScheduleRow>()).results);
+}
+export function schedulesStatement(db: Db, account: string): D1PreparedStatement {
+	return db.prepare(`${scheduleRows} WHERE account_id=?`).bind(account);
+}
+export function decodeSchedules(rows: ScheduleRow[]): RefreshSchedule[] {
 	return (["daily", "weekly", "catalog"] as const).map((kind) => {
-		const row = rows.results.find((r) => r.kind === kind);
+		const row = rows.find((item) => item.kind === kind);
 		return row
 			? {
 					kind,
@@ -211,11 +221,26 @@ export async function saveSchedule(
 	]);
 }
 export async function starredRepos(db: Db, account: string): Promise<string[]> {
-	const rows = await db
-		.prepare("SELECT repo FROM repo_stars WHERE account_id=? ORDER BY repo")
-		.bind(account)
-		.all<{ repo: string }>();
+	const rows = await starredReposStatement(db, account).all<{ repo: string }>();
 	return rows.results.map((r) => r.repo);
+}
+export function starredReposStatement(db: Db, account: string): D1PreparedStatement {
+	return db
+		.prepare("SELECT repo FROM repo_stars WHERE account_id=? AND starred=1 ORDER BY repo")
+		.bind(account);
+}
+export async function readScheduleSettings(db: Db, account: string) {
+	const results = await db.batch([
+		schedulesStatement(db, account),
+		starredReposStatement(db, account),
+	]);
+	const schedules = results[0];
+	const stars = results[1];
+	if (!schedules || !stars) throw new ApiError(500, "db_error", "incomplete settings batch");
+	return {
+		schedules: decodeSchedules(schedules.results as ScheduleRow[]),
+		stars: (stars.results as { repo: string }[]).map((row) => row.repo),
+	};
 }
 export async function enableDefaultSchedules(db: Db, account: string, now: string): Promise<void> {
 	for (const kind of ["daily", "weekly"] as const) {
@@ -235,68 +260,85 @@ export async function enableDefaultSchedules(db: Db, account: string, now: strin
 			.run();
 	}
 }
-export async function scheduleRefreshes(raw: D1Database, now: string): Promise<void> {
-	await expireRuns(createDb(raw), now);
+export async function scheduleRefreshes(
+	raw: D1Database,
+	now: string,
+	accountId = "",
+	clock = () => now,
+): Promise<void> {
+	await expireRuns(createDb(raw), now, accountId);
 	const due = await createDb(raw)
-		.prepare(`${scheduleRows} WHERE enabled=1 AND next_at<=? ORDER BY next_at,kind DESC LIMIT 10`)
-		.bind(now)
+		.prepare(
+			`${scheduleRows} WHERE enabled=1 AND next_at<=? AND (?='' OR account_id=?) ORDER BY next_at,kind DESC`,
+		)
+		.bind(now, accountId, accountId)
 		.all<DueSchedule>();
 	for (const row of due.results) {
-		const db = createDb(raw);
-		let runId: string | null = null;
-		let error: string | null = null;
-		let advance = false;
-		let skipped: FactoryRun | null = null;
 		try {
-			const account = await getAccount(db, row.account_id);
-			if (!account) continue;
-			if (!(await coalesceMissedSlots(db, row, account.login, now))) continue;
-			let repos: string[] = [];
-			if (row.kind !== "catalog") {
-				const catalog = await catalogFactory(db, account.id);
-				if (
-					!catalog?.inventory.complete ||
-					Date.parse(now) - Date.parse(catalog.fetched_at) >= 86400_000
-				) {
-					const preparation = await startRefresh(
-						db,
-						account,
-						{
-							account_id: account.id,
-							requestKey: `${row.kind}:${row.next_at}:catalog`,
-							mode: "catalog",
-							depth: "quick",
-							scope: "all",
-						},
-						now,
-						row.kind,
-						{ kind: row.kind, dueAt: row.next_at },
-					);
-					advance = !["running", "paused"].includes(preparation.status);
-					throw new ApiError(
-						409,
-						preparation.status === "running" || preparation.status === "paused"
-							? "catalog_pending"
-							: "catalog_incomplete",
-						"scheduled catalogue preparation",
-					);
+			const account = await getAccount(createDb(raw), row.account_id);
+			if (account) await normalizePending(raw, row, account.login, now);
+		} catch (error) {
+			await scheduleError(raw, row, error instanceof ApiError ? error.code : "internal_error");
+		}
+	}
+	const accounts = [...new Set(due.results.map((row) => row.account_id))];
+	for (const id of accounts) {
+		const candidates = await createDb(raw)
+			.prepare(
+				`WITH pending AS (${scheduleRows} WHERE account_id=? AND enabled=1 AND next_at<=? AND (kind='weekly' OR next_at>=?)) SELECT * FROM pending ORDER BY ${SCHEDULE_PRIORITY}`,
+			)
+			.bind(id, now, beijingDayStart(now))
+			.all<DueSchedule>();
+		for (const row of candidates.results) {
+			const db = createDb(raw);
+			try {
+				const account = await getAccount(db, row.account_id);
+				if (!account) continue;
+				let repos: string[] = [];
+				if (row.kind !== "catalog") {
+					let catalog = await catalogFactory(db, account.id);
+					let policy = await repoPolicy(db, account.id, undefined, row.scope);
+					const ready = () =>
+						catalog?.inventory.complete &&
+						Date.parse(now) - Date.parse(catalog.fetched_at) < 86400_000 &&
+						policy.repos.every((repo) =>
+							catalog?.repos.some((entry) => entry.name === repo.name_with_owner),
+						);
+					if (!ready()) {
+						const preparation = await startRefresh(
+							db,
+							account,
+							{
+								account_id: account.id,
+								requestKey: `${row.kind}:${row.next_at}:catalog`,
+								mode: "catalog",
+								depth: "quick",
+								scope: "all",
+							},
+							now,
+							row.kind,
+							{ kind: row.kind, dueAt: row.next_at },
+							clock,
+						);
+						if (["running", "paused"].includes(preparation.status)) {
+							await scheduleError(raw, row, "catalog_pending");
+							continue;
+						}
+						if (preparation.status === "completed") {
+							catalog = await catalogFactory(db, account.id);
+							policy = await repoPolicy(db, account.id, undefined, row.scope);
+						}
+						if (!ready()) {
+							await recordFailure(raw, row, account.login, clock(), "catalog_preparation_failed");
+							continue;
+						}
+					}
+					repos = policy.repos.map((repo) => repo.name_with_owner);
 				}
-				const policy = await repoPolicy(db, account.id);
-				const stars = new Set(
-					(await starredRepos(db, account.id)).map((name) => name.toLowerCase()),
-				);
-				repos =
-					row.scope === "all"
-						? statisticsFactory(catalog, policy).repos.map((repo) => repo.name)
-						: policy.repos
-								.filter((repo) => stars.has(repo.name_with_owner.toLowerCase()))
-								.map((repo) => repo.name_with_owner);
-			}
-			if (row.kind !== "catalog" && !repos.length) {
-				error = "no_starred_repositories";
-				advance = true;
-				skipped = skippedRun(row, account.login, now, error);
-			} else {
+				if (row.kind !== "catalog" && !repos.length) {
+					await recordFailure(raw, row, account.login, clock(), "no_starred_repositories");
+					continue;
+				}
 				const run = await startRefresh(
 					db,
 					account,
@@ -311,27 +353,12 @@ export async function scheduleRefreshes(raw: D1Database, now: string): Promise<v
 					now,
 					row.kind === "weekly" ? "weekly" : "daily",
 					{ kind: row.kind, dueAt: row.next_at },
+					clock,
 				);
-				runId = run.id;
-				advance = true;
+				await advanceSchedule(db, row, run).run();
+			} catch (error) {
+				await scheduleError(raw, row, error instanceof ApiError ? error.code : "internal_error");
 			}
-		} catch (e) {
-			error = e instanceof ApiError ? e.code : "internal_error";
 		}
-		const update = db
-			.prepare(
-				`UPDATE ${scheduleTable(row.kind)} SET next_at=?,last_run_id=COALESCE(?,last_run_id),last_error=CASE WHEN last_error IN ('run_timed_out','scheduled_slots_missed') THEN last_error ELSE ? END WHERE account_id=? AND kind=? AND enabled=1 AND next_at=? AND (? IS NULL OR EXISTS(SELECT 1 FROM factory_runs WHERE id=?))`,
-			)
-			.bind(
-				advance ? nextScheduleAt(row.kind, JSON.parse(row.times), row.weekday, now) : row.next_at,
-				runId ?? skipped?.id ?? null,
-				error,
-				row.account_id,
-				row.kind,
-				row.next_at,
-				skipped?.id ?? null,
-				skipped?.id ?? null,
-			);
-		await db.batch([...(skipped ? [skippedRunInsert(db, row, skipped)] : []), update]);
 	}
 }

@@ -2,36 +2,54 @@ import type { Context } from "hono";
 import { z } from "zod";
 import type { Env } from "../env";
 import { getAccount } from "../lib/db/accounts";
-import { controlRun, getRun, listRuns } from "../lib/db/factory-runs";
+import {
+	controlRun,
+	decodeRuns,
+	getRun,
+	listRunsStatement,
+	type RunListRow,
+} from "../lib/db/factory-runs";
 import { ApiError } from "../lib/errors";
-import { enqueueRun } from "../lib/factory-dispatch";
+import { enqueueRun, handoffAccount } from "../lib/factory-dispatch";
 import { refreshInput, startRefresh } from "../lib/factory-start";
 import { requireCatalogRepo } from "../lib/machine-observations";
 import { assertMachineQuery } from "../lib/machine-query";
 import { readJson } from "../lib/read-body";
-import { readSchedules, saveSchedule, starredRepos } from "../lib/refresh-schedule";
+import { readScheduleSettings, saveSchedule } from "../lib/refresh-schedule";
 import { normalizeScheduleConfig, scheduleConfigInput } from "../lib/refresh-schedule-input";
+import { readStarReason, readStars, writeStar } from "../lib/repo-stars";
+import {
+	decodeRunEstimates,
+	estimateRunFinish,
+	type RunEstimateRow,
+	runEstimateStatement,
+} from "../lib/run-estimates";
+import { timedJson } from "../lib/timed-json";
 import type { MachineVars } from "./machine";
 
 type Ctx = Context<{ Bindings: Env; Variables: MachineVars }>;
+export async function getMachineStars(c: Ctx) {
+	assertMachineQuery(c.req.query());
+	return c.json({ items: await readStars(c.get("db"), c.get("principal").accountId) });
+}
 export async function getMachineSettings(c: Ctx) {
 	const account = c.get("principal").accountId;
 	const db = c.get("db");
-	const stats = await db
-		.prepare("SELECT repo,enabled FROM repo_statistics WHERE account_id=? ORDER BY repo")
-		.bind(account)
-		.all<{ repo: string; enabled: number }>();
-	return c.json({
+	const settings = await readScheduleSettings(db, account);
+	return timedJson(c, {
 		account_id: account,
-		stars: await starredRepos(db, account),
-		statistics: stats.results.map((r) => ({ ...r, enabled: r.enabled === 1 })),
-		schedules: await readSchedules(db, account),
+		stars: settings.stars,
+		statistics: [],
+		statistics_deprecated: true,
+		schedules: settings.schedules,
 	});
 }
 export async function machineSetting(c: Ctx) {
 	const method = c.req.method;
 	if (!["PUT", "DELETE"].includes(method))
 		throw new ApiError(405, "method_not_allowed", "method not allowed");
+	if (c.req.path.includes("/statistics/"))
+		throw new ApiError(410, "deprecated", "statistics settings are replaced by stars");
 	const account = c.get("principal").accountId;
 	const db = c.get("db");
 	const now = new Date().toISOString();
@@ -61,53 +79,45 @@ export async function machineSetting(c: Ctx) {
 			account,
 			`${c.req.param("owner")}/${c.req.param("name")}`,
 		);
-		const star = c.req.path.includes("/stars/");
-		const table = star ? "repo_stars" : "repo_statistics";
-		if (method === "DELETE")
-			await db
-				.prepare(`DELETE FROM ${table} WHERE account_id=? AND repo=?`)
-				.bind(account, repo)
-				.run();
-		else if (star)
-			await db
-				.prepare(
-					"INSERT INTO repo_stars(account_id,repo) VALUES(?,?) ON CONFLICT(account_id,repo) DO NOTHING",
-				)
-				.bind(account, repo)
-				.run();
-		else {
-			const parsed = z
-				.object({ enabled: z.boolean() })
-				.strict()
-				.safeParse(await readJson(c.req.raw, 2048));
-			if (!parsed.success) throw new ApiError(400, "validation_failed", "invalid statistics");
-			await db
-				.prepare(
-					"INSERT INTO repo_statistics(account_id,repo,enabled) VALUES(?,?,?) ON CONFLICT(account_id,repo) DO UPDATE SET enabled=excluded.enabled",
-				)
-				.bind(account, repo, Number(parsed.data.enabled))
-				.run();
-		}
+		const reason = await readStarReason(c.req.raw);
+		const { item, changed } = await writeStar(
+			db,
+			account,
+			repo,
+			method === "PUT",
+			"agent",
+			reason,
+			now,
+		);
+		c.set("starUnchanged", !changed);
+		return c.json(item);
 	}
 	return method === "DELETE" ? c.body(null, 204) : getMachineSettings(c);
 }
 export async function machineRuns(c: Ctx) {
 	const accountId = c.get("principal").accountId;
 	const db = c.get("db");
-	const account = await getAccount(db, accountId);
-	if (!account) throw new ApiError(404, "not_found", "account unavailable");
 	const id = c.req.param("id");
 	if (c.req.method === "GET" && !id) {
 		assertMachineQuery(c.req.query());
-		return c.json({
+		const results = await db.batch([
+			db.prepare("SELECT id FROM accounts WHERE id=?").bind(accountId),
+			runEstimateStatement(db, accountId),
+			listRunsStatement(db, accountId),
+		]);
+		if (!results[0]?.results.length) throw new ApiError(404, "not_found", "account unavailable");
+		const calibration = decodeRunEstimates(results[1]?.results as RunEstimateRow[]);
+		return timedJson(c, {
 			account_id: accountId,
-			items: (await listRuns(db, accountId)).map(({ run, counts }) => {
+			items: decodeRuns(results[2]?.results as RunListRow[]).map(({ run, counts }) => {
 				const { checkpoint, ...data } = run;
 				void checkpoint;
-				return { ...data, counts };
+				return { ...data, ...estimateRunFinish(run, counts.total, calibration), counts };
 			}),
 		});
 	}
+	const account = await getAccount(db, accountId);
+	if (!account) throw new ApiError(404, "not_found", "account unavailable");
 	if (c.req.method !== "POST") throw new ApiError(405, "method_not_allowed", "method not allowed");
 	const body = await readJson(c.req.raw, 120000);
 	const now = new Date().toISOString();
@@ -131,5 +141,12 @@ export async function machineRuns(c: Ctx) {
 		} catch {
 			/* Durable cron resumes a queued run. */
 		}
+	else if (id && run.status !== "paused") {
+		try {
+			await handoffAccount(c.env, accountId);
+		} catch {
+			/* Durable cron resumes a queued run. */
+		}
+	}
 	return c.json({ account_id: accountId, id: run.id, status: run.status }, 202);
 }

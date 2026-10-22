@@ -469,7 +469,14 @@ Origin 必过。未知 id → 404。删除行，CASCADE 快照。204 无 body。
 
 ### `GET /api/ci`
 
-只读派生视图，不回源 GitHub、不写 D1。无账号 409 `account_missing`；无 `repos` 快照 409 `snapshot_missing`。一条语句读取当前账号全部 `repo:*:actions`、`:releases`、`:details` 快照（含 `#2` 分页），只纳入参与统计的仓库；参与统计但没有 Actions 快照的仓库列在 `unsaved`，不算作健康。
+Read-only derived view: no upstream GitHub request or D1 write. Missing account
+returns 409 `account_missing`; missing repository snapshot returns 409
+`snapshot_missing`. Batched account reads include saved Actions, releases and
+details, including split snapshot pages. Scope selects owned repositories: all
+includes owned forks and archives, while starred selects the locally starred
+subset. No independent statistics override applies. Selected repositories without
+an Actions snapshot appear in `unsaved`, never as healthy; selected members with
+missing required source times also remain in the freshness denominator.
 
 判定在 `src/lib/ci-health.ts`，基准时间取最新 Actions 快照的 `fetched_at`，不取请求时刻。一条「流」= 工作流 × 线路：默认分支与版本标签（`v1.2`）为一条线，功能分支单独成线，仅在 7 天内活跃且未通过时列出；逐次编号的运行名（`Deploy CI 352…`）合并，Dependabot 更新任务（`event=dynamic` 或 `… - Update #n`）归入 `bot`，不影响仓库结论。每条流取 30 天内最近 10 次成功/失败判定（`failure`、`timed_out`、`action_required`、`startup_failure` 为失败，取消与跳过不计）：
 

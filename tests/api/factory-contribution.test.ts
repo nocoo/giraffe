@@ -94,7 +94,7 @@ beforeAll(() => {
 	rows(
 		[
 			"UPDATE accounts SET is_active=0 WHERE is_active=1;",
-			`INSERT INTO accounts(id,login,token_ciphertext,token_last4,is_active,created_at,updated_at) VALUES(${quote(account)},${quote(`factory-r1-${account}`)},'test-not-an-encrypted-pat','fake',1,${quote(now)},${quote(now)});`,
+			`INSERT INTO accounts(id,login,token_ciphertext,token_last4,is_active,created_at,updated_at) VALUES(${quote(account)},'nocoo','test-not-an-encrypted-pat','fake',1,${quote(now)},${quote(now)});`,
 			`INSERT INTO api_tokens(id,account_id,token_hash,label,scopes,creator,created_at,expires_at) VALUES(${quote(account)},${quote(account)},${quote(createHash("sha256").update(bearer).digest("hex"))},'factory calendar L2','["observations:read"]','local test',${quote(now)},${quote(new Date(Date.now() + 86400_000).toISOString())});`,
 			snapshot("repos", {
 				repos: [{ name_with_owner: "nocoo/app" }, { name_with_owner: "nocoo/disabled" }],
@@ -103,7 +103,7 @@ beforeAll(() => {
 			}),
 			snapshot(`factory:v:${publication.runId}`, publication),
 			`INSERT INTO factory_state(account_id,published_id,next_at) VALUES(${quote(account)},${quote(publication.runId)},${quote(at)});`,
-			`INSERT INTO repo_stars VALUES(${quote(account)},'NOCOO/APP'),(${quote(account)},'nocoo/removed');`,
+			`INSERT INTO repo_stars(account_id,repo) VALUES(${quote(account)},'NOCOO/APP'),(${quote(account)},'nocoo/removed');`,
 			`INSERT INTO repo_statistics VALUES(${quote(account)},'nocoo/disabled',0);`,
 		].join("\n"),
 	);
@@ -148,11 +148,9 @@ it.each(["complete", "pending", "unavailable"] as const)(
 				const data = (machine ? (body as { data: FactorySnapshot }).data : body) as FactorySnapshot;
 				const starred = selector === "?scope=starred";
 				expect(data.repos.map((repo) => repo.name)).toEqual(
-					machine && !starred ? ["nocoo/app", "nocoo/disabled"] : ["nocoo/app"],
+					!starred ? ["nocoo/app", "nocoo/disabled"] : ["nocoo/app"],
 				);
-				expect(data.inventory.excluded).toEqual(
-					!machine && !starred ? [{ name: "nocoo/disabled", reason: "statistics-disabled" }] : [],
-				);
+				expect(data.inventory.excluded).toEqual([]);
 				expect(data.window).toEqual(publication.window);
 				expect(data.publication).toEqual(publication.publication);
 				if (starred) {

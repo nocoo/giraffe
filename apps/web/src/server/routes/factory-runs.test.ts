@@ -290,15 +290,42 @@ it("returns compact history with accurate totals and expands only the requested 
 	expect((await s.call(`/api/factory/runs?history=${"x".repeat(81)}`)).status).toBe(400);
 });
 
-it("freezes all accessible detail pages, including repositories excluded from factory metrics", async () => {
+it("freezes the same owned archive/fork membership for streams and detail pages", async () => {
 	const s = await setup();
+	const first = snapshot.repos[0];
+	if (!first) throw new Error("missing fixture");
+	await s.db.batch(
+		await replaceSnapshotStmts(
+			s.db,
+			id,
+			"factory",
+			{
+				...snapshot,
+				repos: [
+					...snapshot.repos,
+					{
+						...first,
+						id: "archived-fork",
+						name: "nocoo/archived-fork",
+						is_archived: true,
+						is_fork: true,
+					},
+				],
+			},
+			snapshot.fetched_at,
+		),
+	);
 	await s.db.batch(
 		await replaceSnapshotStmts(
 			s.db,
 			id,
 			"repos",
 			{
-				repos: [{ name_with_owner: "nocoo/app" }, { name_with_owner: "org/archived-fork" }],
+				repos: [
+					{ name_with_owner: "nocoo/app" },
+					{ name_with_owner: "nocoo/archived-fork", is_archived: true, is_fork: true },
+					{ name_with_owner: "org/external" },
+				],
 				truncated: false,
 			},
 			snapshot.fetched_at,
@@ -308,14 +335,46 @@ it("freezes all accessible detail pages, including repositories excluded from fa
 		(await s.call("/api/factory/runs", { ...plan(), scope: "all", repos: undefined })).status,
 	).toBe(202);
 	const state = (await (await s.call()).json()) as FactoryRunResponse;
-	expect(state.current?.repos).toEqual(["nocoo/app"]);
-	expect(state.current?.siteRepos).toEqual(["nocoo/app", "org/archived-fork"]);
+	expect(state.current?.repos).toEqual(["nocoo/app", "nocoo/archived-fork"]);
+	expect(state.current?.siteRepos).toEqual(["nocoo/app", "nocoo/archived-fork"]);
 	expect(state.current?.steps).toEqual(
 		expect.arrayContaining([
-			expect.objectContaining({ resource: "repo:org/archived-fork:details" }),
+			expect.objectContaining({ resource: "repo:nocoo/archived-fork:details" }),
+			expect.objectContaining({ kind: "metadata", repo: "nocoo/archived-fork" }),
 		]),
 	);
+	expect(state.current?.steps.some((step) => step.repo === "org/external")).toBe(false);
 });
+
+it.each(["all", "selected"] as const)(
+	"requires rediscovery rather than silently omitting owned catalog-only members for %s",
+	async (scope) => {
+		const s = await setup();
+		await s.db.batch(
+			await replaceSnapshotStmts(
+				s.db,
+				id,
+				"repos",
+				{
+					repos: [
+						{ name_with_owner: "nocoo/app" },
+						{ name_with_owner: "nocoo/legacy-archive", is_archived: true },
+					],
+					truncated: false,
+				},
+				snapshot.fetched_at,
+			),
+		);
+		const response = await s.call("/api/factory/runs", {
+			...plan(),
+			scope,
+			repos: scope === "selected" ? ["nocoo/legacy-archive"] : undefined,
+		});
+		expect(response.status).toBe(409);
+		expect(await response.json()).toMatchObject({ error: { code: "catalog_incomplete" } });
+		expect((await s.db.prepare("SELECT id FROM factory_runs").all()).results).toEqual([]);
+	},
+);
 
 it("requires a complete site catalog before a full refresh, including on an existing installation", async () => {
 	for (const missing of [true, false]) {

@@ -51,6 +51,19 @@ export function ensureLocalSchema(): void {
 			if (migrated === 2) continue;
 			if (migrated !== 0) throw new Error("Partial source content migration");
 		}
+		if (file === "0017_star_provenance.sql") {
+			const stdout = d1([
+				"--command",
+				"SELECT COUNT(*) AS migrated FROM pragma_table_info('repo_stars') WHERE name IN ('starred','source','updated_at','reason')",
+				"--json",
+			]);
+			const result = JSON.parse(stdout.slice(stdout.indexOf("["))) as Array<{
+				results: Array<{ migrated: number }>;
+			}>;
+			const migrated = result[0]?.results[0]?.migrated;
+			if (migrated === 4) continue;
+			if (migrated !== 0) throw new Error("Partial star provenance migration");
+		}
 		d1([`--file=${join(migrations, file)}`]);
 	}
 }

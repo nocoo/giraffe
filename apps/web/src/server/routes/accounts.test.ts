@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import type { Env } from "../env";
 import { createApp } from "../index";
 import { insertAccountStmt } from "../lib/db/accounts";
@@ -10,7 +11,7 @@ const PAT = `ghp_${"A".repeat(36)}`;
 function env(): Env {
 	return {
 		FACTORY_QUEUE: {} as Queue,
-		DB: openSqliteD1(true),
+		DB: sqliteFixture(),
 		ASSETS: { fetch: async () => new Response("x") } as unknown as Fetcher,
 		TOKEN_ENCRYPTION_KEY_CURRENT: "1",
 		TOKEN_ENCRYPTION_KEY_V1: "0".repeat(64),

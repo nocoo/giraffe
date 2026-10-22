@@ -157,7 +157,7 @@ function levelOf(score: number, reasons: FocusReason[]): FocusRepo["level"] {
 	return score >= 15 ? "attention" : "watch";
 }
 
-/** Ranks participating repositories by weighted evidence; every point carries a readable reason. */
+/** Ranks scoped repositories by weighted evidence; every point carries a readable reason. */
 export function focusRanking(src: FocusSources, limit = FOCUS_LIMIT): FocusRepo[] {
 	const now = Date.parse(src.fetchedAt);
 	const issues = group(src.issues, (r) => r.name_with_owner);
@@ -262,7 +262,7 @@ export function focusFindings(src: FocusSources): Finding[] {
 	if (repos && quiet / repos >= 0.2)
 		out.push({
 			tone: "gray",
-			text: `${quiet} 个参与统计的仓库超过 90 天未推送，可考虑归档或排除出统计`,
+			text: `当前范围有 ${quiet} 个仓库超过 90 天未推送，可考虑归档或取消星标以仅每周刷新`,
 		});
 
 	return out;

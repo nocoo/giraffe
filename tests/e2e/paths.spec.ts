@@ -76,6 +76,11 @@ test("settings PAT, unified refresh, repo list, and repo detail", async ({ page 
 	const star = page.getByRole("button", { name: "星标 octocat/hello-world", exact: true });
 	await star.click();
 	await expect(star).toHaveAttribute("aria-pressed", "true");
+	const ownerMarker = page.getByRole("note", {
+		name: "octocat/hello-world 星标来源：owner",
+		exact: true,
+	});
+	await expect(ownerMarker).toBeVisible();
 	await page.reload();
 	await expect(star).toHaveAttribute("aria-pressed", "true");
 	await page.goto("/refresh");
@@ -88,21 +93,25 @@ test("settings PAT, unified refresh, repo list, and repo detail", async ({ page 
 	await page.getByRole("tab", { name: "自动刷新", exact: true }).click();
 	await expect(page.getByLabel("每日快速刷新时间", { exact: true })).toHaveValue("09:15");
 	await page.goto("/repos");
-	const toggle = page.getByRole("switch", { name: "octocat/hello-world 参与统计", exact: true });
-	await expect(toggle).toBeChecked();
-	await toggle.click();
-	await expect(toggle).not.toBeChecked();
-	await expect(toggle).toBeEnabled();
+	await expect(page.getByRole("switch", { name: /参与统计/ })).toHaveCount(0);
+	await page
+		.getByRole("group", { name: "仓库范围" })
+		.getByRole("radio", { name: "全部", exact: true })
+		.click();
+	await star.click();
+	await expect(star).toHaveAttribute("aria-pressed", "false");
 	await page.reload();
-	await expect(toggle).not.toBeChecked();
-	const factory = await page.request.get("/api/factory");
+	await page
+		.getByRole("group", { name: "仓库范围" })
+		.getByRole("radio", { name: "全部", exact: true })
+		.click();
+	await expect(star).toHaveAttribute("aria-pressed", "false");
+	await expect(ownerMarker).toBeVisible();
+	const factory = await page.request.get("/api/factory?scope=starred");
 	expect((await factory.json()).repos).toEqual([]);
-	await page.goto("/factory");
-	await expect(page.locator(".factory-repo-link")).toHaveCount(0);
-	await page.goto("/repos");
-	await toggle.click();
-	await expect(toggle).toBeChecked();
-	await expect(toggle).toBeEnabled();
+	expect((await (await page.request.get("/api/factory?scope=all")).json()).repos).toHaveLength(1);
+	await star.click();
+	await expect(star).toHaveAttribute("aria-pressed", "true");
 	expect((await (await page.request.get("/api/factory")).json()).repos).toHaveLength(1);
 
 	await list.getByRole("link", { name: "octocat/hello-world" }).click();

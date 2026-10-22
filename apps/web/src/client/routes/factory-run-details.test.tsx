@@ -25,7 +25,13 @@ it("renders limited work as fully processed with its own count and safe diagnost
 		error: "dependency_parse_unsupported",
 	});
 	run.status = "completed";
-	const view = { ...run, progress: runProgress(run, snapshot.fetched_at), leaseUntil: null };
+	const view = {
+		...run,
+		progress: runProgress(run, snapshot.fetched_at),
+		leaseUntil: null,
+		expectedFinishAt: null,
+		expectedFinishAtReason: "no_completed_history" as const,
+	};
 	const html = renderToStaticMarkup(
 		<MemoryRouter>
 			<FactoryRunDetails

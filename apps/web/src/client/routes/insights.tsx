@@ -293,7 +293,7 @@ export function InsightsPage() {
 					</p>
 					<ChartBrick
 						title="仓库健康地图"
-						description="每个方块是一个参与统计的仓库，风险在前。颜色表示健康状态，方块内是距最近推送天数；悬停查看触发的规则，点击打开仓库。"
+						description="每个方块是当前范围内的一个自有仓库，风险在前。颜色表示健康状态，方块内是距最近推送天数；悬停查看触发的规则，点击打开仓库。"
 					>
 						<HealthMap tiles={tiles} />
 					</ChartBrick>

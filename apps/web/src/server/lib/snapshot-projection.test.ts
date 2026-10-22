@@ -8,11 +8,45 @@ import { createDb } from "./db/d1";
 import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
 import { readObservation } from "./machine-observations";
 import {
+	policyFromSaved,
+	projectFactory,
 	projectSnapshot,
 	repoPolicy,
-	statisticsFactory,
-	statisticsSnapshot,
-} from "./repo-statistics";
+	scopedSnapshot,
+} from "./snapshot-projection";
+import { selectionFromStars } from "./snapshot-scope";
+
+it.each(["all", "starred"] as const)(
+	"projects selected unpublished membership without inventing %s observations",
+	(scope) => {
+		const snapshot = factoryFixture();
+		const before = structuredClone(snapshot);
+		const catalog = {
+			repos: [
+				{ name_with_owner: "nocoo/app", primary_language: "TypeScript" },
+				{ name_with_owner: "nocoo/missing", description: "Unpublished", primary_language: "Swift" },
+				{ name_with_owner: "outside/foreign" },
+			],
+		};
+		const selection = selectionFromStars(
+			catalog.repos.map((repo) => ({
+				repo: repo.name_with_owner,
+				starred: 1,
+				source: "owner" as const,
+				updated_at: snapshot.fetched_at,
+				reason: null,
+			})),
+			scope,
+		);
+		const projected = projectFactory(snapshot, policyFromSaved(catalog, selection, "nocoo"));
+		expect(projected.selectedRepos).toEqual([
+			{ name: "nocoo/app", description: "Example", language: "TypeScript", topics: ["cli"] },
+			{ name: "nocoo/missing", description: "Unpublished", language: "Swift", topics: null },
+		]);
+		expect(projected.repos).toEqual(before.repos);
+		expect(snapshot).toEqual(before);
+	},
+);
 
 it.each([
 	["issues", "issues"],
@@ -37,7 +71,7 @@ it.each([
 		const project = async () => {
 			const snapshot = await readSnapshot(db, "a", kind);
 			if (!snapshot) throw new Error("missing snapshot");
-			return projectSnapshot(db, "a", kind, snapshot, await repoPolicy(db, "a"), false);
+			return projectSnapshot(db, "a", kind, snapshot, await repoPolicy(db, "a"));
 		};
 		const first = await project();
 		expect(storedContent(first)?.hash).toMatch(/^sha256:[a-f0-9]{64}$/);
@@ -76,7 +110,7 @@ it("keeps legacy dependencies null, absent dependencies distinct, and catalog fl
 	const project = async (kind: string) => {
 		const snapshot = await readSnapshot(db, "a", kind);
 		if (!snapshot) throw new Error("missing snapshot");
-		return projectSnapshot(db, "a", kind, snapshot, await repoPolicy(db, "a"), false);
+		return projectSnapshot(db, "a", kind, snapshot, await repoPolicy(db, "a"));
 	};
 	await save("issues", { issues: [] });
 	const absent = storedContent(await project("issues"))?.hash;
@@ -102,8 +136,8 @@ it("keeps legacy dependencies null, absent dependencies distinct, and catalog fl
 	expect(storedContent(await project("repos"))?.hash).toBe(first);
 	await db.prepare("INSERT INTO repo_statistics VALUES('a','owner/app',0)").run();
 	const disabled = storedContent(await project("repos"))?.hash;
-	expect(disabled).not.toBe(first);
-	await db.prepare("INSERT INTO repo_stars VALUES('a','owner/app')").run();
+	expect(disabled).toBe(first);
+	await db.prepare("INSERT INTO repo_stars(account_id,repo) VALUES('a','owner/app')").run();
 	expect(storedContent(await project("repos"))?.hash).not.toBe(disabled);
 	expect(JSON.stringify(initial)).toBe(initialJson);
 	expect(initial).not.toHaveProperty("content_meta");
@@ -126,12 +160,12 @@ it("uses saved catalog membership for all selectors and never revives removed re
 			"2026-10-18",
 		),
 	);
-	await db.prepare("INSERT INTO repo_stars VALUES('a','owner/removed')").run();
+	await db.prepare("INSERT INTO repo_stars(account_id,repo) VALUES('a','owner/removed')").run();
 	await db.prepare("INSERT INTO repo_statistics VALUES('a','owner/removed',1)").run();
 	const all = await repoPolicy(db, "a");
 	expect(all.includes("OWNER/APP")).toBe(true);
 	expect(all.includes("owner/removed")).toBe(false);
-	expect(all.enabled("owner/removed")).toBe(false);
+	expect(all.includes("owner/removed")).toBe(false);
 	const stars = await repoPolicy(db, "a", undefined, "starred");
 	expect(stars.includes("owner/removed")).toBe(false);
 	expect(stars.empty).toBe(true);
@@ -145,7 +179,7 @@ it("uses saved catalog membership for all selectors and never revives removed re
 			[String(key)]: [{ name_with_owner: "OWNER/APP" }, { name_with_owner: "owner/removed" }],
 			fetched_at: "2026-10-18",
 		};
-		expect(await statisticsSnapshot(db, "a", String(kind), snapshot)).toMatchObject({
+		expect(await scopedSnapshot(db, "a", String(kind), snapshot)).toMatchObject({
 			[String(key)]: [{ name_with_owner: "OWNER/APP" }],
 			freshness: { total: 1 },
 		});
@@ -187,7 +221,7 @@ it("includes baseline timestamps for the entire catalog and for served incomplet
 			fetched_at: baseline,
 			truncated: false,
 		};
-		const result = await statisticsSnapshot(db, "a", String(kind), snapshot);
+		const result = await scopedSnapshot(db, "a", String(kind), snapshot);
 		expect(result).toMatchObject({
 			fetched_at: recent,
 			freshness: {
@@ -199,7 +233,7 @@ it("includes baseline timestamps for the entire catalog and for served incomplet
 		});
 		expect(result.repository_fetched_at).not.toHaveProperty("owner/removed");
 	}
-	const partial = await statisticsSnapshot(db, "a", "issues", {
+	const partial = await scopedSnapshot(db, "a", "issues", {
 		issues: [{ name_with_owner: "owner/baseline" }],
 		fetched_at: baseline,
 		truncated: true,
@@ -223,15 +257,15 @@ it("keeps raw snapshots immutable and excludes factory entries without a saved c
 	];
 	const before = structuredClone(snapshot);
 	const policy = await repoPolicy(db, "absent");
-	expect(statisticsFactory(snapshot, policy).repos).toEqual([]);
-	expect(statisticsFactory(snapshot, policy).inventory.excluded).toEqual([]);
+	expect(projectFactory(snapshot, policy).repos).toEqual([]);
+	expect(projectFactory(snapshot, policy).inventory.excluded).toEqual([]);
 	expect(snapshot).toEqual(before);
-	expect(await statisticsSnapshot(db, "absent", "unknown", { fetched_at: "t" })).toEqual({
+	expect(await scopedSnapshot(db, "absent", "unknown", { fetched_at: "t" })).toEqual({
 		fetched_at: "t",
 	});
-	expect(await statisticsSnapshot(db, "absent", "issues", {})).toEqual({});
+	expect(await scopedSnapshot(db, "absent", "issues", {})).toEqual({});
 	expect(
-		await statisticsSnapshot(db, "absent", "alerts", { items: [{ source: "code_scanning" }, {}] }),
+		await scopedSnapshot(db, "absent", "alerts", { items: [{ source: "code_scanning" }, {}] }),
 	).toMatchObject({ code_scanning_open: 0, dependabot_open: 0 });
 });
 
@@ -259,7 +293,10 @@ it.each(["pending", "complete", "unavailable"] as const)(
 				snapshot.fetched_at,
 			),
 		);
-		await db.prepare("INSERT INTO repo_stars VALUES(?,'NOCOO/APP')").bind(account).run();
+		await db
+			.prepare("INSERT INTO repo_stars(account_id,repo) VALUES(?,'NOCOO/APP')")
+			.bind(account)
+			.run();
 		await db
 			.prepare("INSERT INTO repo_statistics VALUES(?,'nocoo/disabled',0)")
 			.bind(account)
@@ -284,23 +321,15 @@ it.each(["pending", "complete", "unavailable"] as const)(
 		};
 		const before = structuredClone(snapshot);
 		const saved = await raw.prepare("SELECT * FROM snapshots ORDER BY kind").all();
-		for (const statisticsFilter of [true, false]) {
-			const all = statisticsFactory(snapshot, await repoPolicy(db, account), statisticsFilter);
+		{
+			const all = projectFactory(snapshot, await repoPolicy(db, account));
 			expect(all.contribution).toEqual(before.contribution);
 			expect(all.contributionStatus).toBe(status);
 			expect(all.contributionObservation).toEqual(before.contributionObservation);
 			expect(all).not.toHaveProperty("contributionExcluded");
-			expect(all.repos.map((item) => item.name)).toEqual(
-				statisticsFilter ? [repo.name] : [repo.name, "nocoo/disabled"],
-			);
-			expect(all.inventory.excluded).toEqual(
-				statisticsFilter ? [{ name: "nocoo/disabled", reason: "statistics-disabled" }] : [],
-			);
-			const starred = statisticsFactory(
-				snapshot,
-				await repoPolicy(db, account, undefined, "starred"),
-				statisticsFilter,
-			);
+			expect(all.repos.map((item) => item.name)).toEqual([repo.name, "nocoo/disabled"]);
+			expect(all.inventory.excluded).toEqual([]);
+			const starred = projectFactory(snapshot, await repoPolicy(db, account, undefined, "starred"));
 			expect(starred).toMatchObject({
 				repos: [{ name: repo.name }],
 				contribution: null,
@@ -337,20 +366,20 @@ it.each([
 				at,
 			),
 		);
-		await db.prepare("INSERT INTO repo_stars VALUES('a','owner/app')").run();
+		await db.prepare("INSERT INTO repo_stars(account_id,repo) VALUES('a','owner/app')").run();
 		const partial = {
 			[key]: [{ name_with_owner: "owner/app", number: 1 }],
 			fetched_at: at,
 			truncated: true,
 		};
-		expect(await statisticsSnapshot(db, "a", kind, partial, "starred")).toMatchObject({
+		expect(await scopedSnapshot(db, "a", kind, partial, "starred")).toMatchObject({
 			truncated: true,
 			freshness: { total: 1, missing: 0, oldestAt: at },
 		});
 		await db.batch(
 			await replaceSnapshotStmts(db, "a", `repo:owner/app:${suffix}`, { [key]: [] }, at),
 		);
-		expect(await statisticsSnapshot(db, "a", kind, partial, "starred")).toMatchObject({
+		expect(await scopedSnapshot(db, "a", kind, partial, "starred")).toMatchObject({
 			[key]: [],
 			truncated: false,
 			freshness: { total: 1, missing: 0, oldestAt: at },
@@ -363,7 +392,7 @@ it("handles first-day baselines and incomplete source metadata without invented 
 	const db = createDb(raw);
 	await db
 		.prepare(
-			"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES('a','user','encrypted','fake','t','t')",
+			"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES('a','o','encrypted','fake','t','t')",
 		)
 		.run();
 	await db.batch(
@@ -375,16 +404,17 @@ it("handles first-day baselines and incomplete source metadata without invented 
 			"2026-09-18",
 		),
 	);
-	expect(await statisticsSnapshot(db, "a", "insights", { fetched_at: "2026-09-18" })).toMatchObject(
-		{ alerts_incomplete: true, insights: [{ name_with_owner: "o/r", open_issue_count: 0 }] },
-	);
+	expect(await scopedSnapshot(db, "a", "insights", { fetched_at: "2026-09-18" })).toMatchObject({
+		alerts_incomplete: true,
+		insights: [{ name_with_owner: "o/r", open_issue_count: 0 }],
+	});
 });
 
 it("applies the additive migration repeatedly without losing existing rows", () => {
 	const db = new DatabaseSync(":memory:");
 	db.exec(readFileSync("apps/web/src/server/lib/db/schema.sql", "utf8"));
 	db.exec(
-		"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES('a','user','encrypted','fake','t','t'); INSERT INTO repo_statistics VALUES('a','o/r',0)",
+		"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES('a','o','encrypted','fake','t','t'); INSERT INTO repo_statistics VALUES('a','o/r',0)",
 	);
 	const migration = readFileSync("migrations/0004_repo_statistics.sql", "utf8");
 	db.exec(migration);
@@ -419,17 +449,23 @@ it("deduplicates legacy dependency summaries per repo in first-seen order withou
 	publication.repos.push({ ...repo, name: "nocoo/second" });
 	const before = structuredClone(publication);
 	const db = createDb(sqliteFixture());
+	await db
+		.prepare(
+			"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES(?,'nocoo','fake','fake','t','t')",
+		)
+		.bind(publication.account_id)
+		.run();
 	const policy = await repoPolicy(db, publication.account_id, {
 		repos: publication.repos.map(({ name }) => ({ name_with_owner: name })),
 	});
 	const statements = db.statements;
-	const normalized = statisticsFactory(publication, policy);
+	const normalized = projectFactory(publication, policy);
 	for (const item of normalized.repos) {
 		expect(item.dependencies).toEqual(distinct);
 		for (const dependency of item.dependencies) expect(dependency).not.toHaveProperty("id");
 	}
 	expect(normalized.repos[0]?.dependencies[0]).toBe(repo.dependencies[0]);
-	expect(statisticsFactory(normalized, policy)).toEqual(normalized);
+	expect(projectFactory(normalized, policy)).toEqual(normalized);
 	expect(db.statements).toBe(statements);
 	expect(publication).toEqual(before);
 });

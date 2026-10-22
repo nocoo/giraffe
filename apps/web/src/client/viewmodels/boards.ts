@@ -1,5 +1,4 @@
 import type { FactoryDay } from "../../lib/factory-types";
-import { participates } from "../../lib/repo-statistics";
 import type { AlertItem } from "./alerts";
 import type { NotificationRow } from "./inbox";
 import type { IssueRow } from "./issues";
@@ -225,13 +224,12 @@ export function alertsBoard(
 }
 
 export const REPO_STATUS = [
-	{ key: "active", label: "参与统计" },
-	{ key: "disabled", label: "已排除" },
+	{ key: "regular", label: "普通仓库" },
 	{ key: "fork", label: "Fork" },
 	{ key: "archived", label: "已归档" },
 ] as const;
 export const repoStatus = (r: RepoRow) =>
-	r.is_archived ? "archived" : r.is_fork ? "fork" : participates(r) ? "active" : "disabled";
+	r.is_archived ? "archived" : r.is_fork ? "fork" : "regular";
 
 export function reposBoard(
 	all: RepoRow[],

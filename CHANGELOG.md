@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.18.0 - 2026-10-22
+
+### Performance
+
+- Enable Smart Placement as the only deployment-configuration change. Placement needs time to learn real traffic; no immediate location or latency improvement is guaranteed.
+- Batch account observations, repository tabs, factory streams, settings and run lists after authorization; preserve exact response bodies, ETags and private conditional-response headers against the pure functional baseline. Resolve contribution publication heads inside their saved-data query.
+- Report honest CPU-phase timing, including production frozen-clock zeros, with safe numeric decoded row/byte, hash operation and serialized byte counters. Count overlapping hash intervals once rather than summing concurrent waits. Local high-resolution measurements and exact post-R1/R2/R3 cross-version comparisons keep timing evidence separate from response contracts.
+
+### Changed
+
+- Remove the proposed per-request SQL JSON trimming after independent review confirmed a CPU regression. Sources read stored payloads directly while retaining batching, honest timing/work counters and exact response bytes/ETags. No early 304 is added: existing stored hashes do not encode the complete projected representation or its validator.
+
+- Preserve each scheduled daily until same-day admission or an individual failed audit. Terminal work hands off deferred daily runs without manual cooldowns; exact-slot weekly ties win without cancelling active work. Replace latest-only recovery and invisible preparation failures with durable per-occurrence outcomes.
+- Add read-only `expectedFinishAt`/`expectedFinishAtReason` to every exposed run using the account's last five completed actual-kind wall durations, independently of the displayed history limit and absolute deadline.
+
+### Root Causes
+
+- Recheck completed catalog preparation and current membership before canonical admission: a completion between readiness and idempotency reads must not consume the daily key as a false failure.
+- Separate selected factory membership from published observations. Publication-only client denominators hid missing repositories and reported healthy 7/7 coverage for a 7/14 selection; filters, freshness and health now share explicit selected membership.
+- Historical scheduler revision `ac2d1e3` held later work behind the single active catalog and advanced the original daily cursor from recovery time, silently jumping over October 17/18. Page leases were renewable without an absolute lifetime. v0.15.14 bounded that lock but did not fix every missed-slot, failed-preparation or handoff path. The exact catalog stall mechanism is not provable without historical Queue/cursor/fence traces; healthy cron alone is not evidence of consumer progress.
+
+### Changed Membership And Stars
+
+- Protect browser star decisions with owner/agent provenance and durable owner-unstar tombstones. Agent conflicts return 409 `owner_override`; same-direction owner writes are preserved as 200 no-ops. Add GET `/stars`, optional write reasons and repository source markers. Star PUT/DELETE now return a 200 star record instead of settings/204.
+
+- Consolidate daily refresh membership into local stars. Daily selects starred-owned repositories; full refresh and all-scope projections select every owned catalog repository, including archives/forks. Non-owned repositories never enter refresh plans or coverage/freshness denominators. Selected but unpublished repositories count as missing. Remove the hard-coded mirror exclusion and browser statistics toggles; archived repositories retain the full collection plan.
+- Replace statistics writes with 410 `deprecated` and no writes. Settings returns `statistics:[]` with `statistics_deprecated:true`; the deprecated repository `statistics_enabled` field equals `starred`. Bots must replace statistics preferences with star management.
+- Normalize CI freshness units from three input slots per repository to selected repository count. A repository is missing if any required Actions/releases/details timestamp is absent; oldest/latest times still inspect all three dependencies.
+
+### Migration
+
+- Apply additive `0017_star_provenance.sql` after membership cleanup. Surviving stars become owner records; cleaned-up stars remain absent. Keep unstar tombstones and new columns on rollback; old code that treats every row as starred is not a safe rollback target. Legacy timestamps use saved account metadata, not a claimed original star-event time.
+
+- Apply `0016_star_membership.sql`: unstar exactly those account/repository pairs with an explicit false statistics override, then clear all override rows, including departed repositories. Explicit true overrides do not create stars. Keep the empty table for schema rollback, preserve observations/history, and create no owner tombstones for removed stars. The cleanup is deterministic and idempotent; schema docs include the affected-row query.
+
 ## v0.17.3 - 2026-10-22
 
 ### Docs

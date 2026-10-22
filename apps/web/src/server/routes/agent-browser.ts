@@ -13,7 +13,7 @@ import { getActiveAccount } from "../lib/db/accounts";
 import { ApiError } from "../lib/errors";
 import { readSources } from "../lib/machine-sources";
 import { readJson } from "../lib/read-body";
-import { repoPolicy } from "../lib/repo-statistics";
+import { repoPolicy } from "../lib/snapshot-projection";
 
 export function agentBrowserApi() {
 	const app = new Hono<{ Bindings: Env; Variables: AppVars }>();

@@ -63,7 +63,7 @@ it("exposes safe request-local phase timings on sources 200 and 304 only", async
 		const metrics = (header ?? "").split(", ");
 		for (const metric of metrics)
 			expect(metric).toMatch(
-				/^(auth|build|decode|hash|serialize|total|d1_\d+|sql_\d+);dur=\d+\.\d{2}$/,
+				/^(?:(auth|build|decode|hash|serialize|total|d1_\d+|sql_\d+);dur=\d+\.\d{2}|(decoded_rows|decoded_bytes|hash_ops|serialized_bytes);desc="\d+")$/,
 			);
 		for (const name of ["auth", "build", "decode", "hash", "serialize", "total", "d1_1"])
 			expect(metrics.some((metric) => metric.startsWith(`${name};dur=`))).toBe(true);
@@ -94,6 +94,11 @@ it("measures source decoding and projection even with a coarsened worker clock",
 		expect(measure.mock.calls.some(([phase]) => phase === "decode")).toBe(true);
 		expect(measureAsync.mock.calls.filter(([phase]) => phase === "hash").length).toBeGreaterThan(1);
 		expect(response.headers.get("server-timing")).toContain("decode;dur=0.00");
+		for (const name of ["decoded_rows", "decoded_bytes", "hash_ops", "serialized_bytes"])
+			expect(response.headers.get("server-timing")).toMatch(new RegExp(`${name};desc="[1-9]\\d*"`));
+		expect(response.headers.get("server-timing")).toContain(
+			`serialized_bytes;desc="${new TextEncoder().encode(await response.text()).byteLength}"`,
+		);
 	} finally {
 		measure.mockRestore();
 		measureAsync.mockRestore();

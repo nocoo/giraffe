@@ -8,7 +8,11 @@ import type {
 	StepKind,
 	StepStatus,
 } from "../../lib/factory-run";
-import { FACTORY_STREAMS, type FactorySnapshot } from "../../lib/factory-types";
+import {
+	FACTORY_STREAMS,
+	type FactorySnapshot,
+	type FactoryViewSnapshot,
+} from "../../lib/factory-types";
 import { apiGet, apiPost } from "../lib/api";
 import { ensureSession, getActiveAccountId } from "./session";
 
@@ -122,7 +126,21 @@ export function describeRunIssue(code: string | null, kind: StepKind, resource?:
 				...base,
 				title: "自动刷新错过执行时间",
 				reason: "过期的调度时间已记录，不会集中补跑历史任务。",
-				action: "系统只尝试最新的调度时间；请检查服务可用性与刷新记录。",
+				action: "请检查服务可用性与刷新记录；待处理时段会保留至执行或明确失败。",
+			};
+		case "scheduled_slot_missed":
+			return {
+				...base,
+				title: "自动刷新错过当日时限",
+				reason: "本次调度未能在北京时间当日结束前启动，已单独保留失败记录。",
+				action: "检查此前占用账号的刷新及服务可用性；过期时段不会跨天补跑。",
+			};
+		case "catalog_preparation_failed":
+			return {
+				...base,
+				title: "自动刷新准备失败",
+				reason: "前置仓库列表同步未成功，本次目标刷新已保留失败记录。",
+				action: "查看仓库列表同步记录，修复权限或上游问题后重新刷新。",
 			};
 		case "cloud_ai_retired":
 			return {
@@ -221,8 +239,7 @@ export function describeRunIssue(code: string | null, kind: StepKind, resource?:
 				title: "本次刷新达到容量限制",
 				reason: "单条数据、发布内容或计划中的仓库数量超过安全上限。",
 				impact: "刷新已暂停，已有数据和进度保留。",
-				action:
-					"统计仓库过多时可取消后减少统计仓库；全站清单或单条数据过大时，请维护者检查采集范围。",
+				action: "仓库过多时可取消后缩小刷新范围；全站清单或单条数据过大时，请维护者检查采集范围。",
 			};
 		case "repository_cooldown":
 			return {
@@ -402,7 +419,7 @@ export function runPageUpdates(run: FactoryRunView) {
 	});
 }
 
-export function factoryDataHealth(snapshot: FactorySnapshot | null) {
+export function factoryDataHealth(snapshot: FactoryViewSnapshot | null) {
 	if (!snapshot)
 		return {
 			tone: "info",
@@ -414,6 +431,16 @@ export function factoryDataHealth(snapshot: FactorySnapshot | null) {
 			tone: "warning",
 			title: "仓库列表尚未获取完整",
 			detail: "当前统计只包含已找到的仓库，可在刷新中心继续同步。",
+		};
+	const observed = new Set(snapshot.repos.map((repo) => repo.name.toLowerCase()));
+	const unpublished = snapshot.selectedRepos.filter(
+		(repo) => !observed.has(repo.name.toLowerCase()),
+	);
+	if (unpublished.length)
+		return {
+			tone: "warning",
+			title: `${unpublished.length} 个所选仓库尚无工厂数据`,
+			detail: "所选范围尚未完整获取；缺失不代表零。请在刷新中心获取这些仓库的数据。",
 		};
 	const required = FACTORY_STREAMS.filter((kind) => kind !== "alerts");
 	const incomplete = snapshot.repos.filter((repo) =>
@@ -442,6 +469,12 @@ export function factoryDataHealth(snapshot: FactorySnapshot | null) {
 			tone: "warning",
 			title: "账号贡献日历尚未更新",
 			detail: "仓库数据可用；账号贡献日历可能显示旧数据，或暂时为空。",
+		};
+	if (snapshot.truncated === true || (snapshot.freshness?.missing ?? 0) > 0)
+		return {
+			tone: "warning",
+			title: "工厂数据尚不完整",
+			detail: "所选范围有缺失或截断的数据；缺失不代表零，请刷新后查看。",
 		};
 	if (snapshot.publication?.mixed)
 		return {

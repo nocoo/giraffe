@@ -144,7 +144,7 @@ describe("factory incremental collection", () => {
 									: [
 											rawRepo,
 											{ ...rawRepo, id: "3", nameWithOwner: "nocoo/fork", isFork: true },
-											{ ...rawRepo, id: "4", nameWithOwner: "nocoo/rsshub" },
+											{ ...rawRepo, id: "4", nameWithOwner: "nocoo/mirror" },
 											{ ...rawRepo, id: "5", nameWithOwner: "else/app", owner: { login: "else" } },
 										],
 							pageInfo: { hasNextPage: page === 1, endCursor: "c1" },
@@ -158,13 +158,13 @@ describe("factory incremental collection", () => {
 		expect(state.inventory.complete).toBe(false);
 		await invoke(state, gh);
 		expect(state.inventory.scanned).toBe(5);
-		expect(state.repos).toHaveLength(1);
-		expect(state.inventory.excluded.map((r) => r.reason)).toEqual([
-			"archived",
-			"fork",
-			"effective-mirror",
-			"not-owner",
+		expect(state.repos.map((repo) => repo.name)).toEqual([
+			"nocoo/app",
+			"nocoo/old",
+			"nocoo/fork",
+			"nocoo/mirror",
 		]);
+		expect(state.inventory.excluded).toEqual([{ name: "else/app", reason: "not-owner" }]);
 		expect(state.rate).toMatchObject({ resource: "graphql", observedAt: NOW });
 	});
 	it.each([

@@ -4,12 +4,11 @@ import type { Env } from "../env";
 import { createApp } from "../index";
 import { createDb } from "../lib/db/d1";
 import { readSnapshot, replaceSnapshotStmts } from "../lib/db/snapshots";
-import { openSqliteD1 } from "../lib/db/sqlite-d1";
 
 function env(): Env {
 	return {
 		FACTORY_QUEUE: {} as Queue,
-		DB: openSqliteD1(true),
+		DB: sqliteFixture(),
 		ASSETS: { fetch: async () => new Response("x") } as unknown as Fetcher,
 		TOKEN_ENCRYPTION_KEY_CURRENT: "1",
 		ENVIRONMENT: "development",
@@ -45,7 +44,7 @@ async function scopedSetup() {
 		recentAt,
 	);
 	for (const repo of ["OWNER/APP", "owner/empty", "owner/new", "owner/fork"])
-		await db.prepare("INSERT INTO repo_stars VALUES('active',?)").bind(repo).run();
+		await db.prepare("INSERT INTO repo_stars(account_id,repo) VALUES('active',?)").bind(repo).run();
 	const request = (path: string) =>
 		createApp().request(`http://localhost/api/${path}`, {}, bindings);
 	return { bindings, db, save, request };
@@ -54,6 +53,20 @@ async function scopedSetup() {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("scoped snapshot projections", () => {
+	it("returns an empty starred view when all saved stars are nonowned", async () => {
+		const setup = await scopedSetup();
+		await setup.save("repos", { repos: [{ name_with_owner: "external/repo" }] });
+		await setup.db
+			.prepare("INSERT INTO repo_stars(account_id,repo) VALUES('active','external/repo')")
+			.run();
+		const response = await setup.request("issues?scope=starred");
+		expect(response.status).toBe(200);
+		expect(await response.json()).toMatchObject({
+			issues: [],
+			freshness: { total: 0, missing: 0 },
+		});
+	});
+
 	it("resolves browser repository pages using the newest stored case alias", async () => {
 		const setup = await scopedSetup();
 		await setup.save("repo:OWNER/APP:prs", { pull_requests: [{ number: 1 }] }, recentAt);
@@ -82,7 +95,7 @@ describe("scoped snapshot projections", () => {
 			const body = await (await setup.request(`${kind}?scope=all`)).json();
 			expect(body).toMatchObject({
 				[String(key)]: [{ name_with_owner: "OWNER/APP" }],
-				freshness: { oldestAt: baselineAt, total: 4, missing: 3 },
+				freshness: { oldestAt: baselineAt, total: 5, missing: 4 },
 			});
 			expect(
 				await setup.bindings.DB.prepare("SELECT * FROM snapshots ORDER BY kind").all(),
@@ -90,7 +103,7 @@ describe("scoped snapshot projections", () => {
 		}
 	});
 
-	it("projects saved rows before counters, keeps disabled catalog entries and leaves storage untouched", async () => {
+	it("projects saved rows before counters, keeps owned forks and leaves storage untouched", async () => {
 		const setup = await scopedSetup();
 		for (const [kind, key] of [
 			["issues", "issues"],
@@ -116,19 +129,19 @@ describe("scoped snapshot projections", () => {
 			const response = await setup.request(`${kind}?scope=starred`);
 			expect(response.status).toBe(200);
 			expect(await response.json()).toMatchObject({
-				[key]: [{ name_with_owner: "owner/app" }],
-				...(kind === "alerts" ? { dependabot_open: 1, code_scanning_open: null } : {}),
+				[key]: [{ name_with_owner: "owner/app" }, { name_with_owner: "owner/fork" }],
+				...(kind === "alerts" ? { dependabot_open: 2, code_scanning_open: null } : {}),
 			});
 			const unscoped = await (await setup.request(kind)).json();
 			expect(unscoped).toEqual(await (await setup.request(`${kind}?scope=all`)).json());
-			expect((unscoped as Record<string, unknown[]>)[key]).toHaveLength(2);
+			expect((unscoped as Record<string, unknown[]>)[key]).toHaveLength(3);
 		}
 		expect(await (await setup.request("repos?scope=starred")).json()).toMatchObject({
 			repos: [
 				{ name_with_owner: "owner/app", starred: true, statistics_enabled: true },
 				{ name_with_owner: "owner/empty", starred: true },
 				{ name_with_owner: "owner/new", starred: true },
-				{ name_with_owner: "owner/fork", starred: true, statistics_enabled: false },
+				{ name_with_owner: "owner/fork", starred: true, statistics_enabled: true },
 			],
 		});
 		expect(await setup.bindings.DB.prepare("SELECT * FROM snapshots ORDER BY kind").all()).toEqual(
@@ -151,7 +164,7 @@ describe("scoped snapshot projections", () => {
 			const response = await setup.request(`${kind}?scope=starred`);
 			expect(await response.json()).toMatchObject({
 				fetched_at: recentAt,
-				freshness: { oldestAt: checkedAt, latestAt: recentAt, total: 3, missing: 1 },
+				freshness: { oldestAt: checkedAt, latestAt: recentAt, total: 4, missing: 2 },
 			});
 		}
 		expect((await readSnapshot(setup.db, "active", "issues"))?.fetched_at).toBe(baselineAt);
@@ -202,7 +215,7 @@ describe("scoped snapshot projections", () => {
 		const response = await setup.request("insights?scope=starred");
 		expect(await response.json()).toMatchObject({
 			fetched_at: recentAt,
-			freshness: { oldestAt: checkedAt, latestAt: recentAt, total: 2, missing: 0 },
+			freshness: { oldestAt: checkedAt, latestAt: recentAt, total: 1, missing: 0 },
 			insights: [
 				{ name_with_owner: "owner/app", open_issue_count: 1, days_since_push: 30, health: "risky" },
 			],
@@ -240,7 +253,7 @@ describe("scoped snapshot projections", () => {
 			const read = async () => (await setup.request(`insights?scope=${scope}`)).json();
 			expect(await read()).toMatchObject({
 				truncated: true,
-				freshness: { total: 4, missing: 0 },
+				freshness: { total: 2, missing: 0 },
 				insights: [
 					{ name_with_owner: "owner/app", open_issue_count: 90, health: "watch" },
 					{ name_with_owner: "owner/empty", open_issue_count: 90, health: "watch" },
@@ -350,7 +363,9 @@ describe("scoped snapshot projections", () => {
 				"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES('other','other','encrypted','fake','t','t')",
 			)
 			.run();
-		await setup.db.prepare("INSERT INTO repo_stars VALUES('other','owner/hidden')").run();
+		await setup.db
+			.prepare("INSERT INTO repo_stars(account_id,repo) VALUES('other','owner/hidden')")
+			.run();
 		expect(await (await setup.request("notifications?scope=starred")).json()).toMatchObject({
 			notifications: [{ id: "1" }, { id: "2" }, { id: "3" }],
 		});

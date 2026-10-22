@@ -87,7 +87,7 @@ async function setup() {
 	});
 	await save("issues", { issues: [] });
 	await save("insights", { insights: [], alerts_incomplete: true });
-	await db.prepare("INSERT INTO repo_stars VALUES('a','owner/app')").run();
+	await db.prepare("INSERT INTO repo_stars(account_id,repo) VALUES('a','owner/app')").run();
 	const request = async (kind: string, scope: string) => {
 		const response = await createApp().request(`http://localhost/api/${kind}?scope=${scope}`, {}, {
 			DB: raw,

@@ -8,10 +8,10 @@ import { createDb } from "./db/d1";
 import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
 import { exclusion } from "./factory-map";
 import { saveSchedule, scheduleRefreshes } from "./refresh-schedule";
-import { repoPolicy, statisticsFactory } from "./repo-statistics";
+import { projectFactory, repoPolicy } from "./snapshot-projection";
 
 const now = "2026-10-18T00:00:00.000Z";
-const disabledNames = [
+const legacyNames = [
 	"arena",
 	"codo",
 	"deca",
@@ -26,7 +26,7 @@ const disabledNames = [
 	"shrike",
 	"snaky",
 ].map((name) => `nocoo/${name}`);
-const disabledStars = ["nocoo/pi-agent-policy", "nocoo/snaky"];
+const legacyStars = ["nocoo/pi-agent-policy", "nocoo/snaky"];
 
 async function setup() {
 	const raw = sqliteFixture();
@@ -36,7 +36,7 @@ async function setup() {
 	if (!first) throw new Error("missing fixture repository");
 	snapshot.fetched_at = now;
 	snapshot.repos.push(
-		...disabledNames.map((name, index) => ({ ...first, name, id: `R_disabled_${index}` })),
+		...legacyNames.map((name, index) => ({ ...first, name, id: `R_disabled_${index}` })),
 	);
 	snapshot.inventory.total = snapshot.repos.length;
 	snapshot.inventory.scanned = snapshot.repos.length;
@@ -65,12 +65,12 @@ async function setup() {
 		),
 	);
 	await db.batch([
-		...disabledNames.map((name) =>
+		...legacyNames.map((name) =>
 			db
 				.prepare("INSERT INTO repo_statistics(account_id,repo,enabled) VALUES(?,?,0)")
 				.bind(snapshot.account_id, name),
 		),
-		...[first.name, ...disabledStars].map((name) =>
+		...[first.name, ...legacyStars].map((name) =>
 			db
 				.prepare("INSERT INTO repo_stars(account_id,repo) VALUES(?,?)")
 				.bind(snapshot.account_id, name),
@@ -79,18 +79,16 @@ async function setup() {
 	return { raw, db, snapshot, first };
 }
 
-it("explains all thirteen weekly omissions by explicit statistics overrides without changing saved data", async () => {
+it("includes former statistics exclusions in the weekly owned set without changing saved data", async () => {
 	const { db, snapshot, first } = await setup();
 	const before = await readSnapshot(db, snapshot.account_id, "factory");
 	const policy = await repoPolicy(db, snapshot.account_id);
-	const projected = statisticsFactory(snapshot, policy);
-	expect(projected.repos.map((repo) => repo.name)).toEqual([first.name]);
-	expect(projected.inventory.excluded).toEqual(
-		disabledNames.map((name) => ({ name, reason: "statistics-disabled" })),
-	);
-	for (const name of disabledNames) {
+	const projected = projectFactory(snapshot, policy);
+	expect(projected.repos.map((repo) => repo.name)).toEqual([first.name, ...legacyNames]);
+	expect(projected.inventory.excluded).toEqual([]);
+	for (const name of legacyNames) {
 		expect(policy.includes(name)).toBe(true);
-		expect(policy.enabled(name)).toBe(false);
+		expect(policy.includes(name)).toBe(true);
 	}
 	expect(await readSnapshot(db, snapshot.account_id, "factory")).toEqual(before);
 	expect(snapshot.repos).toHaveLength(14);
@@ -101,7 +99,7 @@ it.each([
 	["weekly", "starred"],
 	["daily", "starred"],
 ] as const)(
-	"preserves separate statistics and complete detail-page plans for %s/%s",
+	"uses the same owned membership for factory streams and detail pages for %s/%s",
 	async (kind, scope) => {
 		const { raw, db, snapshot, first } = await setup();
 		await saveSchedule(
@@ -115,15 +113,16 @@ it.each([
 		const rows = await db.prepare("SELECT payload FROM factory_runs").all<{ payload: string }>();
 		expect(rows.results).toHaveLength(1);
 		const run = JSON.parse(rows.results[0]?.payload ?? "{}") as FactoryRun;
+		const pageNames = scope === "all" ? legacyNames : legacyStars;
+		const selected = [first.name, ...pageNames];
 		expect(run).toMatchObject({
 			mode: "refresh",
 			trigger: kind,
-			repos: [first.name],
-			selection: { scope: scope === "all" ? "all" : "selected", order: [first.name] },
+			repos: selected,
+			selection: { scope: scope === "all" ? "all" : "selected", order: selected },
 		});
-		const pageNames = scope === "all" ? disabledNames : disabledStars;
 		expect(run.siteRepos).toEqual([first.name, ...pageNames]);
-		if (scope === "starred") expect(run.selection?.repos).toEqual([first.name, ...disabledStars]);
+		if (scope === "starred") expect(run.selection?.repos).toEqual([first.name, ...legacyStars]);
 		expect(
 			run.steps.filter((step) => step.repo === first.name && step.kind !== "snapshot"),
 		).toEqual(
@@ -131,10 +130,12 @@ it.each([
 				expect.objectContaining({ kind: stepKind, status: "pending" }),
 			),
 		);
-		for (const name of disabledNames) {
+		for (const name of legacyNames) {
 			const steps = run.steps.filter((step) => step.repo === name);
-			expect(steps.filter((step) => step.kind !== "snapshot")).toEqual([]);
-			expect(steps.map((step) => step.resource)).toEqual(
+			expect(steps.filter((step) => step.kind !== "snapshot").map((step) => step.kind)).toEqual(
+				pageNames.includes(name) ? ["metadata", ...FACTORY_STREAMS, "commit"] : [],
+			);
+			expect(steps.filter((step) => step.kind === "snapshot").map((step) => step.resource)).toEqual(
 				pageNames.includes(name) ? REPO_SNAPSHOT_TABS.map((tab) => `repo:${name}:${tab}`) : [],
 			);
 			expect(steps.every((step) => step.status === "pending")).toBe(true);
@@ -145,9 +146,9 @@ it.each([
 	},
 );
 
-it("uses current catalog archive/fork defaults and lets explicit statistics overrides take precedence", async () => {
+it("includes owned archives and forks regardless of obsolete statistics overrides", async () => {
 	const { db, snapshot } = await setup();
-	const names = disabledNames.slice(0, 3);
+	const names = legacyNames.slice(0, 3);
 	await db.batch(
 		await replaceSnapshotStmts(
 			db,
@@ -172,12 +173,50 @@ it("uses current catalog archive/fork defaults and lets explicit statistics over
 		.bind(snapshot.account_id, names[1])
 		.run();
 	const policy = await repoPolicy(db, snapshot.account_id);
-	expect(names.map((name) => policy.enabled(name))).toEqual([false, true, false]);
-	expect(statisticsFactory(snapshot, policy).repos.map((repo) => repo.name)).toEqual([names[1]]);
-	expect(exclusion({ owner: { login: "other" }, nameWithOwner: "other/repo" }, "nocoo", true)).toBe(
+	expect(names.map((name) => policy.includes(name))).toEqual([true, true, true]);
+	expect(projectFactory(snapshot, policy).repos.map((repo) => repo.name)).toEqual(names);
+	expect(exclusion({ owner: { login: "other" }, nameWithOwner: "other/repo" }, "nocoo")).toBe(
 		"not-owner",
 	);
 	expect(
-		exclusion({ owner: { login: "nocoo" }, nameWithOwner: "nocoo/rsshub" }, "nocoo", true),
-	).toBe("effective-mirror");
+		exclusion({ owner: { login: "nocoo" }, nameWithOwner: "nocoo/mirror" }, "nocoo"),
+	).toBeNull();
 });
+
+it.each(["daily", "weekly"] as const)(
+	"rediscovers legacy omitted owned members before %s refresh",
+	async (kind) => {
+		const { raw, db, snapshot } = await setup();
+		const archive = "nocoo/legacy-archive";
+		await db.batch(
+			await replaceSnapshotStmts(
+				db,
+				snapshot.account_id,
+				"repos",
+				{
+					repos: [
+						...snapshot.repos.map((repo) => ({ name_with_owner: repo.name })),
+						{ name_with_owner: archive, is_archived: true },
+					],
+				},
+				now,
+			),
+		);
+		await db
+			.prepare("INSERT INTO repo_stars(account_id,repo) VALUES(?,?)")
+			.bind(snapshot.account_id, archive)
+			.run();
+		await saveSchedule(
+			db,
+			snapshot.account_id,
+			kind,
+			{ enabled: true, time: "08:00", weekday: 0, scope: kind === "daily" ? "starred" : "all" },
+			"2026-10-17T00:01:00.000Z",
+		);
+		await scheduleRefreshes(raw, now);
+		const runs = await db.prepare("SELECT payload FROM factory_runs").all<{ payload: string }>();
+		expect(runs.results.map((row) => JSON.parse(row.payload))).toEqual([
+			expect.objectContaining({ mode: "catalog", trigger: kind, status: "running" }),
+		]);
+	},
+);

@@ -29,7 +29,7 @@ import { recordFactoryRate } from "./factory-rate";
 import { collectSitePage } from "./factory-site";
 import { createGithubClient } from "./github-client";
 import { assertRefreshCapabilities } from "./refresh";
-import { repoPolicy } from "./repo-statistics";
+import { repoPolicy } from "./snapshot-projection";
 import { decryptToken, parseKeyBytes } from "./token-crypto";
 
 export async function executeRunPage(
@@ -99,6 +99,7 @@ export async function executeRunPage(
 				: null;
 			if (
 				previousAttempt &&
+				!run.schedule &&
 				previousAttempt.nextAllowedAt > clock() &&
 				previousAttempt.attemptRunId !== run.id
 			)
@@ -132,8 +133,8 @@ export async function executeRunPage(
 			if (gh.graphqlErrors.length)
 				throw new ApiError(403, "github_forbidden", "repository access unavailable");
 			if (
-				exclusion(repo, run.owner, true) ||
-				!(await repoPolicy(db, run.account_id)).enabled(String(step.repo)) ||
+				exclusion(repo, run.owner) ||
+				!(await repoPolicy(db, run.account_id)).includes(String(step.repo)) ||
 				repo.id !== run.repoIds[String(step.repo)]
 			)
 				throw new ApiError(403, "repository_unavailable", "repository identity/access changed");
@@ -243,7 +244,7 @@ export async function executeRunPage(
 					);
 				},
 			};
-			await stepFactory(checkpoint, gh, token, store, clock(), true);
+			await stepFactory(checkpoint, gh, token, store, clock());
 			if (step.kind === "inventory") {
 				if (checkpoint.repos.length > 500)
 					throw new ApiError(422, "factory_capacity", "catalog exceeds 500 repositories");

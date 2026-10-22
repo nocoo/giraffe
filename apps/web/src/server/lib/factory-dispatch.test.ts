@@ -9,7 +9,11 @@ import { scheduleRefreshes } from "./refresh-schedule";
 vi.mock("./refresh-schedule", () => ({ scheduleRefreshes: vi.fn() }));
 vi.mock("./factory-retention", () => ({ pruneFactory: vi.fn() }));
 vi.mock("./factory-execute", () => ({ executeRunPage: vi.fn() }));
-vi.mock("./db/factory-runs", () => ({ dueRuns: vi.fn(), expireRuns: vi.fn() }));
+vi.mock("./db/factory-runs", () => ({
+	dueRuns: vi.fn(),
+	expireRuns: vi.fn(),
+	dispatchRunState: vi.fn(),
+}));
 const hour = Date.parse("2026-10-03T11:00:00Z");
 beforeEach(() => {
 	vi.resetAllMocks();
@@ -43,12 +47,22 @@ it("uses the event UTC minute for eligibility and wallclock for schedule and cle
 	vi.setSystemTime("2026-10-03T11:03:00Z");
 	await continueFactory(env, hour);
 	expect(pruneFactory).toHaveBeenLastCalledWith(expect.anything(), "2026-10-03T11:03:00.000Z");
-	expect(scheduleRefreshes).toHaveBeenLastCalledWith(env.DB, "2026-10-03T11:03:00.000Z");
+	expect(scheduleRefreshes).toHaveBeenLastCalledWith(
+		env.DB,
+		"2026-10-03T11:03:00.000Z",
+		"",
+		expect.any(Function),
+	);
 	expect(dueRuns).toHaveBeenLastCalledWith(expect.anything(), "2026-10-03T11:03:00.000Z");
 	vi.setSystemTime("2026-10-03T12:00:00Z");
 	await continueFactory(env, hour + 59 * 60000);
 	expect(pruneFactory).toHaveBeenCalledTimes(1);
-	expect(scheduleRefreshes).toHaveBeenLastCalledWith(env.DB, "2026-10-03T12:00:00.000Z");
+	expect(scheduleRefreshes).toHaveBeenLastCalledWith(
+		env.DB,
+		"2026-10-03T12:00:00.000Z",
+		"",
+		expect.any(Function),
+	);
 	expect(dueRuns).toHaveBeenLastCalledWith(expect.anything(), "2026-10-03T12:00:00.000Z");
 });
 

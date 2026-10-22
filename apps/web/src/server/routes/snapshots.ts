@@ -1,16 +1,48 @@
 import type { Context } from "hono";
 import type { AppVars, Env } from "../env";
 import { getActiveAccount } from "../lib/db/accounts";
-import { readRepositorySnapshot, readSnapshot } from "../lib/db/snapshots";
+import { readRepositorySnapshot, readSnapshot, snapshotFromRows } from "../lib/db/snapshots";
 import { ApiError, jsonOk } from "../lib/errors";
-import { statisticsSnapshot } from "../lib/repo-statistics";
-import { snapshotScope, snapshotSelection } from "../lib/snapshot-scope";
+import { accountReadPlan, savedAccountPolicy } from "../lib/saved-observation-read";
+import { assembleSnapshotGroups } from "../lib/snapshot-pages";
+import { projectSnapshot, repoPolicy, scopedSnapshot } from "../lib/snapshot-projection";
+import { snapshotScope } from "../lib/snapshot-scope";
 
 export async function snapshotGet(
 	c: Context<{ Bindings: Env; Variables: AppVars }>,
 	logical: string,
 ): Promise<Response> {
 	const scope = snapshotScope(c.req.queries("scope"));
+	if (logical === "repos" || logical === "issues" || logical === "prs") {
+		const db = c.get("db");
+		const plan = accountReadPlan(db, null, logical, scope);
+		const saved = plan.decode(await db.batch(plan.statements));
+		if (!saved.account) throw new ApiError(409, "account_missing", "no active account");
+		let snap = snapshotFromRows(logical, saved.sourcePages);
+		if (!snap && scope === "all")
+			throw new ApiError(409, "snapshot_missing", `no snapshot for ${logical}`);
+		let policy =
+			logical === "repos"
+				? savedAccountPolicy(saved, scope, snap)
+				: savedAccountPolicy(saved, scope);
+		if (!snap && policy.empty) {
+			const key = { repos: "repos", issues: "issues", prs: "pull_requests" }[logical];
+			snap = { [key]: [], fetched_at: "", truncated: false };
+			if (logical === "repos") policy = { ...policy, catalog: snap };
+		}
+		if (!snap) throw new ApiError(409, "snapshot_missing", `no snapshot for ${logical}`);
+		return jsonOk(
+			{
+				...(await projectSnapshot(db, saved.account.id, logical, snap, policy, () =>
+					assembleSnapshotGroups(saved.repositoryPages),
+				)),
+				account_id: saved.account.id,
+			},
+			200,
+			{ "cache-control": "private, no-store" },
+			c.get("sourceTiming"),
+		);
+	}
 	const account = await getActiveAccount(c.get("db"));
 	if (!account) {
 		throw new ApiError(409, "account_missing", "no active account");
@@ -19,7 +51,7 @@ export async function snapshotGet(
 		? ((await readRepositorySnapshot(c.get("db"), account.id, logical))?.data ?? null)
 		: await readSnapshot(c.get("db"), account.id, logical);
 	if (!snap && scope === "starred" && !logical.startsWith("repo:")) {
-		const selection = await snapshotSelection(c.get("db"), account.id, scope);
+		const selection = await repoPolicy(c.get("db"), account.id, undefined, scope);
 		const key = (
 			{
 				repos: "repos",
@@ -37,11 +69,12 @@ export async function snapshotGet(
 	}
 	return jsonOk(
 		{
-			...(await statisticsSnapshot(c.get("db"), account.id, logical, snap, scope)),
+			...(await scopedSnapshot(c.get("db"), account.id, logical, snap, scope)),
 			account_id: account.id,
 		},
 		200,
 		{ "cache-control": "private, no-store" },
+		c.get("sourceTiming"),
 	);
 }
 

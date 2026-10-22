@@ -1,7 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 import { APP_VERSION } from "../../apps/web/src/lib/version";
 import { factoryFixture } from "../fixtures/factory-snapshot";
-import { createUiFixtures } from "./ui-fixtures";
+import { createUiFixtures, projectFactoryFixture } from "./ui-fixtures";
 
 test.use({ timezoneId: "Asia/Shanghai" });
 
@@ -54,7 +54,7 @@ async function mockPages(page: Page) {
 	snapshot.inventory.total = snapshot.inventory.scanned = snapshot.repos.length;
 	const fixtures: Record<string, unknown> = {
 		...createUiFixtures(),
-		"/api/factory": snapshot,
+		"/api/factory": projectFactoryFixture(snapshot),
 		"/api/factory/runs": {
 			account_id: snapshot.account_id,
 			serverNow: snapshot.fetched_at,
@@ -369,7 +369,7 @@ test("signal list expands fully and fills the space beside a taller dependency c
 	snapshot.inventory.total = snapshot.inventory.scanned = snapshot.repos.length;
 	await page.route(
 		(url) => url.pathname === "/api/factory",
-		(route) => route.fulfill({ json: snapshot }),
+		(route) => route.fulfill({ json: projectFactoryFixture(snapshot) }),
 	);
 	await page.setViewportSize({ width: 1440, height: 1000 });
 	await page.goto("/factory");

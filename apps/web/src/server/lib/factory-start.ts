@@ -7,7 +7,7 @@ import { ApiError } from "./errors";
 import { boundedJson } from "./factory-publish";
 import { siteCatalog } from "./factory-site";
 import { ACCOUNT_ID_RE } from "./id";
-import { repoPolicy, statisticsFactory } from "./repo-statistics";
+import { projectFactory, repoPolicy } from "./snapshot-projection";
 export const refreshInput = z.object({
 	account_id: z.string().regex(ACCOUNT_ID_RE),
 	requestKey: z.string().uuid(),
@@ -29,6 +29,7 @@ export async function startRefresh(
 	now: string,
 	trigger: NonNullable<FactoryRun["trigger"]> = "manual",
 	schedule?: FactoryRun["schedule"],
+	clock = () => now,
 ): Promise<FactoryRun> {
 	await expireRuns(db, now, row.id);
 	const prior = await db
@@ -41,7 +42,7 @@ export async function startRefresh(
 	}
 	const rawCatalog = await catalogFactory(db, row.id);
 	const policy = await repoPolicy(db, row.id);
-	const catalog = rawCatalog ? statisticsFactory(rawCatalog, policy) : null;
+	const catalog = rawCatalog ? projectFactory(rawCatalog, policy) : null;
 	const siteNames = data.mode === "refresh" ? await siteCatalog(db, row.id) : [];
 	const selectedNames = data.repos ?? [];
 	if (
@@ -59,7 +60,10 @@ export async function startRefresh(
 	const states = await repoStates(db, row.id);
 	if (
 		data.mode === "refresh" &&
-		(!catalog || siteRepos === null || (data.scope !== "selected" && !catalog.inventory.complete))
+		(!catalog ||
+			siteRepos === null ||
+			(data.scope !== "selected" && !catalog.inventory.complete) ||
+			(siteRepos ?? []).some((name) => !catalog.repos.some((repo) => repo.name === name)))
 	)
 		throw new ApiError(409, "catalog_incomplete", "discover complete catalog first");
 	let repos: NonNullable<Awaited<ReturnType<typeof catalogFactory>>>["repos"];
@@ -108,18 +112,12 @@ export async function startRefresh(
 		throw new ApiError(400, "validation_failed", "select 1 to 500 repositories");
 	if (
 		data.mode === "refresh" &&
+		!schedule &&
 		data.scope !== "all" &&
 		repos.length > 0 &&
 		repos.every((r) => states.some((s) => s.repo === r.name && s.nextAllowedAt > now))
 	)
 		throw new ApiError(409, "refresh_cooldown", "all selected repositories are cooling down");
-	if (
-		trigger !== "manual" &&
-		repos.some((repo) =>
-			states.some((state) => state.repo === repo.name && state.nextAllowedAt > now),
-		)
-	)
-		throw new ApiError(409, "refresh_cooldown", "scheduled repositories are cooling down");
 	const selection = {
 		scope: data.scope,
 		...(data.repos ? { repos: data.repos } : {}),
@@ -129,6 +127,7 @@ export async function startRefresh(
 		...(data.query ? { query: data.query } : {}),
 		...(data.repo ? { repo: data.repo } : {}),
 	};
+	const acceptedAt = clock();
 	const plan = makeRun(
 		crypto.randomUUID(),
 		row.id,
@@ -136,8 +135,8 @@ export async function startRefresh(
 		data.requestKey,
 		data.mode,
 		repos,
-		now,
-		states,
+		acceptedAt,
+		schedule ? [] : states,
 		siteRepos ?? [],
 		selection,
 		data.depth,
@@ -146,5 +145,5 @@ export async function startRefresh(
 	boundedJson(plan);
 	plan.trigger = trigger;
 	if (schedule) plan.schedule = schedule;
-	return startRun(db, plan);
+	return startRun(db, plan, clock);
 }

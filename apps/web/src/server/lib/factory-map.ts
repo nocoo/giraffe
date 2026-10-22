@@ -25,11 +25,8 @@ function nullable(value: unknown): string | null {
 export function coverage(source = ""): FactoryCoverage {
 	return { status: "pending", pages: 0, fetchedAt: null, source, reason: null, observed: 0 };
 }
-export function exclusion(r: GithubObject, owner: string, includeDisabled = false): string | null {
+export function exclusion(r: GithubObject, owner: string): string | null {
 	if (str(object(r.owner).login).toLowerCase() !== owner.toLowerCase()) return "not-owner";
-	if (!includeDisabled && r.isArchived === true) return "archived";
-	if (!includeDisabled && r.isFork === true) return "fork";
-	if (str(r.nameWithOwner).toLowerCase() === "nocoo/rsshub") return "effective-mirror";
 	return null;
 }
 export function mapFactoryRepo(r: GithubObject): FactoryRepo {

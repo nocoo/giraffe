@@ -49,6 +49,15 @@ try {
 				if (migrated.every(Boolean)) continue;
 				if (migrated.some(Boolean)) throw new Error("Partial source content migration");
 			}
+			if (name === "0017_star_provenance.sql") {
+				const migrated = ["starred", "source", "updated_at", "reason"].map((column) =>
+					Boolean(
+						db.query("SELECT 1 FROM pragma_table_info('repo_stars') WHERE name=?").get(column),
+					),
+				);
+				if (migrated.every(Boolean)) continue;
+				if (migrated.some(Boolean)) throw new Error("Partial star provenance migration");
+			}
 			db.exec(sql);
 		}
 	const required = [
@@ -84,6 +93,9 @@ try {
 	for (const index of ["snapshots_content", "factory_resources_content"])
 		if (!db.query("SELECT 1 FROM sqlite_master WHERE type='index' AND name=?").get(index))
 			throw new Error("Source content index missing");
+	for (const column of ["starred", "source", "updated_at", "reason"])
+		if (!db.query("SELECT 1 FROM pragma_table_info('repo_stars') WHERE name=?").get(column))
+			throw new Error("Star provenance column missing");
 	db.exec("SAVEPOINT factory_probe");
 	const probe = crypto.randomUUID();
 	db.query(

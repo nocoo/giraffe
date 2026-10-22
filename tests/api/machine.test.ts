@@ -59,6 +59,16 @@ it("retains machine bearer CRUD and retires PKCE over real local HTTP", async ()
 		expect((await machine(`${prefix}/sources`, "POST", {})).status).toBe(405);
 		expect((await machine(`${prefix}/sources`, "GET", undefined, "invalid")).status).toBe(401);
 		expect((await machine(`v1/accounts/${"z".repeat(21)}/sources`)).status).toBe(403);
+		const settings = await (await machine(`${prefix}/settings`)).text();
+		expect(JSON.parse(settings)).toMatchObject({ statistics: [], statistics_deprecated: true });
+		for (const method of ["PUT", "DELETE"]) {
+			const deprecated = await machine(`${prefix}/statistics/octocat/hello-world`, method, {
+				enabled: false,
+			});
+			expect(deprecated.status).toBe(410);
+			expect(await deprecated.json()).toMatchObject({ error: { code: "deprecated" } });
+		}
+		expect(await (await machine(`${prefix}/settings`)).text()).toBe(settings);
 		for (const path of [
 			"v1/me",
 			...[
@@ -70,6 +80,7 @@ it("retains machine bearer CRUD and retires PKCE over real local HTTP", async ()
 				"factory",
 				"contributions",
 				"settings",
+				"stars",
 				"refresh-runs",
 				"repos/nocoo/app",
 				...[

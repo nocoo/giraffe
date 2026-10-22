@@ -219,7 +219,7 @@ beforeAll(async () => {
 		null;
 	const repos = names.map((name) => ({
 		name_with_owner: name,
-		owner_login: "batch1",
+		owner_login: "nocoo",
 		is_archived: false,
 		is_fork: false,
 		pushed_at: baseline,
@@ -265,7 +265,7 @@ beforeAll(async () => {
 	publication.inventory.excluded = [{ name: removed, reason: "archived" }];
 	const statements = [
 		"UPDATE accounts SET is_active=0 WHERE is_active=1;",
-		`INSERT INTO accounts(id,login,token_ciphertext,token_last4,is_active,created_at,updated_at) VALUES(${quote(account)},'batch1','unused-test-envelope','test',1,${quote(latest)},${quote(latest)});`,
+		`INSERT INTO accounts(id,login,token_ciphertext,token_last4,is_active,created_at,updated_at) VALUES(${quote(account)},'nocoo','unused-test-envelope','test',1,${quote(latest)},${quote(latest)});`,
 		snapshot("repos", { repos, repository_fetched_at: { "NOCOO/RECOVERED": latest } }, catalogAt),
 		snapshot("factory", { ...publication }),
 	];
@@ -411,6 +411,96 @@ afterAll(() => {
 	sql(
 		`DELETE FROM accounts WHERE id=${quote(account)};${originalActive ? `UPDATE accounts SET is_active=1 WHERE id=${quote(originalActive)};` : ""}`,
 	);
+});
+
+it("protects browser star decisions from machine writes over local HTTP", async () => {
+	const created = await browser("tokens", "POST", {
+		account_id: account,
+		label: "star provenance acceptance",
+		scopes: ["app:read", "app:write", "observations:read"],
+		expires_in_days: 1,
+	});
+	expect(created.status).toBe(201);
+	const token = (await created.json()) as { id: string; token: string };
+	const request = (resource: string, method = "GET", body?: unknown) =>
+		fetch(`${base}/api/v1/accounts/${account}/${resource}`, {
+			method,
+			headers: { authorization: `Bearer ${token.token}`, "content-type": "application/json" },
+			...(body === undefined ? {} : { body: JSON.stringify(body) }),
+		});
+	const resource = "stars/nocoo/missing";
+	const row = () => {
+		assertMarker();
+		return sql(
+			`SELECT * FROM repo_stars WHERE account_id=${quote(account)} AND lower(repo)='nocoo/missing'`,
+		)[0]?.results;
+	};
+	try {
+		expect((await request(resource, "PUT", { reason: "daily policy" })).status).toBe(200);
+		expect(await (await request("stars")).json()).toMatchObject({
+			items: expect.arrayContaining([
+				{
+					repo: "nocoo/missing",
+					starred: true,
+					source: "agent",
+					updated_at: expect.any(String),
+					reason: "daily policy",
+				},
+			]),
+		});
+		const repos = (await (await request("repos")).json()) as {
+			data: { repos: Record<string, unknown>[] };
+		};
+		expect(repos.data.repos.find((repo) => repo.name_with_owner === "nocoo/missing")).toMatchObject(
+			{
+				starred: true,
+				star_source: "agent",
+				star_updated_at: expect.any(String),
+			},
+		);
+		expect(
+			(await browser("repos/nocoo/missing/star", "POST", { account_id: account, enabled: false }))
+				.status,
+		).toBe(200);
+		const tombstone = row();
+		expect(await (await request("stars")).json()).toMatchObject({
+			items: expect.arrayContaining([
+				expect.objectContaining({ repo: "nocoo/missing", starred: false, source: "owner" }),
+			]),
+		});
+		const settings = (await (await request("settings")).json()) as { stars: string[] };
+		expect(settings.stars).not.toContain("nocoo/missing");
+		const conflict = await request(resource, "PUT", { reason: "must not override owner" });
+		expect(conflict.status).toBe(409);
+		expect(await conflict.json()).toMatchObject({ error: { code: "owner_override" } });
+		expect(row()).toEqual(tombstone);
+		expect((await request(resource, "DELETE", { reason: "no-op" })).status).toBe(200);
+		expect(row()).toEqual(tombstone);
+		expect(
+			(await browser("repos/nocoo/missing/star", "POST", { account_id: account, enabled: true }))
+				.status,
+		).toBe(200);
+		const ownerStar = row();
+		expect((await request(resource, "DELETE")).status).toBe(409);
+		expect((await request(resource, "PUT")).status).toBe(200);
+		expect(row()).toEqual(ownerStar);
+		expect((await request(resource, "PUT", { source: "owner" })).status).toBe(400);
+		expect((await request(resource, "PUT", { reason: "x".repeat(201) })).status).toBe(400);
+		expect((await request("stars/outside/catalog", "PUT")).status).toBe(404);
+		expect(await (await request("stars")).json()).toMatchObject({
+			items: expect.arrayContaining([
+				expect.objectContaining({ repo: "nocoo/missing", starred: true, source: "owner" }),
+			]),
+		});
+	} finally {
+		assertMarker();
+		sql(
+			`DELETE FROM repo_stars WHERE account_id=${quote(account)} AND lower(repo)='nocoo/missing';`,
+		);
+		expect((await browser(`tokens/${token.id}`, "DELETE", { account_id: account })).status).toBe(
+			204,
+		);
+	}
 });
 
 it("excludes removed repositories from saved account observations without deleting history", async () => {

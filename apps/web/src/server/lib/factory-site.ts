@@ -10,11 +10,16 @@ import type { GithubClient } from "./github-client";
 import { githubUnavailability } from "./github-unavailable";
 import { buildInsights, type InsightAlert } from "./insights";
 import { assertKind, prepareRefresh } from "./refresh";
-import { repoPolicy } from "./repo-statistics";
 import { splitPages } from "./snapshot-pages";
+import { type Policy, repoPolicy } from "./snapshot-projection";
 
 export async function siteCatalog(db: Db, account: string): Promise<string[] | null> {
-	return catalogNames(await readSnapshot(db, account, "repos"));
+	const policy = await repoPolicy(db, account);
+	return siteCatalogFromPolicy(policy);
+}
+export function siteCatalogFromPolicy(policy: Pick<Policy, "catalog" | "includes">) {
+	const names = catalogNames(policy.catalog);
+	return names?.filter(policy.includes) ?? null;
 }
 
 function catalogNames(snapshot: Record<string, unknown> | null): string[] | null {
@@ -86,7 +91,7 @@ export async function collectSitePage(
 		const fresh = buildInsights(
 			policy.repos
 				.filter(
-					(repo) => selected.has(repo.name_with_owner) && policy.enabled(repo.name_with_owner),
+					(repo) => selected.has(repo.name_with_owner) && policy.includes(repo.name_with_owner),
 				)
 				.map((repo) => ({
 					name_with_owner: repo.name_with_owner,
@@ -291,7 +296,9 @@ export async function collectSitePage(
 	});
 	assertComplete(prepared.written[resource]);
 	if (resource === "repos") {
-		const names = catalogNames(prepared.written.repos ?? null);
+		const names = catalogNames(prepared.written.repos ?? null)?.filter(
+			(name) => name.split("/")[0]?.toLowerCase() === run.owner.toLowerCase(),
+		);
 		if (!names) throw new ApiError(422, "snapshot_incomplete", "repository names unavailable");
 		if (names.length > 500)
 			throw new ApiError(422, "factory_capacity", "site catalog exceeds 500 repositories");

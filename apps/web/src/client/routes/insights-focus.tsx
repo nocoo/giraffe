@@ -59,7 +59,7 @@ export function FocusSection({ ranked, findings }: { ranked: FocusRepo[]; findin
 							<LayerCard.Empty
 								icon={<Target />}
 								title="暂无需要特别关注的仓库"
-								description="参与统计的仓库没有触发任何关注规则。"
+								description="当前范围内的仓库没有触发任何关注规则。"
 							/>
 						</LayerCard.Well>
 					</LayerCard>

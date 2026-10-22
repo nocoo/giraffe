@@ -183,3 +183,11 @@ export type FactorySnapshot = {
 	} | null;
 	contributionStatus: "pending" | "complete" | "unavailable";
 };
+
+export type FactorySelectedRepo = {
+	name: string;
+	description: string | null;
+	language: string | null;
+	topics: string[] | null;
+};
+export type FactoryViewSnapshot = FactorySnapshot & { selectedRepos: FactorySelectedRepo[] };

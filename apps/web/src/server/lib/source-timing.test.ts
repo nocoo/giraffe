@@ -2,6 +2,60 @@ import { expect, it, vi } from "vitest";
 import { createDb } from "./db/d1";
 import { SourceTiming } from "./source-timing";
 
+it("retains honest frozen-clock zeros with safe numeric work metrics", () => {
+	const clock = vi.spyOn(performance, "now").mockReturnValue(10);
+	try {
+		const timing = new SourceTiming();
+		expect(timing.stringify({ text: "长颈鹿" })).toBe('{"text":"长颈鹿"}');
+		timing.work("decoded_rows", 3);
+		timing.work("decoded_bytes", 42);
+		for (const value of [NaN, Infinity, -1, 0.5, Number.MAX_SAFE_INTEGER + 1])
+			timing.work("decoded_rows", value);
+		expect(timing.header()).toContain('decoded_rows;desc="3"');
+		expect(timing.header()).toContain('decoded_bytes;desc="42"');
+		expect(timing.header()).toContain('serialized_bytes;desc="20"');
+		expect(timing.header()).toContain("serialize;dur=0.00");
+		expect(timing.header()).not.toMatch(/NaN|Infinity|-1/);
+	} finally {
+		clock.mockRestore();
+	}
+});
+
+it("counts overlapping hash intervals once rather than summing waits", async () => {
+	let now = 0;
+	const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+	try {
+		const timing = new SourceTiming();
+		let finishFirst = () => {};
+		let finishSecond = () => {};
+		const first = timing.measureAsync(
+			"hash",
+			() =>
+				new Promise<void>((resolve) => {
+					finishFirst = resolve;
+				}),
+		);
+		now = 2;
+		const second = timing.measureAsync(
+			"hash",
+			() =>
+				new Promise<void>((resolve) => {
+					finishSecond = resolve;
+				}),
+		);
+		now = 5;
+		finishFirst();
+		await first;
+		now = 9;
+		finishSecond();
+		await second;
+		expect(timing.header()).toContain("hash;dur=9.00");
+		expect(timing.header()).toContain('hash_ops;desc="2"');
+	} finally {
+		clock.mockRestore();
+	}
+});
+
 it("accumulates fixed phases and records failed operations without diagnostic text", async () => {
 	let now = 0;
 	const clock = vi.spyOn(performance, "now").mockImplementation(() => now++);

@@ -9,7 +9,6 @@ import {
 	type RepoRow,
 	repoMetrics,
 	saveRepoStar,
-	saveRepoStatistics,
 	sortRepos,
 	visibleRepos,
 } from "./repos";
@@ -17,6 +16,9 @@ import { setActiveAccountId } from "./session";
 
 const sample: RepoRow[] = [
 	{
+		starred: true,
+		star_source: "agent",
+		star_updated_at: "2026-10-21T00:00:00Z",
 		name_with_owner: "octocat/hello-world",
 		name: "hello-world",
 		owner_login: "octocat",
@@ -33,6 +35,8 @@ const sample: RepoRow[] = [
 		url: "https://github.com/octocat/hello-world",
 	},
 	{
+		star_source: null,
+		star_updated_at: null,
 		name_with_owner: "octocat/alpha",
 		name: "alpha",
 		owner_login: "octocat",
@@ -51,67 +55,19 @@ const sample: RepoRow[] = [
 ];
 
 describe("repos viewmodel", () => {
-	it("excludes default forks/archives from KPIs and respects explicit overrides", () => {
+	it("counts every scoped repository including unstarred forks and archives", () => {
 		const first = sample[0];
 		if (!first) throw new Error("fixture");
-		expect(
-			repoMetrics([
-				{ ...first, is_fork: true },
-				{ ...first, is_archived: true },
-				{ ...first, statistics_enabled: false },
-			]),
-		).toEqual({ count: 0, stars: 0, forks: 0, issues: 0 });
-		expect(repoMetrics([{ ...first, is_fork: true, statistics_enabled: true }])).toEqual({
-			count: 1,
-			stars: 2,
+		const rows = [
+			{ ...first, starred: false, is_fork: true },
+			{ ...first, starred: false, is_archived: true },
+			{ ...first, starred: true, statistics_enabled: false },
+		];
+		expect(repoMetrics(rows)).toEqual({
+			count: 3,
+			stars: 6,
 			forks: 0,
-			issues: 1,
-		});
-	});
-	it("saves settings, updates cached rows and rejects account changes or failed writes", async () => {
-		const first = sample[0];
-		if (!first) throw new Error("fixture");
-		setActiveAccountId("acc1");
-		let responseAccount = "acc1";
-		let switchAccount = false;
-		let fail = false;
-		vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
-			if (String(input) === "/api/accounts")
-				return Response.json({ accounts: [{ id: "acc1", login: "o", is_active: true }] });
-			if (String(input) === "/api/repos?scope=starred")
-				return Response.json({
-					account_id: "acc1",
-					fetched_at: "t",
-					truncated: false,
-					repos: sample,
-				});
-			expect(init?.method).toBe("POST");
-			if (fail)
-				return Response.json({ error: { code: "db_error", message: "failed" } }, { status: 500 });
-			if (switchAccount) setActiveAccountId("acc2");
-			return Response.json({ account_id: responseAccount });
-		});
-		await loadRepos();
-		await saveRepoStatistics("acc1", first, false);
-		expect(cachedRepoRows()[0]?.statistics_enabled).toBe(false);
-		expect(cachedRepoRows()[1]?.statistics_enabled).toBeUndefined();
-		fail = true;
-		await expect(saveRepoStatistics("acc1", first, true)).rejects.toMatchObject({
-			code: "db_error",
-		});
-		expect(cachedRepoRows()[0]?.statistics_enabled).toBe(false);
-		fail = false;
-		responseAccount = "other";
-		await expect(saveRepoStatistics("acc1", first, true)).rejects.toMatchObject({
-			code: "account_conflict",
-		});
-		responseAccount = "acc1";
-		switchAccount = true;
-		await expect(saveRepoStatistics("acc1", first, true)).rejects.toMatchObject({
-			code: "account_conflict",
-		});
-		await expect(saveRepoStatistics("acc1", first, true)).rejects.toMatchObject({
-			code: "account_conflict",
+			issues: 3,
 		});
 	});
 	it("saves local stars, updates cached rows and rejects account changes or failed writes", async () => {
@@ -121,6 +77,7 @@ describe("repos viewmodel", () => {
 		let responseAccount = "acc1";
 		let switchAccount = false;
 		let fail = false;
+		const updatedAt = "2026-10-22T00:00:00Z";
 		vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
 			if (String(input) === "/api/accounts")
 				return Response.json({ accounts: [{ id: "acc1", login: "o", is_active: true }] });
@@ -131,21 +88,41 @@ describe("repos viewmodel", () => {
 					truncated: false,
 					repos: sample,
 				});
+			expect(String(input)).toBe("/api/repos/octocat/hello-world/star");
 			expect(init?.method).toBe("POST");
 			if (fail)
 				return Response.json({ error: { code: "db_error", message: "failed" } }, { status: 500 });
 			if (switchAccount) setActiveAccountId("acc2");
-			return Response.json({ account_id: responseAccount });
+			return Response.json({
+				account_id: responseAccount,
+				name_with_owner: first.name_with_owner,
+				starred: false,
+				star_source: "owner",
+				star_updated_at: updatedAt,
+			});
 		});
 		await loadRepos();
-		await saveRepoStar("acc1", first, false);
-		expect(cachedRepoRows()[0]?.starred).toBe(false);
+		expect(await saveRepoStar("acc1", first, false)).toEqual({
+			starred: false,
+			star_source: "owner",
+			star_updated_at: updatedAt,
+		});
+		expect(cachedRepoRows()[0]).toMatchObject({
+			starred: false,
+			star_source: "owner",
+			star_updated_at: updatedAt,
+		});
 		expect(cachedRepoRows()[1]?.starred).toBeUndefined();
+		expect(cachedRepoRows()[1]?.star_source).toBeNull();
 		fail = true;
 		await expect(saveRepoStar("acc1", first, true)).rejects.toMatchObject({
 			code: "db_error",
 		});
-		expect(cachedRepoRows()[0]?.starred).toBe(false);
+		expect(cachedRepoRows()[0]).toMatchObject({
+			starred: false,
+			star_source: "owner",
+			star_updated_at: updatedAt,
+		});
 		fail = false;
 		responseAccount = "other";
 		await expect(saveRepoStar("acc1", first, true)).rejects.toMatchObject({

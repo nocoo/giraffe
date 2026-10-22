@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import type { ProjectIdentity } from "../../apps/web/src/lib/project-identity";
 import { factoryFixture } from "../fixtures/factory-snapshot";
-import { createUiFixtures } from "./ui-fixtures";
+import { createUiFixtures, projectFactoryFixture } from "./ui-fixtures";
 
 const repository = "octocat/hello-world";
 const longRepository = "octocat/a-repository-with-a-very-long-name-for-layout-verification";
@@ -61,7 +61,7 @@ async function mockProjects(
 	for (const stream of fixtures["/api/ci"].streams) stream.repo = longRepository;
 	const pages: Record<string, unknown> = {
 		...fixtures,
-		"/api/factory": snapshot,
+		"/api/factory": projectFactoryFixture(snapshot),
 		"/api/factory/runs": {
 			account_id: snapshot.account_id,
 			serverNow: snapshot.fetched_at,

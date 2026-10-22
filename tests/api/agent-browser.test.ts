@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it } from "vitest";
 
 const base = process.env.GIRAFFE_E2E ?? "http://127.0.0.1:17045",
 	jwt = process.env.GIRAFFE_JWT ?? "",
@@ -13,6 +13,22 @@ const call = (path: string, method = "GET", body?: unknown, from = origin) =>
 		},
 		...(body === undefined ? {} : { body: JSON.stringify(body) }),
 	});
+let originalAccounts: { id: string; is_active: boolean }[] = [];
+beforeAll(async () => {
+	const response = await call("accounts");
+	expect(response.status).toBe(200);
+	originalAccounts = ((await response.json()) as { accounts: typeof originalAccounts }).accounts;
+});
+afterAll(async () => {
+	const response = await call("accounts");
+	expect(response.status).toBe(200);
+	const current = ((await response.json()) as { accounts: typeof originalAccounts }).accounts;
+	for (const account of current)
+		if (!originalAccounts.some((original) => original.id === account.id))
+			expect((await call(`accounts/${account.id}`, "DELETE")).status).toBe(204);
+	const active = originalAccounts.find((account) => account.is_active);
+	if (active) expect((await call(`accounts/${active.id}/activate`, "POST")).status).toBe(200);
+});
 it("uses browser Access and CSRF for Agent requests and removes old cloud endpoints", async () => {
 	const created = await call("accounts", "POST", { token: `ghp_${"A".repeat(36)}` });
 	expect(created.ok).toBe(true);

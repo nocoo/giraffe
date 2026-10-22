@@ -1,7 +1,6 @@
 import { Hono } from "hono";
 import { etag, RETAINED_304_HEADERS } from "hono/etag";
 import { resourceCollection, resourceId } from "../../lib/agent-resource";
-import type { FactorySnapshot } from "../../lib/factory-types";
 import { REPO_SNAPSHOT_TABS } from "../../lib/snapshot-kinds";
 import type { AppVars, Env } from "../env";
 import {
@@ -15,30 +14,39 @@ import { authenticateApiToken, recordApiTokenUse } from "../lib/api-tokens";
 import { getAccount } from "../lib/db/accounts";
 import { createDb } from "../lib/db/d1";
 import { ApiError } from "../lib/errors";
-import { readFactoryRate } from "../lib/factory-rate";
 import { readContributions } from "../lib/machine-contributions";
 import {
-	readFactoryResource,
-	readObservation,
-	requireCatalogRepo,
+	readMachineAccountObservation,
+	readMachineFactoryStream,
+	readMachineRepositoryObservation,
 } from "../lib/machine-observations";
 import { assertMachineQuery } from "../lib/machine-query";
 import { readSources } from "../lib/machine-sources";
 import { readJson } from "../lib/read-body";
+import type { AccountObservationResource } from "../lib/saved-observation-statements";
 import { snapshotScope } from "../lib/snapshot-scope";
 import { SourceTiming } from "../lib/source-timing";
-import { getMachineSettings, machineRuns, machineSetting } from "./machine-settings";
+import { timedJson } from "../lib/timed-json";
+import {
+	getMachineSettings,
+	getMachineStars,
+	machineRuns,
+	machineSetting,
+} from "./machine-settings";
 
 type Principal = NonNullable<Awaited<ReturnType<typeof authenticateApiToken>>>;
 export type MachineVars = AppVars & {
 	principal: Principal;
-	sourceTiming: SourceTiming | undefined;
+	starUnchanged: boolean | undefined;
 };
 export function machineApi() {
 	const app = new Hono<{ Bindings: Env; Variables: MachineVars }>();
 	app.use("*", async (c, next) => {
 		const timing =
-			c.req.method === "GET" && /^\/api\/v1\/accounts\/[^/]+\/sources$/.test(c.req.path)
+			c.req.method === "GET" &&
+			/^\/api\/v1\/accounts\/[^/]+\/(?:sources$|repos(?:\/|$)|issues$|prs$|ci$|factory(?:\/|$)|contributions$|settings$|refresh-runs$)/.test(
+				c.req.path,
+			)
 				? new SourceTiming()
 				: undefined;
 		c.set("sourceTiming", timing);
@@ -76,10 +84,11 @@ export function machineApi() {
 			if (!read && !agent && !management)
 				throw new ApiError(405, "method_not_allowed", "observations are read-only");
 		}
-		await next();
+		if (timing) await timing.measureAsync("build", next);
+		else await next();
 		if (timing && (c.res.status === 200 || c.res.status === 304))
 			c.header("Server-Timing", timing.header());
-		if (!["GET", "HEAD"].includes(c.req.method) && c.res.status < 400)
+		if (!["GET", "HEAD"].includes(c.req.method) && c.res.status < 400 && !c.get("starUnchanged"))
 			await recordApiTokenUse(c.get("db"), principal.accountId, principal.id);
 	});
 	app.get("/me", async (c) => {
@@ -159,9 +168,12 @@ export function machineApi() {
 			const read = () =>
 				readSources(c.get("db"), c.get("principal").accountId, c.req.query(), timing);
 			const data = timing ? await timing.measureAsync("build", read) : await read();
-			return timing ? timing.measure("serialize", () => c.json(data)) : c.json(data);
+			return timing
+				? c.body(timing.stringify(data), 200, { "Content-Type": "application/json" })
+				: c.json(data);
 		},
 	);
+	app.get("/accounts/:account/stars", getMachineStars);
 	app.all("/accounts/:account/stars/:owner/:name", machineSetting);
 	app.get(
 		"/accounts/:account/contributions",
@@ -169,13 +181,20 @@ export function machineApi() {
 			c.header("Vary", "Authorization", { append: true });
 			await next();
 		},
-		etag({
-			weak: false,
-			generateDigest: (body) => crypto.subtle.digest("SHA-256", body),
-			retainedHeaders: [...RETAINED_304_HEADERS, "referrer-policy"],
-		}),
+		async (c, next) =>
+			etag({
+				weak: false,
+				generateDigest: (body) => {
+					const hash = () => crypto.subtle.digest("SHA-256", body);
+					return c.get("sourceTiming")?.measureAsync("hash", hash) ?? hash();
+				},
+				retainedHeaders: [...RETAINED_304_HEADERS, "referrer-policy"],
+			})(c, next),
 		async (c) =>
-			c.json(await readContributions(c.get("db"), c.get("principal").accountId, c.req.queries())),
+			timedJson(
+				c,
+				await readContributions(c.get("db"), c.get("principal").accountId, c.req.queries()),
+			),
 	);
 	app.all("/accounts/:account/statistics/:owner/:name", machineSetting);
 	app.all("/accounts/:account/schedules/:kind", machineSetting);
@@ -183,15 +202,12 @@ export function machineApi() {
 	app.all("/accounts/:account/refresh-runs/:id/control", machineRuns);
 	app.get("/accounts/:account/factory/repos/:owner/:name/:stream", async (c) => {
 		assertMachineQuery(c.req.query());
-		return c.json(
-			await readFactoryResource(
+		return timedJson(
+			c,
+			await readMachineFactoryStream(
 				c.get("db"),
 				c.get("principal").accountId,
-				await requireCatalogRepo(
-					c.get("db"),
-					c.get("principal").accountId,
-					`${c.req.param("owner")}/${c.req.param("name")}`,
-				),
+				`${c.req.param("owner")}/${c.req.param("name")}`,
 				c.req.param("stream"),
 			),
 		);
@@ -202,13 +218,14 @@ export function machineApi() {
 			throw new ApiError(404, "not_found", "unknown source");
 		assertMachineQuery(c.req.query());
 		const p = c.get("principal");
-		const name = await requireCatalogRepo(
-			c.get("db"),
-			p.accountId,
-			`${c.req.param("owner")}/${c.req.param("name")}`,
-		);
-		return c.json(
-			await readObservation(c.get("db"), p.accountId, `repo:${name}:${resource}`, "all"),
+		return timedJson(
+			c,
+			await readMachineRepositoryObservation(
+				c.get("db"),
+				p.accountId,
+				`${c.req.param("owner")}/${c.req.param("name")}`,
+				resource,
+			),
 		);
 	});
 	app.get("/accounts/:account/:resource", async (c) => {
@@ -216,19 +233,13 @@ export function machineApi() {
 		if (!["repos", "issues", "prs", "ci", "factory"].includes(kind))
 			throw new ApiError(404, "not_found", "unknown source");
 		assertMachineQuery(c.req.query(), ["scope"]);
-		const observation = await readObservation(
+		const observation = await readMachineAccountObservation(
 			c.get("db"),
 			c.get("principal").accountId,
-			kind,
+			kind as AccountObservationResource,
 			snapshotScope(c.req.queries("scope")),
 		);
-		if (kind === "factory")
-			observation.data.rate = await readFactoryRate(
-				c.get("db"),
-				c.get("principal").accountId,
-				observation.data.rate as FactorySnapshot["rate"],
-			);
-		return c.json(observation);
+		return timedJson(c, observation);
 	});
 	app.notFound(() => {
 		throw new ApiError(404, "not_found", "unknown machine endpoint");

@@ -15,7 +15,7 @@ import {
 	requireCatalogRepo,
 } from "./machine-observations";
 import { readSources } from "./machine-sources";
-import { statisticsSnapshot } from "./repo-statistics";
+import { scopedSnapshot } from "./snapshot-projection";
 
 it.each(FACTORY_STREAMS)(
 	"serves pre-observation %s but rejects missing or replaced evidence",
@@ -181,7 +181,7 @@ it("shares catalog-wide provenance and page replacements with browser reads with
 		})),
 	});
 	for (const name of ["OWNER/APP", "owner/baseline", "owner/empty", "owner/removed"])
-		await db.prepare("INSERT INTO repo_stars VALUES('a',?)").bind(name).run();
+		await db.prepare("INSERT INTO repo_stars(account_id,repo) VALUES('a',?)").bind(name).run();
 	const before = await raw.prepare("SELECT * FROM snapshots ORDER BY kind").all();
 	for (const [resource, key] of [
 		["issues", "issues"],
@@ -211,7 +211,7 @@ it("shares catalog-wide provenance and page replacements with browser reads with
 			expect.arrayContaining([expect.objectContaining({ name_with_owner: "owner/removed" })]),
 		);
 		const starred = await readObservation(db, "a", String(resource), "starred");
-		const browser = await statisticsSnapshot(
+		const browser = await scopedSnapshot(
 			db,
 			"a",
 			String(resource),
@@ -258,7 +258,7 @@ it("assembles CI evidence case-insensitively and keeps missing dependencies unkn
 	await save("repo:owner/unavailable:actions", { unavailable: true });
 	const ci = await readObservation(db, "a", "ci", "all");
 	expect(ci.data.unsaved).toEqual(["owner/missing", "owner/unavailable"]);
-	expect(ci.freshness).toEqual({ oldestAt: at, latestAt: at, total: 9, missing: 7 });
+	expect(ci.freshness).toEqual({ oldestAt: at, latestAt: at, total: 3, missing: 3 });
 	expect(ci.data.totals).toMatchObject({
 		totalRepos: 1,
 		brokenRepos: 0,
@@ -305,7 +305,7 @@ it("does not certify health from unavailable CI dependencies and exposes any dep
 	const ci = await readObservation(db, "a", "ci", "all");
 	expect(ci).toMatchObject({
 		truncated: true,
-		freshness: { total: 3, missing: 2 },
+		freshness: { total: 1, missing: 1 },
 		data: {
 			totals: { totalWorkflows: 0, healthyRepos: 0, unknownRepos: 1, truncatedRepos: 1 },
 			repos: [{ release: null, verdict: "unknown", truncated: true }],
@@ -351,7 +351,7 @@ it("exposes saved unfiltered sources without writes or upstream fetches", async 
 	expect(stars.data.issues).toHaveLength(1);
 	expect(stars.sourceVersion).toMatch(/^sha256:/);
 	const ci = await readObservation(db, a, "ci", "all");
-	expect(ci.freshness).toMatchObject({ missing: 6 });
+	expect(ci.freshness).toMatchObject({ total: 2, missing: 2 });
 	await expect(readObservation(db, a, "prs", "all")).rejects.toMatchObject({ status: 409 });
 	await expect(readObservation(db, a, "factory", "all")).rejects.toMatchObject({ status: 409 });
 	await expect(readFactoryResource(db, a, "nocoo/app", "invalid")).rejects.toMatchObject({

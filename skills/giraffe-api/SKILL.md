@@ -68,7 +68,8 @@ activity; successful mutations do. See [authentication](../../docs/api.md#authen
 
 `GET /sources` requires `observations:read` and returns
 `{account_id,repositories,sources}`. The sorted repository catalog includes
-unstarred, archived, forked and statistics-disabled repositories. Each source is
+owned unstarred, archived and forked repositories. Non-owned repositories are excluded.
+Each source is
 `{resource,version,contentVersion,fetchedAt,freshness,coverage,truncated,unavailable}`.
 Source order is unspecified; missing saved sources can be omitted, not zero.
 
@@ -110,6 +111,9 @@ bounds, not `scope`; discover its evidence through `account:factory`.
 Account observations accept `scope=all|starred` (default all), where stars are local
 Giraffe stars. Repository/stream endpoints accept no query parameters. Every
 documented machine GET rejects unknown query keys with 400 `validation_failed`.
+Factory `selectedRepos` is the expected read-time membership; `repos` contains
+only real publications. Keep unpublished members in denominators and unknown
+metrics unknown. Nullable topic metadata cannot prove exclusion by a topic filter.
 
 ### Detailed field and collection contracts
 
@@ -275,7 +279,20 @@ read [settings/stars/statistics](../../docs/api.md#settings-stars-and-statistics
 [run control](../../docs/api.md#post-refresh-runsidcontrol).
 These manage GitHub refresh, not bot execution. Retry uncertain start with the
 same `requestKey` and body; acceptance is not publication success. Do not alter
-statistics or schedules merely to enlarge analysis coverage.
+stars or schedules merely to enlarge analysis coverage. Daily scope is starred-owned;
+full scope is all-owned, including archives/forks. Statistics writes return 410
+`deprecated`; settings exposes an empty deprecated statistics list, and
+`statistics_enabled` is only a deprecated alias of `starred`.
+`GET /stars` includes provenance and unstarred tombstones. PUT/DELETE accept optional
+`{reason}` (at most 200 characters) and return 200 with a star record. Machine writes
+are always `agent`; opposite owner decisions return 409 `owner_override` and must
+not be retried. Same-direction writes preserve owner provenance as a 200 no-op.
+Use nullable `/repos` fields `star_source` and `star_updated_at` for provenance.
+Pending daily runs defer behind active work and start on terminal handoff; a daily
+that misses its Beijing day gets an explicit failed record, never a later-day run.
+Inspect schedule `lastError` and run outcomes independently. `expectedFinishAt` is
+a read-time same-kind historical median estimate, not a deadline; null includes
+`expectedFinishAtReason`. Do not infer collection success from cron health or ETA.
 
 ## Errors, limits and retries
 
@@ -292,6 +309,7 @@ can fail before validation; edge errors can have a different envelope.
 | 409 `snapshot_missing` | Preserve pending work; missing immutable evidence is not zero |
 | 409 `resource_exists` / `revision_conflict` | GET and reconcile full identity/current revision |
 | 409 `catalog_incomplete` / `refresh_cooldown` / `account_conflict` | Resolve catalog or defer authorized refresh/control |
+| 410 `deprecated` | Stop statistics writes; use authorized local star management |
 | 422 `factory_capacity` | Reduce authorized refresh selection; prior data is retained |
 | 500 `internal_error` / `db_error` | Bounded backoff, then operator diagnosis |
 

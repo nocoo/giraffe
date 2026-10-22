@@ -43,9 +43,12 @@ token activity.
 Schedule management accepts 1-6 sorted/deduplicated `times` per daily, weekly or
 catalog kind, in fixed UTC+08:00. Weekly slots share one weekday. The legacy
 `time` alias remains readable/writable; a single-field write replaces the list
-with one slot. Conflicting aliases are rejected. `nextAt` selects the earliest
-upcoming slot; recovery coalesces earlier missed slots and attempts only the
-latest due occurrence. Migration 0013 does not change existing configured times.
+with one slot. Conflicting aliases are rejected. `nextAt` retains the earliest
+unresolved occurrence and can remain in the past. Recovery settles occurrences
+individually; a daily that misses its Beijing-day admission cutoff receives its
+own `scheduled_slot_missed` audit rather than being coalesced or silently skipped.
+Plural `scheduled_slots_missed` records describe retained historical audits only.
+Migration 0013 does not change existing configured times.
 See [schedule writes](api.md#put--delete-scheduleskind) for scopes and validation.
 
 Security snapshots persist independent `features.dependabot` and
@@ -95,8 +98,10 @@ duplicate reads without changing observation versions or writing cache rows.
 Cloudflare handles production response compression. See the
 [local performance evidence and edge verification limits](12-source-performance.md).
 
-Authenticated `/sources` 200/304 responses also expose safe `Server-Timing`
-phase durations, including each D1 round trip. They are headers only, excluded
+Authenticated observation, settings and run-list GET 200/304 responses also expose safe `Server-Timing`
+phase durations, including each D1 round trip, and numeric work counters. Pure
+CPU durations may be zero because Workers clocks freeze; whole-request CPU is
+available in Workers Observability `cpuTimeMs`. They are headers only, excluded
 from JSON, source hashes and ETags; no query text, repository identity or token
 data is included. See [timing fields and interpretation](api.md#source-request-timing).
 
@@ -189,24 +194,30 @@ that supplied retained data; baseline data must remain visible in `oldestAt`.
 New catalog entries without proven baseline coverage or a saved observation count
 as missing. Top-level `fetchedAt` is the newest selected observation, not proof of
 uniform freshness. Source-index account entries use the same projection.
-Factory freshness instead counts enabled published repositories in the selected
-catalog (`factoryObserved`), not the whole catalog. Non-owned/catalog-only entries
-and statistics-disabled archived/fork entries do not inflate missing/oldest times.
-An eligible published repository without a valid immutable observation time still
-counts as missing. Machine `/factory` and `/sources`'s `account:factory` agree;
+Factory freshness uses the same selected owned catalog denominator: starred-owned
+for daily/starred scope, every owned entry for full/all scope, including archives
+and forks. Catalog-only members and members without a valid immutable observation
+time count as missing. Non-owned repositories never enter any refresh scope or
+denominator. Machine `/factory` and `/sources`'s `account:factory` agree;
 both report `truncated:true` when publication inventory is not complete. Machine
 reads also retain any saved truncation flag when inventory is complete. Machine
-repository list membership remains statistics-unfiltered. The account factory
-content hash includes enabled published identities, freshness total/missing and
-inventory truncation, so changing enabled identities invalidates it even when
+repository list membership has no separate statistics layer. The account factory
+content hash includes selected identities, freshness total/missing and
+inventory truncation, so changing selected identities invalidates it even when
 counts stay equal. Publication versions/windows and stored rows are unchanged;
 inventory counters remain historical collection metadata.
+Projected factory `selectedRepos` lists read-time membership and nullable filter
+metadata separately from the real published `repos`. Clients filter membership
+first and retain unpublished members in coverage, freshness and health. Unknown
+topics conservatively match topic filters; missing observations are not zeroes.
 Default/`scope=all` preserves the exact saved 90-day account contribution calendar,
 status and provenance, independently of repository filtering. Only `scope=starred`
 excludes it (`contribution:null`, `contributionExcluded:true`,
 `contributionStatus:"unavailable"`, no `contributionObservation`), because the
 account-wide calendar cannot be projected to a repository subset. GET is read-only.
-CI freshness counts three saved dependencies per repository, not one timestamp.
+CI freshness counts selected owned repositories, not input slots. Any missing or
+unavailable Actions/releases/details timestamp makes that repository missing once;
+oldest/latest timestamps still inspect all three saved dependencies.
 
 CI verdicts use the known default branch only; missing branch metadata, PR/feature
 branches, null refs and tag refs do not establish default-branch health.
@@ -321,15 +332,44 @@ Absolute run deadlines include paused/backoff time: catalog 30 minutes, quick
 refresh 6 hours, deep refresh or missing legacy depth 12 hours. `deadlineAt` is
 optional on old rows and derived from their start. Scheduler/mutating operations
 expire active runs as `failed` / `error:run_timed_out`, revoke leases, release locks
-and set schedule `lastError`; GET stays read-only. Earlier overdue schedule slots
-are coalesced into failed audit rows with `error:scheduled_slots_missed` and
-`missedSlots:{firstDueAt,lastDueAt,count}`; only the latest due slot is attempted.
+and set schedule `lastError`; GET stays read-only. Each pending daily remains
+queued by its schedule cursor until accepted or individually recorded as failed.
+If it cannot start before its due day's next Beijing midnight, it receives
+`error:scheduled_slot_missed` and a one-slot `missedSlots` audit. Old grouped
+audits remain historical records. A due occurrence starts or records a reason
+within five minutes under the healthy minute cron. Active work is never cancelled
+for a daily; terminal completion immediately hands off same-day daily work,
+bypassing only manual cooldowns. Exact-slot weekly ties precede daily, then catalog;
+otherwise pending current-day daily work precedes unstarted weekly/catalog work.
 Timeout/missed-slot `lastError` warnings persist until an explicit schedule save.
 
-`app:read`/`app:write` can read settings and refresh runs, update stars/statistics/
+All exposed runs add `expectedFinishAt` and `expectedFinishAtReason`: start time
+plus the median wall duration of the account's last five valid completed runs of
+the actual catalog/quick/deep kind, across retained history. Read-time calibration
+is not a deadline or guarantee. Null uses `no_completed_history`,
+`invalid_started_at` or `not_executed`; a valid estimate has a null reason.
+No GET backfill, upstream request or schema migration is introduced.
+
+`app:read`/`app:write` can read settings and refresh runs, update stars/
 schedules, or explicitly start and control the existing durable GitHub refresh
 plan. Refresh management does not execute external analysis or local code. The
 browser's account/token controls remain Access protected.
+
+Statistics writes return 410 `deprecated` without changing storage. Settings returns
+`statistics:[]` and `statistics_deprecated:true`; `/repos[].statistics_enabled` is a
+deprecated alias of `starred`. The migration removes existing stars with explicit
+false overrides, then empties but retains the override table. Bots must use stars
+for daily membership and must not recreate a separate statistics preference.
+
+`GET /stars` returns `{items:[{repo,starred,source,updated_at,reason}]}`, including
+unstarred owner tombstones. PUT/DELETE accept an optional `{reason}` (at most
+200 characters), return 200 with the star record, and always use `source:agent`.
+Browser writes always use `source:owner`. Opposite-direction agent writes against
+owner records return 409 `owner_override` without writes; same-direction writes
+are 200 no-ops preserving owner provenance, timestamp and reason. `/repos` adds
+nullable `star_source` and `star_updated_at`. Existing surviving stars migrate to
+owner; cleanup removals create no tombstones. The settings `stars` list contains
+only currently starred names. Bots must stop on owner conflicts, not retry them.
 
 The existing `agent_resources` table stores generic resources, including analysis
 reports and run status. Historical Work/resource rows and legacy AI tables remain

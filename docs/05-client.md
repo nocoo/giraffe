@@ -9,7 +9,17 @@ last-run time: reports become stale after 36 hours, while a run becomes overdue
 after 48 hours. The page is read-only; it does not enqueue work, invoke a model,
 refresh GitHub or execute code. Legacy Work records and jobs are not displayed.
 
-Business pages compose Basalt PageHeader through BusinessPageHeader: the title shares its row with the repository scope and available controls; subtitle and primary-data time share a wrapping second line. 列表首列为“参与统计”开关，可见性和归档状态独立成列。开关保存到服务端，作用于所有跨仓统计和软件工厂；管理清单保留禁用仓库以便重新开启。语言圆点、语言分布图、工厂规模地图统一使用 `chart-theme.ts` 的多色色板，已知语言固定映射，其他分类按规范化名称稳定映射，排序和筛选不会改变颜色。
+Business pages compose Basalt PageHeader through BusinessPageHeader: the title
+shares its row with repository scope and available controls; subtitle and
+primary-data time share a wrapping second line. Repository rows expose local
+stars and owner/agent provenance, not a statistics-participation toggle. Owner
+unstar tombstones keep their owner marker. Visibility, fork and archive metadata
+remain independent; owned forks and archives are included in all scope and enter
+daily scope when starred. Every cross-repository denominator uses the selected
+owned membership, including members with missing observations. Language dots,
+distributions and factory size maps share `chart-theme.ts`: known languages have
+fixed colors and other categories map by normalized name, independent of sorting
+or filtering.
 
 Vite SPA 契约。页面、MVVM、控件复用、刷新时机与 L1/L3 以本文为准；§11–12 保留阶段 2 的历史实施记录。当前全站刷新以 §7 和 [09](09-factory-runs.md) 为准。01 第 9 节只是信息架构摘要。HTTP 以 [04](04-server.md) 为准，JSON 以 [03](03-schema.md) 为准，测试分层以 [02](02-quality.md) 为准。
 

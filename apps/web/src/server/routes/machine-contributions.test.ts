@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import { factoryFixture } from "../../../../../tests/fixtures/factory-snapshot";
+import { profileDb } from "../../../../../tests/fixtures/profile-db";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import type { ApiScope } from "../../lib/api-access";
 import type { Env } from "../env";
@@ -76,10 +77,13 @@ async function setup() {
 
 it("serves inclusive saved dates in an observation envelope and preserves retained source provenance", async () => {
 	const s = await setup();
+	const profile = profileDb(s.raw);
+	s.env.DB = profile.raw;
 	const saved = (await s.raw.prepare("SELECT * FROM snapshots").all()).results;
 	const tokens = (await s.raw.prepare("SELECT * FROM api_tokens").all()).results;
 	const response = await s.call("?since=2026-09-14&until=2026-09-15");
 	expect(response.status).toBe(200);
+	expect(profile.trips).toHaveLength(2);
 	expect(await response.json()).toMatchObject({
 		account_id: s.snapshot.account_id,
 		sourceVersion: "retained-calendar",

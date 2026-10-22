@@ -1,5 +1,134 @@
 # Source Index Performance
 
+## v0.18.0: timing and comparison boundary
+
+Smart Placement is enabled with `placement.mode = "smart"`. It needs time to
+learn deployed traffic before deciding whether to relocate execution. This
+configuration alone is not evidence of a location change or latency improvement;
+compare request wall time and Workers Observability CPU after its learning period.
+
+Pinned baseline: `9bbecde5b3a8037e5a44b8e9e2e9610dcb71cff3`.
+This is the post-R1/R2/R3 tree plus its two reviewed functional corrections,
+without any performance changes. The reference is retained as merged ancestry;
+existing commits were not rewritten. Its original functional ancestor is
+`6f87d669eb67d92d1ad8a404c8a1fa0e4ffcf3b3`.
+
+The source reader returns stored snapshot payloads directly. Fix round 1 removes
+the per-request SQL JSON rewrite introduced by `50492d5`: rebuilding Actions and
+release arrays and removing detail fields increased SQLite CPU on every request,
+including empty-since and one-repository queries. Batching, honest timing and work
+counters remain intact. The representative fixture again returns 8,784,588 UTF-8
+payload bytes in one five-statement reader batch plus one HTTP authentication
+trip. These counts exclude metadata and transport envelopes; they do not claim
+fewer database pages or billed rows read.
+
+The rejected proposal returned 7,707,069 payload bytes (-12.266%) but its local
+SQL cost outweighed that reduction. The following historical three-sample
+measurement describes the withdrawn proposal, not the current implementation
+(Bun 1.4.3 high-resolution medians, milliseconds, no injected latency):
+
+| Request | D1/SQLite wall | Decode | Hash/projection | Serialize | Total |
+| --- | --- | --- | --- | --- | --- |
+| Full | 5.50 -> 33.78 | 7.01 -> 6.13 | 7.68 -> 9.69 | 0.30 -> 0.30 | 27.46 -> 59.05 |
+| Since, two thirds | 6.53 -> 31.94 | 7.38 -> 5.95 | 9.83 -> 8.51 | 0.22 -> 0.23 | 31.18 -> 54.13 |
+| Since, empty | 5.12 -> 32.72 | 7.20 -> 6.14 | 1.83 -> 3.79 | <0.01 -> <0.01 | 15.32 -> 44.67 |
+| One repository | 4.21 -> 33.05 | 6.97 -> 6.14 | 6.94 -> 7.14 | 0.01 -> 0.01 | 23.90 -> 53.41 |
+
+### Fix-round-1 alternating measurement
+
+`source-roundtrips.ts` now loads five complete revision trees against the same
+126-repository fixture, populated immutable streams and 2,000 unrelated history
+rows. It records one cold sample, then 15 measured samples per variant/scenario,
+alternating forward/reverse variant order each round. Network and database writes
+are denied during reads; no artificial latency is injected. All results remain
+one reader trip/five statements. HTTP authentication is not executed here and
+adds its unchanged separate trip. The profiler measures raw SQLite batch time
+separately from D1-wrapper wall time, which also includes byte-accounting overhead.
+
+Each cell below is **SQLite execution median / read-and-serialize total median**
+in milliseconds, measured locally with Bun 1.4.3:
+
+| Request | Main 0.17.3 `9b95192` | 0.17.2 `86f39d3` | Functional `9bbecde` | Rejected `d673307` | Fixed runtime `34d43b5` |
+| --- | --- | --- | --- | --- | --- |
+| Full | 4.47 / 28.12 | 4.59 / 26.77 | 4.57 / 27.44 | 31.31 / 54.80 | 4.55 / 28.72 |
+| Since, two thirds | 4.46 / 26.93 | 4.49 / 26.87 | 4.47 / 27.17 | 30.79 / 53.62 | 4.64 / 28.73 |
+| Since, empty | 4.42 / 15.38 | 4.47 / 15.18 | 4.43 / 16.52 | 31.31 / 42.66 | 4.48 / 17.62 |
+| One repository | 3.48 / 24.75 | 3.49 / 24.21 | 3.49 / 25.80 | 30.67 / 52.09 | 3.49 / 25.73 |
+
+Fixed D1-wrapper medians are 5.28 / 6.07 / 5.07 / 4.32 ms respectively;
+fixed total p95 values are 34.50 / 35.09 / 19.12 / 28.54 ms. Every variant reads
+8,784,588 payload bytes except the rejected projection (7,707,069). The final
+runtime restores baseline database cost, not a claimed speedup over 0.17.x:
+functional projection changes and honest work instrumentation remain, and some
+total medians are still above the older versions. No deployed latency is measured.
+
+Every sample asserts a stable exact body within its revision. Fixed, functional
+baseline and rejected-projection bodies also match one another byte-for-byte;
+older 0.17.x bodies intentionally differ where R1/R2 changed the contract.
+The separate 207-case HTTP matrix verifies ETags/status/private headers against
+`9bbecde`, rather than pretending the pre-functional API is byte-compatible.
+
+Reproduce the current comparison with `bun run tests/bench/source-roundtrips.ts`,
+`bun test tests/bench/source-legacy-version.test.ts` and
+`bun run tests/bench/route-parity.ts`. The latter archives the complete pinned
+tree and compares 207 route/scenario responses plus conditional tags, using
+stored, mismatched and legacy metadata with network denied. Historical sections
+below describe their original revisions, not the default current benchmark.
+
+Performance changes are compared against the complete post-R1/R2/R3 source tree,
+not the earlier main API contract. The pinned revision is recorded in the batch
+PR body and cross-version benchmarks. Functional membership, provenance and ETA
+changes are intentional and precede this boundary. Performance-only changes must
+preserve exact response JSON bytes, ordering, status and existing ETags, including
+conditional 304 responses and legacy/null metadata.
+
+Workers freeze clocks during pure CPU execution. Decode, hash and serialization
+durations can honestly read `0.00` in production even when work occurs; no minimum
+duration or artificial I/O is inserted. Whole-request CPU is reported separately
+by Workers Observability `cpuTimeMs`. Local Bun `performance.now()` measurements
+use a high-resolution clock and demonstrate the cost without claiming deployed
+CPU timings or latency guarantees.
+
+`Server-Timing` adds numeric work counters in `desc`: `decoded_rows`,
+`decoded_bytes`, `hash_ops`, and `serialized_bytes`. Decoded bytes count UTF-8
+JSON inputs returned to the source assembler, including stored content metadata;
+serialized bytes count the actual UTF-8 response JSON before HTTP compression.
+The values are counts, not milliseconds. Names are fixed and values are safe
+nonnegative integers; no repository, SQL, token or error text enters this header.
+Concurrent operations in the same phase contribute the union of their elapsed
+intervals, not the sum of overlapping waits. Different phases still overlap:
+`build` contains D1/decode/hash/serialization work as applicable, so adding the
+phases is not a CPU measurement.
+
+The historical measurements below describe their original revisions and are not
+current v0.18.0 before/after results.
+
+### Saved-route round trips
+
+These local HTTP counts include machine bearer lookup. Browser Access validation
+does not query D1; active-account selection is included in the count. Batching
+reduces transport waits, not necessarily SQL statement count. Successful reads
+remain read-only; ordering, errors, private headers and ETags are preserved.
+
+| Route group | Browser before -> after | Machine before -> after |
+| --- | --- | --- |
+| Repositories | 4 -> 1 | 5 -> 2 |
+| Issues / pull requests | 6 -> 1 | 6 -> 2 |
+| CI | 5 -> 1 | 5 -> 2 |
+| Factory summary | 7 -> 1 | 7 -> 2 |
+| Repository details and tabs | 2 -> 2 | 6 -> 2 |
+| Factory repository streams | 7 -> 1 | 5 -> 2 |
+| Settings | 3 -> 2 | 3 -> 2 |
+| Runs (`factory/runs` / `refresh-runs`) | 17 -> 2 | 4 -> 2 |
+| Contributions | N/A | 3 -> 2 |
+| Sources | N/A | 2 -> 2 |
+
+Browser repository tabs already have just active-account selection and one saved
+page read, so their two-trip path remains unchanged. Browser runs combine nine
+statements after active-account selection; machine reads keep bearer validation
+separate from the saved-data batch. No speculative upstream call, persistent
+cache or background work is introduced.
+
 ## v0.17.2: database round trips
 
 The steward's read-only Workers Observability sample (October 22, 2026) reports
@@ -393,6 +522,18 @@ harness merely broadens it to historical schemas, all-null metadata and more
 samples without modifying production readers.
 
 ## Conditional responses and compression
+
+Fix round 1 does not add an early 304. Stored `content_meta` contains component
+hash/full-version identifiers, not the complete ordered source-index response or
+its strong HTTP validator. Source entries still derive freshness, coverage,
+availability and account-projected versions from payloads, including legacy rows
+without metadata. Component digests cannot be combined into the existing digest
+of that serialized representation. `If-None-Match:*` must not bypass payload
+validation and turn existing errors into a successful conditional response.
+An exact pre-payload validator would require a separately designed save-time
+representation/validator or sufficient stored projection metadata, with invalidation
+for membership, publication and query variants. That schema/write-path work is
+explicitly deferred; no weaker validator, new cache or additional read is added.
 
 The machine source endpoint uses a strong, content-derived validator and accepts
 `If-None-Match` after bearer, account and scope authorization. Matching requests

@@ -24,6 +24,63 @@ GitHub 字段名跟 REST/GraphQL 对齐（`login`、`nameWithOwner`、`stargazer
 
 ## 2. 表
 
+### Star provenance
+
+Apply `0017_star_provenance.sql` after the membership cleanup. It additively extends
+`repo_stars` with `starred` (0 or 1, default 1), `source` (`owner|agent`, default
+owner), non-null `updated_at`, and nullable `reason` (at most 200 characters).
+The existing account/repository primary key remains case-insensitive. Surviving
+stars become owner records; their timestamp is seeded from the account's stored
+update time, or the Unix epoch when unavailable, not claimed as historical star
+event time. R2-removed rows remain absent and create no owner tombstone.
+
+Owner unstars retain `starred=0` rows. Every membership reader selects only
+`starred=1`; provenance reads include tombstones. Atomic conditional writes allow
+owners to replace any record and agents to replace only agent records or create
+absent records. Same-direction agent writes preserve an owner record unchanged;
+opposite-direction writes return 409. The migration verifier recognizes all four
+added columns, skips a fully applied migration, and rejects partial application.
+
+Do not roll application code back to a version that treats every `repo_stars` row
+as starred: it would misread tombstones and could erase owner protection. Preserve
+the new columns and rows during a rollback; use a provenance-aware code revision
+or restore an explicitly approved pre-migration backup. No automated destructive
+rollback is provided.
+
+### Star membership consolidation
+
+Migration `0016_star_membership.sql` preserves explicit daily-exclusion intent:
+delete a local star if and only if a matching statistics row has `enabled=0` for
+the same account and case-insensitive repository name. It then deletes every
+`repo_statistics` row, including entries whose repositories left the catalog.
+Explicit true overrides on unstarred repositories do not create stars. No production
+repository names are hard-coded. Reapplying the migration is a no-op.
+
+Before applying, the affected-star count is computed by this rule (not by assumed
+production counts):
+
+```sql
+SELECT count(*) AS stars_removed
+FROM repo_stars AS stars
+WHERE EXISTS (
+  SELECT 1 FROM repo_statistics AS statistics
+  WHERE statistics.account_id = stars.account_id
+    AND lower(statistics.repo) = lower(stars.repo)
+    AND statistics.enabled = 0
+);
+SELECT count(*) AS overrides_removed FROM repo_statistics;
+```
+
+Keep the emptied table for schema rollback; do not drop or rebuild it. This does
+not authorize running pre-provenance code against tombstones.
+This authorized cleanup changes configuration intent, not observations, publication
+history or agent resources. Rollback retains the resulting stars and the empty
+table; restoring pre-cleanup preferences requires a separately retained backup.
+The fixture migration covers starred false overrides, unstarred true overrides,
+archived entries, departed-repository residue and a non-owned repository. No remote
+database is accessed for this verification. Removed stars create no owner tombstones,
+so a future agent can star those catalog repositories again.
+
 ### Analysis report read index (v0.17.1)
 
 Migration `0015_analysis_reports.sql` adds only the repeatable partial expression
@@ -101,9 +158,21 @@ stored unchanged; machine reads project explicit nulls. See the
 
 ### `repo_statistics`
 
-仓库参与统计的手动覆盖值，主键 `(account_id, repo)`，仓库名不区分大小写，`enabled` 为 0/1。无覆盖值时，Fork 或已归档仓库默认不参与，其余默认参与。设置独立于 GitHub 快照保存，重新同步不会重置；删除账号时级联删除。增量迁移为 `migrations/0004_repo_statistics.sql`，可重复执行；回滚代码时保留该表即可，无需删除原始快照或设置。
+Retired. Migration `0016_star_membership.sql` preserves explicit exclusions by
+removing matching existing stars, then deletes every statistics override. The
+empty table is retained for schema rollback only; application selection and
+projection never read it, and retired mutation routes never write it. Keeping
+this table does not make pre-provenance code safe to run against owner tombstones;
+follow the migration and rollback requirements above.
 
-`POST /api/repos/:owner/:name/statistics` 接收 `{account_id, enabled: boolean}`，验证活动账号与仓库存在。读取时统一过滤工厂、Issues、PR、Insights、告警和通知，仓库管理页始终返回完整清单及有效 `statistics_enabled`。
+Browser `POST /api/repos/:owner/:name/statistics` and machine
+`PUT/DELETE /api/v1/accounts/:account/statistics/:owner/:name` return `410 deprecated`.
+Machine settings expose an empty overrides array with a deprecation marker;
+the deprecated repository `statistics_enabled` field is only an alias for
+`starred`, not an independent participation setting. Daily membership is the
+starred, account-owned set; full membership is every account-owned catalog
+repository, including forks and archived repositories. Non-owned repositories
+never enter refresh or coverage denominators.
 
 ### `_test_marker`
 

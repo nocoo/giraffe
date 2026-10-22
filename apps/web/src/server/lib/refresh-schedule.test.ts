@@ -138,7 +138,10 @@ it("refreshes disabled-statistics stars and prepares missing catalogues before s
 	);
 	await scheduleRefreshes(s.raw, now);
 	const row = await s.db.prepare("SELECT payload FROM factory_runs").first<{ payload: string }>();
-	expect(JSON.parse(row?.payload ?? "{}")).toMatchObject({ repos: [], siteRepos: ["nocoo/app"] });
+	expect(JSON.parse(row?.payload ?? "{}")).toMatchObject({
+		repos: ["nocoo/app"],
+		siteRepos: ["nocoo/app"],
+	});
 	const missing = await setup();
 	await missing.db.prepare("DELETE FROM snapshots WHERE kind='factory'").run();
 	await saveSchedule(
@@ -190,7 +193,7 @@ it("prepares stale catalogues once without advancing or duplicating the schedule
 	await scheduleRefreshes(s.raw, "2026-09-28T00:03:00.000Z");
 	expect((await readSchedules(s.db, snap.account_id))[0]).toMatchObject({
 		nextAt: "2026-09-29T00:00:00.000Z",
-		lastError: "catalog_incomplete",
+		lastError: "catalog_preparation_failed",
 	});
 	await saveSchedule(
 		s.db,
@@ -199,16 +202,26 @@ it("prepares stale catalogues once without advancing or duplicating the schedule
 		{ enabled: true, time: "08:00", weekday: 0, scope: "starred" },
 		now,
 	);
-	await s.db.prepare("UPDATE factory_runs SET status='completed'").run();
-	await s.db.batch(await replaceSnapshotStmts(s.db, snap.account_id, "factory", snap, later));
+	await s.db.batch(
+		await replaceSnapshotStmts(
+			s.db,
+			snap.account_id,
+			"factory",
+			{ ...snap, fetched_at: later },
+			later,
+		),
+	);
 	await scheduleRefreshes(s.raw, "2026-09-28T00:03:00.000Z");
-	const ready = await s.db
-		.prepare("SELECT payload FROM factory_runs WHERE status='running'")
+	expect(
+		(await s.db.prepare("SELECT id FROM factory_runs WHERE status='running'").all()).results,
+	).toEqual([]);
+	const settled = await s.db
+		.prepare("SELECT payload FROM factory_runs WHERE request_key=?")
+		.bind("daily:2026-09-28T00:00:00.000Z")
 		.first<{ payload: string }>();
-	expect(JSON.parse(ready?.payload ?? "{}")).toMatchObject({
-		mode: "refresh",
-		trigger: "daily",
-		depth: "quick",
+	expect(JSON.parse(settled?.payload ?? "{}")).toMatchObject({
+		status: "failed",
+		error: "catalog_preparation_failed",
 	});
 	expect((await readSchedules(s.db, snap.account_id))[0]?.nextAt).toBe("2026-09-29T00:00:00.000Z");
 });
@@ -256,7 +269,7 @@ it("schedules catalogue discovery daily without requiring existing catalogues or
 	expect((await s.db.prepare("SELECT id FROM factory_runs").all()).results).toHaveLength(1);
 });
 
-it("durably coalesces every superseded slot once and starts only the latest due occurrence", async () => {
+it("records every prior-day slot separately before starting the current occurrence", async () => {
 	vi.useFakeTimers();
 	vi.setSystemTime(now);
 	const s = await setup();
@@ -274,23 +287,25 @@ it("durably coalesces every superseded slot once and starts only the latest due 
 	const rows = (
 		await s.db.prepare("SELECT payload FROM factory_runs").all<{ payload: string }>()
 	).results.map((row) => JSON.parse(row.payload));
-	expect(rows).toHaveLength(2);
-	expect(rows.find((run) => run.error === "scheduled_slots_missed")).toMatchObject({
-		status: "failed",
-		schedule: { kind: "catalog", dueAt: "2026-09-25T00:00:00.000Z" },
-		missedSlots: {
-			firstDueAt: "2026-09-25T00:00:00.000Z",
-			lastDueAt: "2026-09-26T00:00:00.000Z",
-			count: 2,
-		},
-	});
+	expect(rows).toHaveLength(3);
+	const missed = rows.filter((run) => run.error === "scheduled_slot_missed");
+	expect(missed.map((run) => run.schedule.dueAt).sort()).toEqual([
+		"2026-09-25T00:00:00.000Z",
+		"2026-09-26T00:00:00.000Z",
+	]);
+	for (const run of missed)
+		expect(run.missedSlots).toEqual({
+			firstDueAt: run.schedule.dueAt,
+			lastDueAt: run.schedule.dueAt,
+			count: 1,
+		});
 	expect(rows.find((run) => run.status === "running")?.schedule.dueAt).toBe(now);
 	expect((await readSchedules(s.db, snap.account_id))[2]).toMatchObject({
 		nextAt: "2026-09-28T00:00:00.000Z",
-		lastError: "scheduled_slots_missed",
+		lastError: "scheduled_slot_missed",
 	});
 	await scheduleRefreshes(s.raw, new Date().toISOString());
-	expect((await s.db.prepare("SELECT id FROM factory_runs").all()).results).toHaveLength(2);
+	expect((await s.db.prepare("SELECT id FROM factory_runs").all()).results).toHaveLength(3);
 });
 
 it("expires a scheduled paused lock before planning and retains the safe timeout in settings", async () => {
@@ -364,11 +379,11 @@ it("never advances past missed slots if their durable audit transaction fails", 
 	});
 	expect((await s.db.prepare("SELECT id FROM factory_runs").all()).results).toHaveLength(0);
 	await scheduleRefreshes(s.raw, now);
-	expect((await s.db.prepare("SELECT id FROM factory_runs").all()).results).toHaveLength(2);
+	expect((await s.db.prepare("SELECT id FROM factory_runs").all()).results).toHaveLength(3);
 });
 
 it.each(["missed", "empty"] as const)(
-	"does not audit or acknowledge a %s slot accepted after its preliminary read",
+	"does not replace a concurrently accepted %s occurrence with an audit",
 	async (scenario) => {
 		const s = await setup();
 		const kind = scenario === "missed" ? "catalog" : "daily";
@@ -378,13 +393,13 @@ it.each(["missed", "empty"] as const)(
 			snap.account_id,
 			kind,
 			{ enabled: true, time: "08:00", weekday: 0, scope: kind === "catalog" ? "all" : "starred" },
-			scenario === "missed" ? "2026-09-25T00:01:00.000Z" : "2026-09-26T00:01:00.000Z",
+			new Date(Date.parse(due) - 1).toISOString(),
 		);
 		const batch = s.raw.batch.bind(s.raw);
 		let acceptedId = "";
 		vi.spyOn(s.raw, "batch").mockImplementationOnce(async (writes) => {
 			const accepted = await startRefresh(
-				s.db,
+				createDb(s.raw),
 				{ id: snap.account_id, login: "nocoo" },
 				{
 					account_id: snap.account_id,
@@ -393,7 +408,7 @@ it.each(["missed", "empty"] as const)(
 					depth: "quick",
 					scope: "all",
 				},
-				now,
+				due,
 				"daily",
 				{ kind, dueAt: due },
 			);
@@ -401,64 +416,53 @@ it.each(["missed", "empty"] as const)(
 			return batch(writes);
 		});
 		await scheduleRefreshes(s.raw, now);
-		expect((await s.db.prepare("SELECT id FROM factory_runs").all()).results).toEqual([
-			{ id: acceptedId },
-		]);
+		const rows = await s.db
+			.prepare("SELECT id,status FROM factory_runs WHERE request_key=?")
+			.bind(`${kind}:${due}`)
+			.all();
+		expect(rows.results).toEqual([{ id: acceptedId, status: "running" }]);
 		expect(
-			(await readSchedules(s.db, snap.account_id)).find((row) => row.kind === kind),
-		).toMatchObject({
-			nextAt: due,
-			lastRunId: null,
-			lastError: null,
-		});
-		await scheduleRefreshes(s.raw, now);
-		expect((await s.db.prepare("SELECT id FROM factory_runs").all()).results).toEqual([
-			{ id: acceptedId },
-		]);
-		expect(
-			(await readSchedules(s.db, snap.account_id)).find((row) => row.kind === kind),
-		).toMatchObject({
-			lastRunId: acceptedId,
-		});
+			(
+				await s.db
+					.prepare(
+						"SELECT id FROM factory_runs WHERE json_extract(payload,'$.error')='scheduled_slot_missed'",
+					)
+					.all()
+			).results,
+		).toEqual([]);
 	},
 );
 
-it("records weekly missed intervals and never mutates a prior interval on a later tick", async () => {
+it("keeps the oldest weekly occurrence pending and preserves its identity after timeout", async () => {
 	const s = await setup();
 	await saveSchedule(
 		s.db,
 		snap.account_id,
 		"weekly",
-		{ enabled: true, time: "08:00", weekday: 0, scope: "starred" },
+		{ enabled: true, time: "08:00", weekday: 0, scope: "all" },
 		"2026-09-05T00:01:00.000Z",
 	);
 	await scheduleRefreshes(s.raw, now);
-	const initial = await s.db
-		.prepare(
-			"SELECT id,payload FROM factory_runs WHERE json_extract(payload,'$.missedSlots') IS NOT NULL",
-		)
-		.all<{ id: string; payload: string }>();
-	expect(JSON.parse(initial.results[0]?.payload ?? "{}").missedSlots).toEqual({
-		firstDueAt: "2026-09-06T00:00:00.000Z",
-		lastDueAt: "2026-09-20T00:00:00.000Z",
-		count: 3,
-	});
+	const first = await s.db
+		.prepare("SELECT id,payload FROM factory_runs")
+		.first<{ id: string; payload: string }>();
+	expect(JSON.parse(first?.payload ?? "{}").schedule.dueAt).toBe("2026-09-06T00:00:00.000Z");
+	expect((await readSchedules(s.db, snap.account_id))[1]?.nextAt).toBe("2026-09-13T00:00:00.000Z");
 	await scheduleRefreshes(s.raw, "2026-10-18T00:00:00.000Z");
-	expect(
-		await s.db
-			.prepare("SELECT payload FROM factory_runs WHERE id=?")
-			.bind(initial.results[0]?.id)
-			.first(),
-	).toEqual({ payload: initial.results[0]?.payload });
-	const intervals = await s.db
-		.prepare(
-			"SELECT payload FROM factory_runs WHERE json_extract(payload,'$.missedSlots') IS NOT NULL ORDER BY created_at",
-		)
-		.all<{ payload: string }>();
-	expect(intervals.results).toHaveLength(2);
-	expect(JSON.parse(intervals.results[1]?.payload ?? "{}").missedSlots).toEqual({
-		firstDueAt: "2026-10-04T00:00:00.000Z",
-		lastDueAt: "2026-10-11T00:00:00.000Z",
-		count: 2,
+	const old = await s.db
+		.prepare("SELECT payload FROM factory_runs WHERE id=?")
+		.bind(first?.id)
+		.first<{ payload: string }>();
+	expect(JSON.parse(old?.payload ?? "{}")).toMatchObject({
+		error: "run_timed_out",
+		schedule: { kind: "weekly", dueAt: "2026-09-06T00:00:00.000Z" },
 	});
+	expect(
+		(
+			await s.db
+				.prepare("SELECT id FROM factory_runs WHERE request_key=?")
+				.bind("weekly:2026-09-06T00:00:00.000Z")
+				.all()
+		).results,
+	).toHaveLength(1);
 });

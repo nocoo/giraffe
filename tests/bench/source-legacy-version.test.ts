@@ -8,7 +8,7 @@ import { readSources } from "../../apps/web/src/server/lib/machine-sources";
 import { revisionFixture } from "../fixtures/revision";
 import { sqliteFixture } from "../fixtures/sqlite";
 
-const revision = revisionFixture("8c20328c46ae4ef64325c156007dba7d0857216a");
+const revision = revisionFixture("9bbecde5b3a8037e5a44b8e9e2e9610dcb71cff3");
 let baselineApp: typeof import("../../apps/web/src/server/index");
 let baselineSources: typeof import("../../apps/web/src/server/lib/machine-sources");
 let baselineObservations: typeof import("../../apps/web/src/server/lib/machine-observations");
@@ -94,7 +94,7 @@ async function setup(cached: boolean) {
 }
 
 it.each([false, true])(
-	"preserves 0.17.1 source indexes and conditional tags over unchanged legacy rows (cached=%s)",
+	"preserves post-r3 source indexes and conditional tags over unchanged legacy rows (cached=%s)",
 	async (cached) => {
 		const fixture = await setup(cached);
 		const before = await fixture.raw.prepare("SELECT * FROM snapshots ORDER BY kind").all();
@@ -119,7 +119,7 @@ it.each([false, true])(
 );
 
 it.each([false, true])(
-	"preserves 0.17.1 observation versions independently of lifecycle presentation (cached=%s)",
+	"preserves post-r3 observation versions independently of lifecycle presentation (cached=%s)",
 	async (cached) => {
 		const fixture = await setup(cached);
 		for (const resource of ["prs", "repo:owner/app:prs"]) {

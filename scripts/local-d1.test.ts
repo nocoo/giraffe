@@ -31,6 +31,11 @@ it.each([false, true])("prepares refresh tables on startup with existing data: %
 		});
 		ensureLocalSchema();
 		expect(db.prepare("SELECT * FROM repo_stars").all()).toEqual([]);
+		expect(
+			db.prepare("SELECT name FROM pragma_table_info('repo_stars') ORDER BY cid").all(),
+		).toEqual(
+			["account_id", "repo", "starred", "source", "updated_at", "reason"].map((name) => ({ name })),
+		);
 		expect(db.prepare("SELECT * FROM refresh_schedules").all()).toEqual([]);
 		ensureLocalSchema();
 		if (existing) {
@@ -44,6 +49,30 @@ it.each([false, true])("prepares refresh tables on startup with existing data: %
 				},
 			]);
 		}
+	} finally {
+		execute.mockReset();
+		db.close();
+	}
+});
+
+it("rejects a partially applied star provenance migration", () => {
+	const db = new DatabaseSync(":memory:");
+	try {
+		const schema = readFileSync("apps/web/src/server/lib/db/schema.sql", "utf8");
+		const migration = readFileSync("migrations/0017_star_provenance.sql", "utf8");
+		db.exec(schema.slice(0, schema.indexOf(migration)));
+		db.exec("ALTER TABLE repo_stars ADD COLUMN starred INTEGER NOT NULL DEFAULT 1");
+		execute.mockImplementation((_bin: string, args: string[]) => {
+			const file = args.find((arg) => arg.startsWith("--file="));
+			if (file) {
+				db.exec(readFileSync(file.slice("--file=".length), "utf8"));
+				return "";
+			}
+			const query = args[args.indexOf("--command") + 1];
+			if (!query) throw new Error("Missing schema query");
+			return JSON.stringify([{ results: db.prepare(query).all() }]);
+		});
+		expect(() => ensureLocalSchema()).toThrow("Partial star provenance migration");
 	} finally {
 		execute.mockReset();
 		db.close();

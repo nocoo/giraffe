@@ -7,7 +7,7 @@ import {
 } from "../../apps/web/src/lib/factory-run";
 import { defaultSchedule } from "../../apps/web/src/lib/refresh-schedule";
 import { factoryFixture } from "../fixtures/factory-snapshot";
-import { createUiFixtures } from "./ui-fixtures";
+import { createUiFixtures, projectFactoryFixture } from "./ui-fixtures";
 
 function consoleFixture() {
 	const snapshot = factoryFixture();
@@ -107,7 +107,7 @@ function consoleFixture() {
 async function mockConsole(page: Page, fixture: ReturnType<typeof consoleFixture>) {
 	const fixtures: Record<string, unknown> = {
 		...createUiFixtures(),
-		"/api/factory": fixture.snapshot,
+		"/api/factory": projectFactoryFixture(fixture.snapshot),
 		"/api/refresh/settings": {
 			account_id: fixture.state.account_id,
 			starred: [],
@@ -205,9 +205,9 @@ test("schedule incidents do not promise to retry terminal or missed work", async
 	await expect(
 		page.getByText("上次刷新超时，账号锁已释放；请查看执行记录", { exact: true }),
 	).toBeVisible();
-	await expect(
-		page.getByText("曾错过调度时间，已保留记录；仅尝试最新时段", { exact: true }),
-	).toBeVisible();
+	await expect(page.getByText("曾错过调度时间，已保留历史记录", { exact: true })).toBeVisible();
+	await expect(page.getByText("未处理时段会逐条保留", { exact: false })).toBeVisible();
+	await expect(page.getByText("仅尝试最新时段", { exact: false })).toHaveCount(0);
 });
 
 test("account settings guidance navigates without replacing the document", async ({ page }) => {

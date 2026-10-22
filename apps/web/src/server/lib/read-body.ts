@@ -1,6 +1,6 @@
 import { ApiError } from "./errors";
 
-export async function readJson(request: Request, maxBytes: number): Promise<unknown> {
+function requireJson(request: Request) {
 	const rawType = request.headers.get("content-type") ?? "";
 	const [type, ...params] = rawType.split(";").map((part) => part.trim().toLowerCase());
 	if (type !== "application/json") {
@@ -9,8 +9,17 @@ export async function readJson(request: Request, maxBytes: number): Promise<unkn
 	if (params.some((part) => part.startsWith("charset=") && part !== "charset=utf-8")) {
 		throw new ApiError(400, "validation_failed", "json required");
 	}
+}
+
+export async function readJson(
+	request: Request,
+	maxBytes: number,
+	optional = false,
+): Promise<unknown> {
+	if (!optional) requireJson(request);
 	const reader = request.body?.getReader();
 	if (!reader) {
+		if (optional) return undefined;
 		throw new ApiError(400, "validation_failed", "empty body");
 	}
 	const chunks: Uint8Array[] = [];
@@ -29,6 +38,8 @@ export async function readJson(request: Request, maxBytes: number): Promise<unkn
 			chunks.push(value);
 		}
 	}
+	if (optional && total === 0) return undefined;
+	if (optional) requireJson(request);
 	const bytes = new Uint8Array(total);
 	let offset = 0;
 	for (const chunk of chunks) {

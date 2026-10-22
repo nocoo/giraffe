@@ -3,6 +3,41 @@ import { ApiError } from "./errors";
 import { readJson } from "./read-body";
 
 describe("readJson", () => {
+	it("accepts absent and zero-byte optional bodies but validates every nonempty body", async () => {
+		for (const body of [undefined, ""]) {
+			const request = new Request("http://x", {
+				method: "DELETE",
+				...(body === undefined ? {} : { body }),
+			});
+			expect(await readJson(request, 100, true)).toBeUndefined();
+		}
+		for (const body of [" ", "{"])
+			await expect(
+				readJson(
+					new Request("http://x", {
+						method: "PUT",
+						headers: { "content-type": "application/json" },
+						body,
+					}),
+					100,
+					true,
+				),
+			).rejects.toBeInstanceOf(ApiError);
+		await expect(
+			readJson(new Request("http://x", { method: "PUT", body: "{}" }), 100, true),
+		).rejects.toBeInstanceOf(ApiError);
+		expect(
+			await readJson(
+				new Request("http://x", {
+					method: "PUT",
+					headers: { "content-type": "application/json" },
+					body: "null",
+				}),
+				100,
+				true,
+			),
+		).toBeNull();
+	});
 	it("parses json and rejects oversized bodies", async () => {
 		const ok = new Request("http://x", {
 			method: "POST",

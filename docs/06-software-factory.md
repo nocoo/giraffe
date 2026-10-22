@@ -4,7 +4,7 @@
 
 ## 采集契约
 
-- 归属范围：GitHub GraphQL `viewer.repositories(affiliations:[OWNER], ownerAffiliations:[OWNER])`，按名称排序，每页 10 个，遍历 `pageInfo`。按 node ID 去重，清单保留 archived/fork 元数据，默认不参与统计，仓库页可以手动开启。工厂原有本人归属边界及 effective mirror `nocoo/rsshub` 排除规则继续生效。扫描数与 `totalCount` 不符时报错，不宣称清单完整。只能证明当前令牌的可见范围，不能证明没有不可见的私有仓库。
+- Ownership: GitHub GraphQL `viewer.repositories(affiliations:[OWNER], ownerAffiliations:[OWNER])`, ordered by name, traverses `pageInfo` in ten-repository pages and deduplicates by node ID. Full membership includes every account-owned catalog repository, including archives and forks; daily membership is its locally starred subset. Non-owned repositories never enter refresh or coverage denominators. There is no mirror-name exception or separate participation override. A scan/`totalCount` mismatch is an error, not a complete catalog. The catalog proves token-visible ownership only, not the absence of inaccessible private repositories.
 - 仓库规模：`diskUsage` 为 GitHub 仓库磁盘 KiB，不是代码行数；语言为 Linguist 字节数，不含被 Linguist 排除的生成文件等。每仓前 100 种语言，超出则标记语言覆盖不完整。主题前 20 个仅作可重叠筛选标签，不能相加当互斥领域。
 - 采样窗口：从采集启动时 UTC 当日零点往前 89 日至启动时刻，左闭右开。包含当前不完整日。提交按 committer timestamp，固定清单时的默认分支 SHA，包含所有作者及 merge commit；不是所有分支提交，不是 nocoo 个人贡献。跨仓同 SHA 按 repo+SHA 计数。历史账号贡献来自 `contributionsCollection`，可能包含排除仓库、外部仓库与受限贡献；原始记录保留，当前统计响应不返回该汇总。
 - Issue/PR：从各仓资源端点按 updated 降序完整分页，容量截断时优先保留最近更新记录；不按 created_at 提前停止，避免遗漏旧创建、窗口内合并的工作。Issue 显式排除 REST 返回的 `pull_request`。生命周期按 `created_at`、最后 `closed_at`、`merged_at`；不重建 reopen 的多次历史转换。清单的 open/closed 计数是清单取样时状态，明细是分页观察时状态；GitHub 不提供跨 API 原子快照，持续变化的状态可能略有差异。
@@ -27,7 +27,17 @@ See [the contribution API and source references](api.md#get-contributions).
 
 持久刷新设计、迁移与回滚见 [09 — 持久化工厂刷新](09-factory-runs.md)。
 
-仓库页的“参与统计”开关统一约束工厂列表、图表、汇总、引用图及刷新计划。设置在响应读取时应用，不修改不可变发布版本；重新开启会恢复已有观测。旧清单未保存的 Fork/归档仓库，需要同步仓库列表后再采集，缺失观测不算作零。GitHub 全账号贡献日历无法按仓库排除，因此不展示该汇总，保留参与统计仓库的提交日历。全站原始快照与单仓详情继续保留，方便管理和重新纳入。页面缺数据时统一导航到控制台，失败保留已有数据与原时间。
+Repository stars are the only daily-membership control; the statistics toggle is
+retired. Read-time owned/all or owned/starred selection consistently controls
+factory lists, charts, summaries, dependency graphs and coverage, without changing
+immutable publications. New refresh plans use the same resolved owned members for
+factory streams and repository detail pages. Selected repositories without a
+publication still count as missing, not a successful zero. Sync catalogs that lack
+owned forks or archives before collecting them. The account contribution calendar
+cannot be filtered into repository membership; factory repository commit calendars
+use selected observations instead. Saved snapshots and detail observations retain
+their original provenance. Missing data links to the refresh center; failures keep
+previous good observations and timestamps.
 
 `GET /api/factory` 只读已发布的当前账号全局快照。`GET /api/factory/runs` 只读当前 run、最近 20 个历史 run、仓库状态和清单。`POST /api/factory/runs`（`/api/factory/refresh` 为同一契约别名）接收 `{account_id, requestKey: UUID, mode: "catalog" | "refresh", scope, repos?, order?, language?, topic?, query?, repo?}`，202 返回持久 run ID。`requestKey` 每次明确新建操作生成，网络重试复用；重复键返回原 run，不能当作新的刷新。`scope` 支持 all/selected/filter/stale/failed，selected 使用 repos 指定成员和顺序；其他范围由服务端解析成员，order 单独指定优先级。旧 `{restart:true}` 请求拒绝，不能隐式触发全仓刷新。
 

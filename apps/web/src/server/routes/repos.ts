@@ -4,21 +4,20 @@ import type { AppVars, Env } from "../env";
 import { getActiveAccount } from "../lib/db/accounts";
 import { ApiError, jsonOk } from "../lib/errors";
 import { ACCOUNT_ID_RE } from "../lib/id";
+import { requireCatalogRepo } from "../lib/machine-observations";
 import { readJson } from "../lib/read-body";
 import { enableDefaultSchedules } from "../lib/refresh-schedule";
-import { repoPolicy } from "../lib/repo-statistics";
+import { starReason, writeStar } from "../lib/repo-stars";
 import { repoParts, snapshotGet } from "./snapshots";
 
 const settingsInput = z
-	.object({ account_id: z.string().regex(ACCOUNT_ID_RE), enabled: z.boolean() })
+	.object({ account_id: z.string().regex(ACCOUNT_ID_RE), enabled: z.boolean(), reason: starReason })
 	.strict();
-export const setRepoStatistics = (c: Context<{ Bindings: Env; Variables: AppVars }>) =>
-	setRepoSetting(c, "statistics");
-export const setRepoStar = (c: Context<{ Bindings: Env; Variables: AppVars }>) =>
-	setRepoSetting(c, "star");
-async function setRepoSetting(
+export function setRepoStatistics(): never {
+	throw new ApiError(410, "deprecated", "statistics settings are replaced by stars");
+}
+export async function setRepoStar(
 	c: Context<{ Bindings: Env; Variables: AppVars }>,
-	kind: "statistics" | "star",
 ): Promise<Response> {
 	const { owner, name } = repoParts(String(c.req.param("owner")), String(c.req.param("name")));
 	const parsed = settingsInput.safeParse(await readJson(c.req.raw, 1024));
@@ -28,40 +27,24 @@ async function setRepoSetting(
 	if (!account) throw new ApiError(409, "account_missing", "no active account");
 	if (account.id !== parsed.data.account_id)
 		throw new ApiError(409, "account_conflict", "account changed");
-	const policy = await repoPolicy(db, account.id);
-	const full = `${owner}/${name}`;
-	const repo = policy.repos.find((r) => r.name_with_owner.toLowerCase() === full.toLowerCase());
-	if (!repo) throw new ApiError(404, "not_found", "repository not in catalog");
-	if (kind === "star") {
-		if (parsed.data.enabled) {
-			await db
-				.prepare(
-					"INSERT INTO repo_stars(account_id,repo) VALUES(?,?) ON CONFLICT(account_id,repo) DO NOTHING",
-				)
-				.bind(account.id, repo.name_with_owner)
-				.run();
-			await enableDefaultSchedules(db, account.id, new Date().toISOString());
-		} else
-			await db
-				.prepare("DELETE FROM repo_stars WHERE account_id=? AND repo=?")
-				.bind(account.id, repo.name_with_owner)
-				.run();
-		return jsonOk({
-			account_id: account.id,
-			name_with_owner: repo.name_with_owner,
-			starred: parsed.data.enabled,
-		});
-	}
-	await db
-		.prepare(
-			"INSERT INTO repo_statistics(account_id,repo,enabled) VALUES(?,?,?) ON CONFLICT(account_id,repo) DO UPDATE SET enabled=excluded.enabled",
-		)
-		.bind(account.id, repo.name_with_owner, Number(parsed.data.enabled))
-		.run();
+	const repo = await requireCatalogRepo(db, account.id, `${owner}/${name}`);
+	const now = new Date().toISOString();
+	const { item } = await writeStar(
+		db,
+		account.id,
+		repo,
+		parsed.data.enabled,
+		"owner",
+		parsed.data.reason ?? null,
+		now,
+	);
+	if (item.starred) await enableDefaultSchedules(db, account.id, now);
 	return jsonOk({
 		account_id: account.id,
-		name_with_owner: repo.name_with_owner,
-		statistics_enabled: parsed.data.enabled,
+		name_with_owner: repo,
+		starred: item.starred,
+		star_source: item.source,
+		star_updated_at: item.updated_at,
 	});
 }
 

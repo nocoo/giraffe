@@ -1171,3 +1171,79 @@ was not modified. Resizing with the controller's explicit pane ID restored the
 intended layout. Treat split ratios as the existing pane's share, use explicit
 pane IDs for resize operations, and verify returned workspace, tab and geometry
 before continuing. The review pane was closed after collecting its result.
+
+## 2026-10-22 - Respect shell names and verify delegated layout
+
+The batch-10 controller used `path` as a zsh loop variable while inspecting
+instruction locations, despite the brief prohibiting it. zsh aliases `path` to
+`PATH`, so later commands in that subprocess could not resolve. No repository or
+global shell configuration changed. A fresh command process restored the inherited
+environment. Use descriptive names such as `instruction_file` rather than zsh
+special variables, and check brief-specific command constraints before execution.
+
+The controller also repeated the split-ratio mistake already recorded above:
+`0.67` left the controller too wide. An explicit resize of `wH:p1T` corrected it,
+and the returned geometry confirmed 41 of 125 columns for the controller with
+workers only on its right. Verify actual geometry immediately after splitting;
+remembering the rule without checking the returned layout is insufficient.
+
+## 2026-10-22 - Freeze code and schema during HTTP acceptance
+
+The batch-10 controller started the full local API runner while R1 workers were
+editing the watched Worker and adding a migration. The new provenance journey
+first failed because GET stars did not yet exist, but subsequent requests also
+saw reload-related connection loss and 500 responses. That mixed-revision run
+cannot establish integration health or attribute the later failures reliably.
+Use focused isolated tests for concurrent TDD; freeze implementation and schema
+before starting the real HTTP runner, which initializes its database only once.
+Recreate the runner's fixture database after migrations change and rerun all
+acceptance checks against the frozen candidate.
+
+## 2026-10-22 - Prove the intended failure and response boundary
+
+Two batch-10 test drafts failed for the wrong reason: a timing fixture used an
+obsolete account column, and a scheduler race interceptor matched different SQL
+from the actual idempotency lookup. Correct the fixtures first, then rerun the
+original implementation to prove the intended RED before counting GREEN evidence.
+Repeated independent reads in a single test also exhausted the request-scoped
+D1 statement budget; each simulated request needs its own database wrapper.
+
+A standalone JSON Response bypassed Hono's prepared private headers before ETag
+handling, dropping cache-control and referrer policy on 304 responses. Construct
+the response through the context and assert conditional headers alongside exact
+body bytes and ETags in cross-version tests. HTTP status/body parity alone is not
+proof that authorization-sensitive caching behavior has survived refactoring.
+
+## 2026-10-22 - Keep browser fixtures on the projected contract
+
+Batch-10 browser mocks still returned raw stored factory snapshots after the API
+introduced required selected membership. The page could not render, although
+focused projection tests and real API checks passed. Build typed projected mock
+responses after fixture mutations, and update star-write acknowledgements with
+the server-confirmed fields. Keep raw storage fixtures unchanged; never repair
+test drift with a runtime denominator fallback that hides unpublished members.
+
+The follow-up BDD run also caught an obsolete missed-slot expectation, and its
+page context exposed stale help text promising latest-slot-only processing.
+Verify explanatory UI copy as well as error labels when scheduling semantics
+change. A schema-doc correction then omitted the machine endpoint's account
+segment. Copy full mounted paths from route registration, not from a local
+handler path or recollection, and independently review the correction itself.
+
+Final review found duplicate current-contract paragraphs still describing the
+retired membership policy, latest-only schedule recovery and unrestricted old-code
+rollback. Updating the new sections alone left contradictory operational advice.
+Search every current runbook for superseded concepts when contracts change, while
+preserving clearly dated investigation evidence. Review rollback instructions
+separately from additive schema safety: retained tables do not make old semantics
+safe for new tombstone rows.
+
+## 2026-10-22 - Reject payload savings that increase database work
+
+Batch 10 reduced source payload bytes by rebuilding JSON arrays inside SQLite on
+every read. The measured SQL CPU increase outweighed the modest byte reduction,
+including requests that returned no changed sources. Disclosure did not make the
+tradeoff a useful optimization. Independent review rejected it, and fix round 1
+restores direct payload reads in a forward commit. Compare alternating repeated
+samples of database and whole-request cost before accepting a transport-byte
+optimization; do not infer lower remote latency from smaller payloads alone.

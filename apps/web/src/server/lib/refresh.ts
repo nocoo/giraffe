@@ -7,7 +7,7 @@ import {
 	collectRepos,
 	MAX_STAGED_BYTES,
 } from "./collect";
-import { touchLastUsedStmt } from "./db/accounts";
+import { getAccount, touchLastUsedStmt } from "./db/accounts";
 import type { Db } from "./db/d1";
 import { pruneDaysStmt } from "./db/snapshot-days";
 import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
@@ -15,8 +15,8 @@ import { ApiError } from "./errors";
 import { type GithubClient, MAX_FETCHES } from "./github-client";
 import type { Capabilities } from "./github-map";
 import { buildInsights, type InsightAlert, type RepoRow } from "./insights";
-import { repoPolicy } from "./repo-statistics";
 import { assemblePages, splitPages } from "./snapshot-pages";
+import { repoPolicy } from "./snapshot-projection";
 
 const ALL = SITE_SNAPSHOT_KINDS;
 const DERIVED = new Set(["insights"]);
@@ -120,6 +120,11 @@ export async function prepareRefresh(
 	written: Record<string, Collected> = {},
 	options: { deriveInsights?: boolean } = {},
 ) {
+	const owner = (await getAccount(db, accountId))?.login.toLowerCase();
+	for (const kind of requested) {
+		if (kind.startsWith("repo:") && kind.slice(5).split("/")[0]?.toLowerCase() !== owner)
+			throw new ApiError(400, "validation_failed", "repository is not account-owned");
+	}
 	async function loaded(kind: string): Promise<Collected | null> {
 		const current = written[kind];
 		if (current) {
@@ -137,7 +142,7 @@ export async function prepareRefresh(
 		}
 		return repos
 			.map((row) => String((row as { name_with_owner?: string }).name_with_owner ?? ""))
-			.filter(Boolean);
+			.filter((name) => name.split("/")[0]?.toLowerCase() === owner);
 	}
 
 	let used = 0;
@@ -194,7 +199,7 @@ export async function prepareRefresh(
 		if (insightsOk && reposSrc) {
 			const alertsIncomplete = securityIncomplete(alertsSrc);
 			const insights = buildInsights(
-				asRepos(reposSrc).filter((r) => policy.enabled(r.name_with_owner)),
+				asRepos(reposSrc).filter((r) => policy.includes(r.name_with_owner)),
 				Array.isArray(alertsSrc?.items) ? (alertsSrc.items as InsightAlert[]) : [],
 				fetchedAt,
 				alertsIncomplete,

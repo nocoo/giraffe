@@ -73,7 +73,7 @@ beforeAll(() => {
 	seeded = true;
 	sql(
 		[
-			`INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES(${quote(account)},${quote(`pr-${account}`)},'test-only-unused','fake',${quote(now)},${quote(now)});`,
+			`INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES(${quote(account)},'nocoo','test-only-unused','fake',${quote(now)},${quote(now)});`,
 			...[token, restricted].map(
 				(bearer, index) =>
 					`INSERT INTO api_tokens(id,account_id,token_hash,label,scopes,creator,created_at,expires_at) VALUES(${quote(`${account}-${index}`)},${quote(account)},${quote(createHash("sha256").update(bearer).digest("hex"))},'PR acceptance',${quote(JSON.stringify([index ? "app:read" : "observations:read"]))},'local test',${quote(now)},${quote(new Date(Date.now() + 86400_000).toISOString())});`,

@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { expect, it, vi } from "vitest";
 import { analysisTimeCases } from "../../../../../tests/fixtures/analysis-times";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
@@ -202,7 +202,12 @@ it("adds the index repeatably without rewriting rows and preserves old CRUD on r
 		.run();
 	const before = await raw.prepare("SELECT * FROM agent_resources").all();
 	const migration = readFileSync("migrations/0015_analysis_reports.sql", "utf8");
-	expect(readFileSync("apps/web/src/server/lib/db/schema.sql", "utf8").endsWith(migration)).toBe(
+	const migrations = readdirSync("migrations")
+		.filter((name) => name.endsWith(".sql"))
+		.sort()
+		.map((name) => readFileSync(`migrations/${name}`, "utf8"))
+		.join("\n");
+	expect(readFileSync("apps/web/src/server/lib/db/schema.sql", "utf8").endsWith(migrations)).toBe(
 		true,
 	);
 	await raw.prepare(migration).run();

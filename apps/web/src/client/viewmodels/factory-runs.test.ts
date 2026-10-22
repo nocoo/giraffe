@@ -23,6 +23,10 @@ import { setActiveAccountId } from "./session";
 
 vi.mock("../lib/api", () => ({ apiGet: vi.fn(), apiPost: vi.fn() }));
 const snap = factoryFixture();
+const estimate = {
+	expectedFinishAt: null,
+	expectedFinishAtReason: "no_completed_history" as const,
+};
 const run = makeRun("r", snap.account_id, "nocoo", "key", "refresh", snap.repos, snap.fetched_at);
 it("shows limited dependencies as processed without a failure or permission recommendation", () => {
 	const plan = structuredClone(run);
@@ -31,7 +35,12 @@ it("shows limited dependencies as processed without a failure or permission reco
 		status: "limited",
 		error: "dependency_parse_unsupported",
 	});
-	const view = { ...plan, leaseUntil: null, progress: runProgress(plan, snap.fetched_at) };
+	const view = {
+		...plan,
+		...estimate,
+		leaseUntil: null,
+		progress: runProgress(plan, snap.fetched_at),
+	};
 	expect(runStages(view).find((stage) => stage.title === "工厂统计")).toMatchObject({
 		completed: 9,
 		failed: 0,
@@ -49,7 +58,12 @@ it("shows unavailable work separately from problems and completed evidence", () 
 	const alerts = plan.steps.find((step) => step.kind === "alerts");
 	if (!alerts) throw new Error("fixture");
 	Object.assign(alerts, { status: "unavailable", error: "alerts_disabled" });
-	const view = { ...plan, leaseUntil: null, progress: runProgress(plan, snap.fetched_at) };
+	const view = {
+		...plan,
+		...estimate,
+		leaseUntil: null,
+		progress: runProgress(plan, snap.fetched_at),
+	};
 	expect(runIssues(view)).toEqual([]);
 	expect(runStages(view).find((stage) => stage.title === "工厂统计")).toMatchObject({
 		completed: 9,
@@ -68,7 +82,12 @@ it("reports page updates separately from factory publication and scoped exclusio
 	const repos = plan.steps.find((step) => step.resource === "repos");
 	if (!repos) throw new Error("fixture");
 	repos.status = "failed";
-	const view = { ...plan, leaseUntil: null, progress: runProgress(plan, snap.fetched_at) };
+	const view = {
+		...plan,
+		...estimate,
+		leaseUntil: null,
+		progress: runProgress(plan, snap.fetched_at),
+	};
 	expect(runPageUpdates(view).find((page) => page.name === "仓库")).toMatchObject({
 		label: "未更新，保留原数据",
 		updatedAt: null,
@@ -110,7 +129,12 @@ it("shows only repository statistics, details and publication for a scoped run",
 		["nocoo/app", "org/other"],
 		{ scope: "selected" },
 	);
-	const view = { ...scoped, leaseUntil: null, progress: runProgress(scoped, snap.fetched_at) };
+	const view = {
+		...scoped,
+		...estimate,
+		leaseUntil: null,
+		progress: runProgress(scoped, snap.fetched_at),
+	};
 	expect(runStages(view).map((stage) => [stage.title, stage.total])).toEqual([
 		["工厂统计", 9],
 		["仓库页面", 9],
@@ -130,7 +154,7 @@ it("shows only repository statistics, details and publication for a scoped run",
 const state: FactoryRunResponse = {
 	account_id: snap.account_id,
 	serverNow: snap.fetched_at,
-	current: { ...run, leaseUntil: null, progress: runProgress(run, snap.fetched_at) },
+	current: { ...run, ...estimate, leaseUntil: null, progress: runProgress(run, snap.fetched_at) },
 	history: [],
 	repositories: [],
 	catalog: snap.repos,
@@ -326,7 +350,8 @@ it("requests a specific run history without performing a mutation", async () => 
 });
 
 it("separates a finished refresh from missing data and groups the same problem across repositories", () => {
-	const snapshot = factoryFixture();
+	const rawSnapshot = factoryFixture();
+	const snapshot = { ...rawSnapshot, selectedRepos: rawSnapshot.repos };
 	snapshot.status = "complete";
 	snapshot.contributionStatus = "complete";
 	const repo = snapshot.repos[0];
@@ -334,6 +359,7 @@ it("separates a finished refresh from missing data and groups the same problem a
 	for (const coverage of Object.values(repo.coverage)) coverage.status = "complete";
 	repo.coverage.alerts.status = "unavailable";
 	snapshot.repos.push({ ...structuredClone(repo), id: "R_2", name: "nocoo/tools" });
+	snapshot.selectedRepos = snapshot.repos;
 	const completed = makeRun(
 		"partial",
 		snapshot.account_id,
@@ -351,6 +377,7 @@ it("separates a finished refresh from missing data and groups the same problem a
 	completed.cursor = completed.steps.length;
 	const view = {
 		...completed,
+		...estimate,
 		leaseUntil: null,
 		progress: runProgress(completed, snapshot.fetched_at),
 	};
@@ -415,7 +442,8 @@ it("explains recovery without treating rate limits, skipped steps or a paused ru
 
 it("reports missing inventory, healthy data and mixed update times in one health summary", () => {
 	expect(factoryDataHealth(null).title).toBe("还没有工厂数据");
-	const snapshot = factoryFixture();
+	const rawSnapshot = factoryFixture();
+	const snapshot = { ...rawSnapshot, selectedRepos: rawSnapshot.repos };
 	snapshot.inventory.complete = false;
 	expect(
 		factoryDataHealth({ ...snapshot, inventory: { ...snapshot.inventory, complete: true } }).detail,
@@ -442,6 +470,7 @@ it("reports missing inventory, healthy data and mixed update times in one health
 	expect(
 		runStages({
 			...discovery,
+			...estimate,
 			leaseUntil: null,
 			progress: runProgress(discovery, snapshot.fetched_at),
 		}).map((stage) => stage.total),
@@ -464,7 +493,12 @@ it("names page steps, explains incomplete page data, and includes non-metric rep
 	if (!traffic) throw new Error("missing step");
 	traffic.status = "failed";
 	traffic.error = "snapshot_unavailable";
-	const view = { ...plan, leaseUntil: null, progress: runProgress(plan, snap.fetched_at) };
+	const view = {
+		...plan,
+		...estimate,
+		leaseUntil: null,
+		progress: runProgress(plan, snap.fetched_at),
+	};
 	expect(stepLabel(traffic)).toContain("流量");
 	expect(stepLabel({ kind: "snapshot", resource: "notifications" })).toContain("通知");
 	expect(runRepositoryRows(view, []).map((r) => r.repo)).toContain("org/fork");
@@ -480,13 +514,15 @@ it("shows actionable distinctions for credential, capacity, access and upstream 
 	expect(describeRunIssue("permission_denied", "alerts").settings).toBe(true);
 	expect(describeRunIssue("run_timed_out", "publish").reason).toContain("释放账号锁");
 	expect(describeRunIssue("scheduled_slots_missed", "publish").reason).toContain("历史任务");
+	expect(describeRunIssue("scheduled_slot_missed", "publish").reason).toContain("北京时间");
+	expect(describeRunIssue("catalog_preparation_failed", "publish").reason).toContain("仓库列表");
 	for (const code of ["github_unauthorized", "account_missing"]) {
 		expect(describeRunIssue(code, "metadata")).toMatchObject({ settings: true });
 		expect(describeRunIssue(code, "metadata").impact).toContain("保留");
 	}
 	expect(describeRunIssue("encryption_key_missing", "metadata")).toMatchObject({ settings: false });
 	expect(describeRunIssue("encryption_key_missing", "metadata").action).toContain("维护者");
-	expect(describeRunIssue("factory_capacity", "metadata").action).toContain("减少统计仓库");
+	expect(describeRunIssue("factory_capacity", "metadata").action).toContain("缩小刷新范围");
 	expect(describeRunIssue("factory_capacity", "snapshot").action).toContain("全站清单");
 	expect(describeRunIssue("coverage_regression_retained", "commit").impact).toContain("上次的数据");
 	for (const code of [
@@ -525,7 +561,12 @@ it("groups a cooldown once per repository and distinguishes stopped work from qu
 			},
 		],
 	);
-	const view = { ...cooled, leaseUntil: null, progress: runProgress(cooled, snap.fetched_at) };
+	const view = {
+		...cooled,
+		...estimate,
+		leaseUntil: null,
+		progress: runProgress(cooled, snap.fetched_at),
+	};
 	expect(runRepositoryRows(view, [])[0]?.label).toBe("等待执行");
 	expect(
 		view.steps

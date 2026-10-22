@@ -11,32 +11,67 @@ import { prLifecycleState, prSnapshot, prState } from "../../lib/pull-request";
 import { snapshotFreshness } from "../../lib/snapshot-freshness";
 import {
 	composeContent,
-	decodeContent,
 	factoryStreamContent,
 	observationVersion,
 	storedContent,
 } from "./content-version";
 import type { Db } from "./db/d1";
 import { publishedFactory } from "./db/factory-runs";
-import { readRepositorySnapshot, readSnapshot } from "./db/snapshots";
+import { readRepositorySnapshot, readSnapshot, snapshotFromRows } from "./db/snapshots";
 import { ApiError } from "./errors";
-import { streamKey } from "./factory-collect";
+import { factoryRateFromRow } from "./factory-rate";
+import {
+	accountReadPlan,
+	decodePublication,
+	type PublicationPage,
+	type SavedAccountRead,
+	savedAccountPolicy,
+} from "./saved-observation-read";
+import type { AccountObservationResource } from "./saved-observation-statements";
+import {
+	decodeFactoryResource,
+	factoryStreamReadPlan,
+	repositoryReadPlan,
+	type SavedFactoryStream,
+} from "./saved-repository-read";
+import { assembleSnapshotGroups, latestSnapshotGroups, type SnapshotPage } from "./snapshot-pages";
 import {
 	factoryFreshness,
 	factoryObserved,
 	type Policy,
+	projectFactory,
 	projectSnapshot,
 	repoPolicy,
-	statisticsFactory,
-} from "./repo-statistics";
-import { latestSnapshotGroups, type SnapshotPage } from "./snapshot-pages";
+} from "./snapshot-projection";
 import type { SnapshotScope } from "./snapshot-scope";
 
 export async function requireCatalogRepo(db: Db, account: string, name: string) {
-	const policy = await repoPolicy(db, account);
-	const repo = policy.repos.find((r) => r.name_with_owner.toLowerCase() === name.toLowerCase());
+	const snapshot = await readSnapshot(db, account, "repos");
+	return catalogRepository(snapshot, name);
+}
+
+function catalogRepository(snapshot: Record<string, unknown> | null, name: string): string {
+	const repo = (Array.isArray(snapshot?.repos) ? snapshot.repos : []).find(
+		(row) =>
+			typeof row?.name_with_owner === "string" &&
+			row.name_with_owner.toLowerCase() === name.toLowerCase(),
+	);
 	if (!repo) throw new ApiError(404, "not_found", "repository outside saved account catalog");
 	return repo.name_with_owner;
+}
+
+export async function readMachineRepositoryObservation(
+	db: Db,
+	account: string,
+	name: string,
+	tab: string,
+) {
+	const plan = repositoryReadPlan(db, account, name, tab);
+	const saved = plan.decode(await db.batch<SnapshotPage>(plan.statements));
+	const canonical = catalogRepository(snapshotFromRows("repos", saved.catalogPages), name);
+	const snapshot = latestSnapshotGroups(saved.pages).get(`repo:${canonical}:${tab}`.toLowerCase());
+	if (!snapshot) throw new ApiError(409, "snapshot_missing", "no saved source");
+	return observationEnvelope(account, snapshot.resource, snapshot.data, "all");
 }
 export { observationVersion };
 export async function observationEnvelope(
@@ -75,13 +110,8 @@ export function observationMetadata(data: Record<string, unknown>) {
 		unavailable: data.unavailable === true || data.forbidden === true,
 	};
 }
-export async function readCiObservation(
-	db: Db,
-	account: string,
-	policy: Policy,
-	statisticsFilter = false,
-) {
-	return projectCiObservation(policy, await readCiGroups(db, account), statisticsFilter);
+export async function readCiObservation(db: Db, account: string, policy: Policy) {
+	return projectCiObservation(policy, await readCiGroups(db, account));
 }
 
 async function readCiGroups(db: Db, account: string) {
@@ -133,17 +163,16 @@ export function factoryContent(snapshot: FactorySnapshot, policy: Policy) {
 export function ciObservationInputs(
 	policy: Policy,
 	groups: ReturnType<typeof latestSnapshotGroups>,
-	statisticsFilter = false,
 ) {
 	if (!policy.catalog && !policy.empty)
 		throw new ApiError(409, "snapshot_missing", "no repository catalog");
 	const entries: CiEntry[] = [];
 	const unsaved: string[] = [];
 	const times: (string | null)[] = [];
+	let missing = 0;
 	let truncated = false;
 	for (const repo of policy.repos) {
 		const name = repo.name_with_owner;
-		if (statisticsFilter && !policy.enabled(name)) continue;
 		const read = (suffix: string) => groups.get(`repo:${name}:${suffix}`.toLowerCase())?.data;
 		const actions = read("actions");
 		const releases = read("releases");
@@ -158,6 +187,7 @@ export function ciObservationInputs(
 				: null,
 		);
 		times.push(...dependencies);
+		if (snapshotFreshness(dependencies).missing > 0) missing++;
 		if (!actions || actions.unavailable === true || actions.forbidden === true) {
 			unsaved.push(name);
 			continue;
@@ -181,6 +211,8 @@ export function ciObservationInputs(
 		});
 	}
 	const freshness = snapshotFreshness(times);
+	freshness.total = policy.repos.length;
+	freshness.missing = missing;
 	const fetchedAt = freshness.latestAt ?? "";
 	return {
 		entries,
@@ -197,19 +229,21 @@ export function projectCiInputs({ entries, metadata }: ReturnType<typeof ciObser
 export function projectCiObservation(
 	policy: Policy,
 	groups: ReturnType<typeof latestSnapshotGroups>,
-	statisticsFilter = false,
 ) {
-	return projectCiInputs(ciObservationInputs(policy, groups, statisticsFilter));
+	return projectCiInputs(ciObservationInputs(policy, groups));
 }
 
 export function projectFactoryObservation(snapshot: FactorySnapshot, policy: Policy) {
-	const projected = statisticsFactory(snapshot, policy, false);
+	const projected = projectFactory(snapshot, policy);
 	const freshness = factoryFreshness(projected, policy);
 	return {
 		...projected,
 		fetched_at: freshness.latestAt ?? "",
 		freshness,
-		truncated: projected.truncated === true || projected.inventory.complete !== true,
+		truncated:
+			projected.truncated === true ||
+			projected.inventory.complete !== true ||
+			freshness.missing > 0,
 	};
 }
 
@@ -220,14 +254,51 @@ export async function readObservation(
 	scope: SnapshotScope,
 	savedPolicy?: Policy,
 ) {
-	const policy = savedPolicy ?? (await repoPolicy(db, account, undefined, scope));
+	const plan =
+		!savedPolicy && ["repos", "issues", "prs", "ci", "factory"].includes(resource)
+			? accountReadPlan(db, account, resource as AccountObservationResource, scope)
+			: null;
+	const saved = plan ? plan.decode(await db.batch(plan.statements)) : undefined;
+	return projectObservation(db, account, resource, scope, savedPolicy, saved);
+}
+
+export async function readMachineAccountObservation(
+	db: Db,
+	account: string,
+	resource: AccountObservationResource,
+	scope: SnapshotScope,
+) {
+	const plan = accountReadPlan(db, account, resource, scope, { rate: true });
+	const saved = plan.decode(await db.batch(plan.statements));
+	const observation = await projectObservation(db, account, resource, scope, undefined, saved);
+	if (resource === "factory")
+		observation.data.rate = factoryRateFromRow(
+			saved.rateRows[0] ?? null,
+			observation.data.rate as FactorySnapshot["rate"],
+		);
+	return observation;
+}
+
+async function projectObservation(
+	db: Db,
+	account: string,
+	resource: string,
+	scope: SnapshotScope,
+	savedPolicy?: Policy,
+	saved?: SavedAccountRead,
+) {
+	const policy =
+		savedPolicy ??
+		(saved ? savedAccountPolicy(saved, scope) : await repoPolicy(db, account, undefined, scope));
 	if (resource.startsWith("repo:")) {
 		const snapshot = await readRepositorySnapshot(db, account, resource);
 		if (!snapshot) throw new ApiError(409, "snapshot_missing", "no saved source");
 		return observationEnvelope(account, snapshot.resource, snapshot.data, scope);
 	}
 	if (resource === "factory") {
-		const snapshot = await publishedFactory(db, account);
+		const snapshot = saved
+			? decodePublication(saved.sourcePages as PublicationPage[])
+			: await publishedFactory(db, account);
 		if (!snapshot) throw new ApiError(409, "snapshot_missing", "no saved publication");
 		return observationEnvelope(
 			account,
@@ -240,7 +311,7 @@ export async function readObservation(
 		);
 	}
 	if (resource === "ci") {
-		const groups = await readCiGroups(db, account);
+		const groups = saved ? latestSnapshotGroups(saved.ciPages) : await readCiGroups(db, account);
 		const data = projectCiObservation(policy, groups);
 		return observationEnvelope(
 			account,
@@ -252,41 +323,60 @@ export async function readObservation(
 			await ciContent(policy, groups, data.freshness),
 		);
 	}
-	const snapshot = await readSnapshot(db, account, resource);
+	const snapshot = saved
+		? resource === "repos"
+			? policy.catalog
+			: snapshotFromRows(resource, saved.sourcePages)
+		: await readSnapshot(db, account, resource);
 	if (!snapshot) throw new ApiError(409, "snapshot_missing", "no saved source");
-	const data = await projectSnapshot(db, account, resource, snapshot, policy, false);
+	const data = await projectSnapshot(
+		db,
+		account,
+		resource,
+		snapshot,
+		policy,
+		saved ? () => assembleSnapshotGroups(saved.repositoryPages) : undefined,
+	);
 	return observationEnvelope(account, resource, data, scope);
 }
 export async function readFactoryResource(db: Db, account: string, name: string, stream: string) {
 	if (!FACTORY_STREAMS.includes(stream as FactoryStreamName))
 		throw new ApiError(400, "validation_failed", "unknown stream");
-	const snap = await publishedFactory(db, account);
+	const plan = factoryStreamReadPlan(db, account, name, stream);
+	return factoryObservationFromSaved(
+		account,
+		name,
+		stream,
+		plan.decode(await db.batch(plan.statements)),
+	);
+}
+
+export async function readMachineFactoryStream(
+	db: Db,
+	account: string,
+	name: string,
+	stream: string,
+) {
+	const plan = factoryStreamReadPlan(db, account, name, stream, { catalog: true });
+	const saved = plan.decode(await db.batch(plan.statements));
+	const canonical = catalogRepository(snapshotFromRows("repos", saved.catalogPages), name);
+	if (!FACTORY_STREAMS.includes(stream as FactoryStreamName))
+		throw new ApiError(400, "validation_failed", "unknown stream");
+	return factoryObservationFromSaved(account, canonical, stream, saved);
+}
+
+async function factoryObservationFromSaved(
+	account: string,
+	name: string,
+	stream: string,
+	saved: SavedFactoryStream,
+) {
+	const snap = decodePublication(saved.publicationPages);
 	const repo = snap?.repos.find((r) => r.name.toLowerCase() === name.toLowerCase());
 	if (!snap || !repo) throw new ApiError(404, "not_found", "repository outside publication");
 	const observation = repo.observation;
 	const version = observation?.version ?? snap.runId;
-	const original = observation?.repo ?? repo.name;
-	let data: FactoryStreamData | null = null;
-	let content: string | null = null;
-	if (observation?.source === "run") {
-		const row = await db
-			.prepare(
-				"SELECT payload,content_meta FROM factory_resources WHERE run_id=? AND repo=? AND stream=? AND EXISTS(SELECT 1 FROM factory_runs WHERE id=? AND account_id=?)",
-			)
-			.bind(version, original, stream, version, account)
-			.first<{ payload: string; content_meta: string | null }>();
-		data = row ? (JSON.parse(row.payload) as FactoryStreamData) : null;
-		const meta = decodeContent(row?.content_meta);
-		content = meta?.version === version ? meta.hash : null;
-	} else {
-		data = (await readSnapshot(
-			db,
-			account,
-			streamKey(original, stream as FactoryStreamName),
-		)) as FactoryStreamData | null;
-		const meta = storedContent(data);
-		content = meta?.version === version ? meta.hash : null;
-	}
+	const { data, content } = decodeFactoryResource(saved, snap, repo, stream, true);
 	if (!data)
 		throw new ApiError(
 			409,

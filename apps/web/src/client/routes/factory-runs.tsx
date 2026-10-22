@@ -17,7 +17,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { type FactoryRunResponse, type RunSelection, selectRunRepos } from "../../lib/factory-run";
-import type { FactorySnapshot } from "../../lib/factory-types";
+import type { FactoryViewSnapshot } from "../../lib/factory-types";
 import { SearchField } from "../components/layout/collection-chrome";
 import { DataTimeSource } from "../components/layout/data-time";
 import { ProjectLabel } from "../components/layout/project-identity";
@@ -52,7 +52,7 @@ function FactoryRuns({
 	snapshotError,
 	loading,
 }: {
-	snapshot: FactorySnapshot | null;
+	snapshot: FactoryViewSnapshot | null;
 	onPublished: (account?: string) => Promise<void>;
 	filter: { language: string; topic: string; query: string; repo: string };
 	snapshotError: string;
@@ -695,7 +695,7 @@ function FactoryRuns({
 }
 
 export function RefreshPage() {
-	const [snapshot, setSnapshot] = useState<FactorySnapshot | null>(null);
+	const [snapshot, setSnapshot] = useState<FactoryViewSnapshot | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState("");
 	const mounted = useRef(true);

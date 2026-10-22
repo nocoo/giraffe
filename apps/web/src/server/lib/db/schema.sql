@@ -375,3 +375,24 @@ CREATE INDEX IF NOT EXISTS agent_analysis_recent ON agent_resources(
  CASE WHEN json_extract(CASE WHEN json_valid(payload) THEN payload END,'$.generatedAt') GLOB '????-??-??T*' AND (CASE WHEN substr(json_extract(CASE WHEN json_valid(payload) THEN payload END,'$.generatedAt'),-1)='Z' THEN 1 WHEN substr(json_extract(CASE WHEN json_valid(payload) THEN payload END,'$.generatedAt'),-6) GLOB '[+-][0-2][0-9]:[0-5][0-9]' AND CAST(substr(json_extract(CASE WHEN json_valid(payload) THEN payload END,'$.generatedAt'),-5,2) AS INTEGER)<=23 THEN 6 END) IS NOT NULL AND (length(json_extract(CASE WHEN json_valid(payload) THEN payload END,'$.generatedAt'))=19+(CASE WHEN substr(json_extract(CASE WHEN json_valid(payload) THEN payload END,'$.generatedAt'),-1)='Z' THEN 1 WHEN substr(json_extract(CASE WHEN json_valid(payload) THEN payload END,'$.generatedAt'),-6) GLOB '[+-][0-2][0-9]:[0-5][0-9]' AND CAST(substr(json_extract(CASE WHEN json_valid(payload) THEN payload END,'$.generatedAt'),-5,2) AS INTEGER)<=23 THEN 6 END) OR (substr(json_extract(CASE WHEN json_valid(payload) THEN payload END,'$.generatedAt'),20,1)='.' AND length(json_extract(CASE WHEN json_valid(payload) THEN payload END,'$.generatedAt'))>20+(CASE WHEN substr(json_extract(CASE WHEN json_valid(payload) THEN payload END,'$.generatedAt'),-1)='Z' THEN 1 WHEN substr(json_extract(CASE WHEN json_valid(payload) THEN payload END,'$.generatedAt'),-6) GLOB '[+-][0-2][0-9]:[0-5][0-9]' AND CAST(substr(json_extract(CASE WHEN json_valid(payload) THEN payload END,'$.generatedAt'),-5,2) AS INTEGER)<=23 THEN 6 END) AND (CASE WHEN substr(json_extract(CASE WHEN json_valid(payload) THEN payload END,'$.generatedAt'),20,1)='.' THEN substr(json_extract(CASE WHEN json_valid(payload) THEN payload END,'$.generatedAt'),21,length(json_extract(CASE WHEN json_valid(payload) THEN payload END,'$.generatedAt'))-20-(CASE WHEN substr(json_extract(CASE WHEN json_valid(payload) THEN payload END,'$.generatedAt'),-1)='Z' THEN 1 WHEN substr(json_extract(CASE WHEN json_valid(payload) THEN payload END,'$.generatedAt'),-6) GLOB '[+-][0-2][0-9]:[0-5][0-9]' AND CAST(substr(json_extract(CASE WHEN json_valid(payload) THEN payload END,'$.generatedAt'),-5,2) AS INTEGER)<=23 THEN 6 END)) ELSE '' END) NOT GLOB '*[^0-9]*')) AND unixepoch(substr(json_extract(CASE WHEN json_valid(payload) THEN payload END,'$.generatedAt'),1,19)) IS NOT NULL THEN rtrim((CASE WHEN substr(json_extract(CASE WHEN json_valid(payload) THEN payload END,'$.generatedAt'),20,1)='.' THEN substr(json_extract(CASE WHEN json_valid(payload) THEN payload END,'$.generatedAt'),21,length(json_extract(CASE WHEN json_valid(payload) THEN payload END,'$.generatedAt'))-20-(CASE WHEN substr(json_extract(CASE WHEN json_valid(payload) THEN payload END,'$.generatedAt'),-1)='Z' THEN 1 WHEN substr(json_extract(CASE WHEN json_valid(payload) THEN payload END,'$.generatedAt'),-6) GLOB '[+-][0-2][0-9]:[0-5][0-9]' AND CAST(substr(json_extract(CASE WHEN json_valid(payload) THEN payload END,'$.generatedAt'),-5,2) AS INTEGER)<=23 THEN 6 END)) ELSE '' END),'0') END DESC,
  id DESC
 ) WHERE collection='reports' AND type='github-analysis';
+
+DELETE FROM repo_stars
+WHERE EXISTS (
+    SELECT 1 FROM repo_statistics
+    WHERE repo_statistics.account_id = repo_stars.account_id
+      AND lower(repo_statistics.repo) = lower(repo_stars.repo)
+      AND repo_statistics.enabled = 0
+);
+
+DELETE FROM repo_statistics;
+
+ALTER TABLE repo_stars ADD COLUMN starred INTEGER NOT NULL DEFAULT 1 CHECK(starred IN (0,1));
+ALTER TABLE repo_stars ADD COLUMN source TEXT NOT NULL DEFAULT 'owner' CHECK(source IN ('owner','agent'));
+ALTER TABLE repo_stars ADD COLUMN updated_at TEXT NOT NULL DEFAULT '1970-01-01T00:00:00.000Z';
+ALTER TABLE repo_stars ADD COLUMN reason TEXT CHECK(reason IS NULL OR length(reason)<=200);
+
+UPDATE repo_stars
+SET updated_at=COALESCE(
+ strftime('%Y-%m-%dT%H:%M:%fZ',(SELECT updated_at FROM accounts WHERE accounts.id=repo_stars.account_id)),
+ '1970-01-01T00:00:00.000Z'
+);

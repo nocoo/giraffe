@@ -282,9 +282,7 @@ permissions:
 		expect(rows(null)).toEqual([]);
 		expect(rows([null])).toEqual([{}]);
 		expect(coverage().source).toBe("");
-		expect(exclusion({ ...rawRepo, nameWithOwner: "NoCoO/RssHub" }, "NOCOO")).toBe(
-			"effective-mirror",
-		);
+		expect(exclusion({ ...rawRepo, isArchived: true, isFork: true }, "NOCOO")).toBeNull();
 	});
 	it("separates issue records from PRs and preserves native author/timestamps/ids", () => {
 		const rows = mapFactoryEvents("issues", [rawEvent(), { ...rawEvent(2), pull_request: {} }, {}]);

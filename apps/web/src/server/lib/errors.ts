@@ -1,4 +1,5 @@
 import { sanitize } from "./sanitize";
+import type { SourceTiming } from "./source-timing";
 
 export class ApiError extends Error {
 	readonly status: number;
@@ -20,8 +21,13 @@ export function jsonError(status: number, code: string, message: string): Respon
 	});
 }
 
-export function jsonOk(body: unknown, status = 200, headers?: Record<string, string>): Response {
-	return new Response(JSON.stringify(body), {
+export function jsonOk(
+	body: unknown,
+	status = 200,
+	headers?: Record<string, string>,
+	timing?: SourceTiming,
+): Response {
+	return new Response(timing ? timing.stringify(body) : JSON.stringify(body), {
 		status,
 		headers: {
 			"content-type": "application/json; charset=utf-8",

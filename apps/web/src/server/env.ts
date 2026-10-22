@@ -1,9 +1,11 @@
 import type { Identity } from "./lib/access-identity";
 import type { Db } from "./lib/db/d1";
+import type { SourceTiming } from "./lib/source-timing";
 
 export type AppVars = {
 	db: Db;
 	identity: Identity;
+	sourceTiming?: SourceTiming;
 };
 
 export interface Env extends CloudflareBindings {
