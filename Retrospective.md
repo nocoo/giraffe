@@ -1,5 +1,16 @@
 # Retrospective
 
+## 2026-10-23 - Retained diagnostics follow their stream
+
+The per-stream retention change allowed a new repository version to be accepted
+while its dependency evidence stayed old. The dependency-limit carry condition
+still checked whole-repository rejection, so a parse-limited attempt followed by
+permission denial or another collection limit silently lost the diagnostic and
+published the old dependency evidence as complete. Review caught this sequence.
+Carry the prior diagnostic whenever the dependency stream is retained, not just
+when the repository is rejected. Regressions now cover both consecutive failure
+paths, repeated parse limits, preserved source times and clearing on recovery.
+
 ## 2026-10-23 - Verify derivation hashes against distinct inputs
 
 While adding read-time activity totals, the first content-version wrapper used a

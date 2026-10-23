@@ -151,7 +151,7 @@ export async function repositoryWrites(
 						reason: repo.coverage.dependencies.reason,
 					},
 				}
-			: !accepted && old?.dependencyLimit
+			: (!accepted || retained.includes("dependencies")) && old?.dependencyLimit
 				? { dependencyLimit: old.dependencyLimit }
 				: {}),
 		observation: accepted?.observation ?? old?.observation,

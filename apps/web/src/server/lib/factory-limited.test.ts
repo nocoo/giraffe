@@ -8,7 +8,7 @@ import type { Env } from "../env";
 import { createApp } from "../index";
 import { savedContentMeta } from "./content-version";
 import { createDb } from "./db/d1";
-import { claimRun, publishedFactory, saveRun, startRun } from "./db/factory-runs";
+import { claimRun, publishedFactory, repoStates, saveRun, startRun } from "./db/factory-runs";
 import { replaceSnapshotStmts } from "./db/snapshots";
 import { mapDependencies } from "./factory-map";
 import { publicationWrites, repositoryWrites } from "./factory-publish";
@@ -22,14 +22,16 @@ const limit = {
 } as const;
 
 it.each([
-	["run", true, false],
-	["legacy", true, false],
-	["run", false, false],
-	["run", "mismatch", false],
-	["run", true, true],
+	["run", true, false, "parse"],
+	["legacy", true, false, "parse"],
+	["run", false, false, "parse"],
+	["run", "mismatch", false, "parse"],
+	["run", true, true, "parse"],
+	["run", true, false, "permission_denied"],
+	["run", true, false, "limited"],
 ] as const)(
-	"freezes retained dependency limits across attempts and recovery (%s, hash=%s, empty=%s)",
-	async (source, hashed, empty) => {
+	"freezes retained dependency limits across attempts and recovery (%s, hash=%s, empty=%s, retry=%s)",
+	async (source, hashed, empty, retry) => {
 		const raw = sqliteFixture();
 		const snap = factoryFixture();
 		const account = snap.account_id;
@@ -188,6 +190,13 @@ it.each([
 			};
 			if (!recovery) {
 				Object.assign(candidate.coverage.dependencies, limit, { fetchedAt: at, observed: 0 });
+				if (id === "limited-2" && retry !== "parse")
+					Object.assign(candidate.coverage.dependencies, {
+						status: retry === "permission_denied" ? "unavailable" : "limited",
+						reason_code: retry === "permission_denied" ? "permission_denied" : "unknown",
+						reason:
+							retry === "permission_denied" ? "Permission denied" : "Collection limit reached",
+					});
 				candidate.dependencies = [];
 			} else {
 				Object.assign(candidate.coverage.dependencies, {
@@ -229,6 +238,13 @@ it.each([
 			lease.run.status = failure ? "partial" : "completed";
 			lease.run.finishedAt = at;
 			expect(await saveRun(writer, lease, writes, at)).toBe(true);
+			const state = (await repoStates(createDb(raw), account))[0];
+			if (recovery) expect(state).not.toHaveProperty("dependencyLimit");
+			else
+				expect(state?.dependencyLimit).toEqual({
+					reason_code: limit.reason_code,
+					reason: limit.reason,
+				});
 			const stream = await readFactoryResource(createDb(raw), account, repo.name, "dependencies");
 			const profile = profileDb(raw);
 			const reader = createDb(profile.raw);
@@ -265,7 +281,12 @@ it.each([
 					sourceVersion: "original",
 					fetchedAt: snap.fetched_at,
 					truncated: true,
-					coverage: { ...limit, observed: evidence.items.length, fetchedAt: snap.fetched_at },
+					coverage: {
+						...limit,
+						retained: true,
+						observed: evidence.items.length,
+						fetchedAt: snap.fetched_at,
+					},
 					data: { observation: repo.observation, ranges: [snap.window] },
 				});
 				if (hashed === true) {
