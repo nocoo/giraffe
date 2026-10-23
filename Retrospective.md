@@ -17,6 +17,13 @@ replacing zsh's special PATH array and hiding commands for the rest of that shel
 No repository state changed. Use descriptive non-reserved iterator names for
 shell inspection and avoid bundling unrelated diagnostics into oversized output.
 
+The first full HTTP run exposed a remaining legacy test classifying quoted zero
+as an invalid If-Match header. Update both unit and real-HTTP precondition matrices
+when changing a shared contract; the HTTP create now proves zero-tag admission
+and a subsequent 409 conflict. Running L2 and L3 together also hit a Wrangler
+internal socket collision despite their different public ports. Re-run these
+lanes serially without changing project configuration or stopping other projects.
+
 ## 2026-10-23 - Missing branch evidence must stop supplemental classification
 
 The metadata-evidence fix passed a null branch into the supplement collector for
