@@ -229,8 +229,10 @@ Never put credentials in URLs, logs, report payloads or persisted browser state.
   unique known scope. An analysis bot needs only `observations:read`, `agent:read`,
   `agent:write`; it does not need `app:write` or model configuration in Giraffe.
 - GET never collects GitHub or updates token activity. Successful mutations update
-  `last_used_at`. Responses use `Cache-Control: private, no-store` and
-  `Referrer-Policy: no-referrer`.
+  `last_used_at`. Every `/api/v1/*` response, including authentication 401/403,
+  validation 400, not-found 404, unexpected errors and 304, uses
+  `Cache-Control: private, no-store`, `Vary: Authorization` and
+  `Referrer-Policy: no-referrer`. Other `Vary` dimensions are preserved.
 - JSON writes require `Content-Type: application/json`, UTF-8 if charset is given.
   Strict schemas reject extra fields. No body/query is defined unless listed.
 - Reads/updates return 200, resource creation 201, refresh start/control 202,
