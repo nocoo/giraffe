@@ -15,6 +15,53 @@ import {
 } from "./factory-map";
 
 describe("GitHub factory normalization", () => {
+	it.each(["issues", "prs", "actions", "releases"] as const)(
+		"keeps an astral title at the %s code-point limit without adding an ellipsis",
+		(stream) => {
+			const prefix = "t".repeat(239);
+			const event = mapFactoryEvents(stream, [{ ...rawEvent(), title: `${prefix}🦒…tail` }])[0];
+			expect(event?.title).toBe(`${prefix}🦒`);
+			expect(Array.from(event?.title ?? "")).toHaveLength(240);
+		},
+	);
+	it.each(["issues", "prs", "alerts"] as const)(
+		"keeps an astral %s body at the code-point limit",
+		(stream) => {
+			const prefix = "b".repeat(1199);
+			const body = `${prefix}🚀…tail`;
+			const event = mapFactoryEvents(stream, [
+				{ ...rawEvent(), body, security_advisory: { summary: body } },
+			])[0];
+			expect(event?.body).toBe(`${prefix}🚀`);
+			expect(Array.from(event?.body ?? "")).toHaveLength(1200);
+		},
+	);
+	it.each(["name", "tag_name"])("bounds release %s titles by code point", (field) => {
+		const prefix = "r".repeat(239);
+		expect(mapFactoryEvents("releases", [{ [field]: `${prefix}🦒tail` }])[0]?.title).toBe(
+			`${prefix}🦒`,
+		);
+	});
+	it("preserves exact-limit ellipses and first-line commit text", () => {
+		const prefix = "c".repeat(238);
+		for (const suffix of ["", "trailing"]) {
+			const event = mapFactoryEvents("commits", [
+				{ ...rawEvent(), commit: { message: `${prefix}🦒…${suffix}\nnot the subject` } },
+			])[0];
+			expect(event?.title).toBe(`${prefix}🦒…`);
+			expect(Array.from(event?.title ?? "")).toHaveLength(240);
+		}
+	});
+	it("replaces incoming lone surrogates without damaging valid emoji or short empty text", () => {
+		for (const title of ["", "short…", "🦒🚀"]) {
+			expect(mapFactoryEvents("issues", [{ ...rawEvent(), title }])[0]?.title).toBe(title);
+		}
+		const event = mapFactoryEvents("issues", [
+			{ ...rawEvent(), title: "a\ud83db\udc00🦒", body: "\udc00body\ud83d" },
+		])[0];
+		expect(event?.title).toBe("a�b�🦒");
+		expect(event?.body).toBe("�body�");
+	});
 	it.each(
 		(
 			[

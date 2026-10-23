@@ -26,6 +26,43 @@ const run = () =>
 		{ scope: "all" },
 		"quick",
 	);
+it("keeps the ocelot #14 dependency issue body well-formed in the activity projection", () => {
+	const repo = mapFactoryRepo({ ...rawRepo, nameWithOwner: "nocoo/ocelot" });
+	const prefix = "b".repeat(1199);
+	const streams = new Map<string, FactoryStreamData>([
+		[
+			"issues",
+			{
+				runId: "r2",
+				items: mapFactoryEvents("issues", [
+					{
+						id: 14,
+						title: "Update dependencies",
+						body: `${prefix}🦒…`,
+						state: "open",
+						labels: [{ name: "dependencies" }],
+					},
+				]),
+				next: null,
+				ranges: [],
+				coverage: { ...repo.coverage.issues, status: "complete" },
+			},
+		],
+	]);
+	const result = activityRepo(
+		repo,
+		streams,
+		{ since: "2026-10-21T20:00:00.000Z", until, gap: false, first: false },
+		null,
+		null,
+	);
+	expect(result.snapshot.open_issues?.dependency).toMatchObject([
+		{ id: "14", body: `${prefix}🦒` },
+	]);
+	expect(JSON.stringify(result.snapshot.open_issues)).not.toMatch(
+		/\\u[dD][89a-fA-F][0-9a-fA-F]{2}/,
+	);
+});
 it("R4 uses only daily or all-scope quick predecessors, never arbitrary selected runs", () => {
 	const current = run();
 	expect(isActivityRun(current)).toBe(true);
