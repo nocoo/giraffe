@@ -1663,3 +1663,13 @@ default five-second timeout on the GitHub runner. Large boundary fixtures need
 explicit per-test time budgets rather than assuming local runner speed. Give
 the new publication capacity and scale cases 30 seconds each while preserving
 their payload sizes, assertions and the global timeout and coverage thresholds.
+
+## 2026-10-23 - Check listener output, not only lsof status
+
+During B13C validation, the combined L2/L3 `lsof` query printed occupied L2
+ports but returned exit status 1 because not every requested selection matched.
+A shell loop treating nonzero status as an empty result incorrectly attempted
+L2 startup. The runner rejected the occupied stub port before starting services;
+no other controller's process was stopped. Shared-port preflight must inspect
+the captured listener output and wait 30 seconds while any listener remains,
+rather than treating `lsof` status 1 alone as proof that all ports are free.
