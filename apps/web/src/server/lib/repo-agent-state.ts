@@ -57,7 +57,7 @@ export async function readRepoAgentState(
 
 function headerRevision(header: string | undefined) {
 	if (header === undefined) return undefined;
-	if (!/^"[1-9]\d*"$/.test(header))
+	if (!/^"(?:0|[1-9]\d*)"$/.test(header))
 		throw new ApiError(400, "invalid_payload", "Invalid If-Match revision");
 	const revision = Number(header.slice(1, -1));
 	if (!Number.isSafeInteger(revision))
@@ -85,7 +85,7 @@ export async function writeRepoAgentState(
 		throw new ApiError(404, "not_found", "Removed repository has no agent state");
 	if (previous.revision !== null && revision === undefined)
 		throw new ApiError(428, "precondition_required", "Current revision is required");
-	if (revision !== undefined && revision !== previous.revision)
+	if (revision !== undefined && revision !== (previous.revision ?? 0))
 		throw new ApiError(409, "revision_conflict", "Agent state changed");
 	const now = new Date().toISOString();
 	const row =

@@ -70,7 +70,13 @@ Read `/activity?run=latest` with `observations:read`; optional `repository=owner
 narrows repository evidence, and an explicit `run` reads an immutable publication.
 Use `account:activity` in `/sources` and authenticated ETag/304 for polling.
 The direct response contains `window`, `runId`, `previousRunId`, `fetchedAt`,
-`repos`, `totals`, `contributions`, `coverage` and `truncated`.
+`repos`, `totals`, `totals_partial`, `totals_coverage`, `contributions`, `coverage`
+and `truncated`. Totals are read-time subtotals over frozen repositories with
+complete per-metric evidence, including old publications. Inspect
+`totals_coverage.missing[]` (`repo`, `metrics`, `reason`) before treating a subtotal
+as account-wide. A wholly unavailable metric stays null; unrelated partial run
+steps do not discard complete metric streams. Publication IDs/times remain
+unchanged, but derived content versions and response ETags bind this contract.
 
 The interval is `(last published completed-or-partial account-wide quick/daily until, this until]`.
 First publication is a marked 24-hour lookback; a failed/missing run widens the
@@ -173,7 +179,10 @@ publication identity does not replace repository observation identity.
 `sourceVersion` (index `version`) is opaque; compare its full value. Prefer the
 full `contentVersion` for unchanged-content checks. Hashes describe saved content
 and semantic coverage/windows, not collection time; they are not ETags.
-`contentVersion` can be null when saved metadata or an input hash is absent.
+Raw/immutable `contentVersion` can be null when saved metadata is absent.
+Account list and CI projections use a deterministic `unhashed:<full-version>`
+input for saved legacy dependencies instead of nulling the whole composition;
+these inputs remain sensitive to collection-time changes until refreshed.
 GET never repairs hashes. See the [exact hash recipe](../../docs/api.md#content-version-recipe).
 New staged site `sourceVersion` values bind the staged digest to publication
 identity/time; compare them with `/sources.version`, never hash response JSON to
@@ -392,7 +401,12 @@ The browser shows notes/status/review time read-only; it cannot edit them.
 ## Run readiness
 
 Poll `/refresh-runs/latest?kind=daily` with `app:read`; supported kinds also include
-weekly, catalog, manual, quick and deep. Missing match is 404. A non-null
+weekly, catalog, manual, quick and deep. Missing match is 404.
+The returned `kind` is catalog or the daily/weekly/manual trigger; use additive
+`depth` (quick/deep/null) for collection depth, not the query selector.
+For null readiness, inspect `publishedAtReason`: in_progress, failed, cancelled,
+legacy_unprovable or not_published; a present timestamp has a null reason.
+No full run/checkpoint payload is transferred by this compact reader. A non-null
 `publishedAt` means the final publication is visible, not complete: inspect partial
 status, counts, failedSteps and coverage. ETA is historical, not a deadline.
 `/sources` returns publication `runId`/`fetchedAt` plus original `observedAt` and

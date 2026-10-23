@@ -103,10 +103,17 @@ filters return 400; an absent match returns 404. Daily/weekly select trigger,
 catalog selects mode, manual includes legacy unspecified trigger, and quick/deep
 select refresh depth (legacy unspecified depth is deep). Ties use stored creation
 time then ID descending. The response includes `account_id`, `id`, canonical
-`kind`, `status`, `window`, `startedAt`, `expectedFinishAt`,
+`kind`, `depth`, `status`, `window`, `startedAt`, `expectedFinishAt`,
 `expectedFinishAtReason`, `finishedAt`, `counts`, `failedSteps`, `lastError`, and
-`publishedAt`. Activity-eligible runs expose their activity window. ETA uses the
+`publishedAt` and `publishedAtReason`. The returned `kind` is
+`catalog|daily|weekly|manual`, determined by mode/trigger, **not** necessarily the
+query selector: `?kind=quick` can return `kind:"daily",depth:"quick"`.
+`depth` is `quick|deep|null`, null for catalog and deep for historical refreshes
+without a saved depth. Activity-eligible runs expose their activity window. ETA uses the
 existing last-five completed-or-partial same-kind calibration, not a deadline.
+SQLite projects the needed scalar/window fields, step counts and failed-step
+summaries; the reader does not transfer or parse the complete run payload,
+successful-step details or checkpoints. Failed steps retain their stored order.
 
 `publishedAt` is also present on run list/detail views. Completed **or partial**
 runs set it in the same fenced transaction as site snapshots, catalog changes,
@@ -115,6 +122,15 @@ Readiness is not completeness: inspect counts, failed steps and source coverage.
 Historical markers remain null when atomic publication is unprovable (0022).
 Runs created before the staging protocol also keep null when resumed to completion;
 only newly created runs carry the internal atomic-publication capability marker.
+
+Latest-readiness `publishedAtReason` is null when `publishedAt` is present.
+Otherwise it is `in_progress` for running/paused, `failed` or `cancelled` for those
+terminal statuses, `legacy_unprovable` for completed/partial runs without atomic
+publication capability or a historical timestamp field, and `not_published` for
+atomic-capable completed/partial runs with an explicit null timestamp. Migration
+0022 wrote null timestamps to old runs; the capability marker, not merely the
+presence of that null field, distinguishes those legacy runs. This is read-time
+metadata only: no backfill, migration or publication is performed by GET.
 
 `/sources` adds `runId` and `observedAt`. Sources touched by a new publication use
 its run ID and common publication time as `fetchedAt`; `observedAt` and `freshness`
@@ -180,7 +196,10 @@ payloads return 400 `payload_too_large`. Giraffe stores other fields opaquely.
 The complete request body has a 100,000-byte transport cap, independent of the
 serialized-payload cap; excess whitespace/escaping does not bypass it.
 
-- Create without a revision. The repository must currently belong to the saved
+- Create without a revision or with `If-Match: "0"` (the ETag of missing state).
+  The zero header is create-only: existing state, including a concurrent create,
+  returns 409 `revision_conflict` without overwriting it. It takes precedence over
+  a valid body revision; body `revision:0` remains invalid. The repository must currently belong to the saved
   catalog. Revisions are allocated monotonically across the account, not per
   repository; clients must use the returned value, never assume 1 or increment it.
   A removed/replaced identity cannot reuse another identity's old revision.
@@ -229,8 +248,10 @@ Never put credentials in URLs, logs, report payloads or persisted browser state.
   unique known scope. An analysis bot needs only `observations:read`, `agent:read`,
   `agent:write`; it does not need `app:write` or model configuration in Giraffe.
 - GET never collects GitHub or updates token activity. Successful mutations update
-  `last_used_at`. Responses use `Cache-Control: private, no-store` and
-  `Referrer-Policy: no-referrer`.
+  `last_used_at`. Every `/api/v1/*` response, including authentication 401/403,
+  validation 400, not-found 404, unexpected errors and 304, uses
+  `Cache-Control: private, no-store`, `Vary: Authorization` and
+  `Referrer-Policy: no-referrer`. Other `Vary` dimensions are preserved.
 - JSON writes require `Content-Type: application/json`, UTF-8 if charset is given.
   Strict schemas reject extra fields. No body/query is defined unless listed.
 - Reads/updates return 200, resource creation 201, refresh start/control 202,
@@ -336,8 +357,14 @@ api -G "$API/sources" --data-urlencode 'since=2026-10-18T16:00:00+08:00' \
 ```
 
 Each source has all eight fields shown. `contentVersion` is nullable: rows saved
-before content metadata was introduced have no stored hash, and a projection with
-an unhashed input also returns null. Factory streams require stored metadata for
+before content metadata was introduced have no stored hash. Account list
+projections (including issues/PRs/repos) and CI compose deterministic hashes even
+with legacy inputs: each saved input uses its content hash, or `unhashed:` plus
+its full stored version (computed from the frozen saved JSON when absent).
+Absent snapshots use the distinct `missing` marker. Thus an unstarred, archived
+or fork repository's legacy page cannot null the entire account hash. Legacy
+inputs remain sensitive to full-version changes, including collection time,
+until an ordinary refresh saves their content metadata. Factory streams require stored metadata for
 the advertised immutable version; missing/mismatched metadata returns null while
 the existing version/coverage remains. Null is not a content proof: fall back to
 full-version equality. Hashes fill in after the source's next ordinary refresh;
@@ -520,8 +547,9 @@ snapshots instead use the publication-bound composite rule below; do not derive
 their full version by hashing response JSON alone. Account projections still
 derive full versions from their projected JSON. Factory/publication/stream/calendar
 versions instead use their original run IDs. The additive, nullable
-`contentVersion` is computed when evidence is saved, not by decoding and hashing
-stream payloads on GET. It is not an ETag; `/sources` ETags still describe the full
+`contentVersion` uses saved hashes and read-time account compositions; legacy
+account inputs use the full-version marker described above. Factory stream
+payloads are never decoded and hashed on GET. It is not an ETag; `/sources` ETags still describe the full
 response, so refresh metadata can change an ETag while content versions stay equal.
 
 The exact recipe in [content-version.ts](../apps/web/src/server/lib/content-version.ts):
@@ -612,7 +640,12 @@ Account projections compose existing hashes cheaply rather than hash full lists
 on each request. The composite uses the same canonical SHA-256 encoding over
 `{inputs,selection}`. Input keys identify the saved dependencies, values are their
 stored content hashes, and an absent required saved row is the literal `"missing"`.
-An existing input without a stored hash makes the composite null.
+For account lists and CI, an existing input without a stored hash is
+`"unhashed:" + fullVersion`; reuse its saved full version or hash
+`JSON.stringify(prSnapshot(savedData))` when that metadata is also absent.
+This fallback describes the actual frozen legacy input, not successful coverage.
+Account factory composition still returns null when an existing input lacks a
+stored content hash. None of these readers writes metadata or backfills rows.
 
 | Projection | Composite inputs and selection |
 | --- | --- |
@@ -632,8 +665,9 @@ Migration `0014_source_content.sql` adds the two nullable columns and covering
 indexes `snapshots_content(account_id,kind,content_meta)` and
 `factory_resources_content(run_id,repo,stream,content_meta)`, without rebuilding
 tables or backfilling legacy payloads. Pre-release rows return null until their
-next normal save; a composite remains null while any existing dependency lacks a
-hash. Do not refresh upstream or decode old payloads to repair hashes on GET.
+next normal save; account factory composition remains null while any existing
+dependency lacks a hash. Do not refresh upstream or decode old payloads to repair
+hashes on GET.
 See [migration and performance evidence](12-source-performance.md#persisted-content-versions-v0170).
 
 ### Account endpoints
@@ -906,7 +940,8 @@ The response is an `ActivitySnapshot`, not the generic observation envelope:
   repos: [{ repo, ci_runs, prs: { opened, merged, closed },
     issues: { opened, closed }, releases, commits: { default, other, items },
     deploy: { last_success_at, runs }, snapshot, coverage }],
-  totals, contributions, coverage, truncated }
+  totals, totals_partial, totals_coverage: { missing: [{ repo, metrics, reason }] },
+  contributions, coverage, truncated }
 ```
 
 The interval is `(since, until]`, ending at the run's frozen collection cutoff,
@@ -930,7 +965,32 @@ are `{status:complete|partial|unavailable,truncated,reason}`. A bounded paginati
 or storage cut marks the affected list and the whole response truncated; nullable
 totals must not be interpreted as zero. Old good observations are not relabeled
 as newly collected evidence. The source index registers `account:activity` with
-its publication version, content version and saved `fetchedAt`.
+its publication version and saved `fetchedAt`. Its content version hashes canonical
+`{input:<stored-publication-content-version>,derivation:"metric-totals-v1"}` with
+SHA-256, binding the frozen publication to this read-time totals contract.
+Activity ETags hash the full derived response bytes, so old pre-derivation ETags
+cannot incorrectly produce 304. Repeated reads of the same publication and query
+are deterministic; no stored publication, page, timestamp or run ID is rewritten.
+
+Account totals are derived at read time from frozen per-repository evidence,
+including publications created before 0.21.0. Each metric sums only repositories
+with complete evidence for that metric. `red_default_branch` concatenates only
+fully classified repository lists. A metric with no available repository is null,
+not zero; a known empty membership (including an unselected repository filter)
+still has zero counts and an empty red list. `coverage.run:partial` alone does not
+exclude otherwise complete metric streams; unavailable security/alerts do not
+erase CI, PR, issue or release evidence.
+
+`totals_partial` is true when at least one repository/metric is excluded.
+`totals_coverage.missing` groups metric names by repository and reason:
+`partial` or `unavailable` describes the relevant source coverage,
+`missing_evidence` means a missing list/coverage or unclassifiable red workflow,
+and `omitted` identifies frozen members lost to storage capacity. An old truncated
+publication without membership uses `repo:null` for unattributable omissions.
+This flag describes totals only, not overall run completeness or contributions.
+Retained available subtotals remain useful when membership was truncated, while
+the omitted repositories and metrics stay explicit. Neither catalog changes nor
+unrelated newer snapshots enter this calculation.
 Activity freezes only streams carrying this run's ID. Repository evidence is
 current when its observation version matches the run or its repository commit
 step succeeded in this run, with the repository ID matching the frozen run ID
@@ -942,7 +1002,7 @@ repository observations. Activity supplement collection and freezing use only
 that successful same-repository metadata with matching identity when recorded.
 Without verifiable branch evidence, workflow `is_default_branch` and default
 commit branch labels are null, `coverage.default_branch` is unavailable and red
-default-branch totals remain null. A retained branch is never used as a fallback.
+that repository's default-branch total remains null. A retained branch is never used as a fallback.
 This also applies to in-flight runs whose metadata completed before branch
 evidence was recorded: supplemental branch histories are not classified as
 other branches. `coverage.other_commits` stays unavailable and `commits.other`
@@ -953,16 +1013,16 @@ Repositories with failed, unavailable or limited steps have `coverage.run.status
 does not mark run coverage partial or truncated. Dependency diagnostics retain
 their own limited coverage independently. Other limited steps still mark run
 coverage truncated; failed/unavailable steps alone do not. Per-source missing
-evidence remains unavailable/null; a total whose
-source evidence is partial or unavailable stays null, never a fabricated zero.
+evidence remains unavailable/null; partial or unavailable repository metrics are
+excluded from account subtotals, never counted as fabricated zeroes.
 `membership` freezes repository names independently of stored pages, so capacity
 cuts cannot make a selected member look unselected. An unclassifiable failed
-workflow leaves the red default-branch total null and `default_branch` coverage
+workflow leaves that repository's red default-branch contribution null and `default_branch` coverage
 partial rather than claiming no red workflows.
 Publication first profiles frozen repository payload lengths and loads at most
 4,000,000 UTF-8 bytes in frozen membership order, independently of the 16-page
 output limit. Input-budget omissions retain membership, partial/truncated
-coverage and null account totals, never complete zero results.
+coverage and explicit missing-total entries, never complete zero results.
 
 Every CI run exposes `id`, `workflow_id`, `workflow_name`, `event`, `head_branch`,
 `head_sha`, `is_default_branch`, `status`, `conclusion`, `run_attempt`, `created_at`,
@@ -1830,6 +1890,16 @@ is malformed, not forbidden. A 403/404 after any accepted page (even an empty
 page with a next cursor) is interrupted collection: the snapshot step fails with
 `snapshot_incomplete`, retains the previous snapshot and its timestamp, and makes
 the run/publication partial rather than complete.
+The asynchronous POST still returns 202 on admission; a later collection failure
+is recorded on the run, not retroactively returned as HTTP 422 by that POST.
+`/refresh-runs` shows the failed step's `error:"snapshot_incomplete"` and increments
+`counts.failed` (terminal compact history omits full steps). `/refresh-runs/latest`
+keeps that entry in `failedSteps`; `lastError` prefers a run-level error, otherwise
+the first nonempty failed-step error. A nonfatal snapshot failure can still finish
+and publish as `partial`, with non-null `publishedAt` only when atomic publication
+is proven. Fatal run failure instead has status `failed` and null `publishedAt`;
+until completion it remains unpublished. Neither outcome relabels retained
+snapshot evidence as freshly collected.
 This includes global Issues/PR chunks resumed in another queue invocation: the
 durable snapshot cursor, not just the current request's local page counter,
 determines whether collection has already started.
@@ -1891,6 +1961,13 @@ api "$API/refresh-runs"
 
 Requires `app:write`; explicitly schedules GitHub collection. No query; strict body:
 
+A new request while this account has a `running` or `paused` run returns HTTP
+409 `account_conflict`; it does not enqueue a second run. Read `/refresh-runs`
+and wait or explicitly control that run rather than blindly retrying. Reusing
+the same `requestKey` is idempotent and returns the already admitted run (202),
+not a competing-run conflict. Other admission checks can independently return
+validation, catalog or cooldown errors.
+
 | Field | Validation/default |
 | --- | --- |
 | `requestKey` | Required UUID; logical-request identity within account |
@@ -1920,6 +1997,12 @@ detail tabs (details, issues, prs, actions, releases, traffic, security, languag
 contributors). `order` never changes membership; exceeding 500 is an error.
 Inspect `/refresh-runs` for frozen `repos`, `siteRepos`, `selection` and step outcomes.
 Older compact runs may lack full steps; a single changed snapshot is not a full plan.
+
+A selected-scope manual refresh updates `/sources` entries and detail snapshots
+only for its selected repositories. Account projections may change because they
+compose those inputs, but untouched repositories keep their previous evidence.
+It does **not** publish `/activity`; only an eligible account-wide quick refresh
+advances that frozen publication.
 
 For the analysis bot, replace statistics writes with local star writes. Migration
 `0016_star_membership.sql` removes stars only where the same account/repository has
@@ -1978,6 +2061,7 @@ Machine errors are JSON, not Access redirects; no standardized details array or
 | 409 | `catalog_incomplete`, `refresh_cooldown` | Prepare catalog or defer refresh |
 | 409 | `account_conflict` | Existing running/paused run or concurrent run control |
 | 422 | `factory_capacity` | Generated refresh record exceeds capacity; previous data retained |
+| 422 | `snapshot_incomplete` | Bounded/incomplete collection cannot replace a snapshot; retain previous evidence and inspect run diagnostics |
 | 500 | `internal_error`, `db_error` | Bounded backoff and operator diagnosis |
 
 Implemented application limits, not inferred Cloudflare/GitHub quotas:

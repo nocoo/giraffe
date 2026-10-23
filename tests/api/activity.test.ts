@@ -19,6 +19,15 @@ const previousId = `previous-${account}`;
 const pendingId = `pending-${account}`;
 let seeded = false;
 
+const derivedSnapshot = () => ({
+	...snapshot,
+	totals: { ...snapshot.totals, red_default_branch: null },
+	totals_partial: true,
+	totals_coverage: {
+		missing: [{ repo: repository, metrics: ["red_default_branch"], reason: "missing_evidence" }],
+	},
+});
+
 const quote = (value: string) => `'${value.replaceAll("'", "''")}'`;
 function rows(command: string): Record<string, unknown>[] {
 	const persist = process.env.GIRAFFE_PERSIST;
@@ -169,7 +178,7 @@ afterAll(() => {
 	rows(`DELETE FROM accounts WHERE id=${quote(account)};`);
 });
 
-it("R4 HTTP preserves published counts, workflow fields, seamless windows and read-only source polling", async () => {
+it("R4 HTTP derives frozen counts, excludes unproven branch totals and preserves read-only polling", async () => {
 	const saved = () =>
 		rows(
 			`SELECT * FROM activity_publications WHERE account_id=${quote(account)} ORDER BY run_id; SELECT * FROM activity_pages WHERE account_id=${quote(account)} ORDER BY run_id,page; SELECT * FROM api_tokens WHERE account_id=${quote(account)} ORDER BY id; SELECT * FROM factory_runs WHERE account_id=${quote(account)} ORDER BY id;`,
@@ -178,7 +187,7 @@ it("R4 HTTP preserves published counts, workflow fields, seamless windows and re
 	const calls = await (await fetch("http://127.0.0.1:17046/_count")).text();
 	const response = await request();
 	expect(response.status).toBe(200);
-	expect(await response.json()).toEqual(snapshot);
+	expect(await response.json()).toEqual(derivedSnapshot());
 	const prior = await request(`?run=${previousId}`);
 	expect(prior.status).toBe(200);
 	expect(((await prior.json()) as ActivitySnapshot).window.until).toBe(snapshot.window.since);
@@ -269,7 +278,7 @@ it("R4 browser activity reads the active account publication with private condit
 		const calls = await (await fetch("http://127.0.0.1:17046/_count")).text();
 		const response = await browser();
 		expect(response.status).toBe(200);
-		expect(await response.json()).toEqual(snapshot);
+		expect(await response.json()).toEqual(derivedSnapshot());
 		const tag = response.headers.get("etag");
 		expect(tag).toBeTruthy();
 		const conditional = await browser(String(tag));

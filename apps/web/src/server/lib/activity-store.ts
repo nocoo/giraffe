@@ -11,6 +11,7 @@ import {
 	unknownActivity,
 } from "./activity";
 import type { ActivitySupplement } from "./activity-collect";
+import { readActivityTotals } from "./activity-totals";
 import { observationVersion } from "./content-version";
 import type { Db } from "./db/d1";
 import { fenced, type RunLease } from "./db/factory-runs";
@@ -343,7 +344,7 @@ export async function readActivity(
 	db: Db,
 	account: string,
 	query: Record<string, string[]>,
-): Promise<ActivitySnapshot> {
+): Promise<ActivitySnapshot & ReturnType<typeof readActivityTotals>> {
 	if (Object.values(query).some((values) => values.length !== 1))
 		throw new ApiError(400, "validation_failed", "Duplicate activity filter");
 	const parsed = querySchema.safeParse(
@@ -375,6 +376,8 @@ export async function readActivity(
 	const snapshot = JSON.parse(header.payload) as ActivitySnapshot;
 	snapshot.repos =
 		pages?.results.flatMap((page) => JSON.parse(page.payload) as ActivityRepo[]) ?? [];
+	let membership = snapshot.membership ?? snapshot.repos.map((repo) => repo.repo);
+	let unknownOmitted = !snapshot.membership && snapshot.truncated;
 	const repository = parsed.data.repository;
 	if (repository) {
 		const frozenMember =
@@ -404,12 +407,10 @@ export async function readActivity(
 				);
 		}
 		snapshot.repos = matching;
-		snapshot.totals = activityTotals(matching);
 		const omitted =
 			!matching.length && (frozenMember || (!snapshot.membership && snapshot.truncated));
-		if (omitted)
-			for (const key of Object.keys(snapshot.totals) as (keyof ActivitySnapshot["totals"])[])
-				snapshot.totals[key] = null;
+		membership = omitted ? [repository] : matching.map((repo) => repo.repo);
+		unknownOmitted = false;
 		snapshot.contributions = null;
 		snapshot.coverage = {
 			repos: omitted
@@ -431,5 +432,5 @@ export async function readActivity(
 			omitted ||
 			matching.some((repo) => Object.values(repo.coverage).some((value) => value.truncated));
 	}
-	return snapshot;
+	return { ...snapshot, ...readActivityTotals(snapshot.repos, membership, unknownOmitted) };
 }

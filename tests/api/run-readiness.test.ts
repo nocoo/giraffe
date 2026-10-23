@@ -120,6 +120,8 @@ it("R9 HTTP latest returns completed/partial publication, running ETA reason and
 			{
 				status: "completed",
 				publishedAt: finished,
+				publishedAtReason: null,
+				depth: "quick",
 				expectedFinishAt: finished,
 				expectedFinishAtReason: null,
 				window: { until: started },
@@ -131,6 +133,8 @@ it("R9 HTTP latest returns completed/partial publication, running ETA reason and
 			{
 				status: "running",
 				publishedAt: null,
+				publishedAtReason: "in_progress",
+				depth: "deep",
 				expectedFinishAt: null,
 				expectedFinishAtReason: "no_completed_history",
 				window: factoryWindow(started),
@@ -141,17 +145,30 @@ it("R9 HTTP latest returns completed/partial publication, running ETA reason and
 			{
 				status: "failed",
 				publishedAt: null,
+				publishedAtReason: "failed",
+				depth: "quick",
 				lastError: "snapshot_incomplete",
 				counts: { failed: 1 },
 			},
 		],
-		["catalog", { status: "partial", publishedAt: finished, window: factoryWindow(started) }],
+		[
+			"catalog",
+			{
+				status: "partial",
+				publishedAt: finished,
+				publishedAtReason: null,
+				depth: null,
+				window: factoryWindow(started),
+			},
+		],
 		["quick", { id: id("manual"), kind: "manual", window: factoryWindow(started) }],
 		["deep", { id: id("weekly"), kind: "weekly", window: factoryWindow(started) }],
 	] as const) {
 		const response = await request(`?kind=${kind}`);
 		expect(response.status).toBe(200);
 		expect(response.headers.get("cache-control")).toBe("private, no-store");
+		expect(response.headers.get("vary")).toBe("Authorization");
+		expect(response.headers.get("referrer-policy")).toBe("no-referrer");
 		expect(await response.json()).toMatchObject({
 			account_id: account,
 			id: id(kind),
@@ -167,14 +184,22 @@ it("R9 HTTP latest enforces strict queries, app-read, bearer/account isolation a
 	for (const query of ["", "?kind=other", "?kind=daily&kind=daily", "?kind=daily&x=1"]) {
 		const response = await request(query);
 		expect(response.status).toBe(400);
+		expect(response.headers.get("cache-control")).toBe("private, no-store");
+		expect(response.headers.get("vary")).toBe("Authorization");
+		expect(response.headers.get("referrer-policy")).toBe("no-referrer");
 		expect(await response.json()).toMatchObject({ error: { code: "validation_failed" } });
 	}
 	for (const [token, status] of [
 		[null, 401],
 		["invalid", 401],
 		[wrongScope, 403],
-	] as const)
-		expect((await request("?kind=daily", token)).status).toBe(status);
+	] as const) {
+		const response = await request("?kind=daily", token);
+		expect(response.status).toBe(status);
+		expect(response.headers.get("cache-control")).toBe("private, no-store");
+		expect(response.headers.get("vary")).toBe("Authorization");
+		expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+	}
 	expect((await request("?kind=daily", bearer, "z".repeat(21))).status).toBe(403);
 	for (const method of ["POST", "HEAD"])
 		expect((await request("?kind=daily", bearer, account, method)).status).toBe(405);
@@ -204,6 +229,11 @@ it("R9 HTTP browser latest uses the Access-protected active account and returns 
 		rows(`DELETE FROM factory_runs WHERE id=${quote(id("weekly"))};`);
 		for (const response of [await browser("?kind=weekly"), await request("?kind=weekly")]) {
 			expect(response.status).toBe(404);
+			if (response.url.includes("/api/v1/")) {
+				expect(response.headers.get("cache-control")).toBe("private, no-store");
+				expect(response.headers.get("vary")).toBe("Authorization");
+				expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+			}
 			expect(await response.json()).toMatchObject({ error: { code: "not_found" } });
 		}
 	} finally {

@@ -85,11 +85,16 @@ it("R5 HTTP creates, reads, updates with header precedence and rejects optimisti
 	expect(empty.status).toBe(200);
 	expect(empty.headers.get("etag")).toBe('"0"');
 	expect(await empty.json()).toMatchObject({ payload: null, revision: null });
-	const created = await request("PUT", {
-		payload: { summary: "reviewed", status: "attention", memory: { arbitrary: [null, 1] } },
-	});
+	const created = await request(
+		"PUT",
+		{ payload: { summary: "reviewed", status: "attention", memory: { arbitrary: [null, 1] } } },
+		{ "if-match": '"0"' },
+	);
 	expect(created.status).toBe(200);
 	expect(await created.json()).toMatchObject({ revision: 1, updated_by: `${account}-reader` });
+	const duplicate = await request("PUT", { payload: {} }, { "if-match": '"0"' });
+	expect(duplicate.status).toBe(409);
+	expect(await duplicate.json()).toMatchObject({ error: { code: "revision_conflict" } });
 	expect((await request("PUT", { payload: {} })).status).toBe(428);
 	expect((await request("PUT", { revision: 2, payload: {} })).status).toBe(409);
 	expect(
@@ -122,7 +127,7 @@ it("R5 HTTP validates Unicode bytes, strict queries/scopes/account isolation and
 		expect(response.status).toBe(400);
 		expect(await response.json()).toMatchObject({ error: { code: "invalid_payload" } });
 	}
-	for (const header of ["*", 'W/"4"', '"0"', "4"])
+	for (const header of ["*", 'W/"4"', '"00"', "4"])
 		expect((await request("PUT", { payload: {} }, { "if-match": header })).status).toBe(400);
 	expect((await request("GET", undefined, { authorization: `Bearer ${wrongScope}` })).status).toBe(
 		403,

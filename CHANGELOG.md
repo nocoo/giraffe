@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.21.0 - 2026-10-23
+
+### Added
+
+- Read-time account activity subtotals over frozen repositories with complete per-metric evidence, plus `totals_partial` and `totals_coverage.missing` diagnostics. Existing publications benefit without new collection or storage rewrites; wholly unavailable metrics remain null and known empty membership remains zero.
+- Latest refresh readiness includes canonical trigger/catalog `kind`, independent `depth`, and `publishedAtReason` for unpublished, in-progress, failed, cancelled or unprovable legacy runs. SQLite projects only required metadata, counts and failed-step summaries instead of returning the full run payload.
+- Agent-state PUT accepts `If-Match: "0"` as an atomic create-only precondition, with HTTP 409 `revision_conflict` when state already exists or another create wins.
+
+### Fixed
+
+- Account list and CI content versions no longer become null because one saved legacy dependency lacks content metadata. Compositions use a stable full-version marker for that input while raw legacy and immutable-stream metadata stay unchanged.
+- Every private machine response receives `Cache-Control: private, no-store`, authorization-aware `Vary` and `Referrer-Policy: no-referrer`, including authentication, validation, not-found, unexpected-error and conditional responses.
+- Document and pin HTTP 409 `account_conflict` for competing running/paused refreshes, `422 snapshot_incomplete` diagnostics, and selected-scope refresh behavior without activity publication.
+
+### Consumers / migration
+
+- Additive fields preserve existing field types. Activity totals can now contain useful partial values: inspect `totals_partial` and `totals_coverage.missing`, not just numeric totals or the whole-run status. Response ETags and the `account:activity` content-version derivation change; publication IDs/timestamps remain frozen. Account compositions with legacy inputs now have deterministic hashes, sensitive to those inputs' full versions until ordinary refresh saves content metadata.
+- Treat latest-run `kind` as `catalog|daily|weekly|manual`, not the quick/deep query selector; use `depth` for that distinction. Null `publishedAt` is explained by `publishedAtReason` and never proves success.
+- Private response headers now also cover error paths. Keep conditional caches scoped to bearer identity. `If-Match: "0"` changes from a rejected header to create-only; handle a competing create as 409 and reload the current revision.
+- No database migration, manual backfill, production write, dependency update or lockfile change is required. Version displays and `/api/live` derive from root `package.json`.
+
 ## v0.20.1 - 2026-10-23
 
 ### Fixed

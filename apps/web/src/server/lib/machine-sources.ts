@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { FactorySnapshot } from "../../lib/factory-types";
 import { FACTORY_STREAMS } from "../../lib/factory-types";
 import { prSnapshot } from "../../lib/pull-request";
+import { activityReadContentVersion } from "./activity-totals";
 import type { CatalogRow } from "./catalog-history";
 import { catalogView } from "./catalog-read";
 import { decodeContent, factoryStreamContent, storedContent } from "./content-version";
@@ -272,7 +273,7 @@ export async function readSources(
 			sources.push({
 				resource: "account:activity",
 				version: activity.run_id,
-				contentVersion: activity.content_version,
+				contentVersion: await activityReadContentVersion(activity.content_version),
 				...metadata,
 				runId: activity.run_id,
 				observedAt: metadata.fetchedAt,

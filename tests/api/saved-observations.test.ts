@@ -147,7 +147,7 @@ it("exposes matching content versions on saved account and repository observatio
 	}
 });
 
-it("keeps legacy source hashes null without changing full versions or filling metadata on GET", async () => {
+it("versions legacy account composites without changing full versions or filling metadata on GET", async () => {
 	assertMarker();
 	const query = `SELECT kind,payload,fetched_at,content_meta FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`;
 	const rows = sql(query)[0]?.results;
@@ -177,7 +177,11 @@ it("keeps legacy source hashes null without changing full versions or filling me
 			sources: { resource: string; version: string; contentVersion: string | null }[];
 		};
 		for (const source of index.sources) {
-			expect(source.contentVersion).toBeNull();
+			if (
+				["account:issues", "account:prs", "account:ci", "account:repos"].includes(source.resource)
+			)
+				expect(source.contentVersion).toMatch(/^sha256:[0-9a-f]{64}$/);
+			else expect(source.contentVersion).toBeNull();
 			expect(source.version).toBe(
 				before.sources.find((saved: { resource: string }) => saved.resource === source.resource)
 					?.version,
@@ -187,7 +191,12 @@ it("keeps legacy source hashes null without changing full versions or filling me
 			const observation = (await (await machine(path)).json()) as SavedObservation;
 			const original = observations[position];
 			if (!original) throw new Error("original observation missing");
-			expect(observation.contentVersion).toBeNull();
+			if (["issues", "prs", "ci", "repos"].includes(path)) {
+				expect(observation.contentVersion).toMatch(/^sha256:[0-9a-f]{64}$/);
+				expect(observation.contentVersion).toBe(
+					index.sources.find((source) => source.resource === `account:${path}`)?.contentVersion,
+				);
+			} else expect(observation.contentVersion).toBeNull();
 			expect(observation.sourceVersion).toBe(original.sourceVersion);
 			expect(observation.data).toEqual(original.data);
 		}

@@ -14,6 +14,7 @@ import {
 	composeContent,
 	factoryStreamContent,
 	observationVersion,
+	snapshotContentInput,
 	storedContent,
 } from "./content-version";
 import type { Db } from "./db/d1";
@@ -126,19 +127,19 @@ async function readCiGroups(db: Db, account: string) {
 	return latestSnapshotGroups(rows.results);
 }
 
-export function ciContent(
+export async function ciContent(
 	policy: Policy,
 	groups: ReturnType<typeof latestSnapshotGroups>,
 	freshness: ReturnType<typeof snapshotFreshness>,
 ) {
 	const inputs: Record<string, string | null> = {
-		catalog: storedContent(policy.catalog)?.hash ?? null,
+		catalog: await snapshotContentInput(policy.catalog),
 	};
 	for (const repo of policy.repos)
 		for (const suffix of ["actions", "releases", "details"]) {
 			const key = `repo:${repo.name_with_owner}:${suffix}`.toLowerCase();
 			const data = groups.get(key)?.data;
-			inputs[key] = data ? (storedContent(data)?.hash ?? null) : "missing";
+			inputs[key] = await snapshotContentInput(data);
 		}
 	return composeContent(inputs, { total: freshness.total, missing: freshness.missing });
 }

@@ -115,7 +115,25 @@ it("R5 If-Match takes precedence over a valid conflicting body revision", async 
 	});
 });
 
-it.each(['W/"1"', "*", "1", '"0"', '"01"', '"-1"', '"1", "2"', '"9007199254740992"', ""])(
+it("accepts zero If-Match as create-only with one concurrent winner", async () => {
+	const fixtureState = await fixture();
+	const results = await Promise.allSettled([
+		fixtureState.write({ revision: 99, payload: { first: true } }, '"0"'),
+		fixtureState.write({ payload: { second: true } }, '"0"'),
+	]);
+	expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+	expect(results.find((result) => result.status === "rejected")).toMatchObject({
+		reason: { status: 409, code: "revision_conflict" },
+	});
+	const before = await fixtureState.stored();
+	await expect(fixtureState.write({ payload: {} }, '"0"')).rejects.toMatchObject({
+		status: 409,
+		code: "revision_conflict",
+	});
+	expect(await fixtureState.stored()).toEqual(before);
+});
+
+it.each(['W/"1"', "*", "1", '"00"', '"01"', '"-1"', '"1", "2"', '"9007199254740992"', ""])(
 	"R5 rejects unsupported If-Match %j",
 	async (header) => {
 		const s = await fixture();

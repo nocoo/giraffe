@@ -47,6 +47,15 @@ export async function composeContent(
 	return contentVersion("composite", { inputs, selection });
 }
 
+export async function snapshotContentInput(snapshot: Record<string, unknown> | null | undefined) {
+	if (!snapshot) return "missing";
+	const metadata = storedContent(snapshot);
+	return (
+		metadata?.hash ??
+		`unhashed:${metadata?.fullVersion ?? (await observationVersion(prSnapshot(snapshot)))}`
+	);
+}
+
 export function factoryStreamContent(saved: string | null, published: FactoryCoverage) {
 	return published.retained
 		? composeContent({ evidence: saved }, { coverage: coverage(published) })

@@ -4,13 +4,79 @@ import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import type { ActivitySnapshot } from "../../lib/activity-types";
 import { makeRun } from "../../lib/factory-run";
 import { FACTORY_STREAMS } from "../../lib/factory-types";
+import type { Env } from "../env";
+import { createApp } from "../index";
+import { activityEtag } from "../routes/activity";
 import { activityRepo } from "./activity";
 import { activityPublicationWrites, packActivity, readActivity } from "./activity-store";
+import { activityReadContentVersion } from "./activity-totals";
 import { createDb } from "./db/d1";
 import { claimRun, controlRun, saveRun, startRun } from "./db/factory-runs";
 import { mapFactoryEvents, mapFactoryRepo } from "./factory-map";
 import { currentRepo, repositoryWrites } from "./factory-publish";
 import { readSources } from "./machine-sources";
+
+it("derives totals for existing frozen publications without writes and binds polling validators", async () => {
+	const fixture = await setup();
+	const repo = activityRepo(fixture.repo, new Map(), snapshotFor([]).window, null, null);
+	repo.ci_runs = [];
+	repo.coverage.actions = { status: "complete", truncated: false, reason: null };
+	repo.coverage.default_branch = { status: "complete", truncated: false, reason: null };
+	repo.coverage.run = { status: "partial", truncated: false, reason: "security unavailable" };
+	const header = { ...snapshotFor([]), membership: [repo.repo] };
+	await fixture.db.prepare("UPDATE factory_runs SET status='partial' WHERE id='r2'").run();
+	await fixture.db.prepare("UPDATE accounts SET is_active=1").run();
+	await fixture.db
+		.prepare(
+			"INSERT INTO activity_publications(account_id,run_id,until_at,fetched_at,payload,content_version) VALUES('account_123','r2',?,?,?,'saved')",
+		)
+		.bind(now, now, JSON.stringify(header))
+		.run();
+	await fixture.db
+		.prepare("INSERT INTO activity_pages VALUES('account_123','r2',0,?)")
+		.bind(JSON.stringify([repo]))
+		.run();
+	const before = await fixture.db.prepare("SELECT * FROM activity_publications").all();
+	const pagesBefore = await fixture.db.prepare("SELECT * FROM activity_pages").all();
+	const app = createApp();
+	const env = {
+		DB: fixture.raw,
+		ENVIRONMENT: "development",
+		GITHUB_API_BASE: "http://fixture",
+	} as Env;
+	const response = await app.request("http://localhost/api/activity", {}, env);
+	expect(response.status).toBe(200);
+	const data = await response.json();
+	expect(data).toMatchObject({
+		runId: "r2",
+		totals: { ci_runs: 0, merged_prs: null },
+		totals_partial: true,
+	});
+	const tag = response.headers.get("ETag");
+	expect(tag).toBeTruthy();
+	const oldApp = new Hono();
+	oldApp.get("/api/activity", activityEtag, (context) =>
+		context.json({ ...header, repos: [repo] }),
+	);
+	const oldResponse = await oldApp.request("http://localhost/api/activity");
+	expect(oldResponse.headers.get("ETag")).not.toBe(tag);
+	expect(
+		(
+			await app.request(
+				"http://localhost/api/activity",
+				{ headers: { "If-None-Match": tag ?? "" } },
+				env,
+			)
+		).status,
+	).toBe(304);
+	expect(await readActivity(fixture.db, "account_123", { run: ["r2"] })).toEqual(data);
+	const source = (await readSources(fixture.db, "account_123", {})).sources.find(
+		(source) => source.resource === "account:activity",
+	);
+	expect(source?.contentVersion).toBe(await activityReadContentVersion("saved"));
+	expect(await fixture.db.prepare("SELECT * FROM activity_publications").all()).toEqual(before);
+	expect(await fixture.db.prepare("SELECT * FROM activity_pages").all()).toEqual(pagesBefore);
+});
 
 const now = "2026-10-22T20:00:00.000Z";
 async function setup(name = rawRepo.nameWithOwner) {
@@ -1090,7 +1156,13 @@ it("R4 publication profiles metadata first and fetches at most four MB in frozen
 	expect(result.membership).toEqual(names);
 	expect(result.repos.map((repo) => repo.repo)).toEqual(names.slice(0, 3));
 	expect(result.truncated).toBe(true);
-	expect(result.totals.releases).toBeNull();
+	expect(result.totals.releases).toBe(3);
+	expect(result.totals_partial).toBe(true);
+	expect(result.totals_coverage.missing).toContainEqual({
+		repo: names[3],
+		metrics: Object.keys(result.totals),
+		reason: "omitted",
+	});
 	expect(result.coverage.input).toMatchObject({ status: "partial", truncated: true });
 	const omitted = await readActivity(createDb(s.raw), "account_123", {
 		repository: [names[3] ?? ""],
@@ -1207,3 +1279,5 @@ it("R4 oversized account metadata fails boundedly even when red-workflow evidenc
 	snapshot.account_id = "x".repeat(1_500_001);
 	expect(() => packActivity(snapshot)).toThrow("metadata exceeds page capacity");
 });
+
+import { Hono } from "hono";

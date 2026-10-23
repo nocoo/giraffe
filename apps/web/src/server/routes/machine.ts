@@ -15,7 +15,7 @@ import { authenticateApiToken, recordApiTokenUse } from "../lib/api-tokens";
 import { catalogInclude, readCatalogChanges } from "../lib/catalog-read";
 import { getAccount } from "../lib/db/accounts";
 import { createDb } from "../lib/db/d1";
-import { ApiError, toErrorResponse } from "../lib/errors";
+import { ApiError } from "../lib/errors";
 import { readContributions } from "../lib/machine-contributions";
 import {
 	readMachineAccountObservation,
@@ -38,9 +38,9 @@ import {
 	machineRuns,
 	machineSetting,
 } from "./machine-settings";
-import { machineRepoAgentState, repoAgentStateHeaders } from "./repo-agent-state";
-import { machineRepoMeta, repoMetaHeaders } from "./repo-meta";
-import { latestReport, reportLatestHeaders } from "./report-latest";
+import { machineRepoAgentState } from "./repo-agent-state";
+import { machineRepoMeta } from "./repo-meta";
+import { latestReport } from "./report-latest";
 import { getMachineLatestRun } from "./run-readiness";
 
 type Principal = NonNullable<Awaited<ReturnType<typeof authenticateApiToken>>>;
@@ -50,7 +50,18 @@ export type MachineVars = AppVars & {
 };
 export function machineApi() {
 	const app = new Hono<{ Bindings: Env; Variables: MachineVars }>();
-	app.use("/accounts/:account/agent/reports/latest", reportLatestHeaders);
+	app.use("*", async (c, next) => {
+		await next();
+		c.header("Cache-Control", "private, no-store");
+		const vary =
+			c.res.headers
+				.get("Vary")
+				?.split(",")
+				.map((value) => value.trim()) ?? [];
+		if (!vary.some((value) => value.toLowerCase() === "authorization"))
+			c.header("Vary", [...vary, "Authorization"].join(", "));
+		c.header("Referrer-Policy", "no-referrer");
+	});
 	app.use("*", async (c, next) => {
 		const timing =
 			c.req.method === "GET" &&
@@ -61,8 +72,6 @@ export function machineApi() {
 				: undefined;
 		c.set("sourceTiming", timing);
 		c.set("db", createDb(c.env.DB, timing?.recordD1.bind(timing)));
-		c.header("Cache-Control", "private, no-store");
-		c.header("Referrer-Policy", "no-referrer");
 		const authenticate = () =>
 			authenticateApiToken(c.get("db"), c.req.header("Authorization") ?? null);
 		const principal = timing
@@ -161,10 +170,6 @@ export function machineApi() {
 	});
 	app.get(
 		"/accounts/:account/sources",
-		async (c, next) => {
-			c.header("Vary", "Authorization", { append: true });
-			await next();
-		},
 		async (c, next) =>
 			etag({
 				weak: false,
@@ -190,39 +195,18 @@ export function machineApi() {
 		async (c, next) => {
 			if (c.req.method !== "GET")
 				throw new ApiError(405, "method_not_allowed", "Catalog history is read-only");
-			c.header("Vary", "Authorization");
 			await next();
 		},
 		etag({ weak: false, retainedHeaders: [...RETAINED_304_HEADERS, "referrer-policy"] }),
-		async (c) => {
-			try {
-				return c.json(
-					await readCatalogChanges(c.get("db"), c.get("principal").accountId, c.req.queries()),
-				);
-			} catch (error) {
-				const response = toErrorResponse(error);
-				response.headers.set("Cache-Control", "private, no-store");
-				return response;
-			}
-		},
-	);
-	app.get(
-		"/accounts/:account/activity",
-		async (c, next) => {
-			c.header("Vary", "Authorization", { append: true });
-			await next();
-		},
-		activityEtag,
 		async (c) =>
-			c.json(await readActivity(c.get("db"), c.get("principal").accountId, c.req.queries())),
+			c.json(await readCatalogChanges(c.get("db"), c.get("principal").accountId, c.req.queries())),
+	);
+	app.get("/accounts/:account/activity", activityEtag, async (c) =>
+		c.json(await readActivity(c.get("db"), c.get("principal").accountId, c.req.queries())),
 	);
 	app.all("/accounts/:account/stars/:owner/:name", machineSetting);
 	app.get(
 		"/accounts/:account/contributions",
-		async (c, next) => {
-			c.header("Vary", "Authorization", { append: true });
-			await next();
-		},
 		async (c, next) =>
 			etag({
 				weak: false,
@@ -255,12 +239,8 @@ export function machineApi() {
 			),
 		);
 	});
-	app.all("/accounts/:account/repos/:owner/:name/meta", repoMetaHeaders, machineRepoMeta);
-	app.all(
-		"/accounts/:account/repos/:owner/:name/agent-state",
-		repoAgentStateHeaders,
-		machineRepoAgentState,
-	);
+	app.all("/accounts/:account/repos/:owner/:name/meta", machineRepoMeta);
+	app.all("/accounts/:account/repos/:owner/:name/agent-state", machineRepoAgentState);
 	app.get("/accounts/:account/repos/:owner/:name/:resource?", async (c) => {
 		const resource = c.req.param("resource") ?? "details";
 		if (!REPO_SNAPSHOT_TABS.includes(resource as (typeof REPO_SNAPSHOT_TABS)[number]))

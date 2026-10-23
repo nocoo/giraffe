@@ -70,6 +70,54 @@ async function setup() {
 	return { db, raw, env, app, token, call, prefix: `/accounts/${account}` };
 }
 
+it("applies private headers to every machine response, including authentication and handler errors", async () => {
+	const fixture = await setup();
+	const readonly = await createApiToken(fixture.db, {
+		accountId: account,
+		label: "read",
+		scopes: ["observations:read"],
+		expiresInDays: 1,
+		creator: "test@local",
+	});
+	const responses = [
+		await fixture.call("/me", "GET", undefined, null),
+		await fixture.call(`/accounts/${other}/repos`),
+		await fixture.call(`${fixture.prefix}/settings`, "GET", undefined, readonly.token),
+		await fixture.call(`${fixture.prefix}/refresh-runs/latest?kind=invalid`),
+		await fixture.call(`${fixture.prefix}/refresh-runs/latest?kind=daily`),
+		await fixture.call(`${fixture.prefix}/missing`),
+		await fixture.call(`${fixture.prefix}/repos`, "DELETE"),
+		await fixture.call(`${fixture.prefix}/repos/nocoo/app/agent-state`, "PUT", {}),
+		...(await Promise.all(
+			[
+				"repos/nocoo/app/agent-state",
+				"repos/nocoo/app/meta",
+				"refresh-runs",
+				"repos",
+				"sources",
+				"stars",
+				"settings",
+				"activity",
+				"catalog/changes",
+				"agent/reports",
+			].map((path) => fixture.call(`${fixture.prefix}/${path}`)),
+		)),
+	];
+	expect(responses.slice(0, 8).map((response) => response.status)).toEqual([
+		401, 403, 403, 400, 404, 404, 405, 400,
+	]);
+	vi.spyOn(fixture.raw, "prepare").mockImplementationOnce(() => {
+		throw new Error("fixture database failure");
+	});
+	const failure = await fixture.call("/me");
+	expect(failure.status).toBe(500);
+	for (const response of [...responses, failure]) {
+		expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+		expect(response.headers.get("Vary")).toBe("Authorization");
+		expect(response.headers.get("Referrer-Policy")).toBe("no-referrer");
+	}
+});
+
 it.each(["POST", "PATCH"])(
 	"preserves generic %s of JSON beyond JSON1's nesting depth",
 	async (method) => {
@@ -167,6 +215,33 @@ it("enforces bearer, scopes and fixed account independently of dashboard activat
 	expect((await s.app.request("http://localhost/api/repos", {}, prod)).status).toBe(401);
 	expect((await s.app.request("http://localhost/api/tokens", {}, prod)).status).toBe(401);
 });
+
+it.each(["running", "paused"] as const)(
+	"returns 409 account_conflict when starting another run while one is %s",
+	async (status) => {
+		const fixture = await setup();
+		const now = new Date().toISOString();
+		const run = makeRun("active-run", account, "nocoo", crypto.randomUUID(), "catalog", [], now);
+		run.status = status;
+		await fixture.db
+			.prepare(
+				"INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",
+			)
+			.bind(run.id, account, run.requestKey, status, JSON.stringify(run), now, now, now)
+			.run();
+		const response = await fixture.call(`${fixture.prefix}/refresh-runs`, "POST", {
+			requestKey: crypto.randomUUID(),
+			mode: "catalog",
+			scope: "all",
+		});
+		expect(response.status).toBe(409);
+		expect(await response.json()).toMatchObject({ error: { code: "account_conflict" } });
+		expect((await fixture.db.prepare("SELECT id,status FROM factory_runs").all()).results).toEqual([
+			{ id: run.id, status },
+		]);
+		expect(fixture.env.FACTORY_QUEUE.send).not.toHaveBeenCalled();
+	},
+);
 it("rejects unknown query keys on every documented machine GET", async () => {
 	const s = await setup();
 	const paths = [

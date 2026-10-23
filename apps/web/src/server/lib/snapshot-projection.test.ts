@@ -88,13 +88,13 @@ it.each([
 			.prepare("UPDATE snapshots SET content_meta=NULL WHERE kind=?")
 			.bind(`repo:owner/app:${kind}`)
 			.run();
-		expect(storedContent(await project())).toBeNull();
+		expect(storedContent(await project())?.hash).toMatch(/^sha256:[a-f0-9]{64}$/);
 		await save(kind, next, "2026-10-21T00:00:00Z");
 		expect(storedContent(await project())?.hash).toMatch(/^sha256:[a-f0-9]{64}$/);
 	},
 );
 
-it("keeps legacy dependencies null, absent dependencies distinct, and catalog flags in projected hashes", async () => {
+it("keeps legacy and absent dependencies distinct and catalog flags in projected hashes", async () => {
 	const db = createDb(sqliteFixture());
 	await db
 		.prepare(
@@ -117,7 +117,7 @@ it("keeps legacy dependencies null, absent dependencies distinct, and catalog fl
 	expect(absent).toMatch(/^sha256:[a-f0-9]{64}$/);
 	await save("repos", catalog);
 	await db.prepare("UPDATE snapshots SET content_meta=NULL WHERE kind='repos'").run();
-	expect(storedContent(await project("issues"))).toBeNull();
+	expect(storedContent(await project("issues"))?.hash).toMatch(/^sha256:[a-f0-9]{64}$/);
 	await save("repos", catalog);
 	expect(storedContent(await project("issues"))?.hash).not.toBe(absent);
 	const covered = await project("issues");
@@ -128,7 +128,7 @@ it("keeps legacy dependencies null, absent dependencies distinct, and catalog fl
 	await save("issues", { issues: [] }, "2026-10-19T00:00:00Z");
 	expect(storedContent(await project("issues"))?.hash).toBe(storedContent(covered)?.hash);
 	await db.prepare("UPDATE snapshots SET content_meta=NULL WHERE kind='issues'").run();
-	expect(storedContent(await project("issues"))).toBeNull();
+	expect(storedContent(await project("issues"))?.hash).toMatch(/^sha256:[a-f0-9]{64}$/);
 	const initial = await project("repos");
 	const initialJson = JSON.stringify(initial);
 	const first = storedContent(initial)?.hash;

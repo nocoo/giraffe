@@ -231,7 +231,7 @@ it("never reads immutable payloads for full or filtered source indexes", async (
 	expect(await readSources(createDb(fixture.raw), fixture.account, {})).toEqual(before);
 });
 
-it("does not invent content hashes for legacy saved sources", async () => {
+it("keeps raw legacy hashes null while versioning account list and CI projections", async () => {
 	const { raw, account, save } = await savedFixture(false);
 	await save("repos", { repos: [{ name_with_owner: "owner/app" }] });
 	await save("issues", { issues: [] });
@@ -249,8 +249,12 @@ it("does not invent content hashes for legacy saved sources", async () => {
 		coverage: repo.coverage.commits,
 	});
 	const result = await readSources(createDb(raw), account, {});
-	for (const source of result.sources) expect(source.contentVersion).toBeNull();
-	for (const resource of ["repos", "issues", "repo:owner/app:issues", "ci", "factory"])
+	for (const source of result.sources) {
+		if (["account:repos", "account:issues", "account:ci"].includes(source.resource))
+			expect(source.contentVersion).toMatch(/^sha256:[0-9a-f]{64}$/);
+		else expect(source.contentVersion).toBeNull();
+	}
+	for (const resource of ["repo:owner/app:issues", "factory"])
 		expect(
 			(await readObservation(createDb(raw), account, resource, "all")).contentVersion,
 		).toBeNull();
@@ -258,6 +262,52 @@ it("does not invent content hashes for legacy saved sources", async () => {
 		(await readFactoryResource(createDb(raw), account, "owner/app", "commits")).contentVersion,
 	).toBeNull();
 });
+
+it.each([
+	["issues", "issues"],
+	["prs", "prs"],
+	["actions", "ci"],
+	["releases", "ci"],
+	["details", "ci"],
+] as const)(
+	"versions a legacy %s input for account:%s without writes",
+	async (suffix, resource) => {
+		const { raw, account, save } = await savedFixture();
+		await save("repos", {
+			repos: [{ name_with_owner: "owner/old", is_archived: true, is_fork: true }],
+		});
+		await save("issues", { issues: [] });
+		await save("prs", { pull_requests: [] });
+		for (const tab of ["issues", "prs", "actions", "releases", "details"])
+			await save(
+				`repo:owner/old:${tab}`,
+				{ issues: [], pull_requests: [], runs: [], releases: [], default_branch: "main" },
+				"2026-10-21T00:00:00Z",
+			);
+		const legacy = `repo:owner/old:${suffix}`;
+		await raw.prepare("UPDATE snapshots SET content_meta=NULL WHERE kind=?").bind(legacy).run();
+		expect(
+			(await raw.prepare("SELECT kind FROM snapshots WHERE content_meta IS NULL").all()).results,
+		).toEqual([{ kind: legacy }]);
+		const before = await raw.prepare("SELECT * FROM snapshots ORDER BY kind").all();
+		const read = async () =>
+			(await readSources(createDb(raw), account, {})).sources.find(
+				(source) => source.resource === `account:${resource}`,
+			);
+		const original = await read();
+		expect(original?.contentVersion).toMatch(/^sha256:[0-9a-f]{64}$/);
+		expect(await read()).toEqual(original);
+		expect((await readObservation(createDb(raw), account, resource, "all")).contentVersion).toBe(
+			original?.contentVersion,
+		);
+		expect(await raw.prepare("SELECT * FROM snapshots ORDER BY kind").all()).toEqual(before);
+		await raw
+			.prepare("UPDATE snapshots SET payload=json_set(payload,'$.legacy_evidence',1) WHERE kind=?")
+			.bind(legacy)
+			.run();
+		expect((await read())?.contentVersion).not.toBe(original?.contentVersion);
+	},
+);
 
 it.each(["run", "legacy"] as const)(
 	"filters %s streams individually using both publication pages",

@@ -1,5 +1,29 @@
 # Retrospective
 
+## 2026-10-23 - Verify derivation hashes against distinct inputs
+
+While adding read-time activity totals, the first content-version wrapper used a
+root `publication` property. The shared canonicalizer deliberately removes that
+property, so two different publication inputs produced the same derived hash.
+The regression comparing distinct inputs caught this before commit. Bind the
+stored digest under a preserved key and test both repeatability and sensitivity;
+a well-formed SHA-256 string alone is not proof that every dependency is bound.
+Frozen-publication fixtures also verify unchanged storage and changed response
+ETags. Full commit hooks caught stale imports during the source-version change;
+keep those checks enabled throughout atomic changes.
+
+An initial zsh inspection loop also used `path` as its iterator, unintentionally
+replacing zsh's special PATH array and hiding commands for the rest of that shell.
+No repository state changed. Use descriptive non-reserved iterator names for
+shell inspection and avoid bundling unrelated diagnostics into oversized output.
+
+The first full HTTP run exposed a remaining legacy test classifying quoted zero
+as an invalid If-Match header. Update both unit and real-HTTP precondition matrices
+when changing a shared contract; the HTTP create now proves zero-tag admission
+and a subsequent 409 conflict. Running L2 and L3 together also hit a Wrangler
+internal socket collision despite their different public ports. Re-run these
+lanes serially without changing project configuration or stopping other projects.
+
 ## 2026-10-23 - Missing branch evidence must stop supplemental classification
 
 The metadata-evidence fix passed a null branch into the supplement collector for
