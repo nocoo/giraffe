@@ -103,10 +103,17 @@ filters return 400; an absent match returns 404. Daily/weekly select trigger,
 catalog selects mode, manual includes legacy unspecified trigger, and quick/deep
 select refresh depth (legacy unspecified depth is deep). Ties use stored creation
 time then ID descending. The response includes `account_id`, `id`, canonical
-`kind`, `status`, `window`, `startedAt`, `expectedFinishAt`,
+`kind`, `depth`, `status`, `window`, `startedAt`, `expectedFinishAt`,
 `expectedFinishAtReason`, `finishedAt`, `counts`, `failedSteps`, `lastError`, and
-`publishedAt`. Activity-eligible runs expose their activity window. ETA uses the
+`publishedAt` and `publishedAtReason`. The returned `kind` is
+`catalog|daily|weekly|manual`, determined by mode/trigger, **not** necessarily the
+query selector: `?kind=quick` can return `kind:"daily",depth:"quick"`.
+`depth` is `quick|deep|null`, null for catalog and deep for historical refreshes
+without a saved depth. Activity-eligible runs expose their activity window. ETA uses the
 existing last-five completed-or-partial same-kind calibration, not a deadline.
+SQLite projects the needed scalar/window fields, step counts and failed-step
+summaries; the reader does not transfer or parse the complete run payload,
+successful-step details or checkpoints. Failed steps retain their stored order.
 
 `publishedAt` is also present on run list/detail views. Completed **or partial**
 runs set it in the same fenced transaction as site snapshots, catalog changes,
@@ -115,6 +122,15 @@ Readiness is not completeness: inspect counts, failed steps and source coverage.
 Historical markers remain null when atomic publication is unprovable (0022).
 Runs created before the staging protocol also keep null when resumed to completion;
 only newly created runs carry the internal atomic-publication capability marker.
+
+Latest-readiness `publishedAtReason` is null when `publishedAt` is present.
+Otherwise it is `in_progress` for running/paused, `failed` or `cancelled` for those
+terminal statuses, `legacy_unprovable` for completed/partial runs without atomic
+publication capability or a historical timestamp field, and `not_published` for
+atomic-capable completed/partial runs with an explicit null timestamp. Migration
+0022 wrote null timestamps to old runs; the capability marker, not merely the
+presence of that null field, distinguishes those legacy runs. This is read-time
+metadata only: no backfill, migration or publication is performed by GET.
 
 `/sources` adds `runId` and `observedAt`. Sources touched by a new publication use
 its run ID and common publication time as `fetchedAt`; `observedAt` and `freshness`
@@ -624,7 +640,12 @@ Account projections compose existing hashes cheaply rather than hash full lists
 on each request. The composite uses the same canonical SHA-256 encoding over
 `{inputs,selection}`. Input keys identify the saved dependencies, values are their
 stored content hashes, and an absent required saved row is the literal `"missing"`.
-An existing input without a stored hash makes the composite null.
+For account lists and CI, an existing input without a stored hash is
+`"unhashed:" + fullVersion`; reuse its saved full version or hash
+`JSON.stringify(prSnapshot(savedData))` when that metadata is also absent.
+This fallback describes the actual frozen legacy input, not successful coverage.
+Account factory composition still returns null when an existing input lacks a
+stored content hash. None of these readers writes metadata or backfills rows.
 
 | Projection | Composite inputs and selection |
 | --- | --- |
@@ -980,7 +1001,7 @@ repository observations. Activity supplement collection and freezing use only
 that successful same-repository metadata with matching identity when recorded.
 Without verifiable branch evidence, workflow `is_default_branch` and default
 commit branch labels are null, `coverage.default_branch` is unavailable and red
-default-branch totals remain null. A retained branch is never used as a fallback.
+that repository's default-branch total remains null. A retained branch is never used as a fallback.
 This also applies to in-flight runs whose metadata completed before branch
 evidence was recorded: supplemental branch histories are not classified as
 other branches. `coverage.other_commits` stays unavailable and `commits.other`
