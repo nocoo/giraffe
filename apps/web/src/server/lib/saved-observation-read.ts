@@ -28,6 +28,7 @@ export type SavedAccountRead = {
 	account: { id: string; login: string } | null;
 	catalogPages: SnapshotPage[];
 	sourcePages: SnapshotPage[];
+	publicationPages: PublicationPage[];
 	repositoryPages: SnapshotPage[];
 	ciPages: SnapshotPage[];
 	stars: StarRow[];
@@ -56,7 +57,7 @@ export function accountReadPlan(
 	account: SavedAccount,
 	resource: AccountObservationResource,
 	_scope: SnapshotScope,
-	options: { rate?: boolean } = {},
+	options: { rate?: boolean; factorySummary?: boolean } = {},
 ) {
 	const statements = [
 		observationAccountStatement(db, account),
@@ -82,6 +83,9 @@ export function accountReadPlan(
 			)
 			.bind(...accountBindings(account)),
 	);
+	const publicationIndex = statements.length;
+	const withFactory = resource === "repos" && options.factorySummary === true;
+	if (withFactory) statements.push(publicationSnapshotStatement(db, account));
 	return {
 		statements,
 		decode(results: D1Result<unknown>[]): SavedAccountRead {
@@ -93,6 +97,7 @@ export function accountReadPlan(
 				stars: rows<StarRow>(1),
 				catalogPages: rows<SnapshotPage>(2),
 				sourcePages: resource === "ci" ? [] : rows<SnapshotPage>(sourceIndex),
+				publicationPages: withFactory ? rows<PublicationPage>(publicationIndex) : [],
 				repositoryPages:
 					resource === "issues" || resource === "prs" ? rows<SnapshotPage>(repositoryIndex) : [],
 				ciPages: resource === "ci" ? rows<SnapshotPage>(ciIndex) : [],

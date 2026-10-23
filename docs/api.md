@@ -697,6 +697,36 @@ See [migration and performance evidence](12-source-performance.md#persisted-cont
 | `/ci` | `{ streams, repos, daily, totals, fetched_at, freshness, unsaved }`; deterministic saved Actions/releases/details summaries; `unsaved` lists repos without an available saved Actions input |
 | `/factory` | Published `FactorySnapshot`: `{ schema:1, account_id, owner, runId, revision, leaseUntil, startedAt, fetched_at, window, status, inventory, repos, cursor, requests, rate, contribution, contributionStatus, ...publicationMetadata }` |
 
+Both `/repos` items and `/factory`'s `data.repos[]` include the additive summary
+`retained:{any:boolean,streams:FactoryStreamName[]}`. It is derived from the same
+immutable published `coverage[stream].retained` flags served by the stream rows,
+never from a mutable latest run or repository execution state. Stream names follow
+the documented factory stream order. For example, a repository retaining only old
+dependency evidence appears as:
+
+```json
+{
+  "name_with_owner": "nocoo/lizheng.dev",
+  "retained": { "any": true, "streams": ["dependencies"] }
+}
+```
+
+The corresponding `/factory` entry uses `name` instead of `name_with_owner` and
+has the identical summary. A published repository with no retained streams has
+`retained:{any:false,streams:[]}`. A catalog repository without factory data has
+`retained:null` in `/repos` and no fabricated `/factory` repository entry. False
+means no retained streams, not complete coverage: current limited/unavailable
+streams still require inspecting coverage. True describes retention, not an ETA
+or a new status for the whole run. No standalone machine per-repository factory
+summary endpoint exists; the per-stream endpoints remain unchanged apart from
+their corrected freshness.
+
+The `/repos` summary is a read-time enrichment, like `agent_state` and `meta`;
+its catalog `sourceVersion`, `contentVersion` and freshness remain catalog-only.
+Poll the summary or the published `/factory`/`/sources` state independently of
+catalog version changes. No stored rows, publication windows or timestamps are
+rewritten. Existing fields retain their shapes.
+
 Each accepts only the documented selector `scope=all|starred`, default `all`;
 invalid/repeated scope returns 400. `starred` means local Giraffe stars, not GitHub
 stars. Both scopes exclude non-owned repositories and include eligible archives/forks.
@@ -1288,7 +1318,7 @@ done
 ```
 
 Envelope `data` is `{ runId, items: FactoryEvent[], next: string|null, ranges:
-[{ since, until }], coverage, fetched_at, observation?, manifests?, truncated,
+[{ since, until }], coverage, fetched_at, freshness, observation?, manifests?, truncated,
 unavailable }`.
 `coverage` is `{ status, pages, fetchedAt, source, reason, reason_code?, retained?, observed, strategy?,
 sourceFetchedAt? }`; status is `pending|partial|complete|unavailable|limited`,

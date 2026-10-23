@@ -9,6 +9,7 @@ import type {
 import { FACTORY_STREAMS } from "../../lib/factory-types";
 import { prLifecycleState, prSnapshot, prState } from "../../lib/pull-request";
 import { factoryStreamFreshness, snapshotFreshness } from "../../lib/snapshot-freshness";
+import { catalogRowIdentity, identifyCatalogRow } from "./catalog-identity";
 import { catalogFactoryRepo } from "./catalog-read";
 import {
 	composeContent,
@@ -240,6 +241,7 @@ export function projectFactoryObservation(snapshot: FactorySnapshot, policy: Pol
 	const freshness = factoryFreshness(projected, policy);
 	return {
 		...projected,
+		repos: projected.repos.map((repo) => ({ ...repo, retained: factoryRetention(repo) })),
 		fetched_at: freshness.latestAt ?? "",
 		freshness,
 		truncated:
@@ -247,6 +249,12 @@ export function projectFactoryObservation(snapshot: FactorySnapshot, policy: Pol
 			projected.inventory.complete !== true ||
 			freshness.missing > 0,
 	};
+}
+
+function factoryRetention(repo: FactoryRepo | undefined) {
+	if (!repo) return null;
+	const streams = FACTORY_STREAMS.filter((stream) => repo.coverage[stream].retained === true);
+	return { any: streams.length > 0, streams };
 }
 
 export async function readObservation(
@@ -271,7 +279,7 @@ export async function readMachineAccountObservation(
 	scope: SnapshotScope,
 	includeRemoved = false,
 ) {
-	const plan = accountReadPlan(db, account, resource, scope, { rate: true });
+	const plan = accountReadPlan(db, account, resource, scope, { rate: true, factorySummary: true });
 	const saved = plan.decode(await db.batch(plan.statements));
 	const observation = await projectObservation(
 		db,
@@ -286,6 +294,34 @@ export async function readMachineAccountObservation(
 			saved.rateRows[0] ?? null,
 			observation.data.rate as FactorySnapshot["rate"],
 		);
+	if (resource === "repos") {
+		const publication = decodePublication(saved.publicationPages);
+		const policy = savedAccountPolicy(saved, scope, undefined, includeRemoved);
+		const published = new Map(
+			(publication ? factoryObserved(publication, policy) : []).map((repo) => [
+				repo.name.toLowerCase(),
+				repo,
+			]),
+		);
+		const repos = observation.data.repos as {
+			name_with_owner: string;
+			removed_at: string | null;
+		}[];
+		observation.data = {
+			...observation.data,
+			repos: repos.map((repo) =>
+				identifyCatalogRow(
+					{
+						...repo,
+						retained: repo.removed_at
+							? null
+							: factoryRetention(published.get(repo.name_with_owner.toLowerCase())),
+					},
+					catalogRowIdentity(repo),
+				),
+			),
+		};
+	}
 	return observation;
 }
 

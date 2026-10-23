@@ -287,6 +287,11 @@ it.each(resources)("serves complete machine %s with one saved-input batch", asyn
 		.run();
 	for (const scope of ["all", "starred"] as const) {
 		const expected = await readObservation(createDb(s.raw), account, kind, scope);
+		if (kind === "repos")
+			expected.data.repos = (expected.data.repos as { name_with_owner: string }[]).map((repo) => ({
+				...repo,
+				retained: repo.name_with_owner === "nocoo/app" ? { any: false, streams: [] } : null,
+			}));
 		if (kind === "factory")
 			expected.data.rate = await readFactoryRate(
 				createDb(s.raw),

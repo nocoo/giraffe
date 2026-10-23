@@ -1120,7 +1120,7 @@ it.each(["all", "starred"] as const)(
 		);
 		expect(response.status).toBe(200);
 		expect(((await response.json()) as { repos: unknown[] }).repos).toEqual(
-			rows.map((row) => ({
+			rows.map(({ retained, ...row }) => ({
 				...row,
 				agent_state: null,
 				meta: {
@@ -1135,6 +1135,8 @@ it.each(["all", "starred"] as const)(
 				},
 			})),
 		);
+		for (const row of rows.filter((row) => row.removed_at !== null))
+			expect(row.retained).toBeNull();
 	},
 );
 

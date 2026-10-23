@@ -1754,3 +1754,14 @@ unknown. No commit was created and no hook was bypassed. The route fixture now
 requires an explicit result type derived from the production readers. Runtime
 regressions and strict type checks are independent evidence; validate both before
 considering a test-only helper complete.
+
+## 2026-10-23 - Preserve catalog identity through read-time enrichment
+
+The first B13D retention-summary implementation spread catalog rows into new
+objects. Their private identity lives in a WeakMap, so downstream agent-state and
+metadata enrichment lost its join key even though the visible catalog fields
+looked unchanged. Full L1 regressions rejected the commit. Retention enrichment
+now uses the existing `identifyCatalogRow` helper, preserving `catalogRowIdentity`
+through the copy, and leaves removed rows unknown rather than borrowing a
+same-name current repository's summary. Every additional catalog projection must
+preserve this identity just as the existing metadata and state projections do.

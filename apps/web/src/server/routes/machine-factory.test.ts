@@ -130,3 +130,61 @@ it.each([
 		expect(source?.observedAt).toBe(observedAt);
 	},
 );
+
+type Retention = { any: boolean; streams: string[] } | null;
+type RepositoryList = { data: { repos: { name_with_owner: string; retained: Retention }[] } };
+type FactoryList = { data: { repos: { name: string; retained: Retention }[] } };
+
+it.each([
+	[true, "limited"],
+	[true, "complete"],
+	[false, "complete"],
+	[false, "limited"],
+] as const)(
+	"summarizes only published retained streams (retained=%s, status=%s)",
+	async (retained, status) => {
+		const setup = await fixture(retained, status);
+		await setup.save("repos", {
+			repos: [{ name_with_owner: "nocoo/app" }, { name_with_owner: "nocoo/empty" }],
+		});
+		const before = await setup.db.prepare("SELECT * FROM snapshots ORDER BY kind").all();
+		const repositories = await setup.get<RepositoryList>("repos");
+		const factory = await setup.get<FactoryList>("factory");
+		const expected = { any: retained, streams: retained ? ["dependencies"] : [] };
+		expect(repositories.data.repos).toMatchObject([
+			{ name_with_owner: "nocoo/app", retained: expected },
+			{ name_with_owner: "nocoo/empty", retained: null },
+		]);
+		expect(factory.data.repos).toMatchObject([{ name: "nocoo/app", retained: expected }]);
+		expect(factory.data.repos).toHaveLength(1);
+		expect(await setup.db.prepare("SELECT * FROM snapshots ORDER BY kind").all()).toEqual(before);
+		await setup.db.prepare("UPDATE factory_runs SET status='failed',payload='{}'").run();
+		expect(await setup.get<RepositoryList>("repos")).toEqual(repositories);
+		expect(await setup.get<FactoryList>("factory")).toEqual(factory);
+	},
+);
+
+it("leaves repository retention unknown without a factory publication", async () => {
+	const setup = await fixture(true, "limited");
+	await setup.db.prepare("DELETE FROM factory_state").run();
+	await setup.db.prepare("DELETE FROM snapshots WHERE kind LIKE 'factory:%'").run();
+	const repositories = await setup.get<RepositoryList>("repos");
+	expect(repositories.data.repos).toMatchObject([{ name_with_owner: "nocoo/app", retained: null }]);
+});
+
+it("orders multiple retained streams and matches catalog casing without changing catalog versions", async () => {
+	const setup = await fixture(true, "limited");
+	const before = await setup.get<
+		RepositoryList & { sourceVersion: string; contentVersion: string }
+	>("repos");
+	setup.repository.name = "NOCOO/APP";
+	setup.repository.coverage.commits.retained = true;
+	await setup.save("factory:v:current", setup.snapshot);
+	const repositories = await setup.get<typeof before>("repos");
+	const factory = await setup.get<FactoryList>("factory");
+	const expected = { any: true, streams: ["commits", "dependencies"] };
+	expect(repositories.data.repos[0]?.retained).toEqual(expected);
+	expect(factory.data.repos[0]?.retained).toEqual(expected);
+	expect(repositories.sourceVersion).toBe(before.sourceVersion);
+	expect(repositories.contentVersion).toBe(before.contentVersion);
+});
