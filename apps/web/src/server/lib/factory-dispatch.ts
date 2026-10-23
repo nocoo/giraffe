@@ -29,7 +29,6 @@ export async function consumeFactory(batch: MessageBatch<unknown>, env: Env): Pr
 			continue;
 		}
 		try {
-			await expireRuns(createDb(env.DB), new Date().toISOString(), "", id);
 			const next = await executeRunPage(env, id);
 			if (next) await enqueueRun(env, id, next);
 			else {

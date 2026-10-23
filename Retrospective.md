@@ -1675,6 +1675,67 @@ explicit per-test time budgets rather than assuming local runner speed. Give
 the new publication capacity and scale cases 30 seconds each while preserving
 their payload sizes, assertions and the global timeout and coverage thresholds.
 
+## 2026-10-23 - Separate batch audits from atomic business progress
+
+During local v0.22 batching work, the first interruption journal design copied
+uncommitted page progress while failing to preserve request totals and earlier
+completed-step durations if the final payload transaction failed. This was a
+development defect, not a production incident. Independent SQLite crash fixtures
+exposed the difference between replayable business state and already-spent work.
+The journal now contains only audit fields, with fenced pre-request counters and
+completed-duration checkpoints before subsequent work and final save. Cursors,
+pages and business writes commit together. A retry high-water map prevents an
+unsaved success from clearing the interruption retry budget indefinitely.
+An interleaved pause test also showed that version-only control CAS could clear
+a request journal changed after the control read. Controls now compare both the
+version and audit snapshot before any transactional writes, rejecting stale
+controls without losing the concurrent counter.
+
+Sparse encoding also revealed an unsafe downgrade assumption: v0.21 direct JSON
+readers require explicit numeric defaults and would turn missing counters into
+NaN. Additive schema alone does not prove reader rollback. The runbook now requires
+quiescing writers, materializing active audits through controls, retaining an
+export and expanding compact steps before an old reader starts. A local SQLite
+regression checks idempotent expansion, non-default audits and legacy arithmetic.
+Future persistence optimizations must test both crash boundaries and the actual
+old-reader contract, not only new-code round trips.
+
+## 2026-10-23 - Inspect listener output, not only lsof exit status
+
+The first v0.22 branch push was safely rejected by the normal pre-push L2 hook
+because another controller still owned port 17046. The preceding wait loop used
+the exit status of a multi-range lsof query; that query can print real listeners
+while returning nonzero when another requested range has no matches. The loop
+therefore misclassified occupied ports as free. No remote ref was updated and no
+other controller's process was terminated. Shared-port waits must inspect captured
+listener output, poll every 30 seconds while it is nonempty, and recheck immediately
+before starting a runner. A successful earlier probe is not a reservation.
+
+## 2026-10-23 - Control cooldowns must follow batch audits
+
+Review found that pause/cancel still used the durable cursor to choose a repository
+cooldown even though a batch can have advanced beyond it. Cancelling during
+metadata after account contributions therefore recorded the attempt without the
+15-minute repository cooldown. Controls now collect metric repositories from the
+journal-overlaid running steps before changing statuses, retaining the existing
+current-step rule and atomic version/journal preflight. Cross-step pause/cancel
+regressions reproduce the empty cooldown table before the fix; multi-repository
+tests exclude historical completed and untouched work. Whenever execution becomes
+batched, review control paths against in-flight audits as well as saved cursors.
+
+## 2026-10-23 - Separate step admission from page continuation
+
+Review reproduced a metadata request taking 10 seconds followed by three commit
+pages taking 10 seconds each. Applying the 25-second admission check on every
+executor loop yielded after two pages, contrary to the promised stream batching.
+The executor now identifies continuation by the step actually executed in this
+invocation, exempting only that continuation from wall time. Request/D1 caps,
+read-visibility boundaries and fenced heartbeats remain active. Regressions cover
+the 40-second batch, a 91-second batch that excludes competing lease claims, and
+stopping before the next step. Resource admission tests explicitly retain both
+caps for continuing work. Budget contracts must distinguish admission from
+progress inside already admitted work, rather than sharing a blanket loop check.
+
 ## 2026-10-23 - Check listener output, not only lsof status
 
 During B13C validation, the combined L2/L3 `lsof` query printed occupied L2

@@ -149,7 +149,7 @@ it("acknowledges retired review messages without inference, retries or reschedul
 	expect(send).not.toHaveBeenCalled();
 });
 
-it("expires hard deadlines before scheduler work and before every queue claim", async () => {
+it("expires deadlines before scheduling and delegates queue expiry to the executor", async () => {
 	const env = { FACTORY_QUEUE: { send: vi.fn() } } as unknown as Env;
 	await continueFactory(env, hour);
 	expect(expireRuns).toHaveBeenCalledWith(expect.anything(), "2026-10-03T11:00:00.000Z");
@@ -159,14 +159,8 @@ it("expires hard deadlines before scheduler work and before every queue claim", 
 	vi.mocked(executeRunPage).mockResolvedValue(null);
 	const message = { body: { id: "expired" }, ack: vi.fn(), retry: vi.fn() };
 	await consumeFactory({ messages: [message] } as unknown as MessageBatch<unknown>, env);
-	expect(expireRuns).toHaveBeenLastCalledWith(
-		expect.anything(),
-		"2026-10-03T11:00:00.000Z",
-		"",
-		"expired",
-	);
-	expect(vi.mocked(expireRuns).mock.invocationCallOrder[1]).toBeLessThan(
-		vi.mocked(executeRunPage).mock.invocationCallOrder[0] ?? 0,
-	);
+	expect(expireRuns).toHaveBeenCalledOnce();
+	expect(executeRunPage).toHaveBeenCalledExactlyOnceWith(env, "expired");
 	expect(message.ack).toHaveBeenCalledOnce();
+	expect(message.retry).not.toHaveBeenCalled();
 });

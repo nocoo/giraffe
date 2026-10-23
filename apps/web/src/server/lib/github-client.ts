@@ -210,6 +210,7 @@ export function createGithubClient(
 	env: Env,
 	fetchImpl: FetchImpl = fetch,
 	maxResponseBytes = DEFAULT_RESPONSE_BYTES,
+	beforeRequest?: () => Promise<void>,
 ): GithubClient {
 	const base = allowedBase(env);
 	const client: GithubClient = {
@@ -222,6 +223,7 @@ export function createGithubClient(
 			if (client.count >= MAX_FETCHES) {
 				throw new TruncatedError();
 			}
+			await beforeRequest?.();
 			client.count += 1;
 			try {
 				const response = await fetchImpl(url, {

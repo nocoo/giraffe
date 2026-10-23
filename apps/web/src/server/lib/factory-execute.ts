@@ -19,10 +19,12 @@ import {
 import { freezeActivityRepo } from "./activity-store";
 import { savedContentMeta } from "./content-version";
 import { getAccount } from "./db/accounts";
-import { createDb } from "./db/d1";
-import { claimRun, fenced, saveRun } from "./db/factory-runs";
+import { createDb, type Db } from "./db/d1";
+import { beginRunStep } from "./db/factory-run-journal";
+import { claimRun, expireRuns, fenced, type RunLease, saveRun } from "./db/factory-runs";
 import { ApiError } from "./errors";
 import { newFactory, stepFactory } from "./factory-collect";
+import { FactoryInvocation, InvocationStopped } from "./factory-invocation";
 import { exclusion, mapFactoryRepo, object } from "./factory-map";
 import {
 	boundedJson,
@@ -45,9 +47,13 @@ export async function executeRunPage(
 	clock = () => new Date().toISOString(),
 ): Promise<string | null> {
 	const db = createDb(env.DB);
-	const lease = await claimRun(db, id, clock());
-	if (!lease) return null;
+	const lease = await claimRun(db, id, clock(), false);
+	if (!lease) {
+		await expireRuns(db, clock(), "", id);
+		return null;
+	}
 	const run = lease.run;
+	const invocation = new FactoryInvocation(db, lease, clock);
 	const retired = run.steps.filter(
 		(step) => String(step.kind) === "assessment" && ["pending", "running"].includes(step.status),
 	);
@@ -65,37 +71,71 @@ export async function executeRunPage(
 		run.nextAttemptAt = now;
 		return (await saveRun(db, lease, [], clock())) ? now : null;
 	}
-	while (
-		run.steps[run.cursor] &&
-		!["pending", "running"].includes(run.steps[run.cursor]?.status ?? "")
-	)
-		run.cursor++;
-	const step = run.steps[run.cursor];
-	if (!step) {
-		run.status = completedRunStatus(run);
-		run.finishedAt = clock();
-		await saveRun(db, lease, [], clock());
-		return null;
+	try {
+		let previousStep: FactoryRunStep | undefined;
+		for (;;) {
+			while (
+				run.steps[run.cursor] &&
+				!["pending", "running"].includes(run.steps[run.cursor]?.status ?? "")
+			)
+				run.cursor++;
+			const step = run.steps[run.cursor];
+			if (!step) {
+				run.status = completedRunStatus(run);
+				run.finishedAt = clock();
+				break;
+			}
+			if (!invocation.canStart(step, step === previousStep)) break;
+			await invocation.heartbeat();
+			const result = await executeStep(env, db, lease, invocation, step, clock);
+			previousStep = step;
+			invocation.writes.push(...result.writes);
+			if (
+				result.stop ||
+				invocation.completed(step) ||
+				run.status !== "running" ||
+				run.nextAttemptAt > clock()
+			)
+				break;
+		}
+	} catch (error) {
+		if (error instanceof InvocationStopped && error.lostLease) {
+			await expireRuns(db, clock(), "", id);
+			return null;
+		}
+		throw error;
 	}
+	const saved = await saveRun(db, lease, invocation.writes, clock());
+	return saved && run.status === "running" ? run.nextAttemptAt : null;
+}
+
+async function executeStep(
+	env: Env,
+	db: Db,
+	lease: RunLease,
+	invocation: FactoryInvocation,
+	step: FactoryRunStep,
+	clock: () => string,
+) {
+	const run = lease.run;
 	const started = clock();
+	const interrupted = step.error === "worker_interrupted";
 	const savedPages = step.pages;
 	const savedSnapshotCursor = step.snapshotCursor;
 	step.startedAt ??= started;
 	step.attempts = step.error ? step.attempts + 1 : Math.max(1, step.attempts);
 	step.status = "running";
 	step.error = null;
-	const began = await fenced(
-		db,
-		lease,
-		clock(),
-		"UPDATE factory_runs SET payload=? WHERE id=? AND $guard",
-		[JSON.stringify(run), run.id],
-	).run();
-	if (!began.meta.changes) return null;
+	if (!(await beginRunStep(db, lease, clock()))) throw new InvocationStopped(true);
 	const before = structuredClone(run.checkpoint);
-	const gh = createGithubClient(env, undefined, 4_000_000);
+	const gh = createGithubClient(env, undefined, 4_000_000, () => invocation.beforeRequest());
 	let writes: D1PreparedStatement[] = [];
+	let resourceData: FactoryStreamData | null = null;
+	const resourceKey = `${step.repo}:${step.kind}`;
+	let stop = false;
 	try {
+		if (interrupted && (step.retryFailures ?? 0) > RUN_MAX_RETRIES)
+			throw new ApiError(500, "worker_interrupted", "worker interrupted repeatedly");
 		if (step.kind === "metadata") {
 			const state = await db
 				.prepare("SELECT payload FROM factory_repo_state WHERE account_id=? AND repo=?")
@@ -294,6 +334,8 @@ export async function executeRunPage(
 						}
 					: {}),
 				read: async () => {
+					const cached = invocation.resources.get(resourceKey);
+					if (cached) return structuredClone(cached);
 					const row = await db
 						.prepare("SELECT payload FROM factory_resources WHERE run_id=? AND repo=? AND stream=?")
 						.bind(run.id, step.repo, stream)
@@ -301,6 +343,7 @@ export async function executeRunPage(
 					return row ? (JSON.parse(row.payload) as FactoryStreamData) : null;
 				},
 				write: async (_key: string, data: FactoryStreamData) => {
+					resourceData = data;
 					const metadata = await savedContentMeta(
 						`factory:${step.repo}:${stream}`,
 						data,
@@ -364,7 +407,9 @@ export async function executeRunPage(
 		step.retryFailures = 0;
 		boundedJson(run);
 		run.nextAttemptAt = clock();
+		if (resourceData) invocation.resources.set(resourceKey, resourceData);
 	} catch (error) {
+		if (error instanceof InvocationStopped && error.lostLease) throw error;
 		if (before && run.checkpoint) {
 			before.rate = run.checkpoint.rate;
 			if (run.checkpoint.rateLimits) before.rateLimits = run.checkpoint.rateLimits;
@@ -384,10 +429,17 @@ export async function executeRunPage(
 				"encryption_key_missing",
 				"github_rate_limited",
 				"factory_capacity",
+				"factory_yield",
+				"worker_interrupted",
 			].includes(code)
 		)
 			step.retryFailures = (step.retryFailures ?? 0) + 1;
-		if (code === "repository_cooldown") {
+		if (code === "factory_yield") {
+			step.status = "pending";
+			step.error = null;
+			run.nextAttemptAt = clock();
+			stop = true;
+		} else if (code === "repository_cooldown") {
 			for (const later of run.steps)
 				if (
 					later.repo === step.repo &&
@@ -474,8 +526,7 @@ export async function executeRunPage(
 		!["pending", "running"].includes(run.steps[run.cursor]?.status ?? "")
 	)
 		run.cursor++;
-	const saved = await saveRun(db, lease, writes, clock());
-	return saved && run.status === "running" ? run.nextAttemptAt : null;
+	return { writes, stop };
 }
 function finish(
 	step: FactoryRunStep,

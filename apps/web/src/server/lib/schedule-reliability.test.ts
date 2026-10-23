@@ -485,7 +485,9 @@ it("does not skip scheduled metadata at execution because of a preceding run's r
 		.prepare("UPDATE accounts SET token_ciphertext=? WHERE id=?")
 		.bind(await encryptToken("fake", parseKeyBytes("0".repeat(64))), account)
 		.run();
-	const fetcher = vi.fn(async () => Response.json({ data: { repository: rawRepo } }));
+	const fetcher = vi.fn(async (_url: string, _init: RequestInit) =>
+		Response.json({ data: { repository: rawRepo } }),
+	);
 	vi.stubGlobal("fetch", fetcher);
 	await executeRunPage(
 		{
@@ -501,7 +503,9 @@ it("does not skip scheduled metadata at execution because of a preceding run's r
 		status: "success",
 		error: null,
 	});
-	expect(fetcher).toHaveBeenCalledTimes(1);
+	expect(
+		fetcher.mock.calls.filter(([, init]) => String(init.body).includes("openPrs:")),
+	).toHaveLength(1);
 });
 
 it("retains committed successor work when immediate queue delivery fails and safely retries terminal messages", async () => {

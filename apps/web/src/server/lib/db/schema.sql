@@ -569,3 +569,9 @@ CREATE TABLE IF NOT EXISTS repo_meta (
  CHECK((category IS NULL)=(category_source IS NULL)),
  CHECK((exclusion_reason IS NULL)=(exclusion_reason_source IS NULL))
 );
+
+CREATE TABLE IF NOT EXISTS factory_run_journal (
+ run_id TEXT PRIMARY KEY REFERENCES factory_runs(id) ON DELETE CASCADE,
+ invocations INTEGER NOT NULL DEFAULT 0,
+ journal TEXT NOT NULL DEFAULT '{}'
+);
