@@ -325,6 +325,76 @@ it("uses current metadata for activity after a retained repository changes defau
 	expect(activity.totals.red_default_branch).toMatchObject([{ id: 1 }]);
 });
 
+it("keeps other-branch commits unknown when resuming metadata from before sourceBranch existed", async () => {
+	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] }, true);
+	const db = createDb(env.DB);
+	const base = vi.mocked(fetch).getMockImplementation();
+	if (!base) throw new Error("Missing GitHub fixture");
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async (url: string, init: RequestInit) => {
+			const query = String(init?.body);
+			if (query.includes("query ActivityRefs") || query.includes("query ActivityTags"))
+				return Response.json({
+					data: {
+						repository: {
+							refs: {
+								nodes: ["main", "feature"].map((name) => ({
+									name,
+									target: {
+										oid: name,
+										history: {
+											nodes: [{ oid: name, committedDate: now, message: name }],
+											pageInfo: { hasNextPage: false },
+										},
+									},
+								})),
+								pageInfo: { hasNextPage: false },
+							},
+							tags: {
+								nodes: [
+									{ name: "v1", target: { __typename: "Tag", oid: "tag", tagger: { date: now } } },
+								],
+								pageInfo: { hasNextPage: false },
+							},
+						},
+					},
+				});
+			return base(url, init);
+		}),
+	);
+	await beforeMetadata(env);
+	await executeRunPage(env, "r1", () => now);
+	const lease = await claimRun(db, "r1", now);
+	const metadata = lease?.run.steps.find((step) => step.kind === "metadata");
+	if (!lease || !metadata) throw new Error("Missing completed metadata fixture");
+	expect(metadata.status).toBe("success");
+	delete metadata.sourceBranch;
+	expect(await saveRun(db, lease, [], now)).toBe(true);
+	const run = await drive(env);
+	expect(run?.steps.find((step) => step.kind === "metadata")).not.toHaveProperty("sourceBranch");
+	expect(run?.steps.find((step) => step.kind === "activity")?.status).toBe("success");
+	expect(await currentRepo(db, snap.account_id, "nocoo/app")).toMatchObject({ branch: "main" });
+	const activity = await readActivity(db, snap.account_id, {});
+	expect(activity.repos[0]).toMatchObject({
+		commits: { other: null },
+		releases: [{ id: "tag:tag", state: "tag" }],
+		coverage: {
+			other_commits: { status: "unavailable", truncated: false },
+			tags: { status: "complete" },
+			deploy: { status: "complete" },
+		},
+	});
+	expect(activity.repos[0]?.commits.items?.filter((commit) => !commit.is_default_branch)).toEqual(
+		[],
+	);
+	expect(
+		vi
+			.mocked(fetch)
+			.mock.calls.some(([, init]) => String(init?.body).includes("query ActivityRefs")),
+	).toBe(false);
+});
+
 it("B2 publishes daily activity despite a failed repository collection step", async () => {
 	const env = await setup("refresh", { scope: "all" }, true);
 	const base = vi.mocked(fetch).getMockImplementation();

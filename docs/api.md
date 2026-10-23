@@ -943,6 +943,11 @@ that successful same-repository metadata with matching identity when recorded.
 Without verifiable branch evidence, workflow `is_default_branch` and default
 commit branch labels are null, `coverage.default_branch` is unavailable and red
 default-branch totals remain null. A retained branch is never used as a fallback.
+This also applies to in-flight runs whose metadata completed before branch
+evidence was recorded: supplemental branch histories are not classified as
+other branches. `coverage.other_commits` stays unavailable and `commits.other`
+stays null; saved unverified classifications are discarded. Tag and deployment
+collection remain independent and continue normally.
 Repositories with failed, unavailable or limited steps have `coverage.run.status`
 `partial`, except that `limited` with `error:dependency_parse_unsupported` alone
 does not mark run coverage partial or truncated. Dependency diagnostics retain

@@ -1,7 +1,11 @@
 import { expect, it } from "vitest";
 import { github, rawRepo } from "../../../../../tests/fixtures/factory";
 import { makeRun } from "../../lib/factory-run";
-import { collectActivityContributions, collectActivitySupplement } from "./activity-collect";
+import {
+	type ActivitySupplement,
+	collectActivityContributions,
+	collectActivitySupplement,
+} from "./activity-collect";
 import { mapFactoryRepo } from "./factory-map";
 
 const now = "2026-10-22T20:00:00.000Z";
@@ -221,6 +225,63 @@ it("R4 supplements branch commits and annotated tags with measured bounded reque
 	expect(gh.count).toBe(2);
 });
 
+it.each(["refs", "tags", "commits", "deploy", "done"] as const)(
+	"discards unverified other-branch classifications from a saved %s supplement",
+	async (phase) => {
+		const previous: ActivitySupplement = {
+			commits: [
+				{
+					sha: "default-sha",
+					author: null,
+					message: "default",
+					at: now,
+					url: "",
+					branch: "main",
+					is_default_branch: false,
+				},
+			],
+			tags: [],
+			last_success_at: now,
+			coverage: Object.fromEntries(
+				["other_commits", "tags", "deploy"].map((key) => [
+					key,
+					{ status: "complete", truncated: false, reason: null },
+				]),
+			),
+			phase,
+			after: "refs-next",
+			tagAfter: phase === "refs" || phase === "tags" ? "tags-next" : null,
+			pending: [{ branch: "main", sha: "default-sha", after: "history-next" }],
+			deployNext: null,
+			pages: 1,
+		};
+		const gh = github((url, init) => {
+			if (!url.endsWith("/graphql")) return Response.json({ workflow_runs: [] });
+			expect(JSON.parse(String(init?.body)).query).toContain("query ActivityTags");
+			return Response.json({
+				data: { repository: { tags: { nodes: [], pageInfo: { hasNextPage: false } } } },
+			});
+		});
+		const result = await collectActivitySupplement(
+			run(),
+			{ ...mapFactoryRepo(rawRepo), branch: null },
+			gh,
+			"fake",
+			previous,
+		);
+		expect(result.done).toBe(true);
+		expect(result.state).toMatchObject({
+			commits: null,
+			pending: [],
+			after: null,
+			coverage: {
+				other_commits: { status: "unavailable", truncated: false },
+				tags: { status: "complete" },
+				deploy: { status: "complete" },
+			},
+		});
+	},
+);
 it("R4 retains GitHub-reported interval counts and native calendar provenance without forcing composition", async () => {
 	const gh = github((_url, init) => {
 		const variables = JSON.parse(String(init?.body)).variables;

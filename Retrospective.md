@@ -1,5 +1,16 @@
 # Retrospective
 
+## 2026-10-23 - Missing branch evidence must stop supplemental classification
+
+The metadata-evidence fix passed a null branch into the supplement collector for
+in-flight runs whose metadata had completed before the new field existed. The
+collector excluded refs by name inequality, so every ref then became an apparent
+non-default branch with complete coverage. Reproduce the persisted pre-deploy
+metadata shape, not only missing evidence during final publication. Normalize
+supplement checkpoints before resuming or returning a completed phase: discard
+unverified commits and pending histories, keep other-branch coverage unavailable,
+and continue independent tags and deployments without a retained-branch fallback.
+
 ## 2026-10-23 - Unknown branch coverage must reach totals
 
 The branch-evidence regression included a failed workflow, so the existing
