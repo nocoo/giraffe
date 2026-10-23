@@ -665,8 +665,9 @@ Migration `0014_source_content.sql` adds the two nullable columns and covering
 indexes `snapshots_content(account_id,kind,content_meta)` and
 `factory_resources_content(run_id,repo,stream,content_meta)`, without rebuilding
 tables or backfilling legacy payloads. Pre-release rows return null until their
-next normal save; a composite remains null while any existing dependency lacks a
-hash. Do not refresh upstream or decode old payloads to repair hashes on GET.
+next normal save; account factory composition remains null while any existing
+dependency lacks a hash. Do not refresh upstream or decode old payloads to repair
+hashes on GET.
 See [migration and performance evidence](12-source-performance.md#persisted-content-versions-v0170).
 
 ### Account endpoints
