@@ -731,6 +731,15 @@ Poll the summary or the published `/factory`/`/sources` state independently of
 catalog version changes. No stored rows, publication windows or timestamps are
 rewritten. Existing fields retain their shapes.
 
+Retention enrichment first resolves the selected current catalog, then uses at
+most one additional SQL query to project only matching repository IDs, names and
+retained flags from the immutable publication. Dependency/manifests payloads are
+not transferred to or normalized by the Worker for `/repos`. Empty selections
+(including empty `starred`) and removed-only selections skip this query entirely.
+The publication query handles both physical pages together and requires the root
+page; an orphan second page cannot supply evidence. Identity/rename handling and
+catalog source/content versions remain unchanged.
+
 Each accepts only the documented selector `scope=all|starred`, default `all`;
 invalid/repeated scope returns 400. `starred` means local Giraffe stars, not GitHub
 stars. Both scopes exclude non-owned repositories and include eligible archives/forks.

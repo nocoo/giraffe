@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Factory stream envelopes and `/sources` now share coverage-aware freshness. Retained limited dependencies correctly report `freshness.missing:1` on both endpoints; complete retained evidence keeps its original age and reports zero only with a valid evidence timestamp. Current limited evidence also remains incomplete.
+- Repository retention summaries read only SQL-projected identity/retained flags for selected current repositories, never full dependency/manifests payloads. Empty selections skip factory reads; large-evidence, split-page and identity regressions keep the response unchanged.
 
 ### Added
 

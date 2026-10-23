@@ -1,3 +1,4 @@
+import { FACTORY_STREAMS } from "../../lib/factory-types";
 import type { Db } from "./db/d1";
 
 export type SavedAccount = string | null;
@@ -45,4 +46,37 @@ export function publicationSnapshotStatement(db: Db, account: SavedAccount) {
 		.prepare(`WITH head AS (SELECT coalesce((SELECT 'factory:v:' || nullif(published_id,'') FROM factory_state WHERE account_id=${accountIdSql(account)}),'factory') AS logical)
  SELECT s.kind,s.payload,s.content_meta,head.logical FROM snapshots s,head WHERE s.account_id=${accountIdSql(account)} AND s.kind IN (head.logical,head.logical || '#2')`)
 		.bind(...accountBindings(account), ...accountBindings(account));
+}
+
+export function publicationRetentionStatement(
+	db: Db,
+	account: string,
+	names: string[],
+	identities: string[],
+) {
+	return db
+		.prepare(
+			`WITH head AS (
+ SELECT coalesce((SELECT 'factory:v:' || nullif(published_id,'') FROM factory_state WHERE account_id=?),'factory') AS logical
+), publication AS (
+ SELECT saved.kind,saved.payload FROM head
+ JOIN snapshots root ON root.account_id=? AND root.kind=head.logical
+ JOIN snapshots saved ON saved.account_id=root.account_id AND saved.kind IN (head.logical,head.logical || '#2')
+)
+SELECT json_object('id',json_extract(repository.value,'$.id'),'name',json_extract(repository.value,'$.name'),
+ 'coverage',json((SELECT json_group_object(stream.value,json_object('retained',json(CASE
+  WHEN json_type(repository.value,'$.coverage.' || stream.value || '.retained')='true' THEN 'true' ELSE 'false' END)))
+  FROM json_each(?) stream))) AS payload
+FROM publication,json_each(publication.payload,'$.repos') repository
+WHERE lower(json_extract(repository.value,'$.name')) IN (SELECT value FROM json_each(?))
+ OR json_extract(repository.value,'$.id') IN (SELECT value FROM json_each(?))
+ORDER BY publication.kind,CAST(repository.key AS INTEGER)`,
+		)
+		.bind(
+			account,
+			account,
+			JSON.stringify(FACTORY_STREAMS),
+			JSON.stringify(names),
+			JSON.stringify(identities),
+		);
 }

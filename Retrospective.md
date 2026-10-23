@@ -1765,3 +1765,15 @@ now uses the existing `identifyCatalogRow` helper, preserving `catalogRowIdentit
 through the copy, and leaves removed rows unknown rather than borrowing a
 same-name current repository's summary. Every additional catalog projection must
 preserve this identity just as the existing metadata and state projections do.
+
+## 2026-10-23 - Profile read-time summaries before reusing full readers
+
+External review of B13D found that `/repos` reused the complete publication read
+and dependency normalization for a summary needing only identity and seven flags.
+A large dependency payload inflated transferred bytes, even for an empty starred
+selection. Functional equality and the first review did not detect that cost.
+Failing native SQLite profiling tests now reproduce both paths. The fix selects
+the catalog first, skips factory reads for empty/currentless selections, and uses
+one compact SQL projection for selected names/IDs while preserving catalog identity.
+Large payloads no longer increase returned bytes. Read-time enrichments require
+payload-volume and empty-selection evidence as well as value/identity assertions.

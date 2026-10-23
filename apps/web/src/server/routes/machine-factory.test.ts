@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import { factoryFixture } from "../../../../../tests/fixtures/factory-snapshot";
+import { profileDb } from "../../../../../tests/fixtures/profile-db";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import { FACTORY_STREAMS } from "../../lib/factory-types";
 import type { Env } from "../env";
@@ -7,7 +8,10 @@ import { createApp } from "../index";
 import { createApiToken } from "../lib/api-tokens";
 import { createDb } from "../lib/db/d1";
 import { replaceSnapshotStmts } from "../lib/db/snapshots";
-import type { readFactoryResource } from "../lib/machine-observations";
+import {
+	type readFactoryResource,
+	readMachineAccountObservation,
+} from "../lib/machine-observations";
 import type { readSources } from "../lib/machine-sources";
 
 async function fixture(retained: boolean, status: "complete" | "limited") {
@@ -100,7 +104,7 @@ async function fixture(retained: boolean, status: "complete" | "limited") {
 		expect(response.status).toBe(200);
 		return response.json() as Promise<Result>;
 	};
-	return { db, snapshot, repository, save, get, originalAt, currentAt };
+	return { db, raw, snapshot, repository, save, get, originalAt, currentAt };
 }
 
 it.each([
@@ -229,3 +233,113 @@ it("isolates retained summaries from same-name removed and replacement identitie
 	expect((await setup.get<RepositoryList>("repos")).data.repos[0]?.retained).toBeNull();
 	expect((await setup.get<FactoryList>("factory")).data.repos).toEqual([]);
 });
+
+it.each(["all", "starred"] as const)(
+	"bounds %s retention reads independently of large dependency payloads",
+	async (scope) => {
+		const setup = await fixture(true, "limited");
+		if (scope === "starred")
+			await setup.db
+				.prepare("INSERT INTO repo_stars(account_id,repo) VALUES(?,'nocoo/app')")
+				.bind(setup.snapshot.account_id)
+				.run();
+		const read = async () => {
+			const profile = profileDb(setup.raw);
+			const response = await readMachineAccountObservation(
+				createDb(profile.raw),
+				setup.snapshot.account_id,
+				"repos",
+				scope,
+			);
+			return { response, profile };
+		};
+		const baseline = await read();
+		setup.repository.dependencies = largeDependencies();
+		expect(JSON.stringify(setup.snapshot).length).toBeGreaterThan(1_000_000);
+		await setup.save("factory:v:current", setup.snapshot);
+		const large = await read();
+		expect(large.response).toEqual(baseline.response);
+		const bytes = (profile: typeof large.profile) =>
+			profile.queries.reduce((total, query) => total + query.payloadBytes, 0);
+		expect(bytes(large.profile)).toBe(bytes(baseline.profile));
+		expect(bytes(large.profile)).toBeLessThan(2048);
+	},
+);
+
+it.each(["all", "starred"] as const)(
+	"skips factory reads for an empty %s catalog",
+	async (scope) => {
+		const setup = await fixture(true, "limited");
+		if (scope === "all") await setup.save("repos", { repos: [] });
+		setup.repository.dependencies = largeDependencies();
+		await setup.save("factory:v:current", setup.snapshot);
+		const profile = profileDb(setup.raw);
+		const result = await readMachineAccountObservation(
+			createDb(profile.raw),
+			setup.snapshot.account_id,
+			"repos",
+			scope,
+		);
+		expect(result.data.repos).toEqual([]);
+		expect(profile.queries.some((query) => /factory/.test(query.sql))).toBe(false);
+		expect(profile.queries.reduce((total, query) => total + query.payloadBytes, 0)).toBeLessThan(
+			256,
+		);
+	},
+);
+
+function largeDependencies() {
+	return Array.from({ length: 3000 }, (_, index) => ({
+		name: `package-${index}`,
+		version: "x".repeat(300),
+		path: "package.json#dependencies",
+		url: "https://example.test/package.json",
+	}));
+}
+
+it.each(["legacy", "versioned"] as const)(
+	"projects selected renamed retention across %s pages and ignores orphan pages",
+	async (kind) => {
+		const setup = await fixture(true, "limited");
+		await setup.save("repos", { repos: [{ name_with_owner: "nocoo/renamed" }] });
+		await setup.db
+			.prepare(
+				"INSERT INTO catalog_repositories(account_id,identity_key,github_id,repo,row_payload,is_archived,visibility,is_fork,first_seen_source) VALUES(?,'R_1','R_1','nocoo/renamed','{}',0,'PUBLIC',0,'github_catalog')",
+			)
+			.bind(setup.snapshot.account_id)
+			.run();
+		await setup.save("factory:v:current", {
+			...setup.snapshot,
+			repos: [{ ...setup.repository, id: "R_other", name: "nocoo/other" }],
+		});
+		await setup.save("factory:v:current#2", setup.snapshot);
+		if (kind === "legacy") {
+			await setup.db.prepare("DELETE FROM factory_state").run();
+			await setup.db
+				.prepare(
+					"UPDATE snapshots SET kind=replace(kind,'factory:v:current','factory') WHERE kind LIKE 'factory:v:current%'",
+				)
+				.run();
+		}
+		const profile = profileDb(setup.raw);
+		const result = await readMachineAccountObservation(
+			createDb(profile.raw),
+			setup.snapshot.account_id,
+			"repos",
+			"all",
+		);
+		expect(result.data.repos).toMatchObject([
+			{ name_with_owner: "nocoo/renamed", retained: { any: true, streams: ["dependencies"] } },
+		]);
+		expect(profile.queries.at(-1)?.rows).toBe(1);
+		const factory = await setup.get<FactoryList>("factory");
+		expect(factory.data.repos).toMatchObject([
+			{ name: "nocoo/renamed", retained: { any: true, streams: ["dependencies"] } },
+		]);
+		await setup.db
+			.prepare("DELETE FROM snapshots WHERE kind=?")
+			.bind(kind === "legacy" ? "factory" : "factory:v:current")
+			.run();
+		expect((await setup.get<RepositoryList>("repos")).data.repos[0]?.retained).toBeNull();
+	},
+);

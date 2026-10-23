@@ -30,7 +30,10 @@ import {
 	type SavedAccountRead,
 	savedAccountPolicy,
 } from "./saved-observation-read";
-import type { AccountObservationResource } from "./saved-observation-statements";
+import {
+	type AccountObservationResource,
+	publicationRetentionStatement,
+} from "./saved-observation-statements";
 import {
 	decodeFactoryResource,
 	factoryStreamReadPlan,
@@ -251,7 +254,11 @@ export function projectFactoryObservation(snapshot: FactorySnapshot, policy: Pol
 	};
 }
 
-function factoryRetention(repo: FactoryRepo | undefined) {
+type RetentionRepo = Pick<FactoryRepo, "id" | "name"> & {
+	coverage: Record<FactoryStreamName, { retained?: boolean }>;
+};
+
+function factoryRetention(repo: Pick<RetentionRepo, "coverage"> | undefined) {
 	if (!repo) return null;
 	const streams = FACTORY_STREAMS.filter((stream) => repo.coverage[stream].retained === true);
 	return { any: streams.length > 0, streams };
@@ -279,7 +286,7 @@ export async function readMachineAccountObservation(
 	scope: SnapshotScope,
 	includeRemoved = false,
 ) {
-	const plan = accountReadPlan(db, account, resource, scope, { rate: true, factorySummary: true });
+	const plan = accountReadPlan(db, account, resource, scope, { rate: true });
 	const saved = plan.decode(await db.batch(plan.statements));
 	const observation = await projectObservation(
 		db,
@@ -295,18 +302,35 @@ export async function readMachineAccountObservation(
 			observation.data.rate as FactorySnapshot["rate"],
 		);
 	if (resource === "repos") {
-		const publication = decodePublication(saved.publicationPages);
-		const policy = savedAccountPolicy(saved, scope, undefined, includeRemoved);
-		const published = new Map(
-			(publication ? factoryObserved(publication, policy) : []).map((repo) => [
-				repo.name.toLowerCase(),
-				repo,
-			]),
-		);
 		const repos = observation.data.repos as {
 			name_with_owner: string;
 			removed_at: string | null;
 		}[];
+		const names = new Set(
+			repos.filter((repo) => !repo.removed_at).map((repo) => repo.name_with_owner.toLowerCase()),
+		);
+		const published = new Map<string, RetentionRepo>();
+		if (names.size) {
+			const identities = saved.catalogHistory.flatMap((row) =>
+				row.github_id &&
+				!row.removed_at &&
+				row.name_current !== 0 &&
+				names.has(row.repo.toLowerCase())
+					? [row.github_id]
+					: [],
+			);
+			const rows = await publicationRetentionStatement(db, account, [...names], identities).all<{
+				payload: string;
+			}>();
+			for (const row of rows.results) {
+				const repo = catalogFactoryRepo(
+					JSON.parse(row.payload) as RetentionRepo,
+					saved.catalogHistory,
+				);
+				if (repo && names.has(repo.name.toLowerCase()))
+					published.set(repo.name.toLowerCase(), repo);
+			}
+		}
 		observation.data = {
 			...observation.data,
 			repos: repos.map((repo) =>
