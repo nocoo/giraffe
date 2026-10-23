@@ -144,6 +144,32 @@ Ordinary pages reuse `prepareRefresh` and the existing snapshot format. New full
 
 Each invocation commits its staged pages together with the run cursor in a fenced batch, leaving prior visible snapshots unchanged. For new runs, final publication atomically promotes the accepted staged pages, activity and source heads together with `publishedAt` in one fenced transaction. Completed or partial runs can publish; retained or untouched sources keep their original run and timestamps. Resumed pre-upgrade runs may already have exposed independent page writes, so they keep `publishedAt: null` and do not claim this cross-page atomicity guarantee. Cancellation fencing prevents stale writes. Separate reader requests can still straddle a later publication; pin a run ID when reading immutable history.
 
+Coverage retention is per stream, not per repository. Repeated dependency parse
+limits, complete-to-incomplete regressions and shrinking observed limited streams
+retain only the affected stream's items, metrics and coverage. Other streams and
+repository metadata advance to the current run. Any retention sets repository
+state to `partial` with `coverage_regression_retained`, and marks the publication
+as mixed. Dependency parse diagnostics still use the publication's
+`dependencyLimit` overlay; a fully recovered dependency stream clears it.
+
+Retained coverage has `retained: true` and an `observation` carrying its original
+run, window, observation/publication timestamps and source head. `/sources` and
+stream reads preserve that stream's original version, `observedAt` and freshness;
+they never borrow the enclosing repository's new observation. The current run
+stores an immutable `retained:<stream>` evidence copy alongside, not over, its
+original collected resource. This keeps retention bounded by existing run and
+publication roots, preserves original content metadata, and leaves current-run
+activity inputs intact. Quick baselines use the retained stream's original head
+and window. Missing or mismatched retained payloads are explicitly unavailable,
+never complete coverage with an unresolved source reference. Both scheduled daily quick and deep/manual runs use this same commit
+path: an included repository with parse-limited dependencies advances its healthy
+factory sources on the next successful run, without a separate backfill.
+
+No schema migration or historical-row rewrite is needed. After mixed stream
+versions have been written, any rollback build must retain the stream observation
+and `retained:<stream>` reader contract; an older whole-repository reader cannot
+safely interpret these versions. Preserve saved evidence and publication roots.
+
 The browser uses only the refresh console; it does not call the existing `POST /api/refresh` endpoint. The scheduling schema is described below.
 
 The console lists this run's result for each page, distinguishing updated, partially updated, pending, retained and unplanned data. Factory publication cannot imply success for the repository catalog or other pages. CI reads the saved repository details, Actions and releases. Settings and project identity remain configuration/reference reads, not GitHub collection snapshots. Optional security collection diagnostics appear only in the refresh console. Other pages show available alerts or a neutral empty state; missing security data is not presented as a verified zero and does not add a coverage warning to repository, Insights or factory pages.

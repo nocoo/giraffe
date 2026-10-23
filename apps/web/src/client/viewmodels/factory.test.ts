@@ -515,10 +515,10 @@ it("ranks accumulated work with aged share and recent throughput", () => {
 	const backlog = backlogRows(factoryBoard(s, s.repos, s.repos).repoActivity);
 	expect(backlog.rows.map((r) => [r.name, r.total, r.done30])).toEqual([
 		["nocoo/heavy", 7, 6],
-		["nocoo/light", 1, 0],
+		["nocoo/light", 1, null],
 	]);
 	expect(backlog.rows[1]?.agedIssues).toBeNull();
-	expect(backlog).toMatchObject({ openIssues: 7, openPrs: 1, aged: 3, clear: 1, max: 7 });
+	expect(backlog).toMatchObject({ openIssues: 7, openPrs: 1, aged: null, clear: 1, max: 7 });
 	expect(backlogRows([]).max).toBe(1);
 	const tie = withDays("aa", {});
 	Object.assign(tie, { openIssues: 7, openPrs: 0 });

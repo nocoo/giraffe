@@ -70,13 +70,14 @@ function referencedResourceStatement(db: Db, account: SavedAccount, name: string
  candidates AS (SELECT pages.*,j.key AS position,CASE WHEN j.type='object' THEN j.value ELSE '{}' END AS repo
  FROM pages,json_each(CASE WHEN json_type(pages.payload,'$.repos')='array' THEN json_extract(pages.payload,'$.repos') END) j),
  refs AS MATERIALIZED (SELECT account,stream,
+ CASE WHEN json_type(repo,'$.coverage.' || stream || '.observation')='object' THEN 'retained:' || stream ELSE stream END AS resource,
  coalesce(json_extract(repo,'$.observation.repo'),json_extract(repo,'$.name')) AS repo,
  coalesce(json_extract(repo,'$.observation.version'),json_extract(root_payload,'$.runId')) AS version,
  coalesce(json_extract(repo,'$.observation.source'),'legacy') AS source
  FROM candidates WHERE (lower(json_extract(repo,'$.name'))=lower(name) AND NOT EXISTS(SELECT 1 FROM catalog_repositories c WHERE c.account_id=candidates.account AND lower(c.repo)=lower(candidates.name) AND c.removed_at IS NULL AND c.name_current=1 AND c.github_id IS NOT NULL)) OR json_extract(repo,'$.id')=(SELECT github_id FROM catalog_repositories c WHERE c.account_id=candidates.account AND lower(c.repo)=lower(candidates.name) AND c.removed_at IS NULL AND c.name_current=1) ORDER BY ordinal,position LIMIT 1)
  SELECT 'run' AS source,'' AS kind,f.payload,f.content_meta FROM refs
  JOIN factory_runs r ON r.id=refs.version AND r.account_id=refs.account
- JOIN factory_resources f ON f.run_id=r.id AND f.repo=refs.repo AND f.stream=refs.stream WHERE refs.source='run'
+ JOIN factory_resources f ON f.run_id=r.id AND f.repo=refs.repo AND f.stream=refs.resource WHERE refs.source='run'
  UNION ALL
  SELECT 'legacy' AS source,s.kind,s.payload,s.content_meta FROM refs JOIN snapshots s
  ON s.account_id=refs.account AND s.kind IN ('factory:' || refs.repo || ':' || refs.stream,'factory:' || refs.repo || ':' || refs.stream || '#2') WHERE refs.source!='run'`)
@@ -145,7 +146,10 @@ export function decodeFactoryResource(
 	stream: string,
 	withContent = false,
 ) {
-	const version = repo.observation?.version ?? snap.runId;
+	const version =
+		repo.coverage[stream as FactoryStreamName].observation?.version ??
+		repo.observation?.version ??
+		snap.runId;
 	const original =
 		repo.observation?.repo ??
 		snap.repos.find(

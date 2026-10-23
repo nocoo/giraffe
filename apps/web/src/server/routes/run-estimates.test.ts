@@ -1,6 +1,6 @@
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
-import { type FactoryRun, makeRun } from "../../lib/factory-run";
+import { type FactoryRun, type FactoryRunStep, makeRun } from "../../lib/factory-run";
 import type { Env } from "../env";
 import { createApp } from "../index";
 import { createApiToken } from "../lib/api-tokens";
@@ -18,7 +18,15 @@ type RunJson = {
 	progress?: { total: number };
 };
 
-afterEach(() => vi.unstubAllGlobals());
+beforeEach(() => {
+	vi.useFakeTimers({ toFake: ["Date"] });
+	vi.setSystemTime(new Date(now));
+});
+afterEach(() => {
+	vi.useRealTimers();
+	vi.unstubAllGlobals();
+	vi.restoreAllMocks();
+});
 
 async function setup() {
 	const raw = sqliteFixture();
@@ -77,7 +85,13 @@ async function setup() {
 			})),
 		);
 	}
-	return { raw, seed, call, savedRows };
+	const latest = (machine: boolean, kind: string) =>
+		app.request(
+			`http://localhost${machine ? `/api/v1/accounts/${account}/refresh-runs/latest` : "/api/factory/runs/latest"}?kind=${kind}`,
+			{ headers: machine ? { authorization: `Bearer ${token.token}` } : {} },
+			env,
+		);
+	return { raw, seed, call, latest, savedRows };
 }
 
 it("projects matching browser/detail/machine ETA from retained history in one read per GET", async () => {
@@ -132,7 +146,7 @@ it("projects matching browser/detail/machine ETA from retained history in one re
 			expect(run).not.toHaveProperty("checkpoint");
 		}
 		expect(list.find((run) => run.id === "current")).toMatchObject({
-			expectedFinishAt: "2026-10-21T00:00:30.000Z",
+			expectedFinishAt: "2026-10-22T00:00:30.000Z",
 		});
 		expect(list.find((run) => run.id === "failed-21")).toMatchObject({
 			steps: [],
@@ -169,5 +183,153 @@ it("includes every null reason on compact browser and machine entries without hi
 				expectedFinishAt: null,
 				expectedFinishAtReason: reason,
 			});
+	}
+});
+
+it.each(["quick", "deep"] as const)(
+	"matches browser/detail/machine ETA for small manual selected %s work, including historical wall overhead",
+	async (depth) => {
+		const s = await setup();
+		const base = makeRun("plan", account, "owner", "plan", "catalog", [], now)
+			.steps[0] as FactoryRunStep;
+		await s.seed("large-history", {
+			depth,
+			trigger: "daily",
+			status: "partial",
+			startedAt: "2026-10-20T00:00:00.000Z",
+			finishedAt: "2026-10-20T01:10:00.000Z",
+			steps: [
+				...Array.from({ length: 100 }, () => ({
+					...base,
+					kind: "metadata" as const,
+					status: "success" as const,
+					attempts: 1,
+					durationMs: 1000,
+				})),
+				...Array.from({ length: 1000 }, () => ({
+					...base,
+					kind: "snapshot" as const,
+					status: "limited" as const,
+					attempts: 1,
+					durationMs: 3000,
+				})),
+			],
+		});
+		const steps = [
+			...Array.from({ length: 5 }, () => ({ ...base, kind: "metadata" as const })),
+			...Array.from({ length: 50 }, () => ({ ...base, kind: "snapshot" as const })),
+		];
+		const selected = {
+			depth,
+			trigger: "manual" as const,
+			selection: { scope: "selected" as const, repos: ["owner/app"] },
+		};
+		await s.seed("compact-target", {
+			...selected,
+			status: "failed",
+			startedAt: "2026-10-21T00:00:00.000Z",
+			steps,
+		});
+		await s.seed("manual-active", {
+			...selected,
+			status: "running",
+			cursor: 1,
+			steps: steps.map((step, index) => ({
+				...step,
+				status: index === 0 ? "success" : index === 20 ? "skipped" : "pending",
+			})),
+		});
+		const before = await s.savedRows();
+		const network = vi.fn();
+		vi.stubGlobal("fetch", network);
+		for (const [machine, history] of [
+			[false, ""],
+			[false, "compact-target"],
+			[true, ""],
+		] as const) {
+			const response = await s.call(machine, history);
+			expect(response.status).toBe(200);
+			const body = (await response.json()) as {
+				current?: RunJson;
+				history?: RunJson[];
+				items?: RunJson[];
+			};
+			const rows = body.items ?? [...(body.current ? [body.current] : []), ...(body.history ?? [])];
+			expect(rows.find((run) => run.id === "manual-active")).toMatchObject({
+				expectedFinishAt: "2026-10-22T00:03:24.000Z",
+				expectedFinishAtReason: null,
+			});
+			const compact = rows.find((run) => run.id === "compact-target");
+			expect(compact).toMatchObject({
+				expectedFinishAt: "2026-10-21T00:03:30.000Z",
+				expectedFinishAtReason: null,
+			});
+			expect(compact?.steps).toHaveLength(history ? 55 : 0);
+			for (const run of rows)
+				for (const field of ["plans", "stepKinds", "stepPlan", "overhead"])
+					expect(run).not.toHaveProperty(field);
+		}
+		for (const machine of [false, true]) {
+			const latest = await s.latest(machine, depth);
+			expect(latest.status).toBe(200);
+			expect(await latest.json()).toMatchObject({
+				id: "manual-active",
+				kind: "manual",
+				depth,
+				expectedFinishAt: "2026-10-22T00:03:24.000Z",
+				expectedFinishAtReason: null,
+			});
+		}
+		expect(await s.savedRows()).toEqual(before);
+		expect(network).not.toHaveBeenCalled();
+	},
+);
+
+it("scales a large daily run up from a small manual selected history without borrowing another execution kind", async () => {
+	const s = await setup();
+	const base = makeRun("plan", account, "owner", "plan", "catalog", [], now)
+		.steps[0] as FactoryRunStep;
+	await s.seed("manual-history", {
+		depth: "quick",
+		trigger: "manual",
+		selection: { scope: "selected", repos: ["owner/app"] },
+		status: "completed",
+		startedAt: "2026-10-20T00:00:00.000Z",
+		finishedAt: "2026-10-20T00:00:12.000Z",
+		steps: [1000, 3000, 5000].map((durationMs) => ({
+			...base,
+			kind: "metadata",
+			status: "success",
+			attempts: 1,
+			durationMs,
+		})),
+	});
+	await s.seed("daily", {
+		depth: "quick",
+		trigger: "daily",
+		status: "running",
+		steps: Array.from({ length: 1200 }, () => ({ ...base, kind: "activity" })),
+	});
+	await s.seed("deep", { depth: "deep", status: "failed" });
+	for (const machine of [false, true]) {
+		expect(await (await s.latest(machine, "daily")).json()).toMatchObject({
+			id: "daily",
+			expectedFinishAt: "2026-10-22T01:20:00.000Z",
+		});
+		const response = await s.call(machine);
+		const body = (await response.json()) as {
+			current?: RunJson;
+			history?: RunJson[];
+			items?: RunJson[];
+		};
+		const rows = body.items ?? [...(body.current ? [body.current] : []), ...(body.history ?? [])];
+		expect(rows.find((run) => run.id === "daily")).toMatchObject({
+			expectedFinishAt: "2026-10-22T01:20:00.000Z",
+			expectedFinishAtReason: null,
+		});
+		expect(rows.find((run) => run.id === "deep")).toMatchObject({
+			expectedFinishAt: null,
+			expectedFinishAtReason: "no_completed_history",
+		});
 	}
 });

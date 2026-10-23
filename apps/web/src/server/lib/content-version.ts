@@ -69,7 +69,18 @@ function omit(value: unknown, keys: string[]): Record<string, unknown> {
 }
 
 function coverage(value: unknown) {
-	return omit(value, ["fetchedAt", "sourceFetchedAt", "pages", "strategy", "source"]);
+	const data = omit(value, ["fetchedAt", "sourceFetchedAt", "pages", "strategy", "source"]);
+	if (data.observation)
+		data.observation = omit(data.observation, [
+			"version",
+			"refreshedAt",
+			"publishedAt",
+			"metadataAt",
+			"source",
+			"repo",
+			"head",
+		]);
+	return data;
 }
 
 function contribution(value: unknown) {

@@ -6,6 +6,7 @@ import {
 	decodeRunEstimates,
 	estimateRunFinish,
 	type RunEstimateRow,
+	type RunStepPlan,
 	readRunEstimates,
 	runEstimateStatement,
 } from "./run-estimates";
@@ -66,6 +67,12 @@ describe("historical run calibration", () => {
 					kind: "deep",
 					started_at: now,
 					finished_at: stamp(started + duration),
+					total: 1,
+					work_total: 1,
+					timed_total: 0,
+					duration_total: 0,
+					step_medians: null,
+					plans: null,
 				})),
 			),
 		).toEqual({ ...empty, deep: median });
@@ -118,14 +125,22 @@ describe("historical run calibration", () => {
 		expect(batch).toHaveBeenCalledTimes(1);
 		expect(db.statements).toBe(1);
 		expect(result[0]?.results).toHaveLength(8);
-		for (const row of result[0]?.results ?? [])
-			expect(Object.keys(row).sort()).toEqual(["finished_at", "kind", "started_at"]);
+		for (const row of result[0]?.results ?? []) {
+			expect(row).toHaveProperty("total");
+			expect(row).toHaveProperty("work_total");
+			expect(row).not.toHaveProperty("payload");
+		}
 		expect(decodeRunEstimates(result[0]?.results ?? [])).toEqual({
-			catalog: 500000,
-			quick: 100000,
-			deep: 30000,
+			catalog: 62500,
+			quick: 12500,
+			deep: 3750,
+			plans: expect.any(Object),
 		});
-		expect(await readRunEstimates(createDb(raw), "b")).toEqual({ ...empty, deep: 777 });
+		expect(await readRunEstimates(createDb(raw), "b")).toEqual({
+			...empty,
+			deep: 777 / 8,
+			plans: expect.any(Object),
+		});
 		expect(await readRunEstimates(createDb(raw), "missing")).toEqual(empty);
 		expect(await raw.prepare("SELECT * FROM factory_runs ORDER BY id").all()).toEqual(before);
 	});
@@ -148,7 +163,11 @@ describe("historical run calibration", () => {
 		await seed("partial-reversed", { status: "partial", finishedAt: stamp(started - 1000) });
 		await seed("other-account-partial", { status: "partial", account_id: "b" });
 		const before = await raw.prepare("SELECT * FROM factory_runs ORDER BY id").all();
-		expect(await readRunEstimates(createDb(raw), "a")).toEqual({ ...empty, deep: 30000 });
+		expect(await readRunEstimates(createDb(raw), "a")).toEqual({
+			...empty,
+			deep: 3750,
+			plans: expect.any(Object),
+		});
 		expect(await raw.prepare("SELECT * FROM factory_runs ORDER BY id").all()).toEqual(before);
 	});
 
@@ -157,7 +176,7 @@ describe("historical run calibration", () => {
 		await seed("completed", { finishedAt: stamp(started + 10000) });
 		await seed("partial", { status: "partial", finishedAt: stamp(started + 30000) });
 		const calibration = await readRunEstimates(createDb(raw), "a");
-		expect(calibration).toEqual({ ...empty, deep: 20000 });
+		expect(calibration).toEqual({ ...empty, deep: 2500, plans: expect.any(Object) });
 		expect(
 			estimateRunFinish({ mode: "refresh", depth: "quick", startedAt: now }, 1, calibration),
 		).toEqual({ expectedFinishAt: null, expectedFinishAtReason: "no_completed_history" });
@@ -167,14 +186,22 @@ describe("historical run calibration", () => {
 		const { raw, seed } = await fixture();
 		for (const [index, id] of ["a", "b", "c", "d", "e", "f"].entries())
 			await seed(id, { startedAt: stamp(started - (index + 1) * 1000), finishedAt: now });
-		expect(await readRunEstimates(createDb(raw), "a")).toEqual({ ...empty, deep: 4000 });
+		expect(await readRunEstimates(createDb(raw), "a")).toEqual({
+			...empty,
+			deep: 500,
+			plans: expect.any(Object),
+		});
 	});
 
 	it("keeps a genuine zero-duration completed run but rejects zero-work audits", async () => {
 		const { raw, seed } = await fixture();
 		await seed("zero", { finishedAt: now });
 		await seed("audit", { steps: [], finishedAt: stamp(started + 10000) });
-		expect(await readRunEstimates(createDb(raw), "a")).toEqual({ ...empty, deep: 0 });
+		expect(await readRunEstimates(createDb(raw), "a")).toEqual({
+			...empty,
+			deep: 0,
+			plans: expect.any(Object),
+		});
 	});
 
 	it.each([
@@ -192,7 +219,11 @@ describe("historical run calibration", () => {
 				startedAt: invalid,
 				finishedAt: "2026-10-23T01:00:00.000Z",
 			});
-		expect(await readRunEstimates(createDb(raw), "a")).toEqual({ ...empty, deep: 10000 });
+		expect(await readRunEstimates(createDb(raw), "a")).toEqual({
+			...empty,
+			deep: 1250,
+			plans: expect.any(Object),
+		});
 	});
 
 	it("accepts ISO timestamps with UTC offsets and optional fractional seconds", async () => {
@@ -201,7 +232,44 @@ describe("historical run calibration", () => {
 			startedAt: "2026-10-22T04:00:00.000+04:00",
 			finishedAt: "2026-10-22T00:00:10Z",
 		});
-		expect(await readRunEstimates(createDb(raw), "a")).toEqual({ ...empty, deep: 10000 });
+		expect(await readRunEstimates(createDb(raw), "a")).toEqual({
+			...empty,
+			deep: 1250,
+			plans: expect.any(Object),
+		});
+	});
+
+	it("can omit history plans for the scalar latest reader without changing calibration", async () => {
+		const { raw, seed } = await fixture();
+		await seed("sample", { finishedAt: stamp(started + 8000) });
+		const result = await runEstimateStatement(createDb(raw), "a", false).all<RunEstimateRow>();
+		expect(result.results).toHaveLength(1);
+		expect(result.results[0]?.plans).toBeNull();
+		expect(decodeRunEstimates(result.results)).toEqual({ ...empty, deep: 1000 });
+	});
+
+	it("groups stored kinds and remaining statuses exactly without counting skipped work or crossing accounts", async () => {
+		const { raw, seed } = await fixture();
+		const base = makeRun("plan", "a", "owner", "plan", "catalog", [], now).steps[0];
+		if (!base) throw new Error("missing fixture step");
+		await seed("sample", {
+			steps: [
+				{ ...base, kind: "metadata", status: "success" },
+				{ ...base, kind: "metadata", status: "skipped" },
+				{ ...base, kind: "snapshot", status: "pending" },
+			],
+		});
+		await seed("foreign", { account_id: "b" });
+		expect(await readRunEstimates(createDb(raw), "a")).toEqual({
+			...empty,
+			deep: 500,
+			plans: {
+				sample: [
+					["metadata", 1, 0],
+					["snapshot", 1, 1],
+				],
+			},
+		});
 	});
 });
 
@@ -227,14 +295,14 @@ describe("run finish projection", () => {
 		const compact = { ...run, steps: [], depth: "quick" } as const;
 		const calibration = { catalog: 5000, quick: 2000, deep: 3000 };
 		expect(estimateRunFinish(compact, 10, calibration)).toEqual({
-			expectedFinishAt: stamp(started + 2000),
+			expectedFinishAt: stamp(started + 20000),
 			expectedFinishAtReason: null,
 		});
 		expect(estimateRunFinish({ ...compact, mode: "catalog" }, 4, calibration)).toEqual({
-			expectedFinishAt: stamp(started + 5000),
+			expectedFinishAt: stamp(started + 20000),
 			expectedFinishAtReason: null,
 		});
-		expect(estimateRunFinish(run, 10, calibration).expectedFinishAt).toBe(stamp(started + 3000));
+		expect(estimateRunFinish(run, 10, calibration).expectedFinishAt).toBe(stamp(started + 30000));
 	});
 
 	it("does not slide a past estimate or replace it with an independent deadline", () => {
@@ -244,10 +312,52 @@ describe("run finish projection", () => {
 			deadlineAt: "2026-10-01T12:00:00.000Z",
 		};
 		expect(estimateRunFinish(old, 3, { ...empty, deep: 10000 })).toEqual({
-			expectedFinishAt: "2026-10-01T00:00:10.000Z",
+			expectedFinishAt: "2026-10-01T00:00:30.000Z",
 			expectedFinishAtReason: null,
 		});
 		expect(estimateRunFinish(old, 3, empty).expectedFinishAt).toBeNull();
 		expect(estimateRunFinish(run, 3, { ...empty, deep: 0 }).expectedFinishAt).toBe(now);
+	});
+
+	it("uses grouped remaining kinds for latest/compact projections without transferring steps", () => {
+		const stepPlan: RunStepPlan = [
+			["metadata", 2, 0],
+			["snapshot", 2, 1],
+		];
+		const calibration = {
+			...empty,
+			deep: 2000,
+			stepKinds: { deep: { metadata: 1000, snapshot: 3000 } },
+			overhead: { deep: 500 },
+		};
+		expect(estimateRunFinish({ ...run, status: "running", stepPlan }, 4, calibration, now)).toEqual(
+			{ expectedFinishAt: stamp(started + 3500), expectedFinishAtReason: null },
+		);
+		expect(
+			estimateRunFinish({ ...run, status: "completed", stepPlan }, 4, calibration, now),
+		).toEqual({ expectedFinishAt: stamp(started + 10000), expectedFinishAtReason: null });
+	});
+
+	it("scales minimal projections by remaining counts, with the cursor only as a last resort", () => {
+		const calibration = { ...empty, deep: 1000 };
+		for (const [input, remaining] of [
+			[{ cursor: 3 }, 7],
+			[{ cursor: 3, completed: 8 }, 2],
+			[{}, 10],
+			[{ completed: 20 }, 0],
+		] as const) {
+			expect(
+				estimateRunFinish({ ...run, status: "running", ...input }, 10, calibration, now)
+					.expectedFinishAt,
+			).toBe(stamp(started + remaining * 1000));
+		}
+		expect(
+			estimateRunFinish(
+				{ ...run, status: "running", nextAttemptAt: "invalid" },
+				1,
+				calibration,
+				now,
+			).expectedFinishAt,
+		).toBe(stamp(started + 1000));
 	});
 });
