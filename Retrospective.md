@@ -1890,3 +1890,11 @@ and assertions. Preserve all HTTP, read-only and network-count assertions and
 rerun both API suites without retries, skipped tests or hook bypasses. Prefer
 asynchronous fixture subprocesses in HTTP tests, and distinguish observed failures
 from unproven explanations when recording validation evidence.
+
+The asynchronous rerun reached the HTTP assertions and exposed a separate fixture
+mistake: the newest retained run includes its steps even without a `history` query.
+The new regression had incorrectly expected an empty step array on that browser
+list. `listRunsStatement` explicitly selects the latest run as the default detail;
+the assertion now requires the retained step in both list and explicit-detail
+responses. Read the actual projection contract before asserting compactness, and
+do not change production serialization to fit a mistaken regression fixture.

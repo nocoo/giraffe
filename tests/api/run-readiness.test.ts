@@ -267,7 +267,7 @@ it("clears terminal ETAs on HTTP list, latest and browser detail without changin
 				const body = (await response.json()) as { history: (FactoryRun & typeof expected)[] };
 				const detail = body.history.find((item) => item.id === runId);
 				expect(detail).toMatchObject(expected);
-				expect(detail?.steps).toHaveLength(query ? 1 : 0);
+				expect(detail?.steps).toHaveLength(1);
 			}
 			expect(await saved()).toEqual(before);
 			expect(await (await fetch("http://127.0.0.1:17046/_count")).text()).toBe(calls);
