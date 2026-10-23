@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.21.1 - 2026-10-23
+
+### Fixed
+
+- Retain regressed factory evidence per stream instead of rejecting the entire repository version. Repeated dependency parse limits no longer freeze healthy commits, issues, pull requests, Actions, releases or alerts; current-run activity inputs remain intact.
+- Preserve retained evidence's original run, observation/publication time, source window and content metadata. Missing retained payloads remain explicitly unavailable, and mixed publications expose repository state `partial` with `coverage_regression_retained`.
+- Scale refresh completion estimates by planned work and remaining steps, using historical per-step calibration and observed execution overhead rather than reusing a whole-run duration for every plan size, including manual selected-scope runs.
+- Clarify that `refresh-runs/latest?kind=quick|deep` filters depth across all triggers and scopes; a manual quick run can match `kind=quick`, while scheduled daily consumers must request `kind=daily`.
+
+### Consumers
+
+- After deployment, repositories with persistently parse-limited dependencies, such as `nocoo/lizheng.dev`, advance their healthy factory source rows on the next successful scheduled or manual refresh that includes them. Daily quick refresh uses the same fixed publication path; no manual production backfill is required.
+- Retained streams stay flagged with `retained: true` and retain their original source version and freshness. A repository's newer observation does not make retained stream evidence current; consumers must inspect each stream's coverage and observation.
+
 ## v0.21.0 - 2026-10-23
 
 ### Added
