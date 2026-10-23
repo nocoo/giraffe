@@ -124,3 +124,22 @@ it.each(["wall", "writes", "stop"])(
 		expect(invocation.requests).toBe(0);
 	},
 );
+
+it("admits parallel activity after earlier work while keeping global publication boundaries", async () => {
+	const { db, lease, now } = await setup();
+	const invocation = new FactoryInvocation(db, lease, () => now);
+	const current = lease.run.steps[0];
+	if (!current) throw new Error("fixture step missing");
+	invocation.completed({ ...current, kind: "snapshot", repo: "nocoo/app0" });
+	const activity = { ...current, kind: "activity" as const, repo: "nocoo/app1" };
+	expect(invocation.endReason(activity)).toBe("publish_boundary");
+	expect(invocation.endReason(activity, true)).toBeNull();
+	expect(invocation.endReason({ ...activity, kind: "snapshot" })).toBe("snapshot_boundary");
+	expect(invocation.endReason({ ...activity, kind: "snapshot" }, true)).toBeNull();
+	expect(invocation.endReason({ ...activity, kind: "publish", repo: null }, true)).toBe(
+		"publish_boundary",
+	);
+	expect(
+		invocation.endReason({ ...activity, kind: "snapshot", resource: "insights", repo: null }, true),
+	).toBe("publish_boundary");
+});

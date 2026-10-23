@@ -302,9 +302,14 @@ it("preserves a completed step after a mid-loop lease loss", async () => {
 	);
 	expect(await executeRunPage(env, "r1", () => now)).toBeNull();
 	const db = createDb(env.DB);
-	expect(
-		(await db.prepare("SELECT * FROM factory_resources WHERE run_id='r1'").all()).results,
-	).toEqual([]);
+	const resources = await db
+		.prepare("SELECT stream,payload FROM factory_resources WHERE run_id='r1'")
+		.all<{ stream: string; payload: string }>();
+	expect(resources.results.map((resource) => resource.stream)).toEqual(["executor:checkpoint"]);
+	expect(JSON.parse(resources.results[0]?.payload ?? "null")).toMatchObject({
+		runId: "r1",
+		repos: [{ name: "nocoo/app" }],
+	});
 	expect((await getRun(db, snap.account_id, "r1"))?.run).toMatchObject({
 		status: "paused",
 		cursor: 1,
@@ -515,7 +520,7 @@ it("yields at the shared budgets and resumes an unfinished site step without ref
 	expect(pending?.requests).toBe(requested);
 	expect(pending?.steps[0]).toMatchObject({ status: "success", pages: 20 });
 	expect(pending?.steps[1]).toMatchObject({
-		status: "pending",
+		status: "running",
 		attempts: 1,
 		pages: requested - 20,
 		error: null,
@@ -538,6 +543,18 @@ it("uses fewer than half as many invocations as the selected-repository step pla
 	expect(run?.status).toBe("completed");
 	expect(run?.steps).toHaveLength(19);
 	expect(run?.invocations).toBeLessThan(10);
+});
+
+it("continues from drained repository work to publication within the same invocation", async () => {
+	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] });
+	expect(await executeRunPage(env, "r1", () => now)).toBeNull();
+	const run = (await getRun(createDb(env.DB), snap.account_id, "r1"))?.run;
+	expect(run?.status).toBe("completed");
+	expect(run?.invocations).toBe(1);
+	expect(run?.steps.every((step) => step.status === "success")).toBe(true);
+	expect(run?.steps.at(-1)).toMatchObject({ kind: "publish", status: "success" });
+	expect(run?.requests).toBeLessThanOrEqual(40);
+	expect((await publishedFactory(createDb(env.DB), snap.account_id))?.runId).toBe("r1");
 });
 
 it("batches a 60-repository daily plan without changing its 1146 logical steps", async () => {
@@ -989,7 +1006,7 @@ it("keeps other-branch commits unknown when resuming metadata from before source
 		}),
 	);
 	await beforeMetadata(env);
-	await executeRunPage(env, "r1", () => now);
+	await executeMetadata(env);
 	const lease = await claimRun(db, "r1", now);
 	const metadata = lease?.run.steps.find((step) => step.kind === "metadata");
 	if (!lease || !metadata) throw new Error("Missing completed metadata fixture");
@@ -1919,12 +1936,13 @@ async function drive(env: Env, start = now) {
 }
 
 async function beforeMetadata(env: Env) {
-	const canStart = FactoryInvocation.prototype.canStart;
-	const boundary = vi.spyOn(FactoryInvocation.prototype, "canStart").mockImplementation(function (
+	const endReason = FactoryInvocation.prototype.endReason;
+	const boundary = vi.spyOn(FactoryInvocation.prototype, "endReason").mockImplementation(function (
 		this: FactoryInvocation,
 		step,
+		parallel,
 	) {
-		return step.kind !== "metadata" && canStart.call(this, step);
+		return step.kind === "metadata" ? "yield" : endReason.call(this, step, parallel);
 	});
 	try {
 		for (let index = 0; index < 20; index++) {
@@ -1939,12 +1957,13 @@ async function beforeMetadata(env: Env) {
 }
 
 async function executeMetadata(env: Env) {
-	const canStart = FactoryInvocation.prototype.canStart;
-	const boundary = vi.spyOn(FactoryInvocation.prototype, "canStart").mockImplementation(function (
+	const endReason = FactoryInvocation.prototype.endReason;
+	const boundary = vi.spyOn(FactoryInvocation.prototype, "endReason").mockImplementation(function (
 		this: FactoryInvocation,
 		step,
+		parallel,
 	) {
-		return step.kind === "metadata" && canStart.call(this, step);
+		return step.kind === "metadata" ? endReason.call(this, step, parallel) : "yield";
 	});
 	try {
 		await executeRunPage(env, "r1", () => now);
@@ -1983,7 +2002,7 @@ it.each([false, true])(
 				}),
 			),
 		);
-		await executeRunPage(env, "r1", () => now);
+		await executeMetadata(env);
 		expect((await getRun(db, snap.account_id, "r1"))?.run.checkpoint?.rate).toEqual(
 			hasRate
 				? { remaining: 400, resetAt: "2026-09-15T23:00:00Z", resource: "graphql", observedAt: now }
@@ -2031,7 +2050,18 @@ async function legacyAssessment(status: "pending" | "running" | "success") {
 				.run();
 			return { env, db, run };
 		}
-		await executeRunPage(env, "r1", () => now);
+		const canStart = FactoryInvocation.prototype.canStart;
+		const boundary = vi.spyOn(FactoryInvocation.prototype, "canStart").mockImplementation(function (
+			this: FactoryInvocation,
+			step,
+		) {
+			return step.kind !== "publish" && canStart.call(this, step);
+		});
+		try {
+			await executeRunPage(env, "r1", () => now);
+		} finally {
+			boundary.mockRestore();
+		}
 	}
 	throw new Error("publication checkpoint missing");
 }

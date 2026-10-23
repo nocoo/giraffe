@@ -10,6 +10,7 @@ import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
 import { consumeFactory, continueFactory } from "./factory-dispatch";
 import { executeRunPage } from "./factory-execute";
 import { FactoryInvocation, InvocationStopped } from "./factory-invocation";
+import { encodeRun } from "./factory-run-codec";
 import { encryptToken, parseKeyBytes } from "./token-crypto";
 
 afterEach(() => {
@@ -18,7 +19,7 @@ afterEach(() => {
 	vi.useRealTimers();
 });
 
-async function setup(activity = false, metadataRequests = 4) {
+async function setup(activity = false, metadataRequests = 4, snapshotsOnly = false) {
 	const snapshot = factoryFixture();
 	const first = snapshot.repos[0];
 	if (!first) throw new Error("fixture");
@@ -84,6 +85,7 @@ async function setup(activity = false, metadataRequests = 4) {
 			...repos.map((repo) => ({ ...template, repo: repo.name, kind: "activity" as const })),
 		);
 	}
+	if (snapshotsOnly) run.steps = run.steps.filter((step) => step.kind === "snapshot" || !step.repo);
 	await startRun(db, run);
 	let active = 0;
 	let peak = 0;
@@ -281,7 +283,7 @@ it("takes over an expired pool and fences every late result from its old lease",
 it.each(["redelivery", "cron"] as const)(
 	"recovers canceled consecutive pool snapshots through %s without catch or release",
 	async (recovery) => {
-		const fixture = await setup();
+		const fixture = await setup(false, 0, true);
 		const db = createDb(fixture.env.DB);
 		const base = vi.mocked(fetch).getMockImplementation();
 		if (!base) throw new Error("fixture");
@@ -671,8 +673,7 @@ it.each(["identity", "cooldown"])("propagates %s failures to deferred activity",
 });
 
 it("starts four details requests before any finishes, without holding the projection lock", async () => {
-	const fixture = await setup();
-	await executeRunPage(fixture.env, fixture.run.id, () => fixture.now);
+	const fixture = await setup(false, 0, true);
 	const base = vi.mocked(fetch).getMockImplementation();
 	if (!base) throw new Error("fixture");
 	let active = 0;
@@ -691,4 +692,97 @@ it("starts four details requests before any finishes, without holding the projec
 	);
 	await executeRunPage(fixture.env, fixture.run.id, () => fixture.now);
 	expect(peak).toBe(4);
+});
+
+it("collects several activity pages per repository in one four-lane invocation", async () => {
+	const fixture = await setup(true, 0);
+	const db = createDb(fixture.env.DB);
+	const repo = factoryFixture().repos[0];
+	if (!repo) throw new Error("fixture repository missing");
+	for (const [index, name] of fixture.run.repos.entries())
+		await db.batch([
+			db
+				.prepare(
+					"INSERT INTO factory_repo_versions(account_id,repo,version,payload,refreshed_at) VALUES(?,?,?,?,?)",
+				)
+				.bind(
+					fixture.run.account_id,
+					name,
+					fixture.run.id,
+					JSON.stringify({ ...repo, id: `repo-${index}`, name }),
+					fixture.now,
+				),
+			db
+				.prepare("INSERT INTO factory_repo_state(account_id,repo,version,payload) VALUES(?,?,?,?)")
+				.bind(
+					fixture.run.account_id,
+					name,
+					fixture.run.id,
+					JSON.stringify({ repo: name, version: fixture.run.id }),
+				),
+		]);
+	for (const step of fixture.run.steps) {
+		if (step.kind === "activity" || step.kind === "publish") continue;
+		step.status = "success";
+		if (step.kind === "metadata") step.sourceBranch = "main";
+	}
+	fixture.run.cursor = fixture.run.steps.findIndex((step) => step.kind === "activity");
+	await db
+		.prepare("UPDATE factory_runs SET payload=? WHERE id=?")
+		.bind(encodeRun(fixture.run), fixture.run.id)
+		.run();
+	let active = 0;
+	let peak = 0;
+	let entered = 0;
+	let release = () => {};
+	const firstPages = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async (url: string, init?: RequestInit) => {
+			active++;
+			peak = Math.max(peak, active);
+			const body = init?.body ? JSON.parse(String(init.body)) : {};
+			const query = String(body.query);
+			if (query.includes("ActivityRefs")) {
+				if (++entered === FACTORY_REPO_CONCURRENCY) release();
+				await firstPages;
+			}
+			await new Promise<void>((resolve) => setTimeout(resolve, 1));
+			active--;
+			if (query.includes("ActivityRefs"))
+				return Response.json({
+					data: {
+						repository: {
+							refs: { nodes: [], pageInfo: { hasNextPage: false } },
+							tags: { nodes: [], pageInfo: { hasNextPage: true, endCursor: "tags-next" } },
+						},
+					},
+				});
+			if (query.includes("ActivityTags")) {
+				expect(body.variables.tagAfter).toBe("tags-next");
+				return Response.json({
+					data: { repository: { tags: { nodes: [], pageInfo: { hasNextPage: false } } } },
+				});
+			}
+			if (url.includes("/actions/runs?"))
+				return Response.json({ total_count: 0, workflow_runs: [] });
+			throw new Error("unexpected activity fixture request");
+		}),
+	);
+	await executeRunPage(fixture.env, fixture.run.id, () => fixture.now);
+	const run = await fixture.read();
+	expect(peak).toBe(FACTORY_REPO_CONCURRENCY);
+	expect(run.requests).toBe(12);
+	expect(run.steps.filter((step) => step.kind === "activity")).toMatchObject(
+		Array.from({ length: 4 }, () => ({ status: "success", pages: 3, attempts: 1 })),
+	);
+	const accepted = await db
+		.prepare("SELECT payload FROM factory_resources WHERE run_id=? AND stream='activity'")
+		.bind(run.id)
+		.all<{ payload: string }>();
+	expect(accepted.results.map((row) => JSON.parse(row.payload))).toMatchObject(
+		Array.from({ length: 4 }, () => ({ phase: "done", pages: 3 })),
+	);
 });

@@ -129,9 +129,13 @@ export async function executeRunPage(
 						stagedWrites += writes;
 					},
 				);
-				reason = invocation.endReason(step, true) ?? "yield";
+				const boundary = invocation.endReason(step, true);
 				if (run.status !== "running") return null;
-				break;
+				if (boundary || run.nextAttemptAt > clock()) {
+					reason = boundary ?? "run_end";
+					break;
+				}
+				continue;
 			}
 			if (!invocation.canStart(step)) {
 				reason = invocation.endReason(step) ?? "yield";

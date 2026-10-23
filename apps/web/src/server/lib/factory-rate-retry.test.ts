@@ -63,5 +63,13 @@ it("retains spent REST budget when the PR details batch fails and the page rolls
 	expect(saved?.checkpoint?.repos[0]?.coverage.prs.status).toBe("pending");
 	expect(saved?.steps[0]).toMatchObject({ status: "pending", error: "github_rate_limited" });
 	expect(saved?.nextAttemptAt).toBe(reset);
-	expect((await db.prepare("SELECT * FROM factory_resources").all()).results).toEqual([]);
+	const resources = await db
+		.prepare("SELECT stream,payload FROM factory_resources WHERE run_id=?")
+		.bind(run.id)
+		.all<{ stream: string; payload: string }>();
+	expect(resources.results.map((resource) => resource.stream)).toEqual(["executor:checkpoint"]);
+	expect(JSON.parse(resources.results[0]?.payload ?? "null")).toMatchObject({
+		rateLimits: { core: { remaining: 49, resetAt: reset } },
+		repos: [{ coverage: { prs: { status: "pending" } } }],
+	});
 });

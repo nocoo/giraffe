@@ -49,7 +49,9 @@ export class FactoryInvocation {
 		if (this.statementCost >= INVOCATION_STATEMENTS) return "statements";
 		if (
 			this.worked &&
-			(step.kind === "publish" || step.kind === "activity" || step.resource === "insights")
+			(step.kind === "publish" ||
+				(!parallel && step.kind === "activity") ||
+				step.resource === "insights")
 		)
 			return "publish_boundary";
 		if (!parallel && this.snapshotRepo !== undefined && this.snapshotRepo !== step.repo)
