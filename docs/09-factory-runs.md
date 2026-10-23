@@ -548,19 +548,19 @@ continued healthy processing, a catalog cannot retain the active lock for 48 hou
 Those bounds do not ensure successful collection and did not by themselves fix
 coalesced slots, failed preparation audit gaps or immediate daily handoff.
 
-Every exposed run adds `expectedFinishAt` and `expectedFinishAtReason`. Read-time
-calibration uses the median wall duration of the latest five valid completed runs
-for that account and actual kind (`catalog`, `quick`, `deep`), across retained
-history rather than the 21 displayed rows. A daily-triggered catalog preparation
-is catalog, not quick. Missing legacy depth means deep. Pauses/backoff count in
-wall duration; failed/partial runs do not supply successful samples. A completed
-run with stored work and equal valid start/end times contributes a zero-duration
-sample. Compact history uses stored step totals, not its omitted step array, to
-distinguish executed work from audit records. The estimate is `startedAt + median`, can be
-in the past, and is distinct from the hard deadline. With no history it is null
-with `no_completed_history`; invalid legacy starts use `invalid_started_at` and
-zero-work audit records use `not_executed`. GET never writes estimates or fetches
-upstream. No new schema migration is needed for these response-only fields.
+Every exposed run adds `expectedFinishAt` and `expectedFinishAtReason`. Terminal
+runs (`completed`, `failed`, `partial`, `cancelled`) always return
+`expectedFinishAt: null` with reason `terminal`; use `finishedAt` for the actual
+end. This takes precedence over missing work, invalid timestamps or missing
+history. Browser history/detail, machine lists and every latest-readiness kind
+share the same rule. Running/paused estimates retain the existing
+[plan-scaled calibration](api.md#get-refresh-runs), using the latest five valid
+completed or partial runs of the same account and actual kind (`catalog`,
+`quick`, `deep`), across retained history rather than the 21 displayed rows.
+Pending schedules are not run statuses and are unchanged. An estimate is not a
+hard deadline. For non-terminal runs, missing history uses `no_completed_history`,
+invalid starts use `invalid_started_at`, and zero-work records use `not_executed`.
+GET never writes estimates or fetches upstream. No schema migration is needed.
 
 Expected feature/access absence finishes a step as `unavailable`, counted separately
 from `failed` and visible in the console. Dependency safe-parse limitations finish

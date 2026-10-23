@@ -102,6 +102,7 @@ export type RepoRefreshState = {
 	coverage?: number;
 };
 export type RunFinishEstimateReason =
+	| "terminal"
 	| "no_completed_history"
 	| "invalid_started_at"
 	| "not_executed"

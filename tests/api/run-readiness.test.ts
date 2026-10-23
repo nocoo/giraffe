@@ -122,8 +122,8 @@ it("R9 HTTP latest returns completed/partial publication, running ETA reason and
 				publishedAt: finished,
 				publishedAtReason: null,
 				depth: "quick",
-				expectedFinishAt: finished,
-				expectedFinishAtReason: null,
+				expectedFinishAt: null,
+				expectedFinishAtReason: "terminal",
 				window: { until: started },
 				counts: { total: 1, success: 1 },
 			},
@@ -144,6 +144,8 @@ it("R9 HTTP latest returns completed/partial publication, running ETA reason and
 			"manual",
 			{
 				status: "failed",
+				expectedFinishAt: null,
+				expectedFinishAtReason: "terminal",
 				publishedAt: null,
 				publishedAtReason: "failed",
 				depth: "quick",
@@ -155,6 +157,8 @@ it("R9 HTTP latest returns completed/partial publication, running ETA reason and
 			"catalog",
 			{
 				status: "partial",
+				expectedFinishAt: null,
+				expectedFinishAtReason: "terminal",
 				publishedAt: finished,
 				publishedAtReason: null,
 				depth: null,
@@ -203,6 +207,76 @@ it("R9 HTTP latest enforces strict queries, app-read, bearer/account isolation a
 	expect((await request("?kind=daily", bearer, "z".repeat(21))).status).toBe(403);
 	for (const method of ["POST", "HEAD"])
 		expect((await request("?kind=daily", bearer, account, method)).status).toBe(405);
+});
+
+it("clears terminal ETAs on HTTP list, latest and browser detail without changing stored runs", async () => {
+	marker();
+	const prior = rows("SELECT id FROM accounts WHERE is_active=1")[0]?.id;
+	const runId = id("0e256e3d");
+	const jwt = process.env.GIRAFFE_JWT;
+	const browser = (query = "") =>
+		fetch(`${base}/api/factory/runs${query}`, {
+			headers: jwt ? { "Cf-Access-Jwt-Assertion": jwt } : {},
+		});
+	rows(
+		`UPDATE accounts SET is_active=0 WHERE is_active=1; UPDATE accounts SET is_active=1 WHERE id=${quote(account)};`,
+	);
+	try {
+		for (const status of ["completed", "failed", "partial", "cancelled"] as const) {
+			marker();
+			const run = {
+				...makeRun(runId, account, owner, runId, "refresh", [], "2026-10-23T21:00:44.000Z"),
+				depth: "quick" as const,
+				status,
+				finishedAt: "2026-10-23T21:27:34.000Z",
+			};
+			run.steps = run.steps.slice(0, 1).map((step) => ({
+				...step,
+				status: status === "partial" || status === "failed" ? "failed" : "success",
+			}));
+			rows(
+				`DELETE FROM factory_runs WHERE id=${quote(runId)}; INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES(${quote(run.id)},${quote(account)},${quote(run.requestKey)},${quote(status)},${quote(JSON.stringify(run))},${quote(run.startedAt)},${quote(run.startedAt)},${quote(run.startedAt)});`,
+			);
+			const saved = () =>
+				rows(
+					`SELECT * FROM factory_runs WHERE account_id=${quote(account)} ORDER BY id; SELECT * FROM api_tokens WHERE account_id=${quote(account)} ORDER BY id;`,
+				);
+			const before = saved();
+			const calls = await (await fetch("http://127.0.0.1:17046/_count")).text();
+			const expected = {
+				id: runId,
+				status,
+				finishedAt: run.finishedAt,
+				expectedFinishAt: null,
+				expectedFinishAtReason: "terminal",
+			};
+			const latest = await request("?kind=manual");
+			expect(latest.status).toBe(200);
+			expect(await latest.json()).toMatchObject(expected);
+			const list = await fetch(`${base}/api/v1/accounts/${account}/refresh-runs`, {
+				headers: { Authorization: `Bearer ${bearer}` },
+			});
+			expect(list.status).toBe(200);
+			expect(await list.json()).toMatchObject({
+				items: expect.arrayContaining([expect.objectContaining(expected)]),
+			});
+			for (const query of ["", `?history=${runId}`]) {
+				const response = await browser(query);
+				expect(response.status).toBe(200);
+				const body = (await response.json()) as { history: (FactoryRun & typeof expected)[] };
+				const detail = body.history.find((item) => item.id === runId);
+				expect(detail).toMatchObject(expected);
+				expect(detail?.steps).toHaveLength(query ? 1 : 0);
+			}
+			expect(saved()).toEqual(before);
+			expect(await (await fetch("http://127.0.0.1:17046/_count")).text()).toBe(calls);
+		}
+	} finally {
+		marker();
+		rows(
+			`DELETE FROM factory_runs WHERE id=${quote(runId)}; UPDATE accounts SET is_active=0 WHERE id=${quote(account)};${typeof prior === "string" ? `UPDATE accounts SET is_active=1 WHERE id=${quote(prior)};` : ""}`,
+		);
+	}
 });
 
 it("R9 HTTP browser latest uses the Access-protected active account and returns 404 for missing kinds", async () => {

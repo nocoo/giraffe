@@ -169,6 +169,8 @@ export function estimateRunFinish(
 	calibration: RunEstimateCalibration,
 	now = new Date().toISOString(),
 ): RunFinishEstimate {
+	if (run.status && ["completed", "failed", "partial", "cancelled"].includes(run.status))
+		return { expectedFinishAt: null, expectedFinishAtReason: "terminal" };
 	if (total === 0) return { expectedFinishAt: null, expectedFinishAtReason: "not_executed" };
 	const startedAt = Date.parse(run.startedAt);
 	if (!Number.isFinite(startedAt))

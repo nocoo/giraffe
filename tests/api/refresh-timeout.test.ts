@@ -175,7 +175,7 @@ it("publishes all missed slots durably and immutably through the local scheduled
 				status: "failed",
 				missedSlots: { firstDueAt: dueAt, lastDueAt: dueAt, count: 1 },
 				expectedFinishAt: null,
-				expectedFinishAtReason: "not_executed",
+				expectedFinishAtReason: "terminal",
 			});
 		}
 		expect(
