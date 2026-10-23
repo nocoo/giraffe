@@ -134,31 +134,33 @@ it.each(["graphql", 403, 404, 500] as const)(
 			}),
 		);
 		await executeRunPage(env, run.id, () => now);
-		expect(
-			(await getRun(createDb(env.DB), snapshot.account_id, run.id))?.run.checkpoint
-				?.contributionStatus,
-		).toBe("pending");
+		const first = (await getRun(createDb(env.DB), snapshot.account_id, run.id))?.run;
+		expect(first?.checkpoint?.contributionStatus).toBe(failure === 500 ? "pending" : "unavailable");
+		expect(typeCalls).toBe(1);
 		expect((await publishedFactory(createDb(env.DB), snapshot.account_id))?.contribution).toEqual(
 			snapshot.contribution,
 		);
-		let time = now;
-		for (let attempt = 0; attempt < (failure === 500 ? 4 : 1); attempt++) {
-			const next = await executeRunPage(env, run.id, () => time);
-			if (next) time = next;
+		for (let attempt = 0; attempt < (failure === 500 ? 3 : 0); attempt++) {
+			const pending = (await getRun(db, snapshot.account_id, run.id))?.run;
+			if (!pending) throw new Error("missing retry run");
+			expect(pending.steps[0]).toMatchObject({ status: "pending", retryFailures: attempt + 1 });
+			expect(Date.parse(pending.nextAttemptAt)).toBeGreaterThan(Date.parse(now));
+			await executeRunPage(env, run.id, () => pending.nextAttemptAt);
 		}
 		const terminal = (await getRun(db, snapshot.account_id, run.id))?.run;
 		expect(terminal?.steps[0]?.status).toBe(failure === 500 ? "failed" : "unavailable");
 		expect(terminal?.checkpoint?.contributionStatus).toBe("unavailable");
 		for (let page = 0; page < 20; page++) {
-			const next = await executeRunPage(env, run.id, () => time);
-			if (!next) break;
-			time = next;
+			const pending = (await getRun(db, snapshot.account_id, run.id))?.run;
+			if (!pending) throw new Error("missing continuation run");
+			if (pending.status !== "running") break;
+			await executeRunPage(env, run.id, () => pending.nextAttemptAt);
 		}
 		expect(typeCalls).toBe(failure === 500 ? 4 : 1);
 		const finished = (await getRun(db, snapshot.account_id, run.id))?.run;
-		expect(
-			finished?.steps.filter((step) => step.repo).every((step) => step.status === "success"),
-		).toBe(true);
+		const repositorySteps = finished?.steps.filter((step) => step.repo) ?? [];
+		expect(repositorySteps.length).toBeGreaterThan(0);
+		expect(repositorySteps.every((step) => step.status === "success")).toBe(true);
 		expect(finished?.status).toBe(failure === 500 ? "partial" : "completed");
 		const publication = await publishedFactory(createDb(env.DB), snapshot.account_id);
 		expect(publication?.runId).toBe(run.id);

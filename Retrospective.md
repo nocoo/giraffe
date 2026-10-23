@@ -1663,3 +1663,28 @@ default five-second timeout on the GitHub runner. Large boundary fixtures need
 explicit per-test time budgets rather than assuming local runner speed. Give
 the new publication capacity and scale cases 30 seconds each while preserving
 their payload sizes, assertions and the global timeout and coverage thresholds.
+
+## 2026-10-23 - Separate batch audits from atomic business progress
+
+During local v0.22 batching work, the first interruption journal design copied
+uncommitted page progress while failing to preserve request totals and earlier
+completed-step durations if the final payload transaction failed. This was a
+development defect, not a production incident. Independent SQLite crash fixtures
+exposed the difference between replayable business state and already-spent work.
+The journal now contains only audit fields, with fenced pre-request counters and
+completed-duration checkpoints before subsequent work and final save. Cursors,
+pages and business writes commit together. A retry high-water map prevents an
+unsaved success from clearing the interruption retry budget indefinitely.
+An interleaved pause test also showed that version-only control CAS could clear
+a request journal changed after the control read. Controls now compare both the
+version and audit snapshot before any transactional writes, rejecting stale
+controls without losing the concurrent counter.
+
+Sparse encoding also revealed an unsafe downgrade assumption: v0.21 direct JSON
+readers require explicit numeric defaults and would turn missing counters into
+NaN. Additive schema alone does not prove reader rollback. The runbook now requires
+quiescing writers, materializing active audits through controls, retaining an
+export and expanding compact steps before an old reader starts. A local SQLite
+regression checks idempotent expansion, non-default audits and legacy arithmetic.
+Future persistence optimizations must test both crash boundaries and the actual
+old-reader contract, not only new-code round trips.

@@ -50,6 +50,7 @@ export type FactoryRunStep = {
 	error: string | null;
 };
 export type FactoryRun = {
+	invocations?: number;
 	atomicPublication?: true;
 	publishedAt?: string | null;
 	activityWindow?: import("./activity-types").ActivityWindow;

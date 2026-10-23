@@ -5,6 +5,7 @@ import { factoryFixture } from "../../../../../../tests/fixtures/factory-snapsho
 import { sqliteFixture } from "../../../../../../tests/fixtures/sqlite";
 import { makeRun } from "../../../lib/factory-run";
 import { createDb } from "./d1";
+import { beginRunStep, recordRunRequest, renewRunLease } from "./factory-run-journal";
 import { claimRun, controlRun, getRun, saveRun, startRun } from "./factory-runs";
 
 const snap = factoryFixture();
@@ -26,6 +27,39 @@ async function setup() {
 	};
 }
 describe("D1 durable runs", () => {
+	it("journals attempts without rewriting payload and recovers a crash", async () => {
+		const { db, raw, run } = await setup();
+		await startRun(db, run);
+		const lease = await claimRun(createDb(raw), run.id, now);
+		if (!lease) throw new Error("fixture");
+		const before = await raw
+			.prepare("SELECT payload FROM factory_runs WHERE id=?")
+			.bind(run.id)
+			.first();
+		Object.assign(lease.run.steps[0] ?? {}, { status: "running", attempts: 1, startedAt: now });
+		expect(await beginRunStep(createDb(raw), lease, now)).toBe(true);
+		expect(
+			await raw.prepare("SELECT payload FROM factory_runs WHERE id=?").bind(run.id).first(),
+		).toEqual(before);
+		const later = new Date(Date.parse(now) + 91_000).toISOString();
+		const recovered = await claimRun(createDb(raw), run.id, later);
+		expect(recovered?.run.steps[0]).toMatchObject({
+			attempts: 1,
+			retryFailures: 1,
+			error: "worker_interrupted",
+		});
+		expect(recovered?.run.invocations).toBe(2);
+		expect(await renewRunLease(createDb(raw), lease, later)).toBe(false);
+		if (!recovered) throw new Error("fixture");
+		expect(await renewRunLease(createDb(raw), recovered, later)).toBe(true);
+		expect(await saveRun(createDb(raw), recovered, [], later)).toBe(true);
+		expect(
+			await createDb(raw)
+				.prepare("SELECT journal FROM factory_run_journal WHERE run_id=?")
+				.bind(run.id)
+				.first("journal"),
+		).toBe("{}");
+	});
 	it("migrates twice without changing legacy rows", () => {
 		const db = new DatabaseSync(":memory:");
 		db.exec(readFileSync("apps/web/src/server/lib/db/schema.sql", "utf8"));
@@ -166,6 +200,41 @@ it("serializes competing controls instead of overwriting a newer run version", a
 	expect(controls.find((r) => r.status === "rejected")).toMatchObject({
 		reason: { code: "account_conflict" },
 	});
+});
+
+it("rejects a stale control without discarding a concurrent request audit", async () => {
+	const { db, raw, run } = await setup();
+	await startRun(db, run);
+	const lease = await claimRun(createDb(raw), run.id, now);
+	if (!lease) throw new Error("fixture");
+	const controlDb = createDb(raw);
+	const batch = controlDb.batch.bind(controlDb);
+	vi.spyOn(controlDb, "batch").mockImplementationOnce(async (statements) => {
+		expect(await recordRunRequest(createDb(raw), lease, now)).toBe(true);
+		return batch(statements);
+	});
+	await expect(controlRun(controlDb, snap.account_id, run.id, "pause", now)).rejects.toMatchObject({
+		code: "account_conflict",
+	});
+	expect((await getRun(createDb(raw), snap.account_id, run.id))?.run).toMatchObject({
+		status: "running",
+		requests: 1,
+	});
+	expect(await controlRun(createDb(raw), snap.account_id, run.id, "pause", now)).toMatchObject({
+		status: "paused",
+		requests: 1,
+	});
+});
+
+it("preserves a genuine control transaction error without changing the run", async () => {
+	const { db, raw, run } = await setup();
+	await startRun(db, run);
+	const controlDb = createDb(raw);
+	vi.spyOn(controlDb, "batch").mockRejectedValueOnce(new Error("fixture transaction failure"));
+	await expect(controlRun(controlDb, snap.account_id, run.id, "cancel", now)).rejects.toThrow(
+		"fixture transaction failure",
+	);
+	expect((await getRun(createDb(raw), snap.account_id, run.id))?.run.status).toBe("running");
 });
 
 it.each(["snapshot", "assessment"] as const)(

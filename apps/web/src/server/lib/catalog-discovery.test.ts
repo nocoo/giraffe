@@ -682,8 +682,7 @@ it("R7 real quick executor reuses renamed run evidence whose original observatio
 		{ scope: "selected" },
 		"quick",
 	);
-	run.cursor = run.steps.findIndex((step) => step.kind === "commits");
-	for (const step of run.steps.slice(0, run.cursor)) step.status = "success";
+	run.steps = run.steps.filter((step) => step.kind === "commits");
 	run.checkpoint = newFactory(account, "nocoo", now);
 	run.checkpoint.inventory.complete = true;
 	run.checkpoint.contributionStatus = "unavailable";
@@ -708,9 +707,12 @@ it("R7 real quick executor reuses renamed run evidence whose original observatio
 		vi.unstubAllGlobals();
 	}
 	const saved = await getRun(createDb(context.raw), account, run.id);
+	expect(saved?.run.steps).toHaveLength(1);
+	expect(saved?.run.status).toBe("completed");
 	expect(saved?.run.steps.find((step) => step.kind === "commits")?.error).toBeNull();
 	expect(saved?.run.steps.find((step) => step.kind === "commits")).toMatchObject({
 		status: "success",
+		strategy: "reused",
 	});
 	expect(saved?.run.checkpoint?.repos[0]?.coverage.commits).toMatchObject({
 		status: "complete",

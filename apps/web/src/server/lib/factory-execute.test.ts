@@ -20,6 +20,7 @@ import {
 import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
 import { consumeFactory } from "./factory-dispatch";
 import { executeRunPage } from "./factory-execute";
+import { FactoryInvocation } from "./factory-invocation";
 import { currentRepo, repositoryWrites } from "./factory-publish";
 import { readSources } from "./machine-sources";
 import { encryptToken, parseKeyBytes } from "./token-crypto";
@@ -129,6 +130,460 @@ beforeEach(() =>
 afterEach(() => {
 	vi.unstubAllGlobals();
 	vi.useRealTimers();
+});
+it("batches metadata and streams under one lease and one invocation", async () => {
+	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] });
+	await executeRunPage(env, "r1", () => now);
+	const run = (await getRun(createDb(env.DB), snap.account_id, "r1"))?.run;
+	expect(run?.invocations).toBe(1);
+	expect(run?.steps.filter((step) => step.status === "success").length).toBeGreaterThan(2);
+	expect(run?.requests).toBeGreaterThan(2);
+});
+
+it("collects stream pages in one invocation without increasing attempts", async () => {
+	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] });
+	const base = vi.mocked(fetch).getMockImplementation();
+	if (!base) throw new Error("fixture");
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async (url: string, init: RequestInit) => {
+			if (url.includes("/commits?"))
+				return Response.json([], {
+					headers: url.includes("page=2")
+						? {}
+						: { link: '<https://api.github.com/repos/nocoo/app/commits?page=2>; rel="next"' },
+				});
+			return base(url, init);
+		}),
+	);
+	await executeRunPage(env, "r1", () => now);
+	const run = (await getRun(createDb(env.DB), snap.account_id, "r1"))?.run;
+	expect(run?.steps.find((step) => step.kind === "commits")).toMatchObject({
+		status: "success",
+		attempts: 1,
+		pages: 2,
+	});
+});
+
+it("stops before another step after the wall budget without dropping the finished step", async () => {
+	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] });
+	const base = vi.mocked(fetch).getMockImplementation();
+	if (!base) throw new Error("fixture");
+	let time = now;
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async (url: string, init: RequestInit) => {
+			time = new Date(Date.parse(now) + 25_000).toISOString();
+			return base(url, init);
+		}),
+	);
+	expect(await executeRunPage(env, "r1", () => time)).toBe(time);
+	const run = (await getRun(createDb(env.DB), snap.account_id, "r1"))?.run;
+	expect(run?.cursor).toBe(1);
+	expect(run?.steps[0]).toMatchObject({
+		status: "success",
+		attempts: 1,
+		pages: 1,
+		durationMs: 25_000,
+	});
+	expect(run?.steps[1]).toMatchObject({ status: "pending", attempts: 0 });
+	expect(fetch).toHaveBeenCalledTimes(1);
+});
+
+it("renews during a long site step so cron cannot reclaim its lease", async () => {
+	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] });
+	const db = createDb(env.DB);
+	const found = await getRun(db, snap.account_id, "r1");
+	if (!found) throw new Error("fixture");
+	found.run.steps = found.run.steps.filter((step) => step.resource === "repo:nocoo/app:actions");
+	await db
+		.prepare("UPDATE factory_runs SET payload=? WHERE id='r1'")
+		.bind(JSON.stringify(found.run))
+		.run();
+	let elapsed = 0;
+	let pages = 0;
+	const time = () => new Date(Date.parse(now) + elapsed).toISOString();
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async () => {
+			pages++;
+			elapsed += 13_000;
+			expect(await claimRun(createDb(env.DB), "r1", time())).toBeNull();
+			return Response.json(
+				{ workflow_runs: [] },
+				{
+					headers:
+						pages === 8
+							? {}
+							: {
+									link: `<https://api.github.com/repos/nocoo/app/actions/runs?page=${pages + 1}>; rel="next"`,
+								},
+				},
+			);
+		}),
+	);
+	await executeRunPage(env, "r1", time);
+	const saved = (await getRun(createDb(env.DB), snap.account_id, "r1"))?.run;
+	expect(pages).toBe(8);
+	expect(saved?.steps[0]).toMatchObject({
+		status: "success",
+		pages: 8,
+		attempts: 1,
+		durationMs: 104_000,
+	});
+	expect(saved?.invocations).toBe(1);
+});
+
+it("aborts the whole unsaved batch after a mid-loop lease loss", async () => {
+	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] });
+	const base = vi.mocked(fetch).getMockImplementation();
+	if (!base) throw new Error("fixture");
+	let calls = 0;
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async (url: string, init: RequestInit) => {
+			if (++calls === 2) await controlRun(createDb(env.DB), snap.account_id, "r1", "pause", now);
+			return base(url, init);
+		}),
+	);
+	expect(await executeRunPage(env, "r1", () => now)).toBeNull();
+	const db = createDb(env.DB);
+	expect(
+		(await db.prepare("SELECT * FROM factory_resources WHERE run_id='r1'").all()).results,
+	).toEqual([]);
+	expect((await getRun(db, snap.account_id, "r1"))?.run).toMatchObject({
+		status: "paused",
+		cursor: 0,
+		requests: 2,
+	});
+	expect(calls).toBe(2);
+});
+
+it("recovers journalled attempts after a batch crashes before saving", async () => {
+	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] });
+	const db = createDb(env.DB);
+	await db
+		.prepare(
+			"CREATE TEMP TRIGGER crash_batch BEFORE UPDATE OF payload ON factory_runs BEGIN SELECT RAISE(ABORT,'fixture crash'); END",
+		)
+		.run();
+	await expect(executeRunPage(env, "r1", () => now)).rejects.toMatchObject({ code: "db_error" });
+	expect(
+		(await db.prepare("SELECT * FROM factory_resources WHERE run_id='r1'").all()).results,
+	).toEqual([]);
+	const attempted = (await getRun(db, snap.account_id, "r1"))?.run;
+	expect(attempted?.steps[0]).toMatchObject({ status: "running", attempts: 1 });
+	expect(attempted?.requests).toBe(vi.mocked(fetch).mock.calls.length);
+	await db.prepare("DROP TRIGGER crash_batch").run();
+	const later = new Date(Date.parse(now) + RUN_LEASE_MS + 1).toISOString();
+	await executeRunPage(env, "r1", () => later);
+	const recovered = (await getRun(createDb(env.DB), snap.account_id, "r1"))?.run;
+	expect(recovered?.steps[0]).toMatchObject({
+		status: "success",
+		attempts: 2,
+		retryFailures: 0,
+		pages: 1,
+	});
+	expect(recovered?.invocations).toBe(2);
+});
+
+it("saves earlier work but backs off at least fifteen minutes on a mid-loop rate limit", async () => {
+	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] });
+	vi.useFakeTimers();
+	vi.setSystemTime(now);
+	const base = vi.mocked(fetch).getMockImplementation();
+	if (!base) throw new Error("fixture");
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async (url: string, init: RequestInit) =>
+			url.includes("/issues?") ? Response.json({}, { status: 429 }) : base(url, init),
+		),
+	);
+	const next = await executeRunPage(env, "r1", () => now);
+	expect(next).toBe(new Date(Date.parse(now) + 900_000).toISOString());
+	const run = (await getRun(createDb(env.DB), snap.account_id, "r1"))?.run;
+	expect(run?.steps.find((step) => step.kind === "commits")).toMatchObject({
+		status: "success",
+		attempts: 1,
+	});
+	expect(run?.steps.find((step) => step.kind === "issues")).toMatchObject({
+		status: "pending",
+		error: "github_rate_limited",
+	});
+	expect(run?.steps.find((step) => step.kind === "issues")?.retryFailures ?? 0).toBe(0);
+	expect(run?.steps.find((step) => step.kind === "prs")).toMatchObject({
+		status: "pending",
+		attempts: 0,
+	});
+	expect(run?.invocations).toBe(1);
+});
+
+it("yields at the shared request cap and retries an unfinished site step without a failure", async () => {
+	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] });
+	const db = createDb(env.DB);
+	const found = await getRun(db, snap.account_id, "r1");
+	if (!found) throw new Error("fixture");
+	found.run.steps = ["actions", "contributors"].flatMap((resource) =>
+		found.run.steps.filter((step) => step.resource === `repo:nocoo/app:${resource}`),
+	);
+	await db
+		.prepare("UPDATE factory_runs SET payload=? WHERE id='r1'")
+		.bind(JSON.stringify(found.run))
+		.run();
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async (url: string) => {
+			const target = new URL(url);
+			const page = Number(target.searchParams.get("page") ?? 1);
+			const actions = target.pathname.endsWith("actions/runs");
+			return Response.json(actions ? { workflow_runs: [] } : [], {
+				headers:
+					page === (actions ? 20 : 30)
+						? {}
+						: { link: `<https://api.github.com${target.pathname}?page=${page + 1}>; rel="next"` },
+			});
+		}),
+	);
+	await executeRunPage(env, "r1", () => now);
+	const pending = (await getRun(createDb(env.DB), snap.account_id, "r1"))?.run;
+	expect(fetch).toHaveBeenCalledTimes(40);
+	expect(pending?.requests).toBe(40);
+	expect(pending?.steps[0]).toMatchObject({ status: "success", pages: 20 });
+	expect(pending?.steps[1]).toMatchObject({
+		status: "pending",
+		attempts: 1,
+		pages: 0,
+		error: null,
+	});
+	await executeRunPage(env, "r1", () => now);
+	const saved = (await getRun(createDb(env.DB), snap.account_id, "r1"))?.run;
+	expect(saved?.steps[1]).toMatchObject({
+		status: "success",
+		attempts: 1,
+		pages: 30,
+		retryFailures: 0,
+	});
+	expect(saved?.requests).toBe(70);
+	expect(saved?.invocations).toBe(2);
+});
+
+it("uses fewer than half as many invocations as the selected-repository step plan", async () => {
+	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] });
+	const run = await drive(env);
+	expect(run?.status).toBe("completed");
+	expect(run?.steps).toHaveLength(19);
+	expect(run?.invocations).toBe(5);
+});
+
+it("batches a 60-repository daily plan without changing its 1146 logical steps", async () => {
+	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] }, true);
+	const repos = Array.from({ length: 60 }, (_, index) => ({
+		...structuredClone(snap.repos[0]),
+		id: `R_${index}`,
+		name: `nocoo/app-${index}`,
+	})) as typeof snap.repos;
+	const db = createDb(env.DB);
+	const original = (await getRun(db, snap.account_id, "r1"))?.run;
+	if (!original) throw new Error("fixture");
+	const run = {
+		...makeRun(
+			"r1",
+			snap.account_id,
+			"nocoo",
+			"k1",
+			"refresh",
+			repos,
+			now,
+			[],
+			repos.map((repo) => repo.name),
+			{ scope: "selected" },
+			"quick",
+			true,
+		),
+		trigger: "daily",
+		activityWindow: original.activityWindow,
+	};
+	await db
+		.prepare("UPDATE factory_runs SET payload=? WHERE id='r1'")
+		.bind(JSON.stringify(run))
+		.run();
+	await db.batch(
+		await replaceSnapshotStmts(db, snap.account_id, "factory", { ...snap, repos }, now),
+	);
+	await db.batch(
+		await replaceSnapshotStmts(
+			db,
+			snap.account_id,
+			"repos",
+			{ repos: repos.map((repo) => ({ name_with_owner: repo.name })) },
+			now,
+		),
+	);
+	const base = vi.mocked(fetch).getMockImplementation();
+	if (!base) throw new Error("fixture");
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async (url: string, init: RequestInit) => {
+			const query = String(init?.body ?? "");
+			if (query.includes("day0:"))
+				return Response.json({
+					data: {
+						user: Object.fromEntries(
+							Array.from({ length: 15 }, (_, index) => [
+								`day${index}`,
+								{
+									totalCommitContributions: 0,
+									totalIssueContributions: 0,
+									totalPullRequestContributions: 0,
+									totalPullRequestReviewContributions: 0,
+									totalRepositoryContributions: 0,
+									restrictedContributionsCount: 0,
+								},
+							]),
+						),
+					},
+				});
+			if (query.includes("contributionsCollection"))
+				return Response.json({
+					data: {
+						user: {
+							contributionsCollection: {
+								restrictedContributionsCount: 0,
+								contributionCalendar: {
+									totalContributions: 0,
+									weeks: [
+										{
+											contributionDays: Array.from({ length: 90 }, (_, index) => ({
+												date: new Date(Date.parse(run.window.since) + index * 86400_000)
+													.toISOString()
+													.slice(0, 10),
+												contributionCount: 0,
+											})),
+										},
+									],
+								},
+							},
+						},
+					},
+				});
+			if (query.includes("affiliations:[OWNER, COLLABORATOR"))
+				return Response.json({
+					data: {
+						viewer: {
+							repositories: {
+								nodes: repos.map((repo) => ({ ...rawRepo, id: repo.id, nameWithOwner: repo.name })),
+								pageInfo: { hasNextPage: false },
+							},
+						},
+					},
+				});
+			if (query.includes("openPrs:")) {
+				const name = String(JSON.parse(query).variables.name);
+				const repo = repos.find((repo) => repo.name === `nocoo/${name}`);
+				if (!repo) throw new Error("unexpected repository");
+				return Response.json({
+					data: { repository: { ...rawRepo, id: repo.id, nameWithOwner: repo.name } },
+				});
+			}
+			return base(url, init);
+		}),
+	);
+	for (let invocation = 0; invocation < 600; invocation++) {
+		const saved = (await getRun(createDb(env.DB), snap.account_id, "r1"))?.run;
+		if (!saved) throw new Error("fixture");
+		if (saved.status !== "running") {
+			expect(saved.steps).toHaveLength(1146);
+			expect(
+				saved.status,
+				JSON.stringify(saved.steps.filter((step) => step.status === "failed")),
+			).toBe("completed");
+			expect(saved.invocations).toBe(320);
+			expect(saved.requests).toBe(1270);
+			expect(saved.publishedAt).toBe(now);
+			return;
+		}
+		await executeRunPage(env, "r1", () => saved.nextAttemptAt);
+	}
+	throw new Error("daily simulation did not finish");
+}, 30_000);
+
+it("retains completed durations on crash replay and never counts uncommitted stream pages", async () => {
+	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] });
+	const db = createDb(env.DB);
+	const found = await getRun(db, snap.account_id, "r1");
+	if (!found) throw new Error("fixture");
+	found.run.steps = found.run.steps.filter((step) => ["metadata", "commits"].includes(step.kind));
+	await db
+		.prepare("UPDATE factory_runs SET payload=? WHERE id='r1'")
+		.bind(JSON.stringify(found.run))
+		.run();
+	const base = vi.mocked(fetch).getMockImplementation();
+	if (!base) throw new Error("fixture");
+	let elapsed = 0;
+	const time = () => new Date(Date.parse(now) + elapsed).toISOString();
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async (url: string, init: RequestInit) => {
+			elapsed += 1000;
+			if (url.includes("/commits?"))
+				return Response.json([], {
+					headers: url.includes("page=2")
+						? {}
+						: { link: '<https://api.github.com/repos/nocoo/app/commits?page=2>; rel="next"' },
+				});
+			return base(url, init);
+		}),
+	);
+	await db
+		.prepare(
+			"CREATE TEMP TRIGGER crash_batch BEFORE UPDATE OF payload ON factory_runs BEGIN SELECT RAISE(ABORT,'fixture crash'); END",
+		)
+		.run();
+	await expect(executeRunPage(env, "r1", time)).rejects.toMatchObject({ code: "db_error" });
+	const interrupted = (await getRun(db, snap.account_id, "r1"))?.run;
+	expect(interrupted?.steps[0]?.durationMs).toBe(1000);
+	expect(interrupted?.steps[1]).toMatchObject({ durationMs: 2000, pages: 0 });
+	expect(interrupted?.requests).toBe(3);
+	await db.prepare("DROP TRIGGER crash_batch").run();
+	elapsed += RUN_LEASE_MS;
+	await executeRunPage(env, "r1", time);
+	const recovered = (await getRun(createDb(env.DB), snap.account_id, "r1"))?.run;
+	expect(recovered?.steps[0]).toMatchObject({ durationMs: 2000, attempts: 2, pages: 1 });
+	expect(recovered?.steps[1]).toMatchObject({ durationMs: 4000, attempts: 2, pages: 2 });
+	expect(recovered?.requests).toBe(6);
+});
+
+it("bounds repeated crashed attempts even when each unsaved attempt otherwise succeeds", async () => {
+	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] });
+	const db = createDb(env.DB);
+	const found = await getRun(db, snap.account_id, "r1");
+	if (!found) throw new Error("fixture");
+	found.run.steps = found.run.steps.filter((step) => step.kind === "metadata");
+	await db
+		.prepare("UPDATE factory_runs SET payload=? WHERE id='r1'")
+		.bind(JSON.stringify(found.run))
+		.run();
+	await db
+		.prepare(
+			"CREATE TEMP TRIGGER crash_batch BEFORE UPDATE OF payload ON factory_runs BEGIN SELECT RAISE(ABORT,'fixture crash'); END",
+		)
+		.run();
+	let elapsed = 0;
+	const time = () => new Date(Date.parse(now) + elapsed).toISOString();
+	for (let attempt = 0; attempt < 4; attempt++) {
+		await expect(executeRunPage(env, "r1", time)).rejects.toMatchObject({ code: "db_error" });
+		elapsed += RUN_LEASE_MS + 1;
+	}
+	await db.prepare("DROP TRIGGER crash_batch").run();
+	await executeRunPage(env, "r1", time);
+	expect(fetch).toHaveBeenCalledTimes(4);
+	const saved = (await getRun(createDb(env.DB), snap.account_id, "r1"))?.run;
+	expect(saved?.steps[0]).toMatchObject({
+		status: "failed",
+		error: "worker_interrupted",
+		retryFailures: 4,
+	});
+	expect(saved?.status).toBe("partial");
 });
 it("finishes expected unavailable streams without a partial publication", async () => {
 	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] });
@@ -1065,12 +1520,12 @@ it("R4 eligible daily executor freezes supplemental activity and publishes a rea
 	await executeRunPage(env, "r1", () => now);
 	const pending = (await getRun(createDb(env.DB), snap.account_id, "r1"))?.run;
 	expect(pending?.publishedAt).toBeNull();
-	expect(pending?.steps[pending.cursor]).toMatchObject({
+	expect(pending?.steps.find((step) => step.kind === "contributions")).toMatchObject({
 		kind: "contributions",
-		status: "running",
-		pages: 1,
+		status: "success",
+		pages: 7,
 	});
-	expect(pending?.checkpoint?.contributionStatus).toBe("pending");
+	expect(pending?.checkpoint?.contributionStatus).toBe("complete");
 	expect((await publishedFactory(createDb(env.DB), snap.account_id))?.runId).toBe(snap.runId);
 	const run = await drive(env);
 	expect(run?.status).toBe("completed");
@@ -1293,12 +1748,38 @@ async function drive(env: Env, start = now) {
 }
 
 async function beforeMetadata(env: Env) {
-	for (let i = 0; i < 20; i++) {
-		const found = await getRun(createDb(env.DB), snap.account_id, "r1");
-		if (found?.run.steps[found.run.cursor]?.kind === "metadata") return;
-		await executeRunPage(env, "r1", () => now);
+	const canStart = FactoryInvocation.prototype.canStart;
+	const boundary = vi.spyOn(FactoryInvocation.prototype, "canStart").mockImplementation(function (
+		this: FactoryInvocation,
+		step,
+	) {
+		return step.kind !== "metadata" && canStart.call(this, step);
+	});
+	try {
+		for (let index = 0; index < 20; index++) {
+			const found = await getRun(createDb(env.DB), snap.account_id, "r1");
+			if (found?.run.steps[found.run.cursor]?.kind === "metadata") return;
+			await executeRunPage(env, "r1", () => now);
+		}
+		throw new Error("metadata step not reached");
+	} finally {
+		boundary.mockRestore();
 	}
-	throw new Error("metadata step not reached");
+}
+
+async function executeMetadata(env: Env) {
+	const canStart = FactoryInvocation.prototype.canStart;
+	const boundary = vi.spyOn(FactoryInvocation.prototype, "canStart").mockImplementation(function (
+		this: FactoryInvocation,
+		step,
+	) {
+		return step.kind === "metadata" && canStart.call(this, step);
+	});
+	try {
+		await executeRunPage(env, "r1", () => now);
+	} finally {
+		boundary.mockRestore();
+	}
 }
 
 it.each([false, true])(
@@ -1733,7 +2214,7 @@ it("fences a page that completes after pause, then resumes from the last committ
 	await controlRun(createDb(env.DB), snap.account_id, "r1", "pause", now);
 	release(Response.json({ data: { user: null } }));
 	expect(await running).toBeNull();
-	expect((await getRun(createDb(env.DB), snap.account_id, "r1"))?.run.requests).toBe(0);
+	expect((await getRun(createDb(env.DB), snap.account_id, "r1"))?.run.requests).toBe(1);
 });
 
 it("records unavailable coverage, metadata limits, catalog failure and malformed checkpoints honestly", async () => {
@@ -1830,7 +2311,7 @@ it("rechecks repository cooldown at execution after a competing run commits duri
 		)
 		.run();
 	const calls = vi.mocked(fetch).mock.calls.length;
-	await executeRunPage(env, "r1", () => now);
+	await executeMetadata(env);
 	expect(fetch).toHaveBeenCalledTimes(calls);
 	const run = (await getRun(createDb(env.DB), snap.account_id, "r1"))?.run;
 	expect(run?.steps.filter((s) => s.status === "skipped")).toHaveLength(9);
@@ -1903,7 +2384,7 @@ it("aborts before GitHub when a control invalidates the lease between claim and 
 	const env = await setup();
 	const prepare = env.DB.prepare.bind(env.DB);
 	env.DB.prepare = (sql: string) => {
-		if (sql.startsWith("UPDATE factory_runs SET payload=? WHERE id=?"))
+		if (sql.startsWith("UPDATE factory_run_journal SET journal=json_patch"))
 			void prepare(
 				"UPDATE factory_runs SET status='paused',lease_token=NULL,payload=json_set(payload,'$.status','paused') WHERE id='r1'",
 			).run();
@@ -1941,7 +2422,7 @@ it("keeps interrupted repository cooldown while allowing the same frozen run to 
 	const env = await setup();
 	const { controlRun, repoStates } = await import("./db/factory-runs");
 	await beforeMetadata(env);
-	await executeRunPage(env, "r1", () => now);
+	await executeMetadata(env);
 	await controlRun(createDb(env.DB), snap.account_id, "r1", "pause", now);
 	expect((await repoStates(createDb(env.DB), snap.account_id))[0]).toMatchObject({
 		attemptRunId: "r1",
@@ -1967,7 +2448,7 @@ it("does not shorten an existing repository cooldown on repeated pause/cancel co
 	const env = await setup();
 	const { controlRun, repoStates } = await import("./db/factory-runs");
 	await beforeMetadata(env);
-	await executeRunPage(env, "r1", () => now);
+	await executeMetadata(env);
 	await controlRun(createDb(env.DB), snap.account_id, "r1", "pause", now);
 	await createDb(env.DB)
 		.prepare(

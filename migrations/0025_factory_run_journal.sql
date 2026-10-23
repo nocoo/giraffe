@@ -1,0 +1,5 @@
+CREATE TABLE IF NOT EXISTS factory_run_journal (
+ run_id TEXT PRIMARY KEY REFERENCES factory_runs(id) ON DELETE CASCADE,
+ invocations INTEGER NOT NULL DEFAULT 0,
+ journal TEXT NOT NULL DEFAULT '{}'
+);

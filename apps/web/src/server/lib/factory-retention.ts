@@ -7,6 +7,7 @@ export function factoryStorageStatement(db: Db, account: string): D1PreparedStat
  COALESCE((SELECT bytes FROM factory_budget WHERE account_id=?),0) + (SELECT COALESCE(SUM(bytes),0) FROM (
 		SELECT length(CAST(payload AS BLOB)) AS bytes FROM snapshots WHERE account_id=? AND kind NOT LIKE 'factory%'
 		UNION ALL SELECT length(CAST(payload AS BLOB)) FROM snapshot_days WHERE account_id=?
+		UNION ALL SELECT length(CAST(j.journal AS BLOB)) FROM factory_run_journal j JOIN factory_runs r ON r.id=j.run_id WHERE r.account_id=?
 		UNION ALL SELECT length(CAST(COALESCE(input,'')||COALESCE(judgment,'')||COALESCE(report,'') AS BLOB)) FROM ai_reviews WHERE account_id=?
  UNION ALL SELECT length(CAST(a.diagnostic AS BLOB)) FROM ai_review_attempts a JOIN ai_reviews r ON r.job_id=a.job_id WHERE r.account_id=?
 	))
@@ -16,6 +17,7 @@ export function factoryStorageStatement(db: Db, account: string): D1PreparedStat
 	 + (SELECT COALESCE(SUM(length(CAST(identity_key||table_name||repo||COALESCE(version,'')||payload AS BLOB))),0) FROM catalog_displaced_state WHERE account_id=?)
 	 + (SELECT COALESCE(SUM(length(CAST(history_since||COALESCE(checked_at,'')||COALESCE(source_run_id,'')||COALESCE(warning_code,'') AS BLOB))),0) FROM catalog_state WHERE account_id=?) AS totalBytes`)
 		.bind(
+			account,
 			account,
 			account,
 			account,

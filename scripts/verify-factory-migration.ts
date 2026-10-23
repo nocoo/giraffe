@@ -94,6 +94,7 @@ try {
 			db.exec(sql);
 		}
 	const required = [
+		"factory_run_journal",
 		"factory_runs",
 		"factory_state",
 		"factory_resources",

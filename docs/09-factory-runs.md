@@ -9,14 +9,122 @@
 ## 计划与执行
 
 - D1 is the source of truth. The refresh center at `/refresh` is the only collection entry point. Each run freezes its factory repositories (`repos`), detail targets (`siteRepos`), order, window and steps. New plans use the same resolved account-owned members for factory streams and detail pages: all includes owned archives and forks, daily uses starred-owned members, and selected/filter/stale/failed scopes stay within ownership. There is no statistics override, mirror exception or excluded-member detail-only lane. Previously frozen active and historical plans remain unchanged.
-- For N resolved owned repositories, a new full refresh has `18N + 8` logical steps: six site snapshots including Insights, contributions, nine factory steps and nine detail tabs per repository, and publication. A manual scoped refresh has `18N + 1` steps; one selected repository has 19. Daily scoped refresh adds repos, notifications, Insights and contributions (`18N + 5`, or 23 for one repository). Catalog discovery has four steps. Historical frozen plans can retain different factory/detail counts. New plans contain no AI checkpoints; frozen old AI stages retire without provider calls while other collection work continues.
+- For N resolved owned repositories, a deep full refresh has `18N + 8` logical steps: six site snapshots including Insights, contributions, nine factory steps and nine detail tabs per repository, and publication. A manual scoped refresh has `18N + 1` steps; one selected repository has 19. Quick full/daily refresh also adds one activity step per repository and one activity-contributions step: daily has `19N + 6`, or 1,146 steps for 60 repositories. Catalog discovery has four steps. Historical frozen plans can retain different factory/detail counts. New plans contain no AI checkpoints; frozen old AI stages retire without provider calls while other collection work continues.
 - Catalog runs retain four steps: inventory, site catalog, restore and publication. Full refresh requires complete statistics and site catalogs; non-selected scoped runs require a complete statistics catalog. A selected known repository does not require a complete site catalog. Full refresh still reports `catalog_changed` when discovery finds repositories outside its frozen site targets; synchronize the catalog explicitly before including them.
 - Dependabot REST alerts use the `after` cursor from GitHub's next Link header; the endpoint rejects numeric `page` pagination. Resume checkpoints preserve the cursor, repository and original filters. Other REST streams retain sequential page validation.
-- 每个队列消息执行一页/一个有界动作并提交，再安排下一条。全站 Issues/PRs/告警每次最多处理 10 个仓库，中间结果与 cursor 一起保存在既有 staging，全部完成后才替换列表。cron 每分钟扫描到期任务，修复 enqueue 与数据库之间不可原子的问题。队列消息只有 run ID，没有令牌或事件。
+- Each queue message claims once, executes several steps/pages within the invocation budgets below, commits once, then schedules a continuation. Site Issues/PRs/alerts retain their ten-repository chunks and staging cursors; lists become visible only at publication. The minute cron repairs missed dispatch. Queue messages contain only the run ID, never tokens or events.
 - 90 秒租约；提交事务中的每一条写入都受 run ID、lease token、版本、未过期租约和 running 状态保护。最后 CAS 更新 checkpoint 并释放租约。控制操作使旧租约失效；已在途的 GitHub 请求可能结束，但不能再写。
-- 每页心跳与 checkpoint 同时落库。崩溃最多重取未提交页；去重以事件 ID，统计只在流结束时计算。队列重复投递不会重复发布。
+- Fenced heartbeats renew independently of the final checkpoint. A crash can replay the entire unsaved invocation, not just its last page. Durable audit records retain attempted work while business data, pages and cursors roll back together. Event-ID deduplication and fenced publication prevent duplicate results.
 - 临时失败按 30/60/120 秒退避，最多 3 次重试；GitHub 限流遵循 Retry-After/reset，未知时至少 15 分钟，任务保持可恢复。401 暂停等待更新凭据。统计仓库失败只跳过后续统计步骤；页面数据失败不会阻断其他页面。权限不足、来源缺失/截断、清单变化不无效重试；保留旧快照及原时间，不伪装成功零值。
 - 账户启动冷却 60 秒；每个统计仓库尝试后冷却 15 分钟。服务器时钟决定下次允许时间；客户端仅显示倒计时。全站刷新允许统计仓库为空或都在冷却，仍更新页面数据。暂停保留唯一活动 run，取消释放活动槽并保留已提交数据；新 run 不会与旧执行者竞争。
+
+## v0.22 invocation budgets and persistence
+
+New work starts only before 25 seconds of invocation wall time, below 40 GitHub
+requests and below 36 executed D1 statements plus buffered writes. A long step may
+finish past the admission deadline. Before each GitHub request, the executor
+checks ownership, renews a lease with at most 30 seconds remaining, and yields at
+60 executed statements plus buffered writes, reserving space under the existing
+80-statement hard limit for audits and final save. Each individual fetch retains
+its 15-second timeout; leases extend by 90 seconds but never past the run deadline.
+Budget yields are not network failures. No queue, cron or deployment limit changes
+are required, and no repository/request parallelism is introduced.
+
+Stream pages share an invocation resource cache and one atomic final save. The
+loop stops before publication, activity or Insights when buffered writes must be
+visible to their readers, between repositories after detail snapshots, and after
+a global snapshot or unfinished site chunk. Failed or rate-limited collection
+can commit earlier accepted work without publishing incomplete new sources.
+Lost ownership aborts all buffered business writes. Expiry runs once per executor
+invocation, including no-claim and lost-lease paths.
+
+Migration `0025_factory_run_journal.sql` adds an account-cascaded, run-owned table
+for invocation counts and small audit JSON. Claim reads the payload once, takes a
+version-CAS lease without `RETURNING payload`, and increments `invocations`. The
+executor journals attempt/start metadata before work and completed durations
+before starting subsequent work and before final save. A fenced request counter
+is persisted immediately before each fetch; it counts attempted dispatches, even
+if cancellation or a crash prevents a result. A crash during an unfinished fetch
+cannot reconstruct elapsed time after its last checkpoint. Completed audited
+durations survive replay. Retry high-water marks survive unsaved successes, so
+repeated final-save crashes cannot reset the retry limit indefinitely. Pages,
+business status, activity contributions and cursors stay in the final transaction,
+not the audit journal. Pause/cancel materialize audits while invalidating ownership.
+Controls compare both the run version and the journal in a transaction preflight;
+a concurrent audit update returns `account_conflict` rather than dropping counters.
+
+Sparse step encoding omits only zero/null defaults for attempts, pages, duration,
+timestamps and errors. API decoding restores every required field; kind, repo,
+status and non-default audits remain stored. This avoids a per-step table join and
+preserves existing SQL progress projections, at the cost of still serializing a
+single bounded payload once per save. Large checkpoint/contribution data remains
+bounded in that payload rather than adding another persistence subsystem. The
+codec fixture reduces its default plan below 80% of the original JSON size.
+Journal bytes are included in storage telemetry and cascade with retained runs.
+Public refresh/factory shapes remain unchanged except the additive run field
+`invocations`, counting successful lease claims, including recovery invocations.
+
+Local fixture measurements (no real network latency): a 19-step selected run uses
+5 invocations; a 60-repository quick daily plan preserves all 1,146 steps and
+publishes in 320 invocations with 1,270 fixture GitHub requests. Compared with at
+least 1,146 one-step invocations, the latter removes 72% of handoffs. The observed
+production baseline of about 1,570 invocations / 1,845 requests is a different
+workload, not a paired benchmark. More pages, slow requests and D1 latency can
+raise the new count. This is not evidence of a 15–20 minute production duration;
+measure `invocations`, requests and wall duration on the next authorized scheduled
+run before making a speed claim.
+
+Tests that previously assumed one step per call now stop explicitly at metadata
+admission boundaries or follow persisted `nextAttemptAt` for retries. Metadata
+call assertions count that operation rather than unrelated later streams. Existing
+publication, retained-source, window, cooldown and terminal-status assertions remain.
+
+### Downgrade preparation
+
+Do not deploy a v0.21.x reader directly over compact v0.22 rows: missing numeric
+fields otherwise become `NaN` on old executor arithmetic. The additive table can
+remain, but payloads must be expanded before old code resumes. This is an offline
+rollback operation, not a runtime compatibility path or automatic migration.
+
+1. Under a separately authorized maintenance window, stop new manual/scheduled
+   run creation and queue/cron execution. First use v0.22 controls to pause active
+   runs or drain them to terminal state; wait for in-flight requests to settle.
+   Do not rely only on stopping the browser. Prove no running rows or leases remain
+   and no paused row has an unmaterialized journal. Take and retain a fresh export.
+2. Rehearse the following projection on a local copy of that quiescent export.
+   Record account, snapshot, resource and publication digests and preserve all
+   additive tables. Do not delete historical runs, publications or journal rows.
+3. Apply the tested projection to the quiescent database only through separately
+   authorized rollback operations; this implementation/test task never runs it on
+   remote D1. Keep all writers stopped during projection and reader replacement.
+
+```sql
+SELECT COUNT(*) FROM factory_runs
+WHERE status='running' OR lease_token IS NOT NULL OR lease_until IS NOT NULL;
+SELECT COUNT(*) FROM factory_run_journal AS journal
+JOIN factory_runs AS run ON run.id=journal.run_id
+WHERE run.status='paused' AND journal.journal<>'{}';
+-- Both preconditions must return zero before projecting any rows.
+UPDATE factory_runs SET payload=json_set(payload,'$.steps',json((
+ SELECT json_group_array(json_set(value,
+ '$.attempts',coalesce(json_extract(value,'$.attempts'),0),
+ '$.startedAt',json_extract(value,'$.startedAt'),
+ '$.finishedAt',json_extract(value,'$.finishedAt'),
+ '$.durationMs',coalesce(json_extract(value,'$.durationMs'),0),
+ '$.pages',coalesce(json_extract(value,'$.pages'),0),
+ '$.error',json_extract(value,'$.error')))
+ FROM json_each(factory_runs.payload,'$.steps'))))
+ WHERE json_type(payload,'$.steps')='array';
+```
+
+4. Verify all expanded step fields exist, numeric audits remain finite, row counts
+   and unrelated digests match, and old `JSON.parse` readers can read every run.
+   `factory-run-codec.test.ts` executes this SQLite projection twice, preserves
+   non-default audits and verifies old-reader increment arithmetic. Run migration
+   verification and old-version local suites against the backup before deploying
+   that reader, then restore scheduling/dispatch and resume paused runs. Retain the
+   export until the rollback is accepted. Journal-only invocation telemetry is
+   retained in the additive table even though old code does not update it.
 
 ## 数据发布与兼容
 
@@ -28,7 +136,7 @@
 
 Ordinary pages reuse `prepareRefresh` and the existing snapshot format. New full-site plans refresh the catalog, Issues, PRs, alerts, notifications and Insights before repository statistics. Insights is an explicit local derivation step: this run's catalog and Issues must succeed; optional alerts and notifications never block it. Plans with explicit Insights do not derive it as a side effect of other page writes. Existing frozen plans retain their implicit derivation.
 
-Each page commits its staging data independently with the run cursor in a fenced batch, leaving prior visible snapshots unchanged. For new runs, final publication atomically promotes the accepted staged pages, activity and source heads together with `publishedAt` in one fenced transaction. Completed or partial runs can publish; retained or untouched sources keep their original run and timestamps. Resumed pre-upgrade runs may already have exposed independent page writes, so they keep `publishedAt: null` and do not claim this cross-page atomicity guarantee. Cancellation fencing prevents stale writes. Separate reader requests can still straddle a later publication; pin a run ID when reading immutable history.
+Each invocation commits its staged pages together with the run cursor in a fenced batch, leaving prior visible snapshots unchanged. For new runs, final publication atomically promotes the accepted staged pages, activity and source heads together with `publishedAt` in one fenced transaction. Completed or partial runs can publish; retained or untouched sources keep their original run and timestamps. Resumed pre-upgrade runs may already have exposed independent page writes, so they keep `publishedAt: null` and do not claim this cross-page atomicity guarantee. Cancellation fencing prevents stale writes. Separate reader requests can still straddle a later publication; pin a run ID when reading immutable history.
 
 The browser uses only the refresh console; it does not call the existing `POST /api/refresh` endpoint. The scheduling schema is described below.
 
@@ -78,9 +186,9 @@ Grok、Pi 的第一轮架构审查均指出体积、fencing、publication 映射
 
 ## 发布审查后的边界
 
-启动 run 与账户冷却在同一个 D1 batch 内完成。claim 只取得租约；执行器先归一化 cursor，再 fenced 保存实际阶段/开始时间，之后才发 GitHub 请求，不能把已完成步骤复活。凭据暂停不消耗网络重试预算；每页网络错误独立最多重试 3 次，实际 attempts/requests 继续如实计数。
+Starting a run and account cooldown remains one D1 batch. Claim acquires the lease and increments invocation telemetry without rewriting the payload. The executor normalizes the cursor and journals attempt/start audits before GitHub, never reviving completed steps. Credential pauses consume no network retry budget; each page retains at most three transient retries and honest attempts/requests.
 
-队列最多并行 2 个消费者；每账号唯一 run 与租约仍使同一令牌串行执行。单页执行后把下一页送入队尾，不让单个账号一次投递整仓队列。
+Queue concurrency remains unchanged at two consumers; the unique active run and lease keep each account serial. After a bounded batch, continuation returns to the queue tail rather than enqueueing the entire repository plan.
 
 API 的 `repos` 只表示 selected 成员；`order` 是独立的优先级顺序。filter 的 language/topic/query/repo 由服务端解析，run.selection 保存原条件，run.repos/repoIds 固定解析结果。stale/failed 明确覆盖全清单，不偷偷叠加页面筛选。表格末列「数据时间」打开对话框，按需展示 metadataAt、活动窗口、快照时间和旧资源来源，完整时间明确本地时区，距今逐秒更新；混合快照不显示统一的 90 天调查窗口，也不计算统一同比趋势。
 
