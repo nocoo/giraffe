@@ -100,6 +100,17 @@ deadline for delayed redelivery instead of silently dropping the message.
 Queue 10250/429 sends retry after 0.5/1/2 seconds, recomputing delay against the
 original target; exhausted sends remain observable and cron remains a fallback.
 
+A platform cancellation does not run catch/release or request an explicit retry.
+Only already accepted atomic checkpoints survive; each pool lane has at most one
+unfinished step. The remaining lease is at most 40 seconds after cancellation.
+A prompt duplicate delivery schedules against that expiry (less than one second
+of queue-delay rounding). With no redelivery, healthy minute-cron recovery takes
+less than 40 + 60 = 100 seconds to enqueue eligible work in the worst phase,
+plus queue delivery and execution latency. It cannot promise sub-90-second
+cron-only recovery without changing scheduling configuration. Queue overload or
+platform delivery delays prevent a hard production wall-time ceiling. Leases
+created by an older deployed version retain their stored expiry.
+
 Migration `0025_factory_run_journal.sql` adds an account-cascaded, run-owned table
 for invocation counts and small audit JSON. Claim reads the payload once, takes a
 version-CAS lease without `RETURNING payload`, and increments `invocations`. The
@@ -187,6 +198,18 @@ step per repository and complete publication. A separate test holds all four
 commit requests across the actual 40-second lease expiry, lets a replacement
 invocation finish, and rejects every late result from the former lease. Rate-limit,
 shared snapshot projection and budget-admission tests cover cross-lane state.
+
+The `22a88190` ellie incident (October 23, 2026, steps 826–828) also has a
+snapshot-specific regression. Four real SQLite-backed pool lanes accept consecutive
+details/actions snapshots and a traffic-view replay page before all clone fetches
+are suspended. The old consumer remains suspended without catch/release, ack or
+retry until the replacement publishes. Real dispatch/claim code rejects an early
+takeover, preserves accepted payloads and audits, retries only the unfinished
+traffic step per lane, and never refetches an accepted view page. A delayed
+redelivery resumes at 40.001 seconds; the deliberately worst-phase cron resumes
+at 99.999 seconds. Late responses are released only for fixture cleanup after
+publication and cannot change the final run. These are deterministic scheduling
+bounds with immediate queue delivery, not a simulation of Cloudflare's scheduler.
 
 Tests that previously assumed one step per call now stop explicitly at metadata
 admission boundaries or follow persisted `nextAttemptAt` for retries. Metadata
