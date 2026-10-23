@@ -5,7 +5,7 @@ import { snapshotFreshness } from "../../lib/snapshot-freshness";
 import type { CatalogRow } from "./catalog-history";
 import { catalogRowIdentity, identifyCatalogRow } from "./catalog-identity";
 import { catalogFactoryRepo, catalogView } from "./catalog-read";
-import { composeContent, storedContent, withContent } from "./content-version";
+import { composeContent, snapshotContentInput, withContent } from "./content-version";
 import { getAccount } from "./db/accounts";
 import type { Db } from "./db/d1";
 import { readSnapshot } from "./db/snapshots";
@@ -106,10 +106,6 @@ function complete(snapshot: Record<string, unknown> | null) {
 	);
 }
 
-function contentInput(snapshot: Record<string, unknown> | null) {
-	return snapshot ? (storedContent(snapshot)?.hash ?? null) : "missing";
-}
-
 async function repositoryPages(db: Db, account: string, suffix: string) {
 	const rows = await db
 		.prepare(
@@ -191,8 +187,8 @@ async function projectList(
 	const completeRepos = new Set<string>();
 	const securitySources: (SecurityFeatures | undefined)[] = [];
 	const contentInputs: Record<string, string | null> = {
-		catalog: contentInput(policy.catalog),
-		[kind]: contentInput(snapshot),
+		catalog: await snapshotContentInput(policy.catalog),
+		[kind]: await snapshotContentInput(snapshot),
 	};
 	for (const [lower, name] of names) {
 		let source = snapshot;
@@ -217,7 +213,7 @@ async function projectList(
 			at = pageAt;
 			covered = true;
 			source = page ?? null;
-			contentInputs[`repo:${lower}:${suffix}`] = contentInput(page ?? null);
+			contentInputs[`repo:${lower}:${suffix}`] = await snapshotContentInput(page);
 			replacements.set(
 				lower,
 				snapshotItems(page ?? null, key).map((row) => ({ ...row, name_with_owner: name })),

@@ -173,7 +173,10 @@ publication identity does not replace repository observation identity.
 `sourceVersion` (index `version`) is opaque; compare its full value. Prefer the
 full `contentVersion` for unchanged-content checks. Hashes describe saved content
 and semantic coverage/windows, not collection time; they are not ETags.
-`contentVersion` can be null when saved metadata or an input hash is absent.
+Raw/immutable `contentVersion` can be null when saved metadata is absent.
+Account list and CI projections use a deterministic `unhashed:<full-version>`
+input for saved legacy dependencies instead of nulling the whole composition;
+these inputs remain sensitive to collection-time changes until refreshed.
 GET never repairs hashes. See the [exact hash recipe](../../docs/api.md#content-version-recipe).
 New staged site `sourceVersion` values bind the staged digest to publication
 identity/time; compare them with `/sources.version`, never hash response JSON to

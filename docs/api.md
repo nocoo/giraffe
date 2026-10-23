@@ -338,8 +338,14 @@ api -G "$API/sources" --data-urlencode 'since=2026-10-18T16:00:00+08:00' \
 ```
 
 Each source has all eight fields shown. `contentVersion` is nullable: rows saved
-before content metadata was introduced have no stored hash, and a projection with
-an unhashed input also returns null. Factory streams require stored metadata for
+before content metadata was introduced have no stored hash. Account list
+projections (including issues/PRs/repos) and CI compose deterministic hashes even
+with legacy inputs: each saved input uses its content hash, or `unhashed:` plus
+its full stored version (computed from the frozen saved JSON when absent).
+Absent snapshots use the distinct `missing` marker. Thus an unstarred, archived
+or fork repository's legacy page cannot null the entire account hash. Legacy
+inputs remain sensitive to full-version changes, including collection time,
+until an ordinary refresh saves their content metadata. Factory streams require stored metadata for
 the advertised immutable version; missing/mismatched metadata returns null while
 the existing version/coverage remains. Null is not a content proof: fall back to
 full-version equality. Hashes fill in after the source's next ordinary refresh;
@@ -522,8 +528,9 @@ snapshots instead use the publication-bound composite rule below; do not derive
 their full version by hashing response JSON alone. Account projections still
 derive full versions from their projected JSON. Factory/publication/stream/calendar
 versions instead use their original run IDs. The additive, nullable
-`contentVersion` is computed when evidence is saved, not by decoding and hashing
-stream payloads on GET. It is not an ETag; `/sources` ETags still describe the full
+`contentVersion` uses saved hashes and read-time account compositions; legacy
+account inputs use the full-version marker described above. Factory stream
+payloads are never decoded and hashed on GET. It is not an ETag; `/sources` ETags still describe the full
 response, so refresh metadata can change an ETag while content versions stay equal.
 
 The exact recipe in [content-version.ts](../apps/web/src/server/lib/content-version.ts):
