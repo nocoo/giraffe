@@ -69,6 +69,13 @@ codec fixture reduces its default plan below 80% of the original JSON size.
 Journal bytes are included in storage telemetry and cascade with retained runs.
 Public refresh/factory shapes remain unchanged except the additive run field
 `invocations`, counting successful lease claims, including recovery invocations.
+The field is omitted when no positive count exists, including runs predating
+v0.22.0 unless a later recovery starts recording claims. Missing is not measured
+zero. Compare positive counts with executed steps/pages, `requests` and measured
+`finishedAt - startedAt` for matching execution kind, depth, scope and workload;
+wall time per claim includes scheduling/backoff and is not Worker CPU time.
+The machine `/refresh-runs` list exposes this optional field; its separate compact
+`/refresh-runs/latest` summary does not. See the [consumer measurement contract](api.md#get-refresh-runs).
 
 Local fixture measurements (no real network latency): a 19-step selected run uses
 5 invocations; a 60-repository quick daily plan preserves all 1,146 steps and

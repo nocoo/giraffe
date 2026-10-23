@@ -1889,6 +1889,26 @@ non-active runs have `steps:[]`, not full history. Every row includes
 `counts:{total,success,failed,unavailable,limited,skipped}` computed from the stored steps,
 including compact history. No browser progress/lease summary is added.
 
+Optional `invocations:number` counts successful execution lease claims, including
+recovery claims after a crash or expired lease. It counts acquired leases, not
+successful runs, executed steps, GitHub requests or rejected claim attempts. A
+single lease can process multiple steps/pages. Runs predating v0.22.0 normally
+omit the field; a later recovery under v0.22.0 or newer can begin recording it.
+Zero claims also omit the field. Missing is not measured zero, so exclude missing
+counts from invocation-based comparisons rather than substituting `0`.
+
+For speed measurements, record `invocations`, `requests`, executed step/page
+counts and `finishedAt - startedAt` for comparable completed/partial runs with
+the same execution kind, depth, scope and workload. Executed steps divided by
+positive `invocations` measures batching; wall duration divided by positive
+`invocations` measures effective time per claim, including queue/backoff overhead,
+not isolated Worker execution time. Compare wall duration and request volume
+alongside batching: fewer invocations alone does not prove a faster run. Recovery,
+pagination, retention and upstream latency can change the ratios. Active-run
+counts are provisional; do not substitute ETA for a measured finish time.
+`GET /refresh-runs/latest` is a separate compact summary and does not include
+`invocations`; use the matching `id` in this list for the count.
+
 Every run also includes `expectedFinishAt:string|null` and
 `expectedFinishAtReason:string|null`. Calibration selects the latest five valid
 completed or partial runs for the account and execution kind (`catalog`, `quick`,
@@ -1927,7 +1947,7 @@ history estimate remains null rather than borrowing another execution kind.
 Run fields: `id`, `account_id`, `owner`, `requestKey`, `mode`, `repos`, `repoIds`,
 `window:{since,until}`, `steps`, `cursor`, `status`, `startedAt`, `updatedAt`,
 `finishedAt`, `nextAttemptAt`, `requests`, `version`, `restoreCursor`, plus optional
-`selection`, `depth`, `trigger`, `schedule`, `siteRepos`, `deadlineAt`, `error`,
+`invocations`, `selection`, `depth`, `trigger`, `schedule`, `siteRepos`, `deadlineAt`, `error`,
 `missedSlots:{firstDueAt,lastDueAt,count}`. Status is
 `running|paused|completed|partial|cancelled|failed`. Steps carry `kind`, `repo`,
 `status`, `attempts`, `startedAt`, `finishedAt`, `durationMs`, `pages`, `error`, and
