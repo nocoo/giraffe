@@ -92,6 +92,19 @@ it.each(legacy.cases)(
 			return JSON.parse(row.payload) as FactoryStreamData;
 		};
 		const paths: string[] = [];
+		if (!accepted.next) throw new Error("missing legacy cursor");
+		const thirdPage = new URL(accepted.next, "https://api.github.com");
+		thirdPage.searchParams.set("page", "3");
+		const expectedPaths = [
+			accepted.next,
+			`${thirdPage.pathname}${thirdPage.search}`,
+			...accepted.ranges.map(
+				(range) =>
+					`/repos/nocoo/app/actions/runs?created=${range.since}..${range.until}&per_page=100&page=1`,
+			),
+		];
+		const filteredPaths: string[] = [];
+		const runs = [{ ...rawEvent(101), created_at: accepted.items[0]?.at ?? now }];
 		vi.stubGlobal(
 			"fetch",
 			vi.fn(async (input: string, init?: RequestInit) => {
@@ -101,12 +114,31 @@ it.each(legacy.cases)(
 					const current = Number(url.searchParams.get("page") ?? 1);
 					const filtered = url.searchParams.has("created");
 					const next = filtered ? (current === 2 ? 3 : null) : current === 1 ? 2 : null;
-					const id = filtered ? (current === 1 ? 104 : current + 100) : current + 200;
+					if (filtered) {
+						const path = `${url.pathname}${url.search}`;
+						expect(path).toBe(expectedPaths[filteredPaths.length]);
+						filteredPaths.push(path);
+						const [since, until] = String(url.searchParams.get("created")).split("..");
+						if (!since || !until) throw new Error("missing filtered range");
+						const createdAt = Date.parse(since) + current * 60_000;
+						expect(createdAt).toBeLessThan(Date.parse(until));
+						runs.push({
+							...rawEvent(101 + filteredPaths.length),
+							created_at: new Date(createdAt).toISOString(),
+						});
+					}
 					url.host = "api.github.com";
 					url.protocol = "https:";
 					if (next) url.searchParams.set("page", String(next));
 					return Response.json(
-						{ total_count: 2, workflow_runs: [rawEvent(id)] },
+						{
+							total_count: filtered ? (current === 1 ? 1 : 3) : runs.length,
+							workflow_runs: filtered
+								? runs.slice(-1)
+								: current === 1
+									? runs.slice(0, 1)
+									: runs.slice(1),
+						},
 						{ headers: next ? { link: `<${url}>; rel="next"` } : {} },
 					);
 				}
@@ -169,6 +201,7 @@ it.each(legacy.cases)(
 				: ["N_101", "N_102", "N_103"],
 		);
 		expect(completed.ranges).toEqual([]);
+		expect(filteredPaths).toEqual(expectedPaths);
 		expect(run?.requests).toBe(initial.requests + paths.length);
 		expect(
 			(await publishedFactory(createDb(env.DB), initial.account_id))?.repos[0]?.coverage.actions,

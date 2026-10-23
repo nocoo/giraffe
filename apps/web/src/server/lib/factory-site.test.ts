@@ -367,18 +367,39 @@ it.each(legacySite.cases)(
 				calls.push(`${body.variables.o}/${body.variables.n}`);
 				return Response.json({
 					data: {
-						repository: { vulnerabilityAlerts: { nodes: [], pageInfo: { hasNextPage: false } } },
+						repository: {
+							vulnerabilityAlerts: {
+								nodes: [
+									{
+										id: body.variables.n,
+										securityAdvisory: { summary: "New dependency" },
+										securityVulnerability: { severity: "HIGH" },
+									},
+								],
+								pageInfo: { hasNextPage: false },
+							},
+						},
 					},
 				});
 			}
-			calls.push(
-				...String(body.variables.q)
-					.split(" ")
-					.filter((part) => part.startsWith("repo:"))
-					.map((part) => part.slice(5)),
-			);
+			const group = String(body.variables.q)
+				.split(" ")
+				.filter((part) => part.startsWith("repo:"))
+				.map((part) => part.slice(5));
+			calls.push(...group);
 			return Response.json({
-				data: { search: { issueCount: 0, nodes: [], pageInfo: { hasNextPage: false } } },
+				data: {
+					search: {
+						issueCount: group.length,
+						nodes: group.map((name) => ({
+							__typename: entry.resource === "prs" ? "PullRequest" : "Issue",
+							number: 1,
+							title: name,
+							repository: { nameWithOwner: name },
+						})),
+						pageInfo: { hasNextPage: false },
+					},
+				},
 			});
 		});
 		expect(result).toMatchObject({ done: true, cursor: entry.names.length });
@@ -386,7 +407,11 @@ it.each(legacySite.cases)(
 		const saved = await readSnapshot(createDb(raw), "account", entry.resource, "site");
 		const key =
 			entry.resource === "issues" ? "issues" : entry.resource === "prs" ? "pull_requests" : "items";
-		expect(saved?.[key]).toEqual((entry.payload as Record<string, unknown>)[key]);
+		const rows = saved?.[key] as { name_with_owner: string }[];
+		expect(rows.slice(0, entry.cursor)).toEqual((entry.payload as Record<string, unknown>)[key]);
+		expect(rows.map((row) => row.name_with_owner)).toEqual(entry.names);
+		if (entry.resource === "alerts")
+			expect(saved).toMatchObject({ dependabot_open: entry.names.length, code_scanning_open: 0 });
 		expect(saved?.truncated).toBe(false);
 		expect(await readSnapshot(createDb(raw), "account", entry.resource)).toBeNull();
 	},
