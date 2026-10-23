@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import type { CiReport, CiRun } from "../../apps/web/src/lib/ci-health";
@@ -9,6 +8,7 @@ import type {
 } from "../../apps/web/src/lib/factory-types";
 import type { SnapshotFreshness } from "../../apps/web/src/lib/snapshot-freshness";
 import { savedContentMeta } from "../../apps/web/src/server/lib/content-version";
+import { executeD1FixtureSync } from "../fixtures/d1";
 import { factoryFixture } from "../fixtures/factory-snapshot";
 
 const base = process.env.GIRAFFE_E2E ?? "http://127.0.0.1:17045";
@@ -58,21 +58,7 @@ function sql(command: string) {
 		base !== "http://127.0.0.1:17045"
 	)
 		throw new Error("local runner context required");
-	const raw = execFileSync(
-		resolve("node_modules/.bin/wrangler"),
-		[
-			"d1",
-			"execute",
-			"giraffe-db",
-			"--local",
-			`--persist-to=${persist}`,
-			`--config=${config}`,
-			"--json",
-			"--command",
-			command,
-		],
-		{ encoding: "utf8" },
-	);
+	const raw = executeD1FixtureSync(command, { persist, config });
 	return JSON.parse(raw) as { results: Record<string, unknown>[] }[];
 }
 

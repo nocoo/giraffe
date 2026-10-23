@@ -1,10 +1,9 @@
-import { execFile } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { resolve } from "node:path";
-import { promisify } from "node:util";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { factoryWindow } from "../../apps/web/src/lib/factory";
 import { type FactoryRun, makeRun } from "../../apps/web/src/lib/factory-run";
+import { executeD1Fixture } from "../fixtures/d1";
 
 const base = process.env.GIRAFFE_E2E ?? "http://127.0.0.1:17045";
 const account = randomUUID().replaceAll("-", "").slice(0, 21);
@@ -28,21 +27,7 @@ async function rows(command: string): Promise<Record<string, unknown>[]> {
 		resolve(config) !== resolve(".wrangler/e2e-run/wrangler.toml")
 	)
 		throw new Error("dedicated local L2 runner context required");
-	const { stdout } = await promisify(execFile)(
-		resolve("node_modules/.bin/wrangler"),
-		[
-			"d1",
-			"execute",
-			"giraffe-db",
-			"--local",
-			`--persist-to=${persist}`,
-			`--config=${config}`,
-			"--json",
-			"--command",
-			command,
-		],
-		{ encoding: "utf8" },
-	);
+	const stdout = await executeD1Fixture(command, { persist, config });
 	return (JSON.parse(stdout) as { results: Record<string, unknown>[] }[]).flatMap(
 		(item) => item.results,
 	);
