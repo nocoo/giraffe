@@ -3,6 +3,7 @@ import {
 	BenchmarkClock,
 	benchmarkGithub,
 	benchmarkLatency,
+	benchmarkPhases,
 	runBenchmark,
 } from "./factory-benchmark";
 
@@ -92,10 +93,10 @@ it("excludes gaps between requests from request wall time and resets timing betw
 	await github.fetch("https://factory-benchmark.invalid/notifications");
 	await clock.sleep(1000);
 	await github.fetch("https://factory-benchmark.invalid/notifications");
-	expect(clock.now).toBe(1600);
+	expect(clock.now).toBe(5000);
 	expect(github.timing()).toEqual({
-		requestWallMs: 600,
-		serialServiceMs: 600,
+		requestWallMs: 4000,
+		serialServiceMs: 4000,
 		maxConcurrentRequests: 1,
 	});
 	github.reset();
@@ -105,6 +106,101 @@ it("excludes gaps between requests from request wall time and resets timing betw
 		serialServiceMs: 0,
 		maxConcurrentRequests: 0,
 	});
+});
+
+it("measures lane occupancy from work intervals without counting delivery gaps as busy", () => {
+	const phases = benchmarkPhases(
+		[
+			{ phase: "factory", repo: "a", start: 0, end: 4 },
+			{ phase: "factory", repo: "b", start: 1, end: 4 },
+			{ phase: "factory", repo: "c", start: 2, end: 4 },
+			{ phase: "factory", repo: "d", start: 3, end: 4 },
+			{ phase: "factory", repo: "e", start: 5, end: 6 },
+			{ phase: "activity", repo: "a", start: 7, end: 10 },
+		],
+		0,
+		10,
+	);
+	expect(phases[0]).toMatchObject({
+		wallMs: 6,
+		exclusiveWallMs: 7,
+		laneMs: [1, 2, 1, 1, 1],
+		averageBusyLanes: 11 / 6,
+	});
+	expect(phases[1]).toMatchObject({
+		wallMs: 3,
+		exclusiveWallMs: 3,
+		laneMs: [0, 3, 0, 0, 0],
+		averageBusyLanes: 1,
+	});
+});
+
+it("counts a repository lane once and shares overlapping phase wall time explicitly", () => {
+	const phases = benchmarkPhases(
+		[
+			{ phase: "factory", repo: "a", start: 0, end: 4 },
+			{ phase: "factory", repo: "a", start: 1, end: 3 },
+			{ phase: "snapshot", repo: "b", start: 2, end: 6 },
+		],
+		0,
+		6,
+	);
+	expect(phases.map((phase) => phase.exclusiveWallMs)).toEqual([3, 3]);
+	expect(phases[0]?.laneMs).toEqual([0, 4, 0, 0, 0]);
+});
+
+it("models nine notification pages instead of an empty account prelude", async () => {
+	const github = benchmarkGithub(new BenchmarkClock(0), 60);
+	let url: string | null = "https://factory-benchmark.invalid/notifications?per_page=100";
+	let pages = 0;
+	while (url) {
+		const response: Response = await github.fetch(url);
+		expect(await response.json()).toHaveLength(100);
+		pages++;
+		const next: string | undefined = /<([^>]+)>/.exec(response.headers.get("link") ?? "")?.[1];
+		url = next ? next.replace("https://api.github.com", "https://factory-benchmark.invalid") : null;
+	}
+	expect(pages).toBe(9);
+	expect(github.metrics().notifications?.serviceMs).toBe(18_000);
+});
+
+it("models 205 nonempty refs, tags and history pages per sixty repositories", async () => {
+	const github = benchmarkGithub(new BenchmarkClock(Date.parse("2026-10-23T00:00:00Z")), 60);
+	let pages = 0;
+	for (let index = 0; index < 60; index++) {
+		const request = async (query: string, after: string | null = null) => {
+			pages++;
+			const response = await github.fetch("https://factory-benchmark.invalid/graphql", {
+				body: JSON.stringify({
+					query,
+					variables: { name: `bench-${String(index).padStart(3, "0")}`, after, tagAfter: after },
+				}),
+			});
+			return (await response.json()) as {
+				data: {
+					repository: {
+						refs: { nodes: unknown[]; pageInfo: { hasNextPage: boolean; endCursor: string } };
+						tags: { nodes: unknown[] };
+						object: { history: { nodes: unknown[] } };
+					};
+				};
+			};
+		};
+		const first = await request("query ActivityRefs");
+		expect(first.data.repository.refs.nodes.length).toBeGreaterThan(0);
+		if (first.data.repository.refs.pageInfo.hasNextPage)
+			await request("query ActivityRefs", first.data.repository.refs.pageInfo.endCursor);
+		expect((await request("query ActivityTags", "tags-1")).data.repository.tags.nodes).toHaveLength(
+			1,
+		);
+		expect(
+			(await request("query ActivityBranchHistory", "history-1")).data.repository.object.history
+				.nodes,
+		).toHaveLength(1);
+	}
+	expect(pages).toBe(205);
+	expect(github.metrics().activity?.requests).toBe(205);
+	expect(github.metrics().activity?.serviceMs).toBeCloseTo(299_000);
 });
 
 it("rejects non-fixture destinations and unsupported fixture requests", async () => {
@@ -129,6 +225,51 @@ it("honors since while keeping canonical pagination links inside the fake handle
 	expect(await recent.json()).toHaveLength(1);
 });
 
+it("honors Actions lower bounds and retains an older-than-thirty-day baseline", async () => {
+	const github = benchmarkGithub(new BenchmarkClock(Date.parse("2026-10-23T00:00:00Z")), 60);
+	const base = "https://factory-benchmark.invalid/repos/octocat/bench-059/actions/runs";
+	const response = await github.fetch(`${base}?created=>=2026-09-23T00:00:00Z`);
+	const delta = (await response.json()) as {
+		total_count: number;
+		workflow_runs: { created_at: string; run_started_at: string }[];
+	};
+	expect(delta.total_count).toBe(2);
+	expect(delta.workflow_runs).toHaveLength(1);
+	expect(delta.workflow_runs[0]?.created_at).toBe("2026-10-22T18:00:00.000Z");
+	expect(delta.workflow_runs[0]?.run_started_at).toBe(delta.workflow_runs[0]?.created_at);
+	expect(response.headers.get("link")).toContain("page=2");
+	const old = (await (await github.fetch(`${base}?page=3`)).json()) as {
+		total_count: number;
+		workflow_runs: { created_at: string }[];
+	};
+	expect(old.total_count).toBe(13);
+	expect(Date.parse(old.workflow_runs[0]?.created_at ?? "")).toBeLessThan(
+		Date.parse("2026-09-23T00:00:00Z"),
+	);
+});
+
+it("supports pinned unfiltered commit history and identical-head comparisons", async () => {
+	const github = benchmarkGithub(new BenchmarkClock(Date.parse("2026-10-23T00:00:00Z")), 1);
+	const base = "https://factory-benchmark.invalid/repos/octocat/bench-000";
+	expect(
+		await (await github.fetch(`${base}/commits?sha=abc&per_page=100&page=1`)).json(),
+	).toMatchObject([{ sha: "abc", parents: [] }]);
+	expect(
+		await (await github.fetch(`${base}/commits?sha=abc&since=2026-10-22T00:00:00Z`)).json(),
+	).toEqual([]);
+	expect(await (await github.fetch(`${base}/compare/abc...abc`)).json()).toMatchObject({
+		status: "identical",
+		total_commits: 0,
+		commits: [],
+	});
+	expect(await (await github.fetch(`${base}/compare/old...abc`)).json()).toMatchObject({
+		status: "ahead",
+		total_commits: 1,
+		commits: [{ sha: "abc" }],
+	});
+	expect(github.unsupported).toEqual([]);
+});
+
 it("executes and publishes an isolated daily with consistent accounting", async () => {
 	const result = await runBenchmark({ repos: 2, warm: false });
 	expect(result.measured.status).toBe("completed");
@@ -143,6 +284,32 @@ it("executes and publishes an isolated daily with consistent accounting", async 
 		result.measured.requestWallMs + result.measured.waitingMs,
 	);
 	expect(result.measured.maxConcurrentRequests).toBeGreaterThanOrEqual(1);
+	expect(result.measured.poolOccupancy?.averageBusyLanes).toBeGreaterThan(0);
+	expect(result.measured.poolOccupancy?.averageBusyLanes).toBeLessThanOrEqual(4);
+	expect(result.measured.poolOccupancy?.laneMs.reduce((sum, value) => sum + value, 0)).toBeCloseTo(
+		result.measured.poolOccupancy?.wallMs ?? 0,
+		3,
+	);
+	expect(result.measured.phases.map((phase) => phase.phase)).toEqual([
+		"account",
+		"insights",
+		"factory",
+		"snapshot",
+		"activity",
+		"publish",
+	]);
+	expect(result.measured.phases.reduce((sum, phase) => sum + phase.requests, 0)).toBe(
+		result.measured.requests,
+	);
+	expect(result.measured.phases.reduce((sum, phase) => sum + phase.exclusiveWallMs, 0)).toBeCloseTo(
+		result.measured.simulatedWallMs,
+		0,
+	);
+	for (const phase of result.measured.phases) {
+		expect(phase.laneMs.reduce((sum, value) => sum + value, 0)).toBeCloseTo(phase.wallMs, 0);
+		expect(phase.averageBusyLanes).toBeGreaterThanOrEqual(0);
+		expect(phase.averageBusyLanes).toBeLessThanOrEqual(4);
+	}
 }, 30_000);
 
 it("replays the selected daily deterministically after a real previous-day publication", async () => {
