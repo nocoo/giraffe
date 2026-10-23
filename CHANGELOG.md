@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Persist accepted factory steps and pages atomically before later work. A subsequent failure retains earlier results, request accounting and retry evidence; stale leases cannot publish. Renew 40-second deadline-capped leases at boundaries, release owned leases on uncaught failures, and redeliver lease collisions at expiry.
 - Retry queue overload sends with bounded 0.5/1/2-second backoff and failed deliveries with 5/10/15-second delays. Structured invocation and dispatch logs expose cursor/cost/end-reason and operation-level failures without tokens, payloads or raw exception text.
 - Resume slow snapshots page by page without refetching accepted responses. Preserve catalog identity lookups across yields and process large raw REST pages without retaining their unused fields together in memory.
+- Resume v0.22 paginated Actions streams using their persisted filtered source, next page and split-window queue. Never confuse that cursor with the new unfiltered shared-history page index; accepted pages survive upgrade and later repository steps can publish normally.
 
 ### Changed
 

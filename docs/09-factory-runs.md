@@ -60,6 +60,14 @@ payloads are fetched before taking the projection lock; shared global snapshot
 read/modify/write projection holds that lock through atomic acceptance so one
 repository cannot overwrite another's accepted rows.
 
+When resuming an accepted Actions stream, its persisted source owns its cursor.
+A v0.22 filtered `created=...` stream continues from its saved `next` and pending
+split-window ranges, retaining accepted events and page counts. Its filtered page
+number is never treated as an index into the unfiltered `actions-source` cache.
+Shared raw history can still be collected independently for later snapshots.
+The cross-version fixtures come from the real `12d4612` collector, including both
+a page-2 checkpoint and a split-window checkpoint with a queued range.
+
 Each repository's executor checkpoint uses the existing run-owned
 `factory_resources` stream `executor:checkpoint`. Acceptance copies all of that
 repository's step statuses, including deferred activity skips, into the central

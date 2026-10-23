@@ -250,15 +250,19 @@ export async function stepActions(
 	assertFactoryReserve(snapshot, now);
 	const repo = snapshot.repos[snapshot.cursor.repo];
 	if (!repo) throw new ApiError(409, "snapshot_missing", "Actions repository missing");
+	const saved =
+		repo.coverage.actions.status === "pending"
+			? null
+			: await store.read(streamKey(repo.name, "actions"));
+	if (saved && saved.coverage.source !== firstPage(repo.name)) {
+		await stepFactory(snapshot, filteredClient(gh), token, store, now);
+		return [];
+	}
 	const source = await readSource(db, lease, repo.name);
 	if (source.status === "limited" && !source.error) {
 		await stepFactory(snapshot, filteredClient(gh), token, store, now);
 		return [];
 	}
-	const saved =
-		repo.coverage.actions.status === "pending"
-			? null
-			: await store.read(streamKey(repo.name, "actions"));
 	const index = saved?.coverage.pages ?? 0;
 	let page: SourcePage | null = null;
 	let headers = new Headers();
