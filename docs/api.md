@@ -915,7 +915,8 @@ The response is an `ActivitySnapshot`, not the generic observation envelope:
   repos: [{ repo, ci_runs, prs: { opened, merged, closed },
     issues: { opened, closed }, releases, commits: { default, other, items },
     deploy: { last_success_at, runs }, snapshot, coverage }],
-  totals, contributions, coverage, truncated }
+  totals, totals_partial, totals_coverage: { missing: [{ repo, metrics, reason }] },
+  contributions, coverage, truncated }
 ```
 
 The interval is `(since, until]`, ending at the run's frozen collection cutoff,
@@ -939,7 +940,32 @@ are `{status:complete|partial|unavailable,truncated,reason}`. A bounded paginati
 or storage cut marks the affected list and the whole response truncated; nullable
 totals must not be interpreted as zero. Old good observations are not relabeled
 as newly collected evidence. The source index registers `account:activity` with
-its publication version, content version and saved `fetchedAt`.
+its publication version and saved `fetchedAt`. Its content version hashes canonical
+`{input:<stored-publication-content-version>,derivation:"metric-totals-v1"}` with
+SHA-256, binding the frozen publication to this read-time totals contract.
+Activity ETags hash the full derived response bytes, so old pre-derivation ETags
+cannot incorrectly produce 304. Repeated reads of the same publication and query
+are deterministic; no stored publication, page, timestamp or run ID is rewritten.
+
+Account totals are derived at read time from frozen per-repository evidence,
+including publications created before 0.21.0. Each metric sums only repositories
+with complete evidence for that metric. `red_default_branch` concatenates only
+fully classified repository lists. A metric with no available repository is null,
+not zero; a known empty membership (including an unselected repository filter)
+still has zero counts and an empty red list. `coverage.run:partial` alone does not
+exclude otherwise complete metric streams; unavailable security/alerts do not
+erase CI, PR, issue or release evidence.
+
+`totals_partial` is true when at least one repository/metric is excluded.
+`totals_coverage.missing` groups metric names by repository and reason:
+`partial` or `unavailable` describes the relevant source coverage,
+`missing_evidence` means a missing list/coverage or unclassifiable red workflow,
+and `omitted` identifies frozen members lost to storage capacity. An old truncated
+publication without membership uses `repo:null` for unattributable omissions.
+This flag describes totals only, not overall run completeness or contributions.
+Retained available subtotals remain useful when membership was truncated, while
+the omitted repositories and metrics stay explicit. Neither catalog changes nor
+unrelated newer snapshots enter this calculation.
 Activity freezes only streams carrying this run's ID. Repository evidence is
 current when its observation version matches the run or its repository commit
 step succeeded in this run, with the repository ID matching the frozen run ID
@@ -962,16 +988,16 @@ Repositories with failed, unavailable or limited steps have `coverage.run.status
 does not mark run coverage partial or truncated. Dependency diagnostics retain
 their own limited coverage independently. Other limited steps still mark run
 coverage truncated; failed/unavailable steps alone do not. Per-source missing
-evidence remains unavailable/null; a total whose
-source evidence is partial or unavailable stays null, never a fabricated zero.
+evidence remains unavailable/null; partial or unavailable repository metrics are
+excluded from account subtotals, never counted as fabricated zeroes.
 `membership` freezes repository names independently of stored pages, so capacity
 cuts cannot make a selected member look unselected. An unclassifiable failed
-workflow leaves the red default-branch total null and `default_branch` coverage
+workflow leaves that repository's red default-branch contribution null and `default_branch` coverage
 partial rather than claiming no red workflows.
 Publication first profiles frozen repository payload lengths and loads at most
 4,000,000 UTF-8 bytes in frozen membership order, independently of the 16-page
 output limit. Input-budget omissions retain membership, partial/truncated
-coverage and null account totals, never complete zero results.
+coverage and explicit missing-total entries, never complete zero results.
 
 Every CI run exposes `id`, `workflow_id`, `workflow_name`, `event`, `head_branch`,
 `head_sha`, `is_default_branch`, `status`, `conclusion`, `run_attempt`, `created_at`,

@@ -70,7 +70,13 @@ Read `/activity?run=latest` with `observations:read`; optional `repository=owner
 narrows repository evidence, and an explicit `run` reads an immutable publication.
 Use `account:activity` in `/sources` and authenticated ETag/304 for polling.
 The direct response contains `window`, `runId`, `previousRunId`, `fetchedAt`,
-`repos`, `totals`, `contributions`, `coverage` and `truncated`.
+`repos`, `totals`, `totals_partial`, `totals_coverage`, `contributions`, `coverage`
+and `truncated`. Totals are read-time subtotals over frozen repositories with
+complete per-metric evidence, including old publications. Inspect
+`totals_coverage.missing[]` (`repo`, `metrics`, `reason`) before treating a subtotal
+as account-wide. A wholly unavailable metric stays null; unrelated partial run
+steps do not discard complete metric streams. Publication IDs/times remain
+unchanged, but derived content versions and response ETags bind this contract.
 
 The interval is `(last published completed-or-partial account-wide quick/daily until, this until]`.
 First publication is a marked 24-hour lookback; a failed/missing run widens the
