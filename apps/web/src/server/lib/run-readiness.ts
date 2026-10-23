@@ -8,7 +8,9 @@ import {
 	decodeRunEstimates,
 	estimateRunFinish,
 	type RunEstimateRow,
+	type RunStepPlan,
 	runEstimateStatement,
+	runStepPlanSql,
 } from "./run-estimates";
 
 const latestQuery = z.strictObject({
@@ -37,6 +39,8 @@ type LatestRow = {
 	status: FactoryRun["status"];
 	window: string;
 	startedAt: string | null;
+	nextAttemptAt: string | null;
+	stepPlan: string;
 	finishedAt: string | null;
 	error: string | null;
 	publishedAt: string | null;
@@ -81,6 +85,8 @@ const latestProjection = `json_extract(payload,'$.id') AS id,
  json_extract(payload,'$.status') AS status,
  coalesce(json_extract(payload,'$.activityWindow'),json_extract(payload,'$.window')) AS window,
  json_extract(payload,'$.startedAt') AS startedAt,
+ json_extract(payload,'$.nextAttemptAt') AS nextAttemptAt,
+ ${runStepPlanSql} AS stepPlan,
  json_extract(payload,'$.finishedAt') AS finishedAt,
  json_extract(payload,'$.error') AS error,
  json_extract(payload,'$.publishedAt') AS publishedAt,
@@ -109,7 +115,7 @@ export async function readLatestRun(db: Db, account: string, query: Record<strin
 				`SELECT ${latestProjection} FROM factory_runs WHERE account_id=? AND ${filters[kind]} ORDER BY created_at DESC,id DESC LIMIT 1`,
 			)
 			.bind(account),
-		runEstimateStatement(db, account),
+		runEstimateStatement(db, account, false),
 	]);
 	const row = latest?.results[0] as LatestRow | undefined;
 	if (!row) throw new ApiError(404, "not_found", "Run not found");
@@ -135,7 +141,14 @@ export async function readLatestRun(db: Db, account: string, query: Record<strin
 		window: JSON.parse(row.window) as FactoryWindow | ActivityWindow,
 		startedAt: row.startedAt,
 		...estimateRunFinish(
-			{ mode, depth: depth ?? "deep", startedAt: row.startedAt ?? "" },
+			{
+				mode,
+				depth: depth ?? "deep",
+				startedAt: row.startedAt ?? "",
+				status,
+				...(row.nextAttemptAt ? { nextAttemptAt: row.nextAttemptAt } : {}),
+				stepPlan: JSON.parse(row.stepPlan) as RunStepPlan,
+			},
 			total,
 			calibration,
 		),

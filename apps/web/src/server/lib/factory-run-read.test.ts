@@ -102,6 +102,22 @@ it("includes finished partial refresh history in the batched ETA calibration", a
 	}
 	const profile = profileDb(fixture.raw);
 	const result = await readFactoryRunInputs(createDb(profile.raw), fixture.account, "");
-	expect(result.calibration).toEqual({ catalog: null, quick: null, deep: 2000 });
+	expect(result.calibration).toEqual({
+		catalog: null,
+		quick: null,
+		deep: 250,
+		plans: {
+			"partial-1000": [
+				["contributions", 1, 1],
+				["publish", 1, 1],
+				["snapshot", 6, 6],
+			],
+			"partial-3000": [
+				["contributions", 1, 1],
+				["publish", 1, 1],
+				["snapshot", 6, 6],
+			],
+		},
+	});
 	expect(profile.trips).toHaveLength(1);
 });
