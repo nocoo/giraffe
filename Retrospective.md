@@ -1825,3 +1825,20 @@ now accepts either shared budget while still proving saved request counts,
 exactly 50 total requests without refetching, and completion in two invocations.
 Keep intermediate tests valid before subsequent optimizations, and verify the
 actual commit snapshot rather than relying on a greener working tree.
+
+## 2026-10-23 - Review parallel acceptance beyond network overlap
+
+The first B14A repository-pool implementation passed overlap and recovery tests
+but missed four cross-lane contracts. Copying only selected collection indices
+discarded skips on deferred activity; taking the snapshot projection lock before
+missing-resource fetches serialized requests; queued prepared writes were absent
+from admission accounting; and fixed ETA groups disagreed with lane replenishment.
+Independent review identified all four before commit or push. Focused regressions
+failed first, then verified complete repository status propagation, four overlapping
+detail requests, pending-write admission and earliest-free-lane ETA scheduling.
+Admission also rechecks wall/write/stop budgets after waiting for heartbeat, and
+failure logs retain progress already accepted before a save failure. Lease-expiry
+and save-failure fixtures verify that accepted work survives, only one in-flight
+step per repository retries, and stale results cannot alter the replacement run.
+For concurrent execution, audit admission, projection, acceptance and retry state
+together; a fast network benchmark alone does not prove safe concurrency.

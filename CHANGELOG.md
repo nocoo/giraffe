@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reconcile Issues with `since` and PRs with an updated-descending cutoff against complete, non-retained observations. Validate current state counts, restart full collection on mismatches, and refresh retained PR GraphQL state even for closed/merged PRs. Add optional event `updatedAt`; incremental coverage describes the reconciled stream, not just changed rows.
 - Reuse one complete run-owned Actions history for stream metrics, detail snapshots and deployment history. Explicitly limited histories retain the old snapshot and may require the existing bounded filtered-window collection rather than claiming completeness.
 - New quick runs use 30 UTC dates; deep runs keep 90 and existing runs retain their frozen windows. Flush request accounting with step checkpoints instead of per-request journal writes; factory D1 admission/hard caps are 600/800 under the paid-plan 1,000-query limit.
+- Run four repositories concurrently inside one invocation with shared request, statement and wall budgets. Keep each repository ordered, serialize checkpoint/projection writes and defer activity/global/publication work; abrupt death loses at most one in-flight step per repository while every accepted checkpoint survives.
+- Estimate remaining wall time with four repository lanes and serial phase barriers, retaining separate scheduling/backoff overhead and a serial fallback when audited timings or repository plans are missing.
 
 ### Local Measurement And Limits
 
@@ -30,14 +32,15 @@ all 1,146 logical steps. Latencies are fixed from the supplied brief.
 | v0.22.1 baseline `12d4612` | 426 | 1,651 | 41.678 |
 | P1 recovery `e8a8372` | 274 | 1,669 | 42.004 |
 | v0.23 source candidate, serial repositories | 166 | 1,221 | 23.898 |
+| v0.23 four-repository pool, selected daily | 173 | 1,213 | 7.158 |
 
 The fixture excludes D1/CPU/queue-delivery latency and production stalls; it is
-not a production SLO prediction. The under-20-minute goal remains unmet. A 4–6
-repository pool is not included pending clarification of the global one-in-flight
-step crash-loss requirement versus one in-flight step per parallel repository.
-No configuration, dependency, lockfile or schema migration changes are included;
-no production operations were performed. This branch does not claim the complete
-B14A brief is ready.
+not a production SLO prediction. Two identical pool replays complete all 1,146
+steps in 429,453 simulated milliseconds, below the 20-minute simulation target.
+Peak request concurrency is four; summed request service time is 1,425,170 ms,
+not elapsed wall time. The measured invocation maximum is 40 requests and 619
+D1 statements (including warmup), below the shared hard limits. Configuration,
+dependencies and migrations are unchanged. No production operations were performed.
 
 ## v0.22.1 - 2026-10-23
 

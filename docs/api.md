@@ -1926,8 +1926,10 @@ Zero claims also omit the field. Missing is not measured zero, so exclude missin
 counts from invocation-based comparisons rather than substituting `0`.
 
 From v0.23, completed steps/pages survive a later invocation failure. `requests`
-is flushed at step/checkpoint boundaries and can undercount only the in-flight
-step after abrupt death or cancellation; it is not a billing ledger. Budget
+is flushed at step/checkpoint boundaries and can undercount only one in-flight
+step per parallel repository after abrupt death or cancellation (at most four
+with the in-code pool); it is not a billing ledger. Every accepted checkpoint
+is retained. Budget
 yields preserve the pending cursor with null error and no retry-failure charge.
 Lease collisions schedule continuation at the current lease expiry.
 
@@ -1957,14 +1959,23 @@ terminal steps (`success`, `failed`, `unavailable`, `limited`, with positive
 median of those step durations within the same execution kind. Genuine zero
 durations count; skipped, unattempted and missing/invalid timings do not. Fully
 timed sample runs also supply per-step scheduling/backoff overhead:
-`max(0, wallDuration - sum(stepDurations)) / nonSkippedSteps`; the median overhead
-is added to each remaining step. Incomplete timing records never masquerade as
+`max(0, wallDuration - modeledStepWallDuration) / nonSkippedSteps`; the median
+overhead is added to each remaining step without dividing it by concurrency.
+The model assigns ordered repository work to four lanes, placing each next
+repository on the earliest free lane, separately for metadata/streams/commit and
+repository snapshots. Activity, global snapshots and publication remain serial
+barriers. This is an idealized lane schedule: invocation-boundary replenishment,
+scheduling and backoff remain in the learned overhead. Incomplete timing records never masquerade as
 overhead. If no audited timings exist, calibration instead uses the median
 `wallDuration / nonSkippedSteps`, which already includes overhead. Invalid-time,
 failed/cancelled and zero-work/all-skipped sample runs are excluded.
 
-Running/paused ETA is `max(now, startedAt, nextAttemptAt) + sum(remaining step
-durations + per-step overhead)`. All terminal outcomes remove work, including
+Running/paused ETA is `max(now, startedAt, nextAttemptAt) + modeledRemainingWall
++ remainingSteps * perStepOverhead`. Repository-aware parallel modeling applies
+only when audited step timings exist; wall-only calibration or a compact plan
+without repository/order information stays serial to avoid double discounting.
+Historical serial samples can conservatively retain serialization in learned
+overhead until parallel samples arrive. All terminal outcomes remove work, including
 skipped future steps ahead of the cursor. Paused estimates assume resumption now
 or after outstanding backoff, not a prediction of user action. Terminal history
 anchors the full non-skipped plan estimate at `startedAt`, so its estimate can be

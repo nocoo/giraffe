@@ -14,7 +14,7 @@
 - Dependabot REST alerts use the `after` cursor from GitHub's next Link header; the endpoint rejects numeric `page` pagination. Resume checkpoints preserve the cursor, repository and original filters. Other REST streams retain sequential page validation.
 - Each queue message claims once, checkpoints every accepted step/page, then schedules a continuation. Site Issues/PRs/alerts retain their ten-repository chunks and staging cursors; lists become visible only at publication. The minute cron repairs missed dispatch. Queue messages contain only the run ID, never tokens or events.
 - A 40-second lease fences every write by run ID, token, version, unexpired lease and running status. Intermediate saves atomically advance the version while retaining ownership; the final save releases it. Controls invalidate ownership without undoing prior checkpoints.
-- A dead invocation can lose only work since its latest step/page checkpoint. Request accounting is crash-safe to within that in-flight step. Event-ID deduplication and fenced publication prevent duplicate results.
+- A dead invocation can lose at most one in-flight step per parallel repository, never an accepted step/page checkpoint. Request accounting can omit requests only from those in-flight steps. Event-ID deduplication and fenced publication prevent duplicate results.
 - 临时失败按 30/60/120 秒退避，最多 3 次重试；GitHub 限流遵循 Retry-After/reset，未知时至少 15 分钟，任务保持可恢复。401 暂停等待更新凭据。统计仓库失败只跳过后续统计步骤；页面数据失败不会阻断其他页面。权限不足、来源缺失/截断、清单变化不无效重试；保留旧快照及原时间，不伪装成功零值。
 - 账户启动冷却 60 秒；每个统计仓库尝试后冷却 15 分钟。服务器时钟决定下次允许时间；客户端仅显示倒计时。全站刷新允许统计仓库为空或都在冷却，仍更新页面数据。暂停保留唯一活动 run，取消释放活动槽并保留已提交数据；新 run 不会与旧执行者竞争。
 
@@ -24,8 +24,12 @@ The earlier 80-statement investigation figure is historical; these factory-only
 limits supersede it without changing other API paths.
 
 New work starts before 25 seconds of invocation wall time, below 40 GitHub
-requests and 600 executed D1 statements plus staged writes. Every request checks
-the wall budget, reserving five seconds for checkpointing; individual fetches
+requests and 600 executed D1 statements plus staged writes across every lane.
+Request slots are reserved before asynchronous admission; wall, stop and statement
+budgets are rechecked after waiting for the shared heartbeat lock. Pending writes
+waiting for acceptance count toward admission, and concurrent reads are counted
+even while a D1 batch is running. Every request checks the wall budget,
+reserving five seconds for checkpointing; individual fetches
 retain their 15-second timeout. Step boundaries and requests renew the 40-second
 lease when at most half remains, never beyond the absolute run deadline.
 The factory-only D1 hard cap is 800 statements, leaving 200 for checkpoint/error
@@ -34,13 +38,36 @@ handling after admission closes and another 200 below D1's paid-plan limit of
 Budget yields preserve cursors, keep errors null and do not spend retry failures.
 No queue, cron, deployment or Cloudflare configuration changes are required.
 
+The in-code `FACTORY_REPO_CONCURRENCY = 4` pool runs up to four different repositories
+inside one invocation. Metadata, streams and repository commits form the first
+phase; repository snapshots form the second. Each lane stays pinned to one
+repository and executes one step/page at a time, saving before starting another.
+Each invocation selects up to four unfinished repositories; completed lanes can
+be replaced at the next invocation. One request/statement/wall budget belongs to
+the invocation, not to each lane. Four GitHub fetches can overlap, while journal,
+heartbeat and checkpoint writes are serialized. The 40-request ceiling and the
+800-statement hard cap are not multiplied by pool width.
+
 Stream pages share an invocation resource cache, with an atomic fenced save after
-each accepted page. Publication, activity and Insights remain separate boundaries;
-detail snapshot work does not cross a repository boundary. Snapshot collection
+each accepted page. Publication, activity, global snapshots and Insights remain
+serial boundaries. All activity waits until all repository snapshots complete,
+including when resuming an older interleaved plan. Snapshot collection
 replays already staged responses locally and saves each newly fetched page in
 bounded, run-owned resources. This splits slow Actions and other paged snapshots
 without changing list results or fetching accepted pages again. Lost ownership
-rejects the in-flight writes, not earlier committed checkpoints.
+rejects the in-flight writes, not earlier committed checkpoints. Missing repository
+payloads are fetched before taking the projection lock; shared global snapshot
+read/modify/write projection holds that lock through atomic acceptance so one
+repository cannot overwrite another's accepted rows.
+
+Each repository's executor checkpoint uses the existing run-owned
+`factory_resources` stream `executor:checkpoint`. Acceptance copies all of that
+repository's step statuses, including deferred activity skips, into the central
+run and preserves other lanes' in-flight journal entries. Staged SQL is rebound
+to the latest central version only for the same run and lease token; the original
+token/version/expiry/status fences still gate the complete transaction. A failing
+lane stops new admission, and late results cannot overwrite accepted checkpoints.
+Failure logs include progress accepted before the failure.
 
 Uncaught executor errors release only their own fenced lease. Queue retries use
 5/10/15 seconds based on delivery attempts. A live-lease collision returns its
@@ -54,7 +81,8 @@ version-CAS lease without `RETURNING payload`, and increments `invocations`. The
 executor journals attempt/start metadata before work and completed durations
 before starting subsequent work and before final save. Request counts accumulate
 in memory and flush with the existing step audit/checkpoint, not once per fetch.
-Cancellation or abrupt death can omit requests only from the in-flight step.
+Cancellation or abrupt death can omit requests only from the one in-flight step
+per active repository (at most four in the pool).
 A crash during an unfinished fetch
 cannot reconstruct elapsed time after its last checkpoint. Completed audited
 durations survive replay. Retry high-water marks survive unsaved successes, so
@@ -119,11 +147,21 @@ SQLite and the existing fake-GitHub response model with a virtual clock. Fixed
 brief-derived page latencies, prior-day warmup, zero D1/CPU/queue-delivery latency,
 and no injected production stalls are explicit assumptions. Baseline `12d4612`
 publishes 1,146 steps in 426 invocations / 1,651 requests / 41.678 simulated minutes;
-P1 `e8a8372` uses 274 / 1,669 / 42.004; the final serial-repository candidate uses
-166 / 1,221 / 23.898. This remains above twenty minutes and is not a production
-finish-time guarantee. Repository execution is still serial: no pool or
-parallelism-adjusted ETA is claimed while the global one-in-flight loss bound
-versus per-repository loss bound awaits clarification. Configuration is unchanged.
+P1 `e8a8372` uses 274 / 1,669 / 42.004; the pushed serial-repository candidate uses
+166 / 1,221 / 23.898. The four-repository pool publishes all 1,146 steps in
+173 invocations / 1,213 requests / 7.158 simulated minutes (429,453 ms).
+Two identical replays confirm deterministic results. Peak request concurrency
+is four; summed request service time is 1,425,170 ms, while request wall time is
+429,453 ms. Including warmup, no invocation exceeds 40 requests or 619 executed
+D1 statements. This is below the twenty-minute simulation target, not a production
+finish-time guarantee. Configuration and migrations are unchanged.
+
+Pool regressions kill work after four accepted metadata steps and during a later
+save, then assert byte-equivalent accepted step records, one retried in-flight
+step per repository and complete publication. A separate test holds all four
+commit requests across the actual 40-second lease expiry, lets a replacement
+invocation finish, and rejects every late result from the former lease. Rate-limit,
+shared snapshot projection and budget-admission tests cover cross-lane state.
 
 Tests that previously assumed one step per call now stop explicitly at metadata
 admission boundaries or follow persisted `nextAttemptAt` for retries. Metadata
@@ -132,11 +170,13 @@ publication, retained-source, window, cooldown and terminal-status assertions re
 
 ### Downgrade preparation
 
-v0.23 recovery uses the existing `0025` schema; no migration or old-row rewrite is
-required. v0.22 in-flight leases remain valid until their stored expiry. Before a
-downgrade to v0.22, drain/pause v0.23 work under separately authorized maintenance;
-v0.22 cannot resume the new page replay optimization and may repeat an unfinished
-snapshot, but immutable publications and earlier accepted steps remain intact.
+v0.23 recovery and the repository pool use the existing `0025` schema; no migration
+or old-row rewrite is required. Earlier in-flight leases remain valid until their
+stored expiry. Before downgrading to a pre-pool v0.23 build or v0.22, drain active
+runs under separately authorized maintenance. If work must be paused, retain it
+without resuming it on the old executor: that executor cannot restore several
+unfinished repository checkpoints safely. v0.22 also lacks page replay. Immutable
+publications remain intact; pausing alone does not make old-executor resume safe.
 
 Do not deploy a v0.21.x reader directly over compact v0.22 rows: missing numeric
 fields otherwise become `NaN` on old executor arithmetic. The additive table can
