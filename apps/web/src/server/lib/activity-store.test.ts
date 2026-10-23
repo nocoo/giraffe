@@ -8,11 +8,12 @@ import { activityRepo } from "./activity";
 import { activityPublicationWrites, packActivity, readActivity } from "./activity-store";
 import { createDb } from "./db/d1";
 import { claimRun, controlRun, saveRun, startRun } from "./db/factory-runs";
-import { mapFactoryRepo } from "./factory-map";
+import { mapFactoryEvents, mapFactoryRepo } from "./factory-map";
+import { currentRepo, repositoryWrites } from "./factory-publish";
 import { readSources } from "./machine-sources";
 
 const now = "2026-10-22T20:00:00.000Z";
-async function setup() {
+async function setup(name = rawRepo.nameWithOwner) {
 	const raw = sqliteFixture();
 	const db = createDb(raw);
 	await db
@@ -21,7 +22,7 @@ async function setup() {
 		)
 		.bind(now, now)
 		.run();
-	const repo = mapFactoryRepo(rawRepo);
+	const repo = mapFactoryRepo({ ...rawRepo, nameWithOwner: name });
 	const run = makeRun(
 		"r2",
 		"account_123",
@@ -97,6 +98,61 @@ it("R4 revoked leases cannot leave activity pages and unpublished runs never ret
 		)?.n,
 	).toBe(0);
 });
+it.each([
+	["limited", "dependency_parse_unsupported", "success", false, false],
+	["limited", "coverage_limited", "success", true, true],
+	["failed", "dependency_parse_unsupported", "success", true, false],
+	["unavailable", "dependency_parse_unsupported", "success", true, false],
+	["limited", "dependency_parse_unsupported", "limited", true, true],
+	["limited", "dependency_parse_unsupported", "failed", true, false],
+	["limited", "dependency_parse_unsupported", "unavailable", true, false],
+] as const)(
+	"publishes activity run coverage for dependency %s/%s and actions %s",
+	async (status, error, otherStatus, partial, truncated) => {
+		const { raw, db, lease, repo } = await setup();
+		for (const step of lease.run.steps) step.status = "success";
+		const dependency = lease.run.steps.find((step) => step.kind === "dependencies");
+		const actions = lease.run.steps.find((step) => step.kind === "actions");
+		if (!dependency || !actions) throw new Error("Missing source steps");
+		Object.assign(dependency, { status, error });
+		actions.status = otherStatus;
+		const streams = new Map(
+			FACTORY_STREAMS.map((stream) => [
+				stream,
+				{
+					runId: lease.run.id,
+					items: [],
+					next: null,
+					ranges: [],
+					coverage: { ...repo.coverage[stream], status: "complete" as const },
+				},
+			]),
+		);
+		const activity = activityRepo(repo, streams, snapshotFor([]).window, extra(), {
+			features: { dependabot: { status: "available" }, code_scanning: { status: "available" } },
+			dependabot_open: 0,
+			code_scanning_open: 0,
+		});
+		await db
+			.prepare(
+				"INSERT INTO factory_resources(run_id,repo,stream,payload) VALUES(?,?,'activity-snapshot',?)",
+			)
+			.bind(lease.run.id, repo.name, JSON.stringify(activity))
+			.run();
+		const writes = await activityPublicationWrites(db, lease, now, [repo]);
+		lease.run.status = partial ? "partial" : "completed";
+		expect(await saveRun(db, lease, writes, now)).toBe(true);
+		const data = await readActivity(createDb(raw), lease.run.account_id, {});
+		expect(data.truncated).toBe(truncated);
+		expect(data.coverage.repos).toMatchObject({
+			status: partial ? "partial" : "complete",
+			truncated,
+		});
+		if (partial)
+			expect(data.repos[0]?.coverage.run).toMatchObject({ status: "partial", truncated });
+		else expect(data.repos[0]?.coverage.run).toBeUndefined();
+	},
+);
 it.each(["failed", "unavailable", "limited"] as const)(
 	"B2 publishes partial runs with %s repository evidence, source discovery and chaining",
 	async (status) => {
@@ -319,6 +375,260 @@ it("R4 stale observations and stream run mismatches never become current zero sn
 	expect(data.commits.default).toBeNull();
 	expect(data.coverage.actions).toMatchObject({ status: "partial", truncated: true });
 });
+it("freezes current activity when repeated dependency parse limits retain the previous repository", async () => {
+	const { freezeActivityRepo } = await import("./activity-store");
+	const fixture = await setup("nocoo/lizheng.dev");
+	const { db, lease, repo } = fixture;
+	for (const stream of FACTORY_STREAMS) repo.coverage[stream].status = "complete";
+	repo.coverage.dependencies = {
+		...repo.coverage.dependencies,
+		status: "limited",
+		reason_code: "dependency_parse_unsupported",
+		reason: "Workflow jobs cannot be parsed safely",
+	};
+	repo.observation = {
+		version: "r1",
+		window: { ...lease.run.window, until: "2026-10-21T20:00:00.000Z" },
+		refreshedAt: "2026-10-21T20:00:00.000Z",
+		source: "run",
+	};
+	await db.batch(await repositoryWrites(db, lease, now, repo, repo.name, null));
+	const refreshed = structuredClone(repo);
+	refreshed.branch = "trunk";
+	refreshed.observation = {
+		version: lease.run.id,
+		window: lease.run.window,
+		refreshedAt: now,
+		source: "run",
+	};
+	await db.batch(await repositoryWrites(db, lease, now, refreshed, repo.name, null));
+	const retained = await currentRepo(db, lease.run.account_id, repo.name);
+	expect(retained).toEqual(repo);
+	if (!retained) throw new Error("Missing retained repository");
+	for (const step of lease.run.steps) {
+		step.status = step.kind === "dependencies" ? "limited" : "success";
+		step.error = step.kind === "dependencies" ? "dependency_parse_unsupported" : null;
+		if (step.kind === "metadata") Object.assign(step, { sourceBranch: refreshed.branch });
+	}
+	const events = {
+		prs: [{ id: 1, created_at: now, merged_at: now, base: { ref: "main" } }],
+		issues: [{ id: 2, created_at: now, state: "open" }],
+		actions: [
+			{
+				id: 3,
+				workflow_id: 4,
+				created_at: now,
+				status: "completed",
+				conclusion: "failure",
+				event: "push",
+				head_branch: "trunk",
+			},
+		],
+		releases: [{ id: 5, published_at: now }],
+		commits: [{ sha: "current-sha", commit: { committer: { date: now }, message: "Current" } }],
+	};
+	for (const stream of ["prs", "issues", "actions", "releases", "commits"] as const)
+		await db
+			.prepare("UPDATE factory_resources SET payload=? WHERE run_id=? AND repo=? AND stream=?")
+			.bind(
+				JSON.stringify({
+					runId: lease.run.id,
+					items: mapFactoryEvents(stream, events[stream]),
+					coverage: repo.coverage[stream],
+					next: null,
+					ranges: [],
+				}),
+				lease.run.id,
+				repo.name,
+				stream,
+			)
+			.run();
+	await db.batch([await freezeActivityRepo(db, lease, now, retained, extra())]);
+	const writes = await activityPublicationWrites(db, lease, now, [retained]);
+	lease.run.status = "completed";
+	expect(await saveRun(db, lease, writes, now)).toBe(true);
+	const data = await readActivity(createDb(fixture.raw), lease.run.account_id, {});
+	const activity = data.repos[0];
+	expect(activity).toMatchObject({
+		prs: { merged: [{ id: "1" }] },
+		issues: { opened: [{ id: "2" }] },
+		ci_runs: [{ id: 3, is_default_branch: true }],
+		releases: [{ id: "5" }],
+		commits: { default: 1, other: 0, items: [{ sha: "current-sha", branch: "trunk" }] },
+		coverage: { default_branch: { status: "complete" } },
+		snapshot: { open_prs: [], open_issues: { other: [{ id: "2" }] } },
+	});
+	for (const stream of Object.keys(events))
+		expect(activity?.coverage[stream]).toMatchObject({ status: "complete", truncated: false });
+	expect(data.totals).toMatchObject({ ci_runs: 1, merged_prs: 1, issues_opened: 1, releases: 1 });
+	expect(data.totals.red_default_branch).toMatchObject([{ id: 3, repo: repo.name }]);
+	expect((await currentRepo(db, lease.run.account_id, repo.name))?.branch).toBe("main");
+	expect((await currentRepo(db, lease.run.account_id, repo.name))?.observation).toEqual(
+		repo.observation,
+	);
+});
+it.each(["missing-step", "failed-step", "missing-branch", "null-branch", "other-repo", "accepted"])(
+	"does not infer a current default branch without verified metadata (%s)",
+	async (mode) => {
+		const { freezeActivityRepo } = await import("./activity-store");
+		const { db, lease, repo } = await setup();
+		repo.observation = {
+			version: mode === "accepted" ? lease.run.id : "old",
+			window: lease.run.window,
+			refreshedAt: now,
+			source: "run",
+		};
+		for (const step of lease.run.steps) step.status = "success";
+		const metadata = lease.run.steps.find(
+			(step) => step.kind === "metadata" && step.repo === repo.name,
+		);
+		if (!metadata) throw new Error("Missing metadata step");
+		if (mode === "missing-step")
+			lease.run.steps = lease.run.steps.filter((step) => step !== metadata);
+		if (mode === "failed-step")
+			Object.assign(metadata, { status: "failed", sourceBranch: "trunk" });
+		if (mode === "null-branch") Object.assign(metadata, { sourceBranch: null });
+		if (mode === "other-repo")
+			Object.assign(metadata, { repo: "nocoo/other", sourceBranch: "trunk" });
+		await db
+			.prepare(
+				"UPDATE factory_resources SET payload=? WHERE run_id=? AND repo=? AND stream='actions'",
+			)
+			.bind(
+				JSON.stringify({
+					runId: lease.run.id,
+					items: mapFactoryEvents("actions", [
+						{
+							id: 1,
+							created_at: now,
+							head_branch: "main",
+							event: "push",
+							status: "completed",
+							conclusion: "failure",
+						},
+						{
+							id: 2,
+							created_at: now,
+							head_branch: "main",
+							event: "push",
+							status: "completed",
+							conclusion: "success",
+						},
+					]),
+					coverage: { ...repo.coverage.actions, status: "complete" },
+					next: null,
+					ranges: [],
+				}),
+				lease.run.id,
+				repo.name,
+			)
+			.run();
+		await db.batch([await freezeActivityRepo(db, lease, now, repo, extra())]);
+		const row = await db
+			.prepare("SELECT payload FROM factory_resources WHERE stream='activity-snapshot'")
+			.first<{ payload: string }>();
+		const activity = JSON.parse(row?.payload ?? "{}");
+		expect(activity.ci_runs).toMatchObject([
+			{ is_default_branch: null },
+			{ is_default_branch: null },
+		]);
+		expect(activity.coverage.default_branch).toMatchObject({
+			status: "unavailable",
+			truncated: false,
+		});
+		expect(repo.branch).toBe("main");
+	},
+);
+it.each([
+	[null, false],
+	[null, true],
+	["main", false],
+	["main", true],
+] as const)(
+	"publishes red CI totals with branch %s and successful runs %s",
+	async (branch, hasRuns) => {
+		const { freezeActivityRepo } = await import("./activity-store");
+		const { db, lease, repo } = await setup();
+		for (const step of lease.run.steps) step.status = "success";
+		const metadata = lease.run.steps.find((step) => step.kind === "metadata");
+		if (!metadata) throw new Error("Missing metadata step");
+		metadata.sourceBranch = branch;
+		const items = hasRuns
+			? mapFactoryEvents("actions", [
+					{
+						id: 1,
+						created_at: now,
+						head_branch: "main",
+						event: "push",
+						status: "completed",
+						conclusion: "success",
+					},
+				])
+			: [];
+		await db
+			.prepare(
+				"UPDATE factory_resources SET payload=? WHERE run_id=? AND repo=? AND stream='actions'",
+			)
+			.bind(
+				JSON.stringify({
+					runId: lease.run.id,
+					items,
+					coverage: { ...repo.coverage.actions, status: "complete" },
+					next: null,
+					ranges: [],
+				}),
+				lease.run.id,
+				repo.name,
+			)
+			.run();
+		await db.batch([await freezeActivityRepo(db, lease, now, repo, extra())]);
+		const writes = await activityPublicationWrites(db, lease, now, [repo]);
+		lease.run.status = "completed";
+		expect(await saveRun(db, lease, writes, now)).toBe(true);
+		const data = await readActivity(db, "account_123", {});
+		expect(data.repos[0]?.coverage.default_branch?.status).toBe(
+			branch ? "complete" : "unavailable",
+		);
+		expect(data.totals.ci_runs).toBe(items.length);
+		expect(data.totals.red_default_branch).toEqual(branch ? [] : null);
+	},
+);
+it.each([
+	"success",
+	"missing-id",
+	"pending",
+	"failed",
+	"missing-commit",
+	"other-repo",
+	"wrong-id",
+	"wrong-stream-run",
+])("R4 validates retained activity commit and identity evidence (%s)", async (mode) => {
+	const { freezeActivityRepo } = await import("./activity-store");
+	const { db, lease, repo } = await setup();
+	repo.observation = { version: "old", window: lease.run.window, refreshedAt: now, source: "run" };
+	const commit = lease.run.steps.find((step) => step.repo === repo.name && step.kind === "commit");
+	if (!commit) throw new Error("Missing commit step");
+	commit.status = mode === "pending" || mode === "failed" ? mode : "success";
+	if (mode === "missing-commit")
+		lease.run.steps = lease.run.steps.filter((step) => step !== commit);
+	if (mode === "other-repo") commit.repo = "nocoo/other";
+	if (mode === "wrong-id") lease.run.repoIds[repo.name] = "different-repository";
+	if (mode === "missing-id") delete lease.run.repoIds[repo.name];
+	if (mode === "wrong-stream-run")
+		await db
+			.prepare("UPDATE factory_resources SET payload=json_set(payload,'$.runId','old')")
+			.run();
+	await db.batch([await freezeActivityRepo(db, lease, now, repo, extra())]);
+	const row = await db
+		.prepare("SELECT payload FROM factory_resources WHERE stream='activity-snapshot'")
+		.first<{ payload: string }>();
+	const activity = JSON.parse(row?.payload ?? "{}");
+	const current = mode === "success" || mode === "missing-id";
+	expect(activity.snapshot.open_prs).toEqual(current ? [] : null);
+	expect(activity.ci_runs).toEqual(current ? [] : null);
+	expect(activity.commits.default).toBe(current ? 0 : null);
+	expect(activity.coverage.actions.status).toBe(current ? "complete" : "unavailable");
+});
 it("R9 activity never substitutes live security snapshots for missing staged evidence", async () => {
 	const { freezeActivityRepo } = await import("./activity-store");
 	const s = await setup();
@@ -474,6 +784,7 @@ it("R4 red-workflow header copies obey the same UTF-8 cap as repository pages", 
 		coverage: {
 			...repo.coverage,
 			actions: { status: "complete" as const, truncated: false, reason: null },
+			default_branch: { status: "complete" as const, truncated: false, reason: null },
 		},
 	}));
 	const packed = packActivity(snapshotFor(snapshots));
@@ -612,6 +923,9 @@ it("R4 publishes unknown-branch failures as nullable red totals through authenti
 	const { createApp } = await import("../index");
 	const { createApiToken } = await import("./api-tokens");
 	const s = await setup();
+	const metadata = s.lease.run.steps.find((step) => step.kind === "metadata");
+	if (!metadata) throw new Error("Missing metadata step");
+	Object.assign(metadata, { status: "success", sourceBranch: "main" });
 	s.repo.observation = {
 		version: "r2",
 		window: s.lease.run.window,

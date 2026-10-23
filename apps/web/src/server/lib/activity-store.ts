@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { ActivityRepo, ActivitySnapshot } from "../../lib/activity-types";
 import type { FactoryRepo, FactoryStreamData } from "../../lib/factory-types";
 import {
+	activityBranch,
 	activityRepo,
 	activityTotals,
 	completeActivity,
@@ -146,7 +147,10 @@ export async function activityPublicationWrites(
 		const activity =
 			frozen.get(name) ?? activityRepo(repo, new Map(), requireActivityWindow(run), null, null);
 		const incomplete = run.steps.filter(
-			(step) => step.repo === name && ["failed", "unavailable", "limited"].includes(step.status),
+			(step) =>
+				step.repo === name &&
+				["failed", "unavailable", "limited"].includes(step.status) &&
+				!(step.status === "limited" && step.error === "dependency_parse_unsupported"),
 		);
 		if (incomplete.length)
 			activity.coverage.run = {
@@ -258,12 +262,17 @@ export async function freezeActivityRepo(
 	]);
 	if (!resources || !snapshots)
 		throw new ApiError(500, "db_error", "Incomplete activity source batch");
+	const expectedRepoId = run.repoIds[repo.name];
+	const currentRepo =
+		(expectedRepoId === undefined || expectedRepoId === repo.id) &&
+		(repo.observation?.version === run.id ||
+			run.steps.some(
+				(step) => step.repo === repo.name && step.kind === "commit" && step.status === "success",
+			));
 	const streams = new Map(
 		resources.results.flatMap((row) => {
 			const data = JSON.parse(row.payload) as FactoryStreamData;
-			return data.runId === run.id && repo.observation?.version === run.id
-				? [[row.stream, data] as const]
-				: [];
+			return data.runId === run.id && currentRepo ? [[row.stream, data] as const] : [];
 		}),
 	);
 	const kind = `repo:${repo.name}:security`;
@@ -278,7 +287,13 @@ export async function freezeActivityRepo(
 		observedAt <= Date.parse(step.finishedAt ?? "") &&
 		observedAt >= Date.parse(run.startedAt);
 	const security = verified ? candidate : null;
-	const activity = activityRepo(repo, streams, requireActivityWindow(run), supplement, security);
+	const activity = activityRepo(
+		{ ...repo, branch: activityBranch(run, repo) },
+		streams,
+		requireActivityWindow(run),
+		supplement,
+		security,
+	);
 	if (Date.parse(requireActivityWindow(run).since) < Date.parse(run.window.since))
 		for (const key of ["commits", "actions"])
 			activity.coverage[key] = {

@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
 import { expect, it } from "vitest";
 import { makeRun } from "../../apps/web/src/lib/factory-run";
+import { missedSlotFixture } from "../fixtures/missed-slots";
 
 const base = process.env.GIRAFFE_E2E ?? "http://127.0.0.1:17045";
 const root = resolve(import.meta.dirname, "../..");
@@ -150,11 +151,9 @@ INSERT INTO ${table}(account_id,kind,enabled,time,weekday,scope,next_at,last_run
 it("publishes all missed slots durably and immutably through the local scheduled HTTP handler", async () => {
 	const s = await fixture();
 	try {
-		const today = new Date();
-		today.setUTCHours(0, 0, 0, 0);
-		const due = new Date(today.getTime() - 3 * 86400_000).toISOString();
+		const { today, due, time } = missedSlotFixture(new Date().toISOString());
 		rows(
-			`INSERT INTO catalog_refresh_schedules(account_id,kind,enabled,time,weekday,scope,next_at) VALUES(${literal(s.account)},'catalog',1,'08:00',0,'all',${literal(due)})`,
+			`INSERT INTO catalog_refresh_schedules(account_id,kind,enabled,time,weekday,scope,next_at) VALUES(${literal(s.account)},'catalog',1,${literal(time)},0,'all',${literal(due)})`,
 		);
 		const cron = () =>
 			fetch(`${base}/cdn-cgi/handler/scheduled?cron=${encodeURIComponent("* * * * *")}`);
@@ -167,7 +166,7 @@ it("publishes all missed slots durably and immutably through the local scheduled
 		);
 		expect(missed).toHaveLength(3);
 		for (let daysAgo = 1; daysAgo <= 3; daysAgo++) {
-			const dueAt = new Date(today.getTime() - daysAgo * 86400_000).toISOString();
+			const dueAt = new Date(Date.parse(today) - daysAgo * 86400_000).toISOString();
 			expect(
 				missed.find((run: { requestKey: string }) => run.requestKey === `catalog:${dueAt}`),
 			).toMatchObject({
@@ -178,9 +177,7 @@ it("publishes all missed slots durably and immutably through the local scheduled
 			});
 		}
 		expect(
-			history.items.filter(
-				(run: { requestKey: string }) => run.requestKey === `catalog:${today.toISOString()}`,
-			),
+			history.items.filter((run: { requestKey: string }) => run.requestKey === `catalog:${today}`),
 		).toHaveLength(1);
 		const immutable = rows(
 			`SELECT id,payload FROM factory_runs WHERE account_id=${literal(s.account)} AND json_extract(payload,'$.error')='scheduled_slot_missed' ORDER BY id`,

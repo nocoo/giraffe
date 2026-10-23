@@ -10,6 +10,7 @@ import {
 	type FactoryStreamName,
 } from "../../lib/factory-types";
 import { type Env, encryptionKey } from "../env";
+import { activityBranch } from "./activity";
 import {
 	type ActivitySupplement,
 	collectActivityContributions,
@@ -147,7 +148,7 @@ export async function executeRunPage(
 				const actions = saved.results.find((row) => row.stream === "actions");
 				const result = await collectActivitySupplement(
 					run,
-					repo,
+					{ ...repo, branch: activityBranch(run, repo) },
 					gh,
 					token,
 					previous ? (JSON.parse(previous.payload) as ActivitySupplement) : null,
@@ -196,12 +197,14 @@ export async function executeRunPage(
 				repo.id !== run.repoIds[String(step.repo)]
 			)
 				throw new ApiError(403, "repository_unavailable", "repository identity/access changed");
-			step.sourceHead = mapFactoryRepo(repo).head;
+			const metadata = mapFactoryRepo(repo);
+			step.sourceHead = metadata.head;
+			step.sourceBranch = metadata.branch;
 			const previous = run.checkpoint;
 			run.checkpoint = newFactory(run.account_id, run.owner, run.startedAt);
 			run.checkpoint.runId = run.id;
 			run.checkpoint.inventory.complete = true;
-			run.checkpoint.repos = [{ ...mapFactoryRepo(repo), metadataAt: clock() }];
+			run.checkpoint.repos = [{ ...metadata, metadataAt: clock() }];
 			run.checkpoint.contributionStatus = previous?.contributionStatus ?? "unavailable";
 			run.checkpoint.contribution = previous?.contribution ?? null;
 			run.checkpoint.rate = previous?.rate ?? null;

@@ -931,8 +931,29 @@ or storage cut marks the affected list and the whole response truncated; nullabl
 totals must not be interpreted as zero. Old good observations are not relabeled
 as newly collected evidence. The source index registers `account:activity` with
 its publication version, content version and saved `fetchedAt`.
+Activity freezes only streams carrying this run's ID. Repository evidence is
+current when its observation version matches the run or its repository commit
+step succeeded in this run, with the repository ID matching the frozen run ID
+when available. A retained dependency evidence version therefore does not discard
+successfully collected activity streams; absent successful commit evidence,
+stale observations remain unavailable.
+The metadata step saves the current run's default branch separately from retained
+repository observations. Activity supplement collection and freezing use only
+that successful same-repository metadata with matching identity when recorded.
+Without verifiable branch evidence, workflow `is_default_branch` and default
+commit branch labels are null, `coverage.default_branch` is unavailable and red
+default-branch totals remain null. A retained branch is never used as a fallback.
+This also applies to in-flight runs whose metadata completed before branch
+evidence was recorded: supplemental branch histories are not classified as
+other branches. `coverage.other_commits` stays unavailable and `commits.other`
+stays null; saved unverified classifications are discarded. Tag and deployment
+collection remain independent and continue normally.
 Repositories with failed, unavailable or limited steps have `coverage.run.status`
-`partial`. Per-source missing evidence remains unavailable/null; a total whose
+`partial`, except that `limited` with `error:dependency_parse_unsupported` alone
+does not mark run coverage partial or truncated. Dependency diagnostics retain
+their own limited coverage independently. Other limited steps still mark run
+coverage truncated; failed/unavailable steps alone do not. Per-source missing
+evidence remains unavailable/null; a total whose
 source evidence is partial or unavailable stays null, never a fabricated zero.
 `membership` freezes repository names independently of stored pages, so capacity
 cuts cannot make a selected member look unselected. An unclassifiable failed

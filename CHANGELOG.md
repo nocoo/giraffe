@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.20.1 - 2026-10-23
+
+### Fixed
+
+- Preserve current-run activity when repeated dependency parse limitations retain an older repository observation. The freeze guard previously discarded every current stream solely because the accepted repository version was older. A successful repository commit in this run now also establishes current evidence, with matching repository identity when recorded; every stream must still carry this run's ID. Dependency evidence retention and stale-source rejection remain unchanged.
+- Exclude terminal `limited` steps with `dependency_parse_unsupported` from activity run gaps. This diagnostic alone no longer makes `coverage.run` partial or the activity publication truncated; other failed, unavailable and limited steps retain their existing behavior. Dependency coverage remains independently limited.
+- Capture the default branch in each successful current-run metadata step and use that evidence for activity collection and publication, independently of retained repository versions. Default-branch renames now classify CI and branch commits correctly. Missing, failed or identity-mismatched metadata yields unknown branch classification and unavailable default-branch coverage, never the retained branch. Red default-branch totals remain null without verified branch evidence, including empty or all-successful CI lists. In-flight runs whose metadata predates this field also keep other-branch counts null and coverage unavailable; supplemental collection discards unverified branch classifications and pending histories while preserving independent tag and deployment evidence.
+- No schema migration is required. Historical activity publications are immutable and are not rewritten; the fixes apply to future publications.
+
 ## v0.20.0 - 2026-10-22
 
 ### Added

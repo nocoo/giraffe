@@ -1,5 +1,56 @@
 # Retrospective
 
+## 2026-10-23 - Missing branch evidence must stop supplemental classification
+
+The metadata-evidence fix passed a null branch into the supplement collector for
+in-flight runs whose metadata had completed before the new field existed. The
+collector excluded refs by name inequality, so every ref then became an apparent
+non-default branch with complete coverage. Reproduce the persisted pre-deploy
+metadata shape, not only missing evidence during final publication. Normalize
+supplement checkpoints before resuming or returning a completed phase: discard
+unverified commits and pending histories, keep other-branch coverage unavailable,
+and continue independent tags and deployments without a retained-branch fallback.
+
+## 2026-10-23 - Unknown branch coverage must reach totals
+
+The branch-evidence regression included a failed workflow, so the existing
+unknown-failure guard already produced a null red-default-branch total. Review
+found that empty and all-successful workflow lists still returned an empty total
+despite unavailable branch coverage. Require complete default-branch coverage
+in the aggregate itself and test both list shapes against unknown and verified
+metadata. Propagate evidence availability independently of the observed outcome;
+an absent failure does not verify the branch.
+
+## 2026-10-23 - Current streams need current branch metadata
+
+The retained-version activity fix initially verified stream run IDs without
+separating their branch context from the retained repository. Review identified
+that a default-branch rename could suppress a current failed-CI warning and label
+current commits with the old branch. Persist sourceBranch on the existing
+successful metadata step and share its identity-checked lookup between supplement
+collection and freezing. Missing evidence stays unknown; do not revive a retained
+branch. Regression tests preserve the old repository while verifying renamed
+default-branch CI and commits on the former default branch.
+
+The first executor regression matched any GraphQL query containing nameWithOwner
+and accidentally replaced the catalog response. Narrow the mock to the metadata
+query and account explicitly for the shared fixture's unavailable contributions
+instead of assuming that unrelated stages succeed.
+
+## 2026-10-23 - Preserve shell and pane execution context
+
+The hotfix preflight used `path` as a zsh loop variable. That special variable
+rewrote the child shell's PATH, so later tool checks failed with command-not-found.
+The parent environment and repository were unchanged; repeating the checks in a
+fresh shell confirmed free test ports and the installed browser. Use descriptive
+ordinary names such as `stateDir`, not shell special variables, for loop targets.
+
+During review-pane setup, Herdr's resize command with `--current` resolved to an
+unrelated focused pane and returned `changed:false`. Retrying with the verified
+explicit controller pane ID changed only the intended split. For pane mutations,
+pass the inspected pane ID and verify the returned workspace, pane and layout
+instead of assuming caller context was honored.
+
 ## 2026-10-22 - Browser assertions need a specific landmark
 
 The daily-report browser test copied an overflow assertion using main, but the

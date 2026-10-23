@@ -183,6 +183,15 @@ export async function collectActivitySupplement(
 		deployNext: null,
 		pages: 0,
 	};
+	if (!repo.branch) {
+		state.commits = null;
+		state.coverage.other_commits = unknownActivity("Current-run default branch unavailable");
+		state.pending = [];
+		state.after = null;
+		if (state.phase === "refs" || state.phase === "commits")
+			state.phase =
+				state.pages === 0 || state.tagAfter ? "tags" : state.last_success_at ? "done" : "deploy";
+	}
 	if (state.phase === "done") return { state, done: true };
 	const [owner, name] = repo.name.split("/");
 	const variables = {
