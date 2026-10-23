@@ -31,6 +31,7 @@ export type FactoryCoverage = {
 	observed: number;
 };
 export type FactoryEvent = {
+	updatedAt?: string | null;
 	activityRun?: Omit<import("./activity-types").ActivityRun, "is_default_branch">;
 	merged_by?: string | null;
 	base_ref?: string | null;
@@ -125,6 +126,12 @@ export type FactoryRepo = {
 	manifests?: FactoryDependency[];
 };
 export type FactoryStreamData = {
+	incremental?: {
+		since: string;
+		phase: "collect" | "pr_state";
+		pendingPrIds: string[];
+		observedIds: string[];
+	};
 	runId: string;
 	items: FactoryEvent[];
 	manifests?: FactoryDependency[];

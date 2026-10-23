@@ -366,12 +366,19 @@ async function executeStep(
 				checkpoint.status = "collecting";
 			}
 			const store = {
-				...(run.depth === "quick" && stream
+				...(stream && (run.depth === "quick" || stream === "issues" || stream === "prs")
 					? {
 							baseline: async () => {
 								const repo = await currentRepo(db, run.account_id, String(step.repo));
 								if (!repo?.observation || repo.id !== run.repoIds[String(step.repo)]) return null;
 								const retained = repo.coverage[stream].observation;
+								if (
+									(stream === "issues" || stream === "prs") &&
+									(retained ||
+										repo.coverage[stream].retained ||
+										repo.coverage[stream].status !== "complete")
+								)
+									return null;
 								const row = await db
 									.prepare(
 										"SELECT payload FROM factory_resources WHERE run_id=? AND repo=? AND stream=?",

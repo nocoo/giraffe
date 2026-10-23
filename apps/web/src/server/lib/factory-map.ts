@@ -85,7 +85,10 @@ export function mapFactoryEvents(stream: FactoryStreamName, data: GithubObject[]
 				author: str(object(r.user ?? r.author ?? r.actor).login) || "unlinked",
 				state: str(r.state ?? r.status),
 			};
-			if (stream === "prs" || stream === "issues") event.body = str(r.body).slice(0, 1200);
+			if (stream === "prs" || stream === "issues") {
+				event.body = str(r.body).slice(0, 1200);
+				event.updatedAt = nullable(r.updated_at);
+			}
 			if (stream === "commits") {
 				event.id = str(r.sha);
 				event.at = str(object(commit.committer).date);
