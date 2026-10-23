@@ -523,6 +523,18 @@ publication produce 7/14 stream coverage, one missing repository and warning
 health. A missing-only selection has 0/7 coverage and unknown metrics/times, not
 invented zero observations. Unknown catalog topics cannot exclude a member from
 a topic filter. This metadata is not persisted into immutable publications.
+
+Individual factory streams use the same freshness calculation in `/sources` and
+`/factory/repos/:owner/:name/:stream`: `total:1`, with `missing:1` whenever coverage
+is not `complete` or its saved `coverage.fetchedAt` is absent/invalid. Otherwise
+`missing:0`. A valid saved timestamp remains both `oldestAt` and `latestAt`, even
+when coverage is missing; invalid timestamps yield null bounds. Missing measures
+coverage, not merely the presence of dated rows. In particular, retained limited
+dependencies correctly report `missing:1` on both endpoints, not `0` just because
+old evidence has a timestamp. Retained complete evidence reports `missing:0` but
+keeps its original timestamp: completeness does not establish recency. Current
+limited evidence also reports `missing:1`; only complete, dated evidence reports
+zero. Consumers must check both coverage and age before treating a stream as fresh.
 Machine `/factory` and `account:factory` expose `truncated:true` when
 `publication.inventory.complete !== true`, even when `freshness.missing` is zero.
 An existing saved `truncated:true` is also preserved, even with complete inventory;
@@ -1371,8 +1383,8 @@ remain published through the coverage-regression guard. New publications freeze
 the latest dependency safe-parse limitation as `coverage.status:"limited"`, with
 that safe reason/code and `retained:true`; older resource payloads and publications
 are not modified. Browser/machine stream reads and `/sources` agree on that
-coverage, with `truncated:true`, `unavailable:false` and missing freshness coverage
-in the source index. Items, manifests, `coverage.observed`, source URLs, original
+coverage, with `truncated:true`, `unavailable:false` and `freshness.missing:1`
+in both the source index and stream envelope. Items, manifests, `coverage.observed`, source URLs, original
 window and evidence timestamps remain those of the retained data, not the failed
 attempt. No retained empty list proves zero, including an empty limited baseline.
 Without a prior stronger baseline, the new limited resource is published directly

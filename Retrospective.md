@@ -1745,3 +1745,12 @@ L2 startup. The runner rejected the occupied stub port before starting services;
 no other controller's process was stopped. Shared-port preflight must inspect
 the captured listener output and wait 30 seconds while any listener remains,
 rather than treating `lsof` status 1 alone as proof that all ports are free.
+
+## 2026-10-23 - Type route fixture JSON before committing
+
+The B13D freshness regressions passed at runtime, but the first commit hook
+rejected unchecked `Response.json()` results because TypeScript treats them as
+unknown. No commit was created and no hook was bypassed. The route fixture now
+requires an explicit result type derived from the production readers. Runtime
+regressions and strict type checks are independent evidence; validate both before
+considering a test-only helper complete.

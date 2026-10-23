@@ -8,7 +8,7 @@ import type {
 } from "../../lib/factory-types";
 import { FACTORY_STREAMS } from "../../lib/factory-types";
 import { prLifecycleState, prSnapshot, prState } from "../../lib/pull-request";
-import { snapshotFreshness } from "../../lib/snapshot-freshness";
+import { factoryStreamFreshness, snapshotFreshness } from "../../lib/snapshot-freshness";
 import { catalogFactoryRepo } from "./catalog-read";
 import {
 	composeContent,
@@ -437,6 +437,7 @@ export function factoryResourceData(
 			: {}),
 		ranges: [coverage.observation?.window ?? repo.observation?.window ?? snap.window],
 		fetched_at: coverage.fetchedAt,
+		freshness: factoryStreamFreshness(coverage),
 		observation: coverage.observation ?? repo.observation,
 		coverage,
 		truncated: coverage.status === "limited",

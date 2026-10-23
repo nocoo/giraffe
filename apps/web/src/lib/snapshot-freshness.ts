@@ -1,3 +1,5 @@
+import type { FactoryCoverage } from "./factory-types";
+
 export type SnapshotFreshness = {
 	oldestAt: string | null;
 	latestAt: string | null;
@@ -18,4 +20,9 @@ export function snapshotFreshness(times: (string | null | undefined)[]): Snapsho
 		if (latestAt === null || Date.parse(time) > Date.parse(latestAt)) latestAt = time;
 	}
 	return { oldestAt, latestAt, total: times.length, missing };
+}
+export function factoryStreamFreshness(coverage: Pick<FactoryCoverage, "status" | "fetchedAt">) {
+	const freshness = snapshotFreshness([coverage.fetchedAt]);
+	if (coverage.status !== "complete") freshness.missing = 1;
+	return freshness;
 }
