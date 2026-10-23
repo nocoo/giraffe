@@ -1859,3 +1859,19 @@ steps. The complete executor fixture also needs valid security and catalog stubs
 missing those initially produced unrelated fixture failures, not upgrade defects.
 When changing source strategy, test actual old checkpoint data at every yield
 boundary, including nested ranges, rather than assuming a fresh-run shape.
+
+## 2026-10-23 - Protect old root ownership before parallel handoff
+
+The follow-up legacy-cursor audit found that lanes cloned the shared run after
+awaiting their checkpoint reads. A slower v0.22 repository without a per-repo
+checkpoint could therefore inherit a faster repository's newly accepted root.
+Freezing startup state alone would fix that invocation but still lose the old
+root if its lane yielded before saving. The repair freezes startup state and
+seeds the valid old single-repository root in the same fenced transaction as the
+first replacement save, preserving existing checkpoint rows on conflict. Thirteen
+regressions cover Issues/PRs page-2 identity, early budget exit, a cursor past the
+repository, newer-row priority, rollback, lost lease and lost commit acknowledgement.
+Tests require retained old events and successful two-repository publication.
+Three baseline-generated site chunk fixtures separately verify unchanged snapshot
+handoff. Review upgrade paths across invocation boundaries, not only races within
+one Promise pool; durable fallback ownership matters even when a lane does no work.

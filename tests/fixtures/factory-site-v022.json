@@ -1,0 +1,482 @@
+{
+	"sourceRevision": "12d461220d3213cfc28209cb57b0b5bc496fcb37",
+	"cases": [
+		{
+			"resource": "issues",
+			"names": [
+				"nocoo/repo0",
+				"nocoo/repo1",
+				"nocoo/repo2",
+				"nocoo/repo3",
+				"nocoo/repo4",
+				"nocoo/repo5",
+				"nocoo/repo6",
+				"nocoo/repo7",
+				"nocoo/repo8",
+				"nocoo/repo9",
+				"nocoo/repo10",
+				"nocoo/repo11"
+			],
+			"cursor": 10,
+			"payload": {
+				"truncated": false,
+				"issues": [
+					{
+						"name_with_owner": "nocoo/repo0",
+						"number": 1,
+						"title": "nocoo/repo0",
+						"url": "",
+						"created_at": "",
+						"updated_at": "",
+						"author_login": null,
+						"labels": [],
+						"comments_count": 0
+					},
+					{
+						"name_with_owner": "nocoo/repo1",
+						"number": 1,
+						"title": "nocoo/repo1",
+						"url": "",
+						"created_at": "",
+						"updated_at": "",
+						"author_login": null,
+						"labels": [],
+						"comments_count": 0
+					},
+					{
+						"name_with_owner": "nocoo/repo2",
+						"number": 1,
+						"title": "nocoo/repo2",
+						"url": "",
+						"created_at": "",
+						"updated_at": "",
+						"author_login": null,
+						"labels": [],
+						"comments_count": 0
+					},
+					{
+						"name_with_owner": "nocoo/repo3",
+						"number": 1,
+						"title": "nocoo/repo3",
+						"url": "",
+						"created_at": "",
+						"updated_at": "",
+						"author_login": null,
+						"labels": [],
+						"comments_count": 0
+					},
+					{
+						"name_with_owner": "nocoo/repo4",
+						"number": 1,
+						"title": "nocoo/repo4",
+						"url": "",
+						"created_at": "",
+						"updated_at": "",
+						"author_login": null,
+						"labels": [],
+						"comments_count": 0
+					},
+					{
+						"name_with_owner": "nocoo/repo5",
+						"number": 1,
+						"title": "nocoo/repo5",
+						"url": "",
+						"created_at": "",
+						"updated_at": "",
+						"author_login": null,
+						"labels": [],
+						"comments_count": 0
+					},
+					{
+						"name_with_owner": "nocoo/repo6",
+						"number": 1,
+						"title": "nocoo/repo6",
+						"url": "",
+						"created_at": "",
+						"updated_at": "",
+						"author_login": null,
+						"labels": [],
+						"comments_count": 0
+					},
+					{
+						"name_with_owner": "nocoo/repo7",
+						"number": 1,
+						"title": "nocoo/repo7",
+						"url": "",
+						"created_at": "",
+						"updated_at": "",
+						"author_login": null,
+						"labels": [],
+						"comments_count": 0
+					},
+					{
+						"name_with_owner": "nocoo/repo8",
+						"number": 1,
+						"title": "nocoo/repo8",
+						"url": "",
+						"created_at": "",
+						"updated_at": "",
+						"author_login": null,
+						"labels": [],
+						"comments_count": 0
+					},
+					{
+						"name_with_owner": "nocoo/repo9",
+						"number": 1,
+						"title": "nocoo/repo9",
+						"url": "",
+						"created_at": "",
+						"updated_at": "",
+						"author_login": null,
+						"labels": [],
+						"comments_count": 0
+					}
+				],
+				"fetched_at": "2026-09-15T22:00:00.000Z"
+			}
+		},
+		{
+			"resource": "prs",
+			"names": [
+				"nocoo/repo0",
+				"nocoo/repo1",
+				"nocoo/repo2",
+				"nocoo/repo3",
+				"nocoo/repo4",
+				"nocoo/repo5",
+				"nocoo/repo6",
+				"nocoo/repo7",
+				"nocoo/repo8",
+				"nocoo/repo9",
+				"nocoo/repo10",
+				"nocoo/repo11"
+			],
+			"cursor": 10,
+			"payload": {
+				"truncated": false,
+				"pull_requests": [
+					{
+						"name_with_owner": "nocoo/repo0",
+						"number": 1,
+						"title": "nocoo/repo0",
+						"url": "",
+						"created_at": "",
+						"updated_at": "",
+						"author_login": null,
+						"is_draft": false,
+						"review_decision": null,
+						"additions": 0,
+						"deletions": 0,
+						"base_ref": "",
+						"head_ref": "",
+						"state": null,
+						"mergeable": null,
+						"mergeStateStatus": null,
+						"checks": {
+							"state": null
+						}
+					},
+					{
+						"name_with_owner": "nocoo/repo1",
+						"number": 1,
+						"title": "nocoo/repo1",
+						"url": "",
+						"created_at": "",
+						"updated_at": "",
+						"author_login": null,
+						"is_draft": false,
+						"review_decision": null,
+						"additions": 0,
+						"deletions": 0,
+						"base_ref": "",
+						"head_ref": "",
+						"state": null,
+						"mergeable": null,
+						"mergeStateStatus": null,
+						"checks": {
+							"state": null
+						}
+					},
+					{
+						"name_with_owner": "nocoo/repo2",
+						"number": 1,
+						"title": "nocoo/repo2",
+						"url": "",
+						"created_at": "",
+						"updated_at": "",
+						"author_login": null,
+						"is_draft": false,
+						"review_decision": null,
+						"additions": 0,
+						"deletions": 0,
+						"base_ref": "",
+						"head_ref": "",
+						"state": null,
+						"mergeable": null,
+						"mergeStateStatus": null,
+						"checks": {
+							"state": null
+						}
+					},
+					{
+						"name_with_owner": "nocoo/repo3",
+						"number": 1,
+						"title": "nocoo/repo3",
+						"url": "",
+						"created_at": "",
+						"updated_at": "",
+						"author_login": null,
+						"is_draft": false,
+						"review_decision": null,
+						"additions": 0,
+						"deletions": 0,
+						"base_ref": "",
+						"head_ref": "",
+						"state": null,
+						"mergeable": null,
+						"mergeStateStatus": null,
+						"checks": {
+							"state": null
+						}
+					},
+					{
+						"name_with_owner": "nocoo/repo4",
+						"number": 1,
+						"title": "nocoo/repo4",
+						"url": "",
+						"created_at": "",
+						"updated_at": "",
+						"author_login": null,
+						"is_draft": false,
+						"review_decision": null,
+						"additions": 0,
+						"deletions": 0,
+						"base_ref": "",
+						"head_ref": "",
+						"state": null,
+						"mergeable": null,
+						"mergeStateStatus": null,
+						"checks": {
+							"state": null
+						}
+					},
+					{
+						"name_with_owner": "nocoo/repo5",
+						"number": 1,
+						"title": "nocoo/repo5",
+						"url": "",
+						"created_at": "",
+						"updated_at": "",
+						"author_login": null,
+						"is_draft": false,
+						"review_decision": null,
+						"additions": 0,
+						"deletions": 0,
+						"base_ref": "",
+						"head_ref": "",
+						"state": null,
+						"mergeable": null,
+						"mergeStateStatus": null,
+						"checks": {
+							"state": null
+						}
+					},
+					{
+						"name_with_owner": "nocoo/repo6",
+						"number": 1,
+						"title": "nocoo/repo6",
+						"url": "",
+						"created_at": "",
+						"updated_at": "",
+						"author_login": null,
+						"is_draft": false,
+						"review_decision": null,
+						"additions": 0,
+						"deletions": 0,
+						"base_ref": "",
+						"head_ref": "",
+						"state": null,
+						"mergeable": null,
+						"mergeStateStatus": null,
+						"checks": {
+							"state": null
+						}
+					},
+					{
+						"name_with_owner": "nocoo/repo7",
+						"number": 1,
+						"title": "nocoo/repo7",
+						"url": "",
+						"created_at": "",
+						"updated_at": "",
+						"author_login": null,
+						"is_draft": false,
+						"review_decision": null,
+						"additions": 0,
+						"deletions": 0,
+						"base_ref": "",
+						"head_ref": "",
+						"state": null,
+						"mergeable": null,
+						"mergeStateStatus": null,
+						"checks": {
+							"state": null
+						}
+					},
+					{
+						"name_with_owner": "nocoo/repo8",
+						"number": 1,
+						"title": "nocoo/repo8",
+						"url": "",
+						"created_at": "",
+						"updated_at": "",
+						"author_login": null,
+						"is_draft": false,
+						"review_decision": null,
+						"additions": 0,
+						"deletions": 0,
+						"base_ref": "",
+						"head_ref": "",
+						"state": null,
+						"mergeable": null,
+						"mergeStateStatus": null,
+						"checks": {
+							"state": null
+						}
+					},
+					{
+						"name_with_owner": "nocoo/repo9",
+						"number": 1,
+						"title": "nocoo/repo9",
+						"url": "",
+						"created_at": "",
+						"updated_at": "",
+						"author_login": null,
+						"is_draft": false,
+						"review_decision": null,
+						"additions": 0,
+						"deletions": 0,
+						"base_ref": "",
+						"head_ref": "",
+						"state": null,
+						"mergeable": null,
+						"mergeStateStatus": null,
+						"checks": {
+							"state": null
+						}
+					}
+				],
+				"fetched_at": "2026-09-15T22:00:00.000Z"
+			}
+		},
+		{
+			"resource": "alerts",
+			"names": [
+				"nocoo/repo0",
+				"nocoo/repo1",
+				"nocoo/repo2",
+				"nocoo/repo3",
+				"nocoo/repo4",
+				"nocoo/repo5",
+				"nocoo/repo6",
+				"nocoo/repo7",
+				"nocoo/repo8",
+				"nocoo/repo9",
+				"nocoo/repo10",
+				"nocoo/repo11"
+			],
+			"cursor": 10,
+			"payload": {
+				"truncated": false,
+				"unavailable": false,
+				"features": {
+					"dependabot": {
+						"status": "available",
+						"reason_code": null,
+						"reason": null
+					},
+					"code_scanning": {
+						"status": "available",
+						"reason_code": null,
+						"reason": null
+					}
+				},
+				"items": [
+					{
+						"name_with_owner": "nocoo/repo0",
+						"source": "dependabot",
+						"severity": "high",
+						"summary": "Fix dependency",
+						"url": ""
+					},
+					{
+						"name_with_owner": "nocoo/repo1",
+						"source": "dependabot",
+						"severity": "high",
+						"summary": "Fix dependency",
+						"url": ""
+					},
+					{
+						"name_with_owner": "nocoo/repo2",
+						"source": "dependabot",
+						"severity": "high",
+						"summary": "Fix dependency",
+						"url": ""
+					},
+					{
+						"name_with_owner": "nocoo/repo3",
+						"source": "dependabot",
+						"severity": "high",
+						"summary": "Fix dependency",
+						"url": ""
+					},
+					{
+						"name_with_owner": "nocoo/repo4",
+						"source": "dependabot",
+						"severity": "high",
+						"summary": "Fix dependency",
+						"url": ""
+					},
+					{
+						"name_with_owner": "nocoo/repo5",
+						"source": "dependabot",
+						"severity": "high",
+						"summary": "Fix dependency",
+						"url": ""
+					},
+					{
+						"name_with_owner": "nocoo/repo6",
+						"source": "dependabot",
+						"severity": "high",
+						"summary": "Fix dependency",
+						"url": ""
+					},
+					{
+						"name_with_owner": "nocoo/repo7",
+						"source": "dependabot",
+						"severity": "high",
+						"summary": "Fix dependency",
+						"url": ""
+					},
+					{
+						"name_with_owner": "nocoo/repo8",
+						"source": "dependabot",
+						"severity": "high",
+						"summary": "Fix dependency",
+						"url": ""
+					},
+					{
+						"name_with_owner": "nocoo/repo9",
+						"source": "dependabot",
+						"severity": "high",
+						"summary": "Fix dependency",
+						"url": ""
+					}
+				],
+				"dependabot_open": 10,
+				"code_scanning_open": 0,
+				"fetched_at": "2026-09-15T22:00:00.000Z"
+			}
+		}
+	]
+}

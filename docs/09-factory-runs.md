@@ -68,6 +68,14 @@ Shared raw history can still be collected independently for later snapshots.
 The cross-version fixtures come from the real `12d4612` collector, including both
 a page-2 checkpoint and a split-window checkpoint with a queued range.
 
+Issues/PRs with a saved partial resource continue its original `next` rather than
+starting the new incremental strategy. Legacy baseline events without audited
+update timestamps do not qualify for incremental collection. Site Issues/PRs/
+alerts keep their existing `snapshot:{resource}` chunks and `snapshotCursor`;
+new replay keys are separate. Cross-version fixtures from `12d4612` verify that
+accepted ten-repository chunks survive and only the remaining repositories are
+queried before staged snapshot publication, without recollecting accepted groups.
+
 Each repository's executor checkpoint uses the existing run-owned
 `factory_resources` stream `executor:checkpoint`. Acceptance copies all of that
 repository's step statuses, including deferred activity skips, into the central
@@ -76,6 +84,15 @@ to the latest central version only for the same run and lease token; the origina
 token/version/expiry/status fences still gate the complete transaction. A failing
 lane stops new admission, and late results cannot overwrite accepted checkpoints.
 Failure logs include progress accepted before the failure.
+
+Before parallel checkpoint reads, the pool freezes the invocation's startup run.
+An older single-repository root is identified by its run/repository IDs and
+successful metadata, not by a cursor that may already be past its repository.
+The first accepting lane atomically seeds that root into `executor:checkpoint`
+alongside its own save, without replacing an existing per-repository checkpoint.
+This protects the old repository even if its lane yields before its first save,
+another lane returns first, or the commit acknowledgement is lost. Invalid or
+global roots are not seeded; pending protection writes share the statement budget.
 
 Uncaught executor errors release only their own fenced lease. Queue retries use
 5/10/15 seconds based on delivery attempts. A live-lease collision returns its

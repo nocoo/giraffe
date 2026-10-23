@@ -73,6 +73,17 @@ export async function executeRepoPool(
 	operation: (value: "heartbeat" | "step" | "save") => void,
 	progress: (steps: number, writes: number) => void,
 ) {
+	const initial = structuredClone(lease.run);
+	const owner = initial.checkpoint?.repos.length === 1 ? initial.checkpoint.repos[0] : undefined;
+	let checkpointToPreserve =
+		owner &&
+		initial.checkpoint?.runId === initial.id &&
+		initial.repoIds[owner.name] === owner.id &&
+		initial.steps.some(
+			(step) => step.repo === owner.name && step.kind === "metadata" && step.status === "success",
+		)
+			? { repo: owner.name, snapshot: initial.checkpoint }
+			: null;
 	let tail = Promise.resolve();
 	async function acquire() {
 		let release = () => {};
@@ -102,7 +113,7 @@ export async function executeRepoPool(
 					)
 					.bind(lease.run.id, repo)
 					.first<{ payload: string }>();
-				const run = structuredClone(lease.run);
+				const run = structuredClone(initial);
 				if (saved) run.checkpoint = JSON.parse(saved.payload) as FactorySnapshot;
 				const lane: RunLease = {
 					run,
@@ -166,7 +177,9 @@ export async function executeRepoPool(
 							},
 						});
 						pendingWrites =
-							result.writes.length + (run.checkpoint && step.kind !== "snapshot" ? 1 : 0);
+							result.writes.length +
+							(run.checkpoint && step.kind !== "snapshot" ? 1 : 0) +
+							(checkpointToPreserve ? 1 : 0);
 						invocation.pendingWrites += pendingWrites;
 						await lock();
 						if (failure) return;
@@ -193,6 +206,20 @@ export async function executeRepoPool(
 						)
 							central.cursor++;
 						const writes = rebindRunWrites(db, lease, result.writes);
+						if (checkpointToPreserve)
+							writes.push(
+								fenced(
+									db,
+									lease,
+									invocation.clock(),
+									"INSERT INTO factory_resources(run_id,repo,stream,payload) SELECT ?,?,'executor:checkpoint',? WHERE $guard ON CONFLICT(run_id,repo,stream) DO NOTHING",
+									[
+										central.id,
+										checkpointToPreserve.repo,
+										boundedJson(checkpointToPreserve.snapshot),
+									],
+								),
+							);
 						if (run.checkpoint && step.kind !== "snapshot")
 							writes.push(
 								fenced(
@@ -215,6 +242,7 @@ export async function executeRepoPool(
 							))
 						)
 							throw new InvocationStopped(true);
+						checkpointToPreserve = null;
 						if (!["pending", "running"].includes(step.status)) progress(1, 0);
 						invocation.pendingWrites -= pendingWrites;
 						pendingWrites = 0;

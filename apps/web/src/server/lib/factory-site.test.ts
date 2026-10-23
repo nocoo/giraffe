@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import { github, NOW } from "../../../../../tests/fixtures/factory";
+import legacySite from "../../../../../tests/fixtures/factory-site-v022.json";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import { makeRun } from "../../lib/factory-run";
 import { createDb } from "./db/d1";
@@ -342,6 +343,54 @@ async function collectBatch(
 	}
 	throw new Error("snapshot did not finish its bounded batch");
 }
+
+it.each(legacySite.cases)(
+	"resumes v0.22 $resource chunks without replaying accepted repositories",
+	async (entry) => {
+		expect(legacySite.sourceRevision).toBe("12d461220d3213cfc28209cb57b0b5bc496fcb37");
+		const raw = await setup(entry.resource, entry.names);
+		const db = createDb(raw);
+		const lease = await claimRun(db, "site", NOW);
+		const step = lease?.run.steps[lease.run.cursor];
+		if (!lease || !step) throw new Error("fixture step");
+		step.snapshotCursor = entry.cursor;
+		await db
+			.prepare("INSERT INTO factory_resources(run_id,repo,stream,payload) VALUES(?,?,?,?)")
+			.bind("site", "", `snapshot:${entry.resource}`, JSON.stringify(entry.payload))
+			.run();
+		expect(await saveRun(db, lease, [], NOW)).toBe(true);
+		const calls: string[] = [];
+		const result = await page(raw, (url, init) => {
+			if (!url.endsWith("/graphql")) return Response.json([]);
+			const body = JSON.parse(String(init?.body));
+			if (entry.resource === "alerts") {
+				calls.push(`${body.variables.o}/${body.variables.n}`);
+				return Response.json({
+					data: {
+						repository: { vulnerabilityAlerts: { nodes: [], pageInfo: { hasNextPage: false } } },
+					},
+				});
+			}
+			calls.push(
+				...String(body.variables.q)
+					.split(" ")
+					.filter((part) => part.startsWith("repo:"))
+					.map((part) => part.slice(5)),
+			);
+			return Response.json({
+				data: { search: { issueCount: 0, nodes: [], pageInfo: { hasNextPage: false } } },
+			});
+		});
+		expect(result).toMatchObject({ done: true, cursor: entry.names.length });
+		expect(calls).toEqual(entry.names.slice(entry.cursor));
+		const saved = await readSnapshot(createDb(raw), "account", entry.resource, "site");
+		const key =
+			entry.resource === "issues" ? "issues" : entry.resource === "prs" ? "pull_requests" : "items";
+		expect(saved?.[key]).toEqual((entry.payload as Record<string, unknown>)[key]);
+		expect(saved?.truncated).toBe(false);
+		expect(await readSnapshot(createDb(raw), "account", entry.resource)).toBeNull();
+	},
+);
 
 it("persists global lists in bounded chunks and publishes only after every repository was read", async () => {
 	const names = Array.from({ length: 21 }, (_, i) => `org/repo${i}`);
