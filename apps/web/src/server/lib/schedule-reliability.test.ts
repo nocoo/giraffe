@@ -523,7 +523,7 @@ it("retains committed successor work when immediate queue delivery fails and saf
 	const message = { body: { id: run.id }, ack, retry };
 	const env = { DB: s.raw, FACTORY_QUEUE: { send } } as unknown as Env;
 	await consumeFactory({ messages: [message] } as unknown as MessageBatch<unknown>, env);
-	expect(retry).toHaveBeenCalledWith({ delaySeconds: 120 });
+	expect(retry).toHaveBeenCalledWith({ delaySeconds: 5 });
 	await consumeFactory({ messages: [message] } as unknown as MessageBatch<unknown>, env);
 	expect(ack).toHaveBeenCalledTimes(1);
 	expect((await s.runs()).filter((item) => item.trigger === "daily")).toHaveLength(1);
