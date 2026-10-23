@@ -14,6 +14,7 @@ import {
 	getRun,
 	listRuns,
 	publishedFactory,
+	repoStates,
 	saveRun,
 	startRun,
 } from "./db/factory-runs";
@@ -258,6 +259,62 @@ it("aborts the whole unsaved batch after a mid-loop lease loss", async () => {
 	});
 	expect(calls).toBe(2);
 });
+
+it.each(["pause", "cancel"] as const)(
+	"keeps the attempted repo cooldown on %s after advancing past the durable cursor",
+	async (action) => {
+		const env = await setup();
+		const db = createDb(env.DB);
+		const found = await getRun(db, snap.account_id, "r1");
+		if (!found) throw new Error("fixture");
+		found.run.steps = found.run.steps.filter((step) =>
+			["contributions", "metadata", "commits"].includes(step.kind),
+		);
+		await db
+			.prepare("UPDATE factory_runs SET payload=? WHERE id='r1'")
+			.bind(JSON.stringify(found.run))
+			.run();
+		let during: typeof found.run | undefined;
+		const base = vi.mocked(fetch).getMockImplementation();
+		if (!base) throw new Error("fixture");
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (url: string, init: RequestInit) => {
+				if (String(init.body).includes("nameWithOwner")) {
+					during = (await getRun(db, snap.account_id, "r1"))?.run;
+					await controlRun(db, snap.account_id, "r1", action, now);
+				}
+				return base(url, init);
+			}),
+		);
+		expect(await executeRunPage(env, "r1", () => now)).toBeNull();
+		expect(during?.cursor).toBe(0);
+		expect(during?.steps[0]?.kind).toBe("contributions");
+		expect(during?.steps[1]).toMatchObject({
+			kind: "metadata",
+			repo: "nocoo/app",
+			attempts: 1,
+		});
+		expect(await repoStates(db, snap.account_id)).toEqual([
+			expect.objectContaining({
+				repo: "nocoo/app",
+				attemptRunId: "r1",
+				attemptStatus: action,
+				attemptedAt: now,
+				nextAllowedAt: "2026-09-15T22:15:00.000Z",
+			}),
+		]);
+		expect((await getRun(db, snap.account_id, "r1"))?.run).toMatchObject({
+			status: action === "pause" ? "paused" : "cancelled",
+			cursor: 0,
+			requests: 2,
+		});
+		expect(
+			(await db.prepare("SELECT * FROM factory_resources WHERE run_id='r1'").all()).results,
+		).toEqual([]);
+		expect(fetch).toHaveBeenCalledTimes(2);
+	},
+);
 
 it("recovers journalled attempts after a batch crashes before saving", async () => {
 	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] });

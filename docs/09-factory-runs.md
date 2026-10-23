@@ -52,6 +52,10 @@ business status, activity contributions and cursors stay in the final transactio
 not the audit journal. Pause/cancel materialize audits while invalidating ownership.
 Controls compare both the run version and the journal in a transaction preflight;
 a concurrent audit update returns `account_conflict` rather than dropping counters.
+Pause/cancel apply repository cooldowns to every metric repository attempted in
+the unsaved batch, not only the repository at the durable cursor. Journal-overlay
+running steps identify those attempts before controls change their statuses;
+completed work from earlier batches and untouched repositories are not extended.
 
 Sparse step encoding omits only zero/null defaults for attempts, pages, duration,
 timestamps and errors. API decoding restores every required field; kind, repo,

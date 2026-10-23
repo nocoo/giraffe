@@ -1699,3 +1699,15 @@ therefore misclassified occupied ports as free. No remote ref was updated and no
 other controller's process was terminated. Shared-port waits must inspect captured
 listener output, poll every 30 seconds while it is nonempty, and recheck immediately
 before starting a runner. A successful earlier probe is not a reservation.
+
+## 2026-10-23 - Control cooldowns must follow batch audits
+
+Review found that pause/cancel still used the durable cursor to choose a repository
+cooldown even though a batch can have advanced beyond it. Cancelling during
+metadata after account contributions therefore recorded the attempt without the
+15-minute repository cooldown. Controls now collect metric repositories from the
+journal-overlaid running steps before changing statuses, retaining the existing
+current-step rule and atomic version/journal preflight. Cross-step pause/cancel
+regressions reproduce the empty cooldown table before the fix; multi-repository
+tests exclude historical completed and untouched work. Whenever execution becomes
+batched, review control paths against in-flight audits as well as saved cursors.

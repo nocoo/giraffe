@@ -403,6 +403,17 @@ export async function controlRun(
 	if (!found) throw new ApiError(404, "not_found", "run not found");
 	const run = found.run;
 	if (!["running", "paused"].includes(run.status)) return run;
+	const attemptedRepos = new Set<string>();
+	for (const [index, step] of run.steps.entries()) {
+		if (
+			action !== "resume" &&
+			step.repo &&
+			!["snapshot", "assessment"].includes(step.kind) &&
+			(step.status === "running" || index === run.cursor) &&
+			run.steps.some((attempted) => attempted.repo === step.repo && attempted.startedAt)
+		)
+			attemptedRepos.add(step.repo);
+	}
 	run.status = action === "pause" ? "paused" : action === "resume" ? "running" : "cancelled";
 	run.updatedAt = now;
 	if (action === "pause")
@@ -417,20 +428,14 @@ export async function controlRun(
 			}
 	}
 	const writes: D1PreparedStatement[] = [];
-	const current = run.steps[run.cursor];
-	if (
-		action !== "resume" &&
-		current?.repo &&
-		!["snapshot", "assessment"].includes(current.kind) &&
-		run.steps.some((s) => s.repo === current.repo && s.startedAt)
-	) {
+	for (const repo of attemptedRepos) {
 		const prior = await db
 			.prepare("SELECT version,payload FROM factory_repo_state WHERE account_id=? AND repo=?")
-			.bind(account, current.repo)
+			.bind(account, repo)
 			.first<{ version: string | null; payload: string }>();
 		const state: RepoRefreshState = prior
 			? (JSON.parse(prior.payload) as RepoRefreshState)
-			: { repo: current.repo, status: "partial", refreshedAt: null, nextAllowedAt: now };
+			: { repo, status: "partial", refreshedAt: null, nextAllowedAt: now };
 		state.nextAllowedAt =
 			[state.nextAllowedAt, new Date(Date.parse(now) + REPO_COOLDOWN_MS).toISOString()]
 				.sort()
@@ -445,7 +450,7 @@ export async function controlRun(
 				)
 				.bind(
 					account,
-					current.repo,
+					repo,
 					prior?.version ?? null,
 					JSON.stringify(state),
 					account,

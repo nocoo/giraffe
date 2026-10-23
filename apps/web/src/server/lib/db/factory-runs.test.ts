@@ -237,6 +237,48 @@ it("preserves a genuine control transaction error without changing the run", asy
 	expect((await getRun(createDb(raw), snap.account_id, run.id))?.run.status).toBe("running");
 });
 
+it.each(["pause", "cancel"] as const)(
+	"applies %s cooldowns to every audited repo but not prior or untouched work",
+	async (action) => {
+		const { db, raw, run } = await setup();
+		const metadata = run.steps.find((step) => step.kind === "metadata");
+		const contributions = run.steps.find((step) => step.kind === "contributions");
+		if (!metadata || !contributions) throw new Error("fixture");
+		run.steps = [
+			{ ...metadata, repo: "nocoo/old", status: "success", startedAt: now },
+			contributions,
+			{ ...metadata },
+			{ ...metadata, kind: "commits" },
+			{ ...metadata, repo: "nocoo/second" },
+			{ ...metadata, repo: "nocoo/untouched" },
+		];
+		run.cursor = 1;
+		await startRun(db, run);
+		const lease = await claimRun(createDb(raw), run.id, now);
+		if (!lease) throw new Error("fixture");
+		for (const index of [2, 3, 4]) {
+			lease.run.cursor = index;
+			Object.assign(lease.run.steps[index] ?? {}, {
+				status: "running",
+				attempts: 1,
+				startedAt: now,
+			});
+			expect(await beginRunStep(createDb(raw), lease, now)).toBe(true);
+		}
+		await controlRun(db, snap.account_id, run.id, action, now);
+		const states = await db
+			.prepare("SELECT repo,payload FROM factory_repo_state ORDER BY repo")
+			.all<{ repo: string; payload: string }>();
+		expect(states.results.map((row) => row.repo)).toEqual(["nocoo/app", "nocoo/second"]);
+		for (const row of states.results)
+			expect(JSON.parse(row.payload)).toMatchObject({
+				attemptRunId: run.id,
+				attemptStatus: action,
+				nextAllowedAt: "2026-09-15T22:15:00.000Z",
+			});
+	},
+);
+
 it.each(["snapshot", "assessment"] as const)(
 	"does not change factory metric cooldowns when controlling a stored %s step",
 	async (kind) => {
