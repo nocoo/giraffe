@@ -108,8 +108,8 @@ it("R9 fake-clock completed latest exposes the stored marker and activity window
 			status: "completed",
 			window: activityWindow,
 			startedAt: started,
-			expectedFinishAt: "2026-10-21T21:30:00.000Z",
-			expectedFinishAtReason: null,
+			expectedFinishAt: null,
+			expectedFinishAtReason: "terminal",
 			finishedAt: "2026-10-21T21:30:00.000Z",
 			counts: { total: 1, success: 1, failed: 0, unavailable: 0, limited: 0, skipped: 0 },
 			failedSteps: [],
@@ -218,7 +218,7 @@ it("R9 fake-clock failed latest returns safe failed-step summary, fallback error
 		lastError: "snapshot_incomplete",
 		publishedAt: null,
 		expectedFinishAt: null,
-		expectedFinishAtReason: "no_completed_history",
+		expectedFinishAtReason: "terminal",
 	});
 });
 

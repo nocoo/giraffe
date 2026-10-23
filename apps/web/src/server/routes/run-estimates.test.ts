@@ -142,7 +142,10 @@ it("projects matching browser/detail/machine ETA from retained history in one re
 		expect(list).toHaveLength(21);
 		for (const run of list) {
 			expect(run).toHaveProperty("expectedFinishAt");
-			expect(run).toHaveProperty("expectedFinishAtReason", null);
+			expect(run).toHaveProperty(
+				"expectedFinishAtReason",
+				run.id === "current" ? null : "terminal",
+			);
 			expect(run).not.toHaveProperty("checkpoint");
 		}
 		expect(list.find((run) => run.id === "current")).toMatchObject({
@@ -150,7 +153,8 @@ it("projects matching browser/detail/machine ETA from retained history in one re
 		});
 		expect(list.find((run) => run.id === "failed-21")).toMatchObject({
 			steps: [],
-			expectedFinishAt: "2026-10-21T00:00:30.000Z",
+			expectedFinishAt: null,
+			expectedFinishAtReason: "terminal",
 		});
 	}
 	const detail = await read(false, "failed-21");
@@ -164,7 +168,7 @@ it("projects matching browser/detail/machine ETA from retained history in one re
 	expect(fetch).not.toHaveBeenCalled();
 });
 
-it("includes every null reason on compact browser and machine entries without historical samples", async () => {
+it("prioritizes terminal reasons on compact browser and machine entries without historical samples", async () => {
 	const s = await setup();
 	await s.seed("no-history", { status: "failed" });
 	await s.seed("invalid-start", { status: "failed", startedAt: "invalid" }, now);
@@ -175,9 +179,9 @@ it("includes every null reason on compact browser and machine entries without hi
 		const body = (await response.json()) as { items?: RunJson[]; history?: RunJson[] };
 		const list = body.items ?? body.history ?? [];
 		for (const [id, reason] of [
-			["no-history", "no_completed_history"],
-			["invalid-start", "invalid_started_at"],
-			["no-work", "not_executed"],
+			["no-history", "terminal"],
+			["invalid-start", "terminal"],
+			["no-work", "terminal"],
 		])
 			expect(list.find((run) => run.id === id)).toMatchObject({
 				expectedFinishAt: null,
@@ -261,8 +265,8 @@ it.each(["quick", "deep"] as const)(
 			});
 			const compact = rows.find((run) => run.id === "compact-target");
 			expect(compact).toMatchObject({
-				expectedFinishAt: "2026-10-21T00:03:30.000Z",
-				expectedFinishAtReason: null,
+				expectedFinishAt: null,
+				expectedFinishAtReason: "terminal",
 			});
 			expect(compact?.steps).toHaveLength(history ? 55 : 0);
 			for (const run of rows)
@@ -329,7 +333,62 @@ it("scales a large daily run up from a small manual selected history without bor
 		});
 		expect(rows.find((run) => run.id === "deep")).toMatchObject({
 			expectedFinishAt: null,
-			expectedFinishAtReason: "no_completed_history",
+			expectedFinishAtReason: "terminal",
 		});
 	}
 });
+
+it.each(["completed", "failed", "partial", "cancelled"] as const)(
+	"clears %s ETA on browser/machine lists, detail and latest without writes",
+	async (status) => {
+		for (const [kind, mode, depth, trigger] of [
+			["catalog", "catalog", "deep", "manual"],
+			["daily", "refresh", "quick", "daily"],
+			["weekly", "refresh", "deep", "weekly"],
+			["manual", "refresh", "deep", "manual"],
+			["quick", "refresh", "quick", "manual"],
+			["deep", "refresh", "deep", "manual"],
+		] as const) {
+			const fixture = await setup();
+			const startedAt = "2026-10-23T21:00:44.000Z";
+			const finishedAt = "2026-10-23T21:27:34.000Z";
+			await fixture.seed("sample", {
+				mode,
+				depth,
+				status: "completed",
+				startedAt: "2026-10-20T21:00:44.000Z",
+				finishedAt: "2026-10-20T22:00:44.000Z",
+			});
+			await fixture.seed("terminal", { mode, depth, trigger, status, startedAt, finishedAt });
+			const before = await fixture.savedRows();
+			const network = vi.fn();
+			vi.stubGlobal("fetch", network);
+			const expected = {
+				id: "terminal",
+				status,
+				finishedAt,
+				expectedFinishAt: null,
+				expectedFinishAtReason: "terminal",
+			};
+			for (const machine of [false, true]) {
+				const response = await fixture.call(machine);
+				expect(response.status).toBe(200);
+				const body = (await response.json()) as { items?: RunJson[]; history?: RunJson[] };
+				expect((body.items ?? body.history)?.find((run) => run.id === "terminal")).toMatchObject(
+					expected,
+				);
+				const latest = await fixture.latest(machine, kind);
+				expect(latest.status).toBe(200);
+				expect(await latest.json()).toMatchObject(expected);
+			}
+			const response = await fixture.call(false, "terminal");
+			expect(response.status).toBe(200);
+			const body = (await response.json()) as { history: RunJson[] };
+			const detail = body.history.find((run) => run.id === "terminal");
+			expect(detail).toMatchObject(expected);
+			expect(detail?.steps.length).toBeGreaterThan(0);
+			expect(await fixture.savedRows()).toEqual(before);
+			expect(network).not.toHaveBeenCalled();
+		}
+	},
+);

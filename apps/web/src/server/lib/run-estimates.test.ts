@@ -276,6 +276,22 @@ describe("historical run calibration", () => {
 describe("run finish projection", () => {
 	const run = { mode: "refresh", startedAt: now } as const;
 
+	it.each(["completed", "partial", "failed", "cancelled"] as const)(
+		"does not project a future finish for terminal %s runs",
+		(status) => {
+			for (const total of [0, 10]) {
+				expect(estimateRunFinish({ ...run, status, startedAt: "invalid" }, total, empty)).toEqual({
+					expectedFinishAt: null,
+					expectedFinishAtReason: "terminal",
+				});
+				expect(estimateRunFinish({ ...run, status }, total, { ...empty, deep: 1000 })).toEqual({
+					expectedFinishAt: null,
+					expectedFinishAtReason: "terminal",
+				});
+			}
+		},
+	);
+
 	it("always emits nullable fields with an explicit unavailable reason", () => {
 		expect(estimateRunFinish(run, 1, empty)).toEqual({
 			expectedFinishAt: null,
@@ -335,7 +351,7 @@ describe("run finish projection", () => {
 		);
 		expect(
 			estimateRunFinish({ ...run, status: "completed", stepPlan }, 4, calibration, now),
-		).toEqual({ expectedFinishAt: stamp(started + 10000), expectedFinishAtReason: null });
+		).toEqual({ expectedFinishAt: null, expectedFinishAtReason: "terminal" });
 	});
 
 	it("scales minimal projections by remaining counts, with the cursor only as a last resort", () => {

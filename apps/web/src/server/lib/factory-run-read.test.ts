@@ -108,12 +108,14 @@ it("includes finished partial refresh history in the batched ETA calibration", a
 		deep: 250,
 		plans: {
 			"partial-1000": [
-				["snapshot", 6, 6, null],
+				["snapshot", 5, 5, null],
+				["snapshot", 1, 1, null, "insights"],
 				["contributions", 1, 1, null],
 				["publish", 1, 1, null],
 			],
 			"partial-3000": [
-				["snapshot", 6, 6, null],
+				["snapshot", 5, 5, null],
+				["snapshot", 1, 1, null, "insights"],
 				["contributions", 1, 1, null],
 				["publish", 1, 1, null],
 			],

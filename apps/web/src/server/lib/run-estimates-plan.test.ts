@@ -48,6 +48,192 @@ async function history(
 }
 
 describe("plan-scaled finish estimates", () => {
+	it("models the 06:44 activity entry tail instead of spreading its waits over factory steps", async () => {
+		const timed = (
+			kind: FactoryRunStep["kind"],
+			repo: string | null,
+			start: number,
+			wall: number,
+			service: number,
+		) => ({
+			...step(kind, service),
+			repo,
+			startedAt: stamp(start),
+			finishedAt: stamp(start + wall),
+		});
+		const factoryStart = 108_000;
+		const snapshotStart = factoryStart + 816_000;
+		const activityStart = snapshotStart + 837_000;
+		const activityEnd = activityStart + 858_000;
+		const steps = [
+			timed("snapshot", null, 0, factoryStart, 62_000),
+			...Array.from({ length: 540 }, (_, index) =>
+				timed(
+					"metadata",
+					`r${Math.floor(index / 9)}`,
+					factoryStart + Math.floor(index / 36) * (816_000 / 15) + (index % 9) * (816_000 / 135),
+					816_000 / 135,
+					1_737_000 / 540,
+				),
+			),
+			...Array.from({ length: 540 }, (_, index) =>
+				timed(
+					"snapshot",
+					`r${Math.floor(index / 9)}`,
+					snapshotStart + Math.floor(index / 36) * (837_000 / 15) + (index % 9) * (837_000 / 135),
+					837_000 / 135,
+					1_889_000 / 540,
+				),
+			),
+			...Array.from({ length: 60 }, (_, index) =>
+				timed("activity", `r${index}`, activityStart + index * 14_300, 14_300, 299_000 / 60),
+			),
+			{ ...timed("snapshot", null, activityEnd, 3000, 3000), resource: "insights" },
+			timed("publish", null, activityEnd + 3000, 4000, 4000),
+		];
+		const finish = activityEnd + 7000;
+		const calibration = await history(steps, finish, "quick");
+		expect(calibration.plans?.history?.at(-2)).toEqual(["snapshot", 1, 0, null, "insights"]);
+		const dailyStart = "2026-10-24T06:14:55+08:00";
+		const current = new Date(Date.parse(dailyStart) + activityStart).toISOString();
+		const expected = new Date(Date.parse(dailyStart) + finish).toISOString();
+		const pending = steps.map((entry) => ({
+			...entry,
+			status:
+				entry.kind === "activity" || entry.kind === "publish" || entry.resource === "insights"
+					? ("pending" as const)
+					: ("success" as const),
+		}));
+		const run = {
+			mode: "refresh" as const,
+			depth: "quick" as const,
+			status: "running" as const,
+			startedAt: dailyStart,
+			steps: pending,
+		};
+		expect(current).toBe("2026-10-23T22:44:16.000Z");
+		const detailed = estimateRunFinish(run, steps.length, calibration, current);
+		expect(Date.parse(detailed.expectedFinishAt ?? "")).toBeGreaterThanOrEqual(
+			Date.parse(expected),
+		);
+		expect(Date.parse(detailed.expectedFinishAt ?? "") - Date.parse(expected)).toBeLessThan(60_000);
+		const stepPlan: RunStepPlan = pending.map(({ kind, repo, status, resource }) =>
+			resource === "insights"
+				? [kind, 1, Number(status === "pending"), repo, resource]
+				: [kind, 1, Number(status === "pending"), repo],
+		);
+		expect(
+			estimateRunFinish({ ...run, steps: [], stepPlan }, steps.length, calibration, current),
+		).toEqual(detailed);
+		const initial = steps.map((entry) => ({ ...entry, status: "pending" as const }));
+		expect(
+			Date.parse(
+				estimateRunFinish({ ...run, steps: initial }, steps.length, calibration, dailyStart)
+					.expectedFinishAt ?? "",
+			),
+		).toBeGreaterThanOrEqual(Date.parse(expected));
+	});
+
+	it.each([
+		["invalid", stamp(1000)],
+		[stamp(2000), stamp(1000)],
+		[stamp(-1), stamp(1000)],
+		[stamp(0), stamp(5000)],
+	] as const)(
+		"rejects invalid phase envelopes %s to %s without losing aggregate calibration",
+		async (startedAt, finishedAt) => {
+			const calibration = await history(
+				[{ ...step("metadata", 1000), startedAt, finishedAt }],
+				3000,
+				"quick",
+			);
+			expect(calibration.phaseOverhead).toBeUndefined();
+			expect(calibration.overhead?.quick).toBe(2000);
+		},
+	);
+
+	it("assigns delivery and terminal gaps to their actual phases and accepts zero-duration work", async () => {
+		const steps = [
+			{ ...step("contributions", 0), repo: null, startedAt: stamp(1000), finishedAt: stamp(1000) },
+			{ ...step("activity", 1000), repo: "r", startedAt: stamp(2000), finishedAt: stamp(5000) },
+			{ ...step("publish", 1000), repo: null, startedAt: stamp(6000), finishedAt: stamp(7000) },
+		];
+		const calibration = await history(steps, 8000, "quick");
+		expect(calibration.phaseOverhead?.quick).toEqual({
+			account: 1000,
+			activity: 3000,
+			publish: 2000,
+		});
+		expect(
+			estimateRunFinish(
+				{
+					mode: "refresh",
+					depth: "quick",
+					startedAt: now,
+					status: "running",
+					steps: steps.map((entry) => ({ ...entry, status: "pending" })),
+				},
+				steps.length,
+				calibration,
+				now,
+			).expectedFinishAt,
+		).toBe(stamp(8000));
+	});
+
+	it("does not spread account prelude and insights waits across repository work", async () => {
+		const steps = [
+			{ ...step("snapshot", 10_000), repo: null, startedAt: stamp(0), finishedAt: stamp(100_000) },
+			...Array.from({ length: 4 }, (_, index) => ({
+				...step("metadata", 1000),
+				repo: `r${index}`,
+				startedAt: stamp(100_000),
+				finishedAt: stamp(101_000),
+			})),
+			{
+				...step("snapshot", 1000),
+				repo: null,
+				resource: "insights",
+				startedAt: stamp(103_000),
+				finishedAt: stamp(104_000),
+			},
+			{
+				...step("publish", 1000),
+				repo: null,
+				startedAt: stamp(104_000),
+				finishedAt: stamp(105_000),
+			},
+		];
+		const calibration = await history(steps, 105_000, "quick");
+		const run = {
+			mode: "refresh" as const,
+			depth: "quick" as const,
+			startedAt: now,
+			status: "running" as const,
+			steps: steps.map((entry) => ({
+				...entry,
+				status: entry.repo ? ("pending" as const) : ("success" as const),
+			})),
+		};
+		expect(estimateRunFinish(run, steps.length, calibration, stamp(100_000)).expectedFinishAt).toBe(
+			stamp(101_000),
+		);
+		expect(
+			estimateRunFinish(
+				{
+					...run,
+					steps: steps.map((entry) => ({
+						...entry,
+						status:
+							entry.repo || entry.kind === "snapshot" ? ("success" as const) : ("pending" as const),
+					})),
+				},
+				steps.length,
+				calibration,
+				stamp(104_000),
+			).expectedFinishAt,
+		).toBe(stamp(105_000));
+	});
+
 	it("keeps rolling four-repo lanes, separate phases, deferred activity and serial overhead", () => {
 		const steps = [
 			...Array.from({ length: 9 }, () => ({ ...step("metadata"), repo: "r0" })),
@@ -149,7 +335,6 @@ describe("plan-scaled finish estimates", () => {
 			id: "history",
 			mode: "refresh" as const,
 			startedAt: now,
-			status: "completed" as const,
 			steps,
 		};
 		const detailed = estimateRunFinish(run, steps.length, calibration, now);
@@ -177,7 +362,6 @@ describe("plan-scaled finish estimates", () => {
 			id: "history",
 			mode: "refresh" as const,
 			startedAt: now,
-			status: "completed" as const,
 			steps,
 		};
 		expect(calibration.plans?.history?.slice(0, 2)).toEqual([
