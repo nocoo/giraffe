@@ -5,6 +5,7 @@ import type { Db } from "./db/d1";
 import { fenced, type RunLease } from "./db/factory-runs";
 import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
 import { ApiError } from "./errors";
+import { collectActionsSnapshot } from "./factory-actions";
 import { boundedJson } from "./factory-publish";
 import { SnapshotPageReady, snapshotReplay } from "./factory-snapshot-replay";
 import type { GithubClient } from "./github-client";
@@ -67,6 +68,17 @@ export async function collectSitePage(
 	now: string,
 ) {
 	assertKind(step.resource ?? "");
+	const actionsRepo = /^repo:(.+):actions$/.exec(step.resource ?? "")?.[1];
+	if (actionsRepo) {
+		const before = gh.count;
+		const source = await collectActionsSnapshot(db, lease, actionsRepo, gh, token, now);
+		if (!source.payload) return { writes: source.writes, done: false };
+		const result = await collectSiteBatch(db, lease, step, gh, token, now, {
+			[step.resource ?? ""]: source.payload,
+		});
+		if (gh.count === before) step.strategy = "reused";
+		return { ...result, writes: [...source.writes, ...result.writes] };
+	}
 	const replay = await snapshotReplay(
 		db,
 		lease,
@@ -91,6 +103,7 @@ async function collectSiteBatch(
 	gh: GithubClient,
 	token: string,
 	now: string,
+	written: Record<string, Collected> = {},
 ) {
 	const resource = step.resource ?? "";
 	assertKind(resource);
@@ -158,7 +171,6 @@ async function collectSiteBatch(
 		};
 	}
 	if (resource === "insights") assertSources(run.steps, ["repos", "issues"]);
-	const written: Record<string, Collected> = {};
 	const writes: D1PreparedStatement[] = [];
 	if (["issues", "prs", "alerts"].includes(resource)) {
 		const names = run.siteRepos ?? run.repos;

@@ -31,6 +31,7 @@ import {
 	saveRun,
 } from "./db/factory-runs";
 import { ApiError } from "./errors";
+import { cachedActionsClient, stepActions } from "./factory-actions";
 import { newFactory, stepFactory } from "./factory-collect";
 import {
 	FactoryInvocation,
@@ -250,7 +251,7 @@ async function executeStep(
 				const result = await collectActivitySupplement(
 					run,
 					{ ...repo, branch: activityBranch(run, repo) },
-					gh,
+					await cachedActionsClient(db, lease, repo.name, gh),
 					token,
 					previous ? (JSON.parse(previous.payload) as ActivitySupplement) : null,
 					actions ? (JSON.parse(actions.payload) as FactoryStreamData) : null,
@@ -428,7 +429,9 @@ async function executeStep(
 					);
 				},
 			};
-			await stepFactory(checkpoint, gh, token, store, clock());
+			if (stream === "actions")
+				writes.push(...(await stepActions(db, lease, checkpoint, gh, token, store, clock())));
+			else await stepFactory(checkpoint, gh, token, store, clock());
 			if (step.kind === "inventory") {
 				if (checkpoint.repos.length > 500)
 					throw new ApiError(422, "factory_capacity", "catalog exceeds 500 repositories");
