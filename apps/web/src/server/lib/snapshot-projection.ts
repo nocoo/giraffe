@@ -1,4 +1,5 @@
 import { uniqueDependencySummaries } from "../../lib/factory-dependencies";
+import { factoryEvidenceFreshness } from "../../lib/factory-freshness";
 import type { FactorySnapshot, FactoryViewSnapshot } from "../../lib/factory-types";
 import { type SecurityFeatures, securityCount, securityIncomplete } from "../../lib/security";
 import { snapshotFreshness } from "../../lib/snapshot-freshness";
@@ -510,12 +511,9 @@ export function factoryObserved(publication: FactorySnapshot, policy: Policy) {
 
 export function factoryFreshness(snap: FactorySnapshot, policy: Policy) {
 	const observations = new Map(
-		factoryObserved(snap, policy).map((repo) => [
-			repo.name.toLowerCase(),
-			repo.observation?.refreshedAt,
-		]),
+		factoryObserved(snap, policy).map((repo) => [repo.name.toLowerCase(), repo]),
 	);
-	return snapshotFreshness(
+	return factoryEvidenceFreshness(
 		policy.repos.map((repo) => observations.get(repo.name_with_owner.toLowerCase())),
 	);
 }

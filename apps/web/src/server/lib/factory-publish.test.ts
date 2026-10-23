@@ -84,6 +84,19 @@ it("preserves stronger last-known-good coverage and failed-repository metadata i
 	for (const key of FACTORY_STREAMS) repo.coverage[key].status = "complete";
 	repo.observation = { version: "r1", refreshedAt: now, window: snap.window, source: "run" };
 	await db.batch(await repositoryWrites(db, lease, now, repo, repo.name, null));
+	await db
+		.prepare("INSERT INTO factory_resources(run_id,repo,stream,payload) VALUES('r1',?,'prs',?)")
+		.bind(
+			repo.name,
+			JSON.stringify({
+				runId: "r1",
+				items: [],
+				ranges: [],
+				next: null,
+				coverage: repo.coverage.prs,
+			}),
+		)
+		.run();
 	expect((await repoStates(db, snap.account_id))[0]).toMatchObject({
 		status: "success",
 		version: "r1",
@@ -122,7 +135,27 @@ it.each(unsupportedWorkflowJobs)(
 		];
 		repo.observation = { version: "r1", refreshedAt: now, window: snap.window, source: "run" };
 		await db.batch(await repositoryWrites(db, lease, now, repo, repo.name, null));
+		await db
+			.prepare(
+				"INSERT INTO factory_resources(run_id,repo,stream,payload) VALUES('r1',?,'dependencies',?)",
+			)
+			.bind(
+				repo.name,
+				JSON.stringify({
+					runId: "r1",
+					items: [],
+					ranges: [],
+					next: null,
+					coverage: repo.coverage.dependencies,
+				}),
+			)
+			.run();
 		const before = await currentRepo(db, snap.account_id, repo.name);
+		await db
+			.prepare(
+				"INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) SELECT 'r2',account_id,'r2','completed',payload,next_at,created_at,updated_at FROM factory_runs WHERE id='r1'",
+			)
+			.run();
 		const state = ready("dependencies");
 		state.repos = [structuredClone(repo)];
 		const candidate = state.repos[0];
@@ -142,9 +175,14 @@ it.each(unsupportedWorkflowJobs)(
 			now,
 		);
 		await db.batch(await repositoryWrites(db, lease, now, candidate, repo.name, null));
-		expect(await currentRepo(db, snap.account_id, repo.name)).toEqual(before);
+		expect(await currentRepo(db, snap.account_id, repo.name)).toMatchObject({
+			observation: candidate.observation,
+			dependencies: before?.dependencies,
+			coverage: { dependencies: { ...before?.coverage.dependencies, retained: true } },
+		});
 		expect((await repoStates(db, snap.account_id))[0]).toMatchObject({
-			version: "r1",
+			version: "r2",
+			status: "partial",
 			error: "coverage_regression_retained",
 		});
 	},

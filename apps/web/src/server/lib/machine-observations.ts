@@ -386,7 +386,7 @@ async function factoryObservationFromSaved(
 		.map((repo) => catalogFactoryRepo(repo, saved.catalogHistory))
 		.find((repo) => repo?.name.toLowerCase() === name.toLowerCase());
 	if (!snap || !repo) throw new ApiError(404, "not_found", "repository outside publication");
-	const observation = repo.observation;
+	const observation = repo.coverage[stream as FactoryStreamName].observation ?? repo.observation;
 	const version = observation?.version ?? snap.runId;
 	const { data, content } = decodeFactoryResource(saved, snap, repo, stream, true);
 	if (!data)
@@ -435,9 +435,9 @@ export function factoryResourceData(
 		...(stream === "dependencies"
 			? dependencyEvidence(data.items, [...(repo.manifests ?? []), ...(data.manifests ?? [])])
 			: {}),
-		ranges: [repo.observation?.window ?? snap.window],
+		ranges: [coverage.observation?.window ?? repo.observation?.window ?? snap.window],
 		fetched_at: coverage.fetchedAt,
-		observation: repo.observation,
+		observation: coverage.observation ?? repo.observation,
 		coverage,
 		truncated: coverage.status === "limited",
 		unavailable: coverage.status === "unavailable",

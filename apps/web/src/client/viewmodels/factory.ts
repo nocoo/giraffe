@@ -1,4 +1,5 @@
 import { aggregateFactory, emptyDay } from "../../lib/factory";
+import { factoryEvidenceFreshness } from "../../lib/factory-freshness";
 import {
 	FACTORY_STREAMS,
 	type FactoryCoverage,
@@ -51,7 +52,7 @@ export const reloadFactory = (scope = getRepositoryScope()) =>
 	fetchKind<FactoryViewSnapshot>(scopedResource("factory", scope));
 
 export function factoryFreshness(repos: FactoryRepo[]): SnapshotFreshness {
-	return snapshotFreshness(repos.map((repo) => repo.observation?.refreshedAt));
+	return factoryEvidenceFreshness(repos);
 }
 export async function loadFactoryDetail(
 	repo: string,
@@ -121,8 +122,13 @@ export function factoryBoard(
 	const unpublished = selectedRepos.filter((repo) => !observations.has(repo.name.toLowerCase()));
 	const membershipComplete = unpublished.length === 0;
 	const aggregate = aggregateFactory(repos);
+	const windowOf: StreamWindow = (repo, stream) =>
+		repo.coverage[stream].observation?.window ?? repo.observation?.window ?? snapshot.window;
 	const windows = repos.length
-		? repos.map((r) => r.observation?.window ?? snapshot.window)
+		? repos.flatMap((repo) => [
+				repo.observation?.window ?? snapshot.window,
+				...FACTORY_STREAMS.map((stream) => windowOf(repo, stream)),
+			])
 		: [snapshot.window];
 	const end = Math.max(...windows.map((w) => Date.parse(w.until)));
 	const earliest = Math.min(...windows.map((w) => Date.parse(w.since)));
@@ -141,14 +147,9 @@ export function factoryBoard(
 				stream,
 				selectedRepos.length > 0 &&
 					membershipComplete &&
-					repos.every((r) => {
-						const window = r.observation?.window ?? snapshot.window;
-						return (
-							r.coverage[stream].status === "complete" &&
-							date >= Date.parse(window.since) &&
-							date < Date.parse(window.until)
-						);
-					}),
+					repos.every((repo) =>
+						coversWindow(repo, stream, windowOf, date, Math.min(date + DAY_MS, end)),
+					),
 			]),
 		) as Record<FactoryStreamName, boolean>;
 		days.push({ date: day, ...(aggregate.days[day] ?? emptyDay()), complete });
@@ -167,12 +168,21 @@ export function factoryBoard(
 			if (status === "limited") coverage.limited++;
 		}
 	const midnight = Date.parse(new Date(end).toISOString().slice(0, 10));
-	const windowOf = (r: FactoryRepo) => r.observation?.window ?? snapshot.window;
-	// Periods end at the last UTC day every repository observed in full, so comparisons never mix a partial day.
 	const periodEnd = repos.length
-		? Math.min(...repos.map((r) => Date.parse(windowOf(r).until.slice(0, 10))))
+		? Math.min(
+				...repos.map((r) =>
+					Date.parse((r.observation?.window ?? snapshot.window).until.slice(0, 10)),
+				),
+			)
 		: midnight;
-	const repoActivity = repos.map((r) => activityOf(r, periodEnd));
+	const repoActivity = repos.map((r) =>
+		activityOf(
+			r,
+			windowOf,
+			periodEnd,
+			Date.parse((r.observation?.window ?? snapshot.window).until),
+		),
+	);
 	const series = addStock(days, repos, membershipComplete);
 	const stockOn = (date: string, key: "openIssues" | "openPrs") =>
 		series.find((d) => d.date === date)?.[key] ?? null;
@@ -214,10 +224,8 @@ export function factoryBoard(
 	activity.unknown += unpublished.length;
 
 	return {
-		freshness: snapshotFreshness(
-			selectedRepos.map(
-				(repo) => observations.get(repo.name.toLowerCase())?.observation?.refreshedAt,
-			),
+		freshness: factoryEvidenceFreshness(
+			selectedRepos.map((repo) => observations.get(repo.name.toLowerCase())),
 		),
 		metadataFreshness: snapshotFreshness(
 			selectedRepos.map((repo) => {
@@ -316,6 +324,22 @@ const FLOW_KEYS = [
 const PERIOD_STREAMS = ["commits", "issues", "prs", "actions", "releases"] as const;
 const emptyFlow = (): Flow => Object.fromEntries(FLOW_KEYS.map((k) => [k, 0])) as Flow;
 const isoDay = (t: number) => new Date(t).toISOString().slice(0, 10);
+type StreamWindow = (repo: FactoryRepo, stream: FactoryStreamName) => FactoryWindow;
+
+function coversWindow(
+	repo: FactoryRepo,
+	stream: FactoryStreamName,
+	windowOf: StreamWindow,
+	from: number,
+	to: number,
+) {
+	const window = windowOf(repo, stream);
+	return (
+		repo.coverage[stream].status === "complete" &&
+		Date.parse(window.since) <= from &&
+		Date.parse(window.until) >= to
+	);
+}
 
 function sumFlow(days: Record<string, Flow>, from: number, to: number): Flow {
 	const flow = emptyFlow();
@@ -327,15 +351,16 @@ function sumFlow(days: Record<string, Flow>, from: number, to: number): Flow {
 	return flow;
 }
 
-function activityOf(r: FactoryRepo, midnight: number) {
+function activityOf(r: FactoryRepo, windowOf: StreamWindow, midnight: number, asOf: number) {
 	let last: string | undefined;
 	for (const [date, value] of Object.entries(r.metrics.days))
 		if (value.commits && date < isoDay(midnight + DAY_MS) && date > (last ?? "")) last = date;
 	const known = {
-		commits: hasFactoryMeasurement(r, "commits"),
-		issues: r.coverage.issues.status === "complete",
-		prs: r.coverage.prs.status === "complete",
+		commits: coversWindow(r, "commits", windowOf, midnight - 30 * DAY_MS, midnight),
+		issues: coversWindow(r, "issues", windowOf, midnight - 30 * DAY_MS, midnight),
+		prs: coversWindow(r, "prs", windowOf, midnight - 30 * DAY_MS, midnight),
 	};
+	const current = (stream: "issues" | "prs") => coversWindow(r, stream, windowOf, asOf, asOf);
 	return {
 		name: r.name,
 		language: r.language,
@@ -347,8 +372,8 @@ function activityOf(r: FactoryRepo, midnight: number) {
 		previous7: sumFlow(r.metrics.days, midnight - 14 * DAY_MS, midnight - 7 * DAY_MS).commits,
 		openIssues: r.openIssues,
 		openPrs: r.openPrs,
-		agedIssues: known.issues ? r.metrics.agedIssues : null,
-		agedPrs: known.prs ? r.metrics.agedPrs : null,
+		agedIssues: current("issues") ? r.metrics.agedIssues : null,
+		agedPrs: current("prs") ? r.metrics.agedPrs : null,
 		known,
 	};
 }
@@ -356,25 +381,20 @@ export type RepoActivity = ReturnType<typeof activityOf>;
 
 function periodSummary(
 	repos: FactoryRepo[],
-	windowOf: (r: FactoryRepo) => FactoryWindow,
+	windowOf: StreamWindow,
 	midnight: number,
 	length: Period,
 	membershipComplete: boolean,
 ) {
 	const since = midnight - length * DAY_MS;
 	const previousSince = since - length * DAY_MS;
-	const covered = (from: number) =>
+	const covered = (from: number, to: number) =>
 		Object.fromEntries(
 			PERIOD_STREAMS.map((stream) => [
 				stream,
 				membershipComplete &&
 					repos.length > 0 &&
-					repos.every(
-						(r) =>
-							r.coverage[stream].status === "complete" &&
-							Date.parse(windowOf(r).since) <= from &&
-							Date.parse(windowOf(r).until) >= midnight,
-					),
+					repos.every((repo) => coversWindow(repo, stream, windowOf, from, to)),
 			]),
 		) as Record<(typeof PERIOD_STREAMS)[number], boolean>;
 	const total = (from: number, to: number) => {
@@ -393,8 +413,8 @@ function periodSummary(
 		until: isoDay(midnight - DAY_MS),
 		current: total(since, midnight),
 		previous: total(previousSince, since),
-		complete: covered(since),
-		previousComplete: covered(previousSince),
+		complete: covered(since, midnight),
+		previousComplete: covered(previousSince, since),
 	};
 }
 export type PeriodSummary = ReturnType<typeof periodSummary> & {
@@ -418,10 +438,16 @@ type BoardDay = FactoryDay & { date: string; complete: Record<FactoryStreamName,
  * is exact only when every repository's event list is complete; a negative result proves missing
  * events, so that day and every earlier day are withheld.
  */
-function walkBack(days: BoardDay[], now: number | null, net: (d: BoardDay) => number) {
+function walkBack(
+	days: BoardDay[],
+	now: number | null,
+	stream: "issues" | "prs",
+	net: (d: BoardDay) => number,
+) {
 	const out: (number | null)[] = new Array(days.length).fill(null);
 	let open = now;
 	for (let i = days.length - 1; i >= 0 && open !== null && open >= 0; i--) {
+		if (!days[i]?.complete[stream]) break;
 		out[i] = open;
 		open -= net(days[i] as BoardDay);
 	}
@@ -437,21 +463,15 @@ function addStock(days: BoardDay[], repos: FactoryRepo[], membershipComplete: bo
 	const openIssues = walkBack(
 		days,
 		exact("issues") ? sum("openIssues") : null,
+		"issues",
 		(d) => d.issueOpened - d.issueClosed,
 	);
 	const openPrs = walkBack(
 		days,
 		exact("prs") ? sum("openPrs") : null,
+		"prs",
 		(d) => d.prOpened - d.prMerged - d.prClosed,
 	);
-	const commitKnown =
-		membershipComplete &&
-		repos.length > 0 &&
-		repos.every((r) => hasFactoryMeasurement(r, "commits"));
-	const ciKnown =
-		membershipComplete &&
-		repos.length > 0 &&
-		repos.every((r) => r.coverage.actions.status === "complete");
 	const index = new Map(days.map((d, i) => [d.date, i]));
 	const commitDays = repos.map((r) =>
 		Object.entries(r.metrics.days)
@@ -465,16 +485,16 @@ function addStock(days: BoardDay[], repos: FactoryRepo[], membershipComplete: bo
 	return days.map((d, i) => {
 		success += d.ciSuccess - (days[i - 7]?.ciSuccess ?? 0);
 		failure += d.ciFailure - (days[i - 7]?.ciFailure ?? 0);
-		const rolling = i >= 6;
+		const rolling = (stream: "commits" | "actions") =>
+			i >= 6 && days.slice(i - 6, i + 1).every((day) => day.complete[stream]);
 		return {
 			...d,
 			openIssues: openIssues[i] ?? null,
 			openPrs: openPrs[i] ?? null,
-			ciRate7: ciKnown && rolling && success + failure ? success / (success + failure) : null,
-			activeRepos7:
-				commitKnown && rolling
-					? commitDays.filter((list) => list.some((k) => k <= i && k > i - 7)).length
-					: null,
+			ciRate7: rolling("actions") && success + failure ? success / (success + failure) : null,
+			activeRepos7: rolling("commits")
+				? commitDays.filter((list) => list.some((k) => k <= i && k > i - 7)).length
+				: null,
 		};
 	});
 }
@@ -489,7 +509,8 @@ export function backlogRows(activity: RepoActivity[]) {
 			agedIssues: r.agedIssues,
 			agedPrs: r.agedPrs,
 			total: r.openIssues + r.openPrs,
-			done30: r.periods[30].issueClosed + r.periods[30].prMerged,
+			done30:
+				r.known.issues && r.known.prs ? r.periods[30].issueClosed + r.periods[30].prMerged : null,
 		}))
 		.filter((r) => r.total > 0)
 		.sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
@@ -497,7 +518,9 @@ export function backlogRows(activity: RepoActivity[]) {
 		rows,
 		openIssues: rows.reduce((n, r) => n + r.openIssues, 0),
 		openPrs: rows.reduce((n, r) => n + r.openPrs, 0),
-		aged: rows.reduce((n, r) => n + (r.agedIssues ?? 0) + (r.agedPrs ?? 0), 0),
+		aged: rows.every((r) => r.agedIssues !== null && r.agedPrs !== null)
+			? rows.reduce((n, r) => n + (r.agedIssues ?? 0) + (r.agedPrs ?? 0), 0)
+			: null,
 		clear: activity.length - rows.length,
 		max: Math.max(1, ...rows.map((r) => r.total)),
 	};
@@ -615,8 +638,8 @@ export function safeGithubUrl(url: string): string {
 		return "https://github.com";
 	}
 }
-export function formatFactoryCount(n: number): string {
-	return n.toLocaleString("en-US");
+export function formatFactoryCount(n: number | null): string {
+	return n === null ? "—" : n.toLocaleString("en-US");
 }
 export function formatHours(n: number | null): string {
 	return n === null

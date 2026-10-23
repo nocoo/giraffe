@@ -26,6 +26,7 @@ import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
 import { ApiError } from "./errors";
 import { streamKey } from "./factory-collect";
 import { latestFactoryRate } from "./factory-rate";
+import { retainFactoryStream } from "./factory-stream-retention";
 import { publishSiteSnapshots } from "./site-publication";
 import { assemblePages, physicalKinds, splitPages } from "./snapshot-pages";
 
@@ -112,27 +113,38 @@ export async function repositoryWrites(
 		.bind(lease.run.account_id, name)
 		.first<{ payload: string }>();
 	const old = oldState ? (JSON.parse(oldState.payload) as RepoRefreshState) : null;
+	if (
+		previous?.observation &&
+		old?.observation?.version === previous.observation.version &&
+		old.observation.publishedAt
+	)
+		previous.observation.publishedAt = old.observation.publishedAt;
 	const parseLimited =
 		repo?.coverage.dependencies.status === "limited" &&
 		repo.coverage.dependencies.reason_code === "dependency_parse_unsupported";
-	// An incomplete refresh must never replace a previously complete stream with less evidence.
-	const regression =
-		repo &&
-		previous &&
-		FACTORY_STREAMS.some(
-			(s) =>
-				(s === "dependencies" && parseLimited && previous.coverage[s].status === "limited") ||
-				(previous.coverage[s].status === "complete" && repo.coverage[s].status !== "complete") ||
-				(previous.coverage[s].status === "limited" &&
-					previous.coverage[s].observed > 0 &&
-					repo.coverage[s].status !== "complete" &&
-					(repo.coverage[s].status !== "limited" ||
-						repo.coverage[s].observed < previous.coverage[s].observed)),
-		);
-	const accepted = error || regression ? null : repo;
+	const retained =
+		repo && previous && !error
+			? FACTORY_STREAMS.filter(
+					(s) =>
+						(s === "dependencies" && parseLimited && previous.coverage[s].status === "limited") ||
+						(previous.coverage[s].status === "complete" &&
+							repo.coverage[s].status !== "complete") ||
+						(previous.coverage[s].status === "limited" &&
+							previous.coverage[s].observed > 0 &&
+							repo.coverage[s].status !== "complete" &&
+							(repo.coverage[s].status !== "limited" ||
+								repo.coverage[s].observed < previous.coverage[s].observed)),
+				)
+			: [];
+	const regression = retained.length > 0;
+	const accepted = error ? null : repo ? structuredClone(repo) : null;
+	const writes: D1PreparedStatement[] = [];
+	if (accepted && previous)
+		for (const stream of retained)
+			writes.push(...(await retainFactoryStream(db, lease, now, accepted, previous, stream)));
 	const steps = lease.run.steps.filter((s) => s.repo === name);
 	const state: RepoRefreshState = {
-		...(!accepted && parseLimited && repo
+		...((!accepted || retained.includes("dependencies")) && parseLimited && repo
 			? {
 					dependencyLimit: {
 						reason_code: "dependency_parse_unsupported" as const,
@@ -162,7 +174,6 @@ export async function repositoryWrites(
 			? FACTORY_STREAMS.filter((s) => accepted.coverage[s].status === "complete").length
 			: (old?.coverage ?? 0),
 	};
-	const writes: D1PreparedStatement[] = [];
 	if (accepted)
 		writes.push(
 			fenced(
@@ -360,7 +371,7 @@ export async function publicationWrites(
 				repo.observation.version === run.id ? now : state.observation?.publishedAt;
 			if (publishedAt) repo.observation.publishedAt = publishedAt;
 		}
-		if (state.dependencyLimit)
+		if (state.dependencyLimit && repo.coverage.dependencies.status !== "unavailable")
 			repo.coverage.dependencies = {
 				...repo.coverage.dependencies,
 				...state.dependencyLimit,
@@ -443,8 +454,11 @@ export async function publicationWrites(
 		};
 	snapshot.publication = {
 		mixed:
-			snapshot.repos.some((r) => r.observation?.version !== run.id) ||
-			Boolean(snapshot.contribution && snapshot.contributionObservation?.version !== run.id),
+			snapshot.repos.some(
+				(r) =>
+					r.observation?.version !== run.id ||
+					FACTORY_STREAMS.some((stream) => r.coverage[stream].retained),
+			) || Boolean(snapshot.contribution && snapshot.contributionObservation?.version !== run.id),
 		runId: run.id,
 		publishedAt: now,
 	};

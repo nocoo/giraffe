@@ -275,17 +275,23 @@ it.each([
 				if (index > 0) expect(stream.contentVersion).toBe(lastHash);
 				lastHash = stream.contentVersion;
 				expect(
-					await raw.prepare("SELECT * FROM factory_repo_versions ORDER BY version").all(),
+					await raw
+						.prepare(
+							"SELECT * FROM factory_repo_versions WHERE version='original' ORDER BY version",
+						)
+						.all(),
 				).toEqual(originalRows);
-				expect(await raw.prepare("SELECT * FROM factory_resources ORDER BY run_id").all()).toEqual(
-					originalResources,
-				);
+				expect(
+					await raw
+						.prepare("SELECT * FROM factory_resources WHERE run_id='original' ORDER BY run_id")
+						.all(),
+				).toEqual(originalResources);
 				expect(
 					await raw
 						.prepare("SELECT version FROM factory_version_refs WHERE publication_id=?")
 						.bind(id)
 						.all(),
-				).toMatchObject({ results: [{ version: "original" }] });
+				).toMatchObject({ results: [{ version: failure ? "limited-2" : id }] });
 			} else {
 				expect(stream).toMatchObject({
 					sourceVersion: id,

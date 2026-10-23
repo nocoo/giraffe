@@ -2,7 +2,11 @@ import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import type { CiReport, CiRun } from "../../apps/web/src/lib/ci-health";
-import type { FactorySnapshot, FactoryWindow } from "../../apps/web/src/lib/factory-types";
+import type {
+	FactorySnapshot,
+	FactoryStreamData,
+	FactoryWindow,
+} from "../../apps/web/src/lib/factory-types";
 import type { SnapshotFreshness } from "../../apps/web/src/lib/snapshot-freshness";
 import { savedContentMeta } from "../../apps/web/src/server/lib/content-version";
 import { factoryFixture } from "../fixtures/factory-snapshot";
@@ -622,6 +626,163 @@ it("exposes the saved factory stream window without changing collection state", 
 		),
 	).toEqual(before);
 	expect(await (await fetch("http://127.0.0.1:17046/_count")).text()).toBe(countBefore);
+});
+
+it("keeps retained stream source indexes and immutable HTTP reads consistent within a mixed publication", async () => {
+	assertMarker();
+	const oldRun = "saved-observations-retained-old";
+	const newRun = "saved-observations-retained-new";
+	const kind = `factory:v:${newRun}`;
+	const stateQuery = `SELECT * FROM factory_state WHERE account_id=${quote(account)}`;
+	const originalState = sql(stateQuery)[0]?.results ?? [];
+	const publication = factoryFixture();
+	const repo = publication.repos[0];
+	if (!repo) throw new Error("factory fixture missing");
+	const oldWindow = publication.window;
+	const newWindow = { since: catalogAt, until: latest };
+	const originalObservation = {
+		version: oldRun,
+		window: oldWindow,
+		refreshedAt: baseline,
+		publishedAt: baseline,
+		source: "run" as const,
+		repo: "nocoo/recovered",
+	};
+	repo.name = "nocoo/recovered";
+	repo.observation = {
+		...originalObservation,
+		version: newRun,
+		window: newWindow,
+		refreshedAt: latest,
+		publishedAt: latest,
+	};
+	const dependencies: FactoryStreamData = {
+		runId: oldRun,
+		items: [legacyWorkflowDependency],
+		next: null,
+		ranges: [oldWindow],
+		coverage: {
+			...repo.coverage.dependencies,
+			status: "complete",
+			fetchedAt: baseline,
+			observed: 1,
+		},
+	};
+	repo.coverage.dependencies = {
+		...dependencies.coverage,
+		status: "limited",
+		reason_code: "dependency_parse_unsupported",
+		reason: "Unsupported workflow; previous dependency evidence retained",
+		retained: true,
+		observation: { ...originalObservation, head: "old-head" },
+	};
+	repo.coverage.commits = {
+		...repo.coverage.commits,
+		status: "complete",
+		fetchedAt: latest,
+	};
+	const commits: FactoryStreamData = {
+		runId: newRun,
+		items: [],
+		next: null,
+		ranges: [newWindow],
+		coverage: repo.coverage.commits,
+	};
+	publication.account_id = account;
+	publication.runId = newRun;
+	publication.window = newWindow;
+	publication.fetched_at = latest;
+	publication.status = "partial";
+	publication.publication = { runId: newRun, mixed: true, publishedAt: latest };
+	const readState = () =>
+		sql(
+			[
+				`SELECT * FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind;`,
+				`${stateQuery};`,
+				`SELECT * FROM factory_runs WHERE account_id=${quote(account)} ORDER BY id;`,
+				`SELECT f.* FROM factory_resources f JOIN factory_runs r ON r.id=f.run_id WHERE r.account_id=${quote(account)} ORDER BY f.run_id,f.repo,f.stream;`,
+				`SELECT * FROM api_tokens WHERE account_id=${quote(account)} ORDER BY id;`,
+			].join("\n"),
+		).map((statement) => statement.results);
+	const before = readState();
+	try {
+		const statements = [await snapshot(kind, { ...publication })];
+		for (const id of [oldRun, newRun])
+			statements.push(
+				`INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES(${quote(id)},${quote(account)},${quote(id)},'partial','{}',${quote(latest)},${quote(latest)},${quote(latest)});`,
+			);
+		for (const [stream, data, window] of [
+			["retained:dependencies", dependencies, oldWindow],
+			["commits", commits, newWindow],
+		] as const) {
+			const metadata = await savedContentMeta(
+				`factory:${repo.name}:${stream === "retained:dependencies" ? "dependencies" : stream}`,
+				{ ...data },
+				window,
+			);
+			statements.push(
+				`INSERT INTO factory_resources(run_id,repo,stream,payload,content_meta) VALUES(${quote(newRun)},${quote(repo.name)},${quote(stream)},${quote(JSON.stringify(data))},${quote(metadata)});`,
+			);
+		}
+		statements.push(
+			`INSERT INTO factory_state(account_id,published_id,next_at) VALUES(${quote(account)},${quote(newRun)},${quote(latest)}) ON CONFLICT(account_id) DO UPDATE SET published_id=excluded.published_id;`,
+		);
+		sql(statements.join("\n"));
+		const seededState = readState();
+		for (let read = 0; read < 2; read++) {
+			const index = (await (await machine("sources?repository=nocoo%2Frecovered")).json()) as {
+				sources: { resource: string; contentVersion: string | null }[];
+			};
+			for (const [stream, version, observedAt, window] of [
+				["dependencies", oldRun, baseline, oldWindow],
+				["commits", newRun, latest, newWindow],
+			] as const) {
+				const source = index.sources.find(
+					(entry) => entry.resource === `factory:${repo.name}:${stream}`,
+				);
+				expect(source).toMatchObject({
+					runId: version,
+					version,
+					observedAt,
+					coverage: stream === "dependencies" ? repo.coverage.dependencies : repo.coverage.commits,
+				});
+				expect(source?.contentVersion).toMatch(/^sha256:[0-9a-f]{64}$/);
+				const result = (await (
+					await machine(`factory/repos/${repo.name}/${stream}`)
+				).json()) as SavedObservation;
+				expect(result).toMatchObject({
+					sourceVersion: version,
+					contentVersion: source?.contentVersion,
+					data: {
+						runId: version,
+						ranges: [window],
+						fetched_at: observedAt,
+						observation:
+							stream === "dependencies" ? repo.coverage.dependencies.observation : repo.observation,
+						coverage:
+							stream === "dependencies" ? repo.coverage.dependencies : repo.coverage.commits,
+					},
+				});
+			}
+			expect(readState()).toEqual(seededState);
+		}
+	} finally {
+		assertMarker();
+		sql(
+			[
+				`DELETE FROM snapshots WHERE account_id=${quote(account)} AND kind=${quote(kind)};`,
+				`DELETE FROM factory_runs WHERE id IN (${quote(oldRun)},${quote(newRun)});`,
+				`DELETE FROM factory_state WHERE account_id=${quote(account)};`,
+				...originalState.map(
+					(row) =>
+						`INSERT INTO factory_state(${Object.keys(row).join(",")}) VALUES(${Object.values(row)
+							.map((value) => (value === null ? "NULL" : quote(String(value))))
+							.join(",")});`,
+				),
+			].join("\n"),
+		);
+	}
+	expect(readState()).toEqual(before);
 });
 
 it("normalizes saved dependency unknowns and separates root and workspace identities over HTTP", async () => {
