@@ -104,6 +104,7 @@ it("R9 fake-clock completed latest exposes the stored marker and activity window
 			account_id: account,
 			id: "done",
 			kind: "daily",
+			depth: "quick",
 			status: "completed",
 			window: activityWindow,
 			startedAt: started,
@@ -114,6 +115,7 @@ it("R9 fake-clock completed latest exposes the stored marker and activity window
 			failedSteps: [],
 			lastError: null,
 			publishedAt: "2026-10-21T21:30:00.000Z",
+			publishedAtReason: null,
 		});
 	}
 	expect(await s.saved()).toEqual(before);
