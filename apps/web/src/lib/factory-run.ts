@@ -12,6 +12,7 @@ export const RUN_COOLDOWN_MS = 60_000;
 export const REPO_COOLDOWN_MS = 15 * 60_000;
 export const RUN_LEASE_MS = 40_000;
 export const RUN_MAX_RETRIES = 3;
+export const FACTORY_REPO_CONCURRENCY = 4;
 export type RunStatus = "running" | "paused" | "completed" | "partial" | "cancelled" | "failed";
 export type StepStatus =
 	| "pending"
@@ -220,12 +221,12 @@ export function makeRun(
 					]),
 					...pageRepos.flatMap((repo) => [
 						...REPO_SNAPSHOT_TABS.map((tab) => snapshot(`repo:${repo}:${tab}`, repo)),
-						...(depth === "quick" &&
-						(dailyPages || full) &&
-						repos.some((selected) => selected.name === repo)
-							? [step("activity", repo)]
-							: []),
 					]),
+					...(depth === "quick" && (dailyPages || full)
+						? pageRepos
+								.filter((repo) => repos.some((selected) => selected.name === repo))
+								.map((repo) => step("activity", repo))
+						: []),
 					...(dailyPages && !full ? [snapshot("insights")] : []),
 					step("publish"),
 				];
@@ -267,6 +268,37 @@ export function makeRun(
 		restoreCursor: 0,
 	};
 }
+export function factoryRunDuration(
+	steps: readonly (Pick<FactoryRunStep, "kind" | "durationMs"> &
+		Partial<Pick<FactoryRunStep, "repo">>)[],
+): number {
+	const collection = new Map<string, number>();
+	const snapshots = new Map<string, number>();
+	let duration = 0;
+	for (const step of steps) {
+		const phase = step.repo
+			? step.kind === "snapshot"
+				? snapshots
+				: step.kind === "metadata" ||
+						step.kind === "commit" ||
+						FACTORY_STREAMS.some((kind) => kind === step.kind)
+					? collection
+					: null
+			: null;
+		if (phase && step.repo) phase.set(step.repo, (phase.get(step.repo) ?? 0) + step.durationMs);
+		else duration += step.durationMs;
+	}
+	for (const phase of [collection, snapshots]) {
+		const lanes = Array.from({ length: FACTORY_REPO_CONCURRENCY }, () => 0);
+		for (const repoDuration of phase.values()) {
+			const availableAt = Math.min(...lanes);
+			lanes[lanes.indexOf(availableAt)] = availableAt + repoDuration;
+		}
+		duration += Math.max(...lanes);
+	}
+	return duration;
+}
+
 export function runProgress(run: FactoryRun, now: string) {
 	const count = (status: StepStatus) => run.steps.filter((s) => s.status === status).length;
 	const success = count("success"),
@@ -291,7 +323,12 @@ export function runProgress(run: FactoryRun, now: string) {
 		etaSeconds:
 			run.status === "running" && average !== null
 				? Math.ceil(
-						(average * (run.steps.length - completed)) / 1000 +
+						factoryRunDuration(
+							run.steps
+								.filter((step) => step.status === "pending" || step.status === "running")
+								.map((step) => ({ ...step, durationMs: average })),
+						) /
+							1000 +
 							Math.max(0, Date.parse(run.nextAttemptAt) - Date.parse(now)) / 1000,
 					)
 				: null,

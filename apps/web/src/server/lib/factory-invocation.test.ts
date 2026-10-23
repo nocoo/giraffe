@@ -80,3 +80,47 @@ it("counts requests in memory and renews before half the lease remains", async (
 	expect(db.statements).toBe(1);
 	expect(lease.leaseUntil).toBe(new Date(Date.parse(time) + RUN_LEASE_MS).toISOString());
 });
+
+it("reserves the shared request budget before concurrent admission can race", async () => {
+	const { db, lease, now } = await setup();
+	const invocation = new FactoryInvocation(db, lease, () => now);
+	invocation.requests = 38;
+	const results = await Promise.allSettled(
+		Array.from({ length: 4 }, () => invocation.beforeRequest()),
+	);
+	expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(2);
+	expect(invocation.requests).toBe(40);
+});
+
+it("includes other lanes' queued writes in admission while retaining save headroom", async () => {
+	const { db, lease, now } = await setup();
+	const invocation = new FactoryInvocation(db, lease, () => now);
+	const step = lease.run.steps[0];
+	if (!step) throw new Error("fixture");
+	for (let index = 0; index < INVOCATION_STATEMENTS - 2; index++)
+		await db.prepare("SELECT 1").first();
+	invocation.pendingWrites = 3;
+	expect(invocation.canStart(step)).toBe(false);
+	await expect(invocation.beforeRequest()).rejects.toMatchObject({ code: "factory_yield" });
+	await db.batch(Array.from({ length: 3 }, () => db.prepare("SELECT 1")));
+	invocation.pendingWrites = 0;
+	expect(db.statements).toBe(601);
+	expect(db.statements).toBeLessThan(INVOCATION_DB_STATEMENTS);
+});
+
+it.each(["wall", "writes", "stop"])(
+	"rechecks %s after waiting for the shared heartbeat lock",
+	async (reason) => {
+		const { db, lease, now } = await setup();
+		let time = now;
+		const invocation = new FactoryInvocation(db, lease, () => time);
+		await expect(
+			invocation.beforeRequest(async () => {
+				if (reason === "wall") time = new Date(Date.parse(now) + 20_000).toISOString();
+				if (reason === "writes") invocation.pendingWrites = INVOCATION_STATEMENTS;
+				if (reason === "stop") invocation.stopped = true;
+			}),
+		).rejects.toMatchObject({ code: "factory_yield" });
+		expect(invocation.requests).toBe(0);
+	},
+);

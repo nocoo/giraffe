@@ -27,6 +27,7 @@ export class BenchmarkClock {
 		this.external++;
 		return operation.finally(() => {
 			this.external--;
+			this.schedule();
 		});
 	}
 
@@ -38,13 +39,10 @@ export class BenchmarkClock {
 	}
 
 	private schedule() {
-		if (this.timer || !this.pending.length) return;
+		if (this.timer || this.external || !this.pending.length) return;
 		this.timer = setTimeout(() => {
 			this.timer = undefined;
-			if (this.external) {
-				this.schedule();
-				return;
-			}
+			if (this.external) return;
 			this.now = Math.max(this.now, Math.min(...this.pending.map((item) => item.at)));
 			const ready = this.pending.filter((item) => item.at <= this.now);
 			this.pending = this.pending.filter((item) => item.at > this.now);
@@ -107,6 +105,10 @@ type BenchmarkEnv = {
 export function benchmarkGithub(clock: BenchmarkClock, count: number) {
 	const repos = Array.from({ length: count }, (_, index) => repository(index));
 	let metrics: Partial<Record<Category, RequestMetric>> = {};
+	let concurrentRequests = 0;
+	let maxConcurrentRequests = 0;
+	let requestWallMs = 0;
+	let requestStartedAt = clock.now;
 	const unsupported: string[] = [];
 	function respond(category: Category, body: unknown, next?: URL) {
 		const serviceMs = benchmarkLatency(category);
@@ -114,11 +116,18 @@ export function benchmarkGithub(clock: BenchmarkClock, count: number) {
 		const metric = metrics[category];
 		metric.requests++;
 		metric.serviceMs += serviceMs;
-		return clock.sleep(serviceMs).then(() =>
-			Response.json(body, {
-				headers: next ? { link: `<${next.href}>; rel="next"` } : {},
-			}),
-		);
+		if (concurrentRequests++ === 0) requestStartedAt = clock.now;
+		maxConcurrentRequests = Math.max(maxConcurrentRequests, concurrentRequests);
+		return clock
+			.sleep(serviceMs)
+			.then(() =>
+				Response.json(body, {
+					headers: next ? { link: `<${next.href}>; rel="next"` } : {},
+				}),
+			)
+			.finally(() => {
+				if (--concurrentRequests === 0) requestWallMs += clock.now - requestStartedAt;
+			});
 	}
 
 	const fetch = async (input: string | URL | Request, init?: RequestInit) => {
@@ -261,8 +270,15 @@ export function benchmarkGithub(clock: BenchmarkClock, count: number) {
 		repos,
 		unsupported,
 		metrics: () => metrics,
+		timing: () => ({
+			requestWallMs,
+			serialServiceMs: Object.values(metrics).reduce((sum, metric) => sum + metric.serviceMs, 0),
+			maxConcurrentRequests,
+		}),
 		reset: () => {
 			metrics = {};
+			maxConcurrentRequests = 0;
+			requestWallMs = 0;
 		},
 	};
 }
@@ -500,9 +516,9 @@ export async function runBenchmark(
 				simulatedWallMs: Math.round(clock.now - started),
 				simulatedMinutes: Number(((clock.now - started) / 60_000).toFixed(3)),
 				waitingMs: Math.round(waitingMs),
-				serialServiceMs: Math.round(
-					Object.values(requestsByCategory).reduce((sum, metric) => sum + metric.serviceMs, 0),
-				),
+				serialServiceMs: Math.round(github.timing().serialServiceMs),
+				requestWallMs: Math.round(github.timing().requestWallMs),
+				maxConcurrentRequests: github.timing().maxConcurrentRequests,
 				requestsByCategory,
 				stepDurationMs: Math.round(saved.steps.reduce((sum, step) => sum + step.durationMs, 0)),
 			};
@@ -533,6 +549,7 @@ export async function runBenchmark(
 				"Other request latency is the existing L2 factory GraphQL fixture's 300ms; calibration is a synthetic workload, not a production replay.",
 				"Zero D1/CPU/queue-delivery latency; no cancellation, overload or recovery stalls injected; nextAttemptAt waits are included.",
 				"Concurrent fake requests overlap on a virtual event clock; native crypto must finish before advancing; 1ms host turns do not count as simulated latency.",
+				"simulatedWallMs includes queue waits; requestWallMs is the union of in-flight request intervals; serialServiceMs sums request latencies and does not represent elapsed wall time.",
 				"No production wall-time prediction or proof of the under-20-minute SLO; actual requests and invocation boundaries are executed.",
 			],
 			warmup,

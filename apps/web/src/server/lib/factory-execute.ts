@@ -40,6 +40,7 @@ import {
 } from "./factory-invocation";
 import { type FactoryEndReason, logFactory } from "./factory-log";
 import { exclusion, mapFactoryRepo, object } from "./factory-map";
+import { executeRepoPool, type PoolStepHooks, poolSteps } from "./factory-pool";
 import {
 	boundedJson,
 	currentRepo,
@@ -108,6 +109,28 @@ export async function executeRunPage(
 				run.status = completedRunStatus(run);
 				run.finishedAt = clock();
 				reason = "completed";
+				break;
+			}
+			const repositories = poolSteps(run);
+			if (repositories.size) {
+				const activeInvocation = invocation;
+				await executeRepoPool(
+					db,
+					lease,
+					invocation,
+					repositories,
+					(poolDb, lane, current, hooks) =>
+						executeStep(env, poolDb, lane, activeInvocation, current, clock, hooks),
+					(value) => {
+						operation = value;
+					},
+					(steps, writes) => {
+						stepsDone += steps;
+						stagedWrites += writes;
+					},
+				);
+				reason = invocation.endReason(step, true) ?? "yield";
+				if (run.status !== "running") return null;
 				break;
 			}
 			if (!invocation.canStart(step)) {
@@ -185,6 +208,7 @@ async function executeStep(
 	invocation: FactoryInvocation,
 	step: FactoryRunStep,
 	clock: () => string,
+	hooks?: PoolStepHooks,
 ) {
 	const run = lease.run;
 	const started = clock();
@@ -195,9 +219,12 @@ async function executeStep(
 	step.attempts = step.error ? step.attempts + 1 : Math.max(1, step.attempts);
 	step.status = "running";
 	step.error = null;
-	if (!(await beginRunStep(db, lease, clock()))) throw new InvocationStopped(true);
+	if (!(await (hooks ? hooks.begin(step) : beginRunStep(db, lease, clock()))))
+		throw new InvocationStopped(true);
 	const before = structuredClone(run.checkpoint);
-	const gh = createGithubClient(env, undefined, 4_000_000, () => invocation.beforeRequest());
+	const gh = createGithubClient(env, undefined, 4_000_000, () =>
+		invocation.beforeRequest(hooks?.heartbeat),
+	);
 	let writes: D1PreparedStatement[] = [];
 	let resourceData: FactoryStreamData | null = null;
 	const resourceKey = `${step.repo}:${step.kind}`;
@@ -284,7 +311,7 @@ async function executeStep(
 				}
 			}
 		} else if (step.kind === "snapshot") {
-			const result = await collectSitePage(db, lease, step, gh, token, clock());
+			const result = await collectSitePage(db, lease, step, gh, token, clock(), hooks?.project);
 			writes = result.writes;
 			if (result.done) {
 				finish(step, result.unavailable ? "unavailable" : "success", clock());
@@ -539,6 +566,7 @@ async function executeStep(
 			run.status = "paused";
 			step.status = "pending";
 		} else if (code === "github_rate_limited") {
+			invocation.stopped = true;
 			step.status = "pending";
 			run.nextAttemptAt = new Date(
 				Math.max(

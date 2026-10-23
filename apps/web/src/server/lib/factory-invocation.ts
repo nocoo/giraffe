@@ -21,9 +21,14 @@ export class FactoryInvocation {
 	readonly resources = new Map<string, FactoryStreamData>();
 	readonly writes: D1PreparedStatement[] = [];
 	requests = 0;
+	pendingWrites = 0;
+	get statementCost() {
+		return this.db.statements + this.writes.length + this.pendingWrites;
+	}
 	private readonly started: number;
 	private snapshotRepo: string | null | undefined;
 	private worked = false;
+	stopped = false;
 
 	constructor(
 		readonly db: Db,
@@ -37,16 +42,17 @@ export class FactoryInvocation {
 		return this.endReason(step) === null;
 	}
 
-	endReason(step: FactoryRunStep): FactoryEndReason | null {
+	endReason(step: FactoryRunStep, parallel = false): FactoryEndReason | null {
+		if (this.stopped) return "yield";
 		if (Date.parse(this.clock()) - this.started >= INVOCATION_WALL_MS) return "wall";
 		if (this.requests >= INVOCATION_REQUESTS) return "requests";
-		if (this.db.statements + this.writes.length >= INVOCATION_STATEMENTS) return "statements";
+		if (this.statementCost >= INVOCATION_STATEMENTS) return "statements";
 		if (
 			this.worked &&
 			(step.kind === "publish" || step.kind === "activity" || step.resource === "insights")
 		)
 			return "publish_boundary";
-		if (this.snapshotRepo !== undefined && this.snapshotRepo !== step.repo)
+		if (!parallel && this.snapshotRepo !== undefined && this.snapshotRepo !== step.repo)
 			return "snapshot_boundary";
 		return null;
 	}
@@ -63,14 +69,25 @@ export class FactoryInvocation {
 		if (!(await renewRunLease(this.db, this.lease, now))) throw new InvocationStopped(true);
 	}
 
-	async beforeRequest() {
+	private checkRequestBudget() {
 		if (
+			this.stopped ||
 			Date.parse(this.clock()) - this.started >= INVOCATION_WALL_MS - 5_000 ||
-			this.requests >= INVOCATION_REQUESTS ||
-			this.db.statements + this.writes.length >= INVOCATION_STATEMENTS
+			this.statementCost >= INVOCATION_STATEMENTS
 		)
 			throw new InvocationStopped();
-		await this.heartbeat();
+	}
+
+	async beforeRequest(heartbeat = () => this.heartbeat()) {
+		this.checkRequestBudget();
+		if (this.requests >= INVOCATION_REQUESTS) throw new InvocationStopped();
 		this.requests++;
+		try {
+			await heartbeat();
+			this.checkRequestBudget();
+		} catch (error) {
+			this.requests--;
+			throw error;
+		}
 	}
 }

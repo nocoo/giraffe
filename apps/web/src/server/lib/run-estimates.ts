@@ -1,8 +1,9 @@
-import type {
-	FactoryRun,
-	FactoryRunStep,
-	RunFinishEstimateReason,
-	StepKind,
+import {
+	type FactoryRun,
+	type FactoryRunStep,
+	factoryRunDuration,
+	type RunFinishEstimateReason,
+	type StepKind,
 } from "../../lib/factory-run";
 import type { Db } from "./db/d1";
 
@@ -14,11 +15,11 @@ export type RunEstimateRow = {
 	total: number;
 	work_total: number;
 	timed_total: number;
-	duration_total: number;
+	timed_steps: string;
 	step_medians: string | null;
 	plans: string | null;
 };
-export type RunStepPlan = [kind: StepKind, total: number, remaining: number][];
+export type RunStepPlan = [kind: StepKind, total: number, remaining: number, repo: string | null][];
 export type RunEstimateCalibration = Record<RunEstimateKind, number | null> & {
 	stepKinds?: Partial<Record<RunEstimateKind, Partial<Record<StepKind, number>>>>;
 	overhead?: Partial<Record<RunEstimateKind, number>>;
@@ -38,11 +39,13 @@ function validTimestamp(column: "started_at" | "finished_at"): string {
  AND substr(${column},21,length(${column})-20-(${zoneLength})) NOT GLOB '*[^0-9]*'))`;
 }
 
-export const runStepPlanSql = `(SELECT json_group_array(json_array(step_kind,total,remaining)) FROM (
+export const runStepPlanSql = `(SELECT json_group_array(json_array(step_kind,total,remaining,repo)) FROM (
  SELECT json_extract(value,'$.kind') AS step_kind,
+ json_extract(value,'$.repo') AS repo,
  SUM(json_extract(value,'$.status')!='skipped') AS total,
  SUM(json_extract(value,'$.status') IN ('pending','running')) AS remaining
- FROM json_each(payload,'$.steps') GROUP BY json_extract(value,'$.kind')))`;
+ FROM json_each(payload,'$.steps') GROUP BY json_extract(value,'$.kind'),json_extract(value,'$.repo')
+ ORDER BY MIN(CAST(key AS INTEGER))))`;
 
 export function runEstimateStatement(
 	db: Db,
@@ -75,7 +78,8 @@ export function runEstimateStatement(
 ), samples AS MATERIALIZED (
  SELECT * FROM ranked WHERE sample<=5
 ), step_values AS MATERIALIZED (
- SELECT samples.id,samples.kind,json_extract(step.value,'$.kind') AS step_kind,
+ SELECT samples.id,samples.kind,CAST(step.key AS INTEGER) AS step_index,
+ json_extract(step.value,'$.kind') AS step_kind,json_extract(step.value,'$.repo') AS repo,
  json_extract(step.value,'$.durationMs') AS duration_ms
  FROM samples JOIN factory_runs runs ON runs.id=samples.id,json_each(runs.payload,'$.steps') step
  WHERE json_extract(step.value,'$.status') IN ('success','failed','unavailable','limited')
@@ -94,7 +98,8 @@ export function runEstimateStatement(
 )
 SELECT kind,started_at,finished_at,total,work_total,
  (SELECT COUNT(*) FROM step_values WHERE step_values.id=samples.id) AS timed_total,
- coalesce((SELECT SUM(duration_ms) FROM step_values WHERE step_values.id=samples.id),0) AS duration_total,
+ (SELECT json_group_array(json_array(step_kind,repo,duration_ms)) FROM (
+ SELECT step_kind,repo,duration_ms FROM step_values WHERE step_values.id=samples.id ORDER BY step_index)) AS timed_steps,
  CASE WHEN sample=1 THEN (SELECT json_group_object(step_kind,duration_ms) FROM step_medians WHERE step_medians.kind=samples.kind) END AS step_medians,
  CASE WHEN ROW_NUMBER() OVER (ORDER BY kind,sample)=1 THEN ${plans} END AS plans
  FROM samples ORDER BY kind,sample`)
@@ -128,7 +133,13 @@ export function decodeRunEstimates(rows: readonly RunEstimateRow[]): RunEstimate
 			const overhead = median(
 				samples
 					.filter((row) => row.timed_total === row.work_total)
-					.map((row) => Math.max(0, wallDuration(row) - row.duration_total) / row.work_total),
+					.map((row) => {
+						const steps = JSON.parse(row.timed_steps) as [StepKind, string | null, number][];
+						const measured = steps.map(([kind, repo, durationMs]) => ({ kind, repo, durationMs }));
+						const duration = factoryRunDuration(measured);
+						// Invocation-boundary delays remain serial overhead, not fixed repository batches.
+						return Math.max(0, wallDuration(row) - duration) / row.work_total;
+					}),
 			);
 			if (overhead !== null) {
 				calibration.overhead ??= {};
@@ -149,7 +160,8 @@ export async function readRunEstimates(db: Db, account: string): Promise<RunEsti
 export function estimateRunFinish(
 	run: Pick<FactoryRun, "mode" | "depth" | "startedAt"> &
 		Partial<Pick<FactoryRun, "id" | "status" | "cursor" | "nextAttemptAt">> & {
-			steps?: readonly Pick<FactoryRunStep, "kind" | "status">[];
+			steps?: readonly (Pick<FactoryRunStep, "kind" | "status"> &
+				Partial<Pick<FactoryRunStep, "repo">>)[];
 			completed?: number;
 			stepPlan?: RunStepPlan;
 		},
@@ -168,23 +180,29 @@ export function estimateRunFinish(
 	const active = run.status === "running" || run.status === "paused";
 	const medians = calibration.stepKinds?.[kind];
 	const overhead = calibration.overhead?.[kind] ?? 0;
-	const stepDuration = (stepKind: StepKind) => (medians?.[stepKind] ?? perStep) + overhead;
+	const stepDuration = (stepKind: StepKind) => medians?.[stepKind] ?? perStep;
 	const plan = run.stepPlan ?? (run.id ? calibration.plans?.[run.id] : undefined);
+	const plannedDuration = (
+		steps: { kind: StepKind; repo?: string | null; durationMs: number; count: number }[],
+	) =>
+		(medians ? factoryRunDuration(steps) : steps.reduce((sum, step) => sum + step.durationMs, 0)) +
+		steps.reduce((sum, step) => sum + overhead * step.count, 0);
 	let duration: number;
 	if (run.steps?.length === total) {
-		duration = run.steps.reduce(
-			(sum, step) =>
-				sum +
-				(step.status === "skipped" || (active && !["pending", "running"].includes(step.status))
-					? 0
-					: stepDuration(step.kind)),
-			0,
+		duration = plannedDuration(
+			run.steps
+				.filter(
+					(step) =>
+						step.status !== "skipped" && (!active || ["pending", "running"].includes(step.status)),
+				)
+				.map((step) => ({ ...step, durationMs: stepDuration(step.kind), count: 1 })),
 		);
 	} else if (plan) {
-		duration = plan.reduce(
-			(sum, [stepKind, count, remaining]) =>
-				sum + stepDuration(stepKind) * (active ? remaining : count),
-			0,
+		duration = plannedDuration(
+			plan.flatMap(([kind, total, remaining, repo]) => {
+				const count = active ? remaining : total;
+				return count ? [{ kind, repo, durationMs: stepDuration(kind) * count, count }] : [];
+			}),
 		);
 	} else {
 		const remaining = active ? Math.max(0, total - (run.completed ?? run.cursor ?? 0)) : total;
