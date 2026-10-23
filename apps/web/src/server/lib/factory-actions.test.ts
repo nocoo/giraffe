@@ -62,6 +62,62 @@ async function setup() {
 		snapshot,
 		site,
 		read,
+		async baseline(
+			runs: Record<string, unknown>[],
+			options: { id?: string; status?: string } = {},
+		) {
+			const previous = "previous-actions";
+			const observedAt = "2026-09-14T22:00:00.000Z";
+			lease.run.repoIds["nocoo/app"] = "R_1";
+			await raw
+				.prepare(
+					"INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES(?,'account','previous',?,'{}',?,?,?)",
+				)
+				.bind(previous, options.status ?? "completed", observedAt, observedAt, observedAt)
+				.run();
+			await raw
+				.prepare(
+					"INSERT INTO factory_repo_versions(account_id,repo,version,payload,refreshed_at) VALUES('account','nocoo/app',?,?,?)",
+				)
+				.bind(
+					previous,
+					JSON.stringify({ ...snapshot.repos[0], id: options.id ?? "R_1" }),
+					observedAt,
+				)
+				.run();
+			await raw
+				.prepare(
+					"INSERT INTO factory_repo_state(account_id,repo,version,payload) VALUES('account','nocoo/app',?,'{}')",
+				)
+				.bind(previous)
+				.run();
+			const pages = Math.max(1, Math.ceil(runs.length / 100));
+			const resources: [string, unknown][] = [
+				[
+					"actions-source",
+					{
+						status: "complete",
+						next: null,
+						pages,
+						observed: runs.length,
+						expected: runs.length,
+						bytes: 0,
+					},
+				],
+			];
+			for (let index = 0; index < pages; index++)
+				resources.push([
+					`actions-source:${String(index).padStart(3, "0")}:000`,
+					JSON.stringify({ runs: runs.slice(index * 100, (index + 1) * 100), next: null }),
+				]);
+			for (const [key, value] of resources)
+				await raw
+					.prepare(
+						"INSERT INTO factory_resources(run_id,repo,stream,payload) VALUES(?,'nocoo/app',?,?)",
+					)
+					.bind(previous, key, JSON.stringify(value))
+					.run();
+		},
 		async stream(client: GithubClient) {
 			const current = createDb(raw);
 			const writes: D1PreparedStatement[] = [];
@@ -108,6 +164,478 @@ function page(runs: unknown[], next?: number, total?: number | string) {
 		},
 	);
 }
+
+function completedRun(id: number, createdAt = "2020-01-01T00:00:00Z") {
+	return {
+		...rawEvent(id),
+		name: "Deploy",
+		status: "completed",
+		conclusion: "success",
+		workflow_id: 9,
+		run_attempt: 1,
+		head_sha: "abc",
+		created_at: createdAt,
+		run_started_at: createdAt,
+		updated_at: createdAt,
+	};
+}
+
+async function finishActions(fixture: Awaited<ReturnType<typeof setup>>, client: GithubClient) {
+	for (let index = 0; index < 45; index++) {
+		await fixture.stream(client);
+		if ((await fixture.read())?.coverage.status === "complete") return;
+	}
+	throw new Error("Actions did not complete");
+}
+
+it("reconciles an incremental delta into the exact shared stream, snapshot and deployment source", async () => {
+	const fixture = await setup();
+	const history = Array.from({ length: 1230 }, (_, index) => completedRun(index + 1));
+	const pending = {
+		...completedRun(1231, "2026-09-01T00:00:00Z"),
+		status: "in_progress",
+		conclusion: null,
+	};
+	await fixture.baseline([pending, ...history]);
+	const delta = [
+		completedRun(1232, "2026-09-15T21:00:00Z"),
+		completedRun(1231, pending.created_at),
+	];
+	const all = [...delta, ...history];
+	const paths: string[] = [];
+	const client = github((path) => {
+		paths.push(path);
+		const url = new URL(path);
+		if (url.searchParams.has("created")) {
+			expect(url.searchParams.get("created")).toBe(">=2026-08-15T21:59:59.000Z");
+			return page(delta, undefined, delta.length);
+		}
+		const index = Number(url.searchParams.get("page") ?? 1);
+		return page(
+			all.slice((index - 1) * 100, index * 100),
+			index < Math.ceil(all.length / 100) ? index + 1 : undefined,
+			all.length,
+		);
+	});
+	await finishActions(fixture, client);
+	expect(paths).toHaveLength(2);
+	expect(fixture.snapshot.requests).toBe(2);
+	expect((await fixture.read())?.coverage).toMatchObject({
+		status: "complete",
+		strategy: "incremental",
+		observed: 2,
+	});
+	expect((await fixture.read())?.items).toEqual(mapFactoryEvents("actions", delta));
+	const unused = github(() => {
+		throw new Error("must reuse incremental source");
+	});
+	expect((await fixture.snapshotPage(unused)).done).toBe(true);
+	expect(
+		await readSnapshot(createDb(fixture.raw), "account", fixture.site.resource ?? "", "actions"),
+	).toMatchObject({ truncated: false, runs: mapActionRuns({ workflow_runs: all }) });
+	const cached = await cachedActionsClient(
+		createDb(fixture.raw),
+		fixture.lease,
+		"nocoo/app",
+		unused,
+	);
+	const response = await cached.githubApi(
+		"fake",
+		"/repos/nocoo/app/actions/runs?status=success&per_page=100",
+	);
+	expect(await response.json()).toMatchObject({
+		total_count: all.length,
+		workflow_runs: all.slice(0, 100),
+	});
+	expect(unused.count).toBe(0);
+});
+
+it("refreshes completed reruns throughout the prior observation's 30-day eligibility window", async () => {
+	const fixture = await setup();
+	const old = completedRun(1);
+	const rerun = completedRun(2, "2026-08-15T22:00:00Z");
+	await fixture.baseline([rerun, old]);
+	const updated = { ...rerun, conclusion: "failure", run_attempt: 2, updated_at: NOW };
+	const client = github((path) =>
+		new URL(path).searchParams.has("created")
+			? page([updated], undefined, 1)
+			: page([updated], 2, 2),
+	);
+	await finishActions(fixture, client);
+	expect(client.count).toBe(2);
+	await fixture.snapshotPage(
+		github(() => {
+			throw new Error("must reuse");
+		}),
+	);
+	expect(
+		await readSnapshot(createDb(fixture.raw), "account", fixture.site.resource ?? "", "actions"),
+	).toMatchObject({ runs: mapActionRuns({ workflow_runs: [updated, old] }) });
+});
+
+it.each(["queued", "in_progress", "completed"])(
+	"widens the delta for old %s runs that may still change",
+	async (status) => {
+		const fixture = await setup();
+		const old = completedRun(1);
+		const mutable = { ...completedRun(2, "2026-01-01T00:00:00Z"), status, run_started_at: NOW };
+		await fixture.baseline([mutable, old]);
+		const client = github((path) => {
+			if (new URL(path).searchParams.has("created")) {
+				expect(new URL(path).searchParams.get("created")).toBe(">=2026-01-01T00:00:00.000Z");
+				return page([mutable], undefined, 1);
+			}
+			return page([mutable], 2, 2);
+		});
+		await finishActions(fixture, client);
+		expect(client.count).toBe(2);
+	},
+);
+
+it("falls back to full history when historical deletion breaks count reconciliation", async () => {
+	const fixture = await setup();
+	const history = [completedRun(1), completedRun(2)];
+	const recent = completedRun(3, "2026-09-01T00:00:00Z");
+	await fixture.baseline([recent, ...history]);
+	const current = [completedRun(4, NOW), recent, history[0]];
+	let filtered = false;
+	const client = github((path) => {
+		const url = new URL(path);
+		if (url.searchParams.has("created")) {
+			filtered = true;
+			return page(current.slice(0, 2), undefined, 2);
+		}
+		return filtered ? page(current, undefined, 3) : page(current.slice(0, 1), 2, 3);
+	});
+	await finishActions(fixture, client);
+	expect(client.count).toBe(3);
+	expect((await fixture.read())?.coverage.strategy).toBe("full");
+	await fixture.snapshotPage(
+		github(() => {
+			throw new Error("must reuse");
+		}),
+	);
+	expect(
+		await readSnapshot(createDb(fixture.raw), "account", fixture.site.resource ?? "", "actions"),
+	).toMatchObject({ runs: mapActionRuns({ workflow_runs: current }) });
+});
+
+it("checkpoints incremental pages without exposing filtered history as a complete source", async () => {
+	const fixture = await setup();
+	await fixture.baseline([completedRun(1), completedRun(2, "2026-09-01T00:00:00Z")]);
+	await fixture.stream(github(() => page([completedRun(3, "2026-09-15T21:00:00Z")], 2, 3)));
+	await fixture.stream(github(() => page([completedRun(3, "2026-09-15T21:00:00Z")], 2, 2)));
+	const source = await fixture.raw
+		.prepare(
+			"SELECT payload FROM factory_resources WHERE run_id='actions' AND stream='actions-source'",
+		)
+		.first<{ payload: string }>();
+	expect(JSON.parse(source?.payload ?? "null")).toMatchObject({
+		status: "partial",
+		pages: 0,
+		next: "/repos/nocoo/app/actions/runs?per_page=100",
+	});
+	const upstream = github(() => {
+		throw new Error("must not request");
+	});
+	expect(
+		await cachedActionsClient(createDb(fixture.raw), fixture.lease, "nocoo/app", upstream),
+	).toBe(upstream);
+	const stopped = new InvocationStopped();
+	await expect(
+		fixture.stream(
+			github(() => {
+				throw stopped;
+			}),
+		),
+	).rejects.toBe(stopped);
+	const client = github((path) => {
+		expect(new URL(path).searchParams.get("created")).not.toBeNull();
+		expect(new URL(path).searchParams.get("page")).toBe("2");
+		return page([completedRun(2, "2026-09-01T00:00:00Z")], undefined, 2);
+	});
+	await finishActions(fixture, client);
+	expect(client.count).toBe(1);
+	expect((await fixture.read())?.coverage).toMatchObject({ strategy: "incremental", observed: 2 });
+});
+
+it("can build the incremental source from the snapshot lane before replaying all stream pages", async () => {
+	const fixture = await setup();
+	const history = Array.from({ length: 230 }, (_, index) => completedRun(index + 1));
+	await fixture.baseline(history);
+	const recent = completedRun(231, "2026-09-15T21:00:00Z");
+	const probe = github(() => page([recent], 2, 231));
+	expect((await fixture.snapshotPage(probe)).done).toBe(false);
+	const delta = github((path) => {
+		expect(new URL(path).searchParams.has("created")).toBe(true);
+		return page([recent], undefined, 1);
+	});
+	expect((await fixture.snapshotPage(delta)).done).toBe(true);
+	const unused = github(() => {
+		throw new Error("must replay");
+	});
+	await finishActions(fixture, unused);
+	expect(unused.count).toBe(0);
+	expect((await fixture.read())?.items).toEqual(mapFactoryEvents("actions", [recent]));
+	expect(
+		await readSnapshot(createDb(fixture.raw), "account", fixture.site.resource ?? "", "actions"),
+	).toMatchObject({ runs: mapActionRuns({ workflow_runs: [recent, ...history] }) });
+});
+
+it("removes deleted recent runs using the authoritative empty delta while retaining old deployments", async () => {
+	const fixture = await setup();
+	const history = Array.from({ length: 101 }, (_, index) => completedRun(index + 1));
+	await fixture.baseline([completedRun(102, "2026-09-01T00:00:00Z"), ...history]);
+	const client = github((path) =>
+		new URL(path).searchParams.has("created")
+			? page([], undefined, 0)
+			: page(history.slice(0, 100), 2, 101),
+	);
+	await finishActions(fixture, client);
+	expect(client.count).toBe(2);
+	expect((await fixture.read())?.coverage).toMatchObject({
+		status: "complete",
+		strategy: "incremental",
+		observed: 0,
+	});
+	await fixture.snapshotPage(
+		github(() => {
+			throw new Error("must reuse");
+		}),
+	);
+	expect(
+		await readSnapshot(createDb(fixture.raw), "account", fixture.site.resource ?? "", "actions"),
+	).toMatchObject({ runs: mapActionRuns({ workflow_runs: history }) });
+});
+
+it.each([
+	["filtered search cap", () => page([], undefined, 1001)],
+	["missing count", () => page([completedRun(2, "2026-09-01T00:00:00Z")])],
+	["incomplete count", () => page([], undefined, 1)],
+	[
+		"duplicate ids",
+		() =>
+			page(
+				[completedRun(2, "2026-09-01T00:00:00Z"), completedRun(2, "2026-09-01T00:00:00Z")],
+				undefined,
+				2,
+			),
+	],
+	["invalid id", () => page([{ ...completedRun(2, "2026-09-01T00:00:00Z"), id: 0 }], undefined, 1)],
+	["historical id collision", () => page([completedRun(1, "2026-09-01T00:00:00Z")], undefined, 1)],
+	["out-of-range result", () => page([completedRun(2)], undefined, 1)],
+] as const)("abandons the delta and restarts full collection for %s", async (_name, response) => {
+	const fixture = await setup();
+	const runs = [completedRun(2, "2026-09-01T00:00:00Z"), completedRun(1)];
+	await fixture.baseline(runs);
+	await fixture.stream(github(() => page(runs.slice(0, 1), 2, 2)));
+	await fixture.stream(github(response));
+	const client = github((path) => {
+		expect(new URL(path).searchParams.has("created")).toBe(false);
+		return page(runs, undefined, 2);
+	});
+	await finishActions(fixture, client);
+	expect((await fixture.read())?.coverage).toMatchObject({ strategy: "full", observed: 1 });
+	expect((await fixture.read())?.items).toEqual(mapFactoryEvents("actions", runs.slice(0, 1)));
+});
+
+it("abandons a drifting delta count and never repeats its accepted filtered pages", async () => {
+	const fixture = await setup();
+	const recent = completedRun(2, "2026-09-01T00:00:00Z");
+	const runs = [recent, completedRun(1)];
+	await fixture.baseline(runs);
+	await fixture.stream(github(() => page([recent], 2, 2)));
+	await fixture.stream(github(() => page([recent], 2, 2)));
+	await fixture.stream(github(() => page([], undefined, 1)));
+	const client = github((path) => {
+		expect(new URL(path).searchParams.has("created")).toBe(false);
+		return page(runs, undefined, 2);
+	});
+	await finishActions(fixture, client);
+	expect(client.count).toBe(1);
+	expect((await fixture.read())?.coverage.strategy).toBe("full");
+	expect(
+		(
+			await fixture.raw
+				.prepare(
+					"SELECT stream FROM factory_resources WHERE run_id='actions' AND stream LIKE 'actions-incremental:%'",
+				)
+				.all()
+		).results,
+	).toEqual([]);
+});
+
+it.each([
+	["different repository identity", { id: "R_recreated" }],
+	["unpublished failed baseline", { status: "failed" }],
+] as const)("does not use a %s", async (_name, options) => {
+	const fixture = await setup();
+	await fixture.baseline([completedRun(1)], options);
+	await fixture.stream(
+		github((path) => {
+			expect(new URL(path).searchParams.has("created")).toBe(false);
+			return page([], undefined, 0);
+		}),
+	);
+	expect((await fixture.read())?.coverage.strategy).toBe("full");
+});
+
+it.each([
+	["missing", null],
+	["malformed", JSON.stringify({ next: null, runs: null })],
+	["null", "null"],
+	["invalid JSON", "{"],
+] as const)("falls back to full collection for a %s baseline page", async (_name, payload) => {
+	const fixture = await setup();
+	await fixture.baseline([completedRun(1)]);
+	if (payload === null)
+		await fixture.raw
+			.prepare(
+				"DELETE FROM factory_resources WHERE run_id='previous-actions' AND stream LIKE 'actions-source:%'",
+			)
+			.run();
+	else
+		await fixture.raw
+			.prepare(
+				"UPDATE factory_resources SET payload=? WHERE run_id='previous-actions' AND stream LIKE 'actions-source:%'",
+			)
+			.bind(JSON.stringify(payload))
+			.run();
+	await fixture.stream(github(() => page([], undefined, 0)));
+	expect((await fixture.read())?.coverage).toMatchObject({ status: "complete", strategy: "full" });
+});
+
+it("abandons filtered pagination at its bounded page budget", async () => {
+	const fixture = await setup();
+	await fixture.baseline([completedRun(1)]);
+	await fixture.stream(github(() => page([completedRun(2, "2026-09-01T00:00:00Z")], 2, 101)));
+	for (let index = 1; index <= 40; index++)
+		await fixture.stream(
+			github(() => page([completedRun(index + 1, "2026-09-01T00:00:00Z")], index + 1, 100)),
+		);
+	const client = github((path) => {
+		expect(new URL(path).searchParams.has("created")).toBe(false);
+		return page([], undefined, 0);
+	});
+	await finishActions(fixture, client);
+	expect(client.count).toBe(1);
+	expect((await fixture.read())?.coverage.strategy).toBe("full");
+});
+
+it("resumes a v0.23 shared source without changing its committed unfiltered cursor", async () => {
+	const fixture = await setup();
+	const recent = completedRun(2, "2026-09-01T00:00:00Z");
+	expect((await fixture.snapshotPage(github(() => page([recent], 2, 2)))).done).toBe(false);
+	await fixture.baseline([recent, completedRun(1)]);
+	await fixture.stream(
+		github(() => {
+			throw new Error("must replay committed v0.23 page");
+		}),
+	);
+	await fixture.stream(
+		github((path) => {
+			const url = new URL(path);
+			expect(url.searchParams.get("page")).toBe("2");
+			expect(url.searchParams.has("created")).toBe(false);
+			return page([completedRun(1)], undefined, 2);
+		}),
+	);
+	expect((await fixture.read())?.coverage).toMatchObject({
+		status: "complete",
+		strategy: "full",
+		pages: 2,
+	});
+	expect((await fixture.read())?.items).toEqual(mapFactoryEvents("actions", [recent]));
+});
+
+it("discards abandoned delta metadata after a v0.23 worker starts full collection", async () => {
+	const fixture = await setup();
+	const recent = completedRun(2, "2026-09-01T00:00:00Z");
+	await fixture.baseline([recent, completedRun(1)]);
+	await fixture.stream(github(() => page([recent], 2, 2)));
+	await fixture.raw
+		.prepare(
+			"UPDATE factory_resources SET payload=json_set(payload,'$.pages',1,'$.observed',1,'$.expected',2,'$.next','/repos/nocoo/app/actions/runs?per_page=100&page=2') WHERE run_id='actions' AND stream='actions-source'",
+		)
+		.run();
+	await fixture.raw
+		.prepare(
+			"INSERT INTO factory_resources(run_id,repo,stream,payload) VALUES('actions','nocoo/app','actions-source:000:000',?)",
+		)
+		.bind(
+			JSON.stringify(
+				JSON.stringify({
+					runs: [recent],
+					next: "/repos/nocoo/app/actions/runs?per_page=100&page=2",
+				}),
+			),
+		)
+		.run();
+	const client = github((path) => {
+		expect(new URL(path).searchParams.has("created")).toBe(false);
+		expect(new URL(path).searchParams.get("page")).toBe("2");
+		return page([completedRun(1)], undefined, 2);
+	});
+	await finishActions(fixture, client);
+	expect(client.count).toBe(1);
+	expect((await fixture.read())?.coverage).toMatchObject({
+		status: "complete",
+		strategy: "full",
+		observed: 1,
+	});
+});
+
+it("fences materialized incremental pages and their source state as one checkpoint", async () => {
+	const fixture = await setup();
+	const recent = completedRun(2, "2026-09-01T00:00:00Z");
+	await fixture.baseline([recent, completedRun(1)]);
+	await fixture.stream(github(() => page([recent], 2, 2)));
+	const db = createDb(fixture.raw);
+	const writes = await stepActions(
+		db,
+		fixture.lease,
+		fixture.snapshot,
+		github(() => page([recent], undefined, 1)),
+		"fake",
+		memoryStore(),
+		NOW,
+	);
+	const later = new Date(Date.parse(NOW) + 120_000).toISOString();
+	expect(await claimRun(createDb(fixture.raw), "actions", later)).not.toBeNull();
+	expect(await saveRun(db, fixture.lease, writes, later, true)).toBe(false);
+	expect(
+		(
+			await fixture.raw
+				.prepare(
+					"SELECT stream FROM factory_resources WHERE run_id='actions' AND stream LIKE 'actions-source:%'",
+				)
+				.all()
+		).results,
+	).toEqual([]);
+	const source = await fixture.raw
+		.prepare(
+			"SELECT payload FROM factory_resources WHERE run_id='actions' AND stream='actions-source'",
+		)
+		.first<{ payload: string }>();
+	expect(JSON.parse(source?.payload ?? "null")).toMatchObject({ status: "partial", pages: 0 });
+});
+
+it.each([undefined, "2000+", 5000] as const)(
+	"uses the unfiltered probe directly when its count is %s",
+	async (total) => {
+		const fixture = await setup();
+		const recent = completedRun(2, "2026-09-01T00:00:00Z");
+		await fixture.baseline([completedRun(1)]);
+		await fixture.stream(github(() => page([recent], 2, total)));
+		const client = github((path) => {
+			expect(new URL(path).searchParams.has("created")).toBe(false);
+			expect(new URL(path).searchParams.get("page")).toBe("2");
+			return page([completedRun(1)]);
+		});
+		await fixture.stream(client);
+		expect(client.count).toBe(1);
+	},
+);
 
 it("shares every unfiltered page with the frozen-window stream and exact full snapshot", async () => {
 	const fixture = await setup();
