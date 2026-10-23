@@ -1688,3 +1688,14 @@ export and expanding compact steps before an old reader starts. A local SQLite
 regression checks idempotent expansion, non-default audits and legacy arithmetic.
 Future persistence optimizations must test both crash boundaries and the actual
 old-reader contract, not only new-code round trips.
+
+## 2026-10-23 - Inspect listener output, not only lsof exit status
+
+The first v0.22 branch push was safely rejected by the normal pre-push L2 hook
+because another controller still owned port 17046. The preceding wait loop used
+the exit status of a multi-range lsof query; that query can print real listeners
+while returning nonzero when another requested range has no matches. The loop
+therefore misclassified occupied ports as free. No remote ref was updated and no
+other controller's process was terminated. Shared-port waits must inspect captured
+listener output, poll every 30 seconds while it is nonempty, and recheck immediately
+before starting a runner. A successful earlier probe is not a reservation.
