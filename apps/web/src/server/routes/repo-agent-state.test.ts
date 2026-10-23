@@ -69,6 +69,31 @@ async function fixture(active = true) {
 	return { raw, env, app, call, mint, token };
 }
 
+it("accepts the missing-state ETag for create-only PUT and rejects subsequent creates", async () => {
+	const state = await fixture();
+	const absent = await state.call();
+	expect(absent.headers.get("ETag")).toBe('"0"');
+	const created = await state.call(
+		"PUT",
+		{ payload: { summary: "Created once" } },
+		{ "If-Match": '"0"' },
+	);
+	expect(created.status).toBe(200);
+	expect(await created.json()).toMatchObject({ payload: { summary: "Created once" }, revision: 1 });
+	const conflict = await state.call(
+		"PUT",
+		{ payload: { summary: "Overwrite" } },
+		{ "If-Match": '"0"' },
+	);
+	expect(conflict.status).toBe(409);
+	expect(await conflict.json()).toMatchObject({ error: { code: "revision_conflict" } });
+	for (const response of [created, conflict]) {
+		expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+		expect(response.headers.get("Vary")).toBe("Authorization");
+		expect(response.headers.get("Referrer-Policy")).toBe("no-referrer");
+	}
+});
+
 it("R5 browser and machine GET expose flat null state, concurrency-only ETags and private 200 without writes", async () => {
 	const s = await fixture();
 	const before = (await s.raw.prepare("SELECT * FROM api_tokens").all()).results;
@@ -219,7 +244,7 @@ it("R5 rejects unknown queries, unknown repos, invalid JSON and unsupported prec
 		expect(response.status).toBe(400);
 		expect(await response.json()).toMatchObject({ error: { code: "invalid_payload" } });
 	}
-	for (const header of ['W/"1"', "*", '"0"'])
+	for (const header of ['W/"1"', "*", '"00"'])
 		expect((await s.call("PUT", { payload: {} }, { "if-match": header })).status).toBe(400);
 	const invalid = await s.app.request(
 		"http://localhost/api/v1/accounts/a/repos/owner/app/agent-state",

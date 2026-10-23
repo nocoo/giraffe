@@ -180,7 +180,10 @@ payloads return 400 `payload_too_large`. Giraffe stores other fields opaquely.
 The complete request body has a 100,000-byte transport cap, independent of the
 serialized-payload cap; excess whitespace/escaping does not bypass it.
 
-- Create without a revision. The repository must currently belong to the saved
+- Create without a revision or with `If-Match: "0"` (the ETag of missing state).
+  The zero header is create-only: existing state, including a concurrent create,
+  returns 409 `revision_conflict` without overwriting it. It takes precedence over
+  a valid body revision; body `revision:0` remains invalid. The repository must currently belong to the saved
   catalog. Revisions are allocated monotonically across the account, not per
   repository; clients must use the returned value, never assume 1 or increment it.
   A removed/replaced identity cannot reuse another identity's old revision.
