@@ -1875,3 +1875,18 @@ Tests require retained old events and successful two-repository publication.
 Three baseline-generated site chunk fixtures separately verify unchanged snapshot
 handoff. Review upgrade paths across invocation boundaries, not only races within
 one Promise pool; durable fallback ownership matters even when a lane does no work.
+
+## 2026-10-24 - Keep HTTP regression fixtures asynchronous
+
+The first B15A pre-push run rejected the new terminal-ETA HTTP regression with
+`fetch failed` / `ECONNRESET`; the other 65 API tests passed and no branch was
+pushed. The new case performed several synchronous Wrangler subprocess calls
+before issuing its first HTTP read, blocking the test process's event loop.
+Isolated keep-alive probes did not reproduce the exact reset, so the transport
+failure must not be presented as a proven application bug or a confirmed idle
+timeout. The readiness test's SQL helper, marker checks and cleanup now await
+asynchronous subprocesses, letting connection events run between fixture writes
+and assertions. Preserve all HTTP, read-only and network-count assertions and
+rerun both API suites without retries, skipped tests or hook bypasses. Prefer
+asynchronous fixture subprocesses in HTTP tests, and distinguish observed failures
+from unproven explanations when recording validation evidence.

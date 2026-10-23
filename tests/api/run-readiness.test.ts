@@ -1,6 +1,7 @@
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { resolve } from "node:path";
+import { promisify } from "node:util";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { factoryWindow } from "../../apps/web/src/lib/factory";
 import { type FactoryRun, makeRun } from "../../apps/web/src/lib/factory-run";
@@ -16,7 +17,7 @@ const id = (kind: string) => `${account}-${kind}`;
 const quote = (value: string) => `'${value.replaceAll("'", "''")}'`;
 let seeded = false;
 
-function rows(command: string): Record<string, unknown>[] {
+async function rows(command: string): Promise<Record<string, unknown>[]> {
 	const persist = process.env.GIRAFFE_PERSIST;
 	const config = process.env.GIRAFFE_CONFIG;
 	if (
@@ -27,7 +28,7 @@ function rows(command: string): Record<string, unknown>[] {
 		resolve(config) !== resolve(".wrangler/e2e-run/wrangler.toml")
 	)
 		throw new Error("dedicated local L2 runner context required");
-	const result = execFileSync(
+	const { stdout } = await promisify(execFile)(
 		resolve("node_modules/.bin/wrangler"),
 		[
 			"d1",
@@ -42,12 +43,12 @@ function rows(command: string): Record<string, unknown>[] {
 		],
 		{ encoding: "utf8" },
 	);
-	return (JSON.parse(result) as { results: Record<string, unknown>[] }[]).flatMap(
+	return (JSON.parse(stdout) as { results: Record<string, unknown>[] }[]).flatMap(
 		(item) => item.results,
 	);
 }
-const marker = () =>
-	expect(rows("SELECT value FROM _test_marker WHERE key='env'")).toEqual([{ value: "test" }]);
+const marker = async () =>
+	expect(await rows("SELECT value FROM _test_marker WHERE key='env'")).toEqual([{ value: "test" }]);
 const request = (
 	query = "?kind=daily",
 	token: string | null = bearer,
@@ -59,8 +60,8 @@ const request = (
 		headers: token ? { Authorization: `Bearer ${token}` } : {},
 	});
 
-beforeAll(() => {
-	marker();
+beforeAll(async () => {
+	await marker();
 	const now = new Date().toISOString();
 	const mint = (token: string, scopes: string[], suffix: string) =>
 		`INSERT INTO api_tokens(id,account_id,token_hash,label,scopes,creator,created_at,expires_at) VALUES(${quote(id(suffix))},${quote(account)},${quote(createHash("sha256").update(token).digest("hex"))},'readiness L2',${quote(JSON.stringify(scopes))},'local test',${quote(now)},${quote(new Date(Date.now() + 86400_000).toISOString())});`;
@@ -81,7 +82,7 @@ beforeAll(() => {
 		return `INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES(${quote(run.id)},${quote(account)},${quote(run.requestKey)},${quote(run.status)},${quote(JSON.stringify(run))},${quote(started)},${quote(started)},${quote(started)});`;
 	};
 	seeded = true;
-	rows(
+	await rows(
 		[
 			`INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES(${quote(account)},${quote(owner)},'test-not-an-encrypted-pat','fake',${quote(now)},${quote(now)});`,
 			mint(bearer, ["app:read", "app:write"], "reader"),
@@ -101,10 +102,10 @@ beforeAll(() => {
 		].join("\n"),
 	);
 });
-afterAll(() => {
+afterAll(async () => {
 	if (!seeded) return;
-	marker();
-	rows(`DELETE FROM accounts WHERE id=${quote(account)};`);
+	await marker();
+	await rows(`DELETE FROM accounts WHERE id=${quote(account)};`);
 });
 
 it("R9 HTTP latest returns completed/partial publication, running ETA reason and safe failures without writes or upstream calls", async () => {
@@ -112,7 +113,7 @@ it("R9 HTTP latest returns completed/partial publication, running ETA reason and
 		rows(
 			`SELECT * FROM factory_runs WHERE account_id=${quote(account)} ORDER BY id; SELECT * FROM api_tokens WHERE account_id=${quote(account)} ORDER BY id;`,
 		);
-	const before = saved();
+	const before = await saved();
 	const calls = await (await fetch("http://127.0.0.1:17046/_count")).text();
 	for (const [kind, expected] of [
 		[
@@ -181,7 +182,7 @@ it("R9 HTTP latest returns completed/partial publication, running ETA reason and
 		});
 	}
 	expect(await (await fetch("http://127.0.0.1:17046/_count")).text()).toBe(calls);
-	expect(saved()).toEqual(before);
+	expect(await saved()).toEqual(before);
 });
 
 it("R9 HTTP latest enforces strict queries, app-read, bearer/account isolation and GET-only methods", async () => {
@@ -210,20 +211,20 @@ it("R9 HTTP latest enforces strict queries, app-read, bearer/account isolation a
 });
 
 it("clears terminal ETAs on HTTP list, latest and browser detail without changing stored runs", async () => {
-	marker();
-	const prior = rows("SELECT id FROM accounts WHERE is_active=1")[0]?.id;
+	await marker();
+	const prior = (await rows("SELECT id FROM accounts WHERE is_active=1"))[0]?.id;
 	const runId = id("0e256e3d");
 	const jwt = process.env.GIRAFFE_JWT;
 	const browser = (query = "") =>
 		fetch(`${base}/api/factory/runs${query}`, {
 			headers: jwt ? { "Cf-Access-Jwt-Assertion": jwt } : {},
 		});
-	rows(
+	await rows(
 		`UPDATE accounts SET is_active=0 WHERE is_active=1; UPDATE accounts SET is_active=1 WHERE id=${quote(account)};`,
 	);
 	try {
 		for (const status of ["completed", "failed", "partial", "cancelled"] as const) {
-			marker();
+			await marker();
 			const run = {
 				...makeRun(runId, account, owner, runId, "refresh", [], "2026-10-23T21:00:44.000Z"),
 				depth: "quick" as const,
@@ -234,14 +235,14 @@ it("clears terminal ETAs on HTTP list, latest and browser detail without changin
 				...step,
 				status: status === "partial" || status === "failed" ? "failed" : "success",
 			}));
-			rows(
+			await rows(
 				`DELETE FROM factory_runs WHERE id=${quote(runId)}; INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES(${quote(run.id)},${quote(account)},${quote(run.requestKey)},${quote(status)},${quote(JSON.stringify(run))},${quote(run.startedAt)},${quote(run.startedAt)},${quote(run.startedAt)});`,
 			);
 			const saved = () =>
 				rows(
 					`SELECT * FROM factory_runs WHERE account_id=${quote(account)} ORDER BY id; SELECT * FROM api_tokens WHERE account_id=${quote(account)} ORDER BY id;`,
 				);
-			const before = saved();
+			const before = await saved();
 			const calls = await (await fetch("http://127.0.0.1:17046/_count")).text();
 			const expected = {
 				id: runId,
@@ -268,21 +269,21 @@ it("clears terminal ETAs on HTTP list, latest and browser detail without changin
 				expect(detail).toMatchObject(expected);
 				expect(detail?.steps).toHaveLength(query ? 1 : 0);
 			}
-			expect(saved()).toEqual(before);
+			expect(await saved()).toEqual(before);
 			expect(await (await fetch("http://127.0.0.1:17046/_count")).text()).toBe(calls);
 		}
 	} finally {
-		marker();
-		rows(
+		await marker();
+		await rows(
 			`DELETE FROM factory_runs WHERE id=${quote(runId)}; UPDATE accounts SET is_active=0 WHERE id=${quote(account)};${typeof prior === "string" ? `UPDATE accounts SET is_active=1 WHERE id=${quote(prior)};` : ""}`,
 		);
 	}
 });
 
 it("R9 HTTP browser latest uses the Access-protected active account and returns 404 for missing kinds", async () => {
-	marker();
-	const prior = rows("SELECT id FROM accounts WHERE is_active=1")[0]?.id;
-	rows(
+	await marker();
+	const prior = (await rows("SELECT id FROM accounts WHERE is_active=1"))[0]?.id;
+	await rows(
 		`UPDATE accounts SET is_active=0 WHERE is_active=1; UPDATE accounts SET is_active=1 WHERE id=${quote(account)};`,
 	);
 	const jwt = process.env.GIRAFFE_JWT;
@@ -300,7 +301,7 @@ it("R9 HTTP browser latest uses the Access-protected active account and returns 
 			publishedAt: finished,
 		});
 		expect((await browser("?kind=daily&x=1")).status).toBe(400);
-		rows(`DELETE FROM factory_runs WHERE id=${quote(id("weekly"))};`);
+		await rows(`DELETE FROM factory_runs WHERE id=${quote(id("weekly"))};`);
 		for (const response of [await browser("?kind=weekly"), await request("?kind=weekly")]) {
 			expect(response.status).toBe(404);
 			if (response.url.includes("/api/v1/")) {
@@ -311,8 +312,8 @@ it("R9 HTTP browser latest uses the Access-protected active account and returns 
 			expect(await response.json()).toMatchObject({ error: { code: "not_found" } });
 		}
 	} finally {
-		marker();
-		rows(
+		await marker();
+		await rows(
 			`UPDATE accounts SET is_active=0 WHERE id=${quote(account)};${typeof prior === "string" ? `UPDATE accounts SET is_active=1 WHERE id=${quote(prior)};` : ""}`,
 		);
 	}
