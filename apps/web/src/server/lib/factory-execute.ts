@@ -311,7 +311,16 @@ async function executeStep(
 				}
 			}
 		} else if (step.kind === "snapshot") {
-			const result = await collectSitePage(db, lease, step, gh, token, clock(), hooks?.project);
+			const result = await collectSitePage(
+				db,
+				lease,
+				step,
+				gh,
+				token,
+				clock(),
+				hooks?.project,
+				hooks?.heartbeat ?? (() => invocation.heartbeat()),
+			);
 			writes = result.writes;
 			if (result.done) {
 				finish(step, result.unavailable ? "unavailable" : "success", clock());

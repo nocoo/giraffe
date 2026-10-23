@@ -8,7 +8,7 @@ import { createDb } from "./db/d1";
 import { claimRun, saveRun, startRun } from "./db/factory-runs";
 import { readSnapshot } from "./db/snapshots";
 import { ApiError } from "./errors";
-import { InvocationStopped } from "./factory-invocation";
+import { FactoryInvocation, InvocationStopped } from "./factory-invocation";
 import { collectSitePage } from "./factory-site";
 import { createGithubClient } from "./github-client";
 import { mapActionRuns } from "./github-map";
@@ -141,6 +141,62 @@ it("also advances slow GraphQL repository snapshots one new request at a time", 
 		expect(await saveRun(db, lease, result.writes, NOW, true)).toBe(true);
 	}
 	expect(cursors).toEqual([null, "next-page"]);
+});
+
+it("keeps slow startup repository pages through post-fetch processing without waiting for lease expiry", async () => {
+	const { raw, lease, step } = await setup("repos");
+	lease.run.mode = "catalog";
+	let elapsed = 0;
+	const clock = () => new Date(Date.parse(NOW) + elapsed).toISOString();
+	const cursors: unknown[] = [];
+	for (let index = 0; index < 2; index++) {
+		const db = createDb(raw);
+		const invocation = new FactoryInvocation(db, lease, clock);
+		if (index === 0) elapsed = 19_000;
+		const client = createGithubClient(
+			{ ENVIRONMENT: "production" } as Env,
+			async (_url, init) => {
+				cursors.push(JSON.parse(String(init?.body)).variables.after);
+				elapsed += 15_000;
+				return Response.json({
+					data: {
+						viewer: {
+							repositories: {
+								nodes: [{ ...rawRepo, id: `R_${index}`, nameWithOwner: `nocoo/app${index}` }],
+								pageInfo: {
+									hasNextPage: index === 0,
+									endCursor: index === 0 ? "next-page" : null,
+								},
+							},
+						},
+					},
+				});
+			},
+			undefined,
+			() => invocation.beforeRequest(),
+		);
+		const result = await collectSitePage(db, lease, step, client, "fake", clock(), undefined, () =>
+			invocation.heartbeat(),
+		);
+		elapsed += 7_000;
+		expect(await saveRun(db, lease, result.writes, clock(), true)).toBe(true);
+		expect(result.done).toBe(index === 1);
+		expect(client.count).toBe(1);
+		expect(await claimRun(createDb(raw), "site", clock())).toBeNull();
+	}
+	expect(cursors).toEqual([null, "next-page"]);
+	const db = createDb(raw);
+	const plan = await db
+		.prepare("SELECT payload FROM factory_resources WHERE stream='catalog-plan'")
+		.first<{ payload: string }>();
+	expect(JSON.parse(plan?.payload ?? "{}").rows).toHaveLength(2);
+	expect(
+		await db
+			.prepare(
+				"SELECT count(*) AS total FROM factory_resources WHERE stream LIKE 'snapshot-replay:%'",
+			)
+			.first(),
+	).toEqual({ total: 0 });
 });
 
 it("keeps upstream errors and fencing instead of treating them as a successful page", async () => {

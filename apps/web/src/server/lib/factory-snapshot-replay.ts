@@ -38,6 +38,7 @@ export async function snapshotReplay(
 	cursor: number,
 	upstream: GithubClient,
 	now: string,
+	heartbeat?: () => Promise<void>,
 ) {
 	const prefix = `snapshot-replay:${resource}:${cursor}:`;
 	const rows = await db
@@ -136,6 +137,7 @@ export async function snapshotReplay(
 						: {}),
 				};
 			}
+			await heartbeat?.();
 			const text = JSON.stringify(entry);
 			if (token && text.includes(token))
 				throw new ApiError(422, "snapshot_incomplete", "snapshot response contains credentials");
