@@ -12,45 +12,118 @@
 - For N resolved owned repositories, a deep full refresh has `18N + 8` logical steps: six site snapshots including Insights, contributions, nine factory steps and nine detail tabs per repository, and publication. A manual scoped refresh has `18N + 1` steps; one selected repository has 19. Quick full/daily refresh also adds one activity step per repository and one activity-contributions step: daily has `19N + 6`, or 1,146 steps for 60 repositories. Catalog discovery has four steps. Historical frozen plans can retain different factory/detail counts. New plans contain no AI checkpoints; frozen old AI stages retire without provider calls while other collection work continues.
 - Catalog runs retain four steps: inventory, site catalog, restore and publication. Full refresh requires complete statistics and site catalogs; non-selected scoped runs require a complete statistics catalog. A selected known repository does not require a complete site catalog. Full refresh still reports `catalog_changed` when discovery finds repositories outside its frozen site targets; synchronize the catalog explicitly before including them.
 - Dependabot REST alerts use the `after` cursor from GitHub's next Link header; the endpoint rejects numeric `page` pagination. Resume checkpoints preserve the cursor, repository and original filters. Other REST streams retain sequential page validation.
-- Each queue message claims once, executes several steps/pages within the invocation budgets below, commits once, then schedules a continuation. Site Issues/PRs/alerts retain their ten-repository chunks and staging cursors; lists become visible only at publication. The minute cron repairs missed dispatch. Queue messages contain only the run ID, never tokens or events.
-- 90 秒租约；提交事务中的每一条写入都受 run ID、lease token、版本、未过期租约和 running 状态保护。最后 CAS 更新 checkpoint 并释放租约。控制操作使旧租约失效；已在途的 GitHub 请求可能结束，但不能再写。
-- Fenced heartbeats renew independently of the final checkpoint. A crash can replay the entire unsaved invocation, not just its last page. Durable audit records retain attempted work while business data, pages and cursors roll back together. Event-ID deduplication and fenced publication prevent duplicate results.
+- Each queue message claims once, checkpoints every accepted step/page, then schedules a continuation. Site Issues/PRs/alerts retain their ten-repository chunks and staging cursors; lists become visible only at publication. The minute cron repairs missed dispatch. Queue messages contain only the run ID, never tokens or events.
+- A 40-second lease fences every write by run ID, token, version, unexpired lease and running status. Intermediate saves atomically advance the version while retaining ownership; the final save releases it. Controls invalidate ownership without undoing prior checkpoints.
+- A dead invocation can lose at most one in-flight step per parallel repository, never an accepted step/page checkpoint. Request accounting can omit requests only from those in-flight steps. Event-ID deduplication and fenced publication prevent duplicate results.
 - 临时失败按 30/60/120 秒退避，最多 3 次重试；GitHub 限流遵循 Retry-After/reset，未知时至少 15 分钟，任务保持可恢复。401 暂停等待更新凭据。统计仓库失败只跳过后续统计步骤；页面数据失败不会阻断其他页面。权限不足、来源缺失/截断、清单变化不无效重试；保留旧快照及原时间，不伪装成功零值。
 - 账户启动冷却 60 秒；每个统计仓库尝试后冷却 15 分钟。服务器时钟决定下次允许时间；客户端仅显示倒计时。全站刷新允许统计仓库为空或都在冷却，仍更新页面数据。暂停保留唯一活动 run，取消释放活动槽并保留已提交数据；新 run 不会与旧执行者竞争。
 
-## v0.22 invocation budgets and persistence
+## v0.23 invocation budgets and persistence
 
-New work starts only before 25 seconds of invocation wall time, below 40 GitHub
-requests and below 36 executed D1 statements plus buffered writes. A long step and
-its remaining stream pages may finish past the admission deadline; only a new
-step checks wall time. Page continuation still obeys request and D1 caps, and a
-subsequent invocation must admit its first step normally. Before each GitHub
-request, the executor checks ownership, renews a lease with at most 30 seconds remaining, and yields at
-60 executed statements plus buffered writes, reserving space under the existing
-80-statement hard limit for audits and final save. Each individual fetch retains
-its 15-second timeout; leases extend by 90 seconds but never past the run deadline.
-Budget yields are not network failures. No queue, cron or deployment limit changes
-are required, and no repository/request parallelism is introduced.
+The earlier 80-statement investigation figure is historical; these factory-only
+limits supersede it without changing other API paths.
 
-Stream pages share an invocation resource cache and one atomic final save. The
-loop stops before publication, activity or Insights when buffered writes must be
-visible to their readers, between repositories after detail snapshots, and after
-a global snapshot or unfinished site chunk. Failed or rate-limited collection
-can commit earlier accepted work without publishing incomplete new sources.
-Lost ownership aborts all buffered business writes. Expiry runs once per executor
-invocation, including no-claim and lost-lease paths.
+New work starts before 25 seconds of invocation wall time, below 40 GitHub
+requests and 600 executed D1 statements plus staged writes across every lane.
+Request slots are reserved before asynchronous admission; wall, stop and statement
+budgets are rechecked after waiting for the shared heartbeat lock. Pending writes
+waiting for acceptance count toward admission, and concurrent reads are counted
+even while a D1 batch is running. Every request checks the wall budget,
+reserving five seconds for checkpointing; individual fetches
+retain their 15-second timeout. Step boundaries and requests renew the 40-second
+lease when at most half remains, never beyond the absolute run deadline.
+The factory-only D1 hard cap is 800 statements, leaving 200 for checkpoint/error
+handling after admission closes and another 200 below D1's paid-plan limit of
+1,000 queries per invocation. Other API paths keep their 80-statement cap.
+Budget yields preserve cursors, keep errors null and do not spend retry failures.
+No queue, cron, deployment or Cloudflare configuration changes are required.
+
+The in-code `FACTORY_REPO_CONCURRENCY = 4` pool runs up to four different repositories
+inside one invocation. Metadata, streams and repository commits form the first
+phase; repository snapshots form the second. Each lane stays pinned to one
+repository and executes one step/page at a time, saving before starting another.
+Each invocation selects up to four unfinished repositories; completed lanes can
+be replaced at the next invocation. One request/statement/wall budget belongs to
+the invocation, not to each lane. Four GitHub fetches can overlap, while journal,
+heartbeat and checkpoint writes are serialized. The 40-request ceiling and the
+800-statement hard cap are not multiplied by pool width.
+
+Stream pages share an invocation resource cache, with an atomic fenced save after
+each accepted page. Publication, activity, global snapshots and Insights remain
+serial boundaries. All activity waits until all repository snapshots complete,
+including when resuming an older interleaved plan. Snapshot collection
+replays already staged responses locally and saves each newly fetched page in
+bounded, run-owned resources. This splits slow Actions and other paged snapshots
+without changing list results or fetching accepted pages again. Lost ownership
+rejects the in-flight writes, not earlier committed checkpoints. Missing repository
+payloads are fetched before taking the projection lock; shared global snapshot
+read/modify/write projection holds that lock through atomic acceptance so one
+repository cannot overwrite another's accepted rows.
+
+When resuming an accepted Actions stream, its persisted source owns its cursor.
+A v0.22 filtered `created=...` stream continues from its saved `next` and pending
+split-window ranges, retaining accepted events and page counts. Its filtered page
+number is never treated as an index into the unfiltered `actions-source` cache.
+Shared raw history can still be collected independently for later snapshots.
+The cross-version fixtures come from the real `12d4612` collector, including both
+a page-2 checkpoint and a split-window checkpoint with a queued range.
+
+Issues/PRs with a saved partial resource continue its original `next` rather than
+starting the new incremental strategy. Legacy baseline events without audited
+update timestamps do not qualify for incremental collection. Site Issues/PRs/
+alerts keep their existing `snapshot:{resource}` chunks and `snapshotCursor`;
+new replay keys are separate. Cross-version fixtures from `12d4612` verify that
+accepted ten-repository chunks survive and only the remaining repositories are
+queried before staged snapshot publication, without recollecting accepted groups.
+
+Each repository's executor checkpoint uses the existing run-owned
+`factory_resources` stream `executor:checkpoint`. Acceptance copies all of that
+repository's step statuses, including deferred activity skips, into the central
+run and preserves other lanes' in-flight journal entries. Staged SQL is rebound
+to the latest central version only for the same run and lease token; the original
+token/version/expiry/status fences still gate the complete transaction. A failing
+lane stops new admission, and late results cannot overwrite accepted checkpoints.
+Failure logs include progress accepted before the failure.
+
+Before parallel checkpoint reads, the pool freezes the invocation's startup run.
+An older single-repository root is identified by its run/repository IDs and
+successful metadata, not by a cursor that may already be past its repository.
+The first accepting lane atomically seeds that root into `executor:checkpoint`
+alongside its own save, without replacing an existing per-repository checkpoint.
+This protects the old repository even if its lane yields before its first save,
+another lane returns first, or the commit acknowledgement is lost. Invalid or
+global roots are not seeded; pending protection writes share the statement budget.
+
+Uncaught executor errors release only their own fenced lease. Queue retries use
+5/10/15 seconds based on delivery attempts. A live-lease collision returns its
+deadline for delayed redelivery instead of silently dropping the message.
+Queue 10250/429 sends retry after 0.5/1/2 seconds, recomputing delay against the
+original target; exhausted sends remain observable and cron remains a fallback.
+
+A platform cancellation does not run catch/release or request an explicit retry.
+Only already accepted atomic checkpoints survive; each pool lane has at most one
+unfinished step. The remaining lease is at most 40 seconds after cancellation.
+A prompt duplicate delivery schedules against that expiry (less than one second
+of queue-delay rounding). With no redelivery, healthy minute-cron recovery takes
+less than 40 + 60 = 100 seconds to enqueue eligible work in the worst phase,
+plus queue delivery and execution latency. It cannot promise sub-90-second
+cron-only recovery without changing scheduling configuration. Queue overload or
+platform delivery delays prevent a hard production wall-time ceiling. Leases
+created by an older deployed version retain their stored expiry.
 
 Migration `0025_factory_run_journal.sql` adds an account-cascaded, run-owned table
 for invocation counts and small audit JSON. Claim reads the payload once, takes a
 version-CAS lease without `RETURNING payload`, and increments `invocations`. The
 executor journals attempt/start metadata before work and completed durations
-before starting subsequent work and before final save. A fenced request counter
-is persisted immediately before each fetch; it counts attempted dispatches, even
-if cancellation or a crash prevents a result. A crash during an unfinished fetch
+before starting subsequent work and before final save. Request counts accumulate
+in memory and flush with the existing step audit/checkpoint, not once per fetch.
+Cancellation or abrupt death can omit requests only from the one in-flight step
+per active repository (at most four in the pool).
+A crash during an unfinished fetch
 cannot reconstruct elapsed time after its last checkpoint. Completed audited
 durations survive replay. Retry high-water marks survive unsaved successes, so
 repeated final-save crashes cannot reset the retry limit indefinitely. Pages,
-business status, activity contributions and cursors stay in the final transaction,
+business status, activity contributions and cursors stay in each checkpoint transaction,
 not the audit journal. Pause/cancel materialize audits while invalidating ownership.
 Controls compare both the run version and the journal in a transaction preflight;
 a concurrent audit update returns `account_conflict` rather than dropping counters.
@@ -58,6 +131,23 @@ Pause/cancel apply repository cooldowns to every metric repository attempted in
 the unsaved batch, not only the repository at the durable cursor. Journal-overlay
 running steps identify those attempts before controls change their statuses;
 completed work from earlier batches and untouched repositories are not extended.
+
+### Observability
+
+Each executor emits one `console.log` JSON line with
+`event:"factory_invocation"`, `runId`, `cursorStart`, `cursorEnd`, `stepsDone`,
+`requests`, `statements`, `stagedWrites`, `elapsedMs`, and `endReason`.
+`operation` locates the failure in `claim`, `heartbeat`, `step`, or `save` without
+exposing SQL or upstream payloads.
+Reasons are `wall`, `requests`, `statements`, `snapshot_boundary`,
+`publish_boundary`, `yield`, `completed`, `lost_lease`, `save_failed`, `error`,
+or `run_end`. Filter Workers Observability on this event and the run ID.
+Separate `factory_consume_error`, `factory_queue_send_error`,
+`factory_continue_error`, `factory_prune_error` and `factory_lease_release_error`
+events expose dispatch/recovery failures. Error objects contain safe normalized
+`name`, `code`, and `message`; raw upstream bodies, SQL, stacks, tokens and arbitrary
+exception text are never logged. A platform cancellation may prevent the final
+log; durable step checkpoints and the journal still establish its last progress.
 
 Sparse step encoding omits only zero/null defaults for attempts, pages, duration,
 timestamps and errors. API decoding restores every required field; kind, repo,
@@ -77,7 +167,7 @@ wall time per claim includes scheduling/backoff and is not Worker CPU time.
 The machine `/refresh-runs` list exposes this optional field; its separate compact
 `/refresh-runs/latest` summary does not. See the [consumer measurement contract](api.md#get-refresh-runs).
 
-Local fixture measurements (no real network latency): a 19-step selected run uses
+Historical v0.22 local fixture measurements (no real network latency): a 19-step selected run uses
 5 invocations; a 60-repository quick daily plan preserves all 1,146 steps and
 publishes in 320 invocations with 1,270 fixture GitHub requests. Compared with at
 least 1,146 one-step invocations, the latter removes 72% of handoffs. The observed
@@ -87,12 +177,54 @@ raise the new count. This is not evidence of a 15–20 minute production duratio
 measure `invocations`, requests and wall duration on the next authorized scheduled
 run before making a speed claim.
 
+The v0.23 deterministic warm 60-repository benchmark (`bun run
+scripts/factory-benchmark.ts --selection selected`) executes the real runner,
+SQLite and the existing fake-GitHub response model with a virtual clock. Fixed
+brief-derived page latencies, prior-day warmup, zero D1/CPU/queue-delivery latency,
+and no injected production stalls are explicit assumptions. Baseline `12d4612`
+publishes 1,146 steps in 426 invocations / 1,651 requests / 41.678 simulated minutes;
+P1 `e8a8372` uses 274 / 1,669 / 42.004; the pushed serial-repository candidate uses
+166 / 1,221 / 23.898. The four-repository pool publishes all 1,146 steps in
+173 invocations / 1,213 requests / 7.158 simulated minutes (429,453 ms).
+Two identical replays confirm deterministic results. Peak request concurrency
+is four; summed request service time is 1,425,170 ms, while request wall time is
+429,453 ms. Including warmup, no invocation exceeds 40 requests or 619 executed
+D1 statements. This is below the twenty-minute simulation target, not a production
+finish-time guarantee. Configuration and migrations are unchanged.
+
+Pool regressions kill work after four accepted metadata steps and during a later
+save, then assert byte-equivalent accepted step records, one retried in-flight
+step per repository and complete publication. A separate test holds all four
+commit requests across the actual 40-second lease expiry, lets a replacement
+invocation finish, and rejects every late result from the former lease. Rate-limit,
+shared snapshot projection and budget-admission tests cover cross-lane state.
+
+The `22a88190` ellie incident (October 23, 2026, steps 826–828) also has a
+snapshot-specific regression. Four real SQLite-backed pool lanes accept consecutive
+details/actions snapshots and a traffic-view replay page before all clone fetches
+are suspended. The old consumer remains suspended without catch/release, ack or
+retry until the replacement publishes. Real dispatch/claim code rejects an early
+takeover, preserves accepted payloads and audits, retries only the unfinished
+traffic step per lane, and never refetches an accepted view page. A delayed
+redelivery resumes at 40.001 seconds; the deliberately worst-phase cron resumes
+at 99.999 seconds. Late responses are released only for fixture cleanup after
+publication and cannot change the final run. These are deterministic scheduling
+bounds with immediate queue delivery, not a simulation of Cloudflare's scheduler.
+
 Tests that previously assumed one step per call now stop explicitly at metadata
 admission boundaries or follow persisted `nextAttemptAt` for retries. Metadata
 call assertions count that operation rather than unrelated later streams. Existing
 publication, retained-source, window, cooldown and terminal-status assertions remain.
 
 ### Downgrade preparation
+
+v0.23 recovery and the repository pool use the existing `0025` schema; no migration
+or old-row rewrite is required. Earlier in-flight leases remain valid until their
+stored expiry. Before downgrading to a pre-pool v0.23 build or v0.22, drain active
+runs under separately authorized maintenance. If work must be paused, retain it
+without resuming it on the old executor: that executor cannot restore several
+unfinished repository checkpoints safely. v0.22 also lacks page replay. Immutable
+publications remain intact; pausing alone does not make old-executor resume safe.
 
 Do not deploy a v0.21.x reader directly over compact v0.22 rows: missing numeric
 fields otherwise become `NaN` on old executor arithmetic. The additive table can
@@ -254,9 +386,14 @@ API 的 `repos` 只表示 selected 成员；`order` 是独立的优先级顺序�
 Daily quick refresh updates the current starred view. Weekly deep refresh calibrates
 history across its configured scope. Depth and repository membership are separate;
 both modes publish the same snapshots and preserve prior good data on failed reads.
+New quick runs freeze 30 UTC calendar dates; deep runs retain 90. Existing runs
+keep their persisted window through upgrade/resume. All metrics, stream filtering
+and contribution collection use that frozen window; retained evidence keeps its
+original window rather than being relabelled as a fresh thirty-day observation.
 Scheduled daily refresh also plans the account-wide contribution step, even for
 starred selection. Manual selected refresh does not add that account-wide work.
-The 90-day calendar and six 15-day type batches each consume one leased page;
+The quick calendar uses one calendar request and two 15-day type batches; deep
+uses one calendar request and six batches. Each batch has its own checkpoint;
 checkpoint progress, request/rate accounting and publication remain fenced.
 An interrupted or unavailable collection retains the previous good calendar and
 its original provenance. Type details are optional/null where GitHub lacks them;
@@ -266,8 +403,45 @@ head and rolling window permit it. Immutable commit history can stop at a verifi
 baseline intersection. Mutable Issues, PRs, Actions, releases and contributor lists
 must not stop merely because an old ID appears: old records can change, disappear,
 or move between pages. Current open Issue/PR lists are fully reconciled within the
-existing request, pagination and storage limits. Deep mode rebuilds all bounded
-source evidence, including unchanged-head resources.
+existing request, pagination and storage limits. Deep mode rebuilds pinned code
+evidence even at an unchanged head; mutable stream reconciliation is available
+at either depth.
+
+### Incremental mutable streams
+
+Issues use REST `since`; PRs use updated-descending pagination and a timestamp
+cutoff, not an unsupported `since` parameter. The watermark is the earlier of
+the prior complete stream's fetched time and its frozen observation start, with
+a one-second overlap. This includes updates made while the prior run was paging.
+Only matching repository identities and complete, non-retained baselines qualify;
+missing timestamps, limited/unavailable coverage and invalid baselines trigger a
+full traversal. Additive event `updatedAt` records the REST update timestamp.
+
+Delta items replace matching IDs in the baseline. Final open/closed/merged counts
+must match current repository metadata; a mismatch or detected deletion restarts
+a full collection instead of certifying a stale union. PR GraphQL state is refreshed
+in bounded batches for retained items as well as changed REST items, since check
+reruns need not move REST `updated_at`. Coverage remains partial during collection
+and reconciliation, then becomes `complete` with `strategy:"incremental"` only
+after validation. It describes the reconciled full stream, not merely the delta;
+`sourceFetchedAt` identifies the baseline observation. Limits and failures retain
+the prior good stream with its original source window and timestamps.
+
+### Shared Actions observations
+
+One run-owned, paginated unfiltered Actions source normally serves the factory
+window, full Actions detail snapshot and successful-deployment history. Its
+allowlisted rows contain the fields needed by both existing projections; page
+and source writes commit with the run cursor. Complete history can also prove
+that no successful deployment exists without a third GitHub traversal.
+
+A complete full source is required for snapshot/cache reuse. If full history hits
+the existing page/byte limits, the old snapshot is retained and the metric stream
+uses bounded created-window collection, including the existing 1,000-run range
+splitting. That explicitly limited case can require additional filtered requests;
+it must not turn truncated history into successful zero or claim universal
+single-pass completeness. Malformed shared pages are remembered as safe failures;
+genuine transient errors keep the existing bounded retry policy.
 
 Source provenance remains distinct from the last successful check. Reused code
 evidence records its original `sourceFetchedAt`; missing/incomplete evidence causes
@@ -338,7 +512,7 @@ extend it. Old payloads derive the deadline from `startedAt`; new runs store
 revokes their lease, increments their fence version and releases the account lock.
 The owning schedule records `lastError`; scheduler and mutating operations perform
 recovery, never GET. All fenced writes also enforce the hard deadline, independently
-of the renewable 90-second page lease. No schema migration or old-row rewrite is
+of the renewable 40-second page lease. No schema migration or old-row rewrite is
 needed for these JSON payload fields.
 Timeout/missed-slot schedule warnings are sticky until an explicit schedule save,
 so successful recovery in the same tick cannot erase the incident.

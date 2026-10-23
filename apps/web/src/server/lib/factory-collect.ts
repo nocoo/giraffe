@@ -8,6 +8,7 @@ import {
 import { dependencyEvidence, dependencyFromEvent } from "../../lib/factory-dependencies";
 import {
 	FACTORY_STREAMS,
+	type FactoryEvent,
 	type FactoryRepo,
 	type FactorySnapshot,
 	type FactoryStreamData,
@@ -66,6 +67,86 @@ export type FactoryStore = {
 	read: (key: string) => Promise<FactoryStreamData | null>;
 	write: (key: string, data: FactoryStreamData) => Promise<void>;
 };
+
+function updatedTime(item: FactoryEvent): number {
+	return Date.parse(item.updatedAt ?? "");
+}
+
+function incrementalCursor(
+	prior: Awaited<ReturnType<NonNullable<FactoryStore["baseline"]>>>,
+	stream: "issues" | "prs",
+	now: string,
+): FactoryStreamData["incremental"] {
+	if (
+		prior?.data.coverage.status !== "complete" ||
+		prior.data.coverage.retained ||
+		prior.data.coverage.observation ||
+		prior.data.next ||
+		prior.data.ranges.length ||
+		prior.data.coverage.observed !== prior.data.items.length ||
+		new Set(prior.data.items.map((item) => item.id)).size !== prior.data.items.length ||
+		prior.data.items.some((item) => !Number.isFinite(updatedTime(item)))
+	)
+		return;
+	const fetchedAt = Date.parse(prior.data.coverage.fetchedAt ?? "");
+	const startedAt = Date.parse(prior.window.until);
+	const watermark = Math.min(fetchedAt, startedAt);
+	const cutoff = new Date(watermark - 1000);
+	if (
+		!Number.isFinite(fetchedAt) ||
+		!(fetchedAt < Date.parse(now)) ||
+		!(startedAt <= Date.parse(now)) ||
+		!Number.isFinite(cutoff.getTime())
+	)
+		return;
+	return {
+		since: cutoff.toISOString(),
+		phase: "collect",
+		pendingPrIds: stream === "prs" ? prior.data.items.map((item) => item.id) : [],
+		observedIds: [],
+	};
+}
+
+function resetIncremental(data: FactoryStreamData, first: string): void {
+	data.items = [];
+	data.next = first;
+	data.coverage.source = first;
+	data.coverage.strategy = "full";
+	delete data.coverage.sourceFetchedAt;
+	delete data.incremental;
+}
+
+function reconcileIncremental(
+	data: FactoryStreamData,
+	repo: FactoryRepo,
+	stream: FactoryStreamName,
+	first: string,
+): void {
+	if (!data.incremental || data.next) return;
+	const counts =
+		stream === "issues"
+			? [repo.openIssues, repo.closedIssues]
+			: [repo.openPrs, repo.closedPrs, repo.mergedPrs];
+	const states = stream === "issues" ? ["open", "closed"] : ["open", "closed", "merged"];
+	if (
+		counts.some(
+			(count, index) =>
+				!Number.isSafeInteger(count) ||
+				count < 0 ||
+				data.items.filter((item) => item.state === states[index]).length !== count,
+		) ||
+		counts.reduce((total, count) => total + count, 0) !== data.items.length
+	) {
+		resetIncremental(data, first);
+		return;
+	}
+	if (data.incremental.pendingPrIds.length) data.incremental.phase = "pr_state";
+	else {
+		data.items.sort((first, second) => updatedTime(second) - updatedTime(first));
+		delete data.incremental;
+	}
+}
+
 function source(repo: FactoryRepo, stream: FactoryStreamName, window: FactoryWindow): string {
 	const base = `/repos/${repo.name}`;
 	switch (stream) {
@@ -200,7 +281,12 @@ async function collectStream(
 		ranges: [],
 		coverage: coverage(first),
 	};
-	const prior = stream === "commits" || stream === "dependencies" ? await store.baseline?.() : null;
+	const prior =
+		stream === "commits" ||
+		stream === "dependencies" ||
+		(!saved && (stream === "issues" || stream === "prs"))
+			? await store.baseline?.()
+			: null;
 	const baseline =
 		prior?.data.coverage.status === "complete" &&
 		prior.window.since <= s.window.since &&
@@ -214,11 +300,46 @@ async function collectStream(
 				inWindow(e.at, s.window) ||
 				(Boolean(s.activityWindow) && Date.parse(e.at ?? "") === Date.parse(s.window.until)),
 		) ?? [];
-	data.coverage.strategy = "full";
+	if (!saved && prior && (stream === "issues" || stream === "prs")) {
+		const incremental = incrementalCursor(prior, stream, now);
+		if (incremental) {
+			data.incremental = incremental;
+			data.items = structuredClone(prior.data.items);
+			data.coverage.sourceFetchedAt = prior.data.coverage.fetchedAt;
+			data.next = stream === "issues" ? `${first}&since=${incremental.since}` : first;
+			data.coverage.source = data.next;
+		}
+	}
+	data.coverage.strategy = data.incremental ? "incremental" : "full";
 	data.coverage.status = "partial";
 	data.coverage.fetchedAt = now;
 	try {
-		if (
+		if (data.incremental?.phase === "pr_state") {
+			const pending = new Set(data.incremental.pendingPrIds.slice(0, 100));
+			let refreshed = false;
+			const page = await collectPrState(
+				s,
+				{
+					...gh,
+					get graphqlErrors() {
+						return gh.graphqlErrors;
+					},
+					async githubGraphql(...args) {
+						const result = await gh.githubGraphql(...args);
+						const ids = new Set(rows(result.nodes).map((node) => node.id));
+						refreshed = !gh.graphqlErrors.length && [...pending].every((id) => ids.has(id));
+						return result;
+					},
+				},
+				token,
+				data.items.filter((item) => pending.has(item.id)),
+				now,
+			);
+			if (refreshed) {
+				data.items = uniqueEvents([...data.items, ...page]);
+				data.incremental.pendingPrIds = data.incremental.pendingPrIds.slice(100);
+			} else resetIncremental(data, first);
+		} else if (
 			baseline &&
 			baseline.head === repo.head &&
 			(stream === "dependencies" || stream === "commits")
@@ -297,8 +418,25 @@ async function collectStream(
 						(Boolean(s.activityWindow) && Date.parse(e.at ?? "") === Date.parse(s.window.until)),
 				);
 				if (stream === "prs") page = await collectPrState(s, gh, token, page, now);
-				data.items = uniqueEvents([...data.items, ...page]);
-				data.next = factoryNext(response.headers.get("link"), path);
+				if (data.incremental && page.some((item) => !Number.isFinite(updatedTime(item)))) {
+					resetIncremental(data, first);
+				} else {
+					data.items = uniqueEvents([...data.items, ...page]);
+					data.next = factoryNext(response.headers.get("link"), path);
+					if (data.incremental) {
+						const since = Date.parse(data.incremental.since);
+						const seen = new Set([...data.incremental.observedIds, ...page.map((item) => item.id)]);
+						data.incremental.observedIds = [...seen];
+						data.incremental.pendingPrIds = data.incremental.pendingPrIds.filter(
+							(id) => !seen.has(id),
+						);
+						if (stream === "prs" && !data.next && seen.size !== data.items.length) {
+							resetIncremental(data, first);
+						} else if (stream === "prs" && page.some((item) => updatedTime(item) < since)) {
+							data.next = null;
+						}
+					}
+				}
 				const ids = new Set(retained.map((e) => e.id));
 				if (stream === "commits" && data.next && page.some((e) => ids.has(e.id))) {
 					data.items = uniqueEvents([...retained, ...data.items]);
@@ -310,6 +448,7 @@ async function collectStream(
 				}
 			}
 		}
+		reconcileIncremental(data, repo, stream, first);
 		if (data.coverage.strategy !== "reused") data.coverage.pages++;
 		if (stream === "actions" && data.coverage.pages >= 100 && (data.next || data.ranges.length)) {
 			data.coverage.status = "limited";
@@ -341,7 +480,8 @@ async function collectStream(
 			data.next = null;
 			data.ranges = [];
 		}
-		if (!data.next && data.coverage.status === "partial") data.coverage.status = "complete";
+		if (!data.next && !data.incremental && data.coverage.status === "partial")
+			data.coverage.status = "complete";
 	} catch (error) {
 		if (
 			error instanceof ApiError &&

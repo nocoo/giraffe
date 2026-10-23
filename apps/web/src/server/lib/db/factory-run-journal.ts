@@ -26,49 +26,49 @@ export function applyRunJournal(run: FactoryRun, journal: string, recover = fals
 	}
 }
 
-export async function beginRunStep(db: Db, lease: RunLease, now: string): Promise<boolean> {
-	const step = lease.run.steps[lease.run.cursor];
+export async function beginRunStep(
+	db: Db,
+	lease: RunLease,
+	now: string,
+	index = lease.run.cursor,
+): Promise<boolean> {
+	const step = lease.run.steps[index];
 	if (!step) return false;
 	lease.attemptedSteps ??= new Map();
 	lease.attemptedSteps.set(
-		lease.run.cursor,
-		Math.max(lease.attemptedSteps.get(lease.run.cursor) ?? 0, step.retryFailures ?? 0),
+		index,
+		Math.max(lease.attemptedSteps.get(index) ?? 0, step.retryFailures ?? 0),
 	);
 	return saveRunAudits(db, lease, now);
 }
 
-export async function saveRunAudits(db: Db, lease: RunLease, now: string): Promise<boolean> {
-	const audits = Object.fromEntries(
-		[...(lease.attemptedSteps ?? [])].map(([index, failures]) => {
-			const step = lease.run.steps[index] as FactoryRunStep;
-			return [
-				index,
-				{
-					attempts: step.attempts,
-					startedAt: step.startedAt,
-					durationMs: step.durationMs,
-					retryFailures: Math.max(failures, step.retryFailures ?? 0),
-				},
-			];
-		}),
+export function runAudits(lease: RunLease, acceptedStep?: number) {
+	return Object.fromEntries(
+		[...(lease.attemptedSteps ?? [])]
+			.filter(([index]) => index !== acceptedStep)
+			.map(([index, failures]) => {
+				const step = lease.run.steps[index] as FactoryRunStep;
+				return [
+					index,
+					{
+						attempts: step.attempts,
+						startedAt: step.startedAt,
+						durationMs: step.durationMs,
+						retryFailures: Math.max(failures, step.retryFailures ?? 0),
+					},
+				];
+			}),
 	);
+}
+
+export async function saveRunAudits(db: Db, lease: RunLease, now: string): Promise<boolean> {
+	const audits = runAudits(lease);
 	const result = await fenced(
 		db,
 		lease,
 		now,
 		"UPDATE factory_run_journal SET journal=json_patch(journal,json(?)) WHERE run_id=? AND $guard",
-		[JSON.stringify(audits), lease.run.id],
-	).run();
-	return Boolean(result.meta.changes);
-}
-
-export async function recordRunRequest(db: Db, lease: RunLease, now: string): Promise<boolean> {
-	const result = await fenced(
-		db,
-		lease,
-		now,
-		"UPDATE factory_run_journal SET journal=json_set(journal,'$.requests',MAX(coalesce(json_extract(journal,'$.requests'),0),?)+1) WHERE run_id=? AND $guard",
-		[lease.run.requests, lease.run.id],
+		[JSON.stringify({ ...audits, requests: lease.run.requests }), lease.run.id],
 	).run();
 	return Boolean(result.meta.changes);
 }

@@ -40,6 +40,12 @@ const event = (overrides: Partial<FactoryEvent> = {}): FactoryEvent => ({
 });
 
 describe("factory measurement contract", () => {
+	it("uses a shorter thirty-date window for quick collection", () => {
+		expect(factoryWindow("2026-09-15T22:00:00Z", 30)).toEqual({
+			since: "2026-08-17T00:00:00.000Z",
+			until: "2026-09-15T22:00:00.000Z",
+		});
+	});
 	it("uses 90 UTC calendar dates, including the partial current date", () => {
 		expect(factoryWindow("2026-09-15T22:00:00Z")).toEqual({
 			since: "2026-06-18T00:00:00.000Z",

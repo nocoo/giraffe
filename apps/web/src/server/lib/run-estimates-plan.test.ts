@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import { type FactoryRun, type FactoryRunStep, makeRun } from "../../lib/factory-run";
 import { createDb } from "./db/d1";
-import { estimateRunFinish, readRunEstimates } from "./run-estimates";
+import { estimateRunFinish, type RunStepPlan, readRunEstimates } from "./run-estimates";
 
 const now = "2026-10-22T00:00:00.000Z";
 const started = Date.parse(now);
@@ -48,6 +48,192 @@ async function history(
 }
 
 describe("plan-scaled finish estimates", () => {
+	it("keeps rolling four-repo lanes, separate phases, deferred activity and serial overhead", () => {
+		const steps = [
+			...Array.from({ length: 9 }, () => ({ ...step("metadata"), repo: "r0" })),
+			...Array.from({ length: 4 }, (_, index) => ({ ...step("metadata"), repo: `r${index + 1}` })),
+			...Array.from({ length: 5 }, (_, index) => [
+				{ ...step("snapshot"), repo: `r${index}` },
+				...(index < 2 ? [{ ...step("activity"), repo: `r${index}` }] : []),
+			]).flat(),
+			step("publish"),
+		].map((entry) => ({ ...entry, status: "pending" as const }));
+		const run = { mode: "refresh" as const, startedAt: now, status: "running" as const, steps };
+		const calibration = {
+			catalog: null,
+			quick: null,
+			deep: 1000,
+			stepKinds: { deep: { metadata: 1000, snapshot: 3000, activity: 5000, publish: 7000 } },
+			overhead: { deep: 500 },
+		};
+		expect(estimateRunFinish(run, steps.length, calibration, now).expectedFinishAt).toBe(
+			stamp(42_500),
+		);
+	});
+
+	it("excludes terminal repo work before assigning remaining repositories to lanes", () => {
+		const steps = [
+			...Array.from({ length: 4 }, (_, index) => ({ ...step("metadata"), repo: `done${index}` })),
+			...Array.from({ length: 5 }, (_, index) => ({
+				...step("metadata"),
+				repo: `todo${index}`,
+				status: index === 0 ? ("running" as const) : ("pending" as const),
+			})),
+		];
+		const run = {
+			mode: "refresh" as const,
+			startedAt: now,
+			status: "paused" as const,
+			nextAttemptAt: stamp(60_000),
+			steps,
+		};
+		expect(
+			estimateRunFinish(
+				run,
+				steps.length,
+				{ catalog: null, quick: null, deep: 1000, stepKinds: { deep: {} } },
+				now,
+			).expectedFinishAt,
+		).toBe(stamp(62_000));
+	});
+
+	it("overlaps long A and E in detailed and compact remaining-work plans after backoff", () => {
+		const steps = [
+			...(["success", "failed", "unavailable", "limited", "skipped"] as const).map(
+				(status, index) => ({ ...step("issues"), repo: `done${index}`, status }),
+			),
+			{ ...step("issues"), repo: "a", status: "running" as const },
+			...["b", "c", "d"].map((repo) => ({
+				...step("metadata"),
+				repo,
+				status: "pending" as const,
+			})),
+			{ ...step("issues"), repo: "e", status: "pending" as const },
+		];
+		const stepPlan: RunStepPlan = steps.map(({ kind, status, repo }) => [
+			kind,
+			Number(status !== "skipped"),
+			Number(status === "pending" || status === "running"),
+			repo,
+		]);
+		const run = {
+			mode: "refresh" as const,
+			startedAt: now,
+			status: "running" as const,
+			nextAttemptAt: stamp(60_000),
+			steps,
+		};
+		const calibration = {
+			catalog: null,
+			quick: null,
+			deep: 1000,
+			stepKinds: { deep: { metadata: 1000, issues: 10_000 } },
+			overhead: { deep: 500 },
+		};
+		const detailed = estimateRunFinish(run, steps.length, calibration, stamp(30_000));
+		expect(detailed.expectedFinishAt).toBe(stamp(73_500));
+		expect(
+			estimateRunFinish({ ...run, steps: [], stepPlan }, steps.length, calibration, stamp(30_000)),
+		).toEqual(detailed);
+	});
+
+	it("calibrates invocation-boundary delay separately from rolling A/E service time", async () => {
+		const steps = [
+			{ ...step("issues", 10_000), repo: "a" },
+			...["b", "c", "d"].map((repo) => ({ ...step("metadata", 1000), repo })),
+			{ ...step("issues", 10_000), repo: "e" },
+		];
+		const calibration = await history(steps, 14_000, "deep");
+		expect(calibration.overhead?.deep).toBe(600);
+		const run = {
+			id: "history",
+			mode: "refresh" as const,
+			startedAt: now,
+			status: "completed" as const,
+			steps,
+		};
+		const detailed = estimateRunFinish(run, steps.length, calibration, now);
+		expect(detailed.expectedFinishAt).toBe(stamp(14_000));
+		expect(estimateRunFinish({ ...run, steps: [] }, steps.length, calibration, now)).toEqual(
+			detailed,
+		);
+	});
+
+	it("preserves repo lane order and deferred activities in compact plans", async () => {
+		const steps = [
+			...Array.from({ length: 5 }, (_, index) => ({
+				...step("metadata", 1000),
+				repo: `r${index}`,
+			})),
+			...Array.from({ length: 5 }, (_, index) => [
+				{ ...step("snapshot", 3000), repo: `r${index}` },
+				{ ...step("snapshot", 3000), repo: `r${index}` },
+				{ ...step("activity", 5000), repo: `r${index}` },
+			]).flat(),
+			step("publish", 7000),
+		];
+		const calibration = await history(steps, 48_000, "deep");
+		const run = {
+			id: "history",
+			mode: "refresh" as const,
+			startedAt: now,
+			status: "completed" as const,
+			steps,
+		};
+		expect(calibration.plans?.history?.slice(0, 2)).toEqual([
+			["metadata", 1, 0, "r0"],
+			["metadata", 1, 0, "r1"],
+		]);
+		expect(estimateRunFinish({ ...run, steps: [] }, steps.length, calibration, now)).toEqual(
+			estimateRunFinish(run, steps.length, calibration, now),
+		);
+		expect(estimateRunFinish(run, steps.length, calibration, now).expectedFinishAt).toBe(
+			stamp(48_000),
+		);
+	});
+
+	it("learns serial overhead from parallel wall time rather than summed request service time", async () => {
+		const calibration = await history(
+			Array.from({ length: 4 }, (_, index) => ({ ...step("metadata", 1000), repo: `r${index}` })),
+			3000,
+			"deep",
+		);
+		expect(calibration.overhead?.deep).toBe(500);
+		expect(
+			estimateRunFinish(
+				{
+					mode: "refresh",
+					startedAt: now,
+					steps: Array.from({ length: 4 }, (_, index) => ({
+						...step("metadata"),
+						repo: `r${index}`,
+					})),
+				},
+				4,
+				calibration,
+			).expectedFinishAt,
+		).toBe(stamp(3000));
+	});
+
+	it("does not discount already wall-normalized history again when audited step timing is absent", async () => {
+		const calibration = await history(
+			Array.from({ length: 4 }, (_, index) => ({
+				...step("metadata"),
+				attempts: 0,
+				repo: `r${index}`,
+			})),
+			4000,
+			"deep",
+		);
+		const steps = Array.from({ length: 4 }, (_, index) => ({
+			...step("metadata"),
+			repo: `r${index}`,
+		}));
+		expect(
+			estimateRunFinish({ mode: "refresh", startedAt: now, steps }, 4, calibration)
+				.expectedFinishAt,
+		).toBe(stamp(4000));
+	});
 	it.each(["quick", "deep"] as const)(
 		"scales a 55-step manual selected %s run down from a large daily sample, including wall overhead",
 		async (depth) => {

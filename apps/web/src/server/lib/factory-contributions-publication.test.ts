@@ -7,6 +7,7 @@ import type { Env } from "../env";
 import { createDb } from "./db/d1";
 import { getRun, publishedFactory, startRun } from "./db/factory-runs";
 import { replaceSnapshotStmts } from "./db/snapshots";
+import { contributionDates } from "./factory-contributions";
 import { executeRunPage } from "./factory-execute";
 import { encryptToken, parseKeyBytes } from "./token-crypto";
 
@@ -118,10 +119,11 @@ it.each(["graphql", 403, 404, 500] as const)(
 									totalContributions: 0,
 									weeks: [
 										{
-											contributionDays: Array.from({ length: 90 }, (_, index) => ({
-												date: new Date(Date.parse(run.window.since) + index * 86400_000)
-													.toISOString()
-													.slice(0, 10),
+											contributionDays: contributionDates(
+												run.window.since.slice(0, 10),
+												run.window.until.slice(0, 10),
+											).map((date) => ({
+												date,
 												contributionCount: 0,
 											})),
 										},

@@ -1777,3 +1777,101 @@ the catalog first, skips factory reads for empty/currentless selections, and use
 one compact SQL projection for selected names/IDs while preserving catalog identity.
 Large payloads no longer increase returned bytes. Read-time enrichments require
 payload-volume and empty-selection evidence as well as value/identity assertions.
+
+## 2026-10-23 - Freeze all writers before hooked commits
+
+During B14A, the first commit attempt overlapped a benchmark worker's unfinished
+type change. Earlier full checks had passed, but pre-commit correctly rejected
+the changing working tree. No failing commit or push occurred. The coordinator
+paused every file-writing worker, including the measurement worker, waited for
+its type/lint fix, and reran the normal hook successfully. A green check applies
+to a stable tree, not to concurrently changing work; freeze all writers before
+staging and hooked commits, then resume only after recording the result.
+
+## 2026-10-23 - Preserve control flow and memory semantics in page replay
+
+B14A review found two gaps in the first generic snapshot replay implementation.
+The catalog identity fallback swallowed its page-yield exception, and a cumulative
+raw-response byte cap rejected large release bodies whose projected snapshots
+were small enough to publish. Focused regressions now cover deferred identity
+lookups and seven large release pages. Yield/lease signals cross the catalog
+catch unchanged; replay loads cached responses one page at a time instead of
+holding the full raw history in memory. When introducing resumability around an
+existing collector, audit every catch and compare limits on the same data shape
+as the original path, not just the final small fixtures.
+
+## 2026-10-23 - REST watermarks do not invalidate derived PR checks
+
+The first B14A PR delta implementation refreshed GraphQL state only for changed
+REST rows and retained open PRs. Review reproduced closed/merged PRs whose commit
+checks changed from pending to success without advancing REST updated_at; their
+incremental output incorrectly remained complete with stale checks. Full-object
+equivalence tests failed before the fix. Every retained PR omitted from the REST
+delta now refreshes its GraphQL state in resumable batches of at most 100 IDs.
+Treat independently mutable derived fields as separate sources; a REST timestamp
+or a terminal lifecycle state cannot prove that commit checks stayed unchanged.
+
+## 2026-10-23 - Validate each atomic commit without later changes
+
+Independent B14A commit archives exposed a budget regression assertion that
+passed only after a later Actions optimization. The earlier snapshot correctly
+yielded at the statement budget before exhausting requests, but its test required
+exactly 40 requests. Working-tree hooks had seen the later unstaged optimization
+and therefore did not prove that the staged commit was independently green.
+The coordinator stopped the first push before publication and confirmed that
+the remote branch did not exist. Only unpublished commits were replayed, with
+the normal pre-commit gate executed at every replayed snapshot. The regression
+now accepts either shared budget while still proving saved request counts,
+exactly 50 total requests without refetching, and completion in two invocations.
+Keep intermediate tests valid before subsequent optimizations, and verify the
+actual commit snapshot rather than relying on a greener working tree.
+
+## 2026-10-23 - Review parallel acceptance beyond network overlap
+
+The first B14A repository-pool implementation passed overlap and recovery tests
+but missed four cross-lane contracts. Copying only selected collection indices
+discarded skips on deferred activity; taking the snapshot projection lock before
+missing-resource fetches serialized requests; queued prepared writes were absent
+from admission accounting; and fixed ETA groups disagreed with lane replenishment.
+Independent review identified all four before commit or push. Focused regressions
+failed first, then verified complete repository status propagation, four overlapping
+detail requests, pending-write admission and earliest-free-lane ETA scheduling.
+Admission also rechecks wall/write/stop budgets after waiting for heartbeat, and
+failure logs retain progress already accepted before a save failure. Lease-expiry
+and save-failure fixtures verify that accepted work survives, only one in-flight
+step per repository retries, and stale results cannot alter the replacement run.
+For concurrent execution, audit admission, projection, acceptance and retry state
+together; a fast network benchmark alone does not prove safe concurrency.
+
+## 2026-10-23 - Test deployed checkpoints, not just new collectors
+
+Post-push review of B14A reproduced a v0.22 Actions checkpoint whose filtered
+cursor was already on page 2. The new shared-history loader started its unfiltered
+source at page 1 but passed that response to the old cursor, so pagination expected
+page 3 and rejected the page-2 Link on every retry. New-run and interruption tests
+had not exercised a checkpoint produced by the deployed collector. The repair
+keeps cursor ownership with the persisted filtered source instead of inferring it
+from the shared cache page count. Fixtures generated by the immutable `12d4612`
+collector reproduce ordinary pagination and a split-window queue. Both fail on
+the pushed implementation and pass after the repair, preserving accepted events,
+page counts, pending ranges, request accounting and later release/publication
+steps. The complete executor fixture also needs valid security and catalog stubs;
+missing those initially produced unrelated fixture failures, not upgrade defects.
+When changing source strategy, test actual old checkpoint data at every yield
+boundary, including nested ranges, rather than assuming a fresh-run shape.
+
+## 2026-10-23 - Protect old root ownership before parallel handoff
+
+The follow-up legacy-cursor audit found that lanes cloned the shared run after
+awaiting their checkpoint reads. A slower v0.22 repository without a per-repo
+checkpoint could therefore inherit a faster repository's newly accepted root.
+Freezing startup state alone would fix that invocation but still lose the old
+root if its lane yielded before saving. The repair freezes startup state and
+seeds the valid old single-repository root in the same fenced transaction as the
+first replacement save, preserving existing checkpoint rows on conflict. Thirteen
+regressions cover Issues/PRs page-2 identity, early budget exit, a cursor past the
+repository, newer-row priority, rollback, lost lease and lost commit acknowledgement.
+Tests require retained old events and successful two-repository publication.
+Three baseline-generated site chunk fixtures separately verify unchanged snapshot
+handoff. Review upgrade paths across invocation boundaries, not only races within
+one Promise pool; durable fallback ownership matters even when a lane does no work.

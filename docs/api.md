@@ -955,8 +955,9 @@ time; each day's `observedAt` is its type-batch observation time, or the calenda
 time for legacy/missing type details. The day flag remains partial even tomorrow
 until a newer successful run observes it again. Normal daily scheduled refreshes
 now collect contributions as well as weekly/full runs; manual selected runs do
-not silently broaden to account-wide collection. One calendar request plus six
-15-day aggregate batches costs at most seven resumable lease pages for 90 days,
+not silently broaden to account-wide collection. New quick runs use 30 UTC dates
+(one calendar request plus two 15-day batches); deep runs use 90 dates (one plus
+six batches). Persisted old run windows do not change on resume. Collection uses
 with the existing request/rate reserve, fencing, publication and retention rules.
 
 Sources: [GitHub contribution time attribution](https://docs.github.com/en/account-and-profile/reference/profile-contributions-reference#how-contribution-event-times-are-calculated),
@@ -1129,7 +1130,7 @@ validated single-cell count but marks coverage partial. The current day remains
 See `apps/web/src/lib/activity-types.ts` for the complete field contract.
 
 The supplementary collector normally adds one refs/tags GraphQL request per repo,
-plus a successful-workflow REST request only when the complete saved 90-day action
+plus a successful-workflow REST request only when the complete saved action
 stream cannot provide deployment success. Continuations are bounded at 20 requests
 per repo and explicitly truncated. Account contribution intervals use one bounded
 GraphQL request. The normal two-request fixture adds 85 leased pages for 42 repos
@@ -1337,6 +1338,20 @@ unavailable }`.
 sourceFetchedAt? }`; status is `pending|partial|complete|unavailable|limited`,
 strategy `full|incremental|reused`. An empty list proves zero only with complete
 coverage. `next` is saved collection metadata, not a machine pagination URL.
+
+New quick runs publish a 30-date window and deep runs a 90-date window; always
+read `observation.window`, including the original window on retained evidence,
+rather than inferring coverage from run depth or from the current date.
+
+Issues and PRs can report `strategy:"incremental"` after merging changed rows with
+a valid complete baseline and reconciling current state counts. `complete` means
+the reconciled stream is complete, not that a delta alone covers all history.
+`sourceFetchedAt` identifies the baseline; event `updatedAt?` is the REST update
+timestamp. Retained/limited baselines and reconciliation mismatches require a full
+fetch. PR GraphQL state is refreshed separately from the REST timestamp cursor.
+Actions window metrics, detail snapshots and deployment history reuse one complete
+run-owned source where available; incomplete full history remains explicit and
+can require the existing bounded filtered-window collection.
 
 The alerts stream is the current **open Dependabot set**, not alerts created or
 updated inside the factory time window. It uses REST `state=open`; security
@@ -1910,6 +1925,14 @@ omit the field; a later recovery under v0.22.0 or newer can begin recording it.
 Zero claims also omit the field. Missing is not measured zero, so exclude missing
 counts from invocation-based comparisons rather than substituting `0`.
 
+From v0.23, completed steps/pages survive a later invocation failure. `requests`
+is flushed at step/checkpoint boundaries and can undercount only one in-flight
+step per parallel repository after abrupt death or cancellation (at most four
+with the in-code pool); it is not a billing ledger. Every accepted checkpoint
+is retained. Budget
+yields preserve the pending cursor with null error and no retry-failure charge.
+Lease collisions schedule continuation at the current lease expiry.
+
 For speed measurements, record `invocations`, `requests`, executed step/page
 counts and `finishedAt - startedAt` for comparable completed/partial runs with
 the same execution kind, depth, scope and workload. Executed steps divided by
@@ -1936,14 +1959,23 @@ terminal steps (`success`, `failed`, `unavailable`, `limited`, with positive
 median of those step durations within the same execution kind. Genuine zero
 durations count; skipped, unattempted and missing/invalid timings do not. Fully
 timed sample runs also supply per-step scheduling/backoff overhead:
-`max(0, wallDuration - sum(stepDurations)) / nonSkippedSteps`; the median overhead
-is added to each remaining step. Incomplete timing records never masquerade as
+`max(0, wallDuration - modeledStepWallDuration) / nonSkippedSteps`; the median
+overhead is added to each remaining step without dividing it by concurrency.
+The model assigns ordered repository work to four lanes, placing each next
+repository on the earliest free lane, separately for metadata/streams/commit and
+repository snapshots. Activity, global snapshots and publication remain serial
+barriers. This is an idealized lane schedule: invocation-boundary replenishment,
+scheduling and backoff remain in the learned overhead. Incomplete timing records never masquerade as
 overhead. If no audited timings exist, calibration instead uses the median
 `wallDuration / nonSkippedSteps`, which already includes overhead. Invalid-time,
 failed/cancelled and zero-work/all-skipped sample runs are excluded.
 
-Running/paused ETA is `max(now, startedAt, nextAttemptAt) + sum(remaining step
-durations + per-step overhead)`. All terminal outcomes remove work, including
+Running/paused ETA is `max(now, startedAt, nextAttemptAt) + modeledRemainingWall
++ remainingSteps * perStepOverhead`. Repository-aware parallel modeling applies
+only when audited step timings exist; wall-only calibration or a compact plan
+without repository/order information stays serial to avoid double discounting.
+Historical serial samples can conservatively retain serialization in learned
+overhead until parallel samples arrive. All terminal outcomes remove work, including
 skipped future steps ahead of the cursor. Paused estimates assume resumption now
 or after outstanding backoff, not a prediction of user action. Terminal history
 anchors the full non-skipped plan estimate at `startedAt`, so its estimate can be

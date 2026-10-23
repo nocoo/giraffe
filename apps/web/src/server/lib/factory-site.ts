@@ -1,11 +1,13 @@
 import type { FactoryRunStep } from "../../lib/factory-run";
 import { retainSecurity, type SecurityFeatures, securityIncomplete } from "../../lib/security";
-import { type Collected, collectKind } from "./collect";
+import { type Collected, collectKind, MAX_STAGED_BYTES } from "./collect";
 import type { Db } from "./db/d1";
 import { fenced, type RunLease } from "./db/factory-runs";
 import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
 import { ApiError } from "./errors";
+import { collectActionsSnapshot } from "./factory-actions";
 import { boundedJson } from "./factory-publish";
+import { SnapshotPageReady, snapshotReplay } from "./factory-snapshot-replay";
 import type { GithubClient } from "./github-client";
 import { githubUnavailability } from "./github-unavailable";
 import { buildInsights, type InsightAlert } from "./insights";
@@ -64,6 +66,55 @@ export async function collectSitePage(
 	gh: GithubClient,
 	token: string,
 	now: string,
+	project?: () => Promise<void>,
+) {
+	assertKind(step.resource ?? "");
+	const actionsRepo = /^repo:(.+):actions$/.exec(step.resource ?? "")?.[1];
+	if (actionsRepo) {
+		const before = gh.count;
+		const source = await collectActionsSnapshot(db, lease, actionsRepo, gh, token, now);
+		if (!source.payload) return { writes: source.writes, done: false };
+		const result = await collectSiteBatch(
+			db,
+			lease,
+			step,
+			gh,
+			token,
+			now,
+			{
+				[step.resource ?? ""]: source.payload,
+			},
+			project,
+		);
+		if (gh.count === before) step.strategy = "reused";
+		return { ...result, writes: [...source.writes, ...result.writes] };
+	}
+	const replay = await snapshotReplay(
+		db,
+		lease,
+		step.resource ?? "",
+		step.snapshotCursor ?? 0,
+		gh,
+		now,
+	);
+	try {
+		const result = await collectSiteBatch(db, lease, step, replay.client, token, now, {}, project);
+		return { ...result, writes: [...result.writes, ...replay.cleanup()] };
+	} catch (error) {
+		if (error instanceof SnapshotPageReady) return { writes: replay.writes, done: false };
+		throw error;
+	}
+}
+
+async function collectSiteBatch(
+	db: Db,
+	lease: RunLease,
+	step: FactoryRunStep,
+	gh: GithubClient,
+	token: string,
+	now: string,
+	written: Record<string, Collected> = {},
+	project?: () => Promise<void>,
 ) {
 	const resource = step.resource ?? "";
 	assertKind(resource);
@@ -131,7 +182,6 @@ export async function collectSitePage(
 		};
 	}
 	if (resource === "insights") assertSources(run.steps, ["repos", "issues"]);
-	const written: Record<string, Collected> = {};
 	const writes: D1PreparedStatement[] = [];
 	if (["issues", "prs", "alerts"].includes(resource)) {
 		const names = run.siteRepos ?? run.repos;
@@ -292,6 +342,9 @@ export async function collectSitePage(
 		} else written[resource] = await collectKind(gh, token, resource, [], 1_500_000);
 		written[resource].source_head = metadata.sourceHead;
 	}
+	if (step.repo && !written[resource])
+		written[resource] = await collectKind(gh, token, resource, [], MAX_STAGED_BYTES);
+	await project?.();
 	const prepared = await prepareRefresh(db, run.account_id, gh, token, [resource], now, written, {
 		deriveInsights: resource === "insights" || !run.steps.some((s) => s.resource === "insights"),
 		deferCatalog: resource === "repos",

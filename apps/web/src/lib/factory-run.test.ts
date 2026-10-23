@@ -2,17 +2,135 @@ import { describe, expect, it } from "vitest";
 import { factoryFixture } from "../../../../tests/fixtures/factory-snapshot";
 import {
 	completedRunStatus,
+	FACTORY_REPO_CONCURRENCY,
+	factoryRunDuration,
 	makeRun,
 	retryDelay,
 	runProgress,
 	selectRunRepos,
 } from "./factory-run";
+import { FACTORY_STREAMS } from "./factory-types";
 
 const snapshot = factoryFixture();
 const now = snapshot.fetched_at;
 const firstRepo = snapshot.repos[0];
 if (!firstRepo) throw new Error("fixture");
 const repos = [firstRepo, { ...firstRepo, id: "R_2", name: "nocoo/two", language: "Go" }];
+it("bounds repository concurrency and defers activity until every repository snapshot finishes", () => {
+	expect(FACTORY_REPO_CONCURRENCY).toBe(4);
+	const run = makeRun(
+		"quick",
+		"a",
+		"nocoo",
+		"k",
+		"refresh",
+		repos,
+		now,
+		[],
+		undefined,
+		undefined,
+		"quick",
+	);
+	const firstActivity = run.steps.findIndex((step) => step.kind === "activity");
+	const lastSnapshot = run.steps.reduce(
+		(last, step, index) => (step.kind === "snapshot" && step.repo ? index : last),
+		-1,
+	);
+	expect(firstActivity).toBeGreaterThan(lastSnapshot);
+	expect(run.steps.slice(firstActivity).map((step) => step.kind)).toEqual([
+		"activity",
+		"activity",
+		"publish",
+	]);
+});
+
+it("estimates remaining work with four repository lanes, phase barriers and serial activity", () => {
+	const run = makeRun("eta", "a", "nocoo", "k", "catalog", [], now);
+	const base = run.steps[0];
+	if (!base) throw new Error("fixture");
+	run.steps = [
+		{ ...base, status: "success", durationMs: 1000 },
+		...Array.from({ length: 5 }, (_, index) => ({
+			...base,
+			kind: "metadata" as const,
+			repo: `r${index}`,
+		})),
+		...Array.from({ length: 5 }, (_, index) => [
+			{ ...base, kind: "snapshot" as const, repo: `r${index}` },
+			{ ...base, kind: "activity" as const, repo: `r${index}` },
+		]).flat(),
+		{ ...base, kind: "publish" },
+	];
+	run.nextAttemptAt = new Date(Date.parse(now) + 2000).toISOString();
+	expect(runProgress(run, now).etaSeconds).toBe(12);
+});
+
+it.each(["issues", "snapshot"] as const)(
+	"admits long E alongside unfinished A in the %s phase without exceeding four lanes",
+	(kind) => {
+		const steps = [10_000, 1_000, 1_000, 1_000, 10_000].flatMap((durationMs, index) => [
+			{ kind, repo: `r${index}`, durationMs: durationMs / 2 },
+			{ kind, repo: `r${index}`, durationMs: durationMs / 2 },
+		]);
+		expect(factoryRunDuration(steps)).toBe(11_000);
+		expect(
+			factoryRunDuration(
+				Array.from({ length: 9 }, (_, index) => ({ kind, repo: `r${index}`, durationMs: 1000 })),
+			),
+		).toBe(3000);
+	},
+);
+
+it("preserves repository admission order instead of sorting longer work first", () => {
+	expect(
+		factoryRunDuration(
+			[1000, 1000, 1000, 1000, 10_000].map((durationMs, index) => ({
+				kind: "issues",
+				repo: `r${index}`,
+				durationMs,
+			})),
+		),
+	).toBe(11_000);
+});
+
+it("rebuilds rolling lanes from remaining work when short repositories finish", () => {
+	const run = makeRun("eta", "a", "nocoo", "k", "refresh", [], now);
+	const base = run.steps[0];
+	if (!base) throw new Error("fixture");
+	run.steps = [
+		{ ...base, status: "success", durationMs: 1000 },
+		...[10, 1, 1, 1, 10].flatMap((count, index) =>
+			Array.from({ length: count }, () => ({
+				...base,
+				kind: "issues" as const,
+				repo: `r${index}`,
+			})),
+		),
+	];
+	expect(runProgress(run, now).etaSeconds).toBe(11);
+	for (const step of run.steps)
+		if (["r1", "r2", "r3"].includes(step.repo ?? "")) step.status = "success";
+	expect(runProgress(run, now).etaSeconds).toBe(10);
+});
+
+it("keeps every repository stream and commit serial within its lane and all global work serial", () => {
+	const collection = ["metadata" as const, ...FACTORY_STREAMS, "commit" as const];
+	const steps = Array.from({ length: 4 }, (_, index) => [
+		...collection.map((kind) => ({ kind, repo: `r${index}`, durationMs: 1000 })),
+		{ kind: "snapshot" as const, repo: `r${index}`, durationMs: 3000 },
+		{ kind: "activity" as const, repo: `r${index}`, durationMs: 5000 },
+	]).flat();
+	expect(
+		factoryRunDuration([
+			...steps,
+			{ kind: "contributions", repo: null, durationMs: 2000 },
+			{ kind: "activity-contributions", durationMs: 4000 },
+			{ kind: "snapshot", repo: null, durationMs: 6000 },
+			{ kind: "publish", repo: null, durationMs: 7000 },
+		]),
+	).toBe(collection.length * 1000 + 3000 + 4 * 5000 + 2000 + 4000 + 6000 + 7000);
+	expect(factoryRunDuration([])).toBe(0);
+});
 it("counts limited steps as terminal independently of failures and unavailable steps", () => {
 	const run = makeRun("r", "a", "nocoo", "k", "catalog", [], now);
 	Object.assign(run.steps[0] ?? {}, { status: "limited", error: "coverage_limited" });
@@ -61,6 +179,37 @@ it("publishes collected repositories without scheduling cloud analysis", () => {
 	expect(run.steps.at(-1)?.kind).toBe("publish");
 });
 describe("frozen refresh plans", () => {
+	it("freezes thirty dates for quick and ninety for deep without changing the step plan", () => {
+		const quick = makeRun(
+			"quick",
+			snapshot.account_id,
+			"nocoo",
+			"quick",
+			"refresh",
+			repos,
+			now,
+			[],
+			[],
+			{ scope: "selected" },
+			"quick",
+		);
+		const deep = makeRun(
+			"deep",
+			snapshot.account_id,
+			"nocoo",
+			"deep",
+			"refresh",
+			repos,
+			now,
+			[],
+			[],
+			{ scope: "selected" },
+			"deep",
+		);
+		expect(Date.parse(quick.window.since) - Date.parse(deep.window.since)).toBe(60 * 86400_000);
+		expect(quick.window.until).toBe(deep.window.until);
+		expect(quick.steps.length).toBe(deep.steps.length);
+	});
 	it("freezes selected order, scope, window and logical total independently of page counts", () => {
 		const selection = selectRunRepos(
 			repos,

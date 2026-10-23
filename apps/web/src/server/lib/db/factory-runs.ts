@@ -15,7 +15,7 @@ import { decodeRun, encodeRun } from "../factory-run-codec";
 import { RUN_DEADLINE_SQL, runDeadlineAt, timedOutRun } from "../factory-timeout";
 import { beijingDayStart, SCHEDULE_ADMISSION } from "../schedule-admission";
 import type { Db } from "./d1";
-import { applyRunJournal, saveRunAudits } from "./factory-run-journal";
+import { applyRunJournal, runAudits, saveRunAudits } from "./factory-run-journal";
 import { readSnapshot } from "./snapshots";
 
 type RunRow = {
@@ -165,7 +165,7 @@ export async function startRun(
 		run.startedAt = acceptedAt;
 		run.updatedAt = acceptedAt;
 		run.nextAttemptAt = acceptedAt;
-		run.window = factoryWindow(acceptedAt);
+		run.window = factoryWindow(acceptedAt, run.depth === "quick" ? 30 : 90);
 	}
 	let previousActivityStart = "";
 	let activityInterrupted = false;
@@ -331,6 +331,21 @@ export async function claimRun(
 	if (row.journal) applyRunJournal(run, row.journal, true);
 	return { run, token, version: run.version, leaseUntil };
 }
+const fencedWrites = new WeakMap<
+	D1PreparedStatement,
+	{ lease: RunLease; now: string; sql: string; values: unknown[] }
+>();
+
+export function rebindRunWrites(db: Db, lease: RunLease, writes: D1PreparedStatement[]) {
+	return writes.map((statement) => {
+		const saved = fencedWrites.get(statement);
+		if (!saved) return statement;
+		if (saved.lease.token !== lease.token || saved.lease.run.id !== lease.run.id)
+			throw new ApiError(409, "factory_lease_lost", "factory write ownership changed");
+		return fenced(db, lease, saved.now, saved.sql, saved.values);
+	});
+}
+
 export function fenced(
 	db: Db,
 	lease: RunLease,
@@ -340,15 +355,19 @@ export function fenced(
 ): D1PreparedStatement {
 	lease.fenceAt = lease.fenceAt && lease.fenceAt > now ? lease.fenceAt : now;
 	const guard = `EXISTS(SELECT 1 FROM factory_runs WHERE id=? AND lease_token=? AND version=? AND lease_until>? AND ${RUN_DEADLINE_SQL}>? AND status='running')`;
-	return db
+	const statement = db
 		.prepare(sql.replace("$guard", guard))
 		.bind(...values, lease.run.id, lease.token, lease.version, now, now);
+	fencedWrites.set(statement, { lease, now, sql, values });
+	return statement;
 }
 export async function saveRun(
 	db: Db,
 	lease: RunLease,
 	writes: D1PreparedStatement[],
 	now: string,
+	keepLease = false,
+	acceptedStep?: number,
 ): Promise<boolean> {
 	const run = lease.run;
 	await expireRuns(db, now, run.account_id, run.id);
@@ -364,22 +383,33 @@ export async function saveRun(
 			// A failed final CAS must not leave earlier writes committed. Abort the transaction first.
 			db.prepare(`SELECT CASE WHEN EXISTS(${validSql}) THEN 1 ELSE json('{') END`).bind(...args),
 			...writes,
+			fenced(db, lease, now, "UPDATE factory_run_journal SET journal=? WHERE run_id=? AND $guard", [
+				acceptedStep === undefined ? "{}" : JSON.stringify(runAudits(lease, acceptedStep)),
+				run.id,
+			]),
 			fenced(
 				db,
 				lease,
 				now,
-				"UPDATE factory_run_journal SET journal='{}' WHERE run_id=? AND $guard",
-				[run.id],
-			),
-			fenced(
-				db,
-				lease,
-				now,
-				"UPDATE factory_runs SET payload=?,status=?,version=version+1,updated_at=?,next_at=?,lease_token=NULL,lease_until=NULL WHERE id=? AND $guard",
-				[encodeRun(run), run.status, now, run.nextAttemptAt, run.id],
+				"UPDATE factory_runs SET payload=?,status=?,version=version+1,updated_at=?,next_at=?,lease_token=?,lease_until=? WHERE id=? AND $guard",
+				[
+					encodeRun(run),
+					run.status,
+					now,
+					run.nextAttemptAt,
+					keepLease ? lease.token : null,
+					keepLease ? lease.leaseUntil : null,
+					run.id,
+				],
 			),
 		]);
-		return Boolean(result.at(-1)?.meta.changes);
+		const saved = Boolean(result.at(-1)?.meta.changes);
+		if (saved) {
+			lease.version = run.version;
+			if (acceptedStep === undefined) lease.attemptedSteps?.clear();
+			else lease.attemptedSteps?.delete(acceptedStep);
+		}
+		return saved;
 	} catch (error) {
 		if (
 			!(await db
@@ -390,6 +420,25 @@ export async function saveRun(
 			return false;
 		throw error;
 	}
+}
+export async function releaseRunLease(db: Db, lease: RunLease, now: string): Promise<void> {
+	await fenced(
+		db,
+		lease,
+		now,
+		"UPDATE factory_runs SET lease_token=NULL,lease_until=NULL WHERE id=? AND $guard",
+		[lease.run.id],
+	).run();
+}
+
+export async function nextRunAttempt(db: Db, id: string): Promise<string | null> {
+	const row = await db
+		.prepare(
+			"SELECT MAX(next_at,coalesce(lease_until,next_at)) AS next_at FROM factory_runs WHERE id=? AND status='running'",
+		)
+		.bind(id)
+		.first<{ next_at: string }>();
+	return row?.next_at ?? null;
 }
 export async function controlRun(
 	db: Db,

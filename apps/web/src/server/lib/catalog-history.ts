@@ -312,6 +312,11 @@ export async function planCatalog(
 					continue;
 				}
 			} catch (error) {
+				if (
+					error instanceof ApiError &&
+					["factory_yield", "factory_lease_lost"].includes(error.code)
+				)
+					throw error;
 				reason =
 					error instanceof GithubUnavailableError && error.reasonCode === "permission_denied"
 						? "permission_denied"

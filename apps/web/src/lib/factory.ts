@@ -7,11 +7,11 @@ import type {
 	FactoryWindow,
 } from "./factory-types";
 
-export function factoryWindow(now: string): FactoryWindow {
+export function factoryWindow(now: string, days = 90): FactoryWindow {
 	const end = new Date(now);
 	const start = new Date(now);
 	start.setUTCHours(0, 0, 0, 0);
-	start.setUTCDate(start.getUTCDate() - 89);
+	start.setUTCDate(start.getUTCDate() - days + 1);
 	return { since: start.toISOString(), until: end.toISOString() };
 }
 export function emptyDay(): FactoryDay {

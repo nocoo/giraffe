@@ -70,7 +70,7 @@ describe("historical run calibration", () => {
 					total: 1,
 					work_total: 1,
 					timed_total: 0,
-					duration_total: 0,
+					timed_steps: "[]",
 					step_medians: null,
 					plans: null,
 				})),
@@ -265,8 +265,8 @@ describe("historical run calibration", () => {
 			deep: 500,
 			plans: {
 				sample: [
-					["metadata", 1, 0],
-					["snapshot", 1, 1],
+					["metadata", 1, 0, null],
+					["snapshot", 1, 1, null],
 				],
 			},
 		});
@@ -321,8 +321,8 @@ describe("run finish projection", () => {
 
 	it("uses grouped remaining kinds for latest/compact projections without transferring steps", () => {
 		const stepPlan: RunStepPlan = [
-			["metadata", 2, 0],
-			["snapshot", 2, 1],
+			["metadata", 2, 0, null],
+			["snapshot", 2, 1, null],
 		];
 		const calibration = {
 			...empty,

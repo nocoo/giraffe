@@ -21,11 +21,26 @@ import { savedContentMeta } from "./content-version";
 import { getAccount } from "./db/accounts";
 import { createDb, type Db } from "./db/d1";
 import { beginRunStep } from "./db/factory-run-journal";
-import { claimRun, expireRuns, fenced, type RunLease, saveRun } from "./db/factory-runs";
+import {
+	claimRun,
+	expireRuns,
+	fenced,
+	nextRunAttempt,
+	type RunLease,
+	releaseRunLease,
+	saveRun,
+} from "./db/factory-runs";
 import { ApiError } from "./errors";
+import { cachedActionsClient, stepActions } from "./factory-actions";
 import { newFactory, stepFactory } from "./factory-collect";
-import { FactoryInvocation, InvocationStopped } from "./factory-invocation";
+import {
+	FactoryInvocation,
+	INVOCATION_DB_STATEMENTS,
+	InvocationStopped,
+} from "./factory-invocation";
+import { type FactoryEndReason, logFactory } from "./factory-log";
 import { exclusion, mapFactoryRepo, object } from "./factory-map";
+import { executeRepoPool, type PoolStepHooks, poolSteps } from "./factory-pool";
 import {
 	boundedJson,
 	currentRepo,
@@ -46,33 +61,43 @@ export async function executeRunPage(
 	id: string,
 	clock = () => new Date().toISOString(),
 ): Promise<string | null> {
-	const db = createDb(env.DB);
-	const lease = await claimRun(db, id, clock(), false);
-	if (!lease) {
-		await expireRuns(db, clock(), "", id);
-		return null;
-	}
-	const run = lease.run;
-	const invocation = new FactoryInvocation(db, lease, clock);
-	const retired = run.steps.filter(
-		(step) => String(step.kind) === "assessment" && ["pending", "running"].includes(step.status),
-	);
-	if (retired.length) {
-		const now = clock();
-		for (const step of retired) {
-			finish(step, "skipped", now);
-			step.error = "cloud_ai_retired";
-		}
-		while (
-			run.steps[run.cursor] &&
-			!["pending", "running"].includes(run.steps[run.cursor]?.status ?? "")
-		)
-			run.cursor++;
-		run.nextAttemptAt = now;
-		return (await saveRun(db, lease, [], clock())) ? now : null;
-	}
+	const db = createDb(env.DB, undefined, INVOCATION_DB_STATEMENTS);
+	const started = Date.parse(clock());
+	let lease: RunLease | null = null;
+	let invocation: FactoryInvocation | null = null;
+	let reason: FactoryEndReason = "run_end";
+	let operation: "claim" | "heartbeat" | "step" | "save" = "claim";
+	let failure: unknown;
+	let cursorStart = 0;
+	let stepsDone = 0;
+	let stagedWrites = 0;
 	try {
-		let previousStep: FactoryRunStep | undefined;
+		lease = await claimRun(db, id, new Date(started).toISOString(), false);
+		if (!lease) {
+			await expireRuns(db, clock(), "", id);
+			return await nextRunAttempt(db, id);
+		}
+		const run = lease.run;
+		cursorStart = run.cursor;
+		invocation = new FactoryInvocation(db, lease, clock);
+		const retired = run.steps.filter(
+			(step) => String(step.kind) === "assessment" && ["pending", "running"].includes(step.status),
+		);
+		if (retired.length) {
+			const now = clock();
+			for (const step of retired) {
+				finish(step, "skipped", now);
+				step.error = "cloud_ai_retired";
+			}
+			while (
+				run.steps[run.cursor] &&
+				!["pending", "running"].includes(run.steps[run.cursor]?.status ?? "")
+			)
+				run.cursor++;
+			run.nextAttemptAt = now;
+			operation = "save";
+			return (await saveRun(db, lease, [], clock())) ? now : null;
+		}
 		for (;;) {
 			while (
 				run.steps[run.cursor] &&
@@ -83,30 +108,97 @@ export async function executeRunPage(
 			if (!step) {
 				run.status = completedRunStatus(run);
 				run.finishedAt = clock();
+				reason = "completed";
 				break;
 			}
-			if (!invocation.canStart(step, step === previousStep)) break;
-			await invocation.heartbeat();
-			const result = await executeStep(env, db, lease, invocation, step, clock);
-			previousStep = step;
-			invocation.writes.push(...result.writes);
-			if (
-				result.stop ||
-				invocation.completed(step) ||
-				run.status !== "running" ||
-				run.nextAttemptAt > clock()
-			)
+			const repositories = poolSteps(run);
+			if (repositories.size) {
+				const activeInvocation = invocation;
+				await executeRepoPool(
+					db,
+					lease,
+					invocation,
+					repositories,
+					(poolDb, lane, current, hooks) =>
+						executeStep(env, poolDb, lane, activeInvocation, current, clock, hooks),
+					(value) => {
+						operation = value;
+					},
+					(steps, writes) => {
+						stepsDone += steps;
+						stagedWrites += writes;
+					},
+				);
+				reason = invocation.endReason(step, true) ?? "yield";
+				if (run.status !== "running") return null;
 				break;
+			}
+			if (!invocation.canStart(step)) {
+				reason = invocation.endReason(step) ?? "yield";
+				if (step.status === "running") step.status = "pending";
+				break;
+			}
+			operation = "heartbeat";
+			await invocation.heartbeat();
+			operation = "step";
+			const result = await executeStep(env, db, lease, invocation, step, clock);
+			invocation.writes.push(...result.writes);
+			stagedWrites += result.writes.length;
+			const boundary = invocation.completed(step);
+			if (!["pending", "running"].includes(step.status)) stepsDone++;
+			operation = "save";
+			if (!(await saveRun(db, lease, invocation.writes, clock(), run.status === "running"))) {
+				reason = "save_failed";
+				return await nextRunAttempt(db, id);
+			}
+			invocation.writes.length = 0;
+			if (run.status !== "running") {
+				reason = run.finishedAt ? "completed" : "run_end";
+				return null;
+			}
+			if (result.stop || boundary || run.nextAttemptAt > clock()) {
+				reason = result.stop || boundary ? "yield" : "run_end";
+				break;
+			}
 		}
+		operation = "save";
+		const saved = await saveRun(db, lease, [], clock());
+		if (!saved) reason = "save_failed";
+		return saved && run.status === "running" ? run.nextAttemptAt : null;
 	} catch (error) {
+		failure = error;
+		reason = operation === "save" ? "save_failed" : "error";
+		if (lease) {
+			try {
+				await releaseRunLease(createDb(env.DB), lease, clock());
+			} catch (releaseError) {
+				logFactory("factory_lease_release_error", { runId: id }, releaseError);
+			}
+		}
 		if (error instanceof InvocationStopped && error.lostLease) {
+			reason = "lost_lease";
 			await expireRuns(db, clock(), "", id);
-			return null;
+			return await nextRunAttempt(db, id);
 		}
 		throw error;
+	} finally {
+		logFactory(
+			"factory_invocation",
+			{
+				runId: id,
+				cursorStart,
+				cursorEnd: lease?.run.cursor ?? cursorStart,
+				stepsDone,
+				requests: invocation?.requests ?? 0,
+				statements: db.statements,
+				stagedWrites,
+				elapsedMs: Math.max(0, Date.parse(clock()) - started),
+				endReason: reason,
+				operation,
+			},
+			failure,
+		);
 	}
-	const saved = await saveRun(db, lease, invocation.writes, clock());
-	return saved && run.status === "running" ? run.nextAttemptAt : null;
 }
 
 async function executeStep(
@@ -116,6 +208,7 @@ async function executeStep(
 	invocation: FactoryInvocation,
 	step: FactoryRunStep,
 	clock: () => string,
+	hooks?: PoolStepHooks,
 ) {
 	const run = lease.run;
 	const started = clock();
@@ -126,9 +219,12 @@ async function executeStep(
 	step.attempts = step.error ? step.attempts + 1 : Math.max(1, step.attempts);
 	step.status = "running";
 	step.error = null;
-	if (!(await beginRunStep(db, lease, clock()))) throw new InvocationStopped(true);
+	if (!(await (hooks ? hooks.begin(step) : beginRunStep(db, lease, clock()))))
+		throw new InvocationStopped(true);
 	const before = structuredClone(run.checkpoint);
-	const gh = createGithubClient(env, undefined, 4_000_000, () => invocation.beforeRequest());
+	const gh = createGithubClient(env, undefined, 4_000_000, () =>
+		invocation.beforeRequest(hooks?.heartbeat),
+	);
 	let writes: D1PreparedStatement[] = [];
 	let resourceData: FactoryStreamData | null = null;
 	const resourceKey = `${step.repo}:${step.kind}`;
@@ -189,7 +285,7 @@ async function executeStep(
 				const result = await collectActivitySupplement(
 					run,
 					{ ...repo, branch: activityBranch(run, repo) },
-					gh,
+					await cachedActionsClient(db, lease, repo.name, gh),
 					token,
 					previous ? (JSON.parse(previous.payload) as ActivitySupplement) : null,
 					actions ? (JSON.parse(actions.payload) as FactoryStreamData) : null,
@@ -215,7 +311,7 @@ async function executeStep(
 				}
 			}
 		} else if (step.kind === "snapshot") {
-			const result = await collectSitePage(db, lease, step, gh, token, clock());
+			const result = await collectSitePage(db, lease, step, gh, token, clock(), hooks?.project);
 			writes = result.writes;
 			if (result.done) {
 				finish(step, result.unavailable ? "unavailable" : "success", clock());
@@ -242,6 +338,7 @@ async function executeStep(
 			step.sourceBranch = metadata.branch;
 			const previous = run.checkpoint;
 			run.checkpoint = newFactory(run.account_id, run.owner, run.startedAt);
+			run.checkpoint.window = run.window;
 			run.checkpoint.runId = run.id;
 			run.checkpoint.inventory.complete = true;
 			run.checkpoint.repos = [{ ...metadata, metadataAt: clock() }];
@@ -291,6 +388,7 @@ async function executeStep(
 		} else {
 			run.checkpoint ??= newFactory(run.account_id, run.owner, run.startedAt);
 			const checkpoint = run.checkpoint;
+			checkpoint.window = run.window;
 			if (run.activityWindow) checkpoint.activityWindow = run.activityWindow;
 			checkpoint.runId = run.id;
 			if (step.kind === "contributions") {
@@ -305,12 +403,19 @@ async function executeStep(
 				checkpoint.status = "collecting";
 			}
 			const store = {
-				...(run.depth === "quick" && stream
+				...(stream && (run.depth === "quick" || stream === "issues" || stream === "prs")
 					? {
 							baseline: async () => {
 								const repo = await currentRepo(db, run.account_id, String(step.repo));
 								if (!repo?.observation || repo.id !== run.repoIds[String(step.repo)]) return null;
 								const retained = repo.coverage[stream].observation;
+								if (
+									(stream === "issues" || stream === "prs") &&
+									(retained ||
+										repo.coverage[stream].retained ||
+										repo.coverage[stream].status !== "complete")
+								)
+									return null;
 								const row = await db
 									.prepare(
 										"SELECT payload FROM factory_resources WHERE run_id=? AND repo=? AND stream=?",
@@ -360,7 +465,9 @@ async function executeStep(
 					);
 				},
 			};
-			await stepFactory(checkpoint, gh, token, store, clock());
+			if (stream === "actions")
+				writes.push(...(await stepActions(db, lease, checkpoint, gh, token, store, clock())));
+			else await stepFactory(checkpoint, gh, token, store, clock());
 			if (step.kind === "inventory") {
 				if (checkpoint.repos.length > 500)
 					throw new ApiError(422, "factory_capacity", "catalog exceeds 500 repositories");
@@ -459,6 +566,7 @@ async function executeStep(
 			run.status = "paused";
 			step.status = "pending";
 		} else if (code === "github_rate_limited") {
+			invocation.stopped = true;
 			step.status = "pending";
 			run.nextAttemptAt = new Date(
 				Math.max(
