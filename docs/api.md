@@ -721,6 +721,10 @@ or a new status for the whole run. No standalone machine per-repository factory
 summary endpoint exists; the per-stream endpoints remain unchanged apart from
 their corrected freshness.
 
+Rows included through `include=removed` have `retained:null`: they cannot inherit
+a same-name replacement's current publication. Published observations are matched
+through the existing catalog identity rules before summaries are joined.
+
 The `/repos` summary is a read-time enrichment, like `agent_state` and `meta`;
 its catalog `sourceVersion`, `contentVersion` and freshness remain catalog-only.
 Poll the summary or the published `/factory`/`/sources` state independently of

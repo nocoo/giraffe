@@ -188,3 +188,44 @@ it("orders multiple retained streams and matches catalog casing without changing
 	expect(repositories.sourceVersion).toBe(before.sourceVersion);
 	expect(repositories.contentVersion).toBe(before.contentVersion);
 });
+
+it("isolates retained summaries from same-name removed and replacement identities", async () => {
+	const setup = await fixture(true, "limited");
+	await setup.save("repos", {
+		repos: [{ name_with_owner: "nocoo/app", description: "current" }],
+	});
+	for (const [identity, description, removedAt] of [
+		["R_1", "current", null],
+		["R_old", "old", setup.currentAt],
+		["R_older", "older", setup.currentAt],
+	] as const)
+		await setup.db
+			.prepare(
+				"INSERT INTO catalog_repositories(account_id,identity_key,github_id,repo,row_payload,removed_at,is_archived,visibility,is_fork,first_seen_source,name_current) VALUES(?,?,?,'nocoo/app',?,?,0,'PUBLIC',0,'github_catalog',?)",
+			)
+			.bind(
+				setup.snapshot.account_id,
+				identity,
+				identity,
+				JSON.stringify({ name_with_owner: "nocoo/app", description }),
+				removedAt,
+				Number(removedAt === null),
+			)
+			.run();
+	const repositories = await setup.get<{
+		data: { repos: { description: string; retained: Retention }[] };
+	}>("repos?include=removed");
+	expect(repositories.data.repos).toHaveLength(3);
+	for (const description of ["old", "older"])
+		expect(
+			repositories.data.repos.find((repo) => repo.description === description)?.retained,
+		).toBeNull();
+	expect(repositories.data.repos.find((repo) => repo.description === "current")?.retained).toEqual({
+		any: true,
+		streams: ["dependencies"],
+	});
+	setup.repository.id = "R_old";
+	await setup.save("factory:v:current", setup.snapshot);
+	expect((await setup.get<RepositoryList>("repos")).data.repos[0]?.retained).toBeNull();
+	expect((await setup.get<FactoryList>("factory")).data.repos).toEqual([]);
+});
