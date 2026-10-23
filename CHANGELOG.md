@@ -19,8 +19,8 @@ decision and dependency security gates; this is not a completed release.
 ### Changed
 
 - Replenish four repository lanes inside the invocation and pipeline each repository's factory, snapshot and activity work in planned order. Activity can accept several pages per invocation; global work/publication remain fenced barriers. Drained repository work can continue without an unnecessary invocation boundary.
-- Reconcile complete Actions baselines using a conservative rerun horizon, ID deduplication and total-count validation. Materialize one complete shared history for metrics, snapshots and deployments; unreliable or over-limit deltas restart full collection. Preserve accepted v0.23 pages through cross-version checkpoints.
-- Extend the real-runner SQLite benchmark with account prelude, nine notification pages, 205 activity pages, explicit continuation delay, phase breakdowns and lane occupancy. The 1,146-step selected daily improves from 24.594 to 9.351 simulated minutes, 326 to 50 invocations, and 1.193 to 3.229 average busy lanes. This does not prove the production under-twenty-minute target.
+- Reconcile complete Actions baselines using a conservative rerun horizon, ID deduplication and total-count validation. Materialize one complete shared history for metrics, snapshots and deployments in bounded resumable write batches; unreliable or over-limit deltas restart full collection. Preserve accepted v0.23 pages through cross-version checkpoints.
+- Extend the real-runner SQLite benchmark with account prelude, nine notification pages, 205 activity pages, explicit continuation delay, phase breakdowns and lane occupancy. The 1,146-step selected daily improves from 24.594 to 9.356 simulated minutes, 326 to 50 invocations, and 1.193 to 3.226 average busy lanes. This does not prove the production under-twenty-minute target.
 
 ### Pending Decision
 

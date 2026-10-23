@@ -35,12 +35,16 @@ type Source = {
 		observed: number;
 		expected: number | null;
 		bytes: number;
+		materializing?: number;
 	};
 	error?: { status: number; code: string; reasonCode?: GithubUnavailableError["reasonCode"] };
 };
 type SourcePage = { runs: GithubObject[]; next: string | null };
+type SourceWrites = { writes: D1PreparedStatement[]; materialized?: SourcePage[] };
 const SOURCE = "actions-source";
 const DELTA = "actions-incremental";
+const MATERIALIZING = "actions-materializing";
+const MATERIALIZATION_WRITES = 20;
 const RERUN_WINDOW_MS = 30 * 86400_000;
 class InvalidActionsSource extends ApiError {
 	constructor() {
@@ -237,28 +241,48 @@ function pageWrites(
 ) {
 	const encoded = JSON.stringify(page);
 	const writes: D1PreparedStatement[] = [];
-	for (let offset = 0; offset < encoded.length; offset += 250_000)
+	for (let offset = 0; offset < encoded.length; offset += 1_000_000) {
+		const chunks: unknown[] = [];
+		const values: string[] = [];
+		for (let part = offset; part < Math.min(offset + 1_000_000, encoded.length); part += 250_000) {
+			values.push("(?,?)");
+			chunks.push(
+				`${pagePrefix(index, kind)}${String(part / 250_000).padStart(3, "0")}`,
+				boundedJson(encoded.slice(part, part + 250_000)),
+			);
+		}
 		writes.push(
-			writeSource(
+			fenced(
 				db,
 				lease,
-				repo,
-				`${pagePrefix(index, kind)}${String(offset / 250_000).padStart(3, "0")}`,
-				encoded.slice(offset, offset + 250_000),
 				now,
+				`INSERT INTO factory_resources(run_id,repo,stream,payload) SELECT ?,?,column1,column2 FROM (VALUES ${values.join(",")}) WHERE $guard ON CONFLICT(run_id,repo,stream) DO UPDATE SET payload=excluded.payload`,
+				[lease.run.id, repo, ...chunks],
 			),
 		);
+	}
 	return writes;
 }
 
-function clearDelta(db: Db, lease: RunLease, repo: string, now: string) {
+function clearDelta(db: Db, lease: RunLease, repo: string, now: string, kind = DELTA) {
 	return fenced(
 		db,
 		lease,
 		now,
 		"DELETE FROM factory_resources WHERE run_id=? AND repo=? AND substr(stream,1,?)=? AND $guard",
-		[lease.run.id, repo, DELTA.length + 1, `${DELTA}:`],
+		[lease.run.id, repo, kind.length + 1, `${kind}:`],
 	);
+}
+
+function restartSource(db: Db, lease: RunLease, repo: string, source: Source, now: string) {
+	delete source.incremental;
+	return {
+		writes: [
+			clearDelta(db, lease, repo, now),
+			clearDelta(db, lease, repo, now, MATERIALIZING),
+			writeSource(db, lease, repo, SOURCE, source, now),
+		],
+	};
 }
 
 async function incrementPage(
@@ -269,7 +293,7 @@ async function incrementPage(
 	page: SourcePage,
 	payload: GithubObject,
 	now: string,
-) {
+): Promise<SourceWrites | null> {
 	const delta = source.incremental;
 	if (!delta) return null;
 	const total = payload.total_count;
@@ -287,12 +311,7 @@ async function incrementPage(
 		delta.next = `/repos/${repo}/actions/runs?created=>=${delta.since}&per_page=100`;
 		return { writes: [writeSource(db, lease, repo, SOURCE, source, now)] };
 	}
-	const restart = () => {
-		delete source.incremental;
-		return {
-			writes: [clearDelta(db, lease, repo, now), writeSource(db, lease, repo, SOURCE, source, now)],
-		};
-	};
+	const restart = () => restartSource(db, lease, repo, source, now);
 	if (
 		!Number.isSafeInteger(total) ||
 		Number(total) < 0 ||
@@ -318,10 +337,23 @@ async function incrementPage(
 				writeSource(db, lease, repo, SOURCE, source, now),
 			],
 		};
+	return materializeSource(db, lease, repo, source, delta, now, page);
+}
+
+async function materializeSource(
+	db: Db,
+	lease: RunLease,
+	repo: string,
+	source: Source,
+	delta: NonNullable<Source["incremental"]>,
+	now: string,
+	page?: SourcePage,
+): Promise<SourceWrites> {
+	const restart = () => restartSource(db, lease, repo, source, now);
 	const chunks = await readSourcePages(db, lease, repo, lease.run.id, DELTA);
 	const fresh: GithubObject[] = [];
 	for (let index = 0; index < delta.pages; index++)
-		fresh.push(...(index === delta.pages - 1 ? page : decodePage(chunks.get(index))).runs);
+		fresh.push(...(page && index === delta.pages - 1 ? page : decodePage(chunks.get(index))).runs);
 	const baseline = await baselineRuns(db, lease, repo, delta.runId, delta.baselinePages);
 	const since = Date.parse(delta.since);
 	if (
@@ -357,6 +389,17 @@ async function incrementPage(
 		0,
 	);
 	if (bytes > MAX_STAGED_BYTES) return restart();
+	const writes = page ? pageWrites(db, lease, repo, delta.pages - 1, page, now, DELTA) : [];
+	const pending = materialized
+		.flatMap((current, index) => pageWrites(db, lease, repo, index, current, now, MATERIALIZING))
+		.slice(delta.materializing ?? 0);
+	const batch = pending.slice(0, Math.max(0, MATERIALIZATION_WRITES - writes.length - 4));
+	writes.push(...batch);
+	delta.materializing = (delta.materializing ?? 0) + batch.length;
+	if (batch.length < pending.length) {
+		writes.push(writeSource(db, lease, repo, SOURCE, source, now));
+		return { writes };
+	}
 	Object.assign(source, {
 		status: "complete",
 		next: null,
@@ -370,8 +413,23 @@ async function incrementPage(
 	return {
 		materialized,
 		writes: [
+			...writes,
+			fenced(
+				db,
+				lease,
+				now,
+				"INSERT INTO factory_resources(run_id,repo,stream,payload) SELECT run_id,repo,? || substr(stream,?),payload FROM factory_resources WHERE run_id=? AND repo=? AND substr(stream,1,?)=? AND $guard ON CONFLICT(run_id,repo,stream) DO UPDATE SET payload=excluded.payload",
+				[
+					SOURCE,
+					MATERIALIZING.length + 1,
+					lease.run.id,
+					repo,
+					MATERIALIZING.length + 1,
+					`${MATERIALIZING}:`,
+				],
+			),
 			clearDelta(db, lease, repo, now),
-			...materialized.flatMap((current, index) => pageWrites(db, lease, repo, index, current, now)),
+			clearDelta(db, lease, repo, now, MATERIALIZING),
 			writeSource(db, lease, repo, SOURCE, source, now),
 		],
 	};
@@ -406,6 +464,11 @@ async function fetchPage(
 	let materialized: SourcePage[] | undefined;
 	let headers = new Headers();
 	try {
+		if (source.incremental?.materializing !== undefined) {
+			const result = await materializeSource(db, lease, repo, source, source.incremental, now);
+			materialized = result.materialized;
+			return { page: materialized?.[0] ?? null, materialized, headers, writes: result.writes };
+		}
 		const path = source.incremental?.next ?? source.next ?? firstPage(repo);
 		const response = await gh.githubApi(token, path);
 		headers = response.headers;

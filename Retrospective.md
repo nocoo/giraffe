@@ -1891,3 +1891,18 @@ Tests require retained old events and successful two-repository publication.
 Three baseline-generated site chunk fixtures separately verify unchanged snapshot
 handoff. Review upgrade paths across invocation boundaries, not only races within
 one Promise pool; durable fallback ownership matters even when a lane does no work.
+
+## 2026-10-24 - Bound reconciliation writes across all lanes
+
+The first B16A Actions reconciliation staged an entire valid history in one
+collector result. Normal fixtures passed, but independent review reproduced
+four concurrent 15.4 MB histories starting near 500 executed statements. Each
+result added 82 writes, exceeding the shared 800-statement hard cap during
+acceptance. The real SQLite four-lane regression failed before the repair.
+Materialization now checkpoints bounded temporary-page batches and atomically
+promotes the complete source. The regression verifies recovery, unchanged
+accepted pages, all 4,000 records per repository and no repeated final-delta
+request. Admission thresholds alone do not bound asynchronous work already
+admitted; every collector result must also leave room for all active lanes and
+their fenced journal writes. Do not raise caps or discard a legal source to
+make a budget test pass.

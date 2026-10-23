@@ -203,22 +203,22 @@ all 1,146 steps through the actual runner and SQLite on both frozen sources.
 
 | Daily measurement | v0.23 source | B16A candidate |
 | --- | ---: | ---: |
-| Simulated minutes | 24.594 | 9.351 |
+| Simulated minutes | 24.594 | 9.356 |
 | Invocations | 326 | 50 |
-| Requests | 1,366 | 1,357 |
-| Average busy repository lanes | 1.193 | 3.229 |
-| Four lanes busy | 18.63% | 78.90% |
+| Requests | 1,366 | 1,356 |
+| Average busy repository lanes | 1.193 | 3.226 |
+| Four lanes busy | 18.63% | 78.80% |
 | Account span, seconds | 42.500 | 42.500 |
 | Factory span, seconds | 329.509 | 407.485 |
-| Snapshot span, seconds | 188.244 | 493.861 |
-| Activity span, seconds | 906.200 | 112.717 |
+| Snapshot span, seconds | 188.244 | 494.161 |
+| Activity span, seconds | 906.200 | 111.655 |
 
 The after spans overlap and must not be summed. Exclusive wall allocation
 (equally dividing phase overlap and assigning idle gaps to the preceding phase)
-is account 42.500, factory 209.722, snapshots 246.269, activity 60.241,
+is account 42.500, factory 209.949, snapshots 246.646, activity 59.937,
 Insights 2.300 and publish 0 seconds. Zero CPU/D1 cost makes Insights/publication
 service zero; this is a declared simulation limitation, not a production claim.
-The larger all-scope 1,149-step fixture improves from 31.881 to 16.869 minutes.
+An earlier frozen all-scope 1,149-step fixture improves from 31.881 to 16.869 minutes.
 Its 515.463-second account prelude is a different workload, not the selected
 daily's prelude. Neither fixture reproduces the production startup interruption
 or real D1/CPU/queue latency, and Actions age distribution is synthetic. The
@@ -480,6 +480,15 @@ restart full collection; an incomplete delta never becomes a complete snapshot.
 Existing v0.23 unfiltered checkpoints continue their saved pages. A v0.23 Worker
 that resumes a new probe can start normal full collection; later code recognizes
 accepted unfiltered pages rather than resuming obsolete delta bookkeeping.
+
+Large reconciliations stage pages under a run-owned temporary prefix in batches
+of at most 20 source-write statements, leaving room for the shared four-lane
+journal budget. An intermediate fenced checkpoint records materialization
+progress with partial coverage; continuation reads the accepted delta rather
+than requesting it again. The final fenced save promotes all staged pages to
+the canonical prefix and marks the source complete atomically. Temporary pages
+are never exposed as a complete history, and canonical v0.23 page keys and
+payloads remain unchanged.
 
 A complete full source is required for snapshot/cache reuse. If full history hits
 the existing page/byte limits, the old snapshot is retained and the metric stream

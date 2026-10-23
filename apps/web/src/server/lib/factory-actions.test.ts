@@ -10,7 +10,7 @@ import { createDb } from "./db/d1";
 import { claimRun, fenced, saveRun, startRun } from "./db/factory-runs";
 import { readSnapshot } from "./db/snapshots";
 import { ApiError } from "./errors";
-import { cachedActionsClient, stepActions } from "./factory-actions";
+import { cachedActionsClient, collectActionsSnapshot, stepActions } from "./factory-actions";
 import { type FactoryStore, stepFactory, streamKey } from "./factory-collect";
 import { InvocationStopped } from "./factory-invocation";
 import { mapFactoryEvents } from "./factory-map";
@@ -105,11 +105,17 @@ async function setup() {
 					},
 				],
 			];
-			for (let index = 0; index < pages; index++)
-				resources.push([
-					`actions-source:${String(index).padStart(3, "0")}:000`,
-					JSON.stringify({ runs: runs.slice(index * 100, (index + 1) * 100), next: null }),
-				]);
+			for (let index = 0; index < pages; index++) {
+				const encoded = JSON.stringify({
+					runs: runs.slice(index * 100, (index + 1) * 100),
+					next: null,
+				});
+				for (let offset = 0; offset < encoded.length; offset += 250_000)
+					resources.push([
+						`actions-source:${String(index).padStart(3, "0")}:${String(offset / 250_000).padStart(3, "0")}`,
+						encoded.slice(offset, offset + 250_000),
+					]);
+			}
 			for (const [key, value] of resources)
 				await raw
 					.prepare(
@@ -138,6 +144,7 @@ async function setup() {
 			writes.push(
 				...(await stepActions(current, lease, snapshot, client, "private-token", store, NOW)),
 			);
+			expect(writes.length).toBeLessThanOrEqual(24);
 			expect(await saveRun(current, lease, writes, NOW, true)).toBe(true);
 		},
 		async snapshotPage(client: GithubClient) {
@@ -248,6 +255,311 @@ it("reconciles an incremental delta into the exact shared stream, snapshot and d
 		workflow_runs: all.slice(0, 100),
 	});
 	expect(unused.count).toBe(0);
+});
+
+it.each(["stream", "snapshot"] as const)(
+	"resumes bounded materialization of legal large history started by the %s lane",
+	async (lane) => {
+		const fixture = await setup();
+		const history = Array.from({ length: 3900 }, (_, index) => ({
+			...completedRun(index + 1),
+			path: "x".repeat(3500),
+		}));
+		const recent = completedRun(3901, "2026-09-15T21:00:00Z");
+		const all = [recent, ...history];
+		const bytes = new TextEncoder().encode(JSON.stringify(all)).length;
+		expect(bytes).toBeGreaterThan(15_000_000);
+		expect(bytes).toBeLessThan(MAX_STAGED_BYTES);
+		await fixture.baseline(history);
+		const client = github((path) =>
+			new URL(path).searchParams.has("created")
+				? page([recent], undefined, 1)
+				: page(all.slice(0, 100), 2, all.length),
+		);
+		for (let index = 0; index < 2; index++) {
+			if (lane === "stream") await fixture.stream(client);
+			else {
+				const db = createDb(fixture.raw);
+				const result = await collectActionsSnapshot(
+					db,
+					fixture.lease,
+					"nocoo/app",
+					client,
+					"fake",
+					NOW,
+				);
+				expect(result.writes.length).toBeLessThanOrEqual(20);
+				expect(result.payload).toBeUndefined();
+				expect(await saveRun(db, fixture.lease, result.writes, NOW, true)).toBe(true);
+			}
+		}
+		const source = await fixture.raw
+			.prepare(
+				"SELECT payload FROM factory_resources WHERE run_id='actions' AND stream='actions-source'",
+			)
+			.first<{ payload: string }>();
+		expect(JSON.parse(source?.payload ?? "null")).toMatchObject({
+			status: "partial",
+			pages: 0,
+			next: "/repos/nocoo/app/actions/runs?per_page=100",
+		});
+		expect(
+			(
+				await fixture.raw
+					.prepare(
+						"SELECT stream FROM factory_resources WHERE run_id='actions' AND stream LIKE 'actions-source:%'",
+					)
+					.all()
+			).results,
+		).toEqual([]);
+		const unused = github(() => {
+			throw new Error("must resume without refetching");
+		});
+		expect(
+			await cachedActionsClient(createDb(fixture.raw), fixture.lease, "nocoo/app", unused),
+		).toBe(unused);
+		let complete = false;
+		for (let index = 0; index < 10; index++) {
+			if (lane === "stream") {
+				await fixture.stream(unused);
+				const saved = await fixture.raw
+					.prepare(
+						"SELECT payload FROM factory_resources WHERE run_id='actions' AND stream='actions-source'",
+					)
+					.first<{ payload: string }>();
+				complete = JSON.parse(saved?.payload ?? "null").status === "complete";
+				if (complete) break;
+				continue;
+			}
+			const db = createDb(fixture.raw);
+			const result = await collectActionsSnapshot(
+				db,
+				fixture.lease,
+				"nocoo/app",
+				unused,
+				"fake",
+				NOW,
+			);
+			expect(result.writes.length).toBeLessThanOrEqual(20);
+			if (result.payload) {
+				expect(result.payload).toMatchObject({
+					runs: mapActionRuns({ workflow_runs: all }),
+					truncated: false,
+				});
+				complete = true;
+			}
+			expect(await saveRun(db, fixture.lease, result.writes, NOW, true)).toBe(true);
+			if (complete) break;
+		}
+		expect(complete).toBe(true);
+		expect(
+			(
+				await collectActionsSnapshot(
+					createDb(fixture.raw),
+					fixture.lease,
+					"nocoo/app",
+					unused,
+					"fake",
+					NOW,
+				)
+			).payload,
+		).toMatchObject({
+			runs: mapActionRuns({ workflow_runs: all }),
+			truncated: false,
+		});
+		await finishActions(fixture, unused);
+		expect((await fixture.read())?.items).toEqual(mapFactoryEvents("actions", [recent]));
+		expect((await fixture.read())?.coverage).toMatchObject({
+			status: "complete",
+			strategy: "incremental",
+		});
+		const cached = await cachedActionsClient(
+			createDb(fixture.raw),
+			fixture.lease,
+			"nocoo/app",
+			unused,
+		);
+		expect(
+			await (
+				await cached.githubApi(
+					"fake",
+					"/repos/nocoo/app/actions/runs?status=success&per_page=100&page=40",
+				)
+			).json(),
+		).toMatchObject({
+			total_count: all.length,
+			workflow_runs: all.slice(3900),
+		});
+		expect(
+			(
+				await fixture.raw
+					.prepare(
+						"SELECT stream FROM factory_resources WHERE run_id='actions' AND (stream LIKE 'actions-incremental:%' OR stream LIKE 'actions-materializing:%')",
+					)
+					.all()
+			).results,
+		).toEqual([]);
+		expect(client.count).toBe(2);
+		expect(unused.count).toBe(0);
+	},
+);
+
+it.each(["full", "incremental"] as const)(
+	"bounds writes for a legal large single %s source page without dropping raw chunks",
+	async (strategy) => {
+		const fixture = await setup();
+		const recent = {
+			...completedRun(102, "2026-09-15T21:00:00Z"),
+			tag_name: "x".repeat(15_500_000),
+		};
+		const history =
+			strategy === "incremental"
+				? Array.from({ length: 101 }, (_, index) => completedRun(index + 1))
+				: [];
+		if (history.length) await fixture.baseline(history);
+		const client = github((path) =>
+			page(
+				[recent],
+				history.length && !new URL(path).searchParams.has("created") ? 2 : undefined,
+				new URL(path).searchParams.has("created") ? 1 : history.length + 1,
+			),
+		);
+		await finishActions(fixture, client);
+		expect((await fixture.read())?.coverage).toMatchObject({ status: "complete", strategy });
+		const unused = github(() => {
+			throw new Error("must reuse all large chunks");
+		});
+		const cached = await cachedActionsClient(
+			createDb(fixture.raw),
+			fixture.lease,
+			"nocoo/app",
+			unused,
+		);
+		expect(
+			await (
+				await cached.githubApi("fake", "/repos/nocoo/app/actions/runs?status=success&per_page=100")
+			).json(),
+		).toMatchObject({
+			total_count: history.length + 1,
+			workflow_runs: [recent, ...history].slice(0, 100),
+		});
+		expect(client.count).toBe(strategy === "incremental" ? 2 : 1);
+		expect(unused.count).toBe(0);
+	},
+);
+
+it("fences the final materialization batch and resumes durable temporary chunks after lease takeover", async () => {
+	const fixture = await setup();
+	const history = Array.from({ length: 2000 }, (_, index) => completedRun(index + 1));
+	const recent = completedRun(2001, "2026-09-15T21:00:00Z");
+	await fixture.baseline(history);
+	await fixture.stream(github(() => page([recent], 2, history.length + 1)));
+	await fixture.stream(github(() => page([recent], undefined, 1)));
+	const unused = github(() => {
+		throw new Error("must resume the accepted delta");
+	});
+	const db = createDb(fixture.raw);
+	const result = await collectActionsSnapshot(db, fixture.lease, "nocoo/app", unused, "fake", NOW);
+	expect(result.payload).toMatchObject({
+		runs: mapActionRuns({ workflow_runs: [recent, ...history] }),
+	});
+	const later = new Date(Date.parse(NOW) + 120_000).toISOString();
+	const takeover = await claimRun(createDb(fixture.raw), "actions", later);
+	if (!takeover) throw new Error("missing takeover lease");
+	expect(await saveRun(db, fixture.lease, result.writes, later, true)).toBe(false);
+	const source = await fixture.raw
+		.prepare(
+			"SELECT payload FROM factory_resources WHERE run_id='actions' AND stream='actions-source'",
+		)
+		.first<{ payload: string }>();
+	expect(JSON.parse(source?.payload ?? "null")).toMatchObject({ status: "partial", pages: 0 });
+	expect(
+		(
+			await fixture.raw
+				.prepare(
+					"SELECT stream FROM factory_resources WHERE run_id='actions' AND stream LIKE 'actions-source:%'",
+				)
+				.all()
+		).results,
+	).toEqual([]);
+	const resumed = createDb(fixture.raw);
+	const accepted = await collectActionsSnapshot(
+		resumed,
+		takeover,
+		"nocoo/app",
+		unused,
+		"fake",
+		later,
+	);
+	expect(accepted.writes.length).toBeLessThanOrEqual(20);
+	expect(accepted.payload).toEqual(result.payload && { ...result.payload, fetched_at: later });
+	expect(await saveRun(resumed, takeover, accepted.writes, later, true)).toBe(true);
+	expect(
+		(
+			await collectActionsSnapshot(
+				createDb(fixture.raw),
+				takeover,
+				"nocoo/app",
+				unused,
+				"fake",
+				later,
+			)
+		).payload,
+	).toEqual(accepted.payload);
+	expect(unused.count).toBe(0);
+});
+
+it("ignores temporary materialization chunks when v0.23 restarts canonical unfiltered collection", async () => {
+	const fixture = await setup();
+	const history = Array.from({ length: 2000 }, (_, index) => completedRun(index + 1));
+	const recent = completedRun(2001, "2026-09-15T21:00:00Z");
+	await fixture.baseline(history);
+	await fixture.stream(github(() => page([recent], 2, history.length + 1)));
+	await fixture.stream(github(() => page([recent], undefined, 1)));
+	const row = await fixture.raw
+		.prepare(
+			"SELECT payload FROM factory_resources WHERE run_id='actions' AND stream='actions-source'",
+		)
+		.first<{ payload: string }>();
+	const source = JSON.parse(row?.payload ?? "null");
+	expect(source.incremental.materializing).toBeGreaterThan(0);
+	const next = "/repos/nocoo/app/actions/runs?per_page=100&page=2";
+	await fixture.raw
+		.prepare(
+			"UPDATE factory_resources SET payload=? WHERE run_id='actions' AND stream='actions-source'",
+		)
+		.bind(JSON.stringify({ ...source, pages: 1, next, observed: 1, expected: 2, bytes: 0 }))
+		.run();
+	await fixture.raw
+		.prepare(
+			"INSERT INTO factory_resources(run_id,repo,stream,payload) VALUES('actions','nocoo/app','actions-source:000:000',?)",
+		)
+		.bind(JSON.stringify(JSON.stringify({ runs: [recent], next })))
+		.run();
+	const client = github((path) => {
+		expect(new URL(path).pathname + new URL(path).search).toBe(next);
+		return page([completedRun(1)], undefined, 2);
+	});
+	await finishActions(fixture, client);
+	expect((await fixture.read())?.coverage).toMatchObject({ status: "complete", strategy: "full" });
+	const unused = github(() => {
+		throw new Error("must reuse the v0.23 canonical source");
+	});
+	expect(
+		(
+			await collectActionsSnapshot(
+				createDb(fixture.raw),
+				fixture.lease,
+				"nocoo/app",
+				unused,
+				"fake",
+				NOW,
+			)
+		).payload,
+	).toMatchObject({
+		runs: mapActionRuns({ workflow_runs: [recent, completedRun(1)] }),
+	});
+	expect(client.count).toBe(1);
 });
 
 it("refreshes completed reruns throughout the prior observation's 30-day eligibility window", async () => {
