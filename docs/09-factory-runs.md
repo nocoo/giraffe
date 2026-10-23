@@ -12,45 +12,51 @@
 - For N resolved owned repositories, a deep full refresh has `18N + 8` logical steps: six site snapshots including Insights, contributions, nine factory steps and nine detail tabs per repository, and publication. A manual scoped refresh has `18N + 1` steps; one selected repository has 19. Quick full/daily refresh also adds one activity step per repository and one activity-contributions step: daily has `19N + 6`, or 1,146 steps for 60 repositories. Catalog discovery has four steps. Historical frozen plans can retain different factory/detail counts. New plans contain no AI checkpoints; frozen old AI stages retire without provider calls while other collection work continues.
 - Catalog runs retain four steps: inventory, site catalog, restore and publication. Full refresh requires complete statistics and site catalogs; non-selected scoped runs require a complete statistics catalog. A selected known repository does not require a complete site catalog. Full refresh still reports `catalog_changed` when discovery finds repositories outside its frozen site targets; synchronize the catalog explicitly before including them.
 - Dependabot REST alerts use the `after` cursor from GitHub's next Link header; the endpoint rejects numeric `page` pagination. Resume checkpoints preserve the cursor, repository and original filters. Other REST streams retain sequential page validation.
-- Each queue message claims once, executes several steps/pages within the invocation budgets below, commits once, then schedules a continuation. Site Issues/PRs/alerts retain their ten-repository chunks and staging cursors; lists become visible only at publication. The minute cron repairs missed dispatch. Queue messages contain only the run ID, never tokens or events.
-- 90 秒租约；提交事务中的每一条写入都受 run ID、lease token、版本、未过期租约和 running 状态保护。最后 CAS 更新 checkpoint 并释放租约。控制操作使旧租约失效；已在途的 GitHub 请求可能结束，但不能再写。
-- Fenced heartbeats renew independently of the final checkpoint. A crash can replay the entire unsaved invocation, not just its last page. Durable audit records retain attempted work while business data, pages and cursors roll back together. Event-ID deduplication and fenced publication prevent duplicate results.
+- Each queue message claims once, checkpoints every accepted step/page, then schedules a continuation. Site Issues/PRs/alerts retain their ten-repository chunks and staging cursors; lists become visible only at publication. The minute cron repairs missed dispatch. Queue messages contain only the run ID, never tokens or events.
+- A 40-second lease fences every write by run ID, token, version, unexpired lease and running status. Intermediate saves atomically advance the version while retaining ownership; the final save releases it. Controls invalidate ownership without undoing prior checkpoints.
+- A dead invocation can lose only work since its latest step/page checkpoint. Request accounting is crash-safe to within that in-flight step. Event-ID deduplication and fenced publication prevent duplicate results.
 - 临时失败按 30/60/120 秒退避，最多 3 次重试；GitHub 限流遵循 Retry-After/reset，未知时至少 15 分钟，任务保持可恢复。401 暂停等待更新凭据。统计仓库失败只跳过后续统计步骤；页面数据失败不会阻断其他页面。权限不足、来源缺失/截断、清单变化不无效重试；保留旧快照及原时间，不伪装成功零值。
 - 账户启动冷却 60 秒；每个统计仓库尝试后冷却 15 分钟。服务器时钟决定下次允许时间；客户端仅显示倒计时。全站刷新允许统计仓库为空或都在冷却，仍更新页面数据。暂停保留唯一活动 run，取消释放活动槽并保留已提交数据；新 run 不会与旧执行者竞争。
 
-## v0.22 invocation budgets and persistence
+## v0.23 invocation budgets and persistence
 
-New work starts only before 25 seconds of invocation wall time, below 40 GitHub
-requests and below 36 executed D1 statements plus buffered writes. A long step and
-its remaining stream pages may finish past the admission deadline; only a new
-step checks wall time. Page continuation still obeys request and D1 caps, and a
-subsequent invocation must admit its first step normally. Before each GitHub
-request, the executor checks ownership, renews a lease with at most 30 seconds remaining, and yields at
-60 executed statements plus buffered writes, reserving space under the existing
-80-statement hard limit for audits and final save. Each individual fetch retains
-its 15-second timeout; leases extend by 90 seconds but never past the run deadline.
-Budget yields are not network failures. No queue, cron or deployment limit changes
-are required, and no repository/request parallelism is introduced.
+New work starts before 25 seconds of invocation wall time, below 40 GitHub
+requests and 600 executed D1 statements plus staged writes. Every request checks
+the wall budget, reserving five seconds for checkpointing; individual fetches
+retain their 15-second timeout. Step boundaries and requests renew the 40-second
+lease when at most half remains, never beyond the absolute run deadline.
+The factory-only D1 hard cap is 800 statements, leaving 200 for checkpoint/error
+handling after admission closes and another 200 below D1's paid-plan limit of
+1,000 queries per invocation. Other API paths keep their 80-statement cap.
+Budget yields preserve cursors, keep errors null and do not spend retry failures.
+No queue, cron, deployment or Cloudflare configuration changes are required.
 
-Stream pages share an invocation resource cache and one atomic final save. The
-loop stops before publication, activity or Insights when buffered writes must be
-visible to their readers, between repositories after detail snapshots, and after
-a global snapshot or unfinished site chunk. Failed or rate-limited collection
-can commit earlier accepted work without publishing incomplete new sources.
-Lost ownership aborts all buffered business writes. Expiry runs once per executor
-invocation, including no-claim and lost-lease paths.
+Stream pages share an invocation resource cache, with an atomic fenced save after
+each accepted page. Publication, activity and Insights remain separate boundaries;
+detail snapshot work does not cross a repository boundary. Snapshot collection
+replays already staged responses locally and saves each newly fetched page in
+bounded, run-owned resources. This splits slow Actions and other paged snapshots
+without changing list results or fetching accepted pages again. Lost ownership
+rejects the in-flight writes, not earlier committed checkpoints.
+
+Uncaught executor errors release only their own fenced lease. Queue retries use
+5/10/15 seconds based on delivery attempts. A live-lease collision returns its
+deadline for delayed redelivery instead of silently dropping the message.
+Queue 10250/429 sends retry after 0.5/1/2 seconds, recomputing delay against the
+original target; exhausted sends remain observable and cron remains a fallback.
 
 Migration `0025_factory_run_journal.sql` adds an account-cascaded, run-owned table
 for invocation counts and small audit JSON. Claim reads the payload once, takes a
 version-CAS lease without `RETURNING payload`, and increments `invocations`. The
 executor journals attempt/start metadata before work and completed durations
-before starting subsequent work and before final save. A fenced request counter
-is persisted immediately before each fetch; it counts attempted dispatches, even
-if cancellation or a crash prevents a result. A crash during an unfinished fetch
+before starting subsequent work and before final save. Request counts accumulate
+in memory and flush with the existing step audit/checkpoint, not once per fetch.
+Cancellation or abrupt death can omit requests only from the in-flight step.
+A crash during an unfinished fetch
 cannot reconstruct elapsed time after its last checkpoint. Completed audited
 durations survive replay. Retry high-water marks survive unsaved successes, so
 repeated final-save crashes cannot reset the retry limit indefinitely. Pages,
-business status, activity contributions and cursors stay in the final transaction,
+business status, activity contributions and cursors stay in each checkpoint transaction,
 not the audit journal. Pause/cancel materialize audits while invalidating ownership.
 Controls compare both the run version and the journal in a transaction preflight;
 a concurrent audit update returns `account_conflict` rather than dropping counters.
@@ -58,6 +64,21 @@ Pause/cancel apply repository cooldowns to every metric repository attempted in
 the unsaved batch, not only the repository at the durable cursor. Journal-overlay
 running steps identify those attempts before controls change their statuses;
 completed work from earlier batches and untouched repositories are not extended.
+
+### Observability
+
+Each executor emits one `console.log` JSON line with
+`event:"factory_invocation"`, `runId`, `cursorStart`, `cursorEnd`, `stepsDone`,
+`requests`, `statements`, `stagedWrites`, `elapsedMs`, and `endReason`.
+Reasons are `wall`, `requests`, `statements`, `snapshot_boundary`,
+`publish_boundary`, `yield`, `completed`, `lost_lease`, `save_failed`, `error`,
+or `run_end`. Filter Workers Observability on this event and the run ID.
+Separate `factory_consume_error`, `factory_queue_send_error`,
+`factory_continue_error`, `factory_prune_error` and `factory_lease_release_error`
+events expose dispatch/recovery failures. Error objects contain safe normalized
+`name`, `code`, and `message`; raw upstream bodies, SQL, stacks, tokens and arbitrary
+exception text are never logged. A platform cancellation may prevent the final
+log; durable step checkpoints and the journal still establish its last progress.
 
 Sparse step encoding omits only zero/null defaults for attempts, pages, duration,
 timestamps and errors. API decoding restores every required field; kind, repo,
@@ -93,6 +114,12 @@ call assertions count that operation rather than unrelated later streams. Existi
 publication, retained-source, window, cooldown and terminal-status assertions remain.
 
 ### Downgrade preparation
+
+v0.23 recovery uses the existing `0025` schema; no migration or old-row rewrite is
+required. v0.22 in-flight leases remain valid until their stored expiry. Before a
+downgrade to v0.22, drain/pause v0.23 work under separately authorized maintenance;
+v0.22 cannot resume the new page replay optimization and may repeat an unfinished
+snapshot, but immutable publications and earlier accepted steps remain intact.
 
 Do not deploy a v0.21.x reader directly over compact v0.22 rows: missing numeric
 fields otherwise become `NaN` on old executor arithmetic. The additive table can

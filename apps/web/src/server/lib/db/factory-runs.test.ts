@@ -3,9 +3,9 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { factoryFixture } from "../../../../../../tests/fixtures/factory-snapshot";
 import { sqliteFixture } from "../../../../../../tests/fixtures/sqlite";
-import { makeRun } from "../../../lib/factory-run";
+import { makeRun, RUN_LEASE_MS } from "../../../lib/factory-run";
 import { createDb } from "./d1";
-import { beginRunStep, recordRunRequest, renewRunLease } from "./factory-run-journal";
+import { beginRunStep, renewRunLease, saveRunAudits } from "./factory-run-journal";
 import { claimRun, controlRun, getRun, saveRun, startRun } from "./factory-runs";
 
 const snap = factoryFixture();
@@ -27,6 +27,33 @@ async function setup() {
 	};
 }
 describe("D1 durable runs", () => {
+	it("checkpoints completed steps while fencing one interrupted successor", async () => {
+		const { raw, db, run } = await setup();
+		await startRun(db, run);
+		const lease = await claimRun(createDb(raw), run.id, now);
+		if (!lease) throw new Error("fixture");
+		const first = lease.run.steps[0];
+		if (!first) throw new Error("fixture");
+		Object.assign(first, { status: "running", attempts: 1, startedAt: now });
+		await beginRunStep(createDb(raw), lease, now);
+		Object.assign(first, { status: "success", finishedAt: now });
+		lease.run.requests = 3;
+		lease.run.cursor = 1;
+		expect(await saveRun(createDb(raw), lease, [], now, true)).toBe(true);
+		expect(await claimRun(createDb(raw), run.id, now)).toBeNull();
+		Object.assign(lease.run.steps[1] ?? {}, { status: "running", attempts: 1, startedAt: now });
+		await beginRunStep(createDb(raw), lease, now);
+		const later = new Date(Date.parse(now) + RUN_LEASE_MS + 1).toISOString();
+		const recovered = await claimRun(createDb(raw), run.id, later);
+		expect(recovered?.run.requests).toBe(3);
+		expect(recovered?.run.steps[0]).toMatchObject({ status: "success", attempts: 1, error: null });
+		expect(recovered?.run.steps[1]).toMatchObject({
+			status: "pending",
+			attempts: 1,
+			error: "worker_interrupted",
+		});
+		expect(await saveRun(createDb(raw), lease, [], later, true)).toBe(false);
+	});
 	it("journals attempts without rewriting payload and recovers a crash", async () => {
 		const { db, raw, run } = await setup();
 		await startRun(db, run);
@@ -202,7 +229,7 @@ it("serializes competing controls instead of overwriting a newer run version", a
 	});
 });
 
-it("rejects a stale control without discarding a concurrent request audit", async () => {
+it("rejects a stale control without discarding a concurrent step audit", async () => {
 	const { db, raw, run } = await setup();
 	await startRun(db, run);
 	const lease = await claimRun(createDb(raw), run.id, now);
@@ -210,7 +237,8 @@ it("rejects a stale control without discarding a concurrent request audit", asyn
 	const controlDb = createDb(raw);
 	const batch = controlDb.batch.bind(controlDb);
 	vi.spyOn(controlDb, "batch").mockImplementationOnce(async (statements) => {
-		expect(await recordRunRequest(createDb(raw), lease, now)).toBe(true);
+		lease.run.requests++;
+		expect(await saveRunAudits(createDb(raw), lease, now)).toBe(true);
 		return batch(statements);
 	});
 	await expect(controlRun(controlDb, snap.account_id, run.id, "pause", now)).rejects.toMatchObject({

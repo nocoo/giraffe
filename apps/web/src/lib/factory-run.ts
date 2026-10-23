@@ -10,7 +10,7 @@ import { REPO_SNAPSHOT_TABS, SITE_SNAPSHOT_KINDS } from "./snapshot-kinds";
 
 export const RUN_COOLDOWN_MS = 60_000;
 export const REPO_COOLDOWN_MS = 15 * 60_000;
-export const RUN_LEASE_MS = 90_000;
+export const RUN_LEASE_MS = 40_000;
 export const RUN_MAX_RETRIES = 3;
 export type RunStatus = "running" | "paused" | "completed" | "partial" | "cancelled" | "failed";
 export type StepStatus =

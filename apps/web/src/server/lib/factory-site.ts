@@ -6,6 +6,7 @@ import { fenced, type RunLease } from "./db/factory-runs";
 import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
 import { ApiError } from "./errors";
 import { boundedJson } from "./factory-publish";
+import { SnapshotPageReady, snapshotReplay } from "./factory-snapshot-replay";
 import type { GithubClient } from "./github-client";
 import { githubUnavailability } from "./github-unavailable";
 import { buildInsights, type InsightAlert } from "./insights";
@@ -58,6 +59,32 @@ function assertSources(steps: FactoryRunStep[], resources: string[]): void {
 
 /** One bounded page of site work. All writes commit with the run's lease and cursor. */
 export async function collectSitePage(
+	db: Db,
+	lease: RunLease,
+	step: FactoryRunStep,
+	gh: GithubClient,
+	token: string,
+	now: string,
+) {
+	assertKind(step.resource ?? "");
+	const replay = await snapshotReplay(
+		db,
+		lease,
+		step.resource ?? "",
+		step.snapshotCursor ?? 0,
+		gh,
+		now,
+	);
+	try {
+		const result = await collectSiteBatch(db, lease, step, replay.client, token, now);
+		return { ...result, writes: [...result.writes, ...replay.cleanup()] };
+	} catch (error) {
+		if (error instanceof SnapshotPageReady) return { writes: replay.writes, done: false };
+		throw error;
+	}
+}
+
+async function collectSiteBatch(
 	db: Db,
 	lease: RunLease,
 	step: FactoryRunStep,

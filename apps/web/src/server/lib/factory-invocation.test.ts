@@ -1,10 +1,15 @@
 import { expect, it } from "vitest";
 import { factoryFixture } from "../../../../../tests/fixtures/factory-snapshot";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
-import { makeRun } from "../../lib/factory-run";
+import { makeRun, RUN_LEASE_MS } from "../../lib/factory-run";
 import { createDb } from "./db/d1";
 import { claimRun, startRun } from "./db/factory-runs";
-import { FactoryInvocation, InvocationStopped } from "./factory-invocation";
+import {
+	FactoryInvocation,
+	INVOCATION_DB_STATEMENTS,
+	INVOCATION_STATEMENTS,
+	InvocationStopped,
+} from "./factory-invocation";
 
 async function setup() {
 	const snapshot = factoryFixture();
@@ -21,7 +26,7 @@ async function setup() {
 	await startRun(db, run);
 	const lease = await claimRun(db, run.id, now);
 	if (!lease) throw new Error("fixture");
-	return { db: createDb(raw), lease, now };
+	return { db: createDb(raw, undefined, INVOCATION_DB_STATEMENTS), lease, now };
 }
 
 it("stops at the D1 admission cap with room left for the atomic save", async () => {
@@ -30,15 +35,14 @@ it("stops at the D1 admission cap with room left for the atomic save", async () 
 	const step = lease.run.steps[0];
 	if (!step) throw new Error("fixture");
 	expect(invocation.canStart(step)).toBe(true);
-	for (let index = 0; index < 36; index++) await db.prepare("SELECT 1").first();
+	for (let index = 0; index < INVOCATION_STATEMENTS; index++) await db.prepare("SELECT 1").first();
 	expect(invocation.canStart(step)).toBe(false);
 	expect(invocation.canStart(step, true)).toBe(false);
-	for (let index = 36; index < 60; index++) await db.prepare("SELECT 1").first();
 	await expect(invocation.beforeRequest()).rejects.toMatchObject({ code: "factory_yield" });
-	expect(db.statements).toBe(60);
+	expect(db.statements).toBe(INVOCATION_STATEMENTS);
 });
 
-it("exempts only continuing work from wall time, never from the request cap", async () => {
+it("budgets every page including continuing work before the wall deadline", async () => {
 	const { db, lease, now } = await setup();
 	let time = now;
 	const invocation = new FactoryInvocation(db, lease, () => time);
@@ -47,7 +51,8 @@ it("exempts only continuing work from wall time, never from the request cap", as
 	step.status = "running";
 	time = new Date(Date.parse(now) + 25_000).toISOString();
 	expect(invocation.canStart(step)).toBe(false);
-	expect(invocation.canStart(step, true)).toBe(true);
+	expect(invocation.canStart(step, true)).toBe(false);
+	await expect(invocation.beforeRequest()).rejects.toMatchObject({ code: "factory_yield" });
 	invocation.requests = 40;
 	expect(invocation.canStart(step, true)).toBe(false);
 	await expect(invocation.beforeRequest()).rejects.toMatchObject({ code: "factory_yield" });
@@ -59,5 +64,19 @@ it("rejects expired heartbeats without extending a lost lease", async () => {
 		new Date(Date.parse(now) + 91_000).toISOString(),
 	);
 	await expect(invocation.heartbeat()).rejects.toEqual(new InvocationStopped(true));
-	expect(lease.leaseUntil).toBe(new Date(Date.parse(now) + 90_000).toISOString());
+	expect(lease.leaseUntil).toBe(new Date(Date.parse(now) + RUN_LEASE_MS).toISOString());
+});
+
+it("counts requests in memory and renews before half the lease remains", async () => {
+	const { db, lease, now } = await setup();
+	let time = now;
+	const invocation = new FactoryInvocation(db, lease, () => time);
+	await invocation.beforeRequest();
+	await invocation.beforeRequest();
+	expect(invocation.requests).toBe(2);
+	expect(db.statements).toBe(0);
+	time = new Date(Date.parse(now) + RUN_LEASE_MS / 2 + 1).toISOString();
+	await invocation.heartbeat();
+	expect(db.statements).toBe(1);
+	expect(lease.leaseUntil).toBe(new Date(Date.parse(time) + RUN_LEASE_MS).toISOString());
 });

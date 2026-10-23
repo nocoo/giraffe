@@ -57,18 +57,7 @@ export async function saveRunAudits(db: Db, lease: RunLease, now: string): Promi
 		lease,
 		now,
 		"UPDATE factory_run_journal SET journal=json_patch(journal,json(?)) WHERE run_id=? AND $guard",
-		[JSON.stringify(audits), lease.run.id],
-	).run();
-	return Boolean(result.meta.changes);
-}
-
-export async function recordRunRequest(db: Db, lease: RunLease, now: string): Promise<boolean> {
-	const result = await fenced(
-		db,
-		lease,
-		now,
-		"UPDATE factory_run_journal SET journal=json_set(journal,'$.requests',MAX(coalesce(json_extract(journal,'$.requests'),0),?)+1) WHERE run_id=? AND $guard",
-		[lease.run.requests, lease.run.id],
+		[JSON.stringify({ ...audits, requests: lease.run.requests }), lease.run.id],
 	).run();
 	return Boolean(result.meta.changes);
 }

@@ -349,6 +349,7 @@ export async function saveRun(
 	lease: RunLease,
 	writes: D1PreparedStatement[],
 	now: string,
+	keepLease = false,
 ): Promise<boolean> {
 	const run = lease.run;
 	await expireRuns(db, now, run.account_id, run.id);
@@ -375,11 +376,24 @@ export async function saveRun(
 				db,
 				lease,
 				now,
-				"UPDATE factory_runs SET payload=?,status=?,version=version+1,updated_at=?,next_at=?,lease_token=NULL,lease_until=NULL WHERE id=? AND $guard",
-				[encodeRun(run), run.status, now, run.nextAttemptAt, run.id],
+				"UPDATE factory_runs SET payload=?,status=?,version=version+1,updated_at=?,next_at=?,lease_token=?,lease_until=? WHERE id=? AND $guard",
+				[
+					encodeRun(run),
+					run.status,
+					now,
+					run.nextAttemptAt,
+					keepLease ? lease.token : null,
+					keepLease ? lease.leaseUntil : null,
+					run.id,
+				],
 			),
 		]);
-		return Boolean(result.at(-1)?.meta.changes);
+		const saved = Boolean(result.at(-1)?.meta.changes);
+		if (saved) {
+			lease.version = run.version;
+			lease.attemptedSteps?.clear();
+		}
+		return saved;
 	} catch (error) {
 		if (
 			!(await db
@@ -390,6 +404,25 @@ export async function saveRun(
 			return false;
 		throw error;
 	}
+}
+export async function releaseRunLease(db: Db, lease: RunLease, now: string): Promise<void> {
+	await fenced(
+		db,
+		lease,
+		now,
+		"UPDATE factory_runs SET lease_token=NULL,lease_until=NULL WHERE id=? AND $guard",
+		[lease.run.id],
+	).run();
+}
+
+export async function nextRunAttempt(db: Db, id: string): Promise<string | null> {
+	const row = await db
+		.prepare(
+			"SELECT MAX(next_at,coalesce(lease_until,next_at)) AS next_at FROM factory_runs WHERE id=? AND status='running'",
+		)
+		.bind(id)
+		.first<{ next_at: string }>();
+	return row?.next_at ?? null;
 }
 export async function controlRun(
 	db: Db,

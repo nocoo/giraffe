@@ -18,7 +18,7 @@ async function d1Try<T>(fn: () => Promise<T>): Promise<T> {
 	}
 }
 
-export function createDb(raw: D1Database, observe?: D1TimingObserver): Db {
+export function createDb(raw: D1Database, observe?: D1TimingObserver, cap = CAP): Db {
 	let statements = 0;
 	let inBatch = false;
 	async function execute<Result>(operation: () => Promise<Result>, count = 1): Promise<Result> {
@@ -45,7 +45,7 @@ export function createDb(raw: D1Database, observe?: D1TimingObserver): Db {
 		if (inBatch) {
 			return;
 		}
-		if (statements + n > CAP) {
+		if (statements + n > cap) {
 			throw new ApiError(500, "db_error", "d1 statement cap");
 		}
 		statements += n;

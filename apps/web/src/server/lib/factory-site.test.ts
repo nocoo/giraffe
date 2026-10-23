@@ -3,6 +3,7 @@ import { github, NOW } from "../../../../../tests/fixtures/factory";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import { makeRun } from "../../lib/factory-run";
 import { createDb } from "./db/d1";
+import type { RunLease } from "./db/factory-runs";
 import { claimRun, saveRun, startRun } from "./db/factory-runs";
 import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
 import { newFactory } from "./factory-collect";
@@ -59,8 +60,8 @@ it("retains complete Actions when publication metadata overflows two exact 15000
 	if (!lease || !step) throw new Error("fixture lease missing");
 	let cursor = 0;
 	await expect(
-		collectSitePage(
-			db,
+		collectBatch(
+			raw,
 			lease,
 			step,
 			github(() => {
@@ -319,9 +320,27 @@ async function page(raw: D1Database, handler: Parameters<typeof github>[0]) {
 	const lease = await claimRun(db, "site", NOW);
 	const step = lease?.run.steps[lease.run.cursor];
 	if (!lease || !step) throw new Error("fixture step");
-	const result = await collectSitePage(db, lease, step, github(handler), "fake", NOW);
+	const result = await collectBatch(raw, lease, step, github(handler), "fake", NOW);
 	await saveRun(db, lease, result.writes, NOW);
 	return { ...result, cursor: step.snapshotCursor };
+}
+
+async function collectBatch(
+	raw: D1Database,
+	lease: RunLease,
+	step: RunLease["run"]["steps"][number],
+	client: ReturnType<typeof github>,
+	token: string,
+	now: string,
+) {
+	const cursor = step.snapshotCursor;
+	for (let attempt = 0; attempt < 40; attempt++) {
+		const db = createDb(raw);
+		const result = await collectSitePage(db, lease, step, client, token, now);
+		expect(await saveRun(db, lease, result.writes, now, true)).toBe(true);
+		if (result.done || step.snapshotCursor !== cursor) return { ...result, writes: [] };
+	}
+	throw new Error("snapshot did not finish its bounded batch");
 }
 
 it("persists global lists in bounded chunks and publishes only after every repository was read", async () => {

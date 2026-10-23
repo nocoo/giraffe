@@ -1910,6 +1910,12 @@ omit the field; a later recovery under v0.22.0 or newer can begin recording it.
 Zero claims also omit the field. Missing is not measured zero, so exclude missing
 counts from invocation-based comparisons rather than substituting `0`.
 
+From v0.23, completed steps/pages survive a later invocation failure. `requests`
+is flushed at step/checkpoint boundaries and can undercount only the in-flight
+step after abrupt death or cancellation; it is not a billing ledger. Budget
+yields preserve the pending cursor with null error and no retry-failure charge.
+Lease collisions schedule continuation at the current lease expiry.
+
 For speed measurements, record `invocations`, `requests`, executed step/page
 counts and `finishedAt - startedAt` for comparable completed/partial runs with
 the same execution kind, depth, scope and workload. Executed steps divided by

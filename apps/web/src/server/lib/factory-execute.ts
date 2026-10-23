@@ -21,10 +21,23 @@ import { savedContentMeta } from "./content-version";
 import { getAccount } from "./db/accounts";
 import { createDb, type Db } from "./db/d1";
 import { beginRunStep } from "./db/factory-run-journal";
-import { claimRun, expireRuns, fenced, type RunLease, saveRun } from "./db/factory-runs";
+import {
+	claimRun,
+	expireRuns,
+	fenced,
+	nextRunAttempt,
+	type RunLease,
+	releaseRunLease,
+	saveRun,
+} from "./db/factory-runs";
 import { ApiError } from "./errors";
 import { newFactory, stepFactory } from "./factory-collect";
-import { FactoryInvocation, InvocationStopped } from "./factory-invocation";
+import {
+	FactoryInvocation,
+	INVOCATION_DB_STATEMENTS,
+	InvocationStopped,
+} from "./factory-invocation";
+import { type FactoryEndReason, logFactory } from "./factory-log";
 import { exclusion, mapFactoryRepo, object } from "./factory-map";
 import {
 	boundedJson,
@@ -46,33 +59,41 @@ export async function executeRunPage(
 	id: string,
 	clock = () => new Date().toISOString(),
 ): Promise<string | null> {
-	const db = createDb(env.DB);
-	const lease = await claimRun(db, id, clock(), false);
-	if (!lease) {
-		await expireRuns(db, clock(), "", id);
-		return null;
-	}
-	const run = lease.run;
-	const invocation = new FactoryInvocation(db, lease, clock);
-	const retired = run.steps.filter(
-		(step) => String(step.kind) === "assessment" && ["pending", "running"].includes(step.status),
-	);
-	if (retired.length) {
-		const now = clock();
-		for (const step of retired) {
-			finish(step, "skipped", now);
-			step.error = "cloud_ai_retired";
-		}
-		while (
-			run.steps[run.cursor] &&
-			!["pending", "running"].includes(run.steps[run.cursor]?.status ?? "")
-		)
-			run.cursor++;
-		run.nextAttemptAt = now;
-		return (await saveRun(db, lease, [], clock())) ? now : null;
-	}
+	const db = createDb(env.DB, undefined, INVOCATION_DB_STATEMENTS);
+	const started = Date.parse(clock());
+	let lease: RunLease | null = null;
+	let invocation: FactoryInvocation | null = null;
+	let reason: FactoryEndReason = "run_end";
+	let failure: unknown;
+	let cursorStart = 0;
+	let stepsDone = 0;
+	let stagedWrites = 0;
 	try {
-		let previousStep: FactoryRunStep | undefined;
+		lease = await claimRun(db, id, new Date(started).toISOString(), false);
+		if (!lease) {
+			await expireRuns(db, clock(), "", id);
+			return await nextRunAttempt(db, id);
+		}
+		const run = lease.run;
+		cursorStart = run.cursor;
+		invocation = new FactoryInvocation(db, lease, clock);
+		const retired = run.steps.filter(
+			(step) => String(step.kind) === "assessment" && ["pending", "running"].includes(step.status),
+		);
+		if (retired.length) {
+			const now = clock();
+			for (const step of retired) {
+				finish(step, "skipped", now);
+				step.error = "cloud_ai_retired";
+			}
+			while (
+				run.steps[run.cursor] &&
+				!["pending", "running"].includes(run.steps[run.cursor]?.status ?? "")
+			)
+				run.cursor++;
+			run.nextAttemptAt = now;
+			return (await saveRun(db, lease, [], clock())) ? now : null;
+		}
 		for (;;) {
 			while (
 				run.steps[run.cursor] &&
@@ -83,30 +104,70 @@ export async function executeRunPage(
 			if (!step) {
 				run.status = completedRunStatus(run);
 				run.finishedAt = clock();
+				reason = "completed";
 				break;
 			}
-			if (!invocation.canStart(step, step === previousStep)) break;
+			if (!invocation.canStart(step)) {
+				reason = invocation.endReason(step) ?? "yield";
+				if (step.status === "running") step.status = "pending";
+				break;
+			}
 			await invocation.heartbeat();
 			const result = await executeStep(env, db, lease, invocation, step, clock);
-			previousStep = step;
 			invocation.writes.push(...result.writes);
-			if (
-				result.stop ||
-				invocation.completed(step) ||
-				run.status !== "running" ||
-				run.nextAttemptAt > clock()
-			)
+			stagedWrites += result.writes.length;
+			const boundary = invocation.completed(step);
+			if (!["pending", "running"].includes(step.status)) stepsDone++;
+			if (!(await saveRun(db, lease, invocation.writes, clock(), run.status === "running"))) {
+				reason = "save_failed";
+				return await nextRunAttempt(db, id);
+			}
+			invocation.writes.length = 0;
+			if (run.status !== "running") {
+				reason = run.finishedAt ? "completed" : "run_end";
+				return null;
+			}
+			if (result.stop || boundary || run.nextAttemptAt > clock()) {
+				reason = result.stop || boundary ? "yield" : "run_end";
 				break;
+			}
 		}
+		const saved = await saveRun(db, lease, [], clock());
+		if (!saved) reason = "save_failed";
+		return saved && run.status === "running" ? run.nextAttemptAt : null;
 	} catch (error) {
+		failure = error;
+		reason = "error";
+		if (lease) {
+			try {
+				await releaseRunLease(createDb(env.DB), lease, clock());
+			} catch (releaseError) {
+				logFactory("factory_lease_release_error", { runId: id }, releaseError);
+			}
+		}
 		if (error instanceof InvocationStopped && error.lostLease) {
+			reason = "lost_lease";
 			await expireRuns(db, clock(), "", id);
-			return null;
+			return await nextRunAttempt(db, id);
 		}
 		throw error;
+	} finally {
+		logFactory(
+			"factory_invocation",
+			{
+				runId: id,
+				cursorStart,
+				cursorEnd: lease?.run.cursor ?? cursorStart,
+				stepsDone,
+				requests: invocation?.requests ?? 0,
+				statements: db.statements,
+				stagedWrites,
+				elapsedMs: Math.max(0, Date.parse(clock()) - started),
+				endReason: reason,
+			},
+			failure,
+		);
 	}
-	const saved = await saveRun(db, lease, invocation.writes, clock());
-	return saved && run.status === "running" ? run.nextAttemptAt : null;
 }
 
 async function executeStep(
