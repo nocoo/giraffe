@@ -69,6 +69,13 @@ codec fixture reduces its default plan below 80% of the original JSON size.
 Journal bytes are included in storage telemetry and cascade with retained runs.
 Public refresh/factory shapes remain unchanged except the additive run field
 `invocations`, counting successful lease claims, including recovery invocations.
+The field is omitted when no positive count exists, including runs predating
+v0.22.0 unless a later recovery starts recording claims. Missing is not measured
+zero. Compare positive counts with executed steps/pages, `requests` and measured
+`finishedAt - startedAt` for matching execution kind, depth, scope and workload;
+wall time per claim includes scheduling/backoff and is not Worker CPU time.
+The machine `/refresh-runs` list exposes this optional field; its separate compact
+`/refresh-runs/latest` summary does not. See the [consumer measurement contract](api.md#get-refresh-runs).
 
 Local fixture measurements (no real network latency): a 19-step selected run uses
 5 invocations; a 60-repository quick daily plan preserves all 1,146 steps and
@@ -155,7 +162,14 @@ as mixed. Dependency parse diagnostics still use the publication's
 Retained coverage has `retained: true` and an `observation` carrying its original
 run, window, observation/publication timestamps and source head. `/sources` and
 stream reads preserve that stream's original version, `observedAt` and freshness;
-they never borrow the enclosing repository's new observation. The current run
+they never borrow the enclosing repository's new observation. Both endpoints
+derive stream freshness from the served coverage: `total:1`, `missing:1` for
+non-complete coverage or an absent/invalid evidence timestamp, otherwise zero.
+Valid original timestamps remain the freshness bounds even for limited evidence.
+Thus retained limited streams have missing coverage, while retained complete
+streams have complete but potentially old evidence; neither acquires the new
+publication's age. This does not change account-level repository freshness or ETA.
+The current run
 stores an immutable `retained:<stream>` evidence copy alongside, not over, its
 original collected resource. This keeps retention bounded by existing run and
 publication roots, preserves original content metadata, and leaves current-run

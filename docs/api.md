@@ -523,6 +523,18 @@ publication produce 7/14 stream coverage, one missing repository and warning
 health. A missing-only selection has 0/7 coverage and unknown metrics/times, not
 invented zero observations. Unknown catalog topics cannot exclude a member from
 a topic filter. This metadata is not persisted into immutable publications.
+
+Individual factory streams use the same freshness calculation in `/sources` and
+`/factory/repos/:owner/:name/:stream`: `total:1`, with `missing:1` whenever coverage
+is not `complete` or its saved `coverage.fetchedAt` is absent/invalid. Otherwise
+`missing:0`. A valid saved timestamp remains both `oldestAt` and `latestAt`, even
+when coverage is missing; invalid timestamps yield null bounds. Missing measures
+coverage, not merely the presence of dated rows. In particular, retained limited
+dependencies correctly report `missing:1` on both endpoints, not `0` just because
+old evidence has a timestamp. Retained complete evidence reports `missing:0` but
+keeps its original timestamp: completeness does not establish recency. Current
+limited evidence also reports `missing:1`; only complete, dated evidence reports
+zero. Consumers must check both coverage and age before treating a stream as fresh.
 Machine `/factory` and `account:factory` expose `truncated:true` when
 `publication.inventory.complete !== true`, even when `freshness.missing` is zero.
 An existing saved `truncated:true` is also preserved, even with complete inventory;
@@ -684,6 +696,49 @@ See [migration and performance evidence](12-source-performance.md#persisted-cont
 | `/prs` | `{ pull_requests: PullRequest[], fetched_at, truncated, repository_fetched_at?, freshness?, ...savedMetadata }`; saved open PRs |
 | `/ci` | `{ streams, repos, daily, totals, fetched_at, freshness, unsaved }`; deterministic saved Actions/releases/details summaries; `unsaved` lists repos without an available saved Actions input |
 | `/factory` | Published `FactorySnapshot`: `{ schema:1, account_id, owner, runId, revision, leaseUntil, startedAt, fetched_at, window, status, inventory, repos, cursor, requests, rate, contribution, contributionStatus, ...publicationMetadata }` |
+
+Both `/repos` items and `/factory`'s `data.repos[]` include the additive summary
+`retained:{any:boolean,streams:FactoryStreamName[]}`. It is derived from the same
+immutable published `coverage[stream].retained` flags served by the stream rows,
+never from a mutable latest run or repository execution state. Stream names follow
+the documented factory stream order. For example, a repository retaining only old
+dependency evidence appears as:
+
+```json
+{
+  "name_with_owner": "nocoo/lizheng.dev",
+  "retained": { "any": true, "streams": ["dependencies"] }
+}
+```
+
+The corresponding `/factory` entry uses `name` instead of `name_with_owner` and
+has the identical summary. A published repository with no retained streams has
+`retained:{any:false,streams:[]}`. A catalog repository without factory data has
+`retained:null` in `/repos` and no fabricated `/factory` repository entry. False
+means no retained streams, not complete coverage: current limited/unavailable
+streams still require inspecting coverage. True describes retention, not an ETA
+or a new status for the whole run. No standalone machine per-repository factory
+summary endpoint exists; the per-stream endpoints remain unchanged apart from
+their corrected freshness.
+
+Rows included through `include=removed` have `retained:null`: they cannot inherit
+a same-name replacement's current publication. Published observations are matched
+through the existing catalog identity rules before summaries are joined.
+
+The `/repos` summary is a read-time enrichment, like `agent_state` and `meta`;
+its catalog `sourceVersion`, `contentVersion` and freshness remain catalog-only.
+Poll the summary or the published `/factory`/`/sources` state independently of
+catalog version changes. No stored rows, publication windows or timestamps are
+rewritten. Existing fields retain their shapes.
+
+Retention enrichment first resolves the selected current catalog, then uses at
+most one additional SQL query to project only matching repository IDs, names and
+retained flags from the immutable publication. Dependency/manifests payloads are
+not transferred to or normalized by the Worker for `/repos`. Empty selections
+(including empty `starred`) and removed-only selections skip this query entirely.
+The publication query handles both physical pages together and requires the root
+page; an orphan second page cannot supply evidence. Identity/rename handling and
+catalog source/content versions remain unchanged.
 
 Each accepts only the documented selector `scope=all|starred`, default `all`;
 invalid/repeated scope returns 400. `starred` means local Giraffe stars, not GitHub
@@ -1276,7 +1331,7 @@ done
 ```
 
 Envelope `data` is `{ runId, items: FactoryEvent[], next: string|null, ranges:
-[{ since, until }], coverage, fetched_at, observation?, manifests?, truncated,
+[{ since, until }], coverage, fetched_at, freshness, observation?, manifests?, truncated,
 unavailable }`.
 `coverage` is `{ status, pages, fetchedAt, source, reason, reason_code?, retained?, observed, strategy?,
 sourceFetchedAt? }`; status is `pending|partial|complete|unavailable|limited`,
@@ -1371,8 +1426,8 @@ remain published through the coverage-regression guard. New publications freeze
 the latest dependency safe-parse limitation as `coverage.status:"limited"`, with
 that safe reason/code and `retained:true`; older resource payloads and publications
 are not modified. Browser/machine stream reads and `/sources` agree on that
-coverage, with `truncated:true`, `unavailable:false` and missing freshness coverage
-in the source index. Items, manifests, `coverage.observed`, source URLs, original
+coverage, with `truncated:true`, `unavailable:false` and `freshness.missing:1`
+in both the source index and stream envelope. Items, manifests, `coverage.observed`, source URLs, original
 window and evidence timestamps remain those of the retained data, not the failed
 attempt. No retained empty list proves zero, including an empty limited baseline.
 Without a prior stronger baseline, the new limited resource is published directly
@@ -1847,6 +1902,26 @@ non-active runs have `steps:[]`, not full history. Every row includes
 `counts:{total,success,failed,unavailable,limited,skipped}` computed from the stored steps,
 including compact history. No browser progress/lease summary is added.
 
+Optional `invocations:number` counts successful execution lease claims, including
+recovery claims after a crash or expired lease. It counts acquired leases, not
+successful runs, executed steps, GitHub requests or rejected claim attempts. A
+single lease can process multiple steps/pages. Runs predating v0.22.0 normally
+omit the field; a later recovery under v0.22.0 or newer can begin recording it.
+Zero claims also omit the field. Missing is not measured zero, so exclude missing
+counts from invocation-based comparisons rather than substituting `0`.
+
+For speed measurements, record `invocations`, `requests`, executed step/page
+counts and `finishedAt - startedAt` for comparable completed/partial runs with
+the same execution kind, depth, scope and workload. Executed steps divided by
+positive `invocations` measures batching; wall duration divided by positive
+`invocations` measures effective time per claim, including queue/backoff overhead,
+not isolated Worker execution time. Compare wall duration and request volume
+alongside batching: fewer invocations alone does not prove a faster run. Recovery,
+pagination, retention and upstream latency can change the ratios. Active-run
+counts are provisional; do not substitute ETA for a measured finish time.
+`GET /refresh-runs/latest` is a separate compact summary and does not include
+`invocations`; use the matching `id` in this list for the count.
+
 Every run also includes `expectedFinishAt:string|null` and
 `expectedFinishAtReason:string|null`. Calibration selects the latest five valid
 completed or partial runs for the account and execution kind (`catalog`, `quick`,
@@ -1885,7 +1960,7 @@ history estimate remains null rather than borrowing another execution kind.
 Run fields: `id`, `account_id`, `owner`, `requestKey`, `mode`, `repos`, `repoIds`,
 `window:{since,until}`, `steps`, `cursor`, `status`, `startedAt`, `updatedAt`,
 `finishedAt`, `nextAttemptAt`, `requests`, `version`, `restoreCursor`, plus optional
-`selection`, `depth`, `trigger`, `schedule`, `siteRepos`, `deadlineAt`, `error`,
+`invocations`, `selection`, `depth`, `trigger`, `schedule`, `siteRepos`, `deadlineAt`, `error`,
 `missedSlots:{firstDueAt,lastDueAt,count}`. Status is
 `running|paused|completed|partial|cancelled|failed`. Steps carry `kind`, `repo`,
 `status`, `attempts`, `startedAt`, `finishedAt`, `durationMs`, `pages`, `error`, and

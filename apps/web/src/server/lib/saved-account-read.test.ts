@@ -271,7 +271,7 @@ it("does not decode unused corrupt repository pages for empty scopes or non-list
 	expect((await readObservation(createDb(s.raw), account, "issues", "all")).data.issues).toBeNull();
 });
 
-it.each(resources)("serves complete machine %s with one saved-input batch", async (kind) => {
+it.each(resources)("serves complete machine %s with bounded saved-input reads", async (kind) => {
 	const s = await fixture();
 	const rate = {
 		resource: "core",
@@ -287,6 +287,11 @@ it.each(resources)("serves complete machine %s with one saved-input batch", asyn
 		.run();
 	for (const scope of ["all", "starred"] as const) {
 		const expected = await readObservation(createDb(s.raw), account, kind, scope);
+		if (kind === "repos")
+			expected.data.repos = (expected.data.repos as { name_with_owner: string }[]).map((repo) => ({
+				...repo,
+				retained: repo.name_with_owner === "nocoo/app" ? { any: false, streams: [] } : null,
+			}));
 		if (kind === "factory")
 			expected.data.rate = await readFactoryRate(
 				createDb(s.raw),
@@ -298,7 +303,7 @@ it.each(resources)("serves complete machine %s with one saved-input batch", asyn
 		expect(JSON.stringify(actual)).toBe(JSON.stringify(expected));
 		expect(actual.sourceVersion).toBe(expected.sourceVersion);
 		if (kind === "factory") expect(actual.data.rate).toEqual(rate);
-		expect(profile.trips).toHaveLength(1);
+		expect(profile.trips).toHaveLength(kind === "repos" ? 2 : 1);
 	}
 });
 

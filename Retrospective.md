@@ -1745,3 +1745,35 @@ L2 startup. The runner rejected the occupied stub port before starting services;
 no other controller's process was stopped. Shared-port preflight must inspect
 the captured listener output and wait 30 seconds while any listener remains,
 rather than treating `lsof` status 1 alone as proof that all ports are free.
+
+## 2026-10-23 - Type route fixture JSON before committing
+
+The B13D freshness regressions passed at runtime, but the first commit hook
+rejected unchecked `Response.json()` results because TypeScript treats them as
+unknown. No commit was created and no hook was bypassed. The route fixture now
+requires an explicit result type derived from the production readers. Runtime
+regressions and strict type checks are independent evidence; validate both before
+considering a test-only helper complete.
+
+## 2026-10-23 - Preserve catalog identity through read-time enrichment
+
+The first B13D retention-summary implementation spread catalog rows into new
+objects. Their private identity lives in a WeakMap, so downstream agent-state and
+metadata enrichment lost its join key even though the visible catalog fields
+looked unchanged. Full L1 regressions rejected the commit. Retention enrichment
+now uses the existing `identifyCatalogRow` helper, preserving `catalogRowIdentity`
+through the copy, and leaves removed rows unknown rather than borrowing a
+same-name current repository's summary. Every additional catalog projection must
+preserve this identity just as the existing metadata and state projections do.
+
+## 2026-10-23 - Profile read-time summaries before reusing full readers
+
+External review of B13D found that `/repos` reused the complete publication read
+and dependency normalization for a summary needing only identity and seven flags.
+A large dependency payload inflated transferred bytes, even for an empty starred
+selection. Functional equality and the first review did not detect that cost.
+Failing native SQLite profiling tests now reproduce both paths. The fix selects
+the catalog first, skips factory reads for empty/currentless selections, and uses
+one compact SQL projection for selected names/IDs while preserving catalog identity.
+Large payloads no longer increase returned bytes. Read-time enrichments require
+payload-volume and empty-selection evidence as well as value/identity assertions.

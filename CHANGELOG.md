@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.22.1 - 2026-10-23
+
+### Fixed
+
+- Factory stream envelopes and `/sources` now share coverage-aware freshness. Retained limited dependencies correctly report `freshness.missing:1` on both endpoints; complete retained evidence keeps its original age and reports zero only with a valid evidence timestamp. Current limited evidence also remains incomplete.
+- Repository retention summaries read only SQL-projected identity/retained flags for selected current repositories, never full dependency/manifests payloads. Empty selections skip factory reads; large-evidence, split-page and identity regressions keep the response unchanged.
+
+### Added
+
+- Machine `/repos` items and `/factory` repository entries expose `retained:{any,streams}` derived solely from immutable published stream coverage. Catalog repositories without factory data return `retained:null`; published repositories without retention return `{any:false,streams:[]}`, which does not imply complete coverage.
+
+### Consumer Notes
+
+- Check both coverage and freshness age before treating retained evidence as current. Existing fields keep their shapes; no migration, publication rewrite, execution/batching, ETA, deployment or retention-policy change is included.
+- The `/repos` retention summary is a read-time enrichment, not part of catalog source/content versions. Inspect it independently of catalog version changes, or follow factory/source publication changes.
+- Document optional `/refresh-runs` `invocations` as successful lease claims including recovery. Legacy/zero-count runs omit it; missing is not measured zero. Compare batching with requests, executed work and measured wall duration for matching workloads, not invocation counts alone.
+
 ## v0.22.0 - 2026-10-23
 
 ### Added

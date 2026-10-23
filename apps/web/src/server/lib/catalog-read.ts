@@ -12,7 +12,10 @@ import { storedContent, withContent } from "./content-version";
 import type { Db } from "./db/d1";
 import { ApiError } from "./errors";
 
-export function catalogFactoryRepo(repo: FactoryRepo, rows: CatalogRow[]): FactoryRepo | null {
+export function catalogFactoryRepo<Repo extends Pick<FactoryRepo, "id" | "name" | "observation">>(
+	repo: Repo,
+	rows: CatalogRow[],
+): Repo | null {
 	const current = rows.find(
 		(row) => row.github_id === repo.id && !row.removed_at && row.name_current !== 0,
 	);

@@ -123,6 +123,10 @@ it("counts unpublished catalog members as missing and preserves original factory
 	expect(browser).not.toHaveProperty("contributionExcluded");
 	expect((await readObservation(createDb(raw), account, "factory", "all")).data).toEqual({
 		...browser,
+		repos: (browser.repos as Record<string, unknown>[]).map((repo) => ({
+			...repo,
+			retained: { any: false, streams: [] },
+		})),
 		account_id: account,
 	});
 	const runs = await (await app.request("http://localhost/api/factory/runs", {}, env)).json();

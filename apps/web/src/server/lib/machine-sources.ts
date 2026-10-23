@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { FactorySnapshot } from "../../lib/factory-types";
 import { FACTORY_STREAMS } from "../../lib/factory-types";
 import { prSnapshot } from "../../lib/pull-request";
+import { factoryStreamFreshness } from "../../lib/snapshot-freshness";
 import { activityReadContentVersion } from "./activity-totals";
 import type { CatalogRow } from "./catalog-history";
 import { catalogView } from "./catalog-read";
@@ -222,12 +223,7 @@ export async function readSources(
 			};
 			const data = {
 				fetched_at: coverage.fetchedAt,
-				freshness: {
-					oldestAt: coverage.fetchedAt,
-					latestAt: coverage.fetchedAt,
-					total: 1,
-					missing: coverage.status === "complete" ? 0 : 1,
-				},
+				freshness: factoryStreamFreshness(coverage),
 				coverage,
 				truncated: coverage.status === "limited",
 				unavailable:

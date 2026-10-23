@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { snapshotFreshness } from "./snapshot-freshness";
+import { factoryStreamFreshness, snapshotFreshness } from "./snapshot-freshness";
 
 it("reports empty and wholly missing sources without inventing a collection time", () => {
 	expect(snapshotFreshness([])).toEqual({ oldestAt: null, latestAt: null, total: 0, missing: 0 });
@@ -10,6 +10,26 @@ it("reports empty and wholly missing sources without inventing a collection time
 		missing: 4,
 	});
 });
+
+it.each(["pending", "partial", "complete", "unavailable", "limited"] as const)(
+	"counts incomplete or undated %s factory coverage as missing",
+	(status) => {
+		const at = "2026-10-18T00:00:00Z";
+		expect(factoryStreamFreshness({ status, fetchedAt: at })).toEqual({
+			oldestAt: at,
+			latestAt: at,
+			total: 1,
+			missing: status === "complete" ? 0 : 1,
+		});
+		for (const fetchedAt of [null, "invalid"])
+			expect(factoryStreamFreshness({ status, fetchedAt })).toEqual({
+				oldestAt: null,
+				latestAt: null,
+				total: 1,
+				missing: 1,
+			});
+	},
+);
 
 it("orders actual instants, preserves provenance strings and leaves its inputs immutable", () => {
 	const times = ["2026-09-30T23:00:00-07:00", null, "2026-10-01T05:00:00Z", undefined];

@@ -1,5 +1,31 @@
 # Source Index Performance
 
+## v0.22.1 bounded repository retention summaries
+
+The machine `/repos` retention summary must not reuse the full factory publication
+reader. The initial implementation returned and normalized dependencies/manifests
+for every published repository, even when the selected catalog was empty.
+
+The corrected reader resolves catalog selection first. A nonempty current selection
+adds one read-only SQL projection of matching repository IDs, names and the seven
+retained flags; empty or removed-only selections issue no factory query. Names and
+stable IDs restrict rows before transfer, and existing catalog identity rules still
+reject replaced identities and resolve renames. The statement reads the referenced
+legacy or versioned publication's two pages together, requiring the root page.
+It never returns dependency/manifests content or invokes publication normalization.
+
+Native SQLite regressions compare the complete response before/after adding over
+1 MB of dependency evidence: both `all` and nonempty `starred` return the same
+payload-byte count, below 2 KiB for the one-repository fixture. Empty `all` and
+`starred` issue no factory SQL and return less than 256 catalog payload bytes.
+Additional regressions cover renamed IDs on second pages, unselected rows, orphan
+pages and same-name removed/replacement isolation. Byte counts measure returned
+`payload` strings, not SQLite internal JSON scanning, disk I/O or production latency.
+
+This is one bounded supplemental query, not one query per repository. The base
+catalog read remains batched; authentication and existing agent-state/meta reads
+are separate. `/sources`, full `/factory` reads and persisted hashes are unchanged.
+
 ## v0.20.0 bounded site publication preparation
 
 New site snapshots compute canonical and exact staged full digests while their
