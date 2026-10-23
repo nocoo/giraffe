@@ -61,6 +61,37 @@ it("publishes collected repositories without scheduling cloud analysis", () => {
 	expect(run.steps.at(-1)?.kind).toBe("publish");
 });
 describe("frozen refresh plans", () => {
+	it("freezes thirty dates for quick and ninety for deep without changing the step plan", () => {
+		const quick = makeRun(
+			"quick",
+			snapshot.account_id,
+			"nocoo",
+			"quick",
+			"refresh",
+			repos,
+			now,
+			[],
+			[],
+			{ scope: "selected" },
+			"quick",
+		);
+		const deep = makeRun(
+			"deep",
+			snapshot.account_id,
+			"nocoo",
+			"deep",
+			"refresh",
+			repos,
+			now,
+			[],
+			[],
+			{ scope: "selected" },
+			"deep",
+		);
+		expect(Date.parse(quick.window.since) - Date.parse(deep.window.since)).toBe(60 * 86400_000);
+		expect(quick.window.until).toBe(deep.window.until);
+		expect(quick.steps.length).toBe(deep.steps.length);
+	});
 	it("freezes selected order, scope, window and logical total independently of page counts", () => {
 		const selection = selectRunRepos(
 			repos,

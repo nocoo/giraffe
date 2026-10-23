@@ -19,6 +19,7 @@ import {
 	startRun,
 } from "./db/factory-runs";
 import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
+import { contributionDates } from "./factory-contributions";
 import { consumeFactory } from "./factory-dispatch";
 import { executeRunPage } from "./factory-execute";
 import { FactoryInvocation } from "./factory-invocation";
@@ -616,10 +617,11 @@ it("batches a 60-repository daily plan without changing its 1146 logical steps",
 									totalContributions: 0,
 									weeks: [
 										{
-											contributionDays: Array.from({ length: 90 }, (_, index) => ({
-												date: new Date(Date.parse(run.window.since) + index * 86400_000)
-													.toISOString()
-													.slice(0, 10),
+											contributionDays: contributionDates(
+												run.window.since.slice(0, 10),
+												run.window.until.slice(0, 10),
+											).map((date) => ({
+												date,
 												contributionCount: 0,
 											})),
 										},
@@ -1666,10 +1668,11 @@ it("R4 eligible daily executor freezes supplemental activity and publishes a rea
 									totalContributions: 0,
 									weeks: [
 										{
-											contributionDays: Array.from({ length: 90 }, (_, index) => ({
-												date: new Date(Date.parse(snap.window.since) + index * 86400_000)
-													.toISOString()
-													.slice(0, 10),
+											contributionDays: contributionDates(
+												String(JSON.parse(String(init.body)).variables.since).slice(0, 10),
+												String(JSON.parse(String(init.body)).variables.until).slice(0, 10),
+											).map((date) => ({
+												date,
 												contributionCount: 0,
 											})),
 										},
@@ -1690,7 +1693,7 @@ it("R4 eligible daily executor freezes supplemental activity and publishes a rea
 	expect(pending?.steps.find((step) => step.kind === "contributions")).toMatchObject({
 		kind: "contributions",
 		status: "success",
-		pages: 7,
+		pages: 3,
 	});
 	expect(pending?.checkpoint?.contributionStatus).toBe("complete");
 	expect((await publishedFactory(createDb(env.DB), snap.account_id))?.runId).toBe(snap.runId);
@@ -1733,11 +1736,11 @@ it("R4 eligible daily executor freezes supplemental activity and publishes a rea
 
 	expect(run?.steps.find((step) => step.kind === "contributions")).toMatchObject({
 		status: "success",
-		pages: 7,
+		pages: 3,
 	});
 	expect(
 		(await publishedFactory(createDb(env.DB), snap.account_id))?.contribution?.days,
-	).toHaveLength(90);
+	).toHaveLength(30);
 	for (const kind of ["repos", "issues", "prs", "notifications", "insights"]) {
 		const saved = await readSnapshot(createDb(env.DB), snap.account_id, kind);
 		expect(saved, kind).not.toBeNull();

@@ -165,7 +165,7 @@ export async function startRun(
 		run.startedAt = acceptedAt;
 		run.updatedAt = acceptedAt;
 		run.nextAttemptAt = acceptedAt;
-		run.window = factoryWindow(acceptedAt);
+		run.window = factoryWindow(acceptedAt, run.depth === "quick" ? 30 : 90);
 	}
 	let previousActivityStart = "";
 	let activityInterrupted = false;

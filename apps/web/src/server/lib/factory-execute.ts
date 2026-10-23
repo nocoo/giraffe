@@ -304,6 +304,7 @@ async function executeStep(
 			step.sourceBranch = metadata.branch;
 			const previous = run.checkpoint;
 			run.checkpoint = newFactory(run.account_id, run.owner, run.startedAt);
+			run.checkpoint.window = run.window;
 			run.checkpoint.runId = run.id;
 			run.checkpoint.inventory.complete = true;
 			run.checkpoint.repos = [{ ...metadata, metadataAt: clock() }];
@@ -353,6 +354,7 @@ async function executeStep(
 		} else {
 			run.checkpoint ??= newFactory(run.account_id, run.owner, run.startedAt);
 			const checkpoint = run.checkpoint;
+			checkpoint.window = run.window;
 			if (run.activityWindow) checkpoint.activityWindow = run.activityWindow;
 			checkpoint.runId = run.id;
 			if (step.kind === "contributions") {

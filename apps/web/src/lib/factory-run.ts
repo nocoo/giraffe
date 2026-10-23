@@ -251,7 +251,7 @@ export function makeRun(
 		repos: repos.map((r) => r.name),
 		siteRepos: [...pageRepos],
 		repoIds: Object.fromEntries(repos.map((r) => [r.name, r.id])),
-		window: factoryWindow(now),
+		window: factoryWindow(now, depth === "quick" ? 30 : 90),
 		steps,
 		cursor: 0,
 		status: "running",
