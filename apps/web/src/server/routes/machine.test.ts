@@ -215,6 +215,33 @@ it("enforces bearer, scopes and fixed account independently of dashboard activat
 	expect((await s.app.request("http://localhost/api/repos", {}, prod)).status).toBe(401);
 	expect((await s.app.request("http://localhost/api/tokens", {}, prod)).status).toBe(401);
 });
+
+it.each(["running", "paused"] as const)(
+	"returns 409 account_conflict when starting another run while one is %s",
+	async (status) => {
+		const fixture = await setup();
+		const now = new Date().toISOString();
+		const run = makeRun("active-run", account, "nocoo", crypto.randomUUID(), "catalog", [], now);
+		run.status = status;
+		await fixture.db
+			.prepare(
+				"INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",
+			)
+			.bind(run.id, account, run.requestKey, status, JSON.stringify(run), now, now, now)
+			.run();
+		const response = await fixture.call(`${fixture.prefix}/refresh-runs`, "POST", {
+			requestKey: crypto.randomUUID(),
+			mode: "catalog",
+			scope: "all",
+		});
+		expect(response.status).toBe(409);
+		expect(await response.json()).toMatchObject({ error: { code: "account_conflict" } });
+		expect((await fixture.db.prepare("SELECT id,status FROM factory_runs").all()).results).toEqual([
+			{ id: run.id, status },
+		]);
+		expect(fixture.env.FACTORY_QUEUE.send).not.toHaveBeenCalled();
+	},
+);
 it("rejects unknown query keys on every documented machine GET", async () => {
 	const s = await setup();
 	const paths = [

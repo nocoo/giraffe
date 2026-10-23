@@ -1868,6 +1868,16 @@ is malformed, not forbidden. A 403/404 after any accepted page (even an empty
 page with a next cursor) is interrupted collection: the snapshot step fails with
 `snapshot_incomplete`, retains the previous snapshot and its timestamp, and makes
 the run/publication partial rather than complete.
+The asynchronous POST still returns 202 on admission; a later collection failure
+is recorded on the run, not retroactively returned as HTTP 422 by that POST.
+`/refresh-runs` shows the failed step's `error:"snapshot_incomplete"` and increments
+`counts.failed` (terminal compact history omits full steps). `/refresh-runs/latest`
+keeps that entry in `failedSteps`; `lastError` prefers a run-level error, otherwise
+the first nonempty failed-step error. A nonfatal snapshot failure can still finish
+and publish as `partial`, with non-null `publishedAt` only when atomic publication
+is proven. Fatal run failure instead has status `failed` and null `publishedAt`;
+until completion it remains unpublished. Neither outcome relabels retained
+snapshot evidence as freshly collected.
 This includes global Issues/PR chunks resumed in another queue invocation: the
 durable snapshot cursor, not just the current request's local page counter,
 determines whether collection has already started.
@@ -1929,6 +1939,13 @@ api "$API/refresh-runs"
 
 Requires `app:write`; explicitly schedules GitHub collection. No query; strict body:
 
+A new request while this account has a `running` or `paused` run returns HTTP
+409 `account_conflict`; it does not enqueue a second run. Read `/refresh-runs`
+and wait or explicitly control that run rather than blindly retrying. Reusing
+the same `requestKey` is idempotent and returns the already admitted run (202),
+not a competing-run conflict. Other admission checks can independently return
+validation, catalog or cooldown errors.
+
 | Field | Validation/default |
 | --- | --- |
 | `requestKey` | Required UUID; logical-request identity within account |
@@ -1958,6 +1975,12 @@ detail tabs (details, issues, prs, actions, releases, traffic, security, languag
 contributors). `order` never changes membership; exceeding 500 is an error.
 Inspect `/refresh-runs` for frozen `repos`, `siteRepos`, `selection` and step outcomes.
 Older compact runs may lack full steps; a single changed snapshot is not a full plan.
+
+A selected-scope manual refresh updates `/sources` entries and detail snapshots
+only for its selected repositories. Account projections may change because they
+compose those inputs, but untouched repositories keep their previous evidence.
+It does **not** publish `/activity`; only an eligible account-wide quick refresh
+advances that frozen publication.
 
 For the analysis bot, replace statistics writes with local star writes. Migration
 `0016_star_membership.sql` removes stars only where the same account/repository has
@@ -2016,6 +2039,7 @@ Machine errors are JSON, not Access redirects; no standardized details array or
 | 409 | `catalog_incomplete`, `refresh_cooldown` | Prepare catalog or defer refresh |
 | 409 | `account_conflict` | Existing running/paused run or concurrent run control |
 | 422 | `factory_capacity` | Generated refresh record exceeds capacity; previous data retained |
+| 422 | `snapshot_incomplete` | Bounded/incomplete collection cannot replace a snapshot; retain previous evidence and inspect run diagnostics |
 | 500 | `internal_error`, `db_error` | Bounded backoff and operator diagnosis |
 
 Implemented application limits, not inferred Cloudflare/GitHub quotas:

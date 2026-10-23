@@ -134,6 +134,8 @@ INSERT INTO ${table}(account_id,kind,enabled,time,weekday,scope,next_at,last_run
 				),
 			);
 			expect(competing.map((response) => response.status).sort()).toEqual([202, 409]);
+			const conflict = competing.find((response) => response.status === 409);
+			expect(await conflict?.json()).toMatchObject({ error: { code: "account_conflict" } });
 			expect(
 				rows(
 					`SELECT id FROM factory_runs WHERE account_id=${literal(s.account)} AND status IN ('running','paused')`,
