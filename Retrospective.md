@@ -1810,3 +1810,18 @@ equivalence tests failed before the fix. Every retained PR omitted from the REST
 delta now refreshes its GraphQL state in resumable batches of at most 100 IDs.
 Treat independently mutable derived fields as separate sources; a REST timestamp
 or a terminal lifecycle state cannot prove that commit checks stayed unchanged.
+
+## 2026-10-23 - Validate each atomic commit without later changes
+
+Independent B14A commit archives exposed a budget regression assertion that
+passed only after a later Actions optimization. The earlier snapshot correctly
+yielded at the statement budget before exhausting requests, but its test required
+exactly 40 requests. Working-tree hooks had seen the later unstaged optimization
+and therefore did not prove that the staged commit was independently green.
+The coordinator stopped the first push before publication and confirmed that
+the remote branch did not exist. Only unpublished commits were replayed, with
+the normal pre-commit gate executed at every replayed snapshot. The regression
+now accepts either shared budget while still proving saved request counts,
+exactly 50 total requests without refetching, and completion in two invocations.
+Keep intermediate tests valid before subsequent optimizations, and verify the
+actual commit snapshot rather than relying on a greener working tree.
