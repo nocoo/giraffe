@@ -77,4 +77,9 @@ bun run factory:preview .factory-cache/my-survey
 
 已知性能边界：单次明细仍会在 Worker 内解析最多 1.2 MB / 5,000 条，再筛选分页；这是有界读取，未实现按日期索引的明细表。前端聚合使用 memo，仓库表仅渲染 25 行；采集期间保留已发布总览，后台发布新版本后更新一次。未来规模超出这一级时可以改为按日物理分片，当前不会隐藏容量截断。
 
+The v0.24 default-branch activity design, including observation semantics,
+force-push limits, durable deduplication and migration costs, is specified in
+[landed activity](13-landed-activity.md). It does not change the rolling factory
+commit stream's committer-date statistics.
+
 若分页中途失去权限而已取得部分记录，资源标为 limited（不完整子集），清空待取范围并明确原因；完全未取得记录时才是 unavailable。提交/合并/发布计数在覆盖不完整时用 `≥` 标出已观测下界；完整的零仍显示 0，没有可用观测显示 `—`。CI 比率只代表观测样本，不把不完整比率误标为下界。

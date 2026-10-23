@@ -1129,6 +1129,14 @@ validated single-cell count but marks coverage partial. The current day remains
 `partial:true`; day `since`/`until` describe Beijing boundaries, not query variables.
 See `apps/web/src/lib/activity-types.ts` for the complete field contract.
 
+The proposed v0.24 default-branch observation contract is specified in
+[landed activity](13-landed-activity.md). `observed_at` means first local
+observation of a SHA on a sampled default-branch head, not GitHub push time;
+`at` remains its original committed date. Pending evidence and capacity gaps
+must not be represented as complete zero counts. This design does not promise
+visibility of commits made unreachable between samples.
+This is a proposal requiring a semantics decision, not a shipped API field.
+
 The supplementary collector normally adds one refs/tags GraphQL request per repo,
 plus a successful-workflow REST request only when the complete saved action
 stream cannot provide deployment success. Continuations are bounded at 20 requests
@@ -1961,10 +1969,18 @@ durations count; skipped, unattempted and missing/invalid timings do not. Fully
 timed sample runs also supply per-step scheduling/backoff overhead:
 `max(0, wallDuration - modeledStepWallDuration) / nonSkippedSteps`; the median
 overhead is added to each remaining step without dividing it by concurrency.
+When complete valid start/end intervals are available, calibration separates
+account prelude, factory, snapshot, activity, Insights and publication overhead.
+It unions overlapping intervals within each phase and assigns intervening gaps
+to the following phase. Remaining activity therefore retains its measured tail
+instead of receiving only the small average overhead of all 1,146 steps. Compact
+plans distinguish Insights from other snapshots. Incomplete interval evidence
+keeps the existing overall overhead rather than inventing a phase measurement.
 The model assigns ordered repository work to four lanes, placing each next
 repository on the earliest free lane, separately for metadata/streams/commit and
-repository snapshots. Activity, global snapshots and publication remain serial
-barriers. This is an idealized lane schedule: invocation-boundary replenishment,
+repository snapshots. The estimator conservatively retains activity service time;
+the executor now pipelines repository activity in its four-lane pool, while
+global snapshots and publication remain barriers. This is an idealized lane schedule: invocation-boundary replenishment,
 scheduling and backoff remain in the learned overhead. Incomplete timing records never masquerade as
 overhead. If no audited timings exist, calibration instead uses the median
 `wallDuration / nonSkippedSteps`, which already includes overhead. Invalid-time,
@@ -1978,15 +1994,16 @@ Historical serial samples can conservatively retain serialization in learned
 overhead until parallel samples arrive. All terminal outcomes remove work, including
 skipped future steps ahead of the cursor. Paused estimates assume resumption now
 or after outstanding backoff, not a prediction of user action. Terminal history
-anchors the full non-skipped plan estimate at `startedAt`, so its estimate can be
-in the past and is not the recorded finish time. Browser history/detail, compact
+has `expectedFinishAt:null` and `expectedFinishAtReason:"terminal"`; it uses the
+recorded `finishedAt`, never a newly projected finish. Browser history/detail, compact
 machine history and latest readiness share this contract; internal calibration
 and grouped plans are not response fields. GET remains read-only and never fetches
 GitHub. The estimate is neither the hard `deadlineAt` nor a completion guarantee.
 
 Reasons are null for a present estimate, `no_completed_history` when no usable
 completed-or-partial same-execution-kind history exists, `invalid_started_at` for
-an invalid stored start, and `not_executed` for a zero-step audit record. A missing
+an invalid stored active start, `not_executed` for a zero-step active audit record,
+and `terminal` for a finished/cancelled run (checked before other reasons). A missing
 history estimate remains null rather than borrowing another execution kind.
 
 Run fields: `id`, `account_id`, `owner`, `requestKey`, `mode`, `repos`, `repoIds`,

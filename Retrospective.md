@@ -1,5 +1,21 @@
 # Retrospective
 
+## 2026-10-24 - Verify normalization and patch anchors
+
+The first Unicode boundary fixture assumed every factory stream retained the
+generic title. Alerts intentionally replace it with package/severity, so that
+assertion failed for an unrelated reason. The fixture now tests alert summaries
+and tests title clipping only in streams that retain that field. Two attempted
+documentation patches also used an unverified heading and were rejected without
+changing files. Inspect exact anchors and per-stream overrides before building
+a shared regression fixture or applying a multi-file patch; a red test must
+demonstrate the target defect, not a mistaken fixture assumption.
+
+Gate wrappers initially assigned an exit code to zsh's read-only `status`
+variable after the underlying check completed. The shell rejected that wrapper;
+the saved check logs, not the wrapper error, establish each gate's result.
+Use `exit_code` for shell bookkeeping and preserve the command's exit status.
+
 ## 2026-10-23 - Retained diagnostics follow their stream
 
 The per-stream retention change allowed a new repository version to be accepted
