@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.23.0 - 2026-10-23
+
+### Fixed
+
+- Persist accepted factory steps and pages atomically before later work. A subsequent failure retains earlier results, request accounting and retry evidence; stale leases cannot publish. Renew 40-second deadline-capped leases at boundaries, release owned leases on uncaught failures, and redeliver lease collisions at expiry.
+- Retry queue overload sends with bounded 0.5/1/2-second backoff and failed deliveries with 5/10/15-second delays. Structured invocation and dispatch logs expose cursor/cost/end-reason and operation-level failures without tokens, payloads or raw exception text.
+- Resume slow snapshots page by page without refetching accepted responses. Preserve catalog identity lookups across yields and process large raw REST pages without retaining their unused fields together in memory.
+
+### Changed
+
+- Reconcile Issues with `since` and PRs with an updated-descending cutoff against complete, non-retained observations. Validate current state counts, restart full collection on mismatches, and refresh retained PR GraphQL state even for closed/merged PRs. Add optional event `updatedAt`; incremental coverage describes the reconciled stream, not just changed rows.
+- Reuse one complete run-owned Actions history for stream metrics, detail snapshots and deployment history. Explicitly limited histories retain the old snapshot and may require the existing bounded filtered-window collection rather than claiming completeness.
+- New quick runs use 30 UTC dates; deep runs keep 90 and existing runs retain their frozen windows. Flush request accounting with step checkpoints instead of per-request journal writes; factory D1 admission/hard caps are 600/800 under the paid-plan 1,000-query limit.
+
+### Local Measurement And Limits
+
+The deterministic warm 60-repository daily fixture executes the real runner,
+SQLite and existing fake-GitHub response model; every measured run publishes
+all 1,146 logical steps. Latencies are fixed from the supplied brief.
+
+| Revision / stage | Invocations | Requests | Simulated minutes |
+| --- | ---: | ---: | ---: |
+| v0.22.1 baseline `12d4612` | 426 | 1,651 | 41.678 |
+| P1 recovery `e8a8372` | 274 | 1,669 | 42.004 |
+| v0.23 source candidate, serial repositories | 166 | 1,221 | 23.898 |
+
+The fixture excludes D1/CPU/queue-delivery latency and production stalls; it is
+not a production SLO prediction. The under-20-minute goal remains unmet. A 4–6
+repository pool is not included pending clarification of the global one-in-flight
+step crash-loss requirement versus one in-flight step per parallel repository.
+No configuration, dependency, lockfile or schema migration changes are included;
+no production operations were performed. This branch does not claim the complete
+B14A brief is ready.
+
 ## v0.22.1 - 2026-10-23
 
 ### Fixed

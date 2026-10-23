@@ -1799,3 +1799,14 @@ catch unchanged; replay loads cached responses one page at a time instead of
 holding the full raw history in memory. When introducing resumability around an
 existing collector, audit every catch and compare limits on the same data shape
 as the original path, not just the final small fixtures.
+
+## 2026-10-23 - REST watermarks do not invalidate derived PR checks
+
+The first B14A PR delta implementation refreshed GraphQL state only for changed
+REST rows and retained open PRs. Review reproduced closed/merged PRs whose commit
+checks changed from pending to success without advancing REST updated_at; their
+incremental output incorrectly remained complete with stale checks. Full-object
+equivalence tests failed before the fix. Every retained PR omitted from the REST
+delta now refreshes its GraphQL state in resumable batches of at most 100 IDs.
+Treat independently mutable derived fields as separate sources; a REST timestamp
+or a terminal lifecycle state cannot prove that commit checks stayed unchanged.

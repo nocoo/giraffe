@@ -20,6 +20,9 @@
 
 ## v0.23 invocation budgets and persistence
 
+The earlier 80-statement investigation figure is historical; these factory-only
+limits supersede it without changing other API paths.
+
 New work starts before 25 seconds of invocation wall time, below 40 GitHub
 requests and 600 executed D1 statements plus staged writes. Every request checks
 the wall budget, reserving five seconds for checkpointing; individual fetches
@@ -70,6 +73,8 @@ completed work from earlier batches and untouched repositories are not extended.
 Each executor emits one `console.log` JSON line with
 `event:"factory_invocation"`, `runId`, `cursorStart`, `cursorEnd`, `stepsDone`,
 `requests`, `statements`, `stagedWrites`, `elapsedMs`, and `endReason`.
+`operation` locates the failure in `claim`, `heartbeat`, `step`, or `save` without
+exposing SQL or upstream payloads.
 Reasons are `wall`, `requests`, `statements`, `snapshot_boundary`,
 `publish_boundary`, `yield`, `completed`, `lost_lease`, `save_failed`, `error`,
 or `run_end`. Filter Workers Observability on this event and the run ID.
@@ -98,7 +103,7 @@ wall time per claim includes scheduling/backoff and is not Worker CPU time.
 The machine `/refresh-runs` list exposes this optional field; its separate compact
 `/refresh-runs/latest` summary does not. See the [consumer measurement contract](api.md#get-refresh-runs).
 
-Local fixture measurements (no real network latency): a 19-step selected run uses
+Historical v0.22 local fixture measurements (no real network latency): a 19-step selected run uses
 5 invocations; a 60-repository quick daily plan preserves all 1,146 steps and
 publishes in 320 invocations with 1,270 fixture GitHub requests. Compared with at
 least 1,146 one-step invocations, the latter removes 72% of handoffs. The observed
@@ -107,6 +112,18 @@ workload, not a paired benchmark. More pages, slow requests and D1 latency can
 raise the new count. This is not evidence of a 15–20 minute production duration;
 measure `invocations`, requests and wall duration on the next authorized scheduled
 run before making a speed claim.
+
+The v0.23 deterministic warm 60-repository benchmark (`bun run
+scripts/factory-benchmark.ts --selection selected`) executes the real runner,
+SQLite and the existing fake-GitHub response model with a virtual clock. Fixed
+brief-derived page latencies, prior-day warmup, zero D1/CPU/queue-delivery latency,
+and no injected production stalls are explicit assumptions. Baseline `12d4612`
+publishes 1,146 steps in 426 invocations / 1,651 requests / 41.678 simulated minutes;
+P1 `e8a8372` uses 274 / 1,669 / 42.004; the final serial-repository candidate uses
+166 / 1,221 / 23.898. This remains above twenty minutes and is not a production
+finish-time guarantee. Repository execution is still serial: no pool or
+parallelism-adjusted ETA is claimed while the global one-in-flight loss bound
+versus per-repository loss bound awaits clarification. Configuration is unchanged.
 
 Tests that previously assumed one step per call now stop explicitly at metadata
 admission boundaries or follow persisted `nextAttemptAt` for retries. Metadata
@@ -281,9 +298,14 @@ API 的 `repos` 只表示 selected 成员；`order` 是独立的优先级顺序�
 Daily quick refresh updates the current starred view. Weekly deep refresh calibrates
 history across its configured scope. Depth and repository membership are separate;
 both modes publish the same snapshots and preserve prior good data on failed reads.
+New quick runs freeze 30 UTC calendar dates; deep runs retain 90. Existing runs
+keep their persisted window through upgrade/resume. All metrics, stream filtering
+and contribution collection use that frozen window; retained evidence keeps its
+original window rather than being relabelled as a fresh thirty-day observation.
 Scheduled daily refresh also plans the account-wide contribution step, even for
 starred selection. Manual selected refresh does not add that account-wide work.
-The 90-day calendar and six 15-day type batches each consume one leased page;
+The quick calendar uses one calendar request and two 15-day type batches; deep
+uses one calendar request and six batches. Each batch has its own checkpoint;
 checkpoint progress, request/rate accounting and publication remain fenced.
 An interrupted or unavailable collection retains the previous good calendar and
 its original provenance. Type details are optional/null where GitHub lacks them;
@@ -293,8 +315,45 @@ head and rolling window permit it. Immutable commit history can stop at a verifi
 baseline intersection. Mutable Issues, PRs, Actions, releases and contributor lists
 must not stop merely because an old ID appears: old records can change, disappear,
 or move between pages. Current open Issue/PR lists are fully reconciled within the
-existing request, pagination and storage limits. Deep mode rebuilds all bounded
-source evidence, including unchanged-head resources.
+existing request, pagination and storage limits. Deep mode rebuilds pinned code
+evidence even at an unchanged head; mutable stream reconciliation is available
+at either depth.
+
+### Incremental mutable streams
+
+Issues use REST `since`; PRs use updated-descending pagination and a timestamp
+cutoff, not an unsupported `since` parameter. The watermark is the earlier of
+the prior complete stream's fetched time and its frozen observation start, with
+a one-second overlap. This includes updates made while the prior run was paging.
+Only matching repository identities and complete, non-retained baselines qualify;
+missing timestamps, limited/unavailable coverage and invalid baselines trigger a
+full traversal. Additive event `updatedAt` records the REST update timestamp.
+
+Delta items replace matching IDs in the baseline. Final open/closed/merged counts
+must match current repository metadata; a mismatch or detected deletion restarts
+a full collection instead of certifying a stale union. PR GraphQL state is refreshed
+in bounded batches for retained items as well as changed REST items, since check
+reruns need not move REST `updated_at`. Coverage remains partial during collection
+and reconciliation, then becomes `complete` with `strategy:"incremental"` only
+after validation. It describes the reconciled full stream, not merely the delta;
+`sourceFetchedAt` identifies the baseline observation. Limits and failures retain
+the prior good stream with its original source window and timestamps.
+
+### Shared Actions observations
+
+One run-owned, paginated unfiltered Actions source normally serves the factory
+window, full Actions detail snapshot and successful-deployment history. Its
+allowlisted rows contain the fields needed by both existing projections; page
+and source writes commit with the run cursor. Complete history can also prove
+that no successful deployment exists without a third GitHub traversal.
+
+A complete full source is required for snapshot/cache reuse. If full history hits
+the existing page/byte limits, the old snapshot is retained and the metric stream
+uses bounded created-window collection, including the existing 1,000-run range
+splitting. That explicitly limited case can require additional filtered requests;
+it must not turn truncated history into successful zero or claim universal
+single-pass completeness. Malformed shared pages are remembered as safe failures;
+genuine transient errors keep the existing bounded retry policy.
 
 Source provenance remains distinct from the last successful check. Reused code
 evidence records its original `sourceFetchedAt`; missing/incomplete evidence causes
@@ -365,7 +424,7 @@ extend it. Old payloads derive the deadline from `startedAt`; new runs store
 revokes their lease, increments their fence version and releases the account lock.
 The owning schedule records `lastError`; scheduler and mutating operations perform
 recovery, never GET. All fenced writes also enforce the hard deadline, independently
-of the renewable 90-second page lease. No schema migration or old-row rewrite is
+of the renewable 40-second page lease. No schema migration or old-row rewrite is
 needed for these JSON payload fields.
 Timeout/missed-slot schedule warnings are sticky until an explicit schedule save,
 so successful recovery in the same tick cannot erase the incident.
