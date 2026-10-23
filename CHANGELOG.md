@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Upgrade Happy DOM to 21.0.4 to address GHSA-834v-8h66-3h79.
 - Return `expectedFinishAt: null` with `expectedFinishAtReason: "terminal"` for completed, failed, partial and cancelled factory runs across lists, history details and latest readiness. Use `finishedAt` for the actual end; running/paused estimates are unchanged.
 
 ## v0.23.0 - 2026-10-23

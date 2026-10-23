@@ -1898,3 +1898,16 @@ list. `listRunsStatement` explicitly selects the latest run as the default detai
 the assertion now requires the retained step in both list and explicit-detail
 responses. Read the actual projection contract before asserting compactness, and
 do not change production serialization to fit a mistaken regression fixture.
+
+## 2026-10-24 - Verify dependency scope before starting a commit
+
+The approved Happy DOM update used the Tencent mirror, but Bun also wrote mirror
+tarball URLs into unrelated lock entries. A combined inspect-and-commit command
+printed that drift without treating it as a failure and started the commit hook.
+The commit was interrupted before Git recorded it. The lock was normalized back
+to registry-neutral entries, then compared with the previous revision: only the
+Happy DOM workspace constraint, package version and integrity changed. A frozen
+mirror install passed without further changes, and the normal commit hook passed
+on that exact two-file patch. Never chain a human-readable diff straight into
+staging and committing; assert the allowed dependency/file scope first and fail
+closed on unexpected lock changes.
