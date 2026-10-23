@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.24.0 - 2026-10-24
+
+Unreleased preparation. B16A remains blocked on the landed-attribution semantics
+decision and dependency security gates; this is not a completed release.
+
+### Fixed
+
+- Clip activity/factory titles, issue/PR bodies, commit subjects and advisory summaries by Unicode code point, preserving astral characters at the boundary.
+- Renew snapshot leases after newly fetched responses and before processing/projection so a slow response does not consume the remaining lease before accepted-page persistence. The reproduced local failure is fixed; the production process-death cause is not established.
+- Calibrate ETA overhead by account, factory, snapshot, activity, Insights and publication phases. Keep the observed activity tail in remaining estimates; terminal runs return a null estimate with reason `terminal` and retain their recorded finish time.
+
+### Changed
+
+- Replenish four repository lanes inside the invocation and pipeline each repository's factory, snapshot and activity work in planned order. Activity can accept several pages per invocation; global work/publication remain fenced barriers. Drained repository work can continue without an unnecessary invocation boundary.
+- Reconcile complete Actions baselines using a conservative rerun horizon, ID deduplication and total-count validation. Materialize one complete shared history for metrics, snapshots and deployments; unreliable or over-limit deltas restart full collection. Preserve accepted v0.23 pages through cross-version checkpoints.
+- Extend the real-runner SQLite benchmark with account prelude, nine notification pages, 205 activity pages, explicit continuation delay, phase breakdowns and lane occupancy. The 1,146-step selected daily improves from 24.594 to 9.351 simulated minutes, 326 to 50 invocations, and 1.193 to 3.229 average busy lanes. This does not prove the production under-twenty-minute target.
+
+### Pending Decision
+
+- Default-branch activity still uses its existing committer-date behavior. The design in `docs/13-landed-activity.md` explains why polling cannot discover commits made unreachable between samples or reconstruct exact historical push times. Observation-scoped attribution versus a durable push-event source requires approval; no migration or weaker guarantee is silently introduced.
+- Dependencies, lockfile, deployment configuration and refresh schedules are unchanged. Existing pinned security findings prevent normal push until resolved through the authorized upstream path.
+
 ## v0.23.0 - 2026-10-23
 
 ### Fixed
