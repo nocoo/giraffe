@@ -18,6 +18,7 @@ export type UnavailableReasonCode =
 	| "not_found"
 	| "unknown";
 export type FactoryCoverage = {
+	observation?: NonNullable<FactoryRepo["observation"]> & { head: string | null };
 	reason_code?: UnavailableReasonCode | "dependency_parse_unsupported";
 	retained?: true;
 	strategy?: "full" | "incremental" | "reused";

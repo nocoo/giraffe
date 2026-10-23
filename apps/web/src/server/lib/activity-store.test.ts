@@ -441,7 +441,7 @@ it("R4 stale observations and stream run mismatches never become current zero sn
 	expect(data.commits.default).toBeNull();
 	expect(data.coverage.actions).toMatchObject({ status: "partial", truncated: true });
 });
-it("freezes current activity when repeated dependency parse limits retain the previous repository", async () => {
+it("freezes current activity even when passed previous repository metadata", async () => {
 	const { freezeActivityRepo } = await import("./activity-store");
 	const fixture = await setup("nocoo/lizheng.dev");
 	const { db, lease, repo } = fixture;
@@ -468,9 +468,12 @@ it("freezes current activity when repeated dependency parse limits retain the pr
 		source: "run",
 	};
 	await db.batch(await repositoryWrites(db, lease, now, refreshed, repo.name, null));
-	const retained = await currentRepo(db, lease.run.account_id, repo.name);
-	expect(retained).toEqual(repo);
-	if (!retained) throw new Error("Missing retained repository");
+	expect(await currentRepo(db, lease.run.account_id, repo.name)).toMatchObject({
+		branch: "trunk",
+		observation: refreshed.observation,
+		coverage: { dependencies: { retained: true, observation: repo.observation } },
+	});
+	const retained = repo;
 	for (const step of lease.run.steps) {
 		step.status = step.kind === "dependencies" ? "limited" : "success";
 		step.error = step.kind === "dependencies" ? "dependency_parse_unsupported" : null;
@@ -528,9 +531,9 @@ it("freezes current activity when repeated dependency parse limits retain the pr
 		expect(activity?.coverage[stream]).toMatchObject({ status: "complete", truncated: false });
 	expect(data.totals).toMatchObject({ ci_runs: 1, merged_prs: 1, issues_opened: 1, releases: 1 });
 	expect(data.totals.red_default_branch).toMatchObject([{ id: 3, repo: repo.name }]);
-	expect((await currentRepo(db, lease.run.account_id, repo.name))?.branch).toBe("main");
+	expect((await currentRepo(db, lease.run.account_id, repo.name))?.branch).toBe("trunk");
 	expect((await currentRepo(db, lease.run.account_id, repo.name))?.observation).toEqual(
-		repo.observation,
+		refreshed.observation,
 	);
 });
 it.each(["missing-step", "failed-step", "missing-branch", "null-branch", "other-repo", "accepted"])(

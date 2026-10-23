@@ -105,6 +105,7 @@ export async function readSources(
 						coalesce(json_extract(value,'$.observation.repo'),json_extract(value,'$.name')) AS repo,
 						coalesce(json_extract(value,'$.observation.version'),publication.run_id) AS version,
 						coalesce(json_extract(value,'$.observation.source'),'legacy') AS source
+						,json_extract(value,'$.coverage') AS coverage
 					FROM publication,json_each(publication.repos)
 					WHERE (EXISTS(SELECT 1 FROM catalog_repositories c WHERE c.account_id=? AND c.github_id=json_extract(value,'$.id') AND c.removed_at IS NULL AND c.name_current=1)
 					 OR NOT EXISTS(SELECT 1 FROM catalog_repositories c WHERE c.account_id=? AND c.repo=json_extract(value,'$.name') COLLATE NOCASE AND c.github_id IS NOT NULL AND c.removed_at IS NULL AND c.name_current=1))
@@ -118,10 +119,11 @@ export async function readSources(
 					OR (s.kind LIKE 'repo:%' AND (s.kind LIKE '%:issues' OR s.kind LIKE '%:issues#2' OR s.kind LIKE '%:prs' OR s.kind LIKE '%:prs#2' OR s.kind LIKE '%:actions' OR s.kind LIKE '%:actions#2' OR s.kind LIKE '%:releases' OR s.kind LIKE '%:releases#2' OR s.kind LIKE '%:details' OR s.kind LIKE '%:details#2'))
 				)
 				UNION ALL
-				SELECT 'stream:' || refs.name || ':' || f.stream AS kind,NULL AS payload,f.content_meta
+				SELECT 'stream:' || refs.name || ':' || streams.value AS kind,NULL AS payload,f.content_meta
 				FROM refs CROSS JOIN factory_runs r ON r.id=refs.version AND r.account_id=?
+				CROSS JOIN json_each(?) streams
 				CROSS JOIN factory_resources f INDEXED BY factory_resources_content ON f.run_id=r.id AND f.repo=refs.repo
-				WHERE refs.source='run' AND f.stream IN (SELECT value FROM json_each(?))
+				WHERE refs.source='run' AND f.stream=CASE WHEN json_type(refs.coverage,'$.' || streams.value || '.observation')='object' THEN 'retained:' || streams.value ELSE streams.value END
 				UNION ALL
 				SELECT kind,NULL AS payload,content_meta FROM snapshots
 				WHERE account_id=? AND kind IN (SELECT kind FROM legacy)`,
@@ -212,11 +214,12 @@ export async function readSources(
 			(repository && repo.name.toLowerCase() !== repository.toLowerCase())
 		)
 			return [];
-		const provenance = {
-			...(repo.observation?.publishedAt ? { publishedAt: repo.observation.publishedAt } : {}),
-		};
 		return FACTORY_STREAMS.flatMap((stream) => {
 			const coverage = repo.coverage[stream];
+			const observation = coverage.observation ?? repo.observation;
+			const provenance = {
+				...(observation?.publishedAt ? { publishedAt: observation.publishedAt } : {}),
+			};
 			const data = {
 				fetched_at: coverage.fetchedAt,
 				freshness: {
@@ -357,7 +360,10 @@ export async function readSources(
 	const repositories = policy.repos.map((repo) => repo.name_with_owner).sort();
 	if (publication)
 		for (const { repo, stream, data: metadata, provenance } of streams) {
-			const version = repo.observation?.version ?? publication.runId;
+			const version =
+				repo.coverage[stream].observation?.version ??
+				repo.observation?.version ??
+				publication.runId;
 			const meta = streamMeta.get(
 				repo.observation?.source === "run"
 					? `stream:${repo.name}:${stream}`

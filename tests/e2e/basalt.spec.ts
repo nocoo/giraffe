@@ -5,7 +5,7 @@ import { createUiFixtures, projectFactoryFixture } from "./ui-fixtures";
 
 test.use({ timezoneId: "Asia/Shanghai" });
 
-async function mockPages(page: Page) {
+async function mockPages(page: Page, completeCommits = false) {
 	const snapshot = factoryFixture();
 	snapshot.account_id = "ui-account";
 	snapshot.status = "complete";
@@ -44,7 +44,7 @@ async function mockPages(page: Page) {
 			releases: 1,
 		};
 		if (index === 1) {
-			repo.coverage.commits.status = "limited";
+			repo.coverage.commits.status = completeCommits ? "complete" : "limited";
 			repo.coverage.commits.observed = 18;
 			repo.metrics.commits = 18;
 			repo.metrics.days["2026-09-11"] = { ...repo.metrics.days["2026-09-10"], commits: 6 };
@@ -412,9 +412,9 @@ test("calendar edge cells keep selection and keyboard focus inside the grid", as
 });
 
 for (const [chart, values] of [
-	["PR 流量与存量", ["新开9", "合并6", "未合并关闭 ↓3", "日终 open3"]],
-	["Issue 流量与存量", ["新开6", "关闭3", "日终 open2"]],
-	["提交产出与覆盖面", ["提交≥ 36", "7 日活跃仓库3"]],
+	["PR 流量与存量", ["新开9", "合并6", "未合并关闭 ↓3", "日终 open无法倒推"]],
+	["Issue 流量与存量", ["新开6", "关闭3", "日终 open无法倒推"]],
+	["提交产出与覆盖面", ["提交≥ 36", "7 日活跃仓库—"]],
 	["交付吞吐", ["合并 PR6", "Release3", "CI 7 日成功率85.7%"]],
 ] as const) {
 	test(`${chart} tooltip displays daily values and leaves the page usable`, async ({ page }) => {
@@ -497,6 +497,7 @@ test("factory visualizations use Basalt chart frames and preserve keyboard drill
 });
 
 test("factory Basalt controls and larger text fit mobile and dark mode", async ({ page }) => {
+	await mockPages(page, true);
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.addInitScript(() => localStorage.setItem("theme", "dark"));
 	await page.goto("/factory");

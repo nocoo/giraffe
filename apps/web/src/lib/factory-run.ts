@@ -99,11 +99,16 @@ export type RepoRefreshState = {
 	version?: string | null;
 	coverage?: number;
 };
+export type RunFinishEstimateReason =
+	| "no_completed_history"
+	| "invalid_started_at"
+	| "not_executed"
+	| null;
 export type FactoryRunView = Omit<FactoryRun, "checkpoint"> & {
 	progress: ReturnType<typeof runProgress>;
 	leaseUntil: string | null;
 	expectedFinishAt: string | null;
-	expectedFinishAtReason: "no_completed_history" | "invalid_started_at" | "not_executed" | null;
+	expectedFinishAtReason: RunFinishEstimateReason;
 };
 export type FactoryRunResponse = {
 	storage?: { resourceBytes: number; totalBytes: number };

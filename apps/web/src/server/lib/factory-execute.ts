@@ -270,17 +270,26 @@ export async function executeRunPage(
 							baseline: async () => {
 								const repo = await currentRepo(db, run.account_id, String(step.repo));
 								if (!repo?.observation || repo.id !== run.repoIds[String(step.repo)]) return null;
+								const retained = repo.coverage[stream].observation;
 								const row = await db
 									.prepare(
 										"SELECT payload FROM factory_resources WHERE run_id=? AND repo=? AND stream=?",
 									)
-									.bind(repo.observation.version, repo.observation.repo ?? step.repo, stream)
+									.bind(
+										repo.observation.version,
+										repo.observation.repo ?? step.repo,
+										retained ? `retained:${stream}` : stream,
+									)
 									.first<{ payload: string }>();
 								if (!row) return null;
 								const data = JSON.parse(row.payload) as FactoryStreamData;
 								if (stream === "dependencies")
 									data.manifests = [...(repo.manifests ?? []), ...(data.manifests ?? [])];
-								return { data, head: repo.head, window: repo.observation.window };
+								return {
+									data,
+									head: retained ? retained.head : repo.head,
+									window: retained?.window ?? repo.observation.window,
+								};
 							},
 						}
 					: {}),

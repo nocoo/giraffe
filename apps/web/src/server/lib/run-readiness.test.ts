@@ -100,18 +100,24 @@ it("R9 latest normalizes missing historical markers to null but retains the cata
 });
 
 it("R9 latest reuses partial-aware estimates and prioritizes the run error over failed-step errors", async () => {
-	const run = await seed("sample", { status: "partial" }, "2026-10-20T00:00:00.000Z");
-	await seed("active", {
-		status: "running",
-		finishedAt: null,
-		error: "run_timed_out",
-		steps: run.steps.map((step) => ({ ...step, status: "failed", error: "snapshot_incomplete" })),
-	});
-	expect(await read("daily")).toMatchObject({
-		expectedFinishAt: finished,
-		expectedFinishAtReason: null,
-		lastError: "run_timed_out",
-	});
+	vi.useFakeTimers({ toFake: ["Date"] });
+	vi.setSystemTime(new Date("2026-10-23T00:00:00.000Z"));
+	try {
+		const run = await seed("sample", { status: "partial" }, "2026-10-20T00:00:00.000Z");
+		await seed("active", {
+			status: "running",
+			finishedAt: null,
+			error: "run_timed_out",
+			steps: run.steps.map((step) => ({ ...step, status: "failed", error: "snapshot_incomplete" })),
+		});
+		expect(await read("daily")).toMatchObject({
+			expectedFinishAt: "2026-10-23T00:00:00.000Z",
+			expectedFinishAtReason: null,
+			lastError: "run_timed_out",
+		});
+	} finally {
+		vi.useRealTimers();
+	}
 });
 
 it.each([

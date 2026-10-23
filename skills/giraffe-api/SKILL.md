@@ -402,6 +402,11 @@ The browser shows notes/status/review time read-only; it cannot edit them.
 
 Poll `/refresh-runs/latest?kind=daily` with `app:read`; supported kinds also include
 weekly, catalog, manual, quick and deep. Missing match is 404.
+Use `kind=daily` for scheduled daily refreshes. `kind=quick` and `kind=deep`
+filter refresh depth across **all triggers and scopes**, including manual
+selected-scope refreshes; legacy unspecified depth counts as deep. They do not
+restrict results to scheduled runs. For example, `/refresh-runs/latest?kind=quick`
+can return `kind:"manual",depth:"quick"` for a manual selected-scope quick refresh.
 The returned `kind` is catalog or the daily/weekly/manual trigger; use additive
 `depth` (quick/deep/null) for collection depth, not the query selector.
 For null readiness, inspect `publishedAtReason`: in_progress, failed, cancelled,

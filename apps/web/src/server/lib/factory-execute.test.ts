@@ -313,8 +313,11 @@ it("uses current metadata for activity after a retained repository changes defau
 		sourceBranch: "trunk",
 	});
 	expect(await currentRepo(db, snap.account_id, previous.name)).toMatchObject({
-		branch: "main",
-		observation: previous.observation,
+		branch: "trunk",
+		observation: { version: "r1" },
+		coverage: {
+			dependencies: { retained: true, fetchedAt: previous.coverage.dependencies.fetchedAt },
+		},
 	});
 	const activity = await readActivity(db, snap.account_id, {});
 	expect(activity.repos[0]).toMatchObject({

@@ -97,7 +97,8 @@ export async function getFactoryStream(c: Ctx): Promise<Response> {
 		throw new ApiError(404, "not_found", "repository outside selected owned catalog");
 	if (!repo || !snap) throw new ApiError(404, "not_found", "repository outside factory inventory");
 	let resource: FactoryStreamData | null = null;
-	const version = repo.observation?.version ?? snap.runId;
+	const version =
+		repo.coverage[stream].observation?.version ?? repo.observation?.version ?? snap.runId;
 	if (repo.observation?.source === "run" || repo.coverage[stream].status !== "pending")
 		resource = decodeFactoryResource(saved, snap, repo, stream).data;
 	if (!resource && repo.coverage[stream].status !== "pending")

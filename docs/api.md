@@ -101,16 +101,21 @@ same query, Access protection and active account. The required kind selects the
 latest retained matching run, not merely the latest 21 entries. Unknown or repeated
 filters return 400; an absent match returns 404. Daily/weekly select trigger,
 catalog selects mode, manual includes legacy unspecified trigger, and quick/deep
-select refresh depth (legacy unspecified depth is deep). Ties use stored creation
-time then ID descending. The response includes `account_id`, `id`, canonical
+select refresh depth across **all triggers and scopes**, including manual
+selected-scope refreshes (legacy unspecified depth is deep). Use `kind=daily`
+for scheduled daily refreshes; `kind=quick` is not a scheduled-daily filter.
+Ties use stored creation time then ID descending. The response includes `account_id`, `id`, canonical
 `kind`, `depth`, `status`, `window`, `startedAt`, `expectedFinishAt`,
 `expectedFinishAtReason`, `finishedAt`, `counts`, `failedSteps`, `lastError`, and
 `publishedAt` and `publishedAtReason`. The returned `kind` is
 `catalog|daily|weekly|manual`, determined by mode/trigger, **not** necessarily the
-query selector: `?kind=quick` can return `kind:"daily",depth:"quick"`.
+query selector: `?kind=quick` can return `kind:"daily",depth:"quick"` or
+`kind:"manual",depth:"quick"`, for example when the latest matching run is a
+manual selected-scope quick refresh.
 `depth` is `quick|deep|null`, null for catalog and deep for historical refreshes
-without a saved depth. Activity-eligible runs expose their activity window. ETA uses the
-existing last-five completed-or-partial same-kind calibration, not a deadline.
+without a saved depth. Activity-eligible runs expose their activity window. ETA uses
+the plan-scaled, same-execution-kind calibration described under
+[GET /refresh-runs](#get-refresh-runs), not a deadline.
 SQLite projects the needed scalar/window fields, step counts and failed-step
 summaries; the reader does not transfer or parse the complete run payload,
 successful-step details or checkpoints. Failed steps retain their stored order.
@@ -1843,19 +1848,39 @@ non-active runs have `steps:[]`, not full history. Every row includes
 including compact history. No browser progress/lease summary is added.
 
 Every run also includes `expectedFinishAt:string|null` and
-`expectedFinishAtReason:string|null`. The estimate is its start plus the median
-wall duration of the last five valid completed or partial runs of that account and actual
-kind (`catalog`, `quick`, `deep`), using all retained history, not only these 21
-rows. It is recalibrated at read time and may be in the past; it is not the hard
-`deadlineAt` or a completion guarantee. Catalog preparations are catalog samples
-regardless of daily/weekly trigger. Samples require real valid start/finish times
-and positive work; failed/cancelled and zero-work runs remain excluded. With no
-eligible same-kind sample, the estimate stays null rather than borrowing a
-different kind's duration. `no_completed_history` means no eligible completed-or-partial
-same-kind history, including an account with no usable terminal duration.
-Null reasons are `no_completed_history`, `invalid_started_at` or `not_executed`
-(zero-work audit); a present estimate has a null reason. Browser run history and
-selected detail use the same projection without writing stored payloads.
+`expectedFinishAtReason:string|null`. Calibration selects the latest five valid
+completed or partial runs for the account and execution kind (`catalog`, `quick`,
+`deep`), across retained history rather than just the displayed 21 rows. Samples
+span every trigger and scope: manual selected runs use their own planned work,
+not the full wall time of a much larger daily run. Catalog preparations remain
+catalog samples regardless of trigger; missing legacy depth means deep.
+
+For each step kind, calibration uses the median recorded `durationMs` of executed
+terminal steps (`success`, `failed`, `unavailable`, `limited`, with positive
+`attempts` and a numeric nonnegative duration). Unseen step kinds use the overall
+median of those step durations within the same execution kind. Genuine zero
+durations count; skipped, unattempted and missing/invalid timings do not. Fully
+timed sample runs also supply per-step scheduling/backoff overhead:
+`max(0, wallDuration - sum(stepDurations)) / nonSkippedSteps`; the median overhead
+is added to each remaining step. Incomplete timing records never masquerade as
+overhead. If no audited timings exist, calibration instead uses the median
+`wallDuration / nonSkippedSteps`, which already includes overhead. Invalid-time,
+failed/cancelled and zero-work/all-skipped sample runs are excluded.
+
+Running/paused ETA is `max(now, startedAt, nextAttemptAt) + sum(remaining step
+durations + per-step overhead)`. All terminal outcomes remove work, including
+skipped future steps ahead of the cursor. Paused estimates assume resumption now
+or after outstanding backoff, not a prediction of user action. Terminal history
+anchors the full non-skipped plan estimate at `startedAt`, so its estimate can be
+in the past and is not the recorded finish time. Browser history/detail, compact
+machine history and latest readiness share this contract; internal calibration
+and grouped plans are not response fields. GET remains read-only and never fetches
+GitHub. The estimate is neither the hard `deadlineAt` nor a completion guarantee.
+
+Reasons are null for a present estimate, `no_completed_history` when no usable
+completed-or-partial same-execution-kind history exists, `invalid_started_at` for
+an invalid stored start, and `not_executed` for a zero-step audit record. A missing
+history estimate remains null rather than borrowing another execution kind.
 
 Run fields: `id`, `account_id`, `owner`, `requestKey`, `mode`, `repos`, `repoIds`,
 `window:{since,until}`, `steps`, `cursor`, `status`, `startedAt`, `updatedAt`,

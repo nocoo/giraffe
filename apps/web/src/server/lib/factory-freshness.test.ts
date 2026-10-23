@@ -1,6 +1,7 @@
 import { expect, it, vi } from "vitest";
 import { factoryFixture } from "../../../../../tests/fixtures/factory-snapshot";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
+import { FACTORY_STREAMS } from "../../lib/factory-types";
 import { createDb } from "./db/d1";
 import { replaceSnapshotStmts } from "./db/snapshots";
 import { readObservation } from "./machine-observations";
@@ -168,4 +169,43 @@ it("preserves stored truncation independently of complete inventory", async () =
 			(source) => source.resource === "account:factory",
 		),
 	).toMatchObject({ truncated: true, contentVersion: truncated.contentVersion });
+});
+
+it("preserves per-stream evidence ages in both factory envelopes and source indexes with repository denominators", async () => {
+	const { raw, db, account, publication, repo, save } = await fixture();
+	const old = "2026-08-01T00:00:00.000Z";
+	const fetched = "2026-09-15T21:00:00.000Z";
+	if (!repo.observation) throw new Error("Missing observation");
+	repo.coverage = structuredClone(repo.coverage);
+	for (const stream of FACTORY_STREAMS) repo.coverage[stream].fetchedAt = fetched;
+	repo.coverage.commits = {
+		...repo.coverage.commits,
+		status: "complete",
+		retained: true,
+		fetchedAt: old,
+		observation: {
+			...repo.observation,
+			version: "retained",
+			refreshedAt: old,
+			window: { since: "2026-05-01T00:00:00.000Z", until: old },
+			head: "old-head",
+		},
+	};
+	await save("factory", publication);
+	await save("repos", {
+		repos: [{ name_with_owner: repo.name }, { name_with_owner: "nocoo/missing" }],
+	});
+	const before = (await raw.prepare("SELECT * FROM snapshots ORDER BY kind").all()).results;
+	const expected = { oldestAt: old, latestAt: fetched, total: 2, missing: 1 };
+	expect(factoryFreshness(publication, await repoPolicy(db, account))).toEqual(expected);
+	const envelope = await readObservation(db, account, "factory", "all");
+	expect(envelope).toMatchObject({ freshness: expected, fetchedAt: fetched });
+	const index = await readSources(createDb(raw), account, {});
+	expect(index.sources.find((source) => source.resource === "account:factory")).toMatchObject({
+		freshness: expected,
+		contentVersion: envelope.contentVersion,
+	});
+	expect((await raw.prepare("SELECT * FROM snapshots ORDER BY kind").all()).results).toEqual(
+		before,
+	);
 });

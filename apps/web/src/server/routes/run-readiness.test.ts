@@ -122,35 +122,47 @@ it("R9 fake-clock completed latest exposes the stored marker and activity window
 	expect(network).not.toHaveBeenCalled();
 });
 
-it("R9 fake-clock running latest reuses actual-kind median ETA and never exposes an active marker or recovers an expired deadline", async () => {
-	const s = await setup();
-	for (const [index, minutes] of [10, 20, 90].entries())
-		await s.seed(`sample-${index}`, {
-			startedAt: "2026-10-20T00:00:00.000Z",
-			finishedAt: new Date(Date.parse("2026-10-20T00:00:00.000Z") + minutes * 60_000).toISOString(),
-			trigger: "manual",
-		});
-	await s.seed("active", {
-		status: "running",
-		finishedAt: null,
-		publishedAt: now,
-		deadlineAt: "2026-10-21T22:00:00.000Z",
-	});
-	const before = await s.saved();
-	for (const machine of [true, false]) {
-		const response = await s.call("?kind=daily", machine);
-		expect(response.status).toBe(200);
-		expect(await response.json()).toMatchObject({
-			id: "active",
+it.each(["success", "pending"] as const)(
+	"R9 fake-clock running latest estimates %s work without exposing an active marker or recovering an expired deadline",
+	async (stepStatus) => {
+		const s = await setup();
+		for (const [index, minutes] of [10, 20, 90].entries())
+			await s.seed(`sample-${index}`, {
+				startedAt: "2026-10-20T00:00:00.000Z",
+				finishedAt: new Date(
+					Date.parse("2026-10-20T00:00:00.000Z") + minutes * 60_000,
+				).toISOString(),
+				trigger: "manual",
+			});
+		await s.seed("active", {
 			status: "running",
-			expectedFinishAt: "2026-10-21T21:20:00.000Z",
-			expectedFinishAtReason: null,
 			finishedAt: null,
-			publishedAt: null,
+			publishedAt: now,
+			deadlineAt: "2026-10-21T22:00:00.000Z",
+			steps: [
+				{
+					...(makeRun("active", account, "owner", "active", "refresh", [], started)
+						.steps[0] as FactoryRunStep),
+					status: stepStatus,
+				},
+			],
 		});
-	}
-	expect(await s.saved()).toEqual(before);
-});
+		const before = await s.saved();
+		for (const machine of [true, false]) {
+			const response = await s.call("?kind=daily", machine);
+			expect(response.status).toBe(200);
+			expect(await response.json()).toMatchObject({
+				id: "active",
+				status: "running",
+				expectedFinishAt: stepStatus === "pending" ? "2026-10-22T00:20:00.000Z" : now,
+				expectedFinishAtReason: null,
+				finishedAt: null,
+				publishedAt: null,
+			});
+		}
+		expect(await s.saved()).toEqual(before);
+	},
+);
 
 it.each([
 	["quick", { trigger: "weekly", depth: "quick" }, "weekly"],
