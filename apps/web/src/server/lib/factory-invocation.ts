@@ -30,9 +30,9 @@ export class FactoryInvocation {
 		this.started = Date.parse(clock());
 	}
 
-	canStart(step: FactoryRunStep) {
+	canStart(step: FactoryRunStep, continuing = false) {
 		return (
-			Date.parse(this.clock()) - this.started < INVOCATION_WALL_MS &&
+			(continuing || Date.parse(this.clock()) - this.started < INVOCATION_WALL_MS) &&
 			this.requests < INVOCATION_REQUESTS &&
 			this.db.statements + this.writes.length < INVOCATION_STATEMENTS &&
 			(!this.writes.length ||

@@ -72,6 +72,7 @@ export async function executeRunPage(
 		return (await saveRun(db, lease, [], clock())) ? now : null;
 	}
 	try {
+		let previousStep: FactoryRunStep | undefined;
 		for (;;) {
 			while (
 				run.steps[run.cursor] &&
@@ -84,9 +85,10 @@ export async function executeRunPage(
 				run.finishedAt = clock();
 				break;
 			}
-			if (!invocation.canStart(step)) break;
+			if (!invocation.canStart(step, step === previousStep)) break;
 			await invocation.heartbeat();
 			const result = await executeStep(env, db, lease, invocation, step, clock);
+			previousStep = step;
 			invocation.writes.push(...result.writes);
 			if (
 				result.stop ||

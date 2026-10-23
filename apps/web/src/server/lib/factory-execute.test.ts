@@ -191,6 +191,56 @@ it("stops before another step after the wall budget without dropping the finishe
 	expect(fetch).toHaveBeenCalledTimes(1);
 });
 
+it.each([
+	{ pageCount: 3, requestMs: 10_000 },
+	{ pageCount: 6, requestMs: 13_000 },
+])(
+	"finishes $pageCount stream pages past admission time while fencing lease renewal",
+	async ({ pageCount, requestMs }) => {
+		const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] });
+		const base = vi.mocked(fetch).getMockImplementation();
+		if (!base) throw new Error("fixture");
+		let elapsed = 0;
+		let pages = 0;
+		const competingClaims: unknown[] = [];
+		const time = () => new Date(Date.parse(now) + elapsed).toISOString();
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (url: string, init: RequestInit) => {
+				elapsed += requestMs;
+				competingClaims.push(await claimRun(createDb(env.DB), "r1", time()));
+				if (url.includes("/commits?")) {
+					pages++;
+					return Response.json([], {
+						headers:
+							pages === pageCount
+								? {}
+								: {
+										link: `<https://api.github.com/repos/nocoo/app/commits?page=${pages + 1}>; rel="next"`,
+									},
+					});
+				}
+				return base(url, init);
+			}),
+		);
+		expect(await executeRunPage(env, "r1", time)).toBe(time());
+		const run = (await getRun(createDb(env.DB), snap.account_id, "r1"))?.run;
+		expect(pages).toBe(pageCount);
+		expect(run?.steps[0]).toMatchObject({ kind: "metadata", status: "success" });
+		expect(run?.steps[1]).toMatchObject({
+			kind: "commits",
+			status: "success",
+			attempts: 1,
+			pages: pageCount,
+			durationMs: requestMs * pageCount,
+		});
+		expect(run?.steps[2]).toMatchObject({ status: "pending", attempts: 0 });
+		expect(run).toMatchObject({ cursor: 2, requests: pageCount + 1, invocations: 1 });
+		expect(competingClaims).toEqual(Array.from({ length: pageCount + 1 }, () => null));
+		expect(fetch).toHaveBeenCalledTimes(pageCount + 1);
+	},
+);
+
 it("renews during a long site step so cron cannot reclaim its lease", async () => {
 	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] });
 	const db = createDb(env.DB);

@@ -21,9 +21,11 @@
 ## v0.22 invocation budgets and persistence
 
 New work starts only before 25 seconds of invocation wall time, below 40 GitHub
-requests and below 36 executed D1 statements plus buffered writes. A long step may
-finish past the admission deadline. Before each GitHub request, the executor
-checks ownership, renews a lease with at most 30 seconds remaining, and yields at
+requests and below 36 executed D1 statements plus buffered writes. A long step and
+its remaining stream pages may finish past the admission deadline; only a new
+step checks wall time. Page continuation still obeys request and D1 caps, and a
+subsequent invocation must admit its first step normally. Before each GitHub
+request, the executor checks ownership, renews a lease with at most 30 seconds remaining, and yields at
 60 executed statements plus buffered writes, reserving space under the existing
 80-statement hard limit for audits and final save. Each individual fetch retains
 its 15-second timeout; leases extend by 90 seconds but never past the run deadline.

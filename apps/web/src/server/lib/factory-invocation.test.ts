@@ -32,9 +32,25 @@ it("stops at the D1 admission cap with room left for the atomic save", async () 
 	expect(invocation.canStart(step)).toBe(true);
 	for (let index = 0; index < 36; index++) await db.prepare("SELECT 1").first();
 	expect(invocation.canStart(step)).toBe(false);
+	expect(invocation.canStart(step, true)).toBe(false);
 	for (let index = 36; index < 60; index++) await db.prepare("SELECT 1").first();
 	await expect(invocation.beforeRequest()).rejects.toMatchObject({ code: "factory_yield" });
 	expect(db.statements).toBe(60);
+});
+
+it("exempts only continuing work from wall time, never from the request cap", async () => {
+	const { db, lease, now } = await setup();
+	let time = now;
+	const invocation = new FactoryInvocation(db, lease, () => time);
+	const step = lease.run.steps[0];
+	if (!step) throw new Error("fixture");
+	step.status = "running";
+	time = new Date(Date.parse(now) + 25_000).toISOString();
+	expect(invocation.canStart(step)).toBe(false);
+	expect(invocation.canStart(step, true)).toBe(true);
+	invocation.requests = 40;
+	expect(invocation.canStart(step, true)).toBe(false);
+	await expect(invocation.beforeRequest()).rejects.toMatchObject({ code: "factory_yield" });
 });
 
 it("rejects expired heartbeats without extending a lost lease", async () => {

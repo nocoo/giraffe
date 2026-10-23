@@ -1711,3 +1711,16 @@ current-step rule and atomic version/journal preflight. Cross-step pause/cancel
 regressions reproduce the empty cooldown table before the fix; multi-repository
 tests exclude historical completed and untouched work. Whenever execution becomes
 batched, review control paths against in-flight audits as well as saved cursors.
+
+## 2026-10-23 - Separate step admission from page continuation
+
+Review reproduced a metadata request taking 10 seconds followed by three commit
+pages taking 10 seconds each. Applying the 25-second admission check on every
+executor loop yielded after two pages, contrary to the promised stream batching.
+The executor now identifies continuation by the step actually executed in this
+invocation, exempting only that continuation from wall time. Request/D1 caps,
+read-visibility boundaries and fenced heartbeats remain active. Regressions cover
+the 40-second batch, a 91-second batch that excludes competing lease claims, and
+stopping before the next step. Resource admission tests explicitly retain both
+caps for continuing work. Budget contracts must distinguish admission from
+progress inside already admitted work, rather than sharing a blanket loop check.
