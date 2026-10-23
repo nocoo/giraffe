@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.22.0 - 2026-10-23
+
+### Added
+
+- Additive `invocations` telemetry counts acquired execution leases, including crash recovery, so scheduled refresh cost can be measured without upstream reads.
+- Migration `0025_factory_run_journal.sql` preserves fenced request/attempt/duration audits across batched execution and crash replay. Existing snapshots, publications and retention roots remain intact.
+
+### Changed
+
+- Refresh workers execute multiple steps and stream pages per lease, under 25-second new-work admission, 40-request and bounded D1 budgets. Long work renews ownership before requests; buffered writes still commit atomically. Rate-limit backoff, cancellation, publication readiness and source windows remain unchanged.
+- Claim and attempt auditing no longer rewrite the whole run payload. Sparse step storage restores required API fields on read; the public run contract is unchanged apart from additive invocation telemetry. Downgrading to a v0.21 reader requires the documented pause/drain and tested offline payload expansion, not a code-only rollback.
+- Local fixtures preserve a 1,146-step daily plan in 320 invocations and a 19-step selected plan in five. These fixture counts are not a production-duration guarantee; queue/deploy configuration and repository parallelism are unchanged.
+
 ## v0.21.0 - 2026-10-23
 
 ### Added
