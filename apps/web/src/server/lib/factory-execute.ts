@@ -65,6 +65,7 @@ export async function executeRunPage(
 	let lease: RunLease | null = null;
 	let invocation: FactoryInvocation | null = null;
 	let reason: FactoryEndReason = "run_end";
+	let operation: "claim" | "heartbeat" | "step" | "save" = "claim";
 	let failure: unknown;
 	let cursorStart = 0;
 	let stepsDone = 0;
@@ -93,6 +94,7 @@ export async function executeRunPage(
 			)
 				run.cursor++;
 			run.nextAttemptAt = now;
+			operation = "save";
 			return (await saveRun(db, lease, [], clock())) ? now : null;
 		}
 		for (;;) {
@@ -113,12 +115,15 @@ export async function executeRunPage(
 				if (step.status === "running") step.status = "pending";
 				break;
 			}
+			operation = "heartbeat";
 			await invocation.heartbeat();
+			operation = "step";
 			const result = await executeStep(env, db, lease, invocation, step, clock);
 			invocation.writes.push(...result.writes);
 			stagedWrites += result.writes.length;
 			const boundary = invocation.completed(step);
 			if (!["pending", "running"].includes(step.status)) stepsDone++;
+			operation = "save";
 			if (!(await saveRun(db, lease, invocation.writes, clock(), run.status === "running"))) {
 				reason = "save_failed";
 				return await nextRunAttempt(db, id);
@@ -133,12 +138,13 @@ export async function executeRunPage(
 				break;
 			}
 		}
+		operation = "save";
 		const saved = await saveRun(db, lease, [], clock());
 		if (!saved) reason = "save_failed";
 		return saved && run.status === "running" ? run.nextAttemptAt : null;
 	} catch (error) {
 		failure = error;
-		reason = "error";
+		reason = operation === "save" ? "save_failed" : "error";
 		if (lease) {
 			try {
 				await releaseRunLease(createDb(env.DB), lease, clock());
@@ -165,6 +171,7 @@ export async function executeRunPage(
 				stagedWrites,
 				elapsedMs: Math.max(0, Date.parse(clock()) - started),
 				endReason: reason,
+				operation,
 			},
 			failure,
 		);

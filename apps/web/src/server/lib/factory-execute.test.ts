@@ -420,7 +420,8 @@ it("keeps every earlier checkpoint when the third step save dies and retries pro
 		expect.objectContaining({
 			runId: "r1",
 			cursorStart: 0,
-			endReason: "error",
+			endReason: "save_failed",
+			operation: "save",
 			requests: 3,
 			error: { name: "ApiError", code: "db_error", message: "d1 operation failed" },
 		}),
