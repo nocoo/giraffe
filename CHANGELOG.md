@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Override Undici to 7.30.1 to address GHSA-xjj6-f33q-929c, GHSA-4qv8-2p9j-2685 and GHSA-f72v-6w45-q472. Remove the override once Wrangler/Miniflare ship Undici >=7.30.1.
 - Truncate activity and factory titles, bodies and commit subjects by Unicode code point, preserving emoji at the 240/1200-character limits without emitting lone UTF-16 surrogates.
 - Upgrade Happy DOM to 21.0.4 to address GHSA-834v-8h66-3h79.
 - Return `expectedFinishAt: null` with `expectedFinishAtReason: "terminal"` for completed, failed, partial and cancelled factory runs across lists, history details and latest readiness. Use `finishedAt` for the actual end; running/paused estimates are unchanged.
