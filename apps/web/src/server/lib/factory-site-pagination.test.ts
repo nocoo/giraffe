@@ -368,3 +368,111 @@ it("does not apply replay storage limits to a terminal response that needs no ch
 		mapActionRuns({ workflow_runs: [{ id: 1 }] }),
 	);
 });
+
+it("preserves small release projections across more than 16 MiB of raw paginated responses", async () => {
+	const { raw, lease, step } = await setup("repo:nocoo/app:releases");
+	let requests = 0;
+	for (let index = 1; index <= 7; index++) {
+		const db = createDb(raw);
+		const client = github(() => {
+			requests++;
+			return Response.json(
+				Array.from({ length: 100 }, (_, offset) => ({
+					id: (index - 1) * 100 + offset,
+					tag_name: `v${index}.${offset}`,
+					ignored: "x".repeat(30_000),
+				})),
+				{
+					headers:
+						index < 7
+							? {
+									link: `<https://api.github.com/repos/nocoo/app/releases?per_page=100&page=${index + 1}>; rel="next"`,
+								}
+							: {},
+				},
+			);
+		});
+		const result = await collectSitePage(db, lease, step, client, "fake", NOW);
+		expect(result.done).toBe(index === 7);
+		expect(client.count).toBe(1);
+		expect(await saveRun(db, lease, result.writes, NOW, true)).toBe(true);
+	}
+	expect(requests).toBe(7);
+	const snapshot = await readSnapshot(createDb(raw), "account", step.resource ?? "", "site");
+	expect(snapshot?.releases).toHaveLength(700);
+	expect(snapshot?.truncated).toBe(false);
+	expect(JSON.stringify(snapshot).length).toBeLessThan(100_000);
+});
+
+it.each([false, true])(
+	"resumes missing public catalog identity after listing and propagates lease stop %s",
+	async (lostLease) => {
+		const { raw, db, lease, step } = await setup("repos");
+		lease.run.mode = "catalog";
+		for (const [id, repo, visibility] of [
+			["R_1", "nocoo/app", "PRIVATE"],
+			["R_OLD", "nocoo/old", "PUBLIC"],
+		]) {
+			await db
+				.prepare(
+					"INSERT INTO catalog_repositories(account_id,identity_key,github_id,repo,row_payload,first_seen_at,last_seen_at,is_archived,visibility,is_fork,first_seen_source) VALUES('account',?,?,?,?,?,?,0,?,0,'github_catalog')",
+				)
+				.bind(
+					id,
+					id,
+					repo,
+					JSON.stringify({ name_with_owner: repo, visibility }),
+					NOW,
+					NOW,
+					visibility,
+				)
+				.run();
+		}
+		const first = await collectSitePage(
+			db,
+			lease,
+			step,
+			github(() =>
+				Response.json({
+					data: {
+						viewer: {
+							repositories: { nodes: [rawRepo], pageInfo: { hasNextPage: false, endCursor: null } },
+						},
+					},
+				}),
+			),
+			"fake",
+			NOW,
+		);
+		expect(first.done).toBe(false);
+		expect(await saveRun(db, lease, first.writes, NOW, true)).toBe(true);
+		const stopped = new InvocationStopped(lostLease);
+		await expect(
+			collectSitePage(
+				createDb(raw),
+				lease,
+				step,
+				github(() => {
+					throw stopped;
+				}),
+				"fake",
+				NOW,
+			),
+		).rejects.toBe(stopped);
+		const client = github((_url, init) => {
+			expect(JSON.parse(String(init?.body)).variables).toEqual({ id: "R_OLD" });
+			return Response.json({ data: { node: { id: "R_OLD", nameWithOwner: "nocoo/renamed" } } });
+		});
+		const resumedDb = createDb(raw);
+		const result = await collectSitePage(resumedDb, lease, step, client, "fake", NOW);
+		expect(result.done).toBe(true);
+		expect(client.count).toBe(1);
+		expect(await saveRun(resumedDb, lease, result.writes, NOW, true)).toBe(true);
+		const plan = await createDb(raw)
+			.prepare("SELECT payload FROM factory_resources WHERE stream='catalog-plan'")
+			.first<{ payload: string }>();
+		expect(JSON.parse(plan?.payload ?? "{}").renames).toEqual([
+			{ from: "nocoo/old", to: "nocoo/renamed" },
+		]);
+	},
+);

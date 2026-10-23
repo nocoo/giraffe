@@ -479,7 +479,7 @@ it("saves earlier work but backs off at least fifteen minutes on a mid-loop rate
 	expect(run?.invocations).toBe(1);
 });
 
-it("yields at the shared request cap and retries an unfinished site step without a failure", async () => {
+it("yields at the shared budgets and resumes an unfinished site step without refetching", async () => {
 	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] });
 	const db = createDb(env.DB);
 	const found = await getRun(db, snap.account_id, "r1");
@@ -507,13 +507,15 @@ it("yields at the shared request cap and retries an unfinished site step without
 	);
 	await executeRunPage(env, "r1", () => now);
 	const pending = (await getRun(createDb(env.DB), snap.account_id, "r1"))?.run;
-	expect(fetch).toHaveBeenCalledTimes(40);
-	expect(pending?.requests).toBe(40);
+	const requested = vi.mocked(fetch).mock.calls.length;
+	expect(requested).toBeGreaterThan(20);
+	expect(requested).toBeLessThanOrEqual(40);
+	expect(pending?.requests).toBe(requested);
 	expect(pending?.steps[0]).toMatchObject({ status: "success", pages: 20 });
 	expect(pending?.steps[1]).toMatchObject({
 		status: "pending",
 		attempts: 1,
-		pages: 20,
+		pages: requested - 20,
 		error: null,
 	});
 	await executeRunPage(env, "r1", () => now);

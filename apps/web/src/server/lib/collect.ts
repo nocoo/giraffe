@@ -730,7 +730,7 @@ async function collectRestList(
 	budget = MAX_STAGED_BYTES,
 	responseKey?: "workflow_runs",
 ): Promise<Collected> {
-	const rows: unknown[] = [];
+	const collected = finish([], false);
 	let path: string | null = start;
 	let truncated = false;
 	let started = false;
@@ -748,10 +748,12 @@ async function collectRestList(
 				truncated = true;
 				break;
 			}
-			rows.push(...items);
+			const page = finish(items, false);
+			for (const [key, value] of Object.entries(page))
+				if (Array.isArray(value)) (collected[key] as unknown[]).push(...value);
 			started = true;
 			path = nextPath(res);
-			if (exceedsBudget(finish(rows, true), budget)) {
+			if (exceedsBudget({ ...collected, truncated: true }, budget)) {
 				truncated = true;
 				break;
 			}
@@ -763,5 +765,5 @@ async function collectRestList(
 			throw err;
 		}
 	}
-	return finish(rows, truncated);
+	return { ...collected, truncated };
 }

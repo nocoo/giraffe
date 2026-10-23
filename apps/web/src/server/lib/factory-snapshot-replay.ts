@@ -25,7 +25,11 @@ type Entry = {
 	  }
 );
 
-export class SnapshotPageReady extends Error {}
+export class SnapshotPageReady extends ApiError {
+	constructor() {
+		super(409, "factory_yield", "snapshot page ready");
+	}
+}
 
 export async function snapshotReplay(
 	db: Db,
@@ -38,20 +42,13 @@ export async function snapshotReplay(
 	const prefix = `snapshot-replay:${resource}:${cursor}:`;
 	const rows = await db
 		.prepare(
-			"SELECT stream,payload FROM factory_resources WHERE run_id=? AND repo='' AND substr(stream,1,?)=? ORDER BY stream",
+			"SELECT stream FROM factory_resources WHERE run_id=? AND repo='' AND substr(stream,1,?)=? ORDER BY stream",
 		)
 		.bind(lease.run.id, prefix.length, prefix)
-		.all<{ stream: string; payload: string }>();
-	const parts = new Map<string, string[]>();
-	for (const row of rows.results) {
-		const index = row.stream.slice(prefix.length).split(":")[0] ?? "";
-		const chunks = parts.get(index) ?? [];
-		chunks.push(JSON.parse(row.payload));
-		parts.set(index, chunks);
-	}
-	const encoded = [...parts.values()].map((chunks) => chunks.join(""));
-	const entries = encoded.map((text) => JSON.parse(text) as Entry);
-	const bytes = encoded.reduce((total, text) => total + utf8Bytes(text), 0);
+		.all<{ stream: string }>();
+	const saved = new Set(
+		rows.results.map((row) => Number(row.stream.slice(prefix.length).split(":")[0])),
+	);
 	let position = 0;
 	let requested = false;
 	let pending: { text: string; index: number } | undefined;
@@ -105,7 +102,19 @@ export async function snapshotReplay(
 		const key = Array.from(new Uint8Array(digest), (byte) =>
 			byte.toString(16).padStart(2, "0"),
 		).join("");
-		let entry = entries[position];
+		let entry: Entry | undefined;
+		if (saved.has(position)) {
+			const pagePrefix = `${prefix}${String(position).padStart(2, "0")}:`;
+			const chunks = await db
+				.prepare(
+					"SELECT payload FROM factory_resources WHERE run_id=? AND repo='' AND substr(stream,1,?)=? ORDER BY stream",
+				)
+				.bind(lease.run.id, pagePrefix.length, pagePrefix)
+				.all<{ payload: string }>();
+			entry = JSON.parse(
+				chunks.results.map((chunk) => JSON.parse(chunk.payload) as string).join(""),
+			) as Entry;
+		}
 		if (entry && entry.key !== key)
 			throw new ApiError(422, "snapshot_incomplete", "snapshot request changed");
 		if (!entry) {
@@ -150,8 +159,12 @@ export async function snapshotReplay(
 		get writes() {
 			if (!pending) return [];
 			const { text, index } = pending;
-			if (bytes + utf8Bytes(text) > MAX_STAGED_BYTES)
-				throw new ApiError(422, "snapshot_incomplete", "snapshot replay exceeds bounded storage");
+			if (utf8Bytes(text) > MAX_STAGED_BYTES)
+				throw new ApiError(
+					422,
+					"snapshot_incomplete",
+					"snapshot replay page exceeds bounded storage",
+				);
 			const writes: D1PreparedStatement[] = [];
 			for (let offset = 0; offset < text.length; offset += 250_000) {
 				writes.push(

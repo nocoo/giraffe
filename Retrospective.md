@@ -1777,3 +1777,25 @@ the catalog first, skips factory reads for empty/currentless selections, and use
 one compact SQL projection for selected names/IDs while preserving catalog identity.
 Large payloads no longer increase returned bytes. Read-time enrichments require
 payload-volume and empty-selection evidence as well as value/identity assertions.
+
+## 2026-10-23 - Freeze all writers before hooked commits
+
+During B14A, the first commit attempt overlapped a benchmark worker's unfinished
+type change. Earlier full checks had passed, but pre-commit correctly rejected
+the changing working tree. No failing commit or push occurred. The coordinator
+paused every file-writing worker, including the measurement worker, waited for
+its type/lint fix, and reran the normal hook successfully. A green check applies
+to a stable tree, not to concurrently changing work; freeze all writers before
+staging and hooked commits, then resume only after recording the result.
+
+## 2026-10-23 - Preserve control flow and memory semantics in page replay
+
+B14A review found two gaps in the first generic snapshot replay implementation.
+The catalog identity fallback swallowed its page-yield exception, and a cumulative
+raw-response byte cap rejected large release bodies whose projected snapshots
+were small enough to publish. Focused regressions now cover deferred identity
+lookups and seven large release pages. Yield/lease signals cross the catalog
+catch unchanged; replay loads cached responses one page at a time instead of
+holding the full raw history in memory. When introducing resumability around an
+existing collector, audit every catch and compare limits on the same data shape
+as the original path, not just the final small fixtures.
