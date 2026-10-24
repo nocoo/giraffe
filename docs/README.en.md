@@ -92,17 +92,17 @@ Browser tests use the development authentication path. Live GitHub and real Acce
 
 ## Stack
 
-| Technology | Role |
-| --- | --- |
-| TypeScript | Pages, Worker logic, and development scripts |
-| React, Basalt, Tailwind CSS | Console interface and interactions |
-| Recharts | Repository and open-work charts |
-| Hono, Cloudflare Workers | HTTP API, GitHub requests, and static hosting |
-| Cloudflare D1 | Accounts, encrypted PATs, and data snapshots |
-| Cloudflare Access | Deployment access and API identity checks |
-| GitHub REST / GraphQL API | Repositories, open work, alerts, and notifications |
-| Vite | Local development and frontend builds |
-| Vitest, Playwright | Unit, HTTP, and browser tests |
+| Technology                  | Role                                               |
+| --------------------------- | -------------------------------------------------- |
+| TypeScript                  | Pages, Worker logic, and development scripts       |
+| React, Basalt, Tailwind CSS | Console interface and interactions                 |
+| Recharts                    | Repository and open-work charts                    |
+| Hono, Cloudflare Workers    | HTTP API, GitHub requests, and static hosting      |
+| Cloudflare D1               | Accounts, encrypted PATs, and data snapshots       |
+| Cloudflare Access           | Deployment access and API identity checks          |
+| GitHub REST / GraphQL API   | Repositories, open work, alerts, and notifications |
+| Vite                        | Local development and frontend builds              |
+| Vitest, Playwright          | Unit, HTTP, and browser tests                      |
 
 ## Documentation
 

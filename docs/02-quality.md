@@ -22,14 +22,14 @@
 
 ## 2. 总表
 
-| 维 | 命令 | 时机 | 时限 | 阶段 1 | 阶段 2 |
-|----|------|------|------|--------|--------|
-| L1 | `bun run test:coverage` | pre-commit | <30s | Server 单测 | Server + Client 单测 |
-| L2 | `bun run test:e2e:api` | **pre-push**（不进 pre-commit） | <3min | 全部 `/api` 真 HTTP | 同左（随 04 增补） |
-| L3 | `bun run test:e2e:bdd` | CI / 按需 | — | **N/A** | 核心界面路径 |
-| G1 | `typecheck` + `lint` + skip/wrangler/github-fetch/client-fetch gates | pre-commit | 含在 30s 内 | 要 | 要 |
-| G2 | `bun run gate:security` | pre-push | 与 L2 并行，合计 <3min | 要（有 lockfile 后） | 要 |
-| 隔离 | 见第 8 节 | L2/L3 | — | L2 | L2 + L3 |
+| 维   | 命令                                                                 | 时机                            | 时限                   | 阶段 1               | 阶段 2               |
+| ---- | -------------------------------------------------------------------- | ------------------------------- | ---------------------- | -------------------- | -------------------- |
+| L1   | `bun run test:coverage`                                              | pre-commit                      | <30s                   | Server 单测          | Server + Client 单测 |
+| L2   | `bun run test:e2e:api`                                               | **pre-push**（不进 pre-commit） | <3min                  | 全部 `/api` 真 HTTP  | 同左（随 04 增补）   |
+| L3   | `bun run test:e2e:bdd`                                               | CI / 按需                       | —                      | **N/A**              | 核心界面路径         |
+| G1   | `typecheck` + `lint` + skip/wrangler/github-fetch/client-fetch gates | pre-commit                      | 含在 30s 内            | 要                   | 要                   |
+| G2   | `bun run gate:security`                                              | pre-push                        | 与 L2 并行，合计 <3min | 要（有 lockfile 后） | 要                   |
+| 隔离 | 见第 8 节                                                            | L2/L3                           | —                      | L2                   | L2 + L3              |
 
 `bun run test` 只给人看，**不是**门控。门控必须是 `test:coverage`。
 
@@ -48,11 +48,11 @@
 
 Hook：
 
-| Hook | 顺序 | 命令 |
-|------|------|------|
-| pre-commit | G1 → L1 | `bun run typecheck && bun run lint && bun run gate:test-skip && bun run gate:wrangler-vars && bun run gate:github-fetch && bun run gate:client-fetch && bun run test:coverage` |
-| pre-push | L2 ‖ G2 | `bun run test:e2e:api` 与 `bun run gate:security` 并行 |
-| CI | 阶段 1：G1+L1+L2+G2；阶段 2：再加 L3 | 与本地同一命令 |
+| Hook       | 顺序                                 | 命令                                                                                                                                                                           |
+| ---------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| pre-commit | G1 → L1                              | `bun run typecheck && bun run lint && bun run gate:test-skip && bun run gate:wrangler-vars && bun run gate:github-fetch && bun run gate:client-fetch && bun run test:coverage` |
+| pre-push   | L2 ‖ G2                              | `bun run test:e2e:api` 与 `bun run gate:security` 并行                                                                                                                         |
+| CI         | 阶段 1：G1+L1+L2+G2；阶段 2：再加 L3 | 与本地同一命令                                                                                                                                                                 |
 
 `gate:test-skip` 必须扫描 `src/` 与 `tests/`，命中任一则失败，包括链式写法：`.only`、`.skip`、`.todo`、`.fails`、`.runIf`、`.skipIf`、`xtest`、`xdescribe`、`it.todo`、`test.concurrent.todo`。Biome 开启 `noSkippedTests` / `noFocusedTests`（或等价规则）且 `--error-on-warnings`；脚本是双保险。
 
@@ -66,13 +66,13 @@ Hook：
 
 ### 必测
 
-| 对象 | 阶段 | 例子 |
-|------|------|------|
-| 纯函数 | 1 | token 信封加解密、sanitize、快照分页切分 |
-| Server 路由处理的纯逻辑 | 1 | 缺 scope → `capability_missing`；无快照 GET → 409 |
-| Access JWT 校验 | 1 | 缺 `iss`/`aud`/过期 → 401；非测试 JWKS 不得接受自签 token |
-| Client ViewModel | 2 | 不碰 DOM |
-| Client 可测组件 | 2 | 交互与状态，不启 Worker |
+| 对象                    | 阶段 | 例子                                                      |
+| ----------------------- | ---- | --------------------------------------------------------- |
+| 纯函数                  | 1    | token 信封加解密、sanitize、快照分页切分                  |
+| Server 路由处理的纯逻辑 | 1    | 缺 scope → `capability_missing`；无快照 GET → 409         |
+| Access JWT 校验         | 1    | 缺 `iss`/`aud`/过期 → 401；非测试 JWKS 不得接受自签 token |
+| Client ViewModel        | 2    | 不碰 DOM                                                  |
+| Client 可测组件         | 2    | 交互与状态，不启 Worker                                   |
 
 ### 文件位置
 
@@ -93,7 +93,6 @@ L1 禁止：网络、真实 D1、真实 GitHub、启动 wrangler。`vitest` setu
 禁止在仓库根对 wrangler 使用开发者的 `.dev.vars`。
 
 Runner 必须：
-
 1. 建临时目录（例如 `.wrangler/e2e-run/`），把 `wrangler.toml` 拷进去；`src/` 与 schema 文件（`src/server/lib/db/schema.sql` 或 `migrations/`，以 03 为准）必须能从该目录解析。
 2. persist 使用**仓库根绝对路径** `.wrangler/e2e/`（L3 为 `.wrangler/e2e-pw/`），不要写成相对临时 cwd 的嵌套路径。
 3. **只**用 runner 写的 `--env-file` 注入 fixture。L2/L3 **不写、不读** `.dev.vars`。本机 `dev:server` 才用 `.dev.vars`。仓库根 `.dev.vars` 不得传给 E2E wrangler。
@@ -128,7 +127,6 @@ ACCESS_JWKS_URL=http://127.0.0.1:17047/cdn-cgi/access/certs
 套件 A 与套件 B 的 Worker 环境不同，必须 **起停两次** wrangler，各用一份 env-file。不能在同一进程里改 `ENVIRONMENT`。
 
 每个套件：
-
 1. 临时目录 + 占位 `dist/client/index.html`
 2. 清空该套件 persist（可共用 `.wrangler/e2e/`，两次启动之间仍要执行 schema + marker）
 3. **先**用仓库根绝对路径执行 schema：`wrangler d1 execute giraffe-db --local --persist-to=<绝对路径> --file=<schema.sql 绝对路径>`（若 03 改为 migrations，则换成 `migrations apply` + 同一绝对 persist）。写入 `_test_marker`
@@ -140,7 +138,6 @@ ACCESS_JWKS_URL=http://127.0.0.1:17047/cdn-cgi/access/certs
 9. finally 杀全部进程
 
 GitHub 出站的**唯一**入口是请求内 `createGithubClient(env)` 返回的 `githubFetch(url)`（签名细节见 04）。比较用 `new URL(url).origin === new URL(base).origin`，不是 hostname 对 origin。禁止模块级 fetch 计数器。
-
 - `ENVIRONMENT` 为 `development` 或 `test`：必须用 `GITHUB_API_BASE`；origin 不匹配则 **throw 且不调用 fetch**
 - 生产：忽略 `GITHUB_API_BASE`，origin 只能是 `https://api.github.com`
 - L2 runner 未设 `GITHUB_API_BASE` 则失败关闭
@@ -154,26 +151,23 @@ G1 `gate:client-fetch` 扫 `src/client/**`：只允许 `src/client/lib/api.ts` �
 ### 5.3 两套 HTTP
 
 **套件 A — 功能（可短路 Access）**
-
 - 注入 `ENVIRONMENT=development`（仅该套件 `--env-file`，不是 wrangler.toml `[vars]`，不是 `.dev.vars`）
 - GitHub 只允许 `GITHUB_API_BASE`。未注入则 runner 与 `githubFetch` 都失败关闭。出站保证靠 `githubFetch` + G1 AST 门，不靠 stub 观察直连
 
 每个 [04](04-server.md) **方法+路径**至少：
 
-| 种类 | 要求 |
-|------|------|
-| 成功路径 | 写类（POST/DELETE）带**允许的 Origin**；状态码与 body 符合契约；必须能在后续 GET 观察到状态变化。GET **不带 Origin** 也必须 200/409（按是否有快照），证明只读不依赖 Origin |
+| 种类     | 要求                                                                                                                                                                                                                                                  |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 成功路径 | 写类（POST/DELETE）带**允许的 Origin**；状态码与 body 符合契约；必须能在后续 GET 观察到状态变化。GET **不带 Origin** 也必须 200/409（按是否有快照），证明只读不依赖 Origin                                                                            |
 | 契约失败 | **快照类 GET**（repos/issues/prs/insights/alerts/notifications 及单仓 GET）无快照 → 409。`GET /api/live`、`GET /api/me`、`GET /api/accounts` 不在此列。POST **与 DELETE**：缺 Origin → 403；Origin 不在允许列表 → 403。403 **不能**当作该路径唯一用例 |
-| 只读 | GET 期间 GitHub stub 请求数为 0，且相关 D1 行（快照 payload / `fetched_at` / accounts）字节级不变 |
+| 只读     | GET 期间 GitHub stub 请求数为 0，且相关 D1 行（快照 payload / `fetched_at` / accounts）字节级不变                                                                                                                                                     |
 
 PAT `POST /api/accounts` 成功**与失败**路径（400 缺 scope、GitHub stub 401、非法 token）均断言：
-
 - HTTP 响应、错误体、wrangler stdout/stderr 均不含 fixture PAT 明文
 - 经 Worker 可读的账号详情 / live 不得含明文
 - 成功路径：在 `GET /api/live` 已证明 `d1_marker=test` 之后，用同一绝对 persist 做 `wrangler d1 execute --local --persist-to=<绝对路径>` 读 `token_ciphertext`（不新增 dump API）。值必须是信封 JSON（`iv`/`ct`/`tag`），明文 PAT 不是子串
 
 **套件 B — Access 中间件（真 HTTP）**
-
 - `ENVIRONMENT=test`：必须验 JWT；JWKS 只允许 `ACCESS_JWKS_URL`
 - 生产（`ENVIRONMENT` 空或 `production`）**必须忽略** `ACCESS_JWKS_URL`，只信 `CF_ACCESS_TEAM_DOMAIN` 的 JWKS。L1 覆盖「生产模式下 fixture JWKS 被忽略」
 - 用 stub JWKS 签发 fixture JWT
@@ -194,7 +188,6 @@ still runs the full suite; CI and required acceptance use the unchanged full com
 阶段 2 才有。Playwright，Chromium。
 
 L3 **只跑套件 A**（`ENVIRONMENT=development` Access 短路）。不做套件 B，浏览器不注入 CF Access JWT。隔离目录、`--env-file`、GitHub `githubFetch` 边界与 L2 套件 A 相同。L2 写请求仍手设 Origin `https://giraffe.dev.hexly.ai`。L3 Playwright 的页源是 `http://127.0.0.1:27045`，浏览器会带该 Origin；04 在 Access 短路条件下允许 `Origin === request URL origin`。这不是把 loopback 写入生产白名单。差异：
-
 1. 先 `vite build`，把真实 `dist/client` 放进临时目录（不要占位壳）
 2. persist：`.wrangler/e2e-pw/`
 3. 端口 27045；同样先执行 schema + marker 再启动
@@ -202,7 +195,6 @@ L3 **只跑套件 A**（`ENVIRONMENT=development` Access 短路）。不做套�
 5. finally 清理
 
 最低路径（05 可加，不可减）：
-
 1. 设置页提交 fixture PAT（输入框提交后为空）
 2. 仓库列表有数据
 3. 进入单仓详情
@@ -212,7 +204,6 @@ L3 **只跑套件 A**（`ENVIRONMENT=development` Access 短路）。不做套�
 ## 7. G1 / G2
 
 **G1**
-
 - `tsc --noEmit`，`strict` + `noUncheckedIndexedAccess` + `exactOptionalPropertyTypes`
 - `biome check --error-on-warnings .`：0 error、0 warning
 - `bun run gate:test-skip`（见第 3 节）
@@ -221,7 +212,6 @@ L3 **只跑套件 A**（`ENVIRONMENT=development` Access 短路）。不做套�
 - `bun run gate:client-fetch`：Client 只允许 `src/client/lib/api.ts` 以相对路径 `/api/` 调用 fetch
 
 **G2**
-
 - `gitleaks`：pre-push 扫将要推送的范围；命中密钥/PAT 形态则失败
 - `osv-scanner --lockfile=bun.lock`：已知漏洞非零退出
 - fixture 密钥必须是明显假值；gitleaks 允许名单只覆盖该 fixture 路径
@@ -230,13 +220,13 @@ L3 **只跑套件 A**（`ENVIRONMENT=development` Access 短路）。不做套�
 
 ## 8. 隔离
 
-| 资源 | 生产 | L1 | L2 / L3 |
-|------|------|----|---------|
-| D1 | 远程 `giraffe-db` | 无 | persist 目录 SQLite；经 Worker binding 读到 `d1_marker=test` |
-| GitHub | `https://api.github.com` | 无 | 仅 `GITHUB_API_BASE` stub；未配置则失败关闭 |
-| Access | 真 JWT + 真 JWKS | 单测夹具 | 套件 A 可 development 短路；套件 B 真 HTTP + stub JWKS |
-| 配置 | 生产 secrets | 无 | runner `--env-file`，不用任何 `.dev.vars` |
-| PAT | 用户 classic PAT | 假数据 | fixture |
+| 资源   | 生产                     | L1       | L2 / L3                                                      |
+| ------ | ------------------------ | -------- | ------------------------------------------------------------ |
+| D1     | 远程 `giraffe-db`        | 无       | persist 目录 SQLite；经 Worker binding 读到 `d1_marker=test` |
+| GitHub | `https://api.github.com` | 无       | 仅 `GITHUB_API_BASE` stub；未配置则失败关闭                  |
+| Access | 真 JWT + 真 JWKS         | 单测夹具 | 套件 A 可 development 短路；套件 B 真 HTTP + stub JWKS       |
+| 配置   | 生产 secrets             | 无       | runner `--env-file`，不用任何 `.dev.vars`                    |
+| PAT    | 用户 classic PAT         | 假数据   | fixture                                                      |
 
 `wrangler.toml` 禁止 `remote = true`。默认 `bun run dev:server` 也是本地 D1。
 
@@ -260,14 +250,12 @@ L3 **只跑套件 A**（`ENVIRONMENT=development` Access 短路）。不做套�
 ## 10. 阶段完成线
 
 **阶段 1 可宣告完成**，当且仅当：
-
 - 04 列出的全部接口有 L1（该测的逻辑）和 L2 套件 A+B
 - `test:coverage` 四项均 ≥ 95%，`include` 含全部生产 `src/`（测试文件与薄壳除外）
 - pre-commit / pre-push 命令在干净树上可复现绿
 - 无 Client 功能代码
 
 **阶段 2 可宣告完成**，当且仅当：
-
 - 阶段 1 的 L1/L2/G1/G2 仍绿
 - 05 列出的页面有 L1 ViewModel/组件测试
 - 第 6 节最低 L3 路径绿
@@ -279,14 +267,14 @@ These real local HTTP tests run in both L2 suites A and B; they do not replace
 the project's still-planned complete endpoint/method inventory. Paths below are
 relative to `/api/v1/accounts/:account` unless explicitly browser-prefixed.
 
-| Method/path | Contract assertions | L2 file |
-| --- | --- | --- |
-| GET `/contributions` | Typed/legacy days, inclusive bounds, missing data, invalid/order/range/repeated/unknown queries, 401/403, ETag/304, retained provenance, no writes/upstream calls, read-only methods | `tests/api/machine-contributions.test.ts` |
-| GET `/settings`; PUT/DELETE `/schedules/:kind` | All three kinds, normalized 1-6 times, single-time alias, 400 validation, 401/403, method rejection, side-effect-free reads, delete cleanup | `tests/api/refresh-schedules-multi.test.ts` |
-| GET `/prs` | Known and null legacy merge/check state, 401/403, strict queries, no writes/upstream calls | `tests/api/pr-state.test.ts` |
-| GET `/repos/:owner/:name/prs` | Same PR fields plus catalog 404 | `tests/api/pr-state.test.ts` |
-| GET `/factory/repos/:owner/:name/prs` | Same PR fields plus immutable resource/catalog boundaries | `tests/api/pr-state.test.ts` |
-| Browser GET `/api/prs` and `/api/repos/:owner/:name/prs` | Actual local-stub collection exposes the additional PR metadata | `tests/api/matrix.test.ts` |
+| Method/path                                              | Contract assertions                                                                                                                                                                  | L2 file                                     |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------- |
+| GET `/contributions`                                     | Typed/legacy days, inclusive bounds, missing data, invalid/order/range/repeated/unknown queries, 401/403, ETag/304, retained provenance, no writes/upstream calls, read-only methods | `tests/api/machine-contributions.test.ts`   |
+| GET `/settings`; PUT/DELETE `/schedules/:kind`           | All three kinds, normalized 1-6 times, single-time alias, 400 validation, 401/403, method rejection, side-effect-free reads, delete cleanup                                          | `tests/api/refresh-schedules-multi.test.ts` |
+| GET `/prs`                                               | Known and null legacy merge/check state, 401/403, strict queries, no writes/upstream calls                                                                                           | `tests/api/pr-state.test.ts`                |
+| GET `/repos/:owner/:name/prs`                            | Same PR fields plus catalog 404                                                                                                                                                      | `tests/api/pr-state.test.ts`                |
+| GET `/factory/repos/:owner/:name/prs`                    | Same PR fields plus immutable resource/catalog boundaries                                                                                                                            | `tests/api/pr-state.test.ts`                |
+| Browser GET `/api/prs` and `/api/repos/:owner/:name/prs` | Actual local-stub collection exposes the additional PR metadata                                                                                                                      | `tests/api/matrix.test.ts`                  |
 
 `tests/e2e/refresh-schedules-multi.spec.ts` exercises Basalt add/remove/save/reload
 for daily, weekly and catalog schedules in Chromium, including the six-slot limit

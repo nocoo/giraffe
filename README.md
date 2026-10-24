@@ -92,17 +92,17 @@ HTTP 与浏览器脚本自动准备隔离的本地 D1 和 GitHub stub，不需�
 
 ## 技术栈
 
-| 技术 | 用途 |
-| --- | --- |
-| TypeScript | 页面、Worker 与开发脚本 |
-| React、Basalt、Tailwind CSS | 控制台界面与交互 |
-| Recharts | 仓库与待办指标图表 |
-| Hono、Cloudflare Workers | HTTP API、GitHub 请求与静态资源托管 |
-| Cloudflare D1 | 账号、加密 PAT 与数据快照 |
-| Cloudflare Access | 部署入口认证与 API 身份校验 |
-| GitHub REST / GraphQL API | 仓库、待办、告警与通知数据 |
-| Vite | 本地开发与前端构建 |
-| Vitest、Playwright | 单元、HTTP 与浏览器测试 |
+| 技术                        | 用途                                |
+| --------------------------- | ----------------------------------- |
+| TypeScript                  | 页面、Worker 与开发脚本             |
+| React、Basalt、Tailwind CSS | 控制台界面与交互                    |
+| Recharts                    | 仓库与待办指标图表                  |
+| Hono、Cloudflare Workers    | HTTP API、GitHub 请求与静态资源托管 |
+| Cloudflare D1               | 账号、加密 PAT 与数据快照           |
+| Cloudflare Access           | 部署入口认证与 API 身份校验         |
+| GitHub REST / GraphQL API   | 仓库、待办、告警与通知数据          |
+| Vite                        | 本地开发与前端构建                  |
+| Vitest、Playwright          | 单元、HTTP 与浏览器测试             |
 
 ## 文档
 

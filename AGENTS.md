@@ -49,30 +49,30 @@ For daily development, prepare `.dev.vars` from the example without overwriting 
 
 6DQ keeps its name with unified L1, L2/L3, G2 and D1; the owner merged former G1 into L1 on 2026-09-21. Statuses: `enforced`, `planned`, `manual`, `N/A`.
 
-| Dimension | Required proof | Status | Current enforcement / gap |
-|---|---|---|---|
-| L1 pre-commit quality | Statements, branches, functions and lines each ≥95%; no skipped/focused tests; strict types and check-only lint, zero errors/warnings | planned | Commit/CI coverage includes server/shared/client logic with enforced subchecks: the skip gate and Biome reject disabled/focused tests, L1 setup rejects real network, and commit/CI check three TS configs, generated Wrangler types and skip/vars/fetch boundaries. Gates run on the working tree; index-snapshot, <30s and rejection evidence are missing |
-| L2 API | Real local HTTP over 100% of endpoint/method combinations, success/failure and auth | planned | Push/CI run functional suite A and JWT suite B; full endpoint/method assertion inventory must track the evolving factory API |
-| L3 UI | Critical account/catalogue/repository/factory journeys in Chromium | enforced | CI runs the built SPA through `scripts/run-e2e-bdd.ts` and GitHub stub |
-| G2 security | Dependency and secret scans; missing tool fails | enforced | Pre-push passes stdin commit ranges, including new refs, to Gitleaks and scans `bun.lock` with OSV; CI shared scanners |
-| D1 isolation | Fresh local state per run, guards and marker before fixtures/reset/cleanup | planned | Both runners are local with `_test_marker env=test` and stub ports, but reuse fixed directories and delete them before proving marker/ownership |
-| Build | Actual Vite assets in `dist/client` | enforced | L3 runner and CD build; typecheck alone does not build |
-| Docs / migration | API/schema/source-window and rollback proof | manual | Server, client and factory runbooks; local migration verifier on a backup copy |
+| Dimension             | Required proof                                                                                                                        | Status   | Current enforcement / gap                                                                                                                                                                                                                                                                                                                                   |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| L1 pre-commit quality | Statements, branches, functions and lines each ≥95%; no skipped/focused tests; strict types and check-only lint, zero errors/warnings | planned  | Commit/CI coverage includes server/shared/client logic with enforced subchecks: the skip gate and Biome reject disabled/focused tests, L1 setup rejects real network, and commit/CI check three TS configs, generated Wrangler types and skip/vars/fetch boundaries. Gates run on the working tree; index-snapshot, <30s and rejection evidence are missing |
+| L2 API                | Real local HTTP over 100% of endpoint/method combinations, success/failure and auth                                                   | planned  | Push/CI run functional suite A and JWT suite B; full endpoint/method assertion inventory must track the evolving factory API                                                                                                                                                                                                                                |
+| L3 UI                 | Critical account/catalogue/repository/factory journeys in Chromium                                                                    | enforced | CI runs the built SPA through `scripts/run-e2e-bdd.ts` and GitHub stub                                                                                                                                                                                                                                                                                      |
+| G2 security           | Dependency and secret scans; missing tool fails                                                                                       | enforced | Pre-push passes stdin commit ranges, including new refs, to Gitleaks and scans `bun.lock` with OSV; CI shared scanners                                                                                                                                                                                                                                      |
+| D1 isolation          | Fresh local state per run, guards and marker before fixtures/reset/cleanup                                                            | planned  | Both runners are local with `_test_marker env=test` and stub ports, but reuse fixed directories and delete them before proving marker/ownership                                                                                                                                                                                                             |
+| Build                 | Actual Vite assets in `dist/client`                                                                                                   | enforced | L3 runner and CD build; typecheck alone does not build                                                                                                                                                                                                                                                                                                      |
+| Docs / migration      | API/schema/source-window and rollback proof                                                                                           | manual   | Server, client and factory runbooks; local migration verifier on a backup copy                                                                                                                                                                                                                                                                              |
 
-| Hook | Current behavior | Required follow-up |
-|---|---|---|
-| pre-commit | Working-tree typecheck, full lint, four structural gates and coverage | Unified L1 on an index snapshot, <30s |
-| pre-push | Local L2 and G2 in parallel; Gitleaks consumes stdin ranges | Test the same pushed commit snapshots as well, <3min |
+| Hook       | Current behavior                                                      | Required follow-up                                   |
+| ---------- | --------------------------------------------------------------------- | ---------------------------------------------------- |
+| pre-commit | Working-tree typecheck, full lint, four structural gates and coverage | Unified L1 on an index snapshot, <30s                |
+| pre-push   | Local L2 and G2 in parallel; Gitleaks consumes stdin ranges           | Test the same pushed commit snapshots as well, <3min |
 
 Install restores Husky. Hooks are check-only; never use `--no-verify` on commits or branch pushes. CI/CD pins shared `nocoo/base-ci` workflows at `ac635753a869cb85fad1f52aae4ccbd6119f3cae` (main 2026-10-22).
 
 ## Resources and isolation
 
-| Lane | Ports / directory | Boundary |
-|---|---|---|
-| Daily dev | Vite 7045, Worker 37045; `.wrangler/state` | Caddy `giraffe.dev.hexly.ai`; local D1, real GitHub unless configured otherwise |
-| L2 | Worker 17045, GitHub stub 17046, JWKS stub 17047; `.wrangler/e2e` | Functional and signed-JWT suites start separate Workers; runner env files only |
-| L3 | Worker 27045, GitHub stub 27046; `.wrangler/e2e-pw` | Real built SPA with development-auth fixtures |
+| Lane      | Ports / directory                                                 | Boundary                                                                        |
+| --------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Daily dev | Vite 7045, Worker 37045; `.wrangler/state`                        | Caddy `giraffe.dev.hexly.ai`; local D1, real GitHub unless configured otherwise |
+| L2        | Worker 17045, GitHub stub 17046, JWKS stub 17047; `.wrangler/e2e` | Functional and signed-JWT suites start separate Workers; runner env files only  |
+| L3        | Worker 27045, GitHub stub 27046; `.wrangler/e2e-pw`               | Real built SPA with development-auth fixtures                                   |
 
 Keep these ports free; a conflict fails instead of falling back to development. Required runners allocate per-run local persistence, reject remote bindings/credential fallback, prove test context and verify `_test_marker(key,value)` with `env=test` before reset/cleanup. Existing fixed directory names are implementation gaps, not the desired contract.
 
@@ -82,13 +82,13 @@ Keep these ports free; a conflict fails instead of falling back to development. 
 
 `.github/workflows/ci.yml` (workflow `CI`) runs on pull requests and pushes to `main` through the shared `quality.yml`. A PR is green only when every required check passes:
 
-| Check | Runs |
-|---|---|
-| `quality / L1: Quality & Tests` | the four `gate:*` scripts, `bun run typecheck`, `bun run lint`, `bun run test:coverage` |
-| `quality / L2: API E2E / Test (bun on ubuntu-latest)` | `bun run test:e2e:api` |
-| `quality / L3: Browser E2E / Test (bun on ubuntu-latest)` | `bun run test:e2e:bdd` (Chromium) |
-| `quality / G2: Security / Security (Secrets & Vulnerabilities)` | Gitleaks and OSV |
-| `quality / Quality Gate Aggregate` | requires all of the above |
+| Check                                                           | Runs                                                                                    |
+| --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `quality / L1: Quality & Tests`                                 | the four `gate:*` scripts, `bun run typecheck`, `bun run lint`, `bun run test:coverage` |
+| `quality / L2: API E2E / Test (bun on ubuntu-latest)`           | `bun run test:e2e:api`                                                                  |
+| `quality / L3: Browser E2E / Test (bun on ubuntu-latest)`       | `bun run test:e2e:bdd` (Chromium)                                                       |
+| `quality / G2: Security / Security (Secrets & Vulnerabilities)` | Gitleaks and OSV                                                                        |
+| `quality / Quality Gate Aggregate`                              | requires all of the above                                                               |
 
 `Build`, `Package Check` and `Worker Tests` report as skipped; that is expected.
 

@@ -1,4 +1,5 @@
 ---
+
 name: giraffe-api
 description: use this when reading Giraffe's saved GitHub refresh results or publishing external analysis through its scoped machine API, including bot run status, token rotation, and explicitly authorized refresh management; not for live GitHub writes or model execution.
 ---
@@ -34,13 +35,13 @@ the detailed contracts; load the linked sections when needed.
   Never put credentials or raw secret-bearing errors in URLs, reports, logs,
   shared files or browser persistence.
 
-| Scope | Operations |
-| --- | --- |
+| Scope               | Operations                                                  |
+| ------------------- | ----------------------------------------------------------- |
 | `observations:read` | GET source index, catalog, observations and factory streams |
-| `agent:read` | GET records/reports/jobs |
-| `agent:write` | POST/PATCH/DELETE records/reports/jobs |
-| `app:read` | GET settings and refresh runs |
-| `app:write` | PUT/DELETE settings; POST refresh start/control |
+| `agent:read`        | GET records/reports/jobs                                    |
+| `agent:write`       | POST/PATCH/DELETE records/reports/jobs                      |
+| `app:read`          | GET settings and refresh runs                               |
+| `app:write`         | PUT/DELETE settings; POST refresh start/control             |
 
 Write does not imply read. An analysis bot normally needs only
 `observations:read`, `agent:read`, `agent:write`.
@@ -134,12 +135,12 @@ api "$API/repos?scope=all"
   existence, not change. Authentication/query checks and private/no-store apply;
   do not create shared caches or recompute edge-transformed validators.
 
-| Source identity | GET data path |
-| --- | --- |
-| `account:repos`, `account:issues`, `account:prs`, `account:ci`, `account:factory` | `/repos`, `/issues`, `/prs`, `/ci`, `/factory`, respectively |
-| `account:activity` | `/activity?run=latest` |
-| `repo:owner/name:details`, `:issues`, `:prs`, `:actions`, `:releases` | `/repos/:owner/:name/:resource` |
-| `factory:owner/name:commits`, `:issues`, `:prs`, `:actions`, `:releases`, `:alerts`, `:dependencies` | `/factory/repos/:owner/:name/:stream` |
+| Source identity                                                                                      | GET data path                                                |
+| ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `account:repos`, `account:issues`, `account:prs`, `account:ci`, `account:factory`                    | `/repos`, `/issues`, `/prs`, `/ci`, `/factory`, respectively |
+| `account:activity`                                                                                   | `/activity?run=latest`                                       |
+| `repo:owner/name:details`, `:issues`, `:prs`, `:actions`, `:releases`                                | `/repos/:owner/:name/:resource`                              |
+| `factory:owner/name:commits`, `:issues`, `:prs`, `:actions`, `:releases`, `:alerts`, `:dependencies` | `/factory/repos/:owner/:name/:stream`                        |
 
 Traffic/security/languages/contributors are readable repository pages but not
 indexed. `/contributions` reads the saved account calendar with inclusive date
@@ -155,17 +156,17 @@ metrics unknown. Nullable topic metadata cannot prove exclusion by a topic filte
 
 Read these references instead of guessing nested shapes or collection semantics:
 
-| Need | Reference |
-| --- | --- |
-| Source filters, aliases, ETag/304, timing | [Source index](../../docs/api.md#get-accountsasources), [conditional polling](../../docs/api.md#conditional-source-polling), [timing](../../docs/api.md#source-request-timing) |
-| Envelope, freshness, catalog selection | [Observation envelope](../../docs/api.md#observation-envelope), [account fields](../../docs/api.md#account-endpoints) |
-| Repository fields and security feature coverage | [Repository endpoints](../../docs/api.md#repository-endpoints) |
-| PR lifecycle, mergeability, checks | [PR contract](../../docs/api.md#pr-merge-and-checks-state) |
-| CI verdicts and workflow/repository/run units | [CI interpretation](../../docs/api.md#saved-ci-verdicts-and-units) |
-| Calendar dates, nullable types, partial days | [Contributions](../../docs/api.md#get-contributions) |
-| Factory items, immutable windows, coverage | [Factory streams](../../docs/api.md#factory-stream-endpoints) |
-| Dependency manifests and aggregate summaries | [Dependency metadata](../../docs/api.md#dependency-metadata-and-summaries) |
-| Workflow dependency IDs and safe-parse limitations | [Dependency parsing](../../docs/api.md#workflow-dependency-parsing-and-identity) |
+| Need                                               | Reference                                                                                                                                                                      |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Source filters, aliases, ETag/304, timing          | [Source index](../../docs/api.md#get-accountsasources), [conditional polling](../../docs/api.md#conditional-source-polling), [timing](../../docs/api.md#source-request-timing) |
+| Envelope, freshness, catalog selection             | [Observation envelope](../../docs/api.md#observation-envelope), [account fields](../../docs/api.md#account-endpoints)                                                          |
+| Repository fields and security feature coverage    | [Repository endpoints](../../docs/api.md#repository-endpoints)                                                                                                                 |
+| PR lifecycle, mergeability, checks                 | [PR contract](../../docs/api.md#pr-merge-and-checks-state)                                                                                                                     |
+| CI verdicts and workflow/repository/run units      | [CI interpretation](../../docs/api.md#saved-ci-verdicts-and-units)                                                                                                             |
+| Calendar dates, nullable types, partial days       | [Contributions](../../docs/api.md#get-contributions)                                                                                                                           |
+| Factory items, immutable windows, coverage         | [Factory streams](../../docs/api.md#factory-stream-endpoints)                                                                                                                  |
+| Dependency manifests and aggregate summaries       | [Dependency metadata](../../docs/api.md#dependency-metadata-and-summaries)                                                                                                     |
+| Workflow dependency IDs and safe-parse limitations | [Dependency parsing](../../docs/api.md#workflow-dependency-parsing-and-identity)                                                                                               |
 
 Repository verdict values are `broken | flaky | healthy | idle | unknown`.
 The independent release pipeline sentinel `none` means no release workflow.
@@ -190,7 +191,6 @@ reconstruct them. Historical/direct versions and canonical `contentVersion` stay
 
 Skip inference only for an existing valid completed report with matching
 account/scope/canonical repository/domain and a nonempty expected source set:
-
 1. Every expected source must exist in the current index and the report.
 2. When both content hashes exist, compare the entire hashes; unequal hashes
    never fall back to full-version equality.
@@ -207,7 +207,6 @@ Never use a 12-character ID suffix, a null hash or a 304 as completion proof.
 `/agent/{records,reports,jobs}` are generic storage, not execution queues. GET
 requires `agent:read`; POST/PATCH/DELETE require `agent:write`. See the
 [CRUD fields and examples](../../docs/api.md#records-reports-and-jobs).
-
 - Lists return `{account_id,items,nextCursor}` in ID-ascending order, not time
   order. `limit` is 1–100 (default 50); `cursor` is exclusive. Optional `type`,
   `status`, `repository` filters are exact. Follow `nextCursor` to null; there is
@@ -267,7 +266,6 @@ requires Cloudflare Access and the active browser account. A machine bearer does
 not grant access. Machine clients rebuild the newest **3 reports per exact
 `(payload.scope, row.repository, payload.domain)` locally** from the generic
 `GET /api/v1/accounts/:account/agent/reports` list:
-
 - Request `type=github-analysis`, paginate every page, and include all statuses;
   do not filter to completed rows before selecting three. Repository keys are
   case-sensitive and globals normally use null.
@@ -464,19 +462,19 @@ See [discovery](../../docs/api.md#get-catalogchanges) for exact bounds and field
 Use HTTP status and `{error:{code,message}}.error.code`, not message text. Auth
 can fail before validation; edge errors can have a different envelope.
 
-| HTTP / code | Action |
-| --- | --- |
-| 400 `validation_failed` | Correct schema, query, JSON/content type, size or revision |
-| 401 `token_unauthorized` | Stop; check account/expiry/revocation and rotate through browser |
-| 403 `account_forbidden` / `scope_forbidden` | Correct authorized account/scopes; do not escalate automatically |
-| 404 `not_found` / `revision_conflict` | Check catalog/item/endpoint or reconcile missing DELETE target |
-| 405 `method_not_allowed` | Use the documented method; unknown routes can return 404 |
-| 409 `snapshot_missing` | Preserve pending work; missing immutable evidence is not zero |
-| 409 `resource_exists` / `revision_conflict` | GET and reconcile full identity/current revision |
-| 409 `catalog_incomplete` / `refresh_cooldown` / `account_conflict` | Resolve catalog or defer authorized refresh/control |
-| 410 `deprecated` | Stop statistics writes; use authorized local star management |
-| 422 `factory_capacity` | Reduce authorized refresh selection; prior data is retained |
-| 500 `internal_error` / `db_error` | Bounded backoff, then operator diagnosis |
+| HTTP / code                                                        | Action                                                           |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------- |
+| 400 `validation_failed`                                            | Correct schema, query, JSON/content type, size or revision       |
+| 401 `token_unauthorized`                                           | Stop; check account/expiry/revocation and rotate through browser |
+| 403 `account_forbidden` / `scope_forbidden`                        | Correct authorized account/scopes; do not escalate automatically |
+| 404 `not_found` / `revision_conflict`                              | Check catalog/item/endpoint or reconcile missing DELETE target   |
+| 405 `method_not_allowed`                                           | Use the documented method; unknown routes can return 404         |
+| 409 `snapshot_missing`                                             | Preserve pending work; missing immutable evidence is not zero    |
+| 409 `resource_exists` / `revision_conflict`                        | GET and reconcile full identity/current revision                 |
+| 409 `catalog_incomplete` / `refresh_cooldown` / `account_conflict` | Resolve catalog or defer authorized refresh/control              |
+| 410 `deprecated`                                                   | Stop statistics writes; use authorized local star management     |
+| 422 `factory_capacity`                                             | Reduce authorized refresh selection; prior data is retained      |
+| 500 `internal_error` / `db_error`                                  | Bounded backoff, then operator diagnosis                         |
 
 Resource payloads are limited to 65,536 UTF-8 bytes; POST/PATCH bodies to 70,000.
 There is no application request-rate quota or documented total resource-count cap;

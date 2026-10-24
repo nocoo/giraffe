@@ -146,13 +146,13 @@ snapshots are shared by authorized users of a deployment, not tenant-isolated.
 
 Scopes are independent:
 
-| Scope | Capability |
-| --- | --- |
+| Scope               | Capability                                                                               |
+| ------------------- | ---------------------------------------------------------------------------------------- |
 | `observations:read` | Read saved source indexes, account/repository observations and published factory streams |
-| `agent:read` | Read generic records, reports and jobs |
-| `agent:write` | Create, update and delete generic records, reports and jobs |
-| `app:read` | Read refresh settings and runs |
-| `app:write` | Change settings and start/control explicit refresh runs |
+| `agent:read`        | Read generic records, reports and jobs                                                   |
+| `agent:write`       | Create, update and delete generic records, reports and jobs                              |
+| `app:read`          | Read refresh settings and runs                                                           |
+| `app:write`         | Change settings and start/control explicit refresh runs                                  |
 
 An external analysis consumer normally needs only `observations:read`, `agent:read`
 and `agent:write`. It does not need application write access. Missing/invalid,
@@ -235,7 +235,6 @@ rows are not deleted. Local stars further narrow this catalog, never expand it.
 Generic agent resources keep their independent storage/CRUD contract.
 
 Other read paths include:
-
 - `/repos`, `/issues`, `/prs`, `/ci`, `/factory` for saved account observations.
 - `/contributions?since=YYYY-MM-DD&until=YYYY-MM-DD` for the saved account-wide
   calendar, with inclusive dates inside its saved range (at most 90 days), strict

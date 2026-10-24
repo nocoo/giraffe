@@ -95,7 +95,6 @@ GitHub 字段名跟 REST/GraphQL 对齐（`login`、`nameWithOwner`、`stargazer
 Apply additive `0019_catalog_history.sql` after the activity migration. It adds
 three account-cascading tables without a factory-run foreign key, so discovery
 history survives ordinary run garbage collection:
-
 - `catalog_repositories`: `(account_id, identity_key)` primary key, nullable
   stable `github_id`, case-insensitive `repo`, last-known `row_payload` (plain
   existing repository JSON, at most 16,000 UTF-8 bytes), four nullable discovery
@@ -134,7 +133,6 @@ removed mutable stars or synthesize history; restore a verified backup only unde
 separate operational authorization.
 
 Apply `0020_catalog_identity_safety.sql` before the repaired catalog writer:
-
 - Add `catalog_repositories.name_current INTEGER NOT NULL DEFAULT 1`, constrained
   to 0/1, and replace `catalog_current_name` with the current-ownership predicate.
   Existing rows remain current; a same-name replacement can keep its unresolved
@@ -465,11 +463,11 @@ CREATE TABLE snapshot_days (
 
 逻辑 kind 为 `repos`。物理行：
 
-| 条件 | 物理 kind |
-|------|-----------|
-| 整包 ≤ 1,500,000 字节 | `repos` |
-| 需第 2 页 | `repos#2` |
-| 第 n 页 | `repos#n`（仅 n=2） |
+| 条件                  | 物理 kind           |
+| --------------------- | ------------------- |
+| 整包 ≤ 1,500,000 字节 | `repos`             |
+| 需第 2 页             | `repos#2`           |
+| 第 n 页               | `repos#n`（仅 n=2） |
 
 第 1 页 kind **不加** `#1`。最多 **2** 页。第 3 页起丢弃并 `truncated: true`。读取时：一条 SELECT 取 `kind` 与 `kind#2`。写入时一条 `DELETE … kind IN (logical, logical#2)` 加一条多行 `INSERT … VALUES`。禁止 `LIKE`，禁止每页一条 INSERT。
 
@@ -489,9 +487,9 @@ oversized row. Truncation remains explicit; the two-page limit is unchanged.
 
 ```json
 {
-  "account_id": "<accounts.id>",
-  "fetched_at": "2026-09-01T00:00:00.000Z",
-  "truncated": false
+	"account_id": "<accounts.id>",
+	"fetched_at": "2026-09-01T00:00:00.000Z",
+	"truncated": false
 }
 ```
 
@@ -503,26 +501,26 @@ oversized row. Truncation remains explicit; the two-page limit is unchanged.
 
 ```json
 {
-  "fetched_at": "...",
-  "truncated": false,
-  "repos": [
-    {
-      "name_with_owner": "owner/name",
-      "name": "name",
-      "owner_login": "owner",
-      "description": null,
-      "stargazer_count": 0,
-      "fork_count": 0,
-      "open_issue_count": 0,
-      "primary_language": "TypeScript",
-      "pushed_at": "2026-09-01T00:00:00.000Z",
-      "visibility": "PUBLIC",
-      "is_private": false,
-      "is_archived": false,
-      "is_fork": false,
-      "url": "https://github.com/owner/name"
-    }
-  ]
+	"fetched_at": "...",
+	"truncated": false,
+	"repos": [
+		{
+			"name_with_owner": "owner/name",
+			"name": "name",
+			"owner_login": "owner",
+			"description": null,
+			"stargazer_count": 0,
+			"fork_count": 0,
+			"open_issue_count": 0,
+			"primary_language": "TypeScript",
+			"pushed_at": "2026-09-01T00:00:00.000Z",
+			"visibility": "PUBLIC",
+			"is_private": false,
+			"is_archived": false,
+			"is_fork": false,
+			"url": "https://github.com/owner/name"
+		}
+	]
 }
 ```
 
@@ -532,21 +530,21 @@ oversized row. Truncation remains explicit; the two-page limit is unchanged.
 
 ```json
 {
-  "fetched_at": "...",
-  "truncated": false,
-  "issues": [
-    {
-      "name_with_owner": "owner/name",
-      "number": 1,
-      "title": "",
-      "url": "",
-      "created_at": "",
-      "updated_at": "",
-      "author_login": null,
-      "labels": [{ "name": "", "color": "ededed" }],
-      "comments_count": 0
-    }
-  ]
+	"fetched_at": "...",
+	"truncated": false,
+	"issues": [
+		{
+			"name_with_owner": "owner/name",
+			"number": 1,
+			"title": "",
+			"url": "",
+			"created_at": "",
+			"updated_at": "",
+			"author_login": null,
+			"labels": [{ "name": "", "color": "ededed" }],
+			"comments_count": 0
+		}
+	]
 }
 ```
 
@@ -554,25 +552,25 @@ oversized row. Truncation remains explicit; the two-page limit is unchanged.
 
 ```json
 {
-  "fetched_at": "...",
-  "truncated": false,
-  "pull_requests": [
-    {
-      "name_with_owner": "owner/name",
-      "number": 1,
-      "title": "",
-      "url": "",
-      "created_at": "",
-      "updated_at": "",
-      "author_login": null,
-      "is_draft": false,
-      "review_decision": null,
-      "additions": 0,
-      "deletions": 0,
-      "base_ref": "main",
-      "head_ref": "feat"
-    }
-  ]
+	"fetched_at": "...",
+	"truncated": false,
+	"pull_requests": [
+		{
+			"name_with_owner": "owner/name",
+			"number": 1,
+			"title": "",
+			"url": "",
+			"created_at": "",
+			"updated_at": "",
+			"author_login": null,
+			"is_draft": false,
+			"review_decision": null,
+			"additions": 0,
+			"deletions": 0,
+			"base_ref": "main",
+			"head_ref": "feat"
+		}
+	]
 }
 ```
 
@@ -584,19 +582,19 @@ oversized row. Truncation remains explicit; the two-page limit is unchanged.
 
 ```json
 {
-  "fetched_at": "...",
-  "truncated": false,
-  "alerts_incomplete": false,
-  "insights": [
-    {
-      "name_with_owner": "owner/name",
-      "open_issue_count": 0,
-      "days_since_push": 0,
-      "health": "strong",
-      "alerts": [],
-      "opportunities": []
-    }
-  ]
+	"fetched_at": "...",
+	"truncated": false,
+	"alerts_incomplete": false,
+	"insights": [
+		{
+			"name_with_owner": "owner/name",
+			"open_issue_count": 0,
+			"days_since_push": 0,
+			"health": "strong",
+			"alerts": [],
+			"opportunities": []
+		}
+	]
 }
 ```
 
@@ -608,20 +606,20 @@ oversized row. Truncation remains explicit; the two-page limit is unchanged.
 
 ```json
 {
-  "fetched_at": "...",
-  "truncated": false,
-  "unavailable": false,
-  "dependabot_open": 0,
-  "code_scanning_open": 0,
-  "items": [
-    {
-      "name_with_owner": "owner/name",
-      "source": "dependabot",
-      "severity": "high",
-      "summary": "",
-      "url": ""
-    }
-  ]
+	"fetched_at": "...",
+	"truncated": false,
+	"unavailable": false,
+	"dependabot_open": 0,
+	"code_scanning_open": 0,
+	"items": [
+		{
+			"name_with_owner": "owner/name",
+			"source": "dependabot",
+			"severity": "high",
+			"summary": "",
+			"url": ""
+		}
+	]
 }
 ```
 
@@ -631,29 +629,27 @@ oversized row. Truncation remains explicit; the two-page limit is unchanged.
 
 ```json
 {
-  "fetched_at": "...",
-  "truncated": false,
-  "notifications": [
-    {
-      "id": "",
-      "unread": true,
-      "reason": "",
-      "updated_at": "",
-      "title": "",
-      "url": "",
-      "name_with_owner": "owner/name"
-    }
-  ]
+	"fetched_at": "...",
+	"truncated": false,
+	"notifications": [
+		{
+			"id": "",
+			"unread": true,
+			"reason": "",
+			"updated_at": "",
+			"title": "",
+			"url": "",
+			"name_with_owner": "owner/name"
+		}
+	]
 }
 ```
-
 
 ---
 
 ## 5. 刷新与删除
 
 `POST /api/refresh`：
-
 1. 对请求里的 **GitHub kind** 用当前 active account 的 PAT 出站（经 `githubFetch`）。仅 `insights` 的刷新不打 GitHub。
 2. 写成对应 snapshots 行（含分页）。
 3. 重算 `insights`。显式请求且源不足/truncated → 409。显式且 2 页仍超 → 截断写入。隐式且源不足或 2 页仍超 → 跳过。完整规则见 04。

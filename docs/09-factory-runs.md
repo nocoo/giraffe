@@ -201,17 +201,17 @@ notification pages), 205 activity pages with 299 seconds of request service,
 and a declared 2.3-second continuation delay. A warm selected daily executes
 all 1,146 steps through the actual runner and SQLite on both frozen sources.
 
-| Daily measurement | v0.23 source | B16A candidate |
-| --- | ---: | ---: |
-| Simulated minutes | 24.594 | 9.356 |
-| Invocations | 326 | 50 |
-| Requests | 1,366 | 1,356 |
-| Average busy repository lanes | 1.193 | 3.226 |
-| Four lanes busy | 18.63% | 78.80% |
-| Account span, seconds | 42.500 | 42.500 |
-| Factory span, seconds | 329.509 | 407.485 |
-| Snapshot span, seconds | 188.244 | 494.161 |
-| Activity span, seconds | 906.200 | 113.017 |
+| Daily measurement             | v0.23 source | B16A candidate |
+| ----------------------------- | -----------: | -------------: |
+| Simulated minutes             |       24.594 |          9.356 |
+| Invocations                   |          326 |             50 |
+| Requests                      |        1,366 |          1,356 |
+| Average busy repository lanes |        1.193 |          3.226 |
+| Four lanes busy               |       18.63% |         78.80% |
+| Account span, seconds         |       42.500 |         42.500 |
+| Factory span, seconds         |      329.509 |        407.485 |
+| Snapshot span, seconds        |      188.244 |        494.161 |
+| Activity span, seconds        |      906.200 |        113.017 |
 
 The after spans overlap and must not be summed. Exclusive wall allocation
 (equally dividing phase overlap and assigning idle gaps to the preceding phase)
@@ -263,7 +263,6 @@ Do not deploy a v0.21.x reader directly over compact v0.22 rows: missing numeric
 fields otherwise become `NaN` on old executor arithmetic. The additive table can
 remain, but payloads must be expanded before old code resumes. This is an offline
 rollback operation, not a runtime compatibility path or automatic migration.
-
 1. Under a separately authorized maintenance window, stop new manual/scheduled
    run creation and queue/cron execution. First use v0.22 controls to pause active
    runs or drain them to terminal state; wait for in-flight requests to settle.
