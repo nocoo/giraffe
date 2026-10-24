@@ -11,6 +11,7 @@ import {
 	unknownActivity,
 } from "./activity";
 import type { ActivitySupplement } from "./activity-collect";
+import { readLandedActivity } from "./activity-landed";
 import { readActivityTotals } from "./activity-totals";
 import { observationVersion } from "./content-version";
 import type { Db } from "./db/d1";
@@ -40,6 +41,10 @@ export function packActivity(snapshot: ActivitySnapshot) {
 			repo.releases = repo.releases?.slice(0, Math.floor(repo.releases.length / 2)) ?? null;
 			repo.commits.items =
 				repo.commits.items?.slice(0, Math.floor(repo.commits.items.length / 2)) ?? null;
+			repo.commits.deferred = (repo.commits.deferred ?? []).flatMap((group) => {
+				const items = group.items.slice(0, Math.floor(group.items.length / 2));
+				return items.length ? [{ ...group, items }] : [];
+			});
 			repo.commits.default = null;
 			repo.commits.other = null;
 			repo.deploy.runs =
@@ -142,7 +147,7 @@ export async function activityPublicationWrites(
 	const inputOmitted = lengths.results.some((row) => !frozen.has(row.repo));
 	const repos = run.repos.flatMap((name) => {
 		const repo = mapped.get(name);
-		if (!repo)
+		if (!repo || repo.id !== run.repoIds[name])
 			throw new ApiError(409, "snapshot_missing", "Frozen activity repository metadata missing");
 		if (sizes.has(name) && !frozen.has(name)) return [];
 		const activity =
@@ -239,6 +244,24 @@ export async function activityPublicationWrites(
 				[run.account_id, run.id, page, payload, run.account_id, run.id, content],
 			),
 		),
+		...pages.map((payload) => {
+			const identities = (JSON.parse(payload) as ActivityRepo[]).flatMap((repo) => {
+				const id = mapped.get(repo.repo)?.id;
+				return [
+					...(repo.commits.items ?? []),
+					...(repo.commits.deferred ?? []).flatMap((group) => group.items),
+				]
+					.filter((item) => item.is_default_branch && item.observation)
+					.map((item) => ({ repo: id, sha: item.sha, run: item.observation?.runId }));
+			});
+			return fenced(
+				db,
+				lease,
+				now,
+				"UPDATE activity_commit_ledger SET published_run_id=?,payload=NULL WHERE account_id=? AND published_run_id IS NULL AND EXISTS(SELECT 1 FROM activity_publications WHERE account_id=? AND run_id=? AND content_version=?) AND (repo_id,sha,first_run_id) IN (SELECT json_extract(value,'$.repo'),json_extract(value,'$.sha'),json_extract(value,'$.run') FROM json_each(?)) AND $guard",
+				[run.id, run.account_id, run.account_id, run.id, content, JSON.stringify(identities)],
+			);
+		}),
 	];
 }
 export async function freezeActivityRepo(
@@ -294,9 +317,10 @@ export async function freezeActivityRepo(
 		requireActivityWindow(run),
 		supplement,
 		security,
+		await readLandedActivity(db, run, repo),
 	);
 	if (Date.parse(requireActivityWindow(run).since) < Date.parse(run.window.since))
-		for (const key of ["commits", "actions"])
+		for (const key of ["actions"])
 			activity.coverage[key] = {
 				status: "partial",
 				truncated: true,

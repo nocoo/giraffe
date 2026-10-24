@@ -92,6 +92,16 @@ beforeEach(() =>
 	vi.stubGlobal(
 		"fetch",
 		vi.fn(async (url: string, init: RequestInit) => {
+			if (url.includes("/commits?") && !new URL(url).searchParams.has("since"))
+				return Response.json([
+					{
+						sha: new URL(url).searchParams.get("sha"),
+						commit: {
+							message: "Previously authored, newly observed",
+							committer: { date: "2020-01-01T00:00:00Z" },
+						},
+					},
+				]);
 			if (url.includes("/dependabot/alerts") && new URL(url).searchParams.has("page"))
 				return Response.json({ message: "Numeric pagination is unsupported" }, { status: 400 });
 			const q = String(init?.body);
@@ -961,7 +971,14 @@ it("uses current metadata for activity after a retained repository changes defau
 	const activity = await readActivity(db, snap.account_id, {});
 	expect(activity.repos[0]).toMatchObject({
 		ci_runs: [{ id: 1, is_default_branch: true }],
-		commits: { other: 1, items: [{ sha: "main", branch: "main", is_default_branch: false }] },
+		commits: {
+			default: 1,
+			other: 1,
+			items: [
+				{ sha: "abc", branch: "trunk", is_default_branch: true },
+				{ sha: "main", branch: "main", is_default_branch: false },
+			],
+		},
 		coverage: { default_branch: { status: "complete" } },
 	});
 	expect(activity.totals.red_default_branch).toMatchObject([{ id: 1 }]);
@@ -1736,11 +1753,11 @@ it("R4 eligible daily executor freezes supplemental activity and publishes a rea
 		runId: "r1",
 		previousRunId: null,
 		window: { first: true, gap: true },
-		repos: [{ repo: "nocoo/app", ci_runs: [], commits: { default: 0, other: 0 } }],
+		repos: [{ repo: "nocoo/app", ci_runs: [], commits: { default: 1, other: 0 } }],
 	});
 	expect(run?.steps.find((step) => step.kind === "activity")).toMatchObject({
 		status: "success",
-		pages: 1,
+		pages: 2,
 	});
 	expect(
 		(

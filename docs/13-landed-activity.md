@@ -1,95 +1,96 @@
-# Landed activity observations (v0.24 design)
+# Landed activity observations (v0.24)
 
-Status: design proposal, not implemented. The decision below requires approval
-before replacing the requested no-loss guarantee with a narrower contract.
+Status: approved snapshot-based ledger, owner decision 2026-10-24. Migration
+`0026_activity_commit_ledger.sql` is additive and has no backfill.
 
-## Required decision
+## Attribution contract
 
-The brief's absolute no-skipped-commit requirement and exact landing-window
-attribution cannot be established from periodic head samples. Two GitHub
-histories can produce identical responses: one has no changes between samples;
-the other briefly pushes a commit and then force-pushes it away. No local
-algorithm can distinguish them. A head sampled after the frozen cutoff also
-cannot establish whether a commit landed before or after that cutoff.
+Default-branch activity uses first observation, not committer date or an inferred
+push timestamp. Each account / stable GitHub repository ID / SHA identity is
+admitted once. Its original reporting window, observation time and run identity
+never change. A commit dated in window N but first observed in snapshot N+1 is
+attributed only to N+1. Rolling factory statistics and other-branch activity keep
+their existing date-based semantics.
 
-Choose either an explicitly observation-scoped contract (the proposal below),
-including growing compact SHA identities under the existing storage capacity,
-or authorize a durable push-event source and its configuration/storage design.
-No migration or attribution implementation is applied until this is resolved.
+A snapshot begins when reconciliation pins the successful current-run metadata
+head and branch. Pagination always uses this immutable SHA. The reporting window
+is the run's frozen window, not a claim that GitHub was sampled retrospectively at
+its cutoff. Commits pushed and force-pushed away **between two snapshots are
+invisible**. Already observed commits remain counted after removal; reintroducing
+the same SHA never counts it again. Distinct rewritten SHAs are distinct commits.
 
-## Semantics and limits
+## Bounded collection
 
-Default-branch activity is an observation ledger, not a committer-date query.
-Each account/repository-ID/SHA is published at most once by the new collector.
-The first complete sample of a default-branch head establishes its reachable
-history; subsequent samples compare the previous observed head with the current
-run's frozen metadata head. Commit dates remain source metadata, never admission
-filters. A commit authored yesterday but first visible in today's sample belongs
-to today's activity publication. `observed_at` records first observation; it is
-not a fabricated GitHub push timestamp.
+`activity_commit_heads` retains the last completely reconciled head and an active
+checkpoint (pinned head, branch, original window/run/time, mode and cursor). The
+first reconciliation walks pinned history, without date filters. Later snapshots
+paginate the old-head / new-head comparison. An unavailable comparison or a
+divergent history falls back to walking the pinned new head. An unchanged head
+requires no upstream commit request. Every accepted page and its next checkpoint
+are committed atomically under the existing run lease; an expired lease accepts
+neither. Only complete reconciliation advances the baseline.
 
-A polling API cannot discover a commit introduced and made unreachable between
-samples. Neither a compare endpoint nor a commit timestamp can establish when
-such a commit landed. The guarantee covers commits reachable from sampled heads
-and pages already accepted locally. An absolute guarantee covering unobserved,
-subsequently unreachable commits requires a durable upstream push-event source;
-that is outside this branch's no-configuration-change authorization.
+The ledger retains a compact `reconciliation` marker on each identity so a SHA
+repeated across accepted pages cannot inflate completeness. The marker may change
+on later snapshots; original observation metadata never does. History follows
+validated same-resource next links even on short pages; comparison totals count
+unique accepted rows, not repeated page deliveries.
 
-The activity window remains the run's frozen reporting window. Metadata is
-sampled during execution, not retrospectively at `window.until`; therefore
-observation attribution is explicitly distinct from exact push-time attribution.
-Rolling factory commit statistics retain their documented committer-date window;
-they are not the source of default-branch activity counts.
+Each step accepts at most one upstream page (100 commits), then yields to the
+existing four-lane pool. Shared request (40), statement (600 soft / 800 hard), wall
+(25 seconds) and lease budgets remain authoritative; there is no unbounded
+catch-up loop inside one step. A successful slow response renews ownership before
+processing and checkpointing, without another pre-request budget check.
 
-## Collection and publication
+An interrupted reconciliation survives run cancellation and retention. The next
+activity run finishes that pinned snapshot with its **original** attribution,
+then reconciles its own current head. Renames and remove/re-add preserve the
+stable repository-ID ledger; a new repository ID starts a separate history.
+Gaps do not introduce a committer-date cutoff. First catch-up is explicitly marked
+bootstrap: old reachable history is observed evidence, not newly pushed work.
+No historical activity publication is rewritten or used as migration backfill.
 
-1. Pin the default branch and head from successful current-run metadata. Do not
-   follow a moving branch during pagination. An unchanged head requires no commit
-   request but still drains previously accepted, unpublished evidence.
-2. Paginate `compare/previous...current` without date filters. A divergent compare
-   enumerates new reachable commits, including rewritten commits with old dates.
-   When the previous object is unavailable, walk the pinned current history.
-   Distinct SHAs are distinct commits; an already published SHA reintroduced by a
-   force push is not counted again. A removed SHA does not retract old evidence.
-3. Persist each accepted page under the run lease, with its next cursor and an
-   idempotent insert into a durable SHA ledger. Pending compact commit payloads
-   survive cancellation, missing publications, gaps and repository removal.
-   Advance the observed head only after its complete history/difference has been
-   durably accepted. Failed pages never become successful zero counts.
-4. Freeze pending records into the existing immutable activity publication. In
-   the same fenced transaction, mark only SHAs actually present in the final
-   packed publication as published and discard their pending payloads. Capacity
-   omissions stay pending for a subsequent publication; coverage is partial,
-   never a complete zero. Retries cannot insert or publish the same SHA twice.
+## Publication and delayed evidence
 
-With no prior observation, reachable history is bootstrap evidence, not proof
-that every old commit was just pushed. The first window explicitly identifies
-this bootstrap. Upgrade reconciliation must not reinterpret previous activity
-publications as new landings. Repository rename/re-add retains the same GitHub
-node-ID ledger; deletion/recreation with a new node ID starts a separate history.
-Account deletion removes both heads and ledger rows. Cross-account counts remain
-independent. A gap has no date cutoff: pending and newly reachable commits remain
-eligible even if their committer dates precede the reporting window.
+`activity_commit_ledger` stores permanent identities and compact pending payloads.
+Publication reads a bounded pending selection per repository. Current-window
+items contribute to `commits.default`; delayed items are grouped separately in
+`commits.deferred` by their **original** observation run/window. They never inflate
+the later window's count. Each default commit includes `observation` metadata
+(`runId`, `window`, `at`, `bootstrap`). `at` on the commit remains committer date.
 
-## Storage, migration and cost
+Only identities actually present in the final packed immutable publication are
+marked published in the same fenced transaction. Packed-out items, omitted
+repositories and cancelled runs leave payloads pending; coverage is partial,
+never a successful zero. Subsequent publications can expose delayed evidence
+without changing old publications. Counts for an observation window may therefore
+be delivered across several publications, always explicitly grouped by that
+window and never repeated. A GET is still read-only and never drains the ledger.
 
-Existing run journals are retained for a bounded period and cannot provide
-permanent deduplication after old SHAs are reintroduced. An additive migration
-after `0025` is therefore required for compact head and SHA records; no existing
-table, row or resource is rewritten. Old Workers ignore the new tables. Pending
-payloads participate in account storage accounting; published rows retain only
-the identity required for exact deduplication. This identity set grows with
-unique observed commits: exact indefinite deduplication is not bounded storage.
-The existing account capacity must fail closed rather than evict identities.
+## Capacity, cost and rollback
 
-There is no migration-time GitHub backfill. Initial reconciliation is resumable
-and costs O(reachable commits / 100) API pages and O(unique SHAs) storage. Warm
-unchanged heads cost zero commit pages; changed heads cost the paginated compare.
-An unreachable baseline requires a full traversal. No production backfill or
-refresh is triggered from a development machine.
+The two new tables reference accounts only, not retained run rows. Account
+deletion cascades; pruning never evicts deduplication identities or checkpoints.
+All ledger/head UTF-8 bytes participate in account accounting. Reconciliation
+fails closed before exceeding 100,000 identities or 64 MB ledger/head storage per
+account, or the existing 512 MB account budget. At capacity it retains the cursor,
+pending evidence and previous good publication; no partial page is accepted and
+no identity is evicted. These explicit limits bound permanent storage growth.
 
-Downgrade leaves the additive tables intact. A v0.23 Worker cannot maintain this
-ledger and still uses commit-date activity semantics; do not claim the new
-guarantee for windows produced during downgrade. Reconcile retained publications
-before resuming new attribution after mixed-version operation. Existing in-flight
-v0.23 checkpoints must remain readable and accepted pages must not be discarded.
+First catch-up costs approximately sum(ceil(reachable commits / 100)) GitHub
+requests across repositories and O(unique SHA) stored identities. For 60 repos
+with 1,000 commits each this is about 600 history requests / 60,000 identities;
+10,000 each exceeds the account identity ceiling and fails closed rather than
+silently truncating. Warm daily operation needs zero commit requests for unchanged
+heads, and approximately one comparison page per changed repo with <=100 new
+commits. Initial catch-up and warm daily benchmark results must be reported
+separately; simulated upstream timings do not prove production latency.
+
+Migration creates empty tables/indexes only; it does not scan GitHub or rewrite
+existing data and is safe while a 0.23.x run is in flight. Rolling the Worker back
+to **0.23.1** leaves these tables unused and harmless: no down-migration is needed.
+The old Worker resumes its old date-based activity semantics; that downgrade
+interval is not covered by the new ledger guarantee. Re-upgrading resumes retained
+checkpoints and identities, reconciles currently reachable history, and cannot
+recover commits made unreachable while downgraded. Ledger attribution remains
+separate from old-version publications.

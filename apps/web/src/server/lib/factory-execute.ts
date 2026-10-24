@@ -16,6 +16,7 @@ import {
 	collectActivityContributions,
 	collectActivitySupplement,
 } from "./activity-collect";
+import { collectLandedPage } from "./activity-landed";
 import { freezeActivityRepo } from "./activity-store";
 import { savedContentMeta } from "./content-version";
 import { getAccount } from "./db/accounts";
@@ -278,40 +279,52 @@ async function executeStep(
 			const repo = await currentRepo(db, run.account_id, String(step.repo));
 			if (!repo || !run.activityWindow) finish(step, "unavailable", clock());
 			else {
-				const saved = await db
-					.prepare(
-						"SELECT stream,payload FROM factory_resources WHERE run_id=? AND repo=? AND stream IN ('activity','actions')",
-					)
-					.bind(run.id, repo.name)
-					.all<{ stream: string; payload: string }>();
-				const previous = saved.results.find((row) => row.stream === "activity");
-				const actions = saved.results.find((row) => row.stream === "actions");
-				const result = await collectActivitySupplement(
-					run,
-					{ ...repo, branch: activityBranch(run, repo) },
-					await cachedActionsClient(db, lease, repo.name, gh),
+				const landed = await collectLandedPage(
+					db,
+					lease,
+					repo,
+					gh,
 					token,
-					previous ? (JSON.parse(previous.payload) as ActivitySupplement) : null,
-					actions ? (JSON.parse(actions.payload) as FactoryStreamData) : null,
+					clock,
+					hooks?.heartbeat ?? (() => invocation.heartbeat()),
 				);
-				writes.push(
-					fenced(
-						db,
-						lease,
-						clock(),
-						"INSERT INTO factory_resources(run_id,repo,stream,payload) SELECT ?,?,'activity',? WHERE $guard ON CONFLICT(run_id,repo,stream) DO UPDATE SET payload=excluded.payload",
-						[run.id, repo.name, boundedJson(result.state)],
-					),
-				);
-				if (result.done) {
-					writes.push(await freezeActivityRepo(db, lease, clock(), repo, result.state));
-					finish(
-						step,
-						Object.values(result.state.coverage).some((value) => value.truncated)
-							? "limited"
-							: "success",
-						clock(),
+				writes.push(...landed.writes);
+				if (landed.done && landed.writes.length === 0) {
+					const saved = await db
+						.prepare(
+							"SELECT stream,payload FROM factory_resources WHERE run_id=? AND repo=? AND stream IN ('activity','actions')",
+						)
+						.bind(run.id, repo.name)
+						.all<{ stream: string; payload: string }>();
+					const previous = saved.results.find((row) => row.stream === "activity");
+					const actions = saved.results.find((row) => row.stream === "actions");
+					const result = await collectActivitySupplement(
+						run,
+						{ ...repo, branch: activityBranch(run, repo) },
+						await cachedActionsClient(db, lease, repo.name, gh),
+						token,
+						previous ? (JSON.parse(previous.payload) as ActivitySupplement) : null,
+						actions ? (JSON.parse(actions.payload) as FactoryStreamData) : null,
 					);
+					writes.push(
+						fenced(
+							db,
+							lease,
+							clock(),
+							"INSERT INTO factory_resources(run_id,repo,stream,payload) SELECT ?,?,'activity',? WHERE $guard ON CONFLICT(run_id,repo,stream) DO UPDATE SET payload=excluded.payload",
+							[run.id, repo.name, boundedJson(result.state)],
+						),
+					);
+					if (result.done) {
+						writes.push(await freezeActivityRepo(db, lease, clock(), repo, result.state));
+						finish(
+							step,
+							Object.values(result.state.coverage).some((value) => value.truncated)
+								? "limited"
+								: "success",
+							clock(),
+						);
+					}
 				}
 			}
 		} else if (step.kind === "snapshot") {

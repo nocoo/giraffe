@@ -45,6 +45,12 @@ export type ActivityCommit = {
 	url: string;
 	branch: string | null;
 	is_default_branch: boolean;
+	observation?: { runId: string; window: ActivityWindow; at: string; bootstrap: boolean };
+};
+export type DeferredActivityCommits = {
+	runId: string;
+	window: ActivityWindow;
+	items: ActivityCommit[];
 };
 export type ActivityRepo = {
 	repo: string;
@@ -52,7 +58,12 @@ export type ActivityRepo = {
 	prs: { opened: ActivityPr[] | null; merged: ActivityPr[] | null; closed: ActivityPr[] | null };
 	issues: { opened: ActivityIssue[] | null; closed: ActivityIssue[] | null };
 	releases: FactoryEvent[] | null;
-	commits: { default: number | null; other: number | null; items: ActivityCommit[] | null };
+	commits: {
+		default: number | null;
+		other: number | null;
+		items: ActivityCommit[] | null;
+		deferred?: DeferredActivityCommits[];
+	};
 	deploy: { last_success_at: string | null; runs: ActivityRun[] | null };
 	snapshot: {
 		open_prs: ActivityPr[] | null;

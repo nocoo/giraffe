@@ -164,6 +164,22 @@ it("models nine notification pages instead of an empty account prelude", async (
 	expect(github.metrics().notifications?.serviceMs).toBe(18_000);
 });
 
+it("models bounded pinned bootstrap pages separately from date-filtered factory commits", async () => {
+	const github = benchmarkGithub(new BenchmarkClock(0), 1, undefined, 201);
+	for (let page = 1; page <= 3; page++) {
+		const response = await github.fetch(
+			`https://factory-benchmark.invalid/repos/octocat/bench-000/commits?sha=abc&per_page=100&page=${page}`,
+		);
+		expect(await response.json()).toHaveLength(page === 3 ? 1 : 100);
+		expect(response.headers.has("link")).toBe(page < 3);
+	}
+	const dated = await github.fetch(
+		"https://factory-benchmark.invalid/repos/octocat/bench-000/commits?since=2026-01-01&per_page=100",
+	);
+	expect(await dated.json()).toHaveLength(1);
+	expect(github.metrics()["landed-history"]?.requests).toBe(3);
+});
+
 it("models 205 nonempty refs, tags and history pages per sixty repositories", async () => {
 	const github = benchmarkGithub(new BenchmarkClock(Date.parse("2026-10-23T00:00:00Z")), 60);
 	let pages = 0;
@@ -274,6 +290,7 @@ it("executes and publishes an isolated daily with consistent accounting", async 
 	const result = await runBenchmark({ repos: 2, warm: false });
 	expect(result.measured.status).toBe("completed");
 	expect(result.measured.published).toBe(true);
+	expect(result.measured.landedLedger).toEqual({ identities: 2, pending: 0, reconciling: 0 });
 	expect(result.measured.requests).toBe(result.measured.observedRequests);
 	expect(result.measured.stepStatuses).toEqual({ success: result.measured.steps });
 	expect(result.measured.invocations).toBeGreaterThan(1);

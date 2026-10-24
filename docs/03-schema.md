@@ -161,6 +161,26 @@ identity ownership or deletes on an ambiguous 404 is not a safe rollback target;
 deploy a forward repair instead. No production schema or data is changed by the
 local migration verifier.
 
+### Default-branch observation ledger
+
+Migration `0026_activity_commit_ledger.sql` adds `activity_commit_heads` and
+`activity_commit_ledger`, with account-cascade foreign keys only. There is no run
+foreign key: pruning old runs must not remove first-observation identities or
+unfinished catch-up. The primary identity is account / stable repository ID / SHA;
+`first_run_id`, `observed_at`, `window_since` and `window_until` never change.
+`reconciliation` tracks the most recent accepted snapshot containing the SHA for
+cross-page duplicate detection, independently of immutable first attribution.
+`payload` is retained until its commit is actually serialized in a publication,
+then set to null with `published_run_id` in that publication's fenced transaction.
+`activity_commit_pending(account_id,repo_id,published_run_id)` supports bounded
+pending reads. Heads retain a complete baseline and optional JSON checkpoint.
+
+The migration creates empty tables/indexes only, with no backfill or changes to
+existing rows. All UTF-8 ledger/head fields count toward account storage; identities
+are never evicted. Downgrading to v0.23.1 leaves the tables unused and harmless,
+without a down-migration; re-upgrading resumes them. See
+[landed activity](13-landed-activity.md) for capacity and reconciliation cost.
+
 ### Immutable current-run activity
 
 Migration `0018_activity.sql` adds `activity_publications` and `activity_pages`.

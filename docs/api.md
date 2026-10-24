@@ -1132,13 +1132,31 @@ validated single-cell count but marks coverage partial. The current day remains
 `partial:true`; day `since`/`until` describe Beijing boundaries, not query variables.
 See `apps/web/src/lib/activity-types.ts` for the complete field contract.
 
-The proposed v0.24 default-branch observation contract is specified in
-[landed activity](13-landed-activity.md). `observed_at` means first local
-observation of a SHA on a sampled default-branch head, not GitHub push time;
-`at` remains its original committed date. Pending evidence and capacity gaps
-must not be represented as complete zero counts. This design does not promise
-visibility of commits made unreachable between samples.
-This is a proposal requiring a semantics decision, not a shipped API field.
+The v0.24 default-branch observation contract is specified in
+[landed activity](13-landed-activity.md). `commits.default` counts only new ledger
+identities attributed to this reporting window, without a committer-date filter.
+Each default commit carries `observation: {runId, window, at, bootstrap}`:
+`observation.at` is first local observation, not GitHub push time, while the
+commit's `at` remains committer date. First reconciliation includes old reachable
+history and marks it `bootstrap:true`. Ledger admission requires successful
+current-run metadata and an exact stable repository-ID match; a rolling commit
+stream is never a substitute.
+
+`commits.deferred` contains `{runId, window, items}` groups whose first observation
+belongs to an earlier run/window but whose evidence is delivered now. These do
+not contribute to this response's `commits.default`; consumers can group their
+items by original window when aggregating delayed evidence. Only serialized
+identities are marked published, atomically with the immutable publication.
+Pending or packed-out evidence remains durable; the 500-item per-repository
+selection and existing publication byte limits report partial coverage, never a
+complete zero. Repeated GETs remain read-only. Old publications without these
+fields retain their original date-based semantics and are not rewritten.
+
+Migration `0026_activity_commit_ledger.sql` adds the permanent ledger/checkpoints,
+without backfill. Downgrading to v0.23.1 leaves them unused and harmless;
+re-upgrading resumes them. Commits pushed and force-pushed away between snapshots
+are invisible. Rename/re-add preserves the stable repository-ID ledger, whereas
+a replacement ID starts a new ledger; cancelled catch-up keeps its original window.
 
 The supplementary collector normally adds one refs/tags GraphQL request per repo,
 plus a successful-workflow REST request only when the complete saved action

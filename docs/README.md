@@ -24,4 +24,4 @@
 
 - [Source index profiling, conditional responses and compression](12-source-performance.md)
 
-- [Landed activity design proposal and required decisions](13-landed-activity.md)
+- [Landed activity ledger, observation limits and rollback](13-landed-activity.md)

@@ -6,7 +6,12 @@ import { createDb } from "./db/d1";
 import { claimRun, startRun } from "./db/factory-runs";
 import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
 import { publicationWrites, repositoryWrites } from "./factory-publish";
-import { factoryStorage, pruneFactory } from "./factory-retention";
+import {
+	FACTORY_STORAGE_SQL,
+	factoryStorage,
+	factoryStorageStatement,
+	pruneFactory,
+} from "./factory-retention";
 
 const snap = factoryFixture();
 const account = snap.account_id;
@@ -200,4 +205,220 @@ it("preserves historical cloud reports and diagnostics in retention and storage 
 		resourceBytes: 0,
 		totalBytes: new TextEncoder().encode(input + report + diagnostic).length,
 	});
+});
+
+const ledgerRepo = "R_fixture";
+async function addLedgerAccount(db: ReturnType<typeof createDb>, id: string) {
+	await db
+		.prepare(
+			"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES(?,?, 'fake-envelope','fake','old','old')",
+		)
+		.bind(id, id)
+		.run();
+}
+async function addLedgerIdentity(
+	db: ReturnType<typeof createDb>,
+	identityAccount: string,
+	sha: string,
+	firstRun = "absent-run",
+	publication: string | null = null,
+) {
+	await db
+		.prepare("INSERT INTO activity_commit_ledger VALUES(?,?,?,?,?,?,?,?,?,'')")
+		.bind(
+			identityAccount,
+			ledgerRepo,
+			sha,
+			firstRun,
+			"observed",
+			"since",
+			"until",
+			null,
+			publication,
+		)
+		.run();
+}
+
+it("exports the exact 14-parameter account total query for a transaction-time quota guard", async () => {
+	const { raw, db } = await setup();
+	const prepare = raw.prepare.bind(raw);
+	const queries: string[] = [];
+	raw.prepare = (query) => {
+		queries.push(query);
+		return prepare(query);
+	};
+	await factoryStorageStatement(db, account).first();
+	expect(queries).toEqual([FACTORY_STORAGE_SQL]);
+	expect(FACTORY_STORAGE_SQL.match(/\?/g)).toHaveLength(14);
+	await db
+		.prepare("INSERT INTO activity_commit_heads VALUES(?,?,?,?)")
+		.bind(account, ledgerRepo, "fixture-head", '{"cursor":"fake"}')
+		.run();
+	await addLedgerIdentity(db, account, "fixture-sha");
+	const total = await factoryStorage(db, account);
+	expect(total.totalBytes).toBeGreaterThan(0);
+	expect(await db.prepare(FACTORY_STORAGE_SQL.replaceAll("?", "?1")).bind(account).first()).toEqual(
+		total,
+	);
+});
+
+it("counts every UTF8 head, pending, ledger identity, metadata and payload byte only for its account", async () => {
+	const { db } = await setup();
+	const other = "other-\u{1f992}";
+	await addLedgerAccount(db, other);
+	const heads = [
+		[account, "R_\u96ea", "head-\u{1f992}", '{"cursor":"\u96ea\u{1f992}"}'],
+		[account, "R_null", null, null],
+	];
+	const identities = [
+		[
+			account,
+			"R_\u96ea",
+			"sha-\u{1f992}",
+			"first-\u96ea",
+			"observed-\u96ea",
+			"since-\u96ea",
+			"until-\u96ea",
+			'{"message":"\u{1f992}"}',
+			null,
+			"reconciliation-\u{1f992}",
+		],
+		[
+			account,
+			"R_null",
+			"null-sha",
+			"first",
+			"observed",
+			"since",
+			"until",
+			null,
+			"published-\u96ea",
+			"",
+		],
+	];
+	for (const row of heads)
+		await db
+			.prepare("INSERT INTO activity_commit_heads VALUES(?,?,?,?)")
+			.bind(...row)
+			.run();
+	for (const row of identities)
+		await db
+			.prepare("INSERT INTO activity_commit_ledger VALUES(?,?,?,?,?,?,?,?,?,?)")
+			.bind(...row)
+			.run();
+	await db
+		.prepare("INSERT INTO activity_commit_heads VALUES(?,?,?,?)")
+		.bind(other, "R_other", "other-head", "other-pending")
+		.run();
+	await addLedgerIdentity(db, other, "other-sha");
+	const expectedBytes = new TextEncoder().encode([...heads, ...identities].flat().join("")).length;
+	expect(await factoryStorage(db, account)).toEqual({
+		resourceBytes: 0,
+		totalBytes: expectedBytes,
+	});
+	expect(await factoryStorage(db, other)).toEqual({
+		resourceBytes: 0,
+		totalBytes: new TextEncoder().encode(
+			[
+				other,
+				"R_other",
+				"other-head",
+				"other-pending",
+				other,
+				ledgerRepo,
+				"other-sha",
+				"absent-run",
+				"observed",
+				"since",
+				"until",
+			].join(""),
+		).length,
+	});
+	expect(await db.prepare("SELECT * FROM factory_budget").all()).toMatchObject({ results: [] });
+	expect(await db.prepare("SELECT * FROM factory_storage").all()).toMatchObject({ results: [] });
+	await db
+		.prepare(
+			"UPDATE activity_commit_heads SET head=NULL,pending=NULL WHERE account_id=? AND repo_id=?",
+		)
+		.bind(account, "R_\u96ea")
+		.run();
+	await db
+		.prepare(
+			"UPDATE activity_commit_ledger SET payload=NULL,published_run_id=? WHERE account_id=? AND repo_id=?",
+		)
+		.bind("published", account, "R_\u96ea")
+		.run();
+	const released = new TextEncoder().encode(
+		"head-\u{1f992}" + '{"cursor":"\u96ea\u{1f992}"}' + '{"message":"\u{1f992}"}',
+	).length;
+	expect((await factoryStorage(db, account)).totalBytes).toBe(
+		expectedBytes - released + "published".length,
+	);
+});
+
+it("keeps first-observation identities and heads across run pruning and isolates account deletion", async () => {
+	const { raw, db } = await setup();
+	await addLedgerAccount(db, "other");
+	for (const id of [account, "other"]) {
+		await db
+			.prepare("INSERT INTO activity_commit_heads VALUES(?,?,?,?)")
+			.bind(id, ledgerRepo, "observed-head", '{"resume":"fake"}')
+			.run();
+		await addLedgerIdentity(db, id, "published-sha", "old-run", "old-run");
+		await addLedgerIdentity(db, id, "pending-sha", "old-run");
+		await addLedgerIdentity(db, id, "compacted-sha", "old-run", "old-run");
+	}
+	await db
+		.prepare("UPDATE activity_commit_ledger SET payload=? WHERE sha='pending-sha'")
+		.bind('{"fake":"pending"}')
+		.run();
+	await expect(addLedgerIdentity(db, account, "published-sha")).rejects.toMatchObject({
+		code: "db_error",
+	});
+	await db
+		.prepare(
+			"INSERT INTO activity_commit_ledger SELECT account_id,'R_distinct',sha,first_run_id,observed_at,window_since,window_until,payload,published_run_id,reconciliation FROM activity_commit_ledger WHERE account_id=? AND sha='published-sha'",
+		)
+		.bind(account)
+		.run();
+	for (let i = 0; i < 23; i++) {
+		await createDb(raw)
+			.prepare(
+				"INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES(?,?,?,'completed','{}','old',?,'old')",
+			)
+			.bind(
+				i === 0 ? "old-run" : `recent-${i}`,
+				account,
+				`fixture-${i}`,
+				`2020-01-${String(i + 1).padStart(2, "0")}`,
+			)
+			.run();
+	}
+	const heads = await db
+		.prepare("SELECT * FROM activity_commit_heads ORDER BY account_id,repo_id")
+		.all();
+	const identities = await db
+		.prepare("SELECT * FROM activity_commit_ledger ORDER BY account_id,repo_id,sha")
+		.all();
+	const bytesBefore = (await factoryStorage(db, account)).totalBytes;
+	await pruneFactory(db, "2026-10-24T00:00:00.000Z");
+	expect(await db.prepare("SELECT id FROM factory_runs WHERE id='old-run'").first()).toBeNull();
+	expect(await db.prepare("SELECT COUNT(*) AS n FROM factory_runs").first()).toEqual({ n: 20 });
+	expect(
+		await db.prepare("SELECT * FROM activity_commit_heads ORDER BY account_id,repo_id").all(),
+	).toEqual(heads);
+	expect(
+		await db.prepare("SELECT * FROM activity_commit_ledger ORDER BY account_id,repo_id,sha").all(),
+	).toEqual(identities);
+	expect((await factoryStorage(db, account)).totalBytes).toBe(bytesBefore - 3 * "{}".length);
+	const otherBytes = await factoryStorage(db, "other");
+	await db.prepare("DELETE FROM accounts WHERE id=?").bind(account).run();
+	expect(await factoryStorage(db, account)).toEqual({ resourceBytes: 0, totalBytes: 0 });
+	expect(await db.prepare("SELECT COUNT(*) AS n FROM activity_commit_heads").first()).toEqual({
+		n: 1,
+	});
+	expect(await db.prepare("SELECT COUNT(*) AS n FROM activity_commit_ledger").first()).toEqual({
+		n: 3,
+	});
+	expect(await factoryStorage(db, "other")).toEqual(otherBytes);
 });

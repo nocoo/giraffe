@@ -11,6 +11,7 @@ import type {
 import type { FactoryRun } from "../../lib/factory-run";
 import type { FactoryEvent, FactoryRepo, FactoryStreamData } from "../../lib/factory-types";
 import type { ActivitySupplement } from "./activity-collect";
+import type { LandedActivity } from "./activity-landed";
 import { ApiError } from "./errors";
 
 export const completeActivity = (): ActivityCoverage => ({
@@ -107,6 +108,7 @@ export function activityRepo(
 	window: ActivityWindow,
 	supplement: ActivitySupplement | null,
 	security: Record<string, unknown> | null,
+	landed?: LandedActivity,
 ): ActivityRepo {
 	const coverage: ActivityRepo["coverage"] = {};
 	const read = (stream: string): FactoryEvent[] | null => {
@@ -175,18 +177,9 @@ export function activityRepo(
 		read("releases")?.filter(
 			(event) => duringActivity(event.at, window) && event.state !== "draft",
 		) ?? null;
-	const defaultCommits =
-		read("commits")?.filter((event) => duringActivity(event.at, window)) ?? null;
-	const commits: ActivityCommit[] | null =
-		defaultCommits?.map((event) => ({
-			sha: event.id,
-			author: event.author,
-			message: event.title,
-			at: event.at,
-			url: event.url,
-			branch: repo.branch,
-			is_default_branch: true,
-		})) ?? null;
+	coverage.commits =
+		landed?.coverage ?? unknownActivity("Default-branch observation ledger unavailable");
+	const commits: ActivityCommit[] | null = landed?.items ?? null;
 	coverage.other_commits =
 		supplement?.coverage.other_commits ?? unknownActivity("Other branches not observed");
 	coverage.tags =
@@ -294,6 +287,7 @@ export function activityRepo(
 					? (uniqueOther?.length ?? null)
 					: null,
 			items: commits === null ? null : [...commits, ...(uniqueOther ?? [])],
+			deferred: landed?.deferred ?? [],
 		},
 		deploy: {
 			last_success_at: last,

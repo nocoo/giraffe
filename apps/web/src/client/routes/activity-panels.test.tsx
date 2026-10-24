@@ -18,6 +18,32 @@ function render(snapshot: ActivitySnapshot, repository = false) {
 }
 
 describe("activity saved-publication content", () => {
+	it("labels delayed default commits by their original window without adding to current counts", () => {
+		const snapshot = activityFixture();
+		const repo = snapshot.repos[0];
+		if (!repo) throw new Error("Missing repository fixture");
+		repo.commits.deferred = [
+			{
+				runId: "bootstrap",
+				window: { ...snapshot.window, until: "2020-01-02T00:00:00.000Z" },
+				items: [
+					{
+						sha: "old",
+						author: null,
+						message: "Old work",
+						at: null,
+						url: "",
+						branch: "main",
+						is_default_branch: true,
+					},
+				],
+			},
+		];
+		const html = render(snapshot, true);
+		expect(html).toContain("补录 1 个默认分支提交");
+		expect(html).toContain("不计入本窗口");
+		expect(html).toContain('dateTime="2020-01-02T00:00:00.000Z"');
+	});
 	it("shows exact window, data time and Beijing contribution bounds without inventing unknown counts", () => {
 		const html = render(activityFixture());
 		expect(html).toContain('dateTime="2026-10-21T21:00:00.000Z"');

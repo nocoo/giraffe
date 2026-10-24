@@ -1952,3 +1952,20 @@ were no longer terminal. Restoring main's completed status preserves terminal
 precedence while its separate status-free assertions still verify the 14/48
 second calibration projections. Review fixture state and expected behavior
 together after merging; a conflict-free file is not proof of semantic agreement.
+
+## 2026-10-24 - Prove pagination and final ledger quotas
+
+The initial B16A observation ledger treated a short history page as terminal and
+counted compare rows without detecting SHAs repeated across accepted pages.
+Independent local review reproduced both cases: a short page with a next link
+skipped history, and two identical 100-row pages falsely satisfied a 200-commit
+comparison. RED regressions now require validated next links and a durable
+per-identity reconciliation marker, independent of immutable first attribution.
+
+The first quota check also ran before the final run/journal writes. A boundary
+fixture passed its estimated check but committed 58 bytes over the account limit.
+The corrected fenced transaction runs quota postconditions after every mutation,
+including the final run CAS, and rolls back the entire acceptance on excess.
+Tests cover exact limits, replacement deltas, competing acceptance and lane
+rebinding. Validate the final committed state rather than only staged payloads;
+neither a row count nor a preflight estimate proves completeness or capacity.

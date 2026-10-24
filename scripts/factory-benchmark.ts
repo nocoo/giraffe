@@ -234,6 +234,8 @@ type Category =
 	| "actions-deploy"
 	| "snapshot"
 	| "activity"
+	| "landed-history"
+	| "landed-compare"
 	| "notifications"
 	| "other";
 
@@ -247,6 +249,8 @@ export function benchmarkLatency(category: Category) {
 		"actions-deploy": actionPageMs,
 		snapshot: (1_071_000 - 127 * actionPageMs) / (60 * 8),
 		activity: 299_000 / 205,
+		"landed-history": 300,
+		"landed-compare": 300,
 		notifications: 18_000 / 9,
 		other: 300,
 	}[category];
@@ -284,6 +288,7 @@ export function benchmarkGithub(
 	clock: BenchmarkClock,
 	count: number,
 	observe?: (serviceMs: number, repo: string | null) => void,
+	historyCommits = 1,
 ) {
 	const repos = Array.from({ length: count }, (_, index) => repository(index));
 	let metrics: Partial<Record<Category, RequestMetric>> = {};
@@ -490,6 +495,23 @@ export function benchmarkGithub(
 		if (suffix === "/commits") {
 			const since = url.searchParams.get("since");
 			const until = url.searchParams.get("until");
+			if (!since && !until && url.searchParams.has("sha")) {
+				const page = Number(url.searchParams.get("page") ?? 1);
+				const start = (page - 1) * 100;
+				const rows = Array.from(
+					{ length: Math.max(0, Math.min(100, historyCommits - start)) },
+					(_, offset) => {
+						const index = start + offset;
+						return { ...commits[0], sha: index === 0 ? "abc" : `history-${index}` };
+					},
+				);
+				const next =
+					start + rows.length < historyCommits
+						? new URL(url.pathname + url.search, "https://api.github.com")
+						: undefined;
+				if (next) next.searchParams.set("page", String(page + 1));
+				return respond("landed-history", rows, next);
+			}
 			return respond(
 				"other",
 				commits.filter(
@@ -501,7 +523,7 @@ export function benchmarkGithub(
 		}
 		if (suffix?.startsWith("/compare/")) {
 			const [base, head] = suffix.slice("/compare/".length).split("...");
-			return respond("other", {
+			return respond("landed-compare", {
 				status: base === head ? "identical" : "ahead",
 				total_commits: base === head ? 0 : commits.length,
 				ahead_by: base === head ? 0 : commits.length,
@@ -621,11 +643,15 @@ export async function runBenchmark(
 		source?: string;
 		label?: string;
 		selection?: "all" | "selected";
+		historyCommits?: number;
 	} = {},
 ) {
 	const count = options.repos ?? 60;
 	if (!Number.isInteger(count) || count < 1 || count > 120)
 		throw new Error("repos must be between 1 and 120");
+	const historyCommits = options.historyCommits ?? 1;
+	if (!Number.isInteger(historyCommits) || historyCommits < 1 || historyCommits > 10_000)
+		throw new Error("historyCommits must be between 1 and 10000");
 	const source = resolve(options.source ?? process.cwd());
 	const load = (path: string) => import(pathToFileURL(resolve(source, path)).href);
 	const { makeRun } = (await load(
@@ -669,8 +695,11 @@ export async function runBenchmark(
 	const nativeCrypto = globalThis.crypto;
 	const clock = new BenchmarkClock(START - (options.warm === false ? 0 : DAY));
 	let journal: ReturnType<typeof benchmarkJournal> | undefined;
-	const github = benchmarkGithub(clock, count, (serviceMs, repo) =>
-		journal?.request(serviceMs, repo),
+	const github = benchmarkGithub(
+		clock,
+		count,
+		(serviceMs, repo) => journal?.request(serviceMs, repo),
+		historyCommits,
 	);
 	const hash = sourceHash(source);
 	process.chdir(source);
@@ -823,7 +852,19 @@ export async function runBenchmark(
 				throw new Error(
 					`Request mismatch: journal=${saved.requests}, observed=${observedRequests}`,
 				);
+			const hasLedger = await raw
+				.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='activity_commit_ledger'")
+				.first();
+			const landedLedger = hasLedger
+				? await raw
+						.prepare(
+							"SELECT COUNT(*) AS identities,COALESCE(SUM(published_run_id IS NULL),0) AS pending,(SELECT COUNT(*) FROM activity_commit_heads WHERE account_id=? AND pending IS NOT NULL) AS reconciling FROM activity_commit_ledger WHERE account_id=?",
+						)
+						.bind(ACCOUNT, ACCOUNT)
+						.first<{ identities: number; pending: number; reconciling: number }>()
+				: null;
 			return {
+				landedLedger,
 				status: saved.status,
 				published: Boolean(saved.publishedAt),
 				steps: saved.steps.length,
@@ -858,6 +899,7 @@ export async function runBenchmark(
 				.digest("hex"),
 			repos: count,
 			selection: options.selection ?? "all",
+			historyCommits,
 			assumptions: [
 				"Real executeRunPage, makeRun, startRun, publication and SQLite; no HTTP server or network.",
 				"Warm mode executes the previous daily first; its requests/time are excluded from measured.",
@@ -868,7 +910,8 @@ export async function runBenchmark(
 				"Actions snapshot 42.7s/13 requests; other snapshot request latency = (1071s - 127*42.7s/13)/480.",
 				"Actions deployment-history requests use the same per-page latency as Actions snapshots but are reported separately.",
 				"Account prelude uses the actual account collectors, including 9x100 notification rows at 2s per page (18s service); other existing request calibration is unchanged.",
-				"Activity supplements per 60 repos: 60 first refs, 25 extra refs, 60 tag pages and 60 branch-history pages (205 total), calibrated to 299s service; default-branch commits and compare are fixture-only.",
+				"Activity supplements per 60 repos: 60 first refs, 25 extra refs, 60 tag pages and 60 branch-history pages (205 total), calibrated to 299s service.",
+				`Default-branch bootstrap: ${historyCommits} reachable commits/repo in 100-commit pages at 300ms/page, with explicit next links. Warm heads are unchanged and require zero ledger requests. --history-commits models first catch-up separately; this is not a production history distribution.`,
 				"Other request latency is the existing L2 factory GraphQL fixture's 300ms; calibration is a synthetic workload, not a production replay.",
 				"Zero D1/CPU latency; each continuation adds at least 2.3s synthetic queue delivery, using the brief's median inter-step gap as a declared assumption, not a measured queue distribution. nextAttemptAt backoff is honored if longer. No startup lease-loss stall is injected.",
 				"Phase wall spans include invocation gaps; lane occupancy comes from successful journal begin/accept writes, excluding idle gaps. Concurrent phase spans may overlap; exclusive wall time shares overlap equally and assigns gaps to the preceding phase.",
@@ -895,6 +938,7 @@ if (import.meta.main) {
 			repos: { type: "string", default: "60" },
 			cold: { type: "boolean", default: false },
 			selection: { type: "string", default: "all" },
+			"history-commits": { type: "string", default: "1" },
 		},
 	});
 	if (values.selection !== "all" && values.selection !== "selected")
@@ -910,6 +954,7 @@ if (import.meta.main) {
 			repos: Number(values.repos),
 			warm: !values.cold,
 			selection: values.selection,
+			historyCommits: Number(values["history-commits"]),
 		});
 		originalLog(JSON.stringify(result, null, 2));
 	} finally {

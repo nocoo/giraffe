@@ -182,6 +182,17 @@ export function ActivityContent({
 												repo.coverage.other_commits,
 												snapshot.truncated,
 											)}
+											{repo.commits.deferred?.map((group) => (
+												<p
+													key={group.runId}
+													className="mt-basalt-space-xs text-xs text-basalt-muted-foreground"
+												>
+													{`补录 ${group.items.length} 个默认分支提交 · 归属窗口 `}
+													<ActivityTime at={group.window.since} /> →{" "}
+													<ActivityTime at={group.window.until} />
+													（不计入本窗口）
+												</p>
+											))}
 										</dd>
 									</div>
 									<div>

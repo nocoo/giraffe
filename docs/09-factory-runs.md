@@ -730,9 +730,21 @@ of the start and exclusive of the end. Local dates on axes identify the interval
 start, not a regrouping of observations. Schedule wall-clock configuration remains
 explicitly labelled Beijing time; changing the viewing timezone does not reschedule jobs.
 
-## Landed activity proposal
+## Landed activity ledger
 
 [Landed activity](13-landed-activity.md) separates sampled-head attribution from
-exact push-time claims, explains force-push and retention limits, and records the
-decision required before implementation. It proposes additive storage only;
-no migration or attribution behavior has been applied.
+exact push-time claims. Additive migration `0026_activity_commit_ledger.sql`
+retains account/repository-ID/SHA identities and pinned reconciliation checkpoints
+independently of run retention. Each activity step accepts at most one 100-commit
+page; the four-lane pool can accept several pages per invocation under its shared
+budgets. Empty or malformed pinned histories fail closed. Only fully accepted
+reconciliation advances the baseline, and publication compacts only serialized
+identities in the same fenced batch. Delayed evidence retains the original window.
+
+No GitHub backfill occurs during migration. A 60-repository first catch-up with
+1,000 commits per repository needs about 600 history requests and 60,000 permanent
+identities; unchanged warm heads require no commit request. At 100,000 identities,
+64 MB ledger/head bytes or the existing 512 MB account ceiling, admission fails
+closed without advancing the page or evicting identities. Rollback to v0.23.1
+needs no down-migration; re-upgrade resumes the ledger. Force-pushed-away commits
+between snapshots remain invisible; configuration and schedules do not change.
