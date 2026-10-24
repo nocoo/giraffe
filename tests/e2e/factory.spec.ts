@@ -100,6 +100,13 @@ test("factory run survives reload, refreshes the whole site and preserves the la
 	expect(after.runId).toBe(run.id);
 	expect(after.repos).toHaveLength(1);
 	expect(after.repos[0].observation.version).toBe(run.id);
+	const activity = await (await page.request.get("/api/activity")).json();
+	expect(activity.repos[0].commits).toMatchObject({
+		default: 1,
+		items: [
+			{ sha: "abc", at: "2020-01-01T00:00:00Z", observation: { runId: run.id, bootstrap: true } },
+		],
+	});
 	for (const path of [
 		...SITE_SNAPSHOT_KINDS.map((kind) => `/api/${kind}`),
 		"/api/insights",

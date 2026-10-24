@@ -1969,3 +1969,10 @@ including the final run CAS, and rolls back the entire acceptance on excess.
 Tests cover exact limits, replacement deltas, competing acceptance and lane
 rebinding. Validate the final committed state rather than only staged payloads;
 neither a row count nor a preflight estimate proves completeness or capacity.
+
+The first full browser gate then exposed a fixture contradiction: GraphQL metadata
+advertised default head `abc`, but the catch-all REST stub returned an empty
+pinned history. The new collector correctly failed closed instead of claiming a
+zero, making the existing successful-refresh journey partial. A shared local REST
+fixture now returns that pinned old-dated commit without changing date-filtered
+streams, and the real-Worker browser journey asserts its observation attribution.

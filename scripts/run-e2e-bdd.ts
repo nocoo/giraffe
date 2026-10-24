@@ -4,7 +4,7 @@ import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { factoryGraphqlStub, factoryRepoStub } from "./factory-stub";
+import { factoryGraphqlStub, factoryRepoStub, factoryRestStub } from "./factory-stub";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const persist = join(root, ".wrangler/e2e-pw");
@@ -272,6 +272,11 @@ const github = await listen(githubPort, (req, res) => {
 		}
 		if (url.pathname.startsWith("/repos/octocat/hello-world/")) {
 			await Bun.sleep(200);
+			const history = factoryRestStub(url);
+			if (history !== null) {
+				sendJson(res, 200, history);
+				return;
+			}
 			if (url.pathname.includes("/traffic/")) {
 				sendJson(res, 200, { count: 0, uniques: 0, views: [], clones: [] });
 				return;

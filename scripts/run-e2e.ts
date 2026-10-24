@@ -5,7 +5,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { hexlyProjectFixture } from "../tests/fixtures/project-identity";
-import { factoryGraphqlStub, factoryRepoStub } from "./factory-stub";
+import { factoryGraphqlStub, factoryRepoStub, factoryRestStub } from "./factory-stub";
 import { hasApiRoutes } from "./has-api-routes";
 import { securityFixture } from "./security-stub";
 
@@ -537,6 +537,11 @@ const github = await listen(17046, (req, res) => {
 					},
 				],
 			});
+			return;
+		}
+		const history = factoryRestStub(url);
+		if (history !== null) {
+			sendJson(res, 200, history);
 			return;
 		}
 		if (url.pathname.includes("/traffic/")) {
