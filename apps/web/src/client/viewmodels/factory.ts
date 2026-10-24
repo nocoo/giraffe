@@ -336,8 +336,9 @@ function coversWindow(
 	const window = windowOf(repo, stream);
 	return (
 		repo.coverage[stream].status === "complete" &&
-		Date.parse(window.since) <= from &&
-		Date.parse(window.until) >= to
+		(repo.coverage[stream].completeWindows ?? [window]).some(
+			(value) => Date.parse(value.since) <= from && Date.parse(value.until) >= to,
+		)
 	);
 }
 

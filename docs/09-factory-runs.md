@@ -430,6 +430,13 @@ current backlog and other status counters) retain their collection semantics.
 The repository observation window is the union of that retained evidence and the
 collection window, subject to the cap. A first quick publication remains 30 dates;
 a narrower prior observation does not invent 90 dates of coverage.
+When the display span differs, `observation.collectionWindow` preserves the actual
+collection range used by raw stream APIs and incremental baselines. Expanded daily
+summaries carry per-stream `coverage.completeWindows`: bounded, coalesced intervals
+of complete historical evidence plus the new complete collection interval. Missing
+or limited old evidence and gaps between runs are not certified as complete zeroes.
+Stream retention keeps these daily coverage intervals while its raw source
+observation continues to identify the original collection range.
 The global snapshot window unions the included observation windows, rather than
 unconditionally adopting the new run window. Factory and repository chart labels
 follow the displayed UTC span: a quick collection can display up to 90 retained
@@ -451,6 +458,10 @@ Its total is the sum of calendar counts. Restricted totals include retained dail
 attribution, or are `null` when that attribution is unavailable; optional type
 coverage remains partial when retained breakdowns are incomplete. Without a new
 calendar, both the saved calendar and its provenance window remain unchanged.
+Merged calendar days retain their own `fetchedAt` and `observedAt`, filling absent
+legacy timestamps from the original calendar rather than the new collection.
+Date-filtered contribution reads compute freshness and latest timestamps from
+the selected days; retaining a day never refreshes its evidence age.
 Quick mode reuses complete pinned commit/manifests evidence only when the verified
 head and rolling window permit it. Immutable commit history can stop at a verified
 baseline intersection. Mutable Issues, PRs, Actions, releases and contributor lists

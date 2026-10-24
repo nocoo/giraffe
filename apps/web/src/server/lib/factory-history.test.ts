@@ -2,9 +2,44 @@ import { expect, it } from "vitest";
 import { factoryFixture } from "../../../../../tests/fixtures/factory-snapshot";
 import { emptyDay, factoryWindow } from "../../lib/factory";
 import { retainContributionDays, retainRepositoryDays } from "./factory-history";
+import { factoryResourceData } from "./machine-observations";
 
 const now = "2026-10-24T05:00:00.000Z";
 const window = factoryWindow(now, 30);
+
+it.each(["unavailable", "limited", "gap", "complete"])(
+	"preserves historical coverage rather than certifying %s history",
+	(status) => {
+		const snapshot = factoryFixture();
+		const repo = snapshot.repos[0];
+		if (!repo) throw new Error("fixture");
+		repo.observation = { version: "new", source: "run", window, refreshedAt: now };
+		repo.coverage.commits.status = "complete";
+		const previous = structuredClone(repo);
+		previous.observation = { ...repo.observation, window: factoryWindow(now, 90) };
+		previous.coverage.commits.status =
+			status === "gap" ? "complete" : (status as "complete" | "limited" | "unavailable");
+		if (status === "gap") previous.observation.window.until = "2026-09-01T00:00:00.000Z";
+		retainRepositoryDays(repo, previous, window);
+		expect(repo.coverage.commits).toMatchObject({
+			completeWindows:
+				status === "complete"
+					? [factoryWindow(now, 90)]
+					: status === "gap"
+						? [previous.observation.window, window]
+						: [window],
+		});
+		const data = factoryResourceData(snapshot, repo, "commits", {
+			runId: "new",
+			items: [],
+			ranges: [],
+			next: null,
+			coverage: repo.coverage.commits,
+		});
+		expect(data.ranges).toEqual([window]);
+		expect(data.observation?.window).toEqual(window);
+	},
+);
 
 it("uses older saved day evidence even when the old display window was narrowed", () => {
 	const repo = factoryFixture().repos[0];
@@ -116,6 +151,6 @@ it("does not invent old contributions on first publish and excludes an exact mid
 	const midnight = factoryWindow("2026-10-24T00:00:00.000Z", 30);
 	const result = retainContributionDays(fresh, null, midnight);
 	expect(result.window).toEqual(midnight);
-	expect(result.contribution.days).toEqual([fresh.days[0]]);
+	expect(result.contribution.days).toEqual([{ ...fresh.days[0], fetchedAt: now, observedAt: now }]);
 	expect(result.contribution.total).toBe(3);
 });

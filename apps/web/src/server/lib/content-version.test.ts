@@ -12,6 +12,21 @@ import {
 	withContent,
 } from "./content-version";
 
+it("excludes per-day calendar fetch time from contribution content hashes", async () => {
+	const snapshot = factoryFixture();
+	snapshot.contribution = {
+		days: [{ date: "2026-09-15", count: 2, fetchedAt: "old" }],
+		total: 2,
+		restricted: 0,
+		fetchedAt: "old",
+	};
+	const before = await contentVersion("factory", snapshot);
+	const day = snapshot.contribution.days[0];
+	if (!day) throw new Error("fixture");
+	day.fetchedAt = "new";
+	expect(await contentVersion("factory", snapshot)).toBe(before);
+});
+
 it("R9 publication timestamps do not alter factory content fingerprints", async () => {
 	const snapshot = factoryFixture();
 	const original = await contentVersion("factory", snapshot);

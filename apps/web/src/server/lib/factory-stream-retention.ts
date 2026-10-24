@@ -49,6 +49,7 @@ export async function retainFactoryStream(
 			? {
 					observation: {
 						...observation,
+						window: observation.collectionWindow ?? observation.window,
 						head: coverage.observation ? coverage.observation.head : previous.head,
 					},
 				}

@@ -86,7 +86,8 @@ function coverage(value: unknown) {
 function contribution(value: unknown) {
 	if (!value) return value;
 	const data = omit(value, ["fetchedAt", "observedAt"]);
-	if (Array.isArray(data.days)) data.days = data.days.map((day) => omit(day, ["observedAt"]));
+	if (Array.isArray(data.days))
+		data.days = data.days.map((day) => omit(day, ["observedAt", "fetchedAt"]));
 	return data;
 }
 

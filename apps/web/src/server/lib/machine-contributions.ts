@@ -56,12 +56,14 @@ export async function readContributions(db: Db, account: string, query: Record<s
 			count: valid ? day.count : null,
 			partial: day?.partial ?? date >= window.until.slice(0, 10),
 			observedAt: day?.observedAt ?? observedAt,
+			fetchedAt: day?.fetchedAt ?? saved.fetchedAt,
 			types: { ...contributionTypes(), ...day?.types },
 			breakdown: day?.breakdown ?? "unavailable",
 			unavailable: !valid,
 		};
 	});
 	const missing = days.some((day) => day.unavailable);
+	const freshness = snapshotFreshness(days.map((day) => (day.unavailable ? null : day.fetchedAt)));
 	return observationEnvelope(
 		account,
 		"contributions",
@@ -70,9 +72,10 @@ export async function readContributions(db: Db, account: string, query: Record<s
 			until,
 			days,
 			total: missing ? null : days.reduce((sum, day) => sum + Number(day.count), 0),
-			observedAt,
-			fetched_at: saved.fetchedAt,
-			freshness: snapshotFreshness(days.map((day) => (day.unavailable ? null : saved.fetchedAt))),
+			observedAt: snapshotFreshness(days.map((day) => (day.unavailable ? null : day.observedAt)))
+				.latestAt,
+			fetched_at: freshness.latestAt,
+			freshness,
 			coverage: {
 				status: missing ? "unavailable" : "complete",
 				total: selected.length,

@@ -586,6 +586,13 @@ Newly recollected calendars retain outside-window dates up to a 90-date display
 span. `contribution.total` sums calendar counts across that span;
 `contribution.restricted` is `null` if retained daily restricted attribution is
 unavailable, rather than reporting an incomplete sum as a complete total.
+Expanded repository `observation.window` is the daily-chart display range;
+`observation.collectionWindow`, when present, is the actual raw-stream collection
+range. Stream endpoints keep their `ranges` and observation window tied to that
+collection range, including after a later failed refresh retains the stream.
+`coverage.completeWindows` records complete daily-metric intervals inside an
+expanded display span. Consumers must not certify gaps or previously unavailable
+dates from the latest stream status alone.
 CI freshness `total` counts selected owned repositories. A repository counts once
 as `missing` if any required Actions/releases/details dependency lacks a valid
 available timestamp. `oldestAt` and `latestAt` still inspect all three dependencies;
@@ -932,7 +939,7 @@ The standard observation envelope contains this `data` shape:
   since, until, total: number|null, observedAt, fetched_at,
   timezone: "github", typeWindowTimezone: "UTC", partial: boolean,
   window: {since,until}, collectionStatus: "complete"|"pending"|"unavailable",
-  days: [{date,count:number|null,partial,observedAt,unavailable,
+  days: [{date,count:number|null,partial,fetchedAt,observedAt,unavailable,
     types:{commits,issues,pullRequests,pullRequestReviews,restricted,repositories},
     breakdown:"complete"|"unavailable"|"mismatch"}],
   freshness, coverage, unavailable
@@ -947,10 +954,15 @@ these counts, not type aggregates. A missing/invalid saved day returns null coun
 `typesStatus:complete|partial|pending|unavailable`. Freshness uses original
 calendar observation times per selected day, with missing days counted explicitly.
 Known calendar counts remain usable when type details are unavailable.
+Day `fetchedAt` records the calendar count's original collection; `observedAt`
+preserves its type observation when present. Top-level `fetched_at`/`observedAt`
+are the latest applicable times among the selected days, not a later quick merge.
 
 `sourceVersion` identifies the original calendar observation run, not necessarily
 the newest global publication. `source.publicationId` identifies that publication;
-`data.window` is the retained calendar's original frozen window. A newer failed
+`data.window` is the calendar's published display window: a successful quick merge
+can include retained older dates, while an untouched calendar keeps its original
+window. A newer failed
 collection keeps the prior calendar, version, window and timestamps, while
 `collectionStatus` reports the latest attempt's unavailable status. GET never
 advances freshness. Legacy calendars gain null type fields in this endpoint,

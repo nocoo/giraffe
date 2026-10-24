@@ -459,7 +459,9 @@ async function executeStep(
 								return {
 									data,
 									head: retained ? retained.head : repo.head,
-									window: retained?.window ?? repo.observation.window,
+									window: retained
+										? (retained.collectionWindow ?? retained.window)
+										: (repo.observation.collectionWindow ?? repo.observation.window),
 								};
 							},
 						}

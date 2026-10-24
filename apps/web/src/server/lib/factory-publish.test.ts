@@ -27,6 +27,7 @@ import {
 	restoreLegacyRepo,
 	snapshotWrites,
 } from "./factory-publish";
+import { readFactoryResource } from "./machine-observations";
 
 const snap = factoryFixture();
 const now = snap.fetched_at;
@@ -174,6 +175,63 @@ it.each([null, 45])(
 	},
 );
 
+it("keeps the actual quick source window after deep history, quick publication and a failed stream", async () => {
+	const { db, lease, fresh } = await historyFixture(90);
+	const quickWindow = { ...lease.run.window };
+	await db
+		.prepare("INSERT INTO factory_resources(run_id,repo,stream,payload) VALUES(?,?,'commits',?)")
+		.bind(
+			lease.run.id,
+			fresh.name,
+			JSON.stringify({
+				runId: lease.run.id,
+				items: [],
+				ranges: [],
+				next: null,
+				coverage: fresh.coverage.commits,
+			}),
+		)
+		.run();
+	await db.batch(await repositoryWrites(db, lease, now, fresh, fresh.name, null));
+	await db.batch(await publicationWrites(db, lease, now));
+	expect(
+		(await readFactoryResource(db, snap.account_id, fresh.name, "commits")).data,
+	).toMatchObject({ ranges: [quickWindow], observation: { window: quickWindow } });
+	lease.run.status = "completed";
+	expect(await saveRun(db, lease, [], now)).toBe(true);
+	const nextAt = "2026-09-16T22:00:00.000Z";
+	const run = makeRun(
+		"failure",
+		snap.account_id,
+		"nocoo",
+		"failure",
+		"refresh",
+		[fresh],
+		nextAt,
+		[],
+		[],
+		{ scope: "selected", repos: [fresh.name] },
+		"quick",
+	);
+	await startRun(db, run);
+	const next = await claimRun(db, run.id, nextAt);
+	if (!next) throw new Error("fixture");
+	fresh.observation = { version: run.id, source: "run", refreshedAt: nextAt, window: run.window };
+	fresh.coverage.commits.status = "unavailable";
+	await db.batch(await repositoryWrites(db, next, nextAt, fresh, fresh.name, null));
+	await db.batch(await publicationWrites(db, next, nextAt));
+	const published = await publishedFactory(db, snap.account_id);
+	expect(published?.repos[0]?.metrics.commits).toBe(127);
+	expect(published?.repos[0]?.coverage.commits).toMatchObject({
+		retained: true,
+		observation: { version: lease.run.id, window: quickWindow },
+		completeWindows: [factoryWindow(now, 90)],
+	});
+	expect(
+		(await readFactoryResource(db, snap.account_id, fresh.name, "commits")).data,
+	).toMatchObject({ ranges: [quickWindow], observation: { window: quickWindow } });
+});
+
 it("keeps retained-stream provenance and totals separate from successful daily-history merging", async () => {
 	const { db, lease, repo, fresh } = await historyFixture(120);
 	await db
@@ -292,7 +350,10 @@ it.each([false, true])(
 				? {
 						...lease.run.checkpoint?.contribution,
 						total: 13,
-						days: [oldDay, { date: now.slice(0, 10), count: 9 }],
+						days: [
+							{ ...oldDay, fetchedAt: "old" },
+							{ date: now.slice(0, 10), count: 9, fetchedAt: now, observedAt: now },
+						],
 					}
 				: base.contribution,
 		);

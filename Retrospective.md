@@ -2047,3 +2047,14 @@ Markdown. The normal pre-commit lint gate rejected its space indentation before
 creating a commit. Formatting the touched documentation fixes the failure; no
 hook was bypassed and no production operation occurred. Include Markdown code
 blocks in the explicit changed-file format pass before running the full hook.
+
+## 2026-10-24 - Separate display history from source provenance
+
+B19A initially widened repository windows and merged calendar days without
+auditing every consumer of those fields. Independent review reproduced false
+historical completeness, widened raw-stream source ranges and refreshed ages on
+retained calendar days despite passing L1. The follow-up stores collection ranges,
+complete daily-evidence intervals and per-day calendar timestamps separately.
+Regression tests cover coverage recovery/gaps, quick-to-failed retention and
+date-filtered freshness. When changing a shared observation field, trace readers,
+retention writers and content-version recipes, not only the chart and publisher.
