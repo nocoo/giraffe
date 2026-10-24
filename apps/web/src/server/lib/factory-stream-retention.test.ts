@@ -143,7 +143,7 @@ async function setup(stream: FactoryStreamName, source: "run" | "legacy" = "run"
 		version: "current",
 		source: "run",
 		refreshedAt: now,
-		window: { since: "2026-07-25T00:00:00.000Z", until: now },
+		window: lease.run.window,
 	};
 	candidate.metrics = mergeMetrics(
 		FACTORY_STREAMS.map((name) =>

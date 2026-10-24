@@ -575,13 +575,17 @@ the same combined rule enters the account factory content hash.
 clock. Inventory `total`, `scanned` and `pages` remain historical collection
 metadata, not projected repository counts.
 Default/`scope=all` factory reads preserve the saved account-wide contribution
-calendar exactly: all 90 `contribution.days[]` entries, totals, status and
+calendar exactly: all saved `contribution.days[]` entries, totals, status and
 `contributionObservation` provenance. Repository/catalog filtering does
 not rewrite this account-wide evidence. Only `scope=starred` returns
 `contribution:null`, `contributionExcluded:true` and `contributionStatus:"unavailable"`
 without `contributionObservation`: the calendar has no repository breakdown and
 cannot be attributed to that subset. Original publication windows and repository
 versions are retained; GET neither recollects nor rewrites the calendar.
+Newly recollected calendars retain outside-window dates up to a 90-date display
+span. `contribution.total` sums calendar counts across that span;
+`contribution.restricted` is `null` if retained daily restricted attribution is
+unavailable, rather than reporting an incomplete sum as a complete total.
 CI freshness `total` counts selected owned repositories. A repository counts once
 as `missing` if any required Actions/releases/details dependency lacks a valid
 available timestamp. `oldestAt` and `latestAt` still inspect all three dependencies;
@@ -2178,6 +2182,11 @@ api "$API/refresh-runs"
 ```
 
 ### POST /refresh-runs
+
+Quick collection freezes 30 UTC dates, while successful publication retains older
+saved daily history up to 90 dates. Display windows are not collection windows.
+See the [v0.24.2 one-time deep backfill](09-factory-runs.md#one-time-history-backfill-after-v0242)
+for the post-deploy operator request; do not change the daily quick depth to 90.
 
 Requires `app:write`; explicitly schedules GitHub collection. No query; strict body:
 

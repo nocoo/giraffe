@@ -418,13 +418,25 @@ API 的 `repos` 只表示 selected 成员；`order` 是独立的优先级顺序�
 Daily quick refresh updates the current starred view. Weekly deep refresh calibrates
 history across its configured scope. Depth and repository membership are separate;
 both modes publish the same snapshots and preserve prior good data on failed reads.
-New quick runs freeze 30 UTC calendar dates; deep runs retain 90. Existing runs
-keep their persisted window through upgrade/resume. All metrics, stream filtering
-and contribution collection use that frozen window; retained evidence keeps its
-original window rather than being relabelled as a fresh thirty-day observation.
-Factory and repository activity labels follow the UTC dates in the published chart
-window (quick 30 / deep 90), including retained observation windows. The default
-seven-day period comparison does not shorten that chart window.
+New quick runs freeze 30 UTC calendar dates for collection; deep runs freeze 90.
+Existing runs keep their persisted collection window through upgrade/resume.
+Stream filtering, event summarization and contribution collection use that frozen
+window. At repository commit, prior published day buckets outside the new window
+are retained, capped at 90 UTC calendar dates ending at `run.window.until`.
+Buckets inside the new window come only from the new run: missing new buckets are
+not filled from old data, and overlapping dates are never summed twice. The dated
+metric totals follow those buckets; non-daily measurements (authors, cycle samples,
+current backlog and other status counters) retain their collection semantics.
+The repository observation window is the union of that retained evidence and the
+collection window, subject to the cap. A first quick publication remains 30 dates;
+a narrower prior observation does not invent 90 dates of coverage.
+The global snapshot window unions the included observation windows, rather than
+unconditionally adopting the new run window. Factory and repository chart labels
+follow the displayed UTC span: a quick collection can display up to 90 retained
+dates. The default seven-day period comparison does not shorten that chart window.
+Failed-stream `retained: true` paths and untouched repositories keep their original
+source windows/timestamps and mixed-publication semantics; their older provenance
+is not rewritten to satisfy a fresh-history cap.
 Scheduled daily refresh also plans the account-wide contribution step, even for
 starred selection. Manual selected refresh does not add that account-wide work.
 The quick calendar uses one calendar request and two 15-day type batches; deep
@@ -433,6 +445,12 @@ checkpoint progress, request/rate accounting and publication remain fenced.
 An interrupted or unavailable collection retains the previous good calendar and
 its original provenance. Type details are optional/null where GitHub lacks them;
 calendar totals are never reconstructed from a possibly mismatched type sum.
+Successful contribution recollection applies the same outside-window union and
+90-date cap, preserving retained per-day metadata and replacing new-window days.
+Its total is the sum of calendar counts. Restricted totals include retained daily
+attribution, or are `null` when that attribution is unavailable; optional type
+coverage remains partial when retained breakdowns are incomplete. Without a new
+calendar, both the saved calendar and its provenance window remain unchanged.
 Quick mode reuses complete pinned commit/manifests evidence only when the verified
 head and rolling window permit it. Immutable commit history can stop at a verified
 baseline intersection. Mutable Issues, PRs, Actions, releases and contributor lists
@@ -503,6 +521,47 @@ genuine transient errors keep the existing bounded retry policy.
 Source provenance remains distinct from the last successful check. Reused code
 evidence records its original `sourceFetchedAt`; missing/incomplete evidence causes
 normal collection. A failed or limited read never refreshes the age of retained data.
+
+### One-time history backfill after v0.24.2
+
+Only after this fix is deployed, GitHub Guan Jia can request **one deep refresh**
+to refill day buckets already overwritten by earlier quick publications. No
+one-shot code flag or permanent daily-depth change is needed. A successful deep
+publish reloads 90 UTC dates of event history; subsequent quick publications keep
+days 31-90 through outside-window retention, with the oldest dates aging out.
+This is an operator handoff, not an instruction for the implementation/review
+agent to write production or hand-trigger a refresh.
+
+Use the existing machine API with an account-bound token carrying `app:write`:
+`POST /api/v1/accounts/<account-id>/refresh-runs`, `Content-Type: application/json`.
+The exact full-refresh body is:
+
+```json
+{
+	"requestKey": "6a8a64b0-164b-45bb-a7f5-dc441edcddca",
+	"mode": "refresh",
+	"depth": "deep",
+	"scope": "all"
+}
+```
+
+Generate a fresh UUID once for the logical backfill; preserve that same key/body
+when retrying an uncertain submission. Do not send `account_id` in the body.
+Full scope includes account contributions and every owned catalog repository.
+For repository-only backfill, use `"scope": "selected"` plus
+`"repos": ["nocoo/giraffe"]` (replace with the intended saved-catalog names);
+manual selected scope does **not** recollect the account contribution calendar.
+The catalog must already exist; full scope requires complete inventory. Wait for
+any running/paused account run and cooldown rather than creating competing work.
+Do not submit during the daily Beijing blackout, 00:50 through the end of 01:00.
+
+HTTP 202 is admission, not backfill success. Poll the returned run via
+`GET /api/v1/accounts/<account-id>/refresh-runs`, verify its published version and
+per-stream coverage, then read saved factory observations to confirm the expected
+90-date window and daily buckets. Failed/limited streams can retain older evidence
+instead of refilling gaps. No schedule PUT, queue operation, migration or direct
+deployment is part of this handoff. See the exact validation and idempotency rules
+in [POST /refresh-runs](api.md#post-refresh-runs).
 
 ## Stars and automatic refresh
 

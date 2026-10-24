@@ -192,7 +192,7 @@ export type FactorySnapshot = {
 			breakdown?: "complete" | "unavailable" | "mismatch";
 		}[];
 		total: number;
-		restricted: number;
+		restricted: number | null;
 		fetchedAt: string;
 		observedAt?: string;
 		partial?: boolean;

@@ -2039,3 +2039,11 @@ alongside visible headings, while preserving valid descriptions of refresh polic
 The first browser assertion selected every descendant `summary`, including a
 nested exclusion list, and failed Playwright's strict locator check. Target the
 direct-child summary and run the new browser cases before the full gate sequence.
+
+## 2026-10-24 - Include documentation examples in format checks
+
+B19A formatted the changed TypeScript but missed the JSON backfill example in
+Markdown. The normal pre-commit lint gate rejected its space indentation before
+creating a commit. Formatting the touched documentation fixes the failure; no
+hook was bypassed and no production operation occurred. Include Markdown code
+blocks in the explicit changed-file format pass before running the full hook.

@@ -169,6 +169,9 @@ it.each(["graphql", 403, 404, 500] as const)(
 		expect(publication?.contributionStatus).toBe("unavailable");
 		expect(publication?.contribution).toEqual(snapshot.contribution);
 		expect(publication?.contributionObservation).toEqual(snapshot.contributionObservation);
-		expect(publication?.window).toEqual(run.window);
+		expect(publication?.window).toEqual({
+			since: snapshot.contributionObservation.window.since,
+			until: run.window.until,
+		});
 	},
 );

@@ -3,8 +3,9 @@ import { unsupportedWorkflowJobs } from "../../../../../tests/fixtures/dependenc
 import { github, memoryStore, ready } from "../../../../../tests/fixtures/factory";
 import { factoryFixture } from "../../../../../tests/fixtures/factory-snapshot";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
+import { emptyDay, emptyMetrics, factoryWindow } from "../../lib/factory";
 import { makeRun } from "../../lib/factory-run";
-import { FACTORY_STREAMS } from "../../lib/factory-types";
+import { FACTORY_STREAMS, type FactorySnapshot } from "../../lib/factory-types";
 import { beginCatalog, planCatalog } from "./catalog-history";
 import { contentVersion, observationVersion } from "./content-version";
 import { createDb } from "./db/d1";
@@ -79,6 +80,231 @@ async function completeCatalog(
 		.bind(lease.run.id, JSON.stringify(plan))
 		.run();
 }
+
+async function historyFixture(previousDays: number | null = 90, depth: "quick" | "deep" = "quick") {
+	const { db, lease, repo } = await setup();
+	lease.run.mode = "refresh";
+	lease.run.depth = depth;
+	lease.run.window = factoryWindow(now, depth === "quick" ? 30 : 90);
+	for (const stream of FACTORY_STREAMS) repo.coverage[stream].status = "complete";
+	repo.metrics = emptyMetrics();
+	repo.observation = {
+		version: "previous",
+		source: "run",
+		refreshedAt: now,
+		window: factoryWindow(now, previousDays ?? 30),
+	};
+	if (previousDays !== null) {
+		for (let i = 0; i < previousDays; i++) {
+			const date = new Date(Date.parse(now.slice(0, 10)) - i * 86_400_000)
+				.toISOString()
+				.slice(0, 10);
+			repo.metrics.days[date] = { ...emptyDay(), commits: 2, prMerged: 1 };
+		}
+		repo.metrics.commits = previousDays * 2;
+		repo.metrics.prMerged = previousDays;
+		await db.batch(await repositoryWrites(db, lease, now, repo, repo.name, null));
+	}
+	const base: FactorySnapshot = {
+		...snap,
+		runId: "previous",
+		window: repo.observation.window,
+		repos: previousDays === null ? structuredClone(snap.repos) : [structuredClone(repo)],
+	};
+	await db.batch(await snapshotWrites(db, lease, now, "factory:v:previous", base));
+	await db
+		.prepare("UPDATE factory_state SET published_id='previous' WHERE account_id=?")
+		.bind(snap.account_id)
+		.run();
+	const fresh = structuredClone(repo);
+	fresh.observation = { ...repo.observation, version: lease.run.id, window: lease.run.window };
+	fresh.metrics = emptyMetrics();
+	fresh.metrics.days[now.slice(0, 10)] = { ...emptyDay(), commits: 7, prMerged: 3 };
+	fresh.metrics.commits = 7;
+	fresh.metrics.prMerged = 3;
+	return { db, lease, repo, fresh, base };
+}
+
+it.each([90, 120])(
+	"retains and caps %i published dates outside a successful quick window",
+	async (previousDays) => {
+		const { db, lease, repo, fresh } = await historyFixture(previousDays);
+		const before = structuredClone(fresh);
+		await db.batch(await repositoryWrites(db, lease, now, fresh, fresh.name, null));
+		await db.batch(await publicationWrites(db, lease, now));
+		const published = await publishedFactory(db, snap.account_id);
+		const saved = await currentRepo(db, snap.account_id, fresh.name);
+		expect(saved?.observation?.window).toEqual(factoryWindow(now, 90));
+		expect(published?.window).toEqual(factoryWindow(now, 90));
+		expect(published?.repos[0]).toEqual({
+			...saved,
+			observation: { ...saved?.observation, publishedAt: now },
+		});
+		expect(saved?.metrics.days).toEqual({
+			...Object.fromEntries(
+				Object.entries(repo.metrics.days).filter(
+					([date]) =>
+						date >= factoryWindow(now, 90).since.slice(0, 10) &&
+						date < lease.run.window.since.slice(0, 10),
+				),
+			),
+			...fresh.metrics.days,
+		});
+		expect(saved?.metrics).toMatchObject({ commits: 127, prMerged: 63 });
+		expect(saved?.metrics.days[lease.run.window.since.slice(0, 10)]).toBeUndefined();
+		expect(saved?.coverage.commits.retained).toBeUndefined();
+		expect(published?.publication?.mixed).toBe(false);
+		expect(fresh).toEqual(before);
+		expect(await readSnapshot(db, snap.account_id, "factory:v:previous")).toMatchObject({
+			repos: [repo],
+		});
+	},
+);
+
+it.each([null, 45])(
+	"does not invent 90-day history from a %s-day baseline",
+	async (previousDays) => {
+		const { db, lease, fresh } = await historyFixture(previousDays);
+		await db.batch(await repositoryWrites(db, lease, now, fresh, fresh.name, null));
+		await db.batch(await publicationWrites(db, lease, now));
+		const published = await publishedFactory(db, snap.account_id);
+		expect(published?.window).toEqual(factoryWindow(now, previousDays ?? 30));
+		expect(published?.repos[0]?.observation?.window).toEqual(published?.window);
+		expect(published?.repos[0]?.metrics.commits).toBe(previousDays === null ? 7 : 37);
+	},
+);
+
+it("keeps retained-stream provenance and totals separate from successful daily-history merging", async () => {
+	const { db, lease, repo, fresh } = await historyFixture(120);
+	await db
+		.prepare(
+			"INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) SELECT 'previous',account_id,'previous','completed',payload,next_at,created_at,updated_at FROM factory_runs WHERE id='r1'",
+		)
+		.run();
+	await db
+		.prepare(
+			"INSERT INTO factory_resources(run_id,repo,stream,payload) VALUES('previous',?,'commits',?)",
+		)
+		.bind(
+			repo.name,
+			JSON.stringify({
+				runId: "previous",
+				items: [],
+				ranges: [],
+				next: null,
+				coverage: repo.coverage.commits,
+			}),
+		)
+		.run();
+	fresh.coverage.commits.status = "unavailable";
+	await db.batch(await repositoryWrites(db, lease, now, fresh, fresh.name, null));
+	await db.batch(await publicationWrites(db, lease, now));
+	const published = await publishedFactory(db, snap.account_id);
+	expect(published?.window).toEqual(repo.observation?.window);
+	expect(published?.publication?.mixed).toBe(true);
+	expect(published?.repos[0]).toMatchObject({
+		observation: { window: factoryWindow(now, 90) },
+		coverage: { commits: { retained: true, observation: repo.observation } },
+		metrics: { commits: 240, prMerged: 63 },
+	});
+});
+
+it("replaces the entire deep window and retains that display span on the next quick publish", async () => {
+	const { db, lease, fresh } = await historyFixture(120, "deep");
+	await db.batch(await repositoryWrites(db, lease, now, fresh, fresh.name, null));
+	await db.batch(await publicationWrites(db, lease, now));
+	expect((await publishedFactory(db, snap.account_id))?.repos[0]?.metrics).toEqual(fresh.metrics);
+	lease.run.status = "completed";
+	expect(await saveRun(db, lease, [], now)).toBe(true);
+	const nextAt = "2026-09-16T22:00:00.000Z";
+	const run = makeRun(
+		"next",
+		snap.account_id,
+		"nocoo",
+		"next",
+		"refresh",
+		[fresh],
+		nextAt,
+		[],
+		[],
+		{ scope: "selected", repos: [fresh.name] },
+		"quick",
+	);
+	await startRun(db, run);
+	const next = await claimRun(db, run.id, nextAt);
+	if (!next) throw new Error("fixture");
+	fresh.observation = { version: run.id, source: "run", refreshedAt: nextAt, window: run.window };
+	await db.batch(await repositoryWrites(db, next, nextAt, fresh, fresh.name, null));
+	await db.batch(await publicationWrites(db, next, nextAt));
+	const published = await publishedFactory(db, snap.account_id);
+	expect(published?.window).toEqual(factoryWindow(nextAt, 90));
+	expect(published?.repos[0]?.metrics).toEqual(fresh.metrics);
+	expect(run.window).toEqual(factoryWindow(nextAt, 30));
+});
+
+it.each([false, true])(
+	"preserves contribution history and provenance (recollected: %s)",
+	async (recollected) => {
+		const { db, lease, base } = await historyFixture(null);
+		base.repos = [];
+		base.window = factoryWindow(now, 120);
+		const oldDay = { date: factoryWindow(now, 90).since.slice(0, 10), count: 4, observedAt: "old" };
+		base.contribution = {
+			days: [
+				{ date: base.window.since.slice(0, 10), count: 1 },
+				oldDay,
+				{ date: now.slice(0, 10), count: 100 },
+			],
+			total: 105,
+			restricted: 0,
+			fetchedAt: "old",
+		};
+		base.contributionObservation = { version: "previous", window: base.window, fetchedAt: "old" };
+		base.contributionStatus = "complete";
+		await db.batch(await snapshotWrites(db, lease, now, "factory:v:previous", base));
+		if (recollected) {
+			lease.run.checkpoint = {
+				...snap,
+				contributionStatus: "complete",
+				contribution: {
+					days: [{ date: now.slice(0, 10), count: 9 }],
+					total: 9,
+					restricted: 0,
+					fetchedAt: now,
+				},
+			};
+			lease.run.steps.push({
+				kind: "contributions",
+				repo: null,
+				status: "success",
+				attempts: 1,
+				startedAt: now,
+				finishedAt: now,
+				durationMs: 1,
+				pages: 1,
+				error: null,
+			});
+		}
+		await db.batch(await publicationWrites(db, lease, now));
+		const published = await publishedFactory(db, snap.account_id);
+		expect(published?.contribution).toEqual(
+			recollected
+				? {
+						...lease.run.checkpoint?.contribution,
+						total: 13,
+						days: [oldDay, { date: now.slice(0, 10), count: 9 }],
+					}
+				: base.contribution,
+		);
+		expect(published?.contributionObservation).toEqual(
+			recollected
+				? { version: lease.run.id, window: factoryWindow(now, 90), fetchedAt: now }
+				: base.contributionObservation,
+		);
+		expect(published?.window).toEqual(recollected ? factoryWindow(now, 90) : base.window);
+		expect(published?.publication?.mixed).toBe(!recollected);
+	},
+);
 it("preserves stronger last-known-good coverage and failed-repository metadata in one atomic commit", async () => {
 	const { raw, db, lease, repo } = await setup();
 	for (const key of FACTORY_STREAMS) repo.coverage[key].status = "complete";
