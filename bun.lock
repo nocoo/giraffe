@@ -7,7 +7,7 @@
       "dependencies": {
         "@nocoo/basalt": "3.2.1",
         "hono": "^4.13.13",
-        "lucide-react": "1.59.0",
+        "lucide-react": "1.61.0",
         "react": "^19.3.1",
         "react-dom": "^19.3.1",
         "react-router": "^8.5.0",
@@ -39,7 +39,7 @@
       "dependencies": {
         "@nocoo/basalt": "3.2.1",
         "hono": "^4.13.13",
-        "lucide-react": "1.59.0",
+        "lucide-react": "1.61.0",
         "react": "^19.3.1",
         "react-dom": "^19.3.1",
         "react-router": "^8.5.0",
@@ -666,7 +666,7 @@
 
     "lightningcss-win32-x64-msvc": ["lightningcss-win32-x64-msvc@1.33.0", "", { "os": "win32", "cpu": "x64" }, "sha1-40OuFS7tNgncbhGUnRo785oclG8="],
 
-    "lucide-react": ["lucide-react@1.59.0", "", { "peerDependencies": { "@types/react": "*", "react": "^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0" }, "optionalPeers": ["@types/react"] }, "sha512-5qgMyyCPU6OvnKpLS2t693+ZtiqA8oaSweWoUows0BLFKFf6V75m4+CptpmohZHpD5IuOVIBXHBBiv2vpLJmtw=="],
+    "lucide-react": ["lucide-react@1.61.0", "", { "peerDependencies": { "@types/react": "*", "react": "^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0" }, "optionalPeers": ["@types/react"] }, "sha512-v2SQPPPNjnr+BlhL9Spuzmo5yR+hLkftfuE4E3jaxdNPgSH0hJKPcLJBP7yAta87jQNPsSERS59PJjCJ/CorBA=="],
 
     "magic-string": ["magic-string@1.4.3", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.6.0" } }, "sha512-z12OxmaPGE0F4xlpGdjuAUckipLpQlTAuAmyGhNoD7ODpYUzvDfvtxUbjM/jwznyP178oju/KDdyi220wNJ0RQ=="],
 
