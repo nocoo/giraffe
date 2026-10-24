@@ -2026,3 +2026,12 @@ Because zsh ties `path` to `PATH`, the loop hid executable directories and the n
 read-only commands failed. A fresh command shell restored normal lookup; no
 repository or machine configuration changed. Use descriptive variables such as
 `rule_file` or `instruction_file` rather than shell-special names.
+
+## 2026-10-24 - Check expanded copy when fixing window labels
+
+B17A corrected chart headings and tooltips but missed the fixed ninety-day flow
+claim in the expandable methodology section. Its JSX text spanned two lines, so
+single-line searches and heading-only assertions did not cover it. R1 replaces
+that claim with observation-window wording and checks expanded methodology for
+both quick and retained deep windows. Audit multiline copy and collapsed content
+alongside visible headings, while preserving valid descriptions of refresh policy.

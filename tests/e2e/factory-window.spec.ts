@@ -37,6 +37,13 @@ for (const dayCount of [30, 90]) {
 			"每日快速刷新 30 天，每周深度刷新校准 90 天",
 		);
 		await expect(page.getByRole("tooltip")).toContainText("默认 7 天仅用于期间比较");
+		const methodology = page.locator("details").filter({ hasText: "来源、口径与不确定性" });
+		await methodology.locator("summary").click();
+		await expect(methodology).toHaveAttribute("open", "");
+		await expect(
+			methodology.getByText("历史总量与观测窗口内流量分开", { exact: false }),
+		).toBeVisible();
+		await expect(methodology).not.toContainText(/历史总量与\s*90\s*天流量分开/);
 		await page.goto("/repos/octocat/hello-world");
 		await expect(
 			page.getByRole("heading", { name: `${dayCount} 天活动`, exact: true }),

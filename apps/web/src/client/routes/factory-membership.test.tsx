@@ -85,6 +85,13 @@ it.each([30, 90])("labels the published %i-day chart window", async (dayCount) =
 		);
 		expect(container.textContent).toContain("每日快速刷新 30 天，每周深度刷新校准 90 天");
 		expect(container.textContent).toContain("默认 7 天仅用于期间比较");
+		const methodology = Array.from(container.querySelectorAll("details")).find(
+			(details) => details.querySelector("summary")?.textContent === "来源、口径与不确定性",
+		);
+		if (!methodology) throw new Error("Missing factory methodology");
+		methodology.open = true;
+		expect(methodology.textContent).toContain("历史总量与观测窗口内流量分开");
+		expect(methodology.textContent).not.toMatch(/历史总量与\s*90\s*天流量分开/);
 	} finally {
 		await act(async () => root.unmount());
 	}
