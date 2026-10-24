@@ -586,13 +586,17 @@ async function executeStep(
 					later.attempts = 0;
 				}
 			run.nextAttemptAt = clock();
-		} else if (
-			code === "github_unauthorized" ||
-			code === "encryption_key_missing" ||
-			code === "factory_capacity"
-		) {
+		} else if (code === "github_unauthorized" || code === "encryption_key_missing") {
 			run.status = "paused";
 			step.status = "pending";
+		} else if (code === "factory_capacity") {
+			if (step.kind === "activity") {
+				finish(step, "limited", clock());
+				run.nextAttemptAt = clock();
+			} else {
+				run.status = "paused";
+				step.status = "pending";
+			}
 		} else if (code === "github_rate_limited") {
 			invocation.stopped = true;
 			step.status = "pending";
