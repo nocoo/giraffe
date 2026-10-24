@@ -2018,3 +2018,11 @@ inside `per_page=100`, then used the local stub origin instead of GitHub's canon
 pagination origin. The production validator correctly rejected both. Correct
 fixtures before interpreting gate failures; manipulate query parameters and keep
 upstream response links distinct from the local transport origin.
+
+## 2026-10-24 - Avoid shell-special loop variables
+
+During B17A instruction discovery, a zsh loop used `path` as its file variable.
+Because zsh ties `path` to `PATH`, the loop hid executable directories and the next
+read-only commands failed. A fresh command shell restored normal lookup; no
+repository or machine configuration changed. Use descriptive variables such as
+`rule_file` or `instruction_file` rather than shell-special names.

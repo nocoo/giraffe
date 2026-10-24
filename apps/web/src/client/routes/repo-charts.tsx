@@ -24,7 +24,7 @@ export function RepoActivityChart({ days }: { days: Day[] }) {
 	];
 	return (
 		<ChartShell
-			ariaLabel="仓库 90 天活动"
+			ariaLabel={`仓库 ${days.length} 天活动`}
 			className="h-64 w-full"
 			legend={<ChartLegend items={series} shape="line" />}
 			summary={

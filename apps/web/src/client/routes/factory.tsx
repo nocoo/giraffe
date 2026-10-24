@@ -324,8 +324,8 @@ export function FactoryPage() {
 							<section className="factory-section" aria-labelledby="factory-change-title">
 								<SectionRule
 									id="factory-change-title"
-									title={<IconLabel icon={Activity}>变化 · 最近 90 天</IconLabel>}
-									hint="左轴是每日流量（柱），右轴是结果（折线）。Open 存量由当前数量按每日新开与完成倒推；事件不完整时不画折线。"
+									title={<IconLabel icon={Activity}>变化 · 最近 {board.days.length} 天</IconLabel>}
+									hint={`按已发布观测窗口展示 ${board.days.length} 个 UTC 日期；每日快速刷新 30 天，每周深度刷新校准 90 天，保留的数据沿用原窗口。上方默认 7 天仅用于期间比较，不改变图表窗口。左轴是每日流量（柱），右轴是结果（折线）。Open 存量由当前数量按每日新开与完成倒推；事件不完整时不画折线。`}
 								/>
 								<div className="factory-chart-grid grid gap-3 xl:grid-cols-2">
 									<FactoryPanel
