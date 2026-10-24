@@ -380,6 +380,42 @@ const emptyConnection = () => ({ nodes: [], pageInfo: { hasNextPage: false } });
 const emptyRefs = () => ({
 	data: { repository: { refs: emptyConnection(), tags: emptyConnection() } },
 });
+it("truncates supplementary branch commit subjects at a complete code point", async () => {
+	const prefix = "c".repeat(239);
+	const gh = github(() =>
+		Response.json({
+			data: {
+				repository: {
+					tags: emptyConnection(),
+					refs: {
+						pageInfo: { hasNextPage: false },
+						nodes: [
+							{
+								name: "feature",
+								target: {
+									oid: "pinned",
+									history: {
+										pageInfo: { hasNextPage: false },
+										nodes: [
+											{
+												oid: "emoji",
+												committedDate: "2026-10-22T01:00:00.000Z",
+												message: `${prefix}🦒…\nbody`,
+											},
+										],
+									},
+								},
+							},
+						],
+					},
+				},
+			},
+		}),
+	);
+	const result = await collectActivitySupplement(run(), mapFactoryRepo(rawRepo), gh, "fake", null);
+	expect(result.state.commits).toMatchObject([{ sha: "emoji", message: `${prefix}🦒` }]);
+	expect(gh.count).toBe(1);
+});
 it("R4 supplement paginates frozen branch histories and tags, deduplicates SHAs and reports lightweight tags", async () => {
 	let calls = 0;
 	const gh = github((url, init) => {

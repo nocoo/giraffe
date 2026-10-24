@@ -504,14 +504,19 @@ bypassing only manual cooldowns. Exact-slot weekly ties precede daily, then cata
 otherwise pending current-day daily work precedes unstarted weekly/catalog work.
 Timeout/missed-slot `lastError` warnings persist until an explicit schedule save.
 
-All exposed runs add `expectedFinishAt` and `expectedFinishAtReason`: start time
-plus the median wall duration of the account's last five valid completed or partial runs of
-the actual catalog/quick/deep kind, across retained history. Read-time calibration
+All exposed runs add `expectedFinishAt` and `expectedFinishAtReason`. Terminal
+runs (`completed`, `failed`, `partial`, `cancelled`) always return
+`expectedFinishAt: null` with reason `terminal`, including zero-work records or
+runs without valid timestamps/history. Use `finishedAt` for the actual end.
+Lists, browser history/detail and all latest-readiness kinds share this rule.
+Non-terminal runs retain the existing [plan-scaled calibration](api.md#get-refresh-runs)
+from the account's last five valid completed or partial runs of the actual
+catalog/quick/deep kind, across retained history. Read-time calibration
 is not a deadline or guarantee. Samples need valid start/finish times and positive
 work; failed/cancelled and zero-work runs are excluded. No same-kind sample means
 null with `no_completed_history` (no eligible completed-or-partial history), not
 an estimate borrowed from another kind. Other null reasons are
-`invalid_started_at` or `not_executed`; a valid estimate has a null reason.
+`invalid_started_at` or `not_executed` for non-terminal runs; a valid estimate has a null reason.
 No GET backfill, upstream request or schema migration is introduced.
 
 `app:read`/`app:write` can read settings and refresh runs, update stars/

@@ -1,9 +1,9 @@
-import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { executeD1FixtureSync } from "../fixtures/d1";
 
 const base = process.env.GIRAFFE_E2E ?? "http://127.0.0.1:17045";
 const suite = process.env.GIRAFFE_SUITE ?? "A";
@@ -143,21 +143,7 @@ function d1Rows(sql: string): Array<Record<string, unknown>> {
 		return [];
 	}
 	const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
-	const raw = execFileSync(
-		join(root, "node_modules/.bin/wrangler"),
-		[
-			"d1",
-			"execute",
-			"giraffe-db",
-			"--local",
-			`--persist-to=${persist}`,
-			`--config=${config}`,
-			"--json",
-			"--command",
-			sql,
-		],
-		{ encoding: "utf8", cwd: root },
-	);
+	const raw = executeD1FixtureSync(sql, { persist, config, root });
 	const parsed = JSON.parse(raw) as Array<{ results?: Array<Record<string, unknown>> }>;
 	return parsed[0]?.results ?? [];
 }

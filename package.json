@@ -34,7 +34,7 @@
 		"@types/react-dom": "^19.3.0",
 		"@vitejs/plugin-react": "^6.1.2",
 		"@vitest/coverage-v8": "5.0.5",
-		"happy-dom": "^21.0.3",
+		"happy-dom": "^21.0.4",
 		"husky": "9.1.7",
 		"oxc-parser": "^0.155.0",
 		"tailwindcss": "^4.3.3",
@@ -58,6 +58,7 @@
 	},
 	"overrides": {
 		"source-map-js": "^1.2.2",
-		"sharp": "^0.35.5"
+		"sharp": "^0.35.5",
+		"undici": "7.30.1"
 	}
 }

@@ -7,8 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## v0.24.0 - 2026-10-24
 
-Unreleased preparation. B16A remains blocked on the landed-attribution semantics
-decision and dependency security gates; this is not a completed release.
+Unreleased preparation. B16A is on hold for the landed-attribution semantics
+decision; this is not a completed release.
 
 ### Fixed
 
@@ -25,7 +25,16 @@ decision and dependency security gates; this is not a completed release.
 ### Pending Decision
 
 - Default-branch activity still uses its existing committer-date behavior. The design in `docs/13-landed-activity.md` explains why polling cannot discover commits made unreachable between samples or reconstruct exact historical push times. Observation-scoped attribution versus a durable push-event source requires approval; no migration or weaker guarantee is silently introduced.
-- Dependencies, lockfile, deployment configuration and refresh schedules are unchanged. Existing pinned security findings prevent normal push until resolved through the authorized upstream path.
+- Inherit the released v0.23.1 dependency security fixes and code-point truncation through a normal main merge. Deployment configuration and refresh schedules remain unchanged.
+
+## v0.23.1 - 2026-10-24
+
+### Fixed
+
+- Override Undici to 7.30.1 to address GHSA-xjj6-f33q-929c, GHSA-4qv8-2p9j-2685 and GHSA-f72v-6w45-q472. Remove the override once Wrangler/Miniflare ship Undici >=7.30.1.
+- Truncate activity and factory titles, bodies and commit subjects by Unicode code point, preserving emoji at the 240/1200-character limits without emitting lone UTF-16 surrogates.
+- Upgrade Happy DOM to 21.0.4 to address GHSA-834v-8h66-3h79.
+- Return `expectedFinishAt: null` with `expectedFinishAtReason: "terminal"` for completed, failed, partial and cancelled factory runs across lists, history details and latest readiness. Use `finishedAt` for the actual end; running/paused estimates are unchanged.
 
 ## v0.23.0 - 2026-10-23
 

@@ -8,7 +8,6 @@ import {
 	type FactoryStreamName,
 } from "../../lib/factory-types";
 import { prState } from "../../lib/pull-request";
-import { clipText } from "./text";
 
 export type GithubObject = Record<string, unknown>;
 export function object(value: unknown): GithubObject {
@@ -19,6 +18,12 @@ export function rows(value: unknown): GithubObject[] {
 }
 function str(value: unknown): string {
 	return typeof value === "string" ? value : "";
+}
+export function truncateText(value: string, limit: number): string {
+	return Array.from(value)
+		.slice(0, limit)
+		.join("")
+		.replace(/[\uD800-\uDFFF]/gu, "�");
 }
 function nullable(value: unknown): string | null {
 	return str(value) || null;
@@ -77,7 +82,7 @@ export function mapFactoryEvents(stream: FactoryStreamName, data: GithubObject[]
 			const at = str(r.created_at);
 			const event: FactoryEvent = {
 				id: str(r.node_id) || String(r.id ?? r.sha ?? r.number),
-				title: clipText(str(r.title ?? r.name ?? r.tag_name), 240),
+				title: truncateText(str(r.title ?? r.name ?? r.tag_name), 240),
 				url: str(r.html_url),
 				at,
 				createdAt: at,
@@ -87,14 +92,14 @@ export function mapFactoryEvents(stream: FactoryStreamName, data: GithubObject[]
 				state: str(r.state ?? r.status),
 			};
 			if (stream === "prs" || stream === "issues") {
-				event.body = clipText(str(r.body), 1200);
+				event.body = truncateText(str(r.body), 1200);
 				event.updatedAt = nullable(r.updated_at);
 			}
 			if (stream === "commits") {
 				event.id = str(r.sha);
 				event.at = str(object(commit.committer).date);
 				event.createdAt = event.at;
-				event.title = clipText(str(commit.message).split("\n")[0] ?? "", 240);
+				event.title = truncateText(str(commit.message).split("\n")[0] ?? "", 240);
 				event.state = "committed";
 			}
 			if (stream === "prs") {
@@ -152,7 +157,7 @@ export function mapFactoryEvents(stream: FactoryStreamName, data: GithubObject[]
 			if (stream === "alerts") {
 				event.id = String(r.number);
 				event.severity = nullable(object(r.security_advisory).severity);
-				event.body = clipText(str(object(r.security_advisory).summary), 1200);
+				event.body = truncateText(str(object(r.security_advisory).summary), 1200);
 				event.title = `${str(object(object(r.dependency).package).name)} · ${str(object(r.security_advisory).severity)}`;
 			}
 			return event;

@@ -211,11 +211,11 @@ all 1,146 steps through the actual runner and SQLite on both frozen sources.
 | Account span, seconds | 42.500 | 42.500 |
 | Factory span, seconds | 329.509 | 407.485 |
 | Snapshot span, seconds | 188.244 | 494.161 |
-| Activity span, seconds | 906.200 | 111.655 |
+| Activity span, seconds | 906.200 | 113.017 |
 
 The after spans overlap and must not be summed. Exclusive wall allocation
 (equally dividing phase overlap and assigning idle gaps to the preceding phase)
-is account 42.500, factory 209.949, snapshots 246.646, activity 59.937,
+is account 42.500, factory 209.722, snapshots 246.419, activity 60.391,
 Insights 2.300 and publish 0 seconds. Zero CPU/D1 cost makes Insights/publication
 service zero; this is a declared simulation limitation, not a production claim.
 An earlier frozen all-scope 1,149-step fixture improves from 31.881 to 16.869 minutes.
@@ -615,6 +615,10 @@ records retain the conservative wall-only estimate. Terminal runs have no future
 estimate (`expectedFinishAt:null`, reason `terminal`), regardless of history or
 missing timestamps. Missing history, invalid active starts and zero-work audits
 retain their explicit reasons. See the precise [API contract](api.md#get-refresh-runs).
+Terminal precedence applies to completed, failed, partial and cancelled runs on
+browser history/detail, machine lists and every latest-readiness kind; use
+`finishedAt` for the actual end. Pending schedules are not run statuses and are
+unchanged. Calibration reads retained history, not only the 21 displayed rows.
 GET never writes estimates or fetches upstream; no schema migration is needed.
 
 Expected feature/access absence finishes a step as `unavailable`, counted separately

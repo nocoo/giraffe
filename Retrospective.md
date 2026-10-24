@@ -1906,3 +1906,49 @@ request. Admission thresholds alone do not bound asynchronous work already
 admitted; every collector result must also leave room for all active lanes and
 their fenced journal writes. Do not raise caps or discard a legal source to
 make a budget test pass.
+
+## 2026-10-24 - Keep HTTP regression fixtures asynchronous
+
+The first B15A pre-push run rejected the new terminal-ETA HTTP regression with
+`fetch failed` / `ECONNRESET`; the other 65 API tests passed and no branch was
+pushed. The new case performed several synchronous Wrangler subprocess calls
+before issuing its first HTTP read, blocking the test process's event loop.
+Isolated keep-alive probes did not reproduce the exact reset, so the transport
+failure must not be presented as a proven application bug or a confirmed idle
+timeout. The readiness test's SQL helper, marker checks and cleanup now await
+asynchronous subprocesses, letting connection events run between fixture writes
+and assertions. Preserve all HTTP, read-only and network-count assertions and
+rerun both API suites without retries, skipped tests or hook bypasses. Prefer
+asynchronous fixture subprocesses in HTTP tests, and distinguish observed failures
+from unproven explanations when recording validation evidence.
+
+The asynchronous rerun reached the HTTP assertions and exposed a separate fixture
+mistake: the newest retained run includes its steps even without a `history` query.
+The new regression had incorrectly expected an empty step array on that browser
+list. `listRunsStatement` explicitly selects the latest run as the default detail;
+the assertion now requires the retained step in both list and explicit-detail
+responses. Read the actual projection contract before asserting compactness, and
+do not change production serialization to fit a mistaken regression fixture.
+
+## 2026-10-24 - Verify dependency scope before starting a commit
+
+The approved Happy DOM update used the Tencent mirror, but Bun also wrote mirror
+tarball URLs into unrelated lock entries. A combined inspect-and-commit command
+printed that drift without treating it as a failure and started the commit hook.
+The commit was interrupted before Git recorded it. The lock was normalized back
+to registry-neutral entries, then compared with the previous revision: only the
+Happy DOM workspace constraint, package version and integrity changed. A frozen
+mirror install passed without further changes, and the normal commit hook passed
+on that exact two-file patch. Never chain a human-readable diff straight into
+staging and committing; assert the allowed dependency/file scope first and fail
+closed on unexpected lock changes.
+
+## 2026-10-24 - Resolve semantic test conflicts after a clean text merge
+
+The B16A merge of v0.23.1 combined main's terminal-ETA assertions with B16A's
+earlier removal of terminal status from two calibration fixtures. Git reported
+no text conflict in that file, but both regressions failed because the fixtures
+were no longer terminal. Restoring main's completed status preserves terminal
+precedence while its separate status-free assertions still verify the 14/48
+second calibration projections. Review fixture state and expected behavior
+together after merging; a conflict-free file is not proof of semantic agreement.

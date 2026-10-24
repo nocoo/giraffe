@@ -16,10 +16,9 @@ import {
 import { ApiError } from "./errors";
 import { factoryNext } from "./factory-collect";
 import { contributionTypes } from "./factory-contributions";
-import { mapFactoryEvents, object, rows } from "./factory-map";
+import { mapFactoryEvents, object, rows, truncateText } from "./factory-map";
 import { recordFactoryRate } from "./factory-rate";
 import type { GithubClient } from "./github-client";
-import { clipText } from "./text";
 
 export type ActivitySupplement = {
 	commits: ActivityCommit[] | null;
@@ -90,7 +89,7 @@ function addCommits(
 				typeof object(object(node.author).user).login === "string"
 					? String(object(object(node.author).user).login)
 					: null,
-			message: clipText(String(node.message ?? "").split("\n")[0] ?? "", 240),
+			message: truncateText(String(node.message ?? "").split("\n")[0] ?? "", 240),
 			at: String(node.committedDate),
 			url: String(node.url ?? ""),
 			branch,

@@ -116,6 +116,9 @@ manual selected-scope quick refresh.
 without a saved depth. Activity-eligible runs expose their activity window. ETA uses
 the plan-scaled, same-execution-kind calibration described under
 [GET /refresh-runs](#get-refresh-runs), not a deadline.
+For every selector, terminal runs (`completed`, `failed`, `partial`, `cancelled`)
+return `expectedFinishAt: null` with `expectedFinishAtReason: "terminal"`.
+Use `finishedAt` for the actual end; it is not an estimate.
 SQLite projects the needed scalar/window fields, step counts and failed-step
 summaries; the reader does not transfer or parse the complete run payload,
 successful-step details or checkpoints. Failed steps retain their stored order.
@@ -1954,7 +1957,11 @@ counts are provisional; do not substitute ETA for a measured finish time.
 `invocations`; use the matching `id` in this list for the count.
 
 Every run also includes `expectedFinishAt:string|null` and
-`expectedFinishAtReason:string|null`. Calibration selects the latest five valid
+`expectedFinishAtReason:string|null`. Terminal runs (`completed`, `failed`,
+`partial`, `cancelled`) always return `expectedFinishAt: null` and
+`expectedFinishAtReason: "terminal"`; use `finishedAt` for the actual end.
+This rule takes precedence even when work, valid timestamps or history are absent.
+Calibration selects the latest five valid
 completed or partial runs for the account and execution kind (`catalog`, `quick`,
 `deep`), across retained history rather than just the displayed 21 rows. Samples
 span every trigger and scope: manual selected runs use their own planned work,
@@ -1991,7 +1998,7 @@ Running/paused ETA is `max(now, startedAt, nextAttemptAt) + modeledRemainingWall
 only when audited step timings exist; wall-only calibration or a compact plan
 without repository/order information stays serial to avoid double discounting.
 Historical serial samples can conservatively retain serialization in learned
-overhead until parallel samples arrive. All terminal outcomes remove work, including
+overhead until parallel samples arrive. All terminal step outcomes remove work, including
 skipped future steps ahead of the cursor. Paused estimates assume resumption now
 or after outstanding backoff, not a prediction of user action. Terminal history
 has `expectedFinishAt:null` and `expectedFinishAtReason:"terminal"`; it uses the
@@ -2000,10 +2007,10 @@ machine history and latest readiness share this contract; internal calibration
 and grouped plans are not response fields. GET remains read-only and never fetches
 GitHub. The estimate is neither the hard `deadlineAt` nor a completion guarantee.
 
-Reasons are null for a present estimate, `no_completed_history` when no usable
+Reasons are `terminal` for every terminal run. For non-terminal runs, reasons
+are null for a present estimate, `no_completed_history` when no usable
 completed-or-partial same-execution-kind history exists, `invalid_started_at` for
-an invalid stored active start, `not_executed` for a zero-step active audit record,
-and `terminal` for a finished/cancelled run (checked before other reasons). A missing
+an invalid stored active start, and `not_executed` for a zero-step active audit record. A missing
 history estimate remains null rather than borrowing another execution kind.
 
 Run fields: `id`, `account_id`, `owner`, `requestKey`, `mode`, `repos`, `repoIds`,

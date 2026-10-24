@@ -335,10 +335,15 @@ describe("plan-scaled finish estimates", () => {
 			id: "history",
 			mode: "refresh" as const,
 			startedAt: now,
+			status: "completed" as const,
 			steps,
 		};
 		const detailed = estimateRunFinish(run, steps.length, calibration, now);
-		expect(detailed.expectedFinishAt).toBe(stamp(14_000));
+		expect(detailed).toEqual({ expectedFinishAt: null, expectedFinishAtReason: "terminal" });
+		expect(
+			estimateRunFinish({ mode: "refresh", startedAt: now, steps }, steps.length, calibration)
+				.expectedFinishAt,
+		).toBe(stamp(14_000));
 		expect(estimateRunFinish({ ...run, steps: [] }, steps.length, calibration, now)).toEqual(
 			detailed,
 		);
@@ -362,6 +367,7 @@ describe("plan-scaled finish estimates", () => {
 			id: "history",
 			mode: "refresh" as const,
 			startedAt: now,
+			status: "completed" as const,
 			steps,
 		};
 		expect(calibration.plans?.history?.slice(0, 2)).toEqual([
@@ -371,9 +377,17 @@ describe("plan-scaled finish estimates", () => {
 		expect(estimateRunFinish({ ...run, steps: [] }, steps.length, calibration, now)).toEqual(
 			estimateRunFinish(run, steps.length, calibration, now),
 		);
-		expect(estimateRunFinish(run, steps.length, calibration, now).expectedFinishAt).toBe(
-			stamp(48_000),
-		);
+		expect(estimateRunFinish(run, steps.length, calibration, now)).toEqual({
+			expectedFinishAt: null,
+			expectedFinishAtReason: "terminal",
+		});
+		expect(
+			estimateRunFinish(
+				{ id: run.id, mode: "refresh", startedAt: now, steps: [] },
+				steps.length,
+				calibration,
+			).expectedFinishAt,
+		).toBe(stamp(48_000));
 	});
 
 	it("learns serial overhead from parallel wall time rather than summed request service time", async () => {
