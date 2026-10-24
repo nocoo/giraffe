@@ -1988,3 +1988,15 @@ Eight RED cases cover 404, 502, diverged and behind responses with same-run retr
 and new-run resume. They now complete, preserve accepted evidence and still reject
 duplicates within the restarted history scan. A cursor reset must also reset
 scan-local uniqueness, not permanent attribution.
+
+## 2026-10-24 - Guard ledger responses before mapping
+
+Review showed that an upstream commit message echoing the current PAT was mapped
+directly into a durable ledger payload. The new storage path had missed the
+credential rejection used by snapshot replay and Actions. It now rejects the
+entire parsed response before truncation, mapping, fallback or page acceptance,
+using a fixed safe error. Eighteen synthetic-token RED cases now prove rejection
+for history, comparison and divergent responses, including author, URL, SHA,
+discarded fields and text beyond the retained first line. The checkpoint stays
+unchanged, neither ledger nor activity exposes the token, and clean retries work.
+Every new persistence source needs its own no-credential regression before use.

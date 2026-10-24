@@ -97,6 +97,8 @@ export async function collectLandedPage(
 		}
 		await heartbeat();
 		const body: unknown = await response.json();
+		if (token && JSON.stringify(body).includes(token))
+			throw new ApiError(422, "snapshot_incomplete", "Commit source contains credentials");
 		const comparison = object(body);
 		if (pending.mode === "compare" && ["diverged", "behind"].includes(String(comparison.status))) {
 			pending.mode = "history";

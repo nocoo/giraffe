@@ -50,13 +50,18 @@ async function setup() {
 		metadata.sourceHead = head;
 		return lease;
 	}
-	async function accept(lease: RunLease, gh: ReturnType<typeof github>, at: string) {
+	async function accept(
+		lease: RunLease,
+		gh: ReturnType<typeof github>,
+		at: string,
+		token = "fake",
+	) {
 		const result = await collectLandedPage(
 			db,
 			lease,
 			repo,
 			gh,
-			"fake",
+			token,
 			() => at,
 			async () => {},
 		);
@@ -434,4 +439,66 @@ it("rejects duplicate SHAs across compare pages instead of mistaking row count f
 	expect(await fixture.db.prepare("SELECT head FROM activity_commit_heads").first()).toEqual({
 		head: "base",
 	});
+});
+
+it.each(
+	(["history", "compare", "diverged"] as const).flatMap((mode) =>
+		["message", "message-tail", "author", "url", "sha", "ignored"].map((field) => ({
+			mode,
+			field,
+		})),
+	),
+)("rejects credentials in $field before accepting a $mode response", async ({ mode, field }) => {
+	const fixture = await setup();
+	const lease = await fixture.start("credential-guard", first, "head");
+	const token = "synthetic_pat_for_ledger_regression";
+	if (mode !== "history")
+		await fixture.db
+			.prepare(
+				"INSERT INTO activity_commit_heads(account_id,repo_id,head) VALUES('account_123',?,'base')",
+			)
+			.bind(fixture.repo.id)
+			.run();
+	const echoed = {
+		...commit(field === "sha" ? token : "echoed"),
+		commit: {
+			message:
+				field === "message"
+					? token
+					: field === "message-tail"
+						? `Safe subject\n${"x".repeat(250)}${token}`
+						: "Safe subject",
+			committer: { date: first },
+		},
+		author: { login: field === "author" ? token : "nocoo" },
+		html_url: field === "url" ? `https://example.test/${token}` : "https://example.test/safe",
+		diagnostic: field === "ignored" ? token : "safe",
+	};
+	const response = (items: ReturnType<typeof commit>[]) =>
+		Response.json(
+			mode === "history"
+				? items
+				: {
+						status: mode === "diverged" ? "diverged" : "ahead",
+						total_commits: items.length,
+						commits: items,
+					},
+		);
+	const gh = github(() => response([commit("head"), echoed]));
+	await fixture.accept(lease, gh, first, token);
+	const saved = await fixture.db.prepare("SELECT * FROM activity_commit_heads").all();
+	await expect(fixture.accept(lease, gh, first, token)).rejects.toMatchObject({
+		code: "snapshot_incomplete",
+		message: "Commit source contains credentials",
+	});
+	expect(await fixture.db.prepare("SELECT * FROM activity_commit_heads").all()).toEqual(saved);
+	const ledger = await fixture.db.prepare("SELECT * FROM activity_commit_ledger").all();
+	expect(ledger.results).toEqual([]);
+	expect(JSON.stringify(ledger)).not.toContain(token);
+	const activity = await readLandedActivity(fixture.db, lease.run, fixture.repo);
+	expect(activity.items).toEqual([]);
+	expect(activity.deferred).toEqual([]);
+	expect(JSON.stringify(activity)).not.toContain(token);
+	const clean = github(() => response([commit("head")]));
+	expect((await fixture.accept(lease, clean, first, token)).done).toBe(mode !== "diverged");
 });
