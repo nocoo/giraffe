@@ -2035,3 +2035,7 @@ single-line searches and heading-only assertions did not cover it. R1 replaces
 that claim with observation-window wording and checks expanded methodology for
 both quick and retained deep windows. Audit multiline copy and collapsed content
 alongside visible headings, while preserving valid descriptions of refresh policy.
+
+The first browser assertion selected every descendant `summary`, including a
+nested exclusion list, and failed Playwright's strict locator check. Target the
+direct-child summary and run the new browser cases before the full gate sequence.
