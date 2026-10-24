@@ -1,6 +1,6 @@
-import { execFileSync } from "node:child_process";
 import { join, resolve } from "node:path";
 import { expect, it } from "vitest";
+import { executeD1FixtureSync } from "../fixtures/d1";
 
 const base = process.env.GIRAFFE_E2E ?? "http://127.0.0.1:17045";
 const root = resolve(import.meta.dirname, "../..");
@@ -15,21 +15,7 @@ function sql(command: string): Record<string, unknown>[] {
 		config !== join(root, ".wrangler/e2e-run/wrangler.toml")
 	)
 		throw new Error("dedicated local L2 context required");
-	const result = execFileSync(
-		join(root, "node_modules/.bin/wrangler"),
-		[
-			"d1",
-			"execute",
-			"giraffe-db",
-			"--local",
-			`--persist-to=${persist}`,
-			`--config=${config}`,
-			"--json",
-			"--command",
-			command,
-		],
-		{ cwd: root, encoding: "utf8" },
-	);
+	const result = executeD1FixtureSync(command, { persist, config, root });
 	return (JSON.parse(result) as { results: Record<string, unknown>[] }[]).flatMap(
 		(entry) => entry.results,
 	);

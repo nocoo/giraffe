@@ -276,6 +276,54 @@ describe("historical run calibration", () => {
 describe("run finish projection", () => {
 	const run = { mode: "refresh", startedAt: now } as const;
 
+	it.each(["completed", "failed", "partial", "cancelled"] as const)(
+		"returns the terminal reason for %s before checking work, timestamps or history",
+		(status) => {
+			for (const [startedAt, total, calibration] of [
+				[now, 10, { catalog: 5000, quick: 2000, deep: 3000 }],
+				[now, 10, empty],
+				["invalid", 10, empty],
+				["invalid", 0, empty],
+			] as const) {
+				expect(estimateRunFinish({ ...run, status, startedAt }, total, calibration)).toEqual({
+					expectedFinishAt: null,
+					expectedFinishAtReason: "terminal",
+				});
+			}
+		},
+	);
+
+	it.each(["running", "paused"] as const)("preserves the %s estimate and reasons", (status) => {
+		const active = { ...run, status, cursor: 2, nextAttemptAt: stamp(started + 5000) };
+		expect(estimateRunFinish(active, 10, { ...empty, deep: 3000 }, now)).toEqual({
+			expectedFinishAt: stamp(started + 29000),
+			expectedFinishAtReason: null,
+		});
+		expect(estimateRunFinish(active, 10, empty, now)).toEqual({
+			expectedFinishAt: null,
+			expectedFinishAtReason: "no_completed_history",
+		});
+	});
+
+	it("clears the calibrated ETA later than the actual finish of partial run 0e256e3d", () => {
+		const partial = {
+			...run,
+			id: "0e256e3d",
+			status: "partial" as const,
+			startedAt: "2026-10-23T21:00:44.000Z",
+			finishedAt: "2026-10-23T21:27:34.000Z",
+		};
+		const calibration = { ...empty, deep: 180000 };
+		expect(
+			estimateRunFinish({ mode: partial.mode, startedAt: partial.startedAt }, 10, calibration)
+				.expectedFinishAt,
+		).toBe("2026-10-23T21:30:44.000Z");
+		expect(estimateRunFinish(partial, 10, calibration)).toEqual({
+			expectedFinishAt: null,
+			expectedFinishAtReason: "terminal",
+		});
+	});
+
 	it("always emits nullable fields with an explicit unavailable reason", () => {
 		expect(estimateRunFinish(run, 1, empty)).toEqual({
 			expectedFinishAt: null,
@@ -335,7 +383,7 @@ describe("run finish projection", () => {
 		);
 		expect(
 			estimateRunFinish({ ...run, status: "completed", stepPlan }, 4, calibration, now),
-		).toEqual({ expectedFinishAt: stamp(started + 10000), expectedFinishAtReason: null });
+		).toEqual({ expectedFinishAt: null, expectedFinishAtReason: "terminal" });
 	});
 
 	it("scales minimal projections by remaining counts, with the cursor only as a last resort", () => {

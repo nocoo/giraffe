@@ -324,8 +324,8 @@ it("R9 latest projects metadata and failed steps without transferring unused pay
 				gap: false,
 			},
 			startedAt: started,
-			expectedFinishAt: finished,
-			expectedFinishAtReason: null,
+			expectedFinishAt: null,
+			expectedFinishAtReason: "terminal",
 			finishedAt: finished,
 			counts: { total: 5, success: 1, failed: 1, unavailable: 1, limited: 1, skipped: 1 },
 			failedSteps: [
