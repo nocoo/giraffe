@@ -39,26 +39,30 @@ Budget yields preserve cursors, keep errors null and do not spend retry failures
 No queue, cron, deployment or Cloudflare configuration changes are required.
 
 The in-code `FACTORY_REPO_CONCURRENCY = 4` pool runs up to four different repositories
-inside one invocation. Metadata, streams and repository commits form the first
-phase; repository snapshots form the second. Each lane stays pinned to one
-repository and executes one step/page at a time, saving before starting another.
-Each invocation selects up to four unfinished repositories; completed lanes can
-be replaced at the next invocation. One request/statement/wall budget belongs to
+inside one invocation. Each repository keeps its planned metadata, stream, commit,
+snapshot and activity order. A lane saves each accepted step/page before starting
+another, then immediately takes the next eligible repository instead of waiting
+for the slowest member of a fixed batch. One request/statement/wall budget belongs to
 the invocation, not to each lane. Four GitHub fetches can overlap, while journal,
 heartbeat and checkpoint writes are serialized. The 40-request ceiling and the
 800-statement hard cap are not multiplied by pool width.
 
 Stream pages share an invocation resource cache, with an atomic fenced save after
-each accepted page. Publication, activity, global snapshots and Insights remain
-serial boundaries. All activity waits until all repository snapshots complete,
-including when resuming an older interleaved plan. Snapshot collection
+each accepted page. Publication, global snapshots and Insights remain serial
+boundaries. Repository activity shares the pool and can consume several pages
+per invocation; it follows its own repository's planned prerequisites instead
+of waiting for unrelated repositories. Drained repository work can continue to
+the next eligible global step in the same invocation when budgets permit. Snapshot collection
 replays already staged responses locally and saves each newly fetched page in
 bounded, run-owned resources. This splits slow Actions and other paged snapshots
 without changing list results or fetching accepted pages again. Lost ownership
 rejects the in-flight writes, not earlier committed checkpoints. Missing repository
 payloads are fetched before taking the projection lock; shared global snapshot
 read/modify/write projection holds that lock through atomic acceptance so one
-repository cannot overwrite another's accepted rows.
+repository cannot overwrite another's accepted rows. Newly fetched replay pages
+renew the lease after the response and before processing/projection; replaying
+an accepted page adds no heartbeat. This prevents a slow response plus local
+processing from consuming the remaining lease before its page can be saved.
 
 When resuming an accepted Actions stream, its persisted source owns its cursor.
 A v0.22 filtered `created=...` stream continues from its saved `next` and pending
@@ -191,6 +195,35 @@ is four; summed request service time is 1,425,170 ms, while request wall time is
 429,453 ms. Including warmup, no invocation exceeds 40 requests or 619 executed
 D1 statements. This is below the twenty-minute simulation target, not a production
 finish-time guarantee. Configuration and migrations are unchanged.
+
+The B16A `b16a-60-repo-v2` harness adds real account collectors (including nine
+notification pages), 205 activity pages with 299 seconds of request service,
+and a declared 2.3-second continuation delay. A warm selected daily executes
+all 1,146 steps through the actual runner and SQLite on both frozen sources.
+
+| Daily measurement             | v0.23 source | B16A candidate |
+| ----------------------------- | -----------: | -------------: |
+| Simulated minutes             |       24.594 |          9.356 |
+| Invocations                   |          326 |             50 |
+| Requests                      |        1,366 |          1,356 |
+| Average busy repository lanes |        1.193 |          3.226 |
+| Four lanes busy               |       18.63% |         78.80% |
+| Account span, seconds         |       42.500 |         42.500 |
+| Factory span, seconds         |      329.509 |        407.485 |
+| Snapshot span, seconds        |      188.244 |        494.161 |
+| Activity span, seconds        |      906.200 |        113.017 |
+
+The after spans overlap and must not be summed. Exclusive wall allocation
+(equally dividing phase overlap and assigning idle gaps to the preceding phase)
+is account 42.500, factory 209.722, snapshots 246.419, activity 60.391,
+Insights 2.300 and publish 0 seconds. Zero CPU/D1 cost makes Insights/publication
+service zero; this is a declared simulation limitation, not a production claim.
+An earlier frozen all-scope 1,149-step fixture improves from 31.881 to 16.869 minutes.
+Its 515.463-second account prelude is a different workload, not the selected
+daily's prelude. Neither fixture reproduces the production startup interruption
+or real D1/CPU/queue latency, and Actions age distribution is synthetic. The
+real daily under-twenty-minute target remains unverified; no production refresh
+is triggered for these measurements.
 
 Pool regressions kill work after four accepted metadata steps and during a later
 save, then assert byte-equivalent accepted step records, one retried in-flight
@@ -434,6 +467,28 @@ allowlisted rows contain the fields needed by both existing projections; page
 and source writes commit with the run cursor. Complete history can also prove
 that no successful deployment exists without a third GitHub traversal.
 
+A new run can reconcile a complete same-identity prior source incrementally.
+It probes the unfiltered total, refreshes the 30-day rerun horizon before the
+baseline observation (extended to include any older nonterminal run), deduplicates
+IDs, and checks the combined count against the probe before materializing complete
+unfiltered shared pages. Stream metrics, snapshots and deployment history all
+consume those same reconciled pages. Intermediate probes/delta pages retain
+`partial` coverage, never an executor-terminal `pending` result. Missing/corrupt
+baselines, historical-ID collisions, count drift and the filtered 1,000-run limit
+restart full collection; an incomplete delta never becomes a complete snapshot.
+Existing v0.23 unfiltered checkpoints continue their saved pages. A v0.23 Worker
+that resumes a new probe can start normal full collection; later code recognizes
+accepted unfiltered pages rather than resuming obsolete delta bookkeeping.
+
+Large reconciliations stage pages under a run-owned temporary prefix in batches
+of at most 20 source-write statements, leaving room for the shared four-lane
+journal budget. An intermediate fenced checkpoint records materialization
+progress with partial coverage; continuation reads the accepted delta rather
+than requesting it again. The final fenced save promotes all staged pages to
+the canonical prefix and marks the source complete atomically. Temporary pages
+are never exposed as a complete history, and canonical v0.23 page keys and
+payloads remain unchanged.
+
 A complete full source is required for snapshot/cache reuse. If full history hits
 the existing page/byte limits, the old snapshot is retained and the metric stream
 uses bounded created-window collection, including the existing 1,000-run range
@@ -547,19 +602,23 @@ continued healthy processing, a catalog cannot retain the active lock for 48 hou
 Those bounds do not ensure successful collection and did not by themselves fix
 coalesced slots, failed preparation audit gaps or immediate daily handoff.
 
-Every exposed run adds `expectedFinishAt` and `expectedFinishAtReason`. Terminal
-runs (`completed`, `failed`, `partial`, `cancelled`) always return
-`expectedFinishAt: null` with reason `terminal`; use `finishedAt` for the actual
-end. This takes precedence over missing work, invalid timestamps or missing
-history. Browser history/detail, machine lists and every latest-readiness kind
-share the same rule. Running/paused estimates retain the existing
-[plan-scaled calibration](api.md#get-refresh-runs), using the latest five valid
-completed or partial runs of the same account and actual kind (`catalog`,
-`quick`, `deep`), across retained history rather than the 21 displayed rows.
-Pending schedules are not run statuses and are unchanged. An estimate is not a
-hard deadline. For non-terminal runs, missing history uses `no_completed_history`,
-invalid starts use `invalid_started_at`, and zero-work records use `not_executed`.
-GET never writes estimates or fetches upstream. No schema migration is needed.
+Every exposed run adds `expectedFinishAt` and `expectedFinishAtReason`. Read-time
+calibration uses the latest five valid completed/partial same-account,
+same-execution-kind runs, including audited zero-duration work. Recorded timings
+calibrate step-kind medians and account/factory/snapshot/activity/Insights/publish
+phase overhead separately, so queue gaps in a serial activity tail are not spread
+across already completed factory steps. Plans distinguish Insights from other
+snapshots even in compact history. Running/paused estimates anchor remaining work
+at the latest of now, start and outstanding backoff. Legacy incomplete timing
+records retain the conservative wall-only estimate. Terminal runs have no future
+estimate (`expectedFinishAt:null`, reason `terminal`), regardless of history or
+missing timestamps. Missing history, invalid active starts and zero-work audits
+retain their explicit reasons. See the precise [API contract](api.md#get-refresh-runs).
+Terminal precedence applies to completed, failed, partial and cancelled runs on
+browser history/detail, machine lists and every latest-readiness kind; use
+`finishedAt` for the actual end. Pending schedules are not run statuses and are
+unchanged. Calibration reads retained history, not only the 21 displayed rows.
+GET never writes estimates or fetches upstream; no schema migration is needed.
 
 Expected feature/access absence finishes a step as `unavailable`, counted separately
 from `failed` and visible in the console. Dependency safe-parse limitations finish
@@ -669,3 +728,22 @@ ledger rows and detail filters show those boundaries as local intervals, inclusi
 of the start and exclusive of the end. Local dates on axes identify the interval
 start, not a regrouping of observations. Schedule wall-clock configuration remains
 explicitly labelled Beijing time; changing the viewing timezone does not reschedule jobs.
+
+## Landed activity ledger
+
+[Landed activity](13-landed-activity.md) separates sampled-head attribution from
+exact push-time claims. Additive migration `0026_activity_commit_ledger.sql`
+retains account/repository-ID/SHA identities and pinned reconciliation checkpoints
+independently of run retention. Each activity step accepts at most one 100-commit
+page; the four-lane pool can accept several pages per invocation under its shared
+budgets. Empty or malformed pinned histories fail closed. Only fully accepted
+reconciliation advances the baseline, and publication compacts only serialized
+identities in the same fenced batch. Delayed evidence retains the original window.
+
+No GitHub backfill occurs during migration. A 60-repository first catch-up with
+1,000 commits per repository needs about 600 history requests and 60,000 permanent
+identities; unchanged warm heads require no commit request. At 100,000 identities,
+64 MB ledger/head bytes or the existing 512 MB account ceiling, admission fails
+closed without advancing the page or evicting identities. Rollback to v0.23.1
+needs no down-migration; re-upgrade resumes the ledger. Force-pushed-away commits
+between snapshots remain invisible; configuration and schedules do not change.

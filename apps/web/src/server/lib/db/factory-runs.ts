@@ -333,7 +333,7 @@ export async function claimRun(
 }
 const fencedWrites = new WeakMap<
 	D1PreparedStatement,
-	{ lease: RunLease; now: string; sql: string; values: unknown[] }
+	{ lease: RunLease; now: string; sql: string; values: unknown[]; postcondition?: true }
 >();
 
 export function rebindRunWrites(db: Db, lease: RunLease, writes: D1PreparedStatement[]) {
@@ -342,8 +342,27 @@ export function rebindRunWrites(db: Db, lease: RunLease, writes: D1PreparedState
 		if (!saved) return statement;
 		if (saved.lease.token !== lease.token || saved.lease.run.id !== lease.run.id)
 			throw new ApiError(409, "factory_lease_lost", "factory write ownership changed");
-		return fenced(db, lease, saved.now, saved.sql, saved.values);
+		return (saved.postcondition ? fencedPostcondition : fenced)(
+			db,
+			lease,
+			saved.now,
+			saved.sql,
+			saved.values,
+		);
 	});
+}
+
+export function fencedPostcondition(
+	db: Db,
+	lease: RunLease,
+	now: string,
+	sql: string,
+	values: unknown[] = [],
+): D1PreparedStatement {
+	lease.fenceAt = lease.fenceAt && lease.fenceAt > now ? lease.fenceAt : now;
+	const statement = db.prepare(sql).bind(...values);
+	fencedWrites.set(statement, { lease, now, sql, values, postcondition: true });
+	return statement;
 }
 
 export function fenced(
@@ -378,11 +397,13 @@ export async function saveRun(
 	const expiresAfter = lease.fenceAt && lease.fenceAt > now ? lease.fenceAt : now;
 	const validSql = `SELECT 1 FROM factory_runs WHERE id=? AND lease_token=? AND version=? AND lease_until>? AND ${RUN_DEADLINE_SQL}>? AND status='running'`;
 	const args = [run.id, lease.token, lease.version, expiresAfter, expiresAfter];
+	const postconditions = writes.filter((statement) => fencedWrites.get(statement)?.postcondition);
+	const mutations = writes.filter((statement) => !fencedWrites.get(statement)?.postcondition);
 	try {
 		const result = await db.batch([
 			// A failed final CAS must not leave earlier writes committed. Abort the transaction first.
 			db.prepare(`SELECT CASE WHEN EXISTS(${validSql}) THEN 1 ELSE json('{') END`).bind(...args),
-			...writes,
+			...mutations,
 			fenced(db, lease, now, "UPDATE factory_run_journal SET journal=? WHERE run_id=? AND $guard", [
 				acceptedStep === undefined ? "{}" : JSON.stringify(runAudits(lease, acceptedStep)),
 				run.id,
@@ -402,8 +423,10 @@ export async function saveRun(
 					run.id,
 				],
 			),
+			// The initial CAS authorizes this transaction; final assertions must not use its old version.
+			...postconditions,
 		]);
-		const saved = Boolean(result.at(-1)?.meta.changes);
+		const saved = Boolean(result[mutations.length + 2]?.meta.changes);
 		if (saved) {
 			lease.version = run.version;
 			if (acceptedStep === undefined) lease.attemptedSteps?.clear();

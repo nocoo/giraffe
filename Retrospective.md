@@ -1,5 +1,21 @@
 # Retrospective
 
+## 2026-10-24 - Verify normalization and patch anchors
+
+The first Unicode boundary fixture assumed every factory stream retained the
+generic title. Alerts intentionally replace it with package/severity, so that
+assertion failed for an unrelated reason. The fixture now tests alert summaries
+and tests title clipping only in streams that retain that field. Two attempted
+documentation patches also used an unverified heading and were rejected without
+changing files. Inspect exact anchors and per-stream overrides before building
+a shared regression fixture or applying a multi-file patch; a red test must
+demonstrate the target defect, not a mistaken fixture assumption.
+
+Gate wrappers initially assigned an exit code to zsh's read-only `status`
+variable after the underlying check completed. The shell rejected that wrapper;
+the saved check logs, not the wrapper error, establish each gate's result.
+Use `exit_code` for shell bookkeeping and preserve the command's exit status.
+
 ## 2026-10-23 - Retained diagnostics follow their stream
 
 The per-stream retention change allowed a new repository version to be accepted
@@ -1876,6 +1892,21 @@ Three baseline-generated site chunk fixtures separately verify unchanged snapsho
 handoff. Review upgrade paths across invocation boundaries, not only races within
 one Promise pool; durable fallback ownership matters even when a lane does no work.
 
+## 2026-10-24 - Bound reconciliation writes across all lanes
+
+The first B16A Actions reconciliation staged an entire valid history in one
+collector result. Normal fixtures passed, but independent review reproduced
+four concurrent 15.4 MB histories starting near 500 executed statements. Each
+result added 82 writes, exceeding the shared 800-statement hard cap during
+acceptance. The real SQLite four-lane regression failed before the repair.
+Materialization now checkpoints bounded temporary-page batches and atomically
+promotes the complete source. The regression verifies recovery, unchanged
+accepted pages, all 4,000 records per repository and no repeated final-delta
+request. Admission thresholds alone do not bound asynchronous work already
+admitted; every collector result must also leave room for all active lanes and
+their fenced journal writes. Do not raise caps or discard a legal source to
+make a budget test pass.
+
 ## 2026-10-24 - Keep HTTP regression fixtures asynchronous
 
 The first B15A pre-push run rejected the new terminal-ETA HTTP regression with
@@ -1911,3 +1942,79 @@ mirror install passed without further changes, and the normal commit hook passed
 on that exact two-file patch. Never chain a human-readable diff straight into
 staging and committing; assert the allowed dependency/file scope first and fail
 closed on unexpected lock changes.
+
+## 2026-10-24 - Resolve semantic test conflicts after a clean text merge
+
+The B16A merge of v0.23.1 combined main's terminal-ETA assertions with B16A's
+earlier removal of terminal status from two calibration fixtures. Git reported
+no text conflict in that file, but both regressions failed because the fixtures
+were no longer terminal. Restoring main's completed status preserves terminal
+precedence while its separate status-free assertions still verify the 14/48
+second calibration projections. Review fixture state and expected behavior
+together after merging; a conflict-free file is not proof of semantic agreement.
+
+## 2026-10-24 - Prove pagination and final ledger quotas
+
+The initial B16A observation ledger treated a short history page as terminal and
+counted compare rows without detecting SHAs repeated across accepted pages.
+Independent local review reproduced both cases: a short page with a next link
+skipped history, and two identical 100-row pages falsely satisfied a 200-commit
+comparison. RED regressions now require validated next links and a durable
+per-identity reconciliation marker, independent of immutable first attribution.
+
+The first quota check also ran before the final run/journal writes. A boundary
+fixture passed its estimated check but committed 58 bytes over the account limit.
+The corrected fenced transaction runs quota postconditions after every mutation,
+including the final run CAS, and rolls back the entire acceptance on excess.
+Tests cover exact limits, replacement deltas, competing acceptance and lane
+rebinding. Validate the final committed state rather than only staged payloads;
+neither a row count nor a preflight estimate proves completeness or capacity.
+
+The first full browser gate then exposed a fixture contradiction: GraphQL metadata
+advertised default head `abc`, but the catch-all REST stub returned an empty
+pinned history. The new collector correctly failed closed instead of claiming a
+zero, making the existing successful-refresh journey partial. A shared local REST
+fixture now returns that pinned old-dated commit without changing date-filtered
+streams, and the real-Worker browser journey asserts its observation attribution.
+
+## 2026-10-24 - Separate fallback scans from observation identity
+
+Review reproduced a stuck ledger reconciliation when a later comparison page
+became unavailable after earlier pages had been accepted. Falling back to history
+reset the cursor but reused comparison markers, so legitimate overlaps looked
+like repeated pages forever. Reconciliation markers now include the scan mode;
+the account/repository/SHA identity and first observation remain unchanged.
+Eight RED cases cover 404, 502, diverged and behind responses with same-run retry
+and new-run resume. They now complete, preserve accepted evidence and still reject
+duplicates within the restarted history scan. A cursor reset must also reset
+scan-local uniqueness, not permanent attribution.
+
+## 2026-10-24 - Guard ledger responses before mapping
+
+Review showed that an upstream commit message echoing the current PAT was mapped
+directly into a durable ledger payload. The new storage path had missed the
+credential rejection used by snapshot replay and Actions. It now rejects the
+entire parsed response before truncation, mapping, fallback or page acceptance,
+using a fixed safe error. Eighteen synthetic-token RED cases now prove rejection
+for history, comparison and divergent responses, including author, URL, SHA,
+discarded fields and text beyond the retained first line. The checkpoint stays
+unchanged, neither ledger nor activity exposes the token, and clean retries work.
+Every new persistence source needs its own no-credential regression before use.
+
+## 2026-10-24 - Carry REST rate observations through acceptance
+
+The ledger history path omitted REST rate headers, leaving the shared core bucket
+at 51 after a response reported 49. The next request therefore crossed the
+existing reserve. It now validates and records remaining/reset with the accepted
+page, after lease renewal, then rejects further requests under the reserve.
+History and compare regressions reproduce the stale persisted value, retain the
+successful page, block the next request and resume at reset without refetching.
+A real four-lane executor regression preserves the lowest shared rate and stops
+at four already-admitted requests with accepted history intact. Missing or invalid
+headers do not fabricate usable quota or discard a successful response.
+
+The new rate fixtures initially built an invalid next link by matching `page=1`
+inside `per_page=100`, then used the local stub origin instead of GitHub's canonical
+pagination origin. The production validator correctly rejected both. Correct
+fixtures before interpreting gate failures; manipulate query parameters and keep
+upstream response links distinct from the local transport origin.

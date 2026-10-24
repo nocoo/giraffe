@@ -1,5 +1,26 @@
 import { expect, it } from "vitest";
-import { factoryGraphqlStub } from "./factory-stub";
+import { factoryGraphqlStub, factoryRestStub } from "./factory-stub";
+
+it("keeps pinned default-branch history consistent with fixture metadata without changing dated streams", () => {
+	const url = new URL(
+		"http://fixture/repos/octocat/hello-world/commits?sha=abc&per_page=100&page=1",
+	);
+	expect(factoryRestStub(url)).toMatchObject([
+		{
+			sha: "abc",
+			commit: {
+				message: "Previously authored, newly observed",
+				committer: { date: "2020-01-01T00:00:00Z" },
+			},
+		},
+	]);
+	url.searchParams.set("since", "2026-01-01");
+	expect(factoryRestStub(url)).toBeNull();
+	expect(
+		factoryRestStub(new URL("http://fixture/repos/octocat/hello-world/commits?sha=missing")),
+	).toBeNull();
+	expect(factoryRestStub(new URL("http://fixture/repos/octocat/other/commits?sha=abc"))).toBeNull();
+});
 
 it("R4 HTTP fixtures cover bounded refs, tag and branch continuation queries", () => {
 	const connection = { nodes: [], pageInfo: { hasNextPage: false } };

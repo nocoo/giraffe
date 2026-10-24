@@ -19,10 +19,19 @@ export type RunEstimateRow = {
 	step_medians: string | null;
 	plans: string | null;
 };
-export type RunStepPlan = [kind: StepKind, total: number, remaining: number, repo: string | null][];
+export type RunStepPlan = [
+	kind: StepKind,
+	total: number,
+	remaining: number,
+	repo: string | null,
+	resource?: string,
+][];
+type EstimatePhase = "account" | "factory" | "snapshot" | "activity" | "insights" | "publish";
+type TimedStep = [StepKind, string | null, number, string | null, string | null, string | null];
 export type RunEstimateCalibration = Record<RunEstimateKind, number | null> & {
 	stepKinds?: Partial<Record<RunEstimateKind, Partial<Record<StepKind, number>>>>;
 	overhead?: Partial<Record<RunEstimateKind, number>>;
+	phaseOverhead?: Partial<Record<RunEstimateKind, Partial<Record<EstimatePhase, number>>>>;
 	plans?: Record<string, RunStepPlan>;
 };
 export type RunFinishEstimate = {
@@ -39,12 +48,13 @@ function validTimestamp(column: "started_at" | "finished_at"): string {
  AND substr(${column},21,length(${column})-20-(${zoneLength})) NOT GLOB '*[^0-9]*'))`;
 }
 
-export const runStepPlanSql = `(SELECT json_group_array(json_array(step_kind,total,remaining,repo)) FROM (
+export const runStepPlanSql = `(SELECT json_group_array(CASE WHEN resource IS NULL THEN json_array(step_kind,total,remaining,repo) ELSE json_array(step_kind,total,remaining,repo,resource) END) FROM (
  SELECT json_extract(value,'$.kind') AS step_kind,
  json_extract(value,'$.repo') AS repo,
+ CASE WHEN json_extract(value,'$.resource')='insights' THEN 'insights' END AS resource,
  SUM(json_extract(value,'$.status')!='skipped') AS total,
  SUM(json_extract(value,'$.status') IN ('pending','running')) AS remaining
- FROM json_each(payload,'$.steps') GROUP BY json_extract(value,'$.kind'),json_extract(value,'$.repo')
+ FROM json_each(payload,'$.steps') GROUP BY json_extract(value,'$.kind'),json_extract(value,'$.repo'),resource
  ORDER BY MIN(CAST(key AS INTEGER))))`;
 
 export function runEstimateStatement(
@@ -80,7 +90,10 @@ export function runEstimateStatement(
 ), step_values AS MATERIALIZED (
  SELECT samples.id,samples.kind,CAST(step.key AS INTEGER) AS step_index,
  json_extract(step.value,'$.kind') AS step_kind,json_extract(step.value,'$.repo') AS repo,
- json_extract(step.value,'$.durationMs') AS duration_ms
+ json_extract(step.value,'$.durationMs') AS duration_ms,
+ json_extract(step.value,'$.startedAt') AS step_started_at,
+ json_extract(step.value,'$.finishedAt') AS step_finished_at,
+ json_extract(step.value,'$.resource') AS resource
  FROM samples JOIN factory_runs runs ON runs.id=samples.id,json_each(runs.payload,'$.steps') step
  WHERE json_extract(step.value,'$.status') IN ('success','failed','unavailable','limited')
  AND json_extract(step.value,'$.attempts')>0
@@ -98,8 +111,8 @@ export function runEstimateStatement(
 )
 SELECT kind,started_at,finished_at,total,work_total,
  (SELECT COUNT(*) FROM step_values WHERE step_values.id=samples.id) AS timed_total,
- (SELECT json_group_array(json_array(step_kind,repo,duration_ms)) FROM (
- SELECT step_kind,repo,duration_ms FROM step_values WHERE step_values.id=samples.id ORDER BY step_index)) AS timed_steps,
+ (SELECT json_group_array(json_array(step_kind,repo,duration_ms,step_started_at,step_finished_at,resource)) FROM (
+ SELECT step_kind,repo,duration_ms,step_started_at,step_finished_at,resource FROM step_values WHERE step_values.id=samples.id ORDER BY step_index)) AS timed_steps,
  CASE WHEN sample=1 THEN (SELECT json_group_object(step_kind,duration_ms) FROM step_medians WHERE step_medians.kind=samples.kind) END AS step_medians,
  CASE WHEN ROW_NUMBER() OVER (ORDER BY kind,sample)=1 THEN ${plans} END AS plans
  FROM samples ORDER BY kind,sample`)
@@ -114,6 +127,54 @@ function median(values: number[]): number | null {
 			(values[Math.floor(values.length / 2)] as number)) /
 		2
 	);
+}
+
+function estimatePhase(step: {
+	kind: StepKind;
+	repo?: string | null;
+	resource?: string | null;
+}): EstimatePhase {
+	if (step.kind === "publish") return "publish";
+	if (step.resource === "insights") return "insights";
+	if (step.kind === "activity") return "activity";
+	if (!step.repo) return "account";
+	return step.kind === "snapshot" ? "snapshot" : "factory";
+}
+
+function phaseWallTimes(row: RunEstimateRow, steps: TimedStep[]) {
+	const intervals = steps
+		.map(([kind, repo, , start, end, resource]) => ({
+			phase: estimatePhase({ kind, repo, resource }),
+			start: Date.parse(start ?? ""),
+			end: Date.parse(end ?? ""),
+		}))
+		.sort((left, right) => left.start - right.start);
+	const started = Date.parse(row.started_at);
+	const finished = Date.parse(row.finished_at);
+	if (
+		intervals.some(
+			(entry) =>
+				!Number.isFinite(entry.start) ||
+				!Number.isFinite(entry.end) ||
+				entry.start < started ||
+				entry.end > finished ||
+				entry.end < entry.start,
+		)
+	)
+		return null;
+	const totals: Partial<Record<EstimatePhase, number>> = {};
+	const ends: Partial<Record<EstimatePhase, number>> = {};
+	let previous = started;
+	for (const entry of intervals) {
+		const wall = entry.end - Math.max(entry.start, ends[entry.phase] ?? entry.start);
+		totals[entry.phase] =
+			(totals[entry.phase] ?? 0) + Math.max(0, wall) + Math.max(0, entry.start - previous);
+		ends[entry.phase] = Math.max(ends[entry.phase] ?? 0, entry.end);
+		previous = Math.max(previous, entry.end);
+	}
+	const last = intervals.at(-1);
+	if (last) totals[last.phase] = (totals[last.phase] ?? 0) + finished - previous;
+	return totals;
 }
 
 export function decodeRunEstimates(rows: readonly RunEstimateRow[]): RunEstimateCalibration {
@@ -145,6 +206,31 @@ export function decodeRunEstimates(rows: readonly RunEstimateRow[]): RunEstimate
 				calibration.overhead ??= {};
 				calibration.overhead[kind] = overhead;
 			}
+			const phases: Partial<Record<EstimatePhase, number[]>> = {};
+			for (const row of samples.filter((sample) => sample.timed_total === sample.work_total)) {
+				const steps = JSON.parse(row.timed_steps) as TimedStep[];
+				const wall = phaseWallTimes(row, steps);
+				if (!wall) continue;
+				for (const phase of Object.keys(wall) as EstimatePhase[]) {
+					const measured = steps
+						.map(([kind, repo, , , , resource]) => ({
+							kind,
+							repo,
+							resource,
+							durationMs: stepKinds[kind] ?? overall,
+						}))
+						.filter((step) => estimatePhase(step) === phase);
+					const duration = factoryRunDuration(measured);
+					phases[phase] ??= [];
+					phases[phase].push(Math.max(0, (wall[phase] ?? 0) - duration) / measured.length);
+				}
+			}
+			if (Object.keys(phases).length) {
+				calibration.phaseOverhead ??= {};
+				calibration.phaseOverhead[kind] = Object.fromEntries(
+					Object.entries(phases).map(([phase, values]) => [phase, median(values)]),
+				);
+			}
 		}
 	}
 	const plans = rows.find((row) => row.plans)?.plans;
@@ -161,7 +247,7 @@ export function estimateRunFinish(
 	run: Pick<FactoryRun, "mode" | "depth" | "startedAt"> &
 		Partial<Pick<FactoryRun, "id" | "status" | "cursor" | "nextAttemptAt">> & {
 			steps?: readonly (Pick<FactoryRunStep, "kind" | "status"> &
-				Partial<Pick<FactoryRunStep, "repo">>)[];
+				Partial<Pick<FactoryRunStep, "repo" | "resource">>)[];
 			completed?: number;
 			stepPlan?: RunStepPlan;
 		},
@@ -185,10 +271,20 @@ export function estimateRunFinish(
 	const stepDuration = (stepKind: StepKind) => medians?.[stepKind] ?? perStep;
 	const plan = run.stepPlan ?? (run.id ? calibration.plans?.[run.id] : undefined);
 	const plannedDuration = (
-		steps: { kind: StepKind; repo?: string | null; durationMs: number; count: number }[],
+		steps: {
+			kind: StepKind;
+			repo?: string | null;
+			resource?: string;
+			durationMs: number;
+			count: number;
+		}[],
 	) =>
 		(medians ? factoryRunDuration(steps) : steps.reduce((sum, step) => sum + step.durationMs, 0)) +
-		steps.reduce((sum, step) => sum + overhead * step.count, 0);
+		steps.reduce(
+			(sum, step) =>
+				sum + (calibration.phaseOverhead?.[kind]?.[estimatePhase(step)] ?? overhead) * step.count,
+			0,
+		);
 	let duration: number;
 	if (run.steps?.length === total) {
 		duration = plannedDuration(
@@ -201,9 +297,19 @@ export function estimateRunFinish(
 		);
 	} else if (plan) {
 		duration = plannedDuration(
-			plan.flatMap(([kind, total, remaining, repo]) => {
+			plan.flatMap(([kind, total, remaining, repo, resource]) => {
 				const count = active ? remaining : total;
-				return count ? [{ kind, repo, durationMs: stepDuration(kind) * count, count }] : [];
+				return count
+					? [
+							{
+								kind,
+								repo,
+								...(resource ? { resource } : {}),
+								durationMs: stepDuration(kind) * count,
+								count,
+							},
+						]
+					: [];
 			}),
 		);
 	} else {

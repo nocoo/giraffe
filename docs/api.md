@@ -1157,6 +1157,32 @@ validated single-cell count but marks coverage partial. The current day remains
 `partial:true`; day `since`/`until` describe Beijing boundaries, not query variables.
 See `apps/web/src/lib/activity-types.ts` for the complete field contract.
 
+The v0.24 default-branch observation contract is specified in
+[landed activity](13-landed-activity.md). `commits.default` counts only new ledger
+identities attributed to this reporting window, without a committer-date filter.
+Each default commit carries `observation: {runId, window, at, bootstrap}`:
+`observation.at` is first local observation, not GitHub push time, while the
+commit's `at` remains committer date. First reconciliation includes old reachable
+history and marks it `bootstrap:true`. Ledger admission requires successful
+current-run metadata and an exact stable repository-ID match; a rolling commit
+stream is never a substitute.
+
+`commits.deferred` contains `{runId, window, items}` groups whose first observation
+belongs to an earlier run/window but whose evidence is delivered now. These do
+not contribute to this response's `commits.default`; consumers can group their
+items by original window when aggregating delayed evidence. Only serialized
+identities are marked published, atomically with the immutable publication.
+Pending or packed-out evidence remains durable; the 500-item per-repository
+selection and existing publication byte limits report partial coverage, never a
+complete zero. Repeated GETs remain read-only. Old publications without these
+fields retain their original date-based semantics and are not rewritten.
+
+Migration `0026_activity_commit_ledger.sql` adds the permanent ledger/checkpoints,
+without backfill. Downgrading to v0.23.1 leaves them unused and harmless;
+re-upgrading resumes them. Commits pushed and force-pushed away between snapshots
+are invisible. Rename/re-add preserves the stable repository-ID ledger, whereas
+a replacement ID starts a new ledger; cancelled catch-up keeps its original window.
+
 The supplementary collector normally adds one refs/tags GraphQL request per repo,
 plus a successful-workflow REST request only when the complete saved action
 stream cannot provide deployment success. Continuations are bounded at 20 requests
@@ -2015,10 +2041,18 @@ durations count; skipped, unattempted and missing/invalid timings do not. Fully
 timed sample runs also supply per-step scheduling/backoff overhead:
 `max(0, wallDuration - modeledStepWallDuration) / nonSkippedSteps`; the median
 overhead is added to each remaining step without dividing it by concurrency.
+When complete valid start/end intervals are available, calibration separates
+account prelude, factory, snapshot, activity, Insights and publication overhead.
+It unions overlapping intervals within each phase and assigns intervening gaps
+to the following phase. Remaining activity therefore retains its measured tail
+instead of receiving only the small average overhead of all 1,146 steps. Compact
+plans distinguish Insights from other snapshots. Incomplete interval evidence
+keeps the existing overall overhead rather than inventing a phase measurement.
 The model assigns ordered repository work to four lanes, placing each next
 repository on the earliest free lane, separately for metadata/streams/commit and
-repository snapshots. Activity, global snapshots and publication remain serial
-barriers. This is an idealized lane schedule: invocation-boundary replenishment,
+repository snapshots. The estimator conservatively retains activity service time;
+the executor now pipelines repository activity in its four-lane pool, while
+global snapshots and publication remain barriers. This is an idealized lane schedule: invocation-boundary replenishment,
 scheduling and backoff remain in the learned overhead. Incomplete timing records never masquerade as
 overhead. If no audited timings exist, calibration instead uses the median
 `wallDuration / nonSkippedSteps`, which already includes overhead. Invalid-time,
@@ -2030,9 +2064,9 @@ without repository/order information stays serial to avoid double discounting.
 Historical serial samples can conservatively retain serialization in learned
 overhead until parallel samples arrive. All terminal step outcomes remove work, including
 skipped future steps ahead of the cursor. Paused estimates assume resumption now
-or after outstanding backoff, not a prediction of user action. Terminal run history
-has no ETA, regardless of the calibrated projection or recorded finish time.
-Browser history/detail, compact
+or after outstanding backoff, not a prediction of user action. Terminal history
+has `expectedFinishAt:null` and `expectedFinishAtReason:"terminal"`; it uses the
+recorded `finishedAt`, never a newly projected finish. Browser history/detail, compact
 machine history and latest readiness share this contract; internal calibration
 and grouped plans are not response fields. GET remains read-only and never fetches
 GitHub. The estimate is neither the hard `deadlineAt` nor a completion guarantee.
@@ -2040,7 +2074,7 @@ GitHub. The estimate is neither the hard `deadlineAt` nor a completion guarantee
 Reasons are `terminal` for every terminal run. For non-terminal runs, reasons
 are null for a present estimate, `no_completed_history` when no usable
 completed-or-partial same-execution-kind history exists, `invalid_started_at` for
-an invalid stored start, and `not_executed` for a zero-step audit record. A missing
+an invalid stored active start, and `not_executed` for a zero-step active audit record. A missing
 history estimate remains null rather than borrowing another execution kind.
 
 Run fields: `id`, `account_id`, `owner`, `requestKey`, `mode`, `repos`, `repoIds`,

@@ -67,6 +67,7 @@ export async function collectSitePage(
 	token: string,
 	now: string,
 	project?: () => Promise<void>,
+	heartbeat?: () => Promise<void>,
 ) {
 	assertKind(step.resource ?? "");
 	const actionsRepo = /^repo:(.+):actions$/.exec(step.resource ?? "")?.[1];
@@ -96,6 +97,7 @@ export async function collectSitePage(
 		step.snapshotCursor ?? 0,
 		gh,
 		now,
+		heartbeat,
 	);
 	try {
 		const result = await collectSiteBatch(db, lease, step, replay.client, token, now, {}, project);

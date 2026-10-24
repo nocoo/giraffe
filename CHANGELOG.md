@@ -11,6 +11,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Dependency updates: `lucide-react` 1.61.0, `wrangler` 4.152.0, `@biomejs/biome` 2.6.2, `@cloudflare/workers-types` 5.20261023.1, `vite` 8.3.5, `@types/bun` 1.4.4.
 
+## v0.24.0 - 2026-10-24
+
+### Fixed
+
+- Clip activity/factory titles, issue/PR bodies, commit subjects and advisory summaries by Unicode code point, preserving astral characters at the boundary.
+- Renew snapshot leases after newly fetched responses and before processing/projection so a slow response does not consume the remaining lease before accepted-page persistence. The reproduced local failure is fixed; the production process-death cause is not established.
+- Calibrate ETA overhead by account, factory, snapshot, activity, Insights and publication phases. Keep the observed activity tail in remaining estimates; terminal runs return a null estimate with reason `terminal` and retain their recorded finish time.
+- Attribute default-branch commits to their first observed snapshot window, not committer date. Persist stable repository-ID/SHA identities across retries, pagination, force-pushes, rename/re-add, cancellation and retention. Delayed publication retains its original window rather than inflating a later window.
+
+### Changed
+
+- Replenish four repository lanes inside the invocation and pipeline each repository's factory, snapshot and activity work in planned order. Activity can accept several pages per invocation; global work/publication remain fenced barriers. Drained repository work can continue without an unnecessary invocation boundary.
+- Reconcile complete Actions baselines using a conservative rerun horizon, ID deduplication and total-count validation. Materialize one complete shared history for metrics, snapshots and deployments in bounded resumable write batches; unreliable or over-limit deltas restart full collection. Preserve accepted v0.23 pages through cross-version checkpoints.
+- Extend the real-runner SQLite benchmark with account prelude, nine notification pages, 205 activity pages, explicit continuation delay, phase breakdowns and lane occupancy. With main and attribution integrated, the 1,146-step warm selected daily improves from 24.594 to 9.347 simulated minutes, 326 to 50 invocations, and 1.193 to 3.232 average busy lanes. Bootstrap pagination is measured separately with `--cold --history-commits 1000`. This does not prove the production under-twenty-minute target.
+
+### Migration And Rollback
+
+- Apply additive `0026_activity_commit_ledger.sql` (new tables/index only; no backfill). First reachable-history catch-up is checkpointed, one page per step under shared budgets. Permanent identities fail closed at account capacity instead of being evicted.
+- Rolling the Worker back to v0.23.1 leaves the tables unused and harmless; no down-migration is needed. Re-upgrading resumes retained ledger identities/checkpoints. Old-version publications remain unchanged and outside the ledger guarantee.
+- Polling cannot see commits pushed and then force-pushed away between snapshots. First catch-up is bootstrap evidence, not newly pushed work; observation windows are not exact GitHub push-time windows. See `docs/13-landed-activity.md` for gaps, delayed evidence, capacity and cost.
+- Inherit the released v0.23.1 dependency security fixes and code-point truncation, plus v0.23.2 dependency upgrades, through normal main merges. Deployment configuration and refresh schedules remain unchanged.
+
 ## v0.23.1 - 2026-10-24
 
 ### Fixed

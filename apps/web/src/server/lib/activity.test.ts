@@ -316,6 +316,22 @@ it("R4 includes old still-open PRs/issues, issue classes and feature-specific se
 			dependabot_open: 0,
 			code_scanning_open: 12,
 		},
+		{
+			items: [
+				{
+					...extra.commits?.[0],
+					sha: "same",
+					author: null,
+					message: "subject",
+					at: until,
+					url: "",
+					branch: "main",
+					is_default_branch: true,
+				},
+			],
+			deferred: [],
+			coverage: { status: "complete", truncated: false, reason: null },
+		},
 	);
 	expect(out.snapshot.open_prs).toHaveLength(1);
 	expect(out.snapshot.open_prs?.[0]).toMatchObject({

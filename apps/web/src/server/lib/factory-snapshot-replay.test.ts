@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { github, NOW } from "../../../../../tests/fixtures/factory";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import { makeRun } from "../../lib/factory-run";
@@ -6,6 +6,7 @@ import { MAX_STAGED_BYTES } from "./collect";
 import { createDb } from "./db/d1";
 import { claimRun, saveRun, startRun } from "./db/factory-runs";
 import { ApiError } from "./errors";
+import { FactoryInvocation, InvocationStopped } from "./factory-invocation";
 import { SnapshotPageReady, snapshotReplay } from "./factory-snapshot-replay";
 import { GithubUnavailableError } from "./github-unavailable";
 
@@ -68,6 +69,106 @@ it("replays REST bodies and Link only without persisting credentials or response
 	expect(await response.json()).toEqual([{ id: 1 }]);
 	expect(resumed.client.count).toBe(1);
 	expect(resumed.writes).toEqual([]);
+});
+
+it.each(["rest", "graphql"])(
+	"renews after a slow %s response before post-fetch processing exhausts the lease",
+	async (kind) => {
+		const { db, lease } = await setup();
+		let elapsed = 0;
+		const clock = () => new Date(Date.parse(NOW) + elapsed).toISOString();
+		const invocation = new FactoryInvocation(db, lease, clock);
+		const upstream = github(() => {
+			elapsed += 15_000;
+			return Response.json(kind === "graphql" ? { data: { rows: [1] } } : [1]);
+		});
+		const request = upstream.githubFetch;
+		upstream.githubFetch = async (...args) => {
+			await invocation.beforeRequest();
+			return request(...args);
+		};
+		elapsed = 19_000;
+		const replay = await snapshotReplay(db, lease, "repos", 0, upstream, clock(), () =>
+			invocation.heartbeat(),
+		);
+		if (kind === "graphql") await replay.client.githubGraphql("fake", "query", {});
+		else await replay.client.githubApi("fake", "/repos");
+		elapsed += 7_000;
+		expect(await saveRun(db, lease, replay.writes, clock(), true)).toBe(true);
+		expect(lease.leaseUntil).toBe(new Date(Date.parse(NOW) + 74_000).toISOString());
+		expect(await claimRun(db, "site", clock())).toBeNull();
+		expect(invocation.requests).toBe(1);
+		expect(await db.prepare("SELECT count(*) AS total FROM factory_resources").first()).toEqual({
+			total: 1,
+		});
+	},
+);
+
+it("heartbeats only newly fetched pages and retains the bounded one-page checkpoint", async () => {
+	const { db, lease } = await setup();
+	const heartbeat = vi.fn(async () => {});
+	const replay = await snapshotReplay(
+		db,
+		lease,
+		"notifications",
+		0,
+		github(() => Response.json([1])),
+		NOW,
+		heartbeat,
+	);
+	await replay.client.githubApi("fake", "/notifications");
+	await expect(replay.client.githubApi("fake", "/notifications?page=2")).rejects.toBeInstanceOf(
+		SnapshotPageReady,
+	);
+	expect(heartbeat).toHaveBeenCalledTimes(1);
+	expect(await saveRun(db, lease, replay.writes, NOW, true)).toBe(true);
+	const cachedHeartbeat = vi.fn(async () => {});
+	const resumed = await snapshotReplay(
+		db,
+		lease,
+		"notifications",
+		0,
+		github(() => {
+			throw new Error("no network");
+		}),
+		NOW,
+		cachedHeartbeat,
+	);
+	await resumed.client.githubApi("fake", "/notifications");
+	expect(cachedHeartbeat).not.toHaveBeenCalled();
+});
+
+it("rejects a post-response lease loss without changing previously accepted pages", async () => {
+	const { db, lease } = await setup();
+	const first = await snapshotReplay(
+		db,
+		lease,
+		"notifications",
+		0,
+		github(() => Response.json([1])),
+		NOW,
+	);
+	await first.client.githubApi("fake", "/notifications");
+	expect(await saveRun(db, lease, first.writes, NOW, true)).toBe(true);
+	const accepted = await db.prepare("SELECT * FROM factory_resources ORDER BY stream").all();
+	const stopped = new InvocationStopped(true);
+	const resumed = await snapshotReplay(
+		db,
+		lease,
+		"notifications",
+		0,
+		github(() => Response.json([2])),
+		NOW,
+		async () => {
+			throw stopped;
+		},
+	);
+	await resumed.client.githubApi("fake", "/notifications");
+	await expect(resumed.client.githubApi("fake", "/notifications?page=2")).rejects.toBe(stopped);
+	expect(resumed.writes).toEqual([]);
+	expect(await db.prepare("SELECT * FROM factory_resources ORDER BY stream").all()).toEqual(
+		accepted,
+	);
 });
 
 it("never persists an echoed token in successful response bodies or Link cursors", async () => {

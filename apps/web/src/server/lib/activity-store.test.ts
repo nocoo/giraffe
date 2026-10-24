@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { rawRepo } from "../../../../../tests/fixtures/factory";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
-import type { ActivitySnapshot } from "../../lib/activity-types";
+import type { ActivityCommit, ActivitySnapshot } from "../../lib/activity-types";
 import { makeRun } from "../../lib/factory-run";
 import { FACTORY_STREAMS } from "../../lib/factory-types";
 import type { Env } from "../env";
@@ -79,6 +79,46 @@ it("derives totals for existing frozen publications without writes and binds pol
 });
 
 const now = "2026-10-22T20:00:00.000Z";
+async function seedLanded(
+	fixture: Awaited<ReturnType<typeof setup>>,
+	items: ActivityCommit[] = [],
+) {
+	const { db, lease, repo } = fixture;
+	const metadata = lease.run.steps.find((step) => step.kind === "metadata");
+	if (!metadata) throw new Error("Missing metadata fixture");
+	metadata.status = "success";
+	metadata.sourceHead = items[0]?.sha ?? null;
+	await db
+		.prepare("INSERT INTO activity_commit_heads(account_id,repo_id,head) VALUES(?,?,?)")
+		.bind(lease.run.account_id, repo.id, metadata.sourceHead)
+		.run();
+	for (const item of items) {
+		const payload = {
+			...item,
+			observation: {
+				runId: lease.run.id,
+				window: lease.run.activityWindow,
+				at: now,
+				bootstrap: true,
+			},
+		};
+		await db
+			.prepare(
+				"INSERT INTO activity_commit_ledger(account_id,repo_id,sha,first_run_id,observed_at,window_since,window_until,payload) VALUES(?,?,?,?,?,?,?,?)",
+			)
+			.bind(
+				lease.run.account_id,
+				repo.id,
+				item.sha,
+				lease.run.id,
+				now,
+				lease.run.activityWindow?.since,
+				now,
+				JSON.stringify(payload),
+			)
+			.run();
+	}
+}
 async function setup(name = rawRepo.nameWithOwner) {
 	const raw = sqliteFixture();
 	const db = createDb(raw);
@@ -194,11 +234,18 @@ it.each([
 				},
 			]),
 		);
-		const activity = activityRepo(repo, streams, snapshotFor([]).window, extra(), {
-			features: { dependabot: { status: "available" }, code_scanning: { status: "available" } },
-			dependabot_open: 0,
-			code_scanning_open: 0,
-		});
+		const activity = activityRepo(
+			repo,
+			streams,
+			snapshotFor([]).window,
+			extra(),
+			{
+				features: { dependabot: { status: "available" }, code_scanning: { status: "available" } },
+				dependabot_open: 0,
+				code_scanning_open: 0,
+			},
+			{ items: [], deferred: [], coverage: { status: "complete", truncated: false, reason: null } },
+		);
 		await db
 			.prepare(
 				"INSERT INTO factory_resources(run_id,repo,stream,payload) VALUES(?,?,'activity-snapshot',?)",
@@ -376,6 +423,7 @@ function extra(): import("./activity-collect").ActivitySupplement {
 it("R4 freezes only accepted current-run resource evidence with fresh feature-level security", async () => {
 	const { freezeActivityRepo } = await import("./activity-store");
 	const s = await setup();
+	await seedLanded(s);
 	s.repo.observation = {
 		version: "r2",
 		window: s.lease.run.window,
@@ -445,6 +493,17 @@ it("freezes current activity even when passed previous repository metadata", asy
 	const { freezeActivityRepo } = await import("./activity-store");
 	const fixture = await setup("nocoo/lizheng.dev");
 	const { db, lease, repo } = fixture;
+	await seedLanded(fixture, [
+		{
+			sha: "current-sha",
+			at: now,
+			author: null,
+			message: "Current",
+			branch: "trunk",
+			url: "",
+			is_default_branch: true,
+		},
+	]);
 	for (const stream of FACTORY_STREAMS) repo.coverage[stream].status = "complete";
 	repo.coverage.dependencies = {
 		...repo.coverage.dependencies,
@@ -695,7 +754,7 @@ it.each([
 	const current = mode === "success" || mode === "missing-id";
 	expect(activity.snapshot.open_prs).toEqual(current ? [] : null);
 	expect(activity.ci_runs).toEqual(current ? [] : null);
-	expect(activity.commits.default).toBe(current ? 0 : null);
+	expect(activity.commits.default).toBeNull();
 	expect(activity.coverage.actions.status).toBe(current ? "complete" : "unavailable");
 });
 it("R9 activity never substitutes live security snapshots for missing staged evidence", async () => {

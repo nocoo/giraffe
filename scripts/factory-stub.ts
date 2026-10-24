@@ -26,6 +26,26 @@ export const factoryRepoStub = {
 	mergedPrs: { totalCount: 0 },
 	releases: { totalCount: 0 },
 };
+export function factoryRestStub(url: URL): unknown | null {
+	if (
+		url.pathname !== "/repos/octocat/hello-world/commits" ||
+		url.searchParams.get("sha") !== "abc" ||
+		url.searchParams.has("since") ||
+		url.searchParams.has("until")
+	)
+		return null;
+	return [
+		{
+			sha: "abc",
+			commit: {
+				message: "Previously authored, newly observed",
+				committer: { date: "2020-01-01T00:00:00Z" },
+			},
+			author: { login: "octocat" },
+			html_url: "https://github.com/octocat/hello-world/commit/abc",
+		},
+	];
+}
 export function factoryGraphqlStub(
 	query: string,
 	variables: Record<string, unknown>,

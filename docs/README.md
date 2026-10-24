@@ -22,3 +22,5 @@
 - [Machine API v1 reference (English): endpoints, tokens and external bot reports](api.md)
 
 - [Source index profiling, conditional responses and compression](12-source-performance.md)
+
+- [Landed activity ledger, observation limits and rollback](13-landed-activity.md)

@@ -1,0 +1,7 @@
+{
+	"version": "0.23.1",
+	"commit": "f462ba28ad8cb36262db3a3830ef79e34a069ae3",
+	"archiveSha256": "114ac0177d00e90e08806d8e7e88afdbc8a131790db113ec5d10fcfaf8e9aa27",
+	"schemaSha256": "46ddff8153a66eb2aca558ecb000a633ea20ec68d3d0ebb0bfe4a2d313c6b217",
+	"command": "git archive --format=tar.gz f462ba28ad8cb36262db3a3830ef79e34a069ae3 package.json apps/web/src/server apps/web/src/lib ':(exclude)*.test.ts' ':(exclude)*/__tests__/*'"
+}

@@ -1,8 +1,6 @@
 import type { Db } from "./db/d1";
 export type FactoryStorage = { resourceBytes: number; totalBytes: number };
-export function factoryStorageStatement(db: Db, account: string): D1PreparedStatement {
-	return db
-		.prepare(`SELECT
+export const FACTORY_STORAGE_SQL = `SELECT
  COALESCE((SELECT bytes FROM factory_storage WHERE account_id=?),0) AS resourceBytes,
  COALESCE((SELECT bytes FROM factory_budget WHERE account_id=?),0) + (SELECT COALESCE(SUM(bytes),0) FROM (
 		SELECT length(CAST(payload AS BLOB)) AS bytes FROM snapshots WHERE account_id=? AND kind NOT LIKE 'factory%'
@@ -15,8 +13,15 @@ export function factoryStorageStatement(db: Db, account: string): D1PreparedStat
 	 + (SELECT COALESCE(SUM(length(CAST(event_id||kind||repo||COALESCE(github_id,'')||at||source_kind||COALESCE(source_run_id,'')||details AS BLOB))),0) FROM catalog_changes WHERE account_id=?)
 	 + (SELECT COALESCE(SUM(length(CAST(event_id||repo||COALESCE(github_id,'')||at||source_kind||COALESCE(source_run_id,'')||reason AS BLOB))),0) FROM catalog_unconfirmed WHERE account_id=?)
 	 + (SELECT COALESCE(SUM(length(CAST(identity_key||table_name||repo||COALESCE(version,'')||payload AS BLOB))),0) FROM catalog_displaced_state WHERE account_id=?)
-	 + (SELECT COALESCE(SUM(length(CAST(history_since||COALESCE(checked_at,'')||COALESCE(source_run_id,'')||COALESCE(warning_code,'') AS BLOB))),0) FROM catalog_state WHERE account_id=?) AS totalBytes`)
+	 + (SELECT COALESCE(SUM(length(CAST(history_since||COALESCE(checked_at,'')||COALESCE(source_run_id,'')||COALESCE(warning_code,'') AS BLOB))),0) FROM catalog_state WHERE account_id=?)
+	 + (SELECT COALESCE(SUM(length(CAST(account_id||repo_id||COALESCE(head,'')||COALESCE(pending,'') AS BLOB))),0) FROM activity_commit_heads WHERE account_id=?)
+	 + (SELECT COALESCE(SUM(length(CAST(account_id||repo_id||sha||first_run_id||observed_at||window_since||window_until||COALESCE(payload,'')||COALESCE(published_run_id,'')||reconciliation AS BLOB))),0) FROM activity_commit_ledger WHERE account_id=?) AS totalBytes`;
+export function factoryStorageStatement(db: Db, account: string): D1PreparedStatement {
+	return db
+		.prepare(FACTORY_STORAGE_SQL)
 		.bind(
+			account,
+			account,
 			account,
 			account,
 			account,
