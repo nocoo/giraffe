@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
 import { factoryFixture as ready } from "../../../../../tests/fixtures/factory-snapshot";
-import { factoryWindow } from "../../lib/factory";
+import { emptyDay, factoryWindow } from "../../lib/factory";
 import { FACTORY_STREAMS } from "../../lib/factory-types";
 import {
 	activityAge,
@@ -44,6 +44,26 @@ describe("software factory view model", () => {
 		};
 		snapshot.window = factoryWindow(snapshot.fetched_at, 30);
 		expect(factoryBoard(snapshot, snapshot.repos, snapshot.repos).days).toHaveLength(90);
+	});
+	it("charts retained older buckets beside updated quick-window days using the display span", () => {
+		const snapshot = ready();
+		const repo = snapshot.repos[0];
+		if (!repo) throw new Error("fixture");
+		repo.observation = {
+			version: "quick",
+			source: "run",
+			window: snapshot.window,
+			refreshedAt: snapshot.fetched_at,
+		};
+		repo.metrics.days = {
+			[snapshot.window.since.slice(0, 10)]: { ...emptyDay(), commits: 2 },
+			[snapshot.window.until.slice(0, 10)]: { ...emptyDay(), commits: 7 },
+		};
+		const board = factoryBoard(snapshot, [repo], [repo]);
+		expect(board.days).toHaveLength(90);
+		expect(board.days[0]?.commits).toBe(2);
+		expect(board.days.at(-1)?.commits).toBe(7);
+		expect(board.displayWindow).toEqual(snapshot.window);
 	});
 	it("filters reproducibly by language, topic and repository without double counting overlapping tags", () => {
 		const s = ready();

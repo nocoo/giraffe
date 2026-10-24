@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.24.2 - 2026-10-24
+
+### Fixed
+
+- Keep quick collection at 30 UTC dates while retaining published daily history outside that window, capped at 90 dates for newly refreshed evidence. New-window buckets replace prior values without double-counting; dated totals and repository/global display windows follow the retained history. Existing failed-stream retention and mixed-publication provenance remain intact.
+- Merge recollected contribution calendars with retained outside-window dates; preserve untouched calendar provenance. Calendar totals use daily counts, and restricted totals are unknown when retained per-day attribution is missing.
+- Separate expanded chart windows from raw-stream collection provenance, preserve historical complete-coverage intervals without certifying gaps, and calculate date-filtered contribution freshness from retained per-day source timestamps.
+- Document one post-deploy deep refresh by GitHub Guan Jia to refill history already overwritten before this fix. A successful deep publication reloads 90 dates; later quick runs keep days 31-90 without changing the standing daily collection depth. Chart labels continue to follow the displayed span.
+
 ## v0.24.1 - 2026-10-24
 
 ### Fixed

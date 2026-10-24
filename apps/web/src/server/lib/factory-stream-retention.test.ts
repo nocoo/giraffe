@@ -143,7 +143,7 @@ async function setup(stream: FactoryStreamName, source: "run" | "legacy" = "run"
 		version: "current",
 		source: "run",
 		refreshedAt: now,
-		window: { since: "2026-07-25T00:00:00.000Z", until: now },
+		window: lease.run.window,
 	};
 	candidate.metrics = mergeMetrics(
 		FACTORY_STREAMS.map((name) =>
@@ -191,7 +191,11 @@ it.each(FACTORY_STREAMS)(
 		await db.batch(await repositoryWrites(db, lease, now, candidate, candidate.name, null));
 		expect(candidate).toEqual(before);
 		const accepted = await currentRepo(db, account, candidate.name);
-		expect(accepted?.observation).toEqual(candidate.observation);
+		expect(accepted?.observation).toEqual({
+			...candidate.observation,
+			collectionWindow: candidate.observation?.window,
+			window: { since: previous.observation?.window.since, until: now },
+		});
 		expect(accepted?.coverage[stream]).toMatchObject({
 			...previous.coverage[stream],
 			retained: true,

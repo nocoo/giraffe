@@ -25,6 +25,7 @@ import {
 import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
 import { ApiError } from "./errors";
 import { streamKey } from "./factory-collect";
+import { publishedWindow, retainContributionDays, retainRepositoryDays } from "./factory-history";
 import { latestFactoryRate } from "./factory-rate";
 import { retainFactoryStream } from "./factory-stream-retention";
 import { publishSiteSnapshots } from "./site-publication";
@@ -139,6 +140,8 @@ export async function repositoryWrites(
 	const regression = retained.length > 0;
 	const accepted = error ? null : repo ? structuredClone(repo) : null;
 	const writes: D1PreparedStatement[] = [];
+	if (accepted?.observation?.version === lease.run.id && !legacy)
+		retainRepositoryDays(accepted, previous, lease.run.window);
 	if (accepted && previous)
 		for (const stream of retained)
 			writes.push(...(await retainFactoryStream(db, lease, now, accepted, previous, stream)));
@@ -427,23 +430,23 @@ export async function publicationWrites(
 	snapshot.status = completedRunStatus(run) === "completed" ? "complete" : "partial";
 	snapshot.fetched_at = now;
 	snapshot.startedAt = run.startedAt;
-	snapshot.window = run.window;
 	snapshot.requests = run.requests;
 	snapshot.rate = latestFactoryRate(base?.rate, run.checkpoint?.rate);
 	const fresh =
 		run.mode === "refresh" && run.checkpoint?.contributionStatus === "complete"
 			? run.checkpoint.contribution
 			: null;
-	snapshot.contribution = fresh ?? base?.contribution ?? null;
+	const contributionHistory = fresh ? retainContributionDays(fresh, base, run.window) : null;
+	snapshot.contribution = contributionHistory?.contribution ?? base?.contribution ?? null;
 	snapshot.contributionStatus = !run.steps.some((step) => step.kind === "contributions")
 		? (base?.contributionStatus ?? "unavailable")
 		: fresh
 			? "complete"
 			: "unavailable";
-	if (fresh)
+	if (fresh && contributionHistory)
 		snapshot.contributionObservation = {
 			version: run.id,
-			window: run.window,
+			window: contributionHistory.window,
 			fetchedAt: fresh.fetchedAt,
 		};
 	else if (base?.contribution)
@@ -452,6 +455,16 @@ export async function publicationWrites(
 			window: base.window,
 			fetchedAt: base.contribution.fetchedAt,
 		};
+	snapshot.window = publishedWindow(run.window, [
+		...snapshot.repos.flatMap((repo) => [
+			...(repo.observation ? [repo.observation.window] : []),
+			...FACTORY_STREAMS.flatMap((stream) => {
+				const observation = repo.coverage[stream].observation;
+				return observation ? [observation.window] : [];
+			}),
+		]),
+		...(snapshot.contributionObservation ? [snapshot.contributionObservation.window] : []),
+	]);
 	snapshot.publication = {
 		mixed:
 			snapshot.repos.some(

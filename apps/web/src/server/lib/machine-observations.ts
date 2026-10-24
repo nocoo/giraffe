@@ -481,6 +481,8 @@ export function factoryResourceData(
 	const coverage = repo.coverage[stream as FactoryStreamName].retained
 		? repo.coverage[stream as FactoryStreamName]
 		: data.coverage;
+	const observation = coverage.observation ?? repo.observation;
+	const window = observation?.collectionWindow ?? observation?.window ?? snap.window;
 	return {
 		...data,
 		...(stream === "prs"
@@ -495,10 +497,10 @@ export function factoryResourceData(
 		...(stream === "dependencies"
 			? dependencyEvidence(data.items, [...(repo.manifests ?? []), ...(data.manifests ?? [])])
 			: {}),
-		ranges: [coverage.observation?.window ?? repo.observation?.window ?? snap.window],
+		ranges: [window],
 		fetched_at: coverage.fetchedAt,
 		freshness: factoryStreamFreshness(coverage),
-		observation: coverage.observation ?? repo.observation,
+		observation: observation ? { ...observation, window } : undefined,
 		coverage,
 		truncated: coverage.status === "limited",
 		unavailable: coverage.status === "unavailable",

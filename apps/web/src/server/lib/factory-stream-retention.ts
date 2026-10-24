@@ -49,6 +49,7 @@ export async function retainFactoryStream(
 			? {
 					observation: {
 						...observation,
+						window: observation.collectionWindow ?? observation.window,
 						head: coverage.observation ? coverage.observation.head : previous.head,
 					},
 				}
@@ -65,6 +66,17 @@ export async function retainFactoryStream(
 		for (const key of dayKeys) day[key] = previous.metrics.days[date]?.[key] ?? 0;
 		if (Object.values(day).some((value) => value !== 0)) repo.metrics.days[date] = day;
 		else delete repo.metrics.days[date];
+	}
+	if (
+		repo.observation &&
+		previous.observation &&
+		previous.observation.window.since < repo.observation.window.since
+	) {
+		repo.observation.collectionWindow ??= repo.observation.window;
+		repo.observation.window = {
+			...repo.observation.window,
+			since: previous.observation.window.since,
+		};
 	}
 	if (stream === "dependencies") {
 		repo.dependencies = structuredClone(previous.dependencies);

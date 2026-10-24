@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { expect, it } from "vitest";
 import { factoryFixture } from "../../../../../tests/fixtures/factory-snapshot";
-import { emptyDay } from "../../lib/factory";
+import { emptyDay, factoryWindow } from "../../lib/factory";
 import { FACTORY_STREAMS, type FactoryStreamName } from "../../lib/factory-types";
 import {
 	activityQuadrant,
@@ -11,9 +11,46 @@ import {
 	formatFactoryCount,
 } from "./factory";
 
+it("does not turn recovered or disconnected historical stream coverage into complete zeroes", () => {
+	const { snapshot, repo, board } = fixture();
+	Object.assign(repo.coverage.commits, {
+		completeWindows: [
+			{ since: snapshot.window.since, until: "2026-08-01T00:00:00.000Z" },
+			{ since: "2026-10-01T00:00:00.000Z", until: now },
+		],
+	});
+	const result = board();
+	expect(result.days.find((day) => day.date === "2026-07-25")?.complete.commits).toBe(true);
+	expect(result.days.find((day) => day.date === "2026-08-15")?.complete.commits).toBe(false);
+	expect(result.days.find((day) => day.date === "2026-10-22")?.complete.commits).toBe(true);
+	expect(result.periods.at(-1)?.previousComplete.commits).toBe(false);
+});
+
 const now = "2026-10-23T05:00:00.000Z";
 const old = "2026-10-18T05:00:00.000Z";
 const oldWindow = { since: "2026-07-20T00:00:00.000Z", until: old };
+
+it("does not label a uniformly covered retained display as mismatched raw collection windows", () => {
+	const { repo, board } = fixture();
+	if (!repo.observation) throw new Error("fixture");
+	repo.observation.collectionWindow = factoryWindow(now, 30);
+	for (const stream of FACTORY_STREAMS)
+		repo.coverage[stream].completeWindows = [repo.observation.window];
+	expect(board().mixedWindows).toBe(false);
+});
+
+it("charts every retained day after a cross-day failure without certifying healthy stream history", () => {
+	const { repo, board } = fixture(["commits"]);
+	if (!repo.observation) throw new Error("fixture");
+	repo.observation.collectionWindow = factoryWindow(now, 30);
+	repo.observation.window = { ...oldWindow, until: now };
+	repo.metrics.commits = 2;
+	repo.metrics.days = { [oldWindow.since.slice(0, 10)]: { ...emptyDay(), commits: 2 } };
+	const result = board();
+	expect(result.days[0]?.date).toBe(oldWindow.since.slice(0, 10));
+	expect(result.days.reduce((sum, day) => sum + day.commits, 0)).toBe(result.aggregate.commits);
+	expect(result.days[0]?.complete).toMatchObject({ commits: true, releases: false });
+});
 
 function fixture(streams: FactoryStreamName[] = []) {
 	const snapshot = factoryFixture();

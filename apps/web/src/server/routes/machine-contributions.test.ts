@@ -3,10 +3,12 @@ import { factoryFixture } from "../../../../../tests/fixtures/factory-snapshot";
 import { profileDb } from "../../../../../tests/fixtures/profile-db";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import type { ApiScope } from "../../lib/api-access";
+import { factoryWindow } from "../../lib/factory";
 import type { Env } from "../env";
 import { createApp } from "../index";
 import { createApiToken } from "../lib/api-tokens";
 import { createDb } from "../lib/db/d1";
+import { retainContributionDays } from "../lib/factory-history";
 
 async function setup() {
 	const raw = sqliteFixture();
@@ -74,6 +76,29 @@ async function setup() {
 		);
 	return { raw, db, snapshot, save, mint, token, app, env, path, call };
 }
+
+it("keeps retained calendar timestamps and query-specific freshness after a quick merge", async () => {
+	const s = await setup();
+	const old = s.snapshot.contribution?.fetchedAt;
+	const now = "2026-10-24T05:00:00.000Z";
+	const merged = retainContributionDays(
+		{ days: [{ date: "2026-10-24", count: 5 }], total: 5, restricted: 0, fetchedAt: now },
+		s.snapshot,
+		factoryWindow(now, 30),
+	);
+	s.snapshot.contribution = merged.contribution;
+	s.snapshot.contributionObservation = { version: "quick", window: merged.window, fetchedAt: now };
+	await s.save();
+	expect(await (await s.call("?since=2026-09-14&until=2026-09-15")).json()).toMatchObject({
+		fetchedAt: old,
+		freshness: { oldestAt: old, latestAt: old, total: 2, missing: 0 },
+		data: { observedAt: old, days: [{ observedAt: old }, { observedAt: old }] },
+	});
+	expect(await (await s.call("?since=2026-10-24&until=2026-10-24")).json()).toMatchObject({
+		fetchedAt: now,
+		freshness: { oldestAt: now, latestAt: now },
+	});
+});
 
 it("serves inclusive saved dates in an observation envelope and preserves retained source provenance", async () => {
 	const s = await setup();

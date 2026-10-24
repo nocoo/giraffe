@@ -18,6 +18,7 @@ export type UnavailableReasonCode =
 	| "not_found"
 	| "unknown";
 export type FactoryCoverage = {
+	completeWindows?: FactoryWindow[];
 	observation?: NonNullable<FactoryRepo["observation"]> & { head: string | null };
 	reason_code?: UnavailableReasonCode | "dependency_parse_unsupported";
 	retained?: true;
@@ -91,6 +92,7 @@ export type FactoryRepo = {
 	is_archived?: boolean;
 	metadataAt?: string;
 	observation?: {
+		collectionWindow?: FactoryWindow;
 		publishedAt?: string;
 		metadataAt?: string;
 		repo?: string;
@@ -177,6 +179,7 @@ export type FactorySnapshot = {
 	rateLimits?: Partial<Record<"core" | "graphql", FactoryRate>>;
 	contribution: {
 		days: {
+			fetchedAt?: string;
 			date: string;
 			count: number;
 			partial?: boolean;
@@ -192,7 +195,7 @@ export type FactorySnapshot = {
 			breakdown?: "complete" | "unavailable" | "mismatch";
 		}[];
 		total: number;
-		restricted: number;
+		restricted: number | null;
 		fetchedAt: string;
 		observedAt?: string;
 		partial?: boolean;
