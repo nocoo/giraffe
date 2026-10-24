@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.24.3 - 2026-10-25
+
+### Fixed
+
+- Treat mid-run activity `factory_capacity` as a terminal `limited` step instead of pausing the whole refresh run, so dispatch can continue other repositories and reach publication. Metadata and other operator-pause capacity paths are unchanged.
+
 ## v0.24.2 - 2026-10-24
 
 ### Fixed
