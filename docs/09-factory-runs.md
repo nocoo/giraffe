@@ -230,7 +230,6 @@ Do not deploy a v0.21.x reader directly over compact v0.22 rows: missing numeric
 fields otherwise become `NaN` on old executor arithmetic. The additive table can
 remain, but payloads must be expanded before old code resumes. This is an offline
 rollback operation, not a runtime compatibility path or automatic migration.
-
 1. Under a separately authorized maintenance window, stop new manual/scheduled
    run creation and queue/cron execution. First use v0.22 controls to pause active
    runs or drain them to terminal state; wait for in-flight requests to settle.
