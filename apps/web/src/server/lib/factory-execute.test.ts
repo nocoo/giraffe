@@ -5,6 +5,7 @@ import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import { makeRun, RUN_LEASE_MS, type RunSelection } from "../../lib/factory-run";
 import type { Env } from "../env";
 import { createApp } from "../index";
+import * as activityLanded from "./activity-landed";
 import { readActivity } from "./activity-store";
 import { contentVersion, observationVersion } from "./content-version";
 import { createDb } from "./db/d1";
@@ -19,10 +20,13 @@ import {
 	startRun,
 } from "./db/factory-runs";
 import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
+import { ApiError } from "./errors";
 import { contributionDates } from "./factory-contributions";
 import { consumeFactory } from "./factory-dispatch";
 import { executeRunPage } from "./factory-execute";
 import { FactoryInvocation } from "./factory-invocation";
+import { mapFactoryRepo } from "./factory-map";
+import * as factoryPublish from "./factory-publish";
 import { currentRepo, repositoryWrites } from "./factory-publish";
 import { readSources } from "./machine-sources";
 import { encryptToken, parseKeyBytes } from "./token-crypto";
@@ -2578,6 +2582,37 @@ it("never revives completed steps on claim and finalizes exhausted persisted pla
 		expect(saved?.status).toBe(exhausted ? "completed" : "running");
 	}
 });
+it("finishes activity factory_capacity as limited without pausing the run", async () => {
+	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] }, true);
+	const db = createDb(env.DB);
+	const found = await getRun(db, snap.account_id, "r1");
+	if (!found) throw new Error("fixture");
+	for (const step of found.run.steps) {
+		if (step.kind === "activity" && step.status === "pending") {
+			found.run.cursor = found.run.steps.indexOf(step);
+			break;
+		}
+		if (step.status === "pending") step.status = "success";
+	}
+	await db
+		.prepare("UPDATE factory_runs SET payload=? WHERE id=?")
+		.bind(JSON.stringify(found.run), "r1")
+		.run();
+	vi.spyOn(factoryPublish, "currentRepo").mockResolvedValue(mapFactoryRepo(rawRepo));
+	vi.spyOn(activityLanded, "collectLandedPage").mockRejectedValue(
+		new ApiError(422, "factory_capacity", "Activity repository metadata exceeds page capacity"),
+	);
+	await executeRunPage(env, "r1", () => now);
+	const run = (await getRun(db, snap.account_id, "r1"))?.run;
+	expect(run?.status).toBe("running");
+	expect(run?.steps.find((step) => step.kind === "activity")).toMatchObject({
+		status: "limited",
+		error: "factory_capacity",
+	});
+	expect((await listRuns(db, snap.account_id))[0]?.counts).toMatchObject({ limited: 1 });
+	vi.restoreAllMocks();
+});
+
 it("does not spend network retry budget while waiting for valid credentials", async () => {
 	const env = await setup();
 	const { controlRun } = await import("./db/factory-runs");
