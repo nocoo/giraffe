@@ -786,3 +786,96 @@ it("collects several activity pages per repository in one four-lane invocation",
 		Array.from({ length: 4 }, () => ({ phase: "done", pages: 3 })),
 	);
 });
+
+it("shares the landed history reserve and retains accepted pages before backing off", async () => {
+	const fixture = await setup(true, 0);
+	const db = createDb(fixture.env.DB);
+	const template = factoryFixture().repos[0];
+	if (!template) throw new Error("fixture repository missing");
+	const repos = fixture.run.repos.map((name, index) => ({
+		...template,
+		id: `repo-${index}`,
+		name,
+	}));
+	for (const repo of repos)
+		await db.batch([
+			db
+				.prepare(
+					"INSERT INTO factory_repo_versions(account_id,repo,version,payload,refreshed_at) VALUES(?,?,?,?,?)",
+				)
+				.bind(fixture.run.account_id, repo.name, fixture.run.id, JSON.stringify(repo), fixture.now),
+			db
+				.prepare("INSERT INTO factory_repo_state(account_id,repo,version,payload) VALUES(?,?,?,?)")
+				.bind(
+					fixture.run.account_id,
+					repo.name,
+					fixture.run.id,
+					JSON.stringify({ repo: repo.name, version: fixture.run.id }),
+				),
+		]);
+	for (const step of fixture.run.steps) {
+		if (step.kind === "activity" || step.kind === "publish") continue;
+		step.status = "success";
+		if (step.kind === "metadata") {
+			step.sourceBranch = "main";
+			step.sourceHead = "abc";
+		}
+	}
+	const resetAt = new Date(Date.parse(fixture.now) + 3_600_000).toISOString();
+	fixture.run.checkpoint = {
+		...factoryFixture(),
+		repos,
+		rate: { resource: "core", remaining: 51, resetAt, observedAt: fixture.now },
+	};
+	fixture.run.cursor = fixture.run.steps.findIndex((step) => step.kind === "activity");
+	await db
+		.prepare("UPDATE factory_runs SET payload=? WHERE id=?")
+		.bind(encodeRun(fixture.run), fixture.run.id)
+		.run();
+	const requests: string[] = [];
+	let release = () => {};
+	const admitted = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async (url: string) => {
+			requests.push(url);
+			if (requests.length === 4) release();
+			await admitted;
+			const next = new URL(url);
+			next.protocol = "https:";
+			next.host = "api.github.com";
+			const firstPage = next.searchParams.get("page") === "1";
+			next.searchParams.set("page", "2");
+			return Response.json(
+				[{ sha: firstPage ? "abc" : "tail", commit: { message: "Safe history" } }],
+				{
+					headers: {
+						"x-ratelimit-remaining": url.includes("/app0/") ? "49" : "50",
+						"x-ratelimit-reset": String(Date.parse(resetAt) / 1000),
+						...(firstPage ? { link: `<${next.href}>; rel="next"` } : {}),
+					},
+				},
+			);
+		}),
+	);
+	await executeRunPage(fixture.env, fixture.run.id, () => fixture.now);
+	const saved = await fixture.read();
+	expect(saved.checkpoint?.rate).toMatchObject({ remaining: 49, resetAt });
+	expect(saved.checkpoint?.rateLimits?.core?.remaining).toBe(49);
+	expect(saved.nextAttemptAt).toBe(resetAt);
+	expect(requests).toHaveLength(4);
+	expect(requests.every((url) => new URL(url).searchParams.get("page") === "1")).toBe(true);
+	expect(
+		await db.prepare("SELECT sha FROM activity_commit_ledger WHERE repo_id='repo-0'").first(),
+	).toEqual({ sha: "abc" });
+	const head = await db
+		.prepare("SELECT head,pending FROM activity_commit_heads WHERE repo_id='repo-0'")
+		.first<{ head: string | null; pending: string }>();
+	expect(head?.head).toBeNull();
+	expect(JSON.parse(head?.pending ?? "null")).toMatchObject({ page: 2, accepted: 1 });
+	await executeRunPage(fixture.env, fixture.run.id, () => fixture.now);
+	expect(requests).toHaveLength(4);
+	expect((await fixture.read()).nextAttemptAt).toBe(resetAt);
+});

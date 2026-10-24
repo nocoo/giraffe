@@ -43,6 +43,10 @@ existing four-lane pool. Shared request (40), statement (600 soft / 800 hard), w
 (25 seconds) and lease budgets remain authoritative; there is no unbounded
 catch-up loop inside one step. A successful slow response renews ownership before
 processing and checkpointing, without another pre-request budget check.
+REST remaining/reset headers update the shared core rate bucket and
+are saved with the accepted page. Further requests respect the existing
+50-request reserve; a page that reports crossing the reserve is not discarded
+merely because of its own newly observed rate.
 
 An interrupted reconciliation survives run cancellation and retention. The next
 activity run finishes that pinned snapshot with its **original** attribution,

@@ -4,8 +4,10 @@ import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import { makeRun } from "../../lib/factory-run";
 import { collectLandedPage, readLandedActivity } from "./activity-landed";
 import { createDb } from "./db/d1";
-import { claimRun, type RunLease, saveRun, startRun } from "./db/factory-runs";
+import { claimRun, getRun, type RunLease, saveRun, startRun } from "./db/factory-runs";
+import { newFactory } from "./factory-collect";
 import { mapFactoryRepo } from "./factory-map";
+import { recordFactoryRate } from "./factory-rate";
 
 const first = "2026-10-22T22:14:55.000Z";
 const second = "2026-10-23T22:14:55.000Z";
@@ -502,3 +504,116 @@ it.each(
 	const clean = github(() => response([commit("head")]));
 	expect((await fixture.accept(lease, clean, first, token)).done).toBe(mode !== "diverged");
 });
+
+it.each(["history", "compare"])(
+	"persists successful %s rates and blocks the next request until reset",
+	async (mode) => {
+		const fixture = await setup();
+		const lease = await fixture.start("reserve", first, "head");
+		const resetAt = new Date(Date.parse(first) + 3_600_000).toISOString();
+		lease.run.checkpoint = newFactory(lease.run.account_id, "nocoo", first);
+		recordFactoryRate(lease.run.checkpoint, {
+			resource: "graphql",
+			remaining: 500,
+			resetAt,
+			observedAt: first,
+		});
+		recordFactoryRate(lease.run.checkpoint, {
+			resource: "core",
+			remaining: 51,
+			resetAt,
+			observedAt: first,
+		});
+		if (mode === "compare")
+			await fixture.db
+				.prepare(
+					"INSERT INTO activity_commit_heads(account_id,repo_id,head) VALUES('account_123',?,'base')",
+				)
+				.bind(fixture.repo.id)
+				.run();
+		const gh = github((url) => {
+			const last = url.includes("page=2");
+			const items = [commit(last ? "tail" : "head")];
+			return Response.json(
+				mode === "history" ? items : { status: "ahead", total_commits: 2, commits: items },
+				{
+					headers: {
+						"x-ratelimit-remaining": last ? "5000" : "49",
+						"x-ratelimit-reset": String(Date.parse(resetAt) / 1000 + (last ? 3600 : 0)),
+						...(last ? {} : { link: `<${url.replace("&page=1", "&page=2")}>; rel="next"` }),
+					},
+				},
+			);
+		});
+		await fixture.accept(lease, gh, first);
+		expect((await fixture.accept(lease, gh, first)).done).toBe(false);
+		const saved = await getRun(fixture.db, lease.run.account_id, lease.run.id);
+		expect(saved?.run.checkpoint?.rate).toEqual({
+			resource: "core",
+			remaining: 49,
+			resetAt,
+			observedAt: first,
+		});
+		expect(saved?.run.checkpoint?.rateLimits?.graphql?.remaining).toBe(500);
+		expect(
+			await fixture.db.prepare("SELECT COUNT(*) AS count FROM activity_commit_ledger").first(),
+		).toEqual({ count: 1 });
+		const checkpoint = await fixture.db.prepare("SELECT * FROM activity_commit_heads").all();
+		await expect(fixture.accept(lease, gh, first)).rejects.toMatchObject({
+			code: "github_rate_limited",
+			retryAt: resetAt,
+		});
+		expect(gh.count).toBe(1);
+		expect(await fixture.db.prepare("SELECT * FROM activity_commit_heads").all()).toEqual(
+			checkpoint,
+		);
+		const resumed = await fixture.start("reserve-reset", resetAt, "head");
+		resumed.run.checkpoint = saved?.run.checkpoint ?? null;
+		expect((await fixture.accept(resumed, gh, resetAt)).done).toBe(true);
+		expect(gh.count).toBe(2);
+		expect(resumed.run.checkpoint?.rate).toMatchObject({
+			remaining: 5000,
+			resetAt: new Date(Date.parse(resetAt) + 3_600_000).toISOString(),
+			observedAt: resetAt,
+		});
+		expect(
+			(await readLandedActivity(fixture.db, resumed.run, fixture.repo)).deferred[0]?.items,
+		).toHaveLength(2);
+	},
+);
+
+it.each([
+	{ remaining: null, reset: null, expected: 51 },
+	{ remaining: "invalid", reset: null, expected: 51 },
+	{ remaining: "-1", reset: null, expected: 51 },
+	{ remaining: "1.5", reset: null, expected: 51 },
+	{ remaining: "50", reset: null, expected: 50 },
+	{ remaining: "49", reset: null, expected: 49 },
+	{ remaining: "49", reset: "invalid", expected: 49 },
+])(
+	"validates remaining=$remaining and reset=$reset without losing a successful page",
+	async ({ remaining, reset, expected }) => {
+		const fixture = await setup();
+		const lease = await fixture.start("rate-headers", first, "head");
+		lease.run.checkpoint = newFactory(lease.run.account_id, "nocoo", first);
+		recordFactoryRate(lease.run.checkpoint, {
+			resource: "core",
+			remaining: 51,
+			resetAt: second,
+			observedAt: first,
+		});
+		const headers = new Headers();
+		if (remaining !== null) headers.set("x-ratelimit-remaining", remaining);
+		if (reset !== null) headers.set("x-ratelimit-reset", reset);
+		const gh = github(() => Response.json([commit("head")], { headers }));
+		await fixture.accept(lease, gh, first);
+		expect((await fixture.accept(lease, gh, first)).done).toBe(true);
+		expect(lease.run.checkpoint.rate).toEqual({
+			resource: "core",
+			remaining: expected,
+			resetAt: expected === 51 ? second : null,
+			observedAt: first,
+		});
+		expect((await readLandedActivity(fixture.db, lease.run, fixture.repo)).items).toHaveLength(1);
+	},
+);

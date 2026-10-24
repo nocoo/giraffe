@@ -2000,3 +2000,21 @@ for history, comparison and divergent responses, including author, URL, SHA,
 discarded fields and text beyond the retained first line. The checkpoint stays
 unchanged, neither ledger nor activity exposes the token, and clean retries work.
 Every new persistence source needs its own no-credential regression before use.
+
+## 2026-10-24 - Carry REST rate observations through acceptance
+
+The ledger history path omitted REST rate headers, leaving the shared core bucket
+at 51 after a response reported 49. The next request therefore crossed the
+existing reserve. It now validates and records remaining/reset with the accepted
+page, after lease renewal, then rejects further requests under the reserve.
+History and compare regressions reproduce the stale persisted value, retain the
+successful page, block the next request and resume at reset without refetching.
+A real four-lane executor regression preserves the lowest shared rate and stops
+at four already-admitted requests with accepted history intact. Missing or invalid
+headers do not fabricate usable quota or discard a successful response.
+
+The new rate fixtures initially built an invalid next link by matching `page=1`
+inside `per_page=100`, then used the local stub origin instead of GitHub's canonical
+pagination origin. The production validator correctly rejected both. Correct
+fixtures before interpreting gate failures; manipulate query parameters and keep
+upstream response links distinct from the local transport origin.

@@ -13,6 +13,7 @@ import { fenced, type RunLease } from "./db/factory-runs";
 import { ApiError } from "./errors";
 import { factoryNext } from "./factory-collect";
 import { object, truncateText } from "./factory-map";
+import { assertFactoryReserve, recordFactoryRate } from "./factory-rate";
 import type { GithubClient } from "./github-client";
 
 type Pending = {
@@ -74,6 +75,7 @@ export async function collectLandedPage(
 	let commits: ActivityCommit[] = [];
 	let complete = false;
 	if (!initial) {
+		if (lease.run.checkpoint) assertFactoryReserve(lease.run.checkpoint, clock());
 		const path = `/repos/${repo.name}`;
 		const url =
 			pending.mode === "compare"
@@ -96,6 +98,23 @@ export async function collectLandedPage(
 			return stage(pending, [], false);
 		}
 		await heartbeat();
+		const remaining = response.headers.get("x-ratelimit-remaining");
+		const available = Number(remaining);
+		if (
+			lease.run.checkpoint &&
+			remaining !== null &&
+			Number.isSafeInteger(available) &&
+			available >= 0
+		) {
+			const reset = response.headers.get("x-ratelimit-reset");
+			const resetTime = new Date(Number(reset) * 1000);
+			recordFactoryRate(lease.run.checkpoint, {
+				resource: "core",
+				remaining: available,
+				resetAt: reset && Number.isFinite(resetTime.getTime()) ? resetTime.toISOString() : null,
+				observedAt: clock(),
+			});
+		}
 		const body: unknown = await response.json();
 		if (token && JSON.stringify(body).includes(token))
 			throw new ApiError(422, "snapshot_incomplete", "Commit source contains credentials");
