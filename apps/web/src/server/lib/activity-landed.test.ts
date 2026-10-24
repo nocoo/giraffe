@@ -267,6 +267,86 @@ it.each([404, 422])(
 	},
 );
 
+it.each(
+	([404, 502, "diverged", "behind"] as const).flatMap((failure) =>
+		[false, true].map((resume) => ({ failure, resume })),
+	),
+)(
+	"restarts the scan after $failure with accepted compare pages (resume=$resume)",
+	async ({ failure, resume }) => {
+		const fixture = await setup();
+		const original = await fixture.start("compare-round", first, "head");
+		await fixture.db
+			.prepare(
+				"INSERT INTO activity_commit_heads(account_id,repo_id,head) VALUES('account_123',?,'base')",
+			)
+			.bind(fixture.repo.id)
+			.run();
+		const gh = github((url) => {
+			if (url.includes("/compare/")) {
+				if (url.includes("page=2"))
+					return typeof failure === "number"
+						? Response.json({ message: "Unavailable" }, { status: failure })
+						: Response.json({ status: failure, commits: [], total_commits: 0 });
+				return Response.json(
+					{ status: "ahead", total_commits: 2, commits: [commit("observed")] },
+					{
+						headers: {
+							link: '<https://api.github.com/repos/nocoo/app/compare/base...head?page=2>; rel="next"',
+						},
+					},
+				);
+			}
+			return url.includes("page=2")
+				? Response.json([commit("base")])
+				: Response.json([commit("head"), commit("observed")], {
+						headers: {
+							link: '<https://api.github.com/repos/nocoo/app/commits?page=2>; rel="next"',
+						},
+					});
+		});
+		await fixture.accept(original, gh, first);
+		expect((await fixture.accept(original, gh, first)).done).toBe(false);
+		const evidence = () =>
+			fixture.db
+				.prepare(
+					"SELECT first_run_id,observed_at,window_since,window_until,payload,published_run_id FROM activity_commit_ledger WHERE sha='observed'",
+				)
+				.first();
+		const accepted = await evidence();
+		expect((await fixture.accept(original, gh, first)).done).toBe(false);
+		const lease = resume ? await fixture.start("history-resume", second, "head") : original;
+		const now = resume ? second : first;
+		expect((await fixture.accept(lease, gh, now)).done).toBe(false);
+		expect(await evidence()).toEqual(accepted);
+		await expect(
+			fixture.accept(
+				lease,
+				github(() => Response.json([commit("observed")])),
+				now,
+			),
+		).rejects.toMatchObject({ code: "snapshot_incomplete" });
+		expect(await fixture.db.prepare("SELECT head FROM activity_commit_heads").first()).toEqual({
+			head: "base",
+		});
+		expect((await fixture.accept(lease, gh, now)).done).toBe(true);
+		expect(
+			await fixture.db.prepare("SELECT head,pending FROM activity_commit_heads").first(),
+		).toEqual({
+			head: "head",
+			pending: null,
+		});
+		expect(await evidence()).toEqual(accepted);
+		const result = await readLandedActivity(fixture.db, lease.run, fixture.repo);
+		const items = resume ? result.deferred[0]?.items : result.items;
+		expect(items?.map((item) => item.sha)).toEqual(["base", "head", "observed"]);
+		expect(items?.every((item) => item.observation?.runId === original.run.id)).toBe(true);
+		if (resume) expect(result.items).toEqual([]);
+		await fixture.accept(lease, gh, now);
+		expect(gh.count).toBe(4);
+	},
+);
+
 it("checks capacity inside the acceptance transaction, not just before another lane saves", async () => {
 	const fixture = await setup();
 	const lease = await fixture.start("quota-race", first, "head");

@@ -1976,3 +1976,15 @@ pinned history. The new collector correctly failed closed instead of claiming a
 zero, making the existing successful-refresh journey partial. A shared local REST
 fixture now returns that pinned old-dated commit without changing date-filtered
 streams, and the real-Worker browser journey asserts its observation attribution.
+
+## 2026-10-24 - Separate fallback scans from observation identity
+
+Review reproduced a stuck ledger reconciliation when a later comparison page
+became unavailable after earlier pages had been accepted. Falling back to history
+reset the cursor but reused comparison markers, so legitimate overlaps looked
+like repeated pages forever. Reconciliation markers now include the scan mode;
+the account/repository/SHA identity and first observation remain unchanged.
+Eight RED cases cover 404, 502, diverged and behind responses with same-run retry
+and new-run resume. They now complete, preserve accepted evidence and still reject
+duplicates within the restarted history scan. A cursor reset must also reset
+scan-local uniqueness, not permanent attribution.

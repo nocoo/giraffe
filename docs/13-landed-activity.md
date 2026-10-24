@@ -31,9 +31,11 @@ are committed atomically under the existing run lease; an expired lease accepts
 neither. Only complete reconciliation advances the baseline.
 
 The ledger retains a compact `reconciliation` marker on each identity so a SHA
-repeated across accepted pages cannot inflate completeness. The marker may change
-on later snapshots; original observation metadata never does. History follows
-validated same-resource next links even on short pages; comparison totals count
+repeated across accepted pages cannot inflate completeness. The marker includes
+the scan mode: falling back from comparison to history starts a distinct scan
+round, without changing permanent identity deduplication or original attribution.
+The marker may change on later snapshots; original observation metadata never
+does. History follows validated same-resource next links even on short pages; comparison totals count
 unique accepted rows, not repeated page deliveries.
 
 Each step accepts at most one upstream page (100 commits), then yields to the

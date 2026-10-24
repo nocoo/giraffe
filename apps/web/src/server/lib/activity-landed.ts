@@ -129,7 +129,7 @@ export async function collectLandedPage(
 				.bind(
 					lease.run.account_id,
 					repo.id,
-					`${pending.runId}@${pending.head}`,
+					`${pending.runId}@${pending.head}@${pending.mode}`,
 					JSON.stringify(commits.map((commit) => commit.sha)),
 				)
 				.first()
@@ -149,7 +149,7 @@ export async function collectLandedPage(
 		const account = lease.run.account_id;
 		const payload = done ? null : JSON.stringify(checkpoint);
 		const head = done ? checkpoint.head : (saved?.head ?? null);
-		const reconciliation = `${checkpoint.runId}@${checkpoint.head}`;
+		const reconciliation = `${checkpoint.runId}@${checkpoint.head}@${checkpoint.mode}`;
 		const quota = await landedQuota(db, lease, repo.id, items, head, payload, now, reconciliation);
 		return {
 			done: done && checkpoint.head === source?.sourceHead,
