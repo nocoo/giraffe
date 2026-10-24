@@ -67,6 +67,17 @@ export async function retainFactoryStream(
 		if (Object.values(day).some((value) => value !== 0)) repo.metrics.days[date] = day;
 		else delete repo.metrics.days[date];
 	}
+	if (
+		repo.observation &&
+		previous.observation &&
+		previous.observation.window.since < repo.observation.window.since
+	) {
+		repo.observation.collectionWindow ??= repo.observation.window;
+		repo.observation.window = {
+			...repo.observation.window,
+			since: previous.observation.window.since,
+		};
+	}
 	if (stream === "dependencies") {
 		repo.dependencies = structuredClone(previous.dependencies);
 		if (previous.manifests) repo.manifests = structuredClone(previous.manifests);

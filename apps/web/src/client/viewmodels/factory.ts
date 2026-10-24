@@ -123,11 +123,16 @@ export function factoryBoard(
 	const membershipComplete = unpublished.length === 0;
 	const aggregate = aggregateFactory(repos);
 	const windowOf: StreamWindow = (repo, stream) =>
-		repo.coverage[stream].observation?.window ?? repo.observation?.window ?? snapshot.window;
+		repo.coverage[stream].observation?.window ??
+		repo.observation?.collectionWindow ??
+		repo.observation?.window ??
+		snapshot.window;
 	const windows = repos.length
 		? repos.flatMap((repo) => [
 				repo.observation?.window ?? snapshot.window,
-				...FACTORY_STREAMS.map((stream) => windowOf(repo, stream)),
+				...FACTORY_STREAMS.flatMap(
+					(stream) => repo.coverage[stream].completeWindows ?? [windowOf(repo, stream)],
+				),
 			])
 		: [snapshot.window];
 	const end = Math.max(...windows.map((w) => Date.parse(w.until)));

@@ -444,6 +444,9 @@ dates. The default seven-day period comparison does not shorten that chart windo
 Failed-stream `retained: true` paths and untouched repositories keep their original
 source windows/timestamps and mixed-publication semantics; their older provenance
 is not rewritten to satisfy a fresh-history cap.
+Retained daily buckets keep their original display extent even across a UTC date
+boundary, so the chart does not hide counts still present in saved totals. This
+display extent remains separate from the retained raw stream's collection range.
 Scheduled daily refresh also plans the account-wide contribution step, even for
 starred selection. Manual selected refresh does not add that account-wide work.
 The quick calendar uses one calendar request and two 15-day type batches; deep

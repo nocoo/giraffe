@@ -222,6 +222,16 @@ it("keeps the actual quick source window after deep history, quick publication a
 	await db.batch(await publicationWrites(db, next, nextAt));
 	const published = await publishedFactory(db, snap.account_id);
 	expect(published?.repos[0]?.metrics.commits).toBe(127);
+	expect(published?.repos[0]?.observation?.window).toEqual({
+		...factoryWindow(now, 90),
+		until: nextAt,
+	});
+	expect(published?.window).toEqual({ ...factoryWindow(now, 90), until: nextAt });
+	expect(
+		Object.entries(published?.repos[0]?.metrics.days ?? {})
+			.filter(([date]) => date >= String(published?.window.since.slice(0, 10)))
+			.reduce((sum, [, day]) => sum + day.commits, 0),
+	).toBe(127);
 	expect(published?.repos[0]?.coverage.commits).toMatchObject({
 		retained: true,
 		observation: { version: lease.run.id, window: quickWindow },
@@ -261,7 +271,7 @@ it("keeps retained-stream provenance and totals separate from successful daily-h
 	expect(published?.window).toEqual(repo.observation?.window);
 	expect(published?.publication?.mixed).toBe(true);
 	expect(published?.repos[0]).toMatchObject({
-		observation: { window: factoryWindow(now, 90) },
+		observation: { window: repo.observation?.window },
 		coverage: { commits: { retained: true, observation: repo.observation } },
 		metrics: { commits: 240, prMerged: 63 },
 	});
@@ -463,7 +473,11 @@ it.each(unsupportedWorkflowJobs)(
 		);
 		await db.batch(await repositoryWrites(db, lease, now, candidate, repo.name, null));
 		expect(await currentRepo(db, snap.account_id, repo.name)).toMatchObject({
-			observation: candidate.observation,
+			observation: {
+				...candidate.observation,
+				collectionWindow: candidate.observation.window,
+				window: { since: repo.observation.window.since, until: candidate.observation.window.until },
+			},
 			dependencies: before?.dependencies,
 			coverage: { dependencies: { ...before?.coverage.dependencies, retained: true } },
 		});

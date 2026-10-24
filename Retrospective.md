@@ -2058,3 +2058,8 @@ complete daily-evidence intervals and per-day calendar timestamps separately.
 Regression tests cover coverage recovery/gaps, quick-to-failed retention and
 date-filtered freshness. When changing a shared observation field, trace readers,
 retention writers and content-version recipes, not only the chart and publisher.
+
+The next review caught a cross-day interaction: preserving a failed stream's old
+buckets while exposing only its shorter raw collection range hid the oldest saved
+day. The retained repository display span now remains visible independently of
+raw ranges; tests compare the first chart day and chart sums with saved totals.

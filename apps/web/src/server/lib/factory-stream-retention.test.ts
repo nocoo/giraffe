@@ -191,7 +191,11 @@ it.each(FACTORY_STREAMS)(
 		await db.batch(await repositoryWrites(db, lease, now, candidate, candidate.name, null));
 		expect(candidate).toEqual(before);
 		const accepted = await currentRepo(db, account, candidate.name);
-		expect(accepted?.observation).toEqual(candidate.observation);
+		expect(accepted?.observation).toEqual({
+			...candidate.observation,
+			collectionWindow: candidate.observation?.window,
+			window: { since: previous.observation?.window.since, until: now },
+		});
 		expect(accepted?.coverage[stream]).toMatchObject({
 			...previous.coverage[stream],
 			retained: true,
