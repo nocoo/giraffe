@@ -324,8 +324,8 @@ export function FactoryPage() {
 							<section className="factory-section" aria-labelledby="factory-change-title">
 								<SectionRule
 									id="factory-change-title"
-									title={<IconLabel icon={Activity}>变化 · 最近 90 天</IconLabel>}
-									hint="左轴是每日流量（柱），右轴是结果（折线）。Open 存量由当前数量按每日新开与完成倒推；事件不完整时不画折线。"
+									title={<IconLabel icon={Activity}>变化 · 最近 {board.days.length} 天</IconLabel>}
+									hint={`按已发布观测窗口展示 ${board.days.length} 个 UTC 日期；每日快速刷新 30 天，每周深度刷新校准 90 天，保留的数据沿用原窗口。上方默认 7 天仅用于期间比较，不改变图表窗口。左轴是每日流量（柱），右轴是结果（折线）。Open 存量由当前数量按每日新开与完成倒推；事件不完整时不画折线。`}
 								/>
 								<div className="factory-chart-grid grid gap-3 xl:grid-cols-2">
 									<FactoryPanel
@@ -1155,8 +1155,8 @@ export function FactoryPage() {
 							不提供跨端点原子快照。状态可能在采集过程中变化。清单覆盖仅限当前令牌可见仓库，包括私有仓库；无权读取的资源显示未知。
 						</p>
 						<p>
-							提交：固定默认分支 SHA、所有作者、committer 时间；历史总量与 90
-							天流量分开。账号贡献包含整个 GitHub
+							提交：固定默认分支 SHA、所有作者、committer
+							时间；历史总量与观测窗口内流量分开。账号贡献包含整个 GitHub
 							账号的可见/受限活动，不随工厂仓库筛选变化。语言地图按 Linguist 字节，Git 存储按
 							diskUsage KiB，均不是代码行数。
 						</p>

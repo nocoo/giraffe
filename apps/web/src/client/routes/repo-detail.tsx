@@ -553,7 +553,7 @@ export function RepoDetailPage() {
 							<RepoMetaCard owner={owner} name={name} />
 							{days.length ? (
 								<ChartBrick
-									title="90 天活动"
+									title={`${days.length} 天活动`}
 									description="来自软件工厂的该仓库数据：每日默认分支提交与合并 PR（左轴），截至当日 7 天 CI 成功率（右轴）。"
 								>
 									<DataTimeSource

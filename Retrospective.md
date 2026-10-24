@@ -2018,3 +2018,24 @@ inside `per_page=100`, then used the local stub origin instead of GitHub's canon
 pagination origin. The production validator correctly rejected both. Correct
 fixtures before interpreting gate failures; manipulate query parameters and keep
 upstream response links distinct from the local transport origin.
+
+## 2026-10-24 - Avoid shell-special loop variables
+
+During B17A instruction discovery, a zsh loop used `path` as its file variable.
+Because zsh ties `path` to `PATH`, the loop hid executable directories and the next
+read-only commands failed. A fresh command shell restored normal lookup; no
+repository or machine configuration changed. Use descriptive variables such as
+`rule_file` or `instruction_file` rather than shell-special names.
+
+## 2026-10-24 - Check expanded copy when fixing window labels
+
+B17A corrected chart headings and tooltips but missed the fixed ninety-day flow
+claim in the expandable methodology section. Its JSX text spanned two lines, so
+single-line searches and heading-only assertions did not cover it. R1 replaces
+that claim with observation-window wording and checks expanded methodology for
+both quick and retained deep windows. Audit multiline copy and collapsed content
+alongside visible headings, while preserving valid descriptions of refresh policy.
+
+The first browser assertion selected every descendant `summary`, including a
+nested exclusion list, and failed Playwright's strict locator check. Target the
+direct-child summary and run the new browser cases before the full gate sequence.

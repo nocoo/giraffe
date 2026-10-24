@@ -332,12 +332,12 @@ export function repoFactorySeries(
 	window: { since: string; until: string },
 ) {
 	const start = Date.parse(window.since.slice(0, 10));
-	const end = Date.parse(window.until.slice(0, 10));
+	const end = Date.parse(window.until);
 	if (!Number.isFinite(start) || !Number.isFinite(end)) return [];
 	const out = [];
 	const ok: number[] = [];
 	const bad: number[] = [];
-	for (let t = start; t <= end; t += 86_400_000) {
+	for (let t = start; t < end; t += 86_400_000) {
 		const x = new Date(t).toISOString().slice(0, 10);
 		const d = repo.metrics.days[x];
 		ok.push(d?.ciSuccess ?? 0);

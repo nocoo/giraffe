@@ -422,6 +422,9 @@ New quick runs freeze 30 UTC calendar dates; deep runs retain 90. Existing runs
 keep their persisted window through upgrade/resume. All metrics, stream filtering
 and contribution collection use that frozen window; retained evidence keeps its
 original window rather than being relabelled as a fresh thirty-day observation.
+Factory and repository activity labels follow the UTC dates in the published chart
+window (quick 30 / deep 90), including retained observation windows. The default
+seven-day period comparison does not shorten that chart window.
 Scheduled daily refresh also plans the account-wide contribution step, even for
 starred selection. Manual selected refresh does not add that account-wide work.
 The quick calendar uses one calendar request and two 15-day type batches; deep

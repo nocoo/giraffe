@@ -162,6 +162,22 @@ describe("merged pull request history", () => {
 });
 
 describe("single repository factory series", () => {
+	it.each([30, 90])("builds %i UTC dates including the partial last day", (dayCount) => {
+		const until = "2026-09-15T22:00:00.000Z";
+		const since = new Date(Date.parse("2026-09-15") - (dayCount - 1) * 86_400_000).toISOString();
+		const series = repoFactorySeries({ metrics: { days: {} } }, { since, until });
+		expect(series).toHaveLength(dayCount);
+		expect(series[0]?.x).toBe(since.slice(0, 10));
+		expect(series.at(-1)?.x).toBe("2026-09-15");
+	});
+	it("does not include the exclusive UTC midnight endpoint", () => {
+		expect(
+			repoFactorySeries(
+				{ metrics: { days: {} } },
+				{ since: "2026-08-17T00:00:00.000Z", until: "2026-09-16T00:00:00.000Z" },
+			),
+		).toHaveLength(30);
+	});
 	it("fills every day of the window and marks days outside it as unknown", () => {
 		const day = (commits: number) => ({
 			commits,
