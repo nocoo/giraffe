@@ -43,24 +43,24 @@ Codex Sign Off 本文之前，禁止第 12 节步骤 1 及之后（含 Vite 脚�
 
 ## 2. 锁定决策
 
-| 主题 | 决定 |
-|------|------|
-| 包 | `@nocoo/basalt@2.1.8`。从 npm 安装（临时允许的 registry）。禁止把 `../basalt` 源码拷进本仓，禁止 `file:` 依赖，禁止把镜像 URL 写进 `bun.lock`。岛内表面嵌套见 §5.2 |
-| 控件 | 只用该包已发布的控件。根 barrel 没有的走 granular：`@nocoo/basalt/components/*`、`@nocoo/basalt/charts/*`。缺的用 HTML + 已有 Basalt 叶子，不自研第二套 widget |
-| 布局语言 | 参考 `/Users/nocoo/workspace/work/whiteboard/intentional-kusto-queries` 的 **壳**，不是拷它的组件。侧栏展开 260px / 收起 68px，`transition-all duration-300 ease-in-out`，sticky flex 子项（不是 `fixed` + spacer）。主区 **ContentIsland** 浮岛。跳过链接。顶栏高 14（`h-14`）面包屑。中文 UI |
-| 壳实现 | giraffe 的 `src/client/components/layout/*` **只组合** Basalt：`AppShell` / `AppMain` / `AppSkipLink`、`AppHeader`、`PageHeader`、`SectionRule`（均不在根 barrel）、`Sidebar*` + `ContentIsland`（根 barrel）、`ThemeProvider` / `ThemeToggle` / `LinkProvider`。`AccentProvider` 挂在 `app.tsx`（granular `@nocoo/basalt/providers/accent`）。禁止 `SidebarProvider`、禁止再写一套 `sidebar-context`。`AppMain` 必须传 `tabIndex={-1}`，否则 skip link 无法聚焦 |
-| 路由 | React Router SPA。路径与 01 §9 一致，见第 8 节。无 `/login` |
-| 分层 | MVVM。ViewModel 无 View/DOM/`@nocoo/basalt`/`react-dom` import。L1 覆盖率豁免：`src/client/routes/*.tsx` 与 `src/client/components/layout/**/*.tsx`（薄壳组合）。`main.tsx` / `app.tsx` 同样豁免（只挂 provider 与路由表） |
-| 出站 | 唯一 `fetch` 在 `src/client/lib/api.ts`。G1 `gate:client-fetch` 只接受**字面量**或以 `/api/` 开头的**模板字面量**。因此必须写成 `` fetch(`/api/${resource}`) `` 或 `` fetch(`/api/accounts/${id}/activate`) ``，禁止 `fetch(path)` 变量 |
-| 刷新 | GET 只读。唯一入口是 `/refresh` 刷新中心；其他页面无独立刷新及缺快照自动采集。见 §7 / 09 |
-| PAT | 只出现在设置页输入（提交后清空）、该次请求体。禁止 `localStorage` / `sessionStorage` / 前端包 / 日志 |
-| 筛选 | 04 GET 无 filter/sort。搜索、排序、网格/列表切换全在 Client ViewModel。列表用 Basalt `Table`（`@nocoo/basalt/components/table`），**不用** `DataTable`（其内部自带不可关闭的列头排序，会与 VM 双真相） |
-| Origin | 以 04 §5.3 与 02 §6 为准：生产/test 不含 loopback；development Access 短路允许同源 `url.origin`（L3 `:27045`）。步骤 1 实现 `origin.ts`，L1+L2 绿 |
-| 构建 | Vite 8 + `@vitejs/plugin-react` + `@tailwindcss/vite`。仓库根 `index.html`（Vite 入口，`src/client/main.tsx`）。`outDir = dist/client`。Tailwind CSS v4，按 Basalt README：`@source` + `@import "@nocoo/basalt/styles/tailwind"` + `@import "tailwindcss"`。不使用 `@cloudflare/vite-plugin` |
-| 开发拓扑 | 日常 `bun run dev`：Vite `:7045`（Caddy 域名、HMR），`/api` proxy 到 wrangler sidecar `:37045`。不把 Vite 当无 Worker 的可写 API，无 mock。L2/L3 仍 `vite build` + wrangler 托管 `dist/client` |
-| TS | TypeScript 7 `strict` + `exactOptionalPropertyTypes`。Worker 与 Client 分 tsconfig：Client 加 `DOM`；Worker 继续 Workers types。`tsc --noEmit` 两个都跑 |
-| 版本 | `APP_VERSION` 仍来自 `src/lib/version.ts` ← `package.json`。侧栏展示 `v{version}` |
-| L3 时机 | 02：CI / 按需。pre-push 仍是 L2 ‖ G2。步骤 20 实现 runner 与三条路径，不改 husky pre-push |
+| 主题     | 决定                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 包       | `@nocoo/basalt@2.1.8`。从 npm 安装（临时允许的 registry）。禁止把 `../basalt` 源码拷进本仓，禁止 `file:` 依赖，禁止把镜像 URL 写进 `bun.lock`。岛内表面嵌套见 §5.2                                                                                                                                                                                                                                                                                               |
+| 控件     | 只用该包已发布的控件。根 barrel 没有的走 granular：`@nocoo/basalt/components/*`、`@nocoo/basalt/charts/*`。缺的用 HTML + 已有 Basalt 叶子，不自研第二套 widget                                                                                                                                                                                                                                                                                                   |
+| 布局语言 | 参考 `/Users/nocoo/workspace/work/whiteboard/intentional-kusto-queries` 的 **壳**，不是拷它的组件。侧栏展开 260px / 收起 68px，`transition-all duration-300 ease-in-out`，sticky flex 子项（不是 `fixed` + spacer）。主区 **ContentIsland** 浮岛。跳过链接。顶栏高 14（`h-14`）面包屑。中文 UI                                                                                                                                                                   |
+| 壳实现   | giraffe 的 `src/client/components/layout/*` **只组合** Basalt：`AppShell` / `AppMain` / `AppSkipLink`、`AppHeader`、`PageHeader`、`SectionRule`（均不在根 barrel）、`Sidebar*` + `ContentIsland`（根 barrel）、`ThemeProvider` / `ThemeToggle` / `LinkProvider`。`AccentProvider` 挂在 `app.tsx`（granular `@nocoo/basalt/providers/accent`）。禁止 `SidebarProvider`、禁止再写一套 `sidebar-context`。`AppMain` 必须传 `tabIndex={-1}`，否则 skip link 无法聚焦 |
+| 路由     | React Router SPA。路径与 01 §9 一致，见第 8 节。无 `/login`                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 分层     | MVVM。ViewModel 无 View/DOM/`@nocoo/basalt`/`react-dom` import。L1 覆盖率豁免：`src/client/routes/*.tsx` 与 `src/client/components/layout/**/*.tsx`（薄壳组合）。`main.tsx` / `app.tsx` 同样豁免（只挂 provider 与路由表）                                                                                                                                                                                                                                       |
+| 出站     | 唯一 `fetch` 在 `src/client/lib/api.ts`。G1 `gate:client-fetch` 只接受**字面量**或以 `/api/` 开头的**模板字面量**。因此必须写成 ``fetch(`/api/${resource}`)`` 或 ``fetch(`/api/accounts/${id}/activate`)``，禁止 `fetch(path)` 变量                                                                                                                                                                                                                              |
+| 刷新     | GET 只读。唯一入口是 `/refresh` 刷新中心；其他页面无独立刷新及缺快照自动采集。见 §7 / 09                                                                                                                                                                                                                                                                                                                                                                         |
+| PAT      | 只出现在设置页输入（提交后清空）、该次请求体。禁止 `localStorage` / `sessionStorage` / 前端包 / 日志                                                                                                                                                                                                                                                                                                                                                             |
+| 筛选     | 04 GET 无 filter/sort。搜索、排序、网格/列表切换全在 Client ViewModel。列表用 Basalt `Table`（`@nocoo/basalt/components/table`），**不用** `DataTable`（其内部自带不可关闭的列头排序，会与 VM 双真相）                                                                                                                                                                                                                                                           |
+| Origin   | 以 04 §5.3 与 02 §6 为准：生产/test 不含 loopback；development Access 短路允许同源 `url.origin`（L3 `:27045`）。步骤 1 实现 `origin.ts`，L1+L2 绿                                                                                                                                                                                                                                                                                                                |
+| 构建     | Vite 8 + `@vitejs/plugin-react` + `@tailwindcss/vite`。仓库根 `index.html`（Vite 入口，`src/client/main.tsx`）。`outDir = dist/client`。Tailwind CSS v4，按 Basalt README：`@source` + `@import "@nocoo/basalt/styles/tailwind"` + `@import "tailwindcss"`。不使用 `@cloudflare/vite-plugin`                                                                                                                                                                     |
+| 开发拓扑 | 日常 `bun run dev`：Vite `:7045`（Caddy 域名、HMR），`/api` proxy 到 wrangler sidecar `:37045`。不把 Vite 当无 Worker 的可写 API，无 mock。L2/L3 仍 `vite build` + wrangler 托管 `dist/client`                                                                                                                                                                                                                                                                   |
+| TS       | TypeScript 7 `strict` + `exactOptionalPropertyTypes`。Worker 与 Client 分 tsconfig：Client 加 `DOM`；Worker 继续 Workers types。`tsc --noEmit` 两个都跑                                                                                                                                                                                                                                                                                                          |
+| 版本     | `APP_VERSION` 仍来自 `src/lib/version.ts` ← `package.json`。侧栏展示 `v{version}`                                                                                                                                                                                                                                                                                                                                                                                |
+| L3 时机  | 02：CI / 按需。pre-push 仍是 L2 ‖ G2。步骤 20 实现 runner 与三条路径，不改 husky pre-push                                                                                                                                                                                                                                                                                                                                                                        |
 
 ---
 
@@ -118,22 +118,21 @@ tests/e2e/                         # L3；由 scripts/run-e2e-bdd.ts 跑
 
 ## 4. 技术栈
 
-| 层 | 选型 |
-|----|------|
-| 构建 | Vite 8 + `@vitejs/plugin-react` + `@tailwindcss/vite`。`bun run dev` 开 HMR |
-| UI | React 19 + React Router |
-| 样式 | Tailwind CSS v4 + `@nocoo/basalt/styles/tailwind` |
-| 控件 | `@nocoo/basalt@2.1.8` |
-| 图标 | `lucide-react`（Basalt peer） |
-| 图表 | Basalt charts + peer `recharts@^3`（软件工厂、Insights、Traffic、Languages） |
-| Toast | Basalt `toast` / `Toaster`（根 barrel；底层 sonner） |
-| 命令面板 | Basalt `CommandPalette`（⌘K 跳路由） |
-| 测试 | Vitest L1（`src/client/**` 用 happy-dom）；Playwright L3 Chromium |
+| 层       | 选型                                                                         |
+| -------- | ---------------------------------------------------------------------------- |
+| 构建     | Vite 8 + `@vitejs/plugin-react` + `@tailwindcss/vite`。`bun run dev` 开 HMR  |
+| UI       | React 19 + React Router                                                      |
+| 样式     | Tailwind CSS v4 + `@nocoo/basalt/styles/tailwind`                            |
+| 控件     | `@nocoo/basalt@2.1.8`                                                        |
+| 图标     | `lucide-react`（Basalt peer）                                                |
+| 图表     | Basalt charts + peer `recharts@^3`（软件工厂、Insights、Traffic、Languages） |
+| Toast    | Basalt `toast` / `Toaster`（根 barrel；底层 sonner）                         |
+| 命令面板 | Basalt `CommandPalette`（⌘K 跳路由）                                         |
+| 测试     | Vitest L1（`src/client/**` 用 happy-dom）；Playwright L3 Chromium            |
 
 peers：`react` / `react-dom` ^19、`lucide-react`、`recharts` ^3。不用 `DataTable`，因此 **不安** `@tanstack/react-table`。
 
 `package.json` 脚本：
-
 - `dev` — Vite `:7045` HMR + wrangler `:37045`（`/api` proxy）
 - `build` — `vite build` → `dist/client`
 - `test:e2e:bdd` — `scripts/run-e2e-bdd.ts`（有 `src/client` 后不再 phase-1 早退；失败即非 0。pre-push **不**跑它）
@@ -172,15 +171,14 @@ Toaster
 
 Basalt `ContentIsland` 已是 L1 岛。不要再包一层自定义 card 当岛。页面在岛内按 [INTEGRATION §13–15](https://github.com/nocoo/basalt/blob/main/INTEGRATION.md) 嵌套。`AppHeader.title` 是顶栏当前页（`text-sm`）；`PageHeader.title` 是岛内内容标题（`text-2xl`）。二者可以同词，角色不同。禁止自写第二套页头。`AppHeader` 已有面包屑时，`PageHeader` 不要再传 `breadcrumbs`。禁止手写 `bg-card` / `bg-muted` 井。
 
-| 层 | 何处 | 油漆 |
-|---|---|---|
-| L0 | `AppShell` | `bg-basalt-background` |
-| L1 | `ContentIsland` | `--basalt-card` |
-| L2 | 岛上第一张 `LayerCard` | `--basalt-secondary` |
-| L3 | `LayerCard.Well`（`Primary` 是别名） | `--basalt-bright` |
+| 层  | 何处                                 | 油漆                   |
+| --- | ------------------------------------ | ---------------------- |
+| L0  | `AppShell`                           | `bg-basalt-background` |
+| L1  | `ContentIsland`                      | `--basalt-card`        |
+| L2  | 岛上第一张 `LayerCard`               | `--basalt-secondary`   |
+| L3  | `LayerCard.Well`（`Primary` 是别名） | `--basalt-bright`      |
 
 配方：
-
 - Begin with Basalt `PageHeader`, flush on the island. Business pages use `BusinessPageHeader` to compose the repository scope, compact search/sort controls and actions beside the title. At narrow widths, keep scope beside the title and wrap search/sort only when needed. Use existing small controls and design-token spacing; do not duplicate the library header.
 - 分区用 `SectionRule`。卡片标题留在 `LayerCard.Header`。
 - 网格仓卡：岛上裸 `LayerCard padding="md"`，不要 Header/Body。
@@ -192,37 +190,37 @@ Basalt `ContentIsland` 已是 L1 岛。不要再包一层自定义 card 当岛�
 
 ### 5.3 控件映射（强制）
 
-| 用途 | 控件 | 导入 |
-|------|------|------|
-| 壳 | `AppShell` `AppMain` `AppSkipLink` | `@nocoo/basalt/components/app-shell` |
-| 侧栏 / 岛 | `Sidebar*` `ContentIsland` | `@nocoo/basalt` |
-| 顶栏 | `AppHeader` | `@nocoo/basalt/components/app-header` |
-| 岛内页头 | `PageHeader` | `@nocoo/basalt/components/page-header` |
-| 分区 | `SectionRule` | `@nocoo/basalt/components/section-rule` |
-| 按钮 / 输入 / 字段 | `Button` `Input` `Field` `Label` | `@nocoo/basalt`。页级主操作（刷新、提交、激活、全部已读）用默认变体 `bg-basalt-primary`；危险操作用 `destructive`；壳层 / 表头排序用 `ghost`；行内次要用 `secondary` |
-| 搜索 / 筛选 | `InputGroup` / `FilterBar` | granular `components/input-group` / `components/filter-bar`。搜索图标、清空按钮和输入框由共享控件组合；清空后焦点回到输入框 |
-| PAT | `SensitiveInput` | `@nocoo/basalt/components/sensitive-input` |
-| 列表 | `Table` `TableHeader` `TableBody` `TableRow` `TableCell` | `@nocoo/basalt/components/table`。表头可点排序；行内用 `SlotBarChart` meter、绿色/中性徽章，标签保留文字、不套用上游杂色。不用 `DataTable` |
-| 横向内容 | `ScrollArea` | `@nocoo/basalt/components/scroll-area`，`orientation="horizontal"`。宽表放在 Well 内滚动；单仓标签也使用共享滚动区，均有中文可访问名称 |
-| 空态 | `Empty` | `@nocoo/basalt/components/empty` |
-| 统计 | `StatCard` KPI（主题色 icon）；卡片内阶段计数用 `StatStrip` | `layout/kpi` → `@nocoo/basalt/charts/stat-card`；`@nocoo/basalt/components/stat-strip` |
-| 卡片 | `LayerCard` | `@nocoo/basalt/components/layer-card` |
-| 分段（列表/网格、筛选） | `SegmentControl` | `@nocoo/basalt` |
-| 页级 tab（单仓） | `Tabs*` | `@nocoo/basalt` |
-| 工具条 | `Toolbar` | `@nocoo/basalt` |
-| 徽章（health / severity） | `CandyBadge` (Basalt `Badge` composition) | Colored candy badges use white labels in both themes. Neutral gray badges retain dark labels; arbitrary GitHub labels use tinted category fills with semantic foreground text. White labels on bright candy fills are an owner-selected visual preference, not a 4.5:1 contrast guarantee. |
-| 头像 | `Avatar*` | `@nocoo/basalt` |
-| 确认删除账号 | `ConfirmDialog` / `useConfirm` | `@nocoo/basalt` |
-| Toast | `toast` `Toaster` | `@nocoo/basalt` |
-| 主题 | `ThemeProvider` `ThemeToggle` `AccentProvider` | `ThemeProvider` from the root barrel; `AccentProvider` from `@nocoo/basalt/providers/accent`, with `persist={false}` and `defaultAccent="green"`. Do not override `--basalt-*`. Charts use the package Blue/Pink/Green/Yellow/Gray cycle via `lib/chart-theme`, independently of the control accent. The amber swatch uses `paletteOverrides` (`43 92% 48%` light / `43 92% 60%` dark); yellow chart marks share it through `--color-giraffe-yellow`. Other palette colors stay unchanged. Semantic primary text, actions and focus retain Basalt contrast handling. |
-| Router 链接 | `Link` + `LinkProvider` | `@nocoo/basalt` |
-| ⌘K | `CommandPalette*` | `@nocoo/basalt` |
-| Traffic | `AreaChart` 或 `LineChart` | `@nocoo/basalt/charts/area` / `line` |
-| Languages | `layout/donut-chart` | Recharts `Pie` + Basalt `ChartShell` / `ChartLegend` / tooltip；圆环按可用绘图区缩放，避免包默认 48px 半径造成留白 |
-| Insights | `StackedBarChart` `LineChart` `BarChart` + 共享环形图组合 | `@nocoo/basalt/charts/stacked-bar` / `line` / `bar`；`layout/donut-chart` |
-| 软件工厂 | `Sparkline`、堆叠 `AreaChart`；散点图和树图组合 `ChartFrame` + Recharts | 沿用 Basalt `config`、`tooltip`，显式使用站点绿色图表配色；日历选择和缺失态见 [06](06-software-factory.md) |
-| 加载 | `Button loading` | `@nocoo/basalt` |
-| 骨架 | 只用 Basalt `SkeletonLine` 铺在 L2 `LayerCard` 上，不进 Well、不自绘深色块。200ms 内加载完成则不展示 | `@nocoo/basalt/components/skeleton-line` + `layout/page-skeleton` |
+| 用途                      | 控件                                                                                                 | 导入                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------- | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 壳                        | `AppShell` `AppMain` `AppSkipLink`                                                                   | `@nocoo/basalt/components/app-shell`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| 侧栏 / 岛                 | `Sidebar*` `ContentIsland`                                                                           | `@nocoo/basalt`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 顶栏                      | `AppHeader`                                                                                          | `@nocoo/basalt/components/app-header`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| 岛内页头                  | `PageHeader`                                                                                         | `@nocoo/basalt/components/page-header`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| 分区                      | `SectionRule`                                                                                        | `@nocoo/basalt/components/section-rule`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| 按钮 / 输入 / 字段        | `Button` `Input` `Field` `Label`                                                                     | `@nocoo/basalt`。页级主操作（刷新、提交、激活、全部已读）用默认变体 `bg-basalt-primary`；危险操作用 `destructive`；壳层 / 表头排序用 `ghost`；行内次要用 `secondary`                                                                                                                                                                                                                                                                                                                                                                                                 |
+| 搜索 / 筛选               | `InputGroup` / `FilterBar`                                                                           | granular `components/input-group` / `components/filter-bar`。搜索图标、清空按钮和输入框由共享控件组合；清空后焦点回到输入框                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| PAT                       | `SensitiveInput`                                                                                     | `@nocoo/basalt/components/sensitive-input`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| 列表                      | `Table` `TableHeader` `TableBody` `TableRow` `TableCell`                                             | `@nocoo/basalt/components/table`。表头可点排序；行内用 `SlotBarChart` meter、绿色/中性徽章，标签保留文字、不套用上游杂色。不用 `DataTable`                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| 横向内容                  | `ScrollArea`                                                                                         | `@nocoo/basalt/components/scroll-area`，`orientation="horizontal"`。宽表放在 Well 内滚动；单仓标签也使用共享滚动区，均有中文可访问名称                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| 空态                      | `Empty`                                                                                              | `@nocoo/basalt/components/empty`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| 统计                      | `StatCard` KPI（主题色 icon）；卡片内阶段计数用 `StatStrip`                                          | `layout/kpi` → `@nocoo/basalt/charts/stat-card`；`@nocoo/basalt/components/stat-strip`                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| 卡片                      | `LayerCard`                                                                                          | `@nocoo/basalt/components/layer-card`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| 分段（列表/网格、筛选）   | `SegmentControl`                                                                                     | `@nocoo/basalt`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 页级 tab（单仓）          | `Tabs*`                                                                                              | `@nocoo/basalt`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 工具条                    | `Toolbar`                                                                                            | `@nocoo/basalt`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 徽章（health / severity） | `CandyBadge` (Basalt `Badge` composition)                                                            | Colored candy badges use white labels in both themes. Neutral gray badges retain dark labels; arbitrary GitHub labels use tinted category fills with semantic foreground text. White labels on bright candy fills are an owner-selected visual preference, not a 4.5:1 contrast guarantee.                                                                                                                                                                                                                                                                           |
+| 头像                      | `Avatar*`                                                                                            | `@nocoo/basalt`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 确认删除账号              | `ConfirmDialog` / `useConfirm`                                                                       | `@nocoo/basalt`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Toast                     | `toast` `Toaster`                                                                                    | `@nocoo/basalt`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 主题                      | `ThemeProvider` `ThemeToggle` `AccentProvider`                                                       | `ThemeProvider` from the root barrel; `AccentProvider` from `@nocoo/basalt/providers/accent`, with `persist={false}` and `defaultAccent="green"`. Do not override `--basalt-*`. Charts use the package Blue/Pink/Green/Yellow/Gray cycle via `lib/chart-theme`, independently of the control accent. The amber swatch uses `paletteOverrides` (`43 92% 48%` light / `43 92% 60%` dark); yellow chart marks share it through `--color-giraffe-yellow`. Other palette colors stay unchanged. Semantic primary text, actions and focus retain Basalt contrast handling. |
+| Router 链接               | `Link` + `LinkProvider`                                                                              | `@nocoo/basalt`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ⌘K                        | `CommandPalette*`                                                                                    | `@nocoo/basalt`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Traffic                   | `AreaChart` 或 `LineChart`                                                                           | `@nocoo/basalt/charts/area` / `line`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Languages                 | `layout/donut-chart`                                                                                 | Recharts `Pie` + Basalt `ChartShell` / `ChartLegend` / tooltip；圆环按可用绘图区缩放，避免包默认 48px 半径造成留白                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Insights                  | `StackedBarChart` `LineChart` `BarChart` + 共享环形图组合                                            | `@nocoo/basalt/charts/stacked-bar` / `line` / `bar`；`layout/donut-chart`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| 软件工厂                  | `Sparkline`、堆叠 `AreaChart`；散点图和树图组合 `ChartFrame` + Recharts                              | 沿用 Basalt `config`、`tooltip`，显式使用站点绿色图表配色；日历选择和缺失态见 [06](06-software-factory.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| 加载                      | `Button loading`                                                                                     | `@nocoo/basalt`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 骨架                      | 只用 Basalt `SkeletonLine` 铺在 L2 `LayerCard` 上，不进 Well、不自绘深色块。200ms 内加载完成则不展示 | `@nocoo/basalt/components/skeleton-line` + `layout/page-skeleton`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 
 禁止：再引入 shadcn、再包一层 `src/client/components/ui/button.tsx`、用 kusto 的 `cn.ts` / `sidebar-context.tsx`、用 Basalt `DataTable`。
 
@@ -261,7 +259,6 @@ Snapshot headers show the saved data timestamp and compact elapsed age, updated 
 ### 6.1 ViewModel
 
 每个 `src/client/viewmodels/*.ts`：
-
 - 导出纯函数：把 03 JSON + UI 状态（query、sort、view）变成渲染用的 plain object。
 - 可导出 `useXViewModel()`：只依赖 `react`（`useState` / `useCallback` / `useMemo` / `useEffect` / `useRef`）、`../lib/api.ts` 与其他 ViewModel。初次 GET 必须先 `ensureSession()`，响应再校验账号。路由/layout 不直接请求 API。
 - **禁止** import：`react-dom`、`@nocoo/basalt`、`*.tsx`、`document` / `window`（clipboard 纯函数只返回字符串，真正写剪贴板在 route 里用 Basalt `ClipboardText`）。
@@ -273,12 +270,11 @@ G1 约束下，每个 `fetch` 的 URL 参数必须是 `/api/` 字面量或模板
 
 ```ts
 async function send(resource: string, init?: RequestInit): Promise<Response> {
-  return fetch(`/api/${resource}`, { credentials: "same-origin", ...init });
+	return fetch(`/api/${resource}`, { credentials: "same-origin", ...init });
 }
 ```
 
-`resource` 不含前导 `/api/`，例如 `repos`、`accounts/${id}/activate`。`` fetch(`/api/${resource}`) `` 的第一段 quasi 为 `/api/`，能过 `gate:client-fetch`。
-
+`resource` 不含前导 `/api/`，例如 `repos`、`accounts/${id}/activate`。``fetch(`/api/${resource}`)`` 的第一段 quasi 为 `/api/`，能过 `gate:client-fetch`。
 - GET：无 body。
 - POST：有 body 时 `Content-Type: application/json`。Origin 由浏览器设，代码不得手写 `Origin`。
 - DELETE：无 body。
@@ -309,24 +305,24 @@ to another repository never changes the application's identity.
 
 ### 6.3 错误 → UI
 
-| code / HTTP | UI |
-|-------------|----|
-| `access_unauthorized` 401 | 整页说明「未通过 Access」，不跳应用内登录 |
-| `github_unauthorized` 401 | toast「GitHub 认证失败」，设置页可再贴 PAT |
-| `github_forbidden` 403 | toast |
-| `origin_forbidden` 403 | toast；检查页源 |
-| `not_found` 404 | 岛内「未找到」（GitHub 无此仓等）。Client 侧非法 `owner`/`name` 不发请求，展示校验文案，不是 404 |
-| `validation_failed` 400 | 设置页或其它字段错；服务端非法 owner 也是这个 code |
-| `method_not_allowed` 405 | toast（不应被 UI 走到） |
-| `account_missing` 409 | 横幅 + 链到 `/settings` |
-| `account_conflict` 409 | toast「账号已切换」+ `ensureSession()`；**不**自动重放该写 |
-| `snapshot_missing` 409 | 共享空态「等待统一刷新」+ 前往工厂控制台，不执行采集 |
-| `capability_missing` 409 | toast，缺 notifications scope |
-| `scopes_missing` 400 | 设置页字段错 |
-| `github_rate_limited` 503 | toast |
-| `github_error` 502 | toast |
-| `encryption_misconfigured` / `access_misconfigured` / `db_error` / `internal_error` 500 | toast `message` |
-| 其它 | toast `message`（已 sanitize）；未知 code 当 `internal_error` |
+| code / HTTP                                                                             | UI                                                                                               |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `access_unauthorized` 401                                                               | 整页说明「未通过 Access」，不跳应用内登录                                                        |
+| `github_unauthorized` 401                                                               | toast「GitHub 认证失败」，设置页可再贴 PAT                                                       |
+| `github_forbidden` 403                                                                  | toast                                                                                            |
+| `origin_forbidden` 403                                                                  | toast；检查页源                                                                                  |
+| `not_found` 404                                                                         | 岛内「未找到」（GitHub 无此仓等）。Client 侧非法 `owner`/`name` 不发请求，展示校验文案，不是 404 |
+| `validation_failed` 400                                                                 | 设置页或其它字段错；服务端非法 owner 也是这个 code                                               |
+| `method_not_allowed` 405                                                                | toast（不应被 UI 走到）                                                                          |
+| `account_missing` 409                                                                   | 横幅 + 链到 `/settings`                                                                          |
+| `account_conflict` 409                                                                  | toast「账号已切换」+ `ensureSession()`；**不**自动重放该写                                       |
+| `snapshot_missing` 409                                                                  | 共享空态「等待统一刷新」+ 前往工厂控制台，不执行采集                                             |
+| `capability_missing` 409                                                                | toast，缺 notifications scope                                                                    |
+| `scopes_missing` 400                                                                    | 设置页字段错                                                                                     |
+| `github_rate_limited` 503                                                               | toast                                                                                            |
+| `github_error` 502                                                                      | toast                                                                                            |
+| `encryption_misconfigured` / `access_misconfigured` / `db_error` / `internal_error` 500 | toast`message`                                                                                   |
+| 其它                                                                                    | toast`message`（已 sanitize）；未知 code 当 `internal_error`                                     |
 
 成功写操作：`toast.success` 短中文（「已添加账号」等）。失败：`toast.error`（`catchLoad` 注入）。采集任务的结果统一在刷新中心显示，不在普通页面另设刷新钮。
 
@@ -352,8 +348,6 @@ also collect notifications and derive selected Insights after successful sources
 Repository discovery is prepared automatically when the saved catalogue is stale.
 Notification bulk-read is limited to the selected repository scope, and never
 advances the inbox collection timestamp. See 09 for the precise daily run contract.
-
-
 - Full refresh updates saved site sources and repository details. Scoped runs contain nine statistics and nine detail steps per included repository plus publication (19 steps for one repository). External analysis publishes separately through the machine API and is not a collection checkpoint. Frozen old cloud AI steps retire while other collection work continues.
 - 首次使用或旧数据升级时先「同步仓库列表」，再「开始刷新」。清单不完整时禁止在界面启动刷新，不能把未扫描的数据当空数组。
 - 各页面仅 GET；缺少快照统一使用 `SnapshotPending` 导航至 `/refresh` 刷新中心。缺账号则前往设置，不混同于缺数据。
@@ -371,20 +365,20 @@ advances the inbox collection timestamp. See 09 for the precise daily run contra
 
 The Chinese sidebar has five ordered groups: Overview (Software Factory), AI (Analysis, Insights), Repository Health (Repositories, CI and Releases, Security Alerts), Work (Issues, Pull Requests, Notifications), and System (Refresh Center, Settings). `apps/web/src/client/lib/navigation.ts` defines `NAV_GROUPS` for expanded, collapsed and mobile navigation and the command palette. Opening `/` redirects to `/factory` with history replacement; the repository list lives at `/repos`.
 
-| 路由 | 侧栏 | 图标（lucide） | 读 |
-|------|------|----------------|----|
-| `/factory` | 软件工厂 | `Factory` | `GET /api/factory`; links to refresh center |
-| `/refresh` | 刷新中心 | `RefreshCw` | `GET /api/factory/runs`, `GET /api/refresh/settings`; manual runs and automatic schedules |
-| `/analysis` | 分析台 | `Activity` | Access-protected reads of saved reports, source evidence and `grok-bot-run` status |
-| `/insights` | Insights | `Activity` | `GET /api/insights`，并读已有 `issues` / `prs` / `ci` |
-| `/repos` | 仓库 | `Box` | `GET /api/repos` |
-| `/issues` | Issues | `CircleDot` | `GET /api/issues` |
-| `/pulls` | Pull Requests | `GitPullRequest` | `GET /api/prs` |
-| `/ci` | CI 与发布 | `Workflow` | `GET /api/ci` |
-| `/alerts` | 安全告警 | `ShieldAlert` | `GET /api/alerts` |
-| `/inbox` | 通知 | `Inbox` | `GET /api/notifications` |
-| `/repos/:owner/:name` | （钻取，侧栏「仓库」高亮） | — | 按 tab GET 单仓 |
-| `/settings` | 设置 | `Settings` | `GET /api/accounts`、`GET /api/me` |
+| 路由                  | 侧栏                       | 图标（lucide）   | 读                                                                                        |
+| --------------------- | -------------------------- | ---------------- | ----------------------------------------------------------------------------------------- |
+| `/factory`            | 软件工厂                   | `Factory`        | `GET /api/factory`; links to refresh center                                               |
+| `/refresh`            | 刷新中心                   | `RefreshCw`      | `GET /api/factory/runs`, `GET /api/refresh/settings`; manual runs and automatic schedules |
+| `/analysis`           | 分析台                     | `Activity`       | Access-protected reads of saved reports, source evidence and `grok-bot-run` status        |
+| `/insights`           | Insights                   | `Activity`       | `GET /api/insights`，并读已有 `issues` / `prs` / `ci`                                     |
+| `/repos`              | 仓库                       | `Box`            | `GET /api/repos`                                                                          |
+| `/issues`             | Issues                     | `CircleDot`      | `GET /api/issues`                                                                         |
+| `/pulls`              | Pull Requests              | `GitPullRequest` | `GET /api/prs`                                                                            |
+| `/ci`                 | CI 与发布                  | `Workflow`       | `GET /api/ci`                                                                             |
+| `/alerts`             | 安全告警                   | `ShieldAlert`    | `GET /api/alerts`                                                                         |
+| `/inbox`              | 通知                       | `Inbox`          | `GET /api/notifications`                                                                  |
+| `/repos/:owner/:name` | （钻取，侧栏「仓库」高亮） | —                | 按 tab GET 单仓                                                                           |
+| `/settings`           | 设置                       | `Settings`       | `GET /api/accounts`、`GET /api/me`                                                        |
 
 未知路径：岛内 404 文案，不调用 API。
 
@@ -438,16 +432,16 @@ KPI（未读 / 全部）+ `SectionRule` 通知表：状态、标题与仓库链�
 
 标签只读保存的快照，首次加载失败后结束骨架状态。缺数据时展示统一工厂入口，不自动补刷；重新进入页面会重新读取最新保存内容。
 
-| Tab | GET | 要点 |
-|-----|-----|------|
-| 概览 | `.../:owner/:name` | Stars/Forks/Issues KPI；`SectionRule` 概览 + `DescriptionList`（无 `LayerCard.Header`） |
-| 安全 | `/security` | `unavailable` 空态（ShieldAlert），说明账号权限；否则 Dependabot / Code scanning KPI |
-| Actions | `/actions` | runs 表，conclusion Badge；空态 Play icon |
-| PRs / Issues | `/prs` `/issues` | 同跨仓列，无仓列 |
-| 发布 | `/releases` | tag、时间、prerelease |
-| 流量 | `/traffic` | `forbidden` → Empty「无法查看流量」，说明需要推送权限；否则浏览/独立访客/克隆/独立克隆 KPI + 两张图卡（日期轴、数值轴、统计摘要） |
-| 语言 | `/languages` | 图卡 Donut，字节数 |
-| 贡献者 | `/contributors` | `Table` 内的 Avatar + login + 提交次数 |
+| Tab          | GET                | 要点                                                                                                                              |
+| ------------ | ------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| 概览         | `.../:owner/:name` | Stars/Forks/Issues KPI；`SectionRule` 概览 + `DescriptionList`（无 `LayerCard.Header`）                                           |
+| 安全         | `/security`        | `unavailable` 空态（ShieldAlert），说明账号权限；否则 Dependabot / Code scanning KPI                                              |
+| Actions      | `/actions`         | runs 表，conclusion Badge；空态 Play icon                                                                                         |
+| PRs / Issues | `/prs` `/issues`   | 同跨仓列，无仓列                                                                                                                  |
+| 发布         | `/releases`        | tag、时间、prerelease                                                                                                             |
+| 流量         | `/traffic`         | `forbidden` → Empty「无法查看流量」，说明需要推送权限；否则浏览/独立访客/克隆/独立克隆 KPI + 两张图卡（日期轴、数值轴、统计摘要） |
+| 语言         | `/languages`       | 图卡 Donut，字节数                                                                                                                |
+| 贡献者       | `/contributors`    | `Table` 内的 Avatar + login + 提交次数                                                                                            |
 
 侧栏「仓库」在钻取时保持祖先高亮。
 
@@ -489,24 +483,24 @@ export function breadcrumbsFor(pathname: string): { href: string; label: string 
 
 必测纯函数（mock `api.ts`，L1 默认 fetch 仍 throw；`api.ts` 自己的测试注入 fake fetch）：
 
-| 模块 | 例子 |
-|------|------|
-| `api.ts` | 注入 fetch：模板 URL 以 `/api/` 开头、信封抛 `ApiError`、204、成功无 error 字段；refresh/read/read-all 的 body 含 `account_id`；`account_conflict` 不自动重放 |
-| `factory-runs.ts` / `snapshot.ts` | 持久任务启动/控制与轮询；账号切换丢弃在途数据；页面重新加载读取最新保存快照；缺数据不采集 |
-| `accounts` | 提交后 token 空串；列表不含 ciphertext；添加/切换账号不自动 refresh；activate / delete 归约 |
-| `me` | 短路身份字段映射 |
-| `repos` | 搜索/排序/列表|网格；truncated 标记 |
-| `issues` / `pulls` | 过滤 |
-| `insights` | 按 health 分组；健康地图单行说明 |
-| `focus` | Top 10 加权原因、旧版报告折算、可选来源缺失、跨仓发现阈值 |
-| `alerts` | unavailable |
-| `inbox` | 已读与 **read-all** 后 unread false（对返回体归约） |
-| `repo-detail` | 非法 owner 不请求；九个 tab 各绑定正确 GET path；forbidden traffic；unavailable security；languages 排序 |
-| `navigation.ts` | breadcrumbsFor `/`、`/repos`、`/repos/o/n`、未知路径 |
-| `routes.ts` | 01 §9 九条路径全部在表中；与 NAV_ITEMS href 一致 |
-| 命令面板数据 | 静态 NAV_ITEMS；有 repos 缓存时含仓库项 |
-| health 展示 | `alerts_incomplete` →「告警不完整」 |
-| `session.ts` | 每次 ensureSession 都 GET accounts；201 先 stamp；in-flight 切换丢弃；body.account_id 不匹配则丢弃 |
+| 模块                              | 例子                                                                                                                                                          |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api.ts`                          | 注入 fetch：模板 URL 以 `/api/` 开头、信封抛 `ApiError`、204、成功无 error 字段；refresh/read/read-all 的 body 含 `account_id`；`account_conflict` 不自动重放 |
+| `factory-runs.ts` / `snapshot.ts` | 持久任务启动/控制与轮询；账号切换丢弃在途数据；页面重新加载读取最新保存快照；缺数据不采集                                                                     |
+| `accounts`                        | 提交后 token 空串；列表不含 ciphertext；添加/切换账号不自动 refresh；activate / delete 归约                                                                   |
+| `me`                              | 短路身份字段映射                                                                                                                                              |
+| `repos`                           | 搜索/排序/列表                                                                                                                                                | 网格；truncated 标记 |
+| `issues` / `pulls`                | 过滤                                                                                                                                                          |
+| `insights`                        | 按 health 分组；健康地图单行说明                                                                                                                              |
+| `focus`                           | Top 10 加权原因、旧版报告折算、可选来源缺失、跨仓发现阈值                                                                                                     |
+| `alerts`                          | unavailable                                                                                                                                                   |
+| `inbox`                           | 已读与 **read-all** 后 unread false（对返回体归约）                                                                                                           |
+| `repo-detail`                     | 非法 owner 不请求；九个 tab 各绑定正确 GET path；forbidden traffic；unavailable security；languages 排序                                                      |
+| `navigation.ts`                   | breadcrumbsFor `/`、`/repos`、`/repos/o/n`、未知路径                                                                                                          |
+| `routes.ts`                       | 01 §9 九条路径全部在表中；与 NAV_ITEMS href 一致                                                                                                              |
+| 命令面板数据                      | 静态 NAV_ITEMS；有 repos 缓存时含仓库项                                                                                                                       |
+| health 展示                       | `alerts_incomplete` →「告警不完整」                                                                                                                           |
+| `session.ts`                      | 每次 ensureSession 都 GET accounts；201 先 stamp；in-flight 切换丢弃；body.account_id 不匹配则丢弃                                                            |
 
 Client 单测：文件顶 `// @vitest-environment happy-dom` 或 vitest 对 `src/client/**` 设 environment。不得 `import` `src/server`。
 
@@ -515,7 +509,6 @@ Client 单测：文件顶 `// @vitest-environment happy-dom` 或 vitest 对 `src
 ### 10.2 L3
 
 02 §6 最低三条，本文不可减：
-
 1. 打开 `/settings`，在 PAT 框填 L2 同款 fixture PAT，提交。输入框为空。响应不得在 DOM 留下 PAT。
 2. 在工厂同步清单并全站刷新，随后 `/repos` 仓库列表 **有至少一行**（GitHub stub 仓库为 `octocat/hello-world`）；创建账号本身不触发采集。
 3. 点进该仓详情，概览可见描述或名称。
@@ -533,7 +526,6 @@ L3 依赖步骤 1 的 Origin 补丁。未补丁前不算 L3 绿。L3 **不是** 
 ## 11. 04 / 02 补丁（步骤 1）
 
 编号文档已与本文对齐的部分（Origin 表、insights 源不足、L1 豁免、L3 Origin）在 Sign Off 前写入 01/02/04。步骤 1 只补实现：
-
 1. `origin.ts`：development Access 短路时允许同源 Origin。L1：短路同源 通过；生产拒绝 `http://127.0.0.1:27045`。L2 A/B 仍绿。
 2. insights 派生：alerts 截断/缺失不是源不足；写入 `alerts_incomplete`（03）。仓 403 跳过 → alerts `truncated: true`。改 `collect`/`refresh`/`insights` 并补 L1。
 3. 快照外层 `account_id`；refresh/read/read-all **必填** `account_id`：缺 → 400，错 → 409 且零 GitHub、零 D1。
@@ -548,31 +540,31 @@ L3 依赖步骤 1 的 Origin 补丁。未补丁前不算 L3 绿。L3 **不是** 
 
 本文 Sign Off 之前只允许步骤 0。
 
-| # | 提交 | 内容 | 证明 |
-|---|------|------|------|
-| 0 | `docs: add client design document` | 本文 + 01/02/04 对齐 | Codex Sign Off |
-| 1a | `fix: allow same-origin posts in dev` | `origin.ts` | L1；L2 A/B 绿 |
-| 1b | `fix: derive insights when alerts truncated` | refresh/collect 派生 + `alerts_incomplete` + 仓跳过 truncated | L1 |
-| 1c | `fix: return snapshot account_id` | GET/单 kind 体含 `account_id`；写请求缺 id → 400、错 id → 409 且零 GitHub 零 D1 | L1+L2 |
-| 2 | `feat: scaffold vite client toolchain` | 根 `index.html`、Vite、`@tailwindcss/vite`、React 插件、Basalt 依赖、`tsconfig.client.json`、coverage exclude 同步 02、空 `main.tsx`/`app.tsx`/layout 壳、无业务页 | `bun run build`；G1 client-fetch 绿 |
-| 3 | `feat: add same-origin api client` | `api.ts` + errors；`` fetch(`/api/${resource}`) `` | L1 注入 fetch；gate 绿 |
-| 4 | `feat: add refresh coordinator` | `session.ts` + `refresh.ts` 单例、stamp、排队、归一 04 两种 200 | L1 互斥/排队/201 stamp/切换丢弃 |
-| 5 | `feat: add app shell layout` | layout 组合 Basalt；`navigation.ts`；`routes.ts`；`me.ts`；Router 空岛；`LinkProvider`；`AppMain tabIndex={-1}` | L1 navigation + routes 九路径 + me |
-| 6 | `feat: add settings accounts page` | settings + accounts VM；PAT 清空；仅 active/activate 经 refresh.ts 刷 repos | L1 activate/delete |
-| 7 | `feat: add repos list page` | `/repos` | L1 筛选排序 |
-| 8 | `feat: add issues page` | `/issues` | L1 |
-| 9 | `feat: add pulls page` | `/pulls` | L1 |
-| 10 | `feat: add insights page` | 隐式 insights GET | L1 health 分组 |
-| 11 | `feat: add alerts page` | `/alerts` 含 unavailable | L1 |
-| 12 | `feat: add inbox write-through page` | GET + 已读 + **read-all** | L1 归约 |
-| 13 | `feat: add digest page` | markdown 纯函数；刷 repos 后再 GET digest | L1 baseline_missing |
-| 14 | `feat: add repo details tab` | 概览 GET | L1 非法 owner |
-| 15 | `feat: add repo security and traffic` | security + traffic 空态 | L1 unavailable/forbidden |
-| 16 | `feat: add repo actions and releases` | actions + releases 表 | L1 |
-| 17 | `feat: add repo issues and pulls` | 单仓 issues/prs | L1 |
-| 18 | `feat: add repo languages and contributors` | Donut + 列表 | L1 |
-| 19 | `feat: add command palette` | ⌘K 静态项 **与** 内存仓库项 | L1 |
-| 20 | `test: add l3 three-path suite` | Playwright + `run-e2e-bdd.ts` | `bun run test:e2e:bdd` 三条；不改 pre-push |
+| #   | 提交                                         | 内容                                                                                                                                                               | 证明                                       |
+| --- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ |
+| 0   | `docs: add client design document`           | 本文 + 01/02/04 对齐                                                                                                                                               | Codex Sign Off                             |
+| 1a  | `fix: allow same-origin posts in dev`        | `origin.ts`                                                                                                                                                        | L1；L2 A/B 绿                              |
+| 1b  | `fix: derive insights when alerts truncated` | refresh/collect 派生 + `alerts_incomplete` + 仓跳过 truncated                                                                                                      | L1                                         |
+| 1c  | `fix: return snapshot account_id`            | GET/单 kind 体含 `account_id`；写请求缺 id → 400、错 id → 409 且零 GitHub 零 D1                                                                                    | L1+L2                                      |
+| 2   | `feat: scaffold vite client toolchain`       | 根 `index.html`、Vite、`@tailwindcss/vite`、React 插件、Basalt 依赖、`tsconfig.client.json`、coverage exclude 同步 02、空 `main.tsx`/`app.tsx`/layout 壳、无业务页 | `bun run build`；G1 client-fetch 绿        |
+| 3   | `feat: add same-origin api client`           | `api.ts` + errors；``fetch(`/api/${resource}`)``                                                                                                                   | L1 注入 fetch；gate 绿                     |
+| 4   | `feat: add refresh coordinator`              | `session.ts` + `refresh.ts` 单例、stamp、排队、归一 04 两种 200                                                                                                    | L1 互斥/排队/201 stamp/切换丢弃            |
+| 5   | `feat: add app shell layout`                 | layout 组合 Basalt；`navigation.ts`；`routes.ts`；`me.ts`；Router 空岛；`LinkProvider`；`AppMain tabIndex={-1}`                                                    | L1 navigation + routes 九路径 + me         |
+| 6   | `feat: add settings accounts page`           | settings + accounts VM；PAT 清空；仅 active/activate 经 refresh.ts 刷 repos                                                                                        | L1 activate/delete                         |
+| 7   | `feat: add repos list page`                  | `/repos`                                                                                                                                                           | L1 筛选排序                                |
+| 8   | `feat: add issues page`                      | `/issues`                                                                                                                                                          | L1                                         |
+| 9   | `feat: add pulls page`                       | `/pulls`                                                                                                                                                           | L1                                         |
+| 10  | `feat: add insights page`                    | 隐式 insights GET                                                                                                                                                  | L1 health 分组                             |
+| 11  | `feat: add alerts page`                      | `/alerts` 含 unavailable                                                                                                                                           | L1                                         |
+| 12  | `feat: add inbox write-through page`         | GET + 已读 + **read-all**                                                                                                                                          | L1 归约                                    |
+| 13  | `feat: add digest page`                      | markdown 纯函数；刷 repos 后再 GET digest                                                                                                                          | L1 baseline_missing                        |
+| 14  | `feat: add repo details tab`                 | 概览 GET                                                                                                                                                           | L1 非法 owner                              |
+| 15  | `feat: add repo security and traffic`        | security + traffic 空态                                                                                                                                            | L1 unavailable/forbidden                   |
+| 16  | `feat: add repo actions and releases`        | actions + releases 表                                                                                                                                              | L1                                         |
+| 17  | `feat: add repo issues and pulls`            | 单仓 issues/prs                                                                                                                                                    | L1                                         |
+| 18  | `feat: add repo languages and contributors`  | Donut + 列表                                                                                                                                                       | L1                                         |
+| 19  | `feat: add command palette`                  | ⌘K 静态项 **与** 内存仓库项                                                                                                                                        | L1                                         |
+| 20  | `test: add l3 three-path suite`              | Playwright + `run-e2e-bdd.ts`                                                                                                                                      | `bun run test:e2e:bdd` 三条；不改 pre-push |
 
 步骤 2 不得出现业务 route 的数据逻辑。步骤 6 未绿之前不要做仓库页。步骤 4 的 refresh.ts 必须先于设置页。步骤 20 未绿不得宣称阶段 2 完成。
 

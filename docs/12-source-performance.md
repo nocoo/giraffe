@@ -105,12 +105,12 @@ SQL cost outweighed that reduction. The following historical three-sample
 measurement describes the withdrawn proposal, not the current implementation
 (Bun 1.4.3 high-resolution medians, milliseconds, no injected latency):
 
-| Request | D1/SQLite wall | Decode | Hash/projection | Serialize | Total |
-| --- | --- | --- | --- | --- | --- |
-| Full | 5.50 -> 33.78 | 7.01 -> 6.13 | 7.68 -> 9.69 | 0.30 -> 0.30 | 27.46 -> 59.05 |
-| Since, two thirds | 6.53 -> 31.94 | 7.38 -> 5.95 | 9.83 -> 8.51 | 0.22 -> 0.23 | 31.18 -> 54.13 |
-| Since, empty | 5.12 -> 32.72 | 7.20 -> 6.14 | 1.83 -> 3.79 | <0.01 -> <0.01 | 15.32 -> 44.67 |
-| One repository | 4.21 -> 33.05 | 6.97 -> 6.14 | 6.94 -> 7.14 | 0.01 -> 0.01 | 23.90 -> 53.41 |
+| Request           | D1/SQLite wall | Decode       | Hash/projection | Serialize      | Total          |
+| ----------------- | -------------- | ------------ | --------------- | -------------- | -------------- |
+| Full              | 5.50 -> 33.78  | 7.01 -> 6.13 | 7.68 -> 9.69    | 0.30 -> 0.30   | 27.46 -> 59.05 |
+| Since, two thirds | 6.53 -> 31.94  | 7.38 -> 5.95 | 9.83 -> 8.51    | 0.22 -> 0.23   | 31.18 -> 54.13 |
+| Since, empty      | 5.12 -> 32.72  | 7.20 -> 6.14 | 1.83 -> 3.79    | <0.01 -> <0.01 | 15.32 -> 44.67 |
+| One repository    | 4.21 -> 33.05  | 6.97 -> 6.14 | 6.94 -> 7.14    | 0.01 -> 0.01   | 23.90 -> 53.41 |
 
 ### Fix-round-1 alternating measurement
 
@@ -126,12 +126,12 @@ separately from D1-wrapper wall time, which also includes byte-accounting overhe
 Each cell below is **SQLite execution median / read-and-serialize total median**
 in milliseconds, measured locally with Bun 1.4.3:
 
-| Request | Main 0.17.3 `9b95192` | 0.17.2 `86f39d3` | Functional `9bbecde` | Rejected `d673307` | Fixed runtime `34d43b5` |
-| --- | --- | --- | --- | --- | --- |
-| Full | 4.47 / 28.12 | 4.59 / 26.77 | 4.57 / 27.44 | 31.31 / 54.80 | 4.55 / 28.72 |
-| Since, two thirds | 4.46 / 26.93 | 4.49 / 26.87 | 4.47 / 27.17 | 30.79 / 53.62 | 4.64 / 28.73 |
-| Since, empty | 4.42 / 15.38 | 4.47 / 15.18 | 4.43 / 16.52 | 31.31 / 42.66 | 4.48 / 17.62 |
-| One repository | 3.48 / 24.75 | 3.49 / 24.21 | 3.49 / 25.80 | 30.67 / 52.09 | 3.49 / 25.73 |
+| Request           | Main 0.17.3 `9b95192` | 0.17.2 `86f39d3` | Functional `9bbecde` | Rejected `d673307` | Fixed runtime `34d43b5` |
+| ----------------- | --------------------- | ---------------- | -------------------- | ------------------ | ----------------------- |
+| Full              | 4.47 / 28.12          | 4.59 / 26.77     | 4.57 / 27.44         | 31.31 / 54.80      | 4.55 / 28.72            |
+| Since, two thirds | 4.46 / 26.93          | 4.49 / 26.87     | 4.47 / 27.17         | 30.79 / 53.62      | 4.64 / 28.73            |
+| Since, empty      | 4.42 / 15.38          | 4.47 / 15.18     | 4.43 / 16.52         | 31.31 / 42.66      | 4.48 / 17.62            |
+| One repository    | 3.48 / 24.75          | 3.49 / 24.21     | 3.49 / 25.80         | 30.67 / 52.09      | 3.49 / 25.73            |
 
 Fixed D1-wrapper medians are 5.28 / 6.07 / 5.07 / 4.32 ms respectively;
 fixed total p95 values are 34.50 / 35.09 / 19.12 / 28.54 ms. Every variant reads
@@ -188,18 +188,18 @@ does not query D1; active-account selection is included in the count. Batching
 reduces transport waits, not necessarily SQL statement count. Successful reads
 remain read-only; ordering, errors, private headers and ETags are preserved.
 
-| Route group | Browser before -> after | Machine before -> after |
-| --- | --- | --- |
-| Repositories | 4 -> 1 | 5 -> 2 |
-| Issues / pull requests | 6 -> 1 | 6 -> 2 |
-| CI | 5 -> 1 | 5 -> 2 |
-| Factory summary | 7 -> 1 | 7 -> 2 |
-| Repository details and tabs | 2 -> 2 | 6 -> 2 |
-| Factory repository streams | 7 -> 1 | 5 -> 2 |
-| Settings | 3 -> 2 | 3 -> 2 |
-| Runs (`factory/runs` / `refresh-runs`) | 17 -> 2 | 4 -> 2 |
-| Contributions | N/A | 3 -> 2 |
-| Sources | N/A | 2 -> 2 |
+| Route group                            | Browser before -> after | Machine before -> after |
+| -------------------------------------- | ----------------------- | ----------------------- |
+| Repositories                           | 4 -> 1                  | 5 -> 2                  |
+| Issues / pull requests                 | 6 -> 1                  | 6 -> 2                  |
+| CI                                     | 5 -> 1                  | 5 -> 2                  |
+| Factory summary                        | 7 -> 1                  | 7 -> 2                  |
+| Repository details and tabs            | 2 -> 2                  | 6 -> 2                  |
+| Factory repository streams             | 7 -> 1                  | 5 -> 2                  |
+| Settings                               | 3 -> 2                  | 3 -> 2                  |
+| Runs (`factory/runs` / `refresh-runs`) | 17 -> 2                 | 4 -> 2                  |
+| Contributions                          | N/A                     | 3 -> 2                  |
+| Sources                                | N/A                     | 2 -> 2                  |
 
 Browser repository tabs already have just active-account selection and one saved
 page read, so their two-trip path remains unchanged. Browser runs combine nine
@@ -234,12 +234,12 @@ Three samples per case inject 300 ms per actual round trip. Exact JSON equality
 includes ordering, full versions and all eight source fields. Reader-only medians
 exclude the unchanged authorization trip:
 
-| Request | Trips before / after | Total before / after (ms) |
-| --- | ---: | ---: |
-| Full | 5 / 1 | 1585.13 / 352.97 |
-| Since, newer two-thirds | 5 / 1 | 1585.09 / 357.27 |
-| Since, empty result | 5 / 1 | 1574.02 / 355.60 |
-| One repository | 5 / 1 | 1583.69 / 369.42 |
+| Request                 | Trips before / after | Total before / after (ms) |
+| ----------------------- | -------------------: | ------------------------: |
+| Full                    |                5 / 1 |          1585.13 / 352.97 |
+| Since, newer two-thirds |                5 / 1 |          1585.09 / 357.27 |
+| Since, empty result     |                5 / 1 |          1574.02 / 355.60 |
+| One repository          |                5 / 1 |          1583.69 / 369.42 |
 
 Full D1 wall time is 1537.97 -> 319.87 ms; serialization is 0.38 -> 0.39 ms.
 After batching, decode is 13.29 ms and hash-producing projection is 10.03 ms;
@@ -295,12 +295,12 @@ local SQLite/JSC measurement, not deployed D1/V8 or a network-latency simulation
 
 ## Batch-3 baseline before optimization
 
-| Request | Sources | Reader queries | Read median / p95 (ms) | SQLite median (ms) | Serialization median (ms) |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Full | 1,517 | 14 | 37.114 / 40.396 | 3.829 | 0.309 |
-| Since, newer two-thirds | 1,012 | 14 | 35.668 / 37.287 | 4.188 | 0.192 |
-| Since, empty result | 0 | 14 | 34.519 / 37.962 | 3.573 | 0.002 |
-| One repository | 17 | 17 | 28.224 / 28.603 | 3.718 | 0.012 |
+| Request                 | Sources | Reader queries | Read median / p95 (ms) | SQLite median (ms) | Serialization median (ms) |
+| ----------------------- | ------: | -------------: | ---------------------: | -----------------: | ------------------------: |
+| Full                    |   1,517 |             14 |        37.114 / 40.396 |              3.829 |                     0.309 |
+| Since, newer two-thirds |   1,012 |             14 |        35.668 / 37.287 |              4.188 |                     0.192 |
+| Since, empty result     |       0 |             14 |        34.519 / 37.962 |              3.573 |                     0.002 |
+| One repository          |      17 |             17 |        28.224 / 28.603 |              3.718 |                     0.012 |
 
 Bearer authentication adds one query outside these reader counts. The full
 response is 593,822 bytes; the repository-filtered response still includes all
@@ -340,12 +340,12 @@ v0.17.0 metadata migration below is a separate change.
 The comparable after run uses the same deterministic fixture, runtime, warmups,
 sample count and profiling harness as the before run:
 
-| Request | Queries before / after | Read median before / after (ms) | After p95 (ms) | After SQLite median (ms) | After serialization median (ms) |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Full | 14 / 5 | 37.114 / 27.870 | 29.219 | 1.748 | 0.302 |
-| Since, newer two-thirds | 14 / 5 | 35.668 / 25.479 | 26.978 | 1.740 | 0.195 |
-| Since, empty result | 14 / 5 | 34.519 / 14.018 | 16.366 | 1.772 | 0.002 |
-| One repository | 17 / 5 | 28.224 / 19.535 | 21.557 | 1.843 | 0.012 |
+| Request                 | Queries before / after | Read median before / after (ms) | After p95 (ms) | After SQLite median (ms) | After serialization median (ms) |
+| ----------------------- | ---------------------: | ------------------------------: | -------------: | -----------------------: | ------------------------------: |
+| Full                    |                 14 / 5 |                 37.114 / 27.870 |         29.219 |                    1.748 |                           0.302 |
+| Since, newer two-thirds |                 14 / 5 |                 35.668 / 25.479 |         26.978 |                    1.740 |                           0.195 |
+| Since, empty result     |                 14 / 5 |                 34.519 / 14.018 |         16.366 |                    1.772 |                           0.002 |
+| One repository          |                 17 / 5 |                 28.224 / 19.535 |         21.557 |                    1.843 |                           0.012 |
 
 All four scenarios have exactly the same response-body SHA-256 before and after.
 Full payload transfer falls from 16,759,543 to 8,784,588 bytes. JSON parsing falls
@@ -406,24 +406,24 @@ real-stream measurements. Batch-3 medians remain the acceptance baseline; the
 target is no more than about 15% slower in each scenario. The filter-first column
 is rejected intermediate evidence, not the shipped implementation.
 
-| Request | Batch-3 median (ms) | Eager hash median / p95 (ms) | Filter-first median (ms) | Stored hash median / p95 (ms) | Change from batch 3 |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Full | 27.900 | 410.266 / 420.211 | 348.672 | 25.009 / 26.543 | -10.4% |
-| Since, newer two-thirds | 25.500 | 362.817 / 369.914 | 255.446 | 24.122 / 29.685 | -5.4% |
-| Since, empty result | 14.000 | 198.341 / 352.442 | 15.772 | 12.746 / 13.234 | -9.0% |
-| One repository | 19.500 | 252.217 / 255.477 | 66.004 | 22.057 / 24.329 | +13.1% |
+| Request                 | Batch-3 median (ms) | Eager hash median / p95 (ms) | Filter-first median (ms) | Stored hash median / p95 (ms) | Change from batch 3 |
+| ----------------------- | ------------------: | ---------------------------: | -----------------------: | ----------------------------: | ------------------: |
+| Full                    |              27.900 |            410.266 / 420.211 |                  348.672 |               25.009 / 26.543 |              -10.4% |
+| Since, newer two-thirds |              25.500 |            362.817 / 369.914 |                  255.446 |               24.122 / 29.685 |               -5.4% |
+| Since, empty result     |              14.000 |            198.341 / 352.442 |                   15.772 |               12.746 / 13.234 |               -9.0% |
+| One repository          |              19.500 |            252.217 / 255.477 |                   66.004 |               22.057 / 24.329 |              +13.1% |
 
 The final run meets the approximate 15% budget: full, partial and empty requests
 are faster than batch 3; the single-repository request is 13.1% slower while
 still projecting all five account sources. Percentages use the owner's rounded
 batch-3 acceptance baselines. These are local measurements, not edge latency.
 
-| Request | Eager payload bytes | Filter-first payload bytes | Stored-hash payload-byte bound | Factory stream payload bytes allowed |
-| --- | ---: | ---: | ---: | ---: |
-| Full | 125,885,973 | 125,885,973 | 8,784,588 | 0 |
-| Since, newer two-thirds | 125,885,973 | 86,853,012 | 8,784,588 | 0 |
-| Since, empty result | 125,885,973 | 8,784,588 | 8,784,588 | 0 |
-| One repository | 125,885,973 | 9,715,439 | 8,784,588 | 0 |
+| Request                 | Eager payload bytes | Filter-first payload bytes | Stored-hash payload-byte bound | Factory stream payload bytes allowed |
+| ----------------------- | ------------------: | -------------------------: | -----------------------------: | -----------------------------------: |
+| Full                    |         125,885,973 |                125,885,973 |                      8,784,588 |                                    0 |
+| Since, newer two-thirds |         125,885,973 |                 86,853,012 |                      8,784,588 |                                    0 |
+| Since, empty result     |         125,885,973 |                  8,784,588 |                      8,784,588 |                                    0 |
+| One repository          |         125,885,973 |                  9,715,439 |                      8,784,588 |                                    0 |
 
 These byte bounds exclude the small metadata column and count payload returned
 from SQLite, not on-wire HTTP bytes. Unit regressions assert that no factory
@@ -438,7 +438,6 @@ cross-release equality promise.
 
 `0014_source_content.sql` adds nullable TEXT `content_meta` to `snapshots` and
 `factory_resources`, and indexes:
-
 - `snapshots_content(account_id,kind,content_meta)`
 - `factory_resources_content(run_id,repo,stream,content_meta)`
 
@@ -509,12 +508,12 @@ therefore still has 756 null content hashes. Version 0.16.1 has no content metad
 column or response field, even in this comparison: it is the unchanged historical
 contract, not a modified current response.
 
-| Request | v0.16.1 median / p95 (ms) | v0.17.0 median / p95 (ms) | Batch-7 median / p95 (ms) |
-| --- | ---: | ---: | ---: |
-| Full | 30.433 / 33.833 | 24.468 / 27.021 | 24.719 / 27.117 |
-| Since, newer two-thirds | 27.826 / 31.545 | 24.031 / 26.944 | 23.940 / 26.033 |
-| Since, empty result | 16.620 / 18.309 | 12.872 / 14.224 | 12.569 / 14.304 |
-| One repository | 21.810 / 22.993 | 23.100 / 24.439 | 22.896 / 24.507 |
+| Request                 | v0.16.1 median / p95 (ms) | v0.17.0 median / p95 (ms) | Batch-7 median / p95 (ms) |
+| ----------------------- | ------------------------: | ------------------------: | ------------------------: |
+| Full                    |           30.433 / 33.833 |           24.468 / 27.021 |           24.719 / 27.117 |
+| Since, newer two-thirds |           27.826 / 31.545 |           24.031 / 26.944 |           23.940 / 26.033 |
+| Since, empty result     |           16.620 / 18.309 |           12.872 / 14.224 |           12.569 / 14.304 |
+| One repository          |           21.810 / 22.993 |           23.100 / 24.439 |           22.896 / 24.507 |
 
 ### Legacy/all-null metadata fixture
 
@@ -523,12 +522,12 @@ marker. Every 0.17.x source explicitly retains `contentVersion:null` and all eig
 documented fields. The 0.16.1 schema is already metadata-free; its independently
 repeated measurements show the normal timing variation of the same old reader.
 
-| Request | v0.16.1 median / p95 (ms) | v0.17.0 median / p95 (ms) | Batch-7 median / p95 (ms) |
-| --- | ---: | ---: | ---: |
-| Full | 30.536 / 32.521 | 31.686 / 34.671 | 31.121 / 35.123 |
-| Since, newer two-thirds | 27.897 / 31.591 | 28.271 / 31.305 | 28.654 / 30.749 |
-| Since, empty result | 16.370 / 18.755 | 11.939 / 13.641 | 12.105 / 13.448 |
-| One repository | 21.238 / 23.103 | 22.274 / 23.886 | 22.000 / 24.290 |
+| Request                 | v0.16.1 median / p95 (ms) | v0.17.0 median / p95 (ms) | Batch-7 median / p95 (ms) |
+| ----------------------- | ------------------------: | ------------------------: | ------------------------: |
+| Full                    |           30.536 / 32.521 |           31.686 / 34.671 |           31.121 / 35.123 |
+| Since, newer two-thirds |           27.897 / 31.591 |           28.271 / 31.305 |           28.654 / 30.749 |
+| Since, empty result     |           16.370 / 18.755 |           11.939 / 13.641 |           12.105 / 13.448 |
+| One repository          |           21.238 / 23.103 |           22.274 / 23.886 |           22.000 / 24.290 |
 
 **Every revision/mode/scenario uses five reader queries and returns exactly
 8,784,588 snapshot payload bytes from SQLite, with zero stream payload bytes.**
@@ -538,12 +537,12 @@ cross-release hashes are not expected to match when fields or freshness semantic
 change. The byte counts below apply to both 0.17.x readers; v0.16.1 sizes are the
 same in its two independently timed modes.
 
-| Request | Sources | v0.16.1 response bytes | 0.17.x stored response bytes | 0.17.x legacy response bytes | Stored metadata bytes read |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Full | 1,517 | 593,822 | 679,705 | 627,196 | 134,338 |
-| Since, newer two-thirds | 1,012 | 397,022 | 454,338 | 419,286 | 126,064 |
-| Since, empty result | 0 | 2,841 | 2,841 | 2,841 | 109,516 |
-| One repository | 17 | 9,067 | 10,200 | 9,441 | 109,713 |
+| Request                 | Sources | v0.16.1 response bytes | 0.17.x stored response bytes | 0.17.x legacy response bytes | Stored metadata bytes read |
+| ----------------------- | ------: | ---------------------: | ---------------------------: | ---------------------------: | -------------------------: |
+| Full                    |   1,517 |                593,822 |                      679,705 |                      627,196 |                    134,338 |
+| Since, newer two-thirds |   1,012 |                397,022 |                      454,338 |                      419,286 |                    126,064 |
+| Since, empty result     |       0 |                  2,841 |                        2,841 |                        2,841 |                    109,516 |
+| One repository          |      17 |                  9,067 |                       10,200 |                        9,441 |                    109,713 |
 
 Legacy metadata bytes read are zero. All response sizes are uncompressed UTF-8
 JSON, not measured wire bytes. The full legacy increase is exactly **33,374 bytes
@@ -559,12 +558,12 @@ rises from 1.781 ms in 0.16.1 to 2.383 ms in 0.17.0. A separate three-round,
 120-sample 0.17.0 diagnostic suppresses only the bulk stream-metadata SQL branches
 in an external read adapter, **only for the proven all-null fixture**:
 
-| Request | Normal read / SQLite median (ms) | Diagnostic read / SQLite median (ms) |
-| --- | ---: | ---: |
-| Full | 30.725 / 2.349 | 30.343 / 1.878 |
-| Since, newer two-thirds | 27.832 / 2.182 | 27.463 / 1.868 |
-| Since, empty result | 11.743 / 1.990 | 11.660 / 1.861 |
-| One repository | 21.438 / 1.881 | 21.399 / 1.852 |
+| Request                 | Normal read / SQLite median (ms) | Diagnostic read / SQLite median (ms) |
+| ----------------------- | -------------------------------: | -----------------------------------: |
+| Full                    |                   30.725 / 2.349 |                       30.343 / 1.878 |
+| Since, newer two-thirds |                   27.832 / 2.182 |                       27.463 / 1.868 |
+| Since, empty result     |                   11.743 / 1.990 |                       11.660 / 1.861 |
+| One repository          |                   21.438 / 1.881 |                       21.399 / 1.852 |
 
 All diagnostic response bytes/hashes match the normal legacy response, including
 all eight fields. This is an attribution probe, **not shipped code or a safe
@@ -572,7 +571,6 @@ production shortcut**: a reader cannot assume that saved hashes remain absent
 after refresh. The normal reader and metadata indexes remain unchanged.
 
 Separate full-read traces show:
-
 - Legacy: 644 payload parses, no metadata JSON parses, and the same 634 full-version
   digests over 12,736,040 bytes in all three readers. Null composite inputs already
   avoid content-hash computation; caching or deduplicating absent metadata would
@@ -645,7 +643,6 @@ validators as opaque and accept weak request validators. No `no-transform` heade
 is added to force a strong edge tag at the expense of compression.
 
 Official references checked for this change:
-
 - [Workers Accept-Encoding handling](https://developers.cloudflare.com/workers/runtime-apis/fetch/#how-the-accept-encoding-header-is-handled)
 - [Compression eligibility and negotiation](https://developers.cloudflare.com/speed/optimization/content/compression/)
 - [Response encodeBody](https://developers.cloudflare.com/workers/runtime-apis/response/#the-encodebody-option)

@@ -4,6 +4,21 @@ import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { useAnalysisRead } from "./use-analysis-read";
 
+function AnalysisReadProbe({
+	load,
+	receive,
+	fail,
+	intervalMs,
+}: {
+	load: () => Promise<number>;
+	receive: (value: number) => void;
+	fail: () => void;
+	intervalMs?: number;
+}) {
+	useAnalysisRead(load, receive, fail, intervalMs);
+	return null;
+}
+
 it("pauses hidden polling, backs off failures, resumes focus and discards unmounted reads", async () => {
 	vi.useFakeTimers();
 	vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -15,12 +30,10 @@ it("pauses hidden polling, backs off failures, resumes focus and discards unmoun
 		receive = vi.fn(),
 		fail = vi.fn();
 	const root = createRoot(document.createElement("div"));
-	function Reader() {
-		useAnalysisRead(load, receive, fail);
-		return null;
-	}
 	try {
-		await act(async () => root.render(<Reader />));
+		await act(async () =>
+			root.render(<AnalysisReadProbe load={load} receive={receive} fail={fail} />),
+		);
 		expect(receive).toHaveBeenCalledWith(1);
 		load.mockRejectedValue(new Error("offline"));
 		await act(async () => vi.advanceTimersByTimeAsync(15000));
@@ -49,17 +62,12 @@ it("supports a five-second repair poll without polling hidden pages", async () =
 	vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
 	const root = createRoot(document.createElement("div"));
 	const load = vi.fn().mockResolvedValue(1);
-	function Reader() {
-		useAnalysisRead(
-			load,
-			() => {},
-			() => {},
-			5000,
-		);
-		return null;
-	}
 	try {
-		await act(async () => root.render(<Reader />));
+		await act(async () =>
+			root.render(
+				<AnalysisReadProbe load={load} receive={() => {}} fail={() => {}} intervalMs={5000} />,
+			),
+		);
 		await act(async () => vi.advanceTimersByTimeAsync(4999));
 		expect(load).toHaveBeenCalledOnce();
 		await act(async () => vi.advanceTimersByTimeAsync(1));

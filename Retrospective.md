@@ -132,7 +132,7 @@ runner's optional file filter for diagnosis before repeating full acceptance.
 R5 review found four cases missing from the ordinary state tests: a repository
 segment named agent changed the scope classifier; per-identity revision 1 could
 overwrite a replacement identity; transformed validation silently dropped an own
-__proto__ JSON key before measuring bytes; and deeply nested small JSON reached
+**proto** JSON key before measuring bytes; and deeply nested small JSON reached
 SQLite's parser limit as a 500. Anchor scope classification to fixed route prefixes,
 never reuse revision tokens across identities, validate without transforming opaque
 payloads, and enforce a documented application depth bound before storage. Test
