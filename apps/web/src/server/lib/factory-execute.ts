@@ -17,7 +17,7 @@ import {
 	collectActivitySupplement,
 } from "./activity-collect";
 import { collectLandedPage } from "./activity-landed";
-import { freezeActivityRepo } from "./activity-store";
+import { bestEffortFreezeActivityOnCapacity, freezeActivityRepo } from "./activity-store";
 import { savedContentMeta } from "./content-version";
 import { getAccount } from "./db/accounts";
 import { createDb, type Db } from "./db/d1";
@@ -232,6 +232,7 @@ async function executeStep(
 	);
 	let writes: D1PreparedStatement[] = [];
 	let resourceData: FactoryStreamData | null = null;
+	let activitySupplement: ActivitySupplement | null = null;
 	const resourceKey = `${step.repo}:${step.kind}`;
 	let stop = false;
 	try {
@@ -306,6 +307,7 @@ async function executeStep(
 						previous ? (JSON.parse(previous.payload) as ActivitySupplement) : null,
 						actions ? (JSON.parse(actions.payload) as FactoryStreamData) : null,
 					);
+					activitySupplement = result.state;
 					writes.push(
 						fenced(
 							db,
@@ -591,6 +593,17 @@ async function executeStep(
 			step.status = "pending";
 		} else if (code === "factory_capacity") {
 			if (step.kind === "activity") {
+				const repo = await currentRepo(db, run.account_id, String(step.repo));
+				if (repo && run.activityWindow) {
+					const frozen = await bestEffortFreezeActivityOnCapacity(
+						db,
+						lease,
+						clock(),
+						repo,
+						activitySupplement,
+					);
+					if (frozen) writes.push(frozen);
+				}
 				finish(step, "limited", clock());
 				run.nextAttemptAt = clock();
 			} else {

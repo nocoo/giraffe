@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.25.1 - 2026-10-26
+
+### Fixed
+
+- Activity factory steps that finish `limited` on `factory_capacity` now best-effort freeze `activity-snapshot` rows from in-run supplement state or collected factory streams before completing, so a quick daily can still publish a non-hollow `/activity` head when evidence exists. Runs with zero frozen repositories still skip activity publication (v0.24.4).
+
 ## v0.25.0 - 2026-10-25
 
 ### Added

@@ -10,7 +10,7 @@ import {
 	requireActivityWindow,
 	unknownActivity,
 } from "./activity";
-import type { ActivitySupplement } from "./activity-collect";
+import { type ActivitySupplement, defaultActivitySupplement } from "./activity-collect";
 import { readLandedActivity } from "./activity-landed";
 import { readActivityTotals } from "./activity-totals";
 import { observationVersion } from "./content-version";
@@ -268,6 +268,64 @@ export async function activityPublicationWrites(
 			);
 		}),
 	];
+}
+export async function bestEffortFreezeActivityOnCapacity(
+	db: Db,
+	lease: RunLease,
+	now: string,
+	repo: FactoryRepo,
+	supplementHint: ActivitySupplement | null,
+) {
+	const run = lease.run;
+	const exists = await db
+		.prepare(
+			"SELECT 1 AS ok FROM factory_resources WHERE run_id=? AND repo=? AND stream='activity-snapshot' LIMIT 1",
+		)
+		.bind(run.id, repo.name)
+		.first<{ ok: number }>();
+	if (exists) return null;
+	const committed =
+		run.steps.some(
+			(step) => step.repo === repo.name && step.kind === "commit" && step.status === "success",
+		) ||
+		(repo.observation?.version === run.id && run.repoIds[repo.name] === repo.id);
+	if (!committed) return null;
+	let supplement = supplementHint;
+	if (!supplement) {
+		const activity = await db
+			.prepare(
+				"SELECT payload FROM factory_resources WHERE run_id=? AND repo=? AND stream='activity'",
+			)
+			.bind(run.id, repo.name)
+			.first<{ payload: string }>();
+		if (activity) supplement = JSON.parse(activity.payload) as ActivitySupplement;
+	}
+	const streamEvidence = await db
+		.prepare(
+			"SELECT 1 AS ok FROM factory_resources WHERE run_id=? AND repo=? AND stream IN ('commits','actions','prs','issues','releases') AND json_extract(payload,'$.runId')=? LIMIT 1",
+		)
+		.bind(run.id, repo.name, run.id)
+		.first<{ ok: number }>();
+	if (!supplement && !streamEvidence) return null;
+	if (!supplement) {
+		const actions = await db
+			.prepare(
+				"SELECT payload FROM factory_resources WHERE run_id=? AND repo=? AND stream='actions'",
+			)
+			.bind(run.id, repo.name)
+			.first<{ payload: string }>();
+		supplement = defaultActivitySupplement(
+			actions ? (JSON.parse(actions.payload) as FactoryStreamData) : null,
+			repo,
+			true,
+		);
+	}
+	try {
+		return await freezeActivityRepo(db, lease, now, repo, supplement);
+	} catch (error) {
+		if (error instanceof ApiError && error.code === "factory_capacity") return null;
+		throw error;
+	}
 }
 export async function freezeActivityRepo(
 	db: Db,
