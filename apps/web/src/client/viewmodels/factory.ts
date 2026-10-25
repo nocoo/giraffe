@@ -667,7 +667,6 @@ export function factoryParams(
 	if (value) next.set(key, value);
 	else next.delete(key);
 	if (key !== "page") next.delete("page");
-	if (["language", "topic", "q"].includes(key)) next.delete("repo");
 	if (key === "stream") {
 		next.delete("state");
 		next.delete("day");

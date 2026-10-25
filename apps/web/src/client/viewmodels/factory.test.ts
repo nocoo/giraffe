@@ -260,17 +260,13 @@ describe("factory sampling signals", () => {
 	});
 });
 
-it("changes drilldown parameters atomically without reverting the selected tab", () => {
-	const before = new URLSearchParams("repo=nocoo/app&stream=prs&state=open&day=2026-09-01&page=2");
-	const next = factoryParams(before, "stream", "commits");
-	expect(next.get("stream")).toBe("commits");
-	expect(next.has("state")).toBe(false);
-	expect(next.has("day")).toBe(false);
-	expect(next.has("page")).toBe(false);
-	expect(factoryParams(before, "language", "Swift").has("repo")).toBe(false);
-	expect(factoryParams(before, "repo", "").has("repo")).toBe(false);
-	expect(factoryParams(before, "page", "3").get("page")).toBe("3");
-	expect(before.get("stream")).toBe("prs");
+it("resets paging when a filter changes and keeps other filters intact", () => {
+	const before = new URLSearchParams("language=Swift&topic=cli&q=app&period=30&page=3");
+	expect(factoryParams(before, "topic", "ui").get("page")).toBeNull();
+	expect(factoryParams(before, "topic", "ui").get("language")).toBe("Swift");
+	expect(factoryParams(before, "language", "").has("language")).toBe(false);
+	expect(factoryParams(before, "page", "2").get("page")).toBe("2");
+	expect(factoryParams(before, "period", "").has("period")).toBe(false);
 });
 
 it("keeps unknown metrics distinct from observed zero and bounds rendered repository rows", () => {

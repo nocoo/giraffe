@@ -121,8 +121,6 @@ header:has(.giraffe-page-title) > div:first-child > div:last-child { grid-column
 .factory-coverage-unavailable,.factory-coverage-limited { background:var(--color-basalt-warning-tint);color:var(--color-basalt-foreground); }
 .factory-coverage-partial { background:var(--color-basalt-warning-tint);color:var(--color-basalt-foreground); }
 .factory-coverage-pending { color:var(--color-basalt-muted-foreground); }
-.factory-detail-title { display:flex;align-items:center;gap:6px;max-width:420px;font-size:var(--text-sm); }
-.factory-tag { display:inline-block;font-size:var(--text-xs);white-space:nowrap;background:var(--color-basalt-control);padding:2px 6px;border-radius:4px; }
 .factory-link { display:inline-flex;align-items:center;gap:4px;height:auto;padding:0;font-size:var(--text-sm);text-decoration:underline;cursor:pointer; }
 .factory-methods { font-size:var(--text-xs);color:var(--color-basalt-muted-foreground);border-top:1px solid var(--color-basalt-border);padding-top:14px;line-height:1.8; }
 .factory-methods summary { cursor:pointer;color:var(--color-basalt-foreground);font-weight:500; }
@@ -231,7 +229,6 @@ header:has(.giraffe-page-title) > div:first-child > div:last-child { grid-column
  .factory-toolbar>label { flex-wrap:wrap;min-width:0; }
  .factory-toolbar input[aria-label="搜索工厂仓库"] { max-width:none;width:100%; }
  .factory-calendar { gap:3px; }
- .factory-detail-title { min-width:180px; }
 }
 @media(prefers-reduced-motion:reduce) { .factory,.factory * { animation:none!important;transition:none!important; } }
 
