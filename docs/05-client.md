@@ -238,7 +238,25 @@ Basalt `ContentIsland` 已是 L1 岛。不要再包一层自定义 card 当岛�
 - 通知标记已读时显示 `Button loading`，同一页面的已读操作暂时禁用，成功后应用服务端返回的状态。
 - `layout/collection-chrome` 只组合 Basalt 输入和滚动控件，并展示计数与更新时间；`table-chrome` 只组合表格叶子；`kpi` / `chart-brick` 只组合卡片。它们不维护第二套控件样式、API 或筛选逻辑。
 
-### 5.5 字号与可视化规范
+### 5.5 页面骨架：图表在上
+
+数据页按同一顺序组织，跨页面可比：`PageHeader` → **时间序列图** → 汇总数字（`StatStrip` / stat inline）→ 分类拆解卡（`OverviewCard`）→ 筛选后的列表或表格。整页详情（仓库概览）把时间序列图放在 KPI 卡片之上；列表页把同一张图放在标题与统计行之间。
+
+时间序列图是一等方法，不是装饰：同一时间轴上叠加两种以上度量，量级不同的指标用第二 y 轴，避免一条线把另一条压平。当前约定：
+
+| 页面                       | 图表                                            | 系列（轴）                                   |
+| -------------------------- | ----------------------------------------------- | -------------------------------------------- |
+| `/factory`                 | 提交产出与覆盖面、交付吞吐、PR/Issue 流量与存量 | 流量柱 + 7 日比率/存量线（右轴）             |
+| `/repos/:owner/:name` 概览 | N 天活动 + 版本节奏                             | 提交/合并柱 + CI 成功率线（右轴）            |
+| `/repos`                   | 提交产出与覆盖面                                | 每日提交柱 + 7 日活跃仓库线（右轴）          |
+| `/pulls`                   | PR 流量与存量                                   | 新开/合并/未合并关闭柱 + open 存量线（右轴） |
+| `/issues`                  | Issue 流量与存量                                | 新开/关闭柱 + open 存量线（右轴）            |
+| `/ci`                      | 运行结果与成功率                                | 成功/失败/取消堆叠柱 + 7 日成功率线（右轴）  |
+| `/insights`                | 待办存量                                        | open Issue（左轴）+ open PR（右轴）          |
+
+数据来自软件工厂的已发布窗口（`factoryDays`），图表旁必须说明它不是 GitHub 实时状态、事件不完整的日期不画点，并提供读屏摘要。没有按时间分布数据的页面（`/today` 是单窗口视图、`/alerts` 只保存当前 open 计数、`/inbox`、`/analysis`、`/settings`）沿用各自结构，不虚构时间轴。
+
+### 5.6 字号与可视化规范
 
 卡片标题统一为 Basalt `Text variant="heading"`（16px），正文 14px，说明与辅助文字 13px，KPI 数值 28px，坐标轴最小 12px。`index.css` 的 `--text-xs` 统一辅助字号，不逐卡硬编码 9–11px；页标题和大对话框标题保留各自层级。
 
@@ -386,6 +404,8 @@ The Chinese sidebar has five ordered groups: Overview (Software Factory), AI (An
 
 `BusinessPageHeader` presents the repository title, subtitle and data time. Repository scope, search, sorting and status badges share the title row when space permits; search/sorting wrap below at narrower widths. 列表 / 网格切换和结果数放在仓库 `SectionRule.actions`。排序通过 VM 完成，不靠 Table 内置排序。
 
+页首是时间序列图「提交产出与覆盖面」（每日提交柱 + 7 日活跃仓库线，右轴，来自工厂发布窗口），其下是统计行与概览卡。
+
 KPI（共享 `StatCard`，主题色 icon）：仓库数 / Stars / Forks / Issues，由 `repoMetrics` 从快照合计。其下 `SectionRule`「仓库」。
 
 列表：`Table` 列 = 仓库、语言、Stars、Fork、Issues、最近推送、health。首列包含描述、可见性、归档和 Fork 标记；推送时间下显示活跃 meter。health 通过只读 GET 获取已有 insights，没有则不加列；不为此触发采集。`insights.alerts_incomplete === true` 时页头 Badge「告警不完整」，不得把 `strong` 理解成已扫完全部安全告警。不另 GET alerts 来推断该标记。
@@ -398,13 +418,15 @@ KPI（共享 `StatCard`，主题色 icon）：仓库数 / Stars / Forks / Issues
 
 ### 8.2 `/issues` `/pulls`
 
+页首为时间序列图（PR / Issue 流量与存量：新开与完成柱 + open 存量线，右轴），其后是 open 统计行、分类拆解卡与表格。
+
 跨仓表。首列是标题（外链 `url`，`target=_blank`），下方显示编号与可进入单仓页的仓库链接；其余列是作者、更新时间，Issues 另有标签和评论数，PR 另有 draft、review、+add/−del。`FilterBar` 提供搜索和最近更新 / 按仓库排序。Client 侧按仓 / 标题过滤，不改 GET query。
 
 Issues KPI：打开 Issues / 涉及仓库（`issueMetrics`）。PRs KPI：草稿 / 待审查 / 需修改 / 已批准（`pullMetrics`，草稿优先）。表在 `SectionRule` 内。
 
 ### 8.3 `/insights`
 
-总览组第二项。不重复仓库全表。首区「最值得关注的仓库」给出 Top 10 与跨仓发现，其后用 `SectionRule` 分「工作量 / 审查与节奏 / 健康与活跃」。
+总览组第二项。不重复仓库全表。页首为「待办存量」双轴折线（open Issue 左轴、open PR 右轴，由工厂每日事件倒推）；其后首区「最值得关注的仓库」给出 Top 10 与跨仓发现，再用 `SectionRule` 分「工作量 / 审查与节奏 / 健康与活跃」。
 
 Top 10 is derived by `apps/web/src/client/viewmodels/focus.ts` from saved Insights, Issues, PRs, CI and security signals. It does not depend on analysis reports. The analysis desk separately displays reports written by an external producer with explicit source freshness and evidence; see [the machine API contract](11-agent-api.md).
 
@@ -414,7 +436,7 @@ Top 10 is derived by `apps/web/src/client/viewmodels/focus.ts` from saved Insigh
 
 ### 8.3a `/ci`
 
-仓库健康组第二项。页头说明判定口径与数据更新时间；截断与未采集仓库以 Badge 标出。汇总条按连续失败 / 偶发失败 / 稳定 / 无近期运行分段，四个计数各带规则说明。「需要处理」逐张卡片列出 `broken` 流：最近 10 次运行方块、失败始于或成功率、最后成功，以及 GitHub Actions 过滤链接。「继续观察」分反复失败与偶发一次两组，旁边为近 30 天每日运行结果堆叠柱。「全部工作流」表可按判定与文本筛选；「发布」表按发布流水线状态与距今时间排序，超过 3 个典型间隔（或无间隔时 90 天）标「久未发布」。只读 GET，缺数据时统一引导到工厂刷新。
+仓库健康组第二项。页头说明判定口径与数据更新时间；截断与未采集仓库以 Badge 标出。汇总条按连续失败 / 偶发失败 / 稳定 / 无近期运行分段，四个计数各带规则说明。「需要处理」逐张卡片列出 `broken` 流：最近 10 次运行方块、失败始于或成功率、最后成功，以及 GitHub Actions 过滤链接。页首为「运行结果与成功率」（成功/失败/取消堆叠柱 + 7 日成功率线，右轴）。「继续观察」分反复失败与偶发一次两组。「全部工作流」表可按判定与文本筛选；「发布」表按发布流水线状态与距今时间排序，超过 3 个典型间隔（或无间隔时 90 天）标「久未发布」。只读 GET，缺数据时统一引导到工厂刷新。
 
 ### 8.4 `/alerts`
 
@@ -428,20 +450,22 @@ KPI（未读 / 全部）+ `SectionRule` 通知表：状态、标题与仓库链�
 
 `owner`/`name` 校验同 04（`^[A-Za-z0-9_.-]+$`，不是 `.`/`..`），非法 → 岛内校验错误，不请求。
 
-`Tabs`：概览、安全、Actions、PRs、Issues、发布、流量、语言、贡献者。默认概览。使用共享 `ScrollArea` 保持窄屏标签可达；页头更新时间取当前标签快照，缺数据时不显示其他标签的时间。
+`Tabs`：概览、工厂、Agent 分析、安全、Actions、PRs、Issues、发布、流量、语言、贡献者。默认概览；页签状态保存在 `?tab=` 与 `?stream=`。使用共享 `ScrollArea` 保持窄屏标签可达；页头更新时间取当前标签快照，缺数据时不显示其他标签的时间。
 
 标签只读保存的快照，首次加载失败后结束骨架状态。缺数据时展示统一工厂入口，不自动补刷；重新进入页面会重新读取最新保存内容。
 
-| Tab          | GET                | 要点                                                                                                                              |
-| ------------ | ------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
-| 概览         | `.../:owner/:name` | Stars/Forks/Issues KPI；`SectionRule` 概览 + `DescriptionList`（无 `LayerCard.Header`）                                           |
-| 安全         | `/security`        | `unavailable` 空态（ShieldAlert），说明账号权限；否则 Dependabot / Code scanning KPI                                              |
-| Actions      | `/actions`         | runs 表，conclusion Badge；空态 Play icon                                                                                         |
-| PRs / Issues | `/prs` `/issues`   | 同跨仓列，无仓列                                                                                                                  |
-| 发布         | `/releases`        | tag、时间、prerelease                                                                                                             |
-| 流量         | `/traffic`         | `forbidden` → Empty「无法查看流量」，说明需要推送权限；否则浏览/独立访客/克隆/独立克隆 KPI + 两张图卡（日期轴、数值轴、统计摘要） |
-| 语言         | `/languages`       | 图卡 Donut，字节数                                                                                                                |
-| 贡献者       | `/contributors`    | `Table` 内的 Avatar + login + 提交次数                                                                                            |
+| Tab          | GET                                        | 要点                                                                                                                              |
+| ------------ | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| 概览         | `.../:owner/:name`                         | 先时间序列图（N 天活动 + 版本节奏），再 KPI、当次活动（`/api/activity`）与档案卡                                                  |
+| Agent 分析   | 无（链接到 `/analysis?repo=`）             | 只读外部分析报告入口，不在本页运行模型                                                                                            |
+| 工厂         | 见 06 `factory/repos/:owner/:name/:stream` | 按流展示工厂记录：PR/Issue/CI/Release 各自列定义、状态与日期筛选、覆盖与来源、每页 100 条                                         |
+| 安全         | `/security`                                | `unavailable` 空态（ShieldAlert），说明账号权限；否则 Dependabot / Code scanning KPI                                              |
+| Actions      | `/actions`                                 | runs 表，conclusion Badge；空态 Play icon                                                                                         |
+| PRs / Issues | `/prs` `/issues`                           | 同跨仓列，无仓列                                                                                                                  |
+| 发布         | `/releases`                                | tag、时间、prerelease                                                                                                             |
+| 流量         | `/traffic`                                 | `forbidden` → Empty「无法查看流量」，说明需要推送权限；否则浏览/独立访客/克隆/独立克隆 KPI + 两张图卡（日期轴、数值轴、统计摘要） |
+| 语言         | `/languages`                               | 图卡 Donut，字节数                                                                                                                |
+| 贡献者       | `/contributors`                            | `Table` 内的 Avatar + login + 提交次数                                                                                            |
 
 侧栏「仓库」在钻取时保持祖先高亮。
 
