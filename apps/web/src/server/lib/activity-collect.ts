@@ -140,14 +140,11 @@ function addTags(
 	}
 	state.tagAfter = cursor(connection, state.tagAfter);
 }
-export async function collectActivitySupplement(
-	run: FactoryRun,
+export function defaultActivitySupplement(
+	actions: FactoryStreamData | null | undefined,
 	repo: FactoryRepo,
-	gh: GithubClient,
-	token: string,
-	previous: ActivitySupplement | null,
-	actions?: FactoryStreamData | null,
-): Promise<{ state: ActivitySupplement; done: boolean }> {
+	ready = false,
+): ActivitySupplement {
 	const observedSuccess =
 		actions?.coverage.status === "complete"
 			? actions.items
@@ -162,7 +159,7 @@ export async function collectActivitySupplement(
 					.sort()
 					.at(-1)
 			: null;
-	const state: ActivitySupplement = previous ?? {
+	return {
 		commits: [],
 		tags: [],
 		last_success_at: observedSuccess ?? null,
@@ -173,13 +170,23 @@ export async function collectActivitySupplement(
 				? completeActivity()
 				: { status: "partial", truncated: false, reason: "Deployment history pending" },
 		},
-		phase: "refs",
+		phase: ready ? "done" : "refs",
 		after: null,
 		tagAfter: null,
 		pending: [],
 		deployNext: null,
 		pages: 0,
 	};
+}
+export async function collectActivitySupplement(
+	run: FactoryRun,
+	repo: FactoryRepo,
+	gh: GithubClient,
+	token: string,
+	previous: ActivitySupplement | null,
+	actions?: FactoryStreamData | null,
+): Promise<{ state: ActivitySupplement; done: boolean }> {
+	const state: ActivitySupplement = previous ?? defaultActivitySupplement(actions, repo);
 	if (!repo.branch) {
 		state.commits = null;
 		state.coverage.other_commits = unknownActivity("Current-run default branch unavailable");

@@ -3,6 +3,7 @@ import { rawRepo } from "../../../../../tests/fixtures/factory";
 import { factoryFixture } from "../../../../../tests/fixtures/factory-snapshot";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import { makeRun, RUN_LEASE_MS, type RunSelection } from "../../lib/factory-run";
+import { FACTORY_STREAMS } from "../../lib/factory-types";
 import type { Env } from "../env";
 import { createApp } from "../index";
 import * as activityLanded from "./activity-landed";
@@ -2619,6 +2620,62 @@ it("finishes activity factory_capacity as limited without pausing the run", asyn
 		error: "factory_capacity",
 	});
 	expect((await listRuns(db, snap.account_id))[0]?.counts).toMatchObject({ limited: 1 });
+	expect(
+		await db
+			.prepare(
+				"SELECT 1 AS ok FROM factory_resources WHERE run_id='r1' AND stream='activity-snapshot'",
+			)
+			.first(),
+	).toBeNull();
+	vi.restoreAllMocks();
+});
+it("freezes activity evidence on factory_capacity when current-run streams exist", async () => {
+	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] }, true);
+	const db = createDb(env.DB);
+	const found = await getRun(db, snap.account_id, "r1");
+	if (!found) throw new Error("fixture");
+	const repo = snap.repos[0];
+	if (!repo) throw new Error("fixture");
+	for (const step of found.run.steps) {
+		if (step.kind === "activity" && step.status === "pending") {
+			found.run.cursor = found.run.steps.indexOf(step);
+			break;
+		}
+		if (step.status === "pending") step.status = "success";
+	}
+	for (const stream of FACTORY_STREAMS)
+		await db
+			.prepare("INSERT INTO factory_resources(run_id,repo,stream,payload) VALUES(?,?,?,?)")
+			.bind(
+				"r1",
+				repo.name,
+				stream,
+				JSON.stringify({
+					runId: "r1",
+					items: [],
+					next: null,
+					ranges: [],
+					coverage: { ...repo.coverage[stream], status: "complete" },
+				}),
+			)
+			.run();
+	await db
+		.prepare("UPDATE factory_runs SET payload=? WHERE id=?")
+		.bind(JSON.stringify(found.run), "r1")
+		.run();
+	vi.spyOn(factoryPublish, "currentRepo").mockResolvedValue(mapFactoryRepo(rawRepo));
+	vi.spyOn(activityLanded, "collectLandedPage").mockRejectedValue(
+		new ApiError(422, "factory_capacity", "Activity repository metadata exceeds page capacity"),
+	);
+	await executeRunPage(env, "r1", () => now);
+	expect(
+		await db
+			.prepare(
+				"SELECT 1 AS ok FROM factory_resources WHERE run_id='r1' AND repo=? AND stream='activity-snapshot'",
+			)
+			.bind(repo.name)
+			.first(),
+	).toBeTruthy();
 	vi.restoreAllMocks();
 });
 
