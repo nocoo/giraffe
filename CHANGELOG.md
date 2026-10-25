@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.24.5 - 2026-10-25
+
+### Fixed
+
+- One-time migration `0027_retract_hollow_activity_publications.sql` removes legacy activity publications that have no frozen `activity-snapshot` rows (the same hollow gate as v0.24.4), so `/activity?run=latest` falls back to the previous good head. Cascaded `activity_pages` delete and budget triggers apply; `activity_commit_ledger.published_run_id` is cleared when the publication row is gone so pending commits can be claimed by a later publish.
+
 ## v0.24.4 - 2026-10-25
 
 ### Fixed

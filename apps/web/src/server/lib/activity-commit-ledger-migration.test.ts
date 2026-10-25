@@ -31,8 +31,12 @@ it("pins the actual v0.23.1 source and appends the identical additive migration 
 		provenance.archiveSha256,
 	);
 	expect(createHash("sha256").update(oldSchema).digest("hex")).toBe(provenance.schemaSha256);
+	const appended = [
+		migration(),
+		readFileSync("migrations/0027_retract_hollow_activity_publications.sql", "utf8"),
+	].join("\n");
 	expect(readFileSync("apps/web/src/server/lib/db/schema.sql", "utf8")).toBe(
-		`${oldSchema}\n${migration()}`,
+		`${oldSchema}\n${appended}`,
 	);
 	expect(migration()).not.toMatch(/^\s*(?:CREATE\s+TRIGGER|INSERT|UPDATE|DELETE|DROP|ALTER)\b/im);
 });
