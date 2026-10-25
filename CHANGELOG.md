@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.25.0 - 2026-10-25
+
+### Added
+
+- Repository pages gain a 工厂 tab backed by `GET /api/factory/repos/:owner/:name/:stream`. Each stream renders its own columns (PR: state, draft, review, CI and merge; issue: labels and close reason; CI: workflow, branch, attempt and duration; release: tag), with state and UTC-date filters, coverage provenance and 100-record pages. `?tab=` and `?stream=` keep the tab and stream linkable.
+- `/pulls`, `/issues`, `/repos`, `/ci` and `/insights` open with a two-axis time series from the published factory window: flow bars on the left axis plus open stock or a 7-day success rate on the right, so a small series is no longer flattened by a large one. The repository overview leads with its activity and release-tempo charts.
+
+### Changed
+
+- 「需要检查的信号」groups by repository, expands per row and pages six projects at a time instead of listing every signal flat.
+- Repository overview compacts the current window into one strip (window line, six totals, six per-stream cards, observed snapshot) and moves the archive cards beside the charts, cutting the page from 2190 to 1491 px.
+- Page headers collapse to a single row: the description becomes an inline truncated suffix, and data time, repository scope, filters and page actions share one 28px toolbar. Below 1024px the toolbar stacks under the title.
+- `/factory` keeps cross-repo comparison only; repository rows link to the repository page instead of narrowing the board in place.
+
+### Removed
+
+- The `/factory` in-page work-record panel together with its `repo`, `stream`, `state`, `day` and `page` query parameters; existing bookmarks to that drill fall back to the unfiltered board.
+
+### Fixed
+
+- The mobile navigation drawer no longer offers a collapse step that only closed the drawer.
+
 ## v0.24.5 - 2026-10-25
 
 ### Fixed
