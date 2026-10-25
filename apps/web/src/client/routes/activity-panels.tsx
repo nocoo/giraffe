@@ -18,6 +18,159 @@ function ActivityTime({ at }: { at: string | null }) {
 	return at ? <time dateTime={at}>{formatPreciseDate(at, "Asia/Shanghai")}</time> : <>未知</>;
 }
 
+type ActivitySection = ReturnType<typeof activitySections>[number];
+type ActivityRepo = ActivitySnapshot["repos"][number];
+
+/** One activity section's notes and rows, shared by the wide and compact layouts. */
+export function ActivitySectionBody({
+	section,
+	hintedElsewhere = false,
+}: {
+	section: ActivitySection;
+	hintedElsewhere?: boolean;
+}) {
+	return (
+		<>
+			{section.state === "unknown" ? (
+				<p className="mb-basalt-space-lg text-sm" role="note">
+					部分来源未知，不代表窗口内没有活动。
+					{section.missingRepos.length
+						? `缺少完整数据：${section.missingRepos.join("、")}`
+						: "账户仓库范围未完整保存。"}
+				</p>
+			) : null}
+			{section.state === "partial" && !hintedElsewhere ? (
+				<p className="mb-basalt-space-lg text-sm" role="note">
+					记录不完整，不代表窗口内没有活动；当前数量仅为下界。
+				</p>
+			) : null}
+			{section.state === "empty" ? (
+				<p className="text-sm text-basalt-muted-foreground">窗口内没有记录</p>
+			) : null}
+			{section.rows.length ? (
+				<ul className="space-y-basalt-layout-sm">
+					{section.rows.map((row) => (
+						<li key={row.id} className="min-w-0 space-y-basalt-space-xs">
+							<Link
+								href={`/repos/${row.repo}`}
+								className="block break-words text-sm font-medium [overflow-wrap:anywhere]"
+							>
+								{row.title}
+							</Link>
+							<p className="break-words text-xs text-basalt-muted-foreground [overflow-wrap:anywhere]">
+								{row.repo} · {row.kind} · <ActivityTime at={row.at} />
+							</p>
+						</li>
+					))}
+				</ul>
+			) : null}
+		</>
+	);
+}
+
+/** The repository's observed snapshot fields; callers own the surrounding card. */
+export function RepoSnapshotFields({
+	repo,
+	snapshot,
+}: {
+	repo: ActivityRepo;
+	snapshot: ActivitySnapshot;
+}) {
+	return (
+		<dl className="mt-basalt-layout-sm grid grid-cols-2 gap-basalt-layout-sm text-sm sm:grid-cols-3">
+			<div>
+				<dt className="text-basalt-muted-foreground">未结 PR</dt>
+				<dd className="tabular-nums">
+					{activityObservedCount(
+						repo.snapshot.open_prs?.length ?? null,
+						repo.coverage["snapshot.open_prs"],
+						snapshot.truncated,
+					)}
+				</dd>
+			</div>
+			<div>
+				<dt className="text-basalt-muted-foreground">未结 Issue · 依赖 / 安全 / 其他</dt>
+				<dd className="tabular-nums">
+					{activityObservedCount(
+						repo.snapshot.open_issues?.dependency.length ?? null,
+						repo.coverage["snapshot.open_issues"],
+						snapshot.truncated,
+					)}{" "}
+					/{" "}
+					{activityObservedCount(
+						repo.snapshot.open_issues?.security.length ?? null,
+						repo.coverage["snapshot.open_issues"],
+						snapshot.truncated,
+					)}{" "}
+					/{" "}
+					{activityObservedCount(
+						repo.snapshot.open_issues?.other.length ?? null,
+						repo.coverage["snapshot.open_issues"],
+						snapshot.truncated,
+					)}
+				</dd>
+			</div>
+			<div>
+				<dt className="text-basalt-muted-foreground">提交 · 默认 / 其他分支</dt>
+				<dd className="tabular-nums">
+					{activityObservedCount(repo.commits.default, repo.coverage.commits, snapshot.truncated)} /{" "}
+					{activityObservedCount(
+						repo.commits.other,
+						repo.coverage.other_commits,
+						snapshot.truncated,
+					)}
+					{repo.commits.deferred?.map((group) => (
+						<p
+							key={group.runId}
+							className="mt-basalt-space-xs text-xs text-basalt-muted-foreground"
+						>
+							{`补录 ${group.items.length} 个默认分支提交 · 归属窗口 `}
+							<ActivityTime at={group.window.since} /> → <ActivityTime at={group.window.until} />
+							（不计入本窗口）
+						</p>
+					))}
+				</dd>
+			</div>
+			<div>
+				<dt className="text-basalt-muted-foreground">Dependabot</dt>
+				<dd className="tabular-nums">
+					{activityObservedCount(repo.snapshot.dependabot, repo.coverage.dependabot)}
+				</dd>
+			</div>
+			<div>
+				<dt className="text-basalt-muted-foreground">code scanning</dt>
+				<dd className="tabular-nums">
+					{activityObservedCount(repo.snapshot.code_scanning, repo.coverage.code_scanning)}
+				</dd>
+			</div>
+			<div>
+				<dt className="text-basalt-muted-foreground">最近成功部署</dt>
+				<dd>
+					<ActivityTime
+						at={
+							repo.coverage.deploy?.status === "complete" && !repo.coverage.deploy.truncated
+								? repo.deploy.last_success_at
+								: null
+						}
+					/>
+				</dd>
+			</div>
+		</dl>
+	);
+}
+
+export function activitySectionBadge(section: ActivitySection) {
+	return (
+		<CandyBadge
+			tone={section.state === "unknown" || section.state === "partial" ? "amber" : "gray"}
+		>
+			{section.state === "unknown"
+				? "未知"
+				: `${section.state === "partial" ? "≥ " : ""}${section.rows.length} 条`}
+		</CandyBadge>
+	);
+}
+
 export function ActivityContent({
 	snapshot,
 	repository = false,
@@ -79,50 +232,10 @@ export function ActivityContent({
 						key={section.key}
 						title={section.title}
 						data-testid={`activity-${section.key}`}
-						actions={
-							<CandyBadge
-								tone={section.state === "unknown" || section.state === "partial" ? "amber" : "gray"}
-							>
-								{section.state === "unknown"
-									? "未知"
-									: `${section.state === "partial" ? "≥ " : ""}${section.rows.length} 条`}
-							</CandyBadge>
-						}
+						actions={activitySectionBadge(section)}
 					>
 						<LayerCard>
-							{section.state === "unknown" ? (
-								<p className="mb-basalt-space-lg text-sm" role="note">
-									部分来源未知，不代表窗口内没有活动。
-									{section.missingRepos.length
-										? `缺少完整数据：${section.missingRepos.join("、")}`
-										: "账户仓库范围未完整保存。"}
-								</p>
-							) : null}
-							{section.state === "partial" ? (
-								<p className="mb-basalt-space-lg text-sm" role="note">
-									记录不完整，不代表窗口内没有活动；当前数量仅为下界。
-								</p>
-							) : null}
-							{section.state === "empty" ? (
-								<p className="text-sm text-basalt-muted-foreground">窗口内没有记录</p>
-							) : null}
-							{section.rows.length ? (
-								<ul className="space-y-basalt-layout-sm">
-									{section.rows.map((row) => (
-										<li key={row.id} className="min-w-0 space-y-basalt-space-xs">
-											<Link
-												href={`/repos/${row.repo}`}
-												className="block break-words text-sm font-medium [overflow-wrap:anywhere]"
-											>
-												{row.title}
-											</Link>
-											<p className="break-words text-xs text-basalt-muted-foreground [overflow-wrap:anywhere]">
-												{row.repo} · {row.kind} · <ActivityTime at={row.at} />
-											</p>
-										</li>
-									))}
-								</ul>
-							) : null}
+							<ActivitySectionBody section={section} />
 						</LayerCard>
 					</SectionRule>
 				))}
@@ -133,97 +246,7 @@ export function ActivityContent({
 						{snapshot.repos.map((repo) => (
 							<LayerCard key={repo.repo}>
 								<ProjectLink repo={repo.repo} />
-								<dl className="mt-basalt-layout-sm grid grid-cols-2 gap-basalt-layout-sm text-sm sm:grid-cols-3">
-									<div>
-										<dt className="text-basalt-muted-foreground">未结 PR</dt>
-										<dd className="tabular-nums">
-											{activityObservedCount(
-												repo.snapshot.open_prs?.length ?? null,
-												repo.coverage["snapshot.open_prs"],
-												snapshot.truncated,
-											)}
-										</dd>
-									</div>
-									<div>
-										<dt className="text-basalt-muted-foreground">
-											未结 Issue · 依赖 / 安全 / 其他
-										</dt>
-										<dd className="tabular-nums">
-											{activityObservedCount(
-												repo.snapshot.open_issues?.dependency.length ?? null,
-												repo.coverage["snapshot.open_issues"],
-												snapshot.truncated,
-											)}{" "}
-											/{" "}
-											{activityObservedCount(
-												repo.snapshot.open_issues?.security.length ?? null,
-												repo.coverage["snapshot.open_issues"],
-												snapshot.truncated,
-											)}{" "}
-											/{" "}
-											{activityObservedCount(
-												repo.snapshot.open_issues?.other.length ?? null,
-												repo.coverage["snapshot.open_issues"],
-												snapshot.truncated,
-											)}
-										</dd>
-									</div>
-									<div>
-										<dt className="text-basalt-muted-foreground">提交 · 默认 / 其他分支</dt>
-										<dd className="tabular-nums">
-											{activityObservedCount(
-												repo.commits.default,
-												repo.coverage.commits,
-												snapshot.truncated,
-											)}{" "}
-											/{" "}
-											{activityObservedCount(
-												repo.commits.other,
-												repo.coverage.other_commits,
-												snapshot.truncated,
-											)}
-											{repo.commits.deferred?.map((group) => (
-												<p
-													key={group.runId}
-													className="mt-basalt-space-xs text-xs text-basalt-muted-foreground"
-												>
-													{`补录 ${group.items.length} 个默认分支提交 · 归属窗口 `}
-													<ActivityTime at={group.window.since} /> →{" "}
-													<ActivityTime at={group.window.until} />
-													（不计入本窗口）
-												</p>
-											))}
-										</dd>
-									</div>
-									<div>
-										<dt className="text-basalt-muted-foreground">Dependabot</dt>
-										<dd className="tabular-nums">
-											{activityObservedCount(repo.snapshot.dependabot, repo.coverage.dependabot)}
-										</dd>
-									</div>
-									<div>
-										<dt className="text-basalt-muted-foreground">code scanning</dt>
-										<dd className="tabular-nums">
-											{activityObservedCount(
-												repo.snapshot.code_scanning,
-												repo.coverage.code_scanning,
-											)}
-										</dd>
-									</div>
-									<div>
-										<dt className="text-basalt-muted-foreground">最近成功部署</dt>
-										<dd>
-											<ActivityTime
-												at={
-													repo.coverage.deploy?.status === "complete" &&
-													!repo.coverage.deploy.truncated
-														? repo.deploy.last_success_at
-														: null
-												}
-											/>
-										</dd>
-									</div>
-								</dl>
+								<RepoSnapshotFields repo={repo} snapshot={snapshot} />
 							</LayerCard>
 						))}
 						{snapshot.repos.length === 0 ? (

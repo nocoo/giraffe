@@ -571,7 +571,7 @@ export function RepoDetailPage() {
 				<TabsContent value="details">
 					{snap ? (
 						<div className="flex flex-col gap-4">
-							<KpiRow>
+							<div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
 								<Kpi icon={Star} label="Stars" value={formatCount(snap.stargazer_count)} />
 								<Kpi icon={GitFork} label="Forks" value={formatCount(snap.fork_count)} />
 								<Kpi
@@ -602,79 +602,87 @@ export function RepoDetailPage() {
 											: `发布间隔中位 ${activity.releases.cadenceDays} 天`
 									}
 								/>
-							</KpiRow>
-							<RepoCurrentActivity repository={`${owner}/${name}`} />
-							<RepoAgentStateCard owner={owner} name={name} />
-							<RepoMetaCard owner={owner} name={name} />
-							{days.length ? (
-								<ChartBrick
-									title={`${days.length} 天活动`}
-									description="来自软件工厂的该仓库数据：每日默认分支提交与合并 PR（左轴），截至当日 7 天 CI 成功率（右轴）。"
-								>
-									<DataTimeSource
-										entries={[
-											{
-												label: "活动统计",
-												freshness: factoryFreshness(factory ? [factory.repo] : []),
-											},
-										]}
-									/>
-									<p className="giraffe-stat-inline mb-2">
-										<span>
-											30 天提交 <strong>{formatCount(flow30.commits)}</strong>
-										</span>
-										<span>
-											合并 PR <strong>{formatCount(flow30.merged)}</strong>
-										</span>
-										<span>
-											Issue 新开 / 关闭 <strong>{formatCount(flow30.opened)}</strong>/
-											<strong>{formatCount(flow30.closed)}</strong>
-										</span>
-									</p>
-									<RepoActivityChart days={days} />
-								</ChartBrick>
-							) : null}
-							{activity?.releases.timeline.length ? (
-								<ChartBrick
-									title="版本节奏"
-									description="已发布版本按时间排列，空心点为预发布；点的疏密即发布节奏。"
-								>
-									<DataTimeSource
-										entries={[
-											{
-												label: "版本发布",
-												at: releases && !("missing" in releases) ? releases.fetched_at : null,
-											},
-										]}
-									/>
-									{activity ? <ReleaseTimeline releases={activity.releases} /> : null}
-								</ChartBrick>
-							) : null}
-							<SectionRule title="概览">
-								<LayerCard padding="md">
-									<DescriptionList columns={2}>
-										<DescriptionList.Item term="默认分支">
-											<Code>{snap.default_branch}</Code>
-										</DescriptionList.Item>
-										<DescriptionList.Item term="许可证">{snap.license ?? "—"}</DescriptionList.Item>
-										<DescriptionList.Item term="最近推送">
-											<span className="tabular-nums">{formatDate(snap.pushed_at)}</span>
-										</DescriptionList.Item>
-										<DescriptionList.Item term="归档">
-											{snap.is_archived ? (
-												<CandyBadge tone="orange">已归档</CandyBadge>
-											) : (
-												<CandyBadge tone="green">活跃</CandyBadge>
-											)}
-										</DescriptionList.Item>
-										<DescriptionList.Item term="GitHub">
-											<Link href={snap.url} target="_blank" rel="noreferrer">
-												打开仓库
-											</Link>
-										</DescriptionList.Item>
-									</DescriptionList>
-								</LayerCard>
-							</SectionRule>
+							</div>
+							<RepoCurrentActivity repository={`${owner}/${name}`} compact />
+							<div className="grid gap-basalt-layout xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+								<div className="flex min-w-0 flex-col gap-basalt-layout">
+									{days.length ? (
+										<ChartBrick
+											title={`${days.length} 天活动`}
+											description="来自软件工厂的该仓库数据：每日默认分支提交与合并 PR（左轴），截至当日 7 天 CI 成功率（右轴）。"
+										>
+											<DataTimeSource
+												entries={[
+													{
+														label: "活动统计",
+														freshness: factoryFreshness(factory ? [factory.repo] : []),
+													},
+												]}
+											/>
+											<p className="giraffe-stat-inline mb-2">
+												<span>
+													30 天提交 <strong>{formatCount(flow30.commits)}</strong>
+												</span>
+												<span>
+													合并 PR <strong>{formatCount(flow30.merged)}</strong>
+												</span>
+												<span>
+													Issue 新开 / 关闭 <strong>{formatCount(flow30.opened)}</strong>/
+													<strong>{formatCount(flow30.closed)}</strong>
+												</span>
+											</p>
+											<RepoActivityChart days={days} />
+										</ChartBrick>
+									) : null}
+									{activity?.releases.timeline.length ? (
+										<ChartBrick
+											title="版本节奏"
+											description="已发布版本按时间排列，空心点为预发布；点的疏密即发布节奏。"
+										>
+											<DataTimeSource
+												entries={[
+													{
+														label: "版本发布",
+														at: releases && !("missing" in releases) ? releases.fetched_at : null,
+													},
+												]}
+											/>
+											{activity ? <ReleaseTimeline releases={activity.releases} /> : null}
+										</ChartBrick>
+									) : null}
+								</div>
+								<div className="flex min-w-0 flex-col gap-basalt-layout">
+									<SectionRule title="概览">
+										<LayerCard padding="md">
+											<DescriptionList columns={2}>
+												<DescriptionList.Item term="默认分支">
+													<Code>{snap.default_branch}</Code>
+												</DescriptionList.Item>
+												<DescriptionList.Item term="许可证">
+													{snap.license ?? "—"}
+												</DescriptionList.Item>
+												<DescriptionList.Item term="最近推送">
+													<span className="tabular-nums">{formatDate(snap.pushed_at)}</span>
+												</DescriptionList.Item>
+												<DescriptionList.Item term="归档">
+													{snap.is_archived ? (
+														<CandyBadge tone="orange">已归档</CandyBadge>
+													) : (
+														<CandyBadge tone="green">活跃</CandyBadge>
+													)}
+												</DescriptionList.Item>
+												<DescriptionList.Item term="GitHub">
+													<Link href={snap.url} target="_blank" rel="noreferrer">
+														打开仓库
+													</Link>
+												</DescriptionList.Item>
+											</DescriptionList>
+										</LayerCard>
+									</SectionRule>
+									<RepoAgentStateCard owner={owner} name={name} />
+									<RepoMetaCard owner={owner} name={name} />
+								</div>
+							</div>
 						</div>
 					) : null}
 				</TabsContent>

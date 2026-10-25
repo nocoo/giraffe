@@ -9,14 +9,16 @@ import { useSnapshotRead } from "../components/layout/use-snapshot-read";
 import { catchLoad } from "../lib/error-ui";
 import { PAGE_DESCRIPTIONS } from "../lib/navigation";
 import { loadActivity } from "../viewmodels/activity";
+import { CompactRepoActivity } from "./activity-compact";
 import { ActivityContent, ActivityReadError } from "./activity-panels";
 
-function ActivityRead({ repository }: { repository?: string }) {
+function ActivityRead({ repository, compact }: { repository?: string; compact?: boolean }) {
 	const [attempt, setAttempt] = useState(0);
 	return (
 		<ActivityReadState
 			key={attempt}
 			repository={repository}
+			{...(compact ? { compact } : {})}
 			retry={() => setAttempt((value) => value + 1)}
 		/>
 	);
@@ -24,9 +26,11 @@ function ActivityRead({ repository }: { repository?: string }) {
 
 function ActivityReadState({
 	repository,
+	compact,
 	retry,
 }: {
 	repository: string | undefined;
+	compact?: boolean;
 	retry: () => void;
 }) {
 	const [snapshot, setSnapshot] = useState<
@@ -65,7 +69,11 @@ function ActivityReadState({
 					最新读取失败，以下保留上次成功读取的已保存窗口。
 				</p>
 			) : null}
-			<ActivityContent snapshot={snapshot} repository={!!repository} />
+			{compact ? (
+				<CompactRepoActivity snapshot={snapshot} />
+			) : (
+				<ActivityContent snapshot={snapshot} repository={!!repository} />
+			)}
 		</>
 	);
 }
@@ -79,10 +87,16 @@ export function TodayPage() {
 	);
 }
 
-export function RepoCurrentActivity({ repository }: { repository: string }) {
+export function RepoCurrentActivity({
+	repository,
+	compact = false,
+}: {
+	repository: string;
+	compact?: boolean;
+}) {
 	return (
 		<SectionRule title="当次活动" data-testid="repo-current-activity">
-			<ActivityRead key={repository} repository={repository} />
+			<ActivityRead key={repository} repository={repository} compact={compact} />
 		</SectionRule>
 	);
 }
