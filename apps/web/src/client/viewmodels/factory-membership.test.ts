@@ -60,10 +60,10 @@ it("keeps unpublished selection in coverage, days, periods, exact series and hea
 
 it("filters expected membership before joining publications, retaining unknown topics", () => {
 	const snapshot = fixture();
-	const filter = { language: "", topic: "", query: "", repo: "" };
+	const filter = { language: "", topic: "", query: "" };
 	for (const [query, names] of [
-		[{ repo: "NOCOO/APP" }, ["nocoo/app"]],
-		[{ repo: "nocoo/missing" }, ["nocoo/missing"]],
+		[{ query: "nocoo/app" }, ["nocoo/app"]],
+		[{ query: "Unpublished" }, ["nocoo/missing"]],
 		[{ language: "Swift" }, ["nocoo/missing"]],
 		[{ query: "Unpublished" }, ["nocoo/missing"]],
 		[{ topic: "cli" }, ["nocoo/app", "nocoo/missing"]],
@@ -77,7 +77,7 @@ it("filters expected membership before joining publications, retaining unknown t
 		expect(board.coverage.total).toBe(names.length * 7);
 		expect(board.freshness.missing).toBe(names.some((name) => name === "nocoo/missing") ? 1 : 0);
 	}
-	const selected = filterFactoryRepos(snapshot.selectedRepos, { ...filter, repo: "nocoo/app" });
+	const selected = filterFactoryRepos(snapshot.selectedRepos, { ...filter, query: "nocoo/app" });
 	const board = factoryBoard(snapshot, snapshot.repos, selected);
 	expect(board.coverage).toMatchObject({ complete: 7, total: 7 });
 	expect(board.freshness.missing).toBe(0);

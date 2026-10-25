@@ -73,6 +73,41 @@ async function mockScope(page: Page, empty = false) {
 				},
 			});
 		}
+		if (url.pathname.startsWith("/api/factory/repos/octocat/hello-world/")) {
+			return route.fulfill({
+				json: {
+					account_id: "ui-account",
+					runId: "older",
+					repo: "octocat/hello-world",
+					stream: url.pathname.split("/").at(-1) ?? "prs",
+					coverage: {
+						status: "complete",
+						pages: 1,
+						fetchedAt: oldestAt,
+						source: "fixture",
+						reason: null,
+						observed: 1,
+					},
+					page: 1,
+					total: 1,
+					items: [
+						{
+							id: "PR_fixture",
+							title: "fixture pull request",
+							url: "https://github.com/octocat/hello-world/pull/1",
+							at: oldestAt,
+							createdAt: oldestAt,
+							closedAt: null,
+							mergedAt: null,
+							author: "octocat",
+							state: "open",
+							review: null,
+							checks: { state: "SUCCESS" },
+						},
+					],
+				},
+			});
+		}
 		const source: unknown = fixtures[url.pathname as keyof typeof fixtures];
 		if (!source || typeof source !== "object") {
 			return route.fulfill({
@@ -243,20 +278,10 @@ test("explicit unstarred repo detail and factory subviews use their own source t
 			requests.some((request) => request.pathname === "/api/factory" && request.scope === "all"),
 		)
 		.toBe(true);
-	await page.goto("/factory?repo=octocat%2Fhello-world&stream=prs&period=7");
-	const expectActivityTime = async () => {
-		await page.getByRole("button", { name: /^数据更新时间：/ }).click();
-		const source = page
-			.getByRole("dialog", { name: "数据更新时间" })
-			.locator("dl > div")
-			.filter({ has: page.getByText("活动统计", { exact: true }) });
-		await expect(source.locator("time")).toHaveAttribute("datetime", oldestAt);
-		await page.keyboard.press("Escape");
-	};
-	await expectActivityTime();
-	await scopeControl(page).getByRole("radio", { name: "全部", exact: true }).click();
-	await expect(page).toHaveURL(/repo=octocat%2Fhello-world&stream=prs&period=7$/);
-	await expectActivityTime();
+	await page.goto("/repos/octocat/hello-world?tab=factory&stream=prs");
+	await expect(page).toHaveURL(/tab=factory&stream=prs$/);
+	await expect(page.getByRole("link", { name: "fixture pull request" })).toBeVisible();
+	await expect(page.getByText(/^获取于 /)).toBeVisible();
 	await expect
 		.poll(() =>
 			requests.some(

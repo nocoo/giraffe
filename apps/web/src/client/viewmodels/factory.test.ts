@@ -80,14 +80,15 @@ describe("software factory view model", () => {
 		});
 		expect(factoryGroups(s.repos).languages).toEqual(["Swift", "TypeScript"]);
 		expect(
-			filterFactoryRepos(s.repos, { language: "Swift", topic: "cli", query: "", repo: "" }),
+			filterFactoryRepos(s.repos, { language: "Swift", topic: "cli", query: "" }),
 		).toHaveLength(1);
-		expect(
-			filterFactoryRepos(s.repos, { language: "", topic: "", query: "app", repo: "" }),
-		).toHaveLength(1);
-		expect(
-			filterFactoryRepos(s.repos, { language: "", topic: "macos", query: "", repo: "nocoo/app" }),
-		).toHaveLength(0);
+		expect(filterFactoryRepos(s.repos, { language: "", topic: "", query: "app" })).toHaveLength(1);
+		expect(filterFactoryRepos(s.repos, { language: "", topic: "macos", query: "" })).toHaveLength(
+			1,
+		);
+		expect(filterFactoryRepos(s.repos, { language: "", topic: "absent", query: "" })).toHaveLength(
+			0,
+		);
 	});
 	it("reports coverage and raw sample sizes, never treating unknown security as healthy", () => {
 		const s = ready();
@@ -216,12 +217,8 @@ describe("factory sampling signals", () => {
 		const r = s.repos[0];
 		if (!r) throw new Error("fixture");
 		r.description = null;
-		expect(
-			filterFactoryRepos(s.repos, { language: "", topic: "", query: "absent", repo: "" }),
-		).toEqual([]);
-		expect(
-			filterFactoryRepos(s.repos, { language: "", topic: "", query: "", repo: r.name }),
-		).toHaveLength(1);
+		expect(filterFactoryRepos(s.repos, { language: "", topic: "", query: "absent" })).toEqual([]);
+		expect(filterFactoryRepos(s.repos, { language: "", topic: "", query: "" })).toHaveLength(1);
 		expect(safeGithubUrl("not a URL")).toBe("https://github.com");
 		expect(safeGithubUrl("https://user@github.com/nocoo/app")).toBe("https://github.com");
 	});

@@ -374,7 +374,7 @@ test("signal list expands fully and fills the space beside a taller dependency c
 	await page.setViewportSize({ width: 1440, height: 1000 });
 	await page.goto("/factory");
 	const list = page.locator(".factory-signal-list");
-	await expect(list.getByRole("button")).toHaveCount(8);
+	await expect(list.locator("[data-signal-group]")).toHaveCount(4);
 	const originalHeight = await list.evaluate((element) => element.clientHeight);
 	expect(originalHeight).toBeGreaterThan(220);
 	expect(await list.evaluate((element) => element.scrollHeight - element.clientHeight)).toBe(0);
@@ -485,8 +485,8 @@ test("factory visualizations use Basalt chart frames and preserve keyboard drill
 	});
 	await tile.focus();
 	await page.keyboard.press("Enter");
-	await expect(page).toHaveURL(/repo=nocoo%2Fapp/);
-	await page.getByRole("button", { name: "返回仓库群", exact: true }).click();
+	await expect(page).toHaveURL(/\/repos\/nocoo\/app\?tab=factory/);
+	await page.goto("/factory");
 	const day = page.getByRole("button", {
 		name: /2026-09-10 08:00 → 2026-09-11 08:00.*点击查看当日统计/,
 	});

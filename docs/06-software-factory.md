@@ -51,7 +51,7 @@ There is no application-wide account storage quota. Storage telemetry includes f
 
 ## 使用与本地复核
 
-导航「软件工厂」进入 `/factory`。语言群按 GitHub primaryLanguage 互斥分组；topic 允许重叠。仓库搜索、领域筛选、仓库/记录类型/状态/日期/页码保存在 URL。图表点击可下钻，仓库表每页 25 行，明细先按状态或 UTC 日期过滤再每页 100 行；merged 按 mergedAt、closed 按 closedAt，其余按记录时间。提供完整每日账本、语言字节表和来源文件链接作为图形替代；键盘可聚焦图表按钮与表格链接。缺失、限流、权限不足、采集中、无匹配结果分别呈现。
+导航「软件工厂」进入 `/factory`。语言群按 GitHub primaryLanguage 互斥分组；topic 允许重叠。仓库搜索、领域筛选与仓库表页码保存在 URL。`/factory` 只做跨仓比较：图表与仓库表都是跨仓视图，仓库表每页 25 行。单仓明细不再在 `/factory` 内下钻，仓库行与图表点跳到 `/repos/:owner/:name?tab=factory&stream=…`，由仓库页的「工厂」页签按流展示窗口内记录，先按状态或 UTC 日期过滤再每页 100 行；merged 按 mergedAt、closed 按 closedAt，其余按记录时间。提供完整每日账本、语言字节表和来源文件链接作为图形替代；键盘可聚焦图表按钮与表格链接。缺失、限流、权限不足、采集中、无匹配结果分别呈现。
 
 The interface follows the 16/14/13px card typography and shared StatCard in [05 §5.5](05-client.md#55-字号与可视化规范). Trend and throughput charts use Basalt Sparkline/AreaChart; treemaps and scatter plots combine Recharts with Basalt frames, axes and tooltips. All marks use the shared Basalt candy palette; axis labels retain semantic text colors. The calendar keeps its application-owned date selection and unknown states, using Basalt Button/Tooltip and a surface-relative candy-green intensity ramp shared with the repository matrix. Filters, checkboxes and inputs use Basalt controls.
 

@@ -11,7 +11,6 @@ import {
 } from "@nocoo/basalt/components/table";
 import {
 	Activity,
-	ArrowLeft,
 	ArrowUpRight,
 	Boxes,
 	ChevronDown,
@@ -20,15 +19,8 @@ import {
 	GitMerge,
 	Workflow,
 } from "lucide-react";
-import {
-	type CSSProperties,
-	useCallback,
-	useDeferredValue,
-	useEffect,
-	useMemo,
-	useState,
-} from "react";
-import { Link, useSearchParams } from "react-router";
+import { type CSSProperties, useCallback, useDeferredValue, useMemo, useState } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import {
 	FACTORY_STREAMS,
 	type FactoryStreamName,
@@ -49,7 +41,6 @@ import { formatDate, formatDayRange, formatPreciseDate } from "../lib/format";
 import {
 	activityAge,
 	dependencyEdges,
-	type FactoryDetail,
 	factoryBoard,
 	factoryError,
 	factoryGroups,
@@ -64,7 +55,6 @@ import {
 	formatRate,
 	hasFactoryMeasurement,
 	loadFactory,
-	loadFactoryDetail,
 	formatFactoryCount as n,
 	SIGNAL_PAGE_SIZE,
 	STATUS_LABELS,
@@ -95,26 +85,16 @@ export function FactoryPage() {
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState("");
 
+	const navigate = useNavigate();
 	const [params, setParams] = useSearchParams();
-	const [detail, setDetail] = useState<FactoryDetail | null>(null);
-	const [detailLoading, setDetailLoading] = useState(false);
-	const [detailError, setDetailError] = useState("");
 	const [day, setDay] = useState("");
 	const [repoPage, setRepoPage] = useState(1);
 	const [signalPage, setSignalPage] = useState(1);
 	const [openSignals, setOpenSignals] = useState<ReadonlySet<string>>(new Set());
 	const [calendar, setCalendar] = useState<"commits" | "contributions">("commits");
-	const selected = params.get("repo") ?? "";
-	const detailState = params.get("state") ?? "";
-	const detailDay = params.get("day") ?? "";
 	const language = params.get("language") ?? "";
 	const topic = params.get("topic") ?? "";
 	const query = params.get("q") ?? "";
-	const streamRaw = params.get("stream") ?? "prs";
-	const stream = FACTORY_STREAMS.includes(streamRaw as FactoryStreamName)
-		? (streamRaw as FactoryStreamName)
-		: "prs";
-	const page = Math.max(1, Math.min(50, Number(params.get("page")) || 1));
 	const period = ([1, 7, 30] as const).find((p) => String(p) === params.get("period")) ?? 7;
 	const update = useCallback(
 		(key: string, value: string) => {
@@ -122,16 +102,9 @@ export function FactoryPage() {
 		},
 		[setParams],
 	);
+	// A repository's depth view lives on its own page; the factory keeps cross-repo comparison.
 	const drill = (repo: string, nextStream: FactoryStreamName = "prs") => {
-		setParams((old) => {
-			const next = new URLSearchParams(old);
-			next.set("repo", repo);
-			next.set("stream", nextStream);
-			next.delete("state");
-			next.delete("day");
-			next.delete("page");
-			return next;
-		});
+		navigate(`/repos/${repo}?tab=factory&stream=${nextStream}`);
 	};
 	useSnapshotRead(
 		loadFactory,
@@ -146,34 +119,6 @@ export function FactoryPage() {
 			setLoading(false);
 		},
 	);
-	useEffect(() => {
-		let cancelled = false;
-		setDetail(null);
-		setDetailError("");
-		if (
-			!selected ||
-			!snapshot?.repos.some((repo) => repo.name.toLowerCase() === selected.toLowerCase())
-		)
-			return;
-		setDetailLoading(true);
-		void loadFactoryDetail(selected, stream, page, detailState, detailDay)
-			.then((result) => {
-				if (!cancelled) {
-					if (result?.runId === snapshot.runId) setDetail(result);
-					else setDetailError("调查已更新，请重新加载快照。");
-					setDetailLoading(false);
-				}
-			})
-			.catch((err) => {
-				if (!cancelled) {
-					setDetailError(factoryError(err));
-					setDetailLoading(false);
-				}
-			});
-		return () => {
-			cancelled = true;
-		};
-	}, [selected, stream, page, snapshot, detailState, detailDay]);
 	const groups = useMemo(() => factoryGroups(snapshot?.selectedRepos ?? []), [snapshot]);
 	// Typing stays responsive; the board and charts follow at lower priority.
 	const deferredQuery = useDeferredValue(query);
@@ -183,9 +128,8 @@ export function FactoryPage() {
 				language,
 				topic,
 				query: deferredQuery,
-				repo: selected,
 			}),
-		[snapshot, language, topic, deferredQuery, selected],
+		[snapshot, language, topic, deferredQuery],
 	);
 	const scope = useMemo(() => {
 		const names = new Set(selection.map((repo) => repo.name.toLowerCase()));
@@ -198,10 +142,7 @@ export function FactoryPage() {
 	const freshness = board?.freshness;
 	const stale = deferredQuery !== query;
 	const edges = useMemo(() => dependencyEdges(snapshot?.repos ?? []), [snapshot]);
-	const visibleEdges = edges.filter(
-		(e) => !selected || e.source === selected || e.target === selected,
-	);
-	const repo = scope[0];
+	const visibleEdges = edges;
 	const ranking = factoryRepoPage(board?.ranking ?? [], repoPage);
 	const signalGroups = useMemo(() => factorySignalGroups(board?.anomalies ?? []), [board]);
 	const signalPages = factorySignalPage(signalGroups, signalPage);
@@ -283,19 +224,6 @@ export function FactoryPage() {
 							{snapshot.inventory.excluded.length}
 						</span>
 					</div>
-					{selected ? (
-						<div className="flex flex-wrap items-center gap-3 text-sm">
-							<Button size="sm" variant="ghost" onClick={() => update("repo", "")}>
-								<ArrowLeft className="size-4" />
-								返回仓库群
-							</Button>
-							<ProjectLabel repo={selected} className="font-semibold" />
-							{repo?.private ? <span className="factory-tag">Private</span> : null}
-							<Link className="factory-link ml-auto" to={`/repos/${selected}`}>
-								原仓库详情 <ArrowUpRight className="size-3.5" />
-							</Link>
-						</div>
-					) : null}
 					{!selection.length ? (
 						<div role="status" className="py-12 text-center text-sm">
 							{snapshot.inventory.complete
@@ -794,7 +722,7 @@ export function FactoryPage() {
 								</div>
 							</section>
 							<FactoryPanel
-								title={selected ? "仓库生产线" : "仓库生产线 · 按窗口提交量排序"}
+								title="仓库生产线 · 按窗口提交量排序"
 								hint="每行是一条生产线，点击仓库或指标下钻"
 								flush
 							>
@@ -820,14 +748,12 @@ export function FactoryPage() {
 											{ranking.rows.map((r) => (
 												<TableRow key={r.id}>
 													<TableCell className="min-w-60 max-w-72">
-														<Button
-															variant="ghost"
-															className="factory-repo-link max-w-full justify-start text-left whitespace-normal"
-															type="button"
-															onClick={() => drill(r.name)}
+														<Link
+															to={`/repos/${r.name}?tab=factory&stream=prs`}
+															className="factory-repo-link inline-block max-w-full text-left whitespace-normal"
 														>
 															<ProjectLabel repo={r.name} />
-														</Button>
+														</Link>
 														<div className="flex flex-wrap items-center gap-x-1.5 text-xs text-basalt-muted-foreground">
 															<LanguageLabel name={r.language} />
 															{r.private ? <span>· private</span> : null}
@@ -976,157 +902,6 @@ export function FactoryPage() {
 									</div>
 								) : null}
 							</FactoryPanel>
-							{selected ? (
-								<FactoryPanel title={`${selected} · 工作记录`} hint="分页明细 · 每页 100 条">
-									<SegmentControl
-										legend="选择记录类型"
-										value={stream}
-										onValueChange={(value) => update("stream", value)}
-										options={FACTORY_STREAMS.map((value) => ({
-											value,
-											label: STREAM_LABELS[value],
-										}))}
-									/>
-									<div className="factory-toolbar mt-3">
-										<SelectField
-											label="状态"
-											value={detailState}
-											onValueChange={(value) => update("state", value)}
-											options={[
-												{ value: "", label: "全部状态" },
-												{ value: "open", label: "Open" },
-												{ value: "merged", label: "Merged" },
-												{ value: "closed", label: "Closed" },
-												{ value: "success", label: "CI success" },
-												{ value: "failure", label: "CI failure" },
-												{ value: "cancelled", label: "Cancelled" },
-											]}
-										/>
-										<SelectField
-											label={
-												detailState === "merged"
-													? "合并区间（本地）"
-													: detailState === "closed"
-														? "关闭区间（本地）"
-														: "记录区间（本地）"
-											}
-											value={detailDay}
-											onValueChange={(value) => update("day", value)}
-											options={[
-												{ value: "", label: "全部时间" },
-												...[
-													...new Set([
-														...board.days.map((d) => d.date),
-														...(detailDay ? [detailDay] : []),
-													]),
-												]
-													.sort()
-													.map((date) => ({ value: date, label: formatDayRange(date) })),
-											]}
-										/>
-									</div>
-									{detailLoading ? (
-										<p role="status" className="py-6 text-sm">
-											读取记录…
-										</p>
-									) : detailError ? (
-										<p role="alert" className="py-6 text-sm">
-											{detailError}
-										</p>
-									) : detail ? (
-										<>
-											<div className="factory-provenance mt-3">
-												<strong>{STATUS_LABELS[detail.coverage.status]}</strong>
-												<span>
-													{detail.total} 条观察记录 · 第 {page} 页
-												</span>
-												<span>{formatPreciseDate(detail.coverage.fetchedAt)}</span>
-											</div>
-											{detail.coverage.reason ? (
-												<p className="factory-notice">{detail.coverage.reason}</p>
-											) : null}
-											<p className="my-2 break-all text-xs text-basalt-muted-foreground">
-												来源 {detail.coverage.source} · {detail.coverage.pages} API 页
-											</p>
-											{detail.items.length ? (
-												<div className="factory-table-scroll">
-													<Table>
-														<TableHeader>
-															<TableRow>
-																<TableHead>记录</TableHead>
-																<TableHead>状态 / 结论</TableHead>
-																<TableHead>作者</TableHead>
-																<TableHead>时间（本地）</TableHead>
-																<TableHead>合并 / 关闭（本地）</TableHead>
-															</TableRow>
-														</TableHeader>
-														<TableBody>
-															{detail.items.map((e) => (
-																<TableRow key={e.id}>
-																	<TableCell>
-																		<a
-																			href={safeGithubUrl(e.url)}
-																			target="_blank"
-																			rel="noreferrer"
-																			className="factory-detail-title"
-																		>
-																			{e.title || e.id}
-																			<ArrowUpRight className="size-3 shrink-0" />
-																		</a>
-																		<div className="max-w-96 truncate text-xs text-basalt-muted-foreground">
-																			{e.path ?? e.id}
-																			{e.version ? ` · ${e.version}` : ""}
-																		</div>
-																	</TableCell>
-																	<TableCell>
-																		<span className="factory-tag">
-																			{e.conclusion ?? e.state}
-																			{e.draft ? " · draft" : ""}
-																		</span>
-																	</TableCell>
-																	<TableCell>{e.author || "—"}</TableCell>
-																	<TableCell className="whitespace-nowrap text-xs">
-																		{e.at ? formatPreciseDate(e.at) : "—"}
-																	</TableCell>
-																	<TableCell className="whitespace-nowrap text-xs">
-																		{e.mergedAt || e.closedAt
-																			? formatPreciseDate(e.mergedAt ?? e.closedAt)
-																			: "—"}
-																	</TableCell>
-																</TableRow>
-															))}
-														</TableBody>
-													</Table>
-												</div>
-											) : (
-												<p role="status" className="py-6 text-sm text-basalt-muted-foreground">
-													{detail.coverage.status === "complete"
-														? "该端点范围内没有记录。"
-														: "尚无可读记录；不代表 GitHub 中为零。"}
-												</p>
-											)}
-											<div className="mt-3 flex justify-end gap-2">
-												<Button
-													size="sm"
-													variant="secondary"
-													disabled={page <= 1}
-													onClick={() => update("page", String(page - 1))}
-												>
-													上一页
-												</Button>
-												<Button
-													size="sm"
-													variant="secondary"
-													disabled={page * 100 >= detail.total}
-													onClick={() => update("page", String(page + 1))}
-												>
-													下一页
-												</Button>
-											</div>
-										</>
-									) : null}
-								</FactoryPanel>
-							) : null}
 							<details
 								className="factory-methods"
 								id="factory-ledger"
@@ -1216,14 +991,6 @@ export function FactoryPage() {
 							时间按本地时区（{Intl.DateTimeFormat().resolvedOptions().timeZone}
 							）显示；统计区间包含起点、不含终点，最后一个区间尚未结束。
 						</p>
-						{selected && repo?.observation ? (
-							<p>
-								{selected}：数据更新于 {formatPreciseDate(repo.observation.refreshedAt)}，统计范围{" "}
-								{formatPreciseDate(repo.observation.window.since)} →{" "}
-								{formatPreciseDate(repo.observation.window.until)}。
-								{repo.observation.source === "legacy" ? "从历史记录恢复。" : "从 GitHub 获取。"}
-							</p>
-						) : null}
 						<p>
 							调查启动 {formatPreciseDate(snapshot.window.until)}；仓库清单取样后逐资源分页，GitHub
 							不提供跨端点原子快照。状态可能在采集过程中变化。清单覆盖仅限当前令牌可见仓库，包括私有仓库；无权读取的资源显示未知。

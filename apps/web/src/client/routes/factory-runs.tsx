@@ -129,7 +129,6 @@ function FactoryRuns({
 			filterFactoryRepos(scope === "filter" ? options : catalog, {
 				language: "",
 				topic: "",
-				repo: "",
 				query: selectionQuery,
 			}),
 		[options, catalog, scope, selectionQuery],

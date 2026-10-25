@@ -19,7 +19,7 @@ import { getRepositoryScope, scopedResource } from "./scope";
 import { ensureSession, getActiveAccountId } from "./session";
 import { fetchKind, loadKind } from "./snapshot";
 
-export type FactoryFilter = { language: string; topic: string; query: string; repo: string };
+export type FactoryFilter = { language: string; topic: string; query: string };
 export const STREAM_LABELS: Record<FactoryStreamName, string> = {
 	commits: "提交",
 	issues: "Issues",
@@ -97,7 +97,6 @@ export function filterFactoryRepos<Repo extends FactorySelectedRepo>(
 		(r) =>
 			(!f.language || r.language === null || r.language === f.language) &&
 			(!f.topic || r.topics === null || r.topics.includes(f.topic)) &&
-			(!f.repo || r.name.toLowerCase() === f.repo.toLowerCase()) &&
 			(!q || `${r.name} ${r.description ?? ""}`.toLowerCase().includes(q)),
 	);
 }

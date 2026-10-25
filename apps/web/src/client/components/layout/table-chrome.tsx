@@ -48,29 +48,36 @@ export function PersonCell({ login }: { login: string | null }) {
 	);
 }
 
-export function LabelChips({ labels }: { labels: { name: string; color: string }[] }) {
-	if (labels.length === 0) {
+export function LabelChips({
+	labels,
+	wrap = true,
+}: {
+	labels: readonly (string | { name: string })[];
+	wrap?: boolean;
+}) {
+	const names = labels.map((label) => (typeof label === "string" ? label : label.name));
+	if (names.length === 0) {
 		return <span className="text-basalt-muted-foreground">—</span>;
 	}
-	const { shown, extra } = takeChips(labels, 2);
+	const { shown, extra } = takeChips(names, 2);
 	return (
-		<span className="inline-flex flex-wrap items-center gap-1">
-			{shown.map((label) => (
+		<span className={`inline-flex items-center gap-1 ${wrap ? "flex-wrap" : "flex-nowrap"}`}>
+			{shown.map((name) => (
 				<CandyBadge
 					tone="gray"
-					key={label.name}
+					key={name}
 					className="max-w-44 truncate border-transparent px-2 py-0.5 text-xs"
-					title={label.name}
+					title={name}
 					style={{
 						color: "var(--color-basalt-foreground)",
-						backgroundColor: `color-mix(in srgb, ${categoryColor(label.name)} 24%, var(--color-basalt-secondary))`,
+						backgroundColor: `color-mix(in srgb, ${categoryColor(name)} 24%, var(--color-basalt-secondary))`,
 					}}
 				>
-					{label.name}
+					{name}
 				</CandyBadge>
 			))}
 			{extra > 0 ? (
-				<CandyBadge tone="gray" title={labels.map((label) => label.name).join("、")}>
+				<CandyBadge tone="gray" title={names.join("、")}>
 					+{extra}
 				</CandyBadge>
 			) : null}

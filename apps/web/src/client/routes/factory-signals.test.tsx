@@ -96,6 +96,9 @@ it("groups inspection signals per repository, expands on demand and pages the gr
 		await act(async () => first?.querySelector("button")?.click());
 		expect(container.textContent).toContain("2 个 open PR ≥7 天");
 
+		expect(
+			container.querySelector('a[href="/repos/nocoo/r0?tab=factory&stream=prs"]'),
+		).not.toBeNull();
 		expect(container.textContent).toContain("第 1/2 页");
 		const next = Array.from(container.querySelectorAll("button")).find(
 			(button) => button.textContent === "后 6 个项目",

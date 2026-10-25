@@ -32,6 +32,7 @@ import {
 	Code2,
 	Download,
 	Eye,
+	Factory,
 	FolderDown,
 	GitFork,
 	GitPullRequest,
@@ -43,8 +44,13 @@ import {
 	Users,
 } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { useParams } from "react-router";
-import type { FactoryRepo, FactorySnapshot } from "../../lib/factory-types";
+import { useParams, useSearchParams } from "react-router";
+import {
+	FACTORY_STREAMS,
+	type FactoryRepo,
+	type FactorySnapshot,
+	type FactoryStreamName,
+} from "../../lib/factory-types";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ChartBrick, ChartEmpty, ChartRow } from "../components/layout/chart-brick";
 import { TableScroll } from "../components/layout/collection-chrome";
@@ -87,6 +93,7 @@ import type { PullsSnapshot } from "../viewmodels/pulls";
 import {
 	isValidRepoPart,
 	loadRepoTab,
+	REPO_TABS,
 	type RepoActions,
 	type RepoContributors,
 	type RepoDetails,
@@ -100,11 +107,12 @@ import {
 	trafficPoints,
 } from "../viewmodels/repo-detail";
 import { securityKpi } from "../viewmodels/security";
-
 import { ReleaseTimeline, RepoActivityChart, RunOutcomeChart } from "./repo-charts";
+import { RepoFactoryTab } from "./repo-factory";
 import { RepoCurrentActivity } from "./today";
 
-type DetailTab = RepoTab | "analysis";
+const DETAIL_TABS = [...REPO_TABS, "analysis", "factory"] as const;
+type DetailTab = RepoTab | "analysis" | "factory";
 
 async function fetchTab<T extends { account_id: string }>(
 	owner: string,
@@ -134,7 +142,40 @@ export function RepoDetailPage() {
 	const name = params.name ?? "";
 	const identity = useProjectIdentity(`${owner}/${name}`);
 	const valid = isValidRepoPart(owner) && isValidRepoPart(name);
-	const [tab, setTab] = useState<DetailTab>("details");
+	const [search, setSearch] = useSearchParams();
+	const tabParam = search.get("tab");
+	const tab: DetailTab = DETAIL_TABS.includes(tabParam as never)
+		? (tabParam as DetailTab)
+		: "details";
+	const streamParam = search.get("stream");
+	const stream: FactoryStreamName = FACTORY_STREAMS.includes(streamParam as FactoryStreamName)
+		? (streamParam as FactoryStreamName)
+		: "prs";
+	const setTab = (next: DetailTab) =>
+		setSearch(
+			(old) => {
+				const params = new URLSearchParams(old);
+				if (next === "details") params.delete("tab");
+				else params.set("tab", next);
+				params.delete("state");
+				params.delete("day");
+				params.delete("page");
+				return params;
+			},
+			{ replace: true },
+		);
+	const setStream = (next: FactoryStreamName) =>
+		setSearch(
+			(old) => {
+				const params = new URLSearchParams(old);
+				params.set("stream", next);
+				params.delete("state");
+				params.delete("day");
+				params.delete("page");
+				return params;
+			},
+			{ replace: true },
+		);
 	const [snap, setSnap] = useState<RepoDetails | { missing: true } | { invalid: true } | null>(
 		null,
 	);
@@ -154,7 +195,7 @@ export function RepoDetailPage() {
 		async () => ({
 			key: `${owner}/${name}/${tab}`,
 			value:
-				tab === "analysis"
+				tab === "analysis" || tab === "factory"
 					? null
 					: await fetchTab<
 							| RepoDetails
@@ -201,7 +242,7 @@ export function RepoDetailPage() {
 			}
 		},
 		() => undefined,
-		valid && tab !== "analysis",
+		valid && tab !== "analysis" && tab !== "factory",
 		false,
 	);
 
@@ -257,7 +298,7 @@ export function RepoDetailPage() {
 	}, [owner, name, valid]);
 
 	useEffect(() => {
-		if (!valid || tab === "analysis") {
+		if (!valid || tab === "analysis" || tab === "factory") {
 			return;
 		}
 		const snapshotTab = tab;
@@ -458,6 +499,10 @@ export function RepoDetailPage() {
 							<Box className="size-3.5" aria-hidden="true" />
 							概览
 						</TabsTrigger>
+						<TabsTrigger value="factory" className="gap-1.5 whitespace-nowrap">
+							<Factory className="size-3.5" aria-hidden="true" />
+							工厂
+						</TabsTrigger>
 						<TabsTrigger value="analysis" className="gap-1.5 whitespace-nowrap">
 							<Sparkles className="size-3.5" aria-hidden="true" />
 							Agent 分析
@@ -511,6 +556,16 @@ export function RepoDetailPage() {
 								}
 							/>
 						</LayerCard>
+					) : null}
+				</TabsContent>
+				<TabsContent value="factory">
+					{tab === "factory" ? (
+						<RepoFactoryTab
+							repo={`${owner}/${name}`}
+							days={days.map((point) => point.x)}
+							stream={stream}
+							onStream={setStream}
+						/>
 					) : null}
 				</TabsContent>
 				<TabsContent value="details">

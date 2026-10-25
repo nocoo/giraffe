@@ -97,7 +97,7 @@ it.each([30, 90])("labels the published %i-day chart window", async (dayCount) =
 	}
 });
 
-it.each(["?repo=nocoo%2Fmissing", "?language=Swift"])(
+it.each(["?q=unpublished", "?language=Swift"])(
 	"shows selected unpublished data as missing, not an empty filter: %s",
 	async (query) => {
 		const raw = factoryFixture();

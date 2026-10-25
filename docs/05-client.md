@@ -367,7 +367,7 @@ The Chinese sidebar has five ordered groups: Overview (Software Factory), AI (An
 
 | 路由                  | 侧栏                       | 图标（lucide）   | 读                                                                                        |
 | --------------------- | -------------------------- | ---------------- | ----------------------------------------------------------------------------------------- |
-| `/factory`            | 软件工厂                   | `Factory`        | `GET /api/factory`; links to refresh center                                               |
+| `/factory`            | 软件工厂                   | `Factory`        | `GET /api/factory`；跨仓比较，仓库行跳转到 `/repos/:owner/:name?tab=factory`              |
 | `/refresh`            | 刷新中心                   | `RefreshCw`      | `GET /api/factory/runs`, `GET /api/refresh/settings`; manual runs and automatic schedules |
 | `/analysis`           | 分析台                     | `Activity`       | Access-protected reads of saved reports, source evidence and `grok-bot-run` status        |
 | `/insights`           | Insights                   | `Activity`       | `GET /api/insights`，并读已有 `issues` / `prs` / `ci`                                     |
@@ -377,7 +377,7 @@ The Chinese sidebar has five ordered groups: Overview (Software Factory), AI (An
 | `/ci`                 | CI 与发布                  | `Workflow`       | `GET /api/ci`                                                                             |
 | `/alerts`             | 安全告警                   | `ShieldAlert`    | `GET /api/alerts`                                                                         |
 | `/inbox`              | 通知                       | `Inbox`          | `GET /api/notifications`                                                                  |
-| `/repos/:owner/:name` | （钻取，侧栏「仓库」高亮） | —                | 按 tab GET 单仓                                                                           |
+| `/repos/:owner/:name` | （钻取，侧栏「仓库」高亮） | —                | `?tab=` 页签；九个快照 tab GET 单仓，「工厂」tab GET `/api/factory/repos/:o/:n/:stream`   |
 | `/settings`           | 设置                       | `Settings`       | `GET /api/accounts`、`GET /api/me`                                                        |
 
 未知路径：岛内 404 文案，不调用 API。
