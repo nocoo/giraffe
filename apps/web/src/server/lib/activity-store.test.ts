@@ -8,7 +8,12 @@ import type { Env } from "../env";
 import { createApp } from "../index";
 import { activityEtag } from "../routes/activity";
 import { activityRepo } from "./activity";
-import { activityPublicationWrites, packActivity, readActivity } from "./activity-store";
+import {
+	activityPublicationWrites,
+	freezeActivityRepo,
+	packActivity,
+	readActivity,
+} from "./activity-store";
 import { activityReadContentVersion } from "./activity-totals";
 import { createDb } from "./db/d1";
 import { claimRun, controlRun, saveRun, startRun } from "./db/factory-runs";
@@ -121,7 +126,7 @@ async function seedLanded(
 }
 async function setup(name = rawRepo.nameWithOwner) {
 	const raw = sqliteFixture();
-	const db = createDb(raw);
+	const db = createDb(raw, undefined, 10_000);
 	await db
 		.prepare(
 			"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES('account_123','nocoo','fake','fake',?,?)",
@@ -163,8 +168,17 @@ async function setup(name = rawRepo.nameWithOwner) {
 			.run();
 	return { raw, db, lease, repo };
 }
+async function seedFrozenSnapshot(
+	db: Awaited<ReturnType<typeof setup>>["db"],
+	lease: Awaited<ReturnType<typeof setup>>["lease"],
+	repo: Awaited<ReturnType<typeof setup>>["repo"],
+) {
+	for (const step of lease.run.steps) if (step.status === "pending") step.status = "success";
+	await db.batch([await freezeActivityRepo(db, lease, now, repo, extra())]);
+}
 it("R4 publication and pages are immutable, fenced and readable without GitHub or SQL JSON rebuilding", async () => {
 	const { raw, db, lease, repo } = await setup();
+	await seedFrozenSnapshot(db, lease, repo);
 	const writes = await activityPublicationWrites(db, lease, now, [repo]);
 	lease.run.status = "completed";
 	expect(await saveRun(db, lease, writes, now)).toBe(true);
@@ -193,6 +207,7 @@ it("R4 revoked leases cannot leave activity pages and unpublished runs never ret
 	await expect(readActivity(createDb(raw), "account_123", { run: ["r2"] })).rejects.toMatchObject({
 		status: 409,
 	});
+	await seedFrozenSnapshot(db, lease, repo);
 	const writes = await activityPublicationWrites(db, lease, now, [repo]);
 	await controlRun(createDb(raw), "account_123", "r2", "pause", now);
 	expect(await saveRun(db, lease, writes, now)).toBe(false);
@@ -266,6 +281,81 @@ it.each([
 		else expect(data.repos[0]?.coverage.run).toBeUndefined();
 	},
 );
+it("refuses activity publication when no frozen activity-snapshot rows exist", async () => {
+	const raw = sqliteFixture();
+	const db = createDb(raw);
+	await db
+		.prepare(
+			"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES('account_123','nocoo','fake','fake',?,?)",
+		)
+		.bind(now, now)
+		.run();
+	const repo = mapFactoryRepo(rawRepo);
+	const run = makeRun(
+		"r2",
+		"account_123",
+		"nocoo",
+		"key",
+		"refresh",
+		[repo],
+		now,
+		[],
+		[repo.name],
+		{ scope: "all" },
+		"quick",
+	);
+	await startRun(db, run);
+	const lease = await claimRun(db, run.id, now);
+	if (!lease) throw new Error("fixture");
+	for (const stream of FACTORY_STREAMS)
+		await db
+			.prepare("INSERT INTO factory_resources(run_id,repo,stream,payload) VALUES(?,?,?,?)")
+			.bind(
+				run.id,
+				repo.name,
+				stream,
+				JSON.stringify({
+					runId: run.id,
+					items: [],
+					next: null,
+					ranges: [],
+					coverage: { ...repo.coverage[stream], status: "complete" },
+				}),
+			)
+			.run();
+	const activity = lease.run.steps.find((step) => step.kind === "activity");
+	if (activity) Object.assign(activity, { status: "limited", error: "factory_capacity" });
+	const goodHeader = { ...snapshotFor([]), membership: [repo.name], runId: "r1" };
+	await db
+		.prepare(
+			"INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES('r1','account_123','r1','completed','{}',?,?,?)",
+		)
+		.bind(now, now, now)
+		.run();
+	await db
+		.prepare(
+			"INSERT INTO activity_publications(account_id,run_id,until_at,fetched_at,payload,content_version) VALUES('account_123','r1',?,?,?,'saved')",
+		)
+		.bind(now, now, JSON.stringify(goodHeader))
+		.run();
+	await db
+		.prepare("INSERT INTO activity_pages VALUES('account_123','r1',0,?)")
+		.bind(JSON.stringify([activityRepo(repo, new Map(), snapshotFor([]).window, null, null)]))
+		.run();
+	expect(await activityPublicationWrites(db, lease, now, [repo])).toEqual([]);
+	expect(
+		(
+			await db
+				.prepare("SELECT COUNT(*) AS n FROM activity_publications WHERE run_id='r2'")
+				.first<{ n: number }>()
+		)?.n,
+	).toBe(0);
+	const latest = await readActivity(createDb(raw), "account_123", {});
+	expect(latest.runId).toBe("r1");
+	await expect(readActivity(createDb(raw), "account_123", { run: ["r2"] })).rejects.toMatchObject({
+		status: 409,
+	});
+});
 it.each(["failed", "unavailable", "limited"] as const)(
 	"B2 publishes partial runs with %s repository evidence, source discovery and chaining",
 	async (status) => {
@@ -273,6 +363,7 @@ it.each(["failed", "unavailable", "limited"] as const)(
 		const step = lease.run.steps.find((step) => step.repo === repo.name);
 		if (!step) throw new Error("fixture");
 		step.status = status;
+		await seedFrozenSnapshot(db, lease, repo);
 		const writes = await activityPublicationWrites(db, lease, now, [repo]);
 		expect(writes.length).toBeGreaterThan(0);
 		lease.run.status = "partial";
@@ -282,8 +373,8 @@ it.each(["failed", "unavailable", "limited"] as const)(
 		expect(data).toMatchObject({
 			runId: "r2",
 			coverage: { repos: { status: "partial" } },
-			repos: [{ coverage: { run: { status: "partial" } }, ci_runs: null }],
-			totals: { ci_runs: null, merged_prs: null, issues_opened: null, releases: null },
+			repos: [{ coverage: { run: { status: "partial" } }, ci_runs: [] }],
+			totals: { ci_runs: 0, merged_prs: 0, issues_opened: 0, releases: 0 },
 		});
 		expect(await readActivity(createDb(raw), "account_123", { run: ["r2"] })).toEqual(data);
 		const sources = await readSources(createDb(raw), "account_123", {});
@@ -319,6 +410,7 @@ it.each(["failed", "cancelled", "paused"] as const)(
 	"B2 never exposes activity from a %s run even if publication rows exist",
 	async (status) => {
 		const { raw, db, lease, repo } = await setup();
+		await seedFrozenSnapshot(db, lease, repo);
 		const writes = await activityPublicationWrites(db, lease, now, [repo]);
 		await db.batch(writes);
 		await db.prepare("UPDATE factory_runs SET status=? WHERE id='r2'").bind(status).run();
@@ -804,13 +896,16 @@ it("R4 incomplete source batches fail closed and missing metadata cannot publish
 		code: "snapshot_missing",
 	});
 	if (s.lease.run.steps[0]) s.lease.run.steps[0].status = "failed";
+	await seedFrozenSnapshot(s.db, s.lease, s.repo);
 	expect((await activityPublicationWrites(s.db, s.lease, now, [s.repo])).length).toBeGreaterThan(0);
 	s.lease.run.depth = "deep";
 	expect(await activityPublicationWrites(s.db, s.lease, now, [s.repo])).toEqual([]);
 });
 it("R4 existing activity headers cannot acquire changed or extra immutable pages", async () => {
 	const s = await setup();
-	await s.db.batch(await activityPublicationWrites(s.db, s.lease, now, [s.repo]));
+	await seedFrozenSnapshot(s.db, s.lease, s.repo);
+	const readDb = () => createDb(s.raw, undefined, 10_000);
+	await s.db.batch(await activityPublicationWrites(readDb(), s.lease, now, [s.repo]));
 	const before = await s.db.prepare("SELECT payload FROM activity_pages").all();
 	const item = activityRepo(
 		s.repo,
@@ -822,17 +917,18 @@ it("R4 existing activity headers cannot acquire changed or extra immutable pages
 	item.repo = "changed";
 	await s.db
 		.prepare(
-			"INSERT INTO factory_resources(run_id,repo,stream,payload) VALUES('r2','nocoo/app','activity-snapshot',?)",
+			"UPDATE factory_resources SET payload=? WHERE run_id='r2' AND repo='nocoo/app' AND stream='activity-snapshot'",
 		)
 		.bind(JSON.stringify(item))
 		.run();
-	await s.db.batch(await activityPublicationWrites(s.db, s.lease, now, [s.repo]));
+	await s.db.batch(await activityPublicationWrites(readDb(), s.lease, now, [s.repo]));
 	expect((await s.db.prepare("SELECT payload FROM activity_pages").all()).results).toEqual(
 		before.results,
 	);
 });
 it("R4 known unselected repositories return an empty scoped window while unknown repositories fail", async () => {
 	const s = await setup();
+	await seedFrozenSnapshot(s.db, s.lease, s.repo);
 	const writes = await activityPublicationWrites(s.db, s.lease, now, [s.repo]);
 	s.lease.run.status = "completed";
 	await saveRun(s.db, s.lease, writes, now);
@@ -1258,6 +1354,7 @@ it("R4 publication freezes complete bounded contribution coverage without losing
 			},
 		],
 	};
+	await seedFrozenSnapshot(s.db, s.lease, s.repo);
 	const writes = await activityPublicationWrites(s.db, s.lease, now, [s.repo]);
 	s.lease.run.status = "completed";
 	expect(await saveRun(s.db, s.lease, writes, now)).toBe(true);
