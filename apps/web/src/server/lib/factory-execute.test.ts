@@ -1058,7 +1058,7 @@ it("keeps other-branch commits unknown when resuming metadata from before source
 	).toBe(false);
 });
 
-it("B2 publishes daily activity despite a failed repository collection step", async () => {
+it("B2 withholds hollow activity publication when no frozen snapshots despite a failed repository step", async () => {
 	const env = await setup("refresh", { scope: "all" }, true);
 	const base = vi.mocked(fetch).getMockImplementation();
 	if (!base) throw new Error("fixture");
@@ -1072,18 +1072,27 @@ it("B2 publishes daily activity despite a failed repository collection step", as
 	expect(run?.status).toBe("partial");
 	expect(run?.steps.find((step) => step.kind === "releases")?.status).toBe("failed");
 	expect(run?.steps.find((step) => step.kind === "publish")?.status).toBe("success");
-	expect(await readActivity(createDb(env.DB), snap.account_id, {})).toMatchObject({
-		runId: "r1",
-		repos: [
-			{
-				repo: "nocoo/app",
-				coverage: { run: { status: "partial" }, releases: { status: "unavailable" } },
-				releases: null,
-			},
-		],
-		totals: { releases: null },
-		coverage: { repos: { status: "partial" } },
+	expect(
+		(
+			await createDb(env.DB)
+				.prepare(
+					"SELECT COUNT(*) AS n FROM factory_resources WHERE run_id='r1' AND stream='activity-snapshot'",
+				)
+				.first<{ n: number }>()
+		)?.n,
+	).toBe(0);
+	expect(
+		(
+			await createDb(env.DB)
+				.prepare("SELECT COUNT(*) AS n FROM activity_publications WHERE run_id='r1'")
+				.first<{ n: number }>()
+		)?.n,
+	).toBe(0);
+	await expect(readActivity(createDb(env.DB), snap.account_id, {})).rejects.toMatchObject({
+		status: 409,
+		code: "activity_unpublished",
 	});
+	expect(await publishedFactory(createDb(env.DB), snap.account_id)).toMatchObject({ runId: "r1" });
 });
 
 it.each([

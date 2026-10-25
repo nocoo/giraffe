@@ -119,12 +119,19 @@ export async function activityPublicationWrites(
 		!["running", "completed", "partial"].includes(run.status)
 	)
 		return [];
+	const mapped = new Map(repositories.map((repo) => [repo.name, repo]));
+	for (const name of run.repos) {
+		const repo = mapped.get(name);
+		if (!repo || repo.id !== run.repoIds[name])
+			throw new ApiError(409, "snapshot_missing", "Frozen activity repository metadata missing");
+	}
 	const lengths = await db
 		.prepare(
 			"SELECT repo,length(CAST(payload AS BLOB)) AS bytes FROM factory_resources WHERE run_id=? AND stream='activity-snapshot' AND repo IN (SELECT value FROM json_each(?)) LIMIT 500",
 		)
 		.bind(run.id, JSON.stringify(run.repos))
 		.all<{ repo: string; bytes: number }>();
+	if (lengths.results.length === 0) return [];
 	const sizes = new Map(lengths.results.map((row) => [row.repo, row.bytes]));
 	let inputBytes = 0;
 	const selected: { repo: string; bytes: number }[] = [];
@@ -143,12 +150,10 @@ export async function activityPublicationWrites(
 	const frozen = new Map(
 		resources.results.map((row) => [row.repo, JSON.parse(row.payload) as ActivityRepo]),
 	);
-	const mapped = new Map(repositories.map((repo) => [repo.name, repo]));
 	const inputOmitted = lengths.results.some((row) => !frozen.has(row.repo));
 	const repos = run.repos.flatMap((name) => {
 		const repo = mapped.get(name);
-		if (!repo || repo.id !== run.repoIds[name])
-			throw new ApiError(409, "snapshot_missing", "Frozen activity repository metadata missing");
+		if (!repo) return [];
 		if (sizes.has(name) && !frozen.has(name)) return [];
 		const activity =
 			frozen.get(name) ?? activityRepo(repo, new Map(), requireActivityWindow(run), null, null);
