@@ -96,9 +96,14 @@ header:has(.giraffe-page-title) > div:first-child > div:last-child { grid-column
 .factory-flow { display:flex;flex:1;flex-direction:column;justify-content:space-between;gap:20px;padding-top:8px; }
 .factory-flow h3 { font-size:var(--text-sm);font-weight:600;margin-bottom:10px; }
 .factory-signal-list { flex:1; }
-.factory-signal-list>button { display:flex;align-items:center;gap:10px;width:100%;height:auto;white-space:normal;padding:10px 0;font-size:var(--text-sm);border-bottom:1px solid var(--color-basalt-border);text-align:left; }
-.factory-signal-list>button>span:first-child { font-weight:600; }
-.factory-signal-list>button>span:nth-child(2) { margin-left:auto;color:var(--color-basalt-muted-foreground); }
+.factory-signal-group>button { display:flex;align-items:center;gap:8px;width:100%;height:auto;white-space:normal;padding:8px 0;font-size:var(--text-sm);border-bottom:1px solid var(--color-basalt-border);text-align:left; }
+.factory-signal-total { margin-left:auto;color:var(--color-basalt-muted-foreground);font-size:var(--text-xs);white-space:nowrap; }
+.factory-signal-streams { color:var(--color-basalt-muted-foreground);font-size:var(--text-xs);letter-spacing:.04em;white-space:nowrap; }
+.factory-signal-group ul { padding:2px 0 4px 12px;border-bottom:1px solid var(--color-basalt-border); }
+.factory-signal-group ul button { display:flex;align-items:center;gap:8px;width:100%;height:auto;padding:4px 0;font-size:var(--text-xs);white-space:normal;text-align:left; }
+.factory-signal-group ul button>span { flex:1; }
+.factory-signal-pager { display:flex;align-items:center;justify-content:flex-end;gap:8px;padding-top:8px;font-size:var(--text-xs);color:var(--color-basalt-muted-foreground); }
+.factory-signal-pager>span { margin-right:auto; }
 .factory-network>div { display:flex;gap:8px;align-items:center;min-height:34px;font-size:var(--text-sm); }
 .factory-network button { min-width:72px;max-width:130px;height:auto;padding:4px 0;justify-content:flex-start;overflow:hidden;text-overflow:ellipsis; }
 .factory-network-line { flex:1;color:var(--color-basalt-muted-foreground);border-bottom:1px solid var(--color-basalt-border);line-height:0;text-align:right;max-width:100px; }

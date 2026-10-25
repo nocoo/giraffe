@@ -14,6 +14,7 @@ import {
 	ArrowLeft,
 	ArrowUpRight,
 	Boxes,
+	ChevronDown,
 	CircleDot,
 	GitCommitHorizontal,
 	GitMerge,
@@ -55,6 +56,8 @@ import {
 	factoryParams,
 	factoryRepoCount,
 	factoryRepoPage,
+	factorySignalGroups,
+	factorySignalPage,
 	filterFactoryRepos,
 	formatHours,
 	formatObservedCount,
@@ -63,6 +66,7 @@ import {
 	loadFactory,
 	loadFactoryDetail,
 	formatFactoryCount as n,
+	SIGNAL_PAGE_SIZE,
 	STATUS_LABELS,
 	STREAM_CODES,
 	STREAM_LABELS,
@@ -97,6 +101,8 @@ export function FactoryPage() {
 	const [detailError, setDetailError] = useState("");
 	const [day, setDay] = useState("");
 	const [repoPage, setRepoPage] = useState(1);
+	const [signalPage, setSignalPage] = useState(1);
+	const [openSignals, setOpenSignals] = useState<ReadonlySet<string>>(new Set());
 	const [calendar, setCalendar] = useState<"commits" | "contributions">("commits");
 	const selected = params.get("repo") ?? "";
 	const detailState = params.get("state") ?? "";
@@ -197,6 +203,8 @@ export function FactoryPage() {
 	);
 	const repo = scope[0];
 	const ranking = factoryRepoPage(board?.ranking ?? [], repoPage);
+	const signalGroups = useMemo(() => factorySignalGroups(board?.anomalies ?? []), [board]);
+	const signalPages = factorySignalPage(signalGroups, signalPage);
 	return (
 		<div className="factory space-y-4" style={FLOW_STYLE}>
 			<PageHeader
@@ -630,28 +638,94 @@ export function FactoryPage() {
 								<div className="grid gap-3 xl:grid-cols-[1.3fr_1fr]">
 									<FactoryPanel
 										title="需要检查的信号"
-										hint="PR 超过 7 天、Issue 超过 14 天仍未关闭，或 CI 至少运行 10 次且失败率不低于 20% 时提醒检查。这些信号不代表已经确认有问题。"
+										hint={`PR 超过 7 天、Issue 超过 14 天仍未关闭，或 CI 至少运行 10 次且失败率不低于 20% 时提醒检查。按项目分组，展开查看每条信号；每页 ${SIGNAL_PAGE_SIZE} 个项目。这些信号不代表已经确认有问题。`}
 									>
 										<div className="factory-signal-list">
-											{board.anomalies.length ? (
-												board.anomalies.map((a) => (
-													<Button
-														variant="ghost"
-														type="button"
-														key={`${a.repo}:${a.stream}`}
-														onClick={() => drill(a.repo, a.stream)}
-													>
-														<ProjectLabel repo={a.repo} short />
-														<span>{a.label}</span>
-														<ArrowUpRight className="size-3.5" />
-													</Button>
-												))
+											{signalPages.groups ? (
+												signalPages.rows.map((group) => {
+													const open = openSignals.has(group.repo);
+													return (
+														<div
+															key={group.repo}
+															className="factory-signal-group"
+															data-signal-group
+														>
+															<Button
+																variant="ghost"
+																type="button"
+																aria-expanded={open}
+																onClick={() =>
+																	setOpenSignals((current) => {
+																		const next = new Set(current);
+																		if (next.has(group.repo)) next.delete(group.repo);
+																		else next.add(group.repo);
+																		return next;
+																	})
+																}
+															>
+																<ProjectLabel repo={group.repo} short />
+																<span className="factory-signal-total">
+																	{group.signals.length} 条
+																</span>
+																<span className="factory-signal-streams">
+																	{group.signals
+																		.map((signal) => STREAM_CODES[signal.stream])
+																		.join(" ")}
+																</span>
+																<ChevronDown
+																	className={`size-3.5 shrink-0 ${open ? "rotate-180" : ""}`}
+																	aria-hidden="true"
+																/>
+															</Button>
+															{open ? (
+																<ul>
+																	{group.signals.map((signal) => (
+																		<li key={signal.stream}>
+																			<Button
+																				variant="ghost"
+																				type="button"
+																				onClick={() => drill(group.repo, signal.stream)}
+																			>
+																				<span>{signal.label}</span>
+																				<ArrowUpRight className="size-3.5" aria-hidden="true" />
+																			</Button>
+																		</li>
+																	))}
+																</ul>
+															) : null}
+														</div>
+													);
+												})
 											) : (
 												<p className="py-3 text-xs text-basalt-muted-foreground">
 													已观察资源未触发长龄/CI 失败率规则。
 												</p>
 											)}
 										</div>
+										{signalPages.pages > 1 ? (
+											<div className="factory-signal-pager">
+												<span>
+													第 {signalPages.current}/{signalPages.pages} 页 · {signalPages.groups}{" "}
+													个项目 · {signalPages.signals} 条信号
+												</span>
+												<Button
+													size="sm"
+													variant="secondary"
+													disabled={signalPages.current <= 1}
+													onClick={() => setSignalPage(signalPages.current - 1)}
+												>
+													前 {SIGNAL_PAGE_SIZE} 个项目
+												</Button>
+												<Button
+													size="sm"
+													variant="secondary"
+													disabled={signalPages.current >= signalPages.pages}
+													onClick={() => setSignalPage(signalPages.current + 1)}
+												>
+													后 {SIGNAL_PAGE_SIZE} 个项目
+												</Button>
+											</div>
+										) : null}
 									</FactoryPanel>
 									<FactoryPanel title="依赖与维护" hint="固定 SHA 的直接引用证据">
 										<div className="flex flex-wrap gap-4 text-xs">

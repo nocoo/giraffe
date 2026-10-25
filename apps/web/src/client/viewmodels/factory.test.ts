@@ -14,6 +14,8 @@ import {
 	factoryParams,
 	factoryRepoCount,
 	factoryRepoPage,
+	factorySignalGroups,
+	factorySignalPage,
 	filterFactoryRepos,
 	hasFactoryMeasurement,
 	periodChange,
@@ -591,6 +593,46 @@ it("splits repositories into activity and backlog quadrants around medians", () 
 	expect(activityQuadrant([])).toMatchObject({ points: [], medianCommits: 0, medianBacklog: 0 });
 	s.repos = repos.slice(0, 3);
 	expect(activityQuadrant(factoryBoard(s, s.repos, s.repos).repoActivity).medianCommits).toBe(3);
+});
+
+describe("grouped inspection signals", () => {
+	const signal = (
+		repo: string,
+		label: string,
+		stream: "prs" | "issues" | "actions" | "alerts",
+	) => ({
+		repo,
+		label,
+		stream,
+	});
+
+	it("collects one group per repository, heaviest and then alphabetical", () => {
+		const groups = factorySignalGroups([
+			signal("nocoo/b", "1 个 open PR ≥7 天", "prs"),
+			signal("nocoo/a", "2 个 open issue ≥14 天", "issues"),
+			signal("nocoo/a", "CI 失败 3/10", "actions"),
+			signal("nocoo/c", "1 个开放依赖告警", "alerts"),
+		]);
+		expect(groups.map((g) => g.repo)).toEqual(["nocoo/a", "nocoo/b", "nocoo/c"]);
+		expect(groups[0]?.signals.map((s) => s.label)).toEqual([
+			"2 个 open issue ≥14 天",
+			"CI 失败 3/10",
+		]);
+		expect(factorySignalGroups([])).toEqual([]);
+	});
+
+	it("pages groups without dropping the signal total", () => {
+		const groups = factorySignalGroups(
+			Array.from({ length: 8 }, (_, i) => signal(`nocoo/r${i}`, "1 个 open PR ≥7 天", "prs")),
+		);
+		const first = factorySignalPage(groups, 1);
+		expect(first).toMatchObject({ current: 1, pages: 2, signals: 8, groups: 8 });
+		expect(first.rows.map((g) => g.repo)).toHaveLength(6);
+		expect(factorySignalPage(groups, 2).rows.map((g) => g.repo)).toEqual(["nocoo/r6", "nocoo/r7"]);
+		expect(factorySignalPage(groups, 99).current).toBe(2);
+		expect(factorySignalPage(groups, 0).current).toBe(1);
+		expect(factorySignalPage([], 3)).toMatchObject({ rows: [], current: 1, pages: 1, signals: 0 });
+	});
 });
 
 it("describes change against the previous period without inventing a baseline", () => {

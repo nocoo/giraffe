@@ -271,7 +271,7 @@ export function factoryBoard(
 			(a, b) => b.metrics.commits - a.metrics.commits || a.name.localeCompare(b.name),
 		),
 		anomalies: repos.flatMap((r) => {
-			const signals: { repo: string; label: string; stream: FactoryStreamName }[] = [];
+			const signals: FactorySignal[] = [];
 			if (r.metrics.agedPrs)
 				signals.push({
 					repo: r.name,
@@ -680,6 +680,36 @@ export function factoryRepoPage(repos: FactoryRepo[], page: number) {
 	const pages = Math.max(1, Math.ceil(repos.length / 25));
 	const current = Math.min(pages, Math.max(1, page));
 	return { rows: repos.slice((current - 1) * 25, current * 25), current, pages };
+}
+
+export type FactorySignal = { repo: string; label: string; stream: FactoryStreamName };
+export type FactorySignalGroup = { repo: string; signals: FactorySignal[] };
+
+/** One row per repository keeps the inspection panel short; heaviest groups lead. */
+export function factorySignalGroups(anomalies: readonly FactorySignal[]): FactorySignalGroup[] {
+	const byRepo = new Map<string, FactorySignal[]>();
+	for (const signal of anomalies) {
+		const signals = byRepo.get(signal.repo);
+		if (signals) signals.push(signal);
+		else byRepo.set(signal.repo, [signal]);
+	}
+	return [...byRepo.entries()]
+		.map(([repo, signals]) => ({ repo, signals }))
+		.sort((a, b) => b.signals.length - a.signals.length || a.repo.localeCompare(b.repo));
+}
+
+export const SIGNAL_PAGE_SIZE = 6;
+
+export function factorySignalPage(groups: readonly FactorySignalGroup[], page: number) {
+	const pages = Math.max(1, Math.ceil(groups.length / SIGNAL_PAGE_SIZE));
+	const current = Math.min(pages, Math.max(1, page));
+	return {
+		rows: groups.slice((current - 1) * SIGNAL_PAGE_SIZE, current * SIGNAL_PAGE_SIZE),
+		current,
+		pages,
+		groups: groups.length,
+		signals: groups.reduce((n, group) => n + group.signals.length, 0),
+	};
 }
 
 export const STREAM_CODES: Record<FactoryStreamName, string> = {
