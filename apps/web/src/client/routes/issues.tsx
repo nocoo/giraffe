@@ -12,8 +12,10 @@ import {
 } from "@nocoo/basalt/components/table";
 import { CircleDot } from "lucide-react";
 import { useMemo, useState } from "react";
+import type { FactoryViewSnapshot } from "../../lib/factory-types";
 import { BusinessPageHeader as PageHeader } from "../components/layout/business-page-header";
 import { CandyBadge } from "../components/layout/candy-badge";
+import { ChartBrick } from "../components/layout/chart-brick";
 import { ResultCount, SearchField, TableScroll } from "../components/layout/collection-chrome";
 import { DataTimeSource } from "../components/layout/data-time";
 import { IconLabel } from "../components/layout/icon-label";
@@ -36,6 +38,7 @@ import { catchLoad } from "../lib/error-ui";
 import { DATE_CELL, formatCount, formatDate, NUM_CELL, NUM_HEAD } from "../lib/format";
 import { PAGE_DESCRIPTIONS } from "../lib/navigation";
 import { type WorkFilters, workBoard } from "../viewmodels/boards";
+import { factoryDays, factoryFreshness, loadFactory } from "../viewmodels/factory";
 import {
 	type IssueSort,
 	type IssuesSnapshot,
@@ -43,6 +46,7 @@ import {
 	visibleIssues,
 } from "../viewmodels/issues";
 import { AGE_BUCKETS, shortRepo } from "../viewmodels/overview";
+import { FlowStockChart } from "./factory-story";
 
 const NO_FILTERS: WorkFilters = { repo: "", label: "", author: "", age: "" };
 const FILTER_LABELS = { repo: "仓库", label: "标签", author: "作者", age: "年龄" };
@@ -55,6 +59,12 @@ export function IssuesPage() {
 	const pick = (key: keyof WorkFilters) => (value: string) =>
 		setPicked((old) => ({ ...old, [key]: value }));
 	const [snap, setSnap] = useState<IssuesSnapshot | { missing: true } | null>(null);
+	const [factory, setFactory] = useState<FactoryViewSnapshot | null>(null);
+	useSnapshotRead(
+		loadFactory,
+		(snapshot) => setFactory("missing" in snapshot ? null : snapshot),
+		() => undefined,
+	);
 
 	useSnapshotRead(loadIssues, setSnap, (err) => {
 		const missing = catchLoad(err, (message) => {
@@ -73,6 +83,7 @@ export function IssuesPage() {
 		() => (board ? visibleIssues(board.rows, query, sort) : []),
 		[board, query, sort],
 	);
+	const days = useMemo(() => (factory ? factoryDays(factory) : []), [factory]);
 
 	const filters = (
 		<FilterBar label="Issues 筛选" className="w-full">
@@ -134,6 +145,17 @@ export function IssuesPage() {
 				filters={filters}
 			/>
 			<ScopeEmpty count={snap.freshness?.total ?? snap.issues.length} />
+			{days.length ? (
+				<ChartBrick
+					title="Issue 流量与存量"
+					description="柱：每日新开与关闭，左轴为事件数；线：open Issue 存量，右轴。数据来自软件工厂的已发布窗口，不是实时 GitHub 状态。"
+				>
+					<DataTimeSource
+						entries={[{ label: "活动统计", freshness: factoryFreshness(factory?.repos ?? []) }]}
+					/>
+					<FlowStockChart days={days} kind="issues" />
+				</ChartBrick>
+			) : null}
 			<div className="giraffe-stat-inline" data-testid="issue-summary">
 				<span>
 					<strong>{formatCount(board.rows.length)}</strong>

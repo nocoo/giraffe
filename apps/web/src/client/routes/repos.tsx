@@ -20,8 +20,10 @@ import {
 } from "@nocoo/basalt/components/table";
 import { Box, Star } from "lucide-react";
 import { type CSSProperties, useMemo, useState } from "react";
+import type { FactoryViewSnapshot } from "../../lib/factory-types";
 import { BusinessPageHeader as PageHeader } from "../components/layout/business-page-header";
 import { CandyBadge } from "../components/layout/candy-badge";
+import { ChartBrick } from "../components/layout/chart-brick";
 import { ResultCount, SearchField, TableScroll } from "../components/layout/collection-chrome";
 import { DataTimeSource } from "../components/layout/data-time";
 import { IconLabel } from "../components/layout/icon-label";
@@ -62,6 +64,7 @@ import {
 } from "../lib/format";
 import { PAGE_DESCRIPTIONS } from "../lib/navigation";
 import { REPO_STATUS, reposBoard } from "../viewmodels/boards";
+import { factoryDays, factoryFreshness, loadFactory } from "../viewmodels/factory";
 import { AGE_BUCKETS, shortRepo } from "../viewmodels/overview";
 import {
 	healthMap,
@@ -76,6 +79,7 @@ import {
 	type ViewMode,
 	visibleRepos,
 } from "../viewmodels/repos";
+import { CommitBreadthChart } from "./factory-story";
 
 const NO_FILTERS = { language: "", status: "", age: "" };
 const STATUS_COLORS = [
@@ -90,6 +94,12 @@ export function ReposPage() {
 	const [sort, setSort] = useState<SortKey>("stars");
 	const [view, setView] = useState<ViewMode>("list");
 	const [snap, setSnap] = useState<ReposSnapshot | { missing: true } | null>(null);
+	const [factory, setFactory] = useState<FactoryViewSnapshot | null>(null);
+	useSnapshotRead(
+		loadFactory,
+		(snapshot) => setFactory("missing" in snapshot ? null : snapshot),
+		() => undefined,
+	);
 	const [insights, setInsights] = useState<InsightsSnapshot | null>(null);
 	const [saving, setSaving] = useState<string | null>(null);
 	const [picked, setPicked] = useState(NO_FILTERS);
@@ -192,6 +202,7 @@ export function ReposPage() {
 		saving === null,
 	);
 
+	const days = useMemo(() => (factory ? factoryDays(factory) : []), [factory]);
 	const board = useMemo(
 		() => (snap && !("missing" in snap) ? reposBoard(snap.repos, snap.fetched_at, picked) : null),
 		[snap, picked],
@@ -270,6 +281,17 @@ export function ReposPage() {
 				filters={filters}
 			/>
 			<ScopeEmpty count={snap.repos.length} />
+			{days.length ? (
+				<ChartBrick
+					title="提交产出与覆盖面"
+					description="柱：每日默认分支提交（左轴）；线：截至当日 7 天内有提交的仓库数（右轴），看产出集中在少数仓库还是全面推进。来自软件工厂的已发布窗口。"
+				>
+					<DataTimeSource
+						entries={[{ label: "活动统计", freshness: factoryFreshness(factory?.repos ?? []) }]}
+					/>
+					<CommitBreadthChart days={days} />
+				</ChartBrick>
+			) : null}
 			<div className="giraffe-stat-inline" data-testid="repo-summary">
 				<span>
 					<strong>{formatCount(metrics.count)}</strong>个仓库

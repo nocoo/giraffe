@@ -1,10 +1,16 @@
 import { Link, toast } from "@nocoo/basalt";
 import { BarChart } from "@nocoo/basalt/charts/bar";
+import { cartesianAxisProps, chartTooltipProps, GRID_PROPS } from "@nocoo/basalt/charts/config";
+import { ChartShell } from "@nocoo/basalt/charts/frame";
+import { ChartLegend } from "@nocoo/basalt/charts/legend";
 import { StackedBarChart } from "@nocoo/basalt/charts/stacked-bar";
+import { ChartTooltipRow } from "@nocoo/basalt/charts/tooltip";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
 import { Activity, GitPullRequest, Layers3 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { CartesianGrid, Line, LineChart, Tooltip, XAxis, YAxis } from "recharts";
+import type { FactoryViewSnapshot } from "../../lib/factory-types";
 import { BusinessPageHeader as PageHeader } from "../components/layout/business-page-header";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ChartBrick, ChartEmpty, ChartRow } from "../components/layout/chart-brick";
@@ -18,8 +24,9 @@ import { SnapshotPending } from "../components/layout/snapshot-pending";
 import { useSnapshotRead } from "../components/layout/use-snapshot-read";
 import { chartColor } from "../lib/chart-theme";
 import { catchLoad } from "../lib/error-ui";
-import { formatCount } from "../lib/format";
+import { formatCount, formatDate } from "../lib/format";
 import { PAGE_DESCRIPTIONS } from "../lib/navigation";
+import { factoryDays, factoryFreshness, loadFactory } from "../viewmodels/factory";
 import { focusFindings, focusRanking } from "../viewmodels/focus";
 import {
 	buildInsightsCharts,
@@ -55,8 +62,101 @@ const PR_STATUS_SERIES = [
 	{ key: "未标记", color: chartColor(4) },
 ];
 
+type StockDay = { x: string; issues: number | null; prs: number | null };
+
+function StockTooltip({
+	active,
+	payload,
+}: {
+	active?: boolean;
+	payload?: readonly { payload?: StockDay }[];
+}) {
+	const day = payload?.[0]?.payload;
+	if (!active || !day) return null;
+	return (
+		<div className="factory-chart-tip">
+			<strong>{formatDate(day.x)}</strong>
+			<ChartTooltipRow
+				label="Open Issues"
+				color={chartColor(0)}
+				value={day.issues === null ? "无法倒推" : formatCount(day.issues)}
+			/>
+			<ChartTooltipRow
+				label="Open PRs"
+				color={chartColor(1)}
+				value={day.prs === null ? "无法倒推" : formatCount(day.prs)}
+			/>
+		</div>
+	);
+}
+
+/** Two backlogs with different magnitudes: own axis each, so neither flattens the other. */
+function StockTrend({ days }: { days: StockDay[] }) {
+	return (
+		<ChartShell
+			legend={
+				<ChartLegend
+					items={[
+						{ key: "issues", label: "Open Issues · 左轴", color: chartColor(0) },
+						{ key: "prs", label: "Open Pull Requests · 右轴", color: chartColor(1) },
+					]}
+					shape="line"
+				/>
+			}
+			ariaLabel="open issues and pull requests over time"
+			size="factory-plot w-full"
+			summary={
+				<span className="sr-only">
+					蓝线为每日日终 open Issue（左轴），红线为 open PR（右轴），由当前数量按事件倒推。
+				</span>
+			}
+		>
+			<LineChart data={days} margin={{ top: 8, right: 16, bottom: 0, left: 16 }}>
+				<CartesianGrid {...GRID_PROPS} />
+				<XAxis
+					dataKey="x"
+					{...cartesianAxisProps()}
+					tickFormatter={(value) => formatDate(String(value)).slice(5, 10)}
+					minTickGap={24}
+				/>
+				<YAxis yAxisId="issues" {...cartesianAxisProps()} width={48} allowDecimals={false} />
+				<YAxis
+					yAxisId="prs"
+					orientation="right"
+					{...cartesianAxisProps()}
+					width={40}
+					allowDecimals={false}
+				/>
+				<Tooltip {...chartTooltipProps({ cursor: "line" })} content={<StockTooltip />} />
+				<Line
+					yAxisId="issues"
+					dataKey="issues"
+					stroke={chartColor(0)}
+					dot={false}
+					strokeWidth={2}
+					connectNulls={false}
+				/>
+				<Line
+					yAxisId="prs"
+					dataKey="prs"
+					stroke={chartColor(1)}
+					dot={false}
+					strokeWidth={2}
+					connectNulls={false}
+				/>
+			</LineChart>
+		</ChartShell>
+	);
+}
+
 export function InsightsPage() {
 	const [board, setBoard] = useState<InsightsBoard | { missing: true } | null>(null);
+	const [factory, setFactory] = useState<FactoryViewSnapshot | null>(null);
+	useSnapshotRead(
+		loadFactory,
+		(snapshot) => setFactory("missing" in snapshot ? null : snapshot),
+		() => undefined,
+	);
 
 	useSnapshotRead(loadInsightsBoard, setBoard, (err) => {
 		const missing = catchLoad(err, (message) => {
@@ -78,6 +178,7 @@ export function InsightsPage() {
 			board.insights.fetched_at,
 		);
 	}, [board]);
+	const days = useMemo(() => (factory ? factoryDays(factory) : []), [factory]);
 	const rest = charts?.workloadByRepo.find((p) => p.x === "其他");
 	const tiles = useMemo(
 		() => (board && !("missing" in board) ? healthTiles(board.insights.insights) : []),
@@ -157,6 +258,23 @@ export function InsightsPage() {
 				}
 			/>
 			<ScopeEmpty count={board.insights.insights.length} />
+			{days.length ? (
+				<ChartBrick
+					title="待办存量"
+					description="每日日终的 open Issue 与 open PR 存量，由当前数量按每日新开与完成倒推；两条线同一单位，用于看积压走向。来自软件工厂的已发布窗口。"
+				>
+					<DataTimeSource
+						entries={[{ label: "活动统计", freshness: factoryFreshness(factory?.repos ?? []) }]}
+					/>
+					<StockTrend
+						days={days.map((day) => ({
+							x: day.date,
+							issues: day.openIssues,
+							prs: day.openPrs,
+						}))}
+					/>
+				</ChartBrick>
+			) : null}
 			<FocusSection {...focus} />
 			<Link href="/analysis" className="inline-flex text-sm">
 				查看分析报告与证据 →

@@ -19,7 +19,6 @@ import { ChartBrick } from "../components/layout/chart-brick";
 import { SearchField, TableScroll } from "../components/layout/collection-chrome";
 import { DataTimeSource } from "../components/layout/data-time";
 import { IconLabel } from "../components/layout/icon-label";
-import { CountBars } from "../components/layout/overview-cards";
 import { CiSkeleton } from "../components/layout/page-skeleton";
 import { ProjectLink } from "../components/layout/project-identity";
 import { ShareBar } from "../components/layout/rank-bars";
@@ -28,14 +27,7 @@ import { INLINE_SEGMENT } from "../components/layout/segment";
 import { SnapshotPending } from "../components/layout/snapshot-pending";
 import { useSnapshotRead } from "../components/layout/use-snapshot-read";
 import { catchLoad } from "../lib/error-ui";
-import {
-	DATE_CELL,
-	formatCount,
-	formatDate,
-	formatDayRange,
-	NUM_CELL,
-	NUM_HEAD,
-} from "../lib/format";
+import { DATE_CELL, formatCount, formatDate, NUM_CELL, NUM_HEAD } from "../lib/format";
 import { PAGE_DESCRIPTIONS } from "../lib/navigation";
 import {
 	type CiStream,
@@ -47,6 +39,7 @@ import {
 	runTimeline,
 } from "../viewmodels/ci";
 import { daysAgo } from "../viewmodels/overview";
+import { CiTrend } from "./ci-trend";
 
 const VERDICT = {
 	broken: { label: "持续失败", tone: "red", color: "hsl(var(--basalt-accent-8))" },
@@ -130,6 +123,12 @@ export function CiPage() {
 				}
 			/>
 			<ScopeEmpty count={report.repos.length + report.unsaved.length} />
+			<ChartBrick
+				title="运行结果与成功率"
+				description="柱：每日完成运行按结果堆叠（左轴，单位是运行次数）；线：截至当日 7 天成功率（右轴），只计成功与失败，取消与跳过单列。不含 Dependabot 更新任务。"
+			>
+				<CiTrend daily={report.daily} />
+			</ChartBrick>
 			<section className="giraffe-ci-summary" aria-label="CI 判定汇总" data-testid="ci-summary">
 				<ShareBar
 					label="默认分支工作流判定"
@@ -209,23 +208,6 @@ export function CiPage() {
 				>
 					<WatchList title={`反复失败 · ${recurring.length}`} items={recurring} now={report.now} />
 					<WatchList title={`偶发一次 · ${oneOff.length}`} items={oneOff} now={report.now} muted />
-				</ChartBrick>
-				<ChartBrick
-					title="近 30 天运行结果"
-					description="所有分支每日完成运行按结果堆叠，不含 Dependabot 更新任务；此处单位是运行次数，不是工作流健康。"
-				>
-					<CountBars
-						data={report.daily}
-						series={[
-							{ key: "success", label: "成功", color: OUTCOME_COLOR.success },
-							{ key: "failure", label: "失败", color: OUTCOME_COLOR.failure },
-							{ key: "other", label: "取消 / 跳过", color: OUTCOME_COLOR.other },
-						]}
-						label="近 30 天运行结果"
-						xFormat={(v) => formatDate(v).slice(5, 10)}
-						tooltipFormat={(v) => formatDayRange(v)}
-						className="h-56 w-full"
-					/>
 				</ChartBrick>
 			</div>
 

@@ -12,9 +12,10 @@ import {
 } from "@nocoo/basalt/components/table";
 import { GitPullRequest } from "lucide-react";
 import { useMemo, useState } from "react";
-import type { FactorySnapshot } from "../../lib/factory-types";
+import type { FactoryViewSnapshot } from "../../lib/factory-types";
 import { BusinessPageHeader as PageHeader } from "../components/layout/business-page-header";
 import { CandyBadge } from "../components/layout/candy-badge";
+import { ChartBrick } from "../components/layout/chart-brick";
 import { ResultCount, SearchField, TableScroll } from "../components/layout/collection-chrome";
 import { DataTimeSource } from "../components/layout/data-time";
 import { IconLabel } from "../components/layout/icon-label";
@@ -22,7 +23,6 @@ import {
 	ActiveFilters,
 	AgeStrip,
 	Breakdown,
-	CountBars,
 	OverviewCard,
 } from "../components/layout/overview-cards";
 import { ListPageSkeleton } from "../components/layout/page-skeleton";
@@ -33,14 +33,13 @@ import { INLINE_SEGMENT } from "../components/layout/segment";
 import { SnapshotPending } from "../components/layout/snapshot-pending";
 import { ChurnMeter, PersonCell, SortButton } from "../components/layout/table-chrome";
 import { useSnapshotRead } from "../components/layout/use-snapshot-read";
-import { chartColor, FLOW_COLORS } from "../lib/chart-theme";
+import { chartColor } from "../lib/chart-theme";
 import { catchLoad } from "../lib/error-ui";
 import {
 	churnFilled,
 	DATE_CELL,
 	formatCount,
 	formatDate,
-	formatDayRange,
 	formatReview,
 	NUM_CELL,
 	NUM_HEAD,
@@ -54,9 +53,10 @@ import {
 	REVIEW_STATES,
 	type WorkFilters,
 } from "../viewmodels/boards";
-import { loadFactory } from "../viewmodels/factory";
+import { factoryDays, factoryFreshness, loadFactory } from "../viewmodels/factory";
 import { AGE_BUCKETS, shortRepo } from "../viewmodels/overview";
 import { loadPulls, type PullSort, type PullsSnapshot, visiblePulls } from "../viewmodels/pulls";
+import { FlowStockChart } from "./factory-story";
 
 type PullFilters = WorkFilters & { review: string };
 const NO_FILTERS: PullFilters = { repo: "", label: "", author: "", age: "", review: "" };
@@ -73,11 +73,12 @@ export function PullsPage() {
 	const [query, setQuery] = useState("");
 	const [sort, setSort] = useState<PullSort>("updated");
 	const [picked, setPicked] = useState<PullFilters>(NO_FILTERS);
-	const [factory, setFactory] = useState<FactorySnapshot | null>(null);
+	const [factory, setFactory] = useState<FactoryViewSnapshot | null>(null);
 	const history = useMemo(
 		() => (factory ? mergedHistory(factory.repos, factory.window.until, 30) : null),
 		[factory],
 	);
+	const days = useMemo(() => (factory ? factoryDays(factory) : []), [factory]);
 	const pick = (key: keyof PullFilters) => (value: string) =>
 		setPicked((old) => ({ ...old, [key]: value }));
 	const [snap, setSnap] = useState<PullsSnapshot | { missing: true } | null>(null);
@@ -168,6 +169,40 @@ export function PullsPage() {
 				}
 			/>
 			<ScopeEmpty count={snap.freshness?.total ?? snap.pull_requests.length} />
+			{days.length ? (
+				<ChartBrick
+					title="PR 流量与存量"
+					description="柱：每日新开与合并（未合并关闭单列），左轴为事件数；线：open PR 存量，右轴。数据来自软件工厂的已发布窗口，不是实时 GitHub 状态。"
+				>
+					<DataTimeSource
+						entries={[{ label: "活动统计", freshness: factoryFreshness(factory?.repos ?? []) }]}
+					/>
+					<FlowStockChart days={days} kind="prs" />
+					{history ? (
+						<p className="giraffe-stat-inline mt-2">
+							<span>
+								30 天合并 <strong>{formatCount(history.merged)}</strong>
+							</span>
+							<span>
+								新开 <strong>{formatCount(history.opened)}</strong>
+							</span>
+							<span>
+								未合并关闭 <strong>{formatCount(history.closed)}</strong>
+							</span>
+							<span>
+								创建到合并中位数{" "}
+								<strong>
+									{history.cycleHours === null
+										? "—"
+										: history.cycleHours < 1
+											? `${Math.round(history.cycleHours * 60)} 分钟`
+											: `${history.cycleHours.toFixed(1)} 小时`}
+								</strong>
+							</span>
+						</p>
+					) : null}
+				</ChartBrick>
+			) : null}
 			<div className="giraffe-stat-inline" data-testid="pr-summary">
 				<span>
 					<strong>{formatCount(board.rows.length)}</strong>个 open PR ·{" "}
@@ -184,64 +219,6 @@ export function PullsPage() {
 					<strong>{formatCount(board.stale)}</strong>个超过 30 天
 				</span>
 			</div>
-			{history ? (
-				<div className="giraffe-overview">
-					<div className="lg:col-span-2">
-						<OverviewCard
-							title="近 30 天 PR 吞吐"
-							hint="来自软件工厂最近保存的数据：每日合并与新开的 PR。open 列表为空时，这里说明 PR 是否在持续流动。"
-						>
-							<DataTimeSource
-								entries={[
-									{ label: "合并历史", at: factory?.fetched_at, freshness: factory?.freshness },
-								]}
-							/>
-							<CountBars
-								data={history.daily}
-								series={[
-									{ key: "merged", label: "合并", color: FLOW_COLORS.merged },
-									{ key: "opened", label: "新开", color: FLOW_COLORS.opened },
-								]}
-								label="近 30 天每日合并与新开 PR"
-								xFormat={(v) => formatDate(v).slice(5, 10)}
-								tooltipFormat={(v) => formatDayRange(v)}
-								className="h-48 w-full"
-								stacked={false}
-							/>
-							<p className="giraffe-stat-inline mt-2">
-								<span>
-									合并 <strong>{formatCount(history.merged)}</strong>
-								</span>
-								<span>
-									新开 <strong>{formatCount(history.opened)}</strong>
-								</span>
-								<span>
-									未合并关闭 <strong>{formatCount(history.closed)}</strong>
-								</span>
-								<span>
-									创建到合并中位数{" "}
-									<strong>
-										{history.cycleHours === null
-											? "—"
-											: history.cycleHours < 1
-												? `${Math.round(history.cycleHours * 60)} 分钟`
-												: `${history.cycleHours.toFixed(1)} 小时`}
-									</strong>
-								</span>
-							</p>
-						</OverviewCard>
-					</div>
-					<OverviewCard title="合并最多的仓库" hint="近 30 天合并 PR 数，来自软件工厂数据。">
-						<Breakdown
-							rows={history.repos.rows}
-							max={history.repos.max}
-							label="近 30 天合并 PR 按仓库"
-							active=""
-							format={shortRepo}
-						/>
-					</OverviewCard>
-				</div>
-			) : null}
 			{board.total ? (
 				<>
 					<div className="giraffe-overview">
@@ -296,6 +273,17 @@ export function PullsPage() {
 								/>
 							</div>
 						</OverviewCard>
+						{history ? (
+							<OverviewCard title="合并最多的仓库" hint="近 30 天合并 PR 数，来自软件工厂数据。">
+								<Breakdown
+									rows={history.repos.rows}
+									max={history.repos.max}
+									label="近 30 天合并 PR 按仓库"
+									active=""
+									format={shortRepo}
+								/>
+							</OverviewCard>
+						) : null}
 						<OverviewCard title="按仓库与作者" hint="open PR 最多的仓库与作者，点击筛选。">
 							<Breakdown
 								rows={board.repos.rows}

@@ -684,6 +684,11 @@ export type FactorySignal = { repo: string; label: string; stream: FactoryStream
 export type FactorySignalGroup = { repo: string; signals: FactorySignal[] };
 
 /** One row per repository keeps the inspection panel short; heaviest groups lead. */
+/** Published daily series for a snapshot's selected membership, shared by trend charts. */
+export function factoryDays(snapshot: FactoryViewSnapshot) {
+	return factoryBoard(snapshot, snapshot.repos, snapshot.selectedRepos).days;
+}
+
 export function factorySignalGroups(anomalies: readonly FactorySignal[]): FactorySignalGroup[] {
 	const byRepo = new Map<string, FactorySignal[]>();
 	for (const signal of anomalies) {

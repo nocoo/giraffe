@@ -10,6 +10,7 @@ import {
 	dependencyEdges,
 	eventPage,
 	factoryBoard,
+	factoryDays,
 	factoryGroups,
 	factoryParams,
 	factoryRepoCount,
@@ -258,6 +259,21 @@ describe("factory sampling signals", () => {
 			),
 		).toEqual([]);
 	});
+});
+
+it("exposes the published daily series for trend charts", () => {
+	const s = ready();
+	const days = factoryDays({
+		...s,
+		selectedRepos: s.repos.map((repo) => ({
+			name: repo.name,
+			description: repo.description,
+			language: repo.language,
+			topics: repo.topics,
+		})),
+	});
+	expect(days).toHaveLength(90);
+	expect(days.at(-1)?.date).toBe("2026-09-15");
 });
 
 it("resets paging when a filter changes and keeps other filters intact", () => {
