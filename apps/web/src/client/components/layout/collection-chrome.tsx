@@ -18,7 +18,7 @@ export function SearchField({
 }) {
 	const input = useRef<HTMLInputElement>(null);
 	return (
-		<InputGroup className="h-7 w-full sm:w-60">
+		<InputGroup className="h-7 w-full sm:w-60 [&_input]:h-full [&_input]:min-h-0">
 			<InputGroup.Addon>
 				<Search aria-hidden="true" />
 			</InputGroup.Addon>
