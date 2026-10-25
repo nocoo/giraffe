@@ -238,6 +238,14 @@ Basalt `ContentIsland` 已是 L1 岛。不要再包一层自定义 card 当岛�
 - 通知标记已读时显示 `Button loading`，同一页面的已读操作暂时禁用，成功后应用服务端返回的状态。
 - `layout/collection-chrome` 只组合 Basalt 输入和滚动控件，并展示计数与更新时间；`table-chrome` 只组合表格叶子；`kpi` / `chart-brick` 只组合卡片。它们不维护第二套控件样式、API 或筛选逻辑。
 
+### 5.5a 单行页头
+
+`BusinessPageHeader` 是项目对 Basalt `PageHeader` 的覆盖：**一页只占一行**（≥1024px）。
+- `title`（`h1`，24px/600）后紧跟 `description` 作为 muted 后缀，单行截断并带 `title` 提示；不为描述单开一行。
+- `meta`（数据时间等只读控件）、`RepositoryScopeFilter`、`filters`、`actions` 同处一个 toolbar，`margin-left:auto` 右对齐，控件不收缩；窄屏整体换行到标题下方，不挤压标题。
+- 所有页头控件按 28px toolbar 密度（`h-7` 输入、`Button size="sm"`、Basalt SegmentControl 的 28px 选项），不在 32/34px 之间混排。
+- 侧栏折叠按钮只属于桌面轨道；移动端抽屉里不出现折叠步骤（抽屉只负责导航）。
+
 ### 5.5 页面骨架：图表在上
 
 数据页按同一顺序组织，跨页面可比：`PageHeader` → **时间序列图** → 汇总数字（`StatStrip` / stat inline）→ 分类拆解卡（`OverviewCard`）→ 筛选后的列表或表格。整页详情（仓库概览）把时间序列图放在 KPI 卡片之上；列表页把同一张图放在标题与统计行之间。
