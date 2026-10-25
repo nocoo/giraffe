@@ -62,7 +62,7 @@ export function CompactRepoActivity({ snapshot }: { snapshot: ActivitySnapshot }
 					{ label: "其他 PR", value: totals.other },
 					{ label: "新开 Issue", value: totals.opened },
 					{ label: "关闭 Issue", value: totals.closed },
-					{ label: "发布（不含标签）", value: totals.releases },
+					{ label: <span title="不含独立标签">发布版本</span>, value: totals.releases },
 				]}
 			/>
 			{incomplete ? (

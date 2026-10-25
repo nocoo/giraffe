@@ -571,6 +571,52 @@ export function RepoDetailPage() {
 				<TabsContent value="details">
 					{snap ? (
 						<div className="flex flex-col gap-4">
+							<div className="grid gap-basalt-layout xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+								{days.length ? (
+									<ChartBrick
+										title={`${days.length} 天活动`}
+										description="来自软件工厂的该仓库数据：每日默认分支提交与合并 PR（左轴），截至当日 7 天 CI 成功率（右轴）。"
+									>
+										<DataTimeSource
+											entries={[
+												{
+													label: "活动统计",
+													freshness: factoryFreshness(factory ? [factory.repo] : []),
+												},
+											]}
+										/>
+										<p className="giraffe-stat-inline mb-2">
+											<span>
+												30 天提交 <strong>{formatCount(flow30.commits)}</strong>
+											</span>
+											<span>
+												合并 PR <strong>{formatCount(flow30.merged)}</strong>
+											</span>
+											<span>
+												Issue 新开 / 关闭 <strong>{formatCount(flow30.opened)}</strong>/
+												<strong>{formatCount(flow30.closed)}</strong>
+											</span>
+										</p>
+										<RepoActivityChart days={days} />
+									</ChartBrick>
+								) : null}
+								{activity?.releases.timeline.length ? (
+									<ChartBrick
+										title="版本节奏"
+										description="已发布版本按时间排列，空心点为预发布；点的疏密即发布节奏。"
+									>
+										<DataTimeSource
+											entries={[
+												{
+													label: "版本发布",
+													at: releases && !("missing" in releases) ? releases.fetched_at : null,
+												},
+											]}
+										/>
+										{activity ? <ReleaseTimeline releases={activity.releases} /> : null}
+									</ChartBrick>
+								) : null}
+							</div>
 							<div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
 								<Kpi icon={Star} label="Stars" value={formatCount(snap.stargazer_count)} />
 								<Kpi icon={GitFork} label="Forks" value={formatCount(snap.fork_count)} />
@@ -603,53 +649,9 @@ export function RepoDetailPage() {
 									}
 								/>
 							</div>
-							<RepoCurrentActivity repository={`${owner}/${name}`} compact />
 							<div className="grid gap-basalt-layout xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
 								<div className="flex min-w-0 flex-col gap-basalt-layout">
-									{days.length ? (
-										<ChartBrick
-											title={`${days.length} 天活动`}
-											description="来自软件工厂的该仓库数据：每日默认分支提交与合并 PR（左轴），截至当日 7 天 CI 成功率（右轴）。"
-										>
-											<DataTimeSource
-												entries={[
-													{
-														label: "活动统计",
-														freshness: factoryFreshness(factory ? [factory.repo] : []),
-													},
-												]}
-											/>
-											<p className="giraffe-stat-inline mb-2">
-												<span>
-													30 天提交 <strong>{formatCount(flow30.commits)}</strong>
-												</span>
-												<span>
-													合并 PR <strong>{formatCount(flow30.merged)}</strong>
-												</span>
-												<span>
-													Issue 新开 / 关闭 <strong>{formatCount(flow30.opened)}</strong>/
-													<strong>{formatCount(flow30.closed)}</strong>
-												</span>
-											</p>
-											<RepoActivityChart days={days} />
-										</ChartBrick>
-									) : null}
-									{activity?.releases.timeline.length ? (
-										<ChartBrick
-											title="版本节奏"
-											description="已发布版本按时间排列，空心点为预发布；点的疏密即发布节奏。"
-										>
-											<DataTimeSource
-												entries={[
-													{
-														label: "版本发布",
-														at: releases && !("missing" in releases) ? releases.fetched_at : null,
-													},
-												]}
-											/>
-											{activity ? <ReleaseTimeline releases={activity.releases} /> : null}
-										</ChartBrick>
-									) : null}
+									<RepoCurrentActivity repository={`${owner}/${name}`} compact />
 								</div>
 								<div className="flex min-w-0 flex-col gap-basalt-layout">
 									<SectionRule title="概览">
