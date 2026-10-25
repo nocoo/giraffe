@@ -109,13 +109,11 @@ export function InboxPage() {
 		<div className="giraffe-page-motion space-y-6">
 			<PageHeader
 				title="通知"
-				description={
-					<>
-						{PAGE_DESCRIPTIONS["/inbox"]}
-						<DataTimeSource
-							entries={[{ label: "通知", at: snap.fetched_at, freshness: snap.freshness }]}
-						/>
-					</>
+				description={PAGE_DESCRIPTIONS["/inbox"]}
+				meta={
+					<DataTimeSource
+						entries={[{ label: "通知", at: snap.fetched_at, freshness: snap.freshness }]}
+					/>
 				}
 				actions={
 					<>

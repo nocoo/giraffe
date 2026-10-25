@@ -222,19 +222,17 @@ export function InsightsPage() {
 		<div className="giraffe-page-motion space-y-8">
 			<PageHeader
 				title="Insights"
-				description={
-					<>
-						{PAGE_DESCRIPTIONS["/insights"]}
-						<DataTimeSource
-							entries={[
-								{
-									label: "Insights",
-									at: board.insights.fetched_at,
-									freshness: board.insights.freshness,
-								},
-							]}
-						/>
-					</>
+				description={PAGE_DESCRIPTIONS["/insights"]}
+				meta={
+					<DataTimeSource
+						entries={[
+							{
+								label: "Insights",
+								at: board.insights.fetched_at,
+								freshness: board.insights.freshness,
+							},
+						]}
+					/>
 				}
 				actions={
 					<>

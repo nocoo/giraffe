@@ -97,7 +97,7 @@ export function AppShell() {
 						className="w-[260px] max-w-[260px] border-0 bg-basalt-background p-0"
 					>
 						<SheetTitle className="sr-only">打开导航</SheetTitle>
-						<AppSidebar collapsed={false} onToggle={() => setMobileOpen(false)} />
+						<AppSidebar collapsed={false} />
 					</SheetContent>
 				</Sheet>
 			)}

@@ -1,20 +1,43 @@
-import { PageHeader, type PageHeaderProps } from "@nocoo/basalt/components/page-header";
+import type { ReactNode } from "react";
 import { RepositoryScopeFilter } from "./repository-scope";
 
-export function BusinessPageHeader({ title, actions, filters, ...props }: PageHeaderProps) {
+/**
+ * Single-row page chrome. Basalt's `PageHeader` gives the description and the
+ * filters their own bands; here the description becomes a muted inline suffix
+ * and data times, scope, filters and page actions share one toolbar row.
+ */
+export function BusinessPageHeader({
+	title,
+	description,
+	meta,
+	actions,
+	filters,
+}: {
+	title: ReactNode;
+	description?: ReactNode;
+	meta?: ReactNode;
+	actions?: ReactNode;
+	filters?: ReactNode;
+}) {
 	return (
-		<PageHeader
-			{...props}
-			title={<span className="giraffe-page-title">{title}</span>}
-			actions={
-				<>
-					<div className="giraffe-page-controls">
-						<RepositoryScopeFilter />
-						{actions}
-					</div>
-					{filters ? <div className="giraffe-page-filters">{filters}</div> : null}
-				</>
-			}
-		/>
+		<header className="giraffe-page-header">
+			<div className="giraffe-page-heading">
+				<h1 className="giraffe-page-title">{title}</h1>
+				{description ? (
+					<p
+						className="giraffe-page-subtitle"
+						{...(typeof description === "string" ? { title: description } : {})}
+					>
+						{description}
+					</p>
+				) : null}
+			</div>
+			<div className="giraffe-page-toolbar">
+				{meta}
+				<RepositoryScopeFilter />
+				{filters}
+				{actions}
+			</div>
+		</header>
 	);
 }

@@ -59,9 +59,15 @@ for (const width of [1440, 390]) {
 					: null;
 			});
 			expect(position, path).not.toBeNull();
-			expect(position?.scopeTop, path).toBeLessThan(position?.titleBottom ?? 0);
-			expect(position?.scopeBottom, path).toBeGreaterThan(position?.titleTop ?? 0);
-			expect(position?.scopeLeft, path).toBeGreaterThanOrEqual(position?.titleRight ?? 0);
+			if (width >= 1024) {
+				// One row: the toolbar sits beside the title, never below it.
+				expect(position?.scopeTop, path).toBeLessThan(position?.titleBottom ?? 0);
+				expect(position?.scopeBottom, path).toBeGreaterThan(position?.titleTop ?? 0);
+				expect(position?.scopeLeft, path).toBeGreaterThanOrEqual(position?.titleRight ?? 0);
+			} else {
+				// The toolbar stacks under the title instead of squeezing both.
+				expect(position?.scopeTop, path).toBeGreaterThanOrEqual(position?.titleBottom ?? 0);
+			}
 
 			expect(
 				await page.locator("body").evaluate((element) => element.scrollWidth),

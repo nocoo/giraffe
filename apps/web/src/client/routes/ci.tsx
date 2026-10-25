@@ -103,13 +103,11 @@ export function CiPage() {
 		<div className="giraffe-page-motion space-y-6">
 			<PageHeader
 				title="CI 与发布"
-				description={
-					<>
-						{PAGE_DESCRIPTIONS["/ci"]}
-						<DataTimeSource
-							entries={[{ label: "CI 与发布", at: report.fetched_at, freshness: report.freshness }]}
-						/>
-					</>
+				description={PAGE_DESCRIPTIONS["/ci"]}
+				meta={
+					<DataTimeSource
+						entries={[{ label: "CI 与发布", at: report.fetched_at, freshness: report.freshness }]}
+					/>
 				}
 				actions={
 					<>

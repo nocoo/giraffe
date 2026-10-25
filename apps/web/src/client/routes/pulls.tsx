@@ -138,13 +138,11 @@ export function PullsPage() {
 		<div className="giraffe-page-motion space-y-6">
 			<PageHeader
 				title="Pull Requests"
-				description={
-					<>
-						{PAGE_DESCRIPTIONS["/pulls"]}
-						<DataTimeSource
-							entries={[{ label: "Pull Requests", at: snap.fetched_at, freshness: snap.freshness }]}
-						/>
-					</>
+				description={PAGE_DESCRIPTIONS["/pulls"]}
+				meta={
+					<DataTimeSource
+						entries={[{ label: "Pull Requests", at: snap.fetched_at, freshness: snap.freshness }]}
+					/>
 				}
 				actions={snap.truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
 				filters={

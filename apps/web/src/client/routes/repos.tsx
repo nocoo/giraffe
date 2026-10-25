@@ -269,13 +269,11 @@ export function ReposPage() {
 		<div className="giraffe-page-motion space-y-6">
 			<PageHeader
 				title="仓库"
-				description={
-					<>
-						{PAGE_DESCRIPTIONS["/repos"]}
-						<DataTimeSource
-							entries={[{ label: "仓库列表", at: snap.fetched_at, freshness: snap.freshness }]}
-						/>
-					</>
+				description={PAGE_DESCRIPTIONS["/repos"]}
+				meta={
+					<DataTimeSource
+						entries={[{ label: "仓库列表", at: snap.fetched_at, freshness: snap.freshness }]}
+					/>
 				}
 				actions={snap.truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
 				filters={filters}

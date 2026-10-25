@@ -113,13 +113,11 @@ export function AlertsPage() {
 		<div className="giraffe-page-motion space-y-6">
 			<PageHeader
 				title="安全告警"
-				description={
-					<>
-						{PAGE_DESCRIPTIONS["/alerts"]}
-						<DataTimeSource
-							entries={[{ label: "安全告警", at: snap.fetched_at, freshness: snap.freshness }]}
-						/>
-					</>
+				description={PAGE_DESCRIPTIONS["/alerts"]}
+				meta={
+					<DataTimeSource
+						entries={[{ label: "安全告警", at: snap.fetched_at, freshness: snap.freshness }]}
+					/>
 				}
 			/>
 			<ScopeEmpty count={snap.freshness?.total ?? snap.items.length} />

@@ -86,7 +86,14 @@ function commandSearchMatches(value: string, query: string) {
 	return tokens.every((token) => normalizedValue.includes(token));
 }
 
-export function AppSidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
+export function AppSidebar({
+	collapsed,
+	onToggle,
+}: {
+	collapsed: boolean;
+	/** Desktop rail only; the mobile drawer has no collapse step. */
+	onToggle?: () => void;
+}) {
 	const project = useProjectIdentity("nocoo/giraffe");
 	const { pathname } = useLocation();
 	const navigate = useNavigate();
@@ -183,7 +190,7 @@ export function AppSidebar({ collapsed, onToggle }: { collapsed: boolean; onTogg
 							</>
 						)}
 					</Link>
-					{collapsed ? null : (
+					{!collapsed && onToggle ? (
 						<Button
 							variant="ghost"
 							size="icon"
@@ -193,7 +200,7 @@ export function AppSidebar({ collapsed, onToggle }: { collapsed: boolean; onTogg
 						>
 							<PanelLeft aria-hidden="true" />
 						</Button>
-					)}
+					) : null}
 				</div>
 			</SidebarHeader>
 			{collapsed ? (
@@ -202,7 +209,7 @@ export function AppSidebar({ collapsed, onToggle }: { collapsed: boolean; onTogg
 						variant="ghost"
 						size="icon"
 						className="mb-basalt-space-sm self-center"
-						onClick={onToggle}
+						onClick={() => onToggle?.()}
 						aria-label="展开侧栏"
 					>
 						<PanelLeft aria-hidden="true" />

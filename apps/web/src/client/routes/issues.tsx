@@ -133,13 +133,11 @@ export function IssuesPage() {
 		<div className="giraffe-page-motion space-y-6">
 			<PageHeader
 				title="Issues"
-				description={
-					<>
-						{PAGE_DESCRIPTIONS["/issues"]}
-						<DataTimeSource
-							entries={[{ label: "Issues", at: snap.fetched_at, freshness: snap.freshness }]}
-						/>
-					</>
+				description={PAGE_DESCRIPTIONS["/issues"]}
+				meta={
+					<DataTimeSource
+						entries={[{ label: "Issues", at: snap.fetched_at, freshness: snap.freshness }]}
+					/>
 				}
 				actions={snap.truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
 				filters={filters}

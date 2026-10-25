@@ -150,23 +150,19 @@ export function FactoryPage() {
 		<div className="factory space-y-4" style={FLOW_STYLE}>
 			<PageHeader
 				title="软件工厂"
-				description={
+				description="GitHub 的仓库、工作流与交付节奏"
+				meta={
 					snapshot ? (
-						<>
-							GitHub 的仓库、工作流与交付节奏
-							<DataTimeSource
-								entries={[
-									{ label: "活动统计", at: snapshot.fetched_at, freshness },
-									{
-										label: "仓库信息",
-										freshness: board?.metadataFreshness,
-									},
-								]}
-							/>
-						</>
-					) : (
-						"GitHub 的仓库、工作流与交付节奏"
-					)
+						<DataTimeSource
+							entries={[
+								{ label: "活动统计", at: snapshot.fetched_at, freshness },
+								{
+									label: "仓库信息",
+									freshness: board?.metadataFreshness,
+								},
+							]}
+						/>
+					) : null
 				}
 				actions={
 					<Button asChild size="sm">
