@@ -2616,10 +2616,10 @@ it("finishes activity factory_capacity as limited without pausing the run", asyn
 	const run = (await getRun(db, snap.account_id, "r1"))?.run;
 	expect(run?.status).toBe("running");
 	expect(run?.steps.find((step) => step.kind === "activity")).toMatchObject({
-		status: "pending",
-		error: null,
+		status: "limited",
+		error: "factory_capacity",
 	});
-	expect((await listRuns(db, snap.account_id))[0]?.counts).toMatchObject({ limited: 0 });
+	expect((await listRuns(db, snap.account_id))[0]?.counts).toMatchObject({ limited: 1 });
 	expect(
 		await db
 			.prepare(
@@ -2627,6 +2627,89 @@ it("finishes activity factory_capacity as limited without pausing the run", asyn
 			)
 			.first(),
 	).toBeNull();
+	vi.restoreAllMocks();
+});
+it("keeps incomplete landed activity pending on factory_capacity when the invocation made GitHub progress", async () => {
+	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] }, true);
+	const db = createDb(env.DB);
+	const found = await getRun(db, snap.account_id, "r1");
+	if (!found) throw new Error("fixture");
+	for (const step of found.run.steps) {
+		if (step.kind === "activity" && step.status === "pending") {
+			found.run.cursor = found.run.steps.indexOf(step);
+			break;
+		}
+		if (step.status === "pending") step.status = "success";
+	}
+	await db
+		.prepare("UPDATE factory_runs SET payload=? WHERE id=?")
+		.bind(JSON.stringify(found.run), "r1")
+		.run();
+	vi.spyOn(factoryPublish, "currentRepo").mockResolvedValue(mapFactoryRepo(rawRepo));
+	vi.spyOn(activityLanded, "collectLandedPage").mockImplementation(
+		async (_db, _lease, _repo, gh, token) => {
+			await gh.githubApi(token, `/repos/nocoo/app/commits?sha=main&per_page=1`);
+			throw new ApiError(422, "factory_capacity", "landed ledger capacity exceeded");
+		},
+	);
+	await executeRunPage(env, "r1", () => now);
+	const run = (await getRun(db, snap.account_id, "r1"))?.run;
+	expect(run?.steps.find((step) => step.kind === "activity")).toMatchObject({
+		status: "pending",
+		error: null,
+	});
+	expect((await listRuns(db, snap.account_id))[0]?.counts).toMatchObject({ limited: 0 });
+	vi.restoreAllMocks();
+});
+it("persists staged landed writes when run-record factory_capacity follows collectLandedPage", async () => {
+	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] }, true);
+	const db = createDb(env.DB);
+	const found = await getRun(db, snap.account_id, "r1");
+	if (!found) throw new Error("fixture");
+	const repo = snap.repos[0];
+	if (!repo) throw new Error("fixture");
+	for (const step of found.run.steps) {
+		if (step.kind === "activity" && step.status === "pending") {
+			found.run.cursor = found.run.steps.indexOf(step);
+			break;
+		}
+		if (step.status === "pending") step.status = "success";
+	}
+	const metadata = found.run.steps.find(
+		(step) => step.kind === "metadata" && step.repo === repo.name,
+	);
+	if (metadata) metadata.sourceHead = "abc123";
+	const landedWrite = db
+		.prepare(
+			"INSERT INTO activity_commit_heads(account_id,repo_id,head,pending) VALUES(?,?,?,?) ON CONFLICT(account_id,repo_id) DO UPDATE SET pending=excluded.pending",
+		)
+		.bind(snap.account_id, repo.id, null, '{"head":"abc123","page":2}');
+	vi.spyOn(activityLanded, "collectLandedPage").mockResolvedValue({
+		done: false,
+		writes: [landedWrite],
+	});
+	const bounded = vi.spyOn(factoryPublish, "boundedJson").mockImplementation((value) => {
+		if (typeof value === "object" && value !== null && "steps" in value)
+			throw new ApiError(422, "factory_capacity", "run record exceeds capacity");
+		return JSON.stringify(value);
+	});
+	vi.spyOn(factoryPublish, "currentRepo").mockResolvedValue(mapFactoryRepo(rawRepo));
+	await db
+		.prepare("UPDATE factory_runs SET payload=? WHERE id=?")
+		.bind(JSON.stringify(found.run), "r1")
+		.run();
+	await executeRunPage(env, "r1", () => now);
+	expect(
+		await db
+			.prepare("SELECT pending FROM activity_commit_heads WHERE account_id=? AND repo_id=?")
+			.bind(snap.account_id, repo.id)
+			.first<{ pending: string }>(),
+	).toMatchObject({ pending: '{"head":"abc123","page":2}' });
+	const run = (await getRun(db, snap.account_id, "r1"))?.run;
+	const activity = run?.steps.find((step) => step.kind === "activity");
+	expect(activity?.status).not.toBe("limited");
+	expect(activity?.error).not.toBe("factory_capacity");
+	bounded.mockRestore();
 	vi.restoreAllMocks();
 });
 it("freezes activity evidence on factory_capacity when current-run streams exist", async () => {

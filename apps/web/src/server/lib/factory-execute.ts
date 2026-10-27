@@ -556,6 +556,11 @@ async function executeStep(
 		if (savedSnapshotCursor === undefined) delete step.snapshotCursor;
 		else step.snapshotCursor = savedSnapshotCursor;
 		step.finishedAt = null;
+		const activityCapacityWrites =
+			step.kind === "activity" && error instanceof ApiError && error.code === "factory_capacity"
+				? writes
+				: [];
+		const activityCapacityRequests = gh.count;
 		writes = [];
 		const code = error instanceof ApiError ? error.code : "internal_error";
 		step.error = code;
@@ -605,9 +610,12 @@ async function executeStep(
 						);
 						if (frozen) writes.push(frozen);
 						finish(step, "limited", clock());
-					} else {
+					} else if (activityCapacityRequests > 0 || activityCapacityWrites.length > 0) {
+						writes = activityCapacityWrites;
 						step.status = "pending";
 						step.error = null;
+					} else {
+						finish(step, "limited", clock());
 					}
 				} else finish(step, "limited", clock());
 				run.nextAttemptAt = clock();
