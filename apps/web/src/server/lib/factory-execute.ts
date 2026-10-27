@@ -615,6 +615,15 @@ async function executeStep(
 						step.status = "pending";
 						step.error = null;
 					} else {
+						const frozen = await bestEffortFreezeActivityOnCapacity(
+							db,
+							lease,
+							clock(),
+							repo,
+							activitySupplement,
+							{ allowIncompleteLanded: true },
+						);
+						if (frozen) writes.push(frozen);
 						finish(step, "limited", clock());
 					}
 				} else finish(step, "limited", clock());

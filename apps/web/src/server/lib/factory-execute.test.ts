@@ -2774,6 +2774,73 @@ it("freezes activity evidence on factory_capacity when current-run streams exist
 	).toBeTruthy();
 	vi.restoreAllMocks();
 });
+it("freezes activity evidence on factory_capacity limited finish when landed is incomplete but streams exist", async () => {
+	const env = await setup("refresh", { scope: "selected", repos: ["nocoo/app"] }, true);
+	const db = createDb(env.DB);
+	const found = await getRun(db, snap.account_id, "r1");
+	if (!found) throw new Error("fixture");
+	const repo = snap.repos[0];
+	if (!repo) throw new Error("fixture");
+	for (const step of found.run.steps) {
+		if (step.kind === "activity" && step.status === "pending") {
+			found.run.cursor = found.run.steps.indexOf(step);
+			break;
+		}
+		if (step.status === "pending") step.status = "success";
+	}
+	const metadata = found.run.steps.find(
+		(step) => step.kind === "metadata" && step.repo === repo.name,
+	);
+	if (metadata) {
+		metadata.sourceHead = "abc123";
+		metadata.sourceBranch = "main";
+	}
+	await db
+		.prepare(
+			"INSERT INTO activity_commit_heads(account_id,repo_id,head,pending) VALUES(?,?,?,?) ON CONFLICT(account_id,repo_id) DO UPDATE SET pending=excluded.pending",
+		)
+		.bind(snap.account_id, repo.id, null, '{"head":"abc123","page":1}')
+		.run();
+	for (const stream of FACTORY_STREAMS)
+		await db
+			.prepare("INSERT INTO factory_resources(run_id,repo,stream,payload) VALUES(?,?,?,?)")
+			.bind(
+				"r1",
+				repo.name,
+				stream,
+				JSON.stringify({
+					runId: "r1",
+					items: [],
+					next: null,
+					ranges: [],
+					coverage: { ...repo.coverage[stream], status: "complete" },
+				}),
+			)
+			.run();
+	await db
+		.prepare("UPDATE factory_runs SET payload=? WHERE id=?")
+		.bind(JSON.stringify(found.run), "r1")
+		.run();
+	vi.spyOn(factoryPublish, "currentRepo").mockResolvedValue(mapFactoryRepo(rawRepo));
+	vi.spyOn(activityLanded, "collectLandedPage").mockRejectedValue(
+		new ApiError(422, "factory_capacity", "Activity repository metadata exceeds page capacity"),
+	);
+	await executeRunPage(env, "r1", () => now);
+	const run = (await getRun(db, snap.account_id, "r1"))?.run;
+	expect(run?.steps.find((step) => step.kind === "activity")).toMatchObject({
+		status: "limited",
+		error: "factory_capacity",
+	});
+	expect(
+		await db
+			.prepare(
+				"SELECT 1 AS ok FROM factory_resources WHERE run_id='r1' AND repo=? AND stream='activity-snapshot'",
+			)
+			.bind(repo.name)
+			.first(),
+	).toBeTruthy();
+	vi.restoreAllMocks();
+});
 
 it("does not spend network retry budget while waiting for valid credentials", async () => {
 	const env = await setup();
