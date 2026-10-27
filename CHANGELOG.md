@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.25.4 - 2026-10-27
+
+### Fixed
+
+- Activity steps that finish `limited` on `factory_capacity` without forward progress now best-effort freeze `activity-snapshot` rows from in-run supplement or factory stream evidence even when default-branch landed reconciliation is still incomplete, so large quick refreshes can publish a non-hollow `/activity` head. v0.25.2 still skips freezes while landed work stays `pending`; repos with zero freezeable evidence still withhold publication.
+
 ## v0.25.3 - 2026-10-27
 
 ### Fixed
