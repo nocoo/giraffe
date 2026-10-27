@@ -64,6 +64,8 @@ it.each([
 			account_id: "a",
 			id: "retained-target",
 			kind: canonicalKind,
+			trigger: input.trigger === "daily" || input.trigger === "weekly" ? input.trigger : "manual",
+			previousActivityRunId: null,
 			window: run.window,
 		});
 	},
@@ -315,6 +317,8 @@ it("R9 latest projects metadata and failed steps without transferring unused pay
 			account_id: "a",
 			id: "huge",
 			kind: "daily",
+			trigger: "daily",
+			previousActivityRunId: null,
 			depth: "quick",
 			status: "partial",
 			window: {

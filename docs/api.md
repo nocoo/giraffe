@@ -125,8 +125,9 @@ selected-scope refreshes (legacy unspecified depth is deep). Use `kind=daily`
 for scheduled daily refreshes; `kind=quick` is not a scheduled-daily filter.
 Ties use stored creation time then ID descending. The response includes `account_id`, `id`, canonical
 `kind`, `depth`, `status`, `window`, `startedAt`, `expectedFinishAt`,
-`expectedFinishAtReason`, `finishedAt`, `counts`, `failedSteps`, `lastError`, and
-`publishedAt` and `publishedAtReason`. The returned `kind` is
+`expectedFinishAtReason`, `finishedAt`, `counts`, `failedSteps`, `lastError`,
+`trigger`, `previousActivityRunId`, and `publishedAt` and `publishedAtReason`.
+The returned `kind` is
 `catalog|daily|weekly|manual`, determined by mode/trigger, **not** necessarily the
 query selector: `?kind=quick` can return `kind:"daily",depth:"quick"` or
 `kind:"manual",depth:"quick"`, for example when the latest matching run is a
@@ -997,7 +998,11 @@ there is no inferred residual/private type and totals are never adjusted to fit.
 the current GET date. Top-level `observedAt` is the calendar request observation
 time; each day's `observedAt` is its type-batch observation time, or the calendar
 time for legacy/missing type details. The day flag remains partial even tomorrow
-until a newer successful run observes it again. Normal daily scheduled refreshes
+until a newer successful run observes it again. For digest-style daily reporting,
+treat a calendar day `D` as complete when the pinned activity publication has
+`contributions.days[D].partial=false`; prefer that activity day over live
+`GET /contributions` for the same `D`, which can still expose `partial:true` on
+an otherwise finished day. Normal daily scheduled refreshes
 now collect contributions as well as weekly/full runs; manual selected runs do
 not silently broaden to account-wide collection. New quick runs use 30 UTC dates
 (one calendar request plus two 15-day batches); deep runs use 90 dates (one plus
@@ -1022,12 +1027,15 @@ Machine responses vary on `Authorization`; browser responses vary on
 
 `GET /api/v1/accounts/:account/activity?run=latest&repository=owner/name`
 requires `observations:read`. `run` defaults to `latest`; an explicit saved run ID
-selects that immutable publication. `repository` is optional. Unknown query keys
-are rejected. The Access-protected browser reads the active account through
-`GET /api/activity` with the same selectors. Neither endpoint collects GitHub or
-updates token activity. Both support private, authenticated ETag/304 polling.
-Duplicate filters also return 400 `validation_failed`. Unknown run IDs return
-404 `not_found`; a known run without a successful publication (including a running,
+selects that immutable publication. A short ID prefix resolves like refresh-run
+pinning: when exactly one retained run ID starts with the token, that run is
+selected; zero matches return 404 `not_found` and multiple matches return 400
+`validation_failed` (`Ambiguous run reference`). `repository` is optional. Unknown
+query keys are rejected. The Access-protected browser reads the active account
+through `GET /api/activity` with the same selectors. Neither endpoint collects
+GitHub or updates token activity. Both support private, authenticated ETag/304
+polling. Duplicate filters also return 400 `validation_failed`. Unknown run IDs
+return 404 `not_found`; a known run without a successful publication (including a running,
 failed or historical pre-migration run) returns 409 `activity_unpublished`.
 `latest` returns the latest usable publication despite newer failed runs; without
 one it returns 409. A repository in the frozen publication remains readable even

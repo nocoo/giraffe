@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.25.2 - 2026-10-27
+
+### Fixed
+
+- Activity factory steps that hit `factory_capacity` during default-branch landed commit reconciliation now stay `pending` and skip best-effort `activity-snapshot` freezes until the pinned head is fully reconciled, so quick daily publications no longer ship blanket `coverage.commits=unavailable` while contributions remain complete.
+
+### Added
+
+- `GET /activity?run=<short prefix>` resolves an unambiguous run ID the same way refresh-run pinning does; `GET /refresh-runs/latest` now also returns `trigger` and `previousActivityRunId`.
+
+### Changed
+
+- Document that digest-style daily reporting should treat a calendar day as complete from pinned `activity.contributions.days[D]` when `partial=false`, even when live `GET /contributions` still marks the same day partial.
+
 ## v0.25.1 - 2026-10-26
 
 ### Fixed

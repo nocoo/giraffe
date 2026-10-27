@@ -45,6 +45,25 @@ const readHead = (db: Db, account: string, repo: string) =>
 		.bind(account, repo)
 		.first<Head>();
 
+export function isDefaultBranchObservationComplete(
+	sourceHead: string | null | undefined,
+	head: Head | null | undefined,
+): boolean {
+	return sourceHead !== undefined && !head?.pending && (!sourceHead || head?.head === sourceHead);
+}
+
+export async function readDefaultBranchObservationComplete(
+	db: Db,
+	run: FactoryRun,
+	repo: FactoryRepo,
+): Promise<boolean> {
+	const source = metadata(run, repo);
+	return isDefaultBranchObservationComplete(
+		source?.sourceHead,
+		await readHead(db, run.account_id, repo.id),
+	);
+}
+
 export async function collectLandedPage(
 	db: Db,
 	lease: RunLease,
@@ -262,10 +281,7 @@ export async function readLandedActivity(
 			group.items.push(commit);
 		}
 	}
-	const complete =
-		source?.sourceHead !== undefined &&
-		!head?.pending &&
-		(!source.sourceHead || head?.head === source.sourceHead);
+	const complete = isDefaultBranchObservationComplete(source?.sourceHead, head);
 	return {
 		items,
 		deferred,

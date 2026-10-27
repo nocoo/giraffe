@@ -16,7 +16,7 @@ import {
 	collectActivityContributions,
 	collectActivitySupplement,
 } from "./activity-collect";
-import { collectLandedPage } from "./activity-landed";
+import { collectLandedPage, readDefaultBranchObservationComplete } from "./activity-landed";
 import { bestEffortFreezeActivityOnCapacity, freezeActivityRepo } from "./activity-store";
 import { savedContentMeta } from "./content-version";
 import { getAccount } from "./db/accounts";
@@ -595,16 +595,21 @@ async function executeStep(
 			if (step.kind === "activity") {
 				const repo = await currentRepo(db, run.account_id, String(step.repo));
 				if (repo && run.activityWindow) {
-					const frozen = await bestEffortFreezeActivityOnCapacity(
-						db,
-						lease,
-						clock(),
-						repo,
-						activitySupplement,
-					);
-					if (frozen) writes.push(frozen);
-				}
-				finish(step, "limited", clock());
+					if (await readDefaultBranchObservationComplete(db, run, repo)) {
+						const frozen = await bestEffortFreezeActivityOnCapacity(
+							db,
+							lease,
+							clock(),
+							repo,
+							activitySupplement,
+						);
+						if (frozen) writes.push(frozen);
+						finish(step, "limited", clock());
+					} else {
+						step.status = "pending";
+						step.error = null;
+					}
+				} else finish(step, "limited", clock());
 				run.nextAttemptAt = clock();
 			} else {
 				run.status = "paused";
