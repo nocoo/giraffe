@@ -2616,10 +2616,10 @@ it("finishes activity factory_capacity as limited without pausing the run", asyn
 	const run = (await getRun(db, snap.account_id, "r1"))?.run;
 	expect(run?.status).toBe("running");
 	expect(run?.steps.find((step) => step.kind === "activity")).toMatchObject({
-		status: "limited",
-		error: "factory_capacity",
+		status: "pending",
+		error: null,
 	});
-	expect((await listRuns(db, snap.account_id))[0]?.counts).toMatchObject({ limited: 1 });
+	expect((await listRuns(db, snap.account_id))[0]?.counts).toMatchObject({ limited: 0 });
 	expect(
 		await db
 			.prepare(
@@ -2643,6 +2643,19 @@ it("freezes activity evidence on factory_capacity when current-run streams exist
 		}
 		if (step.status === "pending") step.status = "success";
 	}
+	const metadata = found.run.steps.find(
+		(step) => step.kind === "metadata" && step.repo === repo.name,
+	);
+	if (metadata) {
+		metadata.sourceHead = "abc123";
+		metadata.sourceBranch = "main";
+	}
+	await db
+		.prepare(
+			"INSERT INTO activity_commit_heads(account_id,repo_id,head,pending) VALUES(?,?,?,NULL)",
+		)
+		.bind(snap.account_id, repo.id, "abc123")
+		.run();
 	for (const stream of FACTORY_STREAMS)
 		await db
 			.prepare("INSERT INTO factory_resources(run_id,repo,stream,payload) VALUES(?,?,?,?)")

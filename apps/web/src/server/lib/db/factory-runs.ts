@@ -619,3 +619,19 @@ export async function expireRuns(db: Db, now: string, account = "", id = ""): Pr
 		await db.batch(writes);
 	}
 }
+
+export async function resolveFactoryRunReference(db: Db, account: string, reference: string) {
+	if (reference === "latest") return reference;
+	const rows = await db
+		.prepare(
+			"SELECT id FROM factory_runs WHERE account_id=? AND (id=? OR (length(?)<36 AND id LIKE ? || '%')) ORDER BY created_at DESC,id DESC",
+		)
+		.bind(account, reference, reference, reference)
+		.all<{ id: string }>();
+	if (!rows.results.length) throw new ApiError(404, "not_found", "Unknown activity run");
+	if (rows.results.length > 1)
+		throw new ApiError(400, "validation_failed", "Ambiguous run reference");
+	const match = rows.results[0];
+	if (!match) throw new ApiError(404, "not_found", "Unknown activity run");
+	return match.id;
+}

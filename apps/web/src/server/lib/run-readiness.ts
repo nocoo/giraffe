@@ -53,6 +53,7 @@ type LatestRow = {
 	limited: number | null;
 	skipped: number | null;
 	failedSteps: string;
+	previousActivityRunId: string | null;
 };
 
 type PublishedAtReason =
@@ -103,7 +104,8 @@ const latestProjection = `json_extract(payload,'$.id') AS id,
   'repo',coalesce(json_extract(value,'$.repo'),json('null')),
   'resource',coalesce(json_extract(value,'$.resource'),json('null')),
   'error',coalesce(json_extract(value,'$.error'),json('null'))
- ) ORDER BY CAST(key AS INTEGER)) FROM json_each(payload,'$.steps') WHERE json_extract(value,'$.status')='failed'),json('[]')) AS failedSteps`;
+ ) ORDER BY CAST(key AS INTEGER)) FROM json_each(payload,'$.steps') WHERE json_extract(value,'$.status')='failed'),json('[]')) AS failedSteps,
+ json_extract(payload,'$.previousActivityRunId') AS previousActivityRunId`;
 
 export async function readLatestRun(db: Db, account: string, query: Record<string, string[]>) {
 	const parsed = latestQuery.safeParse(query);
@@ -130,6 +132,8 @@ export async function readLatestRun(db: Db, account: string, query: Record<strin
 	return {
 		account_id: account,
 		id: row.id,
+		trigger: row.trigger === "daily" || row.trigger === "weekly" ? row.trigger : "manual",
+		previousActivityRunId: row.previousActivityRunId ?? null,
 		kind:
 			mode === "catalog"
 				? "catalog"

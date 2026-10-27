@@ -11,11 +11,11 @@ import {
 	unknownActivity,
 } from "./activity";
 import { type ActivitySupplement, defaultActivitySupplement } from "./activity-collect";
-import { readLandedActivity } from "./activity-landed";
+import { readDefaultBranchObservationComplete, readLandedActivity } from "./activity-landed";
 import { readActivityTotals } from "./activity-totals";
 import { observationVersion } from "./content-version";
 import type { Db } from "./db/d1";
-import { fenced, type RunLease } from "./db/factory-runs";
+import { fenced, type RunLease, resolveFactoryRunReference } from "./db/factory-runs";
 import { ApiError } from "./errors";
 import { assemblePages } from "./snapshot-pages";
 
@@ -307,6 +307,7 @@ export async function bestEffortFreezeActivityOnCapacity(
 		.bind(run.id, repo.name, run.id)
 		.first<{ ok: number }>();
 	if (!supplement && !streamEvidence) return null;
+	if (!(await readDefaultBranchObservationComplete(db, run, repo))) return null;
 	if (!supplement) {
 		const actions = await db
 			.prepare(
@@ -438,7 +439,10 @@ export async function readActivity(
 		Object.fromEntries(Object.entries(query).map(([key, values]) => [key, values[0]])),
 	);
 	if (!parsed.success) throw new ApiError(400, "validation_failed", "Invalid activity filters");
-	const id = parsed.data.run ?? "latest";
+	const id =
+		parsed.data.run === undefined
+			? "latest"
+			: await resolveFactoryRunReference(db, account, parsed.data.run);
 	const target =
 		"SELECT a.run_id,a.payload FROM activity_publications a JOIN factory_runs r ON r.id=a.run_id AND r.account_id=a.account_id WHERE a.account_id=? AND (?='latest' OR a.run_id=?) AND r.status IN ('completed','partial') ORDER BY a.until_at DESC,a.run_id LIMIT 1";
 	const [headers, pages, runs] = await db.batch<{ payload: string; status: string }>([

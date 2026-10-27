@@ -104,6 +104,8 @@ it("R9 fake-clock completed latest exposes the stored marker and activity window
 			account_id: account,
 			id: "done",
 			kind: "daily",
+			trigger: "daily",
+			previousActivityRunId: null,
 			depth: "quick",
 			status: "completed",
 			window: activityWindow,

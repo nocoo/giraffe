@@ -134,6 +134,47 @@ describe("D1 durable runs", () => {
 	});
 });
 
+it("resolves unambiguous factory run ID prefixes for activity pinning", async () => {
+	const { raw, db } = await setup();
+	const { resolveFactoryRunReference } = await import("./factory-runs");
+	const id = "28b219ee-8d1a-4681-9ed1-8b21553af67f";
+	await raw
+		.prepare(
+			"INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES(?,?,?,'completed',?,?,?,?)",
+		)
+		.bind(
+			id,
+			snap.account_id,
+			id,
+			JSON.stringify({ id, account_id: snap.account_id }),
+			now,
+			now,
+			now,
+		)
+		.run();
+	expect(await resolveFactoryRunReference(db, snap.account_id, "28b219ee")).toBe(id);
+	await expect(resolveFactoryRunReference(db, snap.account_id, "28b219ef")).rejects.toMatchObject({
+		code: "not_found",
+	});
+	await raw
+		.prepare(
+			"INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES(?,?,?,'completed',?,?,?,?)",
+		)
+		.bind(
+			"28b219ee-aaaa-bbbb-cccc-ddddeeeeffff",
+			snap.account_id,
+			"28b219ee-aaaa-bbbb-cccc-ddddeeeeffff",
+			JSON.stringify({ id: "28b219ee-aaaa-bbbb-cccc-ddddeeeeffff" }),
+			now,
+			now,
+			now,
+		)
+		.run();
+	await expect(resolveFactoryRunReference(db, snap.account_id, "28b219ee")).rejects.toMatchObject({
+		code: "validation_failed",
+	});
+});
+
 it("keeps publications, catalog and history readable without GitHub and scopes account reads", async () => {
 	const { db, raw, run } = await setup();
 	const { publishedFactory, catalogFactory, listRuns, repoStates, dueRuns, factoryHead } =
