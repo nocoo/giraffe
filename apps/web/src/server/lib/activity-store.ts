@@ -275,6 +275,7 @@ export async function bestEffortFreezeActivityOnCapacity(
 	now: string,
 	repo: FactoryRepo,
 	supplementHint: ActivitySupplement | null,
+	options?: { allowIncompleteLanded?: boolean },
 ) {
 	const run = lease.run;
 	const exists = await db
@@ -307,7 +308,11 @@ export async function bestEffortFreezeActivityOnCapacity(
 		.bind(run.id, repo.name, run.id)
 		.first<{ ok: number }>();
 	if (!supplement && !streamEvidence) return null;
-	if (!(await readDefaultBranchObservationComplete(db, run, repo))) return null;
+	if (
+		!options?.allowIncompleteLanded &&
+		!(await readDefaultBranchObservationComplete(db, run, repo))
+	)
+		return null;
 	if (!supplement) {
 		const actions = await db
 			.prepare(
