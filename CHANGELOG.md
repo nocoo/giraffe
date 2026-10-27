@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.25.3 - 2026-10-27
+
+### Fixed
+
+- Activity steps that hit `factory_capacity` while default-branch landed observation is still incomplete now finish `limited` when the invocation made no forward progress (no GitHub requests and no staged landed head/ledger writes), instead of staying `pending` forever when ledger or run-record capacity blocks reconciliation. Invocations that still advance landed reconciliation (GitHub traffic or staged landed writes) keep the v0.25.2 `pending` resume behavior.
+- When activity work fails on run-record `factory_capacity` after `collectLandedPage` staged head/ledger writes, those writes are retained for persistence instead of being discarded with the rest of the step batch.
+
 ## v0.25.2 - 2026-10-27
 
 ### Fixed
