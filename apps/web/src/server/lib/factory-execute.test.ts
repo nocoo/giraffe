@@ -2817,6 +2817,32 @@ it("freezes activity evidence on factory_capacity limited finish when landed is 
 				}),
 			)
 			.run();
+	const commitAt = found.run.activityWindow?.until ?? now;
+	await db
+		.prepare(
+			"UPDATE factory_resources SET payload=? WHERE run_id='r1' AND repo=? AND stream='commits'",
+		)
+		.bind(
+			JSON.stringify({
+				runId: "r1",
+				items: [
+					{
+						id: "bind-sha",
+						title: "bind",
+						at: commitAt,
+						url: "",
+						author: "nocoo",
+						createdAt: commitAt,
+						state: "committed",
+					},
+				],
+				next: null,
+				ranges: [],
+				coverage: { ...repo.coverage.commits, status: "complete" },
+			}),
+			repo.name,
+		)
+		.run();
 	await db
 		.prepare("UPDATE factory_runs SET payload=? WHERE id=?")
 		.bind(JSON.stringify(found.run), "r1")
@@ -2831,14 +2857,16 @@ it("freezes activity evidence on factory_capacity limited finish when landed is 
 		status: "limited",
 		error: "factory_capacity",
 	});
-	expect(
-		await db
-			.prepare(
-				"SELECT 1 AS ok FROM factory_resources WHERE run_id='r1' AND repo=? AND stream='activity-snapshot'",
-			)
-			.bind(repo.name)
-			.first(),
-	).toBeTruthy();
+	const snapshot = await db
+		.prepare(
+			"SELECT payload FROM factory_resources WHERE run_id='r1' AND repo=? AND stream='activity-snapshot'",
+		)
+		.bind(repo.name)
+		.first<{ payload: string }>();
+	expect(JSON.parse(snapshot?.payload ?? "{}")).toMatchObject({
+		commits: { default: 1, items: [{ sha: "bind-sha" }] },
+		coverage: { commits: { status: "partial" } },
+	});
 	vi.restoreAllMocks();
 });
 

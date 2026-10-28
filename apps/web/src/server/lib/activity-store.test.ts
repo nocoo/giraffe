@@ -581,6 +581,67 @@ it("R4 stale observations and stream run mismatches never become current zero sn
 	expect(data.commits.default).toBeNull();
 	expect(data.coverage.actions).toMatchObject({ status: "partial", truncated: true });
 });
+it("binds factory default-branch commits when freezing with incomplete landed observation", async () => {
+	const { freezeActivityRepo } = await import("./activity-store");
+	const s = await setup();
+	const metadata = s.lease.run.steps.find((step) => step.kind === "metadata");
+	if (!metadata) throw new Error("fixture");
+	metadata.status = "success";
+	metadata.sourceHead = "pinned-head";
+	metadata.sourceBranch = "main";
+	await s.db
+		.prepare(
+			"INSERT INTO activity_commit_heads(account_id,repo_id,head,pending) VALUES(?,?,?,?) ON CONFLICT(account_id,repo_id) DO UPDATE SET head=excluded.head,pending=excluded.pending",
+		)
+		.bind(s.lease.run.account_id, s.repo.id, null, '{"head":"pinned-head","page":1}')
+		.run();
+	s.repo.observation = {
+		version: s.lease.run.id,
+		window: s.lease.run.window,
+		refreshedAt: now,
+		source: "run",
+	};
+	const commitAt = s.lease.run.activityWindow?.until ?? now;
+	await s.db
+		.prepare(
+			"UPDATE factory_resources SET payload=? WHERE run_id=? AND repo=? AND stream='commits'",
+		)
+		.bind(
+			JSON.stringify({
+				runId: s.lease.run.id,
+				items: mapFactoryEvents("commits", [
+					{
+						sha: "factory-sha",
+						commit: { committer: { date: commitAt }, message: "Ship" },
+						author: { login: "nocoo" },
+					},
+				]),
+				next: null,
+				ranges: [],
+				coverage: { ...s.repo.coverage.commits, status: "complete" },
+			}),
+			s.lease.run.id,
+			s.repo.name,
+		)
+		.run();
+	for (const step of s.lease.run.steps) {
+		if (step.kind === "commit" && step.repo === s.repo.name) step.status = "success";
+	}
+	await s.db.batch([
+		await freezeActivityRepo(s.db, s.lease, now, s.repo, extra(), {
+			allowIncompleteLanded: true,
+		}),
+	]);
+	const row = await s.db
+		.prepare("SELECT payload FROM factory_resources WHERE stream='activity-snapshot'")
+		.first<{ payload: string }>();
+	const activity = JSON.parse(row?.payload ?? "{}");
+	expect(activity.coverage.commits).toMatchObject({ status: "partial" });
+	expect(activity.commits).toMatchObject({
+		default: 1,
+		items: [{ sha: "factory-sha", is_default_branch: true }],
+	});
+});
 it("freezes current activity even when passed previous repository metadata", async () => {
 	const { freezeActivityRepo } = await import("./activity-store");
 	const fixture = await setup("nocoo/lizheng.dev");
