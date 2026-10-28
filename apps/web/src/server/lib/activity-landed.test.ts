@@ -2,7 +2,11 @@ import { expect, it } from "vitest";
 import { github, rawRepo } from "../../../../../tests/fixtures/factory";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import { makeRun } from "../../lib/factory-run";
-import { collectLandedPage, readLandedActivity } from "./activity-landed";
+import {
+	collectLandedPage,
+	readLandedActivity,
+	supplementLandedFromFactoryCommits,
+} from "./activity-landed";
 import { createDb } from "./db/d1";
 import { claimRun, getRun, type RunLease, saveRun, startRun } from "./db/factory-runs";
 import { newFactory } from "./factory-collect";
@@ -617,3 +621,44 @@ it.each([
 		expect((await readLandedActivity(fixture.db, lease.run, fixture.repo)).items).toHaveLength(1);
 	},
 );
+
+it("supplements incomplete landed coverage from complete in-run factory commits", async () => {
+	const fixture = await setup();
+	const lease = await fixture.start("bind-run", first, "head-sha");
+	const landed = await readLandedActivity(fixture.db, lease.run, fixture.repo);
+	expect(landed.coverage).toMatchObject({
+		status: "unavailable",
+		reason: "Pinned default-branch observation incomplete",
+	});
+	const bound = supplementLandedFromFactoryCommits(
+		landed,
+		{
+			runId: lease.run.id,
+			items: [
+				{
+					id: "factory-sha",
+					title: "factory commit",
+					at: first,
+					url: "https://example/commit",
+					author: "nocoo",
+					createdAt: first,
+					closedAt: null,
+					mergedAt: null,
+					state: "committed",
+				},
+			],
+			next: null,
+			ranges: [],
+			coverage: { ...fixture.repo.coverage.commits, status: "complete" },
+		},
+		lease.run,
+		"main",
+	);
+	expect(bound.coverage).toMatchObject({
+		status: "partial",
+		truncated: true,
+		reason:
+			"Pinned default-branch observation incomplete; bound in-run factory default-branch commits",
+	});
+	expect(bound.items).toMatchObject([{ sha: "factory-sha", is_default_branch: true }]);
+});

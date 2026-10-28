@@ -5,8 +5,13 @@ import type {
 	DeferredActivityCommits,
 } from "../../lib/activity-types";
 import type { FactoryRun } from "../../lib/factory-run";
-import type { FactoryRepo } from "../../lib/factory-types";
-import { completeActivity, requireActivityWindow, unknownActivity } from "./activity";
+import type { FactoryRepo, FactoryStreamData } from "../../lib/factory-types";
+import {
+	completeActivity,
+	duringActivity,
+	requireActivityWindow,
+	unknownActivity,
+} from "./activity";
 import { landedQuota } from "./activity-landed-quota";
 import type { Db } from "./db/d1";
 import { fenced, type RunLease } from "./db/factory-runs";
@@ -295,5 +300,61 @@ export async function readLandedActivity(
 							"Pending default commits exceed the 500-item publication budget; retained for their original windows",
 					}
 				: completeActivity(),
+	};
+}
+
+export function supplementLandedFromFactoryCommits(
+	landed: LandedActivity,
+	stream: FactoryStreamData | undefined,
+	run: FactoryRun,
+	branch: string | null,
+): LandedActivity {
+	if (landed.coverage.status === "complete") return landed;
+	const source = stream?.coverage;
+	const factoryEligible =
+		stream?.runId === run.id &&
+		source &&
+		source.status !== "unavailable" &&
+		source.status !== "pending";
+	const window = requireActivityWindow(run);
+	const fromFactory: ActivityCommit[] = [];
+	if (factoryEligible) {
+		for (const event of stream.items ?? []) {
+			if (!duringActivity(event.at, window)) continue;
+			fromFactory.push({
+				sha: event.id,
+				author: event.author ?? null,
+				message: event.title ?? "",
+				at: event.at,
+				url: event.url ?? "",
+				branch,
+				is_default_branch: true,
+			});
+		}
+	}
+	const merged = [...landed.items];
+	const seen = new Set(merged.map((item) => item.sha));
+	for (const item of fromFactory) {
+		if (!seen.has(item.sha)) {
+			merged.push(item);
+			seen.add(item.sha);
+		}
+	}
+	if (!merged.length) return landed;
+	const factoryBound = fromFactory.length > 0;
+	const truncated =
+		(factoryBound && source?.status !== "complete") ||
+		landed.coverage.truncated ||
+		Boolean(landed.coverage.reason);
+	return {
+		items: merged,
+		deferred: landed.deferred,
+		coverage: {
+			status: "partial",
+			truncated: Boolean(truncated),
+			reason: factoryBound
+				? "Pinned default-branch observation incomplete; bound in-run factory default-branch commits"
+				: (landed.coverage.reason ?? "Pinned default-branch observation incomplete"),
+		},
 	};
 }

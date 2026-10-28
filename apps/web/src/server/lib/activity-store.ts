@@ -11,7 +11,11 @@ import {
 	unknownActivity,
 } from "./activity";
 import { type ActivitySupplement, defaultActivitySupplement } from "./activity-collect";
-import { readDefaultBranchObservationComplete, readLandedActivity } from "./activity-landed";
+import {
+	readDefaultBranchObservationComplete,
+	readLandedActivity,
+	supplementLandedFromFactoryCommits,
+} from "./activity-landed";
 import { readActivityTotals } from "./activity-totals";
 import { observationVersion } from "./content-version";
 import type { Db } from "./db/d1";
@@ -327,7 +331,7 @@ export async function bestEffortFreezeActivityOnCapacity(
 		);
 	}
 	try {
-		return await freezeActivityRepo(db, lease, now, repo, supplement);
+		return await freezeActivityRepo(db, lease, now, repo, supplement, options);
 	} catch (error) {
 		if (error instanceof ApiError && error.code === "factory_capacity") return null;
 		throw error;
@@ -339,6 +343,7 @@ export async function freezeActivityRepo(
 	now: string,
 	repo: FactoryRepo,
 	supplement: ActivitySupplement,
+	options?: { allowIncompleteLanded?: boolean },
 ) {
 	const run = lease.run;
 	const [resources, snapshots] = await db.batch<{ stream: string; payload: string; kind: string }>([
@@ -380,13 +385,22 @@ export async function freezeActivityRepo(
 		observedAt <= Date.parse(step.finishedAt ?? "") &&
 		observedAt >= Date.parse(run.startedAt);
 	const security = verified ? candidate : null;
+	let landed = await readLandedActivity(db, run, repo);
+	if (options?.allowIncompleteLanded) {
+		landed = supplementLandedFromFactoryCommits(
+			landed,
+			streams.get("commits"),
+			run,
+			activityBranch(run, repo),
+		);
+	}
 	const activity = activityRepo(
 		{ ...repo, branch: activityBranch(run, repo) },
 		streams,
 		requireActivityWindow(run),
 		supplement,
 		security,
-		await readLandedActivity(db, run, repo),
+		landed,
 	);
 	if (Date.parse(requireActivityWindow(run).since) < Date.parse(run.window.since))
 		for (const key of ["actions"])
@@ -395,9 +409,12 @@ export async function freezeActivityRepo(
 				truncated: true,
 				reason: "Activity window begins before the collected 90-day stream",
 			};
-	if (activity.coverage.commits?.status !== "complete") {
+	if (activity.coverage.commits?.status === "unavailable") {
 		activity.commits.default = null;
 		activity.commits.other = null;
+	} else if (activity.coverage.commits?.status === "partial" && options?.allowIncompleteLanded) {
+		const defaults = activity.commits.items?.filter((commit) => commit.is_default_branch) ?? [];
+		activity.commits.default = defaults.length ? defaults.length : null;
 	}
 	const snapshot: ActivitySnapshot = {
 		account_id: run.account_id,
