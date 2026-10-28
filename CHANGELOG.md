@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.25.6 - 2026-10-28
+
+### Fixed
+
+- Every `activity-snapshot` freeze with incomplete default-branch landed reconciliation now supplements from in-run `factory:*:commits` evidence (including `strategy=reused` and successful activity completion), not only capacity-limited `allowIncompleteLanded` freezes gated on the `currentRepo` stream map. Repos with complete in-run factory commit observations publish partial `commits.default` / `items` when landed ledger reconciliation is still pinned incomplete; hollow refuse, capacity freeze rules, and ledger truncation behavior are unchanged.
+
 ## v0.25.5 - 2026-10-28
 
 ### Fixed

@@ -627,11 +627,7 @@ it("binds factory default-branch commits when freezing with incomplete landed ob
 	for (const step of s.lease.run.steps) {
 		if (step.kind === "commit" && step.repo === s.repo.name) step.status = "success";
 	}
-	await s.db.batch([
-		await freezeActivityRepo(s.db, s.lease, now, s.repo, extra(), {
-			allowIncompleteLanded: true,
-		}),
-	]);
+	await s.db.batch([await freezeActivityRepo(s.db, s.lease, now, s.repo, extra())]);
 	const row = await s.db
 		.prepare("SELECT payload FROM factory_resources WHERE stream='activity-snapshot'")
 		.first<{ payload: string }>();
@@ -641,6 +637,115 @@ it("binds factory default-branch commits when freezing with incomplete landed ob
 		default: 1,
 		items: [{ sha: "factory-sha", is_default_branch: true }],
 	});
+});
+it("binds reused in-run factory commits without allowIncompleteLanded", async () => {
+	const { freezeActivityRepo } = await import("./activity-store");
+	const s = await setup();
+	const metadata = s.lease.run.steps.find((step) => step.kind === "metadata");
+	if (!metadata) throw new Error("fixture");
+	metadata.status = "success";
+	metadata.sourceHead = "pinned-head";
+	metadata.sourceBranch = "main";
+	await s.db
+		.prepare(
+			"INSERT INTO activity_commit_heads(account_id,repo_id,head,pending) VALUES(?,?,?,?) ON CONFLICT(account_id,repo_id) DO UPDATE SET head=excluded.head,pending=excluded.pending",
+		)
+		.bind(s.lease.run.account_id, s.repo.id, null, '{"head":"pinned-head","page":1}')
+		.run();
+	s.repo.observation = {
+		version: "previous-run",
+		window: s.lease.run.window,
+		refreshedAt: now,
+		source: "run",
+	};
+	for (const step of s.lease.run.steps) {
+		if (step.kind === "commit" && step.repo === s.repo.name) step.status = "pending";
+	}
+	const commitAt = s.lease.run.activityWindow?.until ?? now;
+	const commitsCoverage = {
+		...s.repo.coverage.commits,
+		status: "complete" as const,
+		strategy: "reused" as const,
+		observed: 1,
+	};
+	await s.db
+		.prepare(
+			"UPDATE factory_resources SET payload=? WHERE run_id=? AND repo=? AND stream='commits'",
+		)
+		.bind(
+			JSON.stringify({
+				runId: s.lease.run.id,
+				items: mapFactoryEvents("commits", [
+					{
+						sha: "reused-factory-sha",
+						commit: { committer: { date: commitAt }, message: "Reuse" },
+						author: { login: "nocoo" },
+					},
+				]),
+				next: null,
+				ranges: [],
+				coverage: commitsCoverage,
+			}),
+			s.lease.run.id,
+			s.repo.name,
+		)
+		.run();
+	await s.db.batch([await freezeActivityRepo(s.db, s.lease, now, s.repo, extra())]);
+	const row = await s.db
+		.prepare("SELECT payload FROM factory_resources WHERE stream='activity-snapshot'")
+		.first<{ payload: string }>();
+	const activity = JSON.parse(row?.payload ?? "{}");
+	expect(activity.coverage.commits).toMatchObject({ status: "partial" });
+	expect(activity.commits).toMatchObject({
+		default: 1,
+		items: [{ sha: "reused-factory-sha", is_default_branch: true }],
+	});
+});
+it("keeps commits unavailable when landed is incomplete and factory has no evidence", async () => {
+	const { freezeActivityRepo } = await import("./activity-store");
+	const s = await setup();
+	const metadata = s.lease.run.steps.find((step) => step.kind === "metadata");
+	if (!metadata) throw new Error("fixture");
+	metadata.status = "success";
+	metadata.sourceHead = "pinned-head";
+	await s.db
+		.prepare(
+			"INSERT INTO activity_commit_heads(account_id,repo_id,head,pending) VALUES(?,?,?,?) ON CONFLICT(account_id,repo_id) DO UPDATE SET head=excluded.head,pending=excluded.pending",
+		)
+		.bind(s.lease.run.account_id, s.repo.id, null, '{"head":"pinned-head","page":1}')
+		.run();
+	s.repo.observation = {
+		version: s.lease.run.id,
+		window: s.lease.run.window,
+		refreshedAt: now,
+		source: "run",
+	};
+	await s.db
+		.prepare(
+			"UPDATE factory_resources SET payload=? WHERE run_id=? AND repo=? AND stream='commits'",
+		)
+		.bind(
+			JSON.stringify({
+				runId: s.lease.run.id,
+				items: [],
+				next: null,
+				ranges: [],
+				coverage: { ...s.repo.coverage.commits, status: "complete", observed: 0 },
+			}),
+			s.lease.run.id,
+			s.repo.name,
+		)
+		.run();
+	await s.db.batch([await freezeActivityRepo(s.db, s.lease, now, s.repo, extra())]);
+	const row = await s.db
+		.prepare("SELECT payload FROM factory_resources WHERE stream='activity-snapshot'")
+		.first<{ payload: string }>();
+	const activity = JSON.parse(row?.payload ?? "{}");
+	expect(activity.coverage.commits).toMatchObject({
+		status: "unavailable",
+		reason: "Pinned default-branch observation incomplete",
+	});
+	expect(activity.commits).toMatchObject({ default: null, items: [] });
 });
 it("freezes current activity even when passed previous repository metadata", async () => {
 	const { freezeActivityRepo } = await import("./activity-store");

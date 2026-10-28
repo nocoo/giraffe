@@ -4,6 +4,7 @@ import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import { makeRun } from "../../lib/factory-run";
 import {
 	collectLandedPage,
+	inRunFactoryCommitsStream,
 	readLandedActivity,
 	supplementLandedFromFactoryCommits,
 } from "./activity-landed";
@@ -621,6 +622,37 @@ it.each([
 		expect((await readLandedActivity(fixture.db, lease.run, fixture.repo)).items).toHaveLength(1);
 	},
 );
+
+it("reads in-run factory commits without current-run repository observation", () => {
+	const stream = {
+		runId: "run-a",
+		items: [
+			{
+				id: "sha",
+				title: "",
+				at: first,
+				url: "",
+				author: "",
+				createdAt: first,
+				closedAt: null,
+				mergedAt: null,
+				state: "committed",
+			},
+		],
+		next: null,
+		ranges: [],
+		coverage: { status: "complete" as const, observed: 1, strategy: "reused" as const },
+	};
+	expect(
+		inRunFactoryCommitsStream([{ stream: "commits", payload: JSON.stringify(stream) }], "run-a"),
+	).toEqual(stream);
+	expect(
+		inRunFactoryCommitsStream(
+			[{ stream: "commits", payload: JSON.stringify({ ...stream, runId: "run-b" }) }],
+			"run-a",
+		),
+	).toBeUndefined();
+});
 
 it("supplements incomplete landed coverage from complete in-run factory commits", async () => {
 	const fixture = await setup();

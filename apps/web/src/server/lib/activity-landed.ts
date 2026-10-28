@@ -303,6 +303,25 @@ export async function readLandedActivity(
 	};
 }
 
+export function inRunFactoryCommitsStream(
+	resources: readonly { stream: string; payload: string }[],
+	runId: string,
+): FactoryStreamData | undefined {
+	const row = resources.find((entry) => entry.stream === "commits");
+	if (!row) return undefined;
+	const data = JSON.parse(row.payload) as FactoryStreamData;
+	const source = data.coverage;
+	if (
+		data.runId !== runId ||
+		!source ||
+		source.status === "unavailable" ||
+		source.status === "pending" ||
+		((source.observed ?? 0) <= 0 && !(data.items?.length ?? 0))
+	)
+		return undefined;
+	return data;
+}
+
 export function supplementLandedFromFactoryCommits(
 	landed: LandedActivity,
 	stream: FactoryStreamData | undefined,
