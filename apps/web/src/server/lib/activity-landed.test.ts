@@ -702,6 +702,120 @@ it("binds reused factory commits on beijing days spanned by the activity window"
 	).toEqual([]);
 });
 
+it("binds reused factory commits on latest retained beijing day before until", () => {
+	const window = {
+		since: "2026-10-28T06:48:37.625Z",
+		until: "2026-10-28T12:54:01.491Z",
+		gap: true,
+		first: false,
+	};
+	const coverage = {
+		status: "complete" as const,
+		observed: 3,
+		strategy: "reused" as const,
+		pages: 0,
+		fetchedAt: "2026-10-04T12:00:00.000Z",
+		source: "",
+		reason: null,
+	};
+	const magpieDay = "2026-10-04T08:00:00.000Z";
+	const stream = {
+		runId: "run-a",
+		items: [
+			{
+				id: "old-a",
+				title: "a",
+				at: magpieDay,
+				url: "",
+				author: "nocoo",
+				createdAt: magpieDay,
+				closedAt: null,
+				mergedAt: null,
+				state: "committed",
+			},
+			{
+				id: "old-b",
+				title: "b",
+				at: "2026-10-04T09:00:00.000Z",
+				url: "",
+				author: "nocoo",
+				createdAt: "2026-10-04T09:00:00.000Z",
+				closedAt: null,
+				mergedAt: null,
+				state: "committed",
+			},
+			{
+				id: "older",
+				title: "c",
+				at: "2026-09-20T12:00:00.000Z",
+				url: "",
+				author: "nocoo",
+				createdAt: "2026-09-20T12:00:00.000Z",
+				closedAt: null,
+				mergedAt: null,
+				state: "committed",
+			},
+		],
+		next: null,
+		ranges: [],
+		coverage,
+	};
+	expect(factoryCommitEventsForActivitySupplement(stream, window).map((event) => event.id)).toEqual(
+		["old-a", "old-b"],
+	);
+});
+
+it("prefers window beijing day over latest retained day for reused streams", () => {
+	const window = {
+		since: "2026-10-28T06:48:37.625Z",
+		until: "2026-10-28T12:54:01.491Z",
+		gap: true,
+		first: false,
+	};
+	const coverage = {
+		status: "complete" as const,
+		observed: 3,
+		strategy: "reused" as const,
+		pages: 0,
+		fetchedAt: "2026-10-28T00:00:00.000Z",
+		source: "",
+		reason: null,
+	};
+	const stream = {
+		runId: "run-a",
+		items: [
+			{
+				id: "today",
+				title: "today",
+				at: "2026-10-28T07:00:00.000Z",
+				url: "",
+				author: "nocoo",
+				createdAt: "2026-10-28T07:00:00.000Z",
+				closedAt: null,
+				mergedAt: null,
+				state: "committed",
+			},
+			{
+				id: "yesterday",
+				title: "yesterday",
+				at: "2026-10-27T10:00:00.000Z",
+				url: "",
+				author: "nocoo",
+				createdAt: "2026-10-27T10:00:00.000Z",
+				closedAt: null,
+				mergedAt: null,
+				state: "committed",
+			},
+		],
+		next: null,
+		ranges: [],
+		coverage,
+	};
+	expect(factoryCommitEventsForActivitySupplement(stream, window).map((event) => event.id)).toEqual(
+		["today"],
+	);
+});
+
 it("supplements incomplete landed coverage from complete in-run factory commits", async () => {
 	const fixture = await setup();
 	const lease = await fixture.start("bind-run", first, "head-sha");

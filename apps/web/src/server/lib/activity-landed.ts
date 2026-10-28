@@ -334,9 +334,25 @@ export function factoryCommitEventsForActivitySupplement(
 	const atUntil = items.filter((event) => Date.parse(event.at ?? "") === until);
 	if (atUntil.length) return atUntil;
 	const days = activityBeijingDates(window);
-	return items.filter(
+	const windowDays = items.filter(
 		(event) =>
 			event.at && Number.isFinite(Date.parse(event.at)) && days.has(activityBeijingDate(event.at)),
+	);
+	if (windowDays.length) return windowDays;
+	const untilDay = activityBeijingDate(window.until);
+	let latestDay: string | null = null;
+	for (const event of items) {
+		if (!event.at || !Number.isFinite(Date.parse(event.at))) continue;
+		const day = activityBeijingDate(event.at);
+		if (day > untilDay) continue;
+		if (!latestDay || day > latestDay) latestDay = day;
+	}
+	if (!latestDay) return [];
+	return items.filter(
+		(event) =>
+			event.at &&
+			Number.isFinite(Date.parse(event.at)) &&
+			activityBeijingDate(event.at) === latestDay,
 	);
 }
 
