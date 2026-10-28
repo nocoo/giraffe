@@ -5,8 +5,9 @@ import type {
 	DeferredActivityCommits,
 } from "../../lib/activity-types";
 import type { FactoryRun } from "../../lib/factory-run";
-import type { FactoryRepo, FactoryStreamData } from "../../lib/factory-types";
+import type { FactoryEvent, FactoryRepo, FactoryStreamData } from "../../lib/factory-types";
 import {
+	activityBeijingDate,
 	completeActivity,
 	duringActivity,
 	requireActivityWindow,
@@ -303,6 +304,42 @@ export async function readLandedActivity(
 	};
 }
 
+function activityBeijingDates(window: ActivityWindow): Set<string> {
+	const dates = new Set<string>();
+	let cursor = Date.parse(window.since);
+	const end = Date.parse(window.until);
+	while (cursor <= end) {
+		dates.add(activityBeijingDate(new Date(cursor).toISOString()));
+		cursor += 86400_000;
+	}
+	dates.add(activityBeijingDate(window.until));
+	return dates;
+}
+
+/** Commits from an in-run factory stream to bind when landed reconciliation is incomplete. */
+export function factoryCommitEventsForActivitySupplement(
+	stream: FactoryStreamData,
+	window: ActivityWindow,
+): FactoryEvent[] {
+	const items = stream.items ?? [];
+	const strict = items.filter((event) => duringActivity(event.at, window));
+	if (strict.length || stream.coverage.strategy !== "reused") return strict;
+	const since = Date.parse(window.since);
+	const until = Date.parse(window.until);
+	const halfOpen = items.filter((event) => {
+		const at = Date.parse(event.at ?? "");
+		return Number.isFinite(at) && at >= since && at < until;
+	});
+	if (halfOpen.length) return halfOpen;
+	const atUntil = items.filter((event) => Date.parse(event.at ?? "") === until);
+	if (atUntil.length) return atUntil;
+	const days = activityBeijingDates(window);
+	return items.filter(
+		(event) =>
+			event.at && Number.isFinite(Date.parse(event.at)) && days.has(activityBeijingDate(event.at)),
+	);
+}
+
 export function inRunFactoryCommitsStream(
 	resources: readonly { stream: string; payload: string }[],
 	runId: string,
@@ -338,8 +375,7 @@ export function supplementLandedFromFactoryCommits(
 	const window = requireActivityWindow(run);
 	const fromFactory: ActivityCommit[] = [];
 	if (factoryEligible) {
-		for (const event of stream.items ?? []) {
-			if (!duringActivity(event.at, window)) continue;
+		for (const event of factoryCommitEventsForActivitySupplement(stream, window)) {
 			fromFactory.push({
 				sha: event.id,
 				author: event.author ?? null,

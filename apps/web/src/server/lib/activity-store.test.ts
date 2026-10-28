@@ -661,7 +661,13 @@ it("binds reused in-run factory commits without allowIncompleteLanded", async ()
 	for (const step of s.lease.run.steps) {
 		if (step.kind === "commit" && step.repo === s.repo.name) step.status = "pending";
 	}
-	const commitAt = s.lease.run.activityWindow?.until ?? now;
+	s.lease.run.activityWindow = {
+		since: "2026-10-28T02:19:00.000Z",
+		until: "2026-10-28T08:04:00.000Z",
+		gap: true,
+		first: false,
+	};
+	const commitAt = "2026-10-28T01:00:00.000Z";
 	const commitsCoverage = {
 		...s.repo.coverage.commits,
 		status: "complete" as const,

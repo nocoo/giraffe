@@ -24,8 +24,9 @@ export const unknownActivity = (reason: string, truncated = false): ActivityCove
 	truncated,
 	reason,
 });
-const beijingDate = (at: string) =>
+export const activityBeijingDate = (at: string) =>
 	new Date(Date.parse(at) + 8 * 3600_000).toISOString().slice(0, 10);
+const beijingDate = activityBeijingDate;
 export function requireActivityWindow(run: FactoryRun): ActivityWindow {
 	if (!run.activityWindow) throw new ApiError(500, "checkpoint_invalid", "Activity window missing");
 	return run.activityWindow;
