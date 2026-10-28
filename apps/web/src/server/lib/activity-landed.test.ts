@@ -4,6 +4,7 @@ import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import { makeRun } from "../../lib/factory-run";
 import {
 	collectLandedPage,
+	factoryCommitEventsForActivitySupplement,
 	inRunFactoryCommitsStream,
 	readLandedActivity,
 	supplementLandedFromFactoryCommits,
@@ -652,6 +653,53 @@ it("reads in-run factory commits without current-run repository observation", ()
 			"run-a",
 		),
 	).toBeUndefined();
+});
+
+it("binds reused factory commits on beijing days spanned by the activity window", () => {
+	const window = {
+		since: "2026-10-28T02:19:00.000Z",
+		until: "2026-10-28T08:04:00.000Z",
+		gap: true,
+		first: false,
+	};
+	const beforeSince = "2026-10-28T01:00:00.000Z";
+	const coverage = {
+		status: "complete" as const,
+		observed: 1,
+		strategy: "reused" as const,
+		pages: 0,
+		fetchedAt: beforeSince,
+		source: "",
+		reason: null,
+	};
+	const stream = {
+		runId: "run-a",
+		items: [
+			{
+				id: "reused-day",
+				title: "retained",
+				at: beforeSince,
+				url: "",
+				author: "nocoo",
+				createdAt: beforeSince,
+				closedAt: null,
+				mergedAt: null,
+				state: "committed",
+			},
+		],
+		next: null,
+		ranges: [],
+		coverage,
+	};
+	expect(factoryCommitEventsForActivitySupplement(stream, window)).toMatchObject([
+		{ id: "reused-day" },
+	]);
+	expect(
+		factoryCommitEventsForActivitySupplement(
+			{ ...stream, coverage: { ...coverage, strategy: "incremental" as const } },
+			window,
+		),
+	).toEqual([]);
 });
 
 it("supplements incomplete landed coverage from complete in-run factory commits", async () => {
