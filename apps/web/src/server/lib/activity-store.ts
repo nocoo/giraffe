@@ -12,6 +12,7 @@ import {
 } from "./activity";
 import { type ActivitySupplement, defaultActivitySupplement } from "./activity-collect";
 import {
+	inRunFactoryCommitsStream,
 	readDefaultBranchObservationComplete,
 	readLandedActivity,
 	supplementLandedFromFactoryCommits,
@@ -331,7 +332,7 @@ export async function bestEffortFreezeActivityOnCapacity(
 		);
 	}
 	try {
-		return await freezeActivityRepo(db, lease, now, repo, supplement, options);
+		return await freezeActivityRepo(db, lease, now, repo, supplement);
 	} catch (error) {
 		if (error instanceof ApiError && error.code === "factory_capacity") return null;
 		throw error;
@@ -343,7 +344,6 @@ export async function freezeActivityRepo(
 	now: string,
 	repo: FactoryRepo,
 	supplement: ActivitySupplement,
-	options?: { allowIncompleteLanded?: boolean },
 ) {
 	const run = lease.run;
 	const [resources, snapshots] = await db.batch<{ stream: string; payload: string; kind: string }>([
@@ -386,10 +386,10 @@ export async function freezeActivityRepo(
 		observedAt >= Date.parse(run.startedAt);
 	const security = verified ? candidate : null;
 	let landed = await readLandedActivity(db, run, repo);
-	if (options?.allowIncompleteLanded) {
+	if (landed.coverage.status !== "complete") {
 		landed = supplementLandedFromFactoryCommits(
 			landed,
-			streams.get("commits"),
+			inRunFactoryCommitsStream(resources.results, run.id),
 			run,
 			activityBranch(run, repo),
 		);
@@ -412,7 +412,10 @@ export async function freezeActivityRepo(
 	if (activity.coverage.commits?.status === "unavailable") {
 		activity.commits.default = null;
 		activity.commits.other = null;
-	} else if (activity.coverage.commits?.status === "partial" && options?.allowIncompleteLanded) {
+	} else if (
+		activity.coverage.commits?.status === "partial" &&
+		activity.coverage.commits.reason?.includes("bound in-run factory default-branch commits")
+	) {
 		const defaults = activity.commits.items?.filter((commit) => commit.is_default_branch) ?? [];
 		activity.commits.default = defaults.length ? defaults.length : null;
 	}
