@@ -1,12 +1,13 @@
 # UI 0.28.0 visual evidence
 
 Baseline: `b3ddaa573828aa080620cef17e396403b432bc58` (v0.27.2).
-Candidate runtime: `c42879f11d154239634ac9d677c33260a5a77039` (v0.28.0).
+Candidate runtime: `04ef5695fd95a5a75bacfc7b9a31a11a7878694b` (v0.28.0).
 Integration base: `89ce50509b3d22303672e4ecc58a584f4cdff9a0` (v0.27.3).
 
-The original before captures remain pinned to v0.27.2. The rebased candidate
-preserves the previously reviewed client and browser fixtures byte-for-byte;
-fresh integration gates exercise the v0.27.3 Worker with this UI.
+The original before captures remain pinned to v0.27.2. After captures include
+the post-rebase settlement corrections: cancellation closure is not successful
+collection, and processed dimensions do not imply available observations.
+Fresh integration gates exercise the v0.27.3 Worker with this UI.
 
 Chromium captures use the same fixed clock, saved API fixtures and localhost-only
 static SPA hosts. No production request or real credential is involved.
@@ -31,6 +32,10 @@ Supplementary mobile-dark captures cover the lower sections:
 - [Token creation and existing-token management](after-settings-tokens-mobile-dark.png)
 - [Factory chart windows and missing-day rendering](after-factory-charts-mobile-dark.png)
 - [Refresh dimensions, reasons and history](after-refresh-details-mobile-dark.png)
+
+Post-rebase semantic regressions have dedicated browser captures:
+- [Cancelled account closure without settled collection](after-cancelled-account.png)
+- [Processed dimensions without claiming complete observations](after-settled-dimensions.png)
 
 The browser journey checks that dimension labels and their repository rows do not
 overflow at both viewport widths and in both themes. Project-identity journeys
