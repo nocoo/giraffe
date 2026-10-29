@@ -844,6 +844,39 @@ describe("unified refresh collection", () => {
 			metadataAt: now,
 		});
 	});
+	it.each([false, true])("preserves saved release transports when mixed=%s", async (mixed) => {
+		const context = await fixture();
+		context.run.params.dimensions = ["releases"];
+		const fetch = upstream([accountPage(), { node: repo() }, { node: repo() }]);
+		await collectAccount(context);
+		await collectRepository(context, "owner/project");
+		await context.env.DB.prepare(
+			"UPDATE refresh_day_observations SET payload=json_set(payload,'$.source','github_rest_latest') WHERE dimension='releases'",
+		).run();
+		if (mixed) {
+			context.days.push({
+				date: "2026-10-29",
+				since: "2026-10-28T16:00:00.000Z",
+				until: "2026-10-29T16:00:00.000Z",
+			});
+		}
+		context.now = "2026-10-30T00:00:00.000Z";
+		context.run.id = "run-2";
+		const result = await collectRepository(context, "owner/project");
+		expect(result.requests).toBe(mixed ? 1 : 0);
+		expect(fetch).toHaveBeenCalledTimes(mixed ? 3 : 2);
+		const saved = await publication(context);
+		expect(saved.repos[0].coverage.releases).toMatchObject({
+			source: mixed ? "mixed" : "github_rest_latest",
+			fetchedAt: now,
+			strategy: mixed ? "incremental" : "reused",
+		});
+		const day = await context.env.DB.prepare(
+			"SELECT payload,fetched_at FROM refresh_day_observations WHERE dimension='releases' AND day='2026-10-28'",
+		).first<{ payload: string; fetched_at: string }>();
+		expect(JSON.parse(day?.payload ?? "{}").source).toBe("github_rest_latest");
+		expect(day?.fetched_at).toBe(now);
+	});
 	it("isolates immutable identities even when a repository name is reused", async () => {
 		const context = await fixture();
 		const fetch = upstream([

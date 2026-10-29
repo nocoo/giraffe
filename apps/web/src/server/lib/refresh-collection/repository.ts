@@ -26,6 +26,7 @@ import {
 	factoryRepo,
 	type Node,
 	object,
+	text,
 	unavailable,
 	windowOf,
 } from "./model";
@@ -260,18 +261,15 @@ export async function collectRepository(
 				? (results.get(dimension)?.inventoryComplete ??
 					object(JSON.parse(latest?.payload ?? "{}")).inventoryComplete === true)
 				: undefined;
+		const sources = new Set(
+			selected.flatMap((row) =>
+				row ? [text(object(JSON.parse(row.payload)).source) ?? "unknown"] : [],
+			),
+		);
 		const coverage = {
 			...unavailable(dimension),
 			...(inventoryComplete === undefined ? {} : { inventoryComplete }),
-			source:
-				dimension === "commits"
-					? "github_graphql_history"
-					: (results.get(dimension)?.source ??
-						(dimension === "issues" || dimension === "prs"
-							? "github_graphql"
-							: dimension === "releases"
-								? "github_graphql_latest"
-								: "github_rest_latest")),
+			source: sources.size > 1 ? "mixed" : ([...sources][0] ?? "unavailable"),
 			status:
 				available.length === selected.length
 					? ("complete" as const)
