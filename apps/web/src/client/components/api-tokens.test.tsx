@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { TooltipProvider } from "@nocoo/basalt";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -59,6 +60,14 @@ afterEach(async () => {
 	vi.unstubAllGlobals();
 });
 
+function setInputValue(input: HTMLInputElement | null, value: string) {
+	if (!input) throw new Error("Missing input");
+	const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+	if (!set) throw new Error("Missing value setter");
+	set.call(input, value);
+	input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
 function button(label: string) {
 	const element = Array.from(container.querySelectorAll("button")).find(
 		(item) => item.textContent === label,
@@ -68,16 +77,27 @@ function button(label: string) {
 }
 
 it("keeps machine token settings and names the app-write refresh permission", async () => {
-	await act(async () => root.render(<ApiTokens accounts={[]} />));
-	expect(container.textContent).toContain("外部 Bot API 令牌");
-	expect(container.querySelector<HTMLInputElement>('[aria-label="新令牌标签"]')?.value).toBe(
-		"External Bot",
+	await act(async () =>
+		root.render(
+			<TooltipProvider>
+				<ApiTokens accounts={[]} />
+			</TooltipProvider>,
+		),
 	);
+	expect(container.textContent).toContain("外部 Bot API 令牌");
+	expect(container.textContent).toContain("创建令牌");
+	expect(container.textContent).toContain("管理现有令牌");
+	expect(container.querySelector<HTMLInputElement>("#new-token-label")?.value).toBe("External Bot");
 	expect(container.textContent).not.toMatch(/本地 Agent|CLI|PKCE/);
 	expect(container.textContent).toContain("原文只显示一次");
 	expect(container.textContent).toContain("撤销立即生效");
 	expect(container.textContent).toContain("修改应用配置");
 	expect(container.textContent).toContain("发起刷新");
+	expect(container.textContent).not.toContain("令牌仅绑定所选账号");
+	const info = container.querySelector<HTMLButtonElement>('[aria-label="外部 Bot API 令牌说明"]');
+	expect(info).not.toBeNull();
+	await act(async () => info?.click());
+	expect(document.body.textContent).toContain("令牌仅绑定所选账号");
 	expect(button("创建令牌").disabled).toBe(true);
 	expect(listTokens).not.toHaveBeenCalled();
 });
@@ -85,9 +105,16 @@ it("keeps machine token settings and names the app-write refresh permission", as
 it("creates, narrows and revokes an account-bound token while keeping the raw token ephemeral", async () => {
 	const storageWrite = vi.spyOn(Storage.prototype, "setItem");
 	vi.mocked(createToken).mockResolvedValue({ ...row, token: "giraffe_test_once" });
-	await act(async () => root.render(<ApiTokens accounts={[account]} />));
+	await act(async () =>
+		root.render(
+			<TooltipProvider>
+				<ApiTokens accounts={[account]} />
+			</TooltipProvider>,
+		),
+	);
 	expect(listTokens).toHaveBeenCalledWith("a");
 	vi.mocked(listTokens).mockResolvedValue({ account_id: "a", items: [row] });
+	setInputValue(container.querySelector<HTMLInputElement>("#new-token-label"), "Ops Bot");
 	await act(async () =>
 		container
 			.querySelector("form")
@@ -95,7 +122,7 @@ it("creates, narrows and revokes an account-bound token while keeping the raw to
 	);
 	expect(createToken).toHaveBeenCalledWith(
 		"a",
-		"External Bot",
+		"Ops Bot",
 		["observations:read", "agent:read", "agent:write"],
 		30,
 	);
@@ -106,8 +133,12 @@ it("creates, narrows and revokes an account-bound token while keeping the raw to
 	expect(container.querySelector('[aria-label="新 API 令牌（仅显示一次）"]')).toBeNull();
 	const checkbox = container.querySelector<HTMLButtonElement>('[id="t-agent:write"]');
 	await act(async () => checkbox?.click());
+	setInputValue(
+		container.querySelector<HTMLInputElement>('[aria-label="External Bot 标签"]'),
+		"Renamed",
+	);
 	await act(async () => button("保存标签与权限").click());
-	expect(updateToken).toHaveBeenCalledWith("a", "t", "External Bot", [
+	expect(updateToken).toHaveBeenCalledWith("a", "t", "Renamed", [
 		"observations:read",
 		"agent:read",
 	]);
@@ -125,7 +156,13 @@ it("creates, narrows and revokes an account-bound token while keeping the raw to
 
 it("shows token-management failures without exposing upstream details", async () => {
 	vi.mocked(listTokens).mockRejectedValue(new Error("private upstream failure"));
-	await act(async () => root.render(<ApiTokens accounts={[account]} />));
+	await act(async () =>
+		root.render(
+			<TooltipProvider>
+				<ApiTokens accounts={[account]} />
+			</TooltipProvider>,
+		),
+	);
 	expect(container.textContent).toContain("无法读取 API 令牌");
 	vi.mocked(createToken).mockRejectedValue(new Error("private upstream failure"));
 	await act(async () =>
@@ -145,8 +182,20 @@ it("ignores a token list that arrives after changing account", async () => {
 			resolve = done;
 		}),
 	);
-	await act(async () => root.render(<ApiTokens accounts={[account]} />));
-	await act(async () => root.render(<ApiTokens accounts={[{ ...account, id: "other" }]} />));
+	await act(async () =>
+		root.render(
+			<TooltipProvider>
+				<ApiTokens accounts={[account]} />
+			</TooltipProvider>,
+		),
+	);
+	await act(async () =>
+		root.render(
+			<TooltipProvider>
+				<ApiTokens accounts={[{ ...account, id: "other" }]} />
+			</TooltipProvider>,
+		),
+	);
 	await act(async () =>
 		resolve({ account_id: "a", items: [{ ...row, label: "Old account token" }] }),
 	);

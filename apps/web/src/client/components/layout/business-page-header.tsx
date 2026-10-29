@@ -1,11 +1,7 @@
 import type { ReactNode } from "react";
+import { HelpTooltip } from "./help-tooltip";
 import { RepositoryScopeFilter } from "./repository-scope";
 
-/**
- * Single-row page chrome. Basalt's `PageHeader` gives the description and the
- * filters their own bands; here the description becomes a muted inline suffix
- * and data times, scope, filters and page actions share one toolbar row.
- */
 export function BusinessPageHeader({
 	title,
 	description,
@@ -24,12 +20,12 @@ export function BusinessPageHeader({
 			<div className="giraffe-page-heading">
 				<h1 className="giraffe-page-title">{title}</h1>
 				{description ? (
-					<p
-						className="giraffe-page-subtitle"
-						{...(typeof description === "string" ? { title: description } : {})}
+					<HelpTooltip
+						label={typeof title === "string" ? `${title}说明` : "页面说明"}
+						className="self-center"
 					>
 						{description}
-					</p>
+					</HelpTooltip>
 				) : null}
 			</div>
 			<div className="giraffe-page-toolbar">

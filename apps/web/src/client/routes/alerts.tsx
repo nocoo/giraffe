@@ -75,16 +75,12 @@ export function AlertsPage() {
 			<div className="space-y-8">
 				<PageHeader
 					title="安全告警"
-					description={
-						"missing" in snap ? (
-							PAGE_DESCRIPTIONS["/alerts"]
-						) : (
-							<>
-								{PAGE_DESCRIPTIONS["/alerts"]}
-								<DataTimeSource
-									entries={[{ label: "安全告警", at: snap.fetched_at, freshness: snap.freshness }]}
-								/>
-							</>
+					description={PAGE_DESCRIPTIONS["/alerts"]}
+					meta={
+						"missing" in snap ? null : (
+							<DataTimeSource
+								entries={[{ label: "安全告警", at: snap.fetched_at, freshness: snap.freshness }]}
+							/>
 						)
 					}
 				/>
@@ -216,23 +212,44 @@ export function AlertsPage() {
 										{items.map((row) => (
 											<TableRow key={`${row.name_with_owner}:${row.url}`}>
 												<TableCell className="w-[60%] min-w-64">
-													<Link
-														href={row.url}
-														target="_blank"
-														rel="noreferrer"
-														className="font-medium text-basalt-foreground giraffe-wrap [overflow-wrap:anywhere] hover:text-basalt-primary"
-													>
-														{row.summary}
-													</Link>
-													<p className="mt-1 text-xs">
-														<ProjectLink
-															repo={row.name_with_owner}
-															className="text-basalt-muted-foreground"
-														/>
-													</p>
+													<div className="flex min-w-0 items-start gap-2">
+														{row.source === "dependabot" ? (
+															<Bug
+																className="mt-0.5 size-4 shrink-0 text-basalt-muted-foreground"
+																strokeWidth={1.5}
+																aria-hidden="true"
+															/>
+														) : (
+															<ShieldAlert
+																className="mt-0.5 size-4 shrink-0 text-basalt-muted-foreground"
+																strokeWidth={1.5}
+																aria-hidden="true"
+															/>
+														)}
+														<div className="min-w-0">
+															<Link
+																href={row.url}
+																target="_blank"
+																rel="noreferrer"
+																className="font-medium text-basalt-foreground giraffe-wrap [overflow-wrap:anywhere] hover:text-basalt-primary"
+															>
+																{row.summary}
+															</Link>
+															<p className="mt-1 text-xs">
+																<ProjectLink
+																	repo={row.name_with_owner}
+																	size={16}
+																	className="text-xs font-normal text-basalt-muted-foreground"
+																/>
+															</p>
+														</div>
+													</div>
 												</TableCell>
 												<TableCell>
-													<CandyBadge tone={sourceBadgeVariant(row.source)}>
+													<CandyBadge
+														tone={sourceBadgeVariant(row.source)}
+														icon={row.source === "dependabot" ? Bug : ShieldAlert}
+													>
 														{row.source}
 													</CandyBadge>
 												</TableCell>

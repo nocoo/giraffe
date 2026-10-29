@@ -48,7 +48,9 @@ describe("activity saved-publication content", () => {
 		const html = render(activityFixture());
 		expect(html).toContain('dateTime="2026-10-21T21:00:00.000Z"');
 		expect(html).toContain('dateTime="2026-10-22T21:00:00.000Z"');
-		expect(html).toContain("Asia/Shanghai");
+		expect(html).toContain("当次窗口说明");
+		expect(html).toContain("贡献绿格说明");
+		expect(html).not.toContain("Asia/Shanghai");
 		expect(html).toContain("数据时间");
 		expect(html).toContain("发布版本（不含独立标签）");
 		expect(html).toContain("2026-10-22");
@@ -112,4 +114,25 @@ describe("activity saved-publication content", () => {
 		expect(html).not.toContain("≥ 8");
 		expect(html).toContain("贡献来源不完整或未知");
 	});
+});
+
+it("decorates activity rows with kind, repository and time metadata", () => {
+	const snapshot = activityFixture();
+	const repo = snapshot.repos[0];
+	if (!repo) throw new Error("Missing repository fixture");
+	repo.prs.merged = [activityPr()];
+	repo.releases = [{ ...activityPr("release"), title: "v0.19.0" }];
+	repo.ci_runs = [activityRun()];
+	repo.deploy.runs = [activityRun(102)];
+	snapshot.totals.merged_prs = 1;
+	const html = render(snapshot, true);
+	expect(html).toContain("lucide-git-merge");
+	expect(html).toContain("lucide-tag");
+	expect(html).toContain("lucide-workflow");
+	expect(html).toContain("lucide-rocket");
+	expect(html).toContain("lucide-clock-3");
+	expect(html).toContain("lucide-git-pull-request");
+	expect(html).toContain("lucide-git-commit");
+	expect(html).toContain('href="/repos/octocat/hello-world"');
+	expect(html).toContain("Keep current-run activity readable");
 });

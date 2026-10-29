@@ -147,9 +147,12 @@ it("keeps star selection and explains its unified refresh selection", async () =
 	expect(container.querySelector('[role="switch"]')).toBeNull();
 	expect(container.textContent).not.toContain("参与统计");
 	expect(container.textContent).not.toContain("已排除");
-	expect(container.textContent).toContain(
-		"星标筛选已保存快照，并决定每日默认刷新的仓库，包含 Fork 和已归档仓库。新发现的仓库仅自动刷新一次，不会自动加星。",
-	);
+	expect(container.textContent).not.toContain("星标筛选已保存快照");
+	const starHelp = container.querySelector<HTMLButtonElement>('[aria-label="星标与刷新说明"]');
+	expect(starHelp).not.toBeNull();
+	await act(async () => starHelp?.click());
+	expect(document.body.textContent).toContain("星标筛选已保存快照");
+	expect(document.body.textContent).toContain("不会自动加星");
 	const star = container.querySelector<HTMLButtonElement>('[aria-label="星标 owner/archived"]');
 	expect(star?.getAttribute("aria-pressed")).toBe("true");
 	await act(async () => star?.click());
