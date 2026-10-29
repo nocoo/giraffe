@@ -8,7 +8,8 @@ export type AppVars = {
 	sourceTiming?: SourceTiming;
 };
 
-export interface Env extends CloudflareBindings {
+export interface Env extends Omit<CloudflareBindings, "REFRESH_RUNNER"> {
+	REFRESH_RUNNER?: CloudflareBindings["REFRESH_RUNNER"];
 	ENVIRONMENT?: string;
 	TOKEN_ENCRYPTION_KEY_CURRENT: string;
 	CF_ACCESS_TEAM_DOMAIN?: string;

@@ -1,11 +1,12 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { NOW, ready } from "../../../../../tests/fixtures/factory";
+import { savedObservationStmts as replaceSnapshotStmts } from "../../../../../tests/fixtures/refresh";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import type { Env } from "../env";
 import { createApp } from "../index";
 import { insertAccountStmt } from "../lib/db/accounts";
 import { createDb } from "../lib/db/d1";
-import { readSnapshot, replaceSnapshotStmts } from "../lib/db/snapshots";
+import { readSnapshot } from "../lib/db/snapshots";
 import { readObservation } from "../lib/machine-observations";
 import { encryptToken, parseKeyBytes } from "../lib/token-crypto";
 
@@ -104,7 +105,9 @@ it.each(["all", "starred"])(
 		await fixture.db.batch(
 			await replaceSnapshotStmts(fixture.db, ID, "factory", { ...snapshot }, NOW),
 		);
-		const before = await fixture.env.DB.prepare("SELECT * FROM snapshots ORDER BY kind").all();
+		const before = await fixture.env.DB.prepare(
+			"SELECT * FROM refresh_snapshots ORDER BY kind",
+		).all();
 		const response = await fixture.call(`/api/factory?scope=${scope}`);
 		expect(response.status).toBe(200);
 		expect(await response.json()).toMatchObject({
@@ -116,9 +119,9 @@ it.each(["all", "starred"])(
 			freshness: { total: 2, missing: 1 },
 			truncated: true,
 		});
-		expect(await fixture.env.DB.prepare("SELECT * FROM snapshots ORDER BY kind").all()).toEqual(
-			before,
-		);
+		expect(
+			await fixture.env.DB.prepare("SELECT * FROM refresh_snapshots ORDER BY kind").all(),
+		).toEqual(before);
 	},
 );
 
@@ -140,7 +143,9 @@ it("retains saved contribution metadata for default/all browser and machine read
 		.prepare("INSERT INTO repo_stars(account_id,repo) VALUES(?,'NOCOO/APP')")
 		.bind(ID)
 		.run();
-	const before = await fixture.env.DB.prepare("SELECT * FROM snapshots ORDER BY kind").all();
+	const before = await fixture.env.DB.prepare(
+		"SELECT * FROM refresh_snapshots ORDER BY kind",
+	).all();
 	const network = vi.fn(() => {
 		throw new Error("factory GET must not fetch upstream");
 	});
@@ -173,9 +178,9 @@ it("retains saved contribution metadata for default/all browser and machine read
 		contributionStatus: "unavailable",
 		contributionExcluded: true,
 	});
-	expect(await fixture.env.DB.prepare("SELECT * FROM snapshots ORDER BY kind").all()).toEqual(
-		before,
-	);
+	expect(
+		await fixture.env.DB.prepare("SELECT * FROM refresh_snapshots ORDER BY kind").all(),
+	).toEqual(before);
 	expect(network).not.toHaveBeenCalled();
 });
 
@@ -195,12 +200,14 @@ it("projects starred factory repositories and dates from their observations, not
 		{
 			...first,
 			name: "nocoo/mixed",
+			id: "R_MIXED",
 			observation: { version: "older", window: state.window, source: "legacy", refreshedAt: early },
 		},
-		{ ...first, name: "nocoo/new" },
+		{ ...first, id: "R_NEW", name: "nocoo/new" },
 		{
 			...first,
 			name: "nocoo/hidden",
+			id: "R_HIDDEN",
 			observation: { version: "newest", window: state.window, source: "legacy", refreshedAt: NOW },
 		},
 	];
@@ -258,16 +265,16 @@ it("filters full resource WIP and UTC days before pagination, rejecting malforme
 		actor: null,
 		value: null,
 	}));
-	await s.db.batch([
-		...(await replaceSnapshotStmts(s.db, ID, "factory", { ...state }, NOW)),
-		...(await replaceSnapshotStmts(
+	await s.db.batch(await replaceSnapshotStmts(s.db, ID, "factory", { ...state }, NOW));
+	await s.db.batch(
+		await replaceSnapshotStmts(
 			s.db,
 			ID,
 			"factory:nocoo/app:prs",
 			{ items, runId: state.runId },
 			NOW,
-		)),
-	]);
+		),
+	);
 	const response = await s.call("/api/factory/repos/nocoo/app/prs?state=open&day=2026-09-01");
 	expect(response.status).toBe(200);
 	expect(await response.json()).toMatchObject({

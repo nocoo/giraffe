@@ -3,6 +3,7 @@ import { AccentProvider } from "@nocoo/basalt/providers/accent";
 import { lazy, type ReactNode, Suspense } from "react";
 import { BrowserRouter, Link, Navigate, Route, Routes } from "react-router";
 import { AppShell } from "./components/layout/app-shell";
+import { RefreshProvider } from "./components/layout/refresh-provider";
 import { BusinessOutlet } from "./components/layout/repository-scope";
 import { APP_PATHS, type AppPath } from "./lib/routes";
 
@@ -103,7 +104,13 @@ export function App() {
 						<BrowserRouter>
 							<Toaster />
 							<Routes>
-								<Route element={<AppShell />}>
+								<Route
+									element={
+										<RefreshProvider>
+											<AppShell />
+										</RefreshProvider>
+									}
+								>
 									<Route element={<BusinessOutlet />}>
 										{pageRoutes(APP_PATHS.filter((path) => !standalone.has(path)))}
 									</Route>

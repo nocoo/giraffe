@@ -1,9 +1,42 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../lib/errors";
-import { cacheGeneration, ensureSession, getActiveAccountId, setActiveAccountId } from "./session";
+import {
+	cacheGeneration,
+	ensureSession,
+	getActiveAccountId,
+	setActiveAccountId,
+	subscribeSession,
+} from "./session";
 
 describe("session", () => {
+	it("shares one pending accounts request", async () => {
+		let finish: ((value: Response) => void) | undefined;
+		const fetch = vi.fn(
+			() =>
+				new Promise<Response>((resolve) => {
+					finish = resolve;
+				}),
+		);
+		vi.stubGlobal("fetch", fetch);
+		const first = ensureSession();
+		const second = ensureSession();
+		expect(fetch).toHaveBeenCalledOnce();
+		finish?.(Response.json({ accounts: [{ id: "one", is_active: true }] }));
+		expect(await Promise.all([first, second])).toEqual(["one", "one"]);
+	});
+	it("notifies account changes only after the new account is visible and unsubscribes", () => {
+		setActiveAccountId(null);
+		const listener = vi.fn(() => getActiveAccountId());
+		const stop = subscribeSession(listener);
+		setActiveAccountId("one");
+		setActiveAccountId("one");
+		expect(listener).toHaveBeenCalledOnce();
+		expect(listener).toHaveReturnedWith("one");
+		stop();
+		setActiveAccountId("two");
+		expect(listener).toHaveBeenCalledOnce();
+	});
 	afterEach(() => {
 		setActiveAccountId(null);
 		vi.stubGlobal("fetch", () => {

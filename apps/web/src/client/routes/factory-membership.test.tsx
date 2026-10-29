@@ -68,6 +68,56 @@ afterEach(() => {
 	vi.unstubAllGlobals();
 });
 
+it.each([false, true])(
+	"labels source calendar days and withholds mixed timezones: %s",
+	async (mixed) => {
+		const raw = factoryFixture();
+		raw.window = {
+			since: "2026-10-27T16:00:00Z",
+			until: "2026-10-28T15:59:59.999Z",
+			timezone: "Asia/Shanghai",
+		};
+		const repo = raw.repos[0];
+		if (!repo) throw new Error("fixture");
+		repo.metrics.days = { "2026-10-28": { ...repo.metrics, commits: 2 } };
+		if (mixed)
+			repo.coverage.commits.completeWindows = [
+				{
+					since: "2026-03-08T05:00:00Z",
+					until: "2026-03-09T03:59:59.999Z",
+					timezone: "America/New_York",
+				},
+			];
+		vi.mocked(loadFactory).mockResolvedValue({ ...raw, selectedRepos: raw.repos });
+		vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+		const container = document.createElement("div");
+		const root = createRoot(container);
+		try {
+			await act(async () =>
+				root.render(
+					<MemoryRouter>
+						<FactoryPage />
+					</MemoryRouter>,
+				),
+			);
+			if (mixed) {
+				expect(container.textContent).toContain(
+					"来源时区不一致，日历与期间汇总不可合并；缺失不代表零。",
+				);
+				expect(container.querySelector("#factory-change-title")).toBeNull();
+			} else {
+				expect(container.textContent).toContain("1 个 Asia/Shanghai 日期");
+				expect(container.textContent).toContain(
+					"2026-10-28 00:00 → 2026-10-29 00:00 (Asia/Shanghai)",
+				);
+				expect(container.textContent).not.toContain("08:00 →");
+			}
+		} finally {
+			await act(async () => root.unmount());
+		}
+	},
+);
+
 it.each([30, 90])("labels the published %i-day chart window", async (dayCount) => {
 	const raw = factoryFixture();
 	raw.window = savedFactoryWindow(raw.fetched_at, dayCount);
@@ -102,7 +152,40 @@ it.each([30, 90])("labels the published %i-day chart window", async (dayCount) =
 	}
 });
 
-it("keeps the dashboard shell honest and refresh disabled without saved data", async () => {
+it.each(["unavailable", "complete"] as const)(
+	"keeps dependency graph missingness distinct from a measured zero: %s",
+	async (status) => {
+		const raw = factoryFixture();
+		for (const repo of raw.repos) {
+			repo.dependencies = [];
+			repo.coverage.dependencies.status = status;
+		}
+		vi.mocked(loadFactory).mockResolvedValue({ ...raw, selectedRepos: raw.repos });
+		vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+		const container = document.createElement("div");
+		const root = createRoot(container);
+		try {
+			await act(async () =>
+				root.render(
+					<MemoryRouter>
+						<FactoryPage />
+					</MemoryRouter>,
+				),
+			);
+			const panel = Array.from(container.querySelectorAll("h2")).find(
+				(heading) => heading.textContent === "依赖与维护",
+			)?.parentElement;
+			expect(panel?.textContent).toContain(status === "complete" ? "观测引用边 0" : "观测引用边 —");
+			expect(panel?.textContent?.includes("依赖分析缺少完整观测，缺失不代表没有依赖。")).toBe(
+				status !== "complete",
+			);
+		} finally {
+			await act(async () => root.unmount());
+		}
+	},
+);
+
+it("keeps the dashboard shell and missing values without retired refresh messages", async () => {
 	vi.mocked(loadFactory).mockResolvedValue({ missing: true });
 	vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 	vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
@@ -118,7 +201,8 @@ it("keeps the dashboard shell honest and refresh disabled without saved data", a
 		);
 		expect(container.textContent).toContain("软件工厂");
 		expect(container.textContent).toContain("暂无已保存的快照");
-		expect(container.textContent).toContain("旧刷新已停用");
+		expect(container.textContent).toContain("统一刷新");
+		expect(container.textContent).not.toContain("旧刷新已停用");
 		const headings = Array.from(container.querySelectorAll("h2")).map(
 			(heading) => heading.textContent,
 		);
@@ -147,10 +231,7 @@ it("keeps the dashboard shell honest and refresh disabled without saved data", a
 		expect(container.querySelector('table[aria-label="仓库生产线"]')).not.toBeNull();
 		expect(container.querySelectorAll("time")).toHaveLength(0);
 		expect(container.textContent).not.toMatch(/最近 \d+ 天|\d{4}-\d{2}-\d{2}|0 个|0%/);
-		const disabled = Array.from(container.querySelectorAll("button")).find((button) =>
-			button.textContent?.includes("刷新暂不可用"),
-		);
-		expect(disabled?.disabled).toBe(true);
+		expect(container.textContent).not.toContain("刷新暂不可用");
 		expect(container.querySelector('a[href^="/refresh"]')).toBeNull();
 		expect(container.textContent).not.toContain("离开页面后也会继续");
 	} finally {

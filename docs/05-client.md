@@ -1,10 +1,9 @@
 # 05 — Client 设计
 
-> **v0.26.0:** Collection execution and the AI analysis product surface have
-> been removed. The implementation details below are historical where they
-> describe refresh modes, runs, schedules, collectors or analysis pages.
-> [Phase 1 retirement](14-phase1-retirement.md) is the current behavior contract;
-> saved-data schemas and read semantics remain relevant.
+> **v0.27.0:** [Phase 2 unified refresh](15-unified-refresh.md) is the current
+> behavior contract. Dashboard and single-repository refresh use one task type,
+> poll saved status and reload new observations on completion. Earlier refresh
+> modes, refresh-center and analysis UI descriptions below remain historical.
 
 ## Analysis desk
 

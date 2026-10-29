@@ -4,6 +4,7 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 import type { ActivitySnapshot } from "../../apps/web/src/lib/activity-types";
 import { activityFixture, activityPr, activityRun } from "../e2e/activity-fixtures";
 import { executeD1FixtureSync } from "../fixtures/d1";
+import { savedSnapshotSql } from "./saved-fixture";
 
 const base = process.env.GIRAFFE_E2E ?? "http://127.0.0.1:17045";
 const account = randomUUID().replaceAll("-", "").slice(0, 21);
@@ -17,15 +18,6 @@ const currentId = `activity-${account}`;
 const previousId = `previous-${account}`;
 const pendingId = `pending-${account}`;
 let seeded = false;
-
-const derivedSnapshot = () => ({
-	...snapshot,
-	totals: { ...snapshot.totals, red_default_branch: null },
-	totals_partial: true,
-	totals_coverage: {
-		missing: [{ repo: repository, metrics: ["red_default_branch"], reason: "missing_evidence" }],
-	},
-});
 
 const quote = (value: string) => `'${value.replaceAll("'", "''")}'`;
 function rows(command: string): Record<string, unknown>[] {
@@ -140,6 +132,16 @@ beforeAll(() => {
 			mint(wrongScope, ["agent:read"], "agent", new Date(Date.now() + 86400_000).toISOString()),
 			mint(expired, ["observations:read"], "expired", "2025-01-01T00:00:00.000Z"),
 			`INSERT INTO snapshots(account_id,kind,payload,fetched_at) VALUES(${quote(account)},'repos',${quote(JSON.stringify({ repos: [{ name_with_owner: repo.repo, owner_login: owner }], fetched_at: snapshot.fetchedAt, truncated: false }))},${quote(snapshot.fetchedAt)});`,
+			savedSnapshotSql(
+				account,
+				"repos",
+				{
+					repos: [{ name_with_owner: repo.repo, owner_login: owner }],
+					fetched_at: snapshot.fetchedAt,
+					truncated: false,
+				},
+				snapshot.fetchedAt,
+			),
 			runRow(previousId, previous.window.until, "completed"),
 			runRow(currentId, snapshot.window.until, "completed"),
 			runRow(pendingId, "2026-10-24T21:00:00.000Z", "running"),
@@ -155,7 +157,7 @@ afterAll(() => {
 	rows(`DELETE FROM accounts WHERE id=${quote(account)};`);
 });
 
-it("R4 HTTP derives frozen counts, excludes unproven branch totals and preserves read-only polling", async () => {
+it("R4 HTTP leaves legacy author-specific activity unavailable without writes or upstream traffic", async () => {
 	const saved = () =>
 		rows(
 			`SELECT * FROM activity_publications WHERE account_id=${quote(account)} ORDER BY run_id; SELECT * FROM activity_pages WHERE account_id=${quote(account)} ORDER BY run_id,page; SELECT * FROM api_tokens WHERE account_id=${quote(account)} ORDER BY id; SELECT * FROM factory_runs WHERE account_id=${quote(account)} ORDER BY id;`,
@@ -163,19 +165,16 @@ it("R4 HTTP derives frozen counts, excludes unproven branch totals and preserves
 	const before = saved();
 	const calls = await (await fetch("http://127.0.0.1:17046/_count")).text();
 	const response = await request();
-	expect(response.status).toBe(200);
-	expect(await response.json()).toEqual(derivedSnapshot());
+	expect(response.status).toBe(409);
+	expect(await response.json()).toMatchObject({ error: { code: "activity_unpublished" } });
 	const prior = await request(`?run=${previousId}`);
-	expect(prior.status).toBe(200);
-	expect(((await prior.json()) as ActivitySnapshot).window.until).toBe(snapshot.window.since);
+	expect(prior.status).toBe(404);
 	const scoped = await request(`?repository=${encodeURIComponent(repository)}`);
-	expect(scoped.status).toBe(200);
-	expect(((await scoped.json()) as ActivitySnapshot).repos).toEqual(snapshot.repos);
-	const tag = response.headers.get("etag");
-	expect(tag).toMatch(/^"[a-f0-9]{40}"$/);
-	const conditional = await request("", bearer, `W/${tag}`);
-	expect(conditional.status).toBe(304);
-	expect(await conditional.text()).toBe("");
+	expect(scoped.status).toBe(409);
+	expect(response.headers.has("etag")).toBe(false);
+	const conditional = await request("", bearer, "*");
+	expect(conditional.status).toBe(409);
+	expect(await conditional.json()).toMatchObject({ error: { code: "activity_unpublished" } });
 	for (const [name, value] of [
 		["cache-control", "private, no-store"],
 		["vary", "Authorization"],
@@ -186,15 +185,11 @@ it("R4 HTTP derives frozen counts, excludes unproven branch totals and preserves
 		headers: { Authorization: `Bearer ${bearer}` },
 	});
 	expect(sources.status).toBe(200);
-	expect(((await sources.json()) as { sources: unknown[] }).sources).toEqual(
-		expect.arrayContaining([
-			expect.objectContaining({
-				resource: "account:activity",
-				fetchedAt: snapshot.fetchedAt,
-				contentVersion: expect.any(String),
-			}),
-		]),
-	);
+	expect(
+		((await sources.json()) as { sources: { resource: string }[] }).sources.some(
+			(source) => source.resource === "account:activity",
+		),
+	).toBe(false);
 	expect(await (await fetch("http://127.0.0.1:17046/_count")).text()).toBe(calls);
 	expect(saved()).toEqual(before);
 });
@@ -202,7 +197,7 @@ it("R4 HTTP derives frozen counts, excludes unproven branch totals and preserves
 it("R4 HTTP rejects incomplete runs, unknown runs, malformed selectors and unauthorized conditional requests", async () => {
 	for (const [query, status] of [
 		["?run=unknown", 404],
-		[`?run=${pendingId}`, 409],
+		[`?run=${pendingId}`, 404],
 		[`?repository=${encodeURIComponent(`${owner}/unknown`)}`, 404],
 	] as const) {
 		const response = await request(query);
@@ -237,7 +232,7 @@ it("R4 HTTP rejects incomplete runs, unknown runs, malformed selectors and unaut
 	expect((await request("", bearer, "*", "HEAD")).status).toBe(405);
 });
 
-it("R4 browser activity reads the active account publication with private conditional responses", async () => {
+it("R4 browser activity ignores legacy publications and keeps missing responses private", async () => {
 	marker();
 	const prior = rows("SELECT id FROM accounts WHERE is_active=1")[0]?.id;
 	rows(
@@ -254,19 +249,18 @@ it("R4 browser activity reads the active account publication with private condit
 	try {
 		const calls = await (await fetch("http://127.0.0.1:17046/_count")).text();
 		const response = await browser();
-		expect(response.status).toBe(200);
-		expect(await response.json()).toEqual(derivedSnapshot());
-		const tag = response.headers.get("etag");
-		expect(tag).toBeTruthy();
-		const conditional = await browser(String(tag));
-		expect(conditional.status).toBe(304);
-		expect(await conditional.text()).toBe("");
+		expect(response.status).toBe(409);
+		expect(await response.json()).toMatchObject({ error: { code: "activity_unpublished" } });
+		expect(response.headers.has("etag")).toBe(false);
+		const conditional = await browser("*");
+		expect(conditional.status).toBe(409);
+		expect(await conditional.json()).toMatchObject({ error: { code: "activity_unpublished" } });
 		expect(conditional.headers.get("cache-control")).toBe("private, no-store");
 		expect(conditional.headers.get("vary")).toContain("Cf-Access-Jwt-Assertion");
 		for (const [query, status] of [
 			["unknown=1", 400],
 			["run=unknown", 404],
-			[`run=${pendingId}`, 409],
+			[`run=${pendingId}`, 404],
 		] as const) {
 			const error = await browser("*", query);
 			expect(error.status).toBe(status);

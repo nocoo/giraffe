@@ -90,6 +90,7 @@ export function createUiFixtures() {
 	);
 	const repoPath = "/api/repos/octocat/hello-world";
 	return {
+		"/api/refresh-runs": { items: [], collectionAvailable: true },
 		"/api/me": { name: "演示账号", email: "demo@example.test", avatar: null },
 		"/api/accounts": {
 			accounts: [

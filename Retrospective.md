@@ -2081,6 +2081,23 @@ to actual test callees. No retained cases were intentionally dropped. Future
 AST-based deletions must inspect the call target, review every selected range and
 compare retained test names before running the full gates.
 
+## 2026-10-29 - Serialize wakeup cleanup with enqueue
+
+Phase-2 review reproduced a queued refresh losing its alarm when an earlier run
+finished between the idle query and alarm deletion. The same initial code reset
+backoff for duplicate or rejected starts, and one account scheduling failure
+prevented later accounts from being queued. Before publication, idle detection
+and wakeup changes were moved into the same short Durable Object critical section
+as enqueue; existing runs keep their retry deadline and scheduler failures are
+isolated per account. Regression tests exercise concurrent enqueue, rate-limit
+backoff and first-account failure. Durable wakeups and external D1 state must be
+reviewed as one protocol, not as independently correct statements.
+
+A staging loop also used `path` as a variable under zsh, where it is tied to
+`PATH`; command lookup failed before anything was staged. The loop now uses
+`file_path` and stops on errors. Shell orchestration must avoid reserved shell
+parameters and fail at the first unsuccessful command.
+
 ## 2026-10-29 - Copy package directories explicitly
 
 The phase-1 worktree's mirror lacked five exact locked packages. A directory-copy
@@ -2107,3 +2124,26 @@ The next review caught a cross-day interaction: preserving a failed stream's old
 buckets while exposing only its shorter raw collection range hid the oldest saved
 day. The retained repository display span now remains visible independently of
 raw ranges; tests compare the first chart day and chart sums with saved totals.
+
+## 2026-10-29 - Select browser accounts in shared API fixtures
+
+The new Activity acceptance passed against an empty local database but failed in
+the complete API suite. Its machine token correctly selected the new account,
+while the browser still used a different active account left by earlier tests.
+Account creation activates only the first account. The fixture now explicitly
+activates its account before browser assertions and restores the previous active
+account during cleanup. A targeted pass cannot establish suite independence;
+cross-account browser and machine assertions must state both account contexts.
+
+## 2026-10-29 - Review shared read boundaries end to end
+
+The final phase-2 review found cases not represented by the first integration
+tests: account-fenced polling returns 404 rather than a synthetic 409, UTC chart
+keys require UTC labels, retained repository dimensions can use different time
+zones, and a transient background detail error must not erase a valid page.
+Regression tests now use those actual contracts and the rendered route.
+Activity also read its inputs and publication in separate batches and was absent
+from source discovery. Its publication now shares the input transaction; the
+source index must describe the same canonical membership and evidence, not an
+approximation based only on the top-level publication. A passing endpoint test
+does not establish consistency with polling, discovery or concurrent publication.

@@ -14,6 +14,7 @@ import {
 } from "../../lib/factory-types";
 import { type SnapshotFreshness, snapshotFreshness } from "../../lib/snapshot-freshness";
 import { apiGet } from "../lib/api";
+import { calendarBounds, factoryCalendarWindows } from "../lib/calendar";
 import { ApiError } from "../lib/errors";
 import { getRepositoryScope, scopedResource } from "./scope";
 import { ensureSession, getActiveAccountId } from "./session";
@@ -76,6 +77,7 @@ export function factoryError(error: unknown): string {
 	if (error instanceof ApiError) {
 		if (error.code === "account_conflict") return "账号已切换，请重新读取已保存的快照。";
 		if (error.code === "account_missing") return "请先在设置中连接 GitHub 账号。";
+		if (error.code === "snapshot_missing") return "暂无已保存的资源快照；缺失不代表没有记录。";
 		if (error.code === "github_unauthorized") return "GitHub 令牌失效，请在设置中更新。";
 	}
 	return "暂时无法读取已保存的快照，请稍后重试。";
@@ -119,15 +121,13 @@ export function factoryBoard(
 		repo.observation?.window ??
 		snapshot.window;
 	const windows = repos.length
-		? repos.flatMap((repo) => [
-				repo.observation?.window ?? snapshot.window,
-				...FACTORY_STREAMS.flatMap(
-					(stream) => repo.coverage[stream].completeWindows ?? [windowOf(repo, stream)],
-				),
-			])
+		? repos.flatMap((repo) => factoryCalendarWindows(repo, snapshot.window))
 		: [snapshot.window];
-	const end = Math.max(...windows.map((w) => Date.parse(w.until)));
-	const earliest = Math.min(...windows.map((w) => Date.parse(w.since)));
+	const mixedTimezones = new Set(windows.map((window) => window.timezone ?? "UTC")).size > 1;
+	const timezone = windows[0]?.timezone ?? "UTC";
+	const bounds = windows.map(calendarBounds);
+	const end = Math.max(...bounds.map((window) => window.until));
+	const earliest = Math.min(...bounds.map((window) => window.since));
 	const start = Math.max(
 		earliest,
 		Date.parse(new Date(end).toISOString().slice(0, 10)) - 365 * 86400_000,
@@ -136,7 +136,7 @@ export function factoryBoard(
 		(w) => w.since !== windows[0]?.since || w.until !== windows[0]?.until,
 	);
 	const days: BoardDay[] = [];
-	for (let date = start; date < end; date += 86400_000) {
+	for (let date = start; !mixedTimezones && date < end; date += 86400_000) {
 		const day = new Date(date).toISOString().slice(0, 10);
 		const complete = Object.fromEntries(
 			FACTORY_STREAMS.map((stream) => [
@@ -148,7 +148,7 @@ export function factoryBoard(
 					),
 			]),
 		) as Record<FactoryStreamName, boolean>;
-		days.push({ date: day, ...(aggregate.days[day] ?? emptyDay()), complete });
+		days.push({ date: day, timezone, ...(aggregate.days[day] ?? emptyDay()), complete });
 	}
 	const coverage = {
 		complete: 0,
@@ -166,24 +166,35 @@ export function factoryBoard(
 	const midnight = Date.parse(new Date(end).toISOString().slice(0, 10));
 	const periodEnd = repos.length
 		? Math.min(
-				...repos.map((r) =>
-					Date.parse((r.observation?.window ?? snapshot.window).until.slice(0, 10)),
-				),
+				...repos.map((repo) => {
+					const window = repo.observation?.window ?? snapshot.window;
+					return window.timezone
+						? calendarBounds(window).until
+						: Date.parse(window.until.slice(0, 10));
+				}),
 			)
 		: midnight;
-	const repoActivity = repos.map((r) =>
+	const calendarRepos = mixedTimezones ? [] : repos;
+	const repoActivity = calendarRepos.map((r) =>
 		activityOf(
 			r,
 			windowOf,
 			periodEnd,
-			Date.parse((r.observation?.window ?? snapshot.window).until),
+			calendarBounds(r.observation?.window ?? snapshot.window).until,
 		),
 	);
 	const series = addStock(days, repos, membershipComplete);
 	const stockOn = (date: string, key: "openIssues" | "openPrs") =>
 		series.find((d) => d.date === date)?.[key] ?? null;
 	const periods = PERIODS.map((length) => {
-		const summary = periodSummary(repos, windowOf, periodEnd, length, membershipComplete);
+		const summary = periodSummary(
+			calendarRepos,
+			windowOf,
+			periodEnd,
+			length,
+			membershipComplete,
+			timezone,
+		);
 		const before = isoDay(Date.parse(summary.since) - DAY_MS);
 		return {
 			...summary,
@@ -217,9 +228,12 @@ export function factoryBoard(
 		]),
 	) as Record<FactoryStreamName, boolean>;
 	const activity = activityBuckets(repoActivity, periodEnd);
-	activity.unknown += unpublished.length;
+	activity.unknown += mixedTimezones ? selectedRepos.length : unpublished.length;
 
 	return {
+		dependenciesComplete:
+			snapshot.repos.length > 0 &&
+			snapshot.repos.every((repo) => repo.coverage.dependencies.status === "complete"),
 		freshness: factoryEvidenceFreshness(
 			selectedRepos.map((repo) => observations.get(repo.name.toLowerCase())),
 		),
@@ -231,7 +245,12 @@ export function factoryBoard(
 		),
 		unpublished,
 		mixedWindows,
-		displayWindow: { since: new Date(start).toISOString(), until: new Date(end).toISOString() },
+		mixedTimezones,
+		timezone,
+		displayWindow: {
+			since: new Date(Math.min(...windows.map((window) => Date.parse(window.since)))).toISOString(),
+			until: new Date(Math.max(...windows.map((window) => Date.parse(window.until)))).toISOString(),
+		},
 		aggregate,
 		streamComplete: Object.fromEntries(
 			FACTORY_STREAMS.map((k) => [
@@ -332,9 +351,10 @@ function coversWindow(
 	const window = windowOf(repo, stream);
 	return (
 		repo.coverage[stream].status === "complete" &&
-		(repo.coverage[stream].completeWindows ?? [window]).some(
-			(value) => Date.parse(value.since) <= from && Date.parse(value.until) >= to,
-		)
+		(repo.coverage[stream].completeWindows ?? [window]).some((value) => {
+			const bounds = calendarBounds(value);
+			return bounds.since <= from && bounds.until >= to;
+		})
 	);
 }
 
@@ -382,6 +402,7 @@ function periodSummary(
 	midnight: number,
 	length: Period,
 	membershipComplete: boolean,
+	timezone: string,
 ) {
 	const since = midnight - length * DAY_MS;
 	const previousSince = since - length * DAY_MS;
@@ -406,6 +427,7 @@ function periodSummary(
 	};
 	return {
 		days: length,
+		timezone,
 		since: isoDay(since),
 		until: isoDay(midnight - DAY_MS),
 		current: total(since, midnight),
@@ -429,7 +451,11 @@ function activityBuckets(activity: RepoActivity[], midnight: number) {
 	return buckets;
 }
 
-type BoardDay = FactoryDay & { date: string; complete: Record<FactoryStreamName, boolean> };
+type BoardDay = FactoryDay & {
+	date: string;
+	timezone: string;
+	complete: Record<FactoryStreamName, boolean>;
+};
 /**
  * Open backlog is only observed today. Walking backwards (open(d-1) = open(d) - opened(d) + closed(d))
  * is exact only when every repository's event list is complete; a negative result proves missing

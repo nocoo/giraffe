@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.27.0 - 2026-10-29
+
+### Added
+
+- Add one durable unified refresh pipeline: account metadata, contribution trend
+  and paginated repository discovery first, then serial repository collection.
+- Add calendar-day observations with configurable display timezone, UTC storage,
+  dimension/window parameters, cache reuse and explicit forced refresh.
+- Add browser and scoped machine refresh-run creation, history/status and
+  ad-hoc repository refresh. Daily automatic refresh runs at 03:00 Asia/Shanghai
+  for starred repositories; newly discovered repositories receive an initial
+  refresh without being automatically starred.
+
+### Changed
+
+- Read new saved observations exclusively; legacy factory rows remain inert and
+  are not migrated. Missing or unsupported evidence remains unavailable.
+- Count daily default-branch commits through GraphQL history totals, stop
+  issue/PR pagination at proven cached boundaries, and collect bounded CI and
+  security-alert samples. Dependency analysis remains unavailable.
+- Keep analysis UI and legacy quick/deep/full orchestration removed. External
+  GitHub digest consumption is scheduled separately for 04:30 Asia/Shanghai;
+  no weekly report or analysis runtime is introduced.
+
 ## v0.26.0 - 2026-10-29
 
 ### Removed

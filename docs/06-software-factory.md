@@ -1,8 +1,9 @@
 # Software factory: saved observations
 
-As of v0.26.0 the factory is a read-only Dashboard over supported saved snapshots.
-The old collection stack and its audit/preview/benchmark tools are removed.
-See [Phase 1 retirement](14-phase1-retirement.md) for API and deployment behavior.
+As of v0.27.0 the factory is a Dashboard over unified-refresh saved observations.
+Reads are side-effect-free; explicit refresh and the fixed daily schedule execute
+A then serial B. The old collection stack remains removed. See
+[Phase 2 unified refresh](15-unified-refresh.md) for API and deployment behavior.
 
 ## Display semantics
 

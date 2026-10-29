@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import type { RepoAgentState } from "../../apps/web/src/lib/repo-agent-state";
 import { executeD1FixtureSync } from "../fixtures/d1";
+import { savedRepositorySql, savedSnapshotSql } from "./saved-fixture";
 
 const base = process.env.GIRAFFE_E2E ?? "http://127.0.0.1:17045";
 const account = randomUUID().replaceAll("-", "").slice(0, 21);
@@ -54,8 +55,16 @@ beforeAll(() => {
 			`INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES(${quote(account)},${quote(owner)},'test-not-an-encrypted-pat','fake',${quote(now)},${quote(now)});`,
 			mint(bearer, ["app:read", "app:write", "observations:read"], "reader"),
 			mint(wrongScope, ["observations:read", "agent:read", "agent:write"], "wrong"),
-			`INSERT INTO catalog_repositories(account_id,identity_key,github_id,repo,row_payload,first_seen_at,last_seen_at,is_archived,visibility,is_fork,first_seen_source) VALUES(${quote(account)},'R_app','R_app',${quote(repository)},${quote(JSON.stringify({ name_with_owner: repository }))},${quote(now)},${quote(now)},0,'PUBLIC',0,'github_catalog');`,
-			`INSERT INTO snapshots(account_id,kind,payload,fetched_at) VALUES(${quote(account)},'repos',${quote(JSON.stringify({ repos: [{ name_with_owner: repository }], fetched_at: now, truncated: false }))},${quote(now)});`,
+			savedSnapshotSql(
+				account,
+				"repos",
+				{
+					repos: [{ id: "R_app", name_with_owner: repository }],
+					fetched_at: now,
+					truncated: false,
+				},
+				now,
+			),
 		].join("\n"),
 	);
 });
@@ -127,11 +136,11 @@ it("R5 HTTP validates Unicode bytes, strict queries/scopes/account isolation and
 	expect((await request("GET", undefined, {}, `${owner}/missing`)).status).toBe(404);
 });
 
-it("R5 HTTP browser reads active-account state and renamed/removed state stays writable without false 304 or GET writes", async () => {
+it("R5 HTTP browser reads current renamed state without false 304 or GET writes", async () => {
 	marker();
 	const prior = rows("SELECT id FROM accounts WHERE is_active=1")[0]?.id;
 	rows(
-		`UPDATE accounts SET is_active=0 WHERE is_active=1; UPDATE accounts SET is_active=1 WHERE id=${quote(account)}; UPDATE catalog_repositories SET repo=${quote(`${owner}/renamed`)},removed_at='2026-10-23T00:00:00.000Z' WHERE account_id=${quote(account)} AND identity_key='R_app';`,
+		`UPDATE accounts SET is_active=0 WHERE is_active=1; UPDATE accounts SET is_active=1 WHERE id=${quote(account)}; UPDATE refresh_catalog SET repo=${quote(`${owner}/renamed`)},payload=json_set(payload,'$.name_with_owner',${quote(`${owner}/renamed`)}) WHERE account_id=${quote(account)} AND repo_id='R_app';`,
 	);
 	try {
 		const before = rows(
@@ -148,7 +157,7 @@ it("R5 HTTP browser reads active-account state and renamed/removed state stays w
 		expect(await response.json()).toMatchObject({
 			account_id: account,
 			repo: `${owner}/renamed`,
-			repo_removed: true,
+			repo_removed: false,
 			revision: 4,
 		});
 		expect(
@@ -179,9 +188,7 @@ it("R5 HTTP browser reads active-account state and renamed/removed state stays w
 it("R5 HTTP protects special-name scopes, identity-safe revisions and opaque JSON validation", async () => {
 	marker();
 	const seed = (identity: string, name: string) =>
-		rows(
-			`INSERT INTO catalog_repositories(account_id,identity_key,github_id,repo,row_payload,is_archived,visibility,is_fork,first_seen_source) VALUES(${quote(account)},${quote(identity)},${quote(identity)},${quote(name)},'{}',0,'PUBLIC',0,'github_catalog');`,
-		);
+		rows(savedRepositorySql(account, identity, name, new Date().toISOString()));
 	for (const [identity, name] of [
 		["R_agent", `${owner}/agent`],
 		["R_owner", "agent/app"],
@@ -213,7 +220,7 @@ it("R5 HTTP protects special-name scopes, identity-safe revisions and opaque JSO
 			(await request("PUT", { revision: original.revision, payload: nested }, {}, name)).status,
 		).toBe(400);
 		rows(
-			`UPDATE catalog_repositories SET removed_at='2026-10-22T06:00:00Z' WHERE account_id=${quote(account)} AND identity_key=${quote(identity)};`,
+			`UPDATE refresh_catalog SET active=0 WHERE account_id=${quote(account)} AND repo_id=${quote(identity)};`,
 		);
 		seed(`${identity}_new`, name);
 		const fresh = await request("PUT", { payload: { summary: "replacement" } }, {}, name);

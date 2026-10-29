@@ -17,7 +17,7 @@ export function FactoryEmpty() {
 		<div className="factory-board">
 			<FactoryPanel title="暂无已保存的快照" hint="使用当前 GitHub 账号">
 				<p className="text-sm text-basalt-muted-foreground">
-					旧刷新已停用，当前无法采集新数据。已有快照仍可只读查看；缺少数据不代表没有活动。
+					可从顶部发起统一刷新，先读取账号信息，再串行刷新星标与新发现的仓库。缺少数据不代表没有活动。
 				</p>
 			</FactoryPanel>
 			<section className="factory-period" aria-label="区间变化">

@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 import type { FactoryCoverage, FactoryEvent, FactoryStreamName } from "../../lib/factory-types";
+import { ApiError } from "../lib/errors";
 import { loadFactoryDetail } from "../viewmodels/factory";
 import { RepoFactoryTab } from "./repo-factory";
 
@@ -11,10 +12,56 @@ vi.mock("../viewmodels/factory", async (original) => ({
 	...(await original<typeof import("../viewmodels/factory")>()),
 	loadFactoryDetail: vi.fn(),
 }));
+const refreshModel = vi.hoisted(() => {
+	const listeners = new Set<() => void>();
+	return {
+		listeners,
+		subscribeData: (listener: () => void) => {
+			listeners.add(listener);
+			return () => {
+				listeners.delete(listener);
+			};
+		},
+	};
+});
+vi.mock("../components/layout/refresh-provider", () => ({ useRefreshModel: () => refreshModel }));
 
 afterEach(() => {
+	refreshModel.listeners.clear();
 	vi.restoreAllMocks();
 	vi.unstubAllGlobals();
+});
+
+it("rereads the current factory record page after refresh without resetting pagination", async () => {
+	vi.mocked(loadFactoryDetail).mockResolvedValue({
+		account_id: "a".repeat(21),
+		runId: "run",
+		repo: "nocoo/app",
+		stream: "prs",
+		coverage,
+		page: 1,
+		total: 101,
+		items: [event({})],
+	});
+	const { container, root } = await render();
+	try {
+		const next = Array.from(container.querySelectorAll("button")).find(
+			(item) => item.textContent === "下一页",
+		);
+		await act(async () => next?.click());
+		expect(container.textContent).toContain("第 2/2 页");
+		expect(refreshModel.listeners.size).toBe(1);
+		vi.mocked(loadFactoryDetail).mockClear();
+		await act(async () => {
+			for (const listener of refreshModel.listeners) listener();
+		});
+		expect(loadFactoryDetail).toHaveBeenCalledOnce();
+		expect(loadFactoryDetail).toHaveBeenCalledWith("nocoo/app", "prs", 2, "", "", "all");
+		expect(container.textContent).toContain("第 2/2 页");
+	} finally {
+		await act(async () => root.unmount());
+	}
+	expect(refreshModel.listeners.size).toBe(0);
 });
 
 const coverage: FactoryCoverage = {
@@ -60,6 +107,20 @@ async function render(stream: FactoryStreamName = "prs") {
 	);
 	return { container, root, onStream };
 }
+
+it("keeps skipped dependency resources missing instead of showing zero observations", async () => {
+	vi.mocked(loadFactoryDetail).mockRejectedValue(new ApiError(409, "snapshot_missing", "missing"));
+	const { container, root } = await render("dependencies");
+	try {
+		expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+			"暂无已保存的资源快照；缺失不代表没有记录。",
+		);
+		expect(container.querySelector(".factory-provenance")).toBeNull();
+		expect(container.textContent).not.toContain("0 条观察记录");
+	} finally {
+		await act(async () => root.unmount());
+	}
+});
 
 it("renders a pull request record with state, review, checks, author and merge time", async () => {
 	vi.mocked(loadFactoryDetail).mockResolvedValue({

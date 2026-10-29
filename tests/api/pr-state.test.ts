@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { executeD1FixtureSync } from "../fixtures/d1";
 import { factoryFixture } from "../fixtures/factory-snapshot";
+import { savedSnapshotSql } from "./saved-fixture";
 
 const base = process.env.GIRAFFE_E2E ?? "http://127.0.0.1:17045";
 const account = randomUUID().replaceAll("-", "").slice(0, 21);
@@ -36,8 +37,8 @@ function marker() {
 	expect(sql("SELECT value FROM _test_marker WHERE key='env'")).toEqual([{ value: "test" }]);
 }
 
-function snapshot(kind: string, data: unknown) {
-	return `INSERT INTO snapshots(account_id,kind,payload,fetched_at) VALUES(${quote(account)},${quote(kind)},${quote(JSON.stringify(data))},${quote(at)});`;
+function snapshot(kind: string, data: object) {
+	return savedSnapshotSql(account, kind, { ...data }, at);
 }
 
 beforeAll(() => {
@@ -94,7 +95,7 @@ function get(path: string, bearer = token, selected = account) {
 it("returns consistent known and legacy PR state on all three read-only endpoints", async () => {
 	const stored = () =>
 		sql(
-			`SELECT * FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind; SELECT * FROM api_tokens WHERE account_id=${quote(account)} ORDER BY id;`,
+			`SELECT * FROM refresh_snapshots WHERE account_id=${quote(account)} ORDER BY kind; SELECT * FROM api_tokens WHERE account_id=${quote(account)} ORDER BY id;`,
 		);
 	const calls = await (await fetch("http://127.0.0.1:17046/_count")).text();
 	const before = stored();

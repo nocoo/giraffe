@@ -1,6 +1,7 @@
 export const NUM_HEAD = "text-right";
 export const NUM_CELL = "text-right tabular-nums";
 export const DATE_CELL = "text-right tabular-nums whitespace-nowrap text-basalt-muted-foreground";
+export const DISPLAY_TIMEZONE = "Asia/Shanghai";
 
 export type CandyTone =
 	| "green"
@@ -35,7 +36,7 @@ export function candyClass(tone: CandyTone): string {
 	return `border-transparent ${foreground} ${CANDY_CLASS[tone]}`;
 }
 
-export function formatDate(value: string | null | undefined, timeZone?: string): string {
+export function formatDate(value: string | null | undefined, timeZone = DISPLAY_TIMEZONE): string {
 	const timestamp = value ? Date.parse(value) : Number.NaN;
 	if (!Number.isFinite(timestamp)) return "—";
 	const parts = Object.fromEntries(
@@ -46,7 +47,7 @@ export function formatDate(value: string | null | undefined, timeZone?: string):
 			hour: "2-digit",
 			minute: "2-digit",
 			hourCycle: "h23",
-			...(timeZone ? { timeZone } : {}),
+			timeZone,
 		})
 			.formatToParts(timestamp)
 			.map(({ type, value }) => [type, value]),
@@ -54,20 +55,23 @@ export function formatDate(value: string | null | undefined, timeZone?: string):
 	return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
 }
 
-export function formatDayRange(day: string, lastDay = day, timeZone?: string): string {
+export function formatDayRange(day: string, lastDay = day, timeZone = "UTC"): string {
 	const end = Date.parse(lastDay) + 86_400_000;
 	if (!Number.isFinite(Date.parse(day)) || !Number.isFinite(end)) return "—";
-	return `${formatDate(day, timeZone)} → ${formatDate(new Date(end).toISOString(), timeZone)}`;
+	return `${day} 00:00 → ${new Date(end).toISOString().slice(0, 10)} 00:00 (${timeZone})`;
 }
 
-export function formatPreciseDate(value: string | null | undefined, timeZone?: string): string {
+export function formatPreciseDate(
+	value: string | null | undefined,
+	timeZone = DISPLAY_TIMEZONE,
+): string {
 	const timestamp = value ? Date.parse(value) : Number.NaN;
 	if (!Number.isFinite(timestamp)) return "时间未知";
 	return new Intl.DateTimeFormat("zh-CN", {
 		dateStyle: "medium",
 		timeStyle: "medium",
 		hourCycle: "h23",
-		...(timeZone ? { timeZone } : {}),
+		timeZone,
 	}).format(timestamp);
 }
 

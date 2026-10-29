@@ -4,6 +4,7 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 import type { FactorySnapshot } from "../../apps/web/src/lib/factory-types";
 import { executeD1FixtureSync } from "../fixtures/d1";
 import { factoryFixture } from "../fixtures/factory-snapshot";
+import { savedSnapshotSql } from "./saved-fixture";
 
 const base = process.env.GIRAFFE_E2E ?? "http://127.0.0.1:17045";
 const account = randomUUID().replaceAll("-", "").slice(0, 21);
@@ -35,8 +36,8 @@ function assertMarker() {
 }
 
 const quote = (value: string) => `'${value.replaceAll("'", "''")}'`;
-function snapshot(kind: string, value: unknown) {
-	return `INSERT INTO snapshots(account_id,kind,payload,fetched_at) VALUES(${quote(account)},${quote(kind)},${quote(JSON.stringify(value))},${quote(at)});`;
+function snapshot(kind: string, value: object) {
+	return savedSnapshotSql(account, kind, { ...value }, at);
 }
 
 beforeAll(() => {
@@ -51,6 +52,7 @@ beforeAll(() => {
 	publication.window = { since: "2026-07-20T00:00:00.000Z", until: at };
 	publication.repos = ["nocoo/app", "nocoo/disabled", "nocoo/removed"].map((name) => ({
 		...repo,
+		id: `R_${name}`,
 		name,
 		observation: {
 			version: `repository-${account}`,
@@ -88,7 +90,6 @@ beforeAll(() => {
 				truncated: false,
 			}),
 			snapshot(`factory:v:${publication.runId}`, publication),
-			`INSERT INTO factory_state(account_id,published_id,next_at) VALUES(${quote(account)},${quote(publication.runId)},${quote(at)});`,
 			`INSERT INTO repo_stars(account_id,repo) VALUES(${quote(account)},'NOCOO/APP'),(${quote(account)},'nocoo/removed');`,
 			`INSERT INTO repo_statistics VALUES(${quote(account)},'nocoo/disabled',0);`,
 		].join("\n"),
@@ -108,12 +109,10 @@ it.each(["complete", "pending", "unavailable"] as const)(
 	async (status) => {
 		assertMarker();
 		publication.contributionStatus = status;
-		rows(
-			`UPDATE snapshots SET payload=${quote(JSON.stringify(publication))} WHERE account_id=${quote(account)} AND kind=${quote(`factory:v:${publication.runId}`)};`,
-		);
+		rows(snapshot("factory", publication));
 		const saved = () =>
 			rows(
-				`SELECT kind,payload,fetched_at FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind; SELECT * FROM api_tokens WHERE account_id=${quote(account)}; SELECT * FROM factory_state WHERE account_id=${quote(account)}; SELECT * FROM accounts ORDER BY id;`,
+				`SELECT kind,payload,fetched_at FROM refresh_snapshots WHERE account_id=${quote(account)} ORDER BY kind; SELECT * FROM api_tokens WHERE account_id=${quote(account)}; SELECT * FROM refresh_publications WHERE account_id=${quote(account)}; SELECT * FROM accounts ORDER BY id;`,
 			);
 		const before = saved();
 		const countBefore = await (await fetch("http://127.0.0.1:17046/_count")).text();

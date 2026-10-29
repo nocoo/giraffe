@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { factoryFixture } from "../../../../../tests/fixtures/factory-snapshot";
+import { emptyDay } from "../../lib/factory";
 import {
 	alertsBoard,
 	inboxBoard,
@@ -162,6 +164,41 @@ describe("merged pull request history", () => {
 });
 
 describe("single repository factory series", () => {
+	it.each(["observation", "completeWindows"])(
+		"does not combine retained source timezones from %s",
+		(source) => {
+			const snapshot = factoryFixture();
+			const repo = snapshot.repos[0];
+			if (!repo) throw new Error("fixture");
+			const window = {
+				since: "2026-10-27T16:00:00Z",
+				until: "2026-10-28T15:59:59.999Z",
+				timezone: "Asia/Shanghai",
+			};
+			const retained = {
+				since: "2026-10-28T04:00:00Z",
+				until: "2026-10-29T03:59:59.999Z",
+				timezone: "America/New_York",
+			};
+			repo.metrics.days = { "2026-10-28": { ...emptyDay(), commits: 2, prMerged: 1 } };
+			repo.observation = {
+				version: "current",
+				source: "run",
+				refreshedAt: snapshot.fetched_at,
+				window,
+			};
+			if (source === "observation")
+				repo.coverage.commits.observation = {
+					version: "retained",
+					source: "run",
+					refreshedAt: snapshot.fetched_at,
+					window: retained,
+					head: null,
+				};
+			else repo.coverage.commits.completeWindows = [retained];
+			expect(repoFactorySeries(repo, window)).toEqual([]);
+		},
+	);
 	it.each([30, 90])("builds %i UTC dates including the partial last day", (dayCount) => {
 		const until = "2026-09-15T22:00:00.000Z";
 		const since = new Date(Date.parse("2026-09-15") - (dayCount - 1) * 86_400_000).toISOString();
@@ -169,6 +206,19 @@ describe("single repository factory series", () => {
 		expect(series).toHaveLength(dayCount);
 		expect(series[0]?.x).toBe(since.slice(0, 10));
 		expect(series.at(-1)?.x).toBe("2026-09-15");
+	});
+	it("keeps a Shanghai calendar day aligned with the repository's date keys", () => {
+		const series = repoFactorySeries(
+			{ metrics: { days: { "2026-10-28": { ...emptyDay(), commits: 2 } } } },
+			{
+				since: "2026-10-27T16:00:00Z",
+				until: "2026-10-28T15:59:59.999Z",
+				timezone: "Asia/Shanghai",
+			},
+		);
+		expect(series.map(({ x, commits }) => ({ x, commits }))).toEqual([
+			{ x: "2026-10-28", commits: 2 },
+		]);
 	});
 	it("does not include the exclusive UTC midnight endpoint", () => {
 		expect(

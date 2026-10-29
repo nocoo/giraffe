@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import type { RepoMeta } from "../../apps/web/src/lib/repo-meta";
 import { executeD1FixtureSync } from "../fixtures/d1";
+import { savedRepositorySql, savedSnapshotSql } from "./saved-fixture";
 
 const base = process.env.GIRAFFE_E2E ?? "http://127.0.0.1:17045";
 const account = randomUUID().replaceAll("-", "").slice(0, 21);
@@ -56,8 +57,16 @@ beforeAll(() => {
 			mint(bearer, ["app:read", "app:write", "observations:read"], "writer"),
 			mint(reader, ["app:read"], "reader"),
 			mint(wrong, ["observations:read", "agent:read", "agent:write"], "wrong"),
-			`INSERT INTO catalog_repositories(account_id,identity_key,github_id,repo,row_payload,first_seen_at,is_archived,visibility,is_fork,first_seen_source) VALUES(${quote(account)},'R_app','R_app',${quote(repository)},${quote(JSON.stringify({ name_with_owner: repository }))},${quote(now)},0,'PUBLIC',0,'github_catalog');`,
-			`INSERT INTO snapshots(account_id,kind,payload,fetched_at) VALUES(${quote(account)},'repos',${quote(JSON.stringify({ repos: [{ name_with_owner: repository }], fetched_at: now, truncated: false }))},${quote(now)});`,
+			savedSnapshotSql(
+				account,
+				"repos",
+				{
+					repos: [{ id: "R_app", name_with_owner: repository }],
+					fetched_at: now,
+					truncated: false,
+				},
+				now,
+			),
 		].join("\n"),
 	);
 });
@@ -148,21 +157,19 @@ it("R6 HTTP enforces strict metadata validation, scopes, fixed-account boundarie
 		["R_owner", "agent/app"],
 	] as const) {
 		marker();
-		rows(
-			`INSERT INTO catalog_repositories(account_id,identity_key,github_id,repo,row_payload,is_archived,visibility,is_fork,first_seen_source) VALUES(${quote(account)},${quote(identity)},${quote(identity)},${quote(name)},'{}',0,'PUBLIC',0,'github_catalog');`,
-		);
+		rows(savedRepositorySql(account, identity, name, new Date().toISOString()));
 		expect((await request("GET", undefined, bearer, name)).status).toBe(200);
 		expect((await request("PUT", { category: "app" }, wrong, name)).status).toBe(403);
 		expect((await request("PUT", { category: "app" }, bearer, name)).status).toBe(200);
 	}
 });
 
-it("R6 HTTP browser reads retained renamed metadata and GET never changes rows or upstream call counts", async () => {
+it("R6 HTTP browser reads current renamed metadata and GET never changes rows or upstream call counts", async () => {
 	marker();
 	const prior = rows("SELECT id FROM accounts WHERE is_active=1")[0]?.id;
 	const renamed = `${owner}/renamed`;
 	rows(
-		`UPDATE accounts SET is_active=0 WHERE is_active=1; UPDATE accounts SET is_active=1 WHERE id=${quote(account)}; UPDATE catalog_repositories SET repo=${quote(renamed)},removed_at='2026-10-23T00:00:00.000Z' WHERE account_id=${quote(account)} AND identity_key='R_app';`,
+		`UPDATE accounts SET is_active=0 WHERE is_active=1; UPDATE accounts SET is_active=1 WHERE id=${quote(account)}; UPDATE refresh_catalog SET repo=${quote(renamed)},payload=json_set(payload,'$.name_with_owner',${quote(renamed)}) WHERE account_id=${quote(account)} AND repo_id='R_app';`,
 	);
 	try {
 		const before = rows(
@@ -177,8 +184,8 @@ it("R6 HTTP browser reads retained renamed metadata and GET never changes rows o
 		expect(await browser.json()).toMatchObject({
 			account_id: account,
 			repo: renamed,
-			repo_removed: true,
-			deleted_at: "2026-10-23T00:00:00.000Z",
+			repo_removed: false,
+			deleted_at: null,
 			category: "docs-vault",
 		});
 		expect((await request("GET", undefined, bearer, renamed)).status).toBe(200);

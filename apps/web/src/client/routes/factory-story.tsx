@@ -190,7 +190,8 @@ export function PeriodStrip({
 					onValueChange={(value) => onPeriod(Number(value) as Period)}
 				/>
 				<span>
-					{formatDayRange(p.since, p.until)} · 对比前 {period} 天 · {activeRepos} 仓 7 日内活跃
+					{formatDayRange(p.since, p.until, p.timezone)} · 对比前 {period} 天 · {activeRepos} 仓 7
+					日内活跃
 				</span>
 			</header>
 			<dl>
@@ -222,7 +223,7 @@ function DayTooltip({
 	if (!active || !d) return null;
 	return (
 		<div className="factory-chart-tip">
-			<strong>{formatDayRange(d.date)}</strong>
+			<strong>{formatDayRange(d.date, d.date, d.timezone)}</strong>
 			{rows.map((r) => (
 				<ChartTooltipRow key={r.label} label={r.label} color={r.color} value={r.value(d)} />
 			))}

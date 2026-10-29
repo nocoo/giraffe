@@ -4,7 +4,7 @@ Bun monorepo: `apps/web` owns the Worker and SPA. Root `package.json` is the aut
 
 Personal GitHub console with saved account snapshots, inboxes and repository detail.
 Profile: ts-worker-web.
-Direction: [Phase 1 retirement](docs/14-phase1-retirement.md), [saved factory observations](docs/06-software-factory.md) and [quality](docs/02-quality.md). Frameworks must not rewrite this file.
+Direction: [unified refresh](docs/15-unified-refresh.md), [saved factory observations](docs/06-software-factory.md) and [quality](docs/02-quality.md). Frameworks must not rewrite this file.
 
 ## Scope and instruction sources
 
@@ -19,7 +19,7 @@ Direction: [Phase 1 retirement](docs/14-phase1-retirement.md), [saved factory ob
 - Browser calls go through `apps/web/src/client/lib/api.ts` using relative `/api/` URLs; GitHub calls use `createGithubClient(env)`. Production ignores fixture GitHub/JWKS overrides. GET snapshots are read-only and must not silently fetch upstream or write data.
 - Server tests must not import the client. Viewmodels stay free of View/DOM imports and views/routes stay thin. The React/Basalt client now exists; historical phase-1 exclusions are no longer the current project scope.
 - Automated tests use local Wrangler/SQLite and GitHub/JWKS stubs, never real PATs, daily `.dev.vars` or `api.github.com`. Never use remote D1 or deploy remote `-test` resources.
-- Phase 1 removes old refresh/collection, run orchestration, queues, cron and the analysis product surface. No A+B collector or replacement refresh is authorized. Saved observations retain original timestamps, windows and missingness; missing coverage is not a successful zero. No data migration is introduced; legacy tables can remain inert. Details: [retirement contract](docs/14-phase1-retirement.md).
+- Phase 2 authorizes one durable A-then-serial-B refresh, the 03:00 Asia/Shanghai starred schedule and explicit single-repository refresh. New repositories get initial observations without auto-starring. Cache complete repo×day×dimension observations by stable identity and timezone; preserve timestamps and missingness. Only new refresh tables feed observations, with no legacy data migration/fallback. Legacy quick/deep/full modes, queues and analysis UI stay removed. Details: [refresh contract](docs/15-unified-refresh.md).
 - Keep strict TDD: failing tests remain in the working tree; commits pass current L1. Never skip hooks to publish a failing change.
 
 ## Setup and commands

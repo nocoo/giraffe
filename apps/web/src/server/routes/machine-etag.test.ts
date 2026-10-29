@@ -108,7 +108,8 @@ it("measures source decoding and projection even with a coarsened worker clock",
 
 it("conditionally returns large source responses with strong folded tags and retained private headers", async () => {
 	const s = await setup();
-	const snapshots = (await s.raw.prepare("SELECT * FROM snapshots ORDER BY kind").all()).results;
+	const snapshots = (await s.raw.prepare("SELECT * FROM refresh_snapshots ORDER BY kind").all())
+		.results;
 	const tokens = (await s.raw.prepare("SELECT * FROM api_tokens ORDER BY id").all()).results;
 	const response = await s.call();
 	expect(response.status).toBe(200);
@@ -129,9 +130,9 @@ it("conditionally returns large source responses with strong folded tags and ret
 	expect(unchanged.status).toBe(200);
 	expect(requireTag(unchanged)).toBe(tag);
 	expect(await unchanged.text()).toBe(body);
-	expect((await s.raw.prepare("SELECT * FROM snapshots ORDER BY kind").all()).results).toEqual(
-		snapshots,
-	);
+	expect(
+		(await s.raw.prepare("SELECT * FROM refresh_snapshots ORDER BY kind").all()).results,
+	).toEqual(snapshots);
 	expect((await s.raw.prepare("SELECT * FROM api_tokens ORDER BY id").all()).results).toEqual(
 		tokens,
 	);
@@ -192,8 +193,8 @@ it("invalidates response variants and metadata without relying on source timesta
 	s.snapshot.repos[0]?.coverage.dependencies &&
 		s.snapshot.repos[0].coverage.dependencies.observed++;
 	await s.raw
-		.prepare("UPDATE snapshots SET payload=? WHERE account_id=? AND kind=?")
-		.bind(JSON.stringify(s.snapshot), s.account, `factory:v:${s.snapshot.runId}`)
+		.prepare("UPDATE refresh_snapshots SET payload=? WHERE account_id=? AND kind=?")
+		.bind(JSON.stringify(s.snapshot), s.account, `factory`)
 		.run();
 	const changed = await s.call(fullTag);
 	expect(changed.status).toBe(200);
@@ -204,7 +205,7 @@ it("invalidates response variants and metadata without relying on source timesta
 	);
 	await s.raw
 		.prepare(
-			"UPDATE snapshots SET payload=json_set(payload,'$.issues[0].title','changed without timestamp') WHERE account_id=? AND kind='repo:fixture/project-001:issues'",
+			"UPDATE refresh_snapshots SET payload=json_set(payload,'$.issues[0].title','changed without timestamp') WHERE account_id=? AND kind='repo:fixture/project-001:issues'",
 		)
 		.bind(s.account)
 		.run();
@@ -214,7 +215,7 @@ it("invalidates response variants and metadata without relying on source timesta
 	expect(contentTag).not.toBe(changedTag);
 	await s.raw
 		.prepare(
-			"UPDATE snapshots SET payload=json_set(payload,'$.repos[0].description','changed catalog') WHERE account_id=? AND kind='repos'",
+			"UPDATE refresh_snapshots SET payload=json_set(payload,'$.repos[0].description','changed catalog') WHERE account_id=? AND kind='repos'",
 		)
 		.bind(s.account)
 		.run();

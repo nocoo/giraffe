@@ -1,12 +1,13 @@
 # Machine API v1: saved data and external resources
 
-Version 0.26.0 removes collection execution and the analysis product surface.
-The machine API remains an authenticated boundary for saved observations,
-application settings and externally owned resources. No endpoint executes local
-code, schedules analysis or starts a GitHub collector.
+Version 0.27.0 adds scoped unified-refresh run creation/history/status and keeps
+the analysis product surface removed. The machine API remains an authenticated
+boundary for saved observations, application settings and externally owned
+resources. No endpoint executes local code or schedules analysis.
 
 The complete payload and endpoint reference is [api.md](api.md). Retired endpoint
-responses and post-deploy checks are in [Phase 1 retirement](14-phase1-retirement.md).
+history is in [Phase 1 retirement](14-phase1-retirement.md); current refresh
+parameters, scheduling and post-deploy checks are in [Phase 2](15-unified-refresh.md).
 
 ## Authentication
 

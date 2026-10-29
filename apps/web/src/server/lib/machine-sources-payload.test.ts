@@ -27,7 +27,7 @@ async function fixture() {
 		snapshots.set(kind, data);
 		await raw
 			.prepare(
-				"INSERT INTO snapshots(account_id,kind,payload,fetched_at,content_meta) VALUES(?,?,?,?,?) ON CONFLICT(account_id,kind) DO UPDATE SET payload=excluded.payload,content_meta=excluded.content_meta",
+				"INSERT INTO refresh_snapshots(account_id,kind,payload,fetched_at,content_meta) VALUES(?,?,?,?,?) ON CONFLICT(account_id,kind) DO UPDATE SET payload=excluded.payload,content_meta=excluded.content_meta",
 			)
 			.bind(
 				account,
@@ -138,11 +138,11 @@ async function fixture() {
 		};
 	}
 	const saved = async () =>
-		(await raw.prepare("SELECT * FROM snapshots ORDER BY kind").all()).results;
+		(await raw.prepare("SELECT * FROM refresh_snapshots ORDER BY kind").all()).results;
 	const payloadBytes = async () =>
 		(
 			await raw
-				.prepare("SELECT SUM(length(CAST(payload AS BLOB))) AS bytes FROM snapshots")
+				.prepare("SELECT SUM(length(CAST(payload AS BLOB))) AS bytes FROM refresh_snapshots")
 				.first<{ bytes: number }>()
 		)?.bytes;
 	async function read(query: Record<string, string> = {}) {
@@ -200,13 +200,13 @@ it.each([
 		const kind = `repo:${repository}:${suffix}`;
 		if (mode.startsWith("split")) {
 			const root = await source.raw
-				.prepare("SELECT payload,content_meta FROM snapshots WHERE kind=?")
+				.prepare("SELECT payload,content_meta FROM refresh_snapshots WHERE kind=?")
 				.bind(kind)
 				.first<SnapshotRow>();
 			if (!root) throw new Error("missing fixture root");
 			await source.raw
 				.prepare(
-					"INSERT INTO snapshots(account_id,kind,payload,fetched_at,content_meta) VALUES(?,?,?,?,?)",
+					"INSERT INTO refresh_snapshots(account_id,kind,payload,fetched_at,content_meta) VALUES(?,?,?,?,?)",
 				)
 				.bind(
 					account,
@@ -229,7 +229,7 @@ it.each([
 				"non-string-full-version": '{"hash":"hash","fullVersion":null}',
 			};
 			await source.raw
-				.prepare("UPDATE snapshots SET content_meta=? WHERE kind=?")
+				.prepare("UPDATE refresh_snapshots SET content_meta=? WHERE kind=?")
 				.bind(metadata[mode] ?? null, kind)
 				.run();
 		}
@@ -247,7 +247,7 @@ it("preserves empty arrays, unsupported shapes and invalid-JSON orphan tails", a
 	await source.save(`repo:${repository}:releases`, { releases: [], freshness: "unknown" });
 	await source.raw
 		.prepare(
-			'INSERT INTO snapshots(account_id,kind,payload,fetched_at,content_meta) VALUES(?,?,\'not-json\',?,\'{"hash":"h","fullVersion":"v"}\')',
+			'INSERT INTO refresh_snapshots(account_id,kind,payload,fetched_at,content_meta) VALUES(?,?,\'not-json\',?,\'{"hash":"h","fullVersion":"v"}\')',
 		)
 		.bind(account, `repo:${repository}:orphan:actions#2`, at)
 		.run();

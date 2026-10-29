@@ -26,18 +26,20 @@ async function fixture() {
 		removed: string | null = null,
 	) => {
 		await raw
+			.prepare("UPDATE refresh_catalog SET active=0 WHERE account_id=? AND repo=? COLLATE NOCASE")
+			.bind(account, name)
+			.run();
+		await raw
 			.prepare(
-				"INSERT INTO catalog_repositories(account_id,identity_key,github_id,repo,row_payload,first_seen_at,last_seen_at,removed_at,is_archived,visibility,is_fork,first_seen_source) VALUES(?,?,?,?,?,?,?, ?,0,'PUBLIC',0,'github_catalog')",
+				"INSERT INTO refresh_catalog(account_id,repo_id,repo,discovered_day,timezone,payload,fetched_at,active) VALUES(?,?,?,'2026-10-22','Asia/Shanghai',?,?,?)",
 			)
 			.bind(
 				account,
 				identity,
-				identity,
 				name,
 				JSON.stringify({ name_with_owner: name }),
 				at,
-				at,
-				removed,
+				Number(removed === null),
 			)
 			.run();
 	};
@@ -60,7 +62,7 @@ it("R6 reads catalog timestamps and empty metadata without writes or upstream ac
 			repo: "owner/app",
 			repo_removed: false,
 			created_at: null,
-			first_seen_at: at,
+			first_seen_at: null,
 			archived_at: null,
 			deleted_at: null,
 			category: null,
@@ -105,24 +107,30 @@ it("R6 atomically patches only specified fields and sources, including concurren
 	expect(await s.stored()).toEqual(before);
 });
 
-it("R6 metadata follows identity through rename/removal, isolates accounts/name replacements", async () => {
+it("R6 metadata follows current identity through rename and isolates inactive identities, replacements and accounts", async () => {
 	const s = await fixture();
 	await s.write({ category: "profile" });
 	await s.raw
 		.prepare(
-			"UPDATE catalog_repositories SET repo='owner/renamed',removed_at=? WHERE account_id='a' AND identity_key='R_app'",
+			"UPDATE refresh_catalog SET repo='owner/renamed' WHERE account_id='a' AND repo_id='R_app'",
 		)
-		.bind(at)
 		.run();
 	expect(await s.read("owner/renamed")).toMatchObject({
-		repo_removed: true,
-		deleted_at: at,
-		first_seen_at: at,
+		repo_removed: false,
+		deleted_at: null,
+		first_seen_at: null,
 		category: "profile",
 	});
 	expect(await s.write({ category: "repro" }, "owner/renamed")).toMatchObject({
-		repo_removed: true,
+		repo_removed: false,
 		category: "repro",
+	});
+	await s.raw
+		.prepare("UPDATE refresh_catalog SET active=0 WHERE account_id='a' AND repo_id='R_app'")
+		.run();
+	await expect(s.read("owner/renamed")).rejects.toMatchObject({ status: 404 });
+	await expect(s.write({ category: "app" }, "owner/renamed")).rejects.toMatchObject({
+		status: 404,
 	});
 	await s.repo("R_new", "owner/renamed");
 	expect(await s.read("owner/renamed")).toMatchObject({
@@ -135,29 +143,21 @@ it("R6 metadata follows identity through rename/removal, isolates accounts/name 
 	await s.write({ category: "derivative" }, "owner/renamed", "b");
 	expect(await s.read("owner/renamed")).toMatchObject({ category: null });
 	await s.repo("R_removed", "owner/removed", "a", at);
-	expect(await s.write({ category: "derivative" }, "owner/removed")).toMatchObject({
-		repo_removed: true,
-		category: "derivative",
+	await expect(s.write({ category: "derivative" }, "owner/removed")).rejects.toMatchObject({
+		status: 404,
 	});
 	await expect(s.write({ category: "app" }, "owner/unknown")).rejects.toMatchObject({
 		status: 404,
 	});
 });
 
-it("R6 both enrichment orders preserve private identity and distinct same-name removed metadata", async () => {
+it("R6 both enrichment orders preserve private identity without attaching inactive same-name metadata or state", async () => {
 	const s = await fixture();
 	await s.write({ category: "app" });
 	await writeRepoAgentState(s.db, "a", "owner/app", { payload: { summary: "first" } }, "fixture");
-	await s.raw
-		.prepare("UPDATE catalog_repositories SET removed_at=? WHERE identity_key='R_app'")
-		.bind(at)
-		.run();
+	await s.raw.prepare("UPDATE refresh_catalog SET active=0 WHERE repo_id='R_app'").run();
 	await s.repo("R_new");
 	await s.write({ category: "docs-vault" });
-	await s.raw
-		.prepare("UPDATE catalog_repositories SET removed_at=? WHERE identity_key='R_new'")
-		.bind(at)
-		.run();
 	for (const reverse of [false, true]) {
 		let data: Record<string, unknown> = {
 			repos: [
@@ -176,8 +176,8 @@ it("R6 both enrichment orders preserve private identity and distinct same-name r
 			: await enrichRepoMeta(s.db, "a", data);
 		expect(data.repos).toEqual([
 			expect.objectContaining({
-				meta: expect.objectContaining({ category: "app", deleted_at: at }),
-				agent_state: expect.objectContaining({ summary: "first" }),
+				meta: null,
+				agent_state: null,
 			}),
 			expect.objectContaining({
 				meta: expect.objectContaining({ category: "docs-vault" }),

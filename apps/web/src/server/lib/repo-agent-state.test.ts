@@ -23,18 +23,20 @@ async function fixture() {
 		removed: string | null = null,
 	) {
 		await raw
+			.prepare("UPDATE refresh_catalog SET active=0 WHERE account_id=? AND repo=? COLLATE NOCASE")
+			.bind(account, name)
+			.run();
+		await raw
 			.prepare(
-				"INSERT INTO catalog_repositories(account_id,identity_key,github_id,repo,row_payload,first_seen_at,last_seen_at,removed_at,is_archived,visibility,is_fork,first_seen_source) VALUES(?,?,?,?,?,?,?, ?,0,'PUBLIC',0,'github_catalog')",
+				"INSERT INTO refresh_catalog(account_id,repo_id,repo,discovered_day,timezone,payload,fetched_at,active) VALUES(?,?,?,'2026-10-22','Asia/Shanghai',?,?,?)",
 			)
 			.bind(
 				account,
 				identity,
-				identity,
 				name,
 				JSON.stringify({ name_with_owner: name }),
 				at,
-				at,
-				removed,
+				Number(removed === null),
 			)
 			.run();
 	}
@@ -176,7 +178,7 @@ it.each([{}, { payload: null }, { payload: [] }, { payload: 1 }, { payload: {}, 
 	},
 );
 
-it("R5 removed repos need existing state and same-name replacement or other account never inherits it", async () => {
+it("R5 inactive repos cannot be read or written and replacements or other accounts never inherit state", async () => {
 	const s = await fixture();
 	await s.repo("R_removed", "owner/removed", "a", at);
 	await expect(s.write({ payload: {} }, undefined, "owner/removed")).rejects.toMatchObject({
@@ -184,11 +186,9 @@ it("R5 removed repos need existing state and same-name replacement or other acco
 	});
 	await s.write({ payload: { private_state: true } });
 	await s.raw
-		.prepare(
-			"UPDATE catalog_repositories SET removed_at=? WHERE account_id='a' AND identity_key='R_app'",
-		)
-		.bind(at)
+		.prepare("UPDATE refresh_catalog SET active=0 WHERE account_id='a' AND repo_id='R_app'")
 		.run();
+	await expect(s.read()).rejects.toMatchObject({ status: 404 });
 	await s.repo("R_replacement");
 	expect(await s.read()).toMatchObject({ repo_removed: false, payload: null, revision: null });
 	await s.repo("R_app", "owner/app", "b");
@@ -226,10 +226,7 @@ it("R5 /repos summaries are nullable and never attach removed identity state to 
 	).toMatchObject({
 		agent_state: { summary: null, status: null },
 	});
-	await s.raw
-		.prepare("UPDATE catalog_repositories SET removed_at=? WHERE identity_key='R_app'")
-		.bind(at)
-		.run();
+	await s.raw.prepare("UPDATE refresh_catalog SET active=0 WHERE repo_id='R_app'").run();
 	await s.repo("R_new");
 	expect(
 		(
@@ -243,7 +240,7 @@ it("R5 /repos summaries are nullable and never attach removed identity state to 
 		{
 			name_with_owner: "owner/app",
 			removed_at: at,
-			agent_state: { revision: 2, updated_at: expect.any(String), summary: null, status: null },
+			agent_state: null,
 		},
 	]);
 });
@@ -254,10 +251,7 @@ it.each(["body", "If-Match"] as const)(
 		const s = await fixture();
 		const old = await s.write({ payload: { summary: "old identity" } });
 		await s.raw
-			.prepare(
-				"UPDATE catalog_repositories SET removed_at=? WHERE account_id='a' AND identity_key='R_app'",
-			)
-			.bind(at)
+			.prepare("UPDATE refresh_catalog SET active=0 WHERE account_id='a' AND repo_id='R_app'")
 			.run();
 		await s.repo("R_new");
 		const fresh = await s.write({ payload: { summary: "new identity" } });
@@ -283,12 +277,10 @@ it.each(["body", "If-Match"] as const)(
 		await s.repo("R_second", "owner/second");
 		const original = await s.write({ payload: { summary: "first" } });
 		const second = await s.write({ payload: { summary: "second" } }, undefined, "owner/second");
-		await s.raw
-			.prepare("UPDATE catalog_repositories SET name_current=0 WHERE account_id='a'")
-			.run();
+		await s.raw.prepare("UPDATE refresh_catalog SET active=0 WHERE account_id='a'").run();
 		await s.raw
 			.prepare(
-				"UPDATE catalog_repositories SET repo=CASE identity_key WHEN 'R_app' THEN 'owner/second' ELSE 'owner/app' END,name_current=1 WHERE account_id='a'",
+				"UPDATE refresh_catalog SET repo=CASE repo_id WHEN 'R_app' THEN 'owner/second' ELSE 'owner/app' END,active=1 WHERE account_id='a'",
 			)
 			.run();
 		const before = await s.stored();

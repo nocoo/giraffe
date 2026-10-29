@@ -1,170 +1,341 @@
 import { expect, it, vi } from "vitest";
+import { refreshActivityFixture } from "../../../../../tests/fixtures/refresh-activity";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
-import type { ActivityRepo, ActivitySnapshot } from "../../lib/activity-types";
-import { activityTotals, unknownActivity } from "./activity";
+import type { FactorySnapshot, FactoryStreamData } from "../../lib/factory-types";
 import { readActivity } from "./activity-store";
 import { createDb } from "./db/d1";
 import { resolveFactoryRunReference } from "./db/factory-runs";
 import { replaceSnapshotStmts } from "./db/snapshots";
 
-const at = "2026-10-22T00:00:00.000Z";
-function repository(): ActivityRepo {
-	return {
-		repo: "owner/app",
-		ci_runs: [],
-		prs: { opened: [], merged: [], closed: [] },
-		issues: { opened: [], closed: [] },
-		releases: [],
-		commits: { default: null, other: null, items: null },
-		deploy: { last_success_at: null, runs: null },
-		snapshot: { open_prs: null, open_issues: null, dependabot: null, code_scanning: null },
-		coverage: Object.fromEntries(
-			["actions", "prs", "issues", "releases", "default_branch"].map((stream) => [
-				stream,
-				{ status: "complete", truncated: false, reason: null },
-			]),
-		),
-	};
-}
-async function fixture() {
-	const raw = sqliteFixture();
+it("projects newly refreshed repository lifecycle events without pretending daily commit totals are owner commits", async () => {
+	const { raw, now } = await refreshActivityFixture();
+	const network = vi.spyOn(globalThis, "fetch");
+	const before = await raw.prepare("SELECT * FROM refresh_resources ORDER BY repo_id,stream").all();
+	try {
+		const activity = await readActivity(createDb(raw), "a", {});
+		expect(activity).toMatchObject({
+			runId: "current-refresh",
+			fetchedAt: now,
+			membership: ["owner/app"],
+			totals: { issues_opened: 1, issues_closed: 1, merged_prs: 1, ci_runs: 1, releases: 1 },
+		});
+		expect(activity.repos[0]).toMatchObject({
+			issues: {
+				opened: [{ author: "collaborator", id: "I_1", closed_by: null }],
+				closed: [{ id: "I_1" }],
+			},
+			prs: {
+				opened: [{ id: "P_1", author: "collaborator" }],
+				merged: [{ id: "P_1", merged_by: null }],
+				closed: [{ id: "P_1" }],
+			},
+			commits: { default: null, other: null, items: null },
+			coverage: {
+				commits: { status: "unavailable" },
+				issues: { status: "complete" },
+				prs: { status: "complete" },
+			},
+		});
+		expect(network).not.toHaveBeenCalled();
+		expect(
+			await raw.prepare("SELECT * FROM refresh_resources ORDER BY repo_id,stream").all(),
+		).toEqual(before);
+	} finally {
+		network.mockRestore();
+	}
+});
+
+it("resolves current run aliases but never presents mutable current resources as a historical run", async () => {
+	const { raw, now } = await refreshActivityFixture();
 	const db = createDb(raw);
-	await db
+	for (const run of ["latest", "current", "current-refresh"])
+		expect(await readActivity(db, "a", { run: [run], repository: ["OWNER/APP"] })).toMatchObject({
+			runId: "current-refresh",
+			membership: ["owner/app"],
+		});
+	await raw
 		.prepare(
-			"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES('a','owner','fake','fake',?,?)",
+			"INSERT INTO refresh_runs(id,account_id,status,trigger,payload,created_at,updated_at) VALUES('previous','a','completed','manual','{}',?,?)",
 		)
-		.bind(at, at)
+		.bind(now, now)
 		.run();
-	const run = async (id: string, status = "completed") =>
-		db
-			.prepare(
-				"INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES(?,'a',?,?,'{}',?,?,?)",
-			)
-			.bind(id, id, status, at, at, at)
-			.run();
-	await run("saved-activity");
-	const repo = repository();
-	const snapshot: ActivitySnapshot = {
-		account_id: "a",
-		runId: "saved-activity",
-		previousRunId: null,
-		window: { since: "2026-10-21T00:00:00.000Z", until: at, first: true, gap: true },
-		fetchedAt: at,
-		membership: [repo.repo],
-		repos: [],
-		totals: activityTotals([]),
-		contributions: null,
-		coverage: {},
-		truncated: false,
-	};
-	const publish = async (repos: ActivityRepo[] = [repo]) => {
-		await db
-			.prepare(
-				"INSERT INTO activity_publications(account_id,run_id,until_at,fetched_at,payload,content_version) VALUES('a',?,?,?,?,?) ON CONFLICT(account_id,run_id) DO UPDATE SET payload=excluded.payload",
-			)
-			.bind(snapshot.runId, at, at, JSON.stringify(snapshot), "saved-content")
-			.run();
-		await db
-			.prepare(
-				"INSERT INTO activity_pages(account_id,run_id,page,payload) VALUES('a',?,0,?) ON CONFLICT(account_id,run_id,page) DO UPDATE SET payload=excluded.payload",
-			)
-			.bind(snapshot.runId, JSON.stringify(repos))
-			.run();
-	};
-	const catalog = async (repos: unknown[]) =>
-		db.batch(await replaceSnapshotStmts(db, "a", "repos", { repos }, at));
-	return { db, raw, repo, snapshot, run, publish, catalog };
-}
-
-it("reads the latest saved publication and repository projection without collection or writes", async () => {
-	const saved = await fixture();
-	await saved.publish();
-	const before = await saved.raw.prepare("SELECT * FROM activity_publications").all();
-	const upstream = vi.spyOn(globalThis, "fetch");
-	expect(await readActivity(saved.db, "a", {})).toMatchObject({
-		runId: "saved-activity",
-		repos: [{ repo: "owner/app" }],
-		totals_partial: false,
-	});
-	expect(
-		await readActivity(saved.db, "a", { run: ["saved"], repository: ["OWNER/APP"] }),
-	).toMatchObject({
-		repos: [{ repo: "owner/app" }],
-		contributions: null,
-		coverage: { repos: { status: "unavailable" } },
-	});
-	expect(await saved.raw.prepare("SELECT * FROM activity_publications").all()).toEqual(before);
-	expect(upstream).not.toHaveBeenCalled();
-	upstream.mockRestore();
-});
-
-it("distinguishes frozen omissions from a current catalog member outside the saved run", async () => {
-	const saved = await fixture();
-	saved.snapshot.membership = ["owner/omitted"];
-	await saved.publish([]);
-	expect(await readActivity(saved.db, "a", { repository: ["owner/omitted"] })).toMatchObject({
-		truncated: true,
-		coverage: { repos: { status: "partial" } },
-		totals: { ci_runs: null },
-	});
-	await saved.catalog([{ name_with_owner: "owner/current" }, {}]);
-	expect(await readActivity(saved.db, "a", { repository: ["owner/current"] })).toMatchObject({
-		truncated: false,
-		repos: [],
-		coverage: { repos: { status: "complete" } },
-	});
-	await expect(readActivity(saved.db, "a", { repository: ["outside/repo"] })).rejects.toMatchObject(
-		{ status: 404 },
-	);
-	await saved.catalog([]);
-	await expect(readActivity(saved.db, "a", { repository: ["outside/repo"] })).rejects.toMatchObject(
-		{ status: 404 },
-	);
-});
-
-it("retains legacy missing membership and unavailable evidence instead of reporting successful zeroes", async () => {
-	const saved = await fixture();
-	delete saved.snapshot.membership;
-	saved.snapshot.truncated = true;
-	saved.repo.coverage.actions = unknownActivity("not observed", true);
-	await saved.publish();
-	expect(await readActivity(saved.db, "a", {})).toMatchObject({ totals_partial: true });
-	expect(await readActivity(saved.db, "a", { repository: ["owner/app"] })).toMatchObject({
-		truncated: true,
-	});
-	await saved.catalog([{ name_with_owner: "owner/omitted" }]);
-	expect(await readActivity(saved.db, "a", { repository: ["owner/omitted"] })).toMatchObject({
-		truncated: true,
-		coverage: { repos: { status: "partial" } },
-	});
-	saved.snapshot.truncated = false;
-	saved.snapshot.coverage.repos = { status: "partial", truncated: false, reason: "saved" };
-	await saved.publish();
-	expect(await readActivity(saved.db, "a", { repository: ["owner/app"] })).toMatchObject({
-		coverage: { repos: { reason: "saved" } },
-	});
-});
-
-it("validates saved-run references and filters without invoking legacy orchestration", async () => {
-	const saved = await fixture();
-	for (const query of [{ run: ["saved", "saved"] }, { invalid: ["x"] }, { repository: ["bad"] }])
-		await expect(readActivity(saved.db, "a", query)).rejects.toMatchObject({ status: 400 });
-	await expect(readActivity(saved.db, "a", {})).rejects.toMatchObject({
+	await expect(readActivity(db, "a", { run: ["previous"] })).rejects.toMatchObject({
 		status: 409,
 		code: "activity_unpublished",
 	});
-	await expect(readActivity(saved.db, "a", { run: ["missing"] })).rejects.toMatchObject({
+});
+
+it("uses current immutable catalog identity after a rename and ignores retired identity and activity poison", async () => {
+	const { raw } = await refreshActivityFixture();
+	await raw.prepare("UPDATE refresh_catalog SET repo='owner/renamed' WHERE repo_id='R_APP'").run();
+	await raw
+		.prepare(
+			"INSERT INTO catalog_repositories(account_id,identity_key,github_id,repo,row_payload,is_archived,visibility,is_fork,first_seen_source) VALUES('a','RETIRED','RETIRED','owner/renamed','{}',0,'PUBLIC',0,'github_catalog')",
+		)
+		.run();
+	await raw
+		.prepare(
+			"INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES('retired','a','retired','completed','{}','future','future','future')",
+		)
+		.run();
+	await raw
+		.prepare(
+			"INSERT INTO activity_publications(account_id,run_id,until_at,fetched_at,payload,content_version) VALUES('a','retired','future','future','not-json','poison')",
+		)
+		.run();
+	const result = await readActivity(createDb(raw), "a", { repository: ["OWNER/RENAMED"] });
+	expect(result).toMatchObject({
+		membership: ["owner/renamed"],
+		runId: "current-refresh",
+		repos: [{ repo: "owner/renamed", issues: { opened: [{ id: "I_1" }] } }],
+	});
+	expect(result.repos[0]?.coverage.issues?.source?.runId).toBe("current-refresh");
+	await expect(
+		readActivity(createDb(raw), "a", { repository: ["owner/app"] }),
+	).rejects.toMatchObject({ status: 404 });
+});
+
+it("keeps newly discovered current members missing rather than zero and excludes inactive or foreign repositories", async () => {
+	const { raw, now } = await refreshActivityFixture();
+	for (const [id, repo, active] of [
+		["R_NEW", "owner/new", 1],
+		["R_FOREIGN", "someone/foreign", 1],
+		["R_GONE", "owner/gone", 0],
+	] as const)
+		await raw
+			.prepare(
+				"INSERT INTO refresh_catalog(account_id,repo_id,repo,discovered_day,timezone,payload,fetched_at,active) VALUES('a',?,?,'2026-10-28','Asia/Shanghai','{}',?,?)",
+			)
+			.bind(id, repo, now, active)
+			.run();
+	const db = createDb(raw);
+	const result = await readActivity(db, "a", {});
+	expect(result.membership).toEqual(["owner/app", "owner/new"]);
+	expect(result.repos[1]).toMatchObject({
+		repo: "owner/new",
+		issues: { opened: null, closed: null },
+		coverage: { issues: { status: "unavailable" } },
+	});
+	expect(result.totals).toMatchObject({ issues_opened: 1 });
+	expect(result.totals_coverage.missing).toContainEqual({
+		repo: "owner/new",
+		reason: "unavailable",
+		metrics: [
+			"ci_runs",
+			"merged_prs",
+			"dependency_prs",
+			"other_prs",
+			"issues_opened",
+			"issues_closed",
+			"releases",
+			"red_default_branch",
+		],
+	});
+	for (const repository of ["owner/gone", "someone/foreign"])
+		await expect(readActivity(db, "a", { repository: [repository] })).rejects.toMatchObject({
+			status: 404,
+		});
+});
+
+it("keeps canonical publication and per-stream truncation visible without inventing full totals", async () => {
+	const { raw, now } = await refreshActivityFixture();
+	const db = createDb(raw);
+	const row = await raw
+		.prepare("SELECT payload FROM refresh_snapshots WHERE kind='factory'")
+		.first<{ payload: string }>();
+	if (!row) throw new Error("factory fixture missing");
+	const publication = JSON.parse(row.payload) as FactorySnapshot;
+	publication.inventory.complete = false;
+	publication.truncated = true;
+	delete publication.publication;
+	await db.batch(
+		await replaceSnapshotStmts(
+			db,
+			"a",
+			"factory",
+			publication as unknown as Record<string, unknown>,
+			now,
+		),
+	);
+	const source = await raw
+		.prepare("SELECT payload FROM refresh_resources WHERE stream='issues'")
+		.first<{ payload: string }>();
+	if (!source) throw new Error("issue fixture missing");
+	const data = JSON.parse(source.payload) as FactoryStreamData;
+	data.coverage.status = "limited";
+	data.coverage.reason = "incomplete_pagination";
+	await raw
+		.prepare("UPDATE refresh_resources SET payload=? WHERE stream='issues'")
+		.bind(JSON.stringify(data))
+		.run();
+	const result = await readActivity(db, "a", {});
+	expect(result).toMatchObject({
+		fetchedAt: now,
+		truncated: true,
+		totals: { issues_opened: null },
+		coverage: { repos: { status: "partial", truncated: true, reason: "catalog_incomplete" } },
+	});
+	expect(result.repos[0]?.issues.opened).toHaveLength(1);
+	expect(result.repos[0]?.coverage.issues).toMatchObject({ status: "partial", truncated: true });
+	expect(result.totals_coverage.missing).toContainEqual({
+		repo: null,
+		reason: "omitted",
+		metrics: expect.arrayContaining(["issues_opened"]),
+	});
+});
+
+it.each([0, 1, 2, 3])(
+	"rejects incomplete canonical activity batches with only %i result sets",
+	async (count) => {
+		const { raw } = await refreshActivityFixture();
+		const db = createDb(raw);
+		const batch = db.batch.bind(db);
+		vi.spyOn(db, "batch").mockImplementation((statements) => batch(statements.slice(0, count)));
+		await expect(readActivity(db, "a", {})).rejects.toMatchObject({
+			status: 500,
+			code: "db_error",
+		});
+	},
+);
+
+it("keeps one canonical publication coherent across a concurrent publish", async () => {
+	const { raw, now } = await refreshActivityFixture();
+	const db = createDb(raw);
+	const batch = db.batch.bind(db);
+	const publish = async (runId: string) => {
+		const row = await raw
+			.prepare("SELECT payload FROM refresh_snapshots WHERE kind='factory'")
+			.first<{ payload: string }>();
+		if (!row) throw new Error("missing publication");
+		const snapshot = JSON.parse(row.payload) as FactorySnapshot;
+		const at = "2026-10-29T05:00:00.000Z";
+		await raw
+			.prepare("UPDATE refresh_snapshots SET payload=?,fetched_at=? WHERE kind='factory'")
+			.bind(
+				JSON.stringify({
+					...snapshot,
+					runId,
+					fetched_at: at,
+					publication: { mixed: false, runId, publishedAt: at },
+					repos: snapshot.repos.map((repo) => ({
+						...repo,
+						observation: { ...repo.observation, version: runId },
+					})),
+				}),
+				at,
+			)
+			.run();
+	};
+	const interleave = vi.spyOn(db, "batch").mockImplementationOnce(async (statements) => {
+		const result = await batch(statements);
+		await publish("new-refresh");
+		return result;
+	});
+	try {
+		const coherent = await readActivity(db, "a", {});
+		expect(coherent).toMatchObject({
+			runId: "current-refresh",
+			fetchedAt: now,
+			membership: ["owner/app"],
+			repos: [{ issues: { opened: [{ id: "I_1" }] } }],
+		});
+		expect(coherent.repos[0]?.coverage.issues).toMatchObject({ status: "complete" });
+		expect(interleave).toHaveBeenCalledTimes(1);
+	} finally {
+		interleave.mockRestore();
+	}
+	const mixed = await readActivity(db, "a", {});
+	expect(mixed.runId).toBe("new-refresh");
+	expect(mixed.repos[0]?.issues.opened).toBeNull();
+	expect(mixed.repos[0]?.coverage.issues).toMatchObject({
+		status: "unavailable",
+		reason: "source_version_mismatch",
+	});
+	await raw
+		.prepare("UPDATE refresh_resources SET payload=json_set(payload,'$.runId','new-refresh')")
+		.run();
+	const switched = await readActivity(db, "a", {});
+	expect(switched).toMatchObject({
+		runId: "new-refresh",
+		membership: ["owner/app"],
+		repos: [{ issues: { opened: [{ id: "I_1" }] } }],
+	});
+});
+
+async function fixture() {
+	const raw = sqliteFixture();
+	await raw
+		.prepare(
+			"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES('a','owner','fake','fake','t','t')",
+		)
+		.run();
+	const run = async (id: string, account = "a", status = "completed") =>
+		raw
+			.prepare(
+				"INSERT INTO refresh_runs(id,account_id,status,trigger,payload,created_at,updated_at) VALUES(?,?,?,'manual','{}','t','t')",
+			)
+			.bind(id, account, status)
+			.run();
+	return { raw, db: createDb(raw), run };
+}
+
+it("keeps new activity explicitly unavailable without reading retired publications or collecting", async () => {
+	const { raw, db, run } = await fixture();
+	await run("saved-activity");
+	await raw
+		.prepare(
+			"INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES('retired','a','retired','completed','{}','t','t','t')",
+		)
+		.run();
+	await raw
+		.prepare(
+			"INSERT INTO activity_publications(account_id,run_id,until_at,fetched_at,payload,content_version) VALUES('a','retired','t','t','not-json','retired')",
+		)
+		.run();
+	const fetch = vi.spyOn(globalThis, "fetch");
+	try {
+		for (const query of [{}, { run: ["saved"] }, { run: ["latest"] }])
+			await expect(readActivity(db, "a", query)).rejects.toMatchObject({
+				status: 409,
+				code: "activity_unpublished",
+			});
+		expect(fetch).not.toHaveBeenCalled();
+		expect((await raw.prepare("SELECT payload FROM activity_publications").all()).results).toEqual([
+			{ payload: "not-json" },
+		]);
+	} finally {
+		fetch.mockRestore();
+	}
+});
+
+it("validates filters, current membership and account-scoped refresh references", async () => {
+	const { raw, db, run } = await fixture();
+	for (const query of [{ run: ["x", "x"] }, { invalid: ["x"] }, { repository: ["invalid"] }])
+		await expect(readActivity(db, "a", query)).rejects.toMatchObject({ status: 400 });
+	await expect(readActivity(db, "a", { run: ["missing"] })).rejects.toMatchObject({ status: 404 });
+	await expect(readActivity(db, "a", { repository: ["owner/app"] })).rejects.toMatchObject({
 		status: 404,
 	});
-	await expect(readActivity(saved.db, "a", { run: ["saved"] })).rejects.toMatchObject({
+	await raw
+		.prepare(
+			"INSERT INTO refresh_catalog(account_id,repo_id,repo,discovered_day,timezone,payload,fetched_at) VALUES('a','R_1','owner/app','2026-10-29','Asia/Shanghai','{}','t')",
+		)
+		.run();
+	await expect(readActivity(db, "a", { repository: ["OWNER/APP"] })).rejects.toMatchObject({
 		status: 409,
 	});
-	await saved.run("saved-another");
-	await expect(resolveFactoryRunReference(saved.db, "a", "saved")).rejects.toMatchObject({
-		status: 400,
+	await run("saved-one");
+	await run("saved-two");
+	await expect(resolveFactoryRunReference(db, "a", "saved")).rejects.toMatchObject({ status: 400 });
+	expect(await resolveFactoryRunReference(db, "a", "saved-one")).toBe("saved-one");
+	expect(await resolveFactoryRunReference(db, "a", "latest")).toBe("latest");
+	await expect(resolveFactoryRunReference(db, "other", "saved-one")).rejects.toMatchObject({
+		status: 404,
 	});
-	expect(await resolveFactoryRunReference(saved.db, "a", "latest")).toBe("latest");
-	await saved.publish();
-	await saved.db.prepare("DELETE FROM activity_pages").run();
-	expect(await readActivity(saved.db, "a", {})).toMatchObject({ repos: [], totals_partial: true });
+	await expect(resolveFactoryRunReference(db, "a", "saved_")).rejects.toMatchObject({
+		status: 404,
+	});
+	await run("a".repeat(36));
+	await run(`${"a".repeat(36)}-tail`);
+	expect(await resolveFactoryRunReference(db, "a", "a".repeat(36))).toBe("a".repeat(36));
 });

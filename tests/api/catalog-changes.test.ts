@@ -1,8 +1,8 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
-import type { CatalogChanges } from "../../apps/web/src/lib/catalog-types";
 import { executeD1FixtureSync } from "../fixtures/d1";
+import { savedSnapshotSql } from "./saved-fixture";
 
 const base = process.env.GIRAFFE_E2E ?? "http://127.0.0.1:17045";
 const account = randomUUID().replaceAll("-", "").slice(0, 21);
@@ -92,7 +92,12 @@ beforeAll(() => {
 			event("removed", "removed"),
 			event("archived", "archive", { before: false, after: true }),
 			event("renamed", "live", { previous_repo: `${owner}/old` }),
-			`INSERT INTO snapshots(account_id,kind,payload,fetched_at) VALUES(${quote(account)},'repos',${quote(JSON.stringify({ repos: [repoRow("live"), repoRow("archive", true)], fetched_at: until, truncated: false }))},${quote(until)});`,
+			savedSnapshotSql(
+				account,
+				"repos",
+				{ repos: [repoRow("live"), repoRow("archive", true)], fetched_at: until, truncated: false },
+				until,
+			),
 			`INSERT INTO repo_stars(account_id,repo,starred,source,updated_at) VALUES(${quote(account)},${quote(`${owner}/live`)},1,'owner',${quote(floor)});`,
 		].join("\n"),
 	);
@@ -104,7 +109,7 @@ afterAll(() => {
 	rows(`DELETE FROM accounts WHERE id=${quote(account)};`);
 });
 
-it("R7 HTTP returns ordered inclusive discovery events, conditional responses and no GET side effects", async () => {
+it("R7 HTTP never exposes legacy discovery events or fabricates canonical history on GET", async () => {
 	const saved = () =>
 		rows(
 			[
@@ -114,6 +119,8 @@ it("R7 HTTP returns ordered inclusive discovery events, conditional responses an
 				"catalog_displaced_state",
 				"catalog_state",
 				"snapshots",
+				"refresh_snapshots",
+				"refresh_catalog",
 				"repo_stars",
 				"api_tokens",
 			]
@@ -125,50 +132,19 @@ it("R7 HTTP returns ordered inclusive discovery events, conditional responses an
 	const response = await request(
 		`catalog/changes?since=${encodeURIComponent("2026-10-22T08:00:00+08:00")}`,
 	);
-	expect(response.status).toBe(200);
-	const changes = (await response.json()) as CatalogChanges;
-	expect(changes).toMatchObject({
-		account_id: account,
-		since: until,
-		until,
-		history_since: floor,
-		warning_code: "catalog_removal_unconfirmed",
-	});
-	expect(changes.added.map((event) => event.repo)).toEqual([`${owner}/archive`, `${owner}/live`]);
-	expect(changes.removed).toEqual([
-		expect.objectContaining({
-			repo: `${owner}/removed`,
-			at: until,
-			source: { kind: "factory", runId: "catalog-fixture" },
-		}),
-	]);
-	expect(changes.archived[0]).toMatchObject({ before: false, after: true });
-	expect(changes.renamed[0]).toMatchObject({ previous_repo: `${owner}/old`, github_id: "R_live" });
-	expect(changes.unarchived).toEqual([]);
-	expect(changes.visibility_changed).toEqual([]);
-	expect(changes.fork_changed).toEqual([]);
-	expect(changes.unconfirmed).toEqual([
-		{
-			event_id: "unconfirmed-previous",
-			repo: `${owner}/live`,
-			github_id: "R_previous",
-			at: until,
-			source: { kind: "factory", runId: "catalog-fixture" },
-			reason: "private_unverifiable",
-		},
-	]);
-	const tag = response.headers.get("etag");
-	expect(tag).toMatch(/^"[a-f0-9]+"$/);
-	const conditional = await request(`catalog/changes?since=${until}`, bearer, "GET", `W/${tag}`);
-	expect(conditional.status).toBe(304);
-	expect(await conditional.text()).toBe("");
+	expect(response.status).toBe(409);
+	expect(await response.json()).toMatchObject({ error: { code: "catalog_unpublished" } });
+	expect(response.headers.has("etag")).toBe(false);
+	const conditional = await request(`catalog/changes?since=${until}`, bearer, "GET", "*");
+	expect(conditional.status).toBe(409);
+	expect(await conditional.json()).toMatchObject({ error: { code: "catalog_unpublished" } });
 	expect(conditional.headers.get("cache-control")).toBe("private, no-store");
 	expect(conditional.headers.get("vary")).toBe("Authorization");
 	expect(await (await fetch("http://127.0.0.1:17046/_count")).text()).toBe(calls);
 	expect(saved()).toEqual(before);
 });
 
-it("R7 HTTP repository history distinguishes current, removed and starred membership", async () => {
+it("R7 HTTP uses canonical current and starred membership without merging legacy removed rows", async () => {
 	const catalog = async (query: string) => {
 		const response = await request(`repos${query}`);
 		expect(response.status).toBe(200);
@@ -181,7 +157,7 @@ it("R7 HTTP repository history distinguishes current, removed and starred member
 	]);
 	expect(current.find((repo) => repo.name === "live")).toMatchObject({
 		...repoRow("live"),
-		first_seen_at: floor,
+		first_seen_at: null,
 		last_seen_at: until,
 		removed_at: null,
 		archived_changed_at: null,
@@ -189,7 +165,7 @@ it("R7 HTTP repository history distinguishes current, removed and starred member
 		star_source: "owner",
 	});
 	const departed = (await catalog("?include=removed")).find((repo) => repo.name === "removed");
-	expect(departed).toMatchObject({ removed_at: until, last_seen_at: floor, starred: false });
+	expect(departed).toBeUndefined();
 	expect(
 		(await catalog("?scope=starred&include=removed")).map((repo) => repo.name_with_owner),
 	).toEqual([`${owner}/live`]);
@@ -209,21 +185,22 @@ it("R7 HTTP repository history distinguishes current, removed and starred member
 	expect((await request(`sources?repository=${owner}%2Fremoved`)).status).toBe(404);
 });
 
-it("R7 HTTP rejects invalid history cursors, unauthorized conditions and expired history", async () => {
+it("R7 HTTP rejects invalid history cursors and unauthorized conditions without using legacy retention", async () => {
 	for (const query of [
 		"",
 		"?since=",
 		"?since=yesterday",
 		"?since=2026-10-22",
 		"?since=2026-02-30T00:00:00Z",
-		"?since=2026-10-23T00:00:00Z",
 		`?since=${floor}&since=${floor}`,
 		`?since=${floor}&scope=all`,
 	])
 		expect((await request(`catalog/changes${query}`, bearer, "GET", "*")).status, query).toBe(400);
-	const expired = await request("catalog/changes?since=2026-10-19T00:00:00Z");
-	expect(expired.status).toBe(410);
-	expect(await expired.json()).toMatchObject({ error: { code: "catalog_history_expired" } });
+	for (const since of ["2026-10-19T00:00:00Z", "2026-10-23T00:00:00Z"]) {
+		const missing = await request(`catalog/changes?since=${since}`);
+		expect(missing.status).toBe(409);
+		expect(await missing.json()).toMatchObject({ error: { code: "catalog_unpublished" } });
+	}
 	for (const [token, status] of [
 		[null, 401],
 		["invalid", 401],

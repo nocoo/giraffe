@@ -1,11 +1,13 @@
 import { z } from "zod";
-import type { ActivityRepo, ActivitySnapshot } from "../../lib/activity-types";
+import type { ActivitySnapshot } from "../../lib/activity-types";
+import type { FactorySnapshot, FactoryStreamData } from "../../lib/factory-types";
 import { unknownActivity } from "./activity";
+import { type ActivityInputs, projectActivityRepo } from "./activity-projection";
 import { readActivityTotals } from "./activity-totals";
 import type { Db } from "./db/d1";
-import { resolveFactoryRunReference } from "./db/factory-runs";
+import { normalizePublication, resolveFactoryRunReference } from "./db/factory-runs";
 import { ApiError } from "./errors";
-import { assemblePages } from "./snapshot-pages";
+import { assembleSnapshotGroups, latestSnapshotGroups, type SnapshotPage } from "./snapshot-pages";
 
 const querySchema = z
 	.object({
@@ -20,6 +22,31 @@ const querySchema = z
 			.optional(),
 	})
 	.strict();
+
+export const activityPublicationSql =
+	"SELECT kind,payload,content_meta FROM refresh_snapshots WHERE account_id=? AND kind IN ('factory','factory#2')";
+
+export function activityPublication(rows: SnapshotPage[]): FactorySnapshot | null {
+	const snapshot = assembleSnapshotGroups(rows).get("factory");
+	return snapshot ? normalizePublication(snapshot as unknown as FactorySnapshot) : null;
+}
+
+export function activityCoverageSummary(publication: FactorySnapshot, truncated: boolean) {
+	return {
+		repos: {
+			status: publication.inventory.complete ? ("complete" as const) : ("partial" as const),
+			truncated: publication.truncated === true,
+			reason: publication.inventory.complete ? null : "catalog_incomplete",
+		},
+		run: {
+			status: "partial" as const,
+			truncated,
+			reason: "owner_commit_attribution_unavailable",
+		},
+		contributions: unknownActivity("native_calendar_has_no_activity_attribution"),
+	};
+}
+
 export async function readActivity(
 	db: Db,
 	account: string,
@@ -31,89 +58,97 @@ export async function readActivity(
 		Object.fromEntries(Object.entries(query).map(([key, values]) => [key, values[0]])),
 	);
 	if (!parsed.success) throw new ApiError(400, "validation_failed", "Invalid activity filters");
-	const id =
-		parsed.data.run === undefined
-			? "latest"
-			: await resolveFactoryRunReference(db, account, parsed.data.run);
-	const target =
-		"SELECT a.run_id,a.payload FROM activity_publications a JOIN factory_runs r ON r.id=a.run_id AND r.account_id=a.account_id WHERE a.account_id=? AND (?='latest' OR a.run_id=?) AND r.status IN ('completed','partial') ORDER BY a.until_at DESC,a.run_id LIMIT 1";
-	const [headers, pages, runs] = await db.batch<{ payload: string; status: string }>([
-		db.prepare(target).bind(account, id, id),
+	const reference = await resolveFactoryRunReference(db, account, parsed.data.run ?? "latest");
+	const [catalog, resources, pages, rawItems, publications] = await db.batch<{
+		repo_id: string;
+		repo: string;
+		stream: string;
+		item_id: string;
+		payload: string;
+		kind: string;
+		content_meta?: string | null;
+	}>([
 		db
 			.prepare(
-				`WITH target AS (${target}) SELECT p.payload FROM activity_pages p JOIN target t ON t.run_id=p.run_id WHERE p.account_id=? ORDER BY p.page`,
+				"SELECT c.repo_id,c.repo FROM refresh_catalog c JOIN accounts a ON a.id=c.account_id WHERE c.account_id=? AND c.active=1 AND substr(c.repo,1,instr(c.repo,'/')-1)=a.login COLLATE NOCASE ORDER BY c.repo COLLATE NOCASE",
 			)
-			.bind(account, id, id, account),
-		db.prepare("SELECT status FROM factory_runs WHERE account_id=? AND id=?").bind(account, id),
+			.bind(account),
+		db
+			.prepare(
+				"SELECT r.repo_id,r.stream,r.payload FROM refresh_resources r JOIN refresh_catalog c ON c.account_id=r.account_id AND c.repo_id=r.repo_id WHERE r.account_id=? AND c.active=1 AND r.stream IN ('issues','prs','actions','releases')",
+			)
+			.bind(account),
+		db
+			.prepare(
+				"SELECT s.kind,s.payload FROM refresh_snapshots s JOIN refresh_catalog c ON c.account_id=s.account_id AND c.repo_id=json_extract(s.payload,'$.repo_id') WHERE s.account_id=? AND c.active=1 AND (s.kind LIKE '%:actions' OR s.kind LIKE '%:actions#2') AND substr(s.kind,6,length(c.repo))=c.repo COLLATE NOCASE",
+			)
+			.bind(account),
+		db
+			.prepare(
+				"SELECT i.repo_id,i.stream,i.item_id,i.payload FROM refresh_items i JOIN refresh_catalog c ON c.account_id=i.account_id AND c.repo_id=i.repo_id WHERE i.account_id=? AND c.active=1",
+			)
+			.bind(account),
+		db.prepare(activityPublicationSql).bind(account),
 	]);
-	const header = headers?.results[0];
-	if (!header) {
-		if (id !== "latest" && !runs?.results.length)
-			throw new ApiError(404, "not_found", "Unknown activity run");
+	if (!catalog || !resources || !pages || !rawItems || !publications)
+		throw new ApiError(500, "db_error", "Incomplete activity inputs");
+	if (
+		parsed.data.repository &&
+		!catalog.results.some((row) => row.repo.toLowerCase() === parsed.data.repository?.toLowerCase())
+	)
+		throw new ApiError(404, "not_found", "Repository outside current refresh catalog");
+	const publication = activityPublication(publications.results);
+	if (!publication || (reference !== "latest" && reference !== publication.runId))
 		throw new ApiError(
 			409,
 			"activity_unpublished",
-			"No successful published account activity for this run",
+			"No activity observations for this refresh publication",
 		);
-	}
-	const snapshot = JSON.parse(header.payload) as ActivitySnapshot;
-	snapshot.repos =
-		pages?.results.flatMap((page) => JSON.parse(page.payload) as ActivityRepo[]) ?? [];
-	let membership = snapshot.membership ?? snapshot.repos.map((repo) => repo.repo);
-	let unknownOmitted = !snapshot.membership && snapshot.truncated;
-	const repository = parsed.data.repository;
-	if (repository) {
-		const frozenMember =
-			snapshot.membership?.some((name) => name.toLowerCase() === repository.toLowerCase()) ?? false;
-		const matching = snapshot.repos.filter(
-			(repo) => repo.repo.toLowerCase() === repository.toLowerCase(),
+	const window = { ...publication.window, gap: true, first: true };
+	const snapshots = latestSnapshotGroups(pages.results as SnapshotPage[]);
+	const members = catalog.results.filter(
+		(row) =>
+			!parsed.data.repository || row.repo.toLowerCase() === parsed.data.repository.toLowerCase(),
+	);
+	const repos = members.map((member) => {
+		const inputs: ActivityInputs = new Map(
+			resources.results
+				.filter((row) => row.repo_id === member.repo_id)
+				.map((row) => [
+					row.stream,
+					{
+						data: JSON.parse(row.payload) as FactoryStreamData,
+						raw: new Map(
+							rawItems.results
+								.filter((item) => item.repo_id === member.repo_id && item.stream === row.stream)
+								.map((item) => [item.item_id, JSON.parse(item.payload) as Record<string, unknown>]),
+						),
+						snapshot: snapshots.get(`repo:${member.repo}:actions`.toLowerCase())?.data,
+					},
+				]),
 		);
-		if (!matching.length && !frozenMember) {
-			const rows = await db
-				.prepare(
-					"SELECT kind,payload FROM snapshots WHERE account_id=? AND kind IN ('repos','repos#2')",
-				)
-				.bind(account)
-				.all<{ kind: string; payload: string }>();
-			const catalog = assemblePages("repos", rows.results);
-			if (
-				!Array.isArray(catalog.repos) ||
-				!catalog.repos.some(
-					(repo: { name_with_owner?: string }) =>
-						repo.name_with_owner?.toLowerCase() === repository.toLowerCase(),
-				)
-			)
-				throw new ApiError(
-					404,
-					"not_found",
-					"Repository outside frozen activity and current catalog",
-				);
-		}
-		snapshot.repos = matching;
-		const omitted =
-			!matching.length && (frozenMember || (!snapshot.membership && snapshot.truncated));
-		membership = omitted ? [repository] : matching.map((repo) => repo.repo);
-		unknownOmitted = false;
-		snapshot.contributions = null;
-		snapshot.coverage = {
-			repos: omitted
-				? {
-						status: "partial",
-						truncated: true,
-						reason: "Frozen repository activity was omitted by storage capacity",
-					}
-				: matching.length
-					? (snapshot.coverage.repos ?? unknownActivity("Repository coverage unavailable"))
-					: {
-							status: "complete",
-							truncated: false,
-							reason: "Repository not included in this frozen run",
-						},
-			contributions: unknownActivity("Account contributions cannot be projected to a repository"),
-		};
-		snapshot.truncated =
-			omitted ||
-			matching.some((repo) => Object.values(repo.coverage).some((value) => value.truncated));
-	}
-	return { ...snapshot, ...readActivityTotals(snapshot.repos, membership, unknownOmitted) };
+		return projectActivityRepo(
+			member.repo,
+			publication.repos.find((repo) => repo.id === member.repo_id),
+			inputs,
+			window,
+		);
+	});
+	const membership = members.map((member) => member.repo);
+	const truncated =
+		publication.truncated === true ||
+		repos.some((repo) => Object.values(repo.coverage).some((coverage) => coverage.truncated));
+	return {
+		account_id: account,
+		runId: publication.runId,
+		previousRunId: null,
+		fetchedAt: publication.publication?.publishedAt ?? publication.fetched_at,
+		window,
+		membership,
+		repos,
+		contributions: null,
+		coverage: activityCoverageSummary(publication, truncated),
+		truncated,
+		...readActivityTotals(repos, membership, publication.inventory.complete !== true),
+	};
 }

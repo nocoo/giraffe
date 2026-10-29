@@ -5,6 +5,7 @@ import { jsonError, toErrorResponse } from "./lib/errors";
 import { SourceTiming } from "./lib/source-timing";
 import { accessBypass, resolveIdentity } from "./middleware/access";
 import { assertOrigin } from "./middleware/origin";
+import { scheduleRefresh } from "./refresh-runner";
 import { activateAccount, getAccounts, postAccount, removeAccount } from "./routes/accounts";
 import { activityEtag, getActivity } from "./routes/activity";
 import { browserTokens } from "./routes/api-tokens";
@@ -15,10 +16,13 @@ import { machineApi } from "./routes/machine";
 import { getMe } from "./routes/me";
 import { postRead, postReadAll } from "./routes/notifications";
 import { getProjectIdentity } from "./routes/project-identity";
+import { browserRefresh } from "./routes/refresh";
 import { browserRepoAgentState, repoAgentStateHeaders } from "./routes/repo-agent-state";
 import { browserRepoMeta, repoMetaHeaders } from "./routes/repo-meta";
 import { repoGet, setRepoStar, setRepoStatistics } from "./routes/repos";
 import { snapshotGet } from "./routes/snapshots";
+
+export { RefreshRunner } from "./refresh-runner";
 
 function notAllowed(): Response {
 	return jsonError(405, "method_not_allowed", "method not allowed");
@@ -81,6 +85,8 @@ export function createApp(): Hono<{ Bindings: Env; Variables: AppVars }> {
 			c.header("Server-Timing", timing.header());
 	});
 	app.route("/api/v1", machineApi());
+	app.all("/api/refresh-runs", browserRefresh);
+	app.all("/api/refresh-runs/:id", browserRefresh);
 	allow(app, "/api/activity", ["GET"]);
 	app.get("/api/activity", activityEtag, getActivity);
 	allow(app, "/api/tokens", ["GET", "POST"]);
@@ -154,6 +160,9 @@ export function createApp(): Hono<{ Bindings: Env; Variables: AppVars }> {
 const app = createApp();
 
 export default {
+	scheduled(event: ScheduledController, env: Env, ctx: ExecutionContext): void {
+		ctx.waitUntil(scheduleRefresh(env, event.scheduledTime));
+	},
 	fetch(request: Request, env: Env, ctx: ExecutionContext): Response | Promise<Response> {
 		const path = new URL(request.url).pathname;
 		if (path === "/api" || path.startsWith("/api/")) {

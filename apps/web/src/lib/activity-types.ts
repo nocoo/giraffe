@@ -1,10 +1,16 @@
-import type { FactoryEvent } from "./factory-types";
+import type { FactoryEvent, FactoryWindow } from "./factory-types";
 
 export type ActivityWindow = { since: string; until: string; gap: boolean; first: boolean };
 export type ActivityCoverage = {
 	status: "complete" | "partial" | "unavailable";
 	truncated: boolean;
 	reason: string | null;
+	source?: {
+		runId: string;
+		fetchedAt: string | null;
+		window: FactoryWindow;
+		completeWindows: FactoryWindow[];
+	};
 };
 export type ActivityRun = {
 	id: number;

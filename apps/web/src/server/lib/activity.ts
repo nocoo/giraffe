@@ -13,11 +13,17 @@ export function activityTotals(repos: ActivityRepo[]): ActivitySnapshot["totals"
 			: repos.reduce((total, repo) => total + (list(repo)?.length ?? 0), 0);
 	const merged = repos.flatMap((repo) => repo.prs.merged ?? []);
 	const mergedTotal = sum("prs", (repo) => repo.prs.merged);
+	const classified = repos.every(
+		(repo) =>
+			!repo.coverage.pr_classification || repo.coverage.pr_classification.status === "complete",
+	);
 	return {
 		ci_runs: sum("actions", (repo) => repo.ci_runs),
 		merged_prs: mergedTotal,
-		dependency_prs: mergedTotal === null ? null : merged.filter((pr) => pr.dependency).length,
-		other_prs: mergedTotal === null ? null : merged.filter((pr) => !pr.dependency).length,
+		dependency_prs:
+			mergedTotal === null || !classified ? null : merged.filter((pr) => pr.dependency).length,
+		other_prs:
+			mergedTotal === null || !classified ? null : merged.filter((pr) => !pr.dependency).length,
 		issues_opened: sum("issues", (repo) => repo.issues.opened),
 		issues_closed: sum("issues", (repo) => repo.issues.closed),
 		releases: sum(

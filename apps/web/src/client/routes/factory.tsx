@@ -165,11 +165,6 @@ export function FactoryPage() {
 						/>
 					) : null
 				}
-				actions={
-					<Button size="sm" disabled title="旧刷新已停用，当前无法采集新数据。">
-						刷新暂不可用
-					</Button>
-				}
 			/>
 			{!loading ? <ScopeEmpty count={snapshot?.selectedRepos.length ?? 0} /> : null}
 			{error ? (
@@ -217,7 +212,7 @@ export function FactoryPage() {
 						<div role="status" className="py-12 text-center text-sm">
 							{snapshot.inventory.complete
 								? "没有符合当前筛选的仓库。"
-								: "已保存的仓库清单不完整；旧刷新已停用。"}{" "}
+								: "已保存的仓库清单不完整；可发起统一刷新补充观测。"}{" "}
 							<Button
 								variant="ghost"
 								className="factory-link"
@@ -229,8 +224,7 @@ export function FactoryPage() {
 						</div>
 					) : !scope.length ? (
 						<p role="status" className="py-8 text-sm text-basalt-muted-foreground">
-							所选 {selection.length}{" "}
-							个仓库尚无工厂观测；缺失不代表零。旧刷新已停用，当前无法采集新数据。
+							所选 {selection.length} 个仓库尚无工厂观测；缺失不代表零。可通过统一刷新补充观测。
 						</p>
 					) : (
 						<>
@@ -240,79 +234,91 @@ export function FactoryPage() {
 									个仓库尚无工厂观测；以下为已获取的数据，缺失不代表零。
 								</p>
 							) : null}
-							<PeriodStrip
-								periods={board.periods}
-								period={period}
-								onPeriod={(value) => update("period", value === 7 ? "" : String(value))}
-								totals={board.totals}
-								activeRepos={board.activity.week}
-							/>
-							<section className="factory-section" aria-labelledby="factory-change-title">
-								<SectionRule
-									id="factory-change-title"
-									title={<IconLabel icon={Activity}>变化 · 最近 {board.days.length} 天</IconLabel>}
-									hint={`按已发布观测窗口展示 ${board.days.length} 个 UTC 日期；保留的数据沿用原窗口。上方默认 7 天仅用于期间比较，不改变图表窗口。左轴是每日流量（柱），右轴是结果（折线）。Open 存量由当前数量按每日新开与完成倒推；事件不完整时不画折线。`}
-								/>
-								<div className="factory-chart-grid grid gap-3 xl:grid-cols-2">
-									<FactoryPanel
-										title="提交产出与覆盖面"
-										hint="柱：每日默认分支提交（左轴）。线：截至当日 7 天内有提交的仓库数（右轴），看产出是集中在少数仓库还是全面推进。"
-									>
-										{board.observed.commits ? (
-											<CommitBreadthChart days={board.days} />
-										) : (
-											<p className="factory-chart-empty">提交尚未采集。</p>
-										)}
-									</FactoryPanel>
-									<FactoryPanel
-										title="交付吞吐"
-										hint="柱：每天合并的 PR 与发布的 Release（左轴）。线：截至当日 7 天 CI 成功率（右轴）。未完整获取的日期只显示已知数量，没有数据时留空。事件类别相加，不代表唯一工作项。"
-									>
-										{board.observed.prs || board.observed.releases ? (
-											<DeliveryChart days={board.days} />
-										) : (
-											<p className="factory-chart-empty">交付资源尚未采集。</p>
-										)}
-									</FactoryPanel>
-								</div>
-								<div className="factory-chart-grid grid gap-3 xl:grid-cols-2">
-									<FactoryPanel
-										title="PR 流量与存量"
-										hint="向上柱为每日新开 PR，向下为合并与未合并关闭（左轴）；阶梯线为日终 open PR 数（右轴）。"
-									>
-										{board.observed.prs ? (
-											<FlowStockChart days={board.days} kind="prs" />
-										) : (
-											<p className="factory-chart-empty">PR 尚未采集。</p>
-										)}
-									</FactoryPanel>
-									<FactoryPanel
-										title="Issue 流量与存量"
-										hint="向上柱为每日新开 Issue，向下为关闭（左轴）；阶梯线为日终 open Issue 数（右轴）。线上升说明积压在增加。"
-									>
-										{board.observed.issues ? (
-											<FlowStockChart days={board.days} kind="issues" />
-										) : (
-											<p className="factory-chart-empty">Issue 尚未采集。</p>
-										)}
-									</FactoryPanel>
-								</div>
-								<FactoryPanel
-									title="仓库变化矩阵"
-									hint={`每行一个仓库。提交列为最近 1、7、30 个完整统计日，颜色深浅按列内最大值；周环比对比前 7 天。PR 与 Issue 列使用上方选中的 ${period} 天区间，积压为当前 open 数。`}
-									flush
-								>
-									<RepoPeriodMatrix
-										activity={board.repoActivity}
+							{board.mixedTimezones ? (
+								<p role="status" className="text-sm text-basalt-muted-foreground">
+									来源时区不一致，日历与期间汇总不可合并；缺失不代表零。
+								</p>
+							) : (
+								<>
+									<PeriodStrip
+										periods={board.periods}
 										period={period}
-										until={(name) =>
-											(scope.find((r) => r.name === name)?.observation?.window ?? snapshot.window)
-												.until
-										}
-										onSelect={(name) => drill(name, "commits")}
+										onPeriod={(value) => update("period", value === 7 ? "" : String(value))}
+										totals={board.totals}
+										activeRepos={board.activity.week}
 									/>
-								</FactoryPanel>
-							</section>
+									<section className="factory-section" aria-labelledby="factory-change-title">
+										<SectionRule
+											id="factory-change-title"
+											title={
+												<IconLabel icon={Activity}>变化 · 最近 {board.days.length} 天</IconLabel>
+											}
+											hint={`按已发布观测窗口展示 ${board.days.length} 个 ${board.timezone} 日期；保留的数据沿用原窗口。上方默认 7 天仅用于期间比较，不改变图表窗口。左轴是每日流量（柱），右轴是结果（折线）。Open 存量由当前数量按每日新开与完成倒推；事件不完整时不画折线。`}
+										/>
+										<div className="factory-chart-grid grid gap-3 xl:grid-cols-2">
+											<FactoryPanel
+												title="提交产出与覆盖面"
+												hint="柱：每日默认分支提交（左轴）。线：截至当日 7 天内有提交的仓库数（右轴），看产出是集中在少数仓库还是全面推进。"
+											>
+												{board.observed.commits ? (
+													<CommitBreadthChart days={board.days} />
+												) : (
+													<p className="factory-chart-empty">提交尚未采集。</p>
+												)}
+											</FactoryPanel>
+											<FactoryPanel
+												title="交付吞吐"
+												hint="柱：每天合并的 PR 与发布的 Release（左轴）。线：截至当日 7 天 CI 成功率（右轴）。未完整获取的日期只显示已知数量，没有数据时留空。事件类别相加，不代表唯一工作项。"
+											>
+												{board.observed.prs || board.observed.releases ? (
+													<DeliveryChart days={board.days} />
+												) : (
+													<p className="factory-chart-empty">交付资源尚未采集。</p>
+												)}
+											</FactoryPanel>
+										</div>
+										<div className="factory-chart-grid grid gap-3 xl:grid-cols-2">
+											<FactoryPanel
+												title="PR 流量与存量"
+												hint="向上柱为每日新开 PR，向下为合并与未合并关闭（左轴）；阶梯线为日终 open PR 数（右轴）。"
+											>
+												{board.observed.prs ? (
+													<FlowStockChart days={board.days} kind="prs" />
+												) : (
+													<p className="factory-chart-empty">PR 尚未采集。</p>
+												)}
+											</FactoryPanel>
+											<FactoryPanel
+												title="Issue 流量与存量"
+												hint="向上柱为每日新开 Issue，向下为关闭（左轴）；阶梯线为日终 open Issue 数（右轴）。线上升说明积压在增加。"
+											>
+												{board.observed.issues ? (
+													<FlowStockChart days={board.days} kind="issues" />
+												) : (
+													<p className="factory-chart-empty">Issue 尚未采集。</p>
+												)}
+											</FactoryPanel>
+										</div>
+										<FactoryPanel
+											title="仓库变化矩阵"
+											hint={`每行一个仓库。提交列为最近 1、7、30 个完整统计日，颜色深浅按列内最大值；周环比对比前 7 天。PR 与 Issue 列使用上方选中的 ${period} 天区间，积压为当前 open 数。`}
+											flush
+										>
+											<RepoPeriodMatrix
+												activity={board.repoActivity}
+												period={period}
+												until={(name) =>
+													(
+														scope.find((r) => r.name === name)?.observation?.window ??
+														snapshot.window
+													).until
+												}
+												onSelect={(name) => drill(name, "commits")}
+											/>
+										</FactoryPanel>
+									</section>
+								</>
+							)}
 							<section className="factory-section" aria-labelledby="factory-stock-title">
 								<SectionRule
 									id="factory-stock-title"
@@ -423,9 +429,11 @@ export function FactoryPage() {
 											/>
 											<span className="text-xs text-basalt-muted-foreground">
 												{calendar === "commits"
-													? board.mixedWindows
-														? "混合窗口 · 各日覆盖见账本"
-														: `${n(board.periods[1]?.current.commits ?? 0)} / ${n(board.periods[1]?.previous.commits ?? 0)} · 近/前 7 个完整日`
+													? board.mixedTimezones
+														? "来源时区不一致 · 缺失"
+														: board.mixedWindows
+															? "混合窗口 · 各日覆盖见账本"
+															: `${n(board.periods[1]?.current.commits ?? 0)} / ${n(board.periods[1]?.previous.commits ?? 0)} · 近/前 7 个完整日`
 													: snapshot.contribution
 														? `${n(snapshot.contribution.total)} 贡献 · ${n(snapshot.contribution.restricted)} 受限贡献`
 														: `${snapshot.contributionStatus === "pending" ? "未采集" : "不可用"}`}
@@ -440,10 +448,11 @@ export function FactoryPage() {
 										) : null}
 										{(
 											calendar === "commits"
-												? board.observed.commits
+												? !board.mixedTimezones && board.observed.commits
 												: snapshot.contribution !== null
 										) ? (
 											<FactoryHeatmap
+												timezone={board.timezone}
 												days={
 													calendar === "commits"
 														? board.days.map((d) => ({
@@ -461,7 +470,7 @@ export function FactoryPage() {
 										)}
 										{day ? (
 											<p className="mt-3 text-xs" role="status">
-												{formatDayRange(day)} ·{" "}
+												{formatDayRange(day, day, board.timezone)} ·{" "}
 												{calendar === "commits"
 													? `${board.days.find((d) => d.date === day)?.commits ?? 0} 提交；已高亮每日账本；明细日期筛选独立。`
 													: `${snapshot.contribution?.days.find((d) => d.date === day)?.count ?? 0} 账号贡献。`}
@@ -654,7 +663,12 @@ export function FactoryPage() {
 												窗口机器人合并 <strong>{board.aggregate.botMerged}</strong>
 											</span>
 											<span>
-												观测引用边 <strong>{visibleEdges.length}</strong>
+												观测引用边{" "}
+												<strong>
+													{visibleEdges.length || board.dependenciesComplete
+														? visibleEdges.length
+														: "—"}
+												</strong>
 											</span>
 										</div>
 										<div className="factory-network mt-3">
@@ -689,7 +703,9 @@ export function FactoryPage() {
 											))}
 											{!visibleEdges.length ? (
 												<p className="py-3 text-xs text-basalt-muted-foreground">
-													当前没有可解析为纳入仓库的直接引用。
+													{board.dependenciesComplete
+														? "当前没有可解析为纳入仓库的直接引用。"
+														: "依赖分析缺少完整观测，缺失不代表没有依赖。"}
 												</p>
 											) : null}
 										</div>
@@ -926,7 +942,9 @@ export function FactoryPage() {
 													variant={day === d.date ? "selected" : "default"}
 													className={day === d.date ? "factory-ledger-selected" : ""}
 												>
-													<TableHead scope="row">{formatDayRange(d.date)}</TableHead>
+													<TableHead scope="row">
+														{formatDayRange(d.date, d.date, d.timezone)}
+													</TableHead>
 													{[
 														d.commits,
 														d.issueOpened,
@@ -978,8 +996,9 @@ export function FactoryPage() {
 							{snapshot.publication?.mixed
 								? "各仓库使用各自最近可用的数据，更新时间与统计范围可能不同。"
 								: `统计范围：${formatPreciseDate(snapshot.window.since)} → ${formatPreciseDate(snapshot.window.until)}。`}
-							时间按本地时区（{Intl.DateTimeFormat().resolvedOptions().timeZone}
-							）显示；统计区间包含起点、不含终点，最后一个区间尚未结束。
+							{snapshot.window.timezone
+								? `来源时区为 ${snapshot.window.timezone}；按已结束的自然日统计，窗口包含起点和最后一毫秒。`
+								: "来源窗口未标记时区，日历沿用 UTC 日期；未完整覆盖的日期保持缺失。"}
 						</p>
 						<p>
 							调查启动 {formatPreciseDate(snapshot.window.until)}；仓库清单取样后逐资源分页，GitHub
@@ -1007,7 +1026,7 @@ export function FactoryPage() {
 							{snapshot.rate
 								? `${snapshot.rate.resource} ${snapshot.rate.remaining}，重置 ${formatPreciseDate(snapshot.rate.resetAt)}`
 								: "此导入快照未记录最近额度"}
-							。截断数据只表示观察子集；旧刷新已停用，这里仅展示已保存快照。
+							。截断数据只表示观察子集；这里仅展示已保存快照，刷新完成后重新读取最新观测。
 						</p>
 						<p>
 							topics 是 GitHub 作者设置的标签，可重叠，不能把标签分组总数相加。引用图只使用可定位的

@@ -11,7 +11,7 @@ import {
 import { APP_PATHS } from "./routes";
 
 describe("navigation", () => {
-	it("keeps snapshot navigation without analysis or refresh execution", () => {
+	it("keeps every saved-data destination without analysis or a separate refresh page", () => {
 		expect(NAV_GROUPS.map((group) => [group.label, group.items.map((item) => item.href)])).toEqual([
 			["总览", ["/factory", "/today", "/insights"]],
 			["仓库健康", ["/repos", "/ci", "/alerts"]],

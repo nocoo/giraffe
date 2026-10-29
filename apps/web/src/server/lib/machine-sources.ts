@@ -1,14 +1,23 @@
 import { z } from "zod";
-import type { FactorySnapshot } from "../../lib/factory-types";
+import type { FactoryCoverage, FactoryWindow } from "../../lib/factory-types";
 import { FACTORY_STREAMS } from "../../lib/factory-types";
 import { prSnapshot } from "../../lib/pull-request";
-import { factoryStreamFreshness } from "../../lib/snapshot-freshness";
-import { activityReadContentVersion } from "./activity-totals";
+import { factoryStreamFreshness, snapshotFreshness } from "../../lib/snapshot-freshness";
+import { activityEvidenceCoverage } from "./activity-projection";
+import {
+	activityCoverageSummary,
+	activityPublication,
+	activityPublicationSql,
+} from "./activity-store";
 import type { CatalogRow } from "./catalog-history";
 import { catalogView } from "./catalog-read";
-import { decodeContent, factoryStreamContent, storedContent } from "./content-version";
+import {
+	composeContent,
+	decodeContent,
+	factoryStreamContent,
+	storedContent,
+} from "./content-version";
 import type { Db } from "./db/d1";
-import { normalizePublication } from "./db/factory-runs";
 import { ApiError } from "./errors";
 import {
 	ciContent,
@@ -25,6 +34,19 @@ import { factoryObserved, policyFromSaved, projectSnapshot } from "./snapshot-pr
 import { selectionFromStars } from "./snapshot-scope";
 import type { SourceTiming } from "./source-timing";
 
+const ACTIVITY_STREAMS = ["issues", "prs", "actions", "releases"] as const;
+type ActivityStream = (typeof ACTIVITY_STREAMS)[number];
+type ResourceMetaRow = {
+	kind: string;
+	content_meta?: string | null;
+	repo_id?: string | null;
+	stream?: string | null;
+	run_id?: string | null;
+	coverage?: string | null;
+	ranges?: string | null;
+	next?: string | null;
+	has_next?: number | null;
+};
 const sourceQuerySchema = z
 	.object({
 		repository: z
@@ -72,16 +94,11 @@ export async function readSources(
 ) {
 	const parsed = sourceQuerySchema.safeParse(query);
 	if (!parsed.success) throw new ApiError(400, "validation_failed", "invalid source filters");
-	const head = `SELECT coalesce((SELECT 'factory:v:' || nullif(published_id,'') FROM factory_state WHERE account_id=?),'factory') AS kind`;
-	const [catalogRows, stars, owners, publicationRows, rows, activityRows, historyRows] =
-		await db.batch<
-			SnapshotPage &
-				StarRow &
-				CatalogRow & { login: string; run_id: string; content_version: string }
-		>([
+	const [catalogRows, stars, owners, publicationRows, rows, resourceRows, historyRows] =
+		await db.batch<SnapshotPage & StarRow & CatalogRow & { login: string }>([
 			db
 				.prepare(
-					"SELECT kind,payload,content_meta FROM snapshots WHERE account_id=? AND kind IN ('repos','repos#2')",
+					"SELECT kind,payload,content_meta FROM refresh_snapshots WHERE account_id=? AND kind IN ('repos','repos#2')",
 				)
 				.bind(account),
 			db
@@ -90,69 +107,20 @@ export async function readSources(
 				)
 				.bind(account),
 			db.prepare("SELECT login FROM accounts WHERE id=?").bind(account),
+			db.prepare(activityPublicationSql).bind(account),
 			db
 				.prepare(
-					`WITH head AS (${head}) SELECT s.kind,s.payload,s.content_meta FROM snapshots s, head WHERE s.account_id=? AND s.kind IN (head.kind,head.kind || '#2')`,
-				)
-				.bind(account, account),
-			db
-				.prepare(
-					`WITH head AS (${head}), publication AS MATERIALIZED (
-					SELECT json_extract(s.payload,'$.repos') AS repos,json_extract(root.payload,'$.runId') AS run_id
-					FROM snapshots s,head JOIN snapshots root ON root.account_id=s.account_id AND root.kind=head.kind
-					WHERE s.account_id=? AND s.kind IN (head.kind,head.kind || '#2')
-				), refs AS MATERIALIZED (
-					SELECT coalesce((SELECT c.repo FROM catalog_repositories c WHERE c.account_id=? AND c.github_id=json_extract(value,'$.id') AND c.removed_at IS NULL AND c.name_current=1),json_extract(value,'$.name')) AS name,
-						coalesce(json_extract(value,'$.observation.repo'),json_extract(value,'$.name')) AS repo,
-						coalesce(json_extract(value,'$.observation.version'),publication.run_id) AS version,
-						coalesce(json_extract(value,'$.observation.source'),'legacy') AS source
-						,json_extract(value,'$.coverage') AS coverage
-					FROM publication,json_each(publication.repos)
-					WHERE (EXISTS(SELECT 1 FROM catalog_repositories c WHERE c.account_id=? AND c.github_id=json_extract(value,'$.id') AND c.removed_at IS NULL AND c.name_current=1)
-					 OR NOT EXISTS(SELECT 1 FROM catalog_repositories c WHERE c.account_id=? AND c.repo=json_extract(value,'$.name') COLLATE NOCASE AND c.github_id IS NOT NULL AND c.removed_at IS NULL AND c.name_current=1))
-					 AND (?='' OR lower(json_extract(value,'$.name'))=lower(?) OR json_extract(value,'$.id')=(SELECT c.github_id FROM catalog_repositories c WHERE c.account_id=? AND c.repo=? COLLATE NOCASE AND c.removed_at IS NULL AND c.name_current=1))
-				), legacy AS (
-					SELECT 'factory:' || repo || ':' || streams.value AS kind FROM refs, json_each(?) AS streams WHERE source!='run'
-				)
-				SELECT s.kind,s.payload,s.content_meta
-				FROM snapshots s WHERE s.account_id=? AND (
-					s.kind IN ('issues','issues#2','prs','prs#2')
-					OR (s.kind LIKE 'repo:%' AND (s.kind LIKE '%:issues' OR s.kind LIKE '%:issues#2' OR s.kind LIKE '%:prs' OR s.kind LIKE '%:prs#2' OR s.kind LIKE '%:actions' OR s.kind LIKE '%:actions#2' OR s.kind LIKE '%:releases' OR s.kind LIKE '%:releases#2' OR s.kind LIKE '%:details' OR s.kind LIKE '%:details#2'))
-				)
-				UNION ALL
-				SELECT 'stream:' || refs.name || ':' || streams.value AS kind,NULL AS payload,f.content_meta
-				FROM refs CROSS JOIN factory_runs r ON r.id=refs.version AND r.account_id=?
-				CROSS JOIN json_each(?) streams
-				CROSS JOIN factory_resources f INDEXED BY factory_resources_content ON f.run_id=r.id AND f.repo=refs.repo
-				WHERE refs.source='run' AND f.stream=CASE WHEN json_type(refs.coverage,'$.' || streams.value || '.observation')='object' THEN 'retained:' || streams.value ELSE streams.value END
-				UNION ALL
-				SELECT kind,NULL AS payload,content_meta FROM snapshots
-				WHERE account_id=? AND kind IN (SELECT kind FROM legacy)`,
-				)
-				.bind(
-					account,
-					account,
-					account,
-					account,
-					account,
-					parsed.data.repository ?? "",
-					parsed.data.repository ?? "",
-					account,
-					parsed.data.repository ?? "",
-					JSON.stringify(FACTORY_STREAMS),
-					account,
-					account,
-					JSON.stringify(FACTORY_STREAMS),
-					account,
-				),
-			db
-				.prepare(
-					"SELECT a.run_id,a.payload,a.content_version FROM activity_publications a JOIN factory_runs r ON r.id=a.run_id AND r.account_id=a.account_id WHERE a.account_id=? AND r.status IN ('completed','partial') ORDER BY a.until_at DESC,a.run_id LIMIT 1",
+					"SELECT kind,payload,content_meta FROM refresh_snapshots WHERE account_id=? AND (kind IN ('issues','issues#2','prs','prs#2') OR (kind LIKE 'repo:%' AND (kind LIKE '%:issues' OR kind LIKE '%:issues#2' OR kind LIKE '%:prs' OR kind LIKE '%:prs#2' OR kind LIKE '%:actions' OR kind LIKE '%:actions#2' OR kind LIKE '%:releases' OR kind LIKE '%:releases#2' OR kind LIKE '%:details' OR kind LIKE '%:details#2')))",
 				)
 				.bind(account),
 			db
 				.prepare(
-					"SELECT * FROM catalog_repositories WHERE account_id=? AND removed_at IS NULL AND name_current=1 ORDER BY repo,identity_key",
+					"SELECT 'stream:' || c.repo || ':' || r.stream AS kind,r.content_meta,c.repo_id AS repo_id,r.stream AS stream,CASE WHEN r.stream IN ('issues','prs','actions','releases') AND json_valid(r.payload) THEN json_extract(r.payload,'$.runId') END AS run_id,CASE WHEN r.stream IN ('issues','prs','actions','releases') AND json_valid(r.payload) THEN json_extract(r.payload,'$.coverage') END AS coverage,CASE WHEN r.stream IN ('issues','prs','actions','releases') AND json_valid(r.payload) THEN json_extract(r.payload,'$.ranges') END AS ranges,CASE WHEN r.stream IN ('issues','prs','actions','releases') AND json_valid(r.payload) THEN json_extract(r.payload,'$.next') END AS next,CASE WHEN r.stream IN ('issues','prs','actions','releases') AND json_valid(r.payload) THEN json_type(r.payload,'$.next') IS NOT NULL END AS has_next FROM refresh_resources r JOIN refresh_catalog c ON c.account_id=r.account_id AND c.repo_id=r.repo_id WHERE r.account_id=? AND c.active=1",
+				)
+				.bind(account),
+			db
+				.prepare(
+					"SELECT repo_id AS github_id,repo_id AS identity_key,repo,payload AS row_payload,fetched_at AS last_seen_at,NULL AS first_seen_at,NULL AS removed_at,NULL AS archived_changed_at,1 AS name_current FROM refresh_catalog WHERE account_id=? AND active=1 ORDER BY repo,repo_id",
 				)
 				.bind(account),
 		]);
@@ -162,7 +130,7 @@ export async function readSources(
 		!owners ||
 		!publicationRows ||
 		!rows ||
-		!activityRows ||
+		!resourceRows ||
 		!historyRows
 	)
 		throw new ApiError(500, "db_error", "incomplete source batch");
@@ -171,7 +139,7 @@ export async function readSources(
 			...catalogRows.results,
 			...publicationRows.results,
 			...rows.results,
-			...(activityRows?.results ?? []),
+			...resourceRows.results,
 		];
 		timing.work("decoded_rows", inputs.length);
 		timing.work(
@@ -204,10 +172,7 @@ export async function readSources(
 		: undefined;
 	if (parsed.data.repository && !repository)
 		throw new ApiError(404, "not_found", "repository outside saved account catalog");
-	const rawPublication = decode(() => assembleSnapshotGroups(publicationRows.results))
-		.values()
-		.next().value as FactorySnapshot | undefined;
-	const publication = rawPublication ? normalizePublication(rawPublication) : null;
+	const publication = decode(() => activityPublication(publicationRows.results));
 	const since = parsed.data.since ? Date.parse(parsed.data.since) : null;
 	const streams = (publication ? factoryObserved(publication, policy) : []).flatMap((repo) => {
 		if (
@@ -236,16 +201,49 @@ export async function readSources(
 				: [];
 		});
 	});
-	const saved = decode(() =>
-		assembleSnapshotGroups(rows.results.filter((row) => row.payload !== null)),
-	);
+	const saved = decode(() => assembleSnapshotGroups(rows.results));
+	const resources = decode(() => resourceRows.results as unknown as ResourceMetaRow[]);
 	const streamMeta = decode(
+		() => new Map(resources.map((row) => [row.kind, decodeContent(row.content_meta)])),
+	);
+	const activityMeta = decode(
 		() =>
 			new Map(
-				rows.results
-					.filter((row) => row.payload === null)
-					.map((row) => [row.kind, decodeContent(row.content_meta)]),
+				resources
+					.filter((row) => row.stream && ACTIVITY_STREAMS.includes(row.stream as ActivityStream))
+					.map(
+						(row) =>
+							[
+								`${row.repo_id}:${row.stream}`,
+								{
+									content: decodeContent(row.content_meta)?.hash ?? null,
+									data:
+										typeof row.run_id === "string" && typeof row.coverage === "string"
+											? {
+													runId: row.run_id,
+													coverage: JSON.parse(row.coverage) as FactoryCoverage,
+													ranges: (row.ranges ? JSON.parse(row.ranges) : []) as FactoryWindow[],
+													...(row.has_next === 1 ? { next: row.next ?? null } : {}),
+												}
+											: null,
+								},
+							] as const,
+					),
 			),
+	);
+	const login = owners.results[0]?.login ?? "";
+	const members = decode(() =>
+		historyRows.results
+			.filter((row) => {
+				const slash = row.repo.indexOf("/");
+				return slash > 0 && row.repo.slice(0, slash).toLowerCase() === login.toLowerCase();
+			})
+			.map((row) => ({ id: row.github_id, name: row.repo }))
+			.sort((left, right) => {
+				const leftName = left.name.toLowerCase();
+				const rightName = right.name.toLowerCase();
+				return Number(leftName > rightName) - Number(rightName > leftName);
+			}),
 	);
 	const groups = latestSnapshots(saved);
 	type Source = {
@@ -256,28 +254,6 @@ export async function readSources(
 		observedAt: string | null;
 	} & ReturnType<typeof observationMetadata>;
 	const sources: Source[] = [];
-	const activity = activityRows?.results[0];
-	if (activity) {
-		const data = decode(() => JSON.parse(activity.payload)) as {
-			fetchedAt: string;
-			coverage: unknown;
-			truncated: boolean;
-		};
-		const metadata = observationMetadata({
-			fetched_at: data.fetchedAt,
-			coverage: data.coverage,
-			truncated: data.truncated,
-		});
-		if (afterSince(metadata, since))
-			sources.push({
-				resource: "account:activity",
-				version: activity.run_id,
-				contentVersion: await activityReadContentVersion(activity.content_version),
-				...metadata,
-				runId: activity.run_id,
-				observedAt: metadata.fetchedAt,
-			});
-	}
 	const add = async (
 		resource: string,
 		data: Record<string, unknown>,
@@ -295,6 +271,60 @@ export async function readSources(
 			...metadata,
 		};
 	};
+	if (publication) {
+		const window = { ...publication.window, gap: true, first: true };
+		const evidence = members.map((member) => {
+			const published = publication.repos.find((repo) => repo.id === member.id);
+			return ACTIVITY_STREAMS.map((stream) =>
+				activityEvidenceCoverage(
+					stream,
+					activityMeta.get(`${member.id}:${stream}`)?.data ?? null,
+					published,
+					window,
+				),
+			);
+		});
+		const times = evidence.map((streams) =>
+			streams.map((coverage) => coverage.source?.fetchedAt ?? null),
+		);
+		const freshness = snapshotFreshness(times.flat());
+		freshness.total = times.length;
+		freshness.missing = times.filter((values) => snapshotFreshness(values).missing > 0).length;
+		const truncated =
+			publication.truncated === true ||
+			evidence.some((streams) => streams.some((coverage) => coverage.truncated));
+		const publishedAt = publication.publication?.publishedAt ?? publication.fetched_at;
+		const runId = publication.runId;
+		const data = {
+			fetched_at: freshness.latestAt,
+			freshness,
+			coverage: activityCoverageSummary(publication, truncated),
+			truncated,
+			unavailable: false,
+		};
+		if (afterSince(sourceMetadata(data, { runId, publishedAt }), since)) {
+			const inputs: Record<string, string | null> = {
+				publication: storedContent(publication)?.hash ?? null,
+			};
+			for (const member of members)
+				for (const stream of ACTIVITY_STREAMS)
+					inputs[`repo:${member.name.toLowerCase()}:${stream}`] =
+						activityMeta.get(`${member.id}:${stream}`)?.content ?? "missing";
+			const source = await add(
+				"account:activity",
+				data,
+				runId,
+				await hash(() =>
+					composeContent(inputs, {
+						repositories: members.map((member) => member.name),
+						truncated,
+					}),
+				),
+				{ runId, publishedAt },
+			);
+			if (source) sources.push(source);
+		}
+	}
 	const indexed = await Promise.all(
 		[...groups.values()].flatMap(({ resource, data }) => {
 			if (!resource.toLowerCase().startsWith("repo:")) return [];
@@ -360,11 +390,7 @@ export async function readSources(
 				repo.coverage[stream].observation?.version ??
 				repo.observation?.version ??
 				publication.runId;
-			const meta = streamMeta.get(
-				repo.observation?.source === "run"
-					? `stream:${repo.name}:${stream}`
-					: `factory:${repo.observation?.repo ?? publication.repos.find((original) => original.name.toLowerCase() === repo.name.toLowerCase() && original.id === repo.id)?.name ?? publication.repos.find((original) => repo.id && original.id === repo.id)?.name ?? repo.name}:${stream}`,
-			);
+			const meta = streamMeta.get(`stream:${repo.name}:${stream}`);
 			const source = await add(
 				`factory:${repo.name}:${stream}`,
 				metadata,

@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { hexlyProjectFixture } from "../tests/fixtures/project-identity";
 import { factoryGraphqlStub, factoryRepoStub, factoryRestStub } from "./factory-stub";
 import { hasApiRoutes } from "./has-api-routes";
+import { refreshGraphqlStub, refreshRestStub } from "./refresh-stub";
 import { securityFixture } from "./security-stub";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -219,7 +220,12 @@ async function suite(name: "A" | "B"): Promise<void> {
 		await waitLive(60_000);
 		await run(
 			join(root, "node_modules/.bin/vitest"),
-			["run", "tests/api", "--config", "vitest.e2e.config.ts"],
+			[
+				"run",
+				...(process.argv.length > 2 ? process.argv.slice(2) : ["tests/api"]),
+				"--config",
+				"vitest.e2e.config.ts",
+			],
 			{
 				GIRAFFE_SUITE: name,
 				GIRAFFE_E2E: "http://127.0.0.1:17045",
@@ -304,6 +310,12 @@ const github = await listen(17046, (req, res) => {
 	githubHits += 1;
 	void (async () => {
 		const auth = req.headers.authorization ?? "";
+		const refreshOwner = auth.includes("U".repeat(8)) ? "phase2" : "octocat";
+		const refreshRest = refreshRestStub(url);
+		if (refreshRest !== null) {
+			sendJson(res, 200, refreshRest);
+			return;
+		}
 		const security = securityFixture(auth);
 		if (url.pathname === "/user") {
 			if (security) {
@@ -331,7 +343,7 @@ const github = await listen(17046, (req, res) => {
 			const scopes = auth.includes("C".repeat(8))
 				? "repo"
 				: "repo, read:org, read:user, notifications";
-			sendJson(res, 200, { login: "octocat", avatar_url: "" }, { "X-OAuth-Scopes": scopes });
+			sendJson(res, 200, { login: refreshOwner, avatar_url: "" }, { "X-OAuth-Scopes": scopes });
 			return;
 		}
 		if (url.pathname === "/graphql") {
@@ -342,6 +354,11 @@ const github = await listen(17046, (req, res) => {
 			};
 			const query = String(request.query ?? "");
 			const variables = request.variables ?? {};
+			const refresh = refreshGraphqlStub(query, variables, refreshOwner);
+			if (refresh) {
+				sendJson(res, 200, refresh);
+				return;
+			}
 			if (security) {
 				sendJson(res, 200, security.graphql(query, variables));
 				return;

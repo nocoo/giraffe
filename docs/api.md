@@ -1,8 +1,8 @@
 # Machine API v1 Reference
 
-The v0.26.0 release removes collection execution and the analysis UI. Saved
-observations and machine resources remain available. See the
-[retirement contract](14-phase1-retirement.md) for browser route removals.
+The v0.27.0 release adds one unified A-then-B refresh and keeps the analysis UI
+removed. Current run creation/status, parameters, stars, caching and daily
+scheduling are specified in [the refresh contract](15-unified-refresh.md).
 
 The machine API reads saved GitHub observations, stores reports/records/jobs, and
 manages saved application preferences. It is not a live GitHub proxy or a model
@@ -11,9 +11,10 @@ the Worker authenticates resource requests. The dashboard and credential-managem
 endpoints remain Access protected. Accounts/snapshots are deployment-shared, not
 per-user tenants. See [the boundary contract](11-agent-api.md).
 
-Collection-time algorithms described alongside saved schemas below explain
-pre-v0.26.0 provenance only. They no longer execute: no discovery, continuation,
-retention writer, publication or scheduled collection runs in this release.
+Legacy quick/deep/full, run-control and schedule-kind descriptions below are
+historical and do not execute. Current observations use only the new `refresh_*`
+tables, never a fallback to legacy publications. The Phase 2 contract supersedes
+older collection endpoint and provenance descriptions below.
 
 ## Daily reports and latest report
 
@@ -380,6 +381,14 @@ invalid/missing timestamps, take the **maximum valid time** of `fetchedAt` and
 than `since`. With no valid time, retain it conservatively. Equality is excluded.
 This matters for merged global issues/PRs/repos: `fetched_at` may remain old while
 changed `repository_fetched_at` advances `freshness.latestAt`.
+
+`account:activity` describes the current owned catalogue membership and the
+canonical Activity publication, including members without observations. Its
+account-wide content identity does not change when a `repository` filter is
+applied. Publication time and original source observation times remain distinct;
+missing, mismatched or truncated stream evidence uses the same coverage rules as
+`/activity`. Owner-attributed commits remain unavailable, so Activity is partial
+even when all supported lifecycle streams have complete coverage.
 
 **Not a durable change cursor:** versions can change without newer timestamps,
 retained old evidence keeps its original time, and failed/budget-deferred analysis
@@ -909,13 +918,11 @@ are the latest applicable times among the selected days, not a later historical 
 
 `sourceVersion` identifies the original calendar observation run, not necessarily
 the newest global publication. `source.publicationId` identifies that publication;
-`data.window` is the calendar's saved display window: a historical merge may
-include retained older dates, while an untouched calendar keeps its original
-window. A failed historical collection retained the prior calendar, version,
-window and timestamps; `collectionStatus` reports that saved attempt's status. GET never
-advances freshness. Legacy calendars gain null type fields in this endpoint,
-without rewriting stored rows. `/factory` retains the original contribution
-shape and any optional fields already present in the saved calendar.
+`data.window` is the calendar's original collection window. The new account
+stage uses one native calendar query; no historical type merge or legacy
+calendar fallback occurs. `collectionStatus` reports the saved collection
+status, and GET never advances freshness. `/factory` retains that same saved
+calendar and its original timestamps.
 
 Strong content-derived ETags and authenticated `If-None-Match` 304 responses work
 as on `/sources`. Authentication and query validation still run; 304 has no body
@@ -932,26 +939,18 @@ or API creation time zone. GraphQL defines `ContributionCalendarDay.date` as the
 day represented by the square; it does not promise a uniform Shanghai/UTC re-bucket
 of every underlying event. Hence the explicit `timezone:"github"` label.
 
-Typed aggregates query `contributionsCollection` for each date's explicit UTC
-interval `00:00:00.000Z` through `23:59:59.999Z` (GitHub's `to` is inclusive),
-clipping the last day at the frozen run `window.until`. They include commit,
-issue, PR, PR-review, restricted/private and repository-creation counts; first
-and popular contributions are not excluded. Different attribution boundaries,
-permission visibility and GitHub counting rules can prevent their sum from
-matching the calendar count. `breakdown:"mismatch"` exposes that discrepancy;
-there is no inferred residual/private type and totals are never adjusted to fit.
+Per-day typed aggregates are not collected. Their fields remain null,
+`breakdown:"unavailable"` exposes the limitation, and the calendar's
+`typesStatus` remains partial. No residual/private type is inferred and totals
+are never adjusted to fit repository commit counts.
 
-`partial` marks the final incomplete day of the frozen observation window, not
-the current GET date. Top-level `observedAt` is the calendar request observation
-time; each day's `observedAt` is its type-batch observation time, or the calendar
-time for legacy/missing type details. The day flag remains partial even tomorrow
-until a newer successful run observes it again. For digest-style daily reporting,
-treat a calendar day `D` as complete when the pinned activity publication has
-`contributions.days[D].partial=false`; prefer that activity day over live
-`GET /contributions` for the same `D`, which can still expose `partial:true` on
-an otherwise finished day. These are historical observation semantics; phase 1
-has no scheduled or manual collection and never resumes old runs. Read operations
-preserve the saved windows and partial flags.
+`partial` is evaluated against the frozen observation window, not the current
+GET date. A native calendar date reaching the UTC cutoff date remains partial;
+a closed Shanghai repository day does not prove that GitHub's differently
+attributed calendar date is complete. Fetch and observation timestamps remain
+those of the account-stage calendar request. Activity does not provide an
+attributed contribution calendar in phase 2; external consumers must keep the
+native calendar's missingness and partial flags rather than infer one.
 
 Sources: [GitHub contribution time attribution](https://docs.github.com/en/account-and-profile/reference/profile-contributions-reference#how-contribution-event-times-are-calculated),
 [GraphQL calendar dates](https://docs.github.com/en/graphql/reference/users#contributioncalendarday),
@@ -964,303 +963,73 @@ api -G "$API/contributions" --data-urlencode 'since=2026-10-01' --data-urlencode
 
 ### GET /activity
 
-All activity responses, including 400/404/409 and 304, carry
-`Cache-Control: private, no-store` and `Referrer-Policy: no-referrer`.
-Machine responses vary on `Authorization`; browser responses vary on
-`Cookie, Cf-Access-Jwt-Assertion`. Error responses do not receive an ETag.
-
 `GET /api/v1/accounts/:account/activity?run=latest&repository=owner/name`
-requires `observations:read`. `run` defaults to `latest`; an explicit saved run ID
-selects that immutable publication. A short ID prefix resolves like refresh-run
-pinning: when exactly one retained run ID starts with the token, that run is
-selected; zero matches return 404 `not_found` and multiple matches return 400
-`validation_failed` (`Ambiguous run reference`). `repository` is optional. Unknown
-query keys are rejected. The Access-protected browser reads the active account
-through `GET /api/activity` with the same selectors. Neither endpoint collects
-GitHub or updates token activity. Both support private, authenticated ETag/304
-polling. Duplicate filters also return 400 `validation_failed`. Unknown run IDs
-return 404 `not_found`; a known run without a successful publication (including a running,
-failed or historical pre-migration run) returns 409 `activity_unpublished`.
-`latest` returns the latest usable publication despite newer failed runs; without
-one it returns 409. A repository in the frozen publication remains readable even
-if later removed from the catalog. A current catalog repo outside that frozen
-membership returns empty `repos`, zero member totals and null contributions;
-a repo in neither set returns 404. Repository filtering never invents a per-repo
-contribution calendar. A member omitted by storage capacity is not an unselected
-repository: its filtered response retains truncation and unknown totals.
+requires `observations:read`. The Access-protected browser uses
+`GET /api/activity` for the active account. These reads never collect GitHub,
+update token activity or repair stored observations.
 
-The response is an `ActivitySnapshot`, not the generic observation envelope:
+`run` defaults to `latest`. Only the current new factory publication is
+available; an explicit retained run ID (or unambiguous prefix) resolves against
+new refresh-run history. An unknown run returns 404 `not_found`, an ambiguous
+prefix returns 400 `validation_failed`, and a known run without the current
+publication returns 409 `activity_unpublished`. Before any new publication,
+`latest` also returns 409. Historical legacy publications are never consulted.
+
+`repository` optionally selects a current owned repository by name. A repository
+outside that current catalogue returns 404. Identity joins use immutable GitHub
+IDs, so name reuse cannot inherit old evidence. Unknown or duplicate query keys
+return 400. Successful responses support authenticated ETag/304; all responses
+use `Cache-Control: private, no-store` and `Referrer-Policy: no-referrer`.
+Machine responses vary on `Authorization`; browser responses vary on
+`Cookie, Cf-Access-Jwt-Assertion`. Errors do not receive an ETag.
+
+The response retains the `ActivitySnapshot` format:
 
 ```text
-{ account_id, runId, previousRunId, fetchedAt, membership?,
-  window: { since, until, gap, first },
+{ account_id, runId, previousRunId, fetchedAt, membership,
+  window: { since, until, timezone?, gap, first },
   repos: [{ repo, ci_runs, prs: { opened, merged, closed },
     issues: { opened, closed }, releases, commits: { default, other, items },
-    deploy: { last_success_at, runs }, snapshot, coverage }],
-  totals, totals_partial, totals_coverage: { missing: [{ repo, metrics, reason }] },
-  contributions, coverage, truncated }
+    deploy, snapshot, coverage }],
+  totals, totals_partial, totals_coverage, contributions, coverage, truncated }
 ```
 
-The following rules explain historical activity publications; v0.26.0 creates
-none and never advances their windows. The interval is `(since, until]`, ending at the run's frozen collection cutoff,
-not its completion time. The last published account-wide quick refresh whose
-terminal status is `completed` or `partial` supplies `since`. A completed run
-without an activity publication (including pre-activity history) does not advance
-the window. Eligible runs are quick refreshes triggered by daily scheduling or a
-manual `scope:all` request, not weekly/deep, catalog or selected-repository work.
-Daily membership remains starred-owned even when it contains zero or one repo.
-The first run uses a bounded 24-hour lookback and sets `first:true,gap:true`.
-Failed/cancelled or unpublished terminal eligible runs, or a missing Beijing
-calendar day, set `gap:true`; the window still starts at the last eligible
-publication. A published partial run advances the window without itself creating
-a gap. Collection-time jitter alone does not create a gap. Adjacent publications
-share the exact boundary timestamp. `latest`, `/sources` discovery and retention
-use the same completed-or-partial publication eligibility; failed/cancelled runs
-remain excluded. A finished partial publication is readable, not a 409.
+The requested closed calendar-day window comes from the current publication,
+with inclusive UTC timestamp boundaries and its original display timezone.
+There is no old quick-run checkpoint or author-event ledger: `previousRunId`
+is null, and `first` / `gap` remain true rather than asserting contiguous
+reporting history. The top-level fetch time identifies publication; per-stream
+`coverage.source` retains the actual run ID, fetch time, original window and
+complete ranges. A publication does not renew source evidence.
 
-Lists distinguish known empty (`[]`) from unavailable (`null`). Coverage entries
-are `{status:complete|partial|unavailable,truncated,reason}`. A bounded pagination
-or storage cut marks the affected list and the whole response truncated; nullable
-totals must not be interpreted as zero. Old good observations are not relabeled
-as newly collected evidence. The source index registers `account:activity` with
-its publication version and saved `fetchedAt`. Its content version hashes canonical
-`{input:<stored-publication-content-version>,derivation:"metric-totals-v1"}` with
-SHA-256, binding the frozen publication to this read-time totals contract.
-Activity ETags hash the full derived response bytes, so old pre-derivation ETags
-cannot incorrectly produce 304. Repeated reads of the same publication and query
-are deterministic; no stored publication, page, timestamp or run ID is rewritten.
+Supported PR/Issue lifecycle events, sampled CI and published releases are
+projected from new saved resources. Event timestamps are filtered to the requested
+window. Missing sources, incompatible source versions or disjoint source windows
+stay unavailable; incomplete overlapping coverage stays partial. Lifecycle
+coverage does not claim a complete current open inbox. PR classification is
+partial when required labels are unavailable.
 
-Account totals are derived at read time from frozen per-repository evidence,
-including publications created before 0.21.0. Each metric sums only repositories
-with complete evidence for that metric. `red_default_branch` concatenates only
-fully classified repository lists. A metric with no available repository is null,
-not zero; a known empty membership (including an unselected repository filter)
-still has zero counts and an empty red list. `coverage.run:partial` alone does not
-exclude otherwise complete metric streams; unavailable security/alerts do not
-erase CI, PR, issue or release evidence.
-
-`totals_partial` is true when at least one repository/metric is excluded.
-`totals_coverage.missing` groups metric names by repository and reason:
-`partial` or `unavailable` describes the relevant source coverage,
-`missing_evidence` means a missing list/coverage or unclassifiable red workflow,
-and `omitted` identifies frozen members lost to storage capacity. An old truncated
-publication without membership uses `repo:null` for unattributable omissions.
-This flag describes totals only, not overall run completeness or contributions.
-Retained available subtotals remain useful when membership was truncated, while
-the omitted repositories and metrics stay explicit. Neither catalog changes nor
-unrelated newer snapshots enter this calculation.
-Activity freezes only streams carrying this run's ID. Repository evidence is
-current when its observation version matches the run or its repository commit
-step succeeded in this run, with the repository ID matching the frozen run ID
-when available. A retained dependency evidence version therefore does not discard
-successfully collected activity streams; absent successful commit evidence,
-stale observations remain unavailable.
-The metadata step saves the current run's default branch separately from retained
-repository observations. Activity supplement collection and freezing use only
-that successful same-repository metadata with matching identity when recorded.
-Without verifiable branch evidence, workflow `is_default_branch` and default
-commit branch labels are null, `coverage.default_branch` is unavailable and red
-that repository's default-branch total remains null. A retained branch is never used as a fallback.
-This also applies to in-flight runs whose metadata completed before branch
-evidence was recorded: supplemental branch histories are not classified as
-other branches. `coverage.other_commits` stays unavailable and `commits.other`
-stays null; saved unverified classifications are discarded. Tag and deployment
-collection remain independent and continue normally.
-Repositories with failed, unavailable or limited steps have `coverage.run.status`
-`partial`, except that `limited` with `error:dependency_parse_unsupported` alone
-does not mark run coverage partial or truncated. Dependency diagnostics retain
-their own limited coverage independently. Other limited steps still mark run
-coverage truncated; failed/unavailable steps alone do not. Per-source missing
-evidence remains unavailable/null; partial or unavailable repository metrics are
-excluded from account subtotals, never counted as fabricated zeroes.
-`membership` freezes repository names independently of stored pages, so capacity
-cuts cannot make a selected member look unselected. An unclassifiable failed
-workflow leaves that repository's red default-branch contribution null and `default_branch` coverage
-partial rather than claiming no red workflows.
-Publication first profiles frozen repository payload lengths and loads at most
-4,000,000 UTF-8 bytes in frozen membership order, independently of the 16-page
-output limit. Input-budget omissions retain membership, partial/truncated
-coverage and explicit missing-total entries, never complete zero results.
-
-Every CI run exposes `id`, `workflow_id`, `workflow_name`, `event`, `head_branch`,
-`head_sha`, `is_default_branch`, `status`, `conclusion`, `run_attempt`, `created_at`,
-`updated_at`, `run_started_at`, `duration_s`, `html_url`, `actor` and workflow `path`.
-PR events include `merged_at`, `merged_by`, `base_ref`, `bot` and `dependency`;
-issue events include `closed_by`, `state_reason` and labels. Lifecycle lists are
-independent timestamp slices, not disjoint partitions: a PR opened and merged in
-the same window appears in both, and a merge with `closed_at` also appears closed.
-Commits include SHA,
-author, first message line, time, branch and default-branch identity. The current
-snapshot includes open PR lifecycle/merge/check/review/draft fields, open issues
-classified as dependency/security/other and independent nullable Dependabot and
-code-scanning counts. Deploy runs are a classified subset of CI; the last known
-successful deployment may precede the activity window or finish after its frozen
-cutoff during collection; it describes current observed state, not a window event.
-Deployment classification matches standalone name/path terms `deploy`,
-`deployment`, `release`, `publish` or `pages`, case-insensitively; it has no
-repository-specific exceptions. The classifier is centralized for future policy
-changes, not exposed as a new settings API. Dependency PRs match Dependabot or
-Renovate author identities or dependency labels; bot identity also recognizes the
-GitHub Bot actor type and `[bot]` suffix. Security issue labels take precedence
-over dependency labels, with the remaining issues in `other`. Release totals
-count releases, not additional tag events; matching release tag names are deduped.
-Annotated tags use the tagger timestamp. Lightweight tags have no creation time
-and therefore leave tag coverage partial, never use commit time as tag time.
-
-Account totals include merged PRs split into dependency/other, opened/closed
-issues, releases, CI runs and red default-branch workflow runs. Contributions
-describe explicit `Asia/Shanghai` intervals, the previous full Beijing day and
-today's partial interval, with independently nullable composition. This is a
-separate bounded query, not a timezone relabeling of `/contributions`' GitHub-native
-calendar. For Beijing date `D`, the query uses `D T00:00:00Z` through
-`D T23:59:59Z`: GitHub truncates the query to UTC dates and its calendar cells
-already use the account's timezone. Each day's `count` is GitHub's reported
-`contributionCalendar.totalContributions`, accepted only when exactly one valid
-native cell has date `D` and the same count. Optional
-`nativeCalendar:{timezone:"github",total,days:[{date,count}]}` preserves returned
-native date labels unchanged. Neither field promises a re-bucketing of GitHub's
-native squares into Beijing days. Missing totals/types stay null. Multiple cells,
-an incorrect date or inconsistent calendar total produce a null day count and
-partial coverage, never a sum of cells. A type-composition mismatch keeps the
-validated single-cell count but marks coverage partial. The current day remains
-`partial:true`; day `since`/`until` describe Beijing boundaries, not query variables.
-See `apps/web/src/lib/activity-types.ts` for the complete field contract.
-
-The v0.24 default-branch observation contract is specified in
-[landed activity](13-landed-activity.md). `commits.default` counts only new ledger
-identities attributed to this reporting window, without a committer-date filter.
-Each default commit carries `observation: {runId, window, at, bootstrap}`:
-`observation.at` is first local observation, not GitHub push time, while the
-commit's `at` remains committer date. First reconciliation includes old reachable
-history and marks it `bootstrap:true`. Ledger admission requires successful
-current-run metadata and an exact stable repository-ID match; a rolling commit
-stream is never a substitute.
-
-`commits.deferred` contains `{runId, window, items}` groups whose first observation
-belongs to an earlier run/window but whose evidence is delivered now. These do
-not contribute to this response's `commits.default`; consumers can group their
-items by original window when aggregating delayed evidence. Only serialized
-identities are marked published, atomically with the immutable publication.
-Pending or packed-out evidence remains durable; the 500-item per-repository
-selection and existing publication byte limits report partial coverage, never a
-complete zero. Repeated GETs remain read-only. Old publications without these
-fields retain their original date-based semantics and are not rewritten.
-
-Historical migration `0026_activity_commit_ledger.sql` added the permanent ledger/checkpoints
-without backfill. Phase 1 leaves those rows untouched but removes their writers;
-upgrading to v0.26.0 does not resume collection. Commits pushed and force-pushed away between snapshots
-are invisible. Rename/re-add preserves the stable repository-ID ledger, whereas
-a replacement ID starts a new ledger; cancelled catch-up keeps its original window.
-
-The supplementary collector and its continuation/request budgets are retired.
-These saved observations are read without GraphQL or REST collection calls.
-
-The `/today` page shows the frozen interval, data timestamp, gap and truncation,
-activity sections and contribution composition. Repository links lead to the
-existing detail page, which embeds the repository's current-run activity.
+Owner-specific commits are unsupported by repository-wide GraphQL counts:
+`commits.default`, `commits.other` and `commits.items` remain null. Native
+contribution calendars also lack Activity attribution, so `contributions` is
+null; read the separate `/contributions` endpoint for the calendar. Uncollected
+security snapshots, tags and other dimensions stay explicitly unavailable.
+Known empty arrays differ from unavailable nulls; totals and coverage never
+convert missing evidence to a successful zero.
 
 ### GET /catalog/changes
 
 `GET /api/v1/accounts/A/catalog/changes?since=<ISO datetime>` requires
-`observations:read`. It reads persisted discovery history only; it never queries
-GitHub, updates token activity or changes stars. `since` is required, must include
-a timezone, and is normalized to UTC. Unknown/duplicate query keys and a cursor
-after the last complete publication return 400. Responses use authenticated
-ETag/304 and `Cache-Control: private, no-store`.
+`observations:read` and remains read-only. Exactly one `since` timestamp with
+an explicit timezone is required; unknown/duplicate keys and invalid timestamps
+return 400 `validation_failed`.
 
-The body contains `account_id`, normalized `since`, `until` (the last complete
-catalog publication), `history_since`, nullable `warning_code`, and `added`, `removed`, `archived`, `unarchived`,
-`visibility_changed`, `fork_changed`, `renamed` and `unconfirmed` arrays. Each event includes
-`event_id`, `repo`, `at`, nullable `github_id`, and
-`source: {kind: "factory" | "legacy", runId: string | null}`, with the relevant
-before/after values. Renames also include `previous_repo`; unconfirmed observations
-include a safe `reason`, never raw upstream diagnostics. Arrays sort ascending
-by `(at, repo, event_id)`. Selection is inclusive (`at >= since`); retain event IDs
-to deduplicate when polling from the previous `until`.
-
-No completed discovery publication returns 409 `catalog_unpublished`. After the
-first publication, `since < history_since` returns 410 `catalog_history_expired`
-immediately, not only after retention eviction; it does not clamp the cursor or
-return a partial 200. `since == history_since` is accepted. For migrated accounts,
-0019 seeds this floor at migration application time (history initialization), not
-the saved catalog's fetch time or the first later publication; that publication
-preserves the floor. Resync from `/repos` after a 410, then poll from the published
-history boundary. The saved 2026-10-21 catalog baseline already excludes `rsshub`
-and `wiki`; their pre-history departures can never be reconstructed as `removed`
-events. Initialization does not invent additions, removals or archive events.
-
-Event retention is bounded to 90 days and 10,000 combined change/unconfirmed events per account. Eviction removes
-whole timestamp cohorts and advances the history floor beyond the evicted time;
-a request before that floor returns 410 `catalog_history_expired`, never a
-silently incomplete success. Resynchronize the current catalog after expiry.
-
-`GET /repos` adds nullable `first_seen_at`, `last_seen_at`, `removed_at` and
-`archived_changed_at` to each row. Other existing row fields retain their meaning.
-Removed repositories are excluded by default; `include=removed` includes retained
-departed rows. This option applies only to `/repos`, alongside `scope=all|starred`.
-Scope still selects owned repositories, and removal clears stars, so removed rows
-do not reappear in starred scope. Removed row payloads have a separate 90-day,
-1,000-row-per-account bound; they are not an unlimited archive.
-
-The following discovery rules describe saved pre-v0.26.0 catalog provenance;
-discovery and catalog publication are now retired. Partial/error/truncated lists could not
-advance history or replace prior membership. Absence or a name-based 404 does not
-prove deletion. Confirm against the previously saved stable GitHub ID with a
-GraphQL node lookup. A matching ID at another name is a rename; a new ID at the
-old name neither confirms deletion nor blocks the old identity's resolution.
-
-A candidate last seen private is never auto-removed (`private_unverifiable`). A
-public candidate is eligible only when this same complete listing still contains
-at least one private owned repository with the same stable ID previously observed
-as private (`scope_unverifiable` otherwise). Tokens without private access therefore
-never auto-remove repositories. Only a recognized, unambiguous identity-not-found
-response can then confirm removal. A missing/malformed response, 401/403, rate or
-secondary limit, 5xx, network failure, or access/permission/SAML/SSO wording in a
-404 retains all state and the original `last_seen_at`. The publication records a
-warning and an `unconfirmed` event so consumers can distinguish uncertainty from
-deletion. Other safe reasons are `mass_removal_guard`, `identity_unavailable`,
-`budget_exhausted`, `permission_denied`, `github_unauthorized`,
-`github_rate_limited`, `github_error` and `lookup_unverifiable`.
-
-Count every missing, not-yet-removed identity as a candidate, including quarantined
-identities displaced by earlier same-name replacements, even if another safety
-guard would also block it. If their total exceeds `max(3, owned_before * 0.1)`
-(no rounding), suppress all removals and confirmation calls, preserve current and
-quarantined mutable state, set `catalog_mass_removal_guard`, and report every
-candidate in `unconfirmed[]` with reason `mass_removal_guard`. This batch reason
-takes precedence over individual private/scope reasons. Conservatively,
-`owned_before` counts only previously current-name, non-removed owned identities,
-including forks and archived repositories; non-owned, departed and quarantined
-identities cannot inflate the denominator. Exactly the threshold is not blocked
-by this guard; all other identity/privacy checks still apply.
-
-Confirmed deletion atomically clears star records (including owner-unstar
-tombstones), statistics residue and mutable factory participation. It does not
-delete immutable observation/publication history or generic agent resources.
-Reappearance emits `added` without restoring an old star. Stable GitHub repository
-IDs identify renames: mutable names move with their star provenance, while frozen
-historical names stay unchanged. Giraffe never auto-stars newly discovered repos;
-the external bot owns automatic starring policy and applies it only when authorized.
-Every accepted star write is last-write-wins across browser and agent writers;
-`source` is informational provenance, never an owner lock or priority rule.
-
-A name reused by a different GitHub repository ID is a distinct identity.
-Current-name ownership follows the identity in the complete listing, even if the
-old identity remains unconfirmed. Its catalog row retains `removed_at:null`;
-mutable stars/statistics/factory state are preserved by old identity in isolated
-storage, not inherited by the replacement. Recovery restores that preserved state
-only to the same identity, never across IDs or after confirmed deletion. Repeated
-catalogs cannot be blocked merely by this same-name replacement.
-
-Retained factory evidence from the departed ID cannot become the replacement's current
-observation or complete source. In `include=removed` responses, the departed row
-stays unstarred with null star provenance even if the new owner of that name is
-starred; only the current identity can enter starred scope. Same-ID reappearance
-can retain original observation provenance, but never restores deleted stars.
-
-Existing saved catalog rows seed their first/last-seen timestamps from the saved
-fetch time without creating change events. This is observation provenance, not
-the repository's creation time. No historical additions/deletions are invented.
+The new catalogue stores current immutable identities, not an event-history
+ledger. Valid requests return 409 `catalog_unpublished`; old catalogue states,
+changes and unconfirmed rows are never used as a fallback. Read `/repos` for
+the latest new catalogue and use the unified refresh-run endpoints to inspect
+collection progress. No synthetic additions, removals or complete history are
+invented from current rows.
 
 ### Repository endpoints
 

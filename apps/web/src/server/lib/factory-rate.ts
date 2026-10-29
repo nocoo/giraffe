@@ -19,13 +19,9 @@ export type SavedFactoryRateRow = { rate: string | null; malformed: number };
 
 export function factoryRateStatement(db: Db, account: SavedAccount) {
 	return db
-		.prepare(`WITH inputs AS MATERIALIZED (
- SELECT id,updated_at,CASE WHEN json_valid(payload,2) THEN payload END AS payload,
- NOT json_valid(payload,2) AS malformed FROM factory_runs WHERE account_id=${accountIdSql(account)}
- ) SELECT (SELECT json_extract(payload,'$.checkpoint.rate') FROM inputs
- WHERE json_type(payload,'$.checkpoint.rate')='object'
- ORDER BY julianday(json_extract(payload,'$.checkpoint.rate.observedAt')) DESC,updated_at DESC,id DESC LIMIT 1) AS rate,
- coalesce((SELECT max(malformed) FROM inputs),0) AS malformed`)
+		.prepare(
+			`SELECT CASE WHEN json_valid(payload,2) AND json_type(payload,'$.rate')='object' THEN json_extract(payload,'$.rate') END AS rate,NOT json_valid(payload,2) AS malformed FROM refresh_publications WHERE account_id=${accountIdSql(account)}`,
+		)
 		.bind(...accountBindings(account));
 }
 

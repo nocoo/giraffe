@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { expect, it } from "vitest";
 import { factoryFixture } from "../fixtures/factory-snapshot";
 import { quote, localD1Rows as rows } from "./local-d1";
+import { savedSnapshotSql } from "./saved-fixture";
 
 const base = process.env.GIRAFFE_E2E ?? "http://127.0.0.1:17045";
 
@@ -58,7 +59,7 @@ it.each([
 			? [{ id: "saved-alert", source: "dependabot", severity: "low", summary: "Saved advisory" }]
 			: [];
 		const snapshot = (kind: string, value: object) =>
-			`INSERT INTO snapshots(account_id,kind,payload,fetched_at) VALUES(${quote(account)},${quote(kind)},${quote(JSON.stringify({ fetched_at: at, truncated: false, ...value }))},${quote(at)});`;
+			savedSnapshotSql(account, kind, { fetched_at: at, truncated: false, ...value }, at);
 		rows(
 			[
 				`INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES(${quote(account)},${quote(owner)},'test-not-an-encrypted-pat','fake',${quote(now)},${quote(now)});`,
@@ -73,7 +74,6 @@ it.each([
 					coverage: repo.coverage.alerts,
 					items,
 				}),
-				`INSERT INTO factory_state(account_id,published_id,next_at) VALUES(${quote(account)},${quote(publication.runId)},${quote(now)});`,
 			].join("\n"),
 		);
 		const machine = (path: string) =>
@@ -82,7 +82,7 @@ it.each([
 			});
 		const state = () =>
 			rows(
-				`SELECT * FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind; SELECT * FROM api_tokens WHERE account_id=${quote(account)}; SELECT * FROM factory_state WHERE account_id=${quote(account)};`,
+				`SELECT * FROM refresh_snapshots WHERE account_id=${quote(account)} ORDER BY kind; SELECT * FROM api_tokens WHERE account_id=${quote(account)}; SELECT * FROM refresh_publications WHERE account_id=${quote(account)}; SELECT * FROM refresh_resources WHERE account_id=${quote(account)} ORDER BY repo_id,stream;`,
 			);
 		try {
 			const before = state();

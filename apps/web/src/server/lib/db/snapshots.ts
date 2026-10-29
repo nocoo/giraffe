@@ -12,7 +12,7 @@ export async function readRepositorySnapshot(db: Db, accountId: string, logical:
 	const [a, b] = physicalKinds(logical);
 	const rows = await db
 		.prepare(
-			"SELECT kind,payload,content_meta FROM snapshots WHERE account_id=? AND kind COLLATE NOCASE IN (?,?)",
+			"SELECT kind,payload,content_meta FROM refresh_snapshots WHERE account_id=? AND kind COLLATE NOCASE IN (?,?)",
 		)
 		.bind(accountId, a, b)
 		.all<SnapshotPage>();
@@ -27,7 +27,7 @@ export async function readSnapshot(
 	const [a, b] = physicalKinds(logical);
 	const result = await db
 		.prepare(
-			"SELECT kind, payload, content_meta FROM snapshots WHERE account_id = ? AND kind IN (?, ?)",
+			"SELECT kind, payload, content_meta FROM refresh_snapshots WHERE account_id = ? AND kind IN (?, ?)",
 		)
 		.bind(accountId, a, b)
 		.all<SnapshotPage>();
@@ -56,13 +56,13 @@ export async function replaceSnapshotStmts(
 	});
 	const metadata = await savedContentMeta(logical, assemblePages(logical, pages));
 	const del = db
-		.prepare("DELETE FROM snapshots WHERE account_id = ? AND kind IN (?, ?)")
+		.prepare("DELETE FROM refresh_snapshots WHERE account_id = ? AND kind IN (?, ?)")
 		.bind(accountId, a, b);
 	const values = pages.flatMap((page) => [accountId, page.kind, page.payload, fetchedAt, metadata]);
 	const placeholders = pages.map(() => "(?, ?, ?, ?, ?)").join(", ");
 	const ins = db
 		.prepare(
-			`INSERT INTO snapshots (account_id, kind, payload, fetched_at, content_meta) VALUES ${placeholders}`,
+			`INSERT INTO refresh_snapshots (account_id, kind, payload, fetched_at, content_meta) VALUES ${placeholders}`,
 		)
 		.bind(...values);
 	return [del, ins];

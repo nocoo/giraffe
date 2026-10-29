@@ -1,18 +1,21 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { factoryFixture } from "../../../../../tests/fixtures/factory-snapshot";
 import { profileDb } from "../../../../../tests/fixtures/profile-db";
+import { savedObservationStmts as replaceSnapshotStmts } from "../../../../../tests/fixtures/refresh";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import type { Env } from "../env";
 import { createApp } from "../index";
 import { createDb } from "./db/d1";
 import { publishedFactory } from "./db/factory-runs";
-import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
+import { readSnapshot } from "./db/snapshots";
 import { readFactoryRate } from "./factory-rate";
 import {
 	readCiObservation,
 	readMachineAccountObservation,
 	readObservation,
 } from "./machine-observations";
+import { enrichRepoAgentStates } from "./repo-agent-state";
+import { enrichRepoMeta } from "./repo-meta";
 import {
 	accountReadPlan,
 	decodePublication,
@@ -67,14 +70,14 @@ async function fixture() {
 	await save("repo:NOCOO/APP:releases", { releases: [] });
 	const snapshot = factoryFixture();
 	snapshot.publication = { runId: snapshot.runId, mixed: true, publishedAt: at };
-	await save(`factory:v:${snapshot.runId}`, snapshot);
+	await save(`factory`, snapshot);
 	await raw
 		.prepare("INSERT INTO factory_state(account_id,published_id,next_at) VALUES(?,?,'t')")
 		.bind(account, snapshot.runId)
 		.run();
 	await raw
 		.prepare(
-			"INSERT INTO snapshots(account_id,kind,payload,fetched_at) VALUES(?,'repo:nocoo/orphan:actions#2','invalid-json',?)",
+			"INSERT INTO refresh_snapshots(account_id,kind,payload,fetched_at) VALUES(?,'repo:nocoo/orphan:actions#2','invalid-json',?)",
 		)
 		.bind(account, at)
 		.run();
@@ -109,13 +112,11 @@ async function browserReference(raw: D1Database, kind: string, scope: SnapshotSc
 	const snap = await readSnapshot(db, account, kind);
 	if (!snap) throw new Error("fixture source missing");
 	const projected = await scopedSnapshot(db, account, kind, snap, scope);
-	if (kind === "repos" && Array.isArray(projected.repos))
-		projected.repos = projected.repos.map((repo: Record<string, unknown>) => ({
-			...repo,
-			agent_state: null,
-			meta: null,
-		}));
-	return { ...projected, account_id: account };
+	const enriched =
+		kind === "repos"
+			? await enrichRepoMeta(db, account, await enrichRepoAgentStates(db, account, projected))
+			: projected;
+	return { ...enriched, account_id: account };
 }
 
 afterEach(() => vi.unstubAllGlobals());
@@ -127,18 +128,18 @@ it.each(resources)(
 		for (const metadata of ["stored", "mismatched", "legacy"]) {
 			if (metadata === "mismatched") {
 				const row = await s.raw
-					.prepare("SELECT payload FROM snapshots WHERE account_id=? AND kind='repos'")
+					.prepare("SELECT payload FROM refresh_snapshots WHERE account_id=? AND kind='repos'")
 					.bind(account)
 					.first<{ payload: string }>();
 				if (!row) throw new Error("fixture catalog");
 				const data = JSON.parse(row.payload);
 				await s.raw
-					.prepare("UPDATE snapshots SET payload=? WHERE account_id=? AND kind='repos'")
+					.prepare("UPDATE refresh_snapshots SET payload=? WHERE account_id=? AND kind='repos'")
 					.bind(JSON.stringify({ ...data, repos: data.repos.slice(0, 1) }), account)
 					.run();
 				await s.raw
 					.prepare(
-						"INSERT INTO snapshots(account_id,kind,payload,fetched_at,content_meta) VALUES(?,'repos#2',?,?,?)",
+						"INSERT INTO refresh_snapshots(account_id,kind,payload,fetched_at,content_meta) VALUES(?,'repos#2',?,?,?)",
 					)
 					.bind(
 						account,
@@ -149,7 +150,7 @@ it.each(resources)(
 					.run();
 			}
 			if (metadata === "legacy")
-				await s.raw.prepare("UPDATE snapshots SET content_meta=NULL").run();
+				await s.raw.prepare("UPDATE refresh_snapshots SET content_meta=NULL").run();
 			for (const scope of ["all", "starred"] as const) {
 				const expected = JSON.stringify(await browserReference(s.raw, kind, scope));
 				const profile = profileDb(s.raw);
@@ -199,8 +200,10 @@ it.each(resources)(
 
 it("keeps browser missing-source errors before malformed catalog decoding", async () => {
 	const s = await fixture();
-	await s.raw.prepare("DELETE FROM snapshots WHERE kind='issues'").run();
-	await s.raw.prepare("UPDATE snapshots SET payload='invalid-json' WHERE kind='repos'").run();
+	await s.raw.prepare("DELETE FROM refresh_snapshots WHERE kind='issues'").run();
+	await s.raw
+		.prepare("UPDATE refresh_snapshots SET payload='invalid-json' WHERE kind='repos'")
+		.run();
 	const response = await createApp().request("http://localhost/api/issues", {}, {
 		DB: s.raw,
 		ENVIRONMENT: "development",
@@ -228,14 +231,11 @@ it("composes account inputs with caller-owned statements in one batch", async ()
 	expect(() => plan.decode(results.slice(0, 1))).toThrow("incomplete observation batch");
 });
 
-it.each(["legacy", "versioned"])(
-	"reads only the referenced %s publication in one statement",
-	async (kind) => {
+it.each(["absent", "retired"])(
+	"reads only canonical factory pages with a %s legacy head in one statement",
+	async (head) => {
 		const s = await fixture();
-		if (kind === "legacy") {
-			await s.raw
-				.prepare("UPDATE snapshots SET kind='factory' WHERE kind LIKE 'factory:v:%'")
-				.run();
+		if (head === "absent") {
 			await s.raw.prepare("DELETE FROM factory_state").run();
 		}
 		await s.save("factory:v:unreferenced", { ignored: true });
@@ -253,7 +253,9 @@ it.each(["legacy", "versioned"])(
 it("does not decode unused corrupt repository pages for empty scopes or non-list payloads", async () => {
 	const s = await fixture();
 	await s.raw
-		.prepare("UPDATE snapshots SET payload='invalid-json' WHERE kind='repo:NOCOO/APP:issues'")
+		.prepare(
+			"UPDATE refresh_snapshots SET payload='invalid-json' WHERE kind='repo:NOCOO/APP:issues'",
+		)
 		.run();
 	await s.raw.prepare("DELETE FROM repo_stars").run();
 	const request = (scope: string) =>
@@ -285,6 +287,12 @@ it.each(resources)("serves complete machine %s with bounded saved-input reads", 
 		)
 		.bind(account, JSON.stringify({ checkpoint: { rate } }))
 		.run();
+	await s.raw
+		.prepare(
+			"UPDATE refresh_publications SET payload=json_set(payload,'$.rate',json(?)) WHERE account_id=?",
+		)
+		.bind(JSON.stringify(rate), account)
+		.run();
 	for (const scope of ["all", "starred"] as const) {
 		const expected = await readObservation(createDb(s.raw), account, kind, scope);
 		if (kind === "repos")
@@ -315,7 +323,8 @@ it("defers speculative malformed-rate errors until the original rate overlay sta
 		)
 		.bind(account)
 		.run();
-	await s.raw.prepare("DELETE FROM snapshots WHERE kind LIKE 'factory:v:%'").run();
+	await s.raw.prepare("DELETE FROM refresh_snapshots WHERE kind IN ('factory','factory#2')").run();
+	await s.raw.prepare("DELETE FROM refresh_publications").run();
 	const request = () =>
 		createApp().request("http://localhost/api/factory", {}, {
 			DB: s.raw,
@@ -327,7 +336,9 @@ it("defers speculative malformed-rate errors until the original rate overlay sta
 		readMachineAccountObservation(createDb(s.raw), account, "factory", "all"),
 	).rejects.toMatchObject({ code: "snapshot_missing" });
 	const snap = factoryFixture();
-	await s.save(`factory:v:${snap.runId}`, snap);
+	await s.save(`factory`, snap);
+	expect((await request()).status).toBe(200);
+	await s.raw.prepare("UPDATE refresh_publications SET payload='invalid-json'").run();
 	const response = await request();
 	expect(response.status).toBe(500);
 	expect(await response.json()).toEqual({ error: { code: "db_error", message: "d1 error" } });

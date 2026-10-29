@@ -70,7 +70,7 @@ it("resets scoped sources without remounting children and re-registers unchanged
 	expect(container.textContent).toContain("暂无数据时间");
 	expect(container.querySelector("header")).toBe(header);
 });
-it("keeps saved data age on focus without reading deleted refresh records", async () => {
+it("keeps saved data age on focus without fetching refresh metadata itself", async () => {
 	await act(async () => root.render(<Page />));
 	expect(container.textContent).toContain("2 小时前更新");
 	await act(async () => window.dispatchEvent(new Event("focus")));

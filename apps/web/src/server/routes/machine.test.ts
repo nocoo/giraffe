@@ -1,13 +1,13 @@
 import { readFileSync } from "node:fs";
 import { expect, it, vi } from "vitest";
 import { factoryFixture } from "../../../../../tests/fixtures/factory-snapshot";
+import { savedObservationStmts as replaceSnapshotStmts } from "../../../../../tests/fixtures/refresh";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 
 import type { Env } from "../env";
 import { createApp } from "../index";
 import { createApiToken } from "../lib/api-tokens";
 import { createDb } from "../lib/db/d1";
-import { replaceSnapshotStmts } from "../lib/db/snapshots";
 
 const account = "a".repeat(21),
 	other = "b".repeat(21);
@@ -103,7 +103,7 @@ it("applies private headers to every machine response, including authentication 
 		)),
 	];
 	expect(responses.slice(0, 8).map((response) => response.status)).toEqual([
-		401, 403, 403, 410, 410, 404, 405, 400,
+		401, 403, 403, 400, 400, 404, 405, 400,
 	]);
 	vi.spyOn(fixture.raw, "prepare").mockImplementationOnce(() => {
 		throw new Error("fixture database failure");
@@ -374,7 +374,7 @@ it("retains incrementally merged global sources with newer repository observatio
 	}
 });
 
-it("filters retained factory publications case-insensitively without rewriting their identities", async () => {
+it("filters refreshed factory publications case-insensitively without rewriting their identities", async () => {
 	const { db, call, prefix } = await setup();
 	await db.batch(
 		await replaceSnapshotStmts(
@@ -390,17 +390,14 @@ it("filters retained factory publications case-insensitively without rewriting t
 	if (!repository) throw new Error("fixture missing");
 	repository.observation = {
 		version: "immutable-v1",
+		repo: "nocoo/app",
 		window: publication.window,
 		refreshedAt: publication.fetched_at,
-		source: "legacy",
+		source: "run",
 	};
 	await db.batch(
-		await replaceSnapshotStmts(db, account, "factory:v:pub", publication, publication.fetched_at),
+		await replaceSnapshotStmts(db, account, "factory", publication, publication.fetched_at),
 	);
-	await db
-		.prepare("INSERT INTO factory_state(account_id,published_id,next_at) VALUES(?,'pub','t')")
-		.bind(account)
-		.run();
 	await db.batch(
 		await replaceSnapshotStmts(
 			db,
@@ -415,14 +412,14 @@ it("filters retained factory publications case-insensitively without rewriting t
 	const result = (await response.json()) as { sources: { resource: string; version: string }[] };
 	expect(result.sources.filter((source) => source.resource.startsWith("factory:"))).toEqual(
 		Object.keys(repository.coverage).map((stream) =>
-			expect.objectContaining({ resource: `factory:nocoo/app:${stream}`, version: "immutable-v1" }),
+			expect.objectContaining({ resource: `factory:NoCoo/App:${stream}`, version: "immutable-v1" }),
 		),
 	);
 	const resource = await call(`${prefix}/factory/repos/NoCoo/App/commits`);
 	expect(resource.status).toBe(200);
 	expect(await resource.json()).toMatchObject({
 		sourceVersion: "immutable-v1",
-		source: { resource: "factory:nocoo/app:commits" },
+		source: { resource: "factory:NoCoo/App:commits" },
 	});
 });
 
@@ -441,19 +438,18 @@ it("projects saved account rates independently of publication and dashboard acti
 	for (const id of [account, other])
 		await db
 			.prepare(
-				"INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES(?,?,?,'running',?,'t','t','t')",
+				"INSERT INTO refresh_publications(account_id,payload,published_at) VALUES(?,?,'t') ON CONFLICT(account_id) DO UPDATE SET payload=excluded.payload",
 			)
 			.bind(
 				id,
-				id,
-				id,
 				JSON.stringify({
-					mode: "catalog",
-					checkpoint: { rate: id === account ? rate : { ...rate, remaining: 999 } },
+					...publication,
+					rate: id === account ? rate : { ...rate, remaining: 999 },
 				}),
 			)
 			.run();
-	const before = (await db.prepare("SELECT * FROM factory_runs ORDER BY id").all()).results;
+	const before = (await db.prepare("SELECT * FROM refresh_publications ORDER BY account_id").all())
+		.results;
 	const tokenBefore = await db
 		.prepare("SELECT * FROM api_tokens WHERE id=?")
 		.bind(token.id)
@@ -462,9 +458,9 @@ it("projects saved account rates independently of publication and dashboard acti
 		sourceVersion: publication.runId,
 		data: { rate },
 	});
-	expect((await db.prepare("SELECT * FROM factory_runs ORDER BY id").all()).results).toEqual(
-		before,
-	);
+	expect(
+		(await db.prepare("SELECT * FROM refresh_publications ORDER BY account_id").all()).results,
+	).toEqual(before);
 	expect(await db.prepare("SELECT * FROM api_tokens WHERE id=?").bind(token.id).first()).toEqual(
 		tokenBefore,
 	);

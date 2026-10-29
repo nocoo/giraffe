@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { executeD1FixtureSync } from "../fixtures/d1";
 import { factoryFixture } from "../fixtures/factory-snapshot";
+import { savedSnapshotSql } from "./saved-fixture";
 
 const base = process.env.GIRAFFE_E2E ?? "http://127.0.0.1:17045";
 const suite = process.env.GIRAFFE_SUITE ?? "A";
@@ -464,14 +465,10 @@ describe("api method matrix", () => {
 		const quote = (value: string) => `'${value.replaceAll("'", "''")}'`;
 		d1Rows(
 			Object.entries(snapshots)
-				.map(
-					([kind, value]) =>
-						`INSERT INTO snapshots(account_id,kind,payload,fetched_at) VALUES(${quote(account.id)},${quote(kind)},${quote(JSON.stringify({ ...value, fetched_at: at, truncated: false }))},${quote(at)});`,
+				.map(([kind, value]) =>
+					savedSnapshotSql(account.id, kind, { ...value, fetched_at: at, truncated: false }, at),
 				)
 				.join("\n"),
-		);
-		d1Rows(
-			`INSERT INTO factory_state(account_id,published_id,next_at) VALUES(${quote(account.id)},${quote(publication.runId)},${quote(at)});`,
 		);
 		expect(await (await api("/api/repos")).json()).toMatchObject({
 			repos: [expect.objectContaining({ name_with_owner: repo })],
@@ -483,7 +480,7 @@ describe("api method matrix", () => {
 		expect(await (await api("/api/repos/octocat/hello-world/languages")).json()).toMatchObject({
 			languages: { TypeScript: 1 },
 		});
-		const snapRows = d1Rows("SELECT kind, fetched_at FROM snapshots ORDER BY kind");
+		const snapRows = d1Rows("SELECT kind, fetched_at FROM refresh_snapshots ORDER BY kind");
 		expect(snapRows.length).toBeGreaterThan(0);
 		for (const row of snapRows) {
 			expect(String(row.fetched_at).length).toBeGreaterThan(10);
@@ -491,7 +488,9 @@ describe("api method matrix", () => {
 		const accountRows = d1Rows("SELECT login, last_used_at, is_active FROM accounts");
 		expect(accountRows[0]).toMatchObject({ login: "octocat", is_active: 1 });
 		expect(String(accountRows[0]?.last_used_at ?? "").length).toBeGreaterThan(10);
-		const beforeRows = d1Rows("SELECT kind, payload, fetched_at FROM snapshots ORDER BY kind");
+		const beforeRows = d1Rows(
+			"SELECT kind, payload, fetched_at FROM refresh_snapshots ORDER BY kind",
+		);
 		const beforeAccounts = d1Rows("SELECT login, last_used_at, is_active FROM accounts");
 		const before = await githubCount();
 		for (const path of GETS.filter((p) => p !== "/api/me" && p !== "/api/accounts")) {
@@ -502,7 +501,7 @@ describe("api method matrix", () => {
 			snapshotMeta(body as Record<string, unknown>);
 		}
 		expect(await githubCount()).toBe(before);
-		expect(d1Rows("SELECT kind, payload, fetched_at FROM snapshots ORDER BY kind")).toEqual(
+		expect(d1Rows("SELECT kind, payload, fetched_at FROM refresh_snapshots ORDER BY kind")).toEqual(
 			beforeRows,
 		);
 		expect(d1Rows("SELECT login, last_used_at, is_active FROM accounts")).toEqual(beforeAccounts);
@@ -539,16 +538,19 @@ describe("api method matrix", () => {
 
 		const requestsBefore = await githubCount();
 		const rowsBefore = d1Rows(
-			"SELECT kind,payload FROM snapshots WHERE kind LIKE 'factory%' ORDER BY kind",
+			"SELECT kind,payload FROM refresh_snapshots WHERE kind LIKE 'factory%' ORDER BY kind",
 		);
 		for (const path of ["/api/factory", "/api/factory/repos/octocat/hello-world/commits"]) {
 			const response = await api(path);
 			expect(response.status).toBe(200);
-			noSecrets(await response.json());
+			const data = await response.json();
+			noSecrets(data);
+			if (path.endsWith("/commits"))
+				expect(data).toMatchObject({ items: [], coverage: { status: "pending", fetchedAt: null } });
 		}
 		expect(await githubCount()).toBe(requestsBefore);
 		expect(
-			d1Rows("SELECT kind,payload FROM snapshots WHERE kind LIKE 'factory%' ORDER BY kind"),
+			d1Rows("SELECT kind,payload FROM refresh_snapshots WHERE kind LIKE 'factory%' ORDER BY kind"),
 		).toEqual(rowsBefore);
 
 		const starsBefore = await githubCount();
@@ -646,7 +648,9 @@ describe("api method matrix", () => {
 			(await api(`/api/accounts/${account.id}`, { method: "DELETE", headers: { origin } })).status,
 		).toBe(204);
 		expect((await api("/api/repos")).status).toBe(409);
-		expect(d1Rows(`SELECT * FROM snapshots WHERE account_id = '${account.id}'`)).toEqual([]);
+		expect(d1Rows(`SELECT * FROM refresh_snapshots WHERE account_id = '${account.id}'`)).toEqual(
+			[],
+		);
 		expect(d1Rows(`SELECT * FROM repo_stars WHERE account_id = '${account.id}'`)).toEqual([]);
 		expect(d1Rows(`SELECT * FROM refresh_schedules WHERE account_id = '${account.id}'`)).toEqual(
 			[],

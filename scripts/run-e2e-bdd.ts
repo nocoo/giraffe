@@ -5,6 +5,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { factoryGraphqlStub, factoryRepoStub, factoryRestStub } from "./factory-stub";
+import { refreshGraphqlStub } from "./refresh-stub";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const persist = join(root, ".wrangler/e2e-pw");
@@ -213,6 +214,11 @@ const github = await listen(githubPort, (req, res) => {
 				variables?: Record<string, unknown>;
 			};
 			const query = String(request.query ?? "");
+			const refresh = refreshGraphqlStub(query, request.variables ?? {});
+			if (refresh) {
+				sendJson(res, 200, refresh);
+				return;
+			}
 			const factoryResponse = factoryGraphqlStub(query, request.variables ?? {});
 			if (factoryResponse) {
 				await Bun.sleep(300);

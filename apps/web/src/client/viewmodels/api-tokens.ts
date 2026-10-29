@@ -21,8 +21,8 @@ export const tokenScopesLabel: Record<string, string> = {
 	"observations:read": "读取 GitHub 快照",
 	"agent:read": "读取 Agent 数据",
 	"agent:write": "写入 Agent 数据",
-	"app:read": "读取应用配置",
-	"app:write": "修改应用配置",
+	"app:read": "读取应用配置与刷新状态",
+	"app:write": "修改应用配置、星标及发起刷新",
 };
 export const listTokens = (account: string) =>
 	apiGet<{ account_id: string; items: ApiTokenRow[] }>(

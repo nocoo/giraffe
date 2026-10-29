@@ -5,7 +5,7 @@ import type {
 	FactoryStreamName,
 } from "../../lib/factory-types";
 import type { CatalogRow } from "./catalog-history";
-import { decodeContent, storedContent } from "./content-version";
+import { decodeContent } from "./content-version";
 import type { Db } from "./db/d1";
 import { snapshotFromRows } from "./db/snapshots";
 import { ApiError } from "./errors";
@@ -30,7 +30,7 @@ export function repositoryReadPlan(db: Db, account: string, name: string, tab: s
 		logicalSnapshotStatement(db, account, "repos"),
 		db
 			.prepare(
-				"SELECT kind,payload,content_meta FROM snapshots WHERE account_id=? AND kind COLLATE NOCASE IN (?,?)",
+				"SELECT kind,payload,content_meta FROM refresh_snapshots WHERE account_id=? AND kind COLLATE NOCASE IN (?,?)",
 			)
 			.bind(account, logical, `${logical}#2`),
 	];
@@ -44,7 +44,7 @@ export function repositoryReadPlan(db: Db, account: string, name: string, tab: s
 	};
 }
 
-export type FactoryResourceRow = SnapshotPage & { source: "run" | "legacy" };
+export type FactoryResourceRow = SnapshotPage & { source: "run" };
 export type SavedFactoryStream = {
 	account: { id: string; login: string } | null;
 	stars: StarRow[];
@@ -56,30 +56,9 @@ export type SavedFactoryStream = {
 
 function referencedResourceStatement(db: Db, account: SavedAccount, name: string, stream: string) {
 	return db
-		.prepare(`WITH target AS (SELECT ${accountIdSql(account)} AS account,? AS name,? AS stream),
- head AS (SELECT target.*,coalesce((SELECT 'factory:v:' || nullif(published_id,'') FROM factory_state WHERE account_id=target.account),'factory') AS logical FROM target),
- roots AS MATERIALIZED (SELECT head.*,CASE WHEN json_valid(s.payload,2) THEN s.payload END AS root_payload FROM head JOIN snapshots s ON s.account_id=head.account AND s.kind=head.logical),
- pages AS (
- SELECT roots.*,0 AS ordinal,root_payload AS payload FROM roots
- UNION ALL
- SELECT roots.*,1 AS ordinal,CASE WHEN json_valid(s.payload,2) THEN s.payload END AS payload
- FROM roots JOIN snapshots s ON s.account_id=roots.account AND s.kind=roots.logical || '#2'
- WHERE (SELECT key FROM json_each(roots.root_payload) WHERE type='array' LIMIT 1)='repos'
- ),
- candidates AS (SELECT pages.*,j.key AS position,CASE WHEN j.type='object' THEN j.value ELSE '{}' END AS repo
- FROM pages,json_each(CASE WHEN json_type(pages.payload,'$.repos')='array' THEN json_extract(pages.payload,'$.repos') END) j),
- refs AS MATERIALIZED (SELECT account,stream,
- CASE WHEN json_type(repo,'$.coverage.' || stream || '.observation')='object' THEN 'retained:' || stream ELSE stream END AS resource,
- coalesce(json_extract(repo,'$.observation.repo'),json_extract(repo,'$.name')) AS repo,
- coalesce(json_extract(repo,'$.observation.version'),json_extract(root_payload,'$.runId')) AS version,
- coalesce(json_extract(repo,'$.observation.source'),'legacy') AS source
- FROM candidates WHERE (lower(json_extract(repo,'$.name'))=lower(name) AND NOT EXISTS(SELECT 1 FROM catalog_repositories c WHERE c.account_id=candidates.account AND lower(c.repo)=lower(candidates.name) AND c.removed_at IS NULL AND c.name_current=1 AND c.github_id IS NOT NULL)) OR json_extract(repo,'$.id')=(SELECT github_id FROM catalog_repositories c WHERE c.account_id=candidates.account AND lower(c.repo)=lower(candidates.name) AND c.removed_at IS NULL AND c.name_current=1) ORDER BY ordinal,position LIMIT 1)
- SELECT 'run' AS source,'' AS kind,f.payload,f.content_meta FROM refs
- JOIN factory_runs r ON r.id=refs.version AND r.account_id=refs.account
- JOIN factory_resources f ON f.run_id=r.id AND f.repo=refs.repo AND f.stream=refs.resource WHERE refs.source='run'
- UNION ALL
- SELECT 'legacy' AS source,s.kind,s.payload,s.content_meta FROM refs JOIN snapshots s
- ON s.account_id=refs.account AND s.kind IN ('factory:' || refs.repo || ':' || refs.stream,'factory:' || refs.repo || ':' || refs.stream || '#2') WHERE refs.source!='run'`)
+		.prepare(
+			`SELECT 'run' AS source,'' AS kind,r.payload,r.content_meta FROM refresh_resources r JOIN refresh_catalog c ON c.account_id=r.account_id AND c.repo_id=r.repo_id WHERE c.account_id=${accountIdSql(account)} AND c.repo=? COLLATE NOCASE AND c.active=1 AND r.stream=?`,
+		)
 		.bind(...accountBindings(account), name, stream);
 }
 
@@ -107,7 +86,7 @@ export function factoryStreamReadPlan(
 	statements.push(
 		db
 			.prepare(
-				`SELECT * FROM catalog_repositories WHERE account_id=${accountIdSql(account)} AND repo=? COLLATE NOCASE AND removed_at IS NULL`,
+				`SELECT repo_id AS github_id,repo_id AS identity_key,repo,payload AS row_payload,fetched_at AS last_seen_at,NULL AS first_seen_at,NULL AS removed_at,NULL AS archived_changed_at,1 AS name_current FROM refresh_catalog WHERE account_id=${accountIdSql(account)} AND repo=? COLLATE NOCASE AND active=1`,
 			)
 			.bind(...accountBindings(account), name),
 	);
@@ -149,30 +128,9 @@ export function decodeFactoryResource(
 		repo.coverage[stream as FactoryStreamName].observation?.version ??
 		repo.observation?.version ??
 		snap.runId;
-	const original =
-		repo.observation?.repo ??
-		snap.repos.find(
-			(original) =>
-				original.name.toLowerCase() === repo.name.toLowerCase() && original.id === repo.id,
-		)?.name ??
-		snap.repos.find((original) => repo.id && original.id === repo.id)?.name ??
-		repo.name;
-	let data: FactoryStreamData | null;
-	let content: string | null = null;
-	if (repo.observation?.source === "run") {
-		const row = saved.resourcePages.find((item) => item.source === "run");
-		data = row ? (JSON.parse(row.payload) as FactoryStreamData) : null;
-		if (withContent) {
-			const meta = decodeContent(row?.content_meta);
-			content = meta?.version === version ? meta.hash : null;
-		}
-	} else {
-		data = snapshotFromRows(
-			`factory:${original}:${stream}`,
-			saved.resourcePages,
-		) as FactoryStreamData | null;
-		const meta = storedContent(data);
-		content = meta?.version === version ? meta.hash : null;
-	}
+	const row = saved.resourcePages[0];
+	const data = row ? (JSON.parse(row.payload) as FactoryStreamData) : null;
+	const meta = withContent ? decodeContent(row?.content_meta) : null;
+	const content = meta?.version === version ? meta.hash : null;
 	return { data, content };
 }

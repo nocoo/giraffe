@@ -13,16 +13,15 @@ import { ApiError } from "./errors";
 type StateRow = {
 	identity_key: string;
 	repo: string;
-	removed_at: string | null;
 	payload: string | null;
 	revision: number | null;
 	updated_at: string | null;
 	updated_by: string | null;
 };
 const TARGET =
-	"SELECT identity_key FROM catalog_repositories WHERE account_id=? AND repo=? COLLATE NOCASE AND (name_current=1 OR removed_at IS NOT NULL) ORDER BY CASE WHEN removed_at IS NULL THEN 0 ELSE 1 END,removed_at DESC,identity_key DESC LIMIT 1";
+	"SELECT repo_id FROM refresh_catalog WHERE account_id=? AND repo=? COLLATE NOCASE AND active=1";
 const RETURNING =
-	"RETURNING identity_key,payload,revision,updated_at,updated_by,(SELECT repo FROM catalog_repositories c WHERE c.account_id=repo_agent_state.account_id AND c.identity_key=repo_agent_state.identity_key) AS repo,(SELECT removed_at FROM catalog_repositories c WHERE c.account_id=repo_agent_state.account_id AND c.identity_key=repo_agent_state.identity_key) AS removed_at";
+	"RETURNING identity_key,payload,revision,updated_at,updated_by,(SELECT repo FROM refresh_catalog c WHERE c.account_id=repo_agent_state.account_id AND c.repo_id=repo_agent_state.identity_key AND c.active=1) AS repo";
 const NEXT_REVISION =
 	"(SELECT COALESCE(MAX(revision),0)+1 FROM repo_agent_state WHERE account_id=?)";
 
@@ -30,7 +29,7 @@ function wire(account: string, row: StateRow): RepoAgentState {
 	return {
 		account_id: account,
 		repo: row.repo,
-		repo_removed: row.removed_at !== null,
+		repo_removed: false,
 		payload: row.payload === null ? null : (JSON.parse(row.payload) as Record<string, unknown>),
 		revision: row.revision,
 		updated_at: row.updated_at,
@@ -40,7 +39,7 @@ function wire(account: string, row: StateRow): RepoAgentState {
 async function stateRow(db: Db, account: string, name: string) {
 	const row = await db
 		.prepare(
-			`SELECT c.identity_key,c.repo,c.removed_at,s.payload,s.revision,s.updated_at,s.updated_by FROM catalog_repositories c LEFT JOIN repo_agent_state s ON s.account_id=c.account_id AND s.identity_key=c.identity_key WHERE c.account_id=? AND c.identity_key=(${TARGET})`,
+			`SELECT c.repo_id AS identity_key,c.repo,s.payload,s.revision,s.updated_at,s.updated_by FROM refresh_catalog c LEFT JOIN repo_agent_state s ON s.account_id=c.account_id AND s.identity_key=c.repo_id WHERE c.account_id=? AND c.active=1 AND c.repo_id=(${TARGET})`,
 		)
 		.bind(account, account, name)
 		.first<StateRow>();
@@ -81,8 +80,6 @@ export async function writeRepoAgentState(
 		throw new ApiError(400, "payload_too_large", "Agent state payload exceeds 16384 UTF-8 bytes");
 	const revision = headerRevision(ifMatch) ?? original.revision;
 	const previous = await stateRow(db, account, name);
-	if (previous.revision === null && previous.removed_at !== null)
-		throw new ApiError(404, "not_found", "Removed repository has no agent state");
 	if (previous.revision !== null && revision === undefined)
 		throw new ApiError(428, "precondition_required", "Current revision is required");
 	if (revision !== undefined && revision !== (previous.revision ?? 0))
@@ -92,7 +89,7 @@ export async function writeRepoAgentState(
 		previous.revision === null
 			? await db
 					.prepare(
-						`INSERT INTO repo_agent_state(account_id,identity_key,payload,revision,updated_at,updated_by) SELECT ?,identity_key,?,${NEXT_REVISION},?,? FROM catalog_repositories WHERE account_id=? AND identity_key=? AND identity_key=(${TARGET}) AND removed_at IS NULL AND name_current=1 AND ${NEXT_REVISION}<=9007199254740991 ON CONFLICT(account_id,identity_key) DO NOTHING ${RETURNING}`,
+						`INSERT INTO repo_agent_state(account_id,identity_key,payload,revision,updated_at,updated_by) SELECT ?,repo_id,?,${NEXT_REVISION},?,? FROM refresh_catalog WHERE account_id=? AND repo_id=? AND repo_id=(${TARGET}) AND active=1 AND ${NEXT_REVISION}<=9007199254740991 ON CONFLICT(account_id,identity_key) DO NOTHING ${RETURNING}`,
 					)
 					.bind(
 						account,
@@ -137,7 +134,7 @@ export async function enrichRepoAgentStates(
 	if (!repos.length) return { ...data, repos: [] as Record<string, unknown>[] };
 	const rows = await db
 		.prepare(
-			"SELECT identity_key,revision,updated_at,CASE WHEN json_type(payload,'$.summary')='text' THEN json_extract(payload,'$.summary') END AS summary,CASE WHEN json_type(payload,'$.status')='text' THEN json_extract(payload,'$.status') END AS status FROM repo_agent_state WHERE account_id=?",
+			"SELECT s.identity_key,s.revision,s.updated_at,CASE WHEN json_type(s.payload,'$.summary')='text' THEN json_extract(s.payload,'$.summary') END AS summary,CASE WHEN json_type(s.payload,'$.status')='text' THEN json_extract(s.payload,'$.status') END AS status FROM repo_agent_state s JOIN refresh_catalog c ON c.account_id=s.account_id AND c.repo_id=s.identity_key WHERE s.account_id=? AND c.active=1",
 		)
 		.bind(account)
 		.all<{
