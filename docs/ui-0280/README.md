@@ -2,7 +2,7 @@
 
 Baseline: `b3ddaa573828aa080620cef17e396403b432bc58` (v0.27.2).
 Candidate client tree: `ce0060f06149dde8c515b1f2a0ab599dff3d377e` (v0.28.0).
-Integration base: `6ad6eb78113e2f18cc0a4b4c0d0dc7ee02c75808` (v0.27.4).
+Integration base: `056f9c01d6c4b9a9f49e46d9a688bdc37bfa1af3` (v0.27.5).
 
 The client tree is the Git tree object at `HEAD:apps/web/src/client`, pinning the
 captured UI independently of this evidence document's containing commit.
@@ -12,7 +12,7 @@ the post-rebase settlement corrections: cancellation closure is not successful
 collection, and processed dimensions do not imply available observations.
 Diagnostic help uses the same closure semantics. Narrow repository panels reflow
 dimension chips without squeezing repository identities into vertical text.
-Fresh integration gates exercise the v0.27.4 Worker with this corrected UI tree.
+Fresh integration gates exercise the v0.27.5 Worker with this corrected UI tree.
 Terminal-unavailable days can be settled cache windows without becoming available
 measurements; unavailable status, zero observed days and null counts stay intact.
 The client rejects unavailable coverage when projecting measurement availability
