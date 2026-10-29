@@ -339,7 +339,11 @@ export async function collectRepository(
 				: coverage;
 		repo.coverage[dimension] =
 			dimension === "alerts"
-				? { ...detailCoverage, completeWindows: coverage.completeWindows }
+				? {
+						...detailCoverage,
+						completeWindows: coverage.completeWindows,
+						availableWindows: coverage.availableWindows ?? [],
+					}
 				: coverage;
 		const items = new Map<string, FactoryEvent>(
 			dimension === "alerts"

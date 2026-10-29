@@ -326,3 +326,27 @@ it("preserves both oldest history and latest source times without renewing cache
 	});
 	expect(fetch).not.toHaveBeenCalled();
 });
+
+it("keeps terminal settlement separate from measured alert windows when inventory recovers", async () => {
+	const db = sqliteFixture();
+	const first = await fixture(db, "first", { dimensions: ["alerts"] }, accountAt);
+	upstream(
+		[accountPage(), { node: repo() }],
+		Response.json({ message: "Not Found" }, { status: 404 }),
+	);
+	await collectAccount(first);
+	await collectRepository(first, "owner/project");
+	const daily = await fixture(db, "daily", { dimensions: ["alerts"] }, "2026-10-30T04:00:00.000Z");
+	upstream([]);
+	await collectRepository(daily, "owner/project");
+	expect(await payload(db, "SELECT payload FROM refresh_repository_publications")).toMatchObject({
+		metrics: { alerts: 0 },
+		coverage: {
+			alerts: {
+				status: "complete",
+				completeWindows: [{ ...windowOf(first), until: windowOf(daily).until }],
+				availableWindows: [windowOf(daily)],
+			},
+		},
+	});
+});

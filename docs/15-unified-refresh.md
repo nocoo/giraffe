@@ -176,7 +176,10 @@ individual events cannot exceed the storage budget either.
 Alerts are current inventory, not historical events: totals and detail items
 come from the latest inventory observation, never a union or maximum across
 cached dates. Latest unavailable inventory remains unavailable. Coverage keeps
-the oldest `fetchedAt` and latest `sourceFetchedAt` evidence times separately;
+historical alert settlement in `completeWindows` and actual measurable alert
+days in `availableWindows`; recovering access never makes an old unavailable
+day measurable. Calendar completeness reads only the latter for alerts.
+Coverage keeps the oldest `fetchedAt` and latest `sourceFetchedAt` evidence times separately;
 cache reuse renews neither. `stockObservedAt.issues` and `.prs` record valid
 GitHub open-count observations independently of item-enumeration completeness.
 Stock lines require a count observed on the latest chart day or its following

@@ -2512,6 +2512,11 @@ The review also caught historical completeness being reused as a current stock
 anchor and earliest source time being mistaken for latest evidence. Separate
 count provenance, lifecycle coverage and oldest/latest times explicitly.
 
+A reverse transition exposed one more boundary: a newly available alert
+inventory must not turn earlier terminal-unavailable settlement into measured
+days. Keep alert `availableWindows` separate from settlement `completeWindows`,
+and test both unavailable-to-available and available-to-unavailable transitions.
+
 Parallel API and browser runners initially collided on a Wrangler internal
 socket even though their public test ports differ. Run these server lanes
 sequentially for final acceptance; a failed startup is not passing browser

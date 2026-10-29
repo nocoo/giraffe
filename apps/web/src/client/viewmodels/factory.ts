@@ -370,10 +370,12 @@ function coversWindow(
 	to: number,
 ) {
 	const coverage = repo.coverage[stream];
-	if (coverage.status === "unavailable" || (stream === "alerts" && coverage.status !== "complete"))
-		return false;
+	if (stream !== "alerts" && coverage.status === "unavailable") return false;
 	const windows =
-		coverage.completeWindows ?? (coverage.status === "complete" ? [windowOf(repo, stream)] : []);
+		stream === "alerts"
+			? (coverage.availableWindows ?? [])
+			: (coverage.completeWindows ??
+				(coverage.status === "complete" ? [windowOf(repo, stream)] : []));
 	const bounds = windows.map(calendarBounds);
 	let cursor = from;
 	for (const value of bounds.sort((left, right) => left.since - right.since)) {

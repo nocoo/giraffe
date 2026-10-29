@@ -124,6 +124,7 @@ export async function resourceStatement(
 				status: "limited" as const,
 				reason: "storage_limit",
 				completeWindows: [],
+				...(payload.coverage.availableWindows === undefined ? {} : { availableWindows: [] }),
 				...(payload.coverage.inventoryComplete === undefined ? {} : { inventoryComplete: false }),
 			},
 		};

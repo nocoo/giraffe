@@ -461,6 +461,33 @@ describe("software factory view model", () => {
 		repo.coverage.commits.status = "complete";
 		expect(hasFactoryMeasurement(repo, "commits")).toBe(true);
 	});
+	it.each([
+		["complete", "2026-10-29", [false, true]],
+		["unavailable", "2026-10-28", [true, false]],
+	] as const)(
+		"keeps historical alert measurements independent of latest %s inventory",
+		(status, available, expected) => {
+			const snapshot = ready();
+			const repo = snapshot.repos[0];
+			if (!repo) throw new Error("fixture");
+			snapshot.window = {
+				since: "2026-10-27T16:00:00.000Z",
+				until: "2026-10-29T15:59:59.999Z",
+				timezone: "Asia/Shanghai",
+			};
+			repo.metrics.days = { "2026-10-28": emptyDay(), "2026-10-29": emptyDay() };
+			Object.assign(repo.coverage.alerts, {
+				status,
+				completeWindows: shanghaiCompleteDays(["2026-10-28", "2026-10-29"]),
+				availableWindows: shanghaiCompleteDays([available]),
+			});
+			expect(
+				factoryBoard(snapshot, [repo], [repo])
+					.days.slice(-2)
+					.map((day) => day.complete.alerts),
+			).toEqual(expected);
+		},
+	);
 	it.each(["partial", "limited"] as const)(
 		"does not assign available days from mixed %s alert settlement windows",
 		(status) => {
@@ -486,6 +513,7 @@ describe("software factory view model", () => {
 			expect(board.days.at(-1)?.complete.commits).toBe(false);
 			repo.coverage.alerts.status = "complete";
 			repo.coverage.alerts.observed = 2;
+			repo.coverage.alerts.availableWindows = shanghaiCompleteDays(["2026-10-28", "2026-10-29"]);
 			const complete = factoryBoard(snapshot, [repo], [repo]);
 			expect(complete.observed.alerts).toBe(true);
 			expect(complete.days.slice(-2).map((day) => day.complete.alerts)).toEqual([true, true]);

@@ -72,6 +72,17 @@ export function dayCoverage(
 			fetchedAt: times[0] ?? null,
 			sourceFetchedAt: times.at(-1) ?? null,
 			observed: available.length,
+			...(dimension === "alerts"
+				? {
+						availableWindows: mergeWindows(
+							available.map(({ payload }) => ({
+								since: String(payload.since),
+								until: new Date(Date.parse(String(payload.until)) - 1).toISOString(),
+								timezone: context.run.params.timezone,
+							})),
+						),
+					}
+				: {}),
 			reason:
 				available.length === selected.length ? null : missing ? "missing_days" : settledReason,
 			completeWindows: mergeWindows(

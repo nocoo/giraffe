@@ -20,6 +20,7 @@ export type UnavailableReasonCode =
 export type FactoryCoverage = {
 	inventoryComplete?: boolean;
 	completeWindows?: FactoryWindow[];
+	availableWindows?: FactoryWindow[];
 	observation?: NonNullable<FactoryRepo["observation"]> & { head: string | null };
 	reason_code?: UnavailableReasonCode | "dependency_parse_unsupported";
 	retained?: true;
