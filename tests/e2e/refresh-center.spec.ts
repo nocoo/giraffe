@@ -66,6 +66,7 @@ test("refresh center shows saved steps and history and cancels only the current 
 	});
 	await page.goto("/refresh");
 	await expect(page.getByRole("heading", { name: "刷新中心", exact: true })).toBeVisible();
+	await expect(page.getByRole("group", { name: "仓库范围", exact: true })).toHaveCount(0);
 	await expect(page.getByRole("region", { name: "逐仓库刷新进度" })).toContainText(
 		"octocat/basalt",
 	);

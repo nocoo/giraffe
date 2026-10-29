@@ -623,6 +623,20 @@ describe("refresh center repositories and reasons", () => {
 			"run-1",
 		]);
 	});
+
+	it("keeps fresher history evidence over an older live snapshot", () => {
+		const saved = run({
+			status: "cancelled",
+			phase: "done",
+			completedRepos: 2,
+			requests: 20,
+			updatedAt: "2026-10-29T04:09:00Z",
+		});
+		expect(mergeRefreshRuns([saved], run())[0]).toMatchObject({
+			status: "cancelled",
+			requests: 20,
+		});
+	});
 });
 
 type FakeLive = {
@@ -700,6 +714,36 @@ afterEach(() => {
 });
 
 describe("refresh center viewmodel", () => {
+	it("selects and displays the newest saved snapshot of the current run", async () => {
+		const saved = run({
+			status: "cancelled",
+			phase: "done",
+			completedRepos: 2,
+			requests: 20,
+			updatedAt: "2026-10-29T04:09:00Z",
+		});
+		vi.mocked(apiGet).mockResolvedValue({ items: [saved], collectionAvailable: true });
+		const model = center(fakeLive(run()));
+		await vi.waitFor(() => expect(model.getSnapshot().loading).toBe(false));
+		expect(model.getSnapshot().selected).toMatchObject({ status: "cancelled", requests: 20 });
+		expect(model.getSnapshot().live.run).toMatchObject({ status: "cancelled", requests: 20 });
+		model.select("run-1");
+		expect(model.getSnapshot().selected?.status).toBe("cancelled");
+	});
+
+	it("rereads stale live state before starting after a saved terminal snapshot", async () => {
+		const saved = run({ status: "cancelled", phase: "done", updatedAt: "2026-10-29T04:09:00Z" });
+		vi.mocked(apiGet).mockResolvedValue({ items: [saved], collectionAvailable: true });
+		const live = fakeLive(run());
+		live.read.mockImplementation(async () => {
+			live.set({ run: saved });
+		});
+		const model = center(live);
+		await vi.waitFor(() => expect(model.getSnapshot().loading).toBe(false));
+		await model.start(defaultRefreshParams());
+		expect(live.read).toHaveBeenCalledOnce();
+		expect(live.start).toHaveBeenCalledOnce();
+	});
 	it("rejects another tab's account history instead of relabeling it", async () => {
 		vi.mocked(apiGet).mockImplementation(async (path) =>
 			path === "accounts"

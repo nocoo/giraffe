@@ -125,6 +125,19 @@ type RefreshState = Readonly<{
 	error: string | null;
 }>;
 
+export function mergeRefreshRun(
+	previous: RefreshRun | null,
+	run: RefreshRun | null,
+): RefreshRun | null {
+	if (!run || previous?.id !== run.id) return run;
+	const snapshot =
+		(refreshActive(run) && !refreshActive(previous)) ||
+		Date.parse(run.updatedAt) < Date.parse(previous.updatedAt)
+			? previous
+			: run;
+	return { ...snapshot, cancelRequested: previous.cancelRequested || run.cancelRequested };
+}
+
 export class RefreshViewModel {
 	private state: RefreshState = {
 		accountId: null,
@@ -171,15 +184,7 @@ export class RefreshViewModel {
 	}
 	private accept(run: RefreshRun | null): void {
 		const previous = this.state.run;
-		let next = run;
-		if (run && previous?.id === run.id) {
-			const snapshot =
-				(refreshActive(run) && !refreshActive(previous)) ||
-				Date.parse(run.updatedAt) < Date.parse(previous.updatedAt)
-					? previous
-					: run;
-			next = { ...snapshot, cancelRequested: previous.cancelRequested || run.cancelRequested };
-		}
+		const next = mergeRefreshRun(previous, run);
 		const changed =
 			next &&
 			!refreshActive(next) &&

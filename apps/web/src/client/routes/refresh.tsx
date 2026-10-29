@@ -242,6 +242,7 @@ function RefreshCenterBody({ center }: { center: RefreshCenterViewModel }) {
 		<div className="refresh-center space-y-4">
 			<PageHeader
 				title="刷新中心"
+				repositoryScope={false}
 				description="统一管理账号 A、仓库 B 的刷新进度、运行记录与每日自动计划"
 				actions={
 					<Button size="sm" variant="secondary" asChild>
@@ -359,7 +360,7 @@ function RefreshCenterBody({ center }: { center: RefreshCenterViewModel }) {
 											回到当前
 										</Button>
 									) : null}
-									<Button size="sm" variant="ghost" onClick={() => void center.load()}>
+									<Button size="sm" variant="ghost" onClick={() => void center.refreshAll()}>
 										<RefreshCw className="size-3.5" aria-hidden="true" />
 										更新记录
 									</Button>

@@ -8,12 +8,14 @@ export function BusinessPageHeader({
 	meta,
 	actions,
 	filters,
+	repositoryScope = true,
 }: {
 	title: ReactNode;
 	description?: ReactNode;
 	meta?: ReactNode;
 	actions?: ReactNode;
 	filters?: ReactNode;
+	repositoryScope?: boolean;
 }) {
 	return (
 		<header className="giraffe-page-header">
@@ -30,7 +32,7 @@ export function BusinessPageHeader({
 			</div>
 			<div className="giraffe-page-toolbar">
 				{meta}
-				<RepositoryScopeFilter />
+				{repositoryScope ? <RepositoryScopeFilter /> : null}
 				{filters}
 				{actions}
 			</div>

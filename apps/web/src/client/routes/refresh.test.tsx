@@ -131,6 +131,7 @@ it("restores the refresh console with current A/B progress, requests and cancell
 	await render(value);
 	const text = container.textContent ?? "";
 	expect(text).toContain("刷新中心");
+	expect(container.querySelector("header fieldset")).toBeNull();
 	expect(text).toContain("刷新中 · 手动 · 星标仓库 + 上海当日新建且未观测的非 fork 仓库");
 	expect(text).toContain("B · nocoo/web · 2 / 2");
 	expect(text).toContain("A · 账号信息、贡献与仓库清单");

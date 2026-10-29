@@ -10,6 +10,7 @@ import {
 import { apiGet } from "../lib/api";
 import { formatCount, formatPreciseDate } from "../lib/format";
 import {
+	mergeRefreshRun,
 	REFRESH_LABELS,
 	type RefreshViewModel,
 	refreshActive,
@@ -511,7 +512,9 @@ export function mergeRefreshRuns(items: RefreshRun[], current: RefreshRun | null
 	if (!current) return items;
 	const index = items.findIndex((item) => item.id === current.id);
 	if (index < 0) return [current, ...items];
-	return items.map((item, position) => (position === index ? current : item));
+	return items.map((item, position) =>
+		position === index ? (mergeRefreshRun(item, current) ?? item) : item,
+	);
 }
 
 export type RefreshLiveState = ReturnType<RefreshViewModel["getSnapshot"]>;
@@ -596,15 +599,19 @@ export class RefreshCenterViewModel {
 	};
 	private compose(data: CenterData): RefreshCenterState {
 		const source = this.liveModel.getSnapshot();
-		const live =
+		const accountLive =
 			source.run && source.run.accountId !== source.accountId ? { ...source, run: null } : source;
 		const history =
-			live.accountId !== null &&
+			accountLive.accountId !== null &&
 			data.historyAccount !== null &&
-			live.accountId !== data.historyAccount
+			accountLive.accountId !== data.historyAccount
 				? []
 				: data.history;
-		const runs = mergeRefreshRuns(history, live.run);
+		const runs = mergeRefreshRuns(history, accountLive.run);
+		const current = accountLive.run
+			? (runs.find((run) => run.id === accountLive.run?.id) ?? accountLive.run)
+			: null;
+		const live = { ...accountLive, run: current };
 		const selected = data.selectedId
 			? (runs.find((run) => run.id === data.selectedId) ?? null)
 			: (live.run ?? runs[0] ?? null);
@@ -679,6 +686,8 @@ export class RefreshCenterViewModel {
 		this.updateData({ selectedId: id });
 	}
 	async start(params: RefreshParams): Promise<void> {
+		if (refreshActive(this.liveModel.getSnapshot().run) && !refreshActive(this.state.live.run))
+			await this.liveModel.read();
 		await this.liveModel.start(params);
 		this.select("");
 	}
