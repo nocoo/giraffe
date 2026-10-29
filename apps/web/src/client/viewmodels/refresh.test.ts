@@ -136,23 +136,32 @@ describe("unified refresh parameters", () => {
 });
 
 describe("refresh viewmodel", () => {
-	it("reconciles an externally switched account after a polling conflict using GET only", async () => {
-		const model = new RefreshViewModel();
-		vi.mocked(apiGet).mockResolvedValueOnce({ items: [refreshRun()], collectionAvailable: true });
-		await model.read();
-		vi.mocked(apiGet)
-			.mockRejectedValueOnce(new ApiError(409, "account_conflict", "changed"))
-			.mockResolvedValueOnce({ accounts: [{ id: "account-2", is_active: true }] })
-			.mockResolvedValueOnce({
-				items: [refreshRun({ id: "run-2", accountId: "account-2" })],
-				collectionAvailable: true,
+	it.each([409, 404])(
+		"reconciles an externally switched account after polling %s using GET only",
+		async (status) => {
+			const model = new RefreshViewModel();
+			vi.mocked(apiGet).mockResolvedValueOnce({ items: [refreshRun()], collectionAvailable: true });
+			await model.read();
+			vi.mocked(apiGet)
+				.mockRejectedValueOnce(
+					new ApiError(status, status === 404 ? "not_found" : "account_conflict", "changed"),
+				)
+				.mockResolvedValueOnce({ accounts: [{ id: "account-2", is_active: true }] })
+				.mockResolvedValueOnce({
+					items: [refreshRun({ id: "run-2", accountId: "account-2" })],
+					collectionAvailable: true,
+				});
+			await model.read();
+			await vi.waitFor(() => expect(model.getSnapshot().run?.id).toBe("run-2"));
+			expect(apiGet).toHaveBeenCalledWith("accounts");
+			expect(model.getSnapshot()).toMatchObject({
+				accountId: "account-2",
+				ready: true,
+				error: null,
 			});
-		await model.read();
-		await vi.waitFor(() => expect(model.getSnapshot().run?.id).toBe("run-2"));
-		expect(apiGet).toHaveBeenCalledWith("accounts");
-		expect(model.getSnapshot()).toMatchObject({ accountId: "account-2", ready: true, error: null });
-		expect(apiPost).not.toHaveBeenCalled();
-	});
+			expect(apiPost).not.toHaveBeenCalled();
+		},
+	);
 	it("reconciles a POST account conflict without ever retrying the write", async () => {
 		const model = new RefreshViewModel();
 		vi.mocked(apiGet)

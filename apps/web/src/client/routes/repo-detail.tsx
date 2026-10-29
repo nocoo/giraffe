@@ -137,7 +137,7 @@ function useRepoTabRead<Value extends { account_id: string }>(
 		receive,
 		(error) => {
 			const missing = catchLoad(error, (message) => toast.error(message));
-			receive(missing ?? { missing: true });
+			if (missing) receive(missing);
 		},
 		enabled,
 		true,
@@ -475,6 +475,10 @@ export function RepoDetailPage() {
 										</p>
 										<RepoActivityChart days={days} />
 									</ChartBrick>
+								) : factory ? (
+									<ChartBrick title="仓库日统计">
+										<ChartEmpty label="来源时区不一致或日期不可用，暂不合并展示日统计。" />
+									</ChartBrick>
 								) : null}
 								{activity?.releases.timeline.length ? (
 									<ChartBrick
@@ -500,7 +504,7 @@ export function RepoDetailPage() {
 									icon={CircleDot}
 									label="Open Issues"
 									value={formatCount(snap.open_issue_count)}
-									{...(factory
+									{...(days.length
 										? { subtitle: `30 天 新开 ${flow30.opened} · 关闭 ${flow30.closed}` }
 										: {})}
 								/>

@@ -1,5 +1,5 @@
-import type { FactoryDay, FactoryWindow } from "../../lib/factory-types";
-import { calendarBounds } from "../lib/calendar";
+import type { FactoryDay, FactoryRepo, FactoryWindow } from "../../lib/factory-types";
+import { calendarBounds, factoryCalendarWindows } from "../lib/calendar";
 import type { AlertItem } from "./alerts";
 import type { NotificationRow } from "./inbox";
 import type { IssueRow } from "./issues";
@@ -329,9 +329,13 @@ export function repoActivityBoard(
 
 /** One repository's factory days as a dense series over its observation window. */
 export function repoFactorySeries(
-	repo: { metrics: { days: Record<string, FactoryDay> } },
+	repo: { metrics: { days: Record<string, FactoryDay> } } & Partial<
+		Pick<FactoryRepo, "coverage" | "observation">
+	>,
 	window: FactoryWindow,
 ) {
+	const windows = factoryCalendarWindows(repo, window);
+	if (new Set(windows.map((source) => source.timezone ?? "UTC")).size > 1) return [];
 	const bounds = calendarBounds(window);
 	const start = window.timezone ? bounds.since : Date.parse(window.since.slice(0, 10));
 	const end = bounds.until;

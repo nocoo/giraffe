@@ -9,6 +9,7 @@ import { emptyDay } from "../../lib/factory";
 import type { RefreshRun } from "../../lib/refresh-types";
 import { RefreshProvider } from "../components/layout/refresh-provider";
 import { apiGet } from "../lib/api";
+import { ApiError } from "../lib/errors";
 import { loadFactory } from "../viewmodels/factory";
 import { defaultRefreshParams } from "../viewmodels/refresh";
 import { loadRepoTab, type RepoDetails } from "../viewmodels/repo-detail";
@@ -46,6 +47,75 @@ afterEach(() => {
 	vi.useRealTimers();
 	vi.unstubAllGlobals();
 	vi.resetAllMocks();
+});
+
+it("retains valid repository details when terminal revalidation fails transiently", async () => {
+	vi.useFakeTimers();
+	vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+	vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+	setActiveAccountId("account-1");
+	const snapshot = factoryFixture();
+	vi.mocked(loadFactory).mockResolvedValue({ ...snapshot, selectedRepos: snapshot.repos });
+	const details: RepoDetails = {
+		account_id: "account-1",
+		fetched_at: snapshot.fetched_at,
+		truncated: false,
+		description: "Saved repository",
+		homepage: null,
+		default_branch: "main",
+		license: null,
+		is_archived: false,
+		open_issue_count: 1,
+		stargazer_count: 0,
+		fork_count: 0,
+		pushed_at: snapshot.fetched_at,
+		url: "https://github.com/nocoo/app",
+	};
+	vi.mocked(loadRepoTab)
+		.mockResolvedValueOnce(details)
+		.mockRejectedValueOnce(new ApiError(503, "db_error", "unavailable"));
+	const run: RefreshRun = {
+		id: "transient-run",
+		accountId: "account-1",
+		params: defaultRefreshParams(),
+		trigger: "manual",
+		status: "running",
+		phase: "repos",
+		repos: ["nocoo/app"],
+		completedRepos: 0,
+		requests: 1,
+		partial: false,
+		errorCode: null,
+		createdAt: snapshot.fetched_at,
+		updatedAt: snapshot.fetched_at,
+		finishedAt: null,
+	};
+	vi.mocked(apiGet).mockResolvedValueOnce({ items: [run], collectionAvailable: true });
+	const container = document.createElement("div");
+	document.body.append(container);
+	const root = createRoot(container);
+	try {
+		await act(async () =>
+			root.render(
+				<RefreshProvider>
+					<MemoryRouter initialEntries={["/repos/nocoo/app?tab=factory"]}>
+						<Routes>
+							<Route path="/repos/:owner/:name" element={<RepoDetailPage />} />
+						</Routes>
+					</MemoryRouter>
+				</RefreshProvider>,
+			),
+		);
+		expect(container.querySelector('[role="tablist"]')).not.toBeNull();
+		vi.mocked(apiGet).mockResolvedValueOnce({ ...run, status: "completed", phase: "done" });
+		await act(async () => vi.advanceTimersByTimeAsync(3000));
+		expect(loadRepoTab).toHaveBeenCalledTimes(2);
+		expect(container.querySelector('[role="tablist"]')).not.toBeNull();
+		expect(container.textContent).toContain("Factory records loaded");
+	} finally {
+		await act(async () => root.unmount());
+		container.remove();
+	}
 });
 
 it.each(["details", "factory", "actions", "releases"])(
@@ -196,79 +266,107 @@ it.each(["details", "factory", "actions", "releases"])(
 	},
 );
 
-it("restores missing repository details and tabs after a terminal refresh on the factory tab", async () => {
-	vi.useFakeTimers();
-	vi.setSystemTime(new Date("2026-10-29T04:00:00Z"));
-	vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-	vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
-	setActiveAccountId("account-1");
-	const run: RefreshRun = {
-		id: "repo-refresh",
-		accountId: "account-1",
-		params: { ...defaultRefreshParams(), repo: "nocoo/app" },
-		trigger: "manual",
-		status: "running",
-		phase: "repos",
-		repos: ["nocoo/app"],
-		completedRepos: 0,
-		requests: 1,
-		partial: false,
-		errorCode: null,
-		createdAt: "2026-10-29T04:00:00Z",
-		updatedAt: "2026-10-29T04:00:00Z",
-		finishedAt: null,
-	};
-	vi.mocked(apiGet).mockResolvedValueOnce({ items: [run], collectionAvailable: true });
-	const snapshot = factoryFixture();
-	vi.mocked(loadFactory).mockResolvedValue({ ...snapshot, selectedRepos: snapshot.repos });
-	const details: RepoDetails = {
-		account_id: "account-1",
-		fetched_at: "2026-10-29T04:00:00Z",
-		truncated: false,
-		description: "Saved repository",
-		homepage: null,
-		default_branch: "main",
-		license: null,
-		is_archived: false,
-		open_issue_count: 0,
-		stargazer_count: 0,
-		fork_count: 0,
-		pushed_at: "2026-10-28T04:00:00Z",
-		url: "https://github.com/nocoo/app",
-	};
-	vi.mocked(loadRepoTab).mockResolvedValueOnce({ missing: true }).mockResolvedValue(details);
-	const container = document.createElement("div");
-	document.body.append(container);
-	const root = createRoot(container);
-	try {
-		await act(async () =>
-			root.render(
-				<RefreshProvider>
-					<MemoryRouter initialEntries={["/repos/nocoo/app?tab=factory"]}>
-						<Routes>
-							<Route path="/repos/:owner/:name" element={<RepoDetailPage />} />
-						</Routes>
-					</MemoryRouter>
-				</RefreshProvider>,
-			),
-		);
-		expect(container.querySelector('[role="tablist"]')).toBeNull();
-		expect(loadRepoTab).toHaveBeenCalledTimes(1);
-		vi.mocked(apiGet).mockResolvedValueOnce({
-			...run,
-			status: "completed",
-			phase: "done",
-			completedRepos: 1,
-			finishedAt: "2026-10-29T04:00:03Z",
+it.each(["factory", "details"])(
+	"restores missing details on %s without combining retained timezones",
+	async (tab) => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-10-29T04:00:00Z"));
+		vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+		vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+		setActiveAccountId("account-1");
+		const run: RefreshRun = {
+			id: "repo-refresh",
+			accountId: "account-1",
+			params: { ...defaultRefreshParams(), repo: "nocoo/app" },
+			trigger: "manual",
+			status: "running",
+			phase: "repos",
+			repos: ["nocoo/app"],
+			completedRepos: 0,
+			requests: 1,
+			partial: false,
+			errorCode: null,
+			createdAt: "2026-10-29T04:00:00Z",
+			updatedAt: "2026-10-29T04:00:00Z",
+			finishedAt: null,
+		};
+		vi.mocked(apiGet).mockResolvedValueOnce({ items: [run], collectionAvailable: true });
+		const snapshot = factoryFixture();
+		const repo = snapshot.repos[0];
+		if (!repo) throw new Error("fixture");
+		snapshot.window = {
+			since: "2026-10-27T16:00:00Z",
+			until: "2026-10-28T15:59:59.999Z",
+			timezone: "Asia/Shanghai",
+		};
+		repo.metrics.days = { "2026-10-28": { ...emptyDay(), commits: 4, issueOpened: 2 } };
+		repo.coverage.commits.completeWindows = [
+			{
+				since: "2026-10-28T04:00:00Z",
+				until: "2026-10-29T03:59:59.999Z",
+				timezone: "America/New_York",
+			},
+		];
+		vi.mocked(loadFactory).mockResolvedValue({ ...snapshot, selectedRepos: snapshot.repos });
+		const details: RepoDetails = {
+			account_id: "account-1",
+			fetched_at: "2026-10-29T04:00:00Z",
+			truncated: false,
+			description: "Saved repository",
+			homepage: null,
+			default_branch: "main",
+			license: null,
+			is_archived: false,
+			open_issue_count: 0,
+			stargazer_count: 0,
+			fork_count: 0,
+			pushed_at: "2026-10-28T04:00:00Z",
+			url: "https://github.com/nocoo/app",
+		};
+		let detailsReads = 0;
+		vi.mocked(loadRepoTab).mockImplementation(async (_owner, _name, resource) => {
+			if (resource !== "details") return { missing: true };
+			detailsReads++;
+			return detailsReads === 1 ? { missing: true } : details;
 		});
-		await act(async () => vi.advanceTimersByTimeAsync(3000));
-		expect(apiGet).toHaveBeenLastCalledWith("refresh-runs/repo-refresh");
-		expect(loadRepoTab).toHaveBeenCalledTimes(2);
-		expect(loadRepoTab).toHaveBeenLastCalledWith("nocoo", "app", "details");
-		expect(container.querySelector('[role="tablist"]')).not.toBeNull();
-		expect(container.textContent).toContain("Factory records loaded");
-	} finally {
-		await act(async () => root.unmount());
-		container.remove();
-	}
-});
+		const container = document.createElement("div");
+		document.body.append(container);
+		const root = createRoot(container);
+		try {
+			await act(async () =>
+				root.render(
+					<RefreshProvider>
+						<MemoryRouter initialEntries={[`/repos/nocoo/app?tab=${tab}`]}>
+							<Routes>
+								<Route path="/repos/:owner/:name" element={<RepoDetailPage />} />
+							</Routes>
+						</MemoryRouter>
+					</RefreshProvider>,
+				),
+			);
+			expect(container.querySelector('[role="tablist"]')).toBeNull();
+			expect(detailsReads).toBe(1);
+			vi.mocked(apiGet).mockResolvedValueOnce({
+				...run,
+				status: "completed",
+				phase: "done",
+				completedRepos: 1,
+				finishedAt: "2026-10-29T04:00:03Z",
+			});
+			await act(async () => vi.advanceTimersByTimeAsync(3000));
+			expect(apiGet).toHaveBeenCalledWith("refresh-runs/repo-refresh");
+			expect(detailsReads).toBe(2);
+			expect(loadRepoTab).toHaveBeenCalledWith("nocoo", "app", "details");
+			expect(container.querySelector('[role="tablist"]')).not.toBeNull();
+			if (tab === "factory") expect(container.textContent).toContain("Factory records loaded");
+			else {
+				expect(container.textContent).toContain("来源时区不一致或日期不可用");
+				expect(container.textContent).not.toContain("Calendar commits:");
+				expect(container.textContent).not.toContain("30 天 新开 0");
+			}
+		} finally {
+			await act(async () => root.unmount());
+			container.remove();
+		}
+	},
+);

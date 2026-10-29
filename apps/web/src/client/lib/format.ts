@@ -55,7 +55,7 @@ export function formatDate(value: string | null | undefined, timeZone = DISPLAY_
 	return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
 }
 
-export function formatDayRange(day: string, lastDay = day, timeZone = DISPLAY_TIMEZONE): string {
+export function formatDayRange(day: string, lastDay = day, timeZone = "UTC"): string {
 	const end = Date.parse(lastDay) + 86_400_000;
 	if (!Number.isFinite(Date.parse(day)) || !Number.isFinite(end)) return "—";
 	return `${day} 00:00 → ${new Date(end).toISOString().slice(0, 10)} 00:00 (${timeZone})`;

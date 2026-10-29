@@ -1,5 +1,21 @@
-import type { FactoryWindow } from "../../lib/factory-types";
+import type { FactoryRepo, FactoryWindow } from "../../lib/factory-types";
 import { formatDate } from "./format";
+
+export function factoryCalendarWindows(
+	repo: Partial<Pick<FactoryRepo, "coverage" | "observation">>,
+	fallback: FactoryWindow,
+): FactoryWindow[] {
+	const window = repo.observation?.window ?? fallback;
+	return [
+		window,
+		...Object.values(repo.coverage ?? {}).flatMap(
+			(coverage) =>
+				coverage.completeWindows ?? [
+					coverage.observation?.window ?? repo.observation?.collectionWindow ?? window,
+				],
+		),
+	];
+}
 
 export function calendarBounds(window: FactoryWindow): { since: number; until: number } {
 	if (!window.timezone) {

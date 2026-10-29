@@ -178,7 +178,11 @@ export class RefreshViewModel {
 	private async reject(error: unknown, generation: number): Promise<void> {
 		if (cacheGeneration() !== generation) return;
 		this.update({ error: refreshError(error), ready: false });
-		if (error instanceof ApiError && error.code === "account_conflict") {
+		if (
+			error instanceof ApiError &&
+			(error.code === "account_conflict" ||
+				(error.status === 404 && error.code === "not_found" && refreshActive(this.state.run)))
+		) {
 			this.update({ run: null });
 			try {
 				await ensureSession();

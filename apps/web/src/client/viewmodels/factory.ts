@@ -14,7 +14,7 @@ import {
 } from "../../lib/factory-types";
 import { type SnapshotFreshness, snapshotFreshness } from "../../lib/snapshot-freshness";
 import { apiGet } from "../lib/api";
-import { calendarBounds } from "../lib/calendar";
+import { calendarBounds, factoryCalendarWindows } from "../lib/calendar";
 import { ApiError } from "../lib/errors";
 import { getRepositoryScope, scopedResource } from "./scope";
 import { ensureSession, getActiveAccountId } from "./session";
@@ -121,12 +121,7 @@ export function factoryBoard(
 		repo.observation?.window ??
 		snapshot.window;
 	const windows = repos.length
-		? repos.flatMap((repo) => [
-				repo.observation?.window ?? snapshot.window,
-				...FACTORY_STREAMS.flatMap(
-					(stream) => repo.coverage[stream].completeWindows ?? [windowOf(repo, stream)],
-				),
-			])
+		? repos.flatMap((repo) => factoryCalendarWindows(repo, snapshot.window))
 		: [snapshot.window];
 	const mixedTimezones = new Set(windows.map((window) => window.timezone ?? "UTC")).size > 1;
 	const timezone = windows[0]?.timezone ?? "UTC";

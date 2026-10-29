@@ -48,9 +48,7 @@ describe("format", () => {
 			"2026-09-01 00:00 → 2026-09-08 00:00 (UTC)",
 		);
 		expect(formatDayRange("invalid")).toBe("—");
-		expect(formatDayRange("2026-09-10")).toBe(
-			"2026-09-10 00:00 → 2026-09-11 00:00 (Asia/Shanghai)",
-		);
+		expect(formatDayRange("2026-09-10")).toBe("2026-09-10 00:00 → 2026-09-11 00:00 (UTC)");
 	});
 
 	it("formats local timestamps and second-accurate elapsed time without losing days", () => {
