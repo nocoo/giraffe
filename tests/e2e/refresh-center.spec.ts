@@ -2,6 +2,9 @@ import { expect, test } from "@playwright/test";
 import { refreshReviewRun, uiRefreshReviewFixtures } from "./ui-refresh-review-fixtures";
 
 test("cancelled account closure does not imply completed collection", async ({ page }, info) => {
+	await page.setViewportSize({ width: 1280, height: 720 });
+	await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
+	await page.clock.setFixedTime(new Date("2026-10-23T01:01:20.000Z"));
 	const fixtures = uiRefreshReviewFixtures();
 	const current = refreshReviewRun();
 	const cancelled = {
@@ -48,10 +51,21 @@ test("cancelled account closure does not imply completed collection", async ({ p
 		"value",
 		"0",
 	);
-	await page.screenshot({ path: info.outputPath("cancelled-account-closure.png"), fullPage: true });
+	await page.screenshot({
+		path: info.outputPath("cancelled-account-closure.png"),
+		fullPage: true,
+		animations: "disabled",
+	});
+	await page.locator("details.refresh-diagnostics > summary").click();
+	await expect(page.locator("details.refresh-diagnostics")).toContainText(
+		"结束时间表示步骤结束，不代表成功完成采集",
+	);
 });
 
 test("settled refresh dimensions do not claim complete observations", async ({ page }, info) => {
+	await page.setViewportSize({ width: 1280, height: 720 });
+	await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
+	await page.clock.setFixedTime(new Date("2026-10-23T01:01:20.000Z"));
 	const fixtures = uiRefreshReviewFixtures();
 	const current = refreshReviewRun();
 	const completed = {
@@ -81,7 +95,15 @@ test("settled refresh dimensions do not claim complete observations", async ({ p
 	await expect(alerts).toContainText("已处理");
 	await expect(alerts).not.toContainText("完整");
 	await expect(repo.locator('.refresh-mini-dims > [title="依赖告警 · 已处理"]')).toBeVisible();
-	await page.screenshot({ path: info.outputPath("settled-dimensions.png"), fullPage: true });
+	const identity = await repo.locator(".refresh-queue-repo").boundingBox();
+	const summary = await repo.locator("summary").boundingBox();
+	expect(identity?.width).toBeGreaterThanOrEqual(160);
+	expect(summary?.height).toBeLessThanOrEqual(120);
+	await page.screenshot({
+		path: info.outputPath("settled-dimensions.png"),
+		fullPage: true,
+		animations: "disabled",
+	});
 });
 
 test("refresh history retains runs with unrecorded diagnostics", async ({ page }) => {

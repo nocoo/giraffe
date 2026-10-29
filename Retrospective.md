@@ -2423,6 +2423,13 @@ daily projection into the viewmodel and reuse the same day-window evidence;
 keep missing keys null even when the overall stream is complete. Browser checks
 must inspect the small repository chart as well as the main chart panels.
 
+The post-rebase visual review also exposed a repository identity squeezed into
+seven lines at an intermediate desktop width. Viewport-only breakpoints missed
+the narrow panel inside a two-column layout. Reflow its chips by container width
+and assert usable identity width and row height, not only absence of overflow.
+Review diagnostic explanations alongside corrected status labels: a closed step
+timestamp does not establish successful collection, including in helper copy.
+
 Token recovery also needs response ordering: an older initial read can fail or
 return an empty list after a successful creation and reload. Invalidate that
 initial request when the newer list request starts, and test both late outcomes.

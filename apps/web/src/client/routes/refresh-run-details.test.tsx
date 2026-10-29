@@ -228,6 +228,8 @@ it("renders a cancellation-closed account step as interrupted without settled at
 	const text = container.textContent ?? "";
 	expect(text).toContain("0 / 1");
 	expect(text).not.toContain("完成 2026");
+	expect(text).toContain("结束时间表示步骤结束，不代表成功完成采集");
+	expect(text).not.toContain("未完成的步骤只显示已开始时间");
 });
 
 it("uses neutral end-time wording for a cancellation-closed interrupted repository", async () => {

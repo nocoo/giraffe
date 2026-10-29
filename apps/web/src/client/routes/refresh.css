@@ -467,6 +467,9 @@
 	font-size: var(--text-sm);
 	line-height: 1.6;
 }
+.refresh-run-repositories {
+	container: refresh-repositories / inline-size;
+}
 .refresh-run-row > summary {
 	display: grid;
 	grid-template-columns: 16px minmax(0, 1fr) auto 96px;
@@ -721,6 +724,19 @@ details[open] > summary > .refresh-disclosure {
 .refresh-run-phases [data-complete="true"]:not([data-skipped="true"]) .refresh-phase-number {
 	color: var(--refresh-success);
 	border-color: var(--refresh-success);
+}
+@container refresh-repositories (max-width: 600px) {
+	.refresh-run-row > summary {
+		grid-template-columns: 16px minmax(0, 1fr) auto;
+	}
+	.refresh-mini-dims {
+		grid-column: 2 / -1;
+		grid-row: 2;
+	}
+	.refresh-queue-count {
+		grid-column: 3;
+		grid-row: 1;
+	}
 }
 @media (min-width: 1000px) {
 	.refresh-run-details:has(.refresh-run-issues):has(.refresh-run-repositories) {

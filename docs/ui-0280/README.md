@@ -1,12 +1,17 @@
 # UI 0.28.0 visual evidence
 
 Baseline: `b3ddaa573828aa080620cef17e396403b432bc58` (v0.27.2).
-Candidate runtime: `04ef5695fd95a5a75bacfc7b9a31a11a7878694b` (v0.28.0).
+Candidate client tree: `05f5305dc7b34516f53f738a1abb1bc73890bef6` (v0.28.0).
 Integration base: `89ce50509b3d22303672e4ecc58a584f4cdff9a0` (v0.27.3).
+
+The client tree is the Git tree object at `HEAD:apps/web/src/client`, pinning the
+captured UI independently of this evidence document's containing commit.
 
 The original before captures remain pinned to v0.27.2. After captures include
 the post-rebase settlement corrections: cancellation closure is not successful
 collection, and processed dimensions do not imply available observations.
+Diagnostic help uses the same closure semantics. Narrow repository panels reflow
+dimension chips without squeezing repository identities into vertical text.
 Fresh integration gates exercise the v0.27.3 Worker with this UI.
 
 Chromium captures use the same fixed clock, saved API fixtures and localhost-only
@@ -36,6 +41,10 @@ Supplementary mobile-dark captures cover the lower sections:
 Post-rebase semantic regressions have dedicated browser captures:
 - [Cancelled account closure without settled collection](after-cancelled-account.png)
 - [Processed dimensions without claiming complete observations](after-settled-dimensions.png)
+
+These supplemental captures use 1280 × 720, light theme and the same fixed clock.
+The settled-dimension journey asserts at least 160px of repository identity width
+and at most 120px of summary height inside the desktop two-column layout.
 
 The browser journey checks that dimension labels and their repository rows do not
 overflow at both viewport widths and in both themes. Project-identity journeys
