@@ -52,7 +52,7 @@ export async function deployWorker(
 		}
 		if (!response.ok) throw new Error(`Cloudflare request failed (${response.status})`);
 		const body = z
-			.object({ success: z.literal(true), result: z.unknown() })
+			.object({ success: z.literal(true), result: z.unknown().optional() })
 			.safeParse(await response.json().catch(() => null));
 		if (!body.success) throw new Error("Invalid Cloudflare response");
 		return body.data.result;

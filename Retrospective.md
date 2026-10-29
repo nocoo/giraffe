@@ -2066,6 +2066,12 @@ only the retired production queue consumer through the authorized workflow, with
 mocked regression tests and post-deployment API verification. Future trigger
 retirements must verify remote reconciliation semantics, not only source absence.
 
+Follow-up review caught another API assumption: consumer deletion can return a
+successful envelope without `result`. A failing mocked regression now covers
+that documented shape; GET payloads still require their endpoint-specific
+schemas. Validate response contracts per operation instead of assuming read and
+delete envelopes are identical.
+
 ## 2026-10-29 - Match test callees before removing cases
 
 During collection retirement, an AST cleanup initially matched an enclosing

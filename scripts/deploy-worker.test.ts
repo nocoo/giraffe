@@ -77,6 +77,17 @@ describe("collection trigger retirement deployment", () => {
 			expect(request.mock.calls.every((call) => call[1].method === "GET")).toBe(true);
 		},
 	);
+	it("accepts a successful consumer deletion without a result field", async () => {
+		const request = vi
+			.fn()
+			.mockResolvedValueOnce(reply([queue([consumer])]))
+			.mockResolvedValueOnce(Response.json({ success: true, errors: [], messages: [] }))
+			.mockResolvedValueOnce(reply([queue([])]))
+			.mockResolvedValueOnce(reply({ schedules: [] }));
+		const deploy = vi.fn().mockResolvedValue(undefined);
+		await deployWorker(environment, request, deploy);
+		expect(deploy).toHaveBeenCalledOnce();
+	});
 	it.each([
 		new Response("secret-upstream-error", { status: 403 }),
 		Response.json({ success: false, errors: ["secret-upstream-error"] }),
