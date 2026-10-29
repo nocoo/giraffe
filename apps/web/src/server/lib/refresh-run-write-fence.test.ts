@@ -193,17 +193,26 @@ it("rejects terminal overwrite and legacy rewrites while accepting modern termin
 		requestBreakdown: { total: 0 },
 	});
 	expect(await activeRefreshRun(db, "account")).toBeNull();
+	const other = await createRefreshRun(
+		db,
+		"account",
+		parseRefreshParams({}, new Date(now)),
+		"manual",
+		"2026-10-28T01:00:00.000Z",
+	);
+	await saveRefreshRun(db, { ...other, status: "running", updatedAt: now });
 	const counted = addRefreshRequests(
-		{ ...run, status: "partial", phase: "done", finishedAt: now },
+		{ ...other, status: "partial", phase: "done", finishedAt: now },
 		"b",
 		{ graphql: 1, rest: 2 },
 	);
 	await saveRefreshRun(db, counted);
-	expect(await getRefreshRun(db, "account", run.id)).toMatchObject({
+	expect(await getRefreshRun(db, "account", other.id)).toMatchObject({
 		status: "partial",
 		requests: 3,
 		requestBreakdown: { total: 3, graphql: 1, rest: 2, b: { graphql: 1, rest: 2 } },
 	});
+	expect(await getRefreshRun(db, "account", run.id)).toMatchObject({ status: "cancelled" });
 });
 
 it("allows modern store progress past a legacy writer without losing observations", async () => {

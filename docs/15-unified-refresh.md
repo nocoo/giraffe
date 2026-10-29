@@ -27,8 +27,9 @@ Cloudflare alarm-delivery SLA. A crash may replay the interrupted step; rate-lim
 and transient retry deadlines still take precedence once the failure is recorded.
 
 Successful settlement and the next step's start share one D1 write. The runner
-carries that persisted cursor directly into the next step rather than querying
-the active run twice and setting an immediate alarm between healthy steps. The
+carries that persisted cursor directly into the next step without setting an
+immediate alarm between healthy steps. Each continuation reads current D1 intent
+before collecting so an out-of-object cancellation cannot be missed. The
 five-second recovery alarm is rearmed before this transition write. A failed
 transition can replay the previous step; retry exhaustion and cancellation keep
 their durable recovery paths and the terminal-state/write-revision fences.
@@ -307,7 +308,13 @@ Existing `PUT|DELETE /accounts/:account/stars/:owner/:name` and browser
 factory-stream and contribution GET endpoints retain their response formats and
 read only newly saved data. Tokens/PATs never enter run payloads, URLs or logs.
 
-Cancel accepts no parameters. It records durable intent, stops after the current
+Cancel accepts no parameters. The ordinary Worker first atomically records intent
+in D1; a best-effort `waitUntil` notification wakes the Durable Object without
+blocking the response. A busy, failed or reset object cannot prevent the D1 write
+or turn a successful cancellation request into a 500. Alarm entry, continuation
+and settlement read D1 intent. Stale writes preserve cancellation, and intent
+committed before a terminal settlement takes precedence over that settlement.
+It stops after the current
 A step or repository finishes, and preserves all already-written observations.
 Queued runs cancel without collecting. Pending cancellation returns the run with
 `cancelRequested: true` and HTTP 202; immediate cancellation and already-terminal

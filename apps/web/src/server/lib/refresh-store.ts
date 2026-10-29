@@ -257,11 +257,30 @@ export async function createRefreshRun(
 		.run();
 	return run;
 }
+const cancelWins =
+	"json_extract(refresh_runs.payload,'$.cancelRequested')=1 AND json_extract(next.payload,'$.status') IN ('completed','partial','failed')";
+const cancelledAt =
+	"coalesce(json_extract(refresh_runs.payload,'$.finishedAt'),json_extract(next.payload,'$.finishedAt'),json_extract(next.payload,'$.updatedAt'))";
 export async function saveRefreshRun(db: Db, run: RefreshRun): Promise<void> {
 	await db
 		.prepare(
-			"UPDATE refresh_runs SET status=?,payload=?,updated_at=?,writer_revision=writer_revision+1 WHERE account_id=? AND id=?",
+			`WITH next(payload) AS (VALUES(?)) UPDATE refresh_runs SET status=CASE WHEN ${cancelWins} THEN 'cancelled' ELSE json_extract(next.payload,'$.status') END,payload=json_set(next.payload,'$.cancelRequested',json(CASE WHEN json_extract(refresh_runs.payload,'$.cancelRequested')=1 OR json_extract(next.payload,'$.cancelRequested')=1 THEN 'true' ELSE 'false' END),'$.status',CASE WHEN ${cancelWins} THEN 'cancelled' ELSE json_extract(next.payload,'$.status') END,'$.phase',CASE WHEN ${cancelWins} THEN 'done' ELSE json_extract(next.payload,'$.phase') END,'$.finishedAt',CASE WHEN ${cancelWins} THEN ${cancelledAt} ELSE json_extract(next.payload,'$.finishedAt') END),updated_at=CASE WHEN ${cancelWins} THEN ${cancelledAt} ELSE ? END,writer_revision=writer_revision+1 FROM next WHERE refresh_runs.account_id=? AND refresh_runs.id=?`,
 		)
-		.bind(run.status, JSON.stringify(run), run.updatedAt, run.accountId, run.id)
+		.bind(JSON.stringify(run), run.updatedAt, run.accountId, run.id)
 		.run();
+}
+export type RefreshCancelRequest = { run: RefreshRun | null; requested: boolean };
+export async function requestRefreshCancel(
+	db: Db,
+	account: string,
+	id: string,
+	at: string,
+): Promise<RefreshCancelRequest> {
+	const result = await db
+		.prepare(
+			"UPDATE refresh_runs SET status=CASE WHEN status='queued' THEN 'cancelled' ELSE status END,payload=json_set(payload,'$.cancelRequested',json('true'),'$.updatedAt',?,'$.status',CASE WHEN status='queued' THEN 'cancelled' ELSE json_extract(payload,'$.status') END,'$.phase',CASE WHEN status='queued' THEN 'done' ELSE json_extract(payload,'$.phase') END,'$.finishedAt',CASE WHEN status='queued' THEN ? ELSE json_extract(payload,'$.finishedAt') END),updated_at=?,writer_revision=writer_revision+1 WHERE account_id=? AND id=? AND status IN ('queued','running')",
+		)
+		.bind(at, at, at, account, id)
+		.run();
+	return { run: await getRefreshRun(db, account, id), requested: result.meta.changes > 0 };
 }

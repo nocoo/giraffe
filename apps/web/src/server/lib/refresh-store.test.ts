@@ -13,6 +13,7 @@ import {
 	emptyRequestBreakdown,
 	getRefreshRun,
 	listRefreshRuns,
+	requestRefreshCancel,
 	saveRefreshRun,
 	scheduledRefreshRun,
 	startRefreshStep,
@@ -159,6 +160,165 @@ it("marks queued and running runs cancelled once and never mutates terminal runs
 	expect(terminalRefreshStatus("running")).toBe(false);
 	for (const status of ["completed", "partial", "failed", "cancelled"] as const)
 		expect(terminalRefreshStatus(status)).toBe(true);
+});
+it("persists an external cancellation that stale runner payloads cannot clear", async () => {
+	const db = await fixture();
+	const now = "2026-10-29T01:00:00.000Z";
+	const run = await createRefreshRun(
+		db,
+		"account",
+		parseRefreshParams({}, new Date(now)),
+		"manual",
+		now,
+	);
+	const running = { ...run, status: "running" as const, phase: "repos" as const };
+	await saveRefreshRun(db, running);
+	expect(await requestRefreshCancel(db, "account", "missing", now)).toEqual({
+		run: null,
+		requested: false,
+	});
+	expect(await requestRefreshCancel(db, "other", run.id, now)).toEqual({
+		run: null,
+		requested: false,
+	});
+	expect(
+		await requestRefreshCancel(db, "account", run.id, "2026-10-29T01:01:00.000Z"),
+	).toMatchObject({
+		requested: true,
+		run: {
+			status: "running",
+			phase: "repos",
+			cancelRequested: true,
+			updatedAt: "2026-10-29T01:01:00.000Z",
+			finishedAt: null,
+		},
+	});
+	await saveRefreshRun(db, { ...running, updatedAt: "2026-10-29T01:02:00.000Z" });
+	expect(await getRefreshRun(db, "account", run.id)).toMatchObject({
+		status: "running",
+		cancelRequested: true,
+		completedRepos: 0,
+		updatedAt: "2026-10-29T01:02:00.000Z",
+	});
+	const others = await createRefreshRun(
+		db,
+		"other",
+		parseRefreshParams({}, new Date(now)),
+		"manual",
+		now,
+	);
+	await saveRefreshRun(db, { ...others, status: "running", cancelRequested: true });
+	await saveRefreshRun(db, { ...others, status: "running", cancelRequested: false });
+	expect(await getRefreshRun(db, "other", others.id)).toMatchObject({ cancelRequested: true });
+});
+it("cancels a queued run atomically so only the runner can finish a running one", async () => {
+	const db = await fixture();
+	const now = "2026-10-29T01:00:00.000Z";
+	const run = await createRefreshRun(
+		db,
+		"account",
+		parseRefreshParams({}, new Date(now)),
+		"manual",
+		now,
+	);
+	expect(await requestRefreshCancel(db, "account", run.id, "2026-10-29T01:01:00.000Z")).toEqual({
+		requested: true,
+		run: {
+			...run,
+			status: "cancelled",
+			phase: "done",
+			cancelRequested: true,
+			updatedAt: "2026-10-29T01:01:00.000Z",
+			finishedAt: "2026-10-29T01:01:00.000Z",
+		},
+	});
+	expect(await activeRefreshRun(db, "account")).toBeNull();
+	expect(
+		await requestRefreshCancel(db, "account", run.id, "2026-10-29T01:02:00.000Z"),
+	).toMatchObject({
+		requested: false,
+		run: {
+			status: "cancelled",
+			cancelRequested: true,
+			finishedAt: "2026-10-29T01:01:00.000Z",
+		},
+	});
+	await expect(saveRefreshRun(db, { ...run, status: "running" })).rejects.toThrow();
+	expect((await getRefreshRun(db, "account", run.id))?.status).toBe("cancelled");
+});
+it.each(["completed", "partial", "failed"] as const)(
+	"makes a pending cancellation win over a stale %s settlement",
+	async (status) => {
+		const db = await fixture();
+		const now = "2026-10-29T01:00:00.000Z";
+		const run = await createRefreshRun(
+			db,
+			"account",
+			parseRefreshParams({}, new Date(now)),
+			"manual",
+			now,
+		);
+		const running = { ...run, status: "running" as const, phase: "repos" as const };
+		await saveRefreshRun(db, running);
+		await requestRefreshCancel(db, "account", run.id, "2026-10-29T01:01:00.000Z");
+		const settled = {
+			...addRefreshRequests(running, "b", { graphql: 1, rest: 2 }),
+			status,
+			phase: "done" as const,
+			partial: status !== "completed",
+			errorCode: status === "failed" ? "github_error" : null,
+			updatedAt: "2026-10-29T01:02:00.000Z",
+			finishedAt: "2026-10-29T01:02:00.000Z",
+		};
+		await saveRefreshRun(db, settled);
+		expect(await getRefreshRun(db, "account", run.id)).toMatchObject({
+			status: "cancelled",
+			phase: "done",
+			cancelRequested: true,
+			requests: 3,
+			requestBreakdown: { total: 3, graphql: 1, rest: 2 },
+			errorCode: status === "failed" ? "github_error" : null,
+			updatedAt: "2026-10-29T01:02:00.000Z",
+			finishedAt: "2026-10-29T01:02:00.000Z",
+		});
+		expect(await activeRefreshRun(db, "account")).toBeNull();
+		await saveRefreshRun(db, {
+			...settled,
+			updatedAt: "2026-10-29T01:03:00.000Z",
+			finishedAt: "2026-10-29T01:03:00.000Z",
+		});
+		expect(await getRefreshRun(db, "account", run.id)).toMatchObject({
+			status: "cancelled",
+			finishedAt: "2026-10-29T01:02:00.000Z",
+		});
+		await expect(
+			saveRefreshRun(db, { ...running, updatedAt: "2026-10-29T01:04:00.000Z" }),
+		).rejects.toThrow();
+	},
+);
+it("keeps a settled run settled when the cancellation arrives after settlement", async () => {
+	const db = await fixture();
+	const now = "2026-10-29T01:00:00.000Z";
+	const run = await createRefreshRun(
+		db,
+		"account",
+		parseRefreshParams({}, new Date(now)),
+		"manual",
+		now,
+	);
+	const completed = {
+		...run,
+		status: "completed" as const,
+		phase: "done" as const,
+		updatedAt: "2026-10-29T01:02:00.000Z",
+		finishedAt: "2026-10-29T01:02:00.000Z",
+	};
+	await saveRefreshRun(db, completed);
+	expect(await requestRefreshCancel(db, "account", run.id, "2026-10-29T01:03:00.000Z")).toEqual({
+		run: completed,
+		requested: false,
+	});
+	expect(await getRefreshRun(db, "account", run.id)).toEqual(completed);
 });
 it("merges safe failure metadata per repository without duplicating codes", async () => {
 	const db = await fixture();

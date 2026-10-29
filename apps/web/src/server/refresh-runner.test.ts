@@ -123,6 +123,80 @@ async function deferredCollection() {
 		};
 	};
 }
+
+it("settles D1-only cancellation after a CPU reset without entering cached B", async () => {
+	const fixture = await setup();
+	const run = await startRefresh(fixture.env, "account", { repo: "octo/one" });
+	await saveRefreshRun(fixture.db(), {
+		...run,
+		status: "running",
+		phase: "repos",
+		repos: ["octo/one"],
+		aReused: true,
+	});
+	await refreshStore.requestRefreshCancel(
+		fixture.db(),
+		"account",
+		run.id,
+		new Date().toISOString(),
+	);
+	expect(await fixture.storage.get(`cancel:${run.id}`)).toBeUndefined();
+	await fixture.restart().alarm();
+	expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
+		status: "cancelled",
+		cancelRequested: true,
+		completedRepos: 0,
+		requests: 0,
+	});
+	expect(collectors.collectAccount).not.toHaveBeenCalled();
+	expect(collectors.collectRepository).not.toHaveBeenCalled();
+	expect(fixture.alarmAt()).toBeNull();
+});
+
+it("honors a D1-only cancel while B is stalled and preserves completed work", async () => {
+	const fixture = await setup();
+	const run = await startRefresh(fixture.env, "account", {});
+	const pending = await deferredCollection();
+	const alarm = fixture.runner.alarm();
+	const { release } = await pending();
+	await refreshStore.requestRefreshCancel(
+		fixture.db(),
+		"account",
+		run.id,
+		new Date().toISOString(),
+	);
+	release(collected(3, 1, 2));
+	await alarm;
+	expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
+		status: "cancelled",
+		completedRepos: 1,
+		requests: 4,
+		cancelRequested: true,
+	});
+	expect(collectors.collectRepository).toHaveBeenCalledOnce();
+});
+
+it("rechecks D1 cancellation before the same-wake repository continuation", async () => {
+	const fixture = await setup();
+	const run = await startRefresh(fixture.env, "account", {});
+	const save = refreshStore.saveRefreshRun;
+	const spy = vi.spyOn(refreshStore, "saveRefreshRun").mockImplementation(async (db, next) => {
+		await save(db, next);
+		if (next.phase === "repos" && !next.cancelRequested)
+			await refreshStore.requestRefreshCancel(fixture.db(), "account", run.id, next.updatedAt);
+	});
+	try {
+		await fixture.runner.alarm();
+		expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
+			status: "cancelled",
+			cancelRequested: true,
+			completedRepos: 0,
+		});
+		expect(collectors.collectRepository).not.toHaveBeenCalled();
+	} finally {
+		spy.mockRestore();
+	}
+});
 it("durably queues one account run and executes A then B serial across restarts", async () => {
 	const fixture = await setup();
 	const run = await startRefresh(fixture.env, "account", {});
@@ -624,15 +698,20 @@ it("never resurrects a cancelled run when a concurrent alarm finalizes it first"
 
 it("returns the same run from the public cancel helper and fences unknown accounts", async () => {
 	const fixture = await setup();
+	const background: Promise<unknown>[] = [];
+	const waitUntil = (work: Promise<unknown>) => {
+		background.push(work);
+	};
 	const run = await startRefresh(fixture.env, "account", {});
-	expect((await cancelRefresh(fixture.env, "account", run.id)).status).toBe("cancelled");
-	await expect(cancelRefresh(fixture.env, "missing", run.id)).rejects.toMatchObject({
-		code: "account_missing",
+	expect((await cancelRefresh(fixture.env, "account", run.id, waitUntil)).status).toBe("cancelled");
+	await expect(cancelRefresh(fixture.env, "missing", run.id, waitUntil)).rejects.toMatchObject({
+		code: "not_found",
 	});
 	const { REFRESH_RUNNER: _binding, ...withoutBinding } = fixture.env;
-	await expect(cancelRefresh(withoutBinding, "account", run.id)).rejects.toMatchObject({
-		code: "refresh_unavailable",
+	await expect(cancelRefresh(withoutBinding, "account", run.id, waitUntil)).resolves.toMatchObject({
+		status: "cancelled",
 	});
+	await Promise.all(background);
 });
 
 it("does not disturb an in-flight step when a queued run is cancelled", async () => {
@@ -1318,7 +1397,7 @@ it("persists each healthy transition once without re-reading the active run or r
 	fixture.storage.setAlarm.mockClear();
 	try {
 		await fixture.runner.alarm();
-		expect(active).toHaveBeenCalledTimes(2);
+		expect(active).toHaveBeenCalledTimes(3);
 		expect(save).toHaveBeenCalledTimes(3);
 		expect(save.mock.calls[1]?.[1]).toMatchObject({
 			phase: "repos",
