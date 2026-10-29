@@ -57,6 +57,9 @@ The cache key is account × immutable repository ID × timezone × day × dimens
 Complete cached days skip upstream work unless `force` is true. Cache reuse keeps
 source timestamps, and a newly published run/window does not make old evidence
 fresh. Identity replacements cannot inherit observations by repository name.
+Published coverage preserves the selected day observations' actual source;
+windows combining REST and GraphQL evidence report `mixed`, never relabel cached
+REST releases as newly collected GraphQL data.
 - Daily commits use one GraphQL `history(since,until) { totalCount }` alias per
   uncached day. They are default-branch counts, not owner-only/all-branch counts.
   No REST commit pagination or reconciliation against contribution totals occurs.
@@ -179,6 +182,11 @@ preserving its indexes/history and all observation tables. Active v0.27.0 payloa
 lack transport/reason fields and are explicitly failed with
 `refresh_schema_cutover`, rather than resumed using invented counts. Their last
 source timestamp and numeric request total remain intact. Historical terminal
+payloads cannot be overwritten by a stale legacy writer: database triggers reject
+legacy active inserts/updates and prevent terminal-to-active transitions. A legacy
+Worker write during cutover fails rather than resurrecting a run or reserving its
+active/scheduled slot. New run requests must reach the upgraded Worker.
+Historical terminal
 payloads stay unchanged; `requestBreakdown`, `partialReasons` and
 `cancelRequested` are produced for new v0.27.1 runs only. This is not a migration
 of legacy observations or a runtime compatibility fallback. The migration is

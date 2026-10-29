@@ -1,6 +1,6 @@
 # 03 — 数据 Schema
 
-> **v0.27.0:** [Phase 2 unified refresh](15-unified-refresh.md) is the current
+> **v0.27.1:** [Phase 2 unified refresh](15-unified-refresh.md) is the current
 > storage and execution contract. New `refresh_*` tables have no legacy-data
 > migration. Earlier factory/run/analysis schema descriptions below are historical;
 > retired tables can remain inert and are never observation fallbacks.
