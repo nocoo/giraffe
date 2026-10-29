@@ -2,7 +2,7 @@ import { Button, Checkbox, Field, Input } from "@nocoo/basalt";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
 import { Ban, Clock3, KeyRound, ListChecks, ShieldCheck, UserRound } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { formatPreciseDate } from "../lib/format";
 import type { PublicAccount } from "../viewmodels/accounts";
 import {
@@ -33,8 +33,10 @@ export function ApiTokens({ accounts }: { accounts: PublicAccount[] }) {
 	const [error, setError] = useState("");
 	const [listError, setListError] = useState("");
 	const [busy, setBusy] = useState(false);
+	const listRequest = useRef(0);
 	useEffect(() => {
 		let cancelled = false;
+		const request = ++listRequest.current;
 		setSecret("");
 		setError("");
 		setListError("");
@@ -42,10 +44,10 @@ export function ApiTokens({ accounts }: { accounts: PublicAccount[] }) {
 		if (selected)
 			void listTokens(selected)
 				.then((value) => {
-					if (!cancelled) setRows(value.items);
+					if (!cancelled && request === listRequest.current) setRows(value.items);
 				})
 				.catch(() => {
-					if (!cancelled) setListError("无法读取 API 令牌");
+					if (!cancelled && request === listRequest.current) setListError("无法读取 API 令牌");
 				});
 		return () => {
 			cancelled = true;
@@ -56,6 +58,7 @@ export function ApiTokens({ accounts }: { accounts: PublicAccount[] }) {
 		setError("");
 		try {
 			await action();
+			listRequest.current++;
 			setRows((await listTokens(selected)).items);
 			setListError("");
 		} catch {

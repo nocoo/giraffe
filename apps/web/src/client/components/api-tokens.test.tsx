@@ -202,6 +202,41 @@ it("recovers the management list after a failed initial read and a successful cr
 	);
 });
 
+it.each(["success", "failure"])(
+	"ignores the old initial token list %s after successful creation and reload",
+	async (outcome) => {
+		let resolve: (value: { account_id: string; items: ApiTokenRow[] }) => void = () => {};
+		let reject: (error: Error) => void = () => {};
+		vi.mocked(listTokens).mockReturnValueOnce(
+			new Promise((done, fail) => {
+				resolve = done;
+				reject = fail;
+			}),
+		);
+		await act(async () =>
+			root.render(
+				<TooltipProvider>
+					<ApiTokens accounts={[account]} />
+				</TooltipProvider>,
+			),
+		);
+		vi.mocked(createToken).mockResolvedValue({ ...row, token: "giraffe_test_once" });
+		vi.mocked(listTokens).mockResolvedValue({ account_id: "a", items: [row] });
+		await act(async () =>
+			container
+				.querySelector("form")
+				?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
+		);
+		await act(async () => {
+			if (outcome === "failure") reject(new Error("private upstream failure"));
+			else resolve({ account_id: "a", items: [] });
+		});
+		expect(container.textContent).not.toContain("无法读取 API 令牌");
+		expect(container.textContent).toContain("共 1 个");
+		expect(container.querySelector('[aria-label="External Bot 标签"]')).not.toBeNull();
+	},
+);
+
 it("ignores a token list that arrives after changing account", async () => {
 	let resolve: (value: { account_id: string; items: ApiTokenRow[] }) => void = () => {};
 	vi.mocked(listTokens).mockReturnValueOnce(
