@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { sqliteFixture } from "../../../../tests/fixtures/sqlite";
 import type { Env } from "./env";
 import { createDb } from "./lib/db/d1";
@@ -850,53 +850,60 @@ async function withSavedA(
 		.run();
 }
 
-it("reuses a same-day successful A for an adhoc repository without renewing its evidence", async () => {
-	const fixture = await setup();
-	await withSavedA(fixture, "2026-10-29T02:00:00.000Z");
-	const run = await startRefresh(fixture.env, "account", { repo: "octo/one" });
-	expect(run.params.repo).toBe("octo/one");
-	await fixture.runner.alarm();
-	expect(collectors.collectAccount).not.toHaveBeenCalled();
-	expect(collectors.collectRepository.mock.calls[0]?.[1]).toBe("octo/one");
-	expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
-		status: "completed",
-		aReused: true,
-		repos: ["octo/one"],
-		requests: 3,
-		requestBreakdown: { total: 3, graphql: 1, rest: 2, a: { graphql: 0, rest: 0 } },
-	});
-	const account = await fixture.raw
-		.prepare("SELECT fetched_at FROM refresh_accounts WHERE account_id='account'")
-		.first<{ fetched_at: string }>();
-	expect(account?.fetched_at).toBe("2026-10-29T02:00:00.000Z");
-});
+describe("same-Shanghai-day account reuse", () => {
+	beforeEach(() =>
+		vi.useFakeTimers({ now: new Date("2026-10-29T04:00:00.000Z"), toFake: ["Date"] }),
+	);
+	afterEach(() => vi.useRealTimers());
 
-it.each<[string, Record<string, unknown>, string, string?]>([
-	["forced adhoc", { repo: "octo/one", force: true }, "2026-10-29T02:00:00.000Z"],
-	["default scope", {}, "2026-10-29T02:00:00.000Z"],
-	["previous Shanghai day", { repo: "octo/one" }, "2026-10-28T02:00:00.000Z"],
-	["partial A", { repo: "octo/one" }, "2026-10-29T02:00:00.000Z", "partial"],
-])("refreshes A instead of reusing it for %s", async (_label, params, savedAt, status) => {
-	const fixture = await setup();
-	await withSavedA(fixture, savedAt, status);
-	const run = await startRefresh(fixture.env, "account", params);
-	await fixture.runner.alarm();
-	expect(collectors.collectAccount).toHaveBeenCalledOnce();
-	expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
-		aReused: false,
+	it("reuses a same-day successful A for an adhoc repository without renewing its evidence", async () => {
+		const fixture = await setup();
+		await withSavedA(fixture, "2026-10-29T02:00:00.000Z");
+		const run = await startRefresh(fixture.env, "account", { repo: "octo/one" });
+		expect(run.params.repo).toBe("octo/one");
+		await fixture.runner.alarm();
+		expect(collectors.collectAccount).not.toHaveBeenCalled();
+		expect(collectors.collectRepository.mock.calls[0]?.[1]).toBe("octo/one");
+		expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
+			status: "completed",
+			aReused: true,
+			repos: ["octo/one"],
+			requests: 3,
+			requestBreakdown: { total: 3, graphql: 1, rest: 2, a: { graphql: 0, rest: 0 } },
+		});
+		const account = await fixture.raw
+			.prepare("SELECT fetched_at FROM refresh_accounts WHERE account_id='account'")
+			.first<{ fetched_at: string }>();
+		expect(account?.fetched_at).toBe("2026-10-29T02:00:00.000Z");
 	});
-});
 
-it("rejects an adhoc repository missing from the reusable catalogue", async () => {
-	const fixture = await setup();
-	await withSavedA(fixture, "2026-10-29T02:00:00.000Z");
-	const run = await startRefresh(fixture.env, "account", { repo: "octo/missing" });
-	await fixture.runner.alarm();
-	expect(collectors.collectAccount).not.toHaveBeenCalled();
-	expect(collectors.collectRepository).not.toHaveBeenCalled();
-	expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
-		status: "failed",
-		errorCode: "not_found",
+	it.each<[string, Record<string, unknown>, string, string?]>([
+		["forced adhoc", { repo: "octo/one", force: true }, "2026-10-29T02:00:00.000Z"],
+		["default scope", {}, "2026-10-29T02:00:00.000Z"],
+		["previous Shanghai day", { repo: "octo/one" }, "2026-10-28T02:00:00.000Z"],
+		["partial A", { repo: "octo/one" }, "2026-10-29T02:00:00.000Z", "partial"],
+	])("refreshes A instead of reusing it for %s", async (_label, params, savedAt, status) => {
+		const fixture = await setup();
+		await withSavedA(fixture, savedAt, status);
+		const run = await startRefresh(fixture.env, "account", params);
+		await fixture.runner.alarm();
+		expect(collectors.collectAccount).toHaveBeenCalledOnce();
+		expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
+			aReused: false,
+		});
+	});
+
+	it("rejects an adhoc repository missing from the reusable catalogue", async () => {
+		const fixture = await setup();
+		await withSavedA(fixture, "2026-10-29T02:00:00.000Z");
+		const run = await startRefresh(fixture.env, "account", { repo: "octo/missing" });
+		await fixture.runner.alarm();
+		expect(collectors.collectAccount).not.toHaveBeenCalled();
+		expect(collectors.collectRepository).not.toHaveBeenCalled();
+		expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
+			status: "failed",
+			errorCode: "not_found",
+		});
 	});
 });
 
