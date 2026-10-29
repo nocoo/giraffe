@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { beforeEach, expect, it, vi } from "vitest";
 import { sqliteFixture } from "../../../../tests/fixtures/sqlite";
 import type { Env } from "./env";
@@ -646,4 +647,160 @@ it("never marks a run partial without a reason code", async () => {
 		status: "partial",
 		partialReasons: [{ repo: null, codes: ["collection:partial"] }],
 	});
+});
+
+const legacyRun = (id: string, status: string) =>
+	JSON.stringify({
+		id,
+		accountId: "account",
+		status,
+		phase: "repos",
+		repos: ["octo/one"],
+		completedRepos: 1,
+		requests: 5,
+		partial: false,
+		errorCode: null,
+		createdAt: "2026-10-28T19:00:00.000Z",
+		updatedAt: "2026-10-28T20:00:00.000Z",
+		finishedAt: null,
+	});
+const oldSaveRun =
+	"UPDATE refresh_runs SET status=?,payload=?,updated_at=? WHERE account_id=? AND id=?";
+const oldInsertRun =
+	"INSERT INTO refresh_runs(id,account_id,status,trigger,schedule_day,payload,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)";
+const fenceError = /refresh_(schema_cutover|terminal_run)/;
+function sqlStatements(text: string): string[] {
+	const statements: string[] = [];
+	let lines: string[] = [];
+	let trigger = false;
+	for (const line of text.split("\n")) {
+		lines.push(line);
+		const trimmed = line.trim();
+		if (/^CREATE TRIGGER/i.test(trimmed)) trigger = true;
+		if (trigger && trimmed === "END;") {
+			trigger = false;
+			statements.push(lines.join("\n").trim());
+			lines = [];
+		} else if (!trigger && trimmed.endsWith(";")) {
+			const statement = lines.join("\n").trim();
+			if (statement) statements.push(statement);
+			lines = [];
+		}
+	}
+	const tail = lines.join("\n").trim();
+	if (tail) statements.push(tail);
+	return statements;
+}
+
+it("cuts a legacy active run over with the real 0030 migration and lets a real alarm finish past it", async () => {
+	const fixture = await setup();
+	const now = "2026-10-28T20:00:00.000Z";
+	for (const trigger of [
+		"refresh_run_modern_payload_insert",
+		"refresh_run_modern_payload_update",
+		"refresh_run_no_terminal_revive",
+	])
+		await fixture.raw.prepare(`DROP TRIGGER IF EXISTS ${trigger}`).run();
+	const oldSave = (status: string) =>
+		fixture.raw
+			.prepare(oldSaveRun)
+			.bind(status, legacyRun("legacy-running", status), now, "account", "legacy-running")
+			.run();
+	await fixture.raw
+		.prepare(oldInsertRun)
+		.bind(
+			"legacy-running",
+			"account",
+			"running",
+			"manual",
+			null,
+			legacyRun("legacy-running", "running"),
+			"2026-10-28T19:00:00.000Z",
+			now,
+		)
+		.run();
+	await expect(oldSave("running")).resolves.toMatchObject({ success: true });
+	await fixture.raw
+		.prepare(
+			"INSERT INTO refresh_day_observations(account_id,repo_id,timezone,day,dimension,status,payload,fetched_at) VALUES('account','R_APP','Asia/Shanghai','2026-10-28','commits','complete','{}',?)",
+		)
+		.bind(now)
+		.run();
+	for (const statement of sqlStatements(
+		readFileSync("migrations/0030_refresh_run_cancel.sql", "utf8"),
+	))
+		await fixture.raw.prepare(statement).run();
+	const migrated = await fixture.raw
+		.prepare("SELECT status,payload FROM refresh_runs WHERE id='legacy-running'")
+		.first<{ status: string; payload: string }>();
+	expect(migrated?.status).toBe("failed");
+	const legacy = JSON.parse(String(migrated?.payload)) as Record<string, unknown>;
+	expect(legacy).toMatchObject({
+		id: "legacy-running",
+		status: "failed",
+		phase: "done",
+		errorCode: "refresh_schema_cutover",
+		requests: 5,
+		repos: ["octo/one"],
+		completedRepos: 1,
+		finishedAt: now,
+	});
+	expect(legacy.requestBreakdown).toBeUndefined();
+	await expect(oldSave("running")).rejects.toThrow(fenceError);
+	await expect(oldSave("completed")).rejects.toThrow(fenceError);
+	await expect(
+		fixture.raw
+			.prepare(oldInsertRun)
+			.bind(
+				"legacy-new",
+				"account",
+				"queued",
+				"manual",
+				null,
+				legacyRun("legacy-new", "queued"),
+				now,
+				now,
+			)
+			.run(),
+	).rejects.toThrow(fenceError);
+	const run = await startRefresh(fixture.env, "account", {});
+	expect(run.status).toBe("queued");
+	expect(run.id).not.toBe("legacy-running");
+	await fixture.runner.alarm();
+	expect(collectors.collectAccount).toHaveBeenCalledOnce();
+	await expect(oldSave("running")).rejects.toThrow(fenceError);
+	await fixture.runner.alarm();
+	await expect(oldSave("completed")).rejects.toThrow(fenceError);
+	await fixture.runner.alarm();
+	expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
+		status: "completed",
+		phase: "done",
+		completedRepos: 2,
+		requests: 7,
+		requestBreakdown: {
+			total: 7,
+			graphql: 3,
+			rest: 4,
+			a: { graphql: 1, rest: 0 },
+			b: { graphql: 2, rest: 4 },
+		},
+		partialReasons: [],
+		cancelRequested: false,
+	});
+	expect(await getRefreshRun(fixture.db(), "account", "legacy-running")).toMatchObject({
+		status: "failed",
+		errorCode: "refresh_schema_cutover",
+		completedRepos: 1,
+	});
+	expect(
+		await fixture.raw
+			.prepare(
+				"SELECT repo_id,dimension,status FROM refresh_day_observations WHERE account_id='account'",
+			)
+			.all(),
+	).toMatchObject({ results: [{ repo_id: "R_APP", dimension: "commits", status: "complete" }] });
+	expect(fixture.alarmAt()).toBeNull();
+	await fixture.runner.alarm();
+	expect(collectors.collectAccount).toHaveBeenCalledOnce();
+	expect((await startRefresh(fixture.env, "account", {})).status).toBe("queued");
 });

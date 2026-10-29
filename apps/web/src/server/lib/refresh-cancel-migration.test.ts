@@ -29,6 +29,33 @@ const modern = (id: string, status: string) =>
 		finishedAt: null,
 	});
 
+const triggers = (database: DatabaseSync) =>
+	database
+		.prepare(
+			"SELECT name,sql FROM sqlite_master WHERE type='trigger' AND tbl_name='refresh_runs' ORDER BY name",
+		)
+		.all();
+
+it("ships the same run write fence in the migration and a fresh schema", () => {
+	const migration = readFileSync("migrations/0030_refresh_run_cancel.sql", "utf8");
+	const schema = readFileSync("apps/web/src/server/lib/db/schema.sql", "utf8");
+	const directory = mkdtempSync(join(tmpdir(), "giraffe-cancel-fence-"));
+	const fresh = new DatabaseSync(join(directory, "fresh.sqlite"));
+	const upgraded = new DatabaseSync(join(directory, "upgraded.sqlite"));
+	try {
+		fresh.exec(schema);
+		upgraded.exec("PRAGMA foreign_keys=ON");
+		upgraded.exec(schema.slice(0, schema.indexOf(migration)));
+		for (let pass = 0; pass < 2; pass++) upgraded.exec(migration);
+		expect(triggers(fresh)).not.toEqual([]);
+		expect(triggers(upgraded)).toEqual(triggers(fresh));
+	} finally {
+		fresh.close();
+		upgraded.close();
+		rmSync(directory, { recursive: true, force: true });
+	}
+});
+
 it("widens the status constraint and retires pre-0.27.1 active payloads without inventing counts", () => {
 	const migration = readFileSync("migrations/0030_refresh_run_cancel.sql", "utf8");
 	const schema = readFileSync("apps/web/src/server/lib/db/schema.sql", "utf8");
@@ -45,6 +72,9 @@ it("widens the status constraint and retires pre-0.27.1 active payloads without 
 		);
 		source.exec(
 			"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES('account','owner','fake','fake','old','old')",
+		);
+		source.exec(
+			"INSERT INTO refresh_day_observations(account_id,repo_id,timezone,day,dimension,status,payload,fetched_at) VALUES('account','R_APP','Asia/Shanghai','2026-10-28','commits','complete','{}','2026-10-28T20:00:00.000Z')",
 		);
 		const legacy = (id: string, status: string) =>
 			JSON.stringify({
@@ -151,6 +181,23 @@ it("widens the status constraint and retires pre-0.27.1 active payloads without 
 		expect(
 			database
 				.prepare(
+					"SELECT account_id,repo_id,timezone,day,dimension,status,fetched_at FROM refresh_day_observations",
+				)
+				.all(),
+		).toEqual([
+			{
+				account_id: "account",
+				repo_id: "R_APP",
+				timezone: "Asia/Shanghai",
+				day: "2026-10-28",
+				dimension: "commits",
+				status: "complete",
+				fetched_at: "2026-10-28T20:00:00.000Z",
+			},
+		]);
+		expect(
+			database
+				.prepare(
 					"SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='refresh_runs' ORDER BY name",
 				)
 				.all(),
@@ -166,19 +213,14 @@ it("widens the status constraint and retires pre-0.27.1 active payloads without 
 		expect(() =>
 			database.prepare("UPDATE refresh_runs SET status='retired' WHERE id='modern'").run(),
 		).toThrow();
+		const insertRun = database.prepare(
+			"INSERT INTO refresh_runs(id,account_id,status,trigger,payload,created_at,updated_at) VALUES(?,'account',?,'manual',?,'now','now')",
+		);
 		expect(() =>
-			database
-				.prepare(
-					"INSERT INTO refresh_runs(id,account_id,status,trigger,payload,created_at,updated_at) VALUES('second-running','account','running','manual','{}','now','now')",
-				)
-				.run(),
+			insertRun.run("second-running", "running", modern("second-running", "running")),
 		).not.toThrow();
 		expect(() =>
-			database
-				.prepare(
-					"INSERT INTO refresh_runs(id,account_id,status,trigger,payload,created_at,updated_at) VALUES('third-running','account','running','manual','{}','now','now')",
-				)
-				.run(),
+			insertRun.run("third-running", "running", modern("third-running", "running")),
 		).toThrow();
 	} finally {
 		database.close();

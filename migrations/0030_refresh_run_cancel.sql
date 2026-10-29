@@ -25,3 +25,39 @@ WHERE status IN ('queued','running')
   OR json_type(payload,'$.partialReasons') IS NULL
   OR json_type(payload,'$.cancelRequested') IS NULL
  );
+
+CREATE TRIGGER IF NOT EXISTS refresh_run_modern_payload_insert
+BEFORE INSERT ON refresh_runs
+WHEN NEW.status IN ('queued','running')
+ AND CASE
+  WHEN json_valid(NEW.payload)=0 THEN 1
+  WHEN json_type(NEW.payload,'$.requestBreakdown') IS NULL THEN 1
+  WHEN json_type(NEW.payload,'$.requestBreakdown.a') IS NULL THEN 1
+  WHEN json_type(NEW.payload,'$.requestBreakdown.b') IS NULL THEN 1
+  WHEN json_type(NEW.payload,'$.partialReasons') IS NULL THEN 1
+  WHEN json_type(NEW.payload,'$.cancelRequested') IS NULL THEN 1
+  ELSE 0
+ END
+BEGIN
+ SELECT RAISE(ABORT,'refresh_schema_cutover');
+END;
+CREATE TRIGGER IF NOT EXISTS refresh_run_modern_payload_update
+BEFORE UPDATE ON refresh_runs
+WHEN CASE
+ WHEN json_valid(NEW.payload)=0 THEN 1
+ WHEN json_type(NEW.payload,'$.requestBreakdown') IS NULL THEN 1
+ WHEN json_type(NEW.payload,'$.requestBreakdown.a') IS NULL THEN 1
+ WHEN json_type(NEW.payload,'$.requestBreakdown.b') IS NULL THEN 1
+ WHEN json_type(NEW.payload,'$.partialReasons') IS NULL THEN 1
+ WHEN json_type(NEW.payload,'$.cancelRequested') IS NULL THEN 1
+ ELSE 0 END
+BEGIN
+ SELECT RAISE(ABORT,'refresh_schema_cutover');
+END;
+CREATE TRIGGER IF NOT EXISTS refresh_run_no_terminal_revive
+BEFORE UPDATE ON refresh_runs
+WHEN OLD.status IN ('completed','partial','failed','cancelled')
+ AND NEW.status IN ('queued','running')
+BEGIN
+ SELECT RAISE(ABORT,'refresh_terminal_run');
+END;
