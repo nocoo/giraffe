@@ -1,6 +1,6 @@
 # Machine API v1 Reference
 
-The v0.27.0 release adds one unified A-then-B refresh and keeps the analysis UI
+The v0.27.1 release provides one unified A-then-B refresh and keeps the analysis UI
 removed. Current run creation/status, parameters, stars, caching and daily
 scheduling are specified in [the refresh contract](15-unified-refresh.md).
 
@@ -11,10 +11,10 @@ the Worker authenticates resource requests. The dashboard and credential-managem
 endpoints remain Access protected. Accounts/snapshots are deployment-shared, not
 per-user tenants. See [the boundary contract](11-agent-api.md).
 
-Legacy quick/deep/full, run-control and schedule-kind descriptions below are
-historical and do not execute. Current observations use only the new `refresh_*`
-tables, never a fallback to legacy publications. The Phase 2 contract supersedes
-older collection endpoint and provenance descriptions below.
+Legacy quick/deep/full, run-control and schedule-kind routes are removed.
+Current observations use only the new `refresh_*` tables, never a fallback to
+legacy publications. Historical retirement behavior is documented separately in
+[Phase 1](14-phase1-retirement.md), not as the current endpoint contract.
 
 ## Daily reports and latest report
 
@@ -115,10 +115,42 @@ O(1) latest claim is made. No data migration is introduced.
 
 ## Run readiness
 
-`GET /accounts/:account/refresh-runs/latest` now returns authenticated
-`410 collection_unavailable`. It does not read or revive historical runs.
-Use saved observation timestamps and coverage directly; no readiness signal
-from a running collector exists in phase 1.
+`GET /accounts/:account/refresh-runs/latest` requires `app:read` and returns the
+latest new refresh run, or `409 snapshot_missing` before any run exists.
+It never starts or revives a run. A run can be `queued`, `running`, `completed`,
+`partial`, `failed` or `cancelled`; `phase` is `account`, `repos` or `done`.
+Use each saved observation's timestamps and coverage, not just run completion,
+when deciding whether a source is ready. Cached sources retain their old times.
+
+The numeric `requests` field remains the actual total. Its detailed counterpart
+includes failed attempts, retries and pagination, not logical steps:
+
+```json
+{
+	"requests": 5,
+	"requestBreakdown": {
+		"total": 5,
+		"graphql": 2,
+		"rest": 3,
+		"a": { "graphql": 1, "rest": 0 },
+		"b": { "graphql": 1, "rest": 3 }
+	},
+	"partial": true,
+	"partialReasons": [{ "repo": "nocoo/giraffe", "codes": ["alerts:permission_denied"] }],
+	"cancelRequested": false
+}
+```
+
+`partialReasons` lists safe codes for every incomplete/missing repository
+dimension; account-level entries use `repo: null`. Missingness never exposes
+raw GitHub errors or credentials. `completedRepos` counts processed repositories,
+including partial ones, not repositories proven complete. See the
+[request budget](15-unified-refresh.md#request-budget-and-partial-reasons).
+
+These detailed fields are produced by v0.27.1 runs. Historical terminal v0.27.0
+payloads retain their original numeric total without fabricated breakdowns.
+Schema cutover explicitly fails old active payloads with
+`errorCode: "refresh_schema_cutover"`; already-saved observations remain intact.
 
 ## Repository metadata
 
@@ -228,8 +260,8 @@ Never put credentials in URLs, logs, report payloads or persisted browser state.
   `Referrer-Policy: no-referrer`. Other `Vary` dimensions are preserved.
 - JSON writes require `Content-Type: application/json`, UTF-8 if charset is given.
   Strict schemas reject extra fields. No body/query is defined unless listed.
-- Reads/updates return 200, resource creation 201, retired collection operations
-  return 410 `collection_unavailable`,
+- Reads/updates return 200, resource creation 201, refresh creation and pending
+  cancellation return 202,
   deletions 204 with no body except star deletion, which returns its 200 record.
   Separate reads are not a transaction; verify versions.
 
@@ -1365,7 +1397,7 @@ api -X DELETE "$API/agent/jobs/example-job-1?revision=$REVISION"
 Externally produced reports remain generic machine resources. The server validates
 storage structure and revision rules, not an analysis UI schema. No analysis
 contract module, report cards, bot-status presentation or browser projection is
-part of phase 1. Successful persistence does not execute any job.
+part of this release. Successful persistence does not execute any job.
 
 Payloads must not contain secrets or raw secret-bearing errors. Producers may
 include saved source versions and timestamps as their own evidence, but must
@@ -1390,7 +1422,7 @@ Local stars are Giraffe configuration, not GitHub writes.
 | DELETE `/statistics/:owner/:name` | `app:write` | Ignored                          | 410 `deprecated`; never writes                      |
 
 No query parameters. Settings is `{ account_id, stars:string[], statistics:[],
-statistics_deprecated:true, schedules:[], collectionAvailable:false }`. The empty statistics field and
+statistics_deprecated:true, schedules:[{time:"03:00",timezone:"Asia/Shanghai",cron:"0 19 * * *",scope:"starred"}], collectionAvailable:true }`. The empty statistics field and
 deprecated `/repos[].statistics_enabled` alias remain for one version. Browser
 `POST /api/repos/:owner/:name/statistics` also returns 410 `deprecated` without writing.
 Star records include unstarred tombstones. `source` is `owner|agent`, `updated_at`
@@ -1424,24 +1456,46 @@ api -X PUT "$API/stars/$OWNER/$NAME"
 api -X DELETE "$API/stars/$OWNER/$NAME"
 ```
 
-### Retired collection endpoints
+### Unified refresh endpoints
 
 All endpoints below require the existing fixed-account bearer and scope checks.
-Read operations require `app:read`; retired mutations require `app:write`.
+Read operations require `app:read`; start/cancel require `app:write`.
 
-| Method and path                  | Result                                           |
-| -------------------------------- | ------------------------------------------------ |
-| `GET /refresh-runs`              | `200`, `items: []`, `collectionAvailable: false` |
-| `GET /refresh-runs/latest`       | `410 collection_unavailable`                     |
-| `POST /refresh-runs`             | `410 collection_unavailable`                     |
-| `POST /refresh-runs/:id/control` | `410 collection_unavailable`                     |
-| `PUT /schedules/:kind`           | `410 collection_unavailable`                     |
-| `DELETE /schedules/:kind`        | `410 collection_unavailable`                     |
+| Method and path                 | Result                                               |
+| ------------------------------- | ---------------------------------------------------- |
+| `GET /refresh-runs`             | `200`, up to 50 `items`, `collectionAvailable: true` |
+| `GET /refresh-runs/latest`      | `200` run, or `409 snapshot_missing`                 |
+| `GET /refresh-runs/:id`         | `200` account-fenced run, or `404 not_found`         |
+| `POST /refresh-runs`            | `202` queued/active run                              |
+| `POST /refresh-runs/:id/cancel` | `202` pending cancellation, or `200` terminal run    |
 
-`GET /settings` returns `schedules: []` and `collectionAvailable: false`.
-No request starts, resumes or changes a historical run or schedule. Quick, deep,
-full, scope-based collection plans and their estimates are no longer supported.
-No replacement collection parameters are defined in phase 1.
+Start accepts a strict object with optional `since`, `until` (inclusive closed
+calendar days, 1–31 days), `timezone` (IANA, default `Asia/Shanghai`), `dimensions`
+(nonempty, distinct `commits|issues|prs|actions|releases|alerts`), `force` (default
+false), and `repo` (`owner/name`). Dates default to yesterday. Matching active
+manual requests return the existing run; different parameters return
+`409 refresh_conflict`. Unknown parameters and legacy modes return 400.
+
+Automatic B includes all locally starred repositories regardless of owner, plus
+genuinely new, unobserved, non-fork repositories owned by the account and created
+in the current Shanghai day. Owner filtering applies only to the new-repository
+exception; unstarred foreign repositories never enter automatic B, even on an empty DB.
+Explicit `repo` selects any current catalogue repository after A. No refresh
+changes stars. Full cache hits require no B requests unless forced.
+
+Cancel takes no parameters. It durably records cancellation and stops after the
+current repository (or A step) finishes, retaining existing repo×day data. Queued
+runs cancel without collection. The response is the current run; pending requests
+have `cancelRequested: true`, terminal cancellations have `status: "cancelled"`.
+Repeated requests are idempotent. Existing terminal runs retain their status and
+payload; unknown or other-account IDs return 404. Authentication, account fencing,
+write scope and browser same-origin checks apply before mutation.
+
+Browser equivalents are `/api/refresh-runs`, `/latest`, `/:id` and `/:id/cancel`,
+using the active account and Cloudflare Access. `GET /settings` advertises
+`collectionAvailable: true` and the fixed 03:00 Asia/Shanghai schedule. The removed
+`POST /refresh-runs/:id/control` and `PUT|DELETE /schedules/:kind` return 404;
+quick/deep/full, mutable schedules and historical run revival remain unsupported.
 
 ## Errors, limits and retries
 

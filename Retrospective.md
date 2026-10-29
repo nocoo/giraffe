@@ -1,5 +1,22 @@
 # Retrospective
 
+## 2026-10-29 - Preflight local runners and preserve fixture evidence
+
+The first acceptance launch started local GitHub/JWKS stubs before discovering
+that the worktree's Wrangler executable was unavailable. A retry encountered
+the original runner's occupied test port. The process identity and working
+directory were checked before terminating only that task-owned runner; no daily
+development or production service was touched. Install locked dependencies and
+verify runtime executables and reserved ports before starting an integration
+lane, and collect the failed session before restarting it.
+
+Moving releases into the main repository GraphQL query also invalidated REST-only
+fixtures. The first local HTTP acceptance correctly returned a partial run rather
+than silently claiming complete data. Updating the GraphQL connection requires
+explicit pagination metadata and numeric database IDs; existing activity release
+content must move with the transport, not be replaced by empty successful data.
+New tests retain release field parity and reject unproven pagination completion.
+
 ## 2026-10-24 - Verify normalization and patch anchors
 
 The first Unicode boundary fixture assumed every factory stream retained the
