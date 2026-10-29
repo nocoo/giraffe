@@ -106,11 +106,53 @@ export async function collectItems(
 	}
 }
 
+export function collectReleases(connection: Node, denied: boolean): Dimension {
+	if (!Array.isArray(connection.nodes)) return failure(null);
+	const raw: Node[] = nodes(connection.nodes).map((node) => ({
+		id: count(node.databaseId),
+		name: text(node.name),
+		tag_name: text(node.tagName) ?? "",
+		html_url: text(node.url) ?? "",
+		draft: node.isDraft === true,
+		prerelease: node.isPrerelease === true,
+		published_at: text(node.publishedAt),
+		created_at: text(node.createdAt),
+		updated_at: text(node.updatedAt),
+	}));
+	const hasNextPage = object(connection.pageInfo).hasNextPage;
+	const reason = denied
+		? "graphql_partial"
+		: hasNextPage === true
+			? "latest_page_only"
+			: hasNextPage === false
+				? null
+				: "incomplete_pagination";
+	return {
+		raw,
+		items: raw.map((row) => ({
+			...event({
+				id: String(row.id),
+				title: row.name ?? row.tag_name,
+				url: row.html_url,
+				state: row.draft ? "draft" : "published",
+				createdAt: row.created_at,
+				updatedAt: row.updated_at,
+			}),
+			at: text(row.published_at),
+			conclusion: null,
+			tag_name: text(row.tag_name),
+		})),
+		status: reason === null ? "complete" : "partial",
+		reason,
+		source: "github_graphql_latest",
+	};
+}
+
 export async function collectRest(
 	context: CollectionContext,
 	transport: Transport,
 	repo: string,
-	stream: "actions" | "releases" | "alerts",
+	stream: "actions" | "alerts",
 ): Promise<Dimension> {
 	const path = `/repos/${repo.split("/").map(encodeURIComponent).join("/")}`;
 	const get = (suffix: string) =>
@@ -192,31 +234,28 @@ export async function collectRest(
 			source: "github_rest_latest",
 		};
 	}
-	const { body, next } = await get(
-		stream === "actions" ? "/actions/runs?per_page=100" : "/releases?per_page=100",
-	);
-	const value = stream === "actions" ? object(body).workflow_runs : body;
+	const { body, next } = await get("/actions/runs?per_page=100");
+	const value = object(body).workflow_runs;
 	if (!Array.isArray(value)) return failure(null);
 	const raw = nodes(value);
 	const oldest = raw.at(-1);
-	const at = stream === "actions" ? oldest?.created_at : oldest?.published_at;
+	const at = oldest?.created_at;
 	const truncated =
-		(next || (stream === "actions" && (count(object(body).total_count) ?? 0) > raw.length)) &&
+		(next || (count(object(body).total_count) ?? 0) > raw.length) &&
 		(!text(at) || Date.parse(String(at)) >= Date.parse(windowOf(context).since));
 	return {
 		raw,
 		items: raw.map((row) => ({
 			...event({
 				id: String(row.id),
-				title: row.name ?? row.tag_name,
+				title: row.name,
 				url: row.html_url,
-				state: row.status ?? (row.draft ? "draft" : "published"),
+				state: row.status,
 				createdAt: row.created_at,
 				updatedAt: row.updated_at,
 			}),
-			at: text(stream === "releases" ? row.published_at : row.created_at),
+			at: text(row.created_at),
 			conclusion: text(row.conclusion),
-			tag_name: text(row.tag_name),
 		})),
 		status: truncated ? "partial" : "complete",
 		reason: truncated ? "latest_page_only" : null,

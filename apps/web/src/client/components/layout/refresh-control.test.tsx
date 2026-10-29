@@ -36,6 +36,15 @@ function run(overrides: Partial<RefreshRun> = {}): RefreshRun {
 		repos: [],
 		completedRepos: 0,
 		requests: 1,
+		requestBreakdown: {
+			total: 1,
+			graphql: 1,
+			rest: 0,
+			a: { graphql: 1, rest: 0 },
+			b: { graphql: 0, rest: 0 },
+		},
+		partialReasons: [],
+		cancelRequested: false,
 		partial: false,
 		errorCode: null,
 		createdAt: "2026-10-29T04:00:00Z",
@@ -90,8 +99,9 @@ it("offers one account refresh with yesterday, star/new selection and external s
 	empty();
 	await render();
 	await act(async () => button("刷新数据").click());
-	expect(document.body.textContent).toContain("星标仓库");
-	expect(document.body.textContent).toContain("新发现");
+	expect(document.body.textContent).toContain("所有星标仓库（不限所有者）");
+	expect(document.body.textContent).toContain("本账号上海当日新建且未观测的非 fork 仓库");
+	expect(document.body.textContent).not.toContain("新发现");
 	expect(document.body.textContent).toContain("03:00");
 	expect(document.body.textContent).toContain("04:30");
 	expect(document.body.textContent).toContain("依赖分析");

@@ -44,7 +44,16 @@ export async function refreshActivityFixture() {
 			repos: [],
 			completedRepos: 0,
 			requests: 0,
+			requestBreakdown: {
+				total: 0,
+				graphql: 0,
+				rest: 0,
+				a: { graphql: 0, rest: 0 },
+				b: { graphql: 0, rest: 0 },
+			},
+			partialReasons: [],
 			partial: false,
+			cancelRequested: false,
 			errorCode: null,
 			createdAt: now,
 			updatedAt: now,
@@ -94,6 +103,20 @@ export async function refreshActivityFixture() {
 			pageInfo: { hasNextPage: false },
 		},
 		repositoryTopics: { nodes: [] },
+		releases: {
+			totalCount: 1,
+			...connection([
+				{
+					id: "RE_8",
+					databaseId: 8,
+					name: "v1",
+					tagName: "v1",
+					createdAt: "2026-10-28T06:00:00.000Z",
+					publishedAt: "2026-10-28T06:00:00.000Z",
+					url: "https://github.com/owner/app/releases/v1",
+				},
+			]),
+		},
 	};
 	const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
 		const url = String(input);
@@ -135,17 +158,6 @@ export async function refreshActivityFixture() {
 					},
 				],
 			});
-		if (url.includes("/releases"))
-			return Response.json([
-				{
-					id: 8,
-					name: "v1",
-					tag_name: "v1",
-					created_at: "2026-10-28T06:00:00.000Z",
-					published_at: "2026-10-28T06:00:00.000Z",
-					html_url: "https://github.com/owner/app/releases/v1",
-				},
-			]);
 		return Response.json([]);
 	});
 	try {

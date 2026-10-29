@@ -1,5 +1,53 @@
 # Retrospective
 
+## 2026-10-29 - Preflight local runners and preserve fixture evidence
+
+The first acceptance launch started local GitHub/JWKS stubs before discovering
+that the worktree's Wrangler executable was unavailable. A retry encountered
+the original runner's occupied test port. The process identity and working
+directory were checked before terminating only that task-owned runner; no daily
+development or production service was touched. Install locked dependencies and
+verify runtime executables and reserved ports before starting an integration
+lane, and collect the failed session before restarting it.
+
+Moving releases into the main repository GraphQL query also invalidated REST-only
+fixtures. The first local HTTP acceptance correctly returned a partial run rather
+than silently claiming complete data. Updating the GraphQL connection requires
+explicit pagination metadata and numeric database IDs; existing activity release
+content must move with the transport, not be replaced by empty successful data.
+New tests retain release field parity and reject unproven pagination completion.
+
+## 2026-10-29 - Preserve accepted cancellation during failure settlement
+
+An accepted cancellation was durable, but settlement first constructed a failed
+terminal run when the in-flight account/repository step returned a fatal error.
+The cancellation helper then correctly refused to change a terminal state,
+inadvertently discarding the earlier cancellation. The settlement lock now reads
+accepted intent before choosing failure state. Regressions defer both A and B,
+accept cancellation, then reject with an authentication error and verify a
+cancelled terminal response, retained request counts and idempotent repeats.
+
+## 2026-10-29 - Fence cutover writers and preserve cached provenance
+
+Failing legacy active runs once during migration did not stop an in-flight old
+Worker from saving its pre-migration payload afterward. The database now rejects
+legacy active inserts and stale updates, and prevents terminal runs from becoming
+active again. Migration tests must exercise writers on both sides of a cutover,
+not only inspect the immediate migrated rows; historical counts stay unmodified.
+
+Moving releases to GraphQL also caused newly published coverage to label cached
+REST day observations as GraphQL. Coverage now derives its source from the actual
+selected day payloads and reports mixed sources explicitly. Cache regression tests
+must preserve both timestamps and provenance across transport changes.
+
+The first write fence only checked payload fields. A rollback to the old runner
+could read a modern payload, preserve its new fields by spreading it, and update
+only the old counters. A sequential old/new alarm reproduction exposed lost
+request counts and partial runs without reasons. The database now requires every
+update to advance an internal writer revision, and only the new save SQL does so.
+Version-transition tests must cover old code reading new data as well as stale
+old payloads; field presence does not prove writer capability.
+
 ## 2026-10-24 - Verify normalization and patch anchors
 
 The first Unicode boundary fixture assumed every factory stream retained the

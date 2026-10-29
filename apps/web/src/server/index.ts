@@ -87,6 +87,7 @@ export function createApp(): Hono<{ Bindings: Env; Variables: AppVars }> {
 	app.route("/api/v1", machineApi());
 	app.all("/api/refresh-runs", browserRefresh);
 	app.all("/api/refresh-runs/:id", browserRefresh);
+	app.all("/api/refresh-runs/:id/cancel", browserRefresh);
 	allow(app, "/api/activity", ["GET"]);
 	app.get("/api/activity", activityEtag, getActivity);
 	allow(app, "/api/tokens", ["GET", "POST"]);

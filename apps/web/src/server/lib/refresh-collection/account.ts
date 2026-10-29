@@ -3,14 +3,25 @@ import { ApiError } from "../errors";
 import { TruncatedError } from "../github-client";
 import { mapRepos } from "../github-map";
 import type { AccountCollectionResult, CollectionContext } from "../refresh-collection-contract";
-import { count, type Node, nodes, object, text, windowOf } from "./model";
+import {
+	catalogPayload,
+	count,
+	type Node,
+	newlyCreatedRepo,
+	nodes,
+	object,
+	ownedBy,
+	shanghaiDay,
+	text,
+	windowOf,
+} from "./model";
 import { accountQuery } from "./queries";
 import { catalog, collectionDb, publish, snapshots } from "./store";
 import { transport } from "./transport";
 
 export async function collectAccount(context: CollectionContext): Promise<AccountCollectionResult> {
 	const db = collectionDb(context);
-	const { client, request } = transport(context);
+	const { client, request, breakdown } = transport(context);
 	let after: string | null = null;
 	let pages = 0;
 	let complete = false;
@@ -200,24 +211,42 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 	await publish(db, context);
 	const saved = (await catalog(db, context.account.id)).results;
 	const requestedRepo = context.run.params.repo;
+	const reasons = [
+		...(complete ? [] : ["catalog:incomplete"]),
+		...(contributionComplete ? [] : ["contributions:unavailable"]),
+	];
 	if (requestedRepo) {
 		const requested = saved.find((repo) => repo.repo.toLowerCase() === requestedRepo.toLowerCase());
 		if (!requested)
 			throw new ApiError(404, "not_found", "Repository not found in current catalogue");
 		return {
 			requests: client.count,
-			partial: !complete || !contributionComplete,
+			requestBreakdown: breakdown(),
+			partial: reasons.length > 0,
+			reasons,
 			repos: [requested.repo],
 		};
 	}
-	const selected = await db
-		.prepare(`SELECT c.repo FROM refresh_catalog c LEFT JOIN repo_stars s ON s.account_id=c.account_id AND s.repo=c.repo COLLATE NOCASE
- WHERE c.account_id=? AND c.active=1 AND (s.starred=1 OR (c.discovered_day=? AND c.timezone=? AND NOT EXISTS(SELECT 1 FROM refresh_repository_publications p WHERE p.account_id=c.account_id AND p.repo_id=c.repo_id))) ORDER BY c.repo COLLATE NOCASE`)
-		.bind(context.account.id, date, context.run.params.timezone)
-		.all<{ repo: string }>();
+	const day = shanghaiDay(context.now);
+	const candidates = await db
+		.prepare(`SELECT c.repo,c.payload,
+ EXISTS(SELECT 1 FROM repo_stars s WHERE s.account_id=c.account_id AND s.repo=c.repo COLLATE NOCASE AND s.starred=1) AS starred,
+ EXISTS(SELECT 1 FROM refresh_repository_publications p WHERE p.account_id=c.account_id AND p.repo_id=c.repo_id) AS observed
+ FROM refresh_catalog c WHERE c.account_id=? AND c.active=1 ORDER BY c.repo COLLATE NOCASE`)
+		.bind(context.account.id)
+		.all<{ repo: string; payload: string; starred: number; observed: number }>();
 	return {
 		requests: client.count,
-		partial: !complete || !contributionComplete,
-		repos: selected.results.map((repo) => repo.repo),
+		requestBreakdown: breakdown(),
+		partial: reasons.length > 0,
+		reasons,
+		repos: candidates.results
+			.filter((row) => {
+				if (row.starred === 1) return true;
+				const raw = catalogPayload(row.payload);
+				if (!raw || !ownedBy(text(object(raw.owner).login), context.account.login)) return false;
+				return !row.observed && newlyCreatedRepo(raw, day.since, day.until);
+			})
+			.map((row) => row.repo),
 	};
 }

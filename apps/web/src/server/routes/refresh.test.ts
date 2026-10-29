@@ -5,7 +5,13 @@ import { createApp } from "../index";
 import { createApiToken } from "../lib/api-tokens";
 import { createDb } from "../lib/db/d1";
 import { parseRefreshParams } from "../lib/refresh-params";
-import { createRefreshRun } from "../lib/refresh-store";
+import {
+	cancelRefreshRun,
+	createRefreshRun,
+	getRefreshRun,
+	saveRefreshRun,
+	terminalRefreshStatus,
+} from "../lib/refresh-store";
 
 async function fixture(
 	scopes: ("app:read" | "app:write" | "observations:read")[] = ["app:read", "app:write"],
@@ -32,7 +38,17 @@ async function fixture(
 		REFRESH_RUNNER: {
 			getByName: (account: string) => ({
 				fetch: async (request: Request) => {
-					const body = (await request.json()) as { params: unknown };
+					const path = new URL(request.url).pathname;
+					const body = (await request.json()) as { params?: unknown; id?: string };
+					if (path === "/cancel") {
+						const run = await getRefreshRun(createDb(raw), account, body.id ?? "");
+						if (!run) return Response.json({ error: { code: "not_found" } }, { status: 404 });
+						const cancelled = cancelRefreshRun(run, new Date().toISOString());
+						if (cancelled !== run) await saveRefreshRun(createDb(raw), cancelled);
+						return Response.json(cancelled, {
+							status: terminalRefreshStatus(cancelled.status) ? 200 : 202,
+						});
+					}
 					return Response.json(
 						await createRefreshRun(
 							createDb(raw),
@@ -59,7 +75,7 @@ async function fixture(
 			},
 			env,
 		);
-	return { call, raw, env, accountId };
+	return { call, raw, env, accountId, token };
 }
 it("starts and reads the same unified run through browser and scoped machine APIs", async () => {
 	const { call } = await fixture();
@@ -133,4 +149,61 @@ it("keeps GETs read-only and reports missing active accounts", async () => {
 it("accepts the default refresh with an empty request body", async () => {
 	const { call } = await fixture();
 	expect((await call("refresh-runs", "POST")).status).toBe(202);
+});
+it("cancels through browser and machine POST with explicit terminal states", async () => {
+	const { call } = await fixture();
+	const run = (await (await call("refresh-runs", "POST", {}, false)).json()) as { id: string };
+	const cancelled = await call(`refresh-runs/${run.id}/cancel`, "POST", undefined, false);
+	expect(cancelled.status).toBe(200);
+	expect(await cancelled.json()).toMatchObject({
+		id: run.id,
+		status: "cancelled",
+		phase: "done",
+		cancelRequested: true,
+	});
+	const machine = await call(`refresh-runs/${run.id}/cancel`, "POST");
+	expect(machine.status).toBe(200);
+	expect(await machine.json()).toMatchObject({ status: "cancelled" });
+	expect(await (await call("refresh-runs/latest", "GET", undefined, false)).json()).toMatchObject({
+		id: run.id,
+		status: "cancelled",
+		phase: "done",
+	});
+	expect((await call("refresh-runs/missing/cancel", "POST", undefined, false)).status).toBe(404);
+	expect((await call("refresh-runs/missing/cancel", "POST")).status).toBe(404);
+	for (const machine of [false, true])
+		expect((await call(`refresh-runs/${run.id}/cancel`, "GET", undefined, machine)).status).toBe(
+			405,
+		);
+});
+it("requires app:write, same-origin and the machine account fence for cancellation", async () => {
+	const readOnly = await fixture(["app:read"]);
+	expect((await readOnly.call("refresh-runs/run-1/cancel", "POST")).status).toBe(403);
+	const observations = await fixture(["observations:read"]);
+	expect(
+		(await observations.call("refresh-runs/run-1/cancel", "POST", undefined, true)).status,
+	).toBe(403);
+	const { call, env, token } = await fixture();
+	const created = (await (await call("refresh-runs", "POST", {})).json()) as { id: string };
+	expect(
+		(
+			await createApp().request(
+				`http://localhost/api/refresh-runs/${created.id}/cancel`,
+				{ method: "POST", headers: { origin: "https://evil.test" } },
+				env,
+			)
+		).status,
+	).toBe(403);
+	expect(
+		(
+			await createApp().request(
+				`http://localhost/api/v1/accounts/other/refresh-runs/${created.id}/cancel`,
+				{ method: "POST", headers: { authorization: `Bearer ${token.token}` } },
+				env,
+			)
+		).status,
+	).toBe(403);
+	expect((await call(`refresh-runs/${created.id}/cancel?mode=full`, "POST")).status).toBe(400);
+	expect((await call(`refresh-runs/${created.id}/cancel`, "POST")).status).toBe(200);
+	expect((await call(`refresh-runs/${created.id}/cancel`, "POST")).status).toBe(200);
 });

@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.27.1 - 2026-10-29
+
+### Fixed
+
+- Refresh all explicitly starred repositories regardless of owner, plus only
+  unobserved non-fork repositories owned by the account and created during the
+  current Asia/Shanghai day. An empty database no longer refreshes historical
+  repositories automatically; explicit single-repository requests remain independent.
+- Add idempotent browser and scoped machine cancellation. Durable cancellation
+  stops after the current step, preserves observations and survives fatal failures.
+- Preserve the numeric request total and expose actual GraphQL/REST counts by
+  account/repository phase, plus repository-specific partial reason codes.
+- Fold releases into the main repository GraphQL query, reducing uncached B from
+  five to four requests (one GraphQL, three REST). Truncated release pages remain
+  partial; cached observations retain their original transport provenance.
+- Fence legacy active-run writes during the run-schema cutover without inventing
+  historical transport counts or migrating observations. Update refresh API and
+  scope documentation to match the implementation.
+
 ## v0.27.0 - 2026-10-29
 
 ### Added

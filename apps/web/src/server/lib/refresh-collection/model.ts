@@ -65,6 +65,33 @@ export function windowOf(context: CollectionContext) {
 		timezone: context.run.params.timezone,
 	};
 }
+const SHANGHAI_OFFSET_MS = 8 * 3_600_000;
+export function shanghaiDay(now: string) {
+	const day = new Date(Date.parse(now) + SHANGHAI_OFFSET_MS).toISOString().slice(0, 10);
+	const start = Date.parse(`${day}T00:00:00.000Z`) - SHANGHAI_OFFSET_MS;
+	return {
+		since: new Date(start).toISOString(),
+		until: new Date(start + 86_400_000).toISOString(),
+	};
+}
+export function catalogPayload(payload: string): Node | null {
+	try {
+		return object(JSON.parse(payload));
+	} catch {
+		return null;
+	}
+}
+export const ownedBy = (owner: string | null, login: string) =>
+	owner !== null && owner.toLowerCase() === login.toLowerCase();
+export function newlyCreatedRepo(raw: Node, since: string, until: string): boolean {
+	const createdAt = Date.parse(String(raw.createdAt));
+	return (
+		raw.isFork === false &&
+		Number.isFinite(createdAt) &&
+		createdAt >= Date.parse(since) &&
+		createdAt < Date.parse(until)
+	);
+}
 export function unavailable(source: string, reason = "not_collected"): FactoryCoverage {
 	return { status: "unavailable", pages: 0, fetchedAt: null, source, reason, observed: 0 };
 }

@@ -49,12 +49,31 @@ it("runs real durable A then serial B, serves latest observations and reuses day
 	}
 	try {
 		expect((await browser(`accounts/${account.id}/activate`, "POST")).status).toBe(200);
+		const discovery = await run({ dimensions: ["commits"] });
+		expect(discovery.repos).toEqual([]);
+		expect(discovery.requests).toBe(1);
+		expect(discovery.requestBreakdown).toEqual({
+			total: 1,
+			graphql: 1,
+			rest: 0,
+			a: { graphql: 1, rest: 0 },
+			b: { graphql: 0, rest: 0 },
+		});
 		const first = await run({
 			dimensions: ["commits", "issues", "prs", "actions", "releases", "alerts"],
+			repo: "phase2/demo",
 		});
 		expect(first.repos).toEqual(["phase2/demo"]);
 		expect(first.completedRepos).toBe(1);
-		expect(first.requests).toBeLessThanOrEqual(8);
+		expect(first.requests).toBe(5);
+		expect(first.requestBreakdown).toEqual({
+			total: 5,
+			graphql: 2,
+			rest: 3,
+			a: { graphql: 1, rest: 0 },
+			b: { graphql: 1, rest: 3 },
+		});
+		expect(first.partialReasons).toEqual([]);
 		expect(await (await machine("stars")).json()).toEqual({ items: [] });
 		for (const path of [
 			"repos",
@@ -104,9 +123,49 @@ it("runs real durable A then serial B, serves latest observations and reuses day
 		expect(cached.requests).toBe(1);
 		const forced = await run({ dimensions: ["commits"], repo: "phase2/demo", force: true });
 		expect(forced.requests).toBe(2);
+		expect(forced.requestBreakdown).toMatchObject({
+			a: { graphql: 1, rest: 0 },
+			b: { graphql: 1, rest: 0 },
+		});
 		expect((await machine("stars/phase2/demo", "DELETE")).status).toBe(200);
+		for (const cancel of [
+			() => machine(`refresh-runs/${first.id}/cancel`, "POST"),
+			() => browser(`refresh-runs/${first.id}/cancel`, "POST"),
+		]) {
+			const response = await cancel();
+			expect(response.status).toBe(200);
+			expect(await response.json()).toEqual(first);
+		}
+		expect((await machine("refresh-runs/missing/cancel", "POST")).status).toBe(404);
+		expect((await browser("refresh-runs/missing/cancel", "POST")).status).toBe(404);
+		const pending = await machine("refresh-runs", "POST", {
+			repo: "phase2/demo",
+			dimensions: ["commits"],
+			force: true,
+		});
+		expect(pending.status).toBe(202);
+		let cancelled = (await pending.json()) as RefreshRun;
+		const cancellation = await browser(`refresh-runs/${cancelled.id}/cancel`, "POST");
+		expect([200, 202]).toContain(cancellation.status);
+		cancelled = (await cancellation.json()) as RefreshRun;
+		for (
+			let attempt = 0;
+			attempt < 40 && ["queued", "running"].includes(cancelled.status);
+			attempt++
+		) {
+			await new Promise((resolve) => setTimeout(resolve, 100));
+			cancelled = (await (await machine(`refresh-runs/${cancelled.id}`)).json()) as RefreshRun;
+		}
+		expect(cancelled.status).toBe("cancelled");
+		expect(cancelled.cancelRequested).toBe(true);
+		expect(cancelled.finishedAt).not.toBeNull();
+		const repeated = await machine(`refresh-runs/${cancelled.id}/cancel`, "POST");
+		expect(repeated.status).toBe(200);
+		expect(await repeated.json()).toEqual(cancelled);
+		expect((await machine(`refresh-runs/${cancelled.id}/cancel`)).status).toBe(405);
+		expect((await machine("repos/phase2/demo/details")).status).toBe(200);
 		const list = (await (await machine("refresh-runs")).json()) as { items: RefreshRun[] };
-		expect(list.items).toHaveLength(4);
+		expect(list.items).toHaveLength(6);
 		expect((await machine(`refresh-runs/${first.id}`, "DELETE")).status).toBe(405);
 	} finally {
 		await browser(`accounts/${account.id}`, "DELETE");

@@ -145,6 +145,7 @@ it("authenticates and authorizes before returning retired collection responses w
 		["settings", "GET"],
 		["refresh-runs", "POST"],
 		["refresh-runs/old/control", "POST"],
+		["refresh-runs/old/cancel", "POST"],
 		["schedules/daily", "PUT"],
 		["schedules/weekly", "DELETE"],
 	] as const) {

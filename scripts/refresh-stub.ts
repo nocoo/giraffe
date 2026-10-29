@@ -102,7 +102,7 @@ export function refreshGraphqlStub(
 					openPrs: { totalCount: 0 },
 					closedPrs: { totalCount: 0 },
 					mergedPrs: { totalCount: 0 },
-					releases: { totalCount: 0 },
+					releases: { totalCount: 0, pageInfo: { hasNextPage: false }, nodes: [] },
 					issues: { ...empty, nodes: issues },
 					pullRequests: empty,
 				},

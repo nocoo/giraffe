@@ -9,7 +9,10 @@ export const accountQuery = `query RefreshAccount($after:String,$since:DateTime!
  contributionsCollection(from:$since,to:$until) { restrictedContributionsCount contributionCalendar { totalContributions weeks { contributionDays { date contributionCount } } } } }
  rateLimit { remaining resetAt }
 }`;
-export function repositoryQuery(days: RefreshDay[], issues: boolean, prs: boolean) {
+export function repositoryQuery(days: RefreshDay[], needed: string[]) {
+	const releases = needed.includes("releases")
+		? `releases(first:100,orderBy:{field:CREATED_AT,direction:DESC}) { totalCount ${page} nodes { id databaseId name tagName url isDraft isPrerelease publishedAt createdAt updatedAt } }`
+		: "releases { totalCount }";
 	return `query RefreshRepository($id:ID!${days.map((_, index) => `,$since${index}:GitTimestamp!,$until${index}:GitTimestamp!`).join("")}) {
  node(id:$id) { ... on Repository { ${catalogFields}
  defaultBranchRef { name target { ... on Commit { oid history { totalCount } ${days.map((_, index) => `day${index}:history(since:$since${index},until:$until${index}) { totalCount }`).join(" ")} } } }
@@ -17,9 +20,9 @@ export function repositoryQuery(days: RefreshDay[], issues: boolean, prs: boolea
  repositoryTopics(first:100) { nodes { topic { name } } }
  openIssues:issues(states:OPEN) { totalCount } closedIssues:issues(states:CLOSED) { totalCount }
  openPrs:pullRequests(states:OPEN) { totalCount } closedPrs:pullRequests(states:CLOSED) { totalCount } mergedPrs:pullRequests(states:MERGED) { totalCount }
- releases { totalCount }
- ${issues ? `issues(first:100,orderBy:{field:UPDATED_AT,direction:DESC}) { ${page} nodes { ${issueFields} } }` : ""}
- ${prs ? `pullRequests(first:100,orderBy:{field:UPDATED_AT,direction:DESC}) { ${page} nodes { ${prFields} } }` : ""}
+ ${releases}
+ ${needed.includes("issues") ? `issues(first:100,orderBy:{field:UPDATED_AT,direction:DESC}) { ${page} nodes { ${issueFields} } }` : ""}
+ ${needed.includes("prs") ? `pullRequests(first:100,orderBy:{field:UPDATED_AT,direction:DESC}) { ${page} nodes { ${prFields} } }` : ""}
  } } rateLimit { remaining resetAt }
  }`;
 }

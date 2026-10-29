@@ -36,6 +36,7 @@ it("pins the actual v0.23.1 source and appends the identical additive migration 
 		readFileSync("migrations/0027_retract_hollow_activity_publications.sql", "utf8"),
 		readFileSync("migrations/0028_refresh_observations.sql", "utf8"),
 		readFileSync("migrations/0029_refresh_runs.sql", "utf8"),
+		readFileSync("migrations/0030_refresh_run_cancel.sql", "utf8"),
 	].join("\n");
 	expect(readFileSync("apps/web/src/server/lib/db/schema.sql", "utf8")).toBe(
 		`${oldSchema}\n${appended}`,

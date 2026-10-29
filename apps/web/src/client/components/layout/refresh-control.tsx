@@ -68,7 +68,7 @@ function RefreshPanel({
 				<p className="text-xs text-basalt-muted-foreground">
 					{repo
 						? `先刷新账号信息，再仅刷新 ${repo}，不改变星标。`
-						: "先刷新账号信息与仓库清单，再串行刷新星标仓库和新发现且尚无数据的仓库；不会自动加星。"}
+						: "先刷新账号信息与仓库清单，再串行刷新所有星标仓库（不限所有者），以及本账号上海当日新建且未观测的非 fork 仓库；不会自动加星。"}
 				</p>
 				<div role="status" aria-live="polite" className="space-y-1 text-sm tabular-nums">
 					{state.loading || state.reading ? (
@@ -79,8 +79,8 @@ function RefreshPanel({
 								{refreshStatus(state.run)} · {refreshProgress(state.run)}
 							</p>
 							<p className="text-xs text-basalt-muted-foreground">
-								{state.run.params.repo ?? "星标与新发现的仓库"} · {state.run.params.since} →{" "}
-								{state.run.params.until} · {state.run.params.timezone}
+								{state.run.params.repo ?? "所有星标仓库 + 本账号上海当日新建且未观测的非 fork 仓库"}{" "}
+								· {state.run.params.since} → {state.run.params.until} · {state.run.params.timezone}
 							</p>
 							<p className="text-xs text-basalt-muted-foreground">
 								更新时间：{formatDate(state.run.updatedAt, state.run.params.timezone)}
