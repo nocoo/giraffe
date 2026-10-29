@@ -2134,3 +2134,16 @@ Account creation activates only the first account. The fixture now explicitly
 activates its account before browser assertions and restores the previous active
 account during cleanup. A targeted pass cannot establish suite independence;
 cross-account browser and machine assertions must state both account contexts.
+
+## 2026-10-29 - Review shared read boundaries end to end
+
+The final phase-2 review found cases not represented by the first integration
+tests: account-fenced polling returns 404 rather than a synthetic 409, UTC chart
+keys require UTC labels, retained repository dimensions can use different time
+zones, and a transient background detail error must not erase a valid page.
+Regression tests now use those actual contracts and the rendered route.
+Activity also read its inputs and publication in separate batches and was absent
+from source discovery. Its publication now shares the input transaction; the
+source index must describe the same canonical membership and evidence, not an
+approximation based only on the top-level publication. A passing endpoint test
+does not establish consistency with polling, discovery or concurrent publication.
