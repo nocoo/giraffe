@@ -19,7 +19,7 @@
 
 Giraffe is a personal GitHub console for saved repository, Issue / PR, security and notification snapshots across connected accounts.
 
-Version 0.27.4 completes unavailable security-day cache windows without inventing measurements, chains healthy A/B steps through slow I/O, and reduces D1 round trips. Same-day account reuse and fully cached single-repository refreshes need no upstream requests. Automatic refresh covers all explicitly starred repositories plus this account's unobserved non-fork repositories created during the current Asia/Shanghai day, without automatic starring. Saved reads never collect upstream; analysis and legacy refresh modes remain removed. See the [phase-2 contract](docs/15-unified-refresh.md).
+Version 0.27.5 bounds cached-snapshot CPU work and interrupted refresh recovery, and persists cancellation before notifying the runner. Same-day account reuse and fully cached single-repository refreshes need no upstream requests. Automatic refresh covers all explicitly starred repositories plus this account's unobserved non-fork repositories created during the current Asia/Shanghai day, without automatic starring. Saved reads never collect upstream; analysis and legacy refresh modes remain removed. See the [phase-2 contract](docs/15-unified-refresh.md).
 
 PAT 使用 AES-256-GCM 加密后存入 D1；数据快照以 JSON 保存，未做应用层加密。这是个人部署，获准访问同一部署的人共享其中的账号与快照。
 

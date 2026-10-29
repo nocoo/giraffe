@@ -1,4 +1,4 @@
-# Phase 2: unified refresh (v0.27.4)
+# Phase 2: unified refresh (v0.27.5)
 
 This is the authorized replacement for the collection stack retired in v0.26.0.
 There is one task type, not quick/deep/full modes. The Dashboard keeps its saved
@@ -391,7 +391,7 @@ production or local-network RTTs. Alarms were delivered at `max(now, alarmAt)`.
 
 Two benchmark passes produced identical counts. v0.27.2 finished partial because
 it classified the 404s as failures; the later sources finished completed.
-The current regression additionally measures collector entry/exit independently:
+The v0.27.4 regression additionally measures collector entry/exit independently:
 the synthetic force A-to-B collector gap is 9 s (three 3 s D1 calls), not the
 zero delta between fused durable timestamps. Injecting an extra 40 s settlement
 delay fails its end-to-end bound (100.6 s versus the 61 s limit).
@@ -403,6 +403,33 @@ not force then non-force: both baseline and current local probes already reuse
 the resulting unavailable day with zero HTTP requests. The reproducible cache
 defect is the misleading coverage projection; the cause of those production
 two REST requests is not proven by the available trace.
+
+### v0.27.5 idle and cancellation regression
+
+Saved-snapshot pagination previously encoded each growing page prefix. A 6,000-item
+fixture encoded 3,778,416,870 bytes for roughly 1.95 MB of input. The replacement
+accounts for each item's UTF-8 bytes once per packing pass, including commas and
+the final truncation metadata. Its deterministic regression bounds encoded bytes
+linearly and retains the exact two-page and multibyte boundary checks. This proves
+a CPU amplification defect, not the unique cause of the supplied production stall;
+no production CPU trace or request was collected.
+
+The real-local HTTP regression seeds 16,000 cached issues and 16,000 cached pull
+requests, then reuses A and all B observations with zero upstream requests. On
+implementation `93027d7`, the development-auth and signed-JWT lanes completed in
+265 ms and 266 ms wall time respectively (including a 250 ms polling interval),
+with 105 ms durable run duration and 97 ms B duration in each. These local stub
+measurements show prompt same-wake completion, not a production latency guarantee.
+
+Cancellation tests cover hung/reset DO notifications, D1-only recovery after a
+reset, in-flight settlement, and cancellation racing with a rate-limit deadline.
+Heartbeat alarms target at most five seconds without collecting before the saved
+retry deadline; platform delivery latency is not bounded by the application.
+Runtime-interruption tests prove that three interrupted attempts cannot trigger a
+fourth collection of the same step. Local workerd does not enforce production CPU
+limits, so those resets are simulated. The synthetic D1 latency budget now allows
+one additional cancellation read: 21 calls / 64 s for force and 18 calls / 55 s
+for cached work, with a 12 s collector-entry gap under injected 3 s D1 latency.
 
 `0028_refresh_observations.sql` adds `refresh_catalog`, `refresh_accounts`,
 `refresh_day_observations`, `refresh_items`, `refresh_repository_publications`,

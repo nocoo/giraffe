@@ -1,6 +1,6 @@
 # 04 — Server 设计
 
-> **v0.27.4:** [Phase 2 unified refresh](15-unified-refresh.md) is the current
+> **v0.27.5:** [Phase 2 unified refresh](15-unified-refresh.md) is the current
 > execution, API and deployment contract. A durable A-then-serial-B task replaces
 > the retired stack. Earlier mode/run/schedule/analysis implementation descriptions
 > below are historical; Access, encrypted PATs and pure saved GETs remain required.
