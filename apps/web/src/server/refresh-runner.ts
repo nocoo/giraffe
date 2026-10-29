@@ -295,6 +295,8 @@ export class RefreshRunner implements DurableObject {
 				const retry = await this.state.storage.get<Retry>("retry");
 				const cancelling = !!(await this.state.storage.get<boolean>(cancelKey(active.id)));
 				const sameStep = retry?.key === `${active.id}:${active.phase}:${active.completedRepos}`;
+				if (cancelling || (sameStep && retry.exhausted))
+					await this.state.storage.setAlarm(Date.now() + RECOVERY_MS);
 				if (sameStep && retry.exhausted) {
 					const failure = retry.exhausted;
 					let resolved = failedStep(

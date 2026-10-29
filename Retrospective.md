@@ -2284,3 +2284,9 @@ Recovery replays that evidence without collection, fenced by run/phase/cursor.
 Tests cover failed saves, committed writes with lost acknowledgements, cleanup
 failures, next-repository/new-run fences and cancellation with original safe
 details/counts/times. Cancelling a settled step must not renew its finish time.
+
+The first replay implementation also relied on an already-consumed alarm if D1
+failed again. Native alarm retries are finite, so every settlement replay now
+arms its own recovery before writing D1. Alarm-delivery fixtures consume the old
+alarm before invoking the handler; retaining it in memory had hidden this gap.
+Repeated replay-save failures, including cancellation, are regression cases.

@@ -105,6 +105,7 @@ async function setup() {
 }
 async function deliverNextAlarm(fixture: Awaited<ReturnType<typeof setup>>) {
 	vi.useFakeTimers({ now: Math.max(Date.now(), fixture.alarmAt() ?? 0), toFake: ["Date"] });
+	await fixture.storage.deleteAlarm();
 	await fixture.restart().alarm();
 }
 async function deferredCollection() {
@@ -1639,6 +1640,45 @@ it.each(["committed-save", "retry-delete"])(
 				errorCode: null,
 			});
 			expect(collectors.collectAccount).toHaveBeenCalledTimes(5);
+		} finally {
+			failure.mockRestore();
+		}
+	},
+);
+
+it.each([false, true])(
+	"rearms recovery for repeated exhausted settlement failures (cancel=%s)",
+	async (cancel) => {
+		const fixture = await setup();
+		collectors.collectAccount.mockRejectedValue(new ApiError(503, "github_rate_limited", "safe"));
+		const run = await startRefresh(fixture.env, "account", {});
+		for (let attempt = 0; attempt < 3; attempt++) await deliverNextAlarm(fixture);
+		const save = refreshStore.saveRefreshRun;
+		let failures = 3;
+		const failure = vi
+			.spyOn(refreshStore, "saveRefreshRun")
+			.mockImplementation(async (db, next) => {
+				if (["failed", "cancelled"].includes(next.status) && failures > 0) {
+					failures -= 1;
+					throw new Error("settlement still unavailable");
+				}
+				return save(db, next);
+			});
+		try {
+			await expect(deliverNextAlarm(fixture)).rejects.toThrow("settlement still unavailable");
+			if (cancel) await fixture.cancelRequest(run.id);
+			for (let replay = 0; replay < 2; replay++) {
+				await expect(deliverNextAlarm(fixture)).rejects.toThrow("settlement still unavailable");
+				expect(fixture.alarmAt()).toBe(Date.now() + 5_000);
+				expect(collectors.collectAccount).toHaveBeenCalledTimes(4);
+				expect(await fixture.storage.get("retry")).toMatchObject({ attempts: 4 });
+			}
+			await deliverNextAlarm(fixture);
+			expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
+				status: cancel ? "cancelled" : "failed",
+			});
+			expect(collectors.collectAccount).toHaveBeenCalledTimes(4);
+			expect(fixture.alarmAt()).toBeNull();
 		} finally {
 			failure.mockRestore();
 		}
