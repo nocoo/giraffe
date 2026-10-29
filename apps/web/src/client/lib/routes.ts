@@ -9,6 +9,7 @@ export const APP_PATHS = [
 	"/ci",
 	"/alerts",
 	"/inbox",
+	"/refresh",
 	"/repos/:owner/:name",
 	"/settings",
 ] as const;

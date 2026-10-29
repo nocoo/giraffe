@@ -500,6 +500,88 @@ describe("refresh viewmodel", () => {
 		expect(model.getSnapshot().error).toContain("状态");
 	});
 
+	it("cancels the active run once and keeps a pending cancellation pollable", async () => {
+		vi.mocked(apiGet).mockResolvedValueOnce({
+			items: [refreshRun()],
+			collectionAvailable: true,
+		});
+		const model = new RefreshViewModel();
+		await model.read();
+		vi.mocked(apiPost).mockResolvedValueOnce(refreshRun({ cancelRequested: true }));
+		await model.cancel();
+		expect(apiPost).toHaveBeenCalledWith("refresh-runs/run-1/cancel");
+		expect(model.getSnapshot()).toMatchObject({
+			run: { cancelRequested: true },
+			cancelling: false,
+			error: null,
+		});
+		await model.cancel();
+		expect(apiPost).toHaveBeenCalledOnce();
+	});
+
+	it("accepts a terminal cancellation, notifies readers once and ignores later cancels", async () => {
+		vi.mocked(apiGet).mockResolvedValueOnce({
+			items: [refreshRun({ status: "queued", phase: "account", repos: [] })],
+			collectionAvailable: true,
+		});
+		const model = new RefreshViewModel();
+		const refreshed = vi.fn();
+		model.subscribeData(refreshed);
+		await model.read();
+		const cancelled = refreshRun({
+			status: "cancelled",
+			phase: "done",
+			cancelRequested: true,
+			finishedAt: "2026-10-29T04:05:00Z",
+		});
+		vi.mocked(apiPost).mockResolvedValueOnce(cancelled);
+		await model.cancel();
+		expect(model.getSnapshot().run?.status).toBe("cancelled");
+		expect(refreshed).toHaveBeenCalledOnce();
+		await model.cancel();
+		expect(apiPost).toHaveBeenCalledOnce();
+	});
+
+	it("does not cancel without an active run, while starting, or another account", async () => {
+		const model = new RefreshViewModel();
+		await model.cancel();
+		expect(apiPost).not.toHaveBeenCalled();
+		vi.mocked(apiGet)
+			.mockResolvedValueOnce({ items: [], collectionAvailable: true })
+			.mockRejectedValueOnce(new ApiError(409, "snapshot_missing", "missing"));
+		await model.read();
+		let finish: ((run: RefreshRun) => void) | undefined;
+		vi.mocked(apiPost).mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finish = resolve;
+				}),
+		);
+		const starting = model.start(defaultRefreshParams());
+		await model.cancel();
+		expect(apiPost).toHaveBeenCalledOnce();
+		finish?.(refreshRun({ status: "queued" }));
+		await starting;
+		vi.mocked(apiPost).mockResolvedValueOnce(refreshRun({ accountId: "other" }));
+		await model.cancel();
+		expect(model.getSnapshot().error).toContain("状态");
+		expect(model.getSnapshot().run).toBeNull();
+	});
+
+	it("reports a missing run on cancel without retrying the write", async () => {
+		vi.mocked(apiGet).mockResolvedValueOnce({
+			items: [refreshRun()],
+			collectionAvailable: true,
+		});
+		const model = new RefreshViewModel();
+		await model.read();
+		vi.mocked(apiPost).mockRejectedValueOnce(new ApiError(404, "not_found", "missing"));
+		await model.cancel();
+		expect(model.getSnapshot().error).toContain("不存在");
+		expect(model.getSnapshot().cancelling).toBe(false);
+		expect(apiPost).toHaveBeenCalledOnce();
+	});
+
 	it("unlocks polling and shows the terminal cancelled state after a machine cancel", async () => {
 		vi.mocked(apiGet).mockResolvedValueOnce({ items: [refreshRun()], collectionAvailable: true });
 		const model = new RefreshViewModel();

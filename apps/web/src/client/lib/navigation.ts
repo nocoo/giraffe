@@ -29,7 +29,10 @@ export const NAV_GROUPS: readonly NavGroup[] = [
 	},
 	{
 		label: "系统",
-		items: [{ href: "/settings", label: "设置", icon: "Settings" }],
+		items: [
+			{ href: "/refresh", label: "刷新中心", icon: "RefreshCw" },
+			{ href: "/settings", label: "设置", icon: "Settings" },
+		],
 	},
 ];
 
@@ -45,6 +48,7 @@ export const PAGE_DESCRIPTIONS = {
 	"/ci": "各仓库 CI 与发布状态，区分连续失败与偶发失败",
 	"/alerts": "Dependabot 与 code scanning",
 	"/inbox": "GitHub 通知收件箱",
+	"/refresh": "统一 A/B 刷新、运行记录与每日自动计划",
 	"/settings": "Access 身份与 GitHub 账号",
 } as const;
 

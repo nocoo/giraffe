@@ -22,6 +22,9 @@ const NotFoundPage = lazy(() =>
 	import("./routes/not-found").then((m) => ({ default: m.NotFoundPage })),
 );
 const PullsPage = lazy(() => import("./routes/pulls").then((m) => ({ default: m.PullsPage })));
+const RefreshPage = lazy(() =>
+	import("./routes/refresh").then((m) => ({ default: m.RefreshPage })),
+);
 const RepoDetailPage = lazy(() =>
 	import("./routes/repo-detail").then((m) => ({ default: m.RepoDetailPage })),
 );
@@ -69,11 +72,12 @@ const PAGES: Record<(typeof APP_PATHS)[number], ReactNode> = {
 	"/ci": <CiPage />,
 	"/alerts": <AlertsPage />,
 	"/inbox": <InboxPage />,
+	"/refresh": <RefreshPage />,
 	"/repos/:owner/:name": <RepoDetailPage />,
 	"/settings": <SettingsPage />,
 };
 
-const standalone = new Set<AppPath>(["/repos/:owner/:name", "/settings", "/today"]);
+const standalone = new Set<AppPath>(["/refresh", "/repos/:owner/:name", "/settings", "/today"]);
 
 function pageRoutes(paths: readonly AppPath[]) {
 	return paths.map((path) => (
