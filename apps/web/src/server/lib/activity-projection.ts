@@ -34,15 +34,17 @@ function covers(window: FactoryWindow, ranges: FactoryWindow[]) {
 	}
 	return cursor > Date.parse(window.until);
 }
-function evidence(
-	repo: FactoryRepo | undefined,
+type ActivityEvidenceData = Pick<FactoryStreamData, "runId" | "coverage" | "ranges"> & {
+	next?: string | null;
+};
+
+export function activityEvidenceCoverage(
 	stream: string,
-	inputs: ActivityInputs,
+	data: ActivityEvidenceData | null,
+	repo: FactoryRepo | undefined,
 	window: FactoryWindow,
-) {
-	const saved = inputs.get(stream);
-	if (!saved || !repo) return { items: null, coverage: unknownActivity("source_missing") };
-	const data = saved.data;
+): ActivityCoverage {
+	if (!data || !repo) return unknownActivity("source_missing");
 	const published = repo.coverage[stream as keyof FactoryRepo["coverage"]];
 	const observation = published.observation ?? repo.observation;
 	const sourceWindow = observation?.window ?? window;
@@ -52,10 +54,7 @@ function evidence(
 		window: sourceWindow,
 		completeWindows: data.ranges,
 	};
-	const unavailable = (reason: string) => ({
-		items: null,
-		coverage: { ...unknownActivity(reason), source },
-	});
+	const unavailable = (reason: string) => ({ ...unknownActivity(reason), source });
 	if (observation?.version !== undefined && data.runId !== observation.version)
 		return unavailable("source_version_mismatch");
 	if (
@@ -66,7 +65,7 @@ function evidence(
 	if (["pending", "unavailable"].includes(data.coverage.status))
 		return unavailable(data.coverage.reason ?? "source_unavailable");
 	const complete = data.coverage.status === "complete" && covers(window, data.ranges);
-	const coverage: ActivityCoverage = {
+	return {
 		status: complete ? "complete" : "partial",
 		truncated:
 			data.next !== null ||
@@ -75,10 +74,24 @@ function evidence(
 		reason: complete ? null : (data.coverage.reason ?? "incomplete_window"),
 		source,
 	};
+}
+function evidence(
+	repo: FactoryRepo | undefined,
+	stream: string,
+	inputs: ActivityInputs,
+	window: FactoryWindow,
+) {
+	const saved = inputs.get(stream);
+	const coverage = activityEvidenceCoverage(stream, saved?.data ?? null, repo, window);
 	return {
-		items: data.items.filter((item) =>
-			[item.at, item.createdAt, item.closedAt, item.mergedAt].some((at) => inWindow(at, window)),
-		),
+		items:
+			saved && coverage.status !== "unavailable"
+				? saved.data.items.filter((item) =>
+						[item.at, item.createdAt, item.closedAt, item.mergedAt].some((at) =>
+							inWindow(at, window),
+						),
+					)
+				: null,
 		coverage,
 	};
 }

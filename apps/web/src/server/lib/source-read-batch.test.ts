@@ -27,7 +27,7 @@ it("reads the complete source index with one reader D1 round trip and seven read
 	const profile = profileDb(fixture.raw);
 	const result = await readSources(createDb(profile.raw), fixture.account, {});
 	expect(result.repositories).toEqual(fixture.names);
-	expect(result.sources).toHaveLength(1517);
+	expect(result.sources).toHaveLength(1518);
 	expect(profile.queries).toHaveLength(7);
 	expect(profile.trips).toHaveLength(1);
 });

@@ -5,10 +5,12 @@ import {
 	savedObservationStmts as replaceSnapshotStmts,
 	syncSavedObservation,
 } from "../../../../../tests/fixtures/refresh";
+import { refreshActivityFixture } from "../../../../../tests/fixtures/refresh-activity";
 import { populateSourceStreams, sourcesFixture } from "../../../../../tests/fixtures/sources";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import * as ci from "../../lib/ci-health";
 import { FACTORY_STREAMS } from "../../lib/factory-types";
+import { readActivity } from "./activity-store";
 import { savedContentMeta } from "./content-version";
 import { createDb } from "./db/d1";
 import { readSnapshot } from "./db/snapshots";
@@ -73,10 +75,10 @@ it("reads 126 repositories within seven queries and bounds empty-since hashing",
 	const full = await readSources(fullDb, account, {});
 	const fullDigests = fullDigest.mock.calls.length;
 	fullDigest.mockRestore();
-	expect(fullDigests).toBeLessThan(10);
+	expect(fullDigests).toBeLessThan(12);
 	expect(fullDb.statements).toBeLessThanOrEqual(7);
 	expect(full.repositories).toEqual(names);
-	expect(full.sources).toHaveLength(1517);
+	expect(full.sources).toHaveLength(1518);
 	for (const query of [
 		{ repository: "FIXTURE/PROJECT-001" },
 		{ since: "2026-10-19T00:00:00.000Z" },
@@ -139,6 +141,186 @@ async function savedFixture(persist = true) {
 	};
 	return { raw, account, save };
 }
+
+it("indexes the canonical activity publication as account:activity", async () => {
+	const { raw, now } = await refreshActivityFixture();
+	const network = vi.spyOn(globalThis, "fetch");
+	const saved = async () =>
+		(await raw.prepare("SELECT kind,payload FROM refresh_snapshots ORDER BY kind").all()).results;
+	const before = await saved();
+	try {
+		const activity = await readActivity(createDb(raw), "a", {});
+		expect(activity).toMatchObject({
+			runId: "current-refresh",
+			membership: ["owner/app"],
+			repos: [{ issues: { opened: [{ id: "I_1" }] } }],
+		});
+		const result = await readSources(createDb(raw), "a", {});
+		expect(result.sources.find((source) => source.resource === "account:activity")).toEqual({
+			resource: "account:activity",
+			version: "current-refresh",
+			contentVersion: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+			runId: "current-refresh",
+			observedAt: now,
+			fetchedAt: now,
+			freshness: { oldestAt: now, latestAt: now, total: 1, missing: 0 },
+			coverage: {
+				repos: { status: "complete", truncated: false, reason: null },
+				run: {
+					status: "partial",
+					truncated: false,
+					reason: "owner_commit_attribution_unavailable",
+				},
+				contributions: {
+					status: "unavailable",
+					truncated: false,
+					reason: "native_calendar_has_no_activity_attribution",
+				},
+			},
+			truncated: false,
+			unavailable: false,
+		});
+		const original = (await readSources(createDb(raw), "a", {})).sources.find(
+			(source) => source.resource === "account:activity",
+		);
+		for (const query of [{ repository: "OWNER/APP" }, { since: "2026-10-29T03:59:59.999Z" }])
+			expect(
+				(await readSources(createDb(raw), "a", query)).sources.find(
+					(source) => source.resource === "account:activity",
+				),
+			).toEqual(original);
+		expect(
+			(await readSources(createDb(raw), "a", { since: now })).sources.some(
+				(source) => source.resource === "account:activity",
+			),
+		).toBe(false);
+		await raw
+			.prepare(
+				"UPDATE refresh_resources SET content_meta=json_set(content_meta,'$.hash','sha256:changed') WHERE stream='issues'",
+			)
+			.run();
+		const changed = (await readSources(createDb(raw), "a", {})).sources.find(
+			(source) => source.resource === "account:activity",
+		);
+		expect(changed?.version).toBe(original?.version);
+		expect(changed?.fetchedAt).toBe(original?.fetchedAt);
+		expect(changed?.contentVersion).not.toBe(original?.contentVersion);
+		expect(await saved()).toEqual(before);
+		expect(network).not.toHaveBeenCalled();
+	} finally {
+		network.mockRestore();
+	}
+});
+
+it("matches /activity evidence for next, pagination reasons, missing resources and version mismatch", async () => {
+	const { raw } = await refreshActivityFixture();
+	const patch = async (stream: string, change: (data: Record<string, unknown>) => void) => {
+		const row = await raw
+			.prepare("SELECT payload FROM refresh_resources WHERE stream=?")
+			.bind(stream)
+			.first<{ payload: string }>();
+		if (!row) throw new Error("missing stream fixture");
+		const data = JSON.parse(row.payload) as Record<string, unknown>;
+		change(data);
+		await raw
+			.prepare("UPDATE refresh_resources SET payload=? WHERE stream=?")
+			.bind(JSON.stringify(data), stream)
+			.run();
+	};
+	const read = async () => {
+		const activity = await readActivity(createDb(raw), "a", {});
+		const source = (await readSources(createDb(raw), "a", {})).sources.find(
+			(row) => row.resource === "account:activity",
+		);
+		expect(source?.version).toBe(activity.runId);
+		expect(source?.coverage).toEqual(activity.coverage);
+		expect(source?.truncated).toBe(activity.truncated);
+		return { activity, source };
+	};
+	expect((await read()).source).toMatchObject({ truncated: false, freshness: { missing: 0 } });
+	await patch("issues", (data) => {
+		data.next = "cursor-2";
+	});
+	expect((await read()).activity.truncated).toBe(true);
+	await patch("issues", (data) => {
+		delete data.next;
+	});
+	expect((await read()).activity.truncated).toBe(true);
+	await patch("issues", (data) => {
+		data.next = null;
+	});
+	expect((await read()).activity.truncated).toBe(false);
+	await patch("actions", (data) => {
+		data.coverage = { ...(data.coverage as object), status: "partial", reason: "latest_page_only" };
+	});
+	expect((await read()).activity.truncated).toBe(true);
+	await patch("prs", (data) => {
+		data.coverage = {
+			...(data.coverage as object),
+			status: "partial",
+			reason: "incomplete_pagination",
+		};
+	});
+	expect((await read()).activity.truncated).toBe(true);
+	await raw.prepare("DELETE FROM refresh_resources WHERE stream='releases'").run();
+	const missing = await read();
+	expect(missing.activity.repos[0]?.coverage.releases).toMatchObject({
+		status: "unavailable",
+		reason: "source_missing",
+	});
+	expect(missing.source?.freshness).toMatchObject({ total: 1, missing: 1 });
+	await patch("issues", (data) => {
+		data.runId = "other-run";
+	});
+	const mismatch = await read();
+	expect(mismatch.activity.repos[0]?.coverage.issues).toMatchObject({
+		status: "unavailable",
+		reason: "source_version_mismatch",
+	});
+});
+
+it("keeps account activity on current owned catalog members regardless of repository filter", async () => {
+	const { raw, now } = await refreshActivityFixture();
+	const baseline = (await readSources(createDb(raw), "a", {})).sources.find(
+		(source) => source.resource === "account:activity",
+	);
+	for (const [id, repo, active] of [
+		["R_NEW", "owner/second", 1],
+		["R_FOREIGN", "someone/else", 1],
+		["R_GONE", "owner/gone", 0],
+	] as const)
+		await raw
+			.prepare(
+				"INSERT INTO refresh_catalog(account_id,repo_id,repo,discovered_day,timezone,payload,fetched_at,active) VALUES('a',?,?,'2026-10-29','Asia/Shanghai','{}',?,?)",
+			)
+			.bind(id, repo, now, active)
+			.run();
+	const activity = await readActivity(createDb(raw), "a", {});
+	expect(activity.membership).toEqual(["owner/app", "owner/second"]);
+	const unfiltered = await readSources(createDb(raw), "a", {});
+	const source = unfiltered.sources.find((row) => row.resource === "account:activity");
+	expect(source).toMatchObject({
+		version: "current-refresh",
+		runId: "current-refresh",
+		freshness: { total: 2, missing: 1, oldestAt: now, latestAt: now },
+	});
+	expect(source?.contentVersion).not.toBe(baseline?.contentVersion);
+	const filtered = await readSources(createDb(raw), "a", { repository: "OWNER/APP" });
+	expect(filtered.sources.filter((row) => row.resource.startsWith("account:"))).toEqual(
+		unfiltered.sources.filter((row) => row.resource.startsWith("account:")),
+	);
+	expect(filtered.sources.some((row) => row.resource === "account:activity")).toBe(true);
+	expect(
+		(await readSources(createDb(raw), "a", { since: now })).sources.some(
+			(row) => row.resource === "account:activity",
+		),
+	).toBe(false);
+	expect(
+		(await readSources(createDb(raw), "a", { since: "2026-10-29T03:59:59.999Z" })).sources.find(
+			(row) => row.resource === "account:activity",
+		),
+	).toEqual(source);
+});
 
 it("does not build a CI report excluded by since", async () => {
 	const fixture = await sourcesFixture();
@@ -208,9 +390,9 @@ it("never reads immutable payloads for full or filtered source indexes", async (
 	const payloads = await populateSourceStreams(fixture);
 	const repository = "fixture/project-001";
 	for (const [query, expectedBytes, count] of [
-		[{}, 0, 1517],
+		[{}, 0, 1518],
 		[{ since: "2026-10-21T00:00:00Z" }, 0, 0],
-		[{ repository: repository.toUpperCase() }, 0, 17],
+		[{ repository: repository.toUpperCase() }, 0, 18],
 		[{ repository, since: fixture.latest }, 0, 0],
 	] as const) {
 		const profile = profileDb(fixture.raw);
@@ -220,7 +402,7 @@ it("never reads immutable payloads for full or filtered source indexes", async (
 		expect(profile.queries.reduce((sum, row) => sum + row.payloadBytes, 0)).toBe(
 			baseBytes + Number(expectedBytes),
 		);
-		if (count === 17)
+		if (count === 18)
 			expect(
 				result.sources.find((source) => source.resource === `factory:${repository}:commits`)
 					?.contentVersion,
@@ -231,9 +413,24 @@ it("never reads immutable payloads for full or filtered source indexes", async (
 	const before = await readSources(createDb(profile.raw), fixture.account, {});
 	const query = profile.queries.find((query) => query.sql.includes("FROM refresh_resources"));
 	if (!query) throw new Error("missing metadata query");
-	expect(query.sql).not.toContain("r.payload");
+	expect(query.sql).toContain("json_extract(r.payload,'$.coverage')");
+	expect(query.sql).not.toMatch(/json_extract\(r\.payload,'\$\.(items|manifests)/);
 	await fixture.raw.prepare("UPDATE refresh_resources SET payload='not-json'").run();
-	expect(await readSources(createDb(fixture.raw), fixture.account, {})).toEqual(before);
+	const after = await readSources(createDb(fixture.raw), fixture.account, {});
+	expect(after.sources).toEqual(before.sources);
+	expect(after.sources.find((source) => source.resource === "account:activity")).toMatchObject({
+		version: "publication-local-bench",
+		fetchedAt: fixture.latest,
+		observedAt: null,
+		freshness: {
+			oldestAt: null,
+			latestAt: null,
+			total: fixture.names.length,
+			missing: fixture.names.length,
+		},
+		truncated: false,
+		unavailable: false,
+	});
 });
 
 it("keeps raw legacy hashes null while versioning account list and CI projections", async () => {
@@ -407,11 +604,22 @@ it("preserves exact realistic response content and all advertised snapshot versi
 					(suffix) => `repo:${name}:${suffix}`,
 				),
 			),
-			...["issues", "prs", "ci", "factory", "repos"].map((kind) => `account:${kind}`),
+			...["issues", "prs", "ci", "factory", "repos", "activity"].map((kind) => `account:${kind}`),
 			...names.flatMap((name) => FACTORY_STREAMS.map((stream) => `factory:${name}:${stream}`)),
 		].sort(),
 	);
-	for (const source of result.sources.filter((source) => source.resource.startsWith("account:")))
+	expect(result.sources.find((source) => source.resource === "account:activity")).toMatchObject({
+		version: "publication-local-bench",
+		runId: "publication-local-bench",
+		fetchedAt: latest,
+		observedAt: null,
+		freshness: { oldestAt: null, latestAt: null, total: names.length, missing: names.length },
+		truncated: false,
+		unavailable: false,
+	});
+	for (const source of result.sources.filter(
+		(source) => source.resource.startsWith("account:") && source.resource !== "account:activity",
+	))
 		expect(source.freshness).toEqual({
 			oldestAt: old,
 			latestAt: source.resource === "account:repos" ? old : latest,
@@ -423,7 +631,9 @@ it("preserves exact realistic response content and all advertised snapshot versi
 		version: "publication-local-bench",
 	});
 	expect(await readSources(createDb(raw), account, {})).toEqual(result);
-	for (const source of result.sources.filter((row) => !row.resource.startsWith("factory:"))) {
+	for (const source of result.sources.filter(
+		(row) => !row.resource.startsWith("factory:") && row.resource !== "account:activity",
+	)) {
 		const resource = source.resource.replace(/^account:/, "");
 		const envelope = await readObservation(createDb(raw), account, resource, "all");
 		expect(source).toEqual({

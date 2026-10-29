@@ -1,12 +1,13 @@
 import { z } from "zod";
 import type { ActivitySnapshot } from "../../lib/activity-types";
-import type { FactoryStreamData } from "../../lib/factory-types";
+import type { FactorySnapshot, FactoryStreamData } from "../../lib/factory-types";
+import { unknownActivity } from "./activity";
 import { type ActivityInputs, projectActivityRepo } from "./activity-projection";
 import { readActivityTotals } from "./activity-totals";
 import type { Db } from "./db/d1";
-import { publishedFactory, resolveFactoryRunReference } from "./db/factory-runs";
+import { normalizePublication, resolveFactoryRunReference } from "./db/factory-runs";
 import { ApiError } from "./errors";
-import { latestSnapshotGroups, type SnapshotPage } from "./snapshot-pages";
+import { assembleSnapshotGroups, latestSnapshotGroups, type SnapshotPage } from "./snapshot-pages";
 
 const querySchema = z
 	.object({
@@ -21,6 +22,31 @@ const querySchema = z
 			.optional(),
 	})
 	.strict();
+
+export const activityPublicationSql =
+	"SELECT kind,payload,content_meta FROM refresh_snapshots WHERE account_id=? AND kind IN ('factory','factory#2')";
+
+export function activityPublication(rows: SnapshotPage[]): FactorySnapshot | null {
+	const snapshot = assembleSnapshotGroups(rows).get("factory");
+	return snapshot ? normalizePublication(snapshot as unknown as FactorySnapshot) : null;
+}
+
+export function activityCoverageSummary(publication: FactorySnapshot, truncated: boolean) {
+	return {
+		repos: {
+			status: publication.inventory.complete ? ("complete" as const) : ("partial" as const),
+			truncated: publication.truncated === true,
+			reason: publication.inventory.complete ? null : "catalog_incomplete",
+		},
+		run: {
+			status: "partial" as const,
+			truncated,
+			reason: "owner_commit_attribution_unavailable",
+		},
+		contributions: unknownActivity("native_calendar_has_no_activity_attribution"),
+	};
+}
+
 export async function readActivity(
 	db: Db,
 	account: string,
@@ -33,13 +59,14 @@ export async function readActivity(
 	);
 	if (!parsed.success) throw new ApiError(400, "validation_failed", "Invalid activity filters");
 	const reference = await resolveFactoryRunReference(db, account, parsed.data.run ?? "latest");
-	const [catalog, resources, pages, rawItems] = await db.batch<{
+	const [catalog, resources, pages, rawItems, publications] = await db.batch<{
 		repo_id: string;
 		repo: string;
 		stream: string;
 		item_id: string;
 		payload: string;
 		kind: string;
+		content_meta?: string | null;
 	}>([
 		db
 			.prepare(
@@ -61,15 +88,16 @@ export async function readActivity(
 				"SELECT i.repo_id,i.stream,i.item_id,i.payload FROM refresh_items i JOIN refresh_catalog c ON c.account_id=i.account_id AND c.repo_id=i.repo_id WHERE i.account_id=? AND c.active=1",
 			)
 			.bind(account),
+		db.prepare(activityPublicationSql).bind(account),
 	]);
-	if (!catalog || !resources || !pages || !rawItems)
+	if (!catalog || !resources || !pages || !rawItems || !publications)
 		throw new ApiError(500, "db_error", "Incomplete activity inputs");
 	if (
 		parsed.data.repository &&
 		!catalog.results.some((row) => row.repo.toLowerCase() === parsed.data.repository?.toLowerCase())
 	)
 		throw new ApiError(404, "not_found", "Repository outside current refresh catalog");
-	const publication = await publishedFactory(db, account);
+	const publication = activityPublication(publications.results);
 	if (!publication || (reference !== "latest" && reference !== publication.runId))
 		throw new ApiError(
 			409,
@@ -119,19 +147,7 @@ export async function readActivity(
 		membership,
 		repos,
 		contributions: null,
-		coverage: {
-			repos: {
-				status: publication.inventory.complete ? "complete" : "partial",
-				truncated: publication.truncated === true,
-				reason: publication.inventory.complete ? null : "catalog_incomplete",
-			},
-			run: { status: "partial", truncated, reason: "owner_commit_attribution_unavailable" },
-			contributions: {
-				status: "unavailable",
-				truncated: false,
-				reason: "native_calendar_has_no_activity_attribution",
-			},
-		},
+		coverage: activityCoverageSummary(publication, truncated),
 		truncated,
 		...readActivityTotals(repos, membership, publication.inventory.complete !== true),
 	};

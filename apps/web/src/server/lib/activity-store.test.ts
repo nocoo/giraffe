@@ -198,6 +198,70 @@ it.each([0, 1, 2, 3])(
 	},
 );
 
+it("keeps one canonical publication coherent across a concurrent publish", async () => {
+	const { raw, now } = await refreshActivityFixture();
+	const db = createDb(raw);
+	const batch = db.batch.bind(db);
+	const publish = async (runId: string) => {
+		const row = await raw
+			.prepare("SELECT payload FROM refresh_snapshots WHERE kind='factory'")
+			.first<{ payload: string }>();
+		if (!row) throw new Error("missing publication");
+		const snapshot = JSON.parse(row.payload) as FactorySnapshot;
+		const at = "2026-10-29T05:00:00.000Z";
+		await raw
+			.prepare("UPDATE refresh_snapshots SET payload=?,fetched_at=? WHERE kind='factory'")
+			.bind(
+				JSON.stringify({
+					...snapshot,
+					runId,
+					fetched_at: at,
+					publication: { mixed: false, runId, publishedAt: at },
+					repos: snapshot.repos.map((repo) => ({
+						...repo,
+						observation: { ...repo.observation, version: runId },
+					})),
+				}),
+				at,
+			)
+			.run();
+	};
+	const interleave = vi.spyOn(db, "batch").mockImplementationOnce(async (statements) => {
+		const result = await batch(statements);
+		await publish("new-refresh");
+		return result;
+	});
+	try {
+		const coherent = await readActivity(db, "a", {});
+		expect(coherent).toMatchObject({
+			runId: "current-refresh",
+			fetchedAt: now,
+			membership: ["owner/app"],
+			repos: [{ issues: { opened: [{ id: "I_1" }] } }],
+		});
+		expect(coherent.repos[0]?.coverage.issues).toMatchObject({ status: "complete" });
+		expect(interleave).toHaveBeenCalledTimes(1);
+	} finally {
+		interleave.mockRestore();
+	}
+	const mixed = await readActivity(db, "a", {});
+	expect(mixed.runId).toBe("new-refresh");
+	expect(mixed.repos[0]?.issues.opened).toBeNull();
+	expect(mixed.repos[0]?.coverage.issues).toMatchObject({
+		status: "unavailable",
+		reason: "source_version_mismatch",
+	});
+	await raw
+		.prepare("UPDATE refresh_resources SET payload=json_set(payload,'$.runId','new-refresh')")
+		.run();
+	const switched = await readActivity(db, "a", {});
+	expect(switched).toMatchObject({
+		runId: "new-refresh",
+		membership: ["owner/app"],
+		repos: [{ issues: { opened: [{ id: "I_1" }] } }],
+	});
+});
+
 async function fixture() {
 	const raw = sqliteFixture();
 	await raw

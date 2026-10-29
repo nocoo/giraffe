@@ -80,6 +80,19 @@ it("runs real durable A then serial B, serves latest observations and reuses day
 		expect(activity.repos[0]?.commits).toMatchObject({ default: null, other: null, items: null });
 		expect(activity.repos[0]?.coverage.commits?.status).toBe("unavailable");
 		expect((await browser("activity")).status).toBe(200);
+		const sources = (await (await machine("sources")).json()) as {
+			sources: {
+				resource: string;
+				version: string;
+				fetchedAt: string;
+				contentVersion: string | null;
+			}[];
+		};
+		expect(sources.sources.find((source) => source.resource === "account:activity")).toMatchObject({
+			version: first.id,
+			fetchedAt: activity.fetchedAt,
+			contentVersion: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+		});
 		const defaultRun = await run({ dimensions: ["commits"] });
 		expect(defaultRun.repos).toEqual([]);
 		expect(defaultRun.requests).toBe(1);

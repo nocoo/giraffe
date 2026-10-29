@@ -382,6 +382,14 @@ than `since`. With no valid time, retain it conservatively. Equality is excluded
 This matters for merged global issues/PRs/repos: `fetched_at` may remain old while
 changed `repository_fetched_at` advances `freshness.latestAt`.
 
+`account:activity` describes the current owned catalogue membership and the
+canonical Activity publication, including members without observations. Its
+account-wide content identity does not change when a `repository` filter is
+applied. Publication time and original source observation times remain distinct;
+missing, mismatched or truncated stream evidence uses the same coverage rules as
+`/activity`. Owner-attributed commits remain unavailable, so Activity is partial
+even when all supported lifecycle streams have complete coverage.
+
 **Not a durable change cursor:** versions can change without newer timestamps,
 retained old evidence keeps its original time, and failed/budget-deferred analysis
 can remain pending. Retry pending/failed older work before advancing a local cutoff,

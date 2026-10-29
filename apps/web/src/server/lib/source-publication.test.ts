@@ -114,9 +114,22 @@ it("R9 since between collection and publication includes every newly visible sou
 	const full = await s.read();
 	const before = await s.stored();
 	const incremental = await s.read({ since: between });
-	expect(full.data.sources).toHaveLength(17);
+	expect(full.data.sources).toHaveLength(18);
 	expect(incremental.data).toEqual(full.data);
-	for (const source of incremental.data.sources)
+	expect(
+		incremental.data.sources.find((source) => source.resource === "account:activity"),
+	).toMatchObject({
+		version: "R1",
+		runId: "R1",
+		fetchedAt: published,
+		observedAt: null,
+		freshness: { oldestAt: null, latestAt: null, total: 1, missing: 1 },
+		truncated: false,
+		unavailable: false,
+	});
+	for (const source of incremental.data.sources.filter(
+		(source) => source.resource !== "account:activity",
+	))
 		expect(source).toMatchObject({ runId: "R1", fetchedAt: published, observedAt: collected });
 	for (const since of [published, "2026-10-22T13:00:00+08:00"])
 		expect((await s.read({ since })).data.sources).toEqual([]);
