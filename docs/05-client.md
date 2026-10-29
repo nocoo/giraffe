@@ -1,9 +1,16 @@
 # 05 — Client 设计
 
-> **v0.27.5:** [Phase 2 unified refresh](15-unified-refresh.md) is the current
-> behavior contract. Dashboard and single-repository refresh use one task type,
-> poll saved status and reload new observations on completion. Earlier refresh
-> modes, refresh-center and analysis UI descriptions below remain historical.
+> **v0.28.0:** [Phase 2 unified refresh](15-unified-refresh.md) remains the data
+> contract. `/refresh` restores the Refresh Center layout using only unified
+> refresh runs: account A, serial repository B, cancellation and saved history.
+> Optional per-step timestamps are displayed when present; absent timings are
+> unknown, not zero. Historical quick/deep/full modes and analysis UI remain
+> removed. Earlier implementation descriptions below are historical.
+
+The factory defaults to a 90-day chart window ending at the latest saved data
+day, with explicit range choices and Asia/Shanghai display days. Missing
+observations stay empty. Page descriptions use focusable information tooltips;
+external Bot token creation and management occupy separate compact sections.
 
 ## Analysis desk
 

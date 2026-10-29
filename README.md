@@ -19,7 +19,7 @@
 
 Giraffe is a personal GitHub console for saved repository, Issue / PR, security and notification snapshots across connected accounts.
 
-Version 0.27.5 bounds cached-snapshot CPU work and interrupted refresh recovery, and persists cancellation before notifying the runner. Same-day account reuse and fully cached single-repository refreshes need no upstream requests. Automatic refresh covers all explicitly starred repositories plus this account's unobserved non-fork repositories created during the current Asia/Shanghai day, without automatic starring. Saved reads never collect upstream; analysis and legacy refresh modes remain removed. See the [phase-2 contract](docs/15-unified-refresh.md).
+Version 0.28.0 restores the Refresh Center with unified A/B progress, saved run history and cancellation, restores factory chart windows, and tidies token management and activity lists. Cached-snapshot work and interrupted refresh recovery remain bounded, and cancellation is persisted before runner notification. Same-day account reuse and fully cached single-repository refreshes need no upstream requests. Automatic refresh still covers all explicitly starred repositories plus this account's unobserved non-fork repositories created during the current Asia/Shanghai day, without automatic starring. Saved reads never collect upstream; analysis and legacy refresh modes remain removed. See the [phase-2 contract](docs/15-unified-refresh.md).
 
 PAT 使用 AES-256-GCM 加密后存入 D1；数据快照以 JSON 保存，未做应用层加密。这是个人部署，获准访问同一部署的人共享其中的账号与快照。
 
@@ -41,7 +41,7 @@ PAT 使用 AES-256-GCM 加密后存入 D1；数据快照以 JSON 保存，未做
 1. 打开[站点](https://giraffe.hexly.ai)，通过该部署的 Cloudflare Access 访问策略。应用没有单独的注册或登录页。
 2. 在「设置」添加 GitHub **classic PAT**，需要 `repo`、`read:org`、`read:user` 和 `notifications` scope。当前不接受 fine-grained PAT。令牌输入框在提交时立即清空。
 3. The first account becomes active. Adding or switching an account never silently collects data.
-4. View existing saved snapshots, or the empty state when no data is available. Collection is unavailable in this delete-only release.
+4. View saved snapshots, or open Refresh Center to explicitly collect data and inspect account/repository progress, history and partial results.
 5. If needed, create a least-privilege, fixed-account API token in settings for an external consumer. Tokens expire within 90 days. Generic machine resources remain available, but Giraffe does not execute or display analysis jobs.
 
 侧栏身份来自 Cloudflare Access。姓名与头像会通过邮箱的 SHA-256 摘要查询 `lizheng.blog` 作者档案，服务不可用时使用身份信息回退。
