@@ -1,0 +1,61 @@
+import { expect, test } from "@playwright/test";
+import { refreshReviewRun, uiRefreshReviewFixtures } from "./ui-refresh-review-fixtures";
+
+test("refresh center shows saved steps and history and cancels only the current run", async ({
+	page,
+}) => {
+	const fixtures = uiRefreshReviewFixtures();
+	let current = refreshReviewRun();
+	const writes: { path: string; method: string; body: unknown }[] = [];
+	await page.clock.setFixedTime(new Date("2026-10-23T01:01:20.000Z"));
+	await page.route("**/api/**", (route) => {
+		const request = route.request();
+		const path = new URL(request.url()).pathname;
+		if (request.method() !== "GET") {
+			writes.push({ path, method: request.method(), body: request.postDataJSON() });
+			if (path === `/api/refresh-runs/${current.id}/cancel` && request.method() === "POST") {
+				current = { ...current, cancelRequested: true };
+				return route.fulfill({ json: current });
+			}
+			return route.fulfill({
+				status: 403,
+				json: { error: { code: "unexpected_write", message: "Unexpected fixture mutation" } },
+			});
+		}
+		if (path === `/api/refresh-runs/${current.id}`) return route.fulfill({ json: current });
+		return path in fixtures
+			? route.fulfill({ json: fixtures[path] })
+			: route.fulfill({
+					status: 409,
+					json: { error: { code: "snapshot_missing", message: "No fixture" } },
+				});
+	});
+	await page.goto("/refresh");
+	await expect(page.getByRole("heading", { name: "刷新中心", exact: true })).toBeVisible();
+	await expect(page.getByRole("region", { name: "逐仓库刷新进度" })).toContainText(
+		"octocat/basalt",
+	);
+	const requestCounts = page.getByLabel("请求统计", { exact: true });
+	await expect(requestCounts).toContainText("GraphQL");
+	await expect(requestCounts).toContainText("REST");
+	const partialRepo = page
+		.locator("details.refresh-run-row")
+		.filter({ hasText: "octocat/hello-world" });
+	await partialRepo.locator("summary").click();
+	await expect(partialRepo).toContainText("无权限");
+	await expect(partialRepo).toContainText("40 秒");
+	await expect(
+		page.locator("details.refresh-run-row").filter({ hasText: "octocat/field-notes" }),
+	).toContainText("待刷新");
+	const historyRow = page.getByRole("row").filter({ hasText: "2026年10月22日" });
+	await historyRow.getByRole("button", { name: /运行详情/ }).click();
+	await expect(page.getByRole("button", { name: "回到当前", exact: true })).toBeVisible();
+	await expect(page.getByRole("button", { name: "结束本次刷新", exact: true })).toHaveCount(0);
+	await page.getByRole("button", { name: "回到当前", exact: true }).click();
+	expect(writes).toEqual([]);
+	await page.getByRole("button", { name: "结束本次刷新", exact: true }).click();
+	await expect(page.getByText("已请求取消", { exact: true })).toBeVisible();
+	expect(writes).toEqual([
+		{ path: "/api/refresh-runs/refresh-review-current/cancel", method: "POST", body: null },
+	]);
+});

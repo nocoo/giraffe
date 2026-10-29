@@ -1,6 +1,34 @@
 import { expect, test } from "@playwright/test";
 import { factoryFixture, savedFactoryWindow } from "../fixtures/factory-snapshot";
 import { createUiFixtures, projectFactoryFixture } from "./ui-fixtures";
+import { uiRefreshReviewFixtures } from "./ui-refresh-review-fixtures";
+
+test("factory ranges end at saved Shanghai data and keep unobserved days empty", async ({
+	page,
+}) => {
+	const fixtures = uiRefreshReviewFixtures();
+	await page.route("**/api/**", (route) => {
+		const pathname = new URL(route.request().url()).pathname;
+		return route.fulfill({
+			json: fixtures[pathname] ?? { error: { code: "snapshot_missing", message: "No fixture" } },
+			status: pathname in fixtures ? 200 : 409,
+		});
+	});
+	await page.goto("/factory");
+	const range = page.getByRole("radiogroup", { name: "图表窗口", exact: true });
+	await expect(range.getByRole("radio", { name: "90 天", exact: true })).toBeChecked();
+	await expect(page.getByRole("heading", { name: "变化 · 最近 90 天", exact: true })).toBeVisible();
+	const latest = page.locator("button.factory-day").last();
+	await expect(latest).toHaveAttribute("aria-label", /2026-10-22.*Asia\/Shanghai/);
+	await expect(page.locator("button.factory-day").first()).toHaveAttribute("aria-label", /无观测/);
+	await range.getByRole("radio", { name: "30 天", exact: true }).click();
+	await expect(page).toHaveURL(/range=30/);
+	await expect(page.getByRole("heading", { name: "变化 · 最近 30 天", exact: true })).toBeVisible();
+	await expect(page.locator("button.factory-day")).toHaveCount(30);
+	await range.getByRole("radio", { name: "180 天", exact: true }).click();
+	await expect(page.locator("button.factory-day")).toHaveCount(180);
+	await expect(latest).toHaveAttribute("aria-label", /2026-10-22.*Asia\/Shanghai/);
+});
 
 for (const dayCount of [30, 90]) {
 	test(`factory and repository labels follow the ${dayCount}-day observation`, async ({ page }) => {
