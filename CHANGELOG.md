@@ -15,6 +15,11 @@
   distinct from disabled features.
 - Verify same-Shanghai-day account reuse and zero-request fully cached ad-hoc
   refreshes through the real local HTTP boundary.
+- Reject incomplete historical annual calendars even when their saved status
+  claims completeness; newly incomplete calendars remain unavailable/partial.
+- Combine pending observation writes and publication reads into one ordered D1
+  batch before publishing aggregates, reducing persistence round trips without
+  changing saved evidence or content hashes.
 
 ## v0.27.2 - 2026-10-29
 

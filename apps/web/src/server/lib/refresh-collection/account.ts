@@ -210,8 +210,7 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 			context.now,
 		)),
 	);
-	await db.batch(statements);
-	await publish(db, context);
+	await publish(db, context, statements);
 	const saved = (await catalog(db, context.account.id)).results;
 	const requestedRepo = context.run.params.repo;
 	const reasons = [

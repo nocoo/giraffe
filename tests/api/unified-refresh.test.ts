@@ -37,6 +37,7 @@ it("runs real durable A then serial B, serves latest observations and reuses day
 			...(body === undefined ? {} : { body: JSON.stringify(body) }),
 		});
 	async function run(params: unknown): Promise<RefreshRun> {
+		const requestedAt = performance.now();
 		const started = await machine("refresh-runs", "POST", params);
 		expect(started.status).toBe(202);
 		let item = (await started.json()) as RefreshRun;
@@ -55,6 +56,7 @@ it("runs real durable A then serial B, serves latest observations and reuses day
 		expect(timings.a.reused).toBe(item.aReused);
 		expect(timings.a.attempts).toBe(1);
 		let previousFinished = Date.parse(timings.a.finishedAt);
+		const repositoryTimings: { repo: string; durationMs: number; gapMs: number }[] = [];
 		expect(previousFinished).toBeGreaterThanOrEqual(accountStarted);
 		expect(timings.repos.map((step) => step.repo)).toEqual(item.repos);
 		for (const step of timings.repos) {
@@ -63,10 +65,31 @@ it("runs real durable A then serial B, serves latest observations and reuses day
 			expect(startedAt).toBeGreaterThanOrEqual(previousFinished);
 			expect(startedAt - previousFinished).toBeLessThanOrEqual(5_000);
 			expect(step.attempts).toBe(1);
+			repositoryTimings.push({
+				repo: step.repo,
+				durationMs: Date.parse(step.finishedAt) - startedAt,
+				gapMs: startedAt - previousFinished,
+			});
 			previousFinished = Date.parse(step.finishedAt);
 			expect(previousFinished).toBeGreaterThanOrEqual(startedAt);
 		}
 		expect(Date.parse(item.finishedAt)).toBeGreaterThanOrEqual(previousFinished);
+		if (process.env.GIRAFFE_REFRESH_PROFILE === "1") {
+			console.log(
+				"REFRESH_PROFILE",
+				JSON.stringify({
+					suite: process.env.GIRAFFE_SUITE,
+					params: item.params,
+					aReused: item.aReused,
+					requests: item.requestBreakdown,
+					wallMs: Math.round(performance.now() - requestedAt),
+					runMs: Date.parse(item.finishedAt) - Date.parse(item.createdAt),
+					queueMs: accountStarted - Date.parse(timings.queuedAt),
+					aMs: Date.parse(timings.a.finishedAt) - accountStarted,
+					b: repositoryTimings,
+				}),
+			);
+		}
 		return item;
 	}
 	try {
@@ -169,12 +192,12 @@ it("runs real durable A then serial B, serves latest observations and reuses day
 		const cached = await run({ dimensions: ["commits"] });
 		expect(cached.repos).toEqual(["phase2/demo"]);
 		expect(cached.requests).toBe(1);
-		const forced = await run({ dimensions: ["commits"], repo: "phase2/demo", force: true });
+		const forced = await run({ repo: "phase2/demo", force: true });
 		expect(forced.aReused).toBe(false);
-		expect(forced.requests).toBe(2);
+		expect(forced.requests).toBe(5);
 		expect(forced.requestBreakdown).toMatchObject({
 			a: { graphql: 1, rest: 0 },
-			b: { graphql: 1, rest: 0 },
+			b: { graphql: 1, rest: 3 },
 		});
 		const cacheWindow = {
 			repo: "phase2/demo",

@@ -505,8 +505,7 @@ export async function collectRepository(
 				context.now,
 			)),
 		);
-	await db.batch(writes);
-	await publish(db, context);
+	await publish(db, context, writes);
 	const reasons = context.run.params.dimensions.flatMap((dimension) => {
 		const coverage = repo.coverage[dimension];
 		const code =

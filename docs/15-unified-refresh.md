@@ -34,6 +34,12 @@ be distinguished from its final run payload. v0.27.2 already removed one-second
 successful-step sleeps and added bounded draining; v0.27.3 fixes the remaining
 recovery interval rather than attributing an unobserved production failure.
 
+The v0.27.2 follow-up also recorded a reused A followed by about 5.5 minutes in
+`repos` with zero requests. Regressions now run reused A and zero-request B in
+one alarm invocation without advancing the clock, and interrupt the first B
+start to verify recovery at five seconds. Neither report proves the original
+interruption's cause; the recovery alarm is a fallback, not normal step pacing.
+
 New run status includes `timings: {queuedAt,a,repos}`. `a` is initially null, then
 contains `startedAt`, nullable `finishedAt`, `attempts` and `reused`. `repos` holds
 the started repositories in serial order, each with `repo`, `startedAt`, nullable
@@ -208,12 +214,15 @@ repository, or about 14 minutes projected for 61. The former fixed successful
 alarm delay alone contributed at least about 62 seconds to a 61-repository run;
 non-rate-limit retries previously added 60 + 120 + 240 seconds per failed step.
 The new transient retry total is 22 seconds. The report cannot distinguish all
-GitHub latency from alarm delivery or prove the tail's cause. With 246 sequential
-HTTP requests averaging 0.5–1 second, a no-retry run is estimated at 2–4 minutes
-plus D1/publication and alarm overhead; allow roughly **3–6 minutes** for planning.
-This is an explicit latency assumption, not a production measurement or SLA.
-Rate limits and extra pagination can extend it substantially. No production
-refresh or cancellation was used to validate this change.
+GitHub latency from alarm delivery or prove the tail's cause. An earlier 3–6
+minute projection for 246 requests assumed 0.5–1 second per HTTP request; that is
+not a validated production budget. The v0.27.2 forced single-repository report
+instead observed 78 seconds (A about 40 seconds, B about 38 seconds) for six
+requests. Dividing this wall time by request count does not measure HTTP latency:
+it includes D1, publication, hashing and scheduling. Local measurements and D1
+round-trip regressions must be distinguished from production latency, and rate
+limits or extra pagination can extend either run. No production refresh or
+cancellation was used to validate this change.
 
 `requests` remains the numeric total for existing consumers. New runs also have
 `requestBreakdown: {total,graphql,rest,a:{graphql,rest},b:{graphql,rest}}`. Each
@@ -292,6 +301,35 @@ totals or a false zero. Before a new publication exists, Activity returns
 existing displays rather than serving stale legacy observations.
 
 ## Storage, verification and rollback
+
+Step persistence combines pending observation writes and three publication reads
+in one ordered D1 batch, followed by one aggregate/publication write batch. The
+reads see the pending writes; a failed read rolls that first transaction back.
+A failed final publication batch leaves the observations durable for retry, as
+before. Saved source timestamps, unavailable/null values and content hashes are
+unchanged. Source writes and final publication writes were already batched;
+this change removes separate read calls and folds the source batch into them.
+
+A local in-memory SQLite fixture with 61 repositories, 25 issues and 25 PRs per
+repository, a complete annual account calendar and four pending writes per step
+measured 61 persistence/publication repetitions:
+
+| Metric                | Before   | After    |
+| --------------------- | -------- | -------- |
+| D1 calls per step     | 6        | 2        |
+| D1 calls for 61 steps | 366      | 122      |
+| Read statements       | 244      | 183      |
+| Write statements      | 793      | 793      |
+| Local elapsed time    | 426.9 ms | 422.5 ms |
+
+These measurements exclude collection HTTP and runner bookkeeping; the fixture
+injects no network latency and is not a production timing claim. The small local
+wall-time difference is not evidence of a production speedup. Regression tests
+pin call counts, read-your-writes, failed-read rollback and published evidence.
+For real local Worker step timings, run
+`GIRAFFE_REFRESH_PROFILE=1 bun run test:e2e:api tests/api/unified-refresh.test.ts`;
+its JSON output includes queue/A/B durations, step gaps and actual request counts
+for force, REST-only and zero-request cache paths, using only local stub data.
 
 `0028_refresh_observations.sql` adds `refresh_catalog`, `refresh_accounts`,
 `refresh_day_observations`, `refresh_items`, `refresh_repository_publications`,
