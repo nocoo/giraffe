@@ -33,6 +33,13 @@ diagnostics distinguish actual HTTP status from local API wrappers, through the
 runner's persisted error record. GraphQL HTTP-200 rate-limit errors use the same
 latest retry/reset deadline calculation as REST, verified at the durable alarm.
 
+The final fixed-revision review moved the test process to the following day and
+exposed hardcoded same-day fixtures paired with the real clock; that test group
+now isolates and restores Date. Full Chromium verification also caught an overly
+strict selection guard rejecting incomplete but observed calendar cells. Date
+membership, not completeness, determines selection; the status preserves lower
+bounds or missingness. Narrow tests cannot replace the full interaction suite.
+
 ## 2026-10-29 - Preflight local runners and preserve fixture evidence
 
 The first acceptance launch started local GitHub/JWKS stubs before discovering

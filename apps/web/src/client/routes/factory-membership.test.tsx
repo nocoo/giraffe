@@ -168,6 +168,49 @@ it("clears a selected contribution date when the same scope loses its calendar",
 	}
 });
 
+it.each([0, 2])(
+	"keeps partially observed commit dates selectable without inventing a zero: %i",
+	async (commits) => {
+		const raw = factoryFixture();
+		raw.window = {
+			since: "2026-09-10T00:00:00Z",
+			until: "2026-09-10T23:59:59.999Z",
+			timezone: "UTC",
+		};
+		const repo = raw.repos[0];
+		if (!repo) throw new Error("fixture");
+		repo.coverage.commits.status = "limited";
+		repo.coverage.commits.observed = 1;
+		repo.coverage.commits.fetchedAt = raw.fetched_at;
+		repo.metrics.days = { "2026-09-10": { ...repo.metrics, commits } };
+		vi.mocked(loadFactory).mockResolvedValue({
+			...raw,
+			contribution: null,
+			selectedRepos: raw.repos,
+		});
+		vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+		const container = document.createElement("div");
+		const root = createRoot(container);
+		try {
+			await act(async () =>
+				root.render(
+					<MemoryRouter>
+						<FactoryPage />
+					</MemoryRouter>,
+				),
+			);
+			expect(container.querySelector("[data-calendar-days]")).not.toBeNull();
+			await act(async () =>
+				container.querySelector<HTMLButtonElement>("[data-calendar-days]")?.click(),
+			);
+			expect(container.textContent).toContain(`${commits ? "≥ 2" : "—"} 提交；已高亮每日账本`);
+			expect(container.querySelector(".factory-ledger-selected")).not.toBeNull();
+		} finally {
+			await act(async () => root.unmount());
+		}
+	},
+);
+
 it.each([false, true])(
 	"labels source calendar days and withholds mixed timezones: %s",
 	async (mixed) => {

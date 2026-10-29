@@ -153,14 +153,18 @@ export function FactoryPage() {
 	const day = (
 		calendar === "contributions"
 			? snapshot?.contribution?.days.some((entry) => entry.date === selectedDay)
-			: !board?.mixedTimezones &&
-				board?.days.some((entry) => entry.date === selectedDay && entry.complete.commits)
+			: !board?.mixedTimezones && board?.days.some((entry) => entry.date === selectedDay)
 	)
 		? selectedDay
 		: "";
 	useEffect(() => {
 		if (selectedDay && !day) setDay("");
 	}, [selectedDay, day]);
+	const selectedCommit = board?.days.find((entry) => entry.date === day);
+	const selectedCommitCount =
+		selectedCommit && (selectedCommit.complete.commits || selectedCommit.commits > 0)
+			? formatObservedCount(selectedCommit.commits, selectedCommit.complete.commits)
+			: "—";
 	const stale = deferredQuery !== query;
 	const edges = useMemo(() => dependencyEdges(snapshot?.repos ?? []), [snapshot]);
 	const visibleEdges = edges;
@@ -244,7 +248,7 @@ export function FactoryPage() {
 					<p className="mt-3 text-xs" role="status">
 						{formatDayRange(day, day, calendarTimezone ?? board.timezone)} ·{" "}
 						{calendar === "commits"
-							? `${board.days.find((d) => d.date === day)?.commits ?? 0} 提交；已高亮每日账本；明细日期筛选独立。`
+							? `${selectedCommitCount} 提交；已高亮每日账本；明细日期筛选独立。`
 							: `${snapshot.contribution?.days.find((d) => d.date === day)?.count ?? 0} 账号贡献。`}
 						<a
 							className="factory-link ml-2"
