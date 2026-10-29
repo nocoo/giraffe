@@ -1,7 +1,7 @@
 # UI 0.28.0 visual evidence
 
 Baseline: `b3ddaa573828aa080620cef17e396403b432bc58` (v0.27.2).
-Candidate client tree: `a33e7724f2f336c05fb5a95cee84a970fd101133` (v0.28.0).
+Candidate client tree: `d607ada3ba76cd795d99bd3b0f5d8c09a4ce51f7` (v0.28.0).
 Integration base: `6ad6eb78113e2f18cc0a4b4c0d0dc7ee02c75808` (v0.27.4).
 
 The client tree is the Git tree object at `HEAD:apps/web/src/client`, pinning the
@@ -17,6 +17,10 @@ Terminal-unavailable days can be settled cache windows without becoming availabl
 measurements; unavailable status, zero observed days and null counts stay intact.
 The client rejects unavailable coverage when projecting measurement availability
 and complete observation days, even when settled cache windows are present.
+Mixed available/unavailable alert streams remain observed, but their settlement
+windows do not identify which dates have complete measurements. Daily alert
+completeness therefore remains unknown unless overall alert coverage is complete;
+partial flow streams retain their individually complete day windows.
 
 Chromium captures use the same fixed clock, saved API fixtures and localhost-only
 static SPA hosts. No production request or real credential is involved.

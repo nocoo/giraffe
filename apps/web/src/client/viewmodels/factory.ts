@@ -370,7 +370,8 @@ function coversWindow(
 	to: number,
 ) {
 	const coverage = repo.coverage[stream];
-	if (coverage.status === "unavailable") return false;
+	if (coverage.status === "unavailable" || (stream === "alerts" && coverage.status !== "complete"))
+		return false;
 	const windows =
 		coverage.completeWindows ?? (coverage.status === "complete" ? [windowOf(repo, stream)] : []);
 	const bounds = windows.map(calendarBounds);

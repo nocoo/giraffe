@@ -2441,3 +2441,11 @@ not only unchanged screenshots or fixtures from the previous backend contract.
 Token recovery also needs response ordering: an older initial read can fail or
 return an empty list after a successful creation and reload. Invalidate that
 initial request when the newer list request starts, and test both late outcomes.
+
+Rejecting only overall unavailable coverage still admitted mixed security days:
+one available day made the stream partial while its settled windows included a
+terminal-unavailable day. The publication identifies no available-day subset, so
+partial alert windows cannot establish exact daily measurement completeness.
+Keep stream availability and complete flow-day evidence, but conservatively
+withhold alert-day completeness until overall alert coverage is complete. Test
+mixed real producer output and cached reuse, not only all-unavailable streams.
