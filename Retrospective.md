@@ -2357,3 +2357,21 @@ reset exhaustion, lost settlement acknowledgements and cleanup failures. No
 production trace or production request was collected in this change. The CPU
 amplification is proven locally; it is not proof of the unique cause of the
 reported production reset, and local latency is not production acceptance.
+
+## 2026-10-29 - Preserve refresh evidence and response ordering
+
+The restored Refresh Center initially assumed every retained run contained the
+current diagnostic fields. The store returns saved payloads unchanged, and the
+documented contract permits missing historical diagnostics. Review reproduced a
+history-page crash, terminal step durations that kept growing, and fatal work
+misclassified as unattempted. Projections now preserve unknown results, bound
+unfinished step measurements by the run end, and distinguish attributed failures
+from untouched repositories. Client tests include mixed historical/current rows
+and opening an older run without inventing complete dimensions or request counts.
+
+Review also reproduced out-of-order cancellation/poll responses and history from
+another tab's active account. Accepted cancellation and terminal states are now
+monotonic per run; stale cancellation responses or errors cannot replace a newer
+run. History validates the returned account before accepting its records and
+reconciles the session on conflict. Exercise response orders and account identity
+at each independent read boundary, not only the provider's happy-path polling.
