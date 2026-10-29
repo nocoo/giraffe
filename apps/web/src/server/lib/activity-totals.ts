@@ -21,8 +21,8 @@ const metrics = [...numericMetrics, "red_default_branch"] as const;
 const streams: Record<Metric, string[]> = {
 	ci_runs: ["actions"],
 	merged_prs: ["prs"],
-	dependency_prs: ["prs"],
-	other_prs: ["prs"],
+	dependency_prs: ["prs", "pr_classification"],
+	other_prs: ["prs", "pr_classification"],
 	issues_opened: ["issues"],
 	issues_closed: ["issues"],
 	releases: ["releases"],

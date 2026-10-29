@@ -25,6 +25,27 @@ export function refreshGraphqlStub(
 		primaryLanguage: { name: "TypeScript" },
 	};
 	const rateLimit = { remaining: 4999, resetAt: new Date(Date.now() + 3_600_000).toISOString() };
+	const issueAt = new Date(
+		Date.parse(String(variables.since0 ?? "2026-10-28T00:00:00Z")) + 3_600_000,
+	).toISOString();
+	const issues =
+		owner === "phase2"
+			? [
+					{
+						id: "I_refresh_phase2",
+						number: 1,
+						title: "Fresh lifecycle observation",
+						url: "https://github.com/phase2/demo/issues/1",
+						state: "OPEN",
+						createdAt: issueAt,
+						updatedAt: issueAt,
+						closedAt: null,
+						author: { login: "phase2" },
+						labels: { nodes: [] },
+						comments: { totalCount: 0 },
+					},
+				]
+			: [];
 	if (query.includes("query RefreshAccount")) {
 		const since = Date.parse(String(variables.since));
 		const until = Date.parse(String(variables.until));
@@ -76,13 +97,13 @@ export function refreshGraphqlStub(
 						pageInfo: { hasNextPage: false },
 					},
 					repositoryTopics: { nodes: [] },
-					openIssues: { totalCount: 0 },
+					openIssues: { totalCount: issues.length },
 					closedIssues: { totalCount: 0 },
 					openPrs: { totalCount: 0 },
 					closedPrs: { totalCount: 0 },
 					mergedPrs: { totalCount: 0 },
 					releases: { totalCount: 0 },
-					issues: empty,
+					issues: { ...empty, nodes: issues },
 					pullRequests: empty,
 				},
 				rateLimit,

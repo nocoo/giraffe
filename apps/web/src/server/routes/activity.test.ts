@@ -1,11 +1,55 @@
 import { Hono } from "hono";
 import { expect, it } from "vitest";
+import { refreshActivityFixture } from "../../../../../tests/fixtures/refresh-activity";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import type { AppVars, Env } from "../env";
 import { createApp } from "../index";
 import { createApiToken } from "../lib/api-tokens";
 import { createDb } from "../lib/db/d1";
 import { activityEtag } from "./activity";
+
+it("serves partial meaningful Activity200 after a new refresh on browser and machine GETs", async () => {
+	const { raw } = await refreshActivityFixture();
+	const token = await createApiToken(createDb(raw), {
+		accountId: "a",
+		label: "activity",
+		scopes: ["observations:read"],
+		expiresInDays: 1,
+		creator: "fixture",
+	});
+	const app = createApp();
+	const env = {
+		DB: raw,
+		ENVIRONMENT: "development",
+		GITHUB_API_BASE: "http://activity.fixture",
+	} as Env;
+	for (const path of ["/api/activity", "/api/v1/accounts/a/activity"]) {
+		const headers = path.startsWith("/api/v1/") ? { Authorization: `Bearer ${token.token}` } : {};
+		const response = await app.request(`http://localhost${path}`, { headers }, env);
+		expect(response.status).toBe(200);
+		expect(await response.json()).toMatchObject({
+			runId: "current-refresh",
+			totals: { merged_prs: 1, issues_opened: 1 },
+			repos: [
+				{
+					commits: { default: null, other: null, items: null },
+					coverage: { commits: { status: "unavailable" } },
+				},
+			],
+		});
+		const etag = response.headers.get("etag");
+		expect(etag).toMatch(/^"[a-f0-9]+"$/);
+		expect(
+			(
+				await app.request(
+					`http://localhost${path}`,
+					{ headers: { ...headers, "If-None-Match": String(etag) } },
+					env,
+				)
+			).status,
+		).toBe(304);
+	}
+});
 
 it.each(["/api/activity", "/api/v1/accounts/a/activity"])(
 	"keeps private successful and conditional activity headers for %s",

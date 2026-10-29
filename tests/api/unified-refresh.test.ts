@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import type { ActivitySnapshot } from "../../apps/web/src/lib/activity-types";
 import type { RefreshRun } from "../../apps/web/src/lib/refresh-types";
 
 const base = process.env.GIRAFFE_E2E ?? "http://127.0.0.1:17045";
@@ -47,6 +48,7 @@ it("runs real durable A then serial B, serves latest observations and reuses day
 		return item;
 	}
 	try {
+		expect((await browser(`accounts/${account.id}/activate`, "POST")).status).toBe(200);
 		const first = await run({
 			dimensions: ["commits", "issues", "prs", "actions", "releases", "alerts"],
 		});
@@ -68,6 +70,16 @@ it("runs real durable A then serial B, serves latest observations and reuses day
 			const response = await machine(path);
 			expect(response.status, path).toBe(200);
 		}
+		const activityResponse = await machine("activity");
+		expect(activityResponse.status).toBe(200);
+		const activity = (await activityResponse.json()) as ActivitySnapshot;
+		expect(activity.runId).toBe(first.id);
+		expect(activity.repos[0]?.issues.opened).toEqual([
+			expect.objectContaining({ title: "Fresh lifecycle observation" }),
+		]);
+		expect(activity.repos[0]?.commits).toMatchObject({ default: null, other: null, items: null });
+		expect(activity.repos[0]?.coverage.commits?.status).toBe("unavailable");
+		expect((await browser("activity")).status).toBe(200);
 		const defaultRun = await run({ dimensions: ["commits"] });
 		expect(defaultRun.repos).toEqual([]);
 		expect(defaultRun.requests).toBe(1);
