@@ -237,7 +237,6 @@ function known(d: Day, key: keyof Day, stream: keyof Day["complete"]): number | 
 	return d.complete[stream] || value ? value : null;
 }
 
-/** Missing days stay unknown; incomplete days expose their observed lower bound. */
 function shown(value: number | null, complete: boolean): string {
 	if (value === null) return "未知";
 	return complete ? n(value) : value ? `≥ ${n(value)}` : "未知";

@@ -2,7 +2,6 @@ import { Button, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from
 import { Info } from "lucide-react";
 import { type ReactNode, useState } from "react";
 
-/** Focusable info button beside a key label; the explanation stays out of the header. */
 export function HelpTooltip({
 	label,
 	children,
@@ -26,7 +25,6 @@ export function HelpTooltip({
 						onFocus={() => setOpen(true)}
 						onBlur={() => setOpen(false)}
 						onClick={(event) => {
-							// Keep tap-to-open working; Radix otherwise closes tooltips on click.
 							event.preventDefault();
 							setOpen(true);
 						}}

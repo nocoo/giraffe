@@ -137,7 +137,6 @@ export function factoryBoard(
 	const lastWindowDay = isoDay(end - 1);
 	const latestDay = latestObservedDay(repos, firstDay, lastWindowDay);
 	const latestStart = Date.parse(`${latestDay}T00:00:00.000Z`);
-	// An explicit range keeps its full span; the default clamps to available history.
 	const rangeStart = latestStart - (rangeDays - 1) * DAY_MS;
 	const firstDayStart = Date.parse(`${firstDay}T00:00:00.000Z`);
 	const startDay = isoDay(explicitRange ? rangeStart : Math.max(firstDayStart, rangeStart));
@@ -507,7 +506,6 @@ const MISSING_DAY: DayFlow = {
 function missingDay(): DayFlow {
 	return { ...MISSING_DAY };
 }
-/** Latest published repo×day, including zero-activity days; falls back to the window end. */
 function latestObservedDay(repos: FactoryRepo[], firstDay: string, lastWindowDay: string) {
 	let latest = "";
 	for (const repo of repos)
@@ -542,7 +540,6 @@ function walkBack(
 	return out;
 }
 
-/** Stock is exact only when every selected repository is complete through the window end. */
 function addStock(days: BoardDay[], repos: FactoryRepo[], stockKnown: boolean) {
 	const exact = (stream: "issues" | "prs") =>
 		stockKnown && repos.length > 0 && repos.every((r) => r.coverage[stream].status === "complete");
