@@ -313,7 +313,9 @@ const github = await listen(17046, (req, res) => {
 		const refreshOwner = auth.includes("U".repeat(8)) ? "phase2" : "octocat";
 		const refreshRest = refreshRestStub(url);
 		if (refreshRest !== null) {
-			sendJson(res, 200, refreshRest);
+			if (url.pathname.endsWith("/code-scanning/alerts"))
+				sendJson(res, 404, { message: "Not Found" });
+			else sendJson(res, 200, refreshRest);
 			return;
 		}
 		const security = securityFixture(auth);

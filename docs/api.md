@@ -1,6 +1,6 @@
 # Machine API v1 Reference
 
-The v0.27.2 release provides one unified A-then-B refresh and keeps the analysis UI
+The v0.27.3 release provides one unified A-then-B refresh and keeps the analysis UI
 removed. Current run creation/status, parameters, stars, caching and daily
 scheduling are specified in [the refresh contract](15-unified-refresh.md).
 
@@ -150,6 +150,13 @@ New entries may include `failures: [{dimension,code,httpStatus,graphqlType,graph
 Unknown diagnostic metadata is null, never raw upstream error text.
 `aReused` is true when a non-forced single-repository request reuses a complete
 same-Shanghai-day A: its A request count is zero, without renewing source timestamps.
+
+New runs expose `timings: {queuedAt,a,repos}`. The account entry `a` is null until
+started, then contains `startedAt`, nullable `finishedAt`, `attempts` and `reused`.
+Each started repository has an ordered entry with `repo`, `startedAt`, nullable
+`finishedAt` and `attempts`. These UTC execution timestamps measure queue and
+step latency, not observation freshness; a reused A still records its local step.
+Historical runs are not backfilled with invented execution timestamps.
 
 Request/reason/cancellation fields are produced since v0.27.1; `failures` and
 `aReused` are introduced in v0.27.2. Historical terminal v0.27.0

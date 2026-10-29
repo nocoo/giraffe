@@ -1,4 +1,4 @@
-# Phase 2: unified refresh (v0.27.2)
+# Phase 2: unified refresh (v0.27.3)
 
 This is the authorized replacement for the collection stack retired in v0.26.0.
 There is one task type, not quick/deep/full modes. The Dashboard keeps its saved
@@ -17,6 +17,32 @@ rate-limit failures wait at least 60 seconds and honor any later `retry-after` o
 reset deadline. After the bounded retries, repository failures remain partial,
 while fatal account/authentication failures stop the run.
 There is no queue consumer and no HTTP `waitUntil`-only collection task.
+
+POST arms the first durable alarm at the current time. Before persisting a step
+start, the runner records a recovery alarm five seconds ahead, not five minutes.
+Healthy steps continue in the same handler; budget/step-cap yields leave an alarm
+due immediately. These bounds describe requested scheduling delays, not a
+Cloudflare alarm-delivery SLA. A crash may replay the interrupted step; rate-limit
+and transient retry deadlines still take precedence once the failure is recorded.
+
+The v0.27.1 acceptance recorded `running/account` with zero requests for about
+five minutes. Both v0.27.1 and v0.27.2 armed a 300-second recovery alarm before
+collection, and only successful settlement replaced it. Fault-injection tests
+reproduce that recovery gap. The incident has no trace proving what interrupted
+the original handler; deployment eviction versus a failed/stalled handler cannot
+be distinguished from its final run payload. v0.27.2 already removed one-second
+successful-step sleeps and added bounded draining; v0.27.3 fixes the remaining
+recovery interval rather than attributing an unobserved production failure.
+
+New run status includes `timings: {queuedAt,a,repos}`. `a` is initially null, then
+contains `startedAt`, nullable `finishedAt`, `attempts` and `reused`. `repos` holds
+the started repositories in serial order, each with `repo`, `startedAt`, nullable
+`finishedAt` and `attempts`. `attempts` counts settled collection attempts, not
+crashes before settlement; `startedAt` remains the first observed start across
+retries. Finish stays null until the step completes, fails permanently or is
+cancelled. Queued cancellation creates no step timings. All execution times are
+UTC and remain distinct from cached observation timestamps. Historical runs are
+not backfilled.
 
 Cloudflare cron `0 19 * * *` starts the default refresh at **03:00 Asia/Shanghai**.
 Scheduled requests are deduplicated by account and Shanghai day; a daily request
@@ -90,10 +116,14 @@ REST releases as newly collected GraphQL data.
 - Actions and security alerts use bounded REST samples. CI represents
   the latest/short-window sample, not exhaustive historical execution.
   Alerts are truncated only for a nonempty sample with a next-page link. An empty
-  sample is complete. HTTP 403/404 features are unavailable, not truncated; mixed
-  available/unavailable features keep aggregate alerts unavailable and uncached.
-  Per-feature security counts preserve an available zero versus an unavailable
-  null. A later non-forced run can collect newly accessible features.
+  sample is complete. Security HTTP 404 and explicitly feature-disabled 403
+  responses are terminal unavailable observations: complete for daily caching,
+  unavailable for display, and not a partial run. Mixed available/terminal-unavailable
+  features are cacheable without replacing unavailable null counts with zero.
+  Permission-restricted or unrecognized 403 responses remain unavailable and
+  uncached; authentication, rate limits and transient failures remain failures.
+  Force, a missing day or a different observation day probes terminal unavailable
+  features again. A non-forced repeat of the same complete day does not.
 - Dependency analysis is unsupported and displayed as missing. Dependency alerts
   can be collected. Traffic, author-event ledgers and other uncollected dimensions
   remain explicit empty/unavailable observations, never legacy fallbacks.
@@ -126,6 +156,25 @@ dimensions, no retry and no extra issue/PR pages. A is per account, not per repo
 | B alerts: Dependabot + code scanning                                    | 0       | 2    | 2     |
 | B total per uncached repository                                         | 1       | 3    | 4     |
 | B complete cache hit for all requested days/dimensions                  | 0       | 0    | 0     |
+
+On non-forced runs with a saved repository publication, B skips GraphQL when all
+requested GraphQL dimensions are cached, even if actions or alerts still need
+REST collection. It uses the account catalogue's immutable repository identity
+and retains saved detail metadata. A first REST-only publication still needs one
+GraphQL metadata query; force also refreshes metadata. Fully cached B needs none.
+
+For a same-Shanghai-day, single-repository non-forced repeat: A costs zero, fully
+cached B costs zero, and a run missing only both security features costs two REST
+requests with no GraphQL. Terminal unavailable security days count as cached.
+With no rate limit/retry and typical network/D1 latency, plan for seconds rather
+than minutes (roughly 1–5 seconds fully cached, 2–10 seconds with two REST calls).
+These are planning estimates, not production measurements or latency guarantees;
+there is no intentional healthy-path scheduling wait.
+
+Retry not-before deadlines are persisted with their run/step identity and checked
+before collection after every wakeup. A failed final alarm write cannot turn a
+five-second recovery into an early rate-limit retry. Cancellation is evaluated
+first and does not wait for the retry deadline.
 
 Before v0.27.1, B used one GraphQL and four REST requests, including a redundant
 REST release sample. Releases now share the main query, reducing the normal B

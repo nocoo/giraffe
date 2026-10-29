@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.27.3 - 2026-10-29
+
+### Fixed
+
+- Bound interrupted-step recovery instead of leaving refreshes waiting for a
+  five-minute safety alarm. Record queue, account and repository step timestamps
+  in run status without renewing cached evidence timestamps.
+- Skip repository GraphQL when all requested GraphQL dimensions are cached,
+  including runs that still need REST actions or security observations.
+- Cache terminal unavailable security features for the observation day: HTTP
+  404 and explicitly disabled 403 responses no longer make completed runs partial.
+  Preserve unavailable null counts and keep access restrictions and rate limits
+  distinct from disabled features.
+- Verify same-Shanghai-day account reuse and zero-request fully cached ad-hoc
+  refreshes through the real local HTTP boundary.
+
 ## v0.27.2 - 2026-10-29
 
 ### Fixed
