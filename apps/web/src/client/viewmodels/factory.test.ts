@@ -491,6 +491,24 @@ describe("software factory view model", () => {
 			expect(complete.days.slice(-2).map((day) => day.complete.alerts)).toEqual([true, true]);
 		},
 	);
+	it.each(["partial", "limited"] as const)(
+		"rejects settlement-only evidence in an unobserved %s alert stream",
+		(status) => {
+			const snapshot = ready();
+			const repo = snapshot.repos[0];
+			if (!repo) throw new Error("fixture");
+			repo.coverage.alerts.status = status;
+			repo.coverage.alerts.observed = 0;
+			repo.coverage.alerts.completeWindows = shanghaiCompleteDays(["2026-09-14"]);
+			expect(hasFactoryMeasurement(repo, "alerts")).toBe(false);
+			expect(factoryBoard(snapshot, [repo], [repo]).observed.alerts).toBe(false);
+			repo.coverage.alerts.observed = 1;
+			expect(hasFactoryMeasurement(repo, "alerts")).toBe(true);
+			repo.coverage.alerts.observed = 0;
+			repo.coverage.alerts.status = "complete";
+			expect(hasFactoryMeasurement(repo, "alerts")).toBe(true);
+		},
+	);
 	it("unions Asia/Shanghai day windows without crossing the local day boundary", () => {
 		const snapshot = ready();
 		const repo = snapshot.repos[0];

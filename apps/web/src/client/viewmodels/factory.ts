@@ -808,7 +808,7 @@ export function hasFactoryMeasurement(repo: FactoryRepo, stream: FactoryStreamNa
 	return (
 		coverage.status === "complete" ||
 		coverage.observed > 0 ||
-		(coverage.completeWindows?.length ?? 0) > 0
+		(stream !== "alerts" && (coverage.completeWindows?.length ?? 0) > 0)
 	);
 }
 

@@ -2449,3 +2449,8 @@ partial alert windows cannot establish exact daily measurement completeness.
 Keep stream availability and complete flow-day evidence, but conservatively
 withhold alert-day completeness until overall alert coverage is complete. Test
 mixed real producer output and cached reuse, not only all-unavailable streams.
+Also test the absence of available days: a terminal-unavailable day followed by
+a temporary failure publishes partial coverage with zero observed days and a
+nonempty settlement window. Alert availability must require complete status or
+positive observed evidence, never that window alone. Preserve the separate flow
+stream behavior, where a complete day window still proves an observed zero.
