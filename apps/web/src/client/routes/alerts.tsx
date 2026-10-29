@@ -238,7 +238,6 @@ export function AlertsPage() {
 															<p className="mt-1 text-xs">
 																<ProjectLink
 																	repo={row.name_with_owner}
-																	size={16}
 																	className="text-xs font-normal text-basalt-muted-foreground"
 																/>
 															</p>

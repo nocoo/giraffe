@@ -219,9 +219,10 @@
 	min-width: 0;
 }
 .refresh-mini-dims {
-	display: grid;
-	grid-template-columns: repeat(6, minmax(0, 1fr));
+	display: flex;
+	flex-wrap: wrap;
 	gap: 4px;
+	min-width: 0;
 }
 .refresh-queue-count {
 	font-size: var(--text-xs);
@@ -468,7 +469,7 @@
 }
 .refresh-run-row > summary {
 	display: grid;
-	grid-template-columns: 16px minmax(0, 1fr) minmax(150px, 190px) 96px;
+	grid-template-columns: 16px minmax(0, 1fr) auto 96px;
 	gap: 12px;
 	align-items: center;
 	padding: 14px 16px;
@@ -488,16 +489,17 @@
 }
 .refresh-mini-dims > span {
 	display: flex;
+	flex: 0 0 auto;
 	justify-content: center;
 	align-items: center;
 	border-radius: 3px;
 	height: 18px;
-	padding-inline: 2px;
+	padding-inline: 6px;
 	background: var(--color-basalt-border);
 	font-size: var(--text-xs);
 	line-height: 1;
 	color: var(--color-basalt-foreground);
-	overflow: hidden;
+	white-space: nowrap;
 }
 .refresh-dimension-list > li {
 	border: 1px solid var(--color-basalt-border);
@@ -805,7 +807,6 @@ details[open] > summary > .refresh-disclosure {
 	.refresh-mini-dims {
 		grid-column: 2 / -1;
 		grid-row: 2;
-		grid-template-columns: repeat(3, minmax(0, 1fr));
 	}
 	.refresh-queue-count {
 		grid-column: 3;

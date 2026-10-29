@@ -14,7 +14,6 @@ export function IconLabel({
 	children: ReactNode;
 	className?: string;
 	iconClassName?: string;
-	/** Long explanation kept beside the label as an accessible info tooltip. */
 	hint?: ReactNode;
 	hintLabel?: string;
 }) {

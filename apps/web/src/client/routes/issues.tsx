@@ -300,7 +300,6 @@ export function IssuesPage() {
 																<span aria-hidden="true">·</span>
 																<ProjectLink
 																	repo={row.name_with_owner}
-																	size={16}
 																	className="text-xs font-normal text-basalt-muted-foreground"
 																/>
 															</div>

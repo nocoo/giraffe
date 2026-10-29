@@ -118,7 +118,6 @@ export function ActivitySectionBody({
 									<div className="flex flex-wrap items-center gap-x-basalt-space-lg gap-y-basalt-space-xs text-xs text-basalt-muted-foreground">
 										<ProjectLink
 											repo={row.repo}
-											size={16}
 											className="text-xs font-normal text-basalt-muted-foreground"
 										/>
 										{section.key === "ci" || section.key === "deploy" ? (

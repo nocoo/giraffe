@@ -1,5 +1,23 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { uiRefreshReviewFixtures } from "./ui-refresh-review-fixtures";
+
+async function expectDimensionChipsFit(page: Page) {
+	const chips = page.locator(".refresh-mini-dims > span");
+	expect(await chips.allTextContents()).toEqual(
+		expect.arrayContaining(["提交", "Issues", "PRs", "CI", "发布", "告警"]),
+	);
+	const measured = await chips.evaluateAll((nodes) =>
+		nodes.map((node) => ({
+			label: node.textContent ?? "",
+			overflow: node.scrollWidth - node.clientWidth,
+		})),
+	);
+	expect(measured.filter((chip) => chip.overflow > 0)).toEqual([]);
+	const rowOverflow = await page
+		.locator(".refresh-run-row > summary")
+		.evaluateAll((nodes) => nodes.map((node) => node.scrollWidth - node.clientWidth));
+	expect(rowOverflow.filter((delta) => delta > 0)).toEqual([]);
+}
 
 for (const viewport of [
 	{ width: 1440, height: 1100 },
@@ -54,8 +72,34 @@ for (const viewport of [
 					animations: "disabled",
 					fullPage: true,
 				});
+				if (process.env.GIRAFFE_UI_BASELINE !== "1") {
+					if (path === "settings" && viewport.width < 700) {
+						const tokenLabel = page.getByRole("textbox", { name: "Daily digest bot 标签" });
+						await tokenLabel.scrollIntoViewIfNeeded();
+						await expect(tokenLabel).toBeVisible();
+						await page.screenshot({
+							path: info.outputPath(`settings-tokens-${theme}-${viewport.width}.png`),
+							animations: "disabled",
+						});
+					}
+					if (path === "factory" && viewport.width < 700) {
+						await page.locator("#factory-change-title").evaluate((node) => {
+							node.scrollIntoView({ block: "start" });
+							const header = document.querySelector("header")?.getBoundingClientRect().height ?? 0;
+							window.scrollBy(0, -header - 8);
+						});
+						await expect(
+							page.getByRole("heading", { name: "提交产出与覆盖面", exact: true }),
+						).toBeVisible();
+						await page.screenshot({
+							path: info.outputPath(`factory-charts-${theme}-${viewport.width}.png`),
+							animations: "disabled",
+						});
+					}
+				}
 				if (path === "refresh" && process.env.GIRAFFE_UI_BASELINE !== "1") {
 					await page.locator('section[aria-label="刷新记录"]').scrollIntoViewIfNeeded();
+					await expectDimensionChipsFit(page);
 					await page.screenshot({
 						path: info.outputPath(`refresh-details-${theme}-${viewport.width}.png`),
 						animations: "disabled",
