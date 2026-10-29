@@ -1,7 +1,39 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { assemblePages, latestSnapshotGroups, physicalKinds, splitPages } from "./snapshot-pages";
 
 describe("snapshot-pages", () => {
+	it("bounds UTF-8 encoding work linearly when a cached inbox spans two pages", () => {
+		const payload = {
+			fetched_at: "2026-10-29T00:00:00.000Z",
+			truncated: false,
+			issues: Array.from({ length: 6_000 }, (_, index) => ({
+				id: String(index),
+				title: "缓存😀".repeat(30),
+			})),
+		};
+		const encode = TextEncoder.prototype.encode;
+		const inputBytes = encode.call(new TextEncoder(), JSON.stringify(payload)).length;
+		let encodedBytes = 0;
+		const spy = vi.spyOn(TextEncoder.prototype, "encode").mockImplementation(function (
+			this: TextEncoder,
+			text,
+		) {
+			const bytes = encode.call(this, text);
+			encodedBytes += bytes.length;
+			return bytes;
+		});
+		try {
+			const result = splitPages("issues", payload);
+			expect(result.pages).toHaveLength(2);
+			expect(result.truncated).toBe(false);
+			expect(assemblePages("issues", result.pages)).toEqual(payload);
+			expect(encodedBytes).toBeLessThan(inputBytes * 4);
+			for (const page of result.pages)
+				expect(encode.call(new TextEncoder(), page.payload).length).toBeLessThanOrEqual(1_500_000);
+		} finally {
+			spy.mockRestore();
+		}
+	});
 	it.each([
 		["issues", "issues"],
 		["prs", "pull_requests"],
