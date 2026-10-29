@@ -5,6 +5,7 @@ import { sqliteFixture } from "../../../../../../tests/fixtures/sqlite";
 import { createDb } from "../db/d1";
 import { ApiError } from "../errors";
 import {
+	readFactoryResource,
 	readMachineAccountObservation,
 	readMachineRepositoryObservation,
 } from "../machine-observations";
@@ -744,6 +745,63 @@ describe("unified refresh collection", () => {
 			);
 		},
 	);
+	it("keeps an unavailable alert feature from truncating a complete feature", async () => {
+		const context = await fixture();
+		context.run.params.dimensions = ["alerts"];
+		upstream(undefined, {
+			"/dependabot/alerts": [],
+			"/code-scanning/alerts": Response.json({ message: "no analysis found" }, { status: 404 }),
+		});
+		await collectAccount(context);
+		expect(await collectRepository(context, "owner/project")).toEqual({
+			requests: 3,
+			requestBreakdown: { graphql: 1, rest: 2 },
+			partial: true,
+			reasons: ["alerts:not_found"],
+		});
+		expect(await sourceSnapshot(context, "repo:owner/project:security")).toMatchObject({
+			truncated: false,
+			unavailable: true,
+			dependabot_open: 0,
+			code_scanning_open: null,
+			features: {
+				dependabot: { status: "available" },
+				code_scanning: { status: "unavailable", reason_code: "not_found" },
+			},
+		});
+		expect((await observation(context, "alerts")).results[0]?.status).toBe("unavailable");
+		expect(
+			await readFactoryResource(collectionDb(context), "a", "owner/project", "alerts"),
+		).toMatchObject({ data: { unavailable: true, coverage: { status: "unavailable" } } });
+		upstream([{ node: repo() }], {
+			"/code-scanning/alerts": [{ number: 1, state: "open", created_at: now }],
+		});
+		expect(await collectRepository(context, "owner/project")).toMatchObject({
+			requests: 3,
+			partial: false,
+		});
+		expect(await sourceSnapshot(context, "repo:owner/project:security")).toMatchObject({
+			code_scanning_open: 1,
+			unavailable: false,
+			truncated: false,
+		});
+	});
+	it("treats an empty alert page as complete instead of truncated", async () => {
+		const context = await fixture();
+		context.run.params.dimensions = ["alerts"];
+		upstream(undefined, {
+			"/dependabot/alerts": Response.json([], {
+				headers: { link: '<https://github.test/next>; rel="next"' },
+			}),
+		});
+		await collectAccount(context);
+		expect((await collectRepository(context, "owner/project")).partial).toBe(false);
+		expect(await sourceSnapshot(context, "repo:owner/project:security")).toMatchObject({
+			truncated: false,
+			dependabot_open: 0,
+			features: { dependabot: { status: "available" } },
+		});
+	});
 	it("records disabled alerts separately from permission-denied alerts without successful zeros", async () => {
 		const context = await fixture();
 		upstream(undefined, {
@@ -778,7 +836,7 @@ describe("unified refresh collection", () => {
 			const data =
 				path === "/actions/runs"
 					? { total_count: 101, workflow_runs: [{ id: 1, created_at: "2026-10-28T01:00:00Z" }] }
-					: [];
+					: [{ number: 1, state: "open" }];
 			upstream(undefined, {
 				[path]: Response.json(data, {
 					headers: { link: '<https://github.test/next>; rel="next"' },
@@ -786,6 +844,11 @@ describe("unified refresh collection", () => {
 			});
 			await collectAccount(context);
 			expect((await collectRepository(context, "owner/project")).partial).toBe(true);
+			if (path === "/dependabot/alerts")
+				expect(await sourceSnapshot(context, "repo:owner/project:security")).toMatchObject({
+					truncated: true,
+					features: { dependabot: { status: "partial" } },
+				});
 		},
 	);
 	it.each(["/actions/runs", "/dependabot/alerts"])(

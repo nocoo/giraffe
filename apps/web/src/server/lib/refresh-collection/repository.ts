@@ -375,7 +375,10 @@ export async function collectRepository(
 						[key]: mappedRows(dimension, result.raw, saved.repo),
 						repo_id: saved.repo_id,
 						...security,
-						truncated: result.status !== "complete" || inventoryComplete === false,
+						truncated:
+							dimension === "alerts"
+								? result.truncated === true
+								: result.status !== "complete" || inventoryComplete === false,
 						inventory_complete: inventoryComplete,
 						unavailable: result.status === "unavailable",
 						window: windowOf(context),

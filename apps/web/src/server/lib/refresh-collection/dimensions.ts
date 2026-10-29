@@ -15,6 +15,7 @@ export type Dimension = {
 	source: string;
 	inventoryComplete?: boolean;
 	features?: SecurityFeatures;
+	truncated?: boolean;
 };
 type Transport = ReturnType<typeof transport>;
 export const terminal = (error: unknown) =>
@@ -165,17 +166,22 @@ export async function collectRest(
 		});
 	if (stream === "alerts") {
 		const results: Dimension[] = [];
+		const failed = (error: unknown): Dimension => {
+			const result = failure(error);
+			return githubUnavailability(error) ? result : { ...result, status: "partial" };
+		};
 		for (const kind of ["dependabot", "code-scanning"]) {
 			try {
 				const { body, next } = await get(`/${kind}/alerts?state=open&per_page=100`);
 				if (!Array.isArray(body)) {
-					results.push(failure(null));
+					results.push(failed(null));
 					continue;
 				}
 				const raw: Node[] = nodes(body).map((row) => ({
 					...row,
 					source: kind === "code-scanning" ? "code_scanning" : kind,
 				}));
+				const truncated = body.length > 0 && next;
 				results.push({
 					raw,
 					items: raw.map((row) => {
@@ -193,16 +199,22 @@ export async function collectRest(
 							severity: text(advisory.severity ?? rule.security_severity_level),
 						};
 					}),
-					status: next ? "partial" : "complete",
-					reason: next ? "latest_page_only" : null,
+					status: truncated ? "partial" : "complete",
+					reason: truncated ? "latest_page_only" : null,
 					source: "github_rest_latest",
 				});
 			} catch (error) {
 				if (terminal(error)) throw error;
-				results.push(failure(error));
+				results.push(failed(error));
 			}
 		}
+		const status = results.some((result) => result.status === "partial")
+			? "partial"
+			: results.some((result) => result.status === "unavailable")
+				? "unavailable"
+				: "complete";
 		return {
+			truncated: results.some((result) => result.reason === "latest_page_only"),
 			features: Object.fromEntries(
 				results.map((result, index) => [
 					index === 0 ? "dependabot" : "code_scanning",
@@ -225,12 +237,13 @@ export async function collectRest(
 			) as SecurityFeatures,
 			items: results.flatMap((result) => result.items),
 			raw: results.flatMap((result) => result.raw),
-			status: results.every((result) => result.status === "complete")
-				? "complete"
-				: results.every((result) => result.status === "unavailable")
-					? "unavailable"
-					: "partial",
-			reason: results.find((result) => result.reason)?.reason ?? null,
+			status,
+			reason:
+				status === "complete"
+					? null
+					: (results.find((result) => result.status === status)?.reason ??
+						results.find((result) => result.reason)?.reason ??
+						null),
 			source: "github_rest_latest",
 		};
 	}
