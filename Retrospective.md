@@ -2250,3 +2250,11 @@ execution history to make a new diagnostic field look complete.
 Local integration also exposed shared fixed-port contention between worktrees.
 Coordinators must reserve the L2/L3 lanes before starting runners, not merely check
 that ports look free. A concurrent run is not valid evidence for either worktree.
+
+The shorter recovery interval also exposed a crash window in retry settlement:
+retry attempts were durable, but their not-before deadline existed only in the
+final alarm write. If that write failed, recovery could contact GitHub before a
+rate-limit reset. Retry state now persists the deadline before settlement and
+alarm entry enforces it, with cancellation checked first. Fault injection must
+interrupt persistence boundaries, not merely return upstream errors on the
+ordinary successful-save path.

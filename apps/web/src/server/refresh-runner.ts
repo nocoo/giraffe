@@ -65,7 +65,12 @@ const failureCode = (error: unknown) =>
 	error instanceof ApiError && safeCodes.has(error.code) ? error.code : "refresh_failed";
 const terminal = (run: RefreshRun) => terminalRefreshStatus(run.status);
 const cancelKey = (id: string) => `cancel:${id}`;
-type Retry = { key: string; attempts: number; detail?: RefreshFailureDetail };
+type Retry = {
+	key: string;
+	attempts: number;
+	notBefore: number;
+	detail?: RefreshFailureDetail;
+};
 type StepOutcome =
 	| { ok: true; phase: "account"; result: AccountCollectionResult }
 	| { ok: true; phase: "repos"; result: CollectionResult; failures: RefreshFailureDetail[] }
@@ -263,6 +268,14 @@ export class RefreshRunner implements DurableObject {
 					await this.state.storage.delete("retry");
 					return null;
 				}
+				const retry = await this.state.storage.get<Retry>("retry");
+				if (
+					retry?.key === `${active.id}:${active.phase}:${active.completedRepos}` &&
+					retry.notBefore > Date.now()
+				) {
+					await this.state.storage.setAlarm(retry.notBefore);
+					return null;
+				}
 				const run = startRefreshStep({ ...active, status: "running" as const, updatedAt: at }, at);
 				await this.state.storage.setAlarm(Date.now() + RECOVERY_MS);
 				await saveRefreshRun(db, run);
@@ -370,8 +383,6 @@ export class RefreshRunner implements DurableObject {
 				outcome.counted,
 			);
 			if (!fatal && attempts < RETRY_LIMIT) {
-				pending = { key, attempts: attempts + 1, detail: failureDetail(code, outcome.error) };
-				await this.state.storage.put("retry", pending);
 				const deadline =
 					outcome.error instanceof ApiError && outcome.error.retryAt
 						? Date.parse(outcome.error.retryAt)
@@ -380,6 +391,13 @@ export class RefreshRunner implements DurableObject {
 					Date.now() + retryDelay(code, attempts),
 					Number.isFinite(deadline) ? deadline : 0,
 				);
+				pending = {
+					key,
+					attempts: attempts + 1,
+					notBefore: retryAt,
+					detail: failureDetail(code, outcome.error),
+				};
+				await this.state.storage.put("retry", pending);
 			}
 			run = completeRefreshStepAttempt(run, at, pending === undefined);
 			if (pending === undefined) {

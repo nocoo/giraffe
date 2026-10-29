@@ -24,6 +24,7 @@ beforeEach(() => {
 	});
 	collectors.collectRepository.mockReset().mockResolvedValue(collected(3, 1, 2));
 });
+afterEach(() => vi.useRealTimers());
 async function setup() {
 	const raw = sqliteFixture();
 	const token = `ghp_${"T".repeat(36)}`;
@@ -100,6 +101,10 @@ async function setup() {
 		},
 	};
 }
+async function deliverNextAlarm(fixture: Awaited<ReturnType<typeof setup>>) {
+	vi.useFakeTimers({ now: Math.max(Date.now(), fixture.alarmAt() ?? 0), toFake: ["Date"] });
+	await fixture.restart().alarm();
+}
 async function deferredCollection() {
 	let release: ((value: unknown) => void) | undefined;
 	collectors.collectRepository.mockImplementationOnce(
@@ -169,14 +174,14 @@ it("retries transient failures with durable bounded attempts then continues othe
 	collectors.collectRepository.mockRejectedValue(
 		new ApiError(503, "github_rate_limited", "safe", new Date(Date.now() + 120_000).toISOString()),
 	);
-	for (let attempt = 0; attempt < 4; attempt++) await fixture.restart().alarm();
+	for (let attempt = 0; attempt < 4; attempt++) await deliverNextAlarm(fixture);
 	expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
 		completedRepos: 1,
 		partial: true,
 		partialReasons: [{ repo: "octo/one", codes: ["github_rate_limited"] }],
 	});
 	collectors.collectRepository.mockResolvedValue(collected(2, 0, 2));
-	await fixture.restart().alarm();
+	await deliverNextAlarm(fixture);
 	expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
 		status: "partial",
 		completedRepos: 2,
@@ -302,7 +307,7 @@ it("bounds unknown repository failures, rejects invalid retry timestamps and pub
 	);
 	await fixture.runner.alarm();
 	collectors.collectRepository.mockRejectedValue(new Error(fixture.token));
-	for (let attempt = 0; attempt < 3; attempt++) await fixture.restart().alarm();
+	for (let attempt = 0; attempt < 3; attempt++) await deliverNextAlarm(fixture);
 	expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
 		status: "partial",
 		errorCode: "refresh_failed",
@@ -332,7 +337,7 @@ it("preserves retry deadlines for duplicate, conflicting and queued schedule sta
 	await startRefresh(fixture.env, "account", {}, "scheduled");
 	expect(fixture.storage.setAlarm).toHaveBeenCalledTimes(alarms);
 	collectors.collectAccount.mockResolvedValue({ repos: [], ...collected(1, 1, 0) });
-	await fixture.runner.alarm();
+	await deliverNextAlarm(fixture);
 	expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
 		status: "completed",
 		errorCode: null,
@@ -352,7 +357,7 @@ it("counts failed upstream attempts without treating durable steps as requests",
 		requestBreakdown: { total: 2, graphql: 2, rest: 0, a: { graphql: 2, rest: 0 } },
 	});
 	collectors.collectAccount.mockResolvedValue({ repos: [], ...collected(1, 0, 1) });
-	await fixture.runner.alarm();
+	await deliverNextAlarm(fixture);
 	expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
 		requests: 3,
 		requestBreakdown: { total: 3, graphql: 2, rest: 1, a: { graphql: 2, rest: 1 } },
@@ -962,7 +967,7 @@ it.each(["network", "invalid-json"])(
 		);
 		try {
 			const run = await startRefresh(fixture.env, "account", {});
-			for (let attempt = 0; attempt < 4; attempt++) await fixture.restart().alarm();
+			for (let attempt = 0; attempt < 4; attempt++) await deliverNextAlarm(fixture);
 			expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
 				status: "partial",
 				partialReasons: [
@@ -1031,9 +1036,9 @@ it("attributes exhausted repository steps to the repository with safe metadata",
 	collectors.collectRepository.mockRejectedValue(
 		new ApiError(502, "github_error", "upstream secret detail", null, 502),
 	);
-	for (let attempt = 0; attempt < 4; attempt++) await fixture.restart().alarm();
+	for (let attempt = 0; attempt < 4; attempt++) await deliverNextAlarm(fixture);
 	collectors.collectRepository.mockResolvedValue(collected(3, 1, 2));
-	await fixture.restart().alarm();
+	await deliverNextAlarm(fixture);
 	const stored = await getRefreshRun(fixture.db(), "account", run.id);
 	expect(stored).toMatchObject({ status: "partial", completedRepos: 2 });
 	expect(stored?.partialReasons).toEqual([
@@ -1222,9 +1227,56 @@ it("backs off briefly for transient failures and keeps retry-after for rate limi
 	collectors.collectAccount.mockRejectedValueOnce(
 		new ApiError(503, "github_rate_limited", "safe", deadline),
 	);
-	await fixture.restart().alarm();
+	await deliverNextAlarm(fixture);
 	expect(fixture.alarmAt()).toBeGreaterThanOrEqual(Date.parse(deadline));
 });
+
+it.each([false, true])(
+	"preserves rate-limit deadlines through an interrupted alarm write (cancel=%s)",
+	async (cancel) => {
+		vi.useFakeTimers({ now: new Date("2026-10-29T04:00:00.000Z"), toFake: ["Date"] });
+		try {
+			const fixture = await setup();
+			const run = await startRefresh(fixture.env, "account", {});
+			const deadline = Date.now() + 120_000;
+			collectors.collectAccount.mockImplementationOnce(async () => {
+				fixture.storage.setAlarm.mockRejectedValueOnce(new Error("alarm write interrupted"));
+				throw new ApiError(
+					503,
+					"github_rate_limited",
+					"safe",
+					new Date(deadline).toISOString(),
+					429,
+				);
+			});
+			await expect(fixture.runner.alarm()).rejects.toThrow("alarm write interrupted");
+			expect(fixture.alarmAt()).toBe(Date.now() + 5_000);
+			vi.setSystemTime(Date.now() + 5_000);
+			if (cancel) await fixture.cancelRequest(run.id);
+			await fixture.restart().alarm();
+			expect(collectors.collectAccount).toHaveBeenCalledTimes(1);
+			if (cancel) {
+				expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
+					status: "cancelled",
+				});
+				expect(fixture.alarmAt()).toBeNull();
+			} else {
+				expect(fixture.alarmAt()).toBe(deadline);
+				vi.setSystemTime(deadline - 1);
+				await fixture.restart().alarm();
+				expect(collectors.collectAccount).toHaveBeenCalledTimes(1);
+				vi.setSystemTime(deadline);
+				await fixture.restart().alarm();
+				expect(collectors.collectAccount).toHaveBeenCalledTimes(2);
+				expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
+					status: "completed",
+				});
+			}
+		} finally {
+			vi.useRealTimers();
+		}
+	},
+);
 
 it("attributes the pending retry when a run is cancelled during backoff", async () => {
 	const fixture = await setup();
@@ -1275,7 +1327,7 @@ it("clears a resolved transient failure code before the run finishes", async () 
 		errorCode: "github_error",
 		status: "running",
 	});
-	await fixture.runner.alarm();
+	await deliverNextAlarm(fixture);
 	expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
 		status: "completed",
 		errorCode: null,
@@ -1292,12 +1344,12 @@ it.each([1, 2])(
 		collectors.collectAccount.mockResolvedValue({ repos, ...collected(1, 1, 0) });
 		const run = await startRefresh(fixture.env, "account", {});
 		collectors.collectRepository.mockRejectedValue(new ApiError(502, "github_error", "safe"));
-		for (let attempt = 0; attempt < 3; attempt++) await fixture.runner.alarm();
+		for (let attempt = 0; attempt < 3; attempt++) await deliverNextAlarm(fixture);
 		collectors.collectRepository.mockImplementationOnce(async () => {
 			await fixture.cancelRequest(run.id);
 			throw new ApiError(502, "github_error", "safe");
 		});
-		await fixture.runner.alarm();
+		await deliverNextAlarm(fixture);
 		const saved = await getRefreshRun(fixture.db(), "account", run.id);
 		expect(saved).toMatchObject({ status: "cancelled", completedRepos: 1 });
 		expect(saved?.partialReasons.map((reason) => reason.repo)).toEqual(["octo/one"]);
