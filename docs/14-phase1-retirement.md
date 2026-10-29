@@ -32,14 +32,14 @@ Browser routes are removed and return authenticated `404 not_found`:
 
 Machine requests retain bearer authentication, account fencing and scope checks:
 
-| Endpoint under `/api/v1/accounts/:account` | Phase-1 result                                                    |
-| ------------------------------------------ | ----------------------------------------------------------------- |
-| `GET /refresh-runs`                        | `200`, `items: []`, `collectionAvailable: false`                  |
-| `GET /refresh-runs/latest`                 | `410 collection_unavailable`                                      |
-| `POST /refresh-runs`                       | `410 collection_unavailable`                                      |
-| `POST /refresh-runs/:id/control`           | `410 collection_unavailable`                                      |
-| `PUT                                       | DELETE /schedules/:kind`                                          | `410 collection_unavailable` |
-| `GET /settings`                            | Saved settings with `schedules: []`, `collectionAvailable: false` |
+| Endpoint under `/api/v1/accounts/:account`        | Phase-1 result                                                    |
+| ------------------------------------------------- | ----------------------------------------------------------------- |
+| `GET /refresh-runs`                               | `200`, `items: []`, `collectionAvailable: false`                  |
+| `GET /refresh-runs/latest`                        | `410 collection_unavailable`                                      |
+| `POST /refresh-runs`                              | `410 collection_unavailable`                                      |
+| `POST /refresh-runs/:id/control`                  | `410 collection_unavailable`                                      |
+| `PUT /schedules/:kind`, `DELETE /schedules/:kind` | `410 collection_unavailable`                                      |
+| `GET /settings`                                   | Saved settings with `schedules: []`, `collectionAvailable: false` |
 
 Snapshot, factory/stream, source, contribution and activity reads remain read-only.
 No GET starts collection, changes token activity or repairs legacy rows. Invalid
@@ -50,8 +50,17 @@ responses; unavailable operations are not tokenless endpoints.
 
 No data migration is introduced. Legacy D1 tables and historical rows can remain
 in place, but old runs and schedules are not resumed or presented as active work.
-Wrangler has no collection cron or queue binding/consumer, and the Worker exports
-only its HTTP handler. AES-GCM PAT encryption, Cloudflare Access, same-origin
+Wrangler explicitly declares `crons = []` and has no queue binding/consumer;
+the Worker exports only its HTTP handler. The authorized release workflow runs
+`scripts/deploy-worker.ts`: it removes only the production `giraffe` consumer
+from `giraffe-factory` (if present), invokes the locked Wrangler deployment and
+then verifies that this consumer and all Worker cron schedules are absent.
+It preserves the queue itself and unrelated consumers, and fails closed on
+API/deployment/verification errors. The deployment token needs Workers Scripts
+Edit and Queues Edit permissions. The script refuses local execution; tests
+use fake API responses and never access production. Cron verification uses the
+[Cloudflare schedules API](https://developers.cloudflare.com/api/typescript/resources/workers/subresources/scripts/subresources/schedules/methods/get/).
+AES-GCM PAT encryption, Cloudflare Access, same-origin
 browser writes and hash-only expiring machine tokens are unchanged.
 
 The root `package.json` is the authoritative `0.26.0` version. Merge/deployment is

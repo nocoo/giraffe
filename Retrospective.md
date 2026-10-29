@@ -2056,6 +2056,16 @@ rejected that mixed revision. Release metadata must be finalized before starting
 built-SPA run, and any concurrent code or version change invalidates its final
 acceptance evidence. The suite was rebuilt and rerun against the finalized tree.
 
+## 2026-10-29 - Retire remote triggers explicitly
+
+The first phase-1 implementation removed Wrangler cron and queue configuration
+without accounting for already registered Cloudflare triggers. Independent review
+of the locked Wrangler deployment code showed that omission does not unregister
+those resources. The release now explicitly clears cron schedules and removes
+only the retired production queue consumer through the authorized workflow, with
+mocked regression tests and post-deployment API verification. Future trigger
+retirements must verify remote reconciliation semantics, not only source absence.
+
 ## 2026-10-29 - Match test callees before removing cases
 
 During collection retirement, an AST cleanup initially matched an enclosing

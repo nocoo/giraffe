@@ -223,7 +223,8 @@ Never put credentials in URLs, logs, report payloads or persisted browser state.
   `Referrer-Policy: no-referrer`. Other `Vary` dimensions are preserved.
 - JSON writes require `Content-Type: application/json`, UTF-8 if charset is given.
   Strict schemas reject extra fields. No body/query is defined unless listed.
-- Reads/updates return 200, resource creation 201, refresh start/control 202,
+- Reads/updates return 200, resource creation 201, retired collection operations
+  return 410 `collection_unavailable`,
   deletions 204 with no body except star deletion, which returns its 200 record.
   Separate reads are not a transaction; verify versions.
 
@@ -1683,41 +1684,35 @@ Use status/code, not message text. Auth/scope checks may precede route validatio
 Machine errors are JSON, not Access redirects; no standardized details array or
 `retryAt` JSON field exists.
 
-| HTTP | Code                                     | Meaning/action                                                                                                |
-| ---- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| 400  | `validation_failed`                      | Invalid JSON/content type, oversized body, schema/query/revision error; fix input                             |
-| 401  | `token_unauthorized`                     | Missing/malformed/expired/revoked bearer or unavailable account                                               |
-| 403  | `account_forbidden`, `scope_forbidden`   | Wrong account or missing required scope                                                                       |
-| 404  | `not_found`                              | Unknown endpoint/resource/repo, missing item/run/publication repository                                       |
-| 404  | `revision_conflict`                      | DELETE target missing                                                                                         |
-| 405  | `method_not_allowed`                     | Unsupported method/mutation; unregistered routes may instead be 404                                           |
-| 409  | `snapshot_missing`                       | Saved/immutable source unavailable; not zero                                                                  |
-| 409  | `resource_exists`                        | GET and compare full intended resource identity/version                                                       |
-| 409  | `revision_conflict`                      | Reload current revision and reconcile                                                                         |
-| 409  | `catalog_incomplete`, `refresh_cooldown` | Prepare catalog or defer refresh                                                                              |
-| 409  | `account_conflict`                       | Existing running/paused run or concurrent run control                                                         |
-| 422  | `factory_capacity`                       | Generated refresh record exceeds capacity; previous data retained                                             |
-| 422  | `snapshot_incomplete`                    | Bounded/incomplete collection cannot replace a snapshot; retain previous evidence and inspect run diagnostics |
-| 500  | `internal_error`, `db_error`             | Bounded backoff and operator diagnosis                                                                        |
+| HTTP | Code                                   | Meaning/action                                                                    |
+| ---- | -------------------------------------- | --------------------------------------------------------------------------------- |
+| 400  | `validation_failed`                    | Invalid JSON/content type, oversized body, schema/query/revision error; fix input |
+| 401  | `token_unauthorized`                   | Missing/malformed/expired/revoked bearer or unavailable account                   |
+| 403  | `account_forbidden`, `scope_forbidden` | Wrong account or missing required scope                                           |
+| 404  | `not_found`                            | Unknown endpoint/resource/repo, missing item/run/publication repository           |
+| 404  | `revision_conflict`                    | DELETE target missing                                                             |
+| 405  | `method_not_allowed`                   | Unsupported method/mutation; unregistered routes may instead be 404               |
+| 409  | `snapshot_missing`                     | Saved/immutable source unavailable; not zero                                      |
+| 409  | `resource_exists`                      | GET and compare full intended resource identity/version                           |
+| 409  | `revision_conflict`                    | Reload current revision and reconcile                                             |
+| 410  | `collection_unavailable`               | Collection is retired; do not retry start/control/latest/schedule operations      |
+| 500  | `internal_error`, `db_error`           | Bounded backoff and operator diagnosis                                            |
 
 Implemented application limits, not inferred Cloudflare/GitHub quotas:
 
-| Surface                                     | Limit                                                                                                      |
-| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| Tokens                                      | 1-90 days; default 30                                                                                      |
-| Resource payload / POST-PATCH body          | 65,536 / 70,000 UTF-8 bytes, respectively                                                                  |
-| Resource ID / list page                     | 1-80 URL-safe ASCII characters / default 50, maximum 100                                                   |
-| Statistics/schedule JSON body               | 2,048 bytes                                                                                                |
-| Refresh start/control JSON body             | 120,000 bytes                                                                                              |
-| Refresh selection/priority / generated plan | 500 entries each / 1,800,000 bytes                                                                         |
-| Refresh concurrency/cooldown                | One running/paused run per account; 60-second run-start and 15-minute repository cooldown where applicable |
-| Refresh run list                            | Maximum 21, no pagination                                                                                  |
-| Browser token management JSON               | 8,192 bytes                                                                                                |
+| Surface                            | Limit                                                    |
+| ---------------------------------- | -------------------------------------------------------- |
+| Tokens                             | 1-90 days; default 30                                    |
+| Resource payload / POST-PATCH body | 65,536 / 70,000 UTF-8 bytes, respectively                |
+| Resource ID / list page            | 1-80 URL-safe ASCII characters / default 50, maximum 100 |
+| Statistics JSON body               | 2,048 bytes                                              |
+| Refresh run list                   | Empty; `collectionAvailable: false`, no pagination       |
+| Browser token management JSON      | 8,192 bytes                                              |
 
 There is **no application requests-per-second/minute quota**, per-token throttle,
 standard rate-limit headers, documented total resource-count limit, or source-index
 pagination. A 25-repository bot batch is not an API quota. Cloudflare/edge policy
-may still reject requests; GitHub limits affect explicit refresh, not saved GETs.
+may still reject requests. Saved GETs never call GitHub, and collection is unavailable.
 Use bounded exponential backoff/jitter for transport, edge 429 and 5xx failures;
 honor `Retry-After` only when supplied. Reconcile uncertain POST/PATCH results;
 handle each 409 by code, not generic success/retry.
