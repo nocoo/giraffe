@@ -40,6 +40,14 @@ REST day observations as GraphQL. Coverage now derives its source from the actua
 selected day payloads and reports mixed sources explicitly. Cache regression tests
 must preserve both timestamps and provenance across transport changes.
 
+The first write fence only checked payload fields. A rollback to the old runner
+could read a modern payload, preserve its new fields by spreading it, and update
+only the old counters. A sequential old/new alarm reproduction exposed lost
+request counts and partial runs without reasons. The database now requires every
+update to advance an internal writer revision, and only the new save SQL does so.
+Version-transition tests must cover old code reading new data as well as stale
+old payloads; field presence does not prove writer capability.
+
 ## 2026-10-24 - Verify normalization and patch anchors
 
 The first Unicode boundary fixture assumed every factory stream retained the

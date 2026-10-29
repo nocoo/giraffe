@@ -186,6 +186,11 @@ payloads cannot be overwritten by a stale legacy writer: database triggers rejec
 legacy active inserts/updates and prevent terminal-to-active transitions. A legacy
 Worker write during cutover fails rather than resurrecting a run or reserving its
 active/scheduled slot. New run requests must reach the upgraded Worker.
+Every update must advance the internal database `writer_revision`; the new save
+path does so atomically. Old SQL is rejected even when an old Worker reads and
+spreads a modern payload during rollback, before it can collect or corrupt counts.
+Rolling back to v0.27.0 does not restore refresh functionality against this schema;
+use a compatible approved revision or roll forward. Stored observations remain readable.
 Historical terminal
 payloads stay unchanged; `requestBreakdown`, `partialReasons` and
 `cancelRequested` are produced for new v0.27.1 runs only. This is not a migration

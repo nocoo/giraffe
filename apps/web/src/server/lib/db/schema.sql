@@ -705,7 +705,8 @@ CREATE TABLE IF NOT EXISTS refresh_runs_cancelled (
  schedule_day TEXT,
  payload TEXT NOT NULL,
  created_at TEXT NOT NULL,
- updated_at TEXT NOT NULL
+ updated_at TEXT NOT NULL,
+ writer_revision INTEGER NOT NULL DEFAULT 0
 );
 INSERT OR IGNORE INTO refresh_runs_cancelled(id,account_id,status,trigger,schedule_day,payload,created_at,updated_at)
  SELECT id,account_id,status,trigger,schedule_day,payload,created_at,updated_at FROM refresh_runs;
@@ -742,7 +743,7 @@ BEGIN
 END;
 CREATE TRIGGER IF NOT EXISTS refresh_run_modern_payload_update
 BEFORE UPDATE ON refresh_runs
-WHEN CASE
+WHEN NEW.writer_revision != OLD.writer_revision + 1 OR CASE
  WHEN json_valid(NEW.payload)=0 THEN 1
  WHEN json_type(NEW.payload,'$.requestBreakdown') IS NULL THEN 1
  WHEN json_type(NEW.payload,'$.requestBreakdown.a') IS NULL THEN 1

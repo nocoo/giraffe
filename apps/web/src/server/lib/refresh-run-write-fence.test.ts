@@ -65,6 +65,28 @@ const cutoverRow = (raw: D1Database, id: string) =>
 		)
 		.run();
 
+it("rejects legacy SQL even when its payload preserves modern fields", async () => {
+	const { raw, db } = await fixture();
+	const run = await createRefreshRun(
+		db,
+		"account",
+		parseRefreshParams({}, new Date(now)),
+		"manual",
+		now,
+	);
+	for (const payload of [run, { ...run, requests: 1, partial: true }]) {
+		await blocked(
+			raw.prepare(runSave).bind("running", JSON.stringify(payload), now, "account", run.id).run(),
+		);
+		expect(await getRefreshRun(db, "account", run.id)).toEqual(run);
+	}
+	await saveRefreshRun(db, { ...run, status: "running" });
+	await saveRefreshRun(db, { ...run, status: "completed", phase: "done", finishedAt: now });
+	expect(
+		await raw.prepare("SELECT writer_revision FROM refresh_runs WHERE id=?").bind(run.id).first(),
+	).toEqual({ writer_revision: 2 });
+});
+
 it("keeps a cut over failed run terminal when the in-flight 0.27.0 runner writes running again", async () => {
 	const { raw, db } = await fixture();
 	await cutoverRow(raw, "legacy-running");

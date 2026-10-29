@@ -208,10 +208,18 @@ it("widens the status constraint and retires pre-0.27.1 active payloads without 
 			{ name: "sqlite_autoindex_refresh_runs_1" },
 		]);
 		expect(() =>
-			database.prepare("UPDATE refresh_runs SET status='cancelled' WHERE id='modern'").run(),
+			database
+				.prepare(
+					"UPDATE refresh_runs SET status='cancelled',writer_revision=writer_revision+1 WHERE id='modern'",
+				)
+				.run(),
 		).not.toThrow();
 		expect(() =>
-			database.prepare("UPDATE refresh_runs SET status='retired' WHERE id='modern'").run(),
+			database
+				.prepare(
+					"UPDATE refresh_runs SET status='retired',writer_revision=writer_revision+1 WHERE id='modern'",
+				)
+				.run(),
 		).toThrow();
 		const insertRun = database.prepare(
 			"INSERT INTO refresh_runs(id,account_id,status,trigger,payload,created_at,updated_at) VALUES(?,'account',?,'manual',?,'now','now')",

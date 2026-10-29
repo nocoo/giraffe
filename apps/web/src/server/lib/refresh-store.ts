@@ -153,7 +153,9 @@ export async function createRefreshRun(
 }
 export async function saveRefreshRun(db: Db, run: RefreshRun): Promise<void> {
 	await db
-		.prepare("UPDATE refresh_runs SET status=?,payload=?,updated_at=? WHERE account_id=? AND id=?")
+		.prepare(
+			"UPDATE refresh_runs SET status=?,payload=?,updated_at=?,writer_revision=writer_revision+1 WHERE account_id=? AND id=?",
+		)
 		.bind(run.status, JSON.stringify(run), run.updatedAt, run.accountId, run.id)
 		.run();
 }
