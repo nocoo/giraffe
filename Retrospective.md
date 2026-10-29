@@ -2375,3 +2375,11 @@ monotonic per run; stale cancellation responses or errors cannot replace a newer
 run. History validates the returned account before accepting its records and
 reconciles the session on conflict. Exercise response orders and account identity
 at each independent read boundary, not only the provider's happy-path polling.
+
+The first full UI lane also caught a list-polish regression: repository marks
+were reduced from the established 24px size to 16px. Focused activity tests did
+not include the project-identity contract. Restore the existing mark size rather
+than weakening those assertions. Visual review additionally found desktop
+dimension labels clipped inside a six-column grid; measure each rendered label
+against its available width at desktop and mobile sizes, and capture lower
+settings/factory sections rather than judging them from the first viewport.
