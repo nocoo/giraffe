@@ -17,6 +17,29 @@ explicit pagination metadata and numeric database IDs; existing activity release
 content must move with the transport, not be replaced by empty successful data.
 New tests retain release field parity and reject unproven pagination completion.
 
+## 2026-10-29 - Preserve accepted cancellation during failure settlement
+
+An accepted cancellation was durable, but settlement first constructed a failed
+terminal run when the in-flight account/repository step returned a fatal error.
+The cancellation helper then correctly refused to change a terminal state,
+inadvertently discarding the earlier cancellation. The settlement lock now reads
+accepted intent before choosing failure state. Regressions defer both A and B,
+accept cancellation, then reject with an authentication error and verify a
+cancelled terminal response, retained request counts and idempotent repeats.
+
+## 2026-10-29 - Fence cutover writers and preserve cached provenance
+
+Failing legacy active runs once during migration did not stop an in-flight old
+Worker from saving its pre-migration payload afterward. The database now rejects
+legacy active inserts and stale updates, and prevents terminal runs from becoming
+active again. Migration tests must exercise writers on both sides of a cutover,
+not only inspect the immediate migrated rows; historical counts stay unmodified.
+
+Moving releases to GraphQL also caused newly published coverage to label cached
+REST day observations as GraphQL. Coverage now derives its source from the actual
+selected day payloads and reports mixed sources explicitly. Cache regression tests
+must preserve both timestamps and provenance across transport changes.
+
 ## 2026-10-24 - Verify normalization and patch anchors
 
 The first Unicode boundary fixture assumed every factory stream retained the

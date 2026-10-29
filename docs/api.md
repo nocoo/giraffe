@@ -1515,24 +1515,26 @@ Machine errors are JSON, not Access redirects; no standardized details array or
 | 409  | `snapshot_missing`                     | Saved/immutable source unavailable; not zero                                      |
 | 409  | `resource_exists`                      | GET and compare full intended resource identity/version                           |
 | 409  | `revision_conflict`                    | Reload current revision and reconcile                                             |
-| 410  | `collection_unavailable`               | Collection is retired; do not retry start/control/latest/schedule operations      |
+| 409  | `refresh_conflict`                     | Different refresh already active; read its status before starting another         |
+| 503  | `refresh_unavailable`                  | Durable refresh binding unavailable; diagnose configuration before retrying       |
 | 500  | `internal_error`, `db_error`           | Bounded backoff and operator diagnosis                                            |
 
 Implemented application limits, not inferred Cloudflare/GitHub quotas:
 
-| Surface                            | Limit                                                    |
-| ---------------------------------- | -------------------------------------------------------- |
-| Tokens                             | 1-90 days; default 30                                    |
-| Resource payload / POST-PATCH body | 65,536 / 70,000 UTF-8 bytes, respectively                |
-| Resource ID / list page            | 1-80 URL-safe ASCII characters / default 50, maximum 100 |
-| Statistics JSON body               | 2,048 bytes                                              |
-| Refresh run list                   | Empty; `collectionAvailable: false`, no pagination       |
-| Browser token management JSON      | 8,192 bytes                                              |
+| Surface                            | Limit                                                      |
+| ---------------------------------- | ---------------------------------------------------------- |
+| Tokens                             | 1-90 days; default 30                                      |
+| Resource payload / POST-PATCH body | 65,536 / 70,000 UTF-8 bytes, respectively                  |
+| Resource ID / list page            | 1-80 URL-safe ASCII characters / default 50, maximum 100   |
+| Statistics JSON body               | 2,048 bytes                                                |
+| Refresh run list                   | Latest 50 runs; `collectionAvailable: true`, no pagination |
+| Browser token management JSON      | 8,192 bytes                                                |
 
 There is **no application requests-per-second/minute quota**, per-token throttle,
 standard rate-limit headers, documented total resource-count limit, or source-index
 pagination. A 25-repository bot batch is not an API quota. Cloudflare/edge policy
-may still reject requests. Saved GETs never call GitHub, and collection is unavailable.
+may still reject requests. Saved GETs never call GitHub; only explicit refresh
+creation and the fixed daily schedule start collection.
 Use bounded exponential backoff/jitter for transport, edge 429 and 5xx failures;
 honor `Retry-After` only when supplied. Reconcile uncertain POST/PATCH results;
 handle each 409 by code, not generic success/retry.
@@ -1542,8 +1544,11 @@ handle each 409 by code, not generic success/retry.
 1. Obtain an expiring, fixed-account token with only the required scopes.
 2. Read `/sources` and supported saved observations; preserve timestamps,
    missingness and coverage when presenting evidence.
-3. Treat `collection_unavailable` as a terminal unavailable capability, not a
-   retryable job. Do not poll legacy run readiness or attempt scheduling.
+3. If freshness is insufficient and the token has `app:write`, start a unified
+   refresh and poll its account-fenced status until terminal. Inspect
+   `partialReasons` and source timestamps before consuming results; cancel
+   unwanted work through `POST /refresh-runs/:id/cancel`. Never invoke retired
+   controls or schedule-kind routes.
 4. If needed, publish externally produced resources using the generic
    records/reports/jobs API and revision controls. Giraffe does not execute them.
 5. Rotate the token before expiry; never store it in URLs or logs.
