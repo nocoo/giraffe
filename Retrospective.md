@@ -2454,3 +2454,27 @@ a temporary failure publishes partial coverage with zero observed days and a
 nonempty settlement window. Alert availability must require complete status or
 positive observed evidence, never that window alone. Preserve the separate flow
 stream behavior, where a complete day window still proves an observed zero.
+
+## 2026-10-29: prove expanded lookbacks against production storage limits
+
+The first 90-day regression covered one repository and cache reuse, but missed
+the requested scale of roughly 61 starred repositories with all six dimensions.
+Review reproduced an aggregate above D1's 2,000,000-byte string limit because
+every complete day repeated a coverage window. It also reproduced an oversized
+single JSON binding when 90 alert days repeated ordinary nonempty evidence.
+Local SQLite accepts both oversized values, so passing collection tests alone
+did not establish a deployable backfill.
+
+Contiguous completed ranges now coalesce without concealing gaps or unavailable
+measurements. Fragmented coverage still needs multiple ranges, so the unpaged
+publication stores only its actual consumers' rate and retention projection;
+the full factory stays in the existing paged snapshot store. Day observations
+use linear UTF-8 accounting and bounded bindings in one transaction. Capacity
+regressions must enforce the remote byte limit locally, retain all repositories,
+exercise nonempty multibyte evidence and include fragmented as well as complete
+windows. Never infer deployment safety from an empty single-repository fixture.
+
+While updating the duplicated golden payload, a context-free patch initially
+changed the factory snapshot instead of the operational publication. The golden
+test caught it before commit. Distinguish repeated serialized fixtures by their
+surrounding key and preserve the public snapshot golden unchanged.

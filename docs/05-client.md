@@ -1,6 +1,6 @@
 # 05 — Client 设计
 
-> **v0.28.0:** [Phase 2 unified refresh](15-unified-refresh.md) remains the data
+> **v0.28.1:** [Phase 2 unified refresh](15-unified-refresh.md) remains the data
 > contract. `/refresh` restores the Refresh Center layout using only unified
 > refresh runs: account A, serial repository B, cancellation and saved history.
 > Optional per-step timestamps are displayed when present; absent timings are

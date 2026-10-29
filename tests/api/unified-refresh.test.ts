@@ -274,7 +274,34 @@ it("runs real durable A then serial B, serves latest observations and reuses day
 				repos: [expect.objectContaining({ metrics: expect.objectContaining({ alerts: 1 }) })],
 			},
 		});
+		const cachedObservations = localD1Rows(`SELECT day,dimension,status,payload,fetched_at
+			FROM refresh_day_observations WHERE account_id=${quote(account.id)}
+			AND dimension IN ('commits','alerts') ORDER BY day,dimension`);
+		const backfill = await run({ lookbackDays: 90, dimensions: ["commits", "alerts"] });
+		expect(backfill.params).toMatchObject({ lookbackDays: 90, timezone: "Asia/Shanghai" });
+		expect(backfill.repos).toEqual(["phase2/demo"]);
+		expect(backfill.requestBreakdown.b).toEqual({ graphql: 1, rest: 2 });
+		expect(
+			localD1Rows(`SELECT dimension,COUNT(*) AS days FROM refresh_day_observations
+				WHERE account_id=${quote(account.id)} AND timezone='Asia/Shanghai'
+				AND day BETWEEN ${quote(backfill.params.since)} AND ${quote(backfill.params.until)}
+				AND status='complete' AND dimension IN ('commits','alerts') GROUP BY dimension
+				ORDER BY dimension`),
+		).toEqual([
+			{ dimension: "alerts", days: 90 },
+			{ dimension: "commits", days: 90 },
+		]);
+		const reusedBackfill = await run({ lookbackDays: 90, dimensions: ["commits", "alerts"] });
+		expect(reusedBackfill.requestBreakdown.b).toEqual({ graphql: 0, rest: 0 });
+		expect(
+			localD1Rows(`SELECT day,dimension,status,payload,fetched_at
+				FROM refresh_day_observations WHERE account_id=${quote(account.id)}
+				AND dimension IN ('commits','alerts') ORDER BY day,dimension`),
+		).toEqual(expect.arrayContaining(cachedObservations));
 		expect((await machine("stars/phase2/demo", "DELETE")).status).toBe(200);
+		const unstarredBackfill = await run({ lookbackDays: 90, dimensions: ["commits"] });
+		expect(unstarredBackfill.repos).toEqual([]);
+		expect(unstarredBackfill.requestBreakdown.b).toEqual({ graphql: 0, rest: 0 });
 		for (const cancel of [
 			() => machine(`refresh-runs/${first.id}/cancel`, "POST"),
 			() => browser(`refresh-runs/${first.id}/cancel`, "POST"),
@@ -312,7 +339,7 @@ it("runs real durable A then serial B, serves latest observations and reuses day
 		expect((await machine(`refresh-runs/${cancelled.id}/cancel`)).status).toBe(405);
 		expect((await machine("repos/phase2/demo/details")).status).toBe(200);
 		const list = (await (await machine("refresh-runs")).json()) as { items: RefreshRun[] };
-		expect(list.items).toHaveLength(10);
+		expect(list.items).toHaveLength(13);
 		expect((await machine(`refresh-runs/${first.id}`, "DELETE")).status).toBe(405);
 	} finally {
 		await browser(`accounts/${account.id}`, "DELETE");

@@ -150,12 +150,7 @@ const connection = (values: unknown[], more = false, cursor: string | null = nul
 	pageInfo: { hasNextPage: more, endCursor: cursor },
 });
 async function publication(context: CollectionContext) {
-	const row = await context.env.DB.prepare(
-		"SELECT payload FROM refresh_publications WHERE account_id=?",
-	)
-		.bind(context.account.id)
-		.first<{ payload: string }>();
-	return JSON.parse(row?.payload ?? "{}");
+	return sourceSnapshot(context, "factory");
 }
 async function observation(context: CollectionContext, dimension: string) {
 	return context.env.DB.prepare(
@@ -241,10 +236,7 @@ describe("unified refresh collection", () => {
 			reasons: [],
 		});
 		expect(fetch).toHaveBeenCalledTimes(5);
-		const publication = await context.env.DB.prepare(
-			"SELECT payload FROM refresh_publications WHERE account_id='a'",
-		).first<{ payload: string }>();
-		const saved = JSON.parse(publication?.payload ?? "{}");
+		const saved = await publication(context);
 		expect(saved.repos[0].coverage.dependencies.status).toBe("unavailable");
 		expect(saved.repos[0].metrics.commits).toBe(3);
 		expect(saved.contribution.days[0].count).toBe(2);
@@ -1478,6 +1470,73 @@ describe("unified refresh collection", () => {
 			]),
 		]);
 		expect((await collectAccount(context)).repos).toEqual(["other/lib", "owner/chosen"]);
+	});
+	it("restricts a lookback backfill to locally starred repositories without a new-repo exception", async () => {
+		const context = await fixture();
+		await context.env.DB.batch([
+			context.env.DB.prepare(
+				"INSERT INTO repo_stars(account_id,repo,starred,source,updated_at) VALUES('a','other/lib',1,'owner',?)",
+			).bind(now),
+			context.env.DB.prepare(
+				"INSERT INTO repo_stars(account_id,repo,starred,source,updated_at) VALUES('a','owner/chosen',1,'owner',?)",
+			).bind(now),
+		]);
+		context.run.params.lookbackDays = 90;
+		upstream([
+			accountPage([
+				{
+					...repo("R_star", "other/lib"),
+					owner: { login: "other" },
+					createdAt: "2020-01-01T00:00:00Z",
+				} as never,
+				{
+					...repo("R_plain", "other/plain"),
+					owner: { login: "other" },
+					createdAt: "2026-10-29T02:00:00Z",
+				} as never,
+				{
+					...repo("R_fresh", "owner/fresh"),
+					createdAt: "2026-10-29T02:00:00Z",
+				} as never,
+				{
+					...repo("R_chosen", "owner/chosen"),
+					createdAt: "2020-01-01T00:00:00Z",
+				} as never,
+				{
+					...repo("R_legacy", "owner/legacy"),
+					createdAt: "2020-01-01T00:00:00Z",
+				} as never,
+			]),
+		]);
+		expect(await collectAccount(context)).toEqual({
+			requests: 1,
+			requestBreakdown: { graphql: 1, rest: 0 },
+			partial: false,
+			reasons: [],
+			repos: ["other/lib", "owner/chosen"],
+		});
+	});
+	it("selects every automatically eligible repository without a lookback", async () => {
+		const context = await fixture();
+		await context.env.DB.prepare(
+			"INSERT INTO repo_stars(account_id,repo,starred,source,updated_at) VALUES('a','other/lib',1,'owner',?)",
+		)
+			.bind(now)
+			.run();
+		upstream([
+			accountPage([
+				{
+					...repo("R_star", "other/lib"),
+					owner: { login: "other" },
+					createdAt: "2020-01-01T00:00:00Z",
+				} as never,
+				{
+					...repo("R_fresh", "owner/fresh"),
+					createdAt: "2026-10-29T02:00:00Z",
+				} as never,
+			]),
+		]);
+		expect((await collectAccount(context)).repos).toEqual(["other/lib", "owner/fresh"]);
 	});
 	it("keeps an explicit repository request independent of automatic selection", async () => {
 		const context = await fixture();

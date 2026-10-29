@@ -143,6 +143,15 @@ it("starts and reads the same unified run through browser and scoped machine API
 		schedules: [{ timezone: "Asia/Shanghai", time: "03:00", scope: "starred" }],
 	});
 });
+it.each([true, false])("accepts starred lookback through the API (machine=%s)", async (machine) => {
+	const { call } = await fixture();
+	const response = await call("refresh-runs", "POST", { lookbackDays: 90 }, machine);
+	expect(response.status).toBe(202);
+	const run = (await response.json()) as { id: string };
+	expect(
+		await (await call(`refresh-runs/${run.id}`, "GET", undefined, machine)).json(),
+	).toMatchObject({ params: { lookbackDays: 90, timezone: "Asia/Shanghai", force: false } });
+});
 it("validates run methods and parameters before durable dispatch", async () => {
 	const { call } = await fixture();
 	for (const body of [

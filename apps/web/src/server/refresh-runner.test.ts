@@ -132,6 +132,41 @@ async function deferredCollection() {
 	};
 }
 
+it("keeps a 90-day backfill account-locked across restarts without changing daily parameters", async () => {
+	const fixture = await setup();
+	const at = new Date("2026-10-28T19:00:00.000Z");
+	const params = { lookbackDays: 90, dimensions: ["commits", "alerts"] };
+	const [first, repeated] = await Promise.all([
+		startRefresh(fixture.env, "account", params, "manual", at),
+		startRefresh(fixture.env, "account", params, "manual", at),
+	]);
+	expect(repeated.id).toBe(first.id);
+	expect(first.params).toMatchObject({
+		lookbackDays: 90,
+		since: "2026-07-31",
+		until: "2026-10-28",
+	});
+	fixture.restart();
+	for (const other of [{ lookbackDays: 89 }, { ...params, force: true }, {}]) {
+		await expect(startRefresh(fixture.env, "account", other, "manual", at)).rejects.toMatchObject({
+			status: 409,
+			code: "refresh_conflict",
+		});
+	}
+	vi.useFakeTimers({ now: new Date("2026-10-29T19:00:00.000Z"), toFake: ["Date"] });
+	await fixture.restart().alarm();
+	expect(collectors.collectRepository.mock.calls[0]?.[0].days).toHaveLength(90);
+	expect(collectors.collectRepository.mock.calls[0]?.[0].days[0].date).toBe("2026-07-31");
+	expect(collectors.collectRepository.mock.calls[0]?.[0].days.at(-1).date).toBe("2026-10-28");
+	expect(await getRefreshRun(fixture.db(), "account", first.id)).toMatchObject({
+		status: "completed",
+		params: { lookbackDays: 90 },
+	});
+	const daily = await startRefresh(fixture.env, "account", {}, "scheduled", at);
+	expect(daily.params).toMatchObject({ since: "2026-10-28", until: "2026-10-28" });
+	expect(daily.params).not.toHaveProperty("lookbackDays");
+});
+
 it("settles D1-only cancellation after a CPU reset without entering cached B", async () => {
 	const fixture = await setup();
 	const run = await startRefresh(fixture.env, "account", { repo: "octo/one" });

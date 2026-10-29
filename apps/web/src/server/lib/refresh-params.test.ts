@@ -34,6 +34,38 @@ describe("unified refresh calendar parameters", () => {
 		]);
 		expect(params.repo).toBe("octo/Hello");
 	});
+	it("expands a 90-day lookback into closed Shanghai calendar days", () => {
+		const params = parseRefreshParams({ lookbackDays: 90 }, now);
+		expect(params).toMatchObject({
+			lookbackDays: 90,
+			since: "2026-07-31",
+			until: "2026-10-28",
+			timezone: "Asia/Shanghai",
+			force: false,
+		});
+		const days = refreshDays(params);
+		expect(days).toHaveLength(90);
+		expect(days[0]).toEqual({
+			date: "2026-07-31",
+			since: "2026-07-30T16:00:00.000Z",
+			until: "2026-07-31T16:00:00.000Z",
+		});
+		expect(days.at(-1)?.until).toBe("2026-10-28T16:00:00.000Z");
+	});
+	it("anchors lookback at Shanghai midnight and handles leap days", () => {
+		const before = parseRefreshParams({ lookbackDays: 1 }, new Date("2024-02-29T15:59:59Z"));
+		const after = parseRefreshParams(
+			{ lookbackDays: 2, timezone: "Asia/Shanghai", dimensions: ["alerts"], force: true },
+			new Date("2024-02-29T16:00:00Z"),
+		);
+		expect(before).toMatchObject({ since: "2024-02-28", until: "2024-02-28" });
+		expect(after).toMatchObject({
+			since: "2024-02-28",
+			until: "2024-02-29",
+			dimensions: ["alerts"],
+			force: true,
+		});
+	});
 	it.each([
 		null,
 		[],
@@ -50,6 +82,16 @@ describe("unified refresh calendar parameters", () => {
 		{ since: "2026-10-28", until: "2026-10-27" },
 		{ until: "2026-10-29" },
 		{ since: "2026-01-01", until: "2026-02-01" },
+		{ lookbackDays: 0 },
+		{ lookbackDays: 91 },
+		{ lookbackDays: -1 },
+		{ lookbackDays: 1.5 },
+		{ lookbackDays: "90" },
+		{ lookbackDays: null },
+		{ lookbackDays: 90, since: "2026-10-01" },
+		{ lookbackDays: 90, until: "2026-10-28" },
+		{ lookbackDays: 90, repo: "octo/hello" },
+		{ lookbackDays: 90, timezone: "UTC" },
 	])("rejects unsupported or unsafe parameters %j", (value) => {
 		expect(() => parseRefreshParams(value, now)).toThrow();
 	});

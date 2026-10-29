@@ -1,6 +1,6 @@
 # Machine API v1 Reference
 
-The v0.27.5 release provides one unified A-then-B refresh and keeps the analysis UI
+The v0.28.1 release provides one unified A-then-B refresh and keeps the analysis UI
 removed. Current run creation/status, parameters, stars, caching and daily
 scheduling are specified in [the refresh contract](15-unified-refresh.md).
 
@@ -1494,6 +1494,40 @@ contract exists. Equal normalized parameters on a manual POST deduplicate agains
 any active run, including a scheduled run (HTTP 202); repeating them after
 termination creates a new run.
 Different active requests return HTTP 409 instead of queueing.
+
+For an ad-hoc historical backfill, send `{"lookbackDays":90}` to the same
+endpoint. It resolves once at request creation to 90 **closed Asia/Shanghai
+calendar days**, ending yesterday, and returns both `params.lookbackDays` and
+the inclusive resolved `since`/`until`. For example, on 2026-10-29 Shanghai time,
+90 days means 2026-07-31 through 2026-10-28. This is not a rolling 90×24-hour
+window and never marks today's unfinished observations complete. `lookbackDays`
+must be an integer from 1 through 90, cannot be combined with `since`, `until`
+or `repo`, and requires `timezone: "Asia/Shanghai"` (the default).
+
+Backfill B selects **only locally starred repositories**, regardless of owner;
+it excludes even newly created, unstarred repositories. A still collects the
+account catalogue and contribution calendar; this does not authorize B to sweep
+the catalogue. `force` and `dimensions` retain their existing meanings. Without
+force, complete repo×day×dimension cache entries are reused with their original
+timestamps, including completed-but-unavailable alert days (such as expected
+404s). Retryable/partial observations remain eligible for collection. Historical
+Actions/security observations retain their bounded-sample and availability
+limitations; lookback does not reconstruct historical alert state or guarantee
+exhaustive historical workflow runs.
+
+The existing per-account lock also applies to backfills: an identical active
+request returns that run; a different request gets `409 refresh_conflict`, not
+another concurrently running job. Backfills are manual only. The fixed 03:00
+Asia/Shanghai daily refresh remains unchanged and is not expanded to 90 days.
+
+**Caller-enforced blackout:** do not start a backfill from **00:50 Asia/Shanghai
+until that day's scheduled daily refresh has finished**. Check the scheduled
+run's status; do not assume completion at a fixed wall-clock time. An absent,
+queued or running daily run does not end the blackout. This is an operational
+caller requirement, not an API-enforced time guard. A backfill started before
+00:50 can still delay the queued daily run; callers must allow enough time or
+request cancellation before the blackout. Do not retry-start a backfill during
+this window.
 
 Automatic B includes all locally starred repositories regardless of owner, plus
 genuinely new, unobserved, non-fork repositories owned by the account and created

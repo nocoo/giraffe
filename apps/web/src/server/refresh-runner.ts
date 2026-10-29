@@ -166,10 +166,10 @@ export async function startRefresh(
 	trigger: RefreshRun["trigger"] = "manual",
 	at = new Date(),
 ): Promise<RefreshRun> {
-	const params = parseRefreshParams(input, at);
+	parseRefreshParams(input, at);
 	const response = await dispatch(env, accountId, "/start", {
 		accountId,
-		params,
+		params: input,
 		trigger,
 		at: at.toISOString(),
 	});

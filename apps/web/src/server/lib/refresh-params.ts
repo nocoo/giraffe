@@ -5,6 +5,7 @@ import { ApiError } from "./errors";
 const DAY = 86_400_000;
 const inputSchema = z
 	.object({
+		lookbackDays: z.number().int().min(1).max(90).optional(),
 		since: z.iso.date().optional(),
 		until: z.iso.date().optional(),
 		timezone: z.string().min(1).max(100).default("Asia/Shanghai"),
@@ -52,6 +53,19 @@ function midnight(date: string, format: Intl.DateTimeFormat): string {
 export function parseRefreshParams(value: unknown, now = new Date()): RefreshParams {
 	const parsed = inputSchema.safeParse(value);
 	if (!parsed.success) throw new ApiError(400, "validation_failed", "invalid refresh parameters");
+	const { lookbackDays } = parsed.data;
+	if (
+		lookbackDays !== undefined &&
+		(parsed.data.since !== undefined ||
+			parsed.data.until !== undefined ||
+			parsed.data.repo !== undefined ||
+			parsed.data.timezone !== "Asia/Shanghai")
+	)
+		throw new ApiError(
+			400,
+			"validation_failed",
+			"lookback requires Shanghai calendar days without since, until or repo",
+		);
 	let today: string;
 	try {
 		today = dateAt(formatter(parsed.data.timezone), now.getTime());
@@ -59,11 +73,11 @@ export function parseRefreshParams(value: unknown, now = new Date()): RefreshPar
 		throw new ApiError(400, "validation_failed", "invalid display timezone");
 	}
 	const until = parsed.data.until ?? shift(today, -1);
-	const since = parsed.data.since ?? until;
+	const since = parsed.data.since ?? shift(until, 1 - (lookbackDays ?? 1));
 	if (
 		since > until ||
 		until >= today ||
-		shift(since, 30) < until ||
+		(lookbackDays === undefined && shift(since, 30) < until) ||
 		new Set(parsed.data.dimensions).size !== parsed.data.dimensions.length
 	)
 		throw new ApiError(
@@ -77,6 +91,7 @@ export function parseRefreshParams(value: unknown, now = new Date()): RefreshPar
 		force: parsed.data.force,
 		since,
 		until,
+		...(lookbackDays === undefined ? {} : { lookbackDays }),
 		...(parsed.data.repo === undefined ? {} : { repo: parsed.data.repo }),
 	};
 }

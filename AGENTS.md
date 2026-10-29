@@ -20,6 +20,7 @@ Direction: [unified refresh](docs/15-unified-refresh.md), [saved factory observa
 - Server tests must not import the client. Viewmodels stay free of View/DOM imports and views/routes stay thin. The React/Basalt client now exists; historical phase-1 exclusions are no longer the current project scope.
 - Automated tests use local Wrangler/SQLite and GitHub/JWKS stubs, never real PATs, daily `.dev.vars` or `api.github.com`. Never use remote D1 or deploy remote `-test` resources.
 - Phase 2 authorizes one durable A-then-serial-B refresh, the 03:00 Asia/Shanghai starred schedule and explicit single-repository refresh. New repositories get initial observations without auto-starring. Cache complete repo×day×dimension observations by stable identity and timezone; preserve timestamps and missingness. Only new refresh tables feed observations, with no legacy data migration/fallback. Legacy quick/deep/full modes, queues and analysis UI stay removed. Details: [refresh contract](docs/15-unified-refresh.md).
+- Ad-hoc `lookbackDays` refreshes backfill closed Shanghai calendar days for locally starred repositories only, without the new-repository exception. Reuse complete caches including terminal unavailable days unless forced. Callers must not start backfills from 00:50 Asia/Shanghai until that day's scheduled daily refresh finishes; this blackout is operational, not server-enforced.
 - Keep strict TDD: failing tests remain in the working tree; commits pass current L1. Never skip hooks to publish a failing change.
 
 ## Setup and commands
