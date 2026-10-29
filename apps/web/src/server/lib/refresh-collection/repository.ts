@@ -92,21 +92,29 @@ export async function collectRepository(
 	name: string,
 ): Promise<CollectionResult> {
 	const db = collectionDb(context);
-	const saved = await db
-		.prepare(
-			"SELECT * FROM refresh_catalog WHERE account_id=? AND repo=? COLLATE NOCASE AND active=1",
-		)
-		.bind(context.account.id, name)
-		.first<Catalog>();
-	if (!saved) throw new ApiError(404, "not_found", "Repository not found in current catalogue");
-	const previous = (
-		await db
+	const accountId = context.account.id;
+	const catalogue =
+		"SELECT repo_id FROM refresh_catalog WHERE account_id=? AND repo=? COLLATE NOCASE AND active=1";
+	const [savedResult, observationResult, priorResult] = (await db.batch([
+		db
 			.prepare(
-				"SELECT * FROM refresh_day_observations WHERE account_id=? AND repo_id=? AND timezone=?",
+				"SELECT * FROM refresh_catalog WHERE account_id=? AND repo=? COLLATE NOCASE AND active=1",
 			)
-			.bind(context.account.id, saved.repo_id, context.run.params.timezone)
-			.all<DayObservation>()
-	).results;
+			.bind(accountId, name),
+		db
+			.prepare(
+				`SELECT * FROM refresh_day_observations WHERE account_id=? AND repo_id=(${catalogue}) AND timezone=?`,
+			)
+			.bind(accountId, accountId, name, context.run.params.timezone),
+		db
+			.prepare(
+				`SELECT payload FROM refresh_repository_publications WHERE account_id=? AND repo_id=(${catalogue})`,
+			)
+			.bind(accountId, accountId, name),
+	])) as [D1Result<Catalog>, D1Result<DayObservation>, D1Result<{ payload: string }>];
+	const saved = savedResult.results[0];
+	if (!saved) throw new ApiError(404, "not_found", "Repository not found in current catalogue");
+	const previous = observationResult.results;
 	const needed = context.run.params.dimensions.filter(
 		(dimension) =>
 			context.run.params.force ||
@@ -137,15 +145,8 @@ export async function collectRepository(
 	const restOnly =
 		needed.length > 0 &&
 		needed.every((dimension) => dimension === "actions" || dimension === "alerts");
-	const prior =
-		!needed.length || restOnly
-			? await db
-					.prepare(
-						"SELECT payload FROM refresh_repository_publications WHERE account_id=? AND repo_id=?",
-					)
-					.bind(context.account.id, saved.repo_id)
-					.first<{ payload: string }>()
-			: null;
+	const priorRow = priorResult.results[0];
+	const prior = priorRow ? { payload: priorRow.payload } : null;
 	const metadataQuery =
 		needed.some((dimension) => dimension !== "actions" && dimension !== "alerts") ||
 		(restOnly && (prior === null || context.run.params.force));
@@ -290,9 +291,16 @@ export async function collectRepository(
 	for (const dimension of context.run.params.dimensions) {
 		const selected = context.days.map((day) => current.get(`${day.date}:${dimension}`));
 		const stored = selected.filter((row): row is DayObservation => row !== undefined);
-		const available = stored.filter(
-			(row) => row.status === "complete" && object(JSON.parse(row.payload)).unavailable !== true,
-		);
+		const settled = stored
+			.filter((row) => row.status === "complete")
+			.map((row) => ({ row, payload: object(JSON.parse(row.payload)) }));
+		const available = settled.filter(({ payload }) => payload.unavailable !== true);
+		const settledReason =
+			settled
+				.map(({ payload }) => text(payload.reason))
+				.find((reason): reason is string => reason !== null) ?? "unavailable";
+		const missing =
+			selected.length !== stored.length || stored.some((row) => row.status !== "complete");
 		terminalUnavailable.set(
 			dimension,
 			selected.length > 0 &&
@@ -331,17 +339,15 @@ export async function collectRepository(
 					.filter(Boolean)
 					.sort()[0] ?? null,
 			observed: available.length,
-			reason: available.length === selected.length ? null : "missing_days",
-			completeWindows: available.flatMap((row) => {
-				const payload = JSON.parse(row.payload) as Node;
-				return [
-					{
-						since: String(payload.since),
-						until: new Date(Date.parse(String(payload.until)) - 1).toISOString(),
-						timezone: context.run.params.timezone,
-					},
-				];
-			}),
+			reason:
+				available.length === selected.length ? null : missing ? "missing_days" : settledReason,
+			completeWindows: settled.flatMap(({ payload }) => [
+				{
+					since: String(payload.since),
+					until: new Date(Date.parse(String(payload.until)) - 1).toISOString(),
+					timezone: context.run.params.timezone,
+				},
+			]),
 			strategy: needed.includes(dimension) ? ("incremental" as const) : ("reused" as const),
 		};
 		repo.coverage[dimension] = coverage;
