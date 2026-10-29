@@ -2,9 +2,9 @@
 
 项目说明：[简体中文](../README.md) · [English](README.en.md)。
 
-Numbered design documents. The current delete-only release contract is
-[Phase 1 retirement](14-phase1-retirement.md); earlier collection investigations
-describe historical implementations, not runnable collection features.
+Numbered design documents. The current release contract is
+[Phase 2 unified refresh](15-unified-refresh.md). Phase 1 and earlier collection
+investigations describe retired implementations, not current execution paths.
 
 | #   | 文档                                       |
 | --- | ------------------------------------------ |
@@ -28,3 +28,5 @@ describe historical implementations, not runnable collection features.
 - [Landed activity ledger, observation limits and rollback](13-landed-activity.md)
 
 - [Phase 1 retirement: v0.26.0 behavior and verification](14-phase1-retirement.md)
+
+- [Phase 2 unified refresh: v0.27.0 execution, APIs and operations](15-unified-refresh.md)

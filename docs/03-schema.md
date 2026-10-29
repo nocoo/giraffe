@@ -1,10 +1,9 @@
 # 03 — 数据 Schema
 
-> **v0.26.0:** Collection execution and the AI analysis product surface have
-> been removed. The implementation details below are historical where they
-> describe refresh modes, runs, schedules, collectors or analysis pages.
-> [Phase 1 retirement](14-phase1-retirement.md) is the current behavior contract;
-> saved-data schemas and read semantics remain relevant.
+> **v0.27.0:** [Phase 2 unified refresh](15-unified-refresh.md) is the current
+> storage and execution contract. New `refresh_*` tables have no legacy-data
+> migration. Earlier factory/run/analysis schema descriptions below are historical;
+> retired tables can remain inert and are never observation fallbacks.
 
 ## Daily reports (0.20.0, no migration)
 

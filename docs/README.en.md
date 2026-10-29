@@ -19,7 +19,7 @@
 
 Giraffe is a personal GitHub console. Add classic PATs for one or more accounts to review repositories, open issues and pull requests, security alerts, and notifications, then compare repository metrics across days.
 
-Version 0.26.0 removes the old refresh/collection stack and the analysis product surface. The Dashboard retains its layout and reads supported saved snapshots with their original timestamps. Missing data shows an explicit empty state; collection is unavailable. No phase-2 A+B collector is included. See the [phase-1 contract](14-phase1-retirement.md).
+Version 0.27.0 adds unified refresh: account discovery first, then serial repository collection with calendar-day caching. The Dashboard and Machine API read new saved observations; missing data stays explicitly unavailable. Starred repositories refresh at 03:00 Asia/Shanghai, with ad-hoc repository refresh and no automatic starring. Analysis and legacy refresh modes remain removed. See the [phase-2 contract](15-unified-refresh.md).
 
 PATs are encrypted with AES-256-GCM before storage in D1. Data snapshots are stored as JSON without additional application-level encryption. This is a personal deployment: everyone allowed into the same deployment shares its accounts and snapshots.
 
