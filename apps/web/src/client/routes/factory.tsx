@@ -151,8 +151,8 @@ export function FactoryPage() {
 		return snapshot?.repos.filter((repo) => names.has(repo.name.toLowerCase())) ?? [];
 	}, [snapshot, selection]);
 	const board = useMemo(
-		() => (snapshot ? factoryBoard(snapshot, scope, selection, range, rangeParam !== null) : null),
-		[snapshot, scope, selection, range, rangeParam],
+		() => (snapshot ? factoryBoard(snapshot, scope, selection, range) : null),
+		[snapshot, scope, selection, range],
 	);
 	const freshness = board?.freshness;
 	const day = (

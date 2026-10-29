@@ -17,6 +17,7 @@ test("factory ranges end at saved Shanghai data and keep unobserved days empty",
 	await page.goto("/factory");
 	const range = page.getByRole("radiogroup", { name: "图表窗口", exact: true });
 	await expect(range.getByRole("radio", { name: "90 天", exact: true })).toBeChecked();
+	await expect(page.locator("button.factory-day")).toHaveCount(90);
 	await expect(page.getByRole("heading", { name: "变化 · 最近 90 天", exact: true })).toBeVisible();
 	const latest = page.locator("button.factory-day").last();
 	await expect(latest).toHaveAttribute("aria-label", /2026-10-22.*Asia\/Shanghai/);
@@ -28,6 +29,8 @@ test("factory ranges end at saved Shanghai data and keep unobserved days empty",
 	await range.getByRole("radio", { name: "180 天", exact: true }).click();
 	await expect(page.locator("button.factory-day")).toHaveCount(180);
 	await expect(latest).toHaveAttribute("aria-label", /2026-10-22.*Asia\/Shanghai/);
+	await range.getByRole("radio", { name: "90 天", exact: true }).click();
+	await expect(page.locator("button.factory-day")).toHaveCount(90);
 });
 
 for (const dayCount of [30, 90]) {
@@ -58,7 +61,8 @@ for (const dayCount of [30, 90]) {
 					});
 		});
 		await page.goto("/factory");
-		await expect(page.getByRole("heading", { name: `变化 · 最近 ${dayCount} 天` })).toBeVisible();
+		await expect(page.getByRole("heading", { name: "变化 · 最近 90 天" })).toBeVisible();
+		await expect(page.locator("button.factory-day")).toHaveCount(90);
 		await page.locator("#factory-change-title").getByLabel("More information").hover();
 		await expect(page.getByRole("tooltip")).not.toContainText("快速刷新");
 		await expect(page.getByRole("tooltip")).not.toContainText("深度刷新");

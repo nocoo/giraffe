@@ -66,7 +66,7 @@ vi.mock("./factory-charts", () => ({
 			type="button"
 			data-calendar-days={days.length}
 			data-calendar-timezone={timezone}
-			onClick={() => onSelect(days[0]?.date ?? "")}
+			onClick={() => onSelect(days.at(-1)?.date ?? "")}
 		/>
 	),
 	FactoryTreemap: () => null,
@@ -252,7 +252,7 @@ it.each([false, true])(
 				);
 				expect(container.querySelector("#factory-change-title")).toBeNull();
 			} else {
-				expect(container.textContent).toContain("1 个 Asia/Shanghai 日期");
+				expect(container.textContent).toContain("90 个 Asia/Shanghai 日期");
 				expect(container.textContent).toContain(
 					"2026-10-28 00:00 → 2026-10-29 00:00 (Asia/Shanghai)",
 				);
@@ -310,7 +310,7 @@ it("defaults the historical chart window to 90 days and keeps range options", as
 	}
 });
 
-it.each([30, 90])("labels the published %i-day chart window", async (dayCount) => {
+it.each([30, 90])("keeps the default chart span over %i published days", async (dayCount) => {
 	const raw = factoryFixture();
 	raw.window = savedFactoryWindow(raw.fetched_at, dayCount);
 	vi.mocked(loadFactory).mockResolvedValue({ ...raw, selectedRepos: raw.repos });
@@ -326,9 +326,7 @@ it.each([30, 90])("labels the published %i-day chart window", async (dayCount) =
 				</MemoryRouter>,
 			),
 		);
-		expect(container.querySelector("#factory-change-title")?.textContent).toBe(
-			`变化 · 最近 ${dayCount} 天`,
-		);
+		expect(container.querySelector("#factory-change-title")?.textContent).toBe("变化 · 最近 90 天");
 		expect(container.textContent).not.toContain("每日快速刷新");
 		expect(container.textContent).not.toContain("每周深度刷新");
 		expect(container.textContent).toContain("默认 7 天仅用于期间比较");

@@ -109,7 +109,6 @@ export function factoryBoard(
 	repos: FactoryRepo[],
 	selectedRepos: FactorySelectedRepo[],
 	rangeDays: number = DEFAULT_FACTORY_RANGE,
-	explicitRange = false,
 ) {
 	const selectedNames = new Set(selectedRepos.map((repo) => repo.name.toLowerCase()));
 	repos = repos.filter((repo) => selectedNames.has(repo.name.toLowerCase()));
@@ -139,7 +138,7 @@ export function factoryBoard(
 	const latestStart = Date.parse(`${latestDay}T00:00:00.000Z`);
 	const rangeStart = latestStart - (rangeDays - 1) * DAY_MS;
 	const firstDayStart = Date.parse(`${firstDay}T00:00:00.000Z`);
-	const startDay = isoDay(explicitRange ? rangeStart : Math.max(firstDayStart, rangeStart));
+	const startDay = isoDay(rangeStart);
 	const availableDays = Math.max(1, Math.round((latestStart - firstDayStart) / DAY_MS) + 1);
 	const days: BoardDay[] = [];
 	for (
@@ -376,14 +375,18 @@ function coversWindow(
 	from: number,
 	to: number,
 ) {
-	const window = windowOf(repo, stream);
-	return (
-		repo.coverage[stream].status === "complete" &&
-		(repo.coverage[stream].completeWindows ?? [window]).some((value) => {
-			const bounds = calendarBounds(value);
-			return bounds.since <= from && bounds.until >= to;
-		})
-	);
+	const coverage = repo.coverage[stream];
+	const windows =
+		coverage.completeWindows ?? (coverage.status === "complete" ? [windowOf(repo, stream)] : []);
+	const bounds = windows.map(calendarBounds);
+	let cursor = from;
+	for (const value of bounds.sort((left, right) => left.since - right.since)) {
+		if (value.until < from) continue;
+		if (value.since > cursor) break;
+		cursor = Math.max(cursor, value.until);
+		if (cursor >= to) return true;
+	}
+	return false;
 }
 
 function sumFlow(days: Record<string, Flow>, from: number, to: number): Flow {
