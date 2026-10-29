@@ -365,6 +365,7 @@ describe("software factory view model", () => {
 		repo.coverage.commits.status = "partial";
 		repo.coverage.commits.completeWindows = shanghaiCompleteDays(["2026-10-28"]);
 		const board = factoryBoard(snapshot, [repo], [repo]);
+		expect(board.observed.commits).toBe(true);
 		expect(board.days).toHaveLength(90);
 		expect(board.days.at(-1)).toMatchObject({
 			date: "2026-10-28",
@@ -375,6 +376,18 @@ describe("software factory view model", () => {
 		const earlier = board.days.slice(0, -1);
 		expect(earlier.every((day) => !day.observed && day.commits === null)).toBe(true);
 		expect(earlier.every((day) => !day.complete.commits)).toBe(true);
+	});
+	it("shows partial observations without claiming their days are complete", () => {
+		const snapshot = ready();
+		const repo = snapshot.repos[0];
+		if (!repo) throw new Error("fixture");
+		repo.coverage.commits.status = "partial";
+		repo.coverage.commits.observed = 2;
+		repo.metrics.days = { "2026-09-15": { ...emptyDay(), commits: 2 } };
+		const board = factoryBoard(snapshot, [repo], [repo]);
+		expect(board.observed.commits).toBe(true);
+		expect(board.days.at(-1)).toMatchObject({ commits: 2, complete: { commits: false } });
+		expect(hasFactoryMeasurement(repo, "commits")).toBe(true);
 	});
 	it("unions Asia/Shanghai day windows without crossing the local day boundary", () => {
 		const snapshot = ready();

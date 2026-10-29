@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { emptyDay } from "../../apps/web/src/lib/factory";
 import { factoryFixture, savedFactoryWindow } from "../fixtures/factory-snapshot";
 import { createUiFixtures, projectFactoryFixture } from "./ui-fixtures";
 import { uiRefreshReviewFixtures } from "./ui-refresh-review-fixtures";
@@ -40,12 +41,15 @@ for (const dayCount of [30, 90]) {
 		const repo = snapshot.repos[0];
 		if (!repo) throw new Error("fixture");
 		repo.name = "octocat/hello-world";
+		repo.metrics.days = { "2026-09-15": emptyDay() };
 		repo.observation = {
 			version: snapshot.runId,
 			window: savedFactoryWindow(snapshot.fetched_at, dayCount),
 			refreshedAt: snapshot.fetched_at,
 			source: "run",
 		};
+		repo.coverage.commits.status = "partial";
+		repo.coverage.commits.completeWindows = [repo.observation.window];
 		snapshot.window = savedFactoryWindow(snapshot.fetched_at, 30);
 		const fixtures: Record<string, unknown> = {
 			...createUiFixtures(),
@@ -63,6 +67,7 @@ for (const dayCount of [30, 90]) {
 		await page.goto("/factory");
 		await expect(page.getByRole("heading", { name: "变化 · 最近 90 天" })).toBeVisible();
 		await expect(page.locator("button.factory-day")).toHaveCount(90);
+		await expect(page.getByText("提交尚未采集。", { exact: true })).toHaveCount(0);
 		await page.locator("#factory-change-title").getByLabel("More information").hover();
 		await expect(page.getByRole("tooltip")).not.toContainText("快速刷新");
 		await expect(page.getByRole("tooltip")).not.toContainText("深度刷新");

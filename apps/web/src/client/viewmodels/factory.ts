@@ -232,15 +232,9 @@ export function factoryBoard(
 		.map(([name, bytes]) => ({ name, bytes, share: languageTotal ? bytes / languageTotal : 0 }))
 		.sort((a, b) => b.bytes - a.bytes);
 	const observed = Object.fromEntries(
-		FACTORY_STREAMS.map((k) => [
-			k,
-			repos.some(
-				(r) =>
-					r.coverage[k].status === "complete" ||
-					(r.coverage[k].status !== "pending" &&
-						r.coverage[k].status !== "partial" &&
-						r.coverage[k].observed > 0),
-			),
+		FACTORY_STREAMS.map((stream) => [
+			stream,
+			repos.some((repo) => hasFactoryMeasurement(repo, stream)),
 		]),
 	) as Record<FactoryStreamName, boolean>;
 	const activity = activityBuckets(repoActivity, periodEnd);
@@ -808,7 +802,11 @@ export const STREAM_CODES: Record<FactoryStreamName, string> = {
 };
 export function hasFactoryMeasurement(repo: FactoryRepo, stream: FactoryStreamName): boolean {
 	const coverage = repo.coverage[stream];
-	return coverage.status === "complete" || (coverage.status === "limited" && coverage.observed > 0);
+	return (
+		coverage.status === "complete" ||
+		(coverage.status !== "pending" &&
+			(coverage.observed > 0 || (coverage.completeWindows?.length ?? 0) > 0))
+	);
 }
 
 export function formatObservedCount(value: number, complete: boolean): string {

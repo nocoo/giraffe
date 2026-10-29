@@ -2397,3 +2397,9 @@ when another day makes the overall stream partial; gaps remain unknown and
 observed complete zeros remain zero. The old single-window predicate could not
 represent the new API's daily evidence. Update route tests to select the intended
 observed date, rather than accidentally selecting the new empty leading date.
+
+The first daily-window correction updated completeness but missed the separate
+chart visibility predicate, which still hid all partial streams. Verify the
+rendered chart as well as its day values: a complete zero day remains visible
+inside an otherwise partial stream. Share the evidence predicate with table
+counts so partial observations do not disappear at another presentation boundary.
