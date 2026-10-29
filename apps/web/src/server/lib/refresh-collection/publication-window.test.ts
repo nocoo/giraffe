@@ -4,6 +4,9 @@ import { sqliteFixture } from "../../../../../../tests/fixtures/sqlite";
 import type { FactoryViewSnapshot } from "../../../lib/factory-types";
 import type { Env } from "../../env";
 import { createApp } from "../../index";
+import { createDb } from "../db/d1";
+import { readFactoryResource } from "../machine-observations";
+import { readSources } from "../machine-sources";
 import type { CollectionContext } from "../refresh-collection-contract";
 import { parseRefreshParams, refreshDays } from "../refresh-params";
 import { collectAccount, collectRepository } from "./index";
@@ -308,6 +311,13 @@ it("preserves both oldest history and latest source times without renewing cache
 	const saved = (await response.json()) as FactoryViewSnapshot;
 	expect(saved.repos[0]?.observation?.refreshedAt).toBe(daily.now);
 	expect(saved.freshness).toMatchObject({ oldestAt: accountAt, latestAt: daily.now });
+	const detail = await readFactoryResource(createDb(db), "a", "owner/project", "commits");
+	const source = (await readSources(createDb(db), "a", {})).sources.find(
+		(entry) => entry.resource === "factory:owner/project:commits",
+	);
+	const freshness = { oldestAt: accountAt, latestAt: daily.now, total: 1, missing: 0 };
+	expect(detail.freshness).toEqual(freshness);
+	expect(source?.freshness).toEqual(freshness);
 	const replay = { ...daily, now: "2026-10-30T05:00:00.000Z" };
 	const fetch = upstream([]);
 	await collectRepository(replay, "owner/project");

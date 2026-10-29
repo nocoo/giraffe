@@ -43,3 +43,22 @@ it("orders actual instants, preserves provenance strings and leaves its inputs i
 	expect(times).toEqual(before);
 	expect(snapshotFreshness([times[0], times[0]])).toMatchObject({ total: 2, missing: 0 });
 });
+
+it("keeps oldest and latest retained evidence times within one stream denominator", () => {
+	const coverage = {
+		status: "complete" as const,
+		fetchedAt: "2026-10-29T04:00:00.000Z",
+		sourceFetchedAt: "2026-10-30T04:00:00.000Z",
+	};
+	expect(factoryStreamFreshness(coverage)).toEqual({
+		oldestAt: coverage.fetchedAt,
+		latestAt: coverage.sourceFetchedAt,
+		total: 1,
+		missing: 0,
+	});
+	expect(factoryStreamFreshness({ ...coverage, status: "limited" })).toMatchObject({
+		latestAt: coverage.sourceFetchedAt,
+		total: 1,
+		missing: 1,
+	});
+});

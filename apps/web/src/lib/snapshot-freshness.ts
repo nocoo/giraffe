@@ -21,8 +21,17 @@ export function snapshotFreshness(times: (string | null | undefined)[]): Snapsho
 	}
 	return { oldestAt, latestAt, total: times.length, missing };
 }
-export function factoryStreamFreshness(coverage: Pick<FactoryCoverage, "status" | "fetchedAt">) {
-	const freshness = snapshotFreshness([coverage.fetchedAt]);
-	if (coverage.status !== "complete") freshness.missing = 1;
-	return freshness;
+export function factoryStreamFreshness(
+	coverage: Pick<FactoryCoverage, "status" | "fetchedAt" | "sourceFetchedAt">,
+) {
+	const freshness = snapshotFreshness(
+		coverage.sourceFetchedAt
+			? [coverage.fetchedAt, coverage.sourceFetchedAt]
+			: [coverage.fetchedAt],
+	);
+	return {
+		...freshness,
+		total: 1,
+		missing: coverage.status !== "complete" || freshness.missing > 0 ? 1 : 0,
+	};
 }
