@@ -209,10 +209,12 @@ test("card help is compact, supports hover and keyboard, and charts keep green k
 	await expect(surface).toHaveCSS("outline-style", "solid");
 	await expect(surface).toHaveCSS("outline-width", "2px");
 	const keyboardColor = await surface.evaluate((element) => getComputedStyle(element).outlineColor);
+	await page.getByRole("button", { name: "刷新数据", exact: true }).click();
 	const primaryColor = await page
-		.getByRole("button", { name: "刷新暂不可用", exact: true })
+		.getByRole("button", { name: "开始刷新", exact: true })
 		.evaluate((element) => getComputedStyle(element).backgroundColor);
 	expect(keyboardColor).toBe(primaryColor);
+	await page.keyboard.press("Escape");
 	await page.getByRole("heading", { name: "交付吞吐", exact: true }).click();
 	await surface.click({ position: { x: 10, y: 10 } });
 	await expect(surface).toBeFocused();
@@ -305,7 +307,7 @@ test("chart content fills cards, donut charts use the plot area and table gutter
 		),
 	).toBeLessThanOrEqual(1);
 	await page
-		.getByRole("button", { name: /2026-09-10 08:00 → 2026-09-11 08:00.*点击查看当日统计/ })
+		.getByRole("button", { name: /2026-09-10 00:00 → 2026-09-11 00:00 \(UTC\).*点击查看当日统计/ })
 		.click();
 	await expect(page.locator(".factory-ledger-selected")).toHaveAttribute("aria-selected", "true");
 	await page.goto("/insights");
@@ -423,12 +425,14 @@ for (const [chart, values] of [
 		await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
 		const tip = plot.locator(".factory-chart-tip");
 		await expect(tip).toBeVisible();
-		await expect(tip.locator("strong")).toHaveText("2026-09-10 08:00 → 2026-09-11 08:00");
+		await expect(tip.locator("strong")).toHaveText("2026-09-10 00:00 → 2026-09-11 00:00 (UTC)");
 		await expect(tip.getByTestId("chart-tooltip-row")).toHaveText([...values]);
 		await page.mouse.move(0, 0);
 		await expect(tip).not.toBeVisible();
 		await page
-			.getByRole("button", { name: /2026-09-10 08:00 → 2026-09-11 08:00.*点击查看当日统计/ })
+			.getByRole("button", {
+				name: /2026-09-10 00:00 → 2026-09-11 00:00 \(UTC\).*点击查看当日统计/,
+			})
 			.click();
 		await expect(page.locator(".factory-ledger-selected")).toContainText("2026-09-10");
 		expect(errors).toEqual([]);
@@ -476,7 +480,7 @@ test("factory visualizations use Basalt chart frames and preserve keyboard drill
 	await expect(page).toHaveURL(/\/repos\/nocoo\/app\?tab=factory/);
 	await page.goto("/factory");
 	const day = page.getByRole("button", {
-		name: /2026-09-10 08:00 → 2026-09-11 08:00.*点击查看当日统计/,
+		name: /2026-09-10 00:00 → 2026-09-11 00:00 \(UTC\).*点击查看当日统计/,
 	});
 	await day.click();
 	await expect(day).toHaveAttribute("aria-pressed", "true");
@@ -516,7 +520,9 @@ test("factory Basalt controls and larger text fit mobile and dark mode", async (
 		animations: "disabled",
 	});
 	await page.getByRole("button", { name: "关闭数据时间", exact: true }).click();
-	await expect(page.getByRole("button", { name: "刷新暂不可用", exact: true })).toBeDisabled();
+	await page.getByRole("button", { name: "刷新数据", exact: true }).click();
+	await expect(page.getByRole("button", { name: "开始刷新", exact: true })).toBeEnabled();
+	await page.keyboard.press("Escape");
 	await expect(page.getByRole("link", { name: "去刷新", exact: true })).toHaveCount(0);
 	expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 	await page.screenshot({ path: ".factory-cache/basalt/dialog-mobile-dark.png" });
@@ -566,7 +572,9 @@ test("repository timestamps stay in a Basalt dialog and elapsed time ticks every
 	await expect(dialog.getByRole("timer")).toHaveCount(0);
 });
 
-test("other pages are read-only and missing data never offers collection", async ({ page }) => {
+test("page reads never collect and repository refresh remains explicit when data is missing", async ({
+	page,
+}) => {
 	const writes: string[] = [];
 	page.on("request", (request) => {
 		if (new URL(request.url()).pathname.startsWith("/api/") && request.method() !== "GET")
@@ -585,8 +593,9 @@ test("other pages are read-only and missing data never offers collection", async
 		await page.goto(path);
 		await expect(page.getByTestId(content)).toBeVisible();
 		await expect(
-			page.getByRole("main").getByRole("button", { name: /刷新/, disabled: false }),
-		).toHaveCount(0);
+			page.getByRole("main").getByRole("button", { name: "刷新此仓库", exact: true }),
+		).toHaveCount(path.startsWith("/repos/octocat/") ? 1 : 0);
+		await expect(page.getByRole("button", { name: "刷新数据", exact: true })).toBeVisible();
 		await expect(page.getByText("首个账号添加成功后会自动同步仓库。", { exact: true })).toHaveCount(
 			0,
 		);
@@ -599,7 +608,10 @@ test("other pages are read-only and missing data never offers collection", async
 	);
 	await page.getByRole("tab", { name: "流量", exact: true }).click();
 	await expect(page.getByText("暂无已保存的快照", { exact: true })).toBeVisible();
-	await expect(page.getByRole("button", { name: "刷新暂不可用", exact: true })).toBeDisabled();
+	await page.getByRole("button", { name: "刷新此仓库", exact: true }).click();
+	await expect(page.getByRole("button", { name: "开始刷新", exact: true })).toBeEnabled();
+	await expect(page.getByRole("dialog", { name: "统一刷新" })).toContainText("不改变星标");
+	await page.keyboard.press("Escape");
 	await expect(page.getByRole("link", { name: "前往刷新中心", exact: true })).toHaveCount(0);
 	expect(writes).toEqual([]);
 });

@@ -67,7 +67,7 @@ function button(label: string) {
 	return element;
 }
 
-it("keeps machine token settings available without any refresh permission promise", async () => {
+it("keeps machine token settings and names the app-write refresh permission", async () => {
 	await act(async () => root.render(<ApiTokens accounts={[]} />));
 	expect(container.textContent).toContain("外部 Bot API 令牌");
 	expect(container.querySelector<HTMLInputElement>('[aria-label="新令牌标签"]')?.value).toBe(
@@ -77,7 +77,7 @@ it("keeps machine token settings available without any refresh permission promis
 	expect(container.textContent).toContain("原文只显示一次");
 	expect(container.textContent).toContain("撤销立即生效");
 	expect(container.textContent).toContain("修改应用配置");
-	expect(container.textContent).not.toContain("发起刷新");
+	expect(container.textContent).toContain("发起刷新");
 	expect(button("创建令牌").disabled).toBe(true);
 	expect(listTokens).not.toHaveBeenCalled();
 });

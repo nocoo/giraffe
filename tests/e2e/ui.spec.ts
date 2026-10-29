@@ -293,10 +293,12 @@ test("repository grid retains the search and links to the selected repository", 
 	await expect(page.getByRole("tabpanel").getByText("MIT", { exact: true })).toBeVisible();
 });
 
-test("missing snapshots keep read-only empty states and disabled refresh", async ({ page }) => {
+test("missing snapshots keep honest empty states and an explicit account refresh control", async ({
+	page,
+}) => {
 	await page.route("**/api/**", (route) => {
 		const path = new URL(route.request().url()).pathname;
-		if (path === "/api/me" || path === "/api/accounts") {
+		if (path === "/api/me" || path === "/api/accounts" || path.startsWith("/api/refresh-runs")) {
 			return route.fallback();
 		}
 		return route.fulfill({
@@ -309,9 +311,11 @@ test("missing snapshots keep read-only empty states and disabled refresh", async
 	for (const path of ["/repos", "/issues", "/pulls", "/inbox", "/insights"]) {
 		await page.goto(path);
 		await expect(page.getByText("暂无已保存的快照", { exact: true })).toBeVisible();
-		await expect(page.getByRole("button", { name: "刷新暂不可用", exact: true })).toBeDisabled();
+		await page.getByRole("button", { name: "刷新数据", exact: true }).click();
+		await expect(page.getByRole("button", { name: "开始刷新", exact: true })).toBeEnabled();
+		await page.keyboard.press("Escape");
 		await expect(page.getByRole("link", { name: "前往刷新中心", exact: true })).toHaveCount(0);
-		await expect(page.getByText(/旧刷新已停用/)).toBeVisible();
+		await expect(page.getByText(/旧刷新已停用/)).toHaveCount(0);
 	}
 });
 
@@ -399,7 +403,7 @@ test("missing repository tabs remain read-only and show newly saved snapshots", 
 	await expect(page.getByRole("button", { name: "数据更新时间：暂无数据时间" })).toBeVisible();
 	expect(await page.getByTestId("repo-detail").ariaSnapshot()).not.toContain("上次刷新");
 	await expect(page.getByRole("tabpanel").getByRole("status")).toHaveCount(0);
-	await expect(page.getByRole("button", { name: "刷新暂不可用", exact: true })).toBeDisabled();
+	await expect(page.getByRole("button", { name: "刷新此仓库", exact: true })).toBeVisible();
 	await page.unroute("**/api/repos/octocat/hello-world/languages");
 	await page.reload();
 	await page.getByRole("tab", { name: "语言", exact: true }).click();
@@ -411,7 +415,7 @@ test("missing repository tabs remain read-only and show newly saved snapshots", 
 });
 
 for (const mode of ["light", "dark", "mobile"] as const) {
-	test(`${mode}: pages fit long content without overflow or separate refresh buttons`, async ({
+	test(`${mode}: pages fit long content with shared account and repository refresh controls`, async ({
 		page,
 	}) => {
 		const width = mode === "mobile" ? 390 : 1440;
@@ -435,8 +439,9 @@ for (const mode of ["light", "dark", "mobile"] as const) {
 				width,
 			);
 			await expect(
-				page.getByRole("main").getByRole("button", { name: /刷新/, disabled: false }),
-			).toHaveCount(0);
+				page.getByRole("main").getByRole("button", { name: "刷新此仓库", exact: true }),
+			).toHaveCount(path.startsWith("/repos/octocat/") ? 1 : 0);
+			await expect(page.getByRole("button", { name: "刷新数据", exact: true })).toBeVisible();
 			if (process.env.UI_SCREENSHOTS) {
 				await page.screenshot({
 					path: `${process.env.UI_SCREENSHOTS}/${mode}-${ready}.png`,

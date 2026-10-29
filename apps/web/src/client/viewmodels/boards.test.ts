@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { emptyDay } from "../../lib/factory";
 import {
 	alertsBoard,
 	inboxBoard,
@@ -169,6 +170,19 @@ describe("single repository factory series", () => {
 		expect(series).toHaveLength(dayCount);
 		expect(series[0]?.x).toBe(since.slice(0, 10));
 		expect(series.at(-1)?.x).toBe("2026-09-15");
+	});
+	it("keeps a Shanghai calendar day aligned with the repository's date keys", () => {
+		const series = repoFactorySeries(
+			{ metrics: { days: { "2026-10-28": { ...emptyDay(), commits: 2 } } } },
+			{
+				since: "2026-10-27T16:00:00Z",
+				until: "2026-10-28T15:59:59.999Z",
+				timezone: "Asia/Shanghai",
+			},
+		);
+		expect(series.map(({ x, commits }) => ({ x, commits }))).toEqual([
+			{ x: "2026-10-28", commits: 2 },
+		]);
 	});
 	it("does not include the exclusive UTC midnight endpoint", () => {
 		expect(

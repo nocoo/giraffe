@@ -34,20 +34,22 @@ import {
 
 describe("format", () => {
 	it("localizes timestamps and aggregate boundaries across midnight and DST", () => {
+		expect(formatDate("2026-09-16T20:01:12Z")).toBe("2026-09-17 04:01");
+		expect(formatPreciseDate("2026-09-16T20:01:12Z")).toBe("2026年9月17日 04:01:12");
 		expect(formatDate("2026-09-16T20:01:12Z", "Asia/Shanghai")).toBe("2026-09-17 04:01");
 		expect(formatDate("2026-09-28T11:31:35Z", "America/Los_Angeles")).toBe("2026-09-28 04:31");
 		expect(formatDayRange("2026-09-10", "2026-09-10", "Asia/Shanghai")).toBe(
-			"2026-09-10 08:00 → 2026-09-11 08:00",
+			"2026-09-10 00:00 → 2026-09-11 00:00 (Asia/Shanghai)",
 		);
 		expect(formatDayRange("2026-03-08", "2026-03-08", "America/New_York")).toBe(
-			"2026-03-07 19:00 → 2026-03-08 20:00",
+			"2026-03-08 00:00 → 2026-03-09 00:00 (America/New_York)",
 		);
 		expect(formatDayRange("2026-09-01", "2026-09-07", "UTC")).toBe(
-			"2026-09-01 00:00 → 2026-09-08 00:00",
+			"2026-09-01 00:00 → 2026-09-08 00:00 (UTC)",
 		);
 		expect(formatDayRange("invalid")).toBe("—");
 		expect(formatDayRange("2026-09-10")).toBe(
-			`${formatDate("2026-09-10")} → ${formatDate("2026-09-11")}`,
+			"2026-09-10 00:00 → 2026-09-11 00:00 (Asia/Shanghai)",
 		);
 	});
 

@@ -41,7 +41,7 @@ import {
 	Tag,
 	Users,
 } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router";
 import {
 	FACTORY_STREAMS,
@@ -63,6 +63,7 @@ import {
 	TableSkeleton,
 } from "../components/layout/page-skeleton";
 import { ProjectLinks, ProjectName } from "../components/layout/project-identity";
+import { RefreshControl } from "../components/layout/refresh-control";
 import { SnapshotPending } from "../components/layout/snapshot-pending";
 import { ChurnMeter, LabelChips, PersonCell } from "../components/layout/table-chrome";
 import { useProjectIdentity } from "../components/layout/use-project-identity";
@@ -122,6 +123,26 @@ async function fetchTab<T extends { account_id: string }>(
 		return { missing: true };
 	}
 	return first;
+}
+
+function useRepoTabRead<Value extends { account_id: string }>(
+	owner: string,
+	name: string,
+	tab: RepoTab,
+	receive: (value: Value | { missing: true }) => void,
+	enabled: boolean,
+) {
+	useSnapshotRead(
+		() => fetchTab<Value>(owner, name, tab),
+		receive,
+		(error) => {
+			const missing = catchLoad(error, (message) => toast.error(message));
+			receive(missing ?? { missing: true });
+		},
+		enabled,
+		true,
+		`${owner}/${name}/${tab}`,
+	);
 }
 
 function TabWell({ children, flush = false }: { children: ReactNode; flush?: boolean }) {
@@ -188,78 +209,9 @@ export function RepoDetailPage() {
 		null,
 	);
 	const [factory, setFactory] = useState<{ snap: FactorySnapshot; repo: FactoryRepo } | null>(null);
-	const loaded = useRef({ actions: false, releases: false });
-	useSnapshotRead(
-		async () => ({
-			key: `${owner}/${name}/${tab}`,
-			value:
-				tab === "factory"
-					? null
-					: await fetchTab<
-							| RepoDetails
-							| RepoActions
-							| RepoReleases
-							| RepoSecurity
-							| RepoTraffic
-							| IssuesSnapshot
-							| PullsSnapshot
-							| RepoLanguages
-							| RepoContributors
-						>(owner, name, tab),
-		}),
-		({ key, value }) => {
-			if (key !== `${owner}/${name}/${tab}` || !value || "missing" in value) return;
-			switch (tab) {
-				case "details":
-					setSnap(value as RepoDetails);
-					break;
-				case "actions":
-					setActions(value as RepoActions);
-					break;
-				case "releases":
-					setReleases(value as RepoReleases);
-					break;
-				case "security":
-					setSecurity(value as RepoSecurity);
-					break;
-				case "traffic":
-					setTraffic(value as RepoTraffic);
-					break;
-				case "issues":
-					setIssues(value as IssuesSnapshot);
-					break;
-				case "prs":
-					setPulls(value as PullsSnapshot);
-					break;
-				case "languages":
-					setLanguages(value as RepoLanguages);
-					break;
-				case "contributors":
-					setContributors(value as RepoContributors);
-					break;
-			}
-		},
-		() => undefined,
-		valid && tab !== "factory",
-		false,
-	);
-
 	useEffect(() => {
-		let cancelled = false;
+		setSnap(isValidRepoPart(owner) && isValidRepoPart(name) ? null : { invalid: true });
 		setFactory(null);
-		loaded.current = { actions: false, releases: false };
-		if (valid)
-			// The overview borrows the factory's 90-day per-repo metrics; it is optional context.
-			void loadFactory("all")
-				.then((f) => {
-					const repo =
-						"missing" in f
-							? undefined
-							: f.repos.find((r) => r.name.toLowerCase() === `${owner}/${name}`.toLowerCase());
-					if (!cancelled && repo && !("missing" in f)) setFactory({ snap: f, repo });
-				})
-				.catch(() => undefined);
-		setSnap(null);
 		setSecurity(null);
 		setTraffic(null);
 		setActions(null);
@@ -268,118 +220,56 @@ export function RepoDetailPage() {
 		setPulls(null);
 		setLanguages(null);
 		setContributors(null);
-		if (!valid) {
-			setSnap({ invalid: true });
-			return;
-		}
-		void loadRepoTab<RepoDetails>(owner, name, "details")
-			.then((next) => {
-				if (cancelled) {
-					return;
-				}
-				setSnap(next);
-			})
-			.catch((err: unknown) => {
-				if (cancelled) {
-					return;
-				}
-				const missing = catchLoad(err, (message) => {
-					toast.error(message);
-				});
-				if (missing) {
-					setSnap(missing);
-				}
-			});
-		return () => {
-			cancelled = true;
-		};
-	}, [owner, name, valid]);
-
-	useEffect(() => {
-		if (!valid || tab === "factory") {
-			return;
-		}
-		const snapshotTab = tab;
-		let cancelled = false;
-		function apply<T>(
-			setter: (value: T | { missing: true }) => void,
-			value: T | { missing: true },
-		) {
-			if (!cancelled) {
-				setter(value);
-			}
-		}
-		function onTabError(err: unknown): void {
-			if (cancelled) {
-				return;
-			}
-			const missing = catchLoad(err, (message) => {
-				toast.error(message);
-			});
-			if (missing) {
-				setSnap(missing);
-				return;
-			}
-			// A failed initial fetch must leave the loading state so the user can retry.
-			const setCurrent = {
-				details: setSnap,
-				security: setSecurity,
-				traffic: setTraffic,
-				actions: setActions,
-				releases: setReleases,
-				issues: setIssues,
-				prs: setPulls,
-				languages: setLanguages,
-				contributors: setContributors,
-			}[snapshotTab];
-			setCurrent({ missing: true });
-		}
-		if (tab === "security") {
-			void fetchTab<RepoSecurity>(owner, name, "security")
-				.then((value) => apply(setSecurity, value))
-				.catch(onTabError);
-		}
-		if (tab === "traffic") {
-			void fetchTab<RepoTraffic>(owner, name, "traffic")
-				.then((value) => apply(setTraffic, value))
-				.catch(onTabError);
-		}
-		if (tab === "actions" || (tab === "details" && !loaded.current.actions)) {
-			loaded.current.actions = true;
-			void fetchTab<RepoActions>(owner, name, "actions")
-				.then((value) => apply(setActions, value))
-				.catch(onTabError);
-		}
-		if (tab === "releases" || (tab === "details" && !loaded.current.releases)) {
-			loaded.current.releases = true;
-			void fetchTab<RepoReleases>(owner, name, "releases")
-				.then((value) => apply(setReleases, value))
-				.catch(onTabError);
-		}
-		if (tab === "issues") {
-			void fetchTab<IssuesSnapshot>(owner, name, "issues")
-				.then((value) => apply(setIssues, value))
-				.catch(onTabError);
-		}
-		if (tab === "prs") {
-			void fetchTab<PullsSnapshot>(owner, name, "prs")
-				.then((value) => apply(setPulls, value))
-				.catch(onTabError);
-		}
-		if (tab === "languages") {
-			void fetchTab<RepoLanguages>(owner, name, "languages")
-				.then((value) => apply(setLanguages, value))
-				.catch(onTabError);
-		}
-		if (tab === "contributors") {
-			void fetchTab<RepoContributors>(owner, name, "contributors")
-				.then((value) => apply(setContributors, value))
-				.catch(onTabError);
-		}
-		return () => {
-			cancelled = true;
-		};
-	}, [owner, name, valid, tab]);
+	}, [owner, name]);
+	useRepoTabRead<RepoDetails>(owner, name, "details", setSnap, valid);
+	useRepoTabRead<RepoSecurity>(owner, name, "security", setSecurity, valid && tab === "security");
+	useRepoTabRead<RepoTraffic>(owner, name, "traffic", setTraffic, valid && tab === "traffic");
+	useRepoTabRead<RepoActions>(
+		owner,
+		name,
+		"actions",
+		setActions,
+		valid && (tab === "actions" || tab === "details"),
+	);
+	useRepoTabRead<RepoReleases>(
+		owner,
+		name,
+		"releases",
+		setReleases,
+		valid && (tab === "releases" || tab === "details"),
+	);
+	useRepoTabRead<IssuesSnapshot>(owner, name, "issues", setIssues, valid && tab === "issues");
+	useRepoTabRead<PullsSnapshot>(owner, name, "prs", setPulls, valid && tab === "prs");
+	useRepoTabRead<RepoLanguages>(
+		owner,
+		name,
+		"languages",
+		setLanguages,
+		valid && tab === "languages",
+	);
+	useRepoTabRead<RepoContributors>(
+		owner,
+		name,
+		"contributors",
+		setContributors,
+		valid && tab === "contributors",
+	);
+	useSnapshotRead(
+		() => loadFactory("all"),
+		(value) => {
+			const repo =
+				"missing" in value
+					? null
+					: value.repos.find(
+							(item) => item.name.toLowerCase() === `${owner}/${name}`.toLowerCase(),
+						);
+			setFactory(repo && !("missing" in value) ? { snap: value, repo } : null);
+		},
+		() => undefined,
+		valid,
+		true,
+		`${owner}/${name}/factory`,
+	);
 
 	if (!valid || (snap && "invalid" in snap)) {
 		return (
@@ -402,7 +292,12 @@ export function RepoDetailPage() {
 				<PageHeader
 					title={<ProjectName repo={`${owner}/${name}`} project={identity} size={48} showTitle />}
 					description={identity?.description}
-					actions={identity ? <ProjectLinks project={identity} /> : undefined}
+					actions={
+						<>
+							<ProjectLinks project={identity} />
+							<RefreshControl repo={`${owner}/${name}`} />
+						</>
+					}
 				/>
 				<TabWell>
 					<SnapshotPending state={snap} />
@@ -419,7 +314,12 @@ export function RepoDetailPage() {
 				<PageHeader
 					title={<ProjectName repo={`${owner}/${name}`} project={identity} size={48} showTitle />}
 					description={identity?.description}
-					actions={identity ? <ProjectLinks project={identity} /> : undefined}
+					actions={
+						<>
+							<ProjectLinks project={identity} />
+							<RefreshControl repo={`${owner}/${name}`} />
+						</>
+					}
 				/>
 				<RepoDetailSkeleton label="加载仓库" />
 			</div>
@@ -485,6 +385,7 @@ export function RepoDetailPage() {
 					<>
 						{truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
 						<ProjectLinks project={identity} github={snap.url} />
+						<RefreshControl repo={`${owner}/${name}`} />
 					</>
 				}
 			/>
@@ -1065,7 +966,7 @@ export function RepoDetailPage() {
 							<LayerCard.Empty
 								icon={<Code2 />}
 								title="还没有语言统计"
-								description="已保存快照中没有语言数据。旧刷新已停用，当前无法采集新数据。"
+								description="已保存快照中没有语言数据；未采集时保持缺失，不代表仓库没有语言。"
 							/>
 						</TabWell>
 					) : languages ? (

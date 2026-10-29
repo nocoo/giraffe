@@ -10,6 +10,14 @@ export type AccountRow = {
 let activeId: string | null = null;
 let cacheGen = 0;
 let sessionTick: Promise<string> | null = null;
+const listeners = new Set<() => void>();
+
+export function subscribeSession(listener: () => void): () => void {
+	listeners.add(listener);
+	return () => {
+		listeners.delete(listener);
+	};
+}
 
 export function getActiveAccountId(): string | null {
 	return activeId;
@@ -18,8 +26,9 @@ export function getActiveAccountId(): string | null {
 export function setActiveAccountId(id: string | null): void {
 	if (activeId !== id) {
 		cacheGen += 1;
+		activeId = id;
+		for (const listener of listeners) listener();
 	}
-	activeId = id;
 }
 
 export function cacheGeneration(): number {

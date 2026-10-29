@@ -1,10 +1,15 @@
 import { expect, test } from "@playwright/test";
 
-test("a fresh account keeps the dashboard and cannot start collection", async ({ page }) => {
+test("a fresh account keeps missing dashboard data until refresh is explicitly started", async ({
+	page,
+}) => {
 	const collectionRequests: string[] = [];
 	page.on("request", (request) => {
 		const path = new URL(request.url()).pathname;
-		if (/^\/api\/(refresh|factory\/runs|agent)(\/|$)/.test(path)) {
+		if (
+			/^\/api\/(refresh|factory\/runs|agent)(\/|$)/.test(path) ||
+			(path === "/api/refresh-runs" && request.method() !== "GET")
+		) {
 			collectionRequests.push(`${request.method()} ${path}`);
 		}
 	});
@@ -18,9 +23,12 @@ test("a fresh account keeps the dashboard and cannot start collection", async ({
 	);
 	await page.goto("/factory");
 	await expect(page.getByRole("heading", { name: "软件工厂", exact: true })).toBeVisible();
-	await expect(page.getByRole("button", { name: "刷新暂不可用", exact: true })).toBeDisabled();
+	await page.getByRole("button", { name: "刷新数据", exact: true }).click();
+	await expect(page.getByRole("button", { name: "开始刷新", exact: true })).toBeEnabled();
+	await expect(page.getByRole("dialog", { name: "统一刷新" })).toContainText("尚无刷新记录");
+	await page.keyboard.press("Escape");
 	await expect(page.getByText("暂无已保存的快照", { exact: true })).toBeVisible();
-	await expect(page.getByText(/旧刷新已停用/)).toBeVisible();
+	await expect(page.getByText(/旧刷新已停用/)).toHaveCount(0);
 	await expect(page.getByRole("link", { name: /去刷新|刷新中心/ })).toHaveCount(0);
 	for (const title of [
 		"变化 · 暂无观测窗口",

@@ -390,7 +390,8 @@ export function ReposPage() {
 				}
 			>
 				<p className="mb-3 text-xs text-basalt-muted-foreground">
-					星标仅筛选已保存快照，包含 Fork 和已归档仓库。旧刷新已停用，当前无法采集新数据。
+					星标筛选已保存快照，并决定每日默认刷新的仓库，包含 Fork
+					和已归档仓库。新发现的仓库仅自动刷新一次，不会自动加星。
 				</p>
 				{rows.length === 0 ? (
 					<LayerCard>

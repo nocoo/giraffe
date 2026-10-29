@@ -16,7 +16,7 @@ import {
 	useMemo,
 	useState,
 } from "react";
-import { formatPreciseDate } from "../../lib/format";
+import { DISPLAY_TIMEZONE, formatPreciseDate } from "../../lib/format";
 import { type DataTime, dataTimeSummary } from "../../viewmodels/data-time";
 
 type Registry = Map<string, DataTime[]>;
@@ -127,9 +127,7 @@ export function DataTimeControl() {
 						</div>
 					))}
 				</dl>
-				<p className="text-xs text-basalt-muted-foreground">
-					本地时区：{Intl.DateTimeFormat().resolvedOptions().timeZone}
-				</p>
+				<p className="text-xs text-basalt-muted-foreground">显示时区：{DISPLAY_TIMEZONE}</p>
 			</PopoverContent>
 		</Popover>
 	);

@@ -61,7 +61,7 @@ export function RepoActivityChart({ days }: { days: Day[] }) {
 						if (!active || !d) return null;
 						return (
 							<div className="factory-chart-tip">
-								<strong>{formatDayRange(d.x)}</strong>
+								<strong>{formatDayRange(d.x, d.x, d.timezone)}</strong>
 								<ChartTooltipRow
 									label="提交"
 									color={FLOW_COLORS.commits}

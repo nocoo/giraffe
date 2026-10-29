@@ -16,6 +16,7 @@ import { DataTimeControl, DataTimeProvider } from "./data-time";
 import { EnvironmentSwitch } from "./environment-switch";
 import { GithubIcon } from "./github-icon";
 import { HeaderTooltip, HexlyLink } from "./header-links";
+import { RefreshControl } from "./refresh-control";
 import { useRepositoryScope } from "./repository-scope";
 import { ThemeToggle } from "./theme-toggle";
 import { useIsMobile } from "./use-mobile";
@@ -126,6 +127,7 @@ export function AppShell() {
 						actions={
 							<>
 								<EnvironmentSwitch />
+								<RefreshControl />
 								{location.pathname !== "/settings" ? (
 									<DataTimeControl key={`${location.pathname}:${scope}`} />
 								) : null}

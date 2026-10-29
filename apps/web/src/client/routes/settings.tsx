@@ -169,7 +169,7 @@ export function SettingsPage() {
 									</Button>
 								</div>
 								<p className="text-xs leading-5 text-basalt-muted-foreground">
-									添加账号后可查看已有快照。旧刷新已停用，当前无法采集新数据。
+									添加账号后可查看已有快照，或从顶部发起统一刷新。
 								</p>
 							</form>
 						</LayerCard.Body>

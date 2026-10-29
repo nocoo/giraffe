@@ -14,6 +14,7 @@ import type { FactoryCoverage, FactoryEvent, FactoryStreamName } from "../../lib
 import { CandyBadge } from "../components/layout/candy-badge";
 import { TableScroll } from "../components/layout/collection-chrome";
 import { TableSkeleton } from "../components/layout/page-skeleton";
+import { useRefreshModel } from "../components/layout/refresh-provider";
 import { SelectField } from "../components/layout/select-field";
 import { LabelChips, PersonCell } from "../components/layout/table-chrome";
 import {
@@ -301,32 +302,41 @@ export function RepoFactoryTab({
 	const [total, setTotal] = useState(0);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState("");
+	const refreshModel = useRefreshModel();
 
 	useEffect(() => {
 		let cancelled = false;
+		let version = 0;
 		setLoading(true);
 		setError("");
-		void loadFactoryDetail(repo, stream, page, state, day, "all")
-			.then((detail) => {
-				if (cancelled) return;
-				if (!detail) {
-					setError("账号已切换，请重新加载页面。");
-				} else {
-					setItems(detail.items);
-					setCoverage(detail.coverage);
-					setTotal(detail.total);
-				}
-				setLoading(false);
-			})
-			.catch((cause: unknown) => {
-				if (cancelled) return;
-				setError(factoryError(cause));
-				setLoading(false);
-			});
+		function read() {
+			const request = ++version;
+			void loadFactoryDetail(repo, stream, page, state, day, "all")
+				.then((detail) => {
+					if (cancelled || request !== version) return;
+					setError("");
+					if (!detail) {
+						setError("账号已切换，请重新加载页面。");
+					} else {
+						setItems(detail.items);
+						setCoverage(detail.coverage);
+						setTotal(detail.total);
+					}
+					setLoading(false);
+				})
+				.catch((cause: unknown) => {
+					if (cancelled || request !== version) return;
+					setError(factoryError(cause));
+					setLoading(false);
+				});
+		}
+		read();
+		const unsubscribe = refreshModel?.subscribeData(read);
 		return () => {
 			cancelled = true;
+			unsubscribe?.();
 		};
-	}, [repo, stream, page, state, day]);
+	}, [repo, stream, page, state, day, refreshModel]);
 
 	const stateOptions = recordStateOptions(stream);
 	const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -377,7 +387,7 @@ export function RepoFactoryTab({
 			<p className="text-xs text-basalt-muted-foreground">
 				来自软件工厂的窗口内记录，含全部状态与采集覆盖；不是 GitHub 的实时视图。
 			</p>
-			{loading ? null : (
+			{loading || error ? null : (
 				<div className="factory-provenance">
 					{coverage ? (
 						<span>

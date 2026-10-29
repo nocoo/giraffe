@@ -89,10 +89,12 @@ export function FactoryHeatmap({
 	days,
 	selected,
 	onSelect,
+	timezone = "UTC",
 }: {
 	days: { date: string; count: number; known?: boolean }[];
 	selected: string;
 	onSelect: (date: string) => void;
+	timezone?: string;
 }) {
 	const max = Math.max(1, ...days.map((d) => d.count));
 	const offset = days[0] ? (new Date(days[0].date).getDay() + 6) % 7 : 0;
@@ -107,7 +109,7 @@ export function FactoryHeatmap({
 				}}
 			>
 				{days.map((d, i) => {
-					const label = `${formatDayRange(d.date)}：${d.known === false ? (d.count ? `≥ ${n(d.count)}` : "未完整观测") : n(d.count)}`;
+					const label = `${formatDayRange(d.date, d.date, timezone)}：${d.known === false ? (d.count ? `≥ ${n(d.count)}` : "未完整观测") : n(d.count)}`;
 					return (
 						<BasaltTooltip key={d.date}>
 							<TooltipTrigger asChild>

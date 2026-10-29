@@ -28,6 +28,59 @@ import {
 } from "./factory";
 
 describe("software factory view model", () => {
+	it.each([
+		["Asia/Shanghai", "2026-10-28", "2026-10-27T16:00:00Z", "2026-10-28T15:59:59.999Z"],
+		["America/New_York", "2026-03-08", "2026-03-08T05:00:00Z", "2026-03-09T03:59:59.999Z"],
+		["America/New_York", "2026-11-01", "2026-11-01T04:00:00Z", "2026-11-02T04:59:59.999Z"],
+	])(
+		"preserves a complete calendar day and its one-day flow in %s",
+		(timezone, date, since, until) => {
+			const snapshot = ready();
+			const repo = snapshot.repos[0];
+			if (!repo) throw new Error("fixture");
+			snapshot.window = { since, until, timezone };
+			repo.metrics.days = { [date]: { ...emptyDay(), commits: 2 } };
+			for (const stream of FACTORY_STREAMS) repo.coverage[stream].status = "complete";
+			const board = factoryBoard(snapshot, snapshot.repos, snapshot.repos);
+			expect(board.days).toHaveLength(1);
+			expect(board.days[0]).toMatchObject({ date, commits: 2, complete: { commits: true } });
+			expect(board.periods[0]).toMatchObject({
+				since: date,
+				until: date,
+				current: { commits: 2 },
+				complete: { commits: true },
+			});
+			expect(board.repoActivity[0]?.periods[1].commits).toBe(2);
+		},
+	);
+	it("withholds incompatible per-source calendar aggregation across timezones", () => {
+		const snapshot = ready();
+		const first = snapshot.repos[0];
+		if (!first) throw new Error("fixture");
+		snapshot.window = {
+			since: "2026-10-27T16:00:00Z",
+			until: "2026-10-28T15:59:59.999Z",
+			timezone: "Asia/Shanghai",
+		};
+		first.metrics.days = { "2026-10-28": { ...emptyDay(), commits: 2 } };
+		for (const stream of FACTORY_STREAMS) first.coverage[stream].status = "complete";
+		first.coverage.commits.observation = {
+			version: "dst-source",
+			source: "run",
+			refreshedAt: snapshot.fetched_at,
+			head: null,
+			window: {
+				since: "2026-03-08T05:00:00Z",
+				until: "2026-03-09T03:59:59.999Z",
+				timezone: "America/New_York",
+			},
+		};
+		const board = factoryBoard(snapshot, snapshot.repos, snapshot.repos);
+		expect(board.mixedTimezones).toBe(true);
+		expect(board.days).toEqual([]);
+		expect(board.periods[0]?.complete.commits).toBe(false);
+		expect(board.repoActivity).toEqual([]);
+	});
 	it.each([30, 90])("uses the published %i-day UTC window for chart days", (dayCount) => {
 		const snapshot = ready();
 		snapshot.window = savedFactoryWindow(snapshot.fetched_at, dayCount);
@@ -100,6 +153,14 @@ describe("software factory view model", () => {
 		expect(board.coverage.complete).toBe(0);
 		expect(board.aggregate.ciRate).toBeNull();
 		expect(board.days).toHaveLength(90);
+	});
+	it("requires complete dependency evidence before reporting an empty graph as zero", () => {
+		const snapshot = ready();
+		expect(factoryBoard(snapshot, snapshot.repos, snapshot.repos).dependenciesComplete).toBe(false);
+		for (const repo of snapshot.repos) repo.coverage.dependencies.status = "complete";
+		expect(factoryBoard(snapshot, snapshot.repos, snapshot.repos).dependenciesComplete).toBe(true);
+		snapshot.repos = [];
+		expect(factoryBoard(snapshot, [], []).dependenciesComplete).toBe(false);
 	});
 	it("builds only evidenced cross-project references, with source URLs and merged duplicate edges", () => {
 		const s = ready();
