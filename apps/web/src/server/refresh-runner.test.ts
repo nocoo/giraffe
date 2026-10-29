@@ -104,7 +104,15 @@ async function setup() {
 	};
 }
 async function deliverNextAlarm(fixture: Awaited<ReturnType<typeof setup>>) {
-	vi.useFakeTimers({ now: Math.max(Date.now(), fixture.alarmAt() ?? 0), toFake: ["Date"] });
+	const retry = (await fixture.storage.get("retry")) as
+		| { notBefore: number; exhausted?: unknown }
+		| undefined;
+	const active = await refreshStore.activeRefreshRun(fixture.db(), "account");
+	const retryAt = active?.cancelRequested || retry?.exhausted ? 0 : (retry?.notBefore ?? 0);
+	vi.useFakeTimers({
+		now: Math.max(Date.now(), fixture.alarmAt() ?? 0, retryAt),
+		toFake: ["Date"],
+	});
 	await fixture.storage.deleteAlarm();
 	await fixture.restart().alarm();
 }
@@ -181,9 +189,10 @@ it("rechecks D1 cancellation before the same-wake repository continuation", asyn
 	const run = await startRefresh(fixture.env, "account", {});
 	const save = refreshStore.saveRefreshRun;
 	const spy = vi.spyOn(refreshStore, "saveRefreshRun").mockImplementation(async (db, next) => {
-		await save(db, next);
+		const saved = await save(db, next);
 		if (next.phase === "repos" && !next.cancelRequested)
 			await refreshStore.requestRefreshCancel(fixture.db(), "account", run.id, next.updatedAt);
+		return saved;
 	});
 	try {
 		await fixture.runner.alarm();
@@ -196,6 +205,193 @@ it("rechecks D1 cancellation before the same-wake repository continuation", asyn
 	} finally {
 		spy.mockRestore();
 	}
+});
+
+it.each(["account", "repos"] as const)(
+	"bounds uncommitted %s attempts after three runtime resets",
+	async (phase) => {
+		const fixture = await setup();
+		const run = await startRefresh(fixture.env, "account", {});
+		if (phase === "repos")
+			await saveRefreshRun(fixture.db(), { ...run, status: "running", phase, repos: ["octo/one"] });
+		const prototype = Object.getPrototypeOf(fixture.runner) as { settle: () => Promise<unknown> };
+		const reset = vi
+			.spyOn(prototype, "settle")
+			.mockRejectedValue(new Error("runtime reset before settlement"));
+		try {
+			for (let attempt = 0; attempt < 3; attempt++)
+				await expect(deliverNextAlarm(fixture)).rejects.toThrow("runtime reset before settlement");
+		} finally {
+			reset.mockRestore();
+		}
+		await deliverNextAlarm(fixture);
+		expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
+			status: phase === "account" ? "failed" : "partial",
+			phase: "done",
+			errorCode: "refresh_interrupted",
+			requests: 0,
+			partialReasons: [expect.objectContaining({ codes: ["refresh_interrupted"] })],
+		});
+		expect(
+			phase === "account" ? collectors.collectAccount : collectors.collectRepository,
+		).toHaveBeenCalledTimes(3);
+		expect(fixture.alarmAt()).toBeNull();
+	},
+);
+
+it("replays interrupted-attempt exhaustion after failed saves without collecting again", async () => {
+	const fixture = await setup();
+	const run = await startRefresh(fixture.env, "account", {});
+	await fixture.storage.put("executing", { key: `${run.id}:account:0:0`, interruptions: 2 });
+	const save = refreshStore.saveRefreshRun;
+	let failures = 2;
+	const spy = vi.spyOn(refreshStore, "saveRefreshRun").mockImplementation(async (db, next) => {
+		if (next.errorCode === "refresh_interrupted" && failures-- > 0)
+			throw new Error("save interrupted");
+		return save(db, next);
+	});
+	try {
+		for (let attempt = 0; attempt < 2; attempt++) {
+			await expect(deliverNextAlarm(fixture)).rejects.toThrow("save interrupted");
+			expect(fixture.alarmAt()).toBe(Date.now() + 5_000);
+		}
+		await deliverNextAlarm(fixture);
+		expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
+			status: "failed",
+			errorCode: "refresh_interrupted",
+		});
+		expect(collectors.collectAccount).not.toHaveBeenCalled();
+		expect(await fixture.storage.get("executing")).toBeUndefined();
+		expect(new Set(spy.mock.calls.map(([, next]) => next.finishedAt)).size).toBe(1);
+	} finally {
+		spy.mockRestore();
+	}
+});
+
+it("prioritizes persisted cancellation over runtime interruption exhaustion", async () => {
+	const fixture = await setup();
+	const run = await startRefresh(fixture.env, "account", {});
+	await saveRefreshRun(fixture.db(), { ...run, status: "running" });
+	await fixture.storage.put("executing", { key: `${run.id}:account:0:0`, interruptions: 2 });
+	await refreshStore.requestRefreshCancel(
+		fixture.db(),
+		"account",
+		run.id,
+		new Date().toISOString(),
+	);
+	await deliverNextAlarm(fixture);
+	expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
+		status: "cancelled",
+		errorCode: null,
+	});
+	expect(collectors.collectAccount).not.toHaveBeenCalled();
+	expect(await fixture.storage.get("executing")).toBeUndefined();
+});
+
+it("does not defer a concurrent D1 cancellation to a stale rate-limit deadline", async () => {
+	vi.useFakeTimers({ now: new Date("2026-10-29T04:00:00.000Z"), toFake: ["Date"] });
+	const fixture = await setup();
+	const run = await startRefresh(fixture.env, "account", {});
+	collectors.collectRepository.mockRejectedValue(
+		new ApiError(
+			429,
+			"github_rate_limited",
+			"limited",
+			new Date(Date.now() + 3_600_000).toISOString(),
+		),
+	);
+	const put = fixture.storage.put.getMockImplementation();
+	fixture.storage.put.mockImplementation(async (key, value) => {
+		if (key === "retry")
+			await refreshStore.requestRefreshCancel(
+				fixture.db(),
+				"account",
+				run.id,
+				new Date().toISOString(),
+			);
+		await put?.(key, value);
+	});
+	await fixture.runner.alarm();
+	expect(fixture.alarmAt()).toBeLessThanOrEqual(Date.now() + 5_000);
+	await deliverNextAlarm(fixture);
+	expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
+		status: "cancelled",
+		cancelRequested: true,
+	});
+	expect(collectors.collectRepository).toHaveBeenCalledOnce();
+});
+
+it("checks D1 cancellation on a heartbeat even after the settlement write has returned", async () => {
+	vi.useFakeTimers({ now: new Date("2026-10-29T04:00:00.000Z"), toFake: ["Date"] });
+	const fixture = await setup();
+	const run = await startRefresh(fixture.env, "account", {});
+	collectors.collectAccount.mockRejectedValue(
+		new ApiError(
+			429,
+			"github_rate_limited",
+			"limited",
+			new Date(Date.now() + 3_600_000).toISOString(),
+		),
+	);
+	await fixture.runner.alarm();
+	for (let heartbeat = 0; heartbeat < 3; heartbeat++) {
+		vi.setSystemTime(fixture.alarmAt() as number);
+		await fixture.storage.deleteAlarm();
+		await fixture.restart().alarm();
+		expect(collectors.collectAccount).toHaveBeenCalledOnce();
+		expect(await fixture.storage.get("executing")).toBeUndefined();
+		expect(fixture.alarmAt()).toBe(Date.now() + 5_000);
+	}
+	await refreshStore.requestRefreshCancel(
+		fixture.db(),
+		"account",
+		run.id,
+		new Date().toISOString(),
+	);
+	vi.setSystemTime(fixture.alarmAt() as number);
+	await fixture.storage.deleteAlarm();
+	await fixture.restart().alarm();
+	expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
+		status: "cancelled",
+	});
+	expect(collectors.collectAccount).toHaveBeenCalledOnce();
+});
+
+it("stops when the run is deleted during collection", async () => {
+	const fixture = await setup();
+	const run = await startRefresh(fixture.env, "account", {});
+	collectors.collectAccount.mockImplementationOnce(async () => {
+		await fixture.raw.prepare("DELETE FROM refresh_runs WHERE id=?").bind(run.id).run();
+		return { repos: ["octo/one"], ...collected(1, 1, 0) };
+	});
+	await fixture.runner.alarm();
+	expect(collectors.collectRepository).not.toHaveBeenCalled();
+	expect(fixture.alarmAt()).toBeNull();
+});
+
+it("does not count settled retries as runtime interruptions after marker cleanup fails", async () => {
+	const fixture = await setup();
+	const run = await startRefresh(fixture.env, "account", {});
+	collectors.collectAccount.mockRejectedValue(
+		new ApiError(503, "github_unavailable", "unavailable"),
+	);
+	const remove = fixture.storage.delete.getMockImplementation();
+	let failures = 3;
+	fixture.storage.delete.mockImplementation(async (key) => {
+		if (key === "executing" && failures-- > 0) throw new Error("cleanup interrupted");
+		return remove?.(key) ?? false;
+	});
+	for (let attempt = 0; attempt < 3; attempt++) {
+		await expect(deliverNextAlarm(fixture)).rejects.toThrow("cleanup interrupted");
+		const retry = (await fixture.storage.get("retry")) as { notBefore: number };
+		vi.setSystemTime(retry.notBefore);
+	}
+	await deliverNextAlarm(fixture);
+	expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
+		status: "failed",
+		errorCode: "github_unavailable",
+	});
+	expect(collectors.collectAccount).toHaveBeenCalledTimes(4);
 });
 it("durably queues one account run and executes A then B serial across restarts", async () => {
 	const fixture = await setup();
@@ -654,7 +850,8 @@ it("stops retry backoff when cancel arrives and never retries the failed reposit
 		new ApiError(503, "github_rate_limited", "safe", new Date(Date.now() + 120_000).toISOString()),
 	);
 	await fixture.runner.alarm();
-	expect(fixture.alarmAt()).toBeGreaterThan(Date.now() + 60_000);
+	expect(fixture.alarmAt()).toBeLessThanOrEqual(Date.now() + 5_000);
+	expect(await fixture.storage.get("retry")).toMatchObject({ notBefore: expect.any(Number) });
 	expect((await fixture.cancelRequest(run.id)).status).toBe(202);
 	expect(fixture.alarmAt()).toBeLessThanOrEqual(Date.now() + 1_000);
 	await fixture.runner.alarm();
@@ -982,7 +1179,7 @@ describe("same-Shanghai-day account reuse", () => {
 				interrupted = true;
 				throw new Error("B start persistence interrupted");
 			}
-			await original(db, next);
+			return original(db, next);
 		});
 		try {
 			await expect(fixture.runner.alarm()).rejects.toThrow("B start persistence interrupted");
@@ -1198,7 +1395,10 @@ it.each(["rest", "graphql"])(
 				status: "running",
 				errorCode: "github_rate_limited",
 			});
-			expect(fixture.alarmAt()).toBeGreaterThanOrEqual(reset * 1000);
+			expect(
+				((await fixture.storage.get("retry")) as { notBefore: number }).notBefore,
+			).toBeGreaterThanOrEqual(reset * 1000);
+			expect(fixture.alarmAt()).toBeLessThanOrEqual(Date.now() + 5_000);
 		} finally {
 			vi.unstubAllGlobals();
 		}
@@ -1424,7 +1624,8 @@ it("backs off briefly for transient failures and keeps retry-after for rate limi
 		new ApiError(503, "github_rate_limited", "safe", deadline),
 	);
 	await deliverNextAlarm(fixture);
-	expect(fixture.alarmAt()).toBeGreaterThanOrEqual(Date.parse(deadline));
+	expect(await fixture.storage.get("retry")).toMatchObject({ notBefore: Date.parse(deadline) });
+	expect(fixture.alarmAt()).toBeLessThanOrEqual(Date.now() + 5_000);
 });
 
 it.each([false, true])(
@@ -1457,7 +1658,8 @@ it.each([false, true])(
 				});
 				expect(fixture.alarmAt()).toBeNull();
 			} else {
-				expect(fixture.alarmAt()).toBe(deadline);
+				expect(fixture.alarmAt()).toBe(Date.now() + 5_000);
+				expect(await fixture.storage.get("retry")).toMatchObject({ notBefore: deadline });
 				vi.setSystemTime(deadline - 1);
 				await fixture.restart().alarm();
 				expect(collectors.collectAccount).toHaveBeenCalledTimes(1);
@@ -1622,7 +1824,7 @@ it.each(["committed-save", "retry-delete"])(
 		const failure = vi
 			.spyOn(refreshStore, "saveRefreshRun")
 			.mockImplementation(async (db, next) => {
-				await save(db, next);
+				const saved = await save(db, next);
 				if (!interrupted && next.completedRepos === 1) {
 					interrupted = true;
 					if (boundary === "committed-save") throw new Error("settlement acknowledgement lost");
@@ -1630,6 +1832,7 @@ it.each(["committed-save", "retry-delete"])(
 						new Error("settlement acknowledgement lost"),
 					);
 				}
+				return saved;
 			});
 		try {
 			await expect(deliverNextAlarm(fixture)).rejects.toThrow("settlement acknowledgement lost");
@@ -1715,12 +1918,13 @@ it.each(["committed-save", "retry-delete"])(
 		const failure = vi
 			.spyOn(refreshStore, "saveRefreshRun")
 			.mockImplementation(async (db, next) => {
-				await save(db, next);
+				const saved = await save(db, next);
 				if (!interrupted && next.status === "failed") {
 					interrupted = true;
 					if (boundary === "committed-save") throw new Error("terminal acknowledgement lost");
 					fixture.storage.delete.mockRejectedValueOnce(new Error("terminal acknowledgement lost"));
 				}
+				return saved;
 			});
 		try {
 			await expect(deliverNextAlarm(fixture)).rejects.toThrow("terminal acknowledgement lost");

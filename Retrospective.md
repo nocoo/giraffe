@@ -2312,3 +2312,32 @@ wall-time assertion now include that overhead. Transition timestamps describe
 durable state; never use algebraically identical timestamps as execution-speed
 evidence. Real Worker measurements and synthetic I/O measurements must stay
 separate from unmeasured production latency.
+
+## 2026-10-29: bound local CPU work and persist cancellation outside the runner
+
+The v0.27.4 acceptance again stayed in the repository phase with zero settled
+requests, and cancellation failed with a Durable Object CPU-reset error. Those
+counters were only saved after collection, so they could not distinguish an
+unstarted B from a B interrupted during local publication. Inspection found a
+concrete quadratic path: two-page snapshot packing repeatedly serialized and
+UTF-8 encoded each growing prefix. A roughly 1.95 MB fixture caused 3.78 GB of
+encoding work. Linear byte accounting must still preserve exact multibyte and
+truncation boundaries; an initial conservative bound dropped an exactly-fitting
+item and the existing boundary test caught it. A bounded second packing pass
+handles the final truncation metadata without repeating serialization.
+
+Cancellation originally entered the same overloaded object before writing D1.
+The Worker now commits intent first and only notifies the object in background.
+Review then reproduced a second race: cancellation committed after a settlement
+read could inherit an hour-long rate-limit alarm. Reading the atomic update's
+returned payload fixes that window, but not a later cancellation after the update
+returns. Five-second read-only backoff heartbeats close that final gap without
+violating upstream retry deadlines. Uncommitted execution markers also prevent
+runtime resets from bypassing the normal retry budget forever.
+
+Regressions cover linear encoding work, large saved inboxes through real local
+HTTP, failed/hung cancellation notifications, stale writers, late cancellation,
+reset exhaustion, lost settlement acknowledgements and cleanup failures. No
+production trace or production request was collected in this change. The CPU
+amplification is proven locally; it is not proof of the unique cause of the
+reported production reset, and local latency is not production acceptance.

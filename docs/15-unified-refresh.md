@@ -24,7 +24,18 @@ start, the runner records a recovery alarm five seconds ahead, not five minutes.
 Healthy steps continue in the same handler; step-cap yields leave an alarm
 due immediately. These bounds describe requested scheduling delays, not a
 Cloudflare alarm-delivery SLA. A crash may replay the interrupted step; rate-limit
-and transient retry deadlines still take precedence once the failure is recorded.
+and transient retry deadlines still prevent collection before their recorded time.
+Backoff alarms check D1 cancellation at most five seconds apart without issuing
+upstream requests; this also handles cancellation committed after settlement's
+last D1 operation when the best-effort notification is lost.
+
+A durable execution marker identifies the run, phase, repository cursor and
+settled attempt count. Three interruptions of the same uncommitted attempt stop
+replaying collection: A fails, or B advances with `refresh_interrupted` partial
+evidence. The exhaustion decision survives failed D1 settlement. A committed
+attempt is not counted again when marker cleanup fails, and cancellation wins
+over interruption exhaustion. Request totals include only settled evidence;
+requests issued by a killed attempt cannot be reconstructed or claimed as zero.
 
 Successful settlement and the next step's start share one D1 write. The runner
 carries that persisted cursor directly into the next step without setting an
