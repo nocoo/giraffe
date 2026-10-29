@@ -357,6 +357,35 @@ For real local Worker step timings, run
 its JSON output includes queue/A/B durations, step gaps and actual request counts
 for force, REST-only and zero-request cache paths, using only local stub data.
 
+### v0.27.4 local latency regression
+
+An identical real-collector/SQLite fixture with two A GraphQL pages, one B
+GraphQL request and three REST requests was replayed against immutable sources.
+Both security features returned 404. Each D1 RPC advanced a fake clock by 3,000 ms
+and each GitHub request by 100 ms; these are **synthetic I/O costs**, not measured
+production or local-network RTTs. Alarms were delivered at `max(now, alarmAt)`.
+
+| Source                                                            | Force D1 RPCs | Force synthetic wall | Force wakes | Repeat D1 RPCs | Repeat HTTP requests |
+| ----------------------------------------------------------------- | ------------- | -------------------- | ----------- | -------------- | -------------------- |
+| v0.27.2 `b3ddaa573828aa080620cef17e396403b432bc58`                | 32            | 96.6 s               | 2           | 25             | 3                    |
+| v0.27.3 `89ce50509b3d22303672e4ecc58a584f4cdff9a0`                | 24            | 72.6 s               | 2           | 22             | 0                    |
+| v0.27.4 implementation `50b1f4ca5b37a8681cdb381343d637d59c3f105a` | 20            | 60.6 s               | 1           | 17             | 0                    |
+
+Two benchmark passes produced identical counts. v0.27.2 finished partial because
+it classified the 404s as failures; the later sources finished completed.
+The current regression additionally measures collector entry/exit independently:
+the synthetic force A-to-B collector gap is 9 s (three 3 s D1 calls), not the
+zero delta between fused durable timestamps. Injecting an extra 40 s settlement
+delay fails its end-to-end bound (100.6 s versus the 61 s limit).
+
+The supplied production verification recorded 78 s for v0.27.2 and 109 s for
+v0.27.3. No production request was made for this change, so the table does not
+establish production wall time. The supplied sequence was non-force then force,
+not force then non-force: both baseline and current local probes already reuse
+the resulting unavailable day with zero HTTP requests. The reproducible cache
+defect is the misleading coverage projection; the cause of those production
+two REST requests is not proven by the available trace.
+
 `0028_refresh_observations.sql` adds `refresh_catalog`, `refresh_accounts`,
 `refresh_day_observations`, `refresh_items`, `refresh_repository_publications`,
 `refresh_snapshots`, `refresh_publications` and `refresh_resources`.
