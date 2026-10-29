@@ -256,6 +256,8 @@ export function refreshStepTiming(
 }
 
 export function refreshScopeLabel(run: RefreshRun): string {
+	if (run.params.lookbackDays !== undefined)
+		return `历史回填 · 仅星标仓库 · ${run.params.lookbackDays} 天`;
 	if (run.params.repo) return `单仓库 · ${run.params.repo}`;
 	const scope = "星标仓库 + 上海当日新建且未观测的非 fork 仓库";
 	return run.trigger === "scheduled" ? `每日自动 · ${scope}` : `手动 · ${scope}`;

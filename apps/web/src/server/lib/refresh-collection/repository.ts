@@ -34,6 +34,7 @@ import {
 import { repositoryQuery } from "./queries";
 import { collectionDb, dayStatements, publish, resourceStatement, snapshots } from "./store";
 import { transport } from "./transport";
+import { mergeWindows } from "./windows";
 
 const inDay = (value: string | null | undefined, since: string, until: string) =>
 	value !== null &&
@@ -341,13 +342,13 @@ export async function collectRepository(
 			observed: available.length,
 			reason:
 				available.length === selected.length ? null : missing ? "missing_days" : settledReason,
-			completeWindows: settled.flatMap(({ payload }) => [
-				{
+			completeWindows: mergeWindows(
+				settled.map(({ payload }) => ({
 					since: String(payload.since),
 					until: new Date(Date.parse(String(payload.until)) - 1).toISOString(),
 					timezone: context.run.params.timezone,
-				},
-			]),
+				})),
+			),
 			strategy: needed.includes(dimension) ? ("incremental" as const) : ("reused" as const),
 		};
 		repo.coverage[dimension] = coverage;
@@ -482,7 +483,7 @@ export async function collectRepository(
 		repo: saved.repo,
 	};
 	writes.push(
-		dayStatements(db, context, saved.repo_id, observations),
+		...dayStatements(db, context, saved.repo_id, observations),
 		db
 			.prepare(
 				"INSERT INTO refresh_repository_publications(account_id,repo_id,payload,fetched_at) VALUES(?,?,?,?) ON CONFLICT(account_id,repo_id) DO UPDATE SET payload=excluded.payload,fetched_at=excluded.fetched_at",

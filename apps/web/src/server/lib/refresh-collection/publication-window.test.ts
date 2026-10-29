@@ -111,7 +111,7 @@ it("publishes the requested window when a saved account observation is reused", 
 	expect(windowOf(current)).not.toEqual(windowOf(saved));
 	const publication = await payload(
 		db,
-		"SELECT payload FROM refresh_publications WHERE account_id='a'",
+		"SELECT payload FROM refresh_snapshots WHERE account_id='a' AND kind='factory'",
 	);
 	expect(publication.window).toEqual(windowOf(current));
 	expect(publication.runId).toBe("run-b");

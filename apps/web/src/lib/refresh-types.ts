@@ -14,6 +14,7 @@ export type RefreshParams = {
 	dimensions: RefreshDimension[];
 	force: boolean;
 	repo?: string;
+	lookbackDays?: number;
 };
 export type RefreshDay = { date: string; since: string; until: string };
 export type RefreshRequestBreakdown = {

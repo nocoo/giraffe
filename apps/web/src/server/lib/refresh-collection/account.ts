@@ -230,6 +230,7 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 		};
 	}
 	const day = shanghaiDay(context.now);
+	const lookbackDays = context.run.params.lookbackDays;
 	const candidates = await db
 		.prepare(`SELECT c.repo,c.payload,
  EXISTS(SELECT 1 FROM repo_stars s WHERE s.account_id=c.account_id AND s.repo=c.repo COLLATE NOCASE AND s.starred=1) AS starred,
@@ -244,6 +245,7 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 		reasons,
 		repos: candidates.results
 			.filter((row) => {
+				if (lookbackDays !== undefined) return row.starred === 1;
 				if (row.starred === 1) return true;
 				const raw = catalogPayload(row.payload);
 				if (!raw || !ownedBy(text(object(raw.owner).login), context.account.login)) return false;

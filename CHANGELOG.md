@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.28.1 - 2026-10-29
+
+### Added
+
+- Accept `lookbackDays: 90` on the existing browser and machine refresh APIs
+  for ad-hoc Shanghai calendar-day backfills of locally starred repositories only.
+  Keep the existing per-account run lock and the 03:00 daily schedule unchanged.
+- Reuse completed repo/day/dimension observations, including terminal unavailable
+  security days, unless forced; preserve original cached evidence timestamps.
+- Document the caller-enforced blackout: do not start backfills from 00:50
+  Asia/Shanghai until that day's scheduled refresh has finished.
+
+### Fixed
+
+- Coalesce adjacent completed coverage windows without bridging missing days,
+  and keep only rate/retention metadata in the unpaged publication row. Preserve
+  complete factory data in the existing snapshot pages for 90-day backfills.
+- Batch day-observation JSON by UTF-8 byte size within one D1 transaction, so
+  nonempty alert evidence across 90 days does not exceed a single binding limit.
+- Label API-started backfills as starred-only in current refresh status and saved
+  run details instead of displaying the ordinary new-repository selection rule.
+
 ## v0.28.0 - 2026-10-29
 
 ### Added

@@ -3,8 +3,10 @@ import { annualContributionCalendar } from "../../../../../../tests/fixtures/con
 import golden from "../../../../../../tests/fixtures/refresh-publication-golden.json";
 import { sqliteFixture } from "../../../../../../tests/fixtures/sqlite";
 import { createDb, type Db } from "../db/d1";
+import { factoryRateStatement } from "../factory-rate";
 import type { CollectionContext } from "../refresh-collection-contract";
 import { parseRefreshParams, refreshDays } from "../refresh-params";
+import { publicationRetentionStatement } from "../saved-observation-statements";
 import { publish } from "./store";
 
 const now = "2026-10-29T06:00:00.000Z";
@@ -343,6 +345,55 @@ it("republishes identical rows without extra round trips", async () => {
 	expect(goldenShape(await publishedRows(raw))).toEqual(first);
 });
 
+it("keeps rate and identity-fenced retention in a compact operational publication", async () => {
+	const raw = sqliteFixture();
+	const context = await prepared(raw, fixtures);
+	const rate = {
+		remaining: 100,
+		resetAt: "2026-10-29T07:00:00Z",
+		observedAt: now,
+		resource: "graphql",
+	};
+	await raw
+		.prepare("UPDATE refresh_accounts SET payload=json_set(payload,'$.rate',json(?))")
+		.bind(JSON.stringify(rate))
+		.run();
+	await raw
+		.prepare(
+			"UPDATE refresh_repository_publications SET payload=json_set(payload,'$.coverage.dependencies.retained',json('true')) WHERE repo_id='R_1'",
+		)
+		.run();
+	const db = createDb(raw);
+	await publish(db, context);
+	const rows = await publishedRows(raw);
+	const operational = JSON.parse(rows.publication?.payload ?? "{}");
+	expect(Object.keys(operational)).toEqual(["rate", "repos"]);
+	expect(operational.rate).toEqual(rate);
+	expect(operational.repos.map((repo: { name: string }) => repo.name)).toEqual([
+		"owner/alpha",
+		"owner/beta",
+	]);
+	expect(Object.keys(operational.repos[0].coverage)).toHaveLength(7);
+	expect(operational.repos[0].coverage.dependencies).toEqual({ retained: true });
+	expect(operational.repos[1].coverage.dependencies).toEqual({ retained: false });
+	const compactRate = await factoryRateStatement(db, "a").first();
+	const compactRetention = await publicationRetentionStatement(
+		db,
+		"a",
+		["owner/beta"],
+		["R_1"],
+	).all<{ payload: string }>();
+	expect(compactRetention.results.map((row) => JSON.parse(row.payload).id)).toEqual(["R_1", "R_2"]);
+	await raw
+		.prepare("UPDATE refresh_publications SET payload=? WHERE account_id='a'")
+		.bind(rows.snapshots.find((row) => row.kind === "factory")?.payload)
+		.run();
+	expect(await factoryRateStatement(db, "a").first()).toEqual(compactRate);
+	expect(await publicationRetentionStatement(db, "a", ["owner/beta"], ["R_1"]).all()).toEqual(
+		compactRetention,
+	);
+});
+
 it("marks mixed publications when a repository was refreshed by another run", async () => {
 	const raw = sqliteFixture();
 	const context = await prepared(raw, fixtures);
@@ -359,7 +410,9 @@ it("marks mixed publications when a repository was refreshed by another run", as
 		.run();
 	await publish(createDb(raw), context);
 	const rows = await publishedRows(raw);
-	const factory = JSON.parse(rows.publication?.payload ?? "{}") as {
+	const factory = JSON.parse(
+		rows.snapshots.find((row) => row.kind === "factory")?.payload ?? "{}",
+	) as {
 		publication: { mixed: boolean };
 		repos: { name: string }[];
 	};

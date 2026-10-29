@@ -48,12 +48,9 @@ export async function savedObservationStmts(
 	}
 	const stream = /^factory:(.+):([^:]+)$/.exec(kind);
 	if (stream && !kind.startsWith("factory:v:")) {
-		const publication = await db
-			.prepare("SELECT payload FROM refresh_publications WHERE account_id=?")
-			.bind(account)
-			.first<{ payload: string }>();
+		const publication = await readSnapshot(db, account, "factory");
 		const repo = publication
-			? (JSON.parse(publication.payload) as FactorySnapshot).repos.find(
+			? (publication as FactorySnapshot).repos.find(
 					(repo) =>
 						repo.name.toLowerCase() === stream[1]?.toLowerCase() ||
 						repo.observation?.repo?.toLowerCase() === stream[1]?.toLowerCase(),

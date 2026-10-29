@@ -1,4 +1,9 @@
-import type { FactoryRepo, FactorySnapshot, FactoryStreamData } from "../../../lib/factory-types";
+import {
+	FACTORY_STREAMS,
+	type FactoryRepo,
+	type FactorySnapshot,
+	type FactoryStreamData,
+} from "../../../lib/factory-types";
 import { savedContentMeta } from "../content-version";
 import { createDb, type Db } from "../db/d1";
 import { ApiError } from "../errors";
@@ -76,11 +81,32 @@ export function dayStatements(
 	id: string,
 	rows: DayObservation[],
 ) {
-	return db
-		.prepare(`INSERT INTO refresh_day_observations(account_id,repo_id,timezone,day,dimension,status,payload,fetched_at)
+	const maxBytes = 1_500_000;
+	const encoder = new TextEncoder();
+	const batches: string[] = [];
+	let current: string[] = [];
+	let bytes = 2;
+	for (const row of rows) {
+		const encoded = JSON.stringify(row);
+		const size = encoder.encode(encoded).length;
+		if (size + 2 > maxBytes)
+			throw new ApiError(500, "db_error", "day observation exceeds write capacity");
+		if (bytes + size + (current.length ? 1 : 0) > maxBytes) {
+			batches.push(`[${current.join(",")}]`);
+			current = [];
+			bytes = 2;
+		}
+		bytes += size + (current.length ? 1 : 0);
+		current.push(encoded);
+	}
+	if (current.length) batches.push(`[${current.join(",")}]`);
+	return batches.map((batch) =>
+		db
+			.prepare(`INSERT INTO refresh_day_observations(account_id,repo_id,timezone,day,dimension,status,payload,fetched_at)
  SELECT ?,?,?,json_extract(value,'$.day'),json_extract(value,'$.dimension'),json_extract(value,'$.status'),json_extract(value,'$.payload'),json_extract(value,'$.fetched_at') FROM json_each(?) WHERE 1
  ON CONFLICT(account_id,repo_id,timezone,day,dimension) DO UPDATE SET status=excluded.status,payload=excluded.payload,fetched_at=excluded.fetched_at`)
-		.bind(context.account.id, id, context.run.params.timezone, JSON.stringify(rows));
+			.bind(context.account.id, id, context.run.params.timezone, batch),
+	);
 }
 export async function resourceStatement(
 	db: Db,
@@ -212,6 +238,22 @@ export async function publish(
 			.prepare(
 				"INSERT INTO refresh_publications(account_id,payload,published_at) VALUES(?,?,?) ON CONFLICT(account_id) DO UPDATE SET payload=excluded.payload,published_at=excluded.published_at",
 			)
-			.bind(context.account.id, JSON.stringify(snapshot), context.now),
+			.bind(
+				context.account.id,
+				JSON.stringify({
+					rate: snapshot.rate,
+					repos: repos.map((repo) => ({
+						id: repo.id,
+						name: repo.name,
+						coverage: Object.fromEntries(
+							FACTORY_STREAMS.map((stream) => [
+								stream,
+								{ retained: repo.coverage[stream].retained === true },
+							]),
+						),
+					})),
+				}),
+				context.now,
+			),
 	]);
 }

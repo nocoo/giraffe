@@ -1,8 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { annualContributionCalendar } from "../../../../../../tests/fixtures/contribution-calendar";
 import { sqliteFixture } from "../../../../../../tests/fixtures/sqlite";
+import type { FactoryRepo, FactorySnapshot } from "../../../lib/factory-types";
+import type { RefreshDay, RefreshDimension, RefreshParams } from "../../../lib/refresh-types";
 import { readFactoryResource } from "../machine-observations";
 import type { CollectionContext } from "../refresh-collection-contract";
+import { refreshDays } from "../refresh-params";
+import { assemblePages, type SnapshotPage } from "../snapshot-pages";
 import { collectAccount, collectRepository } from "./index";
 import { collectionDb } from "./store";
 
@@ -106,12 +110,14 @@ const graphqlCalls = (fetch: ReturnType<typeof upstream>) =>
 const restCalls = (fetch: ReturnType<typeof upstream>) =>
 	fetch.mock.calls.filter(([url]) => !String(url).endsWith("/graphql")).length;
 async function publication(context: CollectionContext) {
-	const row = await context.env.DB.prepare(
-		"SELECT payload FROM refresh_publications WHERE account_id=?",
+	const rows = await context.env.DB.prepare(
+		"SELECT kind,payload,content_meta FROM refresh_snapshots WHERE account_id=? AND kind LIKE 'factory%' ORDER BY kind",
 	)
 		.bind(context.account.id)
-		.first<{ payload: string }>();
-	return JSON.parse(row?.payload ?? "{}");
+		.all<SnapshotPage>();
+	return assemblePages("factory", rows.results) as unknown as FactorySnapshot & {
+		repos: [FactoryRepo, ...FactoryRepo[]];
+	};
 }
 async function day(context: CollectionContext, dimension: string) {
 	const row = await context.env.DB.prepare(
@@ -131,6 +137,82 @@ async function snapshot(context: CollectionContext, kind: string) {
 		fetched_at: row?.fetched_at,
 		payload: JSON.parse(row?.payload ?? "{}") as Record<string, unknown>,
 	};
+}
+const contiguousSpan = (days: RefreshDay[]) => [
+	{
+		since: String(days[0]?.since),
+		until: new Date(Date.parse(String(days.at(-1)?.until)) - 1).toISOString(),
+		timezone: "Asia/Shanghai",
+	},
+];
+const LOOKBACK_DAYS = 90;
+const LOOKBACK_UNTIL = "2026-10-28";
+const shiftDate = (date: string, days: number) =>
+	new Date(Date.parse(`${date}T00:00:00.000Z`) + days * 86_400_000).toISOString().slice(0, 10);
+function lookbackParams(dimensions: RefreshDimension[]): RefreshParams {
+	return {
+		since: shiftDate(LOOKBACK_UNTIL, -(LOOKBACK_DAYS - 1)),
+		until: LOOKBACK_UNTIL,
+		timezone: "Asia/Shanghai",
+		dimensions,
+		force: false,
+		lookbackDays: LOOKBACK_DAYS,
+	};
+}
+async function lookbackFixture(dimensions: RefreshDimension[]): Promise<CollectionContext> {
+	const context = await fixture();
+	context.run.params = lookbackParams(dimensions);
+	context.days = refreshDays(context.run.params);
+	await context.env.DB.prepare(
+		"INSERT INTO repo_stars(account_id,repo,starred,source,updated_at) VALUES('a','owner/project',1,'owner',?)",
+	)
+		.bind(now)
+		.run();
+	return context;
+}
+function repositoryNode(commitDays: number) {
+	return {
+		node: {
+			...repository(),
+			defaultBranchRef: {
+				name: "main",
+				target: {
+					oid: "head",
+					history: { totalCount: 20 },
+					...Object.fromEntries(
+						Array.from({ length: commitDays }, (_, index) => [
+							`day${index}`,
+							{ totalCount: index % 5 },
+						]),
+					),
+				},
+			},
+		},
+	};
+}
+type GraphqlRequest = { query: string; variables: Record<string, unknown> };
+const graphqlRequests = (fetch: ReturnType<typeof upstream>): GraphqlRequest[] =>
+	fetch.mock.calls
+		.filter(([url]) => String(url).endsWith("/graphql"))
+		.map(
+			(call) =>
+				JSON.parse(String((call as unknown as [string, RequestInit])[1].body)) as GraphqlRequest,
+		);
+const historyAliases = (query: string) => query.match(/day\d+:history/g) ?? [];
+async function observationRows(context: CollectionContext) {
+	return (
+		await context.env.DB.prepare(
+			"SELECT day,dimension,status,payload,fetched_at FROM refresh_day_observations WHERE account_id=? ORDER BY dimension,day",
+		)
+			.bind(context.account.id)
+			.all<{
+				day: string;
+				dimension: string;
+				status: string;
+				payload: string;
+				fetched_at: string;
+			}>()
+	).results;
 }
 
 function countedD1(db: D1Database) {
@@ -642,5 +724,162 @@ describe("refresh reuse boundaries", () => {
 			status: 404,
 			code: "not_found",
 		});
+	});
+});
+
+describe("90-day lookback cache reuse", () => {
+	it("caches every day×dimension of a fresh starred lookback and reuses all of it", async () => {
+		const context = await lookbackFixture(["commits", "issues", "releases"]);
+		expect(context.days).toHaveLength(LOOKBACK_DAYS);
+		const fetch = upstream([accountPage(), repositoryNode(LOOKBACK_DAYS)]);
+		expect((await collectAccount(context)).repos).toEqual(["owner/project"]);
+		expect(await collectRepository(context, "owner/project")).toEqual({
+			requests: 1,
+			requestBreakdown: { graphql: 1, rest: 0 },
+			partial: false,
+			reasons: [],
+		});
+		expect(historyAliases(graphqlRequests(fetch)[1]?.query ?? "")).toHaveLength(LOOKBACK_DAYS);
+		const cached = await observationRows(context);
+		expect(cached).toHaveLength(LOOKBACK_DAYS * 3);
+		expect(cached.every((row) => row.fetched_at === now)).toBe(true);
+		expect(cached.every((row) => row.status === "complete")).toBe(true);
+		const coverage = (await publication(context)).repos[0].coverage;
+		expect(coverage.commits).toMatchObject({
+			status: "complete",
+			observed: LOOKBACK_DAYS,
+			strategy: "incremental",
+		});
+		expect(coverage.commits.completeWindows).toEqual(contiguousSpan(context.days));
+		expect(coverage.issues).toMatchObject({
+			status: "complete",
+			observed: LOOKBACK_DAYS,
+			strategy: "incremental",
+		});
+		expect(coverage.issues.completeWindows).toEqual(contiguousSpan(context.days));
+		expect(coverage.releases).toMatchObject({
+			status: "complete",
+			observed: LOOKBACK_DAYS,
+			strategy: "incremental",
+		});
+		expect(coverage.releases.completeWindows).toEqual(contiguousSpan(context.days));
+		const replay = upstream();
+		expect(await collectRepository(context, "owner/project")).toEqual({
+			requests: 0,
+			requestBreakdown: { graphql: 0, rest: 0 },
+			partial: false,
+			reasons: [],
+		});
+		expect(replay).not.toHaveBeenCalled();
+		expect(await observationRows(context)).toEqual(cached);
+	});
+	it("collects only missing day×dimension observations, preserves cached ones and force recollects", async () => {
+		const context = await lookbackFixture(["commits", "releases", "alerts"]);
+		const unavailableAlerts = {
+			"/dependabot/alerts": [],
+			"/code-scanning/alerts": Response.json({ message: "no analysis found" }, { status: 404 }),
+		};
+		upstream([accountPage(), repositoryNode(LOOKBACK_DAYS)], unavailableAlerts);
+		await collectAccount(context);
+		expect(await collectRepository(context, "owner/project")).toEqual({
+			requests: 3,
+			requestBreakdown: { graphql: 1, rest: 2 },
+			partial: false,
+			reasons: [],
+		});
+		expect(await observationRows(context)).toHaveLength(LOOKBACK_DAYS * 3);
+		const seeded = "2026-10-20T00:00:00.000Z";
+		const missingDays = ["2026-08-15", "2026-09-01", "2026-10-01"];
+		await context.env.DB.batch([
+			context.env.DB.prepare(
+				"UPDATE refresh_day_observations SET fetched_at=? WHERE account_id=?",
+			).bind(seeded, context.account.id),
+			...missingDays.map((day) =>
+				context.env.DB.prepare(
+					"DELETE FROM refresh_day_observations WHERE account_id=? AND dimension='commits' AND day=?",
+				).bind(context.account.id, day),
+			),
+		]);
+		const preserved = await observationRows(context);
+		expect(preserved).toHaveLength(LOOKBACK_DAYS * 3 - missingDays.length);
+		context.now = "2026-10-29T09:00:00.000Z";
+		const fetch = upstream([repositoryNode(missingDays.length)]);
+		expect(await collectRepository(context, "owner/project")).toEqual({
+			requests: 1,
+			requestBreakdown: { graphql: 1, rest: 0 },
+			partial: false,
+			reasons: [],
+		});
+		const requests = graphqlRequests(fetch);
+		expect(requests).toHaveLength(1);
+		expect(historyAliases(requests[0]?.query ?? "")).toHaveLength(missingDays.length);
+		const expectedDays = context.days.filter((day) => missingDays.includes(day.date));
+		expect(requests[0]?.variables).toEqual({
+			id: "R_1",
+			...Object.fromEntries(
+				expectedDays.flatMap((day, index) => [
+					[`since${index}`, day.since],
+					[`until${index}`, new Date(Date.parse(day.until) - 1).toISOString()],
+				]),
+			),
+		});
+		const after = await observationRows(context);
+		expect(after).toHaveLength(LOOKBACK_DAYS * 3);
+		expect(
+			after
+				.filter((row) => row.fetched_at === context.now)
+				.map((row) => `${row.dimension}:${row.day}`)
+				.sort(),
+		).toEqual(missingDays.map((day) => `commits:${day}`).sort());
+		expect(after.filter((row) => row.fetched_at === seeded)).toEqual(preserved);
+		const coverage = (await publication(context)).repos[0].coverage;
+		expect(coverage.commits).toMatchObject({
+			status: "complete",
+			observed: LOOKBACK_DAYS,
+			fetchedAt: seeded,
+			strategy: "incremental",
+		});
+		expect(coverage.commits.completeWindows).toEqual(contiguousSpan(context.days));
+		expect(coverage.releases).toMatchObject({
+			status: "complete",
+			observed: LOOKBACK_DAYS,
+			fetchedAt: seeded,
+			strategy: "reused",
+		});
+		expect(coverage.releases.completeWindows).toEqual(contiguousSpan(context.days));
+		expect(coverage.alerts).toMatchObject({
+			status: "unavailable",
+			observed: 0,
+			reason: "not_found",
+			fetchedAt: seeded,
+			strategy: "reused",
+		});
+		expect(coverage.alerts.completeWindows).toEqual(contiguousSpan(context.days));
+		const replay = upstream();
+		expect(await collectRepository(context, "owner/project")).toEqual({
+			requests: 0,
+			requestBreakdown: { graphql: 0, rest: 0 },
+			partial: false,
+			reasons: [],
+		});
+		expect(replay).not.toHaveBeenCalled();
+		expect(await observationRows(context)).toEqual(after);
+		context.run.params.force = true;
+		context.now = "2026-10-29T10:00:00.000Z";
+		const forced = upstream([repositoryNode(LOOKBACK_DAYS)], unavailableAlerts);
+		expect(await collectRepository(context, "owner/project")).toEqual({
+			requests: 3,
+			requestBreakdown: { graphql: 1, rest: 2 },
+			partial: false,
+			reasons: [],
+		});
+		expect(historyAliases(graphqlRequests(forced)[0]?.query ?? "")).toHaveLength(LOOKBACK_DAYS);
+		expect(restCalls(forced)).toBe(2);
+		const recollected = await observationRows(context);
+		expect(recollected).toHaveLength(LOOKBACK_DAYS * 3);
+		expect(recollected.every((row) => row.fetched_at === context.now)).toBe(true);
+		expect(
+			recollected.filter((row) => row.dimension === "alerts").map((row) => row.payload),
+		).toEqual(after.filter((row) => row.dimension === "alerts").map((row) => row.payload));
 	});
 });

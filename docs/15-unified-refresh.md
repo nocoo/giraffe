@@ -1,4 +1,4 @@
-# Phase 2: unified refresh (v0.27.5)
+# Phase 2: unified refresh (v0.28.1)
 
 This is the authorized replacement for the collection stack retired in v0.26.0.
 There is one task type, not quick/deep/full modes. The Dashboard keeps its saved
@@ -114,6 +114,53 @@ or future days cannot be cached as complete. UTC boundaries account for daylight
 saving changes. Timestamps and wakeups persist in UTC; display/report defaults are
 UTC+8. `repo: "owner/name"` requests an ad-hoc repository; unknown parameters,
 legacy modes and duplicate/empty dimensions are rejected.
+
+### Ad-hoc starred backfill
+
+The existing refresh POST also accepts `{"lookbackDays":90}`. The run freezes
+an inclusive window of N closed **Asia/Shanghai calendar days** ending yesterday
+when it is created, retaining `lookbackDays` alongside the resolved dates in its
+saved parameters. On 2026-10-29 Shanghai time, 90 days resolves to 2026-07-31
+through 2026-10-28. Crossing midnight while the run executes does not move its
+window. This option accepts integers 1–90, cannot be combined with `since`,
+`until` or `repo`, and requires the default `Asia/Shanghai` timezone. It is
+separate from the existing 1–31-day explicit date window.
+
+Only locally starred repositories enter backfill B, regardless of owner. The
+normal new-repository exception does not apply; unstarred catalogue entries are
+never backfilled. A still discovers the account catalogue and annual calendar.
+The per-account active-run lock, equal-request reuse and conflict response are
+unchanged. Backfills are ad-hoc; the 03:00 schedule retains its existing default
+single-closed-day window and selection rules.
+
+Non-force backfills skip completed repo×day×dimension observations, including
+terminal unavailable days such as expected alert 404s, without changing their
+source timestamps. Partial/retryable failures remain missing work; `force: true`
+recollects the requested days. The source limitations below still apply:
+backfill does not fabricate historical security state or exhaustive CI history.
+
+Callers **must not start backfills during the 00:50 Asia/Shanghai → daily-refresh
+completion blackout**. Inspect that day's scheduled run until it is terminal;
+absence, queued and running states do not establish completion. This requirement
+is caller-enforced, not a server-side wall-clock rejection. Start early enough
+to finish before 00:50, or request cancellation; an earlier long backfill can
+still occupy the account lock and delay the daily run. Do not retry-start a
+backfill during the blackout. No cron or automatic backfill is added.
+
+Adjacent completed coverage windows are coalesced without crossing missing or
+partial days. These windows mean collection is settled, including terminal
+unavailable evidence; availability counts, reasons, source provenance and the
+original per-day timestamps remain separate and unchanged. Day-observation JSON
+writes are bounded to 1,500,000 UTF-8 bytes per binding and committed together in
+the existing publication batch; no day is dropped to meet the limit.
+
+`refresh_publications.payload` stores only the operational rate-limit and
+repository-identity/retention projection. The full factory remains in
+`refresh_snapshots` (`factory`, `factory#2`), used by all saved browser/machine
+reads. This removes a duplicate unpaged multi-megabyte aggregate without a
+schema migration, legacy migration or read fallback. The existing two-page
+snapshot capacity and explicit truncation policy still apply to genuinely
+oversized source data; lookback does not remove those bounds.
 
 The cache key is account × immutable repository ID × timezone × day × dimension.
 Complete cached days skip upstream work unless `force` is true. Cache reuse keeps

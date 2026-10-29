@@ -19,6 +19,8 @@
 
 Giraffe is a personal GitHub console. Add classic PATs for one or more accounts to review repositories, open issues and pull requests, security alerts, and notifications, then compare repository metrics across days.
 
+Version 0.28.1 adds ad-hoc `lookbackDays: 90` backfills of starred repositories, reusing completed day caches including terminal unavailable observations. Callers must not start backfills from 00:50 Asia/Shanghai until the daily refresh finishes. The 03:00 schedule, per-account run lock and automatic-refresh selection remain unchanged. Saved reads never collect upstream; analysis and legacy refresh modes remain removed. See the [phase-2 contract](15-unified-refresh.md).
+
 Version 0.28.0 restores the Refresh Center with unified A/B progress, saved run history and cancellation, restores factory chart windows, and tidies token management and activity lists. Cached-snapshot work and interrupted refresh recovery remain bounded, and cancellation is persisted before runner notification. Same-day account reuse and fully cached single-repository refreshes need no upstream requests. Automatic refresh still covers all explicitly starred repositories plus this account's unobserved non-fork repositories created during the current Asia/Shanghai day, without automatic starring. Saved reads never collect upstream; analysis and legacy refresh modes remain removed. See the [phase-2 contract](15-unified-refresh.md).
 
 PATs are encrypted with AES-256-GCM before storage in D1. Data snapshots are stored as JSON without additional application-level encryption. This is a personal deployment: everyone allowed into the same deployment shares its accounts and snapshots.

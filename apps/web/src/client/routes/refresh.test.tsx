@@ -165,6 +165,30 @@ it("drills into a historical run and returns to the live run", async () => {
 	expect(container.textContent).toContain("B · nocoo/web · 2 / 2");
 });
 
+it("keeps starred-only lookback scope in current and historical details", async () => {
+	const params = { ...run().params, lookbackDays: 90, since: "2026-07-31" };
+	const current = run({ params });
+	const old = run({
+		id: "run-0",
+		params: { ...params, lookbackDays: 30, since: "2026-09-29" },
+		status: "completed",
+		phase: "done",
+		completedRepos: 2,
+		finishedAt: "2026-10-29T03:00:00Z",
+	});
+	vi.mocked(apiGet).mockResolvedValue({ items: [current, old], collectionAvailable: true });
+	await render(model(current));
+	const detailScope = () =>
+		container.querySelector('section[aria-label="本次刷新进度"]')?.textContent;
+	expect(detailScope()).toContain("历史回填 · 仅星标仓库 · 90 天");
+	expect(container.textContent).toContain("历史回填 · 仅星标仓库 · 30 天");
+	expect(container.textContent).not.toContain("新建且未观测");
+	await act(async () => exactButton("查看").click());
+	expect(detailScope()).toContain("历史回填 · 仅星标仓库 · 30 天");
+	expect(container.textContent).not.toContain("新建且未观测");
+	expect(button("回到当前")).not.toBeNull();
+});
+
 it("starts a unified refresh from the plan tab and never exposes legacy modes", async () => {
 	vi.mocked(apiGet).mockResolvedValue({ items: [], collectionAvailable: true });
 	const value = model(null);
