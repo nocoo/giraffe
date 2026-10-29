@@ -5,6 +5,7 @@ import { ApiError } from "../lib/errors";
 import {
 	defaultRefreshParams,
 	RefreshViewModel,
+	refreshActive,
 	refreshError,
 	refreshProgress,
 	refreshStatus,
@@ -26,7 +27,16 @@ export function refreshRun(overrides: Partial<RefreshRun> = {}): RefreshRun {
 		repos: [],
 		completedRepos: 0,
 		requests: 1,
+		requestBreakdown: {
+			total: 1,
+			graphql: 1,
+			rest: 0,
+			a: { graphql: 1, rest: 0 },
+			b: { graphql: 0, rest: 0 },
+		},
+		partialReasons: [],
 		partial: false,
+		cancelRequested: false,
 		errorCode: null,
 		createdAt: "2026-10-29T04:00:00Z",
 		updatedAt: "2026-10-29T04:00:00Z",
@@ -122,6 +132,7 @@ describe("unified refresh parameters", () => {
 			["completed", "已完成"],
 			["partial", "部分完成"],
 			["failed", "刷新失败"],
+			["cancelled", "已取消"],
 		] as const)
 			expect(refreshStatus(refreshRun({ status }))).toBe(label);
 	});
@@ -487,5 +498,34 @@ describe("refresh viewmodel", () => {
 		await model.read();
 		expect(model.getSnapshot().run).toBeNull();
 		expect(model.getSnapshot().error).toContain("状态");
+	});
+
+	it("unlocks polling and shows the terminal cancelled state after a machine cancel", async () => {
+		vi.mocked(apiGet).mockResolvedValueOnce({ items: [refreshRun()], collectionAvailable: true });
+		const model = new RefreshViewModel();
+		const refreshed = vi.fn();
+		model.subscribeData(refreshed);
+		await model.read();
+		const cancelled = refreshRun({
+			status: "cancelled",
+			phase: "done",
+			cancelRequested: true,
+			finishedAt: "2026-10-29T04:10:00Z",
+		});
+		expect(refreshActive(cancelled)).toBe(false);
+		expect(refreshStatus(cancelled)).toBe("已取消");
+		vi.mocked(apiGet).mockResolvedValueOnce({
+			...cancelled,
+			requestBreakdown: cancelled.requestBreakdown,
+		});
+		await model.read();
+		expect(model.getSnapshot().run).toMatchObject({ status: "cancelled", phase: "done" });
+		expect(refreshed).toHaveBeenCalledOnce();
+		vi.mocked(apiGet)
+			.mockResolvedValueOnce({ items: [], collectionAvailable: true })
+			.mockResolvedValueOnce(cancelled);
+		await model.read();
+		expect(apiGet).toHaveBeenLastCalledWith("refresh-runs/latest");
+		expect(apiPost).not.toHaveBeenCalled();
 	});
 });

@@ -63,6 +63,26 @@ describe("createGithubClient", () => {
 		expect(other.count).toBe(0);
 	});
 
+	it("counts attempted requests by transport, including failed attempts", async () => {
+		const client = createGithubClient(
+			env({ ENVIRONMENT: "development", GITHUB_API_BASE: "http://127.0.0.1:17046" }),
+			async (input) => {
+				if (String(input).endsWith("/graphql")) return Response.json({ data: { node: null } });
+				if (String(input).endsWith("/broken")) return new Response("{}", { status: 500 });
+				return Response.json([]);
+			},
+		);
+		expect(client.count).toBe(0);
+		expect(client.requests).toEqual({ graphql: 0, rest: 0 });
+		await client.githubGraphql("token", "query { node { id } }", {});
+		await client.githubApi("token", "/user");
+		await client.githubApi("token", "/user");
+		await expect(client.githubApi("token", "/broken")).rejects.toBeInstanceOf(ApiError);
+		await client.githubFetch("http://127.0.0.1:17046/user");
+		expect(client.count).toBe(5);
+		expect(client.requests).toEqual({ graphql: 1, rest: 4 });
+	});
+
 	it("maps github statuses and accepts empty 205", async () => {
 		const client = createGithubClient(
 			env({ ENVIRONMENT: "development", GITHUB_API_BASE: "http://127.0.0.1:17046" }),

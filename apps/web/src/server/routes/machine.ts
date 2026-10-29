@@ -220,6 +220,7 @@ export function machineApi() {
 	app.all("/accounts/:account/statistics/:owner/:name", machineSetting);
 	app.all("/accounts/:account/refresh-runs", machineRefresh);
 	app.all("/accounts/:account/refresh-runs/:id", machineRefresh);
+	app.all("/accounts/:account/refresh-runs/:id/cancel", machineRefresh);
 	app.get("/accounts/:account/factory/repos/:owner/:name/:stream", async (c) => {
 		assertMachineQuery(c.req.query());
 		return timedJson(

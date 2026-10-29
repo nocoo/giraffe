@@ -22,6 +22,8 @@ const repo = (id = "R_1", name = "owner/project") => ({
 	url: `https://github.com/${name}`,
 	owner: { login: "owner" },
 	isPrivate: false,
+	isFork: false,
+	createdAt: "2026-10-29T02:00:00Z",
 	primaryLanguage: { name: "TypeScript" },
 	defaultBranchRef: {
 		name: "main",
@@ -40,7 +42,24 @@ const repo = (id = "R_1", name = "owner/project") => ({
 		pageInfo: { hasNextPage: false },
 	},
 	repositoryTopics: { nodes: [] },
-	releases: { totalCount: 0 },
+	releases: { totalCount: 0, pageInfo: { hasNextPage: false }, nodes: [] },
+});
+const releases = (values: unknown[], more = false) => ({
+	totalCount: values.length,
+	nodes: values,
+	pageInfo: { hasNextPage: more },
+});
+const release = (id: string, published: string | null, created = published) => ({
+	id: `RE_${id}`,
+	databaseId: Number(id),
+	name: `release ${id}`,
+	tagName: `v${id}`,
+	url: `https://github.com/owner/project/releases/${id}`,
+	isDraft: false,
+	isPrerelease: false,
+	publishedAt: published,
+	createdAt: created,
+	updatedAt: published,
 });
 const accountPage = (nodes = [repo()], more = false, cursor: string | null = null) => ({
 	viewer: {
@@ -160,12 +179,16 @@ describe("unified refresh collection", () => {
 		upstream([accountPage(), accountPage(), accountPage()]);
 		expect(await collectAccount(context)).toEqual({
 			requests: 1,
+			requestBreakdown: { graphql: 1, rest: 0 },
 			partial: false,
+			reasons: [],
 			repos: ["owner/project"],
 		});
 		expect(await collectAccount(context)).toEqual({
 			requests: 1,
+			requestBreakdown: { graphql: 1, rest: 0 },
 			partial: false,
+			reasons: [],
 			repos: ["owner/project"],
 		});
 		const next = { ...context, now: "2026-10-30T04:00:00.000Z" };
@@ -190,8 +213,10 @@ describe("unified refresh collection", () => {
 		const fetch = upstream();
 		await collectAccount(context);
 		expect(await collectRepository(context, "owner/project")).toEqual({
-			requests: 5,
+			requests: 4,
+			requestBreakdown: { graphql: 1, rest: 3 },
 			partial: false,
+			reasons: [],
 		});
 		const rows = (
 			await context.env.DB.prepare("SELECT * FROM refresh_day_observations").all<{
@@ -207,9 +232,11 @@ describe("unified refresh collection", () => {
 		expect(requests.every((url) => !url.includes("/commits"))).toBe(true);
 		expect(await collectRepository(context, "owner/project")).toEqual({
 			requests: 0,
+			requestBreakdown: { graphql: 0, rest: 0 },
 			partial: false,
+			reasons: [],
 		});
-		expect(fetch).toHaveBeenCalledTimes(6);
+		expect(fetch).toHaveBeenCalledTimes(5);
 		const publication = await context.env.DB.prepare(
 			"SELECT payload FROM refresh_publications WHERE account_id='a'",
 		).first<{ payload: string }>();
@@ -251,7 +278,9 @@ describe("unified refresh collection", () => {
 		expect(JSON.parse(stored?.payload ?? "{}").count).toBeNull();
 		expect(await collectRepository(context, "owner/project")).toEqual({
 			requests: 1,
+			requestBreakdown: { graphql: 1, rest: 0 },
 			partial: false,
+			reasons: [],
 		});
 	});
 	it("forces already successful days and isolates timezone cache keys", async () => {
@@ -260,10 +289,16 @@ describe("unified refresh collection", () => {
 		await collectAccount(context);
 		await collectRepository(context, "owner/project");
 		context.run.params.force = true;
-		expect((await collectRepository(context, "owner/project")).requests).toBe(5);
+		expect((await collectRepository(context, "owner/project")).requestBreakdown).toEqual({
+			graphql: 1,
+			rest: 3,
+		});
 		context.run.params.force = false;
 		context.run.params.timezone = "UTC";
-		expect((await collectRepository(context, "owner/project")).requests).toBe(5);
+		expect((await collectRepository(context, "owner/project")).requestBreakdown).toEqual({
+			graphql: 1,
+			rest: 3,
+		});
 	});
 	it("persists source timezones through A, B, cache reuse and mixed-zone account publication", async () => {
 		const context = await fixture();
@@ -295,7 +330,7 @@ describe("unified refresh collection", () => {
 		context.onRequests = onRequests;
 		upstream([new Error("secret diagnostic"), accountPage()]);
 		expect((await collectAccount(context)).requests).toBe(2);
-		expect(onRequests).toHaveBeenLastCalledWith(2);
+		expect(onRequests).toHaveBeenLastCalledWith(2, { graphql: 2, rest: 0 });
 	});
 	it.each([
 		[401, 1, "github_unauthorized"],
@@ -310,7 +345,7 @@ describe("unified refresh collection", () => {
 				Array.from({ length: requests }, () => new Response("secret diagnostic", { status })),
 			);
 			await expect(collectAccount(context)).rejects.toMatchObject({ code });
-			expect(onRequests.mock.calls).toEqual([[requests]]);
+			expect(onRequests.mock.calls).toEqual([[requests, { graphql: requests, rest: 0 }]]);
 		},
 	);
 	it("consumes the full page and all forced pages despite cached item IDs", async () => {
@@ -342,7 +377,9 @@ describe("unified refresh collection", () => {
 		context.run.params.force = true;
 		expect(await collectRepository(context, "owner/project")).toEqual({
 			requests: 3,
+			requestBreakdown: { graphql: 3, rest: 0 },
 			partial: false,
+			reasons: [],
 		});
 		const saved = (
 			await context.env.DB.prepare("SELECT item_id,payload FROM refresh_items").all<{
@@ -400,7 +437,9 @@ describe("unified refresh collection", () => {
 			context.run.params.until = "2026-10-29";
 			expect(await collectRepository(context, "owner/project")).toEqual({
 				requests: 2,
+				requestBreakdown: { graphql: 2, rest: 0 },
 				partial: false,
+				reasons: [],
 			});
 			const saved = await sourceSnapshot(context, "repo:owner/project:issues");
 			expect(saved.truncated).toBe(false);
@@ -441,7 +480,9 @@ describe("unified refresh collection", () => {
 		}
 		expect(await collectRepository(context, "owner/project")).toEqual({
 			requests: 0,
+			requestBreakdown: { graphql: 0, rest: 0 },
 			partial: true,
+			reasons: ["issues:inventory_incomplete", "prs:inventory_incomplete"],
 		});
 		expect((await publication(context)).status).toBe("partial");
 	});
@@ -481,7 +522,9 @@ describe("unified refresh collection", () => {
 		await collectAccount(context);
 		expect(await collectRepository(context, "owner/project")).toEqual({
 			requests: 3,
+			requestBreakdown: { graphql: 3, rest: 0 },
 			partial: false,
+			reasons: [],
 		});
 		expect((await publication(context)).repos[0].metrics).toMatchObject({
 			issueOpened: 2,
@@ -510,7 +553,9 @@ describe("unified refresh collection", () => {
 		).toBeNull();
 		expect(await collectRepository(context, "owner/project")).toEqual({
 			requests: 2,
+			requestBreakdown: { graphql: 2, rest: 0 },
 			partial: false,
+			reasons: [],
 		});
 	});
 	it.each([connection([], true, null), connection([{ title: "missing-id" }]), null])(
@@ -549,7 +594,9 @@ describe("unified refresh collection", () => {
 		expect((await collectRepository(context, "owner/project")).partial).toBe(true);
 		expect(await collectRepository(context, "owner/project")).toEqual({
 			requests: 1,
+			requestBreakdown: { graphql: 1, rest: 0 },
 			partial: true,
+			reasons: ["issues:inventory_incomplete"],
 		});
 	});
 	it("collects latest CI, releases and both alert features in the saved wire format", async () => {
@@ -567,31 +614,40 @@ describe("unified refresh collection", () => {
 			{ id: 3, status: "completed", conclusion: "neutral", created_at: "2026-10-28T03:00:00Z" },
 			{ id: 4, status: "in_progress", created_at: "2026-10-28T04:00:00Z" },
 		];
-		upstream(undefined, {
-			"/actions/runs": { total_count: 4, workflow_runs: actions },
-			"/releases": [
-				{ id: 1, tag_name: "v1", published_at: "2026-10-28T04:00:00Z", html_url: "release" },
-			],
-			"/dependabot/alerts": [
+		const fetch = upstream(
+			[
+				accountPage(),
 				{
-					number: 1,
-					security_advisory: { summary: "Upgrade", severity: "high" },
-					html_url: "alert",
-					state: "open",
+					node: {
+						...repo(),
+						releases: releases([release("1", "2026-10-28T04:00:00Z")]),
+					},
 				},
 			],
-			"/code-scanning/alerts": [
-				{
-					number: 2,
-					rule: { description: "Rule", security_severity_level: "critical" },
-					html_url: "code",
-					state: "open",
-				},
-			],
-		});
+			{
+				"/actions/runs": { total_count: 4, workflow_runs: actions },
+				"/dependabot/alerts": [
+					{
+						number: 1,
+						security_advisory: { summary: "Upgrade", severity: "high" },
+						html_url: "alert",
+						state: "open",
+					},
+				],
+				"/code-scanning/alerts": [
+					{
+						number: 2,
+						rule: { description: "Rule", security_severity_level: "critical" },
+						html_url: "code",
+						state: "open",
+					},
+				],
+			},
+		);
 		await collectAccount(context);
 		await collectRepository(context, "owner/project");
 		const saved = await publication(context);
+		expect(fetch.mock.calls.filter(([url]) => url.includes("/releases"))).toEqual([]);
 		expect(saved.repos[0].metrics).toMatchObject({
 			ciSuccess: 1,
 			ciFailure: 1,
@@ -610,6 +666,18 @@ describe("unified refresh collection", () => {
 			);
 		expect((await read("repo:owner/project:prs")).pull_requests).toEqual([]);
 		expect(await read("repo:owner/project:details")).toMatchObject({ default_branch: "main" });
+		expect(await read("repo:owner/project:releases")).toMatchObject({
+			releases: [
+				{
+					id: 1,
+					name: "release 1",
+					tag_name: "v1",
+					html_url: "https://github.com/owner/project/releases/1",
+					draft: false,
+					published_at: "2026-10-28T04:00:00Z",
+				},
+			],
+		});
 		expect(await read("repo:owner/project:security")).toMatchObject({
 			dependabot_open: 1,
 			code_scanning_open: 1,
@@ -625,17 +693,18 @@ describe("unified refresh collection", () => {
 			until: "2026-10-29T16:00:00.000Z",
 		});
 		context.run.params.until = "2026-10-29";
-		upstream(undefined, {
-			"/releases": [
-				{
-					id: 1,
-					created_at: "2026-10-28T04:00:00Z",
-					published_at: "2026-10-29T04:00:00Z",
-					tag_name: "v1",
+		upstream([
+			accountPage(),
+			{
+				node: {
+					...repo(),
+					releases: releases([
+						release("1", "2026-10-29T04:00:00Z", "2026-10-28T04:00:00Z"),
+						{ ...release("2", null, "2026-10-28T04:00:00Z"), isDraft: true },
+					]),
 				},
-				{ id: 2, created_at: "2026-10-28T04:00:00Z", published_at: null, draft: true },
-			],
-		});
+			},
+		]);
 		await collectAccount(context);
 		await collectRepository(context, "owner/project");
 		const saved = (await publication(context)).repos[0];
@@ -647,7 +716,7 @@ describe("unified refresh collection", () => {
 			(await observation(context, "releases")).results.map((row) => JSON.parse(row.payload).count),
 		).toEqual([0, 1]);
 	});
-	it.each(["/actions/runs", "/releases", "/dependabot/alerts", "/code-scanning/alerts"])(
+	it.each(["/actions/runs", "/dependabot/alerts", "/code-scanning/alerts"])(
 		"retries a transient REST failure and never caches it as complete: %s",
 		async (path) => {
 			const context = await fixture();
@@ -702,7 +771,7 @@ describe("unified refresh collection", () => {
 			},
 		});
 	});
-	it.each(["/actions/runs", "/releases", "/dependabot/alerts"])(
+	it.each(["/actions/runs", "/dependabot/alerts"])(
 		"makes pagination-limited latest REST data partial: %s",
 		async (path) => {
 			const context = await fixture();
@@ -719,7 +788,7 @@ describe("unified refresh collection", () => {
 			expect((await collectRepository(context, "owner/project")).partial).toBe(true);
 		},
 	);
-	it.each(["/actions/runs", "/releases", "/dependabot/alerts"])(
+	it.each(["/actions/runs", "/dependabot/alerts"])(
 		"rejects malformed REST envelopes: %s",
 		async (path) => {
 			const context = await fixture();
@@ -741,7 +810,9 @@ describe("unified refresh collection", () => {
 		expect((await collectRepository(context, "owner/project")).partial).toBe(true);
 		expect(await collectRepository(context, "owner/project")).toEqual({
 			requests: 1,
+			requestBreakdown: { graphql: 1, rest: 0 },
 			partial: false,
+			reasons: [],
 		});
 		const body = JSON.parse(String(fetch.mock.calls.at(-1)?.[1]?.body));
 		expect(body.variables).toEqual({
@@ -760,7 +831,9 @@ describe("unified refresh collection", () => {
 		context.run.id = "run-2";
 		expect(await collectRepository(context, "owner/project")).toEqual({
 			requests: 0,
+			requestBreakdown: { graphql: 0, rest: 0 },
 			partial: false,
+			reasons: [],
 		});
 		const saved = await publication(context);
 		expect(saved.runId).toBe("run-2");
@@ -782,11 +855,11 @@ describe("unified refresh collection", () => {
 		await collectAccount(context);
 		await collectRepository(context, "owner/project");
 		await collectAccount(context);
-		expect((await collectRepository(context, "owner/project")).requests).toBe(5);
+		expect((await collectRepository(context, "owner/project")).requests).toBe(4);
 		expect((await publication(context)).repos.map((repo: { id: string }) => repo.id)).toEqual([
 			"R_new",
 		]);
-		expect(fetch).toHaveBeenCalledTimes(12);
+		expect(fetch).toHaveBeenCalledTimes(10);
 	});
 	it("releases only a confirmed reused name when the current catalogue is partial", async () => {
 		const context = await fixture();
@@ -849,7 +922,9 @@ describe("unified refresh collection", () => {
 		upstream([accountPage([repo()], true, "next"), new Error("network"), new Error("network")]);
 		expect(await collectAccount(context)).toEqual({
 			requests: 3,
+			requestBreakdown: { graphql: 3, rest: 0 },
 			partial: true,
+			reasons: ["catalog:incomplete"],
 			repos: ["owner/project"],
 		});
 	});
@@ -1095,11 +1170,237 @@ describe("unified refresh collection", () => {
 				{ workflow_runs: [{ id: 1, created_at: "2026-10-01T00:00:00Z" }] },
 				{ headers: { link: '<https://github.test/next>; rel="next"' } },
 			),
-			"/releases": [{ id: 1, draft: true }],
 		});
 		await collectAccount(context);
 		expect((await collectRepository(context, "owner/project")).partial).toBe(false);
 	});
+	it.each([
+		{
+			label: "another owner",
+			node: { ...repo("R_other", "someone/project"), owner: { login: "someone" } },
+		},
+		{ label: "a fork", node: { ...repo(), isFork: true } },
+		{ label: "a historical repository", node: { ...repo(), createdAt: "2026-10-01T00:00:00Z" } },
+		{ label: "a repository without createdAt", node: { ...repo(), createdAt: undefined } },
+		{ label: "a repository without an owner", node: { ...repo(), owner: undefined } },
+		{
+			label: "a repository created after this Shanghai day",
+			node: { ...repo(), createdAt: "2026-10-30T00:00:00Z" },
+		},
+	])("never promotes $label into the automatic scope of an empty database", async ({ node }) => {
+		const context = await fixture();
+		upstream([accountPage([node as never])]);
+		expect(await collectAccount(context)).toEqual({
+			requests: 1,
+			requestBreakdown: { graphql: 1, rest: 0 },
+			partial: false,
+			reasons: [],
+			repos: [],
+		});
+		expect((await context.env.DB.prepare("SELECT * FROM repo_stars").all()).results).toEqual([]);
+	});
+	it("never promotes an unreadable catalogue payload", async () => {
+		const context = await fixture();
+		const page = accountPage();
+		page.viewer.repositories.totalCount = 2;
+		await context.env.DB.prepare(
+			"INSERT INTO refresh_catalog(account_id,repo_id,repo,discovered_day,timezone,payload,fetched_at,active) VALUES('a','R_broken','owner/broken','2026-10-29','Asia/Shanghai','{not json',?,1)",
+		)
+			.bind(now)
+			.run();
+		upstream([page]);
+		expect(await collectAccount(context)).toMatchObject({
+			partial: true,
+			reasons: ["catalog:incomplete"],
+			repos: ["owner/project"],
+		});
+	});
+	it("selects owner-created repositories owned by the account owner case-insensitively", async () => {
+		const context = await fixture();
+		upstream([accountPage([{ ...repo(), owner: { login: "OWNER" } } as never])]);
+		expect((await collectAccount(context)).repos).toEqual(["owner/project"]);
+	});
+	it("includes starred repositories of any owner and excludes unstarred foreign ones", async () => {
+		const context = await fixture();
+		await context.env.DB.batch([
+			context.env.DB.prepare(
+				"INSERT INTO repo_stars(account_id,repo,starred,source,updated_at) VALUES('a','other/lib',1,'owner',?)",
+			).bind(now),
+			context.env.DB.prepare(
+				"INSERT INTO repo_stars(account_id,repo,starred,source,updated_at) VALUES('a','owner/chosen',1,'owner',?)",
+			).bind(now),
+		]);
+		upstream([
+			accountPage([
+				{
+					...repo("R_star", "other/lib"),
+					owner: { login: "other" },
+					createdAt: "2020-01-01T00:00:00Z",
+				} as never,
+				{
+					...repo("R_plain", "other/plain"),
+					owner: { login: "other" },
+					createdAt: "2026-10-29T02:00:00Z",
+				} as never,
+				{
+					...repo("R_chosen", "owner/chosen"),
+					createdAt: "2020-01-01T00:00:00Z",
+				} as never,
+			]),
+		]);
+		expect((await collectAccount(context)).repos).toEqual(["other/lib", "owner/chosen"]);
+	});
+	it("keeps an explicit repository request independent of automatic selection", async () => {
+		const context = await fixture();
+		context.run.params.repo = "OTHER/legacy";
+		upstream([
+			accountPage([
+				{ ...repo("R_legacy", "other/legacy"), createdAt: "2020-01-01T00:00:00Z" } as never,
+			]),
+		]);
+		expect(await collectAccount(context)).toMatchObject({
+			partial: false,
+			repos: ["other/legacy"],
+		});
+		expect((await context.env.DB.prepare("SELECT * FROM repo_stars").all()).results).toEqual([]);
+	});
+	it("reports the transport split of A and B separately", async () => {
+		const context = await fixture();
+		const onRequests = vi.fn();
+		context.onRequests = onRequests;
+		upstream();
+		expect(await collectAccount(context)).toMatchObject({
+			requestBreakdown: { graphql: 1, rest: 0 },
+		});
+		onRequests.mockClear();
+		const repository = await collectRepository(context, "owner/project");
+		expect(repository.requests).toBe(4);
+		expect(repository.requestBreakdown).toEqual({ graphql: 1, rest: 3 });
+		expect(onRequests.mock.calls.at(-1)).toEqual([4, { graphql: 1, rest: 3 }]);
+	});
+	it("spends one main GraphQL query plus REST for CI and alerts per repository", async () => {
+		const context = await fixture();
+		const fetch = upstream([
+			accountPage(),
+			{
+				node: {
+					...repo(),
+					releases: releases([release("1", "2026-10-28T04:00:00Z")]),
+				},
+			},
+		]);
+		await collectAccount(context);
+		expect((await collectRepository(context, "owner/project")).requestBreakdown).toEqual({
+			graphql: 1,
+			rest: 3,
+		});
+		const repository = fetch.mock.calls.find(
+			([url, init]) =>
+				String(url).endsWith("/graphql") && String(init?.body).includes("RefreshRepository"),
+		);
+		expect(String(repository?.[1]?.body)).toContain("releases(first:100");
+		expect(
+			fetch.mock.calls
+				.map(([url]) => String(url))
+				.filter((url) => !url.endsWith("/graphql"))
+				.map((url) => new URL(url).pathname),
+		).toEqual([
+			"/repos/owner/project/actions/runs",
+			"/repos/owner/project/dependabot/alerts",
+			"/repos/owner/project/code-scanning/alerts",
+		]);
+	});
+	it("keeps a partially denied repository query visible as a releases reason", async () => {
+		const context = await fixture();
+		context.run.params.dimensions = ["releases"];
+		upstream([
+			accountPage(),
+			Response.json({
+				data: {
+					node: {
+						...repo(),
+						releases: releases([release("1", "2026-10-28T04:00:00Z")]),
+					},
+				},
+				errors: [{ type: "FORBIDDEN", path: ["node", "releases", "nodes", 0, "name"] }],
+			}),
+		]);
+		await collectAccount(context);
+		expect(await collectRepository(context, "owner/project")).toEqual({
+			requests: 1,
+			requestBreakdown: { graphql: 1, rest: 0 },
+			partial: true,
+			reasons: ["releases:graphql_partial"],
+		});
+	});
+	it("names a reason code for every partial dimension", async () => {
+		const context = await fixture();
+		upstream(undefined, {
+			"/actions/runs": Response.json({ message: "unavailable" }, { status: 500 }),
+		});
+		await collectAccount(context);
+		const repository = await collectRepository(context, "owner/project");
+		expect(repository.partial).toBe(true);
+		expect(repository.reasons).toEqual(["actions:github_error"]);
+	});
+	it.each([
+		{
+			label: "a truncated page inside the window",
+			connection: releases([release("1", "2026-10-28T04:00:00Z")], true),
+			partial: true,
+			reasons: ["releases:latest_page_only"],
+		},
+		{
+			label: "a truncated page whose oldest entry predates the window",
+			connection: releases([release("1", "2026-10-01T00:00:00Z")], true),
+			partial: true,
+			reasons: ["releases:latest_page_only"],
+		},
+		{
+			label: "a truncated page with a long-created but recently published tail",
+			connection: releases(
+				[
+					release("2", "2026-10-28T04:00:00Z", "2019-01-01T00:00:00Z"),
+					release("1", "2019-01-02T00:00:00Z", "2019-01-01T00:00:00Z"),
+				],
+				true,
+			),
+			partial: true,
+			reasons: ["releases:latest_page_only"],
+		},
+		{
+			label: "a page without pagination metadata",
+			connection: { totalCount: 1, nodes: [release("1", "2026-10-28T04:00:00Z")] },
+			partial: true,
+			reasons: ["releases:incomplete_pagination"],
+		},
+		{
+			label: "a single complete page",
+			connection: releases([release("1", "2026-10-28T04:00:00Z")]),
+			partial: false,
+			reasons: [],
+		},
+		{
+			label: "a malformed connection",
+			connection: null,
+			partial: true,
+			reasons: ["releases:github_error"],
+		},
+	])(
+		"treats $label as $partial with reasons $reasons",
+		async ({ connection, partial, reasons }) => {
+			const context = await fixture();
+			context.run.params.dimensions = ["releases"];
+			upstream([accountPage(), { node: { ...repo(), releases: connection } }]);
+			await collectAccount(context);
+			expect(await collectRepository(context, "owner/project")).toEqual({
+				requests: 1,
+				requestBreakdown: { graphql: 1, rest: 0 },
+				partial,
+				reasons,
+			});
+		},
+	);
 	it("represents unknown language sizes as unavailable metadata defaults", async () => {
 		const context = await fixture();
 		expect(

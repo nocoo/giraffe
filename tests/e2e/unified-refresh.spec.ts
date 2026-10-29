@@ -118,7 +118,9 @@ test("real unified refresh reloads data, respects stars and supports an unstarre
 		dialog.getByRole("checkbox", { name: "强制重采已缓存日期", exact: true }),
 	).not.toBeChecked();
 	const beforeCatalog = reads.filter((path) => path === "/api/repos").length;
-	const discovery = await startRefresh(page, dialog, [repository]);
+	const discovery = await startRefresh(page, dialog, []);
+	expect(discovery.requests).toBe(1);
+	expect(discovery.requestBreakdown.b).toEqual({ graphql: 0, rest: 0 });
 	expect(discovery.params).toEqual({
 		since: yesterday,
 		until: yesterday,
@@ -264,6 +266,15 @@ test("mobile refresh recovers with GET status reads and reports partial data wit
 				repos: [repository],
 				completedRepos: 0,
 				requests: 0,
+				requestBreakdown: {
+					total: 0,
+					graphql: 0,
+					rest: 0,
+					a: { graphql: 0, rest: 0 },
+					b: { graphql: 0, rest: 0 },
+				},
+				partialReasons: [],
+				cancelRequested: false,
 				partial: false,
 				errorCode: null,
 				createdAt: "2026-10-28T00:00:00Z",
@@ -283,6 +294,7 @@ test("mobile refresh recovers with GET status reads and reports partial data wit
 							phase: "done",
 							completedRepos: 1,
 							partial: true,
+							partialReasons: [{ repo: repository, codes: ["github_unavailable"] }],
 							errorCode: "github_unavailable",
 							finishedAt: "2026-10-28T00:00:10Z",
 						};

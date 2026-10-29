@@ -8,7 +8,14 @@ import {
 	mapRepoDetails,
 } from "../github-map";
 import type { CollectionContext, CollectionResult } from "../refresh-collection-contract";
-import { collectItems, collectRest, type Dimension, failure, terminal } from "./dimensions";
+import {
+	collectItems,
+	collectReleases,
+	collectRest,
+	type Dimension,
+	failure,
+	terminal,
+} from "./dimensions";
 import {
 	blankDay,
 	blankMetrics,
@@ -114,13 +121,10 @@ export async function collectRepository(
 		: null;
 	const data = needed.length
 		? await upstream.request((client) =>
-				client.githubGraphql(
-					context.token,
-					repositoryQuery(commitDays, needed.includes("issues"), needed.includes("prs")),
-					variables,
-				),
+				client.githubGraphql(context.token, repositoryQuery(commitDays, needed), variables),
 			)
 		: { node: JSON.parse(saved.payload) as Node };
+	const denied = upstream.client.graphqlErrors.length > 0;
 	const raw = object(data.node);
 	if (
 		raw.id !== saved.repo_id ||
@@ -202,7 +206,8 @@ export async function collectRepository(
 						.bind(context.account.id, saved.repo_id, dimension, JSON.stringify(result.raw)),
 				);
 				result = { ...result, raw: [...merged.values()], items: [...merged.values()].map(event) };
-			} else result = await collectRest(context, upstream, saved.repo, dimension);
+			} else if (dimension === "releases") result = collectReleases(object(raw.releases), denied);
+			else result = await collectRest(context, upstream, saved.repo, dimension);
 		} catch (error) {
 			result = failure(error);
 			if (terminal(error)) pendingError = error;
@@ -264,7 +269,9 @@ export async function collectRepository(
 					: (results.get(dimension)?.source ??
 						(dimension === "issues" || dimension === "prs"
 							? "github_graphql"
-							: "github_rest_latest")),
+							: dimension === "releases"
+								? "github_graphql_latest"
+								: "github_rest_latest")),
 			status:
 				available.length === selected.length
 					? ("complete" as const)
@@ -452,12 +459,21 @@ export async function collectRepository(
 	await db.batch(writes);
 	await publish(db, context);
 	if (pendingError) throw pendingError;
+	const reasons = context.run.params.dimensions.flatMap((dimension) => {
+		const coverage = repo.coverage[dimension];
+		const code =
+			results.get(dimension)?.reason ??
+			coverage.reason ??
+			(coverage.status === "unavailable" ? "unavailable" : "partial");
+		return [
+			...(coverage.status === "complete" ? [] : [`${dimension}:${code}`]),
+			...(coverage.inventoryComplete === false ? [`${dimension}:inventory_incomplete`] : []),
+		];
+	});
 	return {
 		requests: upstream.client.count,
-		partial: context.run.params.dimensions.some(
-			(dimension) =>
-				repo.coverage[dimension].status !== "complete" ||
-				repo.coverage[dimension].inventoryComplete === false,
-		),
+		requestBreakdown: upstream.breakdown(),
+		partial: reasons.length > 0,
+		reasons,
 	};
 }

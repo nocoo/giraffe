@@ -21,6 +21,7 @@ export class TruncatedError extends Error {
 
 export type GithubClient = {
 	count: number;
+	requests: { graphql: number; rest: number };
 	graphqlErrors: Array<{
 		type?: string;
 		reasonCode?: UnavailableReasonCode;
@@ -215,9 +216,11 @@ export function createGithubClient(
 	const base = allowedBase(env);
 	const client: GithubClient = {
 		count: 0,
+		requests: { graphql: 0, rest: 0 },
 		graphqlErrors: [],
 		async githubFetch(url, init) {
-			if (new URL(url).origin !== new URL(base).origin) {
+			const target = new URL(url);
+			if (target.origin !== new URL(base).origin) {
 				throw new ApiError(500, "internal_error", "github origin mismatch");
 			}
 			if (client.count >= MAX_FETCHES) {
@@ -225,6 +228,8 @@ export function createGithubClient(
 			}
 			await beforeRequest?.();
 			client.count += 1;
+			if (target.pathname === "/graphql") client.requests.graphql += 1;
+			else client.requests.rest += 1;
 			try {
 				const response = await fetchImpl(url, {
 					...init,

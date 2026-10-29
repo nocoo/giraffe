@@ -16,17 +16,28 @@ export type RefreshParams = {
 	repo?: string;
 };
 export type RefreshDay = { date: string; since: string; until: string };
+export type RefreshRequestBreakdown = {
+	total: number;
+	graphql: number;
+	rest: number;
+	a: { graphql: number; rest: number };
+	b: { graphql: number; rest: number };
+};
+export type RefreshPartialReason = { repo: string | null; codes: string[] };
 export type RefreshRun = {
 	id: string;
 	accountId: string;
 	params: RefreshParams;
 	trigger: "manual" | "scheduled";
-	status: "queued" | "running" | "completed" | "partial" | "failed";
+	status: "queued" | "running" | "completed" | "partial" | "failed" | "cancelled";
 	phase: "account" | "repos" | "done";
 	repos: string[];
 	completedRepos: number;
 	requests: number;
+	requestBreakdown: RefreshRequestBreakdown;
+	partialReasons: RefreshPartialReason[];
 	partial: boolean;
+	cancelRequested: boolean;
 	errorCode: string | null;
 	createdAt: string;
 	updatedAt: string;

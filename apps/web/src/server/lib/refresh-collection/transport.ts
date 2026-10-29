@@ -1,11 +1,13 @@
 import { ApiError } from "../errors";
 import { createGithubClient, type GithubClient } from "../github-client";
-import type { CollectionContext } from "../refresh-collection-contract";
+import type { CollectionContext, RequestBreakdown } from "../refresh-collection-contract";
 
 export function transport(context: CollectionContext) {
 	const client = createGithubClient(context.env);
+	const breakdown = (): RequestBreakdown => ({ ...client.requests });
 	return {
 		client,
+		breakdown,
 		request: async <Result>(
 			operation: (client: GithubClient) => Promise<Result>,
 		): Promise<Result> => {
@@ -16,7 +18,7 @@ export function transport(context: CollectionContext) {
 					throw error;
 				return await operation(client);
 			} finally {
-				context.onRequests?.(client.count);
+				context.onRequests?.(client.count, breakdown());
 			}
 		},
 	};

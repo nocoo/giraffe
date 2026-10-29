@@ -92,6 +92,7 @@ export function refreshStatus(run: RefreshRun): string {
 		completed: "已完成",
 		partial: "部分完成",
 		failed: "刷新失败",
+		cancelled: "已取消",
 	}[run.status];
 }
 

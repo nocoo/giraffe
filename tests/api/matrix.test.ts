@@ -46,6 +46,7 @@ const FACTORY_GETS = [
 ];
 
 const WRITES: Array<[string, string, RequestInit]> = [
+	["POST", "/api/refresh-runs/missing/cancel", {}],
 	["POST", "/api/repos/octocat/hello-world/star", {}],
 	[
 		"POST",
