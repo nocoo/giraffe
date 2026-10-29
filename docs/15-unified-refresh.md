@@ -1,4 +1,4 @@
-# Phase 2: unified refresh (v0.27.3)
+# Phase 2: unified refresh (v0.27.4)
 
 This is the authorized replacement for the collection stack retired in v0.26.0.
 There is one task type, not quick/deep/full modes. The Dashboard keeps its saved
@@ -9,7 +9,8 @@ observation views; reads never collect upstream, repair data or renew timestamps
 One account-scoped Durable Object persists wakeups and a D1 run history. A run
 collects **A** (account metadata, contribution calendar, paginated repository
 catalogue and GraphQL rate limit) before **B** (repositories, serially). Each alarm
-drains persisted steps within a 25-second work budget, at most 30 steps. Each step
+drains at most 30 persisted steps. Network/D1 waiting is not a CPU-time budget and
+does not split a healthy A/B pair into separate wakes. Each step
 has its own bounded D1 handle. The next recovery wakeup is recorded before work;
 interrupted steps resume idempotently. Successful steps have no fixed sleep or
 one-second alarm delay. Transient failures retry after 2, 5 and 15 seconds;
@@ -20,10 +21,17 @@ There is no queue consumer and no HTTP `waitUntil`-only collection task.
 
 POST arms the first durable alarm at the current time. Before persisting a step
 start, the runner records a recovery alarm five seconds ahead, not five minutes.
-Healthy steps continue in the same handler; budget/step-cap yields leave an alarm
+Healthy steps continue in the same handler; step-cap yields leave an alarm
 due immediately. These bounds describe requested scheduling delays, not a
 Cloudflare alarm-delivery SLA. A crash may replay the interrupted step; rate-limit
 and transient retry deadlines still take precedence once the failure is recorded.
+
+Successful settlement and the next step's start share one D1 write. The runner
+carries that persisted cursor directly into the next step rather than querying
+the active run twice and setting an immediate alarm between healthy steps. The
+five-second recovery alarm is rearmed before this transition write. A failed
+transition can replay the previous step; retry exhaustion and cancellation keep
+their durable recovery paths and the terminal-state/write-revision fences.
 
 The v0.27.1 acceptance recorded `running/account` with zero requests for about
 five minutes. Both v0.27.1 and v0.27.2 armed a 300-second recovery alarm before
@@ -130,6 +138,10 @@ REST releases as newly collected GraphQL data.
   uncached; authentication, rate limits and transient failures remain failures.
   Force, a missing day or a different observation day probes terminal unavailable
   features again. A non-forced repeat of the same complete day does not.
+  `completeWindows` includes these settled unavailable days, while `observed`
+  counts only available measurements and `status`/null values retain missingness.
+  A fully settled unavailable window reports its safe unavailability reason,
+  not `missing_days`. Window completion is not evidence that a feature is enabled.
 - Dependency analysis is unsupported and displayed as missing. Dependency alerts
   can be collected. Traffic, author-event ledgers and other uncollected dimensions
   remain explicit empty/unavailable observations, never legacy fallbacks.
