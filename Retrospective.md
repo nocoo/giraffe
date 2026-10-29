@@ -2478,3 +2478,9 @@ While updating the duplicated golden payload, a context-free patch initially
 changed the factory snapshot instead of the operational publication. The golden
 test caught it before commit. Distinguish repeated serialized fixtures by their
 surrounding key and preserve the public snapshot golden unchanged.
+
+After rebasing onto the restored Refresh Center, its scope labels still described
+the normal new-repository exception for API-started lookbacks. Share the scope
+projection with the header status and test both live and historical backfills.
+Rebase review must check new consumers against the changed producer contract,
+not only resolve text conflicts or repeat the original backend tests.

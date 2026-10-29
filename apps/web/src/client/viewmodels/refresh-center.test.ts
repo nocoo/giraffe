@@ -125,6 +125,9 @@ describe("refresh center run summaries", () => {
 		}
 	});
 	it("labels scope, trigger, window and current step", () => {
+		expect(refreshScopeLabel(run({ params: { ...run().params, lookbackDays: 90 } }))).toBe(
+			"历史回填 · 仅星标仓库 · 90 天",
+		);
 		expect(refreshScopeLabel(run())).toBe("手动 · 星标仓库 + 上海当日新建且未观测的非 fork 仓库");
 		expect(refreshScopeLabel(run({ trigger: "scheduled" }))).toBe(
 			"每日自动 · 星标仓库 + 上海当日新建且未观测的非 fork 仓库",

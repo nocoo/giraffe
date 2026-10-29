@@ -133,6 +133,18 @@ it("offers one account refresh with yesterday, star/new selection and external s
 	expect(load).toHaveBeenCalledTimes(2);
 });
 
+it("labels an API-started lookback as starred-only in the current status", async () => {
+	const backfill = run({
+		params: { ...defaultRefreshParams(), lookbackDays: 90, since: "2026-07-31" },
+	});
+	vi.mocked(apiGet).mockResolvedValue({ items: [backfill], collectionAvailable: true });
+	await render();
+	await act(async () => button("刷新中").click());
+	const status = document.querySelector('[role="status"]')?.textContent;
+	expect(status).toContain("历史回填 · 仅星标仓库 · 90 天");
+	expect(status).not.toContain("新建");
+});
+
 it("visibly disables an idle start while a background status read is pending", async () => {
 	empty();
 	await render();

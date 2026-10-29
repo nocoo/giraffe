@@ -19,6 +19,8 @@
   complete factory data in the existing snapshot pages for 90-day backfills.
 - Batch day-observation JSON by UTF-8 byte size within one D1 transaction, so
   nonempty alert evidence across 90 days does not exceed a single binding limit.
+- Label API-started backfills as starred-only in current refresh status and saved
+  run details instead of displaying the ordinary new-repository selection rule.
 
 ## v0.28.0 - 2026-10-29
 

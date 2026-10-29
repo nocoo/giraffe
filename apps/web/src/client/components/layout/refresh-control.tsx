@@ -18,6 +18,7 @@ import {
 	refreshStatus,
 	refreshTimezone,
 } from "../../viewmodels/refresh";
+import { refreshScopeLabel } from "../../viewmodels/refresh-center";
 import { useRefreshModel } from "./refresh-provider";
 
 export function RefreshControl({ repo }: { repo?: string }) {
@@ -79,8 +80,8 @@ function RefreshPanel({
 								{refreshStatus(state.run)} · {refreshProgress(state.run)}
 							</p>
 							<p className="text-xs text-basalt-muted-foreground">
-								{state.run.params.repo ?? "所有星标仓库 + 本账号上海当日新建且未观测的非 fork 仓库"}{" "}
-								· {state.run.params.since} → {state.run.params.until} · {state.run.params.timezone}
+								{refreshScopeLabel(state.run)} · {state.run.params.since} → {state.run.params.until}{" "}
+								· {state.run.params.timezone}
 							</p>
 							<p className="text-xs text-basalt-muted-foreground">
 								更新时间：{formatDate(state.run.updatedAt, state.run.params.timezone)}
