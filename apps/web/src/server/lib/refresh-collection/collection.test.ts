@@ -786,6 +786,50 @@ describe("unified refresh collection", () => {
 			truncated: false,
 		});
 	});
+	it("preserves known alert items when one feature is unavailable and the other succeeds", async () => {
+		const context = await fixture();
+		context.run.params.dimensions = ["alerts"];
+		upstream(undefined, {
+			"/dependabot/alerts": [
+				{
+					number: 7,
+					security_advisory: { summary: "Upgrade dependency", severity: "high" },
+					html_url: "https://github.com/owner/project/security/dependabot/7",
+					state: "open",
+					created_at: "2026-10-28T01:00:00Z",
+					updated_at: "2026-10-28T02:00:00Z",
+				},
+			],
+			"/code-scanning/alerts": Response.json({ message: "Requires permission" }, { status: 403 }),
+		});
+		await collectAccount(context);
+		expect(await collectRepository(context, "owner/project")).toMatchObject({ requests: 3 });
+		const stored = (await observation(context, "alerts")).results[0];
+		expect(JSON.parse(stored?.payload ?? "{}")).toMatchObject({
+			count: null,
+			observed: 1,
+			items: [{ id: "dependabot:7", title: "Upgrade dependency", severity: "high" }],
+		});
+		expect(await sourceSnapshot(context, "repo:owner/project:security")).toMatchObject({
+			truncated: false,
+			unavailable: true,
+			dependabot_open: 1,
+			code_scanning_open: null,
+			features: {
+				dependabot: { status: "available" },
+				code_scanning: { status: "unavailable", reason_code: "permission_denied" },
+			},
+		});
+		expect(
+			await readFactoryResource(collectionDb(context), "a", "owner/project", "alerts"),
+		).toMatchObject({
+			data: {
+				unavailable: true,
+				coverage: { status: "unavailable" },
+				items: [{ id: "dependabot:7", title: "Upgrade dependency", severity: "high" }],
+			},
+		});
+	});
 	it("treats an empty alert page as complete instead of truncated", async () => {
 		const context = await fixture();
 		context.run.params.dimensions = ["alerts"];

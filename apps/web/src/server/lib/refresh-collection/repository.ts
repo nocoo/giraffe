@@ -302,7 +302,7 @@ export async function collectRepository(
 		const items = new Map<string, FactoryEvent>();
 		for (const day of context.days) {
 			const row = current.get(`${day.date}:${dimension}`);
-			if (!row || row.status === "unavailable") continue;
+			if (!row) continue;
 			const value = JSON.parse(row.payload) as { count: number | null; items: FactoryEvent[] };
 			for (const item of value.items) items.set(item.id, item);
 			if (row.status !== "complete") continue;
