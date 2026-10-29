@@ -157,3 +157,62 @@ it("marks queued and running runs cancelled once and never mutates terminal runs
 	for (const status of ["completed", "partial", "failed", "cancelled"] as const)
 		expect(terminalRefreshStatus(status)).toBe(true);
 });
+it("merges safe failure metadata per repository without duplicating codes", async () => {
+	const db = await fixture();
+	const now = "2026-10-29T01:00:00.000Z";
+	const run = await createRefreshRun(
+		db,
+		"account",
+		parseRefreshParams({}, new Date(now)),
+		"manual",
+		now,
+	);
+	const failure = {
+		dimension: "actions",
+		code: "github_error",
+		httpStatus: 500,
+		graphqlType: null,
+		graphqlPath: null,
+	};
+	const once = addRefreshPartialReasons(
+		{ ...run, partial: true },
+		"octo/one",
+		["actions:github_error"],
+		[failure],
+	);
+	expect(once.partialReasons).toEqual([
+		{ repo: "octo/one", codes: ["actions:github_error"], failures: [failure] },
+	]);
+	const twice = addRefreshPartialReasons(
+		once,
+		"octo/one",
+		["actions:github_error", "prs:partial"],
+		[
+			failure,
+			{
+				dimension: "prs",
+				code: "graphql_partial",
+				httpStatus: null,
+				graphqlType: "FORBIDDEN",
+				graphqlPath: ["node", "pullRequests", "nodes", "0", "title"],
+			},
+		],
+	);
+	expect(twice.partialReasons).toEqual([
+		{
+			repo: "octo/one",
+			codes: ["actions:github_error", "prs:partial"],
+			failures: [
+				failure,
+				{
+					dimension: "prs",
+					code: "graphql_partial",
+					httpStatus: null,
+					graphqlType: "FORBIDDEN",
+					graphqlPath: ["node", "pullRequests", "nodes", "0", "title"],
+				},
+			],
+		},
+	]);
+	expect(addRefreshPartialReasons(twice, "octo/one", [], [])).toBe(twice);
+});

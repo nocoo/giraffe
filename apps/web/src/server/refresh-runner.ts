@@ -1,10 +1,12 @@
 import { z } from "zod";
-import type { RefreshRun } from "../lib/refresh-types";
+import type { RefreshFailureDetail, RefreshRun } from "../lib/refresh-types";
 import { type Env, encryptionKey } from "./env";
 import { getAccount } from "./lib/db/accounts";
 import { createDb, type Db } from "./lib/db/d1";
 import { ApiError, jsonError } from "./lib/errors";
 import { collectAccount, collectRepository } from "./lib/refresh-collection";
+import { catalogRepository, savedAccountPublication } from "./lib/refresh-collection/store";
+import { transportFailure } from "./lib/refresh-collection/transport";
 import type { AccountCollectionResult, CollectionResult } from "./lib/refresh-collection-contract";
 import { parseRefreshParams, refreshDays } from "./lib/refresh-params";
 import {
@@ -51,15 +53,57 @@ const fatalCodes = [
 	"validation_failed",
 ];
 const RETRY_LIMIT = 3;
+const WORK_BUDGET_MS = 25_000;
+const MAX_STEPS_PER_ALARM = 30;
+const RETRY_DELAYS = [2_000, 5_000, 15_000];
+const SHANGHAI_OFFSET_MS = 8 * 3_600_000;
 const failureCode = (error: unknown) =>
 	error instanceof ApiError && safeCodes.has(error.code) ? error.code : "refresh_failed";
 const terminal = (run: RefreshRun) => terminalRefreshStatus(run.status);
 const cancelKey = (id: string) => `cancel:${id}`;
-type Retry = { key: string; attempts: number };
+type Retry = { key: string; attempts: number; detail?: RefreshFailureDetail };
 type StepOutcome =
 	| { ok: true; phase: "account"; result: AccountCollectionResult }
-	| { ok: true; phase: "repos"; result: CollectionResult }
+	| { ok: true; phase: "repos"; result: CollectionResult; failures: RefreshFailureDetail[] }
 	| { ok: false; error: unknown; counted: RequestCounts };
+const retryDelay = (code: string, attempts: number) =>
+	code === "github_rate_limited"
+		? 60_000
+		: (RETRY_DELAYS[Math.min(attempts, RETRY_DELAYS.length - 1)] ?? 15_000);
+const failureDetail = (code: string, error: unknown): RefreshFailureDetail => {
+	const detail = transportFailure(error);
+	return {
+		dimension: detail?.dimension ?? null,
+		code,
+		httpStatus: detail
+			? detail.httpStatus
+			: error instanceof ApiError
+				? error.upstreamStatus
+				: null,
+		graphqlType: detail?.graphqlType ?? null,
+		graphqlPath: detail?.graphqlPath ?? null,
+	};
+};
+const shanghaiDate = (iso: string) =>
+	new Date(Date.parse(iso) + SHANGHAI_OFFSET_MS).toISOString().slice(0, 10);
+async function reusableAccountA(db: Db, run: RefreshRun): Promise<AccountCollectionResult | null> {
+	const name = run.params.repo;
+	if (!name || run.params.force) return null;
+	const saved = await savedAccountPublication(db, run.accountId);
+	if (saved === null || saved.status !== "complete" || typeof saved.fetched_at !== "string")
+		return null;
+	if (shanghaiDate(saved.fetched_at) !== shanghaiDate(run.updatedAt)) return null;
+	const entry = await catalogRepository(db, run.accountId, name);
+	if (!entry) throw new ApiError(404, "not_found", "Repository not found in current catalogue");
+	return {
+		requests: 0,
+		requestBreakdown: { graphql: 0, rest: 0 },
+		partial: false,
+		reasons: [],
+		repos: [entry.repo],
+		aReused: true,
+	};
+}
 function finish(run: RefreshRun, at: string): RefreshRun {
 	return {
 		...run,
@@ -144,7 +188,7 @@ export class RefreshRunner implements DurableObject {
 						return jsonError(409, "refresh_conflict", "a different refresh is already active");
 					return Response.json(active, { status: 202 });
 				}
-				if (!active) await this.state.storage.setAlarm(Date.now() + 1_000);
+				if (!active) await this.state.storage.setAlarm(Date.now());
 				const run = await createRefreshRun(
 					db,
 					accountId,
@@ -193,46 +237,59 @@ export class RefreshRunner implements DurableObject {
 			const marked = { ...run, cancelRequested: true, updatedAt: at };
 			await saveRefreshRun(db, marked);
 			const alarm = await this.state.storage.getAlarm();
-			if (alarm === null || alarm > Date.now() + 1_000)
-				await this.state.storage.setAlarm(Date.now() + 1_000);
+			if (alarm === null || alarm > Date.now()) await this.state.storage.setAlarm(Date.now());
 			return Response.json(marked, { status: 202 });
 		});
 	}
 	async alarm(): Promise<void> {
-		const db = createDb(this.env.DB);
-		const step = await this.state.blockConcurrencyWhile(async () => {
-			const accountId = await this.state.storage.get<string>("accountId");
-			const active = accountId ? await activeRefreshRun(db, accountId) : null;
-			if (!accountId || !active) {
-				await this.state.storage.deleteAlarm();
-				return null;
-			}
-			const at = new Date().toISOString();
-			if (await this.state.storage.get<boolean>(cancelKey(active.id))) {
-				await this.persist(db, accountId, cancelRefreshRun(active, at));
-				return null;
-			}
-			const run = { ...active, status: "running" as const, updatedAt: at };
-			await saveRefreshRun(db, run);
-			await this.state.storage.setAlarm(Date.now() + 5 * 60_000);
-			return { accountId, run };
-		});
-		if (!step) return;
-		const outcome = await this.collect(step.run);
-		await this.state.blockConcurrencyWhile(() => this.settle(db, step, outcome));
+		const deadline = Date.now() + WORK_BUDGET_MS;
+		for (let steps = 0; steps < MAX_STEPS_PER_ALARM; steps++) {
+			const db = createDb(this.env.DB);
+			const step = await this.state.blockConcurrencyWhile(async () => {
+				const accountId = await this.state.storage.get<string>("accountId");
+				const active = accountId ? await activeRefreshRun(db, accountId) : null;
+				if (!accountId || !active) {
+					await this.state.storage.deleteAlarm();
+					return null;
+				}
+				const at = new Date().toISOString();
+				if (await this.state.storage.get<boolean>(cancelKey(active.id))) {
+					const retry = await this.state.storage.get<Retry>("retry");
+					await this.persist(db, accountId, this.attributedCancellation(active, retry));
+					await this.state.storage.delete("retry");
+					return null;
+				}
+				const run = { ...active, status: "running" as const, updatedAt: at };
+				await saveRefreshRun(db, run);
+				await this.state.storage.setAlarm(Date.now() + 5 * 60_000);
+				return { accountId, run };
+			});
+			if (!step) return;
+			const outcome = await this.collect(step.run);
+			const next = await this.state.blockConcurrencyWhile(() => this.settle(db, step, outcome));
+			if (!next || Date.now() >= deadline) return;
+		}
 	}
 	private async collect(run: RefreshRun): Promise<StepOutcome> {
 		let counted: RequestCounts = { graphql: 0, rest: 0 };
+		let failures: RefreshFailureDetail[] = [];
 		try {
 			const db = createDb(this.env.DB);
 			const account = await getAccount(db, run.accountId);
 			if (!account) throw new ApiError(404, "account_missing", "account missing");
+			if (run.phase === "account") {
+				const reused = await reusableAccountA(db, run);
+				if (reused) return { ok: true, phase: "account", result: reused };
+			}
 			const key = encryptionKey(this.env, account.key_version);
 			if (!key) throw new ApiError(500, "encryption_misconfigured", "encryption unavailable");
 			const token = await decryptToken(account.token_ciphertext, parseKeyBytes(key));
 			const context = {
 				onRequests: (_count: number, breakdown: RequestCounts) => {
 					counted = breakdown;
+				},
+				onFailures: (details: RefreshFailureDetail[]) => {
+					failures = details;
 				},
 				env: this.env,
 				account,
@@ -245,7 +302,12 @@ export class RefreshRunner implements DurableObject {
 				return { ok: true, phase: "account", result: await collectAccount(context) };
 			const repo = run.repos[run.completedRepos];
 			if (!repo) throw new ApiError(500, "validation_failed", "repository cursor invalid");
-			return { ok: true, phase: "repos", result: await collectRepository(context, repo) };
+			return {
+				ok: true,
+				phase: "repos",
+				result: await collectRepository(context, repo),
+				failures,
+			};
 		} catch (error) {
 			return { ok: false, error, counted };
 		}
@@ -254,15 +316,23 @@ export class RefreshRunner implements DurableObject {
 		db: Db,
 		step: { accountId: string; run: RefreshRun },
 		outcome: StepOutcome,
-	): Promise<void> {
+	): Promise<boolean> {
 		const at = new Date().toISOString();
 		const cancellationRequested = await this.state.storage.get<boolean>(cancelKey(step.run.id));
 		const accountPhase = step.run.phase === "account";
 		const repo = accountPhase ? null : (step.run.repos[step.run.completedRepos] ?? null);
 		let run: RefreshRun = { ...step.run, updatedAt: at };
 		let retryAt: number | null = null;
+		let pending: Retry | undefined;
 		if (outcome.ok) {
 			run = addRefreshRequests(run, accountPhase ? "a" : "b", outcome.result.requestBreakdown);
+			run = {
+				...run,
+				errorCode: null,
+				...(!accountPhase
+					? {}
+					: { aReused: outcome.phase === "account" && outcome.result.aReused === true }),
+			};
 			run =
 				outcome.phase === "account"
 					? { ...run, phase: "repos", repos: outcome.result.repos }
@@ -275,6 +345,7 @@ export class RefreshRunner implements DurableObject {
 				{ ...run, partial: run.partial || outcome.result.partial },
 				repo,
 				reasons,
+				outcome.phase === "repos" && outcome.result.partial ? outcome.failures : [],
 			);
 			await this.state.storage.delete("retry");
 		} else {
@@ -289,13 +360,14 @@ export class RefreshRunner implements DurableObject {
 				outcome.counted,
 			);
 			if (!fatal && attempts < RETRY_LIMIT) {
-				await this.state.storage.put("retry", { key, attempts: attempts + 1 });
+				pending = { key, attempts: attempts + 1, detail: failureDetail(code, outcome.error) };
+				await this.state.storage.put("retry", pending);
 				const deadline =
 					outcome.error instanceof ApiError && outcome.error.retryAt
 						? Date.parse(outcome.error.retryAt)
 						: 0;
 				retryAt = Math.max(
-					Date.now() + 60_000 * 2 ** attempts,
+					Date.now() + retryDelay(code, attempts),
 					Number.isFinite(deadline) ? deadline : 0,
 				);
 			} else {
@@ -305,15 +377,12 @@ export class RefreshRunner implements DurableObject {
 						? cancellationRequested
 							? run
 							: { ...run, status: "failed", phase: "done", finishedAt: at }
-						: addRefreshPartialReasons(
-								{ ...run, partial: true, completedRepos: run.completedRepos + 1 },
-								repo,
-								[code],
-							);
+						: { ...run, partial: true, completedRepos: run.completedRepos + 1 };
+				run = addRefreshPartialReasons(run, repo, [code], [failureDetail(code, outcome.error)]);
 			}
 		}
 		if (cancellationRequested) {
-			run = cancelRefreshRun(run, at);
+			run = this.attributedCancellation(run, pending, step.run);
 			retryAt = null;
 			await this.state.storage.delete("retry");
 		} else if (retryAt === null && !terminal(run) && run.completedRepos >= run.repos.length)
@@ -328,6 +397,19 @@ export class RefreshRunner implements DurableObject {
 				finishedAt: stored.finishedAt,
 			};
 		await this.persist(db, step.accountId, run, retryAt);
+		return !cancellationRequested && retryAt === null && !terminal(run);
+	}
+	private attributedCancellation(
+		run: RefreshRun,
+		retry: Retry | undefined,
+		step = run,
+	): RefreshRun {
+		const cancelled = cancelRefreshRun(run, new Date().toISOString());
+		if (!run.errorCode) return cancelled;
+		const repo = step.phase === "account" ? null : (step.repos[step.completedRepos] ?? null);
+		const pending = `${step.id}:${step.phase}:${step.completedRepos}`;
+		const detail = retry?.key === pending ? retry.detail : undefined;
+		return addRefreshPartialReasons(cancelled, repo, [run.errorCode], detail ? [detail] : []);
 	}
 	private async persist(
 		db: Db,
@@ -347,7 +429,7 @@ export class RefreshRunner implements DurableObject {
 			return;
 		}
 		if (!urgent && (await this.state.storage.getAlarm()) !== null) return;
-		await this.state.storage.setAlarm(Date.now() + 1_000);
+		await this.state.storage.setAlarm(Date.now());
 	}
 }
 

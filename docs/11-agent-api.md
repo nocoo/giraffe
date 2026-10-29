@@ -1,6 +1,6 @@
 # Machine API v1: saved data and external resources
 
-Version 0.27.1 provides scoped unified-refresh creation/history/status/cancellation and keeps
+Version 0.27.2 provides scoped unified-refresh creation/history/status/cancellation and keeps
 the analysis product surface removed. The machine API remains an authenticated
 boundary for saved observations, application settings and externally owned
 resources. No endpoint executes local code or schedules analysis.
@@ -87,8 +87,14 @@ Paths below are relative to `/api/v1/accounts/:account`. Run reads require
 | `POST /refresh-runs/:id/cancel` | Cooperative, idempotent cancellation; retains saved observations |
 
 Start accepts optional `since`, `until`, `timezone`, `dimensions`, `force` and
-explicit `repo`. Date windows contain 1–31 closed days. Matching active manual
-requests deduplicate; different parameters return `409 refresh_conflict`.
+explicit `repo`. Date windows contain 1–31 closed days. A manual POST matching
+an active run deduplicates; different parameters return `409 refresh_conflict`.
+`requestKey` and all unknown body fields return `400 validation_failed`.
+There is no client idempotency key or `Idempotency-Key` header contract.
+Equal normalized parameters return any active run with HTTP 202, including
+a scheduled run;
+the same POST after termination creates a new run, with normal cache reuse.
+Different active manual requests conflict rather than queueing.
 Automatic B selects all locally starred repositories regardless of owner, plus
 unobserved, non-fork repositories owned by the account and created during the
 current Asia/Shanghai day. Owner filtering applies only to that new-repository
@@ -107,10 +113,15 @@ distinguishes an accepted request from the terminal `cancelled` state.
 `{total,graphql,rest,a:{graphql,rest},b:{graphql,rest}}`, including actual retries
 and pagination. `partialReasons` contains `{repo,codes}` entries (`repo: null`
 for account-level missingness); every partial result has safe reason codes.
+New entries also carry `failures` with safe `dimension`, `code`, `httpStatus`,
+`graphqlType` and `graphqlPath` fields when available. `aReused` reports a complete
+same-Shanghai-day A reused by a non-forced single-repository request; its A request
+count is zero and saved source timestamps remain unchanged.
 Never treat `completedRepos` as the count of complete repositories: partial
 repositories can also have finished processing.
 
-Detailed request/reason/cancellation fields apply to new v0.27.1 runs. Historical
+Detailed request/reason/cancellation fields apply since v0.27.1; `failures` and
+`aReused` are introduced in v0.27.2. Historical
 terminal payloads remain unchanged; schema cutover fails old active payloads
 with `refresh_schema_cutover` rather than inventing transport counts or silently
 resuming incompatible state. It preserves already-saved observations.

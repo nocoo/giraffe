@@ -1,4 +1,5 @@
 import type { FactoryEvent, FactoryRepo, FactoryStreamData } from "../../../lib/factory-types";
+import type { RefreshFailureDetail } from "../../../lib/refresh-types";
 import { ApiError } from "../errors";
 import {
 	mapActionRuns,
@@ -63,6 +64,27 @@ function mappedRows(stream: string, raw: Node[], repo: string) {
 		summary: object(row.security_advisory).summary ?? object(row.rule).description ?? "",
 		url: row.html_url,
 	}));
+}
+
+function attributedFailures(
+	recorded: RefreshFailureDetail[],
+	needed: string[],
+	results: Map<string, Dimension>,
+): RefreshFailureDetail[] {
+	const attributed = [...recorded];
+	for (const dimension of needed) {
+		if (attributed.some((failure) => failure.dimension === dimension)) continue;
+		const reason = results.get(dimension)?.reason;
+		if (!reason) continue;
+		attributed.push({
+			dimension,
+			code: reason,
+			httpStatus: null,
+			graphqlType: null,
+			graphqlPath: null,
+		});
+	}
+	return attributed;
 }
 
 export async function collectRepository(
@@ -142,7 +164,10 @@ export async function collectRepository(
 	const observations: DayObservation[] = [];
 	const writes: D1PreparedStatement[] = [];
 	const results = new Map<string, Dimension>();
+	const failures: RefreshFailureDetail[] = [];
 	let pendingError: unknown;
+	const preLoop = upstream.failures.length;
+	let consumed = preLoop;
 	for (const dimension of needed) {
 		if (dimension === "commits") {
 			const target = object(object(raw.defaultBranchRef).target);
@@ -214,6 +239,9 @@ export async function collectRepository(
 			if (terminal(error)) pendingError = error;
 		}
 		results.set(dimension, result);
+		for (const failure of upstream.failures.slice(consumed))
+			failures.push(failure.dimension === null ? { ...failure, dimension } : failure);
+		consumed = upstream.failures.length;
 		for (const day of context.days) {
 			if (
 				!context.run.params.force &&
@@ -302,7 +330,7 @@ export async function collectRepository(
 		const items = new Map<string, FactoryEvent>();
 		for (const day of context.days) {
 			const row = current.get(`${day.date}:${dimension}`);
-			if (!row || row.status === "unavailable") continue;
+			if (!row) continue;
 			const value = JSON.parse(row.payload) as { count: number | null; items: FactoryEvent[] };
 			for (const item of value.items) items.set(item.id, item);
 			if (row.status !== "complete") continue;
@@ -375,7 +403,10 @@ export async function collectRepository(
 						[key]: mappedRows(dimension, result.raw, saved.repo),
 						repo_id: saved.repo_id,
 						...security,
-						truncated: result.status !== "complete" || inventoryComplete === false,
+						truncated:
+							dimension === "alerts"
+								? result.truncated === true
+								: result.status !== "complete" || inventoryComplete === false,
 						inventory_complete: inventoryComplete,
 						unavailable: result.status === "unavailable",
 						window: windowOf(context),
@@ -456,7 +487,6 @@ export async function collectRepository(
 		);
 	await db.batch(writes);
 	await publish(db, context);
-	if (pendingError) throw pendingError;
 	const reasons = context.run.params.dimensions.flatMap((dimension) => {
 		const coverage = repo.coverage[dimension];
 		const code =
@@ -468,6 +498,10 @@ export async function collectRepository(
 			...(coverage.inventoryComplete === false ? [`${dimension}:inventory_incomplete`] : []),
 		];
 	});
+	context.onFailures?.(
+		attributedFailures([...upstream.failures.slice(0, preLoop), ...failures], needed, results),
+	);
+	if (pendingError) throw pendingError;
 	return {
 		requests: upstream.client.count,
 		requestBreakdown: upstream.breakdown(),

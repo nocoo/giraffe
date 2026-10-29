@@ -1,4 +1,4 @@
-import type { RefreshDay, RefreshRun } from "../../lib/refresh-types";
+import type { RefreshDay, RefreshFailureDetail, RefreshRun } from "../../lib/refresh-types";
 import type { Env } from "../env";
 import type { AccountRow } from "./db/accounts";
 
@@ -11,6 +11,7 @@ export type CollectionContext = {
 	days: RefreshDay[];
 	now: string;
 	onRequests?: (count: number, breakdown: RequestBreakdown) => void;
+	onFailures?: (failures: RefreshFailureDetail[]) => void;
 };
 export type CollectionResult = {
 	requests: number;
@@ -18,4 +19,4 @@ export type CollectionResult = {
 	partial: boolean;
 	reasons: string[];
 };
-export type AccountCollectionResult = CollectionResult & { repos: string[] };
+export type AccountCollectionResult = CollectionResult & { repos: string[]; aReused?: boolean };

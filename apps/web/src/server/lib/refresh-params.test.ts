@@ -38,6 +38,7 @@ describe("unified refresh calendar parameters", () => {
 		null,
 		[],
 		{ mode: "deep" },
+		{ requestKey: "client-retry" },
 		{ force: "yes" },
 		{ repo: "bad" },
 		{ repo: "../repo" },

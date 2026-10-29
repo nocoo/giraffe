@@ -124,6 +124,24 @@ it("serves inclusive saved dates in an observation envelope and preserves retain
 	expect((await s.raw.prepare("SELECT * FROM api_tokens").all()).results).toEqual(tokens);
 });
 
+it("reads the complete saved year without limiting it to the repository window", async () => {
+	const setupResult = await setup();
+	const calendar = setupResult.snapshot.contribution;
+	if (!calendar) throw new Error("missing fixture calendar");
+	calendar.days = Array.from({ length: 367 }, (_, index) => ({
+		date: new Date(Date.parse("2023-03-01T00:00:00Z") + index * 86_400_000)
+			.toISOString()
+			.slice(0, 10),
+		count: 1,
+	}));
+	await setupResult.save();
+	const response = await setupResult.call();
+	expect(response.status).toBe(200);
+	const result = (await response.json()) as { data: { days: unknown[]; total: number } };
+	expect(result.data.days).toHaveLength(367);
+	expect(result.data.total).toBe(367);
+});
+
 it("validates strict dates, order, maximum saved range, duplicate and unknown query keys before conditional replies", async () => {
 	const s = await setup();
 	for (const query of [
@@ -204,7 +222,7 @@ it("reports missing publications and calendars instead of empty success", async 
 	await s.db.prepare("DELETE FROM refresh_snapshots").run();
 	for (const query of [
 		"?since=2026-09-15&until=2026-09-14",
-		"?since=2026-01-01&until=2026-09-15",
+		"?since=2025-01-01&until=2026-09-15",
 		"?since=2026-02-30",
 		"?unknown=1",
 	]) {

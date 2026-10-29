@@ -124,10 +124,22 @@ export function decodeFactoryResource(
 	stream: string,
 	withContent = false,
 ) {
-	const version =
-		repo.coverage[stream as FactoryStreamName].observation?.version ??
-		repo.observation?.version ??
-		snap.runId;
+	const coverage = repo.coverage[stream as FactoryStreamName];
+	const version = coverage.observation?.version ?? repo.observation?.version ?? snap.runId;
+	if (
+		stream === "dependencies" &&
+		coverage.status === "unavailable" &&
+		coverage.reason === "dependency_analysis_unavailable"
+	) {
+		const data: FactoryStreamData = {
+			runId: version,
+			items: [],
+			next: null,
+			ranges: [snap.window],
+			coverage,
+		};
+		return { data, content: null };
+	}
 	const row = saved.resourcePages[0];
 	const data = row ? (JSON.parse(row.payload) as FactoryStreamData) : null;
 	const meta = withContent ? decodeContent(row?.content_meta) : null;

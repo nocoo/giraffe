@@ -40,11 +40,22 @@ export class GithubUnavailableError extends ApiError {
 	readonly reasonCode: UnavailableReasonCode;
 	readonly unambiguousNotFound: boolean;
 
-	constructor(status: number, message: unknown, accessRestricted = false) {
+	constructor(
+		status: number,
+		message: unknown,
+		accessRestricted = false,
+		upstreamStatus: number | null = null,
+	) {
 		const classified = accessRestricted
 			? unavailableReason("permission_denied")
 			: classifyGithubUnavailable(status, message);
-		super(status, status === 404 ? "not_found" : "github_forbidden", classified.reason);
+		super(
+			status,
+			status === 404 ? "not_found" : "github_forbidden",
+			classified.reason,
+			null,
+			upstreamStatus,
+		);
 		this.reasonCode = classified.reason_code;
 		this.unambiguousNotFound = !accessRestricted && unambiguousGithubNotFound(status, message);
 	}

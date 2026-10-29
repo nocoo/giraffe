@@ -97,7 +97,7 @@ export function FactoryHeatmap({
 	timezone?: string;
 }) {
 	const max = Math.max(1, ...days.map((d) => d.count));
-	const offset = days[0] ? (new Date(days[0].date).getDay() + 6) % 7 : 0;
+	const offset = days[0] ? (new Date(days[0].date).getUTCDay() + 6) % 7 : 0;
 	// Basalt's calendar has no date-selection or missing-data API; keep the drilldown
 	// using its buttons, tooltips and heatmap palette instead of replacing unknowns with zero.
 	return (

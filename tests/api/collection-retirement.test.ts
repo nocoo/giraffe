@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, it } from "vitest";
+import { probeText } from "../../scripts/stub-probe";
 import { quote, localD1Rows as rows } from "./local-d1";
 
 const base = process.env.GIRAFFE_E2E ?? "http://127.0.0.1:17045";
@@ -81,7 +82,7 @@ const savedState = () =>
 			.map((table) => `SELECT * FROM ${table} ORDER BY rowid;`)
 			.join("\n"),
 	);
-const count = async () => (await fetch("http://127.0.0.1:17046/_count")).text();
+const count = () => probeText(17046, "/_count");
 const unavailable = async (response: Response, status = 404) => {
 	expect(response.status).toBe(status);
 	expect(response.headers.get("cache-control")).toBe("private, no-store");

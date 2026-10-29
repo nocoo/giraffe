@@ -1,4 +1,4 @@
-import type { RefreshParams, RefreshRun } from "../../lib/refresh-types";
+import type { RefreshFailureDetail, RefreshParams, RefreshRun } from "../../lib/refresh-types";
 import type { Db } from "./db/d1";
 import { createId } from "./id";
 
@@ -52,21 +52,44 @@ export function addRefreshPartialReasons(
 	run: RefreshRun,
 	repo: string | null,
 	codes: string[],
+	failures: RefreshFailureDetail[] = [],
 ): RefreshRun {
-	if (!codes.length) return run;
+	if (!codes.length && !failures.length) return run;
 	const existing = run.partialReasons.find((entry) => entry.repo === repo);
 	if (!existing)
 		return {
 			...run,
-			partialReasons: [...run.partialReasons, { repo, codes: [...new Set(codes)].sort() }],
+			partialReasons: [...run.partialReasons, partialReason(repo, codes, [], failures)],
 		};
-	const merged = [...new Set([...existing.codes, ...codes])].sort();
 	return {
 		...run,
 		partialReasons: run.partialReasons.map((entry) =>
-			entry.repo === repo ? { repo, codes: merged } : entry,
+			entry.repo === repo
+				? partialReason(repo, [...entry.codes, ...codes], entry.failures ?? [], failures)
+				: entry,
 		),
 	};
+}
+function partialReason(
+	repo: string | null,
+	codes: string[],
+	existing: RefreshFailureDetail[],
+	incoming: RefreshFailureDetail[],
+) {
+	const merged = mergeFailures(existing, incoming);
+	return {
+		repo,
+		codes: [...new Set(codes)].sort(),
+		...(merged.length ? { failures: merged } : {}),
+	};
+}
+function mergeFailures(
+	existing: RefreshFailureDetail[],
+	incoming: RefreshFailureDetail[],
+): RefreshFailureDetail[] {
+	const merged = new Map(existing.map((failure) => [JSON.stringify(failure), failure]));
+	for (const failure of incoming) merged.set(JSON.stringify(failure), failure);
+	return [...merged.values()].slice(0, 20);
 }
 export function cancelRefreshRun(run: RefreshRun, at: string): RefreshRun {
 	if (terminalRefreshStatus(run.status)) return run;
@@ -137,6 +160,7 @@ export async function createRefreshRun(
 		requestBreakdown: emptyRequestBreakdown(),
 		partialReasons: [],
 		partial: false,
+		aReused: false,
 		cancelRequested: false,
 		errorCode: null,
 		createdAt: now,

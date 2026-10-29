@@ -19,7 +19,7 @@
 
 Giraffe is a personal GitHub console for saved repository, Issue / PR, security and notification snapshots across connected accounts.
 
-Version 0.27.1 tightens unified refresh selection, adds cooperative cancellation and reports request counts and partial reasons. Account discovery precedes serial repository collection with calendar-day caching. Automatic refresh covers all explicitly starred repositories plus this account's unobserved non-fork repositories created during the current Asia/Shanghai day, without automatic starring. Saved reads never collect upstream; analysis and legacy refresh modes remain removed. See the [phase-2 contract](docs/15-unified-refresh.md).
+Version 0.27.2 corrects alert completeness and unavailable dependency analysis, restores a year of contribution history, and reuses same-day account discovery for single-repository refreshes. Serial repository collection keeps calendar-day caching and explicit failure diagnostics. Automatic refresh covers all explicitly starred repositories plus this account's unobserved non-fork repositories created during the current Asia/Shanghai day, without automatic starring. Saved reads never collect upstream; analysis and legacy refresh modes remain removed. See the [phase-2 contract](docs/15-unified-refresh.md).
 
 PAT 使用 AES-256-GCM 加密后存入 D1；数据快照以 JSON 保存，未做应用层加密。这是个人部署，获准访问同一部署的人共享其中的账号与快照。
 
@@ -31,7 +31,7 @@ PAT 使用 AES-256-GCM 加密后存入 D1；数据快照以 JSON 保存，未做
 - **单仓详情**：详情、安全、Actions、PR、Issue、Release、流量、语言和贡献者九个页签。
 - **Insights 与告警**：按当前快照展示规则分类及 GitHub 安全告警，标明截断、权限不足或数据不可用状态。
 - **通知处理**：浏览通知，标记单条或全部已读；这些操作会同步写回 GitHub。
-- **Saved observations**: existing snapshot filters remain read-only. Refresh, schedules, run controls and the analysis page are removed; missing evidence remains unavailable rather than zero.
+- **Saved observations**: snapshot filters remain read-only. Unified refresh and its daily schedule collect new observations; legacy refresh modes and the analysis page remain removed. Missing evidence remains unavailable rather than zero.
 - **机器 API**：`/api/v1/*` 的每个端点都要求固定账号、有限 scope 和有效期的 Bearer Token。Token 在受 Cloudflare Access 保护的网页中管理，有效期最长 90 天，须在到期前轮换；API 支持读取已保存快照及读写通用记录、报告和任务。
 
 可见仓库与告警取决于 PAT 权限及 GitHub API 的返回结果。控制台不是持续运行的监控服务，也不执行独立的代码安全扫描。

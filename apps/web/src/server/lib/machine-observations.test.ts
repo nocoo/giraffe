@@ -16,6 +16,54 @@ import {
 import { readSources } from "./machine-sources";
 import { scopedSnapshot } from "./snapshot-projection";
 
+it("serves unsupported dependency analysis without inventing saved evidence", async () => {
+	const raw = sqliteFixture();
+	const db = createDb(raw);
+	const snap = factoryFixture();
+	const repo = snap.repos[0];
+	if (!repo) throw new Error("fixture");
+	repo.coverage.dependencies = {
+		status: "unavailable",
+		pages: 0,
+		fetchedAt: null,
+		source: "dependencies",
+		reason: "dependency_analysis_unavailable",
+		observed: 0,
+	};
+	await db
+		.prepare(
+			"INSERT INTO accounts(id,login,token_ciphertext,token_last4,is_active,created_at,updated_at) VALUES(?,'nocoo','fake','fake',1,'t','t')",
+		)
+		.bind(snap.account_id)
+		.run();
+	for (const [kind, data] of [
+		["repos", { repos: [{ id: repo.id, name_with_owner: repo.name }] }],
+		["factory", snap],
+	] as const)
+		await db.batch(await replaceSnapshotStmts(db, snap.account_id, kind, data, snap.fetched_at));
+	const before = await db.prepare("SELECT * FROM refresh_resources").all();
+	expect(await readFactoryResource(db, snap.account_id, repo.name, "dependencies")).toMatchObject({
+		data: {
+			items: [],
+			unavailable: true,
+			fetched_at: null,
+			coverage: repo.coverage.dependencies,
+		},
+	});
+	const response = await createApp().request(
+		`http://localhost/api/factory/repos/${repo.name}/dependencies?scope=all`,
+		{},
+		{
+			DB: raw,
+			ENVIRONMENT: "development",
+			GITHUB_API_BASE: "http://127.0.0.1:17046",
+		} as Env,
+	);
+	expect(response.status).toBe(200);
+	expect(await response.json()).toMatchObject({ items: [], coverage: repo.coverage.dependencies });
+	expect(await db.prepare("SELECT * FROM refresh_resources").all()).toEqual(before);
+});
+
 it.each(FACTORY_STREAMS)(
 	"serves pre-observation %s but rejects missing or replaced evidence",
 	async (stream) => {

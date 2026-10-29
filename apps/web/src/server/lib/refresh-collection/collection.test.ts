@@ -5,10 +5,12 @@ import { sqliteFixture } from "../../../../../../tests/fixtures/sqlite";
 import { createDb } from "../db/d1";
 import { ApiError } from "../errors";
 import {
+	readFactoryResource,
 	readMachineAccountObservation,
 	readMachineRepositoryObservation,
 } from "../machine-observations";
 import type { CollectionContext } from "../refresh-collection-contract";
+import { contributionWindow } from "./account";
 import { collectAccount, collectRepository } from "./index";
 import { blankMetrics, count, event, factoryRepo, nodes, object, text, windowOf } from "./model";
 import { collectionDb, publish } from "./store";
@@ -744,6 +746,107 @@ describe("unified refresh collection", () => {
 			);
 		},
 	);
+	it("keeps an unavailable alert feature from truncating a complete feature", async () => {
+		const context = await fixture();
+		context.run.params.dimensions = ["alerts"];
+		upstream(undefined, {
+			"/dependabot/alerts": [],
+			"/code-scanning/alerts": Response.json({ message: "no analysis found" }, { status: 404 }),
+		});
+		await collectAccount(context);
+		expect(await collectRepository(context, "owner/project")).toEqual({
+			requests: 3,
+			requestBreakdown: { graphql: 1, rest: 2 },
+			partial: true,
+			reasons: ["alerts:not_found"],
+		});
+		expect(await sourceSnapshot(context, "repo:owner/project:security")).toMatchObject({
+			truncated: false,
+			unavailable: true,
+			dependabot_open: 0,
+			code_scanning_open: null,
+			features: {
+				dependabot: { status: "available" },
+				code_scanning: { status: "unavailable", reason_code: "not_found" },
+			},
+		});
+		expect((await observation(context, "alerts")).results[0]?.status).toBe("unavailable");
+		expect(
+			await readFactoryResource(collectionDb(context), "a", "owner/project", "alerts"),
+		).toMatchObject({ data: { unavailable: true, coverage: { status: "unavailable" } } });
+		upstream([{ node: repo() }], {
+			"/code-scanning/alerts": [{ number: 1, state: "open", created_at: now }],
+		});
+		expect(await collectRepository(context, "owner/project")).toMatchObject({
+			requests: 3,
+			partial: false,
+		});
+		expect(await sourceSnapshot(context, "repo:owner/project:security")).toMatchObject({
+			code_scanning_open: 1,
+			unavailable: false,
+			truncated: false,
+		});
+	});
+	it("preserves known alert items when one feature is unavailable and the other succeeds", async () => {
+		const context = await fixture();
+		context.run.params.dimensions = ["alerts"];
+		upstream(undefined, {
+			"/dependabot/alerts": [
+				{
+					number: 7,
+					security_advisory: { summary: "Upgrade dependency", severity: "high" },
+					html_url: "https://github.com/owner/project/security/dependabot/7",
+					state: "open",
+					created_at: "2026-10-28T01:00:00Z",
+					updated_at: "2026-10-28T02:00:00Z",
+				},
+			],
+			"/code-scanning/alerts": Response.json({ message: "Requires permission" }, { status: 403 }),
+		});
+		await collectAccount(context);
+		expect(await collectRepository(context, "owner/project")).toMatchObject({ requests: 3 });
+		const stored = (await observation(context, "alerts")).results[0];
+		expect(JSON.parse(stored?.payload ?? "{}")).toMatchObject({
+			count: null,
+			observed: 1,
+			items: [{ id: "dependabot:7", title: "Upgrade dependency", severity: "high" }],
+		});
+		expect(await sourceSnapshot(context, "repo:owner/project:security")).toMatchObject({
+			truncated: false,
+			unavailable: true,
+			dependabot_open: 1,
+			code_scanning_open: null,
+			features: {
+				dependabot: { status: "available" },
+				code_scanning: { status: "unavailable", reason_code: "permission_denied" },
+			},
+		});
+		expect(
+			await readFactoryResource(collectionDb(context), "a", "owner/project", "alerts"),
+		).toMatchObject({
+			data: {
+				unavailable: true,
+				coverage: { status: "unavailable" },
+				items: [{ id: "dependabot:7", title: "Upgrade dependency", severity: "high" }],
+			},
+		});
+	});
+	it("treats an empty alert page as complete instead of truncated", async () => {
+		const context = await fixture();
+		context.run.params.dimensions = ["alerts"];
+		upstream(undefined, {
+			"/dependabot/alerts": Response.json([], {
+				headers: { link: '<https://github.test/next>; rel="next"' },
+			}),
+		});
+		await collectAccount(context);
+		expect((await collectRepository(context, "owner/project")).partial).toBe(false);
+		expect(await sourceSnapshot(context, "repo:owner/project:security")).toMatchObject({
+			truncated: false,
+			dependabot_open: 0,
+			features: { dependabot: { status: "available" } },
+		});
+	});
 	it("records disabled alerts separately from permission-denied alerts without successful zeros", async () => {
 		const context = await fixture();
 		upstream(undefined, {
@@ -778,7 +881,7 @@ describe("unified refresh collection", () => {
 			const data =
 				path === "/actions/runs"
 					? { total_count: 101, workflow_runs: [{ id: 1, created_at: "2026-10-28T01:00:00Z" }] }
-					: [];
+					: [{ number: 1, state: "open" }];
 			upstream(undefined, {
 				[path]: Response.json(data, {
 					headers: { link: '<https://github.test/next>; rel="next"' },
@@ -786,6 +889,11 @@ describe("unified refresh collection", () => {
 			});
 			await collectAccount(context);
 			expect((await collectRepository(context, "owner/project")).partial).toBe(true);
+			if (path === "/dependabot/alerts")
+				expect(await sourceSnapshot(context, "repo:owner/project:security")).toMatchObject({
+					truncated: true,
+					features: { dependabot: { status: "partial" } },
+				});
 		},
 	);
 	it.each(["/actions/runs", "/dependabot/alerts"])(
@@ -994,6 +1102,49 @@ describe("unified refresh collection", () => {
 			contribution: null,
 			contributionStatus: "unavailable",
 			rate: null,
+		});
+	});
+	it("fetches the contribution calendar over a fixed one-year window independent of the refresh window", async () => {
+		const context = await fixture();
+		const fetch = upstream();
+		await collectAccount(context);
+		expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body)).variables).toEqual({
+			after: null,
+			since: "2025-10-29T04:00:00.000Z",
+			until: now,
+		});
+		const saved = await publication(context);
+		expect(saved.window).toEqual({
+			since: "2026-10-27T16:00:00.000Z",
+			until: "2026-10-28T15:59:59.999Z",
+			timezone: "Asia/Shanghai",
+		});
+		expect(saved.contributionObservation.window).toEqual({
+			since: "2025-10-29T04:00:00.000Z",
+			until: now,
+		});
+		expect(saved.contribution.days).toEqual([
+			{
+				date: "2026-10-28",
+				count: 2,
+				fetchedAt: now,
+				observedAt: now,
+				breakdown: "unavailable",
+			},
+		]);
+	});
+	it("derives the one-year contribution window across leap days", () => {
+		expect(contributionWindow("2026-10-29T04:00:00.000Z")).toEqual({
+			since: "2025-10-29T04:00:00.000Z",
+			until: "2026-10-29T04:00:00.000Z",
+		});
+		expect(contributionWindow("2024-02-29T12:00:00.000Z")).toEqual({
+			since: "2023-03-01T12:00:00.000Z",
+			until: "2024-02-29T12:00:00.000Z",
+		});
+		expect(contributionWindow("2025-03-01T00:00:00.000Z")).toEqual({
+			since: "2024-03-01T00:00:00.000Z",
+			until: "2025-03-01T00:00:00.000Z",
 		});
 	});
 	it("records an actually empty repository as an observed zero, not missing", async () => {

@@ -19,7 +19,14 @@ import {
 	GitMerge,
 	Workflow,
 } from "lucide-react";
-import { type CSSProperties, useCallback, useDeferredValue, useMemo, useState } from "react";
+import {
+	type CSSProperties,
+	useCallback,
+	useDeferredValue,
+	useEffect,
+	useMemo,
+	useState,
+} from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import {
 	FACTORY_STREAMS,
@@ -88,11 +95,13 @@ export function FactoryPage() {
 
 	const navigate = useNavigate();
 	const [params, setParams] = useSearchParams();
-	const [day, setDay] = useState("");
+	const [selectedDay, setDay] = useState("");
 	const [repoPage, setRepoPage] = useState(1);
 	const [signalPage, setSignalPage] = useState(1);
 	const [openSignals, setOpenSignals] = useState<ReadonlySet<string>>(new Set());
-	const [calendar, setCalendar] = useState<"commits" | "contributions">("commits");
+	const [selectedCalendar, setCalendar] = useState<"commits" | "contributions">("contributions");
+	const calendar = snapshot?.contribution ? selectedCalendar : "commits";
+	const calendarTimezone = calendar === "contributions" ? "UTC" : undefined;
 	const language = params.get("language") ?? "";
 	const topic = params.get("topic") ?? "";
 	const query = params.get("q") ?? "";
@@ -141,12 +150,120 @@ export function FactoryPage() {
 		[snapshot, scope, selection],
 	);
 	const freshness = board?.freshness;
+	const day = (
+		calendar === "contributions"
+			? snapshot?.contribution?.days.some((entry) => entry.date === selectedDay)
+			: !board?.mixedTimezones && board?.days.some((entry) => entry.date === selectedDay)
+	)
+		? selectedDay
+		: "";
+	useEffect(() => {
+		if (selectedDay && !day) setDay("");
+	}, [selectedDay, day]);
+	const selectedCommit = board?.days.find((entry) => entry.date === day);
+	const selectedCommitCount =
+		selectedCommit && (selectedCommit.complete.commits || selectedCommit.commits > 0)
+			? formatObservedCount(selectedCommit.commits, selectedCommit.complete.commits)
+			: "—";
 	const stale = deferredQuery !== query;
 	const edges = useMemo(() => dependencyEdges(snapshot?.repos ?? []), [snapshot]);
 	const visibleEdges = edges;
 	const ranking = factoryRepoPage(board?.ranking ?? [], repoPage);
 	const signalGroups = useMemo(() => factorySignalGroups(board?.anomalies ?? []), [board]);
 	const signalPages = factorySignalPage(signalGroups, signalPage);
+	const calendarPanel =
+		snapshot && board ? (
+			<FactoryPanel
+				title={calendar === "commits" ? "提交日历" : "账号贡献日历"}
+				hint={
+					calendar === "commits"
+						? "按提交时间统计当前筛选的仓库，悬停查看本地时间区间。各仓库更新时间不同时，显示它们的日期并集，最多一年；斜纹表示未完整获取，不是零提交。"
+						: "展示账号过去一年的 GitHub 贡献日期（UTC），不受仓库筛选影响；仓库提交仍按独立观测窗口展示。"
+				}
+			>
+				<div className="mb-3 flex items-center justify-between gap-2">
+					<SegmentControl
+						legend="日历来源"
+						value={calendar}
+						options={[
+							{ value: "commits", label: "仓库提交" },
+							{
+								value: "contributions",
+								label: "账号贡献",
+								disabled: !snapshot.contribution,
+							},
+						]}
+						onValueChange={(value) => {
+							setCalendar(value as typeof calendar);
+							setDay("");
+						}}
+					/>
+					<span className="text-xs text-basalt-muted-foreground">
+						{calendar === "commits"
+							? board.mixedTimezones
+								? "来源时区不一致 · 缺失"
+								: board.mixedWindows
+									? "混合窗口 · 各日覆盖见账本"
+									: `${n(board.periods[1]?.current.commits ?? 0)} / ${n(board.periods[1]?.previous.commits ?? 0)} · 近/前 7 个完整日`
+							: snapshot.contribution
+								? `${n(snapshot.contribution.total)} 贡献 · ${n(snapshot.contribution.restricted)} 受限贡献`
+								: `${snapshot.contributionStatus === "pending" ? "未采集" : "不可用"}`}
+					</span>
+				</div>
+				{!snapshot.contribution ? (
+					<p className="mb-2 text-xs text-basalt-muted-foreground">
+						账号贡献仅在全部仓库范围且已保存贡献日历时可用；当前显示仓库提交。
+					</p>
+				) : null}
+				{calendar === "contributions" &&
+				snapshot.contributionObservation &&
+				snapshot.contributionStatus !== "complete" ? (
+					<p className="mb-2 text-xs text-basalt-muted-foreground">
+						本次未能更新，显示上次获取的日历。
+					</p>
+				) : null}
+				{(
+					calendar === "commits"
+						? !board.mixedTimezones && board.observed.commits
+						: snapshot.contribution !== null
+				) ? (
+					<FactoryHeatmap
+						timezone={calendarTimezone ?? board.timezone}
+						days={
+							calendar === "commits"
+								? board.days.map((d) => ({
+										date: d.date,
+										count: d.commits,
+										known: d.complete.commits,
+									}))
+								: (snapshot.contribution?.days ?? [])
+						}
+						selected={day}
+						onSelect={setDay}
+					/>
+				) : (
+					<p className="factory-chart-empty">当前范围的日历数据尚不可用。</p>
+				)}
+				{day ? (
+					<p className="mt-3 text-xs" role="status">
+						{formatDayRange(day, day, calendarTimezone ?? board.timezone)} ·{" "}
+						{calendar === "commits"
+							? `${selectedCommitCount} 提交；已高亮每日账本；明细日期筛选独立。`
+							: `${snapshot.contribution?.days.find((d) => d.date === day)?.count ?? 0} 账号贡献。`}
+						<a
+							className="factory-link ml-2"
+							href={
+								calendar === "commits"
+									? "#factory-ledger"
+									: `https://github.com/${snapshot.owner}?tab=overview&from=${day}&to=${day}`
+							}
+						>
+							查看来源 ↗
+						</a>
+					</p>
+				) : null}
+			</FactoryPanel>
+		) : null;
 	return (
 		<div className="factory space-y-4" style={FLOW_STYLE}>
 			<PageHeader
@@ -208,6 +325,7 @@ export function FactoryPage() {
 							{snapshot.inventory.excluded.length}
 						</span>
 					</div>
+					{(!selection.length || !scope.length) && snapshot.contribution ? calendarPanel : null}
 					{!selection.length ? (
 						<div role="status" className="py-12 text-center text-sm">
 							{snapshot.inventory.complete
@@ -406,87 +524,7 @@ export function FactoryPage() {
 									</Kpi>
 								</KpiRow>
 								<div className="factory-chart-grid grid gap-3 xl:grid-cols-[1.15fr_1fr]">
-									<FactoryPanel
-										title={calendar === "commits" ? "提交日历" : "账号贡献日历"}
-										hint={
-											calendar === "commits"
-												? "按提交时间统计当前筛选的仓库，悬停查看本地时间区间。各仓库更新时间不同时，显示它们的日期并集，最多一年；斜纹表示未完整获取，不是零提交。"
-												: "账号贡献无法按仓库范围筛选，已停止展示。请使用当前范围内仓库的提交日历。"
-										}
-									>
-										<div className="mb-3 flex items-center justify-between gap-2">
-											<SegmentControl
-												legend="日历来源"
-												value={calendar}
-												options={[
-													{ value: "commits", label: "仓库提交" },
-													{ value: "contributions", label: "账号贡献", disabled: true },
-												]}
-												onValueChange={(value) => {
-													setCalendar(value as typeof calendar);
-													setDay("");
-												}}
-											/>
-											<span className="text-xs text-basalt-muted-foreground">
-												{calendar === "commits"
-													? board.mixedTimezones
-														? "来源时区不一致 · 缺失"
-														: board.mixedWindows
-															? "混合窗口 · 各日覆盖见账本"
-															: `${n(board.periods[1]?.current.commits ?? 0)} / ${n(board.periods[1]?.previous.commits ?? 0)} · 近/前 7 个完整日`
-													: snapshot.contribution
-														? `${n(snapshot.contribution.total)} 贡献 · ${n(snapshot.contribution.restricted)} 受限贡献`
-														: `${snapshot.contributionStatus === "pending" ? "未采集" : "不可用"}`}
-											</span>
-										</div>
-										{calendar === "contributions" &&
-										snapshot.contributionObservation &&
-										snapshot.contributionStatus !== "complete" ? (
-											<p className="mb-2 text-xs text-basalt-muted-foreground">
-												本次未能更新，显示上次获取的日历。
-											</p>
-										) : null}
-										{(
-											calendar === "commits"
-												? !board.mixedTimezones && board.observed.commits
-												: snapshot.contribution !== null
-										) ? (
-											<FactoryHeatmap
-												timezone={board.timezone}
-												days={
-													calendar === "commits"
-														? board.days.map((d) => ({
-																date: d.date,
-																count: d.commits,
-																known: d.complete.commits,
-															}))
-														: (snapshot.contribution?.days ?? [])
-												}
-												selected={day}
-												onSelect={setDay}
-											/>
-										) : (
-											<p className="factory-chart-empty">当前范围的日历数据尚不可用。</p>
-										)}
-										{day ? (
-											<p className="mt-3 text-xs" role="status">
-												{formatDayRange(day, day, board.timezone)} ·{" "}
-												{calendar === "commits"
-													? `${board.days.find((d) => d.date === day)?.commits ?? 0} 提交；已高亮每日账本；明细日期筛选独立。`
-													: `${snapshot.contribution?.days.find((d) => d.date === day)?.count ?? 0} 账号贡献。`}
-												<a
-													className="factory-link ml-2"
-													href={
-														calendar === "commits"
-															? "#factory-ledger"
-															: `https://github.com/${snapshot.owner}?tab=overview&from=${day}&to=${day}`
-													}
-												>
-													查看来源 ↗
-												</a>
-											</p>
-										) : null}
-									</FactoryPanel>
+									{calendarPanel}
 									<BacklogPanel activity={board.repoActivity} onSelect={drill} />
 								</div>
 								<div className="factory-chart-grid grid gap-3 xl:grid-cols-3">

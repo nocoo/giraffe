@@ -50,7 +50,22 @@ vi.mock("./factory-charts", () => ({
 		</section>
 	),
 	FactorySpark: () => null,
-	FactoryHeatmap: () => null,
+	FactoryHeatmap: ({
+		days,
+		timezone,
+		onSelect,
+	}: {
+		days: { date: string }[];
+		timezone: string;
+		onSelect: (date: string) => void;
+	}) => (
+		<button
+			type="button"
+			data-calendar-days={days.length}
+			data-calendar-timezone={timezone}
+			onClick={() => onSelect(days[0]?.date ?? "")}
+		/>
+	),
 	FactoryTreemap: () => null,
 }));
 vi.mock("./factory-story", () => ({
@@ -67,6 +82,134 @@ afterEach(() => {
 	vi.restoreAllMocks();
 	vi.unstubAllGlobals();
 });
+
+it.each(["observed", "catalogue-only", "account-only"])(
+	"shows the account contribution year with %s data",
+	async (state) => {
+		const raw = factoryFixture();
+		raw.contribution = {
+			days: Array.from({ length: 365 }, (_, index) => ({
+				date: new Date(Date.parse("2025-10-29T00:00:00Z") + index * 86_400_000)
+					.toISOString()
+					.slice(0, 10),
+				count: 1,
+			})),
+			total: 365,
+			restricted: 0,
+			fetchedAt: raw.fetched_at,
+		};
+		vi.mocked(loadFactory).mockResolvedValue({
+			...raw,
+			repos: state === "observed" ? raw.repos : [],
+			selectedRepos: state === "account-only" ? [] : raw.repos,
+		});
+		vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+		const container = document.createElement("div");
+		const root = createRoot(container);
+		try {
+			await act(async () =>
+				root.render(
+					<MemoryRouter>
+						<FactoryPage />
+					</MemoryRouter>,
+				),
+			);
+			expect(container.querySelector('[data-calendar-days="365"]')).not.toBeNull();
+			expect(
+				container.querySelector("[data-calendar-timezone]")?.getAttribute("data-calendar-timezone"),
+			).toBe("UTC");
+			expect(container.textContent).toContain("账号贡献日历");
+			expect(container.textContent).not.toContain("账号贡献无法按仓库范围筛选，已停止展示");
+		} finally {
+			await act(async () => root.unmount());
+		}
+	},
+);
+
+it("clears a selected contribution date when the same scope loses its calendar", async () => {
+	const raw = factoryFixture();
+	raw.contribution = {
+		days: [{ date: "2025-10-29", count: 3 }],
+		total: 3,
+		restricted: 0,
+		fetchedAt: raw.fetched_at,
+	};
+	vi.mocked(loadFactory).mockResolvedValue({ ...raw, selectedRepos: raw.repos });
+	vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+	vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+	const container = document.createElement("div");
+	const root = createRoot(container);
+	try {
+		await act(async () =>
+			root.render(
+				<MemoryRouter>
+					<FactoryPage />
+				</MemoryRouter>,
+			),
+		);
+		await act(async () =>
+			container.querySelector<HTMLButtonElement>("[data-calendar-days]")?.click(),
+		);
+		expect(container.textContent).toContain("3 账号贡献");
+		vi.mocked(loadFactory).mockResolvedValue({
+			...raw,
+			contribution: null,
+			contributionStatus: "unavailable",
+			selectedRepos: raw.repos,
+		});
+		await act(async () => {
+			window.dispatchEvent(new Event("focus"));
+		});
+		expect(container.textContent).toContain("当前显示仓库提交");
+		expect(container.textContent).not.toContain("已高亮每日账本");
+		expect(container.querySelector(".factory-ledger-selected")).toBeNull();
+	} finally {
+		await act(async () => root.unmount());
+	}
+});
+
+it.each([0, 2])(
+	"keeps partially observed commit dates selectable without inventing a zero: %i",
+	async (commits) => {
+		const raw = factoryFixture();
+		raw.window = {
+			since: "2026-09-10T00:00:00Z",
+			until: "2026-09-10T23:59:59.999Z",
+			timezone: "UTC",
+		};
+		const repo = raw.repos[0];
+		if (!repo) throw new Error("fixture");
+		repo.coverage.commits.status = "limited";
+		repo.coverage.commits.observed = 1;
+		repo.coverage.commits.fetchedAt = raw.fetched_at;
+		repo.metrics.days = { "2026-09-10": { ...repo.metrics, commits } };
+		vi.mocked(loadFactory).mockResolvedValue({
+			...raw,
+			contribution: null,
+			selectedRepos: raw.repos,
+		});
+		vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+		const container = document.createElement("div");
+		const root = createRoot(container);
+		try {
+			await act(async () =>
+				root.render(
+					<MemoryRouter>
+						<FactoryPage />
+					</MemoryRouter>,
+				),
+			);
+			expect(container.querySelector("[data-calendar-days]")).not.toBeNull();
+			await act(async () =>
+				container.querySelector<HTMLButtonElement>("[data-calendar-days]")?.click(),
+			);
+			expect(container.textContent).toContain(`${commits ? "≥ 2" : "—"} 提交；已高亮每日账本`);
+			expect(container.querySelector(".factory-ledger-selected")).not.toBeNull();
+		} finally {
+			await act(async () => root.unmount());
+		}
+	},
+);
 
 it.each([false, true])(
 	"labels source calendar days and withholds mixed timezones: %s",

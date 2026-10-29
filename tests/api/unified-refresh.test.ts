@@ -49,6 +49,11 @@ it("runs real durable A then serial B, serves latest observations and reuses day
 	}
 	try {
 		expect((await browser(`accounts/${account.id}/activate`, "POST")).status).toBe(200);
+		for (const post of [browser, machine]) {
+			const invalid = await post("refresh-runs", "POST", { requestKey: "client-retry" });
+			expect(invalid.status).toBe(400);
+			expect(await invalid.json()).toMatchObject({ error: { code: "validation_failed" } });
+		}
 		const discovery = await run({ dimensions: ["commits"] });
 		expect(discovery.repos).toEqual([]);
 		expect(discovery.requests).toBe(1);
@@ -65,12 +70,13 @@ it("runs real durable A then serial B, serves latest observations and reuses day
 		});
 		expect(first.repos).toEqual(["phase2/demo"]);
 		expect(first.completedRepos).toBe(1);
-		expect(first.requests).toBe(5);
+		expect(first.aReused).toBe(true);
+		expect(first.requests).toBe(4);
 		expect(first.requestBreakdown).toEqual({
-			total: 5,
-			graphql: 2,
+			total: 4,
+			graphql: 1,
 			rest: 3,
-			a: { graphql: 1, rest: 0 },
+			a: { graphql: 0, rest: 0 },
 			b: { graphql: 1, rest: 3 },
 		});
 		expect(first.partialReasons).toEqual([]);
@@ -85,10 +91,30 @@ it("runs real durable A then serial B, serves latest observations and reuses day
 			"repos/phase2/demo/actions",
 			"repos/phase2/demo/security",
 			"factory/repos/phase2/demo/commits",
+			"factory/repos/phase2/demo/dependencies",
 		]) {
 			const response = await machine(path);
 			expect(response.status, path).toBe(200);
 		}
+		const dependencies = await machine("factory/repos/phase2/demo/dependencies");
+		expect(await dependencies.json()).toMatchObject({
+			data: {
+				items: [],
+				unavailable: true,
+				fetched_at: null,
+				coverage: { status: "unavailable", reason: "dependency_analysis_unavailable" },
+			},
+		});
+		const browserDependencies = await browser("factory/repos/phase2/demo/dependencies?scope=all");
+		expect(browserDependencies.status).toBe(200);
+		expect(await browserDependencies.json()).toMatchObject({
+			items: [],
+			coverage: { status: "unavailable", reason: "dependency_analysis_unavailable" },
+		});
+		const contributions = await machine("contributions");
+		const calendar = (await contributions.json()) as { data: { days: unknown[] } };
+		expect(calendar.data.days.length).toBeGreaterThanOrEqual(365);
+		expect(calendar.data.days.length).toBeLessThanOrEqual(367);
 		const activityResponse = await machine("activity");
 		expect(activityResponse.status).toBe(200);
 		const activity = (await activityResponse.json()) as ActivitySnapshot;
@@ -122,6 +148,7 @@ it("runs real durable A then serial B, serves latest observations and reuses day
 		expect(cached.repos).toEqual(["phase2/demo"]);
 		expect(cached.requests).toBe(1);
 		const forced = await run({ dimensions: ["commits"], repo: "phase2/demo", force: true });
+		expect(forced.aReused).toBe(false);
 		expect(forced.requests).toBe(2);
 		expect(forced.requestBreakdown).toMatchObject({
 			a: { graphql: 1, rest: 0 },

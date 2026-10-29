@@ -144,9 +144,6 @@ async function setup() {
 
 it("fences the frozen 0.27.0 alarm before collection and leaves the modern alarm authoritative", async () => {
 	const fixture = await setup();
-	collectors.collectRepository
-		.mockResolvedValueOnce(collected(3, 1, 2, ["actions:unavailable"]))
-		.mockResolvedValue(collected(3, 1, 2));
 	const run = await startRefresh(fixture.env, "account", {});
 	const queued = await getRefreshRun(fixture.db(), "account", run.id);
 	expect(queued?.status).toBe("queued");
@@ -158,11 +155,21 @@ it("fences the frozen 0.27.0 alarm before collection and leaves the modern alarm
 		status: "queued",
 		writer_revision: 0,
 	});
+	let releaseRepository: ((value: unknown) => void) | undefined;
+	collectors.collectRepository
+		.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					releaseRepository = resolve as (value: unknown) => void;
+				}),
+		)
+		.mockResolvedValue(collected(3, 1, 2));
+	const step = fixture.runner.alarm();
+	await vi.waitFor(() => expect(releaseRepository).toBeTypeOf("function"));
 	const afterAccount = async () => fixture.stored(run.id);
-	await fixture.runner.alarm();
 	expect(collectors.collectAccount).toHaveBeenCalledOnce();
 	const accountStep = await afterAccount();
-	expect(accountStep).toMatchObject({ status: "running", writer_revision: 2 });
+	expect(accountStep).toMatchObject({ status: "running", writer_revision: 3 });
 	expect(JSON.parse(accountStep?.payload ?? "{}")).toMatchObject({
 		phase: "repos",
 		requests: 1,
@@ -170,11 +177,9 @@ it("fences the frozen 0.27.0 alarm before collection and leaves the modern alarm
 		partialReasons: [],
 	});
 	await expect(fixture.legacy.alarm()).rejects.toMatchObject({ code: "db_error" });
-	expect(collectors.collectRepository).not.toHaveBeenCalled();
 	expect(await afterAccount()).toEqual(accountStep);
-	await fixture.runner.alarm();
-	expect(collectors.collectRepository).toHaveBeenCalledOnce();
-	await fixture.runner.alarm();
+	releaseRepository?.(collected(3, 1, 2, ["actions:unavailable"]));
+	await step;
 	expect(collectors.collectRepository).toHaveBeenCalledTimes(2);
 	expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
 		status: "partial",

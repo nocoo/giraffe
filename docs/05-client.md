@@ -1,6 +1,6 @@
 # 05 — Client 设计
 
-> **v0.27.1:** [Phase 2 unified refresh](15-unified-refresh.md) is the current
+> **v0.27.2:** [Phase 2 unified refresh](15-unified-refresh.md) is the current
 > behavior contract. Dashboard and single-repository refresh use one task type,
 > poll saved status and reload new observations on completion. Earlier refresh
 > modes, refresh-center and analysis UI descriptions below remain historical.

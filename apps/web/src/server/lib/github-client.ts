@@ -24,6 +24,7 @@ export type GithubClient = {
 	requests: { graphql: number; rest: number };
 	graphqlErrors: Array<{
 		type?: string;
+		path: string[];
 		reasonCode?: UnavailableReasonCode;
 		unambiguousNotFound?: true;
 		nodeNotFound?: true;
@@ -59,29 +60,34 @@ function isRateLimited(res: Response, body: string): boolean {
 	return res.status === 403 && /rate limit/i.test(body);
 }
 
+function rateLimitError(res: Response): ApiError {
+	const retry = res.headers.get("retry-after");
+	const reset = Number(res.headers.get("x-ratelimit-reset")) * 1000;
+	const delay = retry
+		? /^\d+$/.test(retry)
+			? Date.now() + Number(retry) * 1000
+			: Date.parse(retry)
+		: 0;
+	const until = Math.max(
+		Date.now() + 60_000,
+		Number.isFinite(reset) ? reset : 0,
+		Number.isFinite(delay) ? delay : 0,
+	);
+	return new ApiError(
+		503,
+		"github_rate_limited",
+		"github rate limited",
+		new Date(until).toISOString(),
+		res.status,
+	);
+}
+
 function mapStatus(res: Response, body: string): never {
 	if (res.status === 401) {
-		throw new ApiError(401, "github_unauthorized", "github unauthorized");
+		throw new ApiError(401, "github_unauthorized", "github unauthorized", null, res.status);
 	}
 	if (isRateLimited(res, body)) {
-		const retry = res.headers.get("retry-after");
-		const reset = Number(res.headers.get("x-ratelimit-reset")) * 1000;
-		const delay = retry
-			? /^\d+$/.test(retry)
-				? Date.now() + Number(retry) * 1000
-				: Date.parse(retry)
-			: 0;
-		const until = Math.max(
-			Date.now() + 60_000,
-			Number.isFinite(reset) ? reset : 0,
-			Number.isFinite(delay) ? delay : 0,
-		);
-		throw new ApiError(
-			503,
-			"github_rate_limited",
-			"github rate limited",
-			new Date(until).toISOString(),
-		);
+		throw rateLimitError(res);
 	}
 	if (res.status === 403 || res.status === 404) {
 		let message: unknown;
@@ -95,11 +101,123 @@ function mapStatus(res: Response, body: string): never {
 			message,
 			res.headers.has("x-github-sso") ||
 				githubAccessRestricted(JSON.stringify(diagnostics) ?? body),
+			res.status,
 		);
 	}
-	throw new ApiError(502, "github_error", "github error");
+	throw new ApiError(502, "github_error", "github error", null, res.status);
 }
 
+const PATH_SEGMENTS = 8;
+const SAFE_PATH_FIELDS = new Set([
+	"id",
+	"name",
+	"nameWithOwner",
+	"url",
+	"description",
+	"isPrivate",
+	"isArchived",
+	"isFork",
+	"isEmpty",
+	"pushedAt",
+	"createdAt",
+	"updatedAt",
+	"closedAt",
+	"mergedAt",
+	"publishedAt",
+	"diskUsage",
+	"stargazerCount",
+	"forkCount",
+	"visibility",
+	"owner",
+	"login",
+	"avatarUrl",
+	"primaryLanguage",
+	"defaultBranchRef",
+	"target",
+	"oid",
+	"history",
+	"totalCount",
+	"languages",
+	"totalSize",
+	"pageInfo",
+	"hasNextPage",
+	"endCursor",
+	"edges",
+	"size",
+	"node",
+	"repositoryTopics",
+	"nodes",
+	"topic",
+	"openIssues",
+	"closedIssues",
+	"openPrs",
+	"closedPrs",
+	"mergedPrs",
+	"releases",
+	"issues",
+	"pullRequests",
+	"state",
+	"number",
+	"title",
+	"author",
+	"labels",
+	"comments",
+	"isDraft",
+	"additions",
+	"deletions",
+	"baseRefName",
+	"headRefName",
+	"reviewDecision",
+	"mergeable",
+	"mergeStateStatus",
+	"tagName",
+	"isPrerelease",
+	"databaseId",
+	"viewer",
+	"repositories",
+	"contributionsCollection",
+	"contributionCalendar",
+	"weeks",
+	"contributionDays",
+	"date",
+	"contributionCount",
+	"restrictedContributionsCount",
+	"totalContributions",
+	"rateLimit",
+	"remaining",
+	"resetAt",
+]);
+const SAFE_TYPES = new Set([
+	"GRAPHQL",
+	"VALIDATION",
+	"VALIDATION_FAILED",
+	"PARSE_FAILED",
+	"FORBIDDEN",
+	"NOT_FOUND",
+	"RATE_LIMITED",
+	"UNPROCESSABLE",
+	"NON_NULL_VIOLATION",
+	"NULL_VALUE_IN_NON_NULL_POSITION",
+	"SERVICE_UNAVAILABLE",
+	"INTERNAL",
+]);
+function safePath(path: unknown): string[] {
+	if (!Array.isArray(path)) return [];
+	return path
+		.slice(0, PATH_SEGMENTS)
+		.map((segment) =>
+			typeof segment === "string" && SAFE_PATH_FIELDS.has(segment)
+				? segment
+				: typeof segment === "string"
+					? "@"
+					: typeof segment === "number" && Number.isSafeInteger(segment)
+						? String(segment)
+						: "@",
+		);
+}
+function safeType(type: unknown): string {
+	return typeof type === "string" && SAFE_TYPES.has(type) ? type : "UNKNOWN";
+}
 function dropNullNodes(value: unknown): unknown {
 	if (Array.isArray(value)) {
 		return value.filter((item) => item !== null).map(dropNullNodes);
@@ -170,7 +288,13 @@ async function readBoundedBody(res: Response, maxBytes: number): Promise<string>
 	const reader = res.body?.getReader();
 	if (!reader) return "";
 	const large = () =>
-		new ApiError(502, "github_response_too_large", `GitHub response exceeds ${maxBytes / 1e6} MB`);
+		new ApiError(
+			502,
+			"github_response_too_large",
+			`GitHub response exceeds ${maxBytes / 1e6} MB`,
+			null,
+			res.status,
+		);
 	if (Number(res.headers.get("content-length")) > maxBytes) {
 		await reader.cancel();
 		throw large();
@@ -178,7 +302,9 @@ async function readBoundedBody(res: Response, maxBytes: number): Promise<string>
 	const chunks: Uint8Array[] = [];
 	let size = 0;
 	for (;;) {
-		const { done, value } = await reader.read();
+		const { done, value } = await reader.read().catch(() => {
+			throw new ApiError(502, "github_error", "github error", null, res.status);
+		});
 		if (done) break;
 		size += value.byteLength;
 		if (size > maxBytes) {
@@ -200,7 +326,7 @@ async function readJsonBody(res: Response, maxBytes: number): Promise<string> {
 	try {
 		JSON.parse(text);
 	} catch {
-		throw new ApiError(502, "github_error", "github error");
+		throw new ApiError(502, "github_error", "github error", null, res.status);
 	}
 	return text;
 }
@@ -237,7 +363,13 @@ export function createGithubClient(
 					signal: init?.signal ?? AbortSignal.timeout(15_000),
 				});
 				if (response.status >= 300 && response.status < 400) {
-					throw new ApiError(502, "github_error", "github redirects are not allowed");
+					throw new ApiError(
+						502,
+						"github_error",
+						"github redirects are not allowed",
+						null,
+						response.status,
+					);
 				}
 				return response;
 			} catch (err) {
@@ -265,7 +397,7 @@ export function createGithubClient(
 				return res;
 			}
 			if (res.status === 202) {
-				throw new ApiError(502, "github_error", "github error");
+				throw new ApiError(502, "github_error", "github error", null, res.status);
 			}
 			if (!res.ok) {
 				const body = await readBoundedBody(res, maxResponseBytes);
@@ -286,7 +418,7 @@ export function createGithubClient(
 				body: JSON.stringify({ query, variables }),
 			});
 			if (res.status === 202) {
-				throw new ApiError(502, "github_error", "github error");
+				throw new ApiError(502, "github_error", "github error", null, res.status);
 			}
 			if (!res.ok) {
 				const body = await readBoundedBody(res, maxResponseBytes);
@@ -300,7 +432,7 @@ export function createGithubClient(
 				payload = JSON.parse(await readJsonBody(res, maxResponseBytes)) as typeof payload;
 			} catch (error) {
 				if (error instanceof ApiError) throw error;
-				throw new ApiError(502, "github_error", "github error");
+				throw new ApiError(502, "github_error", "github error", null, res.status);
 			}
 			const errors = payload.errors ?? [];
 			const accessRestricted =
@@ -316,7 +448,8 @@ export function createGithubClient(
 					error.path[0] === "node" &&
 					unambiguousGithubNotFound(404, error.message);
 				return {
-					...(error.type === undefined ? {} : { type: error.type }),
+					path: safePath(error.path),
+					...(error.type === undefined ? {} : { type: safeType(error.type) }),
 					...(unambiguousNotFound ? { unambiguousNotFound: true as const } : {}),
 					...(unambiguousNotFound &&
 					typeof variables.id === "string" &&
@@ -338,16 +471,16 @@ export function createGithubClient(
 				};
 			});
 			if (errors.some((e) => e.type === "RATE_LIMITED")) {
-				throw new ApiError(503, "github_rate_limited", "github rate limited");
+				throw rateLimitError(res);
 			}
 			if (
 				errors.length > 0 &&
 				!errors.every((e) => e.type === "FORBIDDEN" || e.type === "NOT_FOUND")
 			) {
-				throw new ApiError(502, "github_error", "github error");
+				throw new ApiError(502, "github_error", "github error", null, res.status);
 			}
 			if (payload.data === null || typeof payload.data !== "object") {
-				throw new ApiError(502, "github_error", "github error");
+				throw new ApiError(502, "github_error", "github error", null, res.status);
 			}
 			const data = payload.data as Record<string, unknown>;
 			if (errors.length > 0) {
