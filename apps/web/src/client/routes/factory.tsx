@@ -47,11 +47,14 @@ import { reportError } from "../lib/error-ui";
 import { formatDate, formatDayRange, formatPreciseDate } from "../lib/format";
 import {
 	activityAge,
+	DEFAULT_FACTORY_RANGE,
 	dependencyEdges,
+	FACTORY_RANGES,
 	factoryBoard,
 	factoryError,
 	factoryGroups,
 	factoryParams,
+	factoryRange,
 	factoryRepoCount,
 	factoryRepoPage,
 	factorySignalGroups,
@@ -106,6 +109,8 @@ export function FactoryPage() {
 	const topic = params.get("topic") ?? "";
 	const query = params.get("q") ?? "";
 	const period = ([1, 7, 30] as const).find((p) => String(p) === params.get("period")) ?? 7;
+	const rangeParam = params.get("range");
+	const range = factoryRange(rangeParam);
 	const update = useCallback(
 		(key: string, value: string) => {
 			setParams((old) => factoryParams(old, key, value));
@@ -146,8 +151,8 @@ export function FactoryPage() {
 		return snapshot?.repos.filter((repo) => names.has(repo.name.toLowerCase())) ?? [];
 	}, [snapshot, selection]);
 	const board = useMemo(
-		() => (snapshot ? factoryBoard(snapshot, scope, selection) : null),
-		[snapshot, scope, selection],
+		() => (snapshot ? factoryBoard(snapshot, scope, selection, range, rangeParam !== null) : null),
+		[snapshot, scope, selection, range, rangeParam],
 	);
 	const freshness = board?.freshness;
 	const day = (
@@ -161,9 +166,10 @@ export function FactoryPage() {
 		if (selectedDay && !day) setDay("");
 	}, [selectedDay, day]);
 	const selectedCommit = board?.days.find((entry) => entry.date === day);
+	const selectedCommits = selectedCommit?.commits ?? null;
 	const selectedCommitCount =
-		selectedCommit && (selectedCommit.complete.commits || selectedCommit.commits > 0)
-			? formatObservedCount(selectedCommit.commits, selectedCommit.complete.commits)
+		selectedCommit && (selectedCommit.complete.commits || (selectedCommits ?? 0) > 0)
+			? formatObservedCount(selectedCommits ?? 0, selectedCommit.complete.commits)
 			: "—";
 	const stale = deferredQuery !== query;
 	const edges = useMemo(() => dependencyEdges(snapshot?.repos ?? []), [snapshot]);
@@ -233,8 +239,9 @@ export function FactoryPage() {
 							calendar === "commits"
 								? board.days.map((d) => ({
 										date: d.date,
-										count: d.commits,
+										count: d.commits ?? 0,
 										known: d.complete.commits,
+										observed: d.observed,
 									}))
 								: (snapshot.contribution?.days ?? [])
 						}
@@ -371,7 +378,30 @@ export function FactoryPage() {
 											title={
 												<IconLabel icon={Activity}>变化 · 最近 {board.days.length} 天</IconLabel>
 											}
-											hint={`按已发布观测窗口展示 ${board.days.length} 个 ${board.timezone} 日期；保留的数据沿用原窗口。上方默认 7 天仅用于期间比较，不改变图表窗口。左轴是每日流量（柱），右轴是结果（折线）。Open 存量由当前数量按每日新开与完成倒推；事件不完整时不画折线。`}
+											actions={
+												<div className="flex flex-wrap items-center justify-end gap-2">
+													<SegmentControl
+														legend="图表窗口"
+														value={String(range)}
+														options={FACTORY_RANGES.map((days) => ({
+															value: String(days),
+															label: `${days} 天`,
+														}))}
+														onValueChange={(value) =>
+															update("range", value === String(DEFAULT_FACTORY_RANGE) ? "" : value)
+														}
+													/>
+													{board.days.length < range || range > board.availableDays ? (
+														<span role="status" className="text-xs text-basalt-muted-foreground">
+															已发布覆盖 {board.availableDays} 天
+															{board.days.length < range
+																? "，默认窗口止于可用历史"
+																: "，更早日期为空白"}
+														</span>
+													) : null}
+												</div>
+											}
+											hint={`按已发布观测窗口展示最近 ${board.days.length} 个 ${board.timezone} 日期（默认 ${DEFAULT_FACTORY_RANGE} 天，可切换图表窗口，截止到最新有观测的日期）；没有观测的日期保持空白，不按零绘制。保留的数据沿用原窗口。上方默认 7 天仅用于期间比较，不改变图表窗口。左轴是每日流量（柱），右轴是结果（折线）。Open 存量由当前数量按每日新开与完成倒推；事件不完整时不画折线。`}
 										/>
 										<div className="factory-chart-grid grid gap-3 xl:grid-cols-2">
 											<FactoryPanel
@@ -954,11 +984,13 @@ export function FactoryPage() {
 								<summary>每日账本 · 可访问的图表数据与趋势核对</summary>
 								<div className="factory-table-scroll">
 									<Table>
-										<caption className="sr-only">当前筛选内各统计区间事件数，本地时间</caption>
+										<caption className="sr-only">
+											当前筛选内各统计区间事件数，按 {board.timezone} 自然日
+										</caption>
 										<TableHeader>
 											<TableRow>
 												{[
-													"统计区间（本地时间）",
+													`统计区间（${board.timezone}）`,
 													"提交",
 													"Issue 创建",
 													"Issue 最后关闭",

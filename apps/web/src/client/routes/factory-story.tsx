@@ -232,8 +232,15 @@ function DayTooltip({
 }
 
 function known(d: Day, key: keyof Day, stream: keyof Day["complete"]): number | null {
-	const value = d[key] as number;
+	const value = d[key] as number | null;
+	if (value === null) return null;
 	return d.complete[stream] || value ? value : null;
+}
+
+/** Missing days stay unknown; incomplete days expose their observed lower bound. */
+function shown(value: number | null, complete: boolean): string {
+	if (value === null) return "未知";
+	return complete ? n(value) : value ? `≥ ${n(value)}` : "未知";
 }
 
 const axisLabel = (value: string, side: "left" | "right") => ({
@@ -302,8 +309,7 @@ export function CommitBreadthChart({ days }: { days: Day[] }) {
 								{
 									label: "提交",
 									color: FLOW_COLORS.commits,
-									value: (d) =>
-										d.complete.commits ? n(d.commits) : d.commits ? `≥ ${n(d.commits)}` : "未知",
+									value: (d) => shown(d.commits, d.complete.commits),
 								},
 								{
 									label: "7 日活跃仓库",
@@ -352,7 +358,7 @@ export function FlowStockChart({ days, kind }: { days: Day[]; kind: "prs" | "iss
 			...d,
 			opened,
 			closed: closed === null ? null : -closed,
-			rejected: prs ? (known(d, "prClosed", "prs") === null ? null : -d.prClosed) : null,
+			rejected: prs ? (known(d, "prClosed", "prs") === null ? null : -(d.prClosed ?? 0)) : null,
 			stock: prs ? d.openPrs : d.openIssues,
 		};
 	});
@@ -420,19 +426,19 @@ export function FlowStockChart({ days, kind }: { days: Day[]; kind: "prs" | "iss
 								{
 									label: "新开",
 									color: FLOW_COLORS.opened,
-									value: (d) => n(prs ? d.prOpened : d.issueOpened),
+									value: (d) => shown(prs ? d.prOpened : d.issueOpened, d.complete[kind]),
 								},
 								{
 									label: prs ? "合并" : "关闭",
 									color: FLOW_COLORS.closed,
-									value: (d) => n(prs ? d.prMerged : d.issueClosed),
+									value: (d) => shown(prs ? d.prMerged : d.issueClosed, d.complete[kind]),
 								},
 								...(prs
 									? [
 											{
 												label: "未合并关闭 ↓",
 												color: "var(--color-basalt-muted-foreground)",
-												value: (d: Day) => n(d.prClosed),
+												value: (d: Day) => shown(d.prClosed, d.complete.prs),
 											},
 										]
 									: []),
@@ -545,8 +551,16 @@ export function DeliveryChart({ days }: { days: Day[] }) {
 					content={
 						<DayTooltip
 							rows={[
-								{ label: "合并 PR", color: FLOW_COLORS.merged, value: (d) => n(d.prMerged) },
-								{ label: "Release", color: FLOW_COLORS.opened, value: (d) => n(d.releases) },
+								{
+									label: "合并 PR",
+									color: FLOW_COLORS.merged,
+									value: (d) => shown(d.prMerged, d.complete.prs),
+								},
+								{
+									label: "Release",
+									color: FLOW_COLORS.opened,
+									value: (d) => shown(d.releases, d.complete.releases),
+								},
 								{
 									label: "CI 7 日成功率",
 									color: FLOW_COLORS.release,
