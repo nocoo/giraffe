@@ -145,6 +145,14 @@ async function observation(context: CollectionContext, dimension: string) {
 		.bind(context.account.id, dimension)
 		.all<{ status: string; payload: string; fetched_at: string }>();
 }
+async function sourceSnapshot(context: CollectionContext, kind: string) {
+	const row = await context.env.DB.prepare(
+		"SELECT payload FROM refresh_snapshots WHERE account_id=? AND kind=?",
+	)
+		.bind(context.account.id, kind)
+		.first<{ payload: string }>();
+	return JSON.parse(row?.payload ?? "{}");
+}
 
 describe("unified refresh collection", () => {
 	it("discovers once, never auto-stars, and skips unstarred repositories the next day", async () => {
@@ -257,6 +265,30 @@ describe("unified refresh collection", () => {
 		context.run.params.timezone = "UTC";
 		expect((await collectRepository(context, "owner/project")).requests).toBe(5);
 	});
+	it("persists source timezones through A, B, cache reuse and mixed-zone account publication", async () => {
+		const context = await fixture();
+		context.run.params.dimensions = ["commits"];
+		upstream([accountPage(), { node: repo() }, accountPage()]);
+		await collectAccount(context);
+		expect((await publication(context)).window.timezone).toBe("Asia/Shanghai");
+		await collectRepository(context, "owner/project");
+		await collectRepository(context, "owner/project");
+		const saved = await publication(context);
+		expect(saved.repos[0].observation.window.timezone).toBe("Asia/Shanghai");
+		expect(saved.repos[0].coverage.commits.completeWindows[0].timezone).toBe("Asia/Shanghai");
+		expect(Object.keys(saved.repos[0].metrics.days)).toEqual(["2026-10-28"]);
+		context.run.params.timezone = "UTC";
+		context.days = [
+			{ date: "2026-10-28", since: "2026-10-28T00:00:00.000Z", until: "2026-10-29T00:00:00.000Z" },
+		];
+		await collectAccount(context);
+		const mixed = await publication(context);
+		expect(mixed.window.timezone).toBe("UTC");
+		expect(mixed.repos[0].observation.window).toEqual(saved.repos[0].observation.window);
+		expect(mixed.repos[0].coverage.commits.completeWindows).toEqual(
+			saved.repos[0].coverage.commits.completeWindows,
+		);
+	});
 	it("retries transient upstream failures without persisting diagnostics", async () => {
 		const context = await fixture();
 		const onRequests = vi.fn();
@@ -281,7 +313,7 @@ describe("unified refresh collection", () => {
 			expect(onRequests.mock.calls).toEqual([[requests]]);
 		},
 	);
-	it("updates the cached boundary item but never requests or consumes the following items", async () => {
+	it("consumes the full page and all forced pages despite cached item IDs", async () => {
 		const context = await fixture();
 		context.run.params.dimensions = ["issues", "prs"];
 		const before = {
@@ -291,19 +323,25 @@ describe("unified refresh collection", () => {
 		};
 		const after = {
 			...repo(),
-			issues: connection([item("Inew"), item("I1", "CLOSED"), item("ignored")], true, "cursor"),
+			issues: connection([item("Inew"), item("I1", "CLOSED"), item("Iafter")], true, "cursor"),
 			pullRequests: connection(
-				[{ ...item("P1"), mergedAt: "2026-10-28T03:00:00Z" }, item("ignored-pr")],
+				[{ ...item("P1"), mergedAt: "2026-10-28T03:00:00Z" }, item("Pafter")],
 				true,
 				"cursor",
 			),
 		};
-		const fetch = upstream([accountPage(), { node: before }, { node: after }]);
+		const fetch = upstream([
+			accountPage(),
+			{ node: before },
+			{ node: after },
+			{ node: { issues: connection([item("Ilater")]) } },
+			{ node: { pullRequests: connection([item("Plater")]) } },
+		]);
 		await collectAccount(context);
 		await collectRepository(context, "owner/project");
 		context.run.params.force = true;
 		expect(await collectRepository(context, "owner/project")).toEqual({
-			requests: 1,
+			requests: 3,
 			partial: false,
 		});
 		const saved = (
@@ -312,18 +350,119 @@ describe("unified refresh collection", () => {
 				payload: string;
 			}>()
 		).results;
-		expect(saved.map((row) => row.item_id)).not.toContain("ignored");
-		expect(saved.map((row) => row.item_id)).not.toContain("ignored-pr");
+		expect(saved.map((row) => row.item_id)).toEqual(
+			expect.arrayContaining(["Iafter", "Pafter", "Ilater", "Plater"]),
+		);
 		expect(JSON.parse(saved.find((row) => row.item_id === "I1")?.payload ?? "{}").state).toBe(
 			"CLOSED",
 		);
 		expect((await publication(context)).repos[0].metrics).toMatchObject({
-			issueOpened: 3,
+			issueOpened: 5,
 			issueClosed: 1,
-			prOpened: 2,
+			prOpened: 4,
 			prMerged: 1,
 		});
-		expect(fetch).toHaveBeenCalledTimes(3);
+		expect(fetch).toHaveBeenCalledTimes(5);
+	});
+	it.each([
+		{ state: "OPEN", updatedAt: "2026-10-29T02:00:00Z" },
+		{ state: "CLOSED", updatedAt: "2026-10-29T02:00:00Z" },
+		{ state: "CLOSED", updatedAt: "2026-10-28T02:00:00.000Z" },
+	])(
+		"only stops after a proven unchanged boundary and still consumes its whole page: %j",
+		async ({ state, updatedAt }) => {
+			const context = await fixture();
+			context.run.params.dimensions = ["issues"];
+			const prior = { ...repo(), issues: connection([item("cached"), item("retained")]) };
+			const changed = { ...item("cached", state), updatedAt };
+			upstream([
+				accountPage(),
+				{ node: prior },
+				{
+					node: {
+						...repo(),
+						issues: connection([changed], true, "changed-page"),
+					},
+				},
+				{
+					node: {
+						issues: connection([item("retained"), item("same-page-new")], true, "unused"),
+					},
+				},
+			]);
+			await collectAccount(context);
+			await collectRepository(context, "owner/project");
+			context.days.push({
+				date: "2026-10-29",
+				since: "2026-10-28T16:00:00.000Z",
+				until: "2026-10-29T16:00:00.000Z",
+			});
+			context.run.params.until = "2026-10-29";
+			expect(await collectRepository(context, "owner/project")).toEqual({
+				requests: 2,
+				partial: false,
+			});
+			const saved = await sourceSnapshot(context, "repo:owner/project:issues");
+			expect(saved.truncated).toBe(false);
+			expect(saved.issues.map((row: { title: string }) => row.title)).toContain("same-page-new");
+			const cached = await context.env.DB.prepare(
+				"SELECT payload FROM refresh_items WHERE item_id='cached'",
+			).first<{ payload: string }>();
+			expect(JSON.parse(cached?.payload ?? "{}")).toMatchObject(changed);
+		},
+	);
+	it("does not claim complete current inventory after stopping below the lifecycle window", async () => {
+		const context = await fixture();
+		context.run.params.dimensions = ["issues", "prs"];
+		const olderOpen = {
+			...item("older-open"),
+			createdAt: "2026-10-25T00:00:00Z",
+			updatedAt: "2026-10-26T00:00:00Z",
+		};
+		upstream([
+			accountPage(),
+			{
+				node: {
+					...repo(),
+					issues: connection([item("recent"), olderOpen], true, "older-issues"),
+					pullRequests: connection([olderOpen], true, "older-prs"),
+				},
+			},
+		]);
+		await collectAccount(context);
+		expect((await collectRepository(context, "owner/project")).partial).toBe(true);
+		for (const stream of ["issues", "prs"]) {
+			const saved = await sourceSnapshot(context, `repo:owner/project:${stream}`);
+			expect(saved).toMatchObject({ truncated: true, inventory_complete: false });
+			expect((await observation(context, stream)).results[0]?.status).toBe("complete");
+			expect(
+				JSON.parse((await observation(context, stream)).results[0]?.payload ?? "{}"),
+			).toMatchObject({ inventoryComplete: false });
+		}
+		expect(await collectRepository(context, "owner/project")).toEqual({
+			requests: 0,
+			partial: true,
+		});
+		expect((await publication(context)).status).toBe("partial");
+	});
+	it("keeps cached older open items while excluding closed issues from open inboxes", async () => {
+		const context = await fixture();
+		context.run.params.dimensions = ["issues"];
+		const old = { ...item("old-open"), createdAt: "2026-10-20T00:00:00Z" };
+		upstream([
+			accountPage(),
+			{ node: { ...repo(), issues: connection([item("closing"), old]) } },
+			{ node: { ...repo(), issues: connection([item("closing", "CLOSED")]) } },
+		]);
+		await collectAccount(context);
+		await collectRepository(context, "owner/project");
+		context.run.params.force = true;
+		await collectRepository(context, "owner/project");
+		for (const kind of ["repo:owner/project:issues", "issues"]) {
+			const saved = await sourceSnapshot(context, kind);
+			expect(saved.issues.map((row: { title: string }) => row.title)).toEqual(["old-open"]);
+		}
+		expect((await publication(context)).repos[0].metrics.issueClosed).toBe(1);
 	});
 	it("paginates initial issue and PR inventories until complete", async () => {
 		const context = await fixture();
@@ -410,7 +549,7 @@ describe("unified refresh collection", () => {
 		expect((await collectRepository(context, "owner/project")).partial).toBe(true);
 		expect(await collectRepository(context, "owner/project")).toEqual({
 			requests: 1,
-			partial: false,
+			partial: true,
 		});
 	});
 	it("collects latest CI, releases and both alert features in the saved wire format", async () => {
@@ -476,6 +615,37 @@ describe("unified refresh collection", () => {
 			code_scanning_open: 1,
 			features: { dependabot: { status: "available" }, code_scanning: { status: "available" } },
 		});
+	});
+	it("counts releases only on their publication day, not their creation day or draft date", async () => {
+		const context = await fixture();
+		context.run.params.dimensions = ["releases"];
+		context.days.push({
+			date: "2026-10-29",
+			since: "2026-10-28T16:00:00.000Z",
+			until: "2026-10-29T16:00:00.000Z",
+		});
+		context.run.params.until = "2026-10-29";
+		upstream(undefined, {
+			"/releases": [
+				{
+					id: 1,
+					created_at: "2026-10-28T04:00:00Z",
+					published_at: "2026-10-29T04:00:00Z",
+					tag_name: "v1",
+				},
+				{ id: 2, created_at: "2026-10-28T04:00:00Z", published_at: null, draft: true },
+			],
+		});
+		await collectAccount(context);
+		await collectRepository(context, "owner/project");
+		const saved = (await publication(context)).repos[0];
+		expect(saved.metrics).toMatchObject({
+			releases: 1,
+			days: { "2026-10-28": { releases: 0 }, "2026-10-29": { releases: 1 } },
+		});
+		expect(
+			(await observation(context, "releases")).results.map((row) => JSON.parse(row.payload).count),
+		).toEqual([0, 1]);
 	});
 	it.each(["/actions/runs", "/releases", "/dependabot/alerts", "/code-scanning/alerts"])(
 		"retries a transient REST failure and never caches it as complete: %s",
@@ -617,6 +787,34 @@ describe("unified refresh collection", () => {
 			"R_new",
 		]);
 		expect(fetch).toHaveBeenCalledTimes(12);
+	});
+	it("releases only a confirmed reused name when the current catalogue is partial", async () => {
+		const context = await fixture();
+		context.run.params.dimensions = ["commits"];
+		upstream([
+			accountPage([repo(), repo("R_other", "owner/unobserved")]),
+			{ node: repo() },
+			accountPage([repo("R_new")], true, "failed-page"),
+			new Error("transient"),
+			new Error("transient"),
+			{ node: repo("R_new") },
+		]);
+		await collectAccount(context);
+		await collectRepository(context, "owner/project");
+		expect((await collectAccount(context)).partial).toBe(true);
+		const active = await context.env.DB.prepare(
+			"SELECT repo_id,repo FROM refresh_catalog WHERE active=1 ORDER BY repo",
+		).all<{ repo_id: string; repo: string }>();
+		expect(active.results).toEqual([
+			{ repo_id: "R_new", repo: "owner/project" },
+			{ repo_id: "R_other", repo: "owner/unobserved" },
+		]);
+		expect((await publication(context)).repos).toEqual([]);
+		expect(await sourceSnapshot(context, "repo:owner/project:details")).toEqual({});
+		expect((await collectRepository(context, "owner/project")).requests).toBe(1);
+		expect((await publication(context)).repos.map((value: { id: string }) => value.id)).toEqual([
+			"R_new",
+		]);
 	});
 	it("allows explicitly validated adhoc requests without starring", async () => {
 		const context = await fixture();

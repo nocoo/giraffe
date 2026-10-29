@@ -105,7 +105,9 @@ export async function publish(db: Db, context: CollectionContext) {
 			account.contributionStatus === "complete" &&
 			repos.every((repo) =>
 				Object.entries(repo.coverage).every(
-					([stream, coverage]) => stream === "dependencies" || coverage.status === "complete",
+					([stream, coverage]) =>
+						stream === "dependencies" ||
+						(coverage.status === "complete" && coverage.inventoryComplete !== false),
 				),
 			)
 				? "complete"

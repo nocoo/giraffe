@@ -156,6 +156,10 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 		);
 	statements.push(
 		db
+			.prepare(`UPDATE refresh_catalog SET active=0 WHERE account_id=? AND active=1 AND EXISTS(
+ SELECT 1 FROM json_each(?) observed WHERE refresh_catalog.repo=json_extract(observed.value,'$.nameWithOwner') COLLATE NOCASE AND refresh_catalog.repo_id<>json_extract(observed.value,'$.id'))`)
+			.bind(context.account.id, JSON.stringify(repositories)),
+		db
 			.prepare(`INSERT INTO refresh_catalog(account_id,repo_id,repo,discovered_day,timezone,payload,fetched_at,active)
  SELECT ?,json_extract(value,'$.id'),json_extract(value,'$.nameWithOwner'),?,?,value,?,1 FROM json_each(?) WHERE 1
  ON CONFLICT(account_id,repo_id) DO UPDATE SET repo=excluded.repo,payload=excluded.payload,fetched_at=excluded.fetched_at,active=1`)

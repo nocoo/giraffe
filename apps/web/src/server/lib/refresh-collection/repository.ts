@@ -38,7 +38,11 @@ function dayItems(items: FactoryEvent[], since: string, until: string) {
 }
 function mappedRows(stream: string, raw: Node[], repo: string) {
 	if (stream === "issues")
-		return mapIssues(raw.map((row) => ({ ...row, repository: { nameWithOwner: repo } })));
+		return mapIssues(
+			raw
+				.filter((row) => row.state === "OPEN")
+				.map((row) => ({ ...row, repository: { nameWithOwner: repo } })),
+		);
 	if (stream === "prs")
 		return mapPullRequests(raw.map((row) => ({ ...row, repository: { nameWithOwner: repo } })));
 	if (stream === "actions") return mapActionRuns({ workflow_runs: raw });
@@ -167,22 +171,27 @@ export async function collectRepository(
 						.bind(context.account.id, saved.repo_id, dimension)
 						.all<{ item_id: string; payload: string }>()
 				).results;
+				const merged = new Map(
+					cached.map((item) => [item.item_id, JSON.parse(item.payload) as Node]),
+				);
+				const completeThrough = previous
+					.filter(
+						(row) =>
+							row.dimension === dimension &&
+							row.status === "complete" &&
+							object(JSON.parse(row.payload)).inventoryComplete === true,
+					)
+					.map((row) => row.fetched_at)
+					.sort()
+					.at(-1);
 				result = await collectItems(
 					context,
 					upstream,
 					saved.repo_id,
 					dimension,
 					object(raw[dimension === "prs" ? "pullRequests" : "issues"]),
-					new Set(cached.map((item) => item.item_id)),
-					previous.some(
-						(row) =>
-							row.dimension === dimension &&
-							row.status === "complete" &&
-							row.day <= context.run.params.since,
-					),
-				);
-				const merged = new Map(
-					cached.map((item) => [item.item_id, JSON.parse(item.payload) as Node]),
+					merged,
+					completeThrough ?? null,
 				);
 				for (const item of result.raw) merged.set(String(item.id), item);
 				writes.push(
@@ -208,7 +217,11 @@ export async function collectRepository(
 			)
 				continue;
 			const items =
-				dimension === "alerts" ? result.items : dayItems(result.items, day.since, day.until);
+				dimension === "alerts"
+					? result.items
+					: dimension === "releases"
+						? result.items.filter((item) => inDay(item.at, day.since, day.until))
+						: dayItems(result.items, day.since, day.until);
 			observations.push({
 				day: day.date,
 				dimension,
@@ -219,6 +232,7 @@ export async function collectRepository(
 					items,
 					source: result.source,
 					reason: result.reason,
+					inventoryComplete: result.inventoryComplete,
 					since: day.since,
 					until: day.until,
 				}),
@@ -233,8 +247,17 @@ export async function collectRepository(
 		const available = selected.filter(
 			(row): row is DayObservation => row !== undefined && row.status === "complete",
 		);
+		const latest = selected
+			.filter((row): row is DayObservation => row !== undefined)
+			.sort((first, second) => second.fetched_at.localeCompare(first.fetched_at))[0];
+		const inventoryComplete =
+			dimension === "issues" || dimension === "prs"
+				? (results.get(dimension)?.inventoryComplete ??
+					object(JSON.parse(latest?.payload ?? "{}")).inventoryComplete === true)
+				: undefined;
 		const coverage = {
 			...unavailable(dimension),
+			...(inventoryComplete === undefined ? {} : { inventoryComplete }),
 			source:
 				dimension === "commits"
 					? "github_graphql_history"
@@ -264,6 +287,7 @@ export async function collectRepository(
 					{
 						since: String(payload.since),
 						until: new Date(Date.parse(String(payload.until)) - 1).toISOString(),
+						timezone: context.run.params.timezone,
 					},
 				];
 			}),
@@ -346,8 +370,10 @@ export async function collectRepository(
 						[key]: mappedRows(dimension, result.raw, saved.repo),
 						repo_id: saved.repo_id,
 						...security,
-						truncated: result.status !== "complete",
+						truncated: result.status !== "complete" || inventoryComplete === false,
+						inventory_complete: inventoryComplete,
 						unavailable: result.status === "unavailable",
+						window: windowOf(context),
 						coverage,
 						source: result.source,
 					},
@@ -429,7 +455,9 @@ export async function collectRepository(
 	return {
 		requests: upstream.client.count,
 		partial: context.run.params.dimensions.some(
-			(dimension) => repo.coverage[dimension].status !== "complete",
+			(dimension) =>
+				repo.coverage[dimension].status !== "complete" ||
+				repo.coverage[dimension].inventoryComplete === false,
 		),
 	};
 }

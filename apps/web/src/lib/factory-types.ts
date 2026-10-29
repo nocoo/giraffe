@@ -1,5 +1,5 @@
 /** GitHub measurements. Null/unavailable is never an observed zero. */
-export type FactoryWindow = { since: string; until: string };
+export type FactoryWindow = { since: string; until: string; timezone?: string };
 export const FACTORY_STREAMS = [
 	"commits",
 	"issues",
@@ -18,6 +18,7 @@ export type UnavailableReasonCode =
 	| "not_found"
 	| "unknown";
 export type FactoryCoverage = {
+	inventoryComplete?: boolean;
 	completeWindows?: FactoryWindow[];
 	observation?: NonNullable<FactoryRepo["observation"]> & { head: string | null };
 	reason_code?: UnavailableReasonCode | "dependency_parse_unsupported";

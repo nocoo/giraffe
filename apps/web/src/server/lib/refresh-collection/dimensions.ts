@@ -13,6 +13,7 @@ export type Dimension = {
 	status: "complete" | "partial" | "unavailable";
 	reason: string | null;
 	source: string;
+	inventoryComplete?: boolean;
 	features?: SecurityFeatures;
 };
 type Transport = ReturnType<typeof transport>;
@@ -39,8 +40,8 @@ export async function collectItems(
 	id: string,
 	stream: "issues" | "prs",
 	connection: Node,
-	cached: Set<string>,
-	allowBoundary: boolean,
+	cached: Map<string, Node>,
+	completeThrough: string | null,
 ): Promise<Dimension> {
 	const result: Dimension = {
 		items: [],
@@ -48,26 +49,43 @@ export async function collectItems(
 		status: transport.client.graphqlErrors.length ? "partial" : "complete",
 		reason: transport.client.graphqlErrors.length ? "graphql_partial" : null,
 		source: "github_graphql",
+		inventoryComplete: false,
 	};
 	const cursors = new Set<string>();
 	for (;;) {
-		if (!Array.isArray(connection.nodes)) return failure(null);
-		for (const raw of nodes(connection.nodes)) {
+		if (!Array.isArray(connection.nodes)) return { ...failure(null), inventoryComplete: false };
+		const page = nodes(connection.nodes);
+		let boundary = false;
+		for (const raw of page) {
 			if (!text(raw.id)) {
 				result.status = "partial";
 				continue;
 			}
 			result.raw.push(raw);
 			result.items.push(event(raw));
-			if (
-				(allowBoundary && cached.has(String(raw.id))) ||
-				(text(raw.updatedAt) &&
-					Date.parse(String(raw.updatedAt)) < Date.parse(windowOf(context).since))
-			)
-				return result;
+			const prior = cached.get(String(raw.id));
+			boundary ||=
+				completeThrough !== null &&
+				prior !== undefined &&
+				text(raw.updatedAt) !== null &&
+				Date.parse(String(raw.updatedAt)) <= Date.parse(completeThrough) &&
+				["updatedAt", "state", "createdAt", "closedAt", "mergedAt"].every(
+					(field) => raw[field] === prior[field],
+				);
 		}
 		const info = object(connection.pageInfo);
-		if (info.hasNextPage === false) return result;
+		if (info.hasNextPage === false)
+			return { ...result, inventoryComplete: result.status === "complete" };
+		const lastUpdated = text(page.at(-1)?.updatedAt);
+		if (
+			!context.run.params.force &&
+			boundary &&
+			lastUpdated !== null &&
+			Date.parse(lastUpdated) <= Date.parse(String(completeThrough))
+		)
+			return { ...result, inventoryComplete: result.status === "complete" };
+		if (lastUpdated !== null && Date.parse(lastUpdated) < Date.parse(windowOf(context).since))
+			return result;
 		const after = text(info.endCursor);
 		if (!after || cursors.has(after))
 			return { ...result, status: "partial", reason: "incomplete_pagination" };
@@ -196,7 +214,7 @@ export async function collectRest(
 				createdAt: row.created_at,
 				updatedAt: row.updated_at,
 			}),
-			at: text(row.published_at ?? row.created_at),
+			at: text(stream === "releases" ? row.published_at : row.created_at),
 			conclusion: text(row.conclusion),
 			tag_name: text(row.tag_name),
 		})),

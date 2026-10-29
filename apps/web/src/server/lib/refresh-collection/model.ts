@@ -59,7 +59,11 @@ export function windowOf(context: CollectionContext) {
 	const first = context.days[0];
 	const last = context.days.at(-1);
 	if (!first || !last) throw new ApiError(400, "validation_failed", "Refresh days required");
-	return { since: first.since, until: new Date(Date.parse(last.until) - 1).toISOString() };
+	return {
+		since: first.since,
+		until: new Date(Date.parse(last.until) - 1).toISOString(),
+		timezone: context.run.params.timezone,
+	};
 }
 export function unavailable(source: string, reason = "not_collected"): FactoryCoverage {
 	return { status: "unavailable", pages: 0, fetchedAt: null, source, reason, observed: 0 };
