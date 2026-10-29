@@ -262,6 +262,158 @@ describe("refresh center run summaries", () => {
 		});
 	});
 
+	it("treats a cancellation-closed account step without settled attempts as interrupted", () => {
+		const closed = {
+			...run({
+				status: "cancelled",
+				phase: "done",
+				repos: [],
+				completedRepos: 0,
+				requests: 0,
+				requestBreakdown: {
+					total: 0,
+					graphql: 0,
+					rest: 0,
+					a: { graphql: 0, rest: 0 },
+					b: { graphql: 0, rest: 0 },
+				},
+				partialReasons: [],
+				partial: false,
+				cancelRequested: true,
+				finishedAt: "2026-10-29T04:05:00Z",
+			}),
+			timings: {
+				queuedAt: "2026-10-29T04:00:00Z",
+				a: {
+					startedAt: "2026-10-29T04:00:00Z",
+					finishedAt: "2026-10-29T04:05:00Z",
+					attempts: 0,
+					reused: false,
+				},
+				repos: [],
+			},
+		} as RefreshRun;
+		expect(refreshAccountRow(closed, NOW)).toMatchObject({
+			status: "interrupted",
+			label: "已中断",
+			note: null,
+			reasons: [],
+			requests: { graphql: 0, rest: 0 },
+		});
+		expect(refreshAccountRow(closed, NOW).timing?.durationSeconds).toBe(300);
+		expect(refreshAccountRow(closed, NOW + 86_400_000).timing?.durationSeconds).toBe(300);
+		expect(refreshProgressOf(closed)).toEqual({
+			total: 1,
+			processed: 0,
+			complete: 0,
+			partial: 0,
+			unknown: 0,
+			pending: 0,
+			skipped: 1,
+			percent: 0,
+		});
+	});
+
+	it("keeps settled, reused, queued and partially failed A cancellations distinct", () => {
+		const cancelled = (
+			a: { startedAt: string; finishedAt: string | null; attempts: number; reused: boolean } | null,
+			overrides: Partial<RefreshRun> = {},
+		) =>
+			({
+				...run({
+					status: "cancelled",
+					phase: "done",
+					repos: [],
+					completedRepos: 0,
+					requests: 0,
+					requestBreakdown: {
+						total: 0,
+						graphql: 0,
+						rest: 0,
+						a: { graphql: 0, rest: 0 },
+						b: { graphql: 0, rest: 0 },
+					},
+					partialReasons: [],
+					partial: false,
+					cancelRequested: true,
+					finishedAt: "2026-10-29T04:05:00Z",
+					...overrides,
+				}),
+				timings: { queuedAt: "2026-10-29T04:00:00Z", a, repos: [] },
+			}) as RefreshRun;
+		const settled = cancelled({
+			startedAt: "2026-10-29T04:00:00Z",
+			finishedAt: "2026-10-29T04:00:20Z",
+			attempts: 1,
+			reused: false,
+		});
+		expect(refreshAccountRow(settled).status).toBe("complete");
+		expect(refreshProgressOf(settled)).toMatchObject({
+			processed: 1,
+			complete: 1,
+			skipped: 0,
+			percent: 100,
+		});
+		const reused = cancelled(
+			{
+				startedAt: "2026-10-29T04:00:00Z",
+				finishedAt: "2026-10-29T04:00:01Z",
+				attempts: 1,
+				reused: true,
+			},
+			{ aReused: true },
+		);
+		expect(refreshAccountRow(reused)).toMatchObject({
+			status: "complete",
+			note: "复用当日账号数据，0 次上游请求",
+		});
+		const queued = cancelled(null);
+		expect(refreshAccountRow(queued)).toMatchObject({ status: "skipped", timing: null });
+		expect(refreshProgressOf(queued)).toMatchObject({ processed: 0, skipped: 1, percent: 0 });
+		const failed = cancelled(
+			{
+				startedAt: "2026-10-29T04:00:00Z",
+				finishedAt: "2026-10-29T04:05:00Z",
+				attempts: 1,
+				reused: false,
+			},
+			{
+				partial: true,
+				errorCode: "github_error",
+				partialReasons: [reason({ repo: null, codes: ["github_error"] })],
+			},
+		);
+		expect(refreshAccountRow(failed).status).toBe("partial");
+		expect(refreshProgressOf(failed)).toMatchObject({
+			processed: 1,
+			complete: 0,
+			partial: 1,
+			percent: 100,
+		});
+	});
+
+	it("labels processed dimensions without claiming complete data coverage", () => {
+		const completed = run({
+			status: "completed",
+			phase: "done",
+			completedRepos: 2,
+			partial: false,
+			partialReasons: [],
+		});
+		const rows = refreshRepoRows(completed, NOW);
+		expect(rows.map((row) => row.status)).toEqual(["complete", "complete"]);
+		expect(rows[0]?.dimensions.every((entry) => entry.state === "complete")).toBe(true);
+		expect(rows[0]?.dimensions.map((entry) => entry.label)).toEqual([
+			"提交 · 已处理",
+			"Issues · 已处理",
+			"PRs · 已处理",
+			"CI / Actions · 已处理",
+			"发布 · 已处理",
+			"依赖告警 · 已处理",
+		]);
+		expect(rows[0]?.dimensions.some((entry) => entry.label.includes("完整"))).toBe(false);
+	});
+
 	it("splits actual A/B requests and degrades when older runs lack the breakdown", () => {
 		expect(refreshRequestRows(run())).toEqual([
 			{ key: "a", label: "A · 账号", graphql: 1, rest: 0, total: 1 },

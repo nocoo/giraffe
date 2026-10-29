@@ -1,5 +1,19 @@
 # Retrospective
 
+## 2026-10-29 - Recheck UI evidence after runner integration
+
+Rebasing the UI onto 0.27.3 produced no client conflicts, and the existing tests
+and fixture screenshots remained green. Independent integration probes still
+found two changed assumptions: cancellation closes step timestamps without
+proving successful account collection, and terminal unavailable security work
+can settle successfully without complete observations. The client must use
+outcome evidence for progress, call closure timestamps end times, and describe
+run-only dimension results as processed rather than complete data. Regression
+fixtures now include a cancelled account with zero settled attempts and a
+completed repository whose run cannot establish observation availability.
+Pixel equality and an unchanged UI diff do not prove compatibility with a new
+backend contract; test the producer's actual edge-case payloads after rebasing.
+
 ## 2026-10-29 - Reserve fixed test ports across worktrees before delegation
 
 The UI coordinator checked free ports before its own L2 run, but did not reserve

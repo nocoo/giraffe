@@ -137,7 +137,7 @@ const STATUS_LABELS: Record<RefreshStepStatus, string> = {
 };
 
 const DIMENSION_STATE_LABELS: Record<RefreshDimensionState, string> = {
-	complete: "完整",
+	complete: "已处理",
 	partial: "部分",
 	running: "读取中",
 	pending: "待刷新",
@@ -281,7 +281,10 @@ function accountProcessed(run: RefreshRun): boolean {
 	if (run.repos.length > 0) return true;
 	if (run.phase === "done" && (run.status === "completed" || run.status === "partial")) return true;
 	const timing = refreshTimings(run)?.a;
-	return run.status === "cancelled" && Boolean(timing?.finishedAt);
+	return (
+		run.status === "cancelled" &&
+		Boolean(timing?.finishedAt && (timing.attempts > 0 || timing.reused))
+	);
 }
 
 function stepClock(run: RefreshRun, now: number): number {
@@ -327,7 +330,6 @@ export function refreshAccountRow(run: RefreshRun, now = Date.now()): RefreshAcc
 	else if (reasons.length) status = "partial";
 	else if (accountProcessed(run)) status = run.partialReasons ? "complete" : "unknown";
 	else if (refreshActive(run)) status = run.status === "queued" ? "pending" : "running";
-	else if (run.status === "cancelled" && timing?.finishedAt) status = "complete";
 	else if (run.status === "cancelled" && timing?.startedAt) status = "interrupted";
 	else status = "skipped";
 	return {

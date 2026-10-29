@@ -110,7 +110,7 @@ function reasonGroups(run: RefreshRun) {
 function timingText(timing: ReturnType<typeof refreshStepTiming>): string | null {
 	if (!timing) return null;
 	const boundary = timing.finishedAt
-		? `完成 ${formatPreciseDate(timing.finishedAt)}`
+		? `结束 ${formatPreciseDate(timing.finishedAt)}`
 		: `开始 ${formatPreciseDate(timing.startedAt)} · 未完成`;
 	return `${boundary} · 耗时 ${timing.durationLabel} · 尝试 ${timing.attempts} 次`;
 }
@@ -460,7 +460,7 @@ export function RefreshRunDetails({
 			<section className="refresh-run-repositories" aria-label="逐仓库刷新进度">
 				<div className="refresh-section-heading">
 					<h3>仓库进度 · A 之后的串行 B</h3>
-					<span>展开仓库，查看维度状态与原因</span>
+					<span>展开仓库，查看维度处理状态与原因</span>
 				</div>
 				{rows.length ? (
 					<div className="refresh-run-queue">

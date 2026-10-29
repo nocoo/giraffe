@@ -1,6 +1,89 @@
 import { expect, test } from "@playwright/test";
 import { refreshReviewRun, uiRefreshReviewFixtures } from "./ui-refresh-review-fixtures";
 
+test("cancelled account closure does not imply completed collection", async ({ page }, info) => {
+	const fixtures = uiRefreshReviewFixtures();
+	const current = refreshReviewRun();
+	const cancelled = {
+		...current,
+		status: "cancelled",
+		phase: "done",
+		repos: [],
+		completedRepos: 0,
+		requests: 0,
+		requestBreakdown: {
+			total: 0,
+			graphql: 0,
+			rest: 0,
+			a: { graphql: 0, rest: 0 },
+			b: { graphql: 0, rest: 0 },
+		},
+		partial: false,
+		partialReasons: [],
+		cancelRequested: true,
+		finishedAt: current.updatedAt,
+		timings: {
+			...current.timings,
+			a: { ...current.timings.a, finishedAt: current.updatedAt, attempts: 0 },
+			repos: [],
+		},
+	};
+	fixtures["/api/refresh-runs"] = { items: [cancelled], collectionAvailable: true };
+	fixtures["/api/refresh-runs/latest"] = cancelled;
+	fixtures[`/api/refresh-runs/${cancelled.id}`] = cancelled;
+	await page.route("**/api/**", (route) => {
+		const request = route.request();
+		const path = new URL(request.url()).pathname;
+		return request.method() === "GET" && path in fixtures
+			? route.fulfill({ json: fixtures[path] })
+			: route.fulfill({ status: 403, json: {} });
+	});
+	await page.goto("/refresh");
+	const account = page.getByRole("list", { name: "刷新阶段" }).locator(":scope > li").first();
+	await expect(account).toContainText("已中断");
+	await expect(account).toContainText("尝试 0 次");
+	await expect(account).toContainText("结束 2026");
+	await expect(account).toHaveAttribute("data-complete", "false");
+	await expect(page.getByRole("progressbar", { name: "本次刷新进度" })).toHaveAttribute(
+		"value",
+		"0",
+	);
+	await page.screenshot({ path: info.outputPath("cancelled-account-closure.png"), fullPage: true });
+});
+
+test("settled refresh dimensions do not claim complete observations", async ({ page }, info) => {
+	const fixtures = uiRefreshReviewFixtures();
+	const current = refreshReviewRun();
+	const completed = {
+		...current,
+		status: "completed",
+		phase: "done",
+		repos: ["octocat/hello-world"],
+		completedRepos: 1,
+		partial: false,
+		partialReasons: [],
+		finishedAt: current.updatedAt,
+	};
+	fixtures["/api/refresh-runs"] = { items: [completed], collectionAvailable: true };
+	fixtures["/api/refresh-runs/latest"] = completed;
+	fixtures[`/api/refresh-runs/${completed.id}`] = completed;
+	await page.route("**/api/**", (route) => {
+		const request = route.request();
+		const path = new URL(request.url()).pathname;
+		return request.method() === "GET" && path in fixtures
+			? route.fulfill({ json: fixtures[path] })
+			: route.fulfill({ status: 403, json: {} });
+	});
+	await page.goto("/refresh");
+	const repo = page.locator("details.refresh-run-row").filter({ hasText: "octocat/hello-world" });
+	await repo.locator("summary").click();
+	const alerts = repo.locator(".refresh-dimension-list > li").filter({ hasText: "依赖告警" });
+	await expect(alerts).toContainText("已处理");
+	await expect(alerts).not.toContainText("完整");
+	await expect(repo.locator('.refresh-mini-dims > [title="依赖告警 · 已处理"]')).toBeVisible();
+	await page.screenshot({ path: info.outputPath("settled-dimensions.png"), fullPage: true });
+});
+
 test("refresh history retains runs with unrecorded diagnostics", async ({ page }) => {
 	const fixtures = uiRefreshReviewFixtures();
 	const current = refreshReviewRun();

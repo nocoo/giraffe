@@ -125,9 +125,10 @@ it("renders per-repository dimensions, reasons, request split and step timings",
 	expect(text).toContain("Issues · Issue 清单未完整");
 	expect(text).toContain("HTTP 200 · Issues · GraphQL Repository · repository.issues");
 	expect(text).toContain("A 开始");
-	expect(text).toContain("完成 2026年10月29日 12:01:15 · 耗时 1 分 0 秒 · 尝试 2 次");
+	expect(text).toContain("结束 2026年10月29日 12:01:15 · 耗时 1 分 0 秒 · 尝试 2 次");
 	expect(text).toContain("5 / 6 维度");
-	expect(text).toContain("提交完整");
+	expect(text).toContain("提交已处理");
+	expect(text).not.toContain("提交完整");
 	expect(text).toContain("Issues部分");
 	expect(text).not.toContain("结束本次刷新");
 });
@@ -184,6 +185,87 @@ it("keeps active cancellation and an older request payload honest", async () => 
 		button?.click();
 	});
 	expect(cancel).toHaveBeenCalledOnce();
+});
+
+it("renders a cancellation-closed account step as interrupted without settled attempts", async () => {
+	const cancelled = {
+		...run({
+			status: "cancelled",
+			phase: "done",
+			repos: [],
+			completedRepos: 0,
+			requests: 0,
+			requestBreakdown: {
+				total: 0,
+				graphql: 0,
+				rest: 0,
+				a: { graphql: 0, rest: 0 },
+				b: { graphql: 0, rest: 0 },
+			},
+			partialReasons: [],
+			partial: false,
+			cancelRequested: true,
+			finishedAt: "2026-10-29T04:05:00Z",
+		}),
+		timings: {
+			queuedAt: "2026-10-29T04:00:00Z",
+			a: {
+				startedAt: "2026-10-29T04:00:00Z",
+				finishedAt: "2026-10-29T04:05:00Z",
+				attempts: 0,
+				reused: false,
+			},
+			repos: [],
+		},
+	} as RefreshRun;
+	await render(<RefreshRunDetails run={cancelled} now={NOW} />);
+	const phases = container.querySelectorAll(".refresh-run-phases > li");
+	expect(phases[0]?.getAttribute("data-complete")).toBe("false");
+	expect(phases[0]?.textContent).toContain("已中断");
+	expect(phases[0]?.textContent).toContain(
+		"结束 2026年10月29日 12:05:00 · 耗时 5 分 0 秒 · 尝试 0 次",
+	);
+	const text = container.textContent ?? "";
+	expect(text).toContain("0 / 1");
+	expect(text).not.toContain("完成 2026");
+});
+
+it("uses neutral end-time wording for a cancellation-closed interrupted repository", async () => {
+	const cancelled = {
+		...run({
+			status: "cancelled",
+			phase: "done",
+			completedRepos: 0,
+			partialReasons: [],
+			partial: false,
+			cancelRequested: true,
+			finishedAt: "2026-10-29T04:05:00Z",
+		}),
+		timings: {
+			queuedAt: "2026-10-29T04:00:00Z",
+			a: {
+				startedAt: "2026-10-29T04:00:00Z",
+				finishedAt: "2026-10-29T04:00:10Z",
+				attempts: 1,
+				reused: false,
+			},
+			repos: [
+				{
+					repo: "nocoo/app",
+					startedAt: "2026-10-29T04:00:10Z",
+					finishedAt: "2026-10-29T04:05:00Z",
+					attempts: 0,
+				},
+			],
+		},
+	} as RefreshRun;
+	await render(<RefreshRunDetails run={cancelled} now={NOW} />);
+	const text = container.textContent ?? "";
+	expect(text).toContain("结束 2026年10月29日 12:05:00 · 耗时 4 分 50 秒 · 尝试 0 次");
+	expect(text).not.toContain("完成 2026年10月29日");
+	expect(
+		container.querySelector('details.refresh-run-row[data-status="interrupted"]'),
+	).not.toBeNull();
 });
 
 it("marks cancelled terminal leftovers as unexecuted with interrupted timings", async () => {
