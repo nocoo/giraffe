@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.27.3 - 2026-10-29
+
+### Fixed
+
+- Bound interrupted-step recovery instead of leaving refreshes waiting for a
+  five-minute safety alarm. Record queue, account and repository step timestamps
+  in run status without renewing cached evidence timestamps.
+- Skip repository GraphQL when all requested GraphQL dimensions are cached,
+  including runs that still need REST actions or security observations.
+- Cache terminal unavailable security features for the observation day: HTTP
+  404 and explicitly disabled 403 responses no longer make completed runs partial.
+  Preserve unavailable null counts and keep access restrictions and rate limits
+  distinct from disabled features.
+- Verify same-Shanghai-day account reuse and zero-request fully cached ad-hoc
+  refreshes through the real local HTTP boundary.
+- Reject incomplete historical annual calendars even when their saved status
+  claims completeness; newly incomplete calendars remain unavailable/partial.
+- Combine pending observation writes and publication reads into one ordered D1
+  batch before publishing aggregates, reducing persistence round trips without
+  changing saved evidence or content hashes.
+
 ## v0.27.2 - 2026-10-29
 
 ### Fixed

@@ -2,6 +2,7 @@ import type { FactorySnapshot } from "../../../lib/factory-types";
 import { ApiError } from "../errors";
 import { TruncatedError } from "../github-client";
 import { mapRepos } from "../github-map";
+import { annualCalendarCoverage, contributionWindow } from "../refresh-calendar";
 import type { AccountCollectionResult, CollectionContext } from "../refresh-collection-contract";
 import {
 	catalogPayload,
@@ -19,12 +20,6 @@ import { accountQuery } from "./queries";
 import { catalog, collectionDb, publish, snapshots } from "./store";
 import { transport } from "./transport";
 
-export function contributionWindow(now: string) {
-	const end = new Date(now);
-	const start = new Date(end);
-	start.setUTCFullYear(end.getUTCFullYear() - 1);
-	return { since: start.toISOString(), until: end.toISOString() };
-}
 export async function collectAccount(context: CollectionContext): Promise<AccountCollectionResult> {
 	const db = collectionDb(context);
 	const { client, request, breakdown } = transport(context);
@@ -104,11 +99,12 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 					},
 				],
 	);
-	const contributionComplete =
-		Array.isArray(contributions.weeks) &&
-		days.length > 0 &&
-		days.length === contributionDays.length &&
-		count(contributions.totalContributions) !== null;
+	const contributionComplete = annualCalendarCoverage({
+		fetchedAt: context.now,
+		window: calendarWindow,
+		days,
+		total: count(contributions.totalContributions),
+	}).complete;
 	const rate = object(first.rateLimit);
 	const snapshot: FactorySnapshot = {
 		schema: 1,
@@ -214,8 +210,7 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 			context.now,
 		)),
 	);
-	await db.batch(statements);
-	await publish(db, context);
+	await publish(db, context, statements);
 	const saved = (await catalog(db, context.account.id)).results;
 	const requestedRepo = context.run.params.repo;
 	const reasons = [

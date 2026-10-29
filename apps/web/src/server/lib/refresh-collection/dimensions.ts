@@ -15,11 +15,17 @@ export type Dimension = {
 	source: string;
 	inventoryComplete?: boolean;
 	features?: SecurityFeatures;
+	terminal?: boolean;
 	truncated?: boolean;
 };
 type Transport = ReturnType<typeof transport>;
 export const terminal = (error: unknown) =>
 	error instanceof ApiError && ["github_unauthorized", "github_rate_limited"].includes(error.code);
+const terminalReasons = new Set(["not_found", "alerts_disabled", "code_scanning_disabled"]);
+const terminalUnavailable = (error: unknown) => {
+	const reason = githubUnavailability(error)?.reason_code;
+	return reason !== undefined && terminalReasons.has(reason);
+};
 export const failure = (error: unknown): Dimension => ({
 	items: [],
 	raw: [],
@@ -168,7 +174,9 @@ export async function collectRest(
 		const results: Dimension[] = [];
 		const failed = (error: unknown): Dimension => {
 			const result = failure(error);
-			return githubUnavailability(error) ? result : { ...result, status: "partial" };
+			return githubUnavailability(error)
+				? { ...result, terminal: terminalUnavailable(error) }
+				: { ...result, status: "partial" };
 		};
 		for (const kind of ["dependabot", "code-scanning"]) {
 			try {
@@ -214,6 +222,7 @@ export async function collectRest(
 				? "unavailable"
 				: "complete";
 		return {
+			terminal: results.every((result) => result.status === "complete" || result.terminal === true),
 			truncated: results.some((result) => result.reason === "latest_page_only"),
 			features: Object.fromEntries(
 				results.map((result, index) => [

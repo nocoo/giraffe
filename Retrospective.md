@@ -2235,3 +2235,58 @@ from source discovery. Its publication now shares the input transaction; the
 source index must describe the same canonical membership and evidence, not an
 approximation based only on the top-level publication. A passing endpoint test
 does not establish consistency with polling, discovery or concurrent publication.
+
+## 2026-10-29 - Do not reconstruct partial execution timelines
+
+The first refresh-timing implementation initialized a missing historical timeline
+when an old active run resumed. Review found that a run already past repository
+zero appended its observed step at array index zero, while completion addressed
+the global repository cursor. The step then appeared unfinished after success or
+cancellation. Timelines now start only when new runs are created; old payloads
+remain untimed. Regression tests include a historical nonzero cursor instead of
+assuming every resumed run begins at the account step. Never manufacture missing
+execution history to make a new diagnostic field look complete.
+
+Local integration also exposed shared fixed-port contention between worktrees.
+Coordinators must reserve the L2/L3 lanes before starting runners, not merely check
+that ports look free. A concurrent run is not valid evidence for either worktree.
+
+The shorter recovery interval also exposed a crash window in retry settlement:
+retry attempts were durable, but their not-before deadline existed only in the
+final alarm write. If that write failed, recovery could contact GitHub before a
+rate-limit reset. Retry state now persists the deadline before settlement and
+alarm entry enforces it, with cancellation checked first. Fault injection must
+interrupt persistence boundaries, not merely return upstream errors on the
+ordinary successful-save path.
+
+Terminal unavailable days made another previously unreachable cache path visible:
+an alert aggregate has a null complete-feature count but can contain observed
+alerts from an available feature. Converting that null count to zero during cache
+reuse hid known alerts in the factory signal. Cached metrics now count the saved
+observed items. Tests must include a nonempty available feature paired with an
+unavailable feature, not only available-zero fixtures.
+
+The v0.27.2 acceptance then showed that a same-day A marked complete could still
+contain only two calendar dates from an older collector. A status flag did not
+prove the current annual-calendar contract. Reuse and new collection now share
+an evidence validator for the original annual window and contiguous date counts;
+the old two-day payload is a runner regression. Fixtures now contain a complete
+calendar unless missingness is the behavior under test. The B-phase zero-request
+stall report also adds explicit same-handler chaining and interrupted-first-B
+persistence tests; it does not establish why the production handler stopped.
+
+A second settlement boundary still removed retry state before the exhausted
+failure's terminal/cursor update committed in D1. Failing that update left the
+run active but reset the attempt budget and lost the newest rate-limit deadline;
+the five-second recovery could therefore make a fifth request too early. Retry
+state now keeps a small exhausted-failure marker until D1 saves successfully.
+Recovery replays that evidence without collection, fenced by run/phase/cursor.
+Tests cover failed saves, committed writes with lost acknowledgements, cleanup
+failures, next-repository/new-run fences and cancellation with original safe
+details/counts/times. Cancelling a settled step must not renew its finish time.
+
+The first replay implementation also relied on an already-consumed alarm if D1
+failed again. Native alarm retries are finite, so every settlement replay now
+arms its own recovery before writing D1. Alarm-delivery fixtures consume the old
+alarm before invoking the handler; retaining it in memory had hidden this gap.
+Repeated replay-save failures, including cancellation, are regression cases.

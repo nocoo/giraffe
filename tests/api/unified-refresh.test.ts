@@ -37,6 +37,7 @@ it("runs real durable A then serial B, serves latest observations and reuses day
 			...(body === undefined ? {} : { body: JSON.stringify(body) }),
 		});
 	async function run(params: unknown): Promise<RefreshRun> {
+		const requestedAt = performance.now();
 		const started = await machine("refresh-runs", "POST", params);
 		expect(started.status).toBe(202);
 		let item = (await started.json()) as RefreshRun;
@@ -45,6 +46,50 @@ it("runs real durable A then serial B, serves latest observations and reuses day
 			item = (await (await machine(`refresh-runs/${item.id}`)).json()) as RefreshRun;
 		}
 		expect(item.status).toBe("completed");
+		const timings = item.timings;
+		if (!timings?.a?.finishedAt || !item.finishedAt)
+			throw new Error("Completed refresh must expose account step timings");
+		expect(timings.queuedAt).toBe(item.createdAt);
+		const accountStarted = Date.parse(timings.a.startedAt);
+		expect(accountStarted).toBeGreaterThanOrEqual(Date.parse(timings.queuedAt));
+		expect(accountStarted - Date.parse(timings.queuedAt)).toBeLessThanOrEqual(5_000);
+		expect(timings.a.reused).toBe(item.aReused);
+		expect(timings.a.attempts).toBe(1);
+		let previousFinished = Date.parse(timings.a.finishedAt);
+		const repositoryTimings: { repo: string; durationMs: number; gapMs: number }[] = [];
+		expect(previousFinished).toBeGreaterThanOrEqual(accountStarted);
+		expect(timings.repos.map((step) => step.repo)).toEqual(item.repos);
+		for (const step of timings.repos) {
+			if (!step.finishedAt) throw new Error("Completed repository must expose its finish time");
+			const startedAt = Date.parse(step.startedAt);
+			expect(startedAt).toBeGreaterThanOrEqual(previousFinished);
+			expect(startedAt - previousFinished).toBeLessThanOrEqual(5_000);
+			expect(step.attempts).toBe(1);
+			repositoryTimings.push({
+				repo: step.repo,
+				durationMs: Date.parse(step.finishedAt) - startedAt,
+				gapMs: startedAt - previousFinished,
+			});
+			previousFinished = Date.parse(step.finishedAt);
+			expect(previousFinished).toBeGreaterThanOrEqual(startedAt);
+		}
+		expect(Date.parse(item.finishedAt)).toBeGreaterThanOrEqual(previousFinished);
+		if (process.env.GIRAFFE_REFRESH_PROFILE === "1") {
+			console.log(
+				"REFRESH_PROFILE",
+				JSON.stringify({
+					suite: process.env.GIRAFFE_SUITE,
+					params: item.params,
+					aReused: item.aReused,
+					requests: item.requestBreakdown,
+					wallMs: Math.round(performance.now() - requestedAt),
+					runMs: Date.parse(item.finishedAt) - Date.parse(item.createdAt),
+					queueMs: accountStarted - Date.parse(timings.queuedAt),
+					aMs: Date.parse(timings.a.finishedAt) - accountStarted,
+					b: repositoryTimings,
+				}),
+			);
+		}
 		return item;
 	}
 	try {
@@ -147,12 +192,67 @@ it("runs real durable A then serial B, serves latest observations and reuses day
 		const cached = await run({ dimensions: ["commits"] });
 		expect(cached.repos).toEqual(["phase2/demo"]);
 		expect(cached.requests).toBe(1);
-		const forced = await run({ dimensions: ["commits"], repo: "phase2/demo", force: true });
+		const forced = await run({ repo: "phase2/demo", force: true });
 		expect(forced.aReused).toBe(false);
-		expect(forced.requests).toBe(2);
+		expect(forced.requests).toBe(5);
 		expect(forced.requestBreakdown).toMatchObject({
 			a: { graphql: 1, rest: 0 },
+			b: { graphql: 1, rest: 3 },
+		});
+		const cacheWindow = {
+			repo: "phase2/demo",
+			since: "2026-01-05",
+			until: "2026-01-05",
+		};
+		const graphqlOnly = await run({
+			...cacheWindow,
+			dimensions: ["commits", "issues", "prs", "releases"],
+		});
+		expect(graphqlOnly.aReused).toBe(true);
+		expect(graphqlOnly.requestBreakdown).toEqual({
+			total: 1,
+			graphql: 1,
+			rest: 0,
+			a: { graphql: 0, rest: 0 },
 			b: { graphql: 1, rest: 0 },
+		});
+		const restOnly = await run(cacheWindow);
+		expect(restOnly.aReused).toBe(true);
+		expect(restOnly.requestBreakdown).toEqual({
+			total: 3,
+			graphql: 0,
+			rest: 3,
+			a: { graphql: 0, rest: 0 },
+			b: { graphql: 0, rest: 3 },
+		});
+		const allCached = await run(cacheWindow);
+		expect(allCached.aReused).toBe(true);
+		expect(allCached.requests).toBe(0);
+		expect(allCached.requestBreakdown).toEqual({
+			total: 0,
+			graphql: 0,
+			rest: 0,
+			a: { graphql: 0, rest: 0 },
+			b: { graphql: 0, rest: 0 },
+		});
+		expect(allCached.partialReasons).toEqual([]);
+		const cachedSecurity = await machine("repos/phase2/demo/security");
+		expect(await cachedSecurity.json()).toMatchObject({
+			data: {
+				unavailable: true,
+				truncated: false,
+				dependabot_open: 1,
+				code_scanning_open: null,
+				features: {
+					dependabot: { status: "available" },
+					code_scanning: { status: "unavailable", reason_code: "not_found" },
+				},
+			},
+		});
+		expect(await (await machine("factory")).json()).toMatchObject({
+			data: {
+				repos: [expect.objectContaining({ metrics: expect.objectContaining({ alerts: 1 }) })],
+			},
 		});
 		expect((await machine("stars/phase2/demo", "DELETE")).status).toBe(200);
 		for (const cancel of [
@@ -192,7 +292,7 @@ it("runs real durable A then serial B, serves latest observations and reuses day
 		expect((await machine(`refresh-runs/${cancelled.id}/cancel`)).status).toBe(405);
 		expect((await machine("repos/phase2/demo/details")).status).toBe(200);
 		const list = (await (await machine("refresh-runs")).json()) as { items: RefreshRun[] };
-		expect(list.items).toHaveLength(6);
+		expect(list.items).toHaveLength(9);
 		expect((await machine(`refresh-runs/${first.id}`, "DELETE")).status).toBe(405);
 	} finally {
 		await browser(`accounts/${account.id}`, "DELETE");

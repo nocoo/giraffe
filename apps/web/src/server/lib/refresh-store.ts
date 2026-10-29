@@ -1,4 +1,10 @@
-import type { RefreshFailureDetail, RefreshParams, RefreshRun } from "../../lib/refresh-types";
+import type {
+	RefreshFailureDetail,
+	RefreshParams,
+	RefreshRun,
+	RefreshRunTimings,
+	RefreshStepTiming,
+} from "../../lib/refresh-types";
 import type { Db } from "./db/d1";
 import { createId } from "./id";
 
@@ -8,6 +14,81 @@ const decode = (row: Row | null): RefreshRun | null =>
 	row ? (JSON.parse(row.payload) as RefreshRun) : null;
 export const terminalRefreshStatus = (status: RefreshRun["status"]): boolean =>
 	status !== "queued" && status !== "running";
+export const emptyRefreshTimings = (at: string): RefreshRunTimings => ({
+	queuedAt: at,
+	a: null,
+	repos: [],
+});
+const stepTiming = (startedAt: string): RefreshStepTiming => ({
+	startedAt,
+	finishedAt: null,
+	attempts: 0,
+});
+const replaced = <Value>(items: Value[], index: number, next: Value): Value[] =>
+	items.map((item, position) => (position === index ? next : item));
+export function startRefreshStep(run: RefreshRun, at: string): RefreshRun {
+	const timings = run.timings;
+	if (!timings) return run;
+	if (run.phase === "account") {
+		if (timings.a) return run;
+		return { ...run, timings: { ...timings, a: { ...stepTiming(at), reused: false } } };
+	}
+	const index = run.completedRepos;
+	const repo = run.repos[index];
+	const current = timings.repos[index];
+	if (!repo || current?.repo === repo) return run;
+	const next: RefreshStepTiming & { repo: string } = { repo, ...stepTiming(at) };
+	return {
+		...run,
+		timings: { ...timings, repos: [...timings.repos.slice(0, index), next] },
+	};
+}
+export function completeRefreshStepAttempt(
+	run: RefreshRun,
+	at: string,
+	done: boolean,
+	reused = false,
+): RefreshRun {
+	const timings = run.timings;
+	if (!timings) return run;
+	const settle = <Entry extends RefreshStepTiming>(entry: Entry): Entry => ({
+		...entry,
+		attempts: entry.attempts + 1,
+		finishedAt: done ? at : null,
+	});
+	if (run.phase === "account") {
+		if (!timings.a) return run;
+		return {
+			...run,
+			timings: { ...timings, a: { ...settle(timings.a), reused: timings.a.reused || reused } },
+		};
+	}
+	const index = run.completedRepos;
+	const entry = timings.repos[index];
+	if (!entry || entry.repo !== run.repos[index]) return run;
+	return { ...run, timings: { ...timings, repos: replaced(timings.repos, index, settle(entry)) } };
+}
+export function closeRefreshStep(run: RefreshRun, at: string): RefreshRun {
+	const timings = run.timings;
+	if (!timings) return run;
+	if (run.phase === "account")
+		return timings.a
+			? {
+					...run,
+					timings: { ...timings, a: { ...timings.a, finishedAt: timings.a.finishedAt ?? at } },
+				}
+			: run;
+	const index = run.completedRepos;
+	const entry = timings.repos[index];
+	if (!entry || entry.repo !== run.repos[index]) return run;
+	return {
+		...run,
+		timings: {
+			...timings,
+			repos: replaced(timings.repos, index, { ...entry, finishedAt: entry.finishedAt ?? at }),
+		},
+	};
+}
 export const emptyRequestBreakdown = (): RefreshRun["requestBreakdown"] => ({
 	total: 0,
 	graphql: 0,
@@ -166,6 +247,7 @@ export async function createRefreshRun(
 		createdAt: now,
 		updatedAt: now,
 		finishedAt: null,
+		timings: emptyRefreshTimings(now),
 	};
 	await db
 		.prepare(

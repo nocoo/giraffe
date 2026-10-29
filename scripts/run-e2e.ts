@@ -313,7 +313,19 @@ const github = await listen(17046, (req, res) => {
 		const refreshOwner = auth.includes("U".repeat(8)) ? "phase2" : "octocat";
 		const refreshRest = refreshRestStub(url);
 		if (refreshRest !== null) {
-			sendJson(res, 200, refreshRest);
+			if (url.pathname.endsWith("/code-scanning/alerts"))
+				sendJson(res, 404, { message: "Not Found" });
+			else if (url.pathname.endsWith("/dependabot/alerts"))
+				sendJson(res, 200, [
+					{
+						number: 7,
+						state: "open",
+						created_at: "2026-01-05T03:00:00Z",
+						html_url: "https://github.com/phase2/demo/security/7",
+						security_advisory: { summary: "Observed vulnerability", severity: "high" },
+					},
+				]);
+			else sendJson(res, 200, refreshRest);
 			return;
 		}
 		const security = securityFixture(auth);

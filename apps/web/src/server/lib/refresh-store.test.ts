@@ -7,12 +7,15 @@ import {
 	addRefreshPartialReasons,
 	addRefreshRequests,
 	cancelRefreshRun,
+	closeRefreshStep,
+	completeRefreshStepAttempt,
 	createRefreshRun,
 	emptyRequestBreakdown,
 	getRefreshRun,
 	listRefreshRuns,
 	saveRefreshRun,
 	scheduledRefreshRun,
+	startRefreshStep,
 	terminalRefreshStatus,
 } from "./refresh-store";
 
@@ -215,4 +218,104 @@ it("merges safe failure metadata per repository without duplicating codes", asyn
 		},
 	]);
 	expect(addRefreshPartialReasons(twice, "octo/one", [], [])).toBe(twice);
+});
+it("records queued and per-step timings without inventing missed attempts", async () => {
+	const db = await fixture();
+	const now = "2026-10-29T01:00:00.000Z";
+	const created = await createRefreshRun(
+		db,
+		"account",
+		parseRefreshParams({}, new Date(now)),
+		"manual",
+		now,
+	);
+	expect(created.timings).toEqual({ queuedAt: now, a: null, repos: [] });
+	const aStarted = startRefreshStep({ ...created, status: "running" }, "2026-10-29T01:00:01.000Z");
+	expect(startRefreshStep(aStarted, "2026-10-29T01:00:30.000Z").timings?.a).toEqual(
+		aStarted.timings?.a,
+	);
+	const aFinished = completeRefreshStepAttempt(aStarted, "2026-10-29T01:00:02.000Z", true, true);
+	expect(aFinished.timings?.a).toEqual({
+		startedAt: "2026-10-29T01:00:01.000Z",
+		finishedAt: "2026-10-29T01:00:02.000Z",
+		attempts: 1,
+		reused: true,
+	});
+	const repos = { ...aFinished, phase: "repos" as const, repos: ["octo/one", "octo/two"] };
+	const repoStarted = startRefreshStep(repos, "2026-10-29T01:00:03.000Z");
+	expect(repoStarted.timings?.repos).toEqual([
+		{
+			repo: "octo/one",
+			startedAt: "2026-10-29T01:00:03.000Z",
+			finishedAt: null,
+			attempts: 0,
+		},
+	]);
+	const retrying = completeRefreshStepAttempt(repoStarted, "2026-10-29T01:00:04.000Z", false);
+	expect(retrying.timings?.repos[0]).toEqual({
+		repo: "octo/one",
+		startedAt: "2026-10-29T01:00:03.000Z",
+		finishedAt: null,
+		attempts: 1,
+	});
+	const resumed = startRefreshStep(retrying, "2026-10-29T01:00:09.000Z");
+	expect(resumed.timings?.repos[0]?.startedAt).toBe("2026-10-29T01:00:03.000Z");
+	const done = completeRefreshStepAttempt(resumed, "2026-10-29T01:00:10.000Z", true);
+	expect(closeRefreshStep(aFinished, "2026-10-29T01:00:20.000Z")).toEqual(aFinished);
+	expect(closeRefreshStep(done, "2026-10-29T01:00:20.000Z")).toEqual(done);
+	expect(done.timings?.repos[0]).toEqual({
+		repo: "octo/one",
+		startedAt: "2026-10-29T01:00:03.000Z",
+		finishedAt: "2026-10-29T01:00:10.000Z",
+		attempts: 2,
+	});
+	const cancelled = closeRefreshStep(retrying, "2026-10-29T01:00:20.000Z");
+	expect(cancelled.timings?.repos[0]).toEqual({
+		repo: "octo/one",
+		startedAt: "2026-10-29T01:00:03.000Z",
+		finishedAt: "2026-10-29T01:00:20.000Z",
+		attempts: 1,
+	});
+	const next = startRefreshStep({ ...done, completedRepos: 1 }, "2026-10-29T01:00:21.000Z");
+	expect(next.timings?.repos[1]).toMatchObject({ repo: "octo/two", attempts: 0 });
+	expect(
+		completeRefreshStepAttempt(aFinished, "2026-10-29T01:00:22.000Z", true).timings?.a,
+	).toMatchObject({ reused: true, attempts: 2 });
+	expect(closeRefreshStep(created, "2026-10-29T01:00:00.500Z")).toBe(created);
+	expect(completeRefreshStepAttempt(created, "2026-10-29T01:00:00.500Z", true)).toBe(created);
+	const unstarted = { ...created, phase: "repos" as const, repos: ["octo/one"] };
+	expect(closeRefreshStep(unstarted, "2026-10-29T01:00:23.000Z")).toBe(unstarted);
+	expect(completeRefreshStepAttempt(unstarted, "2026-10-29T01:00:23.000Z", true)).toBe(unstarted);
+	const mismatched = { ...repoStarted, repos: ["octo/other"] };
+	expect(closeRefreshStep(mismatched, "2026-10-29T01:00:24.000Z")).toBe(mismatched);
+	expect(completeRefreshStepAttempt(mismatched, "2026-10-29T01:00:24.000Z", true)).toBe(mismatched);
+});
+it("adds timings only to new runs and leaves historical payloads unbackfilled", async () => {
+	const db = await fixture();
+	const now = "2026-10-29T01:00:00.000Z";
+	const created = await createRefreshRun(
+		db,
+		"account",
+		parseRefreshParams({}, new Date(now)),
+		"manual",
+		now,
+	);
+	const { timings: _dropped, ...historical } = created;
+	expect(closeRefreshStep(historical, "2026-10-29T01:00:05.000Z")).toBe(historical);
+	expect(completeRefreshStepAttempt(historical, "2026-10-29T01:00:05.000Z", true)).toBe(historical);
+	const reposOnly = { ...historical, phase: "repos" as const, repos: ["octo/one"] };
+	expect(closeRefreshStep(reposOnly, "2026-10-29T01:00:05.000Z")).toBe(reposOnly);
+	expect(completeRefreshStepAttempt(reposOnly, "2026-10-29T01:00:05.000Z", true)).toBe(reposOnly);
+	expect(startRefreshStep(historical, "2026-10-29T01:00:05.000Z")).toBe(historical);
+	const resumed = {
+		...reposOnly,
+		completedRepos: 1,
+		repos: ["octo/one", "octo/two"],
+	};
+	const started = startRefreshStep(resumed, "2026-10-29T01:00:05.000Z");
+	expect(started).toBe(resumed);
+	expect(completeRefreshStepAttempt(started, "2026-10-29T01:00:06.000Z", true)).toBe(resumed);
+	expect(closeRefreshStep(started, "2026-10-29T01:00:07.000Z")).toBe(resumed);
+	await saveRefreshRun(db, historical);
+	expect((await getRefreshRun(db, "account", created.id))?.timings).toBeUndefined();
 });

@@ -101,22 +101,39 @@ export async function resourceStatement(
 			await savedContentMeta(`factory:${id}:${stream}`, payload as unknown as Node),
 		);
 }
-export async function publish(db: Db, context: CollectionContext) {
-	const [saved, repositories] = await Promise.all([
-		db
-			.prepare("SELECT payload FROM refresh_accounts WHERE account_id=?")
-			.bind(context.account.id)
-			.first<{ payload: string }>(),
-		db
-			.prepare(
-				"SELECT p.payload FROM refresh_repository_publications p JOIN refresh_catalog c ON c.account_id=p.account_id AND c.repo_id=p.repo_id AND c.active=1 WHERE p.account_id=? ORDER BY c.repo COLLATE NOCASE",
-			)
-			.bind(context.account.id)
-			.all<{ payload: string }>(),
-	]);
-	if (!saved) throw new ApiError(500, "db_error", "Account observation required");
-	const account = JSON.parse(saved.payload) as FactorySnapshot;
-	const repos = repositories.results.map((row) => JSON.parse(row.payload) as FactoryRepo);
+export async function publish(
+	db: Db,
+	context: CollectionContext,
+	pending: D1PreparedStatement[] = [],
+) {
+	const id = context.account.id;
+	const [saved, sourceRows, catalogRows] = (
+		await db.batch([
+			...pending,
+			db.prepare("SELECT payload FROM refresh_accounts WHERE account_id=?").bind(id),
+			db
+				.prepare(
+					"SELECT s.kind,s.payload,s.content_meta FROM refresh_snapshots s JOIN refresh_catalog c ON c.account_id=s.account_id AND c.repo_id=json_extract(s.payload,'$.repo_id') AND c.active=1 WHERE s.account_id=? AND s.kind LIKE 'repo:%'",
+				)
+				.bind(id),
+			db
+				.prepare(
+					"SELECT c.repo,p.payload AS publication FROM refresh_catalog c LEFT JOIN refresh_repository_publications p ON p.account_id=c.account_id AND p.repo_id=c.repo_id WHERE c.account_id=? AND c.active=1 ORDER BY c.repo COLLATE NOCASE",
+				)
+				.bind(id),
+		])
+	).slice(-3) as [
+		D1Result<{ payload: string }>,
+		D1Result<SnapshotPage>,
+		D1Result<{ repo: string; publication: string | null }>,
+	];
+	const row = saved.results[0];
+	if (!row) throw new ApiError(500, "db_error", "Account observation required");
+	const account = JSON.parse(row.payload) as FactorySnapshot;
+	const inventory = catalogRows.results;
+	const repos = inventory.flatMap((entry) =>
+		entry.publication === null ? [] : [JSON.parse(entry.publication) as FactoryRepo],
+	);
 	const snapshot: FactorySnapshot = {
 		...account,
 		window: windowOf(context),
@@ -141,16 +158,7 @@ export async function publish(db: Db, context: CollectionContext) {
 				? "complete"
 				: "partial",
 	};
-	const sources = (
-		await db
-			.prepare(
-				"SELECT s.kind,s.payload,s.content_meta FROM refresh_snapshots s JOIN refresh_catalog c ON c.account_id=s.account_id AND c.repo_id=json_extract(s.payload,'$.repo_id') AND c.active=1 WHERE s.account_id=? AND s.kind LIKE 'repo:%'",
-			)
-			.bind(context.account.id)
-			.all<SnapshotPage>()
-	).results;
-	const groups = latestSnapshotGroups(sources);
-	const inventory = (await catalog(db, context.account.id)).results;
+	const groups = latestSnapshotGroups(sourceRows.results);
 	const aggregates: D1PreparedStatement[] = [];
 	for (const [logical, suffix, key] of [
 		["issues", "issues", "issues"],

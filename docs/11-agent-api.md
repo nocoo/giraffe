@@ -1,6 +1,6 @@
 # Machine API v1: saved data and external resources
 
-Version 0.27.2 provides scoped unified-refresh creation/history/status/cancellation and keeps
+Version 0.27.3 provides scoped unified-refresh creation/history/status/cancellation and keeps
 the analysis product surface removed. The machine API remains an authenticated
 boundary for saved observations, application settings and externally owned
 resources. No endpoint executes local code or schedules analysis.
@@ -117,6 +117,11 @@ New entries also carry `failures` with safe `dimension`, `code`, `httpStatus`,
 `graphqlType` and `graphqlPath` fields when available. `aReused` reports a complete
 same-Shanghai-day A reused by a non-forced single-repository request; its A request
 count is zero and saved source timestamps remain unchanged.
+New runs also expose `timings: {queuedAt,a,repos}`: `a` is null before account
+processing and otherwise has `startedAt`, nullable `finishedAt`, `attempts` and
+`reused`; ordered repository entries have `repo`, `startedAt`, nullable
+`finishedAt` and `attempts`. These are UTC execution times, including cache reuse,
+not source freshness. Historical execution times are not backfilled.
 Never treat `completedRepos` as the count of complete repositories: partial
 repositories can also have finished processing.
 

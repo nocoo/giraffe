@@ -35,6 +35,16 @@ export type RefreshPartialReason = {
 	codes: string[];
 	failures?: RefreshFailureDetail[];
 };
+export type RefreshStepTiming = {
+	startedAt: string;
+	finishedAt: string | null;
+	attempts: number;
+};
+export type RefreshRunTimings = {
+	queuedAt: string;
+	a: (RefreshStepTiming & { reused: boolean }) | null;
+	repos: (RefreshStepTiming & { repo: string })[];
+};
 export type RefreshRun = {
 	id: string;
 	accountId: string;
@@ -54,4 +64,5 @@ export type RefreshRun = {
 	createdAt: string;
 	updatedAt: string;
 	finishedAt: string | null;
+	timings?: RefreshRunTimings;
 };

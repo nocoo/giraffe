@@ -1,4 +1,4 @@
-# Phase 2: unified refresh (v0.27.2)
+# Phase 2: unified refresh (v0.27.3)
 
 This is the authorized replacement for the collection stack retired in v0.26.0.
 There is one task type, not quick/deep/full modes. The Dashboard keeps its saved
@@ -17,6 +17,38 @@ rate-limit failures wait at least 60 seconds and honor any later `retry-after` o
 reset deadline. After the bounded retries, repository failures remain partial,
 while fatal account/authentication failures stop the run.
 There is no queue consumer and no HTTP `waitUntil`-only collection task.
+
+POST arms the first durable alarm at the current time. Before persisting a step
+start, the runner records a recovery alarm five seconds ahead, not five minutes.
+Healthy steps continue in the same handler; budget/step-cap yields leave an alarm
+due immediately. These bounds describe requested scheduling delays, not a
+Cloudflare alarm-delivery SLA. A crash may replay the interrupted step; rate-limit
+and transient retry deadlines still take precedence once the failure is recorded.
+
+The v0.27.1 acceptance recorded `running/account` with zero requests for about
+five minutes. Both v0.27.1 and v0.27.2 armed a 300-second recovery alarm before
+collection, and only successful settlement replaced it. Fault-injection tests
+reproduce that recovery gap. The incident has no trace proving what interrupted
+the original handler; deployment eviction versus a failed/stalled handler cannot
+be distinguished from its final run payload. v0.27.2 already removed one-second
+successful-step sleeps and added bounded draining; v0.27.3 fixes the remaining
+recovery interval rather than attributing an unobserved production failure.
+
+The v0.27.2 follow-up also recorded a reused A followed by about 5.5 minutes in
+`repos` with zero requests. Regressions now run reused A and zero-request B in
+one alarm invocation without advancing the clock, and interrupt the first B
+start to verify recovery at five seconds. Neither report proves the original
+interruption's cause; the recovery alarm is a fallback, not normal step pacing.
+
+New run status includes `timings: {queuedAt,a,repos}`. `a` is initially null, then
+contains `startedAt`, nullable `finishedAt`, `attempts` and `reused`. `repos` holds
+the started repositories in serial order, each with `repo`, `startedAt`, nullable
+`finishedAt` and `attempts`. `attempts` counts settled collection attempts, not
+crashes before settlement; `startedAt` remains the first observed start across
+retries. Finish stays null until the step completes, fails permanently or is
+cancelled. Queued cancellation creates no step timings. All execution times are
+UTC and remain distinct from cached observation timestamps. Historical runs are
+not backfilled.
 
 Cloudflare cron `0 19 * * *` starts the default refresh at **03:00 Asia/Shanghai**.
 Scheduled requests are deduplicated by account and Shanghai day; a daily request
@@ -90,10 +122,14 @@ REST releases as newly collected GraphQL data.
 - Actions and security alerts use bounded REST samples. CI represents
   the latest/short-window sample, not exhaustive historical execution.
   Alerts are truncated only for a nonempty sample with a next-page link. An empty
-  sample is complete. HTTP 403/404 features are unavailable, not truncated; mixed
-  available/unavailable features keep aggregate alerts unavailable and uncached.
-  Per-feature security counts preserve an available zero versus an unavailable
-  null. A later non-forced run can collect newly accessible features.
+  sample is complete. Security HTTP 404 and explicitly feature-disabled 403
+  responses are terminal unavailable observations: complete for daily caching,
+  unavailable for display, and not a partial run. Mixed available/terminal-unavailable
+  features are cacheable without replacing unavailable null counts with zero.
+  Permission-restricted or unrecognized 403 responses remain unavailable and
+  uncached; authentication, rate limits and transient failures remain failures.
+  Force, a missing day or a different observation day probes terminal unavailable
+  features again. A non-forced repeat of the same complete day does not.
 - Dependency analysis is unsupported and displayed as missing. Dependency alerts
   can be collected. Traffic, author-event ledgers and other uncollected dimensions
   remain explicit empty/unavailable observations, never legacy fallbacks.
@@ -111,6 +147,15 @@ can explicitly rediscover it. No historical observation migration is involved.
 The new publication uses the current request's repository window, not the reused
 A's old window; saved calendar provenance remains unchanged.
 
+Reuse also verifies the saved calendar evidence, not only its status flag. The
+claimed source window must match the preceding calendar year derived from A's
+own fetch timestamp, and every inclusive UTC date must be present once, in
+contiguous order, with finite non-negative counts. Short historical calendars,
+missing dates and malformed evidence require a fresh A. New incomplete calendar
+responses are unavailable/partial and cannot become reusable complete A records.
+This rejects pre-v0.27.2 window-only calendars without migrating or backfilling
+their evidence.
+
 ## Request budget and partial reasons
 
 The following counts are actual HTTP requests with empty caches, all six
@@ -126,6 +171,33 @@ dimensions, no retry and no extra issue/PR pages. A is per account, not per repo
 | B alerts: Dependabot + code scanning                                    | 0       | 2    | 2     |
 | B total per uncached repository                                         | 1       | 3    | 4     |
 | B complete cache hit for all requested days/dimensions                  | 0       | 0    | 0     |
+
+On non-forced runs with a saved repository publication, B skips GraphQL when all
+requested GraphQL dimensions are cached, even if actions or alerts still need
+REST collection. It uses the account catalogue's immutable repository identity
+and retains saved detail metadata. A first REST-only publication still needs one
+GraphQL metadata query; force also refreshes metadata. Fully cached B needs none.
+
+For a same-Shanghai-day, single-repository non-forced repeat: A costs zero, fully
+cached B costs zero, and a run missing only both security features costs two REST
+requests with no GraphQL. Terminal unavailable security days count as cached.
+With no rate limit/retry and typical network/D1 latency, plan for seconds rather
+than minutes (roughly 1–5 seconds fully cached, 2–10 seconds with two REST calls).
+These are planning estimates, not production measurements or latency guarantees;
+there is no intentional healthy-path scheduling wait.
+
+Retry not-before deadlines are persisted with their run/step identity and checked
+before collection after every wakeup. A failed final alarm write cannot turn a
+five-second recovery into an early rate-limit retry. Cancellation is evaluated
+first and does not wait for the retry deadline.
+
+An exhausted failure retains its final attempt count, deadline, safe detail and
+observation time until D1 commits its terminal state or repository cursor. If
+that save fails, recovery replays only settlement, never another GitHub request.
+The marker is fenced to the exact run/phase/cursor, so a committed write with a
+lost acknowledgement cannot settle the next repository or run twice. Cancellation
+keeps the last attempt's evidence and takes priority over waiting. Retry cleanup
+follows successful D1 persistence, including successful and cancelled steps.
 
 Before v0.27.1, B used one GraphQL and four REST requests, including a redundant
 REST release sample. Releases now share the main query, reducing the normal B
@@ -150,12 +222,15 @@ repository, or about 14 minutes projected for 61. The former fixed successful
 alarm delay alone contributed at least about 62 seconds to a 61-repository run;
 non-rate-limit retries previously added 60 + 120 + 240 seconds per failed step.
 The new transient retry total is 22 seconds. The report cannot distinguish all
-GitHub latency from alarm delivery or prove the tail's cause. With 246 sequential
-HTTP requests averaging 0.5–1 second, a no-retry run is estimated at 2–4 minutes
-plus D1/publication and alarm overhead; allow roughly **3–6 minutes** for planning.
-This is an explicit latency assumption, not a production measurement or SLA.
-Rate limits and extra pagination can extend it substantially. No production
-refresh or cancellation was used to validate this change.
+GitHub latency from alarm delivery or prove the tail's cause. An earlier 3–6
+minute projection for 246 requests assumed 0.5–1 second per HTTP request; that is
+not a validated production budget. The v0.27.2 forced single-repository report
+instead observed 78 seconds (A about 40 seconds, B about 38 seconds) for six
+requests. Dividing this wall time by request count does not measure HTTP latency:
+it includes D1, publication, hashing and scheduling. Local measurements and D1
+round-trip regressions must be distinguished from production latency, and rate
+limits or extra pagination can extend either run. No production refresh or
+cancellation was used to validate this change.
 
 `requests` remains the numeric total for existing consumers. New runs also have
 `requestBreakdown: {total,graphql,rest,a:{graphql,rest},b:{graphql,rest}}`. Each
@@ -234,6 +309,35 @@ totals or a false zero. Before a new publication exists, Activity returns
 existing displays rather than serving stale legacy observations.
 
 ## Storage, verification and rollback
+
+Step persistence combines pending observation writes and three publication reads
+in one ordered D1 batch, followed by one aggregate/publication write batch. The
+reads see the pending writes; a failed read rolls that first transaction back.
+A failed final publication batch leaves the observations durable for retry, as
+before. Saved source timestamps, unavailable/null values and content hashes are
+unchanged. Source writes and final publication writes were already batched;
+this change removes separate read calls and folds the source batch into them.
+
+A local in-memory SQLite fixture with 61 repositories, 25 issues and 25 PRs per
+repository, a complete annual account calendar and four pending writes per step
+measured 61 persistence/publication repetitions:
+
+| Metric                | Before   | After    |
+| --------------------- | -------- | -------- |
+| D1 calls per step     | 6        | 2        |
+| D1 calls for 61 steps | 366      | 122      |
+| Read statements       | 244      | 183      |
+| Write statements      | 793      | 793      |
+| Local elapsed time    | 426.9 ms | 422.5 ms |
+
+These measurements exclude collection HTTP and runner bookkeeping; the fixture
+injects no network latency and is not a production timing claim. The small local
+wall-time difference is not evidence of a production speedup. Regression tests
+pin call counts, read-your-writes, failed-read rollback and published evidence.
+For real local Worker step timings, run
+`GIRAFFE_REFRESH_PROFILE=1 bun run test:e2e:api tests/api/unified-refresh.test.ts --disableConsoleIntercept`;
+its JSON output includes queue/A/B durations, step gaps and actual request counts
+for force, REST-only and zero-request cache paths, using only local stub data.
 
 `0028_refresh_observations.sql` adds `refresh_catalog`, `refresh_accounts`,
 `refresh_day_observations`, `refresh_items`, `refresh_repository_publications`,
