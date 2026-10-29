@@ -2290,3 +2290,14 @@ failed again. Native alarm retries are finite, so every settlement replay now
 arms its own recovery before writing D1. Alarm-delivery fixtures consume the old
 alarm before invoking the handler; retaining it in memory had hidden this gap.
 Repeated replay-save failures, including cancellation, are regression cases.
+
+## 2026-10-29: verify hook installation in a new worktree
+
+The v0.27.4 worktree had `core.hooksPath=.husky/_` and the tracked hook scripts,
+but not Husky's generated entrypoints. The first local commit therefore returned
+without running its hook despite no bypass flag or environment variable. L1 had
+been run separately, but that did not establish automatic enforcement. Running
+`bun run prepare` restored the entrypoints; the unpublished commit was amended
+through the complete pre-commit hook. Before the first commit in any new
+worktree, verify the configured hook path and executable entrypoints, not just
+the tracked hook scripts. Keep generated wrappers local and preserve all gates.
