@@ -1,19 +1,5 @@
-import type {
-	FactoryDay,
-	FactoryEvent,
-	FactoryMetrics,
-	FactoryRepo,
-	FactoryStreamName,
-	FactoryWindow,
-} from "./factory-types";
+import type { FactoryDay, FactoryEvent, FactoryMetrics, FactoryRepo } from "./factory-types";
 
-export function factoryWindow(now: string, days = 90): FactoryWindow {
-	const end = new Date(now);
-	const start = new Date(now);
-	start.setUTCHours(0, 0, 0, 0);
-	start.setUTCDate(start.getUTCDate() - days + 1);
-	return { since: start.toISOString(), until: end.toISOString() };
-}
 export function emptyDay(): FactoryDay {
 	return {
 		commits: 0,
@@ -41,74 +27,6 @@ export function emptyMetrics(): FactoryMetrics {
 		days: {},
 		authors: Object.create(null) as Record<string, number>,
 	};
-}
-export function inWindow(at: string | null, window: FactoryWindow): boolean {
-	const t = Date.parse(at ?? "");
-	return t >= Date.parse(window.since) && t < Date.parse(window.until);
-}
-export function uniqueEvents(items: FactoryEvent[]): FactoryEvent[] {
-	return [...new Map(items.map((item) => [item.id, item])).values()];
-}
-export function summarizeEvents(
-	stream: FactoryStreamName,
-	events: FactoryEvent[],
-	window: FactoryWindow,
-): FactoryMetrics {
-	const m = emptyMetrics();
-	function count(key: keyof FactoryDay, at: string | null) {
-		if (!inWindow(at, window) || at === null) return;
-		const day = new Date(at).toISOString().slice(0, 10);
-		const bucket = m.days[day] ?? emptyDay();
-		bucket[key]++;
-		m.days[day] = bucket;
-		m[key]++;
-	}
-	for (const e of uniqueEvents(events)) {
-		if (stream === "commits" && inWindow(e.at, window)) {
-			count("commits", e.at);
-			const author = e.author ?? "unlinked";
-			m.authors[author] = (m.authors[author] ?? 0) + 1;
-		}
-		if (stream === "issues") {
-			count("issueOpened", e.createdAt);
-			count("issueClosed", e.closedAt);
-			if (
-				e.state === "open" &&
-				Date.parse(window.until) - Date.parse(e.createdAt ?? "") >= 14 * 86400000
-			)
-				m.agedIssues++;
-		}
-		if (stream === "prs") {
-			count("prOpened", e.createdAt);
-			count("prMerged", e.mergedAt);
-			if (!e.mergedAt) count("prClosed", e.closedAt);
-			if (inWindow(e.mergedAt, window)) {
-				const hours = (Date.parse(e.mergedAt ?? "") - Date.parse(e.createdAt ?? "")) / 3600000;
-				if (Number.isFinite(hours) && hours >= 0) m.cycleHours.push(hours);
-			}
-			if (
-				e.state === "open" &&
-				Date.parse(window.until) - Date.parse(e.createdAt ?? "") >= 7 * 86400000
-			)
-				m.agedPrs++;
-			if (/^(dependabot|renovate)(\[bot\])?$/.test(e.author ?? "")) {
-				if (e.state === "open") m.botOpen++;
-				if (inWindow(e.mergedAt, window)) m.botMerged++;
-			}
-		}
-		if (stream === "actions" && inWindow(e.createdAt, window)) {
-			if (e.conclusion === "success") count("ciSuccess", e.createdAt);
-			else if (
-				["failure", "timed_out", "action_required", "startup_failure"].includes(e.conclusion ?? "")
-			)
-				count("ciFailure", e.createdAt);
-			else if (e.conclusion == null) m.ciPending++;
-			else m.ciOther++;
-		}
-		if (stream === "releases" && e.state !== "draft") count("releases", e.at);
-		if (stream === "alerts" && e.state === "open") m.alerts++;
-	}
-	return m;
 }
 export function mergeMetrics(metrics: FactoryMetrics[]): FactoryMetrics {
 	const m = emptyMetrics();

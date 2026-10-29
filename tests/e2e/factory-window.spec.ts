@@ -1,6 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { factoryWindow } from "../../apps/web/src/lib/factory";
-import { factoryFixture } from "../fixtures/factory-snapshot";
+import { factoryFixture, savedFactoryWindow } from "../fixtures/factory-snapshot";
 import { createUiFixtures, projectFactoryFixture } from "./ui-fixtures";
 
 for (const dayCount of [30, 90]) {
@@ -12,11 +11,11 @@ for (const dayCount of [30, 90]) {
 		repo.name = "octocat/hello-world";
 		repo.observation = {
 			version: snapshot.runId,
-			window: factoryWindow(snapshot.fetched_at, dayCount),
+			window: savedFactoryWindow(snapshot.fetched_at, dayCount),
 			refreshedAt: snapshot.fetched_at,
 			source: "run",
 		};
-		snapshot.window = factoryWindow(snapshot.fetched_at, 30);
+		snapshot.window = savedFactoryWindow(snapshot.fetched_at, 30);
 		const fixtures: Record<string, unknown> = {
 			...createUiFixtures(),
 			"/api/factory": projectFactoryFixture(snapshot),

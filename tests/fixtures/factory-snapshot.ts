@@ -3,7 +3,17 @@ import {
 	FACTORY_STREAMS,
 	type FactoryRepo,
 	type FactorySnapshot,
+	type FactoryWindow,
 } from "../../apps/web/src/lib/factory-types";
+
+export function savedFactoryWindow(now: string, days = 90): FactoryWindow {
+	const until = new Date(now);
+	const since = new Date(now);
+	since.setUTCHours(0, 0, 0, 0);
+	since.setUTCDate(since.getUTCDate() - days + 1);
+	return { since: since.toISOString(), until: until.toISOString() };
+}
+
 export function factoryFixture(): FactorySnapshot {
 	const now = "2026-09-15T22:00:00.000Z";
 	const repo: FactoryRepo = {

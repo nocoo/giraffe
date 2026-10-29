@@ -3,8 +3,7 @@ import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
-import { factoryFixture } from "../../../../../tests/fixtures/factory-snapshot";
-import { factoryWindow } from "../../lib/factory";
+import { factoryFixture, savedFactoryWindow } from "../../../../../tests/fixtures/factory-snapshot";
 import type { FactoryViewSnapshot } from "../../lib/factory-types";
 import { loadFactory, loadFactoryDetail } from "../viewmodels/factory";
 import { FactoryPage } from "./factory";
@@ -71,7 +70,7 @@ afterEach(() => {
 
 it.each([30, 90])("labels the published %i-day chart window", async (dayCount) => {
 	const raw = factoryFixture();
-	raw.window = factoryWindow(raw.fetched_at, dayCount);
+	raw.window = savedFactoryWindow(raw.fetched_at, dayCount);
 	vi.mocked(loadFactory).mockResolvedValue({ ...raw, selectedRepos: raw.repos });
 	vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 	vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
