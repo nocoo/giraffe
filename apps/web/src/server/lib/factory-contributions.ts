@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { FactorySnapshot } from "../../lib/factory-types";
 
-export const CONTRIBUTION_MAX_DAYS = 90;
+export const CONTRIBUTION_MAX_DAYS = 367;
 export const contributionDate = z.iso.date();
 type Contribution = NonNullable<FactorySnapshot["contribution"]>;
 type ContributionTypes = NonNullable<Contribution["days"][number]["types"]>;

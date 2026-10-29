@@ -10,6 +10,7 @@ import {
 	readMachineRepositoryObservation,
 } from "../machine-observations";
 import type { CollectionContext } from "../refresh-collection-contract";
+import { contributionWindow } from "./account";
 import { collectAccount, collectRepository } from "./index";
 import { blankMetrics, count, event, factoryRepo, nodes, object, text, windowOf } from "./model";
 import { collectionDb, publish } from "./store";
@@ -1101,6 +1102,49 @@ describe("unified refresh collection", () => {
 			contribution: null,
 			contributionStatus: "unavailable",
 			rate: null,
+		});
+	});
+	it("fetches the contribution calendar over a fixed one-year window independent of the refresh window", async () => {
+		const context = await fixture();
+		const fetch = upstream();
+		await collectAccount(context);
+		expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body)).variables).toEqual({
+			after: null,
+			since: "2025-10-29T04:00:00.000Z",
+			until: now,
+		});
+		const saved = await publication(context);
+		expect(saved.window).toEqual({
+			since: "2026-10-27T16:00:00.000Z",
+			until: "2026-10-28T15:59:59.999Z",
+			timezone: "Asia/Shanghai",
+		});
+		expect(saved.contributionObservation.window).toEqual({
+			since: "2025-10-29T04:00:00.000Z",
+			until: now,
+		});
+		expect(saved.contribution.days).toEqual([
+			{
+				date: "2026-10-28",
+				count: 2,
+				fetchedAt: now,
+				observedAt: now,
+				breakdown: "unavailable",
+			},
+		]);
+	});
+	it("derives the one-year contribution window across leap days", () => {
+		expect(contributionWindow("2026-10-29T04:00:00.000Z")).toEqual({
+			since: "2025-10-29T04:00:00.000Z",
+			until: "2026-10-29T04:00:00.000Z",
+		});
+		expect(contributionWindow("2024-02-29T12:00:00.000Z")).toEqual({
+			since: "2023-03-01T12:00:00.000Z",
+			until: "2024-02-29T12:00:00.000Z",
+		});
+		expect(contributionWindow("2025-03-01T00:00:00.000Z")).toEqual({
+			since: "2024-03-01T00:00:00.000Z",
+			until: "2025-03-01T00:00:00.000Z",
 		});
 	});
 	it("records an actually empty repository as an observed zero, not missing", async () => {

@@ -19,9 +19,16 @@ import { accountQuery } from "./queries";
 import { catalog, collectionDb, publish, snapshots } from "./store";
 import { transport } from "./transport";
 
+export function contributionWindow(now: string) {
+	const end = new Date(now);
+	const start = new Date(end);
+	start.setUTCFullYear(end.getUTCFullYear() - 1);
+	return { since: start.toISOString(), until: end.toISOString() };
+}
 export async function collectAccount(context: CollectionContext): Promise<AccountCollectionResult> {
 	const db = collectionDb(context);
 	const { client, request, breakdown } = transport(context);
+	const calendarWindow = contributionWindow(context.now);
 	let after: string | null = null;
 	let pages = 0;
 	let complete = false;
@@ -33,7 +40,7 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 		let data: Node;
 		try {
 			data = await request((github) =>
-				github.githubGraphql(context.token, accountQuery, { after, ...windowOf(context) }),
+				github.githubGraphql(context.token, accountQuery, { after, ...calendarWindow }),
 			);
 		} catch (error) {
 			if (
@@ -150,7 +157,7 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 		contributionStatus: contributionComplete ? "complete" : "unavailable",
 		contributionObservation: {
 			version: context.run.id,
-			window: windowOf(context),
+			window: calendarWindow,
 			fetchedAt: context.now,
 		},
 	};
