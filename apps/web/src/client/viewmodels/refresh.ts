@@ -171,12 +171,18 @@ export class RefreshViewModel {
 	}
 	private accept(run: RefreshRun | null): void {
 		const previous = this.state.run;
+		const next =
+			run && previous && previous.id === run.id
+				? refreshActive(run) && !refreshActive(previous)
+					? previous
+					: { ...run, cancelRequested: previous.cancelRequested || run.cancelRequested }
+				: run;
 		const changed =
-			run &&
-			!refreshActive(run) &&
+			next &&
+			!refreshActive(next) &&
 			!this.state.loading &&
-			(run.id !== previous?.id || refreshActive(previous));
-		this.update({ run, error: null });
+			(next.id !== previous?.id || refreshActive(previous));
+		this.update({ run: next, error: null });
 		if (changed) for (const listener of this.dataListeners) listener();
 	}
 	private async reject(error: unknown, generation: number): Promise<void> {
@@ -262,9 +268,12 @@ export class RefreshViewModel {
 			if (generation !== cacheGeneration()) return;
 			if (next.accountId !== this.state.accountId)
 				throw new ApiError(409, "account_conflict", "account changed");
+			const current = this.state.run;
+			if (!current || current.id !== run.id) return;
 			this.accept(next);
 		} catch (error) {
-			await this.reject(error, generation);
+			const current = this.state.run;
+			if (current && current.id === run.id) await this.reject(error, generation);
 		} finally {
 			this.update({ cancelling: false });
 			if (generation !== cacheGeneration()) void this.read();
