@@ -159,8 +159,9 @@ test("real unified refresh reloads data, respects stars and supports an unstarre
 
 	await page.goto(`/repos/${repository}?tab=factory&stream=dependencies`);
 	await expect(page.getByTestId("repo-detail")).toBeVisible();
-	await expect(page.getByRole("alert")).toContainText("暂无已保存的资源快照；缺失不代表没有记录。");
-	await expect(page.locator(".factory-provenance")).toHaveCount(0);
+	await expect(page.locator(".factory-notice")).toContainText("dependency_analysis_unavailable");
+	await expect(page.locator(".factory-provenance")).toContainText("不可用");
+	await expect(page.getByRole("alert")).toHaveCount(0);
 	const beforeDetail = reads.filter(
 		(path) => path === `/api/factory/repos/${repository}/dependencies`,
 	).length;
@@ -199,6 +200,12 @@ test("real unified refresh reloads data, respects stars and supports an unstarre
 		.getByRole("radio", { name: "全部", exact: true })
 		.click();
 	await expect(page.getByRole("heading", { name: "变化 · 最近 1 天", exact: true })).toBeVisible();
+	await expect(page.getByRole("heading", { name: "账号贡献日历", exact: true })).toBeVisible();
+	await expect(page.getByRole("radio", { name: "账号贡献", exact: true })).toBeEnabled();
+	expect(await page.locator(".factory-day").count()).toBeGreaterThanOrEqual(365);
+	await expect(page.locator(".factory-day").first()).toHaveAttribute("aria-label", /\(UTC\)/);
+	await page.getByRole("radio", { name: "仓库提交", exact: true }).click();
+	await expect(page.locator(".factory-day")).toHaveCount(1);
 	const period = page.locator(".factory-period");
 	await period.getByRole("radio", { name: "1 天", exact: true }).click();
 	await expect(period.locator("dl > div").first().locator("strong")).toHaveText("2");
