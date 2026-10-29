@@ -1,7 +1,12 @@
 # UI 0.28.0 visual evidence
 
 Baseline: `b3ddaa573828aa080620cef17e396403b432bc58` (v0.27.2).
-Candidate runtime: `75fe0a525ae075865b4851d11ae83e03ccde0c55` (v0.28.0).
+Candidate runtime: `c42879f11d154239634ac9d677c33260a5a77039` (v0.28.0).
+Integration base: `89ce50509b3d22303672e4ecc58a584f4cdff9a0` (v0.27.3).
+
+The original before captures remain pinned to v0.27.2. The rebased candidate
+preserves the previously reviewed client and browser fixtures byte-for-byte;
+fresh integration gates exercise the v0.27.3 Worker with this UI.
 
 Chromium captures use the same fixed clock, saved API fixtures and localhost-only
 static SPA hosts. No production request or real credential is involved.
