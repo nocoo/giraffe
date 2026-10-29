@@ -512,20 +512,6 @@ const github = await listen(17046, (req, res) => {
 			sendJson(res, 200, []);
 			return;
 		}
-		if (url.pathname.endsWith("/releases")) {
-			sendJson(res, 200, [
-				{
-					id: 1,
-					tag_name: "v1.0.0",
-					name: "one",
-					html_url: "https://github.com/octocat/hello-world/releases/tag/v1.0.0",
-					draft: false,
-					prerelease: false,
-					published_at: "2026-08-01T00:00:00.000Z",
-				},
-			]);
-			return;
-		}
 		if (url.pathname.endsWith("/contributors")) {
 			sendJson(res, 200, [
 				{
