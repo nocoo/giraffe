@@ -17,6 +17,7 @@ import {
 	factoryGroups,
 	factoryParams,
 	factoryRange,
+	factoryRepoCommits,
 	factoryRepoCount,
 	factoryRepoPage,
 	factorySignalGroups,
@@ -29,6 +30,40 @@ import {
 } from "./factory";
 
 describe("software factory view model", () => {
+	it("keeps repository spark gaps, complete zeros and partial lower bounds distinct", () => {
+		const snapshot = ready();
+		const repo = snapshot.repos[0];
+		if (!repo) throw new Error("fixture");
+		repo.coverage.commits.status = "partial";
+		repo.coverage.commits.completeWindows = shanghaiCompleteDays(["2026-09-13"]);
+		repo.metrics.days = {
+			"2026-09-13": emptyDay(),
+			"2026-09-14": emptyDay(),
+			"2026-09-15": { ...emptyDay(), commits: 2 },
+		};
+		expect(
+			factoryRepoCommits(
+				repo,
+				["2026-09-12", "2026-09-13", "2026-09-14", "2026-09-15"],
+				snapshot.window,
+			),
+		).toEqual([null, 0, null, 2]);
+		repo.coverage.commits.status = "complete";
+		expect(factoryRepoCommits(repo, ["2026-09-12"], snapshot.window)).toEqual([null]);
+		delete repo.coverage.commits.completeWindows;
+		expect(factoryRepoCommits(repo, ["2026-09-13"], snapshot.window)).toEqual([0]);
+		repo.observation = {
+			version: "saved",
+			source: "run",
+			refreshedAt: snapshot.fetched_at,
+			window: shanghaiCompleteDays(["2026-09-13"])[0] ?? snapshot.window,
+		};
+		expect(factoryRepoCommits(repo, ["2026-09-13"], snapshot.window)).toEqual([0]);
+		repo.observation.collectionWindow = repo.observation.window;
+		expect(factoryRepoCommits(repo, ["2026-09-13"], snapshot.window)).toEqual([0]);
+		repo.coverage.commits.observation = { ...repo.observation, head: null };
+		expect(factoryRepoCommits(repo, ["2026-09-13"], snapshot.window)).toEqual([0]);
+	});
 	it.each([
 		["Asia/Shanghai", "2026-10-28", "2026-10-27T16:00:00Z", "2026-10-28T15:59:59.999Z"],
 		["America/New_York", "2026-03-08", "2026-03-08T05:00:00Z", "2026-03-09T03:59:59.999Z"],

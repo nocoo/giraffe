@@ -55,6 +55,7 @@ import {
 	factoryGroups,
 	factoryParams,
 	factoryRange,
+	factoryRepoCommits,
 	factoryRepoCount,
 	factoryRepoPage,
 	factorySignalGroups,
@@ -846,19 +847,11 @@ export function FactoryPage() {
 														<span className="text-basalt-primary">
 															{hasFactoryMeasurement(r, "commits") ? (
 																<FactorySpark
-																	values={board.days
-																		.filter(
-																			(d) =>
-																				!r.observation ||
-																				(d.date >= r.observation.window.since.slice(0, 10) &&
-																					d.date <= r.observation.window.until.slice(0, 10)),
-																		)
-																		.map((d) => {
-																			const count = r.metrics.days[d.date]?.commits ?? 0;
-																			return r.coverage.commits.status === "complete" || count
-																				? count
-																				: null;
-																		})}
+																	values={factoryRepoCommits(
+																		r,
+																		board.days.map((day) => day.date),
+																		snapshot.window,
+																	)}
 																	label={`${r.name} 每日提交`}
 																/>
 															) : (

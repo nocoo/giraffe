@@ -809,6 +809,25 @@ export function hasFactoryMeasurement(repo: FactoryRepo, stream: FactoryStreamNa
 	);
 }
 
+export function factoryRepoCommits(
+	repo: FactoryRepo,
+	dates: readonly string[],
+	fallbackWindow: FactoryWindow,
+): (number | null)[] {
+	const windowOf: StreamWindow = (source, stream) =>
+		source.coverage[stream].observation?.window ??
+		source.observation?.collectionWindow ??
+		source.observation?.window ??
+		fallbackWindow;
+	return dates.map((date) => {
+		const count = repo.metrics.days[date]?.commits;
+		if (count === undefined) return null;
+		if (count > 0) return count;
+		const start = Date.parse(`${date}T00:00:00.000Z`);
+		return coversWindow(repo, "commits", windowOf, start, start + DAY_MS) ? 0 : null;
+	});
+}
+
 export function formatObservedCount(value: number, complete: boolean): string {
 	return `${complete ? "" : "≥ "}${formatFactoryCount(value)}`;
 }

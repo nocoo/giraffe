@@ -49,7 +49,7 @@ for (const dayCount of [30, 90]) {
 			source: "run",
 		};
 		repo.coverage.commits.status = "partial";
-		repo.coverage.commits.completeWindows = [repo.observation.window];
+		repo.coverage.commits.completeWindows = [{ ...repo.observation.window, timezone: "UTC" }];
 		snapshot.window = savedFactoryWindow(snapshot.fetched_at, 30);
 		const fixtures: Record<string, unknown> = {
 			...createUiFixtures(),
@@ -68,6 +68,9 @@ for (const dayCount of [30, 90]) {
 		await expect(page.getByRole("heading", { name: "变化 · 最近 90 天" })).toBeVisible();
 		await expect(page.locator("button.factory-day")).toHaveCount(90);
 		await expect(page.getByText("提交尚未采集。", { exact: true })).toHaveCount(0);
+		await expect(
+			page.getByRole("group", { name: "octocat/hello-world 每日提交", exact: true }),
+		).toBeVisible();
 		await page.locator("#factory-change-title").getByLabel("More information").hover();
 		await expect(page.getByRole("tooltip")).not.toContainText("快速刷新");
 		await expect(page.getByRole("tooltip")).not.toContainText("深度刷新");

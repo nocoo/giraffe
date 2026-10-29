@@ -2403,3 +2403,12 @@ chart visibility predicate, which still hid all partial streams. Verify the
 rendered chart as well as its day values: a complete zero day remains visible
 inside an otherwise partial stream. Share the evidence predicate with table
 counts so partial observations do not disappear at another presentation boundary.
+
+The per-repository sparkline had its own overall-status shortcut too. Move its
+daily projection into the viewmodel and reuse the same day-window evidence;
+keep missing keys null even when the overall stream is complete. Browser checks
+must inspect the small repository chart as well as the main chart panels.
+
+Token recovery also needs response ordering: an older initial read can fail or
+return an empty list after a successful creation and reload. Invalidate that
+initial request when the newer list request starts, and test both late outcomes.
