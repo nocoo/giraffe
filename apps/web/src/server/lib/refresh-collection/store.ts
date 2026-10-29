@@ -9,7 +9,7 @@ import {
 	type SnapshotPage,
 	splitPages,
 } from "../snapshot-pages";
-import type { Catalog, DayObservation, Node } from "./model";
+import { type Catalog, type DayObservation, type Node, windowOf } from "./model";
 
 export const collectionDb = (context: CollectionContext) =>
 	createDb(context.env.DB, undefined, 600);
@@ -42,6 +42,33 @@ export async function snapshots(
 				.bind(account, page.kind, page.payload, fetchedAt, metadata),
 		),
 	];
+}
+export async function savedAccountPublication(
+	db: Db,
+	account: string,
+): Promise<FactorySnapshot | null> {
+	const row = await db
+		.prepare("SELECT payload FROM refresh_accounts WHERE account_id=?")
+		.bind(account)
+		.first<{ payload: string }>();
+	if (!row) return null;
+	try {
+		return JSON.parse(row.payload) as FactorySnapshot;
+	} catch {
+		return null;
+	}
+}
+export async function catalogRepository(
+	db: Db,
+	account: string,
+	name: string,
+): Promise<Catalog | null> {
+	return db
+		.prepare(
+			"SELECT * FROM refresh_catalog WHERE account_id=? AND repo=? COLLATE NOCASE AND active=1",
+		)
+		.bind(account, name)
+		.first<Catalog>();
 }
 export function dayStatements(
 	db: Db,
@@ -92,6 +119,7 @@ export async function publish(db: Db, context: CollectionContext) {
 	const repos = repositories.results.map((row) => JSON.parse(row.payload) as FactoryRepo);
 	const snapshot: FactorySnapshot = {
 		...account,
+		window: windowOf(context),
 		runId: context.run.id,
 		repos,
 		fetched_at: context.now,

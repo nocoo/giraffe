@@ -155,7 +155,9 @@ it("uses safe fallback codes for malformed error bodies and drops GraphQL diagno
 		}),
 	);
 	await gh.githubGraphql("fake", "query", {});
-	expect(gh.graphqlErrors).toEqual([{ type: "FORBIDDEN", reasonCode: "permission_denied" }]);
+	expect(gh.graphqlErrors).toEqual([
+		{ type: "FORBIDDEN", reasonCode: "permission_denied", path: [] },
+	]);
 	expect(githubUnavailability(new Error("private"))).toBeNull();
 	expect(githubUnavailability(new ApiError(502, "github_error", "private"))).toBeNull();
 	expect(githubUnavailability(new ApiError(404, "not_found", "private"))).toMatchObject({

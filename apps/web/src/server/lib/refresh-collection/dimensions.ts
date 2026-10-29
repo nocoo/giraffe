@@ -163,7 +163,7 @@ export async function collectRest(
 				body: (await response.json()) as unknown,
 				next: response.headers.get("link")?.includes('rel="next"') === true,
 			};
-		});
+		}, stream);
 	if (stream === "alerts") {
 		const results: Dimension[] = [];
 		const failed = (error: unknown): Dimension => {

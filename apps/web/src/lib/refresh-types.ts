@@ -23,7 +23,18 @@ export type RefreshRequestBreakdown = {
 	a: { graphql: number; rest: number };
 	b: { graphql: number; rest: number };
 };
-export type RefreshPartialReason = { repo: string | null; codes: string[] };
+export type RefreshFailureDetail = {
+	dimension: string | null;
+	code: string;
+	httpStatus: number | null;
+	graphqlType: string | null;
+	graphqlPath: string[] | null;
+};
+export type RefreshPartialReason = {
+	repo: string | null;
+	codes: string[];
+	failures?: RefreshFailureDetail[];
+};
 export type RefreshRun = {
 	id: string;
 	accountId: string;
@@ -37,6 +48,7 @@ export type RefreshRun = {
 	requestBreakdown: RefreshRequestBreakdown;
 	partialReasons: RefreshPartialReason[];
 	partial: boolean;
+	aReused?: boolean;
 	cancelRequested: boolean;
 	errorCode: string | null;
 	createdAt: string;
