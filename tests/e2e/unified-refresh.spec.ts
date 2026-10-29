@@ -199,13 +199,18 @@ test("real unified refresh reloads data, respects stars and supports an unstarre
 		.getByRole("group", { name: "仓库范围", exact: true })
 		.getByRole("radio", { name: "全部", exact: true })
 		.click();
-	await expect(page.getByRole("heading", { name: "变化 · 最近 1 天", exact: true })).toBeVisible();
+	await expect(page.getByRole("heading", { name: "变化 · 最近 90 天", exact: true })).toBeVisible();
 	await expect(page.getByRole("heading", { name: "账号贡献日历", exact: true })).toBeVisible();
 	await expect(page.getByRole("radio", { name: "账号贡献", exact: true })).toBeEnabled();
 	expect(await page.locator(".factory-day").count()).toBeGreaterThanOrEqual(365);
 	await expect(page.locator(".factory-day").first()).toHaveAttribute("aria-label", /\(UTC\)/);
 	await page.getByRole("radio", { name: "仓库提交", exact: true }).click();
-	await expect(page.locator(".factory-day")).toHaveCount(1);
+	await expect(page.locator(".factory-day")).toHaveCount(90);
+	await expect(page.locator(".factory-day").first()).toHaveAttribute("aria-label", /无观测/);
+	await expect(page.locator(".factory-day").last()).toHaveAttribute(
+		"aria-label",
+		new RegExp(yesterday),
+	);
 	const period = page.locator(".factory-period");
 	await period.getByRole("radio", { name: "1 天", exact: true }).click();
 	await expect(period.locator("dl > div").first().locator("strong")).toHaveText("2");
