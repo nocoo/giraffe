@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import type { ActivitySnapshot } from "../../apps/web/src/lib/activity-types";
 import type { RefreshRun } from "../../apps/web/src/lib/refresh-types";
+import { localD1Rows, quote } from "./local-d1";
 
 const base = process.env.GIRAFFE_E2E ?? "http://127.0.0.1:17045";
 const jwt = process.env.GIRAFFE_JWT ?? "";
@@ -228,6 +229,25 @@ it("runs real durable A then serial B, serves latest observations and reuses day
 		const allCached = await run(cacheWindow);
 		expect(allCached.aReused).toBe(true);
 		expect(allCached.requests).toBe(0);
+		for (const [stream, field] of [
+			["issues", "issues"],
+			["prs", "pull_requests"],
+		] as const) {
+			localD1Rows(`WITH RECURSIVE items(item) AS (
+				VALUES(1) UNION ALL SELECT item+1 FROM items WHERE item<8000
+			), pages(suffix) AS (VALUES(''),('#2'))
+			INSERT OR REPLACE INTO refresh_snapshots(account_id,kind,payload,fetched_at,content_meta)
+			SELECT ${quote(account.id)},${quote(`repo:phase2/demo:${stream}`)}||suffix,
+			json_object('repo_id','R_refresh_phase2','fetched_at',${quote(allCached.updatedAt)},'truncated',json('false'),
+			${quote(field)},json((SELECT json_group_array(json_object('id',suffix||item,'title',${quote("cached-title-".repeat(8))})) FROM items))),
+			${quote(allCached.updatedAt)},NULL FROM pages;`);
+		}
+		const largeCacheStarted = performance.now();
+		const largeCache = await run(cacheWindow);
+		expect(largeCache.aReused).toBe(true);
+		expect(largeCache.requests).toBe(0);
+		expect(largeCache.completedRepos).toBe(1);
+		expect(performance.now() - largeCacheStarted).toBeLessThan(5_000);
 		expect(allCached.requestBreakdown).toEqual({
 			total: 0,
 			graphql: 0,
@@ -292,7 +312,7 @@ it("runs real durable A then serial B, serves latest observations and reuses day
 		expect((await machine(`refresh-runs/${cancelled.id}/cancel`)).status).toBe(405);
 		expect((await machine("repos/phase2/demo/details")).status).toBe(200);
 		const list = (await (await machine("refresh-runs")).json()) as { items: RefreshRun[] };
-		expect(list.items).toHaveLength(9);
+		expect(list.items).toHaveLength(10);
 		expect((await machine(`refresh-runs/${first.id}`, "DELETE")).status).toBe(405);
 	} finally {
 		await browser(`accounts/${account.id}`, "DELETE");

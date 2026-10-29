@@ -20,7 +20,7 @@ async function refreshResponse<Variables extends AppVars>(
 	if (cancelling) {
 		if (c.req.method !== "POST")
 			throw new ApiError(405, "method_not_allowed", "method not allowed");
-		const run = await cancelRefresh(c.env, account, id);
+		const run = await cancelRefresh(c.env, account, id, (work) => c.executionCtx.waitUntil(work));
 		return c.json(run, terminalRefreshStatus(run.status) ? 200 : 202);
 	}
 	if (c.req.method !== "GET" && (c.req.method !== "POST" || id))

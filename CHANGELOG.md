@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.27.5 - 2026-10-29
+
+### Fixed
+
+- Replace quadratic saved-snapshot pagination with linear UTF-8 byte accounting,
+  preserving two-page capacity, exact multibyte boundaries and truncation metadata.
+  Cover same-wake, zero-request A/B reuse with large cached inboxes over local HTTP.
+- Persist cancellation in D1 before notifying the Durable Object. Failed or hung
+  notifications no longer block the response; stale writes cannot clear intent.
+  Five-second backoff heartbeats observe cancellation without retrying upstream early.
+- Bound repeated runtime interruptions of an uncommitted step. Preserve exhausted
+  recovery decisions across failed saves and distinguish committed attempts from
+  failed marker cleanup instead of replaying the same work indefinitely.
+
 ## v0.27.4 - 2026-10-29
 
 ### Fixed

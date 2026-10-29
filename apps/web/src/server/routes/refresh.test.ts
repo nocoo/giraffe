@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import type { Env } from "../env";
 import { createApp } from "../index";
@@ -74,9 +74,51 @@ async function fixture(
 				...(body === undefined ? {} : { body: JSON.stringify(body) }),
 			},
 			env,
+			{
+				waitUntil: (work: Promise<unknown>) => {
+					background.push(work);
+				},
+				passThroughOnException() {},
+				props: {},
+			},
 		);
-	return { call, raw, env, accountId, token };
+	const background: Promise<unknown>[] = [];
+	return { call, raw, env, accountId, token, background };
 }
+
+it.each(["reset", "stalled"])(
+	"persists browser and machine cancellation without waiting for a %s durable object",
+	async (failure) => {
+		const wake = vi.fn(() =>
+			failure === "reset"
+				? Promise.reject(new Error("Durable Object exceeded its CPU time limit and was reset."))
+				: new Promise<Response>(() => {}),
+		);
+		for (const machine of [false, true]) {
+			const { call, raw, env, accountId, background } = await fixture();
+			const run = await createRefreshRun(
+				createDb(raw),
+				accountId,
+				parseRefreshParams({}),
+				"manual",
+				new Date().toISOString(),
+			);
+			await saveRefreshRun(createDb(raw), { ...run, status: "running", phase: "repos" });
+			env.REFRESH_RUNNER = {
+				getByName: () => ({ fetch: wake }),
+			} as unknown as DurableObjectNamespace;
+			const response = await call(`refresh-runs/${run.id}/cancel`, "POST", undefined, machine);
+			expect(response.status).toBe(202);
+			expect(await response.json()).toMatchObject({ status: "running", cancelRequested: true });
+			expect(await getRefreshRun(createDb(raw), accountId, run.id)).toMatchObject({
+				cancelRequested: true,
+			});
+			expect(background).toHaveLength(1);
+			if (failure === "reset") await Promise.all(background);
+		}
+		expect(wake).toHaveBeenCalledTimes(2);
+	},
+);
 it("starts and reads the same unified run through browser and scoped machine APIs", async () => {
 	const { call } = await fixture();
 	expect((await call("refresh-runs/latest")).status).toBe(409);

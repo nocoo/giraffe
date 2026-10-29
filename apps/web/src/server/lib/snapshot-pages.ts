@@ -68,21 +68,39 @@ function pageJson(
 	return JSON.stringify(securitySnapshot({ ...base, [key]: items, truncated }));
 }
 
-function fitsPage(
-	base: Record<string, unknown>,
-	key: string,
-	items: unknown[],
-	next: unknown,
-	truncated: boolean,
-): boolean {
-	return utf8Len(pageJson(base, key, [...items, next], truncated)) <= MAX;
-}
-
 function compactPage(logical: string, payload: Record<string, unknown>): SnapshotPage {
 	const compact = JSON.stringify(emptySnapshot(logical, String(payload.fetched_at ?? "")));
 	if (utf8Len(compact) > MAX)
 		throw new ApiError(422, "snapshot_capacity", "snapshot metadata exceeds page capacity");
 	return { kind: logical, payload: compact };
+}
+
+function packItems(items: unknown[], sizes: number[], baseBytes: number) {
+	const pageItems: unknown[][] = [[], []];
+	const pageBytes = [baseBytes, baseBytes];
+	let page = 0;
+	let capacityExceeded = false;
+	for (const [index, item] of items.entries()) {
+		const itemBytes = sizes[index] as number;
+		if (baseBytes + itemBytes > MAX) {
+			capacityExceeded = true;
+			continue;
+		}
+		const slot = pageItems[page] as unknown[];
+		const nextBytes = (pageBytes[page] as number) + itemBytes + (slot.length ? 1 : 0);
+		if (nextBytes <= MAX) {
+			slot.push(item);
+			pageBytes[page] = nextBytes;
+		} else if (page === 0) {
+			page = 1;
+			(pageItems[1] as unknown[]).push(item);
+			pageBytes[1] = baseBytes + itemBytes;
+		} else {
+			capacityExceeded = true;
+			break;
+		}
+	}
+	return { pageItems, capacityExceeded };
 }
 
 export function splitPages(
@@ -112,31 +130,15 @@ export function splitPages(
 	}
 	const items = payload[key] as unknown[];
 	let truncated = payload.truncated === true;
-	let capacityExceeded = false;
-	const pageItems: unknown[][] = [[], []];
-	let page = 0;
-	for (const item of items) {
-		if (!fitsPage(payload, key, [], item, truncated)) {
-			truncated = true;
-			capacityExceeded = true;
-			continue;
-		}
-		const slot = pageItems[page] as unknown[];
-		if (fitsPage(payload, key, slot, item, truncated)) {
-			slot.push(item);
-			continue;
-		}
-		if (page === 0) {
-			page = 1;
-			const second = pageItems[1] as unknown[];
-			if (fitsPage(payload, key, second, item, truncated)) {
-				second.push(item);
-				continue;
-			}
-		}
+	const sizes = items.map((item) => utf8Len(JSON.stringify([item])) - 2);
+	let { pageItems, capacityExceeded } = packItems(
+		items,
+		sizes,
+		utf8Len(pageJson(payload, key, [], truncated)),
+	);
+	if (capacityExceeded && !truncated) {
 		truncated = true;
-		capacityExceeded = true;
-		break;
+		pageItems = packItems(items, sizes, utf8Len(pageJson(payload, key, [], true))).pageItems;
 	}
 	const pages: SnapshotPage[] = [];
 	for (let i = 0; i < pageItems.length; i += 1) {

@@ -1,4 +1,4 @@
-# Phase 2: unified refresh (v0.27.4)
+# Phase 2: unified refresh (v0.27.5)
 
 This is the authorized replacement for the collection stack retired in v0.26.0.
 There is one task type, not quick/deep/full modes. The Dashboard keeps its saved
@@ -24,11 +24,23 @@ start, the runner records a recovery alarm five seconds ahead, not five minutes.
 Healthy steps continue in the same handler; step-cap yields leave an alarm
 due immediately. These bounds describe requested scheduling delays, not a
 Cloudflare alarm-delivery SLA. A crash may replay the interrupted step; rate-limit
-and transient retry deadlines still take precedence once the failure is recorded.
+and transient retry deadlines still prevent collection before their recorded time.
+Backoff alarms check D1 cancellation at most five seconds apart without issuing
+upstream requests; this also handles cancellation committed after settlement's
+last D1 operation when the best-effort notification is lost.
+
+A durable execution marker identifies the run, phase, repository cursor and
+settled attempt count. Three interruptions of the same uncommitted attempt stop
+replaying collection: A fails, or B advances with `refresh_interrupted` partial
+evidence. The exhaustion decision survives failed D1 settlement. A committed
+attempt is not counted again when marker cleanup fails, and cancellation wins
+over interruption exhaustion. Request totals include only settled evidence;
+requests issued by a killed attempt cannot be reconstructed or claimed as zero.
 
 Successful settlement and the next step's start share one D1 write. The runner
-carries that persisted cursor directly into the next step rather than querying
-the active run twice and setting an immediate alarm between healthy steps. The
+carries that persisted cursor directly into the next step without setting an
+immediate alarm between healthy steps. Each continuation reads current D1 intent
+before collecting so an out-of-object cancellation cannot be missed. The
 five-second recovery alarm is rearmed before this transition write. A failed
 transition can replay the previous step; retry exhaustion and cancellation keep
 their durable recovery paths and the terminal-state/write-revision fences.
@@ -307,7 +319,13 @@ Existing `PUT|DELETE /accounts/:account/stars/:owner/:name` and browser
 factory-stream and contribution GET endpoints retain their response formats and
 read only newly saved data. Tokens/PATs never enter run payloads, URLs or logs.
 
-Cancel accepts no parameters. It records durable intent, stops after the current
+Cancel accepts no parameters. The ordinary Worker first atomically records intent
+in D1; a best-effort `waitUntil` notification wakes the Durable Object without
+blocking the response. A busy, failed or reset object cannot prevent the D1 write
+or turn a successful cancellation request into a 500. Alarm entry, continuation
+and settlement read D1 intent. Stale writes preserve cancellation, and intent
+committed before a terminal settlement takes precedence over that settlement.
+It stops after the current
 A step or repository finishes, and preserves all already-written observations.
 Queued runs cancel without collecting. Pending cancellation returns the run with
 `cancelRequested: true` and HTTP 202; immediate cancellation and already-terminal
@@ -373,7 +391,7 @@ production or local-network RTTs. Alarms were delivered at `max(now, alarmAt)`.
 
 Two benchmark passes produced identical counts. v0.27.2 finished partial because
 it classified the 404s as failures; the later sources finished completed.
-The current regression additionally measures collector entry/exit independently:
+The v0.27.4 regression additionally measures collector entry/exit independently:
 the synthetic force A-to-B collector gap is 9 s (three 3 s D1 calls), not the
 zero delta between fused durable timestamps. Injecting an extra 40 s settlement
 delay fails its end-to-end bound (100.6 s versus the 61 s limit).
@@ -385,6 +403,33 @@ not force then non-force: both baseline and current local probes already reuse
 the resulting unavailable day with zero HTTP requests. The reproducible cache
 defect is the misleading coverage projection; the cause of those production
 two REST requests is not proven by the available trace.
+
+### v0.27.5 idle and cancellation regression
+
+Saved-snapshot pagination previously encoded each growing page prefix. A 6,000-item
+fixture encoded 3,778,416,870 bytes for roughly 1.95 MB of input. The replacement
+accounts for each item's UTF-8 bytes once per packing pass, including commas and
+the final truncation metadata. Its deterministic regression bounds encoded bytes
+linearly and retains the exact two-page and multibyte boundary checks. This proves
+a CPU amplification defect, not the unique cause of the supplied production stall;
+no production CPU trace or request was collected.
+
+The real-local HTTP regression seeds 16,000 cached issues and 16,000 cached pull
+requests, then reuses A and all B observations with zero upstream requests. On
+implementation `93027d7`, the development-auth and signed-JWT lanes completed in
+265 ms and 266 ms wall time respectively (including a 250 ms polling interval),
+with 105 ms durable run duration and 97 ms B duration in each. These local stub
+measurements show prompt same-wake completion, not a production latency guarantee.
+
+Cancellation tests cover hung/reset DO notifications, D1-only recovery after a
+reset, in-flight settlement, and cancellation racing with a rate-limit deadline.
+Heartbeat alarms target at most five seconds without collecting before the saved
+retry deadline; platform delivery latency is not bounded by the application.
+Runtime-interruption tests prove that three interrupted attempts cannot trigger a
+fourth collection of the same step. Local workerd does not enforce production CPU
+limits, so those resets are simulated. The synthetic D1 latency budget now allows
+one additional cancellation read: 21 calls / 64 s for force and 18 calls / 55 s
+for cached work, with a 12 s collector-entry gap under injected 3 s D1 latency.
 
 `0028_refresh_observations.sql` adds `refresh_catalog`, `refresh_accounts`,
 `refresh_day_observations`, `refresh_items`, `refresh_repository_publications`,

@@ -26,6 +26,7 @@ import {
 	terminalRefreshStatus,
 } from "./lib/refresh-store";
 import { decryptToken, parseKeyBytes } from "./lib/token-crypto";
+import { requestCancellation } from "./refresh-cancel";
 
 const startSchema = z
 	.object({
@@ -58,6 +59,7 @@ const fatalCodes = [
 ];
 const RETRY_LIMIT = 3;
 const MAX_STEPS_PER_ALARM = 30;
+const MAX_INTERRUPTED_ATTEMPTS = 3;
 const RECOVERY_MS = 5_000;
 const RETRY_DELAYS = [2_000, 5_000, 15_000];
 const SHANGHAI_OFFSET_MS = 8 * 3_600_000;
@@ -71,6 +73,11 @@ type Retry = {
 	notBefore: number;
 	detail?: RefreshFailureDetail;
 	exhausted?: { counted: RequestCounts; detail: RefreshFailureDetail; at: string };
+};
+type ExecutionAttempt = { key: string; interruptions: number; failedAt?: string };
+const executionKey = (run: RefreshRun) => {
+	const timing = run.phase === "account" ? run.timings?.a : run.timings?.repos[run.completedRepos];
+	return `${run.id}:${run.phase}:${run.completedRepos}:${timing?.attempts ?? 0}`;
 };
 type StepOutcome =
 	| { ok: true; phase: "account"; result: AccountCollectionResult }
@@ -169,9 +176,22 @@ export async function startRefresh(
 	return response.json() as Promise<RefreshRun>;
 }
 
-export async function cancelRefresh(env: Env, accountId: string, id: string): Promise<RefreshRun> {
-	const response = await dispatch(env, accountId, "/cancel", { accountId, id });
-	return response.json() as Promise<RefreshRun>;
+export async function cancelRefresh(
+	env: Env,
+	accountId: string,
+	id: string,
+	waitUntil: (work: Promise<unknown>) => void,
+): Promise<RefreshRun> {
+	const run = await requestCancellation({
+		db: createDb(env.DB),
+		accountId,
+		id,
+		at: new Date().toISOString(),
+		waitUntil,
+		wake: () => dispatch(env, accountId, "/cancel", { accountId, id }),
+	});
+	if (!run) throw new ApiError(404, "not_found", "refresh run missing");
+	return run;
 }
 
 async function dispatch(
@@ -285,16 +305,18 @@ export class RefreshRunner implements DurableObject {
 			const step: { accountId: string; run: RefreshRun } | null =
 				await this.state.blockConcurrencyWhile(async () => {
 					const accountId = await this.state.storage.get<string>("accountId");
-					const active =
-						continuation?.run ?? (accountId ? await activeRefreshRun(db, accountId) : null);
+					const active = accountId ? await activeRefreshRun(db, accountId) : null;
 					if (!accountId || !active) {
 						await this.state.storage.delete("retry");
+						await this.state.storage.delete("executing");
 						await this.state.storage.deleteAlarm();
 						return null;
 					}
 					const at = new Date().toISOString();
 					const retry = await this.state.storage.get<Retry>("retry");
-					const cancelling = !!(await this.state.storage.get<boolean>(cancelKey(active.id)));
+					const cancelling =
+						active.cancelRequested ||
+						!!(await this.state.storage.get<boolean>(cancelKey(active.id)));
 					const sameStep = retry?.key === `${active.id}:${active.phase}:${active.completedRepos}`;
 					if (cancelling || (sameStep && retry.exhausted))
 						await this.state.storage.setAlarm(Date.now() + RECOVERY_MS);
@@ -318,10 +340,34 @@ export class RefreshRunner implements DurableObject {
 						return null;
 					}
 					if (sameStep && retry.notBefore > Date.now()) {
-						await this.state.storage.setAlarm(retry.notBefore);
+						await this.state.storage.setAlarm(Math.min(retry.notBefore, Date.now() + RECOVERY_MS));
 						return null;
 					}
-					if (continuation) return continuation;
+					const previous = await this.state.storage.get<ExecutionAttempt>("executing");
+					const key = executionKey(active);
+					const interruptions = previous?.key === key ? previous.interruptions + 1 : 0;
+					const failedAt =
+						interruptions >= MAX_INTERRUPTED_ATTEMPTS ? (previous?.failedAt ?? at) : undefined;
+					await this.state.storage.put("executing", {
+						key,
+						interruptions,
+						...(failedAt ? { failedAt } : {}),
+					});
+					if (failedAt) {
+						await this.state.storage.setAlarm(Date.now() + RECOVERY_MS);
+						let resolved = failedStep(
+							active,
+							{ graphql: 0, rest: 0 },
+							failureDetail("refresh_interrupted", null),
+							failedAt,
+							false,
+						);
+						if (!terminal(resolved) && resolved.completedRepos >= resolved.repos.length)
+							resolved = finish(resolved, failedAt);
+						await this.persist(db, accountId, resolved);
+						return null;
+					}
+					if (continuation?.run.id === active.id) return { accountId, run: active };
 					const run = startRefreshStep(
 						{ ...active, status: "running" as const, updatedAt: at },
 						at,
@@ -387,7 +433,9 @@ export class RefreshRunner implements DurableObject {
 		canContinue: boolean,
 	): Promise<{ accountId: string; run: RefreshRun } | null> {
 		const at = new Date().toISOString();
-		const cancellationRequested = await this.state.storage.get<boolean>(cancelKey(step.run.id));
+		const stored = await getRefreshRun(db, step.accountId, step.run.id);
+		const cancellationRequested =
+			stored?.cancelRequested || (await this.state.storage.get<boolean>(cancelKey(step.run.id)));
 		const accountPhase = step.run.phase === "account";
 		const repo = accountPhase ? null : (step.run.repos[step.run.completedRepos] ?? null);
 		let run: RefreshRun = { ...step.run, updatedAt: at };
@@ -471,7 +519,6 @@ export class RefreshRunner implements DurableObject {
 			retryAt = null;
 		} else if (retryAt === null && !terminal(run) && run.completedRepos >= run.repos.length)
 			run = finish(run, at);
-		const stored = await getRefreshRun(db, step.accountId, run.id);
 		if (stored && terminal(stored))
 			run = {
 				...run,
@@ -508,11 +555,15 @@ export class RefreshRunner implements DurableObject {
 		retryAt: number | null = null,
 		continuing = false,
 	): Promise<void> {
-		await saveRefreshRun(db, run);
-		if (retryAt === null) await this.state.storage.delete("retry");
-		if (terminal(run)) await this.state.storage.delete(cancelKey(run.id));
-		if (retryAt !== null) await this.state.storage.setAlarm(retryAt);
-		else if (!continuing) await this.wake(db, accountId);
+		const saved = await saveRefreshRun(db, run);
+		await this.state.storage.delete("executing");
+		if (!saved) return this.wake(db, accountId);
+		if (retryAt === null || terminal(saved)) await this.state.storage.delete("retry");
+		if (terminal(saved)) await this.state.storage.delete(cancelKey(saved.id));
+		if (saved.cancelRequested && !terminal(saved)) await this.state.storage.setAlarm(Date.now());
+		else if (retryAt !== null)
+			await this.state.storage.setAlarm(Math.min(retryAt, Date.now() + RECOVERY_MS));
+		else if (!continuing || terminal(saved)) await this.wake(db, accountId);
 	}
 	private async wake(db: Db, accountId: string, urgent = true): Promise<void> {
 		if (!(await activeRefreshRun(db, accountId))) {
