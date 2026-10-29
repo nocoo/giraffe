@@ -1,4 +1,4 @@
-# Phase 2: unified refresh (v0.28.1)
+# Phase 2: unified refresh (v0.28.3)
 
 This is the authorized replacement for the collection stack retired in v0.26.0.
 There is one task type, not quick/deep/full modes. The Dashboard keeps its saved
