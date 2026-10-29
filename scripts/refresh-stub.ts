@@ -1,3 +1,5 @@
+import { contributionDates } from "../apps/web/src/server/lib/factory-contributions";
+
 export function refreshGraphqlStub(
 	query: string,
 	variables: Record<string, unknown>,
@@ -47,15 +49,10 @@ export function refreshGraphqlStub(
 				]
 			: [];
 	if (query.includes("query RefreshAccount")) {
-		const since = Date.parse(String(variables.since));
-		const until = Date.parse(String(variables.until));
-		const days = Array.from(
-			{ length: Math.max(1, Math.ceil((until - since) / 86_400_000)) },
-			(_, index) => ({
-				date: new Date(since + index * 86_400_000 + 8 * 3_600_000).toISOString().slice(0, 10),
-				contributionCount: 2,
-			}),
-		);
+		const days = contributionDates(
+			String(variables.since).slice(0, 10),
+			String(variables.until).slice(0, 10),
+		).map((date) => ({ date, contributionCount: 2 }));
 		return {
 			data: {
 				viewer: {

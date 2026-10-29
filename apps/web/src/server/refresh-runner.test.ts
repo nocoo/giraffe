@@ -1,10 +1,12 @@
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { annualContributionCalendar } from "../../../../tests/fixtures/contribution-calendar";
 import { sqliteFixture } from "../../../../tests/fixtures/sqlite";
 import type { Env } from "./env";
 import { createDb } from "./lib/db/d1";
 import { ApiError } from "./lib/errors";
 import { transport } from "./lib/refresh-collection/transport";
+import * as refreshStore from "./lib/refresh-store";
 import { getRefreshRun, saveRefreshRun } from "./lib/refresh-store";
 import { encryptToken, parseKeyBytes } from "./lib/token-crypto";
 import { cancelRefresh, RefreshRunner, scheduleRefresh, startRefresh } from "./refresh-runner";
@@ -830,13 +832,24 @@ it("cuts a legacy active run over with the real 0030 migration and lets a real a
 	expect((await startRefresh(fixture.env, "account", {})).status).toBe("queued");
 });
 
-const storedAccount = (fetchedAt: string, status = "complete") => ({
-	schema: 1,
-	account_id: "account",
-	owner: "octo",
-	status,
-	fetched_at: fetchedAt,
-});
+const storedAccount = (fetchedAt: string, status = "complete") => {
+	const { window, calendar } = annualContributionCalendar(fetchedAt);
+	return {
+		schema: 1,
+		account_id: "account",
+		owner: "octo",
+		status,
+		fetched_at: fetchedAt,
+		contributionStatus: "complete",
+		contribution: {
+			days: calendar.weeks.flatMap((week) =>
+				week.contributionDays.map((day) => ({ date: day.date, count: day.contributionCount })),
+			),
+			total: calendar.totalContributions,
+		},
+		contributionObservation: { window, fetchedAt },
+	};
+};
 async function withSavedA(
 	fixture: Awaited<ReturnType<typeof setup>>,
 	fetchedAt: string,
@@ -860,6 +873,58 @@ describe("same-Shanghai-day account reuse", () => {
 		vi.useFakeTimers({ now: new Date("2026-10-29T04:00:00.000Z"), toFake: ["Date"] }),
 	);
 	afterEach(() => vi.useRealTimers());
+
+	it("chains reused A directly into zero-request B without delivering the recovery alarm", async () => {
+		const fixture = await setup();
+		await withSavedA(fixture, "2026-10-29T02:00:00.000Z");
+		collectors.collectRepository.mockResolvedValue(collected(0, 0, 0));
+		const run = await startRefresh(fixture.env, "account", { repo: "octo/one" });
+		const started = Date.now();
+		await fixture.runner.alarm();
+		expect(Date.now()).toBe(started);
+		expect(collectors.collectAccount).not.toHaveBeenCalled();
+		expect(collectors.collectRepository).toHaveBeenCalledOnce();
+		const saved = await getRefreshRun(fixture.db(), "account", run.id);
+		expect(saved).toMatchObject({ status: "completed", requests: 0, aReused: true });
+		expect(saved?.timings?.repos[0]?.startedAt).toBe(saved?.timings?.a?.finishedAt);
+		expect(fixture.alarmAt()).toBeNull();
+	});
+
+	it("recovers an interrupted first B start without a five-minute zero-request idle", async () => {
+		const fixture = await setup();
+		await withSavedA(fixture, "2026-10-29T02:00:00.000Z");
+		collectors.collectRepository.mockResolvedValue(collected(0, 0, 0));
+		const run = await startRefresh(fixture.env, "account", { repo: "octo/one" });
+		const original = refreshStore.saveRefreshRun;
+		let interrupted = false;
+		const save = vi.spyOn(refreshStore, "saveRefreshRun").mockImplementation(async (db, next) => {
+			if (!interrupted && next.phase === "repos" && next.timings?.repos.length === 1) {
+				interrupted = true;
+				throw new Error("B start persistence interrupted");
+			}
+			await original(db, next);
+		});
+		try {
+			await expect(fixture.runner.alarm()).rejects.toThrow("B start persistence interrupted");
+			expect(collectors.collectRepository).not.toHaveBeenCalled();
+			expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
+				status: "running",
+				phase: "repos",
+				requests: 0,
+				aReused: true,
+				timings: { repos: [] },
+			});
+			expect(fixture.alarmAt()).toBe(Date.now() + 5_000);
+			await deliverNextAlarm(fixture);
+			expect(collectors.collectRepository).toHaveBeenCalledOnce();
+			expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
+				status: "completed",
+				requests: 0,
+			});
+		} finally {
+			save.mockRestore();
+		}
+	});
 
 	it("reuses a same-day successful A for an adhoc repository without renewing its evidence", async () => {
 		const fixture = await setup();
@@ -886,6 +951,35 @@ describe("same-Shanghai-day account reuse", () => {
 			.prepare("SELECT fetched_at FROM refresh_accounts WHERE account_id='account'")
 			.first<{ fetched_at: string }>();
 		expect(account?.fetched_at).toBe("2026-10-29T02:00:00.000Z");
+	});
+
+	it("recollects a declared-complete historical A containing only two calendar days", async () => {
+		const fixture = await setup();
+		const fetchedAt = "2026-10-29T02:00:00.000Z";
+		await withSavedA(fixture, fetchedAt);
+		const historical = {
+			...storedAccount(fetchedAt),
+			contributionStatus: "complete",
+			contribution: {
+				days: [
+					{ date: "2026-10-27", count: 1 },
+					{ date: "2026-10-28", count: 1 },
+				],
+				total: 2,
+			},
+			contributionObservation: {
+				window: { since: "2026-10-27T00:00:00.000Z", until: "2026-10-29T00:00:00.000Z" },
+				fetchedAt,
+			},
+		};
+		await fixture.raw
+			.prepare("UPDATE refresh_accounts SET payload=? WHERE account_id='account'")
+			.bind(JSON.stringify(historical))
+			.run();
+		const run = await startRefresh(fixture.env, "account", { repo: "octo/one" });
+		await fixture.runner.alarm();
+		expect(collectors.collectAccount).toHaveBeenCalledOnce();
+		expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({ aReused: false });
 	});
 
 	it.each<[string, Record<string, unknown>, string, string?]>([

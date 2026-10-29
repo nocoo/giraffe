@@ -2265,3 +2265,12 @@ alerts from an available feature. Converting that null count to zero during cach
 reuse hid known alerts in the factory signal. Cached metrics now count the saved
 observed items. Tests must include a nonempty available feature paired with an
 unavailable feature, not only available-zero fixtures.
+
+The v0.27.2 acceptance then showed that a same-day A marked complete could still
+contain only two calendar dates from an older collector. A status flag did not
+prove the current annual-calendar contract. Reuse and new collection now share
+an evidence validator for the original annual window and contiguous date counts;
+the old two-day payload is a runner regression. Fixtures now contain a complete
+calendar unless missingness is the behavior under test. The B-phase zero-request
+stall report also adds explicit same-handler chaining and interrupted-first-B
+persistence tests; it does not establish why the production handler stopped.

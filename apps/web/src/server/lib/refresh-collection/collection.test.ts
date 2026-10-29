@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { annualContributionCalendar } from "../../../../../../tests/fixtures/contribution-calendar";
 import { sqliteFixture } from "../../../../../../tests/fixtures/sqlite";
 import { createDb } from "../db/d1";
 import { ApiError } from "../errors";
@@ -9,8 +10,8 @@ import {
 	readMachineAccountObservation,
 	readMachineRepositoryObservation,
 } from "../machine-observations";
+import { contributionWindow } from "../refresh-calendar";
 import type { CollectionContext } from "../refresh-collection-contract";
-import { contributionWindow } from "./account";
 import { collectAccount, collectRepository } from "./index";
 import { blankMetrics, count, event, factoryRepo, nodes, object, text, windowOf } from "./model";
 import { collectionDb, publish } from "./store";
@@ -63,7 +64,7 @@ const release = (id: string, published: string | null, created = published) => (
 	createdAt: created,
 	updatedAt: published,
 });
-const accountPage = (nodes = [repo()], more = false, cursor: string | null = null) => ({
+const accountPage = (nodes = [repo()], more = false, cursor: string | null = null, at = now) => ({
 	viewer: {
 		login: "owner",
 		avatarUrl: "avatar",
@@ -74,10 +75,7 @@ const accountPage = (nodes = [repo()], more = false, cursor: string | null = nul
 		},
 		contributionsCollection: {
 			restrictedContributionsCount: 0,
-			contributionCalendar: {
-				totalContributions: 2,
-				weeks: [{ contributionDays: [{ date: "2026-10-28", contributionCount: 2 }] }],
-			},
+			contributionCalendar: annualContributionCalendar(at, 2).calendar,
 		},
 	},
 	rateLimit: { remaining: 4999, resetAt: "2026-10-29T05:00:00Z" },
@@ -178,7 +176,11 @@ async function sourceSnapshot(context: CollectionContext, kind: string) {
 describe("unified refresh collection", () => {
 	it("discovers once, never auto-stars, and skips unstarred repositories the next day", async () => {
 		const context = await fixture();
-		upstream([accountPage(), accountPage(), accountPage()]);
+		upstream([
+			accountPage(),
+			accountPage(),
+			accountPage([repo()], false, null, "2026-10-30T04:00:00.000Z"),
+		]);
 		expect(await collectAccount(context)).toEqual({
 			requests: 1,
 			requestBreakdown: { graphql: 1, rest: 0 },
@@ -1111,6 +1113,48 @@ describe("unified refresh collection", () => {
 			rate: null,
 		});
 	});
+	it.each([
+		[
+			"a two-day window-only calendar",
+			{
+				totalContributions: 2,
+				weeks: [
+					{
+						contributionDays: [
+							{ date: "2026-10-27", contributionCount: 1 },
+							{ date: "2026-10-28", contributionCount: 1 },
+						],
+					},
+				],
+			},
+		],
+		[
+			"a calendar with an interior hole",
+			{
+				totalContributions: 365,
+				weeks: [
+					{
+						contributionDays: annualContributionCalendar(
+							now,
+						).calendar.weeks[0]?.contributionDays.filter((_, index) => index !== 180),
+					},
+				],
+			},
+		],
+	])("does not publish %s as complete or reusable", async (_name, calendar) => {
+		const context = await fixture();
+		const page = accountPage();
+		page.viewer.contributionsCollection.contributionCalendar = calendar as never;
+		upstream([page]);
+		const result = await collectAccount(context);
+		expect(result.partial).toBe(true);
+		expect(result.reasons).toContain("contributions:unavailable");
+		expect(await publication(context)).toMatchObject({
+			status: "partial",
+			contribution: null,
+			contributionStatus: "unavailable",
+		});
+	});
 	it("fetches the contribution calendar over a fixed one-year window independent of the refresh window", async () => {
 		const context = await fixture();
 		const fetch = upstream();
@@ -1130,15 +1174,9 @@ describe("unified refresh collection", () => {
 			since: "2025-10-29T04:00:00.000Z",
 			until: now,
 		});
-		expect(saved.contribution.days).toEqual([
-			{
-				date: "2026-10-28",
-				count: 2,
-				fetchedAt: now,
-				observedAt: now,
-				breakdown: "unavailable",
-			},
-		]);
+		expect(saved.contribution.days).toHaveLength(366);
+		expect(saved.contribution.days[0]).toMatchObject({ date: "2025-10-29", count: 2 });
+		expect(saved.contribution.days.at(-1)).toMatchObject({ date: "2026-10-29", count: 2 });
 	});
 	it("derives the one-year contribution window across leap days", () => {
 		expect(contributionWindow("2026-10-29T04:00:00.000Z")).toEqual({

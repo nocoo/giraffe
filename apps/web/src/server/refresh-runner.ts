@@ -4,6 +4,7 @@ import { type Env, encryptionKey } from "./env";
 import { getAccount } from "./lib/db/accounts";
 import { createDb, type Db } from "./lib/db/d1";
 import { ApiError, jsonError } from "./lib/errors";
+import { savedAnnualCalendarCoverage } from "./lib/refresh-calendar";
 import { collectAccount, collectRepository } from "./lib/refresh-collection";
 import { catalogRepository, savedAccountPublication } from "./lib/refresh-collection/store";
 import { transportFailure } from "./lib/refresh-collection/transport";
@@ -99,7 +100,7 @@ async function reusableAccountA(db: Db, run: RefreshRun): Promise<AccountCollect
 	const name = run.params.repo;
 	if (!name || run.params.force) return null;
 	const saved = await savedAccountPublication(db, run.accountId);
-	if (saved === null || saved.status !== "complete" || typeof saved.fetched_at !== "string")
+	if (saved === null || saved.status !== "complete" || !savedAnnualCalendarCoverage(saved).complete)
 		return null;
 	if (shanghaiDate(saved.fetched_at) !== shanghaiDate(run.updatedAt)) return null;
 	const entry = await catalogRepository(db, run.accountId, name);

@@ -141,6 +141,15 @@ can explicitly rediscover it. No historical observation migration is involved.
 The new publication uses the current request's repository window, not the reused
 A's old window; saved calendar provenance remains unchanged.
 
+Reuse also verifies the saved calendar evidence, not only its status flag. The
+claimed source window must match the preceding calendar year derived from A's
+own fetch timestamp, and every inclusive UTC date must be present once, in
+contiguous order, with finite non-negative counts. Short historical calendars,
+missing dates and malformed evidence require a fresh A. New incomplete calendar
+responses are unavailable/partial and cannot become reusable complete A records.
+This rejects pre-v0.27.2 window-only calendars without migrating or backfilling
+their evidence.
+
 ## Request budget and partial reasons
 
 The following counts are actual HTTP requests with empty caches, all six

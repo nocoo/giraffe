@@ -1,4 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
+import { annualContributionCalendar } from "../../../../../../tests/fixtures/contribution-calendar";
 import { sqliteFixture } from "../../../../../../tests/fixtures/sqlite";
 import type { CollectionContext } from "../refresh-collection-contract";
 import { parseRefreshParams, refreshDays } from "../refresh-params";
@@ -56,10 +57,7 @@ const accountPage = () => ({
 		repositories: { nodes: [repo()], totalCount: 1, pageInfo: { hasNextPage: false } },
 		contributionsCollection: {
 			restrictedContributionsCount: 0,
-			contributionCalendar: {
-				totalContributions: 0,
-				weeks: [{ contributionDays: [{ date: "2026-10-28", contributionCount: 0 }] }],
-			},
+			contributionCalendar: annualContributionCalendar(accountAt).calendar,
 		},
 	},
 	rateLimit: { remaining: 4999, resetAt: "2026-10-29T05:00:00Z" },
