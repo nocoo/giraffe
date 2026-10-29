@@ -165,6 +165,25 @@ and partial/unavailable evidence remain explicit, and old source timestamps are
 not renewed. Run success and failure reasons describe only its requested days
 and dimensions, not gaps elsewhere in the retained publication.
 
+Flow-detail resources retain the same bounded history, with a separate
+1,500,000-byte UTF-8 payload limit. If events exceed that limit, the resource
+reports `limited` / `storage_limit`, clears its complete windows and ranges,
+and supplies no fictitious continuation. Browser details, machine details,
+source indexes and activity all use this resource coverage; the repository's
+complete daily aggregates are not reduced by detail truncation. Oversized
+individual events cannot exceed the storage budget either.
+
+Alerts are current inventory, not historical events: totals and detail items
+come from the latest inventory observation, never a union or maximum across
+cached dates. Latest unavailable inventory remains unavailable. Coverage keeps
+the oldest `fetchedAt` and latest `sourceFetchedAt` evidence times separately;
+cache reuse renews neither. `stockObservedAt.issues` and `.prs` record valid
+GitHub open-count observations independently of item-enumeration completeness.
+Stock lines require a count observed on the latest chart day or its following
+calendar day, and walk backward only through complete lifecycle days. Missing
+count provenance, missing selected repositories and lifecycle gaps remain
+unknown rather than becoming zero.
+
 The browser's default repository scope is `starred`. Factory charts evaluate
 completeness over every selected starred repository, including unpublished ones.
 Explicit `all` remains available and can have incomplete historical coverage;

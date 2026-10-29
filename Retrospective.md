@@ -2502,3 +2502,17 @@ boundary instead of weakening missingness to reproduce a reported screenshot.
 The first new tests also assumed a response envelope and a SQLite adapter column
 overload that this project does not use; inspect real fixture contracts before
 attributing an initial failing assertion to the product bug.
+
+The first review found that extending the metrics loop also extended detail
+resources and current inventory. A 90-by-100 CI-event fixture exceeded D1's row
+limit; an alert resolved on the next day reappeared during zero-request replay.
+Keep current inventory separate from event history, bound detail payloads with
+honest limited coverage, and verify every read projection uses that same scope.
+The review also caught historical completeness being reused as a current stock
+anchor and earliest source time being mistaken for latest evidence. Separate
+count provenance, lifecycle coverage and oldest/latest times explicitly.
+
+Parallel API and browser runners initially collided on a Wrangler internal
+socket even though their public test ports differ. Run these server lanes
+sequentially for final acceptance; a failed startup is not passing browser
+evidence. Local fixture timings do not establish production D1 latency.

@@ -118,7 +118,7 @@ export async function getFactoryStream(c: Ctx): Promise<Response> {
 			runId: snap.runId,
 			repo: repo.name,
 			stream,
-			coverage: repo.coverage[stream],
+			coverage: resource?.coverage ?? repo.coverage[stream],
 			page,
 			total: items.length,
 			items: items.slice((page - 1) * 100, page * 100),

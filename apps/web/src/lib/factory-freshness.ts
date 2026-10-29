@@ -6,13 +6,13 @@ export function factoryEvidenceFreshness(repos: (FactoryRepo | undefined)[]): Sn
 		if (!repo?.observation || !Number.isFinite(Date.parse(repo.observation.refreshedAt)))
 			return snapshotFreshness([null]);
 		return snapshotFreshness(
-			FACTORY_STREAMS.map((stream) => {
+			FACTORY_STREAMS.flatMap((stream) => {
 				const coverage = repo.coverage[stream];
-				return (
+				const oldest =
 					coverage.fetchedAt ??
 					coverage.observation?.refreshedAt ??
-					(coverage.retained ? null : repo.observation?.refreshedAt)
-				);
+					(coverage.retained ? null : repo.observation?.refreshedAt);
+				return coverage.sourceFetchedAt ? [oldest, coverage.sourceFetchedAt] : [oldest];
 			}),
 		);
 	});

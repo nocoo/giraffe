@@ -115,7 +115,7 @@ export async function readSources(
 				.bind(account),
 			db
 				.prepare(
-					"SELECT 'stream:' || c.repo || ':' || r.stream AS kind,r.content_meta,c.repo_id AS repo_id,r.stream AS stream,CASE WHEN r.stream IN ('issues','prs','actions','releases') AND json_valid(r.payload) THEN json_extract(r.payload,'$.runId') END AS run_id,CASE WHEN r.stream IN ('issues','prs','actions','releases') AND json_valid(r.payload) THEN json_extract(r.payload,'$.coverage') END AS coverage,CASE WHEN r.stream IN ('issues','prs','actions','releases') AND json_valid(r.payload) THEN json_extract(r.payload,'$.ranges') END AS ranges,CASE WHEN r.stream IN ('issues','prs','actions','releases') AND json_valid(r.payload) THEN json_extract(r.payload,'$.next') END AS next,CASE WHEN r.stream IN ('issues','prs','actions','releases') AND json_valid(r.payload) THEN json_type(r.payload,'$.next') IS NOT NULL END AS has_next FROM refresh_resources r JOIN refresh_catalog c ON c.account_id=r.account_id AND c.repo_id=r.repo_id WHERE r.account_id=? AND c.active=1",
+					"SELECT 'stream:' || c.repo || ':' || r.stream AS kind,r.content_meta,c.repo_id AS repo_id,r.stream AS stream,CASE WHEN json_valid(r.payload) THEN json_extract(r.payload,'$.runId') END AS run_id,CASE WHEN json_valid(r.payload) THEN json_extract(r.payload,'$.coverage') END AS coverage,CASE WHEN json_valid(r.payload) THEN json_extract(r.payload,'$.ranges') END AS ranges,CASE WHEN json_valid(r.payload) THEN json_extract(r.payload,'$.next') END AS next,CASE WHEN json_valid(r.payload) THEN json_type(r.payload,'$.next') IS NOT NULL END AS has_next FROM refresh_resources r JOIN refresh_catalog c ON c.account_id=r.account_id AND c.repo_id=r.repo_id WHERE r.account_id=? AND c.active=1",
 				)
 				.bind(account),
 			db
@@ -174,6 +174,13 @@ export async function readSources(
 		throw new ApiError(404, "not_found", "repository outside saved account catalog");
 	const publication = decode(() => activityPublication(publicationRows.results));
 	const since = parsed.data.since ? Date.parse(parsed.data.since) : null;
+	const resources = decode(() => resourceRows.results as unknown as ResourceMetaRow[]);
+	const resourceCoverage = new Map(
+		resources.map((row) => [
+			`${row.repo_id}:${row.stream}`,
+			row.coverage ? (JSON.parse(row.coverage) as FactoryCoverage) : null,
+		]),
+	);
 	const streams = (publication ? factoryObserved(publication, policy) : []).flatMap((repo) => {
 		if (
 			!policy.includes(repo.name) ||
@@ -181,7 +188,9 @@ export async function readSources(
 		)
 			return [];
 		return FACTORY_STREAMS.flatMap((stream) => {
-			const coverage = repo.coverage[stream];
+			const coverage = repo.coverage[stream].retained
+				? repo.coverage[stream]
+				: (resourceCoverage.get(`${repo.id}:${stream}`) ?? repo.coverage[stream]);
 			const observation = coverage.observation ?? repo.observation;
 			const provenance = {
 				...(observation?.publishedAt ? { publishedAt: observation.publishedAt } : {}),
@@ -202,7 +211,6 @@ export async function readSources(
 		});
 	});
 	const saved = decode(() => assembleSnapshotGroups(rows.results));
-	const resources = decode(() => resourceRows.results as unknown as ResourceMetaRow[]);
 	const streamMeta = decode(
 		() => new Map(resources.map((row) => [row.kind, decodeContent(row.content_meta)])),
 	);

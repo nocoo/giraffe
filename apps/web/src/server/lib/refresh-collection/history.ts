@@ -51,6 +51,11 @@ export function dayCoverage(
 	const sources = new Set(
 		stored.map((row) => text(object(JSON.parse(row.payload)).source) ?? "unknown"),
 	);
+	const times = stored
+		.filter((row) => row.status !== "unavailable")
+		.map((row) => row.fetched_at)
+		.filter(Boolean)
+		.sort();
 	return {
 		settled: selected.length > 0 && !missing,
 		coverage: {
@@ -64,12 +69,8 @@ export function dayCoverage(
 						? "partial"
 						: "unavailable",
 			pages: result || (dimension === "commits" && needed.includes(dimension)) ? 1 : 0,
-			fetchedAt:
-				stored
-					.filter((row) => row.status !== "unavailable")
-					.map((row) => row.fetched_at)
-					.filter(Boolean)
-					.sort()[0] ?? null,
+			fetchedAt: times[0] ?? null,
+			sourceFetchedAt: times.at(-1) ?? null,
 			observed: available.length,
 			reason:
 				available.length === selected.length ? null : missing ? "missing_days" : settledReason,

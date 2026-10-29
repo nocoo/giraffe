@@ -9,6 +9,12 @@
   dimensions, resetting their timestamps or concealing unavailable/partial gaps.
 - Keep run completion scoped to its requested days and dimensions, independently
   of older gaps retained in factory publications and stream resources.
+- Bound retained event details to 1.5 MB with explicit limited coverage across
+  browser, machine and activity reads, without dropping daily aggregates.
+- Keep current alert inventory separate from historical events and preserve
+  both oldest and latest source times when cached and fresh days coexist.
+- Anchor stock lines on explicitly observed counts and stop at lifecycle gaps,
+  instead of suppressing every current stock value for a historical gap.
 
 ### Verified
 

@@ -100,6 +100,8 @@ export function factoryRepo(raw: Node, context: CollectionContext): FactoryRepo 
 	const target = object(branch.target);
 	const languages = object(raw.languages);
 	const edges = nodes(languages.edges);
+	const openIssues = count(object(raw.openIssues).totalCount);
+	const openPrs = count(object(raw.openPrs).totalCount);
 	return {
 		id: String(raw.id),
 		name: String(raw.nameWithOwner),
@@ -121,15 +123,19 @@ export function factoryRepo(raw: Node, context: CollectionContext): FactoryRepo 
 		branch: text(branch.name),
 		head: text(target.oid),
 		totalCommits: count(object(target.history).totalCount) ?? 0,
-		openIssues: count(object(raw.openIssues).totalCount) ?? 0,
+		openIssues: openIssues ?? 0,
 		closedIssues: count(object(raw.closedIssues).totalCount) ?? 0,
-		openPrs: count(object(raw.openPrs).totalCount) ?? 0,
+		openPrs: openPrs ?? 0,
 		closedPrs: count(object(raw.closedPrs).totalCount) ?? 0,
 		mergedPrs: count(object(raw.mergedPrs).totalCount) ?? 0,
 		totalReleases: count(object(raw.releases).totalCount) ?? 0,
 		is_fork: raw.isFork === true,
 		is_archived: raw.isArchived === true,
 		metadataAt: context.now,
+		stockObservedAt: {
+			issues: openIssues === null ? null : context.now,
+			prs: openPrs === null ? null : context.now,
+		},
 		coverage: Object.fromEntries(
 			["commits", "issues", "prs", "actions", "releases", "alerts", "dependencies"].map(
 				(stream) => [

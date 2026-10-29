@@ -123,6 +123,7 @@ export type FactoryRepo = {
 	closedPrs: number;
 	mergedPrs: number;
 	totalReleases: number;
+	stockObservedAt?: { issues: string | null; prs: string | null };
 	coverage: Record<FactoryStreamName, FactoryCoverage>;
 	metrics: FactoryMetrics;
 	dependencies: FactoryDependency[];

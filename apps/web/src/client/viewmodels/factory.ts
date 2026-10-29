@@ -199,7 +199,7 @@ export function factoryBoard(
 			calendarBounds(r.observation?.window ?? snapshot.window).until,
 		),
 	);
-	const series = addStock(days, repos, membershipComplete && latestDay === lastWindowDay);
+	const series = addStock(days, repos, membershipComplete && latestDay === lastWindowDay, timezone);
 	const stockOn = (date: string, key: "openIssues" | "openPrs") =>
 		series.find((d) => d.date === date)?.[key] ?? null;
 	const periods = PERIODS.map((length) => {
@@ -539,9 +539,23 @@ function walkBack(
 	return out;
 }
 
-function addStock(days: BoardDay[], repos: FactoryRepo[], stockKnown: boolean) {
+function addStock(days: BoardDay[], repos: FactoryRepo[], stockKnown: boolean, timezone: string) {
+	const latest = days.at(-1);
+	const anchor = Date.parse(`${latest?.date}T00:00:00.000Z`);
+	const observedDay = (at: string | null | undefined) => {
+		const time = Date.parse(at ?? "");
+		if (!Number.isFinite(time)) return null;
+		const stamp = new Date(time).toISOString();
+		return calendarBounds({ since: stamp, until: stamp, timezone }).since;
+	};
 	const exact = (stream: "issues" | "prs") =>
-		stockKnown && repos.length > 0 && repos.every((r) => r.coverage[stream].status === "complete");
+		stockKnown &&
+		latest?.complete[stream] === true &&
+		repos.length > 0 &&
+		repos.every((repo) => {
+			const day = observedDay(repo.stockObservedAt?.[stream]);
+			return day === anchor || day === anchor + DAY_MS;
+		});
 	const sum = (key: "openIssues" | "openPrs") => repos.reduce((n, r) => n + r[key], 0);
 	const openIssues = walkBack(
 		days,

@@ -38,6 +38,7 @@ export function factoryFixture(): FactorySnapshot {
 		closedPrs: 2,
 		mergedPrs: 3,
 		totalReleases: 1,
+		stockObservedAt: { issues: now, prs: now },
 		coverage: Object.fromEntries(
 			FACTORY_STREAMS.map((s) => [
 				s,

@@ -497,7 +497,7 @@ export function factoryResourceData(
 		...(stream === "dependencies"
 			? dependencyEvidence(data.items, [...(repo.manifests ?? []), ...(data.manifests ?? [])])
 			: {}),
-		ranges: [window],
+		ranges: data.ranges,
 		fetched_at: coverage.fetchedAt,
 		freshness: factoryStreamFreshness(coverage),
 		observation: observation ? { ...observation, window } : undefined,

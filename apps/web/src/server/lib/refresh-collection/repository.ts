@@ -298,6 +298,15 @@ export async function collectRepository(
 	const current = new Map(previous.map((row) => [`${row.day}:${row.dimension}`, row]));
 	for (const row of observations) current.set(`${row.day}:${row.dimension}`, row);
 	const retainedDays = publicationDays(context, [...current.values()]);
+	const latestAlert = [...current.values()]
+		.filter((row) => row.dimension === "alerts")
+		.sort(
+			(first, second) =>
+				second.fetched_at.localeCompare(first.fetched_at) || second.day.localeCompare(first.day),
+		)[0];
+	const latestAlertPayload = latestAlert
+		? (JSON.parse(latestAlert.payload) as { since: string; until: string; items: FactoryEvent[] })
+		: null;
 	const dimensions = REFRESH_DIMENSIONS.filter(
 		(dimension) =>
 			context.run.params.dimensions.includes(dimension) ||
@@ -313,13 +322,35 @@ export async function collectRepository(
 			needed,
 		);
 		const { inventoryComplete } = coverage;
-		repo.coverage[dimension] = coverage;
-		const items = new Map<string, FactoryEvent>();
+		const alertDays =
+			latestAlert && latestAlertPayload
+				? [
+						{
+							date: latestAlert.day,
+							since: latestAlertPayload.since,
+							until: latestAlertPayload.until,
+						},
+					]
+				: [];
+		const detailCoverage =
+			dimension === "alerts"
+				? dayCoverage(context, dimension, alertDays, current, results.get(dimension), needed)
+						.coverage
+				: coverage;
+		repo.coverage[dimension] =
+			dimension === "alerts"
+				? { ...detailCoverage, completeWindows: coverage.completeWindows }
+				: coverage;
+		const items = new Map<string, FactoryEvent>(
+			dimension === "alerts"
+				? (latestAlertPayload?.items ?? []).map((item) => [item.id, item])
+				: [],
+		);
 		for (const day of retainedDays) {
 			const row = current.get(`${day.date}:${dimension}`);
 			if (!row) continue;
 			const value = JSON.parse(row.payload) as { count: number | null; items: FactoryEvent[] };
-			for (const item of value.items) items.set(item.id, item);
+			if (dimension !== "alerts") for (const item of value.items) items.set(item.id, item);
 			if (row.status !== "complete") continue;
 			const metrics = repo.metrics.days[row.day] ?? blankDay();
 			if (dimension === "commits") {
@@ -353,9 +384,10 @@ export async function collectRepository(
 			runId: context.run.id,
 			items: [...items.values()],
 			next: null,
-			ranges: coverage.completeWindows,
-			coverage,
+			ranges: detailCoverage.completeWindows,
+			coverage: detailCoverage,
 		};
+		if (dimension === "alerts") repo.metrics.alerts = resource.items.length;
 		writes.push(await resourceStatement(db, context, saved.repo_id, dimension, resource));
 		const result = results.get(dimension);
 		if (result) {
@@ -417,20 +449,11 @@ export async function collectRepository(
 			"releases",
 		] as const)
 			repo.metrics[key] += metrics[key];
-	repo.metrics.alerts =
-		results.get("alerts")?.items.length ??
-		Math.max(
-			0,
-			...retainedDays.map((day) => {
-				const value = current.get(`${day.date}:alerts`);
-				return value?.status === "complete"
-					? (JSON.parse(value.payload) as { items: FactoryEvent[] }).items.length
-					: 0;
-			}),
-		);
 	const fetchedAt =
-		Object.values(repo.coverage)
-			.flatMap((coverage) => (coverage.fetchedAt ? [coverage.fetchedAt] : []))
+		[...current.values()]
+			.filter((row) => row.status !== "unavailable")
+			.map((row) => row.fetched_at)
+			.concat(repo.metadataAt ? [repo.metadataAt] : [])
 			.sort()
 			.at(-1) ??
 		repo.metadataAt ??

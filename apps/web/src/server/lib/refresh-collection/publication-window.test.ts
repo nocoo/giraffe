@@ -87,9 +87,11 @@ async function fixture(
 		run: { id, accountId: "a", params, requests: 0, createdAt: now },
 	} as unknown as CollectionContext;
 }
-function upstream(responses: unknown[]) {
+function upstream(responses: unknown[], alerts: unknown[] | Response = []) {
 	const fetch = vi.fn(async (input: string) => {
 		if (input.endsWith("/graphql")) return Response.json({ data: responses.shift() });
+		if (input.includes("/dependabot/alerts"))
+			return alerts instanceof Response ? alerts.clone() : Response.json(alerts);
 		return Response.json([]);
 	});
 	vi.stubGlobal("fetch", fetch);
@@ -242,3 +244,75 @@ it.each(["partial", "unavailable"])(
 		expect(metrics.days["2026-10-28"]).toBeUndefined();
 	},
 );
+
+it("keeps resolved alerts out of current totals and details across cached daily replay", async () => {
+	const db = sqliteFixture();
+	const first = await fixture(db, "first", { dimensions: ["alerts"] }, accountAt);
+	upstream(
+		[accountPage(), { node: repo() }],
+		[
+			{
+				number: 1,
+				state: "open",
+				created_at: "2026-10-28T03:00:00Z",
+				html_url: "https://github.com/owner/project/security/1",
+				security_advisory: { summary: "Resolved tomorrow", severity: "high" },
+			},
+		],
+	);
+	await collectAccount(first);
+	await collectRepository(first, "owner/project");
+	const daily = await fixture(db, "daily", { dimensions: ["alerts"] }, "2026-10-30T04:00:00.000Z");
+	upstream([]);
+	await collectRepository(daily, "owner/project");
+	expect(
+		await payload(db, "SELECT payload FROM refresh_resources WHERE stream='alerts'"),
+	).toMatchObject({ items: [] });
+	const fetch = upstream([]);
+	expect(await collectRepository(daily, "owner/project")).toMatchObject({ requests: 0 });
+	expect(await payload(db, "SELECT payload FROM refresh_repository_publications")).toMatchObject({
+		metrics: { alerts: 0 },
+	});
+	expect(fetch).not.toHaveBeenCalled();
+	const missing = await fixture(
+		db,
+		"missing",
+		{ dimensions: ["alerts"] },
+		"2026-10-31T04:00:00.000Z",
+	);
+	upstream([], Response.json({ message: "Not Found" }, { status: 404 }));
+	await collectRepository(missing, "owner/project");
+	expect(
+		await payload(db, "SELECT payload FROM refresh_resources WHERE stream='alerts'"),
+	).toMatchObject({ items: [], coverage: { status: "unavailable" } });
+});
+
+it("preserves both oldest history and latest source times without renewing cached evidence", async () => {
+	const db = sqliteFixture();
+	const first = await fixture(db, "first", { dimensions: ["commits", "releases"] }, accountAt);
+	upstream([accountPage(), { node: repo() }]);
+	await collectAccount(first);
+	await collectRepository(first, "owner/project");
+	const daily = await fixture(
+		db,
+		"daily",
+		{ dimensions: ["commits", "releases"] },
+		"2026-10-30T04:00:00.000Z",
+	);
+	upstream([{ node: repo() }]);
+	await collectRepository(daily, "owner/project");
+	const response = await createApp().request("http://localhost/api/factory?scope=all", {}, {
+		...daily.env,
+		ENVIRONMENT: "development",
+	} as Env);
+	const saved = (await response.json()) as FactoryViewSnapshot;
+	expect(saved.repos[0]?.observation?.refreshedAt).toBe(daily.now);
+	expect(saved.freshness).toMatchObject({ oldestAt: accountAt, latestAt: daily.now });
+	const replay = { ...daily, now: "2026-10-30T05:00:00.000Z" };
+	const fetch = upstream([]);
+	await collectRepository(replay, "owner/project");
+	expect(await payload(db, "SELECT payload FROM refresh_repository_publications")).toMatchObject({
+		observation: { refreshedAt: daily.now },
+	});
+	expect(fetch).not.toHaveBeenCalled();
+});

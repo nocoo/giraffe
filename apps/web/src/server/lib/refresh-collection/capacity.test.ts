@@ -1,14 +1,19 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { sqliteFixture } from "../../../../../../tests/fixtures/sqlite";
-import type { FactorySnapshot } from "../../../lib/factory-types";
+import type { FactorySnapshot, FactoryStreamData } from "../../../lib/factory-types";
 import type { RefreshParams } from "../../../lib/refresh-types";
+import type { Env } from "../../env";
+import { createApp } from "../../index";
+import { readActivity } from "../activity-store";
 import { createDb } from "../db/d1";
+import { readFactoryResource } from "../machine-observations";
+import { readSources } from "../machine-sources";
 import type { CollectionContext } from "../refresh-collection-contract";
 import { refreshDays } from "../refresh-params";
 import { assemblePages, type SnapshotPage } from "../snapshot-pages";
 import { collectRepository } from "./index";
 import { blankDay, blankMetrics } from "./model";
-import { publish } from "./store";
+import { dayStatements, publish, resourceStatement, snapshots } from "./store";
 
 const now = "2026-10-29T06:00:00.000Z";
 const D1_ROW_LIMIT = 2_000_000;
@@ -142,6 +147,133 @@ function upstream(skipped: (day: number) => boolean, alerts: AlertRows = noAlert
 }
 afterEach(() => vi.unstubAllGlobals());
 
+it("keeps 90 daily aggregates when distinct retained detail events exceed one D1 row", async () => {
+	const { raw, context } = await fixture(1, () => false, false);
+	context.run.params.dimensions = ["actions"];
+	const rows = context.days.map((day) => ({
+		day: day.date,
+		dimension: "actions",
+		status: "complete" as const,
+		fetched_at: now,
+		payload: JSON.stringify({
+			count: 100,
+			source: "github_rest_latest",
+			since: day.since,
+			until: day.until,
+			items: Array.from({ length: 100 }, (_, index) => ({
+				id: `${day.date}:${index}`,
+				title: "Retained workflow run ".repeat(20),
+				url: `https://github.com/${name(0)}/actions/runs/${day.date}-${index}`,
+				at: day.since,
+				createdAt: day.since,
+				state: "completed",
+				conclusion: "success",
+			})),
+		}),
+	}));
+	const db = createDb(raw);
+	await db.batch(dayStatements(db, context, "R_0", rows));
+	context.days = context.days.slice(-1);
+	context.run.params.since = context.run.params.until;
+	const fetch = upstream(() => false);
+	expect(await collectRepository(context, name(0))).toMatchObject({ requests: 0 });
+	expect(fetch).not.toHaveBeenCalled();
+	const repo = (await published(raw)).snapshot.repos[0];
+	expect(Object.keys(repo?.metrics.days ?? {})).toHaveLength(DAYS);
+	expect(repo?.metrics.ciSuccess).toBe(100 * DAYS);
+	expect(repo?.coverage.actions.status).toBe("complete");
+	const saved = await raw
+		.prepare("SELECT payload FROM refresh_resources WHERE stream='actions'")
+		.first<{ payload: string }>();
+	expect(bytes(saved?.payload ?? "")).toBeLessThanOrEqual(PAGE_LIMIT);
+	const resource = JSON.parse(saved?.payload ?? "{}") as FactoryStreamData;
+	expect(resource.items.length).toBeGreaterThan(0);
+	expect(resource.items.length).toBeLessThan(100 * DAYS);
+	expect(resource).toMatchObject({
+		ranges: [],
+		next: null,
+		coverage: { status: "limited", reason: "storage_limit", completeWindows: [] },
+	});
+	await db.batch(
+		await snapshots(db, "a", "repos", { repos: [{ id: "R_0", name_with_owner: name(0) }] }, now),
+	);
+	const detail = await readFactoryResource(db, "a", name(0), "actions");
+	expect(detail).toMatchObject({
+		truncated: true,
+		coverage: resource.coverage,
+		data: { ranges: [] },
+	});
+	const source = (await readSources(db, "a", {})).sources.find(
+		(entry) => entry.resource === `factory:${name(0)}:actions`,
+	);
+	expect(source).toMatchObject({
+		truncated: true,
+		coverage: resource.coverage,
+		contentVersion: detail.contentVersion,
+	});
+	const browser = await createApp().request(
+		`http://localhost/api/factory/repos/${name(0)}/actions?scope=all`,
+		{},
+		{ ...context.env, ENVIRONMENT: "development" } as Env,
+	);
+	expect(browser.status).toBe(200);
+	expect(await browser.json()).toMatchObject({ coverage: resource.coverage });
+	const activity = await readActivity(db, "a", {});
+	expect(activity.repos[0]?.coverage.actions).toMatchObject({
+		status: "partial",
+		truncated: true,
+		reason: "storage_limit",
+	});
+});
+
+it("marks a single oversized UTF-8 detail unavailable for exact enumeration without inventing a continuation", async () => {
+	const { raw, context } = await fixture(1, () => false, false);
+	const db = createDb(raw);
+	const payload: FactoryStreamData = {
+		runId: context.run.id,
+		items: [
+			{
+				id: "large",
+				title: "界".repeat(600_000),
+				url: "https://github.com/owner/project",
+				at: now,
+				createdAt: now,
+				closedAt: null,
+				mergedAt: null,
+				author: null,
+				state: "open",
+			},
+		],
+		next: null,
+		ranges: [],
+		coverage: {
+			status: "complete",
+			pages: 1,
+			fetchedAt: now,
+			source: "github",
+			reason: null,
+			observed: 1,
+			inventoryComplete: true,
+		},
+	};
+	await db.batch([await resourceStatement(db, context, "R_0", "issues", payload)]);
+	const saved = await raw
+		.prepare("SELECT payload FROM refresh_resources WHERE stream='issues'")
+		.first<{ payload: string }>();
+	expect(bytes(saved?.payload ?? "")).toBeLessThanOrEqual(PAGE_LIMIT);
+	expect(JSON.parse(saved?.payload ?? "{}")).toMatchObject({
+		items: [],
+		next: null,
+		ranges: [],
+		coverage: {
+			status: "limited",
+			inventoryComplete: false,
+			reason: "storage_limit",
+			completeWindows: [],
+		},
+	});
+});
+
 async function fixture(
 	repositories: number,
 	skipped: (day: number) => boolean,
@@ -165,7 +297,7 @@ async function fixture(
 			schema: 1,
 			account_id: "a",
 			owner: "owner",
-			inventory: { total: repositories, scanned: repositories, complete: true },
+			inventory: { total: repositories, scanned: repositories, complete: true, excluded: [] },
 			contributionStatus: "complete",
 			contribution: {
 				days: [],
@@ -519,7 +651,7 @@ it("writes non-empty 90-day alert observations through the real collector within
 	expect(evidence.unavailable).toBe(false);
 	expect(result.snapshot.repos[0]?.coverage.alerts).toMatchObject({
 		status: "complete",
-		observed: DAYS,
+		observed: 1,
 		source: "github_rest_latest",
 	});
 	expect(result.publicationBytes).toBeLessThanOrEqual(D1_ROW_LIMIT);
