@@ -57,6 +57,7 @@ export function ApiTokens({ accounts }: { accounts: PublicAccount[] }) {
 		try {
 			await action();
 			setRows((await listTokens(selected)).items);
+			setListError("");
 		} catch {
 			setError("操作失败，请检查权限、标签和有效期后重试。");
 		} finally {
