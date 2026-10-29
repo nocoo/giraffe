@@ -254,9 +254,42 @@ const axisLabel = (value: string, side: "left" | "right") => ({
 	},
 });
 
+/** Keep sparse or all-null line series on a readable count scale. */
+export function factoryCountAxisDomain(
+	values: readonly (number | null | undefined)[],
+): [number, number] {
+	const observed = values.filter((value): value is number => value != null);
+	const peak = observed.length ? Math.max(...observed) : 0;
+	return [0, Math.max(1, peak)];
+}
+
+export function factoryCountAxisTicks(domain: readonly [number, number]): number[] {
+	const [min, max] = domain;
+	if (max <= min) return [min, min + 1];
+	if (max - min <= 4) return [min, max];
+	const mid = Math.round((min + max) / 2);
+	return [min, mid, max];
+}
+
+const FACTORY_RATE_AXIS_TICKS = [0, 0.25, 0.5, 0.75, 1] as const;
+
+const FACTORY_DUAL_AXIS_MARGIN = { top: 8, right: 44, bottom: 0, left: 16 } as const;
+
+const FACTORY_SECONDARY_Y_AXIS = {
+	hide: false,
+	axisLine: false,
+	tickLine: false,
+	tick: {
+		fill: "var(--color-basalt-muted-foreground)",
+		fontSize: 12,
+	},
+} as const;
+
 /** Output (bars, left axis) against how widely the work was spread (line, right axis). */
 export function CommitBreadthChart({ days }: { days: Day[] }) {
 	const data = days.map((d) => ({ ...d, commitsKnown: known(d, "commits", "commits") }));
+	const breadthDomain = factoryCountAxisDomain(data.map((d) => d.activeRepos7));
+	const breadthTicks = factoryCountAxisTicks(breadthDomain);
 	const series = [
 		{ key: "commitsKnown", label: "每日提交", color: FLOW_COLORS.commits },
 		{ key: "activeRepos7", label: "7 日活跃仓库数 · 右轴", color: FLOW_COLORS.release },
@@ -273,11 +306,7 @@ export function CommitBreadthChart({ days }: { days: Day[] }) {
 				</span>
 			}
 		>
-			<ComposedChart
-				data={data}
-				margin={{ top: 8, right: 16, bottom: 0, left: 16 }}
-				barCategoryGap={1}
-			>
+			<ComposedChart data={data} margin={FACTORY_DUAL_AXIS_MARGIN} barCategoryGap={1}>
 				<CartesianGrid {...GRID_PROPS} />
 				<XAxis
 					dataKey="date"
@@ -295,10 +324,12 @@ export function CommitBreadthChart({ days }: { days: Day[] }) {
 				<YAxis
 					yAxisId="breadth"
 					orientation="right"
-					{...cartesianAxisProps()}
+					{...FACTORY_SECONDARY_Y_AXIS}
+					domain={breadthDomain}
+					ticks={breadthTicks}
 					allowDecimals={false}
-					width={36}
-					label={axisLabel("活跃仓库", "right")}
+					allowDataOverflow
+					width={40}
 				/>
 				<Tooltip
 					{...chartTooltipProps({ cursor: "bar" })}
@@ -374,7 +405,8 @@ export function FlowStockChart({ days, kind }: { days: Day[]; kind: "prs" | "iss
 			: []),
 		{ key: "stock", label: "Open 存量 · 右轴", color: "var(--color-basalt-foreground)" },
 	];
-	const hasStock = data.some((d) => d.stock !== null);
+	const stockDomain = factoryCountAxisDomain(data.map((d) => d.stock));
+	const stockTicks = factoryCountAxisTicks(stockDomain);
 	return (
 		<ChartShell
 			legend={<ChartLegend items={series} shape="bar" />}
@@ -389,7 +421,7 @@ export function FlowStockChart({ days, kind }: { days: Day[]; kind: "prs" | "iss
 		>
 			<ComposedChart
 				data={data}
-				margin={{ top: 8, right: 16, bottom: 0, left: 16 }}
+				margin={FACTORY_DUAL_AXIS_MARGIN}
 				stackOffset="sign"
 				barCategoryGap={1}
 			>
@@ -411,10 +443,12 @@ export function FlowStockChart({ days, kind }: { days: Day[]; kind: "prs" | "iss
 				<YAxis
 					yAxisId="stock"
 					orientation="right"
-					{...cartesianAxisProps(!hasStock)}
+					{...FACTORY_SECONDARY_Y_AXIS}
+					domain={stockDomain}
+					ticks={stockTicks}
 					allowDecimals={false}
-					width={36}
-					label={axisLabel(hasStock ? "Open" : "", "right")}
+					allowDataOverflow
+					width={40}
 				/>
 				<ReferenceLine yAxisId="flow" y={0} stroke="var(--color-basalt-border)" />
 				<Tooltip
@@ -517,11 +551,7 @@ export function DeliveryChart({ days }: { days: Day[] }) {
 				</span>
 			}
 		>
-			<ComposedChart
-				data={data}
-				margin={{ top: 8, right: 16, bottom: 0, left: 16 }}
-				barCategoryGap={1}
-			>
+			<ComposedChart data={data} margin={FACTORY_DUAL_AXIS_MARGIN} barCategoryGap={1}>
 				<CartesianGrid {...GRID_PROPS} />
 				<XAxis
 					dataKey="date"
@@ -539,11 +569,12 @@ export function DeliveryChart({ days }: { days: Day[] }) {
 				<YAxis
 					yAxisId="rate"
 					orientation="right"
-					{...cartesianAxisProps()}
+					{...FACTORY_SECONDARY_Y_AXIS}
 					domain={[0, 1]}
+					ticks={[...FACTORY_RATE_AXIS_TICKS]}
+					allowDataOverflow
 					width={40}
 					tickFormatter={(v: number) => `${Math.round(v * 100)}%`}
-					label={axisLabel("CI 成功率", "right")}
 				/>
 				<Tooltip
 					{...chartTooltipProps({ cursor: "bar" })}

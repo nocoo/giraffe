@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.28.2 - 2026-10-29
+
+### Fixed
+
+- Hide the factory dashboard chart-window segment legend visually while keeping the
+  control named for screen readers, so the range toggle aligns with the section title row.
+- Reserve dual-axis margin and stable count domains on factory change-section charts so
+  right-axis ticks stay visible when line series are sparse or entirely null.
+- Render secondary Y axes with explicit tick ladders and Basalt-independent tick props,
+  because the shared axis helper prevented Recharts 3 from painting right-axis labels.
+
 ## v0.28.1 - 2026-10-29
 
 ### Added
