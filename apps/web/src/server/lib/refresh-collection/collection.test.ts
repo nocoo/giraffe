@@ -757,8 +757,8 @@ describe("unified refresh collection", () => {
 		expect(await collectRepository(context, "owner/project")).toEqual({
 			requests: 3,
 			requestBreakdown: { graphql: 1, rest: 2 },
-			partial: true,
-			reasons: ["alerts:not_found"],
+			partial: false,
+			reasons: [],
 		});
 		expect(await sourceSnapshot(context, "repo:owner/project:security")).toMatchObject({
 			truncated: false,
@@ -770,10 +770,17 @@ describe("unified refresh collection", () => {
 				code_scanning: { status: "unavailable", reason_code: "not_found" },
 			},
 		});
-		expect((await observation(context, "alerts")).results[0]?.status).toBe("unavailable");
+		expect((await observation(context, "alerts")).results[0]?.status).toBe("complete");
 		expect(
 			await readFactoryResource(collectionDb(context), "a", "owner/project", "alerts"),
 		).toMatchObject({ data: { unavailable: true, coverage: { status: "unavailable" } } });
+		const cached = upstream();
+		expect(await collectRepository(context, "owner/project")).toMatchObject({
+			requests: 0,
+			partial: false,
+		});
+		expect(cached).not.toHaveBeenCalled();
+		context.run.params.force = true;
 		upstream([{ node: repo() }], {
 			"/code-scanning/alerts": [{ number: 1, state: "open", created_at: now }],
 		});

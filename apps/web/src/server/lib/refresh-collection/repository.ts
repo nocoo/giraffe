@@ -134,15 +134,22 @@ export async function collectRepository(
 		variables[`since${index}`] = day.since;
 		variables[`until${index}`] = new Date(Date.parse(day.until) - 1).toISOString();
 	}
-	const prior = !needed.length
-		? await db
-				.prepare(
-					"SELECT payload FROM refresh_repository_publications WHERE account_id=? AND repo_id=?",
-				)
-				.bind(context.account.id, saved.repo_id)
-				.first<{ payload: string }>()
-		: null;
-	const data = needed.length
+	const restOnly =
+		needed.length > 0 &&
+		needed.every((dimension) => dimension === "actions" || dimension === "alerts");
+	const prior =
+		!needed.length || restOnly
+			? await db
+					.prepare(
+						"SELECT payload FROM refresh_repository_publications WHERE account_id=? AND repo_id=?",
+					)
+					.bind(context.account.id, saved.repo_id)
+					.first<{ payload: string }>()
+			: null;
+	const metadataQuery =
+		needed.some((dimension) => dimension !== "actions" && dimension !== "alerts") ||
+		(restOnly && (prior === null || context.run.params.force));
+	const data = metadataQuery
 		? await upstream.request((client) =>
 				client.githubGraphql(context.token, repositoryQuery(commitDays, needed), variables),
 			)
@@ -154,13 +161,14 @@ export async function collectRepository(
 		String(raw.nameWithOwner).toLowerCase() !== saved.repo.toLowerCase()
 	)
 		throw new ApiError(502, "github_error", "Repository identity unavailable");
-	const repo: FactoryRepo = prior
-		? {
-				...(JSON.parse(prior.payload) as FactoryRepo),
-				coverage: factoryRepo(raw, context).coverage,
-				metrics: blankMetrics(),
-			}
-		: factoryRepo(raw, context);
+	const repo: FactoryRepo =
+		!metadataQuery && prior
+			? {
+					...(JSON.parse(prior.payload) as FactoryRepo),
+					coverage: factoryRepo(raw, context).coverage,
+					metrics: blankMetrics(),
+				}
+			: factoryRepo(raw, context);
 	const observations: DayObservation[] = [];
 	const writes: D1PreparedStatement[] = [];
 	const results = new Map<string, Dimension>();
@@ -256,16 +264,18 @@ export async function collectRepository(
 					: dimension === "releases"
 						? result.items.filter((item) => inDay(item.at, day.since, day.until))
 						: dayItems(result.items, day.since, day.until);
+			const unavailableTerminal = result.terminal === true;
 			observations.push({
 				day: day.date,
 				dimension,
-				status: result.status,
+				status: unavailableTerminal ? "complete" : result.status,
 				payload: JSON.stringify({
 					count: result.status === "complete" ? items.length : null,
 					observed: items.length,
 					items,
 					source: result.source,
 					reason: result.reason,
+					unavailable: unavailableTerminal && result.status === "unavailable",
 					inventoryComplete: result.inventoryComplete,
 					since: day.since,
 					until: day.until,
@@ -276,10 +286,18 @@ export async function collectRepository(
 	}
 	const current = new Map(previous.map((row) => [`${row.day}:${row.dimension}`, row]));
 	for (const row of observations) current.set(`${row.day}:${row.dimension}`, row);
+	const terminalUnavailable = new Map<string, boolean>();
 	for (const dimension of context.run.params.dimensions) {
 		const selected = context.days.map((day) => current.get(`${day.date}:${dimension}`));
-		const available = selected.filter(
-			(row): row is DayObservation => row !== undefined && row.status === "complete",
+		const stored = selected.filter((row): row is DayObservation => row !== undefined);
+		const available = stored.filter(
+			(row) => row.status === "complete" && object(JSON.parse(row.payload)).unavailable !== true,
+		);
+		terminalUnavailable.set(
+			dimension,
+			selected.length > 0 &&
+				stored.length === selected.length &&
+				stored.every((row) => row.status === "complete"),
 		);
 		const latest = selected
 			.filter((row): row is DayObservation => row !== undefined)
@@ -463,7 +481,7 @@ export async function collectRepository(
 			)
 			.bind(context.account.id, saved.repo_id, JSON.stringify(repo), context.now),
 	);
-	if (needed.length)
+	if (metadataQuery)
 		writes.push(
 			...(await snapshots(
 				db,
@@ -494,7 +512,9 @@ export async function collectRepository(
 			coverage.reason ??
 			(coverage.status === "unavailable" ? "unavailable" : "partial");
 		return [
-			...(coverage.status === "complete" ? [] : [`${dimension}:${code}`]),
+			...(coverage.status === "complete" || terminalUnavailable.get(dimension) === true
+				? []
+				: [`${dimension}:${code}`]),
 			...(coverage.inventoryComplete === false ? [`${dimension}:inventory_incomplete`] : []),
 		];
 	});
