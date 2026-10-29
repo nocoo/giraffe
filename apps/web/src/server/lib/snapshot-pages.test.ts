@@ -2,6 +2,29 @@ import { describe, expect, it } from "vitest";
 import { assemblePages, latestSnapshotGroups, physicalKinds, splitPages } from "./snapshot-pages";
 
 describe("snapshot-pages", () => {
+	it.each([
+		["issues", "issues"],
+		["prs", "pull_requests"],
+		["alerts", "items"],
+		["notifications", "notifications"],
+		["repo:owner/app:actions", "runs"],
+		["repo:owner/app:issues", "issues"],
+		["repo:owner/app:prs", "pull_requests"],
+		["repo:owner/app:releases", "releases"],
+		["repo:owner/app:contributors", "contributors"],
+	])("bounds oversized saved %s without claiming complete evidence", (kind, key) => {
+		const result = splitPages(kind, { blob: "x".repeat(1_500_001) });
+		expect(assemblePages(kind, result.pages)).toMatchObject({ [key]: [], truncated: true });
+	});
+	it.each(["details", "traffic", "security", "languages", "unknown"])(
+		"bounds oversized saved repository %s metadata",
+		(tab) => {
+			const kind = `repo:owner/app:${tab}`;
+			const result = splitPages(kind, { blob: "x".repeat(1_500_001) });
+			expect(assemblePages(kind, result.pages)).toMatchObject({ fetched_at: "", truncated: true });
+			expect(result.capacityExceeded).toBe(true);
+		},
+	);
 	it.each([false, true])(
 		"distinguishes new capacity loss from inherited truncation (%s)",
 		(truncated) => {

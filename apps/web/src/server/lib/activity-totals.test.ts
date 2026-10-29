@@ -1,27 +1,50 @@
 import { expect, it } from "vitest";
-import { rawRepo } from "../../../../../tests/fixtures/factory";
-import type { ActivityRepo } from "../../lib/activity-types";
-import { activityPr, activityRepo, completeActivity, workflowRun } from "./activity";
+import type { ActivityPr, ActivityRepo, ActivityRun } from "../../lib/activity-types";
 import { activityReadContentVersion, readActivityTotals } from "./activity-totals";
-import { mapFactoryEvents, mapFactoryRepo } from "./factory-map";
 
 function repository(name: string): ActivityRepo {
-	const repo = activityRepo(
-		mapFactoryRepo({ ...rawRepo, nameWithOwner: name }),
-		new Map(),
-		{ since: "2026-10-21T00:00:00Z", until: "2026-10-22T00:00:00Z", first: true, gap: true },
-		null,
-		null,
-	);
+	const repo: ActivityRepo = {
+		repo: name,
+		ci_runs: [],
+		prs: { opened: [], merged: [], closed: [] },
+		issues: { opened: [], closed: [] },
+		releases: [],
+		commits: { default: null, other: null, items: null },
+		deploy: { last_success_at: null, runs: null },
+		snapshot: { open_prs: null, open_issues: null, dependabot: null, code_scanning: null },
+		coverage: {},
+	};
 	repo.ci_runs = [];
 	repo.prs.merged = [];
 	repo.issues.opened = [];
 	repo.issues.closed = [];
 	repo.releases = [];
 	for (const stream of ["actions", "prs", "issues", "releases", "default_branch"])
-		repo.coverage[stream] = completeActivity();
+		repo.coverage[stream] = { status: "complete", truncated: false, reason: null };
 	return repo;
 }
+
+it("keeps missing saved lists unknown and ignores non-red or non-default workflow evidence", () => {
+	const repo = repository("owner/app");
+	repo.releases = null;
+	repo.prs.merged = null;
+	repo.issues.opened = null;
+	repo.issues.closed = null;
+	repo.ci_runs = [
+		{ id: 1, conclusion: null, is_default_branch: null },
+		{ id: 2, conclusion: null, is_default_branch: true },
+		{ id: 3, conclusion: "failure", is_default_branch: false },
+	] as ActivityRun[];
+	expect(readActivityTotals([repo])).toMatchObject({
+		totals: {
+			merged_prs: null,
+			issues_opened: null,
+			issues_closed: null,
+			releases: null,
+			red_default_branch: [],
+		},
+	});
+});
 
 it("sums independently available metrics despite unrelated partial run coverage", () => {
 	const healthy = repository("owner/healthy");
@@ -93,18 +116,10 @@ it("marks missing lists or unclassified red workflows as missing evidence", () =
 it("adds nonzero counts and red workflows only from proven repository metrics", () => {
 	const first = repository("owner/first");
 	const second = repository("owner/second");
-	first.prs.merged = mapFactoryEvents("prs", [
-		{ id: "dep", number: 1, author: { login: "dependabot[bot]" } },
-		{ id: "human", number: 2, author: { login: "owner" } },
-	]).map(activityPr);
+	first.prs.merged = [{ dependency: true }, { dependency: false }] as ActivityPr[];
 	second.prs.merged = first.prs.merged;
 	second.coverage.prs = { status: "partial", truncated: true, reason: "cut" };
-	first.ci_runs = mapFactoryEvents("actions", [
-		{ id: 1, name: "CI", status: "completed", conclusion: "failure", head_branch: "main" },
-	]).flatMap((event) => {
-		const run = workflowRun(event, "main");
-		return run ? [run] : [];
-	});
+	first.ci_runs = [{ id: 1, conclusion: "failure", is_default_branch: true }] as ActivityRun[];
 	second.ci_runs = first.ci_runs;
 	const result = readActivityTotals([first, second]);
 	expect(result.totals).toMatchObject({
@@ -117,7 +132,7 @@ it("adds nonzero counts and red workflows only from proven repository metrics", 
 			{ repo: "owner/second", id: 1 },
 		],
 	});
-	if (second.ci_runs[0]) second.ci_runs[0] = { ...second.ci_runs[0], is_default_branch: null };
+	if (second.ci_runs?.[0]) second.ci_runs[0] = { ...second.ci_runs[0], is_default_branch: null };
 	expect(readActivityTotals([second])).toMatchObject({
 		totals: { ci_runs: 1, red_default_branch: null },
 		totals_coverage: {

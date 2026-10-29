@@ -11,13 +11,12 @@ import {
 import { APP_PATHS } from "./routes";
 
 describe("navigation", () => {
-	it("opens with the factory and groups analysis tools under AI", () => {
+	it("keeps snapshot navigation without analysis or refresh execution", () => {
 		expect(NAV_GROUPS.map((group) => [group.label, group.items.map((item) => item.href)])).toEqual([
-			["总览", ["/factory", "/today"]],
-			["AI", ["/analysis", "/insights"]],
+			["总览", ["/factory", "/today", "/insights"]],
 			["仓库健康", ["/repos", "/ci", "/alerts"]],
 			["待办", ["/issues", "/pulls", "/inbox"]],
-			["系统", ["/refresh", "/settings"]],
+			["系统", ["/settings"]],
 		]);
 		expect(NAV_ITEMS.map((item) => item.href)).toEqual(
 			NAV_GROUPS.flatMap((group) => group.items.map((item) => item.href)),
@@ -27,8 +26,6 @@ describe("navigation", () => {
 			"/factory",
 			"/today",
 			"/repos",
-			"/analysis",
-			"/refresh",
 			"/issues",
 			"/pulls",
 			"/insights",
@@ -55,7 +52,7 @@ describe("navigation", () => {
 		expect(breadcrumbsFor("/nope")).toEqual([{ href: "/nope", label: "未找到" }]);
 		expect(headerTitle("/")).toBe("软件工厂");
 		expect(headerTitle("/repos")).toBe("仓库");
-		for (const retired of ["/work", "/authorize"]) {
+		for (const retired of ["/work", "/authorize", "/analysis", "/refresh"]) {
 			expect(headerTitle(retired)).toBe("未找到");
 			expect(breadcrumbsFor(retired)).toEqual([{ href: retired, label: "未找到" }]);
 			expect(paletteItems(null).find((item) => item.href === retired)).toBeUndefined();

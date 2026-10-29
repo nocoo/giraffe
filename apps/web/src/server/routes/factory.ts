@@ -9,7 +9,6 @@ import {
 import type { AppVars, Env } from "../env";
 import { catalogFactoryRepo } from "../lib/catalog-read";
 import { ApiError, jsonOk } from "../lib/errors";
-import { newFactory } from "../lib/factory-collect";
 import { factoryRateFromRow } from "../lib/factory-rate";
 import {
 	accountReadPlan,
@@ -37,18 +36,7 @@ export async function getFactory(c: Ctx): Promise<Response> {
 	const account = saved.account;
 	if (!account) throw new ApiError(409, "account_missing", "no active account");
 	const policy = savedAccountPolicy(saved, scope);
-	let snap = decodePublication(saved.sourcePages as PublicationPage[]);
-	if (!snap && policy.empty) {
-		const empty = newFactory(account.id, account.login, "1970-01-01T00:00:00.000Z");
-		snap = {
-			...empty,
-			runId: "",
-			startedAt: "",
-			window: { since: empty.window.until, until: empty.window.until },
-			status: "complete",
-			inventory: { ...empty.inventory, complete: true },
-		};
-	}
+	const snap = decodePublication(saved.sourcePages as PublicationPage[]);
 	if (!snap) throw new ApiError(409, "snapshot_missing", "no factory snapshot");
 	const projected = projectFactory(snap, policy);
 	const freshness = factoryFreshness(projected, policy);

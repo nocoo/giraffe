@@ -74,19 +74,11 @@ export async function loadFactoryDetail(
 }
 export function factoryError(error: unknown): string {
 	if (error instanceof ApiError) {
-		if (error.code === "factory_capacity")
-			return "单条数据或仓库数量超过安全上限。已有数据保留；请缩小刷新范围。";
-		if (error.code === "refresh_cooldown") return "刚刚发起过刷新，请等倒计时结束后再试。";
-		if (error.code === "catalog_incomplete")
-			return "仓库列表还没读完整，请先点击「同步仓库列表」。";
-		if (error.code === "github_rate_limited")
-			return "GitHub 暂时限制了请求频率，已获取的数据已保存，等待请求额度恢复后继续。";
-		if (error.code === "account_conflict")
-			return "账号已切换，或已有刷新正在进行。请更新状态后继续。";
+		if (error.code === "account_conflict") return "账号已切换，请重新读取已保存的快照。";
 		if (error.code === "account_missing") return "请先在设置中连接 GitHub 账号。";
 		if (error.code === "github_unauthorized") return "GitHub 令牌失效，请在设置中更新。";
 	}
-	return "暂时无法完成操作。已有数据和刷新进度保留，请稍后重试。";
+	return "暂时无法读取已保存的快照，请稍后重试。";
 }
 export function filterFactoryRepos<Repo extends FactorySelectedRepo>(
 	repos: Repo[],

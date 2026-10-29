@@ -30,7 +30,6 @@ async function setup(withAccount = true) {
 			.bind(id, "nocoo", "encrypted", "fake", at, at)
 			.run();
 	const env = {
-		FACTORY_QUEUE: {} as Queue,
 		TOKEN_ENCRYPTION_KEY_CURRENT: "1",
 		DB: raw,
 		ENVIRONMENT: "development",

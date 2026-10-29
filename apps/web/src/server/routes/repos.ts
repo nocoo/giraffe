@@ -6,7 +6,6 @@ import { ApiError, jsonOk } from "../lib/errors";
 import { ACCOUNT_ID_RE } from "../lib/id";
 import { requireCatalogRepo } from "../lib/machine-observations";
 import { readJson } from "../lib/read-body";
-import { enableDefaultSchedules } from "../lib/refresh-schedule";
 import { starReason, writeStar } from "../lib/repo-stars";
 import { repoParts, snapshotGet } from "./snapshots";
 
@@ -38,7 +37,6 @@ export async function setRepoStar(
 		parsed.data.reason ?? null,
 		now,
 	);
-	if (item.starred) await enableDefaultSchedules(db, account.id, now);
 	return jsonOk({
 		account_id: account.id,
 		name_with_owner: repo,

@@ -1,7 +1,7 @@
 import { securitySnapshot } from "../../lib/security";
-import { emptyCollected } from "./collect";
 import { decodeContent, withContent } from "./content-version";
 import { ApiError } from "./errors";
+import { emptyTraffic, mapRepoDetails } from "./github-map";
 
 const MAX = 1_500_000;
 
@@ -79,7 +79,7 @@ function fitsPage(
 }
 
 function compactPage(logical: string, payload: Record<string, unknown>): SnapshotPage {
-	const compact = JSON.stringify(emptyCollected(logical, String(payload.fetched_at ?? "")));
+	const compact = JSON.stringify(emptySnapshot(logical, String(payload.fetched_at ?? "")));
 	if (utf8Len(compact) > MAX)
 		throw new ApiError(422, "snapshot_capacity", "snapshot metadata exceeds page capacity");
 	return { kind: logical, payload: compact };
@@ -182,4 +182,57 @@ export function assemblePages(logical: string, rows: SnapshotPage[]): Record<str
 
 export function physicalKinds(logical: string): [string, string] {
 	return [logical, `${logical}#2`];
+}
+
+function emptySnapshot(kind: string, fetchedAt: string): Record<string, unknown> {
+	const base = { fetched_at: fetchedAt, truncated: true };
+	if (kind === "repos") {
+		return { ...base, repos: [] };
+	}
+	if (kind === "issues") {
+		return { ...base, issues: [] };
+	}
+	if (kind === "prs") {
+		return { ...base, pull_requests: [] };
+	}
+	if (kind === "alerts") {
+		return {
+			...base,
+			unavailable: true,
+			items: [],
+			dependabot_open: null,
+			code_scanning_open: null,
+		};
+	}
+	if (kind === "notifications") {
+		return { ...base, notifications: [] };
+	}
+	if (kind.endsWith(":details")) {
+		return { ...base, ...mapRepoDetails({}) };
+	}
+	if (kind.endsWith(":actions")) {
+		return { ...base, runs: [] };
+	}
+	if (kind.endsWith(":traffic")) {
+		return { ...base, forbidden: false, views: emptyTraffic(), clones: emptyTraffic() };
+	}
+	if (kind.endsWith(":security")) {
+		return { ...base, unavailable: true, dependabot_open: null, code_scanning_open: null };
+	}
+	if (kind.endsWith(":issues")) {
+		return { ...base, issues: [] };
+	}
+	if (kind.endsWith(":prs")) {
+		return { ...base, pull_requests: [] };
+	}
+	if (kind.endsWith(":releases")) {
+		return { ...base, releases: [] };
+	}
+	if (kind.endsWith(":languages")) {
+		return { ...base, languages: {} };
+	}
+	if (kind.endsWith(":contributors")) {
+		return { ...base, contributors: [] };
+	}
+	return base;
 }

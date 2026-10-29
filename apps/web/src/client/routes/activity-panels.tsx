@@ -253,7 +253,7 @@ export function ActivityContent({
 							<p className="text-sm text-basalt-muted-foreground">
 								{snapshot.truncated
 									? "该仓库的活动记录未完整保存，不代表没有活动。"
-									: "该仓库未包含在当次快速刷新中，不代表没有活动。"}
+									: "已保存的活动窗口不包含该仓库，不代表没有活动。"}
 							</p>
 						) : null}
 					</div>

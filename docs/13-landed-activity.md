@@ -1,5 +1,11 @@
 # Landed activity observations (v0.24)
 
+> **v0.26.0:** Collection execution and the AI analysis product surface have
+> been removed. The implementation details below are historical where they
+> describe refresh modes, runs, schedules, collectors or analysis pages.
+> [Phase 1 retirement](14-phase1-retirement.md) is the current behavior contract;
+> saved-data schemas and read semantics remain relevant.
+
 Status: approved snapshot-based ledger, owner decision 2026-10-24. Migration
 `0026_activity_commit_ledger.sql` is additive and has no backfill.
 

@@ -33,6 +33,7 @@ import { SourceTiming } from "../lib/source-timing";
 import { timedJson } from "../lib/timed-json";
 import { activityEtag } from "./activity";
 import {
+	getMachineLatestRun,
 	getMachineSettings,
 	getMachineStars,
 	machineRuns,
@@ -41,7 +42,6 @@ import {
 import { machineRepoAgentState } from "./repo-agent-state";
 import { machineRepoMeta } from "./repo-meta";
 import { latestReport } from "./report-latest";
-import { getMachineLatestRun } from "./run-readiness";
 
 type Principal = NonNullable<Awaited<ReturnType<typeof authenticateApiToken>>>;
 export type MachineVars = AppVars & {

@@ -1,5 +1,11 @@
 # 01 — 架构、技术选型与功能
 
+> **v0.26.0:** Collection execution and the AI analysis product surface have
+> been removed. The implementation details below are historical where they
+> describe refresh modes, runs, schedules, collectors or analysis pages.
+> [Phase 1 retirement](14-phase1-retirement.md) is the current behavior contract;
+> saved-data schemas and read semantics remain relevant.
+
 Giraffe 是个人 GitHub 监控控制台。仓库 code name 为 `giraffe`。本文是项目的方向文档：架构、技术选型、首版功能边界，以及后续实现必须遵守的工程约定。
 
 > 返回 [文档目录](README.md)

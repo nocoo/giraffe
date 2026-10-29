@@ -1,14 +1,8 @@
 import { expect, it } from "vitest";
-import { factoryFixture } from "../../../../../tests/fixtures/factory-snapshot";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import type { FactorySnapshot } from "../../lib/factory-types";
 import { createDb } from "./db/d1";
-import {
-	assertFactoryReserve,
-	latestFactoryRate,
-	readFactoryRate,
-	recordFactoryRate,
-} from "./factory-rate";
+import { latestFactoryRate, readFactoryRate } from "./factory-rate";
 
 const now = Date.parse("2026-10-21T06:00:00Z");
 const rate = {
@@ -17,20 +11,6 @@ const rate = {
 	resource: "core",
 	observedAt: "2026-10-21T05:59:00Z",
 };
-
-it("preserves the legacy bucket when observing another resource and honors the latest observation", () => {
-	const state = factoryFixture();
-	state.rate = { ...rate, remaining: 49 };
-	recordFactoryRate(state, { ...rate, resource: "graphql", remaining: 900 });
-	expect(() => assertFactoryReserve(state, new Date(now).toISOString())).toThrowError(
-		"GitHub reserve reached",
-	);
-	recordFactoryRate(state, { ...rate, resource: "core", remaining: 50 });
-	expect(() => assertFactoryReserve(state, new Date(now).toISOString())).not.toThrow();
-	state.rate = { ...rate, remaining: 49 };
-	expect(() => assertFactoryReserve(state, new Date(now).toISOString())).toThrow();
-	expect(() => assertFactoryReserve(state, rate.resetAt)).not.toThrow();
-});
 
 it("orders observations by their own timestamp, not reset deadlines or publication times", () => {
 	const older = {

@@ -9,7 +9,6 @@ import { decodeContent, storedContent } from "./content-version";
 import type { Db } from "./db/d1";
 import { snapshotFromRows } from "./db/snapshots";
 import { ApiError } from "./errors";
-import { streamKey } from "./factory-collect";
 import type { StarRow } from "./repo-stars";
 import type { PublicationPage } from "./saved-observation-read";
 import {
@@ -169,7 +168,7 @@ export function decodeFactoryResource(
 		}
 	} else {
 		data = snapshotFromRows(
-			streamKey(original, stream as FactoryStreamName),
+			`factory:${original}:${stream}`,
 			saved.resourcePages,
 		) as FactoryStreamData | null;
 		const meta = storedContent(data);

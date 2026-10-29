@@ -121,14 +121,10 @@ for (const width of [1440, 1024, 390]) {
 	});
 }
 
-test("one header clock groups a refresh by its end and clears sources on navigation", async ({
+test("one header clock shows saved source times without retired refresh records", async ({
 	page,
 }) => {
 	const fixtures: Record<string, unknown> = createUiFixtures();
-	fixtures["/api/refresh/times"] = {
-		account_id: "ui-account",
-		runs: [{ startedAt: "2026-10-01T08:00:00Z", finishedAt: "2026-10-01T08:10:00Z" }],
-	};
 	fixtures["/api/issues"] = {
 		...createUiFixtures()["/api/issues"],
 		freshness: {
@@ -152,8 +148,8 @@ test("one header clock groups a refresh by its end and clears sources on navigat
 	await expect(trigger).toHaveCount(1);
 	await trigger.click();
 	const dialog = page.getByRole("dialog", { name: "数据更新时间" });
-	await expect(dialog.locator("time")).toHaveAttribute("datetime", "2026-10-01T08:10:00Z");
-	await expect(dialog).not.toContainText("部分数据仍来自较早的刷新");
+	await expect(dialog.locator("time")).toHaveAttribute("datetime", "2026-10-01T08:09:00Z");
+	await expect(dialog).toContainText("部分数据仍来自较早的刷新");
 	await page.keyboard.press("Escape");
 	await expect(trigger).toBeFocused();
 	await page.getByRole("button", { name: "仓库", exact: true }).click();

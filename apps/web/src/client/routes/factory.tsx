@@ -63,6 +63,7 @@ import {
 	safeGithubUrl,
 } from "../viewmodels/factory";
 import { FactoryHeatmap, FactoryPanel, FactorySpark, FactoryTreemap } from "./factory-charts";
+import { FactoryEmpty } from "./factory-empty";
 import { FactoryRepoTimes } from "./factory-repo-times";
 import { ActivityBar, FactorySkeleton } from "./factory-skeleton";
 import {
@@ -165,8 +166,8 @@ export function FactoryPage() {
 					) : null
 				}
 				actions={
-					<Button asChild size="sm">
-						<Link to={`/refresh?${params.toString()}`}>去刷新</Link>
+					<Button size="sm" disabled title="旧刷新已停用，当前无法采集新数据。">
+						刷新暂不可用
 					</Button>
 				}
 			/>
@@ -177,15 +178,7 @@ export function FactoryPage() {
 				</p>
 			) : null}
 			{loading && !snapshot ? <FactorySkeleton /> : null}
-			{!loading && !snapshot ? (
-				<FactoryPanel title="建立你的软件工厂视图" hint="使用当前 GitHub 账号">
-					<p className="py-8 text-sm text-basalt-muted-foreground">
-						同步仓库列表，再选择需要更新的仓库，即可查看提交、工作记录与交付趋势。
-						刷新可以暂停，离开页面后也会继续。
-					</p>
-					<p className="pb-4 text-sm">点击右上角「去刷新」开始。</p>
-				</FactoryPanel>
-			) : null}
+			{!loading && !snapshot ? <FactoryEmpty /> : null}
 			{snapshot && board ? (
 				<div className="factory-board" data-stale={stale || undefined}>
 					<div className="factory-toolbar">
@@ -224,7 +217,7 @@ export function FactoryPage() {
 						<div role="status" className="py-12 text-center text-sm">
 							{snapshot.inventory.complete
 								? "没有符合当前筛选的仓库。"
-								: "仓库清单仍在分页采集中。"}{" "}
+								: "已保存的仓库清单不完整；旧刷新已停用。"}{" "}
 							<Button
 								variant="ghost"
 								className="factory-link"
@@ -236,7 +229,8 @@ export function FactoryPage() {
 						</div>
 					) : !scope.length ? (
 						<p role="status" className="py-8 text-sm text-basalt-muted-foreground">
-							所选 {selection.length} 个仓库尚无工厂观测；缺失不代表零。请前往刷新中心获取数据。
+							所选 {selection.length}{" "}
+							个仓库尚无工厂观测；缺失不代表零。旧刷新已停用，当前无法采集新数据。
 						</p>
 					) : (
 						<>
@@ -257,7 +251,7 @@ export function FactoryPage() {
 								<SectionRule
 									id="factory-change-title"
 									title={<IconLabel icon={Activity}>变化 · 最近 {board.days.length} 天</IconLabel>}
-									hint={`按已发布观测窗口展示 ${board.days.length} 个 UTC 日期；每日快速刷新 30 天，每周深度刷新校准 90 天，保留的数据沿用原窗口。上方默认 7 天仅用于期间比较，不改变图表窗口。左轴是每日流量（柱），右轴是结果（折线）。Open 存量由当前数量按每日新开与完成倒推；事件不完整时不画折线。`}
+									hint={`按已发布观测窗口展示 ${board.days.length} 个 UTC 日期；保留的数据沿用原窗口。上方默认 7 天仅用于期间比较，不改变图表窗口。左轴是每日流量（柱），右轴是结果（折线）。Open 存量由当前数量按每日新开与完成倒推；事件不完整时不画折线。`}
 								/>
 								<div className="factory-chart-grid grid gap-3 xl:grid-cols-2">
 									<FactoryPanel
@@ -1013,8 +1007,7 @@ export function FactoryPage() {
 							{snapshot.rate
 								? `${snapshot.rate.resource} ${snapshot.rate.remaining}，重置 ${formatPreciseDate(snapshot.rate.resetAt)}`
 								: "此导入快照未记录最近额度"}
-							。每条队列消息至多 1 页 / 一个逻辑动作，资源至多 5,000 条或 1.2
-							MB；截断数据只表示观察子集。已完成资源在续传时复用；更新调查重新取样。
+							。截断数据只表示观察子集；旧刷新已停用，这里仅展示已保存快照。
 						</p>
 						<p>
 							topics 是 GitHub 作者设置的标签，可重叠，不能把标签分组总数相加。引用图只使用可定位的

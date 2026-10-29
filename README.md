@@ -17,9 +17,9 @@
 
 ## 这是什么
 
-Giraffe 是面向个人的 GitHub 控制台。添加一个或多个账号的 classic PAT 后，可以集中查看仓库、开放的 Issue / PR、安全告警和通知，并按规则与 AI 评估找出最值得关注的仓库。
+Giraffe is a personal GitHub console for saved repository, Issue / PR, security and notification snapshots across connected accounts.
 
-Worker 从 GitHub 获取数据并保存到 D1，支持手动刷新、每日快速刷新与每周深度刷新。浏览器展示原始快照和来源时间；分析台只展示外部分析程序通过机器 API 写入的 Issues、PR、CI 与 CD 报告及其证据。Giraffe 不运行模型推理或自动修改代码；Insights 保留确定性的待办与健康排序。
+Version 0.26.0 removes the old refresh/collection stack and the analysis product surface. The Dashboard keeps its layout and reads supported saved snapshots with their original timestamps. Missing data shows an explicit empty state, and collection is unavailable. No phase-2 A+B collector is included. See the [phase-1 contract](docs/14-phase1-retirement.md).
 
 PAT 使用 AES-256-GCM 加密后存入 D1；数据快照以 JSON 保存，未做应用层加密。这是个人部署，获准访问同一部署的人共享其中的账号与快照。
 
@@ -31,8 +31,7 @@ PAT 使用 AES-256-GCM 加密后存入 D1；数据快照以 JSON 保存，未做
 - **单仓详情**：详情、安全、Actions、PR、Issue、Release、流量、语言和贡献者九个页签。
 - **Insights 与告警**：按当前快照展示规则分类及 GitHub 安全告警，标明截断、权限不足或数据不可用状态。
 - **通知处理**：浏览通知，标记单条或全部已读；这些操作会同步写回 GitHub。
-- **关注范围与定时刷新**：业务页面默认只看 Giraffe 关注仓库，可切换全部；每日快速刷新与每周深度刷新由云端执行。
-- **分析台**：只读展示单仓库和全局的外部分析报告、来源版本、证据新鲜度及 `grok-bot-run` 最近运行状态。证据超过 36 小时单独判为过期，最近运行超过 48 小时显示逾期；分析台不执行任务。
+- **Saved observations**: existing snapshot filters remain read-only. Refresh, schedules, run controls and the analysis page are removed; missing evidence remains unavailable rather than zero.
 - **机器 API**：`/api/v1/*` 的每个端点都要求固定账号、有限 scope 和有效期的 Bearer Token。Token 在受 Cloudflare Access 保护的网页中管理，有效期最长 90 天，须在到期前轮换；API 支持读取已保存快照及读写通用记录、报告和任务。
 
 可见仓库与告警取决于 PAT 权限及 GitHub API 的返回结果。控制台不是持续运行的监控服务，也不执行独立的代码安全扫描。
@@ -41,9 +40,9 @@ PAT 使用 AES-256-GCM 加密后存入 D1；数据快照以 JSON 保存，未做
 
 1. 打开[站点](https://giraffe.hexly.ai)，通过该部署的 Cloudflare Access 访问策略。应用没有单独的注册或登录页。
 2. 在「设置」添加 GitHub **classic PAT**，需要 `repo`、`read:org`、`read:user` 和 `notifications` scope。当前不接受 fine-grained PAT。令牌输入框在提交时立即清空。
-3. 首个账号成为当前账号。在刷新中心发现仓库并选择关注项，添加或切换账号不会静默采集。
-4. 配置每日快速与每周深度刷新。页面读取已保存快照，不通过 GET 自动采集。
-5. 如需使用外部分析程序，在设置页为固定账号创建最小权限的 API Token，并由外部系统安全保存与运行该程序。Giraffe 不安装或调度分析程序；`/analysis` 仅展示其已发布的报告和运行状态。Token 最长 90 天，到期前须手动轮换。
+3. The first account becomes active. Adding or switching an account never silently collects data.
+4. View existing saved snapshots, or the empty state when no data is available. Collection is unavailable in this delete-only release.
+5. If needed, create a least-privilege, fixed-account API token in settings for an external consumer. Tokens expire within 90 days. Generic machine resources remain available, but Giraffe does not execute or display analysis jobs.
 
 侧栏身份来自 Cloudflare Access。姓名与头像会通过邮箱的 SHA-256 摘要查询 `lizheng.blog` 作者档案，服务不可用时使用身份信息回退。
 

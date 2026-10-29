@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { expect, it, vi } from "vitest";
 import { factoryFixture } from "../../../../../tests/fixtures/factory-snapshot";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
-import { makeRun } from "../../lib/factory-run";
+
 import type { Env } from "../env";
 import { createApp } from "../index";
 import { createApiToken } from "../lib/api-tokens";
@@ -39,7 +39,6 @@ async function setup() {
 		DB: raw,
 		ENVIRONMENT: "development",
 		GITHUB_API_BASE: "http://fixture",
-		FACTORY_QUEUE: { send: vi.fn() },
 	} as unknown as Env;
 	const token = await createApiToken(db, {
 		accountId: account,
@@ -104,7 +103,7 @@ it("applies private headers to every machine response, including authentication 
 		)),
 	];
 	expect(responses.slice(0, 8).map((response) => response.status)).toEqual([
-		401, 403, 403, 400, 404, 404, 405, 400,
+		401, 403, 403, 410, 410, 404, 405, 400,
 	]);
 	vi.spyOn(fixture.raw, "prepare").mockImplementationOnce(() => {
 		throw new Error("fixture database failure");
@@ -139,43 +138,7 @@ it.each(["POST", "PATCH"])(
 		expect(await (await s.call(`${path}/deep`)).json()).toMatchObject({ item: { payload } });
 	},
 );
-it("keeps unavailable and limited counts in compact machine history without writes", async () => {
-	const s = await setup();
-	for (const [id, at] of [
-		["old", "2026-01-01T00:00:00.000Z"],
-		["new", "2026-01-02T00:00:00.000Z"],
-	]) {
-		if (!id || !at) throw new Error("fixture");
-		const run = makeRun(id, account, "nocoo", id, "catalog", [], at);
-		for (const step of run.steps) step.status = "success";
-		Object.assign(run.steps[1] ?? {}, { status: "unavailable", error: "permission_denied" });
-		Object.assign(run.steps[2] ?? {}, { status: "limited", error: "dependency_parse_unsupported" });
-		run.status = "completed";
-		await s.db
-			.prepare(
-				"INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES(?,?,?,'completed',?,?,?,?)",
-			)
-			.bind(id, account, id, JSON.stringify(run), at, at, at)
-			.run();
-	}
-	const before = await s.db.prepare("SELECT * FROM factory_runs ORDER BY id").all();
-	const response = await s.call(`${s.prefix}/refresh-runs`);
-	expect(response.status).toBe(200);
-	expect(await response.json()).toMatchObject({
-		items: [
-			{
-				id: "new",
-				counts: { total: 4, success: 2, failed: 0, unavailable: 1, limited: 1, skipped: 0 },
-			},
-			{
-				id: "old",
-				steps: [],
-				counts: { total: 4, success: 2, failed: 0, unavailable: 1, limited: 1, skipped: 0 },
-			},
-		],
-	});
-	expect(await s.db.prepare("SELECT * FROM factory_runs ORDER BY id").all()).toEqual(before);
-});
+
 it("enforces bearer, scopes and fixed account independently of dashboard activation", async () => {
 	const s = await setup();
 	expect((await s.call("/me", "GET", undefined, null)).status).toBe(401);
@@ -216,32 +179,6 @@ it("enforces bearer, scopes and fixed account independently of dashboard activat
 	expect((await s.app.request("http://localhost/api/tokens", {}, prod)).status).toBe(401);
 });
 
-it.each(["running", "paused"] as const)(
-	"returns 409 account_conflict when starting another run while one is %s",
-	async (status) => {
-		const fixture = await setup();
-		const now = new Date().toISOString();
-		const run = makeRun("active-run", account, "nocoo", crypto.randomUUID(), "catalog", [], now);
-		run.status = status;
-		await fixture.db
-			.prepare(
-				"INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",
-			)
-			.bind(run.id, account, run.requestKey, status, JSON.stringify(run), now, now, now)
-			.run();
-		const response = await fixture.call(`${fixture.prefix}/refresh-runs`, "POST", {
-			requestKey: crypto.randomUUID(),
-			mode: "catalog",
-			scope: "all",
-		});
-		expect(response.status).toBe(409);
-		expect(await response.json()).toMatchObject({ error: { code: "account_conflict" } });
-		expect((await fixture.db.prepare("SELECT id,status FROM factory_runs").all()).results).toEqual([
-			{ id: run.id, status },
-		]);
-		expect(fixture.env.FACTORY_QUEUE.send).not.toHaveBeenCalled();
-	},
-);
 it("rejects unknown query keys on every documented machine GET", async () => {
 	const s = await setup();
 	const paths = [
@@ -562,7 +499,7 @@ it.each([
 		);
 	},
 );
-it("manages only explicit local configuration and durable refresh controls", async () => {
+it("manages only explicit local configuration without collection", async () => {
 	const s = await setup();
 	const p = s.prefix;
 	expect((await s.call(`${p}/settings`)).status).toBe(200);
@@ -588,50 +525,4 @@ it("manages only explicit local configuration and durable refresh controls", asy
 		statistics: [],
 		statistics_deprecated: true,
 	});
-	for (const kind of ["daily", "weekly", "catalog"]) {
-		const path = `${p}/schedules/${kind}`;
-		const body = {
-			enabled: true,
-			time: "08:00",
-			weekday: 0,
-			scope: kind === "daily" ? "starred" : "all",
-		};
-		expect((await s.call(path, "PUT", body)).status).toBe(200);
-		expect((await s.call(path, "DELETE")).status).toBe(204);
-	}
-	expect((await s.call(`${p}/schedules/no`, "PUT", {})).status).toBe(400);
-	expect(
-		(
-			await s.call(`${p}/schedules/daily`, "PUT", {
-				enabled: true,
-				time: "08:00",
-				weekday: 0,
-				scope: "all",
-			})
-		).status,
-	).toBe(400);
-	expect((await s.call(`${p}/schedules/catalog`, "PUT", {})).status).toBe(400);
-	expect((await s.call(`${p}/refresh-runs`)).status).toBe(200);
-	expect((await s.call(`${p}/refresh-runs`, "DELETE")).status).toBe(405);
-	expect((await s.call(`${p}/refresh-runs`, "POST", {})).status).toBe(400);
-	expect((await s.call(`${p}/refresh-runs/no/control`, "POST", {})).status).toBe(400);
-	expect((await s.call(`${p}/refresh-runs/no/control`, "POST", { action: "pause" })).status).toBe(
-		404,
-	);
-	const run = await s.call(`${p}/refresh-runs`, "POST", {
-		requestKey: crypto.randomUUID(),
-		mode: "catalog",
-		scope: "all",
-	});
-	expect(run.status).toBe(202);
-	const id = ((await run.json()) as { id: string }).id;
-	expect(
-		(await s.call(`${p}/refresh-runs/${id}/control`, "POST", { action: "pause" })).status,
-	).toBe(202);
-	expect(
-		(await s.call(`${p}/refresh-runs/${id}/control`, "POST", { action: "resume" })).status,
-	).toBe(202);
-	expect(
-		(await s.call(`${p}/refresh-runs/${id}/control`, "POST", { action: "cancel" })).status,
-	).toBe(202);
 });

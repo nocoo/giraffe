@@ -44,7 +44,12 @@ vi.mock("../components/layout/project-identity", () => ({
 	ProjectLabel: ({ repo }: { repo: string }) => <span>{repo}</span>,
 }));
 vi.mock("./factory-charts", () => ({
-	FactoryPanel: ({ children }: { children: ReactNode }) => <section>{children}</section>,
+	FactoryPanel: ({ title, children }: { title: ReactNode; children: ReactNode }) => (
+		<section>
+			<h2>{title}</h2>
+			{children}
+		</section>
+	),
 	FactorySpark: () => null,
 	FactoryHeatmap: () => null,
 	FactoryTreemap: () => null,
@@ -83,7 +88,8 @@ it.each([30, 90])("labels the published %i-day chart window", async (dayCount) =
 		expect(container.querySelector("#factory-change-title")?.textContent).toBe(
 			`变化 · 最近 ${dayCount} 天`,
 		);
-		expect(container.textContent).toContain("每日快速刷新 30 天，每周深度刷新校准 90 天");
+		expect(container.textContent).not.toContain("每日快速刷新");
+		expect(container.textContent).not.toContain("每周深度刷新");
 		expect(container.textContent).toContain("默认 7 天仅用于期间比较");
 		const methodology = Array.from(container.querySelectorAll("details")).find(
 			(details) => details.querySelector("summary")?.textContent === "来源、口径与不确定性",
@@ -92,6 +98,62 @@ it.each([30, 90])("labels the published %i-day chart window", async (dayCount) =
 		methodology.open = true;
 		expect(methodology.textContent).toContain("历史总量与观测窗口内流量分开");
 		expect(methodology.textContent).not.toMatch(/历史总量与\s*90\s*天流量分开/);
+	} finally {
+		await act(async () => root.unmount());
+	}
+});
+
+it("keeps the dashboard shell honest and refresh disabled without saved data", async () => {
+	vi.mocked(loadFactory).mockResolvedValue({ missing: true });
+	vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+	vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+	const container = document.createElement("div");
+	const root = createRoot(container);
+	try {
+		await act(async () =>
+			root.render(
+				<MemoryRouter initialEntries={["/factory"]}>
+					<FactoryPage />
+				</MemoryRouter>,
+			),
+		);
+		expect(container.textContent).toContain("软件工厂");
+		expect(container.textContent).toContain("暂无已保存的快照");
+		expect(container.textContent).toContain("旧刷新已停用");
+		const headings = Array.from(container.querySelectorAll("h2")).map(
+			(heading) => heading.textContent,
+		);
+		for (const title of [
+			"变化 · 暂无观测窗口",
+			"提交产出与覆盖面",
+			"交付吞吐",
+			"PR 流量与存量",
+			"Issue 流量与存量",
+			"仓库变化矩阵",
+			"存量 · 我名下全部仓库",
+			"提交日历",
+			"积压任务",
+			"仓库规模地图",
+			"提交与待办",
+			"工作流量账",
+			"需要检查的信号",
+			"依赖与维护",
+			"仓库生产线 · 按窗口提交量排序",
+		])
+			expect(headings).toContain(title);
+		expect(container.querySelectorAll(".giraffe-stat-card")).toHaveLength(5);
+		expect(container.querySelectorAll(".factory-period dd")).toHaveLength(5);
+		for (const value of container.querySelectorAll(".factory-period dd"))
+			expect(value.textContent).toBe("—");
+		expect(container.querySelector('table[aria-label="仓库生产线"]')).not.toBeNull();
+		expect(container.querySelectorAll("time")).toHaveLength(0);
+		expect(container.textContent).not.toMatch(/最近 \d+ 天|\d{4}-\d{2}-\d{2}|0 个|0%/);
+		const disabled = Array.from(container.querySelectorAll("button")).find((button) =>
+			button.textContent?.includes("刷新暂不可用"),
+		);
+		expect(disabled?.disabled).toBe(true);
+		expect(container.querySelector('a[href^="/refresh"]')).toBeNull();
+		expect(container.textContent).not.toContain("离开页面后也会继续");
 	} finally {
 		await act(async () => root.unmount());
 	}

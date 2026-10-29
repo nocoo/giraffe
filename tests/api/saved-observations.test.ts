@@ -527,12 +527,12 @@ it("excludes removed repositories from saved account observations without deleti
 		"notifications",
 		"alerts",
 		"insights",
-		`agent/accounts/${account}/sources`,
 	]) {
 		const response = await browser(path);
 		expect(response.status).toBe(200);
 		expect((await response.text()).toLowerCase()).not.toContain(removed);
 	}
+	expect((await browser(`agent/accounts/${account}/sources`)).status).toBe(404);
 	const details = await fetch(`${base}/api/v1/accounts/${account}/repos/nocoo/rsshub/details`, {
 		headers: { authorization: `Bearer ${bearer}` },
 	});

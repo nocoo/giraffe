@@ -6,7 +6,7 @@ import { createApp } from "../index";
 import { createApiToken } from "../lib/api-tokens";
 import { createDb } from "../lib/db/d1";
 
-it("reads settings and machine runs in one post-auth batch", async () => {
+it("reads settings and retired machine run skeleton without collection", async () => {
 	const fixture = await sourcesFixture();
 	await fixture.raw
 		.prepare("UPDATE accounts SET is_active=1 WHERE id=?")
@@ -20,8 +20,6 @@ it("reads settings and machine runs in one post-auth batch", async () => {
 		creator: "fixture@local.test",
 	});
 	for (const route of [
-		"/api/refresh/settings",
-		"/api/factory/runs",
 		`/api/v1/accounts/${fixture.account}/settings`,
 		`/api/v1/accounts/${fixture.account}/refresh-runs`,
 	]) {
@@ -38,7 +36,7 @@ it("reads settings and machine runs in one post-auth batch", async () => {
 			} as unknown as Env,
 		);
 		expect(response.status, route).toBe(200);
-		expect(profile.trips, route).toHaveLength(2);
+		expect(profile.trips, route).toHaveLength(route.endsWith("/settings") ? 2 : 1);
 		expect(response.headers.get("server-timing")).toContain("serialized_bytes;desc=");
 	}
 });

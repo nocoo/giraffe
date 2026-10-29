@@ -1,11 +1,13 @@
 import { expect, test } from "@playwright/test";
-import type { FactoryRunResponse } from "../../apps/web/src/lib/factory-run";
-import { REPO_SNAPSHOT_TABS, SITE_SNAPSHOT_KINDS } from "../../apps/web/src/lib/snapshot-kinds";
 
-test("factory run survives reload, refreshes the whole site and preserves the last snapshot", async ({
-	page,
-}) => {
-	test.setTimeout(180000);
+test("a fresh account keeps the dashboard and cannot start collection", async ({ page }) => {
+	const collectionRequests: string[] = [];
+	page.on("request", (request) => {
+		const path = new URL(request.url()).pathname;
+		if (/^\/api\/(refresh|factory\/runs|agent)(\/|$)/.test(path)) {
+			collectionRequests.push(`${request.method()} ${path}`);
+		}
+	});
 	await page.goto("/settings");
 	await page.getByTestId("pat-input").fill(`ghp_${"A".repeat(36)}`);
 	await page.getByTestId("pat-submit").click();
@@ -13,116 +15,50 @@ test("factory run survives reload, refreshes the whole site and preserves the la
 	await expect(page.locator("form").filter({ has: page.getByTestId("pat-input") })).toHaveAttribute(
 		"aria-busy",
 		"false",
-		{ timeout: 15000 },
 	);
 	await page.goto("/factory");
-	await page.getByRole("link", { name: "去刷新", exact: true }).click();
-	await page.getByRole("combobox", { name: "刷新模式", exact: true }).click();
-	await page.getByRole("option", { name: "同步仓库列表", exact: true }).click();
-	await page.getByRole("button", { name: "开始刷新", exact: true }).click();
-	await expect(page.getByRole("progressbar", { name: "本次刷新进度" })).toHaveAttribute("max", "4");
-	await page.reload();
-	await expect(page.getByRole("dialog")).toHaveCount(0);
-	await expect(page.getByRole("region", { name: "数据健康与刷新进度" })).toBeVisible();
-	await expect
-		.poll(
-			async () => {
-				const state = (await (
-					await page.request.get("/api/factory/runs")
-				).json()) as FactoryRunResponse;
-				return state.current?.status ?? state.history[0]?.status;
-			},
-			{ timeout: 25000 },
-		)
-		.toBe("completed");
-	const before = await (await page.request.get("/api/factory")).json();
-	expect(before.repos).toHaveLength(1);
-
-	await page.getByRole("button", { name: "更新状态", exact: true }).click();
-	await page.getByRole("tab", { name: "发起刷新" }).click();
-	await page.getByRole("combobox", { name: "刷新模式", exact: true }).click();
-	await page.getByRole("option", { name: "快速刷新", exact: true }).click();
-	await expect(
-		page.getByRole("checkbox", { name: "octocat/hello-world", exact: true }),
-	).toBeChecked();
-	const create = page.getByRole("button", { name: "开始刷新（1）" });
-	await expect(create).toBeEnabled({ timeout: 70000 });
-	const started = page.waitForResponse(
-		(r) => r.url().endsWith("/api/factory/runs") && r.request().method() === "POST",
-	);
-	await create.click();
-	const response = await started;
-	expect(response.status()).toBe(202);
-	const run = (await response.json()) as { id: string };
-	expect(await (await page.request.get("/api/factory")).json()).toEqual(before);
-	await page.reload();
-
-	await page.getByText("运行信息", { exact: true }).click();
-	await expect(page.locator("code").getByText(run.id, { exact: true })).toBeVisible();
-	await expect(page.getByRole("progressbar", { name: "本次刷新进度" })).toHaveAttribute(
-		"max",
-		"28",
-	);
-	await expect
-		.poll(
-			async () => {
-				const state = (await (
-					await page.request.get("/api/factory/runs")
-				).json()) as FactoryRunResponse;
-				return state.history.find((r) => r.id === run.id)?.status;
-			},
-			{ timeout: 45000 },
-		)
-		.toBe("completed");
-	await page.getByRole("button", { name: "更新状态", exact: true }).click();
-	await expect(page.getByRole("progressbar", { name: "本次刷新进度" })).toHaveAttribute(
-		"value",
-		"28",
-	);
-	const completed = (await (
-		await page.request.get("/api/factory/runs")
-	).json()) as FactoryRunResponse;
-	expect(
-		completed.history
-			.find((entry) => entry.id === run.id)
-			?.steps.find((step) => step.resource === "insights"),
-	).toMatchObject({ status: "success" });
-	expect(
-		completed.history
-			.find((entry) => entry.id === run.id)
-			?.steps.find((step) => String(step.kind) === "assessment"),
-	).toBeUndefined();
-	await expect(page.locator(".factory-run-phases>li").filter({ hasText: "AI 分析" })).toHaveCount(
-		0,
-	);
-	await expect(page.locator(".factory-run-issues")).toHaveCount(0);
-	const after = await (await page.request.get("/api/factory")).json();
-	expect(after.runId).toBe(run.id);
-	expect(after.repos).toHaveLength(1);
-	expect(after.repos[0].observation.version).toBe(run.id);
-	const activity = await (await page.request.get("/api/activity")).json();
-	expect(activity.repos[0].commits).toMatchObject({
-		default: 1,
-		items: [
-			{ sha: "abc", at: "2020-01-01T00:00:00Z", observation: { runId: run.id, bootstrap: true } },
-		],
-	});
+	await expect(page.getByRole("heading", { name: "软件工厂", exact: true })).toBeVisible();
+	await expect(page.getByRole("button", { name: "刷新暂不可用", exact: true })).toBeDisabled();
+	await expect(page.getByText("暂无已保存的快照", { exact: true })).toBeVisible();
+	await expect(page.getByText(/旧刷新已停用/)).toBeVisible();
+	await expect(page.getByRole("link", { name: /去刷新|刷新中心/ })).toHaveCount(0);
+	for (const title of [
+		"变化 · 暂无观测窗口",
+		"提交产出与覆盖面",
+		"交付吞吐",
+		"PR 流量与存量",
+		"Issue 流量与存量",
+		"仓库变化矩阵",
+		"存量 · 我名下全部仓库",
+		"提交日历",
+		"积压任务",
+		"仓库规模地图",
+		"提交与待办",
+		"工作流量账",
+		"需要检查的信号",
+		"依赖与维护",
+		"仓库生产线 · 按窗口提交量排序",
+	])
+		await expect(page.getByRole("heading", { name: title, exact: true })).toBeVisible();
+	await expect(page.locator(".giraffe-stat-card")).toHaveCount(5);
+	await expect(page.getByRole("table", { name: "仓库生产线", exact: true })).toBeVisible();
+	await expect(page.getByRole("columnheader", { name: "资源覆盖", exact: true })).toBeVisible();
+	await expect(page.locator(".factory-period dd")).toHaveText(["—", "—", "—", "—", "—"]);
+	await expect(page.locator("main time")).toHaveCount(0);
+	await expect(page.locator("main")).not.toContainText(/最近 \d+ 天|\d{4}-\d{2}-\d{2}|0 个|0%/);
 	for (const path of [
-		...SITE_SNAPSHOT_KINDS.map((kind) => `/api/${kind}`),
-		"/api/insights",
-		...REPO_SNAPSHOT_TABS.map(
-			(tab) => `/api/repos/octocat/hello-world${tab === "details" ? "" : `/${tab}`}`,
-		),
+		"/repos",
+		"/issues",
+		"/pulls",
+		"/ci",
+		"/alerts",
+		"/inbox",
+		"/today",
+		"/insights",
 	]) {
-		const saved = await page.request.get(path);
-		expect(saved.ok(), `${path} is saved by the factory run`).toBe(true);
-		expect(await saved.json()).toMatchObject({ account_id: after.account_id, truncated: false });
+		await page.goto(path);
+		await expect(page.locator("main")).toBeVisible();
+		await expect(page.getByText("页面不存在", { exact: true })).toHaveCount(0);
 	}
-	await page.setViewportSize({ width: 1440, height: 1000 });
-	await page.screenshot({ path: ".factory-cache/refresh-v06/local-desktop.png", fullPage: true });
-	await page.setViewportSize({ width: 390, height: 844 });
-	await expect
-		.poll(() => page.locator("body").evaluate((el) => el.scrollWidth))
-		.toBeLessThanOrEqual(390);
-	await page.screenshot({ path: ".factory-cache/refresh-v06/local-mobile.png", fullPage: true });
+	expect(collectionRequests).toEqual([]);
 });

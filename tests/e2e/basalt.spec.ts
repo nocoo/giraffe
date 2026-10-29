@@ -55,18 +55,6 @@ async function mockPages(page: Page, completeCommits = false) {
 	const fixtures: Record<string, unknown> = {
 		...createUiFixtures(),
 		"/api/factory": projectFactoryFixture(snapshot),
-		"/api/factory/runs": {
-			account_id: snapshot.account_id,
-			serverNow: snapshot.fetched_at,
-			current: null,
-			history: [],
-			catalog: snapshot.repos,
-			catalogComplete: true,
-			catalogUpdatedAt: snapshot.fetched_at,
-			nextAllowedAt: null,
-			publication: null,
-			repositories: [],
-		},
 	};
 	await page.route("**/api/**", (route) => {
 		const path = new URL(route.request().url()).pathname;
@@ -222,7 +210,7 @@ test("card help is compact, supports hover and keyboard, and charts keep green k
 	await expect(surface).toHaveCSS("outline-width", "2px");
 	const keyboardColor = await surface.evaluate((element) => getComputedStyle(element).outlineColor);
 	const primaryColor = await page
-		.getByRole("link", { name: "去刷新", exact: true })
+		.getByRole("button", { name: "刷新暂不可用", exact: true })
 		.evaluate((element) => getComputedStyle(element).backgroundColor);
 	expect(keyboardColor).toBe(primaryColor);
 	await page.getByRole("heading", { name: "交付吞吐", exact: true }).click();
@@ -528,25 +516,8 @@ test("factory Basalt controls and larger text fit mobile and dark mode", async (
 		animations: "disabled",
 	});
 	await page.getByRole("button", { name: "关闭数据时间", exact: true }).click();
-	await page.getByRole("link", { name: "去刷新", exact: true }).click();
-	await page.getByRole("tab", { name: "发起刷新", exact: true }).click();
-	await expect(page.getByRole("heading", { name: "选择要更新的仓库", exact: true })).toHaveCSS(
-		"font-size",
-		"16px",
-	);
-	await page.getByRole("combobox", { name: "刷新范围", exact: true }).click();
-	await page.getByRole("option", { name: "手动选择仓库", exact: true }).click();
-	await page.getByRole("checkbox", { name: "nocoo/app", exact: true }).check();
-	await expect(page.getByRole("button", { name: "开始刷新（1）", exact: true })).toBeEnabled();
-	await expect(page.locator(".factory-console select")).toHaveCount(0);
-	await expect(page.getByRole("checkbox", { name: "nocoo/app", exact: true })).toHaveClass(
-		/basalt-ui/,
-	);
-	expect(
-		await page
-			.getByRole("region", { name: "刷新管理" })
-			.evaluate((element) => element.scrollWidth <= element.clientWidth),
-	).toBe(true);
+	await expect(page.getByRole("button", { name: "刷新暂不可用", exact: true })).toBeDisabled();
+	await expect(page.getByRole("link", { name: "去刷新", exact: true })).toHaveCount(0);
 	expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 	await page.screenshot({ path: ".factory-cache/basalt/dialog-mobile-dark.png" });
 });
@@ -595,9 +566,7 @@ test("repository timestamps stay in a Basalt dialog and elapsed time ticks every
 	await expect(dialog.getByRole("timer")).toHaveCount(0);
 });
 
-test("other pages are read-only and missing data leads to the unified factory console", async ({
-	page,
-}) => {
+test("other pages are read-only and missing data never offers collection", async ({ page }) => {
 	const writes: string[] = [];
 	page.on("request", (request) => {
 		if (new URL(request.url()).pathname.startsWith("/api/") && request.method() !== "GET")
@@ -615,7 +584,9 @@ test("other pages are read-only and missing data leads to the unified factory co
 	] as const) {
 		await page.goto(path);
 		await expect(page.getByTestId(content)).toBeVisible();
-		await expect(page.getByRole("main").getByRole("button", { name: /刷新/ })).toHaveCount(0);
+		await expect(
+			page.getByRole("main").getByRole("button", { name: /刷新/, disabled: false }),
+		).toHaveCount(0);
 		await expect(page.getByText("首个账号添加成功后会自动同步仓库。", { exact: true })).toHaveCount(
 			0,
 		);
@@ -627,8 +598,8 @@ test("other pages are read-only and missing data leads to the unified factory co
 		}),
 	);
 	await page.getByRole("tab", { name: "流量", exact: true }).click();
-	await expect(page.getByText("等待统一刷新", { exact: true })).toBeVisible();
-	await page.getByRole("link", { name: "前往刷新中心", exact: true }).click();
-	await expect(page.getByRole("region", { name: "刷新管理", exact: true })).toBeVisible();
+	await expect(page.getByText("暂无已保存的快照", { exact: true })).toBeVisible();
+	await expect(page.getByRole("button", { name: "刷新暂不可用", exact: true })).toBeDisabled();
+	await expect(page.getByRole("link", { name: "前往刷新中心", exact: true })).toHaveCount(0);
 	expect(writes).toEqual([]);
 });

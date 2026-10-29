@@ -155,36 +155,27 @@ it("R8 HTTP preserves generic report CRUD and the latest resource ID while selec
 	});
 });
 
-it("R8 HTTP machine and browser latest share history, hide legacy invalid daily rows and never mutate GET state", async () => {
+it("R8 HTTP machine latest hides legacy invalid daily rows and never mutates GET state", async () => {
 	marker();
-	const prior = rows("SELECT id FROM accounts WHERE is_active=1")[0]?.id;
 	const now = new Date().toISOString();
 	rows(
-		`UPDATE accounts SET is_active=0 WHERE is_active=1; UPDATE accounts SET is_active=1 WHERE id=${quote(account)}; INSERT INTO agent_resources(account_id,collection,id,repository,type,status,payload,created_at,updated_at) VALUES(${quote(account)},'reports','legacy-invalid',NULL,'github-daily','completed','{}',${quote(now)},${quote(now)});`,
+		`INSERT INTO agent_resources(account_id,collection,id,repository,type,status,payload,created_at,updated_at) VALUES(${quote(account)},'reports','legacy-invalid',NULL,'github-daily','completed','{}',${quote(now)},${quote(now)});`,
 	);
 	try {
 		const before = rows(
 			`SELECT * FROM api_tokens WHERE account_id=${quote(account)} ORDER BY id; SELECT * FROM agent_resources WHERE account_id=${quote(account)} ORDER BY id;`,
 		);
 		const calls = await (await fetch("http://127.0.0.1:17046/_count")).text();
-		const jwt = process.env.GIRAFFE_JWT;
-		const headers = jwt ? { "Cf-Access-Jwt-Assertion": jwt } : {};
-		const prefix = `${base}/api/agent/accounts/${account}`;
-		const browser = await fetch(`${prefix}/reports/latest?type=github-daily`, { headers });
-		expect(browser.status).toBe(200);
-		const latest = await browser.json();
+		const response = await request("reports/latest?type=github-daily", "GET", undefined, reader);
+		expect(response.status).toBe(200);
+		const latest = (await response.json()) as { invalidCount: number };
 		expect(latest.invalidCount).toBe(1);
-		expect(
-			await (await request("reports/latest?type=github-daily", "GET", undefined, reader)).json(),
-		).toEqual(latest);
-		const history = await (await fetch(`${prefix}/analysis/daily`, { headers })).json();
-		expect(history).toMatchObject({ account_id: account, items: [latest.item], invalidCount: 1 });
-		const cached = await fetch(`${prefix}/reports/latest?type=github-daily`, {
-			headers: { ...headers, "if-none-match": browser.headers.get("etag") ?? "" },
+		const cached = await request("reports/latest?type=github-daily", "GET", undefined, reader, {
+			"if-none-match": response.headers.get("etag") ?? "",
 		});
 		expect(cached.status).toBe(304);
 		expect(cached.headers.get("cache-control")).toBe("private, no-store");
-		expect(cached.headers.get("vary")).toContain("Cf-Access-Jwt-Assertion");
+		expect(cached.headers.get("vary")).toContain("Authorization");
 		expect(cached.headers.get("referrer-policy")).toBe("no-referrer");
 		for (const token of [wrong, "invalid"])
 			expect(
@@ -213,15 +204,6 @@ it("R8 HTTP machine and browser latest share history, hide legacy invalid daily 
 			"type=bad!",
 		])
 			expect((await request(`reports/latest?${query}`)).status).toBe(400);
-		expect((await fetch(`${prefix}/analysis/daily?x=1`, { headers })).status).toBe(400);
-		expect(
-			(
-				await fetch(
-					`${base}/api/agent/accounts/${"z".repeat(21)}/reports/latest?type=github-daily`,
-					{ headers },
-				)
-			).status,
-		).toBe(409);
 		expect(
 			rows(
 				`SELECT * FROM api_tokens WHERE account_id=${quote(account)} ORDER BY id; SELECT * FROM agent_resources WHERE account_id=${quote(account)} ORDER BY id;`,
@@ -230,8 +212,6 @@ it("R8 HTTP machine and browser latest share history, hide legacy invalid daily 
 		expect(await (await fetch("http://127.0.0.1:17046/_count")).text()).toBe(calls);
 	} finally {
 		marker();
-		rows(
-			`UPDATE accounts SET is_active=0 WHERE id=${quote(account)};${typeof prior === "string" ? `UPDATE accounts SET is_active=1 WHERE id=${quote(prior)};` : ""}`,
-		);
+		rows(`DELETE FROM agent_resources WHERE account_id=${quote(account)} AND id='legacy-invalid';`);
 	}
 });

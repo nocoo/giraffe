@@ -15,15 +15,19 @@ export function SnapshotPending({
 			title={missingTitle(state)}
 			description={
 				needsAccount
-					? "连接账号后，在软件工厂统一更新数据。"
-					: "数据由软件工厂统一更新，可在那里查看进度或失败原因。"
+					? "连接账号后可查看已有快照。旧刷新已停用，当前无法采集新数据。"
+					: "暂无已保存的快照。旧刷新已停用，当前无法采集新数据。"
 			}
 			action={
-				<Button variant="secondary" size="sm" asChild>
-					<Link href={needsAccount ? "/settings" : "/refresh"}>
-						{needsAccount ? "查看账号设置" : "前往刷新中心"}
-					</Link>
-				</Button>
+				needsAccount ? (
+					<Button variant="secondary" size="sm" asChild>
+						<Link href="/settings">查看账号设置</Link>
+					</Button>
+				) : (
+					<Button variant="secondary" size="sm" disabled>
+						刷新暂不可用
+					</Button>
+				)
 			}
 		/>
 	);

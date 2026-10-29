@@ -28,8 +28,6 @@ it("times approved saved reads without exposing private diagnostics", async () =
 		"/api/repos",
 		"/api/ci",
 		"/api/factory",
-		"/api/refresh/settings",
-		"/api/factory/runs",
 		`/api/v1/accounts/${fixture.account}/repos`,
 		`/api/v1/accounts/${fixture.account}/ci`,
 		`/api/v1/accounts/${fixture.account}/factory`,

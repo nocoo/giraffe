@@ -234,7 +234,7 @@ export function InboxPage() {
 							<LayerCard.Empty
 								icon={<Inbox />}
 								title={snap.notifications.length ? "没有符合筛选的通知" : "收件箱为空"}
-								description="新的 GitHub 通知将在下次刷新后出现在这里。"
+								description="这里仅显示已保存的通知。旧刷新已停用，当前无法采集新通知。"
 							/>
 						) : (
 							<>

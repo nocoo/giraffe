@@ -6,7 +6,7 @@ import { createApiToken } from "../lib/api-tokens";
 import { createDb } from "../lib/db/d1";
 import { replaceSnapshotStmts } from "../lib/db/snapshots";
 import { readSources } from "../lib/machine-sources";
-import { starredRepos } from "../lib/refresh-schedule";
+import { readStars } from "../lib/repo-stars";
 import { snapshotSelection } from "../lib/snapshot-scope";
 
 const account = "s".repeat(21);
@@ -105,7 +105,9 @@ it("mints agent provenance, lists tombstones, and keeps settings and every selec
 		],
 	});
 	expect(await setup.raw.prepare("SELECT * FROM repo_stars").all()).toEqual(before);
-	expect(await starredRepos(setup.db, account)).toEqual([]);
+	expect(
+		(await readStars(setup.db, account)).filter((star) => star.starred).map((star) => star.repo),
+	).toEqual([]);
 	expect((await snapshotSelection(setup.db, account, "starred")).starred("OWNER/APP")).toBe(false);
 	expect((await readSources(setup.db, account, {})).repositories).toEqual([
 		"owner/app",

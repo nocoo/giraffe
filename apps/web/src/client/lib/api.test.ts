@@ -41,19 +41,19 @@ describe("api client", () => {
 		vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
 			const url = String(input);
 			seen.push(`${init?.method ?? "GET"} ${url}`);
-			if (url === "/api/refresh") {
-				expect(init?.body).toContain("account_id");
-				return Response.json({ account_id: "a", kinds: ["repos"] });
+			if (url === "/api/accounts") {
+				expect(init?.body).toContain("token");
+				return Response.json({ id: "a" });
 			}
 			if (url === "/api/accounts/x") {
 				return new Response(null, { status: 204 });
 			}
 			throw new Error(url);
 		});
-		const posted = await apiPost<{ kinds: string[] }>("refresh", { account_id: "a", kinds: "all" });
-		expect(posted.kinds).toEqual(["repos"]);
+		const posted = await apiPost<{ id: string }>("accounts", { token: "fixture" });
+		expect(posted.id).toBe("a");
 		await apiDelete("accounts/x");
-		expect(seen).toEqual(["POST /api/refresh", "DELETE /api/accounts/x"]);
+		expect(seen).toEqual(["POST /api/accounts", "DELETE /api/accounts/x"]);
 	});
 
 	it("covers envelope fallbacks and empty post", async () => {

@@ -33,9 +33,8 @@ for (const dayCount of [30, 90]) {
 		await page.goto("/factory");
 		await expect(page.getByRole("heading", { name: `变化 · 最近 ${dayCount} 天` })).toBeVisible();
 		await page.locator("#factory-change-title").getByLabel("More information").hover();
-		await expect(page.getByRole("tooltip")).toContainText(
-			"每日快速刷新 30 天，每周深度刷新校准 90 天",
-		);
+		await expect(page.getByRole("tooltip")).not.toContainText("快速刷新");
+		await expect(page.getByRole("tooltip")).not.toContainText("深度刷新");
 		await expect(page.getByRole("tooltip")).toContainText("默认 7 天仅用于期间比较");
 		const methodology = page.locator("details").filter({ hasText: "来源、口径与不确定性" });
 		await methodology.locator(":scope > summary").click();

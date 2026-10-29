@@ -129,13 +129,5 @@ it("counts unpublished catalog members as missing and preserves original factory
 		})),
 		account_id: account,
 	});
-	const runs = await (await app.request("http://localhost/api/factory/runs", {}, env)).json();
-	expect(runs).toMatchObject({
-		repositories: [
-			{ repo: "NOCOO/APP" },
-			{ repo: "nocoo/missing" },
-			{ repo: "nocoo/no-observation" },
-		],
-	});
 	expect(await raw.prepare("SELECT * FROM snapshots ORDER BY kind").all()).toEqual(before);
 });

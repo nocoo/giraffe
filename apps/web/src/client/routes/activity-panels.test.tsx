@@ -80,7 +80,7 @@ describe("activity saved-publication content", () => {
 		snapshot.coverage.repos = { status: "partial", truncated: true, reason: "page capacity" };
 		const html = render(snapshot, true);
 		expect(html).toContain("该仓库的活动记录未完整保存");
-		expect(html).not.toContain("该仓库未包含在当次快速刷新中");
+		expect(html).not.toContain("已保存的活动窗口不包含该仓库");
 	});
 
 	it("renders activity repository destinations and independent security null values", () => {

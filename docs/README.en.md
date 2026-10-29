@@ -19,7 +19,7 @@
 
 Giraffe is a personal GitHub console. Add classic PATs for one or more accounts to review repositories, open issues and pull requests, security alerts, and notifications, then compare repository metrics across days.
 
-A Worker collects GitHub snapshots into D1 through manual, daily quick and weekly deep refreshes. The analysis desk reads evidence-bound Issues, PR, CI and CD reports published by an external analysis program through the machine API. Giraffe does not run model inference or automatically change code. Insights retain deterministic prioritization.
+Version 0.26.0 removes the old refresh/collection stack and the analysis product surface. The Dashboard retains its layout and reads supported saved snapshots with their original timestamps. Missing data shows an explicit empty state; collection is unavailable. No phase-2 A+B collector is included. See the [phase-1 contract](14-phase1-retirement.md).
 
 PATs are encrypted with AES-256-GCM before storage in D1. Data snapshots are stored as JSON without additional application-level encryption. This is a personal deployment: everyone allowed into the same deployment shares its accounts and snapshots.
 
@@ -31,8 +31,7 @@ PATs are encrypted with AES-256-GCM before storage in D1. Data snapshots are sto
 - **Repository details**: nine tabs for details, security, Actions, pull requests, issues, releases, traffic, languages, and contributors.
 - **Insights and alerts**: rule-based classifications and GitHub security alerts from the current snapshots, with truncation, permission, and availability states.
 - **Notifications**: browse notifications and mark one or all as read. These actions also update GitHub.
-- **Scope and schedules**: business pages default to Giraffe-starred repositories, with an explicit All scope and scheduled quick/deep refresh.
-- **Analysis desk**: read-only repository and portfolio reports, source versions, evidence freshness, and the latest `grok-bot-run` status. Evidence older than 36 hours is stale; a last run older than 48 hours is overdue. The page does not execute jobs.
+- **Saved observations**: existing snapshot filters remain read-only. Refresh, schedules, run controls and the analysis page are removed; missing evidence is unavailable, not zero.
 - **Machine API**: every `/api/v1/*` endpoint requires a fixed-account, scoped bearer token. Manage tokens through the Cloudflare Access-protected dashboard; tokens expire within 90 days and must be rotated before expiry. The API reads saved observations and supports CRUD for generic records, reports and jobs.
 
 Visible repositories and alerts depend on PAT permissions and GitHub API responses. The console does not run continuous monitoring or perform its own code security scans.
@@ -41,9 +40,9 @@ Visible repositories and alerts depend on PAT permissions and GitHub API respons
 
 1. Open the [website](https://giraffe.hexly.ai) through the deployment's Cloudflare Access policy. There is no separate application sign-up or login page.
 2. Add a GitHub **classic PAT** in Settings with the `repo`, `read:org`, `read:user`, and `notifications` scopes. Fine-grained PATs are not currently accepted. The token input clears immediately on submission.
-3. The first account becomes active. Discover repositories in the refresh center and star those you follow; adding or switching accounts never silently collects GitHub data.
-4. Configure daily quick and weekly deep refresh. Ordinary GETs read saved snapshots only.
-5. If using an external analysis program, create a least-privilege API token for the intended account and keep it in the external system's private configuration. Giraffe does not install or schedule that program; the analysis desk displays only reports and run status it publishes. Rotate the token before its maximum 90-day expiry.
+3. The first account becomes active. Adding or switching accounts never silently collects GitHub data.
+4. View saved snapshots or the empty state when data is missing. Collection is unavailable in this delete-only release.
+5. If needed, create a least-privilege API token for an external consumer and rotate it before its maximum 90-day expiry. Generic machine resources remain available; Giraffe does not execute or display analysis jobs.
 
 The sidebar identity comes from Cloudflare Access. Names and avatars are looked up through the `lizheng.blog` author profile service using a SHA-256 digest of the email address, with an identity fallback when the service is unavailable.
 

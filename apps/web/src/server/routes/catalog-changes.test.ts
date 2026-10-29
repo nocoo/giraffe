@@ -1,11 +1,10 @@
-import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
-import { github } from "../../../../../tests/fixtures/factory";
+
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import type { Env } from "../env";
 import { createApp } from "../index";
 import { createApiToken } from "../lib/api-tokens";
-import { beginCatalog, catalogPlanWrites, planCatalog } from "../lib/catalog-history";
+
 import { createDb } from "../lib/db/d1";
 import { replaceSnapshotStmts } from "../lib/db/snapshots";
 
@@ -59,76 +58,6 @@ it("R7 catalog changes is explicitly uninitialized instead of fabricating an emp
 	expect(await context.raw.prepare("SELECT * FROM api_tokens ORDER BY id").all()).toEqual(
 		tokensBefore,
 	);
-});
-
-it("B6 keeps the migration history floor after first publication without inventing prehistory removals", async () => {
-	const context = await fixture();
-	const db = createDb(context.raw);
-	const savedAt = "2026-10-21T11:30:23.494Z";
-	const repos = [
-		{ name_with_owner: "nocoo/giraffe", is_archived: false },
-		{ name_with_owner: "nocoo/snaky", is_archived: true },
-	];
-	await db.batch(await replaceSnapshotStmts(db, "a", "repos", { repos }, savedAt));
-	await db.batch(
-		readFileSync("migrations/0019_catalog_history.sql", "utf8")
-			.split(";")
-			.map((sql) => sql.trim())
-			.filter(Boolean)
-			.map((sql) => db.prepare(sql)),
-	);
-	const state = await context.raw
-		.prepare("SELECT history_since,checked_at FROM catalog_state WHERE account_id='a'")
-		.first<{ history_since: string; checked_at: string | null }>();
-	if (!state) throw new Error("missing migrated catalog state");
-	expect(state.checked_at).toBeNull();
-	expect(state.history_since > savedAt).toBe(true);
-	const beforeFloor = new Date(Date.parse(state.history_since) - 1).toISOString();
-	expect((await context.request(`since=${beforeFloor}`)).status).toBe(409);
-	const gh = github(() => {
-		throw new Error("the saved catalog must not synthesize missing-repository lookups");
-	});
-	const at = new Date(Date.parse(state.history_since) + 1000).toISOString();
-	const plan = await planCatalog(
-		await beginCatalog(db, "a"),
-		{ repos, truncated: false },
-		{ "nocoo/giraffe": "R_giraffe", "nocoo/snaky": "R_snaky" },
-		"nocoo",
-		gh,
-		"fixture",
-		at,
-		{ kind: "factory", runId: "first-catalog" },
-	);
-	await db.batch(catalogPlanWrites(db, "a", plan));
-	const expired = await context.request(`since=${beforeFloor}`);
-	expect(expired.status).toBe(410);
-	expect(await expired.json()).toMatchObject({ error: { code: "catalog_history_expired" } });
-	const boundary = await context.request(`since=${state.history_since}`);
-	expect(boundary.status).toBe(200);
-	expect(await boundary.json()).toMatchObject({
-		since: state.history_since,
-		history_since: state.history_since,
-		until: at,
-		added: [],
-		removed: [],
-		archived: [],
-		unconfirmed: [],
-	});
-	expect(
-		await context.raw
-			.prepare(
-				"SELECT repo,removed_at FROM catalog_repositories WHERE account_id='a' ORDER BY repo",
-			)
-			.all(),
-	).toMatchObject({
-		results: [
-			{ repo: "nocoo/giraffe", removed_at: null },
-			{ repo: "nocoo/snaky", removed_at: null },
-		],
-	});
-	for (const repo of ["nocoo/rsshub", "nocoo/wiki"])
-		expect(plan.rows.some((row) => row.repo === repo)).toBe(false);
-	expect(gh.count).toBe(0);
 });
 
 it.each([

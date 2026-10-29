@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.26.0 - 2026-10-29
+
+### Removed
+
+- Remove the legacy quick/deep/full refresh collectors, factory-run orchestration,
+  continuation queues, cron schedules and collection audit/preview tools.
+- Remove refresh/run/schedule browser routes and controls, the analysis page,
+  analysis navigation and analysis-only browser projections.
+
+### Changed
+
+- Preserve Dashboard sections, repository views and supported saved observations;
+  missing data uses explicit empty states and disabled refresh messaging, never
+  fabricated zeros or renewed source timestamps.
+- Keep Cloudflare Access, encrypted PAT accounts, hash-only scoped machine tokens
+  and external records/reports/jobs. Retired machine collection mutations and
+  readiness return `410 collection_unavailable`; run lists/settings expose empty
+  collection skeletons.
+- This is a breaking, delete-only phase-1 release with no data migration, no A+B
+  replacement collector and no weekly-report or analysis runtime. Phase 2 remains
+  out of scope.
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),

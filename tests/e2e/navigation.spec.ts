@@ -38,17 +38,6 @@ function stubApi(page: Page, fixtures: Record<string, unknown>, writes: string[]
 		const request = route.request();
 		if (request.method() !== "GET") writes.push(request.url());
 		const path = new URL(request.url()).pathname;
-		if (path.startsWith("/api/agent/accounts/")) {
-			return route.fulfill({
-				json: {
-					account_id: "ui-account",
-					items: [],
-					repositories: [],
-					sources: [],
-					invalidCount: 0,
-				},
-			});
-		}
 		return path in fixtures
 			? route.fulfill({ json: fixtures[path] })
 			: route.fulfill({
@@ -60,7 +49,7 @@ function stubApi(page: Page, fixtures: Record<string, unknown>, writes: string[]
 
 for (const width of [1440, 390]) {
 	for (const theme of ["light", "dark"] as const) {
-		test(`factory landing and AI navigation at ${width}px in ${theme}`, async ({ page }) => {
+		test(`factory landing and snapshot navigation at ${width}px in ${theme}`, async ({ page }) => {
 			await page.setViewportSize({ width, height: 900 });
 			await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
 			const fixtures: Record<string, unknown> = createUiFixtures();
@@ -82,17 +71,20 @@ for (const width of [1440, 390]) {
 			await expect(nav.locator("button[aria-expanded]")).toHaveText(
 				NAV_GROUPS.map((group) => group.label),
 			);
-			const aiToggle = nav.getByRole("button", { name: "AI", exact: true });
-			const ai = page.locator(`[id="${await aiToggle.getAttribute("aria-controls")}"]`);
-			await expect(ai.getByRole("button")).toHaveText(["分析台", "Insights"]);
+			const overviewToggle = nav.getByRole("button", { name: "总览", exact: true });
+			const overview = page.locator(`[id="${await overviewToggle.getAttribute("aria-controls")}"]`);
+			await expect(overview.getByRole("button")).toHaveText(["软件工厂", "今日活动", "Insights"]);
+			await expect(nav.getByRole("button", { name: "AI", exact: true })).toHaveCount(0);
+			await expect(nav.getByRole("button", { name: "分析台", exact: true })).toHaveCount(0);
+			await expect(nav.getByRole("button", { name: "刷新中心", exact: true })).toHaveCount(0);
 			await expect(nav.getByRole("button", { name: "Agent", exact: true })).toHaveCount(0);
-			await aiToggle.click();
-			await expect(aiToggle).toHaveAttribute("aria-expanded", "false");
-			await expect(ai.getByRole("button", { name: "分析台", exact: true })).toBeHidden();
-			await aiToggle.focus();
+			await overviewToggle.click();
+			await expect(overviewToggle).toHaveAttribute("aria-expanded", "false");
+			await expect(overview.getByRole("button", { name: "Insights", exact: true })).toBeHidden();
+			await overviewToggle.focus();
 			await page.keyboard.press("Enter");
-			await expect(aiToggle).toHaveAttribute("aria-expanded", "true");
-			await expect(ai.getByRole("button", { name: "分析台", exact: true })).toBeVisible();
+			await expect(overviewToggle).toHaveAttribute("aria-expanded", "true");
+			await expect(overview.getByRole("button", { name: "Insights", exact: true })).toBeVisible();
 			const home = sidebar.getByRole("link", { name: "Giraffe 首页" });
 			await expect(home).toHaveAttribute("href", "/");
 			await expect(home.getByText(`v${APP_VERSION}`, { exact: true })).toBeVisible();
@@ -108,7 +100,6 @@ for (const width of [1440, 390]) {
 			});
 
 			for (const [label, path] of [
-				["分析台", "/analysis"],
 				["Insights", "/insights"],
 				["仓库", "/repos"],
 			] as const) {
@@ -205,13 +196,13 @@ test("group disclosure stays collapsed when another group navigates", async ({ p
 	await stubApi(page, createUiFixtures(), writes);
 	await gotoAndWaitForSidebar(page, "/repos");
 	const sidebar = page.getByRole("complementary");
-	const ai = sidebar.getByRole("button", { name: "AI", exact: true });
-	await ai.click();
-	await expect(ai).toHaveAttribute("aria-expanded", "false");
+	const overview = sidebar.getByRole("button", { name: "总览", exact: true });
+	await overview.click();
+	await expect(overview).toHaveAttribute("aria-expanded", "false");
 	await sidebar.getByRole("button", { name: "Issues", exact: true }).click();
 	await expect(page).toHaveURL(/\/issues$/);
 	await expect(page.getByRole("heading", { name: "Issues", exact: true })).toBeVisible();
-	await expect(ai).toHaveAttribute("aria-expanded", "false");
+	await expect(overview).toHaveAttribute("aria-expanded", "false");
 	expect(writes).toEqual([]);
 });
 

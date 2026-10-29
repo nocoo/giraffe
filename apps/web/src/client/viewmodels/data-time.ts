@@ -1,4 +1,3 @@
-import type { RefreshWindow } from "../../lib/refresh-times";
 import type { SnapshotFreshness } from "../../lib/snapshot-freshness";
 import { formatTimeAgo } from "../lib/format";
 
@@ -8,19 +7,15 @@ export type DataTime = {
 	freshness?: SnapshotFreshness | undefined;
 };
 
-export function dataTimeSummary(sources: DataTime[], runs: RefreshWindow[], now: number) {
-	const completedAt = (value: string | null | undefined) => {
+export function dataTimeSummary(sources: DataTime[], now: number) {
+	const savedAt = (value: string | null | undefined) => {
 		if (!value || !Number.isFinite(Date.parse(value))) return null;
-		const time = Date.parse(value);
-		return (
-			runs.find((run) => time >= Date.parse(run.startedAt) && time <= Date.parse(run.finishedAt))
-				?.finishedAt ?? value
-		);
+		return value;
 	};
 	const rows = sources.map(({ label, at, freshness }) => ({
 		label,
-		at: completedAt(freshness ? freshness.latestAt : at),
-		oldestAt: completedAt(freshness?.oldestAt),
+		at: savedAt(freshness ? freshness.latestAt : at),
+		oldestAt: savedAt(freshness?.oldestAt),
 		empty: freshness?.total === 0,
 		missing: freshness?.missing ?? 0,
 	}));

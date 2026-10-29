@@ -2,7 +2,6 @@ import {
 	Avatar,
 	AvatarFallback,
 	AvatarImage,
-	Button,
 	Link,
 	Tabs,
 	TabsContent,
@@ -38,7 +37,6 @@ import {
 	GitPullRequest,
 	Play,
 	ShieldAlert,
-	Sparkles,
 	Star,
 	Tag,
 	Users,
@@ -111,8 +109,8 @@ import { ReleaseTimeline, RepoActivityChart, RunOutcomeChart } from "./repo-char
 import { RepoFactoryTab } from "./repo-factory";
 import { RepoCurrentActivity } from "./today";
 
-const DETAIL_TABS = [...REPO_TABS, "analysis", "factory"] as const;
-type DetailTab = RepoTab | "analysis" | "factory";
+const DETAIL_TABS = [...REPO_TABS, "factory"] as const;
+type DetailTab = RepoTab | "factory";
 
 async function fetchTab<T extends { account_id: string }>(
 	owner: string,
@@ -195,7 +193,7 @@ export function RepoDetailPage() {
 		async () => ({
 			key: `${owner}/${name}/${tab}`,
 			value:
-				tab === "analysis" || tab === "factory"
+				tab === "factory"
 					? null
 					: await fetchTab<
 							| RepoDetails
@@ -242,7 +240,7 @@ export function RepoDetailPage() {
 			}
 		},
 		() => undefined,
-		valid && tab !== "analysis" && tab !== "factory",
+		valid && tab !== "factory",
 		false,
 	);
 
@@ -298,7 +296,7 @@ export function RepoDetailPage() {
 	}, [owner, name, valid]);
 
 	useEffect(() => {
-		if (!valid || tab === "analysis" || tab === "factory") {
+		if (!valid || tab === "factory") {
 			return;
 		}
 		const snapshotTab = tab;
@@ -429,25 +427,23 @@ export function RepoDetailPage() {
 	}
 
 	const activeSnapshot =
-		tab === "analysis"
-			? null
-			: tab === "details"
-				? snap
-				: tab === "security"
-					? security
-					: tab === "traffic"
-						? traffic
-						: tab === "actions"
-							? actions
-							: tab === "releases"
-								? releases
-								: tab === "issues"
-									? issues
-									: tab === "prs"
-										? pulls
-										: tab === "languages"
-											? languages
-											: contributors;
+		tab === "details"
+			? snap
+			: tab === "security"
+				? security
+				: tab === "traffic"
+					? traffic
+					: tab === "actions"
+						? actions
+						: tab === "releases"
+							? releases
+							: tab === "issues"
+								? issues
+								: tab === "prs"
+									? pulls
+									: tab === "languages"
+										? languages
+										: contributors;
 	const current = activeSnapshot && !("missing" in activeSnapshot) ? activeSnapshot : null;
 	const activity =
 		(actions && !("missing" in actions)) || (releases && !("missing" in releases))
@@ -503,10 +499,6 @@ export function RepoDetailPage() {
 							<Factory className="size-3.5" aria-hidden="true" />
 							工厂
 						</TabsTrigger>
-						<TabsTrigger value="analysis" className="gap-1.5 whitespace-nowrap">
-							<Sparkles className="size-3.5" aria-hidden="true" />
-							Agent 分析
-						</TabsTrigger>
 						<TabsTrigger value="security" className="gap-1.5 whitespace-nowrap">
 							<ShieldAlert className="size-3.5" aria-hidden="true" />
 							安全
@@ -541,23 +533,6 @@ export function RepoDetailPage() {
 						</TabsTrigger>
 					</TabsList>
 				</ScrollArea>
-				<TabsContent value="analysis">
-					{tab === "analysis" ? (
-						<LayerCard>
-							<LayerCard.Empty
-								title="外部分析报告"
-								description="查看 Issues、PR、CI 和 CD 的来源、判断与待办，不再在云端运行模型。"
-								action={
-									<Button asChild>
-										<Link href={`/analysis?repo=${encodeURIComponent(`${owner}/${name}`)}`}>
-											打开仓库分析台
-										</Link>
-									</Button>
-								}
-							/>
-						</LayerCard>
-					) : null}
-				</TabsContent>
 				<TabsContent value="factory">
 					{tab === "factory" ? (
 						<RepoFactoryTab
@@ -1090,7 +1065,7 @@ export function RepoDetailPage() {
 							<LayerCard.Empty
 								icon={<Code2 />}
 								title="还没有语言统计"
-								description="仓库中有可统计的代码后，刷新即可查看语言分布。"
+								description="已保存快照中没有语言数据。旧刷新已停用，当前无法采集新数据。"
 							/>
 						</TabWell>
 					) : languages ? (

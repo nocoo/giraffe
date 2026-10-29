@@ -2,7 +2,6 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import type { ActivitySnapshot } from "../../apps/web/src/lib/activity-types";
-import { makeRun } from "../../apps/web/src/lib/factory-run";
 import { activityFixture, activityPr, activityRun } from "../e2e/activity-fixtures";
 import { executeD1FixtureSync } from "../fixtures/d1";
 
@@ -109,21 +108,13 @@ beforeAll(() => {
 	const mint = (token: string, scopes: string[], suffix: string, expiresAt: string) =>
 		`INSERT INTO api_tokens(id,account_id,token_hash,label,scopes,creator,created_at,expires_at) VALUES(${quote(`${account}-${suffix}`)},${quote(account)},${quote(createHash("sha256").update(token).digest("hex"))},'activity L2',${quote(JSON.stringify(scopes))},'local test',${quote(suffix === "expired" ? "2024-12-31T00:00:00.000Z" : now)},${quote(expiresAt)});`;
 	const runRow = (id: string, at: string, status: "running" | "completed") => {
-		const run = makeRun(
+		const run = {
 			id,
-			account,
-			owner,
-			id,
-			"refresh",
-			[],
-			at,
-			[],
-			[],
-			{ scope: "all" },
-			"quick",
-		);
-		run.status = status;
-		run.finishedAt = status === "completed" ? at : null;
+			account_id: account,
+			status,
+			startedAt: at,
+			finishedAt: status === "completed" ? at : null,
+		};
 		return `INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES(${quote(id)},${quote(account)},${quote(id)},${quote(status)},${quote(JSON.stringify(run))},${quote(at)},${quote(at)},${quote(at)});`;
 	};
 	const publication = (data: ActivitySnapshot) =>

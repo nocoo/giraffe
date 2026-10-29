@@ -1,12 +1,7 @@
 import { expect, it } from "vitest";
-import { github } from "../../../../../tests/fixtures/factory";
+
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
-import {
-	beginCatalog,
-	catalogPlanWrites,
-	catalogRetentionWrites,
-	planCatalog,
-} from "./catalog-history";
+
 import { identifyCatalogRow } from "./catalog-identity";
 import { createDb } from "./db/d1";
 import { enrichRepoAgentStates, readRepoAgentState, writeRepoAgentState } from "./repo-agent-state";
@@ -180,63 +175,6 @@ it.each([{}, { payload: null }, { payload: [] }, { payload: 1 }, { payload: {}, 
 		await expect(s.write(input)).rejects.toMatchObject({ status: 400, code: "invalid_payload" });
 	},
 );
-
-it("R5 stable identity survives real catalog refresh, rename, removal and retention without modifying state", async () => {
-	const s = await fixture();
-	await s.repo("R_proof", "owner/proof");
-	await s.raw
-		.prepare(
-			"UPDATE catalog_repositories SET visibility='PRIVATE',row_payload=? WHERE identity_key='R_proof'",
-		)
-		.bind(JSON.stringify({ name_with_owner: "owner/proof", is_private: true }))
-		.run();
-	await s.write({ payload: { summary: "preserved", arbitrary: { pointer: "memory" } } });
-	const before = await s.stored();
-	const gh = github(() =>
-		Response.json({
-			data: { node: null },
-			errors: [{ type: "NOT_FOUND", message: "Not Found", path: ["node"] }],
-		}),
-	);
-	for (const [time, name] of [
-		["2026-10-23T00:00:00.000Z", "owner/app"],
-		["2026-10-24T00:00:00.000Z", "owner/renamed"],
-		["2026-10-25T00:00:00.000Z", null],
-	] as const) {
-		const db = createDb(s.raw);
-		const repos = [
-			{ name_with_owner: "owner/proof", is_private: true },
-			...(name ? [{ name_with_owner: name }] : []),
-		];
-		const plan = await planCatalog(
-			await beginCatalog(db, "a"),
-			{ repos, truncated: false },
-			{ "owner/proof": "R_proof", ...(name ? { [name]: "R_app" } : {}) },
-			"owner",
-			gh,
-			"fixture",
-			time,
-			{ kind: "legacy", runId: null },
-		);
-		await db.batch(catalogPlanWrites(db, "a", plan));
-		expect(await s.stored()).toEqual(before);
-	}
-	expect(await s.read("owner/renamed")).toMatchObject({
-		repo_removed: true,
-		revision: 1,
-		payload: { summary: "preserved" },
-	});
-	await expect(s.read("owner/app")).rejects.toMatchObject({ status: 404 });
-	await s.repo("R_unused", "owner/unused", "a", "2026-10-25T00:00:00.000Z");
-	const db = createDb(s.raw);
-	await db.batch(catalogRetentionWrites(db, "a", "2027-10-25T00:00:00.000Z"));
-	expect(await s.read("owner/renamed")).toMatchObject({ repo_removed: true, revision: 1 });
-	await expect(s.read("owner/unused")).rejects.toMatchObject({ status: 404 });
-	expect(await s.stored()).toEqual(before);
-	expect(
-		await s.write({ revision: 1, payload: { removed_update: true } }, undefined, "owner/renamed"),
-	).toMatchObject({ repo_removed: true, revision: 2 });
-});
 
 it("R5 removed repos need existing state and same-name replacement or other account never inherits it", async () => {
 	const s = await fixture();
