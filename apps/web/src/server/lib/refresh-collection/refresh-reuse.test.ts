@@ -136,6 +136,45 @@ async function snapshot(context: CollectionContext, kind: string) {
 }
 
 describe("refresh reuse boundaries", () => {
+	it.each([
+		["code-scanning", 404, "Not Found", "dependabot"],
+		["dependabot", 403, "Dependabot alerts are disabled", "code-scanning"],
+	] as const)(
+		"preserves observed alerts when cached %s is unavailable",
+		async (missing, status, message, available) => {
+			const context = await fixture();
+			context.run.params.dimensions = ["alerts"];
+			upstream([accountPage(), { node: repository() }], {
+				[`/${missing}/alerts`]: Response.json({ message }, { status }),
+				[`/${available}/alerts`]: [
+					{
+						number: 7,
+						state: "open",
+						created_at: "2026-10-28T03:00:00Z",
+						html_url: "https://github.com/owner/project/security/7",
+						security_advisory: { summary: "Observed vulnerability", severity: "high" },
+						rule: { description: "Observed vulnerability", security_severity_level: "high" },
+					},
+				],
+			});
+			await collectAccount(context);
+			expect(await collectRepository(context, "owner/project")).toMatchObject({ partial: false });
+			expect((await publication(context)).repos[0].metrics.alerts).toBe(1);
+			const evidence = await day(context, "alerts");
+			expect(evidence).toMatchObject({ status: "complete", payload: { count: null, observed: 1 } });
+			expect(evidence.payload.items).toHaveLength(1);
+			const security = await snapshot(context, "repo:owner/project:security");
+			const fetch = upstream();
+			expect(await collectRepository(context, "owner/project")).toMatchObject({
+				requests: 0,
+				partial: false,
+			});
+			expect(fetch).not.toHaveBeenCalled();
+			expect((await publication(context)).repos[0].metrics.alerts).toBe(1);
+			expect(await day(context, "alerts")).toEqual(evidence);
+			expect(await snapshot(context, "repo:owner/project:security")).toEqual(security);
+		},
+	);
 	it("collects REST-only work without a metadata GraphQL query", async () => {
 		const context = await fixture();
 		upstream([accountPage(), { node: repository() }]);

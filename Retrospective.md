@@ -2258,3 +2258,10 @@ rate-limit reset. Retry state now persists the deadline before settlement and
 alarm entry enforces it, with cancellation checked first. Fault injection must
 interrupt persistence boundaries, not merely return upstream errors on the
 ordinary successful-save path.
+
+Terminal unavailable days made another previously unreachable cache path visible:
+an alert aggregate has a null complete-feature count but can contain observed
+alerts from an available feature. Converting that null count to zero during cache
+reuse hid known alerts in the factory signal. Cached metrics now count the saved
+observed items. Tests must include a nonempty available feature paired with an
+unavailable feature, not only available-zero fixtures.

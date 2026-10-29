@@ -454,7 +454,9 @@ export async function collectRepository(
 			0,
 			...context.days.map((day) => {
 				const value = current.get(`${day.date}:alerts`);
-				return value?.status === "complete" ? Number((JSON.parse(value.payload) as Node).count) : 0;
+				return value?.status === "complete"
+					? (JSON.parse(value.payload) as { items: FactoryEvent[] }).items.length
+					: 0;
 			}),
 		);
 	const fetchedAt =

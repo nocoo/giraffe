@@ -315,6 +315,16 @@ const github = await listen(17046, (req, res) => {
 		if (refreshRest !== null) {
 			if (url.pathname.endsWith("/code-scanning/alerts"))
 				sendJson(res, 404, { message: "Not Found" });
+			else if (url.pathname.endsWith("/dependabot/alerts"))
+				sendJson(res, 200, [
+					{
+						number: 7,
+						state: "open",
+						created_at: "2026-01-05T03:00:00Z",
+						html_url: "https://github.com/phase2/demo/security/7",
+						security_advisory: { summary: "Observed vulnerability", severity: "high" },
+					},
+				]);
 			else sendJson(res, 200, refreshRest);
 			return;
 		}

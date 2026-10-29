@@ -218,12 +218,17 @@ it("runs real durable A then serial B, serves latest observations and reuses day
 			data: {
 				unavailable: true,
 				truncated: false,
-				dependabot_open: 0,
+				dependabot_open: 1,
 				code_scanning_open: null,
 				features: {
 					dependabot: { status: "available" },
 					code_scanning: { status: "unavailable", reason_code: "not_found" },
 				},
+			},
+		});
+		expect(await (await machine("factory")).json()).toMatchObject({
+			data: {
+				repos: [expect.objectContaining({ metrics: expect.objectContaining({ alerts: 1 }) })],
 			},
 		});
 		expect((await machine("stars/phase2/demo", "DELETE")).status).toBe(200);
