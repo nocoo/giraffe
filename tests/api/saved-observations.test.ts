@@ -909,10 +909,6 @@ it("reads only the canonical publication rate and hides expired or untimestamped
 		`SELECT payload FROM refresh_snapshots WHERE account_id=${quote(account)} AND kind='factory'`,
 	)[0]?.results[0]?.payload;
 	if (typeof original !== "string") throw new Error("saved publication missing");
-	const resourceWhere = `account_id=${quote(account)} AND stream='commits' AND repo_id=(SELECT repo_id FROM refresh_catalog WHERE account_id=${quote(account)} AND repo='nocoo/recovered')`;
-	const originalResource = sql(`SELECT payload FROM refresh_resources WHERE ${resourceWhere}`)[0]
-		?.results[0]?.payload;
-	if (typeof originalResource !== "string") throw new Error("saved stream missing");
 	try {
 		sql(
 			`UPDATE refresh_snapshots SET payload=json_set(payload,'$.rate',json(${quote(JSON.stringify(fresh))})) WHERE account_id=${quote(account)} AND kind='factory'; ${publicationSql(account)}`,
@@ -1107,6 +1103,10 @@ it("revalidates private sources over HTTP with response-derived tags and no GET 
 	const since = await conditionalSources(tag, "sources?since=2099-01-01T00%3A00%3A00Z");
 	expect(since.status).toBe(200);
 	expect(since.headers.get("etag")).not.toBe(tag);
+	const resourceWhere = `account_id=${quote(account)} AND stream='commits' AND repo_id=(SELECT repo_id FROM refresh_catalog WHERE account_id=${quote(account)} AND repo='nocoo/recovered')`;
+	const originalResource = sql(`SELECT payload FROM refresh_resources WHERE ${resourceWhere}`)[0]
+		?.results[0]?.payload;
+	if (typeof originalResource !== "string") throw new Error("saved stream missing");
 	const original = sql(
 		`SELECT payload FROM refresh_snapshots WHERE account_id=${quote(account)} AND kind='factory'`,
 	)[0]?.results[0]?.payload;

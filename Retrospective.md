@@ -2535,3 +2535,9 @@ Vitest's generic five-second deadline; the unfinished async collector then
 polluted the following test's global fetch spy. Give this scale test an explicit
 15-second deadline, retaining all byte, request-count and retention assertions.
 It is a capacity regression, not a production CPU benchmark.
+
+A repeated SQL-fixture setup block also made a patch place the resource backup
+variables in the wrong HTTP test. L1 does not typecheck `tests/api`, so the
+targeted real-HTTP run caught the reference error. Anchor repeated setup edits
+to the enclosing test's unique assertions and verify the actual HTTP lane before
+claiming the fixture update is complete.
