@@ -19,7 +19,7 @@
 
 Giraffe is a personal GitHub console. Add classic PATs for one or more accounts to review repositories, open issues and pull requests, security alerts, and notifications, then compare repository metrics across days.
 
-Version 0.27.5 bounds cached-snapshot CPU work and interrupted refresh recovery, and persists cancellation before notifying the runner. Same-day account reuse and fully cached single-repository refreshes need no upstream requests. Automatic refresh covers all explicitly starred repositories plus this account's unobserved non-fork repositories created during the current Asia/Shanghai day, without automatic starring. Saved reads never collect upstream; analysis and legacy refresh modes remain removed. See the [phase-2 contract](15-unified-refresh.md).
+Version 0.28.0 restores the Refresh Center with unified A/B progress, saved run history and cancellation, restores factory chart windows, and tidies token management and activity lists. Cached-snapshot work and interrupted refresh recovery remain bounded, and cancellation is persisted before runner notification. Same-day account reuse and fully cached single-repository refreshes need no upstream requests. Automatic refresh still covers all explicitly starred repositories plus this account's unobserved non-fork repositories created during the current Asia/Shanghai day, without automatic starring. Saved reads never collect upstream; analysis and legacy refresh modes remain removed. See the [phase-2 contract](15-unified-refresh.md).
 
 PATs are encrypted with AES-256-GCM before storage in D1. Data snapshots are stored as JSON without additional application-level encryption. This is a personal deployment: everyone allowed into the same deployment shares its accounts and snapshots.
 
@@ -41,7 +41,7 @@ Visible repositories and alerts depend on PAT permissions and GitHub API respons
 1. Open the [website](https://giraffe.hexly.ai) through the deployment's Cloudflare Access policy. There is no separate application sign-up or login page.
 2. Add a GitHub **classic PAT** in Settings with the `repo`, `read:org`, `read:user`, and `notifications` scopes. Fine-grained PATs are not currently accepted. The token input clears immediately on submission.
 3. The first account becomes active. Adding or switching accounts never silently collects GitHub data.
-4. View saved snapshots or the empty state when data is missing. Collection is unavailable in this delete-only release.
+4. View saved snapshots, or open Refresh Center to explicitly collect data and inspect account/repository progress, history and partial results.
 5. If needed, create a least-privilege API token for an external consumer and rotate it before its maximum 90-day expiry. Generic machine resources remain available; Giraffe does not execute or display analysis jobs.
 
 The sidebar identity comes from Cloudflare Access. Names and avatars are looked up through the `lizheng.blog` author profile service using a SHA-256 digest of the email address, with an identity fallback when the service is unavailable.

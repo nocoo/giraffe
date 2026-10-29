@@ -91,7 +91,7 @@ export function FactoryHeatmap({
 	onSelect,
 	timezone = "UTC",
 }: {
-	days: { date: string; count: number; known?: boolean }[];
+	days: { date: string; count: number; known?: boolean; observed?: boolean }[];
 	selected: string;
 	onSelect: (date: string) => void;
 	timezone?: string;
@@ -109,7 +109,15 @@ export function FactoryHeatmap({
 				}}
 			>
 				{days.map((d, i) => {
-					const label = `${formatDayRange(d.date, d.date, timezone)}：${d.known === false ? (d.count ? `≥ ${n(d.count)}` : "未完整观测") : n(d.count)}`;
+					const label = `${formatDayRange(d.date, d.date, timezone)}：${
+						d.observed === false
+							? "无观测"
+							: d.known === false
+								? d.count
+									? `≥ ${n(d.count)}`
+									: "未完整观测"
+								: n(d.count)
+					}`;
 					return (
 						<BasaltTooltip key={d.date}>
 							<TooltipTrigger asChild>
@@ -122,7 +130,7 @@ export function FactoryHeatmap({
 										gridRow: ((i + offset) % 7) + 1,
 										backgroundColor: `var(--giraffe-heat-${d.count === 0 ? 0 : Math.min(4, Math.ceil((d.count / max) * 4))})`,
 									}}
-									className={`factory-day h-auto min-w-0 p-0 ${d.known === false && d.count === 0 ? "factory-day-unknown" : ""} ${selected === d.date ? "factory-day-selected" : ""}`}
+									className={`factory-day h-auto min-w-0 p-0 ${d.observed === false || (d.known === false && d.count === 0) ? "factory-day-unknown" : ""} ${selected === d.date ? "factory-day-selected" : ""}`}
 									aria-pressed={selected === d.date}
 									aria-label={`${label}，点击查看当日统计`}
 								/>
@@ -145,7 +153,10 @@ export function FactoryHeatmap({
 					))}{" "}
 					多
 				</span>
-				<span>{formatDate(days.at(-1)?.date).slice(0, 10)}（末日未满）</span>
+				<span>
+					{formatDate(days.at(-1)?.date).slice(0, 10)}
+					{days.at(-1)?.observed === undefined ? "（最新日期）" : "（最新观测日）"}
+				</span>
 			</div>
 		</div>
 	);

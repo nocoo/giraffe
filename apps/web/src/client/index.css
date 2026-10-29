@@ -48,7 +48,6 @@
 .giraffe-page-header { display:flex;min-width:0;flex-direction:column;gap:calc(var(--spacing) * 2); }
 .giraffe-page-heading { display:flex;min-width:0;align-items:baseline;gap:calc(var(--spacing) * 3); }
 .giraffe-page-title { margin:0;min-width:0;flex-shrink:0;font-size:1.5rem;font-weight:600;line-height:1.2;letter-spacing:-.01em;white-space:nowrap; }
-.giraffe-page-subtitle { min-width:0;flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--text-xs);color:var(--color-basalt-muted-foreground); }
 .giraffe-page-toolbar { display:flex;min-width:0;flex-wrap:wrap;align-items:center;gap:calc(var(--spacing) * 2); }
 @media (min-width:1024px) {
  .giraffe-page-header { flex-direction:row;align-items:center;gap:calc(var(--spacing) * 4); }

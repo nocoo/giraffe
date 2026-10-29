@@ -1,5 +1,35 @@
 # Retrospective
 
+## 2026-10-29 - Recheck UI evidence after runner integration
+
+Rebasing the UI onto 0.27.3 produced no client conflicts, and the existing tests
+and fixture screenshots remained green. Independent integration probes still
+found two changed assumptions: cancellation closes step timestamps without
+proving successful account collection, and terminal unavailable security work
+can settle successfully without complete observations. The client must use
+outcome evidence for progress, call closure timestamps end times, and describe
+run-only dimension results as processed rather than complete data. Regression
+fixtures now include a cancelled account with zero settled attempts and a
+completed repository whose run cannot establish observation availability.
+Pixel equality and an unchanged UI diff do not prove compatibility with a new
+backend contract; test the producer's actual edge-case payloads after rebasing.
+
+## 2026-10-29 - Reserve fixed test ports across worktrees before delegation
+
+The UI coordinator checked free ports before its own L2 run, but did not reserve
+the fixed L2/L3 lanes across concurrent worktrees before dispatching workers.
+A UI worker also ran focused L3 before receiving the later explicit restriction.
+Another worktree reported affected L2 runs; a free-port probe alone cannot
+establish exclusive ownership across independently scheduled processes.
+
+The coordinators established an explicit handoff: finish and clean up the
+current UI L2 run, then reserve both test lanes to the runner worktree until it
+releases them. UI screenshots use separate localhost-only static servers with
+intercepted fixture APIs. Delegate unit tests by default and explicitly reserve
+fixed integration ports with all active coordinators before any L2/L3 or
+pre-push command. Verify process cwd and listener cleanup before handoff; do not
+stop another worktree's process or change runners in a UI-only task.
+
 ## 2026-10-29 - Verify phase-two fixes across consumers and durable boundaries
 
 The first acceptance implementation treated mixed security-feature availability
@@ -2341,3 +2371,86 @@ reset exhaustion, lost settlement acknowledgements and cleanup failures. No
 production trace or production request was collected in this change. The CPU
 amplification is proven locally; it is not proof of the unique cause of the
 reported production reset, and local latency is not production acceptance.
+
+## 2026-10-29 - Preserve refresh evidence and response ordering
+
+The restored Refresh Center initially assumed every retained run contained the
+current diagnostic fields. The store returns saved payloads unchanged, and the
+documented contract permits missing historical diagnostics. Review reproduced a
+history-page crash, terminal step durations that kept growing, and fatal work
+misclassified as unattempted. Projections now preserve unknown results, bound
+unfinished step measurements by the run end, and distinguish attributed failures
+from untouched repositories. Client tests include mixed historical/current rows
+and opening an older run without inventing complete dimensions or request counts.
+
+Review also reproduced out-of-order cancellation/poll responses and history from
+another tab's active account. Accepted cancellation and terminal states are now
+monotonic per run; stale cancellation responses or errors cannot replace a newer
+run. History validates the returned account before accepting its records and
+reconciles the session on conflict. Exercise response orders and account identity
+at each independent read boundary, not only the provider's happy-path polling.
+
+The first full UI lane also caught a list-polish regression: repository marks
+were reduced from the established 24px size to 16px. Focused activity tests did
+not include the project-identity contract. Restore the existing mark size rather
+than weakening those assertions. Visual review additionally found desktop
+dimension labels clipped inside a six-column grid; measure each rendered label
+against its available width at desktop and mobile sizes, and capture lower
+settings/factory sections rather than judging them from the first viewport.
+
+The next review found that a successful token mutation could leave the initial
+list error visible, and a newer history response could be replaced by stale live
+state. Clear recovered list errors only after a successful reload, and apply the
+same run-freshness rules to polling and history projection. Refresh-only pages
+must not expose a global repository filter that does not affect their contents.
+
+The restored chart range also incorrectly shortened its default to the available
+history, while explicit ranges retained empty days. All selected ranges now keep
+their full span. Factory coverage must join contiguous complete day windows, even
+when another day makes the overall stream partial; gaps remain unknown and
+observed complete zeros remain zero. The old single-window predicate could not
+represent the new API's daily evidence. Update route tests to select the intended
+observed date, rather than accidentally selecting the new empty leading date.
+
+The first daily-window correction updated completeness but missed the separate
+chart visibility predicate, which still hid all partial streams. Verify the
+rendered chart as well as its day values: a complete zero day remains visible
+inside an otherwise partial stream. Share the evidence predicate with table
+counts so partial observations do not disappear at another presentation boundary.
+
+The per-repository sparkline had its own overall-status shortcut too. Move its
+daily projection into the viewmodel and reuse the same day-window evidence;
+keep missing keys null even when the overall stream is complete. Browser checks
+must inspect the small repository chart as well as the main chart panels.
+
+The post-rebase visual review also exposed a repository identity squeezed into
+seven lines at an intermediate desktop width. Viewport-only breakpoints missed
+the narrow panel inside a two-column layout. Reflow its chips by container width
+and assert usable identity width and row height, not only absence of overflow.
+Review diagnostic explanations alongside corrected status labels: a closed step
+timestamp does not establish successful collection, including in helper copy.
+
+A second rebase integrated terminal-unavailable security days into completed
+cache windows. The factory viewmodel had treated any nonempty window list as
+measurement evidence, so its availability flag became true despite unavailable
+status, zero observed days and null counts. No visible alert-count misreport was
+established. Distinguish settled cache coverage from available observations at
+each consumer predicate, and test the actual new producer payload after rebasing,
+not only unchanged screenshots or fixtures from the previous backend contract.
+
+Token recovery also needs response ordering: an older initial read can fail or
+return an empty list after a successful creation and reload. Invalidate that
+initial request when the newer list request starts, and test both late outcomes.
+
+Rejecting only overall unavailable coverage still admitted mixed security days:
+one available day made the stream partial while its settled windows included a
+terminal-unavailable day. The publication identifies no available-day subset, so
+partial alert windows cannot establish exact daily measurement completeness.
+Keep stream availability and complete flow-day evidence, but conservatively
+withhold alert-day completeness until overall alert coverage is complete. Test
+mixed real producer output and cached reuse, not only all-unavailable streams.
+Also test the absence of available days: a terminal-unavailable day followed by
+a temporary failure publishes partial coverage with zero observed days and a
+nonempty settlement window. Alert availability must require complete status or
+positive observed evidence, never that window alone. Preserve the separate flow
+stream behavior, where a complete day window still proves an observed zero.

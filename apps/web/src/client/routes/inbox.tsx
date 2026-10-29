@@ -10,7 +10,7 @@ import {
 	TableRow,
 } from "@nocoo/basalt/components/table";
 import { TablePager } from "@nocoo/basalt/components/table-pager";
-import { CheckCheck, Inbox, MailCheck } from "lucide-react";
+import { Bell, CheckCheck, Clock3, Inbox, MailCheck, MailOpen } from "lucide-react";
 import { useMemo, useState } from "react";
 import { BusinessPageHeader as PageHeader } from "../components/layout/business-page-header";
 import { CandyBadge } from "../components/layout/candy-badge";
@@ -263,27 +263,53 @@ export function InboxPage() {
 														)}
 													</TableCell>
 													<TableCell className="w-[48%] min-w-64">
-														<Link
-															href={row.url}
-															target="_blank"
-															rel="noreferrer"
-															className={`${row.unread ? "font-semibold" : "font-medium"} text-basalt-foreground giraffe-wrap [overflow-wrap:anywhere] hover:text-basalt-primary`}
-														>
-															{row.title}
-														</Link>
-														<p className="mt-1 text-xs">
-															<ProjectLink
-																repo={row.name_with_owner}
-																className="text-basalt-muted-foreground"
-															/>
-														</p>
+														<div className="flex min-w-0 items-start gap-2">
+															{row.unread ? (
+																<Bell
+																	className="mt-0.5 size-4 shrink-0 text-basalt-primary"
+																	strokeWidth={1.5}
+																	aria-hidden="true"
+																/>
+															) : (
+																<MailOpen
+																	className="mt-0.5 size-4 shrink-0 text-basalt-muted-foreground"
+																	strokeWidth={1.5}
+																	aria-hidden="true"
+																/>
+															)}
+															<div className="min-w-0">
+																<Link
+																	href={row.url}
+																	target="_blank"
+																	rel="noreferrer"
+																	className={`${row.unread ? "font-semibold" : "font-medium"} text-basalt-foreground giraffe-wrap [overflow-wrap:anywhere] hover:text-basalt-primary`}
+																>
+																	{row.title}
+																</Link>
+																<p className="mt-1 text-xs">
+																	<ProjectLink
+																		repo={row.name_with_owner}
+																		className="text-xs font-normal text-basalt-muted-foreground"
+																	/>
+																</p>
+															</div>
+														</div>
 													</TableCell>
 													<TableCell>
 														<CandyBadge tone={reasonBadgeVariant(row.reason)}>
 															{row.reason}
 														</CandyBadge>
 													</TableCell>
-													<TableCell className={DATE_CELL}>{formatDate(row.updated_at)}</TableCell>
+													<TableCell className={DATE_CELL}>
+														<span className="inline-flex items-center justify-end gap-1.5">
+															<Clock3
+																className="size-3.5 shrink-0 text-basalt-muted-foreground"
+																strokeWidth={1.5}
+																aria-hidden="true"
+															/>
+															<time dateTime={row.updated_at}>{formatDate(row.updated_at)}</time>
+														</span>
+													</TableCell>
 													<TableCell className="text-right">
 														{row.unread ? (
 															<Button

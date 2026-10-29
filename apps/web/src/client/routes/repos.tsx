@@ -18,7 +18,7 @@ import {
 	TableHeader,
 	TableRow,
 } from "@nocoo/basalt/components/table";
-import { Box, Star } from "lucide-react";
+import { Box, Clock3, Star } from "lucide-react";
 import { type CSSProperties, useMemo, useState } from "react";
 import type { FactoryViewSnapshot } from "../../lib/factory-types";
 import { BusinessPageHeader as PageHeader } from "../components/layout/business-page-header";
@@ -372,7 +372,15 @@ export function ReposPage() {
 				onClear={(key) => setPicked((old) => (key ? { ...old, [key]: "" } : NO_FILTERS))}
 			/>
 			<SectionRule
-				title={<IconLabel icon={Box}>仓库</IconLabel>}
+				title={
+					<IconLabel
+						icon={Box}
+						hint="星标筛选已保存快照，并决定每日默认刷新的仓库，包含 Fork 和已归档仓库。新发现的仓库仅自动刷新一次，不会自动加星。"
+						hintLabel="星标与刷新说明"
+					>
+						仓库
+					</IconLabel>
+				}
 				actions={
 					<>
 						<ResultCount count={rows.length} total={snap.repos.length} />
@@ -389,10 +397,6 @@ export function ReposPage() {
 					</>
 				}
 			>
-				<p className="mb-3 text-xs text-basalt-muted-foreground">
-					星标筛选已保存快照，并决定每日默认刷新的仓库，包含 Fork
-					和已归档仓库。新发现的仓库仅自动刷新一次，不会自动加星。
-				</p>
 				{rows.length === 0 ? (
 					<LayerCard>
 						<LayerCard.Well>
@@ -455,7 +459,8 @@ export function ReposPage() {
 											{row.is_archived ? <CandyBadge tone="orange">归档</CandyBadge> : null}
 											{row.is_fork ? <CandyBadge tone="teal">Fork</CandyBadge> : null}
 										</div>
-										<p className="mt-3 text-xs tabular-nums text-basalt-muted-foreground">
+										<p className="mt-3 flex items-center gap-1.5 text-xs tabular-nums text-basalt-muted-foreground">
+											<Clock3 className="size-3.5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
 											推送于 {formatDate(row.pushed_at)}
 										</p>
 									</LayerCard>

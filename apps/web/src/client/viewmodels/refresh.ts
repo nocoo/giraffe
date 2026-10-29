@@ -107,6 +107,7 @@ export function refreshError(error: unknown): string {
 		if (error.code === "account_missing") return "请先在设置中连接 GitHub 账号。";
 		if (error.code === "local_read_only") return "线上数据为只读，请切回 Local 后刷新。";
 		if (error.code === "access_unauthorized") return "未通过 Access，请重新验证身份。";
+		if (error.status === 404) return "刷新记录已不存在，请重新读取状态。";
 		if (error.status === 409) return "刷新状态已变化，请重试读取状态后再操作。";
 	}
 	return "无法读取或启动刷新，请重试读取状态。";
@@ -118,10 +119,24 @@ type RefreshState = Readonly<{
 	loading: boolean;
 	reading: boolean;
 	starting: boolean;
+	cancelling: boolean;
 	available: boolean;
 	ready: boolean;
 	error: string | null;
 }>;
+
+export function mergeRefreshRun(
+	previous: RefreshRun | null,
+	run: RefreshRun | null,
+): RefreshRun | null {
+	if (!run || previous?.id !== run.id) return run;
+	const snapshot =
+		(refreshActive(run) && !refreshActive(previous)) ||
+		Date.parse(run.updatedAt) < Date.parse(previous.updatedAt)
+			? previous
+			: run;
+	return { ...snapshot, cancelRequested: previous.cancelRequested || run.cancelRequested };
+}
 
 export class RefreshViewModel {
 	private state: RefreshState = {
@@ -130,6 +145,7 @@ export class RefreshViewModel {
 		loading: true,
 		reading: false,
 		starting: false,
+		cancelling: false,
 		available: true,
 		ready: false,
 		error: null,
@@ -168,12 +184,13 @@ export class RefreshViewModel {
 	}
 	private accept(run: RefreshRun | null): void {
 		const previous = this.state.run;
+		const next = mergeRefreshRun(previous, run);
 		const changed =
-			run &&
-			!refreshActive(run) &&
+			next &&
+			!refreshActive(next) &&
 			!this.state.loading &&
-			(run.id !== previous?.id || refreshActive(previous));
-		this.update({ run, error: null });
+			(next.id !== previous?.id || refreshActive(previous));
+		this.update({ run: next, error: null });
 		if (changed) for (const listener of this.dataListeners) listener();
 	}
 	private async reject(error: unknown, generation: number): Promise<void> {
@@ -240,6 +257,34 @@ export class RefreshViewModel {
 			this.update({ reading: false });
 			if (cacheGeneration() === generation) this.update({ loading: false });
 			else void this.read();
+		}
+	}
+	async cancel(): Promise<void> {
+		const run = this.state.run;
+		if (
+			!run ||
+			!refreshActive(run) ||
+			run.cancelRequested ||
+			this.state.cancelling ||
+			this.state.starting
+		)
+			return;
+		const generation = cacheGeneration();
+		this.update({ cancelling: true, error: null });
+		try {
+			const next = await apiPost<RefreshRun>(`refresh-runs/${encodeURIComponent(run.id)}/cancel`);
+			if (generation !== cacheGeneration()) return;
+			if (next.accountId !== this.state.accountId)
+				throw new ApiError(409, "account_conflict", "account changed");
+			const current = this.state.run;
+			if (!current || current.id !== run.id) return;
+			this.accept(next);
+		} catch (error) {
+			const current = this.state.run;
+			if (current && current.id === run.id) await this.reject(error, generation);
+		} finally {
+			this.update({ cancelling: false });
+			if (generation !== cacheGeneration()) void this.read();
 		}
 	}
 	async start(params: RefreshParams): Promise<void> {

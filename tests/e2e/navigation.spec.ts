@@ -13,7 +13,7 @@ async function gotoAndWaitForSidebar(page: Page, url: string) {
 
 async function waitForReposRouteSettled(page: Page, width: number) {
 	await expect(page).toHaveURL(/\/repos$/);
-	await expect(page.getByText("当前账号下的仓库快照")).toBeVisible();
+	await expect(page.locator(".giraffe-page-title").filter({ hasText: /^仓库$/ })).toBeVisible();
 	const sidebar = page.getByRole("complementary");
 	if (width === 1440) {
 		await expect(sidebar.getByRole("button", { name: "展开侧栏" })).toBeVisible();
@@ -76,7 +76,7 @@ for (const width of [1440, 390]) {
 			await expect(overview.getByRole("button")).toHaveText(["软件工厂", "今日活动", "Insights"]);
 			await expect(nav.getByRole("button", { name: "AI", exact: true })).toHaveCount(0);
 			await expect(nav.getByRole("button", { name: "分析台", exact: true })).toHaveCount(0);
-			await expect(nav.getByRole("button", { name: "刷新中心", exact: true })).toHaveCount(0);
+			await expect(nav.getByRole("button", { name: "刷新中心", exact: true })).toHaveCount(1);
 			await expect(nav.getByRole("button", { name: "Agent", exact: true })).toHaveCount(0);
 			await overviewToggle.click();
 			await expect(overviewToggle).toHaveAttribute("aria-expanded", "false");
@@ -213,7 +213,7 @@ test("mobile navigation restores focus and closes across the desktop breakpoint"
 	const writes: string[] = [];
 	await stubApi(page, createUiFixtures(), writes);
 	await page.goto("/repos");
-	await expect(page.getByText("当前账号下的仓库快照")).toBeVisible();
+	await expect(page.locator(".giraffe-page-title").filter({ hasText: /^仓库$/ })).toBeVisible();
 	const opener = page.getByRole("button", { name: "打开导航" });
 	await opener.click();
 	const drawer = page.getByRole("dialog", { name: "打开导航" });

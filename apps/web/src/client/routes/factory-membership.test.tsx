@@ -18,16 +18,19 @@ vi.mock("@nocoo/basalt/components/section-rule", () => ({
 		id,
 		title,
 		hint,
+		actions,
 		children,
 	}: {
 		id?: string;
 		title: ReactNode;
 		hint?: ReactNode;
+		actions?: ReactNode;
 		children?: ReactNode;
 	}) => (
 		<section>
 			<h2 id={id}>{title}</h2>
 			<p>{hint}</p>
+			{actions}
 			{children}
 		</section>
 	),
@@ -63,7 +66,7 @@ vi.mock("./factory-charts", () => ({
 			type="button"
 			data-calendar-days={days.length}
 			data-calendar-timezone={timezone}
-			onClick={() => onSelect(days[0]?.date ?? "")}
+			onClick={() => onSelect(days.at(-1)?.date ?? "")}
 		/>
 	),
 	FactoryTreemap: () => null,
@@ -249,7 +252,7 @@ it.each([false, true])(
 				);
 				expect(container.querySelector("#factory-change-title")).toBeNull();
 			} else {
-				expect(container.textContent).toContain("1 个 Asia/Shanghai 日期");
+				expect(container.textContent).toContain("90 个 Asia/Shanghai 日期");
 				expect(container.textContent).toContain(
 					"2026-10-28 00:00 → 2026-10-29 00:00 (Asia/Shanghai)",
 				);
@@ -261,7 +264,53 @@ it.each([false, true])(
 	},
 );
 
-it.each([30, 90])("labels the published %i-day chart window", async (dayCount) => {
+it("defaults the historical chart window to 90 days and keeps range options", async () => {
+	const raw = factoryFixture();
+	raw.window = savedFactoryWindow(raw.fetched_at, 90);
+	vi.mocked(loadFactory).mockResolvedValue({ ...raw, selectedRepos: raw.repos });
+	vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+	const container = document.createElement("div");
+	const root = createRoot(container);
+	try {
+		await act(async () =>
+			root.render(
+				<MemoryRouter initialEntries={["/factory"]}>
+					<FactoryPage />
+				</MemoryRouter>,
+			),
+		);
+		expect(container.querySelector("#factory-change-title")?.textContent).toBe("变化 · 最近 90 天");
+		const radios = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="radio"]'));
+		expect(radios.map((radio) => radio.textContent)).toEqual(
+			expect.arrayContaining(["30 天", "90 天", "180 天", "365 天"]),
+		);
+		const thirty = radios.find((radio) => radio.textContent === "30 天");
+		if (!thirty) throw new Error("Missing 30-day chart range");
+		await act(async () => thirty.click());
+		expect(container.querySelector("#factory-change-title")?.textContent).toBe("变化 · 最近 30 天");
+		expect(container.textContent).toContain("没有观测的日期保持空白，不按零绘制");
+		const wider = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="radio"]')).find(
+			(radio) => radio.textContent === "180 天",
+		);
+		if (!wider) throw new Error("Missing 180-day chart range");
+		await act(async () => wider.click());
+		expect(container.querySelector("#factory-change-title")?.textContent).toBe(
+			"变化 · 最近 180 天",
+		);
+		expect(container.textContent).toContain("已发布覆盖 90 天，更早日期为空白");
+		const [ninety] = Array.from(
+			container.querySelectorAll<HTMLButtonElement>('[role="radio"]'),
+		).filter((radio) => radio.textContent === "90 天");
+		if (!ninety) throw new Error("Missing 90-day chart range");
+		await act(async () => ninety.click());
+		expect(container.querySelector("#factory-change-title")?.textContent).toBe("变化 · 最近 90 天");
+		expect(container.textContent).not.toContain("已发布覆盖");
+	} finally {
+		await act(async () => root.unmount());
+	}
+});
+
+it.each([30, 90])("keeps the default chart span over %i published days", async (dayCount) => {
 	const raw = factoryFixture();
 	raw.window = savedFactoryWindow(raw.fetched_at, dayCount);
 	vi.mocked(loadFactory).mockResolvedValue({ ...raw, selectedRepos: raw.repos });
@@ -277,9 +326,7 @@ it.each([30, 90])("labels the published %i-day chart window", async (dayCount) =
 				</MemoryRouter>,
 			),
 		);
-		expect(container.querySelector("#factory-change-title")?.textContent).toBe(
-			`变化 · 最近 ${dayCount} 天`,
-		);
+		expect(container.querySelector("#factory-change-title")?.textContent).toBe("变化 · 最近 90 天");
 		expect(container.textContent).not.toContain("每日快速刷新");
 		expect(container.textContent).not.toContain("每周深度刷新");
 		expect(container.textContent).toContain("默认 7 天仅用于期间比较");

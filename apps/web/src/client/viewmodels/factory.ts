@@ -1,4 +1,4 @@
-import { aggregateFactory, emptyDay } from "../../lib/factory";
+import { aggregateFactory } from "../../lib/factory";
 import { factoryEvidenceFreshness } from "../../lib/factory-freshness";
 import {
 	FACTORY_STREAMS,
@@ -108,6 +108,7 @@ export function factoryBoard(
 	snapshot: FactorySnapshot,
 	repos: FactoryRepo[],
 	selectedRepos: FactorySelectedRepo[],
+	rangeDays: number = DEFAULT_FACTORY_RANGE,
 ) {
 	const selectedNames = new Set(selectedRepos.map((repo) => repo.name.toLowerCase()));
 	repos = repos.filter((repo) => selectedNames.has(repo.name.toLowerCase()));
@@ -128,16 +129,25 @@ export function factoryBoard(
 	const bounds = windows.map(calendarBounds);
 	const end = Math.max(...bounds.map((window) => window.until));
 	const earliest = Math.min(...bounds.map((window) => window.since));
-	const start = Math.max(
-		earliest,
-		Date.parse(new Date(end).toISOString().slice(0, 10)) - 365 * 86400_000,
-	);
 	const mixedWindows = windows.some(
 		(w) => w.since !== windows[0]?.since || w.until !== windows[0]?.until,
 	);
+	const firstDay = isoDay(earliest);
+	const lastWindowDay = isoDay(end - 1);
+	const latestDay = latestObservedDay(repos, firstDay, lastWindowDay);
+	const latestStart = Date.parse(`${latestDay}T00:00:00.000Z`);
+	const rangeStart = latestStart - (rangeDays - 1) * DAY_MS;
+	const firstDayStart = Date.parse(`${firstDay}T00:00:00.000Z`);
+	const startDay = isoDay(rangeStart);
+	const availableDays = Math.max(1, Math.round((latestStart - firstDayStart) / DAY_MS) + 1);
 	const days: BoardDay[] = [];
-	for (let date = start; !mixedTimezones && date < end; date += 86400_000) {
-		const day = new Date(date).toISOString().slice(0, 10);
+	for (
+		let date = Date.parse(`${startDay}T00:00:00.000Z`);
+		!mixedTimezones && date <= latestStart;
+		date += DAY_MS
+	) {
+		const day = isoDay(date);
+		const values = aggregate.days[day];
 		const complete = Object.fromEntries(
 			FACTORY_STREAMS.map((stream) => [
 				stream,
@@ -148,7 +158,13 @@ export function factoryBoard(
 					),
 			]),
 		) as Record<FactoryStreamName, boolean>;
-		days.push({ date: day, timezone, ...(aggregate.days[day] ?? emptyDay()), complete });
+		days.push({
+			date: day,
+			timezone,
+			observed: values !== undefined,
+			...(values ?? missingDay()),
+			complete,
+		});
 	}
 	const coverage = {
 		complete: 0,
@@ -163,7 +179,6 @@ export function factoryBoard(
 			if (status === "unavailable") coverage.unavailable++;
 			if (status === "limited") coverage.limited++;
 		}
-	const midnight = Date.parse(new Date(end).toISOString().slice(0, 10));
 	const periodEnd = repos.length
 		? Math.min(
 				...repos.map((repo) => {
@@ -172,8 +187,9 @@ export function factoryBoard(
 						? calendarBounds(window).until
 						: Date.parse(window.until.slice(0, 10));
 				}),
+				mixedTimezones ? Number.POSITIVE_INFINITY : latestStart + DAY_MS,
 			)
-		: midnight;
+		: latestStart + DAY_MS;
 	const calendarRepos = mixedTimezones ? [] : repos;
 	const repoActivity = calendarRepos.map((r) =>
 		activityOf(
@@ -183,7 +199,7 @@ export function factoryBoard(
 			calendarBounds(r.observation?.window ?? snapshot.window).until,
 		),
 	);
-	const series = addStock(days, repos, membershipComplete);
+	const series = addStock(days, repos, membershipComplete && latestDay === lastWindowDay);
 	const stockOn = (date: string, key: "openIssues" | "openPrs") =>
 		series.find((d) => d.date === date)?.[key] ?? null;
 	const periods = PERIODS.map((length) => {
@@ -216,15 +232,9 @@ export function factoryBoard(
 		.map(([name, bytes]) => ({ name, bytes, share: languageTotal ? bytes / languageTotal : 0 }))
 		.sort((a, b) => b.bytes - a.bytes);
 	const observed = Object.fromEntries(
-		FACTORY_STREAMS.map((k) => [
-			k,
-			repos.some(
-				(r) =>
-					r.coverage[k].status === "complete" ||
-					(r.coverage[k].status !== "pending" &&
-						r.coverage[k].status !== "partial" &&
-						r.coverage[k].observed > 0),
-			),
+		FACTORY_STREAMS.map((stream) => [
+			stream,
+			repos.some((repo) => hasFactoryMeasurement(repo, stream)),
 		]),
 	) as Record<FactoryStreamName, boolean>;
 	const activity = activityBuckets(repoActivity, periodEnd);
@@ -247,9 +257,11 @@ export function factoryBoard(
 		mixedWindows,
 		mixedTimezones,
 		timezone,
+		availableDays,
 		displayWindow: {
-			since: new Date(Math.min(...windows.map((window) => Date.parse(window.since)))).toISOString(),
-			until: new Date(Math.max(...windows.map((window) => Date.parse(window.until)))).toISOString(),
+			since: `${startDay}T00:00:00.000Z`,
+			until: `${isoDay(latestStart + DAY_MS)}T00:00:00.000Z`,
+			timezone,
 		},
 		aggregate,
 		streamComplete: Object.fromEntries(
@@ -314,6 +326,15 @@ export function factoryBoard(
 const DAY_MS = 86_400_000;
 export const PERIODS = [1, 7, 30] as const;
 export type Period = (typeof PERIODS)[number];
+export const FACTORY_RANGES = [30, 90, 180, 365] as const;
+export type FactoryRange = (typeof FACTORY_RANGES)[number];
+export const DEFAULT_FACTORY_RANGE: FactoryRange = 90;
+export function factoryRange(value: string | null | undefined): FactoryRange {
+	const parsed = Number(value);
+	return (FACTORY_RANGES as readonly number[]).includes(parsed)
+		? (parsed as FactoryRange)
+		: DEFAULT_FACTORY_RANGE;
+}
 type Flow = {
 	commits: number;
 	prOpened: number;
@@ -348,14 +369,20 @@ function coversWindow(
 	from: number,
 	to: number,
 ) {
-	const window = windowOf(repo, stream);
-	return (
-		repo.coverage[stream].status === "complete" &&
-		(repo.coverage[stream].completeWindows ?? [window]).some((value) => {
-			const bounds = calendarBounds(value);
-			return bounds.since <= from && bounds.until >= to;
-		})
-	);
+	const coverage = repo.coverage[stream];
+	if (coverage.status === "unavailable" || (stream === "alerts" && coverage.status !== "complete"))
+		return false;
+	const windows =
+		coverage.completeWindows ?? (coverage.status === "complete" ? [windowOf(repo, stream)] : []);
+	const bounds = windows.map(calendarBounds);
+	let cursor = from;
+	for (const value of bounds.sort((left, right) => left.since - right.since)) {
+		if (value.until < from) continue;
+		if (value.since > cursor) break;
+		cursor = Math.max(cursor, value.until);
+		if (cursor >= to) return true;
+	}
+	return false;
 }
 
 function sumFlow(days: Record<string, Flow>, from: number, to: number): Flow {
@@ -451,11 +478,46 @@ function activityBuckets(activity: RepoActivity[], midnight: number) {
 	return buckets;
 }
 
-type BoardDay = FactoryDay & {
+type DayFlow = { [Key in keyof FactoryDay]: number | null };
+type FactoryBoardDay = DayFlow & {
 	date: string;
 	timezone: string;
+	observed: boolean;
 	complete: Record<FactoryStreamName, boolean>;
+	openIssues: number | null;
+	openPrs: number | null;
+	ciRate7: number | null;
+	activeRepos7: number | null;
 };
+type BoardDay = Omit<FactoryBoardDay, "openIssues" | "openPrs" | "ciRate7" | "activeRepos7">;
+
+const MISSING_DAY: DayFlow = {
+	commits: null,
+	issueOpened: null,
+	issueClosed: null,
+	prOpened: null,
+	prMerged: null,
+	prClosed: null,
+	ciSuccess: null,
+	ciFailure: null,
+	releases: null,
+};
+function missingDay(): DayFlow {
+	return { ...MISSING_DAY };
+}
+function latestObservedDay(repos: FactoryRepo[], firstDay: string, lastWindowDay: string) {
+	let latest = "";
+	for (const repo of repos)
+		for (const date of Object.keys(repo.metrics.days))
+			if (
+				/^\d{4}-\d{2}-\d{2}$/.test(date) &&
+				date >= firstDay &&
+				date <= lastWindowDay &&
+				date > latest
+			)
+				latest = date;
+	return latest || lastWindowDay;
+}
 /**
  * Open backlog is only observed today. Walking backwards (open(d-1) = open(d) - opened(d) + closed(d))
  * is exact only when every repository's event list is complete; a negative result proves missing
@@ -477,23 +539,21 @@ function walkBack(
 	return out;
 }
 
-function addStock(days: BoardDay[], repos: FactoryRepo[], membershipComplete: boolean) {
+function addStock(days: BoardDay[], repos: FactoryRepo[], stockKnown: boolean) {
 	const exact = (stream: "issues" | "prs") =>
-		membershipComplete &&
-		repos.length > 0 &&
-		repos.every((r) => r.coverage[stream].status === "complete");
+		stockKnown && repos.length > 0 && repos.every((r) => r.coverage[stream].status === "complete");
 	const sum = (key: "openIssues" | "openPrs") => repos.reduce((n, r) => n + r[key], 0);
 	const openIssues = walkBack(
 		days,
 		exact("issues") ? sum("openIssues") : null,
 		"issues",
-		(d) => d.issueOpened - d.issueClosed,
+		(d) => (d.issueOpened ?? 0) - (d.issueClosed ?? 0),
 	);
 	const openPrs = walkBack(
 		days,
 		exact("prs") ? sum("openPrs") : null,
 		"prs",
-		(d) => d.prOpened - d.prMerged - d.prClosed,
+		(d) => (d.prOpened ?? 0) - (d.prMerged ?? 0) - (d.prClosed ?? 0),
 	);
 	const index = new Map(days.map((d, i) => [d.date, i]));
 	const commitDays = repos.map((r) =>
@@ -506,8 +566,8 @@ function addStock(days: BoardDay[], repos: FactoryRepo[], membershipComplete: bo
 	let success = 0;
 	let failure = 0;
 	return days.map((d, i) => {
-		success += d.ciSuccess - (days[i - 7]?.ciSuccess ?? 0);
-		failure += d.ciFailure - (days[i - 7]?.ciFailure ?? 0);
+		success += (d.ciSuccess ?? 0) - (days[i - 7]?.ciSuccess ?? 0);
+		failure += (d.ciFailure ?? 0) - (days[i - 7]?.ciFailure ?? 0);
 		const rolling = (stream: "commits" | "actions") =>
 			i >= 6 && days.slice(i - 6, i + 1).every((day) => day.complete[stream]);
 		return {
@@ -744,7 +804,31 @@ export const STREAM_CODES: Record<FactoryStreamName, string> = {
 };
 export function hasFactoryMeasurement(repo: FactoryRepo, stream: FactoryStreamName): boolean {
 	const coverage = repo.coverage[stream];
-	return coverage.status === "complete" || (coverage.status === "limited" && coverage.observed > 0);
+	if (coverage.status === "pending" || coverage.status === "unavailable") return false;
+	return (
+		coverage.status === "complete" ||
+		coverage.observed > 0 ||
+		(stream !== "alerts" && (coverage.completeWindows?.length ?? 0) > 0)
+	);
+}
+
+export function factoryRepoCommits(
+	repo: FactoryRepo,
+	dates: readonly string[],
+	fallbackWindow: FactoryWindow,
+): (number | null)[] {
+	const windowOf: StreamWindow = (source, stream) =>
+		source.coverage[stream].observation?.window ??
+		source.observation?.collectionWindow ??
+		source.observation?.window ??
+		fallbackWindow;
+	return dates.map((date) => {
+		const count = repo.metrics.days[date]?.commits;
+		if (count === undefined) return null;
+		if (count > 0) return count;
+		const start = Date.parse(`${date}T00:00:00.000Z`);
+		return coversWindow(repo, "commits", windowOf, start, start + DAY_MS) ? 0 : null;
+	});
 }
 
 export function formatObservedCount(value: number, complete: boolean): string {

@@ -1,9 +1,28 @@
 import { Button, Link } from "@nocoo/basalt";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
+import {
+	Bot,
+	Box,
+	CalendarDays,
+	CircleDot,
+	Clock3,
+	Database,
+	GitCommit,
+	GitMerge,
+	GitPullRequest,
+	Lock,
+	MessageSquare,
+	Rocket,
+	ScanSearch,
+	Tag,
+	Workflow,
+} from "lucide-react";
 import type { ActivitySnapshot } from "../../lib/activity-types";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { DataTimeSource } from "../components/layout/data-time";
+import { HelpTooltip } from "../components/layout/help-tooltip";
+import { IconLabel } from "../components/layout/icon-label";
 import { Kpi, KpiRow } from "../components/layout/kpi";
 import { ProjectLink } from "../components/layout/project-identity";
 import { formatPreciseDate } from "../lib/format";
@@ -19,7 +38,38 @@ function ActivityTime({ at }: { at: string | null }) {
 }
 
 type ActivitySection = ReturnType<typeof activitySections>[number];
+
 type ActivityRepo = ActivitySnapshot["repos"][number];
+
+const SECTION_ICONS = {
+	merged: GitMerge,
+	opened: GitPullRequest,
+	closed: CircleDot,
+	releases: Tag,
+	ci: Workflow,
+	deploy: Rocket,
+} as const;
+
+const CONTRIBUTION_TYPES = [
+	{ key: "commits", label: "提交", icon: GitCommit },
+	{ key: "issues", label: "Issue", icon: CircleDot },
+	{ key: "pullRequests", label: "PR", icon: GitPullRequest },
+	{ key: "pullRequestReviews", label: "Review", icon: MessageSquare },
+	{ key: "restricted", label: "私有贡献", icon: Lock },
+	{ key: "repositories", label: "仓库", icon: Box },
+] as const;
+
+export function activitySectionIcon(key: string) {
+	return SECTION_ICONS[key as keyof typeof SECTION_ICONS] ?? Tag;
+}
+
+function rowIcon(sectionKey: string, kind: string) {
+	if (sectionKey === "ci") return Workflow;
+	if (sectionKey === "deploy") return Rocket;
+	if (kind.startsWith("PR")) return sectionKey === "merged" ? GitMerge : GitPullRequest;
+	if (kind.startsWith("Issue")) return CircleDot;
+	return Tag;
+}
 
 /** One activity section's notes and rows, shared by the wide and compact layouts. */
 export function ActivitySectionBody({
@@ -49,19 +99,42 @@ export function ActivitySectionBody({
 			) : null}
 			{section.rows.length ? (
 				<ul className="space-y-basalt-layout-sm">
-					{section.rows.map((row) => (
-						<li key={row.id} className="min-w-0 space-y-basalt-space-xs">
-							<Link
-								href={`/repos/${row.repo}`}
-								className="block break-words text-sm font-medium [overflow-wrap:anywhere]"
-							>
-								{row.title}
-							</Link>
-							<p className="break-words text-xs text-basalt-muted-foreground [overflow-wrap:anywhere]">
-								{row.repo} · {row.kind} · <ActivityTime at={row.at} />
-							</p>
-						</li>
-					))}
+					{section.rows.map((row) => {
+						const RowIcon = rowIcon(section.key, row.kind);
+						return (
+							<li key={row.id} className="flex min-w-0 items-start gap-2">
+								<RowIcon
+									className="mt-0.5 size-4 shrink-0 text-basalt-muted-foreground"
+									strokeWidth={1.5}
+									aria-hidden="true"
+								/>
+								<div className="min-w-0 flex-1 space-y-basalt-space-xs">
+									<Link
+										href={`/repos/${row.repo}`}
+										className="block break-words text-sm font-medium [overflow-wrap:anywhere]"
+									>
+										{row.title}
+									</Link>
+									<div className="flex flex-wrap items-center gap-x-basalt-space-lg gap-y-basalt-space-xs text-xs text-basalt-muted-foreground">
+										<ProjectLink
+											repo={row.repo}
+											className="text-xs font-normal text-basalt-muted-foreground"
+										/>
+										{section.key === "ci" || section.key === "deploy" ? (
+											<CandyBadge tone="gray">{row.kind}</CandyBadge>
+										) : (
+											<IconLabel icon={Tag} iconClassName="size-3.5">
+												{row.kind}
+											</IconLabel>
+										)}
+										<IconLabel icon={Clock3} iconClassName="size-3.5">
+											<ActivityTime at={row.at} />
+										</IconLabel>
+									</div>
+								</div>
+							</li>
+						);
+					})}
 				</ul>
 			) : null}
 		</>
@@ -77,10 +150,14 @@ export function RepoSnapshotFields({
 	snapshot: ActivitySnapshot;
 }) {
 	return (
-		<dl className="mt-basalt-layout-sm grid grid-cols-2 gap-basalt-layout-sm text-sm sm:grid-cols-3">
-			<div>
-				<dt className="text-basalt-muted-foreground">未结 PR</dt>
-				<dd className="tabular-nums">
+		<dl className="mt-basalt-layout-sm grid grid-cols-2 gap-x-basalt-layout gap-y-basalt-layout-sm sm:grid-cols-3">
+			<div className="min-w-0 space-y-basalt-space-xs">
+				<dt className="text-basalt-xs text-basalt-muted-foreground">
+					<IconLabel icon={GitPullRequest} iconClassName="size-3.5">
+						未结 PR
+					</IconLabel>
+				</dt>
+				<dd className="font-medium tabular-nums">
 					{activityObservedCount(
 						repo.snapshot.open_prs?.length ?? null,
 						repo.coverage["snapshot.open_prs"],
@@ -88,9 +165,13 @@ export function RepoSnapshotFields({
 					)}
 				</dd>
 			</div>
-			<div>
-				<dt className="text-basalt-muted-foreground">未结 Issue · 依赖 / 安全 / 其他</dt>
-				<dd className="tabular-nums">
+			<div className="min-w-0 space-y-basalt-space-xs">
+				<dt className="text-basalt-xs text-basalt-muted-foreground">
+					<IconLabel icon={CircleDot} iconClassName="size-3.5">
+						未结 Issue · 依赖 / 安全 / 其他
+					</IconLabel>
+				</dt>
+				<dd className="font-medium tabular-nums">
 					{activityObservedCount(
 						repo.snapshot.open_issues?.dependency.length ?? null,
 						repo.coverage["snapshot.open_issues"],
@@ -110,9 +191,13 @@ export function RepoSnapshotFields({
 					)}
 				</dd>
 			</div>
-			<div>
-				<dt className="text-basalt-muted-foreground">提交 · 默认 / 其他分支</dt>
-				<dd className="tabular-nums">
+			<div className="min-w-0 space-y-basalt-space-xs">
+				<dt className="text-basalt-xs text-basalt-muted-foreground">
+					<IconLabel icon={GitCommit} iconClassName="size-3.5">
+						提交 · 默认 / 其他分支
+					</IconLabel>
+				</dt>
+				<dd className="font-medium tabular-nums">
 					{activityObservedCount(repo.commits.default, repo.coverage.commits, snapshot.truncated)} /{" "}
 					{activityObservedCount(
 						repo.commits.other,
@@ -122,7 +207,7 @@ export function RepoSnapshotFields({
 					{repo.commits.deferred?.map((group) => (
 						<p
 							key={group.runId}
-							className="mt-basalt-space-xs text-xs text-basalt-muted-foreground"
+							className="mt-basalt-space-xs text-basalt-xs font-normal text-basalt-muted-foreground"
 						>
 							{`补录 ${group.items.length} 个默认分支提交 · 归属窗口 `}
 							<ActivityTime at={group.window.since} /> → <ActivityTime at={group.window.until} />
@@ -131,21 +216,33 @@ export function RepoSnapshotFields({
 					))}
 				</dd>
 			</div>
-			<div>
-				<dt className="text-basalt-muted-foreground">Dependabot</dt>
-				<dd className="tabular-nums">
+			<div className="min-w-0 space-y-basalt-space-xs">
+				<dt className="text-basalt-xs text-basalt-muted-foreground">
+					<IconLabel icon={Bot} iconClassName="size-3.5">
+						Dependabot
+					</IconLabel>
+				</dt>
+				<dd className="font-medium tabular-nums">
 					{activityObservedCount(repo.snapshot.dependabot, repo.coverage.dependabot)}
 				</dd>
 			</div>
-			<div>
-				<dt className="text-basalt-muted-foreground">code scanning</dt>
-				<dd className="tabular-nums">
+			<div className="min-w-0 space-y-basalt-space-xs">
+				<dt className="text-basalt-xs text-basalt-muted-foreground">
+					<IconLabel icon={ScanSearch} iconClassName="size-3.5">
+						code scanning
+					</IconLabel>
+				</dt>
+				<dd className="font-medium tabular-nums">
 					{activityObservedCount(repo.snapshot.code_scanning, repo.coverage.code_scanning)}
 				</dd>
 			</div>
-			<div>
-				<dt className="text-basalt-muted-foreground">最近成功部署</dt>
-				<dd>
+			<div className="min-w-0 space-y-basalt-space-xs">
+				<dt className="text-basalt-xs text-basalt-muted-foreground">
+					<IconLabel icon={Rocket} iconClassName="size-3.5">
+						最近成功部署
+					</IconLabel>
+				</dt>
+				<dd className="font-medium">
 					<ActivityTime
 						at={
 							repo.coverage.deploy?.status === "complete" && !repo.coverage.deploy.truncated
@@ -184,37 +281,41 @@ export function ActivityContent({
 			<DataTimeSource entries={[{ label: "当次活动", at: snapshot.fetchedAt }]} />
 			<LayerCard data-testid="activity-window">
 				<div className="flex flex-wrap items-center justify-between gap-basalt-space-lg">
-					<p className="text-sm font-medium">当次窗口 · 北京时间（起点不含，终点包含）</p>
+					<h2 className="flex items-center gap-2 text-sm font-medium">
+						<CalendarDays
+							className="size-4 shrink-0 text-basalt-muted-foreground"
+							strokeWidth={1.5}
+							aria-hidden="true"
+						/>
+						当次窗口
+						<HelpTooltip label="当次窗口说明">
+							<p>北京时间，起点不含、终点包含。</p>
+							<p>窗口延伸至上次成功刷新；缺失日期或失败运行不算无活动。</p>
+							<p>首次窗口仅覆盖已采集的有限回看范围，不代表此前没有活动。</p>
+							<p>已保存的部分数据不是完整总数。</p>
+						</HelpTooltip>
+					</h2>
 					<div className="flex flex-wrap gap-basalt-space-md">
 						{snapshot.window.gap ? <CandyBadge tone="amber">窗口有间隔</CandyBadge> : null}
 						{snapshot.window.first ? <CandyBadge tone="gray">首次窗口</CandyBadge> : null}
 						{snapshot.truncated ? <CandyBadge tone="amber">数据已截断</CandyBadge> : null}
 					</div>
 				</div>
-				<p className="mt-basalt-space-lg flex flex-wrap gap-x-basalt-space-md text-sm tabular-nums">
+				<p className="mt-basalt-space-lg flex flex-wrap items-center gap-x-basalt-space-md text-sm tabular-nums">
+					<Clock3
+						className="size-4 shrink-0 text-basalt-muted-foreground"
+						strokeWidth={1.5}
+						aria-hidden="true"
+					/>
 					<ActivityTime at={snapshot.window.since} />
 					<span aria-hidden="true">→</span>
 					<ActivityTime at={snapshot.window.until} />
 				</p>
-				<p className="mt-basalt-space-md break-words text-xs text-basalt-muted-foreground [overflow-wrap:anywhere]">
+				<p className="mt-basalt-space-md flex flex-wrap items-center gap-x-basalt-space-xs break-words text-xs text-basalt-muted-foreground [overflow-wrap:anywhere]">
+					<Database className="size-3.5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
 					数据时间：
 					<ActivityTime at={snapshot.fetchedAt} /> · 运行 {snapshot.runId}
 				</p>
-				{snapshot.window.gap ? (
-					<p className="mt-basalt-space-lg text-sm" role="note">
-						窗口延伸至上次成功刷新；缺失日期或失败运行不算无活动。
-					</p>
-				) : null}
-				{snapshot.window.first ? (
-					<p className="mt-basalt-space-md text-sm" role="note">
-						首次窗口仅覆盖已采集的有限回看范围，不代表此前没有活动。
-					</p>
-				) : null}
-				{snapshot.truncated ? (
-					<p className="mt-basalt-space-md text-sm" role="note">
-						仅展示已保存的部分数据，数量不是完整总数。
-					</p>
-				) : null}
 			</LayerCard>
 			<KpiRow>
 				<Kpi
@@ -230,7 +331,7 @@ export function ActivityContent({
 				{activitySections(snapshot).map((section) => (
 					<SectionRule
 						key={section.key}
-						title={section.title}
+						title={<IconLabel icon={activitySectionIcon(section.key)}>{section.title}</IconLabel>}
 						data-testid={`activity-${section.key}`}
 						actions={activitySectionBadge(section)}
 					>
@@ -259,22 +360,37 @@ export function ActivityContent({
 					</div>
 				</SectionRule>
 			) : (
-				<SectionRule title="贡献绿格" data-testid="activity-contributions">
-					<p className="mb-basalt-layout-sm text-xs text-basalt-muted-foreground">
-						Asia/Shanghai · 请求区间按北京日划分，贡献数由 GitHub 返回；原生日历日期保留 GitHub
-						归属，不代表已转换时区。
-					</p>
+				<SectionRule
+					title={
+						<IconLabel
+							icon={CalendarDays}
+							hint="Asia/Shanghai · 请求区间按北京日划分，贡献数由 GitHub 返回；原生日历日期保留 GitHub 归属，不代表已转换时区。"
+							hintLabel="贡献绿格说明"
+						>
+							贡献绿格
+						</IconLabel>
+					}
+					data-testid="activity-contributions"
+				>
 					{snapshot.contributions ? (
 						<div className="grid min-w-0 gap-basalt-layout-sm sm:grid-cols-2">
 							{snapshot.contributions.days.map((day) => (
 								<LayerCard key={day.date}>
 									<div className="flex flex-wrap items-center justify-between gap-basalt-space-lg">
-										<h3 className="text-sm font-medium tabular-nums">{day.date}</h3>
+										<h3 className="flex items-center gap-2 text-sm font-medium tabular-nums">
+											<CalendarDays
+												className="size-4 shrink-0 text-basalt-muted-foreground"
+												strokeWidth={1.5}
+												aria-hidden="true"
+											/>
+											{day.date}
+										</h3>
 										<CandyBadge tone={day.partial ? "amber" : "green"}>
 											{day.partial ? "当天未结束" : "完整北京日"}
 										</CandyBadge>
 									</div>
-									<p className="mt-basalt-layout-sm text-xs text-basalt-muted-foreground">
+									<p className="mt-basalt-layout-sm flex items-center gap-1.5 text-xs text-basalt-muted-foreground">
+										<GitCommit className="size-3.5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
 										GitHub reported contributions（请求区间）
 									</p>
 									<p className="mt-basalt-space-md text-2xl font-semibold tabular-nums">
@@ -286,23 +402,22 @@ export function ActivityContent({
 										</p>
 									) : null}
 									<dl className="mt-basalt-layout-sm grid grid-cols-2 gap-basalt-space-lg text-xs">
-										{(
-											[
-												["提交", day.types.commits],
-												["Issue", day.types.issues],
-												["PR", day.types.pullRequests],
-												["Review", day.types.pullRequestReviews],
-												["私有贡献", day.types.restricted],
-												["仓库", day.types.repositories],
-											] as const
-										).map(([label, value]) => (
-											<div key={label} className="flex justify-between gap-basalt-space-md">
-												<dt className="text-basalt-muted-foreground">{label}</dt>
-												<dd className="tabular-nums">{activityCount(value)}</dd>
+										{CONTRIBUTION_TYPES.map(({ key, label, icon }) => (
+											<div
+												key={key}
+												className="flex items-center justify-between gap-basalt-space-md"
+											>
+												<dt className="text-basalt-muted-foreground">
+													<IconLabel icon={icon} iconClassName="size-3.5">
+														{label}
+													</IconLabel>
+												</dt>
+												<dd className="tabular-nums">{activityCount(day.types[key])}</dd>
 											</div>
 										))}
 									</dl>
-									<p className="mt-basalt-layout-sm break-words text-xs text-basalt-muted-foreground">
+									<p className="mt-basalt-layout-sm flex flex-wrap items-center gap-1.5 break-words text-xs text-basalt-muted-foreground">
+										<Clock3 className="size-3.5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
 										<ActivityTime at={day.since} /> → <ActivityTime at={day.until} />
 									</p>
 									{day.nativeCalendar ? (

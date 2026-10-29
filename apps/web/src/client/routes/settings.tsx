@@ -241,10 +241,19 @@ export function SettingsPage() {
 													</div>
 												</TableCell>
 												<TableCell className="whitespace-nowrap font-mono text-xs">
-													•••• {row.token_last4}
+													<span className="inline-flex items-center gap-1.5">
+														<KeyRound
+															className="size-3.5 shrink-0 text-basalt-muted-foreground"
+															strokeWidth={1.5}
+															aria-hidden="true"
+														/>
+														•••• {row.token_last4}
+													</span>
 												</TableCell>
 												<TableCell className="max-w-56 text-xs leading-5 text-basalt-muted-foreground">
-													{row.scopes}
+													<IconLabel icon={ShieldCheck} iconClassName="size-3.5">
+														{row.scopes}
+													</IconLabel>
 												</TableCell>
 												<TableCell>
 													{row.is_active ? (

@@ -10,7 +10,16 @@ import {
 	TableHeader,
 	TableRow,
 } from "@nocoo/basalt/components/table";
-import { ArrowUpRight, CircleAlert, Eye, ShieldCheck, Tag, Workflow } from "lucide-react";
+import {
+	ArrowUpRight,
+	CircleAlert,
+	Clock3,
+	Eye,
+	GitBranch,
+	ShieldCheck,
+	Tag,
+	Workflow,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import { CI_IDLE_DAYS, CI_RECENT, type CiReportResponse } from "../../lib/ci-health";
 import { BusinessPageHeader as PageHeader } from "../components/layout/business-page-header";
@@ -18,6 +27,7 @@ import { CandyBadge } from "../components/layout/candy-badge";
 import { ChartBrick } from "../components/layout/chart-brick";
 import { SearchField, TableScroll } from "../components/layout/collection-chrome";
 import { DataTimeSource } from "../components/layout/data-time";
+import { HelpTooltip } from "../components/layout/help-tooltip";
 import { IconLabel } from "../components/layout/icon-label";
 import { CiSkeleton } from "../components/layout/page-skeleton";
 import { ProjectLink } from "../components/layout/project-identity";
@@ -128,6 +138,32 @@ export function CiPage() {
 				<CiTrend daily={report.daily} />
 			</ChartBrick>
 			<section className="giraffe-ci-summary" aria-label="CI 判定汇总" data-testid="ci-summary">
+				<div className="flex flex-wrap items-center gap-basalt-space-md">
+					<h2 className="flex items-center gap-2 text-basalt-sm font-medium">
+						<Workflow
+							className="size-4 shrink-0 text-basalt-muted-foreground"
+							strokeWidth={1.5}
+							aria-hidden="true"
+						/>
+						CI 判定汇总
+					</h2>
+					<HelpTooltip label="CI 判定汇总说明">
+						<p>
+							汇总单位为默认分支工作流（{formatCount(t.totalWorkflows)} 条），仓库单独计数（
+							{formatCount(t.totalRepos)} 个，其中 {formatCount(t.unknownRepos)}{" "}
+							个无默认分支判定）。
+						</p>
+						<p>
+							非默认分支 {formatCount(t.nonDefaultBranchStreams)} 条观察线、
+							{formatCount(t.nonDefaultBranchFailures)} 次失败运行（近 30 天，含
+							PR、标签和未知引用）， 不影响仓库和工作流健康。
+						</p>
+						<p>
+							Dependabot 更新任务另计 {formatCount(t.botStreams)} 条。基准时间采用已保存观测的时间{" "}
+							{formatDate(report.now)}。
+						</p>
+					</HelpTooltip>
+				</div>
 				<ShareBar
 					label="默认分支工作流判定"
 					legend={false}
@@ -168,19 +204,18 @@ export function CiPage() {
 						note={`${t.idleRepos} 个仓库 · ${CI_IDLE_DAYS} 天无运行或无判定`}
 					/>
 				</dl>
-				<p>
-					汇总单位为默认分支工作流（{formatCount(t.totalWorkflows)} 条），仓库单独计数（
-					{formatCount(t.totalRepos)} 个，其中 {formatCount(t.unknownRepos)} 个无默认分支判定）。
-					非默认分支 {formatCount(t.nonDefaultBranchStreams)} 条观察线、
-					{formatCount(t.nonDefaultBranchFailures)} 次失败运行（近 30 天，含 PR、标签和未知引用），
-					不影响仓库和工作流健康。Dependabot 更新任务另计 {formatCount(t.botStreams)} 条。
-					基准时间采用已保存观测的时间 {formatDate(report.now)}。
-				</p>
 			</section>
 
 			<SectionRule
-				title={<IconLabel icon={CircleAlert}>需要处理</IconLabel>}
-				hint={`仅默认分支：最新完成判定失败，且连续至少 2 次失败，或近 4 次以上判定中至少半数失败。最新完成判定成功即恢复；${CI_IDLE_DAYS} 天无运行归为空闲。`}
+				title={
+					<IconLabel
+						icon={CircleAlert}
+						hint={`仅默认分支：最新完成判定失败，且连续至少 2 次失败，或近 4 次以上判定中至少半数失败。最新完成判定成功即恢复；${CI_IDLE_DAYS} 天无运行归为空闲。`}
+						hintLabel="需要处理说明"
+					>
+						需要处理
+					</IconLabel>
+				}
 			>
 				{buckets.act.length ? (
 					<ul className="giraffe-ci-cards">
@@ -210,8 +245,15 @@ export function CiPage() {
 			</div>
 
 			<SectionRule
-				title={<IconLabel icon={Workflow}>工作流与分支观察</IconLabel>}
-				hint="每行一条工作流分支线，分支观察不计入健康汇总。方块为最近 10 次运行，从左到右由旧到新，最右侧加框的一格是最新一次；不足 10 次时，左侧以极淡灰色补位，不代表运行状态。"
+				title={
+					<IconLabel
+						icon={Workflow}
+						hint="每行一条工作流分支线，分支观察不计入健康汇总。方块为最近 10 次运行，从左到右由旧到新，最右侧加框的一格是最新一次；不足 10 次时，左侧以极淡灰色补位，不代表运行状态。"
+						hintLabel="工作流与分支观察说明"
+					>
+						工作流与分支观察
+					</IconLabel>
+				}
 				actions={
 					<FilterBar label="工作流筛选">
 						<SearchField
@@ -254,10 +296,27 @@ export function CiPage() {
 									{streams.map((s) => (
 										<TableRow key={`${s.repo}:${s.workflow}:${s.scope}:${s.branch}`}>
 											<TableCell>
-												<ProjectLink repo={s.repo} className="font-medium text-basalt-foreground" />
-												<div className="text-xs text-basalt-muted-foreground">
-													{s.workflow}
-													{s.scope === "branch" ? ` · ${s.branch ?? "未知引用"}` : ""}
+												<div className="flex min-w-0 items-start gap-2">
+													<Workflow
+														className="mt-0.5 size-4 shrink-0 text-basalt-muted-foreground"
+														strokeWidth={1.5}
+														aria-hidden="true"
+													/>
+													<div className="min-w-0">
+														<ProjectLink
+															repo={s.repo}
+															className="font-medium text-basalt-foreground"
+														/>
+														<div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-basalt-muted-foreground">
+															<GitBranch
+																className="size-3.5 shrink-0"
+																strokeWidth={1.5}
+																aria-hidden="true"
+															/>
+															{s.workflow}
+															{s.scope === "branch" ? ` · ${s.branch ?? "未知引用"}` : ""}
+														</div>
+													</div>
 												</div>
 											</TableCell>
 											<TableCell>
@@ -275,8 +334,26 @@ export function CiPage() {
 											<TableCell className={NUM_CELL}>
 												{s.rate === null ? "—" : `${Math.round(s.rate * 100)}%`}
 											</TableCell>
-											<TableCell className={DATE_CELL}>{ago(s.lastSuccess, report.now)}</TableCell>
-											<TableCell className={DATE_CELL}>{ago(s.lastRun, report.now)}</TableCell>
+											<TableCell className={DATE_CELL}>
+												<span className="inline-flex items-center justify-end gap-1.5">
+													<Clock3
+														className="size-3.5 shrink-0"
+														strokeWidth={1.5}
+														aria-hidden="true"
+													/>
+													{ago(s.lastSuccess, report.now)}
+												</span>
+											</TableCell>
+											<TableCell className={DATE_CELL}>
+												<span className="inline-flex items-center justify-end gap-1.5">
+													<Clock3
+														className="size-3.5 shrink-0"
+														strokeWidth={1.5}
+														aria-hidden="true"
+													/>
+													{ago(s.lastRun, report.now)}
+												</span>
+											</TableCell>
 										</TableRow>
 									))}
 								</TableBody>
@@ -294,8 +371,15 @@ export function CiPage() {
 			</SectionRule>
 
 			<SectionRule
-				title={<IconLabel icon={Tag}>发布</IconLabel>}
-				hint="按发布流水线状态和距最近版本的时间排序。超过 3 个典型间隔（或 90 天）未发布标记为久未发布。"
+				title={
+					<IconLabel
+						icon={Tag}
+						hint="按发布流水线状态和距最近版本的时间排序。超过 3 个典型间隔（或 90 天）未发布标记为久未发布。"
+						hintLabel="发布说明"
+					>
+						发布
+					</IconLabel>
+				}
 			>
 				<LayerCard>
 					<LayerCard.Well className="p-0">
@@ -318,7 +402,16 @@ export function CiPage() {
 												<ProjectLink repo={r.repo} className="font-medium text-basalt-foreground" />
 											</TableCell>
 											<TableCell>
-												{r.latest ?? <span className="text-basalt-muted-foreground">从未发布</span>}
+												<span className="inline-flex items-center gap-1.5">
+													<Tag
+														className="size-3.5 shrink-0 text-basalt-muted-foreground"
+														strokeWidth={1.5}
+														aria-hidden="true"
+													/>
+													{r.latest ?? (
+														<span className="text-basalt-muted-foreground">从未发布</span>
+													)}
+												</span>
 											</TableCell>
 											<TableCell>
 												{r.pipeline === "none" ? (

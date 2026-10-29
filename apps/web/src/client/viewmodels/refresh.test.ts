@@ -500,6 +500,88 @@ describe("refresh viewmodel", () => {
 		expect(model.getSnapshot().error).toContain("状态");
 	});
 
+	it("cancels the active run once and keeps a pending cancellation pollable", async () => {
+		vi.mocked(apiGet).mockResolvedValueOnce({
+			items: [refreshRun()],
+			collectionAvailable: true,
+		});
+		const model = new RefreshViewModel();
+		await model.read();
+		vi.mocked(apiPost).mockResolvedValueOnce(refreshRun({ cancelRequested: true }));
+		await model.cancel();
+		expect(apiPost).toHaveBeenCalledWith("refresh-runs/run-1/cancel");
+		expect(model.getSnapshot()).toMatchObject({
+			run: { cancelRequested: true },
+			cancelling: false,
+			error: null,
+		});
+		await model.cancel();
+		expect(apiPost).toHaveBeenCalledOnce();
+	});
+
+	it("accepts a terminal cancellation, notifies readers once and ignores later cancels", async () => {
+		vi.mocked(apiGet).mockResolvedValueOnce({
+			items: [refreshRun({ status: "queued", phase: "account", repos: [] })],
+			collectionAvailable: true,
+		});
+		const model = new RefreshViewModel();
+		const refreshed = vi.fn();
+		model.subscribeData(refreshed);
+		await model.read();
+		const cancelled = refreshRun({
+			status: "cancelled",
+			phase: "done",
+			cancelRequested: true,
+			finishedAt: "2026-10-29T04:05:00Z",
+		});
+		vi.mocked(apiPost).mockResolvedValueOnce(cancelled);
+		await model.cancel();
+		expect(model.getSnapshot().run?.status).toBe("cancelled");
+		expect(refreshed).toHaveBeenCalledOnce();
+		await model.cancel();
+		expect(apiPost).toHaveBeenCalledOnce();
+	});
+
+	it("does not cancel without an active run, while starting, or another account", async () => {
+		const model = new RefreshViewModel();
+		await model.cancel();
+		expect(apiPost).not.toHaveBeenCalled();
+		vi.mocked(apiGet)
+			.mockResolvedValueOnce({ items: [], collectionAvailable: true })
+			.mockRejectedValueOnce(new ApiError(409, "snapshot_missing", "missing"));
+		await model.read();
+		let finish: ((run: RefreshRun) => void) | undefined;
+		vi.mocked(apiPost).mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finish = resolve;
+				}),
+		);
+		const starting = model.start(defaultRefreshParams());
+		await model.cancel();
+		expect(apiPost).toHaveBeenCalledOnce();
+		finish?.(refreshRun({ status: "queued" }));
+		await starting;
+		vi.mocked(apiPost).mockResolvedValueOnce(refreshRun({ accountId: "other" }));
+		await model.cancel();
+		expect(model.getSnapshot().error).toContain("状态");
+		expect(model.getSnapshot().run).toBeNull();
+	});
+
+	it("reports a missing run on cancel without retrying the write", async () => {
+		vi.mocked(apiGet).mockResolvedValueOnce({
+			items: [refreshRun()],
+			collectionAvailable: true,
+		});
+		const model = new RefreshViewModel();
+		await model.read();
+		vi.mocked(apiPost).mockRejectedValueOnce(new ApiError(404, "not_found", "missing"));
+		await model.cancel();
+		expect(model.getSnapshot().error).toContain("不存在");
+		expect(model.getSnapshot().cancelling).toBe(false);
+		expect(apiPost).toHaveBeenCalledOnce();
+	});
+
 	it("unlocks polling and shows the terminal cancelled state after a machine cancel", async () => {
 		vi.mocked(apiGet).mockResolvedValueOnce({ items: [refreshRun()], collectionAvailable: true });
 		const model = new RefreshViewModel();
@@ -527,5 +609,202 @@ describe("refresh viewmodel", () => {
 		await model.read();
 		expect(apiGet).toHaveBeenLastCalledWith("refresh-runs/latest");
 		expect(apiPost).not.toHaveBeenCalled();
+	});
+
+	it("keeps an accepted cancel request when a stale poll resolves afterwards", async () => {
+		vi.mocked(apiGet).mockResolvedValueOnce({ items: [refreshRun()], collectionAvailable: true });
+		const model = new RefreshViewModel();
+		await model.read();
+		let finishPoll: ((run: RefreshRun) => void) | undefined;
+		vi.mocked(apiGet).mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finishPoll = resolve;
+				}),
+		);
+		const polling = model.read();
+		vi.mocked(apiPost).mockResolvedValueOnce(refreshRun({ cancelRequested: true }));
+		await model.cancel();
+		expect(model.getSnapshot().run?.cancelRequested).toBe(true);
+		finishPoll?.(refreshRun());
+		await polling;
+		expect(model.getSnapshot().run).toMatchObject({ id: "run-1", cancelRequested: true });
+	});
+
+	it("keeps newer run progress when an older cancel snapshot arrives", async () => {
+		for (const status of ["running", "cancelled"] as const) {
+			vi.mocked(apiGet).mockResolvedValueOnce({ items: [refreshRun()], collectionAvailable: true });
+			const model = new RefreshViewModel();
+			await model.read();
+			let finishCancel: ((run: RefreshRun) => void) | undefined;
+			vi.mocked(apiPost).mockImplementationOnce(
+				() =>
+					new Promise((resolve) => {
+						finishCancel = resolve;
+					}),
+			);
+			const cancelling = model.cancel();
+			vi.mocked(apiGet).mockResolvedValueOnce(
+				refreshRun({ status, completedRepos: 2, requests: 20, updatedAt: "2026-10-29T04:01:00Z" }),
+			);
+			await model.read();
+			finishCancel?.(refreshRun({ status, cancelRequested: true }));
+			await cancelling;
+			expect(model.getSnapshot().run).toMatchObject({
+				status,
+				completedRepos: 2,
+				requests: 20,
+				updatedAt: "2026-10-29T04:01:00Z",
+				cancelRequested: true,
+			});
+		}
+	});
+
+	it("ignores a late cancel response after a newer run was accepted", async () => {
+		vi.mocked(apiGet).mockResolvedValueOnce({ items: [refreshRun()], collectionAvailable: true });
+		const model = new RefreshViewModel();
+		await model.read();
+		let finishCancel: ((run: RefreshRun) => void) | undefined;
+		vi.mocked(apiPost).mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finishCancel = resolve;
+				}),
+		);
+		const cancelling = model.cancel();
+		vi.mocked(apiGet).mockResolvedValueOnce(
+			refreshRun({
+				status: "cancelled",
+				phase: "done",
+				cancelRequested: true,
+				finishedAt: "2026-10-29T04:05:00Z",
+			}),
+		);
+		await model.read();
+		expect(model.getSnapshot().run?.status).toBe("cancelled");
+		vi.mocked(apiPost).mockResolvedValueOnce(refreshRun({ id: "run-2", status: "queued" }));
+		await model.start(defaultRefreshParams());
+		expect(model.getSnapshot().run?.id).toBe("run-2");
+		finishCancel?.(refreshRun({ status: "running", cancelRequested: true }));
+		await cancelling;
+		expect(model.getSnapshot().run).toMatchObject({
+			id: "run-2",
+			status: "queued",
+			cancelRequested: false,
+		});
+		expect(model.getSnapshot().error).toBeNull();
+	});
+
+	it("keeps cancellation state isolated when the account switches mid-poll", async () => {
+		vi.mocked(apiGet).mockResolvedValueOnce({ items: [refreshRun()], collectionAvailable: true });
+		const model = new RefreshViewModel();
+		await model.read();
+		vi.mocked(apiPost).mockResolvedValueOnce(refreshRun({ cancelRequested: true }));
+		await model.cancel();
+		let finishPoll: ((run: RefreshRun) => void) | undefined;
+		vi.mocked(apiGet).mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finishPoll = resolve;
+				}),
+		);
+		const polling = model.read();
+		setActiveAccountId("account-2");
+		model.accountChanged();
+		vi.mocked(apiGet).mockResolvedValueOnce({
+			items: [refreshRun({ id: "run-2", accountId: "account-2" })],
+			collectionAvailable: true,
+		});
+		finishPoll?.(refreshRun({ cancelRequested: true }));
+		await polling;
+		await vi.waitFor(() => expect(model.getSnapshot().run?.id).toBe("run-2"));
+		expect(model.getSnapshot().run).toMatchObject({ id: "run-2", cancelRequested: false });
+		expect(model.getSnapshot().accountId).toBe("account-2");
+	});
+
+	it("drops a cancel response for a run already reported missing", async () => {
+		vi.mocked(apiGet).mockResolvedValueOnce({ items: [refreshRun()], collectionAvailable: true });
+		const model = new RefreshViewModel();
+		await model.read();
+		let finishCancel: ((run: RefreshRun) => void) | undefined;
+		vi.mocked(apiPost).mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finishCancel = resolve;
+				}),
+		);
+		const cancelling = model.cancel();
+		vi.mocked(apiGet)
+			.mockRejectedValueOnce(new ApiError(404, "not_found", "missing"))
+			.mockResolvedValueOnce({ accounts: [{ id: "account-1", is_active: true }] });
+		await model.read();
+		expect(model.getSnapshot().run).toBeNull();
+		finishCancel?.(refreshRun({ status: "running", cancelRequested: true }));
+		await cancelling;
+		expect(model.getSnapshot().run).toBeNull();
+		expect(model.getSnapshot().error).toContain("不存在");
+		expect(apiPost).toHaveBeenCalledOnce();
+	});
+
+	it("does not let a late cancel response downgrade a terminal run", async () => {
+		vi.mocked(apiGet).mockResolvedValueOnce({ items: [refreshRun()], collectionAvailable: true });
+		const model = new RefreshViewModel();
+		await model.read();
+		let finishCancel: ((run: RefreshRun) => void) | undefined;
+		vi.mocked(apiPost).mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finishCancel = resolve;
+				}),
+		);
+		const cancelling = model.cancel();
+		vi.mocked(apiGet).mockResolvedValueOnce(
+			refreshRun({
+				status: "cancelled",
+				phase: "done",
+				cancelRequested: true,
+				finishedAt: "2026-10-29T04:05:00Z",
+			}),
+		);
+		await model.read();
+		expect(model.getSnapshot().run?.status).toBe("cancelled");
+		finishCancel?.(refreshRun({ status: "running", cancelRequested: true }));
+		await cancelling;
+		expect(model.getSnapshot().run).toMatchObject({
+			id: "run-1",
+			status: "cancelled",
+			phase: "done",
+			cancelRequested: true,
+		});
+	});
+
+	it("keeps a newer run when a stale cancel request fails", async () => {
+		vi.mocked(apiGet).mockResolvedValueOnce({ items: [refreshRun()], collectionAvailable: true });
+		const model = new RefreshViewModel();
+		await model.read();
+		let failCancel: ((error: Error) => void) | undefined;
+		vi.mocked(apiPost).mockImplementationOnce(
+			() =>
+				new Promise((_resolve, reject) => {
+					failCancel = reject;
+				}),
+		);
+		const cancelling = model.cancel();
+		vi.mocked(apiGet).mockResolvedValueOnce(
+			refreshRun({
+				status: "cancelled",
+				phase: "done",
+				cancelRequested: true,
+				finishedAt: "2026-10-29T04:05:00Z",
+			}),
+		);
+		await model.read();
+		vi.mocked(apiPost).mockResolvedValueOnce(refreshRun({ id: "run-2", status: "queued" }));
+		await model.start(defaultRefreshParams());
+		expect(model.getSnapshot().run?.id).toBe("run-2");
+		failCancel?.(new ApiError(404, "not_found", "missing"));
+		await cancelling;
+		expect(model.getSnapshot().run).toMatchObject({ id: "run-2", status: "queued" });
+		expect(model.getSnapshot().error).toBeNull();
 	});
 });

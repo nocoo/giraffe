@@ -7,7 +7,7 @@ import { StackedBarChart } from "@nocoo/basalt/charts/stacked-bar";
 import { ChartTooltipRow } from "@nocoo/basalt/charts/tooltip";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
-import { Activity, GitPullRequest, Layers3 } from "lucide-react";
+import { Activity, Box, CircleDot, Eye, GitPullRequest, Layers3, ShieldCheck } from "lucide-react";
 import { useMemo, useState } from "react";
 import { CartesianGrid, Line, LineChart, Tooltip, XAxis, YAxis } from "recharts";
 import type { FactoryViewSnapshot } from "../../lib/factory-types";
@@ -277,15 +277,30 @@ export function InsightsPage() {
 			<SectionRule title={<IconLabel icon={Layers3}>工作量</IconLabel>}>
 				<div className="space-y-3" data-testid="insight-metrics">
 					<p className="giraffe-stat-inline">
-						<span>
+						<span className="inline-flex items-center gap-1.5">
+							<CircleDot
+								className="size-3.5 shrink-0 text-basalt-muted-foreground"
+								strokeWidth={1.5}
+								aria-hidden="true"
+							/>
 							<strong>{formatCount(charts.issueCount)}</strong>个 open Issue ·{" "}
 							<strong>{formatCount(charts.reposWithIssues + charts.reposWithBoth)}</strong>个仓库
 						</span>
-						<span>
+						<span className="inline-flex items-center gap-1.5">
+							<GitPullRequest
+								className="size-3.5 shrink-0 text-basalt-muted-foreground"
+								strokeWidth={1.5}
+								aria-hidden="true"
+							/>
 							<strong>{formatCount(charts.prCount)}</strong>个 open PR ·{" "}
 							<strong>{formatCount(charts.reposWithPrs + charts.reposWithBoth)}</strong>个仓库
 						</span>
-						<span>
+						<span className="inline-flex items-center gap-1.5">
+							<Box
+								className="size-3.5 shrink-0 text-basalt-muted-foreground"
+								strokeWidth={1.5}
+								aria-hidden="true"
+							/>
 							<strong>{formatCount(charts.reposQuiet)}</strong>个仓库无待办
 						</span>
 					</p>
@@ -391,10 +406,20 @@ export function InsightsPage() {
 			<SectionRule title={<IconLabel icon={Activity}>健康与活跃</IconLabel>}>
 				<div className="space-y-3">
 					<p className="giraffe-stat-inline">
-						<span>
+						<span className="inline-flex items-center gap-1.5">
+							<ShieldCheck
+								className="size-3.5 shrink-0 text-basalt-muted-foreground"
+								strokeWidth={1.5}
+								aria-hidden="true"
+							/>
 							健康 <strong>{formatCount(charts.strongCount)}</strong>
 						</span>
-						<span>
+						<span className="inline-flex items-center gap-1.5">
+							<Eye
+								className="size-3.5 shrink-0 text-basalt-muted-foreground"
+								strokeWidth={1.5}
+								aria-hidden="true"
+							/>
 							观察 <strong>{formatCount(charts.watchCount)}</strong>
 						</span>
 						<span>

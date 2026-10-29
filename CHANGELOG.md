@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.28.0 - 2026-10-29
+
+### Added
+
+- Restore the Refresh Center with unified account-then-repository progress,
+  request counts, optional step timings, cancellation and saved run history.
+- Restore factory chart windows ending at the latest saved observation, with
+  Shanghai display days and explicit gaps rather than fabricated zero activity.
+
+### Changed
+
+- Separate external Bot API token creation from existing-token management and
+  size settings controls to their content.
+- Move long page descriptions into keyboard-accessible information tooltips
+  and give activity rows consistent icons and compact metadata.
+
 ## v0.27.5 - 2026-10-29
 
 ### Fixed
