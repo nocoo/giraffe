@@ -78,6 +78,18 @@ async function render(element: ReactNode) {
 	await act(async () => root.render(element));
 }
 
+it("opens a retained historical run without manufacturing missing diagnostics", async () => {
+	const historical = run();
+	Reflect.deleteProperty(historical, "partialReasons");
+	Reflect.deleteProperty(historical, "requestBreakdown");
+	Reflect.deleteProperty(historical, "cancelRequested");
+	await render(<RefreshRunDetails run={historical} now={NOW} />);
+	expect(container.textContent).toContain("结果未记录");
+	expect(container.textContent).toContain("未记录 3");
+	expect(container.querySelectorAll('[data-state="unknown"]')).toHaveLength(24);
+	expect(container.querySelectorAll('[data-state="complete"]')).toHaveLength(0);
+});
+
 it("renders per-repository dimensions, reasons, request split and step timings", async () => {
 	const timed = {
 		...run(),

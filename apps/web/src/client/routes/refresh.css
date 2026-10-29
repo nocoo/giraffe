@@ -622,7 +622,8 @@
 .refresh-progress-segments > [data-status="pending"] {
 	background: var(--refresh-info);
 }
-.refresh-progress-segments > [data-status="skipped"] {
+.refresh-progress-segments > [data-status="skipped"],
+.refresh-progress-segments > [data-status="unknown"] {
 	background: var(--refresh-skipped);
 }
 .refresh-issue[data-info="true"] {
@@ -637,12 +638,16 @@
 .refresh-mini-dims > [data-state="partial"] {
 	background: var(--refresh-warning);
 }
+.refresh-mini-dims > [data-state="failed"] {
+	background: var(--color-basalt-destructive);
+}
 .refresh-mini-dims > [data-state="running"] {
 	background: var(--refresh-info);
 }
 .refresh-mini-dims > [data-state="pending"],
 .refresh-mini-dims > [data-state="skipped"],
-.refresh-mini-dims > [data-state="interrupted"] {
+.refresh-mini-dims > [data-state="interrupted"],
+.refresh-mini-dims > [data-state="unknown"] {
 	background: var(--color-basalt-muted);
 	color: var(--color-basalt-muted-foreground);
 }

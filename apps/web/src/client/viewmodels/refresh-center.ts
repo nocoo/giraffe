@@ -16,7 +16,7 @@ import {
 	refreshError,
 	refreshStatus,
 } from "./refresh";
-import { cacheGeneration, subscribeSession } from "./session";
+import { cacheGeneration, ensureSession, getActiveAccountId, subscribeSession } from "./session";
 
 type RefreshPhaseTiming = {
 	startedAt: string;
@@ -47,7 +47,9 @@ export type RefreshRepoStatus =
 	| "running"
 	| "pending"
 	| "skipped"
-	| "interrupted";
+	| "interrupted"
+	| "failed"
+	| "unknown";
 export type RefreshStepStatus = RefreshRepoStatus | "failed";
 export type RefreshDimensionState =
 	| "complete"
@@ -55,7 +57,9 @@ export type RefreshDimensionState =
 	| "running"
 	| "pending"
 	| "skipped"
-	| "interrupted";
+	| "interrupted"
+	| "failed"
+	| "unknown";
 
 export type RefreshReason = {
 	dimension: RefreshDimension | null;
@@ -103,6 +107,7 @@ export type RefreshProgress = {
 	processed: number;
 	complete: number;
 	partial: number;
+	unknown: number;
 	pending: number;
 	skipped: number;
 	percent: number;
@@ -127,6 +132,7 @@ const STATUS_LABELS: Record<RefreshStepStatus, string> = {
 	skipped: "未执行",
 	interrupted: "已中断",
 	failed: "失败",
+	unknown: "结果未记录",
 };
 
 const DIMENSION_STATE_LABELS: Record<RefreshDimensionState, string> = {
@@ -136,6 +142,8 @@ const DIMENSION_STATE_LABELS: Record<RefreshDimensionState, string> = {
 	pending: "待刷新",
 	skipped: "未执行",
 	interrupted: "已中断",
+	failed: "未完成",
+	unknown: "未记录",
 };
 
 const REASON_LABELS: Record<string, string> = {
@@ -275,22 +283,33 @@ function accountProcessed(run: RefreshRun): boolean {
 	return run.status === "cancelled" && Boolean(timing?.finishedAt);
 }
 
+function stepClock(run: RefreshRun, now: number): number {
+	return refreshActive(run) ? now : Date.parse(run.finishedAt ?? run.updatedAt);
+}
+
 export function refreshProgressOf(run: RefreshRun): RefreshProgress {
 	const total = 1 + run.repos.length;
 	const processed = Math.min(total, (accountProcessed(run) ? 1 : 0) + run.completedRepos);
-	const accountPartial = run.partialReasons.some((reason) => reason.repo === null);
+	const accountPartial =
+		accountProcessed(run) && run.partialReasons?.some((reason) => reason.repo === null);
 	const partialRepos = new Set(
-		run.partialReasons.flatMap((reason) => (reason.repo ? [reason.repo] : [])),
+		(run.partialReasons ?? []).flatMap((reason) =>
+			reason.repo && run.repos.slice(0, run.completedRepos).includes(reason.repo)
+				? [reason.repo]
+				: [],
+		),
 	).size;
 	const partial = Math.min(processed, (accountPartial ? 1 : 0) + partialRepos);
+	const unknown = run.partialReasons ? 0 : processed;
 	const terminal = !refreshActive(run);
 	const skipped = terminal ? total - processed : 0;
 	const pending = terminal ? 0 : total - processed;
 	return {
 		total,
 		processed,
-		complete: Math.max(0, processed - partial),
+		complete: Math.max(0, processed - partial - unknown),
 		partial,
+		unknown,
 		pending,
 		skipped,
 		percent: Math.round((processed / total) * 100),
@@ -298,14 +317,14 @@ export function refreshProgressOf(run: RefreshRun): RefreshProgress {
 }
 
 export function refreshAccountRow(run: RefreshRun, now = Date.now()): RefreshAccountRow {
-	const timing = refreshStepTiming(refreshTimings(run)?.a, now);
-	const reasons = run.partialReasons
+	const timing = refreshStepTiming(refreshTimings(run)?.a, stepClock(run, now));
+	const reasons = (run.partialReasons ?? [])
 		.filter((reason) => reason.repo === null)
 		.flatMap(refreshReasons);
 	let status: RefreshStepStatus;
 	if (run.status === "failed" && run.repos.length === 0) status = "failed";
 	else if (reasons.length) status = "partial";
-	else if (accountProcessed(run)) status = "complete";
+	else if (accountProcessed(run)) status = run.partialReasons ? "complete" : "unknown";
 	else if (refreshActive(run)) status = run.status === "queued" ? "pending" : "running";
 	else if (run.status === "cancelled" && timing?.finishedAt) status = "complete";
 	else if (run.status === "cancelled" && timing?.startedAt) status = "interrupted";
@@ -330,12 +349,18 @@ function repoStatus(
 ): RefreshRepoStatus {
 	const done = index < run.completedRepos;
 	if (done)
-		return run.partialReasons.some((reason) => reason.repo === run.repos[index])
-			? "partial"
-			: "complete";
+		return !run.partialReasons
+			? "unknown"
+			: run.partialReasons.some((reason) => reason.repo === run.repos[index])
+				? "partial"
+				: "complete";
 	if (refreshActive(run) && run.phase === "repos" && index === run.completedRepos) return "running";
 	if (refreshActive(run)) return "pending";
-	if (run.status === "cancelled" && timing?.startedAt && !timing.finishedAt) return "interrupted";
+	const attempted =
+		Boolean(timing?.startedAt) ||
+		Boolean(run.partialReasons?.some((reason) => reason.repo === run.repos[index]));
+	if (run.status === "failed" && attempted) return "failed";
+	if (run.status === "cancelled" && attempted) return "interrupted";
 	return "skipped";
 }
 
@@ -357,10 +382,10 @@ export function refreshRepoRows(run: RefreshRun, now = Date.now()): RefreshRepoR
 	return run.repos.map((repo, index) => {
 		const timing = refreshStepTiming(
 			timings.find((entry) => entry.repo === repo),
-			now,
+			stepClock(run, now),
 		);
 		const status = repoStatus(run, index, timing);
-		const reasons = run.partialReasons
+		const reasons = (run.partialReasons ?? [])
 			.filter((reason) => reason.repo === repo)
 			.flatMap(refreshReasons);
 		return {
@@ -457,9 +482,9 @@ export function refreshTimingRows(
 
 export function refreshProblemRepos(run: RefreshRun): string[] {
 	const repos = [
-		...new Set(run.partialReasons.flatMap((reason) => (reason.repo ? [reason.repo] : []))),
+		...new Set((run.partialReasons ?? []).flatMap((reason) => (reason.repo ? [reason.repo] : []))),
 	];
-	return run.partialReasons.some((reason) => reason.repo === null) ? ["账号", ...repos] : repos;
+	return run.partialReasons?.some((reason) => reason.repo === null) ? ["账号", ...repos] : repos;
 }
 
 export function refreshHistoryRows(runs: RefreshRun[], now = Date.now()): RefreshHistoryRow[] {
@@ -472,7 +497,7 @@ export function refreshHistoryRows(runs: RefreshRun[], now = Date.now()): Refres
 			scope: refreshScopeLabel(run),
 			duration: refreshDurationLabel(run, now),
 			requests: formatCount(run.requests),
-			problems: problems.length ? problems.join("、") : "—",
+			problems: !run.partialReasons ? "未记录" : problems.length ? problems.join("、") : "—",
 			active: refreshActive(run),
 		};
 	});
@@ -570,7 +595,9 @@ export class RefreshCenterViewModel {
 		};
 	};
 	private compose(data: CenterData): RefreshCenterState {
-		const live = this.liveModel.getSnapshot();
+		const source = this.liveModel.getSnapshot();
+		const live =
+			source.run && source.run.accountId !== source.accountId ? { ...source, run: null } : source;
 		const history =
 			live.accountId !== null &&
 			data.historyAccount !== null &&
@@ -616,14 +643,24 @@ export class RefreshCenterViewModel {
 		this.reading = true;
 		this.updateData({ loading: true });
 		const generation = cacheGeneration();
+		const accountId = getActiveAccountId() ?? this.liveModel.getSnapshot().accountId;
 		try {
 			const body = await apiGet<{ items: RefreshRun[]; collectionAvailable: boolean }>(
 				"refresh-runs",
 			);
 			if (generation !== cacheGeneration() || this.disposed) return;
+			if (body.items.some((run) => run.accountId !== accountId)) {
+				this.updateData({
+					history: [],
+					historyAccount: null,
+					error: "活动账号已变化，正在重新读取账号，请重试。",
+				});
+				await ensureSession();
+				return;
+			}
 			this.updateData({
 				history: body.items,
-				historyAccount: this.liveModel.getSnapshot().accountId,
+				historyAccount: accountId,
 				error: null,
 			});
 		} catch (error) {

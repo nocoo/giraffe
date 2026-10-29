@@ -63,6 +63,7 @@ const STEP_ICON = {
 	skipped: Minus,
 	interrupted: Pause,
 	failed: AlertCircle,
+	unknown: Info,
 };
 
 function stepIcon(status: RefreshStepStatus) {
@@ -79,18 +80,20 @@ function statusTone(status: RefreshRun["status"]) {
 }
 
 function reasonGroups(run: RefreshRun) {
-	const account = run.partialReasons
+	const account = (run.partialReasons ?? [])
 		.filter((reason) => reason.repo === null)
 		.flatMap(refreshReasons);
 	const repos = [
-		...new Set(run.partialReasons.flatMap((reason) => (reason.repo ? [reason.repo] : []))),
+		...new Set((run.partialReasons ?? []).flatMap((reason) => (reason.repo ? [reason.repo] : []))),
 	];
 	const groups = [
 		...(account.length ? [{ key: "account", label: "账号 / 页面", reasons: account }] : []),
 		...repos.map((repo) => ({
 			key: repo,
 			label: repo,
-			reasons: run.partialReasons.filter((reason) => reason.repo === repo).flatMap(refreshReasons),
+			reasons: (run.partialReasons ?? [])
+				.filter((reason) => reason.repo === repo)
+				.flatMap(refreshReasons),
 		})),
 	];
 	if (!groups.length && run.errorCode)
@@ -210,23 +213,27 @@ export function RefreshRunDetails({
 	const active = refreshActive(run);
 	const cancelable = canCancelRefresh(run) && onCancel !== undefined;
 	const bProcessed = rows.filter(
-		(row) => row.status === "complete" || row.status === "partial",
+		(row) => row.status === "complete" || row.status === "partial" || row.status === "unknown",
 	).length;
 	const bPartial = rows.filter((row) => row.status === "partial").length;
 	const bInterrupted = rows.some((row) => row.status === "interrupted");
-	const bStatus: RefreshStepStatus = !rows.length
-		? "pending"
-		: bProcessed === rows.length
-			? bPartial
-				? "partial"
-				: "complete"
-			: active
-				? "running"
-				: bInterrupted
-					? "interrupted"
-					: bProcessed
+	const bStatus: RefreshStepStatus = rows.some((row) => row.status === "failed")
+		? "failed"
+		: rows.some((row) => row.status === "unknown")
+			? "unknown"
+			: !rows.length
+				? "pending"
+				: bProcessed === rows.length
+					? bPartial
 						? "partial"
-						: "skipped";
+						: "complete"
+					: active
+						? "running"
+						: bInterrupted
+							? "interrupted"
+							: bProcessed
+								? "partial"
+								: "skipped";
 	return (
 		<div className="refresh-run-details">
 			<section className="refresh-run-overview" aria-label="本次刷新进度">
@@ -264,6 +271,10 @@ export function RefreshRunDetails({
 							style={{ width: `${(progress.partial / progress.total) * 100}%` }}
 						/>
 						<span
+							data-status="unknown"
+							style={{ width: `${(progress.unknown / progress.total) * 100}%` }}
+						/>
+						<span
 							data-status="pending"
 							style={{ width: `${(progress.pending / progress.total) * 100}%` }}
 						/>
@@ -274,6 +285,12 @@ export function RefreshRunDetails({
 					</div>
 				</div>
 				<div className="refresh-progress-legend">
+					{progress.unknown > 0 ? (
+						<span data-status="unknown">
+							<Info aria-hidden="true" />
+							未记录 {progress.unknown}
+						</span>
+					) : null}
 					<span data-status="complete">
 						<Check aria-hidden="true" />
 						已完成 {progress.complete}
@@ -319,8 +336,8 @@ export function RefreshRunDetails({
 						</div>
 					</li>
 					<li
-						data-complete={rows.length > 0 && bProcessed === rows.length}
-						data-warning={bPartial > 0}
+						data-complete={bStatus === "complete"}
+						data-warning={bPartial > 0 || bStatus === "failed"}
 						data-skipped={rows.length > 0 && bProcessed === 0}
 					>
 						<span className="refresh-phase-number">{rows.length ? stepIcon(bStatus) : "2"}</span>
@@ -328,6 +345,11 @@ export function RefreshRunDetails({
 							<strong>B · 仓库串行刷新</strong>
 							<small>
 								{bProcessed} / {rows.length} 个仓库已处理
+								{bStatus === "failed"
+									? " · 有仓库失败"
+									: bStatus === "unknown"
+										? " · 结果未记录"
+										: ""}
 								{bPartial ? ` · ${bPartial} 个部分完成` : ""}
 								{active && run.phase === "repos" ? ` · 当前 ${refreshCurrentStep(run)}` : ""}
 							</small>

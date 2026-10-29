@@ -72,6 +72,58 @@ const reason = (value: Partial<RefreshPartialReason>): RefreshPartialReason => (
 });
 
 describe("refresh center run summaries", () => {
+	it("preserves missing historical diagnostics without claiming complete results", () => {
+		const historical = run({ status: "partial", phase: "done", completedRepos: 2 });
+		Reflect.deleteProperty(historical, "partialReasons");
+		Reflect.deleteProperty(historical, "requestBreakdown");
+		Reflect.deleteProperty(historical, "cancelRequested");
+		expect(refreshHistoryRows([run(), historical])[1]?.problems).toBe("未记录");
+		expect(refreshAccountRow(historical).status).toBe("unknown");
+		expect(refreshRepoRows(historical).every((row) => row.status === "unknown")).toBe(true);
+		expect(refreshRepoRows(historical)[0]?.dimensions.every((row) => row.state === "unknown")).toBe(
+			true,
+		);
+		expect(refreshProgressOf(historical)).toMatchObject({ processed: 3, complete: 0, unknown: 3 });
+		expect(refreshRequestRows(historical)[0]?.total).toBeNull();
+	});
+
+	it("bounds unfinished terminal step durations and distinguishes fatal B from untouched repos", () => {
+		const terminal = {
+			...run({
+				status: "failed",
+				phase: "done",
+				finishedAt: "2026-10-29T04:02:00Z",
+				repos: ["nocoo/app", "nocoo/web", "nocoo/untouched"],
+				partialReasons: [reason({ repo: "nocoo/web", codes: ["github_unauthorized"] })],
+			}),
+			timings: {
+				queuedAt: "2026-10-29T04:00:00Z",
+				a: { startedAt: "2026-10-29T04:00:00Z", finishedAt: null, attempts: 1, reused: false },
+				repos: [
+					{ repo: "nocoo/web", startedAt: "2026-10-29T04:01:00Z", finishedAt: null, attempts: 1 },
+				],
+			},
+		};
+		for (const status of ["failed", "cancelled"] as const) {
+			const ended = { ...terminal, status };
+			expect(refreshAccountRow(ended, NOW).timing?.durationSeconds).toBe(120);
+			expect(refreshAccountRow(ended, NOW + 86400000).timing?.durationSeconds).toBe(120);
+			expect(refreshRepoRows(ended, NOW)[1]?.timing?.durationSeconds).toBe(60);
+			expect(refreshRepoRows(ended, NOW + 86400000)[1]?.timing?.durationSeconds).toBe(60);
+			expect(refreshRepoRows(ended).map((row) => row.status)).toEqual([
+				"complete",
+				status === "failed" ? "failed" : "interrupted",
+				"skipped",
+			]);
+			expect(refreshProgressOf(ended)).toMatchObject({ processed: 2, complete: 2, partial: 0 });
+			Reflect.deleteProperty(ended, "timings");
+			expect(refreshRepoRows(ended).map((row) => row.status)).toEqual([
+				"complete",
+				status === "failed" ? "failed" : "interrupted",
+				"skipped",
+			]);
+		}
+	});
 	it("labels scope, trigger, window and current step", () => {
 		expect(refreshScopeLabel(run())).toBe("手动 · 星标仓库 + 上海当日新建且未观测的非 fork 仓库");
 		expect(refreshScopeLabel(run({ trigger: "scheduled" }))).toBe(
@@ -100,6 +152,7 @@ describe("refresh center run summaries", () => {
 			processed: 2,
 			complete: 2,
 			partial: 0,
+			unknown: 0,
 			pending: 1,
 			skipped: 0,
 			percent: 67,
@@ -122,6 +175,7 @@ describe("refresh center run summaries", () => {
 			processed: 2,
 			complete: 1,
 			partial: 1,
+			unknown: 0,
 			pending: 0,
 			skipped: 1,
 			percent: 67,
@@ -646,6 +700,18 @@ afterEach(() => {
 });
 
 describe("refresh center viewmodel", () => {
+	it("rejects another tab's account history instead of relabeling it", async () => {
+		vi.mocked(apiGet).mockImplementation(async (path) =>
+			path === "accounts"
+				? { accounts: [{ id: "account-1", is_active: true }] }
+				: { items: [run({ accountId: "account-2" })], collectionAvailable: true },
+		);
+		const model = center(fakeLive(run()));
+		await vi.waitFor(() => expect(model.getSnapshot().loading).toBe(false));
+		expect(model.getSnapshot().history).toEqual([]);
+		expect(model.getSnapshot().error).toContain("账号已变化");
+		expect(model.getSnapshot().runs.every((entry) => entry.accountId === "account-1")).toBe(true);
+	});
 	it("loads history once, merges the live run and switches the selected run", async () => {
 		const older = run({ id: "run-0", status: "completed", phase: "done" });
 		vi.mocked(apiGet).mockResolvedValue({ items: [older], collectionAvailable: true });
@@ -685,7 +751,7 @@ describe("refresh center viewmodel", () => {
 		live.notifyData();
 		await vi.waitFor(() => expect(apiGet).toHaveBeenCalledTimes(2));
 		live.set({ accountId: "account-2" });
-		expect(model.getSnapshot()).toMatchObject({ selectedId: "", selected: { id: "run-1" } });
+		expect(model.getSnapshot()).toMatchObject({ selectedId: "", selected: null });
 		setActiveAccountId("account-2");
 		await vi.waitFor(() => expect(apiGet).toHaveBeenCalledTimes(3));
 		model.dispose();
@@ -720,7 +786,10 @@ describe("refresh center viewmodel", () => {
 	it("drops a history response from a superseded account and reloads after it settles", async () => {
 		let finish: ((body: unknown) => void) | undefined;
 		vi.mocked(apiGet)
-			.mockResolvedValue({ items: [run({ id: "run-2" })], collectionAvailable: true })
+			.mockResolvedValue({
+				items: [run({ id: "run-2", accountId: "account-2" })],
+				collectionAvailable: true,
+			})
 			.mockImplementationOnce(
 				() =>
 					new Promise((resolve) => {

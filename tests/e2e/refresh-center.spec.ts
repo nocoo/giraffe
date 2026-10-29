@@ -1,6 +1,40 @@
 import { expect, test } from "@playwright/test";
 import { refreshReviewRun, uiRefreshReviewFixtures } from "./ui-refresh-review-fixtures";
 
+test("refresh history retains runs with unrecorded diagnostics", async ({ page }) => {
+	const fixtures = uiRefreshReviewFixtures();
+	const current = refreshReviewRun();
+	const historical = {
+		...current,
+		id: "unrecorded-history",
+		status: "partial",
+		phase: "done",
+		completedRepos: 3,
+		createdAt: "2026-10-21T01:00:00.000Z",
+		finishedAt: "2026-10-21T01:02:00.000Z",
+	};
+	for (const field of ["partialReasons", "requestBreakdown", "cancelRequested", "timings"])
+		Reflect.deleteProperty(historical, field);
+	fixtures["/api/refresh-runs"] = { items: [current, historical], collectionAvailable: true };
+	await page.route("**/api/**", (route) => {
+		const request = route.request();
+		const path = new URL(request.url()).pathname;
+		return request.method() === "GET" && path in fixtures
+			? route.fulfill({ json: fixtures[path] })
+			: route.fulfill({ status: 403, json: {} });
+	});
+	await page.goto("/refresh");
+	const historyRow = page.getByRole("row").filter({ hasText: "2026年10月21日" });
+	await expect(historyRow).toContainText("未记录");
+	await historyRow.getByRole("button", { name: /运行详情/ }).click();
+	await expect(page.getByRole("region", { name: "逐仓库刷新进度" })).toContainText("结果未记录");
+	await expect(page.locator('.refresh-mini-dims > [data-state="complete"]')).toHaveCount(0);
+	await expect(page.getByLabel("请求统计", { exact: true })).toContainText("—");
+	await expect(page.getByRole("button", { name: "结束本次刷新", exact: true })).toHaveCount(0);
+	await page.getByRole("button", { name: "回到当前", exact: true }).click();
+	await expect(page.getByRole("button", { name: "结束本次刷新", exact: true })).toBeVisible();
+});
+
 test("refresh center shows saved steps and history and cancels only the current run", async ({
 	page,
 }) => {
