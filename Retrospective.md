@@ -1,5 +1,21 @@
 # Retrospective
 
+## 2026-10-29 - Reserve fixed test ports across worktrees before delegation
+
+The UI coordinator checked free ports before its own L2 run, but did not reserve
+the fixed L2/L3 lanes across concurrent worktrees before dispatching workers.
+A UI worker also ran focused L3 before receiving the later explicit restriction.
+Another worktree reported affected L2 runs; a free-port probe alone cannot
+establish exclusive ownership across independently scheduled processes.
+
+The coordinators established an explicit handoff: finish and clean up the
+current UI L2 run, then reserve both test lanes to the runner worktree until it
+releases them. UI screenshots use separate localhost-only static servers with
+intercepted fixture APIs. Delegate unit tests by default and explicitly reserve
+fixed integration ports with all active coordinators before any L2/L3 or
+pre-push command. Verify process cwd and listener cleanup before handoff; do not
+stop another worktree's process or change runners in a UI-only task.
+
 ## 2026-10-29 - Verify phase-two fixes across consumers and durable boundaries
 
 The first acceptance implementation treated mixed security-feature availability
