@@ -1,7 +1,7 @@
 # UI 0.28.0 visual evidence
 
 Baseline: `b3ddaa573828aa080620cef17e396403b432bc58` (v0.27.2).
-Candidate runtime: `01034e73e538e94d15325679e3f1d08e80b390b0` (v0.28.0).
+Candidate runtime: `75fe0a525ae075865b4851d11ae83e03ccde0c55` (v0.28.0).
 
 Chromium captures use the same fixed clock, saved API fixtures and localhost-only
 static SPA hosts. No production request or real credential is involved.
