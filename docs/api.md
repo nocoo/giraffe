@@ -5,11 +5,15 @@ observations and machine resources remain available. See the
 [retirement contract](14-phase1-retirement.md) for browser route removals.
 
 The machine API reads saved GitHub observations, stores reports/records/jobs, and
-optionally manages refresh settings. It is not a live GitHub proxy or a model
+manages saved application preferences. It is not a live GitHub proxy or a model
 inference service. Only `https://giraffe.hexly.ai/api/v1/*` has an Access bypass;
 the Worker authenticates resource requests. The dashboard and credential-management
 endpoints remain Access protected. Accounts/snapshots are deployment-shared, not
 per-user tenants. See [the boundary contract](11-agent-api.md).
+
+Collection-time algorithms described alongside saved schemas below explain
+pre-v0.26.0 provenance only. They no longer execute: no discovery, continuation,
+retention writer, publication or scheduled collection runs in this release.
 
 ## Daily reports and latest report
 
@@ -901,18 +905,17 @@ calendar observation times per selected day, with missing days counted explicitl
 Known calendar counts remain usable when type details are unavailable.
 Day `fetchedAt` records the calendar count's original collection; `observedAt`
 preserves its type observation when present. Top-level `fetched_at`/`observedAt`
-are the latest applicable times among the selected days, not a later quick merge.
+are the latest applicable times among the selected days, not a later historical merge.
 
 `sourceVersion` identifies the original calendar observation run, not necessarily
 the newest global publication. `source.publicationId` identifies that publication;
-`data.window` is the calendar's published display window: a successful quick merge
-can include retained older dates, while an untouched calendar keeps its original
-window. A newer failed
-collection keeps the prior calendar, version, window and timestamps, while
-`collectionStatus` reports the latest attempt's unavailable status. GET never
+`data.window` is the calendar's saved display window: a historical merge may
+include retained older dates, while an untouched calendar keeps its original
+window. A failed historical collection retained the prior calendar, version,
+window and timestamps; `collectionStatus` reports that saved attempt's status. GET never
 advances freshness. Legacy calendars gain null type fields in this endpoint,
-without rewriting stored rows. `/factory` retains its original contribution
-shape and adds only optional fields on newly collected calendars.
+without rewriting stored rows. `/factory` retains the original contribution
+shape and any optional fields already present in the saved calendar.
 
 Strong content-derived ETags and authenticated `If-None-Match` 304 responses work
 as on `/sources`. Authentication and query validation still run; 304 has no body
@@ -998,7 +1001,8 @@ The response is an `ActivitySnapshot`, not the generic observation envelope:
   contributions, coverage, truncated }
 ```
 
-The interval is `(since, until]`, ending at the run's frozen collection cutoff,
+The following rules explain historical activity publications; v0.26.0 creates
+none and never advances their windows. The interval is `(since, until]`, ending at the run's frozen collection cutoff,
 not its completion time. The last published account-wide quick refresh whose
 terminal status is `completed` or `partial` supplies `since`. A completed run
 without an activity publication (including pre-activity history) does not advance
@@ -1142,21 +1146,14 @@ selection and existing publication byte limits report partial coverage, never a
 complete zero. Repeated GETs remain read-only. Old publications without these
 fields retain their original date-based semantics and are not rewritten.
 
-Migration `0026_activity_commit_ledger.sql` adds the permanent ledger/checkpoints,
-without backfill. Downgrading to v0.23.1 leaves them unused and harmless;
-re-upgrading resumes them. Commits pushed and force-pushed away between snapshots
+Historical migration `0026_activity_commit_ledger.sql` added the permanent ledger/checkpoints
+without backfill. Phase 1 leaves those rows untouched but removes their writers;
+upgrading to v0.26.0 does not resume collection. Commits pushed and force-pushed away between snapshots
 are invisible. Rename/re-add preserves the stable repository-ID ledger, whereas
 a replacement ID starts a new ledger; cancelled catch-up keeps its original window.
 
-The supplementary collector normally adds one refs/tags GraphQL request per repo,
-plus a successful-workflow REST request only when the complete saved action
-stream cannot provide deployment success. Continuations are bounded at 20 requests
-per repo and explicitly truncated. Account contribution intervals use one bounded
-GraphQL request. The normal two-request fixture adds 85 leased pages for 42 repos
-or 121 for 60; at the historical 48 min / 778 pages cadence this is about 5.2 or
-7.5 minutes. A 60-repo nominal total extrapolates to about 76 minutes, not a tested
-production SLA. Rate limits, unusually many branches/tags or deployment pages can
-increase this cost. Existing PR/issue/action/release streams are reused.
+The supplementary collector and its continuation/request budgets are retired.
+These saved observations are read without GraphQL or REST collection calls.
 
 The `/today` page shows the frozen interval, data timestamp, gap and truncation,
 activity sections and contribution composition. Repository links lead to the
@@ -1205,8 +1202,8 @@ Scope still selects owned repositories, and removal clears stars, so removed row
 do not reappear in starred scope. Removed row payloads have a separate 90-day,
 1,000-row-per-account bound; they are not an unlimited archive.
 
-Discovery runs at every successful complete catalog publication, including the
-catalog preparation before quick refresh. Partial/error/truncated lists cannot
+The following discovery rules describe saved pre-v0.26.0 catalog provenance;
+discovery and catalog publication are now retired. Partial/error/truncated lists could not
 advance history or replace prior membership. Absence or a name-based 404 does not
 prove deletion. Confirm against the previously saved stable GitHub ID with a
 GraphQL node lookup. A matching ID at another name is a rename; a new ID at the
@@ -1358,7 +1355,7 @@ sourceFetchedAt? }`; status is `pending|partial|complete|unavailable|limited`,
 strategy `full|incremental|reused`. An empty list proves zero only with complete
 coverage. `next` is saved collection metadata, not a machine pagination URL.
 
-New quick runs publish a 30-date window and deep runs a 90-date window; always
+Saved quick runs used a 30-date window and deep runs a 90-date window; always
 read `observation.window`, including the original window on retained evidence,
 rather than inferring coverage from run depth or from the current date.
 
