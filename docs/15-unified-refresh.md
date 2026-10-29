@@ -154,6 +154,25 @@ original per-day timestamps remain separate and unchanged. Day-observation JSON
 writes are bounded to 1,500,000 UTF-8 bytes per binding and committed together in
 the existing publication batch; no day is dropped to meet the limit.
 
+Repository publication retains the 90 most recent distinct calendar dates from
+cached observations and the current request, scoped by account, immutable
+repository ID and timezone. A one-day run merges fresh evidence into that series
+instead of replacing it. Cached dimensions survive a narrower refresh. The read
+loads at most 90 cached dates plus any explicitly requested older dates, in the
+existing preparation batch; publication performs no extra upstream calls. Older
+observations remain in the day cache, but are outside the published series. Gaps
+and partial/unavailable evidence remain explicit, and old source timestamps are
+not renewed. Run success and failure reasons describe only its requested days
+and dimensions, not gaps elsewhere in the retained publication.
+
+The browser's default repository scope is `starred`. Factory charts evaluate
+completeness over every selected starred repository, including unpublished ones.
+Explicit `all` remains available and can have incomplete historical coverage;
+the unscoped API still means `all` for existing consumers. Terminal unavailable
+alerts reuse the same account/repository/timezone/day cache in multi-repository
+runs too. New days and retryable permission failures still require fresh calls;
+terminal unavailability is not a permanent repository-wide capability cache.
+
 `refresh_publications.payload` stores only the operational rate-limit and
 repository-identity/retention projection. The full factory remains in
 `refresh_snapshots` (`factory`, `factory#2`), used by all saved browser/machine

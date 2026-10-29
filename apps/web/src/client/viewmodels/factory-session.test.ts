@@ -37,6 +37,16 @@ describe("factory account-bound data operations", () => {
 		expect(await reloadFactory()).toEqual(snap);
 		expect(apiPost).not.toHaveBeenCalled();
 	});
+	it("reads the starred scope by default and keeps the explicit all scope", async () => {
+		await loadFactory();
+		expect(apiGet).toHaveBeenLastCalledWith("factory?scope=starred");
+		await reloadFactory();
+		expect(apiGet).toHaveBeenLastCalledWith("factory?scope=starred");
+		await loadFactory("all");
+		expect(apiGet).toHaveBeenLastCalledWith("factory?scope=all");
+		await reloadFactory("all");
+		expect(apiGet).toHaveBeenLastCalledWith("factory?scope=all");
+	});
 	it("loads filtered detail and ignores a late response after switching accounts", async () => {
 		await loadFactoryDetail("nocoo/app", "prs");
 		expect(apiGet).toHaveBeenCalledWith(

@@ -1,6 +1,9 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { annualContributionCalendar } from "../../../../../../tests/fixtures/contribution-calendar";
 import { sqliteFixture } from "../../../../../../tests/fixtures/sqlite";
+import type { FactoryViewSnapshot } from "../../../lib/factory-types";
+import type { Env } from "../../env";
+import { createApp } from "../../index";
 import type { CollectionContext } from "../refresh-collection-contract";
 import { parseRefreshParams, refreshDays } from "../refresh-params";
 import { collectAccount, collectRepository } from "./index";
@@ -128,3 +131,114 @@ it("publishes the requested window when a saved account observation is reused", 
 	const requested = fetch.mock.calls.map(([input]) => String(input));
 	expect(requested.some((url) => url.includes("/activity"))).toBe(false);
 });
+
+it("keeps cached history and other dimensions visible through the factory API after a daily run", async () => {
+	const db = sqliteFixture();
+	const historical = repo();
+	Object.assign(historical.defaultBranchRef.target, {
+		day1: { totalCount: 4 },
+		day2: { totalCount: 5 },
+	});
+	upstream([accountPage(), { node: historical }]);
+	const backfill = await fixture(
+		db,
+		"backfill",
+		{ lookbackDays: 3, dimensions: ["commits", "releases"] },
+		accountAt,
+	);
+	await collectAccount(backfill);
+	await collectRepository(backfill, "owner/project");
+	const daily = await fixture(db, "daily", { dimensions: ["commits"] }, "2026-10-30T04:00:00.000Z");
+	upstream([{ node: repo() }]);
+	expect(await collectRepository(daily, "owner/project")).toMatchObject({ partial: false });
+	const fetch = upstream([]);
+	const response = await createApp().request("http://localhost/api/factory?scope=all", {}, {
+		...daily.env,
+		ENVIRONMENT: "development",
+	} as Env);
+	expect(response.status).toBe(200);
+	const body = (await response.json()) as FactoryViewSnapshot;
+	const published = body.repos[0];
+	expect(Object.keys(published?.metrics.days ?? {})).toEqual([
+		"2026-10-26",
+		"2026-10-27",
+		"2026-10-28",
+		"2026-10-29",
+	]);
+	expect(published?.metrics.commits).toBe(15);
+	expect(published?.coverage.commits.completeWindows).toEqual([
+		{
+			since: "2026-10-25T16:00:00.000Z",
+			until: "2026-10-29T15:59:59.999Z",
+			timezone: "Asia/Shanghai",
+		},
+	]);
+	expect(published?.coverage.releases).toMatchObject({
+		status: "partial",
+		fetchedAt: accountAt,
+		completeWindows: [windowOf(backfill)],
+	});
+	expect(
+		await payload(db, "SELECT payload FROM refresh_resources WHERE stream='releases'"),
+	).toMatchObject({ runId: "daily", ranges: [windowOf(backfill)] });
+	expect(fetch).not.toHaveBeenCalled();
+	const reused = await fixture(db, "reuse", { dimensions: ["commits"] }, daily.now);
+	expect(await collectRepository(reused, "owner/project")).toMatchObject({
+		requests: 0,
+		partial: false,
+	});
+	expect(fetch).not.toHaveBeenCalled();
+});
+
+it.each(["partial", "unavailable"])(
+	"preserves historical %s gaps without marking a complete daily run partial",
+	async (status) => {
+		const db = sqliteFixture();
+		const historical = repo();
+		Object.assign(historical.defaultBranchRef.target, { day1: { totalCount: 4 } });
+		upstream([accountPage(), { node: historical }]);
+		const backfill = await fixture(
+			db,
+			"backfill",
+			{ lookbackDays: 2, dimensions: ["commits"] },
+			accountAt,
+		);
+		await collectAccount(backfill);
+		await collectRepository(backfill, "owner/project");
+		await db
+			.prepare("UPDATE refresh_day_observations SET status=? WHERE day='2026-10-28'")
+			.bind(status)
+			.run();
+		const daily = await fixture(
+			db,
+			"daily",
+			{ dimensions: ["commits"] },
+			"2026-10-30T04:00:00.000Z",
+		);
+		upstream([{ node: repo() }]);
+		expect(await collectRepository(daily, "owner/project")).toMatchObject({
+			partial: false,
+			reasons: [],
+		});
+		const saved = await payload(db, "SELECT payload FROM refresh_repository_publications");
+		expect(saved.coverage).toMatchObject({
+			commits: {
+				status: "partial",
+				observed: 2,
+				reason: "missing_days",
+				fetchedAt: accountAt,
+				completeWindows: [
+					{
+						since: "2026-10-26T16:00:00.000Z",
+						until: "2026-10-27T15:59:59.999Z",
+						timezone: "Asia/Shanghai",
+					},
+					windowOf(daily),
+				],
+			},
+		});
+		expect(saved.metrics).toMatchObject({ commits: 6 });
+		const metrics = saved.metrics as { days: Record<string, unknown> };
+		expect(metrics.days["2026-10-28"]).toBeUndefined();
+	},
+);

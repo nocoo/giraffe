@@ -2484,3 +2484,21 @@ the normal new-repository exception for API-started lookbacks. Share the scope
 projection with the header status and test both live and historical backfills.
 Rebase review must check new consumers against the changed producer contract,
 not only resolve text conflicts or repeat the original backend tests.
+
+## 2026-10-30: distinguish requested windows from published history
+
+Repository publication iterated only the current run's days, so a daily refresh
+replaced a previously backfilled series despite intact per-day observations.
+Regression coverage now reads the factory API after a multi-day run followed by
+a daily run, and checks retention, missingness and the 61-repository capacity.
+Collection completion must describe the requested work independently of older
+partial evidence retained in the publication.
+
+During investigation, a proposed chart fix ignored unpublished selected members.
+Controller review rejected it before commit because it would falsely declare
+starred repositories with no observations complete. The actual browser default
+was already starred; unscoped API reads default to all. Verify the scope at each
+boundary instead of weakening missingness to reproduce a reported screenshot.
+The first new tests also assumed a response envelope and a SQLite adapter column
+overload that this project does not use; inspect real fixture contracts before
+attributing an initial failing assertion to the product bug.

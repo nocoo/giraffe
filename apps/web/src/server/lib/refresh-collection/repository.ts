@@ -1,5 +1,5 @@
 import type { FactoryEvent, FactoryRepo, FactoryStreamData } from "../../../lib/factory-types";
-import type { RefreshFailureDetail } from "../../../lib/refresh-types";
+import { REFRESH_DIMENSIONS, type RefreshFailureDetail } from "../../../lib/refresh-types";
 import { ApiError } from "../errors";
 import {
 	mapActionRuns,
@@ -17,6 +17,7 @@ import {
 	failure,
 	terminal,
 } from "./dimensions";
+import { dayCoverage, PUBLICATION_DAYS, publicationDays } from "./history";
 import {
 	blankDay,
 	blankMetrics,
@@ -27,14 +28,11 @@ import {
 	factoryRepo,
 	type Node,
 	object,
-	text,
-	unavailable,
 	windowOf,
 } from "./model";
 import { repositoryQuery } from "./queries";
 import { collectionDb, dayStatements, publish, resourceStatement, snapshots } from "./store";
 import { transport } from "./transport";
-import { mergeWindows } from "./windows";
 
 const inDay = (value: string | null | undefined, since: string, until: string) =>
 	value !== null &&
@@ -104,9 +102,20 @@ export async function collectRepository(
 			.bind(accountId, name),
 		db
 			.prepare(
-				`SELECT * FROM refresh_day_observations WHERE account_id=? AND repo_id=(${catalogue}) AND timezone=?`,
+				`SELECT * FROM refresh_day_observations WHERE account_id=? AND repo_id=(${catalogue}) AND timezone=? AND (day IN (SELECT day FROM refresh_day_observations WHERE account_id=? AND repo_id=(${catalogue}) AND timezone=? GROUP BY day ORDER BY day DESC LIMIT ${PUBLICATION_DAYS}) OR day BETWEEN ? AND ?)`,
 			)
-			.bind(accountId, accountId, name, context.run.params.timezone),
+			.bind(
+				accountId,
+				accountId,
+				name,
+				context.run.params.timezone,
+				accountId,
+				accountId,
+				name,
+				context.run.params.timezone,
+				context.run.params.since,
+				context.run.params.until,
+			),
 		db
 			.prepare(
 				`SELECT payload FROM refresh_repository_publications WHERE account_id=? AND repo_id=(${catalogue})`,
@@ -288,72 +297,25 @@ export async function collectRepository(
 	}
 	const current = new Map(previous.map((row) => [`${row.day}:${row.dimension}`, row]));
 	for (const row of observations) current.set(`${row.day}:${row.dimension}`, row);
-	const terminalUnavailable = new Map<string, boolean>();
-	for (const dimension of context.run.params.dimensions) {
-		const selected = context.days.map((day) => current.get(`${day.date}:${dimension}`));
-		const stored = selected.filter((row): row is DayObservation => row !== undefined);
-		const settled = stored
-			.filter((row) => row.status === "complete")
-			.map((row) => ({ row, payload: object(JSON.parse(row.payload)) }));
-		const available = settled.filter(({ payload }) => payload.unavailable !== true);
-		const settledReason =
-			settled
-				.map(({ payload }) => text(payload.reason))
-				.find((reason): reason is string => reason !== null) ?? "unavailable";
-		const missing =
-			selected.length !== stored.length || stored.some((row) => row.status !== "complete");
-		terminalUnavailable.set(
+	const retainedDays = publicationDays(context, [...current.values()]);
+	const dimensions = REFRESH_DIMENSIONS.filter(
+		(dimension) =>
+			context.run.params.dimensions.includes(dimension) ||
+			previous.some((row) => row.dimension === dimension),
+	);
+	for (const dimension of dimensions) {
+		const { coverage } = dayCoverage(
+			context,
 			dimension,
-			selected.length > 0 &&
-				stored.length === selected.length &&
-				stored.every((row) => row.status === "complete"),
+			retainedDays,
+			current,
+			results.get(dimension),
+			needed,
 		);
-		const latest = selected
-			.filter((row): row is DayObservation => row !== undefined)
-			.sort((first, second) => second.fetched_at.localeCompare(first.fetched_at))[0];
-		const inventoryComplete =
-			dimension === "issues" || dimension === "prs"
-				? (results.get(dimension)?.inventoryComplete ??
-					object(JSON.parse(latest?.payload ?? "{}")).inventoryComplete === true)
-				: undefined;
-		const sources = new Set(
-			selected.flatMap((row) =>
-				row ? [text(object(JSON.parse(row.payload)).source) ?? "unknown"] : [],
-			),
-		);
-		const coverage = {
-			...unavailable(dimension),
-			...(inventoryComplete === undefined ? {} : { inventoryComplete }),
-			source: sources.size > 1 ? "mixed" : ([...sources][0] ?? "unavailable"),
-			status:
-				available.length === selected.length
-					? ("complete" as const)
-					: available.length || selected.some((row) => row?.status === "partial")
-						? ("partial" as const)
-						: ("unavailable" as const),
-			pages:
-				results.has(dimension) || (dimension === "commits" && needed.includes(dimension)) ? 1 : 0,
-			fetchedAt:
-				selected
-					.filter((row) => row?.status !== "unavailable")
-					.map((row) => row?.fetched_at ?? "")
-					.filter(Boolean)
-					.sort()[0] ?? null,
-			observed: available.length,
-			reason:
-				available.length === selected.length ? null : missing ? "missing_days" : settledReason,
-			completeWindows: mergeWindows(
-				settled.map(({ payload }) => ({
-					since: String(payload.since),
-					until: new Date(Date.parse(String(payload.until)) - 1).toISOString(),
-					timezone: context.run.params.timezone,
-				})),
-			),
-			strategy: needed.includes(dimension) ? ("incremental" as const) : ("reused" as const),
-		};
+		const { inventoryComplete } = coverage;
 		repo.coverage[dimension] = coverage;
 		const items = new Map<string, FactoryEvent>();
-		for (const day of context.days) {
+		for (const day of retainedDays) {
 			const row = current.get(`${day.date}:${dimension}`);
 			if (!row) continue;
 			const value = JSON.parse(row.payload) as { count: number | null; items: FactoryEvent[] };
@@ -459,7 +421,7 @@ export async function collectRepository(
 		results.get("alerts")?.items.length ??
 		Math.max(
 			0,
-			...context.days.map((day) => {
+			...retainedDays.map((day) => {
 				const value = current.get(`${day.date}:alerts`);
 				return value?.status === "complete"
 					? (JSON.parse(value.payload) as { items: FactoryEvent[] }).items.length
@@ -514,15 +476,20 @@ export async function collectRepository(
 		);
 	await publish(db, context, writes);
 	const reasons = context.run.params.dimensions.flatMap((dimension) => {
-		const coverage = repo.coverage[dimension];
+		const { coverage, settled } = dayCoverage(
+			context,
+			dimension,
+			context.days,
+			current,
+			results.get(dimension),
+			needed,
+		);
 		const code =
 			results.get(dimension)?.reason ??
 			coverage.reason ??
 			(coverage.status === "unavailable" ? "unavailable" : "partial");
 		return [
-			...(coverage.status === "complete" || terminalUnavailable.get(dimension) === true
-				? []
-				: [`${dimension}:${code}`]),
+			...(coverage.status === "complete" || settled ? [] : [`${dimension}:${code}`]),
 			...(coverage.inventoryComplete === false ? [`${dimension}:inventory_incomplete`] : []),
 		];
 	});

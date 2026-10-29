@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { expect, it } from "vitest";
 import { factoryFixture } from "../../../../../tests/fixtures/factory-snapshot";
+import { emptyDay } from "../../lib/factory";
 import { FACTORY_STREAMS } from "../../lib/factory-types";
 import { factoryBoard, factoryGroups, filterFactoryRepos } from "./factory";
 
@@ -53,6 +54,36 @@ it("keeps unpublished selection in coverage, days, periods, exact series and hea
 	expect(board.aggregate.commits).toBe(3);
 	expect(board.ranking).toEqual(snapshot.repos);
 	expect(snapshot.repos).toHaveLength(1);
+});
+
+it("draws historical coverage lines for the published starred selection and withholds them for an unpublished star", () => {
+	const snapshot = fixture();
+	const repo = snapshot.repos[0];
+	if (!repo) throw new Error("missing fixture publication");
+	repo.metrics.days = {
+		"2026-09-15": { ...emptyDay(), commits: 2, ciSuccess: 4, ciFailure: 1, issueOpened: 1 },
+	};
+	const starred = filterFactoryRepos(snapshot.selectedRepos, {
+		language: "",
+		topic: "",
+		query: "nocoo/app",
+	});
+	const published = factoryBoard(snapshot, snapshot.repos, starred);
+	expect(published.days.slice(1).every((day) => day.complete.commits)).toBe(true);
+	expect(published.days.at(-1)).toMatchObject({
+		activeRepos7: 1,
+		ciRate7: 0.8,
+		openIssues: 1,
+		openPrs: 1,
+	});
+	expect(published.periods[1]?.complete.commits).toBe(true);
+	const blocked = factoryBoard(snapshot, snapshot.repos, snapshot.selectedRepos);
+	expect(blocked.days.at(-1)).toMatchObject({
+		activeRepos7: null,
+		ciRate7: null,
+		openIssues: null,
+		openPrs: null,
+	});
 });
 
 it("filters expected membership before joining publications, retaining unknown topics", () => {

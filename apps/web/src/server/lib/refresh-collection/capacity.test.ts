@@ -286,6 +286,67 @@ it("compacts lookback windows so all 61 repositories survive D1 publication", as
 			factoryPageBytes: result.pages.map((page) => bytes(page.payload)),
 		})}`,
 	);
+	const daily = {
+		...context,
+		days: context.days.slice(-1),
+		run: {
+			...context.run,
+			id: "run-daily",
+			params: { ...context.run.params, since: context.run.params.until },
+		},
+	};
+	const fetch = upstream(() => false);
+	const started = performance.now();
+	for (let index = 0; index < REPOSITORIES; index += 1)
+		expect(await collectRepository(daily, name(index))).toMatchObject({
+			requests: 0,
+			partial: false,
+		});
+	const elapsed = performance.now() - started;
+	expect(fetch).not.toHaveBeenCalled();
+	const cached = await published(raw);
+	for (const repo of cached.snapshot.repos) {
+		expect(Object.keys(repo.metrics.days)).toHaveLength(DAYS);
+		for (const dimension of DIMENSIONS)
+			expect(repo.coverage[dimension].completeWindows).toEqual([span]);
+	}
+	console.log(
+		`cached-daily-history ${JSON.stringify({ repositories: REPOSITORIES, elapsedMs: elapsed, perRepoMs: elapsed / REPOSITORIES })}`,
+	);
+	const next = {
+		...daily,
+		now: "2026-10-30T04:00:00.000Z",
+		run: {
+			...daily.run,
+			id: "run-next-day",
+			params: { ...daily.run.params, since: "2026-10-29", until: "2026-10-29" },
+		},
+	};
+	next.days = refreshDays(next.run.params);
+	expect(await collectRepository(next, name(0))).toMatchObject({ partial: false });
+	const advanced = (await published(raw)).snapshot.repos[0];
+	expect(Object.keys(advanced?.metrics.days ?? {})).toHaveLength(DAYS);
+	expect(advanced?.metrics.days["2026-07-31"]).toBeUndefined();
+	expect(advanced?.metrics.days["2026-10-29"]).toBeDefined();
+	expect(advanced?.coverage.commits.completeWindows).toEqual([
+		{ ...span, since: "2026-07-31T16:00:00.000Z", until: "2026-10-29T15:59:59.999Z" },
+	]);
+	expect(
+		await raw
+			.prepare(
+				"SELECT COUNT(DISTINCT day) AS count FROM refresh_day_observations WHERE repo_id='R_0'",
+			)
+			.first(),
+	).toEqual({ count: DAYS + 1 });
+	const oldDay = {
+		...next,
+		days: context.days.slice(0, 1),
+		run: { ...next.run, params: { ...next.run.params, since: "2026-07-31", until: "2026-07-31" } },
+	};
+	fetch.mockClear();
+	expect(await collectRepository(oldDay, name(0))).toMatchObject({ requests: 0 });
+	expect(fetch).not.toHaveBeenCalled();
+	expect((await published(raw)).snapshot.repos[0]?.metrics).toEqual(advanced?.metrics);
 });
 
 it("keeps unreachable-day gaps and unavailable windows separate and reports the reachable worst case", async () => {
