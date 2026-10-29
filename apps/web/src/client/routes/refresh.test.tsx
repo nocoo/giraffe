@@ -226,7 +226,8 @@ it("shows the fixed daily schedule instead of editable legacy plans", async () =
 	await render(model(null));
 	await tab("自动刷新");
 	expect(container.textContent).toContain("每日 03:00 Asia/Shanghai");
-	expect(container.textContent).toContain("04:30");
+	expect(container.textContent).toContain("页面仅展示已保存的运行结果");
+	expect(container.textContent).not.toContain("04:30");
 	expect(container.textContent).not.toContain("每周");
 	expect(container.textContent).not.toContain("保存计划");
 });

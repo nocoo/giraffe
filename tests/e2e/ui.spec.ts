@@ -547,8 +547,10 @@ test("CI health uses saved default-branch verdicts and labels observational unit
 	await expect(tile("继续观察").locator("strong")).toHaveText("1");
 	await expect(tile("无近期运行").locator("strong")).toHaveText("1");
 	await expect(summary).toContainText("14 天");
-	await expect(summary).toContainText("非默认分支 4 条观察线、8 次失败运行");
-	await expect(summary).toContainText("不影响仓库和工作流健康");
+	await summary.getByRole("button", { name: "CI 判定汇总说明" }).focus();
+	await expect(page.getByRole("tooltip")).toContainText("非默认分支 4 条观察线、8 次失败运行");
+	await expect(page.getByRole("tooltip")).toContainText("不影响仓库和工作流健康");
+	await page.keyboard.press("Escape");
 	const list = page.getByTestId("ci-list");
 	await expect(
 		list.getByRole("row").filter({ hasText: "field-notes" }).filter({ hasText: "分支观察" }),

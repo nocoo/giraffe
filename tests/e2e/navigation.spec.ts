@@ -13,7 +13,7 @@ async function gotoAndWaitForSidebar(page: Page, url: string) {
 
 async function waitForReposRouteSettled(page: Page, width: number) {
 	await expect(page).toHaveURL(/\/repos$/);
-	await expect(page.getByRole("heading", { name: "仓库", exact: true })).toBeVisible();
+	await expect(page.locator(".giraffe-page-title").filter({ hasText: /^仓库$/ })).toBeVisible();
 	const sidebar = page.getByRole("complementary");
 	if (width === 1440) {
 		await expect(sidebar.getByRole("button", { name: "展开侧栏" })).toBeVisible();
@@ -213,7 +213,7 @@ test("mobile navigation restores focus and closes across the desktop breakpoint"
 	const writes: string[] = [];
 	await stubApi(page, createUiFixtures(), writes);
 	await page.goto("/repos");
-	await expect(page.getByText("当前账号下的仓库快照")).toBeVisible();
+	await expect(page.locator(".giraffe-page-title").filter({ hasText: /^仓库$/ })).toBeVisible();
 	const opener = page.getByRole("button", { name: "打开导航" });
 	await opener.click();
 	const drawer = page.getByRole("dialog", { name: "打开导航" });

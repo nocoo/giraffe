@@ -483,7 +483,7 @@ function RefreshCenterBody({ center }: { center: RefreshCenterViewModel }) {
 								</div>
 								<div>
 									<h4>结果读取</h4>
-									<p>GitHub管家在北京时间 04:30 读取已保存结果；它属于外部服务。</p>
+									<p>页面仅展示已保存的运行结果；读取历史记录不会重新采集 GitHub 数据。</p>
 								</div>
 							</div>
 							<p className="refresh-request-note">
