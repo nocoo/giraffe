@@ -2383,3 +2383,17 @@ than weakening those assertions. Visual review additionally found desktop
 dimension labels clipped inside a six-column grid; measure each rendered label
 against its available width at desktop and mobile sizes, and capture lower
 settings/factory sections rather than judging them from the first viewport.
+
+The next review found that a successful token mutation could leave the initial
+list error visible, and a newer history response could be replaced by stale live
+state. Clear recovered list errors only after a successful reload, and apply the
+same run-freshness rules to polling and history projection. Refresh-only pages
+must not expose a global repository filter that does not affect their contents.
+
+The restored chart range also incorrectly shortened its default to the available
+history, while explicit ranges retained empty days. All selected ranges now keep
+their full span. Factory coverage must join contiguous complete day windows, even
+when another day makes the overall stream partial; gaps remain unknown and
+observed complete zeros remain zero. The old single-window predicate could not
+represent the new API's daily evidence. Update route tests to select the intended
+observed date, rather than accidentally selecting the new empty leading date.
