@@ -1,0 +1,91 @@
+import { expect, it } from "vitest";
+import type { RefreshRun } from "../../apps/web/src/lib/refresh-types";
+
+const base = process.env.GIRAFFE_E2E ?? "http://127.0.0.1:17045";
+const jwt = process.env.GIRAFFE_JWT ?? "";
+function browser(path: string, method = "GET", body?: unknown) {
+	return fetch(`${base}/api/${path}`, {
+		method,
+		headers: {
+			origin: "https://giraffe.dev.hexly.ai",
+			"content-type": "application/json",
+			...(jwt ? { "Cf-Access-Jwt-Assertion": jwt } : {}),
+		},
+		...(body === undefined ? {} : { body: JSON.stringify(body) }),
+	});
+}
+it("runs real durable A then serial B, serves latest observations and reuses day caches", async () => {
+	const existing = (await (await browser("accounts")).json()) as {
+		accounts: { id: string; is_active: boolean }[];
+	};
+	const accountResponse = await browser("accounts", "POST", { token: `ghp_${"U".repeat(36)}` });
+	expect(accountResponse.status).toBe(201);
+	const account = (await accountResponse.json()) as { id: string };
+	const tokenResponse = await browser("tokens", "POST", {
+		account_id: account.id,
+		label: "phase2 local acceptance",
+		scopes: ["observations:read", "app:read", "app:write"],
+		expires_in_days: 1,
+	});
+	expect(tokenResponse.status).toBe(201);
+	const token = (await tokenResponse.json()) as { token: string };
+	const machine = (path: string, method = "GET", body?: unknown) =>
+		fetch(`${base}/api/v1/accounts/${account.id}/${path}`, {
+			method,
+			headers: { Authorization: `Bearer ${token.token}`, "content-type": "application/json" },
+			...(body === undefined ? {} : { body: JSON.stringify(body) }),
+		});
+	async function run(params: unknown): Promise<RefreshRun> {
+		const started = await machine("refresh-runs", "POST", params);
+		expect(started.status).toBe(202);
+		let item = (await started.json()) as RefreshRun;
+		for (let attempt = 0; attempt < 60 && ["queued", "running"].includes(item.status); attempt++) {
+			await new Promise((resolve) => setTimeout(resolve, 250));
+			item = (await (await machine(`refresh-runs/${item.id}`)).json()) as RefreshRun;
+		}
+		expect(item.status).toBe("completed");
+		return item;
+	}
+	try {
+		const first = await run({
+			dimensions: ["commits", "issues", "prs", "actions", "releases", "alerts"],
+		});
+		expect(first.repos).toEqual(["phase2/demo"]);
+		expect(first.completedRepos).toBe(1);
+		expect(first.requests).toBeLessThanOrEqual(8);
+		expect(await (await machine("stars")).json()).toEqual({ items: [] });
+		for (const path of [
+			"repos",
+			"factory",
+			"contributions",
+			"repos/phase2/demo/details",
+			"repos/phase2/demo/issues",
+			"repos/phase2/demo/prs",
+			"repos/phase2/demo/actions",
+			"repos/phase2/demo/security",
+			"factory/repos/phase2/demo/commits",
+		]) {
+			const response = await machine(path);
+			expect(response.status, path).toBe(200);
+		}
+		const defaultRun = await run({ dimensions: ["commits"] });
+		expect(defaultRun.repos).toEqual([]);
+		expect(defaultRun.requests).toBe(1);
+		expect(
+			(await machine("stars/phase2/demo", "PUT", { reason: "local refresh test" })).status,
+		).toBe(200);
+		const cached = await run({ dimensions: ["commits"] });
+		expect(cached.repos).toEqual(["phase2/demo"]);
+		expect(cached.requests).toBe(1);
+		const forced = await run({ dimensions: ["commits"], repo: "phase2/demo", force: true });
+		expect(forced.requests).toBe(2);
+		expect((await machine("stars/phase2/demo", "DELETE")).status).toBe(200);
+		const list = (await (await machine("refresh-runs")).json()) as { items: RefreshRun[] };
+		expect(list.items).toHaveLength(4);
+		expect((await machine(`refresh-runs/${first.id}`, "DELETE")).status).toBe(405);
+	} finally {
+		await browser(`accounts/${account.id}`, "DELETE");
+		const previous = existing.accounts.find((item) => item.is_active);
+		if (previous) await browser(`accounts/${previous.id}/activate`, "POST");
+	}
+}, 60_000);

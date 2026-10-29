@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { expect, it } from "vitest";
-import { readActivity } from "./activity-store";
 import { createDb, type Db } from "./db/d1";
 
 const migration = () =>
@@ -137,7 +136,11 @@ it("retracts hollow activity publications without frozen snapshots and restores 
 		sync.exec(schemaBeforeHeal());
 		const db = createDb(d1Database(sync));
 		await seedActivityDb(db);
-		expect((await readActivity(db, "account_123", {})).runId).toBe("hollow");
+		expect(
+			sync
+				.prepare("SELECT run_id FROM activity_publications ORDER BY fetched_at DESC LIMIT 1")
+				.get(),
+		).toEqual({ run_id: "hollow" });
 		apply(sync);
 		expect(sync.prepare("SELECT run_id FROM activity_publications ORDER BY run_id").all()).toEqual([
 			{ run_id: "good" },
@@ -145,7 +148,11 @@ it("retracts hollow activity publications without frozen snapshots and restores 
 		expect(sync.prepare("SELECT run_id FROM activity_pages ORDER BY run_id").all()).toEqual([
 			{ run_id: "good" },
 		]);
-		expect((await readActivity(db, "account_123", {})).runId).toBe("good");
+		expect(
+			sync
+				.prepare("SELECT run_id FROM activity_publications ORDER BY fetched_at DESC LIMIT 1")
+				.get(),
+		).toEqual({ run_id: "good" });
 		const ledger = sync
 			.prepare("SELECT sha,published_run_id FROM activity_commit_ledger ORDER BY sha")
 			.all() as { sha: string; published_run_id: string | null }[];

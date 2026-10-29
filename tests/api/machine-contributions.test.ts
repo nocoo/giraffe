@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { executeD1FixtureSync } from "../fixtures/d1";
 import { factoryFixture } from "../fixtures/factory-snapshot";
+import { savedSnapshotSql } from "./saved-fixture";
 
 const base = process.env.GIRAFFE_E2E ?? "http://127.0.0.1:17045";
 const account = randomUUID().replaceAll("-", "").slice(0, 21);
@@ -11,7 +12,7 @@ const wrongScope = `giraffe_${randomBytes(32).toString("base64url")}`;
 const expired = `giraffe_${randomBytes(32).toString("base64url")}`;
 const at = "2026-10-20T12:00:00.000Z";
 const snapshot = factoryFixture();
-const kind = `factory:v:contributions-${account}`;
+const kind = "factory";
 let seeded = false;
 
 const quote = (value: string) => `'${value.replaceAll("'", "''")}'`;
@@ -33,10 +34,7 @@ function rows(command: string): Record<string, unknown>[] {
 }
 const marker = () =>
 	expect(rows("SELECT value FROM _test_marker WHERE key='env'")).toEqual([{ value: "test" }]);
-const save = () =>
-	rows(
-		`UPDATE snapshots SET payload=${quote(JSON.stringify(snapshot))} WHERE account_id=${quote(account)} AND kind=${quote(kind)};`,
-	);
+const save = () => rows(savedSnapshotSql(account, kind, { ...snapshot }, at));
 const request = (
 	query = "",
 	token: string | null = bearer,
@@ -115,8 +113,7 @@ beforeAll(() => {
 			mint(bearer, ["observations:read"], "reader", new Date(Date.now() + 86400_000).toISOString()),
 			mint(wrongScope, ["agent:read"], "agent", new Date(Date.now() + 86400_000).toISOString()),
 			mint(expired, ["observations:read"], "expired", "2025-01-01T00:00:00.000Z"),
-			`INSERT INTO snapshots(account_id,kind,payload,fetched_at) VALUES(${quote(account)},${quote(kind)},${quote(JSON.stringify(snapshot))},${quote(at)});`,
-			`INSERT INTO factory_state(account_id,published_id,next_at) VALUES(${quote(account)},${quote(snapshot.runId)},${quote(at)});`,
+			savedSnapshotSql(account, kind, { ...snapshot }, at),
 		].join("\n"),
 	);
 });
@@ -130,7 +127,7 @@ afterAll(() => {
 it("reads typed inclusive daily contributions and validates conditional polling without writes or upstream traffic", async () => {
 	const saved = () =>
 		rows(
-			`SELECT kind,payload,fetched_at FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind; SELECT * FROM api_tokens WHERE account_id=${quote(account)} ORDER BY id; SELECT * FROM factory_state WHERE account_id=${quote(account)};`,
+			`SELECT kind,payload,fetched_at FROM refresh_snapshots WHERE account_id=${quote(account)} ORDER BY kind; SELECT * FROM api_tokens WHERE account_id=${quote(account)} ORDER BY id; SELECT * FROM refresh_publications WHERE account_id=${quote(account)};`,
 		);
 	const count = await (await fetch("http://127.0.0.1:17046/_count")).text();
 	const before = saved();

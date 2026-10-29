@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import { factoryFixture } from "../../../../../tests/fixtures/factory-snapshot";
 import { profileDb } from "../../../../../tests/fixtures/profile-db";
+import { savedObservationStmts } from "../../../../../tests/fixtures/refresh";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import type { ApiScope } from "../../lib/api-access";
 import type { Env } from "../env";
@@ -36,13 +37,8 @@ async function setup() {
 		window: { since: "2026-06-18T00:00:00.000Z", until: "2026-09-15T12:00:00.000Z" },
 		fetchedAt: snapshot.contribution.fetchedAt,
 	};
-	const save = () =>
-		db
-			.prepare(
-				"INSERT INTO snapshots(account_id,kind,payload,fetched_at) VALUES(?,'factory',?,?) ON CONFLICT(account_id,kind) DO UPDATE SET payload=excluded.payload",
-			)
-			.bind(account, JSON.stringify(snapshot), snapshot.fetched_at)
-			.run();
+	const save = async () =>
+		db.batch(await savedObservationStmts(db, account, "factory", snapshot, snapshot.fetched_at));
 	await save();
 	const mint = (scopes: ApiScope[] = ["observations:read"], now?: string) =>
 		createApiToken(
@@ -79,7 +75,7 @@ it("serves inclusive saved dates in an observation envelope and preserves retain
 	const s = await setup();
 	const profile = profileDb(s.raw);
 	s.env.DB = profile.raw;
-	const saved = (await s.raw.prepare("SELECT * FROM snapshots").all()).results;
+	const saved = (await s.raw.prepare("SELECT * FROM refresh_snapshots").all()).results;
 	const tokens = (await s.raw.prepare("SELECT * FROM api_tokens").all()).results;
 	const response = await s.call("?since=2026-09-14&until=2026-09-15");
 	expect(response.status).toBe(200);
@@ -124,7 +120,7 @@ it("serves inclusive saved dates in an observation envelope and preserves retain
 		},
 	});
 	expect((await s.call("?since=2026-09-15&until=2026-09-15")).status).toBe(200);
-	expect((await s.raw.prepare("SELECT * FROM snapshots").all()).results).toEqual(saved);
+	expect((await s.raw.prepare("SELECT * FROM refresh_snapshots").all()).results).toEqual(saved);
 	expect((await s.raw.prepare("SELECT * FROM api_tokens").all()).results).toEqual(tokens);
 });
 
@@ -204,7 +200,8 @@ it("reports missing publications and calendars instead of empty success", async 
 	s.snapshot.contribution = null;
 	await s.save();
 	expect((await s.call()).status).toBe(409);
-	await s.db.prepare("DELETE FROM snapshots").run();
+	await s.db.prepare("DELETE FROM refresh_publications").run();
+	await s.db.prepare("DELETE FROM refresh_snapshots").run();
 	for (const query of [
 		"?since=2026-09-15&until=2026-09-14",
 		"?since=2026-01-01&until=2026-09-15",

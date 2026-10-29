@@ -82,33 +82,35 @@ const savedState = () =>
 			.join("\n"),
 	);
 const count = async () => (await fetch("http://127.0.0.1:17046/_count")).text();
-const unavailable = async (response: Response) => {
-	expect(response.status).toBe(410);
+const unavailable = async (response: Response, status = 404) => {
+	expect(response.status).toBe(status);
 	expect(response.headers.get("cache-control")).toBe("private, no-store");
 	expect(response.headers.get("vary")).toContain("Authorization");
 	expect(response.headers.get("referrer-policy")).toBe("no-referrer");
-	expect(await response.json()).toMatchObject({ error: { code: "collection_unavailable" } });
+	expect(await response.json()).toMatchObject({
+		error: { code: status === 400 ? "validation_failed" : "not_found" },
+	});
 };
 
-it("keeps machine collection skeletons inert even when legacy runs and schedules remain", async () => {
+it("never revives legacy runs or modes when unified refresh is available", async () => {
 	const before = savedState();
 	const upstream = await count();
-	for (const kind of ["", "?kind=daily", "?kind=weekly", "?kind=catalog", "?kind=invalid&x=1"])
-		await unavailable(await request(`refresh-runs/latest${kind}`));
+	expect((await request("refresh-runs/latest")).status).toBe(409);
+	for (const kind of ["?kind=daily", "?kind=weekly", "?kind=catalog", "?kind=invalid&x=1"])
+		await unavailable(await request(`refresh-runs/latest${kind}`), 400);
 	for (const bearer of [writer, reader]) {
 		const list = await request("refresh-runs", "GET", undefined, bearer);
 		expect(list.status).toBe(200);
 		expect(await list.json()).toMatchObject({
-			account_id: account,
 			items: [],
-			collectionAvailable: false,
+			collectionAvailable: true,
 		});
 		const settings = await request("settings", "GET", undefined, bearer);
 		expect(settings.status).toBe(200);
 		expect(await settings.json()).toMatchObject({
 			account_id: account,
-			schedules: [],
-			collectionAvailable: false,
+			schedules: [{ time: "03:00", timezone: "Asia/Shanghai", scope: "starred" }],
+			collectionAvailable: true,
 		});
 	}
 	for (const mode of ["catalog", "refresh"])
@@ -120,6 +122,7 @@ it("keeps machine collection skeletons inert even when legacy runs and schedules
 					depth,
 					scope: "all",
 				}),
+				400,
 			);
 	for (const action of ["pause", "resume", "cancel"])
 		for (const id of [`old-${account}`, "missing"])
@@ -166,11 +169,14 @@ it("authenticates and authorizes before returning retired collection responses w
 		["refresh-runs", "PUT"],
 		["refresh-runs/latest", "POST"],
 		["refresh-runs/latest", "HEAD"],
+	] as const)
+		expect((await request(path, method)).status).toBe(405);
+	for (const [path, method] of [
 		["refresh-runs/old/control", "GET"],
 		["schedules/daily", "GET"],
 		["schedules/daily", "POST"],
-	] as const)
-		expect((await request(path, method)).status).toBe(405);
+	])
+		expect((await request(path ?? "", method)).status).toBe(404);
 	expect((await request("refresh-runs?x=1")).status).toBe(400);
 	expect(savedState()).toEqual(before);
 	expect(await count()).toBe(upstream);

@@ -1,14 +1,13 @@
 import { expect, it } from "vitest";
 import { factoryFixture } from "../../../../../tests/fixtures/factory-snapshot";
 import { profileDb } from "../../../../../tests/fixtures/profile-db";
+import { savedObservationStmts as replaceSnapshotStmts } from "../../../../../tests/fixtures/refresh";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import { FACTORY_STREAMS } from "../../lib/factory-types";
 import { REPO_SNAPSHOT_TABS } from "../../lib/snapshot-kinds";
 import type { Env } from "../env";
 import { createApp } from "../index";
-import { savedContentMeta } from "./content-version";
 import { createDb } from "./db/d1";
-import { replaceSnapshotStmts } from "./db/snapshots";
 import {
 	readFactoryResource,
 	readMachineFactoryStream,
@@ -51,7 +50,7 @@ async function fixture(source: "run" | "legacy" = "run") {
 	};
 	for (const stream of FACTORY_STREAMS)
 		repo.coverage[stream] = { ...repo.coverage[stream], status: "complete", fetchedAt: at };
-	await save("factory:v:publication", snap);
+	await save("factory", snap);
 	await raw
 		.prepare(
 			"INSERT INTO factory_state(account_id,published_id,next_at) VALUES(?,'publication','t')",
@@ -72,18 +71,7 @@ async function fixture(source: "run" | "legacy" = "run") {
 			coverage: repo.coverage[stream],
 			next: null,
 		};
-		if (source === "run")
-			await raw
-				.prepare(
-					"INSERT INTO factory_resources(run_id,repo,stream,payload,content_meta) VALUES('evidence','NOCOO/original',?,?,?)",
-				)
-				.bind(
-					stream,
-					JSON.stringify(data),
-					await savedContentMeta(`factory:${repo.name}:${stream}`, data),
-				)
-				.run();
-		else await save(`factory:NOCOO/original:${stream}`, data);
+		await save(`factory:NOCOO/original:${stream}`, data);
 	}
 	return { raw, save, snap, repo };
 }
@@ -142,7 +130,9 @@ it("leaves browser removed-history access at 200 with two trips and no catalog g
 
 it("preserves browser validation, inventory and source error priority", async () => {
 	const s = await fixture();
-	await s.raw.prepare("UPDATE snapshots SET payload='invalid-json' WHERE kind='repos'").run();
+	await s.raw
+		.prepare("UPDATE refresh_snapshots SET payload='invalid-json' WHERE kind='repos'")
+		.run();
 	for (const [path, code, message] of [
 		["factory/repos/nocoo/app/unknown", 400, "unknown stream"],
 		["factory/repos/nocoo/app/prs?page=0", 400, "invalid page"],
@@ -153,7 +143,7 @@ it("preserves browser validation, inventory and source error priority", async ()
 		expect(await response.json()).toMatchObject({ error: { message } });
 	}
 	await s.save("repos", { repos: [{ name_with_owner: "nocoo/app" }] });
-	await s.raw.prepare("DELETE FROM factory_resources WHERE stream='prs'").run();
+	await s.raw.prepare("DELETE FROM refresh_resources WHERE stream='prs'").run();
 	const missing = await browser(s.raw, "factory/repos/nocoo/app/prs?day=invalid");
 	expect(missing.status).toBe(409);
 	expect(await missing.json()).toMatchObject({
@@ -164,9 +154,9 @@ it("preserves browser validation, inventory and source error priority", async ()
 it("keeps pending legacy browser coverage empty without parsing an unused corrupt resource", async () => {
 	const s = await fixture("legacy");
 	s.repo.coverage.prs.status = "pending";
-	await s.save("factory:v:publication", s.snap);
+	await s.save("factory", s.snap);
 	await s.raw
-		.prepare("UPDATE snapshots SET payload='invalid-json' WHERE kind='factory:NOCOO/original:prs'")
+		.prepare("UPDATE refresh_resources SET payload='invalid-json' WHERE stream='prs'")
 		.run();
 	const response = await browser(s.raw, "factory/repos/nocoo/app/prs");
 	expect(response.status).toBe(200);
@@ -179,7 +169,7 @@ it("keeps pending legacy browser coverage empty without parsing an unused corrup
 
 it("does not decode run content metadata on the browser path", async () => {
 	const s = await fixture();
-	await s.raw.prepare("UPDATE factory_resources SET content_meta='invalid-json'").run();
+	await s.raw.prepare("UPDATE refresh_resources SET content_meta='invalid-json'").run();
 	expect((await browser(s.raw, "factory/repos/nocoo/app/prs")).status).toBe(200);
 	await expect(
 		readFactoryResource(createDb(s.raw), account, "nocoo/app", "prs"),
@@ -224,12 +214,14 @@ it("keeps machine catalog guards ahead of saved source and stream errors", async
 		readMachineFactoryStream(createDb(s.raw), account, "nocoo/removed", "invalid"),
 	).rejects.toMatchObject({ status: 404, message: "repository outside saved account catalog" });
 	await s.raw
-		.prepare("UPDATE snapshots SET payload='invalid-json' WHERE kind='factory:v:publication'")
+		.prepare("UPDATE refresh_snapshots SET payload='invalid-json' WHERE kind='factory'")
 		.run();
 	await expect(
 		readMachineFactoryStream(createDb(s.raw), account, "nocoo/app", "invalid"),
 	).rejects.toMatchObject({ status: 400, message: "unknown stream" });
-	await s.raw.prepare("UPDATE snapshots SET payload='invalid-json' WHERE kind='repos'").run();
+	await s.raw
+		.prepare("UPDATE refresh_snapshots SET payload='invalid-json' WHERE kind='repos'")
+		.run();
 	await expect(
 		readMachineFactoryStream(createDb(s.raw), account, "nocoo/app", "invalid"),
 	).rejects.toBeInstanceOf(SyntaxError);
@@ -240,18 +232,18 @@ it("keeps machine catalog guards ahead of saved source and stream errors", async
 
 async function splitSaved(raw: D1Database, kind: string, key: string) {
 	const row = await raw
-		.prepare("SELECT payload,content_meta FROM snapshots WHERE account_id=? AND kind=?")
+		.prepare("SELECT payload,content_meta FROM refresh_snapshots WHERE account_id=? AND kind=?")
 		.bind(account, kind)
 		.first<{ payload: string; content_meta: string | null }>();
 	if (!row) throw new Error("fixture split root");
 	const data = JSON.parse(row.payload);
 	await raw
-		.prepare("UPDATE snapshots SET payload=? WHERE account_id=? AND kind=?")
+		.prepare("UPDATE refresh_snapshots SET payload=? WHERE account_id=? AND kind=?")
 		.bind(JSON.stringify({ ...data, [key]: [] }), account, kind)
 		.run();
 	await raw
 		.prepare(
-			"INSERT INTO snapshots(account_id,kind,payload,fetched_at,content_meta) VALUES(?,?,?,?,?)",
+			"INSERT INTO refresh_snapshots(account_id,kind,payload,fetched_at,content_meta) VALUES(?,?,?,?,?)",
 		)
 		.bind(account, `${kind}#2`, row.payload, at, row.content_meta)
 		.run();
@@ -262,16 +254,18 @@ it.each(["run", "legacy"] as const)(
 	async (source) => {
 		const s = await fixture(source);
 		s.repo.coverage.prs = { ...s.repo.coverage.prs, retained: true, status: "limited" };
-		await s.save("factory:v:publication", s.snap);
+		await s.save("factory", s.snap);
 		await splitSaved(s.raw, "repos", "repos");
-		await splitSaved(s.raw, "factory:v:publication", "repos");
+		await splitSaved(s.raw, "factory", "repos");
 		if (source === "legacy") await splitSaved(s.raw, "factory:NOCOO/original:prs", "items");
 		for (const metadata of ["stored", "mismatched", "legacy"]) {
 			if (metadata === "mismatched")
-				await s.raw.prepare("UPDATE snapshots SET content_meta='{}' WHERE kind LIKE '%#2'").run();
+				await s.raw
+					.prepare("UPDATE refresh_snapshots SET content_meta='{}' WHERE kind LIKE '%#2'")
+					.run();
 			if (metadata === "legacy") {
-				await s.raw.prepare("UPDATE snapshots SET content_meta=NULL").run();
-				await s.raw.prepare("UPDATE factory_resources SET content_meta=NULL").run();
+				await s.raw.prepare("UPDATE refresh_snapshots SET content_meta=NULL").run();
+				await s.raw.prepare("UPDATE refresh_resources SET content_meta=NULL").run();
 			}
 			const profile = profileDb(s.raw);
 			const actual = await readMachineFactoryStream(
@@ -286,10 +280,9 @@ it.each(["run", "legacy"] as const)(
 			expect(actual.truncated).toBe(true);
 			expect(profile.trips).toHaveLength(1);
 			expect(
-				profile.queries.find((query) => query.sql.includes("refs AS MATERIALIZED"))?.rows,
-			).toBe(source === "run" ? 1 : 2);
-			if (metadata === "legacy" || (source === "legacy" && metadata === "mismatched"))
-				expect(actual.contentVersion).toBeNull();
+				profile.queries.find((query) => query.sql.includes("FROM refresh_resources"))?.rows,
+			).toBe(1);
+			if (metadata === "legacy") expect(actual.contentVersion).toBeNull();
 			expect((await browser(s.raw, "factory/repos/nocoo/app/prs")).status).toBe(200);
 		}
 	},
@@ -309,7 +302,7 @@ it("never substitutes another account or a newer immutable resource", async () =
 		.run();
 	await s.raw
 		.prepare(
-			"INSERT INTO factory_resources(run_id,repo,stream,payload) VALUES('foreign','NOCOO/original','prs','invalid-json')",
+			"INSERT INTO refresh_resources(account_id,repo_id,stream,payload) VALUES('other','R_1','prs','invalid-json')",
 		)
 		.run();
 	s.repo.observation = {
@@ -319,18 +312,18 @@ it("never substitutes another account or a newer immutable resource", async () =
 		window: s.snap.window,
 		refreshedAt: at,
 	};
-	await s.save("factory:v:publication", s.snap);
+	await s.save("factory", s.snap);
 	await expect(
 		readMachineFactoryStream(createDb(s.raw), account, "nocoo/app", "prs"),
 	).rejects.toMatchObject({
 		status: 409,
-		message: "immutable source missing; refresh this repository",
+		message: "immutable source version mismatch; refresh this repository",
 	});
 	s.repo.observation.version = "evidence";
-	await s.save("factory:v:publication", s.snap);
+	await s.save("factory", s.snap);
 	await s.raw
-		.prepare("UPDATE factory_resources SET payload=? WHERE run_id='evidence' AND stream='prs'")
-		.bind(JSON.stringify({ runId: "newer", items: [] }))
+		.prepare("UPDATE refresh_resources SET payload=? WHERE account_id=? AND stream='prs'")
+		.bind(JSON.stringify({ runId: "newer", items: [] }), account)
 		.run();
 	await expect(
 		readMachineFactoryStream(createDb(s.raw), account, "nocoo/app", "prs"),
@@ -386,7 +379,7 @@ it("does not turn machine catalog membership into an owned-repository guard", as
 	await s.save("repos", { repos: [{ name_with_owner: "outside/app" }] });
 	await s.save("repo:OUTSIDE/APP:details", { marker: "external" });
 	s.repo.name = "outside/app";
-	await s.save("factory:v:publication", s.snap);
+	await s.save("factory", s.snap);
 	expect(
 		(await readMachineRepositoryObservation(createDb(s.raw), account, "outside/app", "details"))
 			.data.marker,
@@ -399,8 +392,8 @@ it("does not turn machine catalog membership into an owned-repository guard", as
 
 it("mirrors the saved assembler when a different first array owns the second page", async () => {
 	const s = await fixture();
-	await s.save("factory:v:publication", { other: [], ...s.snap, repos: [] });
-	await s.save("factory:v:publication#2", s.snap);
+	await s.save("factory", { other: [], ...s.snap, repos: [] });
+	await s.save("factory#2", s.snap);
 	await expect(
 		readMachineFactoryStream(createDb(s.raw), account, "nocoo/app", "prs"),
 	).rejects.toMatchObject({ status: 404, message: "repository outside publication" });

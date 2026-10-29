@@ -75,11 +75,11 @@ it.each(["browser", "machine"] as const)(
 		const metadata = await savedContentMeta(kind, legacy);
 		await db
 			.prepare(
-				"INSERT INTO snapshots(account_id,kind,payload,fetched_at,content_meta) VALUES('a',?,?,?,?)",
+				"INSERT INTO refresh_snapshots(account_id,kind,payload,fetched_at,content_meta) VALUES('a',?,?,?,?)",
 			)
 			.bind(kind, JSON.stringify(legacy), at, metadata)
 			.run();
-		const before = await db.prepare("SELECT * FROM snapshots ORDER BY kind").all();
+		const before = await db.prepare("SELECT * FROM refresh_snapshots ORDER BY kind").all();
 		const { body, data } = await request(lane);
 		expect(data).toMatchObject({
 			truncated: true,
@@ -92,6 +92,6 @@ it.each(["browser", "machine"] as const)(
 			expect(body.sourceVersion).toBe(JSON.parse(metadata).fullVersion);
 			expect(body.contentVersion).toBe(JSON.parse(metadata).hash);
 		}
-		expect(await db.prepare("SELECT * FROM snapshots ORDER BY kind").all()).toEqual(before);
+		expect(await db.prepare("SELECT * FROM refresh_snapshots ORDER BY kind").all()).toEqual(before);
 	},
 );

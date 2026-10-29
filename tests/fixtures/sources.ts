@@ -21,10 +21,17 @@ export async function sourcesFixture() {
 		const payload = JSON.stringify({ ...data, fetched_at: at, truncated: data.truncated === true });
 		await raw
 			.prepare(
-				"INSERT INTO snapshots(account_id,kind,payload,fetched_at,content_meta) VALUES(?,?,?,?,?)",
+				"INSERT INTO refresh_snapshots(account_id,kind,payload,fetched_at,content_meta) VALUES(?,?,?,?,?)",
 			)
 			.bind(account, kind, payload, at, await savedContentMeta(kind, JSON.parse(payload)))
 			.run();
+		if (kind === "factory")
+			await raw
+				.prepare(
+					"INSERT INTO refresh_publications(account_id,payload,published_at) VALUES(?,?,?) ON CONFLICT(account_id) DO UPDATE SET payload=excluded.payload,published_at=excluded.published_at",
+				)
+				.bind(account, payload, at)
+				.run();
 	};
 	await raw.prepare("CREATE TABLE _test_marker(key TEXT PRIMARY KEY,value TEXT NOT NULL)").run();
 	await raw.prepare("INSERT INTO _test_marker(key,value) VALUES('env','test')").run();
@@ -40,6 +47,7 @@ export async function sourcesFixture() {
 		.bind(account, latest, latest)
 		.run();
 	const catalog = names.map((name, i) => ({
+		id: `R_FIXTURE_${i}`,
 		name_with_owner: name,
 		owner_login: "fixture",
 		name: name.split("/")[1],
@@ -54,6 +62,13 @@ export async function sourcesFixture() {
 		open_issue_count: 40,
 	}));
 	await save("repos", { repos: catalog }, old);
+	for (const repo of catalog)
+		await raw
+			.prepare(
+				"INSERT INTO refresh_catalog(account_id,repo_id,repo,discovered_day,timezone,payload,fetched_at) VALUES(?,?,?,'2026-10-18','Asia/Shanghai',?,?)",
+			)
+			.bind(account, repo.id, repo.name_with_owner, JSON.stringify(repo), old)
+			.run();
 	const snapshot = factoryFixture();
 	const template = snapshot.repos[0];
 	if (!template) throw new Error("missing factory template");
@@ -105,11 +120,7 @@ export async function sourcesFixture() {
 			]),
 		) as FactoryRepo["coverage"],
 	}));
-	await save(`factory:v:${snapshot.runId}`, snapshot);
-	await raw
-		.prepare("INSERT INTO factory_state(account_id,published_id,next_at) VALUES(?,?,'t')")
-		.bind(account, snapshot.runId)
-		.run();
+	await save("factory", snapshot);
 	const allIssues: Record<string, unknown>[] = [],
 		allPrs: Record<string, unknown>[] = [];
 	const recorded: Record<string, string> = {};
@@ -212,12 +223,6 @@ export async function populateSourceStreams(fixture: Awaited<ReturnType<typeof s
 	for (const repo of snapshot.repos) {
 		const version = repo.observation?.version;
 		assert.ok(version);
-		await raw
-			.prepare(
-				"INSERT OR IGNORE INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES(?,?,?,'completed','{}','t','t','t')",
-			)
-			.bind(version, account, version)
-			.run();
 		const coverage = repo.coverage.commits;
 		const data: FactoryStreamData = {
 			runId: version,
@@ -243,11 +248,11 @@ export async function populateSourceStreams(fixture: Awaited<ReturnType<typeof s
 		payloadBytes.set(repo.name, bytes);
 		await raw
 			.prepare(
-				"INSERT INTO factory_resources(run_id,repo,stream,payload,content_meta) VALUES(?,?,'commits',?,?)",
+				"INSERT INTO refresh_resources(account_id,repo_id,stream,payload,content_meta) VALUES(?,?,'commits',?,?)",
 			)
 			.bind(
-				version,
-				repo.name,
+				account,
+				repo.id,
 				payload,
 				await savedContentMeta(`factory:${repo.name}:commits`, data, snapshot.window),
 			)

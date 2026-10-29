@@ -1,13 +1,17 @@
 import { expect, it, vi } from "vitest";
 import { factoryFixture } from "../../../../../tests/fixtures/factory-snapshot";
 import { profileDb } from "../../../../../tests/fixtures/profile-db";
+import {
+	savedObservationStmts as replaceSnapshotStmts,
+	syncSavedObservation,
+} from "../../../../../tests/fixtures/refresh";
 import { populateSourceStreams, sourcesFixture } from "../../../../../tests/fixtures/sources";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import * as ci from "../../lib/ci-health";
 import { FACTORY_STREAMS } from "../../lib/factory-types";
 import { savedContentMeta } from "./content-version";
 import { createDb } from "./db/d1";
-import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
+import { readSnapshot } from "./db/snapshots";
 import { readFactoryResource, readObservation } from "./machine-observations";
 import { readSources } from "./machine-sources";
 
@@ -35,10 +39,10 @@ it("filters every repository source and factory inventory against the current ca
 			});
 	const first = snap.repos[0];
 	if (!first) throw new Error("fixture");
-	snap.repos.push({ ...first, name: "nocoo/removed" });
+	snap.repos.push({ ...first, id: "R_REMOVED", name: "nocoo/removed" });
 	snap.inventory.excluded.push({ name: "nocoo/removed", reason: "fork" });
 	await save("factory", snap);
-	const before = await raw.prepare("SELECT * FROM snapshots ORDER BY kind").all();
+	const before = await raw.prepare("SELECT * FROM refresh_snapshots ORDER BY kind").all();
 	const fetchSpy = vi.spyOn(globalThis, "fetch");
 	try {
 		const sources = await readSources(createDb(raw), account, {});
@@ -52,7 +56,9 @@ it("filters every repository source and factory inventory against the current ca
 		const factory = await readObservation(db, account, "factory", "all");
 		expect(factory.data.repos).toHaveLength(1);
 		expect(factory.data.inventory).toMatchObject({ excluded: [] });
-		expect(await raw.prepare("SELECT * FROM snapshots ORDER BY kind").all()).toEqual(before);
+		expect(await raw.prepare("SELECT * FROM refresh_snapshots ORDER BY kind").all()).toEqual(
+			before,
+		);
 		expect(fetchSpy).not.toHaveBeenCalled();
 	} finally {
 		fetchSpy.mockRestore();
@@ -61,7 +67,7 @@ it("filters every repository source and factory inventory against the current ca
 
 it("reads 126 repositories within seven queries and bounds empty-since hashing", async () => {
 	const { raw, account, names } = await sourcesFixture();
-	const before = (await raw.prepare("SELECT * FROM snapshots ORDER BY kind").all()).results;
+	const before = (await raw.prepare("SELECT * FROM refresh_snapshots ORDER BY kind").all()).results;
 	const fullDb = createDb(raw);
 	const fullDigest = vi.spyOn(crypto.subtle, "digest");
 	const full = await readSources(fullDb, account, {});
@@ -92,9 +98,9 @@ it("reads 126 repositories within seven queries and bounds empty-since hashing",
 	} finally {
 		digest.mockRestore();
 	}
-	expect((await raw.prepare("SELECT * FROM snapshots ORDER BY kind").all()).results).toEqual(
-		before,
-	);
+	expect(
+		(await raw.prepare("SELECT * FROM refresh_snapshots ORDER BY kind").all()).results,
+	).toEqual(before);
 });
 
 async function savedFixture(persist = true) {
@@ -109,7 +115,7 @@ async function savedFixture(persist = true) {
 	const save = async (kind: string, data: Record<string, unknown>, at = "2026-10-20T00:00:00Z") => {
 		await raw
 			.prepare(
-				"INSERT INTO snapshots(account_id,kind,payload,fetched_at) VALUES(?,?,?,?) ON CONFLICT(account_id,kind) DO UPDATE SET payload=excluded.payload,fetched_at=excluded.fetched_at",
+				"INSERT INTO refresh_snapshots(account_id,kind,payload,fetched_at) VALUES(?,?,?,?) ON CONFLICT(account_id,kind) DO UPDATE SET payload=excluded.payload,fetched_at=excluded.fetched_at",
 			)
 			.bind(account, kind, JSON.stringify({ ...data, fetched_at: at }), at)
 			.run();
@@ -118,10 +124,18 @@ async function savedFixture(persist = true) {
 			const data = await readSnapshot(createDb(raw), account, logical);
 			if (data)
 				await raw
-					.prepare("UPDATE snapshots SET content_meta=? WHERE account_id=? AND kind IN (?,?)")
+					.prepare(
+						"UPDATE refresh_snapshots SET content_meta=? WHERE account_id=? AND kind IN (?,?)",
+					)
 					.bind(await savedContentMeta(logical, data), account, logical, `${logical}#2`)
 					.run();
 		}
+		await syncSavedObservation(createDb(raw), account, kind, at);
+		if (!persist)
+			await raw
+				.prepare("UPDATE refresh_resources SET content_meta=NULL WHERE account_id=?")
+				.bind(account)
+				.run();
 	};
 	return { raw, account, save };
 }
@@ -215,19 +229,10 @@ it("never reads immutable payloads for full or filtered source indexes", async (
 	expect(payloads.size).toBe(126);
 	const profile = profileDb(fixture.raw);
 	const before = await readSources(createDb(profile.raw), fixture.account, {});
-	const query = profile.queries.find((query) => query.sql.includes("factory_resources_content"));
+	const query = profile.queries.find((query) => query.sql.includes("FROM refresh_resources"));
 	if (!query) throw new Error("missing metadata query");
-	const plan = await fixture.raw
-		.prepare(`EXPLAIN QUERY PLAN ${query.sql}`)
-		.bind(...query.bindings)
-		.all<{ detail: string }>();
-	expect(
-		plan.results.some((row) => row.detail.includes("COVERING INDEX factory_resources_content")),
-	).toBe(true);
-	expect(plan.results.some((row) => row.detail.includes("COVERING INDEX snapshots_content"))).toBe(
-		true,
-	);
-	await fixture.raw.prepare("UPDATE factory_resources SET payload='not-json'").run();
+	expect(query.sql).not.toContain("r.payload");
+	await fixture.raw.prepare("UPDATE refresh_resources SET payload='not-json'").run();
 	expect(await readSources(createDb(fixture.raw), fixture.account, {})).toEqual(before);
 });
 
@@ -285,11 +290,15 @@ it.each([
 				"2026-10-21T00:00:00Z",
 			);
 		const legacy = `repo:owner/old:${suffix}`;
-		await raw.prepare("UPDATE snapshots SET content_meta=NULL WHERE kind=?").bind(legacy).run();
+		await raw
+			.prepare("UPDATE refresh_snapshots SET content_meta=NULL WHERE kind=?")
+			.bind(legacy)
+			.run();
 		expect(
-			(await raw.prepare("SELECT kind FROM snapshots WHERE content_meta IS NULL").all()).results,
+			(await raw.prepare("SELECT kind FROM refresh_snapshots WHERE content_meta IS NULL").all())
+				.results,
 		).toEqual([{ kind: legacy }]);
-		const before = await raw.prepare("SELECT * FROM snapshots ORDER BY kind").all();
+		const before = await raw.prepare("SELECT * FROM refresh_snapshots ORDER BY kind").all();
 		const read = async () =>
 			(await readSources(createDb(raw), account, {})).sources.find(
 				(source) => source.resource === `account:${resource}`,
@@ -300,9 +309,13 @@ it.each([
 		expect((await readObservation(createDb(raw), account, resource, "all")).contentVersion).toBe(
 			original?.contentVersion,
 		);
-		expect(await raw.prepare("SELECT * FROM snapshots ORDER BY kind").all()).toEqual(before);
+		expect(await raw.prepare("SELECT * FROM refresh_snapshots ORDER BY kind").all()).toEqual(
+			before,
+		);
 		await raw
-			.prepare("UPDATE snapshots SET payload=json_set(payload,'$.legacy_evidence',1) WHERE kind=?")
+			.prepare(
+				"UPDATE refresh_snapshots SET payload=json_set(payload,'$.legacy_evidence',1) WHERE kind=?",
+			)
 			.bind(legacy)
 			.run();
 		expect((await read())?.contentVersion).not.toBe(original?.contentVersion);
@@ -326,8 +339,11 @@ it.each(["run", "legacy"] as const)(
 		};
 		kept.coverage.commits.fetchedAt = "2026-10-20T01:00:00+01:00";
 		kept.coverage.issues.fetchedAt = "2026-10-20T00:00:00.001Z";
-		const other = { ...kept, name: "owner/other" };
-		await save("repos", { repos: [kept, other].map((repo) => ({ name_with_owner: repo.name })) });
+		kept.id = "R_KEPT";
+		const other = { ...kept, id: "R_OTHER", name: "owner/other" };
+		await save("repos", {
+			repos: [kept, other].map((repo) => ({ id: repo.id, name_with_owner: repo.name })),
+		});
 		await save("factory", { ...snap, repos: [other] });
 		await save("factory#2", { ...snap, repos: [kept] });
 		const query = { repository: "OWNER/KEPT", since: "2026-10-20T00:00:00Z" };
@@ -355,20 +371,12 @@ it.each(["run", "legacy"] as const)(
 				fetched_at: snap.fetched_at,
 			});
 			const meta = await savedContentMeta(`factory:${name}:${stream}`, JSON.parse(payload));
-			if (source === "run")
-				await raw
-					.prepare(
-						"INSERT INTO factory_resources(run_id,repo,stream,payload,content_meta) VALUES('original',?,?,?,?)",
-					)
-					.bind(name, stream, payload, meta)
-					.run();
-			else
-				await raw
-					.prepare(
-						"INSERT INTO snapshots(account_id,kind,payload,fetched_at,content_meta) VALUES(?,?,?,?,?)",
-					)
-					.bind(account, `factory:${name}:${stream}`, payload, snap.fetched_at, meta)
-					.run();
+			await raw
+				.prepare(
+					"INSERT INTO refresh_resources(account_id,repo_id,stream,payload,content_meta) VALUES(?,?,?,?,?)",
+				)
+				.bind(account, name === kept.name ? kept.id : other.id, stream, payload, meta)
+				.run();
 		}
 		const profile = profileDb(raw);
 		const result = await readSources(createDb(profile.raw), account, query);
@@ -480,7 +488,7 @@ it("shares decoded alias pages without replacing latest-complete inbox evidence 
 	await save("repo:owner/app:issues", { issues: [{ number: 3 }], truncated: true });
 	await raw
 		.prepare(
-			"INSERT INTO snapshots(account_id,kind,payload,fetched_at) VALUES(?,'repo:owner/orphan:issues#2','invalid-json','bad')",
+			"INSERT INTO refresh_snapshots(account_id,kind,payload,fetched_at) VALUES(?,'repo:owner/orphan:issues#2','invalid-json','bad')",
 		)
 		.bind(account)
 		.run();
@@ -538,7 +546,7 @@ it("preserves since max-time, strict equality and conservative missing or malfor
 	});
 });
 
-it("omits absent sources and never substitutes a legacy publication for a missing immutable head", async () => {
+it("omits absent sources and ignores retired immutable heads", async () => {
 	const { raw, account, save } = await savedFixture();
 	expect(await readSources(createDb(raw), account, {})).toEqual({
 		account_id: account,
@@ -560,44 +568,36 @@ it("omits absent sources and never substitutes a legacy publication for a missin
 		(await readSources(createDb(raw), account, {})).sources.some((row) =>
 			row.resource.includes("factory"),
 		),
-	).toBe(false);
+	).toBe(true);
 });
 
-it("projects stored immutable hashes, including second pages, not newer or foreign runs", async () => {
+it("indexes immutable IDs, excludes foreign accounts and rejects mismatched stream versions", async () => {
 	const { raw, account, save } = await savedFixture();
 	const publication = factoryFixture();
 	const template = publication.repos[0];
-	if (!template) throw new Error("missing repository fixture");
-	const names = ["owner/renamed", "owner/legacy", "owner/foreign"];
-	await save("repos", { repos: names.map((name) => ({ name_with_owner: name })) });
-	publication.repos = names.map((name, i) => ({
+	if (!template) throw new Error("missing fixture repository");
+	const names = ["owner/renamed", "owner/second", "owner/foreign"];
+	publication.repos = names.map((name, index) => ({
 		...structuredClone(template),
+		id: `R_${index}`,
 		name,
 		observation: {
-			repo: i === 0 ? "OWNER/ORIGINAL" : name,
-			version: i === 2 ? "foreign" : "original",
-			source: i === 1 ? "legacy" : "run",
-			refreshedAt: publication.fetched_at,
+			repo: index === 0 ? "OWNER/ORIGINAL" : name,
+			version: "original",
+			source: "run",
 			window: publication.window,
+			refreshedAt: publication.fetched_at,
 		},
 	}));
+	await save("repos", {
+		repos: publication.repos.map((repo) => ({ id: repo.id, name_with_owner: repo.name })),
+	});
 	await save("factory", publication);
 	await raw
 		.prepare(
 			"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES('foreign','foreign','fake','fake','t','t')",
 		)
 		.run();
-	for (const [id, owner] of [
-		["original", account],
-		["newer", account],
-		["foreign", "foreign"],
-	])
-		await raw
-			.prepare(
-				"INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES(?,?,?,'completed','{}','t','t','t')",
-			)
-			.bind(id, owner, id)
-			.run();
 	const stream = {
 		runId: "original",
 		items: [{ id: "1", title: "original", at: "2026-10-01T00:00:00Z" }],
@@ -609,64 +609,63 @@ it("projects stored immutable hashes, including second pages, not newer or forei
 			fetchedAt: publication.fetched_at,
 		},
 	};
-	for (const [version, repo] of [
-		["original", "OWNER/ORIGINAL"],
-		["newer", "owner/renamed"],
-		["foreign", "owner/foreign"],
-	])
+	for (const [index, repo] of publication.repos.entries())
 		await raw
 			.prepare(
-				"INSERT INTO factory_resources(run_id,repo,stream,payload,content_meta) VALUES(?,?,'commits',?,?)",
+				"INSERT INTO refresh_resources(account_id,repo_id,stream,payload,content_meta) VALUES(?,?,'commits',?,?)",
 			)
 			.bind(
-				version,
-				repo,
-				JSON.stringify({ ...stream, runId: version }),
-				await savedContentMeta(`factory:${repo}:commits`, { ...stream, runId: version }),
+				index === 2 ? "foreign" : account,
+				repo.id,
+				JSON.stringify(stream),
+				await savedContentMeta(`factory:${repo.name}:commits`, stream),
 			)
 			.run();
-	await save("factory:owner/legacy:commits", stream);
-	await save("factory:owner/legacy:commits#2", {
-		...stream,
-		items: [{ id: "2", title: "second page" }],
-	});
-	const before = await raw
-		.prepare("SELECT * FROM factory_resources ORDER BY run_id,repo,stream")
-		.all();
-	const db = createDb(raw);
-	const index = await readSources(db, account, {});
-	expect(db.statements).toBeLessThanOrEqual(7);
+	const profile = profileDb(raw);
+	const index = await readSources(createDb(profile.raw), account, {});
+	expect(profile.queries).toHaveLength(7);
 	for (const name of names.slice(0, 2)) {
 		const envelope = await readFactoryResource(createDb(raw), account, name, "commits");
 		expect(
-			index.sources.find((s) => s.resource === `factory:${name}:commits`)?.contentVersion,
+			index.sources.find((source) => source.resource === `factory:${name}:commits`)?.contentVersion,
 		).toBe(envelope.contentVersion);
 	}
 	expect(
-		index.sources.find((s) => s.resource === "factory:owner/foreign:commits")?.contentVersion,
+		index.sources.find((source) => source.resource === "factory:owner/foreign:commits")
+			?.contentVersion,
 	).toBeNull();
-	expect(
-		await raw.prepare("SELECT * FROM factory_resources ORDER BY run_id,repo,stream").all(),
-	).toEqual(before);
+	await expect(
+		readFactoryResource(createDb(raw), account, "owner/foreign", "commits"),
+	).rejects.toMatchObject({ status: 409 });
+	const updated = { ...stream, items: [{ ...stream.items[0], title: "changed" }] };
 	await raw
-		.prepare("UPDATE factory_resources SET payload=?,content_meta=? WHERE run_id='original'")
-		.bind(
-			JSON.stringify({ ...stream, items: [{ ...stream.items[0], title: "changed" }] }),
-			await savedContentMeta("factory:OWNER/ORIGINAL:commits", {
-				...stream,
-				items: [{ ...stream.items[0], title: "changed" }],
-			}),
-		)
+		.prepare("UPDATE refresh_resources SET payload=?,content_meta=? WHERE account_id=?")
+		.bind(JSON.stringify(updated), await savedContentMeta("factory:repo:commits", updated), account)
 		.run();
-	await save("factory:owner/legacy:commits#2", {
-		...stream,
-		items: [{ id: "2", title: "changed second page" }],
-	});
 	const changed = await readSources(createDb(raw), account, {});
 	for (const name of names.slice(0, 2)) {
-		const previous = index.sources.find((s) => s.resource === `factory:${name}:commits`);
-		const current = changed.sources.find((s) => s.resource === `factory:${name}:commits`);
+		const previous = index.sources.find((source) => source.resource === `factory:${name}:commits`);
+		const current = changed.sources.find((source) => source.resource === `factory:${name}:commits`);
 		expect(current?.version).toBe(previous?.version);
 		expect(current?.contentVersion).not.toBe(previous?.contentVersion);
 	}
+	await raw
+		.prepare("UPDATE refresh_resources SET payload=?,content_meta=? WHERE account_id=?")
+		.bind(
+			JSON.stringify({ ...stream, runId: "newer" }),
+			await savedContentMeta("factory:repo:commits", { ...stream, runId: "newer" }),
+			account,
+		)
+		.run();
+	expect(
+		(await readSources(createDb(raw), account, {})).sources.find(
+			(source) => source.resource === "factory:owner/renamed:commits",
+		)?.contentVersion,
+	).toBeNull();
+	await expect(
+		readFactoryResource(createDb(raw), account, "owner/renamed", "commits"),
+	).rejects.toMatchObject({
+		status: 409,
+		message: "immutable source version mismatch; refresh this repository",
+	});
 });

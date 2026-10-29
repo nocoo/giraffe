@@ -6,7 +6,7 @@ import { createApp } from "../index";
 import { createApiToken } from "../lib/api-tokens";
 import { createDb } from "../lib/db/d1";
 
-it("reads settings and retired machine run skeleton without collection", async () => {
+it("reads settings and unified run history without collection", async () => {
 	const fixture = await sourcesFixture();
 	await fixture.raw
 		.prepare("UPDATE accounts SET is_active=1 WHERE id=?")
@@ -36,7 +36,7 @@ it("reads settings and retired machine run skeleton without collection", async (
 			} as unknown as Env,
 		);
 		expect(response.status, route).toBe(200);
-		expect(profile.trips, route).toHaveLength(route.endsWith("/settings") ? 2 : 1);
+		expect(profile.trips, route).toHaveLength(2);
 		expect(response.headers.get("server-timing")).toContain("serialized_bytes;desc=");
 	}
 });

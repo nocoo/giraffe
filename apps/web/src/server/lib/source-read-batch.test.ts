@@ -16,8 +16,10 @@ it("profiles a read-only SELECT batch as one round trip while retaining each sta
 	expect(result.map((row) => row.results)).toEqual([[{ value: 1 }], [{ value: 2 }]]);
 	expect(profile.queries).toHaveLength(2);
 	expect(profile.trips).toHaveLength(1);
-	expect(() => profile.raw.prepare("DELETE FROM snapshots").run()).toThrow();
-	await expect(profile.raw.batch([profile.raw.prepare("DELETE FROM snapshots")])).rejects.toThrow();
+	expect(() => profile.raw.prepare("DELETE FROM refresh_snapshots").run()).toThrow();
+	await expect(
+		profile.raw.batch([profile.raw.prepare("DELETE FROM refresh_snapshots")]),
+	).rejects.toThrow();
 });
 
 it("reads the complete source index with one reader D1 round trip and seven read-only statements", async () => {
@@ -61,27 +63,16 @@ it("rejects malformed filters without a trip and incomplete batch responses with
 	await expect(profile.raw.batch([raw.prepare("SELECT 1")])).rejects.toThrow("owned statements");
 });
 
-it("never indexes an orphan publication second page and uses the root run ID for legacy second-page refs", async () => {
+it("ignores orphan canonical publication pages and retired heads", async () => {
 	const fixture = await sourcesFixture();
+	await fixture.raw.prepare("DELETE FROM refresh_publications").run();
+	await fixture.raw.prepare("DELETE FROM refresh_snapshots WHERE kind='factory'").run();
 	const publication = factoryFixture();
-	const repo = publication.repos[0];
-	if (!repo) throw new Error("missing fixture repository");
-	repo.name = fixture.names[0] ?? "";
-	publication.runId = "root-version";
-	await fixture.save("factory#2", { ...publication, repos: [repo], runId: "tail-version" });
+	await fixture.save("factory#2", publication);
 	await fixture.raw
-		.prepare("UPDATE factory_state SET published_id=NULL WHERE account_id=?")
+		.prepare("INSERT INTO factory_state(account_id,published_id,next_at) VALUES(?,'retired','t')")
 		.bind(fixture.account)
 		.run();
-	let result = await readSources(createDb(fixture.raw), fixture.account, {});
+	const result = await readSources(createDb(fixture.raw), fixture.account, {});
 	expect(result.sources.some((source) => source.resource.includes("factory"))).toBe(false);
-	await fixture.save("factory", { ...publication, repos: [] });
-	await fixture.save(`factory:${repo.name}:commits`, { runId: publication.runId, items: [] });
-	result = await readSources(createDb(fixture.raw), fixture.account, {});
-	expect(
-		result.sources.find((source) => source.resource === `factory:${repo.name}:commits`),
-	).toMatchObject({
-		version: "root-version",
-		contentVersion: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
-	});
 });

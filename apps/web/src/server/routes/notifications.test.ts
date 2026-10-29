@@ -4,7 +4,6 @@ import type { Env } from "../env";
 import { createApp } from "../index";
 import { createDb } from "../lib/db/d1";
 import { readSnapshot, replaceSnapshotStmts } from "../lib/db/snapshots";
-import { openSqliteD1 } from "../lib/db/sqlite-d1";
 import { MAX_FETCHES } from "../lib/github-client";
 import { encryptToken, parseKeyBytes } from "../lib/token-crypto";
 
@@ -12,7 +11,7 @@ const PAT = `ghp_${"A".repeat(36)}`;
 
 function env(): Env {
 	return {
-		DB: openSqliteD1(true),
+		DB: sqliteFixture(),
 		ASSETS: { fetch: async () => new Response("x") } as unknown as Fetcher,
 		TOKEN_ENCRYPTION_KEY_CURRENT: "1",
 		TOKEN_ENCRYPTION_KEY_V1: "0".repeat(64),
@@ -129,7 +128,9 @@ describe("scoped notification write-through", () => {
 		expect(Date.parse(account?.last_used_at ?? "")).toBeGreaterThan(Date.parse(collectedAt));
 		expect(
 			await fixture.db
-				.prepare("SELECT fetched_at FROM snapshots WHERE account_id=? AND kind='notifications'")
+				.prepare(
+					"SELECT fetched_at FROM refresh_snapshots WHERE account_id=? AND kind='notifications'",
+				)
 				.bind(scopedAccount)
 				.first(),
 		).toEqual({ fetched_at: collectedAt });

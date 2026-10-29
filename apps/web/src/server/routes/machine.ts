@@ -32,13 +32,8 @@ import { snapshotScope } from "../lib/snapshot-scope";
 import { SourceTiming } from "../lib/source-timing";
 import { timedJson } from "../lib/timed-json";
 import { activityEtag } from "./activity";
-import {
-	getMachineLatestRun,
-	getMachineSettings,
-	getMachineStars,
-	machineRuns,
-	machineSetting,
-} from "./machine-settings";
+import { getMachineSettings, getMachineStars, machineSetting } from "./machine-settings";
+import { machineRefresh } from "./refresh";
 import { machineRepoAgentState } from "./repo-agent-state";
 import { machineRepoMeta } from "./repo-meta";
 import { latestReport } from "./report-latest";
@@ -223,10 +218,8 @@ export function machineApi() {
 			),
 	);
 	app.all("/accounts/:account/statistics/:owner/:name", machineSetting);
-	app.all("/accounts/:account/schedules/:kind", machineSetting);
-	app.all("/accounts/:account/refresh-runs", machineRuns);
-	app.all("/accounts/:account/refresh-runs/latest", getMachineLatestRun);
-	app.all("/accounts/:account/refresh-runs/:id/control", machineRuns);
+	app.all("/accounts/:account/refresh-runs", machineRefresh);
+	app.all("/accounts/:account/refresh-runs/:id", machineRefresh);
 	app.get("/accounts/:account/factory/repos/:owner/:name/:stream", async (c) => {
 		assertMachineQuery(c.req.query());
 		return timedJson(

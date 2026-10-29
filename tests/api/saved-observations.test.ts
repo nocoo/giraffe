@@ -10,6 +10,7 @@ import type { SnapshotFreshness } from "../../apps/web/src/lib/snapshot-freshnes
 import { savedContentMeta } from "../../apps/web/src/server/lib/content-version";
 import { executeD1FixtureSync } from "../fixtures/d1";
 import { factoryFixture } from "../fixtures/factory-snapshot";
+import { publicationSql, savedSnapshotSql } from "./saved-fixture";
 
 const base = process.env.GIRAFFE_E2E ?? "http://127.0.0.1:17045";
 const account = "batch1aaaaaaaaaaaaaaa";
@@ -77,16 +78,21 @@ async function snapshot(
 ) {
 	const payload = { fetched_at: at, truncated: false, ...data };
 	const metadata = await savedContentMeta(kind, payload, window);
-	return `INSERT INTO snapshots(account_id,kind,payload,fetched_at,content_meta) VALUES(${quote(account)},${quote(kind)},${quote(JSON.stringify(payload))},${quote(at)},${quote(metadata)});`;
+	return savedSnapshotSql(account, kind, payload, at, metadata);
 }
 
 function restoreSnapshots(rows: Record<string, unknown>[]) {
 	assertMarker();
 	sql(
 		rows
-			.map(
-				(row) =>
-					`INSERT OR REPLACE INTO snapshots(account_id,kind,payload,fetched_at,content_meta) VALUES(${quote(account)},${quote(String(row.kind))},${quote(String(row.payload))},${quote(String(row.fetched_at))},${typeof row.content_meta === "string" ? quote(row.content_meta) : "NULL"});`,
+			.map((row) =>
+				savedSnapshotSql(
+					account,
+					String(row.kind),
+					JSON.parse(String(row.payload)) as Record<string, unknown>,
+					String(row.fetched_at),
+					typeof row.content_meta === "string" ? row.content_meta : null,
+				),
 			)
 			.join(""),
 	);
@@ -139,7 +145,7 @@ it("exposes matching content versions on saved account and repository observatio
 
 it("versions legacy account composites without changing full versions or filling metadata on GET", async () => {
 	assertMarker();
-	const query = `SELECT kind,payload,fetched_at,content_meta FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`;
+	const query = `SELECT kind,payload,fetched_at,content_meta FROM refresh_snapshots WHERE account_id=${quote(account)} ORDER BY kind`;
 	const rows = sql(query)[0]?.results;
 	if (!rows?.length) throw new Error("saved fixtures missing");
 	const paths = [
@@ -161,7 +167,9 @@ it("versions legacy account composites without changing full versions or filling
 		expect(observation.contentVersion).toMatch(/^sha256:[0-9a-f]{64}$/);
 	try {
 		assertMarker();
-		sql(`UPDATE snapshots SET content_meta=NULL WHERE account_id=${quote(account)};`);
+		sql(
+			`UPDATE refresh_snapshots SET content_meta=NULL WHERE account_id=${quote(account)}; UPDATE refresh_resources SET content_meta=NULL WHERE account_id=${quote(account)};`,
+		);
 		const legacyRows = sql(query)[0]?.results;
 		const index = (await (await machine("sources")).json()) as {
 			sources: { resource: string; version: string; contentVersion: string | null }[];
@@ -247,6 +255,7 @@ beforeAll(async () => {
 	publication.account_id = account;
 	publication.repos = [names[0] as string, removed].map((name) => ({
 		...repo,
+		id: name === names[0] ? repo.id : `R_${name}`,
 		name,
 		dependencies: [
 			...repo.dependencies,
@@ -512,7 +521,7 @@ it("applies last-write-wins to browser and machine stars over local HTTP", async
 it("excludes removed repositories from saved account observations without deleting history", async () => {
 	const countBefore = await (await fetch("http://127.0.0.1:17046/_count")).text();
 	const before = sql(
-		`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
+		`SELECT kind,payload FROM refresh_snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
 	).map((statement) => statement.results);
 	for (const path of ["repos", "issues", "prs", "ci", "factory", "sources"]) {
 		const data = await (await machine(path)).json();
@@ -565,9 +574,9 @@ it("excludes removed repositories from saved account observations without deleti
 		],
 	});
 	expect(
-		sql(`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`).map(
-			(statement) => statement.results,
-		),
+		sql(
+			`SELECT kind,payload FROM refresh_snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
+		).map((statement) => statement.results),
 	).toEqual(before);
 	expect(await (await fetch("http://127.0.0.1:17046/_count")).text()).toBe(countBefore);
 });
@@ -595,7 +604,7 @@ it("includes baseline and missing repositories in all and starred freshness", as
 
 it("exposes the saved factory stream window without changing collection state", async () => {
 	const before = sql(
-		`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
+		`SELECT kind,payload FROM refresh_snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
 	).map((statement) => statement.results);
 	const countBefore = await (await fetch("http://127.0.0.1:17046/_count")).text();
 	const result = await (await machine("factory/repos/nocoo/recovered/commits")).json();
@@ -607,9 +616,9 @@ it("exposes the saved factory stream window without changing collection state", 
 		},
 	});
 	expect(
-		sql(`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`).map(
-			(statement) => statement.results,
-		),
+		sql(
+			`SELECT kind,payload FROM refresh_snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
+		).map((statement) => statement.results),
 	).toEqual(before);
 	expect(await (await fetch("http://127.0.0.1:17046/_count")).text()).toBe(countBefore);
 });
@@ -618,9 +627,11 @@ it("keeps retained stream source indexes and immutable HTTP reads consistent wit
 	assertMarker();
 	const oldRun = "saved-observations-retained-old";
 	const newRun = "saved-observations-retained-new";
-	const kind = `factory:v:${newRun}`;
-	const stateQuery = `SELECT * FROM factory_state WHERE account_id=${quote(account)}`;
-	const originalState = sql(stateQuery)[0]?.results ?? [];
+	const kind = "factory";
+	const stateQuery = `SELECT * FROM refresh_publications WHERE account_id=${quote(account)}`;
+	const originalSnapshots =
+		sql(`SELECT * FROM refresh_snapshots WHERE account_id=${quote(account)} ORDER BY kind`)[0]
+			?.results ?? [];
 	const publication = factoryFixture();
 	const repo = publication.repos[0];
 	if (!repo) throw new Error("factory fixture missing");
@@ -683,36 +694,28 @@ it("keeps retained stream source indexes and immutable HTTP reads consistent wit
 	const readState = () =>
 		sql(
 			[
-				`SELECT * FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind;`,
+				`SELECT * FROM refresh_snapshots WHERE account_id=${quote(account)} ORDER BY kind;`,
 				`${stateQuery};`,
-				`SELECT * FROM factory_runs WHERE account_id=${quote(account)} ORDER BY id;`,
-				`SELECT f.* FROM factory_resources f JOIN factory_runs r ON r.id=f.run_id WHERE r.account_id=${quote(account)} ORDER BY f.run_id,f.repo,f.stream;`,
+				`SELECT * FROM refresh_resources WHERE account_id=${quote(account)} ORDER BY repo_id,stream;`,
 				`SELECT * FROM api_tokens WHERE account_id=${quote(account)} ORDER BY id;`,
 			].join("\n"),
 		).map((statement) => statement.results);
 	const before = readState();
 	try {
 		const statements = [await snapshot(kind, { ...publication })];
-		for (const id of [oldRun, newRun])
-			statements.push(
-				`INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES(${quote(id)},${quote(account)},${quote(id)},'partial','{}',${quote(latest)},${quote(latest)},${quote(latest)});`,
-			);
 		for (const [stream, data, window] of [
-			["retained:dependencies", dependencies, oldWindow],
+			["dependencies", dependencies, oldWindow],
 			["commits", commits, newWindow],
 		] as const) {
 			const metadata = await savedContentMeta(
-				`factory:${repo.name}:${stream === "retained:dependencies" ? "dependencies" : stream}`,
+				`factory:${repo.name}:${stream}`,
 				{ ...data },
 				window,
 			);
 			statements.push(
-				`INSERT INTO factory_resources(run_id,repo,stream,payload,content_meta) VALUES(${quote(newRun)},${quote(repo.name)},${quote(stream)},${quote(JSON.stringify(data))},${quote(metadata)});`,
+				savedSnapshotSql(account, `factory:${repo.name}:${stream}`, { ...data }, latest, metadata),
 			);
 		}
-		statements.push(
-			`INSERT INTO factory_state(account_id,published_id,next_at) VALUES(${quote(account)},${quote(newRun)},${quote(latest)}) ON CONFLICT(account_id) DO UPDATE SET published_id=excluded.published_id;`,
-		);
 		sql(statements.join("\n"));
 		const seededState = readState();
 		for (let read = 0; read < 2; read++) {
@@ -754,26 +757,14 @@ it("keeps retained stream source indexes and immutable HTTP reads consistent wit
 		}
 	} finally {
 		assertMarker();
-		sql(
-			[
-				`DELETE FROM snapshots WHERE account_id=${quote(account)} AND kind=${quote(kind)};`,
-				`DELETE FROM factory_runs WHERE id IN (${quote(oldRun)},${quote(newRun)});`,
-				`DELETE FROM factory_state WHERE account_id=${quote(account)};`,
-				...originalState.map(
-					(row) =>
-						`INSERT INTO factory_state(${Object.keys(row).join(",")}) VALUES(${Object.values(row)
-							.map((value) => (value === null ? "NULL" : quote(String(value))))
-							.join(",")});`,
-				),
-			].join("\n"),
-		);
+		restoreSnapshots(originalSnapshots);
 	}
 	expect(readState()).toEqual(before);
 });
 
 it("normalizes saved dependency unknowns and separates root and workspace identities over HTTP", async () => {
 	const before = sql(
-		`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
+		`SELECT kind,payload FROM refresh_snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
 	).map((statement) => statement.results);
 	const stream = (await (await machine("factory/repos/nocoo/recovered/dependencies")).json()) as {
 		data: { items: { id: string }[] };
@@ -808,15 +799,15 @@ it("normalizes saved dependency unknowns and separates root and workspace identi
 		],
 	});
 	expect(
-		sql(`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`).map(
-			(statement) => statement.results,
-		),
+		sql(
+			`SELECT kind,payload FROM refresh_snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
+		).map((statement) => statement.results),
 	).toEqual(before);
 });
 
 it("deduplicates account dependency summaries over HTTP without stream reads or writes", async () => {
 	const before = sql(
-		`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
+		`SELECT kind,payload FROM refresh_snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
 	)[0]?.results;
 	const countBefore = await (await fetch("http://127.0.0.1:17046/_count")).text();
 	for (const scope of ["all", "starred"]) {
@@ -843,22 +834,23 @@ it("deduplicates account dependency summaries over HTTP without stream reads or 
 		}
 	}
 	expect(
-		sql(`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`)[0]
-			?.results,
+		sql(
+			`SELECT kind,payload FROM refresh_snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
+		)[0]?.results,
 	).toEqual(before);
 	expect(await (await fetch("http://127.0.0.1:17046/_count")).text()).toBe(countBefore);
 });
 
-it("serves pre-observation windows and explains missing or replaced legacy streams over HTTP", async () => {
+it("serves saved windows and never falls back to legacy rows for missing or replaced canonical streams", async () => {
 	assertMarker();
 	const rows = sql(
-		`SELECT kind,payload,fetched_at,content_meta FROM snapshots WHERE account_id=${quote(account)} AND kind IN ('factory','factory:nocoo/recovered:commits') ORDER BY kind`,
+		`SELECT kind,payload,fetched_at,content_meta FROM refresh_snapshots WHERE account_id=${quote(account)} AND kind IN ('factory','factory:nocoo/recovered:commits') ORDER BY kind`,
 	)[0]?.results;
-	if (rows?.length !== 2) throw new Error("legacy fixture missing");
+	if (rows?.length !== 2) throw new Error("saved fixture missing");
 	const countBefore = await (await fetch("http://127.0.0.1:17046/_count")).text();
 	try {
 		sql(
-			`UPDATE snapshots SET payload=json_remove(payload,'$.repos[0].observation') WHERE account_id=${quote(account)} AND kind='factory';`,
+			`UPDATE refresh_snapshots SET payload=json_remove(payload,'$.repos[0].observation') WHERE account_id=${quote(account)} AND kind='factory'; ${publicationSql(account)} INSERT INTO snapshots(account_id,kind,payload,fetched_at,content_meta) SELECT account_id,kind,payload,fetched_at,content_meta FROM refresh_snapshots WHERE account_id=${quote(account)} AND kind='factory:nocoo/recovered:commits';`,
 		);
 		const path = "factory/repos/nocoo/recovered/commits";
 		expect(await (await machine(path)).json()).toMatchObject({
@@ -867,33 +859,34 @@ it("serves pre-observation windows and explains missing or replaced legacy strea
 		});
 		for (const [command, message] of [
 			[
-				"UPDATE snapshots SET payload=json_set(payload,'$.runId','another-run')",
+				"UPDATE refresh_resources SET payload=json_set(payload,'$.runId','another-run')",
 				"immutable source version mismatch; refresh this repository",
 			],
-			["DELETE FROM snapshots", "immutable source missing; refresh this repository"],
+			["DELETE FROM refresh_resources", "immutable source missing; refresh this repository"],
 		]) {
-			sql(
-				`${command} WHERE account_id=${quote(account)} AND kind='factory:nocoo/recovered:commits';`,
-			);
+			sql(`${command} WHERE account_id=${quote(account)} AND stream='commits';`);
 			const before = sql(
-				`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
+				`SELECT kind,payload FROM refresh_snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
 			)[0]?.results;
 			expect(await (await machine(path, 409)).json()).toMatchObject({
 				error: { code: "snapshot_missing", message },
 			});
 			expect(
 				sql(
-					`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
+					`SELECT kind,payload FROM refresh_snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
 				)[0]?.results,
 			).toEqual(before);
 		}
 		expect(await (await fetch("http://127.0.0.1:17046/_count")).text()).toBe(countBefore);
 	} finally {
+		sql(
+			`DELETE FROM snapshots WHERE account_id=${quote(account)} AND kind='factory:nocoo/recovered:commits';`,
+		);
 		restoreSnapshots(rows);
 	}
 });
 
-it("reads the latest timestamped catalog rate and hides an expired newest observation without writes", async () => {
+it("reads only the canonical publication rate and hides expired or untimestamped observations without writes", async () => {
 	const countBefore = await (await fetch("http://127.0.0.1:17046/_count")).text();
 	assertMarker();
 	const observedAt = new Date(Date.now() - 60_000).toISOString();
@@ -910,14 +903,21 @@ it("reads the latest timestamped catalog rate and hides an expired newest observ
 		observedAt: new Date(Date.now() - 30_000).toISOString(),
 	};
 	sql(
-		`INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES('batch3-rate',${quote(account)},'batch3-rate','running',${quote(JSON.stringify({ mode: "catalog", checkpoint: { rate: fresh } }))},'t','t','2999-01-01');`,
+		`INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES('batch3-rate',${quote(account)},'batch3-rate','running',${quote(JSON.stringify({ mode: "catalog", checkpoint: { rate: stale } }))},'t','t','2999-01-01');`,
 	);
+	const original = sql(
+		`SELECT payload FROM refresh_snapshots WHERE account_id=${quote(account)} AND kind='factory'`,
+	)[0]?.results[0]?.payload;
+	if (typeof original !== "string") throw new Error("saved publication missing");
 	try {
+		sql(
+			`UPDATE refresh_snapshots SET payload=json_set(payload,'$.rate',json(${quote(JSON.stringify(fresh))})) WHERE account_id=${quote(account)} AND kind='factory'; ${publicationSql(account)}`,
+		);
 		const before = sql(`SELECT payload FROM factory_runs WHERE id='batch3-rate'`).map(
 			(statement) => statement.results,
 		);
 		const snapshots = sql(
-			`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
+			`SELECT kind,payload FROM refresh_snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
 		).map((statement) => statement.results);
 		expect(await (await machine("factory")).json()).toMatchObject({ data: { rate: fresh } });
 		expect(await (await browser("factory")).json()).toMatchObject({ rate: fresh });
@@ -928,27 +928,24 @@ it("reads the latest timestamped catalog rate and hides an expired newest observ
 		).toEqual(before);
 		expect(
 			sql(
-				`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
+				`SELECT kind,payload FROM refresh_snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
 			).map((statement) => statement.results),
 		).toEqual(snapshots);
 		sql(
-			`UPDATE snapshots SET payload=json_set(payload,'$.rate',json(${quote(JSON.stringify(fresh))})) WHERE account_id=${quote(account)} AND kind='factory'; UPDATE factory_runs SET payload=json_set(payload,'$.checkpoint.rate',json(${quote(JSON.stringify(stale))})) WHERE id='batch3-rate';`,
+			`UPDATE refresh_snapshots SET payload=json_set(payload,'$.rate',json(${quote(JSON.stringify(stale))})) WHERE account_id=${quote(account)} AND kind='factory'; ${publicationSql(account)}`,
 		);
 		expect(await (await machine("factory")).json()).toMatchObject({ data: { rate: null } });
 		expect(await (await browser("factory")).json()).toMatchObject({ rate: null });
 		sql(
-			`UPDATE factory_runs SET payload=json_set(payload,'$.checkpoint.rate',json(${quote(JSON.stringify({ ...stale, resetAt: fresh.resetAt, observedAt: null }))})) WHERE id='batch3-rate'; UPDATE snapshots SET payload=json_remove(payload,'$.rate.observedAt') WHERE account_id=${quote(account)} AND kind='factory';`,
+			`UPDATE refresh_snapshots SET payload=json_set(payload,'$.rate',json(${quote(JSON.stringify({ ...fresh, observedAt: null }))})) WHERE account_id=${quote(account)} AND kind='factory'; ${publicationSql(account)}`,
 		);
 		expect(await (await machine("factory")).json()).toMatchObject({ data: { rate: null } });
 		expect(await (await fetch("http://127.0.0.1:17046/_count")).text()).toBe(countBefore);
-		const original = snapshots[0]?.find((row) => row.kind === "factory")?.payload;
-		if (typeof original !== "string") throw new Error("fixture");
-		sql(
-			`UPDATE snapshots SET payload=${quote(original)} WHERE account_id=${quote(account)} AND kind='factory';`,
-		);
 	} finally {
 		assertMarker();
-		sql("DELETE FROM factory_runs WHERE id='batch3-rate';");
+		sql(
+			`DELETE FROM factory_runs WHERE id='batch3-rate'; UPDATE refresh_snapshots SET payload=${quote(original)} WHERE account_id=${quote(account)} AND kind='factory'; ${publicationSql(account)}`,
+		);
 	}
 });
 
@@ -1013,9 +1010,9 @@ it("keeps latest-any source versions distinct from latest-complete multipage inb
 		"repo:nocoo/baseline:issues",
 	];
 	const before = sql(
-		`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
+		`SELECT kind,payload FROM refresh_snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
 	).map((statement) => statement.results);
-	const cleanup = `DELETE FROM snapshots WHERE account_id=${quote(account)} AND kind IN (${kinds.map(quote).join(",")});`;
+	const cleanup = `DELETE FROM refresh_snapshots WHERE account_id=${quote(account)} AND kind IN (${kinds.map(quote).join(",")});`;
 	try {
 		const metadata = await savedContentMeta(kinds[0] as string, {
 			fetched_at: catalogAt,
@@ -1029,7 +1026,7 @@ it("keeps latest-any source versions distinct from latest-complete multipage inb
 					snapshot(kinds[1] as string, { issues: [{ number: 202 }] }, catalogAt),
 					snapshot(kinds[2] as string, { issues: [{ number: 203 }], unavailable: true }),
 				])),
-				`UPDATE snapshots SET content_meta=${quote(metadata)} WHERE account_id=${quote(account)} AND kind IN (${quote(kinds[0] as string)},${quote(kinds[1] as string)});`,
+				`UPDATE refresh_snapshots SET content_meta=${quote(metadata)} WHERE account_id=${quote(account)} AND kind IN (${quote(kinds[0] as string)},${quote(kinds[1] as string)});`,
 			].join("\n"),
 		);
 		const index = (await (await machine("sources?repository=NOCOO%2FBASELINE")).json()) as {
@@ -1063,9 +1060,9 @@ it("keeps latest-any source versions distinct from latest-complete multipage inb
 		sql(cleanup);
 	}
 	expect(
-		sql(`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`).map(
-			(statement) => statement.results,
-		),
+		sql(
+			`SELECT kind,payload FROM refresh_snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
+		).map((statement) => statement.results),
 	).toEqual(before);
 });
 
@@ -1077,7 +1074,7 @@ function conditionalSources(tag: string, path = "sources", token: string | null 
 
 it("revalidates private sources over HTTP with response-derived tags and no GET writes", async () => {
 	const before = sql(
-		`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
+		`SELECT kind,payload FROM refresh_snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
 	).map((statement) => statement.results);
 	const tokens = sql(`SELECT * FROM api_tokens WHERE account_id=${quote(account)} ORDER BY id`).map(
 		(statement) => statement.results,
@@ -1107,13 +1104,13 @@ it("revalidates private sources over HTTP with response-derived tags and no GET 
 	expect(since.status).toBe(200);
 	expect(since.headers.get("etag")).not.toBe(tag);
 	const original = sql(
-		`SELECT payload FROM snapshots WHERE account_id=${quote(account)} AND kind='factory'`,
+		`SELECT payload FROM refresh_snapshots WHERE account_id=${quote(account)} AND kind='factory'`,
 	)[0]?.results[0]?.payload;
 	if (typeof original !== "string") throw new Error("saved publication missing");
 	try {
 		assertMarker();
 		sql(
-			`UPDATE snapshots SET payload=json_set(payload,'$.repos[0].coverage.commits.observed',9999) WHERE account_id=${quote(account)} AND kind='factory';`,
+			`UPDATE refresh_snapshots SET payload=json_set(payload,'$.repos[0].coverage.commits.observed',9999) WHERE account_id=${quote(account)} AND kind='factory'; ${publicationSql(account)}`,
 		);
 		const metadataChanged = await conditionalSources(tag);
 		expect(metadataChanged.status).toBe(200);
@@ -1121,13 +1118,13 @@ it("revalidates private sources over HTTP with response-derived tags and no GET 
 	} finally {
 		assertMarker();
 		sql(
-			`UPDATE snapshots SET payload=${quote(original)} WHERE account_id=${quote(account)} AND kind='factory';`,
+			`UPDATE refresh_snapshots SET payload=${quote(original)} WHERE account_id=${quote(account)} AND kind='factory'; ${publicationSql(account)}`,
 		);
 	}
 	expect(
-		sql(`SELECT kind,payload FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind`).map(
-			(statement) => statement.results,
-		),
+		sql(
+			`SELECT kind,payload FROM refresh_snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
+		).map((statement) => statement.results),
 	).toEqual(before);
 	expect(
 		sql(`SELECT * FROM api_tokens WHERE account_id=${quote(account)} ORDER BY id`).map(

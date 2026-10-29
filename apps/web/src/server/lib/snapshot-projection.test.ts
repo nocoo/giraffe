@@ -2,10 +2,11 @@ import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { expect, it } from "vitest";
 import { factoryFixture } from "../../../../../tests/fixtures/factory-snapshot";
+import { savedObservationStmts as replaceSnapshotStmts } from "../../../../../tests/fixtures/refresh";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import { storedContent } from "./content-version";
 import { createDb } from "./db/d1";
-import { readSnapshot, replaceSnapshotStmts } from "./db/snapshots";
+import { readSnapshot } from "./db/snapshots";
 import { readObservation } from "./machine-observations";
 import {
 	policyFromSaved,
@@ -85,7 +86,7 @@ it.each([
 		expect(refreshed.fetched_at).not.toBe(second.fetched_at);
 		expect(storedContent(refreshed)?.hash).toBe(storedContent(second)?.hash);
 		await db
-			.prepare("UPDATE snapshots SET content_meta=NULL WHERE kind=?")
+			.prepare("UPDATE refresh_snapshots SET content_meta=NULL WHERE kind=?")
 			.bind(`repo:owner/app:${kind}`)
 			.run();
 		expect(storedContent(await project())?.hash).toMatch(/^sha256:[a-f0-9]{64}$/);
@@ -95,7 +96,8 @@ it.each([
 );
 
 it("keeps legacy and absent dependencies distinct and catalog flags in projected hashes", async () => {
-	const db = createDb(sqliteFixture());
+	const raw = sqliteFixture();
+	const db = createDb(raw);
 	await db
 		.prepare(
 			"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES('a','owner','fake','fake','t','t')",
@@ -106,17 +108,21 @@ it("keeps legacy and absent dependencies distinct and catalog flags in projected
 		resource: string,
 		data: Record<string, unknown>,
 		at = "2026-10-18T00:00:00Z",
-	) => db.batch(await replaceSnapshotStmts(db, "a", resource, data, at));
+	) => {
+		const writer = createDb(raw);
+		return writer.batch(await replaceSnapshotStmts(writer, "a", resource, data, at));
+	};
 	const project = async (kind: string) => {
-		const snapshot = await readSnapshot(db, "a", kind);
+		const reader = createDb(raw);
+		const snapshot = await readSnapshot(reader, "a", kind);
 		if (!snapshot) throw new Error("missing snapshot");
-		return projectSnapshot(db, "a", kind, snapshot, await repoPolicy(db, "a"));
+		return projectSnapshot(reader, "a", kind, snapshot, await repoPolicy(reader, "a"));
 	};
 	await save("issues", { issues: [] });
 	const absent = storedContent(await project("issues"))?.hash;
 	expect(absent).toMatch(/^sha256:[a-f0-9]{64}$/);
 	await save("repos", catalog);
-	await db.prepare("UPDATE snapshots SET content_meta=NULL WHERE kind='repos'").run();
+	await db.prepare("UPDATE refresh_snapshots SET content_meta=NULL WHERE kind='repos'").run();
 	expect(storedContent(await project("issues"))?.hash).toMatch(/^sha256:[a-f0-9]{64}$/);
 	await save("repos", catalog);
 	expect(storedContent(await project("issues"))?.hash).not.toBe(absent);
@@ -127,7 +133,7 @@ it("keeps legacy and absent dependencies distinct and catalog flags in projected
 	expect(storedContent(missing)?.hash).not.toBe(storedContent(covered)?.hash);
 	await save("issues", { issues: [] }, "2026-10-19T00:00:00Z");
 	expect(storedContent(await project("issues"))?.hash).toBe(storedContent(covered)?.hash);
-	await db.prepare("UPDATE snapshots SET content_meta=NULL WHERE kind='issues'").run();
+	await db.prepare("UPDATE refresh_snapshots SET content_meta=NULL WHERE kind='issues'").run();
 	expect(storedContent(await project("issues"))?.hash).toMatch(/^sha256:[a-f0-9]{64}$/);
 	const initial = await project("repos");
 	const initialJson = JSON.stringify(initial);
@@ -320,7 +326,7 @@ it.each(["pending", "complete", "unavailable"] as const)(
 			fetchedAt: snapshot.contribution.fetchedAt,
 		};
 		const before = structuredClone(snapshot);
-		const saved = await raw.prepare("SELECT * FROM snapshots ORDER BY kind").all();
+		const saved = await raw.prepare("SELECT * FROM refresh_snapshots ORDER BY kind").all();
 		{
 			const all = projectFactory(snapshot, await repoPolicy(db, account));
 			expect(all.contribution).toEqual(before.contribution);
@@ -339,7 +345,7 @@ it.each(["pending", "complete", "unavailable"] as const)(
 			expect(starred).not.toHaveProperty("contributionObservation");
 		}
 		expect(snapshot).toEqual(before);
-		expect(await raw.prepare("SELECT * FROM snapshots ORDER BY kind").all()).toEqual(saved);
+		expect(await raw.prepare("SELECT * FROM refresh_snapshots ORDER BY kind").all()).toEqual(saved);
 	},
 );
 
@@ -470,7 +476,7 @@ it("deduplicates legacy dependency summaries per repo in first-seen order withou
 	expect(publication).toEqual(before);
 });
 
-it.each(["factory", "factory:v:r1"])(
+it.each(["without-retired-head", "with-retired-head"])(
 	"normalizes %s summary reads without extra queries or stored changes",
 	async (kind) => {
 		const raw = sqliteFixture();
@@ -488,18 +494,20 @@ it.each(["factory", "factory:v:r1"])(
 		if (!repo) throw new Error("fixture");
 		const dependency = { name: "external", version: "^1", path: "package.json", url: "saved" };
 		repo.dependencies = [dependency, { ...dependency }];
-		await db.batch(await replaceSnapshotStmts(db, account, kind, publication, now));
-		if (kind !== "factory")
+		await db.batch(await replaceSnapshotStmts(db, account, "factory", publication, now));
+		if (kind === "with-retired-head")
 			await db
 				.prepare("INSERT INTO factory_state(account_id,published_id,next_at) VALUES(?,'r1','t')")
 				.bind(account)
 				.run();
-		const before = await raw.prepare("SELECT * FROM snapshots ORDER BY kind").all();
+		const before = await raw.prepare("SELECT * FROM refresh_snapshots ORDER BY kind").all();
 		const policy = await repoPolicy(db, account, { repos: [{ name_with_owner: repo.name }] });
 		const reader = createDb(raw);
 		const result = await readObservation(reader, account, "factory", "all", policy);
 		expect(result.data.repos).toMatchObject([{ dependencies: [dependency] }]);
-		expect(reader.statements).toBe(2);
-		expect(await raw.prepare("SELECT * FROM snapshots ORDER BY kind").all()).toEqual(before);
+		expect(reader.statements).toBe(1);
+		expect(await raw.prepare("SELECT * FROM refresh_snapshots ORDER BY kind").all()).toEqual(
+			before,
+		);
 	},
 );

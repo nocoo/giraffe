@@ -4,7 +4,6 @@ import { contentVersion } from "../content-version";
 import { insertAccountStmt } from "./accounts";
 import { createDb } from "./d1";
 import { readSnapshot, replaceSnapshotStmts } from "./snapshots";
-import { openSqliteD1 } from "./sqlite-d1";
 
 describe("snapshots store", () => {
 	it("persists one content hash for the retained pages without changing payloads", async () => {
@@ -24,7 +23,9 @@ describe("snapshots store", () => {
 		expect(saved.repos).toHaveLength(2);
 		expect(saved.truncated).toBe(true);
 		const rows = await db
-			.prepare("SELECT content_meta,payload FROM snapshots WHERE account_id='hash' ORDER BY kind")
+			.prepare(
+				"SELECT content_meta,payload FROM refresh_snapshots WHERE account_id='hash' ORDER BY kind",
+			)
 			.all<{ content_meta: string; payload: string }>();
 		expect(rows.results).toHaveLength(2);
 		for (const row of rows.results) {
@@ -36,7 +37,7 @@ describe("snapshots store", () => {
 		}
 		await db.batch(await replaceSnapshotStmts(db, "hash", "repos", payload, "second"));
 		const refreshed = await db
-			.prepare("SELECT content_meta FROM snapshots WHERE account_id='hash' ORDER BY kind")
+			.prepare("SELECT content_meta FROM refresh_snapshots WHERE account_id='hash' ORDER BY kind")
 			.all<{ content_meta: string }>();
 		expect(refreshed.results.map((row) => JSON.parse(row.content_meta).hash)).toEqual(
 			rows.results.map((row) => JSON.parse(row.content_meta).hash),
@@ -63,7 +64,7 @@ describe("snapshots store", () => {
 			),
 		);
 		const row = await db
-			.prepare("SELECT content_meta FROM snapshots WHERE account_id='hash'")
+			.prepare("SELECT content_meta FROM refresh_snapshots WHERE account_id='hash'")
 			.first<{ content_meta: string }>();
 		expect(JSON.parse(row?.content_meta ?? "null")).toMatchObject({
 			hash: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
@@ -72,7 +73,7 @@ describe("snapshots store", () => {
 	});
 
 	it("replaces pages in two statements and reads them back", async () => {
-		const db = createDb(openSqliteD1());
+		const db = createDb(sqliteFixture());
 		await db.batch([
 			insertAccountStmt(db, {
 				id: "1",

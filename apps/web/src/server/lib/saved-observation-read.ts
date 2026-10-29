@@ -78,7 +78,7 @@ export function accountReadPlan(
 	statements.push(
 		db
 			.prepare(
-				`SELECT * FROM catalog_repositories WHERE account_id=${accountIdSql(account)} ORDER BY repo,identity_key`,
+				`SELECT repo_id AS github_id,repo_id AS identity_key,repo,payload AS row_payload,fetched_at AS last_seen_at,NULL AS first_seen_at,NULL AS removed_at,NULL AS archived_changed_at,1 AS name_current FROM refresh_catalog WHERE account_id=${accountIdSql(account)} AND active=1 ORDER BY repo,repo_id`,
 			)
 			.bind(...accountBindings(account)),
 	);

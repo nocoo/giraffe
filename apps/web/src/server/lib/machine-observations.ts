@@ -124,7 +124,7 @@ async function readCiGroups(db: Db, account: string) {
 	// One statement for every repository keeps the Worker well inside the D1 statement cap.
 	const rows = await db
 		.prepare(
-			"SELECT kind, payload, fetched_at, content_meta FROM snapshots WHERE account_id=? AND kind LIKE 'repo:%' AND (kind LIKE '%:actions' OR kind LIKE '%:actions#2' OR kind LIKE '%:releases' OR kind LIKE '%:releases#2' OR kind LIKE '%:details' OR kind LIKE '%:details#2')",
+			"SELECT kind, payload, fetched_at, content_meta FROM refresh_snapshots WHERE account_id=? AND kind LIKE 'repo:%' AND (kind LIKE '%:actions' OR kind LIKE '%:actions#2' OR kind LIKE '%:releases' OR kind LIKE '%:releases#2' OR kind LIKE '%:details' OR kind LIKE '%:details#2')",
 		)
 		.bind(account)
 		.all<SnapshotPage & { fetched_at: string }>();

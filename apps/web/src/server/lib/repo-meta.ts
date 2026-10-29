@@ -25,9 +25,9 @@ type MetaRow = {
 	exclusion_reason_source: Source;
 };
 const TARGET =
-	"SELECT identity_key FROM catalog_repositories WHERE account_id=? AND repo=? COLLATE NOCASE AND (name_current=1 OR removed_at IS NOT NULL) ORDER BY CASE WHEN removed_at IS NULL THEN 0 ELSE 1 END,removed_at DESC,identity_key DESC LIMIT 1";
+	"SELECT repo_id FROM refresh_catalog WHERE account_id=? AND repo=? COLLATE NOCASE AND active=1";
 const COLUMNS =
-	"c.identity_key,c.repo,c.first_seen_at,c.removed_at,m.created_at,m.archived_at,m.category,m.exclusion_reason,m.updated_at,m.created_at_source,m.archived_at_source,m.category_source,m.exclusion_reason_source";
+	"c.repo_id AS identity_key,c.repo,NULL AS first_seen_at,NULL AS removed_at,m.created_at,m.archived_at,m.category,m.exclusion_reason,m.updated_at,m.created_at_source,m.archived_at_source,m.category_source,m.exclusion_reason_source";
 const FIELDS = ["created_at", "archived_at", "category", "exclusion_reason"] as const;
 
 function fields(row: MetaRow): RepoMetaFields {
@@ -58,7 +58,7 @@ function wire(account: string, row: MetaRow): RepoMeta {
 export async function readRepoMeta(db: Db, account: string, name: string): Promise<RepoMeta> {
 	const row = await db
 		.prepare(
-			`SELECT ${COLUMNS} FROM catalog_repositories c LEFT JOIN repo_meta m ON m.account_id=c.account_id AND m.identity_key=c.identity_key WHERE c.account_id=? AND c.identity_key=(${TARGET})`,
+			`SELECT ${COLUMNS} FROM refresh_catalog c LEFT JOIN repo_meta m ON m.account_id=c.account_id AND m.identity_key=c.repo_id WHERE c.account_id=? AND c.active=1 AND c.repo_id=(${TARGET})`,
 		)
 		.bind(account, account, name)
 		.first<MetaRow>();
@@ -84,7 +84,7 @@ export async function writeRepoMeta(
 	]);
 	const row = await db
 		.prepare(
-			`INSERT INTO repo_meta(account_id,identity_key,${columns.join(",")},updated_at) SELECT ?,identity_key,${columns.map(() => "?").join(",")},? FROM catalog_repositories WHERE account_id=? AND identity_key=(${TARGET}) ON CONFLICT(account_id,identity_key) DO UPDATE SET ${updates},updated_at=excluded.updated_at RETURNING *,(SELECT repo FROM catalog_repositories c WHERE c.account_id=repo_meta.account_id AND c.identity_key=repo_meta.identity_key) AS repo,(SELECT first_seen_at FROM catalog_repositories c WHERE c.account_id=repo_meta.account_id AND c.identity_key=repo_meta.identity_key) AS first_seen_at,(SELECT removed_at FROM catalog_repositories c WHERE c.account_id=repo_meta.account_id AND c.identity_key=repo_meta.identity_key) AS removed_at`,
+			`INSERT INTO repo_meta(account_id,identity_key,${columns.join(",")},updated_at) SELECT ?,repo_id,${columns.map(() => "?").join(",")},? FROM refresh_catalog WHERE account_id=? AND active=1 AND repo_id=(${TARGET}) ON CONFLICT(account_id,identity_key) DO UPDATE SET ${updates},updated_at=excluded.updated_at RETURNING *,(SELECT repo FROM refresh_catalog c WHERE c.account_id=repo_meta.account_id AND c.repo_id=repo_meta.identity_key AND c.active=1) AS repo,NULL AS first_seen_at,NULL AS removed_at`,
 		)
 		.bind(account, ...values, new Date().toISOString(), account, account, name)
 		.first<MetaRow>();
@@ -96,7 +96,7 @@ export async function enrichRepoMeta(db: Db, account: string, data: Record<strin
 	if (!repos.length) return { ...data, repos: [] as Record<string, unknown>[] };
 	const result = await db
 		.prepare(
-			`SELECT ${COLUMNS} FROM catalog_repositories c LEFT JOIN repo_meta m ON m.account_id=c.account_id AND m.identity_key=c.identity_key WHERE c.account_id=?`,
+			`SELECT ${COLUMNS} FROM refresh_catalog c LEFT JOIN repo_meta m ON m.account_id=c.account_id AND m.identity_key=c.repo_id WHERE c.account_id=? AND c.active=1`,
 		)
 		.bind(account)
 		.all<MetaRow>();

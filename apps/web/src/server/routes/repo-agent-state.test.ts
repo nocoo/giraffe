@@ -1,11 +1,11 @@
 import { expect, it, vi } from "vitest";
+import { savedObservationStmts as replaceSnapshotStmts } from "../../../../../tests/fixtures/refresh";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import type { ApiScope } from "../../lib/api-access";
 import type { Env } from "../env";
 import { createApp } from "../index";
 import { createApiToken } from "../lib/api-tokens";
 import { createDb } from "../lib/db/d1";
-import { replaceSnapshotStmts } from "../lib/db/snapshots";
 import { readSources } from "../lib/machine-sources";
 
 async function fixture(active = true) {
@@ -17,15 +17,15 @@ async function fixture(active = true) {
 		)
 		.bind(Number(active), at, at)
 		.run();
-	await raw
-		.prepare(
-			"INSERT INTO catalog_repositories(account_id,identity_key,github_id,repo,row_payload,first_seen_at,last_seen_at,is_archived,visibility,is_fork,first_seen_source) VALUES('a','R_app','R_app','owner/app','{\"name_with_owner\":\"owner/app\"}',?,?,0,'PUBLIC',0,'github_catalog')",
-		)
-		.bind(at, at)
-		.run();
 	const db = createDb(raw);
 	await db.batch(
-		await replaceSnapshotStmts(db, "a", "repos", { repos: [{ name_with_owner: "owner/app" }] }, at),
+		await replaceSnapshotStmts(
+			db,
+			"a",
+			"repos",
+			{ repos: [{ id: "R_app", name_with_owner: "owner/app" }] },
+			at,
+		),
 	);
 	const mint = (scopes: ApiScope[]) =>
 		createApiToken(createDb(raw), {
@@ -161,14 +161,11 @@ it("R5 machine PUT uses token identity, conditional revisions and first-write/up
 	expect((await s.call("GET", undefined, { "if-none-match": '"2"' })).status).toBe(200);
 });
 
-it("R5 unchanged revisions never hide catalog rename/removal behind a false 304", async () => {
+it("R5 unchanged revisions never hide current catalog renames or inactive identities behind a false 304", async () => {
 	const s = await fixture();
 	await s.call("PUT", { payload: { summary: "stable" } });
 	await s.raw
-		.prepare(
-			"UPDATE catalog_repositories SET repo='owner/renamed',removed_at=? WHERE identity_key='R_app'",
-		)
-		.bind("2026-10-23T00:00:00.000Z")
+		.prepare("UPDATE refresh_catalog SET repo='owner/renamed' WHERE repo_id='R_app'")
 		.run();
 	for (const browser of [true, false]) {
 		const response = await s.call(
@@ -183,11 +180,17 @@ it("R5 unchanged revisions never hide catalog rename/removal behind a false 304"
 		expect(response.headers.get("etag")).toBe('"1"');
 		expect(await response.json()).toMatchObject({
 			repo: "owner/renamed",
-			repo_removed: true,
+			repo_removed: false,
 			revision: 1,
 			payload: { summary: "stable" },
 		});
 	}
+	await s.raw.prepare("UPDATE refresh_catalog SET active=0 WHERE repo_id='R_app'").run();
+	for (const browser of [true, false])
+		expect(
+			(await s.call("GET", undefined, { "if-none-match": '"1"' }, browser, "a", "owner/renamed"))
+				.status,
+		).toBe(404);
 });
 
 it("R5 state scopes/account/Access boundaries reject unauthorized readers and keep browser writes forbidden", async () => {
@@ -263,10 +266,7 @@ it.each(["owner/agent", "agent/app"])(
 	"R5 fixed route prefixes prevent agent-scoped writes to %s",
 	async (name) => {
 		const s = await fixture();
-		await s.raw
-			.prepare("UPDATE catalog_repositories SET repo=? WHERE identity_key='R_app'")
-			.bind(name)
-			.run();
+		await s.raw.prepare("UPDATE refresh_catalog SET repo=? WHERE repo_id='R_app'").bind(name).run();
 		const agent = await s.mint(["agent:read", "agent:write"]);
 		for (const method of ["GET", "PUT"]) {
 			const response = await s.call(
@@ -358,21 +358,31 @@ it("R5 enriches both /repos responses without changing source versions, content 
 	expect(await readSources(createDb(s.raw), "a", {})).toEqual(sources);
 });
 
-it("R5 same-name removed identities with identical removal timestamps retain distinct /repos state", async () => {
+it("R5 excludes retired same-name identities from /repos and keeps current identity state distinct", async () => {
 	const s = await fixture();
 	const removed = "2026-10-23T00:00:00.000Z";
 	await s.call("PUT", { payload: { summary: "first identity", status: "ok" } });
 	await s.raw
 		.prepare(
-			"UPDATE catalog_repositories SET removed_at=?,row_payload=? WHERE identity_key='R_app'",
+			"INSERT INTO catalog_repositories(account_id,identity_key,github_id,repo,row_payload,removed_at,is_archived,visibility,is_fork,first_seen_source) VALUES('a','R_app','R_app','owner/app',?,?,0,'PUBLIC',0,'github_catalog')",
 		)
-		.bind(removed, JSON.stringify({ name_with_owner: "owner/app", description: "first" }))
+		.bind(JSON.stringify({ name_with_owner: "owner/app", description: "first" }), removed)
 		.run();
 	await s.raw
 		.prepare(
 			"INSERT INTO catalog_repositories(account_id,identity_key,github_id,repo,row_payload,is_archived,visibility,is_fork,first_seen_source) VALUES('a','R_second','R_second','owner/app','{\"name_with_owner\":\"owner/app\",\"description\":\"second\"}',0,'PUBLIC',0,'github_catalog')",
 		)
 		.run();
+	const db = createDb(s.raw);
+	await db.batch(
+		await replaceSnapshotStmts(
+			db,
+			"a",
+			"repos",
+			{ repos: [{ id: "R_second", name_with_owner: "owner/app", description: "second" }] },
+			removed,
+		),
+	);
 	await s.call("PUT", { payload: { summary: "second identity", status: "blocked" } });
 	await s.raw
 		.prepare("UPDATE catalog_repositories SET removed_at=? WHERE identity_key='R_second'")
@@ -390,22 +400,18 @@ it("R5 same-name removed identities with identical removal timestamps retain dis
 			data?: { repos: Record<string, unknown>[] };
 		};
 		const repos = browser ? result.repos : result.data?.repos;
-		expect(repos).toHaveLength(2);
-		expect(repos?.find((repo) => repo.description === "first")).toMatchObject({
-			agent_state: { summary: "first identity", status: "ok" },
-		});
+		expect(repos).toHaveLength(1);
+		expect(repos?.some((repo) => repo.description === "first")).toBe(false);
 		expect(repos?.find((repo) => repo.description === "second")).toMatchObject({
 			agent_state: { summary: "second identity", status: "blocked" },
 		});
 	}
 });
 
-it("R5 absent state retains renamed/removed catalog context with a zero concurrency ETag", async () => {
+it("R5 absent state follows current catalog rename with a zero concurrency ETag", async () => {
 	const s = await fixture();
 	await s.raw
-		.prepare(
-			"UPDATE catalog_repositories SET repo='owner/renamed',removed_at='2026-10-23T00:00:00.000Z' WHERE identity_key='R_app'",
-		)
+		.prepare("UPDATE refresh_catalog SET repo='owner/renamed' WHERE repo_id='R_app'")
 		.run();
 	for (const browser of [true, false]) {
 		const response = await s.call(
@@ -420,7 +426,7 @@ it("R5 absent state retains renamed/removed catalog context with a zero concurre
 		expect(response.headers.get("etag")).toBe('"0"');
 		expect(await response.json()).toMatchObject({
 			repo: "owner/renamed",
-			repo_removed: true,
+			repo_removed: false,
 			payload: null,
 			revision: null,
 		});

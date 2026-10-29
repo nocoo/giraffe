@@ -29,4 +29,12 @@ database_name = "giraffe-db"
 database_id = "02138e3b-9b18-48b3-95b3-fa8bccd8faa8"
 
 [triggers]
-crons = []
+crons = ["0 19 * * *"]
+
+[[durable_objects.bindings]]
+name = "REFRESH_RUNNER"
+class_name = "RefreshRunner"
+
+[[migrations]]
+tag = "v1-refresh"
+new_sqlite_classes = ["RefreshRunner"]

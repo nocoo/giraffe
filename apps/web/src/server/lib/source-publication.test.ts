@@ -1,6 +1,7 @@
 import { expect, it, vi } from "vitest";
 import { factoryFixture } from "../../../../../tests/fixtures/factory-snapshot";
 import { profileDb } from "../../../../../tests/fixtures/profile-db";
+import { syncSavedObservation } from "../../../../../tests/fixtures/refresh";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import { FACTORY_STREAMS } from "../../lib/factory-types";
 import { savedContentMeta } from "./content-version";
@@ -28,10 +29,11 @@ async function fixture() {
 		const data = { fetched_at: collected, truncated: false, ...fields };
 		await raw
 			.prepare(
-				"INSERT INTO snapshots(account_id,kind,payload,fetched_at,content_meta) VALUES(?,?,?,?,?) ON CONFLICT(account_id,kind) DO UPDATE SET payload=excluded.payload,fetched_at=excluded.fetched_at,content_meta=excluded.content_meta",
+				"INSERT INTO refresh_snapshots(account_id,kind,payload,fetched_at,content_meta) VALUES(?,?,?,?,?) ON CONFLICT(account_id,kind) DO UPDATE SET payload=excluded.payload,fetched_at=excluded.fetched_at,content_meta=excluded.content_meta",
 			)
 			.bind(account, kind, JSON.stringify(data), collected, await savedContentMeta(kind, data))
 			.run();
+		await syncSavedObservation(createDb(raw), account, kind, collected);
 	};
 	await save("repos", { repos: [{ name_with_owner: repository }], publication });
 	for (const [kind, fields] of [
@@ -63,7 +65,7 @@ async function fixture() {
 	repo.observation = observation;
 	for (const stream of FACTORY_STREAMS)
 		repo.coverage[stream] = { ...repo.coverage[stream], status: "complete", fetchedAt: collected };
-	await save("factory:v:R1", snapshot);
+	await save("factory", snapshot);
 	await raw
 		.prepare("INSERT INTO factory_state(account_id,published_id,next_at) VALUES(?,'R1',?)")
 		.bind(account, collected)
@@ -75,7 +77,7 @@ async function fixture() {
 		.bind(account, collected, collected, collected)
 		.run();
 	const stored = async () =>
-		(await raw.prepare("SELECT * FROM snapshots ORDER BY kind").all()).results;
+		(await raw.prepare("SELECT * FROM refresh_snapshots ORDER BY kind").all()).results;
 	const read = async (query: Record<string, string> = {}) => {
 		const profile = profileDb(raw);
 		const data = await readSources(createDb(profile.raw), account, query);
@@ -154,7 +156,7 @@ it("R9 retained R1 streams keep their persisted publication time under a newer p
 	s.snapshot.publication = { runId: "R2", publishedAt: later, mixed: true };
 	for (const stream of FACTORY_STREAMS)
 		s.repo.coverage[stream] = { ...s.repo.coverage[stream], retained: true };
-	await s.save("factory:v:R2", s.snapshot);
+	await s.save("factory", s.snapshot);
 	await s.raw
 		.prepare("UPDATE factory_state SET published_id='R2' WHERE account_id=?")
 		.bind(account)
@@ -188,7 +190,7 @@ it("R9 retained R1 streams keep their persisted publication time under a newer p
 it("R9 legacy observations without publication provenance keep their original observed time", async () => {
 	const s = await fixture();
 	delete s.repo.observation?.publishedAt;
-	await s.save("factory:v:R1", s.snapshot);
+	await s.save("factory", s.snapshot);
 	const { data } = await s.read();
 	for (const stream of FACTORY_STREAMS)
 		expect(

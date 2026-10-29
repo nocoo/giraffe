@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { savedObservationStmts as replaceSnapshotStmts } from "../../../../../tests/fixtures/refresh";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import type { Env } from "../env";
 import { createApp } from "../index";
 import { createDb } from "../lib/db/d1";
-import { readSnapshot, replaceSnapshotStmts } from "../lib/db/snapshots";
+import { readSnapshot } from "../lib/db/snapshots";
 
 function env(): Env {
 	return {
@@ -90,14 +91,16 @@ describe("scoped snapshot projections", () => {
 				[String(key)]: [{ name_with_owner: "OWNER/APP" }, { name_with_owner: "owner/removed" }],
 				truncated: true,
 			});
-			const before = await setup.bindings.DB.prepare("SELECT * FROM snapshots ORDER BY kind").all();
+			const before = await setup.bindings.DB.prepare(
+				"SELECT * FROM refresh_snapshots ORDER BY kind",
+			).all();
 			const body = await (await setup.request(`${kind}?scope=all`)).json();
 			expect(body).toMatchObject({
 				[String(key)]: [{ name_with_owner: "OWNER/APP" }],
 				freshness: { oldestAt: baselineAt, total: 5, missing: 4 },
 			});
 			expect(
-				await setup.bindings.DB.prepare("SELECT * FROM snapshots ORDER BY kind").all(),
+				await setup.bindings.DB.prepare("SELECT * FROM refresh_snapshots ORDER BY kind").all(),
 			).toEqual(before);
 		}
 	});
@@ -116,7 +119,9 @@ describe("scoped snapshot projections", () => {
 					source: "dependabot",
 				})),
 			});
-		const before = await setup.bindings.DB.prepare("SELECT * FROM snapshots ORDER BY kind").all();
+		const before = await setup.bindings.DB.prepare(
+			"SELECT * FROM refresh_snapshots ORDER BY kind",
+		).all();
 		const network = vi.fn();
 		vi.stubGlobal("fetch", network);
 		for (const [kind, key] of [
@@ -143,9 +148,9 @@ describe("scoped snapshot projections", () => {
 				{ name_with_owner: "owner/fork", starred: true, statistics_enabled: true },
 			],
 		});
-		expect(await setup.bindings.DB.prepare("SELECT * FROM snapshots ORDER BY kind").all()).toEqual(
-			before,
-		);
+		expect(
+			await setup.bindings.DB.prepare("SELECT * FROM refresh_snapshots ORDER BY kind").all(),
+		).toEqual(before);
 		expect(network).not.toHaveBeenCalled();
 	});
 
@@ -312,7 +317,7 @@ describe("scoped snapshot projections", () => {
 	it("serves empty projected lists without saved collections when no repositories are starred", async () => {
 		const setup = await scopedSetup();
 		await setup.db.prepare("DELETE FROM repo_stars WHERE account_id='active'").run();
-		await setup.db.prepare("DELETE FROM snapshots WHERE account_id='active'").run();
+		await setup.db.prepare("DELETE FROM refresh_snapshots WHERE account_id='active'").run();
 		for (const [kind, key] of [
 			["repos", "repos"],
 			["issues", "issues"],
@@ -339,12 +344,14 @@ describe("scoped snapshot projections", () => {
 			checkedAt,
 		);
 		await setup.save("issues", { issues: [] }, recentAt);
-		const before = await setup.bindings.DB.prepare("SELECT * FROM snapshots ORDER BY kind").all();
+		const before = await setup.bindings.DB.prepare(
+			"SELECT * FROM refresh_snapshots ORDER BY kind",
+		).all();
 		for (const suffix of ["", "?scope=all", "?scope=starred"])
 			expect((await setup.request(`insights${suffix}`)).status).toBe(409);
-		expect(await setup.bindings.DB.prepare("SELECT * FROM snapshots ORDER BY kind").all()).toEqual(
-			before,
-		);
+		expect(
+			await setup.bindings.DB.prepare("SELECT * FROM refresh_snapshots ORDER BY kind").all(),
+		).toEqual(before);
 	});
 
 	it("retains collection order and excludes another account's stars", async () => {

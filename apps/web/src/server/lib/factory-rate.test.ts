@@ -55,8 +55,13 @@ it("rejects invalid, expired and undated observations without falling back to ol
 		.bind(JSON.stringify({ checkpoint: { rate: stale } }))
 		.run();
 	const before = db.statements;
-	expect(await readFactoryRate(db, "a", rate, now)).toBeNull();
+	expect(await readFactoryRate(db, "a", rate, now)).toEqual(rate);
 	expect(db.statements - before).toBe(1);
+	await db
+		.prepare("INSERT INTO refresh_publications(account_id,payload,published_at) VALUES('a',?,'t')")
+		.bind(JSON.stringify({ rate: stale }))
+		.run();
+	expect(await readFactoryRate(db, "a", rate, now)).toBeNull();
 	await db
 		.prepare(
 			"INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES('b','other','fake','fake','t','t')",

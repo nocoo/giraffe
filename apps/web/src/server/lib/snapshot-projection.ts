@@ -32,7 +32,7 @@ export async function repoPolicy(
 	const owner = await getAccount(db, account);
 	const history = await db
 		.prepare(
-			"SELECT * FROM catalog_repositories WHERE account_id=? AND removed_at IS NULL AND name_current=1 ORDER BY repo,identity_key",
+			"SELECT repo_id AS github_id,repo_id AS identity_key,repo,payload AS row_payload,fetched_at AS last_seen_at,NULL AS first_seen_at,NULL AS removed_at,NULL AS archived_changed_at,1 AS name_current FROM refresh_catalog WHERE account_id=? AND active=1 ORDER BY repo,repo_id",
 		)
 		.bind(account)
 		.all<CatalogRow>();
@@ -110,7 +110,7 @@ function complete(snapshot: Record<string, unknown> | null) {
 async function repositoryPages(db: Db, account: string, suffix: string) {
 	const rows = await db
 		.prepare(
-			"SELECT kind, payload, content_meta FROM snapshots WHERE account_id=? AND (kind LIKE ? OR kind LIKE ?)",
+			"SELECT kind, payload, content_meta FROM refresh_snapshots WHERE account_id=? AND (kind LIKE ? OR kind LIKE ?)",
 		)
 		.bind(account, `repo:%:${suffix}`, `repo:%:${suffix}#2`)
 		.all<SnapshotPage>();

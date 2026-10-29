@@ -1,13 +1,12 @@
 import { expect, it } from "vitest";
 import { factoryFixture } from "../../../../../tests/fixtures/factory-snapshot";
+import { savedObservationStmts as replaceSnapshotStmts } from "../../../../../tests/fixtures/refresh";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import { FACTORY_STREAMS } from "../../lib/factory-types";
 import { prSnapshot } from "../../lib/pull-request";
 import type { Env } from "../env";
 import { createApp } from "../index";
-import { savedContentMeta } from "./content-version";
 import { createDb } from "./db/d1";
-import { replaceSnapshotStmts } from "./db/snapshots";
 import {
 	observationEnvelope,
 	readFactoryResource,
@@ -33,7 +32,7 @@ it.each(FACTORY_STREAMS)(
 		const save = async (kind: string, payload: Record<string, unknown>) =>
 			db.batch(await replaceSnapshotStmts(db, snap.account_id, kind, payload, snap.fetched_at));
 		await save("factory", snap);
-		await save("repos", { repos: [{ name_with_owner: repo.name }] });
+		await save("repos", { repos: [{ id: repo.id, name_with_owner: repo.name }] });
 		const kind = `factory:${repo.name}:${stream}`;
 		const resource = {
 			runId: snap.runId,
@@ -43,12 +42,12 @@ it.each(FACTORY_STREAMS)(
 			coverage: { ...repo.coverage[stream], status: "complete", fetchedAt: snap.fetched_at },
 		};
 		await save(kind, resource);
-		const before = await db.prepare("SELECT * FROM snapshots ORDER BY kind").all();
+		const before = await db.prepare("SELECT * FROM refresh_snapshots ORDER BY kind").all();
 		expect(await readFactoryResource(db, snap.account_id, repo.name, stream)).toMatchObject({
 			sourceVersion: snap.runId,
 			data: { items: [], ranges: [snap.window], coverage: { status: "complete" } },
 		});
-		expect(await db.prepare("SELECT * FROM snapshots ORDER BY kind").all()).toEqual(before);
+		expect(await db.prepare("SELECT * FROM refresh_snapshots ORDER BY kind").all()).toEqual(before);
 		const indexed = (await readSources(db, snap.account_id, {})).sources.find(
 			(source) => source.resource === kind,
 		);
@@ -69,7 +68,10 @@ it.each(FACTORY_STREAMS)(
 				message: "immutable source version mismatch; refresh this repository",
 			},
 		);
-		await db.prepare("DELETE FROM snapshots WHERE kind=?").bind(kind).run();
+		await db
+			.prepare("DELETE FROM refresh_resources WHERE account_id=? AND repo_id=? AND stream=?")
+			.bind(snap.account_id, repo.id, stream)
+			.run();
 		await expect(readFactoryResource(db, snap.account_id, repo.name, stream)).rejects.toMatchObject(
 			{
 				status: 409,
@@ -182,7 +184,7 @@ it("shares catalog-wide provenance and page replacements with browser reads with
 	});
 	for (const name of ["OWNER/APP", "owner/baseline", "owner/empty", "owner/removed"])
 		await db.prepare("INSERT INTO repo_stars(account_id,repo) VALUES('a',?)").bind(name).run();
-	const before = await raw.prepare("SELECT * FROM snapshots ORDER BY kind").all();
+	const before = await raw.prepare("SELECT * FROM refresh_snapshots ORDER BY kind").all();
 	for (const [resource, key] of [
 		["issues", "issues"],
 		["prs", "pull_requests"],
@@ -220,9 +222,9 @@ it("shares catalog-wide provenance and page replacements with browser reads with
 		);
 		expect(starred.data).toEqual(prSnapshot(browser, { lifecycle: true }));
 	}
-	expect((await raw.prepare("SELECT * FROM snapshots WHERE kind='repos'").all()).results).toEqual(
-		before.results,
-	);
+	expect(
+		(await raw.prepare("SELECT * FROM refresh_snapshots WHERE kind='repos'").all()).results,
+	).toEqual(before.results);
 });
 
 it("assembles CI evidence case-insensitively and keeps missing dependencies unknown", async () => {
@@ -360,7 +362,7 @@ it("exposes saved unfiltered sources without writes or upstream fetches", async 
 	await expect(readFactoryResource(db, a, "nocoo/app", "commits")).rejects.toMatchObject({
 		status: 404,
 	});
-	await save("factory:v:pub", snap);
+	await save("factory", snap);
 	await db
 		.prepare("INSERT INTO factory_state(account_id,published_id,next_at) VALUES(?,'pub','t')")
 		.bind(a)
@@ -409,7 +411,7 @@ it("preserves immutable run resources, missing coverage and mixed source flags",
 		window: snap.window,
 		refreshedAt: snap.fetched_at,
 	};
-	await save("factory:v:pub", snap);
+	await save("factory", snap);
 	await db
 		.prepare("INSERT INTO factory_state(account_id,published_id,next_at) VALUES(?,'pub','t')")
 		.bind(a)
@@ -430,10 +432,10 @@ it("preserves immutable run resources, missing coverage and mixed source flags",
 		ranges: [{ since: "pending", until: "queue" }],
 	};
 	snap.window = { since: "2026-09-01T00:00:00Z", until: "2026-10-21T00:00:00Z" };
-	await save("factory:v:pub", snap);
+	await save("factory", snap);
 	await db
-		.prepare("INSERT INTO factory_resources(run_id,repo,stream,payload) VALUES(?,?,?,?)")
-		.bind("r", repo.name, "commits", JSON.stringify(resource))
+		.prepare("INSERT INTO refresh_resources(account_id,repo_id,stream,payload) VALUES(?,?,?,?)")
+		.bind(a, repo.id, "commits", JSON.stringify(resource))
 		.run();
 	expect(await readFactoryResource(db, a, repo.name, "commits")).toMatchObject({
 		sourceVersion: "r",
@@ -442,12 +444,12 @@ it("preserves immutable run resources, missing coverage and mixed source flags",
 		data: { ranges: [repo.observation.window] },
 	});
 	resource.coverage.status = "unavailable";
-	await db.prepare("UPDATE factory_resources SET payload=?").bind(JSON.stringify(resource)).run();
+	await db.prepare("UPDATE refresh_resources SET payload=?").bind(JSON.stringify(resource)).run();
 	expect((await readFactoryResource(db, a, repo.name, "commits")).unavailable).toBe(true);
 	expect((await readObservation(db, a, "factory", "starred")).data.repos).toEqual([]);
 	repo.observation.source = "legacy";
 	repo.observation.version = snap.runId;
-	await save("factory:v:pub", snap);
+	await save("factory", snap);
 	await save(`factory:${repo.name}:commits`, {
 		runId: snap.runId,
 		coverage: { status: "complete", fetchedAt: snap.fetched_at },
@@ -458,7 +460,7 @@ it("preserves immutable run resources, missing coverage and mixed source flags",
 		data: { ranges: [repo.observation.window] },
 	});
 	delete repo.observation;
-	await save("factory:v:pub", snap);
+	await save("factory", snap);
 	expect((await readFactoryResource(db, a, repo.name, "commits")).data.ranges).toEqual([
 		snap.window,
 	]);
@@ -539,26 +541,11 @@ it.each(["run", "legacy"] as const)(
 		};
 		await save("repos", { repos: [{ name_with_owner: repo.name }] });
 		await save("factory", { ...snap });
-		if (source === "run") {
-			await db
-				.prepare(
-					"INSERT INTO factory_runs(id,account_id,request_key,status,payload,next_at,created_at,updated_at) VALUES('r',?,'k','completed','{}','t','t','t')",
-				)
-				.bind(snap.account_id)
-				.run();
-			await db
-				.prepare(
-					"INSERT INTO factory_resources(run_id,repo,stream,payload,content_meta) VALUES('r',?,'dependencies',?,?)",
-				)
-				.bind(
-					repo.name,
-					JSON.stringify(data),
-					await savedContentMeta(`factory:${repo.name}:dependencies`, data),
-				)
-				.run();
-		} else await save(`factory:${repo.name}:dependencies`, data);
-		const before = await db.prepare("SELECT kind,payload FROM snapshots ORDER BY kind").all();
-		const resources = await db.prepare("SELECT * FROM factory_resources").all();
+		await save(`factory:${repo.name}:dependencies`, data);
+		const before = await db
+			.prepare("SELECT kind,payload FROM refresh_snapshots ORDER BY kind")
+			.all();
+		const resources = await db.prepare("SELECT * FROM refresh_resources").all();
 		const stream = await readFactoryResource(db, snap.account_id, repo.name, "dependencies");
 		expect(stream).toMatchObject({
 			sourceVersion: "r",
@@ -584,9 +571,9 @@ it.each(["run", "legacy"] as const)(
 			},
 		]);
 		expect(
-			(await db.prepare("SELECT kind,payload FROM snapshots ORDER BY kind").all()).results,
+			(await db.prepare("SELECT kind,payload FROM refresh_snapshots ORDER BY kind").all()).results,
 		).toEqual(before.results);
-		expect((await db.prepare("SELECT * FROM factory_resources").all()).results).toEqual(
+		expect((await db.prepare("SELECT * FROM refresh_resources").all()).results).toEqual(
 			resources.results,
 		);
 	},
@@ -654,14 +641,22 @@ it.each(["running", "completed"])(
 			)
 			.run();
 		const before = (await db.prepare("SELECT * FROM factory_runs").all()).results;
-		const saved = (await db.prepare("SELECT kind,payload FROM snapshots ORDER BY kind").all())
-			.results;
+		const saved = (
+			await db.prepare("SELECT kind,payload FROM refresh_snapshots ORDER BY kind").all()
+		).results;
+		expect(await read()).toMatchObject({ runId: snap.runId, rate: older });
+		await db
+			.prepare(
+				"UPDATE refresh_publications SET payload=json_set(payload,'$.rate',json(?)) WHERE account_id=?",
+			)
+			.bind(JSON.stringify(latest), snap.account_id)
+			.run();
 		expect(await read()).toMatchObject({ runId: snap.runId, rate: latest });
 		await db
 			.prepare(
-				"UPDATE factory_runs SET payload=json_set(payload,'$.checkpoint.rate.resetAt',?) WHERE id='catalog'",
+				"UPDATE refresh_publications SET payload=json_set(payload,'$.rate.resetAt',?) WHERE account_id=?",
 			)
-			.bind(new Date(Date.now() - 1_000).toISOString())
+			.bind(new Date(Date.now() - 1_000).toISOString(), snap.account_id)
 			.run();
 		expect(await read()).toMatchObject({ rate: null });
 		await db
@@ -670,7 +665,7 @@ it.each(["running", "completed"])(
 			.run();
 		expect((await db.prepare("SELECT * FROM factory_runs").all()).results).toEqual(before);
 		expect(
-			(await db.prepare("SELECT kind,payload FROM snapshots ORDER BY kind").all()).results,
+			(await db.prepare("SELECT kind,payload FROM refresh_snapshots ORDER BY kind").all()).results,
 		).toEqual(saved);
 	},
 );

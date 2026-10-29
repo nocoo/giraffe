@@ -48,13 +48,15 @@ async function fixture(scopes: ("observations:read" | "app:read")[] = ["observat
 
 it("R7 catalog changes is explicitly uninitialized instead of fabricating an empty complete history", async () => {
 	const context = await fixture();
-	const before = await context.raw.prepare("SELECT * FROM snapshots ORDER BY kind").all();
+	const before = await context.raw.prepare("SELECT * FROM refresh_snapshots ORDER BY kind").all();
 	const tokensBefore = await context.raw.prepare("SELECT * FROM api_tokens ORDER BY id").all();
 	const response = await context.request();
 	expect(response.status).toBe(409);
 	expect(await response.json()).toMatchObject({ error: { code: "catalog_unpublished" } });
 	expect(response.headers.get("cache-control")).toBe("private, no-store");
-	expect(await context.raw.prepare("SELECT * FROM snapshots ORDER BY kind").all()).toEqual(before);
+	expect(await context.raw.prepare("SELECT * FROM refresh_snapshots ORDER BY kind").all()).toEqual(
+		before,
+	);
 	expect(await context.raw.prepare("SELECT * FROM api_tokens ORDER BY id").all()).toEqual(
 		tokensBefore,
 	);
@@ -89,7 +91,7 @@ it("R7 catalog changes enforces account-bound observation credentials and observ
 	expect((await managementOnly.request()).status).toBe(403);
 });
 
-it("R7 catalog changes serves inclusive normalized events and private ETag304 without any saved-data mutation", async () => {
+it("R7 catalog changes rejects retired event history even with a current refresh catalog and conditional headers", async () => {
 	const context = await fixture();
 	const at = "2026-10-22T00:00:00.000Z";
 	await context.raw
@@ -105,26 +107,32 @@ it("R7 catalog changes serves inclusive normalized events and private ETag304 wi
 			)
 			.bind(repo, repo, `R_${repo}`, at)
 			.run();
+	await context.raw
+		.prepare(
+			"INSERT INTO refresh_catalog(account_id,repo_id,repo,discovered_day,timezone,payload,fetched_at) VALUES('a','R_CURRENT','nocoo/current','2026-10-22','Asia/Shanghai','{}',?)",
+		)
+		.bind(at)
+		.run();
 	const before = await context.raw.prepare("SELECT * FROM api_tokens").all();
+	const eventsBefore = await context.raw
+		.prepare("SELECT * FROM catalog_changes ORDER BY event_id")
+		.all();
 	const response = await context.request(
 		`since=${encodeURIComponent("2026-10-22T08:00:00+08:00")}`,
 	);
-	expect(response.status).toBe(200);
+	expect(response.status).toBe(409);
 	expect(await response.json()).toMatchObject({
-		since: at,
-		until: at,
-		added: [
-			{ repo: "nocoo/a", source: { kind: "factory", runId: "catalog-run" } },
-			{ repo: "nocoo/z" },
-		],
+		error: { code: "catalog_unpublished" },
 	});
-	const tag = response.headers.get("etag");
-	expect(tag).toMatch(/^"[a-f0-9]+"$/);
-	const conditional = await context.request(`since=${at}`, { tag: `W/${tag}` });
-	expect(conditional.status).toBe(304);
-	expect(await conditional.text()).toBe("");
+	expect(response.headers.get("etag")).toBeNull();
+	const conditional = await context.request(`since=${at}`, { tag: 'W/"retired"' });
+	expect(conditional.status).toBe(409);
+	expect(await conditional.json()).toMatchObject({ error: { code: "catalog_unpublished" } });
 	expect(conditional.headers.get("cache-control")).toBe("private, no-store");
 	expect(conditional.headers.get("vary")).toBe("Authorization");
 	expect(await context.raw.prepare("SELECT * FROM api_tokens").all()).toEqual(before);
+	expect(
+		await context.raw.prepare("SELECT * FROM catalog_changes ORDER BY event_id").all(),
+	).toEqual(eventsBefore);
 	expect((await context.request("since=invalid", { tag: "*" })).status).toBe(400);
 });

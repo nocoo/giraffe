@@ -1,9 +1,9 @@
 import { expect, it, vi } from "vitest";
 import { factoryFixture } from "../../../../../tests/fixtures/factory-snapshot";
+import { savedObservationStmts as replaceSnapshotStmts } from "../../../../../tests/fixtures/refresh";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import { FACTORY_STREAMS } from "../../lib/factory-types";
 import { createDb } from "./db/d1";
-import { replaceSnapshotStmts } from "./db/snapshots";
 import { readObservation } from "./machine-observations";
 import { readSources } from "./machine-sources";
 import { factoryFreshness, repoPolicy } from "./snapshot-projection";
@@ -31,17 +31,19 @@ async function fixture() {
 	publication.repos.push(
 		{
 			...repo,
+			id: "R_ARCHIVED",
 			name: "nocoo/archived",
 			is_archived: true,
 			observation: { ...repo.observation, refreshedAt: "2026-09-01T00:00:00Z" },
 		},
 		{
 			...repo,
+			id: "R_FORK",
 			name: "nocoo/fork",
 			is_fork: true,
 			observation: { ...repo.observation, refreshedAt: "2026-09-02T00:00:00Z" },
 		},
-		{ ...repo, name: "nocoo/removed" },
+		{ ...repo, id: "R_REMOVED", name: "nocoo/removed" },
 	);
 	const save = async (kind: string, data: Record<string, unknown>) =>
 		db.batch(await replaceSnapshotStmts(db, account, kind, data, publication.fetched_at));
@@ -59,7 +61,7 @@ async function fixture() {
 
 it("counts every owned published repository without changing visible lists or stored evidence", async () => {
 	const { raw, db, account, publication } = await fixture();
-	const before = (await raw.prepare("SELECT * FROM snapshots ORDER BY kind").all()).results;
+	const before = (await raw.prepare("SELECT * FROM refresh_snapshots ORDER BY kind").all()).results;
 	const fetchSpy = vi.spyOn(globalThis, "fetch");
 	try {
 		const expected = {
@@ -81,9 +83,9 @@ it("counts every owned published repository without changing visible lists or st
 			truncated: false,
 			contentVersion: envelope.contentVersion,
 		});
-		expect((await raw.prepare("SELECT * FROM snapshots ORDER BY kind").all()).results).toEqual(
-			before,
-		);
+		expect(
+			(await raw.prepare("SELECT * FROM refresh_snapshots ORDER BY kind").all()).results,
+		).toEqual(before);
 		expect(fetchSpy).not.toHaveBeenCalled();
 	} finally {
 		fetchSpy.mockRestore();
@@ -195,7 +197,7 @@ it("preserves per-stream evidence ages in both factory envelopes and source inde
 	await save("repos", {
 		repos: [{ name_with_owner: repo.name }, { name_with_owner: "nocoo/missing" }],
 	});
-	const before = (await raw.prepare("SELECT * FROM snapshots ORDER BY kind").all()).results;
+	const before = (await raw.prepare("SELECT * FROM refresh_snapshots ORDER BY kind").all()).results;
 	const expected = { oldestAt: old, latestAt: fetched, total: 2, missing: 1 };
 	expect(factoryFreshness(publication, await repoPolicy(db, account))).toEqual(expected);
 	const envelope = await readObservation(db, account, "factory", "all");
@@ -205,7 +207,7 @@ it("preserves per-stream evidence ages in both factory envelopes and source inde
 		freshness: expected,
 		contentVersion: envelope.contentVersion,
 	});
-	expect((await raw.prepare("SELECT * FROM snapshots ORDER BY kind").all()).results).toEqual(
-		before,
-	);
+	expect(
+		(await raw.prepare("SELECT * FROM refresh_snapshots ORDER BY kind").all()).results,
+	).toEqual(before);
 });

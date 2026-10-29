@@ -1,11 +1,11 @@
 import { expect, it, vi } from "vitest";
+import { savedObservationStmts as replaceSnapshotStmts } from "../../../../../tests/fixtures/refresh";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import type { ApiScope } from "../../lib/api-access";
 import type { Env } from "../env";
 import { createApp } from "../index";
 import { createApiToken } from "../lib/api-tokens";
 import { createDb } from "../lib/db/d1";
-import { replaceSnapshotStmts } from "../lib/db/snapshots";
 import { readSources } from "../lib/machine-sources";
 
 async function fixture(active = true) {
@@ -17,15 +17,15 @@ async function fixture(active = true) {
 		)
 		.bind(Number(active), at, at)
 		.run();
-	await raw
-		.prepare(
-			"INSERT INTO catalog_repositories(account_id,identity_key,github_id,repo,row_payload,first_seen_at,is_archived,visibility,is_fork,first_seen_source) VALUES('a','R_app','R_app','owner/app','{\"name_with_owner\":\"owner/app\"}',?,0,'PUBLIC',0,'github_catalog')",
-		)
-		.bind(at)
-		.run();
 	const db = createDb(raw);
 	await db.batch(
-		await replaceSnapshotStmts(db, "a", "repos", { repos: [{ name_with_owner: "owner/app" }] }, at),
+		await replaceSnapshotStmts(
+			db,
+			"a",
+			"repos",
+			{ repos: [{ id: "R_app", name_with_owner: "owner/app" }] },
+			at,
+		),
 	);
 	const mint = (scopes: ApiScope[]) =>
 		createApiToken(db, {
@@ -82,7 +82,7 @@ it("R6 browser/machine GET are read-only and PUT enriches /repos without alterin
 			expect(await response.json()).toMatchObject({
 				account_id: "a",
 				created_at: null,
-				first_seen_at: "2026-10-22T00:00:00.000Z",
+				first_seen_at: null,
 				field_sources: {},
 			});
 		}
@@ -129,10 +129,7 @@ it.each(["owner/app", "owner/agent", "agent/app"])(
 	"R6 app scopes enforce metadata boundaries for %s",
 	async (name) => {
 		const s = await fixture();
-		await s.raw
-			.prepare("UPDATE catalog_repositories SET repo=? WHERE identity_key='R_app'")
-			.bind(name)
-			.run();
+		await s.raw.prepare("UPDATE refresh_catalog SET repo=? WHERE repo_id='R_app'").bind(name).run();
 		for (const scopes of [["agent:read", "agent:write"], ["observations:read"]] as ApiScope[][]) {
 			const token = await s.mint(scopes);
 			for (const method of ["GET", "PUT"])

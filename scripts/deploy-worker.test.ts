@@ -20,9 +20,11 @@ const reply = (result: unknown) => Response.json({ success: true, result });
 
 afterEach(() => vi.restoreAllMocks());
 
-describe("collection trigger retirement deployment", () => {
-	it("explicitly clears cron schedules and uses the guarded deployment script", () => {
-		expect(readFileSync("wrangler.toml", "utf8")).toMatch(/\[triggers\]\s+crons = \[\]/);
+describe("unified refresh deployment", () => {
+	it("declares only the daily Shanghai refresh and uses guarded deployment", () => {
+		expect(readFileSync("wrangler.toml", "utf8")).toMatch(
+			/\[triggers\]\s+crons = \["0 19 \* \* \*"\]/,
+		);
 		expect(readFileSync(".github/workflows/release.yml", "utf8")).toContain(
 			'deploy-script: "bun run scripts/deploy-worker.ts"',
 		);
@@ -51,7 +53,7 @@ describe("collection trigger retirement deployment", () => {
 			.mockResolvedValueOnce(reply([queue([target, other, staging])]))
 			.mockResolvedValueOnce(reply(null))
 			.mockResolvedValueOnce(reply([queue([other, staging])]))
-			.mockResolvedValueOnce(reply({ schedules: [] }));
+			.mockResolvedValueOnce(reply({ schedules: [{ cron: "0 19 * * *" }] }));
 		const deploy = vi.fn().mockImplementation(async () => {
 			expect(request).toHaveBeenCalledTimes(2);
 		});
@@ -70,7 +72,7 @@ describe("collection trigger retirement deployment", () => {
 				.fn()
 				.mockResolvedValueOnce(reply(queues))
 				.mockResolvedValueOnce(reply(queues))
-				.mockResolvedValueOnce(reply({ schedules: [] }));
+				.mockResolvedValueOnce(reply({ schedules: [{ cron: "0 19 * * *" }] }));
 			const deploy = vi.fn().mockResolvedValue(undefined);
 			await deployWorker(environment, request, deploy);
 			expect(deploy).toHaveBeenCalledOnce();
@@ -83,7 +85,7 @@ describe("collection trigger retirement deployment", () => {
 			.mockResolvedValueOnce(reply([queue([consumer])]))
 			.mockResolvedValueOnce(Response.json({ success: true, errors: [], messages: [] }))
 			.mockResolvedValueOnce(reply([queue([])]))
-			.mockResolvedValueOnce(reply({ schedules: [] }));
+			.mockResolvedValueOnce(reply({ schedules: [{ cron: "0 19 * * *" }] }));
 		const deploy = vi.fn().mockResolvedValue(undefined);
 		await deployWorker(environment, request, deploy);
 		expect(deploy).toHaveBeenCalledOnce();
@@ -114,14 +116,19 @@ describe("collection trigger retirement deployment", () => {
 	it.each([
 		{ queues: [queue([consumer])], schedules: [] },
 		{ queues: [], schedules: [{ cron: "* * * * *" }] },
-	])("fails verification if any retired trigger remains", async ({ queues, schedules }) => {
-		const request = vi
-			.fn()
-			.mockResolvedValueOnce(reply([]))
-			.mockResolvedValueOnce(reply(queues))
-			.mockResolvedValueOnce(reply({ schedules }));
-		await expect(deployWorker(environment, request, vi.fn())).rejects.toThrow(
-			"Collection triggers remain",
-		);
-	});
+		{ queues: [], schedules: [] },
+		{ queues: [], schedules: [{ cron: "0 19 * * *" }, { cron: "0 1 * * *" }] },
+	])(
+		"fails verification for stale queues or an incorrect schedule",
+		async ({ queues, schedules }) => {
+			const request = vi
+				.fn()
+				.mockResolvedValueOnce(reply([]))
+				.mockResolvedValueOnce(reply(queues))
+				.mockResolvedValueOnce(reply({ schedules }));
+			await expect(deployWorker(environment, request, vi.fn())).rejects.toThrow(
+				"Invalid unified refresh triggers",
+			);
+		},
+	);
 });

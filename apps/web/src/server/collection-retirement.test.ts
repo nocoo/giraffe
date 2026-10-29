@@ -38,12 +38,10 @@ async function setup(
 	return { raw, app, env, token: token.token };
 }
 
-describe("phase-one collection retirement", () => {
+describe("legacy collection remains retired in phase two", () => {
 	it.each([
 		["DELETE", "refresh-runs"],
-		["GET", "refresh-runs/old/control"],
 		["POST", "refresh-runs/latest"],
-		["GET", "schedules/daily"],
 	])("rejects unsupported machine %s %s without collection", async (method, path) => {
 		const fixture = await setup();
 		const response = await fixture.app.request(
@@ -56,8 +54,8 @@ describe("phase-one collection retirement", () => {
 		);
 		expect(response.status).toBe(405);
 	});
-	it("exports no scheduled or queue collection handlers", () => {
-		expect(worker).not.toHaveProperty("scheduled");
+	it("exports the unified schedule but no legacy queue handler", () => {
+		expect(worker).toHaveProperty("scheduled");
 		expect(worker).not.toHaveProperty("queue");
 	});
 
@@ -89,35 +87,37 @@ describe("phase-one collection retirement", () => {
 	});
 
 	it.each([
-		["POST", "refresh-runs"],
 		["POST", "refresh-runs/old/control"],
 		["PUT", "schedules/daily"],
 		["DELETE", "schedules/weekly"],
-	])("returns authenticated scoped retirement for machine %s %s", async (method, path) => {
-		const fixture = await setup();
-		const request = (bearer?: string, accountId = account) =>
-			fixture.app.request(
-				`http://localhost/api/v1/accounts/${accountId}/${path}`,
-				{
-					method,
-					headers: bearer ? { authorization: `Bearer ${bearer}` } : {},
-				},
-				fixture.env,
-			);
-		expect((await request()).status).toBe(401);
-		expect((await request(fixture.token, "b".repeat(21))).status).toBe(403);
-		const response = await request(fixture.token);
-		expect(response.status).toBe(410);
-		expect(await response.json()).toMatchObject({ error: { code: "collection_unavailable" } });
-		const readonly = await setup(["observations:read"]);
-		expect(
-			(
-				await fixture.app.request(
-					`http://localhost/api/v1/accounts/${account}/${path}`,
-					{ method, headers: { authorization: `Bearer ${readonly.token}` } },
-					readonly.env,
-				)
-			).status,
-		).toBe(403);
-	});
+	])(
+		"keeps removed machine endpoints behind account and scope checks: %s %s",
+		async (method, path) => {
+			const fixture = await setup();
+			const request = (bearer?: string, accountId = account) =>
+				fixture.app.request(
+					`http://localhost/api/v1/accounts/${accountId}/${path}`,
+					{
+						method,
+						headers: bearer ? { authorization: `Bearer ${bearer}` } : {},
+					},
+					fixture.env,
+				);
+			expect((await request()).status).toBe(401);
+			expect((await request(fixture.token, "b".repeat(21))).status).toBe(403);
+			const response = await request(fixture.token);
+			expect(response.status).toBe(404);
+			expect(await response.json()).toMatchObject({ error: { code: "not_found" } });
+			const readonly = await setup(["observations:read"]);
+			expect(
+				(
+					await fixture.app.request(
+						`http://localhost/api/v1/accounts/${account}/${path}`,
+						{ method, headers: { authorization: `Bearer ${readonly.token}` } },
+						readonly.env,
+					)
+				).status,
+			).toBe(403);
+		},
+	);
 });

@@ -80,8 +80,12 @@ export async function deployWorker(
 	const remainingConsumers = await consumers();
 	const schedules = schedulesSchema.safeParse(await api("/workers/scripts/giraffe/schedules"));
 	if (!schedules.success) throw new Error("Invalid Cloudflare schedules response");
-	if (remainingConsumers.length || schedules.data.schedules.length) {
-		throw new Error("Collection triggers remain after deployment");
+	if (
+		remainingConsumers.length ||
+		schedules.data.schedules.length !== 1 ||
+		schedules.data.schedules[0]?.cron !== "0 19 * * *"
+	) {
+		throw new Error("Invalid unified refresh triggers after deployment");
 	}
 }
 
