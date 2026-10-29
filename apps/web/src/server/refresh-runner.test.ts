@@ -910,13 +910,14 @@ describe("same-Shanghai-day account reuse", () => {
 			expect(collectors.collectRepository).not.toHaveBeenCalled();
 			expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
 				status: "running",
-				phase: "repos",
+				phase: "account",
 				requests: 0,
-				aReused: true,
+				aReused: false,
 				timings: { repos: [] },
 			});
 			expect(fixture.alarmAt()).toBe(Date.now() + 5_000);
 			await deliverNextAlarm(fixture);
+			expect(collectors.collectAccount).not.toHaveBeenCalled();
 			expect(collectors.collectRepository).toHaveBeenCalledOnce();
 			expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
 				status: "completed",
@@ -1283,7 +1284,7 @@ it("records retried and cancelled steps without inventing finished work", async 
 	expect(cancelled?.timings?.repos[0]?.finishedAt).toBe(cancelled?.finishedAt);
 });
 
-it("stops draining when the alarm work budget is spent and resumes on the next alarm", async () => {
+it("chains slow A and B in one wake instead of treating I/O wall time as a CPU budget", async () => {
 	vi.useFakeTimers({ now: new Date("2026-10-29T04:00:00.000Z"), toFake: ["Date"] });
 	try {
 		const fixture = await setup();
@@ -1297,18 +1298,39 @@ it("stops draining when the alarm work budget is spent and resumes on the next a
 		});
 		const run = await startRefresh(fixture.env, "account", {});
 		await fixture.runner.alarm();
-		expect(collectors.collectRepository).not.toHaveBeenCalled();
-		expect(fixture.alarmAt()).not.toBeNull();
-		expect(fixture.alarmAt() ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual(Date.now());
-		await fixture.runner.alarm();
-		expect(collectors.collectRepository).toHaveBeenCalledOnce();
-		await fixture.runner.alarm();
+		expect(collectors.collectRepository).toHaveBeenCalledTimes(2);
+		expect(fixture.alarmAt()).toBeNull();
 		expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
 			status: "completed",
 			completedRepos: 2,
 		});
 	} finally {
 		vi.useRealTimers();
+	}
+});
+
+it("persists each healthy transition once without re-reading the active run or rearming an immediate alarm", async () => {
+	const fixture = await setup();
+	collectors.collectAccount.mockResolvedValue({ repos: ["octo/one"], ...collected(2, 2, 0) });
+	const run = await startRefresh(fixture.env, "account", { force: true });
+	const active = vi.spyOn(refreshStore, "activeRefreshRun");
+	const save = vi.spyOn(refreshStore, "saveRefreshRun");
+	fixture.storage.setAlarm.mockClear();
+	try {
+		await fixture.runner.alarm();
+		expect(active).toHaveBeenCalledTimes(2);
+		expect(save).toHaveBeenCalledTimes(3);
+		expect(save.mock.calls[1]?.[1]).toMatchObject({
+			phase: "repos",
+			timings: { a: { attempts: 1 }, repos: [{ repo: "octo/one", attempts: 0 }] },
+		});
+		expect(fixture.storage.setAlarm).toHaveBeenCalledTimes(2);
+		expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
+			status: "completed",
+		});
+	} finally {
+		active.mockRestore();
+		save.mockRestore();
 	}
 });
 

@@ -2290,3 +2290,25 @@ failed again. Native alarm retries are finite, so every settlement replay now
 arms its own recovery before writing D1. Alarm-delivery fixtures consume the old
 alarm before invoking the handler; retaining it in memory had hidden this gap.
 Repeated replay-save failures, including cancellation, are regression cases.
+
+## 2026-10-29: verify hook installation in a new worktree
+
+The v0.27.4 worktree had `core.hooksPath=.husky/_` and the tracked hook scripts,
+but not Husky's generated entrypoints. The first local commit therefore returned
+without running its hook despite no bypass flag or environment variable. L1 had
+been run separately, but that did not establish automatic enforcement. Running
+`bun run prepare` restored the entrypoints; the unpublished commit was amended
+through the complete pre-commit hook. Before the first commit in any new
+worktree, verify the configured hook path and executable entrypoints, not just
+the tracked hook scripts. Keep generated wrappers local and preserve all gates.
+
+## 2026-10-29: measure execution independently from durable transitions
+
+Fusing A settlement and B start reduced D1 writes but made their stored timestamps
+equal. The first v0.27.4 performance assertion subtracted those fields and always
+reported zero gap, even when review injected 40 seconds into the settlement
+write. Independent collector entry/exit probes and a bounded end-to-end synthetic
+wall-time assertion now include that overhead. Transition timestamps describe
+durable state; never use algebraically identical timestamps as execution-speed
+evidence. Real Worker measurements and synthetic I/O measurements must stay
+separate from unmeasured production latency.

@@ -1,6 +1,6 @@
 # Machine API v1: saved data and external resources
 
-Version 0.27.3 provides scoped unified-refresh creation/history/status/cancellation and keeps
+Version 0.27.4 provides scoped unified-refresh creation/history/status/cancellation and keeps
 the analysis product surface removed. The machine API remains an authenticated
 boundary for saved observations, application settings and externally owned
 resources. No endpoint executes local code or schedules analysis.

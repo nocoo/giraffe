@@ -169,7 +169,7 @@ it("fences the frozen 0.27.0 alarm before collection and leaves the modern alarm
 	const afterAccount = async () => fixture.stored(run.id);
 	expect(collectors.collectAccount).toHaveBeenCalledOnce();
 	const accountStep = await afterAccount();
-	expect(accountStep).toMatchObject({ status: "running", writer_revision: 3 });
+	expect(accountStep).toMatchObject({ status: "running", writer_revision: 2 });
 	expect(JSON.parse(accountStep?.payload ?? "{}")).toMatchObject({
 		phase: "repos",
 		requests: 1,
@@ -198,6 +198,6 @@ it("fences the frozen 0.27.0 alarm before collection and leaves the modern alarm
 	});
 	expect(await fixture.stored(run.id)).toMatchObject({
 		status: "partial",
-		writer_revision: 6,
+		writer_revision: 4,
 	});
 });

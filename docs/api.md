@@ -1,6 +1,6 @@
 # Machine API v1 Reference
 
-The v0.27.3 release provides one unified A-then-B refresh and keeps the analysis UI
+The v0.27.4 release provides one unified A-then-B refresh and keeps the analysis UI
 removed. Current run creation/status, parameters, stars, caching and daily
 scheduling are specified in [the refresh contract](15-unified-refresh.md).
 

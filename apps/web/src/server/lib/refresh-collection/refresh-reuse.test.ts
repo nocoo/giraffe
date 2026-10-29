@@ -133,6 +133,38 @@ async function snapshot(context: CollectionContext, kind: string) {
 	};
 }
 
+function countedD1(db: D1Database) {
+	const roundtrips: string[][] = [];
+	const records = new WeakMap<object, { query: string; statement: D1PreparedStatement }>();
+	const wrap = (statement: D1PreparedStatement, query: string): D1PreparedStatement => {
+		const wrapped = {
+			bind: (...values: unknown[]) => wrap(statement.bind(...values), query),
+			first: <T = Record<string, unknown>>(column?: string) => {
+				roundtrips.push([query]);
+				return column === undefined ? statement.first<T>() : statement.first<T>(column);
+			},
+			all: <T = Record<string, unknown>>() => {
+				roundtrips.push([query]);
+				return statement.all<T>();
+			},
+			run: () => statement.run(),
+		} as unknown as D1PreparedStatement;
+		records.set(wrapped, { query, statement });
+		return wrapped;
+	};
+	return {
+		roundtrips,
+		db: {
+			prepare: (query: string) => wrap(db.prepare(query), query),
+			batch: (statements: D1PreparedStatement[]) => {
+				const entries = statements.map((statement) => records.get(statement));
+				roundtrips.push(entries.map((entry) => entry?.query ?? ""));
+				return db.batch(entries.map((entry) => entry?.statement ?? db.prepare("SELECT 1")));
+			},
+		} as unknown as D1Database,
+	};
+}
+
 describe("refresh reuse boundaries", () => {
 	it.each([
 		["code-scanning", 404, "Not Found", "dependabot"],
@@ -380,6 +412,148 @@ describe("refresh reuse boundaries", () => {
 		});
 		expect((await snapshot(context, "repo:owner/project:details")).fetched_at).toBe(context.now);
 	});
+	it("caches an expected unavailable security day as a complete window and reuses it", async () => {
+		const context = await fixture();
+		context.run.params.dimensions = ["alerts"];
+		upstream([accountPage()]);
+		await collectAccount(context);
+		context.run.params.force = true;
+		upstream([{ node: repository() }], {
+			"/dependabot/alerts": [],
+			"/code-scanning/alerts": Response.json({ message: "no analysis found" }, { status: 404 }),
+		});
+		expect(await collectRepository(context, "owner/project")).toEqual({
+			requests: 3,
+			requestBreakdown: { graphql: 1, rest: 2 },
+			partial: false,
+			reasons: [],
+		});
+		const window = {
+			since: "2026-10-27T16:00:00.000Z",
+			until: "2026-10-28T15:59:59.999Z",
+			timezone: "Asia/Shanghai",
+		};
+		expect(await day(context, "alerts")).toMatchObject({
+			status: "complete",
+			payload: { count: null, observed: 0, unavailable: true, reason: "not_found" },
+		});
+		const forced = await publication(context);
+		expect(forced.repos[0].coverage.alerts).toMatchObject({
+			status: "unavailable",
+			observed: 0,
+			reason: "not_found",
+			strategy: "incremental",
+			completeWindows: [window],
+		});
+		const security = await snapshot(context, "repo:owner/project:security");
+		context.run.params.force = false;
+		const fetch = upstream();
+		expect(await collectRepository(context, "owner/project")).toEqual({
+			requests: 0,
+			requestBreakdown: { graphql: 0, rest: 0 },
+			partial: false,
+			reasons: [],
+		});
+		expect(fetch).not.toHaveBeenCalled();
+		expect((await publication(context)).repos[0].coverage.alerts).toMatchObject({
+			status: "unavailable",
+			observed: 0,
+			reason: "not_found",
+			strategy: "reused",
+			completeWindows: [window],
+		});
+		expect(await snapshot(context, "repo:owner/project:security")).toEqual(security);
+	});
+	it("keeps a mixed available and unavailable security day explicit and cacheable", async () => {
+		const context = await fixture();
+		context.run.params.dimensions = ["alerts"];
+		upstream([accountPage(), { node: repository() }], {
+			"/dependabot/alerts": [
+				{
+					number: 7,
+					state: "open",
+					created_at: "2026-10-28T03:00:00Z",
+					html_url: "https://github.com/owner/project/security/7",
+					security_advisory: { summary: "Observed vulnerability", severity: "high" },
+				},
+			],
+			"/code-scanning/alerts": Response.json({ message: "no analysis found" }, { status: 404 }),
+		});
+		await collectAccount(context);
+		expect(await collectRepository(context, "owner/project")).toMatchObject({ partial: false });
+		const evidence = await day(context, "alerts");
+		expect(evidence).toMatchObject({
+			status: "complete",
+			payload: { count: null, observed: 1, unavailable: true, reason: "not_found" },
+		});
+		expect(evidence.payload.items).toHaveLength(1);
+		expect((await publication(context)).repos[0].coverage.alerts).toMatchObject({
+			status: "unavailable",
+			observed: 0,
+			reason: "not_found",
+			completeWindows: [
+				{
+					since: "2026-10-27T16:00:00.000Z",
+					until: "2026-10-28T15:59:59.999Z",
+					timezone: "Asia/Shanghai",
+				},
+			],
+		});
+		const fetch = upstream();
+		expect(await collectRepository(context, "owner/project")).toMatchObject({ requests: 0 });
+		expect(fetch).not.toHaveBeenCalled();
+		expect(await day(context, "alerts")).toEqual(evidence);
+	});
+	it("keeps a transient security failure retryable", async () => {
+		const context = await fixture();
+		context.run.params.dimensions = ["alerts"];
+		upstream([accountPage(), { node: repository() }], {
+			"/dependabot/alerts": Response.json({ message: "upstream detail" }, { status: 500 }),
+			"/code-scanning/alerts": [],
+		});
+		await collectAccount(context);
+		expect(await collectRepository(context, "owner/project")).toEqual({
+			requests: 4,
+			requestBreakdown: { graphql: 1, rest: 3 },
+			partial: true,
+			reasons: ["alerts:github_error"],
+		});
+		expect(await day(context, "alerts")).toMatchObject({
+			status: "partial",
+			payload: { unavailable: false },
+		});
+		upstream([], { "/dependabot/alerts": [], "/code-scanning/alerts": [] });
+		expect(await collectRepository(context, "owner/project")).toEqual({
+			requests: 2,
+			requestBreakdown: { graphql: 0, rest: 2 },
+			partial: false,
+			reasons: [],
+		});
+		expect((await day(context, "alerts")).status).toBe("complete");
+	});
+	it("does not cache a rate-limited security day", async () => {
+		const context = await fixture();
+		context.run.params.dimensions = ["alerts"];
+		upstream([accountPage(), { node: repository() }], {
+			"/dependabot/alerts": Response.json({ message: "rate limit" }, { status: 429 }),
+		});
+		await collectAccount(context);
+		await expect(collectRepository(context, "owner/project")).rejects.toMatchObject({
+			code: "github_rate_limited",
+		});
+		expect(await day(context, "alerts")).toMatchObject({
+			status: "unavailable",
+			payload: { unavailable: false },
+		});
+		upstream([], { "/dependabot/alerts": [], "/code-scanning/alerts": [] });
+		expect(await collectRepository(context, "owner/project")).toEqual({
+			requests: 2,
+			requestBreakdown: { graphql: 0, rest: 2 },
+			partial: false,
+			reasons: [],
+		});
+		expect((await day(context, "alerts")).status).toBe("complete");
+	});
 	it("keeps permission-denied security features retryable", async () => {
 		const context = await fixture();
 		context.run.params.dimensions = ["alerts"];
@@ -403,5 +577,70 @@ describe("refresh reuse boundaries", () => {
 			reasons: [],
 		});
 		expect((await day(context, "alerts")).status).toBe("complete");
+	});
+	it("reads catalogue, day observations and prior publication in one D1 batch", async () => {
+		const context = await fixture();
+		context.run.params.dimensions = ["alerts"];
+		upstream([accountPage(), { node: repository() }], {
+			"/dependabot/alerts": [],
+			"/code-scanning/alerts": Response.json({ message: "no analysis found" }, { status: 404 }),
+		});
+		await collectAccount(context);
+		await collectRepository(context, "owner/project");
+		const counted = countedD1(context.env.DB);
+		context.env = { ...context.env, DB: counted.db };
+		const fetch = upstream();
+		expect(await collectRepository(context, "owner/project")).toMatchObject({ requests: 0 });
+		expect(fetch).not.toHaveBeenCalled();
+		expect(counted.roundtrips).toHaveLength(3);
+		const [preparation] = counted.roundtrips;
+		expect(preparation).toHaveLength(3);
+		expect(preparation?.[0]).toContain("refresh_catalog");
+		expect(preparation?.[1]).toContain("refresh_day_observations");
+		expect(preparation?.[2]).toContain("refresh_repository_publications");
+	});
+	it("keeps a forced repository preparation to one D1 read batch", async () => {
+		const context = await fixture();
+		context.run.params.dimensions = ["alerts"];
+		upstream([accountPage(), { node: repository() }], {
+			"/dependabot/alerts": [],
+			"/code-scanning/alerts": [],
+		});
+		await collectAccount(context);
+		await collectRepository(context, "owner/project");
+		context.run.params.force = true;
+		const counted = countedD1(context.env.DB);
+		context.env = { ...context.env, DB: counted.db };
+		upstream([{ node: repository() }], { "/dependabot/alerts": [], "/code-scanning/alerts": [] });
+		expect(await collectRepository(context, "owner/project")).toMatchObject({ requests: 3 });
+		expect(counted.roundtrips).toHaveLength(3);
+		expect(counted.roundtrips[0]).toHaveLength(3);
+		expect(counted.roundtrips[1]).not.toHaveLength(3);
+	});
+	it("joins cached evidence by catalogue identity for case-variant names", async () => {
+		const context = await fixture();
+		context.run.params.dimensions = ["alerts"];
+		upstream([accountPage(), { node: repository() }], {
+			"/dependabot/alerts": [],
+			"/code-scanning/alerts": [],
+		});
+		await collectAccount(context);
+		expect(await collectRepository(context, "OWNER/Project")).toMatchObject({ partial: false });
+		expect((await publication(context)).repos[0]).toMatchObject({
+			id: "R_1",
+			name: "owner/project",
+		});
+		const observations = await context.env.DB.prepare(
+			"SELECT repo_id,COUNT(*) AS rows FROM refresh_day_observations GROUP BY repo_id",
+		).all<{ repo_id: string; rows: number }>();
+		expect(observations.results).toEqual([{ repo_id: "R_1", rows: 1 }]);
+		const fetch = upstream();
+		expect(await collectRepository(context, "owner/PROJECT")).toMatchObject({ requests: 0 });
+		expect(fetch).not.toHaveBeenCalled();
+		await context.env.DB.prepare("UPDATE refresh_catalog SET active=0 WHERE account_id='a'").run();
+		await expect(collectRepository(context, "owner/project")).rejects.toMatchObject({
+			status: 404,
+			code: "not_found",
+		});
 	});
 });

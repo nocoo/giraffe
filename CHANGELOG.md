@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.27.4 - 2026-10-29
+
+### Fixed
+
+- Include terminal unavailable security days in completed cache windows without
+  turning missing measurements or per-feature null counts into available data.
+  Preserve same-day non-force zero-request reuse after expected 404/disabled results.
+- Keep healthy A/B steps in the same wake even when network or D1 I/O exceeds
+  25 seconds. Fuse settlement and the next durable step start, and remove
+  redundant active-run reads and alarm writes between steps.
+- Batch repository catalogue, day-cache and prior-publication reads in one D1
+  round trip. Keep five-second interruption recovery, rate-limit deadlines,
+  cancellation, retry exhaustion and write fencing covered by regressions.
+
 ## v0.27.3 - 2026-10-29
 
 ### Fixed
