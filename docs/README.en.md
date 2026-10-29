@@ -19,7 +19,7 @@
 
 Giraffe is a personal GitHub console. Add classic PATs for one or more accounts to review repositories, open issues and pull requests, security alerts, and notifications, then compare repository metrics across days.
 
-Version 0.27.1 tightens unified refresh selection, adds cooperative cancellation and reports request counts and partial reasons. Account discovery precedes serial repository collection with calendar-day caching. Automatic refresh covers all explicitly starred repositories plus this account's unobserved non-fork repositories created during the current Asia/Shanghai day, without automatic starring. Saved reads never collect upstream; analysis and legacy refresh modes remain removed. See the [phase-2 contract](15-unified-refresh.md).
+Version 0.27.2 corrects alert completeness and unavailable dependency analysis, restores a year of contribution history, and reuses same-day account discovery for single-repository refreshes. Serial repository collection keeps calendar-day caching and explicit failure diagnostics. Automatic refresh covers all explicitly starred repositories plus this account's unobserved non-fork repositories created during the current Asia/Shanghai day, without automatic starring. Saved reads never collect upstream; analysis and legacy refresh modes remain removed. See the [phase-2 contract](15-unified-refresh.md).
 
 PATs are encrypted with AES-256-GCM before storage in D1. Data snapshots are stored as JSON without additional application-level encryption. This is a personal deployment: everyone allowed into the same deployment shares its accounts and snapshots.
 
@@ -31,7 +31,7 @@ PATs are encrypted with AES-256-GCM before storage in D1. Data snapshots are sto
 - **Repository details**: nine tabs for details, security, Actions, pull requests, issues, releases, traffic, languages, and contributors.
 - **Insights and alerts**: rule-based classifications and GitHub security alerts from the current snapshots, with truncation, permission, and availability states.
 - **Notifications**: browse notifications and mark one or all as read. These actions also update GitHub.
-- **Saved observations**: existing snapshot filters remain read-only. Refresh, schedules, run controls and the analysis page are removed; missing evidence is unavailable, not zero.
+- **Saved observations**: snapshot filters remain read-only. Unified refresh and its daily schedule collect new observations; legacy refresh modes and the analysis page remain removed. Missing evidence remains unavailable rather than zero.
 - **Machine API**: every `/api/v1/*` endpoint requires a fixed-account, scoped bearer token. Manage tokens through the Cloudflare Access-protected dashboard; tokens expire within 90 days and must be rotated before expiry. The API reads saved observations and supports CRUD for generic records, reports and jobs.
 
 Visible repositories and alerts depend on PAT permissions and GitHub API responses. The console does not run continuous monitoring or perform its own code security scans.

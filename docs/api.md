@@ -1,6 +1,6 @@
 # Machine API v1 Reference
 
-The v0.27.1 release provides one unified A-then-B refresh and keeps the analysis UI
+The v0.27.2 release provides one unified A-then-B refresh and keeps the analysis UI
 removed. Current run creation/status, parameters, stars, caching and daily
 scheduling are specified in [the refresh contract](15-unified-refresh.md).
 
@@ -146,8 +146,13 @@ dimension; account-level entries use `repo: null`. Missingness never exposes
 raw GitHub errors or credentials. `completedRepos` counts processed repositories,
 including partial ones, not repositories proven complete. See the
 [request budget](15-unified-refresh.md#request-budget-and-partial-reasons).
+New entries may include `failures: [{dimension,code,httpStatus,graphqlType,graphqlPath}]`.
+Unknown diagnostic metadata is null, never raw upstream error text.
+`aReused` is true when a non-forced single-repository request reuses a complete
+same-Shanghai-day A: its A request count is zero, without renewing source timestamps.
 
-These detailed fields are produced by v0.27.1 runs. Historical terminal v0.27.0
+Request/reason/cancellation fields are produced since v0.27.1; `failures` and
+`aReused` are introduced in v0.27.2. Historical terminal v0.27.0
 payloads retain their original numeric total without fabricated breakdowns.
 Schema cutover explicitly fails old active payloads with
 `errorCode: "refresh_schema_cutover"`; already-saved observations remain intact.
@@ -572,10 +577,10 @@ not rewrite this account-wide evidence. Only `scope=starred` returns
 without `contributionObservation`: the calendar has no repository breakdown and
 cannot be attributed to that subset. Original publication windows and repository
 versions are retained; GET neither recollects nor rewrites the calendar.
-Newly recollected calendars retain outside-window dates up to a 90-date display
-span. `contribution.total` sums calendar counts across that span;
-`contribution.restricted` is `null` if retained daily restricted attribution is
-unavailable, rather than reporting an incomplete sum as a complete total.
+Each successful A replaces the saved calendar with GitHub's preceding calendar
+year, independently of the repository window; it does not merge historical dates.
+`contribution.total` and `contribution.restricted` are the matching upstream
+calendar totals. Missing daily type breakdowns remain unavailable.
 Expanded repository `observation.window` is the daily-chart display range;
 `observation.collectionWindow`, when present, is the actual raw-stream collection
 range. Stream endpoints keep their `ranges` and observation window tied to that
@@ -916,7 +921,8 @@ per-repository count names are removed; consumers must use the explicit-unit nam
 saved account-wide calendar, independent of repository stars/statistics. It never
 collects GitHub data or updates token activity. Optional `since` and `until` are
 inclusive, real `YYYY-MM-DD` dates; omitted bounds use the saved earliest/latest
-dates. Both bounds must lie inside the saved calendar and cover at most 90 days.
+dates. Both bounds must lie inside the saved calendar and cover at most 367
+inclusive dates (one calendar year across a leap year, including both endpoints).
 Reversed ranges, invalid dates, repeated parameters and unknown keys (including
 `scope`) return 400 `validation_failed`. The endpoint does not extend missing
 history with zeroes. No saved publication/calendar returns 409 `snapshot_missing`;
@@ -1472,9 +1478,15 @@ Read operations require `app:read`; start/cancel require `app:write`.
 Start accepts a strict object with optional `since`, `until` (inclusive closed
 calendar days, 1–31 days), `timezone` (IANA, default `Asia/Shanghai`), `dimensions`
 (nonempty, distinct `commits|issues|prs|actions|releases|alerts`), `force` (default
-false), and `repo` (`owner/name`). Dates default to yesterday. Matching active
-manual requests return the existing run; different parameters return
+false), and `repo` (`owner/name`). Dates default to yesterday. A manual POST
+matching an active run returns that run; different parameters return
 `409 refresh_conflict`. Unknown parameters and legacy modes return 400.
+`requestKey` is not accepted: it is an unknown field and returns
+`400 validation_failed`. No client idempotency key or `Idempotency-Key` header
+contract exists. Equal normalized parameters on a manual POST deduplicate against
+any active run, including a scheduled run (HTTP 202); repeating them after
+termination creates a new run.
+Different active requests return HTTP 409 instead of queueing.
 
 Automatic B includes all locally starred repositories regardless of owner, plus
 genuinely new, unobserved, non-fork repositories owned by the account and created

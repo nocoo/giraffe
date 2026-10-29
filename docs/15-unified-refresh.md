@@ -1,4 +1,4 @@
-# Phase 2: unified refresh (v0.27.1)
+# Phase 2: unified refresh (v0.27.2)
 
 This is the authorized replacement for the collection stack retired in v0.26.0.
 There is one task type, not quick/deep/full modes. The Dashboard keeps its saved
@@ -9,9 +9,13 @@ observation views; reads never collect upstream, repair data or renew timestamps
 One account-scoped Durable Object persists wakeups and a D1 run history. A run
 collects **A** (account metadata, contribution calendar, paginated repository
 catalogue and GraphQL rate limit) before **B** (repositories, serially). Each alarm
-advances one stage/repository. The next wakeup is recorded before work; interrupted
-steps resume idempotently. Transient failures have bounded backoff, while fatal
-account/authentication failures stop the run. Repository failures remain partial.
+drains persisted steps within a 25-second work budget, at most 30 steps. Each step
+has its own bounded D1 handle. The next recovery wakeup is recorded before work;
+interrupted steps resume idempotently. Successful steps have no fixed sleep or
+one-second alarm delay. Transient failures retry after 2, 5 and 15 seconds;
+rate-limit failures wait at least 60 seconds and honor any later `retry-after` or
+reset deadline. After the bounded retries, repository failures remain partial,
+while fatal account/authentication failures stop the run.
 There is no queue consumer and no HTTP `waitUntil`-only collection task.
 
 Cloudflare cron `0 19 * * *` starts the default refresh at **03:00 Asia/Shanghai**.
@@ -63,8 +67,15 @@ REST releases as newly collected GraphQL data.
 - Daily commits use one GraphQL `history(since,until) { totalCount }` alias per
   uncached day. They are default-branch counts, not owner-only/all-branch counts.
   No REST commit pagination or reconciliation against contribution totals occurs.
-- A single GraphQL contribution calendar supplies the green-square trend. Missing
-  type breakdowns are unavailable, not zero.
+- A GraphQL contribution calendar spans the preceding calendar year through the
+  A collection timestamp, independently of the repository observation window.
+  Leap-day arithmetic stays inside GitHub's one-year limit. The saved date range
+  can include 367 dates across a leap year when both endpoints are included.
+  The Dashboard's all-repository view defaults to this account-wide green grid,
+  labeled with GitHub/UTC dates; it can switch to windowed repository commits.
+  The calendar remains reachable before any repository B observation exists.
+  Starred scope still excludes account-wide contribution statistics and shows
+  repository commits instead. Missing type breakdowns are unavailable, not zero.
 - PR/Issue collection starts with one page in the main repository query, then
   consumes that page before applying a proven cache/lower-bound stop. A known ID
   with a changed update timestamp is not a safe cache boundary; force bypasses
@@ -78,9 +89,27 @@ REST releases as newly collected GraphQL data.
   existing shape, with numeric IDs from GraphQL `databaseId`.
 - Actions and security alerts use bounded REST samples. CI represents
   the latest/short-window sample, not exhaustive historical execution.
+  Alerts are truncated only for a nonempty sample with a next-page link. An empty
+  sample is complete. HTTP 403/404 features are unavailable, not truncated; mixed
+  available/unavailable features keep aggregate alerts unavailable and uncached.
+  Per-feature security counts preserve an available zero versus an unavailable
+  null. A later non-forced run can collect newly accessible features.
 - Dependency analysis is unsupported and displayed as missing. Dependency alerts
   can be collected. Traffic, author-event ledgers and other uncollected dimensions
   remain explicit empty/unavailable observations, never legacy fallbacks.
+  Both browser and machine repository dependency endpoints return HTTP 200 with
+  empty items and `coverage.status: "unavailable"`, reason
+  `dependency_analysis_unavailable`, and no invented source timestamp.
+
+An ad-hoc, non-forced request reuses a complete A saved during the same
+Asia/Shanghai day, even when repository observation dates/timezone differ.
+`aReused: true` records this choice; A makes zero upstream requests and keeps its
+original calendar/catalogue source timestamps. Default/scheduled runs still
+collect A. Missing, partial, previous-day or forced A is collected again. A
+repository absent from the current cached catalogue returns `not_found`; force
+can explicitly rediscover it. No historical observation migration is involved.
+The new publication uses the current request's repository window, not the reused
+A's old window; saved calendar provenance remains unchanged.
 
 ## Request budget and partial reasons
 
@@ -91,6 +120,7 @@ dimensions, no retry and no extra issue/PR pages. A is per account, not per repo
 | ----------------------------------------------------------------------- | ------- | ---- | ----- |
 | A account + first 100 catalogue repositories + calendar/rate limit      | 1       | 0    | 1     |
 | Each additional A catalogue page (maximum 35 pages overall)             | +1      | 0    | +1    |
+| A reused for a same-day non-forced ad-hoc request                       | 0       | 0    | 0     |
 | B per repository: metadata, daily commit aliases, issues, PRs, releases | 1       | 0    | 1     |
 | B CI: latest actions runs                                               | 0       | 1    | 1     |
 | B alerts: Dependabot + code scanning                                    | 0       | 2    | 2     |
@@ -108,6 +138,25 @@ GraphQL point cost is not the same as HTTP request count. Existing account
 snapshots expose observed GraphQL remaining/reset values; the run API does not
 invent a before/after cost measurement.
 
+For the acceptance report's 127-entry catalogue and approximately 61 stars,
+normal A is two GraphQL requests and B is 61 × (one GraphQL + three REST):
+**246 requests, 63 GraphQL and 183 REST**. A reused single-repository request
+costs four requests with an empty B cache; forcing it costs six. Fully cached B
+costs zero. Extra pages, new same-day repositories and retries increase these
+budgets.
+
+The v0.27.0 observation was 28m34s for 127 repositories, approximately 13.5s per
+repository, or about 14 minutes projected for 61. The former fixed successful
+alarm delay alone contributed at least about 62 seconds to a 61-repository run;
+non-rate-limit retries previously added 60 + 120 + 240 seconds per failed step.
+The new transient retry total is 22 seconds. The report cannot distinguish all
+GitHub latency from alarm delivery or prove the tail's cause. With 246 sequential
+HTTP requests averaging 0.5–1 second, a no-retry run is estimated at 2–4 minutes
+plus D1/publication and alarm overhead; allow roughly **3–6 minutes** for planning.
+This is an explicit latency assumption, not a production measurement or SLA.
+Rate limits and extra pagination can extend it substantially. No production
+refresh or cancellation was used to validate this change.
+
 `requests` remains the numeric total for existing consumers. New runs also have
 `requestBreakdown: {total,graphql,rest,a:{graphql,rest},b:{graphql,rest}}`. Each
 transport total equals A+B and `requestBreakdown.total === requests`.
@@ -116,6 +165,14 @@ transport total equals A+B and `requestBreakdown.total === requests`.
 `contributions:unavailable`, `issues:inventory_incomplete`,
 `actions:github_error`, `alerts:permission_denied`, and
 `releases:latest_page_only`. Exhausted repository retries use safe error codes.
+New diagnostic entries can also include
+`failures: [{dimension,code,httpStatus,graphqlType,graphqlPath}]`. Unknown metadata
+is null; GraphQL types and path fields are allowlisted. No HTTP response means
+`httpStatus: null`; an HTTP 200 parsing failure retains 200, not a local 502.
+REST failures never inherit
+an earlier GraphQL error. Retry exhaustion and cancellation keep the original
+step's repository identity, while recovered transient errors clear `errorCode`.
+Historical run payloads are not rewritten to fabricate these new diagnostics.
 Every new `partial: true` run has reasons, including cached incomplete inventory;
 unsupported, unrequested dimensions do not turn a selected complete window into
 a partial run. Processed repositories can be partial: `completedRepos` is progress,
@@ -137,10 +194,20 @@ hash-only bearer tokens and `app:read` / `app:write` scopes.
 
 Run states are `queued`, `running`, `completed`, `partial`, `failed`, `cancelled`. Responses
 include phase, ordered repositories, completed count, actual upstream request
-count and safe error code. Matching active manual requests return the same run;
+count and safe error code. A manual POST matching any active run's normalized
+parameters returns that run, including an active scheduled run;
 a different active request returns `409 refresh_conflict`. Machine settings expose
 the fixed daily schedule. Legacy run controls and quick/deep/full schedules stay
 removed; no alias or fallback is provided.
+
+The POST body does not accept `requestKey` or any other unknown field (HTTP 400
+`validation_failed`). There is no client-supplied idempotency key, including an
+`Idempotency-Key` header contract. A manual POST with equal normalized parameters
+deduplicates against any active run, returning it with HTTP 202 regardless of
+whether it was started manually or scheduled. After it reaches a
+terminal state, submitting the same parameters creates a new run; cached
+observations may still avoid upstream work. Concurrent different parameters
+return HTTP 409 rather than queueing another manual run.
 
 Existing `PUT|DELETE /accounts/:account/stars/:owner/:name` and browser
 `POST /api/repos/:owner/:name/star` manage B membership. Current observation,
@@ -193,7 +260,7 @@ Rolling back to v0.27.0 does not restore refresh functionality against this sche
 use a compatible approved revision or roll forward. Stored observations remain readable.
 Historical terminal
 payloads stay unchanged; `requestBreakdown`, `partialReasons` and
-`cancelRequested` are produced for new v0.27.1 runs only. This is not a migration
+`cancelRequested` are produced for new runs since v0.27.1. This is not a migration
 of legacy observations or a runtime compatibility fallback. The migration is
 idempotent and verified against a local SQLite backup copy with rollback checks.
 After a future authorized deployment, explicitly start a new run if a prior run

@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.27.2 - 2026-10-29
+
+### Fixed
+
+- Trace repository collection failures with safe dimension, HTTP status and
+  GraphQL diagnostics; retain partial-observation reasons without raw errors.
+- Keep empty alert samples complete and disabled or inaccessible security
+  features unavailable, rather than truncating an otherwise complete feature.
+- Return explicit unavailable dependency analysis from repository detail APIs,
+  matching factory coverage without asking consumers to refresh missing analysis.
+- Collect a full calendar year of contribution history independently of the
+  requested repository window and reuse successful same-Shanghai-day account
+  collection for non-forced single-repository refreshes.
+- Remove fixed successful-step alarm delays while retaining durable recovery
+  wakeups, bounded retries and rate-limit backoff.
+- Document strict POST fields, rejection of `requestKey`, active-run duplicate
+  behavior and the absence of a client idempotency-key contract.
+- Use a bounded one-shot local stub counter probe to avoid stale HTTP keep-alive
+  reuse in API acceptance tests without masking failures with broad retries.
+
 ## v0.27.1 - 2026-10-29
 
 ### Fixed

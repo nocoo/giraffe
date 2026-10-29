@@ -1,5 +1,38 @@
 # Retrospective
 
+## 2026-10-29 - Verify phase-two fixes across consumers and durable boundaries
+
+The first acceptance implementation treated mixed security-feature availability
+as an aggregate complete zero to avoid a false truncation label. Independent
+review reproduced the resulting missingness loss and same-day cache lockout.
+Availability and pagination are separate axes: unavailable features must prevent
+complete aggregate caching, without truncating an available feature.
+
+Extending the upstream contribution window alone left the machine API's 90-day
+limit and disabled Dashboard calendar unchanged. Regression tests now cross the
+saved read and UI boundaries, including a full year, UTC labels and scoped
+exclusion. A transport diagnostic also inherited an earlier GraphQL error during
+a later REST failure; mixed-protocol tests now isolate those failures.
+
+Small runner tests missed cancellation after retry exhaustion advancing the
+attribution cursor, and a healthy multi-step alarm exhausting a shared D1 counter.
+Cancellation now attributes the original step, while a 35-repository regression
+proves bounded per-step database handling and durable continuation. Always test
+batch limits and cross-step failures, not just a two-repository happy path.
+
+The inherited L2 failure at main 0864d00 reported an undici closed socket, without
+a probe-level stack. Normal preceding Worker responses and the idle `_count`
+connection make stale keep-alive reuse the strongest explanation, not a proven
+packet-level diagnosis. The counter probe now opens a one-shot bounded connection
+and rejects status, timeout and abort failures; no broad retry masks failures.
+
+Further cross-boundary probes exposed an A-only calendar hidden behind B data,
+a stale selected date becoming a false zero, and reused A metadata leaking its
+old window into a new publication. Tests now cover those transitions. Transport
+diagnostics distinguish actual HTTP status from local API wrappers, through the
+runner's persisted error record. GraphQL HTTP-200 rate-limit errors use the same
+latest retry/reset deadline calculation as REST, verified at the durable alarm.
+
 ## 2026-10-29 - Preflight local runners and preserve fixture evidence
 
 The first acceptance launch started local GitHub/JWKS stubs before discovering
