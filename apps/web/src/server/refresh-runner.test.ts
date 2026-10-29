@@ -450,6 +450,44 @@ it("cancels a running run after the current repository, keeping its data", async
 	expect(fixture.alarmAt()).toBeNull();
 });
 
+it.each(["account", "repos"] as const)(
+	"preserves accepted cancellation when the current %s step fails fatally",
+	async (phase) => {
+		const fixture = await setup();
+		const run = await startRefresh(fixture.env, "account", {});
+		if (phase === "repos") await fixture.runner.alarm();
+		let rejectCollection: ((error: Error) => void) | undefined;
+		const collector =
+			phase === "account" ? collectors.collectAccount : collectors.collectRepository;
+		collector.mockImplementationOnce(async (context) => {
+			context.onRequests(1, { graphql: 1, rest: 0 });
+			return new Promise((_resolve, reject) => {
+				rejectCollection = reject;
+			});
+		});
+		const step = fixture.runner.alarm();
+		await vi.waitFor(() => expect(rejectCollection).toBeTypeOf("function"));
+		const accepted = await fixture.cancelRequest(run.id);
+		expect(accepted.status).toBe(202);
+		expect(await accepted.json()).toMatchObject({ cancelRequested: true, status: "running" });
+		rejectCollection?.(new ApiError(401, "github_unauthorized", "safe"));
+		await step;
+		const cancelled = await getRefreshRun(fixture.db(), "account", run.id);
+		expect(cancelled).toMatchObject({
+			status: "cancelled",
+			phase: "done",
+			cancelRequested: true,
+			completedRepos: 0,
+			errorCode: "github_unauthorized",
+			requests: phase === "account" ? 1 : 2,
+		});
+		expect(await (await fixture.cancelRequest(run.id)).json()).toEqual(cancelled);
+		await fixture.runner.alarm();
+		expect(collector).toHaveBeenCalledOnce();
+		expect(fixture.alarmAt()).toBeNull();
+	},
+);
+
 it("cancels a queued run without any account work and still wakes the queued schedule", async () => {
 	const fixture = await setup();
 	collectors.collectAccount.mockResolvedValue({ repos: [], ...collected(1, 1, 0) });

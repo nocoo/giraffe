@@ -256,6 +256,7 @@ export class RefreshRunner implements DurableObject {
 		outcome: StepOutcome,
 	): Promise<void> {
 		const at = new Date().toISOString();
+		const cancellationRequested = await this.state.storage.get<boolean>(cancelKey(step.run.id));
 		const accountPhase = step.run.phase === "account";
 		const repo = accountPhase ? null : (step.run.repos[step.run.completedRepos] ?? null);
 		let run: RefreshRun = { ...step.run, updatedAt: at };
@@ -301,7 +302,9 @@ export class RefreshRunner implements DurableObject {
 				await this.state.storage.delete("retry");
 				run =
 					accountPhase || fatal
-						? { ...run, status: "failed", phase: "done", finishedAt: at }
+						? cancellationRequested
+							? run
+							: { ...run, status: "failed", phase: "done", finishedAt: at }
 						: addRefreshPartialReasons(
 								{ ...run, partial: true, completedRepos: run.completedRepos + 1 },
 								repo,
@@ -309,7 +312,7 @@ export class RefreshRunner implements DurableObject {
 							);
 			}
 		}
-		if (await this.state.storage.get<boolean>(cancelKey(run.id))) {
+		if (cancellationRequested) {
 			run = cancelRefreshRun(run, at);
 			retryAt = null;
 			await this.state.storage.delete("retry");
