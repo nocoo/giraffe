@@ -171,12 +171,15 @@ export class RefreshViewModel {
 	}
 	private accept(run: RefreshRun | null): void {
 		const previous = this.state.run;
-		const next =
-			run && previous && previous.id === run.id
-				? refreshActive(run) && !refreshActive(previous)
+		let next = run;
+		if (run && previous?.id === run.id) {
+			const snapshot =
+				(refreshActive(run) && !refreshActive(previous)) ||
+				Date.parse(run.updatedAt) < Date.parse(previous.updatedAt)
 					? previous
-					: { ...run, cancelRequested: previous.cancelRequested || run.cancelRequested }
-				: run;
+					: run;
+			next = { ...snapshot, cancelRequested: previous.cancelRequested || run.cancelRequested };
+		}
 		const changed =
 			next &&
 			!refreshActive(next) &&

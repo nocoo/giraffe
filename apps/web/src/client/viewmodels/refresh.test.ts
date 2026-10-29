@@ -631,6 +631,35 @@ describe("refresh viewmodel", () => {
 		expect(model.getSnapshot().run).toMatchObject({ id: "run-1", cancelRequested: true });
 	});
 
+	it("keeps newer run progress when an older cancel snapshot arrives", async () => {
+		for (const status of ["running", "cancelled"] as const) {
+			vi.mocked(apiGet).mockResolvedValueOnce({ items: [refreshRun()], collectionAvailable: true });
+			const model = new RefreshViewModel();
+			await model.read();
+			let finishCancel: ((run: RefreshRun) => void) | undefined;
+			vi.mocked(apiPost).mockImplementationOnce(
+				() =>
+					new Promise((resolve) => {
+						finishCancel = resolve;
+					}),
+			);
+			const cancelling = model.cancel();
+			vi.mocked(apiGet).mockResolvedValueOnce(
+				refreshRun({ status, completedRepos: 2, requests: 20, updatedAt: "2026-10-29T04:01:00Z" }),
+			);
+			await model.read();
+			finishCancel?.(refreshRun({ status, cancelRequested: true }));
+			await cancelling;
+			expect(model.getSnapshot().run).toMatchObject({
+				status,
+				completedRepos: 2,
+				requests: 20,
+				updatedAt: "2026-10-29T04:01:00Z",
+				cancelRequested: true,
+			});
+		}
+	});
+
 	it("ignores a late cancel response after a newer run was accepted", async () => {
 		vi.mocked(apiGet).mockResolvedValueOnce({ items: [refreshRun()], collectionAvailable: true });
 		const model = new RefreshViewModel();
