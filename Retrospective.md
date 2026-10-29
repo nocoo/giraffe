@@ -2235,3 +2235,18 @@ from source discovery. Its publication now shares the input transaction; the
 source index must describe the same canonical membership and evidence, not an
 approximation based only on the top-level publication. A passing endpoint test
 does not establish consistency with polling, discovery or concurrent publication.
+
+## 2026-10-29 - Do not reconstruct partial execution timelines
+
+The first refresh-timing implementation initialized a missing historical timeline
+when an old active run resumed. Review found that a run already past repository
+zero appended its observed step at array index zero, while completion addressed
+the global repository cursor. The step then appeared unfinished after success or
+cancellation. Timelines now start only when new runs are created; old payloads
+remain untimed. Regression tests include a historical nonzero cursor instead of
+assuming every resumed run begins at the account step. Never manufacture missing
+execution history to make a new diagnostic field look complete.
+
+Local integration also exposed shared fixed-port contention between worktrees.
+Coordinators must reserve the L2/L3 lanes before starting runners, not merely check
+that ports look free. A concurrent run is not valid evidence for either worktree.

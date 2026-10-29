@@ -870,6 +870,12 @@ describe("same-Shanghai-day account reuse", () => {
 			repos: ["octo/one"],
 			requests: 3,
 			requestBreakdown: { total: 3, graphql: 1, rest: 2, a: { graphql: 0, rest: 0 } },
+			timings: {
+				queuedAt: run.createdAt,
+				a: { reused: true, attempts: 1, finishedAt: expect.any(String) },
+				repos: [{ repo: "octo/one", attempts: 1, finishedAt: expect.any(String) }],
+			},
+			finishedAt: expect.any(String),
 		});
 		const account = await fixture.raw
 			.prepare("SELECT fetched_at FROM refresh_accounts WHERE account_id='account'")
@@ -891,6 +897,33 @@ describe("same-Shanghai-day account reuse", () => {
 		expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
 			aReused: false,
 		});
+	});
+
+	it.each<[string, string, string, boolean]>([
+		[
+			"a saved A ending the previous Shanghai day at 23:59:59.999",
+			"2026-10-28T15:59:59.999Z",
+			"2026-10-28T16:00:00.000Z",
+			false,
+		],
+		[
+			"a saved A at the Shanghai midnight that starts the run's day",
+			"2026-10-28T16:00:00.000Z",
+			"2026-10-29T15:59:59.999Z",
+			true,
+		],
+	])("reuse across the Shanghai day boundary is %s", async (_label, savedAt, now, reused) => {
+		const fixture = await setup();
+		vi.setSystemTime(new Date(now));
+		await withSavedA(fixture, savedAt);
+		const run = await startRefresh(fixture.env, "account", { repo: "octo/one" });
+		await fixture.runner.alarm();
+		expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
+			status: "completed",
+			aReused: reused,
+			timings: { a: { reused } },
+		});
+		expect(collectors.collectAccount).toHaveBeenCalledTimes(reused ? 0 : 1);
 	});
 
 	it("rejects an adhoc repository missing from the reusable catalogue", async () => {
@@ -1039,6 +1072,117 @@ it("drains several durable steps per alarm instead of one round trip per reposit
 	expect(fixture.alarmAt()).toBeNull();
 });
 
+it("arms the first step at POST and records honest queued, account and repository timings", async () => {
+	const fixture = await setup();
+	const run = await startRefresh(fixture.env, "account", {});
+	expect(run.timings?.queuedAt).toBe(run.createdAt);
+	expect(run.timings?.a).toBeNull();
+	expect(run.timings?.repos).toEqual([]);
+	expect(fixture.alarmAt()).not.toBeNull();
+	expect(fixture.alarmAt() ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual(Date.now());
+	await fixture.restart().alarm();
+	const timings = (await getRefreshRun(fixture.db(), "account", run.id))?.timings;
+	expect(timings?.queuedAt).toBe(run.createdAt);
+	expect(timings?.a).toMatchObject({ reused: false, attempts: 1 });
+	expect(Date.parse(timings?.a?.startedAt ?? "")).toBeLessThanOrEqual(
+		Date.parse(timings?.a?.finishedAt ?? ""),
+	);
+	expect(timings?.repos.map((step) => step.repo)).toEqual(["octo/one", "octo/two"]);
+	for (const step of timings?.repos ?? []) {
+		expect(step.finishedAt).not.toBeNull();
+		expect(step.attempts).toBe(1);
+		expect(Date.parse(step.startedAt)).toBeLessThanOrEqual(Date.parse(step.finishedAt ?? ""));
+	}
+});
+
+it("never schedules a wakeup beyond the recovery bound during a healthy run", async () => {
+	const fixture = await setup();
+	collectors.collectAccount.mockResolvedValue({
+		repos: ["octo/one", "octo/two", "octo/three"],
+		...collected(1, 1, 0),
+	});
+	const run = await startRefresh(fixture.env, "account", {});
+	await fixture.runner.alarm();
+	const armed = fixture.storage.setAlarm.mock.calls.map(([at]) => Number(at));
+	expect(armed.length).toBeGreaterThan(2);
+	for (const at of armed) expect(at).toBeLessThanOrEqual(Date.now() + 5_000);
+	expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
+		status: "completed",
+		completedRepos: 3,
+	});
+});
+
+it("keeps an interrupted step's recovery wakeup inside five seconds", async () => {
+	const fixture = await setup();
+	const run = await startRefresh(fixture.env, "account", {});
+	const inFlight = await deferredCollection();
+	const step = fixture.runner.alarm();
+	const { release } = await inFlight();
+	expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
+		status: "running",
+		phase: "repos",
+		timings: {
+			a: { attempts: 1 },
+			repos: [{ repo: "octo/one", finishedAt: null, attempts: 0 }],
+		},
+	});
+	const armed = fixture.alarmAt() ?? Number.POSITIVE_INFINITY;
+	expect(armed).toBeGreaterThan(Date.now());
+	expect(armed - Date.now()).toBeLessThanOrEqual(5_000);
+	release(collected(3, 1, 2));
+	await step;
+	expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
+		status: "completed",
+	});
+	expect(fixture.alarmAt()).toBeNull();
+});
+
+it("closes an interrupted account attempt when the run is cancelled during backoff", async () => {
+	const fixture = await setup();
+	const run = await startRefresh(fixture.env, "account", {});
+	collectors.collectAccount.mockRejectedValueOnce(new ApiError(502, "github_error", "safe"));
+	await fixture.runner.alarm();
+	expect((await getRefreshRun(fixture.db(), "account", run.id))?.timings?.a).toMatchObject({
+		attempts: 1,
+		finishedAt: null,
+	});
+	expect((await fixture.cancelRequest(run.id)).status).toBe(202);
+	await fixture.runner.alarm();
+	const cancelled = await getRefreshRun(fixture.db(), "account", run.id);
+	expect(cancelled).toMatchObject({ status: "cancelled", errorCode: "github_error" });
+	expect(cancelled?.timings?.a).toMatchObject({ attempts: 1 });
+	expect(cancelled?.timings?.a?.finishedAt).toBe(cancelled?.finishedAt);
+	expect(cancelled?.timings?.repos).toEqual([]);
+});
+
+it("records retried and cancelled steps without inventing finished work", async () => {
+	const fixture = await setup();
+	const run = await startRefresh(fixture.env, "account", {});
+	collectors.collectRepository.mockRejectedValue(
+		new ApiError(503, "github_rate_limited", "safe", new Date(Date.now() + 120_000).toISOString()),
+	);
+	await fixture.runner.alarm();
+	const retrying = await getRefreshRun(fixture.db(), "account", run.id);
+	expect(retrying?.timings?.a).toMatchObject({ attempts: 1 });
+	expect(retrying?.timings?.a?.finishedAt).not.toBeNull();
+	expect(retrying?.timings?.repos).toEqual([
+		{ repo: "octo/one", startedAt: expect.any(String), finishedAt: null, attempts: 1 },
+	]);
+	expect((await fixture.cancelRequest(run.id)).status).toBe(202);
+	await fixture.runner.alarm();
+	const cancelled = await getRefreshRun(fixture.db(), "account", run.id);
+	expect(cancelled).toMatchObject({ status: "cancelled", completedRepos: 0 });
+	expect(cancelled?.timings?.repos).toEqual([
+		{
+			repo: "octo/one",
+			startedAt: expect.any(String),
+			finishedAt: expect.any(String),
+			attempts: 1,
+		},
+	]);
+	expect(cancelled?.timings?.repos[0]?.finishedAt).toBe(cancelled?.finishedAt);
+});
+
 it("stops draining when the alarm work budget is spent and resumes on the next alarm", async () => {
 	vi.useFakeTimers({ now: new Date("2026-10-29T04:00:00.000Z"), toFake: ["Date"] });
 	try {
@@ -1055,6 +1199,7 @@ it("stops draining when the alarm work budget is spent and resumes on the next a
 		await fixture.runner.alarm();
 		expect(collectors.collectRepository).not.toHaveBeenCalled();
 		expect(fixture.alarmAt()).not.toBeNull();
+		expect(fixture.alarmAt() ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual(Date.now());
 		await fixture.runner.alarm();
 		expect(collectors.collectRepository).toHaveBeenCalledOnce();
 		await fixture.runner.alarm();

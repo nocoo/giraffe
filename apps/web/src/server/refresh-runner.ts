@@ -14,11 +14,14 @@ import {
 	addRefreshPartialReasons,
 	addRefreshRequests,
 	cancelRefreshRun,
+	closeRefreshStep,
+	completeRefreshStepAttempt,
 	createRefreshRun,
 	getRefreshRun,
 	type RequestCounts,
 	saveRefreshRun,
 	scheduledRefreshRun,
+	startRefreshStep,
 	terminalRefreshStatus,
 } from "./lib/refresh-store";
 import { decryptToken, parseKeyBytes } from "./lib/token-crypto";
@@ -55,6 +58,7 @@ const fatalCodes = [
 const RETRY_LIMIT = 3;
 const WORK_BUDGET_MS = 25_000;
 const MAX_STEPS_PER_ALARM = 30;
+const RECOVERY_MS = 5_000;
 const RETRY_DELAYS = [2_000, 5_000, 15_000];
 const SHANGHAI_OFFSET_MS = 8 * 3_600_000;
 const failureCode = (error: unknown) =>
@@ -259,9 +263,9 @@ export class RefreshRunner implements DurableObject {
 					await this.state.storage.delete("retry");
 					return null;
 				}
-				const run = { ...active, status: "running" as const, updatedAt: at };
+				const run = startRefreshStep({ ...active, status: "running" as const, updatedAt: at }, at);
+				await this.state.storage.setAlarm(Date.now() + RECOVERY_MS);
 				await saveRefreshRun(db, run);
-				await this.state.storage.setAlarm(Date.now() + 5 * 60_000);
 				return { accountId, run };
 			});
 			if (!step) return;
@@ -333,6 +337,12 @@ export class RefreshRunner implements DurableObject {
 					? {}
 					: { aReused: outcome.phase === "account" && outcome.result.aReused === true }),
 			};
+			run = completeRefreshStepAttempt(
+				run,
+				at,
+				true,
+				outcome.phase === "account" && outcome.result.aReused === true,
+			);
 			run =
 				outcome.phase === "account"
 					? { ...run, phase: "repos", repos: outcome.result.repos }
@@ -370,7 +380,9 @@ export class RefreshRunner implements DurableObject {
 					Date.now() + retryDelay(code, attempts),
 					Number.isFinite(deadline) ? deadline : 0,
 				);
-			} else {
+			}
+			run = completeRefreshStepAttempt(run, at, pending === undefined);
+			if (pending === undefined) {
 				await this.state.storage.delete("retry");
 				run =
 					accountPhase || fatal
@@ -404,7 +416,8 @@ export class RefreshRunner implements DurableObject {
 		retry: Retry | undefined,
 		step = run,
 	): RefreshRun {
-		const cancelled = cancelRefreshRun(run, new Date().toISOString());
+		const at = new Date().toISOString();
+		const cancelled = cancelRefreshRun(closeRefreshStep(run, at), at);
 		if (!run.errorCode) return cancelled;
 		const repo = step.phase === "account" ? null : (step.repos[step.completedRepos] ?? null);
 		const pending = `${step.id}:${step.phase}:${step.completedRepos}`;
