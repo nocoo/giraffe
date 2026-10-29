@@ -2430,6 +2430,14 @@ and assert usable identity width and row height, not only absence of overflow.
 Review diagnostic explanations alongside corrected status labels: a closed step
 timestamp does not establish successful collection, including in helper copy.
 
+A second rebase integrated terminal-unavailable security days into completed
+cache windows. The factory viewmodel had treated any nonempty window list as
+measurement evidence, so its availability flag became true despite unavailable
+status, zero observed days and null counts. No visible alert-count misreport was
+established. Distinguish settled cache coverage from available observations at
+each consumer predicate, and test the actual new producer payload after rebasing,
+not only unchanged screenshots or fixtures from the previous backend contract.
+
 Token recovery also needs response ordering: an older initial read can fail or
 return an empty list after a successful creation and reload. Invalidate that
 initial request when the newer list request starts, and test both late outcomes.

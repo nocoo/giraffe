@@ -1,7 +1,7 @@
 # UI 0.28.0 visual evidence
 
 Baseline: `b3ddaa573828aa080620cef17e396403b432bc58` (v0.27.2).
-Candidate client tree: `05f5305dc7b34516f53f738a1abb1bc73890bef6` (v0.28.0).
+Candidate client tree: `a33e7724f2f336c05fb5a95cee84a970fd101133` (v0.28.0).
 Integration base: `6ad6eb78113e2f18cc0a4b4c0d0dc7ee02c75808` (v0.27.4).
 
 The client tree is the Git tree object at `HEAD:apps/web/src/client`, pinning the
@@ -12,9 +12,11 @@ the post-rebase settlement corrections: cancellation closure is not successful
 collection, and processed dimensions do not imply available observations.
 Diagnostic help uses the same closure semantics. Narrow repository panels reflow
 dimension chips without squeezing repository identities into vertical text.
-Fresh integration gates exercise the v0.27.4 Worker with this unchanged UI tree.
+Fresh integration gates exercise the v0.27.4 Worker with this corrected UI tree.
 Terminal-unavailable days can be settled cache windows without becoming available
 measurements; unavailable status, zero observed days and null counts stay intact.
+The client rejects unavailable coverage when projecting measurement availability
+and complete observation days, even when settled cache windows are present.
 
 Chromium captures use the same fixed clock, saved API fixtures and localhost-only
 static SPA hosts. No production request or real credential is involved.

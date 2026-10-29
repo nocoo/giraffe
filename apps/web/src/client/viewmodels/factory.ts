@@ -370,6 +370,7 @@ function coversWindow(
 	to: number,
 ) {
 	const coverage = repo.coverage[stream];
+	if (coverage.status === "unavailable") return false;
 	const windows =
 		coverage.completeWindows ?? (coverage.status === "complete" ? [windowOf(repo, stream)] : []);
 	const bounds = windows.map(calendarBounds);
@@ -802,10 +803,11 @@ export const STREAM_CODES: Record<FactoryStreamName, string> = {
 };
 export function hasFactoryMeasurement(repo: FactoryRepo, stream: FactoryStreamName): boolean {
 	const coverage = repo.coverage[stream];
+	if (coverage.status === "pending" || coverage.status === "unavailable") return false;
 	return (
 		coverage.status === "complete" ||
-		(coverage.status !== "pending" &&
-			(coverage.observed > 0 || (coverage.completeWindows?.length ?? 0) > 0))
+		coverage.observed > 0 ||
+		(coverage.completeWindows?.length ?? 0) > 0
 	);
 }
 

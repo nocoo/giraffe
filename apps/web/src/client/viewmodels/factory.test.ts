@@ -424,6 +424,43 @@ describe("software factory view model", () => {
 		expect(board.days.at(-1)).toMatchObject({ commits: 2, complete: { commits: false } });
 		expect(hasFactoryMeasurement(repo, "commits")).toBe(true);
 	});
+	it("keeps terminal-unavailable settled windows out of measured and complete evidence", () => {
+		const snapshot = ready();
+		const repo = snapshot.repos[0];
+		if (!repo) throw new Error("fixture");
+		snapshot.window = {
+			since: "2026-10-27T16:00:00.000Z",
+			until: "2026-10-28T15:59:59.999Z",
+			timezone: "Asia/Shanghai",
+		};
+		repo.metrics.days = { "2026-10-28": emptyDay() };
+		repo.coverage.commits.status = "unavailable";
+		repo.coverage.commits.observed = 0;
+		repo.coverage.commits.reason = "not_found";
+		repo.coverage.commits.completeWindows = shanghaiCompleteDays(["2026-10-28"]);
+		repo.coverage.alerts.status = "unavailable";
+		repo.coverage.alerts.observed = 0;
+		repo.coverage.alerts.completeWindows = shanghaiCompleteDays(["2026-10-28"]);
+		const board = factoryBoard(snapshot, [repo], [repo]);
+		expect(hasFactoryMeasurement(repo, "commits")).toBe(false);
+		expect(hasFactoryMeasurement(repo, "alerts")).toBe(false);
+		expect(board.observed).toMatchObject({ commits: false, alerts: false });
+		expect(board.days.at(-1)).toMatchObject({
+			date: "2026-10-28",
+			complete: { commits: false, alerts: false },
+		});
+		expect(factoryRepoCommits(repo, ["2026-10-28"], snapshot.window)).toEqual([null]);
+		repo.coverage.commits.status = "partial";
+		expect(hasFactoryMeasurement(repo, "commits")).toBe(true);
+		expect(factoryBoard(snapshot, [repo], [repo]).days.at(-1)).toMatchObject({
+			commits: 0,
+			complete: { commits: true },
+		});
+		repo.coverage.commits.status = "limited";
+		expect(hasFactoryMeasurement(repo, "commits")).toBe(true);
+		repo.coverage.commits.status = "complete";
+		expect(hasFactoryMeasurement(repo, "commits")).toBe(true);
+	});
 	it("unions Asia/Shanghai day windows without crossing the local day boundary", () => {
 		const snapshot = ready();
 		const repo = snapshot.repos[0];
