@@ -58,6 +58,12 @@ cancelled. Queued cancellation creates no step timings. All execution times are
 UTC and remain distinct from cached observation timestamps. Historical runs are
 not backfilled.
 
+These are durable step-transition timestamps, not HTTP/collector entry probes.
+With fused transitions, A finish and B start share a timestamp before the D1
+write completes. Their difference alone cannot prove zero idle. The local
+performance regression independently measures real collector entry/exit and
+end-to-end time, including injected D1 latency and settlement overhead.
+
 Cloudflare cron `0 19 * * *` starts the default refresh at **03:00 Asia/Shanghai**.
 Scheduled requests are deduplicated by account and Shanghai day; a daily request
 queues behind existing work. GitHub管家 consumes stored results at **04:30

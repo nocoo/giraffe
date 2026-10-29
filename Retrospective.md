@@ -2301,3 +2301,14 @@ been run separately, but that did not establish automatic enforcement. Running
 through the complete pre-commit hook. Before the first commit in any new
 worktree, verify the configured hook path and executable entrypoints, not just
 the tracked hook scripts. Keep generated wrappers local and preserve all gates.
+
+## 2026-10-29: measure execution independently from durable transitions
+
+Fusing A settlement and B start reduced D1 writes but made their stored timestamps
+equal. The first v0.27.4 performance assertion subtracted those fields and always
+reported zero gap, even when review injected 40 seconds into the settlement
+write. Independent collector entry/exit probes and a bounded end-to-end synthetic
+wall-time assertion now include that overhead. Transition timestamps describe
+durable state; never use algebraically identical timestamps as execution-speed
+evidence. Real Worker measurements and synthetic I/O measurements must stay
+separate from unmeasured production latency.

@@ -4,6 +4,7 @@ import { sqliteFixture } from "../../../../tests/fixtures/sqlite";
 import type { RefreshRun } from "../lib/refresh-types";
 import type { Env } from "./env";
 import { createDb } from "./lib/db/d1";
+import * as collection from "./lib/refresh-collection";
 import { getRefreshRun } from "./lib/refresh-store";
 import { encryptToken, parseKeyBytes } from "./lib/token-crypto";
 import { RefreshRunner, startRefresh } from "./refresh-runner";
@@ -11,6 +12,7 @@ import { RefreshRunner, startRefresh } from "./refresh-runner";
 afterEach(() => {
 	vi.useRealTimers();
 	vi.unstubAllGlobals();
+	vi.restoreAllMocks();
 });
 
 it("finishes a real force A/serial B despite slow D1 and reuses unavailable alert days with zero requests", async () => {
@@ -126,6 +128,24 @@ it("finishes a real force A/serial B despite slow D1 and reuses unavailable aler
 		TOKEN_ENCRYPTION_KEY_CURRENT: "1",
 	} as unknown as Env;
 	const runner = new RefreshRunner(state, env);
+	const spans: { phase: string; started: number; finished: number }[] = [];
+	async function measure<Value>(phase: string, operation: () => Promise<Value>): Promise<Value> {
+		const span = { phase, started: Date.now(), finished: Date.now() };
+		spans.push(span);
+		try {
+			return await operation();
+		} finally {
+			span.finished = Date.now();
+		}
+	}
+	const collectAccount = collection.collectAccount;
+	const collectRepository = collection.collectRepository;
+	vi.spyOn(collection, "collectAccount").mockImplementation((context) =>
+		measure("a", () => collectAccount(context)),
+	);
+	vi.spyOn(collection, "collectRepository").mockImplementation((context, repo) =>
+		measure("b", () => collectRepository(context, repo)),
+	);
 	env.REFRESH_RUNNER = {
 		getByName: () => ({ fetch: (request: Request) => runner.fetch(request) }),
 	} as unknown as DurableObjectNamespace;
@@ -134,12 +154,13 @@ it("finishes a real force A/serial B despite slow D1 and reuses unavailable aler
 		d1Calls: number;
 		wallMs: number;
 		requests: number;
-		gapMs: number;
+		collectorGapMs: number | null;
 	}[] = [];
 	let securityEvidence: unknown;
 	for (const force of [true, false]) {
 		const started = Date.now();
 		calls.length = 0;
+		spans.length = 0;
 		upstream.mockClear();
 		const run = await startRefresh(env, "account", { repo: "phase2/demo", force });
 		await runner.alarm();
@@ -154,6 +175,7 @@ it("finishes a real force A/serial B despite slow D1 and reuses unavailable aler
 		expect(alarm).toBeNull();
 		expect(Date.now() - started).toBeGreaterThan(25_000);
 		expect(calls.length).toBeLessThanOrEqual(force ? 20 : 17);
+		expect(Date.now() - started).toBeLessThanOrEqual(force ? 61_000 : 52_000);
 		const security = await raw
 			.prepare(
 				"SELECT payload,fetched_at FROM refresh_snapshots WHERE account_id='account' AND kind='repo:phase2/demo:security'",
@@ -170,16 +192,18 @@ it("finishes a real force A/serial B despite slow D1 and reuses unavailable aler
 		});
 		if (force) securityEvidence = security;
 		else expect(security).toEqual(securityEvidence);
-		const gapMs =
-			Date.parse(saved.timings?.repos[0]?.startedAt ?? "") -
-			Date.parse(saved.timings?.a?.finishedAt ?? "");
-		expect(gapMs).toBeLessThanOrEqual(1_000);
+		const accountSpan = spans.find((span) => span.phase === "a");
+		const repositorySpan = spans.find((span) => span.phase === "b");
+		expect(repositorySpan).toBeDefined();
+		const collectorGapMs =
+			accountSpan && repositorySpan ? repositorySpan.started - accountSpan.finished : null;
+		if (force) expect(collectorGapMs).toBeLessThanOrEqual(9_000);
 		results.push({
 			force,
 			d1Calls: calls.length,
 			wallMs: Date.now() - started,
 			requests: saved.requests,
-			gapMs,
+			collectorGapMs,
 		});
 	}
 	if (process.env.GIRAFFE_REFRESH_PROFILE === "1")
