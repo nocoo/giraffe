@@ -1409,6 +1409,242 @@ it("attributes the pending retry when a run is cancelled during backoff", async 
 	expect(fixture.storage.delete).toHaveBeenCalledWith("retry");
 });
 
+it.each([
+	["account", false],
+	["account", true],
+	["repos", false],
+	["repos", true],
+] as const)(
+	"recovers exhausted %s settlement without another request after D1 failure (cancel=%s)",
+	async (phase, cancel) => {
+		vi.useFakeTimers({ now: new Date("2026-10-29T04:00:00.000Z"), toFake: ["Date"] });
+		const fixture = await setup();
+		collectors.collectAccount.mockResolvedValue({ repos: ["octo/one"], ...collected(1, 1, 0) });
+		const collector =
+			phase === "account" ? collectors.collectAccount : collectors.collectRepository;
+		const path = phase === "account" ? ["viewer", "repositories"] : ["repository", "issues"];
+		collector.mockImplementation(async (context) =>
+			transport(context).request(async (client) => {
+				client.count = 1;
+				client.requests.graphql = 1;
+				client.graphqlErrors.push({ type: "RATE_LIMITED", path });
+				throw new ApiError(
+					503,
+					"github_rate_limited",
+					"safe",
+					new Date(Date.now() + 120_000).toISOString(),
+					429,
+				);
+			}),
+		);
+		const run = await startRefresh(fixture.env, "account", {});
+		for (let attempt = 0; attempt < 3; attempt++) await deliverNextAlarm(fixture);
+		const save = refreshStore.saveRefreshRun;
+		let interrupted = false;
+		const failure = vi
+			.spyOn(refreshStore, "saveRefreshRun")
+			.mockImplementation(async (db, next) => {
+				if (!interrupted && ["failed", "partial"].includes(next.status)) {
+					interrupted = true;
+					throw new Error("terminal settlement interrupted");
+				}
+				return save(db, next);
+			});
+		try {
+			await expect(deliverNextAlarm(fixture)).rejects.toThrow("terminal settlement interrupted");
+			const failedAt = new Date().toISOString();
+			expect(collector).toHaveBeenCalledTimes(4);
+			expect(await fixture.storage.get("retry")).toMatchObject({
+				attempts: 4,
+				notBefore: Date.now() + 120_000,
+			});
+			expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
+				status: "running",
+				requests: phase === "account" ? 3 : 4,
+			});
+			vi.setSystemTime(Date.now() + 5_000);
+			if (cancel) await fixture.cancelRequest(run.id);
+			await fixture.restart().alarm();
+			expect(collector).toHaveBeenCalledTimes(4);
+			const finished = await getRefreshRun(fixture.db(), "account", run.id);
+			expect(finished).toMatchObject({
+				status: cancel ? "cancelled" : phase === "account" ? "failed" : "partial",
+				requests: phase === "account" ? 4 : 5,
+				errorCode: "github_rate_limited",
+				partialReasons: [
+					{
+						repo: phase === "account" ? null : "octo/one",
+						failures: [
+							{
+								dimension: phase === "account" ? "catalog" : "issues",
+								graphqlType: "RATE_LIMITED",
+								graphqlPath: path,
+								httpStatus: 429,
+							},
+						],
+					},
+				],
+			});
+			expect(
+				phase === "account" ? finished?.timings?.a : finished?.timings?.repos[0],
+			).toMatchObject({
+				attempts: 4,
+				finishedAt: failedAt,
+			});
+			expect(await fixture.storage.get("retry")).toBeUndefined();
+			expect(fixture.alarmAt()).toBeNull();
+		} finally {
+			failure.mockRestore();
+		}
+	},
+);
+
+it.each(["committed-save", "retry-delete"])(
+	"fences an exhausted repository marker after %s acknowledgement fails",
+	async (boundary) => {
+		const fixture = await setup();
+		collectors.collectRepository.mockImplementation(async (context, repo) => {
+			if (repo === "octo/two") return collected(3, 1, 2);
+			context.onRequests(1, { graphql: 1, rest: 0 });
+			throw new ApiError(
+				503,
+				"github_rate_limited",
+				"safe",
+				new Date(Date.now() + 120_000).toISOString(),
+			);
+		});
+		const run = await startRefresh(fixture.env, "account", {});
+		for (let attempt = 0; attempt < 3; attempt++) await deliverNextAlarm(fixture);
+		const save = refreshStore.saveRefreshRun;
+		let interrupted = false;
+		const failure = vi
+			.spyOn(refreshStore, "saveRefreshRun")
+			.mockImplementation(async (db, next) => {
+				await save(db, next);
+				if (!interrupted && next.completedRepos === 1) {
+					interrupted = true;
+					if (boundary === "committed-save") throw new Error("settlement acknowledgement lost");
+					fixture.storage.delete.mockRejectedValueOnce(
+						new Error("settlement acknowledgement lost"),
+					);
+				}
+			});
+		try {
+			await expect(deliverNextAlarm(fixture)).rejects.toThrow("settlement acknowledgement lost");
+			expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
+				status: "running",
+				completedRepos: 1,
+				requests: 5,
+			});
+			await deliverNextAlarm(fixture);
+			expect(collectors.collectRepository.mock.calls.map(([, repo]) => repo)).toEqual([
+				"octo/one",
+				"octo/one",
+				"octo/one",
+				"octo/one",
+				"octo/two",
+			]);
+			expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
+				status: "partial",
+				completedRepos: 2,
+				requests: 8,
+			});
+			expect(await fixture.storage.get("retry")).toBeUndefined();
+		} finally {
+			failure.mockRestore();
+		}
+	},
+);
+
+it.each([false, true])(
+	"retains retry until successful D1 settlement (cancel=%s)",
+	async (cancel) => {
+		const fixture = await setup();
+		collectors.collectAccount
+			.mockRejectedValueOnce(new ApiError(502, "github_error", "safe"))
+			.mockResolvedValue({ repos: [], ...collected(1, 1, 0) });
+		const run = await startRefresh(fixture.env, "account", {});
+		await fixture.runner.alarm();
+		if (cancel) await fixture.cancelRequest(run.id);
+		const save = refreshStore.saveRefreshRun;
+		let interrupted = false;
+		const failure = vi
+			.spyOn(refreshStore, "saveRefreshRun")
+			.mockImplementation(async (db, next) => {
+				if (!interrupted && ["completed", "cancelled"].includes(next.status)) {
+					interrupted = true;
+					throw new Error("D1 unavailable");
+				}
+				return save(db, next);
+			});
+		try {
+			await expect(deliverNextAlarm(fixture)).rejects.toThrow("D1 unavailable");
+			expect(await fixture.storage.get("retry")).toMatchObject({ attempts: 1 });
+			if (cancel) expect(await fixture.storage.get(`cancel:${run.id}`)).toBe(true);
+			await deliverNextAlarm(fixture);
+			expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
+				status: cancel ? "cancelled" : "completed",
+			});
+			expect(await fixture.storage.get("retry")).toBeUndefined();
+			expect(await fixture.storage.get(`cancel:${run.id}`)).toBeUndefined();
+		} finally {
+			failure.mockRestore();
+		}
+	},
+);
+
+it.each(["committed-save", "retry-delete"])(
+	"does not reopen a terminal run or apply its marker to a new run after %s fails",
+	async (boundary) => {
+		const fixture = await setup();
+		collectors.collectAccount.mockImplementation(async (context) => {
+			context.onRequests(1, { graphql: 1, rest: 0 });
+			throw new ApiError(
+				503,
+				"github_rate_limited",
+				"safe",
+				new Date(Date.now() + 120_000).toISOString(),
+			);
+		});
+		const run = await startRefresh(fixture.env, "account", {});
+		for (let attempt = 0; attempt < 3; attempt++) await deliverNextAlarm(fixture);
+		const save = refreshStore.saveRefreshRun;
+		let interrupted = false;
+		const failure = vi
+			.spyOn(refreshStore, "saveRefreshRun")
+			.mockImplementation(async (db, next) => {
+				await save(db, next);
+				if (!interrupted && next.status === "failed") {
+					interrupted = true;
+					if (boundary === "committed-save") throw new Error("terminal acknowledgement lost");
+					fixture.storage.delete.mockRejectedValueOnce(new Error("terminal acknowledgement lost"));
+				}
+			});
+		try {
+			await expect(deliverNextAlarm(fixture)).rejects.toThrow("terminal acknowledgement lost");
+			const terminal = await getRefreshRun(fixture.db(), "account", run.id);
+			expect(terminal).toMatchObject({ status: "failed", requests: 4 });
+			if (boundary === "retry-delete") {
+				await deliverNextAlarm(fixture);
+				expect(collectors.collectAccount).toHaveBeenCalledTimes(4);
+				expect(await fixture.storage.get("retry")).toBeUndefined();
+			}
+			collectors.collectAccount.mockResolvedValue({ repos: [], ...collected(1, 1, 0) });
+			const next = await startRefresh(fixture.env, "account", {});
+			await deliverNextAlarm(fixture);
+			expect(await getRefreshRun(fixture.db(), "account", run.id)).toEqual(terminal);
+			expect(await getRefreshRun(fixture.db(), "account", next.id)).toMatchObject({
+				status: "completed",
+				requests: 1,
+				errorCode: null,
+			});
+			expect(collectors.collectAccount).toHaveBeenCalledTimes(5);
+		} finally {
+			failure.mockRestore();
+		}
+	},
+);
+
 it("clears a resolved transient failure code before the run finishes", async () => {
 	const fixture = await setup();
 	collectors.collectAccount.mockResolvedValue({ repos: ["octo/one"], ...collected(1, 1, 0) });

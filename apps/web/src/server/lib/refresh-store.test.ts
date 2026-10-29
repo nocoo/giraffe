@@ -261,6 +261,8 @@ it("records queued and per-step timings without inventing missed attempts", asyn
 	const resumed = startRefreshStep(retrying, "2026-10-29T01:00:09.000Z");
 	expect(resumed.timings?.repos[0]?.startedAt).toBe("2026-10-29T01:00:03.000Z");
 	const done = completeRefreshStepAttempt(resumed, "2026-10-29T01:00:10.000Z", true);
+	expect(closeRefreshStep(aFinished, "2026-10-29T01:00:20.000Z")).toEqual(aFinished);
+	expect(closeRefreshStep(done, "2026-10-29T01:00:20.000Z")).toEqual(done);
 	expect(done.timings?.repos[0]).toEqual({
 		repo: "octo/one",
 		startedAt: "2026-10-29T01:00:03.000Z",

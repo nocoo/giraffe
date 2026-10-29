@@ -2274,3 +2274,13 @@ the old two-day payload is a runner regression. Fixtures now contain a complete
 calendar unless missingness is the behavior under test. The B-phase zero-request
 stall report also adds explicit same-handler chaining and interrupted-first-B
 persistence tests; it does not establish why the production handler stopped.
+
+A second settlement boundary still removed retry state before the exhausted
+failure's terminal/cursor update committed in D1. Failing that update left the
+run active but reset the attempt budget and lost the newest rate-limit deadline;
+the five-second recovery could therefore make a fifth request too early. Retry
+state now keeps a small exhausted-failure marker until D1 saves successfully.
+Recovery replays that evidence without collection, fenced by run/phase/cursor.
+Tests cover failed saves, committed writes with lost acknowledgements, cleanup
+failures, next-repository/new-run fences and cancellation with original safe
+details/counts/times. Cancelling a settled step must not renew its finish time.

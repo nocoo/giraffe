@@ -73,14 +73,20 @@ export function closeRefreshStep(run: RefreshRun, at: string): RefreshRun {
 	if (!timings) return run;
 	if (run.phase === "account")
 		return timings.a
-			? { ...run, timings: { ...timings, a: { ...timings.a, finishedAt: at } } }
+			? {
+					...run,
+					timings: { ...timings, a: { ...timings.a, finishedAt: timings.a.finishedAt ?? at } },
+				}
 			: run;
 	const index = run.completedRepos;
 	const entry = timings.repos[index];
 	if (!entry || entry.repo !== run.repos[index]) return run;
 	return {
 		...run,
-		timings: { ...timings, repos: replaced(timings.repos, index, { ...entry, finishedAt: at }) },
+		timings: {
+			...timings,
+			repos: replaced(timings.repos, index, { ...entry, finishedAt: entry.finishedAt ?? at }),
+		},
 	};
 }
 export const emptyRequestBreakdown = (): RefreshRun["requestBreakdown"] => ({

@@ -71,6 +71,7 @@ type Retry = {
 	attempts: number;
 	notBefore: number;
 	detail?: RefreshFailureDetail;
+	exhausted?: { counted: RequestCounts; detail: RefreshFailureDetail; at: string };
 };
 type StepOutcome =
 	| { ok: true; phase: "account"; result: AccountCollectionResult }
@@ -123,6 +124,33 @@ function finish(run: RefreshRun, at: string): RefreshRun {
 		updatedAt: at,
 		finishedAt: at,
 	};
+}
+
+function failedStep(
+	run: RefreshRun,
+	counted: RequestCounts,
+	detail: RefreshFailureDetail,
+	at: string,
+	cancel: boolean,
+): RefreshRun {
+	const accountPhase = run.phase === "account";
+	const repo = accountPhase ? null : (run.repos[run.completedRepos] ?? null);
+	let failed = completeRefreshStepAttempt(
+		addRefreshRequests(
+			{ ...run, errorCode: detail.code, updatedAt: at },
+			accountPhase ? "a" : "b",
+			counted,
+		),
+		at,
+		true,
+	);
+	failed =
+		accountPhase || fatalCodes.includes(detail.code)
+			? cancel
+				? failed
+				: { ...failed, status: "failed", phase: "done", finishedAt: at }
+			: { ...failed, partial: true, completedRepos: failed.completedRepos + 1 };
+	return addRefreshPartialReasons(failed, repo, [detail.code], [detail]);
 }
 
 export async function startRefresh(
@@ -259,21 +287,34 @@ export class RefreshRunner implements DurableObject {
 				const accountId = await this.state.storage.get<string>("accountId");
 				const active = accountId ? await activeRefreshRun(db, accountId) : null;
 				if (!accountId || !active) {
+					await this.state.storage.delete("retry");
 					await this.state.storage.deleteAlarm();
 					return null;
 				}
 				const at = new Date().toISOString();
-				if (await this.state.storage.get<boolean>(cancelKey(active.id))) {
-					const retry = await this.state.storage.get<Retry>("retry");
-					await this.persist(db, accountId, this.attributedCancellation(active, retry));
-					await this.state.storage.delete("retry");
+				const retry = await this.state.storage.get<Retry>("retry");
+				const cancelling = !!(await this.state.storage.get<boolean>(cancelKey(active.id)));
+				const sameStep = retry?.key === `${active.id}:${active.phase}:${active.completedRepos}`;
+				if (sameStep && retry.exhausted) {
+					const failure = retry.exhausted;
+					let resolved = failedStep(
+						active,
+						failure.counted,
+						failure.detail,
+						failure.at,
+						cancelling,
+					);
+					if (cancelling) resolved = this.attributedCancellation(resolved, retry, active);
+					else if (!terminal(resolved) && resolved.completedRepos >= resolved.repos.length)
+						resolved = finish(resolved, failure.at);
+					await this.persist(db, accountId, resolved);
 					return null;
 				}
-				const retry = await this.state.storage.get<Retry>("retry");
-				if (
-					retry?.key === `${active.id}:${active.phase}:${active.completedRepos}` &&
-					retry.notBefore > Date.now()
-				) {
+				if (cancelling) {
+					await this.persist(db, accountId, this.attributedCancellation(active, retry));
+					return null;
+				}
+				if (sameStep && retry.notBefore > Date.now()) {
 					await this.state.storage.setAlarm(retry.notBefore);
 					return null;
 				}
@@ -371,51 +412,53 @@ export class RefreshRunner implements DurableObject {
 				reasons,
 				outcome.phase === "repos" && outcome.result.partial ? outcome.failures : [],
 			);
-			await this.state.storage.delete("retry");
 		} else {
 			const code = failureCode(outcome.error);
 			const retry = await this.state.storage.get<Retry>("retry");
 			const key = `${run.id}:${step.run.phase}:${step.run.completedRepos}`;
 			const attempts = retry?.key === key ? retry.attempts : 0;
 			const fatal = fatalCodes.includes(code);
-			run = addRefreshRequests(
-				{ ...run, errorCode: code },
-				accountPhase ? "a" : "b",
-				outcome.counted,
-			);
-			if (!fatal && attempts < RETRY_LIMIT) {
+			const detail = failureDetail(code, outcome.error);
+			if (!fatal) {
 				const deadline =
 					outcome.error instanceof ApiError && outcome.error.retryAt
 						? Date.parse(outcome.error.retryAt)
 						: 0;
-				retryAt = Math.max(
+				const notBefore = Math.max(
 					Date.now() + retryDelay(code, attempts),
 					Number.isFinite(deadline) ? deadline : 0,
 				);
-				pending = {
+				const recorded: Retry = {
 					key,
 					attempts: attempts + 1,
-					notBefore: retryAt,
-					detail: failureDetail(code, outcome.error),
+					notBefore,
+					detail,
+					...(attempts < RETRY_LIMIT
+						? {}
+						: { exhausted: { counted: outcome.counted, detail, at } }),
 				};
-				await this.state.storage.put("retry", pending);
+				await this.state.storage.put("retry", recorded);
+				if (attempts < RETRY_LIMIT) {
+					pending = recorded;
+					retryAt = notBefore;
+				}
 			}
-			run = completeRefreshStepAttempt(run, at, pending === undefined);
-			if (pending === undefined) {
-				await this.state.storage.delete("retry");
-				run =
-					accountPhase || fatal
-						? cancellationRequested
-							? run
-							: { ...run, status: "failed", phase: "done", finishedAt: at }
-						: { ...run, partial: true, completedRepos: run.completedRepos + 1 };
-				run = addRefreshPartialReasons(run, repo, [code], [failureDetail(code, outcome.error)]);
-			}
+			run =
+				pending === undefined
+					? failedStep(run, outcome.counted, detail, at, !!cancellationRequested)
+					: completeRefreshStepAttempt(
+							addRefreshRequests(
+								{ ...run, errorCode: code },
+								accountPhase ? "a" : "b",
+								outcome.counted,
+							),
+							at,
+							false,
+						);
 		}
 		if (cancellationRequested) {
 			run = this.attributedCancellation(run, pending, step.run);
 			retryAt = null;
-			await this.state.storage.delete("retry");
 		} else if (retryAt === null && !terminal(run) && run.completedRepos >= run.repos.length)
 			run = finish(run, at);
 		const stored = await getRefreshRun(db, step.accountId, run.id);
@@ -451,6 +494,7 @@ export class RefreshRunner implements DurableObject {
 		urgent = true,
 	): Promise<void> {
 		await saveRefreshRun(db, run);
+		if (retryAt === null) await this.state.storage.delete("retry");
 		if (terminal(run)) await this.state.storage.delete(cancelKey(run.id));
 		if (retryAt !== null) await this.state.storage.setAlarm(retryAt);
 		else await this.wake(db, accountId, urgent);

@@ -191,6 +191,14 @@ before collection after every wakeup. A failed final alarm write cannot turn a
 five-second recovery into an early rate-limit retry. Cancellation is evaluated
 first and does not wait for the retry deadline.
 
+An exhausted failure retains its final attempt count, deadline, safe detail and
+observation time until D1 commits its terminal state or repository cursor. If
+that save fails, recovery replays only settlement, never another GitHub request.
+The marker is fenced to the exact run/phase/cursor, so a committed write with a
+lost acknowledgement cannot settle the next repository or run twice. Cancellation
+keeps the last attempt's evidence and takes priority over waiting. Retry cleanup
+follows successful D1 persistence, including successful and cancelled steps.
+
 Before v0.27.1, B used one GraphQL and four REST requests, including a redundant
 REST release sample. Releases now share the main query, reducing the normal B
 budget from five to four requests (20%). For 61 selected repositories and a
@@ -327,7 +335,7 @@ injects no network latency and is not a production timing claim. The small local
 wall-time difference is not evidence of a production speedup. Regression tests
 pin call counts, read-your-writes, failed-read rollback and published evidence.
 For real local Worker step timings, run
-`GIRAFFE_REFRESH_PROFILE=1 bun run test:e2e:api tests/api/unified-refresh.test.ts`;
+`GIRAFFE_REFRESH_PROFILE=1 bun run test:e2e:api tests/api/unified-refresh.test.ts --disableConsoleIntercept`;
 its JSON output includes queue/A/B durations, step gaps and actual request counts
 for force, REST-only and zero-request cache paths, using only local stub data.
 
