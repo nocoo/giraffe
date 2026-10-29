@@ -479,7 +479,7 @@ it("compacts lookback windows so all 61 repositories survive D1 publication", as
 	expect(await collectRepository(oldDay, name(0))).toMatchObject({ requests: 0 });
 	expect(fetch).not.toHaveBeenCalled();
 	expect((await published(raw)).snapshot.repos[0]?.metrics).toEqual(advanced?.metrics);
-});
+}, 15_000);
 
 it("keeps unreachable-day gaps and unavailable windows separate and reports the reachable worst case", async () => {
 	const skipped = (day: number) => day % 2 === 0;

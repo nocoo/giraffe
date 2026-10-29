@@ -2521,3 +2521,17 @@ Parallel API and browser runners initially collided on a Wrangler internal
 socket even though their public test ports differ. Run these server lanes
 sequentially for final acceptance; a failed startup is not passing browser
 evidence. Local fixture timings do not establish production D1 latency.
+
+The normal push hook then rejected three HTTP assertions that still inferred
+stream ranges from the aggregate publication or mutated aggregate coverage to
+test stream-source revalidation. Align HTTP fixtures with the authoritative
+resource coverage as well as unit projections: aggregate-only changes must not
+change a stream tag, while actual resource metadata changes must invalidate it.
+Keep the push gate enabled and rerun both real-HTTP authentication lanes.
+
+The expanded capacity case performs both a 61-repository backfill and its
+61-repository cached replay. Concurrent local HTTP tests pushed it beyond
+Vitest's generic five-second deadline; the unfinished async collector then
+polluted the following test's global fetch spy. Give this scale test an explicit
+15-second deadline, retaining all byte, request-count and retention assertions.
+It is a capacity regression, not a production CPU benchmark.

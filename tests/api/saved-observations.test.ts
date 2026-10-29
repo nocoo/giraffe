@@ -602,7 +602,7 @@ it("includes baseline and missing repositories in all and starred freshness", as
 	}
 });
 
-it("exposes the saved factory stream window without changing collection state", async () => {
+it("keeps saved stream ranges separate from the publication window without changing collection state", async () => {
 	const before = sql(
 		`SELECT kind,payload FROM refresh_snapshots WHERE account_id=${quote(account)} ORDER BY kind`,
 	).map((statement) => statement.results);
@@ -610,7 +610,7 @@ it("exposes the saved factory stream window without changing collection state", 
 	const result = await (await machine("factory/repos/nocoo/recovered/commits")).json();
 	expect(result).toMatchObject({
 		data: {
-			ranges: [factoryFixture().window],
+			ranges: [],
 			observation: { window: factoryFixture().window },
 			coverage: { status: "complete" },
 		},
@@ -855,7 +855,7 @@ it("serves saved windows and never falls back to legacy rows for missing or repl
 		const path = "factory/repos/nocoo/recovered/commits";
 		expect(await (await machine(path)).json()).toMatchObject({
 			sourceVersion: factoryFixture().runId,
-			data: { ranges: [factoryFixture().window], items: [], coverage: { status: "complete" } },
+			data: { ranges: [], items: [], coverage: { status: "complete" } },
 		});
 		for (const [command, message] of [
 			[
@@ -909,6 +909,10 @@ it("reads only the canonical publication rate and hides expired or untimestamped
 		`SELECT payload FROM refresh_snapshots WHERE account_id=${quote(account)} AND kind='factory'`,
 	)[0]?.results[0]?.payload;
 	if (typeof original !== "string") throw new Error("saved publication missing");
+	const resourceWhere = `account_id=${quote(account)} AND stream='commits' AND repo_id=(SELECT repo_id FROM refresh_catalog WHERE account_id=${quote(account)} AND repo='nocoo/recovered')`;
+	const originalResource = sql(`SELECT payload FROM refresh_resources WHERE ${resourceWhere}`)[0]
+		?.results[0]?.payload;
+	if (typeof originalResource !== "string") throw new Error("saved stream missing");
 	try {
 		sql(
 			`UPDATE refresh_snapshots SET payload=json_set(payload,'$.rate',json(${quote(JSON.stringify(fresh))})) WHERE account_id=${quote(account)} AND kind='factory'; ${publicationSql(account)}`,
@@ -1112,11 +1116,18 @@ it("revalidates private sources over HTTP with response-derived tags and no GET 
 		sql(
 			`UPDATE refresh_snapshots SET payload=json_set(payload,'$.repos[0].coverage.commits.observed',9999) WHERE account_id=${quote(account)} AND kind='factory'; ${publicationSql(account)}`,
 		);
+		const aggregateChanged = await conditionalSources(tag);
+		expect(aggregateChanged.status).toBe(304);
+		expect(aggregateChanged.headers.get("etag")).toBe(tag);
+		sql(
+			`UPDATE refresh_resources SET payload=json_set(payload,'$.coverage.observed',9999) WHERE ${resourceWhere}`,
+		);
 		const metadataChanged = await conditionalSources(tag);
 		expect(metadataChanged.status).toBe(200);
 		expect(metadataChanged.headers.get("etag")).not.toBe(tag);
 	} finally {
 		assertMarker();
+		sql(`UPDATE refresh_resources SET payload=${quote(originalResource)} WHERE ${resourceWhere}`);
 		sql(
 			`UPDATE refresh_snapshots SET payload=${quote(original)} WHERE account_id=${quote(account)} AND kind='factory'; ${publicationSql(account)}`,
 		);
