@@ -1,16 +1,9 @@
 import { expect, it, vi } from "vitest";
-import { github } from "../../../../../tests/fixtures/factory";
+
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
-import {
-	beginCatalog,
-	catalogCreationTimes,
-	catalogIdentity,
-	catalogPlanWrites,
-	catalogRetentionWrites,
-	planCatalog,
-} from "./catalog-history";
+
 import { catalogRowIdentity, identifyCatalogRow } from "./catalog-identity";
-import { collectRepos } from "./collect";
+
 import { createDb } from "./db/d1";
 import { enrichRepoAgentStates, writeRepoAgentState } from "./repo-agent-state";
 import { enrichRepoMeta, readRepoMeta, writeRepoMeta } from "./repo-meta";
@@ -112,7 +105,7 @@ it("R6 atomically patches only specified fields and sources, including concurren
 	expect(await s.stored()).toEqual(before);
 });
 
-it("R6 metadata follows identity through rename/removal, pins retention and isolates accounts/name replacements", async () => {
+it("R6 metadata follows identity through rename/removal, isolates accounts/name replacements", async () => {
 	const s = await fixture();
 	await s.write({ category: "profile" });
 	await s.raw
@@ -121,7 +114,6 @@ it("R6 metadata follows identity through rename/removal, pins retention and isol
 		)
 		.bind(at)
 		.run();
-	await s.db.batch(catalogRetentionWrites(s.db, "a", "2027-10-22T00:00:00Z"));
 	expect(await s.read("owner/renamed")).toMatchObject({
 		repo_removed: true,
 		deleted_at: at,
@@ -195,222 +187,4 @@ it("R6 both enrichment orders preserve private identity and distinct same-name r
 		]);
 	}
 	expect(await enrichRepoMeta(s.db, "a", {})).toEqual({ repos: [] });
-});
-
-it("R6 the existing catalog request collects createdAt without wire changes and publication never replaces agent values", async () => {
-	const s = await fixture();
-	const queries: { query: string; variables: Record<string, unknown> }[] = [];
-	let name = "owner/app";
-	let collectedAt = created;
-	const gh = github((_url, init) => {
-		const body = JSON.parse(String(init?.body)) as {
-			query: string;
-			variables: Record<string, unknown>;
-		};
-		queries.push(body);
-		return Response.json({
-			data: {
-				viewer: {
-					repositories: {
-						nodes: [{ id: "R_app", nameWithOwner: name, createdAt: collectedAt }],
-						pageInfo: { hasNextPage: false },
-					},
-				},
-			},
-		});
-	});
-	for (const [index, time] of [at, "2026-10-23T00:00:00Z", "2026-10-24T00:00:00Z"].entries()) {
-		const baseline = await beginCatalog(s.db, "a");
-		const payload = await collectRepos(gh, "fixture");
-		expect(JSON.stringify(payload)).not.toContain("createdAt");
-		expect(JSON.stringify(payload)).not.toContain("created_at");
-		const plan = await planCatalog(
-			baseline,
-			payload,
-			catalogIdentity(payload),
-			"owner",
-			gh,
-			"fixture",
-			time,
-			{ kind: "legacy", runId: null },
-		);
-		await s.db.batch(catalogPlanWrites(s.db, "a", plan));
-		if (index === 0) {
-			expect(await s.read()).toMatchObject({
-				created_at: created,
-				field_sources: { created_at: "catalog" },
-			});
-			await s.write({ created_at: "2019-01-01T00:00:00Z", category: "app" });
-			name = "owner/renamed";
-			collectedAt = "2021-01-01T00:00:00Z";
-		} else
-			expect(await s.read(name)).toMatchObject({
-				created_at: "2019-01-01T00:00:00Z",
-				category: "app",
-				field_sources: { created_at: "agent", category: "agent" },
-			});
-	}
-	expect(queries).toHaveLength(3);
-	expect(
-		queries.every(
-			(query) =>
-				query.query.includes("viewer") &&
-				query.query.includes("createdAt") &&
-				!query.query.includes("nodes(ids:"),
-		),
-	).toBe(true);
-});
-
-it("R6 staged catalog fills only empty fields and atomically preserves a later agent patch", async () => {
-	const s = await fixture();
-	const gh = github(() => {
-		throw new Error("No upstream required");
-	});
-	const payload = { truncated: false, repos: [{ name_with_owner: "owner/app" }] };
-	catalogCreationTimes(payload, { R_app: created });
-	const plan = await planCatalog(
-		await beginCatalog(s.db, "a"),
-		payload,
-		{ "owner/app": "R_app" },
-		"owner",
-		gh,
-		"fixture",
-		at,
-		{ kind: "factory", runId: "staged" },
-	);
-	await s.write({ category: "app" });
-	const staged = JSON.parse(JSON.stringify(plan)) as typeof plan;
-	await s.db.batch(catalogPlanWrites(s.db, "a", staged));
-	expect(await s.read()).toMatchObject({
-		created_at: created,
-		category: "app",
-		field_sources: { created_at: "catalog", category: "agent" },
-	});
-	const next = await planCatalog(
-		await beginCatalog(s.db, "a"),
-		payload,
-		{ "owner/app": "R_app" },
-		"owner",
-		gh,
-		"fixture",
-		"2026-10-23T00:00:00Z",
-		{ kind: "factory", runId: "next" },
-	);
-	await s.write({ created_at: "2018-01-01T00:00:00Z" });
-	const before = await s.stored();
-	await s.db.batch(catalogPlanWrites(s.db, "a", next));
-	expect(await s.stored()).toEqual(before);
-});
-
-it("R6 delayed catalog publication never regresses a later metadata update time", async () => {
-	vi.useFakeTimers();
-	try {
-		vi.setSystemTime(new Date(at));
-		const setup = await fixture();
-		const payload = { truncated: false, repos: [{ name_with_owner: "owner/app" }] };
-		catalogCreationTimes(payload, { R_app: created });
-		const plan = await planCatalog(
-			await beginCatalog(setup.db, "a"),
-			payload,
-			{ "owner/app": "R_app" },
-			"owner",
-			github(() => {
-				throw new Error("No upstream required");
-			}),
-			"fixture",
-			at,
-			{ kind: "factory", runId: "delayed" },
-		);
-		vi.setSystemTime(new Date("2026-10-22T02:00:00.000Z"));
-		await setup.write({ category: "docs-vault" });
-		vi.setSystemTime(new Date("2026-10-22T03:00:00.000Z"));
-		await setup.db.batch(catalogPlanWrites(setup.db, "a", plan));
-		expect(await setup.read()).toMatchObject({
-			created_at: created,
-			category: "docs-vault",
-			updated_at: "2026-10-22T03:00:00.000Z",
-			field_sources: { created_at: "catalog", category: "agent" },
-		});
-		const published = await setup.stored();
-		vi.setSystemTime(new Date("2026-10-22T04:00:00.000Z"));
-		const next = await planCatalog(
-			await beginCatalog(setup.db, "a"),
-			payload,
-			{ "owner/app": "R_app" },
-			"owner",
-			github(() => {
-				throw new Error("No upstream required");
-			}),
-			"fixture",
-			new Date().toISOString(),
-			{ kind: "factory", runId: "subsequent" },
-		);
-		await setup.db.batch(catalogPlanWrites(setup.db, "a", next));
-		expect(await setup.stored()).toEqual(published);
-	} finally {
-		vi.useRealTimers();
-	}
-});
-
-it("R6 missing or invalid optional creation timestamps never become catalog metadata", async () => {
-	const gh = github(() =>
-		Response.json({
-			data: {
-				viewer: {
-					repositories: {
-						nodes: [
-							{ id: "R_valid", nameWithOwner: "owner/valid", createdAt: created },
-							{ id: "R_invalid", nameWithOwner: "owner/invalid", createdAt: "invalid" },
-							{ id: "R_missing", nameWithOwner: "owner/missing" },
-						],
-						pageInfo: { hasNextPage: false },
-					},
-				},
-			},
-		}),
-	);
-	const payload = await collectRepos(gh, "fixture");
-	expect(payload.truncated).toBe(false);
-	expect(catalogCreationTimes(payload)).toEqual({ R_valid: created });
-	expect(gh.count).toBe(1);
-});
-
-it("R6 confirmed catalog removal preserves agent fields and uses catalog deletion time without copying it", async () => {
-	const s = await fixture();
-	await s.repo("R_proof", "owner/proof");
-	await s.raw
-		.prepare(
-			"UPDATE catalog_repositories SET visibility='PRIVATE',row_payload=? WHERE identity_key='R_proof'",
-		)
-		.bind(JSON.stringify({ name_with_owner: "owner/proof", is_private: true }))
-		.run();
-	await s.write({ created_at: created, category: "app", exclusion_reason: "preserved" });
-	const before = await s.stored();
-	const gh = github(() =>
-		Response.json({
-			data: { node: null },
-			errors: [{ type: "NOT_FOUND", message: "Not Found", path: ["node"] }],
-		}),
-	);
-	const removed = "2026-10-23T00:00:00.000Z";
-	const plan = await planCatalog(
-		await beginCatalog(s.db, "a"),
-		{ truncated: false, repos: [{ name_with_owner: "owner/proof", is_private: true }] },
-		{ "owner/proof": "R_proof" },
-		"owner",
-		gh,
-		"fixture",
-		removed,
-		{ kind: "legacy", runId: null },
-	);
-	await s.db.batch(catalogPlanWrites(s.db, "a", plan));
-	expect(await s.read()).toMatchObject({
-		repo_removed: true,
-		deleted_at: removed,
-		created_at: created,
-		category: "app",
-		exclusion_reason: "preserved",
-		field_sources: { created_at: "agent", category: "agent", exclusion_reason: "agent" },
-	});
-	expect(await s.stored()).toEqual(before);
 });

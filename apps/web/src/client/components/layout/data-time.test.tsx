@@ -2,8 +2,6 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { RefreshTimes } from "../../../lib/refresh-times";
-import { setActiveAccountId } from "../../viewmodels/session";
 import { fetchKind } from "../../viewmodels/snapshot";
 import { DataTimeControl, DataTimeProvider, DataTimeSource } from "./data-time";
 
@@ -15,12 +13,7 @@ beforeEach(() => {
 	vi.setSystemTime(new Date("2026-10-02T10:10:00Z"));
 	vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 	vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
-	setActiveAccountId("a");
-	const times: RefreshTimes = {
-		account_id: "a",
-		runs: [{ startedAt: "2026-10-02T08:00:00Z", finishedAt: "2026-10-02T08:10:00Z" }],
-	};
-	vi.mocked(fetchKind).mockResolvedValue(times);
+	vi.mocked(fetchKind).mockClear();
 	container = document.createElement("div");
 	document.body.append(container);
 	root = createRoot(container);
@@ -28,7 +21,6 @@ beforeEach(() => {
 afterEach(async () => {
 	await act(async () => root.unmount());
 	container.remove();
-	setActiveAccountId(null);
 	vi.restoreAllMocks();
 	vi.useRealTimers();
 	vi.unstubAllGlobals();
@@ -53,7 +45,7 @@ function Page({
 it("registers sources, ticks relative age, replaces data and cleans up on navigation", async () => {
 	await act(async () => root.render(<Page />));
 	expect(container.textContent).toContain("2 小时前更新");
-	expect(fetchKind).toHaveBeenCalledWith("refresh/times");
+	expect(fetchKind).not.toHaveBeenCalled();
 	await act(async () => vi.advanceTimersByTimeAsync(3600000));
 	expect(container.textContent).toContain("3 小时前更新");
 	await act(async () => root.render(<Page at="2026-09-30T08:00:00Z" />));
@@ -69,7 +61,7 @@ it("resets scoped sources without remounting children and re-registers unchanged
 	await act(async () => root.render(<Page scope="issues:all" />));
 	expect(container.querySelector("header")).toBe(header);
 	expect(container.textContent).toContain("2 小时前更新");
-	expect(fetchKind).toHaveBeenCalledWith("refresh/times");
+	expect(fetchKind).not.toHaveBeenCalled();
 	await act(async () => root.render(<Page scope="repos:all" visible={false} />));
 	expect(container.textContent).toContain("暂无数据时间");
 	await act(async () => root.render(<Page scope="issues:starred" />));
@@ -78,22 +70,12 @@ it("resets scoped sources without remounting children and re-registers unchanged
 	expect(container.textContent).toContain("暂无数据时间");
 	expect(container.querySelector("header")).toBe(header);
 });
-it("does not replace saved times with another account's refresh completion", async () => {
-	const times: RefreshTimes = {
-		account_id: "other",
-		runs: [{ startedAt: "2026-10-01T00:00:00Z", finishedAt: "2026-10-02T10:00:00Z" }],
-	};
-	vi.mocked(fetchKind).mockResolvedValue(times);
+it("keeps saved data age on focus without reading deleted refresh records", async () => {
 	await act(async () => root.render(<Page />));
 	expect(container.textContent).toContain("2 小时前更新");
-});
-it("keeps data age when refresh records cannot be read", async () => {
-	vi.mocked(fetchKind).mockRejectedValue(new Error("offline"));
-	await act(async () => root.render(<Page />));
-	expect(container.textContent).toContain("2 小时前更新");
-	vi.mocked(fetchKind).mockResolvedValue({ missing: true });
 	await act(async () => window.dispatchEvent(new Event("focus")));
 	expect(container.textContent).toContain("2 小时前更新");
+	expect(fetchKind).not.toHaveBeenCalled();
 });
 
 it("opens one named popover with precise times and mixed/missing source notices", async () => {
@@ -124,7 +106,7 @@ it("opens one named popover with precise times and mixed/missing source notices"
 	expect(dialog?.textContent).toContain("数据更新时间");
 	expect(dialog?.textContent).toContain("部分数据仍来自较早的刷新");
 	expect(dialog?.textContent).toContain("1 项缺少数据");
-	expect(dialog?.querySelector("time")?.dateTime).toBe("2026-10-02T08:10:00Z");
+	expect(dialog?.querySelector("time")?.dateTime).toBe("2026-10-02T08:00:00Z");
 	await act(async () =>
 		document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
 	);

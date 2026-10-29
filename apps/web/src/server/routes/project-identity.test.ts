@@ -5,7 +5,6 @@ import { openSqliteD1 } from "../lib/db/sqlite-d1";
 import { projectApiBase } from "../lib/project-identity";
 
 const env: Env = {
-	FACTORY_QUEUE: {} as Queue,
 	DB: openSqliteD1(true),
 	ASSETS: { fetch: async () => new Response("asset") } as unknown as Fetcher,
 	TOKEN_ENCRYPTION_KEY_CURRENT: "1",

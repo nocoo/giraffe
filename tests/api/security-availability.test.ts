@@ -1,195 +1,126 @@
-import { join, resolve } from "node:path";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { expect, it } from "vitest";
-import { executeD1FixtureSync } from "../fixtures/d1";
+import { factoryFixture } from "../fixtures/factory-snapshot";
+import { quote, localD1Rows as rows } from "./local-d1";
 
 const base = process.env.GIRAFFE_E2E ?? "http://127.0.0.1:17045";
-const root = resolve(import.meta.dirname, "../..");
-const origin = "https://giraffe.dev.hexly.ai";
-
-function sql(command: string): Record<string, unknown>[] {
-	const persist = process.env.GIRAFFE_PERSIST;
-	const config = process.env.GIRAFFE_CONFIG;
-	if (
-		new URL(base).hostname !== "127.0.0.1" ||
-		persist !== join(root, ".wrangler/e2e") ||
-		config !== join(root, ".wrangler/e2e-run/wrangler.toml")
-	)
-		throw new Error("dedicated local L2 context required");
-	const result = executeD1FixtureSync(command, { persist, config, root });
-	return (JSON.parse(result) as { results: Record<string, unknown>[] }[]).flatMap(
-		(entry) => entry.results,
-	);
-}
-
-const browser = (path: string, method = "GET", body?: unknown) =>
-	fetch(`${base}/api/${path}`, {
-		method,
-		headers: {
-			origin,
-			"content-type": "application/json",
-			...(process.env.GIRAFFE_JWT ? { "Cf-Access-Jwt-Assertion": process.env.GIRAFFE_JWT } : {}),
-		},
-		...(body === undefined ? {} : { body: JSON.stringify(body) }),
-	});
 
 it.each([
-	["E", "alerts_disabled", ""],
-	["F", "permission_denied", ""],
-	["G", "not_found", ""],
-	["H", "unknown", ""],
-	["I", "alerts_disabled", "issues"],
-	["J", "alerts_disabled", "prs"],
-	["K", "alerts_disabled", "actions"],
-	["L", "alerts_disabled", ""],
-	["M", "not_found", ""],
-	["N", "alerts_disabled", ""],
-	["O", "", ""],
-])(
-	"publishes safe %s security diagnostics and separates unavailable run counts (%s)",
-	async (letter, reasonCode, incomplete) => {
-		const openSet = letter === "M" || letter === "O";
-		const anyUnavailable = letter !== "O";
-		expect(sql("SELECT value FROM _test_marker WHERE key='env'")).toEqual([{ value: "test" }]);
-		const created = await browser("accounts", "POST", { token: `ghp_${letter.repeat(36)}` });
-		expect(created.status).toBe(201);
-		const account = (await created.json()) as { id: string; login: string };
-		expect((await browser(`accounts/${account.id}/activate`, "POST")).status).toBe(200);
-		const minted = await browser("tokens", "POST", {
-			account_id: account.id,
-			label: "security availability L2",
-			scopes: ["observations:read", "app:read", "app:write"],
-			expires_in_days: 1,
-		});
-		expect(minted.status).toBe(201);
-		const token = (await minted.json()) as { token: string };
-		const machine = (path: string, method = "GET", body?: unknown) =>
-			fetch(`${base}/api/v1/accounts/${account.id}/${path}`, {
-				method,
-				headers: { authorization: `Bearer ${token.token}`, "content-type": "application/json" },
-				...(body === undefined ? {} : { body: JSON.stringify(body) }),
-			});
-		type Run = {
-			id: string;
-			status: string;
-			counts: { unavailable: number; failed: number };
-			steps: { status: string; resource?: string; error?: string }[];
+	["alerts_disabled", false, false],
+	["permission_denied", false, false],
+	["not_found", false, false],
+	["unknown", false, false],
+	["code_scanning_disabled", true, false],
+	["alerts_disabled", false, true],
+	[null, true, true],
+] as const)(
+	"reads saved security coverage %s (%s/%s) without recollecting or fabricating unavailable counts",
+	async (reason, dependabotAvailable, codeScanningAvailable) => {
+		const account = randomUUID().replaceAll("-", "").slice(0, 21);
+		const owner = `security-${account}`;
+		const repository = `${owner}/hello-world`;
+		const bearer = `giraffe_${randomBytes(32).toString("base64url")}`;
+		const now = new Date().toISOString();
+		const at = "2026-10-22T00:00:00.000Z";
+		const publication = factoryFixture();
+		publication.account_id = account;
+		publication.owner = owner;
+		publication.runId = `saved-${account}`;
+		publication.status = "complete";
+		const repo = publication.repos[0];
+		if (!repo) throw new Error("factory fixture missing");
+		repo.name = repository;
+		repo.coverage.alerts = {
+			status: dependabotAvailable ? "complete" : "unavailable",
+			pages: dependabotAvailable ? 1 : 0,
+			fetchedAt: at,
+			source: "saved",
+			reason,
+			...(reason && !dependabotAvailable ? { reason_code: reason } : {}),
+			observed: dependabotAvailable ? 1 : 0,
 		};
-		const runs = async () =>
-			((await (await machine("refresh-runs")).json()) as { items: Run[] }).items;
-		const start = async (mode: string) => {
-			const response = await machine("refresh-runs", "POST", {
-				requestKey: crypto.randomUUID(),
-				mode,
-				scope: "selected",
-				...(mode === "refresh" ? { repos: [`${account.login}/hello-world`] } : {}),
-			});
-			expect(response.status).toBe(202);
-			const run = (await response.json()) as { id: string };
-			await expect
-				.poll(async () => (await runs()).find((item) => item.id === run.id)?.status, {
-					timeout: 30000,
-					interval: 200,
-				})
-				.toBe(mode === "refresh" && incomplete ? "partial" : "completed");
-			return (await runs()).find((item) => item.id === run.id) as Run;
-		};
-		try {
-			await start("catalog");
-			expect(sql("SELECT value FROM _test_marker WHERE key='env'")).toEqual([{ value: "test" }]);
-			const kind = `repo:${account.login}/hello-world:${incomplete}`;
-			const old = {
-				fetched_at: "2025-01-01T00:00:00.000Z",
-				truncated: false,
-				[incomplete === "actions" ? "runs" : incomplete === "prs" ? "pull_requests" : "issues"]: [],
-			};
-			if (incomplete)
-				sql(
-					`INSERT INTO snapshots(account_id,kind,payload,fetched_at) VALUES('${account.id}','${kind}','${JSON.stringify(old)}','${old.fetched_at}')`,
-				);
-			sql(
-				`UPDATE factory_state SET next_at='2000-01-01T00:00:00.000Z' WHERE account_id='${account.id}'; UPDATE factory_runs SET created_at='2000-01-01T00:00:00.000Z' WHERE account_id='${account.id}'`,
-			);
-			const run = await start("refresh");
-			if (anyUnavailable) expect(run.counts.unavailable).toBeGreaterThan(0);
-			if (incomplete) {
-				expect(run.counts.failed).toBeGreaterThan(0);
-				expect(run.steps.find((step) => step.resource === kind)).toMatchObject({
-					status: "failed",
-					error: "snapshot_incomplete",
-				});
-				expect(
-					sql(`SELECT payload FROM snapshots WHERE account_id='${account.id}' AND kind='${kind}'`),
-				).toEqual([{ payload: JSON.stringify(old) }]);
-			} else expect(run.counts.failed).toBe(0);
-			if (anyUnavailable)
-				expect(run.steps.filter((step) => step.status === "unavailable").length).toBeGreaterThan(0);
-			const factory = await browser("factory?scope=all");
-			expect(factory.status).toBe(200);
-			expect(await factory.json()).toMatchObject({
-				status: incomplete ? "partial" : "complete",
-				runId: run.id,
-				repos: [
-					{
-						coverage: {
-							alerts: openSet
-								? { status: "complete" }
-								: { status: "unavailable", reason_code: reasonCode },
-						},
-					},
-				],
-			});
-			const readsBefore = Number(await (await fetch("http://127.0.0.1:17046/_count")).text());
-			const security = await machine(`repos/${account.login}/hello-world/security`);
-			expect(security.status).toBe(200);
-			const snapshot = await security.json();
-			expect(snapshot).toMatchObject({
-				unavailable: !["M", "N", "O"].includes(letter),
-				truncated: false,
-				data: {
-					dependabot_open: letter === "M" ? 2 : letter === "O" ? 0 : null,
-					code_scanning_open: letter === "N" || letter === "O" ? 0 : null,
-					features: {
-						dependabot: {
-							status: openSet ? "available" : "unavailable",
-							reason_code: openSet ? null : reasonCode,
-						},
-						code_scanning: {
-							status: letter === "N" || letter === "O" ? "available" : "unavailable",
-							reason_code:
-								letter === "N" || letter === "O"
-									? null
-									: letter === "L"
-										? "code_scanning_disabled"
-										: reasonCode,
-						},
-					},
+		const security = {
+			unavailable: !dependabotAvailable && !codeScanningAvailable,
+			dependabot_open: dependabotAvailable ? 1 : null,
+			code_scanning_open: codeScanningAvailable ? 0 : null,
+			features: {
+				dependabot: {
+					status: dependabotAvailable ? "available" : "unavailable",
+					reason_code: dependabotAvailable ? null : reason,
 				},
+				code_scanning: {
+					status: codeScanningAvailable ? "available" : "unavailable",
+					reason_code: codeScanningAvailable ? null : reason,
+				},
+			},
+		};
+		const items = dependabotAvailable
+			? [{ id: "saved-alert", source: "dependabot", severity: "low", summary: "Saved advisory" }]
+			: [];
+		const snapshot = (kind: string, value: object) =>
+			`INSERT INTO snapshots(account_id,kind,payload,fetched_at) VALUES(${quote(account)},${quote(kind)},${quote(JSON.stringify({ fetched_at: at, truncated: false, ...value }))},${quote(at)});`;
+		rows(
+			[
+				`INSERT INTO accounts(id,login,token_ciphertext,token_last4,created_at,updated_at) VALUES(${quote(account)},${quote(owner)},'test-not-an-encrypted-pat','fake',${quote(now)},${quote(now)});`,
+				`INSERT INTO api_tokens(id,account_id,token_hash,label,scopes,creator,created_at,expires_at) VALUES(${quote(account)},${quote(account)},${quote(createHash("sha256").update(bearer).digest("hex"))},'security L2','["observations:read"]','local test',${quote(now)},${quote(new Date(Date.now() + 86400_000).toISOString())});`,
+				snapshot("repos", { repos: [{ name_with_owner: repository, owner_login: owner }] }),
+				snapshot(`repo:${repository}:security`, security),
+				snapshot(`factory:v:${publication.runId}`, publication),
+				snapshot(`factory:${repository}:alerts`, {
+					runId: publication.runId,
+					repo: repository,
+					stream: "alerts",
+					coverage: repo.coverage.alerts,
+					items,
+				}),
+				`INSERT INTO factory_state(account_id,published_id,next_at) VALUES(${quote(account)},${quote(publication.runId)},${quote(now)});`,
+			].join("\n"),
+		);
+		const machine = (path: string) =>
+			fetch(`${base}/api/v1/accounts/${account}/${path}`, {
+				headers: { Authorization: `Bearer ${bearer}`, connection: "close" },
 			});
-			expect(JSON.stringify(snapshot)).not.toContain("private upstream diagnostics");
-			expect(await (await machine("sources")).json()).toMatchObject({
+		const state = () =>
+			rows(
+				`SELECT * FROM snapshots WHERE account_id=${quote(account)} ORDER BY kind; SELECT * FROM api_tokens WHERE account_id=${quote(account)}; SELECT * FROM factory_state WHERE account_id=${quote(account)};`,
+			);
+		try {
+			const before = state();
+			const count = await (
+				await fetch("http://127.0.0.1:17046/_count", { headers: { connection: "close" } })
+			).text();
+			const response = await machine(`repos/${repository}/security`);
+			expect(response.status).toBe(200);
+			expect(await response.json()).toMatchObject({
+				unavailable: security.unavailable,
+				truncated: false,
+				data: security,
+			});
+			const stream = await machine(`factory/repos/${repository}/alerts`);
+			expect(stream.status).toBe(200);
+			expect(await stream.json()).toMatchObject({
+				unavailable: !dependabotAvailable,
+				data: { items, coverage: repo.coverage.alerts },
+			});
+			const sources = await machine("sources");
+			expect(sources.status).toBe(200);
+			expect(await sources.json()).toMatchObject({
 				sources: expect.arrayContaining([
 					expect.objectContaining({
-						resource: `factory:${account.login}/hello-world:alerts`,
-						unavailable: !openSet,
-						coverage: expect.objectContaining(
-							openSet
-								? { status: "complete", observed: letter === "M" ? 2 : 0 }
-								: { reason_code: reasonCode },
-						),
+						resource: `factory:${repository}:alerts`,
+						unavailable: !dependabotAvailable,
+						coverage: expect.objectContaining({ status: repo.coverage.alerts.status }),
 					}),
 				]),
 			});
-			const alerts = await machine(`factory/repos/${account.login}/hello-world/alerts`);
-			expect(alerts.status).toBe(200);
-			expect(await alerts.json()).toMatchObject({
-				data: {
-					items: openSet ? (letter === "M" ? [expect.any(Object), expect.any(Object)] : []) : [],
-					coverage: { status: openSet ? "complete" : "unavailable" },
-				},
-			});
-			expect(Number(await (await fetch("http://127.0.0.1:17046/_count")).text())).toBe(readsBefore);
+			expect(state()).toEqual(before);
+			expect(
+				await (
+					await fetch("http://127.0.0.1:17046/_count", { headers: { connection: "close" } })
+				).text(),
+			).toBe(count);
 		} finally {
-			expect((await browser(`accounts/${account.id}`, "DELETE")).status).toBe(204);
+			rows(`DELETE FROM accounts WHERE id=${quote(account)};`);
 		}
 	},
 );

@@ -10,7 +10,6 @@ const PAT = `ghp_${"A".repeat(36)}`;
 
 function env(): Env {
 	return {
-		FACTORY_QUEUE: {} as Queue,
 		DB: sqliteFixture(),
 		ASSETS: { fetch: async () => new Response("x") } as unknown as Fetcher,
 		TOKEN_ENCRYPTION_KEY_CURRENT: "1",
@@ -55,80 +54,6 @@ describe("accounts routes", () => {
 		expect(((await listed.json()) as { accounts: unknown[] }).accounts).toHaveLength(1);
 		const repos = await createApp().request("http://localhost/api/repos", {}, e);
 		expect(repos.status).toBe(409);
-		vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
-			const url = String(input);
-			if (url.endsWith("/graphql")) {
-				const body = JSON.parse(String(init?.body ?? "{}")) as { query?: string };
-				const query = body.query ?? "";
-				if (query.includes("search")) {
-					return Response.json({
-						data: { search: { issueCount: 0, nodes: [], pageInfo: { hasNextPage: false } } },
-					});
-				}
-				if (query.includes("vulnerabilityAlerts")) {
-					return Response.json({
-						data: { repository: { vulnerabilityAlerts: { nodes: [] } } },
-					});
-				}
-				return Response.json({
-					data: {
-						viewer: {
-							repositories: {
-								nodes: [
-									{
-										nameWithOwner: "octocat/hello-world",
-										name: "hello-world",
-										owner: { login: "octocat" },
-										stargazerCount: 1,
-										forkCount: 0,
-										pushedAt: "2026-08-01T00:00:00.000Z",
-									},
-								],
-								pageInfo: { hasNextPage: false },
-							},
-						},
-					},
-				});
-			}
-			if (url.includes("/notifications") || url.includes("/code-scanning")) {
-				return Response.json([]);
-			}
-			throw new Error(`unexpected ${url}`);
-		});
-		const refreshed = await createApp().request(
-			"http://localhost/api/refresh",
-			{
-				method: "POST",
-				headers,
-				body: JSON.stringify({ account_id: body.id, kinds: ["repos"] }),
-			},
-			e,
-		);
-		expect(refreshed.status).toBe(200);
-		const after = await createApp().request("http://localhost/api/repos", {}, e);
-		expect(after.status).toBe(200);
-		expect(
-			(
-				await createApp().request(
-					"http://localhost/api/refresh",
-					{
-						method: "POST",
-						headers,
-						body: JSON.stringify({ account_id: body.id, kinds: ["repos", "repos"] }),
-					},
-					e,
-				)
-			).status,
-		).toBe(400);
-		expect(
-			(
-				await createApp().request(
-					"http://localhost/api/refresh",
-					{ method: "POST", headers, body: JSON.stringify({ account_id: body.id }) },
-					e,
-				)
-			).status,
-		).toBe(200);
 		const id = body.id;
 		expect(
 			(
@@ -163,15 +88,7 @@ describe("accounts routes", () => {
 				)
 			).status,
 		).toBe(404);
-		expect(
-			(
-				await createApp().request(
-					"http://localhost/api/refresh",
-					{ method: "POST", headers, body: JSON.stringify({ account_id: body.id, kinds: [] }) },
-					e,
-				)
-			).status,
-		).toBe(400);
+
 		expect(
 			(
 				await createApp().request(
@@ -208,19 +125,6 @@ describe("accounts routes", () => {
 				)
 			).status,
 		).toBe(404);
-		expect(
-			(
-				await createApp().request(
-					"http://localhost/api/refresh",
-					{
-						method: "POST",
-						headers,
-						body: JSON.stringify({ account_id: "gone_account_id_00000", kinds: ["insights"] }),
-					},
-					e,
-				)
-			).status,
-		).toBe(409);
 	});
 
 	it("upserts the same login and rejects missing scopes", async () => {
@@ -288,7 +192,6 @@ describe("accounts routes", () => {
 		let blows = 1;
 		const e = {
 			...env(),
-			FACTORY_QUEUE: {} as Queue,
 			DB: {
 				prepare: (sql: string) => raw.prepare(sql),
 				batch: async (statements: D1PreparedStatement[]) => {
@@ -314,7 +217,6 @@ describe("accounts routes", () => {
 		const empty = openSqliteD1(true);
 		const e2 = {
 			...env(),
-			FACTORY_QUEUE: {} as Queue,
 			DB: {
 				prepare: (sql: string) => empty.prepare(sql),
 				batch: async () => {
@@ -364,7 +266,6 @@ describe("accounts routes", () => {
 		let counts = 0;
 		const e = {
 			...env(),
-			FACTORY_QUEUE: {} as Queue,
 			DB: {
 				prepare(sql: string) {
 					const stmt = raw.prepare(sql);

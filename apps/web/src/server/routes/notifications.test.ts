@@ -12,7 +12,6 @@ const PAT = `ghp_${"A".repeat(36)}`;
 
 function env(): Env {
 	return {
-		FACTORY_QUEUE: {} as Queue,
 		DB: openSqliteD1(true),
 		ASSETS: { fetch: async () => new Response("x") } as unknown as Fetcher,
 		TOKEN_ENCRYPTION_KEY_CURRENT: "1",
@@ -323,19 +322,21 @@ describe("notification write-through", () => {
 				collectedAt,
 			),
 		);
-		expect(
-			(
-				await createApp().request(
-					"http://localhost/api/refresh",
-					{
-						method: "POST",
-						headers,
-						body: JSON.stringify({ account_id: accountId, kinds: ["notifications"] }),
-					},
-					e,
-				)
-			).status,
-		).toBe(200);
+
+		await db.batch(
+			await replaceSnapshotStmts(
+				db,
+				accountId,
+				"notifications",
+				{
+					notifications: [
+						{ id: "123", unread: true, name_with_owner: "octocat/n" },
+						{ id: "456", unread: true, name_with_owner: "octocat/n" },
+					],
+				},
+				collectedAt,
+			),
+		);
 		const read = await createApp().request(
 			"http://localhost/api/notifications/read",
 			{ method: "POST", headers, body: JSON.stringify({ id: "123", account_id: accountId }) },

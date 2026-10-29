@@ -65,12 +65,10 @@ describe("factory account-bound data operations", () => {
 			"account_missing",
 			"github_unauthorized",
 			"internal_error",
-			"refresh_cooldown",
-			"catalog_incomplete",
-			"factory_capacity",
 		] as const)
 			expect(factoryError(new ApiError(503, code, "secret"))).not.toContain("secret");
 		expect(factoryError(new Error("secret"))).not.toContain("secret");
+		expect(factoryError(new Error("secret"))).not.toContain("刷新进度");
 	});
 	it("formats zero, unavailable, durations consistently", () => {
 		expect(formatFactoryCount(15000)).toBe("15,000");

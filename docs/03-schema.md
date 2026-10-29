@@ -1,5 +1,11 @@
 # 03 — 数据 Schema
 
+> **v0.26.0:** Collection execution and the AI analysis product surface have
+> been removed. The implementation details below are historical where they
+> describe refresh modes, runs, schedules, collectors or analysis pages.
+> [Phase 1 retirement](14-phase1-retirement.md) is the current behavior contract;
+> saved-data schemas and read semantics remain relevant.
+
 ## Daily reports (0.20.0, no migration)
 
 `github-daily` uses the existing agent_resources table and account/collection/ID

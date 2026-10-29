@@ -3,7 +3,6 @@ import { sqliteFixture } from "../../../../../../tests/fixtures/sqlite";
 import { contentVersion } from "../content-version";
 import { insertAccountStmt } from "./accounts";
 import { createDb } from "./d1";
-import { pruneDaysStmt } from "./snapshot-days";
 import { readSnapshot, replaceSnapshotStmts } from "./snapshots";
 import { openSqliteD1 } from "./sqlite-d1";
 
@@ -102,7 +101,6 @@ describe("snapshots store", () => {
 		const snap = await readSnapshot(db, "1", "repos");
 		expect(snap?.repos).toEqual([{ n: 1 }]);
 		expect(await readSnapshot(db, "1", "issues")).toBeNull();
-		await db.batch([pruneDaysStmt(db, "1", "2026-08-01")]);
 	});
 });
 

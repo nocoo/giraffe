@@ -262,7 +262,7 @@ export function focusFindings(src: FocusSources): Finding[] {
 	if (repos && quiet / repos >= 0.2)
 		out.push({
 			tone: "gray",
-			text: `当前范围有 ${quiet} 个仓库超过 90 天未推送，可考虑归档或取消星标以仅每周刷新`,
+			text: `当前范围有 ${quiet} 个仓库超过 90 天未推送，可考虑归档或取消星标以缩小关注范围`,
 		});
 
 	return out;

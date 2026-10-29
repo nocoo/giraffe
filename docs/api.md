@@ -1,11 +1,19 @@
 # Machine API v1 Reference
 
+The v0.26.0 release removes collection execution and the analysis UI. Saved
+observations and machine resources remain available. See the
+[retirement contract](14-phase1-retirement.md) for browser route removals.
+
 The machine API reads saved GitHub observations, stores reports/records/jobs, and
-optionally manages refresh settings. It is not a live GitHub proxy or a model
+manages saved application preferences. It is not a live GitHub proxy or a model
 inference service. Only `https://giraffe.hexly.ai/api/v1/*` has an Access bypass;
 the Worker authenticates resource requests. The dashboard and credential-management
 endpoints remain Access protected. Accounts/snapshots are deployment-shared, not
 per-user tenants. See [the boundary contract](11-agent-api.md).
+
+Collection-time algorithms described alongside saved schemas below explain
+pre-v0.26.0 provenance only. They no longer execute: no discovery, continuation,
+retention writer, publication or scheduled collection runs in this release.
 
 ## Daily reports and latest report
 
@@ -80,8 +88,7 @@ immutable, and any supplied payload is a full replacement. Invalid bodies return
 their existing create/list/detail/PATCH/DELETE contracts.
 
 GET `/accounts/:account/agent/reports/latest?type=<type>` requires `agent:read`.
-Browser equivalent: `/api/agent/accounts/:account/reports/latest?type=<type>`,
-protected by Access and the active account. Exactly one valid type query is
+The analysis browser surface is removed. Exactly one valid type query is
 required for this operation; unknown/repeated parameters return 400. Without a
 type query, the bare `reports/latest` path retains its existing meaning as the
 resource whose ID is `latest`, including its PATCH/DELETE operations.
@@ -101,76 +108,16 @@ empty results. Authentication, account fencing and query validation precede
 conditional matching. Both 200 and 304 retain private/no-store, no-referrer and
 reader-specific Vary headers. GET never fetches GitHub or records token activity.
 
-Browser GET `/api/agent/accounts/:account/analysis/daily` accepts no query and returns
-`{account_id,items,invalidCount}` with the newest seven valid reporting dates through
-the same selector; its first item equals daily latest. The analysis page starts
-there, supports date browsing, and shows a notice for hidden reports. Markdown is
-displayed as escaped plain text with preserved whitespace, consistently with the
-existing report renderer; raw HTML and Markdown-generated links never execute.
-Explicit HTTPS evidence/Xray links open with noopener/noreferrer. Four existing
-domain cards remain available. The new readers scan only the selected account/type's
-retained reports; no indexed O(1) latest claim is made. Existing optimized analysis
-projection and `/sources` reads remain unchanged. No migration is required.
+Daily-report browser projections and presentation are removed. Machine report
+reads remain bounded to the selected account/type's retained reports; no indexed
+O(1) latest claim is made. No data migration is introduced.
 
 ## Run readiness
 
-`GET /accounts/:account/refresh-runs/latest?kind=daily|weekly|catalog|manual|quick|deep`
-requires `app:read`. Browser equivalent: `GET /api/factory/runs/latest` with the
-same query, Access protection and active account. The required kind selects the
-latest retained matching run, not merely the latest 21 entries. Unknown or repeated
-filters return 400; an absent match returns 404. Daily/weekly select trigger,
-catalog selects mode, manual includes legacy unspecified trigger, and quick/deep
-select refresh depth across **all triggers and scopes**, including manual
-selected-scope refreshes (legacy unspecified depth is deep). Use `kind=daily`
-for scheduled daily refreshes; `kind=quick` is not a scheduled-daily filter.
-Ties use stored creation time then ID descending. The response includes `account_id`, `id`, canonical
-`kind`, `depth`, `status`, `window`, `startedAt`, `expectedFinishAt`,
-`expectedFinishAtReason`, `finishedAt`, `counts`, `failedSteps`, `lastError`,
-`trigger`, `previousActivityRunId`, and `publishedAt` and `publishedAtReason`.
-The returned `kind` is
-`catalog|daily|weekly|manual`, determined by mode/trigger, **not** necessarily the
-query selector: `?kind=quick` can return `kind:"daily",depth:"quick"` or
-`kind:"manual",depth:"quick"`, for example when the latest matching run is a
-manual selected-scope quick refresh.
-`depth` is `quick|deep|null`, null for catalog and deep for historical refreshes
-without a saved depth. Activity-eligible runs expose their activity window. ETA uses
-the plan-scaled, same-execution-kind calibration described under
-[GET /refresh-runs](#get-refresh-runs), not a deadline.
-For every selector, terminal runs (`completed`, `failed`, `partial`, `cancelled`)
-return `expectedFinishAt: null` with `expectedFinishAtReason: "terminal"`.
-Use `finishedAt` for the actual end; it is not an estimate.
-SQLite projects the needed scalar/window fields, step counts and failed-step
-summaries; the reader does not transfer or parse the complete run payload,
-successful-step details or checkpoints. Failed steps retain their stored order.
-
-`publishedAt` is also present on run list/detail views. Completed **or partial**
-runs set it in the same fenced transaction as site snapshots, catalog changes,
-factory head and eligible activity. Running, failed and cancelled runs have null.
-Readiness is not completeness: inspect counts, failed steps and source coverage.
-Historical markers remain null when atomic publication is unprovable (0022).
-Runs created before the staging protocol also keep null when resumed to completion;
-only newly created runs carry the internal atomic-publication capability marker.
-
-Latest-readiness `publishedAtReason` is null when `publishedAt` is present.
-Otherwise it is `in_progress` for running/paused, `failed` or `cancelled` for those
-terminal statuses, `legacy_unprovable` for completed/partial runs without atomic
-publication capability or a historical timestamp field, and `not_published` for
-atomic-capable completed/partial runs with an explicit null timestamp. Migration
-0022 wrote null timestamps to old runs; the capability marker, not merely the
-presence of that null field, distinguishes those legacy runs. This is read-time
-metadata only: no backfill, migration or publication is performed by GET.
-
-`/sources` adds `runId` and `observedAt`. Sources touched by a new publication use
-its run ID and common publication time as `fetchedAt`; `observedAt` and `freshness`
-preserve collection times. Untouched/retained streams keep their original run/time;
-legacy snapshot sources have null runId. Derived CI uses its newest published
-input, without claiming every component is fresh.
-`since` compares visibility time, including sources collected before the cutoff
-but published afterwards. Publication provenance does not change CI source versions.
-For eligible runs, `/activity?run=latest` and `account:activity` share the published run ID/time.
-Catalog/deep/selected runs do not replace the account activity head. Separate GETs
-can straddle a subsequent publication; compare IDs or pin `/activity?run=<id>`.
-GET never starts work, records token use or changes run state.
+`GET /accounts/:account/refresh-runs/latest` now returns authenticated
+`410 collection_unavailable`. It does not read or revive historical runs.
+Use saved observation timestamps and coverage directly; no readiness signal
+from a running collector exists in phase 1.
 
 ## Repository metadata
 
@@ -280,7 +227,8 @@ Never put credentials in URLs, logs, report payloads or persisted browser state.
   `Referrer-Policy: no-referrer`. Other `Vary` dimensions are preserved.
 - JSON writes require `Content-Type: application/json`, UTF-8 if charset is given.
   Strict schemas reject extra fields. No body/query is defined unless listed.
-- Reads/updates return 200, resource creation 201, refresh start/control 202,
+- Reads/updates return 200, resource creation 201, retired collection operations
+  return 410 `collection_unavailable`,
   deletions 204 with no body except star deletion, which returns its 200 record.
   Separate reads are not a transaction; verify versions.
 
@@ -343,7 +291,7 @@ contract.
 
 ### GET /accounts/A/sources
 
-Shares saved-source assembly with the browser's `/api/agent/accounts/A/sources`.
+Reads saved sources through the authenticated machine boundary only.
 Machine `repositories` is the sorted **owned saved catalog**, including unstarred,
 forked and archived repositories. Non-owned entries never enter refresh membership
 or freshness/coverage denominators.
@@ -957,18 +905,17 @@ calendar observation times per selected day, with missing days counted explicitl
 Known calendar counts remain usable when type details are unavailable.
 Day `fetchedAt` records the calendar count's original collection; `observedAt`
 preserves its type observation when present. Top-level `fetched_at`/`observedAt`
-are the latest applicable times among the selected days, not a later quick merge.
+are the latest applicable times among the selected days, not a later historical merge.
 
 `sourceVersion` identifies the original calendar observation run, not necessarily
 the newest global publication. `source.publicationId` identifies that publication;
-`data.window` is the calendar's published display window: a successful quick merge
-can include retained older dates, while an untouched calendar keeps its original
-window. A newer failed
-collection keeps the prior calendar, version, window and timestamps, while
-`collectionStatus` reports the latest attempt's unavailable status. GET never
+`data.window` is the calendar's saved display window: a historical merge may
+include retained older dates, while an untouched calendar keeps its original
+window. A failed historical collection retained the prior calendar, version,
+window and timestamps; `collectionStatus` reports that saved attempt's status. GET never
 advances freshness. Legacy calendars gain null type fields in this endpoint,
-without rewriting stored rows. `/factory` retains its original contribution
-shape and adds only optional fields on newly collected calendars.
+without rewriting stored rows. `/factory` retains the original contribution
+shape and any optional fields already present in the saved calendar.
 
 Strong content-derived ETags and authenticated `If-None-Match` 304 responses work
 as on `/sources`. Authentication and query validation still run; 304 has no body
@@ -1002,12 +949,9 @@ until a newer successful run observes it again. For digest-style daily reporting
 treat a calendar day `D` as complete when the pinned activity publication has
 `contributions.days[D].partial=false`; prefer that activity day over live
 `GET /contributions` for the same `D`, which can still expose `partial:true` on
-an otherwise finished day. Normal daily scheduled refreshes
-now collect contributions as well as weekly/full runs; manual selected runs do
-not silently broaden to account-wide collection. New quick runs use 30 UTC dates
-(one calendar request plus two 15-day batches); deep runs use 90 dates (one plus
-six batches). Persisted old run windows do not change on resume. Collection uses
-with the existing request/rate reserve, fencing, publication and retention rules.
+an otherwise finished day. These are historical observation semantics; phase 1
+has no scheduled or manual collection and never resumes old runs. Read operations
+preserve the saved windows and partial flags.
 
 Sources: [GitHub contribution time attribution](https://docs.github.com/en/account-and-profile/reference/profile-contributions-reference#how-contribution-event-times-are-calculated),
 [GraphQL calendar dates](https://docs.github.com/en/graphql/reference/users#contributioncalendarday),
@@ -1057,7 +1001,8 @@ The response is an `ActivitySnapshot`, not the generic observation envelope:
   contributions, coverage, truncated }
 ```
 
-The interval is `(since, until]`, ending at the run's frozen collection cutoff,
+The following rules explain historical activity publications; v0.26.0 creates
+none and never advances their windows. The interval is `(since, until]`, ending at the run's frozen collection cutoff,
 not its completion time. The last published account-wide quick refresh whose
 terminal status is `completed` or `partial` supplies `since`. A completed run
 without an activity publication (including pre-activity history) does not advance
@@ -1201,21 +1146,14 @@ selection and existing publication byte limits report partial coverage, never a
 complete zero. Repeated GETs remain read-only. Old publications without these
 fields retain their original date-based semantics and are not rewritten.
 
-Migration `0026_activity_commit_ledger.sql` adds the permanent ledger/checkpoints,
-without backfill. Downgrading to v0.23.1 leaves them unused and harmless;
-re-upgrading resumes them. Commits pushed and force-pushed away between snapshots
+Historical migration `0026_activity_commit_ledger.sql` added the permanent ledger/checkpoints
+without backfill. Phase 1 leaves those rows untouched but removes their writers;
+upgrading to v0.26.0 does not resume collection. Commits pushed and force-pushed away between snapshots
 are invisible. Rename/re-add preserves the stable repository-ID ledger, whereas
 a replacement ID starts a new ledger; cancelled catch-up keeps its original window.
 
-The supplementary collector normally adds one refs/tags GraphQL request per repo,
-plus a successful-workflow REST request only when the complete saved action
-stream cannot provide deployment success. Continuations are bounded at 20 requests
-per repo and explicitly truncated. Account contribution intervals use one bounded
-GraphQL request. The normal two-request fixture adds 85 leased pages for 42 repos
-or 121 for 60; at the historical 48 min / 778 pages cadence this is about 5.2 or
-7.5 minutes. A 60-repo nominal total extrapolates to about 76 minutes, not a tested
-production SLA. Rate limits, unusually many branches/tags or deployment pages can
-increase this cost. Existing PR/issue/action/release streams are reused.
+The supplementary collector and its continuation/request budgets are retired.
+These saved observations are read without GraphQL or REST collection calls.
 
 The `/today` page shows the frozen interval, data timestamp, gap and truncation,
 activity sections and contribution composition. Repository links lead to the
@@ -1264,8 +1202,8 @@ Scope still selects owned repositories, and removal clears stars, so removed row
 do not reappear in starred scope. Removed row payloads have a separate 90-day,
 1,000-row-per-account bound; they are not an unlimited archive.
 
-Discovery runs at every successful complete catalog publication, including the
-catalog preparation before quick refresh. Partial/error/truncated lists cannot
+The following discovery rules describe saved pre-v0.26.0 catalog provenance;
+discovery and catalog publication are now retired. Partial/error/truncated lists could not
 advance history or replace prior membership. Absence or a name-based 404 does not
 prove deletion. Confirm against the previously saved stable GitHub ID with a
 GraphQL node lookup. A matching ID at another name is a rename; a new ID at the
@@ -1417,7 +1355,7 @@ sourceFetchedAt? }`; status is `pending|partial|complete|unavailable|limited`,
 strategy `full|incremental|reused`. An empty list proves zero only with complete
 coverage. `next` is saved collection metadata, not a machine pagination URL.
 
-New quick runs publish a 30-date window and deep runs a 90-date window; always
+Saved quick runs used a 30-date window and deep runs a 90-date window; always
 read `observation.window`, including the original window on retained evidence,
 rather than inferring coverage from run depth or from the current date.
 
@@ -1653,257 +1591,17 @@ REVISION="$(api "$API/agent/jobs/example-job-1" | jq -er '.item.revision')"
 api -X DELETE "$API/agent/jobs/example-job-1?revision=$REVISION"
 ```
 
-Report POST is shown next. Payloads must never include secrets or raw
-secret-bearing errors. The generic server validates storage structure, not the
-analysis schema; successful persistence alone does not prove UI acceptance.
+## External reports
 
-## Publishing analysis
+Externally produced reports remain generic machine resources. The server validates
+storage structure and revision rules, not an analysis UI schema. No analysis
+contract module, report cards, bot-status presentation or browser projection is
+part of phase 1. Successful persistence does not execute any job.
 
-The web owns [`analysis-contracts.ts`](../apps/web/src/lib/analysis-contracts.ts).
-POST reports with `type:"github-analysis"`, `status:"completed"`. Row `repository`
-must equal payload `repository`, and row `source_version` must equal payload
-`sourceVersion`. Repo scope requires canonical repository; global scope uses null.
-The default `/analysis` "all repositories" view displays only global reports
-(`repository:null`); repository reports appear only after selecting that repository.
-The recommended minimum is four completed global reports: `issues` using
-`account:issues`, `prs` using `account:prs`, `ci` using `account:ci`, and `cd` using
-`account:factory`; add `account:repos` where catalog evidence is needed. Copy source
-`resource`, `version`, non-null `contentVersion` and `fetchedAt` from `/sources`.
-Omit the report source's optional `contentVersion` when the index value is null.
-Account observation `source.resource` is only `issues`/`prs`/etc., not
-`account:issues`.
-
-Validate every payload before writing `type:github-analysis`, even if its row status
-is not completed. The page validates all returned rows before checking status:
-an invalid draft/pending row still raises a page error and is ignored. Valid other
-reports can still render; this is not an unconditional page crash. Keep drafts and
-pending work outside that report type. Generic storage acceptance is not validation
-of the strict analysis contract; unknown POST/PATCH envelope fields return 400,
-while unknown report payload fields are rejected by the analysis reader.
-
-### Report payload
-
-Required unless marked optional; lengths are characters unless bytes are specified:
-
-| Field                                            | Constraint                                                                                                                                                                                          |
-| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `schemaVersion`, `scope`, `repository`, `domain` | `1`; `repo                                                                                                                                                                                          | global`; `owner/name`or null;`issues           | prs                                                                                                             | ci                                                | cd` |
-| `sourceVersion`                                  | Nonempty full report-source digest; deterministic recipe below                                                                                                                                      |
-| `observedAt`, `generatedAt`                      | ISO datetimes with offsets; source observation time distinct from generation time                                                                                                                   |
-| `verdict`, `summary`                             | `pass                                                                                                                                                                                               | attention                                      | fail                                                                                                            | unknown`; trimmed nonempty summary, maximum 4,000 |
-| `findings`                                       | Maximum 8 `{ title, detail, evidenceIds }`; title 1-200, trimmed detail 1-4,000, maximum 20 evidence ID strings                                                                                     |
-| `actions`                                        | Maximum 6 `{ title, reason, priority }`; title 1-200, trimmed reason 1-4,000, priority `now                                                                                                         | next                                           | later`                                                                                                          |
-| `limitations`                                    | Maximum 20 strings, each 1-1,000                                                                                                                                                                    |
-| `sources`                                        | Maximum 500 `{ resource:string, version:string                                                                                                                                                      | null, contentVersion?:string, fetchedAt:string | null, complete:boolean, stale:boolean }`; optional content version must match `^sha256:[0-9a-f]{64}$`, not null |
-| `evidence`                                       | Maximum 24 `{ id, repository, kind, title, state, detail, url, at }`; id 1-256; repository `owner/name` or null; kind/title/state/detail maxima 40/300/60/900; valid URL or null; at string or null |
-| `omitted`                                        | Nonnegative integer count of omitted evidence                                                                                                                                                       |
-| `judgment`                                       | Required `{ model, choice, confidence?, probabilities? }`; nonempty model; choice `routine                                                                                                          | review                                         | urgent                                                                                                          | unknown`                                          |
-| `producer`                                       | Optional; individual fields optional too: strings `orchestrator`, `executor`, `decision`, `jobId`; integer `conversationId`                                                                         |
-
-Confidence, if present, is in [0,1]. Optional probabilities must include all four
-keys `routine`, `review`, `urgent`, `unknown`, each in [0,1], sum to 1 (validator
-tolerance 0.001), with the chosen option maximal (ties allowed). Omit probabilities
-rather than invent them. Model/choice, evidence, sources, verdict and times remain
-required. Report and nested source/evidence/judgment/producer/finding/action objects
-are strict. Empty evidence/findings/actions arrays are permitted, not proof of health.
-
-Repo sources cite source-index identities/full versions. Do not list repository
-names as sources of the recommended direct global reports. That separate child-
-report aggregation mode requires matching completed child reports for the browser's
-entire expected repository set; machine catalog membership and browser activation
-differ. Existing reports without `contentVersion` remain valid.
-
-For direct sources, a report is current only when it has sources and every source's
-`contentVersion` equals the current source's value when both hashes exist. If the
-report omits it or the current source's hash is null, compare full `version`
-instead; two present but unequal hashes never fall back. Evidence age and displayed
-oldest time use current `/sources.fetchedAt`, not the report's old time or
-`generatedAt`. More than 36 hours,
-missing/invalid time or over one minute in the future is stale. Incomplete report
-sources, missing current sources, truncation, unavailability or missing freshness
-coverage prevent a passing verdict. Missing/stale/superseded/incomplete evidence
-shows `unknown`. Child-report aggregation retains its own child-version/time checks.
-
-### Stable IDs and publication
-
-Before inference, skip only an existing `status:completed` report with a valid
-payload, matching account/scope/repository/domain and a nonempty expected source
-set whose **every full content version** matches the current index when both
-hashes exist. If either hash is absent/null, require full-version equality instead.
-Do not skip on a missing source or mismatching present hashes. The 12-character
-prefix only names an ID, never proves equality. For global identity construction use
-`/sources` entries such as `account:issues`, not envelope `source.resource`.
-
-Use `analysis-{repo|global}-{domain}-{first12}`: `repo` is a literal scope word,
-not a slash-containing repository. Report `sourceVersion` is hex SHA-256 of a
-deterministic encoding of scope, canonical repository/null, domain, and **sorted
-source identities plus full content versions (full version when absent)**. Include repository identity to avoid
-collisions between repositories with identical data. Take `first12` from that
-report digest, never from the raw observation's `sha256:` prefix or digest alone.
-Exclude generation times/confidence so retries remain stable. Example recipe:
-
-```bash
-api "$API/repos/$OWNER/$NAME/issues" > observation.json
-jq -n --arg repository "$REPOSITORY" --slurpfile observations observation.json \
-  '{scope:"repo",repository:$repository,domain:"issues",sources:[
-    $observations[0] | {resource:.source.resource,version:(.contentVersion // .sourceVersion)}
-  ]}' > report-identity.json
-SOURCE_VERSION="$(node --input-type=module -e '
-  import {createHash} from "node:crypto";
-  import {readFileSync} from "node:fs";
-  const identity = JSON.parse(readFileSync("report-identity.json", "utf8"));
-  const sources = identity.sources.map(({resource,version}) => ({resource,version}));
-  const compare = (left,right) => left < right ? -1 : left > right ? 1 : 0;
-  sources.sort((left,right) => compare(left.resource,right.resource) ||
-    compare(JSON.stringify(left.version),JSON.stringify(right.version)));
-  const canonical = JSON.stringify({scope:identity.scope,repository:identity.repository,domain:identity.domain,sources});
-  process.stdout.write(createHash("sha256").update(canonical).digest("hex"));
-')"
-REPORT_ID="analysis-repo-issues-${SOURCE_VERSION:0:12}"
-```
-
-Prepare truthful `report-payload.json` using the required fields and actual
-sources/evidence/times. For each source copy the observation's `sourceVersion`
-into `sources[].version` and its non-null `contentVersion` into
-`sources[].contentVersion`; omit that optional field when null. Keep both when
-available, distinct from the report's composite `sourceVersion`. For globals use
-the corresponding `/sources` entries. This minimal illustrative shape makes no passing claim;
-replace its digest, source version and times with actual inputs:
-
-```json
-{
-	"schemaVersion": 1,
-	"scope": "repo",
-	"repository": "nocoo/giraffe",
-	"domain": "issues",
-	"sourceVersion": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-	"observedAt": "2026-10-19T00:10:00Z",
-	"generatedAt": "2026-10-19T01:30:00Z",
-	"verdict": "unknown",
-	"summary": "Saved issue coverage is incomplete.",
-	"findings": [],
-	"actions": [],
-	"limitations": ["The saved issue source is truncated."],
-	"sources": [
-		{
-			"resource": "repo:nocoo/giraffe:issues",
-			"version": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-			"contentVersion": "sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
-			"fetchedAt": "2026-10-19T00:10:00Z",
-			"complete": false,
-			"stale": false
-		}
-	],
-	"evidence": [],
-	"omitted": 0,
-	"judgment": { "model": "external-bot-model", "choice": "unknown" }
-}
-```
-
-```bash
-jq --arg id "$REPORT_ID" --arg repository "$REPOSITORY" --arg version "$SOURCE_VERSION" \
-  '{id:$id,repository:$repository,type:"github-analysis",status:"completed",
-    source_version:$version,payload:(. + {scope:"repo",repository:$repository,
-      domain:"issues",sourceVersion:$version})}' report-payload.json > report-create.json
-json -X POST "$API/agent/reports" --data-binary @report-create.json
-api "$API/agent/reports/$REPORT_ID"
-```
-
-On 409 `resource_exists` or uncertain POST, GET the ID and compare account, type,
-completed status, repository, domain/scope, valid payload and **full row/payload
-source version**. A matching 12-character prefix is insufficient. Mismatches,
-incomplete rows or collisions need explicit reconciliation, not blind skipping,
-overwriting or random replacement IDs. No `Idempotency-Key`, automatic upsert or
-report-specific server deduplication exists beyond account/collection/ID uniqueness.
-
-### Bot run record and analysis UI
-
-Use record ID **and** type `grok-bot-run`, repository null, payload
-exactly `{ lastRunAt, status, analyzed, skipped, error? }`: extra keys make the
-run record invalid in the page. Require an offset ISO timestamp,
-nonnegative counts, status `running|completed|failed`, matching row/payload status.
-Error is a short safe code/message, never raw provider output. This is a producer
-convention, not a server-enforced bot schema. Create once; then GET/PATCH with
-current revision and complete replacement payload. Reconcile create/revision 409s.
-
-The analysis page reads saved reports and the account-wide record with both ID
-and type `grok-bot-run`. It shows `lastRunAt`, status and analyzed/skipped counts;
-failed runs also show the safe error text. The browser requires an ISO datetime
-with an offset, nonnegative integer counts, one of the three statuses and a
-matching row status. Malformed payloads, non-null repository or times more than
-one minute in the future are errors, not successful runs.
-
-The default routine cadence is 24 hours. A run becomes overdue when `lastRunAt`
-is more than 48 hours old, independently of the 36-hour report evidence age.
-There is no schedule configuration or heartbeat dependency in this view. Legacy
-`work-cron` records and Work jobs are not displayed or requested; their stored
-data is retained. An absent valid record shows an empty state, not an offline
-runner. Loading and visible polling are read-only and never invoke a model or
-refresh GitHub. Do not synthesize fake Work heartbeats for an external bot.
-
-### Analysis report projection and retention
-
-The Access-protected browser endpoint
-`GET /api/agent/accounts/A/analysis/reports` returns `{account_id, items: Resource[]}`
-for the active account. It accepts no query parameters and performs no writes or
-upstream calls. It is not a machine endpoint or an Access-bypass route.
-
-It selects only `reports` of `type:github-analysis`, taking the newest **N=3 rows
-per exact `(payload.scope, row.repository, payload.domain)`** across all statuses.
-Repository matching is case-sensitive; global reports normally use null. Order
-within each key is `(utcWholeSecond DESC, fractionDigits DESC, id DESC)` using
-binary text order for fraction digits and IDs. Whole-second conversion removes
-the fraction first, then subtracts the explicit signed offset in seconds; it never
-rounds a `.9999` fraction into the next second. Fraction digits keep arbitrary
-precision and leading zeros, trim trailing zeros, and use `""` for zero/no fraction.
-Their lexicographic order exactly matches decimal order without floating-point
-conversion. Equivalent offsets/trailing-zero spellings tie and use descending ID.
-The accepted reader syntax stays Zod ISO datetime with required seconds, optional
-arbitrary-length fractional seconds and `Z` or `+/-HH:MM` (hours 00-23, minutes
-00-59). The index/query handle the same full offset range explicitly rather than
-relying on SQLite's narrower offset parser. Parsing is guarded by the ISO-shaped
-pattern `????-??-??T*`, timezone/fraction shape checks and whole-second conversion;
-missing, nonmatching or SQLite-unparseable values sort last. This excludes relative
-keywords such as `now`, which are unsafe in an expression index, without rejecting
-generic storage writes. Full report/date validation remains in the client. `created_at`,
-`updated_at`, revision and current source versions do not determine inclusion.
-Malformed keys form their own groups; selected malformed or non-completed rows
-still reach the existing strict reader validation and consume a slot. Only valid
-completed candidates are displayed, preferring current sources within the selected
-three and then exact generation instant and descending binary ID. The client uses
-the same whole-second/fraction comparison for candidates and child-report
-generation chronology, not millisecond `Date.parse` comparison. A current
-historical report outside those three is no longer a display candidate.
-
-Index/query JSON extraction first guards the entire payload with `json_valid`.
-Schema-accepted payloads beyond JSON1's nesting depth remain stored and writable;
-their extracted scope/domain/time components become null, while repository still
-participates in the key. Selected rows retain their original payloads for client
-validation. Migration, POST and PATCH do not reject or rewrite these resources.
-
-Migration `0015_analysis_reports.sql` adds a partial expression index. One SQL
-statement seeks distinct indexed keys, then at most three row IDs per key before
-loading payloads. The final sort covers only selected rows, not report history.
-For K distinct keys the response contains at most 3K resources; it is not a fixed
-account-wide byte cap. Adding history to existing keys does not add queries,
-returned payloads or a full historical scan. The SQLite regression uses 6,001
-historical rows, asserts three returned payloads below 5 KB, and checks actual
-`EXPLAIN QUERY PLAN` key-range/equality index seeks and rowid hydration. A second
-60,001-row case has the same query/payload bounds; SQLite bytecode assertions
-prove table columns are read only by the selected-row hydration cursor.
-
-The generic machine `GET /api/v1/accounts/A/agent/reports` and generic browser
-resource lists are unchanged: ID-ascending cursor pagination, all matching rows,
-no newest-per-key filtering or 5,000-row total limit. The analysis page's separate
-`grok-bot-run` record query still traverses at most 50 pages of 100 rows; excessive
-matching run records can still fail the load. Use the single stable run-record ID.
-
-There is no server-side automatic report cleanup. Report history no longer needs
-deletion to avoid the old UI cap. Retention still requires explicit authorization:
-GET the current revision then
-`DELETE /accounts/A/agent/reports/:id?revision=N` (204 on success). Preserve needed
-current/child reports and audit history; analysis permission is not deletion
-permission. All old rows remain stored and individually/generically readable.
+Payloads must not contain secrets or raw secret-bearing errors. Producers may
+include saved source versions and timestamps as their own evidence, but must
+not label unavailable collection as fresh or complete. Existing report rows
+remain accessible through the generic resource API.
 
 ## Application management
 
@@ -1923,7 +1621,7 @@ Local stars are Giraffe configuration, not GitHub writes.
 | DELETE `/statistics/:owner/:name` | `app:write` | Ignored                          | 410 `deprecated`; never writes                      |
 
 No query parameters. Settings is `{ account_id, stars:string[], statistics:[],
-statistics_deprecated:true, schedules:Schedule[] }`. The empty statistics field and
+statistics_deprecated:true, schedules:[], collectionAvailable:false }`. The empty statistics field and
 deprecated `/repos[].statistics_enabled` alias remain for one version. Browser
 `POST /api/repos/:owner/:name/statistics` also returns 410 `deprecated` without writing.
 Star records include unstarred tombstones. `source` is `owner|agent`, `updated_at`
@@ -1957,337 +1655,24 @@ api -X PUT "$API/stars/$OWNER/$NAME"
 api -X DELETE "$API/stars/$OWNER/$NAME"
 ```
 
-### PUT / DELETE /schedules/:kind
+### Retired collection endpoints
 
-Requires `app:write`; kind `daily|weekly|catalog`; no query. PUT requires
-`enabled`, `weekday`, `scope`, and either `times` or the single-slot `time` alias
-in a strict JSON object:
+All endpoints below require the existing fixed-account bearer and scope checks.
+Read operations require `app:read`; retired mutations require `app:write`.
 
-| Field     | Validation                                                                                                                                     |
-| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `enabled` | Boolean                                                                                                                                        |
-| `times`   | Array of 1-6 `HH:MM` values, `00:00`-`23:59`, fixed UTC+08:00 (Asia/Shanghai); deduplicated and sorted on save                                 |
-| `time`    | Optional legacy single-slot alias. Writing it alone sets `times:[time]`; when both fields are supplied it must equal the earliest sorted slot. |
-| `weekday` | Integer 0-6, Sunday 0. Weekly uses it; daily accepts but ignores it for timing; catalog requires 0.                                            |
-| `scope`   | `all                                                                                                                                           | starred`; daily requires `starred`, catalog requires `all`, weekly permits either |
+| Method and path                  | Result                                           |
+| -------------------------------- | ------------------------------------------------ |
+| `GET /refresh-runs`              | `200`, `items: []`, `collectionAvailable: false` |
+| `GET /refresh-runs/latest`       | `410 collection_unavailable`                     |
+| `POST /refresh-runs`             | `410 collection_unavailable`                     |
+| `POST /refresh-runs/:id/control` | `410 collection_unavailable`                     |
+| `PUT /schedules/:kind`           | `410 collection_unavailable`                     |
+| `DELETE /schedules/:kind`        | `410 collection_unavailable`                     |
 
-PUT returns Settings. Each Schedule is `{ kind, enabled, time, times, weekday, scope,
-nextAt, lastRunId, lastError }`; last three can be null. PUT recalculates `nextAt`
-and clears `lastError`, without resource revisions. DELETE has no body, returns
-204, and restores a disabled default on reads: daily `08:00/starred`, weekly
-`04:00/all`, catalog `07:00/all`, weekday 0. These are defaults, not a claim about
-production configuration. This schedules cloud refresh, not a bot routine.
-
-All three kinds support multiple slots. Weekly slots share one weekday; daily
-and catalog slots recur each day. `time` always reads as `times[0]` and remains
-supported, with no removal date; new consumers should write `times`. Invalid
-times, empty/overlong lists and conflicting aliases return 400 `validation_failed`.
-`nextAt` is the earliest unresolved slot, strictly after a save but potentially
-in the past while deferred. Recovery advances from each settled due time, not
-from recovery time. A due run starts or records a safe `lastError` on the next
-healthy minute tick (within five minutes). An active run is never cancelled for
-a daily; terminal completion immediately hands off pending daily work, bypassing
-only manual cooldowns. Current-day daily work precedes unstarted weekly/catalog
-work, except exact-slot ties where weekly precedes daily, then catalog.
-
-A daily not admitted before its due date's next Beijing midnight receives its
-own failed `scheduled_slot_missed` run and `missedSlots` count 1. It never starts
-on a later day. Failed catalog preparation and empty selection also create
-explicit target records. Old grouped audits remain readable. Occurrence request
-keys, transactional guards and compare-and-swap updates prevent duplicate starts
-or an audit racing with acceptance. Bounded backlog draining preserves unresolved
-cursors. GETs remain read-only; no production schedule times are changed.
-Migration 0013 preserves every existing setting and `next_at`; it does not add
-morning runs. The owner must explicitly choose any additional times.
-
-```bash
-json -X PUT "$API/schedules/daily" --data '{"enabled":true,"time":"08:00","weekday":0,"scope":"starred"}'
-json -X PUT "$API/schedules/daily" --data '{"enabled":true,"times":["05:30","19:30"],"weekday":0,"scope":"starred"}'
-json -X PUT "$API/schedules/weekly" --data '{"enabled":true,"time":"04:00","weekday":0,"scope":"all"}'
-json -X PUT "$API/schedules/catalog" --data '{"enabled":true,"time":"07:00","weekday":0,"scope":"all"}'
-KIND='catalog'; api -X DELETE "$API/schedules/$KIND"
-```
-
-### GET /refresh-runs
-
-Requires `app:read`; no body or supported query. Returns `{ account_id,
-items:Run[] }`, at most 21 runs, running/paused first, then newest creation time.
-No pagination or machine run-detail GET exists. Runs exclude `checkpoint`; older
-non-active runs have `steps:[]`, not full history. Every row includes
-`counts:{total,success,failed,unavailable,limited,skipped}` computed from the stored steps,
-including compact history. No browser progress/lease summary is added.
-
-Optional `invocations:number` counts successful execution lease claims, including
-recovery claims after a crash or expired lease. It counts acquired leases, not
-successful runs, executed steps, GitHub requests or rejected claim attempts. A
-single lease can process multiple steps/pages. Runs predating v0.22.0 normally
-omit the field; a later recovery under v0.22.0 or newer can begin recording it.
-Zero claims also omit the field. Missing is not measured zero, so exclude missing
-counts from invocation-based comparisons rather than substituting `0`.
-
-From v0.23, completed steps/pages survive a later invocation failure. `requests`
-is flushed at step/checkpoint boundaries and can undercount only one in-flight
-step per parallel repository after abrupt death or cancellation (at most four
-with the in-code pool); it is not a billing ledger. Every accepted checkpoint
-is retained. Budget
-yields preserve the pending cursor with null error and no retry-failure charge.
-Lease collisions schedule continuation at the current lease expiry.
-
-For speed measurements, record `invocations`, `requests`, executed step/page
-counts and `finishedAt - startedAt` for comparable completed/partial runs with
-the same execution kind, depth, scope and workload. Executed steps divided by
-positive `invocations` measures batching; wall duration divided by positive
-`invocations` measures effective time per claim, including queue/backoff overhead,
-not isolated Worker execution time. Compare wall duration and request volume
-alongside batching: fewer invocations alone does not prove a faster run. Recovery,
-pagination, retention and upstream latency can change the ratios. Active-run
-counts are provisional; do not substitute ETA for a measured finish time.
-`GET /refresh-runs/latest` is a separate compact summary and does not include
-`invocations`; use the matching `id` in this list for the count.
-
-Every run also includes `expectedFinishAt:string|null` and
-`expectedFinishAtReason:string|null`. Terminal runs (`completed`, `failed`,
-`partial`, `cancelled`) always return `expectedFinishAt: null` and
-`expectedFinishAtReason: "terminal"`; use `finishedAt` for the actual end.
-This rule takes precedence even when work, valid timestamps or history are absent.
-Calibration selects the latest five valid
-completed or partial runs for the account and execution kind (`catalog`, `quick`,
-`deep`), across retained history rather than just the displayed 21 rows. Samples
-span every trigger and scope: manual selected runs use their own planned work,
-not the full wall time of a much larger daily run. Catalog preparations remain
-catalog samples regardless of trigger; missing legacy depth means deep.
-
-For each step kind, calibration uses the median recorded `durationMs` of executed
-terminal steps (`success`, `failed`, `unavailable`, `limited`, with positive
-`attempts` and a numeric nonnegative duration). Unseen step kinds use the overall
-median of those step durations within the same execution kind. Genuine zero
-durations count; skipped, unattempted and missing/invalid timings do not. Fully
-timed sample runs also supply per-step scheduling/backoff overhead:
-`max(0, wallDuration - modeledStepWallDuration) / nonSkippedSteps`; the median
-overhead is added to each remaining step without dividing it by concurrency.
-When complete valid start/end intervals are available, calibration separates
-account prelude, factory, snapshot, activity, Insights and publication overhead.
-It unions overlapping intervals within each phase and assigns intervening gaps
-to the following phase. Remaining activity therefore retains its measured tail
-instead of receiving only the small average overhead of all 1,146 steps. Compact
-plans distinguish Insights from other snapshots. Incomplete interval evidence
-keeps the existing overall overhead rather than inventing a phase measurement.
-The model assigns ordered repository work to four lanes, placing each next
-repository on the earliest free lane, separately for metadata/streams/commit and
-repository snapshots. The estimator conservatively retains activity service time;
-the executor now pipelines repository activity in its four-lane pool, while
-global snapshots and publication remain barriers. This is an idealized lane schedule: invocation-boundary replenishment,
-scheduling and backoff remain in the learned overhead. Incomplete timing records never masquerade as
-overhead. If no audited timings exist, calibration instead uses the median
-`wallDuration / nonSkippedSteps`, which already includes overhead. Invalid-time,
-failed/cancelled and zero-work/all-skipped sample runs are excluded.
-
-Running/paused ETA is `max(now, startedAt, nextAttemptAt) + modeledRemainingWall + remainingSteps * perStepOverhead`. Repository-aware parallel modeling applies
-only when audited step timings exist; wall-only calibration or a compact plan
-without repository/order information stays serial to avoid double discounting.
-Historical serial samples can conservatively retain serialization in learned
-overhead until parallel samples arrive. All terminal step outcomes remove work, including
-skipped future steps ahead of the cursor. Paused estimates assume resumption now
-or after outstanding backoff, not a prediction of user action. Terminal history
-has `expectedFinishAt:null` and `expectedFinishAtReason:"terminal"`; it uses the
-recorded `finishedAt`, never a newly projected finish. Browser history/detail, compact
-machine history and latest readiness share this contract; internal calibration
-and grouped plans are not response fields. GET remains read-only and never fetches
-GitHub. The estimate is neither the hard `deadlineAt` nor a completion guarantee.
-
-Reasons are `terminal` for every terminal run. For non-terminal runs, reasons
-are null for a present estimate, `no_completed_history` when no usable
-completed-or-partial same-execution-kind history exists, `invalid_started_at` for
-an invalid stored active start, and `not_executed` for a zero-step active audit record. A missing
-history estimate remains null rather than borrowing another execution kind.
-
-Run fields: `id`, `account_id`, `owner`, `requestKey`, `mode`, `repos`, `repoIds`,
-`window:{since,until}`, `steps`, `cursor`, `status`, `startedAt`, `updatedAt`,
-`finishedAt`, `nextAttemptAt`, `requests`, `version`, `restoreCursor`, plus optional
-`invocations`, `selection`, `depth`, `trigger`, `schedule`, `siteRepos`, `deadlineAt`, `error`,
-`missedSlots:{firstDueAt,lastDueAt,count}`. Status is
-`running|paused|completed|partial|cancelled|failed`. Steps carry `kind`, `repo`,
-`status`, `attempts`, `startedAt`, `finishedAt`, `durationMs`, `pages`, `error`, and
-optional `resource`, `sourceHead`, `strategy`, `snapshotCursor`, `retryFailures`.
-Nested types: [`factory-run.ts`](../apps/web/src/lib/factory-run.ts).
-
-Step status is `pending|running|success|failed|unavailable|limited|skipped`. Expected
-feature/access unavailability is terminal `unavailable`, not `failed`; it does
-not by itself make a run `partial`. Dependency safe-parse failures alone finish
-as terminal `limited` with `error:"dependency_parse_unsupported"`; the collector
-uses that typed safe code for unsupported workflow structure or an unparseable
-manifest, never classification by display text. This adds `counts.limited` and
-completed browser progress without incrementing failed/unavailable counts or
-making the run partial. Collector capacity truncation with no access-failure
-reason code likewise increments `counts.limited`, not `counts.failed`; its
-`coverage.status:"limited"` evidence remains limited, never complete. Interrupted
-pagination/access loss, malformed upstream containers and exhausted
-upstream retries remain failures. `completed` means the plan finished without
-failures or skipped required work, not that every data source is available.
-In particular, a limited observed subset with `permission_denied`, `not_found`,
-disabled-feature or `unknown` access restriction remains a failed step/partial
-run. Do not classify by the `coverage_limited` error string alone: older fallback
-error mapping can also use it for an unknown mid-pagination restriction.
-For paginated lists, only an explicit first-page access denial can represent
-expected absence. A search response without `nodes` and without an access error
-is malformed, not forbidden. A 403/404 after any accepted page (even an empty
-page with a next cursor) is interrupted collection: the snapshot step fails with
-`snapshot_incomplete`, retains the previous snapshot and its timestamp, and makes
-the run/publication partial rather than complete.
-The asynchronous POST still returns 202 on admission; a later collection failure
-is recorded on the run, not retroactively returned as HTTP 422 by that POST.
-`/refresh-runs` shows the failed step's `error:"snapshot_incomplete"` and increments
-`counts.failed` (terminal compact history omits full steps). `/refresh-runs/latest`
-keeps that entry in `failedSteps`; `lastError` prefers a run-level error, otherwise
-the first nonempty failed-step error. A nonfatal snapshot failure can still finish
-and publish as `partial`, with non-null `publishedAt` only when atomic publication
-is proven. Fatal run failure instead has status `failed` and null `publishedAt`;
-until completion it remains unpublished. Neither outcome relabels retained
-snapshot evidence as freshly collected.
-This includes global Issues/PR chunks resumed in another queue invocation: the
-durable snapshot cursor, not just the current request's local page counter,
-determines whether collection has already started.
-Search and security GraphQL responses with field/node access errors and a surviving connection
-are partial responses, not whole-connection unavailability, even if filtering the
-denied nodes leaves an empty array.
-Catalog pages advertising a continuation require a nonempty new string cursor;
-missing, invalid or repeated cursors are incomplete, never a successful empty catalog.
-Saved GraphQL connections require an explicit boolean `pageInfo.hasNextPage`;
-missing pagination metadata is not proof of a terminal page. Search and security
-continuations also require nonempty new string cursors.
-Likewise, a declared REST next link that cannot be parsed is incomplete, not EOF;
-only absence of a next relation proves the list has ended.
-REST list containers must match the endpoint: Actions requires `workflow_runs`,
-while releases, contributors and notifications require arrays. A different JSON
-container is incomplete even when empty.
-List elements must be records before filtering/mapping; invalid elements cannot
-be silently dropped to manufacture a successful empty observation. Legitimate
-empty lists and nullable optional record fields remain valid.
-Legal GraphQL null nodes remain supported; this is not
-full validation of optional metadata fields.
-Whole-source first-page denial is classified identically for global and repository
-Issues/PR search, whether returned as HTTP or GraphQL access errors. Derived
-Insights retain prior data and become unavailable when every unsatisfied required
-source is explicitly unavailable; a failed, absent or unfinished source still
-makes Insights fail as incomplete.
-For the **same run ID**, a published factory snapshot has `status:complete` for
-a completed run and `status:partial` for a partial run. A newer failed, paused or
-timed-out attempt can leave an older publication untouched; compare run IDs and
-per-stream coverage, not status strings from different runs. Historical rows and
-publications are not rewritten.
-
-All runs have absolute wall-clock deadlines from `startedAt`: catalog **30 minutes**,
-quick refresh **6 hours**, deep refresh (including legacy missing depth) **12 hours**.
-Paused time and retry backoff count toward the same deadline. Legacy rows without
-`deadlineAt` derive it from their original start. On the next scheduler tick or
-mutating start/control/queue operation, expired running/paused rows become `failed`
-with `error:run_timed_out`, release their lease/account lock, and update the owning
-schedule's `lastError`. Lease fencing rejects writes after the deadline; GET never
-performs this recovery.
-
-`nextAt` identifies the earliest unresolved occurrence and may remain in the past
-while other work is active. Recovery processes retained occurrences individually
-in bounded normalization passes. A daily that cannot start before
-the next Beijing midnight receives its own immutable failed audit with
-`error:scheduled_slot_missed`, `schedule`, and `missedSlots.count:1`; it performs
-no GitHub work. Advance from the settled due time, never from recovery time.
-Existing plural `scheduled_slots_missed` records remain readable historical
-audits, not the rule for newly missed dailies. Settings expose safe `lastError`
-diagnostics for deferred, failed and missed work. Inspect run history for each
-durable outcome; an explicit schedule save clears its diagnostic and replaces
-the pending configuration without cancelling an active run.
-
-```bash
-api "$API/refresh-runs"
-```
-
-### POST /refresh-runs
-
-Quick collection freezes 30 UTC dates, while successful publication retains older
-saved daily history up to 90 dates. Display windows are not collection windows.
-See the [v0.24.2 one-time deep backfill](09-factory-runs.md#one-time-history-backfill-after-v0242)
-for the post-deploy operator request; do not change the daily quick depth to 90.
-
-Requires `app:write`; explicitly schedules GitHub collection. No query; strict body:
-
-A new request while this account has a `running` or `paused` run returns HTTP
-409 `account_conflict`; it does not enqueue a second run. Read `/refresh-runs`
-and wait or explicitly control that run rather than blindly retrying. Reusing
-the same `requestKey` is idempotent and returns the already admitted run (202),
-not a competing-run conflict. Other admission checks can independently return
-validation, catalog or cooldown errors.
-
-| Field                        | Validation/default                                                                                  |
-| ---------------------------- | --------------------------------------------------------------------------------------------------- |
-| `requestKey`                 | Required UUID; logical-request identity within account                                              |
-| `mode`                       | Required `catalog                                                                                   | refresh`              |
-| `depth`                      | `quick                                                                                              | deep`, default `deep` |
-| `scope`                      | `all                                                                                                | selected              | filter | stale | failed`, default `selected` |
-| `repos`                      | Optional membership array, maximum 500 strings of at most 200; refresh permits only with `selected` |
-| `order`                      | Optional priority array, maximum 500 strings of at most 200; changes order, not membership          |
-| `repo`                       | Optional exact repository filter, maximum 200                                                       |
-| `language`, `topic`, `query` | Optional filters, maximum 100 each                                                                  |
-
-Do not send `account_id`; token/path provide it. Refresh requires saved catalog;
-non-selected scopes require complete inventory. Selection/priorities must be unique
-and valid. Filter uses exact repo/language/topic and case-insensitive name/description
-substring query. Stale selects missing, non-success or at-least-24-hour-old state;
-failed selects failed state. All refresh scopes exclude non-owned repositories.
-Refresh selection is bounded to 500 repositories
-and must be nonempty except for existing `all` behavior.
-
-Daily quick refresh selects starred-owned catalog repositories. Weekly full refresh
-selects every owned catalog repository, including unstarred, archived and forked
-entries. Statistics overrides no longer participate in selection. No repository
-name has a special mirror rule, and non-owned repositories enter neither factory
-streams nor detail-page plans. There is no eligibility cutoff based on size, empty
-history or `pushed_at`; archived repositories receive the same streams and nine
-detail tabs (details, issues, prs, actions, releases, traffic, security, languages,
-contributors). `order` never changes membership; exceeding 500 is an error.
-Inspect `/refresh-runs` for frozen `repos`, `siteRepos`, `selection` and step outcomes.
-Older compact runs may lack full steps; a single changed snapshot is not a full plan.
-
-A selected-scope manual refresh updates `/sources` entries and detail snapshots
-only for its selected repositories. Account projections may change because they
-compose those inputs, but untouched repositories keep their previous evidence.
-It does **not** publish `/activity`; only an eligible account-wide quick refresh
-advances that frozen publication.
-
-For the analysis bot, replace statistics writes with local star writes. Migration
-`0016_star_membership.sql` removes stars only where the same account/repository has
-an explicit false statistics override, then empties (but retains) `repo_statistics`.
-Unstarred explicit true overrides do not create stars. See the
-[migration and rollback contract](03-schema.md#star-membership-consolidation).
-
-```bash
-REQUEST_KEY="$(node -p 'crypto.randomUUID()')"
-jq -n --arg key "$REQUEST_KEY" '{requestKey:$key,mode:"catalog",depth:"quick",scope:"all"}' |
-  json -X POST "$API/refresh-runs" --data-binary @-
-
-REQUEST_KEY="$(node -p 'crypto.randomUUID()')"
-jq -n --arg key "$REQUEST_KEY" --arg repo "$REPOSITORY" \
-  '{requestKey:$key,mode:"refresh",depth:"deep",scope:"selected",repos:[$repo]}' > refresh-request.json
-json -X POST "$API/refresh-runs" --data-binary @refresh-request.json
-```
-
-Returns 202 `{ account_id, id, status }`. Do not start catalog/refresh concurrently.
-Retry uncertain submission with the **same key/body**: duplicate key returns the
-existing run, even if a new body asks for different work. A new key means new work.
-Acceptance is not successful collection/publication; poll runs and inspect coverage.
-
-### POST /refresh-runs/:id/control
-
-Requires `app:write`; no query; strict body `{ action:"pause"|"resume"|"cancel" }`.
-Returns 202 `{ account_id, id, status }`. Missing run is 404. Terminal runs return
-unchanged; resume preserves rate-limit/backoff deadlines. Concurrent control can
-return 409 `account_conflict`.
-
-```bash
-RUN_ID='replace-with-returned-id'
-ACTION='pause'
-jq -n --arg action "$ACTION" '{action:$action}' |
-  json -X POST "$API/refresh-runs/$RUN_ID/control" --data-binary @-
-```
+`GET /settings` returns `schedules: []` and `collectionAvailable: false`.
+No request starts, resumes or changes a historical run or schedule. Quick, deep,
+full, scope-based collection plans and their estimates are no longer supported.
+No replacement collection parameters are defined in phase 1.
 
 ## Errors, limits and retries
 
@@ -2296,67 +1681,49 @@ Use status/code, not message text. Auth/scope checks may precede route validatio
 Machine errors are JSON, not Access redirects; no standardized details array or
 `retryAt` JSON field exists.
 
-| HTTP | Code                                     | Meaning/action                                                                                                |
-| ---- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| 400  | `validation_failed`                      | Invalid JSON/content type, oversized body, schema/query/revision error; fix input                             |
-| 401  | `token_unauthorized`                     | Missing/malformed/expired/revoked bearer or unavailable account                                               |
-| 403  | `account_forbidden`, `scope_forbidden`   | Wrong account or missing required scope                                                                       |
-| 404  | `not_found`                              | Unknown endpoint/resource/repo, missing item/run/publication repository                                       |
-| 404  | `revision_conflict`                      | DELETE target missing                                                                                         |
-| 405  | `method_not_allowed`                     | Unsupported method/mutation; unregistered routes may instead be 404                                           |
-| 409  | `snapshot_missing`                       | Saved/immutable source unavailable; not zero                                                                  |
-| 409  | `resource_exists`                        | GET and compare full intended resource identity/version                                                       |
-| 409  | `revision_conflict`                      | Reload current revision and reconcile                                                                         |
-| 409  | `catalog_incomplete`, `refresh_cooldown` | Prepare catalog or defer refresh                                                                              |
-| 409  | `account_conflict`                       | Existing running/paused run or concurrent run control                                                         |
-| 422  | `factory_capacity`                       | Generated refresh record exceeds capacity; previous data retained                                             |
-| 422  | `snapshot_incomplete`                    | Bounded/incomplete collection cannot replace a snapshot; retain previous evidence and inspect run diagnostics |
-| 500  | `internal_error`, `db_error`             | Bounded backoff and operator diagnosis                                                                        |
+| HTTP | Code                                   | Meaning/action                                                                    |
+| ---- | -------------------------------------- | --------------------------------------------------------------------------------- |
+| 400  | `validation_failed`                    | Invalid JSON/content type, oversized body, schema/query/revision error; fix input |
+| 401  | `token_unauthorized`                   | Missing/malformed/expired/revoked bearer or unavailable account                   |
+| 403  | `account_forbidden`, `scope_forbidden` | Wrong account or missing required scope                                           |
+| 404  | `not_found`                            | Unknown endpoint/resource/repo, missing item/run/publication repository           |
+| 404  | `revision_conflict`                    | DELETE target missing                                                             |
+| 405  | `method_not_allowed`                   | Unsupported method/mutation; unregistered routes may instead be 404               |
+| 409  | `snapshot_missing`                     | Saved/immutable source unavailable; not zero                                      |
+| 409  | `resource_exists`                      | GET and compare full intended resource identity/version                           |
+| 409  | `revision_conflict`                    | Reload current revision and reconcile                                             |
+| 410  | `collection_unavailable`               | Collection is retired; do not retry start/control/latest/schedule operations      |
+| 500  | `internal_error`, `db_error`           | Bounded backoff and operator diagnosis                                            |
 
 Implemented application limits, not inferred Cloudflare/GitHub quotas:
 
-| Surface                                     | Limit                                                                                                      |
-| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| Tokens                                      | 1-90 days; default 30                                                                                      |
-| Resource payload / POST-PATCH body          | 65,536 / 70,000 UTF-8 bytes, respectively                                                                  |
-| Resource ID / list page                     | 1-80 URL-safe ASCII characters / default 50, maximum 100                                                   |
-| Statistics/schedule JSON body               | 2,048 bytes                                                                                                |
-| Refresh start/control JSON body             | 120,000 bytes                                                                                              |
-| Refresh selection/priority / generated plan | 500 entries each / 1,800,000 bytes                                                                         |
-| Refresh concurrency/cooldown                | One running/paused run per account; 60-second run-start and 15-minute repository cooldown where applicable |
-| Refresh run list                            | Maximum 21, no pagination                                                                                  |
-| Browser token management JSON               | 8,192 bytes                                                                                                |
+| Surface                            | Limit                                                    |
+| ---------------------------------- | -------------------------------------------------------- |
+| Tokens                             | 1-90 days; default 30                                    |
+| Resource payload / POST-PATCH body | 65,536 / 70,000 UTF-8 bytes, respectively                |
+| Resource ID / list page            | 1-80 URL-safe ASCII characters / default 50, maximum 100 |
+| Statistics JSON body               | 2,048 bytes                                              |
+| Refresh run list                   | Empty; `collectionAvailable: false`, no pagination       |
+| Browser token management JSON      | 8,192 bytes                                              |
 
 There is **no application requests-per-second/minute quota**, per-token throttle,
 standard rate-limit headers, documented total resource-count limit, or source-index
 pagination. A 25-repository bot batch is not an API quota. Cloudflare/edge policy
-may still reject requests; GitHub limits affect explicit refresh, not saved GETs.
+may still reject requests. Saved GETs never call GitHub, and collection is unavailable.
 Use bounded exponential backoff/jitter for transport, edge 429 and 5xx failures;
 honor `Retry-After` only when supplied. Reconcile uncertain POST/PATCH results;
 handle each 409 by code, not generic success/retry.
 
-## Recommended external bot flow
+## Recommended external consumer flow
 
-This change provisions no routine, model, credentials or migrations. Run outside
-Giraffe with private token/model configuration and persisted pending-work state.
-1. Validate `/me`, account/scopes/expiry; alert on 401 or upcoming expiry. Use the
-   three analysis scopes, not application writes.
-2. Start with `/sources` and `/repos?scope=all`; periodically repeat full scans.
-   Between full scans use `since` only as an optimization. Merge pending/failed
-   work first, and persist pending identity/full versions before advancing cutoff.
-3. Build repository/domain and global work from actual source identities/versions.
-   Read observations; verify account, versions and coverage. If versions moved
-   since indexing, recompute identity. Bound batches locally without dropping work.
-4. Compute stable report ID; GET existing reports if useful before inference.
-   Analyze only when no matching valid completed report exists. Publish truthful
-   reports; insufficient evidence is `unknown`. Reconcile uncertain POST/409 by GET
-   and full version. Mark work done only after publication is confirmed.
-5. Publish globals using account observations or the correct complete child-report
-   set. Keep incomplete/failed domains pending. Create/PATCH `grok-bot-run` with
-   current revision, accurate counts/status/time and safe errors; a failed status
-   write must not erase pending work or blindly recreate reports. It is not a cursor.
-6. Reconcile full scans even after empty polls; rotate tokens before expiry. The
-   analysis page shows the bot's last-run record, not the presence of a local runner.
+1. Obtain an expiring, fixed-account token with only the required scopes.
+2. Read `/sources` and supported saved observations; preserve timestamps,
+   missingness and coverage when presenting evidence.
+3. Treat `collection_unavailable` as a terminal unavailable capability, not a
+   retryable job. Do not poll legacy run readiness or attempt scheduling.
+4. If needed, publish externally produced resources using the generic
+   records/reports/jobs API and revision controls. Giraffe does not execute them.
+5. Rotate the token before expiry; never store it in URLs or logs.
 
 ## Access-protected browser token management
 

@@ -9,7 +9,6 @@ export type ErrorUi =
 	| { kind: "ok" };
 
 const TOAST: Record<string, string> = {
-	ai_connection_failed: "AI 连接测试失败，请检查地址、模型和 API key",
 	github_unauthorized: "GitHub 认证失败",
 	github_forbidden: "没有 GitHub 权限",
 	origin_forbidden: "来源不被允许",
@@ -33,7 +32,7 @@ export function errorUi(err: unknown): ErrorUi {
 		return { kind: "account_missing" };
 	}
 	if (err.code === "snapshot_missing") {
-		return { kind: "empty", title: "等待统一刷新" };
+		return { kind: "empty", title: "暂无已保存的快照" };
 	}
 	if (err.code === "activity_unpublished") {
 		return { kind: "empty", title: "等待活动发布" };
@@ -75,7 +74,7 @@ export function reportOk(): void {
 }
 
 export function missingTitle(snap: { missing: true; title?: unknown }): string {
-	return typeof snap.title === "string" ? snap.title : "等待统一刷新";
+	return typeof snap.title === "string" ? snap.title : "暂无已保存的快照";
 }
 
 export function catchLoad(

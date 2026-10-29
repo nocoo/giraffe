@@ -8,12 +8,6 @@ export const NAV_GROUPS: readonly NavGroup[] = [
 		items: [
 			{ href: "/factory", label: "软件工厂", icon: "Factory" },
 			{ href: "/today", label: "今日活动", icon: "CalendarDays" },
-		],
-	},
-	{
-		label: "AI",
-		items: [
-			{ href: "/analysis", label: "分析台", icon: "Activity" },
 			{ href: "/insights", label: "Insights", icon: "Activity" },
 		],
 	},
@@ -35,21 +29,16 @@ export const NAV_GROUPS: readonly NavGroup[] = [
 	},
 	{
 		label: "系统",
-		items: [
-			{ href: "/refresh", label: "刷新中心", icon: "RefreshCw" },
-			{ href: "/settings", label: "设置", icon: "Settings" },
-		],
+		items: [{ href: "/settings", label: "设置", icon: "Settings" }],
 	},
 ];
 
 export const NAV_ITEMS: readonly NavItem[] = NAV_GROUPS.flatMap((group) => group.items);
 
 export const PAGE_DESCRIPTIONS = {
-	"/today": "当次成功快速刷新的活动窗口与当前快照",
+	"/today": "最近保存的活动窗口与当前快照",
 	"/repos": "当前账号下的仓库快照",
-	"/analysis": "外部分析报告与证据",
 	"/factory": "可追溯的软件工厂流量与交付",
-	"/refresh": "手动刷新、自动计划与运行记录",
 	"/issues": "跨仓打开的 Issue",
 	"/pulls": "跨仓打开的 Pull Request",
 	"/insights": "最值得关注的仓库、跨仓发现与健康分布",

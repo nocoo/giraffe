@@ -1,5 +1,11 @@
 # 05 — Client 设计
 
+> **v0.26.0:** Collection execution and the AI analysis product surface have
+> been removed. The implementation details below are historical where they
+> describe refresh modes, runs, schedules, collectors or analysis pages.
+> [Phase 1 retirement](14-phase1-retirement.md) is the current behavior contract;
+> saved-data schemas and read semantics remain relevant.
+
 ## Analysis desk
 
 `/analysis` reads saved reports published by an external analysis program. It shows

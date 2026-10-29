@@ -141,14 +141,14 @@ async function renderRepos(scope: "starred" | "all") {
 	);
 }
 
-it("uses stars alone for daily selection without a statistics switch", async () => {
+it("keeps star selection without promising an automatic refresh", async () => {
 	await renderRepos("starred");
 	expect(container.querySelector('[data-testid="repo-summary"]')?.textContent).toContain("2个仓库");
 	expect(container.querySelector('[role="switch"]')).toBeNull();
 	expect(container.textContent).not.toContain("参与统计");
 	expect(container.textContent).not.toContain("已排除");
 	expect(container.textContent).toContain(
-		"星标仓库每天刷新；全部自有仓库每周刷新，包含 Fork 和已归档仓库。",
+		"星标仅筛选已保存快照，包含 Fork 和已归档仓库。旧刷新已停用，当前无法采集新数据。",
 	);
 	const star = container.querySelector<HTMLButtonElement>('[aria-label="星标 owner/archived"]');
 	expect(star?.getAttribute("aria-pressed")).toBe("true");

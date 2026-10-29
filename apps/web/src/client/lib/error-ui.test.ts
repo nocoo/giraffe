@@ -19,7 +19,7 @@ describe("errorUi", () => {
 		});
 		expect(errorUi(new ApiError(409, "snapshot_missing", "no"))).toEqual({
 			kind: "empty",
-			title: "等待统一刷新",
+			title: "暂无已保存的快照",
 		});
 		expect(errorUi(new ApiError(409, "activity_unpublished", "no"))).toEqual({
 			kind: "empty",
@@ -59,7 +59,7 @@ describe("errorUi", () => {
 			title: "未找到",
 		});
 		expect(missingTitle({ missing: true, title: "未找到" })).toBe("未找到");
-		expect(missingTitle({ missing: true })).toBe("等待统一刷新");
+		expect(missingTitle({ missing: true })).toBe("暂无已保存的快照");
 	});
 
 	it("notifies subscribers and maps load failures", () => {
@@ -72,7 +72,7 @@ describe("errorUi", () => {
 		stop();
 		expect(catchLoad(new ApiError(409, "snapshot_missing", "n"), () => undefined)).toEqual({
 			missing: true,
-			title: "等待统一刷新",
+			title: "暂无已保存的快照",
 		});
 		expect(catchLoad(new ApiError(404, "not_found", "gone"), () => undefined)).toEqual({
 			missing: true,

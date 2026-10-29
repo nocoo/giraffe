@@ -5,7 +5,6 @@ import { createGithubClient, TruncatedError } from "./github-client";
 
 function env(partial: Partial<Env>): Env {
 	return {
-		FACTORY_QUEUE: {} as Queue,
 		DB: {} as D1Database,
 		ASSETS: { fetch: () => Promise.reject(new Error("no assets")) } as unknown as Fetcher,
 		TOKEN_ENCRYPTION_KEY_CURRENT: "1",

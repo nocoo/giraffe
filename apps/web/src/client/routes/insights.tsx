@@ -274,9 +274,6 @@ export function InsightsPage() {
 				</ChartBrick>
 			) : null}
 			<FocusSection {...focus} />
-			<Link href="/analysis" className="inline-flex text-sm">
-				查看分析报告与证据 →
-			</Link>
 			<SectionRule title={<IconLabel icon={Layers3}>工作量</IconLabel>}>
 				<div className="space-y-3" data-testid="insight-metrics">
 					<p className="giraffe-stat-inline">

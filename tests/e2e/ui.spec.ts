@@ -39,7 +39,7 @@ test("retired Work routes expose no controls or runtime requests", async ({ page
 	expect(runtimeRequests).toEqual([]);
 	await page.goto("/repos");
 	await expect(page.getByTestId("repo-list")).toBeVisible();
-	await expect(page.getByRole("button", { name: "分析台", exact: true })).toBeVisible();
+	await expect(page.getByRole("button", { name: "分析台", exact: true })).toHaveCount(0);
 });
 
 test("repository and Insights omit optional security warnings while showing saved data", async ({
@@ -174,16 +174,13 @@ for (const [path, label, list] of [
 	});
 }
 
-test("insights keeps deterministic CI and alert reasons separate from external analysis", async ({
+test("insights keeps deterministic CI and alert reasons without analysis links", async ({
 	page,
 }) => {
 	await page.goto("/insights");
 	await expect(page.getByRole("list", { name: "Top 10 关注仓库" })).toBeVisible();
 	await expect(page.getByTestId("insight-focus")).toContainText("Release 连续 2 次失败");
-	await expect(page.getByRole("link", { name: /查看分析报告与证据/ })).toHaveAttribute(
-		"href",
-		"/analysis",
-	);
+	await expect(page.getByRole("link", { name: /查看分析报告与证据/ })).toHaveCount(0);
 	await expect(page.getByText("AI 总评：优先处理")).toHaveCount(0);
 });
 
@@ -296,7 +293,7 @@ test("repository grid retains the search and links to the selected repository", 
 	await expect(page.getByRole("tabpanel").getByText("MIT", { exact: true })).toBeVisible();
 });
 
-test("missing snapshots lead to the unified factory console", async ({ page }) => {
+test("missing snapshots keep read-only empty states and disabled refresh", async ({ page }) => {
 	await page.route("**/api/**", (route) => {
 		const path = new URL(route.request().url()).pathname;
 		if (path === "/api/me" || path === "/api/accounts") {
@@ -311,11 +308,10 @@ test("missing snapshots lead to the unified factory console", async ({ page }) =
 	await expect(page.getByText("暂无告警数据", { exact: true })).toBeVisible();
 	for (const path of ["/repos", "/issues", "/pulls", "/inbox", "/insights"]) {
 		await page.goto(path);
-		await expect(page.getByText("等待统一刷新", { exact: true })).toBeVisible();
-		await expect(page.getByRole("main").getByRole("button", { name: /刷新/ })).toHaveCount(0);
-		await page.getByRole("link", { name: "前往刷新中心", exact: true }).click();
-		await expect(page).toHaveURL(/\/refresh$/);
-		await expect(page.getByRole("region", { name: "刷新管理", exact: true })).toBeVisible();
+		await expect(page.getByText("暂无已保存的快照", { exact: true })).toBeVisible();
+		await expect(page.getByRole("button", { name: "刷新暂不可用", exact: true })).toBeDisabled();
+		await expect(page.getByRole("link", { name: "前往刷新中心", exact: true })).toHaveCount(0);
+		await expect(page.getByText(/旧刷新已停用/)).toBeVisible();
 	}
 });
 
@@ -360,7 +356,7 @@ test("legacy security stays unknown while traffic retains permission guidance", 
 	await expect(page.getByRole("group", { name: "views", exact: true })).toHaveCount(0);
 });
 
-test("missing repository tabs remain read-only and show fresh data after a factory visit", async ({
+test("missing repository tabs remain read-only and show newly saved snapshots", async ({
 	page,
 }) => {
 	const writes: string[] = [];
@@ -397,14 +393,15 @@ test("missing repository tabs remain read-only and show fresh data after a facto
 	await page.getByRole("tab", { name: "安全", exact: true }).click();
 	await expectTime(previous);
 	await page.getByRole("tab", { name: "语言", exact: true }).click();
-	await expect(page.getByRole("tabpanel").getByText("等待统一刷新", { exact: true })).toBeVisible();
+	await expect(
+		page.getByRole("tabpanel").getByText("暂无已保存的快照", { exact: true }),
+	).toBeVisible();
 	await expect(page.getByRole("button", { name: "数据更新时间：暂无数据时间" })).toBeVisible();
 	expect(await page.getByTestId("repo-detail").ariaSnapshot()).not.toContain("上次刷新");
 	await expect(page.getByRole("tabpanel").getByRole("status")).toHaveCount(0);
-	await page.getByRole("link", { name: "前往刷新中心", exact: true }).click();
-	await expect(page.getByRole("region", { name: "刷新管理", exact: true })).toBeVisible();
+	await expect(page.getByRole("button", { name: "刷新暂不可用", exact: true })).toBeDisabled();
 	await page.unroute("**/api/repos/octocat/hello-world/languages");
-	await page.goBack();
+	await page.reload();
 	await page.getByRole("tab", { name: "语言", exact: true }).click();
 	await expectChart(page, "languages");
 	await expectTime("2026-09-08T08:30:00.000Z");
@@ -437,7 +434,9 @@ for (const mode of ["light", "dark", "mobile"] as const) {
 			expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
 				width,
 			);
-			await expect(page.getByRole("main").getByRole("button", { name: /刷新/ })).toHaveCount(0);
+			await expect(
+				page.getByRole("main").getByRole("button", { name: /刷新/, disabled: false }),
+			).toHaveCount(0);
 			if (process.env.UI_SCREENSHOTS) {
 				await page.screenshot({
 					path: `${process.env.UI_SCREENSHOTS}/${mode}-${ready}.png`,

@@ -1,7 +1,10 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
-import { factoryFixture as ready } from "../../../../../tests/fixtures/factory-snapshot";
-import { emptyDay, factoryWindow } from "../../lib/factory";
+import {
+	factoryFixture as ready,
+	savedFactoryWindow,
+} from "../../../../../tests/fixtures/factory-snapshot";
+import { emptyDay } from "../../lib/factory";
 import { FACTORY_STREAMS } from "../../lib/factory-types";
 import {
 	activityAge,
@@ -27,7 +30,7 @@ import {
 describe("software factory view model", () => {
 	it.each([30, 90])("uses the published %i-day UTC window for chart days", (dayCount) => {
 		const snapshot = ready();
-		snapshot.window = factoryWindow(snapshot.fetched_at, dayCount);
+		snapshot.window = savedFactoryWindow(snapshot.fetched_at, dayCount);
 		const board = factoryBoard(snapshot, snapshot.repos, snapshot.repos);
 		expect(board.days).toHaveLength(dayCount);
 		expect(board.days[0]?.date).toBe(snapshot.window.since.slice(0, 10));
@@ -45,7 +48,7 @@ describe("software factory view model", () => {
 			source: "run",
 			publishedAt: snapshot.fetched_at,
 		};
-		snapshot.window = factoryWindow(snapshot.fetched_at, 30);
+		snapshot.window = savedFactoryWindow(snapshot.fetched_at, 30);
 		expect(factoryBoard(snapshot, snapshot.repos, snapshot.repos).days).toHaveLength(90);
 	});
 	it("charts retained older buckets beside updated quick-window days using the display span", () => {

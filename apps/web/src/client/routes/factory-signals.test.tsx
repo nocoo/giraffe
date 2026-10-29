@@ -3,8 +3,8 @@ import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
-import { factoryFixture } from "../../../../../tests/fixtures/factory-snapshot";
-import { emptyMetrics, factoryWindow } from "../../lib/factory";
+import { factoryFixture, savedFactoryWindow } from "../../../../../tests/fixtures/factory-snapshot";
+import { emptyMetrics } from "../../lib/factory";
 import type { FactoryViewSnapshot } from "../../lib/factory-types";
 import { loadFactory, loadFactoryDetail } from "../viewmodels/factory";
 import { FactoryPage } from "./factory";
@@ -53,7 +53,7 @@ afterEach(() => {
 
 function snapshotWithSignals(): FactoryViewSnapshot {
 	const raw = factoryFixture();
-	raw.window = factoryWindow(raw.fetched_at, 90);
+	raw.window = savedFactoryWindow(raw.fetched_at, 90);
 	const base = raw.repos[0];
 	if (!base) throw new Error("fixture");
 	const repos = Array.from({ length: 8 }, (_, i) => ({

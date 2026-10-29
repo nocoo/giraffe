@@ -152,7 +152,7 @@ export function ReposPage() {
 						</Button>
 					</TooltipTrigger>
 					<TooltipContent>
-						<p>Giraffe 星标：每天自动刷新</p>
+						<p>Giraffe 星标：筛选已保存快照，不触发采集</p>
 						{source ? <p>星标来源：{source}</p> : null}
 						{repo.star_updated_at ? (
 							<p>
@@ -390,7 +390,7 @@ export function ReposPage() {
 				}
 			>
 				<p className="mb-3 text-xs text-basalt-muted-foreground">
-					星标仓库每天刷新；全部自有仓库每周刷新，包含 Fork 和已归档仓库。
+					星标仅筛选已保存快照，包含 Fork 和已归档仓库。旧刷新已停用，当前无法采集新数据。
 				</p>
 				{rows.length === 0 ? (
 					<LayerCard>

@@ -1,6 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { factoryWindow } from "../../apps/web/src/lib/factory";
-import { factoryFixture } from "../fixtures/factory-snapshot";
+import { factoryFixture, savedFactoryWindow } from "../fixtures/factory-snapshot";
 import { createUiFixtures, projectFactoryFixture } from "./ui-fixtures";
 
 for (const dayCount of [30, 90]) {
@@ -12,11 +11,11 @@ for (const dayCount of [30, 90]) {
 		repo.name = "octocat/hello-world";
 		repo.observation = {
 			version: snapshot.runId,
-			window: factoryWindow(snapshot.fetched_at, dayCount),
+			window: savedFactoryWindow(snapshot.fetched_at, dayCount),
 			refreshedAt: snapshot.fetched_at,
 			source: "run",
 		};
-		snapshot.window = factoryWindow(snapshot.fetched_at, 30);
+		snapshot.window = savedFactoryWindow(snapshot.fetched_at, 30);
 		const fixtures: Record<string, unknown> = {
 			...createUiFixtures(),
 			"/api/factory": projectFactoryFixture(snapshot),
@@ -33,9 +32,8 @@ for (const dayCount of [30, 90]) {
 		await page.goto("/factory");
 		await expect(page.getByRole("heading", { name: `变化 · 最近 ${dayCount} 天` })).toBeVisible();
 		await page.locator("#factory-change-title").getByLabel("More information").hover();
-		await expect(page.getByRole("tooltip")).toContainText(
-			"每日快速刷新 30 天，每周深度刷新校准 90 天",
-		);
+		await expect(page.getByRole("tooltip")).not.toContainText("快速刷新");
+		await expect(page.getByRole("tooltip")).not.toContainText("深度刷新");
 		await expect(page.getByRole("tooltip")).toContainText("默认 7 天仅用于期间比较");
 		const methodology = page.locator("details").filter({ hasText: "来源、口径与不确定性" });
 		await methodology.locator(":scope > summary").click();

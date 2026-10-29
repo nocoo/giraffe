@@ -22,7 +22,7 @@ export const tokenScopesLabel: Record<string, string> = {
 	"agent:read": "读取 Agent 数据",
 	"agent:write": "写入 Agent 数据",
 	"app:read": "读取应用配置",
-	"app:write": "修改配置与发起刷新",
+	"app:write": "修改应用配置",
 };
 export const listTokens = (account: string) =>
 	apiGet<{ account_id: string; items: ApiTokenRow[] }>(

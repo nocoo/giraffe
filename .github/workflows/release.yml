@@ -38,6 +38,7 @@ jobs:
       runtime-version: "1.4.0"
       install-policy: "project"
       build-command: "bun run build"
+      deploy-script: "bun run scripts/deploy-worker.ts"
       d1-migrations: true
       d1-databases: "giraffe-db"
       environment: production

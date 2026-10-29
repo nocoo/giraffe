@@ -98,35 +98,3 @@ export function createDb(raw: D1Database, observe?: D1TimingObserver, cap = CAP)
 		},
 	};
 }
-
-export function guardedDb(db: Db, check: () => void): Db {
-	function wrap(statement: D1PreparedStatement): D1PreparedStatement {
-		const guarded = {
-			bind: (...values: unknown[]) => wrap(statement.bind(...values)),
-			first: <Result>(column?: string) => {
-				check();
-				return column === undefined ? statement.first<Result>() : statement.first<Result>(column);
-			},
-			all: <Result>() => {
-				check();
-				return statement.all<Result>();
-			},
-			run: () => {
-				check();
-				return statement.run();
-			},
-		} as D1PreparedStatement;
-		originals.set(guarded, originals.get(statement) ?? statement);
-		return guarded;
-	}
-	return {
-		get statements() {
-			return db.statements;
-		},
-		prepare: (query) => wrap(db.prepare(query)),
-		batch: (statements) => {
-			check();
-			return db.batch(statements);
-		},
-	};
-}

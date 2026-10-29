@@ -3,7 +3,6 @@ import { expect, it } from "vitest";
 import { factoryFixture } from "../../../../../tests/fixtures/factory-snapshot";
 import { FACTORY_STREAMS } from "../../lib/factory-types";
 import { factoryBoard, factoryGroups, filterFactoryRepos } from "./factory";
-import { factoryDataHealth } from "./factory-runs";
 
 function fixture() {
 	const snapshot = factoryFixture();
@@ -54,8 +53,6 @@ it("keeps unpublished selection in coverage, days, periods, exact series and hea
 	expect(board.aggregate.commits).toBe(3);
 	expect(board.ranking).toEqual(snapshot.repos);
 	expect(snapshot.repos).toHaveLength(1);
-	expect(factoryDataHealth(snapshot)).toMatchObject({ tone: "warning" });
-	expect(factoryDataHealth(snapshot).detail).toContain("缺失不代表零");
 });
 
 it("filters expected membership before joining publications, retaining unknown topics", () => {
@@ -86,7 +83,6 @@ it("filters expected membership before joining publications, retaining unknown t
 		languages: ["Swift", "TypeScript"],
 		topics: ["cli"],
 	});
-	expect(factoryDataHealth({ ...snapshot, selectedRepos: selected }).tone).toBe("success");
 });
 
 it("does not fabricate observations or timestamps for an entirely unpublished filtered selection", () => {
@@ -99,7 +95,4 @@ it("does not fabricate observations or timestamps for an entirely unpublished fi
 	expect(board.ranking).toEqual([]);
 	expect(board.repoActivity).toEqual([]);
 	expect(board.days.every((day) => !day.complete.commits && day.openIssues === null)).toBe(true);
-	expect(factoryDataHealth({ ...snapshot, repos: [], selectedRepos: selected }).tone).toBe(
-		"warning",
-	);
 });

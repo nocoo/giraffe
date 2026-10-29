@@ -1,5 +1,11 @@
 # 08 — 软件工厂独立审查与验证
 
+> **v0.26.0:** Collection execution and the AI analysis product surface have
+> been removed. The implementation details below are historical where they
+> describe refresh modes, runs, schedules, collectors or analysis pages.
+> [Phase 1 retirement](14-phase1-retirement.md) is the current behavior contract;
+> saved-data schemas and read semantics remain relevant.
+
 2026-09-16：由 **Grok CLI（grok-4.5）** 与 **Pi CLI（GPT-5.6-terra）** 分别独立审阅源码、测量契约和调查摘要。两者只读，没有执行修改。Pi 使用临时会话配置连接可用模型，没有修改本机全局模型配置。原文仅保留最终审查文本：本地 `.factory-cache/grok-findings.md` 与 `.factory-cache/pi-findings.md`。
 
 ## 已处理意见

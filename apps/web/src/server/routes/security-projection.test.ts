@@ -1,11 +1,10 @@
 import { expect, it } from "vitest";
-import { github } from "../../../../../tests/fixtures/factory";
+
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import type { Env } from "../env";
 import { createApp } from "../index";
 import { createDb } from "../lib/db/d1";
-import { readSnapshot, replaceSnapshotStmts } from "../lib/db/snapshots";
-import { prepareRefresh } from "../lib/refresh";
+import { replaceSnapshotStmts } from "../lib/db/snapshots";
 
 const at = "2026-10-21T00:00:00.000Z";
 const available = { status: "available", reason_code: null, reason: null };
@@ -20,56 +19,6 @@ const mixed = {
 		code_scanning: { status: "unavailable", reason_code: "not_found", reason: "Not found" },
 	},
 };
-
-it.each(["all", "starred"])(
-	"downgrades collector availability when storage drops security items for %s",
-	async (scope) => {
-		const fixture = await setup();
-		await fixture.save("repos", {
-			repos: [{ name_with_owner: "owner/a" }, { name_with_owner: "owner/app" }],
-		});
-		const db = createDb(fixture.raw);
-		const prepared = await prepareRefresh(
-			db,
-			"a",
-			github((url) =>
-				url.endsWith("/graphql")
-					? Response.json({
-							data: {
-								repository: {
-									vulnerabilityAlerts: {
-										nodes: [],
-										pageInfo: { hasNextPage: false },
-									},
-								},
-							},
-						})
-					: Response.json(
-							Array.from({ length: url.includes("/owner/a/") ? 100 : 1 }, () => ({
-								rule: { description: "x".repeat(30_000) },
-							})),
-						),
-			),
-			"fake",
-			["alerts"],
-			at,
-			{},
-			{ deriveInsights: false },
-		);
-		await db.batch(prepared.stmts);
-		const raw = await readSnapshot(db, "a", "alerts");
-		expect(raw).toMatchObject({ truncated: true, code_scanning_open: 101 });
-		const projected = await fixture.request("alerts", scope);
-		expect(projected).toMatchObject({
-			features: {
-				dependabot: { status: "partial" },
-				code_scanning: { status: "partial" },
-			},
-		});
-		if (scope === "starred") expect(projected.code_scanning_open).toBeNull();
-		else expect(projected.code_scanning_open).toBeGreaterThan(0);
-	},
-);
 
 async function setup() {
 	const raw = sqliteFixture();

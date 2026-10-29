@@ -198,7 +198,6 @@ async function suite(name: "A" | "B"): Promise<void> {
 		[
 			"dev",
 			"--local",
-			"--test-scheduled",
 			"--port",
 			"17045",
 			`--persist-to=${persist}`,

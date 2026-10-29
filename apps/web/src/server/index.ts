@@ -2,29 +2,22 @@ import { type Context, Hono } from "hono";
 import { type AppVars, type Env, envMode } from "./env";
 import { createDb } from "./lib/db/d1";
 import { jsonError, toErrorResponse } from "./lib/errors";
-import { consumeFactory, continueFactory } from "./lib/factory-dispatch";
 import { SourceTiming } from "./lib/source-timing";
 import { accessBypass, resolveIdentity } from "./middleware/access";
 import { assertOrigin } from "./middleware/origin";
 import { activateAccount, getAccounts, postAccount, removeAccount } from "./routes/accounts";
 import { activityEtag, getActivity } from "./routes/activity";
-import { agentBrowserApi } from "./routes/agent-browser";
 import { browserTokens } from "./routes/api-tokens";
 import { getCi } from "./routes/ci";
 import { getFactory, getFactoryStream } from "./routes/factory";
-import { getFactoryRuns, postFactoryControl, postFactoryRun } from "./routes/factory-runs";
 import { liveResponse } from "./routes/live";
 import { machineApi } from "./routes/machine";
 import { getMe } from "./routes/me";
 import { postRead, postReadAll } from "./routes/notifications";
 import { getProjectIdentity } from "./routes/project-identity";
-import { postRefresh } from "./routes/refresh";
-import { getRefreshSettings, postRefreshSchedule } from "./routes/refresh-settings";
-import { getRefreshTimes } from "./routes/refresh-times";
 import { browserRepoAgentState, repoAgentStateHeaders } from "./routes/repo-agent-state";
 import { browserRepoMeta, repoMetaHeaders } from "./routes/repo-meta";
 import { repoGet, setRepoStar, setRepoStatistics } from "./routes/repos";
-import { getLatestRun } from "./routes/run-readiness";
 import { snapshotGet } from "./routes/snapshots";
 
 function notAllowed(): Response {
@@ -68,9 +61,7 @@ export function createApp(): Hono<{ Bindings: Env; Variables: AppVars }> {
 		}
 		const timing =
 			c.req.method === "GET" &&
-			/^\/api\/(?:repos(?:\/|$)|issues$|prs$|ci$|factory(?:\/|$)|refresh\/settings$)/.test(
-				c.req.path,
-			)
+			/^\/api\/(?:repos(?:\/|$)|issues$|prs$|ci$|factory(?:\/|$))/.test(c.req.path)
 				? new SourceTiming()
 				: undefined;
 		c.set("sourceTiming", timing);
@@ -90,7 +81,6 @@ export function createApp(): Hono<{ Bindings: Env; Variables: AppVars }> {
 			c.header("Server-Timing", timing.header());
 	});
 	app.route("/api/v1", machineApi());
-	app.route("/api/agent", agentBrowserApi());
 	allow(app, "/api/activity", ["GET"]);
 	app.get("/api/activity", activityEtag, getActivity);
 	allow(app, "/api/tokens", ["GET", "POST"]);
@@ -110,27 +100,10 @@ export function createApp(): Hono<{ Bindings: Env; Variables: AppVars }> {
 	app.post("/api/accounts/:id/activate", (c) => activateAccount(c));
 	allow(app, "/api/accounts/:id", ["DELETE"]);
 	app.delete("/api/accounts/:id", (c) => removeAccount(c));
-	allow(app, "/api/refresh/times", ["GET"]);
-	onGet(app, "/api/refresh/times", getRefreshTimes);
-	allow(app, "/api/refresh/settings", ["GET"]);
-	onGet(app, "/api/refresh/settings", getRefreshSettings);
-	allow(app, "/api/refresh/schedules/:kind", ["POST"]);
-	app.post("/api/refresh/schedules/:kind", postRefreshSchedule);
 	allow(app, "/api/repos/:owner/:name/star", ["POST"]);
 	app.post("/api/repos/:owner/:name/star", setRepoStar);
-	allow(app, "/api/refresh", ["POST"]);
-	app.post("/api/refresh", (c) => postRefresh(c));
 	allow(app, "/api/factory", ["GET"]);
 	onGet(app, "/api/factory", getFactory);
-	allow(app, "/api/factory/refresh", ["POST"]);
-	app.post("/api/factory/refresh", postFactoryRun);
-	allow(app, "/api/factory/runs", ["GET", "POST"]);
-	onGet(app, "/api/factory/runs", getFactoryRuns);
-	app.post("/api/factory/runs", postFactoryRun);
-	allow(app, "/api/factory/runs/latest", ["GET"]);
-	onGet(app, "/api/factory/runs/latest", getLatestRun);
-	allow(app, "/api/factory/runs/:id/control", ["POST"]);
-	app.post("/api/factory/runs/:id/control", postFactoryControl);
 	allow(app, "/api/factory/repos/:owner/:name/:stream", ["GET"]);
 	onGet(app, "/api/factory/repos/:owner/:name/:stream", getFactoryStream);
 	allow(app, "/api/ci", ["GET"]);
@@ -181,10 +154,6 @@ export function createApp(): Hono<{ Bindings: Env; Variables: AppVars }> {
 const app = createApp();
 
 export default {
-	queue: consumeFactory,
-	scheduled(event: ScheduledController, env: Env, ctx: ExecutionContext) {
-		ctx.waitUntil(continueFactory(env, event.scheduledTime));
-	},
 	fetch(request: Request, env: Env, ctx: ExecutionContext): Response | Promise<Response> {
 		const path = new URL(request.url).pathname;
 		if (path === "/api" || path.startsWith("/api/")) {

@@ -62,18 +62,6 @@ async function mockProjects(
 	const pages: Record<string, unknown> = {
 		...fixtures,
 		"/api/factory": projectFactoryFixture(snapshot),
-		"/api/factory/runs": {
-			account_id: snapshot.account_id,
-			serverNow: snapshot.fetched_at,
-			current: null,
-			history: [],
-			catalog: snapshot.repos,
-			catalogComplete: true,
-			catalogUpdatedAt: snapshot.fetched_at,
-			nextAllowedAt: null,
-			publication: null,
-			repositories: [],
-		},
 	};
 	const projects: Record<string, ProjectIdentity> = {
 		[repository]: hello,
@@ -211,7 +199,7 @@ test("project identity remains available before repository snapshots exist", asy
 	await page.goto(`/repos/${repository}`);
 	await expect(page.getByRole("heading", { name: `${hello.title} ${repository}` })).toBeVisible();
 	await expect(page.getByText(hello.description, { exact: true })).toBeVisible();
-	await expect(page.getByText("等待统一刷新", { exact: true })).toBeVisible();
+	await expect(page.getByText("暂无已保存的快照", { exact: true })).toBeVisible();
 	await expectLinks(
 		page.locator("header").filter({
 			has: page.getByRole("heading", { name: `${hello.title} ${repository}`, exact: true }),

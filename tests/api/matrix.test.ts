@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { executeD1FixtureSync } from "../fixtures/d1";
+import { factoryFixture } from "../fixtures/factory-snapshot";
 
 const base = process.env.GIRAFFE_E2E ?? "http://127.0.0.1:17045";
 const suite = process.env.GIRAFFE_SUITE ?? "A";
@@ -39,24 +40,12 @@ const GETS = [
 
 const FACTORY_GETS = [
 	"/api/activity",
-	"/api/refresh/times",
-	"/api/refresh/settings",
-	"/api/factory/runs",
 	"/api/factory",
 	"/api/factory/repos/octocat/hello-world/commits",
 ];
 
 const WRITES: Array<[string, string, RequestInit]> = [
 	["POST", "/api/repos/octocat/hello-world/star", {}],
-	["POST", "/api/refresh/schedules/daily", {}],
-	["POST", "/api/refresh/schedules/weekly", {}],
-	["POST", "/api/factory/runs", {}],
-	["POST", "/api/factory/runs/x/control", {}],
-	[
-		"POST",
-		"/api/factory/refresh",
-		{ headers: { "content-type": "application/json" }, body: JSON.stringify({ account_id: "x" }) },
-	],
 	[
 		"POST",
 		"/api/accounts",
@@ -64,14 +53,6 @@ const WRITES: Array<[string, string, RequestInit]> = [
 	],
 	["POST", "/api/accounts/x/activate", {}],
 	["DELETE", "/api/accounts/x", {}],
-	[
-		"POST",
-		"/api/refresh",
-		{
-			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ account_id: "x", kinds: ["repos"] }),
-		},
-	],
 	[
 		"POST",
 		"/api/notifications/read",
@@ -402,221 +383,105 @@ describe("api method matrix", () => {
 			expect(log).not.toContain("nope");
 		}
 
-		const refreshed = await api("/api/refresh", {
-			method: "POST",
-			headers: { origin, "content-type": "application/json" },
-			body: JSON.stringify({ account_id: account.id }),
-		});
-		expect(refreshed.status).toBe(200);
-		const refreshBody = (await refreshed.json()) as {
-			fetched_at?: string;
-			kinds?: string[];
-			truncated_kinds?: string[];
-		};
-		expect(refreshBody.fetched_at).toEqual(expect.any(String));
-		expect(refreshBody.kinds).toEqual(expect.arrayContaining(["repos", "issues", "prs", "alerts"]));
-		expect(Array.isArray(refreshBody.truncated_kinds)).toBe(true);
-		noSecrets(refreshBody);
-		const repoRefresh = await api("/api/refresh", {
-			method: "POST",
-			headers: { origin, "content-type": "application/json" },
-			body: JSON.stringify({
-				account_id: account.id,
-				kinds: [
-					"repo:octocat/hello-world:details",
-					"repo:octocat/hello-world:actions",
-					"repo:octocat/hello-world:traffic",
-					"repo:octocat/hello-world:security",
-					"repo:octocat/hello-world:issues",
-					"repo:octocat/hello-world:prs",
-					"repo:octocat/hello-world:releases",
-					"repo:octocat/hello-world:languages",
-					"repo:octocat/hello-world:contributors",
-				],
-			}),
-		});
-		expect(repoRefresh.status).toBe(200);
-		const repoRefreshBody = (await repoRefresh.json()) as { kinds?: string[] };
-		expect(repoRefreshBody.kinds?.length).toBeGreaterThan(0);
-		noSecrets(repoRefreshBody);
-		const reposGet = await api("/api/repos");
-		expect(reposGet.status).toBe(200);
-		const reposBody = (await reposGet.json()) as Record<string, unknown> & {
-			repos: Array<Record<string, unknown>>;
-		};
-		snapshotMeta(reposBody);
-		expect(reposBody.truncated).toBe(false);
-		expect(reposBody.repos[0]).toMatchObject({
-			name_with_owner: "octocat/hello-world",
-			name: "hello-world",
-			owner_login: "octocat",
-			stargazer_count: 1,
-			fork_count: 0,
-			url: "https://github.com/octocat/hello-world",
-		});
-		noSecrets(reposBody);
-		const detailsBody = (await (await api("/api/repos/octocat/hello-world")).json()) as Record<
-			string,
-			unknown
-		>;
-		snapshotMeta(detailsBody);
-		expect(detailsBody).toMatchObject({
-			default_branch: "main",
-			url: "https://github.com/octocat/hello-world",
-		});
-		noSecrets(detailsBody);
-		const issuesBody = (await (await api("/api/issues")).json()) as Record<string, unknown>;
-		snapshotMeta(issuesBody);
-		expect((issuesBody.issues as unknown[])[0]).toEqual({
-			name_with_owner: "octocat/hello-world",
+		const at = "2026-10-22T00:00:00.000Z";
+		const repo = "octocat/hello-world";
+		const issue = {
+			name_with_owner: repo,
 			number: 1,
-			title: "bug",
+			title: "saved issue",
+			state: "OPEN",
 			url: "https://github.com/octocat/hello-world/issues/1",
-			created_at: "2026-08-01T00:00:00.000Z",
-			updated_at: "2026-08-02T00:00:00.000Z",
-			author_login: "octocat",
-			labels: [{ name: "bug", color: "ededed" }],
-			comments_count: 0,
-		});
-		const prsBody = (await (await api("/api/prs")).json()) as Record<string, unknown>;
-		snapshotMeta(prsBody);
-		const expectedPr = {
-			state: "open",
-			name_with_owner: "octocat/hello-world",
+		};
+		const pr = {
+			name_with_owner: repo,
 			number: 2,
-			title: "pr",
+			title: "saved PR",
+			state: "open",
 			url: "https://github.com/octocat/hello-world/pull/2",
-			created_at: "2026-08-01T00:00:00.000Z",
-			updated_at: "2026-08-02T00:00:00.000Z",
-			author_login: "octocat",
-			is_draft: false,
-			review_decision: "APPROVED",
-			mergeable: true,
-			mergeStateStatus: "CLEAN",
-			checks: { state: "SUCCESS" },
-			additions: 1,
-			deletions: 1,
-			base_ref: "main",
-			head_ref: "feat",
 		};
-		expect((prsBody.pull_requests as unknown[])[0]).toEqual(expectedPr);
-		const alertsBody = (await (await api("/api/alerts")).json()) as Record<string, unknown>;
-		snapshotMeta(alertsBody);
-		expect(alertsBody).toMatchObject({
-			unavailable: false,
-			dependabot_open: 1,
-			code_scanning_open: 0,
-		});
-		expect((alertsBody.items as unknown[])[0]).toEqual({
-			name_with_owner: "octocat/hello-world",
-			source: "dependabot",
-			severity: "low",
-			summary: "demo",
-			url: "https://github.com/advisories/GHSA-demo",
-		});
-		const insightsBody = (await (await api("/api/insights")).json()) as Record<string, unknown>;
-		snapshotMeta(insightsBody);
-		expect(Array.isArray(insightsBody.insights)).toBe(true);
-		const trafficBody = (await (
-			await api("/api/repos/octocat/hello-world/traffic")
-		).json()) as Record<string, unknown>;
-		snapshotMeta(trafficBody);
-		expect(trafficBody).toMatchObject({
-			forbidden: false,
-			views: { count: expect.any(Number), uniques: expect.any(Number) },
-			clones: { count: expect.any(Number), uniques: expect.any(Number) },
-		});
-		const securityBody = (await (
-			await api("/api/repos/octocat/hello-world/security")
-		).json()) as Record<string, unknown>;
-		snapshotMeta(securityBody);
-		expect(securityBody).toMatchObject({
-			unavailable: expect.any(Boolean),
-			dependabot_open: expect.any(Number),
-			code_scanning_open: expect.any(Number),
-		});
-		const languagesBody = (await (
-			await api("/api/repos/octocat/hello-world/languages")
-		).json()) as Record<string, unknown>;
-		snapshotMeta(languagesBody);
-		expect(languagesBody.languages).toMatchObject({ TypeScript: 1 });
-		const actionsBody = (await (
-			await api("/api/repos/octocat/hello-world/actions")
-		).json()) as Record<string, unknown>;
-		snapshotMeta(actionsBody);
-		expect((actionsBody.runs as unknown[])[0]).toEqual({
-			id: 1,
-			name: "ci",
-			html_url: "https://github.com/octocat/hello-world/actions/runs/1",
-			status: "completed",
-			conclusion: "success",
-			event: "push",
-			head_branch: "main",
-			created_at: "2026-08-01T00:00:00.000Z",
-			updated_at: "2026-08-01T00:00:00.000Z",
-		});
-		const releasesBody = (await (
-			await api("/api/repos/octocat/hello-world/releases")
-		).json()) as Record<string, unknown>;
-		snapshotMeta(releasesBody);
-		expect((releasesBody.releases as unknown[])[0]).toEqual({
-			id: 1,
-			tag_name: "v1.0.0",
-			name: "one",
-			html_url: "https://github.com/octocat/hello-world/releases/tag/v1.0.0",
-			draft: false,
-			prerelease: false,
-			published_at: "2026-08-01T00:00:00.000Z",
-		});
-		const contributorsBody = (await (
-			await api("/api/repos/octocat/hello-world/contributors")
-		).json()) as Record<string, unknown>;
-		snapshotMeta(contributorsBody);
-		expect((contributorsBody.contributors as unknown[])[0]).toEqual({
-			login: "octocat",
-			avatar_url: "https://github.com/octocat.png",
-			html_url: "https://github.com/octocat",
-			contributions: 1,
-		});
-		const repoIssues = (await (
-			await api("/api/repos/octocat/hello-world/issues")
-		).json()) as Record<string, unknown>;
-		snapshotMeta(repoIssues);
-		expect((repoIssues.issues as unknown[])[0]).toEqual({
-			name_with_owner: "octocat/hello-world",
-			number: 1,
-			title: "bug",
-			url: "https://github.com/octocat/hello-world/issues/1",
-			created_at: "2026-08-01T00:00:00.000Z",
-			updated_at: "2026-08-02T00:00:00.000Z",
-			author_login: "octocat",
-			labels: [{ name: "bug", color: "ededed" }],
-			comments_count: 0,
-		});
-		const repoPrs = (await (await api("/api/repos/octocat/hello-world/prs")).json()) as Record<
-			string,
-			unknown
-		>;
-		snapshotMeta(repoPrs);
-		expect((repoPrs.pull_requests as unknown[])[0]).toEqual(expectedPr);
-		const oneKind = await api("/api/refresh", {
-			method: "POST",
-			headers: { origin, "content-type": "application/json" },
-			body: JSON.stringify({ account_id: account.id, kinds: ["alerts"] }),
-		});
-		expect(oneKind.status).toBe(200);
-		expect(await oneKind.json()).toEqual(await (await api("/api/alerts")).json());
-		const notifSnap = (await (await api("/api/notifications")).json()) as Record<
-			string,
-			unknown
-		> & {
-			notifications: Array<Record<string, unknown>>;
+		const snapshots: Record<string, Record<string, unknown>> = {
+			repos: {
+				repos: [
+					{
+						name_with_owner: repo,
+						name: "hello-world",
+						owner_login: "octocat",
+						stargazer_count: 1,
+						fork_count: 0,
+						url: "https://github.com/octocat/hello-world",
+					},
+				],
+			},
+			issues: { issues: [issue] },
+			prs: { pull_requests: [pr] },
+			alerts: {
+				unavailable: false,
+				dependabot_open: 1,
+				code_scanning_open: 0,
+				items: [
+					{ name_with_owner: repo, source: "dependabot", severity: "low", summary: "saved alert" },
+				],
+			},
+			insights: { insights: [] },
+			notifications: {
+				notifications: [
+					{ id: "123", unread: true, name_with_owner: repo },
+					{ id: "456", unread: true, name_with_owner: repo },
+				],
+			},
+			"repo:octocat/hello-world:details": {
+				default_branch: "main",
+				url: "https://github.com/octocat/hello-world",
+			},
+			"repo:octocat/hello-world:actions": { runs: [] },
+			"repo:octocat/hello-world:traffic": {
+				forbidden: false,
+				views: { count: 2, uniques: 1 },
+				clones: { count: 1, uniques: 1 },
+			},
+			"repo:octocat/hello-world:security": {
+				unavailable: false,
+				dependabot_open: 1,
+				code_scanning_open: 0,
+			},
+			"repo:octocat/hello-world:issues": { issues: [issue] },
+			"repo:octocat/hello-world:prs": { pull_requests: [pr] },
+			"repo:octocat/hello-world:releases": { releases: [] },
+			"repo:octocat/hello-world:languages": { languages: { TypeScript: 1 } },
+			"repo:octocat/hello-world:contributors": { contributors: [] },
 		};
-		snapshotMeta(notifSnap);
-		expect(notifSnap.notifications[0]).toMatchObject({
-			id: "123",
-			unread: true,
-			name_with_owner: "octocat/hello-world",
+		const publication = factoryFixture();
+		publication.account_id = account.id;
+		publication.owner = "octocat";
+		publication.runId = `saved-${account.id}`;
+		publication.status = "complete";
+		const factoryRepo = publication.repos[0];
+		if (!factoryRepo) throw new Error("factory fixture missing");
+		factoryRepo.name = repo;
+		factoryRepo.url = "https://github.com/octocat/hello-world";
+		snapshots[`factory:v:${publication.runId}`] = { ...publication };
+		expect(d1Rows("SELECT value FROM _test_marker WHERE key='env'")).toEqual([{ value: "test" }]);
+		const quote = (value: string) => `'${value.replaceAll("'", "''")}'`;
+		d1Rows(
+			Object.entries(snapshots)
+				.map(
+					([kind, value]) =>
+						`INSERT INTO snapshots(account_id,kind,payload,fetched_at) VALUES(${quote(account.id)},${quote(kind)},${quote(JSON.stringify({ ...value, fetched_at: at, truncated: false }))},${quote(at)});`,
+				)
+				.join("\n"),
+		);
+		d1Rows(
+			`INSERT INTO factory_state(account_id,published_id,next_at) VALUES(${quote(account.id)},${quote(publication.runId)},${quote(at)});`,
+		);
+		expect(await (await api("/api/repos")).json()).toMatchObject({
+			repos: [expect.objectContaining({ name_with_owner: repo })],
+		});
+		expect(await (await api("/api/issues")).json()).toMatchObject({
+			issues: [expect.objectContaining({ title: "saved issue" })],
+		});
+		expect(await (await api("/api/alerts")).json()).toMatchObject({ dependabot_open: 1 });
+		expect(await (await api("/api/repos/octocat/hello-world/languages")).json()).toMatchObject({
+			languages: { TypeScript: 1 },
 		});
 		const snapRows = d1Rows("SELECT kind, fetched_at FROM snapshots ORDER BY kind");
 		expect(snapRows.length).toBeGreaterThan(0);
@@ -672,109 +537,19 @@ describe("api method matrix", () => {
 			),
 		).toBe(true);
 
-		const postFactory = (path: string, body: unknown) =>
-			api(path, {
-				method: "POST",
-				headers: { origin, "content-type": "application/json" },
-				body: JSON.stringify(body),
-			});
-		const createPlan = {
-			account_id: account.id,
-			requestKey: crypto.randomUUID(),
-			mode: "catalog",
-			scope: "selected",
-		};
-		const createdRun = await postFactory("/api/factory/runs", createPlan);
-		expect(createdRun.status).toBe(202);
-		const task = (await createdRun.json()) as { id: string };
-		expect((await postFactory("/api/factory/runs", createPlan)).status).toBe(202);
-		expect(
-			(
-				await postFactory(`/api/factory/runs/${task.id}/control`, {
-					account_id: account.id,
-					action: "pause",
-				})
-			).status,
-		).toBe(200);
-		const paused = (await (await api("/api/factory/runs")).json()) as {
-			current: { status: string };
-		};
-		expect(paused.current.status).toBe("paused");
-		expect(paused.current).toMatchObject({
-			expectedFinishAt: null,
-			expectedFinishAtReason: "no_completed_history",
-		});
-		noSecrets(paused);
-		expect(
-			(
-				await postFactory(`/api/factory/runs/${task.id}/control`, {
-					account_id: account.id,
-					action: "resume",
-				})
-			).status,
-		).toBe(200);
-		await expect
-			.poll(
-				async () => {
-					const r = (await (await api("/api/factory/runs")).json()) as {
-						current: unknown;
-						history: { status: string }[];
-					};
-					return r.current ? "running" : r.history[0]?.status;
-				},
-				{ timeout: 25000, interval: 250 },
-			)
-			.toBe("completed");
-		const factoryBefore = (await (await api("/api/factory")).json()) as { repos: unknown[] };
-		expect(factoryBefore.repos).toHaveLength(1);
-		expect(
-			(
-				await postFactory("/api/factory/refresh", {
-					account_id: account.id,
-					requestKey: crypto.randomUUID(),
-					mode: "refresh",
-					scope: "selected",
-					repos: ["octocat/hello-world"],
-				})
-			).status,
-		).toBe(409);
-		// Move only isolated fixture deadlines into the past to exercise a second run without a real minute wait.
-		d1Rows(
-			"UPDATE factory_state SET next_at='2000-01-01T00:00:00.000Z'; UPDATE factory_runs SET created_at='2000-01-01T00:00:00.000Z'",
-		);
-		const refreshRun = await postFactory("/api/factory/refresh", {
-			account_id: account.id,
-			requestKey: crypto.randomUUID(),
-			mode: "refresh",
-			scope: "selected",
-			repos: ["octocat/hello-world"],
-		});
-		expect(refreshRun.status).toBe(202);
-		expect(await refreshRun.json()).toMatchObject({ totalSteps: 19 });
-		expect(await (await api("/api/factory")).json()).toEqual(factoryBefore);
-		await expect
-			.poll(
-				async () => {
-					const r = (await (await api("/api/factory/runs")).json()) as {
-						current: unknown;
-						history: { status: string }[];
-					};
-					return (
-						!r.current && r.history.some((h) => h.status === "completed" || h.status === "partial")
-					);
-				},
-				{ timeout: 25000, interval: 250 },
-			)
-			.toBe(true);
-		expect((await api("/api/factory/repos/octocat/hello-world/commits")).status).toBe(200);
 		const requestsBefore = await githubCount();
-		const rowsBefore = d1Rows("SELECT kind,payload FROM snapshots WHERE kind LIKE 'factory%'");
-		await api("/api/factory/runs");
-		await api("/api/factory");
-		expect(await githubCount()).toBe(requestsBefore);
-		expect(d1Rows("SELECT kind,payload FROM snapshots WHERE kind LIKE 'factory%'")).toEqual(
-			rowsBefore,
+		const rowsBefore = d1Rows(
+			"SELECT kind,payload FROM snapshots WHERE kind LIKE 'factory%' ORDER BY kind",
 		);
+		for (const path of ["/api/factory", "/api/factory/repos/octocat/hello-world/commits"]) {
+			const response = await api(path);
+			expect(response.status).toBe(200);
+			noSecrets(await response.json());
+		}
+		expect(await githubCount()).toBe(requestsBefore);
+		expect(
+			d1Rows("SELECT kind,payload FROM snapshots WHERE kind LIKE 'factory%' ORDER BY kind"),
+		).toEqual(rowsBefore);
 
 		const starsBefore = await githubCount();
 		const save = (path: string, body: unknown) =>
@@ -787,11 +562,9 @@ describe("api method matrix", () => {
 			(await save("/api/repos/octocat/hello-world/star", { account_id: account.id, enabled: true }))
 				.status,
 		).toBe(200);
-		const refreshSettings = (await (await api("/api/refresh/settings")).json()) as {
-			starred: string[];
-			schedules: { kind: string; enabled: boolean; time: string }[];
-		};
-		expect(refreshSettings.starred).toEqual(["octocat/hello-world"]);
+		expect(d1Rows(`SELECT repo FROM repo_stars WHERE account_id=${quote(account.id)}`)).toEqual([
+			{ repo: "octocat/hello-world" },
+		]);
 		for (const path of [
 			"repos",
 			"issues",
@@ -840,24 +613,6 @@ describe("api method matrix", () => {
 		).toBe(200);
 		expect(await githubCount()).toBe(starsBefore);
 		expect(
-			refreshSettings.schedules.filter((s) => s.kind !== "catalog").every((s) => s.enabled),
-		).toBe(true);
-		expect(refreshSettings.schedules.find((s) => s.kind === "catalog")?.enabled).toBe(false);
-		for (const kind of ["daily", "weekly"]) {
-			const config = {
-				account_id: account.id,
-				enabled: false,
-				time: "09:15",
-				weekday: 1,
-				scope: "starred",
-			};
-			expect((await save(`/api/refresh/schedules/${kind}`, config)).status).toBe(200);
-			expect(
-				(await save(`/api/refresh/schedules/${kind}`, { ...config, time: "25:00" })).status,
-			).toBe(400);
-			expect((await api(`/api/refresh/schedules/${kind}`)).status).toBe(405);
-		}
-		expect(
 			(await save("/api/repos/octocat/missing/star", { account_id: account.id, enabled: true }))
 				.status,
 		).toBe(404);
@@ -879,7 +634,9 @@ describe("api method matrix", () => {
 		expect(activated.status).toBe(200);
 		expect(await activated.json()).toMatchObject({ id: account2.id, is_active: true });
 		expect((await api("/api/repos")).status).toBe(409);
-		expect(await (await api("/api/refresh/settings")).json()).toMatchObject({ starred: [] });
+		expect(d1Rows(`SELECT repo FROM repo_stars WHERE account_id=${quote(account2.id)}`)).toEqual(
+			[],
+		);
 		expect(
 			(await api(`/api/accounts/${account.id}/activate`, { method: "POST", headers: { origin } }))
 				.status,

@@ -1,13 +1,12 @@
 import { expect, it } from "vitest";
-import { github } from "../../../../../tests/fixtures/factory";
+
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import type { Env } from "../env";
 import { createApp } from "../index";
 import { createApiToken } from "../lib/api-tokens";
-import { observationVersion, savedContentMeta, storedContent } from "../lib/content-version";
+import { savedContentMeta, storedContent } from "../lib/content-version";
 import { createDb } from "../lib/db/d1";
 import { readRepositorySnapshot, replaceSnapshotStmts } from "../lib/db/snapshots";
-import { prepareRefresh } from "../lib/refresh";
 
 const at = "2026-10-21T00:00:00.000Z";
 const kind = "repo:owner/app:security";
@@ -53,66 +52,6 @@ async function setup() {
 		return { body, data: lane === "browser" ? body : (body.data as Record<string, unknown>) };
 	};
 	return { db, request };
-}
-
-it.each(["browser", "machine"] as const)(
-	"marks repository security features partial after actual refresh storage truncation on %s reads",
-	async (lane) => {
-		const { db, request } = await setup();
-		const prepared = await prepareRefresh(
-			db,
-			"a",
-			github((url) =>
-				url.endsWith("/graphql")
-					? Response.json({
-							data: {
-								repository: {
-									vulnerabilityAlerts: { nodes: [], pageInfo: { hasNextPage: false } },
-								},
-							},
-						})
-					: Response.json(
-							Array.from({ length: 100 }, (_, number) => ({
-								number,
-								rule: { description: "x".repeat(30_000) },
-							})),
-						),
-			),
-			"fake",
-			[kind],
-			at,
-			{},
-			{ deriveInsights: false },
-		);
-		await db.batch(prepared.stmts);
-		const before = await db.prepare("SELECT * FROM snapshots ORDER BY kind").all();
-		const { body, data } = await request(lane);
-		expect(data).toMatchObject({ truncated: true, code_scanning_open: 100 });
-		expect(data.items).toHaveLength(98);
-		expect(data.features).toEqual({ dependabot: partial, code_scanning: partial });
-		expect(prepared.written[kind]?.features).toEqual(data.features);
-		const rows = await db
-			.prepare("SELECT payload FROM snapshots WHERE kind IN (?,?) ORDER BY kind")
-			.bind(kind, `${kind}#2`)
-			.all<{ payload: string }>();
-		expect(rows.results).toHaveLength(2);
-		for (const row of rows.results) {
-			const saved = JSON.parse(row.payload);
-			expect(saved).toMatchObject({ truncated: true, features: data.features });
-			expect(new TextEncoder().encode(row.payload).length).toBeLessThanOrEqual(1_500_000);
-		}
-		const saved = (await readRepositorySnapshot(db, "a", kind))?.data;
-		expect(storedContent(saved)?.fullVersion).toBe(
-			await observationVersion(dataWithoutAccount(data)),
-		);
-		if (lane === "machine") expect(body.sourceVersion).toBe(storedContent(saved)?.fullVersion);
-		expect(await db.prepare("SELECT * FROM snapshots ORDER BY kind").all()).toEqual(before);
-	},
-);
-
-function dataWithoutAccount(data: Record<string, unknown>) {
-	const { account_id: _account, ...snapshot } = data;
-	return snapshot;
 }
 
 it.each(["browser", "machine"] as const)(

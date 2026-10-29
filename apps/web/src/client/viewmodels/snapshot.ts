@@ -37,7 +37,6 @@ export async function fetchKind<T extends { account_id: string }>(
 export async function loadKind<T extends { account_id: string }>(
 	resource: string,
 ): Promise<T | { missing: true }> {
-	// The durable factory job can finish while this page is unmounted.
 	// Navigation reads the latest saved data; GET never starts collection.
 	return fetchKind<T>(resource);
 }

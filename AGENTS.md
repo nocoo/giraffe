@@ -2,9 +2,9 @@
 
 Bun monorepo: `apps/web` owns the Worker and SPA. Root `package.json` is the authoritative version and root commands run all web gates.
 
-Personal GitHub console with account snapshots, inboxes, repository detail and resumable software-factory runs.
+Personal GitHub console with saved account snapshots, inboxes and repository detail.
 Profile: ts-worker-web.
-Direction: [architecture](docs/01-architecture.md), [quality](docs/02-quality.md) and [factory runs](docs/09-factory-runs.md). Frameworks must not rewrite this file.
+Direction: [Phase 1 retirement](docs/14-phase1-retirement.md), [saved factory observations](docs/06-software-factory.md) and [quality](docs/02-quality.md). Frameworks must not rewrite this file.
 
 ## Scope and instruction sources
 
@@ -19,7 +19,7 @@ Direction: [architecture](docs/01-architecture.md), [quality](docs/02-quality.md
 - Browser calls go through `apps/web/src/client/lib/api.ts` using relative `/api/` URLs; GitHub calls use `createGithubClient(env)`. Production ignores fixture GitHub/JWKS overrides. GET snapshots are read-only and must not silently fetch upstream or write data.
 - Server tests must not import the client. Viewmodels stay free of View/DOM imports and views/routes stay thin. The React/Basalt client now exists; historical phase-1 exclusions are no longer the current project scope.
 - Automated tests use local Wrangler/SQLite and GitHub/JWKS stubs, never real PATs, daily `.dev.vars` or `api.github.com`. Never use remote D1 or deploy remote `-test` resources.
-- Preserve leased/fenced factory writes, bounded retention and immutable per-repository/global publication. Failed or limited collection retains prior good data and its original window; missing coverage is not a successful zero. Preserve old rows through additive migrations and rollback. Details: [factory contract](docs/06-software-factory.md), [run/storage rules](docs/09-factory-runs.md).
+- Phase 1 removes old refresh/collection, run orchestration, queues, cron and the analysis product surface. No A+B collector or replacement refresh is authorized. Saved observations retain original timestamps, windows and missingness; missing coverage is not a successful zero. No data migration is introduced; legacy tables can remain inert. Details: [retirement contract](docs/14-phase1-retirement.md).
 - Keep strict TDD: failing tests remain in the working tree; commits pass current L1. Never skip hooks to publish a failing change.
 
 ## Setup and commands
@@ -112,4 +112,4 @@ Narratives remain in [Retrospective.md](Retrospective.md); keep only recurring r
 - Every `/api/v1/*` request requires a Worker-enforced hash-only, fixed-account, scoped, expiring bearer token; there are no tokenless machine endpoints. Access bypass is restricted to that path, never the dashboard host.
 - Browser token management remains Access protected and browser writes require same-origin. Tokens expire within 90 days and must be rotated before expiry. Raw tokens are returned only when minted and must not enter logs, URLs, browser persistence or D1.
 - Agent records/reports/jobs are mutable local application resources with revisions. GitHub observations and factory publications remain read-only. GET never collects upstream or records token activity.
-- `/analysis` reads externally published reports and the account-wide `grok-bot-run` record. Evidence freshness (36 hours) and overdue status (48 hours) are independent. The web application has no bundled analysis runtime, model inference/settings, automatic code-change engine or API endpoint that executes local code. External producers use the machine API; never submit their model secrets to Giraffe. Legacy AI tables and historical resource rows remain preserved. Contract: [Machine API](docs/11-agent-api.md).
+- `/analysis` and analysis-only browser projections are removed. Generic machine records/reports/jobs remain available, but there is no bundled analysis runtime, model inference/settings, automatic code-change engine or endpoint that executes local code. External producers use the machine API; never submit their model secrets to Giraffe. Legacy AI tables and historical resource rows can remain untouched. Contract: [Machine API](docs/11-agent-api.md).

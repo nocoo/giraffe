@@ -17,7 +17,6 @@ async function setup() {
 		.bind(id, "nocoo", "encrypted", "fake", at, at)
 		.run();
 	const env = {
-		FACTORY_QUEUE: {} as Queue,
 		TOKEN_ENCRYPTION_KEY_CURRENT: "1",
 		DB: raw,
 		ENVIRONMENT: "development",
@@ -201,36 +200,5 @@ describe("owned catalog and local star selection", () => {
 		expect(
 			(await request("repos/external/fork/star", { account_id: id, enabled: true })).status,
 		).toBe(409);
-	});
-
-	it("refreshes owned forks and rejects nonowned selected refresh membership", async () => {
-		const { request, get, save } = await setup();
-		expect((await request("factory/repos/nocoo/fork/commits")).status).toBe(200);
-		expect((await get("factory/runs")).catalog).toHaveLength(3);
-		await save("repos", {
-			repos: [{ name_with_owner: "nocoo/fork" }, { name_with_owner: "external/app" }],
-		});
-		expect(
-			(
-				await request("factory/runs", {
-					account_id: id,
-					requestKey: crypto.randomUUID(),
-					mode: "refresh",
-					scope: "selected",
-					repos: ["external/app"],
-				})
-			).status,
-		).toBe(400);
-		expect(
-			(
-				await request("factory/runs", {
-					account_id: id,
-					requestKey: crypto.randomUUID(),
-					mode: "refresh",
-					scope: "selected",
-					repos: ["nocoo/fork"],
-				})
-			).status,
-		).toBe(202);
 	});
 });

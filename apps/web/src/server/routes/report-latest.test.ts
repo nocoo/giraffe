@@ -59,8 +59,8 @@ async function fixture(active = true) {
 }
 const body = () => ({ type: "github-daily", status: "completed", payload: dailyPayload() });
 
-it.each([false, true])(
-	"R8 daily POST returns 201/200, latest agrees with browser history, raw strict JSON rejects before transformation (browser=%state)",
+it.each([false])(
+	"R8 daily POST returns 201/200, latest preserves machine storage, raw strict JSON rejects before transformation (browser=%state)",
 	async (browser) => {
 		const state = await fixture();
 		const created = await state.call("/reports", browser, "POST", body());
@@ -73,14 +73,6 @@ it.each([false, true])(
 		expect(await replaced.json()).toMatchObject({ item: { revision: 2 } });
 		const latest = await state.call("/reports/latest?type=github-daily", browser);
 		expect(latest.status).toBe(200);
-		const selected = (await latest.json()) as { item: unknown };
-		const history = await state.call("/analysis/daily", true);
-		expect(history.status).toBe(200);
-		expect(await history.json()).toEqual({
-			account_id: "a",
-			items: [selected.item],
-			invalidCount: 0,
-		});
 		const payload = JSON.parse(JSON.stringify(dailyPayload()));
 		Object.defineProperty(payload, "__proto__", {
 			value: { opaque: "x".repeat(66000) },
@@ -102,7 +94,7 @@ it.each([false, true])(
 	},
 );
 
-it.each([false, true])(
+it.each([false])(
 	"R8 strong full-body ETag supports 304 forms, empty latest and required headers without GET writes (browser=%state)",
 	async (browser) => {
 		const state = await fixture();
@@ -160,11 +152,8 @@ it.each([false, true])(
 
 it.each([
 	{ browser: false, status: 400, code: "validation_failed" },
-	{ browser: true, status: 400, code: "validation_failed" },
 	{ browser: false, status: 404, code: "not_found" },
-	{ browser: true, status: 404, code: "not_found" },
 	{ browser: false, status: 409, code: "snapshot_missing" },
-	{ browser: true, status: 409, code: "snapshot_missing" },
 ])(
 	"keeps private latest-report reader error headers for $status (browser=$browser)",
 	async ({ browser, status, code }) => {
@@ -194,7 +183,7 @@ it.each([
 	},
 );
 
-it.each([false, true])(
+it.each([false])(
 	"keeps private latest-report generic not-found headers (browser=%s)",
 	async (browser) => {
 		const state = await fixture();
@@ -212,22 +201,9 @@ it.each([false, true])(
 	},
 );
 
-it("keeps private latest-report browser account error headers before the reader", async () => {
-	const state = await fixture(false);
-	const response = await state.call("/reports/latest?type=github-daily", true, "GET", undefined, {
-		"if-none-match": "*",
-	});
-	expect(response.status).toBe(409);
-	expect(await response.json()).toMatchObject({ error: { code: "account_missing" } });
-	expect(response.headers.get("cache-control")).toBe("private, no-store");
-	expect(response.headers.get("referrer-policy")).toBe("no-referrer");
-	expect(response.headers.get("vary")).toBe("Cookie, Cf-Access-Jwt-Assertion");
-	expect(response.headers.get("etag")).toBeNull();
-});
-
 it("R8 validates type/query/auth/account before conditional GET and keeps history GET-only", async () => {
 	const state = await fixture();
-	for (const browser of [false, true]) {
+	for (const browser of [false]) {
 		for (const query of ["type=", "type=bad/type", "type=custom&type=other", "type=custom&limit=1"])
 			expect(
 				(
@@ -268,7 +244,6 @@ it("R8 validates type/query/auth/account before conditional GET and keeps histor
 			})
 		).status,
 	).toBe(401);
-	expect((await (await fixture(false)).call("/analysis/daily", true)).status).toBe(409);
 	expect(
 		(
 			await state.app.request(
@@ -278,12 +253,9 @@ it("R8 validates type/query/auth/account before conditional GET and keeps histor
 			)
 		).status,
 	).toBe(401);
-	expect((await state.call("/analysis/daily?x=1", true)).status).toBe(400);
-	for (const method of ["POST", "PATCH", "DELETE", "HEAD"])
-		expect((await state.call("/analysis/daily", true, method)).status).toBe(405);
 });
 
-it.each([false, true])(
+it.each([false])(
 	"R8 generic reports and literal ID latest preserve CRUD and pagination (browser=%state)",
 	async (browser) => {
 		const state = await fixture();

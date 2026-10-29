@@ -31,7 +31,7 @@ it("freezes the bootstrapped target and blocks Prod writes before fetch", async 
 	expect(new Headers(init?.headers).get("x-giraffe-local-instance")).toBe("prod-one");
 	fetcher.mockClear();
 	for (const action of [
-		() => apiPost("refresh"),
+		() => apiPost("accounts", { token: "fake" }),
 		() => apiDelete("accounts/a"),
 		() => apiWrite("tokens/a", "PATCH", {}),
 	])

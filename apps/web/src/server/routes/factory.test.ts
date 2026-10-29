@@ -1,12 +1,11 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { NOW, rawEvent, ready } from "../../../../../tests/fixtures/factory";
+import { NOW, ready } from "../../../../../tests/fixtures/factory";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import type { Env } from "../env";
 import { createApp } from "../index";
 import { insertAccountStmt } from "../lib/db/accounts";
 import { createDb } from "../lib/db/d1";
 import { readSnapshot, replaceSnapshotStmts } from "../lib/db/snapshots";
-import { mapFactoryEvents } from "../lib/factory-map";
 import { readObservation } from "../lib/machine-observations";
 import { encryptToken, parseKeyBytes } from "../lib/token-crypto";
 
@@ -15,7 +14,6 @@ const ID = "a".repeat(21);
 const headers = { origin: "https://giraffe.dev.hexly.ai", "content-type": "application/json" };
 async function setup(withAccount = true) {
 	const env = {
-		FACTORY_QUEUE: {} as Queue,
 		DB: sqliteFixture(),
 		ASSETS: { fetch: async () => new Response("app") },
 		ENVIRONMENT: "development",
@@ -251,13 +249,15 @@ it("filters full resource WIP and UTC days before pagination, rejecting malforme
 	const repo = state.repos[0];
 	if (!repo) throw new Error("fixture");
 	repo.coverage.prs.status = "complete";
-	const items = mapFactoryEvents(
-		"prs",
-		Array.from({ length: 201 }, (_, i) => ({
-			...rawEvent(i),
-			state: i === 200 ? "open" : "closed",
-		})),
-	);
+	const items = Array.from({ length: 201 }, (_, index) => ({
+		id: `N_${index}`,
+		at: "2026-09-01T00:00:00Z",
+		state: index === 200 ? "open" : "closed",
+		url: "",
+		title: "saved",
+		actor: null,
+		value: null,
+	}));
 	await s.db.batch([
 		...(await replaceSnapshotStmts(s.db, ID, "factory", { ...state }, NOW)),
 		...(await replaceSnapshotStmts(
@@ -302,13 +302,13 @@ it("never serves detail from another survey generation", async () => {
 	expect((await s.call("/api/factory/repos/nocoo/app/commits")).status).toBe(409);
 });
 
-it("rejects legacy implicit full refresh without changing stored data", async () => {
+it("removes legacy implicit full refresh without changing stored data", async () => {
 	const s = await setup();
 	const old = ready();
 	old.status = "complete";
 	await s.db.batch(await replaceSnapshotStmts(s.db, ID, "factory", { ...old }, NOW));
 	expect((await s.call("/api/factory/refresh", { account_id: ID, restart: true })).status).toBe(
-		400,
+		404,
 	);
 	expect(await readSnapshot(s.db, ID, "factory")).toMatchObject({
 		runId: old.runId,
@@ -339,19 +339,8 @@ it("does not invent an empty result when a published resource reference is missi
 	expect((await s.call("/api/factory/repos/nocoo/app/commits")).status).toBe(409);
 });
 
-it("returns a stable empty starred projection before the first factory publication", async () => {
+it("reports missing factory snapshots without inventing a publication", async () => {
 	const fixture = await setup();
-	const before = await fixture.env.DB.prepare("SELECT * FROM snapshots").all();
-	const response = await fixture.call("/api/factory?scope=starred");
-	expect(response.status).toBe(200);
-	const body = await response.json();
-	expect(body).toMatchObject({
-		account_id: ID,
-		repos: [],
-		fetched_at: "",
-		freshness: { oldestAt: null, latestAt: null, total: 0, missing: 0 },
-	});
-	expect(await (await fixture.call("/api/factory?scope=starred")).json()).toEqual(body);
-	expect(await fixture.env.DB.prepare("SELECT * FROM snapshots").all()).toEqual(before);
+	expect((await fixture.call("/api/factory?scope=starred")).status).toBe(409);
 	expect((await fixture.call("/api/factory?scope=all")).status).toBe(409);
 });

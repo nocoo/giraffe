@@ -1,5 +1,11 @@
 # 07 — nocoo 软件工厂真实调查（2026-09-16）
 
+> **v0.26.0:** Collection execution and the AI analysis product surface have
+> been removed. The implementation details below are historical where they
+> describe refresh modes, runs, schedules, collectors or analysis pages.
+> [Phase 1 retirement](14-phase1-retirement.md) is the current behavior contract;
+> saved-data schemas and read semantics remain relevant.
+
 本报告来自 2026-09-15 UTC 的 GitHub API 实际调查，不是应用内固定数据。原始响应、逐仓明细与截图保留在本地 `.factory-cache/`，未纳入 Git。可用 [06 中的命令](06-software-factory.md)重新生成自己的调查。读取权限只证明当前凭证可见的仓库范围。
 
 ## 范围与规模

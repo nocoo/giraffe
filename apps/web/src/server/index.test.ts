@@ -5,7 +5,6 @@ import { openSqliteD1 } from "./lib/db/sqlite-d1";
 
 function env(): Env {
 	return {
-		FACTORY_QUEUE: {} as Queue,
 		DB: openSqliteD1(true),
 		ASSETS: {
 			fetch: async () => new Response("asset"),
@@ -63,7 +62,7 @@ describe("worker fetch", () => {
 		).toBe(405);
 		expect(
 			(await createApp().request("http://localhost/api/refresh", { method: "GET" }, e)).status,
-		).toBe(405);
+		).toBe(404);
 		expect(
 			(await createApp().request("http://localhost/api/live", { method: "HEAD" }, e)).status,
 		).toBe(405);

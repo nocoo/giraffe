@@ -2048,6 +2048,50 @@ creating a commit. Formatting the touched documentation fixes the failure; no
 hook was bypassed and no production operation occurred. Include Markdown code
 blocks in the explicit changed-file format pass before running the full hook.
 
+## 2026-10-29 - Freeze version metadata before browser verification
+
+The first phase-1 browser runner built the SPA before the release version changed,
+while later tests imported the new manifest version. Navigation assertions correctly
+rejected that mixed revision. Release metadata must be finalized before starting a
+built-SPA run, and any concurrent code or version change invalidates its final
+acceptance evidence. The suite was rebuilt and rerun against the finalized tree.
+
+## 2026-10-29 - Retire remote triggers explicitly
+
+The first phase-1 implementation removed Wrangler cron and queue configuration
+without accounting for already registered Cloudflare triggers. Independent review
+of the locked Wrangler deployment code showed that omission does not unregister
+those resources. The release now explicitly clears cron schedules and removes
+only the retired production queue consumer through the authorized workflow, with
+mocked regression tests and post-deployment API verification. Future trigger
+retirements must verify remote reconciliation semantics, not only source absence.
+
+Follow-up review caught another API assumption: consumer deletion can return a
+successful envelope without `result`. A failing mocked regression now covers
+that documented shape; GET payloads still require their endpoint-specific
+schemas. Validate response contracts per operation instead of assuming read and
+delete envelopes are identical.
+
+## 2026-10-29 - Match test callees before removing cases
+
+During collection retirement, an AST cleanup initially matched an enclosing
+`describe` block instead of only obsolete execution tests. The original account
+and notification cases were restored immediately and the selector was narrowed
+to actual test callees. No retained cases were intentionally dropped. Future
+AST-based deletions must inspect the call target, review every selected range and
+compare retained test names before running the full gates.
+
+## 2026-10-29 - Copy package directories explicitly
+
+The phase-1 worktree's mirror lacked five exact locked packages. A directory-copy
+command used trailing slashes from file discovery, so macOS copied their contents
+into the cache parent instead of preserving package directories. The copy failed
+on internal links; no repository source, credentials or main-checkout packages
+were changed. Explicit package directory paths without trailing slashes restored
+the local dependencies, and Wrangler's version was checked directly. When reusing
+a dependency cache, inspect source and target shapes first and verify binaries
+before announcing that dependencies are ready.
+
 ## 2026-10-24 - Separate display history from source provenance
 
 B19A initially widened repository windows and merged calendar days without

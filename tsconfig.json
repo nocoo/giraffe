@@ -27,9 +27,7 @@
 		"apps/web/src/**/*.tsx",
 		"tests/bench/**/*.ts",
 		"vitest.config.ts",
-		"vitest.setup.ts",
-		"scripts/factory-audit.ts",
-		"scripts/factory-preview.ts"
+		"vitest.setup.ts"
 	],
 	"exclude": ["node_modules", "dist", ".wrangler", "coverage", "apps/web/src/client"]
 }

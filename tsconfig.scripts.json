@@ -11,6 +11,5 @@
 		"skipLibCheck": true,
 		"types": ["bun"]
 	},
-	"include": ["scripts/**/*.ts"],
-	"exclude": ["scripts/factory-audit.ts", "scripts/factory-preview.ts"]
+	"include": ["scripts/**/*.ts"]
 }
