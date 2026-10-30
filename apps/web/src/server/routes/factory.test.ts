@@ -125,6 +125,52 @@ it.each(["all", "starred"])(
 	},
 );
 
+it("projects only locally starred membership for the starred scope and the whole catalogue for all", async () => {
+	const fixture = await setup();
+	const state = ready();
+	const repo = state.repos[0];
+	if (!repo) throw new Error("missing fixture publication");
+	for (const coverage of Object.values(repo.coverage)) coverage.status = "complete";
+	repo.observation = {
+		source: "run",
+		version: state.runId,
+		window: state.window,
+		refreshedAt: NOW,
+	};
+	await fixture.db.batch(
+		await replaceSnapshotStmts(
+			fixture.db,
+			ID,
+			"repos",
+			{
+				repos: [
+					{ name_with_owner: "nocoo/app", primary_language: "TypeScript" },
+					{ name_with_owner: "nocoo/other", primary_language: "Go" },
+				],
+			},
+			NOW,
+		),
+	);
+	await fixture.db
+		.prepare("INSERT INTO repo_stars(account_id,repo) VALUES(?,'nocoo/app')")
+		.bind(ID)
+		.run();
+	await fixture.db.batch(await replaceSnapshotStmts(fixture.db, ID, "factory", { ...state }, NOW));
+	const starred = await (await fixture.call("/api/factory?scope=starred")).json();
+	expect(starred).toMatchObject({
+		selectedRepos: [{ name: "nocoo/app", language: "TypeScript" }],
+		repos: [{ name: "nocoo/app" }],
+		freshness: { total: 1, missing: 0 },
+		truncated: false,
+	});
+	const all = await (await fixture.call("/api/factory?scope=all")).json();
+	expect(all).toMatchObject({
+		selectedRepos: [{ name: "nocoo/app" }, { name: "nocoo/other" }],
+		freshness: { total: 2, missing: 1 },
+		truncated: true,
+	});
+});
+
 it("retains saved contribution metadata for default/all browser and machine reads only", async () => {
 	const fixture = await setup();
 	const state = ready();

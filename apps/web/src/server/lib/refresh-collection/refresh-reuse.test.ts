@@ -448,7 +448,7 @@ describe("refresh reuse boundaries", () => {
 			reasons: [],
 		});
 		const saved = await publication(context);
-		expect(saved.repos[0].coverage.alerts).toMatchObject({ status: "partial", observed: 1 });
+		expect(saved.repos[0].coverage.alerts).toMatchObject({ status: "unavailable", observed: 0 });
 		expect(
 			(
 				await context.env.DB.prepare(

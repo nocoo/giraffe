@@ -93,7 +93,7 @@ it.each(FACTORY_STREAMS)(
 		const before = await db.prepare("SELECT * FROM refresh_snapshots ORDER BY kind").all();
 		expect(await readFactoryResource(db, snap.account_id, repo.name, stream)).toMatchObject({
 			sourceVersion: snap.runId,
-			data: { items: [], ranges: [snap.window], coverage: { status: "complete" } },
+			data: { items: [], ranges: [], coverage: { status: "complete" } },
 		});
 		expect(await db.prepare("SELECT * FROM refresh_snapshots ORDER BY kind").all()).toEqual(before);
 		const indexed = (await readSources(db, snap.account_id, {})).sources.find(
@@ -489,7 +489,7 @@ it("preserves immutable run resources, missing coverage and mixed source flags",
 		sourceVersion: "r",
 		truncated: true,
 		source: { publicationId: "pub" },
-		data: { ranges: [repo.observation.window] },
+		data: { ranges: resource.ranges },
 	});
 	resource.coverage.status = "unavailable";
 	await db.prepare("UPDATE refresh_resources SET payload=?").bind(JSON.stringify(resource)).run();
@@ -502,6 +502,7 @@ it("preserves immutable run resources, missing coverage and mixed source flags",
 		runId: snap.runId,
 		coverage: { status: "complete", fetchedAt: snap.fetched_at },
 		items: [],
+		ranges: [repo.observation.window],
 	});
 	expect(await readFactoryResource(db, a, repo.name, "commits")).toMatchObject({
 		truncated: false,
@@ -509,7 +510,7 @@ it("preserves immutable run resources, missing coverage and mixed source flags",
 	});
 	delete repo.observation;
 	await save("factory", snap);
-	expect((await readFactoryResource(db, a, repo.name, "commits")).data.ranges).toEqual([
+	expect((await readFactoryResource(db, a, repo.name, "commits")).data.ranges).not.toEqual([
 		snap.window,
 	]);
 	expect(

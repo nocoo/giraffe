@@ -20,6 +20,7 @@ export type UnavailableReasonCode =
 export type FactoryCoverage = {
 	inventoryComplete?: boolean;
 	completeWindows?: FactoryWindow[];
+	availableWindows?: FactoryWindow[];
 	observation?: NonNullable<FactoryRepo["observation"]> & { head: string | null };
 	reason_code?: UnavailableReasonCode | "dependency_parse_unsupported";
 	retained?: true;
@@ -123,6 +124,7 @@ export type FactoryRepo = {
 	closedPrs: number;
 	mergedPrs: number;
 	totalReleases: number;
+	stockObservedAt?: { issues: string | null; prs: string | null };
 	coverage: Record<FactoryStreamName, FactoryCoverage>;
 	metrics: FactoryMetrics;
 	dependencies: FactoryDependency[];

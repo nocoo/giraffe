@@ -115,6 +115,26 @@ export async function resourceStatement(
 	stream: string,
 	payload: FactoryStreamData,
 ) {
+	if (new TextEncoder().encode(JSON.stringify(payload)).length > 1_500_000) {
+		const limited = {
+			...payload,
+			ranges: [],
+			coverage: {
+				...payload.coverage,
+				status: "limited" as const,
+				reason: "storage_limit",
+				completeWindows: [],
+				...(payload.coverage.availableWindows === undefined ? {} : { availableWindows: [] }),
+				...(payload.coverage.inventoryComplete === undefined ? {} : { inventoryComplete: false }),
+			},
+		};
+		const first = splitPages("resource", limited).pages[0];
+		if (!first) throw new ApiError(500, "db_error", "resource page required");
+		payload = {
+			...limited,
+			items: (JSON.parse(first.payload) as { items?: FactoryStreamData["items"] }).items ?? [],
+		};
+	}
 	return db
 		.prepare(
 			"INSERT INTO refresh_resources(account_id,repo_id,stream,payload,content_meta) VALUES(?,?,?,?,?) ON CONFLICT(account_id,repo_id,stream) DO UPDATE SET payload=excluded.payload,content_meta=excluded.content_meta",

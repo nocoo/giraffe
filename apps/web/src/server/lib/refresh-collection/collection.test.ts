@@ -1296,14 +1296,15 @@ describe("unified refresh collection", () => {
 		).toEqual([]);
 		expect(await publication(context)).toMatchObject({ repos: [] });
 	});
-	it("does not label unrequested dimensions complete when publishing only cached commits", async () => {
+	it("preserves cached dimensions without inventing coverage for unobserved streams", async () => {
 		const context = await fixture();
 		upstream();
 		await collectAccount(context);
 		await collectRepository(context, "owner/project");
 		context.run.params.dimensions = ["commits"];
 		await collectRepository(context, "owner/project");
-		expect((await publication(context)).repos[0].coverage.issues.status).toBe("unavailable");
+		expect((await publication(context)).repos[0].coverage.issues.status).toBe("complete");
+		expect((await publication(context)).repos[0].coverage.dependencies.status).toBe("unavailable");
 	});
 	it("keeps partial GraphQL item responses partial on initial and subsequent pages", async () => {
 		const context = await fixture();

@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.28.3 - 2026-10-30
+
+### Fixed
+
+- Retain the 90 most recent cached calendar dates per repository/timezone when
+  publishing a one-day refresh. Merge fresh observations without dropping older
+  dimensions, resetting their timestamps or concealing unavailable/partial gaps.
+- Keep run completion scoped to its requested days and dimensions, independently
+  of older gaps retained in factory publications and stream resources.
+- Bound retained event details to 1.5 MB with explicit limited coverage across
+  browser, machine and activity reads, without dropping daily aggregates.
+- Keep current alert inventory separate from historical events and preserve
+  both oldest and latest source times when cached and fresh days coexist.
+- Anchor stock lines on explicitly observed counts and stop at lifecycle gaps,
+  instead of suppressing every current stock value for a historical gap.
+
+### Verified
+
+- A 61-repository cached daily refresh preserves 90-day history with no upstream
+  calls, within the existing D1 binding/page limits.
+- The browser already defaults to starred membership; explicit all-scope API
+  reads remain unchanged. Missing selected stars still prevent complete lines.
+- Multi-repository terminal-unavailable alerts already reuse same-day caches.
+  New days and retryable permission errors continue to request fresh evidence.
+
 ## v0.28.2 - 2026-10-29
 
 ### Fixed

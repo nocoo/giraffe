@@ -2484,3 +2484,60 @@ the normal new-repository exception for API-started lookbacks. Share the scope
 projection with the header status and test both live and historical backfills.
 Rebase review must check new consumers against the changed producer contract,
 not only resolve text conflicts or repeat the original backend tests.
+
+## 2026-10-30: distinguish requested windows from published history
+
+Repository publication iterated only the current run's days, so a daily refresh
+replaced a previously backfilled series despite intact per-day observations.
+Regression coverage now reads the factory API after a multi-day run followed by
+a daily run, and checks retention, missingness and the 61-repository capacity.
+Collection completion must describe the requested work independently of older
+partial evidence retained in the publication.
+
+During investigation, a proposed chart fix ignored unpublished selected members.
+Controller review rejected it before commit because it would falsely declare
+starred repositories with no observations complete. The actual browser default
+was already starred; unscoped API reads default to all. Verify the scope at each
+boundary instead of weakening missingness to reproduce a reported screenshot.
+The first new tests also assumed a response envelope and a SQLite adapter column
+overload that this project does not use; inspect real fixture contracts before
+attributing an initial failing assertion to the product bug.
+
+The first review found that extending the metrics loop also extended detail
+resources and current inventory. A 90-by-100 CI-event fixture exceeded D1's row
+limit; an alert resolved on the next day reappeared during zero-request replay.
+Keep current inventory separate from event history, bound detail payloads with
+honest limited coverage, and verify every read projection uses that same scope.
+The review also caught historical completeness being reused as a current stock
+anchor and earliest source time being mistaken for latest evidence. Separate
+count provenance, lifecycle coverage and oldest/latest times explicitly.
+
+A reverse transition exposed one more boundary: a newly available alert
+inventory must not turn earlier terminal-unavailable settlement into measured
+days. Keep alert `availableWindows` separate from settlement `completeWindows`,
+and test both unavailable-to-available and available-to-unavailable transitions.
+
+Parallel API and browser runners initially collided on a Wrangler internal
+socket even though their public test ports differ. Run these server lanes
+sequentially for final acceptance; a failed startup is not passing browser
+evidence. Local fixture timings do not establish production D1 latency.
+
+The normal push hook then rejected three HTTP assertions that still inferred
+stream ranges from the aggregate publication or mutated aggregate coverage to
+test stream-source revalidation. Align HTTP fixtures with the authoritative
+resource coverage as well as unit projections: aggregate-only changes must not
+change a stream tag, while actual resource metadata changes must invalidate it.
+Keep the push gate enabled and rerun both real-HTTP authentication lanes.
+
+The expanded capacity case performs both a 61-repository backfill and its
+61-repository cached replay. Concurrent local HTTP tests pushed it beyond
+Vitest's generic five-second deadline; the unfinished async collector then
+polluted the following test's global fetch spy. Give this scale test an explicit
+15-second deadline, retaining all byte, request-count and retention assertions.
+It is a capacity regression, not a production CPU benchmark.
+
+A repeated SQL-fixture setup block also made a patch place the resource backup
+variables in the wrong HTTP test. L1 does not typecheck `tests/api`, so the
+targeted real-HTTP run caught the reference error. Anchor repeated setup edits
+to the enclosing test's unique assertions and verify the actual HTTP lane before
+claiming the fixture update is complete.

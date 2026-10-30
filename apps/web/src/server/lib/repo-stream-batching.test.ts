@@ -112,7 +112,7 @@ it.each(FACTORY_STREAMS)(
 			const actual = await readFactoryResource(createDb(profile.raw), account, "NOCOO/APP", stream);
 			expect(JSON.stringify(actual)).toBe(JSON.stringify(expected));
 			expect(actual.sourceVersion).toBe("evidence");
-			expect(actual.data.ranges).toEqual([s.repo.observation?.window]);
+			expect(actual.data.ranges).toEqual([s.snap.window]);
 			expect(profile.trips).toHaveLength(1);
 		}
 	},
@@ -275,7 +275,7 @@ it.each(["run", "legacy"] as const)(
 				"prs",
 			);
 			expect(actual.sourceVersion).toBe("evidence");
-			expect(actual.data.ranges).toEqual([s.repo.observation?.window]);
+			expect(actual.data.ranges).toEqual([s.snap.window]);
 			expect(actual.coverage).toEqual(s.repo.coverage.prs);
 			expect(actual.truncated).toBe(true);
 			expect(profile.trips).toHaveLength(1);

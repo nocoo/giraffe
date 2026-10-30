@@ -1,4 +1,4 @@
-# Phase 2: unified refresh (v0.28.1)
+# Phase 2: unified refresh (v0.28.3)
 
 This is the authorized replacement for the collection stack retired in v0.26.0.
 There is one task type, not quick/deep/full modes. The Dashboard keeps its saved
@@ -153,6 +153,47 @@ unavailable evidence; availability counts, reasons, source provenance and the
 original per-day timestamps remain separate and unchanged. Day-observation JSON
 writes are bounded to 1,500,000 UTF-8 bytes per binding and committed together in
 the existing publication batch; no day is dropped to meet the limit.
+
+Repository publication retains the 90 most recent distinct calendar dates from
+cached observations and the current request, scoped by account, immutable
+repository ID and timezone. A one-day run merges fresh evidence into that series
+instead of replacing it. Cached dimensions survive a narrower refresh. The read
+loads at most 90 cached dates plus any explicitly requested older dates, in the
+existing preparation batch; publication performs no extra upstream calls. Older
+observations remain in the day cache, but are outside the published series. Gaps
+and partial/unavailable evidence remain explicit, and old source timestamps are
+not renewed. Run success and failure reasons describe only its requested days
+and dimensions, not gaps elsewhere in the retained publication.
+
+Flow-detail resources retain the same bounded history, with a separate
+1,500,000-byte UTF-8 payload limit. If events exceed that limit, the resource
+reports `limited` / `storage_limit`, clears its complete windows and ranges,
+and supplies no fictitious continuation. Browser details, machine details,
+source indexes and activity all use this resource coverage; the repository's
+complete daily aggregates are not reduced by detail truncation. Oversized
+individual events cannot exceed the storage budget either.
+
+Alerts are current inventory, not historical events: totals and detail items
+come from the latest inventory observation, never a union or maximum across
+cached dates. Latest unavailable inventory remains unavailable. Coverage keeps
+historical alert settlement in `completeWindows` and actual measurable alert
+days in `availableWindows`; recovering access never makes an old unavailable
+day measurable. Calendar completeness reads only the latter for alerts.
+Coverage keeps the oldest `fetchedAt` and latest `sourceFetchedAt` evidence times separately;
+cache reuse renews neither. `stockObservedAt.issues` and `.prs` record valid
+GitHub open-count observations independently of item-enumeration completeness.
+Stock lines require a count observed on the latest chart day or its following
+calendar day, and walk backward only through complete lifecycle days. Missing
+count provenance, missing selected repositories and lifecycle gaps remain
+unknown rather than becoming zero.
+
+The browser's default repository scope is `starred`. Factory charts evaluate
+completeness over every selected starred repository, including unpublished ones.
+Explicit `all` remains available and can have incomplete historical coverage;
+the unscoped API still means `all` for existing consumers. Terminal unavailable
+alerts reuse the same account/repository/timezone/day cache in multi-repository
+runs too. New days and retryable permission failures still require fresh calls;
+terminal unavailability is not a permanent repository-wide capability cache.
 
 `refresh_publications.payload` stores only the operational rate-limit and
 repository-identity/retention projection. The full factory remains in

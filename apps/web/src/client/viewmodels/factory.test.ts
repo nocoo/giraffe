@@ -461,6 +461,33 @@ describe("software factory view model", () => {
 		repo.coverage.commits.status = "complete";
 		expect(hasFactoryMeasurement(repo, "commits")).toBe(true);
 	});
+	it.each([
+		["complete", "2026-10-29", [false, true]],
+		["unavailable", "2026-10-28", [true, false]],
+	] as const)(
+		"keeps historical alert measurements independent of latest %s inventory",
+		(status, available, expected) => {
+			const snapshot = ready();
+			const repo = snapshot.repos[0];
+			if (!repo) throw new Error("fixture");
+			snapshot.window = {
+				since: "2026-10-27T16:00:00.000Z",
+				until: "2026-10-29T15:59:59.999Z",
+				timezone: "Asia/Shanghai",
+			};
+			repo.metrics.days = { "2026-10-28": emptyDay(), "2026-10-29": emptyDay() };
+			Object.assign(repo.coverage.alerts, {
+				status,
+				completeWindows: shanghaiCompleteDays(["2026-10-28", "2026-10-29"]),
+				availableWindows: shanghaiCompleteDays([available]),
+			});
+			expect(
+				factoryBoard(snapshot, [repo], [repo])
+					.days.slice(-2)
+					.map((day) => day.complete.alerts),
+			).toEqual(expected);
+		},
+	);
 	it.each(["partial", "limited"] as const)(
 		"does not assign available days from mixed %s alert settlement windows",
 		(status) => {
@@ -486,6 +513,7 @@ describe("software factory view model", () => {
 			expect(board.days.at(-1)?.complete.commits).toBe(false);
 			repo.coverage.alerts.status = "complete";
 			repo.coverage.alerts.observed = 2;
+			repo.coverage.alerts.availableWindows = shanghaiCompleteDays(["2026-10-28", "2026-10-29"]);
 			const complete = factoryBoard(snapshot, [repo], [repo]);
 			expect(complete.observed.alerts).toBe(true);
 			expect(complete.days.slice(-2).map((day) => day.complete.alerts)).toEqual([true, true]);
@@ -1080,9 +1108,149 @@ it("reconstructs open backlog backwards from the current count and rolls 7-day b
 	});
 	a.coverage.issues.status = "limited";
 	b.coverage.actions.status = "pending";
+	a.stockObservedAt = { issues: null, prs: "2026-09-15T22:00:00.000Z" };
 	const blind = factoryBoard(s, s.repos, s.repos).days;
 	expect(blind.every((d) => d.openIssues === null && d.ciRate7 === null)).toBe(true);
 	expect(blind.at(-1)?.openPrs).toBe(1);
+});
+
+it("keeps current stock through retained history while stopping at a real day gap", () => {
+	const s = ready();
+	const repo = withDays("app", {
+		"2026-09-15": { ...day(1), issueOpened: 2 },
+		"2026-09-14": { ...day(1), issueClosed: 3 },
+	});
+	Object.assign(repo, {
+		openIssues: 4,
+		openPrs: 2,
+		stockObservedAt: { issues: "2026-09-15T22:00:00.000Z", prs: "2026-09-15T22:00:00.000Z" },
+	});
+	const retained = utcCompleteDays(
+		utcDates("2026-08-01", 46).filter((date) => date !== "2026-08-10"),
+	);
+	for (const stream of ["issues", "prs"] as const) {
+		repo.coverage[stream].status = "partial";
+		repo.coverage[stream].completeWindows = retained;
+	}
+	s.repos = [repo];
+	const board = factoryBoard(s, s.repos, s.repos);
+	const at = (date: string) => board.days.find((d) => d.date === date);
+	expect(at("2026-09-15")).toMatchObject({ openIssues: 4, openPrs: 2 });
+	expect(at("2026-09-14")).toMatchObject({ openIssues: 2, openPrs: 2 });
+	expect(at("2026-09-13")).toMatchObject({ openIssues: 5, openPrs: 2 });
+	expect(at("2026-08-11")?.openIssues).toBe(5);
+	expect(at("2026-08-10")?.openIssues).toBeNull();
+	expect(at("2026-08-09")?.openPrs).toBeNull();
+	expect(board.periods[1]?.stock).toEqual({
+		openIssues: { from: 5, to: 2 },
+		openPrs: { from: 2, to: 2 },
+	});
+});
+
+it("anchors stock on counts observed with the latest day, not item enumeration", () => {
+	const s = ready();
+	const repo = withDays("app", { "2026-09-15": { ...day(1), issueOpened: 2 } });
+	Object.assign(repo, {
+		openIssues: 4,
+		openPrs: 2,
+		stockObservedAt: { issues: "2026-09-15T22:00:00.000Z", prs: "2026-09-15T22:00:00.000Z" },
+	});
+	repo.coverage.issues.status = "partial";
+	repo.coverage.issues.inventoryComplete = false;
+	repo.coverage.issues.completeWindows = utcCompleteDays(utcDates("2026-06-18", 90));
+	repo.coverage.prs.completeWindows = utcCompleteDays(utcDates("2026-06-18", 90));
+	s.repos = [repo];
+	const board = factoryBoard(s, s.repos, s.repos);
+	expect(board.days.every((d) => d.complete.issues)).toBe(true);
+	expect(board.days.at(-1)).toMatchObject({ openIssues: 4, openPrs: 2 });
+	expect(board.periods[0]?.stock).toEqual({
+		openIssues: { from: 2, to: 2 },
+		openPrs: { from: 2, to: 2 },
+	});
+});
+
+it("withholds stock when the counts were observed before the latest day", () => {
+	const s = ready();
+	const repo = withDays("app", { "2026-09-15": { ...day(1), issueOpened: 2 } });
+	Object.assign(repo, {
+		openIssues: 4,
+		openPrs: 2,
+		stockObservedAt: { issues: "2026-09-11T00:00:00.000Z", prs: "2026-09-11T00:00:00.000Z" },
+	});
+	const other = withDays("other", { "2026-09-15": day(1) });
+	Object.assign(other, {
+		openIssues: 0,
+		openPrs: 0,
+		stockObservedAt: { issues: "2026-09-15T22:00:00.000Z", prs: "2026-09-15T22:00:00.000Z" },
+	});
+	s.repos = [repo];
+	expect(
+		factoryBoard(s, s.repos, s.repos).days.every(
+			(d) => d.openIssues === null && d.openPrs === null,
+		),
+	).toBe(true);
+	s.repos = [repo, other];
+	expect(factoryBoard(s, s.repos, s.repos).days.every((d) => d.openPrs === null)).toBe(true);
+	repo.stockObservedAt = { issues: "2026-09-15T22:00:00.000Z", prs: "2026-09-15T22:00:00.000Z" };
+	expect(factoryBoard(s, s.repos, s.repos).days.at(-1)?.openIssues).toBe(4);
+});
+
+it("anchors Shanghai counts by calendar date instead of UTC midnight", () => {
+	const s = ready();
+	s.window = {
+		since: "2026-08-31T16:00:00.000Z",
+		until: "2026-09-15T15:59:59.999Z",
+		timezone: "Asia/Shanghai",
+	};
+	const repo = withDays("app", { "2026-09-15": { ...day(1), issueOpened: 2 } });
+	Object.assign(repo, {
+		openIssues: 4,
+		openPrs: 2,
+		stockObservedAt: { issues: "2026-09-14T20:00:00.000Z", prs: "2026-09-14T20:00:00.000Z" },
+	});
+	s.repos = [repo];
+	const board = factoryBoard(s, s.repos, s.repos);
+	expect(board.timezone).toBe("Asia/Shanghai");
+	expect(board.days.at(-1)).toMatchObject({ date: "2026-09-15", openIssues: 4, openPrs: 2 });
+});
+
+it("accepts counts from the latest or next calendar date only", () => {
+	const s = ready();
+	s.window = { since: "2026-06-18T00:00:00.000Z", until: "2026-09-10T22:00:00.000Z" };
+	const repo = withDays("app", { "2026-09-10": { ...day(1), issueOpened: 2 } });
+	Object.assign(repo, { openIssues: 4, openPrs: 2 });
+	s.repos = [repo];
+	const at = (stamp: string) => {
+		repo.stockObservedAt = { issues: stamp, prs: stamp };
+		return factoryBoard(s, s.repos, s.repos).days.at(-1)?.openIssues ?? null;
+	};
+	expect(at("2026-09-10T22:00:00.000Z")).toBe(4);
+	expect(at("2026-09-11T00:00:00.000Z")).toBe(4);
+	expect(at("2026-09-09T22:00:00.000Z")).toBeNull();
+	expect(at("2026-09-15T00:00:00.000Z")).toBeNull();
+});
+
+it("withholds stock without per-stream count evidence, never falling back to coverage", () => {
+	const s = ready();
+	const repo = withDays("app", { "2026-09-15": { ...day(1), issueOpened: 2 } });
+	Object.assign(repo, { openIssues: 4, openPrs: 2 });
+	s.repos = [repo];
+	expect(factoryBoard(s, s.repos, s.repos).days.at(-1)).toMatchObject({
+		openIssues: 4,
+		openPrs: 2,
+	});
+	delete repo.stockObservedAt;
+	const unknown = factoryBoard(s, s.repos, s.repos);
+	expect(unknown.days.at(-1)).toMatchObject({ openIssues: null, openPrs: null });
+	expect(unknown.periods[0]?.stock).toEqual({
+		openIssues: { from: null, to: null },
+		openPrs: { from: null, to: null },
+	});
+	repo.stockObservedAt = { issues: "2026-09-15T22:00:00.000Z", prs: null };
+	expect(factoryBoard(s, s.repos, s.repos).days.at(-1)).toMatchObject({
+		openIssues: 4,
+		openPrs: null,
+	});
 });
 
 it("ranks accumulated work with aged share and recent throughput", () => {
