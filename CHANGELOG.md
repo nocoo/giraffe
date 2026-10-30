@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.28.4 - 2026-10-30
+
+### Fixed
+
+- Collect repository issue and pull-request inventories with GraphQL `states:OPEN`
+  only, paginating until the open list is complete instead of truncating against
+  closed history. Closed and merged stock counts continue to come from GraphQL
+  `totalCount` fields on the repository metadata query.
+- Reconcile cached open rows that disappear from a complete open inventory sync so
+  daily lifecycle metrics still observe closures without paging closed items.
+- Expose open pull-request snapshots from OPEN rows only, matching the existing
+  open-issue inbox filter.
+
+### Verified
+
+- Regression tests cover OPEN-only queries, `totalCount` stock lines, >100 open
+  pagination, repeated-cursor incomplete inventory, and inventory reconciliation.
+
 ## v0.28.3 - 2026-10-30
 
 ### Fixed

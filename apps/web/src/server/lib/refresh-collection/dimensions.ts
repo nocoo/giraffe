@@ -90,9 +90,10 @@ export async function collectItems(
 			lastUpdated !== null &&
 			Date.parse(lastUpdated) <= Date.parse(String(completeThrough))
 		)
-			return { ...result, inventoryComplete: result.status === "complete" };
-		if (lastUpdated !== null && Date.parse(lastUpdated) < Date.parse(windowOf(context).since))
-			return result;
+			return {
+				...result,
+				inventoryComplete: result.status === "complete" && info.hasNextPage !== true,
+			};
 		const after = text(info.endCursor);
 		if (!after || cursors.has(after))
 			return { ...result, status: "partial", reason: "incomplete_pagination" };
