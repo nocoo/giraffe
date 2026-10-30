@@ -28,6 +28,7 @@ import {
 	factoryRepo,
 	type Node,
 	object,
+	text,
 	windowOf,
 } from "./model";
 import { repositoryQuery } from "./queries";
@@ -52,7 +53,11 @@ function mappedRows(stream: string, raw: Node[], repo: string) {
 				.map((row) => ({ ...row, repository: { nameWithOwner: repo } })),
 		);
 	if (stream === "prs")
-		return mapPullRequests(raw.map((row) => ({ ...row, repository: { nameWithOwner: repo } })));
+		return mapPullRequests(
+			raw
+				.filter((row) => row.state === "OPEN")
+				.map((row) => ({ ...row, repository: { nameWithOwner: repo } })),
+		);
 	if (stream === "actions") return mapActionRuns({ workflow_runs: raw });
 	if (stream === "releases") return mapReleases(raw);
 	return raw.map((row) => ({
@@ -158,6 +163,7 @@ export async function collectRepository(
 	const priorRow = priorResult.results[0];
 	const prior = priorRow ? { payload: priorRow.payload } : null;
 	const metadataQuery =
+		context.run.params.force ||
 		needed.some((dimension) => dimension !== "actions" && dimension !== "alerts") ||
 		(restOnly && (prior === null || context.run.params.force));
 	const data = metadataQuery
@@ -242,13 +248,59 @@ export async function collectRepository(
 					merged,
 					completeThrough ?? null,
 				);
+				const fetchedOpenIds = new Set(result.raw.map((item) => String(item.id)));
 				for (const item of result.raw) merged.set(String(item.id), item);
+				const expectedOpen =
+					dimension === "issues"
+						? count(object(raw.openIssues).totalCount)
+						: count(object(raw.openPrs).totalCount);
+				const collectedOpen = result.raw.filter((row) => row.state === "OPEN").length;
+				if (
+					result.inventoryComplete === true &&
+					expectedOpen !== null &&
+					collectedOpen !== expectedOpen
+				) {
+					result = {
+						...result,
+						inventoryComplete: false,
+						status: result.status === "complete" ? "partial" : result.status,
+						reason: result.reason ?? "inventory_count_mismatch",
+					};
+				}
+				if (result.inventoryComplete === true) {
+					for (const [itemId, item] of merged) {
+						if (item.state !== "OPEN" || fetchedOpenIds.has(itemId)) continue;
+						const closedAt = text(item.closedAt) ?? text(item.updatedAt) ?? context.now;
+						merged.set(itemId, {
+							...item,
+							state: "CLOSED",
+							closedAt,
+							...(dimension === "prs" && text(item.mergedAt) ? {} : { mergedAt: null }),
+						});
+					}
+					if (expectedOpen !== null) {
+						const openInMerged = [...merged.values()].filter((row) => row.state === "OPEN").length;
+						if (openInMerged !== expectedOpen) {
+							result = {
+								...result,
+								inventoryComplete: false,
+								status: result.status === "complete" ? "partial" : result.status,
+								reason: result.reason ?? "inventory_count_mismatch",
+							};
+						}
+					}
+				}
 				writes.push(
 					db
 						.prepare(
 							`INSERT INTO refresh_items(account_id,repo_id,stream,item_id,payload) SELECT ?,?,?,json_extract(value,'$.id'),value FROM json_each(?) WHERE 1 ON CONFLICT(account_id,repo_id,stream,item_id) DO UPDATE SET payload=excluded.payload`,
 						)
-						.bind(context.account.id, saved.repo_id, dimension, JSON.stringify(result.raw)),
+						.bind(
+							context.account.id,
+							saved.repo_id,
+							dimension,
+							JSON.stringify([...merged.values()]),
+						),
 				);
 				result = { ...result, raw: [...merged.values()], items: [...merged.values()].map(event) };
 			} else if (dimension === "releases") result = collectReleases(object(raw.releases), denied);

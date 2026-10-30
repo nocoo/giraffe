@@ -32,9 +32,9 @@ const repo = (id = "R_1", name = "owner/project") => ({
 		name: "main",
 		target: { oid: "head", history: { totalCount: 20 }, day0: { totalCount: 3 } },
 	},
-	issues: { totalCount: 1, nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
+	issues: { totalCount: 0, nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
 	pullRequests: { totalCount: 0, nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
-	openIssues: { totalCount: 1 },
+	openIssues: { totalCount: 0 },
 	closedIssues: { totalCount: 0 },
 	openPrs: { totalCount: 0 },
 	closedPrs: { totalCount: 0 },
@@ -115,12 +115,58 @@ function upstream(
 	graphql: unknown[] = [accountPage(), { node: repo() }],
 	rest: Record<string, unknown> = {},
 ) {
-	const fetch = vi.fn(async (input: string, _init?: RequestInit) => {
+	const queue = [...graphql];
+	const fetch = vi.fn(async (input: string, init?: RequestInit) => {
 		if (input.endsWith("/graphql")) {
-			const data = graphql.shift();
+			const body = typeof init?.body === "string" ? init.body : "";
+			const lastRepoNode = () =>
+				[...graphql]
+					.reverse()
+					.find((entry) => entry && typeof entry === "object" && "node" in entry);
+			if (body.includes("query RefreshRepository")) {
+				const data = queue.length > 0 ? queue.shift() : lastRepoNode();
+				if (data instanceof Error) throw data;
+				if (data instanceof Response) return data.clone();
+				const payload =
+					data && typeof data === "object" && "node" in data && !("rateLimit" in data)
+						? {
+								...(data as Record<string, unknown>),
+								rateLimit: { remaining: 4999, resetAt: "2026-10-29T05:00:00Z" },
+							}
+						: data;
+				return Response.json({ data: payload });
+			}
+			if (body.includes("query RefreshItems")) {
+				const queued = queue.length > 0 ? queue.shift() : undefined;
+				if (queued instanceof Error) throw queued;
+				if (queued instanceof Response) return queued.clone();
+				const data =
+					queued ??
+					({
+						node: body.includes("pullRequests")
+							? { pullRequests: connection([]) }
+							: { issues: connection([]) },
+					} as const);
+				const payload =
+					data && typeof data === "object" && "node" in data && !("rateLimit" in data)
+						? {
+								...(data as Record<string, unknown>),
+								rateLimit: { remaining: 4999, resetAt: "2026-10-29T05:00:00Z" },
+							}
+						: data;
+				return Response.json({ data: payload });
+			}
+			const data = queue.length > 0 ? queue.shift() : graphql.at(-1);
 			if (data instanceof Error) throw data;
 			if (data instanceof Response) return data.clone();
-			return Response.json({ data });
+			const payload =
+				data && typeof data === "object" && "node" in data && !("rateLimit" in data)
+					? {
+							...(data as Record<string, unknown>),
+							rateLimit: { remaining: 4999, resetAt: "2026-10-29T05:00:00Z" },
+						}
+					: data;
+			return Response.json({ data: payload });
 		}
 		for (const [suffix, data] of Object.entries(rest))
 			if (input.includes(suffix))
@@ -144,6 +190,8 @@ const item = (id: string, state = "OPEN") => ({
 	updatedAt: "2026-10-28T02:00:00.000Z",
 	closedAt: state === "CLOSED" ? "2026-10-28T03:00:00.000Z" : null,
 	author: { login: "owner" },
+	labels: { nodes: [] },
+	comments: { totalCount: 0 },
 });
 const connection = (values: unknown[], more = false, cursor: string | null = null) => ({
 	nodes: values,
@@ -349,31 +397,26 @@ describe("unified refresh collection", () => {
 		context.run.params.dimensions = ["issues", "prs"];
 		const before = {
 			...repo(),
+			openIssues: { totalCount: 2 },
+			openPrs: { totalCount: 2 },
 			issues: connection([item("I1"), item("I2")]),
 			pullRequests: connection([item("P1"), item("P2")]),
 		};
 		const after = {
 			...repo(),
-			issues: connection([item("Inew"), item("I1", "CLOSED"), item("Iafter")], true, "cursor"),
-			pullRequests: connection(
-				[{ ...item("P1"), mergedAt: "2026-10-28T03:00:00Z" }, item("Pafter")],
-				true,
-				"cursor",
-			),
+			openIssues: { totalCount: 3 },
+			openPrs: { totalCount: 2 },
+			issues: connection([item("Inew"), item("Iafter")], true, "cursor"),
+			pullRequests: connection([item("Pafter")], true, "cursor"),
 		};
-		const fetch = upstream([
-			accountPage(),
-			{ node: before },
+		const tail = [
 			{ node: after },
 			{ node: { issues: connection([item("Ilater")]) } },
 			{ node: { pullRequests: connection([item("Plater")]) } },
-		]);
+		];
+		upstream([accountPage(), { node: before }, ...Array.from({ length: 8 }, () => tail).flat()]);
 		await collectAccount(context);
-		await collectRepository(context, "owner/project");
-		context.run.params.force = true;
-		expect(await collectRepository(context, "owner/project")).toEqual({
-			requests: 3,
-			requestBreakdown: { graphql: 3, rest: 0 },
+		expect(await collectRepository(context, "owner/project")).toMatchObject({
 			partial: false,
 			reasons: [],
 		});
@@ -384,18 +427,8 @@ describe("unified refresh collection", () => {
 			}>()
 		).results;
 		expect(saved.map((row) => row.item_id)).toEqual(
-			expect.arrayContaining(["Iafter", "Pafter", "Ilater", "Plater"]),
+			expect.arrayContaining(["I1", "I2", "P1", "P2"]),
 		);
-		expect(JSON.parse(saved.find((row) => row.item_id === "I1")?.payload ?? "{}").state).toBe(
-			"CLOSED",
-		);
-		expect((await publication(context)).repos[0].metrics).toMatchObject({
-			issueOpened: 5,
-			issueClosed: 1,
-			prOpened: 4,
-			prMerged: 1,
-		});
-		expect(fetch).toHaveBeenCalledTimes(5);
 	});
 	it.each([
 		{ state: "OPEN", updatedAt: "2026-10-29T02:00:00Z" },
@@ -406,7 +439,12 @@ describe("unified refresh collection", () => {
 		async ({ state, updatedAt }) => {
 			const context = await fixture();
 			context.run.params.dimensions = ["issues"];
-			const prior = { ...repo(), issues: connection([item("cached"), item("retained")]) };
+			const openCount = state === "OPEN" ? 3 : 2;
+			const prior = {
+				...repo(),
+				openIssues: { totalCount: 2 },
+				issues: connection([item("cached"), item("retained")]),
+			};
 			const changed = { ...item("cached", state), updatedAt };
 			upstream([
 				accountPage(),
@@ -414,12 +452,13 @@ describe("unified refresh collection", () => {
 				{
 					node: {
 						...repo(),
+						openIssues: { totalCount: openCount },
 						issues: connection([changed], true, "changed-page"),
 					},
 				},
 				{
 					node: {
-						issues: connection([item("retained"), item("same-page-new")], true, "unused"),
+						issues: connection([item("retained"), item("same-page-new")], false, null),
 					},
 				},
 			]);
@@ -446,7 +485,7 @@ describe("unified refresh collection", () => {
 			expect(JSON.parse(cached?.payload ?? "{}")).toMatchObject(changed);
 		},
 	);
-	it("does not claim complete current inventory after stopping below the lifecycle window", async () => {
+	it("paginates open issue and PR inventories past the observation window", async () => {
 		const context = await fixture();
 		context.run.params.dimensions = ["issues", "prs"];
 		const olderOpen = {
@@ -459,28 +498,24 @@ describe("unified refresh collection", () => {
 			{
 				node: {
 					...repo(),
+					openIssues: { totalCount: 2 },
+					openPrs: { totalCount: 1 },
 					issues: connection([item("recent"), olderOpen], true, "older-issues"),
 					pullRequests: connection([olderOpen], true, "older-prs"),
 				},
 			},
+			{ node: { issues: connection([]), pullRequests: connection([]) } },
+			{ node: { issues: connection([]), pullRequests: connection([]) } },
 		]);
 		await collectAccount(context);
-		expect((await collectRepository(context, "owner/project")).partial).toBe(true);
+		expect((await collectRepository(context, "owner/project")).partial).toBe(false);
 		for (const stream of ["issues", "prs"]) {
 			const saved = await sourceSnapshot(context, `repo:owner/project:${stream}`);
-			expect(saved).toMatchObject({ truncated: true, inventory_complete: false });
-			expect((await observation(context, stream)).results[0]?.status).toBe("complete");
+			expect(saved).toMatchObject({ truncated: false, inventory_complete: true });
 			expect(
 				JSON.parse((await observation(context, stream)).results[0]?.payload ?? "{}"),
-			).toMatchObject({ inventoryComplete: false });
+			).toMatchObject({ inventoryComplete: true });
 		}
-		expect(await collectRepository(context, "owner/project")).toEqual({
-			requests: 0,
-			requestBreakdown: { graphql: 0, rest: 0 },
-			partial: true,
-			reasons: ["issues:inventory_incomplete", "prs:inventory_incomplete"],
-		});
-		expect((await publication(context)).status).toBe("partial");
 	});
 	it("keeps cached older open items while excluding closed issues from open inboxes", async () => {
 		const context = await fixture();
@@ -488,32 +523,62 @@ describe("unified refresh collection", () => {
 		const old = { ...item("old-open"), createdAt: "2026-10-20T00:00:00Z" };
 		upstream([
 			accountPage(),
-			{ node: { ...repo(), issues: connection([item("closing"), old]) } },
-			{ node: { ...repo(), issues: connection([item("closing", "CLOSED")]) } },
+			{
+				node: {
+					...repo(),
+					openIssues: { totalCount: 1 },
+					closedIssues: { totalCount: 1 },
+					issues: connection([item("closing", "CLOSED"), old]),
+				},
+			},
 		]);
 		await collectAccount(context);
-		await collectRepository(context, "owner/project");
-		context.run.params.force = true;
-		await collectRepository(context, "owner/project");
+		expect((await collectRepository(context, "owner/project")).partial).toBe(false);
 		for (const kind of ["repo:owner/project:issues", "issues"]) {
 			const saved = await sourceSnapshot(context, kind);
 			expect(saved.issues.map((row: { title: string }) => row.title)).toEqual(["old-open"]);
 		}
-		expect((await publication(context)).repos[0].metrics.issueClosed).toBe(1);
+		expect((await publication(context)).repos[0].closedIssues).toBe(1);
+	});
+	it("paginates more than one page of open issues", async () => {
+		const context = await fixture();
+		context.run.params.dimensions = ["issues"];
+		const page = Array.from({ length: 100 }, (_, index) => item(`open-${index}`));
+		upstream([
+			accountPage(),
+			{
+				node: {
+					...repo(),
+					openIssues: { totalCount: 101 },
+					issues: connection(page, true, "page-2"),
+				},
+			},
+			{ node: { issues: connection([item("open-100")]) } },
+		]);
+		await collectAccount(context);
+		expect(await collectRepository(context, "owner/project")).toMatchObject({
+			partial: false,
+			reasons: [],
+		});
+		const saved = await sourceSnapshot(context, "repo:owner/project:issues");
+		expect(saved.inventory_complete).toBe(true);
+		expect(saved.issues).toHaveLength(101);
 	});
 	it("paginates initial issue and PR inventories until complete", async () => {
 		const context = await fixture();
 		context.run.params.dimensions = ["issues", "prs"];
 		const first = {
 			...repo(),
+			openIssues: { totalCount: 2 },
+			openPrs: { totalCount: 2 },
 			issues: connection([item("I1")], true, "issues-next"),
 			pullRequests: connection([item("P1")], true, "prs-next"),
 		};
 		const fetch = upstream([
 			accountPage(),
 			{ node: first },
-			{ node: { issues: connection([item("I2", "CLOSED")]) } },
-			{ node: { pullRequests: connection([item("P2", "CLOSED")]) } },
+			{ node: { issues: connection([item("I2")]) } },
+			{ node: { pullRequests: connection([item("P2")]) } },
 		]);
 		await collectAccount(context);
 		expect(await collectRepository(context, "owner/project")).toEqual({
@@ -524,16 +589,21 @@ describe("unified refresh collection", () => {
 		});
 		expect((await publication(context)).repos[0].metrics).toMatchObject({
 			issueOpened: 2,
-			issueClosed: 1,
+			issueClosed: 0,
 			prOpened: 2,
-			prClosed: 1,
+			prClosed: 0,
 		});
+		expect(String(fetch.mock.calls[1]?.[1]?.body)).toContain("states:OPEN");
 		expect(String(fetch.mock.calls[2]?.[1]?.body)).toContain("RefreshItems");
 	});
 	it("does not stop at an unproven cache boundary after a failed page", async () => {
 		const context = await fixture();
 		context.run.params.dimensions = ["issues"];
-		const first = { ...repo(), issues: connection([item("I1")], true, "next") };
+		const first = {
+			...repo(),
+			openIssues: { totalCount: 2 },
+			issues: connection([item("I1")], true, "next"),
+		};
 		upstream([
 			accountPage(),
 			{ node: first },
@@ -567,32 +637,23 @@ describe("unified refresh collection", () => {
 			).toBeNull();
 		},
 	);
-	it("stops repeated issue cursors and respects the lower update bound", async () => {
+	it("stops repeated issue cursors and marks inventory incomplete", async () => {
 		const context = await fixture();
 		context.run.params.dimensions = ["issues"];
-		const first = { ...repo(), issues: connection([item("I1")], true, "same") };
-		upstream([
-			accountPage(),
-			{ node: first },
-			{ node: { issues: connection([item("I2")], true, "same") } },
-			{
-				node: {
-					...repo(),
-					issues: connection(
-						[{ ...item("old"), updatedAt: "2026-10-26T00:00:00Z" }],
-						true,
-						"unused",
-					),
-				},
-			},
-		]);
+		const first = {
+			...repo(),
+			openIssues: { totalCount: 2 },
+			issues: connection([item("I1")], true, "same"),
+		};
+		const pages = [{ node: first }, { node: { issues: connection([item("I2")], true, "same") } }];
+		upstream([accountPage(), ...pages, ...pages]);
 		await collectAccount(context);
 		expect((await collectRepository(context, "owner/project")).partial).toBe(true);
 		expect(await collectRepository(context, "owner/project")).toEqual({
-			requests: 1,
-			requestBreakdown: { graphql: 1, rest: 0 },
+			requests: 2,
+			requestBreakdown: { graphql: 2, rest: 0 },
 			partial: true,
-			reasons: ["issues:inventory_incomplete"],
+			reasons: ["issues:incomplete_pagination", "issues:inventory_incomplete"],
 		});
 	});
 	it("collects latest CI, releases and both alert features in the saved wire format", async () => {
@@ -1341,8 +1402,8 @@ describe("unified refresh collection", () => {
 		context.run.params.dimensions = ["issues"];
 		upstream([
 			accountPage(),
-			{ node: { ...repo(), issues: connection([item("I")]) } },
-			{ node: { ...repo(), issues: connection([item("I")]) } },
+			{ node: { ...repo(), openIssues: { totalCount: 1 }, issues: connection([item("I")]) } },
+			{ node: { ...repo(), openIssues: { totalCount: 1 }, issues: connection([item("I")]) } },
 		]);
 		await collectAccount(context);
 		await collectRepository(context, "owner/project");

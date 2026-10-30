@@ -21,12 +21,12 @@ export function repositoryQuery(days: RefreshDay[], needed: string[]) {
  openIssues:issues(states:OPEN) { totalCount } closedIssues:issues(states:CLOSED) { totalCount }
  openPrs:pullRequests(states:OPEN) { totalCount } closedPrs:pullRequests(states:CLOSED) { totalCount } mergedPrs:pullRequests(states:MERGED) { totalCount }
  ${releases}
- ${needed.includes("issues") ? `issues(first:100,orderBy:{field:UPDATED_AT,direction:DESC}) { ${page} nodes { ${issueFields} } }` : ""}
- ${needed.includes("prs") ? `pullRequests(first:100,orderBy:{field:UPDATED_AT,direction:DESC}) { ${page} nodes { ${prFields} } }` : ""}
+ ${needed.includes("issues") ? `issues(states:OPEN,first:100,orderBy:{field:UPDATED_AT,direction:DESC}) { ${page} nodes { ${issueFields} } }` : ""}
+ ${needed.includes("prs") ? `pullRequests(states:OPEN,first:100,orderBy:{field:UPDATED_AT,direction:DESC}) { ${page} nodes { ${prFields} } }` : ""}
  } } rateLimit { remaining resetAt }
  }`;
 }
 export function itemQuery(stream: "issues" | "prs") {
 	const field = stream === "prs" ? "pullRequests" : "issues";
-	return `query RefreshItems($id:ID!,$after:String!) { node(id:$id) { ... on Repository { ${field}(first:100,after:$after,orderBy:{field:UPDATED_AT,direction:DESC}) { ${page} nodes { ${stream === "prs" ? prFields : issueFields} } } } } }`;
+	return `query RefreshItems($id:ID!,$after:String!) { node(id:$id) { ... on Repository { ${field}(states:OPEN,first:100,after:$after,orderBy:{field:UPDATED_AT,direction:DESC}) { ${page} nodes { ${stream === "prs" ? prFields : issueFields} } } } } }`;
 }
