@@ -40,6 +40,7 @@ import { Kpi, KpiRow } from "../components/layout/kpi";
 import { LanguageLabel } from "../components/layout/labels";
 import { ProjectLabel } from "../components/layout/project-identity";
 import { ScopeEmpty } from "../components/layout/repository-scope";
+import { INLINE_SEGMENT } from "../components/layout/segment";
 import { SelectField } from "../components/layout/select-field";
 import { useSnapshotRead } from "../components/layout/use-snapshot-read";
 import { FLOW_COLORS } from "../lib/chart-theme";
@@ -382,6 +383,7 @@ export function FactoryPage() {
 											actions={
 												<div className="flex flex-wrap items-center justify-end gap-2">
 													<SegmentControl
+														className={INLINE_SEGMENT}
 														legend="图表窗口"
 														value={String(range)}
 														options={FACTORY_RANGES.map((days) => ({

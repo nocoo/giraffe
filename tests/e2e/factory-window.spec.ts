@@ -20,6 +20,25 @@ test("factory ranges end at saved Shanghai data and keep unobserved days empty",
 	await expect(range.getByRole("radio", { name: "90 天", exact: true })).toBeChecked();
 	await expect(page.locator("button.factory-day")).toHaveCount(90);
 	await expect(page.getByRole("heading", { name: "变化 · 最近 90 天", exact: true })).toBeVisible();
+	const dualAxisCharts = [
+		"提交产出与覆盖面",
+		"交付吞吐",
+		"PR 流量与存量",
+		"Issue 流量与存量",
+	] as const;
+	for (const label of dualAxisCharts) {
+		const plot = page.getByRole("group", { name: label, exact: true });
+		await expect(plot.locator(".recharts-yAxis")).toHaveCount(2);
+		const tickValues = await plot.locator(".recharts-cartesian-axis-tick-value").allTextContents();
+		const numericTicks = tickValues.filter((value) => !/^\d{2}-\d{2}$/.test(value));
+		expect(numericTicks.length, `${label} numeric ticks`).toBeGreaterThan(5);
+		if (label === "交付吞吐") {
+			expect(
+				tickValues.some((value) => value.endsWith("%")),
+				`${label} rate ticks`,
+			).toBe(true);
+		}
+	}
 	const latest = page.locator("button.factory-day").last();
 	await expect(latest).toHaveAttribute("aria-label", /2026-10-22.*Asia\/Shanghai/);
 	await expect(page.locator("button.factory-day").first()).toHaveAttribute("aria-label", /无观测/);
