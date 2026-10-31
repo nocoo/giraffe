@@ -4,7 +4,8 @@ import {
 	type RepoMetaFields,
 	repoMetaWriteSchema,
 } from "../../lib/repo-meta";
-import { catalogRowIdentity, identifyCatalogRow } from "./catalog-identity";
+import { catalogRowIdentityFromRecord, identifyCatalogRow } from "./catalog-identity";
+import { invalidateDashboardWarmCacheSafely } from "./dashboard-response-cache";
 import type { Db } from "./db/d1";
 import { ApiError } from "./errors";
 
@@ -89,6 +90,7 @@ export async function writeRepoMeta(
 		.bind(account, ...values, new Date().toISOString(), account, account, name)
 		.first<MetaRow>();
 	if (!row) throw new ApiError(404, "not_found", "Repository not found");
+	await invalidateDashboardWarmCacheSafely(db, account);
 	return wire(account, row);
 }
 export async function enrichRepoMeta(db: Db, account: string, data: Record<string, unknown>) {
@@ -101,10 +103,17 @@ export async function enrichRepoMeta(db: Db, account: string, data: Record<strin
 		.bind(account)
 		.all<MetaRow>();
 	const rows = new Map(result.results.map((row) => [row.identity_key, row]));
+	const identityByName = new Map(
+		result.results.map((row) => [row.repo.toLowerCase(), row.identity_key]),
+	);
 	return {
 		...data,
 		repos: repos.map((repo) => {
-			const identity = catalogRowIdentity(repo);
+			const identity =
+				catalogRowIdentityFromRecord(repo) ??
+				(typeof repo.name_with_owner === "string"
+					? identityByName.get(repo.name_with_owner.toLowerCase())
+					: undefined);
 			const row = identity === undefined ? undefined : rows.get(identity);
 			return identifyCatalogRow({ ...repo, meta: row ? fields(row) : null }, identity);
 		}),

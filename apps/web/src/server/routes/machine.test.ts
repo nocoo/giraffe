@@ -111,7 +111,8 @@ it("applies private headers to every machine response, including authentication 
 	const failure = await fixture.call("/me");
 	expect(failure.status).toBe(500);
 	for (const response of [...responses, failure]) {
-		expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+		const cache = response.headers.get("Cache-Control");
+		expect(cache === "private, no-store" || cache === "private, no-cache").toBe(true);
 		expect(response.headers.get("Vary")).toBe("Authorization");
 		expect(response.headers.get("Referrer-Policy")).toBe("no-referrer");
 	}

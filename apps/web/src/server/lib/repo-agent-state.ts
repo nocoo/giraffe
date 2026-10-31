@@ -6,7 +6,8 @@ import {
 	type RepoAgentStateWrite,
 	repoAgentStateWriteSchema,
 } from "../../lib/repo-agent-state";
-import { catalogRowIdentity, identifyCatalogRow } from "./catalog-identity";
+import { catalogRowIdentityFromRecord, identifyCatalogRow } from "./catalog-identity";
+import { invalidateDashboardWarmCacheSafely } from "./dashboard-response-cache";
 import type { Db } from "./db/d1";
 import { ApiError } from "./errors";
 
@@ -122,6 +123,7 @@ export async function writeRepoAgentState(
 					)
 					.first<StateRow>();
 	if (!row) throw new ApiError(409, "revision_conflict", "Agent state changed");
+	await invalidateDashboardWarmCacheSafely(db, account);
 	return wire(account, row);
 }
 
@@ -134,21 +136,29 @@ export async function enrichRepoAgentStates(
 	if (!repos.length) return { ...data, repos: [] as Record<string, unknown>[] };
 	const rows = await db
 		.prepare(
-			"SELECT s.identity_key,s.revision,s.updated_at,CASE WHEN json_type(s.payload,'$.summary')='text' THEN json_extract(s.payload,'$.summary') END AS summary,CASE WHEN json_type(s.payload,'$.status')='text' THEN json_extract(s.payload,'$.status') END AS status FROM repo_agent_state s JOIN refresh_catalog c ON c.account_id=s.account_id AND c.repo_id=s.identity_key WHERE s.account_id=? AND c.active=1",
+			"SELECT s.identity_key,c.repo,s.revision,s.updated_at,CASE WHEN json_type(s.payload,'$.summary')='text' THEN json_extract(s.payload,'$.summary') END AS summary,CASE WHEN json_type(s.payload,'$.status')='text' THEN json_extract(s.payload,'$.status') END AS status FROM repo_agent_state s JOIN refresh_catalog c ON c.account_id=s.account_id AND c.repo_id=s.identity_key WHERE s.account_id=? AND c.active=1",
 		)
 		.bind(account)
 		.all<{
 			identity_key: string;
+			repo: string;
 			revision: number;
 			updated_at: string;
 			summary: unknown;
 			status: unknown;
 		}>();
 	const states = new Map(rows.results.map((row) => [row.identity_key, row]));
+	const identityByName = new Map(
+		rows.results.map((row) => [row.repo.toLowerCase(), row.identity_key]),
+	);
 	return {
 		...data,
 		repos: repos.map((repo) => {
-			const identity = catalogRowIdentity(repo);
+			const identity =
+				catalogRowIdentityFromRecord(repo) ??
+				(typeof repo.name_with_owner === "string"
+					? identityByName.get(repo.name_with_owner.toLowerCase())
+					: undefined);
 			const state = identity === undefined ? undefined : states.get(identity);
 			const summary: RepoAgentStateSummary | null = state
 				? {

@@ -173,7 +173,7 @@ test("list, grid and detail share project identity without replacing Giraffe bra
 	await expect(detail.getByText(hello.description, { exact: true })).toBeVisible();
 	await expectLinks(detail, hello);
 	await expectMark(detail.getByRole("heading", { level: 1 }).locator("img"), 48);
-	await expect(page).toHaveTitle(giraffe.title);
+	await expect(page).toHaveTitle(`${repository} · Giraffe`);
 	await expect(page.locator('link[rel="icon"]')).toHaveAttribute("href", giraffe.favicon);
 	await expect(page.locator("aside img")).toHaveAttribute("src", giraffe.navigationIcon);
 	await expect(page.locator("aside")).toContainText(giraffe.title);

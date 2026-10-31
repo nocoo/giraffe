@@ -10,7 +10,7 @@ import { Menu, ShieldAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router";
 import { subscribeErrorUi } from "../../lib/error-ui";
-import { headerCrumbs, headerTitle } from "../../lib/navigation";
+import { documentTitle, headerCrumbs, headerTitle } from "../../lib/navigation";
 import { AppSidebar } from "./app-sidebar";
 import { DataTimeControl, DataTimeProvider } from "./data-time";
 import { EnvironmentSwitch } from "./environment-switch";
@@ -26,7 +26,6 @@ export function AppShell() {
 	const project = useProjectIdentity("nocoo/giraffe");
 	useEffect(() => {
 		if (!project) return;
-		document.title = project.title;
 		const favicon = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
 		if (favicon) {
 			const image = new Image();
@@ -49,6 +48,9 @@ export function AppShell() {
 	const [mobileOpen, setMobileOpen] = useState(false);
 	const mobileTriggerRef = useRef<HTMLButtonElement>(null);
 	const location = useLocation();
+	useEffect(() => {
+		document.title = documentTitle(location.pathname);
+	}, [location.pathname]);
 	const scope = useRepositoryScope();
 	const navigate = useNavigate();
 	const { theme } = useTheme();

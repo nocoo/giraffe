@@ -3,7 +3,6 @@ import { etag, RETAINED_304_HEADERS } from "hono/etag";
 import { resourceCollection, resourceId } from "../../lib/agent-resource";
 import { REPO_SNAPSHOT_TABS } from "../../lib/snapshot-kinds";
 import type { AppVars, Env } from "../env";
-import { readActivity } from "../lib/activity-store";
 import {
 	createResource,
 	deleteResource,
@@ -13,25 +12,29 @@ import {
 } from "../lib/agent-resources";
 import { authenticateApiToken, recordApiTokenUse } from "../lib/api-tokens";
 import { catalogInclude, readCatalogChanges } from "../lib/catalog-read";
+import {
+	buildMachineAccountObservation,
+	patchMachineFactoryObservation,
+	patchMachineReposObservation,
+} from "../lib/dashboard-builders";
+import { accountObservationDataVersion } from "../lib/dashboard-data-version";
+import { dashboardCacheKey, respondDashboardCached } from "../lib/dashboard-response-cache";
 import { getAccount } from "../lib/db/accounts";
 import { createDb } from "../lib/db/d1";
 import { ApiError } from "../lib/errors";
 import { readContributions } from "../lib/machine-contributions";
 import {
-	readMachineAccountObservation,
 	readMachineFactoryStream,
 	readMachineRepositoryObservation,
 } from "../lib/machine-observations";
 import { assertMachineQuery } from "../lib/machine-query";
 import { readSources } from "../lib/machine-sources";
 import { readJson } from "../lib/read-body";
-import { enrichRepoAgentStates } from "../lib/repo-agent-state";
-import { enrichRepoMeta } from "../lib/repo-meta";
 import type { AccountObservationResource } from "../lib/saved-observation-statements";
 import { snapshotScope } from "../lib/snapshot-scope";
 import { SourceTiming } from "../lib/source-timing";
 import { timedJson } from "../lib/timed-json";
-import { activityEtag } from "./activity";
+import { activityHeaders, getActivity } from "./activity";
 import { getMachineSettings, getMachineStars, machineSetting } from "./machine-settings";
 import { machineRefresh } from "./refresh";
 import { machineRepoAgentState } from "./repo-agent-state";
@@ -47,7 +50,7 @@ export function machineApi() {
 	const app = new Hono<{ Bindings: Env; Variables: MachineVars }>();
 	app.use("*", async (c, next) => {
 		await next();
-		c.header("Cache-Control", "private, no-store");
+		if (!c.res.headers.has("Cache-Control")) c.header("Cache-Control", "private, no-store");
 		const vary =
 			c.res.headers
 				.get("Vary")
@@ -196,9 +199,7 @@ export function machineApi() {
 		async (c) =>
 			c.json(await readCatalogChanges(c.get("db"), c.get("principal").accountId, c.req.queries())),
 	);
-	app.get("/accounts/:account/activity", activityEtag, async (c) =>
-		c.json(await readActivity(c.get("db"), c.get("principal").accountId, c.req.queries())),
-	);
+	app.get("/accounts/:account/activity", activityHeaders, getActivity);
 	app.all("/accounts/:account/stars/:owner/:name", machineSetting);
 	app.get(
 		"/accounts/:account/contributions",
@@ -257,26 +258,52 @@ export function machineApi() {
 			throw new ApiError(404, "not_found", "unknown source");
 		const includeRemoved = kind === "repos" ? catalogInclude(c.req.queries()) : false;
 		if (kind !== "repos") assertMachineQuery(c.req.query(), ["scope"]);
-		const observation = await readMachineAccountObservation(
-			c.get("db"),
-			c.get("principal").accountId,
-			kind as AccountObservationResource,
-			snapshotScope(c.req.queries("scope")),
-			includeRemoved,
-		);
-		if (kind === "repos") {
-			observation.data = await enrichRepoAgentStates(
-				c.get("db"),
-				c.get("principal").accountId,
-				observation.data,
-			);
-			observation.data = await enrichRepoMeta(
-				c.get("db"),
-				c.get("principal").accountId,
-				observation.data,
-			);
-		}
-		return timedJson(c, observation);
+		const scope = snapshotScope(c.req.queries("scope"));
+		const db = c.get("db");
+		const accountId = c.get("principal").accountId;
+		return respondDashboardCached(c, {
+			accountId,
+			cacheKey: dashboardCacheKey(`machine:/accounts/${kind}`, {
+				scope,
+				...(kind === "repos" ? { includeRemoved: includeRemoved ? "1" : "0" } : {}),
+			}),
+			machine: true,
+			version: () =>
+				accountObservationDataVersion(
+					db,
+					accountId,
+					kind as AccountObservationResource,
+					scope,
+					includeRemoved,
+				),
+			build: () =>
+				buildMachineAccountObservation(
+					db,
+					accountId,
+					kind as AccountObservationResource,
+					scope,
+					includeRemoved,
+				),
+			...(kind === "factory"
+				? {
+						patch: (stored: unknown) =>
+							patchMachineFactoryObservation(
+								db,
+								accountId,
+								stored as { data: Record<string, unknown> } & Record<string, unknown>,
+							),
+					}
+				: kind === "repos"
+					? {
+							patch: (stored: unknown) =>
+								patchMachineReposObservation(
+									db,
+									accountId,
+									stored as { data: Record<string, unknown> } & Record<string, unknown>,
+								),
+						}
+					: {}),
+		});
 	});
 	app.notFound(() => {
 		throw new ApiError(404, "not_found", "unknown machine endpoint");

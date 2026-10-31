@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	breadcrumbsFor,
+	documentTitle,
 	headerCrumbs,
 	headerTitle,
 	NAV_GROUPS,
@@ -62,6 +63,10 @@ describe("navigation", () => {
 		expect(headerCrumbs("/")).toEqual([{ href: "/", label: "Giraffe" }]);
 		expect(headerCrumbs("/settings")).toEqual([{ href: "/", label: "Giraffe" }]);
 		expect(headerTitle("/repos/o/n")).toBe("o/n");
+		expect(documentTitle("/factory")).toBe("软件工厂 · Giraffe");
+		expect(documentTitle("/ci")).toBe("CI 与发布 · Giraffe");
+		expect(documentTitle("/settings")).toBe("设置 · Giraffe");
+		expect(documentTitle("/repos/octocat/hello")).toBe("octocat/hello · Giraffe");
 		expect(headerCrumbs("/repos/o/n")).toEqual([{ href: "/repos", label: "仓库" }]);
 		expect(paletteItems(null).map((item) => item.href)).toEqual(NAV_ITEMS.map((item) => item.href));
 		expect(paletteItems(null)[0]).toEqual({

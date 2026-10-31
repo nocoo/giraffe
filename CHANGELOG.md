@@ -1,5 +1,35 @@
 # Changelog
 
+## v0.28.6 - 2026-10-31
+
+### Added
+
+- Precompute dashboard GET responses at refresh publish time in D1
+  (`dashboard_warm_responses`), keyed by account, route and scope/query variant,
+  with data-version strong ETags and `Cache-Control: private, no-cache`
+  conditional revalidation.
+- Cheap authenticated `If-None-Match` handling for browser and machine
+  `/factory`, `/ci`, `/repos`, `/issues`, `/prs`, and default `/activity`
+  reads: one lightweight version lookup plus optional warm-body fetch, returning
+  304 without rebuilding projections when data is unchanged.
+- Client `document.title` follows the active route (`{页面名} · Giraffe`) on
+  SPA navigation, aligned with sidebar page labels.
+- PWA installability via `manifest.webmanifest`, generated logo icons (192/512 +
+  maskable), and a minimal service worker that does not cache `/api/*`.
+
+### Changed
+
+- Factory rate limits are merged on read rather than stored in warm bodies, so
+  expiry stays correct without invalidating otherwise unchanged publications.
+- Dashboard warm rows invalidate when local stars, repository agent state, or
+  repository metadata change.
+
+### Verified
+
+- Regression tests cover warm-cache 304 hits without heavy D1 batches, rebuild
+  after star changes, per-key retention, ETag differences across scopes, route
+  document titles, and dashboard read batching with version preludes.
+
 ## v0.28.5 - 2026-10-31
 
 ### Fixed

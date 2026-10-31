@@ -7,7 +7,7 @@ import { accessBypass, resolveIdentity } from "./middleware/access";
 import { assertOrigin } from "./middleware/origin";
 import { scheduleRefresh } from "./refresh-runner";
 import { activateAccount, getAccounts, postAccount, removeAccount } from "./routes/accounts";
-import { activityEtag, getActivity } from "./routes/activity";
+import { activityHeaders, getActivity } from "./routes/activity";
 import { browserTokens } from "./routes/api-tokens";
 import { getCi } from "./routes/ci";
 import { getFactory, getFactoryStream } from "./routes/factory";
@@ -89,7 +89,7 @@ export function createApp(): Hono<{ Bindings: Env; Variables: AppVars }> {
 	app.all("/api/refresh-runs/:id", browserRefresh);
 	app.all("/api/refresh-runs/:id/cancel", browserRefresh);
 	allow(app, "/api/activity", ["GET"]);
-	app.get("/api/activity", activityEtag, getActivity);
+	app.get("/api/activity", activityHeaders, getActivity);
 	allow(app, "/api/tokens", ["GET", "POST"]);
 	app.on(["GET", "POST"], "/api/tokens", browserTokens);
 	allow(app, "/api/tokens/:id", ["PATCH", "DELETE"]);

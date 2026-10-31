@@ -15,6 +15,12 @@ document.documentElement.classList.toggle("dark", isDark);
 document.documentElement.classList.toggle("light", !isDark);
 document.documentElement.dataset.mode = isDark ? "dark" : "light";
 
+if ("serviceWorker" in navigator) {
+	navigator.serviceWorker.register("/sw.js").catch(() => {
+		// Installability is optional when service workers are blocked.
+	});
+}
+
 const root = document.getElementById("root");
 if (!root) {
 	throw new Error("root missing");
