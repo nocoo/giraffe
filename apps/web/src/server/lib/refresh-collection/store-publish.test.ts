@@ -159,7 +159,7 @@ async function prepared(
 		new Date(now),
 	);
 	const context = {
-		env: { DB: raw },
+		env: { DB: raw, ENVIRONMENT: "test", GITHUB_API_BASE: "http://github.test" },
 		account: { id: "a", login: "owner" },
 		token: "memory-only-fake-token",
 		run: { id: "run-b", accountId: "a", params, requests: 0, createdAt: now },
