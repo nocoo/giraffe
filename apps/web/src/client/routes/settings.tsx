@@ -24,6 +24,7 @@ import {
 import { ExternalLink, KeyRound, ShieldCheck, Trash2, Users } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 import { ApiTokens } from "../components/api-tokens";
+import { UserChip } from "../components/github-user";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ResultCount, TableScroll } from "../components/layout/collection-chrome";
 import { IconLabel } from "../components/layout/icon-label";
@@ -230,15 +231,7 @@ export function SettingsPage() {
 										{accounts.map((row) => (
 											<TableRow key={row.id}>
 												<TableCell>
-													<div className="flex items-center gap-2">
-														<Avatar className="size-8">
-															{row.avatar_url ? (
-																<AvatarImage src={row.avatar_url} alt={row.login} />
-															) : null}
-															<AvatarFallback>{initials(row.login)}</AvatarFallback>
-														</Avatar>
-														{row.login}
-													</div>
+													<UserChip login={row.login} avatarUrl={row.avatar_url} size="md" />
 												</TableCell>
 												<TableCell className="whitespace-nowrap font-mono text-xs">
 													<span className="inline-flex items-center gap-1.5">

@@ -1,14 +1,4 @@
-import {
-	Avatar,
-	AvatarFallback,
-	AvatarImage,
-	Link,
-	Tabs,
-	TabsContent,
-	TabsList,
-	TabsTrigger,
-	toast,
-} from "@nocoo/basalt";
+import { Link, Tabs, TabsContent, TabsList, TabsTrigger, toast } from "@nocoo/basalt";
 import { AreaChart } from "@nocoo/basalt/charts/area";
 import { Code } from "@nocoo/basalt/components/code";
 import { DescriptionList } from "@nocoo/basalt/components/description-list";
@@ -49,6 +39,7 @@ import {
 	type FactorySnapshot,
 	type FactoryStreamName,
 } from "../../lib/factory-types";
+import { UserChip } from "../components/github-user";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ChartBrick, ChartEmpty, ChartRow } from "../components/layout/chart-brick";
 import { TableScroll } from "../components/layout/collection-chrome";
@@ -1018,12 +1009,12 @@ export function RepoDetailPage() {
 										<TableRow key={row.login}>
 											<TableCell>
 												<div className="flex min-w-0 items-center gap-3">
-													<Avatar className="size-8 shrink-0">
-														{row.avatar_url ? (
-															<AvatarImage src={row.avatar_url} alt={row.login} />
-														) : null}
-														<AvatarFallback>{row.login.slice(0, 2)}</AvatarFallback>
-													</Avatar>
+													<UserChip
+														login={row.login}
+														avatarUrl={row.avatar_url}
+														size="md"
+														showLogin={false}
+													/>
 													<Link
 														href={row.html_url}
 														target="_blank"

@@ -29,6 +29,7 @@ export type ActivityRow = {
 	title: string;
 	kind: string;
 	at: string | null;
+	author: string | null;
 };
 type ActivitySource = {
 	coverage: string[];
@@ -48,6 +49,7 @@ function events(
 			title: event.title,
 			kind,
 			at: event[field],
+			author: event.author ?? event.merged_by ?? event.closed_by ?? null,
 		})) ?? null
 	);
 }
@@ -65,6 +67,7 @@ function runs(repo: ActivityRepo, items: ActivityRun[] | null, defaultBranch: bo
 				title: run.workflow_name,
 				kind: `${run.head_branch ?? "未知分支"} · ${run.conclusion}`,
 				at: run.created_at,
+				author: run.actor,
 			})) ?? null
 	);
 }

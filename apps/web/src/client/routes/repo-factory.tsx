@@ -11,6 +11,7 @@ import {
 import { ArrowUpRight } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import type { FactoryCoverage, FactoryEvent, FactoryStreamName } from "../../lib/factory-types";
+import { UserChip } from "../components/github-user";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { TableScroll } from "../components/layout/collection-chrome";
 import { TableSkeleton } from "../components/layout/page-skeleton";
@@ -150,9 +151,11 @@ function columns(stream: FactoryStreamName): Column[] {
 								: ["更新", event.updatedAt ?? event.at];
 						const actor = event.mergedAt ? event.merged_by : null;
 						return (
-							<span className="text-xs tabular-nums text-basalt-muted-foreground">
-								{label} {at ? formatDate(at) : "—"}
-								{actor ? ` · ${actor}` : ""}
+							<span className="inline-flex flex-wrap items-center gap-1 text-xs tabular-nums text-basalt-muted-foreground">
+								<span>
+									{label} {at ? formatDate(at) : "—"}
+								</span>
+								{actor ? <UserChip login={actor} size="xs" className="max-w-36" /> : null}
 							</span>
 						);
 					},
@@ -176,10 +179,17 @@ function columns(stream: FactoryStreamName): Column[] {
 					head: "关闭",
 					headClassName: NUM_HEAD,
 					cell: (event) => (
-						<span className="text-xs text-basalt-muted-foreground">
-							{event.closedAt
-								? `${formatDate(event.closedAt)}${event.closed_by ? ` · ${event.closed_by}` : ""}`
-								: issueReason(event.state_reason) || "—"}
+						<span className="inline-flex flex-wrap items-center gap-1 text-xs text-basalt-muted-foreground">
+							{event.closedAt ? (
+								<>
+									<span>{formatDate(event.closedAt)}</span>
+									{event.closed_by ? (
+										<UserChip login={event.closed_by} size="xs" className="max-w-36" />
+									) : null}
+								</>
+							) : (
+								issueReason(event.state_reason) || "—"
+							)}
 						</span>
 					),
 				},
@@ -210,6 +220,10 @@ function columns(stream: FactoryStreamName): Column[] {
 							{event.activityRun?.head_branch ?? "—"}
 						</span>
 					),
+				},
+				{
+					head: "触发者",
+					cell: (event) => <PersonCell login={event.activityRun?.actor ?? null} />,
 				},
 				{
 					head: "尝试",

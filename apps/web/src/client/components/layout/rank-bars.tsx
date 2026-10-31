@@ -1,5 +1,6 @@
 import { Button } from "@nocoo/basalt";
 import { formatCount } from "../../lib/format";
+import { UserChip } from "../github-user";
 
 export type RankRow = {
 	name: string;
@@ -20,6 +21,7 @@ export function RankBars({
 	active = "",
 	onSelect,
 	color = "var(--color-basalt-chart-5)",
+	userAvatars = false,
 }: {
 	rows: RankRow[];
 	max: number;
@@ -27,6 +29,7 @@ export function RankBars({
 	active?: string;
 	onSelect?: (name: string) => void;
 	color?: string;
+	userAvatars?: boolean;
 }) {
 	if (!rows.length) return <p className="giraffe-rank-empty">暂无数据</p>;
 	return (
@@ -34,8 +37,14 @@ export function RankBars({
 			{rows.map((row, i) => {
 				const body = (
 					<>
-						<span className="giraffe-rank-name" title={row.label ?? row.name}>
-							{row.label ?? row.name}
+						<span
+							className="giraffe-rank-name inline-flex min-w-0 items-center gap-1.5"
+							title={row.label ?? row.name}
+						>
+							{userAvatars && row.name !== "其他" ? (
+								<UserChip login={row.name} size="xs" showLogin={false} className="shrink-0" />
+							) : null}
+							<span className="truncate">{row.label ?? row.name}</span>
 						</span>
 						<span className="giraffe-rank-track" aria-hidden="true">
 							<span
