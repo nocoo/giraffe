@@ -13,6 +13,22 @@ export function reusableDayObservation(row: DayObservation, dimension: string): 
 	return object(JSON.parse(row.payload)).inventoryComplete === true;
 }
 
+export function dayNeedsRefresh(
+	context: CollectionContext,
+	previous: DayObservation[],
+	day: RefreshDay,
+	dimension: string,
+): boolean {
+	if (context.run.params.force) return true;
+	const row = previous.find((entry) => entry.day === day.date && entry.dimension === dimension);
+	if (!row) return true;
+	if (dimension === "issues" || dimension === "prs") {
+		const latest = context.days.at(-1)?.date;
+		if (latest && day.date === latest) return true;
+	}
+	return !reusableDayObservation(row, dimension);
+}
+
 export function publicationDays(context: CollectionContext, rows: DayObservation[]): RefreshDay[] {
 	const days = new Map<string, RefreshDay>();
 	for (const row of rows) {

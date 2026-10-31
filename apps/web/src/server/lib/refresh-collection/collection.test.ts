@@ -205,7 +205,7 @@ async function observation(context: CollectionContext, dimension: string) {
 		"SELECT * FROM refresh_day_observations WHERE account_id=? AND dimension=? ORDER BY day",
 	)
 		.bind(context.account.id, dimension)
-		.all<{ status: string; payload: string; fetched_at: string }>();
+		.all<{ day: string; status: string; payload: string; fetched_at: string }>();
 }
 async function sourceSnapshot(context: CollectionContext, kind: string) {
 	const row = await context.env.DB.prepare(
@@ -278,12 +278,12 @@ describe("unified refresh collection", () => {
 		const requests = fetch.mock.calls.map(([url]) => url);
 		expect(requests.every((url) => !url.includes("/commits"))).toBe(true);
 		expect(await collectRepository(context, "owner/project")).toEqual({
-			requests: 0,
-			requestBreakdown: { graphql: 0, rest: 0 },
+			requests: 1,
+			requestBreakdown: { graphql: 1, rest: 0 },
 			partial: false,
 			reasons: [],
 		});
-		expect(fetch).toHaveBeenCalledTimes(5);
+		expect(fetch).toHaveBeenCalledTimes(6);
 		const saved = await publication(context);
 		expect(saved.repos[0].coverage.dependencies.status).toBe("unavailable");
 		expect(saved.repos[0].metrics.commits).toBe(3);
@@ -717,8 +717,14 @@ describe("unified refresh collection", () => {
 			}
 		},
 	);
-	it("reuses complete issue and pull-request day observations without upstream calls", async () => {
+	it("reuses older issue and pull-request days but always recollects the latest calendar day", async () => {
 		const context = await fixture();
+		context.days = [
+			{ date: "2026-10-27", since: "2026-10-26T16:00:00.000Z", until: "2026-10-27T16:00:00.000Z" },
+			{ date: "2026-10-28", since: "2026-10-27T16:00:00.000Z", until: "2026-10-28T16:00:00.000Z" },
+		];
+		context.run.params.since = "2026-10-27";
+		context.run.params.until = "2026-10-28";
 		context.run.params.dimensions = ["issues", "prs"];
 		const open = item("cached-open");
 		upstream([
@@ -738,19 +744,111 @@ describe("unified refresh collection", () => {
 			partial: false,
 			reasons: [],
 		});
-		for (const dimension of ["issues", "prs"] as const) {
-			expect(
-				JSON.parse((await observation(context, dimension)).results[0]?.payload ?? "{}"),
-			).toMatchObject({ inventoryComplete: true });
-		}
-		const fetch = upstream();
-		expect(await collectRepository(context, "owner/project")).toEqual({
-			requests: 0,
-			requestBreakdown: { graphql: 0, rest: 0 },
+		const seededIssues = (await observation(context, "issues")).results;
+		context.now = "2026-10-29T09:00:00.000Z";
+		const fetch = upstream([
+			{
+				node: {
+					...repo(),
+					openIssues: { totalCount: 1 },
+					openPrs: { totalCount: 1 },
+					issues: connection([open]),
+					pullRequests: connection([open]),
+				},
+			},
+		]);
+		expect(await collectRepository(context, "owner/project")).toMatchObject({
+			partial: false,
+			reasons: [],
+			requests: 1,
+		});
+		expect(fetch).toHaveBeenCalled();
+		const afterIssues = (await observation(context, "issues")).results;
+		expect(afterIssues.find((row) => row.day === "2026-10-27")).toEqual(
+			seededIssues.find((row) => row.day === "2026-10-27"),
+		);
+		expect(afterIssues.find((row) => row.day === "2026-10-28")?.fetched_at).toBe(context.now);
+	});
+	it("derives merged and closed day metrics from full inventories when day payloads omit lifecycle items", async () => {
+		const context = await fixture();
+		context.days = [
+			{ date: "2026-10-31", since: "2026-10-30T16:00:00.000Z", until: "2026-10-31T16:00:00.000Z" },
+		];
+		context.run.params = {
+			...context.run.params,
+			since: "2026-10-31",
+			until: "2026-10-31",
+			dimensions: ["issues", "prs"],
+		};
+		const mergedAt = "2026-10-31T02:00:00.000Z";
+		const closedAt = "2026-10-31T03:00:00.000Z";
+		const cachedMerged = {
+			...item("merged-pr", "MERGED"),
+			mergedAt,
+			state: "MERGED",
+		};
+		const cachedClosed = {
+			...item("closed-issue", "CLOSED"),
+			closedAt,
+			state: "CLOSED",
+		};
+		upstream([
+			accountPage(),
+			{
+				node: {
+					...repo(),
+					openIssues: { totalCount: 0 },
+					openPrs: { totalCount: 0 },
+					issues: connection([]),
+					pullRequests: connection([]),
+				},
+			},
+		]);
+		await collectAccount(context);
+		await collectRepository(context, "owner/project");
+		const emptyDay = {
+			count: 0,
+			observed: 0,
+			items: [],
+			source: "github_graphql",
+			inventoryComplete: true,
+			since: context.days[0]?.since,
+			until: context.days[0]?.until,
+		};
+		await context.env.DB.batch([
+			context.env.DB.prepare(
+				"UPDATE refresh_day_observations SET payload=? WHERE account_id=? AND dimension=?",
+			).bind(JSON.stringify(emptyDay), context.account.id, "prs"),
+			context.env.DB.prepare(
+				"UPDATE refresh_day_observations SET payload=? WHERE account_id=? AND dimension=?",
+			).bind(JSON.stringify(emptyDay), context.account.id, "issues"),
+			context.env.DB.prepare(
+				"INSERT INTO refresh_items(account_id,repo_id,stream,item_id,payload) VALUES('a','R_1','prs',?,?)",
+			).bind(String(cachedMerged.id), JSON.stringify(cachedMerged)),
+			context.env.DB.prepare(
+				"INSERT INTO refresh_items(account_id,repo_id,stream,item_id,payload) VALUES('a','R_1','issues',?,?)",
+			).bind(String(cachedClosed.id), JSON.stringify(cachedClosed)),
+		]);
+		upstream([
+			{
+				node: {
+					...repo(),
+					openIssues: { totalCount: 0 },
+					openPrs: { totalCount: 0 },
+					issues: connection([]),
+					pullRequests: connection([]),
+				},
+			},
+		]);
+		expect(await collectRepository(context, "owner/project")).toMatchObject({
 			partial: false,
 			reasons: [],
 		});
-		expect(fetch).not.toHaveBeenCalled();
+		const saved = await publication(context);
+		expect(saved.repos[0].metrics.days["2026-10-31"]).toMatchObject({
+			prMerged: 1,
+			issueClosed: 1,
+		});
 	});
 	it("collects latest CI, releases and both alert features in the saved wire format", async () => {
 		const context = await fixture();
@@ -1152,18 +1250,19 @@ describe("unified refresh collection", () => {
 		context.now = "2026-10-30T00:00:00.000Z";
 		context.run.id = "run-2";
 		expect(await collectRepository(context, "owner/project")).toEqual({
-			requests: 0,
-			requestBreakdown: { graphql: 0, rest: 0 },
+			requests: 1,
+			requestBreakdown: { graphql: 1, rest: 0 },
 			partial: false,
 			reasons: [],
 		});
 		const saved = await publication(context);
 		expect(saved.runId).toBe("run-2");
 		expect(saved.repos[0].coverage.commits.fetchedAt).toBe(now);
+		expect(saved.repos[0].coverage.issues.fetchedAt).toBe(context.now);
 		expect(saved.repos[0].observation).toMatchObject({
-			refreshedAt: now,
+			refreshedAt: context.now,
 			publishedAt: context.now,
-			metadataAt: now,
+			metadataAt: context.now,
 		});
 	});
 	it.each([false, true])("preserves saved release transports when mixed=%s", async (mixed) => {
