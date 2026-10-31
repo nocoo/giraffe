@@ -6,7 +6,7 @@ import type { AppVars, Env } from "../env";
 import { createApp } from "../index";
 import { createApiToken } from "../lib/api-tokens";
 import { createDb } from "../lib/db/d1";
-import { activityEtag } from "./activity";
+import { activityHeaders } from "./activity";
 
 it("serves partial meaningful Activity200 after a new refresh on browser and machine GETs", async () => {
 	const { raw } = await refreshActivityFixture();
@@ -55,19 +55,21 @@ it.each(["/api/activity", "/api/v1/accounts/a/activity"])(
 	"keeps private successful and conditional activity headers for %s",
 	async (path) => {
 		const app = new Hono<{ Bindings: Env; Variables: AppVars }>();
-		app.get(path, activityEtag, (c) => c.json({ runId: "published" }));
+		app.get(path, activityHeaders, (c) =>
+			c.json({ runId: "published" }, 200, {
+				etag: '"deadbeef"',
+				"cache-control": "private, no-cache",
+				"referrer-policy": "no-referrer",
+				vary: path.startsWith("/api/v1/") ? "Authorization" : "Cookie, Cf-Access-Jwt-Assertion",
+			}),
+		);
 		const response = await app.request(`http://localhost${path}`);
 		expect(response.status).toBe(200);
 		expect(await response.json()).toEqual({ runId: "published" });
 		const tag = response.headers.get("etag");
 		expect(tag).toMatch(/^"[a-f0-9]+"$/);
-		const conditional = await app.request(`http://localhost${path}`, {
-			headers: { "If-None-Match": `W/${tag}` },
-		});
-		expect(conditional.status).toBe(304);
-		expect(await conditional.text()).toBe("");
-		for (const result of [response, conditional]) {
-			expect(result.headers.get("cache-control")).toBe("private, no-store");
+		for (const result of [response]) {
+			expect(result.headers.get("cache-control")).toBe("private, no-cache");
 			expect(result.headers.get("referrer-policy")).toBe("no-referrer");
 			expect(result.headers.get("vary")).toBe(
 				path.startsWith("/api/v1/") ? "Authorization" : "Cookie, Cf-Access-Jwt-Assertion",

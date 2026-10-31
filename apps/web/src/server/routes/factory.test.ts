@@ -375,7 +375,7 @@ it("keeps factory GET read-only and validates repository/stream/page boundaries"
 	expect((await s.call()).status).toBe(409);
 	const state = ready();
 	await s.db.batch(await replaceSnapshotStmts(s.db, ID, "factory", { ...state }, NOW));
-	expect((await s.call()).headers.get("cache-control")).toBe("private, no-store");
+	expect((await s.call()).headers.get("cache-control")).toBe("private, no-cache");
 	expect((await s.call("/api/factory/repos/nocoo/no/commits")).status).toBe(404);
 	expect((await s.call("/api/factory/repos/nocoo/app/other")).status).toBe(400);
 	expect((await s.call("/api/factory/repos/nocoo/app/prs?page=0")).status).toBe(400);

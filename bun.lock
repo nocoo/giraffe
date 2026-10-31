@@ -27,6 +27,7 @@
         "happy-dom": "^21.0.4",
         "husky": "9.1.7",
         "oxc-parser": "^0.155.0",
+        "sharp": "0.35.5",
         "tailwindcss": "^4.3.3",
         "typescript": "7.0.2",
         "vite": "^8.3.5",

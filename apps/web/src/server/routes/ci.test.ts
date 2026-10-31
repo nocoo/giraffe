@@ -195,7 +195,7 @@ describe("GET /api/ci", () => {
 		const res = await s.call();
 		vi.unstubAllGlobals();
 		expect(res.status).toBe(200);
-		expect(res.headers.get("cache-control")).toBe("private, no-store");
+		expect(res.headers.get("cache-control")).toBe("private, no-cache");
 		const body = (await res.json()) as CiReportResponse;
 		expect(fetchSpy).not.toHaveBeenCalled();
 		expect(

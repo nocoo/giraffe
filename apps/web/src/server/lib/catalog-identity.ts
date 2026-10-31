@@ -11,3 +11,9 @@ export function identifyCatalogRow<Row extends object>(
 export function catalogRowIdentity(row: object): string | undefined {
 	return identities.get(row);
 }
+
+export function catalogRowIdentityFromRecord(repo: Record<string, unknown>): string | undefined {
+	const identity = catalogRowIdentity(repo);
+	if (identity !== undefined) return identity;
+	return typeof repo.id === "string" ? repo.id : undefined;
+}

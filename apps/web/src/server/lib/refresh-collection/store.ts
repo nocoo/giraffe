@@ -4,7 +4,9 @@ import {
 	type FactorySnapshot,
 	type FactoryStreamData,
 } from "../../../lib/factory-types";
+import { envMode } from "../../env";
 import { savedContentMeta } from "../content-version";
+import { warmDashboardResponsesAfterPublish } from "../dashboard-warm";
 import { createDb, type Db } from "../db/d1";
 import { ApiError } from "../errors";
 import type { CollectionContext } from "../refresh-collection-contract";
@@ -276,4 +278,10 @@ export async function publish(
 				context.now,
 			),
 	]);
+	if (envMode(context.env.ENVIRONMENT) !== "test") {
+		await warmDashboardResponsesAfterPublish(
+			createDb(context.env.DB, undefined, 10_000),
+			context.account.id,
+		);
+	}
 }

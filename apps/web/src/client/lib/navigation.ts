@@ -102,6 +102,13 @@ export function headerTitle(pathname: string): string {
 	return label;
 }
 
+export const DOCUMENT_TITLE_SUFFIX = "Giraffe";
+
+export function documentTitle(pathname: string): string {
+	const page = headerTitle(pathname);
+	return `${page} · ${DOCUMENT_TITLE_SUFFIX}`;
+}
+
 export function headerCrumbs(pathname: string): { href: string; label: string }[] {
 	const crumbs = breadcrumbsFor(pathname);
 	if (crumbs.length > 1) {

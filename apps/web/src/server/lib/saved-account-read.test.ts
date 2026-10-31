@@ -169,13 +169,16 @@ it.each(resources)(
 				);
 				expect(response.status).toBe(200);
 				expect(await response.text()).toBe(expected);
-				expect(response.headers.get("cache-control")).toBe("private, no-store");
+				expect(response.headers.get("cache-control")).toBe("private, no-cache");
 				expect(network).not.toHaveBeenCalled();
-				expect(profile.trips).toHaveLength(kind === "repos" ? 3 : 1);
-				expect(profile.trips[0]?.statements).toBeGreaterThan(1);
+				expect(profile.trips).toHaveLength(kind === "repos" || kind === "factory" ? 6 : 4);
+				expect(profile.trips[0]?.statements).toBe(1);
+				expect(profile.trips[1]?.statements).toBeGreaterThan(1);
+				expect(profile.trips[2]?.statements).toBe(1);
+				expect(profile.trips[3]?.statements).toBeGreaterThan(1);
 				if (kind === "repos") {
-					expect(profile.trips[1]?.statements).toBe(1);
-					expect(profile.trips[2]?.statements).toBe(1);
+					expect(profile.trips[4]?.statements).toBe(1);
+					expect(profile.trips[5]?.statements).toBe(1);
 					expect(profile.queries.at(-2)?.sql).toContain("FROM repo_agent_state");
 					expect(profile.queries.at(-1)?.sql).toContain("LEFT JOIN repo_meta");
 				}

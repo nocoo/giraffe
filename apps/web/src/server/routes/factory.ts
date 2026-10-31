@@ -8,55 +8,38 @@ import {
 } from "../../lib/factory-types";
 import type { AppVars, Env } from "../env";
 import { catalogFactoryRepo } from "../lib/catalog-read";
+import { buildBrowserFactory, patchBrowserFactoryBody } from "../lib/dashboard-builders";
+import { accountObservationDataVersion } from "../lib/dashboard-data-version";
+import { dashboardCacheKey, respondDashboardCached } from "../lib/dashboard-response-cache";
+import { getActiveAccount } from "../lib/db/accounts";
 import { ApiError, jsonOk } from "../lib/errors";
-import { factoryRateFromRow } from "../lib/factory-rate";
-import {
-	accountReadPlan,
-	decodePublication,
-	type PublicationPage,
-	savedAccountPolicy,
-} from "../lib/saved-observation-read";
+import { decodePublication } from "../lib/saved-observation-read";
 import {
 	decodeFactoryResource,
 	factoryStreamPolicy,
 	factoryStreamReadPlan,
 } from "../lib/saved-repository-read";
-import { factoryFreshness, projectFactory } from "../lib/snapshot-projection";
 import { snapshotScope } from "../lib/snapshot-scope";
 import { repoParts } from "./snapshots";
 
 type Ctx = Context<{ Bindings: Env; Variables: AppVars }>;
-const PRIVATE = { "cache-control": "private, no-store" };
+const PRIVATE = { "cache-control": "private, no-cache" };
 
 export async function getFactory(c: Ctx): Promise<Response> {
 	const scope = snapshotScope(c.req.queries("scope"));
 	const db = c.get("db");
-	const plan = accountReadPlan(db, null, "factory", scope, { rate: true });
-	const saved = plan.decode(await db.batch(plan.statements));
-	const account = saved.account;
+	const account = await getActiveAccount(db);
 	if (!account) throw new ApiError(409, "account_missing", "no active account");
-	const policy = savedAccountPolicy(saved, scope);
-	const snap = decodePublication(saved.sourcePages as PublicationPage[]);
-	if (!snap) throw new ApiError(409, "snapshot_missing", "no factory snapshot");
-	const projected = projectFactory(snap, policy);
-	const freshness = factoryFreshness(projected, policy);
-	return jsonOk(
-		{
-			...projected,
-			rate: factoryRateFromRow(saved.rateRows[0] ?? null, snap.rate),
-			fetched_at: freshness.latestAt ?? "",
-			freshness,
-			truncated:
-				projected.truncated === true ||
-				projected.inventory.complete !== true ||
-				freshness.missing > 0,
-			account_id: account.id,
-		},
-		200,
-		PRIVATE,
-		c.get("sourceTiming"),
-	);
+	return respondDashboardCached(c, {
+		accountId: account.id,
+		cacheKey: dashboardCacheKey("browser:/api/factory", { scope }),
+		machine: false,
+		version: () => accountObservationDataVersion(db, account.id, "factory", scope),
+		build: () => buildBrowserFactory(db, scope),
+		patch: (stored) => patchBrowserFactoryBody(db, account.id, stored as Record<string, unknown>),
+	});
 }
+
 export async function getFactoryStream(c: Ctx): Promise<Response> {
 	const scope = snapshotScope(c.req.queries("scope"));
 	const db = c.get("db");

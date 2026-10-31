@@ -1,26 +1,39 @@
-import type { Context, Next } from "hono";
-import { etag, RETAINED_304_HEADERS } from "hono/etag";
+import type { Context } from "hono";
 import type { AppVars, Env } from "../env";
-import { readActivity } from "../lib/activity-store";
+import { respondActivityDashboardCached } from "../lib/dashboard-response-cache";
 import { getActiveAccount } from "../lib/db/accounts";
 import { ApiError } from "../lib/errors";
 
 type Ctx = Context<{ Bindings: Env; Variables: AppVars }>;
-const conditionalActivity = etag({
-	weak: false,
-	retainedHeaders: [...RETAINED_304_HEADERS, "referrer-policy"],
-});
-export async function activityEtag(c: Ctx, next: Next) {
-	await conditionalActivity(c, next);
-	c.header("Cache-Control", "private, no-store");
-	c.header("Referrer-Policy", "no-referrer");
-	c.header(
-		"Vary",
-		c.req.path.startsWith("/api/v1/") ? "Authorization" : "Cookie, Cf-Access-Jwt-Assertion",
-	);
+
+function activityQueryKey(query: Record<string, string[]>): string {
+	return Object.entries(query)
+		.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+		.flatMap(([key, values]) => values.map((value) => `${key}=${value}`))
+		.join("&");
 }
+
+export async function activityHeaders(c: Ctx, next: () => Promise<void>) {
+	await next();
+	if (c.res.status >= 400) {
+		c.header("Cache-Control", "private, no-store");
+		c.header("Referrer-Policy", "no-referrer");
+		c.header(
+			"Vary",
+			c.req.path.startsWith("/api/v1/") ? "Authorization" : "Cookie, Cf-Access-Jwt-Assertion",
+		);
+	}
+}
+
 export async function getActivity(c: Ctx) {
-	const account = await getActiveAccount(c.get("db"));
-	if (!account) throw new ApiError(409, "account_missing", "No active account");
-	return c.json(await readActivity(c.get("db"), account.id, c.req.queries()));
+	const machine = c.req.path.startsWith("/api/v1/");
+	const accountId = machine ? c.req.param("account") : (await getActiveAccount(c.get("db")))?.id;
+	if (!accountId) throw new ApiError(409, "account_missing", "No active account");
+	const query = c.req.queries();
+	return respondActivityDashboardCached(c, {
+		accountId,
+		query,
+		queryKey: activityQueryKey(query),
+		machine,
+	});
 }

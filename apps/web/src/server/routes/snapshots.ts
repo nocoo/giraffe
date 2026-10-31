@@ -1,14 +1,14 @@
 import type { Context } from "hono";
 import type { AppVars, Env } from "../env";
 import { catalogInclude } from "../lib/catalog-read";
+import { buildBrowserAccountSnapshot, patchBrowserReposBody } from "../lib/dashboard-builders";
+import { accountObservationDataVersion } from "../lib/dashboard-data-version";
+import { dashboardCacheKey, respondDashboardCached } from "../lib/dashboard-response-cache";
 import { getActiveAccount } from "../lib/db/accounts";
-import { readRepositorySnapshot, readSnapshot, snapshotFromRows } from "../lib/db/snapshots";
+import { readRepositorySnapshot, readSnapshot } from "../lib/db/snapshots";
 import { ApiError, jsonOk } from "../lib/errors";
-import { enrichRepoAgentStates } from "../lib/repo-agent-state";
-import { enrichRepoMeta } from "../lib/repo-meta";
-import { accountReadPlan, savedAccountPolicy } from "../lib/saved-observation-read";
-import { assembleSnapshotGroups } from "../lib/snapshot-pages";
-import { projectSnapshot, repoPolicy, scopedSnapshot } from "../lib/snapshot-projection";
+import type { AccountObservationResource } from "../lib/saved-observation-statements";
+import { repoPolicy, scopedSnapshot } from "../lib/snapshot-projection";
 import { snapshotScope } from "../lib/snapshot-scope";
 
 export async function snapshotGet(
@@ -19,38 +19,37 @@ export async function snapshotGet(
 	const includeRemoved = logical === "repos" ? catalogInclude(c.req.queries()) : false;
 	if (logical === "repos" || logical === "issues" || logical === "prs") {
 		const db = c.get("db");
-		const plan = accountReadPlan(db, null, logical, scope);
-		const saved = plan.decode(await db.batch(plan.statements));
-		if (!saved.account) throw new ApiError(409, "account_missing", "no active account");
-		let snap = snapshotFromRows(logical, saved.sourcePages);
-		if (!snap && scope === "all")
-			throw new ApiError(409, "snapshot_missing", `no snapshot for ${logical}`);
-		let policy =
-			logical === "repos"
-				? savedAccountPolicy(saved, scope, snap, includeRemoved)
-				: savedAccountPolicy(saved, scope);
-		if (!snap && policy.empty) {
-			const key = { repos: "repos", issues: "issues", prs: "pull_requests" }[logical];
-			snap = { [key]: [], fetched_at: "", truncated: false };
-			if (logical === "repos") policy = { ...policy, catalog: snap };
-		}
-		if (!snap) throw new ApiError(409, "snapshot_missing", `no snapshot for ${logical}`);
-		let projected = await projectSnapshot(db, saved.account.id, logical, snap, policy, () =>
-			assembleSnapshotGroups(saved.repositoryPages),
-		);
-		if (logical === "repos") {
-			projected = await enrichRepoAgentStates(db, saved.account.id, projected);
-			projected = await enrichRepoMeta(db, saved.account.id, projected);
-		}
-		return jsonOk(
-			{
-				...projected,
-				account_id: saved.account.id,
-			},
-			200,
-			{ "cache-control": "private, no-store" },
-			c.get("sourceTiming"),
-		);
+		const account = await getActiveAccount(db);
+		if (!account) throw new ApiError(409, "account_missing", "no active account");
+		return respondDashboardCached(c, {
+			accountId: account.id,
+			cacheKey: dashboardCacheKey(`browser:/api/${logical}`, {
+				scope,
+				...(logical === "repos" ? { includeRemoved: includeRemoved ? "1" : "0" } : {}),
+			}),
+			machine: false,
+			version: () =>
+				accountObservationDataVersion(
+					db,
+					account.id,
+					logical as AccountObservationResource,
+					scope,
+					includeRemoved,
+				),
+			build: () =>
+				buildBrowserAccountSnapshot(
+					db,
+					logical as "repos" | "issues" | "prs",
+					scope,
+					includeRemoved,
+				),
+			...(logical === "repos"
+				? {
+						patch: (stored: unknown) =>
+							patchBrowserReposBody(db, account.id, stored as Record<string, unknown>),
+					}
+				: {}),
+		});
 	}
 	const account = await getActiveAccount(c.get("db"));
 	if (!account) {
@@ -82,7 +81,7 @@ export async function snapshotGet(
 			account_id: account.id,
 		},
 		200,
-		{ "cache-control": "private, no-store" },
+		{ "cache-control": "private, no-cache" },
 		c.get("sourceTiming"),
 	);
 }
