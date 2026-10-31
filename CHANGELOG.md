@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.28.9 - 2026-10-31
+
+### Fixed
+
+- Factory day metrics for issues and pull requests now derive merged/closed/opened
+  counts from the full refreshed inventory (including cached lifecycle transitions),
+  not only items embedded in each day observation payload. This restores correct
+  `prMerged` / `issueClosed` on the latest Shanghai calendar day after OPEN-only
+  inventory collection.
+- Always re-collect the latest calendar day for issues and pull requests on
+  non-force refreshes, even when the cached day row is otherwise reusable, so
+  end-of-day merges and closes are not frozen by an earlier lookback snapshot.
+- Activity `/activity` open PR and open issue snapshots now list the full published
+  open inventory from factory stream resources instead of window-filtered lifecycle
+  evidence.
+
+### Verified
+
+- Regression tests cover stale day payloads with cached merges/closes, latest-day
+  re-collection vs older-day reuse, full open inventory snapshots, and incomplete
+  inventory partial coverage.
+
 ## v0.28.8 - 2026-10-31
 
 ### Added

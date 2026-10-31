@@ -5,6 +5,7 @@ export type ActivityCoverage = {
 	status: "complete" | "partial" | "unavailable";
 	truncated: boolean;
 	reason: string | null;
+	inventoryComplete?: boolean;
 	source?: {
 		runId: string;
 		fetchedAt: string | null;

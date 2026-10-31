@@ -296,7 +296,6 @@ describe("refresh reuse boundaries", () => {
 			rest: 0,
 		});
 		const first = await publication(context);
-		const details = await snapshot(context, "repo:owner/project:details");
 		expect(first.repos[0]).toMatchObject({
 			branch: "main",
 			head: "head",
@@ -306,18 +305,39 @@ describe("refresh reuse boundaries", () => {
 		});
 		context.now = "2026-10-29T09:00:00.000Z";
 		context.run.params.dimensions = ["commits", "issues", "prs", "actions", "releases", "alerts"];
-		const fetch = upstream([], {
-			"/actions/runs": { total_count: 0, workflow_runs: [] },
-			"/dependabot/alerts": [],
-			"/code-scanning/alerts": [],
-		});
+		const fetch = upstream(
+			[
+				{
+					node: {
+						...repository(),
+						openIssues: { totalCount: 0 },
+						openPrs: { totalCount: 0 },
+						issues: {
+							totalCount: 0,
+							nodes: [],
+							pageInfo: { hasNextPage: false, endCursor: null },
+						},
+						pullRequests: {
+							totalCount: 0,
+							nodes: [],
+							pageInfo: { hasNextPage: false, endCursor: null },
+						},
+					},
+				},
+			],
+			{
+				"/actions/runs": { total_count: 0, workflow_runs: [] },
+				"/dependabot/alerts": [],
+				"/code-scanning/alerts": [],
+			},
+		);
 		expect(await collectRepository(context, "owner/project")).toEqual({
-			requests: 3,
-			requestBreakdown: { graphql: 0, rest: 3 },
+			requests: 4,
+			requestBreakdown: { graphql: 1, rest: 3 },
 			partial: false,
 			reasons: [],
 		});
-		expect(graphqlCalls(fetch)).toBe(0);
+		expect(graphqlCalls(fetch)).toBe(1);
 		expect(restCalls(fetch)).toBe(3);
 		const second = await publication(context);
 		expect(second.repos[0]).toMatchObject({
@@ -328,18 +348,36 @@ describe("refresh reuse boundaries", () => {
 			totalCommits: 20,
 			description: "saved metadata",
 			topics: ["personal"],
-			metadataAt: now,
-			observation: { metadataAt: now },
+			metadataAt: context.now,
+			observation: { metadataAt: context.now },
 		});
 		expect(second.repos[0].coverage.commits.strategy).toBe("reused");
 		expect(second.repos[0].coverage.actions.strategy).toBe("incremental");
-		expect(await snapshot(context, "repo:owner/project:details")).toEqual(details);
-		const cached = upstream();
+		expect(await snapshot(context, "repo:owner/project:details")).toMatchObject({
+			fetched_at: context.now,
+			payload: { description: "saved metadata", default_branch: "main" },
+		});
+		const cached = upstream([
+			{
+				node: {
+					...repository(),
+					openIssues: { totalCount: 0 },
+					openPrs: { totalCount: 0 },
+					issues: { totalCount: 0, nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
+					pullRequests: {
+						totalCount: 0,
+						nodes: [],
+						pageInfo: { hasNextPage: false, endCursor: null },
+					},
+				},
+			},
+		]);
 		expect(await collectRepository(context, "owner/project")).toMatchObject({
-			requests: 0,
+			requests: 1,
+			requestBreakdown: { graphql: 1, rest: 0 },
 			partial: false,
 		});
-		expect(cached).not.toHaveBeenCalled();
+		expect(cached).toHaveBeenCalled();
 	});
 	it("caches a 404 security feature as complete but unavailable", async () => {
 		const context = await fixture();
@@ -763,15 +801,29 @@ describe("90-day lookback cache reuse", () => {
 			strategy: "incremental",
 		});
 		expect(coverage.releases.completeWindows).toEqual(contiguousSpan(context.days));
-		const replay = upstream();
+		const replay = upstream([
+			{
+				node: {
+					...repository(),
+					openIssues: { totalCount: 0 },
+					issues: { totalCount: 0, nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
+				},
+			},
+		]);
 		expect(await collectRepository(context, "owner/project")).toEqual({
-			requests: 0,
-			requestBreakdown: { graphql: 0, rest: 0 },
+			requests: 1,
+			requestBreakdown: { graphql: 1, rest: 0 },
 			partial: false,
 			reasons: [],
 		});
-		expect(replay).not.toHaveBeenCalled();
-		expect(await observationRows(context)).toEqual(cached);
+		expect(replay).toHaveBeenCalled();
+		const after = await observationRows(context);
+		expect(after.filter((row) => row.dimension !== "issues" || row.day !== LOOKBACK_UNTIL)).toEqual(
+			cached.filter((row) => row.dimension !== "issues" || row.day !== LOOKBACK_UNTIL),
+		);
+		expect(
+			after.find((row) => row.dimension === "issues" && row.day === LOOKBACK_UNTIL)?.fetched_at,
+		).toBe(context.now);
 	});
 	it("collects only missing day×dimension observations, preserves cached ones and force recollects", async () => {
 		const context = await lookbackFixture(["commits", "releases", "alerts"]);

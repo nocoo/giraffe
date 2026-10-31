@@ -431,11 +431,11 @@ it("compacts lookback windows so all 61 repositories survive D1 publication", as
 	const started = performance.now();
 	for (let index = 0; index < REPOSITORIES; index += 1)
 		expect(await collectRepository(daily, name(index))).toMatchObject({
-			requests: 0,
+			requests: 1,
 			partial: false,
 		});
 	const elapsed = performance.now() - started;
-	expect(fetch).not.toHaveBeenCalled();
+	expect(fetch).toHaveBeenCalledTimes(REPOSITORIES);
 	const cached = await published(raw);
 	for (const repo of cached.snapshot.repos) {
 		expect(Object.keys(repo.metrics.days)).toHaveLength(DAYS);
@@ -476,8 +476,8 @@ it("compacts lookback windows so all 61 repositories survive D1 publication", as
 		run: { ...next.run, params: { ...next.run.params, since: "2026-07-31", until: "2026-07-31" } },
 	};
 	fetch.mockClear();
-	expect(await collectRepository(oldDay, name(0))).toMatchObject({ requests: 0 });
-	expect(fetch).not.toHaveBeenCalled();
+	expect(await collectRepository(oldDay, name(0))).toMatchObject({ requests: 1, partial: false });
+	expect(fetch).toHaveBeenCalledTimes(1);
 	expect((await published(raw)).snapshot.repos[0]?.metrics).toEqual(advanced?.metrics);
 }, 15_000);
 

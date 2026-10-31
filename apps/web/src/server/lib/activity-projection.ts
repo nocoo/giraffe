@@ -65,6 +65,7 @@ export function activityEvidenceCoverage(
 	if (["pending", "unavailable"].includes(data.coverage.status))
 		return unavailable(data.coverage.reason ?? "source_unavailable");
 	const complete = data.coverage.status === "complete" && covers(window, data.ranges);
+	const inventoryComplete = published?.inventoryComplete ?? data.coverage.inventoryComplete;
 	return {
 		status: complete ? "complete" : "partial",
 		truncated:
@@ -73,6 +74,7 @@ export function activityEvidenceCoverage(
 			["latest_page_only", "incomplete_pagination"].includes(data.coverage.reason ?? ""),
 		reason: complete ? null : (data.coverage.reason ?? "incomplete_window"),
 		source,
+		...(inventoryComplete === undefined ? {} : { inventoryComplete }),
 	};
 }
 function evidence(
@@ -179,6 +181,14 @@ export function projectActivityRepo(
 	const releases = evidence(repo, "releases", inputs, window);
 	const prItems = prs.items?.map((item) => pullRequest(item, inputs.get("prs"))) ?? null;
 	const issueItems = issues.items?.map((item) => issue(item, inputs.get("issues"))) ?? null;
+	const fullPrItems =
+		inputs.get("prs") && prs.coverage.status !== "unavailable"
+			? (inputs.get("prs")?.data.items.map((item) => pullRequest(item, inputs.get("prs"))) ?? null)
+			: null;
+	const fullIssueItems =
+		inputs.get("issues") && issues.coverage.status !== "unavailable"
+			? (inputs.get("issues")?.data.items.map((item) => issue(item, inputs.get("issues"))) ?? null)
+			: null;
 	const ci = actions.items?.map((item) => action(item, inputs.get("actions"), repo)) ?? null;
 	const deploy =
 		ci?.filter((run) =>
@@ -186,8 +196,8 @@ export function projectActivityRepo(
 				`${run.workflow_name} ${run.path ?? ""}`,
 			),
 		) ?? null;
-	const openPrs = prItems?.filter((item) => item.state === "open") ?? null;
-	const openIssues = issueItems?.filter((item) => item.state === "open") ?? null;
+	const openPrs = fullPrItems?.filter((item) => item.state === "open") ?? null;
+	const openIssues = fullIssueItems?.filter((item) => item.state === "open") ?? null;
 	const classification = (prs.items ?? []).every(
 		(item) =>
 			item.dependency !== undefined ||
@@ -216,13 +226,33 @@ export function projectActivityRepo(
 			: { ...prs.coverage, status: "partial", reason: "dependency_labels_unavailable" },
 		"snapshot.open_prs": {
 			...prs.coverage,
-			status: openPrs === null ? "unavailable" : "partial",
-			reason: "windowed_snapshot",
+			status:
+				openPrs === null
+					? "unavailable"
+					: repo?.coverage.prs?.inventoryComplete === false
+						? "partial"
+						: "complete",
+			reason:
+				openPrs === null
+					? prs.coverage.reason
+					: repo?.coverage.prs?.inventoryComplete === false
+						? "open_inventory_incomplete"
+						: null,
 		},
 		"snapshot.open_issues": {
 			...issues.coverage,
-			status: openIssues === null ? "unavailable" : "partial",
-			reason: "windowed_snapshot",
+			status:
+				openIssues === null
+					? "unavailable"
+					: repo?.coverage.issues?.inventoryComplete === false
+						? "partial"
+						: "complete",
+			reason:
+				openIssues === null
+					? issues.coverage.reason
+					: repo?.coverage.issues?.inventoryComplete === false
+						? "open_inventory_incomplete"
+						: null,
 		},
 		security: unknownActivity("security_snapshot_unavailable"),
 		run: { status: "partial", truncated: false, reason: "owner_commit_attribution_unavailable" },

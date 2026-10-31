@@ -17,7 +17,7 @@ import {
 	failure,
 	terminal,
 } from "./dimensions";
-import { dayCoverage, PUBLICATION_DAYS, publicationDays, reusableDayObservation } from "./history";
+import { dayCoverage, dayNeedsRefresh, PUBLICATION_DAYS, publicationDays } from "./history";
 import {
 	blankDay,
 	blankMetrics,
@@ -169,18 +169,8 @@ export async function collectRepository(
 	const saved = savedResult.results[0];
 	if (!saved) throw new ApiError(404, "not_found", "Repository not found in current catalogue");
 	const previous = observationResult.results;
-	const needed = context.run.params.dimensions.filter(
-		(dimension) =>
-			context.run.params.force ||
-			context.days.some(
-				(day) =>
-					!previous.some(
-						(row) =>
-							row.day === day.date &&
-							row.dimension === dimension &&
-							reusableDayObservation(row, dimension),
-					),
-			),
+	const needed = context.run.params.dimensions.filter((dimension) =>
+		context.days.some((day) => dayNeedsRefresh(context, previous, day, dimension)),
 	);
 	const upstream = transport(context);
 	const commitDays = needed.includes("commits")
@@ -356,16 +346,7 @@ export async function collectRepository(
 			failures.push(failure.dimension === null ? { ...failure, dimension } : failure);
 		consumed = upstream.failures.length;
 		for (const day of context.days) {
-			if (
-				!context.run.params.force &&
-				previous.some(
-					(row) =>
-						row.day === day.date &&
-						row.dimension === dimension &&
-						reusableDayObservation(row, dimension),
-				)
-			)
-				continue;
+			if (!dayNeedsRefresh(context, previous, day, dimension)) continue;
 			const items =
 				dimension === "alerts"
 					? result.items
@@ -455,26 +436,35 @@ export async function collectRepository(
 				? (latestAlertPayload?.items ?? []).map((item) => [item.id, item])
 				: [],
 		);
+		const streamInventory =
+			dimension === "issues" || dimension === "prs" ? (results.get(dimension)?.items ?? []) : null;
+		if (streamInventory) {
+			for (const item of streamInventory) items.set(item.id, item);
+		}
 		for (const day of retainedDays) {
 			const row = current.get(`${day.date}:${dimension}`);
 			if (!row) continue;
 			const value = JSON.parse(row.payload) as { count: number | null; items: FactoryEvent[] };
 			if (dimension !== "alerts") for (const item of value.items) items.set(item.id, item);
 			if (row.status !== "complete") continue;
+			const dayBounds = retainedDays.find((entry) => entry.date === row.day);
+			if (!dayBounds) continue;
 			const metrics = repo.metrics.days[row.day] ?? blankDay();
 			if (dimension === "commits") {
 				metrics.commits = Number(value.count);
 				repo.metrics.commits += Number(value.count);
 			}
-			for (const item of value.items) {
+			const metricItems =
+				dimension === "issues" || dimension === "prs" ? [...items.values()] : value.items;
+			for (const item of metricItems) {
 				if (dimension === "issues") {
-					if (inDay(item.createdAt, day.since, day.until)) metrics.issueOpened++;
-					if (inDay(item.closedAt, day.since, day.until)) metrics.issueClosed++;
+					if (inDay(item.createdAt, dayBounds.since, dayBounds.until)) metrics.issueOpened++;
+					if (inDay(item.closedAt, dayBounds.since, dayBounds.until)) metrics.issueClosed++;
 				}
 				if (dimension === "prs") {
-					if (inDay(item.createdAt, day.since, day.until)) metrics.prOpened++;
-					if (inDay(item.mergedAt, day.since, day.until)) metrics.prMerged++;
-					else if (inDay(item.closedAt, day.since, day.until)) metrics.prClosed++;
+					if (inDay(item.createdAt, dayBounds.since, dayBounds.until)) metrics.prOpened++;
+					if (inDay(item.mergedAt, dayBounds.since, dayBounds.until)) metrics.prMerged++;
+					else if (inDay(item.closedAt, dayBounds.since, dayBounds.until)) metrics.prClosed++;
 				}
 				if (dimension === "actions") {
 					if (item.conclusion === "success") metrics.ciSuccess++;
@@ -491,7 +481,10 @@ export async function collectRepository(
 		}
 		const resource: FactoryStreamData = {
 			runId: context.run.id,
-			items: [...items.values()],
+			items:
+				dimension === "issues" || dimension === "prs"
+					? (streamInventory ?? [...items.values()])
+					: [...items.values()],
 			next: null,
 			ranges: detailCoverage.completeWindows,
 			coverage: detailCoverage,

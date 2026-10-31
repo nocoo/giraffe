@@ -338,31 +338,67 @@ describe("canonical activity source evidence", () => {
 		expect(read().deploy.last_success_at).toBe(run.updated_at);
 		expect(read().deploy.runs).toHaveLength(3);
 	});
-	it("only partitions observed open items and never calls windowed lists a full repository snapshot", () => {
+	it("builds open inventory snapshots from full published streams, not window-limited lifecycle evidence", () => {
 		const { set, read } = fixture();
 		set("issues", [
-			item({ id: "security", labels: ["security", "dependencies"] }),
-			item({ id: "dependencies", labels: ["dependencies"] }),
-			item({ id: "other", labels: [] }),
-			item({ id: "closed", labels: [], state: "closed" }),
+			item({ id: "security", labels: ["security", "dependencies"], createdAt: window.since }),
+			item({
+				id: "dependencies",
+				labels: ["dependencies"],
+				createdAt: "2026-10-20T00:00:00.000Z",
+			}),
+			item({ id: "other", labels: [], createdAt: "2026-10-20T00:00:00.000Z" }),
+			item({
+				id: "closed",
+				labels: [],
+				state: "closed",
+				createdAt: "2026-10-20T00:00:00.000Z",
+			}),
+			item({
+				id: "outside-window",
+				at: null,
+				createdAt: "2026-10-20T00:00:00.000Z",
+				labels: ["security"],
+			}),
 		]);
 		set("prs", [
 			item({ id: "open", labels: [] }),
 			item({ id: "merged", state: "merged", labels: [] }),
+			item({
+				id: "stale-open",
+				at: null,
+				createdAt: "2026-10-20T00:00:00.000Z",
+				labels: [],
+			}),
 		]);
 		expect(read().snapshot.open_issues).toMatchObject({
-			security: [{ id: "security" }],
+			security: [{ id: "security" }, { id: "outside-window" }],
 			dependency: [{ id: "dependencies" }],
 			other: [{ id: "other" }],
 		});
-		expect(read().snapshot.open_prs?.map((row) => row.id)).toEqual(["open"]);
+		expect(
+			read()
+				.snapshot.open_prs?.map((row) => row.id)
+				.sort(),
+		).toEqual(["open", "stale-open"]);
+		expect(read().issues.opened?.map((row) => row.id)).toEqual(["security"]);
 		expect(read().coverage["snapshot.open_issues"]).toMatchObject({
-			status: "partial",
-			reason: "windowed_snapshot",
+			status: "complete",
+			reason: null,
 		});
 		expect(read().coverage["snapshot.open_prs"]).toMatchObject({
+			status: "complete",
+			reason: null,
+		});
+	});
+	it("marks open inventory snapshots partial when stream inventory is incomplete", () => {
+		const { repo, set, read } = fixture();
+		const saved = set("issues", [item({ id: "one" })]);
+		repo.coverage.issues.inventoryComplete = false;
+		saved.data.coverage = { ...saved.data.coverage, inventoryComplete: false };
+		expect(read().coverage["snapshot.open_issues"]).toMatchObject({
 			status: "partial",
-			reason: "windowed_snapshot",
+			reason: "open_inventory_incomplete",
 		});
 	});
 });
