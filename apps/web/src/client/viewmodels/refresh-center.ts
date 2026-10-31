@@ -154,6 +154,7 @@ const REASON_LABELS: Record<string, string> = {
 	"prs:inventory_incomplete": "PR 清单未完整",
 	"releases:latest_page_only": "仅获取到最新一页发布",
 	"releases:incomplete_pagination": "发布分页信息缺失",
+	"actions:filter_cap": "CI 运行结果达到搜索上限",
 	"actions:github_error": "读取失败",
 	"alerts:permission_denied": "无权限",
 	"collection:partial": "该步骤只获取到部分数据",

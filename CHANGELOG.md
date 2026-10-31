@@ -8,11 +8,22 @@
   only when `inventoryComplete` is true, not merely when the row status is
   `complete`. Legacy or partial rows with incomplete open inventories are
   re-collected instead of silently reused.
+- Bound `/actions/runs` collection to the refresh window with GitHub `created`
+  range filters (Shanghai calendar days mapped to exact UTC bounds), paginate
+  through results, dedupe workflow run ids, and split by day when the 1000-result
+  search cap is hit.
+- Treat GraphQL release inventories as complete when the oldest fetched release
+  predates the window even if another page exists, instead of flagging
+  `latest_page_only` for repositories with more than 100 total releases.
+- When actions or releases collection is partial, mark only calendar days on or
+  before the oldest fetched item as partial so newer complete days still publish.
 
 ### Verified
 
 - Regression tests cover re-collection when cached issue/PR days lack complete
-  inventory, and zero-request reuse when inventory is fully complete.
+  inventory, zero-request reuse when inventory is fully complete, actions
+  `created` filters and pagination, run-id deduplication, filter-cap handling,
+  and release window coverage.
 
 ## v0.28.4 - 2026-10-30
 
