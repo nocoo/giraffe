@@ -656,6 +656,102 @@ describe("unified refresh collection", () => {
 			reasons: ["issues:incomplete_pagination", "issues:inventory_incomplete"],
 		});
 	});
+	it.each([
+		["inventoryComplete false", false],
+		["missing inventoryComplete", undefined],
+	] as const)(
+		"recollects issues and pull requests when cached days are complete but %s",
+		async (_label, inventoryComplete) => {
+			const context = await fixture();
+			context.run.params.dimensions = ["issues", "prs"];
+			const open = item("open-item");
+			upstream([
+				accountPage(),
+				{
+					node: {
+						...repo(),
+						openIssues: { totalCount: 1 },
+						openPrs: { totalCount: 1 },
+						issues: connection([open]),
+						pullRequests: connection([open]),
+					},
+				},
+			]);
+			await collectAccount(context);
+			expect(await collectRepository(context, "owner/project")).toMatchObject({
+				partial: false,
+				reasons: [],
+			});
+			for (const dimension of ["issues", "prs"] as const) {
+				const row = (await observation(context, dimension)).results[0];
+				const payload = JSON.parse(row?.payload ?? "{}") as Record<string, unknown>;
+				if (inventoryComplete === undefined) delete payload.inventoryComplete;
+				else payload.inventoryComplete = inventoryComplete;
+				await context.env.DB.prepare(
+					"UPDATE refresh_day_observations SET payload=? WHERE account_id=? AND dimension=?",
+				)
+					.bind(JSON.stringify(payload), context.account.id, dimension)
+					.run();
+			}
+			const fetch = upstream([
+				{
+					node: {
+						...repo(),
+						openIssues: { totalCount: 1 },
+						openPrs: { totalCount: 1 },
+						issues: connection([open]),
+						pullRequests: connection([open]),
+					},
+				},
+			]);
+			expect(await collectRepository(context, "owner/project")).toMatchObject({
+				partial: false,
+				reasons: [],
+				requests: 1,
+			});
+			expect(fetch).toHaveBeenCalled();
+			for (const dimension of ["issues", "prs"] as const) {
+				expect(
+					JSON.parse((await observation(context, dimension)).results[0]?.payload ?? "{}"),
+				).toMatchObject({ inventoryComplete: true });
+			}
+		},
+	);
+	it("reuses complete issue and pull-request day observations without upstream calls", async () => {
+		const context = await fixture();
+		context.run.params.dimensions = ["issues", "prs"];
+		const open = item("cached-open");
+		upstream([
+			accountPage(),
+			{
+				node: {
+					...repo(),
+					openIssues: { totalCount: 1 },
+					openPrs: { totalCount: 1 },
+					issues: connection([open]),
+					pullRequests: connection([open]),
+				},
+			},
+		]);
+		await collectAccount(context);
+		expect(await collectRepository(context, "owner/project")).toMatchObject({
+			partial: false,
+			reasons: [],
+		});
+		for (const dimension of ["issues", "prs"] as const) {
+			expect(
+				JSON.parse((await observation(context, dimension)).results[0]?.payload ?? "{}"),
+			).toMatchObject({ inventoryComplete: true });
+		}
+		const fetch = upstream();
+		expect(await collectRepository(context, "owner/project")).toEqual({
+			requests: 0,
+			requestBreakdown: { graphql: 0, rest: 0 },
+			partial: false,
+			reasons: [],
+		});
+		expect(fetch).not.toHaveBeenCalled();
+	});
 	it("collects latest CI, releases and both alert features in the saved wire format", async () => {
 		const context = await fixture();
 		const actions = [
@@ -940,10 +1036,67 @@ describe("unified refresh collection", () => {
 		"makes pagination-limited latest REST data partial: %s",
 		async (path) => {
 			const context = await fixture();
-			const data =
-				path === "/actions/runs"
-					? { total_count: 101, workflow_runs: [{ id: 1, created_at: "2026-10-28T01:00:00Z" }] }
-					: [{ number: 1, state: "open" }];
+			if (path === "/actions/runs") {
+				const runs = Array.from({ length: 100 }, (_, index) => ({
+					id: index + 1,
+					name: "CI",
+					html_url: "https://github.com/owner/project/actions/runs/1",
+					status: "completed",
+					conclusion: "success",
+					created_at: "2026-10-28T02:00:00.000Z",
+					updated_at: "2026-10-28T02:00:00.000Z",
+				}));
+				const fetch = vi.fn(async (input: string, init?: RequestInit) => {
+					if (input.endsWith("/graphql")) {
+						const body = JSON.parse(String(init?.body));
+						const payload = body.query?.includes("RefreshAccount")
+							? accountPage()
+							: { node: repo() };
+						return Response.json({
+							data: {
+								...payload,
+								rateLimit: { remaining: 4999, resetAt: "2026-10-29T05:00:00Z" },
+							},
+						});
+					}
+					if (!input.includes("/actions/runs")) return Response.json([]);
+					const page = Number(new URL(input).searchParams.get("page") ?? "1");
+					if (page === 1) {
+						return Response.json(
+							{ total_count: 101, workflow_runs: runs },
+							{ headers: { link: '<https://github.test/next>; rel="next"' } },
+						);
+					}
+					return Response.json({
+						total_count: 101,
+						workflow_runs: [
+							{
+								id: 101,
+								name: "CI",
+								html_url: "https://github.com/owner/project/actions/runs/101",
+								status: "completed",
+								conclusion: "success",
+								created_at: "2026-10-28T01:00:00.000Z",
+								updated_at: "2026-10-28T01:00:00.000Z",
+							},
+						],
+					});
+				});
+				vi.stubGlobal("fetch", fetch);
+				await collectAccount(context);
+				expect(await collectRepository(context, "owner/project")).toMatchObject({
+					partial: false,
+					reasons: [],
+				});
+				expect(
+					fetch.mock.calls.filter(([url]) => String(url).includes("/actions/runs")),
+				).toHaveLength(2);
+				expect(
+					String(fetch.mock.calls.find(([url]) => String(url).includes("/actions/runs"))?.[0]),
+				).toContain("created=");
+				return;
+			}
+			const data = [{ number: 1, state: "open" }];
 			upstream(undefined, {
 				[path]: Response.json(data, {
 					headers: { link: '<https://github.test/next>; rel="next"' },
@@ -951,11 +1104,10 @@ describe("unified refresh collection", () => {
 			});
 			await collectAccount(context);
 			expect((await collectRepository(context, "owner/project")).partial).toBe(true);
-			if (path === "/dependabot/alerts")
-				expect(await sourceSnapshot(context, "repo:owner/project:security")).toMatchObject({
-					truncated: true,
-					features: { dependabot: { status: "partial" } },
-				});
+			expect(await sourceSnapshot(context, "repo:owner/project:security")).toMatchObject({
+				truncated: true,
+				features: { dependabot: { status: "partial" } },
+			});
 		},
 	);
 	it.each(["/actions/runs", "/dependabot/alerts"])(
@@ -1446,14 +1598,39 @@ describe("unified refresh collection", () => {
 		expect(result.requests).toBe(40);
 		expect(result.partial).toBe(true);
 	});
-	it("keeps latest REST pagination complete when its tail precedes the requested window", async () => {
+	it("keeps paginated actions complete when the next page finishes the window", async () => {
 		const context = await fixture();
-		upstream(undefined, {
-			"/actions/runs": Response.json(
-				{ workflow_runs: [{ id: 1, created_at: "2026-10-01T00:00:00Z" }] },
-				{ headers: { link: '<https://github.test/next>; rel="next"' } },
-			),
+		const fetch = vi.fn(async (input: string, init?: RequestInit) => {
+			if (input.endsWith("/graphql")) {
+				const body = JSON.parse(String(init?.body));
+				const payload = body.query?.includes("RefreshAccount") ? accountPage() : { node: repo() };
+				return Response.json({
+					data: {
+						...payload,
+						rateLimit: { remaining: 4999, resetAt: "2026-10-29T05:00:00Z" },
+					},
+				});
+			}
+			if (!input.includes("/actions/runs")) return Response.json([]);
+			const page = Number(new URL(input).searchParams.get("page") ?? "1");
+			if (page === 1) {
+				return Response.json(
+					{
+						workflow_runs: [
+							{
+								id: 1,
+								created_at: "2026-10-28T03:00:00.000Z",
+								status: "completed",
+								conclusion: "success",
+							},
+						],
+					},
+					{ headers: { link: '<https://github.test/next>; rel="next"' } },
+				);
+			}
+			return Response.json({ workflow_runs: [] });
 		});
+		vi.stubGlobal("fetch", fetch);
 		await collectAccount(context);
 		expect((await collectRepository(context, "owner/project")).partial).toBe(false);
 	});
@@ -1703,8 +1880,8 @@ describe("unified refresh collection", () => {
 		{
 			label: "a truncated page whose oldest entry predates the window",
 			connection: releases([release("1", "2026-10-01T00:00:00Z")], true),
-			partial: true,
-			reasons: ["releases:latest_page_only"],
+			partial: false,
+			reasons: [],
 		},
 		{
 			label: "a truncated page with a long-created but recently published tail",
@@ -1715,8 +1892,8 @@ describe("unified refresh collection", () => {
 				],
 				true,
 			),
-			partial: true,
-			reasons: ["releases:latest_page_only"],
+			partial: false,
+			reasons: [],
 		},
 		{
 			label: "a page without pagination metadata",
@@ -1751,6 +1928,126 @@ describe("unified refresh collection", () => {
 			});
 		},
 	);
+	it("dedupes workflow run ids across paginated actions pages", async () => {
+		const context = await fixture();
+		const run = {
+			id: 42,
+			name: "CI",
+			html_url: "https://github.com/owner/project/actions/runs/42",
+			status: "completed",
+			conclusion: "success",
+			created_at: "2026-10-28T02:00:00.000Z",
+			updated_at: "2026-10-28T02:00:00.000Z",
+		};
+		const fetch = vi.fn(async (input: string, init?: RequestInit) => {
+			if (input.endsWith("/graphql")) {
+				const body = JSON.parse(String(init?.body));
+				const payload = body.query?.includes("RefreshAccount") ? accountPage() : { node: repo() };
+				return Response.json({
+					data: {
+						...payload,
+						rateLimit: { remaining: 4999, resetAt: "2026-10-29T05:00:00Z" },
+					},
+				});
+			}
+			if (!input.includes("/actions/runs")) return Response.json([]);
+			const page = Number(new URL(input).searchParams.get("page") ?? "1");
+			if (page === 1) {
+				return Response.json(
+					{ workflow_runs: [run] },
+					{ headers: { link: '<https://github.test/next>; rel="next"' } },
+				);
+			}
+			return Response.json({ workflow_runs: [{ ...run, run_attempt: 2 }] });
+		});
+		vi.stubGlobal("fetch", fetch);
+		await collectAccount(context);
+		await collectRepository(context, "owner/project");
+		const saved = await sourceSnapshot(context, "repo:owner/project:actions");
+		expect(saved.runs).toHaveLength(1);
+		expect((await publication(context)).repos[0].metrics.ciSuccess).toBe(1);
+	});
+	it("marks only days on or before the oldest partial release as incomplete", async () => {
+		const context = await fixture();
+		context.run.params.dimensions = ["releases"];
+		context.days = [
+			{ date: "2026-10-27", since: "2026-10-26T16:00:00.000Z", until: "2026-10-27T16:00:00.000Z" },
+			{ date: "2026-10-28", since: "2026-10-27T16:00:00.000Z", until: "2026-10-28T16:00:00.000Z" },
+		];
+		context.run.params.since = "2026-10-27";
+		context.run.params.until = "2026-10-28";
+		upstream([
+			accountPage(),
+			{
+				node: {
+					...repo(),
+					releases: releases(
+						[
+							release("new", "2026-10-28T04:00:00Z", "2026-10-27T12:00:00Z"),
+							release("old", "2026-10-27T12:00:00Z", "2026-10-27T12:00:00Z"),
+						],
+						true,
+					),
+				},
+			},
+		]);
+		await collectAccount(context);
+		expect(await collectRepository(context, "owner/project")).toMatchObject({
+			partial: true,
+			reasons: ["releases:latest_page_only"],
+		});
+		const rows = await context.env.DB.prepare(
+			"SELECT day,status FROM refresh_day_observations WHERE dimension='releases' ORDER BY day",
+		).all<{ day: string; status: string }>();
+		expect(rows.results).toEqual([
+			{ day: "2026-10-27", status: "partial" },
+			{ day: "2026-10-28", status: "complete" },
+		]);
+	});
+	it("flags actions filter_cap when a single day still hits the search limit", async () => {
+		const context = await fixture();
+		const pageRuns = Array.from({ length: 100 }, (_, index) => ({
+			id: index + 1,
+			name: "CI",
+			html_url: "https://github.com/owner/project/actions/runs/1",
+			status: "completed",
+			conclusion: "success",
+			created_at: "2026-10-28T02:00:00.000Z",
+			updated_at: "2026-10-28T02:00:00.000Z",
+		}));
+		const fetch = vi.fn(async (input: string, init?: RequestInit) => {
+			if (input.endsWith("/graphql")) {
+				const body = JSON.parse(String(init?.body));
+				const payload = body.query?.includes("RefreshAccount") ? accountPage() : { node: repo() };
+				return Response.json({
+					data: {
+						...payload,
+						rateLimit: { remaining: 4999, resetAt: "2026-10-29T05:00:00Z" },
+					},
+				});
+			}
+			if (!input.includes("/actions/runs")) return Response.json([]);
+			const page = Number(new URL(input).searchParams.get("page") ?? "1");
+			return Response.json(
+				{
+					total_count: 2000,
+					workflow_runs: pageRuns.map((row) => ({ ...row, id: page * 100 + row.id })),
+				},
+				{
+					headers:
+						page >= 10
+							? { link: '<https://github.test/next>; rel="next"' }
+							: { link: '<https://github.test/next>; rel="next"' },
+				},
+			);
+		});
+		vi.stubGlobal("fetch", fetch);
+		await collectAccount(context);
+		expect(await collectRepository(context, "owner/project")).toMatchObject({
+			partial: true,
+			reasons: ["actions:filter_cap"],
+		});
+	});
 	it("represents unknown language sizes as unavailable metadata defaults", async () => {
 		const context = await fixture();
 		expect(

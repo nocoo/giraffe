@@ -17,6 +17,8 @@ export type Dimension = {
 	features?: SecurityFeatures;
 	terminal?: boolean;
 	truncated?: boolean;
+	/** Oldest fetched source timestamp (ISO), used to bound per-day partial observations. */
+	oldestAt?: string | null;
 };
 type Transport = ReturnType<typeof transport>;
 export const terminal = (error: unknown) =>
@@ -114,7 +116,7 @@ export async function collectItems(
 	}
 }
 
-export function collectReleases(connection: Node, denied: boolean): Dimension {
+export function collectReleases(connection: Node, denied: boolean, since: string): Dimension {
 	if (!Array.isArray(connection.nodes)) return failure(null);
 	const raw: Node[] = nodes(connection.nodes).map((node) => ({
 		id: count(node.databaseId),
@@ -128,13 +130,16 @@ export function collectReleases(connection: Node, denied: boolean): Dimension {
 		updated_at: text(node.updatedAt),
 	}));
 	const hasNextPage = object(connection.pageInfo).hasNextPage;
+	const oldestCreated = text(raw.at(-1)?.created_at);
+	const windowCovered = oldestCreated !== null && Date.parse(oldestCreated) < Date.parse(since);
 	const reason = denied
 		? "graphql_partial"
-		: hasNextPage === true
-			? "latest_page_only"
-			: hasNextPage === false
-				? null
+		: hasNextPage === false || (hasNextPage === true && windowCovered)
+			? null
+			: hasNextPage === true
+				? "latest_page_only"
 				: "incomplete_pagination";
+	const oldestAt = reason === null ? null : oldestCreated;
 	return {
 		raw,
 		items: raw.map((row) => ({
@@ -153,8 +158,12 @@ export function collectReleases(connection: Node, denied: boolean): Dimension {
 		status: reason === null ? "complete" : "partial",
 		reason,
 		source: "github_graphql_latest",
+		oldestAt,
 	};
 }
+
+const toGithubSecond = (iso: string) => iso.replace(/\.\d{3}Z$/, "Z");
+const dayUntilExclusive = (until: string) => new Date(Date.parse(until) - 1).toISOString();
 
 export async function collectRest(
 	context: CollectionContext,
@@ -257,31 +266,77 @@ export async function collectRest(
 			source: "github_rest_latest",
 		};
 	}
-	const { body, next } = await get("/actions/runs?per_page=100");
-	const value = object(body).workflow_runs;
-	if (!Array.isArray(value)) return failure(null);
-	const raw = nodes(value);
-	const oldest = raw.at(-1);
-	const at = oldest?.created_at;
-	const truncated =
-		(next || (count(object(body).total_count) ?? 0) > raw.length) &&
-		(!text(at) || Date.parse(String(at)) >= Date.parse(windowOf(context).since));
+	const window = windowOf(context);
+	const seen = new Set<string>();
+	const raw: Node[] = [];
+	const ingest = (runs: Node[]) => {
+		for (const row of runs) {
+			if (row.id === null || row.id === undefined) continue;
+			const id = String(row.id);
+			if (seen.has(id)) continue;
+			seen.add(id);
+			raw.push(row);
+		}
+	};
+	const fetchRange = async (
+		since: string,
+		until: string,
+	): Promise<"complete" | "cap" | "invalid"> => {
+		const range = `${toGithubSecond(since)}..${toGithubSecond(until)}`;
+		let page = 1;
+		for (;;) {
+			const { body, next } = await get(
+				`/actions/runs?created=${encodeURIComponent(range)}&per_page=100&exclude_pull_requests=true&page=${page}`,
+			);
+			const value = object(body).workflow_runs;
+			if (!Array.isArray(value)) return "invalid";
+			ingest(nodes(value));
+			if (page * 100 >= 1000 && next) return "cap";
+			if (!next || value.length < 100) return "complete";
+			page++;
+		}
+	};
+	let reason: string | null = null;
+	let truncated = false;
+	const windowOutcome = await fetchRange(window.since, window.until);
+	if (windowOutcome === "invalid") return failure(null);
+	if (windowOutcome === "cap") {
+		seen.clear();
+		raw.length = 0;
+		for (const day of context.days) {
+			const dayOutcome = await fetchRange(day.since, dayUntilExclusive(day.until));
+			if (dayOutcome === "invalid") return failure(null);
+			if (dayOutcome === "cap") {
+				truncated = true;
+				reason = "filter_cap";
+				break;
+			}
+		}
+	}
+	const items = raw.map((row) => ({
+		...event({
+			id: String(row.id),
+			title: row.name,
+			url: row.html_url,
+			state: row.status,
+			createdAt: row.created_at,
+			updatedAt: row.updated_at,
+		}),
+		at: text(row.created_at),
+		conclusion: text(row.conclusion),
+	}));
+	const oldestAt =
+		items
+			.map((item) => item.at)
+			.filter((at): at is string => at !== null)
+			.sort((first, second) => Date.parse(first) - Date.parse(second))[0] ?? null;
 	return {
 		raw,
-		items: raw.map((row) => ({
-			...event({
-				id: String(row.id),
-				title: row.name,
-				url: row.html_url,
-				state: row.status,
-				createdAt: row.created_at,
-				updatedAt: row.updated_at,
-			}),
-			at: text(row.created_at),
-			conclusion: text(row.conclusion),
-		})),
-		status: truncated ? "partial" : "complete",
-		reason: truncated ? "latest_page_only" : null,
-		source: "github_rest_latest",
+		items,
+		status: reason === null ? "complete" : "partial",
+		reason,
+		source: "github_rest_window",
+		truncated,
+		oldestAt,
 	};
 }

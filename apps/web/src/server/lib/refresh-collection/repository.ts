@@ -17,7 +17,7 @@ import {
 	failure,
 	terminal,
 } from "./dimensions";
-import { dayCoverage, PUBLICATION_DAYS, publicationDays } from "./history";
+import { dayCoverage, PUBLICATION_DAYS, publicationDays, reusableDayObservation } from "./history";
 import {
 	blankDay,
 	blankMetrics,
@@ -40,6 +40,45 @@ const inDay = (value: string | null | undefined, since: string, until: string) =
 	value !== undefined &&
 	Date.parse(value) >= Date.parse(since) &&
 	Date.parse(value) < Date.parse(until);
+function partialBoundaryDay(context: CollectionContext, oldestAt: string): string {
+	const hit = context.days.find((day) => inDay(oldestAt, day.since, day.until));
+	if (hit) return hit.date;
+	if (context.days[0] && Date.parse(oldestAt) < Date.parse(context.days[0].since))
+		return context.days[0].date;
+	return context.days.at(-1)?.date ?? oldestAt.slice(0, 10);
+}
+function observationForDay(
+	result: Dimension,
+	dimension: string,
+	day: { date: string; since: string; until: string },
+	context: CollectionContext,
+	items: FactoryEvent[],
+	unavailableTerminal: boolean,
+) {
+	if (unavailableTerminal) {
+		return {
+			status: "complete" as const,
+			reason: result.reason,
+			count: result.status === "complete" ? items.length : null,
+		};
+	}
+	if (
+		result.status === "partial" &&
+		(dimension === "actions" || dimension === "releases") &&
+		result.oldestAt
+	) {
+		const boundary = partialBoundaryDay(context, result.oldestAt);
+		if (day.date > boundary) {
+			return { status: "complete" as const, reason: null, count: items.length };
+		}
+		return { status: "partial" as const, reason: result.reason, count: null };
+	}
+	return {
+		status: (unavailableTerminal ? "complete" : result.status) as DayObservation["status"],
+		reason: result.reason,
+		count: result.status === "complete" ? items.length : null,
+	};
+}
 function dayItems(items: FactoryEvent[], since: string, until: string) {
 	return items.filter((item) =>
 		[item.at, item.createdAt, item.closedAt, item.mergedAt].some((at) => inDay(at, since, until)),
@@ -137,7 +176,9 @@ export async function collectRepository(
 				(day) =>
 					!previous.some(
 						(row) =>
-							row.day === day.date && row.dimension === dimension && row.status === "complete",
+							row.day === day.date &&
+							row.dimension === dimension &&
+							reusableDayObservation(row, dimension),
 					),
 			),
 	);
@@ -303,7 +344,8 @@ export async function collectRepository(
 						),
 				);
 				result = { ...result, raw: [...merged.values()], items: [...merged.values()].map(event) };
-			} else if (dimension === "releases") result = collectReleases(object(raw.releases), denied);
+			} else if (dimension === "releases")
+				result = collectReleases(object(raw.releases), denied, windowOf(context).since);
 			else result = await collectRest(context, upstream, saved.repo, dimension);
 		} catch (error) {
 			result = failure(error);
@@ -317,7 +359,10 @@ export async function collectRepository(
 			if (
 				!context.run.params.force &&
 				previous.some(
-					(row) => row.day === day.date && row.dimension === dimension && row.status === "complete",
+					(row) =>
+						row.day === day.date &&
+						row.dimension === dimension &&
+						reusableDayObservation(row, dimension),
 				)
 			)
 				continue;
@@ -328,16 +373,24 @@ export async function collectRepository(
 						? result.items.filter((item) => inDay(item.at, day.since, day.until))
 						: dayItems(result.items, day.since, day.until);
 			const unavailableTerminal = result.terminal === true;
+			const { status, reason, count } = observationForDay(
+				result,
+				dimension,
+				day,
+				context,
+				items,
+				unavailableTerminal,
+			);
 			observations.push({
 				day: day.date,
 				dimension,
-				status: unavailableTerminal ? "complete" : result.status,
+				status,
 				payload: JSON.stringify({
-					count: result.status === "complete" ? items.length : null,
+					count,
 					observed: items.length,
 					items,
 					source: result.source,
-					reason: result.reason,
+					reason,
 					unavailable: unavailableTerminal && result.status === "unavailable",
 					inventoryComplete: result.inventoryComplete,
 					since: day.since,
@@ -481,7 +534,9 @@ export async function collectRepository(
 						truncated:
 							dimension === "alerts"
 								? result.truncated === true
-								: result.status !== "complete" || inventoryComplete === false,
+								: dimension === "actions"
+									? result.truncated === true
+									: result.status !== "complete" || inventoryComplete === false,
 						inventory_complete: inventoryComplete,
 						unavailable: result.status === "unavailable",
 						window: windowOf(context),
