@@ -220,15 +220,16 @@ it("runs real durable A then serial B, serves latest observations and reuses day
 		const restOnly = await run(cacheWindow);
 		expect(restOnly.aReused).toBe(true);
 		expect(restOnly.requestBreakdown).toEqual({
-			total: 3,
-			graphql: 0,
+			total: 4,
+			graphql: 1,
 			rest: 3,
 			a: { graphql: 0, rest: 0 },
-			b: { graphql: 0, rest: 3 },
+			b: { graphql: 1, rest: 3 },
 		});
 		const allCached = await run(cacheWindow);
 		expect(allCached.aReused).toBe(true);
-		expect(allCached.requests).toBe(0);
+		expect(allCached.requests).toBe(1);
+		expect(allCached.requestBreakdown).toMatchObject({ graphql: 1, rest: 0 });
 		for (const [stream, field] of [
 			["issues", "issues"],
 			["prs", "pull_requests"],
