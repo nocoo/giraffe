@@ -150,6 +150,7 @@ it("renders a pull request record with state, review, checks, author and merge t
 		expect(text).toContain("已批准");
 		expect(text).toContain("检查通过");
 		expect(text).toContain("nocoo");
+		expect(container.querySelector('[data-testid="github-avatar-fallback"]')).not.toBeNull();
 		expect(text).toContain("覆盖");
 		expect(text).toContain("完整");
 		expect(text).toContain("1 条观察记录");

@@ -1,7 +1,8 @@
-import { Avatar, AvatarFallback, Button } from "@nocoo/basalt";
+import { Button } from "@nocoo/basalt";
 import { SlotBarChart } from "@nocoo/basalt/charts/slot-bar";
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
-import { initials, takeChips } from "../../lib/format";
+import { takeChips } from "../../lib/format";
+import { UserChip } from "../github-user";
 import { CandyBadge } from "./candy-badge";
 
 export function SortButton({
@@ -35,17 +36,7 @@ export function SortButton({
 }
 
 export function PersonCell({ login }: { login: string | null }) {
-	if (!login) {
-		return <span className="text-basalt-muted-foreground">—</span>;
-	}
-	return (
-		<span className="inline-flex max-w-40 items-center gap-2" title={login}>
-			<Avatar className="size-6">
-				<AvatarFallback className="text-xs">{initials(login)}</AvatarFallback>
-			</Avatar>
-			<span className="truncate">{login}</span>
-		</span>
-	);
+	return <UserChip login={login} size="sm" className="max-w-40" />;
 }
 
 export function LabelChips({

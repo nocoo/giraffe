@@ -19,6 +19,7 @@ import {
 	Workflow,
 } from "lucide-react";
 import type { ActivitySnapshot } from "../../lib/activity-types";
+import { UserChip } from "../components/github-user";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { DataTimeSource } from "../components/layout/data-time";
 import { HelpTooltip } from "../components/layout/help-tooltip";
@@ -120,6 +121,9 @@ export function ActivitySectionBody({
 											repo={row.repo}
 											className="text-xs font-normal text-basalt-muted-foreground"
 										/>
+										{row.author ? (
+											<UserChip login={row.author} size="xs" className="max-w-40" />
+										) : null}
 										{section.key === "ci" || section.key === "deploy" ? (
 											<CandyBadge tone="gray">{row.kind}</CandyBadge>
 										) : (

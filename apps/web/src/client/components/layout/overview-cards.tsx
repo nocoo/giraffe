@@ -91,6 +91,7 @@ export function Breakdown({
 	onSelect,
 	color,
 	format = (name) => name,
+	userAvatars = false,
 }: {
 	rows: { name: string; value: number; share?: number; other?: number; color?: string }[];
 	max: number;
@@ -99,6 +100,7 @@ export function Breakdown({
 	onSelect?: (name: string) => void;
 	color?: string;
 	format?: (name: string) => string;
+	userAvatars?: boolean;
 }) {
 	// "其他" aggregates the tail; scaling to it would flatten every named row.
 	const named = rows.filter((r) => !r.other).map((r) => r.value);
@@ -122,6 +124,7 @@ export function Breakdown({
 			active={active}
 			{...(onSelect ? { onSelect } : {})}
 			{...(color ? { color } : {})}
+			userAvatars={userAvatars}
 		/>
 	);
 }

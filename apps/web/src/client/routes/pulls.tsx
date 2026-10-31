@@ -298,6 +298,7 @@ export function PullsPage() {
 									label="PR 按作者"
 									active={picked.author}
 									onSelect={pick("author")}
+									userAvatars
 								/>
 							</div>
 						</OverviewCard>

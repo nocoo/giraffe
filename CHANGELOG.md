@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.28.8 - 2026-10-31
+
+### Added
+
+- Shared GitHub `UserChip` / `GithubAvatar` for author and actor rows across issues,
+  pull requests, factory records, activity, settings accounts, and contributor lists.
+  Real avatars load from stored `avatar_url` when present, otherwise
+  `avatars.githubusercontent.com`; broken images fall back to a deterministic colored
+  initial badge.
+
+### Verified
+
+- Unit tests cover avatar color hash stability, bot login letters, image `onError`
+  fallback, and factory PR author rendering.
+
 ## v0.28.7 - 2026-10-31
 
 ### Fixed
