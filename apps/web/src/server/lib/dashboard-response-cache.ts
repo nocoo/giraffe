@@ -110,6 +110,15 @@ export async function invalidateDashboardWarmCache(db: Db, accountId: string): P
 	await db.prepare("DELETE FROM dashboard_warm_responses WHERE account_id=?").bind(accountId).run();
 }
 
+export async function invalidateDashboardWarmCacheSafely(db: Db, accountId: string): Promise<void> {
+	try {
+		await invalidateDashboardWarmCache(db, accountId);
+	} catch (error) {
+		const detail = error instanceof Error ? error.message : String(error);
+		console.warn(`dashboard warm invalidate failed for ${accountId}: ${detail}`);
+	}
+}
+
 type RespondOptions = {
 	accountId: string;
 	cacheKey: string;

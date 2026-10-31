@@ -1,7 +1,8 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { annualContributionCalendar } from "../../../../../../tests/fixtures/contribution-calendar";
 import golden from "../../../../../../tests/fixtures/refresh-publication-golden.json";
 import { sqliteFixture } from "../../../../../../tests/fixtures/sqlite";
+import * as warmRun from "../dashboard-warm-run";
 import { createDb, type Db } from "../db/d1";
 import { factoryRateStatement } from "../factory-rate";
 import type { CollectionContext } from "../refresh-collection-contract";
@@ -608,4 +609,44 @@ it("publishes each observation step with two round trips end to end", async () =
 			{ rpc: 9, reads: 0, writes: 9 },
 		]).flat(),
 	);
+});
+
+it("completes publish when dashboard warm fails safely", async () => {
+	const raw = sqliteFixture();
+	const base = await prepared(raw, fixtures);
+	const context = {
+		...base,
+		env: { ...base.env, ENVIRONMENT: "production" },
+	} as typeof base;
+	const warmSpy = vi
+		.spyOn(warmRun, "warmDashboardResponsesAfterPublish")
+		.mockRejectedValue(new Error("warm failed"));
+	const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+	try {
+		await publish(createDb(raw), context);
+		expect(goldenShape(await publishedRows(raw))).toEqual(golden);
+		expect(warmSpy.mock.calls.length).toBeGreaterThan(0);
+		expect(
+			warnSpy.mock.calls.some(([message]) =>
+				String(message).includes("dashboard warm after publish failed"),
+			),
+		).toBe(true);
+	} finally {
+		warmSpy.mockRestore();
+		warnSpy.mockRestore();
+	}
+});
+
+it("writes dashboard warm rows after publish outside test environment", async () => {
+	const raw = sqliteFixture();
+	const base = await prepared(raw, fixtures);
+	const context = {
+		...base,
+		env: { ...base.env, ENVIRONMENT: "production" },
+	} as typeof base;
+	await publish(createDb(raw), context);
+	const rows = await raw
+		.prepare("SELECT COUNT(*) AS count FROM dashboard_warm_responses WHERE account_id='a'")
+		.first<{ count: number }>();
+	expect(rows?.count ?? 0).toBeGreaterThan(0);
 });

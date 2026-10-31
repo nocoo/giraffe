@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { invalidateDashboardWarmCache } from "./dashboard-response-cache";
+import { invalidateDashboardWarmCacheSafely } from "./dashboard-response-cache";
 import type { Db } from "./db/d1";
 import { ApiError } from "./errors";
 import { readJson } from "./read-body";
@@ -55,6 +55,6 @@ export async function writeStar(
 	]);
 	const row = saved?.results[0];
 	if (!row) throw new ApiError(500, "db_error", "star result missing");
-	await invalidateDashboardWarmCache(db, account);
+	await invalidateDashboardWarmCacheSafely(db, account);
 	return { item: record(row), changed: Boolean(written?.results.length) };
 }

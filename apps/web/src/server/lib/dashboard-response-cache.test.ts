@@ -6,7 +6,11 @@ import type { Env } from "../env";
 import { createApp } from "../index";
 import * as builders from "../lib/dashboard-builders";
 import { accountObservationDataVersion } from "../lib/dashboard-data-version";
-import { dashboardCacheKey, storeWarmDashboardBody } from "../lib/dashboard-response-cache";
+import {
+	dashboardCacheKey,
+	invalidateDashboardWarmCacheSafely,
+	storeWarmDashboardBody,
+} from "../lib/dashboard-response-cache";
 import { createDb } from "../lib/db/d1";
 
 async function seedFactory(db: ReturnType<typeof createDb>, account = "a") {
@@ -114,4 +118,26 @@ it("stores only the latest warm row per cache key", async () => {
 	await storeWarmDashboardBody(db, "a", cacheKey, "v2", { two: 2 });
 	const rows = await raw.prepare("SELECT data_version,body FROM dashboard_warm_responses").all();
 	expect(rows.results).toEqual([{ data_version: "v2", body: '{"two":2}' }]);
+});
+
+it("invalidateDashboardWarmCacheSafely ignores delete failures", async () => {
+	const db = createDb({
+		prepare: () =>
+			({
+				bind: () => ({
+					run: async () => {
+						throw new Error("warm table unavailable");
+					},
+				}),
+			}) as unknown as D1PreparedStatement,
+	} as unknown as D1Database);
+	const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+	try {
+		await invalidateDashboardWarmCacheSafely(db, "a");
+		expect(warnSpy).toHaveBeenCalledWith(
+			expect.stringContaining("dashboard warm invalidate failed for a"),
+		);
+	} finally {
+		warnSpy.mockRestore();
+	}
 });

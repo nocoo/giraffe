@@ -7,7 +7,7 @@ import {
 	repoAgentStateWriteSchema,
 } from "../../lib/repo-agent-state";
 import { catalogRowIdentityFromRecord, identifyCatalogRow } from "./catalog-identity";
-import { invalidateDashboardWarmCache } from "./dashboard-response-cache";
+import { invalidateDashboardWarmCacheSafely } from "./dashboard-response-cache";
 import type { Db } from "./db/d1";
 import { ApiError } from "./errors";
 
@@ -123,7 +123,7 @@ export async function writeRepoAgentState(
 					)
 					.first<StateRow>();
 	if (!row) throw new ApiError(409, "revision_conflict", "Agent state changed");
-	await invalidateDashboardWarmCache(db, account);
+	await invalidateDashboardWarmCacheSafely(db, account);
 	return wire(account, row);
 }
 

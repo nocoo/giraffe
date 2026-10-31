@@ -5,7 +5,7 @@ import {
 	repoMetaWriteSchema,
 } from "../../lib/repo-meta";
 import { catalogRowIdentityFromRecord, identifyCatalogRow } from "./catalog-identity";
-import { invalidateDashboardWarmCache } from "./dashboard-response-cache";
+import { invalidateDashboardWarmCacheSafely } from "./dashboard-response-cache";
 import type { Db } from "./db/d1";
 import { ApiError } from "./errors";
 
@@ -90,7 +90,7 @@ export async function writeRepoMeta(
 		.bind(account, ...values, new Date().toISOString(), account, account, name)
 		.first<MetaRow>();
 	if (!row) throw new ApiError(404, "not_found", "Repository not found");
-	await invalidateDashboardWarmCache(db, account);
+	await invalidateDashboardWarmCacheSafely(db, account);
 	return wire(account, row);
 }
 export async function enrichRepoMeta(db: Db, account: string, data: Record<string, unknown>) {
