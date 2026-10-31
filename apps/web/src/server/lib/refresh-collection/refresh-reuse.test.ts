@@ -296,7 +296,6 @@ describe("refresh reuse boundaries", () => {
 			rest: 0,
 		});
 		const first = await publication(context);
-		const details = await snapshot(context, "repo:owner/project:details");
 		expect(first.repos[0]).toMatchObject({
 			branch: "main",
 			head: "head",
