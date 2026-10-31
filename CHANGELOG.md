@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.28.7 - 2026-10-31
+
+### Fixed
+
+- Load the web app manifest with `crossorigin="use-credentials"` so Cloudflare
+  Access can authenticate manifest fetches and PWA install works in production.
+
+### Verified
+
+- Regression test asserts the manifest link carries `crossorigin=use-credentials`
+  and PWA assets stay on same-origin paths.
+
 ## v0.28.6 - 2026-10-31
 
 ### Added
