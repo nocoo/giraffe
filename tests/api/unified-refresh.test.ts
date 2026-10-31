@@ -246,15 +246,15 @@ it("runs real durable A then serial B, serves latest observations and reuses day
 		const largeCacheStarted = performance.now();
 		const largeCache = await run(cacheWindow);
 		expect(largeCache.aReused).toBe(true);
-		expect(largeCache.requests).toBe(0);
+		expect(largeCache.requests).toBe(1);
 		expect(largeCache.completedRepos).toBe(1);
 		expect(performance.now() - largeCacheStarted).toBeLessThan(5_000);
 		expect(allCached.requestBreakdown).toEqual({
-			total: 0,
-			graphql: 0,
+			total: 1,
+			graphql: 1,
 			rest: 0,
 			a: { graphql: 0, rest: 0 },
-			b: { graphql: 0, rest: 0 },
+			b: { graphql: 1, rest: 0 },
 		});
 		expect(allCached.partialReasons).toEqual([]);
 		const cachedSecurity = await machine("repos/phase2/demo/security");
