@@ -19,6 +19,8 @@ export type Dimension = {
 	truncated?: boolean;
 	/** Oldest fetched source timestamp (ISO), used to bound per-day partial observations. */
 	oldestAt?: string | null;
+	/** Merges/closes fetched via GitHub search for the refresh window (real closedAt/mergedAt). */
+	lifecycle?: FactoryEvent[];
 };
 type Transport = ReturnType<typeof transport>;
 export const terminal = (error: unknown) =>

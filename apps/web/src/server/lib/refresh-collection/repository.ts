@@ -1,5 +1,9 @@
 import type { FactoryEvent, FactoryRepo, FactoryStreamData } from "../../../lib/factory-types";
-import { REFRESH_DIMENSIONS, type RefreshFailureDetail } from "../../../lib/refresh-types";
+import {
+	REFRESH_DIMENSIONS,
+	type RefreshDimension,
+	type RefreshFailureDetail,
+} from "../../../lib/refresh-types";
 import { ApiError } from "../errors";
 import {
 	mapActionRuns,
@@ -19,6 +23,15 @@ import {
 } from "./dimensions";
 import { dayCoverage, dayNeedsRefresh, PUBLICATION_DAYS, publicationDays } from "./history";
 import {
+	closedIssueSearchQuery,
+	dropStaleOpen,
+	lifecycleCalendarRange,
+	lifecycleEvents,
+	lifecycleFromResponse,
+	mergedPrSearchQuery,
+	mergeLifecycleRaw,
+} from "./lifecycle";
+import {
 	blankDay,
 	blankMetrics,
 	type Catalog,
@@ -28,7 +41,6 @@ import {
 	factoryRepo,
 	type Node,
 	object,
-	text,
 	windowOf,
 } from "./model";
 import { repositoryQuery } from "./queries";
@@ -171,7 +183,7 @@ export async function collectRepository(
 	const previous = observationResult.results;
 	const needed = context.run.params.dimensions.filter((dimension) =>
 		context.days.some((day) => dayNeedsRefresh(context, previous, day, dimension)),
-	);
+	) as RefreshDimension[];
 	const upstream = transport(context);
 	const commitDays = needed.includes("commits")
 		? context.days.filter(
@@ -197,11 +209,29 @@ export async function collectRepository(
 		context.run.params.force ||
 		needed.some((dimension) => dimension !== "actions" && dimension !== "alerts") ||
 		(restOnly && (prior === null || context.run.params.force));
+	const lifecycleRange = lifecycleCalendarRange(context.days);
+	const wantLifecycle =
+		metadataQuery === true &&
+		lifecycleRange !== null &&
+		needed.some((dimension) => dimension === "issues" || dimension === "prs");
+	if (wantLifecycle && lifecycleRange) {
+		for (const dimension of needed) {
+			if (dimension === "prs")
+				variables.mergedQuery = mergedPrSearchQuery(saved.repo, lifecycleRange);
+			if (dimension === "issues")
+				variables.closedQuery = closedIssueSearchQuery(saved.repo, lifecycleRange);
+		}
+	}
 	const data = metadataQuery
 		? await upstream.request((client) =>
-				client.githubGraphql(context.token, repositoryQuery(commitDays, needed), variables),
+				client.githubGraphql(
+					context.token,
+					repositoryQuery(commitDays, needed, wantLifecycle),
+					variables,
+				),
 			)
 		: { node: JSON.parse(saved.payload) as Node };
+	const lifecycleRaw = wantLifecycle ? lifecycleFromResponse(object(data), needed) : null;
 	const denied = upstream.client.graphqlErrors.length > 0;
 	const raw = object(data.node);
 	if (
@@ -299,16 +329,7 @@ export async function collectRepository(
 					};
 				}
 				if (result.inventoryComplete === true) {
-					for (const [itemId, item] of merged) {
-						if (item.state !== "OPEN" || fetchedOpenIds.has(itemId)) continue;
-						const closedAt = text(item.closedAt) ?? text(item.updatedAt) ?? context.now;
-						merged.set(itemId, {
-							...item,
-							state: "CLOSED",
-							closedAt,
-							...(dimension === "prs" && text(item.mergedAt) ? {} : { mergedAt: null }),
-						});
-					}
+					dropStaleOpen(merged, fetchedOpenIds);
 					if (expectedOpen !== null) {
 						const openInMerged = [...merged.values()].filter((row) => row.state === "OPEN").length;
 						if (openInMerged !== expectedOpen) {
@@ -320,6 +341,21 @@ export async function collectRepository(
 							};
 						}
 					}
+				}
+				if (lifecycleRaw) {
+					mergeLifecycleRaw(
+						merged,
+						dimension === "prs" ? lifecycleRaw.merged : lifecycleRaw.closed,
+						dimension,
+					);
+				}
+				const lifecycle = lifecycleRaw ? lifecycleEvents(lifecycleRaw, dimension) : [];
+				if (lifecycleRaw?.truncated && result.status === "complete") {
+					result = {
+						...result,
+						status: "partial",
+						reason: result.reason ?? "lifecycle_search_truncated",
+					};
 				}
 				writes.push(
 					db
@@ -333,7 +369,12 @@ export async function collectRepository(
 							JSON.stringify([...merged.values()]),
 						),
 				);
-				result = { ...result, raw: [...merged.values()], items: [...merged.values()].map(event) };
+				result = {
+					...result,
+					lifecycle,
+					raw: [...merged.values()],
+					items: [...merged.values()].map(event),
+				};
 			} else if (dimension === "releases")
 				result = collectReleases(object(raw.releases), denied, windowOf(context).since);
 			else result = await collectRest(context, upstream, saved.repo, dimension);
@@ -347,12 +388,16 @@ export async function collectRepository(
 		consumed = upstream.failures.length;
 		for (const day of context.days) {
 			if (!dayNeedsRefresh(context, previous, day, dimension)) continue;
+			const streamEvents = [...result.items];
+			for (const item of result.lifecycle ?? []) {
+				if (!streamEvents.some((existing) => existing.id === item.id)) streamEvents.push(item);
+			}
 			const items =
 				dimension === "alerts"
 					? result.items
 					: dimension === "releases"
 						? result.items.filter((item) => inDay(item.at, day.since, day.until))
-						: dayItems(result.items, day.since, day.until);
+						: dayItems(streamEvents, day.since, day.until);
 			const unavailableTerminal = result.terminal === true;
 			const { status, reason, count } = observationForDay(
 				result,
@@ -440,6 +485,7 @@ export async function collectRepository(
 			dimension === "issues" || dimension === "prs" ? (results.get(dimension)?.items ?? []) : null;
 		if (streamInventory) {
 			for (const item of streamInventory) items.set(item.id, item);
+			for (const item of results.get(dimension)?.lifecycle ?? []) items.set(item.id, item);
 		}
 		for (const day of retainedDays) {
 			const row = current.get(`${day.date}:${dimension}`);
@@ -456,14 +502,19 @@ export async function collectRepository(
 			}
 			const metricItems =
 				dimension === "issues" || dimension === "prs" ? [...items.values()] : value.items;
+			const lifecycleMetric = results.get(dimension)?.lifecycle ?? [];
+			for (const item of lifecycleMetric) {
+				if (dimension === "issues" && inDay(item.closedAt, dayBounds.since, dayBounds.until))
+					metrics.issueClosed++;
+				if (dimension === "prs" && inDay(item.mergedAt, dayBounds.since, dayBounds.until))
+					metrics.prMerged++;
+			}
 			for (const item of metricItems) {
 				if (dimension === "issues") {
 					if (inDay(item.createdAt, dayBounds.since, dayBounds.until)) metrics.issueOpened++;
-					if (inDay(item.closedAt, dayBounds.since, dayBounds.until)) metrics.issueClosed++;
 				}
 				if (dimension === "prs") {
 					if (inDay(item.createdAt, dayBounds.since, dayBounds.until)) metrics.prOpened++;
-					if (inDay(item.mergedAt, dayBounds.since, dayBounds.until)) metrics.prMerged++;
 					else if (inDay(item.closedAt, dayBounds.since, dayBounds.until)) metrics.prClosed++;
 				}
 				if (dimension === "actions") {

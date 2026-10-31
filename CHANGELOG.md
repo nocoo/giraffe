@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.28.10 - 2026-11-01
+
+### Fixed
+
+- Collect merged pull requests and closed issues for each refresh window with
+  GitHub GraphQL search (`is:merged` / `is:closed` with Shanghai calendar date
+  ranges) in the same repository query as OPEN inventory, so lifecycle events
+  outside the OPEN list are fetched with real `mergedAt` / `closedAt`
+  timestamps.
+- Attribute factory and activity merge/close metrics to the Shanghai calendar
+  day of the GitHub timestamp, not the day an item disappears from OPEN
+  inventory or the refresh observation time.
+- Stop fabricating `closedAt` from `updatedAt` or observation time when cached
+  OPEN items leave the inventory; rely on search results for window lifecycle.
+
+### Verified
+
+- Regression tests cover latest-day merge/close counts with empty OPEN
+  inventory, r2shot-style mis-dating prevention, lifecycle query strings, and
+  bounded GraphQL (single RefreshRepository call per repo collect).
+
 ## v0.28.9 - 2026-10-31
 
 ### Fixed
