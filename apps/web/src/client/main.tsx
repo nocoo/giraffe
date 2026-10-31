@@ -15,8 +15,10 @@ document.documentElement.classList.toggle("dark", isDark);
 document.documentElement.classList.toggle("light", !isDark);
 document.documentElement.dataset.mode = isDark ? "dark" : "light";
 
+const serviceWorkerUrl = "/sw.js";
+
 if ("serviceWorker" in navigator) {
-	navigator.serviceWorker.register("/sw.js").catch(() => {
+	navigator.serviceWorker.register(serviceWorkerUrl, { scope: "/" }).catch(() => {
 		// Installability is optional when service workers are blocked.
 	});
 }
