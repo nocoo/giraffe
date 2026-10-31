@@ -656,6 +656,102 @@ describe("unified refresh collection", () => {
 			reasons: ["issues:incomplete_pagination", "issues:inventory_incomplete"],
 		});
 	});
+	it.each([
+		["inventoryComplete false", false],
+		["missing inventoryComplete", undefined],
+	] as const)(
+		"recollects issues and pull requests when cached days are complete but %s",
+		async (_label, inventoryComplete) => {
+			const context = await fixture();
+			context.run.params.dimensions = ["issues", "prs"];
+			const open = item("open-item");
+			upstream([
+				accountPage(),
+				{
+					node: {
+						...repo(),
+						openIssues: { totalCount: 1 },
+						openPrs: { totalCount: 1 },
+						issues: connection([open]),
+						pullRequests: connection([open]),
+					},
+				},
+			]);
+			await collectAccount(context);
+			expect(await collectRepository(context, "owner/project")).toMatchObject({
+				partial: false,
+				reasons: [],
+			});
+			for (const dimension of ["issues", "prs"] as const) {
+				const row = (await observation(context, dimension)).results[0];
+				const payload = JSON.parse(row?.payload ?? "{}") as Record<string, unknown>;
+				if (inventoryComplete === undefined) delete payload.inventoryComplete;
+				else payload.inventoryComplete = inventoryComplete;
+				await context.env.DB.prepare(
+					"UPDATE refresh_day_observations SET payload=? WHERE account_id=? AND dimension=?",
+				)
+					.bind(JSON.stringify(payload), context.account.id, dimension)
+					.run();
+			}
+			const fetch = upstream([
+				{
+					node: {
+						...repo(),
+						openIssues: { totalCount: 1 },
+						openPrs: { totalCount: 1 },
+						issues: connection([open]),
+						pullRequests: connection([open]),
+					},
+				},
+			]);
+			expect(await collectRepository(context, "owner/project")).toMatchObject({
+				partial: false,
+				reasons: [],
+				requests: 1,
+			});
+			expect(fetch).toHaveBeenCalled();
+			for (const dimension of ["issues", "prs"] as const) {
+				expect(
+					JSON.parse((await observation(context, dimension)).results[0]?.payload ?? "{}"),
+				).toMatchObject({ inventoryComplete: true });
+			}
+		},
+	);
+	it("reuses complete issue and pull-request day observations without upstream calls", async () => {
+		const context = await fixture();
+		context.run.params.dimensions = ["issues", "prs"];
+		const open = item("cached-open");
+		upstream([
+			accountPage(),
+			{
+				node: {
+					...repo(),
+					openIssues: { totalCount: 1 },
+					openPrs: { totalCount: 1 },
+					issues: connection([open]),
+					pullRequests: connection([open]),
+				},
+			},
+		]);
+		await collectAccount(context);
+		expect(await collectRepository(context, "owner/project")).toMatchObject({
+			partial: false,
+			reasons: [],
+		});
+		for (const dimension of ["issues", "prs"] as const) {
+			expect(
+				JSON.parse((await observation(context, dimension)).results[0]?.payload ?? "{}"),
+			).toMatchObject({ inventoryComplete: true });
+		}
+		const fetch = upstream();
+		expect(await collectRepository(context, "owner/project")).toEqual({
+			requests: 0,
+			requestBreakdown: { graphql: 0, rest: 0 },
+			partial: false,
+			reasons: [],
+		});
+		expect(fetch).not.toHaveBeenCalled();
+	});
 	it("collects latest CI, releases and both alert features in the saved wire format", async () => {
 		const context = await fixture();
 		const actions = [

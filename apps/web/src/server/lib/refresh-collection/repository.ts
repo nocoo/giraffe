@@ -17,7 +17,7 @@ import {
 	failure,
 	terminal,
 } from "./dimensions";
-import { dayCoverage, PUBLICATION_DAYS, publicationDays } from "./history";
+import { dayCoverage, PUBLICATION_DAYS, publicationDays, reusableDayObservation } from "./history";
 import {
 	blankDay,
 	blankMetrics,
@@ -137,7 +137,9 @@ export async function collectRepository(
 				(day) =>
 					!previous.some(
 						(row) =>
-							row.day === day.date && row.dimension === dimension && row.status === "complete",
+							row.day === day.date &&
+							row.dimension === dimension &&
+							reusableDayObservation(row, dimension),
 					),
 			),
 	);
@@ -317,7 +319,10 @@ export async function collectRepository(
 			if (
 				!context.run.params.force &&
 				previous.some(
-					(row) => row.day === day.date && row.dimension === dimension && row.status === "complete",
+					(row) =>
+						row.day === day.date &&
+						row.dimension === dimension &&
+						reusableDayObservation(row, dimension),
 				)
 			)
 				continue;

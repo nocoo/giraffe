@@ -7,6 +7,12 @@ import { mergeWindows } from "./windows";
 
 export const PUBLICATION_DAYS = 90;
 
+export function reusableDayObservation(row: DayObservation, dimension: string): boolean {
+	if (row.status !== "complete") return false;
+	if (dimension !== "issues" && dimension !== "prs") return true;
+	return object(JSON.parse(row.payload)).inventoryComplete === true;
+}
+
 export function publicationDays(context: CollectionContext, rows: DayObservation[]): RefreshDay[] {
 	const days = new Map<string, RefreshDay>();
 	for (const row of rows) {
@@ -31,7 +37,7 @@ export function dayCoverage(
 	const selected = days.map((day) => current.get(`${day.date}:${dimension}`));
 	const stored = selected.filter((row): row is DayObservation => row !== undefined);
 	const settled = stored
-		.filter((row) => row.status === "complete")
+		.filter((row) => reusableDayObservation(row, dimension))
 		.map((row) => ({ row, payload: object(JSON.parse(row.payload)) }));
 	const available = settled.filter(({ payload }) => payload.unavailable !== true);
 	const settledReason =
@@ -39,7 +45,8 @@ export function dayCoverage(
 			.map(({ payload }) => text(payload.reason))
 			.find((reason): reason is string => reason !== null) ?? "unavailable";
 	const missing =
-		selected.length !== stored.length || stored.some((row) => row.status !== "complete");
+		selected.length !== stored.length ||
+		stored.some((row) => !reusableDayObservation(row, dimension));
 	const latest = [...stored].sort((first, second) =>
 		second.fetched_at.localeCompare(first.fetched_at),
 	)[0];

@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.28.5 - 2026-10-31
+
+### Fixed
+
+- Treat issue and pull-request day observations as reusable on non-force refreshes
+  only when `inventoryComplete` is true, not merely when the row status is
+  `complete`. Legacy or partial rows with incomplete open inventories are
+  re-collected instead of silently reused.
+
+### Verified
+
+- Regression tests cover re-collection when cached issue/PR days lack complete
+  inventory, and zero-request reuse when inventory is fully complete.
+
 ## v0.28.4 - 2026-10-30
 
 ### Fixed
