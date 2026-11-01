@@ -769,7 +769,7 @@ describe("unified refresh collection", () => {
 		);
 		expect(afterIssues.find((row) => row.day === "2026-10-28")?.fetched_at).toBe(context.now);
 	});
-	it("derives merged and closed day metrics from full inventories when day payloads omit lifecycle items", async () => {
+	it("counts merged and closed metrics from lifecycle search when OPEN inventory is empty", async () => {
 		const context = await fixture();
 		context.days = [
 			{ date: "2026-10-31", since: "2026-10-30T16:00:00.000Z", until: "2026-10-31T16:00:00.000Z" },
@@ -782,17 +782,7 @@ describe("unified refresh collection", () => {
 		};
 		const mergedAt = "2026-10-31T02:00:00.000Z";
 		const closedAt = "2026-10-31T03:00:00.000Z";
-		const cachedMerged = {
-			...item("merged-pr", "MERGED"),
-			mergedAt,
-			state: "MERGED",
-		};
-		const cachedClosed = {
-			...item("closed-issue", "CLOSED"),
-			closedAt,
-			state: "CLOSED",
-		};
-		upstream([
+		const fetch = upstream([
 			accountPage(),
 			{
 				node: {
@@ -802,53 +792,72 @@ describe("unified refresh collection", () => {
 					issues: connection([]),
 					pullRequests: connection([]),
 				},
-			},
-		]);
-		await collectAccount(context);
-		await collectRepository(context, "owner/project");
-		const emptyDay = {
-			count: 0,
-			observed: 0,
-			items: [],
-			source: "github_graphql",
-			inventoryComplete: true,
-			since: context.days[0]?.since,
-			until: context.days[0]?.until,
-		};
-		await context.env.DB.batch([
-			context.env.DB.prepare(
-				"UPDATE refresh_day_observations SET payload=? WHERE account_id=? AND dimension=?",
-			).bind(JSON.stringify(emptyDay), context.account.id, "prs"),
-			context.env.DB.prepare(
-				"UPDATE refresh_day_observations SET payload=? WHERE account_id=? AND dimension=?",
-			).bind(JSON.stringify(emptyDay), context.account.id, "issues"),
-			context.env.DB.prepare(
-				"INSERT INTO refresh_items(account_id,repo_id,stream,item_id,payload) VALUES('a','R_1','prs',?,?)",
-			).bind(String(cachedMerged.id), JSON.stringify(cachedMerged)),
-			context.env.DB.prepare(
-				"INSERT INTO refresh_items(account_id,repo_id,stream,item_id,payload) VALUES('a','R_1','issues',?,?)",
-			).bind(String(cachedClosed.id), JSON.stringify(cachedClosed)),
-		]);
-		upstream([
-			{
-				node: {
-					...repo(),
-					openIssues: { totalCount: 0 },
-					openPrs: { totalCount: 0 },
-					issues: connection([]),
-					pullRequests: connection([]),
+				mergedLifecycle: {
+					nodes: [{ ...item("merged-pr", "MERGED"), mergedAt, state: "MERGED" }],
+					pageInfo: { hasNextPage: false, endCursor: null },
+				},
+				closedLifecycle: {
+					nodes: [{ ...item("closed-issue", "CLOSED"), closedAt, state: "CLOSED" }],
+					pageInfo: { hasNextPage: false, endCursor: null },
 				},
 			},
 		]);
+		await collectAccount(context);
 		expect(await collectRepository(context, "owner/project")).toMatchObject({
 			partial: false,
 			reasons: [],
+			requests: 1,
 		});
+		expect(
+			fetch.mock.calls.filter(
+				([url, init]) =>
+					String(url).endsWith("/graphql") && String(init?.body).includes("RefreshRepository"),
+			),
+		).toHaveLength(1);
 		const saved = await publication(context);
 		expect(saved.repos[0].metrics.days["2026-10-31"]).toMatchObject({
 			prMerged: 1,
 			issueClosed: 1,
 		});
+	});
+	it("attributes closes to the Shanghai day of closedAt, not the day OPEN inventory disappeared", async () => {
+		const context = await fixture();
+		context.days = [
+			{ date: "2026-10-29", since: "2026-10-28T16:00:00.000Z", until: "2026-10-29T16:00:00.000Z" },
+			{ date: "2026-10-31", since: "2026-10-30T16:00:00.000Z", until: "2026-10-31T16:00:00.000Z" },
+		];
+		context.run.params = {
+			...context.run.params,
+			since: "2026-10-29",
+			until: "2026-10-31",
+			dimensions: ["issues"],
+		};
+		const closedAt = "2026-10-31T01:03:00.000Z";
+		const staleOpen = item("r2shot-400", "OPEN");
+		upstream([
+			accountPage(),
+			{
+				node: {
+					...repo(),
+					openIssues: { totalCount: 0 },
+					issues: connection([]),
+				},
+				closedLifecycle: {
+					nodes: [{ ...item("r2shot-400", "CLOSED"), closedAt, state: "CLOSED" }],
+					pageInfo: { hasNextPage: false, endCursor: null },
+				},
+			},
+		]);
+		await collectAccount(context);
+		await context.env.DB.prepare(
+			"INSERT INTO refresh_items(account_id,repo_id,stream,item_id,payload) VALUES('a','R_1','issues',?,?)",
+		)
+			.bind(String(staleOpen.id), JSON.stringify(staleOpen))
+			.run();
+		expect(await collectRepository(context, "owner/project")).toMatchObject({ partial: false });
+		const saved = await publication(context);
+		expect(saved.repos[0].metrics.days["2026-10-29"]?.issueClosed ?? 0).toBe(0);
+		expect(saved.repos[0].metrics.days["2026-10-31"]?.issueClosed).toBe(1);
 	});
 	it("collects latest CI, releases and both alert features in the saved wire format", async () => {
 		const context = await fixture();

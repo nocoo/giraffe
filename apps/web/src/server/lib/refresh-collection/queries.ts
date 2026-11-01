@@ -1,4 +1,5 @@
 import type { RefreshDay } from "../../../lib/refresh-types";
+import { lifecycleSearchFields } from "./lifecycle";
 
 const catalogFields = `id name nameWithOwner url description isPrivate isArchived isFork isEmpty pushedAt createdAt diskUsage stargazerCount forkCount visibility owner { login } primaryLanguage { name }`;
 const page = `pageInfo { hasNextPage endCursor }`;
@@ -9,11 +10,14 @@ export const accountQuery = `query RefreshAccount($after:String,$since:DateTime!
  contributionsCollection(from:$since,to:$until) { restrictedContributionsCount contributionCalendar { totalContributions weeks { contributionDays { date contributionCount } } } } }
  rateLimit { remaining resetAt }
 }`;
-export function repositoryQuery(days: RefreshDay[], needed: string[]) {
+export function repositoryQuery(days: RefreshDay[], needed: string[], lifecycle = false) {
 	const releases = needed.includes("releases")
 		? `releases(first:100,orderBy:{field:CREATED_AT,direction:DESC}) { totalCount ${page} nodes { id databaseId name tagName url isDraft isPrerelease publishedAt createdAt updatedAt } }`
 		: "releases { totalCount }";
-	return `query RefreshRepository($id:ID!${days.map((_, index) => `,$since${index}:GitTimestamp!,$until${index}:GitTimestamp!`).join("")}) {
+	const { vars: lifecycleVars, fields: lifecycleFields } = lifecycle
+		? lifecycleSearchFields(needed)
+		: { vars: "", fields: "" };
+	return `query RefreshRepository($id:ID!${days.map((_, index) => `,$since${index}:GitTimestamp!,$until${index}:GitTimestamp!`).join("")}${lifecycleVars}) {
  node(id:$id) { ... on Repository { ${catalogFields}
  defaultBranchRef { name target { ... on Commit { oid history { totalCount } ${days.map((_, index) => `day${index}:history(since:$since${index},until:$until${index}) { totalCount }`).join(" ")} } } }
  languages(first:100,orderBy:{field:SIZE,direction:DESC}) { totalSize pageInfo { hasNextPage } edges { size node { name } } }
@@ -24,6 +28,7 @@ export function repositoryQuery(days: RefreshDay[], needed: string[]) {
  ${needed.includes("issues") ? `issues(states:OPEN,first:100,orderBy:{field:UPDATED_AT,direction:DESC}) { ${page} nodes { ${issueFields} } }` : ""}
  ${needed.includes("prs") ? `pullRequests(states:OPEN,first:100,orderBy:{field:UPDATED_AT,direction:DESC}) { ${page} nodes { ${prFields} } }` : ""}
  } } rateLimit { remaining resetAt }
+ ${lifecycleFields}
  }`;
 }
 export function itemQuery(stream: "issues" | "prs") {
