@@ -50,6 +50,14 @@ function allowedBase(env: Env): string {
 	return base.replace(/\/$/, "");
 }
 
+function graphqlErrorSummary(errors: Array<{ message?: string }>): string {
+	const messages = errors
+		.map((error) => error.message?.trim())
+		.filter((message): message is string => Boolean(message));
+	if (messages.length === 0) return "github error";
+	return messages.slice(0, 3).join("; ");
+}
+
 function isRateLimited(res: Response, body: string): boolean {
 	if (res.status === 429) {
 		return true;
@@ -477,10 +485,10 @@ export function createGithubClient(
 				errors.length > 0 &&
 				!errors.every((e) => e.type === "FORBIDDEN" || e.type === "NOT_FOUND")
 			) {
-				throw new ApiError(502, "github_error", "github error", null, res.status);
+				throw new ApiError(502, "github_error", graphqlErrorSummary(errors), null, res.status);
 			}
 			if (payload.data === null || typeof payload.data !== "object") {
-				throw new ApiError(502, "github_error", "github error", null, res.status);
+				throw new ApiError(502, "github_error", graphqlErrorSummary(errors), null, res.status);
 			}
 			const data = payload.data as Record<string, unknown>;
 			if (errors.length > 0) {

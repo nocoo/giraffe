@@ -17,7 +17,7 @@ import {
 	windowOf,
 } from "./model";
 import { accountQuery } from "./queries";
-import { catalog, collectionDb, publish, snapshots } from "./store";
+import { catalog, collectionDb, publish, savedAccountPublication, snapshots } from "./store";
 import { transport } from "./transport";
 
 export async function collectAccount(context: CollectionContext): Promise<AccountCollectionResult> {
@@ -105,6 +105,9 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 		days,
 		total: count(contributions.totalContributions),
 	}).complete;
+	const priorAccount = contributionComplete
+		? null
+		: await savedAccountPublication(db, context.account.id);
 	const rate = object(first.rateLimit);
 	const snapshot: FactorySnapshot = {
 		schema: 1,
@@ -149,13 +152,23 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 					timezone: "github",
 					typesStatus: "partial",
 				}
-			: null,
-		contributionStatus: contributionComplete ? "complete" : "unavailable",
-		contributionObservation: {
-			version: context.run.id,
-			window: calendarWindow,
-			fetchedAt: context.now,
-		},
+			: (priorAccount?.contribution ?? null),
+		contributionStatus: contributionComplete
+			? "complete"
+			: priorAccount?.contribution
+				? (priorAccount.contributionStatus ?? "complete")
+				: "unavailable",
+		contributionObservation: contributionComplete
+			? {
+					version: context.run.id,
+					window: calendarWindow,
+					fetchedAt: context.now,
+				}
+			: (priorAccount?.contributionObservation ?? {
+					version: context.run.id,
+					window: calendarWindow,
+					fetchedAt: context.now,
+				}),
 	};
 	const statements = [
 		db
