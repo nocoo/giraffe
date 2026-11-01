@@ -1,6 +1,8 @@
 import type { FactorySnapshot } from "../../lib/factory-types";
 import { contributionDates } from "./factory-contributions";
 
+type ContributionDay = NonNullable<FactorySnapshot["contribution"]>["days"][number];
+
 const DAY_MS = 86_400_000;
 
 export type RefreshCalendarWindow = { since: string; until: string };
@@ -99,4 +101,27 @@ export function savedAnnualCalendarCoverage(
 		days: snapshot?.contribution?.days,
 		total: snapshot?.contribution?.total,
 	});
+}
+
+export function materializeContributionDays(
+	fetchedAt: string,
+	window: RefreshCalendarWindow,
+	rawDays: Array<{ date: string; count: number }>,
+): ContributionDay[] | null {
+	if (!rawDays.length) return null;
+	const expected = contributionDates(window.since.slice(0, 10), window.until.slice(0, 10));
+	if (!expected.length) return null;
+	const byDate = new Map(rawDays.map((day) => [day.date, day.count]));
+	return expected.map((date) => ({
+		date,
+		count: byDate.get(date) ?? 0,
+		fetchedAt,
+		observedAt: fetchedAt,
+		breakdown: "unavailable" as const,
+	}));
+}
+
+export function contributionFailureCode(coverage: RefreshCalendarCoverage): string {
+	if (coverage.reason === "complete") return "contributions:unavailable";
+	return `contributions:coverage_${coverage.reason}`;
 }

@@ -1,9 +1,15 @@
 import type { FactorySnapshot } from "../../../lib/factory-types";
+import type { RefreshFailureDetail } from "../../../lib/refresh-types";
 import { publishedFactory } from "../db/factory-runs";
 import { ApiError } from "../errors";
 import { TruncatedError } from "../github-client";
 import { mapRepos } from "../github-map";
-import { annualCalendarCoverage, contributionWindow } from "../refresh-calendar";
+import {
+	annualCalendarCoverage,
+	contributionFailureCode,
+	contributionWindow,
+	materializeContributionDays,
+} from "../refresh-calendar";
 import type { AccountCollectionResult, CollectionContext } from "../refresh-collection-contract";
 import {
 	catalogPayload,
@@ -94,25 +100,27 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 	const contributionDays = nodes(contributions.weeks).flatMap((week) =>
 		nodes(week.contributionDays),
 	);
-	const days = contributionDays.flatMap((day) =>
-		count(day.contributionCount) === null || !text(day.date)
-			? []
-			: [
-					{
-						date: String(day.date),
-						count: Number(day.contributionCount),
-						fetchedAt: context.now,
-						observedAt: context.now,
-						breakdown: "unavailable" as const,
-					},
-				],
-	);
-	const contributionComplete = annualCalendarCoverage({
+	const rawObserved = contributionDays.flatMap((day) => {
+		const countValue = count(day.contributionCount);
+		const date = text(day.date);
+		return countValue === null || !date ? [] : [{ date, count: Number(countValue) }];
+	});
+	const materializedDays =
+		materializeContributionDays(context.now, calendarWindow, rawObserved) ?? [];
+	const summedTotal = materializedDays.reduce((sum, day) => sum + day.count, 0);
+	const totalFromGithub = count(contributions.totalContributions);
+	const contributionTotal = materializedDays.length
+		? totalFromGithub !== null && totalFromGithub === summedTotal
+			? totalFromGithub
+			: summedTotal
+		: null;
+	const contributionCoverage = annualCalendarCoverage({
 		fetchedAt: context.now,
 		window: calendarWindow,
-		days,
-		total: count(contributions.totalContributions),
-	}).complete;
+		days: materializedDays,
+		total: contributionTotal,
+	});
+	const contributionComplete = contributionCoverage.complete && materializedDays.length > 0;
 	const priorAccount = await savedAccountPublication(db, context.account.id);
 	const priorFactoryRow = await db
 		.prepare("SELECT payload FROM refresh_snapshots WHERE account_id=? AND kind='factory'")
@@ -129,23 +137,77 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 			? priorFactoryFromRow.contribution
 			: priorFactory?.contribution;
 	const contributionRetained = contributionComplete || Boolean(retainedContribution?.days?.length);
+	const freshContribution =
+		contributionComplete && contributionTotal !== null
+			? {
+					days: materializedDays,
+					total: Number(contributionTotal),
+					restricted: count(
+						object(object(first.viewer).contributionsCollection).restrictedContributionsCount,
+					),
+					fetchedAt: context.now,
+					observedAt: context.now,
+					timezone: "github" as const,
+					typesStatus: "partial" as const,
+				}
+			: null;
 	const contributionGraphqlErrors = client.graphqlErrors.filter((error) =>
 		contributionGraphqlPath(error.path),
 	);
-	const contributionFailures =
-		contributionGraphqlErrors.length > 0
-			? contributionGraphqlErrors.map((error) => ({
-					dimension: null,
-					code: "contributions:graphql_error" as const,
-					httpStatus: null,
-					graphqlType:
-						(typeof (error as { message?: string }).message === "string" &&
-							(error as { message?: string }).message) ||
-						(typeof error.type === "string" ? error.type : null),
-					graphqlPath: Array.isArray(error.path) ? error.path.map(String) : null,
-				}))
-			: [];
-	if (contributionFailures.length) context.onFailures?.(contributionFailures);
+	const rawCoverage =
+		rawObserved.length > 0
+			? annualCalendarCoverage({
+					fetchedAt: context.now,
+					window: calendarWindow,
+					days: rawObserved.map((day) => ({ date: day.date, count: day.count })),
+					total: contributionTotal,
+				})
+			: null;
+	const contributionDiagnostics: RefreshFailureDetail[] = [];
+	if (contributionGraphqlErrors.length > 0) {
+		contributionDiagnostics.push(
+			...contributionGraphqlErrors.map((error) => ({
+				dimension: null,
+				code: "contributions:graphql_error" as const,
+				httpStatus: null,
+				graphqlType:
+					(typeof (error as { message?: string }).message === "string" &&
+						(error as { message?: string }).message) ||
+					(typeof error.type === "string" ? error.type : null),
+				graphqlPath: Array.isArray(error.path) ? error.path.map(String) : null,
+			})),
+		);
+	} else if (rawObserved.length === 0) {
+		contributionDiagnostics.push({
+			dimension: null,
+			code: "contributions:empty",
+			httpStatus: null,
+			graphqlType: null,
+			graphqlPath: null,
+		});
+	} else if (rawCoverage && !rawCoverage.complete) {
+		contributionDiagnostics.push({
+			dimension: null,
+			code: contributionFailureCode(rawCoverage),
+			httpStatus: null,
+			graphqlType: rawCoverage.reason,
+			graphqlPath: null,
+		});
+	}
+	if (
+		contributionRetained &&
+		retainedContribution?.days?.length &&
+		(!contributionComplete || contributionGraphqlErrors.length > 0)
+	) {
+		contributionDiagnostics.push({
+			dimension: null,
+			code: "contributions:retained",
+			httpStatus: null,
+			graphqlType: null,
+			graphqlPath: null,
+		});
+	}
+	if (contributionDiagnostics.length) context.onFailures?.(contributionDiagnostics);
 	const rate = object(first.rateLimit);
 	const snapshot: FactorySnapshot = {
 		schema: 1,
@@ -178,19 +240,7 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 						resource: "graphql",
 						observedAt: context.now,
 					},
-		contribution: contributionComplete
-			? {
-					days,
-					total: Number(contributions.totalContributions),
-					restricted: count(
-						object(object(first.viewer).contributionsCollection).restrictedContributionsCount,
-					),
-					fetchedAt: context.now,
-					observedAt: context.now,
-					timezone: "github",
-					typesStatus: "partial",
-				}
-			: (retainedContribution ?? null),
+		contribution: freshContribution ?? retainedContribution ?? null,
 		contributionStatus: contributionComplete
 			? "complete"
 			: retainedContribution?.days?.length
@@ -267,10 +317,12 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 	});
 	const saved = (await catalog(db, context.account.id)).results;
 	const requestedRepo = context.run.params.repo;
-	const reasons = [
-		...(complete ? [] : ["catalog:incomplete"]),
-		...(contributionComplete || contributionRetained ? [] : ["contributions:unavailable"]),
-	];
+	const contributionReasons = contributionRetained
+		? []
+		: rawObserved.length === 0
+			? ["contributions:empty"]
+			: [contributionFailureCode(contributionCoverage)];
+	const reasons = [...(complete ? [] : ["catalog:incomplete"]), ...contributionReasons];
 	if (requestedRepo) {
 		const requested = saved.find((repo) => repo.repo.toLowerCase() === requestedRepo.toLowerCase());
 		if (!requested)
@@ -281,7 +333,7 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 			partial: reasons.length > 0,
 			reasons,
 			repos: [requested.repo],
-			failures: contributionFailures,
+			failures: contributionDiagnostics,
 		};
 	}
 	const day = shanghaiDay(context.now);
@@ -307,6 +359,6 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 				return !row.observed && newlyCreatedRepo(raw, day.since, day.until);
 			})
 			.map((row) => row.repo),
-		failures: contributionFailures,
+		failures: contributionDiagnostics,
 	};
 }

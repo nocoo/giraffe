@@ -5,6 +5,7 @@ import { annualContributionCalendar } from "../../../../../../tests/fixtures/con
 import { sqliteFixture } from "../../../../../../tests/fixtures/sqlite";
 import { createDb } from "../db/d1";
 import { ApiError } from "../errors";
+import { readContributions } from "../machine-contributions";
 import {
 	readFactoryResource,
 	readMachineAccountObservation,
@@ -1904,29 +1905,38 @@ describe("unified refresh collection", () => {
 		[
 			"a calendar with an interior hole",
 			{
-				totalContributions: 365,
+				totalContributions: 365 * 2 - 2,
 				weeks: [
 					{
 						contributionDays: annualContributionCalendar(
 							now,
+							2,
 						).calendar.weeks[0]?.contributionDays.filter((_, index) => index !== 180),
 					},
 				],
 			},
 		],
-	])("does not publish %s as complete or reusable", async (_name, calendar) => {
+	])("materializes %s into a saved annual calendar", async (_name, calendar) => {
 		const context = await fixture();
 		const page = accountPage();
 		page.viewer.contributionsCollection.contributionCalendar = calendar as never;
 		upstream([page]);
 		const result = await collectAccount(context);
-		expect(result.partial).toBe(true);
-		expect(result.reasons).toContain("contributions:unavailable");
-		expect(await publication(context)).toMatchObject({
-			status: "partial",
-			contribution: null,
-			contributionStatus: "unavailable",
-		});
+		expect(result.partial).toBe(false);
+		expect(result.reasons).not.toContain("contributions:empty");
+		const saved = JSON.parse(
+			(
+				await context.env.DB.prepare(
+					"SELECT payload FROM refresh_accounts WHERE account_id='a'",
+				).first<{ payload: string }>()
+			)?.payload ?? "{}",
+		) as {
+			contributionStatus: string;
+			contribution: { days: { date: string; count: number }[] };
+		};
+		expect(saved.contributionStatus).toBe("complete");
+		expect(saved.contribution.days).toHaveLength(366);
+		expect(saved.contribution.days.some((day) => day.count > 0)).toBe(true);
 	});
 	it("keeps account inventory complete when GraphQL errors only touch contributionsCollection", async () => {
 		const context = await fixture();
@@ -1944,7 +1954,7 @@ describe("unified refresh collection", () => {
 		]);
 		const result = await collectAccount(context);
 		expect(result.partial).toBe(true);
-		expect(result.reasons).toContain("contributions:unavailable");
+		expect(result.reasons).toContain("contributions:empty");
 		const saved = JSON.parse(
 			(
 				await context.env.DB.prepare(
@@ -2149,6 +2159,36 @@ describe("unified refresh collection", () => {
 		expect(saved.contribution.days).toHaveLength(366);
 		expect(saved.contribution.days[0]).toMatchObject({ date: "2025-10-29", count: 2 });
 		expect(saved.contribution.days.at(-1)).toMatchObject({ date: "2026-10-29", count: 2 });
+	});
+	it("materializes GitHub week order gaps and serves the calendar without activity attribution", async () => {
+		const context = await fixture();
+		const calendar = annualContributionCalendar(now, 3).calendar;
+		const days = calendar.weeks[0]?.contributionDays ?? [];
+		const shuffled = [...days.slice(180), ...days.slice(0, 180)];
+		const page = accountPage();
+		page.viewer.contributionsCollection.contributionCalendar = {
+			totalContributions: calendar.totalContributions,
+			weeks: [{ contributionDays: shuffled }],
+		} as never;
+		upstream([page]);
+		const failures: import("../../../lib/refresh-types").RefreshFailureDetail[] = [];
+		context.onFailures = (details) => failures.push(...details);
+		const result = await collectAccount(context);
+		expect(result.partial).toBe(false);
+		expect(result.reasons).not.toContain("contributions:empty");
+		expect(failures.some((entry) => entry.code.startsWith("contributions:coverage_"))).toBe(true);
+		const saved = JSON.parse(
+			(
+				await context.env.DB.prepare(
+					"SELECT payload FROM refresh_accounts WHERE account_id='a'",
+				).first<{ payload: string }>()
+			)?.payload ?? "{}",
+		) as { contribution: { days: { date: string; breakdown: string }[] } };
+		expect(saved.contribution.days).toHaveLength(366);
+		expect(saved.contribution.days[0]?.breakdown).toBe("unavailable");
+		const served = await readContributions(createDb(context.env.DB), "a", {});
+		expect(served.data.days).toHaveLength(366);
+		expect(served.unavailable).toBe(false);
 	});
 	it("derives the one-year contribution window across leap days", () => {
 		expect(contributionWindow("2026-10-29T04:00:00.000Z")).toMatchObject({

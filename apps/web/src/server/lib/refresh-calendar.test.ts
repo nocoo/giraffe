@@ -4,6 +4,7 @@ import { contributionDates } from "./factory-contributions";
 import {
 	annualCalendarCoverage,
 	contributionWindow,
+	materializeContributionDays,
 	type RefreshCalendarWindow,
 	savedAnnualCalendarCoverage,
 } from "./refresh-calendar";
@@ -171,5 +172,26 @@ describe("annual contribution calendar coverage", () => {
 		expect(
 			annualCalendarCoverage({ fetchedAt: window.until, window, days: null, total: 0 }).reason,
 		).toBe("missing");
+	});
+});
+
+describe("materializeContributionDays", () => {
+	it("fills interior holes and out-of-order GitHub weeks", () => {
+		const window = contributionWindow(anchor);
+		const days = daysOf(window, 2);
+		const shuffled = [...days.slice(100), ...days.slice(0, 100)].map((day) => ({
+			date: String(day.date),
+			count: Number(day.count),
+		}));
+		const materialized = materializeContributionDays(window.until, window, shuffled);
+		expect(materialized?.length).toBe(366);
+		expect(
+			annualCalendarCoverage({
+				fetchedAt: window.until,
+				window,
+				days: materialized ?? [],
+				total: materialized?.reduce((sum, day) => sum + day.count, 0) ?? 0,
+			}).complete,
+		).toBe(true);
 	});
 });
