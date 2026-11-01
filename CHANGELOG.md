@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.28.16 - 2026-11-02
+
+### Fixed
+
+- Account refresh **materializes** GitHub contribution day counts into the annual calendar
+  even when weeks arrive out of order or with interior gaps, without requiring per-repo
+  activity attribution (`breakdown: unavailable` remains best-effort).
+- Contribution failures on refresh runs now log **`contributions:empty`**, **`contributions:coverage_*`**, **`contributions:graphql_error`**, and **`contributions:retained`** instead of only `contributions:unavailable`.
+- A successful fresh or retained calendar is persisted to `refresh_accounts` and factory publish so **`GET /contributions` returns 200**.
+
 ## v0.28.15 - 2026-11-01
 
 ### Fixed
