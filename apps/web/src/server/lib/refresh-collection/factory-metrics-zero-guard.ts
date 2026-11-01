@@ -24,15 +24,13 @@ export const FACTORY_DAY_METRIC_FIELDS = [
 	"releases",
 ] as const satisfies readonly (keyof FactoryDay)[];
 
-/** Default-branch ciFailure may legitimately decrease; accidental zero-out guard skips it. */
+/** Metrics protected when a refresh would accidentally zero a field (semantic narrowing exempt). */
 export const FACTORY_DAY_METRICS_ZERO_GUARD_FIELDS = [
 	"commits",
 	"issueOpened",
 	"issueClosed",
 	"prOpened",
 	"prMerged",
-	"prClosed",
-	"ciSuccess",
 	"releases",
 ] as const satisfies readonly (keyof FactoryDay)[];
 
@@ -43,6 +41,7 @@ export function guardFactoryDayMetrics(
 	priorDays: Record<string, FactoryDay> | undefined,
 	nextDays: Record<string, FactoryDay>,
 	repo: string,
+	actionsVerified: (day: string) => boolean = () => true,
 ): { days: Record<string, FactoryDay>; warnings: RefreshMetricGuardEvent[] } {
 	const warnings: RefreshMetricGuardEvent[] = [];
 	if (!priorDays) return { days: nextDays, warnings };
@@ -66,7 +65,11 @@ export function guardFactoryDayMetrics(
 				kept = true;
 			}
 		}
-		if (kept) days[date] = merged;
+		if (!actionsVerified(date)) {
+			merged.ciSuccess = priorDay.ciSuccess;
+			merged.ciFailure = priorDay.ciFailure;
+		}
+		if (kept || !actionsVerified(date)) days[date] = merged;
 	}
 	return { days, warnings };
 }

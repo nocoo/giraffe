@@ -1,4 +1,5 @@
 import type { FactorySnapshot } from "../../../lib/factory-types";
+import { publishedFactory } from "../db/factory-runs";
 import { ApiError } from "../errors";
 import { TruncatedError } from "../github-client";
 import { mapRepos } from "../github-map";
@@ -117,27 +118,34 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 		.prepare("SELECT payload FROM refresh_snapshots WHERE account_id=? AND kind='factory'")
 		.bind(context.account.id)
 		.first<{ payload: string }>();
-	const priorFactory = priorFactoryRow
+	const priorFactoryFromRow = priorFactoryRow
 		? (JSON.parse(priorFactoryRow.payload) as FactorySnapshot)
 		: null;
+	const priorFactoryPublished = await publishedFactory(db, context.account.id).catch(() => null);
+	const priorFactory = priorFactoryPublished ?? priorFactoryFromRow;
 	const retainedContribution = priorAccount?.contribution?.days?.length
 		? priorAccount.contribution
-		: priorFactory?.contribution;
+		: priorFactoryFromRow?.contribution?.days?.length
+			? priorFactoryFromRow.contribution
+			: priorFactory?.contribution;
 	const contributionRetained = contributionComplete || Boolean(retainedContribution?.days?.length);
 	const contributionGraphqlErrors = client.graphqlErrors.filter((error) =>
 		contributionGraphqlPath(error.path),
 	);
-	if (contributionGraphqlErrors.length) {
-		context.onFailures?.(
-			contributionGraphqlErrors.map((error) => ({
-				dimension: null,
-				code: "contributions:graphql_error",
-				httpStatus: null,
-				graphqlType: typeof error.type === "string" ? error.type : null,
-				graphqlPath: Array.isArray(error.path) ? error.path.map(String) : null,
-			})),
-		);
-	}
+	const contributionFailures =
+		contributionGraphqlErrors.length > 0
+			? contributionGraphqlErrors.map((error) => ({
+					dimension: null,
+					code: "contributions:graphql_error" as const,
+					httpStatus: null,
+					graphqlType:
+						(typeof (error as { message?: string }).message === "string" &&
+							(error as { message?: string }).message) ||
+						(typeof error.type === "string" ? error.type : null),
+					graphqlPath: Array.isArray(error.path) ? error.path.map(String) : null,
+				}))
+			: [];
+	if (contributionFailures.length) context.onFailures?.(contributionFailures);
 	const rate = object(first.rateLimit);
 	const snapshot: FactorySnapshot = {
 		schema: 1,
@@ -273,6 +281,7 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 			partial: reasons.length > 0,
 			reasons,
 			repos: [requested.repo],
+			failures: contributionFailures,
 		};
 	}
 	const day = shanghaiDay(context.now);
@@ -298,5 +307,6 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 				return !row.observed && newlyCreatedRepo(raw, day.since, day.until);
 			})
 			.map((row) => row.repo),
+		failures: contributionFailures,
 	};
 }

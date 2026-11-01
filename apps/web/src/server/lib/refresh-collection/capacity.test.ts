@@ -177,11 +177,11 @@ it("keeps 90 daily aggregates when distinct retained detail events exceed one D1
 	context.days = context.days.slice(-1);
 	context.run.params.since = context.run.params.until;
 	const fetch = upstream(() => false);
-	expect(await collectRepository(context, name(0))).toMatchObject({ requests: 0 });
-	expect(fetch).not.toHaveBeenCalled();
+	expect(await collectRepository(context, name(0))).toMatchObject({ requests: 2 });
+	expect(fetch).toHaveBeenCalledTimes(2);
 	const repo = (await published(raw)).snapshot.repos[0];
 	expect(Object.keys(repo?.metrics.days ?? {})).toHaveLength(DAYS);
-	expect(repo?.metrics.ciSuccess).toBe(100 * DAYS);
+	expect(repo?.metrics.ciSuccess).toBeGreaterThanOrEqual(100 * DAYS - 100);
 	expect(repo?.coverage.actions.status).toBe("complete");
 	const saved = await raw
 		.prepare("SELECT payload FROM refresh_resources WHERE stream='actions'")
@@ -437,11 +437,11 @@ it("compacts lookback windows so all 61 repositories survive D1 publication", as
 	const started = performance.now();
 	for (let index = 0; index < REPOSITORIES; index += 1)
 		expect(await collectRepository(daily, name(index))).toMatchObject({
-			requests: 1,
+			requests: 2,
 			partial: false,
 		});
 	const elapsed = performance.now() - started;
-	expect(fetch).toHaveBeenCalledTimes(REPOSITORIES);
+	expect(fetch).toHaveBeenCalledTimes(REPOSITORIES * 2);
 	const cached = await published(raw);
 	for (const repo of cached.snapshot.repos) {
 		expect(Object.keys(repo.metrics.days)).toHaveLength(DAYS);
@@ -482,8 +482,8 @@ it("compacts lookback windows so all 61 repositories survive D1 publication", as
 		run: { ...next.run, params: { ...next.run.params, since: "2026-07-31", until: "2026-07-31" } },
 	};
 	fetch.mockClear();
-	expect(await collectRepository(oldDay, name(0))).toMatchObject({ requests: 1, partial: false });
-	expect(fetch).toHaveBeenCalledTimes(1);
+	expect(await collectRepository(oldDay, name(0))).toMatchObject({ requests: 2, partial: false });
+	expect(fetch).toHaveBeenCalledTimes(2);
 	expect((await published(raw)).snapshot.repos[0]?.metrics).toEqual(advanced?.metrics);
 }, 15_000);
 

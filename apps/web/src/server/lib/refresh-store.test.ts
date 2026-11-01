@@ -4,6 +4,7 @@ import { createDb } from "./db/d1";
 import { parseRefreshParams } from "./refresh-params";
 import {
 	activeRefreshRun,
+	addRefreshActionsObservationAudit,
 	addRefreshMetricGuardEvents,
 	addRefreshPartialReasons,
 	addRefreshRequests,
@@ -157,6 +158,24 @@ it("appends metric guard warnings onto the refresh run", async () => {
 	expect(
 		addRefreshMetricGuardEvents(run, [{ ...event, field: "prOpened" }]).metricGuardEvents,
 	).toEqual([event, { ...event, field: "prOpened" }]);
+});
+it("accumulates actions observation audit entries on refresh runs", () => {
+	const run = {
+		id: "run-1",
+		actionsObservationAudit: undefined,
+	} as never;
+	const audit = {
+		repo: "octo/one",
+		outsideWindowDays: 2,
+		missingObservationDays: 1,
+		missingBranchDays: 0,
+	};
+	const updated = addRefreshActionsObservationAudit(run, audit);
+	expect(updated.actionsObservationAudit).toEqual([audit]);
+	expect(
+		addRefreshActionsObservationAudit(updated, { ...audit, repo: "octo/two" })
+			.actionsObservationAudit,
+	).toEqual([audit, { ...audit, repo: "octo/two" }]);
 });
 it("marks queued and running runs cancelled once and never mutates terminal runs", async () => {
 	const db = await fixture();

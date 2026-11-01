@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { FactoryDay } from "../../../lib/factory-types";
 import {
 	FACTORY_DAY_METRICS_ZERO_GUARD_ENV,
+	FACTORY_DAY_METRICS_ZERO_GUARD_FIELDS,
 	factoryDayMetricsZeroGuardEnabled,
 	guardFactoryDayMetrics,
 	resyncFactoryMetricsTotals,
@@ -39,6 +40,20 @@ describe("factory day metrics zero guard", () => {
 		expect(warnings.filter((w) => w.field === "issueOpened")).toHaveLength(1);
 		expect(warnings.filter((w) => w.field === "ciFailure")).toHaveLength(0);
 	});
+
+	it.each([...FACTORY_DAY_METRICS_ZERO_GUARD_FIELDS])(
+		"restores omitted day row for guarded field %s",
+		(field) => {
+			const priorDay = { ...blankDay(), [field]: 4 };
+			const { days, warnings } = guardFactoryDayMetrics(
+				{ "2026-08-04": priorDay },
+				{},
+				"owner/repo",
+			);
+			expect(days["2026-08-04"]?.[field]).toBe(4);
+			expect(warnings.some((entry) => entry.field === field)).toBe(true);
+		},
+	);
 
 	it("resyncs roll-up totals from guarded day rows", () => {
 		const metrics = {
@@ -102,13 +117,18 @@ describe("factory day metrics zero guard", () => {
 		expect(warnings).toEqual([]);
 	});
 
-	it("still zero-guards accidental ciFailure zero for other fields only", () => {
-		const prior = { "2026-10-29": { ...blankDay(), ciFailure: 4, prOpened: 2 } };
-		const next = { "2026-10-29": { ...blankDay(), ciFailure: 0, prOpened: 0 } };
+	it("allows prClosed narrowing without zero guard", () => {
+		const prior = { "2026-10-29": { ...blankDay(), prClosed: 3 } };
+		const next = { "2026-10-29": { ...blankDay(), prClosed: 0 } };
 		const { days, warnings } = guardFactoryDayMetrics(prior, next, "owner/repo");
-		expect(days["2026-10-29"]).toMatchObject({ ciFailure: 0, prOpened: 2 });
-		expect(warnings).toEqual([
-			{ code: "zero_guard_kept", repo: "owner/repo", day: "2026-10-29", field: "prOpened" },
-		]);
+		expect(days["2026-10-29"]?.prClosed).toBe(0);
+		expect(warnings).toEqual([]);
+	});
+
+	it("preserves ciSuccess when actions observations are unverified", () => {
+		const prior = { "2026-08-03": { ...blankDay(), ciSuccess: 5, ciFailure: 2 } };
+		const next = { "2026-08-03": { ...blankDay() } };
+		const { days } = guardFactoryDayMetrics(prior, next, "owner/repo", () => false);
+		expect(days["2026-08-03"]).toMatchObject({ ciSuccess: 5, ciFailure: 2 });
 	});
 });

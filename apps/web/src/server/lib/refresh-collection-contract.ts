@@ -26,5 +26,10 @@ export type CollectionResult = {
 	requestBreakdown: RequestBreakdown;
 	partial: boolean;
 	reasons: string[];
+	actionsObservationAudit?: import("../../lib/refresh-types").RefreshActionsObservationAudit;
 };
-export type AccountCollectionResult = CollectionResult & { repos: string[]; aReused?: boolean };
+export type AccountCollectionResult = CollectionResult & {
+	repos: string[];
+	aReused?: boolean;
+	failures?: import("../../lib/refresh-types").RefreshFailureDetail[];
+};

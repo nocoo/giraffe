@@ -24,6 +24,7 @@ import {
 import {
 	accumulateActionMetrics,
 	accumulateIssuePrMetrics,
+	canVerifyDefaultBranchCiFailures,
 	seedOutsideWindowMetrics,
 } from "./factory-day-metrics";
 import {
@@ -33,9 +34,11 @@ import {
 } from "./factory-metrics-zero-guard";
 import {
 	actionsDayMissingBranch,
+	auditActionsObservations,
 	dayBoundsFromObservation,
 	dayCoverage,
 	dayNeedsRefresh,
+	actionRepairDays as listActionRepairDays,
 	PUBLICATION_DAYS,
 	publicationDays,
 } from "./history";
@@ -47,6 +50,7 @@ import {
 	lifecycleSearchRange,
 	mergedPrSearchQuery,
 	mergeLifecycleRaw,
+	openedPrSearchQuery,
 } from "./lifecycle";
 import {
 	blankDay,
@@ -199,7 +203,22 @@ export async function collectRepository(
 	const saved = savedResult.results[0];
 	if (!saved) throw new ApiError(404, "not_found", "Repository not found in current catalogue");
 	const previous = observationResult.results;
+	const priorRow = priorResult.results[0];
+	const priorRepoPayload = priorRow ? (JSON.parse(priorRow.payload) as FactoryRepo) : null;
+	const windowDayDates = new Set(context.days.map((day) => day.date));
+	const retainedProbe = publicationDays(context, previous, priorRepoPayload?.metrics?.days);
+	const actionDaysToRepair =
+		context.run.params.lookbackDays !== undefined &&
+		context.run.params.dimensions.includes("actions")
+			? listActionRepairDays(
+					windowDayDates,
+					retainedProbe,
+					previous,
+					priorRepoPayload?.metrics?.days,
+				)
+			: [];
 	const needed = context.run.params.dimensions.filter((dimension) => {
+		if (dimension === "actions" && actionDaysToRepair.length > 0) return true;
 		if (
 			dimension === "actions" &&
 			previous.some((row) => row.dimension === "actions" && actionsDayMissingBranch(row))
@@ -226,7 +245,6 @@ export async function collectRepository(
 	const restOnly =
 		needed.length > 0 &&
 		needed.every((dimension) => dimension === "actions" || dimension === "alerts");
-	const priorRow = priorResult.results[0];
 	const prior = priorRow ? { payload: priorRow.payload } : null;
 	const metadataQuery =
 		context.run.params.force ||
@@ -239,8 +257,10 @@ export async function collectRepository(
 		needed.some((dimension) => dimension === "issues" || dimension === "prs");
 	if (wantLifecycle && lifecycleRange) {
 		for (const dimension of needed) {
-			if (dimension === "prs")
+			if (dimension === "prs") {
 				variables.mergedQuery = mergedPrSearchQuery(saved.repo, lifecycleRange);
+				variables.openedQuery = openedPrSearchQuery(saved.repo, lifecycleRange);
+			}
 			if (dimension === "issues")
 				variables.closedQuery = closedIssueSearchQuery(saved.repo, lifecycleRange);
 		}
@@ -262,16 +282,16 @@ export async function collectRepository(
 		String(raw.nameWithOwner).toLowerCase() !== saved.repo.toLowerCase()
 	)
 		throw new ApiError(502, "github_error", "Repository identity unavailable");
-	const priorRepoPayload = prior ? (JSON.parse(prior.payload) as FactoryRepo) : null;
-	const windowDayDates = new Set(context.days.map((day) => day.date));
+	const refreshedMeta = factoryRepo(raw, context);
 	const repo: FactoryRepo =
 		!metadataQuery && priorRepoPayload
 			? {
 					...priorRepoPayload,
-					coverage: factoryRepo(raw, context).coverage,
+					branch: refreshedMeta.branch,
+					coverage: refreshedMeta.coverage,
 					metrics: blankMetrics(),
 				}
-			: factoryRepo(raw, context);
+			: refreshedMeta;
 	const observations: DayObservation[] = [];
 	const writes: D1PreparedStatement[] = [];
 	const results = new Map<string, Dimension>();
@@ -408,7 +428,7 @@ export async function collectRepository(
 				};
 			} else if (dimension === "releases")
 				result = collectReleases(object(raw.releases), denied, windowOf(context).since);
-			else result = await collectRest(context, upstream, saved.repo, dimension);
+			else result = await collectRest(context, upstream, saved.repo, dimension, actionDaysToRepair);
 		} catch (error) {
 			result = failure(error);
 			if (terminal(error)) pendingError = error;
@@ -422,6 +442,11 @@ export async function collectRepository(
 				? (() => {
 						const inWindow = [...context.days];
 						const seen = new Set(inWindow.map((day) => day.date));
+						for (const day of actionDaysToRepair) {
+							if (seen.has(day.date)) continue;
+							inWindow.push(day);
+							seen.add(day.date);
+						}
 						for (const row of previous) {
 							if (row.dimension !== "actions" || seen.has(row.day)) continue;
 							if (!actionsDayMissingBranch(row)) continue;
@@ -474,7 +499,11 @@ export async function collectRepository(
 	}
 	const current = new Map(previous.map((row) => [`${row.day}:${row.dimension}`, row]));
 	for (const row of observations) current.set(`${row.day}:${row.dimension}`, row);
-	const retainedDays = publicationDays(context, [...current.values()]);
+	const retainedDays = publicationDays(
+		context,
+		[...current.values()],
+		priorRepoPayload?.metrics?.days,
+	);
 	const latestAlert = [...current.values()]
 		.filter((row) => row.dimension === "alerts")
 		.sort(
@@ -496,6 +525,7 @@ export async function collectRepository(
 		current,
 		priorRepoPayload?.metrics?.days,
 		repo.branch,
+		context.run.params.timezone,
 	);
 	for (const dimension of dimensions) {
 		const { coverage } = dayCoverage(
@@ -544,9 +574,9 @@ export async function collectRepository(
 		for (const day of retainedDays) {
 			const row = current.get(`${day.date}:${dimension}`);
 			if (!row) continue;
-			if (!windowDayDates.has(day.date)) continue;
 			const value = JSON.parse(row.payload) as { count: number | null; items: FactoryEvent[] };
 			if (dimension !== "alerts") for (const item of value.items) items.set(item.id, item);
+			if (!windowDayDates.has(day.date)) continue;
 			if (row.status !== "complete") continue;
 			const dayBounds = retainedDays.find((entry) => entry.date === row.day);
 			if (!dayBounds) continue;
@@ -567,7 +597,14 @@ export async function collectRepository(
 					dayBounds.since,
 					dayBounds.until,
 				);
-				accumulateIssuePrMetrics(metrics, stream, streamItems, lifecycleMetric, dayBounds);
+				accumulateIssuePrMetrics(
+					metrics,
+					stream,
+					streamItems,
+					lifecycleMetric,
+					dayBounds,
+					context.run.params.timezone,
+				);
 			} else if (dimension === "actions") {
 				accumulateActionMetrics(metrics, value.items, repo.branch, {
 					repoTotals: repo.metrics,
@@ -583,7 +620,9 @@ export async function collectRepository(
 				items:
 					dimension === "issues" || dimension === "prs"
 						? (streamInventory ?? [...items.values()])
-						: [...items.values()],
+						: dimension === "actions"
+							? [...items.values()]
+							: [...items.values()],
 				next: null,
 				ranges: detailCoverage.completeWindows,
 				coverage: detailCoverage,
@@ -650,6 +689,7 @@ export async function collectRepository(
 			priorRepoPayload?.metrics?.days,
 			repo.metrics.days,
 			saved.repo,
+			(day) => canVerifyDefaultBranchCiFailures(current.get(`${day}:actions`)),
 		);
 		repo.metrics.days = days;
 		resyncFactoryMetricsTotals(repo.metrics);
@@ -726,10 +766,17 @@ export async function collectRepository(
 		attributedFailures([...upstream.failures.slice(0, preLoop), ...failures], needed, results),
 	);
 	if (pendingError) throw pendingError;
+	const actionsObservationAudit = auditActionsObservations(
+		saved.repo,
+		windowDayDates,
+		retainedDays,
+		previous,
+	);
 	return {
 		requests: upstream.client.count,
 		requestBreakdown: upstream.breakdown(),
 		partial: reasons.length > 0,
 		reasons,
+		actionsObservationAudit,
 	};
 }

@@ -23,6 +23,10 @@ export function mergedPrSearchQuery(repo: string, range: string): string {
 	return `repo:${repo} is:pr is:merged merged:${range}`;
 }
 
+export function openedPrSearchQuery(repo: string, range: string): string {
+	return `repo:${repo} is:pr created:${range}`;
+}
+
 export function closedIssueSearchQuery(repo: string, range: string): string {
 	return `repo:${repo} is:issue is:closed closed:${range}`;
 }
@@ -31,12 +35,13 @@ export function lifecycleSearchFields(needed: string[]) {
 	const wantPrs = needed.includes("prs");
 	const wantIssues = needed.includes("issues");
 	const vars = [
-		...(wantPrs ? [",$mergedQuery:String!"] : []),
+		...(wantPrs ? [",$mergedQuery:String!,$openedQuery:String!"] : []),
 		...(wantIssues ? [",$closedQuery:String!"] : []),
 	].join("");
 	const fields = [
 		wantPrs
-			? `mergedLifecycle: search(type: ISSUE, query: $mergedQuery, first: 100) { issueCount ${page} nodes { ... on PullRequest { id number title url state createdAt updatedAt closedAt mergedAt isDraft additions deletions baseRefName headRefName reviewDecision mergeable mergeStateStatus author { login } labels(first:20) { nodes { name color } } comments { totalCount } } } }`
+			? `mergedLifecycle: search(type: ISSUE, query: $mergedQuery, first: 100) { issueCount ${page} nodes { ... on PullRequest { id number title url state createdAt updatedAt closedAt mergedAt isDraft additions deletions baseRefName headRefName reviewDecision mergeable mergeStateStatus author { login } labels(first:20) { nodes { name color } } comments { totalCount } } } }
+ openedLifecycle: search(type: ISSUE, query: $openedQuery, first: 100) { issueCount ${page} nodes { ... on PullRequest { id number title url state createdAt updatedAt closedAt mergedAt isDraft additions deletions baseRefName headRefName reviewDecision mergeable mergeStateStatus author { login } labels(first:20) { nodes { name color } } comments { totalCount } } } }`
 			: "",
 		wantIssues
 			? `closedLifecycle: search(type: ISSUE, query: $closedQuery, first: 100) { issueCount ${page} nodes { ... on Issue { id number title url state createdAt updatedAt closedAt author { login } labels(first:20) { nodes { name color } } comments { totalCount } } } }`
@@ -44,7 +49,7 @@ export function lifecycleSearchFields(needed: string[]) {
 	].join("\n ");
 	return { vars, fields, wantPrs, wantIssues };
 }
-type LifecycleRaw = { merged: Node[]; closed: Node[]; truncated: boolean };
+type LifecycleRaw = { merged: Node[]; opened: Node[]; closed: Node[]; truncated: boolean };
 
 function ingestSearch(connection: Node, target: Node[]) {
 	const info = object(connection.pageInfo);
@@ -56,18 +61,28 @@ function ingestSearch(connection: Node, target: Node[]) {
 
 export function lifecycleFromResponse(data: Node, needed: string[]): LifecycleRaw {
 	const merged: Node[] = [];
+	const opened: Node[] = [];
 	const closed: Node[] = [];
 	let truncated = false;
-	if (needed.includes("prs") && ingestSearch(object(data.mergedLifecycle), merged))
-		truncated = true;
+	if (needed.includes("prs")) {
+		if (ingestSearch(object(data.mergedLifecycle), merged)) truncated = true;
+		if (ingestSearch(object(data.openedLifecycle), opened)) truncated = true;
+	}
 	if (needed.includes("issues") && ingestSearch(object(data.closedLifecycle), closed))
 		truncated = true;
-	return { merged, closed, truncated };
+	return { merged, opened, closed, truncated };
 }
 
 export function lifecycleEvents(raw: LifecycleRaw, stream: "issues" | "prs"): FactoryEvent[] {
-	const source = stream === "prs" ? raw.merged : raw.closed;
-	return source.map((row) => event(row));
+	if (stream === "prs") {
+		const byId = new Map<string, Node>();
+		for (const row of [...raw.merged, ...raw.opened]) {
+			if (!text(row.id)) continue;
+			byId.set(String(row.id), { ...(byId.get(String(row.id)) ?? {}), ...row });
+		}
+		return [...byId.values()].map((row) => event(row));
+	}
+	return raw.closed.map((row) => event(row));
 }
 
 export function mergeLifecycleRaw(into: Map<string, Node>, raw: Node[], stream: "issues" | "prs") {

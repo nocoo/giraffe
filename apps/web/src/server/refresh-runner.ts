@@ -16,6 +16,7 @@ import type { AccountCollectionResult, CollectionResult } from "./lib/refresh-co
 import { parseRefreshParams, refreshDays } from "./lib/refresh-params";
 import {
 	activeRefreshRun,
+	addRefreshActionsObservationAudit,
 	addRefreshMetricGuardEvents,
 	addRefreshPartialReasons,
 	addRefreshRequests,
@@ -85,7 +86,12 @@ const executionKey = (run: RefreshRun) => {
 	return `${run.id}:${run.phase}:${run.completedRepos}:${timing?.attempts ?? 0}`;
 };
 type StepOutcome =
-	| { ok: true; phase: "account"; result: AccountCollectionResult }
+	| {
+			ok: true;
+			phase: "account";
+			result: AccountCollectionResult;
+			failures: RefreshFailureDetail[];
+	  }
 	| {
 			ok: true;
 			phase: "repos";
@@ -405,7 +411,7 @@ export class RefreshRunner implements DurableObject {
 			if (!account) throw new ApiError(404, "account_missing", "account missing");
 			if (run.phase === "account") {
 				const reused = await reusableAccountA(db, run);
-				if (reused) return { ok: true, phase: "account", result: reused };
+				if (reused) return { ok: true, phase: "account", result: reused, failures: [] };
 			}
 			const key = encryptionKey(this.env, account.key_version);
 			if (!key) throw new ApiError(500, "encryption_misconfigured", "encryption unavailable");
@@ -429,7 +435,12 @@ export class RefreshRunner implements DurableObject {
 				publishFactorySnapshot: run.phase !== "account",
 			};
 			if (run.phase === "account")
-				return { ok: true, phase: "account", result: await collectAccount(context) };
+				return {
+					ok: true,
+					phase: "account",
+					result: await collectAccount(context),
+					failures,
+				};
 			const repo = run.repos[run.completedRepos];
 			if (!repo) throw new ApiError(500, "validation_failed", "repository cursor invalid");
 			return {
@@ -485,10 +496,12 @@ export class RefreshRunner implements DurableObject {
 				{ ...run, partial: run.partial || outcome.result.partial },
 				repo,
 				reasons,
-				outcome.phase === "repos" && outcome.result.partial ? outcome.failures : [],
+				outcome.failures,
 			);
 			if (outcome.phase === "repos" && outcome.metricGuardEvents.length)
 				run = addRefreshMetricGuardEvents(run, outcome.metricGuardEvents);
+			if (outcome.phase === "repos" && outcome.result.actionsObservationAudit)
+				run = addRefreshActionsObservationAudit(run, outcome.result.actionsObservationAudit);
 		} else {
 			const code = failureCode(outcome.error);
 			const retry = await this.state.storage.get<Retry>("retry");

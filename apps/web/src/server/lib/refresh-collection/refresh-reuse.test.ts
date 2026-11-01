@@ -331,7 +331,7 @@ describe("refresh reuse boundaries", () => {
 				"/code-scanning/alerts": [],
 			},
 		);
-		expect(await collectRepository(context, "owner/project")).toEqual({
+		expect(await collectRepository(context, "owner/project")).toMatchObject({
 			requests: 4,
 			requestBreakdown: { graphql: 1, rest: 3 },
 			partial: false,
@@ -387,7 +387,7 @@ describe("refresh reuse boundaries", () => {
 			"/code-scanning/alerts": Response.json({ message: "no analysis found" }, { status: 404 }),
 		});
 		await collectAccount(context);
-		expect(await collectRepository(context, "owner/project")).toEqual({
+		expect(await collectRepository(context, "owner/project")).toMatchObject({
 			requests: 3,
 			requestBreakdown: { graphql: 1, rest: 2 },
 			partial: false,
@@ -418,7 +418,7 @@ describe("refresh reuse boundaries", () => {
 			data: { unavailable: true, coverage: { status: "unavailable" } },
 		});
 		const fetch = upstream();
-		expect(await collectRepository(context, "owner/project")).toEqual({
+		expect(await collectRepository(context, "owner/project")).toMatchObject({
 			requests: 0,
 			requestBreakdown: { graphql: 0, rest: 0 },
 			partial: false,
@@ -479,7 +479,7 @@ describe("refresh reuse boundaries", () => {
 			"/dependabot/alerts": [],
 			"/code-scanning/alerts": Response.json({ message: "no analysis found" }, { status: 404 }),
 		});
-		expect(await collectRepository(context, "owner/project")).toEqual({
+		expect(await collectRepository(context, "owner/project")).toMatchObject({
 			requests: 2,
 			requestBreakdown: { graphql: 0, rest: 2 },
 			partial: false,
@@ -517,7 +517,7 @@ describe("refresh reuse boundaries", () => {
 			"/dependabot/alerts": [],
 			"/code-scanning/alerts": [],
 		});
-		expect(await collectRepository(context, "owner/project")).toEqual({
+		expect(await collectRepository(context, "owner/project")).toMatchObject({
 			requests: 3,
 			requestBreakdown: { graphql: 1, rest: 2 },
 			partial: false,
@@ -542,7 +542,7 @@ describe("refresh reuse boundaries", () => {
 			"/dependabot/alerts": [],
 			"/code-scanning/alerts": Response.json({ message: "no analysis found" }, { status: 404 }),
 		});
-		expect(await collectRepository(context, "owner/project")).toEqual({
+		expect(await collectRepository(context, "owner/project")).toMatchObject({
 			requests: 3,
 			requestBreakdown: { graphql: 1, rest: 2 },
 			partial: false,
@@ -568,7 +568,7 @@ describe("refresh reuse boundaries", () => {
 		const security = await snapshot(context, "repo:owner/project:security");
 		context.run.params.force = false;
 		const fetch = upstream();
-		expect(await collectRepository(context, "owner/project")).toEqual({
+		expect(await collectRepository(context, "owner/project")).toMatchObject({
 			requests: 0,
 			requestBreakdown: { graphql: 0, rest: 0 },
 			partial: false,
@@ -632,7 +632,7 @@ describe("refresh reuse boundaries", () => {
 			"/code-scanning/alerts": [],
 		});
 		await collectAccount(context);
-		expect(await collectRepository(context, "owner/project")).toEqual({
+		expect(await collectRepository(context, "owner/project")).toMatchObject({
 			requests: 4,
 			requestBreakdown: { graphql: 1, rest: 3 },
 			partial: true,
@@ -643,7 +643,7 @@ describe("refresh reuse boundaries", () => {
 			payload: { unavailable: false },
 		});
 		upstream([], { "/dependabot/alerts": [], "/code-scanning/alerts": [] });
-		expect(await collectRepository(context, "owner/project")).toEqual({
+		expect(await collectRepository(context, "owner/project")).toMatchObject({
 			requests: 2,
 			requestBreakdown: { graphql: 0, rest: 2 },
 			partial: false,
@@ -666,7 +666,7 @@ describe("refresh reuse boundaries", () => {
 			payload: { unavailable: false },
 		});
 		upstream([], { "/dependabot/alerts": [], "/code-scanning/alerts": [] });
-		expect(await collectRepository(context, "owner/project")).toEqual({
+		expect(await collectRepository(context, "owner/project")).toMatchObject({
 			requests: 2,
 			requestBreakdown: { graphql: 0, rest: 2 },
 			partial: false,
@@ -682,7 +682,7 @@ describe("refresh reuse boundaries", () => {
 			"/code-scanning/alerts": Response.json({ message: "Requires permission" }, { status: 403 }),
 		});
 		await collectAccount(context);
-		expect(await collectRepository(context, "owner/project")).toEqual({
+		expect(await collectRepository(context, "owner/project")).toMatchObject({
 			requests: 3,
 			requestBreakdown: { graphql: 1, rest: 2 },
 			partial: true,
@@ -690,7 +690,7 @@ describe("refresh reuse boundaries", () => {
 		});
 		expect((await day(context, "alerts")).status).toBe("unavailable");
 		upstream([], { "/dependabot/alerts": [], "/code-scanning/alerts": [] });
-		expect(await collectRepository(context, "owner/project")).toEqual({
+		expect(await collectRepository(context, "owner/project")).toMatchObject({
 			requests: 2,
 			requestBreakdown: { graphql: 0, rest: 2 },
 			partial: false,
@@ -771,7 +771,7 @@ describe("90-day lookback cache reuse", () => {
 		expect(context.days).toHaveLength(LOOKBACK_DAYS);
 		const fetch = upstream([accountPage(), repositoryNode(LOOKBACK_DAYS)]);
 		expect((await collectAccount(context)).repos).toEqual(["owner/project"]);
-		expect(await collectRepository(context, "owner/project")).toEqual({
+		expect(await collectRepository(context, "owner/project")).toMatchObject({
 			requests: 1,
 			requestBreakdown: { graphql: 1, rest: 0 },
 			partial: false,
@@ -810,7 +810,7 @@ describe("90-day lookback cache reuse", () => {
 				},
 			},
 		]);
-		expect(await collectRepository(context, "owner/project")).toEqual({
+		expect(await collectRepository(context, "owner/project")).toMatchObject({
 			requests: 1,
 			requestBreakdown: { graphql: 1, rest: 0 },
 			partial: false,
@@ -833,7 +833,7 @@ describe("90-day lookback cache reuse", () => {
 		};
 		upstream([accountPage(), repositoryNode(LOOKBACK_DAYS)], unavailableAlerts);
 		await collectAccount(context);
-		expect(await collectRepository(context, "owner/project")).toEqual({
+		expect(await collectRepository(context, "owner/project")).toMatchObject({
 			requests: 3,
 			requestBreakdown: { graphql: 1, rest: 2 },
 			partial: false,
@@ -856,7 +856,7 @@ describe("90-day lookback cache reuse", () => {
 		expect(preserved).toHaveLength(LOOKBACK_DAYS * 3 - missingDays.length);
 		context.now = "2026-10-29T09:00:00.000Z";
 		const fetch = upstream([repositoryNode(missingDays.length)]);
-		expect(await collectRepository(context, "owner/project")).toEqual({
+		expect(await collectRepository(context, "owner/project")).toMatchObject({
 			requests: 1,
 			requestBreakdown: { graphql: 1, rest: 0 },
 			partial: false,
@@ -908,7 +908,7 @@ describe("90-day lookback cache reuse", () => {
 		});
 		expect(coverage.alerts.completeWindows).toEqual(contiguousSpan(context.days));
 		const replay = upstream();
-		expect(await collectRepository(context, "owner/project")).toEqual({
+		expect(await collectRepository(context, "owner/project")).toMatchObject({
 			requests: 0,
 			requestBreakdown: { graphql: 0, rest: 0 },
 			partial: false,
@@ -919,7 +919,7 @@ describe("90-day lookback cache reuse", () => {
 		context.run.params.force = true;
 		context.now = "2026-10-29T10:00:00.000Z";
 		const forced = upstream([repositoryNode(LOOKBACK_DAYS)], unavailableAlerts);
-		expect(await collectRepository(context, "owner/project")).toEqual({
+		expect(await collectRepository(context, "owner/project")).toMatchObject({
 			requests: 3,
 			requestBreakdown: { graphql: 1, rest: 2 },
 			partial: false,

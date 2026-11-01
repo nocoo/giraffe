@@ -130,6 +130,15 @@ export function addRefreshRequests(
 		},
 	};
 }
+export function addRefreshActionsObservationAudit(
+	run: RefreshRun,
+	audit: import("../../lib/refresh-types").RefreshActionsObservationAudit,
+): RefreshRun {
+	return {
+		...run,
+		actionsObservationAudit: [...(run.actionsObservationAudit ?? []), audit],
+	};
+}
 export function addRefreshMetricGuardEvents(
 	run: RefreshRun,
 	events: RefreshMetricGuardEvent[],

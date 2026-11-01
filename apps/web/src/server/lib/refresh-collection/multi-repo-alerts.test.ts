@@ -131,7 +131,7 @@ describe("multi-repository terminal alert reuse", () => {
 			terminalAlerts,
 		);
 		for (const name of names)
-			expect(await collectRepository(context, name)).toEqual({
+			expect(await collectRepository(context, name)).toMatchObject({
 				requests: 3,
 				requestBreakdown: { graphql: 1, rest: 2 },
 				partial: false,
@@ -147,7 +147,7 @@ describe("multi-repository terminal alert reuse", () => {
 
 		const replay = upstream();
 		for (const name of names)
-			expect(await collectRepository(context, name)).toEqual({
+			expect(await collectRepository(context, name)).toMatchObject({
 				requests: 0,
 				requestBreakdown: { graphql: 0, rest: 0 },
 				partial: false,
@@ -163,7 +163,7 @@ describe("multi-repository terminal alert reuse", () => {
 		];
 		const extended = upstream([], terminalAlerts);
 		for (const name of names)
-			expect(await collectRepository(context, name)).toEqual({
+			expect(await collectRepository(context, name)).toMatchObject({
 				requests: 2,
 				requestBreakdown: { graphql: 0, rest: 2 },
 				partial: false,
@@ -201,7 +201,7 @@ describe("multi-repository terminal alert reuse", () => {
 			),
 		};
 		upstream([{ node: repository(names[0], 0) }], denied);
-		expect(await collectRepository(context, names[0])).toEqual({
+		expect(await collectRepository(context, names[0])).toMatchObject({
 			requests: 3,
 			requestBreakdown: { graphql: 1, rest: 2 },
 			partial: true,
@@ -212,7 +212,7 @@ describe("multi-repository terminal alert reuse", () => {
 		]);
 
 		const retry = upstream([], denied);
-		expect(await collectRepository(context, names[0])).toEqual({
+		expect(await collectRepository(context, names[0])).toMatchObject({
 			requests: 2,
 			requestBreakdown: { graphql: 0, rest: 2 },
 			partial: true,

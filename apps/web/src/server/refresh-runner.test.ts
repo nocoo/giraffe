@@ -193,6 +193,35 @@ it("persists metric guard warnings emitted during repository collection", async 
 	});
 });
 
+it("persists actions observation audit from repository collection", async () => {
+	const fixture = await setup();
+	collectors.collectAccount.mockResolvedValueOnce({
+		repos: ["octo/one"],
+		...collected(1, 1, 0),
+	});
+	collectors.collectRepository.mockResolvedValueOnce({
+		...collected(2, 1, 1),
+		actionsObservationAudit: {
+			repo: "octo/one",
+			outsideWindowDays: 3,
+			missingObservationDays: 1,
+			missingBranchDays: 0,
+		},
+	});
+	const run = await startRefresh(fixture.env, "account", { repo: "octo/one" });
+	await fixture.runner.alarm();
+	expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
+		actionsObservationAudit: [
+			{
+				repo: "octo/one",
+				outsideWindowDays: 3,
+				missingObservationDays: 1,
+				missingBranchDays: 0,
+			},
+		],
+	});
+});
+
 it("settles D1-only cancellation after a CPU reset without entering cached B", async () => {
 	const fixture = await setup();
 	const run = await startRefresh(fixture.env, "account", { repo: "octo/one" });

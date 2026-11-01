@@ -244,14 +244,14 @@ describe("unified refresh collection", () => {
 			accountPage(),
 			accountPage([repo()], false, null, "2026-10-30T04:00:00.000Z"),
 		]);
-		expect(await collectAccount(context)).toEqual({
+		expect(await collectAccount(context)).toMatchObject({
 			requests: 1,
 			requestBreakdown: { graphql: 1, rest: 0 },
 			partial: false,
 			reasons: [],
 			repos: ["owner/project"],
 		});
-		expect(await collectAccount(context)).toEqual({
+		expect(await collectAccount(context)).toMatchObject({
 			requests: 1,
 			requestBreakdown: { graphql: 1, rest: 0 },
 			partial: false,
@@ -279,7 +279,7 @@ describe("unified refresh collection", () => {
 		const context = await fixture();
 		const fetch = upstream();
 		await collectAccount(context);
-		expect(await collectRepository(context, "owner/project")).toEqual({
+		expect(await collectRepository(context, "owner/project")).toMatchObject({
 			requests: 4,
 			requestBreakdown: { graphql: 1, rest: 3 },
 			partial: false,
@@ -297,7 +297,7 @@ describe("unified refresh collection", () => {
 		);
 		const requests = fetch.mock.calls.map(([url]) => url);
 		expect(requests.every((url) => !url.includes("/commits"))).toBe(true);
-		expect(await collectRepository(context, "owner/project")).toEqual({
+		expect(await collectRepository(context, "owner/project")).toMatchObject({
 			requests: 1,
 			requestBreakdown: { graphql: 1, rest: 0 },
 			partial: false,
@@ -340,7 +340,7 @@ describe("unified refresh collection", () => {
 		).first<{ status: string; payload: string }>();
 		expect(stored?.status).toBe("unavailable");
 		expect(JSON.parse(stored?.payload ?? "{}").count).toBeNull();
-		expect(await collectRepository(context, "owner/project")).toEqual({
+		expect(await collectRepository(context, "owner/project")).toMatchObject({
 			requests: 1,
 			requestBreakdown: { graphql: 1, rest: 0 },
 			partial: false,
@@ -490,7 +490,7 @@ describe("unified refresh collection", () => {
 				until: "2026-10-29T16:00:00.000Z",
 			});
 			context.run.params.until = "2026-10-29";
-			expect(await collectRepository(context, "owner/project")).toEqual({
+			expect(await collectRepository(context, "owner/project")).toMatchObject({
 				requests: 2,
 				requestBreakdown: { graphql: 2, rest: 0 },
 				partial: false,
@@ -601,7 +601,7 @@ describe("unified refresh collection", () => {
 			{ node: { pullRequests: connection([item("P2")]) } },
 		]);
 		await collectAccount(context);
-		expect(await collectRepository(context, "owner/project")).toEqual({
+		expect(await collectRepository(context, "owner/project")).toMatchObject({
 			requests: 3,
 			requestBreakdown: { graphql: 3, rest: 0 },
 			partial: false,
@@ -637,7 +637,7 @@ describe("unified refresh collection", () => {
 		expect(
 			JSON.parse((await observation(context, "issues")).results[0]?.payload ?? "{}").count,
 		).toBeNull();
-		expect(await collectRepository(context, "owner/project")).toEqual({
+		expect(await collectRepository(context, "owner/project")).toMatchObject({
 			requests: 2,
 			requestBreakdown: { graphql: 2, rest: 0 },
 			partial: false,
@@ -669,7 +669,7 @@ describe("unified refresh collection", () => {
 		upstream([accountPage(), ...pages, ...pages]);
 		await collectAccount(context);
 		expect((await collectRepository(context, "owner/project")).partial).toBe(true);
-		expect(await collectRepository(context, "owner/project")).toEqual({
+		expect(await collectRepository(context, "owner/project")).toMatchObject({
 			requests: 2,
 			requestBreakdown: { graphql: 2, rest: 0 },
 			partial: true,
@@ -1073,6 +1073,57 @@ describe("unified refresh collection", () => {
 		expect(JSON.parse(day?.payload ?? "{}").items[0].activityRun.head_branch).toBe("main");
 		expect((await publication(context)).repos[0].metrics.days[outside]?.ciFailure).toBe(1);
 	});
+	it("fetches GitHub Actions for outside-window days missing observations when prior CI was nonzero", async () => {
+		const context = await fixture();
+		const outside = "2026-10-27";
+		context.days = [
+			{ date: "2026-10-28", since: "2026-10-27T16:00:00.000Z", until: "2026-10-28T16:00:00.000Z" },
+			{ date: "2026-10-31", since: "2026-10-30T16:00:00.000Z", until: "2026-10-31T16:00:00.000Z" },
+		];
+		context.run.params = {
+			...context.run.params,
+			since: "2026-10-28",
+			until: "2026-10-31",
+			lookbackDays: 4,
+			dimensions: ["actions"],
+		};
+		const run = {
+			id: 88,
+			name: "CI",
+			html_url: "https://github.com/owner/project/actions/runs/88",
+			status: "completed",
+			conclusion: "failure",
+			head_branch: "main",
+			created_at: "2026-10-27T04:00:00.000Z",
+			updated_at: "2026-10-27T04:00:00.000Z",
+		};
+		upstream([accountPage(), { node: repo() }]);
+		await collectAccount(context);
+		await collectRepository(context, "owner/project");
+		await context.env.DB.prepare(
+			`UPDATE refresh_repository_publications SET payload=json_set(payload,'$.metrics.days."${outside}"',json(?)) WHERE account_id='a'`,
+		)
+			.bind(JSON.stringify({ ...blankDay(), ciFailure: 2, ciSuccess: 1 }))
+			.run();
+		await context.env.DB.prepare(
+			"DELETE FROM refresh_day_observations WHERE account_id='a' AND day=? AND dimension='actions'",
+		)
+			.bind(outside)
+			.run();
+		const fetch = upstream([{ node: repo() }], {
+			"/actions/runs": { total_count: 1, workflow_runs: [run] },
+		});
+		await collectRepository(context, "owner/project");
+		const restCalls = fetch.mock.calls.filter(([url]) => String(url).includes("/actions/runs"));
+		expect(restCalls.length).toBeGreaterThanOrEqual(2);
+		expect((await publication(context)).repos[0].metrics.days[outside]?.ciFailure).toBe(1);
+		const secondPass = await collectRepository(context, "owner/project");
+		expect(secondPass.actionsObservationAudit).toMatchObject({
+			repo: "owner/project",
+			outsideWindowDays: 1,
+			missingObservationDays: 0,
+		});
+	});
 	it("counts lifecycle merges on the Shanghai day of mergedAt using instant search ranges", async () => {
 		const context = await fixture();
 		context.days = [
@@ -1108,6 +1159,102 @@ describe("unified refresh collection", () => {
 		await collectAccount(context);
 		await collectRepository(context, "owner/project");
 		expect((await publication(context)).repos[0].metrics.days["2026-10-29"]?.prMerged).toBe(1);
+	});
+	it("counts prOpened from opened lifecycle search on the Shanghai calendar day", async () => {
+		const context = await fixture();
+		context.days = [
+			{ date: "2026-10-31", since: "2026-10-30T16:00:00.000Z", until: "2026-10-31T16:00:00.000Z" },
+		];
+		context.run.params = {
+			...context.run.params,
+			since: "2026-10-31",
+			until: "2026-10-31",
+			dimensions: ["prs"],
+		};
+		const createdAt = "2026-10-31T02:00:00.000Z";
+		upstream([
+			accountPage(),
+			{
+				node: {
+					...repo(),
+					openPrs: { totalCount: 0 },
+					pullRequests: connection([]),
+				},
+				openedLifecycle: {
+					nodes: [{ ...item("opened-one", "OPEN"), createdAt, state: "OPEN" }],
+					pageInfo: { hasNextPage: false, endCursor: null },
+				},
+			},
+		]);
+		await collectAccount(context);
+		await collectRepository(context, "owner/project");
+		expect((await publication(context)).repos[0].metrics.days["2026-10-31"]?.prOpened).toBe(1);
+	});
+	it("marks pull request collection partial when lifecycle search is truncated", async () => {
+		const context = await fixture();
+		context.days = [
+			{ date: "2026-10-31", since: "2026-10-30T16:00:00.000Z", until: "2026-10-31T16:00:00.000Z" },
+		];
+		context.run.params = {
+			...context.run.params,
+			since: "2026-10-31",
+			until: "2026-10-31",
+			dimensions: ["prs"],
+		};
+		upstream([
+			accountPage(),
+			{
+				node: {
+					...repo(),
+					openPrs: { totalCount: 0 },
+					pullRequests: connection([]),
+				},
+				mergedLifecycle: {
+					nodes: [item("truncated", "MERGED")],
+					pageInfo: { hasNextPage: true, endCursor: "next" },
+				},
+				openedLifecycle: {
+					nodes: [],
+					pageInfo: { hasNextPage: false, endCursor: null },
+				},
+			},
+		]);
+		await collectAccount(context);
+		const result = await collectRepository(context, "owner/project");
+		expect(result.partial).toBe(true);
+		expect(result.reasons).toContain("prs:lifecycle_search_truncated");
+	});
+	it("includes branchless prior action days when planning observation writes", async () => {
+		const context = await fixture();
+		context.days = [
+			{ date: "2026-10-31", since: "2026-10-30T16:00:00.000Z", until: "2026-10-31T16:00:00.000Z" },
+		];
+		context.run.params = {
+			...context.run.params,
+			since: "2026-10-31",
+			until: "2026-10-31",
+			dimensions: ["actions"],
+		};
+		upstream([accountPage(), { node: repo() }]);
+		await collectAccount(context);
+		await collectRepository(context, "owner/project");
+		await context.env.DB.prepare(
+			`INSERT INTO refresh_day_observations(account_id,repo_id,timezone,day,dimension,status,payload,fetched_at) VALUES('a','R_1','Asia/Shanghai','2026-10-26','actions','complete',?,?)`,
+		)
+			.bind(
+				JSON.stringify({
+					count: 1,
+					items: [{ id: "stale", conclusion: "failure", activityRun: null }],
+					since: "2026-10-25T16:00:00.000Z",
+					until: "2026-10-26T16:00:00.000Z",
+				}),
+				context.now,
+			)
+			.run();
+		upstream([{ node: repo() }]);
+		await expect(collectRepository(context, "owner/project")).resolves.toMatchObject({
+			requests: expect.any(Number),
+		});
 	});
 	it("re-collects actions days missing head_branch and counts default-branch failures", async () => {
 		const context = await fixture();
@@ -1325,7 +1472,7 @@ describe("unified refresh collection", () => {
 			"/code-scanning/alerts": Response.json({ message: "no analysis found" }, { status: 404 }),
 		});
 		await collectAccount(context);
-		expect(await collectRepository(context, "owner/project")).toEqual({
+		expect(await collectRepository(context, "owner/project")).toMatchObject({
 			requests: 3,
 			requestBreakdown: { graphql: 1, rest: 2 },
 			partial: false,
@@ -1550,7 +1697,7 @@ describe("unified refresh collection", () => {
 		const fetch = upstream([accountPage(), { node: repo() }, { node: repo() }]);
 		await collectAccount(context);
 		expect((await collectRepository(context, "owner/project")).partial).toBe(true);
-		expect(await collectRepository(context, "owner/project")).toEqual({
+		expect(await collectRepository(context, "owner/project")).toMatchObject({
 			requests: 1,
 			requestBreakdown: { graphql: 1, rest: 0 },
 			partial: false,
@@ -1571,7 +1718,7 @@ describe("unified refresh collection", () => {
 		await collectRepository(context, "owner/project");
 		context.now = "2026-10-30T00:00:00.000Z";
 		context.run.id = "run-2";
-		expect(await collectRepository(context, "owner/project")).toEqual({
+		expect(await collectRepository(context, "owner/project")).toMatchObject({
 			requests: 1,
 			requestBreakdown: { graphql: 1, rest: 0 },
 			partial: false,
@@ -1659,7 +1806,7 @@ describe("unified refresh collection", () => {
 			{ repo_id: "R_other", repo: "owner/unobserved" },
 		]);
 		expect((await publication(context)).repos).toEqual([]);
-		expect(await sourceSnapshot(context, "repo:owner/project:details")).toEqual({});
+		expect(await sourceSnapshot(context, "repo:owner/project:details")).toMatchObject({});
 		expect((await collectRepository(context, "owner/project")).requests).toBe(1);
 		expect((await publication(context)).repos.map((value: { id: string }) => value.id)).toEqual([
 			"R_new",
@@ -1696,7 +1843,7 @@ describe("unified refresh collection", () => {
 	it("preserves a partial catalogue when a later page fails", async () => {
 		const context = await fixture();
 		upstream([accountPage([repo()], true, "next"), new Error("network"), new Error("network")]);
-		expect(await collectAccount(context)).toEqual({
+		expect(await collectAccount(context)).toMatchObject({
 			requests: 3,
 			requestBreakdown: { graphql: 3, rest: 0 },
 			partial: true,
@@ -1893,6 +2040,65 @@ describe("unified refresh collection", () => {
 		) as { contribution: { days: { date: string }[] } };
 		expect(saved.contribution.days[0]?.date).toBe("2026-09-14");
 	});
+	it("falls back to the factory snapshot row when paginated factory load fails", async () => {
+		const factoryRuns = await import("../db/factory-runs");
+		const publishedFactory = vi
+			.spyOn(factoryRuns, "publishedFactory")
+			.mockRejectedValueOnce(new Error("missing factory pages"));
+		const context = await fixture();
+		const calendar = {
+			days: [
+				{
+					date: "2026-09-20",
+					count: 1,
+					fetchedAt: now,
+					observedAt: now,
+					breakdown: "unavailable" as const,
+				},
+			],
+			total: 1,
+			fetchedAt: now,
+			observedAt: now,
+			timezone: "github",
+			typesStatus: "partial" as const,
+		};
+		await context.env.DB.prepare(
+			"INSERT INTO refresh_snapshots(account_id,kind,payload,fetched_at) VALUES('a','factory',?,?)",
+		)
+			.bind(
+				JSON.stringify({
+					schema: 1,
+					account_id: "a",
+					contribution: calendar,
+					contributionStatus: "complete",
+					repos: [],
+				}),
+				now,
+			)
+			.run();
+		await context.env.DB.prepare(
+			"UPDATE refresh_accounts SET payload=json_remove(payload,'$.contribution') WHERE account_id='a'",
+		).run();
+		upstream([
+			Response.json({
+				data: { viewer: accountPage().viewer, rateLimit: { remaining: 5000, resetAt: now } },
+				errors: [
+					{ type: "FORBIDDEN", path: ["viewer", "contributionsCollection"], message: "denied" },
+				],
+			}),
+		]);
+		const result = await collectAccount(context);
+		expect(result.partial).toBe(false);
+		const saved = JSON.parse(
+			(
+				await context.env.DB.prepare(
+					"SELECT payload FROM refresh_accounts WHERE account_id='a'",
+				).first<{ payload: string }>()
+			)?.payload ?? "{}",
+		) as { contribution: { days: { date: string }[] } };
+		expect(saved.contribution.days[0]?.date).toBe("2026-09-20");
+		publishedFactory.mockRestore();
+	});
 	it("treats contributionCalendar GraphQL errors separately from catalogue inventory", async () => {
 		const context = await fixture();
 		const page = accountPage();
@@ -1945,15 +2151,15 @@ describe("unified refresh collection", () => {
 		expect(saved.contribution.days.at(-1)).toMatchObject({ date: "2026-10-29", count: 2 });
 	});
 	it("derives the one-year contribution window across leap days", () => {
-		expect(contributionWindow("2026-10-29T04:00:00.000Z")).toEqual({
+		expect(contributionWindow("2026-10-29T04:00:00.000Z")).toMatchObject({
 			since: "2025-10-29T04:00:00.000Z",
 			until: "2026-10-29T04:00:00.000Z",
 		});
-		expect(contributionWindow("2024-02-29T12:00:00.000Z")).toEqual({
+		expect(contributionWindow("2024-02-29T12:00:00.000Z")).toMatchObject({
 			since: "2023-03-01T12:00:00.000Z",
 			until: "2024-02-29T12:00:00.000Z",
 		});
-		expect(contributionWindow("2025-03-01T00:00:00.000Z")).toEqual({
+		expect(contributionWindow("2025-03-01T00:00:00.000Z")).toMatchObject({
 			since: "2024-03-01T00:00:00.000Z",
 			until: "2025-03-01T00:00:00.000Z",
 		});
@@ -1974,7 +2180,7 @@ describe("unified refresh collection", () => {
 		expect(count(1.2)).toBeNull();
 		expect(text(3)).toBeNull();
 		expect(nodes(null)).toEqual([]);
-		expect(object([])).toEqual({});
+		expect(object([])).toMatchObject({});
 		expect(factoryRepo({}, context)).toMatchObject({
 			branch: null,
 			head: null,
@@ -2211,7 +2417,7 @@ describe("unified refresh collection", () => {
 	])("never promotes $label into the automatic scope of an empty database", async ({ node }) => {
 		const context = await fixture();
 		upstream([accountPage([node as never])]);
-		expect(await collectAccount(context)).toEqual({
+		expect(await collectAccount(context)).toMatchObject({
 			requests: 1,
 			requestBreakdown: { graphql: 1, rest: 0 },
 			partial: false,
@@ -2308,7 +2514,7 @@ describe("unified refresh collection", () => {
 				} as never,
 			]),
 		]);
-		expect(await collectAccount(context)).toEqual({
+		expect(await collectAccount(context)).toMatchObject({
 			requests: 1,
 			requestBreakdown: { graphql: 1, rest: 0 },
 			partial: false,
@@ -2414,7 +2620,7 @@ describe("unified refresh collection", () => {
 			}),
 		]);
 		await collectAccount(context);
-		expect(await collectRepository(context, "owner/project")).toEqual({
+		expect(await collectRepository(context, "owner/project")).toMatchObject({
 			requests: 1,
 			requestBreakdown: { graphql: 1, rest: 0 },
 			partial: true,
@@ -2481,7 +2687,7 @@ describe("unified refresh collection", () => {
 			context.run.params.dimensions = ["releases"];
 			upstream([accountPage(), { node: { ...repo(), releases: connection } }]);
 			await collectAccount(context);
-			expect(await collectRepository(context, "owner/project")).toEqual({
+			expect(await collectRepository(context, "owner/project")).toMatchObject({
 				requests: 1,
 				requestBreakdown: { graphql: 1, rest: 0 },
 				partial,

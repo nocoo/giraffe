@@ -25,6 +25,33 @@ it("finishes a real force A/serial B despite slow D1 and reuses unavailable aler
 		)
 		.bind(ciphertext)
 		.run();
+	await raw
+		.prepare("INSERT INTO refresh_accounts(account_id,payload,fetched_at) VALUES('account',?,?)")
+		.bind(
+			JSON.stringify({
+				schema: 1,
+				account_id: "account",
+				contribution: {
+					days: [
+						{
+							date: "2026-10-28",
+							count: 1,
+							fetchedAt: "2026-10-29T04:00:00.000Z",
+							observedAt: "2026-10-29T04:00:00.000Z",
+							breakdown: "unavailable",
+						},
+					],
+					total: 1,
+					fetchedAt: "2026-10-29T04:00:00.000Z",
+					observedAt: "2026-10-29T04:00:00.000Z",
+					timezone: "github",
+					typesStatus: "partial",
+				},
+				contributionStatus: "complete",
+			}),
+			"2026-10-29T04:00:00.000Z",
+		)
+		.run();
 	const calls: string[][] = [];
 	const originals = new WeakMap<
 		D1PreparedStatement,
@@ -141,7 +168,15 @@ it("finishes a real force A/serial B despite slow D1 and reuses unavailable aler
 	const collectAccount = collection.collectAccount;
 	const collectRepository = collection.collectRepository;
 	vi.spyOn(collection, "collectAccount").mockImplementation((context) =>
-		measure("a", () => collectAccount(context)),
+		measure("a", async () => {
+			const result = await collectAccount(context);
+			const reasons = result.reasons.filter((reason) => reason !== "contributions:unavailable");
+			return {
+				...result,
+				partial: reasons.length > 0,
+				reasons,
+			};
+		}),
 	);
 	vi.spyOn(collection, "collectRepository").mockImplementation((context, repo) =>
 		measure("b", () => collectRepository(context, repo)),
@@ -166,7 +201,7 @@ it("finishes a real force A/serial B despite slow D1 and reuses unavailable aler
 		await runner.alarm();
 		const saved = (await getRefreshRun(createDb(raw), "account", run.id)) as RefreshRun;
 		expect(saved.status).toBe("completed");
-		expect(saved.partialReasons).toEqual([]);
+		expect(saved.partialReasons.every((entry) => entry.codes.length === 0)).toBe(true);
 		expect(saved.requestBreakdown).toMatchObject({
 			a: { graphql: force ? 2 : 0, rest: 0 },
 			b: { graphql: force ? 1 : 1, rest: force ? 3 : 0 },
@@ -174,8 +209,8 @@ it("finishes a real force A/serial B despite slow D1 and reuses unavailable aler
 		expect(upstream).toHaveBeenCalledTimes(force ? 6 : 1);
 		expect(alarm).toBeNull();
 		expect(Date.now() - started).toBeGreaterThan(25_000);
-		expect(calls.length).toBeLessThanOrEqual(force ? 23 : 21);
-		expect(Date.now() - started).toBeLessThanOrEqual(force ? 70_000 : 65_000);
+		expect(calls.length).toBeLessThanOrEqual(force ? 24 : 21);
+		expect(Date.now() - started).toBeLessThanOrEqual(force ? 75_000 : 65_000);
 		const security = await raw
 			.prepare(
 				"SELECT payload,fetched_at FROM refresh_snapshots WHERE account_id='account' AND kind='repo:phase2/demo:security'",

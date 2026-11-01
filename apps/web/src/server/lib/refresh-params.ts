@@ -103,3 +103,7 @@ export function refreshDays(params: RefreshParams): RefreshDay[] {
 	}
 	return days;
 }
+export function calendarDayBounds(date: string, timezone: string): RefreshDay {
+	const format = formatter(timezone);
+	return { date, since: midnight(date, format), until: midnight(shift(date, 1), format) };
+}

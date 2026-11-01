@@ -1,4 +1,5 @@
 import type { FactoryEvent } from "../../../lib/factory-types";
+import type { RefreshDay } from "../../../lib/refresh-types";
 import type { SecurityFeatures } from "../../../lib/security";
 import { ApiError } from "../errors";
 import { githubUnavailability } from "../github-unavailable";
@@ -172,6 +173,7 @@ export async function collectRest(
 	transport: Transport,
 	repo: string,
 	stream: "actions" | "alerts",
+	extraActionDays: RefreshDay[] = [],
 ): Promise<Dimension> {
 	const path = `/repos/${repo.split("/").map(encodeURIComponent).join("/")}`;
 	const get = (suffix: string) =>
@@ -313,6 +315,16 @@ export async function collectRest(
 				reason = "filter_cap";
 				break;
 			}
+		}
+	}
+	const windowDates = new Set(context.days.map((day) => day.date));
+	for (const day of extraActionDays) {
+		if (windowDates.has(day.date)) continue;
+		const dayOutcome = await fetchRange(day.since, dayUntilExclusive(day.until));
+		if (dayOutcome === "invalid") return failure(null);
+		if (dayOutcome === "cap") {
+			truncated = true;
+			reason = reason ?? "filter_cap";
 		}
 	}
 	const items = raw.map((row) => {
