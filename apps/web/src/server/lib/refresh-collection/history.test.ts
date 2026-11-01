@@ -55,4 +55,32 @@ describe("dayNeedsRefresh", () => {
 		expect(dayNeedsRefresh(ctx, previous, only, "prs")).toBe(true);
 		expect(dayNeedsRefresh(context(days, true), previous, only, "commits")).toBe(true);
 	});
+	it("refreshes actions days whose stored runs are missing head_branch", () => {
+		const days = [day("2026-10-31")];
+		const only = days[0] as RefreshDay;
+		const previous: DayObservation[] = [
+			{
+				...row("2026-10-31", "actions"),
+				payload: JSON.stringify({
+					count: 1,
+					observed: 1,
+					items: [{ id: "1", activityRun: null, conclusion: "failure" }],
+					since: only.since,
+					until: only.until,
+				}),
+			},
+		];
+		expect(dayNeedsRefresh(context(days), previous, only, "actions")).toBe(true);
+	});
+	it("ignores malformed action day payloads when checking branch backfill", () => {
+		const only = day("2026-10-31");
+		expect(
+			dayNeedsRefresh(
+				context([only]),
+				[{ ...row("2026-10-31", "actions"), payload: "{}" }],
+				only,
+				"actions",
+			),
+		).toBe(false);
+	});
 });

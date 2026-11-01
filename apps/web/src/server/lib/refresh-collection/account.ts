@@ -20,6 +20,11 @@ import { accountQuery } from "./queries";
 import { catalog, collectionDb, publish, savedAccountPublication, snapshots } from "./store";
 import { transport } from "./transport";
 
+const contributionGraphqlPath = (path: string[]) =>
+	path.some(
+		(segment) => segment === "contributionsCollection" || segment === "contributionCalendar",
+	);
+
 export async function collectAccount(context: CollectionContext): Promise<AccountCollectionResult> {
 	const db = collectionDb(context);
 	const { client, request, breakdown } = transport(context);
@@ -48,7 +53,9 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 				throw error;
 			break;
 		}
-		restricted ||= client.graphqlErrors.length > 0;
+		restricted ||=
+			client.graphqlErrors.length > 0 &&
+			client.graphqlErrors.some((error) => !contributionGraphqlPath(error.path));
 		if (!pages) first = data;
 		const viewer = object(data.viewer);
 		if (viewer.login !== context.account.login)

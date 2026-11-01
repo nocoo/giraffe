@@ -4,11 +4,19 @@ import { event, type Node, nodes, object, text } from "./model";
 
 const page = `pageInfo { hasNextPage endCursor }`;
 
-export function lifecycleCalendarRange(days: RefreshDay[]): string | null {
-	const first = days[0]?.date;
-	const last = days.at(-1)?.date;
+const toGithubSecond = (iso: string) => iso.replace(/\.\d{3}Z$/, "Z");
+
+export function lifecycleSearchRange(days: RefreshDay[]): string | null {
+	const first = days[0];
+	const last = days.at(-1);
 	if (!first || !last) return null;
-	return first === last ? first : `${first}..${last}`;
+	const untilExclusive = new Date(Date.parse(last.until) - 1).toISOString();
+	return `${toGithubSecond(first.since)}..${toGithubSecond(untilExclusive)}`;
+}
+
+/** @deprecated use lifecycleSearchRange */
+export function lifecycleCalendarRange(days: RefreshDay[]): string | null {
+	return lifecycleSearchRange(days);
 }
 
 export function mergedPrSearchQuery(repo: string, range: string): string {

@@ -4,6 +4,14 @@
 
 ### Fixed
 
+- Scope lifecycle GitHub search to Shanghai **instant** ranges (`since..until` ISO) so
+  early-morning merges/closes count on the correct calendar day; stop rewriting
+  `issueClosed` / `prMerged` on days outside the active lookback window.
+- Persist `head_branch` on collected workflow runs, re-collect action days missing
+  branch metadata on non-force runs, and count default-branch CI failures only when
+  branch matches the repository default.
+- Retain and serve the last good contribution calendar from account observation when
+  a partial run could not refresh contributions or the published factory omitted it.
 - Merge GitHub lifecycle search results before OPEN inventory reconciliation and
   always apply GitHub `closedAt` / `mergedAt` to stored items. Stale OPEN rows
   are removed instead of inferring close state or timestamps when they disappear

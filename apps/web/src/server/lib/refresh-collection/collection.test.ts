@@ -910,6 +910,141 @@ describe("unified refresh collection", () => {
 		).first<{ payload: string }>();
 		expect(JSON.parse(row?.payload ?? "{}")).toMatchObject({ closedAt });
 	});
+	it("preserves factory day metrics outside a lookback window", async () => {
+		const context = await fixture();
+		context.days = [
+			{ date: "2026-10-29", since: "2026-10-28T16:00:00.000Z", until: "2026-10-29T16:00:00.000Z" },
+			{ date: "2026-10-31", since: "2026-10-30T16:00:00.000Z", until: "2026-10-31T16:00:00.000Z" },
+		];
+		context.run.params = {
+			...context.run.params,
+			since: "2026-10-29",
+			until: "2026-10-31",
+			dimensions: ["issues", "prs"],
+		};
+		upstream([
+			accountPage(),
+			{ node: { ...repo(), openIssues: { totalCount: 0 }, issues: connection([]) } },
+		]);
+		await collectAccount(context);
+		await collectRepository(context, "owner/project");
+		await context.env.DB.prepare(
+			"UPDATE refresh_repository_publications SET payload=json_set(payload,'$.metrics.days.\"2026-10-28\".issueClosed',20,'$.metrics.days.\"2026-10-28\".prMerged',18) WHERE account_id='a'",
+		).run();
+		upstream([
+			accountPage(),
+			{
+				node: {
+					...repo(),
+					openIssues: { totalCount: 0 },
+					openPrs: { totalCount: 0 },
+					issues: connection([]),
+					pullRequests: connection([]),
+					mergedLifecycle: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
+					closedLifecycle: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
+				},
+			},
+		]);
+		await collectAccount(context);
+		await collectRepository(context, "owner/project");
+		const saved = await publication(context);
+		expect(saved.repos[0].metrics.days["2026-10-28"]).toMatchObject({
+			issueClosed: 20,
+			prMerged: 18,
+		});
+	});
+	it("counts lifecycle merges on the Shanghai day of mergedAt using instant search ranges", async () => {
+		const context = await fixture();
+		context.days = [
+			{ date: "2026-10-29", since: "2026-10-28T16:00:00.000Z", until: "2026-10-29T16:00:00.000Z" },
+		];
+		context.run.params = {
+			...context.run.params,
+			since: "2026-10-29",
+			until: "2026-10-29",
+			dimensions: ["prs"],
+		};
+		const mergedAt = "2026-10-28T22:03:00.000Z";
+		upstream([
+			accountPage(),
+			{
+				node: {
+					...repo(),
+					openPrs: { totalCount: 0 },
+					pullRequests: connection([]),
+				},
+				mergedLifecycle: {
+					nodes: [
+						{
+							...item("early-merge", "MERGED"),
+							mergedAt,
+							state: "MERGED",
+						},
+					],
+					pageInfo: { hasNextPage: false, endCursor: null },
+				},
+			},
+		]);
+		await collectAccount(context);
+		await collectRepository(context, "owner/project");
+		expect((await publication(context)).repos[0].metrics.days["2026-10-29"]?.prMerged).toBe(1);
+	});
+	it("re-collects actions days missing head_branch and counts default-branch failures", async () => {
+		const context = await fixture();
+		context.run.params.dimensions = ["actions"];
+		const run = {
+			id: 99,
+			name: "CI",
+			html_url: "https://github.com/owner/project/actions/runs/99",
+			status: "completed",
+			conclusion: "failure",
+			head_branch: "main",
+			event: "push",
+			created_at: "2026-10-28T02:00:00.000Z",
+			updated_at: "2026-10-28T02:00:00.000Z",
+		};
+		upstream([accountPage(), { node: repo() }], {
+			"/actions/runs": { total_count: 1, workflow_runs: [run] },
+		});
+		await collectAccount(context);
+		await collectRepository(context, "owner/project");
+		await context.env.DB.prepare(
+			`UPDATE refresh_day_observations SET payload=json_set(payload,'$.items[0].activityRun',json('null')) WHERE account_id='a' AND dimension='actions'`,
+		).run();
+		const fetch = upstream([{ node: repo() }], {
+			"/actions/runs": { total_count: 1, workflow_runs: [run] },
+		});
+		await collectRepository(context, "owner/project");
+		expect(fetch.mock.calls.some(([url]) => String(url).includes("/actions/runs"))).toBe(true);
+		const day = await context.env.DB.prepare(
+			"SELECT payload FROM refresh_day_observations WHERE dimension='actions' LIMIT 1",
+		).first<{ payload: string }>();
+		expect(JSON.parse(day?.payload ?? "{}").items[0].activityRun.head_branch).toBe("main");
+		expect((await publication(context)).repos[0].metrics.ciFailure).toBe(1);
+	});
+	it("counts default-branch CI failures only when head_branch matches", async () => {
+		const context = await fixture();
+		context.run.params.dimensions = ["actions"];
+		upstream([accountPage(), { node: repo() }], {
+			"/actions/runs": {
+				total_count: 1,
+				workflow_runs: [
+					{
+						id: 1,
+						name: "CI",
+						html_url: "https://github.com/owner/project/actions/runs/1",
+						status: "completed",
+						conclusion: "failure",
+						head_branch: "feature",
+						created_at: "2026-10-28T02:00:00.000Z",
+					},
+				],
+			},
+		});
+		await collectAccount(context);
+		await collectRepository(context, "owner/project");
+		expect((await publication(context)).repos[0].metrics.ciFailure).toBe(0);
+	});
 	it("collects latest CI, releases and both alert features in the saved wire format", async () => {
 		const context = await fixture();
 		const actions = [
@@ -919,9 +1054,16 @@ describe("unified refresh collection", () => {
 				html_url: "run",
 				status: "completed",
 				conclusion: "success",
+				head_branch: "main",
 				created_at: "2026-10-28T01:00:00Z",
 			},
-			{ id: 2, status: "completed", conclusion: "failure", created_at: "2026-10-28T02:00:00Z" },
+			{
+				id: 2,
+				status: "completed",
+				conclusion: "failure",
+				head_branch: "main",
+				created_at: "2026-10-28T02:00:00Z",
+			},
 			{ id: 3, status: "completed", conclusion: "neutral", created_at: "2026-10-28T03:00:00Z" },
 			{ id: 4, status: "in_progress", created_at: "2026-10-28T04:00:00Z" },
 		];
@@ -1518,6 +1660,60 @@ describe("unified refresh collection", () => {
 			contribution: null,
 			contributionStatus: "unavailable",
 		});
+	});
+	it("keeps account inventory complete when GraphQL errors only touch contributionsCollection", async () => {
+		const context = await fixture();
+		const page = accountPage();
+		upstream([
+			Response.json({
+				data: {
+					viewer: page.viewer,
+					rateLimit: { remaining: 5000, resetAt: "2026-10-29T05:00:00Z" },
+				},
+				errors: [
+					{ type: "FORBIDDEN", path: ["viewer", "contributionsCollection"], message: "denied" },
+				],
+			}),
+		]);
+		const result = await collectAccount(context);
+		expect(result.partial).toBe(true);
+		expect(result.reasons).toContain("contributions:unavailable");
+		const saved = JSON.parse(
+			(
+				await context.env.DB.prepare(
+					"SELECT payload FROM refresh_accounts WHERE account_id='a'",
+				).first<{ payload: string }>()
+			)?.payload ?? "{}",
+		) as { inventory: { complete: boolean } };
+		expect(saved.inventory.complete).toBe(true);
+	});
+	it("treats contributionCalendar GraphQL errors separately from catalogue inventory", async () => {
+		const context = await fixture();
+		const page = accountPage();
+		upstream([
+			Response.json({
+				data: {
+					viewer: page.viewer,
+					rateLimit: { remaining: 5000, resetAt: "2026-10-29T05:00:00Z" },
+				},
+				errors: [
+					{
+						type: "FORBIDDEN",
+						path: ["viewer", "contributionsCollection", "contributionCalendar"],
+						message: "denied",
+					},
+				],
+			}),
+		]);
+		await collectAccount(context);
+		const saved = JSON.parse(
+			(
+				await context.env.DB.prepare(
+					"SELECT payload FROM refresh_accounts WHERE account_id='a'",
+				).first<{ payload: string }>()
+			)?.payload ?? "{}",
+		) as { inventory: { complete: boolean } };
+		expect(saved.inventory.complete).toBe(true);
 	});
 	it("fetches the contribution calendar over a fixed one-year window independent of the refresh window", async () => {
 		const context = await fixture();

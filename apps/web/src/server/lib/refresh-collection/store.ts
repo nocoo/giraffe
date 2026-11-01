@@ -205,12 +205,31 @@ export async function publish(
 	if (!row) throw new ApiError(500, "db_error", "Account observation required");
 	if (!updateFactorySnapshot) return;
 	const account = JSON.parse(row.payload) as FactorySnapshot;
+	const retainedContribution =
+		account.contribution ??
+		(priorFactory?.contribution?.days?.length ? priorFactory.contribution : null);
+	const retainedContributionObservation =
+		account.contributionObservation ??
+		(retainedContribution ? priorFactory?.contributionObservation : null);
+	const retainedContributionStatus =
+		account.contributionStatus === "complete"
+			? "complete"
+			: retainedContribution
+				? (priorFactory?.contributionStatus ?? account.contributionStatus ?? "complete")
+				: account.contributionStatus;
 	const inventory = catalogRows.results;
 	const repos = inventory.flatMap((entry) =>
 		entry.publication === null ? [] : [JSON.parse(entry.publication) as FactoryRepo],
 	);
 	const snapshot: FactorySnapshot = {
 		...account,
+		contribution: retainedContribution,
+		contributionStatus: retainedContributionStatus,
+		...(retainedContributionObservation
+			? { contributionObservation: retainedContributionObservation }
+			: account.contributionObservation
+				? { contributionObservation: account.contributionObservation }
+				: {}),
 		window: windowOf(context),
 		runId: context.run.id,
 		repos,
@@ -223,7 +242,7 @@ export async function publish(
 		status:
 			repos.length > 0 &&
 			account.inventory.complete &&
-			account.contributionStatus === "complete" &&
+			retainedContributionStatus === "complete" &&
 			repos.every((repo) =>
 				Object.entries(repo.coverage).every(
 					([stream, coverage]) =>

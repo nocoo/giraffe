@@ -315,18 +315,40 @@ export async function collectRest(
 			}
 		}
 	}
-	const items = raw.map((row) => ({
-		...event({
-			id: String(row.id),
-			title: row.name,
-			url: row.html_url,
-			state: row.status,
-			createdAt: row.created_at,
-			updatedAt: row.updated_at,
-		}),
-		at: text(row.created_at),
-		conclusion: text(row.conclusion),
-	}));
+	const items = raw.map((row) => {
+		const branch = text(row.head_branch);
+		const name = String(row.name ?? "");
+		return {
+			...event({
+				id: String(row.id),
+				title: name,
+				url: row.html_url,
+				state: row.status,
+				createdAt: row.created_at,
+				updatedAt: row.updated_at,
+			}),
+			at: text(row.created_at),
+			conclusion: text(row.conclusion),
+			activityRun: {
+				id: Number(row.id),
+				workflow_id: typeof row.workflow_id === "number" ? row.workflow_id : null,
+				workflow_name: name,
+				event: text(row.event),
+				head_branch: branch,
+				head_sha: text(row.head_sha),
+				status: String(row.status ?? ""),
+				conclusion: text(row.conclusion),
+				run_attempt: typeof row.run_attempt === "number" ? row.run_attempt : null,
+				created_at: text(row.created_at),
+				updated_at: text(row.updated_at),
+				run_started_at: text(row.run_started_at),
+				duration_s: null,
+				html_url: String(row.html_url ?? ""),
+				actor: text(object(row.actor).login),
+				path: null,
+			},
+		};
+	});
 	const oldestAt =
 		items
 			.map((item) => item.at)
