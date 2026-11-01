@@ -44,6 +44,12 @@ export type RefreshMetricGuardEvent = {
 	day: string;
 	field: keyof FactoryDay;
 };
+export type RefreshActionsObservationAudit = {
+	repo: string;
+	outsideWindowDays: number;
+	missingObservationDays: number;
+	missingBranchDays: number;
+};
 export type RefreshStepTiming = {
 	startedAt: string;
 	finishedAt: string | null;
@@ -67,6 +73,7 @@ export type RefreshRun = {
 	requestBreakdown: RefreshRequestBreakdown;
 	partialReasons: RefreshPartialReason[];
 	metricGuardEvents?: RefreshMetricGuardEvent[];
+	actionsObservationAudit?: RefreshActionsObservationAudit[];
 	partial: boolean;
 	aReused?: boolean;
 	cancelRequested: boolean;

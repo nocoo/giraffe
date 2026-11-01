@@ -1,8 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { RefreshDay } from "../../../lib/refresh-types";
 import type { CollectionContext } from "../refresh-collection-contract";
-import { dayNeedsRefresh } from "./history";
-import type { DayObservation } from "./model";
+import {
+	actionRepairDays,
+	actionsDayMissingBranch,
+	auditActionsObservations,
+	dayBoundsFromObservation,
+	dayNeedsRefresh,
+	publicationDays,
+	reusableDayObservation,
+} from "./history";
+import { blankDay, type DayObservation } from "./model";
 
 const day = (date: string): RefreshDay => ({
 	date,
@@ -82,5 +90,120 @@ describe("dayNeedsRefresh", () => {
 				"actions",
 			),
 		).toBe(false);
+	});
+	it("refreshes in-window actions during lookback even when observations are complete", () => {
+		const only = day("2026-10-31");
+		const previous = [row("2026-10-31", "actions")];
+		const ctx = {
+			run: { params: { force: false, lookbackDays: 4 } },
+			days: [only],
+		} as CollectionContext;
+		expect(dayNeedsRefresh(ctx, previous, only, "actions")).toBe(true);
+	});
+	it("requires refresh when no prior observation exists for the day", () => {
+		const only = day("2026-10-31");
+		const ctx = context([only]);
+		expect(dayNeedsRefresh(ctx, [], only, "commits")).toBe(true);
+		expect(dayNeedsRefresh(ctx, [], only, "actions")).toBe(true);
+	});
+	it("reuses complete issue observations for non-latest window days", () => {
+		const days = [day("2026-10-30"), day("2026-10-31")];
+		const previous = [row("2026-10-30", "issues"), row("2026-10-31", "issues")];
+		expect(dayNeedsRefresh(context(days), previous, days[0] as RefreshDay, "issues")).toBe(false);
+	});
+	it("honors force refresh for every dimension", () => {
+		const only = day("2026-10-31");
+		expect(
+			dayNeedsRefresh(context([only], true), [row("2026-10-31", "commits")], only, "commits"),
+		).toBe(true);
+	});
+});
+
+describe("reusableDayObservation", () => {
+	it("requires complete issue inventories before reuse", () => {
+		const incomplete = {
+			...row("2026-10-31", "issues"),
+			payload: JSON.stringify({
+				inventoryComplete: false,
+				items: [],
+				since: day("2026-10-31").since,
+				until: day("2026-10-31").until,
+			}),
+		};
+		expect(reusableDayObservation(incomplete, "issues")).toBe(false);
+		expect(reusableDayObservation(row("2026-10-31", "commits"), "commits")).toBe(true);
+	});
+});
+
+describe("action repair and audit", () => {
+	it("lists outside-window days missing observations when prior CI was nonzero", () => {
+		const window = new Set(["2026-10-31"]);
+		const retained = [day("2026-10-28"), day("2026-10-31")];
+		const previous = [row("2026-10-31", "actions")];
+		const repair = actionRepairDays(window, retained, previous, {
+			"2026-10-28": { ...blankDay(), ciFailure: 2, ciSuccess: 0 },
+		});
+		expect(repair.map((entry) => entry.date)).toEqual(["2026-10-28"]);
+		expect(
+			actionRepairDays(
+				window,
+				retained,
+				[
+					{
+						...row("2026-10-28", "actions"),
+						payload: JSON.stringify({
+							items: [{ id: "1", conclusion: "failure", activityRun: null }],
+							since: day("2026-10-28").since,
+							until: day("2026-10-28").until,
+						}),
+					},
+				],
+				undefined,
+			).map((entry) => entry.date),
+		).toEqual(["2026-10-28"]);
+		expect(auditActionsObservations("owner/repo", window, retained, previous)).toMatchObject({
+			repo: "owner/repo",
+			outsideWindowDays: 1,
+			missingObservationDays: 1,
+			missingBranchDays: 0,
+		});
+	});
+	it("derives day bounds from stored observation payloads", () => {
+		const observation = row("2026-10-28", "actions");
+		expect(dayBoundsFromObservation(observation)).toEqual({
+			date: "2026-10-28",
+			since: day("2026-10-28").since,
+			until: day("2026-10-28").until,
+		});
+		expect(actionsDayMissingBranch(undefined)).toBe(false);
+	});
+	it("includes prior publication metric days in retained publication bounds", () => {
+		const ctx = {
+			run: { params: { timezone: "Asia/Shanghai" } },
+			days: [{ date: "2026-10-31", since: "x", until: "y" }],
+		} as CollectionContext;
+		const rows: DayObservation[] = [];
+		const days = publicationDays(ctx, rows, { "2026-08-03": blankDay() });
+		expect(days.some((entry) => entry.date === "2026-08-03")).toBe(true);
+		expect(days.some((entry) => entry.date === "2026-10-31")).toBe(true);
+	});
+	it("counts branchless outside-window action days in the audit", () => {
+		const window = new Set(["2026-10-31"]);
+		const retained = [day("2026-10-28"), day("2026-10-31")];
+		const previous = [
+			{
+				...row("2026-10-28", "actions"),
+				payload: JSON.stringify({
+					items: [{ id: "1", conclusion: "failure", activityRun: {} }],
+					since: day("2026-10-28").since,
+					until: day("2026-10-28").until,
+				}),
+			},
+		];
+		expect(auditActionsObservations("owner/repo", window, retained, previous)).toMatchObject({
+			outsideWindowDays: 1,
+			missingBranchDays: 1,
+			missingObservationDays: 0,
+		});
 	});
 });

@@ -11,6 +11,14 @@ const inDay = (value: string | null | undefined, since: string, until: string) =
 
 const failureConclusions = new Set(["failure", "timed_out", "cancelled", "action_required"]);
 
+const calendarDate = (value: string, timezone: string) =>
+	new Intl.DateTimeFormat("en-CA", {
+		timeZone: timezone,
+		year: "numeric",
+		month: "2-digit",
+		day: "2-digit",
+	}).format(new Date(value));
+
 export function accumulateActionMetrics(
 	metrics: FactoryDay,
 	items: FactoryEvent[],
@@ -38,15 +46,20 @@ export function accumulateIssuePrMetrics(
 	items: FactoryEvent[],
 	lifecycle: FactoryEvent[],
 	dayBounds: RefreshDay,
+	timezone: string,
 ) {
 	const opened = new Set<string>();
+	const openedOnDay = (item: FactoryEvent) => {
+		if (!item.createdAt) return false;
+		return calendarDate(item.createdAt, timezone) === dayBounds.date;
+	};
 	const countOpened = (item: FactoryEvent) => {
 		if (opened.has(item.id)) return;
-		if (dimension === "issues" && inDay(item.createdAt, dayBounds.since, dayBounds.until)) {
+		if (dimension === "issues" && openedOnDay(item)) {
 			opened.add(item.id);
 			metrics.issueOpened++;
 		}
-		if (dimension === "prs" && inDay(item.createdAt, dayBounds.since, dayBounds.until)) {
+		if (dimension === "prs" && openedOnDay(item)) {
 			opened.add(item.id);
 			metrics.prOpened++;
 		}
@@ -94,6 +107,7 @@ export function metricsFromStoredDayObservations(
 	day: RefreshDay,
 	current: Map<string, DayObservation>,
 	defaultBranch: string | null,
+	timezone: string,
 ): FactoryDay {
 	const metrics = blankDay();
 	for (const dimension of ["commits", "issues", "prs", "actions", "releases"] as const) {
@@ -109,8 +123,9 @@ export function metricsFromStoredDayObservations(
 		}
 		const items = Array.isArray(value.items) ? value.items : [];
 		if (dimension === "actions") accumulateActionMetrics(metrics, items, defaultBranch);
-		if (dimension === "issues") accumulateIssuePrMetrics(metrics, "issues", items, [], day);
-		if (dimension === "prs") accumulateIssuePrMetrics(metrics, "prs", items, [], day);
+		if (dimension === "issues")
+			accumulateIssuePrMetrics(metrics, "issues", items, [], day, timezone);
+		if (dimension === "prs") accumulateIssuePrMetrics(metrics, "prs", items, [], day, timezone);
 		if (dimension === "releases") metrics.releases += items.length;
 	}
 	return metrics;
@@ -123,16 +138,24 @@ export function seedOutsideWindowMetrics(
 	current: Map<string, DayObservation>,
 	priorDays: Record<string, FactoryDay> | undefined,
 	defaultBranch: string | null,
+	timezone: string,
 ) {
 	const dimensions = ["commits", "issues", "prs", "actions", "releases"] as const;
 	for (const day of retainedDays) {
 		if (windowDayDates.has(day.date)) continue;
-		const fromCache = metricsFromStoredDayObservations(day, current, defaultBranch);
+		const actionsRow = current.get(`${day.date}:actions`);
+		const fromCache = metricsFromStoredDayObservations(day, current, defaultBranch, timezone);
 		const observed = dimensions.map((dimension) => current.get(`${day.date}:${dimension}`));
 		const hasComplete = observed.some((row) => row?.status === "complete");
 		const hasAnyRow = observed.some((row) => row !== undefined);
 		if (hasComplete) {
-			repoDays[day.date] = fromCache;
+			const merged = { ...fromCache };
+			const priorDay = priorDays?.[day.date];
+			if (!canVerifyDefaultBranchCiFailures(actionsRow) && priorDay) {
+				merged.ciSuccess = priorDay.ciSuccess;
+				merged.ciFailure = priorDay.ciFailure;
+			}
+			repoDays[day.date] = merged;
 			continue;
 		}
 		if (!hasAnyRow) {

@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.28.15 - 2026-11-01
+
+### Fixed
+
+- Lookback repository collect **fetches GitHub Actions per outside-window day** that needs
+  CI repair (missing observation or missing `head_branch`), marks `actions` as needed, and
+  refreshes in-window action days on lookback so factory `ciFailure`/`ciSuccess` use
+  default-branch-only deduped runs (matching activity).
+- Factory zero guard protects only stable semantics (`commits`, opened/merged/closed issue/PR
+  counts); `prClosed`, `ciFailure`, and narrowing `ciSuccess`/`ciFailure` are exempt, with
+  unverified action observations keeping prior CI counts instead of writing zero.
+- `prOpened` uses Shanghai **calendar** `createdAt` plus opened-PR lifecycle search;
+  contribution calendar retention reads paginated factory snapshots and logs GraphQL errors on
+  refresh runs.
+- Refresh run detail includes **`actionsObservationAudit`** per repository (outside-window
+  action row counts).
+
 ## v0.28.14 - 2026-11-01
 
 ### Fixed

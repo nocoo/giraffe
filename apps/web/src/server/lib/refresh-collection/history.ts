@@ -1,6 +1,7 @@
-import type { FactoryCoverage, FactoryWindow } from "../../../lib/factory-types";
-import type { RefreshDay } from "../../../lib/refresh-types";
+import type { FactoryCoverage, FactoryDay, FactoryWindow } from "../../../lib/factory-types";
+import type { RefreshActionsObservationAudit, RefreshDay } from "../../../lib/refresh-types";
 import type { CollectionContext } from "../refresh-collection-contract";
+import { calendarDayBounds } from "../refresh-params";
 import type { Dimension } from "./dimensions";
 import { type DayObservation, object, text, unavailable } from "./model";
 import { mergeWindows } from "./windows";
@@ -19,10 +20,7 @@ function actionItemsMissingBranch(row: DayObservation): boolean {
 	const items = payload.items;
 	if (!Array.isArray(items)) return false;
 	return items.some(
-		(item) =>
-			item &&
-			typeof item === "object" &&
-			!(item as { activityRun?: { head_branch?: unknown } }).activityRun?.head_branch,
+		(item) => !(item as { activityRun?: { head_branch?: unknown } }).activityRun?.head_branch,
 	);
 }
 
@@ -44,7 +42,14 @@ export function dayNeedsRefresh(
 	if (context.run.params.force) return true;
 	const row = previous.find((entry) => entry.day === day.date && entry.dimension === dimension);
 	if (!row) return true;
-	if (dimension === "actions" && actionItemsMissingBranch(row)) return true;
+	if (dimension === "actions") {
+		if (actionItemsMissingBranch(row)) return true;
+		if (
+			context.run.params.lookbackDays !== undefined &&
+			context.days.some((d) => d.date === day.date)
+		)
+			return true;
+	}
 	if (dimension === "issues" || dimension === "prs") {
 		const latest = context.days.at(-1)?.date;
 		if (latest && day.date === latest) return true;
@@ -52,7 +57,58 @@ export function dayNeedsRefresh(
 	return !reusableDayObservation(row, dimension);
 }
 
-export function publicationDays(context: CollectionContext, rows: DayObservation[]): RefreshDay[] {
+export function actionsObservationRow(
+	previous: DayObservation[],
+	day: string,
+): DayObservation | undefined {
+	return previous.find((entry) => entry.day === day && entry.dimension === "actions");
+}
+
+export function actionRepairDays(
+	windowDayDates: Set<string>,
+	retainedDays: RefreshDay[],
+	previous: DayObservation[],
+	priorMetricDays: Record<string, FactoryDay> | undefined,
+): RefreshDay[] {
+	const repair: RefreshDay[] = [];
+	const seen = new Set<string>();
+	for (const day of retainedDays) {
+		if (windowDayDates.has(day.date) || seen.has(day.date)) continue;
+		seen.add(day.date);
+		const row = actionsObservationRow(previous, day.date);
+		const prior = priorMetricDays?.[day.date];
+		const needsRepair = !row
+			? prior !== undefined && Math.max(prior.ciFailure ?? 0, prior.ciSuccess ?? 0) > 0
+			: actionItemsMissingBranch(row);
+		if (needsRepair) repair.push(day);
+	}
+	return repair;
+}
+
+export function auditActionsObservations(
+	repo: string,
+	windowDayDates: Set<string>,
+	retainedDays: RefreshDay[],
+	previous: DayObservation[],
+): RefreshActionsObservationAudit {
+	let outsideWindowDays = 0;
+	let missingObservationDays = 0;
+	let missingBranchDays = 0;
+	for (const day of retainedDays) {
+		if (windowDayDates.has(day.date)) continue;
+		outsideWindowDays++;
+		const row = actionsObservationRow(previous, day.date);
+		if (!row) missingObservationDays++;
+		else if (actionItemsMissingBranch(row)) missingBranchDays++;
+	}
+	return { repo, outsideWindowDays, missingObservationDays, missingBranchDays };
+}
+
+export function publicationDays(
+	context: CollectionContext,
+	rows: DayObservation[],
+	priorMetricDays?: Record<string, FactoryDay>,
+): RefreshDay[] {
 	const days = new Map<string, RefreshDay>();
 	for (const row of rows) {
 		if (days.has(row.day)) continue;
@@ -60,6 +116,11 @@ export function publicationDays(context: CollectionContext, rows: DayObservation
 		days.set(row.day, { date: row.day, since: payload.since, until: payload.until });
 	}
 	for (const day of context.days) days.set(day.date, day);
+	if (priorMetricDays) {
+		for (const date of Object.keys(priorMetricDays)) {
+			if (!days.has(date)) days.set(date, calendarDayBounds(date, context.run.params.timezone));
+		}
+	}
 	return [...days.values()]
 		.sort((first, second) => first.date.localeCompare(second.date))
 		.slice(-PUBLICATION_DAYS);

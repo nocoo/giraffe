@@ -49,7 +49,7 @@ describe("factory day metrics from stored observations", () => {
 				]),
 			],
 		]);
-		expect(metricsFromStoredDayObservations(day, current, "main")).toMatchObject({
+		expect(metricsFromStoredDayObservations(day, current, "main", "Asia/Shanghai")).toMatchObject({
 			issueOpened: 1,
 			prOpened: 1,
 			ciFailure: 1,
@@ -86,6 +86,7 @@ describe("factory day metrics from stored observations", () => {
 			current,
 			{ [day.date]: corrupted, "2026-10-26": priorDay },
 			"main",
+			"Asia/Shanghai",
 		);
 		expect(days[day.date]).toEqual({ ...blankDay(), issueOpened: 1 });
 	});
@@ -141,6 +142,7 @@ describe("factory day metrics from stored observations", () => {
 			current,
 			Object.fromEntries(Object.keys(expected).map((date) => [date, blankDay()])),
 			"main",
+			"Asia/Shanghai",
 		);
 		for (const [date, metrics] of Object.entries(expected)) {
 			expect(days[date]).toEqual(
@@ -148,6 +150,7 @@ describe("factory day metrics from stored observations", () => {
 					{ date, since: `${date}T00:00:00.000Z`, until: `${date}T23:59:59.999Z` },
 					current,
 					"main",
+					"Asia/Shanghai",
 				),
 			);
 			expect(days[date]).toEqual(metrics);
@@ -177,6 +180,7 @@ describe("factory day metrics from stored observations", () => {
 			current,
 			{ "2026-10-27": { ...blankDay(), issueOpened: 9 } },
 			"main",
+			"Asia/Shanghai",
 		);
 		expect(days["2026-10-27"]).toBeUndefined();
 	});
@@ -191,13 +195,22 @@ describe("factory day metrics from stored observations", () => {
 			new Map(),
 			{ [day.date]: priorDay },
 			"main",
+			"Asia/Shanghai",
 		);
 		expect(days[day.date]).toEqual(priorDay);
 	});
 
 	it("omits outside-window days when observations and prior publication are missing", () => {
 		const days: Record<string, FactoryDay> = { "2026-10-27": { ...blankDay(), commits: 1 } };
-		seedOutsideWindowMetrics(days, [day], new Set(["2026-10-28"]), new Map(), undefined, "main");
+		seedOutsideWindowMetrics(
+			days,
+			[day],
+			new Set(["2026-10-28"]),
+			new Map(),
+			undefined,
+			"main",
+			"Asia/Shanghai",
+		);
 		expect(days[day.date]).toBeUndefined();
 	});
 
@@ -239,8 +252,12 @@ describe("factory day metrics from stored observations", () => {
 			fetched_at: "2026-10-31T04:00:00.000Z",
 		};
 		expect(
-			metricsFromStoredDayObservations(day, new Map([[`${day.date}:actions`, row]]), "main")
-				.ciFailure,
+			metricsFromStoredDayObservations(
+				day,
+				new Map([[`${day.date}:actions`, row]]),
+				"main",
+				"Asia/Shanghai",
+			).ciFailure,
 		).toBe(0);
 	});
 
@@ -265,8 +282,133 @@ describe("factory day metrics from stored observations", () => {
 			since: "2026-10-30T16:00:00.000Z",
 			until: "2026-10-31T16:00:00.000Z",
 		};
-		accumulateIssuePrMetrics(metrics, "prs", [], lifecycle, bounds);
+		accumulateIssuePrMetrics(metrics, "prs", [], lifecycle, bounds, "Asia/Shanghai");
 		expect(metrics).toMatchObject({ prOpened: 1, prMerged: 1, prClosed: 1 });
+	});
+
+	it("assigns prOpened to the Shanghai calendar day of createdAt", () => {
+		const shanghaiDay = {
+			date: "2026-10-31",
+			since: "2026-10-30T16:00:00.000Z",
+			until: "2026-10-31T16:00:00.000Z",
+		};
+		const row: DayObservation = {
+			day: shanghaiDay.date,
+			dimension: "prs",
+			status: "complete",
+			payload: JSON.stringify({
+				items: [{ id: "1", createdAt: "2026-10-31T01:00:00.000Z" }],
+				since: shanghaiDay.since,
+				until: shanghaiDay.until,
+			}),
+			fetched_at: "2026-10-31T04:00:00.000Z",
+		};
+		expect(
+			metricsFromStoredDayObservations(
+				shanghaiDay,
+				new Map([[`${shanghaiDay.date}:prs`, row]]),
+				"main",
+				"Asia/Shanghai",
+			).prOpened,
+		).toBe(1);
+	});
+
+	it("preserves prior CI outside the window when actions rows cannot verify failures", () => {
+		const days: Record<string, FactoryDay> = {};
+		const actionsRow: DayObservation = {
+			day: day.date,
+			dimension: "actions",
+			status: "complete",
+			payload: JSON.stringify({
+				items: [{ id: "1", conclusion: "failure", activityRun: {} }],
+				since: day.since,
+				until: day.until,
+			}),
+			fetched_at: "2026-10-31T04:00:00.000Z",
+		};
+		seedOutsideWindowMetrics(
+			days,
+			[day],
+			new Set(["2026-10-28"]),
+			new Map([[`${day.date}:actions`, actionsRow]]),
+			{ [day.date]: { ...blankDay(), ciFailure: 4, ciSuccess: 2 } },
+			"main",
+			"Asia/Shanghai",
+		);
+		expect(days[day.date]).toMatchObject({ ciFailure: 4, ciSuccess: 2 });
+	});
+
+	it("assigns issueOpened using the Shanghai calendar date", () => {
+		const metrics = blankDay();
+		const bounds = {
+			date: "2026-10-31",
+			since: "2026-10-30T16:00:00.000Z",
+			until: "2026-10-31T16:00:00.000Z",
+		};
+		accumulateIssuePrMetrics(
+			metrics,
+			"issues",
+			[{ id: "i1", createdAt: "2026-10-31T01:00:00.000Z" } as never],
+			[],
+			bounds,
+			"Asia/Shanghai",
+		);
+		expect(metrics.issueOpened).toBe(1);
+	});
+
+	it("counts prClosed from lifecycle rows without a same-day merge", () => {
+		const metrics = blankDay();
+		const bounds = {
+			date: "2026-10-31",
+			since: "2026-10-30T16:00:00.000Z",
+			until: "2026-10-31T16:00:00.000Z",
+		};
+		accumulateIssuePrMetrics(
+			metrics,
+			"prs",
+			[],
+			[
+				{
+					id: "c1",
+					createdAt: "2026-10-30T10:00:00.000Z",
+					closedAt: "2026-10-31T10:00:00.000Z",
+					mergedAt: null,
+				},
+			] as never[],
+			bounds,
+			"Asia/Shanghai",
+		);
+		expect(metrics.prClosed).toBe(1);
+	});
+
+	it("counts timed_out and cancelled conclusions as default-branch failures", () => {
+		const metrics = blankDay();
+		for (const conclusion of ["timed_out", "cancelled", "action_required"] as const) {
+			const dayMetrics = blankDay();
+			accumulateActionMetrics(
+				dayMetrics,
+				[{ id: conclusion, conclusion, activityRun: { head_branch: "main" } } as never],
+				"main",
+			);
+			expect(dayMetrics.ciFailure).toBe(1);
+		}
+		expect(metrics.ciFailure).toBe(0);
+	});
+
+	it("counts pending and neutral completed runs in repo totals", () => {
+		const metrics = blankDay();
+		const totals = { ciOther: 0, ciPending: 0 };
+		accumulateActionMetrics(
+			metrics,
+			[
+				{ id: "pending", state: "in_progress", conclusion: null } as never,
+				{ id: "neutral", state: "completed", conclusion: "neutral" } as never,
+			],
+			"main",
+			{ repoTotals: totals },
+		);
+		expect(totals).toMatchObject({ ciPending: 1, ciOther: 1 });
+		expect(metrics.ciSuccess).toBe(0);
 	});
 
 	it("deduplicates workflow runs when accumulating action metrics", () => {

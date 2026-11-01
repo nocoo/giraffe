@@ -125,7 +125,13 @@ it("runs real durable A then serial B, serves latest observations and reuses day
 			a: { graphql: 0, rest: 0 },
 			b: { graphql: 1, rest: 3 },
 		});
-		expect(first.partialReasons).toEqual([]);
+		expect(first.partialReasons).toMatchObject([
+			{
+				repo: "phase2/demo",
+				codes: [],
+				failures: [{ code: "not_found", dimension: "alerts", httpStatus: 404 }],
+			},
+		]);
 		expect(await (await machine("stars")).json()).toEqual({ items: [] });
 		for (const path of [
 			"repos",

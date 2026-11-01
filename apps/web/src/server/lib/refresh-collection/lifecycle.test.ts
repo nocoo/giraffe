@@ -9,6 +9,7 @@ import {
 	lifecycleSearchRange,
 	mergedPrSearchQuery,
 	mergeLifecycleRaw,
+	openedPrSearchQuery,
 } from "./lifecycle";
 import { event } from "./model";
 
@@ -35,6 +36,9 @@ describe("lifecycle search helpers", () => {
 		expect(mergedPrSearchQuery("owner/project", "2026-10-28T16:00:00Z..2026-10-31T15:59:59Z")).toBe(
 			"repo:owner/project is:pr is:merged merged:2026-10-28T16:00:00Z..2026-10-31T15:59:59Z",
 		);
+		expect(openedPrSearchQuery("owner/project", "2026-10-28T16:00:00Z..2026-10-31T15:59:59Z")).toBe(
+			"repo:owner/project is:pr created:2026-10-28T16:00:00Z..2026-10-31T15:59:59Z",
+		);
 		expect(closedIssueSearchQuery("owner/project", "2026-10-31")).toBe(
 			"repo:owner/project is:issue is:closed closed:2026-10-31",
 		);
@@ -44,6 +48,24 @@ describe("lifecycle search helpers", () => {
 		expect(lifecycleSearchFields(["prs"]).fields).toContain("mergedLifecycle");
 		expect(lifecycleSearchFields(["issues"]).vars).toContain("closedQuery");
 		expect(lifecycleSearchFields(["commits"]).fields.trim()).toBe("");
+	});
+	it("merges opened and merged pull request lifecycle search results", () => {
+		const createdAt = "2026-10-31T02:00:00.000Z";
+		const raw = lifecycleFromResponse(
+			{
+				mergedLifecycle: {
+					nodes: [{ id: "PR_1", state: "MERGED", mergedAt: createdAt, createdAt, title: "merged" }],
+					pageInfo: { hasNextPage: false },
+				},
+				openedLifecycle: {
+					nodes: [{ id: "PR_2", state: "OPEN", createdAt, title: "opened" }],
+					pageInfo: { hasNextPage: true },
+				},
+			},
+			["prs"],
+		);
+		expect(raw.truncated).toBe(true);
+		expect(lifecycleEvents(raw, "prs").map((row) => row.id)).toEqual(["PR_1", "PR_2"]);
 	});
 	it("parses merged and closed search nodes with real timestamps", () => {
 		const mergedAt = "2026-10-31T02:00:00.000Z";
