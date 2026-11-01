@@ -1,5 +1,32 @@
 # Changelog
 
+## v0.28.12 - 2026-11-01
+
+### Fixed
+
+- Scope lifecycle GitHub search to Shanghai **instant** ranges (`since..until` ISO) so
+  early-morning merges/closes count on the correct calendar day; stop rewriting
+  `issueClosed` / `prMerged` on days outside the active lookback window.
+- Persist `head_branch` on collected workflow runs, re-collect action days missing
+  branch metadata on non-force runs, and count default-branch CI failures only when
+  branch matches the repository default.
+- Retain and serve the last good contribution calendar from account observation when
+  a partial run could not refresh contributions or the published factory omitted it.
+- Merge GitHub lifecycle search results before OPEN inventory reconciliation and
+  always apply GitHub `closedAt` / `mergedAt` to stored items. Stale OPEN rows
+  are removed instead of inferring close state or timestamps when they disappear
+  from the OPEN list.
+- Never replace a **complete** published factory / activity snapshot (factory,
+  issues, prs, alerts aggregates and `refresh_publications`) with a **partial**
+  one; partial runs still persist account and repository observations and are
+  recorded on the account payload and refresh run. Account phase and pending
+  terminal repository errors skip factory republication.
+
+### Verified
+
+- Regression tests cover lifecycle timestamp overwrite, publication deferral, and
+  complete-snapshot retention on partial account observations.
+
 ## v0.28.11 - 2026-11-01
 
 ### Fixed

@@ -20,6 +20,11 @@ import { accountQuery } from "./queries";
 import { catalog, collectionDb, publish, savedAccountPublication, snapshots } from "./store";
 import { transport } from "./transport";
 
+const contributionGraphqlPath = (path: string[]) =>
+	path.some(
+		(segment) => segment === "contributionsCollection" || segment === "contributionCalendar",
+	);
+
 export async function collectAccount(context: CollectionContext): Promise<AccountCollectionResult> {
 	const db = collectionDb(context);
 	const { client, request, breakdown } = transport(context);
@@ -48,7 +53,9 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 				throw error;
 			break;
 		}
-		restricted ||= client.graphqlErrors.length > 0;
+		restricted ||=
+			client.graphqlErrors.length > 0 &&
+			client.graphqlErrors.some((error) => !contributionGraphqlPath(error.path));
 		if (!pages) first = data;
 		const viewer = object(data.viewer);
 		if (viewer.login !== context.account.login)
@@ -223,7 +230,9 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 			context.now,
 		)),
 	);
-	await publish(db, context, statements);
+	await publish(db, context, statements, {
+		updateFactorySnapshot: context.publishFactorySnapshot !== false,
+	});
 	const saved = (await catalog(db, context.account.id)).results;
 	const requestedRepo = context.run.params.repo;
 	const reasons = [

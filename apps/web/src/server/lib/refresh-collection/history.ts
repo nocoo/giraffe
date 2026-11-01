@@ -13,6 +13,19 @@ export function reusableDayObservation(row: DayObservation, dimension: string): 
 	return object(JSON.parse(row.payload)).inventoryComplete === true;
 }
 
+function actionItemsMissingBranch(row: DayObservation): boolean {
+	if (row.dimension !== "actions" || row.status !== "complete") return false;
+	const payload = object(JSON.parse(row.payload));
+	const items = payload.items;
+	if (!Array.isArray(items)) return false;
+	return items.some(
+		(item) =>
+			item &&
+			typeof item === "object" &&
+			!(item as { activityRun?: { head_branch?: unknown } }).activityRun?.head_branch,
+	);
+}
+
 export function dayNeedsRefresh(
 	context: CollectionContext,
 	previous: DayObservation[],
@@ -22,6 +35,7 @@ export function dayNeedsRefresh(
 	if (context.run.params.force) return true;
 	const row = previous.find((entry) => entry.day === day.date && entry.dimension === dimension);
 	if (!row) return true;
+	if (dimension === "actions" && actionItemsMissingBranch(row)) return true;
 	if (dimension === "issues" || dimension === "prs") {
 		const latest = context.days.at(-1)?.date;
 		if (latest && day.date === latest) return true;

@@ -168,6 +168,7 @@ it("keeps 90 daily aggregates when distinct retained detail events exceed one D1
 				createdAt: day.since,
 				state: "completed",
 				conclusion: "success",
+				activityRun: { head_branch: "main" },
 			})),
 		}),
 	}));

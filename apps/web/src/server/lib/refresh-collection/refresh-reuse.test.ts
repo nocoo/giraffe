@@ -712,7 +712,7 @@ describe("refresh reuse boundaries", () => {
 		const fetch = upstream();
 		expect(await collectRepository(context, "owner/project")).toMatchObject({ requests: 0 });
 		expect(fetch).not.toHaveBeenCalled();
-		expect(counted.roundtrips).toHaveLength(3);
+		expect(counted.roundtrips).toHaveLength(4);
 		const [preparation] = counted.roundtrips;
 		expect(preparation).toHaveLength(3);
 		expect(preparation?.[0]).toContain("refresh_catalog");
@@ -733,9 +733,9 @@ describe("refresh reuse boundaries", () => {
 		context.env = { ...context.env, DB: counted.db };
 		upstream([{ node: repository() }], { "/dependabot/alerts": [], "/code-scanning/alerts": [] });
 		expect(await collectRepository(context, "owner/project")).toMatchObject({ requests: 3 });
-		expect(counted.roundtrips).toHaveLength(3);
+		expect(counted.roundtrips).toHaveLength(4);
 		expect(counted.roundtrips[0]).toHaveLength(3);
-		expect(counted.roundtrips[1]).not.toHaveLength(3);
+		expect(counted.roundtrips[1]).toHaveLength(1);
 	});
 	it("joins cached evidence by catalogue identity for case-variant names", async () => {
 		const context = await fixture();

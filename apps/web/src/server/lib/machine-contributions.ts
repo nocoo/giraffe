@@ -5,6 +5,7 @@ import { ApiError } from "./errors";
 import { contributionDate, contributionDates, contributionTypes } from "./factory-contributions";
 import { observationEnvelope } from "./machine-observations";
 import { assertMachineQuery } from "./machine-query";
+import { savedAccountPublication } from "./refresh-collection/store";
 import { decodePublication, type PublicationPage } from "./saved-observation-read";
 import { publicationSnapshotStatement } from "./saved-observation-statements";
 
@@ -28,8 +29,18 @@ export async function readContributions(db: Db, account: string, query: Record<s
 	const snapshot = decodePublication(
 		(await publicationSnapshotStatement(db, account).all<PublicationPage>()).results,
 	);
-	const saved = snapshot?.contribution;
-	if (!snapshot || !saved?.days.length)
+	const accountObservation = await savedAccountPublication(db, account);
+	const saved = snapshot?.contribution?.days.length
+		? snapshot.contribution
+		: accountObservation?.contribution?.days.length
+			? accountObservation.contribution
+			: null;
+	const publicationSnapshot =
+		snapshot ??
+		(accountObservation?.contribution?.days.length
+			? { ...accountObservation, repos: accountObservation.repos ?? [] }
+			: null);
+	if (!publicationSnapshot || !saved?.days.length)
 		throw new ApiError(409, "snapshot_missing", "no saved contribution calendar");
 	const observed = new Map(
 		saved.days
@@ -45,8 +56,9 @@ export async function readContributions(db: Db, account: string, query: Record<s
 	const selected = contributionDates(since, until);
 	if (!selected.length || since < first || until > last)
 		throw new ApiError(400, "validation_failed", "contribution range exceeds saved dates");
-	const provenance = snapshot.contributionObservation;
-	const window = provenance?.window ?? snapshot.window;
+	const provenance =
+		publicationSnapshot.contributionObservation ?? accountObservation?.contributionObservation;
+	const window = provenance?.window ?? publicationSnapshot.window;
 	const observedAt = saved.observedAt ?? saved.fetchedAt;
 	const days = selected.map((date) => {
 		const day = observed.get(date);
@@ -87,11 +99,14 @@ export async function readContributions(db: Db, account: string, query: Record<s
 			timezone: "github",
 			typeWindowTimezone: "UTC",
 			window,
-			collectionStatus: snapshot.contributionStatus,
+			collectionStatus: publicationSnapshot.contributionStatus,
 		},
 		"all",
-		snapshot.publication?.runId ?? snapshot.runId,
-		provenance?.version ?? snapshot.runId,
-		await composeContent({ publication: storedContent(snapshot)?.hash ?? null }, { since, until }),
+		publicationSnapshot.publication?.runId ?? publicationSnapshot.runId,
+		provenance?.version ?? publicationSnapshot.runId,
+		await composeContent(
+			{ publication: storedContent(publicationSnapshot)?.hash ?? null },
+			{ since, until },
+		),
 	);
 }

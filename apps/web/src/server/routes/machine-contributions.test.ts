@@ -79,7 +79,7 @@ it("serves inclusive saved dates in an observation envelope and preserves retain
 	const tokens = (await s.raw.prepare("SELECT * FROM api_tokens").all()).results;
 	const response = await s.call("?since=2026-09-14&until=2026-09-15");
 	expect(response.status).toBe(200);
-	expect(profile.trips).toHaveLength(2);
+	expect(profile.trips).toHaveLength(3);
 	expect(await response.json()).toMatchObject({
 		account_id: s.snapshot.account_id,
 		sourceVersion: "retained-calendar",
@@ -211,6 +211,64 @@ it("supports authenticated content ETags and preserves all private headers on 30
 	if (s.snapshot.contribution?.days[0]) s.snapshot.contribution.days[0].count = 10;
 	await s.save();
 	expect((await s.call("", s.token.token, tag ?? undefined)).status).toBe(200);
+});
+
+it("serves contribution calendar from refresh_accounts when the published factory omitted it", async () => {
+	const s = await setup();
+	await s.db
+		.prepare(
+			"UPDATE refresh_snapshots SET payload=json_remove(payload,'$.contribution') WHERE account_id=?",
+		)
+		.bind(s.snapshot.account_id)
+		.run();
+	await s.db
+		.prepare(
+			"INSERT INTO refresh_accounts(account_id,payload,fetched_at) VALUES(?,?,?) ON CONFLICT(account_id) DO UPDATE SET payload=excluded.payload,fetched_at=excluded.fetched_at",
+		)
+		.bind(
+			s.snapshot.account_id,
+			JSON.stringify({
+				contribution: s.snapshot.contribution,
+				contributionObservation: s.snapshot.contributionObservation,
+				contributionStatus: s.snapshot.contributionStatus,
+			}),
+			s.snapshot.fetched_at,
+		)
+		.run();
+	const response = await s.call("?since=2026-09-14&until=2026-09-15");
+	expect(response.status).toBe(200);
+	expect(await response.json()).toMatchObject({
+		data: {
+			days: [
+				{ date: "2026-09-14", count: 9 },
+				{ date: "2026-09-15", count: 3 },
+			],
+		},
+	});
+});
+
+it("serves contribution calendar from refresh_accounts when no published factory snapshot exists", async () => {
+	const s = await setup();
+	await s.db.prepare("DELETE FROM refresh_snapshots").run();
+	await s.db.prepare("DELETE FROM refresh_publications").run();
+	await s.db
+		.prepare(
+			"INSERT INTO refresh_accounts(account_id,payload,fetched_at) VALUES(?,?,?) ON CONFLICT(account_id) DO UPDATE SET payload=excluded.payload,fetched_at=excluded.fetched_at",
+		)
+		.bind(
+			s.snapshot.account_id,
+			JSON.stringify({
+				contribution: s.snapshot.contribution,
+				contributionObservation: s.snapshot.contributionObservation,
+				contributionStatus: s.snapshot.contributionStatus,
+				runId: s.snapshot.runId,
+				window: s.snapshot.window,
+			}),
+			s.snapshot.fetched_at,
+		)
+		.run();
+	const response = await s.call("?since=2026-09-14&until=2026-09-15");
+	expect(response.status).toBe(200);
 });
 
 it("reports missing publications and calendars instead of empty success", async () => {

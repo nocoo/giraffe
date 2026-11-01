@@ -25,9 +25,9 @@ import { dayCoverage, dayNeedsRefresh, PUBLICATION_DAYS, publicationDays } from 
 import {
 	closedIssueSearchQuery,
 	dropStaleOpen,
-	lifecycleCalendarRange,
 	lifecycleEvents,
 	lifecycleFromResponse,
+	lifecycleSearchRange,
 	mergedPrSearchQuery,
 	mergeLifecycleRaw,
 } from "./lifecycle";
@@ -209,7 +209,7 @@ export async function collectRepository(
 		context.run.params.force ||
 		needed.some((dimension) => dimension !== "actions" && dimension !== "alerts") ||
 		(restOnly && (prior === null || context.run.params.force));
-	const lifecycleRange = lifecycleCalendarRange(context.days);
+	const lifecycleRange = lifecycleSearchRange(context.days);
 	const wantLifecycle =
 		metadataQuery === true &&
 		lifecycleRange !== null &&
@@ -239,10 +239,12 @@ export async function collectRepository(
 		String(raw.nameWithOwner).toLowerCase() !== saved.repo.toLowerCase()
 	)
 		throw new ApiError(502, "github_error", "Repository identity unavailable");
+	const priorRepoPayload = prior ? (JSON.parse(prior.payload) as FactoryRepo) : null;
+	const windowDayDates = new Set(context.days.map((day) => day.date));
 	const repo: FactoryRepo =
-		!metadataQuery && prior
+		!metadataQuery && priorRepoPayload
 			? {
-					...(JSON.parse(prior.payload) as FactoryRepo),
+					...priorRepoPayload,
 					coverage: factoryRepo(raw, context).coverage,
 					metrics: blankMetrics(),
 				}
@@ -329,6 +331,13 @@ export async function collectRepository(
 					};
 				}
 				if (result.inventoryComplete === true) {
+					if (lifecycleRaw) {
+						mergeLifecycleRaw(
+							merged,
+							dimension === "prs" ? lifecycleRaw.merged : lifecycleRaw.closed,
+							dimension,
+						);
+					}
 					dropStaleOpen(merged, fetchedOpenIds);
 					if (expectedOpen !== null) {
 						const openInMerged = [...merged.values()].filter((row) => row.state === "OPEN").length;
@@ -341,8 +350,7 @@ export async function collectRepository(
 							};
 						}
 					}
-				}
-				if (lifecycleRaw) {
+				} else if (lifecycleRaw) {
 					mergeLifecycleRaw(
 						merged,
 						dimension === "prs" ? lifecycleRaw.merged : lifecycleRaw.closed,
@@ -443,6 +451,16 @@ export async function collectRepository(
 			context.run.params.dimensions.includes(dimension) ||
 			previous.some((row) => row.dimension === dimension),
 	);
+	if (priorRepoPayload?.metrics?.days) {
+		for (const [date, priorDay] of Object.entries(priorRepoPayload.metrics.days)) {
+			if (windowDayDates.has(date)) continue;
+			if (priorDay.issueClosed === 0 && priorDay.prMerged === 0) continue;
+			const metrics = repo.metrics.days[date] ?? blankDay();
+			metrics.issueClosed = priorDay.issueClosed;
+			metrics.prMerged = priorDay.prMerged;
+			repo.metrics.days[date] = metrics;
+		}
+	}
 	for (const dimension of dimensions) {
 		const { coverage } = dayCoverage(
 			context,
@@ -490,6 +508,8 @@ export async function collectRepository(
 		for (const day of retainedDays) {
 			const row = current.get(`${day.date}:${dimension}`);
 			if (!row) continue;
+			if (!windowDayDates.has(day.date) && (dimension === "issues" || dimension === "prs"))
+				continue;
 			const value = JSON.parse(row.payload) as { count: number | null; items: FactoryEvent[] };
 			if (dimension !== "alerts") for (const item of value.items) items.set(item.id, item);
 			if (row.status !== "complete") continue;
@@ -518,12 +538,14 @@ export async function collectRepository(
 					else if (inDay(item.closedAt, dayBounds.since, dayBounds.until)) metrics.prClosed++;
 				}
 				if (dimension === "actions") {
+					const branch = item.activityRun?.head_branch ?? null;
+					const onDefault = Boolean(repo.branch && branch && branch === repo.branch);
 					if (item.conclusion === "success") metrics.ciSuccess++;
 					else if (
 						["failure", "timed_out", "cancelled", "action_required"].includes(item.conclusion ?? "")
-					)
-						metrics.ciFailure++;
-					else if (item.state === "completed") repo.metrics.ciOther++;
+					) {
+						if (onDefault) metrics.ciFailure++;
+					} else if (item.state === "completed") repo.metrics.ciOther++;
 					else repo.metrics.ciPending++;
 				}
 				if (dimension === "releases") metrics.releases++;
@@ -652,7 +674,7 @@ export async function collectRepository(
 				context.now,
 			)),
 		);
-	await publish(db, context, writes);
+	await publish(db, context, writes, { updateFactorySnapshot: pendingError === undefined });
 	const reasons = context.run.params.dimensions.flatMap((dimension) => {
 		const { coverage, settled } = dayCoverage(
 			context,

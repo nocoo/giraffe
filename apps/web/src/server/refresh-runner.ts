@@ -411,6 +411,7 @@ export class RefreshRunner implements DurableObject {
 				run,
 				days: refreshDays(run.params),
 				now: run.updatedAt,
+				publishFactorySnapshot: run.phase !== "account",
 			};
 			if (run.phase === "account")
 				return { ok: true, phase: "account", result: await collectAccount(context) };
