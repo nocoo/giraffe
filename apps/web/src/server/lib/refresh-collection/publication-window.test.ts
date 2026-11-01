@@ -82,7 +82,12 @@ async function fixture(
 		.bind(accountAt, accountAt)
 		.run();
 	return {
-		env: { DB: db, ENVIRONMENT: "test", GITHUB_API_BASE: "http://github.test" },
+		env: {
+			DB: db,
+			ENVIRONMENT: "test",
+			GITHUB_API_BASE: "http://github.test",
+			FACTORY_DAY_METRICS_ZERO_GUARD: "0",
+		},
 		account: { id: "a", login: "owner" },
 		token: "memory-only-fake-token",
 		now,

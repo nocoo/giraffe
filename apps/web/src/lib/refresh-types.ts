@@ -1,3 +1,5 @@
+import type { FactoryDay } from "./factory-types";
+
 export const REFRESH_DIMENSIONS = [
 	"commits",
 	"issues",
@@ -36,6 +38,12 @@ export type RefreshPartialReason = {
 	codes: string[];
 	failures?: RefreshFailureDetail[];
 };
+export type RefreshMetricGuardEvent = {
+	code: "zero_guard_kept";
+	repo: string;
+	day: string;
+	field: keyof FactoryDay;
+};
 export type RefreshStepTiming = {
 	startedAt: string;
 	finishedAt: string | null;
@@ -58,6 +66,7 @@ export type RefreshRun = {
 	requests: number;
 	requestBreakdown: RefreshRequestBreakdown;
 	partialReasons: RefreshPartialReason[];
+	metricGuardEvents?: RefreshMetricGuardEvent[];
 	partial: boolean;
 	aReused?: boolean;
 	cancelRequested: boolean;

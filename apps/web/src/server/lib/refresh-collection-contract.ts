@@ -1,4 +1,9 @@
-import type { RefreshDay, RefreshFailureDetail, RefreshRun } from "../../lib/refresh-types";
+import type {
+	RefreshDay,
+	RefreshFailureDetail,
+	RefreshMetricGuardEvent,
+	RefreshRun,
+} from "../../lib/refresh-types";
 import type { Env } from "../env";
 import type { AccountRow } from "./db/accounts";
 
@@ -12,6 +17,7 @@ export type CollectionContext = {
 	now: string;
 	onRequests?: (count: number, breakdown: RequestBreakdown) => void;
 	onFailures?: (failures: RefreshFailureDetail[]) => void;
+	onMetricGuard?: (event: RefreshMetricGuardEvent) => void;
 	/** When false, persist pending writes but skip factory/aggregate publication head. */
 	publishFactorySnapshot?: boolean;
 };

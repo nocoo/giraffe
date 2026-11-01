@@ -167,6 +167,32 @@ it("keeps a 90-day backfill account-locked across restarts without changing dail
 	expect(daily.params).not.toHaveProperty("lookbackDays");
 });
 
+it("persists metric guard warnings emitted during repository collection", async () => {
+	const fixture = await setup();
+	collectors.collectAccount.mockResolvedValueOnce({
+		repos: ["octo/one"],
+		...collected(1, 1, 0),
+	});
+	collectors.collectRepository.mockImplementation(
+		async (context: { onMetricGuard?: (event: unknown) => void }) => {
+			context.onMetricGuard?.({
+				code: "zero_guard_kept",
+				repo: "octo/one",
+				day: "2026-10-28",
+				field: "commits",
+			});
+			return collected(2, 1, 1);
+		},
+	);
+	const run = await startRefresh(fixture.env, "account", { repo: "octo/one" });
+	await fixture.runner.alarm();
+	expect(await getRefreshRun(fixture.db(), "account", run.id)).toMatchObject({
+		metricGuardEvents: [
+			{ code: "zero_guard_kept", repo: "octo/one", day: "2026-10-28", field: "commits" },
+		],
+	});
+});
+
 it("settles D1-only cancellation after a CPU reset without entering cached B", async () => {
 	const fixture = await setup();
 	const run = await startRefresh(fixture.env, "account", { repo: "octo/one" });

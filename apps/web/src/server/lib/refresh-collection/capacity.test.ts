@@ -330,7 +330,12 @@ async function fixture(
 		lookbackDays: DAYS,
 	};
 	const context = {
-		env: { DB: raw, ENVIRONMENT: "test", GITHUB_API_BASE: "http://github.test" },
+		env: {
+			DB: raw,
+			ENVIRONMENT: "test",
+			GITHUB_API_BASE: "http://github.test",
+			FACTORY_DAY_METRICS_ZERO_GUARD: "0",
+		},
 		account: { id: "a", login: "owner" },
 		token: "memory-only-fake-token",
 		run: { id: "run-lookback", accountId: "a", params, requests: 0, createdAt: now },

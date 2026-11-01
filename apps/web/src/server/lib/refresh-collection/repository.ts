@@ -21,6 +21,16 @@ import {
 	failure,
 	terminal,
 } from "./dimensions";
+import {
+	accumulateActionMetrics,
+	accumulateIssuePrMetrics,
+	seedOutsideWindowMetrics,
+} from "./factory-day-metrics";
+import {
+	factoryDayMetricsZeroGuardEnabled,
+	guardFactoryDayMetrics,
+	resyncFactoryMetricsTotals,
+} from "./factory-metrics-zero-guard";
 import { dayCoverage, dayNeedsRefresh, PUBLICATION_DAYS, publicationDays } from "./history";
 import {
 	closedIssueSearchQuery,
@@ -44,6 +54,7 @@ import {
 	windowOf,
 } from "./model";
 import { repositoryQuery } from "./queries";
+import { applyResourceStorageLimit } from "./resource-storage-limit";
 import { collectionDb, dayStatements, publish, resourceStatement, snapshots } from "./store";
 import { transport } from "./transport";
 
@@ -451,16 +462,14 @@ export async function collectRepository(
 			context.run.params.dimensions.includes(dimension) ||
 			previous.some((row) => row.dimension === dimension),
 	);
-	if (priorRepoPayload?.metrics?.days) {
-		for (const [date, priorDay] of Object.entries(priorRepoPayload.metrics.days)) {
-			if (windowDayDates.has(date)) continue;
-			if (priorDay.issueClosed === 0 && priorDay.prMerged === 0) continue;
-			const metrics = repo.metrics.days[date] ?? blankDay();
-			metrics.issueClosed = priorDay.issueClosed;
-			metrics.prMerged = priorDay.prMerged;
-			repo.metrics.days[date] = metrics;
-		}
-	}
+	seedOutsideWindowMetrics(
+		repo.metrics.days,
+		retainedDays,
+		windowDayDates,
+		current,
+		priorRepoPayload?.metrics?.days,
+		repo.branch,
+	);
 	for (const dimension of dimensions) {
 		const { coverage } = dayCoverage(
 			context,
@@ -508,8 +517,7 @@ export async function collectRepository(
 		for (const day of retainedDays) {
 			const row = current.get(`${day.date}:${dimension}`);
 			if (!row) continue;
-			if (!windowDayDates.has(day.date) && (dimension === "issues" || dimension === "prs"))
-				continue;
+			if (!windowDayDates.has(day.date)) continue;
 			const value = JSON.parse(row.payload) as { count: number | null; items: FactoryEvent[] };
 			if (dimension !== "alerts") for (const item of value.items) items.set(item.id, item);
 			if (row.status !== "complete") continue;
@@ -518,50 +526,45 @@ export async function collectRepository(
 			const metrics = repo.metrics.days[row.day] ?? blankDay();
 			if (dimension === "commits") {
 				metrics.commits = Number(value.count);
-				repo.metrics.commits += Number(value.count);
 			}
-			const metricItems =
-				dimension === "issues" || dimension === "prs" ? [...items.values()] : value.items;
 			const lifecycleMetric = results.get(dimension)?.lifecycle ?? [];
-			for (const item of lifecycleMetric) {
-				if (dimension === "issues" && inDay(item.closedAt, dayBounds.since, dayBounds.until))
-					metrics.issueClosed++;
-				if (dimension === "prs" && inDay(item.mergedAt, dayBounds.since, dayBounds.until))
-					metrics.prMerged++;
-			}
-			for (const item of metricItems) {
-				if (dimension === "issues") {
-					if (inDay(item.createdAt, dayBounds.since, dayBounds.until)) metrics.issueOpened++;
-				}
-				if (dimension === "prs") {
-					if (inDay(item.createdAt, dayBounds.since, dayBounds.until)) metrics.prOpened++;
-					else if (inDay(item.closedAt, dayBounds.since, dayBounds.until)) metrics.prClosed++;
-				}
-				if (dimension === "actions") {
-					const branch = item.activityRun?.head_branch ?? null;
-					const onDefault = Boolean(repo.branch && branch && branch === repo.branch);
-					if (item.conclusion === "success") metrics.ciSuccess++;
-					else if (
-						["failure", "timed_out", "cancelled", "action_required"].includes(item.conclusion ?? "")
-					) {
-						if (onDefault) metrics.ciFailure++;
-					} else if (item.state === "completed") repo.metrics.ciOther++;
-					else repo.metrics.ciPending++;
-				}
-				if (dimension === "releases") metrics.releases++;
+			if (dimension === "issues" || dimension === "prs") {
+				const stream = dimension === "issues" ? "issues" : "prs";
+				const streamItems = dayItems(
+					[
+						...value.items,
+						...lifecycleMetric.filter(
+							(item) => !value.items.some((existing) => existing.id === item.id),
+						),
+					],
+					dayBounds.since,
+					dayBounds.until,
+				);
+				accumulateIssuePrMetrics(metrics, stream, streamItems, lifecycleMetric, dayBounds);
+			} else if (dimension === "actions") {
+				accumulateActionMetrics(metrics, value.items, repo.branch, {
+					repoTotals: repo.metrics,
+				});
+			} else if (dimension === "releases") {
+				metrics.releases += value.items.length;
 			}
 			repo.metrics.days[row.day] = metrics;
 		}
-		const resource: FactoryStreamData = {
-			runId: context.run.id,
-			items:
-				dimension === "issues" || dimension === "prs"
-					? (streamInventory ?? [...items.values()])
-					: [...items.values()],
-			next: null,
-			ranges: detailCoverage.completeWindows,
-			coverage: detailCoverage,
-		};
+		const resource: FactoryStreamData = applyResourceStorageLimit(
+			{
+				runId: context.run.id,
+				items:
+					dimension === "issues" || dimension === "prs"
+						? (streamInventory ?? [...items.values()])
+						: [...items.values()],
+				next: null,
+				ranges: detailCoverage.completeWindows,
+				coverage: detailCoverage,
+			},
+			dimension,
+			retainedDays,
+			current,
+		);
 		if (dimension === "alerts") repo.metrics.alerts = resource.items.length;
 		writes.push(await resourceStatement(db, context, saved.repo_id, dimension, resource));
 		const result = results.get(dimension);
@@ -614,18 +617,17 @@ export async function collectRepository(
 			);
 		}
 	}
-	for (const metrics of Object.values(repo.metrics.days))
-		for (const key of [
-			"issueOpened",
-			"issueClosed",
-			"prOpened",
-			"prMerged",
-			"prClosed",
-			"ciSuccess",
-			"ciFailure",
-			"releases",
-		] as const)
-			repo.metrics[key] += metrics[key];
+	resyncFactoryMetricsTotals(repo.metrics);
+	if (factoryDayMetricsZeroGuardEnabled(context.env)) {
+		const { days, warnings } = guardFactoryDayMetrics(
+			priorRepoPayload?.metrics?.days,
+			repo.metrics.days,
+			saved.repo,
+		);
+		repo.metrics.days = days;
+		resyncFactoryMetricsTotals(repo.metrics);
+		for (const warning of warnings) context.onMetricGuard?.(warning);
+	}
 	const fetchedAt =
 		[...current.values()]
 			.filter((row) => row.status !== "unavailable")

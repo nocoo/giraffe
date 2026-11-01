@@ -13,7 +13,17 @@ import {
 import { contributionWindow } from "../refresh-calendar";
 import type { CollectionContext } from "../refresh-collection-contract";
 import { collectAccount, collectRepository } from "./index";
-import { blankMetrics, count, event, factoryRepo, nodes, object, text, windowOf } from "./model";
+import {
+	blankDay,
+	blankMetrics,
+	count,
+	event,
+	factoryRepo,
+	nodes,
+	object,
+	text,
+	windowOf,
+} from "./model";
 import { collectionDb, publish } from "./store";
 import { transport } from "./transport";
 
@@ -912,15 +922,22 @@ describe("unified refresh collection", () => {
 	});
 	it("preserves factory day metrics outside a lookback window", async () => {
 		const context = await fixture();
+		const outside = "2026-10-27";
+		const outsideDay = {
+			date: outside,
+			since: "2026-10-26T16:00:00.000Z",
+			until: "2026-10-27T16:00:00.000Z",
+		};
 		context.days = [
-			{ date: "2026-10-29", since: "2026-10-28T16:00:00.000Z", until: "2026-10-29T16:00:00.000Z" },
+			{ date: "2026-10-28", since: "2026-10-27T16:00:00.000Z", until: "2026-10-28T16:00:00.000Z" },
 			{ date: "2026-10-31", since: "2026-10-30T16:00:00.000Z", until: "2026-10-31T16:00:00.000Z" },
 		];
 		context.run.params = {
 			...context.run.params,
-			since: "2026-10-29",
+			since: "2026-10-28",
 			until: "2026-10-31",
-			dimensions: ["issues", "prs"],
+			lookbackDays: 4,
+			dimensions: ["issues", "prs", "actions"],
 		};
 		upstream([
 			accountPage(),
@@ -928,9 +945,54 @@ describe("unified refresh collection", () => {
 		]);
 		await collectAccount(context);
 		await collectRepository(context, "owner/project");
+		const priorMetrics = {
+			issueOpened: 70,
+			prOpened: 14,
+			issueClosed: 20,
+			prMerged: 18,
+			ciFailure: 3,
+			ciSuccess: 2,
+			commits: 12,
+			prClosed: 0,
+			releases: 1,
+		};
 		await context.env.DB.prepare(
-			"UPDATE refresh_repository_publications SET payload=json_set(payload,'$.metrics.days.\"2026-10-28\".issueClosed',20,'$.metrics.days.\"2026-10-28\".prMerged',18) WHERE account_id='a'",
-		).run();
+			`UPDATE refresh_repository_publications SET payload=json_set(payload,'$.metrics.days."${outside}"',json(?)) WHERE account_id='a'`,
+		)
+			.bind(JSON.stringify({ ...blankDay(), ...priorMetrics }))
+			.run();
+		const observationPayload = (items: unknown[]) =>
+			JSON.stringify({ count: null, items, since: outsideDay.since, until: outsideDay.until });
+		await context.env.DB.batch([
+			context.env.DB.prepare(
+				`INSERT INTO refresh_day_observations(account_id,repo_id,timezone,day,dimension,status,payload,fetched_at) VALUES('a','R_1','Asia/Shanghai',?,'issues','complete',?,?)`,
+			).bind(
+				outside,
+				observationPayload([{ id: "i1", createdAt: "2026-10-27T02:00:00.000Z" }]),
+				context.now,
+			),
+			context.env.DB.prepare(
+				`INSERT INTO refresh_day_observations(account_id,repo_id,timezone,day,dimension,status,payload,fetched_at) VALUES('a','R_1','Asia/Shanghai',?,'prs','complete',?,?)`,
+			).bind(
+				outside,
+				observationPayload([{ id: "p1", createdAt: "2026-10-27T03:00:00.000Z" }]),
+				context.now,
+			),
+			context.env.DB.prepare(
+				`INSERT INTO refresh_day_observations(account_id,repo_id,timezone,day,dimension,status,payload,fetched_at) VALUES('a','R_1','Asia/Shanghai',?,'actions','complete',?,?)`,
+			).bind(
+				outside,
+				observationPayload([
+					{
+						id: "a1",
+						conclusion: "failure",
+						activityRun: { head_branch: "main" },
+						createdAt: "2026-10-27T04:00:00.000Z",
+					},
+				]),
+				context.now,
+			),
+		]);
 		upstream([
 			accountPage(),
 			{
@@ -948,9 +1010,10 @@ describe("unified refresh collection", () => {
 		await collectAccount(context);
 		await collectRepository(context, "owner/project");
 		const saved = await publication(context);
-		expect(saved.repos[0].metrics.days["2026-10-28"]).toMatchObject({
-			issueClosed: 20,
-			prMerged: 18,
+		expect(saved.repos[0].metrics.days[outside]).toMatchObject({
+			issueOpened: 1,
+			prOpened: 1,
+			ciFailure: 1,
 		});
 	});
 	it("counts lifecycle merges on the Shanghai day of mergedAt using instant search ranges", async () => {
@@ -1686,6 +1749,29 @@ describe("unified refresh collection", () => {
 			)?.payload ?? "{}",
 		) as { inventory: { complete: boolean } };
 		expect(saved.inventory.complete).toBe(true);
+	});
+	it("does not mark the account phase partial when a retained contribution calendar exists", async () => {
+		const context = await fixture();
+		const page = accountPage();
+		upstream([page]);
+		await collectAccount(context);
+		await context.env.DB.prepare(
+			'UPDATE refresh_accounts SET payload=json_set(payload,\'$.contribution\',json(\'{"days":[{"date":"2026-09-14","count":1}],"total":1,"fetchedAt":"2026-09-15T12:00:00.000Z"}\'),\'$.contributionStatus\',\'complete\') WHERE account_id=\'a\'',
+		).run();
+		upstream([
+			Response.json({
+				data: {
+					viewer: page.viewer,
+					rateLimit: { remaining: 5000, resetAt: "2026-10-29T05:00:00Z" },
+				},
+				errors: [
+					{ type: "FORBIDDEN", path: ["viewer", "contributionsCollection"], message: "denied" },
+				],
+			}),
+		]);
+		const result = await collectAccount(context);
+		expect(result.partial).toBe(false);
+		expect(result.reasons).not.toContain("contributions:unavailable");
 	});
 	it("treats contributionCalendar GraphQL errors separately from catalogue inventory", async () => {
 		const context = await fixture();

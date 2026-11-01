@@ -2,6 +2,7 @@ import { expect, it, vi } from "vitest";
 import { annualContributionCalendar } from "../../../../../../tests/fixtures/contribution-calendar";
 import golden from "../../../../../../tests/fixtures/refresh-publication-golden.json";
 import { sqliteFixture } from "../../../../../../tests/fixtures/sqlite";
+import type { RefreshMetricGuardEvent } from "../../../lib/refresh-types";
 import * as warmRun from "../dashboard-warm-run";
 import { createDb, type Db } from "../db/d1";
 import { factoryRateStatement } from "../factory-rate";
@@ -351,6 +352,66 @@ it("publishes aggregates in batched reads and writes without changing output", a
 	expect(counted.sqls.filter((sql) => sql.includes("refresh_catalog"))).toHaveLength(2);
 	expect(counted.sqls.some((sql) => /SELECT \* FROM refresh_catalog/i.test(sql))).toBe(false);
 	expect(goldenShape(await publishedRows(raw))).toEqual(golden);
+});
+
+it("records zero_guard_kept when factory publish would zero stored day metrics", async () => {
+	const raw = sqliteFixture();
+	const events: RefreshMetricGuardEvent[] = [];
+	const context = await prepared(raw, fixtures);
+	context.onMetricGuard = (event) => events.push(event);
+	const db = createDb(raw);
+	await publish(db, context);
+	const day = {
+		commits: 0,
+		issueOpened: 0,
+		issueClosed: 0,
+		prOpened: 0,
+		prMerged: 0,
+		prClosed: 0,
+		ciSuccess: 0,
+		ciFailure: 0,
+		releases: 0,
+	};
+	const priorDay = { ...day, issueOpened: 4 };
+	const metrics = (days: Record<string, typeof day>) => ({
+		...day,
+		alerts: 0,
+		ciOther: 0,
+		ciPending: 0,
+		days,
+	});
+	const factoryRow = await raw
+		.prepare("SELECT payload FROM refresh_snapshots WHERE account_id='a' AND kind='factory'")
+		.first<{ payload: string }>();
+	const factory = JSON.parse(factoryRow?.payload ?? "{}") as {
+		repos: { name: string; metrics: ReturnType<typeof metrics> }[];
+	};
+	factory.repos[0] = {
+		...(factory.repos[0] ?? { name: "owner/alpha" }),
+		name: factory.repos[0]?.name ?? "owner/alpha",
+		metrics: metrics({ "2026-10-28": priorDay }),
+	};
+	await db
+		.prepare("UPDATE refresh_snapshots SET payload=? WHERE account_id='a' AND kind='factory'")
+		.bind(JSON.stringify(factory))
+		.run();
+	const zeroed = {
+		...publication("R_1", "owner/alpha", "complete"),
+		metrics: metrics({ "2026-10-28": { ...day } }),
+	};
+	await db
+		.prepare(
+			"UPDATE refresh_repository_publications SET payload=? WHERE account_id='a' AND repo_id='R_1'",
+		)
+		.bind(JSON.stringify(zeroed))
+		.run();
+	await publish(db, context);
+	expect(events).toContainEqual({
+		code: "zero_guard_kept",
+		repo: "owner/alpha",
+		day: "2026-10-28",
+		field: "issueOpened",
+	});
 });
 
 it("republishes identical rows without extra round trips", async () => {
