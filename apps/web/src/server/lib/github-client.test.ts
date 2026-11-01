@@ -246,6 +246,21 @@ describe("createGithubClient", () => {
 			code: "github_error",
 		});
 	});
+
+	it("surfaces graphql syntax errors in github_error message", async () => {
+		const client = createGithubClient(
+			env({ ENVIRONMENT: "development", GITHUB_API_BASE: "http://127.0.0.1:17046" }),
+			async () =>
+				Response.json({
+					data: null,
+					errors: [{ message: "Syntax Error GraphQL (3:1) Unexpected }" }],
+				}),
+		);
+		await expect(client.githubGraphql("t", "query {", {})).rejects.toMatchObject({
+			code: "github_error",
+			message: "Syntax Error GraphQL (3:1) Unexpected }",
+		});
+	});
 });
 
 it("uses Workers-supported manual redirects and rejects redirects without forwarding credentials", async () => {

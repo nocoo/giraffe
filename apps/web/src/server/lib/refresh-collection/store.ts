@@ -153,7 +153,9 @@ export async function publish(
 	db: Db,
 	context: CollectionContext,
 	pending: D1PreparedStatement[] = [],
+	options: { updateFactorySnapshot?: boolean } = {},
 ) {
+	const updateFactorySnapshot = options.updateFactorySnapshot !== false;
 	const id = context.account.id;
 	const [saved, sourceRows, catalogRows] = (
 		await db.batch([
@@ -177,6 +179,7 @@ export async function publish(
 	];
 	const row = saved.results[0];
 	if (!row) throw new ApiError(500, "db_error", "Account observation required");
+	if (!updateFactorySnapshot) return;
 	const account = JSON.parse(row.payload) as FactorySnapshot;
 	const inventory = catalogRows.results;
 	const repos = inventory.flatMap((entry) =>

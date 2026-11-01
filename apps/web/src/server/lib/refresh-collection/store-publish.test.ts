@@ -346,6 +346,35 @@ it("republishes identical rows without extra round trips", async () => {
 	expect(goldenShape(await publishedRows(raw))).toEqual(first);
 });
 
+it("skips factory snapshot aggregation when updateFactorySnapshot is false", async () => {
+	const raw = sqliteFixture();
+	const context = await prepared(raw, fixtures);
+	const db = createDb(raw);
+	await publish(db, context);
+	const before = goldenShape(await publishedRows(raw));
+	await publish(
+		db,
+		context,
+		[
+			db
+				.prepare(
+					"UPDATE refresh_accounts SET payload=json_set(payload,'$.runId',?) WHERE account_id='a'",
+				)
+				.bind("run-account-only"),
+		],
+		{ updateFactorySnapshot: false },
+	);
+	expect(goldenShape(await publishedRows(raw))).toEqual(before);
+	const account = JSON.parse(
+		(
+			await raw
+				.prepare("SELECT payload FROM refresh_accounts WHERE account_id='a'")
+				.first<{ payload: string }>()
+		)?.payload ?? "{}",
+	) as { runId: string };
+	expect(account.runId).toBe("run-account-only");
+});
+
 it("keeps rate and identity-fenced retention in a compact operational publication", async () => {
 	const raw = sqliteFixture();
 	const context = await prepared(raw, fixtures);

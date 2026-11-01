@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.28.11 - 2026-11-01
+
+### Fixed
+
+- Remove an extra closing brace from `RefreshRepository` lifecycle search fields
+  (`mergedLifecycle` / `closedLifecycle`) that broke the outer query document and
+  caused GitHub GraphQL syntax errors on every repository collect in v0.28.10.
+- Surface GitHub GraphQL `errors[].message` in fatal `github_error` responses so
+  refresh runs record the syntax or validation failure instead of a generic message.
+- Preserve the prior contribution calendar on partial account collects when the
+  annual coverage window is incomplete, instead of wiping `contribution` data.
+
+### Verified
+
+- Every refresh GraphQL document is parsed with `graphql` and validated against
+  `@octokit/graphql-schema` before merge.
+- Regression tests cover graphql error messaging and optional factory publish gating.
+
 ## v0.28.10 - 2026-11-01
 
 ### Fixed

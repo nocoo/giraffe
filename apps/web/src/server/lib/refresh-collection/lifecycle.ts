@@ -28,10 +28,10 @@ export function lifecycleSearchFields(needed: string[]) {
 	].join("");
 	const fields = [
 		wantPrs
-			? `mergedLifecycle: search(type: ISSUE, query: $mergedQuery, first: 100) { issueCount ${page} nodes { ... on PullRequest { id number title url state createdAt updatedAt closedAt mergedAt isDraft additions deletions baseRefName headRefName reviewDecision mergeable mergeStateStatus author { login } labels(first:20) { nodes { name color } } comments { totalCount } } } } }`
+			? `mergedLifecycle: search(type: ISSUE, query: $mergedQuery, first: 100) { issueCount ${page} nodes { ... on PullRequest { id number title url state createdAt updatedAt closedAt mergedAt isDraft additions deletions baseRefName headRefName reviewDecision mergeable mergeStateStatus author { login } labels(first:20) { nodes { name color } } comments { totalCount } } } }`
 			: "",
 		wantIssues
-			? `closedLifecycle: search(type: ISSUE, query: $closedQuery, first: 100) { issueCount ${page} nodes { ... on Issue { id number title url state createdAt updatedAt closedAt author { login } labels(first:20) { nodes { name color } } comments { totalCount } } } } }`
+			? `closedLifecycle: search(type: ISSUE, query: $closedQuery, first: 100) { issueCount ${page} nodes { ... on Issue { id number title url state createdAt updatedAt closedAt author { login } labels(first:20) { nodes { name color } } comments { totalCount } } } }`
 			: "",
 	].join("\n ");
 	return { vars, fields, wantPrs, wantIssues };
