@@ -60,21 +60,26 @@ describe("lifecycle search helpers", () => {
 		expect(lifecycleEvents(raw, "issues")[0]?.closedAt).toBe(closedAt);
 		expect(event({ id: "PR_1", mergedAt, state: "MERGED" }).state).toBe("merged");
 	});
-	it("merges lifecycle rows into inventory and marks stale OPEN without timestamps", () => {
+	it("merges lifecycle rows into inventory and drops stale OPEN without inferring close times", () => {
 		const inventory = new Map<string, Record<string, unknown>>([
 			["OPEN_1", { id: "OPEN_1", state: "OPEN" }],
-			["PRIOR", { id: "PRIOR", state: "OPEN", title: "keep" }],
+			[
+				"PRIOR",
+				{
+					id: "PRIOR",
+					state: "OPEN",
+					title: "keep",
+					closedAt: "2026-10-28T22:30:36.000Z",
+				},
+			],
 		]);
-		mergeLifecycleRaw(inventory, [{ id: "PRIOR", closedAt: "2026-10-31T01:00:00.000Z" }], "issues");
+		mergeLifecycleRaw(inventory, [{ id: "PRIOR", closedAt: "2026-10-31T01:03:27.000Z" }], "issues");
 		expect(inventory.get("PRIOR")).toMatchObject({
 			title: "keep",
 			state: "CLOSED",
-			closedAt: "2026-10-31T01:00:00.000Z",
+			closedAt: "2026-10-31T01:03:27.000Z",
 		});
 		dropStaleOpen(inventory, new Set());
-		expect(inventory.get("OPEN_1")).toMatchObject({ state: "CLOSED", closedAt: null });
-		inventory.set("OPEN_2", { id: "OPEN_2", state: "OPEN", mergedAt: "2026-10-31T02:00:00.000Z" });
-		dropStaleOpen(inventory, new Set());
-		expect(inventory.get("OPEN_2")).toMatchObject({ state: "MERGED" });
+		expect(inventory.has("OPEN_1")).toBe(false);
 	});
 });

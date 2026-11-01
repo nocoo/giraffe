@@ -12,6 +12,8 @@ export type CollectionContext = {
 	now: string;
 	onRequests?: (count: number, breakdown: RequestBreakdown) => void;
 	onFailures?: (failures: RefreshFailureDetail[]) => void;
+	/** When false, persist pending writes but skip factory/aggregate publication head. */
+	publishFactorySnapshot?: boolean;
 };
 export type CollectionResult = {
 	requests: number;

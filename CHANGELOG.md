@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.28.12 - 2026-11-01
+
+### Fixed
+
+- Merge GitHub lifecycle search results before OPEN inventory reconciliation and
+  always apply GitHub `closedAt` / `mergedAt` to stored items. Stale OPEN rows
+  are removed instead of inferring close state or timestamps when they disappear
+  from the OPEN list.
+- Never replace a **complete** published factory / activity snapshot (factory,
+  issues, prs, alerts aggregates and `refresh_publications`) with a **partial**
+  one; partial runs still persist account and repository observations and are
+  recorded on the account payload and refresh run. Account phase and pending
+  terminal repository errors skip factory republication.
+
+### Verified
+
+- Regression tests cover lifecycle timestamp overwrite, publication deferral, and
+  complete-snapshot retention on partial account observations.
+
 ## v0.28.11 - 2026-11-01
 
 ### Fixed

@@ -223,7 +223,9 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 			context.now,
 		)),
 	);
-	await publish(db, context, statements);
+	await publish(db, context, statements, {
+		updateFactorySnapshot: context.publishFactorySnapshot !== false,
+	});
 	const saved = (await catalog(db, context.account.id)).results;
 	const requestedRepo = context.run.params.repo;
 	const reasons = [

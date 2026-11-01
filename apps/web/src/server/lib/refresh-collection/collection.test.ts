@@ -217,6 +217,16 @@ async function sourceSnapshot(context: CollectionContext, kind: string) {
 }
 
 describe("unified refresh collection", () => {
+	it("does not advance factory publication when publishFactorySnapshot is false", async () => {
+		const context = await fixture();
+		upstream([accountPage()]);
+		await collectAccount(context);
+		const before = await publication(context);
+		context.publishFactorySnapshot = false;
+		upstream([accountPage()]);
+		await collectAccount(context);
+		expect(await publication(context)).toEqual(before);
+	});
 	it("discovers once, never auto-stars, and skips unstarred repositories the next day", async () => {
 		const context = await fixture();
 		upstream([
@@ -858,6 +868,47 @@ describe("unified refresh collection", () => {
 		const saved = await publication(context);
 		expect(saved.repos[0].metrics.days["2026-10-29"]?.issueClosed ?? 0).toBe(0);
 		expect(saved.repos[0].metrics.days["2026-10-31"]?.issueClosed).toBe(1);
+	});
+	it("overwrites stale refresh_items closedAt with lifecycle search timestamps", async () => {
+		const context = await fixture();
+		context.days = [
+			{ date: "2026-10-31", since: "2026-10-30T16:00:00.000Z", until: "2026-10-31T16:00:00.000Z" },
+		];
+		context.run.params = {
+			...context.run.params,
+			since: "2026-10-31",
+			until: "2026-10-31",
+			dimensions: ["issues"],
+		};
+		const closedAt = "2026-10-31T01:03:27.000Z";
+		upstream([
+			accountPage(),
+			{
+				node: { ...repo(), openIssues: { totalCount: 0 }, issues: connection([]) },
+				closedLifecycle: {
+					nodes: [{ ...item("r2shot-400", "CLOSED"), closedAt, state: "CLOSED" }],
+					pageInfo: { hasNextPage: false, endCursor: null },
+				},
+			},
+		]);
+		await collectAccount(context);
+		await context.env.DB.prepare(
+			"INSERT INTO refresh_items(account_id,repo_id,stream,item_id,payload) VALUES('a','R_1','issues',?,?)",
+		)
+			.bind(
+				"r2shot-400",
+				JSON.stringify({
+					...item("r2shot-400", "OPEN"),
+					state: "CLOSED",
+					closedAt: "2026-10-28T22:30:36.000Z",
+				}),
+			)
+			.run();
+		await collectRepository(context, "owner/project");
+		const row = await context.env.DB.prepare(
+			"SELECT payload FROM refresh_items WHERE item_id='r2shot-400'",
+		).first<{ payload: string }>();
+		expect(JSON.parse(row?.payload ?? "{}")).toMatchObject({ closedAt });
 	});
 	it("collects latest CI, releases and both alert features in the saved wire format", async () => {
 		const context = await fixture();

@@ -8,9 +8,26 @@ import { factoryRateStatement } from "../factory-rate";
 import type { CollectionContext } from "../refresh-collection-contract";
 import { parseRefreshParams, refreshDays } from "../refresh-params";
 import { publicationRetentionStatement } from "../saved-observation-statements";
-import { publish } from "./store";
+import { publish, shouldReplacePublishedFactorySnapshot } from "./store";
 
 const now = "2026-10-29T06:00:00.000Z";
+
+it("does not replace a complete published factory snapshot with a partial one", () => {
+	expect(
+		shouldReplacePublishedFactorySnapshot(
+			{ status: "complete" } as never,
+			{ status: "partial" } as never,
+		),
+	).toBe(false);
+	expect(
+		shouldReplacePublishedFactorySnapshot(
+			{ status: "partial" } as never,
+			{ status: "partial" } as never,
+		),
+	).toBe(true);
+	expect(shouldReplacePublishedFactorySnapshot(null, { status: "partial" } as never)).toBe(true);
+});
+
 type Trip = { rpc: number; reads: number; writes: number };
 
 function countTrips(raw: D1Database) {
@@ -327,6 +344,7 @@ it("publishes aggregates in batched reads and writes without changing output", a
 	const context = await prepared(raw, fixtures);
 	await publish(createDb(counted.raw), context);
 	expect(counted.trips).toEqual([
+		{ rpc: 1, reads: 1, writes: 0 },
 		{ rpc: 3, reads: 3, writes: 0 },
 		{ rpc: 9, reads: 0, writes: 9 },
 	]);
@@ -342,7 +360,7 @@ it("republishes identical rows without extra round trips", async () => {
 	await publish(createDb(counted.raw), context);
 	const first = goldenShape(await publishedRows(raw));
 	await publish(createDb(counted.raw), context);
-	expect(counted.trips).toHaveLength(4);
+	expect(counted.trips).toHaveLength(6);
 	expect(goldenShape(await publishedRows(raw))).toEqual(first);
 });
 
@@ -373,6 +391,34 @@ it("skips factory snapshot aggregation when updateFactorySnapshot is false", asy
 		)?.payload ?? "{}",
 	) as { runId: string };
 	expect(account.runId).toBe("run-account-only");
+});
+
+it("keeps complete published snapshots when a partial observation would regress them", async () => {
+	const raw = sqliteFixture();
+	const context = await prepared(raw, fixtures);
+	const db = createDb(raw);
+	await publish(db, context);
+	await raw
+		.prepare(
+			"UPDATE refresh_snapshots SET payload=json_set(payload,'$.status',?) WHERE account_id='a' AND kind='factory'",
+		)
+		.bind("complete")
+		.run();
+	const before = goldenShape(await publishedRows(raw));
+	await publish(db, context, [
+		db.prepare(
+			"UPDATE refresh_accounts SET payload=json_set(payload,'$.status','partial','$.inventory.complete',json('false')) WHERE account_id='a'",
+		),
+	]);
+	expect(goldenShape(await publishedRows(raw))).toEqual(before);
+	const account = JSON.parse(
+		(
+			await raw
+				.prepare("SELECT payload FROM refresh_accounts WHERE account_id='a'")
+				.first<{ payload: string }>()
+		)?.payload ?? "{}",
+	) as { status: string };
+	expect(account.status).toBe("partial");
 });
 
 it("keeps rate and identity-fenced retention in a compact operational publication", async () => {
@@ -475,6 +521,7 @@ it("sees pending observation writes in the same publication batch", async () => 
 			),
 	]);
 	expect(counted.trips).toEqual([
+		{ rpc: 1, reads: 1, writes: 0 },
 		{ rpc: 5, reads: 3, writes: 2 },
 		{ rpc: 9, reads: 0, writes: 9 },
 	]);
@@ -511,7 +558,10 @@ it("rolls back pending observation writes when a snapshot read fails in the batc
 	];
 	await raw.prepare("DROP TABLE refresh_catalog").run();
 	await expect(publish(db, context, pending)).rejects.toMatchObject({ code: "db_error" });
-	expect(counted.trips).toEqual([{ rpc: 4, reads: 3, writes: 1 }]);
+	expect(counted.trips).toEqual([
+		{ rpc: 1, reads: 1, writes: 0 },
+		{ rpc: 4, reads: 3, writes: 1 },
+	]);
 	const days = await raw
 		.prepare("SELECT COUNT(*) AS n FROM refresh_day_observations")
 		.first<{ n: number }>();
@@ -602,9 +652,9 @@ it("publishes a full catalogue with two round trips per step", async () => {
 			digestMB: Math.round(stats.digestBytes / 1_000_000),
 		})}`,
 	);
-	expect(counted.trips).toHaveLength(122);
+	expect(counted.trips).toHaveLength(183);
 	expect(counted.trips.map((trip) => trip.rpc)).toEqual(
-		Array.from({ length: 61 }, () => [3, 9]).flat(),
+		Array.from({ length: 61 }, () => [1, 3, 9]).flat(),
 	);
 });
 it("publishes each observation step with two round trips end to end", async () => {
@@ -631,9 +681,10 @@ it("publishes each observation step with two round trips end to end", async () =
 			perStepMs: Math.round((elapsedMs / 61) * 100) / 100,
 		})}`,
 	);
-	expect(counted.trips).toHaveLength(122);
+	expect(counted.trips).toHaveLength(183);
 	expect(counted.trips).toEqual(
 		Array.from({ length: 61 }, () => [
+			{ rpc: 1, reads: 1, writes: 0 },
 			{ rpc: 7, reads: 3, writes: 4 },
 			{ rpc: 9, reads: 0, writes: 9 },
 		]).flat(),

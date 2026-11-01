@@ -329,6 +329,13 @@ export async function collectRepository(
 					};
 				}
 				if (result.inventoryComplete === true) {
+					if (lifecycleRaw) {
+						mergeLifecycleRaw(
+							merged,
+							dimension === "prs" ? lifecycleRaw.merged : lifecycleRaw.closed,
+							dimension,
+						);
+					}
 					dropStaleOpen(merged, fetchedOpenIds);
 					if (expectedOpen !== null) {
 						const openInMerged = [...merged.values()].filter((row) => row.state === "OPEN").length;
@@ -341,8 +348,7 @@ export async function collectRepository(
 							};
 						}
 					}
-				}
-				if (lifecycleRaw) {
+				} else if (lifecycleRaw) {
 					mergeLifecycleRaw(
 						merged,
 						dimension === "prs" ? lifecycleRaw.merged : lifecycleRaw.closed,
@@ -652,7 +658,7 @@ export async function collectRepository(
 				context.now,
 			)),
 		);
-	await publish(db, context, writes);
+	await publish(db, context, writes, { updateFactorySnapshot: pendingError === undefined });
 	const reasons = context.run.params.dimensions.flatMap((dimension) => {
 		const { coverage, settled } = dayCoverage(
 			context,

@@ -70,6 +70,8 @@ export function mergeLifecycleRaw(into: Map<string, Node>, raw: Node[], stream: 
 			...(prior ?? {}),
 			...row,
 			state: stream === "prs" ? "MERGED" : "CLOSED",
+			closedAt: text(row.closedAt),
+			mergedAt: text(row.mergedAt),
 		});
 	}
 }
@@ -77,11 +79,6 @@ export function mergeLifecycleRaw(into: Map<string, Node>, raw: Node[], stream: 
 export function dropStaleOpen(inventory: Map<string, Node>, fetchedOpenIds: Set<string>) {
 	for (const [itemId, item] of inventory) {
 		if (item.state !== "OPEN" || fetchedOpenIds.has(itemId)) continue;
-		inventory.set(itemId, {
-			...item,
-			state: text(item.mergedAt) ? "MERGED" : "CLOSED",
-			closedAt: text(item.closedAt),
-			mergedAt: text(item.mergedAt),
-		});
+		inventory.delete(itemId);
 	}
 }

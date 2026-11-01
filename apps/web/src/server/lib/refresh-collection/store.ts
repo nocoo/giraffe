@@ -149,6 +149,20 @@ export async function resourceStatement(
 			await savedContentMeta(`factory:${id}:${stream}`, payload as unknown as Node),
 		);
 }
+
+export function shouldReplacePublishedFactorySnapshot(
+	prior: FactorySnapshot | null,
+	next: FactorySnapshot,
+): boolean {
+	if (!prior) return true;
+	if (next.status === "complete") return true;
+	if (prior.status === "partial") return true;
+	const priorIds = new Set((prior.repos ?? []).map((repo) => repo.id));
+	const nextIds = new Set((next.repos ?? []).map((repo) => repo.id));
+	if (priorIds.size !== nextIds.size || [...nextIds].some((id) => !priorIds.has(id))) return true;
+	return false;
+}
+
 export async function publish(
 	db: Db,
 	context: CollectionContext,
@@ -157,6 +171,16 @@ export async function publish(
 ) {
 	const updateFactorySnapshot = options.updateFactorySnapshot !== false;
 	const id = context.account.id;
+	let priorFactory: FactorySnapshot | null = null;
+	if (updateFactorySnapshot) {
+		const priorFactoryRow = await db
+			.prepare("SELECT payload FROM refresh_snapshots WHERE account_id=? AND kind='factory'")
+			.bind(id)
+			.first<{ payload: string }>();
+		priorFactory = priorFactoryRow
+			? (JSON.parse(priorFactoryRow.payload) as FactorySnapshot)
+			: null;
+	}
 	const [saved, sourceRows, catalogRows] = (
 		await db.batch([
 			...pending,
@@ -197,6 +221,7 @@ export async function publish(
 			publishedAt: context.now,
 		},
 		status:
+			repos.length > 0 &&
 			account.inventory.complete &&
 			account.contributionStatus === "complete" &&
 			repos.every((repo) =>
@@ -209,6 +234,7 @@ export async function publish(
 				? "complete"
 				: "partial",
 	};
+	if (!shouldReplacePublishedFactorySnapshot(priorFactory, snapshot)) return;
 	const groups = latestSnapshotGroups(sourceRows.results);
 	const aggregates: D1PreparedStatement[] = [];
 	for (const [logical, suffix, key] of [
