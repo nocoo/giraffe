@@ -24,7 +24,20 @@ export const FACTORY_DAY_METRIC_FIELDS = [
 	"releases",
 ] as const satisfies readonly (keyof FactoryDay)[];
 
-const populated = (day: FactoryDay) => FACTORY_DAY_METRIC_FIELDS.some((field) => day[field] !== 0);
+/** Default-branch ciFailure may legitimately decrease; accidental zero-out guard skips it. */
+export const FACTORY_DAY_METRICS_ZERO_GUARD_FIELDS = [
+	"commits",
+	"issueOpened",
+	"issueClosed",
+	"prOpened",
+	"prMerged",
+	"prClosed",
+	"ciSuccess",
+	"releases",
+] as const satisfies readonly (keyof FactoryDay)[];
+
+const populated = (day: FactoryDay) =>
+	FACTORY_DAY_METRICS_ZERO_GUARD_FIELDS.some((field) => day[field] !== 0);
 
 export function guardFactoryDayMetrics(
 	priorDays: Record<string, FactoryDay> | undefined,
@@ -37,7 +50,7 @@ export function guardFactoryDayMetrics(
 	for (const [date, priorDay] of Object.entries(priorDays)) {
 		if (!(date in nextDays) && populated(priorDay)) {
 			days[date] = { ...priorDay };
-			for (const field of FACTORY_DAY_METRIC_FIELDS) {
+			for (const field of FACTORY_DAY_METRICS_ZERO_GUARD_FIELDS) {
 				if (priorDay[field] !== 0)
 					warnings.push({ code: "zero_guard_kept", repo, day: date, field });
 			}
@@ -46,7 +59,7 @@ export function guardFactoryDayMetrics(
 		const proposed = days[date] ?? blankDay();
 		const merged: FactoryDay = { ...proposed };
 		let kept = false;
-		for (const field of FACTORY_DAY_METRIC_FIELDS) {
+		for (const field of FACTORY_DAY_METRICS_ZERO_GUARD_FIELDS) {
 			if (priorDay[field] !== 0 && proposed[field] === 0) {
 				merged[field] = priorDay[field];
 				warnings.push({ code: "zero_guard_kept", repo, day: date, field });

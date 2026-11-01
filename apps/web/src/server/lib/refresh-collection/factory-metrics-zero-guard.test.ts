@@ -25,10 +25,9 @@ describe("factory day metrics zero guard", () => {
 			"2026-10-27": { ...blankDay() },
 		};
 		const { days, warnings } = guardFactoryDayMetrics(prior, next, "owner/repo");
-		expect(days["2026-10-27"]).toMatchObject({ prOpened: 2, ciFailure: 1 });
+		expect(days["2026-10-27"]).toMatchObject({ prOpened: 2, ciFailure: 0 });
 		expect(warnings).toEqual([
 			{ code: "zero_guard_kept", repo: "owner/repo", day: "2026-10-27", field: "prOpened" },
-			{ code: "zero_guard_kept", repo: "owner/repo", day: "2026-10-27", field: "ciFailure" },
 		]);
 	});
 
@@ -38,7 +37,7 @@ describe("factory day metrics zero guard", () => {
 		const { days, warnings } = guardFactoryDayMetrics(prior, {}, "owner/repo");
 		expect(days["2026-08-03"]).toEqual(priorDay);
 		expect(warnings.filter((w) => w.field === "issueOpened")).toHaveLength(1);
-		expect(warnings.filter((w) => w.field === "commits")).toHaveLength(1);
+		expect(warnings.filter((w) => w.field === "ciFailure")).toHaveLength(0);
 	});
 
 	it("resyncs roll-up totals from guarded day rows", () => {
@@ -93,5 +92,23 @@ describe("factory day metrics zero guard", () => {
 		const { days, warnings } = guardFactoryDayMetrics(prior, next, "owner/repo");
 		expect(days).toEqual(next);
 		expect(warnings).toEqual([]);
+	});
+
+	it("does not zero-guard ciFailure decreases", () => {
+		const prior = { "2026-10-29": { ...blankDay(), ciFailure: 4 } };
+		const next = { "2026-10-29": { ...blankDay(), ciFailure: 2 } };
+		const { days, warnings } = guardFactoryDayMetrics(prior, next, "owner/repo");
+		expect(days["2026-10-29"]?.ciFailure).toBe(2);
+		expect(warnings).toEqual([]);
+	});
+
+	it("still zero-guards accidental ciFailure zero for other fields only", () => {
+		const prior = { "2026-10-29": { ...blankDay(), ciFailure: 4, prOpened: 2 } };
+		const next = { "2026-10-29": { ...blankDay(), ciFailure: 0, prOpened: 0 } };
+		const { days, warnings } = guardFactoryDayMetrics(prior, next, "owner/repo");
+		expect(days["2026-10-29"]).toMatchObject({ ciFailure: 0, prOpened: 2 });
+		expect(warnings).toEqual([
+			{ code: "zero_guard_kept", repo: "owner/repo", day: "2026-10-29", field: "prOpened" },
+		]);
 	});
 });

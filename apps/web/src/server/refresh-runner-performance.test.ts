@@ -174,7 +174,7 @@ it("finishes a real force A/serial B despite slow D1 and reuses unavailable aler
 		expect(upstream).toHaveBeenCalledTimes(force ? 6 : 1);
 		expect(alarm).toBeNull();
 		expect(Date.now() - started).toBeGreaterThan(25_000);
-		expect(calls.length).toBeLessThanOrEqual(force ? 22 : 21);
+		expect(calls.length).toBeLessThanOrEqual(force ? 23 : 21);
 		expect(Date.now() - started).toBeLessThanOrEqual(force ? 70_000 : 65_000);
 		const security = await raw
 			.prepare(

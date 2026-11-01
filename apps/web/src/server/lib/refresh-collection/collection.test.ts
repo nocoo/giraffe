@@ -1016,6 +1016,63 @@ describe("unified refresh collection", () => {
 			ciFailure: 1,
 		});
 	});
+	it("re-collects outside-window action days missing head_branch during lookback", async () => {
+		const context = await fixture();
+		const outside = "2026-10-27";
+		const outsideDay = {
+			date: outside,
+			since: "2026-10-26T16:00:00.000Z",
+			until: "2026-10-27T16:00:00.000Z",
+		};
+		context.days = [
+			{ date: "2026-10-28", since: "2026-10-27T16:00:00.000Z", until: "2026-10-28T16:00:00.000Z" },
+			{ date: "2026-10-31", since: "2026-10-30T16:00:00.000Z", until: "2026-10-31T16:00:00.000Z" },
+		];
+		context.run.params = {
+			...context.run.params,
+			since: "2026-10-28",
+			until: "2026-10-31",
+			lookbackDays: 4,
+			dimensions: ["actions"],
+		};
+		const run = {
+			id: 77,
+			name: "CI",
+			html_url: "https://github.com/owner/project/actions/runs/77",
+			status: "completed",
+			conclusion: "failure",
+			head_branch: "main",
+			event: "push",
+			created_at: "2026-10-27T04:00:00.000Z",
+			updated_at: "2026-10-27T04:00:00.000Z",
+		};
+		upstream([accountPage(), { node: repo() }]);
+		await collectAccount(context);
+		await collectRepository(context, "owner/project");
+		const observationPayload = (items: unknown[]) =>
+			JSON.stringify({ count: null, items, since: outsideDay.since, until: outsideDay.until });
+		await context.env.DB.prepare(
+			`INSERT INTO refresh_day_observations(account_id,repo_id,timezone,day,dimension,status,payload,fetched_at) VALUES('a','R_1','Asia/Shanghai',?,'actions','complete',?,?)`,
+		)
+			.bind(
+				outside,
+				observationPayload([{ id: "a1", conclusion: "failure", activityRun: null }]),
+				context.now,
+			)
+			.run();
+		const fetch = upstream([{ node: repo() }], {
+			"/actions/runs": { total_count: 1, workflow_runs: [run] },
+		});
+		await collectRepository(context, "owner/project");
+		expect(fetch.mock.calls.some(([url]) => String(url).includes("/actions/runs"))).toBe(true);
+		const day = await context.env.DB.prepare(
+			"SELECT payload FROM refresh_day_observations WHERE dimension='actions' AND day=?",
+		)
+			.bind(outside)
+			.first<{ payload: string }>();
+		expect(JSON.parse(day?.payload ?? "{}").items[0].activityRun.head_branch).toBe("main");
+		expect((await publication(context)).repos[0].metrics.days[outside]?.ciFailure).toBe(1);
+	});
 	it("counts lifecycle merges on the Shanghai day of mergedAt using instant search ranges", async () => {
 		const context = await fixture();
 		context.days = [
@@ -1772,6 +1829,69 @@ describe("unified refresh collection", () => {
 		const result = await collectAccount(context);
 		expect(result.partial).toBe(false);
 		expect(result.reasons).not.toContain("contributions:unavailable");
+	});
+	it("retains contribution calendar from factory snapshot when refresh_accounts lost it", async () => {
+		const context = await fixture();
+		const page = accountPage();
+		const calendar = {
+			days: [
+				{
+					date: "2026-09-14",
+					count: 2,
+					fetchedAt: now,
+					observedAt: now,
+					breakdown: "unavailable" as const,
+				},
+			],
+			total: 2,
+			fetchedAt: now,
+			observedAt: now,
+			timezone: "github",
+			typesStatus: "partial" as const,
+		};
+		await context.env.DB.prepare(
+			"INSERT INTO refresh_snapshots(account_id,kind,payload,fetched_at) VALUES('a','factory',?,?)",
+		)
+			.bind(
+				JSON.stringify({
+					schema: 1,
+					account_id: "a",
+					contribution: calendar,
+					contributionStatus: "complete",
+					contributionObservation: { version: "prior", window: {}, fetchedAt: now },
+					repos: [],
+				}),
+				now,
+			)
+			.run();
+		await context.env.DB.prepare(
+			"UPDATE refresh_accounts SET payload=json_remove(payload,'$.contribution') WHERE account_id='a'",
+		).run();
+		const failures: import("../../../lib/refresh-types").RefreshFailureDetail[] = [];
+		context.onFailures = (details) => failures.push(...details);
+		upstream([
+			Response.json({
+				data: {
+					viewer: page.viewer,
+					rateLimit: { remaining: 5000, resetAt: "2026-10-29T05:00:00Z" },
+				},
+				errors: [
+					{ type: "FORBIDDEN", path: ["viewer", "contributionsCollection"], message: "denied" },
+				],
+			}),
+		]);
+		const result = await collectAccount(context);
+		expect(result.partial).toBe(false);
+		expect(result.reasons).not.toContain("contributions:unavailable");
+		expect(failures.some((entry) => entry.code === "contributions:graphql_error")).toBe(true);
+		const saved = JSON.parse(
+			(
+				await context.env.DB.prepare(
+					"SELECT payload FROM refresh_accounts WHERE account_id='a'",
+				).first<{ payload: string }>()
+			)?.payload ?? "{}",
+		) as { contribution: { days: { date: string }[] } };
+		expect(saved.contribution.days[0]?.date).toBe("2026-09-14");
 	});
 	it("treats contributionCalendar GraphQL errors separately from catalogue inventory", async () => {
 		const context = await fixture();
