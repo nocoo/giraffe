@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.28.13 - 2026-11-01
+
+### Fixed
+
+- Lookback and daily repository publish never rewrite factory day metrics outside
+  `[since,until]`; outside-window days are rebuilt from stored day observations (D1
+  cache) so a non-force run can recover zeroed publication metrics without GitHub.
+- In-window issue/PR opened counts use day-scoped items instead of global OPEN
+  inventory; `ciFailure` counts default-branch failed runs per Shanghai day only.
+- Account refresh stays **complete** when the contribution calendar is retained from
+  a prior observation despite fresh `contributionsCollection` GraphQL errors; publish
+  and `/contributions` keep serving the saved calendar.
+- Temporary factory day-metrics zero guard (default **on** via
+  `FACTORY_DAY_METRICS_ZERO_GUARD`): publication keeps existing nonzero day values when
+  a refresh would zero a field or drop a populated day row, records `zero_guard_kept`
+  warnings on the refresh run, and applies at repository publish and factory snapshot
+  assembly.
+
 ## v0.28.12 - 2026-11-01
 
 ### Fixed

@@ -112,9 +112,9 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 		days,
 		total: count(contributions.totalContributions),
 	}).complete;
-	const priorAccount = contributionComplete
-		? null
-		: await savedAccountPublication(db, context.account.id);
+	const priorAccount = await savedAccountPublication(db, context.account.id);
+	const contributionRetained =
+		contributionComplete || Boolean(priorAccount?.contribution?.days?.length);
 	const rate = object(first.rateLimit);
 	const snapshot: FactorySnapshot = {
 		schema: 1,
@@ -126,7 +126,7 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 		startedAt: context.run.createdAt,
 		fetched_at: context.now,
 		window: windowOf(context),
-		status: complete && contributionComplete ? "complete" : "partial",
+		status: complete && (contributionComplete || contributionRetained) ? "complete" : "partial",
 		inventory: {
 			total: count(object(object(first.viewer).repositories).totalCount) ?? repositories.length,
 			scanned: repositories.length,
@@ -237,7 +237,7 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 	const requestedRepo = context.run.params.repo;
 	const reasons = [
 		...(complete ? [] : ["catalog:incomplete"]),
-		...(contributionComplete ? [] : ["contributions:unavailable"]),
+		...(contributionComplete || contributionRetained ? [] : ["contributions:unavailable"]),
 	];
 	if (requestedRepo) {
 		const requested = saved.find((repo) => repo.repo.toLowerCase() === requestedRepo.toLowerCase());

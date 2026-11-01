@@ -4,6 +4,7 @@ import { createDb } from "./db/d1";
 import { parseRefreshParams } from "./refresh-params";
 import {
 	activeRefreshRun,
+	addRefreshMetricGuardEvents,
 	addRefreshPartialReasons,
 	addRefreshRequests,
 	cancelRefreshRun,
@@ -134,6 +135,28 @@ it("attributes partial reasons to the account or a single repository without dup
 		{ repo: "octo/one", codes: ["issues:unavailable", "prs:inventory_incomplete"] },
 	]);
 	expect(addRefreshPartialReasons(run, "octo/two", [])).toBe(run);
+});
+it("appends metric guard warnings onto the refresh run", async () => {
+	const db = await fixture();
+	let run = await createRefreshRun(
+		db,
+		"account",
+		parseRefreshParams({}, new Date("2026-10-29T01:00:00.000Z")),
+		"manual",
+		"2026-10-29T01:00:00.000Z",
+	);
+	const event = {
+		code: "zero_guard_kept" as const,
+		repo: "octo/one",
+		day: "2026-10-28",
+		field: "commits" as const,
+	};
+	run = addRefreshMetricGuardEvents(run, [event]);
+	expect(run.metricGuardEvents).toEqual([event]);
+	expect(addRefreshMetricGuardEvents(run, [])).toBe(run);
+	expect(
+		addRefreshMetricGuardEvents(run, [{ ...event, field: "prOpened" }]).metricGuardEvents,
+	).toEqual([event, { ...event, field: "prOpened" }]);
 });
 it("marks queued and running runs cancelled once and never mutates terminal runs", async () => {
 	const db = await fixture();

@@ -1,5 +1,6 @@
 import type {
 	RefreshFailureDetail,
+	RefreshMetricGuardEvent,
 	RefreshParams,
 	RefreshRun,
 	RefreshRunTimings,
@@ -127,6 +128,16 @@ export function addRefreshRequests(
 			a: accountCounts,
 			b: repositoryCounts,
 		},
+	};
+}
+export function addRefreshMetricGuardEvents(
+	run: RefreshRun,
+	events: RefreshMetricGuardEvent[],
+): RefreshRun {
+	if (!events.length) return run;
+	return {
+		...run,
+		metricGuardEvents: [...(run.metricGuardEvents ?? []), ...events],
 	};
 }
 export function addRefreshPartialReasons(

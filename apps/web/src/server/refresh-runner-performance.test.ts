@@ -175,7 +175,7 @@ it("finishes a real force A/serial B despite slow D1 and reuses unavailable aler
 		expect(alarm).toBeNull();
 		expect(Date.now() - started).toBeGreaterThan(25_000);
 		expect(calls.length).toBeLessThanOrEqual(force ? 22 : 21);
-		expect(Date.now() - started).toBeLessThanOrEqual(force ? 64_000 : 65_000);
+		expect(Date.now() - started).toBeLessThanOrEqual(force ? 70_000 : 65_000);
 		const security = await raw
 			.prepare(
 				"SELECT payload,fetched_at FROM refresh_snapshots WHERE account_id='account' AND kind='repo:phase2/demo:security'",

@@ -1,5 +1,9 @@
 import { z } from "zod";
-import type { RefreshFailureDetail, RefreshRun } from "../lib/refresh-types";
+import type {
+	RefreshFailureDetail,
+	RefreshMetricGuardEvent,
+	RefreshRun,
+} from "../lib/refresh-types";
 import { type Env, encryptionKey } from "./env";
 import { getAccount } from "./lib/db/accounts";
 import { createDb, type Db } from "./lib/db/d1";
@@ -12,6 +16,7 @@ import type { AccountCollectionResult, CollectionResult } from "./lib/refresh-co
 import { parseRefreshParams, refreshDays } from "./lib/refresh-params";
 import {
 	activeRefreshRun,
+	addRefreshMetricGuardEvents,
 	addRefreshPartialReasons,
 	addRefreshRequests,
 	cancelRefreshRun,
@@ -81,7 +86,13 @@ const executionKey = (run: RefreshRun) => {
 };
 type StepOutcome =
 	| { ok: true; phase: "account"; result: AccountCollectionResult }
-	| { ok: true; phase: "repos"; result: CollectionResult; failures: RefreshFailureDetail[] }
+	| {
+			ok: true;
+			phase: "repos";
+			result: CollectionResult;
+			failures: RefreshFailureDetail[];
+			metricGuardEvents: RefreshMetricGuardEvent[];
+	  }
 	| { ok: false; error: unknown; counted: RequestCounts };
 const retryDelay = (code: string, attempts: number) =>
 	code === "github_rate_limited"
@@ -387,6 +398,7 @@ export class RefreshRunner implements DurableObject {
 	private async collect(run: RefreshRun): Promise<StepOutcome> {
 		let counted: RequestCounts = { graphql: 0, rest: 0 };
 		let failures: RefreshFailureDetail[] = [];
+		const metricGuardEvents: RefreshMetricGuardEvent[] = [];
 		try {
 			const db = createDb(this.env.DB);
 			const account = await getAccount(db, run.accountId);
@@ -405,6 +417,9 @@ export class RefreshRunner implements DurableObject {
 				onFailures: (details: RefreshFailureDetail[]) => {
 					failures = details;
 				},
+				onMetricGuard: (event: RefreshMetricGuardEvent) => {
+					metricGuardEvents.push(event);
+				},
 				env: this.env,
 				account,
 				token,
@@ -422,6 +437,7 @@ export class RefreshRunner implements DurableObject {
 				phase: "repos",
 				result: await collectRepository(context, repo),
 				failures,
+				metricGuardEvents,
 			};
 		} catch (error) {
 			return { ok: false, error, counted };
@@ -471,6 +487,8 @@ export class RefreshRunner implements DurableObject {
 				reasons,
 				outcome.phase === "repos" && outcome.result.partial ? outcome.failures : [],
 			);
+			if (outcome.phase === "repos" && outcome.metricGuardEvents.length)
+				run = addRefreshMetricGuardEvents(run, outcome.metricGuardEvents);
 		} else {
 			const code = failureCode(outcome.error);
 			const retry = await this.state.storage.get<Retry>("retry");

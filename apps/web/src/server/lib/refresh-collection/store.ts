@@ -16,6 +16,11 @@ import {
 	type SnapshotPage,
 	splitPages,
 } from "../snapshot-pages";
+import {
+	factoryDayMetricsZeroGuardEnabled,
+	guardFactoryDayMetrics,
+	resyncFactoryMetricsTotals,
+} from "./factory-metrics-zero-guard";
 import { type Catalog, type DayObservation, type Node, windowOf } from "./model";
 
 export const collectionDb = (context: CollectionContext) =>
@@ -218,9 +223,32 @@ export async function publish(
 				? (priorFactory?.contributionStatus ?? account.contributionStatus ?? "complete")
 				: account.contributionStatus;
 	const inventory = catalogRows.results;
-	const repos = inventory.flatMap((entry) =>
-		entry.publication === null ? [] : [JSON.parse(entry.publication) as FactoryRepo],
+	const priorRepoByName = new Map(
+		(priorFactory?.repos ?? [])
+			.filter((entry): entry is FactoryRepo => typeof entry?.name === "string")
+			.map((repo) => [repo.name.toLowerCase(), repo]),
 	);
+	const guardEnabled = factoryDayMetricsZeroGuardEnabled(context.env);
+	const repos = inventory.flatMap((entry) => {
+		if (entry.publication === null) return [];
+		let repo = JSON.parse(entry.publication) as FactoryRepo;
+		if (guardEnabled) {
+			const priorRepo = priorRepoByName.get(entry.repo.toLowerCase());
+			if (priorRepo?.metrics?.days) {
+				const { days, warnings } = guardFactoryDayMetrics(
+					priorRepo.metrics.days,
+					repo.metrics.days,
+					entry.repo,
+				);
+				if (warnings.length) {
+					repo = { ...repo, metrics: { ...repo.metrics, days } };
+					resyncFactoryMetricsTotals(repo.metrics);
+					for (const warning of warnings) context.onMetricGuard?.(warning);
+				}
+			}
+		}
+		return [repo];
+	});
 	const snapshot: FactorySnapshot = {
 		...account,
 		contribution: retainedContribution,
