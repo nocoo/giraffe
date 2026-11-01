@@ -26,6 +26,15 @@ function actionItemsMissingBranch(row: DayObservation): boolean {
 	);
 }
 
+export function actionsDayMissingBranch(row: DayObservation | undefined): boolean {
+	return row !== undefined && actionItemsMissingBranch(row);
+}
+
+export function dayBoundsFromObservation(row: DayObservation): RefreshDay {
+	const payload = JSON.parse(row.payload) as { since: string; until: string };
+	return { date: row.day, since: payload.since, until: payload.until };
+}
+
 export function dayNeedsRefresh(
 	context: CollectionContext,
 	previous: DayObservation[],

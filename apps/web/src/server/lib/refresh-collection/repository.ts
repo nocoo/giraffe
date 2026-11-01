@@ -31,7 +31,14 @@ import {
 	guardFactoryDayMetrics,
 	resyncFactoryMetricsTotals,
 } from "./factory-metrics-zero-guard";
-import { dayCoverage, dayNeedsRefresh, PUBLICATION_DAYS, publicationDays } from "./history";
+import {
+	actionsDayMissingBranch,
+	dayBoundsFromObservation,
+	dayCoverage,
+	dayNeedsRefresh,
+	PUBLICATION_DAYS,
+	publicationDays,
+} from "./history";
 import {
 	closedIssueSearchQuery,
 	dropStaleOpen,
@@ -192,9 +199,14 @@ export async function collectRepository(
 	const saved = savedResult.results[0];
 	if (!saved) throw new ApiError(404, "not_found", "Repository not found in current catalogue");
 	const previous = observationResult.results;
-	const needed = context.run.params.dimensions.filter((dimension) =>
-		context.days.some((day) => dayNeedsRefresh(context, previous, day, dimension)),
-	) as RefreshDimension[];
+	const needed = context.run.params.dimensions.filter((dimension) => {
+		if (
+			dimension === "actions" &&
+			previous.some((row) => row.dimension === "actions" && actionsDayMissingBranch(row))
+		)
+			return true;
+		return context.days.some((day) => dayNeedsRefresh(context, previous, day, dimension));
+	}) as RefreshDimension[];
 	const upstream = transport(context);
 	const commitDays = needed.includes("commits")
 		? context.days.filter(
@@ -405,7 +417,22 @@ export async function collectRepository(
 		for (const failure of upstream.failures.slice(consumed))
 			failures.push(failure.dimension === null ? { ...failure, dimension } : failure);
 		consumed = upstream.failures.length;
-		for (const day of context.days) {
+		const observationDays =
+			dimension === "actions"
+				? (() => {
+						const inWindow = [...context.days];
+						const seen = new Set(inWindow.map((day) => day.date));
+						for (const row of previous) {
+							if (row.dimension !== "actions" || seen.has(row.day)) continue;
+							if (!actionsDayMissingBranch(row)) continue;
+							const bounds = dayBoundsFromObservation(row);
+							inWindow.push(bounds);
+							seen.add(bounds.date);
+						}
+						return inWindow;
+					})()
+				: context.days;
+		for (const day of observationDays) {
 			if (!dayNeedsRefresh(context, previous, day, dimension)) continue;
 			const streamEvents = [...result.items];
 			for (const item of result.lifecycle ?? []) {

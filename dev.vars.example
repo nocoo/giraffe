@@ -2,4 +2,5 @@ ENVIRONMENT=development
 GITHUB_API_BASE=https://api.github.com
 TOKEN_ENCRYPTION_KEY_CURRENT=1
 # Temporary safety net for factory day metrics (default on). Set to 0 or false to disable.
+# Does not apply to ciFailure (default-branch narrowing may write lower counts).
 FACTORY_DAY_METRICS_ZERO_GUARD=1

@@ -113,8 +113,31 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 		total: count(contributions.totalContributions),
 	}).complete;
 	const priorAccount = await savedAccountPublication(db, context.account.id);
-	const contributionRetained =
-		contributionComplete || Boolean(priorAccount?.contribution?.days?.length);
+	const priorFactoryRow = await db
+		.prepare("SELECT payload FROM refresh_snapshots WHERE account_id=? AND kind='factory'")
+		.bind(context.account.id)
+		.first<{ payload: string }>();
+	const priorFactory = priorFactoryRow
+		? (JSON.parse(priorFactoryRow.payload) as FactorySnapshot)
+		: null;
+	const retainedContribution = priorAccount?.contribution?.days?.length
+		? priorAccount.contribution
+		: priorFactory?.contribution;
+	const contributionRetained = contributionComplete || Boolean(retainedContribution?.days?.length);
+	const contributionGraphqlErrors = client.graphqlErrors.filter((error) =>
+		contributionGraphqlPath(error.path),
+	);
+	if (contributionGraphqlErrors.length) {
+		context.onFailures?.(
+			contributionGraphqlErrors.map((error) => ({
+				dimension: null,
+				code: "contributions:graphql_error",
+				httpStatus: null,
+				graphqlType: typeof error.type === "string" ? error.type : null,
+				graphqlPath: Array.isArray(error.path) ? error.path.map(String) : null,
+			})),
+		);
+	}
 	const rate = object(first.rateLimit);
 	const snapshot: FactorySnapshot = {
 		schema: 1,
@@ -159,11 +182,11 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 					timezone: "github",
 					typesStatus: "partial",
 				}
-			: (priorAccount?.contribution ?? null),
+			: (retainedContribution ?? null),
 		contributionStatus: contributionComplete
 			? "complete"
-			: priorAccount?.contribution
-				? (priorAccount.contributionStatus ?? "complete")
+			: retainedContribution?.days?.length
+				? (priorAccount?.contributionStatus ?? priorFactory?.contributionStatus ?? "complete")
 				: "unavailable",
 		contributionObservation: contributionComplete
 			? {
@@ -171,7 +194,8 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 					window: calendarWindow,
 					fetchedAt: context.now,
 				}
-			: (priorAccount?.contributionObservation ?? {
+			: (priorAccount?.contributionObservation ??
+				priorFactory?.contributionObservation ?? {
 					version: context.run.id,
 					window: calendarWindow,
 					fetchedAt: context.now,

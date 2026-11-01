@@ -1,5 +1,6 @@
 import type { FactoryDay, FactoryEvent } from "../../../lib/factory-types";
 import type { RefreshDay } from "../../../lib/refresh-types";
+import { actionsDayMissingBranch } from "./history";
 import { blankDay, type DayObservation } from "./model";
 
 const inDay = (value: string | null | undefined, since: string, until: string) =>
@@ -16,7 +17,10 @@ export function accumulateActionMetrics(
 	defaultBranch: string | null,
 	options: { repoTotals?: { ciOther: number; ciPending: number } } = {},
 ) {
+	const seen = new Set<string>();
 	for (const item of items) {
+		if (seen.has(item.id)) continue;
+		seen.add(item.id);
 		const branch = item.activityRun?.head_branch ?? null;
 		const onDefault = Boolean(defaultBranch && branch && branch === defaultBranch);
 		if (item.conclusion === "success") metrics.ciSuccess++;
@@ -35,11 +39,24 @@ export function accumulateIssuePrMetrics(
 	lifecycle: FactoryEvent[],
 	dayBounds: RefreshDay,
 ) {
+	const opened = new Set<string>();
+	const countOpened = (item: FactoryEvent) => {
+		if (opened.has(item.id)) return;
+		if (dimension === "issues" && inDay(item.createdAt, dayBounds.since, dayBounds.until)) {
+			opened.add(item.id);
+			metrics.issueOpened++;
+		}
+		if (dimension === "prs" && inDay(item.createdAt, dayBounds.since, dayBounds.until)) {
+			opened.add(item.id);
+			metrics.prOpened++;
+		}
+	};
 	for (const item of lifecycle) {
 		if (dimension === "issues" && inDay(item.closedAt, dayBounds.since, dayBounds.until))
 			metrics.issueClosed++;
 		if (dimension === "prs" && inDay(item.mergedAt, dayBounds.since, dayBounds.until))
 			metrics.prMerged++;
+		countOpened(item);
 	}
 	if (lifecycle.length === 0) {
 		for (const item of items) {
@@ -50,14 +67,27 @@ export function accumulateIssuePrMetrics(
 		}
 	}
 	for (const item of items) {
-		if (dimension === "issues") {
-			if (inDay(item.createdAt, dayBounds.since, dayBounds.until)) metrics.issueOpened++;
-		}
+		countOpened(item);
 		if (dimension === "prs") {
-			if (inDay(item.createdAt, dayBounds.since, dayBounds.until)) metrics.prOpened++;
-			else if (inDay(item.closedAt, dayBounds.since, dayBounds.until)) metrics.prClosed++;
+			if (
+				inDay(item.closedAt, dayBounds.since, dayBounds.until) &&
+				!inDay(item.mergedAt, dayBounds.since, dayBounds.until)
+			)
+				metrics.prClosed++;
 		}
 	}
+	for (const item of lifecycle) {
+		if (
+			dimension === "prs" &&
+			inDay(item.closedAt, dayBounds.since, dayBounds.until) &&
+			!inDay(item.mergedAt, dayBounds.since, dayBounds.until)
+		)
+			metrics.prClosed++;
+	}
+}
+
+export function canVerifyDefaultBranchCiFailures(actionsRow: DayObservation | undefined): boolean {
+	return actionsRow?.status === "complete" && !actionsDayMissingBranch(actionsRow);
 }
 
 export function metricsFromStoredDayObservations(

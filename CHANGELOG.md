@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.28.14 - 2026-11-01
+
+### Fixed
+
+- Re-collect **actions** day observations outside the active window when stored runs lack
+  `head_branch`, so lookback can rebuild default-branch `ciFailure` from D1 without a 90-day
+  backfill when cache rows are repairable.
+- Factory `ciFailure` uses default-branch-only counting with deduplicated runs; the temporary
+  zero guard no longer applies to `ciFailure` (semantic narrowing may decrease counts).
+- Factory `prOpened` includes lifecycle `createdAt` on the window day (same-day merge case);
+  `prClosed` counts Shanghai-day closes **without** a merge on that day.
+- Account phase retains the contribution calendar from `refresh_accounts` or the published
+  factory snapshot, logs `contributions:graphql_error` on the refresh run, and keeps the run
+  complete when a calendar is retained.
+
 ## v0.28.13 - 2026-11-01
 
 ### Fixed

@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { FactoryDay } from "../../../lib/factory-types";
 import {
 	accumulateActionMetrics,
+	accumulateIssuePrMetrics,
+	canVerifyDefaultBranchCiFailures,
 	metricsFromStoredDayObservations,
 	seedOutsideWindowMetrics,
 } from "./factory-day-metrics";
@@ -197,5 +199,84 @@ describe("factory day metrics from stored observations", () => {
 		const days: Record<string, FactoryDay> = { "2026-10-27": { ...blankDay(), commits: 1 } };
 		seedOutsideWindowMetrics(days, [day], new Set(["2026-10-28"]), new Map(), undefined, "main");
 		expect(days[day.date]).toBeUndefined();
+	});
+
+	it("reports when stored actions can verify default-branch ciFailure", () => {
+		expect(canVerifyDefaultBranchCiFailures(undefined)).toBe(false);
+		const withBranch: DayObservation = {
+			day: day.date,
+			dimension: "actions",
+			status: "complete",
+			payload: JSON.stringify({
+				items: [{ id: "1", conclusion: "failure", activityRun: { head_branch: "main" } }],
+				since: day.since,
+				until: day.until,
+			}),
+			fetched_at: "2026-10-31T04:00:00.000Z",
+		};
+		expect(canVerifyDefaultBranchCiFailures(withBranch)).toBe(true);
+		const missingBranch: DayObservation = {
+			...withBranch,
+			payload: JSON.stringify({
+				items: [{ id: "1", conclusion: "failure", activityRun: {} }],
+				since: day.since,
+				until: day.until,
+			}),
+		};
+		expect(canVerifyDefaultBranchCiFailures(missingBranch)).toBe(false);
+	});
+
+	it("returns zero ciFailure from cache when action runs lack head_branch metadata", () => {
+		const row: DayObservation = {
+			day: day.date,
+			dimension: "actions",
+			status: "complete",
+			payload: JSON.stringify({
+				items: [{ id: "1", conclusion: "failure", activityRun: {} }],
+				since: day.since,
+				until: day.until,
+			}),
+			fetched_at: "2026-10-31T04:00:00.000Z",
+		};
+		expect(
+			metricsFromStoredDayObservations(day, new Map([[`${day.date}:actions`, row]]), "main")
+				.ciFailure,
+		).toBe(0);
+	});
+
+	it("counts prOpened from lifecycle createdAt and prClosed only for non-merged closes", () => {
+		const metrics = blankDay();
+		const lifecycle = [
+			{
+				id: "m1",
+				createdAt: "2026-10-31T10:00:00.000Z",
+				closedAt: "2026-10-31T12:00:00.000Z",
+				mergedAt: "2026-10-31T12:00:00.000Z",
+			},
+			{
+				id: "c1",
+				createdAt: "2026-10-30T10:00:00.000Z",
+				closedAt: "2026-10-31T11:00:00.000Z",
+				mergedAt: null,
+			},
+		] as never[];
+		const bounds = {
+			date: "2026-10-31",
+			since: "2026-10-30T16:00:00.000Z",
+			until: "2026-10-31T16:00:00.000Z",
+		};
+		accumulateIssuePrMetrics(metrics, "prs", [], lifecycle, bounds);
+		expect(metrics).toMatchObject({ prOpened: 1, prMerged: 1, prClosed: 1 });
+	});
+
+	it("deduplicates workflow runs when accumulating action metrics", () => {
+		const metrics = blankDay();
+		const run = {
+			id: "run-1",
+			conclusion: "failure",
+			activityRun: { head_branch: "main" },
+		} as never;
+		accumulateActionMetrics(metrics, [run, run], "main");
+		expect(metrics.ciFailure).toBe(1);
 	});
 });
