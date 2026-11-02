@@ -201,7 +201,7 @@ it("runs real durable A then serial B, serves latest observations and reuses day
 		});
 		const defaultRun = await run({ dimensions: ["commits"] });
 		expect(defaultRun.repos).toEqual([]);
-		expect(defaultRun.requests).toBe(1);
+		expect(defaultRun.requests).toBe(accountGraphqlRequests());
 		expect(
 			(await machine("stars/phase2/demo", "PUT", { reason: "local refresh test" })).status,
 		).toBe(200);
