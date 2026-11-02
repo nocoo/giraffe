@@ -207,7 +207,7 @@ it("runs real durable A then serial B, serves latest observations and reuses day
 		).toBe(200);
 		const cached = await run({ dimensions: ["commits"] });
 		expect(cached.repos).toEqual(["phase2/demo"]);
-		expect(cached.requests).toBe(1);
+		expect(cached.requests).toBe(accountGraphqlRequests());
 		const forced = await run({ repo: "phase2/demo", force: true });
 		expect(forced.aReused).toBe(false);
 		expect(forced.requests).toBe(accountGraphqlRequests() + 4);
