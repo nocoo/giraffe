@@ -1313,6 +1313,61 @@ describe("unified refresh collection", () => {
 		await collectRepository(context, "owner/project");
 		expect((await publication(context)).repos[0].metrics.ciFailure).toBe(0);
 	});
+	it("publishes default-branch-only ciSuccess and ciFailure from stored action observations", async () => {
+		const context = await fixture();
+		context.run.params.dimensions = ["actions"];
+		context.run.params.since = "2026-10-28";
+		context.run.params.until = "2026-10-28";
+		upstream([accountPage(), { node: repo() }], {
+			"/actions/runs": {
+				total_count: 4,
+				workflow_runs: [
+					{
+						id: 1,
+						name: "CI",
+						html_url: "https://github.com/owner/project/actions/runs/1",
+						status: "completed",
+						conclusion: "success",
+						head_branch: "main",
+						created_at: "2026-10-28T02:00:00.000Z",
+					},
+					{
+						id: 2,
+						name: "CI",
+						html_url: "https://github.com/owner/project/actions/runs/2",
+						status: "completed",
+						conclusion: "success",
+						head_branch: "feature",
+						created_at: "2026-10-28T03:00:00.000Z",
+					},
+					{
+						id: 3,
+						name: "CI",
+						html_url: "https://github.com/owner/project/actions/runs/3",
+						status: "completed",
+						conclusion: "failure",
+						head_branch: "main",
+						created_at: "2026-10-28T04:00:00.000Z",
+					},
+					{
+						id: 4,
+						name: "CI",
+						html_url: "https://github.com/owner/project/actions/runs/4",
+						status: "completed",
+						conclusion: "failure",
+						head_branch: "feature",
+						created_at: "2026-10-28T05:00:00.000Z",
+					},
+				],
+			},
+		});
+		await collectAccount(context);
+		await collectRepository(context, "owner/project");
+		expect((await publication(context)).repos[0].metrics).toMatchObject({
+			ciSuccess: 1,
+			ciFailure: 1,
+		});
+	});
 	it("collects latest CI, releases and both alert features in the saved wire format", async () => {
 		const context = await fixture();
 		const actions = [
@@ -2176,7 +2231,7 @@ describe("unified refresh collection", () => {
 		const result = await collectAccount(context);
 		expect(result.partial).toBe(false);
 		expect(result.reasons).not.toContain("contributions:empty");
-		expect(failures.some((entry) => entry.code.startsWith("contributions:coverage_"))).toBe(true);
+		expect(failures.some((entry) => entry.code.startsWith("contributions:coverage_"))).toBe(false);
 		const saved = JSON.parse(
 			(
 				await context.env.DB.prepare(
@@ -2189,6 +2244,26 @@ describe("unified refresh collection", () => {
 		const served = await readContributions(createDb(context.env.DB), "a", {});
 		expect(served.data.days).toHaveLength(366);
 		expect(served.unavailable).toBe(false);
+	});
+	it("uses summed contribution totals when GitHub totalContributions disagrees", async () => {
+		const context = await fixture();
+		const calendar = annualContributionCalendar(now, 4).calendar;
+		const page = accountPage();
+		page.viewer.contributionsCollection.contributionCalendar = {
+			...calendar,
+			totalContributions: 0,
+		} as never;
+		upstream([page]);
+		await collectAccount(context);
+		const saved = JSON.parse(
+			(
+				await context.env.DB.prepare(
+					"SELECT payload FROM refresh_accounts WHERE account_id='a'",
+				).first<{ payload: string }>()
+			)?.payload ?? "{}",
+		) as { contribution: { total: number }; contributionStatus: string };
+		expect(saved.contributionStatus).toBe("complete");
+		expect(saved.contribution.total).toBe(366 * 4);
 	});
 	it("derives the one-year contribution window across leap days", () => {
 		expect(contributionWindow("2026-10-29T04:00:00.000Z")).toMatchObject({
@@ -2743,6 +2818,7 @@ describe("unified refresh collection", () => {
 			html_url: "https://github.com/owner/project/actions/runs/42",
 			status: "completed",
 			conclusion: "success",
+			head_branch: "main",
 			created_at: "2026-10-28T02:00:00.000Z",
 			updated_at: "2026-10-28T02:00:00.000Z",
 		};

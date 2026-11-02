@@ -19,9 +19,10 @@ function actionItemsMissingBranch(row: DayObservation): boolean {
 	const payload = object(JSON.parse(row.payload));
 	const items = payload.items;
 	if (!Array.isArray(items)) return false;
-	return items.some(
-		(item) => !(item as { activityRun?: { head_branch?: unknown } }).activityRun?.head_branch,
-	);
+	return items.some((item) => {
+		const branch = (item as { activityRun?: { head_branch?: unknown } }).activityRun?.head_branch;
+		return typeof branch !== "string" || branch.trim() === "";
+	});
 }
 
 export function actionsDayMissingBranch(row: DayObservation | undefined): boolean {
@@ -31,6 +32,19 @@ export function actionsDayMissingBranch(row: DayObservation | undefined): boolea
 export function dayBoundsFromObservation(row: DayObservation): RefreshDay {
 	const payload = JSON.parse(row.payload) as { since: string; until: string };
 	return { date: row.day, since: payload.since, until: payload.until };
+}
+
+export function refreshDayBounds(
+	date: string,
+	timezone: string,
+	current: Map<string, DayObservation>,
+	fallback: RefreshDay,
+): RefreshDay {
+	for (const dimension of ["commits", "issues", "prs", "actions", "releases"] as const) {
+		const row = current.get(`${date}:${dimension}`);
+		if (row) return dayBoundsFromObservation(row);
+	}
+	return fallback.date === date ? fallback : calendarDayBounds(date, timezone);
 }
 
 export function dayNeedsRefresh(
@@ -100,6 +114,10 @@ export function auditActionsObservations(
 		const row = actionsObservationRow(previous, day.date);
 		if (!row) missingObservationDays++;
 		else if (actionItemsMissingBranch(row)) missingBranchDays++;
+		else {
+			const payload = JSON.parse(row.payload) as { items?: unknown };
+			if (!Array.isArray(payload.items) || payload.items.length === 0) missingObservationDays++;
+		}
 	}
 	return { repo, outsideWindowDays, missingObservationDays, missingBranchDays };
 }

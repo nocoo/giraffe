@@ -32,6 +32,7 @@ export const FACTORY_DAY_METRICS_ZERO_GUARD_FIELDS = [
 	"prOpened",
 	"prMerged",
 	"releases",
+	"ciSuccess",
 ] as const satisfies readonly (keyof FactoryDay)[];
 
 const populated = (day: FactoryDay) =>
@@ -47,29 +48,29 @@ export function guardFactoryDayMetrics(
 	if (!priorDays) return { days: nextDays, warnings };
 	const days: Record<string, FactoryDay> = { ...nextDays };
 	for (const [date, priorDay] of Object.entries(priorDays)) {
-		if (!(date in nextDays) && populated(priorDay)) {
-			days[date] = { ...priorDay };
-			for (const field of FACTORY_DAY_METRICS_ZERO_GUARD_FIELDS) {
-				if (priorDay[field] !== 0)
-					warnings.push({ code: "zero_guard_kept", repo, day: date, field });
+		if (!(date in nextDays)) {
+			if (populated(priorDay)) {
+				days[date] = { ...priorDay };
+				for (const field of FACTORY_DAY_METRICS_ZERO_GUARD_FIELDS) {
+					if (priorDay[field] !== 0)
+						warnings.push({ code: "zero_guard_kept", repo, day: date, field });
+				}
 			}
 			continue;
 		}
 		const proposed = days[date] ?? blankDay();
 		const merged: FactoryDay = { ...proposed };
-		let kept = false;
 		for (const field of FACTORY_DAY_METRICS_ZERO_GUARD_FIELDS) {
 			if (priorDay[field] !== 0 && proposed[field] === 0) {
 				merged[field] = priorDay[field];
 				warnings.push({ code: "zero_guard_kept", repo, day: date, field });
-				kept = true;
 			}
 		}
 		if (!actionsVerified(date)) {
 			merged.ciSuccess = priorDay.ciSuccess;
 			merged.ciFailure = priorDay.ciFailure;
 		}
-		if (kept || !actionsVerified(date)) days[date] = merged;
+		days[date] = merged;
 	}
 	return { days, warnings };
 }

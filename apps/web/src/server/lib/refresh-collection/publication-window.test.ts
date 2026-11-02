@@ -247,9 +247,9 @@ it.each(["partial", "unavailable"])(
 				],
 			},
 		});
-		expect(saved.metrics).toMatchObject({ commits: 6 });
-		const metrics = saved.metrics as { days: Record<string, unknown> };
-		expect(metrics.days["2026-10-28"]).toBeUndefined();
+		expect(saved.metrics).toMatchObject({ commits: 10 });
+		const metrics = saved.metrics as { days: Record<string, { commits?: number }> };
+		expect(metrics.days["2026-10-28"]).toMatchObject({ commits: 4 });
 	},
 );
 

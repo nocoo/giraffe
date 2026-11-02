@@ -91,17 +91,19 @@ describe("factory day metrics from stored observations", () => {
 		expect(days[day.date]).toEqual({ ...blankDay(), issueOpened: 1 });
 	});
 
-	it("counts only default-branch failures in action metrics", () => {
+	it("counts only default-branch successes and failures in action metrics", () => {
 		const metrics = blankDay();
 		accumulateActionMetrics(
 			metrics,
 			[
-				{ id: "1", conclusion: "failure", activityRun: { head_branch: "main" } } as never,
-				{ id: "2", conclusion: "failure", activityRun: { head_branch: "dev" } } as never,
+				{ id: "1", conclusion: "success", activityRun: { head_branch: "main" } } as never,
+				{ id: "2", conclusion: "success", activityRun: { head_branch: "dev" } } as never,
+				{ id: "3", conclusion: "failure", activityRun: { head_branch: "main" } } as never,
+				{ id: "4", conclusion: "failure", activityRun: { head_branch: "dev" } } as never,
 			],
 			"main",
 		);
-		expect(metrics.ciFailure).toBe(1);
+		expect(metrics).toMatchObject({ ciSuccess: 1, ciFailure: 1 });
 	});
 
 	it("preserves ninety seeded outside-window days byte-for-byte from day cache", () => {
@@ -182,7 +184,7 @@ describe("factory day metrics from stored observations", () => {
 			"main",
 			"Asia/Shanghai",
 		);
-		expect(days["2026-10-27"]).toBeUndefined();
+		expect(days["2026-10-27"]).toMatchObject({ issueOpened: 9 });
 	});
 
 	it("restores outside-window days from prior publication when observations are missing", () => {
@@ -206,16 +208,36 @@ describe("factory day metrics from stored observations", () => {
 			days,
 			[day],
 			new Set(["2026-10-28"]),
-			new Map(),
+			new Map([
+				[
+					"2026-10-27:commits",
+					{
+						day: "2026-10-27",
+						dimension: "commits",
+						status: "partial",
+						payload: JSON.stringify({ count: 0, items: [], since: day.since, until: day.until }),
+						fetched_at: "2026-10-31T04:00:00.000Z",
+					},
+				],
+			]),
 			undefined,
 			"main",
 			"Asia/Shanghai",
 		);
-		expect(days[day.date]).toBeUndefined();
+		expect(days["2026-10-27"]).toBeUndefined();
 	});
 
 	it("reports when stored actions can verify default-branch ciFailure", () => {
 		expect(canVerifyDefaultBranchCiFailures(undefined)).toBe(false);
+		expect(
+			canVerifyDefaultBranchCiFailures({
+				day: day.date,
+				dimension: "actions",
+				status: "partial",
+				payload: JSON.stringify({ items: [] }),
+				fetched_at: "2026-10-31T04:00:00.000Z",
+			}),
+		).toBe(false);
 		const withBranch: DayObservation = {
 			day: day.date,
 			dimension: "actions",
@@ -228,6 +250,9 @@ describe("factory day metrics from stored observations", () => {
 			fetched_at: "2026-10-31T04:00:00.000Z",
 		};
 		expect(canVerifyDefaultBranchCiFailures(withBranch)).toBe(true);
+		expect(
+			canVerifyDefaultBranchCiFailures({ ...withBranch, payload: JSON.stringify({ items: [] }) }),
+		).toBe(false);
 		const missingBranch: DayObservation = {
 			...withBranch,
 			payload: JSON.stringify({
@@ -338,6 +363,59 @@ describe("factory day metrics from stored observations", () => {
 		expect(days[day.date]).toMatchObject({ ciFailure: 4, ciSuccess: 2 });
 	});
 
+	it("keeps verified outside-window CI when no prior publication exists", () => {
+		const actionsRow: DayObservation = {
+			day: day.date,
+			dimension: "actions",
+			status: "complete",
+			payload: JSON.stringify({
+				items: [{ id: "1", conclusion: "failure", activityRun: { head_branch: "main" } }],
+				since: day.since,
+				until: day.until,
+			}),
+			fetched_at: "2026-10-31T04:00:00.000Z",
+		};
+		const days: Record<string, FactoryDay> = {};
+		seedOutsideWindowMetrics(
+			days,
+			[day],
+			new Set(["2026-10-28"]),
+			new Map([[`${day.date}:actions`, actionsRow]]),
+			undefined,
+			"main",
+			"Asia/Shanghai",
+		);
+		expect(days[day.date]).toMatchObject({ ciFailure: 1, ciSuccess: 0 });
+	});
+
+	it("rebuilds verified outside-window CI metrics without prior publication values", () => {
+		const actionsRow: DayObservation = {
+			day: day.date,
+			dimension: "actions",
+			status: "complete",
+			payload: JSON.stringify({
+				items: [
+					{ id: "1", conclusion: "success", activityRun: { head_branch: "main" } },
+					{ id: "2", conclusion: "failure", activityRun: { head_branch: "dev" } },
+				],
+				since: day.since,
+				until: day.until,
+			}),
+			fetched_at: "2026-10-31T04:00:00.000Z",
+		};
+		const days: Record<string, FactoryDay> = {};
+		seedOutsideWindowMetrics(
+			days,
+			[day],
+			new Set(["2026-10-28"]),
+			new Map([[`${day.date}:actions`, actionsRow]]),
+			undefined,
+			"main",
+			"Asia/Shanghai",
+		);
+		expect(days[day.date]).toMatchObject({ ciSuccess: 1, ciFailure: 0 });
+	});
+
 	it("assigns issueOpened using the Shanghai calendar date", () => {
 		const metrics = blankDay();
 		const bounds = {
@@ -354,6 +432,54 @@ describe("factory day metrics from stored observations", () => {
 			"Asia/Shanghai",
 		);
 		expect(metrics.issueOpened).toBe(1);
+	});
+
+	it("counts prClosed from stored pr items without lifecycle rows", () => {
+		const bounds = {
+			date: "2026-10-31",
+			since: "2026-10-30T16:00:00.000Z",
+			until: "2026-10-31T16:00:00.000Z",
+		};
+		const row: DayObservation = {
+			day: bounds.date,
+			dimension: "prs",
+			status: "complete",
+			payload: JSON.stringify({
+				items: [
+					{
+						id: "1",
+						createdAt: "2026-10-30T10:00:00.000Z",
+						closedAt: "2026-10-31T10:00:00.000Z",
+						mergedAt: null,
+					},
+				],
+				since: bounds.since,
+				until: bounds.until,
+			}),
+			fetched_at: "2026-10-31T04:00:00.000Z",
+		};
+		expect(
+			metricsFromStoredDayObservations(
+				bounds,
+				new Map([[`${bounds.date}:prs`, row]]),
+				"main",
+				"Asia/Shanghai",
+			).prClosed,
+		).toBe(1);
+	});
+
+	it("drops outside-window days without observations or prior publication", () => {
+		const days: Record<string, FactoryDay> = { "2026-10-27": { ...blankDay(), commits: 1 } };
+		seedOutsideWindowMetrics(
+			days,
+			[day],
+			new Set(["2026-10-28"]),
+			new Map(),
+			undefined,
+			"main",
+			"Asia/Shanghai",
+		);
+		expect(days["2026-10-27"]).toBeUndefined();
 	});
 
 	it("counts prClosed from lifecycle rows without a same-day merge", () => {
@@ -420,5 +546,18 @@ describe("factory day metrics from stored observations", () => {
 		} as never;
 		accumulateActionMetrics(metrics, [run, run], "main");
 		expect(metrics.ciFailure).toBe(1);
+	});
+
+	it("ignores CI counts when the default branch is unknown", () => {
+		const metrics = blankDay();
+		accumulateActionMetrics(
+			metrics,
+			[
+				{ id: "1", conclusion: "success", activityRun: { head_branch: "main" } } as never,
+				{ id: "2", conclusion: "failure", activityRun: { head_branch: "main" } } as never,
+			],
+			null,
+		);
+		expect(metrics).toMatchObject({ ciSuccess: 0, ciFailure: 0 });
 	});
 });

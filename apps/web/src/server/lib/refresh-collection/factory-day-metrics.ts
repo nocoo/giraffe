@@ -1,6 +1,6 @@
 import type { FactoryDay, FactoryEvent } from "../../../lib/factory-types";
 import type { RefreshDay } from "../../../lib/refresh-types";
-import { actionsDayMissingBranch } from "./history";
+import { actionsDayMissingBranch, refreshDayBounds } from "./history";
 import { blankDay, type DayObservation } from "./model";
 
 const inDay = (value: string | null | undefined, since: string, until: string) =>
@@ -31,8 +31,9 @@ export function accumulateActionMetrics(
 		seen.add(item.id);
 		const branch = item.activityRun?.head_branch ?? null;
 		const onDefault = Boolean(defaultBranch && branch && branch === defaultBranch);
-		if (item.conclusion === "success") metrics.ciSuccess++;
-		else if (failureConclusions.has(item.conclusion ?? "")) {
+		if (item.conclusion === "success") {
+			if (onDefault) metrics.ciSuccess++;
+		} else if (failureConclusions.has(item.conclusion ?? "")) {
 			if (onDefault) metrics.ciFailure++;
 		} else if (item.state === "completed") {
 			if (options.repoTotals) options.repoTotals.ciOther += 1;
@@ -100,7 +101,9 @@ export function accumulateIssuePrMetrics(
 }
 
 export function canVerifyDefaultBranchCiFailures(actionsRow: DayObservation | undefined): boolean {
-	return actionsRow?.status === "complete" && !actionsDayMissingBranch(actionsRow);
+	if (actionsRow?.status !== "complete" || actionsDayMissingBranch(actionsRow)) return false;
+	const payload = JSON.parse(actionsRow.payload) as { items?: unknown };
+	return Array.isArray(payload.items) && payload.items.length > 0;
 }
 
 export function metricsFromStoredDayObservations(
@@ -143,11 +146,11 @@ export function seedOutsideWindowMetrics(
 	const dimensions = ["commits", "issues", "prs", "actions", "releases"] as const;
 	for (const day of retainedDays) {
 		if (windowDayDates.has(day.date)) continue;
+		const bounds = refreshDayBounds(day.date, timezone, current, day);
 		const actionsRow = current.get(`${day.date}:actions`);
-		const fromCache = metricsFromStoredDayObservations(day, current, defaultBranch, timezone);
+		const fromCache = metricsFromStoredDayObservations(bounds, current, defaultBranch, timezone);
 		const observed = dimensions.map((dimension) => current.get(`${day.date}:${dimension}`));
 		const hasComplete = observed.some((row) => row?.status === "complete");
-		const hasAnyRow = observed.some((row) => row !== undefined);
 		if (hasComplete) {
 			const merged = { ...fromCache };
 			const priorDay = priorDays?.[day.date];
@@ -158,11 +161,7 @@ export function seedOutsideWindowMetrics(
 			repoDays[day.date] = merged;
 			continue;
 		}
-		if (!hasAnyRow) {
-			if (priorDays?.[day.date]) repoDays[day.date] = { ...blankDay(), ...priorDays[day.date] };
-			else delete repoDays[day.date];
-			continue;
-		}
-		delete repoDays[day.date];
+		if (priorDays?.[day.date]) repoDays[day.date] = { ...blankDay(), ...priorDays[day.date] };
+		else delete repoDays[day.date];
 	}
 }

@@ -81,6 +81,9 @@ function partialBoundaryDay(context: CollectionContext, oldestAt: string): strin
 		return context.days[0].date;
 	return context.days.at(-1)?.date ?? oldestAt.slice(0, 10);
 }
+export function observationBoundaryDay(context: CollectionContext, oldestAt: string): string {
+	return partialBoundaryDay(context, oldestAt);
+}
 function observationForDay(
 	result: Dimension,
 	dimension: string,
@@ -606,7 +609,10 @@ export async function collectRepository(
 					context.run.params.timezone,
 				);
 			} else if (dimension === "actions") {
-				accumulateActionMetrics(metrics, value.items, repo.branch, {
+				const scoped = dayItems(value.items, dayBounds.since, dayBounds.until);
+				metrics.ciSuccess = 0;
+				metrics.ciFailure = 0;
+				accumulateActionMetrics(metrics, scoped, repo.branch, {
 					repoTotals: repo.metrics,
 				});
 			} else if (dimension === "releases") {
