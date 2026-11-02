@@ -3,6 +3,7 @@ import type { FactorySnapshot } from "../../lib/factory-types";
 import { contributionDates } from "./factory-contributions";
 import {
 	annualCalendarCoverage,
+	contributionFailureCode,
 	contributionWindow,
 	materializeContributionDays,
 	type RefreshCalendarWindow,
@@ -48,6 +49,12 @@ describe("refresh calendar window", () => {
 });
 
 describe("annual contribution calendar coverage", () => {
+	it("treats a missing snapshot as incomplete coverage", () => {
+		expect(savedAnnualCalendarCoverage(null)).toMatchObject({
+			complete: false,
+			reason: "missing",
+		});
+	});
 	it.each([
 		[anchor, 366],
 		["2024-02-29T12:00:00.000Z", 366],
@@ -118,6 +125,25 @@ describe("annual contribution calendar coverage", () => {
 			}).reason,
 		).toBe("window_invalid");
 	});
+	it("rejects missing evidence and invalid totals", () => {
+		const window = contributionWindow(anchor);
+		expect(
+			annualCalendarCoverage({
+				fetchedAt: null,
+				window,
+				days: daysOf(window),
+				total: 0,
+			}).reason,
+		).toBe("missing");
+		expect(
+			annualCalendarCoverage({
+				fetchedAt: window.until,
+				window,
+				days: daysOf(window),
+				total: -1,
+			}).reason,
+		).toBe("total_invalid");
+	});
 	it.each<[string, (days: Day[]) => Day[]]>([
 		["a missing endpoint", (days) => days.slice(0, -1)],
 		["an interior hole", (days) => days.filter((_, index) => index !== 180)],
@@ -176,6 +202,10 @@ describe("annual contribution calendar coverage", () => {
 });
 
 describe("materializeContributionDays", () => {
+	it("returns null when GitHub returned no contribution days", () => {
+		const window = contributionWindow(anchor);
+		expect(materializeContributionDays(window.until, window, [])).toBeNull();
+	});
 	it("fills interior holes and out-of-order GitHub weeks", () => {
 		const window = contributionWindow(anchor);
 		const days = daysOf(window, 2);
@@ -193,5 +223,24 @@ describe("materializeContributionDays", () => {
 				total: materialized?.reduce((sum, day) => sum + day.count, 0) ?? 0,
 			}).complete,
 		).toBe(true);
+	});
+});
+
+describe("contributionFailureCode", () => {
+	it.each([
+		["missing"],
+		["window_invalid"],
+		["dates_invalid"],
+		["dates_incomplete"],
+		["total_invalid"],
+	] as const)("maps %s", (reason) => {
+		expect(contributionFailureCode({ complete: false, reason, window: null })).toBe(
+			`contributions:coverage_${reason}`,
+		);
+	});
+	it("falls back when coverage is complete", () => {
+		expect(contributionFailureCode({ complete: true, reason: "complete", window: null })).toBe(
+			"contributions:unavailable",
+		);
 	});
 });

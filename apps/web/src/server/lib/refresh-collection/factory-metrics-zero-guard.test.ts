@@ -18,6 +18,37 @@ describe("factory day metrics zero guard", () => {
 		});
 	});
 
+	it("does not restore omitted days when the prior row was entirely zero", () => {
+		expect(guardFactoryDayMetrics({ "2026-08-03": blankDay() }, {}, "owner/repo").days).toEqual({});
+	});
+
+	it("leaves proposed nonzero values when prior was zero", () => {
+		const next = { "2026-08-03": { ...blankDay(), commits: 2 } };
+		const { days, warnings } = guardFactoryDayMetrics(
+			{ "2026-08-03": blankDay() },
+			next,
+			"owner/repo",
+		);
+		expect(days).toEqual(next);
+		expect(warnings).toEqual([]);
+	});
+
+	it("passes verified matching rows through unchanged", () => {
+		const row = { ...blankDay(), commits: 2, ciSuccess: 1 };
+		const prior = { "2026-08-03": row };
+		const next = { "2026-08-03": { ...row } };
+		const { days, warnings } = guardFactoryDayMetrics(prior, next, "owner/repo", () => true);
+		expect(days["2026-08-03"]).toEqual(row);
+		expect(warnings).toEqual([]);
+	});
+
+	it("restores omitted days when only ciSuccess was populated", () => {
+		const priorDay = { ...blankDay(), ciSuccess: 3 };
+		const { days, warnings } = guardFactoryDayMetrics({ "2026-08-03": priorDay }, {}, "owner/repo");
+		expect(days["2026-08-03"]?.ciSuccess).toBe(3);
+		expect(warnings.some((entry) => entry.field === "ciSuccess")).toBe(true);
+	});
+
 	it("keeps prior nonzero values when a write would zero a field", () => {
 		const prior: Record<string, FactoryDay> = {
 			"2026-10-27": { ...blankDay(), prOpened: 2, ciFailure: 1 },
@@ -130,5 +161,13 @@ describe("factory day metrics zero guard", () => {
 		const next = { "2026-08-03": { ...blankDay() } };
 		const { days } = guardFactoryDayMetrics(prior, next, "owner/repo", () => false);
 		expect(days["2026-08-03"]).toMatchObject({ ciSuccess: 5, ciFailure: 2 });
+	});
+
+	it("keeps prior ciSuccess when a verified write would zero it", () => {
+		const prior = { "2026-08-03": { ...blankDay(), ciSuccess: 5 } };
+		const next = { "2026-08-03": { ...blankDay(), ciSuccess: 0 } };
+		const { days, warnings } = guardFactoryDayMetrics(prior, next, "owner/repo", () => true);
+		expect(days["2026-08-03"]?.ciSuccess).toBe(5);
+		expect(warnings.some((entry) => entry.field === "ciSuccess")).toBe(true);
 	});
 });

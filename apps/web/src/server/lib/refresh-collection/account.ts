@@ -100,11 +100,13 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 	const contributionDays = nodes(contributions.weeks).flatMap((week) =>
 		nodes(week.contributionDays),
 	);
-	const rawObserved = contributionDays.flatMap((day) => {
-		const countValue = count(day.contributionCount);
-		const date = text(day.date);
-		return countValue === null || !date ? [] : [{ date, count: Number(countValue) }];
-	});
+	const rawObserved = contributionDays
+		.flatMap((day) => {
+			const countValue = count(day.contributionCount);
+			const date = text(day.date);
+			return countValue === null || !date ? [] : [{ date, count: Number(countValue) }];
+		})
+		.sort((left, right) => left.date.localeCompare(right.date));
 	const materializedDays =
 		materializeContributionDays(context.now, calendarWindow, rawObserved) ?? [];
 	const summedTotal = materializedDays.reduce((sum, day) => sum + day.count, 0);
@@ -136,7 +138,6 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 		: priorFactoryFromRow?.contribution?.days?.length
 			? priorFactoryFromRow.contribution
 			: priorFactory?.contribution;
-	const contributionRetained = contributionComplete || Boolean(retainedContribution?.days?.length);
 	const freshContribution =
 		contributionComplete && contributionTotal !== null
 			? {
@@ -151,6 +152,9 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 					typesStatus: "partial" as const,
 				}
 			: null;
+	const hasFreshCalendar = freshContribution !== null;
+	const contributionRetained =
+		Boolean(freshContribution) || Boolean(retainedContribution?.days?.length);
 	const contributionGraphqlErrors = client.graphqlErrors.filter((error) =>
 		contributionGraphqlPath(error.path),
 	);
@@ -185,7 +189,7 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 			graphqlType: null,
 			graphqlPath: null,
 		});
-	} else if (rawCoverage && !rawCoverage.complete) {
+	} else if (!contributionComplete && rawCoverage && !rawCoverage.complete) {
 		contributionDiagnostics.push({
 			dimension: null,
 			code: contributionFailureCode(rawCoverage),
@@ -195,6 +199,7 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 		});
 	}
 	if (
+		!hasFreshCalendar &&
 		contributionRetained &&
 		retainedContribution?.days?.length &&
 		(!contributionComplete || contributionGraphqlErrors.length > 0)
@@ -240,12 +245,14 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 						resource: "graphql",
 						observedAt: context.now,
 					},
-		contribution: freshContribution ?? retainedContribution ?? null,
-		contributionStatus: contributionComplete
+		contribution: hasFreshCalendar ? freshContribution : (retainedContribution ?? null),
+		contributionStatus: hasFreshCalendar
 			? "complete"
-			: retainedContribution?.days?.length
-				? (priorAccount?.contributionStatus ?? priorFactory?.contributionStatus ?? "complete")
-				: "unavailable",
+			: contributionComplete
+				? "complete"
+				: retainedContribution?.days?.length
+					? (priorAccount?.contributionStatus ?? priorFactory?.contributionStatus ?? "complete")
+					: "unavailable",
 		contributionObservation: contributionComplete
 			? {
 					version: context.run.id,

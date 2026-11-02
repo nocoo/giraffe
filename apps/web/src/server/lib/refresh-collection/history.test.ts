@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { RefreshDay } from "../../../lib/refresh-types";
 import type { CollectionContext } from "../refresh-collection-contract";
+import { calendarDayBounds } from "../refresh-params";
+import { canVerifyDefaultBranchCiFailures } from "./factory-day-metrics";
 import {
 	actionRepairDays,
 	actionsDayMissingBranch,
@@ -8,6 +10,7 @@ import {
 	dayBoundsFromObservation,
 	dayNeedsRefresh,
 	publicationDays,
+	refreshDayBounds,
 	reusableDayObservation,
 } from "./history";
 import { blankDay, type DayObservation } from "./model";
@@ -168,6 +171,25 @@ describe("action repair and audit", () => {
 			missingBranchDays: 0,
 		});
 	});
+	it("skips outside-window repair when stored actions already include branches", () => {
+		const window = new Set(["2026-10-31"]);
+		const retained = [day("2026-10-28"), day("2026-10-31")];
+		const previous = [
+			{
+				...row("2026-10-28", "actions"),
+				payload: JSON.stringify({
+					items: [{ id: "1", conclusion: "failure", activityRun: { head_branch: "main" } }],
+					since: day("2026-10-28").since,
+					until: day("2026-10-28").until,
+				}),
+			},
+		];
+		expect(
+			actionRepairDays(window, retained, previous, {
+				"2026-10-28": { ...blankDay(), ciSuccess: 2 },
+			}),
+		).toEqual([]);
+	});
 	it("derives day bounds from stored observation payloads", () => {
 		const observation = row("2026-10-28", "actions");
 		expect(dayBoundsFromObservation(observation)).toEqual({
@@ -187,9 +209,9 @@ describe("action repair and audit", () => {
 		expect(days.some((entry) => entry.date === "2026-08-03")).toBe(true);
 		expect(days.some((entry) => entry.date === "2026-10-31")).toBe(true);
 	});
-	it("counts branchless outside-window action days in the audit", () => {
+	it("counts branchless and empty outside-window action days in the audit", () => {
 		const window = new Set(["2026-10-31"]);
-		const retained = [day("2026-10-28"), day("2026-10-31")];
+		const retained = [day("2026-10-27"), day("2026-10-28"), day("2026-10-31")];
 		const previous = [
 			{
 				...row("2026-10-28", "actions"),
@@ -199,11 +221,52 @@ describe("action repair and audit", () => {
 					until: day("2026-10-28").until,
 				}),
 			},
+			{
+				...row("2026-10-27", "actions"),
+				payload: JSON.stringify({
+					items: [],
+					since: day("2026-10-27").since,
+					until: day("2026-10-27").until,
+				}),
+			},
 		];
 		expect(auditActionsObservations("owner/repo", window, retained, previous)).toMatchObject({
-			outsideWindowDays: 1,
+			outsideWindowDays: 2,
 			missingBranchDays: 1,
-			missingObservationDays: 0,
+			missingObservationDays: 1,
 		});
+	});
+	it("treats whitespace-only head_branch as missing for verification and audit", () => {
+		const observationRow = {
+			...row("2026-10-28", "actions"),
+			payload: JSON.stringify({
+				items: [{ id: "1", conclusion: "success", activityRun: { head_branch: "   " } }],
+				since: day("2026-10-28").since,
+				until: day("2026-10-28").until,
+			}),
+		};
+		expect(canVerifyDefaultBranchCiFailures(observationRow)).toBe(false);
+		expect(
+			auditActionsObservations(
+				"owner/repo",
+				new Set(["2026-10-31"]),
+				[day("2026-10-28")],
+				[observationRow],
+			),
+		).toMatchObject({ missingBranchDays: 1 });
+	});
+	it("falls back to calendar bounds when no observation exists for a publication day", () => {
+		expect(refreshDayBounds("2026-08-03", "Asia/Shanghai", new Map(), day("2026-08-04"))).toEqual(
+			calendarDayBounds("2026-08-03", "Asia/Shanghai"),
+		);
+		const fallback = calendarDayBounds("2026-08-03", "Asia/Shanghai");
+		expect(refreshDayBounds("2026-08-03", "Asia/Shanghai", new Map(), fallback)).toEqual(fallback);
+	});
+	it("prefers stored observation bounds when rebuilding outside-window metrics", () => {
+		const observation = row("2026-10-28", "actions");
+		const map = new Map([[`${observation.day}:actions`, observation]]);
+		expect(refreshDayBounds("2026-10-28", "Asia/Shanghai", map, day("2026-10-28"))).toEqual(
+			dayBoundsFromObservation(observation),
+		);
 	});
 });

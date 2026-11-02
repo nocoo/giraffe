@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.28.17 - 2026-11-02
+
+### Fixed
+
+- Factory **ciSuccess** and **ciFailure** now count **default-branch runs only** when rebuilding
+  day metrics from stored action observations and during in-window publish.
+- Outside-window factory days no longer drop to zero when day observations are incomplete;
+  empty “complete” action rows are treated as unverified, `actionsObservationAudit` counts them as
+  missing, and the zero guard protects **ciSuccess** from accidental wipes.
+- Outside-window metrics rebuild uses **observation timezone bounds** instead of synthetic calendar
+  bounds at the publication window edge (fixes 08-03 boundary zero-guard noise).
+- Contribution calendar refresh **replaces** the saved year from the current GitHub calendar when
+  materialization succeeds (no merge with stale days); account/factory `contributionStatus` is
+  `complete` and runs no longer stay partial for `contributions:coverage_*` when materialized.
+
 ## v0.28.16 - 2026-11-02
 
 ### Fixed

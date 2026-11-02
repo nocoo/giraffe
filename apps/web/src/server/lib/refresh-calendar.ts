@@ -109,9 +109,12 @@ export function materializeContributionDays(
 	rawDays: Array<{ date: string; count: number }>,
 ): ContributionDay[] | null {
 	if (!rawDays.length) return null;
+	const observed = [...new Map(rawDays.map((day) => [day.date, day])).values()].sort(
+		(left, right) => left.date.localeCompare(right.date),
+	);
 	const expected = contributionDates(window.since.slice(0, 10), window.until.slice(0, 10));
 	if (!expected.length) return null;
-	const byDate = new Map(rawDays.map((day) => [day.date, day.count]));
+	const byDate = new Map(observed.map((day) => [day.date, day.count]));
 	return expected.map((date) => ({
 		date,
 		count: byDate.get(date) ?? 0,
