@@ -1,7 +1,16 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import type { FactoryViewSnapshot } from "../../apps/web/src/lib/factory-types";
 import type { RefreshRun } from "../../apps/web/src/lib/refresh-types";
+import {
+	contributionCalendarChunkWindows,
+	contributionWindow,
+} from "../../apps/web/src/server/lib/refresh-calendar";
 import { createUiFixtures } from "./ui-fixtures";
+
+const accountGraphqlRequests = () =>
+	1 +
+	contributionCalendarChunkWindows(contributionWindow(new Date().toISOString()), "Asia/Shanghai")
+		.length;
 
 const repository = "octocat/hello-world";
 const otherDimensions = ["Issues", "PRs", "CI / Actions", "发布", "依赖告警"];
@@ -119,7 +128,7 @@ test("real unified refresh reloads data, respects stars and supports an unstarre
 	).not.toBeChecked();
 	const beforeCatalog = reads.filter((path) => path === "/api/repos").length;
 	const discovery = await startRefresh(page, dialog, []);
-	expect(discovery.requests).toBe(1);
+	expect(discovery.requests).toBe(accountGraphqlRequests());
 	expect(discovery.requestBreakdown.b).toEqual({ graphql: 0, rest: 0 });
 	expect(discovery.params).toEqual({
 		since: yesterday,
