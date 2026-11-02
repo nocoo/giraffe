@@ -48,24 +48,39 @@ export function refreshGraphqlStub(
 					},
 				]
 			: [];
+	const contributionCalendar = (since: string, until: string) => {
+		const days = contributionDates(since.slice(0, 10), until.slice(0, 10)).map((date) => ({
+			date,
+			contributionCount: 2,
+		}));
+		return {
+			restrictedContributionsCount: 0,
+			contributionCalendar: {
+				totalContributions: days.length * 2,
+				weeks: [{ contributionDays: days }],
+			},
+		};
+	};
+	if (query.includes("query RefreshContributionCalendar")) {
+		return {
+			data: {
+				viewer: {
+					contributionsCollection: contributionCalendar(
+						String(variables.since),
+						String(variables.until),
+					),
+				},
+				rateLimit,
+			},
+		};
+	}
 	if (query.includes("query RefreshAccount")) {
-		const days = contributionDates(
-			String(variables.since).slice(0, 10),
-			String(variables.until).slice(0, 10),
-		).map((date) => ({ date, contributionCount: 2 }));
 		return {
 			data: {
 				viewer: {
 					login: owner,
 					avatarUrl: "",
 					repositories: { nodes: [metadata], totalCount: 1, pageInfo: empty.pageInfo },
-					contributionsCollection: {
-						restrictedContributionsCount: 0,
-						contributionCalendar: {
-							totalContributions: days.length * 2,
-							weeks: [{ contributionDays: days }],
-						},
-					},
 				},
 				rateLimit,
 			},

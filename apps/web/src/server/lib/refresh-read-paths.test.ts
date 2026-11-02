@@ -1,6 +1,10 @@
 import { expect, it, vi } from "vitest";
 import { factoryFixture } from "../../../../../tests/fixtures/factory-snapshot";
 import { savedObservationStmts } from "../../../../../tests/fixtures/refresh";
+import {
+	accountCalendarGraphqlRequests,
+	installRefreshUpstream,
+} from "../../../../../tests/fixtures/refresh-upstream";
 import { sqliteFixture } from "../../../../../tests/fixtures/sqlite";
 import type { Env } from "../env";
 import { readActivity } from "./activity-store";
@@ -145,9 +149,10 @@ it("uses newly collected catalog-only identities for mutable metadata and agent 
 	const account = await getAccount(db, "a");
 	if (!account) throw new Error("fixture account missing");
 	const now = "2026-10-29T04:00:00.000Z";
-	const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-		Response.json({
-			data: {
+	const fetch = installRefreshUpstream({
+		now,
+		graphql: [
+			{
 				viewer: {
 					login: "nocoo",
 					repositories: {
@@ -155,18 +160,11 @@ it("uses newly collected catalog-only identities for mutable metadata and agent 
 						nodes: [{ id: "R_CURRENT", nameWithOwner: "nocoo/new", owner: { login: "nocoo" } }],
 						pageInfo: { hasNextPage: false, endCursor: null },
 					},
-					contributionsCollection: {
-						restrictedContributionsCount: 0,
-						contributionCalendar: {
-							totalContributions: 1,
-							weeks: [{ contributionDays: [{ date: "2026-10-28", contributionCount: 1 }] }],
-						},
-					},
 				},
 				rateLimit: { remaining: 4999, resetAt: "2026-10-29T05:00:00Z" },
 			},
-		}),
-	);
+		],
+	});
 	try {
 		await collectAccount({
 			env: { DB: raw, ENVIRONMENT: "test", GITHUB_API_BASE: "http://refresh.fixture" } as Env,
@@ -212,7 +210,7 @@ it("uses newly collected catalog-only identities for mutable metadata and agent 
 				finishedAt: null,
 			},
 		});
-		expect(fetch).toHaveBeenCalledTimes(1);
+		expect(fetch).toHaveBeenCalledTimes(accountCalendarGraphqlRequests(now));
 	} finally {
 		fetch.mockRestore();
 	}

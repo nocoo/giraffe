@@ -7,10 +7,11 @@ import { mapRepos } from "../github-map";
 import {
 	annualCalendarCoverage,
 	contributionFailureCode,
+	contributionStatusFromMaterializedCalendar,
 	contributionWindow,
-	materializeContributionDays,
 } from "../refresh-calendar";
 import type { AccountCollectionResult, CollectionContext } from "../refresh-collection-contract";
+import { collectContributionCalendar } from "../refresh-contribution-calendar";
 import {
 	catalogPayload,
 	count,
@@ -23,14 +24,12 @@ import {
 	text,
 	windowOf,
 } from "./model";
-import { accountQuery } from "./queries";
+import { accountCatalogQuery } from "./queries";
 import { catalog, collectionDb, publish, savedAccountPublication, snapshots } from "./store";
 import { transport } from "./transport";
 
 const contributionGraphqlPath = (path: string[]) =>
-	path.some(
-		(segment) => segment === "contributionsCollection" || segment === "contributionCalendar",
-	);
+	path.join("\0").includes("contributionsCollection");
 
 export async function collectAccount(context: CollectionContext): Promise<AccountCollectionResult> {
 	const db = collectionDb(context);
@@ -47,7 +46,7 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 		let data: Node;
 		try {
 			data = await request((github) =>
-				github.githubGraphql(context.token, accountQuery, { after, ...calendarWindow }),
+				github.githubGraphql(context.token, accountCatalogQuery, { after }),
 			);
 		} catch (error) {
 			if (
@@ -94,35 +93,6 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 		month: "2-digit",
 		day: "2-digit",
 	}).format(new Date(context.now));
-	const contributions = object(
-		object(object(first.viewer).contributionsCollection).contributionCalendar,
-	);
-	const contributionDays = nodes(contributions.weeks).flatMap((week) =>
-		nodes(week.contributionDays),
-	);
-	const rawObserved = contributionDays
-		.flatMap((day) => {
-			const countValue = count(day.contributionCount);
-			const date = text(day.date);
-			return countValue === null || !date ? [] : [{ date, count: Number(countValue) }];
-		})
-		.sort((left, right) => left.date.localeCompare(right.date));
-	const materializedDays =
-		materializeContributionDays(context.now, calendarWindow, rawObserved) ?? [];
-	const summedTotal = materializedDays.reduce((sum, day) => sum + day.count, 0);
-	const totalFromGithub = count(contributions.totalContributions);
-	const contributionTotal = materializedDays.length
-		? totalFromGithub !== null && totalFromGithub === summedTotal
-			? totalFromGithub
-			: summedTotal
-		: null;
-	const contributionCoverage = annualCalendarCoverage({
-		fetchedAt: context.now,
-		window: calendarWindow,
-		days: materializedDays,
-		total: contributionTotal,
-	});
-	const contributionComplete = contributionCoverage.complete && materializedDays.length > 0;
 	const priorAccount = await savedAccountPublication(db, context.account.id);
 	const priorFactoryRow = await db
 		.prepare("SELECT payload FROM refresh_snapshots WHERE account_id=? AND kind='factory'")
@@ -138,18 +108,41 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 		: priorFactoryFromRow?.contribution?.days?.length
 			? priorFactoryFromRow.contribution
 			: priorFactory?.contribution;
+	const priorCalendarDays = retainedContribution?.days?.map((day) => ({
+		date: day.date,
+		count: day.count,
+	}));
+	const calendarFetch = await collectContributionCalendar(
+		context,
+		calendarWindow,
+		priorCalendarDays,
+		request,
+	);
+	const rawObserved = calendarFetch.rawObserved;
+	const materializedDays = calendarFetch.materializedDays;
+	const summedTotal = materializedDays.reduce((sum, day) => sum + day.count, 0);
+	const contributionTotal = materializedDays.length ? summedTotal : null;
+	const contributionCoverage = annualCalendarCoverage({
+		fetchedAt: context.now,
+		window: calendarWindow,
+		days: materializedDays,
+		total: contributionTotal,
+	});
+	const contributionComplete =
+		contributionCoverage.complete && materializedDays.length > 0 && !calendarFetch.partial;
+	const hasMaterializedCalendar = materializedDays.length > 0;
 	const freshContribution =
-		contributionComplete && contributionTotal !== null
+		hasMaterializedCalendar && contributionTotal !== null
 			? {
 					days: materializedDays,
 					total: Number(contributionTotal),
-					restricted: count(
-						object(object(first.viewer).contributionsCollection).restrictedContributionsCount,
-					),
+					restricted: calendarFetch.restricted,
 					fetchedAt: context.now,
 					observedAt: context.now,
 					timezone: "github" as const,
 					typesStatus: "partial" as const,
+					partial: calendarFetch.partial,
+					failedRanges: calendarFetch.failedRanges,
 				}
 			: null;
 	const hasFreshCalendar = freshContribution !== null;
@@ -158,15 +151,12 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 	const contributionGraphqlErrors = client.graphqlErrors.filter((error) =>
 		contributionGraphqlPath(error.path),
 	);
-	const rawCoverage =
-		rawObserved.length > 0
-			? annualCalendarCoverage({
-					fetchedAt: context.now,
-					window: calendarWindow,
-					days: rawObserved.map((day) => ({ date: day.date, count: day.count })),
-					total: contributionTotal,
-				})
-			: null;
+	const rawCoverage = annualCalendarCoverage({
+		fetchedAt: context.now,
+		window: calendarWindow,
+		days: rawObserved.map((day) => ({ date: day.date, count: day.count })),
+		total: contributionTotal,
+	});
 	const contributionDiagnostics: RefreshFailureDetail[] = [];
 	if (contributionGraphqlErrors.length > 0) {
 		contributionDiagnostics.push(
@@ -174,10 +164,7 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 				dimension: null,
 				code: "contributions:graphql_error" as const,
 				httpStatus: null,
-				graphqlType:
-					(typeof (error as { message?: string }).message === "string" &&
-						(error as { message?: string }).message) ||
-					(typeof error.type === "string" ? error.type : null),
+				graphqlType: typeof error.type === "string" ? error.type : null,
 				graphqlPath: Array.isArray(error.path) ? error.path.map(String) : null,
 			})),
 		);
@@ -189,7 +176,7 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 			graphqlType: null,
 			graphqlPath: null,
 		});
-	} else if (!contributionComplete && rawCoverage && !rawCoverage.complete) {
+	} else if (!contributionComplete && !rawCoverage.complete && !calendarFetch.partial) {
 		contributionDiagnostics.push({
 			dimension: null,
 			code: contributionFailureCode(rawCoverage),
@@ -198,21 +185,7 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 			graphqlPath: null,
 		});
 	}
-	if (
-		!hasFreshCalendar &&
-		contributionRetained &&
-		retainedContribution?.days?.length &&
-		(!contributionComplete || contributionGraphqlErrors.length > 0)
-	) {
-		contributionDiagnostics.push({
-			dimension: null,
-			code: "contributions:retained",
-			httpStatus: null,
-			graphqlType: null,
-			graphqlPath: null,
-		});
-	}
-	if (contributionDiagnostics.length) context.onFailures?.(contributionDiagnostics);
+	context.onFailures?.(contributionDiagnostics);
 	const rate = object(first.rateLimit);
 	const snapshot: FactorySnapshot = {
 		schema: 1,
@@ -246,13 +219,18 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 						observedAt: context.now,
 					},
 		contribution: hasFreshCalendar ? freshContribution : (retainedContribution ?? null),
-		contributionStatus: hasFreshCalendar
-			? "complete"
-			: contributionComplete
-				? "complete"
-				: retainedContribution?.days?.length
-					? (priorAccount?.contributionStatus ?? priorFactory?.contributionStatus ?? "complete")
-					: "unavailable",
+		contributionStatus: contributionStatusFromMaterializedCalendar(
+			(hasFreshCalendar ? materializedDays : retainedContribution?.days) ?? [],
+			hasFreshCalendar
+				? contributionComplete
+				: annualCalendarCoverage({
+						fetchedAt: context.now,
+						window: calendarWindow,
+						days: retainedContribution?.days ?? [],
+						total: retainedContribution?.total ?? null,
+					}).complete,
+			hasFreshCalendar ? calendarFetch.partial : false,
+		),
 		contributionObservation: contributionComplete
 			? {
 					version: context.run.id,

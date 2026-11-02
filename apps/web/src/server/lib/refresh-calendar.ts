@@ -1,9 +1,12 @@
 import type { FactorySnapshot } from "../../lib/factory-types";
 import { contributionDates } from "./factory-contributions";
+import { calendarDayBounds } from "./refresh-params";
 
 type ContributionDay = NonNullable<FactorySnapshot["contribution"]>["days"][number];
 
 const DAY_MS = 86_400_000;
+
+export const CONTRIBUTION_CALENDAR_CHUNK_DAYS = 28;
 
 export type RefreshCalendarWindow = { since: string; until: string };
 export type RefreshCalendarCoverage = {
@@ -127,4 +130,88 @@ export function materializeContributionDays(
 export function contributionFailureCode(coverage: RefreshCalendarCoverage): string {
 	if (coverage.reason === "complete") return "contributions:unavailable";
 	return `contributions:coverage_${coverage.reason}`;
+}
+
+export function contributionCalendarChunkWindows(
+	window: RefreshCalendarWindow,
+	timezone: string,
+	maxDays = CONTRIBUTION_CALENDAR_CHUNK_DAYS,
+): RefreshCalendarWindow[] {
+	const dates = contributionDates(window.since.slice(0, 10), window.until.slice(0, 10));
+	if (!dates.length) return [];
+	const chunks: RefreshCalendarWindow[] = [];
+	for (let index = 0; index < dates.length; index += maxDays) {
+		const slice = dates.slice(index, index + maxDays);
+		const first = slice[0];
+		const last = slice[slice.length - 1];
+		if (!first || !last) continue;
+		chunks.push({
+			since: calendarDayBounds(first, timezone).since,
+			until: calendarDayBounds(last, timezone).until,
+		});
+	}
+	return chunks;
+}
+
+export function datesInContributionWindow(window: RefreshCalendarWindow): string[] {
+	return contributionDates(window.since.slice(0, 10), window.until.slice(0, 10));
+}
+
+export function contributionChunkFailedDates(
+	window: RefreshCalendarWindow,
+	failedRanges: RefreshCalendarWindow[],
+	timezone = "Asia/Shanghai",
+): Set<string> {
+	const expected = datesInContributionWindow(window);
+	const failed = new Set<string>();
+	for (const range of failedRanges) {
+		for (const date of expected) {
+			const bounds = calendarDayBounds(date, timezone);
+			if (bounds.since >= range.since && bounds.until <= range.until) failed.add(date);
+		}
+	}
+	return failed;
+}
+
+export function mergeChunkedContributionDays(
+	window: RefreshCalendarWindow,
+	fetchedAt: string,
+	priorDays: Array<{ date: string; count: number }> | undefined,
+	chunkDays: Array<{ date: string; count: number }>,
+	failedRanges: RefreshCalendarWindow[],
+): { days: ContributionDay[]; partial: boolean; failedRanges: RefreshCalendarWindow[] } {
+	const expected = datesInContributionWindow(window);
+	const priorByDate = new Map((priorDays ?? []).map((day) => [day.date, day.count]));
+	const fetchedByDate = new Map(chunkDays.map((day) => [day.date, day.count]));
+	const failedDates = contributionChunkFailedDates(window, failedRanges);
+	const days = expected.map((date) => {
+		if (failedDates.has(date) && priorByDate.has(date)) {
+			return {
+				date,
+				count: priorByDate.get(date) ?? 0,
+				fetchedAt,
+				observedAt: fetchedAt,
+				breakdown: "unavailable" as const,
+			};
+		}
+		const count = fetchedByDate.get(date) ?? priorByDate.get(date) ?? 0;
+		return {
+			date,
+			count,
+			fetchedAt,
+			observedAt: fetchedAt,
+			breakdown: "unavailable" as const,
+		};
+	});
+	return { days, partial: failedRanges.length > 0, failedRanges };
+}
+
+export function contributionStatusFromMaterializedCalendar(
+	materializedDays: ContributionDay[],
+	calendarCoverageComplete: boolean,
+	partial: boolean,
+): FactorySnapshot["contributionStatus"] {
+	if (!materializedDays.length) return "unavailable";
+	if (partial || !calendarCoverageComplete) return "partial";
+	return "complete";
 }

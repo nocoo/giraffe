@@ -3,12 +3,18 @@ import type { FactorySnapshot } from "../../lib/factory-types";
 import { contributionDates } from "./factory-contributions";
 import {
 	annualCalendarCoverage,
+	contributionCalendarChunkWindows,
+	contributionChunkFailedDates,
 	contributionFailureCode,
+	contributionStatusFromMaterializedCalendar,
 	contributionWindow,
+	datesInContributionWindow,
 	materializeContributionDays,
+	mergeChunkedContributionDays,
 	type RefreshCalendarWindow,
 	savedAnnualCalendarCoverage,
 } from "./refresh-calendar";
+import { calendarDayBounds } from "./refresh-params";
 
 type Day = { date: unknown; count: unknown };
 const anchor = "2026-10-29T04:00:00.000Z";
@@ -226,6 +232,72 @@ describe("materializeContributionDays", () => {
 	});
 });
 
+describe("contributionCalendarChunkWindows", () => {
+	it("splits the annual window into Shanghai-aligned chunks of at most 28 days", () => {
+		const window = contributionWindow(anchor);
+		const dates = contributionDates(window.since.slice(0, 10), window.until.slice(0, 10));
+		const chunks = contributionCalendarChunkWindows(window, "Asia/Shanghai");
+		let cursor = 0;
+		for (const chunk of chunks) {
+			const slice = dates.slice(cursor, cursor + 28);
+			cursor += slice.length;
+			expect(slice.length).toBeLessThanOrEqual(28);
+			const first = slice[0];
+			if (first) expect(chunk.since).toBe(calendarDayBounds(first, "Asia/Shanghai").since);
+		}
+		expect(cursor).toBe(dates.length);
+	});
+});
+
+describe("contributionStatusFromMaterializedCalendar", () => {
+	it("maps materialized coverage to complete, partial, and unavailable", () => {
+		const day = {
+			date: "2026-10-28",
+			count: 1,
+			fetchedAt: anchor,
+			observedAt: anchor,
+			breakdown: "unavailable" as const,
+		};
+		expect(contributionStatusFromMaterializedCalendar([], true, false)).toBe("unavailable");
+		expect(contributionStatusFromMaterializedCalendar([day], true, false)).toBe("complete");
+		expect(contributionStatusFromMaterializedCalendar([day], true, true)).toBe("partial");
+		expect(contributionStatusFromMaterializedCalendar([day], false, false)).toBe("partial");
+	});
+});
+
+describe("contributionChunkFailedDates", () => {
+	it("maps failed chunk bounds to Shanghai dates inside the annual window", () => {
+		const window = contributionWindow(anchor);
+		const failed = contributionCalendarChunkWindows(window, "Asia/Shanghai")[0];
+		if (!failed) throw new Error("expected chunk");
+		const failedDates = contributionChunkFailedDates(window, [failed], "Asia/Shanghai");
+		expect(failedDates.has("2025-10-29")).toBe(true);
+		expect(failedDates.has("2025-10-28")).toBe(false);
+	});
+});
+
+describe("mergeChunkedContributionDays", () => {
+	it("retains prior counts for failed chunk ranges instead of zeroing", () => {
+		const window = contributionWindow(anchor);
+		const failed = contributionCalendarChunkWindows(window, "Asia/Shanghai")[0];
+		if (!failed) throw new Error("expected chunk");
+		const failedDate = datesInContributionWindow(window).find((date) => {
+			const bounds = calendarDayBounds(date, "Asia/Shanghai");
+			return bounds.since >= failed.since && bounds.until <= failed.until;
+		});
+		if (!failedDate) throw new Error("expected failed date");
+		const merged = mergeChunkedContributionDays(
+			window,
+			anchor,
+			[{ date: failedDate, count: 531 }],
+			[],
+			[failed],
+		);
+		expect(merged.partial).toBe(true);
+		expect(merged.days.find((day) => day.date === failedDate)?.count).toBe(531);
+	});
+});
+
 describe("contributionFailureCode", () => {
 	it.each([
 		["missing"],
@@ -242,5 +314,63 @@ describe("contributionFailureCode", () => {
 		expect(contributionFailureCode({ complete: true, reason: "complete", window: null })).toBe(
 			"contributions:unavailable",
 		);
+	});
+});
+
+describe("annualCalendarCoverage edge cases", () => {
+	it("rejects missing, invalid-window, and malformed day evidence", () => {
+		const window = contributionWindow(anchor);
+		expect(
+			annualCalendarCoverage({ fetchedAt: null, window: null, days: null, total: null }).reason,
+		).toBe("missing");
+		expect(
+			annualCalendarCoverage({
+				fetchedAt: anchor,
+				window: { since: "2020-01-01T00:00:00.000Z", until: anchor },
+				days: daysOf(window),
+				total: 0,
+			}).reason,
+		).toBe("window_invalid");
+		expect(
+			annualCalendarCoverage({
+				fetchedAt: anchor,
+				window,
+				days: [null],
+				total: 0,
+			}).reason,
+		).toBe("dates_invalid");
+	});
+	it("rejects duplicate, gapped, incomplete, and invalid-total calendars", () => {
+		const window = contributionWindow(anchor);
+		const head = first(daysOf(window));
+		expect(
+			annualCalendarCoverage({
+				fetchedAt: anchor,
+				window,
+				days: [head, head],
+				total: 0,
+			}).reason,
+		).toBe("dates_invalid");
+		const days = daysOf(window);
+		const gapped = [days[0], days[2]].filter(Boolean);
+		expect(
+			annualCalendarCoverage({ fetchedAt: anchor, window, days: gapped, total: 0 }).reason,
+		).toBe("dates_invalid");
+		expect(
+			annualCalendarCoverage({
+				fetchedAt: anchor,
+				window,
+				days: days.slice(1),
+				total: 0,
+			}).reason,
+		).toBe("dates_incomplete");
+		expect(
+			annualCalendarCoverage({
+				fetchedAt: anchor,
+				window,
+				days,
+				total: Number.NaN,
+			}).reason,
+		).toBe("total_invalid");
 	});
 });

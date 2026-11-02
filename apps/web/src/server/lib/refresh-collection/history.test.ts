@@ -269,4 +269,39 @@ describe("action repair and audit", () => {
 			dayBoundsFromObservation(observation),
 		);
 	});
+	it("treats incomplete issue inventories as non-reusable", () => {
+		expect(reusableDayObservation(row("2026-10-28", "issues", false), "issues")).toBe(false);
+		expect(
+			reusableDayObservation({ ...row("2026-10-28", "issues"), status: "partial" }, "issues"),
+		).toBe(false);
+	});
+	it("refreshes lookback-window action days when branch metadata is missing", () => {
+		const context = {
+			run: { params: { force: false, lookbackDays: 90 } },
+			days: [day("2026-10-28")],
+		} as CollectionContext;
+		const observation = {
+			...row("2026-10-28", "actions"),
+			payload: JSON.stringify({
+				items: [{ id: "1", conclusion: "success", activityRun: { head_branch: "main" } }],
+				since: day("2026-10-28").since,
+				until: day("2026-10-28").until,
+			}),
+		};
+		expect(dayNeedsRefresh(context, [observation], day("2026-10-28"), "actions")).toBe(true);
+	});
+	it("schedules action repair for outside-window days with prior CI metrics", () => {
+		expect(
+			actionRepairDays(new Set(), [day("2026-10-27")], [], {
+				"2026-10-27": { ...blankDay(), ciSuccess: 2 },
+			}),
+		).toEqual([day("2026-10-27")]);
+	});
+	it("skips duplicate retained days already covered by the refresh window", () => {
+		expect(
+			actionRepairDays(new Set(["2026-10-27"]), [day("2026-10-27"), day("2026-10-27")], [], {
+				"2026-10-27": { ...blankDay(), ciSuccess: 2 },
+			}),
+		).toEqual([]);
+	});
 });

@@ -9,6 +9,7 @@ import { savedContentMeta } from "../content-version";
 import { warmDashboardResponsesAfterPublishSafely } from "../dashboard-warm";
 import { createDb, type Db } from "../db/d1";
 import { ApiError } from "../errors";
+import { savedAnnualCalendarCoverage } from "../refresh-calendar";
 import type { CollectionContext } from "../refresh-collection-contract";
 import {
 	assemblePages,
@@ -216,12 +217,17 @@ export async function publish(
 	const retainedContributionObservation =
 		account.contributionObservation ??
 		(retainedContribution ? priorFactory?.contributionObservation : null);
-	const retainedContributionStatus =
-		account.contributionStatus === "complete"
-			? "complete"
-			: retainedContribution
-				? (priorFactory?.contributionStatus ?? account.contributionStatus ?? "complete")
-				: account.contributionStatus;
+	const retainedContributionStatus = (() => {
+		if (account.contributionStatus === "complete") return "complete";
+		const days = account.contribution?.days ?? [];
+		if (!days.length) return account.contributionStatus ?? "unavailable";
+		const coverage = savedAnnualCalendarCoverage({
+			...account,
+			contribution: account.contribution,
+		});
+		if (account.contribution?.partial) return "partial";
+		return coverage.complete ? "complete" : "partial";
+	})();
 	const inventory = catalogRows.results;
 	const priorRepoByName = new Map(
 		(priorFactory?.repos ?? [])
