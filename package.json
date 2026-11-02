@@ -1,6 +1,6 @@
 {
 	"name": "giraffe",
-	"version": "0.28.17",
+	"version": "0.28.18",
 	"private": true,
 	"type": "module",
 	"scripts": {
@@ -23,7 +23,7 @@
 		"prepare": "husky"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "2.6.2",
+		"@biomejs/biome": "2.6.4",
 		"@cloudflare/workers-types": "5.20261023.1",
 		"@octokit/graphql-schema": "^15.26.1",
 		"@playwright/test": "^1.64.1",
@@ -36,13 +36,13 @@
 		"graphql": "16.9.0",
 		"happy-dom": "^21.0.4",
 		"husky": "9.1.7",
-		"oxc-parser": "^0.155.0",
+		"oxc-parser": "^0.156.0",
 		"sharp": "0.35.5",
 		"tailwindcss": "^4.3.3",
 		"typescript": "7.0.2",
 		"vite": "^8.3.5",
 		"vitest": "5.0.5",
-		"wrangler": "4.152.0"
+		"wrangler": "4.156.0"
 	},
 	"workspaces": [
 		"apps/*"
@@ -53,7 +53,7 @@
 		"lucide-react": "1.61.0",
 		"react": "^19.3.1",
 		"react-dom": "^19.3.1",
-		"react-router": "^8.5.0",
+		"react-router": "^8.5.1",
 		"recharts": "^3.10.1",
 		"zod": "^4.6.7"
 	},

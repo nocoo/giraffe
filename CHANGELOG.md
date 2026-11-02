@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.28.18 - 2026-11-02
+
+### Changed
+
+- Routine dependency updates: `@biomejs/biome`, `wrangler`, `oxc-parser`, and `react-router`.
+
 ## v0.28.17 - 2026-11-02
 
 ### Fixed
