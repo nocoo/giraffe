@@ -5,11 +5,16 @@ const catalogFields = `id name nameWithOwner url description isPrivate isArchive
 const page = `pageInfo { hasNextPage endCursor }`;
 const issueFields = `id number title url state createdAt updatedAt closedAt author { login } labels(first:20) { nodes { name color } } comments { totalCount }`;
 const prFields = `${issueFields} mergedAt isDraft additions deletions baseRefName headRefName reviewDecision mergeable mergeStateStatus`;
-export const accountQuery = `query RefreshAccount($after:String,$since:DateTime!,$until:DateTime!) {
- viewer { login avatarUrl repositories(first:100,after:$after,affiliations:[OWNER,COLLABORATOR,ORGANIZATION_MEMBER],orderBy:{field:NAME,direction:ASC}) { totalCount ${page} nodes { ${catalogFields} } }
- contributionsCollection(from:$since,to:$until) { restrictedContributionsCount contributionCalendar { totalContributions weeks { contributionDays { date contributionCount } } } } }
+export const accountCatalogQuery = `query RefreshAccount($after:String) {
+ viewer { login avatarUrl repositories(first:100,after:$after,affiliations:[OWNER,COLLABORATOR,ORGANIZATION_MEMBER],orderBy:{field:NAME,direction:ASC}) { totalCount ${page} nodes { ${catalogFields} } } }
  rateLimit { remaining resetAt }
 }`;
+export const contributionCalendarQuery = `query RefreshContributionCalendar($since:DateTime!,$until:DateTime!) {
+ viewer { contributionsCollection(from:$since,to:$until) { restrictedContributionsCount contributionCalendar { totalContributions weeks { contributionDays { date contributionCount } } } } } }
+ rateLimit { remaining resetAt }
+}`;
+/** @deprecated Account catalog is paginated separately from chunked contribution calendar fetches. */
+export const accountQuery = accountCatalogQuery;
 export function repositoryQuery(days: RefreshDay[], needed: string[], lifecycle = false) {
 	const releases = needed.includes("releases")
 		? `releases(first:100,orderBy:{field:CREATED_AT,direction:DESC}) { totalCount ${page} nodes { id databaseId name tagName url isDraft isPrerelease publishedAt createdAt updatedAt } }`

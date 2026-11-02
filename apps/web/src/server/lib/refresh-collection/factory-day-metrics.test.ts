@@ -5,6 +5,7 @@ import {
 	accumulateIssuePrMetrics,
 	canVerifyDefaultBranchCiFailures,
 	metricsFromStoredDayObservations,
+	recomputeDefaultBranchCiFromActionsRow,
 	seedOutsideWindowMetrics,
 } from "./factory-day-metrics";
 import { blankDay, type DayObservation } from "./model";
@@ -89,6 +90,77 @@ describe("factory day metrics from stored observations", () => {
 			"Asia/Shanghai",
 		);
 		expect(days[day.date]).toEqual({ ...blankDay(), issueOpened: 1 });
+	});
+
+	it("returns zero CI metrics when actions observations cannot be verified", () => {
+		expect(recomputeDefaultBranchCiFromActionsRow(day, undefined, "main")).toEqual({
+			ciSuccess: 0,
+			ciFailure: 0,
+		});
+	});
+
+	it("rebuilds default-branch CI metrics from a verified actions row", () => {
+		const actionsRow: DayObservation = {
+			day: day.date,
+			dimension: "actions",
+			status: "complete",
+			payload: JSON.stringify({
+				items: [
+					{
+						id: "1",
+						conclusion: "success",
+						activityRun: { head_branch: "main" },
+						createdAt: "2026-10-27T04:00:00.000Z",
+					},
+				],
+				since: day.since,
+				until: day.until,
+			}),
+			fetched_at: "2026-10-31T04:00:00.000Z",
+		};
+		expect(recomputeDefaultBranchCiFromActionsRow(day, actionsRow, "main")).toEqual({
+			ciSuccess: 1,
+			ciFailure: 0,
+		});
+	});
+
+	it("deduplicates duplicate action item ids when accumulating CI metrics", () => {
+		const metrics = blankDay();
+		const run = {
+			id: "run-dup",
+			conclusion: "success",
+			activityRun: { head_branch: "main" },
+		} as never;
+		accumulateActionMetrics(metrics, [run, run], "main");
+		expect(metrics.ciSuccess).toBe(1);
+	});
+
+	it("counts issueOpened from lifecycle rows when item inventory is empty", () => {
+		const metrics = blankDay();
+		const bounds = {
+			date: "2026-10-31",
+			since: "2026-10-30T16:00:00.000Z",
+			until: "2026-10-31T16:00:00.000Z",
+		};
+		accumulateIssuePrMetrics(
+			metrics,
+			"issues",
+			[],
+			[{ id: "1", createdAt: "2026-10-31T01:00:00.000Z" } as never],
+			bounds,
+			"Asia/Shanghai",
+		);
+		expect(metrics.issueOpened).toBe(1);
+	});
+
+	it("ignores non-default-branch successes when counting CI metrics", () => {
+		const metrics = blankDay();
+		accumulateActionMetrics(
+			metrics,
+			[{ id: "1", conclusion: "success", activityRun: { head_branch: "dev" } } as never],
+			"main",
+		);
+		expect(metrics.ciSuccess).toBe(0);
 	});
 
 	it("counts only default-branch successes and failures in action metrics", () => {
@@ -369,7 +441,14 @@ describe("factory day metrics from stored observations", () => {
 			dimension: "actions",
 			status: "complete",
 			payload: JSON.stringify({
-				items: [{ id: "1", conclusion: "failure", activityRun: { head_branch: "main" } }],
+				items: [
+					{
+						id: "1",
+						conclusion: "failure",
+						activityRun: { head_branch: "main" },
+						createdAt: "2026-10-27T04:00:00.000Z",
+					},
+				],
 				since: day.since,
 				until: day.until,
 			}),
@@ -395,8 +474,18 @@ describe("factory day metrics from stored observations", () => {
 			status: "complete",
 			payload: JSON.stringify({
 				items: [
-					{ id: "1", conclusion: "success", activityRun: { head_branch: "main" } },
-					{ id: "2", conclusion: "failure", activityRun: { head_branch: "dev" } },
+					{
+						id: "1",
+						conclusion: "success",
+						activityRun: { head_branch: "main" },
+						createdAt: "2026-10-27T04:00:00.000Z",
+					},
+					{
+						id: "2",
+						conclusion: "failure",
+						activityRun: { head_branch: "dev" },
+						createdAt: "2026-10-27T05:00:00.000Z",
+					},
 				],
 				since: day.since,
 				until: day.until,
@@ -414,6 +503,79 @@ describe("factory day metrics from stored observations", () => {
 			"Asia/Shanghai",
 		);
 		expect(days[day.date]).toMatchObject({ ciSuccess: 1, ciFailure: 0 });
+	});
+
+	it("recomputes verified outside-window ciFailure from cache instead of keeping all-branch prior", () => {
+		const actionsRow: DayObservation = {
+			day: day.date,
+			dimension: "actions",
+			status: "complete",
+			payload: JSON.stringify({
+				items: [
+					{
+						id: "1",
+						conclusion: "failure",
+						activityRun: { head_branch: "main" },
+						createdAt: "2026-10-27T04:00:00.000Z",
+					},
+					{
+						id: "2",
+						conclusion: "failure",
+						activityRun: { head_branch: "dev" },
+						createdAt: "2026-10-27T05:00:00.000Z",
+					},
+				],
+				since: day.since,
+				until: day.until,
+			}),
+			fetched_at: "2026-10-31T04:00:00.000Z",
+		};
+		const days: Record<string, FactoryDay> = {};
+		seedOutsideWindowMetrics(
+			days,
+			[day],
+			new Set(["2026-10-28"]),
+			new Map([[`${day.date}:actions`, actionsRow]]),
+			{ [day.date]: { ...blankDay(), ciFailure: 4, ciSuccess: 2 } },
+			"main",
+			"Asia/Shanghai",
+		);
+		expect(days[day.date]).toMatchObject({ ciSuccess: 0, ciFailure: 1 });
+	});
+
+	it("uses observation bounds on the publication window start day", () => {
+		const windowStart = {
+			date: "2026-08-03",
+			since: "2026-08-02T16:00:00.000Z",
+			until: "2026-08-03T16:00:00.000Z",
+		};
+		const actionsRow: DayObservation = {
+			day: windowStart.date,
+			dimension: "actions",
+			status: "complete",
+			payload: JSON.stringify({
+				items: [
+					{
+						id: "1",
+						conclusion: "success",
+						activityRun: { head_branch: "main" },
+						createdAt: "2026-08-02T15:30:00.000Z",
+					},
+					{
+						id: "2",
+						conclusion: "success",
+						activityRun: { head_branch: "main" },
+						createdAt: "2026-08-03T02:00:00.000Z",
+					},
+				],
+				since: windowStart.since,
+				until: windowStart.until,
+			}),
+			fetched_at: "2026-11-01T04:00:00.000Z",
+		};
+		const current = new Map<string, DayObservation>([[`${windowStart.date}:actions`, actionsRow]]);
+		const metrics = metricsFromStoredDayObservations(windowStart, current, "main", "Asia/Shanghai");
+		expect(metrics.ciSuccess).toBe(1);
 	});
 
 	it("assigns issueOpened using the Shanghai calendar date", () => {
@@ -480,6 +642,42 @@ describe("factory day metrics from stored observations", () => {
 			"Asia/Shanghai",
 		);
 		expect(days["2026-10-27"]).toBeUndefined();
+	});
+
+	it("counts issueClosed from stored items when lifecycle rows are absent", () => {
+		const metrics = blankDay();
+		const bounds = {
+			date: "2026-10-31",
+			since: "2026-10-30T16:00:00.000Z",
+			until: "2026-10-31T16:00:00.000Z",
+		};
+		accumulateIssuePrMetrics(
+			metrics,
+			"issues",
+			[{ id: "1", closedAt: "2026-10-31T10:00:00.000Z" } as never],
+			[],
+			bounds,
+			"Asia/Shanghai",
+		);
+		expect(metrics.issueClosed).toBe(1);
+	});
+
+	it("counts prMerged from stored items when lifecycle rows are absent", () => {
+		const metrics = blankDay();
+		const bounds = {
+			date: "2026-10-31",
+			since: "2026-10-30T16:00:00.000Z",
+			until: "2026-10-31T16:00:00.000Z",
+		};
+		accumulateIssuePrMetrics(
+			metrics,
+			"prs",
+			[{ id: "1", mergedAt: "2026-10-31T10:00:00.000Z" } as never],
+			[],
+			bounds,
+			"Asia/Shanghai",
+		);
+		expect(metrics.prMerged).toBe(1);
 	});
 
 	it("counts prClosed from lifecycle rows without a same-day merge", () => {

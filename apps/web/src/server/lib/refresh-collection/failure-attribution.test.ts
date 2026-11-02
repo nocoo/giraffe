@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { annualContributionCalendar } from "../../../../../../tests/fixtures/contribution-calendar";
+import { installRefreshUpstream } from "../../../../../../tests/fixtures/refresh-upstream";
 import { sqliteFixture } from "../../../../../../tests/fixtures/sqlite";
 import { ApiError } from "../errors";
 import type { CollectionContext } from "../refresh-collection-contract";
@@ -85,18 +86,7 @@ function capture(context: CollectionContext) {
 	return seen;
 }
 function upstream(graphql: unknown[], rest: Record<string, Response> = {}) {
-	const fetch = vi.fn(async (input: string) => {
-		if (input.endsWith("/graphql")) {
-			const data = graphql.shift();
-			if (data instanceof Response) return data.clone();
-			return Response.json({ data });
-		}
-		for (const [suffix, response] of Object.entries(rest))
-			if (input.includes(suffix)) return response.clone();
-		return Response.json([]);
-	});
-	vi.stubGlobal("fetch", fetch);
-	return fetch;
+	return installRefreshUpstream({ now, graphql, rest: rest as Record<string, unknown> });
 }
 afterEach(() => vi.unstubAllGlobals());
 const rateLimited = () =>

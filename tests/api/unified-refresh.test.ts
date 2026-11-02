@@ -1,7 +1,16 @@
 import { expect, it } from "vitest";
 import type { ActivitySnapshot } from "../../apps/web/src/lib/activity-types";
 import type { RefreshRun } from "../../apps/web/src/lib/refresh-types";
+import {
+	contributionCalendarChunkWindows,
+	contributionWindow,
+} from "../../apps/web/src/server/lib/refresh-calendar";
 import { localD1Rows, quote } from "./local-d1";
+
+const accountGraphqlRequests = () =>
+	1 +
+	contributionCalendarChunkWindows(contributionWindow(new Date().toISOString()), "Asia/Shanghai")
+		.length;
 
 const base = process.env.GIRAFFE_E2E ?? "http://127.0.0.1:17045";
 const jwt = process.env.GIRAFFE_JWT ?? "";
@@ -102,12 +111,12 @@ it("runs real durable A then serial B, serves latest observations and reuses day
 		}
 		const discovery = await run({ dimensions: ["commits"] });
 		expect(discovery.repos).toEqual([]);
-		expect(discovery.requests).toBe(1);
+		expect(discovery.requests).toBe(accountGraphqlRequests());
 		expect(discovery.requestBreakdown).toEqual({
-			total: 1,
-			graphql: 1,
+			total: accountGraphqlRequests(),
+			graphql: accountGraphqlRequests(),
 			rest: 0,
-			a: { graphql: 1, rest: 0 },
+			a: { graphql: accountGraphqlRequests(), rest: 0 },
 			b: { graphql: 0, rest: 0 },
 		});
 		const first = await run({
@@ -192,18 +201,18 @@ it("runs real durable A then serial B, serves latest observations and reuses day
 		});
 		const defaultRun = await run({ dimensions: ["commits"] });
 		expect(defaultRun.repos).toEqual([]);
-		expect(defaultRun.requests).toBe(1);
+		expect(defaultRun.requests).toBe(accountGraphqlRequests());
 		expect(
 			(await machine("stars/phase2/demo", "PUT", { reason: "local refresh test" })).status,
 		).toBe(200);
 		const cached = await run({ dimensions: ["commits"] });
 		expect(cached.repos).toEqual(["phase2/demo"]);
-		expect(cached.requests).toBe(1);
+		expect(cached.requests).toBe(accountGraphqlRequests());
 		const forced = await run({ repo: "phase2/demo", force: true });
 		expect(forced.aReused).toBe(false);
-		expect(forced.requests).toBe(5);
+		expect(forced.requests).toBe(accountGraphqlRequests() + 4);
 		expect(forced.requestBreakdown).toMatchObject({
-			a: { graphql: 1, rest: 0 },
+			a: { graphql: accountGraphqlRequests(), rest: 0 },
 			b: { graphql: 1, rest: 3 },
 		});
 		const cacheWindow = {

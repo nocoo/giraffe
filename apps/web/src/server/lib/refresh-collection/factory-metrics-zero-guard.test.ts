@@ -18,6 +18,25 @@ describe("factory day metrics zero guard", () => {
 		});
 	});
 
+	it("treats an all-zero prior day as unpopulated for zero guard", () => {
+		const { days, warnings } = guardFactoryDayMetrics(
+			{ "2026-08-03": blankDay() },
+			{},
+			"owner/repo",
+		);
+		expect(days).toEqual({});
+		expect(warnings).toEqual([]);
+	});
+
+	it("does not restore omitted days when only prClosed was populated", () => {
+		const { days } = guardFactoryDayMetrics(
+			{ "2026-08-03": { ...blankDay(), prClosed: 2 } },
+			{},
+			"owner/repo",
+		);
+		expect(days["2026-08-03"]).toBeUndefined();
+	});
+
 	it("does not restore omitted days when the prior row was entirely zero", () => {
 		expect(guardFactoryDayMetrics({ "2026-08-03": blankDay() }, {}, "owner/repo").days).toEqual({});
 	});
@@ -167,7 +186,14 @@ describe("factory day metrics zero guard", () => {
 		const prior = { "2026-08-03": { ...blankDay(), ciSuccess: 5 } };
 		const next = { "2026-08-03": { ...blankDay(), ciSuccess: 0 } };
 		const { days, warnings } = guardFactoryDayMetrics(prior, next, "owner/repo", () => true);
-		expect(days["2026-08-03"]?.ciSuccess).toBe(5);
-		expect(warnings.some((entry) => entry.field === "ciSuccess")).toBe(true);
+		expect(days["2026-08-03"]?.ciSuccess).toBe(0);
+		expect(warnings).toEqual([
+			{
+				code: "verified_zero_allowed",
+				repo: "owner/repo",
+				day: "2026-08-03",
+				field: "ciSuccess",
+			},
+		]);
 	});
 });

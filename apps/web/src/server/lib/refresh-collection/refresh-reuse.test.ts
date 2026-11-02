@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { annualContributionCalendar } from "../../../../../../tests/fixtures/contribution-calendar";
+import { installRefreshUpstream } from "../../../../../../tests/fixtures/refresh-upstream";
 import { sqliteFixture } from "../../../../../../tests/fixtures/sqlite";
 import type { FactoryRepo, FactorySnapshot } from "../../../lib/factory-types";
 import type { RefreshDay, RefreshDimension, RefreshParams } from "../../../lib/refresh-types";
@@ -89,20 +90,7 @@ async function fixture(): Promise<CollectionContext> {
 	} as CollectionContext;
 }
 function upstream(graphql: unknown[] = [], rest: Record<string, unknown> = {}) {
-	const fetch = vi.fn(async (input: string) => {
-		if (input.endsWith("/graphql")) {
-			const data = graphql.shift();
-			if (data instanceof Error) throw data;
-			if (data instanceof Response) return data.clone();
-			return Response.json({ data });
-		}
-		for (const [suffix, data] of Object.entries(rest))
-			if (input.includes(suffix))
-				return data instanceof Response ? data.clone() : Response.json(data);
-		return Response.json([]);
-	});
-	vi.stubGlobal("fetch", fetch);
-	return fetch;
+	return installRefreshUpstream({ now, graphql, rest });
 }
 afterEach(() => vi.unstubAllGlobals());
 const graphqlCalls = (fetch: ReturnType<typeof upstream>) =>
@@ -777,7 +765,10 @@ describe("90-day lookback cache reuse", () => {
 			partial: false,
 			reasons: [],
 		});
-		expect(historyAliases(graphqlRequests(fetch)[1]?.query ?? "")).toHaveLength(LOOKBACK_DAYS);
+		const repoQuery = graphqlRequests(fetch).find((entry) =>
+			entry.query.includes("query RefreshRepository"),
+		);
+		expect(historyAliases(repoQuery?.query ?? "")).toHaveLength(LOOKBACK_DAYS);
 		const cached = await observationRows(context);
 		expect(cached).toHaveLength(LOOKBACK_DAYS * 3);
 		expect(cached.every((row) => row.fetched_at === now)).toBe(true);

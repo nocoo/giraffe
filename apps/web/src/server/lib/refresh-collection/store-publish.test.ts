@@ -525,6 +525,46 @@ it("retains contribution calendar from the prior factory snapshot when account o
 	expect(factory.contribution?.total).toBe(4);
 });
 
+it("derives factory contributionStatus from materialized partial calendar coverage", async () => {
+	const raw = sqliteFixture();
+	const context = await prepared(raw, fixtures);
+	const db = createDb(raw);
+	await publish(db, context);
+	const partialContribution = {
+		days: [
+			{
+				date: "2026-10-28",
+				count: 2,
+				fetchedAt: now,
+				observedAt: now,
+				breakdown: "unavailable" as const,
+			},
+		],
+		total: 2,
+		fetchedAt: now,
+		observedAt: now,
+		timezone: "github" as const,
+		typesStatus: "partial" as const,
+		partial: true,
+		failedRanges: [{ since: "2025-10-28T16:00:00.000Z", until: "2025-11-25T16:00:00.000Z" }],
+	};
+	await raw
+		.prepare(
+			"UPDATE refresh_accounts SET payload=json_set(payload,'$.contribution',json(?),'$.contributionStatus','partial') WHERE account_id='a'",
+		)
+		.bind(JSON.stringify(partialContribution))
+		.run();
+	await publish(db, context);
+	const factory = JSON.parse(
+		(
+			await raw
+				.prepare("SELECT payload FROM refresh_snapshots WHERE account_id='a' AND kind='factory'")
+				.first<{ payload: string }>()
+		)?.payload ?? "{}",
+	) as { contributionStatus: string };
+	expect(factory.contributionStatus).toBe("partial");
+});
+
 it("keeps rate and identity-fenced retention in a compact operational publication", async () => {
 	const raw = sqliteFixture();
 	const context = await prepared(raw, fixtures);

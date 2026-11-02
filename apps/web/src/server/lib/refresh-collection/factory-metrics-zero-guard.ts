@@ -62,6 +62,10 @@ export function guardFactoryDayMetrics(
 		const merged: FactoryDay = { ...proposed };
 		for (const field of FACTORY_DAY_METRICS_ZERO_GUARD_FIELDS) {
 			if (priorDay[field] !== 0 && proposed[field] === 0) {
+				if (field === "ciSuccess" && actionsVerified(date)) {
+					warnings.push({ code: "verified_zero_allowed", repo, day: date, field });
+					continue;
+				}
 				merged[field] = priorDay[field];
 				warnings.push({ code: "zero_guard_kept", repo, day: date, field });
 			}

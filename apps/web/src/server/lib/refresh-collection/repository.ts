@@ -24,7 +24,7 @@ import {
 import {
 	accumulateActionMetrics,
 	accumulateIssuePrMetrics,
-	canVerifyDefaultBranchCiFailures,
+	canVerifyDefaultBranchCiActions,
 	seedOutsideWindowMetrics,
 } from "./factory-day-metrics";
 import {
@@ -41,6 +41,7 @@ import {
 	actionRepairDays as listActionRepairDays,
 	PUBLICATION_DAYS,
 	publicationDays,
+	refreshDayBounds,
 } from "./history";
 import {
 	closedIssueSearchQuery,
@@ -583,6 +584,7 @@ export async function collectRepository(
 			if (row.status !== "complete") continue;
 			const dayBounds = retainedDays.find((entry) => entry.date === row.day);
 			if (!dayBounds) continue;
+			const bounds = refreshDayBounds(row.day, context.run.params.timezone, current, dayBounds);
 			const metrics = repo.metrics.days[row.day] ?? blankDay();
 			if (dimension === "commits") {
 				metrics.commits = Number(value.count);
@@ -597,19 +599,19 @@ export async function collectRepository(
 							(item) => !value.items.some((existing) => existing.id === item.id),
 						),
 					],
-					dayBounds.since,
-					dayBounds.until,
+					bounds.since,
+					bounds.until,
 				);
 				accumulateIssuePrMetrics(
 					metrics,
 					stream,
 					streamItems,
 					lifecycleMetric,
-					dayBounds,
+					bounds,
 					context.run.params.timezone,
 				);
 			} else if (dimension === "actions") {
-				const scoped = dayItems(value.items, dayBounds.since, dayBounds.until);
+				const scoped = dayItems(value.items, bounds.since, bounds.until);
 				metrics.ciSuccess = 0;
 				metrics.ciFailure = 0;
 				accumulateActionMetrics(metrics, scoped, repo.branch, {
@@ -695,7 +697,7 @@ export async function collectRepository(
 			priorRepoPayload?.metrics?.days,
 			repo.metrics.days,
 			saved.repo,
-			(day) => canVerifyDefaultBranchCiFailures(current.get(`${day}:actions`)),
+			(day) => canVerifyDefaultBranchCiActions(current.get(`${day}:actions`)),
 		);
 		repo.metrics.days = days;
 		resyncFactoryMetricsTotals(repo.metrics);

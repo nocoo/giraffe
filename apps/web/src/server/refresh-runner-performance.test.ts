@@ -103,14 +103,18 @@ it("finishes a real force A/serial B despite slow D1 and reuses unavailable aler
 			if (!result) throw new Error("Unexpected GraphQL query");
 			if ("viewer" in result.data && result.data.viewer) {
 				const viewer = result.data.viewer;
+				const repositories = viewer.repositories ?? {
+					nodes: [],
+					pageInfo: { hasNextPage: false, endCursor: null },
+				};
 				return Response.json({
 					data: {
 						...result.data,
 						viewer: {
 							...viewer,
 							repositories: {
-								...viewer.repositories,
-								nodes: variables.after ? [] : viewer.repositories.nodes,
+								...repositories,
+								nodes: variables.after ? [] : repositories.nodes,
 								pageInfo: {
 									hasNextPage: !variables.after,
 									endCursor: variables.after ? null : "next",
@@ -203,10 +207,10 @@ it("finishes a real force A/serial B despite slow D1 and reuses unavailable aler
 		expect(saved.status).toBe("completed");
 		expect(saved.partialReasons.every((entry) => entry.codes.length === 0)).toBe(true);
 		expect(saved.requestBreakdown).toMatchObject({
-			a: { graphql: force ? 2 : 0, rest: 0 },
+			a: { graphql: force ? 16 : 0, rest: 0 },
 			b: { graphql: force ? 1 : 1, rest: force ? 3 : 0 },
 		});
-		expect(upstream).toHaveBeenCalledTimes(force ? 6 : 1);
+		expect(upstream).toHaveBeenCalledTimes(force ? 20 : 1);
 		expect(alarm).toBeNull();
 		expect(Date.now() - started).toBeGreaterThan(25_000);
 		expect(calls.length).toBeLessThanOrEqual(force ? 24 : 21);

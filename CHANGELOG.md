@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.28.19 - 2026-11-02
+
+### Fixed
+
+- Factory **ciSuccess** and **ciFailure** now share one default-branch, day-scoped recompute path
+  from stored action observations (in and outside the refresh window), replacing stale all-branch
+  `ciFailure` instead of preserving prior counts when observations verify.
+- Zero guard allows verified **ciSuccess** recounts to zero (`verified_zero_allowed`) when the
+  day's actions observation is complete and branch-verified; window-start days use observation
+  `since/until` bounds consistently.
+- Contribution calendar is fetched in **≤28-day Shanghai-aligned chunks**, stitched per day, with
+  prior values kept on chunk failure and `contributionStatus`/`partial` wired from materialized
+  coverage (including factory publish).
+
 ## v0.28.18 - 2026-11-02
 
 ### Changed

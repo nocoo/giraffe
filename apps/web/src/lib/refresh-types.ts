@@ -38,12 +38,19 @@ export type RefreshPartialReason = {
 	codes: string[];
 	failures?: RefreshFailureDetail[];
 };
-export type RefreshMetricGuardEvent = {
-	code: "zero_guard_kept";
-	repo: string;
-	day: string;
-	field: keyof FactoryDay;
-};
+export type RefreshMetricGuardEvent =
+	| {
+			code: "zero_guard_kept";
+			repo: string;
+			day: string;
+			field: keyof FactoryDay;
+	  }
+	| {
+			code: "verified_zero_allowed";
+			repo: string;
+			day: string;
+			field: keyof FactoryDay;
+	  };
 export type RefreshActionsObservationAudit = {
 	repo: string;
 	outsideWindowDays: number;

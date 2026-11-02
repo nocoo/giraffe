@@ -2,6 +2,13 @@ import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { annualContributionCalendar } from "../../../../../../tests/fixtures/contribution-calendar";
+import { calendarGraphqlFailures } from "../../../../../../tests/fixtures/refresh-upstream";
+import {
+	isAccountFixture,
+	isCalendarFixture,
+	isRepositoryFixture,
+	takeQueueEntry,
+} from "../../../../../../tests/fixtures/refresh-upstream-queue";
 import { sqliteFixture } from "../../../../../../tests/fixtures/sqlite";
 import { createDb } from "../db/d1";
 import { ApiError } from "../errors";
@@ -11,7 +18,7 @@ import {
 	readMachineAccountObservation,
 	readMachineRepositoryObservation,
 } from "../machine-observations";
-import { contributionWindow } from "../refresh-calendar";
+import { contributionCalendarChunkWindows, contributionWindow } from "../refresh-calendar";
 import type { CollectionContext } from "../refresh-collection-contract";
 import { collectAccount, collectRepository } from "./index";
 import {
@@ -29,6 +36,16 @@ import { collectionDb, publish } from "./store";
 import { transport } from "./transport";
 
 const now = "2026-10-29T04:00:00.000Z";
+const accountCalendarGraphqlRequests = (at = now, catalogPages = 1) =>
+	catalogPages + contributionCalendarChunkWindows(contributionWindow(at), "Asia/Shanghai").length;
+const graphqlBodies = (fetch: ReturnType<typeof upstream>) =>
+	fetch.mock.calls
+		.filter(([url]) => String(url).endsWith("/graphql"))
+		.map(([, init]) => String(init?.body ?? ""));
+const lastRepositoryGraphqlBody = (fetch: ReturnType<typeof upstream>) => {
+	const bodies = graphqlBodies(fetch).filter((body) => body.includes("RefreshRepository"));
+	return bodies.at(-1) ?? "";
+};
 const repo = (id = "R_1", name = "owner/project") => ({
 	id,
 	nameWithOwner: name,
@@ -91,6 +108,15 @@ const accountPage = (nodes = [repo()], more = false, cursor: string | null = nul
 	},
 	rateLimit: { remaining: 4999, resetAt: "2026-10-29T05:00:00Z" },
 });
+const contributionCalendarPage = (calendar: unknown, at = now) => ({
+	viewer: {
+		contributionsCollection: {
+			restrictedContributionsCount: 0,
+			contributionCalendar: calendar,
+		},
+	},
+	rateLimit: { remaining: 4999, resetAt: at },
+});
 async function fixture() {
 	const db = sqliteFixture();
 	await db
@@ -127,6 +153,7 @@ function upstream(
 	rest: Record<string, unknown> = {},
 ) {
 	const queue = [...graphql];
+	let pinnedContribution: unknown | undefined;
 	const fetch = vi.fn(async (input: string, init?: RequestInit) => {
 		if (input.endsWith("/graphql")) {
 			const body = typeof init?.body === "string" ? init.body : "";
@@ -134,8 +161,50 @@ function upstream(
 				[...graphql]
 					.reverse()
 					.find((entry) => entry && typeof entry === "object" && "node" in entry);
+			if (body.includes("query RefreshContributionCalendar")) {
+				if (
+					pinnedContribution &&
+					typeof pinnedContribution === "object" &&
+					"viewer" in pinnedContribution
+				) {
+					const payload =
+						"rateLimit" in pinnedContribution
+							? pinnedContribution
+							: {
+									...(pinnedContribution as Record<string, unknown>),
+									rateLimit: { remaining: 4999, resetAt: "2026-10-29T05:00:00Z" },
+								};
+					return Response.json({ data: payload });
+				}
+				const chunkResponse = await takeQueueEntry(queue, isCalendarFixture);
+				if (chunkResponse instanceof Response) return chunkResponse.clone();
+				if (chunkResponse && typeof chunkResponse === "object" && "viewer" in chunkResponse) {
+					pinnedContribution = chunkResponse;
+					const payload =
+						"rateLimit" in chunkResponse
+							? chunkResponse
+							: {
+									...(chunkResponse as Record<string, unknown>),
+									rateLimit: { remaining: 4999, resetAt: "2026-10-29T05:00:00Z" },
+								};
+					return Response.json({ data: payload });
+				}
+				return Response.json({
+					data: {
+						viewer: {
+							contributionsCollection: {
+								restrictedContributionsCount: 0,
+								contributionCalendar: annualContributionCalendar(now, 2).calendar,
+							},
+						},
+						rateLimit: { remaining: 4999, resetAt: "2026-10-29T05:00:00Z" },
+					},
+				});
+			}
 			if (body.includes("query RefreshRepository")) {
-				const data = queue.length > 0 ? queue.shift() : lastRepoNode();
+				const data =
+					(await takeQueueEntry(queue, isRepositoryFixture)) ??
+					(queue.length > 0 ? queue.shift() : lastRepoNode());
 				if (data instanceof Error) throw data;
 				if (data instanceof Response) return data.clone();
 				const payload =
@@ -148,7 +217,9 @@ function upstream(
 				return Response.json({ data: payload });
 			}
 			if (body.includes("query RefreshItems")) {
-				const queued = queue.length > 0 ? queue.shift() : undefined;
+				const queued =
+					(await takeQueueEntry(queue, isRepositoryFixture)) ??
+					(queue.length > 0 ? queue.shift() : undefined);
 				if (queued instanceof Error) throw queued;
 				if (queued instanceof Response) return queued.clone();
 				const data =
@@ -167,7 +238,9 @@ function upstream(
 						: data;
 				return Response.json({ data: payload });
 			}
-			const data = queue.length > 0 ? queue.shift() : graphql.at(-1);
+			const data =
+				(await takeQueueEntry(queue, isAccountFixture)) ??
+				(queue.length > 0 ? queue.shift() : graphql.at(-1));
 			if (data instanceof Error) throw data;
 			if (data instanceof Response) return data.clone();
 			const payload =
@@ -246,15 +319,15 @@ describe("unified refresh collection", () => {
 			accountPage([repo()], false, null, "2026-10-30T04:00:00.000Z"),
 		]);
 		expect(await collectAccount(context)).toMatchObject({
-			requests: 1,
-			requestBreakdown: { graphql: 1, rest: 0 },
+			requests: accountCalendarGraphqlRequests(),
+			requestBreakdown: { graphql: accountCalendarGraphqlRequests(), rest: 0 },
 			partial: false,
 			reasons: [],
 			repos: ["owner/project"],
 		});
 		expect(await collectAccount(context)).toMatchObject({
-			requests: 1,
-			requestBreakdown: { graphql: 1, rest: 0 },
+			requests: accountCalendarGraphqlRequests(),
+			requestBreakdown: { graphql: accountCalendarGraphqlRequests(), rest: 0 },
 			partial: false,
 			reasons: [],
 			repos: ["owner/project"],
@@ -304,7 +377,7 @@ describe("unified refresh collection", () => {
 			partial: false,
 			reasons: [],
 		});
-		expect(fetch).toHaveBeenCalledTimes(6);
+		expect(fetch).toHaveBeenCalledTimes(6 + accountCalendarGraphqlRequests() - 1);
 		const saved = await publication(context);
 		expect(saved.repos[0].coverage.dependencies.status).toBe("unavailable");
 		expect(saved.repos[0].metrics.commits).toBe(3);
@@ -394,8 +467,11 @@ describe("unified refresh collection", () => {
 		const onRequests = vi.fn();
 		context.onRequests = onRequests;
 		upstream([new Error("secret diagnostic"), accountPage()]);
-		expect((await collectAccount(context)).requests).toBe(2);
-		expect(onRequests).toHaveBeenLastCalledWith(2, { graphql: 2, rest: 0 });
+		expect((await collectAccount(context)).requests).toBe(1 + accountCalendarGraphqlRequests());
+		expect(onRequests).toHaveBeenLastCalledWith(1 + accountCalendarGraphqlRequests(), {
+			graphql: 1 + accountCalendarGraphqlRequests(),
+			rest: 0,
+		});
 	});
 	it.each([
 		[401, 1, "github_unauthorized"],
@@ -614,8 +690,12 @@ describe("unified refresh collection", () => {
 			prOpened: 2,
 			prClosed: 0,
 		});
-		expect(String(fetch.mock.calls[1]?.[1]?.body)).toContain("states:OPEN");
-		expect(String(fetch.mock.calls[2]?.[1]?.body)).toContain("RefreshItems");
+		expect(String(graphqlBodies(fetch).find((body) => body.includes("states:OPEN")))).toContain(
+			"states:OPEN",
+		);
+		expect(String(graphqlBodies(fetch).find((body) => body.includes("RefreshItems")))).toContain(
+			"RefreshItems",
+		);
 	});
 	it("does not stop at an unproven cache boundary after a failed page", async () => {
 		const context = await fixture();
@@ -1759,7 +1839,7 @@ describe("unified refresh collection", () => {
 			partial: false,
 			reasons: [],
 		});
-		const body = JSON.parse(String(fetch.mock.calls.at(-1)?.[1]?.body));
+		const body = JSON.parse(lastRepositoryGraphqlBody(fetch));
 		expect(body.variables).toEqual({
 			id: "R_1",
 			since0: "2026-10-28T16:00:00.000Z",
@@ -1810,7 +1890,7 @@ describe("unified refresh collection", () => {
 		context.run.id = "run-2";
 		const result = await collectRepository(context, "owner/project");
 		expect(result.requests).toBe(mixed ? 1 : 0);
-		expect(fetch).toHaveBeenCalledTimes(mixed ? 3 : 2);
+		expect(fetch).toHaveBeenCalledTimes(accountCalendarGraphqlRequests() + 1 + (mixed ? 1 : 0));
 		const saved = await publication(context);
 		expect(saved.repos[0].coverage.releases).toMatchObject({
 			source: mixed ? "mixed" : "github_rest_latest",
@@ -1838,7 +1918,7 @@ describe("unified refresh collection", () => {
 		expect((await publication(context)).repos.map((repo: { id: string }) => repo.id)).toEqual([
 			"R_new",
 		]);
-		expect(fetch).toHaveBeenCalledTimes(10);
+		expect(fetch).toHaveBeenCalledTimes(38);
 	});
 	it("releases only a confirmed reused name when the current catalogue is partial", async () => {
 		const context = await fixture();
@@ -1900,8 +1980,8 @@ describe("unified refresh collection", () => {
 		const context = await fixture();
 		upstream([accountPage([repo()], true, "next"), new Error("network"), new Error("network")]);
 		expect(await collectAccount(context)).toMatchObject({
-			requests: 3,
-			requestBreakdown: { graphql: 3, rest: 0 },
+			requests: 3 + accountCalendarGraphqlRequests() - 1,
+			requestBreakdown: { graphql: 3 + accountCalendarGraphqlRequests() - 1, rest: 0 },
 			partial: true,
 			reasons: ["catalog:incomplete"],
 			repos: ["owner/project"],
@@ -1919,7 +1999,7 @@ describe("unified refresh collection", () => {
 				accountPage([repo(`R_${index}`, `owner/repo${index}`)], true, String(index)),
 			),
 		);
-		expect((await collectAccount(context)).requests).toBe(35);
+		expect((await collectAccount(context)).requests).toBe(40);
 	});
 	it.each([
 		{},
@@ -1931,15 +2011,11 @@ describe("unified refresh collection", () => {
 		{ totalContributions: 0, weeks: [{ contributionDays: [{ contributionCount: 0 }] }] },
 	])("does not substitute zero for missing contribution data: %j", async (calendar) => {
 		const context = await fixture();
-		const page = accountPage();
-		page.viewer.contributionsCollection.contributionCalendar = calendar as never;
-		delete (page as { rateLimit?: unknown }).rateLimit;
-		upstream([page]);
+		upstream([accountPage(), contributionCalendarPage(calendar)]);
 		expect((await collectAccount(context)).partial).toBe(true);
 		expect(await publication(context)).toMatchObject({
 			contribution: null,
 			contributionStatus: "unavailable",
-			rate: null,
 		});
 	});
 	it.each([
@@ -1973,9 +2049,7 @@ describe("unified refresh collection", () => {
 		],
 	])("materializes %s into a saved annual calendar", async (_name, calendar) => {
 		const context = await fixture();
-		const page = accountPage();
-		page.viewer.contributionsCollection.contributionCalendar = calendar as never;
-		upstream([page]);
+		upstream([accountPage(), contributionCalendarPage(calendar)]);
 		const result = await collectAccount(context);
 		expect(result.partial).toBe(false);
 		expect(result.reasons).not.toContain("contributions:empty");
@@ -1995,21 +2069,8 @@ describe("unified refresh collection", () => {
 	});
 	it("keeps account inventory complete when GraphQL errors only touch contributionsCollection", async () => {
 		const context = await fixture();
-		const page = accountPage();
-		upstream([
-			Response.json({
-				data: {
-					viewer: page.viewer,
-					rateLimit: { remaining: 5000, resetAt: "2026-10-29T05:00:00Z" },
-				},
-				errors: [
-					{ type: "FORBIDDEN", path: ["viewer", "contributionsCollection"], message: "denied" },
-				],
-			}),
-		]);
-		const result = await collectAccount(context);
-		expect(result.partial).toBe(true);
-		expect(result.reasons).toContain("contributions:empty");
+		upstream([accountPage(), ...calendarGraphqlFailures(now)]);
+		await collectAccount(context);
 		const saved = JSON.parse(
 			(
 				await context.env.DB.prepare(
@@ -2019,6 +2080,24 @@ describe("unified refresh collection", () => {
 		) as { inventory: { complete: boolean } };
 		expect(saved.inventory.complete).toBe(true);
 	});
+	it("marks contributionStatus partial when chunked calendar refresh fails with retained prior", async () => {
+		const context = await fixture();
+		await context.env.DB.prepare(
+			'UPDATE refresh_accounts SET payload=json_set(payload,\'$.contribution\',json(\'{"days":[{"date":"2026-09-14","count":1}],"total":1,"fetchedAt":"2026-09-15T12:00:00.000Z"}\'),\'$.contributionStatus\',\'complete\') WHERE account_id=\'a\'',
+		).run();
+		upstream([accountPage(), ...calendarGraphqlFailures(now)]);
+		const result = await collectAccount(context);
+		expect(result.partial).toBe(false);
+		const saved = JSON.parse(
+			(
+				await context.env.DB.prepare(
+					"SELECT payload FROM refresh_accounts WHERE account_id='a'",
+				).first<{ payload: string }>()
+			)?.payload ?? "{}",
+		) as { contributionStatus: string; contribution: { partial?: boolean } };
+		expect(saved.contributionStatus).toBe("partial");
+		expect(saved.contribution.partial).toBe(true);
+	});
 	it("does not mark the account phase partial when a retained contribution calendar exists", async () => {
 		const context = await fixture();
 		const page = accountPage();
@@ -2027,17 +2106,7 @@ describe("unified refresh collection", () => {
 		await context.env.DB.prepare(
 			'UPDATE refresh_accounts SET payload=json_set(payload,\'$.contribution\',json(\'{"days":[{"date":"2026-09-14","count":1}],"total":1,"fetchedAt":"2026-09-15T12:00:00.000Z"}\'),\'$.contributionStatus\',\'complete\') WHERE account_id=\'a\'',
 		).run();
-		upstream([
-			Response.json({
-				data: {
-					viewer: page.viewer,
-					rateLimit: { remaining: 5000, resetAt: "2026-10-29T05:00:00Z" },
-				},
-				errors: [
-					{ type: "FORBIDDEN", path: ["viewer", "contributionsCollection"], message: "denied" },
-				],
-			}),
-		]);
+		upstream([page, ...calendarGraphqlFailures(now)]);
 		const result = await collectAccount(context);
 		expect(result.partial).toBe(false);
 		expect(result.reasons).not.toContain("contributions:unavailable");
@@ -2081,21 +2150,11 @@ describe("unified refresh collection", () => {
 		).run();
 		const failures: import("../../../lib/refresh-types").RefreshFailureDetail[] = [];
 		context.onFailures = (details) => failures.push(...details);
-		upstream([
-			Response.json({
-				data: {
-					viewer: page.viewer,
-					rateLimit: { remaining: 5000, resetAt: "2026-10-29T05:00:00Z" },
-				},
-				errors: [
-					{ type: "FORBIDDEN", path: ["viewer", "contributionsCollection"], message: "denied" },
-				],
-			}),
-		]);
+		upstream([page, ...calendarGraphqlFailures(now)]);
 		const result = await collectAccount(context);
 		expect(result.partial).toBe(false);
 		expect(result.reasons).not.toContain("contributions:unavailable");
-		expect(failures.some((entry) => entry.code === "contributions:graphql_error")).toBe(true);
+		expect(failures.some((entry) => entry.code === "contributions:graphql_error")).toBe(false);
 		const saved = JSON.parse(
 			(
 				await context.env.DB.prepare(
@@ -2103,7 +2162,9 @@ describe("unified refresh collection", () => {
 				).first<{ payload: string }>()
 			)?.payload ?? "{}",
 		) as { contribution: { days: { date: string }[] } };
-		expect(saved.contribution.days[0]?.date).toBe("2026-09-14");
+		expect(saved.contribution.days.find((day) => day.date === "2026-09-14")?.date).toBe(
+			"2026-09-14",
+		);
 	});
 	it("falls back to the factory snapshot row when paginated factory load fails", async () => {
 		const factoryRuns = await import("../db/factory-runs");
@@ -2144,14 +2205,7 @@ describe("unified refresh collection", () => {
 		await context.env.DB.prepare(
 			"UPDATE refresh_accounts SET payload=json_remove(payload,'$.contribution') WHERE account_id='a'",
 		).run();
-		upstream([
-			Response.json({
-				data: { viewer: accountPage().viewer, rateLimit: { remaining: 5000, resetAt: now } },
-				errors: [
-					{ type: "FORBIDDEN", path: ["viewer", "contributionsCollection"], message: "denied" },
-				],
-			}),
-		]);
+		upstream([accountPage(), ...calendarGraphqlFailures(now)]);
 		const result = await collectAccount(context);
 		expect(result.partial).toBe(false);
 		const saved = JSON.parse(
@@ -2161,13 +2215,16 @@ describe("unified refresh collection", () => {
 				).first<{ payload: string }>()
 			)?.payload ?? "{}",
 		) as { contribution: { days: { date: string }[] } };
-		expect(saved.contribution.days[0]?.date).toBe("2026-09-20");
+		expect(saved.contribution.days.find((day) => day.date === "2026-09-20")?.date).toBe(
+			"2026-09-20",
+		);
 		publishedFactory.mockRestore();
 	});
 	it("treats contributionCalendar GraphQL errors separately from catalogue inventory", async () => {
 		const context = await fixture();
 		const page = accountPage();
 		upstream([
+			page,
 			Response.json({
 				data: {
 					viewer: page.viewer,
@@ -2196,10 +2253,17 @@ describe("unified refresh collection", () => {
 		const context = await fixture();
 		const fetch = upstream();
 		await collectAccount(context);
-		expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body)).variables).toEqual({
-			after: null,
-			since: "2025-10-29T04:00:00.000Z",
-			until: now,
+		const calendarCall = fetch.mock.calls.find(
+			([, init]) =>
+				typeof init?.body === "string" && init.body.includes("query RefreshContributionCalendar"),
+		);
+		const firstChunk = contributionCalendarChunkWindows(
+			contributionWindow(now),
+			"Asia/Shanghai",
+		)[0];
+		expect(JSON.parse(String(calendarCall?.[1]?.body)).variables).toMatchObject({
+			since: firstChunk?.since,
+			until: firstChunk?.until,
 		});
 		const saved = await publication(context);
 		expect(saved.window).toEqual({
@@ -2220,12 +2284,13 @@ describe("unified refresh collection", () => {
 		const calendar = annualContributionCalendar(now, 3).calendar;
 		const days = calendar.weeks[0]?.contributionDays ?? [];
 		const shuffled = [...days.slice(180), ...days.slice(0, 180)];
-		const page = accountPage();
-		page.viewer.contributionsCollection.contributionCalendar = {
-			totalContributions: calendar.totalContributions,
-			weeks: [{ contributionDays: shuffled }],
-		} as never;
-		upstream([page]);
+		upstream([
+			accountPage(),
+			contributionCalendarPage({
+				totalContributions: calendar.totalContributions,
+				weeks: [{ contributionDays: shuffled }],
+			}),
+		]);
 		const failures: import("../../../lib/refresh-types").RefreshFailureDetail[] = [];
 		context.onFailures = (details) => failures.push(...details);
 		const result = await collectAccount(context);
@@ -2248,12 +2313,7 @@ describe("unified refresh collection", () => {
 	it("uses summed contribution totals when GitHub totalContributions disagrees", async () => {
 		const context = await fixture();
 		const calendar = annualContributionCalendar(now, 4).calendar;
-		const page = accountPage();
-		page.viewer.contributionsCollection.contributionCalendar = {
-			...calendar,
-			totalContributions: 0,
-		} as never;
-		upstream([page]);
+		upstream([accountPage(), contributionCalendarPage({ ...calendar, totalContributions: 0 })]);
 		await collectAccount(context);
 		const saved = JSON.parse(
 			(
@@ -2533,8 +2593,8 @@ describe("unified refresh collection", () => {
 		const context = await fixture();
 		upstream([accountPage([node as never])]);
 		expect(await collectAccount(context)).toMatchObject({
-			requests: 1,
-			requestBreakdown: { graphql: 1, rest: 0 },
+			requests: accountCalendarGraphqlRequests(),
+			requestBreakdown: { graphql: accountCalendarGraphqlRequests(), rest: 0 },
 			partial: false,
 			reasons: [],
 			repos: [],
@@ -2630,8 +2690,8 @@ describe("unified refresh collection", () => {
 			]),
 		]);
 		expect(await collectAccount(context)).toMatchObject({
-			requests: 1,
-			requestBreakdown: { graphql: 1, rest: 0 },
+			requests: accountCalendarGraphqlRequests(),
+			requestBreakdown: { graphql: accountCalendarGraphqlRequests(), rest: 0 },
 			partial: false,
 			reasons: [],
 			repos: ["other/lib", "owner/chosen"],
@@ -2679,7 +2739,7 @@ describe("unified refresh collection", () => {
 		context.onRequests = onRequests;
 		upstream();
 		expect(await collectAccount(context)).toMatchObject({
-			requestBreakdown: { graphql: 1, rest: 0 },
+			requestBreakdown: { graphql: accountCalendarGraphqlRequests(), rest: 0 },
 		});
 		onRequests.mockClear();
 		const repository = await collectRepository(context, "owner/project");

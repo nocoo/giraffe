@@ -9,6 +9,12 @@ const inDay = (value: string | null | undefined, since: string, until: string) =
 	Date.parse(value) >= Date.parse(since) &&
 	Date.parse(value) < Date.parse(until);
 
+function dayActionItems(items: FactoryEvent[], since: string, until: string) {
+	return items.filter((item) =>
+		[item.at, item.createdAt, item.closedAt, item.mergedAt].some((at) => inDay(at, since, until)),
+	);
+}
+
 const failureConclusions = new Set(["failure", "timed_out", "cancelled", "action_required"]);
 
 const calendarDate = (value: string, timezone: string) =>
@@ -100,10 +106,28 @@ export function accumulateIssuePrMetrics(
 	}
 }
 
-export function canVerifyDefaultBranchCiFailures(actionsRow: DayObservation | undefined): boolean {
+export function canVerifyDefaultBranchCiActions(actionsRow: DayObservation | undefined): boolean {
 	if (actionsRow?.status !== "complete" || actionsDayMissingBranch(actionsRow)) return false;
 	const payload = JSON.parse(actionsRow.payload) as { items?: unknown };
 	return Array.isArray(payload.items) && payload.items.length > 0;
+}
+
+/** @deprecated Use {@link canVerifyDefaultBranchCiActions}. */
+export const canVerifyDefaultBranchCiFailures = canVerifyDefaultBranchCiActions;
+
+export function recomputeDefaultBranchCiFromActionsRow(
+	bounds: RefreshDay,
+	actionsRow: DayObservation | undefined,
+	defaultBranch: string | null,
+): Pick<FactoryDay, "ciSuccess" | "ciFailure"> {
+	const empty = { ciSuccess: 0, ciFailure: 0 };
+	if (!actionsRow || !canVerifyDefaultBranchCiActions(actionsRow)) return empty;
+	const payload = JSON.parse(actionsRow.payload) as { items?: FactoryEvent[] };
+	const items = Array.isArray(payload.items) ? payload.items : [];
+	const scoped = dayActionItems(items, bounds.since, bounds.until);
+	const metrics = blankDay();
+	accumulateActionMetrics(metrics, scoped, defaultBranch);
+	return { ciSuccess: metrics.ciSuccess, ciFailure: metrics.ciFailure };
 }
 
 export function metricsFromStoredDayObservations(
@@ -125,7 +149,12 @@ export function metricsFromStoredDayObservations(
 			continue;
 		}
 		const items = Array.isArray(value.items) ? value.items : [];
-		if (dimension === "actions") accumulateActionMetrics(metrics, items, defaultBranch);
+		if (dimension === "actions") {
+			const ci = recomputeDefaultBranchCiFromActionsRow(day, row, defaultBranch);
+			metrics.ciSuccess = ci.ciSuccess;
+			metrics.ciFailure = ci.ciFailure;
+			continue;
+		}
 		if (dimension === "issues")
 			accumulateIssuePrMetrics(metrics, "issues", items, [], day, timezone);
 		if (dimension === "prs") accumulateIssuePrMetrics(metrics, "prs", items, [], day, timezone);
@@ -154,7 +183,11 @@ export function seedOutsideWindowMetrics(
 		if (hasComplete) {
 			const merged = { ...fromCache };
 			const priorDay = priorDays?.[day.date];
-			if (!canVerifyDefaultBranchCiFailures(actionsRow) && priorDay) {
+			if (canVerifyDefaultBranchCiActions(actionsRow)) {
+				const ci = recomputeDefaultBranchCiFromActionsRow(bounds, actionsRow, defaultBranch);
+				merged.ciSuccess = ci.ciSuccess;
+				merged.ciFailure = ci.ciFailure;
+			} else if (priorDay) {
 				merged.ciSuccess = priorDay.ciSuccess;
 				merged.ciFailure = priorDay.ciFailure;
 			}

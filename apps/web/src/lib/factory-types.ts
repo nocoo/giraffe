@@ -206,7 +206,7 @@ export type FactorySnapshot = {
 		typeWindowTimezone?: "UTC";
 		typesStatus?: "pending" | "complete" | "partial";
 	} | null;
-	contributionStatus: "pending" | "complete" | "unavailable";
+	contributionStatus: "pending" | "complete" | "partial" | "unavailable";
 };
 
 export type FactorySelectedRepo = {
