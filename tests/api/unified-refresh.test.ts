@@ -210,9 +210,9 @@ it("runs real durable A then serial B, serves latest observations and reuses day
 		expect(cached.requests).toBe(1);
 		const forced = await run({ repo: "phase2/demo", force: true });
 		expect(forced.aReused).toBe(false);
-		expect(forced.requests).toBe(5);
+		expect(forced.requests).toBe(accountGraphqlRequests() + 4);
 		expect(forced.requestBreakdown).toMatchObject({
-			a: { graphql: 1, rest: 0 },
+			a: { graphql: accountGraphqlRequests(), rest: 0 },
 			b: { graphql: 1, rest: 3 },
 		});
 		const cacheWindow = {
