@@ -19,6 +19,14 @@ type GraphqlRequest = <Result>(
 
 type ContributionDay = NonNullable<FactorySnapshot["contribution"]>["days"][number];
 
+export type ContributionChunkFailure = {
+	code:
+		| "contributions:chunk_empty"
+		| "contributions:chunk_github_error"
+		| "contributions:chunk_truncated";
+	chunk: RefreshCalendarWindow;
+};
+
 const parseCalendarDays = (data: unknown) => {
 	const contributions = object(
 		object(object(object(data).viewer).contributionsCollection).contributionCalendar,
@@ -37,6 +45,11 @@ const parseCalendarDays = (data: unknown) => {
 	};
 };
 
+const dedupeObserved = (fetched: Array<{ date: string; count: number }>) =>
+	[...new Map(fetched.map((day) => [day.date, day])).values()].sort((left, right) =>
+		left.date.localeCompare(right.date),
+	);
+
 export async function collectContributionCalendar(
 	context: CollectionContext,
 	calendarWindow: RefreshCalendarWindow,
@@ -48,11 +61,14 @@ export async function collectContributionCalendar(
 	partial: boolean;
 	failedRanges: RefreshCalendarWindow[];
 	restricted: number | null;
+	retainPrior: boolean;
+	chunkFailures: ContributionChunkFailure[];
 }> {
 	const timezone = context.run.params.timezone;
 	const chunks = contributionCalendarChunkWindows(calendarWindow, timezone);
 	const fetched: Array<{ date: string; count: number }> = [];
 	const failedRanges: RefreshCalendarWindow[] = [];
+	const chunkFailures: ContributionChunkFailure[] = [];
 	let restricted: number | null = null;
 	for (const chunk of chunks) {
 		try {
@@ -66,7 +82,64 @@ export async function collectContributionCalendar(
 			);
 			const parsed = parseCalendarDays(data);
 			restricted = parsed.restricted ?? restricted;
+			if (parsed.days.length === 0) {
+				failedRanges.push(chunk);
+				chunkFailures.push({ code: "contributions:chunk_empty", chunk });
+				continue;
+			}
 			fetched.push(...parsed.days);
+		} catch (error) {
+			if (error instanceof TruncatedError) {
+				failedRanges.push(chunk);
+				chunkFailures.push({ code: "contributions:chunk_truncated", chunk });
+				continue;
+			}
+			if (error instanceof ApiError && error.code === "github_error") {
+				failedRanges.push(chunk);
+				chunkFailures.push({ code: "contributions:chunk_github_error", chunk });
+				continue;
+			}
+			throw error;
+		}
+	}
+	let rawObserved = dedupeObserved(fetched);
+	const allChunksFailed = chunks.length > 0 && failedRanges.length === chunks.length;
+	if (rawObserved.length === 0 && priorDays?.length && allChunksFailed) {
+		return {
+			rawObserved: [],
+			materializedDays: [],
+			partial: true,
+			failedRanges,
+			restricted,
+			retainPrior: true,
+			chunkFailures,
+		};
+	}
+	if (rawObserved.length === 0) {
+		try {
+			const data = await request(
+				(github) =>
+					github.githubGraphql(context.token, contributionCalendarQuery, {
+						since: calendarWindow.since,
+						until: calendarWindow.until,
+					}),
+				"contributions",
+			);
+			const parsed = parseCalendarDays(data);
+			restricted = parsed.restricted ?? restricted;
+			if (parsed.days.length > 0) {
+				rawObserved = dedupeObserved(parsed.days);
+				return {
+					rawObserved,
+					materializedDays:
+						materializeContributionDays(context.now, calendarWindow, rawObserved) ?? [],
+					partial: true,
+					failedRanges,
+					restricted,
+					retainPrior: false,
+					chunkFailures,
+				};
+			}
 		} catch (error) {
 			if (
 				!(
@@ -75,12 +148,28 @@ export async function collectContributionCalendar(
 				)
 			)
 				throw error;
-			failedRanges.push(chunk);
 		}
+		if (priorDays?.length) {
+			return {
+				rawObserved: [],
+				materializedDays: [],
+				partial: true,
+				failedRanges,
+				restricted,
+				retainPrior: true,
+				chunkFailures,
+			};
+		}
+		return {
+			rawObserved: [],
+			materializedDays: [],
+			partial: true,
+			failedRanges: allChunksFailed ? failedRanges : failedRanges,
+			restricted,
+			retainPrior: false,
+			chunkFailures,
+		};
 	}
-	const rawObserved = [...new Map(fetched.map((day) => [day.date, day])).values()].sort(
-		(left, right) => left.date.localeCompare(right.date),
-	);
 	const materializedDays = failedRanges.length
 		? mergeChunkedContributionDays(
 				calendarWindow,
@@ -96,5 +185,7 @@ export async function collectContributionCalendar(
 		partial: failedRanges.length > 0,
 		failedRanges,
 		restricted,
+		retainPrior: false,
+		chunkFailures,
 	};
 }

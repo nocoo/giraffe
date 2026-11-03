@@ -118,6 +118,7 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 		priorCalendarDays,
 		request,
 	);
+	const retainPriorUnchanged = calendarFetch.retainPrior && Boolean(retainedContribution);
 	const rawObserved = calendarFetch.rawObserved;
 	const materializedDays = calendarFetch.materializedDays;
 	const summedTotal = materializedDays.reduce((sum, day) => sum + day.count, 0);
@@ -129,10 +130,13 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 		total: contributionTotal,
 	});
 	const contributionComplete =
-		contributionCoverage.complete && materializedDays.length > 0 && !calendarFetch.partial;
-	const hasMaterializedCalendar = materializedDays.length > 0;
+		!retainPriorUnchanged &&
+		contributionCoverage.complete &&
+		materializedDays.length > 0 &&
+		!calendarFetch.partial;
+	const hasMaterializedCalendar = !retainPriorUnchanged && materializedDays.length > 0;
 	const freshContribution =
-		hasMaterializedCalendar && contributionTotal !== null
+		hasMaterializedCalendar && rawObserved.length > 0 && contributionTotal !== null
 			? {
 					days: materializedDays,
 					total: Number(contributionTotal),
@@ -145,7 +149,7 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 					failedRanges: calendarFetch.failedRanges,
 				}
 			: null;
-	const hasFreshCalendar = freshContribution !== null;
+	const hasFreshCalendar = !calendarFetch.retainPrior && freshContribution !== null;
 	const contributionRetained =
 		Boolean(freshContribution) || Boolean(retainedContribution?.days?.length);
 	const contributionGraphqlErrors = client.graphqlErrors.filter((error) =>
@@ -158,6 +162,15 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 		total: contributionTotal,
 	});
 	const contributionDiagnostics: RefreshFailureDetail[] = [];
+	for (const failure of calendarFetch.chunkFailures) {
+		contributionDiagnostics.push({
+			dimension: null,
+			code: failure.code,
+			httpStatus: null,
+			graphqlType: `${failure.chunk.since}..${failure.chunk.until}`,
+			graphqlPath: null,
+		});
+	}
 	if (contributionGraphqlErrors.length > 0) {
 		contributionDiagnostics.push(
 			...contributionGraphqlErrors.map((error) => ({
@@ -168,7 +181,7 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 				graphqlPath: Array.isArray(error.path) ? error.path.map(String) : null,
 			})),
 		);
-	} else if (rawObserved.length === 0) {
+	} else if (rawObserved.length === 0 && !retainPriorUnchanged) {
 		contributionDiagnostics.push({
 			dimension: null,
 			code: "contributions:empty",
@@ -218,19 +231,25 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 						resource: "graphql",
 						observedAt: context.now,
 					},
-		contribution: hasFreshCalendar ? freshContribution : (retainedContribution ?? null),
-		contributionStatus: contributionStatusFromMaterializedCalendar(
-			(hasFreshCalendar ? materializedDays : retainedContribution?.days) ?? [],
-			hasFreshCalendar
-				? contributionComplete
-				: annualCalendarCoverage({
-						fetchedAt: context.now,
-						window: calendarWindow,
-						days: retainedContribution?.days ?? [],
-						total: retainedContribution?.total ?? null,
-					}).complete,
-			hasFreshCalendar ? calendarFetch.partial : false,
-		),
+		contribution: retainPriorUnchanged
+			? (retainedContribution ?? null)
+			: hasFreshCalendar
+				? freshContribution
+				: (retainedContribution ?? null),
+		contributionStatus: retainPriorUnchanged
+			? "partial"
+			: contributionStatusFromMaterializedCalendar(
+					(hasFreshCalendar ? materializedDays : retainedContribution?.days) ?? [],
+					hasFreshCalendar
+						? contributionComplete
+						: annualCalendarCoverage({
+								fetchedAt: context.now,
+								window: calendarWindow,
+								days: retainedContribution?.days ?? [],
+								total: retainedContribution?.total ?? null,
+							}).complete,
+					hasFreshCalendar ? calendarFetch.partial : true,
+				),
 		contributionObservation: contributionComplete
 			? {
 					version: context.run.id,
@@ -302,11 +321,11 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 	});
 	const saved = (await catalog(db, context.account.id)).results;
 	const requestedRepo = context.run.params.repo;
-	const contributionReasons = contributionRetained
-		? []
-		: rawObserved.length === 0
+	const contributionReasons = !contributionRetained
+		? rawObserved.length === 0
 			? ["contributions:empty"]
-			: [contributionFailureCode(contributionCoverage)];
+			: [contributionFailureCode(contributionCoverage)]
+		: [];
 	const reasons = [...(complete ? [] : ["catalog:incomplete"]), ...contributionReasons];
 	if (requestedRepo) {
 		const requested = saved.find((repo) => repo.repo.toLowerCase() === requestedRepo.toLowerCase());

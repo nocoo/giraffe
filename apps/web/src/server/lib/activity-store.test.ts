@@ -36,6 +36,19 @@ it("projects newly refreshed repository lifecycle events without pretending dail
 				prs: { status: "complete" },
 			},
 		});
+		const factory = JSON.parse(
+			(
+				await raw
+					.prepare("SELECT payload FROM refresh_snapshots WHERE kind='factory'")
+					.first<{ payload: string }>()
+			)?.payload ?? "{}",
+		) as FactorySnapshot;
+		if (factory.contribution?.days?.length) {
+			expect(activity.contributions?.days.length).toBeGreaterThan(0);
+			expect(activity.coverage.contributions?.reason).not.toBe(
+				"native_calendar_has_no_activity_attribution",
+			);
+		}
 		expect(network).not.toHaveBeenCalled();
 		expect(
 			await raw.prepare("SELECT * FROM refresh_resources ORDER BY repo_id,stream").all(),
