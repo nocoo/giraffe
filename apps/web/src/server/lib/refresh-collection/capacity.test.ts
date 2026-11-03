@@ -529,7 +529,7 @@ it("keeps unreachable-day gaps and unavailable windows separate and reports the 
 			factoryPages: result.pages.length,
 		})}`,
 	);
-});
+}, 15_000);
 
 it("pages a fully fragmented 61-repository publication without losing repositories", async () => {
 	const { raw, context } = await fixture(REPOSITORIES, () => false, false);

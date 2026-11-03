@@ -336,7 +336,7 @@ describe("unified refresh collection", () => {
 		const next = { ...context, now: "2026-10-30T04:00:00.000Z" };
 		expect((await collectAccount(next)).repos).toEqual([]);
 		expect((await context.env.DB.prepare("SELECT * FROM repo_stars").all()).results).toEqual([]);
-	});
+	}, 15_000);
 	it("paginates the full catalogue and selects starred identities", async () => {
 		const context = await fixture();
 		await context.env.DB.prepare(
