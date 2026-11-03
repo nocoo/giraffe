@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.28.20 - 2026-11-03
+
+### Fixed
+
+- Chunked contribution calendar no longer publishes **synthetic zero** counts for unobserved days
+  (including the rolling tip day) when chunks fail or return empty weeks; an all-failed refresh
+  retains the prior calendar unchanged and records per-chunk diagnostics.
+- Empty `contributionCalendar` chunk responses are treated as chunk failures; optional full-window
+  fallback materializes when chunks fail but a single query succeeds.
+- `/activity` now projects **contributions** and coverage from the materialized factory calendar
+  instead of always reporting `native_calendar_has_no_activity_attribution`.
+
 ## v0.28.19 - 2026-11-02
 
 ### Fixed

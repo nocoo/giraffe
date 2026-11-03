@@ -40,7 +40,7 @@ export const calendarGraphqlFailure = () =>
 
 export const calendarGraphqlFailures = (
 	at: string,
-	count = contributionCalendarChunkWindows(contributionWindow(at), "Asia/Shanghai").length,
+	count = contributionCalendarChunkWindows(contributionWindow(at), "Asia/Shanghai").length + 1,
 ) => Array.from({ length: count }, () => calendarGraphqlFailure());
 
 type RefreshUpstreamOptions = {

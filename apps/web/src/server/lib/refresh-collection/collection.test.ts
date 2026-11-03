@@ -2069,7 +2069,7 @@ describe("unified refresh collection", () => {
 	});
 	it("keeps account inventory complete when GraphQL errors only touch contributionsCollection", async () => {
 		const context = await fixture();
-		upstream([accountPage(), ...calendarGraphqlFailures(now)]);
+		upstream([accountPage(), ...calendarGraphqlFailures(now, 40)]);
 		await collectAccount(context);
 		const saved = JSON.parse(
 			(
@@ -2082,10 +2082,12 @@ describe("unified refresh collection", () => {
 	});
 	it("marks contributionStatus partial when chunked calendar refresh fails with retained prior", async () => {
 		const context = await fixture();
+		upstream([accountPage()]);
+		await collectAccount(context);
 		await context.env.DB.prepare(
 			'UPDATE refresh_accounts SET payload=json_set(payload,\'$.contribution\',json(\'{"days":[{"date":"2026-09-14","count":1}],"total":1,"fetchedAt":"2026-09-15T12:00:00.000Z"}\'),\'$.contributionStatus\',\'complete\') WHERE account_id=\'a\'',
 		).run();
-		upstream([accountPage(), ...calendarGraphqlFailures(now)]);
+		upstream([accountPage(), ...calendarGraphqlFailures(now, 40)]);
 		const result = await collectAccount(context);
 		expect(result.partial).toBe(false);
 		const saved = JSON.parse(
@@ -2094,9 +2096,13 @@ describe("unified refresh collection", () => {
 					"SELECT payload FROM refresh_accounts WHERE account_id='a'",
 				).first<{ payload: string }>()
 			)?.payload ?? "{}",
-		) as { contributionStatus: string; contribution: { partial?: boolean } };
+		) as {
+			contributionStatus: string;
+			contribution: { days: { date: string; count: number }[]; fetchedAt: string };
+		};
 		expect(saved.contributionStatus).toBe("partial");
-		expect(saved.contribution.partial).toBe(true);
+		expect(saved.contribution.days).toEqual([{ date: "2026-09-14", count: 1 }]);
+		expect(saved.contribution.fetchedAt).toBe("2026-09-15T12:00:00.000Z");
 	});
 	it("does not mark the account phase partial when a retained contribution calendar exists", async () => {
 		const context = await fixture();
@@ -2205,7 +2211,7 @@ describe("unified refresh collection", () => {
 		await context.env.DB.prepare(
 			"UPDATE refresh_accounts SET payload=json_remove(payload,'$.contribution') WHERE account_id='a'",
 		).run();
-		upstream([accountPage(), ...calendarGraphqlFailures(now)]);
+		upstream([accountPage(), ...calendarGraphqlFailures(now, 40)]);
 		const result = await collectAccount(context);
 		expect(result.partial).toBe(false);
 		const saved = JSON.parse(

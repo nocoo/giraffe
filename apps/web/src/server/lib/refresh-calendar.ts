@@ -184,25 +184,40 @@ export function mergeChunkedContributionDays(
 	const priorByDate = new Map((priorDays ?? []).map((day) => [day.date, day.count]));
 	const fetchedByDate = new Map(chunkDays.map((day) => [day.date, day.count]));
 	const failedDates = contributionChunkFailedDates(window, failedRanges);
-	const days = expected.map((date) => {
-		if (failedDates.has(date) && priorByDate.has(date)) {
-			return {
+	const days: ContributionDay[] = [];
+	for (const date of expected) {
+		if (failedDates.has(date)) {
+			const prior = priorByDate.get(date);
+			if (prior === undefined) continue;
+			days.push({
 				date,
-				count: priorByDate.get(date) ?? 0,
+				count: prior,
 				fetchedAt,
 				observedAt: fetchedAt,
-				breakdown: "unavailable" as const,
-			};
+				breakdown: "unavailable",
+			});
+			continue;
 		}
-		const count = fetchedByDate.get(date) ?? priorByDate.get(date) ?? 0;
-		return {
+		if (fetchedByDate.has(date)) {
+			days.push({
+				date,
+				count: fetchedByDate.get(date) ?? 0,
+				fetchedAt,
+				observedAt: fetchedAt,
+				breakdown: "unavailable",
+			});
+			continue;
+		}
+		const prior = priorByDate.get(date);
+		if (prior === undefined) continue;
+		days.push({
 			date,
-			count,
+			count: prior,
 			fetchedAt,
 			observedAt: fetchedAt,
-			breakdown: "unavailable" as const,
-		};
-	});
+			breakdown: "unavailable",
+		});
+	}
 	return { days, partial: failedRanges.length > 0, failedRanges };
 }
 

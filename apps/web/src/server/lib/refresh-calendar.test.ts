@@ -296,6 +296,24 @@ describe("mergeChunkedContributionDays", () => {
 		expect(merged.partial).toBe(true);
 		expect(merged.days.find((day) => day.date === failedDate)?.count).toBe(531);
 	});
+
+	it("omits failed dates without prior instead of publishing synthetic zero", () => {
+		const window = contributionWindow(anchor);
+		const dates = datesInContributionWindow(window);
+		const tip = dates.at(-1);
+		if (!tip) throw new Error("expected tip date");
+		const failed = contributionCalendarChunkWindows(window, "Asia/Shanghai").at(-1);
+		if (!failed) throw new Error("expected tip chunk");
+		const merged = mergeChunkedContributionDays(
+			window,
+			anchor,
+			[{ date: dates[0] ?? tip, count: 42 }],
+			[],
+			[failed],
+		);
+		expect(merged.days.some((day) => day.date === tip)).toBe(false);
+		expect(merged.days.find((day) => day.date === dates[0])?.count).toBe(42);
+	});
 });
 
 describe("contributionFailureCode", () => {

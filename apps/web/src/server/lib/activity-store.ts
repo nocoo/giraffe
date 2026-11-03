@@ -1,7 +1,10 @@
 import { z } from "zod";
 import type { ActivitySnapshot } from "../../lib/activity-types";
 import type { FactorySnapshot, FactoryStreamData } from "../../lib/factory-types";
-import { unknownActivity } from "./activity";
+import {
+	activityContributionsCoverage,
+	projectActivityContributions,
+} from "./activity-contributions";
 import { type ActivityInputs, projectActivityRepo } from "./activity-projection";
 import { readActivityTotals } from "./activity-totals";
 import type { Db } from "./db/d1";
@@ -43,7 +46,7 @@ export function activityCoverageSummary(publication: FactorySnapshot, truncated:
 			truncated,
 			reason: "owner_commit_attribution_unavailable",
 		},
-		contributions: unknownActivity("native_calendar_has_no_activity_attribution"),
+		contributions: activityContributionsCoverage(publication),
 	};
 }
 
@@ -146,7 +149,7 @@ export async function readActivity(
 		window,
 		membership,
 		repos,
-		contributions: null,
+		contributions: projectActivityContributions(publication),
 		coverage: activityCoverageSummary(publication, truncated),
 		truncated,
 		...readActivityTotals(repos, membership, publication.inventory.complete !== true),
