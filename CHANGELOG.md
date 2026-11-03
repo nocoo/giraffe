@@ -4,9 +4,9 @@
 
 ### Fixed
 
-- Account refresh now loads the contribution calendar **before** catalogue pagination so
-  Shanghai-aligned chunk queries are not dropped by the shared 40-request GitHub budget
-  (catalogue pagination could consume the budget first and leave every chunk failing).
+- Account refresh reserves GitHub request budget for contribution calendar chunks so
+  catalogue pagination cannot exhaust `MAX_FETCHES` first and leave every chunk failing with
+  `contributions:chunk_github_error`.
 - Chunk failure diagnostics record real `httpStatus`, GitHub `errors[].type`, a truncated
   message, and `calendarRange` `{since, until}` instead of stuffing the range into
   `graphqlType`.
