@@ -116,6 +116,8 @@ const failureDetail = (code: string, error: unknown): RefreshFailureDetail => {
 				: null,
 		graphqlType: detail?.graphqlType ?? null,
 		graphqlPath: detail?.graphqlPath ?? null,
+		graphqlMessage: detail?.graphqlMessage ?? null,
+		calendarRange: detail?.calendarRange ?? null,
 	};
 };
 const shanghaiDate = (iso: string) =>

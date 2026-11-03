@@ -121,6 +121,7 @@ it.each(["network", "invalid-json"])(
 			httpStatus: mode === "network" ? null : 200,
 			graphqlType: null,
 			graphqlPath: null,
+			graphqlMessage: "github error",
 		});
 		expect(fetch.mock.calls.filter(([input]) => input.includes("/actions/runs"))).toHaveLength(2);
 	},
@@ -141,6 +142,7 @@ it("keeps the known actions dimension on a terminal REST rate limit", async () =
 		httpStatus: 429,
 		graphqlType: null,
 		graphqlPath: null,
+		graphqlMessage: "github rate limited",
 	});
 	expect(JSON.stringify(transportFailure(failure))).not.toContain("rate limit exceeded");
 });
@@ -158,6 +160,7 @@ it("keeps the known actions dimension on a terminal REST authorization failure",
 		httpStatus: 401,
 		graphqlType: null,
 		graphqlPath: null,
+		graphqlMessage: "github unauthorized",
 	});
 	expect(JSON.stringify(transportFailure(failure))).not.toContain("Bad credentials");
 });
@@ -175,6 +178,7 @@ it("reports terminal REST failures through onFailures before rethrowing", async 
 		httpStatus: 429,
 		graphqlType: null,
 		graphqlPath: null,
+		graphqlMessage: "github rate limited",
 	});
 });
 
@@ -199,6 +203,7 @@ it("attributes dimension failures with safe http status and graphql type", async
 			httpStatus: 500,
 			graphqlType: null,
 			graphqlPath: null,
+			graphqlMessage: "github error",
 		},
 		{
 			dimension: "alerts",
@@ -206,6 +211,7 @@ it("attributes dimension failures with safe http status and graphql type", async
 			httpStatus: 403,
 			graphqlType: null,
 			graphqlPath: null,
+			graphqlMessage: "Dependabot alerts are disabled for this repository",
 		},
 		{
 			dimension: "alerts",
@@ -213,6 +219,7 @@ it("attributes dimension failures with safe http status and graphql type", async
 			httpStatus: 403,
 			graphqlType: null,
 			graphqlPath: null,
+			graphqlMessage: "GitHub token lacks permission to access this resource",
 		},
 	]);
 	expect(JSON.stringify(seen)).not.toContain("upstream secret detail");
@@ -262,6 +269,7 @@ it("attributes partial graphql errors to the affected dimensions", async () => {
 			httpStatus: null,
 			graphqlType: "FORBIDDEN",
 			graphqlPath: ["node", "releases", "nodes", "0", "name"],
+			graphqlMessage: null,
 		},
 	]);
 });
@@ -288,6 +296,7 @@ it("does not attribute a later REST failure to an earlier GraphQL error", async 
 		httpStatus: 500,
 		graphqlType: null,
 		graphqlPath: null,
+		graphqlMessage: "github error",
 	});
 	expect(
 		seen.some((failure) => failure.httpStatus === 500 && failure.dimension === "releases"),
@@ -324,6 +333,7 @@ it("keeps attacker-controlled graphql type and path out of the failure metadata"
 			httpStatus: null,
 			graphqlType: "FORBIDDEN",
 			graphqlPath: ["node", "releases", "@", "0", "name"],
+			graphqlMessage: null,
 		},
 	]);
 	expect(JSON.stringify(seen)).not.toContain("ghp_SuperSecretTokenValue");
@@ -347,6 +357,7 @@ it("replaces unknown graphql error types with a known marker", async () => {
 		httpStatus: 200,
 		graphqlType: "UNKNOWN",
 		graphqlPath: ["node", "@"],
+		graphqlMessage: expect.any(String),
 	});
 	expect(JSON.stringify(transportFailure(failure))).not.toContain("ghp_SuperSecretTokenValue");
 });

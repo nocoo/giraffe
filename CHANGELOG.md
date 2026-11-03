@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.28.21 - 2026-11-03
+
+### Fixed
+
+- Account refresh now loads the contribution calendar **before** catalogue pagination so
+  Shanghai-aligned chunk queries are not dropped by the shared 40-request GitHub budget
+  (catalogue pagination could consume the budget first and leave every chunk failing).
+- Chunk failure diagnostics record real `httpStatus`, GitHub `errors[].type`, a truncated
+  message, and `calendarRange` `{since, until}` instead of stuffing the range into
+  `graphqlType`.
+- Overlapping chunk boundaries dedupe per Shanghai day (prefer fully enclosed days, then
+  the later chunk); successful chunk fetches replace prior synthetic zero tip counts.
+- Outside-window factory days skip sparse rebuilds that would zero populated edge days
+  (`zero_guard_kept` storms on 08-03…); verified action rows still recompute default-branch
+  `ciFailure`/`ciSuccess` even when other dimensions are missing.
+
 ## v0.28.20 - 2026-11-03
 
 ### Fixed

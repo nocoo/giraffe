@@ -177,12 +177,31 @@ export function seedOutsideWindowMetrics(
 		if (windowDayDates.has(day.date)) continue;
 		const bounds = refreshDayBounds(day.date, timezone, current, day);
 		const actionsRow = current.get(`${day.date}:actions`);
-		const fromCache = metricsFromStoredDayObservations(bounds, current, defaultBranch, timezone);
 		const observed = dimensions.map((dimension) => current.get(`${day.date}:${dimension}`));
-		const hasComplete = observed.some((row) => row?.status === "complete");
-		if (hasComplete) {
-			const merged = { ...fromCache };
-			const priorDay = priorDays?.[day.date];
+		const hasAnyObservation = observed.some((row) => row !== undefined);
+		const hasPartial = observed.some((row) => row && row.status !== "complete");
+		if (!hasAnyObservation || hasPartial) {
+			if (priorDays?.[day.date]) repoDays[day.date] = { ...blankDay(), ...priorDays[day.date] };
+			else delete repoDays[day.date];
+			continue;
+		}
+		const priorDay = priorDays?.[day.date];
+		const fromCache = metricsFromStoredDayObservations(bounds, current, defaultBranch, timezone);
+		const merged: FactoryDay = { ...fromCache };
+		if (priorDay) {
+			if (!current.get(`${day.date}:commits`)) merged.commits = priorDay.commits;
+			if (!current.get(`${day.date}:issues`)) {
+				merged.issueOpened = priorDay.issueOpened;
+				merged.issueClosed = priorDay.issueClosed;
+			}
+			if (!current.get(`${day.date}:prs`)) {
+				merged.prOpened = priorDay.prOpened;
+				merged.prMerged = priorDay.prMerged;
+				merged.prClosed = priorDay.prClosed;
+			}
+			if (!current.get(`${day.date}:releases`)) merged.releases = priorDay.releases;
+		}
+		if (actionsRow?.status === "complete") {
 			if (canVerifyDefaultBranchCiActions(actionsRow)) {
 				const ci = recomputeDefaultBranchCiFromActionsRow(bounds, actionsRow, defaultBranch);
 				merged.ciSuccess = ci.ciSuccess;
@@ -191,10 +210,10 @@ export function seedOutsideWindowMetrics(
 				merged.ciSuccess = priorDay.ciSuccess;
 				merged.ciFailure = priorDay.ciFailure;
 			}
-			repoDays[day.date] = merged;
-			continue;
+		} else if (priorDay) {
+			merged.ciSuccess = priorDay.ciSuccess;
+			merged.ciFailure = priorDay.ciFailure;
 		}
-		if (priorDays?.[day.date]) repoDays[day.date] = { ...blankDay(), ...priorDays[day.date] };
-		else delete repoDays[day.date];
+		repoDays[day.date] = merged;
 	}
 }

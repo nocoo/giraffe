@@ -12,6 +12,7 @@ import {
 import { sqliteFixture } from "../../../../../../tests/fixtures/sqlite";
 import { createDb } from "../db/d1";
 import { ApiError } from "../errors";
+import { MAX_FETCHES } from "../github-client";
 import { readContributions } from "../machine-contributions";
 import {
 	readFactoryResource,
@@ -1994,12 +1995,23 @@ describe("unified refresh collection", () => {
 	});
 	it("caps pathological catalogue pagination below the GitHub request budget", async () => {
 		const context = await fixture();
-		upstream(
+		const chunks = contributionCalendarChunkWindows(
+			contributionWindow(now),
+			"Asia/Shanghai",
+		).length;
+		const fetch = upstream(
 			Array.from({ length: 35 }, (_, index) =>
 				accountPage([repo(`R_${index}`, `owner/repo${index}`)], true, String(index)),
 			),
 		);
-		expect((await collectAccount(context)).requests).toBe(40);
+		await collectAccount(context);
+		expect(fetch.mock.calls.filter(([url]) => String(url).endsWith("/graphql"))).toHaveLength(
+			Math.min(35, MAX_FETCHES - chunks - 1) + chunks,
+		);
+		const calendarBodies = fetch.mock.calls
+			.slice(-chunks)
+			.map(([, init]) => String(init?.body ?? ""));
+		expect(calendarBodies.every((body) => body.includes("RefreshContributionCalendar"))).toBe(true);
 	});
 	it.each([
 		{},

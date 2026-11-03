@@ -1,10 +1,50 @@
 import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "./errors";
+import { createGithubClient } from "./github-client";
 import { contributionCalendarChunkWindows, contributionWindow } from "./refresh-calendar";
+import { transport } from "./refresh-collection/transport";
 import type { CollectionContext } from "./refresh-collection-contract";
-import { collectContributionCalendar } from "./refresh-contribution-calendar";
+import {
+	collectContributionCalendar,
+	dedupeChunkContributionDays,
+} from "./refresh-contribution-calendar";
 
 const now = "2026-10-29T04:00:00.000Z";
+
+describe("dedupeChunkContributionDays", () => {
+	it("prefers the later chunk when Shanghai overlap days appear in adjacent chunks", () => {
+		const chunks = [
+			{ since: "2026-10-04T16:00:00.000Z", until: "2026-11-01T16:00:00.000Z" },
+			{ since: "2026-11-01T16:00:00.000Z", until: "2026-11-28T16:00:00.000Z" },
+		];
+		const deduped = dedupeChunkContributionDays(chunks, "Asia/Shanghai", [
+			{ date: "2026-11-01", count: 100, chunkIndex: 0 },
+			{ date: "2026-11-01", count: 174, chunkIndex: 1 },
+		]);
+		expect(deduped).toEqual([{ date: "2026-11-01", count: 174 }]);
+	});
+
+	it("prefers the chunk where the Shanghai day is fully inside when the later chunk only overlaps the boundary", () => {
+		const chunks = [
+			{ since: "2026-10-04T16:00:00.000Z", until: "2026-11-01T16:00:00.000Z" },
+			{ since: "2026-11-01T16:00:00.000Z", until: "2026-11-28T16:00:00.000Z" },
+		];
+		const deduped = dedupeChunkContributionDays(chunks, "Asia/Shanghai", [
+			{ date: "2026-11-01", count: 174, chunkIndex: 1 },
+			{ date: "2026-11-01", count: 100, chunkIndex: 0 },
+		]);
+		expect(deduped).toEqual([{ date: "2026-11-01", count: 100 }]);
+	});
+
+	it("ignores entries whose chunk index is out of range", () => {
+		const chunks = [{ since: "2026-10-04T16:00:00.000Z", until: "2026-11-01T16:00:00.000Z" }];
+		expect(
+			dedupeChunkContributionDays(chunks, "Asia/Shanghai", [
+				{ date: "2026-10-05", count: 1, chunkIndex: 99 },
+			]),
+		).toEqual([]);
+	});
+});
 
 describe("collectContributionCalendar", () => {
 	it("queries GitHub once per Shanghai-aligned chunk in production mode", async () => {
@@ -33,6 +73,62 @@ describe("collectContributionCalendar", () => {
 		expect(request).toHaveBeenCalledTimes(chunks.length);
 		expect(result.rawObserved.length).toBeGreaterThan(0);
 		expect(result.chunkFailures).toEqual([]);
+	});
+
+	it("parses a GitHub-shaped chunk response through the real transport and github client", async () => {
+		const window = contributionWindow(now);
+		const chunk = contributionCalendarChunkWindows(window, "Asia/Shanghai")[0];
+		if (!chunk) throw new Error("expected chunk");
+		const githubPayload = {
+			data: {
+				viewer: {
+					contributionsCollection: {
+						restrictedContributionsCount: 0,
+						contributionCalendar: {
+							totalContributions: 394,
+							weeks: [
+								{
+									contributionDays: [
+										{ date: "2026-10-28", contributionCount: 394, color: "#196127" },
+										{ date: "2026-10-27", contributionCount: 174, color: "#239a3b" },
+									],
+								},
+							],
+						},
+					},
+				},
+			},
+		};
+		const base = "http://127.0.0.1:17046";
+		const fetch = vi.fn(async () => Response.json(githubPayload));
+		const context = {
+			env: { ENVIRONMENT: "development", GITHUB_API_BASE: base },
+			account: { id: "a", login: "owner" },
+			token: "fake",
+			now,
+			run: { params: { timezone: "Asia/Shanghai" } },
+		} as CollectionContext;
+		const { request } = transport(context);
+		const client = createGithubClient(context.env, fetch);
+		const wrapped = async <Result>(
+			operation: (github: typeof client) => Promise<Result>,
+			dimension?: string,
+		) => request(() => operation(client), dimension);
+		const result = await collectContributionCalendar(
+			context,
+			window,
+			[{ date: "2026-10-28", count: 0 }],
+			wrapped,
+		);
+		expect(result.rawObserved).toEqual(
+			expect.arrayContaining([
+				{ date: "2026-10-28", count: 394 },
+				{ date: "2026-10-27", count: 174 },
+			]),
+		);
+		expect(result.materializedDays.find((day) => day.date === "2026-10-28")?.count).toBe(394);
+		const firstCall = fetch.mock.calls[0] as [string, RequestInit] | undefined;
+		expect(String(firstCall?.[1]?.body ?? "")).toContain(chunk.since);
 	});
 
 	it("treats empty contribution weeks as chunk failure", async () => {
@@ -64,7 +160,7 @@ describe("collectContributionCalendar", () => {
 		const window = contributionWindow(now);
 		const tip = window.until.slice(0, 10);
 		const request = vi.fn(async () => {
-			throw new ApiError(502, "github_error", "calendar unavailable");
+			throw new ApiError(502, "github_error", "calendar unavailable", null, 502);
 		});
 		const context = {
 			env: { ENVIRONMENT: "test" },
@@ -79,6 +175,7 @@ describe("collectContributionCalendar", () => {
 		expect(result.materializedDays).toEqual([]);
 		expect(result.rawObserved).toEqual([]);
 		expect(result.materializedDays.some((day) => day.date === tip && day.count === 0)).toBe(false);
+		expect(result.chunkFailures[0]?.detail?.httpStatus ?? 502).toBe(502);
 	});
 
 	it("merges prior counts for a failed chunk when other chunks succeed", async () => {

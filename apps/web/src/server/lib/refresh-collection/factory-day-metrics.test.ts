@@ -435,6 +435,43 @@ describe("factory day metrics from stored observations", () => {
 		expect(days[day.date]).toMatchObject({ ciFailure: 4, ciSuccess: 2 });
 	});
 
+	it("fills unobserved outside-window fields from prior instead of zeroing edge days", () => {
+		const windowStart = {
+			date: "2026-08-03",
+			since: "2026-08-02T16:00:00.000Z",
+			until: "2026-08-03T16:00:00.000Z",
+		};
+		const priorDay = { ...blankDay(), commits: 4, issueOpened: 2 };
+		const days: Record<string, FactoryDay> = {};
+		const current = new Map<string, DayObservation>([
+			[
+				`${windowStart.date}:commits`,
+				{
+					day: windowStart.date,
+					dimension: "commits",
+					status: "complete",
+					payload: JSON.stringify({
+						count: 0,
+						items: [],
+						since: windowStart.since,
+						until: windowStart.until,
+					}),
+					fetched_at: "2026-11-01T04:00:00.000Z",
+				},
+			],
+		]);
+		seedOutsideWindowMetrics(
+			days,
+			[windowStart],
+			new Set(["2026-10-28"]),
+			current,
+			{ [windowStart.date]: priorDay },
+			"main",
+			"Asia/Shanghai",
+		);
+		expect(days[windowStart.date]).toMatchObject({ commits: 0, issueOpened: 2 });
+	});
+
 	it("keeps verified outside-window CI when no prior publication exists", () => {
 		const actionsRow: DayObservation = {
 			day: day.date,

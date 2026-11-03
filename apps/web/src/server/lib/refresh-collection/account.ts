@@ -2,10 +2,11 @@ import type { FactorySnapshot } from "../../../lib/factory-types";
 import type { RefreshFailureDetail } from "../../../lib/refresh-types";
 import { publishedFactory } from "../db/factory-runs";
 import { ApiError } from "../errors";
-import { TruncatedError } from "../github-client";
+import { MAX_FETCHES, TruncatedError } from "../github-client";
 import { mapRepos } from "../github-map";
 import {
 	annualCalendarCoverage,
+	contributionCalendarChunkWindows,
 	contributionFailureCode,
 	contributionStatusFromMaterializedCalendar,
 	contributionWindow,
@@ -35,6 +36,11 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 	const db = collectionDb(context);
 	const { client, request, breakdown } = transport(context);
 	const calendarWindow = contributionWindow(context.now);
+	const calendarChunkCount = contributionCalendarChunkWindows(
+		calendarWindow,
+		context.run.params.timezone,
+	).length;
+	const catalogFetchBudget = Math.max(0, MAX_FETCHES - calendarChunkCount - 1);
 	let after: string | null = null;
 	let pages = 0;
 	let complete = false;
@@ -84,7 +90,7 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 			break;
 		}
 		after = text(info.endCursor);
-		if (!after || cursors.has(after) || pages >= 35) break;
+		if (!after || cursors.has(after) || pages >= 35 || pages >= catalogFetchBudget) break;
 		cursors.add(after);
 	} while (after);
 	const date = new Intl.DateTimeFormat("en-CA", {
@@ -163,12 +169,15 @@ export async function collectAccount(context: CollectionContext): Promise<Accoun
 	});
 	const contributionDiagnostics: RefreshFailureDetail[] = [];
 	for (const failure of calendarFetch.chunkFailures) {
+		const detail = failure.detail;
 		contributionDiagnostics.push({
-			dimension: null,
+			dimension: detail?.dimension ?? null,
 			code: failure.code,
-			httpStatus: null,
-			graphqlType: `${failure.chunk.since}..${failure.chunk.until}`,
-			graphqlPath: null,
+			httpStatus: detail?.httpStatus ?? null,
+			graphqlType: detail?.graphqlType ?? null,
+			graphqlPath: detail?.graphqlPath ?? null,
+			graphqlMessage: detail?.graphqlMessage ?? null,
+			calendarRange: failure.chunk,
 		});
 	}
 	if (contributionGraphqlErrors.length > 0) {
