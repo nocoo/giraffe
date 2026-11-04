@@ -53,9 +53,20 @@ export async function readContributions(db: Db, account: string, query: Record<s
 	if (!first || !last) throw new ApiError(409, "snapshot_missing", "no saved contribution dates");
 	const since = query.since?.[0] ?? first;
 	const until = query.until?.[0] ?? last;
-	const selected = contributionDates(since, until);
-	if (!selected.length || since < first || until > last)
+	if (since < first)
 		throw new ApiError(400, "validation_failed", "contribution range exceeds saved dates");
+	if (until > last || since > last)
+		throw new ApiError(
+			400,
+			"contributions_calendar_stale",
+			"contribution calendar not yet available for requested dates",
+			null,
+			null,
+			{ lastSavedDate: last },
+		);
+	const selected = contributionDates(since, until);
+	if (!selected.length)
+		throw new ApiError(400, "validation_failed", "invalid contribution date range");
 	const provenance =
 		publicationSnapshot.contributionObservation ?? accountObservation?.contributionObservation;
 	const window = provenance?.window ?? publicationSnapshot.window;

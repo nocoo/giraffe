@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.28.22 - 2026-11-04
+
+### Fixed
+
+- **`contributionCalendarQuery` GraphQL syntax:** remove an extra closing brace that closed the
+  operation before `rateLimit`, which made GitHub return a schema parse error on every calendar
+  chunk (diagnostics now surface as `Expected one of SCHEMA… actual: IDENTIFIER ("rateLimit")`).
+- **GraphQL document gate:** unit tests parse every exported refresh-collection query with `graphql`
+  `parse` and assert `rateLimit` stays a top-level operation field (mock upstream fixtures never
+  validated query text).
+- **`GET /contributions` stale calendar:** when the requested date is past the last saved calendar
+  day, respond with `400 contributions_calendar_stale` and `lastSavedDate` instead of generic
+  `validation_failed`.
+
 ## v0.28.21 - 2026-11-03
 
 ### Fixed
