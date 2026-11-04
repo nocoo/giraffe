@@ -152,7 +152,6 @@ it("validates strict dates, order, maximum saved range, duplicate and unknown qu
 		"?until=2026-09-15T00:00:00Z",
 		"?since=2026-09-15&until=2026-09-14",
 		"?since=2026-01-01",
-		"?until=2026-09-16",
 		"?since=2026-09-14&since=2026-09-15",
 		"?since=",
 	]) {
@@ -161,6 +160,15 @@ it("validates strict dates, order, maximum saved range, duplicate and unknown qu
 		expect(await response.json()).toMatchObject({ error: { code: "validation_failed" } });
 		expect(response.headers.has("etag")).toBe(false);
 	}
+	const stale = await s.call("?until=2026-09-16", s.token.token, "*");
+	expect(stale.status).toBe(400);
+	expect(await stale.json()).toMatchObject({
+		error: {
+			code: "contributions_calendar_stale",
+			lastSavedDate: "2026-09-15",
+			message: "contribution calendar not yet available for requested dates",
+		},
+	});
 });
 
 it("authenticates bearer expiry, revocation, scope and fixed account before matching an ETag", async () => {

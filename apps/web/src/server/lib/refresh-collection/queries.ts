@@ -10,7 +10,7 @@ export const accountCatalogQuery = `query RefreshAccount($after:String) {
  rateLimit { remaining resetAt }
 }`;
 export const contributionCalendarQuery = `query RefreshContributionCalendar($since:DateTime!,$until:DateTime!) {
- viewer { contributionsCollection(from:$since,to:$until) { restrictedContributionsCount contributionCalendar { totalContributions weeks { contributionDays { date contributionCount } } } } } }
+ viewer { contributionsCollection(from:$since,to:$until) { restrictedContributionsCount contributionCalendar { totalContributions weeks { contributionDays { date contributionCount } } } } }
  rateLimit { remaining resetAt }
 }`;
 /** @deprecated Account catalog is paginated separately from chunked contribution calendar fetches. */
