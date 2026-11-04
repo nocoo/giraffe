@@ -32,6 +32,8 @@ export type RefreshFailureDetail = {
 	httpStatus: number | null;
 	graphqlType: string | null;
 	graphqlPath: string[] | null;
+	graphqlMessage?: string | null;
+	calendarRange?: { since: string; until: string } | null;
 };
 export type RefreshPartialReason = {
 	repo: string | null;

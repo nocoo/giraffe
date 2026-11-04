@@ -37,6 +37,7 @@ function graphqlFailure(error: GraphqlError): TransportFailure {
 		httpStatus: null,
 		graphqlType: error.type ?? null,
 		graphqlPath: error.path.length ? error.path : null,
+		graphqlMessage: null,
 	};
 }
 function thrownFailure(
@@ -53,6 +54,10 @@ function thrownFailure(
 		httpStatus: error instanceof ApiError ? error.upstreamStatus : null,
 		graphqlType: graphqlError?.type ?? null,
 		graphqlPath: graphqlError?.path.length ? graphqlError.path : null,
+		graphqlMessage:
+			error instanceof ApiError && typeof error.message === "string"
+				? error.message.slice(0, 240)
+				: null,
 	};
 	if (error !== null && typeof error === "object") details.set(error, failure);
 	return failure;
