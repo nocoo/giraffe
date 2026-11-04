@@ -168,13 +168,20 @@ it("reads typed inclusive daily contributions and validates conditional polling 
 		"?since=2026-02-30",
 		"?since=2026-10-20&until=2026-10-19",
 		"?since=2026-01-01",
-		"?until=2026-10-21",
 		"?since=2026-10-19&since=2026-10-20",
 	]) {
 		const invalid = await request(query, bearer, "*");
 		expect(invalid.status, query).toBe(400);
 		expect(await invalid.json()).toMatchObject({ error: { code: "validation_failed" } });
 	}
+	const stale = await request("?until=2026-10-21", bearer, "*");
+	expect(stale.status).toBe(400);
+	expect(await stale.json()).toMatchObject({
+		error: {
+			code: "contributions_calendar_stale",
+			lastSavedDate: "2026-10-20",
+		},
+	});
 	for (const [token, status] of [
 		[null, 401],
 		["invalid", 401],
