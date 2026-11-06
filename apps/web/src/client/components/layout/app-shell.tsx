@@ -163,13 +163,13 @@ export function AppShell() {
 										description="此应用需要 Cloudflare Access 身份。"
 									/>
 									<LayerCard>
-										<LayerCard.Well>
+										<LayerCard.Body>
 											<EmptyState
 												icon={<ShieldAlert />}
 												title="未通过 Access"
 												description="此应用需要 Cloudflare Access 身份。"
 											/>
-										</LayerCard.Well>
+										</LayerCard.Body>
 									</LayerCard>
 								</div>
 							) : (

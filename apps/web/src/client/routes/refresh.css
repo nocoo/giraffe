@@ -24,9 +24,9 @@
 	display: grid;
 	grid-template-columns: minmax(0, 1fr) minmax(80px, 200px) auto auto;
 	align-items: center;
-	gap: 14px;
+	gap: var(--basalt-space-layout);
 	border-top: 1px solid var(--color-basalt-border);
-	padding: 10px 16px;
+	padding: var(--basalt-space-layout-sm) var(--basalt-space-layout);
 	font-size: var(--text-xs);
 }
 .refresh-banner-run-label {
@@ -61,28 +61,24 @@
 	flex-direction: column;
 	flex: 1;
 	min-height: 0;
+	gap: var(--basalt-space-layout);
 }
 .refresh-console-tabbar {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	padding: 0 28px;
 	border-bottom: 1px solid var(--color-basalt-border);
-}
-.refresh-console-body {
-	padding: 22px 28px;
 }
 .refresh-console-note,
 .refresh-console-error {
 	display: flex;
 	align-items: center;
-	gap: 10px;
+	gap: var(--basalt-space-layout-sm);
 	font-size: var(--text-sm);
 	line-height: 1.7;
-	padding: 12px 14px;
+	padding: var(--basalt-space-layout-sm) var(--basalt-space-layout);
 	border: 1px solid var(--color-basalt-border);
 	border-radius: 8px;
-	margin-bottom: 18px;
 }
 .refresh-console-error {
 	border-color: var(--refresh-warning);
@@ -90,32 +86,30 @@
 .refresh-active-controls {
 	display: flex;
 	align-items: center;
-	gap: 8px;
+	gap: var(--basalt-space-layout-sm);
 	flex-wrap: wrap;
-	padding: 14px 16px;
+	padding: var(--basalt-space-layout);
 	border: 1px solid color-mix(in srgb, var(--refresh-info) 45%, var(--color-basalt-border));
 	border-radius: 9px;
-	margin-bottom: 20px;
 }
 .refresh-history-toolbar {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	gap: 12px;
-	margin-bottom: 18px;
+	gap: var(--basalt-space-layout);
 	flex-wrap: wrap;
 }
 .refresh-run-details {
 	display: flex;
 	flex-direction: column;
-	gap: 22px;
+	gap: var(--basalt-space-layout-lg);
 }
 .refresh-run-overview-heading {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	gap: 12px;
-	margin-bottom: 14px;
+	gap: var(--basalt-space-layout);
+	margin-bottom: var(--basalt-space-layout);
 }
 .refresh-eyebrow {
 	font-size: var(--text-xs);
@@ -145,7 +139,7 @@
 .refresh-run-phases {
 	display: grid;
 	grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-	gap: 22px;
+	gap: var(--basalt-space-layout-lg);
 	margin-top: 14px;
 	border-top: 1px solid var(--color-basalt-border);
 	padding-top: 14px;
@@ -176,9 +170,9 @@
 	display: flex;
 	align-items: baseline;
 	justify-content: space-between;
-	gap: 12px;
+	gap: var(--basalt-space-layout);
 	flex-wrap: wrap;
-	margin-bottom: 12px;
+	margin-bottom: var(--basalt-space-layout-sm);
 }
 .refresh-request-note {
 	margin-top: 10px;
@@ -244,14 +238,14 @@
 	display: flex;
 	align-items: flex-start;
 	justify-content: space-between;
-	gap: 12px;
-	margin: 0 0 20px;
+	gap: var(--basalt-space-layout);
+	margin: 0 0 var(--basalt-space-layout-lg);
 	flex-wrap: wrap;
 }
 .refresh-plan-grid {
 	display: grid;
 	grid-template-columns: repeat(2, minmax(0, 1fr));
-	gap: 14px 18px;
+	gap: var(--basalt-space-layout) var(--basalt-space-layout-lg);
 }
 .refresh-plan-field {
 	display: flex;
@@ -274,16 +268,16 @@
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	gap: 16px;
+	gap: var(--basalt-space-layout-lg);
 	flex-wrap: wrap;
-	margin-top: 20px;
+	margin-top: var(--basalt-space-layout-lg);
 	border-top: 1px solid var(--color-basalt-border);
-	padding-top: 16px;
+	padding-top: var(--basalt-space-layout);
 }
 .refresh-schedule {
 	display: grid;
 	grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-	gap: 14px;
+	gap: var(--basalt-space-layout);
 }
 .refresh-history-table {
 	min-width: 760px;
@@ -742,8 +736,8 @@ details[open] > summary > .refresh-disclosure {
 	}
 	.refresh-banner-progress {
 		grid-template-columns: minmax(60px, 1fr) auto auto;
-		gap: 9px;
-		padding: 10px 12px;
+		gap: var(--basalt-space-layout-sm);
+		padding: var(--basalt-space-layout-sm) var(--basalt-space-layout);
 	}
 	.refresh-banner-run-label {
 		grid-column: 1 / -1;
@@ -751,12 +745,6 @@ details[open] > summary > .refresh-disclosure {
 	.refresh-console {
 		width: 100%;
 		min-width: 0;
-	}
-	.refresh-console-tabbar {
-		padding: 0 16px;
-	}
-	.refresh-console-body {
-		padding: 16px;
 	}
 	.refresh-run-overview-heading {
 		align-items: flex-start;

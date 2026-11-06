@@ -87,7 +87,7 @@ export function AlertsPage() {
 				/>
 				<ScopeEmpty count={0} />
 				<LayerCard>
-					<LayerCard.Well>
+					<LayerCard.Body>
 						<EmptyState
 							icon={<ShieldAlert />}
 							title="暂无告警数据"
@@ -98,7 +98,7 @@ export function AlertsPage() {
 								</Button>
 							}
 						/>
-					</LayerCard.Well>
+					</LayerCard.Body>
 				</LayerCard>
 			</div>
 		);
@@ -200,7 +200,7 @@ export function AlertsPage() {
 			>
 				{items.length === 0 ? (
 					<LayerCard>
-						<LayerCard.Well>
+						<LayerCard.Body>
 							<EmptyState
 								icon={<ShieldAlert />}
 								title={all.length ? "没有符合筛选的告警" : "暂无告警数据"}
@@ -217,11 +217,11 @@ export function AlertsPage() {
 									) : undefined
 								}
 							/>
-						</LayerCard.Well>
+						</LayerCard.Body>
 					</LayerCard>
 				) : (
 					<LayerCard>
-						<LayerCard.Well className="p-0">
+						<LayerCard.Body className="p-0">
 							<TableScroll label="安全告警列表">
 								<Table className="giraffe-data-table min-w-[680px]" data-testid="alert-list">
 									<TableHeader>
@@ -285,7 +285,7 @@ export function AlertsPage() {
 									</TableBody>
 								</Table>
 							</TableScroll>
-						</LayerCard.Well>
+						</LayerCard.Body>
 					</LayerCard>
 				)}
 			</SectionRule>

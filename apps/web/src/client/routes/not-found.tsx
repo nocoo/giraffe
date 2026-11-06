@@ -9,7 +9,7 @@ export function NotFoundPage() {
 		<div className="space-y-8">
 			<PageHeader title="未找到" description="没有这个页面。" />
 			<LayerCard>
-				<LayerCard.Well>
+				<LayerCard.Body>
 					<EmptyState
 						icon={<FileQuestion />}
 						title="页面不存在"
@@ -20,7 +20,7 @@ export function NotFoundPage() {
 							</Button>
 						}
 					/>
-				</LayerCard.Well>
+				</LayerCard.Body>
 			</LayerCard>
 		</div>
 	);

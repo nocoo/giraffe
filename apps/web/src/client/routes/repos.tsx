@@ -242,9 +242,9 @@ export function ReposPage() {
 			<div className="space-y-8">
 				<PageHeader title="仓库" description={PAGE_DESCRIPTIONS["/repos"]} />
 				<LayerCard>
-					<LayerCard.Well>
+					<LayerCard.Body>
 						<SnapshotPending state={snap} />
-					</LayerCard.Well>
+					</LayerCard.Body>
 				</LayerCard>
 			</div>
 		);
@@ -400,7 +400,7 @@ export function ReposPage() {
 			>
 				{rows.length === 0 ? (
 					<LayerCard>
-						<LayerCard.Well>
+						<LayerCard.Body>
 							<EmptyState
 								icon={<Box />}
 								title={query.trim() ? "没有匹配结果" : "还没有仓库"}
@@ -417,7 +417,7 @@ export function ReposPage() {
 									) : undefined
 								}
 							/>
-						</LayerCard.Well>
+						</LayerCard.Body>
 					</LayerCard>
 				) : view === "grid" ? (
 					<div className="grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-3" data-testid="repo-list">
@@ -471,7 +471,7 @@ export function ReposPage() {
 					</div>
 				) : (
 					<LayerCard>
-						<LayerCard.Well className="p-0">
+						<LayerCard.Body className="p-0">
 							<TableScroll label="仓库列表">
 								<Table className="giraffe-data-table min-w-[900px]" data-testid="repo-list">
 									<TableHeader>
@@ -586,7 +586,7 @@ export function ReposPage() {
 									</TableBody>
 								</Table>
 							</TableScroll>
-						</LayerCard.Well>
+						</LayerCard.Body>
 					</LayerCard>
 				)}
 			</SectionRule>

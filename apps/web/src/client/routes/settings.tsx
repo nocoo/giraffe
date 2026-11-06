@@ -114,10 +114,10 @@ export function SettingsPage() {
 	}
 
 	return (
-		<div className="space-y-8">
+		<div className="space-y-basalt-layout-lg">
 			<PageHeader title="设置" description={PAGE_DESCRIPTIONS["/settings"]} />
 			<SectionRule title={<IconLabel icon={KeyRound}>账号连接</IconLabel>}>
-				<div className="grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+				<div className="grid gap-basalt-layout lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
 					<LayerCard>
 						<LayerCard.Header>
 							<Text as="h2" variant="heading" className="flex items-center gap-2">
@@ -136,7 +136,7 @@ export function SettingsPage() {
 						</LayerCard.Header>
 						<LayerCard.Body>
 							<form
-								className="flex flex-col gap-4"
+								className="flex flex-col gap-basalt-layout"
 								aria-busy={busy}
 								onSubmit={(event) => void onSubmit(event)}
 							>
@@ -183,7 +183,7 @@ export function SettingsPage() {
 								访问身份
 							</Text>
 						</LayerCard.Header>
-						<LayerCard.Body className="space-y-5">
+						<LayerCard.Body className="space-y-basalt-layout">
 							{me ? (
 								<div className="flex items-center gap-3">
 									<Avatar className="size-10 shrink-0">
@@ -213,7 +213,7 @@ export function SettingsPage() {
 				actions={<ResultCount count={accounts.length} />}
 			>
 				<LayerCard>
-					<LayerCard.Well className="p-0">
+					<LayerCard.Body className="p-0">
 						{accounts.length === 0 ? (
 							<EmptyState
 								className="[--giraffe-empty-min-height:16rem]"
@@ -305,7 +305,7 @@ export function SettingsPage() {
 								</Table>
 							</TableScroll>
 						)}
-					</LayerCard.Well>
+					</LayerCard.Body>
 				</LayerCard>
 			</SectionRule>
 			<ApiTokens accounts={accounts} />

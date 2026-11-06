@@ -201,9 +201,9 @@ export function InsightsPage() {
 			<div className="space-y-8">
 				<PageHeader title="Insights" description={PAGE_DESCRIPTIONS["/insights"]} />
 				<LayerCard>
-					<LayerCard.Well>
+					<LayerCard.Body>
 						<SnapshotPending state={board} />
-					</LayerCard.Well>
+					</LayerCard.Body>
 				</LayerCard>
 			</div>
 		);

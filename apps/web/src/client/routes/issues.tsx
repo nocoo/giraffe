@@ -112,9 +112,9 @@ export function IssuesPage() {
 			<div className="space-y-8">
 				<PageHeader title="Issues" description={PAGE_DESCRIPTIONS["/issues"]} />
 				<LayerCard>
-					<LayerCard.Well>
+					<LayerCard.Body>
 						<SnapshotPending state={snap} />
-					</LayerCard.Well>
+					</LayerCard.Body>
 				</LayerCard>
 			</div>
 		);
@@ -234,7 +234,7 @@ export function IssuesPage() {
 				actions={<ResultCount count={rows.length} total={snap.issues.length} />}
 			>
 				<LayerCard>
-					<LayerCard.Well {...(rows.length === 0 ? {} : { className: "p-0" })}>
+					<LayerCard.Body {...(rows.length === 0 ? {} : { className: "p-0" })}>
 						{rows.length === 0 ? (
 							<EmptyState
 								icon={<CircleDot />}
@@ -339,7 +339,7 @@ export function IssuesPage() {
 								</Table>
 							</TableScroll>
 						)}
-					</LayerCard.Well>
+					</LayerCard.Body>
 				</LayerCard>
 			</SectionRule>
 		</div>

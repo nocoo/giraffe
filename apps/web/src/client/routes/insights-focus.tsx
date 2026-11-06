@@ -56,13 +56,13 @@ export function FocusSection({ ranked, findings }: { ranked: FocusRepo[]; findin
 					</ol>
 				) : (
 					<LayerCard>
-						<LayerCard.Well>
+						<LayerCard.Body>
 							<EmptyState
 								icon={<Target />}
 								title="暂无需要特别关注的仓库"
 								description="当前范围内的仓库没有触发任何关注规则。"
 							/>
-						</LayerCard.Well>
+						</LayerCard.Body>
 					</LayerCard>
 				)}
 				<LayerCard className="giraffe-findings" padding="md">

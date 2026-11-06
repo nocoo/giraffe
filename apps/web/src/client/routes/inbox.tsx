@@ -82,9 +82,9 @@ export function InboxPage() {
 			<div className="space-y-8">
 				<PageHeader title="通知" description={PAGE_DESCRIPTIONS["/inbox"]} />
 				<LayerCard>
-					<LayerCard.Well>
+					<LayerCard.Body>
 						<SnapshotPending state={snap} />
-					</LayerCard.Well>
+					</LayerCard.Body>
 				</LayerCard>
 			</div>
 		);
@@ -230,7 +230,7 @@ export function InboxPage() {
 				}
 			>
 				<LayerCard>
-					<LayerCard.Well {...(rows.length === 0 ? {} : { className: "p-0" })}>
+					<LayerCard.Body {...(rows.length === 0 ? {} : { className: "p-0" })}>
 						{rows.length === 0 ? (
 							<EmptyState
 								icon={<Inbox />}
@@ -365,7 +365,7 @@ export function InboxPage() {
 								) : null}
 							</>
 						)}
-					</LayerCard.Well>
+					</LayerCard.Body>
 				</LayerCard>
 			</SectionRule>
 		</div>

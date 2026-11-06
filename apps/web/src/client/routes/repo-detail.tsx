@@ -142,9 +142,9 @@ function useRepoTabRead<Value extends { account_id: string }>(
 function TabWell({ children, flush = false }: { children: ReactNode; flush?: boolean }) {
 	return (
 		<LayerCard>
-			<LayerCard.Well {...(flush ? { className: "p-0" } : {})}>
+			<LayerCard.Body {...(flush ? { className: "p-0" } : {})}>
 				{flush ? <TableScroll label="仓库数据">{children}</TableScroll> : children}
-			</LayerCard.Well>
+			</LayerCard.Body>
 		</LayerCard>
 	);
 }

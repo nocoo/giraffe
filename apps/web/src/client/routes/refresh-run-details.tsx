@@ -249,8 +249,8 @@ export function RefreshRunDetails({
 								: "skipped";
 	return (
 		<div className="refresh-run-details">
-			<section className="refresh-run-overview" aria-label="本次刷新进度">
-				<LayerCard.Well className="refresh-run-overview-well">
+			<LayerCard className="refresh-run-overview" aria-label="本次刷新进度">
+				<LayerCard.Body className="refresh-run-overview-well">
 					<div className="refresh-run-overview-heading">
 						<div>
 							<p className="refresh-eyebrow">
@@ -398,8 +398,8 @@ export function RefreshRunDetails({
 							) : null}
 						</div>
 					) : null}
-				</LayerCard.Well>
-			</section>
+				</LayerCard.Body>
+			</LayerCard>
 			<LayerCard aria-label="请求统计">
 				<LayerCard.Header>
 					<h3 className="text-sm font-medium">GitHub 请求 · A / B 拆分</h3>
@@ -480,18 +480,14 @@ export function RefreshRunDetails({
 			<section className="refresh-run-repositories" aria-label="逐仓库刷新进度">
 				<LayerCard>
 					<LayerCard.Header>
-						<div className="refresh-section-heading">
-							<h3>仓库进度 · A 之后的串行 B</h3>
-							<span>展开仓库，查看维度处理状态与原因</span>
-						</div>
+						<h3 className="text-base font-semibold">仓库进度 · A 之后的串行 B</h3>
+						<span className="text-xs text-basalt-muted-foreground">
+							展开仓库，查看维度处理状态与原因
+						</span>
 					</LayerCard.Header>
-					<LayerCard.Well className="p-0">
+					<LayerCard.Body className="p-0">
 						{rows.length ? (
-							<LayerCard.Well className="refresh-run-queue p-0">
-								{rows.map((row) => (
-									<RepoRow key={row.repo} row={row} />
-								))}
-							</LayerCard.Well>
+							rows.map((row) => <RepoRow key={row.repo} row={row} />)
 						) : (
 							<EmptyState
 								icon={<Circle aria-hidden="true" />}
@@ -499,7 +495,7 @@ export function RefreshRunDetails({
 								description="A 完成后，默认范围中的星标仓库与当日新仓库会逐个串行刷新。"
 							/>
 						)}
-					</LayerCard.Well>
+					</LayerCard.Body>
 				</LayerCard>
 			</section>
 			<details className="refresh-diagnostics">

@@ -98,7 +98,9 @@ for (const viewport of [
 					}
 				}
 				if (path === "refresh" && process.env.GIRAFFE_UI_BASELINE !== "1") {
-					await page.locator('section[aria-label="刷新记录"]').scrollIntoViewIfNeeded();
+					await page
+						.locator('[data-basalt-surface][aria-label="刷新记录"]')
+						.scrollIntoViewIfNeeded();
 					await expectDimensionChipsFit(page);
 					await page.screenshot({
 						path: info.outputPath(`refresh-details-${theme}-${viewport.width}.png`),

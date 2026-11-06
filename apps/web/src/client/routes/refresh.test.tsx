@@ -139,9 +139,7 @@ it("restores the refresh console with current A/B progress, requests and cancell
 	expect(text).toContain("GitHub 请求 · A / B 拆分");
 	expect(text).toContain("A · 账号");
 	expect(text).toContain("运行记录");
-	expect(
-		container.querySelector('section[aria-label="刷新记录"] [data-basalt-surface]'),
-	).not.toBeNull();
+	expect(container.querySelector('[aria-label="刷新记录"][data-basalt-surface]')).not.toBeNull();
 	expect(text).not.toMatch(/快速刷新|深度刷新|同步仓库列表/);
 	await act(async () => button("结束刷新").click());
 	expect(value.cancel).toHaveBeenCalledOnce();
@@ -182,8 +180,7 @@ it("keeps starred-only lookback scope in current and historical details", async 
 	});
 	vi.mocked(apiGet).mockResolvedValue({ items: [current, old], collectionAvailable: true });
 	await render(model(current));
-	const detailScope = () =>
-		container.querySelector('section[aria-label="本次刷新进度"]')?.textContent;
+	const detailScope = () => container.querySelector('[aria-label="本次刷新进度"]')?.textContent;
 	expect(detailScope()).toContain("历史回填 · 仅星标仓库 · 90 天");
 	expect(container.textContent).toContain("历史回填 · 仅星标仓库 · 30 天");
 	expect(container.textContent).not.toContain("新建且未观测");

@@ -93,9 +93,9 @@ export function CiPage() {
 			<div className="space-y-8">
 				<PageHeader title="CI 与发布" description={PAGE_DESCRIPTIONS["/ci"]} />
 				<LayerCard>
-					<LayerCard.Well>
+					<LayerCard.Body>
 						<SnapshotPending state={snap} />
-					</LayerCard.Well>
+					</LayerCard.Body>
 				</LayerCard>
 			</div>
 		);
@@ -280,7 +280,7 @@ export function CiPage() {
 				}
 			>
 				<LayerCard>
-					<LayerCard.Well className="p-0">
+					<LayerCard.Body className="p-0">
 						<TableScroll label="工作流列表">
 							<Table className="giraffe-data-table min-w-[860px]" data-testid="ci-list">
 								<TableHeader>
@@ -376,7 +376,7 @@ export function CiPage() {
 								}
 							/>
 						)}
-					</LayerCard.Well>
+					</LayerCard.Body>
 				</LayerCard>
 			</SectionRule>
 
@@ -392,7 +392,7 @@ export function CiPage() {
 				}
 			>
 				<LayerCard>
-					<LayerCard.Well className="p-0">
+					<LayerCard.Body className="p-0">
 						<TableScroll label="发布列表">
 							<Table className="giraffe-data-table min-w-[720px]" data-testid="release-list">
 								<TableHeader>
@@ -446,7 +446,7 @@ export function CiPage() {
 								</TableBody>
 							</Table>
 						</TableScroll>
-					</LayerCard.Well>
+					</LayerCard.Body>
 				</LayerCard>
 			</SectionRule>
 		</div>

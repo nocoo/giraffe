@@ -240,7 +240,7 @@ function RefreshCenterBody({ center }: { center: RefreshCenterViewModel }) {
 		<Check aria-hidden="true" />
 	);
 	return (
-		<div className="refresh-center space-y-4">
+		<div className="refresh-center space-y-basalt-layout">
 			<PageHeader
 				title="刷新中心"
 				repositoryScope={false}
@@ -322,183 +322,177 @@ function RefreshCenterBody({ center }: { center: RefreshCenterViewModel }) {
 							{state.runs.length} 次运行 · {current?.repos.length ?? 0} 个仓库
 						</span>
 					</div>
-					<div className="refresh-console-body">
-						{state.live.error ? (
-							<div role="alert" className="refresh-console-error">
-								<AlertCircle aria-hidden="true" />
-								<p>{state.live.error}</p>
-								<Button size="sm" variant="secondary" onClick={() => void center.refreshAll()}>
-									重试读取
-								</Button>
-							</div>
-						) : null}
-						{state.error ? (
-							<div role="alert" className="refresh-console-error">
-								<AlertCircle aria-hidden="true" />
-								<p>{state.error}</p>
-								<Button size="sm" variant="secondary" onClick={() => void center.load()}>
-									重试读取记录
-								</Button>
-							</div>
-						) : null}
-						<TabsContent value="progress" className="mt-0">
-							<div className="refresh-history-toolbar">
-								<span role="status">
-									{state.loading && !state.runs.length
-										? "正在读取刷新记录…"
-										: state.selectedId
-											? "正在查看历史运行；未执行的步骤保持未执行"
-											: "进度表示已处理，不等于数据完整"}
-								</span>
-								<div>
-									{state.selectedId ? (
-										<Button size="sm" variant="ghost" onClick={() => center.select("")}>
-											回到当前
-										</Button>
-									) : null}
-									<Button size="sm" variant="ghost" onClick={() => void center.refreshAll()}>
-										<RefreshCw className="size-3.5" aria-hidden="true" />
-										更新记录
+					{state.live.error ? (
+						<div role="alert" className="refresh-console-error">
+							<AlertCircle aria-hidden="true" />
+							<p>{state.live.error}</p>
+							<Button size="sm" variant="secondary" onClick={() => void center.refreshAll()}>
+								重试读取
+							</Button>
+						</div>
+					) : null}
+					{state.error ? (
+						<div role="alert" className="refresh-console-error">
+							<AlertCircle aria-hidden="true" />
+							<p>{state.error}</p>
+							<Button size="sm" variant="secondary" onClick={() => void center.load()}>
+								重试读取记录
+							</Button>
+						</div>
+					) : null}
+					<TabsContent value="progress" className="space-y-basalt-layout">
+						<div className="refresh-history-toolbar">
+							<span role="status">
+								{state.loading && !state.runs.length
+									? "正在读取刷新记录…"
+									: state.selectedId
+										? "正在查看历史运行；未执行的步骤保持未执行"
+										: "进度表示已处理，不等于数据完整"}
+							</span>
+							<div>
+								{state.selectedId ? (
+									<Button size="sm" variant="ghost" onClick={() => center.select("")}>
+										回到当前
 									</Button>
-								</div>
+								) : null}
+								<Button size="sm" variant="ghost" onClick={() => void center.refreshAll()}>
+									<RefreshCw className="size-3.5" aria-hidden="true" />
+									更新记录
+								</Button>
 							</div>
-							{state.selected ? (
-								<RefreshRunDetails
-									key={state.selected.id}
-									run={state.selected}
-									now={state.now}
-									{...(current?.id === state.selected.id
-										? { onCancel: () => void center.cancel() }
-										: {})}
-									cancelling={state.live.cancelling}
-								/>
-							) : state.loading ? (
-								<p className="refresh-console-note" role="status">
-									<LoaderCircle className="animate-spin" aria-hidden="true" />
-									正在读取刷新记录…
-								</p>
-							) : (
-								<EmptyState
-									icon={<FolderSync aria-hidden="true" />}
-									title="还没有刷新记录"
-									description="发起第一次统一刷新后，会在这里保留 A / B 进度与结果。"
-									action={
-										<Button size="sm" onClick={() => setTab("plan")}>
-											发起第一次刷新
-										</Button>
-									}
-								/>
-							)}
-							{state.runs.length ? (
-								<section aria-label="刷新记录" className="mt-6">
-									<LayerCard>
-										<LayerCard.Header>
-											<div className="refresh-section-heading">
-												<h3>运行记录</h3>
-												<span>最多显示最近 50 次；点击查看详情</span>
-											</div>
-										</LayerCard.Header>
-										<LayerCard.Well className="p-0">
-											<TableScroll label="刷新记录">
-												<Table className="refresh-history-table">
-													<TableHeader>
-														<TableRow>
-															<TableHead>时间</TableHead>
-															<TableHead>状态</TableHead>
-															<TableHead>范围</TableHead>
-															<TableHead className={NUM_HEAD}>耗时</TableHead>
-															<TableHead className={NUM_HEAD}>请求</TableHead>
-															<TableHead>问题仓库</TableHead>
-															<TableHead />
-														</TableRow>
-													</TableHeader>
-													<TableBody>
-														{historyRows.map((row, index) => {
-															const run = state.runs[index];
-															if (!run) return null;
-															const viewing = state.selected?.id === row.id;
-															return (
-																<TableRow key={row.id} aria-current={viewing ? "true" : undefined}>
-																	<TableCell className="whitespace-nowrap">{row.at}</TableCell>
-																	<TableCell>
-																		<CandyBadge tone={historyTone(run.status)}>
-																			{row.status}
-																		</CandyBadge>
-																	</TableCell>
-																	<TableCell>
-																		<span className="block">{row.scope}</span>
-																		<span className="block text-xs text-basalt-muted-foreground">
-																			{run.trigger === "scheduled" ? "每日自动" : "手动"} ·{" "}
-																			{run.completedRepos} / {run.repos.length} 仓库
-																		</span>
-																	</TableCell>
-																	<TableCell className={NUM_CELL}>{row.duration}</TableCell>
-																	<TableCell className={NUM_CELL}>{row.requests}</TableCell>
-																	<TableCell>
-																		<span
-																			className="block max-w-56 truncate text-xs"
-																			title={row.problems}
-																		>
-																			{row.problems}
-																		</span>
-																	</TableCell>
-																	<TableCell>
-																		<Button
-																			size="sm"
-																			variant="ghost"
-																			aria-label={`查看 ${row.at} 的运行详情`}
-																			onClick={() =>
-																				center.select(row.id === current?.id ? "" : row.id)
-																			}
-																		>
-																			{viewing ? "查看中" : "查看"}
-																		</Button>
-																	</TableCell>
-																</TableRow>
-															);
-														})}
-													</TableBody>
-												</Table>
-											</TableScroll>
-										</LayerCard.Well>
-									</LayerCard>
-								</section>
-							) : null}
-						</TabsContent>
-						<TabsContent value="plan" className="mt-0">
-							<PlanForm center={center} live={state.live} />
-						</TabsContent>
-						<TabsContent value="schedule" className="mt-0">
-							<div className="refresh-plan-scope">
-								<p>
-									自动刷新由 Cloudflare Cron 在北京时间 03:00 发起，与手动刷新使用同一个 A → 串行 B
-									任务和同一份运行记录。
-								</p>
-								<CandyBadge tone="green">
-									<CalendarClock aria-hidden="true" />
-									每日 03:00
-								</CandyBadge>
-							</div>
-							<div className="refresh-schedule">
-								<div>
-									<h4>每日 03:00 Asia/Shanghai</h4>
-									<p>同一账号同一天自动请求去重；已有任务进行时排队执行，不并行。</p>
-								</div>
-								<div>
-									<h4>默认范围</h4>
-									<p>所有星标仓库，加上本账号上海当日新建且未观测的非 fork 仓库；不会自动加星。</p>
-								</div>
-								<div>
-									<h4>结果读取</h4>
-									<p>页面仅展示已保存的运行结果；读取历史记录不会重新采集 GitHub 数据。</p>
-								</div>
-							</div>
-							<p className="refresh-request-note">
-								<Info className="mr-1 inline size-3.5 align-[-2px]" aria-hidden="true" />
-								自动刷新不可在页面中修改时间或启用状态；需要完整读取时请使用上方“发起刷新”。
+						</div>
+						{state.selected ? (
+							<RefreshRunDetails
+								key={state.selected.id}
+								run={state.selected}
+								now={state.now}
+								{...(current?.id === state.selected.id
+									? { onCancel: () => void center.cancel() }
+									: {})}
+								cancelling={state.live.cancelling}
+							/>
+						) : state.loading ? (
+							<p className="refresh-console-note" role="status">
+								<LoaderCircle className="animate-spin" aria-hidden="true" />
+								正在读取刷新记录…
 							</p>
-						</TabsContent>
-					</div>
+						) : (
+							<EmptyState
+								icon={<FolderSync aria-hidden="true" />}
+								title="还没有刷新记录"
+								description="发起第一次统一刷新后，会在这里保留 A / B 进度与结果。"
+								action={
+									<Button size="sm" onClick={() => setTab("plan")}>
+										发起第一次刷新
+									</Button>
+								}
+							/>
+						)}
+						{state.runs.length ? (
+							<LayerCard aria-label="刷新记录">
+								<LayerCard.Header>
+									<h3 className="text-base font-semibold">运行记录</h3>
+									<span className="text-xs text-basalt-muted-foreground">
+										最多显示最近 50 次；点击查看详情
+									</span>
+								</LayerCard.Header>
+								<LayerCard.Body className="p-0">
+									<TableScroll label="刷新记录">
+										<Table className="refresh-history-table">
+											<TableHeader>
+												<TableRow>
+													<TableHead>时间</TableHead>
+													<TableHead>状态</TableHead>
+													<TableHead>范围</TableHead>
+													<TableHead className={NUM_HEAD}>耗时</TableHead>
+													<TableHead className={NUM_HEAD}>请求</TableHead>
+													<TableHead>问题仓库</TableHead>
+													<TableHead />
+												</TableRow>
+											</TableHeader>
+											<TableBody>
+												{historyRows.map((row, index) => {
+													const run = state.runs[index];
+													if (!run) return null;
+													const viewing = state.selected?.id === row.id;
+													return (
+														<TableRow key={row.id} aria-current={viewing ? "true" : undefined}>
+															<TableCell className="whitespace-nowrap">{row.at}</TableCell>
+															<TableCell>
+																<CandyBadge tone={historyTone(run.status)}>{row.status}</CandyBadge>
+															</TableCell>
+															<TableCell>
+																<span className="block">{row.scope}</span>
+																<span className="block text-xs text-basalt-muted-foreground">
+																	{run.trigger === "scheduled" ? "每日自动" : "手动"} ·{" "}
+																	{run.completedRepos} / {run.repos.length} 仓库
+																</span>
+															</TableCell>
+															<TableCell className={NUM_CELL}>{row.duration}</TableCell>
+															<TableCell className={NUM_CELL}>{row.requests}</TableCell>
+															<TableCell>
+																<span
+																	className="block max-w-56 truncate text-xs"
+																	title={row.problems}
+																>
+																	{row.problems}
+																</span>
+															</TableCell>
+															<TableCell>
+																<Button
+																	size="sm"
+																	variant="ghost"
+																	aria-label={`查看 ${row.at} 的运行详情`}
+																	onClick={() =>
+																		center.select(row.id === current?.id ? "" : row.id)
+																	}
+																>
+																	{viewing ? "查看中" : "查看"}
+																</Button>
+															</TableCell>
+														</TableRow>
+													);
+												})}
+											</TableBody>
+										</Table>
+									</TableScroll>
+								</LayerCard.Body>
+							</LayerCard>
+						) : null}
+					</TabsContent>
+					<TabsContent value="plan" className="space-y-basalt-layout">
+						<PlanForm center={center} live={state.live} />
+					</TabsContent>
+					<TabsContent value="schedule" className="space-y-basalt-layout">
+						<div className="refresh-plan-scope">
+							<p>
+								自动刷新由 Cloudflare Cron 在北京时间 03:00 发起，与手动刷新使用同一个 A → 串行 B
+								任务和同一份运行记录。
+							</p>
+							<CandyBadge tone="green">
+								<CalendarClock aria-hidden="true" />
+								每日 03:00
+							</CandyBadge>
+						</div>
+						<div className="refresh-schedule">
+							<div>
+								<h4>每日 03:00 Asia/Shanghai</h4>
+								<p>同一账号同一天自动请求去重；已有任务进行时排队执行，不并行。</p>
+							</div>
+							<div>
+								<h4>默认范围</h4>
+								<p>所有星标仓库，加上本账号上海当日新建且未观测的非 fork 仓库；不会自动加星。</p>
+							</div>
+							<div>
+								<h4>结果读取</h4>
+								<p>页面仅展示已保存的运行结果；读取历史记录不会重新采集 GitHub 数据。</p>
+							</div>
+						</div>
+						<p className="refresh-request-note">
+							<Info className="mr-1 inline size-3.5 align-[-2px]" aria-hidden="true" />
+							自动刷新不可在页面中修改时间或启用状态；需要完整读取时请使用上方“发起刷新”。
+						</p>
+					</TabsContent>
 				</Tabs>
 			</section>
 		</div>

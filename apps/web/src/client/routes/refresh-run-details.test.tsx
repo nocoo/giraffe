@@ -88,8 +88,10 @@ it("opens a retained historical run without manufacturing missing diagnostics", 
 	expect(container.textContent).toContain("未记录 3");
 	expect(container.querySelectorAll('[data-state="unknown"]')).toHaveLength(24);
 	expect(container.querySelectorAll('[data-state="complete"]')).toHaveLength(0);
-	expect(container.querySelector(".refresh-run-overview [data-basalt-surface]")).not.toBeNull();
+	expect(container.querySelector(".refresh-run-overview[data-basalt-surface]")).not.toBeNull();
+	expect(container.querySelector(".refresh-run-overview [data-basalt-surface]")).toBeNull();
 	expect(container.querySelector(".refresh-run-repositories [data-basalt-surface]")).not.toBeNull();
+	expect(container.querySelectorAll("[data-basalt-surface] [data-basalt-surface]")).toHaveLength(0);
 	expect(container.querySelector(".refresh-console-empty")).toBeNull();
 });
 

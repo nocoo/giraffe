@@ -113,9 +113,9 @@ export function PullsPage() {
 			<div className="space-y-8">
 				<PageHeader title="Pull Requests" description={PAGE_DESCRIPTIONS["/pulls"]} />
 				<LayerCard>
-					<LayerCard.Well>
+					<LayerCard.Body>
 						<SnapshotPending state={snap} />
-					</LayerCard.Well>
+					</LayerCard.Body>
 				</LayerCard>
 			</div>
 		);
@@ -321,7 +321,7 @@ export function PullsPage() {
 				actions={<ResultCount count={rows.length} total={snap.pull_requests.length} />}
 			>
 				<LayerCard>
-					<LayerCard.Well {...(rows.length === 0 ? {} : { className: "p-0" })}>
+					<LayerCard.Body {...(rows.length === 0 ? {} : { className: "p-0" })}>
 						{rows.length === 0 ? (
 							<EmptyState
 								icon={<GitPullRequest />}
@@ -447,7 +447,7 @@ export function PullsPage() {
 								</Table>
 							</TableScroll>
 						)}
-					</LayerCard.Well>
+					</LayerCard.Body>
 				</LayerCard>
 			</SectionRule>
 		</div>
