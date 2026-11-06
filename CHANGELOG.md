@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.29.0 - 2026-11-06
+
+### Changed
+
+- Refined repository details with consistent actions, compact filters, 30-record factory pages,
+  and open records selected by default for issues, pull requests, and alerts.
+- Reorganized the refresh center into aligned islands and unified card backgrounds and empty
+  states across the application.
+- Explain disabled Dependabot, code scanning, and unavailable dependency analysis with links to
+  repository security settings where applicable.
+
+### Fixed
+
+- Aligned factory stream pagination with the 30-record browser pages while preserving the
+  previous 5,000-record page range.
+
 ## v0.28.22 - 2026-11-04
 
 ### Fixed
