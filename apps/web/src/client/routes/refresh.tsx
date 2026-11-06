@@ -1,6 +1,7 @@
 import "./refresh.css";
 import { Button, Checkbox, Input, Tabs, TabsContent, TabsList, TabsTrigger } from "@nocoo/basalt";
 import { Banner } from "@nocoo/basalt/components/banner";
+import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import {
 	Table,
 	TableBody,
@@ -22,11 +23,11 @@ import {
 	Square,
 } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { Link } from "react-router";
 import { REFRESH_DIMENSIONS, type RefreshRun } from "../../lib/refresh-types";
 import { BusinessPageHeader as PageHeader } from "../components/layout/business-page-header";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { TableScroll } from "../components/layout/collection-chrome";
+import { EmptyState } from "../components/layout/empty-state";
 import { useRefreshModel } from "../components/layout/refresh-provider";
 import { NUM_CELL, NUM_HEAD } from "../lib/format";
 import { isRemoteReadOnly } from "../lib/local-environment";
@@ -244,11 +245,6 @@ function RefreshCenterBody({ center }: { center: RefreshCenterViewModel }) {
 				title="刷新中心"
 				repositoryScope={false}
 				description="统一管理账号 A、仓库 B 的刷新进度、运行记录与每日自动计划"
-				actions={
-					<Button size="sm" variant="secondary" asChild>
-						<Link to="/factory">返回软件工厂</Link>
-					</Button>
-				}
 			/>
 			<section
 				className="refresh-health"
@@ -382,80 +378,90 @@ function RefreshCenterBody({ center }: { center: RefreshCenterViewModel }) {
 									正在读取刷新记录…
 								</p>
 							) : (
-								<div className="refresh-console-empty">
-									<FolderSync aria-hidden="true" />
-									<h3>还没有刷新记录</h3>
-									<p>发起第一次统一刷新后，会在这里保留 A / B 进度与结果。</p>
-									<Button size="sm" onClick={() => setTab("plan")}>
-										发起第一次刷新
-									</Button>
-								</div>
+								<EmptyState
+									icon={<FolderSync aria-hidden="true" />}
+									title="还没有刷新记录"
+									description="发起第一次统一刷新后，会在这里保留 A / B 进度与结果。"
+									action={
+										<Button size="sm" onClick={() => setTab("plan")}>
+											发起第一次刷新
+										</Button>
+									}
+								/>
 							)}
 							{state.runs.length ? (
 								<section aria-label="刷新记录" className="mt-6">
-									<div className="refresh-section-heading">
-										<h3>运行记录</h3>
-										<span>最多显示最近 50 次；点击查看详情</span>
-									</div>
-									<TableScroll label="刷新记录">
-										<Table className="refresh-history-table">
-											<TableHeader>
-												<TableRow>
-													<TableHead>时间</TableHead>
-													<TableHead>状态</TableHead>
-													<TableHead>范围</TableHead>
-													<TableHead className={NUM_HEAD}>耗时</TableHead>
-													<TableHead className={NUM_HEAD}>请求</TableHead>
-													<TableHead>问题仓库</TableHead>
-													<TableHead />
-												</TableRow>
-											</TableHeader>
-											<TableBody>
-												{historyRows.map((row, index) => {
-													const run = state.runs[index];
-													if (!run) return null;
-													const viewing = state.selected?.id === row.id;
-													return (
-														<TableRow key={row.id} aria-current={viewing ? "true" : undefined}>
-															<TableCell className="whitespace-nowrap">{row.at}</TableCell>
-															<TableCell>
-																<CandyBadge tone={historyTone(run.status)}>{row.status}</CandyBadge>
-															</TableCell>
-															<TableCell>
-																<span className="block">{row.scope}</span>
-																<span className="block text-xs text-basalt-muted-foreground">
-																	{run.trigger === "scheduled" ? "每日自动" : "手动"} ·{" "}
-																	{run.completedRepos} / {run.repos.length} 仓库
-																</span>
-															</TableCell>
-															<TableCell className={NUM_CELL}>{row.duration}</TableCell>
-															<TableCell className={NUM_CELL}>{row.requests}</TableCell>
-															<TableCell>
-																<span
-																	className="block max-w-56 truncate text-xs"
-																	title={row.problems}
-																>
-																	{row.problems}
-																</span>
-															</TableCell>
-															<TableCell>
-																<Button
-																	size="sm"
-																	variant="ghost"
-																	aria-label={`查看 ${row.at} 的运行详情`}
-																	onClick={() =>
-																		center.select(row.id === current?.id ? "" : row.id)
-																	}
-																>
-																	{viewing ? "查看中" : "查看"}
-																</Button>
-															</TableCell>
+									<LayerCard>
+										<LayerCard.Header>
+											<div className="refresh-section-heading">
+												<h3>运行记录</h3>
+												<span>最多显示最近 50 次；点击查看详情</span>
+											</div>
+										</LayerCard.Header>
+										<LayerCard.Well className="p-0">
+											<TableScroll label="刷新记录">
+												<Table className="refresh-history-table">
+													<TableHeader>
+														<TableRow>
+															<TableHead>时间</TableHead>
+															<TableHead>状态</TableHead>
+															<TableHead>范围</TableHead>
+															<TableHead className={NUM_HEAD}>耗时</TableHead>
+															<TableHead className={NUM_HEAD}>请求</TableHead>
+															<TableHead>问题仓库</TableHead>
+															<TableHead />
 														</TableRow>
-													);
-												})}
-											</TableBody>
-										</Table>
-									</TableScroll>
+													</TableHeader>
+													<TableBody>
+														{historyRows.map((row, index) => {
+															const run = state.runs[index];
+															if (!run) return null;
+															const viewing = state.selected?.id === row.id;
+															return (
+																<TableRow key={row.id} aria-current={viewing ? "true" : undefined}>
+																	<TableCell className="whitespace-nowrap">{row.at}</TableCell>
+																	<TableCell>
+																		<CandyBadge tone={historyTone(run.status)}>
+																			{row.status}
+																		</CandyBadge>
+																	</TableCell>
+																	<TableCell>
+																		<span className="block">{row.scope}</span>
+																		<span className="block text-xs text-basalt-muted-foreground">
+																			{run.trigger === "scheduled" ? "每日自动" : "手动"} ·{" "}
+																			{run.completedRepos} / {run.repos.length} 仓库
+																		</span>
+																	</TableCell>
+																	<TableCell className={NUM_CELL}>{row.duration}</TableCell>
+																	<TableCell className={NUM_CELL}>{row.requests}</TableCell>
+																	<TableCell>
+																		<span
+																			className="block max-w-56 truncate text-xs"
+																			title={row.problems}
+																		>
+																			{row.problems}
+																		</span>
+																	</TableCell>
+																	<TableCell>
+																		<Button
+																			size="sm"
+																			variant="ghost"
+																			aria-label={`查看 ${row.at} 的运行详情`}
+																			onClick={() =>
+																				center.select(row.id === current?.id ? "" : row.id)
+																			}
+																		>
+																			{viewing ? "查看中" : "查看"}
+																		</Button>
+																	</TableCell>
+																</TableRow>
+															);
+														})}
+													</TableBody>
+												</Table>
+											</TableScroll>
+										</LayerCard.Well>
+									</LayerCard>
 								</section>
 							) : null}
 						</TabsContent>

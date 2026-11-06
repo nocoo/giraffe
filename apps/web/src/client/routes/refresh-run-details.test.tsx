@@ -88,6 +88,9 @@ it("opens a retained historical run without manufacturing missing diagnostics", 
 	expect(container.textContent).toContain("未记录 3");
 	expect(container.querySelectorAll('[data-state="unknown"]')).toHaveLength(24);
 	expect(container.querySelectorAll('[data-state="complete"]')).toHaveLength(0);
+	expect(container.querySelector(".refresh-run-overview [data-basalt-surface]")).not.toBeNull();
+	expect(container.querySelector(".refresh-run-repositories [data-basalt-surface]")).not.toBeNull();
+	expect(container.querySelector(".refresh-console-empty")).toBeNull();
 });
 
 it("renders per-repository dimensions, reasons, request split and step timings", async () => {
@@ -131,6 +134,38 @@ it("renders per-repository dimensions, reasons, request split and step timings",
 	expect(text).not.toContain("提交完整");
 	expect(text).toContain("Issues部分");
 	expect(text).not.toContain("结束本次刷新");
+});
+
+it("renders disabled alert features as informational GitHub settings reasons", async () => {
+	await render(
+		<RefreshRunDetails
+			run={run({
+				partialReasons: [
+					{
+						repo: "nocoo/app",
+						codes: ["alerts:alerts_disabled", "alerts:code_scanning_disabled"],
+					},
+				],
+			})}
+			now={NOW}
+		/>,
+	);
+	const text = container.textContent ?? "";
+	expect(text).toContain("未开启 Dependabot 告警，可在 GitHub 设置中启用");
+	expect(text).toContain("未开启 Code scanning，可在 GitHub 设置中启用");
+	expect(text).not.toContain("alerts_disabled");
+	expect(text).not.toContain("code_scanning_disabled");
+	const infoRows = container.querySelectorAll('.refresh-issue li[data-info="true"]');
+	expect(infoRows).toHaveLength(2);
+	const links = Array.from(
+		container.querySelectorAll('a[href="https://github.com/nocoo/app/settings/security"]'),
+	);
+	expect(links).toHaveLength(2);
+	for (const link of links) {
+		expect(link.textContent).toContain("去 GitHub 设置");
+		expect(link.getAttribute("target")).toBe("_blank");
+		expect(link.getAttribute("rel")).toBe("noreferrer");
+	}
 });
 
 it("explains a failed account run and an empty B without inventing repositories", async () => {

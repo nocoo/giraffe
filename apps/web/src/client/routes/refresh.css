@@ -55,9 +55,6 @@
 	flex-direction: column;
 	width: 100%;
 	min-width: 0;
-	border: 1px solid var(--color-basalt-border);
-	border-radius: var(--radius-basalt-md);
-	overflow: hidden;
 }
 .refresh-console-tabs {
 	display: flex;
@@ -112,11 +109,6 @@
 	display: flex;
 	flex-direction: column;
 	gap: 22px;
-}
-.refresh-run-overview {
-	border: 1px solid var(--color-basalt-border);
-	border-radius: 10px;
-	padding: 18px;
 }
 .refresh-run-overview-heading {
 	display: flex;
@@ -210,11 +202,6 @@
 .refresh-issue-body {
 	padding: 4px 16px 16px;
 }
-.refresh-run-queue {
-	border: 1px solid var(--color-basalt-border);
-	border-radius: 9px;
-	overflow: hidden;
-}
 .refresh-queue-repo {
 	min-width: 0;
 }
@@ -252,17 +239,6 @@
 	color: var(--color-basalt-muted-foreground);
 	border-top: 1px solid var(--color-basalt-border);
 	padding-top: 13px;
-}
-.refresh-console-empty {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	flex-direction: column;
-	gap: 12px;
-	padding: 40px 18px;
-	font-size: var(--text-sm);
-	color: var(--color-basalt-muted-foreground);
-	text-align: center;
 }
 .refresh-plan-scope {
 	display: flex;
@@ -540,16 +516,6 @@
 	font-size: var(--text-xs);
 	overflow-wrap: anywhere;
 }
-.refresh-console-empty > svg {
-	width: 30px;
-	height: 30px;
-	margin-bottom: 4px;
-}
-.refresh-console-empty h3 {
-	font-size: 1rem;
-	font-weight: 500;
-	color: var(--color-basalt-foreground);
-}
 .refresh-plan-scope > p {
 	font-size: var(--text-xs);
 	line-height: 1.7;
@@ -742,18 +708,31 @@ details[open] > summary > .refresh-disclosure {
 	.refresh-run-details:has(.refresh-run-issues):has(.refresh-run-repositories) {
 		display: grid;
 		grid-template-columns: minmax(0, 1.3fr) minmax(280px, 0.95fr);
-		grid-auto-flow: row dense;
 		align-items: start;
 	}
 	.refresh-run-details > * {
 		min-width: 0;
 		grid-column: 1 / -1;
 	}
+	.refresh-run-details > .refresh-run-overview {
+		grid-column: 1 / -1;
+		grid-row: 1;
+	}
+	.refresh-run-details > [aria-label="请求统计"] {
+		grid-column: 1 / -1;
+		grid-row: 2;
+	}
 	.refresh-run-details > .refresh-run-issues {
 		grid-column: 2;
+		grid-row: 3;
 	}
 	.refresh-run-details > .refresh-run-repositories {
 		grid-column: 1;
+		grid-row: 3;
+	}
+	.refresh-run-details > .refresh-diagnostics {
+		grid-column: 1 / -1;
+		grid-row: 4;
 	}
 }
 @media (max-width: 700px) {
@@ -778,9 +757,6 @@ details[open] > summary > .refresh-disclosure {
 	}
 	.refresh-console-body {
 		padding: 16px;
-	}
-	.refresh-run-overview {
-		padding: 15px;
 	}
 	.refresh-run-overview-heading {
 		align-items: flex-start;

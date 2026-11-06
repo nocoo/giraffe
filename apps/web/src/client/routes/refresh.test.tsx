@@ -131,6 +131,7 @@ it("restores the refresh console with current A/B progress, requests and cancell
 	await render(value);
 	const text = container.textContent ?? "";
 	expect(text).toContain("刷新中心");
+	expect(text).not.toContain("返回软件工厂");
 	expect(container.querySelector("header fieldset")).toBeNull();
 	expect(text).toContain("刷新中 · 手动 · 星标仓库 + 上海当日新建且未观测的非 fork 仓库");
 	expect(text).toContain("B · nocoo/web · 2 / 2");
@@ -138,6 +139,9 @@ it("restores the refresh console with current A/B progress, requests and cancell
 	expect(text).toContain("GitHub 请求 · A / B 拆分");
 	expect(text).toContain("A · 账号");
 	expect(text).toContain("运行记录");
+	expect(
+		container.querySelector('section[aria-label="刷新记录"] [data-basalt-surface]'),
+	).not.toBeNull();
 	expect(text).not.toMatch(/快速刷新|深度刷新|同步仓库列表/);
 	await act(async () => button("结束刷新").click());
 	expect(value.cancel).toHaveBeenCalledOnce();
@@ -219,6 +223,7 @@ it("shows an empty history and leads to the first refresh", async () => {
 	vi.mocked(apiGet).mockResolvedValue({ items: [], collectionAvailable: true });
 	await render(model(null));
 	expect(container.textContent).toContain("还没有刷新记录");
+	expect(container.querySelector(".refresh-console-empty")).toBeNull();
 	await act(async () => button("发起第一次刷新").click());
 	expect(button("开始刷新")).not.toBeNull();
 });

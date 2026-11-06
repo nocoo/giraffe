@@ -1,4 +1,4 @@
-import { Button } from "@nocoo/basalt";
+import { Button, Link } from "@nocoo/basalt";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import {
 	Table,
@@ -14,6 +14,7 @@ import {
 	ChevronRight,
 	Circle,
 	Clock3,
+	ExternalLink,
 	Info,
 	LoaderCircle,
 	Minus,
@@ -22,6 +23,7 @@ import {
 } from "lucide-react";
 import type { RefreshDimension, RefreshRun } from "../../lib/refresh-types";
 import { CandyBadge } from "../components/layout/candy-badge";
+import { EmptyState } from "../components/layout/empty-state";
 import { ProjectLabel } from "../components/layout/project-identity";
 import { formatCount, formatPreciseDate, NUM_CELL, NUM_HEAD } from "../lib/format";
 import { REFRESH_LABELS, refreshActive, refreshStatus } from "../viewmodels/refresh";
@@ -115,18 +117,29 @@ function timingText(timing: ReturnType<typeof refreshStepTiming>): string | null
 	return `${boundary} · 耗时 ${timing.durationLabel} · 尝试 ${timing.attempts} 次`;
 }
 
-function ReasonList({ reasons }: { reasons: RefreshReason[] }) {
+function ReasonList({ reasons, repo }: { reasons: RefreshReason[]; repo?: string }) {
 	return (
 		<ul>
 			{reasons.map((reason) => (
 				<li
 					key={`${reason.dimension ?? "run"}:${reason.code}`}
-					data-info={reason.dimension === null}
+					data-info={reason.informational || reason.dimension === null}
 				>
 					<strong>{reason.label}</strong>
 					{reason.failures.map((failure) => (
 						<span key={refreshFailureText(failure)}>{refreshFailureText(failure)}</span>
 					))}
+					{reason.informational && repo ? (
+						<Button asChild size="sm" variant="secondary">
+							<Link
+								href={`https://github.com/${repo}/settings/security`}
+								target="_blank"
+								rel="noreferrer"
+							>
+								<ExternalLink className="size-3.5" aria-hidden="true" />去 GitHub 设置
+							</Link>
+						</Button>
+					) : null}
 				</li>
 			))}
 		</ul>
@@ -237,153 +250,155 @@ export function RefreshRunDetails({
 	return (
 		<div className="refresh-run-details">
 			<section className="refresh-run-overview" aria-label="本次刷新进度">
-				<div className="refresh-run-overview-heading">
-					<div>
-						<p className="refresh-eyebrow">
-							{refreshScopeLabel(run)} · {run.trigger === "scheduled" ? "每日自动" : "手动发起"}
-						</p>
-						<h3>
-							{refreshStatus(run)} · {refreshWindowLabel(run)}
-						</h3>
-					</div>
-					<div className="refresh-run-fraction">
-						<strong>
-							{progress.processed}
-							<span> / {progress.total}</span>
-						</strong>
-						<small>步已处理</small>
-					</div>
-				</div>
-				<div className="refresh-progress-track">
-					<progress
-						className="sr-only"
-						max={progress.total}
-						value={progress.processed}
-						aria-label="本次刷新进度"
-					/>
-					<div className="refresh-progress-segments" aria-hidden="true">
-						<span
-							data-status="complete"
-							style={{ width: `${(progress.complete / progress.total) * 100}%` }}
-						/>
-						<span
-							data-status="partial"
-							style={{ width: `${(progress.partial / progress.total) * 100}%` }}
-						/>
-						<span
-							data-status="unknown"
-							style={{ width: `${(progress.unknown / progress.total) * 100}%` }}
-						/>
-						<span
-							data-status="pending"
-							style={{ width: `${(progress.pending / progress.total) * 100}%` }}
-						/>
-						<span
-							data-status="skipped"
-							style={{ width: `${(progress.skipped / progress.total) * 100}%` }}
-						/>
-					</div>
-				</div>
-				<div className="refresh-progress-legend">
-					{progress.unknown > 0 ? (
-						<span data-status="unknown">
-							<Info aria-hidden="true" />
-							未记录 {progress.unknown}
-						</span>
-					) : null}
-					<span data-status="complete">
-						<Check aria-hidden="true" />
-						已完成 {progress.complete}
-					</span>
-					<span data-status="partial">
-						<AlertCircle aria-hidden="true" />
-						部分 {progress.partial}
-					</span>
-					<span data-status="pending">
-						<Clock3 aria-hidden="true" />
-						待处理 {progress.pending}
-					</span>
-					<span data-status="skipped">
-						<Minus aria-hidden="true" />
-						未完成 {progress.skipped}
-					</span>
-					<span className="ml-auto">
-						<Clock3 aria-hidden="true" />
-						耗时 {refreshTimingRows(run, now).at(-1)?.value ?? "—"}
-					</span>
-				</div>
-				<p className="refresh-current-step" role="status">
-					{refreshCurrentStep(run)}
-					{run.cancelRequested ? " · 已请求取消，当前步骤结束后停止。" : ""}
-				</p>
-				<ol className="refresh-run-phases" aria-label="刷新阶段">
-					<li
-						data-complete={account.status === "complete"}
-						data-warning={account.status === "partial" || account.status === "failed"}
-						data-skipped={account.status === "skipped"}
-					>
-						<span className="refresh-phase-number">{stepIcon(account.status)}</span>
+				<LayerCard.Well className="refresh-run-overview-well">
+					<div className="refresh-run-overview-heading">
 						<div>
-							<strong>A · 账号信息、贡献与仓库清单</strong>
-							<small>
-								{account.label}
-								{account.requests.graphql !== null || account.requests.rest !== null
-									? ` · GraphQL ${account.requests.graphql ?? "—"} / REST ${account.requests.rest ?? "—"}`
-									: ""}
-								{account.note ? ` · ${account.note}` : ""}
-								{timingText(account.timing) ? ` · ${timingText(account.timing)}` : ""}
-							</small>
+							<p className="refresh-eyebrow">
+								{refreshScopeLabel(run)} · {run.trigger === "scheduled" ? "每日自动" : "手动发起"}
+							</p>
+							<h3>
+								{refreshStatus(run)} · {refreshWindowLabel(run)}
+							</h3>
 						</div>
-					</li>
-					<li
-						data-complete={bStatus === "complete"}
-						data-warning={bPartial > 0 || bStatus === "failed"}
-						data-skipped={rows.length > 0 && bProcessed === 0}
-					>
-						<span className="refresh-phase-number">{rows.length ? stepIcon(bStatus) : "2"}</span>
-						<div>
-							<strong>B · 仓库串行刷新</strong>
-							<small>
-								{bProcessed} / {rows.length} 个仓库已处理
-								{bStatus === "failed"
-									? " · 有仓库失败"
-									: bStatus === "unknown"
-										? " · 结果未记录"
-										: ""}
-								{bPartial ? ` · ${bPartial} 个部分完成` : ""}
-								{active && run.phase === "repos" ? ` · 当前 ${refreshCurrentStep(run)}` : ""}
-							</small>
+						<div className="refresh-run-fraction">
+							<strong>
+								{progress.processed}
+								<span> / {progress.total}</span>
+							</strong>
+							<small>步已处理</small>
 						</div>
-					</li>
-				</ol>
-				<dl className="refresh-run-times">
-					{refreshTimingRows(run, now).map((row) => (
-						<div key={row.label}>
-							<dt>{row.label}</dt>
-							<dd>{row.value}</dd>
-						</div>
-					))}
-					<div>
-						<dt>状态</dt>
-						<dd>
-							<CandyBadge tone={statusTone(run.status)}>{refreshStatus(run)}</CandyBadge>
-						</dd>
 					</div>
-				</dl>
-				{cancelable || run.cancelRequested ? (
-					<div className="refresh-active-controls">
-						<div>
-							<strong>{run.cancelRequested ? "已请求取消" : "结束本次刷新"}</strong>
-							<p>已写入的观测和数据保留，不会回滚。</p>
+					<div className="refresh-progress-track">
+						<progress
+							className="sr-only"
+							max={progress.total}
+							value={progress.processed}
+							aria-label="本次刷新进度"
+						/>
+						<div className="refresh-progress-segments" aria-hidden="true">
+							<span
+								data-status="complete"
+								style={{ width: `${(progress.complete / progress.total) * 100}%` }}
+							/>
+							<span
+								data-status="partial"
+								style={{ width: `${(progress.partial / progress.total) * 100}%` }}
+							/>
+							<span
+								data-status="unknown"
+								style={{ width: `${(progress.unknown / progress.total) * 100}%` }}
+							/>
+							<span
+								data-status="pending"
+								style={{ width: `${(progress.pending / progress.total) * 100}%` }}
+							/>
+							<span
+								data-status="skipped"
+								style={{ width: `${(progress.skipped / progress.total) * 100}%` }}
+							/>
 						</div>
-						{cancelable ? (
-							<Button size="sm" variant="secondary" disabled={cancelling} onClick={onCancel}>
-								<Square className="size-3.5" aria-hidden="true" />
-								{cancelling ? "正在取消…" : "结束本次刷新"}
-							</Button>
+					</div>
+					<div className="refresh-progress-legend">
+						{progress.unknown > 0 ? (
+							<span data-status="unknown">
+								<Info aria-hidden="true" />
+								未记录 {progress.unknown}
+							</span>
 						) : null}
+						<span data-status="complete">
+							<Check aria-hidden="true" />
+							已完成 {progress.complete}
+						</span>
+						<span data-status="partial">
+							<AlertCircle aria-hidden="true" />
+							部分 {progress.partial}
+						</span>
+						<span data-status="pending">
+							<Clock3 aria-hidden="true" />
+							待处理 {progress.pending}
+						</span>
+						<span data-status="skipped">
+							<Minus aria-hidden="true" />
+							未完成 {progress.skipped}
+						</span>
+						<span className="ml-auto">
+							<Clock3 aria-hidden="true" />
+							耗时 {refreshTimingRows(run, now).at(-1)?.value ?? "—"}
+						</span>
 					</div>
-				) : null}
+					<p className="refresh-current-step" role="status">
+						{refreshCurrentStep(run)}
+						{run.cancelRequested ? " · 已请求取消，当前步骤结束后停止。" : ""}
+					</p>
+					<ol className="refresh-run-phases" aria-label="刷新阶段">
+						<li
+							data-complete={account.status === "complete"}
+							data-warning={account.status === "partial" || account.status === "failed"}
+							data-skipped={account.status === "skipped"}
+						>
+							<span className="refresh-phase-number">{stepIcon(account.status)}</span>
+							<div>
+								<strong>A · 账号信息、贡献与仓库清单</strong>
+								<small>
+									{account.label}
+									{account.requests.graphql !== null || account.requests.rest !== null
+										? ` · GraphQL ${account.requests.graphql ?? "—"} / REST ${account.requests.rest ?? "—"}`
+										: ""}
+									{account.note ? ` · ${account.note}` : ""}
+									{timingText(account.timing) ? ` · ${timingText(account.timing)}` : ""}
+								</small>
+							</div>
+						</li>
+						<li
+							data-complete={bStatus === "complete"}
+							data-warning={bPartial > 0 || bStatus === "failed"}
+							data-skipped={rows.length > 0 && bProcessed === 0}
+						>
+							<span className="refresh-phase-number">{rows.length ? stepIcon(bStatus) : "2"}</span>
+							<div>
+								<strong>B · 仓库串行刷新</strong>
+								<small>
+									{bProcessed} / {rows.length} 个仓库已处理
+									{bStatus === "failed"
+										? " · 有仓库失败"
+										: bStatus === "unknown"
+											? " · 结果未记录"
+											: ""}
+									{bPartial ? ` · ${bPartial} 个部分完成` : ""}
+									{active && run.phase === "repos" ? ` · 当前 ${refreshCurrentStep(run)}` : ""}
+								</small>
+							</div>
+						</li>
+					</ol>
+					<dl className="refresh-run-times">
+						{refreshTimingRows(run, now).map((row) => (
+							<div key={row.label}>
+								<dt>{row.label}</dt>
+								<dd>{row.value}</dd>
+							</div>
+						))}
+						<div>
+							<dt>状态</dt>
+							<dd>
+								<CandyBadge tone={statusTone(run.status)}>{refreshStatus(run)}</CandyBadge>
+							</dd>
+						</div>
+					</dl>
+					{cancelable || run.cancelRequested ? (
+						<div className="refresh-active-controls">
+							<div>
+								<strong>{run.cancelRequested ? "已请求取消" : "结束本次刷新"}</strong>
+								<p>已写入的观测和数据保留，不会回滚。</p>
+							</div>
+							{cancelable ? (
+								<Button size="sm" variant="secondary" disabled={cancelling} onClick={onCancel}>
+									<Square className="size-3.5" aria-hidden="true" />
+									{cancelling ? "正在取消…" : "结束本次刷新"}
+								</Button>
+							) : null}
+						</div>
+					) : null}
+				</LayerCard.Well>
 			</section>
 			<LayerCard aria-label="请求统计">
 				<LayerCard.Header>
@@ -444,7 +459,12 @@ export function RefreshRunDetails({
 										<ChevronRight className="refresh-disclosure" aria-hidden="true" />
 									</summary>
 									<div className="refresh-issue-body">
-										<ReasonList reasons={group.reasons} />
+										<ReasonList
+											reasons={group.reasons}
+											{...(group.key === "account" || group.key === "error"
+												? {}
+												: { repo: group.key })}
+										/>
 									</div>
 								</details>
 							))}
@@ -458,23 +478,29 @@ export function RefreshRunDetails({
 				</LayerCard.Body>
 			</LayerCard>
 			<section className="refresh-run-repositories" aria-label="逐仓库刷新进度">
-				<div className="refresh-section-heading">
-					<h3>仓库进度 · A 之后的串行 B</h3>
-					<span>展开仓库，查看维度处理状态与原因</span>
-				</div>
-				{rows.length ? (
-					<div className="refresh-run-queue">
-						{rows.map((row) => (
-							<RepoRow key={row.repo} row={row} />
-						))}
-					</div>
-				) : (
-					<div className="refresh-console-empty">
-						<Circle aria-hidden="true" />
-						<h3>还没有仓库进入 B</h3>
-						<p>A 完成后，默认范围中的星标仓库与当日新仓库会逐个串行刷新。</p>
-					</div>
-				)}
+				<LayerCard>
+					<LayerCard.Header>
+						<div className="refresh-section-heading">
+							<h3>仓库进度 · A 之后的串行 B</h3>
+							<span>展开仓库，查看维度处理状态与原因</span>
+						</div>
+					</LayerCard.Header>
+					<LayerCard.Well className="p-0">
+						{rows.length ? (
+							<LayerCard.Well className="refresh-run-queue p-0">
+								{rows.map((row) => (
+									<RepoRow key={row.repo} row={row} />
+								))}
+							</LayerCard.Well>
+						) : (
+							<EmptyState
+								icon={<Circle aria-hidden="true" />}
+								title="还没有仓库进入 B"
+								description="A 完成后，默认范围中的星标仓库与当日新仓库会逐个串行刷新。"
+							/>
+						)}
+					</LayerCard.Well>
+				</LayerCard>
 			</section>
 			<details className="refresh-diagnostics">
 				<summary>运行信息</summary>

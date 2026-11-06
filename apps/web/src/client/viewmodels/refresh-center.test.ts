@@ -623,6 +623,20 @@ describe("refresh center repositories and reasons", () => {
 		).toBe("github_error");
 	});
 
+	it("marks disabled alert features as informational explanations", () => {
+		const parsed = refreshReasons(
+			reason({
+				codes: ["alerts:alerts_disabled", "alerts:code_scanning_disabled"],
+			}),
+		);
+		expect(parsed.map((entry) => [entry.label, entry.informational])).toEqual([
+			["依赖告警 · 未开启 Dependabot 告警，可在 GitHub 设置中启用", true],
+			["依赖告警 · 未开启 Code scanning，可在 GitHub 设置中启用", true],
+		]);
+		expect(parsed.map((entry) => entry.label).join(" ")).not.toContain("alerts_disabled");
+		expect(parsed.map((entry) => entry.label).join(" ")).not.toContain("code_scanning_disabled");
+	});
+
 	it("derives per-repository status and per-dimension reasons", () => {
 		const rows = refreshRepoRows(
 			run({

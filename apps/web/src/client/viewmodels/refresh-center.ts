@@ -66,6 +66,7 @@ export type RefreshReason = {
 	dimension: RefreshDimension | null;
 	code: string;
 	label: string;
+	informational: boolean;
 	failures: RefreshFailureDetail[];
 };
 
@@ -157,6 +158,8 @@ const REASON_LABELS: Record<string, string> = {
 	"actions:filter_cap": "CI 运行结果达到搜索上限",
 	"actions:github_error": "读取失败",
 	"alerts:permission_denied": "无权限",
+	"alerts:alerts_disabled": "未开启 Dependabot 告警，可在 GitHub 设置中启用",
+	"alerts:code_scanning_disabled": "未开启 Code scanning，可在 GitHub 设置中启用",
 	"collection:partial": "该步骤只获取到部分数据",
 	"dependencies:unavailable": "依赖分析不可用",
 	repository_cooldown: "仓库刷新冷却中",
@@ -199,12 +202,17 @@ function failureSource(failure: RefreshFailureDetail): string {
 	return failure.dimension ? `${failure.dimension}:${failure.code}` : failure.code;
 }
 
+function isInformationalReason(source: string): boolean {
+	return source === "alerts:alerts_disabled" || source === "alerts:code_scanning_disabled";
+}
+
 export function refreshReasons(reason: RefreshPartialReason): RefreshReason[] {
 	const parsed = reason.codes.map((source) => {
 		const segment = reasonCode(source);
 		return {
 			...segment,
 			label: reasonLabel(segment.dimension, segment.code, source),
+			informational: isInformationalReason(source),
 			failures: (reason.failures ?? []).filter((failure) => failureSource(failure) === source),
 		};
 	});
@@ -215,6 +223,7 @@ export function refreshReasons(reason: RefreshPartialReason): RefreshReason[] {
 			return {
 				...segment,
 				label: reasonLabel(segment.dimension, segment.code, failureSource(failure)),
+				informational: isInformationalReason(failureSource(failure)),
 				failures: [failure],
 			};
 		});
