@@ -31,6 +31,7 @@ import {
 	reviewBadgeVariant,
 } from "../lib/format";
 import {
+	coverageReasonLabel,
 	factoryError,
 	loadFactoryDetail,
 	STATUS_LABELS,
@@ -430,9 +431,11 @@ export function RepoFactoryTab({
 					) : null}
 				</div>
 			)}
-			{!loading && coverage?.reason ? <p className="factory-notice">{coverage.reason}</p> : null}
+			{!loading && coverage?.reason ? (
+				<p className="factory-notice">{coverageReasonLabel(coverage.reason)}</p>
+			) : null}
 			<LayerCard>
-				<LayerCard.Well className="p-0">
+				<LayerCard.Body className="p-0">
 					{error ? (
 						<p role="alert" className="px-4 py-6 text-sm">
 							{error}
@@ -495,7 +498,7 @@ export function RepoFactoryTab({
 							</Table>
 						</TableScroll>
 					)}
-				</LayerCard.Well>
+				</LayerCard.Body>
 			</LayerCard>
 			{pages > 1 ? (
 				<div className="flex items-center justify-end gap-2 text-xs text-basalt-muted-foreground">

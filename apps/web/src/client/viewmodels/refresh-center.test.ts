@@ -637,6 +637,40 @@ describe("refresh center repositories and reasons", () => {
 		expect(parsed.map((entry) => entry.label).join(" ")).not.toContain("code_scanning_disabled");
 	});
 
+	it("explains unavailable dependency analysis as a normal configuration state", () => {
+		const parsed = refreshReasons(
+			reason({ codes: ["dependencies:dependency_analysis_unavailable"] }),
+		);
+		expect(parsed[0]?.label).toBe("仓库未配置依赖分析，未采集依赖证据");
+		expect(parsed[0]?.informational).toBe(true);
+		expect(
+			refreshFailureText({
+				dimension: null,
+				code: "dependency_analysis_unavailable",
+				httpStatus: null,
+				graphqlType: null,
+				graphqlPath: null,
+			}),
+		).toBe("仓库未配置依赖分析，未采集依赖证据");
+	});
+
+	it("explains bare disabled codes without a dimension", () => {
+		const parsed = refreshReasons(
+			reason({
+				codes: ["alerts_disabled", "code_scanning_disabled", "dependency_analysis_unavailable"],
+			}),
+		);
+		expect(parsed.map((entry) => entry.label)).toEqual([
+			"未开启 Dependabot 告警，可在 GitHub 设置中启用",
+			"未开启 Code scanning，可在 GitHub 设置中启用",
+			"仓库未配置依赖分析，未采集依赖证据",
+		]);
+		expect(parsed.every((entry) => entry.informational)).toBe(true);
+		expect(parsed.map((entry) => entry.label).join(" ")).not.toMatch(
+			/alerts_disabled|code_scanning_disabled|dependency_analysis_unavailable/,
+		);
+	});
+
 	it("derives per-repository status and per-dimension reasons", () => {
 		const rows = refreshRepoRows(
 			run({

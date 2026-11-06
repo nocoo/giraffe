@@ -37,6 +37,18 @@ export const STATUS_LABELS: Record<FactoryCoverage["status"], string> = {
 	unavailable: "不可用",
 	limited: "已截断",
 };
+
+const COVERAGE_REASONS: Record<string, string> = {
+	dependency_analysis_unavailable: "仓库未配置依赖分析，未采集依赖证据",
+	alerts_disabled: "未开启 Dependabot 告警，可在 GitHub 设置中启用",
+	code_scanning_disabled: "未开启 Code scanning，可在 GitHub 设置中启用",
+};
+
+export function coverageReasonLabel(reason: string): string {
+	const separator = reason.lastIndexOf(":");
+	const code = separator < 0 ? reason : reason.slice(separator + 1);
+	return COVERAGE_REASONS[code] ?? reason;
+}
 export type FactoryDetail = {
 	account_id: string;
 	runId: string;

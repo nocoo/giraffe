@@ -168,7 +168,7 @@ test("real unified refresh reloads data, respects stars and supports an unstarre
 
 	await page.goto(`/repos/${repository}?tab=factory&stream=dependencies`);
 	await expect(page.getByTestId("repo-detail")).toBeVisible();
-	await expect(page.locator(".factory-notice")).toContainText("dependency_analysis_unavailable");
+	await expect(page.locator(".factory-notice")).toContainText("仓库未配置依赖分析，未采集依赖证据");
 	await expect(page.locator(".factory-provenance")).toContainText("不可用");
 	await expect(page.getByRole("alert")).toHaveCount(0);
 	const beforeDetail = reads.filter(

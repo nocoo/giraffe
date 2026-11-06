@@ -10,6 +10,7 @@ import {
 	activityAge,
 	activityQuadrant,
 	backlogRows,
+	coverageReasonLabel,
 	dependencyEdges,
 	eventPage,
 	factoryBoard,
@@ -1354,4 +1355,20 @@ it("describes change against the previous period without inventing a baseline", 
 	expect(periodChange(37, -12, "delta")).toEqual({ label: "+49", direction: "up" });
 	expect(periodChange(-5, 3, "delta")).toEqual({ label: "-8", direction: "down" });
 	expect(periodChange(2, 2, "delta")).toEqual({ label: "持平", direction: "flat" });
+});
+
+it("explains disabled coverage features without raw codes", () => {
+	expect(coverageReasonLabel("dependency_analysis_unavailable")).toBe(
+		"仓库未配置依赖分析，未采集依赖证据",
+	);
+	expect(coverageReasonLabel("dependencies:dependency_analysis_unavailable")).toBe(
+		"仓库未配置依赖分析，未采集依赖证据",
+	);
+	expect(coverageReasonLabel("alerts_disabled")).toBe(
+		"未开启 Dependabot 告警，可在 GitHub 设置中启用",
+	);
+	expect(coverageReasonLabel("code_scanning_disabled")).toBe(
+		"未开启 Code scanning，可在 GitHub 设置中启用",
+	);
+	expect(coverageReasonLabel("unknown_code")).toBe("unknown_code");
 });

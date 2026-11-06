@@ -9,6 +9,7 @@ import {
 } from "../../lib/refresh-types";
 import { apiGet } from "../lib/api";
 import { formatCount, formatPreciseDate } from "../lib/format";
+import { coverageReasonLabel } from "./factory";
 import {
 	mergeRefreshRun,
 	REFRESH_LABELS,
@@ -160,6 +161,8 @@ const REASON_LABELS: Record<string, string> = {
 	"alerts:permission_denied": "无权限",
 	"alerts:alerts_disabled": "未开启 Dependabot 告警，可在 GitHub 设置中启用",
 	"alerts:code_scanning_disabled": "未开启 Code scanning，可在 GitHub 设置中启用",
+	"dependencies:dependency_analysis_unavailable": "仓库未配置依赖分析，未采集依赖证据",
+	dependency_analysis_unavailable: "仓库未配置依赖分析，未采集依赖证据",
 	"collection:partial": "该步骤只获取到部分数据",
 	"dependencies:unavailable": "依赖分析不可用",
 	repository_cooldown: "仓库刷新冷却中",
@@ -195,6 +198,9 @@ function reasonCode(code: string): { dimension: RefreshDimension | null; code: s
 function reasonLabel(dimension: RefreshDimension | null, code: string, source: string): string {
 	const known = REASON_LABELS[source] ?? REASON_LABELS[code];
 	if (known) return dimension ? `${REFRESH_LABELS[dimension]} · ${known}` : known;
+	const explained = coverageReasonLabel(code);
+	if (explained !== code)
+		return dimension ? `${REFRESH_LABELS[dimension]} · ${explained}` : explained;
 	return dimension ? `${REFRESH_LABELS[dimension]} · ${code}` : code;
 }
 
@@ -203,7 +209,13 @@ function failureSource(failure: RefreshFailureDetail): string {
 }
 
 function isInformationalReason(source: string): boolean {
-	return source === "alerts:alerts_disabled" || source === "alerts:code_scanning_disabled";
+	const separator = source.indexOf(":");
+	const code = separator < 0 ? source : source.slice(separator + 1);
+	return (
+		code === "alerts_disabled" ||
+		code === "code_scanning_disabled" ||
+		code === "dependency_analysis_unavailable"
+	);
 }
 
 export function refreshReasons(reason: RefreshPartialReason): RefreshReason[] {
@@ -237,7 +249,7 @@ export function refreshFailureText(failure: RefreshFailureDetail): string {
 	if (failure.dimension) parts.push(dimension ? REFRESH_LABELS[dimension] : failure.dimension);
 	if (failure.graphqlType) parts.push(`GraphQL ${failure.graphqlType}`);
 	if (failure.graphqlPath?.length) parts.push(failure.graphqlPath.join("."));
-	return parts.length ? parts.join(" · ") : failure.code;
+	return parts.length ? parts.join(" · ") : coverageReasonLabel(failure.code);
 }
 
 export function refreshTimings(run: RefreshRun): RefreshRunTimings | undefined {
