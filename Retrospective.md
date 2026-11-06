@@ -2566,3 +2566,14 @@ coverage thresholds. Vitest 5 honours `VITEST_MAX_WORKERS` as a per-invocation
 environment override, and removing a test that asserted the same seven-query
 and byte budget four times cut the heaviest duplication without moving any
 coverage figure. Simplify redundant assertions rather than relaxing the gate.
+
+## 2026-11-06: verify pagination across the UI and API before release
+
+The repository detail view counted pages in groups of 30 while the browser API
+still returned groups of 100. A page-boundary test caught missing records; it
+also revealed that reducing the page size without adjusting the existing page
+limit would make the old 5,000-record range inaccessible. Keep the requested
+page size and maximum accessible range aligned on both sides, and test page
+boundaries and limits. Fixture events with equal timestamps sort by identifier,
+not numeric suffix, so derive the expected ordering from that documented tie
+break instead of assuming insertion order.
