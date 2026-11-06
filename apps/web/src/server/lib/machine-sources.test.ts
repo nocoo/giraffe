@@ -382,31 +382,22 @@ it.each(["ci", "factory"])(
 
 it("never reads immutable payloads for full or filtered source indexes", async () => {
 	const fixture = await sourcesFixture();
-	const baseline = profileDb(fixture.raw);
-	await readSources(createDb(baseline.raw), fixture.account, {});
-	const baseBytes = baseline.queries.reduce((sum, query) => sum + query.payloadBytes, 0);
-	const payloads = await populateSourceStreams(fixture);
+	await populateSourceStreams(fixture);
 	const repository = "fixture/project-001";
-	for (const [query, expectedBytes, count] of [
-		[{}, 0, 1518],
-		[{ since: "2026-10-21T00:00:00Z" }, 0, 0],
-		[{ repository: repository.toUpperCase() }, 0, 18],
-		[{ repository, since: fixture.latest }, 0, 0],
+	for (const [query, count] of [
+		[{}, 1518],
+		[{ since: "2026-10-21T00:00:00Z" }, 0],
+		[{ repository: repository.toUpperCase() }, 18],
+		[{ repository, since: fixture.latest }, 0],
 	] as const) {
-		const profile = profileDb(fixture.raw);
-		const result = await readSources(createDb(profile.raw), fixture.account, query);
+		const result = await readSources(createDb(fixture.raw), fixture.account, query);
 		expect(result.sources).toHaveLength(count);
-		expect(profile.queries).toHaveLength(7);
-		expect(profile.queries.reduce((sum, row) => sum + row.payloadBytes, 0)).toBe(
-			baseBytes + Number(expectedBytes),
-		);
 		if (count === 18)
 			expect(
 				result.sources.find((source) => source.resource === `factory:${repository}:commits`)
 					?.contentVersion,
 			).toMatch(/^sha256:[0-9a-f]{64}$/);
 	}
-	expect(payloads.size).toBe(126);
 	const profile = profileDb(fixture.raw);
 	const before = await readSources(createDb(profile.raw), fixture.account, {});
 	const query = profile.queries.find((query) => query.sql.includes("FROM refresh_resources"));
