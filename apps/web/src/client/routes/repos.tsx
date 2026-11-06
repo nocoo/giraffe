@@ -26,6 +26,7 @@ import { CandyBadge } from "../components/layout/candy-badge";
 import { ChartBrick } from "../components/layout/chart-brick";
 import { ResultCount, SearchField, TableScroll } from "../components/layout/collection-chrome";
 import { DataTimeSource } from "../components/layout/data-time";
+import { EmptyState } from "../components/layout/empty-state";
 import { IconLabel } from "../components/layout/icon-label";
 import { LanguageLabel } from "../components/layout/labels";
 import {
@@ -400,7 +401,7 @@ export function ReposPage() {
 				{rows.length === 0 ? (
 					<LayerCard>
 						<LayerCard.Well>
-							<LayerCard.Empty
+							<EmptyState
 								icon={<Box />}
 								title={query.trim() ? "没有匹配结果" : "还没有仓库"}
 								description={

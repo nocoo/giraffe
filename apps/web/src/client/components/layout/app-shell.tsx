@@ -13,6 +13,7 @@ import { subscribeErrorUi } from "../../lib/error-ui";
 import { documentTitle, headerCrumbs, headerTitle } from "../../lib/navigation";
 import { AppSidebar } from "./app-sidebar";
 import { DataTimeControl, DataTimeProvider } from "./data-time";
+import { EmptyState } from "./empty-state";
 import { EnvironmentSwitch } from "./environment-switch";
 import { GithubIcon } from "./github-icon";
 import { HeaderTooltip, HexlyLink } from "./header-links";
@@ -163,7 +164,7 @@ export function AppShell() {
 									/>
 									<LayerCard>
 										<LayerCard.Well>
-											<LayerCard.Empty
+											<EmptyState
 												icon={<ShieldAlert />}
 												title="未通过 Access"
 												description="此应用需要 Cloudflare Access 身份。"

@@ -1,4 +1,4 @@
-import { Link, SegmentControl, toast } from "@nocoo/basalt";
+import { Button, Link, SegmentControl, toast } from "@nocoo/basalt";
 import { FilterBar } from "@nocoo/basalt/components/filter-bar";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
@@ -27,6 +27,7 @@ import { CandyBadge } from "../components/layout/candy-badge";
 import { ChartBrick } from "../components/layout/chart-brick";
 import { SearchField, TableScroll } from "../components/layout/collection-chrome";
 import { DataTimeSource } from "../components/layout/data-time";
+import { EmptyState } from "../components/layout/empty-state";
 import { HelpTooltip } from "../components/layout/help-tooltip";
 import { IconLabel } from "../components/layout/icon-label";
 import { CiSkeleton } from "../components/layout/page-skeleton";
@@ -360,10 +361,19 @@ export function CiPage() {
 							</Table>
 						</TableScroll>
 						{streams.length ? null : (
-							<LayerCard.Empty
+							<EmptyState
 								icon={<Workflow />}
 								title="没有符合筛选的工作流"
-								description="调整筛选条件后再试。"
+								description="调整筛选条件或清除搜索，查看当前保存的工作流。"
+								action={
+									<Button
+										variant="secondary"
+										size="sm"
+										onClick={() => setFilters({ verdict: "", repo: "", query: "" })}
+									>
+										清除筛选
+									</Button>
+								}
 							/>
 						)}
 					</LayerCard.Well>

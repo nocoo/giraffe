@@ -12,6 +12,7 @@ import {
 	Workflow,
 } from "lucide-react";
 import { CandyBadge } from "../components/layout/candy-badge";
+import { EmptyState } from "../components/layout/empty-state";
 import { IconLabel } from "../components/layout/icon-label";
 import { ProjectLabel } from "../components/layout/project-identity";
 import { formatCount } from "../lib/format";
@@ -56,7 +57,7 @@ export function FocusSection({ ranked, findings }: { ranked: FocusRepo[]; findin
 				) : (
 					<LayerCard>
 						<LayerCard.Well>
-							<LayerCard.Empty
+							<EmptyState
 								icon={<Target />}
 								title="暂无需要特别关注的仓库"
 								description="当前范围内的仓库没有触发任何关注规则。"

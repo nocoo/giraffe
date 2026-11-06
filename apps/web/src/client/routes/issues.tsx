@@ -18,6 +18,7 @@ import { CandyBadge } from "../components/layout/candy-badge";
 import { ChartBrick } from "../components/layout/chart-brick";
 import { ResultCount, SearchField, TableScroll } from "../components/layout/collection-chrome";
 import { DataTimeSource } from "../components/layout/data-time";
+import { EmptyState } from "../components/layout/empty-state";
 import { IconLabel } from "../components/layout/icon-label";
 import {
 	ActiveFilters,
@@ -235,7 +236,7 @@ export function IssuesPage() {
 				<LayerCard>
 					<LayerCard.Well {...(rows.length === 0 ? {} : { className: "p-0" })}>
 						{rows.length === 0 ? (
-							<LayerCard.Empty
+							<EmptyState
 								icon={<CircleDot />}
 								title={query.trim() ? "没有匹配结果" : "没有打开的 Issue"}
 								description={

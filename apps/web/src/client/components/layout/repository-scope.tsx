@@ -1,5 +1,4 @@
 import { Button, SegmentControl } from "@nocoo/basalt";
-import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { Star } from "lucide-react";
 import { useSyncExternalStore } from "react";
 import { Outlet } from "react-router";
@@ -8,6 +7,7 @@ import {
 	setRepositoryScope,
 	subscribeRepositoryScope,
 } from "../../viewmodels/scope";
+import { EmptyState } from "./empty-state";
 import { INLINE_SEGMENT } from "./segment";
 
 export function useRepositoryScope() {
@@ -39,7 +39,8 @@ export function ScopeEmpty({ count }: { count: number }) {
 	const scope = useRepositoryScope();
 	if (scope !== "starred" || count !== 0) return null;
 	return (
-		<LayerCard.Empty
+		<EmptyState
+			className="[--giraffe-empty-min-height:16rem]"
 			icon={<Star />}
 			title="当前星标范围暂无数据"
 			description="可查看全部仓库的已有数据，或在仓库页添加星标。切换范围不会触发采集。"

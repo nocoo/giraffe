@@ -1,4 +1,4 @@
-import { Link, toast } from "@nocoo/basalt";
+import { Button, Link, toast } from "@nocoo/basalt";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
 import {
@@ -15,6 +15,7 @@ import { BusinessPageHeader as PageHeader } from "../components/layout/business-
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ResultCount, TableScroll } from "../components/layout/collection-chrome";
 import { DataTimeSource } from "../components/layout/data-time";
+import { EmptyState } from "../components/layout/empty-state";
 import { IconLabel } from "../components/layout/icon-label";
 import { Kpi, KpiRow } from "../components/layout/kpi";
 import { ActiveFilters, Breakdown, OverviewCard } from "../components/layout/overview-cards";
@@ -86,7 +87,18 @@ export function AlertsPage() {
 				/>
 				<ScopeEmpty count={0} />
 				<LayerCard>
-					<LayerCard.Empty icon={<ShieldAlert />} title="暂无告警数据" />
+					<LayerCard.Well>
+						<EmptyState
+							icon={<ShieldAlert />}
+							title="暂无告警数据"
+							description="当前账号尚未保存安全告警，或代码安全功能未对仓库启用。"
+							action={
+								<Button size="sm" variant="secondary" asChild>
+									<Link href="/settings">查看账号与权限</Link>
+								</Button>
+							}
+						/>
+					</LayerCard.Well>
 				</LayerCard>
 			</div>
 		);
@@ -189,10 +201,21 @@ export function AlertsPage() {
 				{items.length === 0 ? (
 					<LayerCard>
 						<LayerCard.Well>
-							<LayerCard.Empty
+							<EmptyState
 								icon={<ShieldAlert />}
 								title={all.length ? "没有符合筛选的告警" : "暂无告警数据"}
-								{...(all.length ? { description: "清除筛选查看全部告警。" } : {})}
+								description={
+									all.length
+										? "调整筛选条件或清除筛选，查看当前保存的告警。"
+										: "当前范围没有已保存的安全告警。"
+								}
+								action={
+									all.length ? (
+										<Button variant="secondary" size="sm" onClick={() => setPicked(NO_FILTERS)}>
+											清除筛选
+										</Button>
+									) : undefined
+								}
 							/>
 						</LayerCard.Well>
 					</LayerCard>

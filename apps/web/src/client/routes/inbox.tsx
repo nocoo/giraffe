@@ -16,6 +16,7 @@ import { BusinessPageHeader as PageHeader } from "../components/layout/business-
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ResultCount, TableScroll } from "../components/layout/collection-chrome";
 import { DataTimeSource } from "../components/layout/data-time";
+import { EmptyState } from "../components/layout/empty-state";
 import { IconLabel } from "../components/layout/icon-label";
 import {
 	ActiveFilters,
@@ -231,10 +232,24 @@ export function InboxPage() {
 				<LayerCard>
 					<LayerCard.Well {...(rows.length === 0 ? {} : { className: "p-0" })}>
 						{rows.length === 0 ? (
-							<LayerCard.Empty
+							<EmptyState
 								icon={<Inbox />}
 								title={snap.notifications.length ? "没有符合筛选的通知" : "收件箱为空"}
 								description="这里仅显示已保存的通知；统一刷新不采集通知，缺失不代表没有新通知。"
+								action={
+									snap.notifications.length ? (
+										<Button
+											variant="secondary"
+											size="sm"
+											onClick={() => {
+												setPicked(NO_FILTERS);
+												setPage(1);
+											}}
+										>
+											清除筛选
+										</Button>
+									) : undefined
+								}
 							/>
 						) : (
 							<>

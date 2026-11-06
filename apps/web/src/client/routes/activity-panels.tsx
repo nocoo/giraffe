@@ -22,6 +22,7 @@ import type { ActivitySnapshot } from "../../lib/activity-types";
 import { UserChip } from "../components/github-user";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { DataTimeSource } from "../components/layout/data-time";
+import { EmptyState } from "../components/layout/empty-state";
 import { HelpTooltip } from "../components/layout/help-tooltip";
 import { IconLabel } from "../components/layout/icon-label";
 import { Kpi, KpiRow } from "../components/layout/kpi";
@@ -455,7 +456,8 @@ export function ActivityContent({
 export function ActivityReadError({ retry }: { retry: () => void }) {
 	return (
 		<LayerCard>
-			<LayerCard.Empty
+			<EmptyState
+				icon={<ScanSearch />}
 				title="暂时无法读取当次活动"
 				description="未获得完整活动窗口，请重试；读取不会发起采集。"
 				action={

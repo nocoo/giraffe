@@ -1,4 +1,4 @@
-import { Button, Checkbox, Field, Input } from "@nocoo/basalt";
+import { Button, Checkbox, Field, Input, Link } from "@nocoo/basalt";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
 import { Ban, Clock3, KeyRound, ListChecks, ShieldCheck, UserRound } from "lucide-react";
@@ -15,6 +15,7 @@ import {
 	updateToken,
 } from "../viewmodels/api-tokens";
 import { CandyBadge } from "./layout/candy-badge";
+import { EmptyState } from "./layout/empty-state";
 import { IconLabel } from "./layout/icon-label";
 import { SelectField } from "./layout/select-field";
 
@@ -214,10 +215,18 @@ export function ApiTokens({ accounts }: { accounts: PublicAccount[] }) {
 								加载 API 令牌…
 							</p>
 						) : rows.length === 0 ? (
-							<LayerCard.Empty
+							<EmptyState
+								className="[--giraffe-empty-min-height:16rem]"
 								icon={<ListChecks />}
 								title="还没有 API 令牌"
 								description="在左侧创建后，可在这里调整标签、缩小权限或撤销。"
+								action={
+									accounts.length === 0 ? (
+										<Button size="sm" variant="secondary" asChild>
+											<Link href="#pat">连接 GitHub 账号</Link>
+										</Button>
+									) : undefined
+								}
 							/>
 						) : (
 							<ul className="divide-y divide-basalt-border">

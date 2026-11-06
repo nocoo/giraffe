@@ -1,7 +1,7 @@
 import { Button, Link } from "@nocoo/basalt";
-import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { Clock3 } from "lucide-react";
 import { missingTitle } from "../../lib/error-ui";
+import { EmptyState } from "./empty-state";
 
 export function SnapshotPending({
 	state = { missing: true },
@@ -10,7 +10,8 @@ export function SnapshotPending({
 }) {
 	const needsAccount = state.title === "请先连接 GitHub 账号";
 	return (
-		<LayerCard.Empty
+		<EmptyState
+			className="[--giraffe-empty-min-height:16rem]"
 			icon={<Clock3 />}
 			title={missingTitle(state)}
 			description={

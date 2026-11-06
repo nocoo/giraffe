@@ -27,6 +27,7 @@ import { ApiTokens } from "../components/api-tokens";
 import { UserChip } from "../components/github-user";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ResultCount, TableScroll } from "../components/layout/collection-chrome";
+import { EmptyState } from "../components/layout/empty-state";
 import { IconLabel } from "../components/layout/icon-label";
 import { catchLoad, reportError, reportOk } from "../lib/error-ui";
 import { initials } from "../lib/format";
@@ -214,7 +215,17 @@ export function SettingsPage() {
 				<LayerCard>
 					<LayerCard.Well className="p-0">
 						{accounts.length === 0 ? (
-							<LayerCard.Empty title="还没有 GitHub 账号" description="在上方粘贴 classic PAT。" />
+							<EmptyState
+								className="[--giraffe-empty-min-height:16rem]"
+								icon={<KeyRound />}
+								title="还没有 GitHub 账号"
+								description="连接账号后即可查看保存的快照和仓库数据。"
+								action={
+									<Button size="sm" variant="secondary" asChild>
+										<Link href="#pat">填写 classic PAT</Link>
+									</Button>
+								}
+							/>
 						) : (
 							<TableScroll label="GitHub 账号列表">
 								<Table className="giraffe-data-table min-w-[680px]">
