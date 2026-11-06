@@ -49,15 +49,16 @@ it("rereads the current factory record page after refresh without resetting pagi
 			(item) => item.textContent === "下一页",
 		);
 		await act(async () => next?.click());
-		expect(container.textContent).toContain("第 2/2 页");
+		expect(container.textContent).toContain("第 2/4 页");
 		expect(refreshModel.listeners.size).toBe(1);
 		vi.mocked(loadFactoryDetail).mockClear();
 		await act(async () => {
 			for (const listener of refreshModel.listeners) listener();
 		});
 		expect(loadFactoryDetail).toHaveBeenCalledOnce();
-		expect(loadFactoryDetail).toHaveBeenCalledWith("nocoo/app", "prs", 2, "", "", "all");
-		expect(container.textContent).toContain("第 2/2 页");
+		expect(loadFactoryDetail).toHaveBeenCalledWith("nocoo/app", "prs", 2, "open", "", "all");
+		expect(container.textContent).toContain("第 2/4 页");
+		expect(container.textContent).toContain("每页 30 条");
 	} finally {
 		await act(async () => root.unmount());
 	}
@@ -142,7 +143,7 @@ it("renders a pull request record with state, review, checks, author and merge t
 	});
 	const { container, root } = await render();
 	try {
-		expect(loadFactoryDetail).toHaveBeenCalledWith("nocoo/app", "prs", 1, "", "", "all");
+		expect(loadFactoryDetail).toHaveBeenCalledWith("nocoo/app", "prs", 1, "open", "", "all");
 		const text = container.textContent ?? "";
 		expect(text).toContain("fix: keep the run alive");
 		expect(text).toContain("#115");

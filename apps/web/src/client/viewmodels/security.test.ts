@@ -25,10 +25,31 @@ it("renders feature-specific status without turning unavailable or partial zero 
 						? "可用"
 						: status === "partial"
 							? "覆盖不完整"
-							: reason_code
-								? "未启用"
-								: "不可用",
+							: reason_code === "alerts_disabled"
+								? "仓库未开启 Dependabot 告警"
+								: reason_code === "code_scanning_disabled"
+									? "仓库未开启 Code scanning"
+									: "不可用",
 			});
 		}
 	}
+});
+
+it("uses feature-specific wording for disabled security features", () => {
+	const snapshot = {
+		unavailable: false,
+		truncated: false,
+		dependabot_open: null,
+		code_scanning_open: null,
+		features: {
+			dependabot: { status: "unavailable", reason_code: "alerts_disabled", reason: null },
+			code_scanning: {
+				status: "unavailable",
+				reason_code: "code_scanning_disabled",
+				reason: null,
+			},
+		} as const,
+	};
+	expect(securityKpi(snapshot, "dependabot").subtitle).toBe("仓库未开启 Dependabot 告警");
+	expect(securityKpi(snapshot, "code_scanning").subtitle).toBe("仓库未开启 Code scanning");
 });

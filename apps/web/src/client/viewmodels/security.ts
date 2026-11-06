@@ -12,9 +12,10 @@ export function securityKpi(snapshot: SecuritySnapshot, feature: keyof SecurityF
 				? "可用"
 				: coverage.status === "partial"
 					? "覆盖不完整"
-					: coverage.reason_code === "alerts_disabled" ||
-							coverage.reason_code === "code_scanning_disabled"
-						? "未启用"
-						: "不可用",
+					: coverage.reason_code === "alerts_disabled"
+						? "仓库未开启 Dependabot 告警"
+						: coverage.reason_code === "code_scanning_disabled"
+							? "仓库未开启 Code scanning"
+							: "不可用",
 	};
 }

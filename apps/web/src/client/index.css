@@ -69,9 +69,9 @@
 /* Product-specific layouts use Basalt typography, surfaces and control tokens. */
 .factory { font-size:var(--text-sm);line-height:1.6;font-variant-numeric:tabular-nums; }
 .factory-provenance { display:flex;align-items:center;flex-wrap:wrap;gap:.5rem 1rem;font-size:var(--text-xs);color:var(--color-basalt-muted-foreground); }
-.factory-toolbar { display:flex;align-items:center;flex-wrap:wrap;gap:12px; }
-.factory-toolbar>label { display:flex;align-items:center;gap:8px;font-size:var(--text-sm);color:var(--color-basalt-muted-foreground); }
-.factory-toolbar .giraffe-select-field { max-width:280px; }
+.factory-toolbar { display:flex;align-items:center;flex-wrap:nowrap;gap:calc(var(--spacing) * 2); }
+.factory-toolbar>label { display:flex;align-items:center;gap:calc(var(--spacing) * 2);font-size:var(--text-sm);color:var(--color-basalt-muted-foreground); }
+.factory-toolbar .giraffe-select-field { max-width:280px;flex-shrink:0; }
 .factory-notice { font-size:var(--text-sm);line-height:1.7;padding:10px 14px;background:var(--color-basalt-warning-tint);border-radius:6px;color:var(--color-basalt-foreground); }
 .factory-panel-body { display:flex;flex:1;flex-direction:column; }
 .factory-chart-grid .factory-panel-body > figure { flex:1; }
@@ -214,6 +214,7 @@
 .factory-quadrant-note .factory-link { font-size:var(--text-xs); }
 @keyframes factory-grow { from { transform:scaleX(0); } }
 .factory :is(button,a,summary):not(.basalt-ui):focus-visible { outline:2px solid var(--color-basalt-ring);outline-offset:3px; }
+@media(max-width:720px) { .factory-toolbar { flex-wrap:wrap; } }
 @media(max-width:480px) {
  [data-basalt-table] :is(th, td) { padding: .625rem .75rem; }
  .factory-toolbar .giraffe-select-field { flex:1;max-width:none;flex-basis:calc(50% - 12px);flex-direction:column;align-items:stretch;gap:6px; }

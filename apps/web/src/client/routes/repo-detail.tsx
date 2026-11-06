@@ -1,4 +1,4 @@
-import { Link, Tabs, TabsContent, TabsList, TabsTrigger, toast } from "@nocoo/basalt";
+import { Button, Link, Tabs, TabsContent, TabsList, TabsTrigger, toast } from "@nocoo/basalt";
 import { AreaChart } from "@nocoo/basalt/charts/area";
 import { Code } from "@nocoo/basalt/components/code";
 import { DescriptionList } from "@nocoo/basalt/components/description-list";
@@ -20,6 +20,7 @@ import {
 	CircleDot,
 	Code2,
 	Download,
+	ExternalLink,
 	Eye,
 	Factory,
 	FolderDown,
@@ -27,6 +28,7 @@ import {
 	GitPullRequest,
 	Play,
 	ShieldAlert,
+	ShieldCheck,
 	Star,
 	Tag,
 	Users,
@@ -45,6 +47,7 @@ import { ChartBrick, ChartEmpty, ChartRow } from "../components/layout/chart-bri
 import { TableScroll } from "../components/layout/collection-chrome";
 import { DataTimeSource } from "../components/layout/data-time";
 import { DonutChart } from "../components/layout/donut-chart";
+import { EmptyState } from "../components/layout/empty-state";
 import { Kpi, KpiRow } from "../components/layout/kpi";
 import {
 	ChartSkeleton,
@@ -167,6 +170,7 @@ export function RepoDetailPage() {
 				const params = new URLSearchParams(old);
 				if (next === "details") params.delete("tab");
 				else params.set("tab", next);
+				if (next !== "factory") params.delete("stream");
 				params.delete("state");
 				params.delete("day");
 				params.delete("page");
@@ -264,10 +268,10 @@ export function RepoDetailPage() {
 
 	if (!valid || (snap && "invalid" in snap)) {
 		return (
-			<div className="space-y-8">
+			<div className="space-y-basalt-layout-sm">
 				<PageHeader title="仓库" />
 				<TabWell>
-					<LayerCard.Empty
+					<EmptyState
 						icon={<Box />}
 						title="无效仓库"
 						description="owner 或 name 不符合 GitHub 规则。"
@@ -279,7 +283,7 @@ export function RepoDetailPage() {
 
 	if (snap && "missing" in snap) {
 		return (
-			<div className="space-y-8">
+			<div className="space-y-basalt-layout-sm">
 				<PageHeader
 					title={<ProjectName repo={`${owner}/${name}`} project={identity} size={48} showTitle />}
 					description={identity?.description}
@@ -301,7 +305,7 @@ export function RepoDetailPage() {
 
 	if (!snap) {
 		return (
-			<div className="space-y-8">
+			<div className="space-y-basalt-layout-sm">
 				<PageHeader
 					title={<ProjectName repo={`${owner}/${name}`} project={identity} size={48} showTitle />}
 					description={identity?.description}
@@ -359,9 +363,20 @@ export function RepoDetailPage() {
 		{ commits: 0, merged: 0, opened: 0, closed: 0 },
 	);
 	const truncated = tab !== "security" && current?.truncated;
+	const disabledSecurityDescriptions =
+		security && !("missing" in security)
+			? [
+					security.features?.dependabot?.reason_code === "alerts_disabled"
+						? "仓库未开启 Dependabot 告警"
+						: null,
+					security.features?.code_scanning?.reason_code === "code_scanning_disabled"
+						? "仓库未开启 Code scanning"
+						: null,
+				].filter((description): description is string => description !== null)
+			: [];
 
 	return (
-		<div className="space-y-8" data-testid="repo-detail">
+		<div className="space-y-basalt-layout-sm" data-testid="repo-detail">
 			<PageHeader
 				title={<ProjectName repo={`${owner}/${name}`} project={identity} size={48} showTitle />}
 				description={
@@ -374,14 +389,22 @@ export function RepoDetailPage() {
 				}
 				actions={
 					<>
-						{truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
+						{truncated ? (
+							<CandyBadge tone="amber" className="h-7">
+								已截断
+							</CandyBadge>
+						) : null}
 						<ProjectLinks project={identity} github={snap.url} />
 						<RefreshControl repo={`${owner}/${name}`} />
 					</>
 				}
 			/>
 			<Tabs value={tab} onValueChange={(value) => setTab(value as DetailTab)} className="min-w-0">
-				<ScrollArea orientation="horizontal" aria-label="仓库标签页" className="mb-6">
+				<ScrollArea
+					orientation="horizontal"
+					aria-label="仓库标签页"
+					className="mb-basalt-layout-sm"
+				>
 					<TabsList className="w-max min-w-full flex-nowrap" aria-label="仓库详情">
 						<TabsTrigger value="details" className="gap-1.5 whitespace-nowrap">
 							<Box className="size-3.5" aria-hidden="true" />
@@ -566,10 +589,18 @@ export function RepoDetailPage() {
 						</TabWell>
 					) : actions && actions.runs.length === 0 ? (
 						<TabWell>
-							<LayerCard.Empty
+							<EmptyState
 								icon={<Play />}
 								title="还没有工作流记录"
 								description="GitHub Actions 的运行状态与结果会显示在这里。"
+								action={
+									<Button asChild size="sm" variant="secondary">
+										<Link href={`${snap.url}/actions`} target="_blank" rel="noreferrer">
+											<ExternalLink className="size-3.5" aria-hidden="true" />
+											打开 GitHub Actions
+										</Link>
+									</Button>
+								}
 							/>
 						</TabWell>
 					) : actions ? (
@@ -659,10 +690,18 @@ export function RepoDetailPage() {
 						</TabWell>
 					) : releases && releases.releases.length === 0 ? (
 						<TabWell>
-							<LayerCard.Empty
+							<EmptyState
 								icon={<Tag />}
 								title="还没有发布版本"
 								description="仓库发布版本后，这里会显示标签与发布时间。"
+								action={
+									<Button asChild size="sm" variant="secondary">
+										<Link href={`${snap.url}/releases`} target="_blank" rel="noreferrer">
+											<ExternalLink className="size-3.5" aria-hidden="true" />
+											查看 GitHub Releases
+										</Link>
+									</Button>
+								}
 							/>
 						</TabWell>
 					) : releases ? (
@@ -728,17 +767,52 @@ export function RepoDetailPage() {
 				<TabsContent value="security">
 					{security && "missing" in security ? (
 						<TabWell>
-							<LayerCard.Empty icon={<ShieldAlert />} title="暂无告警数据" />
+							<EmptyState
+								icon={<ShieldAlert />}
+								title="暂无告警数据"
+								description="尚未保存该仓库的安全告警快照。"
+								action={
+									<Button asChild size="sm" variant="secondary">
+										<Link href={`${snap.url}/settings/security`} target="_blank" rel="noreferrer">
+											<ExternalLink className="size-3.5" aria-hidden="true" />
+											打开 GitHub 安全设置
+										</Link>
+									</Button>
+								}
+							/>
 						</TabWell>
 					) : security ? (
-						<KpiRow>
-							<Kpi icon={Bug} label="Dependabot" {...securityKpi(security, "dependabot")} />
-							<Kpi
-								icon={ShieldAlert}
-								label="Code scanning"
-								{...securityKpi(security, "code_scanning")}
-							/>
-						</KpiRow>
+						<div className="flex flex-col gap-basalt-layout">
+							{disabledSecurityDescriptions.length > 0 ? (
+								<TabWell>
+									<EmptyState
+										className="[--giraffe-empty-min-height:16rem]"
+										icon={<ShieldCheck />}
+										title="仓库安全功能未开启"
+										description={disabledSecurityDescriptions.join("。")}
+										action={
+											<Button asChild size="sm" variant="secondary">
+												<Link
+													href={`${snap.url}/settings/security`}
+													target="_blank"
+													rel="noreferrer"
+												>
+													<ExternalLink className="size-3.5" aria-hidden="true" />去 GitHub 设置
+												</Link>
+											</Button>
+										}
+									/>
+								</TabWell>
+							) : null}
+							<KpiRow>
+								<Kpi icon={Bug} label="Dependabot" {...securityKpi(security, "dependabot")} />
+								<Kpi
+									icon={ShieldAlert}
+									label="Code scanning"
+									{...securityKpi(security, "code_scanning")}
+								/>
+							</KpiRow>
+						</div>
 					) : null}
 				</TabsContent>
 				<TabsContent value="issues">
@@ -748,7 +822,19 @@ export function RepoDetailPage() {
 						</TabWell>
 					) : issues && issues.issues.length === 0 ? (
 						<TabWell>
-							<LayerCard.Empty icon={<CircleDot />} title="没有 Issue" />
+							<EmptyState
+								icon={<CircleDot />}
+								title="没有 Issue"
+								description="该仓库当前没有可显示的 Issue 快照。"
+								action={
+									<Button asChild size="sm" variant="secondary">
+										<Link href={`${snap.url}/issues`} target="_blank" rel="noreferrer">
+											<ExternalLink className="size-3.5" aria-hidden="true" />
+											查看 GitHub Issues
+										</Link>
+									</Button>
+								}
+							/>
 						</TabWell>
 					) : issues ? (
 						<TabWell flush>
@@ -802,7 +888,19 @@ export function RepoDetailPage() {
 						</TabWell>
 					) : pulls && pulls.pull_requests.length === 0 ? (
 						<TabWell>
-							<LayerCard.Empty icon={<GitPullRequest />} title="没有 Pull Request" />
+							<EmptyState
+								icon={<GitPullRequest />}
+								title="没有 Pull Request"
+								description="该仓库当前没有可显示的 Pull Request 快照。"
+								action={
+									<Button asChild size="sm" variant="secondary">
+										<Link href={`${snap.url}/pulls`} target="_blank" rel="noreferrer">
+											<ExternalLink className="size-3.5" aria-hidden="true" />
+											查看 GitHub Pull Requests
+										</Link>
+									</Button>
+								}
+							/>
 						</TabWell>
 					) : pulls ? (
 						<TabWell flush>
@@ -886,10 +984,18 @@ export function RepoDetailPage() {
 						</TabWell>
 					) : traffic && trafficForbidden(traffic) ? (
 						<TabWell>
-							<LayerCard.Empty
+							<EmptyState
 								icon={<Eye />}
 								title="无法查看流量"
 								description="流量数据需要当前账号拥有此仓库的推送权限。"
+								action={
+									<Button asChild size="sm" variant="secondary">
+										<Link href={snap.url} target="_blank" rel="noreferrer">
+											<ExternalLink className="size-3.5" aria-hidden="true" />
+											打开仓库
+										</Link>
+									</Button>
+								}
 							/>
 						</TabWell>
 					) : traffic ? (
@@ -958,10 +1064,18 @@ export function RepoDetailPage() {
 						</TabWell>
 					) : languages && Object.keys(languages.languages).length === 0 ? (
 						<TabWell>
-							<LayerCard.Empty
+							<EmptyState
 								icon={<Code2 />}
 								title="还没有语言统计"
 								description="已保存快照中没有语言数据；未采集时保持缺失，不代表仓库没有语言。"
+								action={
+									<Button asChild size="sm" variant="secondary">
+										<Link href={snap.url} target="_blank" rel="noreferrer">
+											<ExternalLink className="size-3.5" aria-hidden="true" />
+											打开仓库
+										</Link>
+									</Button>
+								}
 							/>
 						</TabWell>
 					) : languages ? (
@@ -989,10 +1103,18 @@ export function RepoDetailPage() {
 						</TabWell>
 					) : contributors && contributors.contributors.length === 0 ? (
 						<TabWell>
-							<LayerCard.Empty
+							<EmptyState
 								icon={<Users />}
 								title="还没有贡献记录"
 								description="有提交记录的贡献者会显示在这里。"
+								action={
+									<Button asChild size="sm" variant="secondary">
+										<Link href={`${snap.url}/graphs/contributors`} target="_blank" rel="noreferrer">
+											<ExternalLink className="size-3.5" aria-hidden="true" />
+											查看 GitHub 贡献者
+										</Link>
+									</Button>
+								}
 							/>
 						</TabWell>
 					) : contributors ? (

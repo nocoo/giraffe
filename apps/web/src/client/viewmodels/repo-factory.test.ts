@@ -3,6 +3,7 @@ import {
 	checksStatus,
 	isRecordNumbered,
 	issueReason,
+	recordDefaultState,
 	recordNumber,
 	recordStateOptions,
 	recordStatus,
@@ -35,6 +36,14 @@ describe("factory record presentation", () => {
 		expect(isRecordNumbered("prs")).toBe(true);
 		expect(isRecordNumbered("issues")).toBe(true);
 		expect(isRecordNumbered("releases")).toBe(false);
+	});
+
+	it("defaults issue, PR and alert streams to open records", () => {
+		expect(recordDefaultState("issues")).toBe("open");
+		expect(recordDefaultState("prs")).toBe("open");
+		expect(recordDefaultState("alerts")).toBe("open");
+		expect(recordDefaultState("actions")).toBe("");
+		expect(recordDefaultState("commits")).toBe("");
 	});
 
 	it("reads the GitHub number from the record URL", () => {

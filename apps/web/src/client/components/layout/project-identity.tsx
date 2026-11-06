@@ -1,4 +1,4 @@
-import { Link } from "@nocoo/basalt";
+import { Button, Link } from "@nocoo/basalt";
 import { Archive, BookOpen, Box, ExternalLink, Globe } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import type { ProjectIdentity } from "../../../lib/project-identity";
@@ -131,21 +131,36 @@ export function ProjectLinks({
 		<span
 			className={`inline-flex items-center text-xs font-medium ${compact ? "shrink-0 gap-1" : "flex-wrap gap-x-3 gap-y-1.5"}`}
 		>
-			{links.map(({ href, label, icon: Icon }) => (
-				<Link
-					key={label}
-					href={href}
-					target="_blank"
-					rel="noreferrer"
-					className={compact ? "giraffe-icon-link" : "inline-flex items-center gap-1"}
-					{...(compact ? { "aria-label": label, title: label } : {})}
-				>
-					<Icon aria-hidden="true" className="size-3.5" strokeWidth={1.5} />
-					{compact ? null : label}
-				</Link>
-			))}
+			{links.map(({ href, label, icon: Icon }) =>
+				compact ? (
+					<Link
+						key={label}
+						href={href}
+						target="_blank"
+						rel="noreferrer"
+						className="giraffe-icon-link"
+						aria-label={label}
+						title={label}
+					>
+						<Icon aria-hidden="true" className="size-3.5" strokeWidth={1.5} />
+					</Link>
+				) : (
+					<Button
+						key={label}
+						asChild
+						size="sm"
+						variant="secondary"
+						className="shrink-0 whitespace-nowrap"
+					>
+						<Link href={href} target="_blank" rel="noreferrer">
+							<Icon aria-hidden="true" className="size-3.5" strokeWidth={1.5} />
+							{label}
+						</Link>
+					</Button>
+				),
+			)}
 			{project?.archived && !compact ? (
-				<CandyBadge tone="gray" icon={Archive}>
+				<CandyBadge tone="gray" icon={Archive} className="h-7">
 					项目已归档
 				</CandyBadge>
 			) : null}

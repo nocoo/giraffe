@@ -8,14 +8,16 @@ import {
 	TableHeader,
 	TableRow,
 } from "@nocoo/basalt/components/table";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, SearchX } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import type { FactoryCoverage, FactoryEvent, FactoryStreamName } from "../../lib/factory-types";
 import { UserChip } from "../components/github-user";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { TableScroll } from "../components/layout/collection-chrome";
+import { EmptyState } from "../components/layout/empty-state";
 import { TableSkeleton } from "../components/layout/page-skeleton";
 import { useRefreshModel } from "../components/layout/refresh-provider";
+import { INLINE_SEGMENT } from "../components/layout/segment";
 import { SelectField } from "../components/layout/select-field";
 import { LabelChips, PersonCell } from "../components/layout/table-chrome";
 import {
@@ -37,13 +39,14 @@ import {
 import {
 	checksStatus,
 	issueReason,
+	recordDefaultState,
 	recordNumber,
 	recordStateOptions,
 	recordStatus,
 	runDuration,
 } from "../viewmodels/repo-factory";
 
-const PAGE_SIZE = 100;
+const PAGE_SIZE = 30;
 
 type Column = {
 	head: string;
@@ -309,7 +312,7 @@ export function RepoFactoryTab({
 	onStream: (stream: FactoryStreamName) => void;
 }) {
 	const [page, setPage] = useState(1);
-	const [state, setState] = useState("");
+	const [state, setState] = useState(() => recordDefaultState(stream));
 	const [day, setDay] = useState("");
 	const [items, setItems] = useState<FactoryEvent[]>([]);
 	const [coverage, setCoverage] = useState<FactoryCoverage | null>(null);
@@ -317,6 +320,11 @@ export function RepoFactoryTab({
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState("");
 	const refreshModel = useRefreshModel();
+
+	useEffect(() => {
+		setPage(1);
+		setState(recordDefaultState(stream));
+	}, [stream]);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -361,11 +369,13 @@ export function RepoFactoryTab({
 			<div className="factory-toolbar">
 				<SegmentControl
 					legend="记录类型"
+					className={INLINE_SEGMENT}
 					value={stream}
 					onValueChange={(value) => {
-						onStream(value as FactoryStreamName);
+						const next = value as FactoryStreamName;
+						onStream(next);
 						setPage(1);
-						setState("");
+						setState(recordDefaultState(next));
 					}}
 					options={(Object.keys(STREAM_LABELS) as FactoryStreamName[]).map((value) => ({
 						value,
@@ -430,12 +440,26 @@ export function RepoFactoryTab({
 					) : loading ? (
 						<TableSkeleton label="加载工厂记录" columns={headers.length} rows={6} />
 					) : items.length === 0 ? (
-						<LayerCard.Empty
+						<EmptyState
+							icon={<SearchX />}
 							title="没有符合筛选的记录"
 							description={
 								coverage?.status === "complete"
 									? "该端点范围内没有记录。"
 									: "尚无可读记录；不代表 GitHub 中为零。"
+							}
+							action={
+								<Button
+									size="sm"
+									variant="secondary"
+									onClick={() => {
+										setState(recordDefaultState(stream));
+										setDay("");
+										setPage(1);
+									}}
+								>
+									清除筛选
+								</Button>
 							}
 						/>
 					) : (

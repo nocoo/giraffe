@@ -45,6 +45,10 @@ export function recordStateOptions(stream: FactoryStreamName) {
 	return [{ value: "", label: "全部状态" }, ...(STATE_OPTIONS[stream] ?? [])];
 }
 
+export function recordDefaultState(stream: FactoryStreamName): string {
+	return recordStateOptions(stream).some((option) => option.value === "open") ? "open" : "";
+}
+
 export function isRecordNumbered(stream: FactoryStreamName): boolean {
 	return stream === "prs" || stream === "issues";
 }
