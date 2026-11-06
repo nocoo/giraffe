@@ -2541,3 +2541,28 @@ variables in the wrong HTTP test. L1 does not typecheck `tests/api`, so the
 targeted real-HTTP run caught the reference error. Anchor repeated setup edits
 to the enclosing test's unique assertions and verify the actual HTTP lane before
 claiming the fixture update is complete.
+
+## 2026-11-06: prove visual intent in a browser and keep commit exit codes intact
+
+Three coding panes delivered the unified-refresh UI changes with green L1, L2
+and L3 gates, but screenshots of the running dev server still found two unmet
+requirements: the shared empty state filled only 16rem of a 1800px viewport,
+and refresh reasons still rendered raw `alerts_disabled` codes in warning rows.
+Green tests and a successful build do not prove layout intent; capture the live
+page in Chromium and measure the rendered container before declaring a visual
+task done.
+
+A `git commit ... | tail` pipeline masked the pre-commit hook's non-zero exit
+under `set -e`, so a failed first commit was followed by a second commit that
+staged two logical groups together. Check commit status without a pipe, use
+`set -o pipefail`, and inspect `git status` and `git log` immediately after any
+interrupted commit. `git reset --soft HEAD~1` followed by `git reset` preserved
+the working tree and allowed the changes to be recommitted atomically.
+
+A concurrent full coverage run in another repository pushed load average above
+20 and starved Vitest's generic five-second deadline across unrelated server
+tests. Do not touch another workspace's processes or weaken global timeouts or
+coverage thresholds. Vitest 5 honours `VITEST_MAX_WORKERS` as a per-invocation
+environment override, and removing a test that asserted the same seven-query
+and byte budget four times cut the heaviest duplication without moving any
+coverage figure. Simplify redundant assertions rather than relaxing the gate.
