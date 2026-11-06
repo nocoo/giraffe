@@ -59,7 +59,7 @@ export async function getFactoryStream(c: Ctx): Promise<Response> {
 	if (!FACTORY_STREAMS.includes(stream))
 		throw new ApiError(400, "validation_failed", "unknown stream");
 	const page = Number(c.req.query("page") ?? "1");
-	if (!Number.isInteger(page) || page < 1 || page > 50)
+	if (!Number.isInteger(page) || page < 1 || page > Math.ceil(5000 / PAGE_SIZE))
 		throw new ApiError(400, "validation_failed", "invalid page");
 	const snap = decodePublication(saved.publicationPages);
 	const repo = snap?.repos

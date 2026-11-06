@@ -345,13 +345,15 @@ it("filters full resource WIP and UTC days before pagination, rejecting malforme
 			expectedIds.slice((page - 1) * 30, page * 30),
 		);
 	}
+	expect((await s.call("/api/factory/repos/nocoo/app/prs?page=51")).status).toBe(200);
+	expect((await s.call("/api/factory/repos/nocoo/app/prs?page=167")).status).toBe(200);
 	for (const suffix of [
 		"?day=bad",
 		"?day=2026-02-31",
 		"?day=2026-99-99",
 		"?state=bad%20filter",
 		"?page=1.5",
-		"?page=51",
+		"?page=168",
 	])
 		expect((await s.call(`/api/factory/repos/nocoo/app/prs${suffix}`)).status).toBe(400);
 });
