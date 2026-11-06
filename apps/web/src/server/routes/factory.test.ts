@@ -327,6 +327,24 @@ it("filters full resource WIP and UTC days before pagination, rejecting malforme
 		total: 1,
 		items: [{ state: "open", id: "N_200" }],
 	});
+	const expectedIds = items.map((item) => item.id).sort((a, b) => a.localeCompare(b));
+	for (const [page, length] of [
+		[1, 30],
+		[2, 30],
+		[7, 21],
+	] as const) {
+		const result = (await (
+			await s.call(`/api/factory/repos/nocoo/app/prs?page=${page}`)
+		).json()) as {
+			total: number;
+			items: { id: string }[];
+		};
+		expect(result.total).toBe(201);
+		expect(result.items).toHaveLength(length);
+		expect(result.items.map((item) => item.id)).toEqual(
+			expectedIds.slice((page - 1) * 30, page * 30),
+		);
+	}
 	for (const suffix of [
 		"?day=bad",
 		"?day=2026-02-31",

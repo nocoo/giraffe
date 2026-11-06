@@ -24,6 +24,7 @@ import { repoParts } from "./snapshots";
 
 type Ctx = Context<{ Bindings: Env; Variables: AppVars }>;
 const PRIVATE = { "cache-control": "private, no-cache" };
+const PAGE_SIZE = 30;
 
 export async function getFactory(c: Ctx): Promise<Response> {
 	const scope = snapshotScope(c.req.queries("scope"));
@@ -104,7 +105,7 @@ export async function getFactoryStream(c: Ctx): Promise<Response> {
 			coverage: resource?.coverage ?? repo.coverage[stream],
 			page,
 			total: items.length,
-			items: items.slice((page - 1) * 100, page * 100),
+			items: items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
 		},
 		200,
 		PRIVATE,

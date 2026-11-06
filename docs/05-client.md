@@ -478,7 +478,7 @@ KPI（未读 / 全部）+ `SectionRule` 通知表：状态、标题与仓库链�
 | ------------ | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
 | 概览         | `.../:owner/:name`                         | 先时间序列图（N 天活动 + 版本节奏），再 KPI、当次活动（`/api/activity`）与档案卡                                                  |
 | Agent 分析   | 无（链接到 `/analysis?repo=`）             | 只读外部分析报告入口，不在本页运行模型                                                                                            |
-| 工厂         | 见 06 `factory/repos/:owner/:name/:stream` | 按流展示工厂记录：PR/Issue/CI/Release 各自列定义、状态与日期筛选、覆盖与来源、每页 100 条                                         |
+| 工厂         | 见 06 `factory/repos/:owner/:name/:stream` | 按流展示工厂记录：PR/Issue/CI/Release 各自列定义、状态与日期筛选、覆盖与来源、每页 30 条                                          |
 | 安全         | `/security`                                | `unavailable` 空态（ShieldAlert），说明账号权限；否则 Dependabot / Code scanning KPI                                              |
 | Actions      | `/actions`                                 | runs 表，conclusion Badge；空态 Play icon                                                                                         |
 | PRs / Issues | `/prs` `/issues`                           | 同跨仓列，无仓列                                                                                                                  |
