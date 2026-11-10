@@ -108,7 +108,6 @@ export function AppShell() {
 			<DataTimeProvider scope={`${location.pathname}:${scope}`}>
 				<AppMain tabIndex={-1}>
 					<AppHeader
-						className="[&_nav]:min-w-0 [&_nav]:truncate [&_nav]:whitespace-nowrap"
 						leading={
 							isMobile ? (
 								<HeaderTooltip label="打开导航">
