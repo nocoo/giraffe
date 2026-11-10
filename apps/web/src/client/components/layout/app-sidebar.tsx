@@ -70,7 +70,34 @@ const ICONS: Record<string, LucideIcon> = {
 
 function NavIcon({ name, className }: { name: string; className?: string }) {
 	const Icon = ICONS[name] ?? Box;
-	return <Icon className={className ?? "h-4 w-4 shrink-0"} strokeWidth={1.5} />;
+	return <Icon className={className ?? "h-basalt-4 w-basalt-4 shrink-0"} strokeWidth={1.5} />;
+}
+
+function CollapsedNavItem({
+	href,
+	label,
+	icon,
+	active,
+	onNavigate,
+}: {
+	href: string;
+	label: string;
+	icon: string;
+	active: boolean;
+	onNavigate: (href: string) => void;
+}) {
+	return (
+		<Tooltip delayDuration={0}>
+			<TooltipTrigger asChild>
+				<SidebarIconItem active={active} aria-label={label} onClick={() => onNavigate(href)}>
+					<NavIcon name={icon} />
+				</SidebarIconItem>
+			</TooltipTrigger>
+			<TooltipContent side="right" sideOffset={8}>
+				{label}
+			</TooltipContent>
+		</Tooltip>
+	);
 }
 
 function navActive(pathname: string, href: string): boolean {
@@ -207,20 +234,14 @@ export function AppSidebar({
 							</TooltipContent>
 						</Tooltip>
 						{NAV_ITEMS.map((item) => (
-							<Tooltip key={item.href} delayDuration={0}>
-								<TooltipTrigger asChild>
-									<SidebarIconItem
-										active={navActive(pathname, item.href)}
-										aria-label={item.label}
-										onClick={() => navigate(item.href)}
-									>
-										<NavIcon name={item.icon} className="h-4 w-4" />
-									</SidebarIconItem>
-								</TooltipTrigger>
-								<TooltipContent side="right" sideOffset={8}>
-									{item.label}
-								</TooltipContent>
-							</Tooltip>
+							<CollapsedNavItem
+								key={item.href}
+								href={item.href}
+								label={item.label}
+								icon={item.icon}
+								active={navActive(pathname, item.href)}
+								onNavigate={navigate}
+							/>
 						))}
 					</SidebarNav>
 					<SidebarFooter>
@@ -304,7 +325,7 @@ export function AppSidebar({
 									onSelect={() => handleSelect(item.href)}
 									className="cursor-pointer gap-basalt-space-lg"
 								>
-									<NavIcon name={item.icon} className="h-4 w-4 text-basalt-muted-foreground" />
+									<NavIcon name={item.icon} className="text-basalt-muted-foreground" />
 									<span>{item.label}</span>
 								</CommandItem>
 							))}
