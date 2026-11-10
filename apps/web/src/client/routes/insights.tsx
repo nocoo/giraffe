@@ -6,12 +6,12 @@ import { ChartLegend } from "@nocoo/basalt/charts/legend";
 import { StackedBarChart } from "@nocoo/basalt/charts/stacked-bar";
 import { ChartTooltipRow } from "@nocoo/basalt/charts/tooltip";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
+import { PageHeader } from "@nocoo/basalt/components/page-header";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
 import { Activity, Box, CircleDot, Eye, GitPullRequest, Layers3, ShieldCheck } from "lucide-react";
 import { useMemo, useState } from "react";
 import { CartesianGrid, Line, LineChart, Tooltip, XAxis, YAxis } from "recharts";
 import type { FactoryViewSnapshot } from "../../lib/factory-types";
-import { BusinessPageHeader as PageHeader } from "../components/layout/business-page-header";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ChartBrick, ChartEmpty, ChartRow } from "../components/layout/chart-brick";
 import { DataTimeSource } from "../components/layout/data-time";
@@ -19,7 +19,7 @@ import { DonutChart } from "../components/layout/donut-chart";
 import { IconLabel } from "../components/layout/icon-label";
 import { InsightsSkeleton } from "../components/layout/page-skeleton";
 import { ProjectLabel } from "../components/layout/project-identity";
-import { ScopeEmpty } from "../components/layout/repository-scope";
+import { RepositoryScopeFilter, ScopeEmpty } from "../components/layout/repository-scope";
 import { SnapshotPending } from "../components/layout/snapshot-pending";
 import { useSnapshotRead } from "../components/layout/use-snapshot-read";
 import { chartColor } from "../lib/chart-theme";
@@ -199,7 +199,11 @@ export function InsightsPage() {
 	if (board && "missing" in board) {
 		return (
 			<div className="space-y-8">
-				<PageHeader title="Insights" description={PAGE_DESCRIPTIONS["/insights"]} />
+				<PageHeader
+					title="Insights"
+					description={PAGE_DESCRIPTIONS["/insights"]}
+					actions={<RepositoryScopeFilter />}
+				/>
 				<LayerCard>
 					<LayerCard.Body>
 						<SnapshotPending state={board} />
@@ -212,7 +216,11 @@ export function InsightsPage() {
 	if (!board || !charts || !focus) {
 		return (
 			<div className="space-y-8">
-				<PageHeader title="Insights" description={PAGE_DESCRIPTIONS["/insights"]} />
+				<PageHeader
+					title="Insights"
+					description={PAGE_DESCRIPTIONS["/insights"]}
+					actions={<RepositoryScopeFilter />}
+				/>
 				<InsightsSkeleton label="加载 Insights" />
 			</div>
 		);
@@ -223,19 +231,18 @@ export function InsightsPage() {
 			<PageHeader
 				title="Insights"
 				description={PAGE_DESCRIPTIONS["/insights"]}
-				meta={
-					<DataTimeSource
-						entries={[
-							{
-								label: "Insights",
-								at: board.insights.fetched_at,
-								freshness: board.insights.freshness,
-							},
-						]}
-					/>
-				}
 				actions={
 					<>
+						<DataTimeSource
+							entries={[
+								{
+									label: "Insights",
+									at: board.insights.fetched_at,
+									freshness: board.insights.freshness,
+								},
+							]}
+						/>
+						<RepositoryScopeFilter />
 						{board.insights.truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
 						<DataTimeSource
 							entries={[
