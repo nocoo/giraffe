@@ -1,5 +1,6 @@
 import { Button, Link, toast } from "@nocoo/basalt";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
+import { PageHeader } from "@nocoo/basalt/components/page-header";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
 import {
 	Table,
@@ -11,7 +12,6 @@ import {
 } from "@nocoo/basalt/components/table";
 import { Bug, ShieldAlert } from "lucide-react";
 import { useMemo, useState } from "react";
-import { BusinessPageHeader as PageHeader } from "../components/layout/business-page-header";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ResultCount, TableScroll } from "../components/layout/collection-chrome";
 import { DataTimeSource } from "../components/layout/data-time";
@@ -22,7 +22,7 @@ import { ActiveFilters, Breakdown, OverviewCard } from "../components/layout/ove
 import { ListPageSkeleton } from "../components/layout/page-skeleton";
 import { ProjectLink } from "../components/layout/project-identity";
 import { ShareBar } from "../components/layout/rank-bars";
-import { ScopeEmpty } from "../components/layout/repository-scope";
+import { RepositoryScopeFilter, ScopeEmpty } from "../components/layout/repository-scope";
 import { useSnapshotRead } from "../components/layout/use-snapshot-read";
 import { catchLoad } from "../lib/error-ui";
 import { severityBadgeVariant, sourceBadgeVariant } from "../lib/format";
@@ -77,12 +77,15 @@ export function AlertsPage() {
 				<PageHeader
 					title="安全告警"
 					description={PAGE_DESCRIPTIONS["/alerts"]}
-					meta={
-						"missing" in snap ? null : (
-							<DataTimeSource
-								entries={[{ label: "安全告警", at: snap.fetched_at, freshness: snap.freshness }]}
-							/>
-						)
+					actions={
+						<>
+							{"missing" in snap ? null : (
+								<DataTimeSource
+									entries={[{ label: "安全告警", at: snap.fetched_at, freshness: snap.freshness }]}
+								/>
+							)}
+							<RepositoryScopeFilter />
+						</>
 					}
 				/>
 				<ScopeEmpty count={0} />
@@ -107,7 +110,11 @@ export function AlertsPage() {
 	if (!snap) {
 		return (
 			<div className="space-y-8">
-				<PageHeader title="安全告警" description={PAGE_DESCRIPTIONS["/alerts"]} />
+				<PageHeader
+					title="安全告警"
+					description={PAGE_DESCRIPTIONS["/alerts"]}
+					actions={<RepositoryScopeFilter />}
+				/>
 				<ListPageSkeleton label="加载告警" cards={["rank", "rank", "rank"]} columns={3} />
 			</div>
 		);
@@ -122,10 +129,13 @@ export function AlertsPage() {
 			<PageHeader
 				title="安全告警"
 				description={PAGE_DESCRIPTIONS["/alerts"]}
-				meta={
-					<DataTimeSource
-						entries={[{ label: "安全告警", at: snap.fetched_at, freshness: snap.freshness }]}
-					/>
+				actions={
+					<>
+						<DataTimeSource
+							entries={[{ label: "安全告警", at: snap.fetched_at, freshness: snap.freshness }]}
+						/>
+						<RepositoryScopeFilter />
+					</>
 				}
 			/>
 			<ScopeEmpty count={snap.freshness?.total ?? snap.items.length} />
