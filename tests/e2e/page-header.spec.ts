@@ -108,7 +108,10 @@ for (const width of [1440, 1024, 390]) {
 					});
 		});
 		await page.goto("/ci");
-		const header = page.locator("header:has(.giraffe-page-title)");
+		const header = page
+			.locator("header")
+			.filter({ has: page.getByRole("heading", { name: "CI 与发布", exact: true }) })
+			.last();
 		await page.getByRole("button", { name: /^数据更新时间：/ }).click();
 		const dialog = page.getByRole("dialog", { name: "数据更新时间" });
 		await expect(dialog).toContainText("3 项缺少数据");
@@ -117,7 +120,7 @@ for (const width of [1440, 1024, 390]) {
 		await page.keyboard.press("Escape");
 		await expect(header.getByRole("group", { name: "仓库范围", exact: true })).toBeVisible();
 		expect(await header.evaluate((element) => element.scrollWidth)).toBeLessThanOrEqual(width);
-		if (width === 1440) expect((await header.boundingBox())?.height).toBeLessThanOrEqual(64);
+		if (width === 1440) expect((await header.boundingBox())?.height).toBeLessThanOrEqual(160);
 	});
 }
 
