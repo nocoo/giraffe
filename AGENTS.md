@@ -65,7 +65,7 @@ For daily development, prepare `.dev.vars` from the example without overwriting 
 | pre-commit | Index snapshot via `git checkout-index`, then typecheck, full lint, four structural gates and coverage | Wall time still above <30s on this repo; index-vs-worktree rejection is enforced |
 | pre-push   | Local L2 and G2 in parallel; Gitleaks consumes stdin ranges                                            | Test the same pushed commit snapshots as well, <3min                             |
 
-Install restores Husky. Hooks are check-only; never use `--no-verify` on commits or branch pushes. CI/CD pins shared `nocoo/base-ci` workflows at `ac635753a869cb85fad1f52aae4ccbd6119f3cae` (main 2026-10-22).
+Install restores Husky. Hooks are check-only; never use `--no-verify` on commits or branch pushes. CI/CD pins shared `nocoo/base-ci` workflows at `1ea10ecab22b72512399485391603fe03a161016` (`v2026.12`).
 
 ## Resources and isolation
 
@@ -83,15 +83,20 @@ Keep these ports free; a conflict fails instead of falling back to development. 
 
 `.github/workflows/ci.yml` (workflow `CI`) runs on pull requests and pushes to `main` through the shared `quality.yml`. A PR is green only when every required check passes:
 
-| Check                                                           | Runs                                                                                    |
-| --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `quality / L1: Quality & Tests`                                 | the four `gate:*` scripts, `bun run typecheck`, `bun run lint`, `bun run test:coverage` |
-| `quality / L2: API E2E / Test (bun on ubuntu-latest)`           | `bun run test:e2e:api`                                                                  |
-| `quality / L3: Browser E2E / Test (bun on ubuntu-latest)`       | `bun run test:e2e:bdd` (Chromium)                                                       |
-| `quality / G2: Security / Security (Secrets & Vulnerabilities)` | Gitleaks and OSV                                                                        |
-| `quality / Quality Gate Aggregate`                              | requires all of the above                                                               |
+| Check                                            | Runs                                                                                    |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| `quality / S1: Typecheck`                        | `bun run typecheck`                                                                     |
+| `quality / S2: Lint`                             | `bun run lint`                                                                          |
+| `quality / S3: Workflow Lint`                    | actionlint, SHA pin, `deploy-worker.yml` reference                                    |
+| `quality / G1: Secret Scan`                      | Gitleaks (`.gitleaks.toml`)                                                           |
+| `quality / G2: Dependency Vulnerabilities`       | OSV Scanner (`bun.lock`)                                                                |
+| `quality / B1: Build`                            | `bun run build`                                                                         |
+| `quality / L1: Unit Tests & Coverage`            | four `gate:*` scripts then `bun run test:coverage`                                      |
+| `quality / L2: API E2E`                          | `bun run test:e2e:api`                                                                  |
+| `quality / L3: Browser E2E`                    | `bun run test:e2e:bdd` (Chromium)                                                       |
+| `quality / Z1: Gate`                             | slot-status strict aggregate (branch protection should require this check only)         |
 
-`Build`, `Package Check` and `Worker Tests` report as skipped; that is expected.
+`L1.5: Worker Runtime Tests` and `P1: Package Check` are declared `na` in `slot-status` and do not run.
 
 ### Release command and deploy target
 
