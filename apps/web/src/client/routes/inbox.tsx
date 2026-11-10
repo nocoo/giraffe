@@ -1,5 +1,6 @@
 import { Button, Link, SegmentControl, toast } from "@nocoo/basalt";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
+import { PageHeader } from "@nocoo/basalt/components/page-header";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
 import {
 	Table,
@@ -12,7 +13,6 @@ import {
 import { TablePager } from "@nocoo/basalt/components/table-pager";
 import { Bell, CheckCheck, Clock3, Inbox, MailCheck, MailOpen } from "lucide-react";
 import { useMemo, useState } from "react";
-import { BusinessPageHeader as PageHeader } from "../components/layout/business-page-header";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ResultCount, TableScroll } from "../components/layout/collection-chrome";
 import { DataTimeSource } from "../components/layout/data-time";
@@ -26,7 +26,11 @@ import {
 } from "../components/layout/overview-cards";
 import { ListPageSkeleton } from "../components/layout/page-skeleton";
 import { ProjectLink } from "../components/layout/project-identity";
-import { ScopeEmpty, useRepositoryScope } from "../components/layout/repository-scope";
+import {
+	RepositoryScopeFilter,
+	ScopeEmpty,
+	useRepositoryScope,
+} from "../components/layout/repository-scope";
 import { INLINE_SEGMENT } from "../components/layout/segment";
 import { SnapshotPending } from "../components/layout/snapshot-pending";
 import { useSnapshotRead } from "../components/layout/use-snapshot-read";
@@ -80,7 +84,11 @@ export function InboxPage() {
 	if (snap && "missing" in snap) {
 		return (
 			<div className="space-y-8">
-				<PageHeader title="通知" description={PAGE_DESCRIPTIONS["/inbox"]} />
+				<PageHeader
+					title="通知"
+					description={PAGE_DESCRIPTIONS["/inbox"]}
+					actions={<RepositoryScopeFilter />}
+				/>
 				<LayerCard>
 					<LayerCard.Body>
 						<SnapshotPending state={snap} />
@@ -93,7 +101,11 @@ export function InboxPage() {
 	if (!snap) {
 		return (
 			<div className="space-y-8">
-				<PageHeader title="通知" description={PAGE_DESCRIPTIONS["/inbox"]} />
+				<PageHeader
+					title="通知"
+					description={PAGE_DESCRIPTIONS["/inbox"]}
+					actions={<RepositoryScopeFilter />}
+				/>
 				<ListPageSkeleton label="加载通知" cards={["bars", "rank", "rank"]} columns={5} />
 			</div>
 		);
@@ -111,13 +123,12 @@ export function InboxPage() {
 			<PageHeader
 				title="通知"
 				description={PAGE_DESCRIPTIONS["/inbox"]}
-				meta={
-					<DataTimeSource
-						entries={[{ label: "通知", at: snap.fetched_at, freshness: snap.freshness }]}
-					/>
-				}
 				actions={
 					<>
+						<DataTimeSource
+							entries={[{ label: "通知", at: snap.fetched_at, freshness: snap.freshness }]}
+						/>
+						<RepositoryScopeFilter />
 						{snap.truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
 						<Button
 							type="button"

@@ -1,4 +1,5 @@
 import { Button, Input, SegmentControl } from "@nocoo/basalt";
+import { PageHeader } from "@nocoo/basalt/components/page-header";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
 import { StatStrip } from "@nocoo/basalt/components/stat-strip";
 import {
@@ -33,13 +34,12 @@ import {
 	type FactoryStreamName,
 	type FactoryViewSnapshot,
 } from "../../lib/factory-types";
-import { BusinessPageHeader as PageHeader } from "../components/layout/business-page-header";
 import { DataTimeSource } from "../components/layout/data-time";
 import { IconLabel } from "../components/layout/icon-label";
 import { Kpi, KpiRow } from "../components/layout/kpi";
 import { LanguageLabel } from "../components/layout/labels";
 import { ProjectLabel } from "../components/layout/project-identity";
-import { ScopeEmpty } from "../components/layout/repository-scope";
+import { RepositoryScopeFilter, ScopeEmpty } from "../components/layout/repository-scope";
 import { INLINE_SEGMENT } from "../components/layout/segment";
 import { SelectField } from "../components/layout/select-field";
 import { useSnapshotRead } from "../components/layout/use-snapshot-read";
@@ -278,18 +278,21 @@ export function FactoryPage() {
 			<PageHeader
 				title="软件工厂"
 				description="GitHub 的仓库、工作流与交付节奏"
-				meta={
-					snapshot ? (
-						<DataTimeSource
-							entries={[
-								{ label: "活动统计", at: snapshot.fetched_at, freshness },
-								{
-									label: "仓库信息",
-									freshness: board?.metadataFreshness,
-								},
-							]}
-						/>
-					) : null
+				actions={
+					<>
+						{snapshot ? (
+							<DataTimeSource
+								entries={[
+									{ label: "活动统计", at: snapshot.fetched_at, freshness },
+									{
+										label: "仓库信息",
+										freshness: board?.metadataFreshness,
+									},
+								]}
+							/>
+						) : null}
+						<RepositoryScopeFilter />
+					</>
 				}
 			/>
 			{!loading ? <ScopeEmpty count={snapshot?.selectedRepos.length ?? 0} /> : null}

@@ -1,6 +1,7 @@
 import { Button, Link, SegmentControl, toast } from "@nocoo/basalt";
 import { FilterBar } from "@nocoo/basalt/components/filter-bar";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
+import { PageHeader } from "@nocoo/basalt/components/page-header";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
 import {
 	Table,
@@ -13,7 +14,6 @@ import {
 import { Clock3, GitPullRequest } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { FactoryViewSnapshot } from "../../lib/factory-types";
-import { BusinessPageHeader as PageHeader } from "../components/layout/business-page-header";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ChartBrick } from "../components/layout/chart-brick";
 import { ResultCount, SearchField, TableScroll } from "../components/layout/collection-chrome";
@@ -29,7 +29,7 @@ import {
 import { ListPageSkeleton } from "../components/layout/page-skeleton";
 import { ProjectLink } from "../components/layout/project-identity";
 import { ShareBar } from "../components/layout/rank-bars";
-import { ScopeEmpty } from "../components/layout/repository-scope";
+import { RepositoryScopeFilter, ScopeEmpty } from "../components/layout/repository-scope";
 import { INLINE_SEGMENT } from "../components/layout/segment";
 import { SnapshotPending } from "../components/layout/snapshot-pending";
 import { ChurnMeter, PersonCell, SortButton } from "../components/layout/table-chrome";
@@ -111,7 +111,11 @@ export function PullsPage() {
 	if (snap && "missing" in snap) {
 		return (
 			<div className="space-y-8">
-				<PageHeader title="Pull Requests" description={PAGE_DESCRIPTIONS["/pulls"]} />
+				<PageHeader
+					title="Pull Requests"
+					description={PAGE_DESCRIPTIONS["/pulls"]}
+					actions={<RepositoryScopeFilter />}
+				/>
 				<LayerCard>
 					<LayerCard.Body>
 						<SnapshotPending state={snap} />
@@ -124,7 +128,11 @@ export function PullsPage() {
 	if (!snap) {
 		return (
 			<div className="space-y-8">
-				<PageHeader title="Pull Requests" description={PAGE_DESCRIPTIONS["/pulls"]} />
+				<PageHeader
+					title="Pull Requests"
+					description={PAGE_DESCRIPTIONS["/pulls"]}
+					actions={<RepositoryScopeFilter />}
+				/>
 				<ListPageSkeleton
 					label="加载 Pull Requests"
 					cards={["bars", "rank", "columns"]}
@@ -140,12 +148,6 @@ export function PullsPage() {
 			<PageHeader
 				title="Pull Requests"
 				description={PAGE_DESCRIPTIONS["/pulls"]}
-				meta={
-					<DataTimeSource
-						entries={[{ label: "Pull Requests", at: snap.fetched_at, freshness: snap.freshness }]}
-					/>
-				}
-				actions={snap.truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
 				filters={
 					<FilterBar label="Pull Requests 筛选" className="w-full">
 						<SearchField
@@ -165,6 +167,15 @@ export function PullsPage() {
 							]}
 						/>
 					</FilterBar>
+				}
+				actions={
+					<>
+						<DataTimeSource
+							entries={[{ label: "Pull Requests", at: snap.fetched_at, freshness: snap.freshness }]}
+						/>
+						<RepositoryScopeFilter />
+						{snap.truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
+					</>
 				}
 			/>
 			<ScopeEmpty count={snap.freshness?.total ?? snap.pull_requests.length} />

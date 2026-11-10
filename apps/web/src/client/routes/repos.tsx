@@ -9,6 +9,7 @@ import {
 } from "@nocoo/basalt";
 import { FilterBar } from "@nocoo/basalt/components/filter-bar";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
+import { PageHeader } from "@nocoo/basalt/components/page-header";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
 import {
 	Table,
@@ -21,7 +22,6 @@ import {
 import { Box, Clock3, Star } from "lucide-react";
 import { type CSSProperties, useMemo, useState } from "react";
 import type { FactoryViewSnapshot } from "../../lib/factory-types";
-import { BusinessPageHeader as PageHeader } from "../components/layout/business-page-header";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ChartBrick } from "../components/layout/chart-brick";
 import { ResultCount, SearchField, TableScroll } from "../components/layout/collection-chrome";
@@ -38,7 +38,11 @@ import {
 import { ListPageSkeleton } from "../components/layout/page-skeleton";
 import { ProjectSummary } from "../components/layout/project-identity";
 import { ShareBar } from "../components/layout/rank-bars";
-import { ScopeEmpty, useRepositoryScope } from "../components/layout/repository-scope";
+import {
+	RepositoryScopeFilter,
+	ScopeEmpty,
+	useRepositoryScope,
+} from "../components/layout/repository-scope";
 import { INLINE_SEGMENT } from "../components/layout/segment";
 import { SnapshotPending } from "../components/layout/snapshot-pending";
 import { Meter, SortButton } from "../components/layout/table-chrome";
@@ -240,7 +244,11 @@ export function ReposPage() {
 	if (snap && "missing" in snap) {
 		return (
 			<div className="space-y-8">
-				<PageHeader title="仓库" description={PAGE_DESCRIPTIONS["/repos"]} />
+				<PageHeader
+					title="仓库"
+					description={PAGE_DESCRIPTIONS["/repos"]}
+					actions={<RepositoryScopeFilter />}
+				/>
 				<LayerCard>
 					<LayerCard.Body>
 						<SnapshotPending state={snap} />
@@ -253,7 +261,11 @@ export function ReposPage() {
 	if (!snap) {
 		return (
 			<div className="space-y-8">
-				<PageHeader title="仓库" description={PAGE_DESCRIPTIONS["/repos"]} />
+				<PageHeader
+					title="仓库"
+					description={PAGE_DESCRIPTIONS["/repos"]}
+					actions={<RepositoryScopeFilter />}
+				/>
 				<ListPageSkeleton
 					label="加载仓库"
 					cards={["rank", "columns", "rank", "rank"]}
@@ -271,13 +283,16 @@ export function ReposPage() {
 			<PageHeader
 				title="仓库"
 				description={PAGE_DESCRIPTIONS["/repos"]}
-				meta={
-					<DataTimeSource
-						entries={[{ label: "仓库列表", at: snap.fetched_at, freshness: snap.freshness }]}
-					/>
-				}
-				actions={snap.truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
 				filters={filters}
+				actions={
+					<>
+						<DataTimeSource
+							entries={[{ label: "仓库列表", at: snap.fetched_at, freshness: snap.freshness }]}
+						/>
+						<RepositoryScopeFilter />
+						{snap.truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
+					</>
+				}
 			/>
 			<ScopeEmpty count={snap.repos.length} />
 			{days.length ? (
