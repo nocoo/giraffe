@@ -19,9 +19,7 @@ export function ThemeToggle({ "aria-label": ariaLabel = "切换主题" }: ThemeT
 						: "切换为浅色主题"
 			}
 		>
-			<span className="inline-flex">
-				<BasaltThemeToggle aria-label={ariaLabel} />
-			</span>
+			<BasaltThemeToggle aria-label={ariaLabel} />
 		</HeaderTooltip>
 	);
 }

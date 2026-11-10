@@ -1,24 +1,18 @@
 "use client";
 
 import { LinkButton } from "@nocoo/basalt/components/button";
-import {
-	Tooltip,
-	TooltipContent,
-	TooltipProvider,
-	TooltipTrigger,
-} from "@nocoo/basalt/components/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@nocoo/basalt/components/tooltip";
 import type { ReactElement } from "react";
+import { GithubIcon } from "./github-icon";
 
 export function HeaderTooltip({ label, children }: { label: string; children: ReactElement }) {
 	return (
-		<TooltipProvider delayDuration={0}>
-			<Tooltip>
-				<TooltipTrigger asChild>{children}</TooltipTrigger>
-				<TooltipContent side="bottom" sideOffset={6}>
-					{label}
-				</TooltipContent>
-			</Tooltip>
-		</TooltipProvider>
+		<Tooltip delayDuration={0}>
+			<TooltipTrigger asChild>{children}</TooltipTrigger>
+			<TooltipContent side="bottom" sideOffset={6}>
+				{label}
+			</TooltipContent>
+		</Tooltip>
 	);
 }
 
@@ -32,10 +26,8 @@ export function HexlyLink() {
 				target="_blank"
 				rel="noopener noreferrer"
 				aria-label="Giraffe on hexly.ai (opens in a new tab)"
-				className="w-8 shrink-0 rounded-basalt-md text-basalt-muted-foreground hover:text-basalt-foreground [&_svg]:size-[1.125rem]"
 			>
 				<svg
-					className="size-[18px]"
 					width="18"
 					height="18"
 					viewBox="0 0 24 24"
@@ -50,6 +42,23 @@ export function HexlyLink() {
 					<path d="M12 2v20M3.34 7l17.32 10m0-10L3.34 17" />
 				</svg>
 				<span className="sr-only">Giraffe on hexly.ai (opens in a new tab)</span>
+			</LinkButton>
+		</HeaderTooltip>
+	);
+}
+
+export function GithubRepoLink() {
+	return (
+		<HeaderTooltip label="GitHub repository">
+			<LinkButton
+				variant="ghost"
+				size="icon"
+				href="https://github.com/nocoo/giraffe"
+				target="_blank"
+				rel="noopener noreferrer"
+				aria-label="GitHub"
+			>
+				<GithubIcon aria-hidden="true" strokeWidth={1.5} />
 			</LinkButton>
 		</HeaderTooltip>
 	);
