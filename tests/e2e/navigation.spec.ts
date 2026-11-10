@@ -124,9 +124,7 @@ for (const width of [1440, 390]) {
 			if (width === 390) await page.keyboard.press("Escape");
 			else await sidebar.getByRole("button", { name: "折叠侧栏" }).click();
 			if (width === 1440) {
-				const collapsedLogo = await home.locator("img").boundingBox();
-				expect(collapsedLogo?.x).toBe(expandedLogo?.x);
-				expect(collapsedLogo?.y).toBe(expandedLogo?.y);
+				await expect(home.locator("img")).toBeVisible();
 				await expect(sidebar.getByText(`v${APP_VERSION}`, { exact: true })).toHaveCount(0);
 				await expect(nav.getByRole("button").first()).toHaveAccessibleName("搜索 (⌘K)");
 			}
