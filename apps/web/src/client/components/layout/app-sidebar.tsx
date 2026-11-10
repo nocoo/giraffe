@@ -209,13 +209,7 @@ export function AppSidebar({
 							<BrandMark />
 						</Link>
 					</SidebarHeader>
-					<Button
-						variant="ghost"
-						size="icon"
-						className="mb-basalt-space-sm self-center"
-						onClick={() => onToggle?.()}
-						aria-label="展开侧栏"
-					>
+					<Button variant="ghost" size="icon" onClick={() => onToggle?.()} aria-label="展开侧栏">
 						<PanelLeft aria-hidden="true" />
 					</Button>
 					<SidebarNav>
@@ -226,7 +220,7 @@ export function AppSidebar({
 									onClick={openSearch}
 									aria-label="搜索 (⌘K)"
 								>
-									<Search className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
+									<Search className="h-basalt-4 w-basalt-4" strokeWidth={1.5} aria-hidden="true" />
 								</SidebarIconItem>
 							</TooltipTrigger>
 							<TooltipContent side="right" sideOffset={8}>
