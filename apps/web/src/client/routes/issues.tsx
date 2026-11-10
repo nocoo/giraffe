@@ -1,6 +1,7 @@
 import { Button, Link, SegmentControl, toast } from "@nocoo/basalt";
 import { FilterBar } from "@nocoo/basalt/components/filter-bar";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
+import { PageHeader } from "@nocoo/basalt/components/page-header";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
 import {
 	Table,
@@ -13,7 +14,6 @@ import {
 import { CircleDot, Clock3, MessageSquare } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { FactoryViewSnapshot } from "../../lib/factory-types";
-import { BusinessPageHeader as PageHeader } from "../components/layout/business-page-header";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ChartBrick } from "../components/layout/chart-brick";
 import { ResultCount, SearchField, TableScroll } from "../components/layout/collection-chrome";
@@ -29,7 +29,7 @@ import {
 } from "../components/layout/overview-cards";
 import { ListPageSkeleton } from "../components/layout/page-skeleton";
 import { ProjectLink } from "../components/layout/project-identity";
-import { ScopeEmpty } from "../components/layout/repository-scope";
+import { RepositoryScopeFilter, ScopeEmpty } from "../components/layout/repository-scope";
 import { INLINE_SEGMENT } from "../components/layout/segment";
 import { SnapshotPending } from "../components/layout/snapshot-pending";
 import { LabelChips, PersonCell, SortButton } from "../components/layout/table-chrome";
@@ -110,7 +110,11 @@ export function IssuesPage() {
 	if (snap && "missing" in snap) {
 		return (
 			<div className="space-y-8">
-				<PageHeader title="Issues" description={PAGE_DESCRIPTIONS["/issues"]} />
+				<PageHeader
+					title="Issues"
+					description={PAGE_DESCRIPTIONS["/issues"]}
+					actions={<RepositoryScopeFilter />}
+				/>
 				<LayerCard>
 					<LayerCard.Body>
 						<SnapshotPending state={snap} />
@@ -123,7 +127,11 @@ export function IssuesPage() {
 	if (!snap) {
 		return (
 			<div className="space-y-8">
-				<PageHeader title="Issues" description={PAGE_DESCRIPTIONS["/issues"]} />
+				<PageHeader
+					title="Issues"
+					description={PAGE_DESCRIPTIONS["/issues"]}
+					actions={<RepositoryScopeFilter />}
+				/>
 				<ListPageSkeleton label="加载 Issues" cards={["columns", "rank", "bars"]} columns={5} />
 			</div>
 		);
@@ -135,13 +143,16 @@ export function IssuesPage() {
 			<PageHeader
 				title="Issues"
 				description={PAGE_DESCRIPTIONS["/issues"]}
-				meta={
-					<DataTimeSource
-						entries={[{ label: "Issues", at: snap.fetched_at, freshness: snap.freshness }]}
-					/>
-				}
-				actions={snap.truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
 				filters={filters}
+				actions={
+					<>
+						<DataTimeSource
+							entries={[{ label: "Issues", at: snap.fetched_at, freshness: snap.freshness }]}
+						/>
+						<RepositoryScopeFilter />
+						{snap.truncated ? <CandyBadge tone="amber">已截断</CandyBadge> : null}
+					</>
+				}
 			/>
 			<ScopeEmpty count={snap.freshness?.total ?? snap.issues.length} />
 			{days.length ? (
