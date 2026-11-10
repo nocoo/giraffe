@@ -93,6 +93,7 @@ L1 禁止：网络、真实 D1、真实 GitHub、启动 wrangler。`vitest` setu
 禁止在仓库根对 wrangler 使用开发者的 `.dev.vars`。
 
 Runner 必须：
+
 1. 建临时目录（例如 `.wrangler/e2e-run/`），把 `wrangler.toml` 拷进去；`src/` 与 schema 文件（`src/server/lib/db/schema.sql` 或 `migrations/`，以 03 为准）必须能从该目录解析。
 2. persist 使用**仓库根绝对路径** `.wrangler/e2e/`（L3 为 `.wrangler/e2e-pw/`），不要写成相对临时 cwd 的嵌套路径。
 3. **只**用 runner 写的 `--env-file` 注入 fixture。L2/L3 **不写、不读** `.dev.vars`。本机 `dev:server` 才用 `.dev.vars`。仓库根 `.dev.vars` 不得传给 E2E wrangler。
@@ -127,6 +128,7 @@ ACCESS_JWKS_URL=http://127.0.0.1:17047/cdn-cgi/access/certs
 套件 A 与套件 B 的 Worker 环境不同，必须 **起停两次** wrangler，各用一份 env-file。不能在同一进程里改 `ENVIRONMENT`。
 
 每个套件：
+
 1. 临时目录 + 占位 `dist/client/index.html`
 2. 清空该套件 persist（可共用 `.wrangler/e2e/`，两次启动之间仍要执行 schema + marker）
 3. **先**用仓库根绝对路径执行 schema：`wrangler d1 execute giraffe-db --local --persist-to=<绝对路径> --file=<schema.sql 绝对路径>`（若 03 改为 migrations，则换成 `migrations apply` + 同一绝对 persist）。写入 `_test_marker`
@@ -138,6 +140,7 @@ ACCESS_JWKS_URL=http://127.0.0.1:17047/cdn-cgi/access/certs
 9. finally 杀全部进程
 
 GitHub 出站的**唯一**入口是请求内 `createGithubClient(env)` 返回的 `githubFetch(url)`（签名细节见 04）。比较用 `new URL(url).origin === new URL(base).origin`，不是 hostname 对 origin。禁止模块级 fetch 计数器。
+
 - `ENVIRONMENT` 为 `development` 或 `test`：必须用 `GITHUB_API_BASE`；origin 不匹配则 **throw 且不调用 fetch**
 - 生产：忽略 `GITHUB_API_BASE`，origin 只能是 `https://api.github.com`
 - L2 runner 未设 `GITHUB_API_BASE` 则失败关闭
@@ -151,6 +154,7 @@ G1 `gate:client-fetch` 扫 `src/client/**`：只允许 `src/client/lib/api.ts` �
 ### 5.3 两套 HTTP
 
 **套件 A — 功能（可短路 Access）**
+
 - 注入 `ENVIRONMENT=development`（仅该套件 `--env-file`，不是 wrangler.toml `[vars]`，不是 `.dev.vars`）
 - GitHub 只允许 `GITHUB_API_BASE`。未注入则 runner 与 `githubFetch` 都失败关闭。出站保证靠 `githubFetch` + G1 AST 门，不靠 stub 观察直连
 
@@ -163,11 +167,13 @@ G1 `gate:client-fetch` 扫 `src/client/**`：只允许 `src/client/lib/api.ts` �
 | 只读     | GET 期间 GitHub stub 请求数为 0，且相关 D1 行（快照 payload / `fetched_at` / accounts）字节级不变                                                                                                                                                     |
 
 PAT `POST /api/accounts` 成功**与失败**路径（400 缺 scope、GitHub stub 401、非法 token）均断言：
+
 - HTTP 响应、错误体、wrangler stdout/stderr 均不含 fixture PAT 明文
 - 经 Worker 可读的账号详情 / live 不得含明文
 - 成功路径：在 `GET /api/live` 已证明 `d1_marker=test` 之后，用同一绝对 persist 做 `wrangler d1 execute --local --persist-to=<绝对路径>` 读 `token_ciphertext`（不新增 dump API）。值必须是信封 JSON（`iv`/`ct`/`tag`），明文 PAT 不是子串
 
 **套件 B — Access 中间件（真 HTTP）**
+
 - `ENVIRONMENT=test`：必须验 JWT；JWKS 只允许 `ACCESS_JWKS_URL`
 - 生产（`ENVIRONMENT` 空或 `production`）**必须忽略** `ACCESS_JWKS_URL`，只信 `CF_ACCESS_TEAM_DOMAIN` 的 JWKS。L1 覆盖「生产模式下 fixture JWKS 被忽略」
 - 用 stub JWKS 签发 fixture JWT
@@ -188,6 +194,7 @@ still runs the full suite; CI and required acceptance use the unchanged full com
 阶段 2 才有。Playwright，Chromium。
 
 L3 **只跑套件 A**（`ENVIRONMENT=development` Access 短路）。不做套件 B，浏览器不注入 CF Access JWT。隔离目录、`--env-file`、GitHub `githubFetch` 边界与 L2 套件 A 相同。L2 写请求仍手设 Origin `https://giraffe.dev.hexly.ai`。L3 Playwright 的页源是 `http://127.0.0.1:27045`，浏览器会带该 Origin；04 在 Access 短路条件下允许 `Origin === request URL origin`。这不是把 loopback 写入生产白名单。差异：
+
 1. 先 `vite build`，把真实 `dist/client` 放进临时目录（不要占位壳）
 2. persist：`.wrangler/e2e-pw/`
 3. 端口 27045；同样先执行 schema + marker 再启动
@@ -195,6 +202,7 @@ L3 **只跑套件 A**（`ENVIRONMENT=development` Access 短路）。不做套�
 5. finally 清理
 
 最低路径（05 可加，不可减）：
+
 1. 设置页提交 fixture PAT（输入框提交后为空）
 2. 仓库列表有数据
 3. 进入单仓详情
@@ -204,6 +212,7 @@ L3 **只跑套件 A**（`ENVIRONMENT=development` Access 短路）。不做套�
 ## 7. G1 / G2
 
 **G1**
+
 - `tsc --noEmit`，`strict` + `noUncheckedIndexedAccess` + `exactOptionalPropertyTypes`
 - `biome check --error-on-warnings .`：0 error、0 warning
 - `bun run gate:test-skip`（见第 3 节）
@@ -212,6 +221,7 @@ L3 **只跑套件 A**（`ENVIRONMENT=development` Access 短路）。不做套�
 - `bun run gate:client-fetch`：Client 只允许 `src/client/lib/api.ts` 以相对路径 `/api/` 调用 fetch
 
 **G2**
+
 - `gitleaks`：pre-push 扫将要推送的范围；命中密钥/PAT 形态则失败
 - `osv-scanner --lockfile=bun.lock`：已知漏洞非零退出
 - fixture 密钥必须是明显假值；gitleaks 允许名单只覆盖该 fixture 路径
@@ -250,12 +260,14 @@ L3 **只跑套件 A**（`ENVIRONMENT=development` Access 短路）。不做套�
 ## 10. 阶段完成线
 
 **阶段 1 可宣告完成**，当且仅当：
+
 - 04 列出的全部接口有 L1（该测的逻辑）和 L2 套件 A+B
 - `test:coverage` 四项均 ≥ 95%，`include` 含全部生产 `src/`（测试文件与薄壳除外）
 - pre-commit / pre-push 命令在干净树上可复现绿
 - 无 Client 功能代码
 
 **阶段 2 可宣告完成**，当且仅当：
+
 - 阶段 1 的 L1/L2/G1/G2 仍绿
 - 05 列出的页面有 L1 ViewModel/组件测试
 - 第 6 节最低 L3 路径绿

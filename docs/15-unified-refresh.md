@@ -210,6 +210,7 @@ fresh. Identity replacements cannot inherit observations by repository name.
 Published coverage preserves the selected day observations' actual source;
 windows combining REST and GraphQL evidence report `mixed`, never relabel cached
 REST releases as newly collected GraphQL data.
+
 - Daily commits use one GraphQL `history(since,until) { totalCount }` alias per
   uncached day. They are default-branch counts, not owner-only/all-branch counts.
   No REST commit pagination or reconciliation against contribution totals occurs.

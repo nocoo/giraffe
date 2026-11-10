@@ -64,6 +64,7 @@
 随后通过新实现的采集器再次完成 113 → 67 个仓库调查，记录 838 次逻辑请求。将第二轮明细重新聚合到第一轮相同时间窗口，Issue/PR 创建关闭、PR 合并、P50/P90、CI 的四个分类与 Release 全部一致。
 
 仅默认分支提交相差 +4，均来自 `nocoo/gecko`。GitHub compare 确认第二轮固定头相对第一轮 ahead 5、behind 0：4 个提交的 committer date 在第一轮窗口内，但在第一轮固定头中尚不可达，另 1 个合并提交位于窗口外。不是重复分页计数。
+
 - 第一轮头：`0060f8377573016d998847d5bb3ecc3e60ef2805`
 - 第二轮头：`3d2506b1fb7738329d53260fd8b3dde41be9f84d`
 - [GitHub compare 证据](https://github.com/nocoo/gecko/compare/0060f8377573016d998847d5bb3ecc3e60ef2805...3d2506b1fb7738329d53260fd8b3dde41be9f84d)

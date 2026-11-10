@@ -444,6 +444,7 @@ cross-release equality promise.
 
 `0014_source_content.sql` adds nullable TEXT `content_meta` to `snapshots` and
 `factory_resources`, and indexes:
+
 - `snapshots_content(account_id,kind,content_meta)`
 - `factory_resources_content(run_id,repo,stream,content_meta)`
 
@@ -577,6 +578,7 @@ production shortcut**: a reader cannot assume that saved hashes remain absent
 after refresh. The normal reader and metadata indexes remain unchanged.
 
 Separate full-read traces show:
+
 - Legacy: 644 payload parses, no metadata JSON parses, and the same 634 full-version
   digests over 12,736,040 bytes in all three readers. Null composite inputs already
   avoid content-hash computation; caching or deduplicating absent metadata would
@@ -649,6 +651,7 @@ validators as opaque and accept weak request validators. No `no-transform` heade
 is added to force a strong edge tag at the expense of compression.
 
 Official references checked for this change:
+
 - [Workers Accept-Encoding handling](https://developers.cloudflare.com/workers/runtime-apis/fetch/#how-the-accept-encoding-header-is-handled)
 - [Compression eligibility and negotiation](https://developers.cloudflare.com/speed/optimization/content/compression/)
 - [Response encodeBody](https://developers.cloudflare.com/workers/runtime-apis/response/#the-encodebody-option)
