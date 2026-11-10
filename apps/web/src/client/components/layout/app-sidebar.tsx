@@ -240,9 +240,7 @@ export function AppSidebar({
 					</SidebarNav>
 					<SidebarFooter>
 						<Tooltip delayDuration={0}>
-							<TooltipTrigger asChild>
-								<span className="inline-flex">{avatar}</span>
-							</TooltipTrigger>
+							<TooltipTrigger asChild>{avatar}</TooltipTrigger>
 							<TooltipContent side="right" sideOffset={8}>
 								{name}
 							</TooltipContent>
