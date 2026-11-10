@@ -25,7 +25,7 @@
         "@types/react-dom": "^19.3.0",
         "@vitejs/plugin-react": "^6.1.2",
         "@vitest/coverage-v8": "5.1.0",
-        "graphql": "16.9.0",
+        "graphql": "17.1.0",
         "happy-dom": "^21.0.4",
         "husky": "9.1.7",
         "oxc-parser": "^0.156.0",
@@ -635,7 +635,7 @@
 
     "graceful-fs": ["graceful-fs@4.2.11", "", {}, "sha1-QYPk6L8Iu24Fu7L30uDI9xLKQOM="],
 
-    "graphql": ["graphql@16.9.0", "", {}, "sha512-GGTKBX4SD7Wdb8mqeDLni2oaRGYQWjWHGKPQ24ZMnUtKfcsVoiv4uX8+LJr1K6U5VW2Lu1BwJnj7uiori0YtRw=="],
+    "graphql": ["graphql@17.1.0", "", {}, "sha512-JKCOa7rSQNrket/JFhuua86hljUO+IIpyUHfKxlKD6FEfbrLX8jc1FDrA0KPKI+s8OspBCF/5npYccAICHXPpQ=="],
 
     "graphql-tag": ["graphql-tag@2.12.7", "", { "dependencies": { "tslib": "^2.1.0" }, "peerDependencies": { "graphql": "^0.9.0 || ^0.10.0 || ^0.11.0 || ^0.12.0 || ^0.13.0 || ^14.0.0 || ^15.0.0 || ^16.0.0 || ^17.0.0" } }, "sha512-xnE/NFzy+0eIesvAsREJZ284zTl/wYuBAvpsFSDhRGRdRHdnE90M21Q3xAWyYInb0J756c6x0pIQ62+vtvOs1Q=="],
 
