@@ -83,18 +83,18 @@ Keep these ports free; a conflict fails instead of falling back to development. 
 
 `.github/workflows/ci.yml` (workflow `CI`) runs on pull requests and pushes to `main` through the shared `quality.yml`. A PR is green only when every required check passes:
 
-| Check                                            | Runs                                                                                    |
-| ------------------------------------------------ | --------------------------------------------------------------------------------------- |
-| `quality / S1: Typecheck`                        | `bun run typecheck`                                                                     |
-| `quality / S2: Lint`                             | `bun run lint`                                                                          |
-| `quality / S3: Workflow Lint`                    | actionlint, SHA pin, `deploy-worker.yml` reference                                    |
-| `quality / G1: Secret Scan`                      | Gitleaks (`.gitleaks.toml`)                                                           |
-| `quality / G2: Dependency Vulnerabilities`       | OSV Scanner (`bun.lock`)                                                                |
-| `quality / B1: Build`                            | `bun run build`                                                                         |
-| `quality / L1: Unit Tests & Coverage`            | four `gate:*` scripts then `bun run test:coverage`                                      |
-| `quality / L2: API E2E`                          | `bun run test:e2e:api`                                                                  |
-| `quality / L3: Browser E2E`                    | `bun run test:e2e:bdd` (Chromium)                                                       |
-| `quality / Z1: Gate`                             | slot-status strict aggregate (branch protection should require this check only)         |
+| Check                                      | Runs                                                                            |
+| ------------------------------------------ | ------------------------------------------------------------------------------- |
+| `quality / S1: Typecheck`                  | `bun run typecheck`                                                             |
+| `quality / S2: Lint`                       | `bun run lint`                                                                  |
+| `quality / S3: Workflow Lint`              | actionlint, SHA pin, `deploy-worker.yml` reference                              |
+| `quality / G1: Secret Scan`                | Gitleaks (`.gitleaks.toml`)                                                     |
+| `quality / G2: Dependency Vulnerabilities` | OSV Scanner (`bun.lock`)                                                        |
+| `quality / B1: Build`                      | `bun run build`                                                                 |
+| `quality / L1: Unit Tests & Coverage`      | four `gate:*` scripts then `bun run test:coverage`                              |
+| `quality / L2: API E2E`                    | `bun run test:e2e:api`                                                          |
+| `quality / L3: Browser E2E`                | `bun run test:e2e:bdd` (Chromium)                                               |
+| `quality / Z1: Gate`                       | slot-status strict aggregate (branch protection should require this check only) |
 
 `L1.5: Worker Runtime Tests` and `P1: Package Check` are declared `na` in `slot-status` and do not run.
 
