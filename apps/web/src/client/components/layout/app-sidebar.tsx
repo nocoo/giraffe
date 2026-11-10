@@ -161,9 +161,9 @@ export function AppSidebar({
 	const name = me ? displayName(me) : "Giraffe";
 	const email = me?.email;
 	const avatar = (
-		<Avatar className="h-9 w-9 shrink-0">
+		<Avatar>
 			{me?.avatar ? <AvatarImage src={me.avatar} alt={name} /> : null}
-			<AvatarFallback className="text-basalt-sm">{initials(name)}</AvatarFallback>
+			<AvatarFallback>{initials(name)}</AvatarFallback>
 		</Avatar>
 	);
 
