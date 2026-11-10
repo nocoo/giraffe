@@ -2,6 +2,7 @@ import "./refresh.css";
 import { Button, Checkbox, Input, Tabs, TabsContent, TabsList, TabsTrigger } from "@nocoo/basalt";
 import { Banner } from "@nocoo/basalt/components/banner";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
+import { PageHeader } from "@nocoo/basalt/components/page-header";
 import {
 	Table,
 	TableBody,
@@ -24,7 +25,6 @@ import {
 } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { REFRESH_DIMENSIONS, type RefreshRun } from "../../lib/refresh-types";
-import { BusinessPageHeader as PageHeader } from "../components/layout/business-page-header";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { TableScroll } from "../components/layout/collection-chrome";
 import { EmptyState } from "../components/layout/empty-state";
@@ -243,7 +243,6 @@ function RefreshCenterBody({ center }: { center: RefreshCenterViewModel }) {
 		<div className="refresh-center space-y-basalt-layout">
 			<PageHeader
 				title="刷新中心"
-				repositoryScope={false}
 				description="统一管理账号 A、仓库 B 的刷新进度、运行记录与每日自动计划"
 			/>
 			<section
