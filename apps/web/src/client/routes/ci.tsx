@@ -1,6 +1,7 @@
 import { Button, Link, SegmentControl, toast } from "@nocoo/basalt";
 import { FilterBar } from "@nocoo/basalt/components/filter-bar";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
+import { PageHeader } from "@nocoo/basalt/components/page-header";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
 import {
 	Table,
@@ -22,7 +23,6 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { CI_IDLE_DAYS, CI_RECENT, type CiReportResponse } from "../../lib/ci-health";
-import { BusinessPageHeader as PageHeader } from "../components/layout/business-page-header";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ChartBrick } from "../components/layout/chart-brick";
 import { SearchField, TableScroll } from "../components/layout/collection-chrome";
@@ -33,7 +33,7 @@ import { IconLabel } from "../components/layout/icon-label";
 import { CiSkeleton } from "../components/layout/page-skeleton";
 import { ProjectLink } from "../components/layout/project-identity";
 import { ShareBar } from "../components/layout/rank-bars";
-import { ScopeEmpty } from "../components/layout/repository-scope";
+import { RepositoryScopeFilter, ScopeEmpty } from "../components/layout/repository-scope";
 import { INLINE_SEGMENT } from "../components/layout/segment";
 import { SnapshotPending } from "../components/layout/snapshot-pending";
 import { useSnapshotRead } from "../components/layout/use-snapshot-read";
@@ -91,7 +91,11 @@ export function CiPage() {
 	if (snap && "missing" in snap)
 		return (
 			<div className="space-y-8">
-				<PageHeader title="CI 与发布" description={PAGE_DESCRIPTIONS["/ci"]} />
+				<PageHeader
+					title="CI 与发布"
+					description={PAGE_DESCRIPTIONS["/ci"]}
+					actions={<RepositoryScopeFilter />}
+				/>
 				<LayerCard>
 					<LayerCard.Body>
 						<SnapshotPending state={snap} />
@@ -102,7 +106,11 @@ export function CiPage() {
 	if (!report || !buckets)
 		return (
 			<div className="space-y-8">
-				<PageHeader title="CI 与发布" description={PAGE_DESCRIPTIONS["/ci"]} />
+				<PageHeader
+					title="CI 与发布"
+					description={PAGE_DESCRIPTIONS["/ci"]}
+					actions={<RepositoryScopeFilter />}
+				/>
 				<CiSkeleton label="加载 CI 状态" />
 			</div>
 		);
@@ -115,13 +123,12 @@ export function CiPage() {
 			<PageHeader
 				title="CI 与发布"
 				description={PAGE_DESCRIPTIONS["/ci"]}
-				meta={
-					<DataTimeSource
-						entries={[{ label: "CI 与发布", at: report.fetched_at, freshness: report.freshness }]}
-					/>
-				}
 				actions={
 					<>
+						<DataTimeSource
+							entries={[{ label: "CI 与发布", at: report.fetched_at, freshness: report.freshness }]}
+						/>
+						<RepositoryScopeFilter />
 						{t.truncatedRepos ? (
 							<CandyBadge tone="amber">{t.truncatedRepos} 个仓库运行记录已截断</CandyBadge>
 						) : null}
